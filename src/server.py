@@ -51,7 +51,7 @@ class Handler(BaseHTTPRequestHandler):
                 cwd="/app"
             )
 
-        threading.Thread(target=run, daemon=True).start()
+        threading.Thread(target=run, daemon=False).start()
         self._respond(200, "started")
 
     def _respond(self, code, body):

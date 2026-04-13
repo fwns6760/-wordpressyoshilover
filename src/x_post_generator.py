@@ -30,6 +30,95 @@ from wp_client import WPClient
 # ──────────────────────────────────────────────────────────
 # Gemini APIでツイート文生成
 # ──────────────────────────────────────────────────────────
+def generate_with_grok(title: str, category: str, score: str, summary: str = "") -> str:
+    """Grok Responses API（Web+X検索）でXポスト文を生成。失敗時は空文字を返す。"""
+    api_key = os.environ.get("GROK_API_KEY", "")
+    if not api_key:
+        return ""
+
+    from datetime import date, datetime, timedelta
+    today = date.today().strftime("%Y年%m月%d日")
+    from_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    to_date   = datetime.now().strftime("%Y-%m-%d")
+
+    quotes = re.findall(r'「([^」]{5,60})」', summary)
+    decimal_stats = re.findall(r'\.\d{3}', summary)
+    quote_info = f"\n監督・選手コメント: 「{quotes[0]}」" if quotes else ""
+    stats_info = f"\n記事内データ: {', '.join(decimal_stats[:5])}" if decimal_stats else ""
+    article_excerpt = summary[:600] if summary else ""
+
+    prompt = f"""あなたは読売ジャイアンツ専門のファンアカウントの中の人です。
+今日は{today}です。Web検索とX検索で最新情報を調べ、以下のニュースについてXポストを作ってください。
+
+ニュース: {title}{quote_info}{stats_info}
+カテゴリ: {category}
+記事抜粋: {article_excerpt}
+
+【パターン（状況に合うものを1つ選ぶ）】
+
+パターンA：感情爆発型（劇的な結果・逆転・好記録）
+⚾️〇〇きたーー！！🔥
+（1行で核心。2行目に補足）
+→詳細はブログで👇
+
+パターンB：発言引用型（監督・選手コメントがある場合）
+選手名「発言の前半部分…
+（続きが気になるところで切る）
+→全文はブログで👇
+
+パターンC：データ比較型（成績・ランキング）
+■〇〇 今季 vs 昨季
+今季：打率.XXX / HR X本 / 打点XX
+昨季：打率.XXX / HR X本 / 打点XX
+→データで見ると驚愕👇
+
+パターンD：ランキング型
+■セリーグ〇〇ランキング（最新）
+1位　選手名　成績
+3位　巨人選手名　成績
+→全部ブログで解説👇
+
+【絶対ルール】
+・80〜140文字以内（短く一目で読める）
+・冒頭は「きた！」「ヤバい！」「〜きたーー！！」など感情爆発 or データの核心を一撃
+・⚾️🔥🙌‼️を冒頭か末尾に1〜2個
+・X検索でバズっている巨人投稿のトーンを参考にする
+・Web検索で{today}現在のデータを確認してから数字を使う（推測不可）
+・発言は検索結果から実際のものを引用（作らない）
+・ハッシュタグ・URLは含めない（後で追加）
+・最後は「→〇〇はブログで👇」で自然に誘導
+・出力はポスト本文のみ（説明・前置き不要）"""
+
+    payload = json.dumps({
+        "model": "grok-4-1-fast-reasoning",
+        "input": [{"role": "user", "content": prompt}],
+        "tools": [
+            {"type": "web_search"},
+            {"type": "x_search", "from_date": from_date, "to_date": to_date}
+        ]
+    }).encode("utf-8")
+
+    try:
+        req = urllib.request.Request(
+            "https://api.x.ai/v1/responses",
+            data=payload,
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}", "x-grok-conv-id": "aa574b0b-75da-4897-98cb-97ad85daed6c"}
+        )
+        with urllib.request.urlopen(req, timeout=60) as res:
+            data = json.load(res)
+        # output[] から type==message を探す
+        for item in data.get("output", []):
+            if item.get("type") == "message":
+                for content in item.get("content", []):
+                    if isinstance(content, dict) and content.get("type") == "output_text":
+                        text = content.get("text", "").strip()
+                        if text and len(text) > 20:
+                            return text
+        return ""
+    except Exception:
+        return ""
+
+
 def generate_with_gemini(title: str, category: str, score: str, summary: str = "") -> str:
     """Gemini CLI（優先）またはAPIでXポスト文を生成。失敗時は空文字を返す。"""
     import subprocess, shutil
@@ -264,8 +353,10 @@ def build_post(title: str, url: str, category: str, summary: str = "") -> str:
     if len(title) > title_limit:
         title = title[:title_limit - 1] + "…"
 
-    # Geminiでコメント生成（失敗時はテンプレートにフォールバック）
-    ai_comment = generate_with_gemini(title, category, score, summary=summary)
+    # Grok優先（Web+X検索で推論生成）→ Geminiフォールバック → テンプレート
+    ai_comment = generate_with_grok(title, category, score, summary=summary)
+    if not ai_comment:
+        ai_comment = generate_with_gemini(title, category, score, summary=summary)
 
     if ai_comment:
         # 140文字制限チェック（URL=23字換算）

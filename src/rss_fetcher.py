@@ -1283,37 +1283,31 @@ def _main(args, logger):
                 # 記事ページから写真を最大3枚スクレイピング
                 _article_images = fetch_article_images(post_url, max_images=3)
                 _og_url  = _article_images[0] if _article_images else ""
-                _media_id = 0
-                content = build_news_block(title, summary, post_url, name, category, _og_url, _media_id, extra_images=_article_images[1:], has_game=has_game)
+                # dry-runはGrok呼び出しをスキップ（コスト節約）
+                if args.dry_run:
+                    print(f"  DRY: [{category}] {draft_title[:50]}")
+                    print(f"       {post_url}")
+                    success += 1
+                    continue
+                # Grokは1回だけ呼ぶ（media_id=0で生成）
+                content = build_news_block(title, summary, post_url, name, category, _og_url, 0, extra_images=_article_images[1:], has_game=has_game)
             else:
                 content = build_oembed_block(post_url)
                 draft_title = title
-
-            if args.dry_run:
-                print(f"  DRY: [{category}] {draft_title[:50]}")
-                print(f"       {post_url}")
-                # 生成内容をテキストで表示
-                import re as _re_dry
-                plain = _re_dry.sub(r'<[^>]+>', '', content)
-                plain = _re_dry.sub(r'\n{3,}', '\n\n', plain).strip()
-                print("--- 生成内容 ---")
-                print(plain[:1500])
-                print("--- END ---")
-                # dry-run では history に保存しない（再テスト可能にする）
-                success += 1
-                continue
+                if args.dry_run:
+                    print(f"  DRY: [{category}] {draft_title[:50]}")
+                    print(f"       {post_url}")
+                    success += 1
+                    continue
 
             # WP自動公開
             try:
                 category_id = wp.resolve_category_id(category)
 
-                # OG画像アップロードしてアイキャッチ＋記事内画像に使用
+                # OG画像アップロードしてアイキャッチに使用（記事HTML再生成しない）
                 featured_media = 0
                 if source_type == "news" and _og_url:
                     featured_media = wp.upload_image_from_url(_og_url)
-                    if featured_media:
-                        # media_idが確定したので記事本文の画像ブロックを更新
-                        content = build_news_block(title, summary, post_url, name, category, _og_url, featured_media, extra_images=_article_images[1:], has_game=has_game)
 
                 AUTO_POST_CATEGORY_ID = 673  # 自動投稿カテゴリ（サイトマップ除外・noindex）
                 cats = [AUTO_POST_CATEGORY_ID]

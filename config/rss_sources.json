@@ -2,6 +2,5 @@
   {"name": "日刊スポーツ 巨人",    "url": "https://www.nikkansports.com/rss/baseball/professional/atom/giants.xml", "type": "news"},
   {"name": "ベースボールキング",   "url": "https://baseballking.jp/feed",                                          "type": "news"},
   {"name": "Full-Count 巨人",     "url": "https://full-count.jp/tag/yomiuri-giants/feed/",                       "type": "news"},
-  {"name": "スポーツ報知 巨人",    "url": "https://hochi.news/rss/giants.xml",                                    "type": "news"},
-  {"name": "プロ野球まとめ",       "url": "https://baseball-matome.com/feed",                                     "type": "matome"}
+  {"name": "スポーツ報知 巨人",    "url": "https://hochi.news/rss/giants.xml",                                    "type": "news"}
 ]

@@ -253,7 +253,9 @@ def fetch_fan_reactions_with_grok(title: str) -> list:
     to_date   = today_dt.strftime("%Y-%m-%d")
 
     payload = json.dumps({
-        "model": "grok-4-1-fast-reasoning",
+        "model": "grok-4-1-fast-non-reasoning",
+        "max_turns": 1,
+        "max_output_tokens": 1500,
         "input": [
             {
                 "role": "user",
@@ -607,14 +609,15 @@ def generate_article_with_grok(title: str, summary: str, category: str, win_loss
     summary_clean = re.sub(r"<[^>]+>", "", summary).strip()[:400]
 
     query_short = re.sub(r'【.*?】', '', title).strip()[:20]
-    # ファン界隈のニックネームを含めた複合クエリ（週次更新推奨）
-    nickname_query = "(芽ネギ OR 大王 OR 若大将 OR たけまる OR 門脇 OR 大勢 OR 戸郷 OR マタ OR 中山礼都 OR 吉川尚輝) 巨人"
-    prompt = f"""読売ジャイアンツの熱狂的ファンブログ記事を書いてください。今日は{today_str}。
+
+    if win_loss_hint:
+        # 試合記事プロンプト
+        prompt = f"""読売ジャイアンツの熱狂的ファンブログ記事を書いてください。今日は{today_str}。
 
 {win_loss_hint}タイトル: {title}
 要約: {summary_clean}
 
-Web検索でnpb.jp・スポーツナビの最新成績を調べ、X検索で「{query_short} 巨人」および「{nickname_query}」のファンの声を15件以上探してください。ニックネームで呼ばれている投稿も積極的に拾ってください。
+X検索で「{query_short} 巨人」のファンの声を5件探してください。
 
 【絶対ルール】
 ・文体は「ですます調」（〜です、〜ます）で統一する
@@ -623,10 +626,10 @@ Web検索でnpb.jp・スポーツナビの最新成績を調べ、X検索で「{
 ・その下に続く見出しは【】か■で始め選手名を入れる（逆転型・数字比較型・ファン共感型どれでも可）
 ・最初の段落はファン目線で興奮気味に描写。「画面の前で思わずガッツポーズしました！」など共感フレーズを1つ入れる
 ・本文は500〜700文字。各段落は3文以内でテンポよく
-・成績数字は（npb.jp）など出典付き。不明は「〜とみられます」
+・成績数字は上記「タイトル」「要約」に明記されているもののみ使用。書かれていない数字は書かない・推測・架空禁止
 ・負け試合は正直に課題を書く。前向きに美化しない
 ・岡本和真は2025年オフMLB移籍済み → 2026年巨人成績に登場させない
-・---STATS---はその試合・選手の記録を箇条書きで5〜8件（試合結果・安打数・投球内容・チーム成績など）
+・---STATS---はタイトル・要約に含まれる情報のみ箇条書き。書かれていない項目は省略する（空欄可）
 ・---IMPRESSION---は300文字のブロガー感想（ですます調・最後は「コメント欄で教えてください！」）
 ・「ファンの声」「Xより」などの見出しは---ARTICLE---内に書かない（---FANS---に書く）
 
@@ -635,9 +638,41 @@ Web検索でnpb.jp・スポーツナビの最新成績を調べ、X検索で「{
 ---ARTICLE---
 （上記ルール厳守で記事本文のみ。説明不要）
 ---FANS---
-（X検索で見つけた実際のコメント。形式：@アカウント名: コメント内容。1行1件。15件以上。喜び・悔しさ・驚き・批判など感情を多様に選ぶ）
+（X検索で見つけた実際のコメント。形式：@アカウント名: コメント内容。1行1件。5件。喜び・悔しさ・驚き・批判など感情を多様に選ぶ）
 ---STATS---
-（試合・選手の記録を箇条書きで8〜12件。形式：・項目: 値。試合日・球場・スコア・安打数・先発投手・登板回・失点・勝敗・チーム成績・打率・関連選手成績を含める）
+（タイトル・要約に書かれた情報のみ。形式：・項目: 値。書かれていない数字は書かない）
+---IMPRESSION---
+（300文字の感想。ですます調）"""
+    else:
+        # 選手ニュース・コラム記事プロンプト（試合なし）
+        prompt = f"""読売ジャイアンツ応援ブログの記事を書いてください。今日は{today_str}。
+
+タイトル: {title}
+要約: {summary_clean}
+
+X検索で「{query_short} 巨人」に関するファンの声を5件探してください。
+
+【絶対ルール】
+・文体は「ですます調」（〜です、〜ます）で統一する
+・これは試合記事ではない。スコア・勝敗・試合結果は絶対に書かない・推測もしない
+・---SUMMARY---はこのニュースの要点を3〜4文で。選手名・コメント・背景を盛り込む
+・---ARTICLE---の最初の見出しは必ず「■{query_short}の最新情報」にする
+・その下の見出しは選手の経歴・今季成績・注目ポイントなど事実ベースで構成する
+・本文は500〜700文字。各段落は3文以内でテンポよく
+・数字は上記「タイトル」「要約」に明記されているもののみ使用。書かれていない数字は書かない・推測・架空禁止
+・岡本和真は2025年オフMLB移籍済み → 2026年巨人成績に登場させない
+・---STATS---はタイトル・要約に含まれる情報のみ。書かれていない数字は省略（空欄可）。試合スコア・勝敗は書かない
+・---IMPRESSION---は300文字のブロガー感想（ですます調・最後は「コメント欄で教えてください！」）
+・「ファンの声」「Xより」などの見出しは---ARTICLE---内に書かない（---FANS---に書く）
+
+---SUMMARY---
+（3〜4文の要約）
+---ARTICLE---
+（上記ルール厳守で記事本文のみ。説明不要）
+---FANS---
+（X検索で見つけた実際のコメント。形式：@アカウント名: コメント内容。1行1件。5件）
+---STATS---
+（タイトル・要約に書かれた情報のみ。形式：・項目: 値。書かれていない数字は書かない）
 ---IMPRESSION---
 （300文字の感想。ですます調）"""
 
@@ -648,8 +683,9 @@ Web検索でnpb.jp・スポーツナビの最新成績を調べ、X検索で「{
 
     base_payload = {
         "input": [{"role": "user", "content": prompt}],
+        "max_turns": 1,
+        "max_output_tokens": 1500,
         "tools": [
-            {"type": "web_search"},
             {
                 "type": "x_search",
                 "from_date": from_date,
@@ -658,8 +694,7 @@ Web検索でnpb.jp・スポーツナビの最新成績を調べ、X検索で「{
         ]
     }
 
-    # reasoning優先（ツール呼び出しに強い）、失敗時はnon-reasoningにフォールバック
-    models_to_try = ["grok-4-1-fast-reasoning", "grok-4-1-fast-non-reasoning"]
+    models_to_try = ["grok-4-1-fast-non-reasoning"]
     logger.info("Grok Responses API (Web+X検索) で記事生成中...")
     for model_name in models_to_try:
         payload_obj = dict(base_payload)
@@ -674,6 +709,14 @@ Web検索でnpb.jp・スポーツナビの最新成績を調べ、X検索で「{
                 )
                 with urllib.request.urlopen(req, timeout=90) as res:
                     data = json.load(res)
+                # ツール呼び出し回数ログ（コスト確認用）
+                tool_usage = data.get("usage", {}).get("server_side_tool_usage", {})
+                if tool_usage:
+                    logger.info(f"[Grok tool usage] {tool_usage}")
+                # 出力切れ監視（max_output_tokens に達した場合は incomplete_details に理由が入る）
+                incomplete = data.get("incomplete_details")
+                if incomplete:
+                    logger.warning(f"[Grok incomplete] {incomplete} → max_output_tokens を 1800 に上げることを検討")
                 text = _parse_responses_api_text(data)
 
                 # セクション分割: SUMMARY / ARTICLE / FANS / STATS / IMPRESSION
@@ -713,24 +756,25 @@ Web検索でnpb.jp・スポーツナビの最新成績を調べ、X検索で「{
 # ──────────────────────────────────────────────────────────
 _last_ai_body = ""  # 最後に生成されたAI記事本文（Xポスト生成に再利用）
 
-def build_news_block(title: str, summary: str, url: str, source_name: str, category: str = "コラム", og_image_url: str = "", media_id: int = 0, extra_images: list = None) -> str:
+def build_news_block(title: str, summary: str, url: str, source_name: str, category: str = "コラム", og_image_url: str = "", media_id: int = 0, extra_images: list = None, has_game: bool = True) -> str:
     global _last_ai_body
     import re
     summary_clean = re.sub(r"<[^>]+>", "", summary).strip()
 
-    # 勝敗ヒント（generate_article_with_gemini と同じロジック）
-    import re as _re2
-    score_match = _re2.search(r'(\d{1,2})[－\-–](\d{1,2})', title + " " + summary_clean)
+    # 試合がない日は勝敗ヒントを生成しない（架空スコア捏造防止）
     win_loss_hint = ""
-    if score_match:
-        g, o = int(score_match.group(1)), int(score_match.group(2))
-        if "巨人" in (title + summary_clean)[:20]:
-            if g > o:   win_loss_hint = f"※この試合は巨人が{g}-{o}で【勝利】した試合です。"
-            elif g < o: win_loss_hint = f"※この試合は巨人が{g}-{o}で【敗戦】した試合です。負け試合として正直に書くこと。前向きに美化しない。"
-    elif any(w in (title + summary_clean) for w in ["勝利", "白星", "連勝", "サヨナラ勝"]):
-        win_loss_hint = "※この試合は巨人が【勝利】した試合です。"
-    elif any(w in (title + summary_clean) for w in ["敗れ", "敗戦", "連敗", "黒星", "完封負"]):
-        win_loss_hint = "※この試合は巨人が【敗戦】した試合です。負け試合として正直に書くこと。前向きに美化しない。"
+    if has_game:
+        import re as _re2
+        score_match = _re2.search(r'(\d{1,2})[－\-–](\d{1,2})', title + " " + summary_clean)
+        if score_match:
+            g, o = int(score_match.group(1)), int(score_match.group(2))
+            if "巨人" in (title + summary_clean)[:20]:
+                if g > o:   win_loss_hint = f"※この試合は巨人が{g}-{o}で【勝利】した試合です。"
+                elif g < o: win_loss_hint = f"※この試合は巨人が{g}-{o}で【敗戦】した試合です。負け試合として正直に書くこと。前向きに美化しない。"
+        elif any(w in (title + summary_clean) for w in ["勝利", "白星", "連勝", "サヨナラ勝"]):
+            win_loss_hint = "※この試合は巨人が【勝利】した試合です。"
+        elif any(w in (title + summary_clean) for w in ["敗れ", "敗戦", "連敗", "黒星", "完封負"]):
+            win_loss_hint = "※この試合は巨人が【敗戦】した試合です。負け試合として正直に書くこと。前向きに美化しない。"
 
     # Grok（Web+X検索）で記事生成とファンの声を同時取得
     ai_body, real_reactions, summary_block, stats_block, impression_block = generate_article_with_grok(title, summary_clean, category, win_loss_hint)
@@ -871,7 +915,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         blocks += _sep()
 
     # ──────────────────────────────────────────────────────────
-    # ③ ファンの声（Xカード 最大15件）
+    # ③ ファンの声（Xカード 最大5件）
     # ──────────────────────────────────────────────────────────
     if real_reactions:
         blocks += (
@@ -935,14 +979,11 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     # ⑥ コメントボタン
     blocks += _comment_button()
 
-    # 出典（一次情報リンク付き）
+    # 出典（元記事のみ）
     blocks += (
         f'<!-- wp:paragraph -->\n'
         f'<p style="font-size:0.8em;color:#999;">'
-        f'📊 データ出典: '
-        f'<a href="https://npb.jp/bis/2026/stats/bat_c.html" target="_blank" rel="noopener noreferrer">NPB公式（打撃成績）</a> / '
-        f'<a href="https://baseball.yahoo.co.jp/npb/standings/" target="_blank" rel="noopener noreferrer">スポーツナビ（順位表）</a> / '
-        f'<a href="{url}" target="_blank" rel="noopener noreferrer">元記事</a>'
+        f'📰 元記事: <a href="{url}" target="_blank" rel="noopener noreferrer">{source_name}</a>'
         f'</p>\n'
         f'<!-- /wp:paragraph -->'
     )
@@ -1135,15 +1176,12 @@ def check_giants_game_today() -> tuple:
 def _main(args, logger):
     logger.info(f"=== rss_fetcher 開始 {'[DRY RUN]' if args.dry_run else ''} ===")
 
-    # ──────────────────────────────────────────────────────────
-    # 事前チェック：今日の巨人戦があるか確認
-    # ──────────────────────────────────────────────────────────
+    # 今日の巨人戦有無を確認（試合なしの日は試合記事プロンプトを使わない）
     has_game, opponent, venue = check_giants_game_today()
-    if not has_game:
-        logger.info("本日の巨人戦なし（オフ日または中止）→ 記事生成スキップ")
-        return
-
-    logger.info(f"本日の巨人戦確認OK{(' vs ' + opponent) if opponent else ''}{(' @' + venue) if venue else ''}")
+    if has_game:
+        logger.info(f"本日の巨人戦あり{(' vs ' + opponent) if opponent else ''}{(' @' + venue) if venue else ''}")
+    else:
+        logger.info("本日の巨人戦なし → 選手・コラム記事モードで実行")
 
     # 設定読み込み
     with open(RSS_SOURCES_FILE, encoding="utf-8") as f:
@@ -1246,7 +1284,7 @@ def _main(args, logger):
                 _article_images = fetch_article_images(post_url, max_images=3)
                 _og_url  = _article_images[0] if _article_images else ""
                 _media_id = 0
-                content = build_news_block(title, summary, post_url, name, category, _og_url, _media_id, extra_images=_article_images[1:])
+                content = build_news_block(title, summary, post_url, name, category, _og_url, _media_id, extra_images=_article_images[1:], has_game=has_game)
             else:
                 content = build_oembed_block(post_url)
                 draft_title = title
@@ -1254,7 +1292,14 @@ def _main(args, logger):
             if args.dry_run:
                 print(f"  DRY: [{category}] {draft_title[:50]}")
                 print(f"       {post_url}")
-                save_history(post_url, history, entry_title_norm)
+                # 生成内容をテキストで表示
+                import re as _re_dry
+                plain = _re_dry.sub(r'<[^>]+>', '', content)
+                plain = _re_dry.sub(r'\n{3,}', '\n\n', plain).strip()
+                print("--- 生成内容 ---")
+                print(plain[:1500])
+                print("--- END ---")
+                # dry-run では history に保存しない（再テスト可能にする）
                 success += 1
                 continue
 
@@ -1268,7 +1313,7 @@ def _main(args, logger):
                     featured_media = wp.upload_image_from_url(_og_url)
                     if featured_media:
                         # media_idが確定したので記事本文の画像ブロックを更新
-                        content = build_news_block(title, summary, post_url, name, category, _og_url, featured_media, extra_images=_article_images[1:])
+                        content = build_news_block(title, summary, post_url, name, category, _og_url, featured_media, extra_images=_article_images[1:], has_game=has_game)
 
                 AUTO_POST_CATEGORY_ID = 673  # 自動投稿カテゴリ（サイトマップ除外・noindex）
                 cats = [AUTO_POST_CATEGORY_ID]

@@ -15,6 +15,7 @@ import os
 import sys
 import json
 import argparse
+import html
 import re
 from datetime import datetime, timedelta, timezone
 
@@ -59,9 +60,8 @@ class WPClient:
             return None
 
         after = (datetime.now(timezone.utc) - timedelta(hours=within_hours)).isoformat()
-        resp = requests.get(
-            f"{self.api}/posts",
-            params={
+        query_variants = [
+            {
                 "search": title[:40],
                 "per_page": 20,
                 "status": "any",
@@ -69,14 +69,35 @@ class WPClient:
                 "after": after,
                 "_fields": "id,date,title,status",
             },
-            auth=self.auth,
-            timeout=30,
-        )
-        self._raise_for_status(resp, "既存記事検索")
-        for post in resp.json():
-            rendered = (post.get("title") or {}).get("raw") or (post.get("title") or {}).get("rendered") or ""
-            if self._normalize_title(rendered) == normalized:
-                return post
+            {
+                "search": title[:40],
+                "per_page": 20,
+                "after": after,
+                "_fields": "id,date,title",
+            },
+        ]
+
+        last_error = None
+        for params in query_variants:
+            try:
+                resp = requests.get(
+                    f"{self.api}/posts",
+                    params=params,
+                    auth=self.auth,
+                    timeout=30,
+                )
+                self._raise_for_status(resp, "既存記事検索")
+                for post in resp.json():
+                    title_data = post.get("title") or {}
+                    rendered = title_data.get("raw") or title_data.get("rendered") or ""
+                    if self._normalize_title(rendered) == normalized:
+                        return post
+                return None
+            except Exception as e:
+                last_error = e
+
+        if last_error:
+            print(f"[WP] 既存記事検索失敗（公開は継続）: {last_error}")
         return None
 
     # ------------------------------------------------------------------
@@ -121,14 +142,15 @@ class WPClient:
         Returns: media_id (int)、失敗時は 0
         """
         try:
-            img_resp = requests.get(image_url, timeout=15)
+            normalized_url = html.unescape((image_url or "").strip())
+            img_resp = requests.get(normalized_url, timeout=15)
             img_resp.raise_for_status()
             image_data = img_resp.content
             content_type = img_resp.headers.get("Content-Type", "image/jpeg").split(";")[0]
             ext = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}.get(content_type, "jpg")
             if not filename:
                 import hashlib
-                filename = hashlib.md5(image_url.encode()).hexdigest()[:12] + f".{ext}"
+                filename = hashlib.md5(normalized_url.encode()).hexdigest()[:12] + f".{ext}"
 
             resp = requests.post(
                 f"{self.api}/media",

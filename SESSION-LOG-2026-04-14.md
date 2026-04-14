@@ -635,3 +635,26 @@ SESSION-LOG-2026-04-14.md を読んで再開して。
 - テスト
   - `python3 -m unittest tests.test_cost_modes tests.test_x_post_generator tests.test_yahoo_realtime` は `47 tests OK`
   - `python3 -m py_compile src/rss_fetcher.py src/x_post_generator.py` は成功
+
+### 18. 自動Xが飛ばなかった原因を修正し、試合終了の手動トリガー運用を追加
+
+- 原因
+  - 本番ログ確認で、`ネタ不足` ではなく `WordPress既存記事検索` が `400 rest_forbidden_status` を返し、記事公開前に停止していた
+  - さらに画像アップロードが不安定で、`AUTO_TWEET_REQUIRE_IMAGE=1` のままだと次に `featured_media_missing` で自動Xが止まる可能性が高かった
+- 修正
+  - `src/wp_client.py`
+    - `find_recent_post_by_title()` を修正
+      - `status=any + context=edit` の権限付き検索が失敗しても、通常検索へフォールバック
+      - 既存記事検索に失敗しても `公開は継続` するように変更
+    - `upload_image_from_url()` で `&amp;` をデコードして画像URLの 404 を減らした
+  - テスト
+    - `tests/test_wp_client.py` に `権限付き検索が400でも公開継続` のケースを追加
+    - `python3 -m unittest tests.test_wp_client tests.test_cost_modes tests.test_x_post_generator tests.test_yahoo_realtime` は `50 tests OK`
+    - `python3 -m py_compile src/wp_client.py src/rss_fetcher.py src/x_post_generator.py` は成功
+- 本番反映
+  - Cloud Run revision: `yoshilover-fetcher-00084-bfg`
+  - `AUTO_TWEET_REQUIRE_IMAGE=0` に一時変更
+    - 今夜の運用優先で、画像なしでも `記事公開 -> 自動X投稿` を通す
+- 運用追加
+  - ユーザーが試合を見ていて `試合終了` をここで伝えたら、Codex が本番 fetcher を即実行する
+  - その実行で Yahoo固定試合ページの `試合終了` を確認し、`試合後記事 -> 自動X投稿` まで流す

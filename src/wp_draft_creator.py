@@ -27,19 +27,33 @@ POSTED_URLS_FILE = ROOT / "data" / "posted_urls.json"
 
 
 # ------------------------------------------------------------------
-# oEmbedブロックHTML生成
+# X埋め込みHTML生成
 # ------------------------------------------------------------------
-def build_oembed_block(url: str) -> str:
-    # twitter.com 形式に統一（WP oEmbedはtwitter.comを認識する）
-    embed_url = url.replace("https://x.com/", "https://twitter.com/")
+def build_x_widget_script_block() -> str:
     return (
-        f'<!-- wp:embed {{"url":"{embed_url}","type":"rich","providerNameSlug":"twitter","responsive":true,"className":"wp-embed-aspect-16-9 wp-has-aspect-ratio"}} -->\n'
-        f'<figure class="wp-block-embed is-type-rich is-provider-twitter wp-block-embed-twitter wp-embed-aspect-16-9 wp-has-aspect-ratio">\n'
-        f'  <div class="wp-block-embed__wrapper">\n'
-        f'    {embed_url}\n'
-        f'  </div>\n'
-        f'</figure>\n'
-        f'<!-- /wp:embed -->'
+        '<!-- wp:html -->\n'
+        '<script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>\n'
+        '<!-- /wp:html -->'
+    )
+
+
+def build_oembed_block(url: str, compact: bool = False, include_script: bool = True) -> str:
+    # twitter.com 形式に統一し、公式 blockquote 埋め込みを使う。
+    # wp:embed の 16:9 ラッパーを避け、余白と初期表示の遅さを抑える。
+    embed_url = url.replace("https://x.com/", "https://twitter.com/")
+    wrapper_class = "yoshilover-x-embed yoshilover-x-embed-compact" if compact else "yoshilover-x-embed"
+    wrapper_style = "margin:0 auto 0 !important;max-width:550px;" if compact else "margin:24px auto !important;max-width:550px;"
+    extra_attrs = ' data-conversation="none" data-cards="hidden"' if compact else ""
+    script_block = ("\n" + build_x_widget_script_block()) if include_script else ""
+    return (
+        '<!-- wp:html -->\n'
+        f'<div class="{wrapper_class}" style="{wrapper_style}">\n'
+        f'  <blockquote class="twitter-tweet" data-dnt="true" data-lang="ja"{extra_attrs}>\n'
+        f'    <a href="{embed_url}">{embed_url}</a>\n'
+        '  </blockquote>\n'
+        '</div>\n'
+        '<!-- /wp:html -->'
+        f'{script_block}'
     )
 
 

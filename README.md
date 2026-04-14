@@ -58,7 +58,25 @@ X_API_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxx
 X_ACCESS_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxx
 X_ACCESS_TOKEN_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxx
 GCS_BUCKET=yoshilover-history
+RUN_SECRET=change-this-to-a-long-random-secret
+RUN_AUTH_MODE=secret
+RUN_OIDC_SERVICE_ACCOUNT=
+RUN_OIDC_AUDIENCE=
+ENABLE_TEST_GEMINI=0
+LOW_COST_MODE=1
+STRICT_FACT_MODE=1
+AI_ENABLED_CATEGORIES=試合速報,選手情報,首脳陣
+ARTICLE_AI_MODE=gemini
+OFFDAY_ARTICLE_AI_MODE=none
+X_POST_AI_MODE=none
+X_POST_AI_CATEGORIES=試合速報,選手情報,首脳陣
+X_POST_DAILY_LIMIT=5
+FAN_REACTION_LIMIT=5
+AUTO_TWEET_ENABLED=0
 ```
+
+ローカルや単純な HTTP 実行では `RUN_AUTH_MODE=secret` と `RUN_SECRET` を使います。Cloud Run 本番は `RUN_AUTH_MODE=cloud_run` にして、`RUN_OIDC_SERVICE_ACCOUNT` と `RUN_OIDC_AUDIENCE` で Cloud Scheduler の OIDC トークンを検証します。`/test-gemini` はデフォルトで無効で、使う場合だけ `ENABLE_TEST_GEMINI=1` を設定してください。
+`LOW_COST_MODE=1` では、既定で `試合速報 / 選手情報 / 首脳陣` だけ記事AIを有効にし、オフ日は記事AIを止め、X投稿文もテンプレート運用に落とします。`STRICT_FACT_MODE=1` を有効にすると、元記事タイトルと要約にない数字・スコア・出典っぽい記述を検出した場合に、安全な定型記事へ自動フォールバックします。
 
 ## セットアップ
 
@@ -71,6 +89,9 @@ python3 src/rss_fetcher.py
 
 # ドライラン（WP投稿なし）
 python3 src/rss_fetcher.py --dry-run
+
+# WordPress 品質確認用: 下書きだけ作って記事AIを Grok に固定
+python3 src/rss_fetcher.py --limit 1 --draft-only --article-ai-mode grok
 ```
 
 ## GCP / Cloud Run デプロイ
@@ -81,8 +102,12 @@ gcloud builds submit --tag asia-northeast1-docker.pkg.dev/baseballsite/yoshilove
 gcloud run deploy yoshilover-fetcher \
   --image asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/fetcher \
   --region asia-northeast1 \
-  --set-env-vars "$(cat .env | tr '\n' ',')"
+  --set-env-vars WP_URL=https://yoshilover.com,WP_USER=your_wp_username,GCS_BUCKET=yoshilover-history,RUN_AUTH_MODE=cloud_run,RUN_OIDC_SERVICE_ACCOUNT=seo-web-runtime@baseballsite.iam.gserviceaccount.com,RUN_OIDC_AUDIENCE=https://yoshilover-fetcher-487178857517.asia-northeast1.run.app/run,ENABLE_TEST_GEMINI=0,LOW_COST_MODE=1,STRICT_FACT_MODE=1,AI_ENABLED_CATEGORIES=試合速報\\,選手情報\\,首脳陣,ARTICLE_AI_MODE=gemini,OFFDAY_ARTICLE_AI_MODE=none,X_POST_AI_MODE=none,X_POST_AI_CATEGORIES=試合速報\\,選手情報\\,首脳陣,X_POST_DAILY_LIMIT=5,FAN_REACTION_LIMIT=5,AUTO_TWEET_ENABLED=0 \
+  --set-secrets WP_APP_PASSWORD=yoshilover-wp-app-password:latest,RUN_SECRET=yoshilover-run-secret:latest,GEMINI_API_KEY=gemini-api-key:latest,GROK_API_KEY=yoshilover-grok-api-key:latest,X_API_KEY=yoshilover-x-api-key:latest,X_API_SECRET=yoshilover-x-api-secret:latest,X_ACCESS_TOKEN=yoshilover-x-access-token:latest,X_ACCESS_TOKEN_SECRET=yoshilover-x-access-token-secret:latest
 ```
+
+Cloud Run では `.env` をそのまま `--set-env-vars` に流さず、秘密情報は必ず Secret Manager 経由で渡します。
+Cloud Scheduler から `/run` を叩くときは、`oidc-service-account-email` と `oidc-token-audience` を付けて Cloud Run IAM で認証します。
 
 ### Cloud Scheduler ジョブ
 

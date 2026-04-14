@@ -109,7 +109,7 @@ class WPClient:
     # ------------------------------------------------------------------
     # 下書き投稿
     # ------------------------------------------------------------------
-    def create_draft(self, title: str, content: str, categories: list = None) -> int:
+    def create_draft(self, title: str, content: str, categories: list = None, featured_media: int = None) -> int:
         """
         WordPressに下書き記事を作成して post_id を返す。
 
@@ -128,6 +128,8 @@ class WPClient:
         }
         if categories:
             payload["categories"] = categories
+        if featured_media:
+            payload["featured_media"] = featured_media
 
         resp = requests.post(
             f"{self.api}/posts",
@@ -140,6 +142,19 @@ class WPClient:
         post_id = resp.json()["id"]
         print(f"[WP] 下書き作成 post_id={post_id} title={title!r}")
         return post_id
+
+    def update_post_fields(self, post_id: int, **fields) -> None:
+        """記事の任意フィールドを更新（featured_media など）"""
+        payload = {k: v for k, v in fields.items() if v is not None}
+        if not payload:
+            return
+        resp = requests.post(
+            f"{self.api}/posts/{post_id}",
+            auth=self.auth,
+            json=payload,
+            timeout=30,
+        )
+        self._raise_for_status(resp, f"記事更新 post_id={post_id}")
 
     # ------------------------------------------------------------------
     # 記事取得

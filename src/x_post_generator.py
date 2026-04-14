@@ -27,6 +27,48 @@ load_dotenv(ROOT / ".env")
 
 from wp_client import WPClient
 
+TRUE_VALUES = {"1", "true", "yes", "on"}
+DEFAULT_LOW_COST_AI_CATEGORIES = {"試合速報", "選手情報", "首脳陣"}
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in TRUE_VALUES
+
+
+def low_cost_mode_enabled() -> bool:
+    return _env_flag("LOW_COST_MODE", False)
+
+
+def _env_csv_set(name: str, default: set[str]) -> set[str]:
+    value = os.environ.get(name, "")
+    if not value.strip():
+        return set(default)
+    return {item.strip() for item in value.split(",") if item.strip()}
+
+
+def x_post_ai_categories() -> set[str]:
+    default = DEFAULT_LOW_COST_AI_CATEGORIES if low_cost_mode_enabled() else set()
+    return _env_csv_set("X_POST_AI_CATEGORIES", default)
+
+
+def should_use_ai_for_x_post(category: str) -> bool:
+    enabled = x_post_ai_categories()
+    if not enabled:
+        return not low_cost_mode_enabled()
+    return category in enabled
+
+
+def get_x_post_ai_mode() -> str:
+    default_mode = "none" if low_cost_mode_enabled() else "auto"
+    mode = os.environ.get("X_POST_AI_MODE", default_mode).strip().lower()
+    if mode in {"auto", "grok", "gemini", "none"}:
+        return mode
+    return default_mode
+
+
 # ──────────────────────────────────────────────────────────
 # Gemini APIでツイート文生成
 # ──────────────────────────────────────────────────────────
@@ -102,7 +144,7 @@ def generate_with_grok(title: str, category: str, score: str, summary: str = "")
         req = urllib.request.Request(
             "https://api.x.ai/v1/responses",
             data=payload,
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}", "x-grok-conv-id": "aa574b0b-75da-4897-98cb-97ad85daed6c"}
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
         )
         with urllib.request.urlopen(req, timeout=60) as res:
             data = json.load(res)
@@ -250,7 +292,130 @@ PLAYER_TAGS = {
     "井上":      "#井上温大",
     "門脇":      "#門脇誠",
     "泉口":      "#泉口友汰",
+    "浅野":      "#浅野翔吾",
 }
+
+
+def _extract_short_quote(text: str, max_chars: int = 22) -> str:
+    quotes = re.findall(r'「([^」]{4,60})」', text or "")
+    if not quotes:
+        return ""
+    quote = quotes[0].strip()
+    if len(quote) > max_chars:
+        return quote[: max_chars - 1].rstrip() + "…"
+    return quote
+
+
+def _clean_title_for_x(title: str, max_chars: int = 34) -> str:
+    clean = re.sub(r'^【[^】]+】\s*', '', title or "").strip()
+    clean = re.sub(r"\s+", " ", clean)
+    if len(clean) > max_chars:
+        return clean[: max_chars - 1].rstrip() + "…"
+    return clean
+
+
+def _detect_primary_player_tag(text: str) -> str:
+    tags = detect_player_tags(text)
+    return tags[0] if tags else ""
+
+
+def _player_post_angle(title: str, summary: str) -> str:
+    text = f"{title} {summary}"
+    if any(keyword in text for keyword in ("フォーム", "改造", "投げ方", "助言")):
+        return "今回は結果より、フォーム変更の中身が気になる記事です。"
+    if any(keyword in text for keyword in ("昇格", "合流", "復帰", "再調整")):
+        return "今回の動き、今後の起用にも関わってきそうです。"
+    if any(keyword in text for keyword in ("先発", "登板", "ローテ")):
+        return "次の登板をどう見るかが気になる記事です。"
+    if any(keyword in text for keyword in ("抹消", "離脱", "故障")):
+        return "ここからどう立て直すかが気になる記事です。"
+    return "今回のポイントを整理した記事です。"
+
+
+def _player_post_question(title: str, summary: str, player_name: str) -> str:
+    text = f"{title} {summary}"
+    if any(keyword in text for keyword in ("フォーム", "改造", "投げ方", "助言")):
+        return "この変化、どう見ますか？"
+    if any(keyword in text for keyword in ("昇格", "合流", "復帰", "再調整")):
+        return "この流れ、どう見ますか？"
+    if any(keyword in text for keyword in ("先発", "登板", "ローテ")):
+        return "次はどこを見たいですか？"
+    if any(keyword in text for keyword in ("抹消", "離脱", "故障")):
+        return "ここからどう立て直してほしいですか？"
+    return f"{player_name}のこの動き、どう見ますか？"
+
+
+def _build_player_post(title: str, url: str, summary: str, hashtag_str: str) -> str:
+    player_tag = _detect_primary_player_tag(title + " " + summary)
+    player_name = player_tag.lstrip("#") if player_tag else ""
+    quote = _extract_short_quote(f"{title}\n{summary}")
+    if player_name and quote:
+        lead = f"{player_name}「{quote}」"
+    elif quote:
+        lead = f"「{quote}」"
+    elif player_name:
+        lead = f"{player_name}の今回の動き、気になります。"
+    else:
+        lead = _clean_title_for_x(title)
+
+    angle = _player_post_angle(title, summary)
+    question = _player_post_question(title, summary, player_name or "この話題")
+    return f"{lead}\n\n{angle}\n{question}\n\n{url}\n{hashtag_str}"
+
+
+def _manager_post_subtype(title: str, summary: str) -> str:
+    text = f"{title} {summary}"
+    if any(keyword in text for keyword in ("競争", "レギュラー", "固定", "序列")):
+        return "competition"
+    if "若手" in text and "起用" in text:
+        return "competition"
+    if any(keyword in text for keyword in ("継投", "采配", "ベンチ", "勝負手", "代打", "守備固め")):
+        return "strategy"
+    if any(keyword in text for keyword in ("スタメン", "打順", "オーダー", "起用")):
+        return "lineup"
+    if "若手" in text:
+        return "competition"
+    return "general"
+
+
+def _manager_post_angle(title: str, summary: str) -> str:
+    subtype = _manager_post_subtype(title, summary)
+    if subtype == "competition":
+        return "このコメント、次の序列にも関わってきそうです。"
+    if subtype == "lineup":
+        return "この発言、次のスタメンをどう動かすか気になります。"
+    if subtype == "strategy":
+        return "この発言、次のベンチワークをどう読むか気になります。"
+    return "この発言、ベンチの狙いが見える記事です。"
+
+
+def _manager_post_question(title: str, summary: str) -> str:
+    subtype = _manager_post_subtype(title, summary)
+    if subtype == "competition":
+        return "この競争、どう見ますか？"
+    if subtype == "lineup":
+        return "次のスタメン、どう変わると思いますか？"
+    if subtype == "strategy":
+        return "この采配、どう見ますか？"
+    return "この発言、どう見ますか？"
+
+
+def _build_manager_post(title: str, url: str, summary: str, hashtag_str: str) -> str:
+    manager_tag = _detect_primary_player_tag(title + " " + summary)
+    manager_name = manager_tag.lstrip("#") if manager_tag else ""
+    quote = _extract_short_quote(f"{title}\n{summary}", max_chars=28)
+    if manager_name and quote:
+        lead = f"{manager_name}「{quote}」"
+    elif quote:
+        lead = f"「{quote}」"
+    elif manager_name:
+        lead = f"{manager_name}の今回のコメント、気になります。"
+    else:
+        lead = _clean_title_for_x(title)
+
+    angle = _manager_post_angle(title, summary)
+    question = _manager_post_question(title, summary)
+    return f"{lead}\n\n{angle}\n{question}\n\n{url}\n{hashtag_str}"
 
 # ──────────────────────────────────────────────────────────
 # カテゴリ別テンプレート（{title} {url} {tags} を使用）
@@ -321,8 +486,12 @@ def build_post(title: str, url: str, category: str, summary: str = "") -> str:
 
     # ハッシュタグ収集
     tags = list(REQUIRED_TAGS)
-    tags += CATEGORY_TAGS.get(category, ["#プロ野球"])
-    tags += detect_player_tags(title)
+    player_tags = detect_player_tags(title + " " + summary)
+    if category == "選手情報":
+        tags += player_tags[:1]
+    else:
+        tags += CATEGORY_TAGS.get(category, ["#プロ野球"])
+        tags += player_tags
     seen = set()
     unique_tags = []
     for t in tags:
@@ -330,6 +499,15 @@ def build_post(title: str, url: str, category: str, summary: str = "") -> str:
             seen.add(t)
             unique_tags.append(t)
     hashtag_str = " ".join(unique_tags)
+
+    if category == "選手情報":
+        return _build_player_post(title, url, summary, hashtag_str)
+    if category == "首脳陣":
+        manager_tags = list(REQUIRED_TAGS)
+        if player_tags:
+            manager_tags.append(player_tags[0])
+        manager_hashtag_str = " ".join(dict.fromkeys(manager_tags))
+        return _build_manager_post(title, url, summary, manager_hashtag_str)
 
     # スコア検出
     score = detect_score(title)
@@ -353,10 +531,19 @@ def build_post(title: str, url: str, category: str, summary: str = "") -> str:
     if len(title) > title_limit:
         title = title[:title_limit - 1] + "…"
 
-    # Grok優先（Web+X検索で推論生成）→ Geminiフォールバック → テンプレート
-    ai_comment = generate_with_grok(title, category, score, summary=summary)
-    if not ai_comment:
-        ai_comment = generate_with_gemini(title, category, score, summary=summary)
+    ai_comment = ""
+    ai_mode = get_x_post_ai_mode()
+    if should_use_ai_for_x_post(category):
+        if ai_mode == "grok":
+            ai_comment = generate_with_grok(title, category, score, summary=summary)
+            if not ai_comment:
+                ai_comment = generate_with_gemini(title, category, score, summary=summary)
+        elif ai_mode == "gemini":
+            ai_comment = generate_with_gemini(title, category, score, summary=summary)
+        elif ai_mode == "auto":
+            ai_comment = generate_with_grok(title, category, score, summary=summary)
+            if not ai_comment:
+                ai_comment = generate_with_gemini(title, category, score, summary=summary)
 
     if ai_comment:
         # 140文字制限チェック（URL=23字換算）

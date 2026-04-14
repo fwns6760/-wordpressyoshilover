@@ -496,11 +496,20 @@ a:hover { color: var(--orange); opacity: 0.8; }
 }
 
 /* ── Xポスト埋め込み ── */
-.wp-block-embed-twitter {
+.wp-block-embed-twitter,
+.yoshilover-x-embed {
   margin: 24px auto !important;
   max-width: 550px;
 }
-.wp-block-embed-twitter .twitter-tweet { margin: 0 auto !important; }
+.wp-block-embed-twitter.yoshilover-embed-compact,
+.yoshilover-x-embed.yoshilover-x-embed-compact {
+  margin: 0 auto 0 !important;
+}
+.wp-block-embed-twitter .twitter-tweet,
+.yoshilover-x-embed .twitter-tweet,
+.yoshilover-x-embed .twitter-tweet-rendered {
+  margin: 0 auto !important;
+}
 
 /* ── 旧記事バナー ── */
 .old-articles-notice {

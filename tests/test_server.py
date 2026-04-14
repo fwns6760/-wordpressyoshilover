@@ -1,0 +1,85 @@
+import unittest
+from unittest.mock import patch
+
+from src.server import _parse_limit
+
+
+class DummyHandler:
+    def __init__(self, headers=None):
+        self.headers = headers or {}
+
+
+class ParseLimitTests(unittest.TestCase):
+    def test_form_encoded_limit_10_is_not_misread_as_1(self):
+        self.assertEqual(_parse_limit("limit=10", "application/x-www-form-urlencoded"), "10")
+
+    def test_json_limit_is_supported(self):
+        self.assertEqual(_parse_limit('{"limit": 3}', "application/json"), "3")
+
+    def test_invalid_limit_falls_back_to_default(self):
+        self.assertEqual(_parse_limit("limit=abc", "application/x-www-form-urlencoded"), "10")
+
+    def test_non_positive_limit_is_clamped(self):
+        self.assertEqual(_parse_limit("limit=0", "application/x-www-form-urlencoded"), "1")
+
+
+class AuthModeTests(unittest.TestCase):
+    def test_secret_mode_requires_matching_header(self):
+        with patch.dict("os.environ", {"RUN_AUTH_MODE": "secret", "RUN_SECRET": "abc"}, clear=False):
+            from importlib import reload
+            import src.server as server
+
+            reload(server)
+            self.assertFalse(server._uses_cloud_run_auth())
+            self.assertTrue(server._is_authorized(DummyHandler({"X-Secret": "abc"})))
+            self.assertFalse(server._is_authorized(DummyHandler({"X-Secret": "zzz"})))
+
+    def test_cloud_run_mode_skips_x_secret_check(self):
+        with patch.dict("os.environ", {"RUN_AUTH_MODE": "cloud_run"}, clear=False):
+            from importlib import reload
+            import src.server as server
+
+            reload(server)
+            self.assertTrue(server._uses_cloud_run_auth())
+            with patch.object(server, "_verify_oidc_token", return_value=False):
+                self.assertFalse(server._is_authorized(DummyHandler({})))
+            with patch.object(server, "_verify_oidc_token", return_value=True):
+                self.assertTrue(server._is_authorized(DummyHandler({"Authorization": "Bearer token"})))
+
+
+class RunFetcherTests(unittest.TestCase):
+    def test_run_fetcher_success(self):
+        from importlib import reload
+        import src.server as server
+
+        reload(server)
+        with patch.object(server.subprocess, "run") as mock_run:
+            mock_run.return_value.returncode = 0
+            code, message = server._run_fetcher("3")
+        self.assertEqual(code, 200)
+        self.assertEqual(message, "completed")
+
+    def test_run_fetcher_failure_returns_500(self):
+        from importlib import reload
+        import src.server as server
+
+        reload(server)
+        with patch.object(server.subprocess, "run") as mock_run:
+            mock_run.return_value.returncode = 2
+            code, message = server._run_fetcher("3")
+        self.assertEqual(code, 500)
+        self.assertIn("exit code 2", message)
+
+    def test_run_fetcher_timeout_returns_504(self):
+        from importlib import reload
+        import src.server as server
+
+        reload(server)
+        with patch.object(server.subprocess, "run", side_effect=server.subprocess.TimeoutExpired(cmd=["python3"], timeout=1)):
+            code, message = server._run_fetcher("3")
+        self.assertEqual(code, 504)
+        self.assertIn("timed out", message)
+
+
+if __name__ == "__main__":
+    unittest.main()

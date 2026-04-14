@@ -50,7 +50,31 @@ class WPClient:
     def _normalize_title(title: str) -> str:
         return re.sub(r"[\s　【】「」『』〔〕（）()・\\/_-]", "", (title or "")).lower()
 
-    def find_recent_post_by_title(self, title: str, within_hours: int = 48) -> dict | None:
+    @staticmethod
+    def _is_recent_post(post: dict, within_hours: int) -> bool:
+        threshold = timedelta(hours=within_hours)
+        now_utc = datetime.now(timezone.utc)
+        now_local = datetime.now()
+
+        for field in ("date_gmt", "date"):
+            raw = (post or {}).get(field)
+            if not raw:
+                continue
+            try:
+                parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if parsed.tzinfo:
+                return now_utc - parsed.astimezone(timezone.utc) <= threshold
+            return now_local - parsed <= threshold
+        return True
+
+    def find_recent_post_by_title(
+        self,
+        title: str,
+        within_hours: int = 2,
+        reusable_statuses: set[str] | None = None,
+    ) -> dict | None:
         """
         同タイトルの直近投稿を返す。
         単発スクリプトの再送や確認失敗時の二重作成を防ぐために使う。
@@ -67,13 +91,13 @@ class WPClient:
                 "status": "any",
                 "context": "edit",
                 "after": after,
-                "_fields": "id,date,title,status",
+                "_fields": "id,date,date_gmt,title,status",
             },
             {
                 "search": title[:40],
                 "per_page": 20,
                 "after": after,
-                "_fields": "id,date,title",
+                "_fields": "id,date,date_gmt,title,status",
             },
         ]
 
@@ -90,6 +114,11 @@ class WPClient:
                 for post in resp.json():
                     title_data = post.get("title") or {}
                     rendered = title_data.get("raw") or title_data.get("rendered") or ""
+                    status = (post.get("status") or "").lower()
+                    if reusable_statuses is not None and status not in reusable_statuses:
+                        continue
+                    if not self._is_recent_post(post, within_hours):
+                        continue
                     if self._normalize_title(rendered) == normalized:
                         return post
                 return None
@@ -185,10 +214,13 @@ class WPClient:
         Returns:
             作成された投稿の post_id (int)
         """
-        existing = self.find_recent_post_by_title(title)
+        existing = self.find_recent_post_by_title(
+            title,
+            reusable_statuses={"draft", "pending", "future", "auto-draft"},
+        )
         if existing:
             post_id = existing["id"]
-            print(f"[WP] 既存下書き/記事を再利用 post_id={post_id} title={title!r}")
+            print(f"[WP] 既存下書きを再利用 post_id={post_id} title={title!r}")
             return post_id
 
         payload = {

@@ -3255,16 +3255,6 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         f'</div>\n'
         f'<!-- /wp:html -->\n\n'
     )
-    # OGP画像があれば要約の上に表示（ソース記事のその時の写真）
-    if og_image_url:
-        safe_og = og_image_url.replace("&", "&amp;")
-        blocks += (
-            f'<!-- wp:image {{"sizeSlug":"large","linkDestination":"none"}} -->\n'
-            f'<figure class="wp-block-image size-large">'
-            f'<img src="{safe_og}" alt="{safe_title}" style="border-radius:8px;"/>'
-            f'</figure>\n'
-            f'<!-- /wp:image -->\n\n'
-        )
     blocks += _para(summary_text_to_show) + _sep()
 
     # ──────────────────────────────────────────────────────────
@@ -3282,7 +3272,6 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         ai_body = _re3.sub(r'.*Xより.*\n?', '', ai_body)
         ai_body = _normalize_article_text_structure(ai_body, category, has_game)
 
-        img_pool = list(extra_images) if extra_images else []
         para_count = 0
         seen_headings = set()
         current_heading = ""
@@ -3290,18 +3279,9 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         rendered_cta_slots = set()
 
         def _render_paragraph_with_media(text: str) -> str:
-            nonlocal para_count, img_pool
+            nonlocal para_count
             rendered = _para(text)
             para_count += 1
-            if para_count % 2 == 0 and img_pool:
-                img_url = img_pool.pop(0).replace("&", "&amp;")
-                rendered += (
-                    f'<!-- wp:image {{"sizeSlug":"large","linkDestination":"none"}} -->\n'
-                    f'<figure class="wp-block-image size-large">'
-                    f'<img src="{img_url}" alt="{safe_title}" style="border-radius:8px;width:100%;"/>'
-                    f'</figure>\n'
-                    f'<!-- /wp:image -->\n\n'
-                )
             return rendered
 
         def _flush_section() -> None:
@@ -4115,6 +4095,8 @@ def rewrite_display_title(title: str, summary: str, category: str, has_game: boo
                 if any(marker in source_text for marker in ("勝利", "白星", "連勝")):
                     return _trim_display_title(f"巨人{score.group(0)} 勝利の分岐点はどこだったか")
                 return _trim_display_title(f"巨人{score.group(0)} 試合の流れを分けたポイント")
+            if opponent:
+                return _trim_display_title(f"巨人{opponent}戦 試合の流れを分けたポイント")
             return _trim_display_title("巨人戦 試合の流れを分けたポイント")
         return _trim_display_title("巨人戦 試合前にどこを見たいか")
 

@@ -658,3 +658,32 @@ SESSION-LOG-2026-04-14.md を読んで再開して。
 - 運用追加
   - ユーザーが試合を見ていて `試合終了` をここで伝えたら、Codex が本番 fetcher を即実行する
   - その実行で Yahoo固定試合ページの `試合終了` を確認し、`試合後記事 -> 自動X投稿` まで流す
+  - 試合中にCodexへポスト文面を依頼された場合は、`短文優先` の文体で返す
+    - `1〜2文`
+    - `感情は少しだけ`
+    - `説明しすぎない`
+    - `AIっぽい長文にしない`
+
+### 19. アイキャッチ重複と古い記事の誤再利用を修正
+
+- 現象
+  - 本文の先頭や途中に自動差し込みした画像が、テーマ側の `featured image` と重複して見えていた
+  - 試合後の汎用タイトル `巨人戦 試合の流れを分けたポイント` が、数時間前の公開済み記事 `post_id=61933` を再利用してしまい、古い記事の再投稿につながった
+- 修正
+  - `src/rss_fetcher.py`
+    - `build_news_block()` で本文内の自動画像差し込みを停止
+    - 試合後タイトルのフォールバックを `巨人{opponent}戦 試合の流れを分けたポイント` まで具体化
+  - `src/wp_client.py`
+    - 既存記事再利用の既定窓を `48時間 -> 2時間` に短縮
+    - 戻り値の `date/date_gmt` を見て、古い同タイトル投稿を再利用しないように変更
+    - `create_draft()` は公開済み記事を再利用せず、`draft/pending/future/auto-draft` だけ再利用するように変更
+- テスト
+  - `tests/test_wp_client.py`
+    - `古い同タイトル publish は再利用しない`
+    - `create_draft は publish を再利用しない`
+  - `tests/test_build_news_block.py`
+    - `featured image が本文内に重複しない`
+  - `python3 -m unittest tests.test_wp_client tests.test_build_news_block tests.test_cost_modes tests.test_x_post_generator tests.test_yahoo_realtime` は `75 tests OK`
+  - `python3 -m py_compile src/wp_client.py src/rss_fetcher.py src/x_post_generator.py` は成功
+- 本番反映
+  - Cloud Run revision: `yoshilover-fetcher-00086-q49`

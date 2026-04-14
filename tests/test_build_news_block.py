@@ -594,6 +594,36 @@ class BuildNewsBlockTests(unittest.TestCase):
         self.assertIn("勝負の分岐点は？", blocks)
         self.assertIn("今日のMVPは？", blocks)
 
+    def test_featured_image_is_not_duplicated_inside_body(self):
+        with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+            with patch.object(
+                rss_fetcher,
+                "generate_article_with_gemini",
+                return_value=(
+                    "【ニュースの整理】\n"
+                    "巨人が阪神に3-2で勝利した。\n"
+                    "【試合のポイント】\n"
+                    "終盤に岡田悠希の決勝打が飛び出した。\n"
+                    "【次の注目】\n"
+                    "この流れを次戦にもつなげたい。"
+                ),
+            ):
+                blocks, _ = rss_fetcher.build_news_block(
+                    title="【巨人】阪神に3-2で勝利　岡田が決勝打",
+                    summary="巨人が阪神に3-2で勝利した。終盤に岡田悠希の決勝打が飛び出した。",
+                    url="https://example.com/post",
+                    source_name="スポーツ報知",
+                    category="試合速報",
+                    og_image_url="https://example.com/hero.jpg",
+                    media_id=123,
+                    extra_images=["https://example.com/extra.jpg"],
+                    has_game=True,
+                )
+
+        self.assertNotIn("hero.jpg", blocks)
+        self.assertNotIn("extra.jpg", blocks)
+        self.assertNotIn("wp-block-image", blocks)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -58,6 +58,11 @@ class RunFetcherTests(unittest.TestCase):
             code, message = server._run_fetcher("3")
         self.assertEqual(code, 200)
         self.assertEqual(message, "completed")
+        mock_run.assert_called_once_with(
+            ["python3", "src/rss_fetcher.py", "--limit", "3"],
+            cwd="/app",
+            timeout=server.RUN_SUBPROCESS_TIMEOUT,
+        )
 
     def test_run_fetcher_failure_returns_500(self):
         from importlib import reload
@@ -79,6 +84,24 @@ class RunFetcherTests(unittest.TestCase):
             code, message = server._run_fetcher("3")
         self.assertEqual(code, 504)
         self.assertIn("timed out", message)
+
+    def test_run_fetcher_appends_draft_only_flag_when_enabled(self):
+        with patch.dict("os.environ", {"RUN_DRAFT_ONLY": "1"}, clear=False):
+            from importlib import reload
+            import src.server as server
+
+            reload(server)
+            with patch.object(server.subprocess, "run") as mock_run:
+                mock_run.return_value.returncode = 0
+                code, message = server._run_fetcher("5")
+
+        self.assertEqual(code, 200)
+        self.assertEqual(message, "completed")
+        mock_run.assert_called_once_with(
+            ["python3", "src/rss_fetcher.py", "--limit", "5", "--draft-only"],
+            cwd="/app",
+            timeout=server.RUN_SUBPROCESS_TIMEOUT,
+        )
 
 
 if __name__ == "__main__":

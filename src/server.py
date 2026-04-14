@@ -16,6 +16,7 @@ CLOUD_RUN_AUTH_MODES = {"cloud_run", "iam", "oidc"}
 OIDC_SERVICE_ACCOUNT = os.environ.get("RUN_OIDC_SERVICE_ACCOUNT", "").strip()
 OIDC_AUDIENCE = os.environ.get("RUN_OIDC_AUDIENCE", "").strip()
 RUN_SUBPROCESS_TIMEOUT = int(os.environ.get("RUN_SUBPROCESS_TIMEOUT", "285"))
+RUN_DRAFT_ONLY = os.environ.get("RUN_DRAFT_ONLY", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _secret_is_configured() -> bool:
@@ -97,9 +98,12 @@ def _parse_limit(body: str, content_type: str = "") -> str:
 
 
 def _run_fetcher(limit: str) -> tuple[int, str]:
+    cmd = ["python3", "src/rss_fetcher.py", "--limit", limit]
+    if RUN_DRAFT_ONLY:
+        cmd.append("--draft-only")
     try:
         result = subprocess.run(
-            ["python3", "src/rss_fetcher.py", "--limit", limit],
+            cmd,
             cwd="/app",
             timeout=RUN_SUBPROCESS_TIMEOUT,
         )

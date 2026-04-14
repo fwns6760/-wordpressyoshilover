@@ -31,6 +31,7 @@ load_dotenv(ROOT / ".env")
 import tweepy
 from wp_client import WPClient
 from x_post_generator import build_post
+from wp_draft_creator import build_oembed_block
 
 # ──────────────────────────────────────────────────────────
 # カテゴリ別X投稿テンプレート
@@ -83,6 +84,7 @@ logger = logging.getLogger(__name__)
 # 定数
 # ──────────────────────────────────────────────────────────
 HISTORY_FILE = ROOT / "data" / "rss_history.json"
+AUTO_POST_CATEGORY_ID = 673
 COLLECT_INTERVAL_HOURS = 10  # 1日2〜3回に制限
 COLLECT_QUERIES = [
     "from:TokyoGiants -is:retweet",
@@ -106,6 +108,25 @@ def get_client() -> tweepy.Client:
         access_token_secret=os.environ["X_ACCESS_TOKEN_SECRET"],
     )
 
+
+def select_primary_category_name(cat_ids: list[int], categories: list[dict]) -> str:
+    id_to_name = {c["id"]: c["name"] for c in categories}
+    preferred_ids = [
+        cat_id for cat_id in cat_ids
+        if cat_id != AUTO_POST_CATEGORY_ID and id_to_name.get(cat_id) not in {"自動投稿"}
+    ]
+    selected_id = preferred_ids[0] if preferred_ids else (cat_ids[0] if cat_ids else None)
+    return id_to_name.get(selected_id, "コラム")
+
+
+def build_post_context(post: dict) -> tuple[str, str]:
+    content_raw = post.get("content", {}).get("rendered", "")
+    summary = content_raw
+    if content_raw:
+        import re as _re
+        summary = _re.sub(r"\s+", " ", _re.sub(r"<[^>]+>", " ", content_raw)).strip()[:1500]
+    return summary, content_raw
+
 # ──────────────────────────────────────────────────────────
 # postサブコマンド — WP記事をXに投稿
 # ──────────────────────────────────────────────────────────
@@ -119,13 +140,9 @@ def cmd_post(args):
     url = post.get("link", "")
 
     cat_ids = post.get("categories", [])
-    category = "コラム"
-    if cat_ids:
-        cats = wp.get_categories()
-        id_to_name = {c["id"]: c["name"] for c in cats}
-        category = id_to_name.get(cat_ids[0], "コラム")
-
-    tweet_text = build_post(title, url, category)
+    category = select_primary_category_name(cat_ids, wp.get_categories())
+    summary, content_html = build_post_context(post)
+    tweet_text = build_post(title, url, category, summary=summary, content_html=content_html)
 
     if args.dry_run:
         print("[DRY RUN] 投稿内容:")
@@ -135,7 +152,7 @@ def cmd_post(args):
     client = get_client()
     response = client.create_tweet(text=tweet_text)
     tweet_id = response.data["id"]
-    logger.info(f"[post] 投稿成功 tweet_id={tweet_id} post_id={args.post_id} cost=$0.01")
+    logger.info(f"[post] 投稿成功 tweet_id={tweet_id} post_id={args.post_id}")
     print(f"投稿完了: https://x.com/i/web/status/{tweet_id}")
 
 # ──────────────────────────────────────────────────────────
@@ -197,13 +214,13 @@ def cmd_collect(args):
 
             tweet_url = f"https://x.com/i/web/status/{tweet_id}"
             title = tweet.text[:50] + ("…" if len(tweet.text) > 50 else "")
-            body = f'<p>{tweet.text}</p>\n<p>出典: <a href="{tweet_url}">{tweet_url}</a></p>'
+            body = build_oembed_block(tweet_url)
 
             if args.dry_run:
                 print(f"[DRY RUN] 下書き作成: {title}")
                 print(f"  URL: {tweet_url}")
             else:
-                draft_id = wp.create_draft(title, body, categories=[])
+                draft_id = wp.create_draft(title, body, categories=[AUTO_POST_CATEGORY_ID])
                 logger.info(f"[collect] 下書き作成 draft_id={draft_id} tweet_id={tweet_id}")
                 total_drafted += 1
 
@@ -215,11 +232,7 @@ def cmd_collect(args):
     if not args.dry_run:
         save_history(history)
 
-    estimated_cost = total_fetched * 0.005
-    logger.info(
-        f"[collect] 完了 取得={total_fetched}件 下書き={total_drafted}件 "
-        f"推定コスト=${estimated_cost:.3f}"
-    )
+    logger.info(f"[collect] 完了 取得={total_fetched}件 下書き={total_drafted}件")
 
 # ──────────────────────────────────────────────────────────
 # CLIエントリーポイント

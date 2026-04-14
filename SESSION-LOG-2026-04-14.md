@@ -393,3 +393,19 @@ SESSION-LOG-2026-04-14.md を読んで再開して。
 
 - コード・ログ上では `Gemini 3 Flash` は確認できなかった
 - 一方で `gemini-flash-latest` は複数スクリプトに残っていたため、課金表示名のズレを避けるためにも今回すべて明示モデル名へ固定した
+
+### 6. X API クライアントの整合性修正
+
+- `src/x_api_client.py` を現行運用に合わせて修正
+- `post` サブコマンド
+  - `自動投稿` カテゴリを避けて実カテゴリを選ぶ
+  - 記事本文の要約と `content_html` を `x_post_generator.build_post()` に渡す
+  - これでスタメン数字や試合後の分岐点を含む現在の X 文面生成ロジックと一致
+- `collect` サブコマンド
+  - プレーン本文下書きではなく、現行サイトに合わせて X 埋め込みブロック下書きへ変更
+  - `AUTO_POST_CATEGORY_ID=673` を付与
+  - 根拠のない固定 `cost=$...` / `推定コスト=$...` ログは削除
+- テスト
+  - `tests/test_x_api_client.py` を追加
+  - `python3 -m unittest tests.test_x_api_client tests.test_x_post_generator tests.test_cost_modes`
+    - `22 tests OK`

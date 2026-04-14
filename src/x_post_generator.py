@@ -29,6 +29,8 @@ from wp_client import WPClient
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
 DEFAULT_LOW_COST_AI_CATEGORIES = {"試合速報", "選手情報", "首脳陣"}
+GEMINI_FLASH_MODEL = "gemini-2.5-flash"
+GEMINI_FLASH_THINKING_BUDGET = 0
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -67,6 +69,10 @@ def get_x_post_ai_mode() -> str:
     if mode in {"auto", "grok", "gemini", "none"}:
         return mode
     return default_mode
+
+
+def allow_gemini_cli_for_x_post() -> bool:
+    return _env_flag("X_POST_GEMINI_ALLOW_CLI", False)
 
 
 # ──────────────────────────────────────────────────────────
@@ -162,7 +168,7 @@ def generate_with_grok(title: str, category: str, score: str, summary: str = "")
 
 
 def generate_with_gemini(title: str, category: str, score: str, summary: str = "") -> str:
-    """Gemini CLI（優先）またはAPIでXポスト文を生成。失敗時は空文字を返す。"""
+    """GeminiでXポスト文を生成。CLIは明示 opt-in 時のみ使う。"""
     import subprocess, shutil
     api_key = os.environ.get("GEMINI_API_KEY", "")
 
@@ -222,8 +228,8 @@ def generate_with_gemini(title: str, category: str, score: str, summary: str = "
 ・最後は「→〇〇はブログで👇」など自然な誘導で締める
 ・出力はポスト本文のみ（説明不要）"""
 
-    # Gemini CLI優先（Web検索で実際のランキング・発言を取得）
-    if shutil.which("gemini"):
+    # Gemini CLI は課金経路が見えにくいため、明示 opt-in の時だけ使う
+    if allow_gemini_cli_for_x_post() and shutil.which("gemini"):
         try:
             result = subprocess.run(
                 ["gemini", "-p", prompt],
@@ -241,10 +247,14 @@ def generate_with_gemini(title: str, category: str, score: str, summary: str = "
         return ""
     payload = json.dumps({
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"maxOutputTokens": 512, "temperature": 0.9}
+        "generationConfig": {
+            "maxOutputTokens": 512,
+            "temperature": 0.9,
+            "thinkingConfig": {"thinkingBudget": GEMINI_FLASH_THINKING_BUDGET},
+        },
     }).encode("utf-8")
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_FLASH_MODEL}:generateContent?key={api_key}"
         req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=10) as res:
             data = json.load(res)
@@ -293,6 +303,7 @@ PLAYER_TAGS = {
     "門脇":      "#門脇誠",
     "泉口":      "#泉口友汰",
     "浅野":      "#浅野翔吾",
+    "岡田":      "#岡田悠希",
 }
 
 
@@ -317,6 +328,162 @@ def _clean_title_for_x(title: str, max_chars: int = 34) -> str:
 def _detect_primary_player_tag(text: str) -> str:
     tags = detect_player_tags(text)
     return tags[0] if tags else ""
+
+
+def _detect_earliest_player_tag(text: str) -> str:
+    source = text or ""
+    best_index = None
+    best_tag = ""
+    for name, tag in PLAYER_TAGS.items():
+        idx = source.find(name)
+        if idx == -1:
+            continue
+        if best_index is None or idx < best_index:
+            best_index = idx
+            best_tag = tag
+    return best_tag
+
+
+def _looks_like_lineup_post(title: str, summary: str) -> bool:
+    text = f"{title} {summary}"
+    return any(keyword in text for keyword in ("スタメン", "オーダー", "打順"))
+
+
+def _looks_like_postgame_post(title: str, summary: str) -> bool:
+    text = f"{title} {summary}"
+    if _looks_like_lineup_post(title, summary):
+        return False
+    return any(keyword in text for keyword in ("勝利", "敗れ", "敗戦", "黒星", "白星", "引き分け", "決勝打", "サヨナラ", "完封負け", "0封負け"))
+
+
+def _normalize_average(value: str) -> str:
+    clean = (value or "").replace("．", ".").strip()
+    if clean.startswith("."):
+        return clean
+    if re.fullmatch(r"\d{3}", clean):
+        return f".{clean}"
+    return clean
+
+
+def _extract_lineup_stat_rows_from_html(content_html: str, max_rows: int = 2) -> list[dict]:
+    rows = []
+    seen = set()
+    for row_html in re.findall(r"<tr[^>]*>(.*?)</tr>", content_html or "", re.IGNORECASE | re.DOTALL):
+        cells = [
+            re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", cell_html)).strip()
+            for cell_html in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row_html, re.IGNORECASE | re.DOTALL)
+        ]
+        if len(cells) < 7:
+            continue
+        order = cells[0]
+        if not re.fullmatch(r"[1-9]", order):
+            continue
+        key = (order, cells[2])
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append({
+            "order": order,
+            "name": cells[2],
+            "avg": _normalize_average(cells[3]),
+            "hr": cells[4],
+            "rbi": cells[5],
+            "sb": cells[6],
+        })
+        if len(rows) >= max_rows:
+            break
+    return rows
+
+
+def _extract_lineup_stat_rows(text: str, max_rows: int = 2) -> list[dict]:
+    clean = re.sub(r"<[^>]+>", " ", text or "")
+    clean = re.sub(r"\s+", " ", clean)
+    pattern = re.compile(
+        r"(?:(\d)番)\s*([一-龥ァ-ヴーA-Za-z]{2,12})\s*"
+        r"(?:打率)?\s*([\.．]?\d{3})\s*"
+        r"(\d+)本\s*(\d+)打点\s*(\d+)盗塁"
+    )
+    rows = []
+    seen = set()
+    for match in pattern.finditer(clean):
+        order, name, avg, hr, rbi, sb = match.groups()
+        key = (order, name)
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append({
+            "order": order,
+            "name": name,
+            "avg": _normalize_average(avg),
+            "hr": hr,
+            "rbi": rbi,
+            "sb": sb,
+        })
+        if len(rows) >= max_rows:
+            break
+    return rows
+
+
+def _build_lineup_post(title: str, url: str, summary: str, hashtag_str: str, content_html: str = "") -> str:
+    rows = _extract_lineup_stat_rows_from_html(content_html, max_rows=2) if content_html else []
+    if not rows:
+        rows = _extract_lineup_stat_rows(summary, max_rows=2)
+    cleaned_title = _clean_title_for_x(title, max_chars=28)
+
+    if rows:
+        stat_lines = [
+            f"{row['order']}番{row['name']} {row['avg']} {row['hr']}本 {row['rbi']}打点 {row['sb']}盗塁"
+            for row in rows
+        ]
+        body = "\n".join(stat_lines)
+        return f"{cleaned_title}\n\n{body}\nこの並び、どう見ますか？\n\n{url}\n{hashtag_str}"
+
+    return f"{cleaned_title}\n\n今日の並び、どこが気になりますか？\n\n{url}\n{hashtag_str}"
+
+
+def _postgame_result_line(title: str, summary: str) -> str:
+    text = f"{title} {summary}"
+    if "引き分け" in text:
+        return "巨人、引き分け。"
+    if any(keyword in text for keyword in ("完封負け", "0封負け", "打線が沈黙")):
+        if "連敗" in text:
+            return "巨人、打線が沈黙して連敗。"
+        return "巨人、打線が沈黙して敗戦。"
+    if any(keyword in text for keyword in ("サヨナラ勝",)):
+        return "巨人、サヨナラで勝利。"
+    if any(keyword in text for keyword in ("勝利", "白星")):
+        if "連勝" in text:
+            return "巨人、競り勝って連勝。"
+        return "巨人、競り勝って白星。"
+    if any(keyword in text for keyword in ("敗れ", "敗戦", "黒星")):
+        if "連敗" in text:
+            return "巨人、競り負けて連敗。"
+        return "巨人、敗戦。"
+    return _clean_title_for_x(title, max_chars=24)
+
+
+def _postgame_angle(title: str, summary: str) -> str:
+    text = f"{title} {summary}"
+    player_tag = _detect_earliest_player_tag(text)
+    player_name = player_tag.lstrip("#") if player_tag else ""
+    if any(keyword in text for keyword in ("完封負け", "0封負け", "打線が沈黙", "援護なく", "攻略できず")):
+        if player_name and any(keyword in text for keyword in ("失点", "粘投", "試合を作", "先発")):
+            return f"{player_name}は試合を壊さず、勝敗を分けたのは攻撃でした。"
+        return "勝敗を分けたのは攻撃でした。"
+    if any(keyword in text for keyword in ("決勝打", "サヨナラ", "逆転")):
+        if player_name:
+            return f"{player_name}の一打で流れが動き、終盤の勝負どころがはっきり出た試合でした。"
+        return "終盤の一打で流れが動き、勝負どころがはっきり出た試合でした。"
+    if any(keyword in text for keyword in ("継投", "救援", "守り切", "逃げ切")):
+        return "終盤のベンチワークが勝敗に直結した試合でした。"
+    return "流れがどこで傾いたかを見たい試合でした。"
+
+
+def _build_postgame_post(title: str, url: str, summary: str, hashtag_str: str) -> str:
+    result_line = _postgame_result_line(title, summary)
+    angle = _postgame_angle(title, summary)
+    question = "この試合の分岐点、どこでしたか？"
+    return f"{result_line}\n\n{angle}\n{question}\n\n{url}\n{hashtag_str}"
 
 
 def _player_post_angle(title: str, summary: str) -> str:
@@ -480,7 +647,7 @@ def detect_player_tags(text: str) -> list:
 # ──────────────────────────────────────────────────────────
 # ポスト文案組み立て
 # ──────────────────────────────────────────────────────────
-def build_post(title: str, url: str, category: str, summary: str = "") -> str:
+def build_post(title: str, url: str, category: str, summary: str = "", content_html: str = "") -> str:
     # 既存の接頭語を除去（テンプレートと重複しないよう）
     title = re.sub(r'^【(速報|選手情報|球団情報|首脳陣|育成情報|OB情報)】\s*', '', title)
 
@@ -489,6 +656,10 @@ def build_post(title: str, url: str, category: str, summary: str = "") -> str:
     player_tags = detect_player_tags(title + " " + summary)
     if category == "選手情報":
         tags += player_tags[:1]
+    elif category == "試合速報" and _looks_like_postgame_post(title, summary):
+        postgame_tag = _detect_earliest_player_tag(title + " " + summary)
+        if postgame_tag:
+            tags.append(postgame_tag)
     else:
         tags += CATEGORY_TAGS.get(category, ["#プロ野球"])
         tags += player_tags
@@ -508,6 +679,17 @@ def build_post(title: str, url: str, category: str, summary: str = "") -> str:
             manager_tags.append(player_tags[0])
         manager_hashtag_str = " ".join(dict.fromkeys(manager_tags))
         return _build_manager_post(title, url, summary, manager_hashtag_str)
+    if category == "試合速報" and _looks_like_lineup_post(title, summary):
+        lineup_tags = list(REQUIRED_TAGS) + player_tags[:2]
+        lineup_hashtag_str = " ".join(dict.fromkeys(lineup_tags))
+        return _build_lineup_post(title, url, summary, lineup_hashtag_str, content_html=content_html)
+    if category == "試合速報" and _looks_like_postgame_post(title, summary):
+        postgame_tags = list(REQUIRED_TAGS)
+        postgame_tag = _detect_earliest_player_tag(title + " " + summary)
+        if postgame_tag:
+            postgame_tags.append(postgame_tag)
+        postgame_hashtag_str = " ".join(dict.fromkeys(postgame_tags))
+        return _build_postgame_post(title, url, summary, postgame_hashtag_str)
 
     # スコア検出
     score = detect_score(title)
@@ -576,7 +758,8 @@ def main():
         url   = post.get("link", "")
         # 記事本文を取得してXポスト生成に使う
         content_raw = post.get("content", {}).get("rendered", "")
-        summary = re.sub(r"<[^>]+>", "", content_raw).strip()[:500]
+        summary = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", content_raw)).strip()[:1500]
+        content_html = content_raw
         cat_ids = post.get("categories", [])
         category = args.category
         if cat_ids:
@@ -588,11 +771,12 @@ def main():
         url      = args.url
         category = args.category
         summary  = ""
+        content_html = ""
     else:
         parser.print_help()
         sys.exit(1)
 
-    post_text = build_post(title, url, category, summary=summary)
+    post_text = build_post(title, url, category, summary=summary, content_html=content_html)
     char_count = len(post_text.replace(url, "x" * 23))
 
     print(post_text)

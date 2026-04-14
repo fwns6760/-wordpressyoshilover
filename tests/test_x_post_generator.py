@@ -72,6 +72,80 @@ class XPostGeneratorTests(unittest.TestCase):
         self.assertIn("この発言、次のベンチワークをどう読むか気になります。", text)
         self.assertIn("この采配、どう見ますか？", text)
 
+    def test_lineup_post_uses_verified_stat_rows_when_present(self):
+        text = x_post_generator.build_post(
+            title="【巨人】今日のスタメン発表 1番丸、4番岡田",
+            url="https://yoshilover.com/62012",
+            category="試合速報",
+            summary=(
+                "【今日のスタメンデータ】 "
+                "1番 丸佳浩 打率.281 3本 12打点 2盗塁 "
+                "4番 岡田悠希 打率.298 5本 18打点 1盗塁"
+            ),
+        )
+
+        self.assertIn("1番丸佳浩 .281 3本 12打点 2盗塁", text)
+        self.assertIn("4番岡田悠希 .298 5本 18打点 1盗塁", text)
+        self.assertIn("この並び、どう見ますか？", text)
+        self.assertIn("#巨人 #ジャイアンツ", text)
+
+    def test_lineup_post_falls_back_when_stats_missing(self):
+        text = x_post_generator.build_post(
+            title="【巨人】今日のスタメン発表 1番丸、4番岡田",
+            url="https://yoshilover.com/62013",
+            category="試合速報",
+            summary="巨人が阪神戦のスタメンを発表した。",
+        )
+
+        self.assertIn("今日の並び、どこが気になりますか？", text)
+
+    def test_lineup_post_can_read_stats_from_article_html(self):
+        text = x_post_generator.build_post(
+            title="【巨人】今日のスタメン発表 1番丸、4番岡田",
+            url="https://yoshilover.com/62014",
+            category="試合速報",
+            summary="巨人が阪神戦のスタメンを発表した。",
+            content_html=(
+                "<table>"
+                "<tr><th>打順</th><th>位置</th><th>選手名</th><th>打率</th><th>本塁打</th><th>打点</th><th>盗塁</th></tr>"
+                "<tr><td>1</td><td>中</td><td>丸 佳浩</td><td>.281</td><td>3</td><td>12</td><td>2</td></tr>"
+                "<tr><td>4</td><td>左</td><td>岡田 悠希</td><td>.298</td><td>5</td><td>18</td><td>1</td></tr>"
+                "</table>"
+            ),
+        )
+
+        self.assertIn("1番丸 佳浩 .281 3本 12打点 2盗塁", text)
+        self.assertIn("4番岡田 悠希 .298 5本 18打点 1盗塁", text)
+
+    def test_postgame_post_uses_result_flow_and_question(self):
+        text = x_post_generator.build_post(
+            title="【巨人】今季２度目の０封負けで連敗　井上温大は６回２失点も打線が沈黙",
+            url="https://yoshilover.com/61924",
+            category="試合速報",
+            summary=(
+                "巨人はヤクルト投手陣を攻略できず、今季2度目の0封負けを喫した。"
+                "先発井上温大投手は6回6安打2失点と粘投したが、打線の援護なく今季2敗目を喫した。"
+            ),
+        )
+
+        self.assertIn("巨人、打線が沈黙して連敗。", text)
+        self.assertIn("井上温大は試合を壊さず、勝敗を分けたのは攻撃でした。", text)
+        self.assertIn("この試合の分岐点、どこでしたか？", text)
+        self.assertIn("#巨人 #ジャイアンツ #井上温大", text)
+
+    def test_postgame_post_win_variant_uses_endgame_angle(self):
+        text = x_post_generator.build_post(
+            title="【巨人】阪神に3-2で勝利　岡田が決勝打",
+            url="https://yoshilover.com/62015",
+            category="試合速報",
+            summary="巨人が阪神に3-2で勝利した。終盤に岡田悠希の決勝打が飛び出した。",
+        )
+
+        self.assertIn("巨人、競り勝って白星。", text)
+        self.assertIn("岡田悠希の一打で流れが動き、終盤の勝負どころがはっきり出た試合でした。", text)
+        self.assertIn("この試合の分岐点、どこでしたか？", text)
+        self.assertIn("#巨人 #ジャイアンツ #岡田悠希", text)
+
 
 if __name__ == "__main__":
     unittest.main()

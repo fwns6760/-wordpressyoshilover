@@ -80,19 +80,42 @@ class BuildNewsBlockTests(unittest.TestCase):
         )
 
         with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+            with patch.object(rss_fetcher, "fetch_today_giants_lineup_stats_from_yahoo", return_value=[]):
+                with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                    _, ai_body = rss_fetcher.build_news_block(
+                        title=title,
+                        summary=summary,
+                        url="https://example.com/post",
+                        source_name="日刊スポーツ 巨人",
+                        category="試合速報",
+                        has_game=True,
+                    )
+
+        self.assertIn("まずは今日のスタメンでどこが動いたかを整理します。", ai_body)
+        self.assertIn("今日のスタメン記事で大事なのは、誰が入ったかだけでなく、打順や守備位置のどこが動いたかです。", ai_body)
+        self.assertIn("試合前にまず見たいのは、この並びが初回からどう機能するか", ai_body)
+
+    def test_farm_lineup_article_fallback_uses_separate_structure(self):
+        title = "【二軍】巨人対DeNA 4番ショートでスタメン"
+        summary = (
+            "巨人の二軍スタメンが発表された。"
+            "若手内野手が4番ショートに入った。"
+        )
+
+        with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
             with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
                 _, ai_body = rss_fetcher.build_news_block(
                     title=title,
                     summary=summary,
                     url="https://example.com/post",
                     source_name="日刊スポーツ 巨人",
-                    category="試合速報",
+                    category="ドラフト・育成",
                     has_game=True,
                 )
 
-        self.assertIn("まずは今日のスタメンでどこが動いたかを整理します。", ai_body)
-        self.assertIn("今日のスタメン記事で大事なのは、誰が入ったかだけでなく、打順や守備位置のどこが動いたかです。", ai_body)
-        self.assertIn("試合前にまず見たいのは、この並びが初回からどう機能するか", ai_body)
+        self.assertIn("まずは二軍スタメンの並びを整理します。", ai_body)
+        self.assertIn("二軍スタメンで見たいのは、若手や調整組をどこに置いたかです。", ai_body)
+        self.assertIn("まず見たいのは、この並びが一軍昇格の候補や守備位置テストにどうつながるかという点です。", ai_body)
 
     def test_manager_article_fallback_focuses_on_bench_intent(self):
         title = "【巨人】「レギュラーは決まってません。結果残せば使います」阿部監督、若手積極起用で競争期待"
@@ -430,6 +453,146 @@ class BuildNewsBlockTests(unittest.TestCase):
         self.assertIn("戸郷翔征投手がフォーム改造の現状を語りました。", ai_body)
         self.assertIn("<h3>【ニュースの整理】</h3>", blocks)
         self.assertIn("<h3>【次の注目】</h3>", blocks)
+
+    def test_source_links_render_multiple_references(self):
+        with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+            with patch.object(rss_fetcher, "fetch_today_giants_lineup_stats_from_yahoo", return_value=[]):
+                with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                    blocks, _ = rss_fetcher.build_news_block(
+                        title="【巨人】今日のスタメン発表　1番丸、4番岡田",
+                        summary="巨人が阪神戦のスタメンを発表した。1番に丸佳浩、4番に岡田悠希が入った。",
+                        url="https://example.com/post",
+                        source_name="スポーツ報知 / 日刊スポーツ",
+                        category="試合速報",
+                        has_game=True,
+                        source_links=[
+                            {"name": "スポーツ報知", "url": "https://example.com/hochi"},
+                            {"name": "日刊スポーツ", "url": "https://example.com/nikkan"},
+                        ],
+                    )
+
+        self.assertIn("📰 参照元:", blocks)
+        self.assertIn("https://example.com/hochi", blocks)
+        self.assertIn("https://example.com/nikkan", blocks)
+
+    def test_lineup_stats_table_renders_when_verified_rows_exist(self):
+        with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+            with patch.object(rss_fetcher, "fetch_today_giants_lineup_stats_from_yahoo", return_value=[
+                {"order": "1", "position": "中", "name": "丸 佳浩", "avg": ".281", "hr": "3", "rbi": "12", "sb": "2"},
+                {"order": "4", "position": "左", "name": "岡田 悠希", "avg": ".298", "hr": "5", "rbi": "18", "sb": "1"},
+            ]):
+                with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                    blocks, _ = rss_fetcher.build_news_block(
+                        title="【巨人】今日のスタメン発表　1番丸、4番岡田",
+                        summary="巨人が阪神戦のスタメンを発表した。1番に丸佳浩、4番に岡田悠希が入った。",
+                        url="https://example.com/post",
+                        source_name="スポーツ報知",
+                        category="試合速報",
+                        has_game=True,
+                    )
+
+        self.assertIn("📊 今日のスタメンデータ", blocks)
+        self.assertIn("丸 佳浩", blocks)
+        self.assertIn("12", blocks)
+
+    def test_lineup_stats_and_watch_points_render_after_news_section(self):
+        with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+            with patch.object(rss_fetcher, "fetch_today_giants_lineup_stats_from_yahoo", return_value=[
+                {"order": "1", "position": "中", "name": "丸 佳浩", "avg": ".281", "hr": "3", "rbi": "12", "sb": "2"},
+                {"order": "2", "position": "右", "name": "佐々木 俊輔", "avg": ".265", "hr": "1", "rbi": "6", "sb": "3"},
+                {"order": "4", "position": "左", "name": "岡田 悠希", "avg": ".298", "hr": "5", "rbi": "18", "sb": "1"},
+                {"order": "8", "position": "捕", "name": "甲斐 拓也", "avg": ".240", "hr": "2", "rbi": "8", "sb": "0"},
+                {"order": "9", "position": "投", "name": "井上 温大", "avg": ".000", "hr": "0", "rbi": "0", "sb": "0"},
+            ]):
+                with patch.object(
+                    rss_fetcher,
+                    "generate_article_with_gemini",
+                    return_value=(
+                        "【ニュースの整理】\n"
+                        "巨人が阪神戦のスタメンを発表した。\n"
+                        "【次の注目】\n"
+                        "序盤の流れがポイントになる。"
+                    ),
+                ):
+                    blocks, _ = rss_fetcher.build_news_block(
+                        title="【巨人】今日のスタメン発表　1番丸、4番岡田",
+                        summary="巨人が阪神戦のスタメンを発表した。1番に丸佳浩、4番に岡田悠希が入った。",
+                        url="https://example.com/post",
+                        source_name="スポーツ報知",
+                        category="試合速報",
+                        has_game=True,
+                    )
+
+        self.assertLess(blocks.index("【ニュースの整理】"), blocks.index("📊 今日のスタメンデータ"))
+        self.assertLess(blocks.index("📊 今日のスタメンデータ"), blocks.index("👀 スタメンの見どころ"))
+        self.assertLess(blocks.index("👀 スタメンの見どころ"), blocks.index("このニュース、どう見る？"))
+        self.assertIn("<li>1番丸 佳浩から4番岡田 悠希までの流れ。</li>", blocks)
+        self.assertIn("<li>2番佐々木 俊輔がつなぎ、4番岡田 悠希で返せるか。</li>", blocks)
+        self.assertIn("<li>捕手甲斐 拓也を含めた下位打線の入り。</li>", blocks)
+
+    def test_postgame_result_summary_and_watch_points_render_after_news_section(self):
+        with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+            with patch.object(
+                rss_fetcher,
+                "generate_article_with_gemini",
+                return_value=(
+                    "【ニュースの整理】\n"
+                    "巨人が阪神に3-2で勝利した。\n"
+                    "【試合のポイント】\n"
+                    "終盤に岡田悠希の決勝打が飛び出した。\n"
+                    "【次の注目】\n"
+                    "この流れを次戦にもつなげたい。"
+                ),
+            ):
+                blocks, _ = rss_fetcher.build_news_block(
+                    title="【巨人】阪神に3-2で勝利　岡田が決勝打",
+                    summary="巨人が阪神に3-2で勝利した。終盤に岡田悠希の決勝打が飛び出した。",
+                    url="https://example.com/post",
+                    source_name="スポーツ報知",
+                    category="試合速報",
+                    has_game=True,
+                )
+
+        self.assertLess(blocks.index("【ニュースの整理】"), blocks.index("📊 今日の試合結果"))
+        self.assertLess(blocks.index("📊 今日の試合結果"), blocks.index("👀 勝負の分岐点"))
+        self.assertLess(blocks.index("👀 勝負の分岐点"), blocks.index("この試合、どう見る？"))
+        self.assertIn("巨人勝利", blocks)
+        self.assertIn("3-2", blocks)
+        self.assertIn("阪神", blocks)
+        self.assertIn("岡田悠希の決勝打が飛び出した", blocks)
+
+    def test_postgame_cta_labels_are_contextual(self):
+        with patch.object(
+            rss_fetcher,
+            "fetch_fan_reactions_from_yahoo",
+            return_value=[
+                {"handle": "@gfan01", "text": "今日は岡田が決めた。", "url": "https://x.com/gfan01/status/1"},
+            ],
+        ):
+            with patch.object(
+                rss_fetcher,
+                "generate_article_with_gemini",
+                return_value=(
+                    "【ニュースの整理】\n"
+                    "巨人が阪神に3-2で勝利した。\n"
+                    "【試合のポイント】\n"
+                    "終盤に岡田悠希の決勝打が飛び出した。\n"
+                    "【次の注目】\n"
+                    "この流れを次戦にもつなげたい。"
+                ),
+            ):
+                blocks, _ = rss_fetcher.build_news_block(
+                    title="【巨人】阪神に3-2で勝利　岡田が決勝打",
+                    summary="巨人が阪神に3-2で勝利した。終盤に岡田悠希の決勝打が飛び出した。",
+                    url="https://example.com/post",
+                    source_name="スポーツ報知",
+                    category="試合速報",
+                    has_game=True,
+                )
+
+        self.assertIn("この試合、どう見る？", blocks)
+        self.assertIn("勝負の分岐点は？", blocks)
+        self.assertIn("今日のMVPは？", blocks)
 
 
 if __name__ == "__main__":

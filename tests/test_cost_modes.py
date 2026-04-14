@@ -29,10 +29,32 @@ class CostModeTests(unittest.TestCase):
             self.assertTrue(x_post_generator.should_use_ai_for_x_post("首脳陣"))
             self.assertFalse(x_post_generator.should_use_ai_for_x_post("選手情報"))
 
+    def test_gemini_cli_for_x_post_defaults_to_off(self):
+        with patch.dict("os.environ", {"LOW_COST_MODE": "1"}, clear=False):
+            self.assertFalse(x_post_generator.allow_gemini_cli_for_x_post())
+
+    def test_gemini_cli_for_x_post_can_be_opted_in(self):
+        with patch.dict("os.environ", {"X_POST_GEMINI_ALLOW_CLI": "1"}, clear=False):
+            self.assertTrue(x_post_generator.allow_gemini_cli_for_x_post())
+
     def test_article_ai_mode_can_be_overridden_for_this_run(self):
         with patch.dict("os.environ", {"LOW_COST_MODE": "1", "ARTICLE_AI_MODE": "gemini", "OFFDAY_ARTICLE_AI_MODE": "none"}, clear=False):
             self.assertEqual(rss_fetcher.get_article_ai_mode(True, override="grok"), "grok")
             self.assertEqual(rss_fetcher.get_article_ai_mode(False, override="grok"), "grok")
+
+    def test_gemini_attempt_limits_default_to_one_in_low_cost_mode(self):
+        with patch.dict("os.environ", {"LOW_COST_MODE": "1"}, clear=False):
+            self.assertEqual(rss_fetcher.get_gemini_attempt_limit(strict_mode=True), 1)
+            self.assertEqual(rss_fetcher.get_gemini_attempt_limit(strict_mode=False), 1)
+
+    def test_gemini_attempt_limits_can_be_overridden(self):
+        with patch.dict(
+            "os.environ",
+            {"LOW_COST_MODE": "1", "GEMINI_STRICT_MAX_ATTEMPTS": "2", "GEMINI_GROUNDED_MAX_ATTEMPTS": "2"},
+            clear=False,
+        ):
+            self.assertEqual(rss_fetcher.get_gemini_attempt_limit(strict_mode=True), 2)
+            self.assertEqual(rss_fetcher.get_gemini_attempt_limit(strict_mode=False), 2)
 
 
 if __name__ == "__main__":

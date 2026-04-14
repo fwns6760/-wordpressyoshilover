@@ -284,3 +284,112 @@ SESSION-LOG-2026-04-14.md を読んで再開して。
 独自性が弱いのが問題なので、Yahoo のファン声回収と本文の独自性改善を優先して進めて。
 確認対象の draft は post_id=61853。
 ```
+
+## 2026-04-14 夜の追記
+
+### 1. 試合前スタメンは、いったん使える形まで到達
+
+- 一軍スタメンだけ `Yahoo` 実データから `打率 / 本塁打 / 打点 / 盗塁` を取得する実装を追加
+- 過去日のテスト用に `target_day` / `game_id` 指定の helper を追加
+- `2026-04-12` の試合ID `2021038704` で実データ `9人` を確認
+- テスト公開記事
+  - `61920`
+  - `https://yoshilover.com/61920`
+- 記事UIも変更
+  - `【ニュースの整理】`
+  - `📊 今日のスタメンデータ`
+  - `👀 スタメンの見どころ（3行）`
+  - `💬 ファンの声`
+- 2軍スタメンは後回し
+
+### 2. 試合後結果のUXを実装
+
+- `試合後結果` 記事は `【ニュースの整理】` の直後に、結果を先に掴めるブロックを追加
+  - `📊 今日の試合結果`
+  - `👀 勝負の分岐点`
+- `勝負の分岐点` は 3行で出す
+- CTAも試合後専用に変更
+  - `この試合、どう見る？`
+  - `勝負の分岐点は？`
+  - `今日のMVPは？`
+- 実記事も1本公開確認
+  - `61924`
+  - `https://yoshilover.com/61924`
+- 公開後にタイトルも更新
+  - `巨人ヤクルト戦 打線沈黙で何が止まったか`
+- X投稿型も実装
+  - `結果 -> 分岐点 -> 一問 -> URL -> #巨人 #ジャイアンツ #キーパーソン`
+
+### 3. 今日の最終確認
+
+- `python3 -m unittest tests.test_build_news_block`
+  - `22 tests OK`
+- `python3 -m py_compile src/rss_fetcher.py`
+  - OK
+
+### 4. 次の着手
+
+1. `試合後結果` を実記事で1本確認
+2. `首脳陣` の実記事確認
+3. `移籍・補強` の実記事確認
+
+## 2026-04-14 深夜の追記
+
+### 1. Gemini課金まわりの調査結果
+
+- ユーザーが見ていた Gemini 課金は「暴走」ではないが、旧本番の呼び出し設計が重かった
+- `2026-04-12` 〜 `2026-04-13` の Cloud Run ログでは、旧 revision が以下の多段フローを実行していた
+  - `Gemini CLI で記事生成中（Web検索付き）`
+  - 失敗時に `Gemini 2.0 Flash + Google Search`
+  - さらに `Flash Latest` へフォールバック
+  - その後に `ハルシネーションチェック開始（Gemini CLI Web検索）`
+- つまり「少ない記事本数でも 1 記事あたりの Gemini 呼び出し回数が膨らむ」設計だった
+- Sunday の自動実行だけが主犯ではなく、旧 revision の多段呼び出しが課金源として妥当
+
+### 2. 実施した修正
+
+- `src/rss_fetcher.py`
+  - low cost 時の Gemini 試行回数を helper 化
+  - `GEMINI_STRICT_MAX_ATTEMPTS=1`
+  - `GEMINI_GROUNDED_MAX_ATTEMPTS=1`
+  - デフォルトで strict / grounded とも 1 回試行に変更
+- `src/x_post_generator.py`
+  - `gemini-flash-latest` を `gemini-2.5-flash` に固定
+  - `thinkingBudget=0`
+  - Gemini CLI は `X_POST_GEMINI_ALLOW_CLI=1` の時だけ使うよう変更
+- `src/manual_post.py`
+  - `gemini-flash-latest` を `gemini-2.5-flash` に固定
+  - `thinkingBudget=0`
+- `src/weekly_summary.py`
+  - `gemini-flash-latest` を `gemini-2.5-flash` に固定
+  - `thinkingBudget=0`
+- `.env.example`
+  - `GEMINI_STRICT_MAX_ATTEMPTS=1`
+  - `GEMINI_GROUNDED_MAX_ATTEMPTS=1`
+  - `X_POST_GEMINI_ALLOW_CLI=0`
+- `README.md`
+  - Cloud Run deploy 例にも上記 env を反映
+
+### 3. 検証
+
+- `python3 -m unittest tests.test_cost_modes tests.test_x_post_generator tests.test_title_rewrite tests.test_build_news_block`
+  - `52 tests OK`
+- `python3 -m py_compile src/rss_fetcher.py src/x_post_generator.py src/manual_post.py src/weekly_summary.py`
+  - OK
+
+### 4. 本番反映
+
+- Cloud Build
+  - image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/fetcher:codex-20260414-costfix`
+- Cloud Run
+  - revision: `yoshilover-fetcher-00075-kzf`
+  - `GEMINI_STRICT_MAX_ATTEMPTS=1`
+  - `GEMINI_GROUNDED_MAX_ATTEMPTS=1`
+  - `X_POST_GEMINI_ALLOW_CLI=0`
+  - `FAN_REACTION_LIMIT=7`
+- これで本番の Gemini 記事生成は、low cost 設定時に「1 記事 1 回試行」が基本になる
+
+### 5. 補足
+
+- コード・ログ上では `Gemini 3 Flash` は確認できなかった
+- 一方で `gemini-flash-latest` は複数スクリプトに残っていたため、課金表示名のズレを避けるためにも今回すべて明示モデル名へ固定した

@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import feedparser
 import re as _re
+import html as _html
 
 from wp_client import WPClient
 from wp_draft_creator import build_oembed_block, load_posted_urls, save_posted_url
@@ -37,6 +38,22 @@ NON_GAME_RESULT_WORDS = ("勝利", "敗戦", "白星", "黒星", "引き分け",
 FAKE_CITATION_MARKERS = ("npb.jp", "スポーツナビ", "1point02.jp", "Baseball Reference", "baseball.yahoo.co.jp")
 GAME_ARTICLE_KEYWORDS = ("試合結果", "スタメン", "先発", "登板", "白星", "黒星", "勝利", "敗戦", "引き分け", "サヨナラ", "試合")
 LINEUP_ARTICLE_KEYWORDS = ("スタメン", "スターティングメンバー", "オーダー", "打順", "1番", "2番", "3番", "4番")
+FARM_LINEUP_MARKERS = ("二軍", "2軍", "ファーム", "イースタン", "三軍")
+NPB_TEAM_MARKERS = (
+    "巨人",
+    "読売ジャイアンツ",
+    "阪神",
+    "中日",
+    "広島",
+    "DeNA",
+    "ヤクルト",
+    "ソフトバンク",
+    "日本ハム",
+    "ロッテ",
+    "楽天",
+    "オリックス",
+    "西武",
+)
 GIANTS_YAHOO_TEAM_ID = 1
 STRICT_PROMPT_SUMMARY_MAX_CHARS = 800
 DEFAULT_PROMPT_SUMMARY_MAX_CHARS = 400
@@ -156,6 +173,18 @@ def get_fan_reaction_limit() -> int:
     return max(0, min(_env_int("FAN_REACTION_LIMIT", default_limit), 15))
 
 
+def get_gemini_attempt_limit(strict_mode: bool) -> int:
+    if strict_mode:
+        default_limit = 1 if low_cost_mode_enabled() else 2
+        env_name = "GEMINI_STRICT_MAX_ATTEMPTS"
+        upper = 3
+    else:
+        default_limit = 1 if low_cost_mode_enabled() else 2
+        env_name = "GEMINI_GROUNDED_MAX_ATTEMPTS"
+        upper = 2
+    return max(1, min(_env_int(env_name, default_limit), upper))
+
+
 def get_fan_reaction_max_age_hours() -> int:
     default_hours = 72
     return max(6, _env_int("FAN_REACTION_MAX_AGE_HOURS", default_hours))
@@ -176,6 +205,27 @@ def auto_tweet_enabled() -> bool:
 
 def _strip_html(text: str) -> str:
     return _re.sub(r"<[^>]+>", "", text or "").strip()
+
+
+def _collapse_ws(text: str) -> str:
+    return _re.sub(r"\s+", " ", text or "").strip()
+
+
+def _normalize_player_name_key(name: str) -> str:
+    clean = _collapse_ws(_html.unescape(_strip_html(name or "")))
+    return clean.replace(" ", "").replace("　", "")
+
+
+def _extract_html_table_rows(html: str) -> list[list[str]]:
+    rows = []
+    for row_html in _re.findall(r"<tr[^>]*>(.*?)</tr>", html or "", _re.IGNORECASE | _re.DOTALL):
+        cells = []
+        for cell_html in _re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row_html, _re.IGNORECASE | _re.DOTALL):
+            text = _collapse_ws(_html.unescape(_strip_html(cell_html)))
+            cells.append(text)
+        if cells:
+            rows.append(cells)
+    return rows
 
 
 def _normalize_number_token(token: str) -> str:
@@ -296,8 +346,230 @@ def _source_mentions_outcome_terms(title: str, summary: str) -> bool:
     return bool(SCORE_TOKEN_RE.search(source_text) or any(word in source_text for word in NON_GAME_RESULT_WORDS))
 
 
+def _is_farm_lineup_text(text: str) -> bool:
+    clean = _strip_html(text or "")
+    return bool(
+        any(keyword in clean for keyword in LINEUP_ARTICLE_KEYWORDS)
+        and any(marker in clean for marker in FARM_LINEUP_MARKERS)
+    )
+
+
+def _parse_yahoo_team_batting_stats(html: str) -> dict[str, dict]:
+    stats = {}
+    for cells in _extract_html_table_rows(html):
+        if len(cells) < 20 or cells[0] == "位置" or cells[2] == "選手名":
+            continue
+        name = cells[2]
+        key = _normalize_player_name_key(name)
+        if not key:
+            continue
+        stats[key] = {
+            "name": _collapse_ws(name),
+            "avg": cells[3],
+            "hr": cells[10],
+            "rbi": cells[12],
+            "sb": cells[19],
+        }
+    return stats
+
+
+def _extract_async_starting_section(html: str) -> str:
+    start = (html or "").find('<div id="async-starting">')
+    if start == -1:
+        return ""
+    end = (html or "").find('<div id="async-bench">', start)
+    if end == -1:
+        end = len(html or "")
+    return (html or "")[start:end]
+
+
+def _extract_opponent_name_from_game_html(html: str, team_label: str = "巨人") -> str:
+    clean_html = html or ""
+    versus_match = _re.search(r'(?:巨人|読売)[^<]{0,40}(?:vs|VS|対)\s*([^<\s]+)', clean_html)
+    if versus_match:
+        opponent = versus_match.group(1).strip()
+        if opponent and opponent not in {team_label, "読売ジャイアンツ"}:
+            return opponent
+
+    team_names = [
+        _collapse_ws(name)
+        for name in _re.findall(r'class="[^"]*bb-gameScoreTable__teamName[^"]*"[^>]*>([^<]+)<', clean_html)
+    ]
+    for team_name in team_names:
+        if team_name and team_name not in {team_label, "読売ジャイアンツ"}:
+            return team_name
+
+    for marker in NPB_TEAM_MARKERS:
+        if marker in {team_label, "読売ジャイアンツ"}:
+            continue
+        if marker in clean_html:
+            return marker
+    return ""
+
+
+def _parse_yahoo_starting_lineup(html: str, team_label: str = "巨人", opponent_label: str = "") -> list[dict]:
+    section = _extract_async_starting_section(html)
+    if not section:
+        return []
+
+    team_markers = [team_label, "読売ジャイアンツ"]
+    start = -1
+    for marker in team_markers:
+        idx = section.find(marker)
+        if idx != -1 and (start == -1 or idx < start):
+            start = idx
+    if start == -1:
+        return []
+
+    end = len(section)
+    for marker in [opponent_label, *NPB_TEAM_MARKERS]:
+        if not marker or marker == team_label:
+            continue
+        idx = section.find(marker, start + len(team_label))
+        if idx != -1:
+            end = min(end, idx)
+    team_section = section[start:end]
+
+    rows = []
+    for cells in _extract_html_table_rows(team_section):
+        if len(cells) < 5:
+            continue
+        order = cells[0]
+        if not _re.fullmatch(r"[1-9]", order):
+            continue
+        avg = cells[4] if len(cells) >= 6 else cells[-1]
+        if not (avg == "-" or _re.fullmatch(r"[\.．]?\d{3}", avg)):
+            continue
+        rows.append({
+            "order": order,
+            "position": cells[1],
+            "name": _collapse_ws(cells[2]),
+            "avg": avg.replace("．", "."),
+        })
+    return rows
+
+
+def _merge_lineup_rows_with_stats(lineup_rows: list[dict], team_stats: dict[str, dict]) -> list[dict]:
+    merged = []
+    for row in lineup_rows:
+        key = _normalize_player_name_key(row.get("name", ""))
+        stat = team_stats.get(key, {})
+        merged.append({
+            "order": row.get("order", ""),
+            "position": row.get("position", ""),
+            "name": row.get("name", ""),
+            "avg": stat.get("avg") or row.get("avg", "-"),
+            "hr": stat.get("hr", "-"),
+            "rbi": stat.get("rbi", "-"),
+            "sb": stat.get("sb", "-"),
+        })
+    return merged
+
+
+def fetch_giants_batting_stats_from_yahoo() -> dict[str, dict]:
+    import urllib.request as _ur
+
+    url = f"https://baseball.yahoo.co.jp/npb/teams/{GIANTS_YAHOO_TEAM_ID}/memberlist?kind=b"
+    req = _ur.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with _ur.urlopen(req, timeout=10) as res:
+        html = res.read().decode("utf-8", errors="ignore")
+    return _parse_yahoo_team_batting_stats(html)
+
+
+def _normalize_target_day(target_day: str | None = None) -> str:
+    clean = (target_day or "").strip()
+    if _re.fullmatch(r"\d{8}", clean):
+        return clean
+    if _re.fullmatch(r"\d{4}-\d{2}-\d{2}", clean):
+        return clean.replace("-", "")
+    return datetime.now().strftime("%Y%m%d")
+
+
+def _find_giants_game_info_yahoo(target_day: str | None = None) -> tuple[str, str, str]:
+    import urllib.request as _ur
+
+    today = _normalize_target_day(target_day)
+    logger = logging.getLogger("rss_fetcher")
+    urls = [
+        f"https://baseball.yahoo.co.jp/npb/teams/{GIANTS_YAHOO_TEAM_ID}/schedule/",
+        f"https://baseball.yahoo.co.jp/npb/schedule/?year={today[:4]}&month={today[4:6]}",
+    ]
+
+    for url in urls:
+        try:
+            req = _ur.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with _ur.urlopen(req, timeout=10) as res:
+                html = res.read(200000).decode("utf-8", errors="ignore")
+        except Exception as e:
+            logger.warning(f"Yahoo試合日チェック失敗 {url}: {e}")
+            continue
+
+        game_ids = list(dict.fromkeys(_re.findall(r"/npb/game/(\d+)", html)))
+        for game_id in game_ids[:20]:
+            game_url = f"https://baseball.yahoo.co.jp/npb/game/{game_id}/score"
+            try:
+                req = _ur.Request(game_url, headers={"User-Agent": "Mozilla/5.0"})
+                with _ur.urlopen(req, timeout=10) as res:
+                    game_html = res.read(120000).decode("utf-8", errors="ignore")
+            except Exception:
+                continue
+
+            if not (game_id.startswith(today) or today in game_html[:5000]):
+                continue
+
+            opponent = _extract_opponent_name_from_game_html(game_html, team_label="巨人")
+            venue = ""
+            venue_match = _re.search(r'(東京ドーム|神宮|横浜|ナゴヤ|甲子園|マツダ|PayPay|バンテリン|ほっと|ZOZOマリン)', game_html)
+            if venue_match:
+                venue = venue_match.group(1)
+            return game_id, opponent, venue
+
+    return "", "", ""
+
+
+def _find_today_giants_game_info_yahoo() -> tuple[str, str, str]:
+    return _find_giants_game_info_yahoo()
+
+
+def fetch_giants_lineup_stats_from_yahoo(target_day: str | None = None, game_id: str = "", opponent: str = "") -> list[dict]:
+    import urllib.request as _ur
+
+    resolved_game_id = game_id
+    resolved_opponent = opponent
+    if not resolved_game_id:
+        resolved_game_id, resolved_opponent, _venue = _find_giants_game_info_yahoo(target_day)
+    if not resolved_game_id:
+        return []
+
+    url = f"https://baseball.yahoo.co.jp/npb/game/{resolved_game_id}/top"
+    req = _ur.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with _ur.urlopen(req, timeout=10) as res:
+        html = res.read().decode("utf-8", errors="ignore")
+
+    lineup_rows = _parse_yahoo_starting_lineup(html, team_label="巨人", opponent_label=resolved_opponent)
+    if not lineup_rows:
+        return []
+
+    try:
+        team_stats = fetch_giants_batting_stats_from_yahoo()
+    except Exception as e:
+        logging.getLogger("rss_fetcher").warning("巨人打撃成績の取得失敗: %s", e)
+        team_stats = {}
+    return _merge_lineup_rows_with_stats(lineup_rows, team_stats)
+
+
+def fetch_today_giants_lineup_stats_from_yahoo() -> list[dict]:
+    return fetch_giants_lineup_stats_from_yahoo()
+
+
+def fetch_giants_lineup_stats_for_game(game_id: str, opponent: str = "") -> list[dict]:
+    return fetch_giants_lineup_stats_from_yahoo(game_id=game_id, opponent=opponent)
+
+
 def _detect_article_subtype(title: str, summary: str, category: str, has_game: bool) -> str:
     text = _strip_html(f"{title} {summary}")
+    if _is_farm_lineup_text(text):
+        return "farm_lineup"
     if category == "試合速報":
         if any(keyword in text for keyword in LINEUP_ARTICLE_KEYWORDS):
             return "lineup"
@@ -306,6 +578,8 @@ def _detect_article_subtype(title: str, summary: str, category: str, has_game: b
         if has_game:
             return "pregame"
         return "game_note"
+    if category == "ドラフト・育成":
+        return "farm"
     if category == "首脳陣":
         return "manager"
     if category == "補強・移籍":
@@ -388,6 +662,11 @@ def _build_gemini_strict_prompt(
                 f"・{second_heading}では、試合前の空気や登板の入り方など、結果が出る前でも整理できる論点を掘る\n"
                 f"・{third_heading}では、結果予想よりも、最初にどこを見るべきかを具体的に書く\n"
             )
+    elif category == "ドラフト・育成" and article_subtype == "farm_lineup":
+        category_rules = (
+            f"・{second_heading}では、二軍スタメンで誰をどこで試しているか、一軍昇格や守備位置テストにつながる論点を書く\n"
+            f"・{third_heading}では、若手や調整組のうち、試合が始まったら最初に誰のどこを見たいかを具体的に書く\n"
+        )
 
     return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
 以下の元記事タイトルと要約に含まれる事実だけを使って、読者が最後まで読める日本語の記事本文を書いてください。
@@ -898,6 +1177,8 @@ def _build_safe_article_fallback(
         intro = "整理すると、今回のニュースは3点です。"
     elif category == "補強・移籍":
         intro = "補強の話は名前より先に、チームのどこを埋める話なのかを整理します。"
+    elif category == "ドラフト・育成" and article_subtype == "farm_lineup":
+        intro = "まずは二軍スタメンの並びを整理します。"
     elif category == "試合速報":
         if article_subtype == "lineup":
             intro = "まずは今日のスタメンの並びを整理します。"
@@ -934,12 +1215,44 @@ def _build_safe_article_fallback(
             closing = "この登板や試合前の空気が実際の結果にどうつながるか、次の動きまで追っていきたいです。みなさんの意見はコメントで教えてください！"
     elif category == "補強・移籍":
         closing = "補強や移籍の話は、実際に動いた後の競争と編成の変化まで見て初めて評価できます。みなさんの意見はコメントで教えてください！"
+    elif category == "ドラフト・育成" and article_subtype == "farm_lineup":
+        closing = "二軍スタメンは結果より先に、誰をどこで試しているかを見る記事です。一軍につながりそうな並びや守備位置まで、コメントで教えてください！"
     else:
         closing = "ここでは元記事の事実を土台に論点を整理しました。続報が出れば見え方も変わるので、みなさんの意見はコメントで教えてください！"
 
     headings = list(_article_section_headings(category, has_game))
 
-    if article_subtype == "lineup":
+    if article_subtype == "farm_lineup":
+        farm_focus = extra2 or "二軍スタメンで見たいのは、若手や調整組をどこに置いたかです。"
+        farm_context = ""
+        if detail:
+            farm_context = f"{detail}。この配置が、いま何を試しているかを読む入口になります。"
+        elif extra:
+            farm_context = f"{extra}。この並びが一軍昇格や守備位置テストのヒントになります。"
+        elif topic and topic not in lead:
+            farm_context = f"{topic}というテーマが、今回の二軍スタメンを読む入口です。"
+
+        paragraphs = [
+            headings[0],
+            intro,
+            f"{lead}。",
+        ]
+        if detail:
+            paragraphs.append(f"{detail}。")
+        paragraphs.extend([
+            headings[1],
+            farm_focus if farm_focus.endswith("。") else f"{farm_focus}。",
+        ])
+        if extra:
+            paragraphs.append(f"{extra}。")
+        if farm_context:
+            paragraphs.append(farm_context if farm_context.endswith("。") else f"{farm_context}。")
+        paragraphs.extend([
+            headings[2],
+            reaction_line if reaction_line else "まず見たいのは、この並びが一軍昇格の候補や守備位置テストにどうつながるかという点です。",
+            closing,
+        ])
+    elif article_subtype == "lineup":
         lineup_focus = extra2 or "今日のスタメン記事で大事なのは、誰が入ったかだけでなく、打順や守備位置のどこが動いたかです。"
         lineup_context = ""
         if detail:
@@ -1727,6 +2040,7 @@ def generate_article_with_gemini(title: str, summary: str, category: str, real_r
         win_loss_hint = "※この試合は巨人が【敗戦】した試合です。負け試合として正直に書くこと。前向きに美化しない。"
 
     if strict_mode:
+        attempt_limit = get_gemini_attempt_limit(strict_mode=True)
         prompt = _build_gemini_strict_prompt(
             title,
             summary_clean,
@@ -1745,8 +2059,8 @@ def generate_article_with_gemini(title: str, summary: str, category: str, real_r
             }
         }).encode("utf-8")
         logger = logging.getLogger("rss_fetcher")
-        logger.info("Gemini strict fact mode で記事生成中...")
-        for attempt in range(3):
+        logger.info("Gemini strict fact mode で記事生成中（最大%d回試行）...", attempt_limit)
+        for attempt in range(attempt_limit):
             try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
                 req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
@@ -1757,10 +2071,15 @@ def generate_article_with_gemini(title: str, summary: str, category: str, real_r
                 if raw_text and len(raw_text) > 220:
                     logger.info(f"Gemini strict fact mode 生成成功 {len(raw_text)}文字")
                     return raw_text
-                logger.warning(f"Gemini strict fact mode 応答が短すぎる（{len(raw_text)}文字）、リトライ {attempt+1}/3")
+                logger.warning(
+                    "Gemini strict fact mode 応答が短すぎる（%d文字）、試行 %d/%d",
+                    len(raw_text),
+                    attempt + 1,
+                    attempt_limit,
+                )
             except Exception as e:
-                logger.warning(f"Gemini strict fact mode 失敗 試行{attempt+1}/3: {e}")
-        logger.error("Gemini strict fact mode が3回とも失敗 → 記事生成スキップ")
+                logger.warning(f"Gemini strict fact mode 失敗 試行{attempt+1}/{attempt_limit}: {e}")
+        logger.error("Gemini strict fact mode が上限回数に達したため記事生成スキップ")
         return ""
 
     # カテゴリ別プロンプト
@@ -1912,8 +2231,9 @@ def generate_article_with_gemini(title: str, summary: str, category: str, real_r
         }
     }).encode("utf-8")
 
-    logger.info("Gemini 2.5 Flash + Google Search 検索付きで記事生成中（最大2回試行）...")
-    for attempt in range(2):
+    attempt_limit = get_gemini_attempt_limit(strict_mode=False)
+    logger.info("Gemini 2.5 Flash + Google Search 検索付きで記事生成中（最大%d回試行）...", attempt_limit)
+    for attempt in range(attempt_limit):
         try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
             req = urllib.request.Request(url, data=payload_grounded, headers={"Content-Type": "application/json"})
@@ -1925,11 +2245,11 @@ def generate_article_with_gemini(title: str, summary: str, category: str, real_r
             if raw_text and len(raw_text) > 150:
                 logger.info(f"Gemini 2.5 Flash（Google検索付き）生成成功 {len(raw_text)}文字")
                 return raw_text
-            logger.warning(f"Gemini応答が短すぎる（{len(raw_text)}文字）、リトライ {attempt+1}/2")
+            logger.warning("Gemini応答が短すぎる（%d文字）、試行 %d/%d", len(raw_text), attempt + 1, attempt_limit)
         except Exception as e:
-            logger.warning(f"Gemini 2.5 Flash失敗 試行{attempt+1}/2: {e}")
+            logger.warning(f"Gemini 2.5 Flash失敗 試行{attempt+1}/{attempt_limit}: {e}")
 
-    logger.error("Gemini 2.5 Flash（Google検索付き）が2回とも失敗 → 記事生成スキップ")
+    logger.error("Gemini 2.5 Flash（Google検索付き）が上限回数に達したため記事生成スキップ")
     return ""
 
 
@@ -2132,13 +2452,22 @@ X検索で「{query_short} 巨人」に関するファンの声を{fan_reaction_
 # ──────────────────────────────────────────────────────────
 # ニュース記事ブロックHTML生成
 # ──────────────────────────────────────────────────────────
-def build_news_block(title: str, summary: str, url: str, source_name: str, category: str = "コラム", og_image_url: str = "", media_id: int = 0, extra_images: list = None, has_game: bool = True, article_ai_mode_override: str | None = None) -> tuple[str, str]:
+def build_news_block(title: str, summary: str, url: str, source_name: str, category: str = "コラム", og_image_url: str = "", media_id: int = 0, extra_images: list = None, has_game: bool = True, article_ai_mode_override: str | None = None, source_links: list[dict] | None = None) -> tuple[str, str]:
     import re
     summary_clean = re.sub(r"<[^>]+>", "", summary).strip()
+    article_subtype = _detect_article_subtype(title, summary_clean, category, has_game)
     article_ai_mode = get_article_ai_mode(has_game, article_ai_mode_override) if should_use_ai_for_category(category) else "none"
     if category == "選手情報" and not has_game and article_ai_mode_override is None:
         article_ai_mode = "none"
     fan_reaction_limit = get_fan_reaction_limit()
+    lineup_stat_rows = []
+    if category == "試合速報" and article_subtype == "lineup":
+        try:
+            lineup_stat_rows = fetch_today_giants_lineup_stats_from_yahoo()
+        except Exception as e:
+            logging.getLogger("rss_fetcher").warning("スタメン成績の取得失敗: %s", e)
+            lineup_stat_rows = []
+    lineup_stats_rendered = False
 
     # 試合がない日は勝敗ヒントを生成しない（架空スコア捏造防止）
     win_loss_hint = ""
@@ -2223,12 +2552,46 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
 
     import re as _re3
 
+    def _manager_cta_labels() -> dict[str, str]:
+        source_text = f"{title} {summary_clean}"
+        if any(keyword in source_text for keyword in ("競争", "レギュラー", "固定", "序列", "若手")):
+            return {
+                "news": "この競争、どう見る？",
+                "next": "次の序列どうなる？",
+                "fans": "率直にどう思う？",
+            }
+        if any(keyword in source_text for keyword in ("スタメン", "打順", "オーダー", "起用")):
+            return {
+                "news": "この起用、どう見る？",
+                "next": "次のスタメンどうする？",
+                "fans": "率直にどう思う？",
+            }
+        if any(keyword in source_text for keyword in ("継投", "采配", "ベンチ", "勝負手", "代打", "守備固め")):
+            return {
+                "news": "この采配、どう見る？",
+                "next": "次はどう動く？",
+                "fans": "率直にどう思う？",
+            }
+        return {
+            "news": "この発言、どう見る？",
+            "next": "次はどう動く？",
+            "fans": "率直にどう思う？",
+        }
+
     def _comment_button(slot: str = "fans") -> str:
         labels = {
             "news": "このニュース、どう見る？",
             "next": "先に予想を書く？",
             "fans": "みんなの本音は？",
         }
+        if category == "試合速報" and article_subtype == "postgame":
+            labels = {
+                "news": "この試合、どう見る？",
+                "next": "勝負の分岐点は？",
+                "fans": "今日のMVPは？",
+            }
+        elif category == "首脳陣":
+            labels = _manager_cta_labels()
         label = labels.get(slot, labels["fans"])
         if slot in {"news", "next"}:
             return (
@@ -2297,6 +2660,212 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             f'<!-- /wp:spacer -->\n\n'
         )
 
+    def _lineup_stats_block(rows: list[dict]) -> str:
+        if not rows:
+            return ""
+        header = (
+            '<!-- wp:heading {"level":3} -->\n'
+            '<h3>📊 今日のスタメンデータ</h3>\n'
+            '<!-- /wp:heading -->\n\n'
+        )
+        note = (
+            '<!-- wp:paragraph -->\n'
+            '<p style="font-size:0.82em;color:#666;">※スポーツナビ掲載の今季成績（打率 / 本塁打 / 打点 / 盗塁）</p>\n'
+            '<!-- /wp:paragraph -->\n\n'
+        )
+        table_rows = [
+            "<tr><th>打順</th><th>位置</th><th>選手名</th><th>打率</th><th>本塁打</th><th>打点</th><th>盗塁</th></tr>"
+        ]
+        for row in rows:
+            order = str(row.get("order", "")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            position = str(row.get("position", "")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            name = str(row.get("name", "")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            avg = str(row.get("avg", "-")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            hr = str(row.get("hr", "-")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            rbi = str(row.get("rbi", "-")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            sb = str(row.get("sb", "-")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            table_rows.append(
+                "<tr>"
+                f"<td>{order}</td>"
+                f"<td>{position}</td>"
+                f"<td>{name}</td>"
+                f"<td>{avg}</td>"
+                f"<td>{hr}</td>"
+                f"<td>{rbi}</td>"
+                f"<td>{sb}</td>"
+                "</tr>"
+            )
+        table_html = (
+            '<!-- wp:html -->\n'
+            '<div class="yoshilover-lineup-stats" style="overflow-x:auto;margin:0 0 12px;">'
+            '<table style="width:100%;border-collapse:collapse;font-size:0.92em;">'
+            f"{''.join(table_rows)}"
+            "</table>"
+            "</div>\n"
+            '<!-- /wp:html -->\n\n'
+        )
+        return header + note + table_html
+
+    def _lineup_watch_block(rows: list[dict]) -> str:
+        if not rows:
+            return ""
+
+        def _row_by_order(order: str) -> dict:
+            for row in rows:
+                if str(row.get("order", "")) == order:
+                    return row
+            return {}
+
+        leadoff = _row_by_order("1")
+        second = _row_by_order("2")
+        cleanup = _row_by_order("4")
+        catcher = next((row for row in rows if row.get("position") == "捕"), {})
+        ninth = _row_by_order("9")
+
+        points = []
+        if leadoff and cleanup:
+            points.append(
+                f"{leadoff['order']}番{leadoff['name']}から{cleanup['order']}番{cleanup['name']}までの流れ。"
+            )
+        elif leadoff:
+            points.append(f"{leadoff['order']}番{leadoff['name']}がどう出塁するか。")
+        else:
+            points.append("上位打線が序盤にどう形を作るか。")
+
+        if second and cleanup:
+            points.append(
+                f"{second['order']}番{second['name']}がつなぎ、{cleanup['order']}番{cleanup['name']}で返せるか。"
+            )
+        elif cleanup:
+            points.append(f"{cleanup['order']}番{cleanup['name']}がどこで走者を返せるか。")
+        else:
+            points.append("中軸で長打と打点が出るか。")
+
+        if catcher:
+            points.append(f"捕手{catcher['name']}を含めた下位打線の入り。")
+        elif ninth:
+            points.append(f"{ninth['order']}番{ninth['name']}から上位へ戻せるか。")
+        else:
+            points.append("下位打線から上位へどう戻すか。")
+
+        return (
+            '<!-- wp:heading {"level":3} -->\n'
+            '<h3>👀 スタメンの見どころ</h3>\n'
+            '<!-- /wp:heading -->\n\n'
+            + '<!-- wp:list -->\n'
+            + '<ul class="wp-block-list">\n'
+            + "".join(f"<li>{point}</li>\n" for point in points[:3])
+            + '</ul>\n'
+            + '<!-- /wp:list -->\n\n'
+        )
+
+    def _postgame_score_token() -> str:
+        score_match = _re3.search(r'(\d{1,2})[－\-–](\d{1,2})', f"{title} {summary_clean}")
+        if not score_match:
+            return ""
+        return f"{score_match.group(1)}-{score_match.group(2)}"
+
+    def _postgame_result_label() -> str:
+        source_text = f"{title} {summary_clean}"
+        if "引き分け" in source_text:
+            return "引き分け"
+        if any(marker in source_text for marker in ("勝利", "白星", "サヨナラ勝", "連勝", "完封勝")):
+            return "巨人勝利"
+        if any(marker in source_text for marker in ("敗れ", "敗戦", "黒星", "連敗", "完封負")):
+            return "巨人敗戦"
+        return "結果確認中"
+
+    def _postgame_opponent_label() -> str:
+        source_text = f"{title} {summary_clean}"
+        for marker in NPB_TEAM_MARKERS:
+            if marker in {"巨人", "読売ジャイアンツ"}:
+                continue
+            if marker in source_text:
+                return marker
+        return "相手"
+
+    def _postgame_key_play() -> str:
+        facts = _extract_summary_sentences(summary_clean, max_sentences=4)
+        for fact in facts[1:]:
+            clean = fact.strip().rstrip("。")
+            if clean:
+                return clean[:36]
+        stripped_title = _strip_title_prefix(title)
+        stripped_title = _re3.sub(r'^【巨人】', '', stripped_title).strip()
+        stripped_title = _re3.sub(r'^\S+に\d{1,2}[－\-–]\d{1,2}で(?:勝利|敗れ)[　 ]*', '', stripped_title).strip("　 。")
+        return (stripped_title or "流れを分けたポイント").strip()[:36]
+
+    def _postgame_result_block() -> str:
+        score = _postgame_score_token()
+        if not score and article_subtype != "postgame":
+            return ""
+
+        result = _postgame_result_label()
+        opponent = _postgame_opponent_label()
+        key_play = _postgame_key_play()
+        items = [
+            ("結果", result),
+            ("スコア", score or "-"),
+            ("相手", opponent),
+            ("決め手", key_play),
+        ]
+        rows_html = "".join(
+            '<div style="display:grid;grid-template-columns:80px 1fr;gap:10px;padding:10px 0;border-bottom:1px solid #e6e6e6;">'
+            f'<div style="font-size:0.84em;color:#666;font-weight:700;">{label}</div>'
+            f'<div style="font-size:0.95em;color:#111;font-weight:700;line-height:1.5;">{value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")}</div>'
+            '</div>'
+            for label, value in items
+        )
+        return (
+            '<!-- wp:heading {"level":3} -->\n'
+            '<h3>📊 今日の試合結果</h3>\n'
+            '<!-- /wp:heading -->\n\n'
+            '<!-- wp:html -->\n'
+            '<div class="yoshilover-postgame-summary" style="border:1px solid #e6e6e6;border-radius:12px;padding:12px 16px;margin:0 0 12px;background:#fff;">'
+            f'{rows_html}'
+            '</div>\n'
+            '<!-- /wp:html -->\n\n'
+        )
+
+    def _postgame_watch_block() -> str:
+        facts = _extract_summary_sentences(summary_clean, max_sentences=4)
+        points = []
+        score = _postgame_score_token()
+        result = _postgame_result_label()
+
+        for fact in facts[1:]:
+            clean = fact.strip().rstrip("。")
+            if clean:
+                points.append(f"{clean}。")
+
+        if score and result == "巨人勝利":
+            points.append(f"{score}をどう勝ち切ったか。")
+        elif score and result == "巨人敗戦":
+            points.append(f"{score}で落とした終盤の流れ。")
+        elif score and result == "引き分け":
+            points.append(f"{score}で並走した終盤の流れ。")
+
+        points.append("得点の前後でベンチがどう動いたか。")
+        points.append("この内容が次戦にも続くか。")
+
+        deduped = []
+        for point in points:
+            normalized = point.strip()
+            if not normalized or normalized in deduped:
+                continue
+            deduped.append(normalized)
+
+        return (
+            '<!-- wp:heading {"level":3} -->\n'
+            '<h3>👀 勝負の分岐点</h3>\n'
+            '<!-- /wp:heading -->\n\n'
+            + '<!-- wp:list -->\n'
+            + '<ul class="wp-block-list">\n'
+            + "".join(f"<li>{point.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')}</li>\n" for point in deduped[:3])
+            + '</ul>\n'
+            + '<!-- /wp:list -->\n\n'
+        )
+
     blocks = ""
 
     # ──────────────────────────────────────────────────────────
@@ -2304,7 +2873,12 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     # ──────────────────────────────────────────────────────────
     summary_text_to_show = summary_block if summary_block else _build_safe_summary_snippet(title, summary_clean)
     safe_title = title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    safe_source = source_name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") if source_name else "スポーツニュース"
+    display_source_links = source_links or [{"name": source_name or "スポーツニュース", "url": url}]
+    source_badge = " / ".join(
+        (item.get("name") or "スポーツニュース").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        for item in display_source_links[:3]
+    )
+    safe_source = source_badge if source_badge else "スポーツニュース"
     summary_kicker = _summary_kicker(category)
     blocks += (
         f'<!-- wp:html -->\n'
@@ -2367,13 +2941,30 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             return rendered
 
         def _flush_section() -> None:
-            nonlocal blocks, current_heading, current_paragraphs
+            nonlocal blocks, current_heading, current_paragraphs, lineup_stats_rendered
             if not current_heading and not current_paragraphs:
                 return
             if current_heading:
                 blocks += f'<!-- wp:heading {{"level":3}} -->\n<h3>{current_heading}</h3>\n<!-- /wp:heading -->\n\n'
             for paragraph in current_paragraphs:
                 blocks += _render_paragraph_with_media(paragraph)
+            if (
+                current_heading == "【ニュースの整理】"
+                and category == "試合速報"
+                and article_subtype == "lineup"
+                and lineup_stat_rows
+                and not lineup_stats_rendered
+            ):
+                blocks += _lineup_stats_block(lineup_stat_rows)
+                blocks += _lineup_watch_block(lineup_stat_rows)
+                lineup_stats_rendered = True
+            if (
+                current_heading == "【ニュースの整理】"
+                and category == "試合速報"
+                and article_subtype == "postgame"
+            ):
+                blocks += _postgame_result_block()
+                blocks += _postgame_watch_block()
             section_slot = {
                 "【ニュースの整理】": "news",
                 "【次の注目】": "next",
@@ -2419,6 +3010,13 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             li_html = "\n".join(f"<li>{s.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')}</li>" for s in stat_items)
             blocks += f'<!-- wp:list -->\n<ul class="wp-block-list">\n{li_html}\n</ul>\n<!-- /wp:list -->\n\n'
         blocks += _sep()
+        followup_section_rendered = True
+
+    if lineup_stat_rows and not lineup_stats_rendered:
+        if not followup_section_rendered:
+            blocks += _sep()
+        blocks += _lineup_stats_block(lineup_stat_rows)
+        blocks += _lineup_watch_block(lineup_stat_rows)
         followup_section_rendered = True
 
     # ──────────────────────────────────────────────────────────
@@ -2467,12 +3065,16 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             blocks += _sep()
         blocks += _comment_button("fans")
 
-    # ⑥ 出典（元記事のみ）
+    # ⑥ 出典
     blocks += _sep()
+    source_link_html = " / ".join(
+        f'<a href="{(item.get("url") or url).replace("&", "&amp;")}" target="_blank" rel="noopener noreferrer">{(item.get("name") or "スポーツニュース").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")}</a>'
+        for item in display_source_links
+    )
     blocks += (
         f'<!-- wp:paragraph -->\n'
         f'<p style="font-size:0.8em;color:#999;">'
-        f'📰 元記事: <a href="{url}" target="_blank" rel="noopener noreferrer">{source_name}</a>'
+        f'📰 参照元: {source_link_html}'
         f'</p>\n'
         f'<!-- /wp:paragraph -->'
     )
@@ -2613,6 +3215,100 @@ def finalize_post_publication(
     save_history(post_url, history, entry_title_norm)
     return True
 
+
+def save_history_batch(urls: list[str], history: dict, title_norms: list[str] | None = None):
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    for url in _dedupe_preserve_order([u for u in urls if u]):
+        history[url] = now_str
+    for title_norm in _dedupe_preserve_order(title_norms or []):
+        if title_norm and len(title_norm) > 5:
+            history[f"title_norm:{title_norm[:60]}"] = now_str
+    persist_history(history)
+
+
+def _entry_day_key(entry: dict) -> str:
+    pub = entry.get("published_parsed") or entry.get("updated_parsed")
+    if not pub:
+        return ""
+    try:
+        return datetime(*pub[:6], tzinfo=timezone.utc).astimezone().strftime("%Y-%m-%d")
+    except Exception:
+        return ""
+
+
+def _merge_source_summary(candidates: list[dict], max_sentences: int = 6) -> str:
+    pieces = []
+    for candidate in candidates:
+        pieces.extend(_extract_source_sentences(candidate.get("title", ""), candidate.get("summary", ""), max_sentences=3))
+
+    deduped = []
+    seen = set()
+    for piece in pieces:
+        key = piece.replace(" ", "").replace("　", "")
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(piece)
+        if len(deduped) >= max_sentences:
+            break
+
+    if not deduped:
+        return ""
+    return "。".join(deduped).rstrip("。") + "。"
+
+
+def _aggregate_lineup_candidates(candidates: list[dict]) -> list[dict]:
+    grouped: dict[tuple[str, str], list[dict]] = {}
+    passthrough: list[dict] = []
+
+    for candidate in candidates:
+        subtype = _detect_article_subtype(candidate.get("title", ""), candidate.get("summary", ""), candidate.get("category", ""), candidate.get("entry_has_game", True))
+        if not (
+            candidate.get("source_type") == "news"
+            and candidate.get("category") == "試合速報"
+            and subtype == "lineup"
+        ):
+            passthrough.append(candidate)
+            continue
+        key = (candidate.get("published_day") or "", "lineup")
+        grouped.setdefault(key, []).append(candidate)
+
+    aggregated: list[dict] = list(passthrough)
+    for _, group in grouped.items():
+        ordered_group = sorted(group, key=lambda item: (item.get("source_rank", 0), item.get("entry_index", 0)))
+        if len(ordered_group) <= 1:
+            aggregated.extend(ordered_group)
+            continue
+
+        selected = ordered_group[:3]
+        primary = max(
+            selected,
+            key=lambda item: (
+                len(_strip_html(item.get("title", ""))),
+                len(_strip_html(item.get("summary", ""))),
+                -item.get("source_rank", 0),
+            ),
+        )
+        merged = dict(primary)
+        merged["entry_index"] = min(item.get("entry_index", 0) for item in ordered_group)
+        merged["summary"] = _merge_source_summary(selected) or primary.get("summary", "")
+        merged["source_name"] = " / ".join(_dedupe_preserve_order([item.get("source_name", "") for item in selected if item.get("source_name")]))
+        merged["source_links"] = [
+            {"name": item.get("source_name", "スポーツニュース"), "url": item.get("post_url", "")}
+            for item in selected
+            if item.get("post_url")
+        ]
+        merged["history_urls"] = _dedupe_preserve_order(
+            [url for item in ordered_group for url in item.get("history_urls", [item.get("post_url", "")]) if url]
+        )
+        merged["history_title_norms"] = _dedupe_preserve_order(
+            [title_norm for item in ordered_group for title_norm in item.get("history_title_norms", [item.get("entry_title_norm", "")]) if title_norm]
+        )
+        merged["merged_source_count"] = len(selected)
+        aggregated.append(merged)
+
+    return sorted(aggregated, key=lambda item: item.get("entry_index", 0))
+
 # ──────────────────────────────────────────────────────────
 # 巨人キーワードフィルタ
 # ──────────────────────────────────────────────────────────
@@ -2623,6 +3319,8 @@ def is_giants_related(text: str) -> bool:
 # カテゴリ自動分類
 # ──────────────────────────────────────────────────────────
 def classify_category(text: str, keywords: dict) -> str:
+    if _is_farm_lineup_text(text):
+        return "ドラフト・育成"
     for category, kws in keywords.items():
         if any(kw in text for kw in kws):
             return category
@@ -2696,7 +3394,21 @@ def rewrite_display_title(title: str, summary: str, category: str, has_game: boo
             return _trim_display_title(f"巨人スタメン {body}でどこを動かしたか")
         if subtype == "postgame":
             score = SCORE_TOKEN_RE.search(source_text)
+            opponent = next(
+                (marker for marker in NPB_TEAM_MARKERS if marker not in {"巨人", "読売ジャイアンツ"} and marker in source_text),
+                "",
+            )
+            if any(marker in source_text for marker in ("完封負け", "0封負け", "打線が沈黙", "攻略できず")):
+                base = f"巨人{opponent}戦 打線沈黙で何が止まったか" if opponent else "巨人 打線沈黙で何が止まったか"
+                return _trim_display_title(base)
+            if any(marker in source_text for marker in ("決勝打", "サヨナラ", "逆転")):
+                base = f"巨人{opponent}戦 終盤の一打で何が動いたか" if opponent else "巨人戦 終盤の一打で何が動いたか"
+                return _trim_display_title(base)
             if score:
+                if any(marker in source_text for marker in ("敗れ", "敗戦", "黒星")):
+                    return _trim_display_title(f"巨人{score.group(0)} 敗戦の分岐点はどこだったか")
+                if any(marker in source_text for marker in ("勝利", "白星", "連勝")):
+                    return _trim_display_title(f"巨人{score.group(0)} 勝利の分岐点はどこだったか")
                 return _trim_display_title(f"巨人{score.group(0)} 試合の流れを分けたポイント")
             return _trim_display_title("巨人戦 試合の流れを分けたポイント")
         return _trim_display_title("巨人戦 試合前にどこを見たいか")
@@ -2707,6 +3419,10 @@ def rewrite_display_title(title: str, summary: str, category: str, has_game: boo
         if "トレード" in source_text or "移籍" in source_text:
             return _trim_display_title("巨人の補強・移籍 この動きをどう見るか")
         return _trim_display_title("巨人補強の整理 どこを厚くするのか")
+
+    if category == "ドラフト・育成":
+        if subtype == "farm_lineup":
+            return _trim_display_title("巨人二軍スタメン 若手をどう並べたか")
 
     return _trim_display_title(clean_title or "巨人ニュース")
 
@@ -2743,51 +3459,8 @@ def main():
 
 
 def _check_giants_game_today_yahoo() -> tuple:
-    import urllib.request as _ur
-
-    today = datetime.now().strftime("%Y%m%d")
-    logger = logging.getLogger("rss_fetcher")
-    urls = [
-        f"https://baseball.yahoo.co.jp/npb/teams/{GIANTS_YAHOO_TEAM_ID}/schedule/",
-        f"https://baseball.yahoo.co.jp/npb/schedule/?year={today[:4]}&month={today[4:6]}",
-    ]
-
-    for url in urls:
-        try:
-            req = _ur.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with _ur.urlopen(req, timeout=10) as res:
-                html = res.read(200000).decode("utf-8", errors="ignore")
-        except Exception as e:
-            logger.warning(f"Yahoo試合日チェック失敗 {url}: {e}")
-            continue
-
-        game_ids = list(dict.fromkeys(_re.findall(r"/npb/game/(\d+)", html)))
-        for game_id in game_ids[:20]:
-            game_url = f"https://baseball.yahoo.co.jp/npb/game/{game_id}/score"
-            try:
-                req = _ur.Request(game_url, headers={"User-Agent": "Mozilla/5.0"})
-                with _ur.urlopen(req, timeout=10) as res:
-                    game_html = res.read(120000).decode("utf-8", errors="ignore")
-            except Exception:
-                continue
-
-            if not (game_id.startswith(today) or today in game_html[:5000]):
-                continue
-
-            opponent = ""
-            venue = ""
-            opp_match = _re.search(r'(?:巨人|読売)[^<]{0,40}(?:vs|VS|対)\s*([^<\s]+)', game_html)
-            if not opp_match:
-                opp_match = _re.search(r'class="[^"]*bb-gameScoreTable__teamName[^"]*"[^>]*>([^<]+)<', game_html)
-            if opp_match:
-                opponent = opp_match.group(1).strip()
-
-            venue_match = _re.search(r'(東京ドーム|神宮|横浜|ナゴヤ|甲子園|マツダ|PayPay|バンテリン|ほっと|ZOZOマリン)', game_html)
-            if venue_match:
-                venue = venue_match.group(1)
-            return True, opponent, venue
-
-    return False, "", ""
+    game_id, opponent, venue = _find_today_giants_game_info_yahoo()
+    return bool(game_id), opponent, venue
 
 
 def check_giants_game_today() -> tuple:
@@ -2874,11 +3547,10 @@ def _main(args, logger):
     X_POST_CATEGORIES  = {"試合速報", "補強・移籍", "選手情報", "首脳陣"}
     today_str = datetime.now().strftime("%Y-%m-%d")
     x_post_count = history.get(f"x_post_count_{today_str}", 0)
+    prepared_entries = []
+    entry_index = 0
 
-    for source in sources:
-        if success >= args.limit:
-            logger.info(f"上限{args.limit}件に達したため終了")
-            break
+    for source_rank, source in enumerate(sources):
         name        = source["name"]
         url         = source["url"]
         source_type = source.get("type", "news")
@@ -2886,7 +3558,6 @@ def _main(args, logger):
 
         try:
             if source_type == "yahoo_realtime":
-                # yahoo_realtime://キーワード 形式
                 keyword = url.replace("yahoo_realtime://", "")
                 entries = fetch_yahoo_realtime_entries(keyword)
             else:
@@ -2904,12 +3575,10 @@ def _main(args, logger):
             post_url = get_post_url(entry)
             title_text = entry.get("title", "") + " " + entry.get("summary", "")
 
-            # 重複チェック（URL）
             if post_url in history:
                 skip_dup += 1
                 continue
 
-            # 重複チェック（タイトル）- 同じニュースが別URLで来るケースを防ぐ
             import re as _re2
             entry_title_raw = entry.get("title", "").strip()
             entry_title_norm = _re2.sub(r"[\s　【】「」『』〔〕（）()・\-_]", "", entry_title_raw).lower()
@@ -2920,153 +3589,180 @@ def _main(args, logger):
                     skip_dup += 1
                     continue
 
-            # 新鮮さフィルタ（2時間以内・日付なしも弾く）
             pub = entry.get("published_parsed") or entry.get("updated_parsed")
             if not pub:
                 logger.debug(f"  [SKIP:日付なし] {post_url}")
                 skip_filter += 1
                 continue
-            # 時間フィルターなし：GCS履歴で重複管理するため不要
 
-            # 巨人フィルタ
             if not is_giants_related(title_text):
                 logger.debug(f"  [SKIP:フィルタ] {post_url}")
                 skip_filter += 1
                 continue
 
-            # カテゴリ分類
             category = classify_category(title_text, keywords)
             title    = make_title(entry)
+            summary  = entry.get("summary", "") or entry.get("description", "")
+            entry_has_game = infer_article_has_game(title, summary, category, has_game)
 
-            # 選手・監督コメントがない記事はスキップ（newsソースのみ）
-            source_type = source.get("type", "news")
             if source_type == "news":
+                article_subtype = _detect_article_subtype(title, summary, category, entry_has_game)
                 has_comment = "「" in title_text
-                if not has_comment:
+                allow_commentless_news = article_subtype in {"lineup", "farm_lineup", "postgame"}
+                if not has_comment and not allow_commentless_news:
                     logger.debug(f"  [SKIP:コメントなし] {title[:40]}")
                     skip_filter += 1
                     continue
 
             logger.info(f"  [HIT] {title[:40]} → {category}")
+            prepared_entries.append({
+                "entry_index": entry_index,
+                "source_rank": source_rank,
+                "source_name": name,
+                "source_type": source_type,
+                "entry": entry,
+                "post_url": post_url,
+                "title_text": title_text,
+                "category": category,
+                "title": title,
+                "summary": summary,
+                "entry_title_norm": entry_title_norm,
+                "entry_has_game": entry_has_game,
+                "published_day": _entry_day_key(entry),
+                "history_urls": [post_url],
+                "history_title_norms": [entry_title_norm] if entry_title_norm else [],
+            })
+            entry_index += 1
 
-            # ソースタイプに応じてコンテンツ生成
-            if source_type == "news":
-                summary = entry.get("summary", "") or entry.get("description", "")
-                # dry-runはGrok呼び出しをスキップ（コスト節約）
-                if args.dry_run:
-                    draft_title = rewrite_display_title(title, summary, category, infer_article_has_game(title, summary, category, has_game))
-                    print(f"  DRY: [{category}] {draft_title[:50]}")
-                    print(f"       {post_url}")
-                    success += 1
-                    continue
-                # 記事ページから写真を最大3枚スクレイピング
-                _article_images = fetch_article_images(post_url, max_images=3)
-                _og_url  = _article_images[0] if _article_images else ""
-                entry_has_game = infer_article_has_game(title, summary, category, has_game)
+    prepared_entries = _aggregate_lineup_candidates(prepared_entries)
+
+    for item in prepared_entries:
+        if success >= args.limit:
+            logger.info(f"上限{args.limit}件に達したため終了")
+            break
+
+        source_type = item["source_type"]
+        category = item["category"]
+        title = item["title"]
+        summary = item["summary"]
+        post_url = item["post_url"]
+        source_name = item["source_name"]
+        entry_title_norm = item.get("entry_title_norm", "")
+        entry_has_game = item["entry_has_game"]
+
+        if item.get("merged_source_count", 0) > 1:
+            logger.info(f"  [統合] {title[:40]} ← {item['merged_source_count']}ソース")
+
+        if source_type == "news":
+            if args.dry_run:
                 draft_title = rewrite_display_title(title, summary, category, entry_has_game)
-                # Grokは1回だけ呼ぶ（media_id=0で生成）
-                content, ai_body_for_x = build_news_block(
-                    title,
-                    summary,
-                    post_url,
-                    name,
-                    category,
-                    _og_url,
-                    0,
-                    extra_images=_article_images[1:],
-                    has_game=entry_has_game,
-                    article_ai_mode_override=args.article_ai_mode,
-                )
-            else:
-                content = build_oembed_block(post_url)
-                ai_body_for_x = ""
-                draft_title = title
-                if args.dry_run:
-                    print(f"  DRY: [{category}] {draft_title[:50]}")
-                    print(f"       {post_url}")
-                    success += 1
-                    continue
-
-            # WP自動公開
-            try:
-                category_id = wp.resolve_category_id(category)
-
-                # OG画像アップロードしてアイキャッチに使用（記事HTML再生成しない）
-                featured_media = 0
-                if source_type == "news" and _og_url:
-                    featured_media = wp.upload_image_from_url(_og_url)
-
-                AUTO_POST_CATEGORY_ID = 673  # 自動投稿カテゴリ（サイトマップ除外・noindex）
-                cats = [AUTO_POST_CATEGORY_ID]
-                if category_id:
-                    cats.append(category_id)
-
-                # X投稿条件チェック
-                x_eligible = (
-                    source_type == "news"
-                    and category in X_POST_CATEGORIES
-                    and not args.draft_only
-                    and auto_tweet_enabled()
-                    and x_post_count < x_post_daily_limit
-                    and featured_media
-                )
-
-                # ① まずドラフトで記事作成（URL確定のため）
-                post_id = wp.create_post(
-                    draft_title, content,
-                    categories=cats,
-                    status="draft",
-                    featured_media=featured_media or None,
-                )
+                print(f"  DRY: [{category}] {draft_title[:50]}")
+                print(f"       {post_url}")
                 success += 1
-                time.sleep(1)
+                continue
+            _article_images = fetch_article_images(post_url, max_images=3)
+            _og_url  = _article_images[0] if _article_images else ""
+            draft_title = rewrite_display_title(title, summary, category, entry_has_game)
+            content, ai_body_for_x = build_news_block(
+                title,
+                summary,
+                post_url,
+                source_name,
+                category,
+                _og_url,
+                0,
+                extra_images=_article_images[1:],
+                has_game=entry_has_game,
+                article_ai_mode_override=args.article_ai_mode,
+                source_links=item.get("source_links"),
+            )
+        else:
+            content = build_oembed_block(post_url)
+            ai_body_for_x = ""
+            draft_title = title
+            if args.dry_run:
+                print(f"  DRY: [{category}] {draft_title[:50]}")
+                print(f"       {post_url}")
+                success += 1
+                continue
 
-                # ② 通常運用では公開。品質確認時は下書き止めにする
-                published = finalize_post_publication(
-                    wp,
-                    post_id,
-                    post_url,
-                    history,
-                    entry_title_norm,
-                    logger,
-                    draft_only=args.draft_only,
-                )
+        try:
+            category_id = wp.resolve_category_id(category)
 
-                if x_eligible and published:
-                    try:
-                        import tweepy
-                        from dotenv import load_dotenv
-                        load_dotenv(ROOT / ".env")
-                        wp_post_data = wp.get_post(post_id)
-                        article_url = wp_post_data.get("link", "")
-                        tweet_text = build_x_post_text(draft_title, article_url, category, summary=ai_body_for_x or summary)
-                        x_client = tweepy.Client(
-                            bearer_token=os.environ.get("X_BEARER_TOKEN"),
-                            consumer_key=os.environ.get("X_API_KEY"),
-                            consumer_secret=os.environ.get("X_API_SECRET"),
-                            access_token=os.environ.get("X_ACCESS_TOKEN"),
-                            access_token_secret=os.environ.get("X_ACCESS_TOKEN_SECRET"),
-                        )
-                        resp = x_client.create_tweet(text=tweet_text)
-                        tweet_id = resp.data["id"]
-                        x_post_count += 1
-                        history[f"x_post_count_{today_str}"] = x_post_count
-                        persist_history(history)
-                        logger.info(f"  [公開+X投稿] post_id={post_id} tweet_id={tweet_id} 本日{x_post_count}/{x_post_daily_limit}件")
-                    except Exception as xe:
-                        logger.warning(f"  [X投稿失敗] post_id={post_id} {xe}")
-                        logger.info(f"  [公開済み] post_id={post_id}")
-                elif args.draft_only:
-                    logger.info(f"  [下書き作成完了] post_id={post_id}")
-                else:
-                    logger.info(f"  [公開] post_id={post_id} image={'あり' if featured_media else 'なし'}")
+            featured_media = 0
+            if source_type == "news" and _og_url:
+                featured_media = wp.upload_image_from_url(_og_url)
 
-                if success >= args.limit:
-                    break
+            AUTO_POST_CATEGORY_ID = 673
+            cats = [AUTO_POST_CATEGORY_ID]
+            if category_id:
+                cats.append(category_id)
 
-            except Exception as e:
-                logger.error(f"  [ERROR] 公開失敗: {e}")
-                error += 1
+            x_eligible = (
+                source_type == "news"
+                and category in X_POST_CATEGORIES
+                and not args.draft_only
+                and auto_tweet_enabled()
+                and x_post_count < x_post_daily_limit
+                and featured_media
+            )
+
+            post_id = wp.create_post(
+                draft_title, content,
+                categories=cats,
+                status="draft",
+                featured_media=featured_media or None,
+            )
+            success += 1
+            time.sleep(1)
+
+            published = finalize_post_publication(
+                wp,
+                post_id,
+                post_url,
+                history,
+                entry_title_norm,
+                logger,
+                draft_only=args.draft_only,
+            )
+            if published:
+                extra_history_urls = item.get("history_urls", [])
+                extra_history_norms = item.get("history_title_norms", [])
+                if len(extra_history_urls) > 1 or len(extra_history_norms) > 1:
+                    save_history_batch(extra_history_urls, history, extra_history_norms)
+
+            if x_eligible and published:
+                try:
+                    import tweepy
+                    from dotenv import load_dotenv
+                    load_dotenv(ROOT / ".env")
+                    wp_post_data = wp.get_post(post_id)
+                    article_url = wp_post_data.get("link", "")
+                    tweet_text = build_x_post_text(draft_title, article_url, category, summary=ai_body_for_x or summary, content_html=content)
+                    x_client = tweepy.Client(
+                        bearer_token=os.environ.get("X_BEARER_TOKEN"),
+                        consumer_key=os.environ.get("X_API_KEY"),
+                        consumer_secret=os.environ.get("X_API_SECRET"),
+                        access_token=os.environ.get("X_ACCESS_TOKEN"),
+                        access_token_secret=os.environ.get("X_ACCESS_TOKEN_SECRET"),
+                    )
+                    resp = x_client.create_tweet(text=tweet_text)
+                    tweet_id = resp.data["id"]
+                    x_post_count += 1
+                    history[f"x_post_count_{today_str}"] = x_post_count
+                    persist_history(history)
+                    logger.info(f"  [公開+X投稿] post_id={post_id} tweet_id={tweet_id} 本日{x_post_count}/{x_post_daily_limit}件")
+                except Exception as xe:
+                    logger.warning(f"  [X投稿失敗] post_id={post_id} {xe}")
+                    logger.info(f"  [公開済み] post_id={post_id}")
+            elif args.draft_only:
+                logger.info(f"  [下書き作成完了] post_id={post_id}")
+            else:
+                logger.info(f"  [公開] post_id={post_id} image={'あり' if featured_media else 'なし'}")
+
+        except Exception as e:
+            logger.error(f"  [ERROR] 公開失敗: {e}")
+            error += 1
 
     logger.info(
         f"=== 完了: 取得={total} / 投稿={success} / 重複スキップ={skip_dup} "

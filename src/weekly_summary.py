@@ -29,6 +29,8 @@ from wp_client import WPClient
 
 AUTO_POST_CATEGORY_ID = 673
 WEEKLY_CATEGORY_NAME  = "コラム"
+GEMINI_FLASH_MODEL = "gemini-2.5-flash"
+GEMINI_FLASH_THINKING_BUDGET = 0
 
 
 def fetch_recent_posts(wp: WPClient, days: int = 7) -> list:
@@ -96,11 +98,15 @@ def generate_weekly_summary(titles: list) -> str:
 
     payload = json.dumps({
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"maxOutputTokens": 2048, "temperature": 0.8}
+        "generationConfig": {
+            "maxOutputTokens": 2048,
+            "temperature": 0.8,
+            "thinkingConfig": {"thinkingBudget": GEMINI_FLASH_THINKING_BUDGET},
+        },
     }).encode("utf-8")
 
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_FLASH_MODEL}:generateContent?key={api_key}"
         req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=20) as res:
             data = json.load(res)

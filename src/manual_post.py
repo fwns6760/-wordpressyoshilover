@@ -29,6 +29,8 @@ from x_post_generator import build_post as build_x_post_text
 
 CATEGORIES = ["試合速報", "選手情報", "首脳陣", "ドラフト・育成", "OB・解説者", "補強・移籍", "球団情報", "コラム"]
 AUTO_POST_CATEGORY_ID = 673
+GEMINI_FLASH_MODEL = "gemini-2.5-flash"
+GEMINI_FLASH_THINKING_BUDGET = 0
 
 
 # ──────────────────────────────────────────────────────────
@@ -57,11 +59,15 @@ def generate_body_with_gemini(title: str, category: str, hint: str = "") -> str:
 
     payload = json.dumps({
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"maxOutputTokens": 2048, "temperature": 0.85}
+        "generationConfig": {
+            "maxOutputTokens": 2048,
+            "temperature": 0.85,
+            "thinkingConfig": {"thinkingBudget": GEMINI_FLASH_THINKING_BUDGET},
+        },
     }).encode("utf-8")
 
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_FLASH_MODEL}:generateContent?key={api_key}"
         req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=15) as res:
             data = json.load(res)

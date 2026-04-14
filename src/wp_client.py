@@ -17,6 +17,7 @@ import json
 import argparse
 import html
 import re
+import subprocess
 from datetime import datetime, timedelta, timezone
 
 # vendorディレクトリをパスに追加（サーバー環境用）
@@ -31,6 +32,7 @@ from dotenv import load_dotenv
 # プロジェクトルートの .env を読み込む
 ROOT = Path(__file__).parent.parent
 load_dotenv(ROOT / ".env")
+HTTP_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 
 
 class WPClient:
@@ -165,6 +167,31 @@ class WPClient:
     # ------------------------------------------------------------------
     # 画像URLからWPメディアへアップロード
     # ------------------------------------------------------------------
+    @staticmethod
+    def _parse_content_type(header_text: str) -> str:
+        content_type = ""
+        for line in (header_text or "").splitlines():
+            if line.lower().startswith("content-type:"):
+                content_type = line.split(":", 1)[1].strip()
+        return content_type.split(";", 1)[0].strip() or "image/jpeg"
+
+    @staticmethod
+    def _download_image_via_curl(url: str, timeout: int = 15) -> tuple[bytes, str]:
+        header_res = subprocess.run(
+            ["curl", "-fsSL", "-A", HTTP_USER_AGENT, "-D", "-", "-o", "/dev/null", url],
+            capture_output=True,
+            check=True,
+            timeout=timeout + 5,
+        )
+        body_res = subprocess.run(
+            ["curl", "-fsSL", "-A", HTTP_USER_AGENT, url],
+            capture_output=True,
+            check=True,
+            timeout=timeout + 5,
+        )
+        content_type = WPClient._parse_content_type(header_res.stdout.decode("iso-8859-1", errors="ignore"))
+        return body_res.stdout, content_type
+
     def upload_image_from_url(self, image_url: str, filename: str = None) -> int:
         """
         外部画像URLをダウンロードしてWPメディアライブラリにアップロード。
@@ -172,10 +199,17 @@ class WPClient:
         """
         try:
             normalized_url = html.unescape((image_url or "").strip())
-            img_resp = requests.get(normalized_url, timeout=15)
-            img_resp.raise_for_status()
-            image_data = img_resp.content
-            content_type = img_resp.headers.get("Content-Type", "image/jpeg").split(";")[0]
+            try:
+                img_resp = requests.get(
+                    normalized_url,
+                    timeout=15,
+                    headers={"User-Agent": HTTP_USER_AGENT},
+                )
+                img_resp.raise_for_status()
+                image_data = img_resp.content
+                content_type = img_resp.headers.get("Content-Type", "image/jpeg").split(";")[0]
+            except Exception:
+                image_data, content_type = self._download_image_via_curl(normalized_url, timeout=15)
             ext = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}.get(content_type, "jpg")
             if not filename:
                 import hashlib

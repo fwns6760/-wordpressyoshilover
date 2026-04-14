@@ -1,6 +1,6 @@
 import logging
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from src import rss_fetcher
 
@@ -221,6 +221,75 @@ class YahooFanReactionQueryTests(unittest.TestCase):
 
         self.assertEqual(len(reactions), 3)
         self.assertEqual(reactions[0]["handle"], "@togofan")
+
+
+class ArticleImageFetchTests(unittest.TestCase):
+    @patch("src.rss_fetcher.fetch_article_images")
+    def test_extract_entry_image_urls_uses_linked_article_when_summary_has_no_img_tag(self, mock_fetch_images):
+        def fake_fetch(url: str, max_images: int = 1):
+            if "hochi.news/articles/20260414-OHT1T51375.html" in url:
+                return ["https://hochi.news/images/test-hero.jpg"]
+            return []
+
+        mock_fetch_images.side_effect = fake_fetch
+
+        entry = {
+            "title": "【巨人】坂本勇人、代打安打で決勝点呼ぶ",
+            "summary": "【巨人】坂本勇人、代打安打で決勝点呼ぶ #巨人 #giants https://hochi.news/articles/20260414-OHT1T51375.html",
+            "link": "https://x.com/hochi_giants/status/2044045110053151220",
+        }
+
+        images = rss_fetcher._extract_entry_image_urls(entry, entry["link"], max_images=3)
+
+        self.assertEqual(images, ["https://hochi.news/images/test-hero.jpg"])
+
+    @patch("src.rss_fetcher.subprocess.run")
+    @patch("urllib.request.urlopen")
+    def test_fetch_article_images_falls_back_to_curl_when_urllib_fails(self, mock_urlopen, mock_run):
+        mock_urlopen.side_effect = OSError("dns failure")
+        mock_run.return_value = Mock(
+            stdout=b'<html><head><meta property="og:image" content="https://example.com/hero.jpg"></head></html>'
+        )
+
+        images = rss_fetcher.fetch_article_images("https://example.com/article", max_images=2)
+
+        self.assertEqual(images, ["https://example.com/hero.jpg"])
+        mock_run.assert_called_once()
+
+
+class SocialNewsNormalizationTests(unittest.TestCase):
+    def test_clean_social_entry_text_removes_handles_urls_and_hash_tags(self):
+        raw = (
+            "【🔥#熱闘撮って出し🔥】 最後は #大城卓三 選手が二盗を阻止してゲームセット。"
+            " https://www.sanspo.com/article/20260414-47W4XNKJTVFXBKS4TQCR34X6BE/?outputType=theme_giants"
+            " @SANSPOCOM #巨人 #ジャイアンツ"
+        )
+
+        cleaned = rss_fetcher._clean_social_entry_text(raw)
+
+        self.assertNotIn("https://", cleaned)
+        self.assertNotIn("@SANSPOCOM", cleaned)
+        self.assertNotIn("#巨人", cleaned)
+        self.assertIn("最後は", cleaned)
+
+    def test_rewrite_display_title_uses_manager_name_instead_of_type_noise(self):
+        title = "Type「完全に向こうに行った流れを持ってこられた一発」"
+        summary = "阿部慎之助 監督、大城卓三の同点弾を激賞"
+
+        rewritten = rss_fetcher.rewrite_display_title(title, summary, "首脳陣", has_game=True)
+
+        self.assertTrue(rewritten.startswith("阿部慎之助「完全に向こうに行った流れを持ってこられた一発」"))
+        self.assertNotIn("Type", rewritten)
+
+    def test_get_publish_skip_reasons_holds_news_without_featured_media(self):
+        with patch.dict(rss_fetcher.os.environ, {"PUBLISH_REQUIRE_IMAGE": "1"}, clear=False):
+            reasons = rss_fetcher.get_publish_skip_reasons(
+                source_type="social_news",
+                draft_only=False,
+                featured_media=0,
+            )
+
+        self.assertEqual(reasons, ["featured_media_missing"])
 
 
 class GameDayCheckTests(unittest.TestCase):
@@ -489,6 +558,22 @@ class GameDayCheckTests(unittest.TestCase):
                 "DAZN BASEBALL 正捕手争いは熾烈 #だったらDAZN 月々2,300円",
                 "選手情報",
                 "player",
+            )
+        )
+
+    def test_promotional_video_entry_detects_nikkan_live_feed(self):
+        self.assertTrue(
+            rss_fetcher._is_promotional_video_entry(
+                "【動画】巨人増田陸がフェンス直撃の適時二塁打　内海コーチも笑顔で喜ぶ",
+                "DAZNベースボールのXから ホームランまであと少し #だったらDAZN 月々2,300円",
+            )
+        )
+
+    def test_promotional_video_entry_does_not_flag_regular_news(self):
+        self.assertFalse(
+            rss_fetcher._is_promotional_video_entry(
+                "【巨人】松本剛が移籍後初のヒーローインタビュー",
+                "巨人松本剛外野手が決勝打を放ち、初のヒーローインタビューを受けた。",
             )
         )
 

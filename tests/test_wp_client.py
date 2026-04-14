@@ -110,6 +110,22 @@ class TestWPClientDedup(unittest.TestCase):
         self.assertEqual(mock_get.call_count, 2)
         mock_post.assert_called_once()
 
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_upload_image_from_url_falls_back_to_curl_when_requests_get_fails(self, mock_get, mock_post):
+        mock_get.side_effect = OSError("dns failure")
+        mock_post.return_value = Mock(status_code=201, json=lambda: {"id": 321})
+        header_result = Mock(stdout=b"HTTP/2 200\r\ncontent-type: image/webp\r\n\r\n")
+        body_result = Mock(stdout=b"fake-image-bytes")
+
+        with patch("src.wp_client.subprocess.run", side_effect=[header_result, body_result]) as mock_run:
+            media_id = self.wp.upload_image_from_url("https://example.com/image.webp")
+
+        self.assertEqual(media_id, 321)
+        self.assertEqual(mock_run.call_count, 2)
+        post_headers = mock_post.call_args.kwargs["headers"]
+        self.assertEqual(post_headers["Content-Type"], "image/webp")
+
 
 if __name__ == "__main__":
     unittest.main()

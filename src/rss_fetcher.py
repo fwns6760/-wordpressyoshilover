@@ -11,6 +11,7 @@ import os
 import json
 import logging
 import argparse
+import subprocess
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -31,6 +32,7 @@ from x_post_generator import build_post as build_x_post_text
 
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
+HTTP_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 DEFAULT_LOW_COST_AI_CATEGORIES = {"試合速報", "選手情報", "首脳陣"}
 DEFAULT_AUTO_TWEET_CATEGORIES = {"試合速報", "選手情報", "首脳陣", "ドラフト・育成"}
 ENABLE_LIVE_UPDATE_ARTICLES = os.getenv("ENABLE_LIVE_UPDATE_ARTICLES", "0").strip().lower() in TRUE_VALUES
@@ -112,7 +114,41 @@ SOCIAL_VIDEO_SKIP_MARKERS = (
     "【動画】", "動画】", "DAZN BASEBALL", "#だったらDAZN", "月々2,300円",
     "年間プラン・月々払い", "見逃し配信", "ハイライト", "LIVE配信",
 )
+VIDEO_PROMO_TITLE_MARKERS = ("【動画】", "動画】")
+VIDEO_PROMO_SUMMARY_MARKERS = (
+    "DAZNベースボールのXから",
+    "DAZN BASEBALL",
+    "#だったらDAZN",
+    "月々2,300円",
+    "年間プラン・月々払い",
+    "見逃し配信",
+)
 QUOTE_SKIP_MARKERS = ("DAZN", "BASEBALL", "月々", "年間プラン", "パック")
+SOCIAL_TEXT_OUTLET_MARKERS = (
+    "Sponichi Annex",
+    "スポニチ",
+    "スポーツ報知",
+    "日刊スポーツ",
+    "サンスポ",
+    "報知新聞社",
+    "デイリースポーツ",
+    "東スポ",
+    "Full-Count",
+    "BASEBALL KING",
+    "Yahooニュース",
+    "SmartNews",
+)
+SUBJECT_LABEL_STOPWORDS = {
+    "Type",
+    "Sponichi",
+    "Sanspo",
+    "Hochi",
+    "Daily",
+    "SmartNews",
+    "Yahoo",
+    "News",
+    "Giants",
+}
 CATEGORY_REACTION_TERMS = {
     "首脳陣": ("スタメン", "打順", "オーダー", "起用", "序列", "固定", "レギュラー", "若手"),
     "試合速報": ("スタメン", "継投", "采配", "流れ", "代打", "守備", "打順", "勝ちパターン"),
@@ -215,6 +251,10 @@ def auto_tweet_requires_featured_media() -> bool:
     return _env_flag("AUTO_TWEET_REQUIRE_IMAGE", True)
 
 
+def publish_requires_featured_media() -> bool:
+    return _env_flag("PUBLISH_REQUIRE_IMAGE", True)
+
+
 def auto_tweet_enabled() -> bool:
     return _env_flag("AUTO_TWEET_ENABLED", not low_cost_mode_enabled())
 
@@ -251,6 +291,20 @@ def get_auto_tweet_skip_reasons(
         reasons.append("not_published")
     if not article_url:
         reasons.append("article_url_missing")
+    return reasons
+
+
+def get_publish_skip_reasons(
+    *,
+    source_type: str,
+    draft_only: bool,
+    featured_media: int,
+) -> list[str]:
+    reasons = []
+    if draft_only:
+        reasons.append("draft_only")
+    if source_type in {"news", "social_news"} and publish_requires_featured_media() and not featured_media:
+        reasons.append("featured_media_missing")
     return reasons
 
 
@@ -327,10 +381,43 @@ def _strip_title_prefix(title: str) -> str:
     return clean.strip("。 ")
 
 
+def _clean_social_entry_text(text: str) -> str:
+    clean = _html.unescape(_strip_html(text or ""))
+    clean = _re.sub(r'https?://\S+', '', clean)
+    clean = _re.sub(r'(?<!\w)#[\w一-龯ぁ-ゔァ-ヴー々〆〤]+', '', clean)
+    clean = _re.sub(r'(?<!\S)@[\w.\-一-龯ぁ-ゔァ-ヴー々〆〤]+[:：]?', '', clean)
+    clean = _re.sub(
+        r'\s*[-–—]\s*(スポニチ(?: Sponichi Annex)? 野球|Sponichi Annex 野球|スポーツ報知|報知新聞社|日刊スポーツ|サンスポ.*)$',
+        '',
+        clean,
+        flags=_re.IGNORECASE,
+    )
+    clean = _re.sub(r'^\s*Type(?=[「『【])', '', clean)
+    clean = _re.sub(r"\s+", " ", clean)
+    clean = _re.sub(r"\s+([。！？])", r"\1", clean)
+    return clean.strip(" ・\t")
+
+
+def _is_polluted_social_text(text: str) -> bool:
+    clean = _html.unescape(_strip_html(text or "")).strip()
+    if not clean:
+        return True
+    if _re.search(r'https?://\S+', clean):
+        return True
+    if _re.search(r'(?<!\w)#[\w一-龯ぁ-ゔァ-ヴー々〆〤]+', clean):
+        return True
+    if _re.search(r'(?<!\S)@[\w.\-一-龯ぁ-ゔァ-ヴー々〆〤]+', clean):
+        return True
+    if _re.search(r'^\s*Type(?=[「『【])', clean):
+        return True
+    lower_clean = clean.lower()
+    return any(marker.lower() in lower_clean for marker in SOCIAL_TEXT_OUTLET_MARKERS)
+
+
 def _extract_subject_label(title: str, summary: str, category: str) -> str:
     text = f"{_strip_html(title)} {_strip_html(summary)}"
-    player_role_pattern = r"([一-龥ァ-ヴーA-Za-z]{2,10}(?:投手|捕手|内野手|外野手))"
-    staff_role_pattern = r"([一-龥ァ-ヴーA-Za-z]{2,10}(?:監督|コーチ))"
+    player_role_pattern = r"([一-龥ァ-ヴーA-Za-z]{2,10}\s*(?:投手|捕手|内野手|外野手|選手))"
+    staff_role_pattern = r"([一-龥ァ-ヴーA-Za-z]{2,10}\s*(?:監督|コーチ))"
     patterns = [r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})"]
     if category == "選手情報":
         patterns = [
@@ -348,7 +435,9 @@ def _extract_subject_label(title: str, summary: str, category: str) -> str:
     for pattern in patterns:
         match = _re.search(pattern, text)
         if match:
-            label = match.group(1)
+            label = _re.sub(r"\s+", "", match.group(1))
+            if label in SUBJECT_LABEL_STOPWORDS:
+                continue
             if label.startswith("巨人") and len(label) > 4:
                 label = label[2:]
             return label
@@ -790,6 +879,15 @@ def _detect_article_subtype(title: str, summary: str, category: str, has_game: b
     if category == "選手情報":
         return "player"
     return "general"
+
+
+def _is_promotional_video_entry(title: str, summary: str) -> bool:
+    title_text = _strip_html(title or "")
+    summary_text = _strip_html(summary or "")
+    if not any(marker in title_text for marker in VIDEO_PROMO_TITLE_MARKERS):
+        return False
+    promo_text = f"{title_text} {summary_text}"
+    return any(marker in promo_text for marker in VIDEO_PROMO_SUMMARY_MARKERS)
 
 
 def _build_gemini_strict_prompt(
@@ -1890,17 +1988,34 @@ def fetch_og_image(url: str) -> str:
     return imgs[0] if imgs else ""
 
 
+def _fetch_url_html(url: str, max_bytes: int = 200000, timeout: int = 12) -> str:
+    import urllib.request
+
+    req = urllib.request.Request(url, headers={"User-Agent": HTTP_USER_AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as res:
+            return res.read(max_bytes).decode("utf-8", errors="ignore")
+    except Exception:
+        try:
+            result = subprocess.run(
+                ["curl", "-fsSL", "-A", HTTP_USER_AGENT, url],
+                capture_output=True,
+                check=True,
+                timeout=timeout + 3,
+            )
+            return result.stdout[:max_bytes].decode("utf-8", errors="ignore")
+        except Exception:
+            return ""
+
+
 def fetch_article_images(url: str, max_images: int = 3) -> list:
     """記事ページから写真URLを最大 max_images 枚スクレイピングして返す。
     og:image を先頭に、本文中の <img> から大きそうなものを追加する。"""
     try:
-        import urllib.request, urllib.parse
-        req = urllib.request.Request(
-            url,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        )
-        with urllib.request.urlopen(req, timeout=12) as res:
-            html = res.read(200000).decode("utf-8", errors="ignore")
+        import urllib.parse
+        html = _fetch_url_html(url, max_bytes=200000, timeout=12)
+        if not html:
+            return []
 
         seen = set()
         images = []
@@ -1979,12 +2094,13 @@ def fetch_article_images(url: str, max_images: int = 3) -> list:
 def _extract_entry_image_urls(entry: dict, page_url: str = "", max_images: int = 3) -> list[str]:
     import urllib.parse as _urlparse
 
+    title_text = entry.get("title", "") or ""
     fragment = entry.get("summary", "") or entry.get("description", "")
     if not fragment:
         content_list = entry.get("content") or []
         if content_list and isinstance(content_list, list):
             fragment = content_list[0].get("value", "")
-    if not fragment:
+    if not fragment and not title_text:
         return []
 
     seen = set()
@@ -2014,6 +2130,24 @@ def _extract_entry_image_urls(entry: dict, page_url: str = "", max_images: int =
         _add(img_m.group(1))
         if len(images) >= max_images:
             break
+
+    linked_text = _html.unescape(_strip_html(f"{title_text} {fragment}"))
+    linked_urls = []
+    for url_m in _re.finditer(r'https?://[^\s<>"\')]+', linked_text):
+        candidate_url = url_m.group(0).rstrip(".,)")
+        parsed = _urlparse.urlparse(candidate_url)
+        host = parsed.netloc.lower()
+        if not host or host.endswith(("x.com", "twitter.com", "t.co")):
+            continue
+        if candidate_url in linked_urls:
+            continue
+        linked_urls.append(candidate_url)
+
+    for candidate_url in linked_urls[:3]:
+        for img_url in fetch_article_images(candidate_url, max_images=1):
+            _add(img_url)
+            if len(images) >= max_images:
+                return images[:max_images]
     return images[:max_images]
 
 
@@ -3994,7 +4128,7 @@ def classify_category(text: str, keywords: dict) -> str:
 
 def _is_authoritative_social_entry_worthy(title: str, summary: str, category: str, article_subtype: str) -> bool:
     text = _strip_html(f"{title} {summary}")
-    if any(marker in text for marker in SOCIAL_VIDEO_SKIP_MARKERS):
+    if _is_promotional_video_entry(title, summary) or any(marker in text for marker in SOCIAL_VIDEO_SKIP_MARKERS):
         return False
     has_quote = "「" in text and "」" in text
 
@@ -4050,7 +4184,7 @@ def rewrite_display_title(title: str, summary: str, category: str, has_game: boo
     if category == "首脳陣":
         manager_label = _extract_subject_label(title, summary, category)
         if manager_label not in {"", "首脳陣", "巨人"}:
-            subject = manager_label
+            subject = _re.sub(r"(監督|コーチ)$", "", manager_label).strip()
     quote = _extract_quote_phrases(f"{title}\n{summary}", max_phrases=1)
     quote_text = quote[0] if quote else ""
     subtype = _detect_article_subtype(title, summary, category, has_game)
@@ -4271,19 +4405,30 @@ def _main(args, logger):
 
         for entry in entries:
             post_url = get_post_url(entry)
-            title_text = entry.get("title", "") + " " + entry.get("summary", "")
+            entry_title_raw = (entry.get("title", "") or "").strip()
+            entry_summary_raw = entry.get("summary", "") or entry.get("description", "")
+            if source_type == "social_news":
+                entry_title_clean = _clean_social_entry_text(entry_title_raw)
+                entry_summary_clean = _clean_social_entry_text(entry_summary_raw)
+                if _is_polluted_social_text(entry_title_clean) or _is_polluted_social_text(entry_summary_clean):
+                    logger.debug(f"  [SKIP:SNS汚染] {entry_title_raw[:40]}")
+                    skip_filter += 1
+                    continue
+            else:
+                entry_title_clean = entry_title_raw
+                entry_summary_clean = entry_summary_raw
+            title_text = f"{entry_title_clean} {entry_summary_clean}".strip()
 
             if post_url in history:
                 skip_dup += 1
                 continue
 
             import re as _re2
-            entry_title_raw = entry.get("title", "").strip()
-            entry_title_norm = _re2.sub(r"[\s　【】「」『』〔〕（）()・\-_]", "", entry_title_raw).lower()
+            entry_title_norm = _re2.sub(r"[\s　【】「」『』〔〕（）()・\-_]", "", entry_title_clean).lower()
             if entry_title_norm and len(entry_title_norm) > 5:
                 title_key = f"title_norm:{entry_title_norm[:60]}"
                 if title_key in history:
-                    logger.debug(f"  [SKIP:タイトル重複] {entry_title_raw[:50]}")
+                    logger.debug(f"  [SKIP:タイトル重複] {entry_title_clean[:50]}")
                     skip_dup += 1
                     continue
 
@@ -4299,11 +4444,15 @@ def _main(args, logger):
                 continue
 
             category = classify_category(title_text, keywords)
-            title    = make_title(entry)
-            summary  = entry.get("summary", "") or entry.get("description", "")
+            title    = entry_title_clean[:40].strip() if entry_title_clean else make_title(entry)
+            summary  = entry_summary_clean
             entry_has_game = infer_article_has_game(title, summary, category, has_game)
 
             if source_type in {"news", "social_news"}:
+                if _is_promotional_video_entry(entry_title_clean, summary):
+                    logger.debug(f"  [SKIP:動画プロモ] {entry_title_clean[:40]}")
+                    skip_filter += 1
+                    continue
                 article_subtype = _detect_article_subtype(title, summary, category, entry_has_game)
                 if article_subtype == "live_update" and not ENABLE_LIVE_UPDATE_ARTICLES:
                     logger.debug(f"  [SKIP:途中経過停止中] {title[:40]}")
@@ -4464,15 +4613,24 @@ def _main(args, logger):
             success += 1
             time.sleep(1)
 
-            published = finalize_post_publication(
-                wp,
-                post_id,
-                post_url,
-                history,
-                entry_title_norm,
-                logger,
+            publish_skip_reasons = get_publish_skip_reasons(
+                source_type=source_type,
                 draft_only=args.draft_only,
+                featured_media=featured_media,
             )
+            if publish_skip_reasons:
+                logger.info(f"  [下書き止め] post_id={post_id} reason={','.join(publish_skip_reasons)}")
+                published = False
+            else:
+                published = finalize_post_publication(
+                    wp,
+                    post_id,
+                    post_url,
+                    history,
+                    entry_title_norm,
+                    logger,
+                    draft_only=False,
+                )
             if published:
                 extra_history_urls = item.get("history_urls", [])
                 extra_history_norms = item.get("history_title_norms", [])
@@ -4517,12 +4675,15 @@ def _main(args, logger):
                 except Exception as xe:
                     logger.warning(f"  [X投稿失敗] post_id={post_id} {xe}")
                     logger.info(f"  [公開済み] post_id={post_id}")
-            elif args.draft_only:
-                logger.info(f"  [下書き作成完了] post_id={post_id}")
             else:
                 if published:
                     logger.info(f"  [X投稿スキップ] post_id={post_id} reason={','.join(x_skip_reasons)}")
-                logger.info(f"  [公開] post_id={post_id} image={'あり' if featured_media else 'なし'}")
+                    logger.info(f"  [公開] post_id={post_id} image={'あり' if featured_media else 'なし'}")
+                else:
+                    logger.info(
+                        f"  [下書き維持] post_id={post_id} reason={','.join(publish_skip_reasons)} "
+                        f"image={'あり' if featured_media else 'なし'}"
+                    )
 
         except Exception as e:
             logger.error(f"  [ERROR] 公開失敗: {e}")

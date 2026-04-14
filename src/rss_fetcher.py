@@ -33,6 +33,7 @@ from x_post_generator import build_post as build_x_post_text
 TRUE_VALUES = {"1", "true", "yes", "on"}
 DEFAULT_LOW_COST_AI_CATEGORIES = {"試合速報", "選手情報", "首脳陣"}
 DEFAULT_AUTO_TWEET_CATEGORIES = {"試合速報", "選手情報", "首脳陣", "ドラフト・育成"}
+ENABLE_LIVE_UPDATE_ARTICLES = os.getenv("ENABLE_LIVE_UPDATE_ARTICLES", "0").strip().lower() in TRUE_VALUES
 SCORE_TOKEN_RE = _re.compile(r"\d{1,2}\s*[－\-–]\s*\d{1,2}")
 NUMERIC_TOKEN_RE = _re.compile(r"\d+(?:\.\d+)?(?:[%％]|本|打点|勝|敗|回|失点|奪三振|号|位|年|月|日|人|円|試合|打席|安打|点|本塁打|打率|防御率|OPS|WHIP|WAR|wRC\+?|K/9)?")
 NON_GAME_RESULT_WORDS = ("勝利", "敗戦", "白星", "黒星", "引き分け", "サヨナラ勝", "連勝", "連敗", "スコア")
@@ -107,6 +108,11 @@ LOW_VALUE_SHARE_MARKERS = (
     "日テレNEWS", "日刊スポーツ", "デイリースポーツ", "スポーツ報知", "東スポ",
     "記事はこちら", "詳しくはこちら",
 )
+SOCIAL_VIDEO_SKIP_MARKERS = (
+    "【動画】", "動画】", "DAZN BASEBALL", "#だったらDAZN", "月々2,300円",
+    "年間プラン・月々払い", "見逃し配信", "ハイライト", "LIVE配信",
+)
+QUOTE_SKIP_MARKERS = ("DAZN", "BASEBALL", "月々", "年間プラン", "パック")
 CATEGORY_REACTION_TERMS = {
     "首脳陣": ("スタメン", "打順", "オーダー", "起用", "序列", "固定", "レギュラー", "若手"),
     "試合速報": ("スタメン", "継投", "采配", "流れ", "代打", "守備", "打順", "勝ちパターン"),
@@ -905,6 +911,8 @@ def _extract_quote_phrases(text: str, max_phrases: int = 2) -> list[str]:
     phrases = []
     for phrase in _re.findall(r"[「『]([^」』]{4,30})[」』]", _strip_html(text)):
         clean = phrase.strip()
+        if any(marker in clean for marker in QUOTE_SKIP_MARKERS):
+            continue
         if clean and clean not in phrases:
             phrases.append(clean)
         if len(phrases) >= max_phrases:
@@ -3986,10 +3994,14 @@ def classify_category(text: str, keywords: dict) -> str:
 
 def _is_authoritative_social_entry_worthy(title: str, summary: str, category: str, article_subtype: str) -> bool:
     text = _strip_html(f"{title} {summary}")
+    if any(marker in text for marker in SOCIAL_VIDEO_SKIP_MARKERS):
+        return False
     has_quote = "「" in text and "」" in text
 
-    if article_subtype in {"lineup", "farm_lineup", "postgame", "live_update"}:
+    if article_subtype in {"lineup", "farm_lineup", "postgame"}:
         return True
+    if article_subtype == "live_update":
+        return ENABLE_LIVE_UPDATE_ARTICLES
     if category in {"首脳陣", "選手情報"} and has_quote:
         return True
     if category == "ドラフト・育成" and any(keyword in text for keyword in ("二軍", "2軍", "ファーム", "昇格", "支配下", "本塁打", "好投", "猛打賞", "マルチ", "適時打", "先発")):
@@ -4293,9 +4305,13 @@ def _main(args, logger):
 
             if source_type in {"news", "social_news"}:
                 article_subtype = _detect_article_subtype(title, summary, category, entry_has_game)
+                if article_subtype == "live_update" and not ENABLE_LIVE_UPDATE_ARTICLES:
+                    logger.debug(f"  [SKIP:途中経過停止中] {title[:40]}")
+                    skip_filter += 1
+                    continue
                 has_comment = "「" in title_text
                 if source_type == "news":
-                    allow_commentless_news = article_subtype in {"lineup", "farm_lineup", "postgame", "live_update"}
+                    allow_commentless_news = article_subtype in {"lineup", "farm_lineup", "postgame"}
                     if not has_comment and not allow_commentless_news:
                         logger.debug(f"  [SKIP:コメントなし] {title[:40]}")
                         skip_filter += 1
@@ -4354,7 +4370,7 @@ def _main(args, logger):
             prepared_entries.append(synthetic_lineup)
             prepared_entries = sorted(prepared_entries, key=lambda item: item.get("entry_index", 0))
 
-    if has_game and live_update_reason and not _has_primary_live_candidate(prepared_entries):
+    if ENABLE_LIVE_UPDATE_ARTICLES and has_game and live_update_reason and not _has_primary_live_candidate(prepared_entries):
         synthetic_live = _build_yahoo_live_update_candidate(opponent, venue, yahoo_game_status, entry_index, live_update_reason)
         if synthetic_live and not any(history.get(url) for url in synthetic_live.get("history_urls", [])):
             logger.info("  [HIT] Yahoo固定ページから途中経過補完 → 試合速報 (%s)", live_update_reason)

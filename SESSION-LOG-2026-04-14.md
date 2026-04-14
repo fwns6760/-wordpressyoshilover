@@ -687,3 +687,19 @@ SESSION-LOG-2026-04-14.md を読んで再開して。
   - `python3 -m py_compile src/wp_client.py src/rss_fetcher.py src/x_post_generator.py` は成功
 - 本番反映
   - Cloud Run revision: `yoshilover-fetcher-00086-q49`
+
+### 20. 試合中の古い途中経過記事を止める
+
+- 現象
+  - `巨人スタメン ７連敗中と大の苦手、阪神才木からミスも絡んでラッキーな形で２点…` のような、試合中の一時的なスコア見出しが夜遅い巡回で記事化された
+  - 重複対策ではなく、`live_update` 記事化の経路が広すぎた
+- 対応
+  - 不要投稿 `61984` はゴミ箱へ
+  - `src/rss_fetcher.py`
+    - `ENABLE_LIVE_UPDATE_ARTICLES=0` を既定に追加
+    - `news/social_news` の `live_update` は既定で `SKIP`
+    - Yahoo固定ページの `途中経過補完` も既定では止める
+    - `スタメン / 試合後 / 強いコメント` だけ自動記事化を継続
+- テスト
+  - `tests/test_yahoo_realtime.py`
+    - `live_update は既定で記事化しない` を追加

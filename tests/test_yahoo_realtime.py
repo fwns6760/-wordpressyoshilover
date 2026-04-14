@@ -461,6 +461,17 @@ class GameDayCheckTests(unittest.TestCase):
             )
         )
 
+    def test_authoritative_social_entry_rejects_live_update_by_default(self):
+        self.assertFalse(rss_fetcher.ENABLE_LIVE_UPDATE_ARTICLES)
+        self.assertFalse(
+            rss_fetcher._is_authoritative_social_entry_worthy(
+                "【巨人】７連敗中と大の苦手、阪神才木からミスも絡んでラッキーな形で２点先制！",
+                "巨人が2点を先制した。",
+                "試合速報",
+                "live_update",
+            )
+        )
+
     def test_authoritative_social_entry_rejects_weak_promotional_post(self):
         self.assertFalse(
             rss_fetcher._is_authoritative_social_entry_worthy(
@@ -468,6 +479,16 @@ class GameDayCheckTests(unittest.TestCase):
                 "グッズ情報はこちら",
                 "球団情報",
                 "normal",
+            )
+        )
+
+    def test_authoritative_social_entry_rejects_dazn_video_promo(self):
+        self.assertFalse(
+            rss_fetcher._is_authoritative_social_entry_worthy(
+                "【動画】巨人大城卓三が同点弾",
+                "DAZN BASEBALL 正捕手争いは熾烈 #だったらDAZN 月々2,300円",
+                "選手情報",
+                "player",
             )
         )
 

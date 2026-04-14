@@ -1,153 +1,197 @@
-# yoshilover — 読売ジャイアンツ 自動記事生成システム
+# yoshilover
 
-読売ジャイアンツの最新ニュースを RSS で収集し、Grok AI（Web検索＋X検索）で記事・ファン反応を自動生成して WordPress に投稿するシステムです。
+読売ジャイアンツ特化の WordPress 記事生成リポジトリです。  
+RSS と記者・球団 X アカウントを監視し、記事候補を作って `yoshilover.com` に下書きまたは公開投稿します。
 
-## システム構成
+## 現在の運用
 
+- 本番は Cloud Run + Cloud Scheduler で動作
+- 現在は `RUN_DRAFT_ONLY=1` で、`/run` 実行時は `下書き作成のみ`
+- 品質調整が終わるまでは、人が下書きを見て公開判断する前提
+- `PUBLISH_REQUIRE_IMAGE=1` により、`news` / `social_news` でアイキャッチが取れない記事は公開しない
+
+## 何をするコードか
+
+中心は [src/rss_fetcher.py](src/rss_fetcher.py) です。ざっくりこの流れで動きます。
+
+1. RSS と `social_news` ソースを取得
+2. 巨人関連記事だけに絞る
+3. 重複チェック
+4. カテゴリ分類
+5. タイトルを整形
+6. 記事画像を取得
+7. WordPress に投稿
+8. 条件を満たせば公開・X投稿
+
+補助スクリプトは次です。
+
+- [src/server.py](src/server.py): Cloud Run の `/run` エンドポイント
+- [src/wp_client.py](src/wp_client.py): WordPress REST API クライアント
+- [src/x_post_generator.py](src/x_post_generator.py): X 投稿文生成
+- [src/wp_draft_creator.py](src/wp_draft_creator.py): 手動で X URL から下書き作成
+- [src/x_api_client.py](src/x_api_client.py): X API 投稿 / 収集
+- [src/manual_post.py](src/manual_post.py): 手動記事投稿
+
+## ソースの考え方
+
+`config/rss_sources.json` には 2 種類あります。
+
+- `news`: 新聞社・メディアの RSS
+- `social_news`: 球団公式や記者 X を RSSHub 経由で取得
+
+今の方針はこれです。
+
+- `news` は本文材料として比較的安定
+- `social_news` は速報検知として有効
+- ただし `social_news` はノイズが多いので、URL・ハッシュタグ・媒体名混入や動画プロモは落とす
+- 記事品質を見ている間は `draft-only` で回す
+
+## ディレクトリ
+
+```text
+.
+├── config/
+│   ├── keywords.json
+│   └── rss_sources.json
+├── data/
+├── src/
+│   ├── manual_post.py
+│   ├── rss_fetcher.py
+│   ├── server.py
+│   ├── wp_client.py
+│   ├── wp_draft_creator.py
+│   ├── x_api_client.py
+│   └── x_post_generator.py
+├── tests/
+├── Dockerfile
+├── requirements.txt
+└── .env.example
 ```
-RSS フィード / NPB公式
-        ↓
-  rss_fetcher.py
-  ├─ 試合日チェック（オフ日スキップ）
-  ├─ 重複除去（GCS: yoshilover-history）
-  ├─ 記事画像スクレイピング（最大3枚）
-  └─ Grok Responses API
-       ├─ Web検索（最新ニュース）
-       ├─ X検索（当日ファン反応 15件）
-       └─ 記事生成（要約・記録・感想）
-              ↓
-        wp_client.py
-        WordPress REST API
-              ↓
-       yoshilover.com
-              ↓
-    x_post_generator.py
-        X（Twitter）投稿
-```
 
-## 記事レイアウト
+## 必要な環境変数
 
-1. グラデーションバナー（媒体名バッジ＋記事タイトル・巨人カラー紺→赤）
-2. OGP写真（ソース記事から1枚目）
-3. 今日のジャイアンツ要約（3〜4文・ですます調）
-4. 📊 今日の記録（箇条書き 8〜12項目）
-5. 💬 コメントボタン①（小さめ・アウトライン）
-6. 💬 ファンの声（Xより）（Xカード形式・15件・感情多様）
-7. ⚾ 今日の感想（300文字・ですます調）+ 記事内画像 2〜3枚
-8. 💬 コメントボタン②（オレンジ塗り #F5811F）
-9. 出典（NPB公式・スポーツナビ・元記事）
-
-## 主な機能
-
-- **オフ日スキップ**: NPB公式の日程ページを確認し、巨人戦がない日は記事生成をスキップ
-- **重複除去**: GCS バケット `yoshilover-history` で処理済み URL を管理
-- **画像スクレイピング**: ソース記事から OGP 画像＋本文画像を最大3枚取得
-- **Grok AI**: Web検索＋X検索（当日のみ）でリアルタイム情報を取得
-- **ファン反応15件**: 多様な感情（喜び・驚き・批判・期待など）を15件収集
-- **ニックネーム検索**: 芽ネギ・大王・たけまる・マタ など巨人選手のニックネームでX検索
-
-## 環境変数（`.env`）
+最低限これが必要です。
 
 ```env
 WP_URL=https://yoshilover.com
-WP_USER=your_wp_username
-WP_APP_PASSWORD=xxxx xxxx xxxx xxxx xxxx xxxx
-GROK_API_KEY=xai-xxxxxxxxxxxxxxxx
-X_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxx
-X_API_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxx
-X_ACCESS_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxx
-X_ACCESS_TOKEN_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxx
-GCS_BUCKET=yoshilover-history
+WP_USER=
+WP_APP_PASSWORD=
 RUN_SECRET=change-this-to-a-long-random-secret
 RUN_AUTH_MODE=secret
-RUN_OIDC_SERVICE_ACCOUNT=
-RUN_OIDC_AUDIENCE=
-ENABLE_TEST_GEMINI=0
+RUN_DRAFT_ONLY=0
 LOW_COST_MODE=1
 STRICT_FACT_MODE=1
-AI_ENABLED_CATEGORIES=試合速報,選手情報,首脳陣
 ARTICLE_AI_MODE=gemini
 OFFDAY_ARTICLE_AI_MODE=none
-X_POST_AI_MODE=none
-X_POST_AI_CATEGORIES=試合速報,選手情報,首脳陣
-X_POST_DAILY_LIMIT=10
-FAN_REACTION_LIMIT=7
+PUBLISH_REQUIRE_IMAGE=1
 AUTO_TWEET_ENABLED=1
-AUTO_TWEET_CATEGORIES=試合速報,選手情報,首脳陣,ドラフト・育成
 AUTO_TWEET_REQUIRE_IMAGE=1
 ENABLE_X_COLLECT=0
 ```
 
-ローカルや単純な HTTP 実行では `RUN_AUTH_MODE=secret` と `RUN_SECRET` を使います。Cloud Run 本番は `RUN_AUTH_MODE=cloud_run` にして、`RUN_OIDC_SERVICE_ACCOUNT` と `RUN_OIDC_AUDIENCE` で Cloud Scheduler の OIDC トークンを検証します。`RUN_DRAFT_ONLY=1` を入れると Cloud Run の `/run` は公開せず下書き作成だけを行います。`/test-gemini` はデフォルトで無効で、使う場合だけ `ENABLE_TEST_GEMINI=1` を設定してください。
-`LOW_COST_MODE=1` では、既定で `試合速報 / 選手情報 / 首脳陣` だけ記事AIを有効にし、オフ日は記事AIを止め、X投稿文もテンプレート運用に落とします。`STRICT_FACT_MODE=1` を有効にすると、元記事タイトルと要約にない数字・スコア・出典っぽい記述を検出した場合に、安全な定型記事へ自動フォールバックします。`ENABLE_X_COLLECT=0` の既定では、X API の `collect` 検索を実行せず、read/search 課金を避けます。
+Cloud Run では追加で次を使います。
 
-## セットアップ
-
-```bash
-# 依存パッケージ
-pip install -r requirements.txt
-
-# ローカル実行
-python3 src/rss_fetcher.py
-
-# ドライラン（WP投稿なし）
-python3 src/rss_fetcher.py --dry-run
-
-# WordPress 品質確認用: 下書きだけ作って記事AIを Grok に固定
-python3 src/rss_fetcher.py --limit 1 --draft-only --article-ai-mode grok
+```env
+RUN_AUTH_MODE=cloud_run
+RUN_OIDC_SERVICE_ACCOUNT=
+RUN_OIDC_AUDIENCE=
+GCS_BUCKET=yoshilover-history
 ```
 
-## GCP / Cloud Run デプロイ
+補足:
+
+- `RUN_DRAFT_ONLY=1`: Scheduler 実行で公開せず下書きだけ作る
+- `PUBLISH_REQUIRE_IMAGE=1`: アイキャッチが取れない記事は公開しない
+- `AUTO_TWEET_REQUIRE_IMAGE=1`: アイキャッチがない記事は X 自動投稿しない
+- `ENABLE_X_COLLECT=0`: X API の収集を止め、read/search 課金を抑える
+- `LOW_COST_MODE=1`: AI 呼び出しをかなり絞る
+
+## ローカル実行
+
+依存インストール:
 
 ```bash
-# Docker ビルド & Cloud Run デプロイ
-gcloud builds submit --tag asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/fetcher
+pip install -r requirements.txt
+```
+
+通常実行:
+
+```bash
+python3 src/rss_fetcher.py
+```
+
+公開せず結果だけ見る:
+
+```bash
+python3 src/rss_fetcher.py --dry-run
+```
+
+下書きだけ作る:
+
+```bash
+python3 src/rss_fetcher.py --draft-only
+```
+
+件数を絞って確認:
+
+```bash
+python3 src/rss_fetcher.py --limit 3 --draft-only
+```
+
+X URL から手動で下書きを作る:
+
+```bash
+python3 src/wp_draft_creator.py --url https://x.com/... --category 試合速報
+```
+
+WP 投稿から X 文案を作る:
+
+```bash
+python3 src/x_post_generator.py --post-id 123
+```
+
+## テスト
+
+日常的に見るべきものはこれで十分です。
+
+```bash
+python3 -m unittest tests.test_server tests.test_yahoo_realtime tests.test_wp_client tests.test_build_news_block
+python3 -m py_compile src/server.py src/rss_fetcher.py src/wp_client.py src/x_post_generator.py
+```
+
+## Cloud Run
+
+Cloud Run の `POST /run` は [src/server.py](src/server.py) から [src/rss_fetcher.py](src/rss_fetcher.py) を実行します。
+
+- `RUN_DRAFT_ONLY=0`: 通常モード
+- `RUN_DRAFT_ONLY=1`: `rss_fetcher.py --draft-only`
+
+認証モード:
+
+- `RUN_AUTH_MODE=secret`: `X-Secret` ヘッダを使う
+- `RUN_AUTH_MODE=cloud_run`: OIDC トークンを検証する
+
+本番では `cloud_run` を使う想定です。
+
+## デプロイ例
+
+```bash
+gcloud builds submit \
+  --tag asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/fetcher:local-test
+
 gcloud run deploy yoshilover-fetcher \
-  --image asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/fetcher \
+  --image asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/fetcher:local-test \
   --region asia-northeast1 \
-  --set-env-vars WP_URL=https://yoshilover.com,WP_USER=your_wp_username,GCS_BUCKET=yoshilover-history,RUN_AUTH_MODE=cloud_run,RUN_DRAFT_ONLY=0,RUN_OIDC_SERVICE_ACCOUNT=seo-web-runtime@baseballsite.iam.gserviceaccount.com,RUN_OIDC_AUDIENCE=https://yoshilover-fetcher-487178857517.asia-northeast1.run.app/run,ENABLE_TEST_GEMINI=0,LOW_COST_MODE=1,STRICT_FACT_MODE=1,AI_ENABLED_CATEGORIES=試合速報\\,選手情報\\,首脳陣,ARTICLE_AI_MODE=gemini,OFFDAY_ARTICLE_AI_MODE=none,GEMINI_STRICT_MAX_ATTEMPTS=1,GEMINI_GROUNDED_MAX_ATTEMPTS=1,X_POST_AI_MODE=none,X_POST_AI_CATEGORIES=試合速報\\,選手情報\\,首脳陣,X_POST_DAILY_LIMIT=10,FAN_REACTION_LIMIT=7,AUTO_TWEET_ENABLED=1,AUTO_TWEET_CATEGORIES=試合速報\\,選手情報\\,首脳陣\\,ドラフト・育成,AUTO_TWEET_REQUIRE_IMAGE=1 \
+  --set-env-vars WP_URL=https://yoshilover.com,WP_USER=your_wp_username,GCS_BUCKET=yoshilover-history,RUN_AUTH_MODE=cloud_run,RUN_DRAFT_ONLY=1,RUN_OIDC_SERVICE_ACCOUNT=your-service-account,RUN_OIDC_AUDIENCE=https://your-service-url/run,LOW_COST_MODE=1,STRICT_FACT_MODE=1,ARTICLE_AI_MODE=gemini,OFFDAY_ARTICLE_AI_MODE=none,PUBLISH_REQUIRE_IMAGE=1,AUTO_TWEET_ENABLED=1,AUTO_TWEET_REQUIRE_IMAGE=1,ENABLE_X_COLLECT=0 \
   --set-secrets WP_APP_PASSWORD=yoshilover-wp-app-password:latest,RUN_SECRET=yoshilover-run-secret:latest,GEMINI_API_KEY=gemini-api-key:latest,GROK_API_KEY=yoshilover-grok-api-key:latest,X_API_KEY=yoshilover-x-api-key:latest,X_API_SECRET=yoshilover-x-api-secret:latest,X_ACCESS_TOKEN=yoshilover-x-access-token:latest,X_ACCESS_TOKEN_SECRET=yoshilover-x-access-token-secret:latest
 ```
 
-Cloud Run では `.env` をそのまま `--set-env-vars` に流さず、秘密情報は必ず Secret Manager 経由で渡します。
-Cloud Scheduler から `/run` を叩くときは、`oidc-service-account-email` と `oidc-token-audience` を付けて Cloud Run IAM で認証します。
+## 今の品質課題
 
-### Cloud Scheduler ジョブ
+今見ているポイントはこの3つです。
 
-| ジョブ名 | スケジュール | 用途 |
-|---------|-------------|------|
-| giants-weekday-night | 平日 18:00〜23:30（30分ごと） | 平日ナイター対応 |
-| giants-weekend-day   | 土日 11:00〜17:30（30分ごと） | デーゲーム対応 |
-| giants-weekend-night | 土日 20:00〜23:30（30分ごと） | 土日ナイター対応 |
+- `social_news` のノイズをどこまで絞るか
+- `試合速報` のテンプレ記事をどこまで減らすか
+- コメント記事 / 1プレー深掘り / 起用整理の精度をどう上げるか
 
-## RSSソース
-
-- スポーツ報知 / 日刊スポーツ / サンスポ / 東スポ
-- ベースボールキング / Full-Count / 産経
-- Google News（巨人・ジャイアンツ・読売）
-- RSSHub 経由 X アカウント（@TokyoGiants 等）
-
-## ディレクトリ構成
-
-```
-.
-├── Dockerfile
-├── requirements.txt
-├── publish_post.sh
-├── src/
-│   ├── rss_fetcher.py       # メイン記事生成
-│   ├── server.py            # Cloud Run HTTP サーバー
-│   ├── x_post_generator.py  # X投稿生成
-│   ├── wp_client.py         # WordPress REST API クライアント
-│   └── wp_draft_creator.py  # 下書き作成ユーティリティ
-└── config/
-    ├── rss_sources.json     # RSSソース定義
-    └── keywords.json        # キーワード設定
-```
-
-## Grok API 仕様
-
-- エンドポイント: `https://api.x.ai/v1/responses`
-- モデル: `grok-4-1-fast-reasoning`
-- ツール: `web_search` + `x_search`（当日のみ `from_date=today`）
-- レスポンス解析: `output[]` → `type=="message"` → `content[0].output_text.text`
+そのため、しばらくは `draft-only` で回し、下書きを見てソースと記事型を選別する運用にしています。

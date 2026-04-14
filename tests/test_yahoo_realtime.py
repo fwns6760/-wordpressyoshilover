@@ -224,6 +224,56 @@ class YahooFanReactionQueryTests(unittest.TestCase):
 
 
 class GameDayCheckTests(unittest.TestCase):
+    def test_extract_giants_game_from_team_schedule_html_uses_today_package(self):
+        html = """
+        <div class="bb-calendarTable__package bb-calendarTable__package--today">
+          <div class="bb-calendarTable__wrap">
+            <p class="bb-calendarTable__date">14</p>
+            <div class="bb-calendarTable__versusTeam">
+              <p class="bb-calendarTable__teamName">
+                <a href="/npb/teams/5/top" class="bb-calendarTable__versusLogo bb-calendarTable__versusLogo--npbTeam5">阪神</a>
+              </p>
+            </div>
+            <a class="bb-calendarTable__status" href="https://baseball.yahoo.co.jp/npb/game/2021038712/index">見どころ</a>
+            <p class="bb-calendarTable__venue">甲子園</p>
+          </div>
+        </div>
+        """
+
+        game_id, opponent, venue = rss_fetcher._extract_giants_game_from_yahoo_team_schedule_html(html)
+
+        self.assertEqual(game_id, "2021038712")
+        self.assertEqual(opponent, "阪神")
+        self.assertEqual(venue, "甲子園")
+
+    def test_extract_giants_game_from_month_schedule_html_uses_today_rows(self):
+        html = """
+        <tbody>
+          <tr class="bb-scheduleTable__row bb-scheduleTable__row--today">
+            <td class="bb-scheduleTable__data">
+              <div class="bb-scheduleTable__grid">
+                <div class="bb-scheduleTable__home">
+                  <div class="bb-scheduleTable__homeName"><a href="/npb/teams/5/index">阪神</a></div>
+                </div>
+                <div class="bb-scheduleTable__info">
+                  <p class="bb-scheduleTable__status"><a href="/npb/game/2021038712/index">見どころ</a></p>
+                </div>
+                <div class="bb-scheduleTable__away">
+                  <div class="bb-scheduleTable__awayName"><a href="/npb/teams/1/index">巨人</a></div>
+                </div>
+              </div>
+            </td>
+            <td class="bb-scheduleTable__data bb-scheduleTable__data--stadium">甲子園</td>
+          </tr>
+        </tbody>
+        """
+
+        game_id, opponent, venue = rss_fetcher._extract_giants_game_from_yahoo_month_schedule_html(html)
+
+        self.assertEqual(game_id, "2021038712")
+        self.assertEqual(opponent, "阪神")
+        self.assertEqual(venue, "甲子園")
+
     def test_check_giants_game_today_fails_closed_when_all_sources_fail(self):
         with patch.object(rss_fetcher, "_check_giants_game_today_yahoo", return_value=(False, "", "")):
             with patch("urllib.request.urlopen", side_effect=OSError("network down")):
@@ -232,6 +282,194 @@ class GameDayCheckTests(unittest.TestCase):
         self.assertFalse(has_game)
         self.assertEqual(opponent, "")
         self.assertEqual(venue, "")
+
+    def test_build_yahoo_lineup_candidate_creates_lineup_entry(self):
+        rows = [
+            {"order": "1", "position": "中", "name": "丸佳浩", "avg": ".281", "hr": "3", "rbi": "12", "sb": "2"},
+            {"order": "2", "position": "二", "name": "吉川尚輝", "avg": ".298", "hr": "1", "rbi": "8", "sb": "4"},
+            {"order": "3", "position": "左", "name": "キャベッジ", "avg": ".301", "hr": "4", "rbi": "15", "sb": "1"},
+            {"order": "4", "position": "一", "name": "岡田悠希", "avg": ".275", "hr": "5", "rbi": "18", "sb": "0"},
+        ]
+
+        with patch.object(rss_fetcher, "_find_today_giants_game_info_yahoo", return_value=("2021038712", "阪神", "甲子園")):
+            candidate = rss_fetcher._build_yahoo_lineup_candidate("阪神", "甲子園", rows, 99)
+
+        self.assertEqual(candidate["category"], "試合速報")
+        self.assertEqual(candidate["source_name"], "Yahoo!プロ野球 スタメン")
+        self.assertTrue(candidate["is_synthetic_lineup"])
+        self.assertIn("スタメン", candidate["title"])
+        self.assertIn("1番丸佳浩", candidate["title"])
+        self.assertIn("巨人が阪神戦のスタメンを発表した。", candidate["summary"])
+        self.assertEqual(candidate["post_url"], "https://baseball.yahoo.co.jp/npb/game/2021038712/top")
+        self.assertEqual(candidate["history_urls"], ["https://baseball.yahoo.co.jp/npb/game/2021038712/top#lineup"])
+
+    def test_parse_yahoo_game_status_detects_final_score(self):
+        html = """
+        <div id="async-gameDetail" class="bb-gameDetail">
+          <div class="bb-gameTeam">
+            <span class="bb-gameTeam__name">巨人</span>
+          </div>
+          <div class="bb-gameTeam__score">
+            <p class="bb-gameCard__detail">
+              <span class="bb-gameTeam__homeScore">2</span>
+              <span class="bb-gameCard__time">-</span>
+              <span class="bb-gameTeam__awayScore">0</span>
+            </p>
+            <p class="bb-gameCard__state">
+              <span>試合終了</span>
+            </p>
+          </div>
+          <div class="bb-gameTeam">
+            <span class="bb-gameTeam__name">ヤクルト</span>
+          </div>
+        </div>
+        <table id="ing_brd" class="bb-gameScoreTable">
+          <tbody>
+            <tr class="bb-gameScoreTable__row">
+              <td class="bb-gameScoreTable__data bb-gameScoreTable__data--team">巨人</td>
+              <td class="bb-gameScoreTable__data">0</td>
+              <td class="bb-gameScoreTable__data">2</td>
+              <td class="bb-gameScoreTable__total">2</td>
+              <td class="bb-gameScoreTable__total bb-gameScoreTable__data--hits">11</td>
+              <td class="bb-gameScoreTable__total bb-gameScoreTable__data--loss">0</td>
+            </tr>
+            <tr class="bb-gameScoreTable__row">
+              <td class="bb-gameScoreTable__data bb-gameScoreTable__data--team">ヤクルト</td>
+              <td class="bb-gameScoreTable__data">0</td>
+              <td class="bb-gameScoreTable__data">0</td>
+              <td class="bb-gameScoreTable__total">0</td>
+              <td class="bb-gameScoreTable__total bb-gameScoreTable__data--hits">2</td>
+              <td class="bb-gameScoreTable__total bb-gameScoreTable__data--loss">0</td>
+            </tr>
+          </tbody>
+        </table>
+        """
+
+        status = rss_fetcher._parse_yahoo_game_status(html)
+
+        self.assertTrue(status["ended"])
+        self.assertEqual(status["state"], "試合終了")
+        self.assertEqual(status["opponent"], "ヤクルト")
+        self.assertEqual(status["giants_score"], "2")
+        self.assertEqual(status["opponent_score"], "0")
+        self.assertEqual(status["giants_hits"], "11")
+        self.assertEqual(status["opponent_hits"], "2")
+
+    def test_build_yahoo_postgame_candidate_creates_postgame_entry(self):
+        game_status = {
+            "ended": True,
+            "opponent": "ヤクルト",
+            "giants_score": "0",
+            "opponent_score": "2",
+            "giants_hits": "2",
+            "opponent_hits": "11",
+            "giants_errors": "0",
+            "opponent_errors": "0",
+            "post_url": "https://baseball.yahoo.co.jp/npb/game/2021038704/top",
+            "game_id": "2021038704",
+        }
+
+        candidate = rss_fetcher._build_yahoo_postgame_candidate("ヤクルト", "神宮", game_status, 120)
+
+        self.assertEqual(candidate["category"], "試合速報")
+        self.assertEqual(candidate["source_name"], "Yahoo!プロ野球 試合結果")
+        self.assertTrue(candidate["is_synthetic_postgame"])
+        self.assertIn("0-2", candidate["title"])
+        self.assertIn("敗戦", candidate["title"])
+        self.assertIn("巨人がヤクルトに0-2で敗れた。", candidate["summary"])
+        self.assertEqual(candidate["history_urls"], ["https://baseball.yahoo.co.jp/npb/game/2021038704/top#postgame"])
+
+    def test_detect_live_update_reason_prefers_tie_and_lead_change(self):
+        current = {"ended": False, "giants_score": "2", "opponent_score": "2"}
+        previous = {"giants_score": "1", "opponent_score": "2"}
+        self.assertEqual(rss_fetcher._detect_live_update_reason(current, previous), "tie_game")
+
+        current2 = {"ended": False, "giants_score": "3", "opponent_score": "2"}
+        previous2 = {"giants_score": "2", "opponent_score": "2"}
+        self.assertEqual(rss_fetcher._detect_live_update_reason(current2, previous2), "lead_change")
+
+    def test_build_yahoo_live_update_candidate_creates_midgame_entry(self):
+        game_status = {
+            "ended": False,
+            "state": "6回表",
+            "opponent": "阪神",
+            "giants_score": "2",
+            "opponent_score": "2",
+            "giants_hits": "7",
+            "opponent_hits": "5",
+            "giants_errors": "0",
+            "opponent_errors": "1",
+            "post_url": "https://baseball.yahoo.co.jp/npb/game/2021038712/top",
+            "game_id": "2021038712",
+        }
+
+        candidate = rss_fetcher._build_yahoo_live_update_candidate("阪神", "甲子園", game_status, 130, "tie_game")
+
+        self.assertEqual(candidate["category"], "試合速報")
+        self.assertEqual(candidate["source_name"], "Yahoo!プロ野球 途中経過")
+        self.assertTrue(candidate["is_synthetic_live_update"])
+        self.assertIn("同点", candidate["title"])
+        self.assertIn("6回表", candidate["summary"])
+        self.assertEqual(candidate["history_urls"], ["https://baseball.yahoo.co.jp/npb/game/2021038712/top#live-2-2"])
+
+    def test_has_primary_lineup_candidate_detects_existing_rss_lineup(self):
+        candidates = [
+            {
+                "source_type": "news",
+                "category": "試合速報",
+                "title": "【巨人】今日のスタメン発表 1番丸 4番岡田",
+                "summary": "巨人が阪神戦のスタメンを発表した。",
+                "entry_has_game": True,
+            }
+        ]
+
+        self.assertTrue(rss_fetcher._has_primary_lineup_candidate(candidates))
+
+    def test_has_primary_postgame_candidate_detects_existing_rss_result(self):
+        candidates = [
+            {
+                "source_type": "news",
+                "category": "試合速報",
+                "title": "【巨人】ヤクルトに0-2で敗戦",
+                "summary": "巨人がヤクルトに0-2で敗れた。",
+                "entry_has_game": True,
+            }
+        ]
+
+        self.assertTrue(rss_fetcher._has_primary_postgame_candidate(candidates))
+
+    def test_has_primary_live_candidate_detects_existing_live_update(self):
+        candidates = [
+            {
+                "source_type": "social_news",
+                "category": "試合速報",
+                "title": "【巨人途中経過】6回表 巨人2-2阪神と同点",
+                "summary": "巨人が6回表に2-2の同点に持ち込んだ。",
+                "entry_has_game": True,
+            }
+        ]
+
+        self.assertTrue(rss_fetcher._has_primary_live_candidate(candidates))
+
+    def test_authoritative_social_entry_worthy_for_manager_quote(self):
+        self.assertTrue(
+            rss_fetcher._is_authoritative_social_entry_worthy(
+                "【巨人】阿部監督「結果残せば使います」",
+                "若手起用と競争を促すコメント",
+                "首脳陣",
+                "normal",
+            )
+        )
+
+    def test_authoritative_social_entry_rejects_weak_promotional_post(self):
+        self.assertFalse(
+            rss_fetcher._is_authoritative_social_entry_worthy(
+                "本日も応援よろしくお願いします",
+                "グッズ情報はこちら",
+                "球団情報",
+                "normal",
+            )
+        )
 
 
 if __name__ == "__main__":

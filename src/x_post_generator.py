@@ -356,6 +356,13 @@ def _looks_like_postgame_post(title: str, summary: str) -> bool:
     return any(keyword in text for keyword in ("勝利", "敗れ", "敗戦", "黒星", "白星", "引き分け", "決勝打", "サヨナラ", "完封負け", "0封負け"))
 
 
+def _looks_like_live_update_post(title: str, summary: str) -> bool:
+    text = f"{title} {summary}"
+    if _looks_like_lineup_post(title, summary) or _looks_like_postgame_post(title, summary):
+        return False
+    return any(keyword in text for keyword in ("途中経過", "回表", "回裏", "勝ち越し", "同点", "逆転"))
+
+
 def _normalize_average(value: str) -> str:
     clean = (value or "").replace("．", ".").strip()
     if clean.startswith("."):
@@ -424,6 +431,66 @@ def _extract_lineup_stat_rows(text: str, max_rows: int = 2) -> list[dict]:
     return rows
 
 
+def _player_name_to_hashtag(name: str) -> str:
+    normalized = (name or "").replace(" ", "")
+    for key, tag in PLAYER_TAGS.items():
+        if key in normalized:
+            return tag
+    return f"#{normalized}" if normalized else ""
+
+
+def _extract_data_obp_rows_from_html(content_html: str, max_rows: int | None = None) -> list[dict]:
+    rows = []
+    for row_html in re.findall(r"<tr[^>]*>(.*?)</tr>", content_html or "", re.IGNORECASE | re.DOTALL):
+        cells = [
+            re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", cell_html)).strip()
+            for cell_html in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row_html, re.IGNORECASE | re.DOTALL)
+        ]
+        if len(cells) < 6:
+            continue
+        order = cells[0]
+        name = cells[1]
+        if not re.fullmatch(r"\d+", order):
+            continue
+        obp = _normalize_average(cells[5])
+        rows.append({"order": order, "name": name, "obp": obp})
+        if max_rows is not None and len(rows) >= max_rows:
+            break
+    return rows
+
+
+def _build_data_obp_post(title: str, url: str, content_html: str = "") -> str:
+    rows = _extract_data_obp_rows_from_html(content_html)
+    if not rows:
+        base_tags = " ".join(REQUIRED_TAGS)
+        return f"{_clean_title_for_x(title)}\n\n数字で見ると、打線の見え方が少し変わります。\nこの並び、どう見ますか？\n\n{url}\n{base_tags}"
+
+    top_five = rows[:5]
+    leader = top_five[0]
+    sakamoto = next((row for row in rows if "坂本" in row["name"]), None)
+    tags = list(REQUIRED_TAGS)
+    for row in top_five:
+        tag = _player_name_to_hashtag(row["name"])
+        if tag:
+            tags.append(tag)
+    hashtag_str = " ".join(dict.fromkeys(tags))
+    ranking_lines = [f"{row['name']} {row['obp']}" for row in top_five]
+    ranking_block = "\n".join(ranking_lines)
+    sakamoto_line = ""
+    if sakamoto and sakamoto["order"] not in {row["order"] for row in top_five}:
+        sakamoto_line = f"\n坂本勇人 {sakamoto['order']}位 {sakamoto['obp']}"
+
+    return (
+        "阿部監督は打線をどう組むのか。\n\n"
+        "出塁率上位5人\n"
+        f"{ranking_block}"
+        f"{sakamoto_line}\n"
+        "NPB調べ\n"
+        "この並び、どう見ますか？\n\n"
+        f"{url}\n{hashtag_str}"
+    )
+
+
 def _build_lineup_post(title: str, url: str, summary: str, hashtag_str: str, content_html: str = "") -> str:
     rows = _extract_lineup_stat_rows_from_html(content_html, max_rows=2) if content_html else []
     if not rows:
@@ -486,6 +553,32 @@ def _build_postgame_post(title: str, url: str, summary: str, hashtag_str: str) -
     return f"{result_line}\n\n{angle}\n{question}\n\n{url}\n{hashtag_str}"
 
 
+def _live_update_state(title: str, summary: str) -> str:
+    match = re.search(r"(\d+回[表裏]?)", f"{title} {summary}")
+    return match.group(1) if match else "途中経過"
+
+
+def _build_live_update_post(title: str, url: str, summary: str, hashtag_str: str) -> str:
+    score = detect_score(title + " " + summary)
+    state = _live_update_state(title, summary)
+    text = f"{title} {summary}"
+
+    if "逆転" in text:
+        lead = f"巨人、{state}に{score}で逆転を許しました。" if score else f"巨人、{state}に逆転を許しました。"
+        angle = "ここからベンチがどう立て直すかです。"
+    elif "勝ち越し" in text:
+        lead = f"巨人、{state}に{score}で勝ち越し。" if score else f"巨人、{state}に勝ち越し。"
+        angle = "このあとどう逃げ切るかが気になります。"
+    elif "同点" in text:
+        lead = f"巨人、{state}に{score}の同点。" if score else f"巨人、{state}に同点。"
+        angle = "次の1点をどちらが取るかです。"
+    else:
+        lead = f"巨人、{state}で{score}。" if score else f"巨人、{state}の途中経過。"
+        angle = "ここから流れがどちらへ傾くかです。"
+
+    return f"{lead}\n\n{angle}\nこの流れ、どう見ますか？\n\n{url}\n{hashtag_str}"
+
+
 def _player_post_angle(title: str, summary: str) -> str:
     text = f"{title} {summary}"
     if any(keyword in text for keyword in ("フォーム", "改造", "投げ方", "助言")):
@@ -527,6 +620,44 @@ def _build_player_post(title: str, url: str, summary: str, hashtag_str: str) -> 
 
     angle = _player_post_angle(title, summary)
     question = _player_post_question(title, summary, player_name or "この話題")
+    return f"{lead}\n\n{angle}\n{question}\n\n{url}\n{hashtag_str}"
+
+
+def _farm_post_angle(title: str, summary: str) -> str:
+    text = f"{title} {summary}"
+    if any(keyword in text for keyword in ("昇格", "支配下", "合流")):
+        return "この動き、一軍の入れ替えにも関わってきそうです。"
+    if any(keyword in text for keyword in ("本塁打", "猛打賞", "マルチ", "適時打")):
+        return "二軍での打席内容、昇格候補としても気になります。"
+    if any(keyword in text for keyword in ("好投", "先発", "無失点", "三振")):
+        return "二軍での投球内容、次の昇格候補として見たいです。"
+    if any(keyword in text for keyword in ("スタメン", "打順", "オーダー")):
+        return "二軍の並びも、一軍昇格のヒントになります。"
+    return "二軍の動きも、次の一軍を考える材料になります。"
+
+
+def _farm_post_question(title: str, summary: str) -> str:
+    text = f"{title} {summary}"
+    if any(keyword in text for keyword in ("昇格", "支配下", "合流")):
+        return "次に上がるなら誰を見たいですか？"
+    if any(keyword in text for keyword in ("本塁打", "猛打賞", "マルチ", "適時打", "好投", "無失点")):
+        return "この2軍情報、どう見ますか？"
+    return "この2軍の動き、どう見ますか？"
+
+
+def _build_farm_post(title: str, url: str, summary: str, hashtag_str: str) -> str:
+    player_tag = _detect_primary_player_tag(title + " " + summary)
+    player_name = player_tag.lstrip("#") if player_tag else ""
+    quote = _extract_short_quote(f"{title}\n{summary}")
+    if player_name and quote:
+        lead = f"{player_name}「{quote}」"
+    elif player_name:
+        lead = f"{player_name}の2軍での動き、気になります。"
+    else:
+        lead = _clean_title_for_x(title, max_chars=30)
+
+    angle = _farm_post_angle(title, summary)
+    question = _farm_post_question(title, summary)
     return f"{lead}\n\n{angle}\n{question}\n\n{url}\n{hashtag_str}"
 
 
@@ -660,6 +791,8 @@ def build_post(title: str, url: str, category: str, summary: str = "", content_h
         postgame_tag = _detect_earliest_player_tag(title + " " + summary)
         if postgame_tag:
             tags.append(postgame_tag)
+    elif category == "ドラフト・育成":
+        tags += player_tags[:1]
     else:
         tags += CATEGORY_TAGS.get(category, ["#プロ野球"])
         tags += player_tags
@@ -683,6 +816,13 @@ def build_post(title: str, url: str, category: str, summary: str = "", content_h
         lineup_tags = list(REQUIRED_TAGS) + player_tags[:2]
         lineup_hashtag_str = " ".join(dict.fromkeys(lineup_tags))
         return _build_lineup_post(title, url, summary, lineup_hashtag_str, content_html=content_html)
+    if category == "試合速報" and _looks_like_live_update_post(title, summary):
+        live_tags = list(REQUIRED_TAGS)
+        live_tag = _detect_earliest_player_tag(title + " " + summary)
+        if live_tag:
+            live_tags.append(live_tag)
+        live_hashtag_str = " ".join(dict.fromkeys(live_tags))
+        return _build_live_update_post(title, url, summary, live_hashtag_str)
     if category == "試合速報" and _looks_like_postgame_post(title, summary):
         postgame_tags = list(REQUIRED_TAGS)
         postgame_tag = _detect_earliest_player_tag(title + " " + summary)
@@ -690,6 +830,14 @@ def build_post(title: str, url: str, category: str, summary: str = "", content_h
             postgame_tags.append(postgame_tag)
         postgame_hashtag_str = " ".join(dict.fromkeys(postgame_tags))
         return _build_postgame_post(title, url, summary, postgame_hashtag_str)
+    if category == "ドラフト・育成":
+        farm_tags = list(REQUIRED_TAGS)
+        if player_tags:
+            farm_tags.append(player_tags[0])
+        farm_hashtag_str = " ".join(dict.fromkeys(farm_tags))
+        return _build_farm_post(title, url, summary, farm_hashtag_str)
+    if category == "コラム" and ("出塁率" in title or "出塁率" in content_html):
+        return _build_data_obp_post(title, url, content_html=content_html)
 
     # スコア検出
     score = detect_score(title)

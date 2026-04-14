@@ -15,6 +15,8 @@ import os
 import sys
 import json
 import argparse
+import re
+from datetime import datetime, timedelta, timezone
 
 # vendorディレクトリをパスに追加（サーバー環境用）
 _vendor = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'vendor')
@@ -43,11 +45,51 @@ class WPClient:
         self.api     = f"{self.base_url}/wp-json/wp/v2"
         self.headers = {"Content-Type": "application/json"}
 
+    @staticmethod
+    def _normalize_title(title: str) -> str:
+        return re.sub(r"[\s　【】「」『』〔〕（）()・\\/_-]", "", (title or "")).lower()
+
+    def find_recent_post_by_title(self, title: str, within_hours: int = 48) -> dict | None:
+        """
+        同タイトルの直近投稿を返す。
+        単発スクリプトの再送や確認失敗時の二重作成を防ぐために使う。
+        """
+        normalized = self._normalize_title(title)
+        if not normalized or len(normalized) < 6:
+            return None
+
+        after = (datetime.now(timezone.utc) - timedelta(hours=within_hours)).isoformat()
+        resp = requests.get(
+            f"{self.api}/posts",
+            params={
+                "search": title[:40],
+                "per_page": 20,
+                "status": "any",
+                "context": "edit",
+                "after": after,
+                "_fields": "id,date,title,status",
+            },
+            auth=self.auth,
+            timeout=30,
+        )
+        self._raise_for_status(resp, "既存記事検索")
+        for post in resp.json():
+            rendered = (post.get("title") or {}).get("raw") or (post.get("title") or {}).get("rendered") or ""
+            if self._normalize_title(rendered) == normalized:
+                return post
+        return None
+
     # ------------------------------------------------------------------
     # 記事投稿（status指定可）
     # ------------------------------------------------------------------
     def create_post(self, title: str, content: str, categories: list = None,
                     status: str = "publish", featured_media: int = None) -> int:
+        existing = self.find_recent_post_by_title(title)
+        if existing:
+            post_id = existing["id"]
+            print(f"[WP] 既存記事を再利用 post_id={post_id} title={title!r}")
+            return post_id
+
         payload = {
             "title":   title,
             "content": content,
@@ -121,6 +163,12 @@ class WPClient:
         Returns:
             作成された投稿の post_id (int)
         """
+        existing = self.find_recent_post_by_title(title)
+        if existing:
+            post_id = existing["id"]
+            print(f"[WP] 既存下書き/記事を再利用 post_id={post_id} title={title!r}")
+            return post_id
+
         payload = {
             "title":   title,
             "content": content,

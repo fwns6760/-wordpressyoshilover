@@ -409,3 +409,229 @@ SESSION-LOG-2026-04-14.md を読んで再開して。
   - `tests/test_x_api_client.py` を追加
   - `python3 -m unittest tests.test_x_api_client tests.test_x_post_generator tests.test_cost_modes`
     - `22 tests OK`
+
+### 7. Cloud Scheduler 再編成
+
+- 汎用の毎時ジョブ `yoshilover-fetcher-job` は `PAUSED`
+- 平日 daytime
+  - `giants-weekday-daytime`: `0 9-16 * * 1-5`
+- 平日 試合前後
+  - `giants-weekday-pre`: `0,30 17 * * 1-5`
+  - `giants-weekday-post`: `0,30 18-23 * * 1-5`
+- 平日 スタメン高速取得
+  - `giants-weekday-lineup-a`: `50 16 * * 1-5`
+  - `giants-weekday-lineup-b`: `10,20,40,50 17 * * 1-5`
+- 土日 既存枠
+  - `giants-weekend-pre`: `0,30 11-13 * * 0,6`
+  - `giants-weekend-post`: `0,30 16,17 * * 0,6`
+  - `giants-weekend-eve`: `0,30 20-22 * * 0,6`
+- 土日 スタメン高速取得
+  - `giants-weekend-lineup-day-a`: `50 12 * * 0,6`
+  - `giants-weekend-lineup-day-b`: `10,20,40,50 13 * * 0,6`
+  - `giants-weekend-lineup-late-a`: `50 15 * * 0,6`
+  - `giants-weekend-lineup-late-b`: `10,20,40,50 16,17 * * 0,6`
+
+### 8. 巨人データ記事の初回実装
+
+- `src/data_post_generator.py` を追加
+  - 初回テーマは `盗塁阻止率`
+  - NPB リーダーズ `lf_csp2_c.html` を取得して、巨人目線の比較記事を生成
+  - `--dry-run` と `--publish` 対応
+- `tests/test_data_post_generator.py` を追加
+- 初回下書き
+  - `post_id=61938`
+  - タイトル: `巨人捕手の盗塁阻止率をデータで見る 岸田　行倫はセ2位スタート`
+
+### 9. 巨人データ記事の運用版を追加
+
+- 2本目として `出塁率` のデータ記事を追加
+  - `src/data_post_generator.py on-base`
+  - 記事 `61939` を公開
+  - タイトル: `巨人打線は打率だけで見ていいのか 出塁率で見ると泉口 友汰が先頭に立つ`
+- 仕様
+  - `10打席以上` に絞って巨人打線の出塁率一覧を表示
+  - 本文上部と末尾に `引用元` を明記
+  - 引用元は `NPB 個人打撃成績（読売ジャイアンツ）`
+  - URL: `https://npb.jp/bis/2026/stats/idb1_g.html`
+- X投稿もデータ記事専用型を追加
+  - `阿部監督は打線をどう組むのか。`
+  - `出塁率上位5人 + 坂本勇人は10位 + NPB調べ`
+  - 上位5人をハッシュタグ化
+  - 投稿済み: `https://x.com/i/web/status/2043964115539112393`
+- 今後の運用方針
+  - `速報記事` と別軸で `巨人データ記事` を継続追加する
+  - 次候補は `対左右成績`、`直近10試合`、`先発別援護点`
+  - 巨人ファン向けの独自記事として `yoshilover.com` に積み上げる
+
+### 10. 試合日判定の修正と本番反映
+
+- 症状
+  - `2026-04-14 17:20` 台の Cloud Run 実行で `本日の巨人戦なし → 選手・コラム記事モードで実行` になっていた
+  - 実際には `4/14 阪神 vs 巨人 @甲子園` の試合あり
+- 原因
+  - `src/rss_fetcher.py` の Yahoo 試合日判定が、`game_id.startswith(today)` のような古い前提に依存していた
+  - Yahoo の `game_id=2021038712` は日付先頭ではなく、今日の試合を落としていた
+- 修正
+  - Yahoo `teams/1/schedule/` の `bb-calendarTable__package--today` から `game_id / opponent / venue` を直接抽出
+  - Yahoo 月間日程の `bb-scheduleTable__row--today` からも同様に直接抽出
+  - `tests/test_yahoo_realtime.py` に回帰テストを追加
+- 確認
+  - ローカルで Yahoo HTML 保存版から `('2021038712', '阪神', '甲子園')` を取得確認
+  - `python3 -m unittest tests.test_yahoo_realtime` は `12 tests OK`
+  - Cloud Run を `codex-20260414-gamedayfix` で再デプロイ
+  - 新 revision: `yoshilover-fetcher-00076-brq`
+  - 反映後の本番ログで `本日の巨人戦あり vs 阪神 @甲子園` を確認
+- 補足
+  - 修正後の手動実行では `取得=28 / 投稿=0`。試合日判定は直ったが、この時点では RSS 側に条件を通る新規記事がまだなかった
+
+### 11. スタメン記事を無料の固定ページ補完へ変更
+
+- 背景
+  - `2026-04-14` の阪神戦で、試合日判定は直ったが `17:30〜18:00` の自動実行でもスタメン記事は出なかった
+  - 原因は `config/rss_sources.json` のニュースRSSだけでは、スタメン記事が間に合わない/配信されないケースがあるため
+- 方針
+  - `X検索` は使わない
+  - `Yahoo!プロ野球` の固定試合ページから取れるスタメンを、RSS不在時の補完ソースとして使う
+- 実装
+  - `src/rss_fetcher.py`
+    - `_has_primary_lineup_candidate()` を追加
+    - `_build_yahoo_lineup_candidate()` を追加
+    - RSS由来の `lineup` 候補がゼロで、Yahoo固定ページからスタメン行が取れる時だけ、疑似 `試合速報` 候補を1本追加
+  - これにより、通常記事は従来通りRSS、スタメンだけは無料の固定ページ補完で拾う構成になった
+- テスト
+  - `tests/test_yahoo_realtime.py` に補完候補生成のテストを追加
+  - `python3 -m unittest tests.test_yahoo_realtime tests.test_build_news_block` は `36 tests OK`
+
+### 12. X検索なしで固定SNSソースを復活
+
+- 背景
+  - `スタメン` や `試合後コメント` は一般ニュースRSSより `公式/番記者SNS` の方が早い
+  - ただし `X検索` はコストとノイズの面で使わない方針
+- 方針
+  - `config/rss_sources.json` に RSSHub の固定アカウント feed を追加
+    - `@TokyoGiants`
+    - `@hochi_giants`
+    - `@nikkansports`
+    - `@SponichiYakyu`
+    - `@Sanspo_Giants`
+  - source type は `social_news`
+  - ただし記事化するのは
+    - `スタメン`
+    - `試合後`
+    - `監督/選手コメント`
+    - `補強/移籍`
+    のような強い投稿だけ
+- 実装
+  - `src/rss_fetcher.py`
+    - `_is_authoritative_social_entry_worthy()` を追加
+    - `social_news` は `build_news_block()` を通すが、`news` と違って記事画像取得はしない
+    - 弱い宣伝投稿や挨拶投稿は `SKIP:SNS弱い` で落とす
+- テスト
+  - `tests/test_yahoo_realtime.py` に `social_news` 判定テストを追加
+  - `python3 -m unittest tests.test_yahoo_realtime tests.test_build_news_block tests.test_wp_client` は `40 tests OK`
+
+### 13. X運用方針を運用版として固定
+
+- ユーザー方針
+  - `Xからの流入` は今後も重要
+  - ただし `完全自動アカウント` にはしない
+  - 試合中の意見や感想は、ユーザー本人が見ながら手動で投稿する
+- 運用方針
+  - `サイト`: 速報と整理
+  - `X`: 流入と人間味
+  - 自動投稿候補は `スタメン / 試合後結果 / 監督・選手コメント / 公示 / 補強・移籍`
+  - `データ記事` は原則として手動判断で流す
+- 自動X投稿の過去実績
+  - `2026-04-12 18:18` 台: `post_id=61564, 61565, 61567, 61570`
+  - `2026-04-12 18:42-18:43`: `post_id=61584, 61585, 61586`
+  - `2026-04-13 18:45-18:46`: `post_id=61847, 61850`
+  - いずれも `logs/rss_fetcher.log` に `X投稿` または `公開+X投稿` で記録あり
+- チケット更新
+  - `TASKS-4-article-quality.md` に `Ticket 10 — X運用（運用版）` を追加
+
+### 14. 自動X投稿を運用設定で再開
+
+- ユーザー判断
+  - `自動X投稿そのものは使う`
+  - 対象は `試合速報 / 選手情報 / 首脳陣`
+  - `データ記事` は引き続き手動判断
+- ローカル設定
+  - `.env` を `AUTO_TWEET_ENABLED=1`
+  - `AUTO_TWEET_CATEGORIES=試合速報,選手情報,首脳陣`
+  - `AUTO_TWEET_REQUIRE_IMAGE=1`
+- デフォルトとドキュメント
+  - `src/rss_fetcher.py` の `DEFAULT_AUTO_TWEET_CATEGORIES` も `試合速報,選手情報,首脳陣` に変更
+  - `.env.example` と `README.md` も同内容へ更新
+- テスト
+  - `python3 -m unittest tests.test_cost_modes tests.test_yahoo_realtime tests.test_build_news_block` は `49 tests OK`
+  - `python3 -m py_compile src/rss_fetcher.py src/wp_client.py src/x_api_client.py src/x_post_generator.py` は成功
+- 本番反映
+  - Cloud Run revision: `yoshilover-fetcher-00080-78w`
+  - 確認値
+    - `AUTO_TWEET_ENABLED=1`
+    - `AUTO_TWEET_CATEGORIES=試合速報,選手情報,首脳陣`
+    - `AUTO_TWEET_REQUIRE_IMAGE=1`
+    - `X_POST_DAILY_LIMIT=5`
+
+### 15. Yahoo固定ページで試合終了を見て試合後記事を補完
+
+- 背景
+  - `スタメン` は Yahoo 固定試合ページで補完できるようにしたが、`試合後結果` も一般ニュースRSSより遅れる可能性がある
+  - ユーザー要望は `Yahooで試合終了を確認して、それでポストと記事へつなげたい`
+- 実装
+  - `src/rss_fetcher.py`
+    - `_parse_yahoo_game_status()` を追加
+      - `bb-gameCard__state` から `試合終了` を判定
+      - スコアボードから `巨人/相手のスコア・安打・失策` を抽出
+    - `fetch_giants_game_status_from_yahoo()` / `fetch_today_giants_game_status_from_yahoo()` を追加
+    - `_has_primary_postgame_candidate()` を追加
+    - `_build_yahoo_postgame_candidate()` を追加
+      - RSS側に強い試合後記事が無い時だけ、Yahoo固定ページから疑似 `postgame` 候補を1本作る
+  - 既存の `スタメン補完` も内部履歴キーを `#lineup` に変更
+  - `試合後補完` の内部履歴キーは `#postgame`
+  - これで同じ Yahoo 試合ページから `スタメン記事` と `試合後記事` を別々に重複管理できる
+- テスト
+  - `tests/test_yahoo_realtime.py`
+    - 試合終了判定テスト
+    - 疑似 `postgame` 候補生成テスト
+  - `python3 -m unittest tests.test_yahoo_realtime tests.test_build_news_block tests.test_cost_modes` は `52 tests OK`
+  - `python3 -m py_compile src/rss_fetcher.py` は成功
+- 本番反映
+  - Cloud Run revision: `yoshilover-fetcher-00081-qfd`
+  - image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/fetcher:codex-20260414-postgamefallback`
+
+### 16. X運用に2軍情報と動画を追加する方針を固定
+
+- ユーザー意図
+  - 試合中は一軍の流れだけでなく、`2軍情報` や `動画` もXへ混ぜたい
+  - 仕事で試合を見られない日があるため、投稿の柱を増やしたい
+- 運用方針
+  - `試合中の手動X投稿` の補完ネタとして以下を明示的に追加
+    - `2軍の注目結果`
+    - `昇格候補の動き`
+    - `公式動画 / 話題動画`
+  - いきなり `ドラフト・育成` を自動X投稿カテゴリへ広げるのではなく、まずは運用で反応を見る
+  - `2軍情報 / 動画記事` をどこまで記事化・自動化するかは次段で詰める
+- チケット更新
+  - `TASKS-4-article-quality.md` の `Ticket 10 — X運用（運用版）` に反映済み
+
+### 17. 途中経過と2軍情報の自動X運用を拡張
+
+- ユーザー判断
+  - 試合を見られない日があるので、`途中経過` も `記事 + X` を自動で流したい
+  - `2軍情報` も通常運用に含めてよい
+  - ただし `ボット感の強い連投` にはしない
+- 実装
+  - `src/rss_fetcher.py`
+    - `DEFAULT_AUTO_TWEET_CATEGORIES` を `試合速報 / 選手情報 / 首脳陣 / ドラフト・育成` に拡張
+    - `social_news` も自動X投稿対象に変更
+    - `RSSHub固定SNSソース` の画像を `entry.summary` 内の `<img>` から先に拾い、取れなければ元ページから取得
+    - Yahoo固定試合ページのスコア差分を見て、`同点 / 勝ち越し / 逆転 / 複数得点` だけ `途中経過記事` 候補を生成
+    - `#live-スコア` の履歴キーで重複防止
+  - `src/x_post_generator.py`
+    - `途中経過` 専用文面を追加
+    - `ドラフト・育成` 専用文面を追加
+    - 2軍や昇格候補の記事も `ボット感の薄い問いかけ型` に寄せた
+- テスト
+  - `python3 -m unittest tests.test_cost_modes tests.test_x_post_generator tests.test_yahoo_realtime` は `47 tests OK`
+  - `python3 -m py_compile src/rss_fetcher.py src/x_post_generator.py` は成功

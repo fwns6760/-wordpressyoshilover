@@ -29,6 +29,41 @@ class CostModeTests(unittest.TestCase):
             self.assertTrue(x_post_generator.should_use_ai_for_x_post("首脳陣"))
             self.assertFalse(x_post_generator.should_use_ai_for_x_post("選手情報"))
 
+    def test_auto_tweet_categories_default_to_selected_subset(self):
+        with patch.dict("os.environ", {}, clear=False):
+            self.assertTrue("試合速報" in rss_fetcher.get_auto_tweet_categories())
+            self.assertTrue("首脳陣" in rss_fetcher.get_auto_tweet_categories())
+            self.assertTrue("ドラフト・育成" in rss_fetcher.get_auto_tweet_categories())
+            self.assertFalse("コラム" in rss_fetcher.get_auto_tweet_categories())
+
+    def test_auto_tweet_skip_reasons_explain_disabled_state(self):
+        with patch.dict("os.environ", {"AUTO_TWEET_ENABLED": "0"}, clear=False):
+            reasons = rss_fetcher.get_auto_tweet_skip_reasons(
+                source_type="news",
+                category="試合速報",
+                draft_only=False,
+                x_post_count=0,
+                x_post_daily_limit=5,
+                featured_media=123,
+                published=True,
+                article_url="https://yoshilover.com/1",
+            )
+            self.assertEqual(reasons, ["auto_tweet_disabled"])
+
+    def test_auto_tweet_accepts_social_news_when_enabled(self):
+        with patch.dict("os.environ", {"AUTO_TWEET_ENABLED": "1", "AUTO_TWEET_CATEGORIES": "ドラフト・育成"}, clear=False):
+            reasons = rss_fetcher.get_auto_tweet_skip_reasons(
+                source_type="social_news",
+                category="ドラフト・育成",
+                draft_only=False,
+                x_post_count=0,
+                x_post_daily_limit=5,
+                featured_media=123,
+                published=True,
+                article_url="https://yoshilover.com/1",
+            )
+            self.assertEqual(reasons, [])
+
     def test_gemini_cli_for_x_post_defaults_to_off(self):
         with patch.dict("os.environ", {"LOW_COST_MODE": "1"}, clear=False):
             self.assertFalse(x_post_generator.allow_gemini_cli_for_x_post())

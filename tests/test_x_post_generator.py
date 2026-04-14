@@ -146,6 +146,59 @@ class XPostGeneratorTests(unittest.TestCase):
         self.assertIn("この試合の分岐点、どこでしたか？", text)
         self.assertIn("#巨人 #ジャイアンツ #岡田悠希", text)
 
+    def test_live_update_post_uses_non_bot_like_flow_copy(self):
+        text = x_post_generator.build_post(
+            title="【巨人途中経過】6回表 巨人2-2阪神と同点",
+            url="https://yoshilover.com/62020",
+            category="試合速報",
+            summary="巨人が6回表に2-2の同点に持ち込んだ。ここから次の1点が重い。",
+        )
+
+        self.assertIn("巨人、6回表に2-2の同点。", text)
+        self.assertIn("次の1点をどちらが取るかです。", text)
+        self.assertIn("この流れ、どう見ますか？", text)
+        self.assertIn("#巨人 #ジャイアンツ", text)
+
+    def test_farm_post_uses_player_and_promotion_angle(self):
+        text = x_post_generator.build_post(
+            title="【巨人2軍】浅野翔吾が昇格へ向けてマルチ安打",
+            url="https://yoshilover.com/62021",
+            category="ドラフト・育成",
+            summary="巨人2軍の浅野翔吾外野手がマルチ安打を記録。昇格候補として注目が集まる。",
+        )
+
+        self.assertIn("浅野翔吾の2軍での動き、気になります。", text)
+        self.assertIn("この動き、一軍の入れ替えにも関わってきそうです。", text)
+        self.assertIn("次に上がるなら誰を見たいですか？", text)
+        self.assertIn("#巨人 #ジャイアンツ #浅野翔吾", text)
+
+    def test_data_obp_post_uses_top_five_tags_and_source_name(self):
+        text = x_post_generator.build_post(
+            title="巨人打線は打率だけで見ていいのか 出塁率で見ると泉口友汰が先頭に立つ",
+            url="https://yoshilover.com/61939",
+            category="コラム",
+            summary="巨人の出塁率記事。",
+            content_html=(
+                "<table>"
+                "<tr><th>順</th><th>選手</th><th>試合</th><th>打席</th><th>打率</th><th>出塁率</th><th>OPS</th></tr>"
+                "<tr><td>1</td><td>泉口 友汰</td><td>14</td><td>57</td><td>.294</td><td>.368</td><td>.897</td></tr>"
+                "<tr><td>2</td><td>ダルベック</td><td>13</td><td>52</td><td>.205</td><td>.327</td><td>.759</td></tr>"
+                "<tr><td>3</td><td>キャベッジ</td><td>14</td><td>55</td><td>.309</td><td>.309</td><td>.836</td></tr>"
+                "<tr><td>4</td><td>佐々木 俊輔</td><td>11</td><td>27</td><td>.296</td><td>.296</td><td>.777</td></tr>"
+                "<tr><td>5</td><td>浦田 俊輔</td><td>11</td><td>38</td><td>.229</td><td>.289</td><td>.603</td></tr>"
+                "<tr><td>10</td><td>坂本 勇人</td><td>10</td><td>29</td><td>.077</td><td>.172</td><td>.364</td></tr>"
+                "</table>"
+            ),
+        )
+
+        self.assertIn("阿部監督は打線をどう組むのか。", text)
+        self.assertIn("出塁率上位5人", text)
+        self.assertIn("泉口 友汰 .368", text)
+        self.assertIn("浦田 俊輔 .289", text)
+        self.assertIn("坂本勇人 10位 .172", text)
+        self.assertIn("NPB調べ", text)
+        self.assertIn("#巨人 #ジャイアンツ #泉口友汰 #ダルベック #キャベッジ #佐々木俊輔 #浦田俊輔", text)
+
 
 if __name__ == "__main__":
     unittest.main()

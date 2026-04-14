@@ -99,6 +99,10 @@ COLLECT_MAX_RESULTS = 10  # 1クエリあたりの最大取得件数
 # ──────────────────────────────────────────────────────────
 # 認証
 # ──────────────────────────────────────────────────────────
+def x_collect_enabled() -> bool:
+    return os.environ.get("ENABLE_X_COLLECT", "0").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def get_client() -> tweepy.Client:
     return tweepy.Client(
         bearer_token=os.environ.get("X_BEARER_TOKEN"),
@@ -176,6 +180,10 @@ def can_collect(history: dict) -> bool:
     return datetime.now() - last_dt >= timedelta(hours=COLLECT_INTERVAL_HOURS)
 
 def cmd_collect(args):
+    if not x_collect_enabled():
+        logger.info("[collect] スキップ（ENABLE_X_COLLECT=0）")
+        return
+
     history = load_history()
 
     if not args.force and not can_collect(history):

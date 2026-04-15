@@ -42,3 +42,22 @@ jobs:
             src/wp_client.py \
             src/server.py \
             src/x_post_generator.py
+
+      - name: Warn on low rss_fetcher coverage
+        run: |
+          coverage json -o /tmp/yoshilover-coverage.json
+          python - <<'PY'
+          import json
+
+          threshold = 55.0
+          with open("/tmp/yoshilover-coverage.json", encoding="utf-8") as f:
+              data = json.load(f)
+
+          coverage = data["files"]["src/rss_fetcher.py"]["summary"]["percent_covered"]
+          print(f"rss_fetcher.py coverage: {coverage:.1f}% (warning threshold: {threshold:.1f}%)")
+          if coverage < threshold:
+              print(
+                  f"::warning file=src/rss_fetcher.py::"
+                  f"rss_fetcher.py coverage {coverage:.1f}% is below {threshold:.1f}%"
+              )
+          PY

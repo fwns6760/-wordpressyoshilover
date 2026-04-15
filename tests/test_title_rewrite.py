@@ -1,9 +1,37 @@
+import json
 import unittest
+from pathlib import Path
 
 from src import rss_fetcher
 
 
+FIXTURE_DIR = Path(__file__).parent / "fixtures"
+
+
 class DisplayTitleRewriteTests(unittest.TestCase):
+    def test_title_rewrite_golden_fixture(self):
+        with open(FIXTURE_DIR / "title_rewrite_golden.json", encoding="utf-8") as f:
+            cases = json.load(f)
+        with open(rss_fetcher.KEYWORDS_FILE, encoding="utf-8") as f:
+            keywords = json.load(f)
+
+        for case in cases:
+            with self.subTest(case=case["name"]):
+                title = case["title"]
+                summary = case.get("summary", "")
+                category = case.get("category")
+                if "expected_category" in case:
+                    category = rss_fetcher.classify_category(f"{title} {summary}", keywords)
+                    self.assertEqual(category, case["expected_category"])
+                production_title = title[:40].strip()
+                rewritten = rss_fetcher.rewrite_display_title(
+                    production_title,
+                    summary,
+                    category,
+                    case.get("has_game", True),
+                )
+                self.assertEqual(rewritten, case["expected_title"])
+
     def test_lineup_candidates_are_aggregated_across_sources(self):
         candidates = [
             {

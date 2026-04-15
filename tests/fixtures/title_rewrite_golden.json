@@ -1,0 +1,34 @@
+[
+  {
+    "name": "player_quote_name_before_ha",
+    "title": "松本剛は巨人２位のバキバキボディー！「甘いところを絞って打ちに行こう」９回移籍後",
+    "summary": "",
+    "category": "選手情報",
+    "has_game": true,
+    "expected_title": "松本剛「甘いところを絞って打ちに行こう」 実戦で何を見せるか"
+  },
+  {
+    "name": "player_quote_middle_dot_after_team",
+    "title": "巨人・田中将大「打線を線にしない」甲子園の“申し子”が移籍後初の阪神戦で好投誓う",
+    "summary": "田中将大が移籍後初の阪神戦に向け「打線を線にしない」と話した。",
+    "category": "選手情報",
+    "has_game": true,
+    "expected_title": "田中将大「打線を線にしない」 実戦で何を見せるか"
+  },
+  {
+    "name": "player_status_return_from_injury",
+    "title": "【巨人】山崎伊織が復帰へ前進「段階を踏んで上げて来られている」ブルペンで本格的な投球練習",
+    "summary": "山崎伊織が復帰へ前進し、ブルペンで本格的な投球練習を行った。",
+    "category": "選手情報",
+    "has_game": false,
+    "expected_title": "山崎伊織、昇格・復帰でどこを見たいか"
+  },
+  {
+    "name": "farm_development_fullwidth_2gun",
+    "title": "巨人育成ドミニカンが２軍戦猛打＆Ｖ２号 同郷ルシアーノの支配下昇格が刺激…６年目２１歳ティマ",
+    "summary": "巨人育成ドミニカンのティマが２軍戦で猛打＆Ｖ２号。育成選手としてプレーしている。",
+    "expected_category": "ドラフト・育成",
+    "has_game": true,
+    "expected_title": "巨人育成ドミニカンが２軍戦猛打＆Ｖ２号 同郷ルシアーノの支配下昇格が刺激…６…"
+  }
+]

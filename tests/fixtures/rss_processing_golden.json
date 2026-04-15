@@ -1,0 +1,16 @@
+[
+  {
+    "name": "farm_story_does_not_become_player_status",
+    "title": "巨人育成ドミニカンが２軍戦猛打＆Ｖ２号 同郷ルシアーノの支配下昇格が刺激…６年目２１歳ティマ",
+    "summary": "巨人育成ドミニカンのティマが２軍戦で猛打＆Ｖ２号。育成選手としてプレーしている。",
+    "has_game": true,
+    "published_at": "2026-04-15T04:00:00+00:00",
+    "expected": {
+      "category": "ドラフト・育成",
+      "article_subtype": "farm",
+      "player_mode": "",
+      "draft_title": "巨人育成ドミニカンが２軍戦猛打＆Ｖ２号 同郷ルシアーノの支配下昇格が刺激…６…",
+      "skip_reason": ""
+    }
+  }
+]

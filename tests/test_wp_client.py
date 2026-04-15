@@ -14,6 +14,125 @@ class TestWPClientDedup(unittest.TestCase):
         os.environ["WP_APP_PASSWORD"] = "pass"
         self.wp = WPClient()
 
+    @patch.object(WPClient, "update_post_fields")
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_contract_reused_draft_backfills_featured_media(self, mock_get, mock_post, mock_update):
+        mock_get.return_value = Mock(
+            status_code=200,
+            json=lambda: [
+                {
+                    "id": 456,
+                    "title": {"raw": "田中将大「打線を線にしない」 実戦で何を見せるか"},
+                    "status": "draft",
+                    "date": "2099-04-14T17:39:28",
+                    "featured_media": 0,
+                    "categories": [663],
+                }
+            ],
+        )
+
+        post_id = self.wp.create_draft(
+            "田中将大「打線を線にしない」 実戦で何を見せるか",
+            "<p>body</p>",
+            categories=[663],
+            featured_media=62100,
+        )
+
+        self.assertEqual(post_id, 456)
+        mock_post.assert_not_called()
+        mock_update.assert_called_once_with(456, featured_media=62100)
+
+    @patch.object(WPClient, "update_post_fields")
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_contract_draft_request_does_not_reuse_published_post(self, mock_get, mock_post, mock_update):
+        mock_get.return_value = Mock(
+            status_code=200,
+            json=lambda: [
+                {
+                    "id": 123,
+                    "title": {"raw": "巨人戦 試合の流れを分けたポイント"},
+                    "status": "publish",
+                    "date": "2099-04-14T17:39:28",
+                    "featured_media": 321,
+                    "categories": [673],
+                }
+            ],
+        )
+        mock_post.return_value = Mock(status_code=201, json=lambda: {"id": 789})
+
+        post_id = self.wp.create_draft(
+            "巨人戦 試合の流れを分けたポイント",
+            "<p>body</p>",
+            categories=[673],
+            featured_media=654,
+        )
+
+        self.assertEqual(post_id, 789)
+        mock_update.assert_not_called()
+        mock_post.assert_called_once()
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(payload["status"], "draft")
+        self.assertEqual(payload["featured_media"], 654)
+
+    @patch.object(WPClient, "update_post_fields")
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_contract_publish_request_promotes_reused_draft(self, mock_get, mock_post, mock_update):
+        mock_get.return_value = Mock(
+            status_code=200,
+            json=lambda: [
+                {
+                    "id": 654,
+                    "title": {"raw": "阿部監督「粘り勝った」 ベンチの狙いはどこか"},
+                    "status": "draft",
+                    "date": "2099-04-14T17:39:28",
+                    "featured_media": 0,
+                    "categories": [663],
+                }
+            ],
+        )
+
+        post_id = self.wp.create_post(
+            "阿部監督「粘り勝った」 ベンチの狙いはどこか",
+            "<p>body</p>",
+            categories=[673, 663],
+            status="publish",
+            featured_media=777,
+        )
+
+        self.assertEqual(post_id, 654)
+        mock_post.assert_not_called()
+        mock_update.assert_called_once_with(
+            654,
+            featured_media=777,
+            categories=[673, 663],
+            status="publish",
+        )
+
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_contract_wp_api_403_search_falls_back_to_relaxed_query(self, mock_get, mock_post):
+        forbidden = Mock(status_code=403, text='{"code":"rest_forbidden_context"}')
+        ok = Mock(status_code=200, json=lambda: [])
+        mock_get.side_effect = [forbidden, ok]
+        mock_post.return_value = Mock(status_code=201, json=lambda: {"id": 987})
+
+        post_id = self.wp.create_post(
+            "松本剛「甘いところを絞って打ちに行こう」 実戦で何を見せるか",
+            "<p>body</p>",
+            status="draft",
+        )
+
+        self.assertEqual(post_id, 987)
+        self.assertEqual(mock_get.call_count, 2)
+        first_params = mock_get.call_args_list[0].kwargs["params"]
+        second_params = mock_get.call_args_list[1].kwargs["params"]
+        self.assertEqual(first_params["context"], "edit")
+        self.assertNotIn("context", second_params)
+        mock_post.assert_called_once()
+
     @patch("src.wp_client.requests.post")
     @patch("src.wp_client.requests.get")
     def test_create_post_reuses_recent_same_title(self, mock_get, mock_post):

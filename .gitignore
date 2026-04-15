@@ -4,4 +4,6 @@ data/*.json
 __pycache__/
 *.pyc
 *.pyo
+.coverage
+htmlcov/
 .DS_Store

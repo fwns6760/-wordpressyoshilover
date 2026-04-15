@@ -21,6 +21,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
       - name: Compile key modules
         run: |
@@ -31,5 +32,13 @@ jobs:
             src/x_api_client.py \
             src/server.py
 
-      - name: Run unit tests
-        run: python -m unittest discover -s tests
+      - name: Run unit tests with coverage
+        run: coverage run --source=src -m unittest discover -s tests
+
+      - name: Show focused coverage report
+        run: |
+          coverage report -m \
+            src/rss_fetcher.py \
+            src/wp_client.py \
+            src/server.py \
+            src/x_post_generator.py

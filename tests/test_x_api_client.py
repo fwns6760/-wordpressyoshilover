@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from src import x_api_client
 
@@ -34,6 +35,14 @@ class XApiClientTests(unittest.TestCase):
 
         self.assertEqual(summary, "巨人が勝利 井上温大が好投")
         self.assertIn("<p>巨人が勝利</p>", html)
+
+    def test_x_collect_disabled_by_default(self):
+        with patch.dict("os.environ", {}, clear=False):
+            self.assertFalse(x_api_client.x_collect_enabled())
+
+    def test_x_collect_enabled_when_env_flag_is_set(self):
+        with patch.dict("os.environ", {"ENABLE_X_COLLECT": "1"}, clear=False):
+            self.assertTrue(x_api_client.x_collect_enabled())
 
 
 if __name__ == "__main__":

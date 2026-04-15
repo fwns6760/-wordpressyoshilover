@@ -89,6 +89,106 @@ GENERIC_PLAYER_ARTICLE_MARKERS = (
     "可能性を秘めている",
     "重要です",
 )
+PLAYER_MECHANICS_SPECIFIC_MARKERS = (
+    "フォーム",
+    "フォーム変更",
+    "投げ方",
+    "リリース",
+    "腕の振り",
+    "球筋",
+    "制球",
+    "球種",
+    "スイング",
+    "スイング軌道",
+    "打撃フォーム",
+    "構え",
+    "タイミング",
+    "トップ",
+    "打球方向",
+    "コンタクト",
+    "捕球",
+    "送球",
+    "送球動作",
+    "二塁送球",
+    "ブロッキング",
+    "フレーミング",
+    "キャッチング",
+    "初動",
+    "ステップ",
+    "守備範囲",
+    "打球判断",
+)
+PLAYER_MECHANICS_CHANGE_MARKERS = (
+    "修正",
+    "改善",
+    "見直し",
+    "改造",
+    "変更",
+    "取り組み",
+    "助言",
+)
+PLAYER_STATUS_MARKERS = (
+    "昇格",
+    "一軍",
+    "復帰",
+    "登録",
+    "抹消",
+    "合流",
+    "別メニュー",
+    "二軍戦",
+    "2軍戦",
+    "先発へ",
+    "先発予定",
+    "先発見込み",
+    "実戦復帰",
+    "出場見込み",
+)
+PLAYER_QUOTE_CONTEXT_MARKERS = (
+    "甲子園",
+    "東京ドーム",
+    "相手打線",
+    "打線",
+    "配球",
+    "立ち上がり",
+    "先発",
+    "登板",
+    "阪神戦",
+    "広島戦",
+    "中日戦",
+    "DeNA戦",
+    "ヤクルト戦",
+    "交流戦",
+)
+PLAYER_ROLE_SUFFIXES = ("投手", "捕手", "内野手", "外野手", "選手")
+PLAYER_PITCHER_HINT_MARKERS = ("投手", "先発", "登板", "マウンド", "打線", "好投", "ローテ")
+PLAYER_CATCHER_HINT_MARKERS = ("捕手", "配球", "マスク", "送球", "二塁送球", "リード")
+PLAYER_INFIELDER_HINT_MARKERS = ("内野手", "遊撃", "二塁", "三塁", "一塁")
+PLAYER_OUTFIELDER_HINT_MARKERS = ("外野手", "中堅", "左翼", "右翼")
+PLAYER_MECHANICS_TOPIC_PATTERNS = (
+    r"(フォーム(?:修正|改造|変更|見直し))",
+    r"(投げ方(?:の修正|の見直し|変更))",
+    r"(スイング軌道(?:の修正|の見直し))",
+    r"(打撃フォーム(?:の修正|の見直し))",
+    r"(送球動作の改善)",
+    r"(二塁送球(?:につながる)?送球動作の改善)",
+    r"(守備範囲(?:の改善|の見直し))",
+)
+PLAYER_STATUS_TOPIC_PATTERNS = (
+    (r"一軍に?合流", "一軍合流"),
+    (r"二軍戦(?:で)?実戦復帰|二軍戦復帰", "二軍戦復帰"),
+    (r"出場選手登録を抹消|登録抹消", "登録抹消"),
+    (r"一軍昇格|昇格", "一軍昇格"),
+    (r"復帰", "復帰"),
+    (r"別メニュー", "別メニュー"),
+    (r"出場見込み", "出場見込み"),
+)
+PLAYER_QUOTE_SCENE_PATTERNS = (
+    r"(移籍後初の[^。、「」 ]+戦)",
+    r"([^。、「」 ]+戦)に向け",
+    r"(甲子園での登板)",
+    r"(東京ドームでの登板)",
+    r"(試合前)",
+)
 MEDIA_HANDLE_KEYWORDS = (
     "news", "sports", "sport", "online", "official", "daily", "tospo", "nikkan", "hochi",
     "sponichi", "sanspo", "fullcount", "baseballking", "oricon", "yahoo", "jiji", "pr",
@@ -149,6 +249,63 @@ SUBJECT_LABEL_STOPWORDS = {
     "News",
     "Giants",
 }
+SOURCE_BRAND_LABELS = (
+    ("スポーツ報知", "報知新聞"),
+    ("報知新聞社", "報知新聞"),
+    ("日刊スポーツ", "日刊スポーツ"),
+    ("スポニチ", "スポニチ"),
+    ("Sponichi", "スポニチ"),
+    ("サンスポ", "サンスポ"),
+    ("Sanspo", "サンスポ"),
+    ("デイリースポーツ", "デイリースポーツ"),
+    ("東スポ", "東スポ"),
+    ("Full-Count", "Full-Count"),
+    ("BASEBALL KING", "BASEBALL KING"),
+    ("巨人公式", "巨人公式"),
+)
+AMBIGUOUS_PLAYER_SURNAMES = {
+    "田中",
+    "佐藤",
+    "鈴木",
+    "高橋",
+    "伊藤",
+    "渡辺",
+    "中村",
+    "小林",
+    "加藤",
+    "吉田",
+    "山田",
+    "松本",
+    "井上",
+}
+SUBJECT_CANDIDATE_STOPWORDS = {
+    "巨人",
+    "ジャイアンツ",
+    "先発ローテ",
+    "ローテ再編",
+    "阪神3連戦",
+    "シーズンシート",
+    "ジャイアンツ球場",
+    "東京ドーム",
+    "スタメン",
+    "オーダー",
+    "打順",
+    "試合速報",
+    "選手情報",
+    "首脳陣",
+    "補強移籍",
+}
+SUBJECT_CANDIDATE_SUFFIX_STOPWORDS = (
+    "戦",
+    "球場",
+    "打線",
+    "ローテ",
+    "起用",
+    "登録",
+    "抹消",
+    "予定",
+    "見込み",
+)
 CATEGORY_REACTION_TERMS = {
     "首脳陣": ("スタメン", "打順", "オーダー", "起用", "序列", "固定", "レギュラー", "若手"),
     "試合速報": ("スタメン", "継投", "采配", "流れ", "代打", "守備", "打順", "勝ちパターン"),
@@ -204,7 +361,7 @@ def should_use_ai_for_category(category: str) -> bool:
 
 def get_article_ai_mode(has_game: bool, override: str | None = None) -> str:
     env_name = "ARTICLE_AI_MODE" if has_game else "OFFDAY_ARTICLE_AI_MODE"
-    default_mode = "gemini" if has_game else "none" if low_cost_mode_enabled() else "auto"
+    default_mode = "gemini" if has_game else "gemini" if low_cost_mode_enabled() else "auto"
     candidate = override if override is not None else os.environ.get(env_name, default_mode)
     mode = candidate.strip().lower()
     if mode in {"auto", "grok", "gemini", "none"}:
@@ -384,7 +541,7 @@ def _strip_title_prefix(title: str) -> str:
 def _clean_social_entry_text(text: str) -> str:
     clean = _html.unescape(_strip_html(text or ""))
     clean = _re.sub(r'https?://\S+', '', clean)
-    clean = _re.sub(r'(?<!\w)#[\w一-龯ぁ-ゔァ-ヴー々〆〤]+', '', clean)
+    clean = _re.sub(r'#[\w一-龯ぁ-ゔァ-ヴー々〆〤]+', '', clean)
     clean = _re.sub(r'(?<!\S)@[\w.\-一-龯ぁ-ゔァ-ヴー々〆〤]+[:：]?', '', clean)
     clean = _re.sub(
         r'\s*[-–—]\s*(スポニチ(?: Sponichi Annex)? 野球|Sponichi Annex 野球|スポーツ報知|報知新聞社|日刊スポーツ|サンスポ.*)$',
@@ -404,7 +561,7 @@ def _is_polluted_social_text(text: str) -> bool:
         return True
     if _re.search(r'https?://\S+', clean):
         return True
-    if _re.search(r'(?<!\w)#[\w一-龯ぁ-ゔァ-ヴー々〆〤]+', clean):
+    if _re.search(r'#[\w一-龯ぁ-ゔァ-ヴー々〆〤]+', clean):
         return True
     if _re.search(r'(?<!\S)@[\w.\-一-龯ぁ-ゔァ-ヴー々〆〤]+', clean):
         return True
@@ -416,30 +573,51 @@ def _is_polluted_social_text(text: str) -> bool:
 
 def _extract_subject_label(title: str, summary: str, category: str) -> str:
     text = f"{_strip_html(title)} {_strip_html(summary)}"
-    player_role_pattern = r"([一-龥ァ-ヴーA-Za-z]{2,10}\s*(?:投手|捕手|内野手|外野手|選手))"
-    staff_role_pattern = r"([一-龥ァ-ヴーA-Za-z]{2,10}\s*(?:監督|コーチ))"
+    player_role_pattern = r"([一-龥々ァ-ヴーA-Za-z]{2,10}\s*(?:投手|捕手|内野手|外野手|選手))"
+    staff_role_pattern = r"([一-龥々ァ-ヴーA-Za-z]{2,10}\s*(?:監督|コーチ))"
+    named_subject_patterns = [
+        r"(?:巨人|ジャイアンツ)(?:】|の|・|[\s　])?([一-龥々ァ-ヴー]{2,8})(?:(?:投手|捕手|内野手|外野手|選手|監督|コーチ)?(?:が|は|を|に|で|、|「))",
+        r"(?:初戦は|第[0-9一二三四五六七八九十]+戦は|先発は|復帰は|昇格は|登録は|抹消は)([一-龥々ァ-ヴー]{2,8})(?:(?:投手|捕手|内野手|外野手|選手)?(?:が|は|を|に|で|、|「))?",
+        r"([一-龥々ァ-ヴー]{2,8})(?:(?:投手|捕手|内野手|外野手|選手)?(?:が|は|を|に|で|、|「))(?:先発|調整|復帰|昇格|登録|抹消|語った|明かした|狙う|務める|濃厚|有力|予定|見込み)",
+    ]
     patterns = [r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})"]
     if category == "選手情報":
         patterns = [
             player_role_pattern,
             staff_role_pattern,
-        ] + patterns
+        ] + named_subject_patterns + patterns
     elif category == "首脳陣":
         patterns = [
             staff_role_pattern,
             player_role_pattern,
-        ] + patterns
+        ] + named_subject_patterns + patterns
     else:
-        patterns = [player_role_pattern, staff_role_pattern] + patterns
+        patterns = [player_role_pattern, staff_role_pattern] + named_subject_patterns + patterns
+
+    def _is_valid_subject_candidate(label: str) -> bool:
+        if not label:
+            return False
+        if label in SUBJECT_LABEL_STOPWORDS:
+            return False
+        if any(stop in label for stop in SUBJECT_CANDIDATE_STOPWORDS):
+            return False
+        if label.endswith(SUBJECT_CANDIDATE_SUFFIX_STOPWORDS):
+            return False
+        if _re.search(r"\d", label):
+            return False
+        return True
 
     for pattern in patterns:
-        match = _re.search(pattern, text)
-        if match:
+        matches = list(_re.finditer(pattern, text))
+        if not matches:
+            continue
+        iterator = reversed(matches) if pattern in named_subject_patterns else matches
+        for match in iterator:
             label = _re.sub(r"\s+", "", match.group(1))
-            if label in SUBJECT_LABEL_STOPWORDS:
-                continue
             if label.startswith("巨人") and len(label) > 4:
                 label = label[2:]
+            if not _is_valid_subject_candidate(label):
+                continue
             return label
     if category == "首脳陣":
         return "首脳陣"
@@ -456,6 +634,16 @@ def _compact_subject_label(title: str, summary: str, category: str) -> str:
     return subject if len(subject) <= 6 else ""
 
 
+def _player_family_name_alias(title: str, summary: str, category: str) -> str:
+    subject = _compact_subject_label(title, summary, category)
+    if not subject or not _re.fullmatch(r"[一-龥々ァ-ヴー]{4,8}", subject):
+        return ""
+    family_name = subject[:2]
+    if family_name in AMBIGUOUS_PLAYER_SURNAMES:
+        return ""
+    return family_name
+
+
 def _build_safe_summary_snippet(title: str, summary: str) -> str:
     facts = _extract_summary_sentences(summary, max_sentences=2)
     if facts:
@@ -464,6 +652,233 @@ def _build_safe_summary_snippet(title: str, summary: str) -> str:
     if title_text:
         return f"{title_text}。"
     return "巨人の最新ニュースを整理します。"
+
+
+def _player_article_is_mechanics_story(title: str, summary: str) -> bool:
+    return _detect_player_article_mode(title, summary, "選手情報") == "player_mechanics"
+
+
+def _ensure_fact_sentence(text: str, default: str = "") -> str:
+    clean = _collapse_ws(_strip_html(text or "")).strip(" ・\t")
+    if not clean:
+        return default
+    return clean if clean.endswith(("。", "！", "？")) else f"{clean}。"
+
+
+def _extract_player_position(title: str, summary: str) -> str:
+    source_text = _strip_html(f"{title} {summary}")
+    subject = _extract_subject_label(title, summary, "選手情報")
+    for role in PLAYER_ROLE_SUFFIXES:
+        if subject.endswith(role):
+            return role
+    base_name = _compact_subject_label(title, summary, "選手情報")
+    if base_name:
+        nearby = _re.search(rf"{_re.escape(base_name)}\s*({'|'.join(PLAYER_ROLE_SUFFIXES)})", source_text)
+        if nearby:
+            return nearby.group(1)
+    if any(marker in source_text for marker in PLAYER_CATCHER_HINT_MARKERS):
+        return "捕手"
+    if any(marker in source_text for marker in PLAYER_PITCHER_HINT_MARKERS):
+        return "投手"
+    if any(marker in source_text for marker in PLAYER_OUTFIELDER_HINT_MARKERS):
+        return "外野手"
+    if any(marker in source_text for marker in PLAYER_INFIELDER_HINT_MARKERS):
+        return "内野手"
+    return "選手"
+
+
+def _extract_player_role_label(title: str, summary: str) -> str:
+    name = _compact_subject_label(title, summary, "選手情報")
+    role = _extract_player_position(title, summary)
+    if not name:
+        return f"この{role}"
+    return f"{name}{role}"
+
+
+def _extract_prompt_fact_sentences(title: str, summary: str, max_sentences: int = 5) -> list[str]:
+    pieces = []
+    for part in _re.split(r"[。！？\n]+", _strip_html(summary)):
+        clean = part.strip(" ・\t")
+        if clean:
+            pieces.append(clean)
+    title_fact = _strip_title_prefix(title)
+    if title_fact:
+        pieces.append(title_fact)
+
+    deduped = []
+    seen = set()
+    for piece in pieces:
+        key = piece.replace(" ", "").replace("　", "")
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(piece)
+        if len(deduped) >= max_sentences:
+            break
+    return deduped
+
+
+def _find_source_sentence_with_markers(title: str, summary: str, markers: tuple[str, ...], exclude: set[str] | None = None) -> str:
+    exclude = exclude or set()
+    for sentence in _extract_prompt_fact_sentences(title, summary, max_sentences=5):
+        fact = _ensure_fact_sentence(sentence)
+        if not fact or fact in exclude:
+            continue
+        if any(marker in fact for marker in markers):
+            return fact
+    return ""
+
+
+def _extract_player_mechanics_topic(title: str, summary: str) -> str:
+    source_text = _strip_html(f"{title} {summary}")
+    for pattern in PLAYER_MECHANICS_TOPIC_PATTERNS:
+        match = _re.search(pattern, source_text)
+        if match:
+            return match.group(1)
+    mechanics_fact = _find_source_sentence_with_markers(
+        title,
+        summary,
+        PLAYER_MECHANICS_SPECIFIC_MARKERS + PLAYER_MECHANICS_CHANGE_MARKERS,
+    )
+    if mechanics_fact:
+        return _strip_title_prefix(mechanics_fact).strip("。 ")
+    return "技術面の修正"
+
+
+def _extract_player_status_topic(title: str, summary: str) -> str:
+    source_text = _strip_html(f"{title} {summary}")
+    farm_context = any(marker in source_text for marker in ("二軍戦", "２軍戦", "2軍戦", "二軍", "２軍", "2軍", "ファーム", "育成"))
+    for pattern, label in PLAYER_STATUS_TOPIC_PATTERNS:
+        if label == "一軍昇格" and farm_context:
+            continue
+        if _re.search(pattern, source_text):
+            return label
+    if farm_context:
+        if any(marker in source_text for marker in ("二軍戦", "２軍戦", "2軍戦")):
+            return "二軍戦"
+        if any(marker in source_text for marker in ("二軍", "２軍", "2軍", "ファーム", "育成")):
+            return "調整"
+    for marker in PLAYER_STATUS_MARKERS:
+        if marker in {"昇格", "一軍"} and farm_context:
+            continue
+        if marker in source_text:
+            return marker
+    return "調整"
+
+
+def _extract_player_quote_scene(title: str, summary: str) -> str:
+    source_text = _strip_html(f"{title} {summary}")
+    for pattern in PLAYER_QUOTE_SCENE_PATTERNS:
+        match = _re.search(pattern, source_text)
+        if match:
+            return match.group(1)
+    for term in _extract_player_quote_context_terms(title, summary):
+        if term.endswith("戦") or "登板" in term or term in {"試合前", "甲子園", "東京ドーム"}:
+            return term
+    return "試合前"
+
+
+def _format_source_day_label(source_published_at: datetime | None) -> str:
+    if not source_published_at:
+        return ""
+    local_dt = source_published_at.astimezone()
+    return f"{local_dt.month}月{local_dt.day}日"
+
+
+def _extract_player_status_terms(title: str, summary: str) -> list[str]:
+    source_text = _strip_html(f"{title} {summary}")
+    return _dedupe_preserve_order([marker for marker in PLAYER_STATUS_MARKERS if marker in source_text])[:4]
+
+
+def _extract_player_quote_context_terms(title: str, summary: str) -> list[str]:
+    source_text = _strip_html(f"{title} {summary}")
+    terms = []
+    for phrase in _extract_quote_phrases(f"{title}\n{summary}", max_phrases=2):
+        terms.append(phrase)
+    for marker in PLAYER_QUOTE_CONTEXT_MARKERS:
+        if marker in source_text:
+            terms.append(marker)
+    for team in NPB_TEAM_MARKERS:
+        if team in {"巨人", "読売ジャイアンツ"}:
+            continue
+        if team in source_text:
+            terms.append(team)
+    return _dedupe_preserve_order([term for term in terms if term and term not in GENERIC_REACTION_TERMS])[:6]
+
+
+def _detect_player_article_mode(title: str, summary: str, category: str = "選手情報") -> str:
+    if category and category != "選手情報":
+        return ""
+    source_text = _strip_html(f"{title} {summary}")
+    has_specific_mechanics = any(marker in source_text for marker in PLAYER_MECHANICS_SPECIFIC_MARKERS)
+    has_change_mechanics = any(marker in source_text for marker in PLAYER_MECHANICS_CHANGE_MARKERS)
+    if has_specific_mechanics and has_change_mechanics:
+        return "player_mechanics"
+    if _extract_quote_phrases(f"{title}\n{summary}", max_phrases=1):
+        return "player_quote"
+    return "player_status"
+
+
+def _should_skip_stale_player_status_entry(
+    category: str,
+    title: str,
+    summary: str,
+    source_published_at: datetime | None,
+    max_age_hours: int = 24,
+) -> bool:
+    if category != "選手情報":
+        return False
+    if _detect_player_article_mode(title, summary, category) != "player_status":
+        return False
+    if not source_published_at:
+        return False
+    threshold = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+    return source_published_at < threshold
+
+
+def _should_skip_stale_postgame_entry(
+    category: str,
+    title: str,
+    summary: str,
+    source_published_at: datetime | None,
+    max_age_hours: int = 24,
+) -> bool:
+    if category != "試合速報":
+        return False
+    if not source_published_at:
+        return False
+    if _detect_article_subtype(title, summary, category, True) != "postgame":
+        return False
+
+    local_published = source_published_at.astimezone()
+    local_now = datetime.now().astimezone()
+    if local_published.date() < local_now.date():
+        return True
+
+    threshold = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+    return source_published_at < threshold
+
+
+def _display_source_name(name: str) -> str:
+    clean = _collapse_ws(name or "スポーツニュース")
+    if not clean:
+        return "スポーツニュース"
+
+    brand = ""
+    for marker, label in SOURCE_BRAND_LABELS:
+        if marker in clean:
+            brand = label
+            break
+
+    if not brand:
+        return clean
+    if clean == brand or clean.startswith(f"{brand} / ") or clean.startswith(f"{brand}（"):
+        return clean
+    if clean.endswith("X") or "公式X" in clean or "巨人班X" in clean:
+        return f"{brand} / {clean}"
+    if "巨人" in clean and brand not in clean:
+        return f"{brand} / {clean}"
+    return clean
 
 
 def _build_source_fact_block(
@@ -890,6 +1305,105 @@ def _is_promotional_video_entry(title: str, summary: str) -> bool:
     return any(marker in promo_text for marker in VIDEO_PROMO_SUMMARY_MARKERS)
 
 
+def _next_unused_source_fact(title: str, summary: str, used_facts: set[str]) -> str:
+    for sentence in _extract_prompt_fact_sentences(title, summary, max_sentences=5):
+        fact = _ensure_fact_sentence(sentence)
+        if fact and fact not in used_facts:
+            return fact
+    return ""
+
+
+def _build_player_quote_strict_prompt(title: str, summary: str) -> str:
+    player_role = _extract_player_role_label(title, summary)
+    scene = _extract_player_quote_scene(title, summary)
+    quote = _extract_quote_phrases(f"{title}\n{summary}", max_phrases=1)
+    quote_text = quote[0] if quote else _strip_title_prefix(title)[:24]
+    return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
+以下の番号付き事実のみ使用可です。それ以外の情報・解釈・感想・一般論を含む文は出力しないでください。
+1. {player_role}は読売ジャイアンツ所属である。
+2. {player_role}が{scene}に向け「{quote_text}」と話した。{scene}に向けた考え方として出たコメントである。
+3. 試合前コメントの記事である。
+ですます調、300〜400文字で書いてください。
+見出しは【ニュースの整理】と【次の注目】の2つのみです。それ以外の見出しを書いたら出力失敗です。
+【ニュースの整理】では、何を言ったかと、どの場面に向けた言葉かだけを書いてください。
+【次の注目】では、試合の入り方にこの意識がどう出るかだけを書いてください。
+事実にない単語を1つでも足さないでください。事実の言い換えと、次の試合で見るべき点だけで構成してください。
+筆者の評価・感想・印象は書かないでください。
+【次の注目】内の全ての文で「注目されます」「注目が集まります」「期待されます」は使用禁止です。文末は「〜に注目です」「〜がポイントです」「〜を見たいところです」のどれかで終えてください。
+本文だけを出力してください。
+"""
+
+
+def _build_player_mechanics_strict_prompt(title: str, summary: str) -> str:
+    player_role = _extract_player_role_label(title, summary)
+    topic = _extract_player_mechanics_topic(title, summary)
+    topic_fact = _ensure_fact_sentence(f"{player_role}が{topic}に取り組んでいる。")
+    change_fact = _find_source_sentence_with_markers(
+        title,
+        summary,
+        PLAYER_MECHANICS_SPECIFIC_MARKERS + PLAYER_MECHANICS_CHANGE_MARKERS,
+        exclude={topic_fact},
+    )
+    used_facts = {fact for fact in [topic_fact, change_fact] if fact}
+    context_fact = _next_unused_source_fact(title, summary, used_facts)
+    if not change_fact:
+        change_fact = _next_unused_source_fact(title, summary, {topic_fact}) or topic_fact
+        used_facts = {fact for fact in [topic_fact, change_fact] if fact}
+        context_fact = _next_unused_source_fact(title, summary, used_facts)
+    if not context_fact:
+        context_fact = change_fact
+    return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
+以下の番号付き事実のみ使用可です。それ以外の情報・解釈・感想・一般論を含む文は出力しないでください。
+1. {player_role}は読売ジャイアンツ所属である。
+2. {player_role}が{topic}に取り組んでいる。
+3. {change_fact}
+4. {context_fact}
+ですます調、400〜550文字で書いてください。ただし事実が薄い場合は400文字未満でも構いません。無理に話を広げないでください。
+見出しは【ニュースの整理】を必ず使ってください。見出しを3つ使う場合は【ここに注目】【次の注目】の順にしてください。
+【ニュースの整理】では、何を変えているかと、どの場面に向けた修正かだけを書いてください。
+【ここに注目】では、事実2と事実3に書かれている修正内容を、別の言葉で言い換えずにそのまま整理してください。結果や効果は書かないでください。
+【次の注目】では、次の実戦でその修正が続いているかを見る、という点だけを書いてください。
+事実にない数字・比較・結果を足さないでください。
+事実にない単語を1つでも足さないでください。
+同じ事実を繰り返さないでください。一度書いた内容は別の見出しで再度書かないでください。
+筆者の評価・感想・印象は書かないでください。
+【次の注目】内の全ての文で「注目されます」「注目が集まります」「期待されます」「反映されていくか」「着目していきます」は使用禁止です。文末は「〜に注目です」「〜がポイントです」「〜を見たいところです」のどれかで終えてください。
+本文だけを出力してください。
+"""
+
+
+def _build_player_status_strict_prompt(title: str, summary: str, source_day_label: str = "") -> str:
+    player_role = _extract_player_role_label(title, summary)
+    status_topic = _extract_player_status_topic(title, summary)
+    status_fact = _find_source_sentence_with_markers(title, summary, PLAYER_STATUS_MARKERS)
+    used_facts = {fact for fact in [status_fact] if fact}
+    context_fact = _next_unused_source_fact(title, summary, used_facts)
+    if not status_fact:
+        status_fact = _next_unused_source_fact(title, summary, set()) or f"{player_role}が{status_topic}の状態にある。"
+        used_facts = {status_fact}
+        context_fact = _next_unused_source_fact(title, summary, used_facts)
+    if not context_fact:
+        context_fact = status_fact
+    opening_time_rule = f"本文の最初は必ず「（{source_day_label}時点）」で始めてください。\n" if source_day_label else ""
+    return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
+以下の番号付き事実のみ使用可です。それ以外の情報・解釈・感想・一般論を含む文は出力しないでください。
+1. {player_role}は読売ジャイアンツ所属である。
+2. {player_role}が{status_topic}の状態にある。
+3. {status_fact}
+4. {context_fact}
+ですます調、200〜350文字で書いてください。ただし事実が薄い場合は200文字未満でも構いません。無理に話を広げないでください。
+{opening_time_rule}見出しは【ニュースの整理】と【次の注目】の2つのみです。それ以外の見出しを書いたら出力失敗です。
+【ニュースの整理】では、今どの状態かと、現在の登録・起用状況だけを書いてください。
+【次の注目】では、投手は次回登板、野手は次の実戦出場、捕手は次の登録発表のどれか1つだけを書いてください。
+事実にない数字・比較・結果を足さないでください。
+事実にない単語を1つでも足さないでください。
+同じ事実を繰り返さないでください。一度書いた内容は別の見出しで再度書かないでください。
+筆者の評価・感想・印象は書かないでください。
+【次の注目】内の全ての文で「注目されます」「注目が集まります」「期待されます」「反映されていくか」「着目していきます」は使用禁止です。文末は「〜に注目です」「〜がポイントです」「〜を見たいところです」のどれかで終えてください。
+本文だけを出力してください。
+"""
+
+
 def _build_gemini_strict_prompt(
     title: str,
     summary: str,
@@ -898,14 +1412,20 @@ def _build_gemini_strict_prompt(
     win_loss_hint: str,
     has_game: bool,
     real_reactions: list[str] | None = None,
+    source_day_label: str = "",
 ) -> str:
     subject = _extract_subject_label(title, "", category)
     first_heading, second_heading, third_heading = _article_section_headings(category, category == "試合速報")
     article_subtype = _detect_article_subtype(title, summary, category, has_game)
-    opening_focus = "最初の1文でニュースの核心を書く"
+    player_mode = _detect_player_article_mode(title, summary, category) if category == "選手情報" else ""
     if category == "選手情報":
-        opening_focus = f"最初の1文で{subject}に何が起きたかと、何を変えようとしているのかを明確に書く"
-    elif category == "首脳陣":
+        if player_mode == "player_mechanics":
+            return _build_player_mechanics_strict_prompt(title, summary)
+        if player_mode == "player_quote":
+            return _build_player_quote_strict_prompt(title, summary)
+        return _build_player_status_strict_prompt(title, summary, source_day_label=source_day_label)
+    opening_focus = "最初の1文でニュースの核心を書く"
+    if category == "首脳陣":
         opening_focus = f"最初の1文で{subject}の発言より先に、ベンチが何を動かそうとしているのかを書く"
     elif category == "試合速報":
         if article_subtype == "lineup":
@@ -936,13 +1456,28 @@ def _build_gemini_strict_prompt(
 
     category_rules = ""
     if category == "選手情報":
-        category_rules = (
-            f"・{second_heading}では、{subject}が何を変えているのか、外から受けた助言や投げ方の変化がどこに出ているのかを先に整理する\n"
-            f"・{second_heading}では、結果の羅列よりも、フォーム・投げ方・考え方の変化を1つか2つに絞って掘る\n"
-            f"・{third_heading}では、次の実戦でどこを見るかを具体的に書く。『今後に期待』『注目される』のような抽象表現だけで終えない\n"
-            "・『可能性があります』『期待が高まります』『注目されます』『重要な意味を持ちます』のような無難語はできるだけ避け、『どこが気になるか』『どこが分かれ目か』で書く\n"
-            "・『詳細が分かれば』『データが出れば』『明らかになれば』のように、元記事にない追加材料待ちで文を埋めない\n"
-        )
+        if player_mode == "player_mechanics":
+            category_rules = (
+                f"・{second_heading}では、{subject}が何を変えているのか、外から受けた助言や投げ方の変化がどこに出ているのかを先に整理する\n"
+                f"・{second_heading}では、結果の羅列よりも、フォーム・投げ方・考え方の変化を1つか2つに絞って掘る\n"
+                f"・{third_heading}では、次の実戦でどこを見るかを具体的に書く。『今後に期待』『注目される』のような抽象表現だけで終えない\n"
+                "・『可能性があります』『期待が高まります』『注目されます』『重要な意味を持ちます』のような無難語はできるだけ避け、『どこが気になるか』『どこが分かれ目か』で書く\n"
+                "・『詳細が分かれば』『データが出れば』『明らかになれば』のように、元記事にない追加材料待ちで文を埋めない\n"
+            )
+        elif player_mode == "player_quote":
+            category_rules = (
+                f"・{second_heading}では、{subject}の言葉を言い換えて膨らませず、何を意識したコメントなのかを整理する\n"
+                f"・{second_heading}では、フォーム変更・投げ方修正・助言など、元記事にない mechanics の話を足さない\n"
+                f"・{third_heading}では、その意識が次の実戦のどこに出るかを書く。相手や球場、立ち上がりなど具体的な観点を置く\n"
+                "・薄いコメント記事なので、無理に数字や抽象論で膨らませない\n"
+            )
+        else:
+            category_rules = (
+                f"・{second_heading}では、{subject}がいまどの段階にいるのかを整理する。昇格・復帰・二軍戦・登録状況などの現在地を先に置く\n"
+                f"・{second_heading}では、精神論や一般論ではなく、今回の動きがチーム内の役割や次の実戦にどうつながるかを書く\n"
+                f"・{third_heading}では、次に確認すべきポイントを具体的に書く。『今後に期待』だけで終えない\n"
+                "・元記事にない深いフォーム論や長い感想は足さない\n"
+            )
     elif category == "首脳陣":
         category_rules = (
             f"・{second_heading}では、発言の言い回しよりも、ベンチがどこを動かそうとしているかを整理する\n"
@@ -1356,6 +1891,21 @@ def _reaction_focus_score(text: str, title: str, summary: str, category: str, fo
     return score
 
 
+def _reaction_has_subject_context(text: str, title: str, summary: str, category: str) -> bool:
+    clean = _strip_html(text or "")
+    subject = _extract_subject_label(title, summary, category)
+    compact_subject = _compact_subject_label(title, summary, category)
+    family_name_alias = _player_family_name_alias(title, summary, category)
+    generic_subjects = {"巨人", "選手", "首脳陣"}
+    if subject and subject not in generic_subjects and subject in clean:
+        return True
+    if compact_subject and compact_subject not in generic_subjects and compact_subject in clean:
+        return True
+    if family_name_alias and family_name_alias in clean:
+        return True
+    return False
+
+
 def _reaction_can_fill_shortage(
     text: str,
     title: str,
@@ -1368,21 +1918,74 @@ def _reaction_can_fill_shortage(
     clean = _strip_html(text or "")
     subject = _extract_subject_label(title, summary, category)
     compact_subject = _compact_subject_label(title, summary, category)
-    compact_subject_short = ""
-    if compact_subject and _re.fullmatch(r"[一-龥ァ-ヴー]{4,8}", compact_subject):
-        compact_subject_short = compact_subject[:2]
+    family_name_alias = _player_family_name_alias(title, summary, category)
+    player_mode = _detect_player_article_mode(title, summary, category) if category == "選手情報" else ""
     if focus_score >= 2:
         return False
+    if category == "選手情報" and player_mode == "player_quote":
+        quote_hit = any(phrase in clean for phrase in _extract_quote_phrases(f"{title}\n{summary}", max_phrases=2))
+        context_hits = sum(1 for term in _extract_player_quote_context_terms(title, summary) if term in clean)
+        return (
+            _reaction_has_subject_context(clean, title, summary, category)
+            and (quote_hit or context_hits >= 1)
+            and (opinion_score >= 1 or commentary_score >= 1)
+        )
+    if category == "選手情報" and player_mode == "player_status":
+        status_hits = sum(1 for term in _extract_player_status_terms(title, summary) if term in clean)
+        return (
+            _reaction_has_subject_context(clean, title, summary, category)
+            and status_hits >= 1
+            and (opinion_score >= 1 or commentary_score >= 1)
+        )
     if focus_score >= 1 and (opinion_score >= 1 or commentary_score >= 1):
         return True
     if subject and subject not in {"巨人", "選手", "首脳陣"} and subject in clean and commentary_score >= 1:
         return True
     if compact_subject and compact_subject in clean and (opinion_score >= 1 or commentary_score >= 1):
         return True
-    if compact_subject_short and compact_subject_short in clean and (opinion_score >= 1 or commentary_score >= 1):
+    if category == "選手情報" and family_name_alias and family_name_alias in clean and commentary_score >= 1:
+        return True
+    if category != "選手情報" and family_name_alias and family_name_alias in clean and (opinion_score >= 1 or commentary_score >= 1):
         return True
     if any(term in clean for term in CATEGORY_REACTION_TERMS.get(category, ())) and (opinion_score >= 1 or commentary_score >= 1):
         return True
+    return False
+
+
+def _source_requires_precise_fan_reactions(source_name: str, category: str) -> bool:
+    clean = source_name or ""
+    return category in {"選手情報", "首脳陣"} and ("X" in clean or "公式" in clean)
+
+
+def _reaction_matches_precise_source_context(
+    text: str,
+    title: str,
+    summary: str,
+    category: str,
+    focus_terms: list[str],
+) -> bool:
+    clean = _strip_html(text or "")
+    subject = _extract_subject_label(title, summary, category)
+    player_mode = _detect_player_article_mode(title, summary, category) if category == "選手情報" else ""
+    if category == "選手情報" and player_mode == "player_quote":
+        quote_hit = any(phrase in clean for phrase in _extract_quote_phrases(f"{title}\n{summary}", max_phrases=2))
+        context_hits = sum(1 for term in _extract_player_quote_context_terms(title, summary) if term in clean)
+        return quote_hit or (_reaction_has_subject_context(clean, title, summary, category) and context_hits >= 1)
+    if category == "選手情報" and player_mode == "player_status":
+        status_hits = sum(1 for term in _extract_player_status_terms(title, summary) if term in clean)
+        return _reaction_has_subject_context(clean, title, summary, category) and status_hits >= 1
+    if any(phrase in clean for phrase in _extract_quote_phrases(f"{title}\n{summary}", max_phrases=2)):
+        return True
+
+    generic_subjects = {"巨人", "選手", "首脳陣"}
+    if subject and subject not in generic_subjects and subject in clean:
+        topical_hits = sum(
+            1
+            for term in focus_terms[:4]
+            if term and term not in GENERIC_REACTION_TERMS and term != subject and term in clean
+        )
+        return topical_hits >= 1 or category == "首脳陣"
+
     return False
 
 
@@ -1409,6 +2012,13 @@ def _build_fan_reaction_focus_terms(title: str, summary: str, category: str) -> 
     subject = _compact_subject_label(title, summary, category)
     text = f"{_strip_title_prefix(title)} {_strip_html(summary)}"
     candidates = []
+    player_mode = _detect_player_article_mode(title, summary, category) if category == "選手情報" else ""
+    if category == "選手情報" and player_mode == "player_quote":
+        candidates.extend(_extract_player_quote_context_terms(title, summary))
+        return _dedupe_preserve_order(candidates)[:8]
+    if category == "選手情報" and player_mode == "player_status":
+        candidates.extend(_extract_player_status_terms(title, summary))
+        return _dedupe_preserve_order([term for term in candidates if term not in GENERIC_REACTION_TERMS])[:8]
     for keyword in TOPICAL_REACTION_KEYWORDS:
         if keyword in text and keyword not in GENERIC_REACTION_TERMS:
             candidates.append(keyword)
@@ -1426,11 +2036,45 @@ def _build_fan_reaction_queries(title: str, summary: str, category: str) -> list
     subject = _extract_subject_label(title, summary, category)
     compact_subject = _compact_subject_label(title, summary, category)
     focus_terms = _build_fan_reaction_focus_terms(title, summary, category)
+    player_mode = _detect_player_article_mode(title, summary, category) if category == "選手情報" else ""
     topic = _strip_title_prefix(title)
     topic = _re.sub(r"[「」『』【】\[\]]", "", topic)
     topic = topic[:24].strip("。 ")
     generic_subjects = {"選手", "首脳陣", "巨人"}
     queries = []
+
+    if category == "選手情報" and player_mode == "player_quote":
+        quote_terms = _extract_quote_phrases(f"{title}\n{summary}", max_phrases=2)
+        context_terms = [term for term in _extract_player_quote_context_terms(title, summary) if term not in quote_terms]
+        if subject and subject not in generic_subjects:
+            for phrase in quote_terms[:2]:
+                queries.append(f"{subject} {phrase}")
+            for term in context_terms[:2]:
+                queries.append(f"{subject} {term}")
+            queries.append(f"{subject} 巨人")
+        if compact_subject and compact_subject not in generic_subjects and compact_subject != subject:
+            for phrase in quote_terms[:1]:
+                queries.append(f"{compact_subject} {phrase}")
+            for term in context_terms[:1]:
+                queries.append(f"{compact_subject} {term}")
+        if quote_terms:
+            queries.append(f"巨人 {quote_terms[0]}")
+        return _dedupe_preserve_order(queries)[:6]
+
+    if category == "選手情報" and player_mode == "player_status":
+        status_terms = _extract_player_status_terms(title, summary)
+        if subject and subject not in generic_subjects:
+            for term in status_terms[:3]:
+                queries.append(f"{subject} {term}")
+            queries.append(f"{subject} 巨人")
+            queries.append(subject)
+        if compact_subject and compact_subject not in generic_subjects and compact_subject != subject:
+            for term in status_terms[:2]:
+                queries.append(f"{compact_subject} {term}")
+            queries.append(f"{compact_subject} 巨人")
+        if subject:
+            queries.append(f"ジャイアンツ {subject}")
+        return _dedupe_preserve_order(queries)[:6]
 
     if subject and subject not in generic_subjects:
         for term in focus_terms[:2]:
@@ -1481,9 +2125,19 @@ def _build_safe_article_fallback(
     pregame_article = _is_pregame_article(title, summary, category, has_game)
     article_subtype = _detect_article_subtype(title, summary, category, has_game)
     quote_phrases = _extract_quote_phrases(f"{title}\n{summary}", max_phrases=2)
+    player_mode = _detect_player_article_mode(title, summary, category) if category == "選手情報" else ""
+    player_mechanics_story = player_mode == "player_mechanics"
+    player_quote_story = player_mode == "player_quote"
+    player_status_story = player_mode == "player_status"
+    player_status_terms = _extract_player_status_terms(title, summary) if category == "選手情報" else []
     intro = "まずは今回のニュースで押さえておきたいポイントから整理します。"
     if category == "選手情報":
-        intro = f"{subject}の現状を整理します。"
+        if player_mechanics_story:
+            intro = f"{subject}が何を変えているのか整理します。"
+        elif player_quote_story:
+            intro = f"{subject}のコメントと試合前の論点を整理します。"
+        else:
+            intro = f"{subject}の現状を整理します。"
     elif category == "首脳陣":
         intro = "整理すると、今回のニュースは3点です。"
     elif category == "補強・移籍":
@@ -1507,16 +2161,34 @@ def _build_safe_article_fallback(
             clean = _clean_reaction_snippet(_reaction_body_text(reaction))
             if clean:
                 snippets.append(clean)
-        if snippets and category == "選手情報":
+        if snippets and category == "選手情報" and player_mechanics_story:
             reaction_line = f"反応を見ると、{subject}の今回の好投そのものより、いまのフォーム変更が次の実戦でも続くかを見たい空気が強いです。"
+        elif snippets and category == "選手情報" and player_quote_story and quote_phrases:
+            reaction_line = f"反応を見ると、{subject}が口にした「{quote_phrases[0]}」という意識が次の実戦でどう出るかを見たい空気が強いです。"
+        elif snippets and category == "選手情報" and player_status_story:
+            if any(term in player_status_terms for term in ("昇格", "一軍", "登録", "復帰", "合流")):
+                reaction_line = f"反応を見ると、{subject}の今回の動きが一軍での立ち位置にどうつながるかを見たい空気が強いです。"
+            else:
+                reaction_line = f"反応を見ると、{subject}の今回の動きが次の登板や実戦内容にどうつながるかを見たい空気が強いです。"
+        elif snippets and category == "選手情報":
+            reaction_line = f"反応を見ると、{subject}の今回のコメントや準備が次の実戦でどう表れるかを見たい空気が強いです。"
         elif snippets and category == "首脳陣":
             reaction_line = "反応を見ると、このコメントの強さそのものより、次のスタメンや起用がどう動くかを見たい空気が強いです。"
         elif snippets:
             joined = " / ".join(snippets)
             reaction_line = f"反応を見ると「{joined}」という温度感があり、次の動きへの期待と不安が同時に出ている話題です。"
 
-    if category == "選手情報":
+    if category == "選手情報" and player_mechanics_story:
         closing = f"{subject}は次の実戦で、今回いじっている部分をそのまま出せるかが一番の見どころです。結果より先に、球の見え方がどう変わるかを追っていきたいです。今回の記事は、その入口としてかなり分かりやすい材料になっています。みなさんの意見はコメントで教えてください！"
+    elif category == "選手情報" and player_quote_story and quote_phrases:
+        closing = f"{subject}は次の実戦で、今回口にした「{quote_phrases[0]}」という意識をどこまで内容に落とし込めるかが見どころです。言葉だけで終わるのか、阪神戦の入り方や配球にまで出るのかを追っていきたいです。みなさんの意見はコメントで教えてください！"
+    elif category == "選手情報" and player_status_story:
+        if any(term in player_status_terms for term in ("昇格", "一軍", "登録", "復帰", "合流")):
+            closing = f"{subject}は次に、一軍でどこまで役割をもらえるかが見どころです。名前が戻るだけで終わるのか、実際の起用や序列にまで踏み込むのかを追っていきたいです。みなさんの意見はコメントで教えてください！"
+        else:
+            closing = f"{subject}は次の実戦で、今回の動きがどこまで内容に出るかが見どころです。二軍戦や調整登板の先で、一軍につながる材料をどこまで見せられるかを追っていきたいです。みなさんの意見はコメントで教えてください！"
+    elif category == "選手情報":
+        closing = f"{subject}は次の実戦で、今回のコメントや準備がどこまで内容に出るかが見どころです。結果だけでなく、入り方や組み立ての変化まで追っていきたいです。みなさんの意見はコメントで教えてください！"
     elif category == "首脳陣":
         closing = "このコメントが次のスタメンや継投、ベンチの空気にどう出るかまで見ていきたいです。誰を残し、誰を動かすのかまで見えてくると、この発言の重さも変わってきます。みなさんの意見はコメントで教えてください！"
     elif category == "試合速報":
@@ -1666,11 +2338,23 @@ def _build_safe_article_fallback(
         watch_line = reaction_line if reaction_line else "ここで見ておきたいのは、単なる事実確認だけでなく、この動きが次の試合や起用にどうつながるかという点です。"
         news_lines = []
         if category == "選手情報":
-            if quote_phrases:
+            if player_mechanics_story and quote_phrases:
                 focus_line = f"今回の言葉で目を引くのは「{quote_phrases[0]}」という部分です。フォームそのものより、外からの助言を受け入れて投げ方を組み替えているところに今の本気度が出ています。数字だけを追う記事ではなく、何を崩してでも前へ進もうとしているのかが見える話です。完成形を守る段階ではなく、自分を崩してでも戻しにいっているところが今回の芯です。"
+            elif player_quote_story and quote_phrases:
+                focus_line = f"今回のニュースで目を引くのは「{quote_phrases[0]}」という言葉です。コメントの強さだけでなく、{subject}が相手打線へどう入ろうとしているのか、その考え方が短い一言の中に出ています。試合前の記事として読むと、調子の良し悪しより先に、何を意識してマウンドに上がるのかが見えてくる材料です。"
+                watch_line = reaction_line if reaction_line else f"次に見たいのは、{subject}が口にした「{quote_phrases[0]}」という意識が実戦の内容にどうつながるかという点です。立ち上がりや配球の組み立てにその考えが出るなら、今回のコメントの重さも見えてきます。"
+            elif player_status_story:
+                if any(term in player_status_terms for term in ("昇格", "一軍", "登録", "復帰", "合流")):
+                    focus_line = f"今回のニュースで大事なのは、{subject}がいま一軍の戦力表のどこに戻ってくるのかという点です。名前が載ったこと自体より、どの役割で呼ばれるのか、既存の序列をどう動かすのかまで見て読む記事です。復帰や昇格はゴールではなく、ここからどこまで食い込めるかが本当の焦点になります。"
+                    watch_line = reaction_line if reaction_line else f"次に見たいのは、{subject}が今回の動きの先でどんな役割をもらうかという点です。ベンチ入りだけで終わるのか、スタメンや勝ちパターンまで踏み込むのかを見ていきたいです。"
+                else:
+                    focus_line = f"今回のニュースで大事なのは、{subject}がいまどの段階にいるのかという点です。二軍戦や調整登板の見出しだけで終わらず、一軍へ上がる前のどこを確認している段階なのかを整理して読むべき記事です。状態そのものより、チームが何をチェックしているのかまで見えると意味が変わってきます。"
+                    watch_line = reaction_line if reaction_line else f"次に見たいのは、{subject}の今回の動きが次の登板や一軍合流にどうつながるかという点です。数字だけでなく、起用のされ方まで追っていきたいです。"
             else:
-                focus_line = f"数字以上に気になるのは、{subject}が何を変えようとしているのかという点です。結果より先に、投げ方や考え方の変化が見えてくる記事です。調整段階の記事でも、どこをいじっているのかが見えると読み味はかなり変わってきます。"
-            watch_line = reaction_line if reaction_line else f"次に見たいのは、{subject}の今回の調整が次の実戦でもそのまま出るかという点です。球筋や制球の見え方が変わるなら、今回の取り組みが本物かどうかも見えてきます。"
+                focus_line = f"数字以上に気になるのは、{subject}が今回どんな入り方や準備を意識しているのかという点です。単に状態を追う記事ではなく、次の実戦で何を見ればいいかのヒントが入っているタイプの話です。短いコメントでも、相手や場面に対する考え方が見えると読み味はかなり変わってきます。"
+                watch_line = reaction_line if reaction_line else f"次に見たいのは、{subject}の今回のコメントや準備が次の実戦でもそのまま出るかという点です。立ち上がりや攻め方に変化が見えれば、今回の記事の意味もはっきりしてきます。"
+            if player_mechanics_story:
+                watch_line = reaction_line if reaction_line else f"次に見たいのは、{subject}の今回の調整が次の実戦でもそのまま出るかという点です。球筋や制球の見え方が変わるなら、今回の取り組みが本物かどうかも見えてきます。"
         elif category == "試合速報":
             focus_line = "結果だけを並べるより、どこで流れが動いたかを見ておきたい試合です。得点の前後で何が起きたのかまで追うと、見え方が変わってきます。"
             watch_line = reaction_line if reaction_line else "次に見たいのは、この試合で出た手応えや課題が次戦にも続くのかという点です。"
@@ -2154,7 +2838,12 @@ def _extract_entry_image_urls(entry: dict, page_url: str = "", max_images: int =
 # ──────────────────────────────────────────────────────────
 # Yahoo リアルタイム検索でファン反応を取得（記事に組み込む用）
 # ──────────────────────────────────────────────────────────
-def fetch_fan_reactions_from_yahoo(title: str, summary: str = "", category: str = "") -> list:
+def fetch_fan_reactions_from_yahoo(
+    title: str,
+    summary: str = "",
+    category: str = "",
+    source_name: str = "",
+) -> list:
     """記事タイトルからキーワードを抽出し、Yahoo リアルタイム検索でファン投稿を取得。"""
     logger = logging.getLogger("rss_fetcher")
     queries = _build_fan_reaction_queries(title, summary, category)
@@ -2165,6 +2854,7 @@ def fetch_fan_reactions_from_yahoo(title: str, summary: str = "", category: str 
     focus_terms = _build_fan_reaction_focus_terms(title, summary, category)
     excluded_handles = get_fan_reaction_excluded_handles()
     max_age_hours = get_fan_reaction_max_age_hours()
+    strict_source_match = _source_requires_precise_fan_reactions(source_name, category)
     now_ts = int(datetime.now(timezone.utc).timestamp())
     primary_candidates = []
     reserve_candidates = []
@@ -2199,6 +2889,14 @@ def fetch_fan_reactions_from_yahoo(title: str, summary: str = "", category: str 
             commentary_score = _reaction_commentary_score(text)
             focus_score = _reaction_focus_score(text, title, summary, category, focus_terms)
             if _reaction_is_low_value_share(text, title, summary, opinion_score, commentary_score):
+                continue
+            if strict_source_match and not _reaction_matches_precise_source_context(
+                text,
+                title,
+                summary,
+                category,
+                focus_terms,
+            ):
                 continue
             reaction = {
                 "handle": handle,
@@ -2407,7 +3105,15 @@ def _fact_check_article(title: str, article_text: str, api_key: str) -> str:
 # ──────────────────────────────────────────────────────────
 # Geminiでニュース解説記事を生成
 # ──────────────────────────────────────────────────────────
-def generate_article_with_gemini(title: str, summary: str, category: str, real_reactions: list = None, has_game: bool = True) -> str:
+def generate_article_with_gemini(
+    title: str,
+    summary: str,
+    category: str,
+    real_reactions: list = None,
+    has_game: bool = True,
+    source_name: str = "",
+    source_day_label: str = "",
+) -> str:
     """Geminiで巨人ファン向け解説記事を生成。失敗時は空文字を返す。"""
     import urllib.request, urllib.error
     from dotenv import load_dotenv
@@ -2426,7 +3132,7 @@ def generate_article_with_gemini(title: str, summary: str, category: str, real_r
 
     # ファン反応（呼び出し元から渡された場合はそれを使う、なければ取得）
     if real_reactions is None:
-        real_reactions = fetch_fan_reactions_from_yahoo(title, summary, category)
+        real_reactions = fetch_fan_reactions_from_yahoo(title, summary, category, source_name=source_name)
     if real_reactions:
         fan_voices = "\n".join(f"「{_reaction_body_text(r)}」" for r in real_reactions[:3])
         fan_section = f"※以下は実際のXユーザーの声（記事には含めなくてよい、雰囲気の参考のみ）\n{fan_voices}"
@@ -2471,6 +3177,7 @@ def generate_article_with_gemini(title: str, summary: str, category: str, real_r
             win_loss_hint,
             has_game,
             real_reactions=real_reactions,
+            source_day_label=source_day_label,
         )
         payload = json.dumps({
             "contents": [{"parts": [{"text": prompt}]}],
@@ -2874,13 +3581,11 @@ X検索で「{query_short} 巨人」に関するファンの声を{fan_reaction_
 # ──────────────────────────────────────────────────────────
 # ニュース記事ブロックHTML生成
 # ──────────────────────────────────────────────────────────
-def build_news_block(title: str, summary: str, url: str, source_name: str, category: str = "コラム", og_image_url: str = "", media_id: int = 0, extra_images: list = None, has_game: bool = True, article_ai_mode_override: str | None = None, source_links: list[dict] | None = None) -> tuple[str, str]:
+def build_news_block(title: str, summary: str, url: str, source_name: str, category: str = "コラム", og_image_url: str = "", media_id: int = 0, extra_images: list = None, has_game: bool = True, article_ai_mode_override: str | None = None, source_links: list[dict] | None = None, source_day_label: str = "") -> tuple[str, str]:
     import re
     summary_clean = re.sub(r"<[^>]+>", "", summary).strip()
     article_subtype = _detect_article_subtype(title, summary_clean, category, has_game)
     article_ai_mode = get_article_ai_mode(has_game, article_ai_mode_override) if should_use_ai_for_category(category) else "none"
-    if category == "選手情報" and not has_game and article_ai_mode_override is None:
-        article_ai_mode = "none"
     fan_reaction_limit = get_fan_reaction_limit()
     lineup_stat_rows = []
     if category == "試合速報" and article_subtype == "lineup":
@@ -2907,15 +3612,15 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             win_loss_hint = "※この試合は巨人が【敗戦】した試合です。負け試合として正直に書くこと。前向きに美化しない。"
 
     if article_ai_mode == "none":
-        real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, category)
+        real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, category, source_name=source_name)
         ai_body = ""
         real_reactions = real_reactions_yahoo
         summary_block = ""
         stats_block = ""
         impression_block = ""
     elif article_ai_mode == "gemini":
-        real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, category)
-        ai_body = generate_article_with_gemini(title, summary_clean, category, real_reactions=real_reactions_yahoo, has_game=has_game)
+        real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, category, source_name=source_name)
+        ai_body = generate_article_with_gemini(title, summary_clean, category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label)
         real_reactions = real_reactions_yahoo
         summary_block = ""
         stats_block = ""
@@ -2923,8 +3628,8 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     elif article_ai_mode == "grok":
         ai_body, real_reactions, summary_block, stats_block, impression_block = generate_article_with_grok(title, summary_clean, category, win_loss_hint)
         if not ai_body:
-            real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, category)
-            ai_body = generate_article_with_gemini(title, summary_clean, category, real_reactions=real_reactions_yahoo, has_game=has_game)
+            real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, category, source_name=source_name)
+            ai_body = generate_article_with_gemini(title, summary_clean, category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label)
             real_reactions = real_reactions_yahoo
             summary_block = ""
             stats_block = ""
@@ -2934,15 +3639,15 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         if has_game:
             ai_body, real_reactions, summary_block, stats_block, impression_block = generate_article_with_grok(title, summary_clean, category, win_loss_hint)
             if not ai_body:
-                real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, category)
-                ai_body = generate_article_with_gemini(title, summary_clean, category, real_reactions=real_reactions_yahoo, has_game=has_game)
+                real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, category, source_name=source_name)
+                ai_body = generate_article_with_gemini(title, summary_clean, category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label)
                 real_reactions = real_reactions_yahoo
                 summary_block = ""
                 stats_block = ""
                 impression_block = ""
         else:
-            real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, category)
-            ai_body = generate_article_with_gemini(title, summary_clean, category, real_reactions=real_reactions_yahoo, has_game=has_game)
+            real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, category, source_name=source_name)
+            ai_body = generate_article_with_gemini(title, summary_clean, category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label)
             real_reactions = real_reactions_yahoo
             summary_block = ""
             stats_block = ""
@@ -3379,7 +4084,13 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     # ──────────────────────────────────────────────────────────
     summary_text_to_show = summary_block if summary_block else _build_safe_summary_snippet(title, summary_clean)
     safe_title = title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    display_source_links = source_links or [{"name": source_name or "スポーツニュース", "url": url}]
+    display_source_links = [
+        {
+            **item,
+            "name": _display_source_name(item.get("name") or "スポーツニュース"),
+        }
+        for item in (source_links or [{"name": source_name or "スポーツニュース", "url": url}])
+    ]
     source_badge = " / ".join(
         (item.get("name") or "スポーツニュース").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         for item in display_source_links[:3]
@@ -3720,13 +4431,23 @@ def save_history_batch(urls: list[str], history: dict, title_norms: list[str] | 
 
 
 def _entry_day_key(entry: dict) -> str:
-    pub = entry.get("published_parsed") or entry.get("updated_parsed")
-    if not pub:
+    published_at = _entry_published_datetime(entry)
+    if not published_at:
         return ""
     try:
-        return datetime(*pub[:6], tzinfo=timezone.utc).astimezone().strftime("%Y-%m-%d")
+        return published_at.astimezone().strftime("%Y-%m-%d")
     except Exception:
         return ""
+
+
+def _entry_published_datetime(entry: dict) -> datetime | None:
+    pub = entry.get("published_parsed") or entry.get("updated_parsed")
+    if not pub:
+        return None
+    try:
+        return datetime(*pub[:6], tzinfo=timezone.utc)
+    except Exception:
+        return None
 
 
 def _merge_source_summary(candidates: list[dict], max_sentences: int = 6) -> str:
@@ -4120,6 +4841,8 @@ def is_giants_related(text: str) -> bool:
 def classify_category(text: str, keywords: dict) -> str:
     if _is_farm_lineup_text(text):
         return "ドラフト・育成"
+    if any(marker in text for marker in ("二軍戦", "２軍戦", "2軍戦", "二軍", "２軍", "2軍", "ファーム", "育成")):
+        return "ドラフト・育成"
     for category, kws in keywords.items():
         if any(kw in text for kw in kws):
             return category
@@ -4181,10 +4904,12 @@ def rewrite_display_title(title: str, summary: str, category: str, has_game: boo
     clean_title = _clean_display_title_text(title)
     clean_summary = _strip_html(summary or "").strip()
     subject = _short_subject_name(title, summary, category) or "巨人"
+    manager_display_subject = subject
     if category == "首脳陣":
         manager_label = _extract_subject_label(title, summary, category)
         if manager_label not in {"", "首脳陣", "巨人"}:
             subject = _re.sub(r"(監督|コーチ)$", "", manager_label).strip()
+            manager_display_subject = manager_label
     quote = _extract_quote_phrases(f"{title}\n{summary}", max_phrases=1)
     quote_text = quote[0] if quote else ""
     subtype = _detect_article_subtype(title, summary, category, has_game)
@@ -4196,16 +4921,16 @@ def rewrite_display_title(title: str, summary: str, category: str, has_game: boo
         if "昇格" in source_text or "一軍" in source_text or "復帰" in source_text:
             return _trim_display_title(f"{subject}、昇格・復帰でどこを見たいか")
         if quote_text:
-            return _trim_display_title(f"{subject}「{quote_text}」 いま何が変わるのか")
+            return _trim_display_title(f"{subject}「{quote_text}」 実戦で何を見せるか")
         return _trim_display_title(f"{subject}の現状整理 いま何を見たいか")
 
     if category == "首脳陣":
         if quote_text and ("若手" in source_text or "競争" in source_text):
-            return _trim_display_title(f"{subject}「{quote_text}」 若手起用で序列はどう動くか", max_chars=40)
+            return _trim_display_title(f"{manager_display_subject}「{quote_text}」 若手起用で序列はどう動くか", max_chars=40)
         if quote_text and ("スタメン" in source_text or "打順" in source_text or "起用" in source_text):
-            return _trim_display_title(f"{subject}「{quote_text}」 次のスタメンはどう動くか")
+            return _trim_display_title(f"{manager_display_subject}「{quote_text}」 次のスタメンはどう動くか")
         if quote_text:
-            return _trim_display_title(f"{subject}「{quote_text}」 ベンチの狙いはどこか")
+            return _trim_display_title(f"{manager_display_subject}「{quote_text}」 ベンチの狙いはどこか")
         return _trim_display_title(f"{subject}コメント整理 ベンチは何を動かすのか")
 
     if category == "試合速報":
@@ -4432,8 +5157,8 @@ def _main(args, logger):
                     skip_dup += 1
                     continue
 
-            pub = entry.get("published_parsed") or entry.get("updated_parsed")
-            if not pub:
+            published_at = _entry_published_datetime(entry)
+            if not published_at:
                 logger.debug(f"  [SKIP:日付なし] {post_url}")
                 skip_filter += 1
                 continue
@@ -4447,6 +5172,14 @@ def _main(args, logger):
             title    = entry_title_clean[:40].strip() if entry_title_clean else make_title(entry)
             summary  = entry_summary_clean
             entry_has_game = infer_article_has_game(title, summary, category, has_game)
+            if _should_skip_stale_postgame_entry(category, title, summary, published_at):
+                logger.debug(f"  [SKIP:postgame古い] {title[:40]}")
+                skip_filter += 1
+                continue
+            if _should_skip_stale_player_status_entry(category, title, summary, published_at):
+                logger.debug(f"  [SKIP:player_status古い] {title[:40]}")
+                skip_filter += 1
+                continue
 
             if source_type in {"news", "social_news"}:
                 if _is_promotional_video_entry(entry_title_clean, summary):
@@ -4485,6 +5218,7 @@ def _main(args, logger):
                 "summary": summary,
                 "entry_title_norm": entry_title_norm,
                 "entry_has_game": entry_has_game,
+                "published_at": published_at,
                 "published_day": _entry_day_key(entry),
                 "history_urls": [post_url],
                 "history_title_norms": [entry_title_norm] if entry_title_norm else [],
@@ -4550,6 +5284,7 @@ def _main(args, logger):
         source_name = item["source_name"]
         entry_title_norm = item.get("entry_title_norm", "")
         entry_has_game = item["entry_has_game"]
+        source_day_label = _format_source_day_label(item.get("published_at"))
 
         if item.get("merged_source_count", 0) > 1:
             logger.info(f"  [統合] {title[:40]} ← {item['merged_source_count']}ソース")
@@ -4581,6 +5316,7 @@ def _main(args, logger):
                 has_game=entry_has_game,
                 article_ai_mode_override=args.article_ai_mode,
                 source_links=item.get("source_links"),
+                source_day_label=source_day_label,
             )
         else:
             content = build_oembed_block(post_url)

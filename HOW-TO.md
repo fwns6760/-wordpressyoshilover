@@ -21,6 +21,9 @@ grep '☐' TASKS-2-deploy.md
 # TASKS-3-prosports.md の未完了タスク
 grep '☐' TASKS-3-prosports.md
 
+# TASKS-4-article-quality.md の未完了タスク
+grep '☐' TASKS-4-article-quality.md
+
 # 全ファイルの未完了タスク
 grep -rn '☐' TASKS-*.md
 ```
@@ -32,6 +35,7 @@ grep '☑' TASKS-0-prep.md
 grep '☑' TASKS-1-dev.md
 grep '☑' TASKS-2-deploy.md
 grep '☑' TASKS-3-prosports.md
+grep '☑' TASKS-4-article-quality.md
 grep -rn '☑' TASKS-*.md
 ```
 
@@ -41,6 +45,7 @@ grep -rn '☑' TASKS-*.md
 grep 'SSH' TASKS-0-prep.md
 grep 'RSS' TASKS-1-dev.md
 grep 'Cron' TASKS-2-deploy.md
+grep 'social_news' TASKS-4-article-quality.md
 ```
 
 ---
@@ -61,6 +66,50 @@ done
 
 ```bash
 echo "未完了: $(grep -rh '☐' TASKS-*.md | wc -l) / 完了: $(grep -rh '☑' TASKS-*.md | wc -l)"
+```
+
+### 直近 draft を source 別 / 記事型別に見る
+
+```bash
+python3 src/draft_audit.py --limit 15
+python3 src/draft_audit.py --limit 30 --json
+```
+
+---
+
+## GitHub運用
+
+### 基本ルール
+
+```bash
+# 通常作業はここまでを1セットにする
+git status
+git add -A
+git commit -m "fix: 内容に応じた要約"
+git push origin HEAD
+```
+
+### SSH認証の前提
+
+```bash
+# GitHub remote は SSH を使う
+git remote -v
+
+# github.com は id_ed25519 を使う
+cat ~/.ssh/config
+
+# 現在のシェルで鍵が agent に載っているか確認
+ssh-add -l
+
+# GitHub 認証テスト
+ssh -T git@github.com
+```
+
+### 初回や鍵が外れた時
+
+```bash
+ssh-add ~/.ssh/id_ed25519
+ssh -T git@github.com
 ```
 
 ---

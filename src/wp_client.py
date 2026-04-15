@@ -93,13 +93,13 @@ class WPClient:
                 "status": "any",
                 "context": "edit",
                 "after": after,
-                "_fields": "id,date,date_gmt,title,status",
+                "_fields": "id,date,date_gmt,title,status,featured_media,categories",
             },
             {
                 "search": title[:40],
                 "per_page": 20,
                 "after": after,
-                "_fields": "id,date,date_gmt,title,status",
+                "_fields": "id,date,date_gmt,title,status,featured_media,categories",
             },
         ]
 
@@ -131,16 +131,63 @@ class WPClient:
             print(f"[WP] 既存記事検索失敗（公開は継続）: {last_error}")
         return None
 
+    def _reuse_existing_post(
+        self,
+        existing: dict,
+        title: str,
+        categories: list | None = None,
+        status: str = "publish",
+        featured_media: int | None = None,
+    ) -> int:
+        post_id = existing["id"]
+        existing_status = (existing.get("status") or "").lower()
+        update_fields = {}
+
+        if featured_media and not existing.get("featured_media"):
+            update_fields["featured_media"] = featured_media
+
+        if categories:
+            existing_categories = set(existing.get("categories") or [])
+            requested_categories = set(categories)
+            if (
+                requested_categories
+                and requested_categories != existing_categories
+                and existing_status in {"draft", "pending", "future", "auto-draft"}
+            ):
+                update_fields["categories"] = categories
+
+        requested_status = (status or "publish").lower()
+        if requested_status == "publish" and existing_status != "publish":
+            update_fields["status"] = "publish"
+
+        if update_fields:
+            self.update_post_fields(post_id, **update_fields)
+            print(f"[WP] 既存記事を更新 post_id={post_id} fields={','.join(update_fields.keys())}")
+
+        print(f"[WP] 既存記事を再利用 post_id={post_id} title={title!r}")
+        return post_id
+
     # ------------------------------------------------------------------
     # 記事投稿（status指定可）
     # ------------------------------------------------------------------
     def create_post(self, title: str, content: str, categories: list = None,
                     status: str = "publish", featured_media: int = None) -> int:
-        existing = self.find_recent_post_by_title(title)
+        requested_status = (status or "publish").lower()
+        reusable_statuses = None
+        if requested_status == "draft":
+            reusable_statuses = {"draft", "pending", "future", "auto-draft"}
+        elif requested_status == "publish":
+            reusable_statuses = {"publish", "draft", "pending", "future", "auto-draft"}
+
+        existing = self.find_recent_post_by_title(title, reusable_statuses=reusable_statuses)
         if existing:
-            post_id = existing["id"]
-            print(f"[WP] 既存記事を再利用 post_id={post_id} title={title!r}")
-            return post_id
+            return self._reuse_existing_post(
+                existing,
+                title,
+                categories=categories,
+                status=status,
+                featured_media=featured_media,
+            )
 
         payload = {
             "title":   title,
@@ -253,9 +300,13 @@ class WPClient:
             reusable_statuses={"draft", "pending", "future", "auto-draft"},
         )
         if existing:
-            post_id = existing["id"]
-            print(f"[WP] 既存下書きを再利用 post_id={post_id} title={title!r}")
-            return post_id
+            return self._reuse_existing_post(
+                existing,
+                title,
+                categories=categories,
+                status="draft",
+                featured_media=featured_media,
+            )
 
         payload = {
             "title":   title,
@@ -306,6 +357,76 @@ class WPClient:
         )
         self._raise_for_status(resp, f"記事取得 post_id={post_id}")
         return resp.json()
+
+    def list_posts(
+        self,
+        status: str = "draft",
+        per_page: int = 20,
+        page: int = 1,
+        orderby: str = "modified",
+        order: str = "desc",
+        search: str = "",
+        context: str | None = "edit",
+        fields: list[str] | None = None,
+    ) -> list[dict]:
+        """
+        投稿一覧を取得する。
+
+        Args:
+            status:   draft / publish / any など
+            per_page: 1〜100
+            page:     ページ番号
+            orderby:  modified / date など
+            order:    desc / asc
+            search:   検索キーワード
+            context:  edit を使うと raw content も取得しやすい
+            fields:   _fields に渡す一覧
+
+        Returns:
+            投稿 dict の配列
+        """
+        params = {
+            "status": status,
+            "per_page": max(1, min(per_page, 100)),
+            "page": max(1, page),
+            "orderby": orderby,
+            "order": order,
+        }
+        if search.strip():
+            params["search"] = search.strip()
+        if context:
+            params["context"] = context
+        if fields:
+            params["_fields"] = ",".join(fields)
+
+        query_variants = [params]
+        if context:
+            relaxed = dict(params)
+            relaxed.pop("context", None)
+            query_variants.append(relaxed)
+
+        last_error = None
+        seen = set()
+        for variant in query_variants:
+            key = tuple(sorted(variant.items()))
+            if key in seen:
+                continue
+            seen.add(key)
+            try:
+                resp = requests.get(
+                    f"{self.api}/posts",
+                    params=variant,
+                    auth=self.auth,
+                    timeout=30,
+                )
+                self._raise_for_status(resp, f"記事一覧取得 status={status}")
+                return resp.json()
+            except Exception as e:
+                last_error = e
+
+        if last_error:
+            raise last_error
+        return []
 
     def update_post_status(self, post_id: int, status: str) -> None:
         """記事のステータスを更新（draft → publish など）"""

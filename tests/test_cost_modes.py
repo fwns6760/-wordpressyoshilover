@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from src import rss_fetcher, x_post_generator
@@ -76,6 +77,54 @@ class CostModeTests(unittest.TestCase):
         with patch.dict("os.environ", {"LOW_COST_MODE": "1", "ARTICLE_AI_MODE": "gemini", "OFFDAY_ARTICLE_AI_MODE": "none"}, clear=False):
             self.assertEqual(rss_fetcher.get_article_ai_mode(True, override="grok"), "grok")
             self.assertEqual(rss_fetcher.get_article_ai_mode(False, override="grok"), "grok")
+
+    def test_offday_article_ai_mode_defaults_to_gemini_in_low_cost_mode(self):
+        with patch.dict("os.environ", {"LOW_COST_MODE": "1"}, clear=True):
+            self.assertEqual(rss_fetcher.get_article_ai_mode(False), "gemini")
+
+    def test_stale_player_status_entry_is_skipped_after_24_hours(self):
+        old_dt = datetime.now(timezone.utc) - timedelta(hours=25)
+        self.assertTrue(
+            rss_fetcher._should_skip_stale_player_status_entry(
+                "選手情報",
+                "【巨人】佐々木俊輔が登録抹消",
+                "佐々木俊輔外野手が出場選手登録を抹消された。",
+                old_dt,
+            )
+        )
+        fresh_dt = datetime.now(timezone.utc) - timedelta(hours=2)
+        self.assertFalse(
+            rss_fetcher._should_skip_stale_player_status_entry(
+                "選手情報",
+                "【巨人】佐々木俊輔が登録抹消",
+                "佐々木俊輔外野手が出場選手登録を抹消された。",
+                fresh_dt,
+            )
+        )
+
+    def test_yesterdays_postgame_entry_is_skipped(self):
+        yesterday_local = datetime.now().astimezone() - timedelta(hours=12)
+        if yesterday_local.date() == datetime.now().astimezone().date():
+            yesterday_local = yesterday_local - timedelta(days=1)
+        self.assertTrue(
+            rss_fetcher._should_skip_stale_postgame_entry(
+                "試合速報",
+                "巨人4-0勝利",
+                "松本剛が決勝打で巨人が4-0で勝利した。",
+                yesterday_local.astimezone(timezone.utc),
+            )
+        )
+
+    def test_todays_postgame_entry_is_not_skipped(self):
+        fresh_dt = datetime.now(timezone.utc) - timedelta(hours=2)
+        self.assertFalse(
+            rss_fetcher._should_skip_stale_postgame_entry(
+                "試合速報",
+                "巨人4-0勝利",
+                "松本剛が決勝打で巨人が4-0で勝利した。",
+                fresh_dt,
+            )
+        )
 
     def test_gemini_attempt_limits_default_to_one_in_low_cost_mode(self):
         with patch.dict("os.environ", {"LOW_COST_MODE": "1"}, clear=False):

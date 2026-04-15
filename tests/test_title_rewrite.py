@@ -54,6 +54,27 @@ class DisplayTitleRewriteTests(unittest.TestCase):
 
         self.assertEqual(category, "ドラフト・育成")
 
+    def test_classify_category_routes_fullwidth_2gun_article_to_development(self):
+        keywords = {
+            "選手情報": ["昇格", "復帰"],
+            "ドラフト・育成": ["育成", "2軍", "２軍", "ファーム"],
+        }
+
+        category = rss_fetcher.classify_category(
+            "巨人育成ドミニカンが２軍戦猛打＆Ｖ２号 同郷ルシアーノの支配下昇格が刺激…６年目",
+            keywords,
+        )
+
+        self.assertEqual(category, "ドラフト・育成")
+
+    def test_extract_player_status_topic_does_not_treat_farm_story_as_ichigun_shokaku(self):
+        title = "巨人育成ドミニカンが２軍戦猛打＆Ｖ２号 同郷ルシアーノの支配下昇格が刺激…６年目"
+        summary = "巨人育成ドミニカンのティマが２軍戦で猛打＆Ｖ２号。育成選手としてプレーしている。"
+
+        topic = rss_fetcher._extract_player_status_topic(title, summary)
+
+        self.assertEqual(topic, "二軍戦")
+
     def test_manager_title_prefers_angle_over_source_headline(self):
         title = "【巨人】「レギュラーは決まってません。結果残せば使います」阿部監督、若手積極起用で競争期待"
         summary = "阿部監督が「レギュラーは決まってません。結果残せば使います」と話した。若手積極起用で競争を促す考えを示した。"
@@ -69,6 +90,40 @@ class DisplayTitleRewriteTests(unittest.TestCase):
         rewritten = rss_fetcher.rewrite_display_title(title, summary, "選手情報", False)
 
         self.assertEqual(rewritten, "戸郷翔征、フォーム変更のポイントはどこか")
+
+    def test_player_title_keeps_full_name_without_role_suffix(self):
+        title = "【巨人】田中将大が２軍戦で先発へ"
+        summary = "田中将大が2軍戦で先発する予定。"
+
+        rewritten = rss_fetcher.rewrite_display_title(title, summary, "選手情報", False)
+
+        self.assertEqual(rewritten, "田中将大の現状整理 いま何を見たいか")
+
+    def test_player_quote_title_prefers_game_angle_over_generic_change_label(self):
+        title = "【巨人】田中将大「打線を線にしない」甲子園の“申し子”が移籍後初の阪神戦で好投誓う"
+        summary = "田中将大が移籍後初の阪神戦に向け「打線を線にしない」と話した。"
+
+        rewritten = rss_fetcher.rewrite_display_title(title, summary, "選手情報", False)
+
+        self.assertEqual(rewritten, "田中将大「打線を線にしない」 実戦で何を見せるか")
+
+    def test_extract_subject_label_finds_name_from_rotation_context(self):
+        title = "巨人が１４日からの阪神３連戦で先発ローテを再編 初戦は則本昂大 第２戦は田中将大"
+        summary = "巨人が14日からの阪神3連戦で先発ローテを再編。初戦は則本昂大、第2戦は田中将大が務める見込み。"
+
+        subject = rss_fetcher._extract_subject_label(title, summary, "選手情報")
+
+        self.assertEqual(subject, "田中将大")
+
+    def test_extract_subject_label_handles_middle_dot_after_team_name(self):
+        title = "巨人・田中将大「打線を線にしない」甲子園の“申し子”が移籍後初の阪神戦で好投誓う"
+        summary = "田中将大が移籍後初の阪神戦に向け「打線を線にしない」と話した。"
+
+        subject = rss_fetcher._extract_subject_label(title, summary, "選手情報")
+        role_label = rss_fetcher._extract_player_role_label(title, summary)
+
+        self.assertEqual(subject, "田中将大")
+        self.assertEqual(role_label, "田中将大投手")
 
     def test_lineup_title_drops_source_like_duplication(self):
         title = "【巨人】今日のスタメン発表　1番丸、4番岡田"

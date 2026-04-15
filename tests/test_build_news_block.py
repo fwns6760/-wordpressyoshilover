@@ -30,7 +30,7 @@ class BuildNewsBlockTests(unittest.TestCase):
 
         self.assertIn("【ニュースの整理】", ai_body)
         self.assertIn("<h3>【ニュースの整理】</h3>", blocks)
-        self.assertIn("戸郷翔征投手の現状を整理します。", ai_body)
+        self.assertIn("戸郷翔征投手が何を変えているのか整理します。", ai_body)
         self.assertIn("<p>ファームでフォーム改造中の巨人戸郷翔征投手（26）が13日、ジャイアンツ球場での先発投手練習に参加し、心境を明かした。前日12日の2軍DeNA戦に先発して7回4安打1失点と好投した。</p>", blocks)
         self.assertIn("外からの助言を受け入れて投げ方を組み替えている", ai_body)
         self.assertNotIn("……", blocks)
@@ -71,6 +71,29 @@ class BuildNewsBlockTests(unittest.TestCase):
         self.assertIn("登板前ならではの緊張感", ai_body)
         self.assertIn("試合前の記事だからこそ", ai_body)
         self.assertGreater(len(ai_body), 320)
+
+    def test_social_quote_player_fallback_stays_on_quote_and_makes_source_clear(self):
+        title = "【巨人】田中将大「打線を線にしない」甲子園の“申し子”が移籍後初の阪神戦で好投誓う"
+        summary = (
+            "スポーツ報知巨人班Xが、田中将大が「打線を線にしない」と話し、"
+            "移籍後初の阪神戦へ向けて好投を誓ったと伝えた。"
+        )
+
+        with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+            blocks, ai_body = rss_fetcher.build_news_block(
+                title=title,
+                summary=summary,
+                url="https://twitter.com/hochi_giants/status/1",
+                source_name="スポーツ報知巨人班X",
+                category="選手情報",
+                has_game=False,
+            )
+
+        self.assertIn("田中将大のコメントと試合前の論点を整理します。", ai_body)
+        self.assertIn("「打線を線にしない」", ai_body)
+        self.assertNotIn("フォームそのものより", ai_body)
+        self.assertNotIn("投げ方を組み替えている", ai_body)
+        self.assertIn("報知新聞 / スポーツ報知巨人班X", blocks)
 
     def test_lineup_article_fallback_uses_lineup_specific_structure(self):
         title = "【巨人】今日のスタメン発表　1番丸、4番岡田"
@@ -414,7 +437,7 @@ class BuildNewsBlockTests(unittest.TestCase):
                     has_game=False,
                 )
 
-        self.assertIn("戸郷翔征投手の現状を整理します。", ai_body)
+        self.assertIn("戸郷翔征投手が何を変えているのか整理します。", ai_body)
         self.assertIn("外からの助言を受け入れて投げ方を組み替えている", ai_body)
         self.assertNotIn("今後も継続してその効果を見極める必要があります。", ai_body)
 
@@ -453,6 +476,65 @@ class BuildNewsBlockTests(unittest.TestCase):
         self.assertIn("戸郷翔征投手がフォーム改造の現状を語りました。", ai_body)
         self.assertIn("<h3>【ニュースの整理】</h3>", blocks)
         self.assertIn("<h3>【次の注目】</h3>", blocks)
+
+    def test_offday_player_quote_routes_to_gemini(self):
+        title = "【巨人】田中将大「打線を線にしない」移籍後初の阪神戦へ"
+        summary = "田中将大が甲子園での登板へ向けて「打線を線にしない」と話した。"
+        gemini_body = (
+            "【ニュースの整理】\n"
+            "田中将大投手が移籍後初の阪神戦に向けて「打線を線にしない」と話した。\n"
+            "【次の注目】\n"
+            "試合の入り方にこの意識がどう出るかに注目です。"
+        )
+
+        with patch.dict(
+            "os.environ",
+            {"LOW_COST_MODE": "1", "AI_ENABLED_CATEGORIES": "選手情報", "ARTICLE_AI_MODE": "gemini", "OFFDAY_ARTICLE_AI_MODE": "gemini"},
+            clear=False,
+        ):
+            with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+                with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=gemini_body) as gemini_mock:
+                    _, ai_body = rss_fetcher.build_news_block(
+                        title=title,
+                        summary=summary,
+                        url="https://example.com/post",
+                        source_name="スポーツ報知 巨人",
+                        category="選手情報",
+                        has_game=False,
+                    )
+
+        gemini_mock.assert_called_once()
+        self.assertIn("田中将大投手", ai_body)
+
+    def test_offday_player_status_routes_to_gemini(self):
+        title = "【巨人】佐々木俊輔が登録抹消"
+        summary = "2025年9月1日、佐々木俊輔外野手が出場選手登録を抹消された。9月11日以後でなければ再登録はできない。"
+        gemini_body = (
+            "【ニュースの整理】\n"
+            "（9月1日時点）佐々木俊輔外野手が出場選手登録を抹消された。\n"
+            "【次の注目】\n"
+            "佐々木俊輔外野手の次の登録発表に注目です。"
+        )
+
+        with patch.dict(
+            "os.environ",
+            {"LOW_COST_MODE": "1", "AI_ENABLED_CATEGORIES": "選手情報", "ARTICLE_AI_MODE": "gemini", "OFFDAY_ARTICLE_AI_MODE": "gemini"},
+            clear=False,
+        ):
+            with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+                with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=gemini_body) as gemini_mock:
+                    _, ai_body = rss_fetcher.build_news_block(
+                        title=title,
+                        summary=summary,
+                        url="https://example.com/post",
+                        source_name="スポーツ報知 巨人",
+                        category="選手情報",
+                        has_game=False,
+                        source_day_label="9月1日",
+                    )
+
+        gemini_mock.assert_called_once()
+        self.assertIn("佐々木俊輔外野手", ai_body)
 
     def test_source_links_render_multiple_references(self):
         with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):

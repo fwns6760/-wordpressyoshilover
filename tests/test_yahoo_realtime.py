@@ -222,6 +222,33 @@ class YahooFanReactionQueryTests(unittest.TestCase):
         self.assertEqual(len(reactions), 3)
         self.assertEqual(reactions[0]["handle"], "@togofan")
 
+    def test_fetch_fan_reactions_for_social_quote_article_requires_precise_match(self):
+        fresh_ts = int(__import__("time").time()) - 900
+
+        def fake_entries(keyword: str):
+            return [
+                {
+                    "summary": "田中将大が言う『打線を線にしない』って意識、阪神戦でどう出るか見たい。",
+                    "link": "https://x.com/gfan_quote/status/1",
+                    "created_at": fresh_ts,
+                },
+                {
+                    "summary": "田中のフォームまた見直してるのかな。次も気になる。",
+                    "link": "https://x.com/generic_tanaka/status/2",
+                    "created_at": fresh_ts,
+                },
+            ]
+
+        with patch.object(rss_fetcher, "fetch_yahoo_realtime_entries", side_effect=fake_entries):
+            reactions = rss_fetcher.fetch_fan_reactions_from_yahoo(
+                "【巨人】田中将大「打線を線にしない」甲子園の“申し子”が移籍後初の阪神戦で好投誓う",
+                "田中将大が「打線を線にしない」と話し、移籍後初の阪神戦へ向けて好投を誓った。",
+                "選手情報",
+                source_name="スポーツ報知巨人班X",
+            )
+
+        self.assertEqual([reaction["handle"] for reaction in reactions], ["@gfan_quote"])
+
 
 class ArticleImageFetchTests(unittest.TestCase):
     @patch("src.rss_fetcher.fetch_article_images")
@@ -272,13 +299,18 @@ class SocialNewsNormalizationTests(unittest.TestCase):
         self.assertNotIn("#巨人", cleaned)
         self.assertIn("最後は", cleaned)
 
+    def test_clean_social_entry_text_removes_inline_hash_tags_without_space(self):
+        cleaned = rss_fetcher._clean_social_entry_text("田中将大が阪神戦へ向けて好投誓う#巨人")
+
+        self.assertEqual(cleaned, "田中将大が阪神戦へ向けて好投誓う")
+
     def test_rewrite_display_title_uses_manager_name_instead_of_type_noise(self):
         title = "Type「完全に向こうに行った流れを持ってこられた一発」"
         summary = "阿部慎之助 監督、大城卓三の同点弾を激賞"
 
         rewritten = rss_fetcher.rewrite_display_title(title, summary, "首脳陣", has_game=True)
 
-        self.assertTrue(rewritten.startswith("阿部慎之助「完全に向こうに行った流れを持ってこられた一発」"))
+        self.assertTrue(rewritten.startswith("阿部慎之助監督「完全に向こうに行った流れを持ってこられた一発」"))
         self.assertNotIn("Type", rewritten)
 
     def test_get_publish_skip_reasons_holds_news_without_featured_media(self):

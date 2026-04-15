@@ -132,6 +132,12 @@ python3 src/rss_fetcher.py --dry-run
 python3 src/rss_fetcher.py --draft-only
 ```
 
+直近の下書きを source 別 / 記事型別に棚卸し:
+
+```bash
+python3 src/draft_audit.py --limit 15
+```
+
 件数を絞って確認:
 
 ```bash

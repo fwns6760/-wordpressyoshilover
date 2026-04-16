@@ -191,6 +191,41 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("ですます調、350〜650文字", prompt)
         self.assertIn("4月16日時点の情報であることが伝わるように書く", prompt)
 
+    def test_farm_prompt_uses_second_team_specific_structure(self):
+        prompt = rss_fetcher._build_gemini_strict_prompt(
+            title="【二軍】巨人 4-1 ロッテ　ティマが2安打3打点、山城京平は3回1失点",
+            summary="巨人二軍がロッテとの二軍戦に4-1で勝利した。ティマが2安打3打点を記録し、山城京平投手は3回1失点だった。",
+            category="ドラフト・育成",
+            source_fact_block="・巨人二軍がロッテとの二軍戦に4-1で勝利\n・ティマが2安打3打点\n・山城京平投手は3回1失点",
+            win_loss_hint="",
+            has_game=True,
+            real_reactions=[],
+        )
+
+        self.assertIn("【二軍結果・活躍の要旨】", prompt)
+        self.assertIn("【ファームのハイライト】", prompt)
+        self.assertIn("【二軍個別選手成績】", prompt)
+        self.assertIn("【一軍への示唆】", prompt)
+        self.assertIn("source にあるスコア 4-1 を必ず残してください。", prompt)
+        self.assertIn("一軍記事と混同しないよう、「二軍」「ファーム」の文脈を明確にする", prompt)
+
+    def test_farm_lineup_prompt_uses_second_team_lineup_structure(self):
+        prompt = rss_fetcher._build_gemini_strict_prompt(
+            title="【二軍】巨人 vs DeNA 18:00試合開始　1番浅野、4番ティマでスタメン",
+            summary="巨人二軍がDeNA戦のスタメンを発表した。1番浅野翔吾、4番ティマ、先発は西舘勇陽投手。",
+            category="ドラフト・育成",
+            source_fact_block="・巨人二軍がDeNA戦のスタメンを発表\n・1番浅野翔吾、4番ティマ\n・先発は西舘勇陽投手\n・18:00試合開始",
+            win_loss_hint="",
+            has_game=True,
+            real_reactions=[],
+        )
+
+        self.assertIn("【二軍試合概要】", prompt)
+        self.assertIn("【二軍スタメン一覧】", prompt)
+        self.assertIn("【注目選手】", prompt)
+        self.assertIn("一軍記事のような書き方をしない。二軍戦の並びであることを明確に書く", prompt)
+        self.assertIn("数字、打順、選手名、球場名は source にある表記をそのまま残す", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -139,9 +139,11 @@ class BuildNewsBlockTests(unittest.TestCase):
                     has_game=True,
                 )
 
-        self.assertIn("まずは二軍スタメンの並びを整理します。", ai_body)
-        self.assertIn("二軍スタメンで見たいのは、若手や調整組をどこに置いたかです。", ai_body)
-        self.assertIn("まず見たいのは、この並びが一軍昇格の候補や守備位置テストにどうつながるかという点です。", ai_body)
+        self.assertIn("【二軍試合概要】", ai_body)
+        self.assertIn("【二軍スタメン一覧】", ai_body)
+        self.assertIn("【注目選手】", ai_body)
+        self.assertIn("巨人二軍はDeNA戦に臨みます。", ai_body)
+        self.assertIn("若手内野手が4番ショートに入った。", ai_body)
 
     def test_manager_article_fallback_focuses_on_bench_intent(self):
         title = "【巨人】「レギュラーは決まってません。結果残せば使います」阿部監督、若手積極起用で競争期待"
@@ -645,7 +647,11 @@ class BuildNewsBlockTests(unittest.TestCase):
 
         gemini_mock.assert_called_once()
         self.assertEqual(gemini_mock.call_args.args[2], "ドラフト・育成")
-        self.assertIn("巨人二軍が3-1で勝利した。", ai_body)
+        self.assertIn("【二軍結果・活躍の要旨】", ai_body)
+        self.assertIn("【ファームのハイライト】", ai_body)
+        self.assertIn("【二軍個別選手成績】", ai_body)
+        self.assertIn("【一軍への示唆】", ai_body)
+        self.assertIn("巨人二軍の試合は3-1という結果でした。", ai_body)
 
     def test_source_links_render_multiple_references(self):
         with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):

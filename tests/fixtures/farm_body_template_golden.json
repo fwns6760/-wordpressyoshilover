@@ -1,0 +1,40 @@
+[
+  {
+    "name": "farm_result_score",
+    "subtype": "farm",
+    "title": "【二軍】巨人 4-1 ロッテ　ティマが2安打3打点、山城京平は3回1失点",
+    "summary": "巨人二軍がロッテとの二軍戦に4-1で勝利した。ティマが2安打3打点を記録し、山城京平投手は3回1失点だった。",
+    "required_strings": [
+      "4-1",
+      "ティマ",
+      "2安打3打点",
+      "山城京平"
+    ],
+    "expected_is_drafted_player": false
+  },
+  {
+    "name": "farm_drafted_player_watch",
+    "subtype": "farm",
+    "title": "【巨人】ドラ３・山城京平が２軍で再出発　降格後初登板で３回１失点",
+    "summary": "ドラ３山城京平投手が二軍で再出発し、降格後初登板で3回1失点だった。支配下の一軍戦力へ向けて調整が続く。",
+    "required_strings": [
+      "ドラ３",
+      "3回1失点",
+      "支配下"
+    ],
+    "expected_is_drafted_player": true
+  },
+  {
+    "name": "farm_lineup_game_overview",
+    "subtype": "farm_lineup",
+    "title": "【二軍】巨人 vs DeNA 18:00試合開始　1番浅野、4番ティマでスタメン",
+    "summary": "巨人二軍がDeNA戦のスタメンを発表した。1番浅野翔吾、4番ティマ、先発は西舘勇陽投手。",
+    "required_strings": [
+      "DeNA戦",
+      "1番浅野翔吾",
+      "4番ティマ",
+      "西舘勇陽"
+    ],
+    "expected_is_drafted_player": false
+  }
+]

@@ -6403,9 +6403,10 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     blocks += _para(summary_text_to_show) + _sep()
 
     if media_quotes:
+        media_section_label = (media_quotes[0].get("section_label") or "📌 関連ポスト").strip()
         blocks += (
             '<!-- wp:heading {"level":3} -->\n'
-            '<h3>📌 関連ポスト</h3>\n'
+            f'<h3>{media_section_label}</h3>\n'
             '<!-- /wp:heading -->\n\n'
         )
         widget_script_included = False
@@ -7761,6 +7762,8 @@ def _log_media_xpost_embedded(
     source_type: str,
     media_handle: str,
     media_url: str,
+    match_reason: str = "",
+    match_score: int = 0,
     position: str = MEDIA_XPOST_POSITION,
 ) -> None:
     payload = {
@@ -7770,6 +7773,8 @@ def _log_media_xpost_embedded(
         "source_type": source_type,
         "media_handle": media_handle,
         "media_url": media_url,
+        "match_reason": match_reason,
+        "match_score": match_score,
         "position": position,
     }
     logger.info(json.dumps(payload, ensure_ascii=False))
@@ -7906,12 +7911,14 @@ def _main(args, logger):
     today_str = datetime.now().strftime("%Y-%m-%d")
     x_post_count = history.get(f"x_post_count_{today_str}", 0)
     prepared_entries = []
+    media_quote_pool = []
     entry_index = 0
 
     for source_rank, source in enumerate(sources):
         name        = source["name"]
         url         = source["url"]
         source_type = source.get("type", "news")
+        source_role = source.get("role", "article")
         logger.info(f"取得中: {name} ({url})")
 
         try:
@@ -7959,6 +7966,18 @@ def _main(args, logger):
                 logger.debug(f"  [SKIP:日付なし] {post_url}")
                 skip_filter += 1
                 skip_reason_counts["missing_published_at"] += 1
+                continue
+
+            if source_role == "media_quote_only":
+                media_quote_pool.append({
+                    "source_name": name,
+                    "source_type": source_type,
+                    "source_role": source_role,
+                    "source_url": post_url,
+                    "title": entry_title_clean,
+                    "summary": entry_summary_clean,
+                    "created_at": published_at,
+                })
                 continue
 
             if not is_giants_related(title_text):
@@ -8022,6 +8041,7 @@ def _main(args, logger):
                 "source_rank": source_rank,
                 "source_name": name,
                 "source_type": source_type,
+                "source_role": source_role,
                 "entry": entry,
                 "post_url": post_url,
                 "title_text": title_text,
@@ -8118,14 +8138,33 @@ def _main(args, logger):
                 print(f"       {post_url}")
                 success += 1
                 continue
+            effective_story_category = _resolve_article_generation_category(category, raw_title, summary)
+            special_story_kind = (
+                _detect_player_special_template_kind(raw_title, summary)
+                if effective_story_category == "選手情報"
+                else ""
+            )
+            notice_subject = ""
+            notice_type = ""
+            player_aliases: list[str] = []
+            if special_story_kind == "player_notice":
+                notice_subject, notice_type = _extract_notice_subject_and_type(raw_title, summary)
+                family_alias = _player_family_name_alias(raw_title, summary, "選手情報")
+                player_aliases = _dedupe_preserve_order([alias for alias in [notice_subject, family_alias] if alias])
+
             media_quotes = select_media_quotes(
                 {
                     "source_type": source_type,
                     "source_url": post_url,
                     "source_name": source_name,
                     "created_at": item.get("published_at").isoformat() if item.get("published_at") else "",
+                    "story_kind": special_story_kind,
+                    "player_name": notice_subject,
+                    "player_aliases": player_aliases,
+                    "notice_type": notice_type,
                 },
                 max_count=1,
+                media_quote_pool=media_quote_pool,
             )
             if source_type == "news":
                 _article_images = fetch_article_images(post_url, max_images=3)
@@ -8187,6 +8226,18 @@ def _main(args, logger):
             success += 1
             created_category_counts[category] += 1
             created_subtype_counts[title_article_subtype] += 1
+            if media_quotes:
+                first_media_quote = media_quotes[0]
+                _log_media_xpost_embedded(
+                    logger,
+                    post_id,
+                    draft_title,
+                    source_type,
+                    first_media_quote.get("handle", ""),
+                    first_media_quote.get("url", ""),
+                    match_reason=first_media_quote.get("match_reason", ""),
+                    match_score=int(first_media_quote.get("match_score", 0) or 0),
+                )
             if source_type == "social_news":
                 _log_social_body_template_applied(
                     logger,
@@ -8197,16 +8248,6 @@ def _main(args, logger):
                     _social_section_count(ai_body_for_x),
                     _social_quote_count(raw_title, summary, ai_body_for_x),
                 )
-                if media_quotes:
-                    first_media_quote = media_quotes[0]
-                    _log_media_xpost_embedded(
-                        logger,
-                        post_id,
-                        draft_title,
-                        source_type,
-                        first_media_quote.get("handle", ""),
-                        first_media_quote.get("url", ""),
-                    )
             if category == "首脳陣" and title_article_subtype == "manager":
                 _log_manager_body_template_applied(
                     logger,
@@ -8235,7 +8276,6 @@ def _main(args, logger):
                     _farm_numeric_count(raw_title, summary, ai_body_for_x),
                     _farm_is_drafted_player_story(raw_title, summary),
                 )
-            effective_story_category = _resolve_article_generation_category(category, raw_title, summary)
             if _is_recovery_template_story(raw_title, summary, effective_story_category):
                 recovery_subject = _extract_recovery_subject(raw_title, summary)
                 _log_recovery_body_template_applied(

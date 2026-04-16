@@ -54,6 +54,79 @@ class MediaXpostSelectorTests(unittest.TestCase):
         self.assertEqual(quotes[0]["url"], "https://x.com/TokyoGiants/status/456")
         self.assertEqual(quotes[0]["handle"], "@TokyoGiants")
 
+    def test_notice_story_matches_npb_quote_by_player_name_and_time(self):
+        quotes = select_media_quotes(
+            {
+                "source_type": "news",
+                "story_kind": "player_notice",
+                "player_name": "皆川岳飛",
+                "player_aliases": ["皆川岳飛", "皆川"],
+                "notice_type": "一軍登録",
+                "created_at": "2026-04-16T10:00:00+09:00",
+            },
+            media_quote_pool=[
+                {
+                    "source_name": "NPB公式X",
+                    "source_url": "https://twitter.com/npb/status/1",
+                    "title": "【公示】4/16 巨人・皆川岳飛を出場選手登録",
+                    "summary": "",
+                    "created_at": "2026-04-16T09:30:00+09:00",
+                }
+            ],
+        )
+
+        self.assertEqual(len(quotes), 1)
+        self.assertEqual(quotes[0]["url"], "https://twitter.com/npb/status/1")
+        self.assertEqual(quotes[0]["section_label"], "📌 公示ポスト")
+        self.assertIn(quotes[0]["match_reason"], {"composite", "player_name_match"})
+        self.assertGreater(quotes[0]["match_score"], 100)
+
+    def test_notice_story_rejects_npb_quote_when_player_name_does_not_match(self):
+        quotes = select_media_quotes(
+            {
+                "source_type": "news",
+                "story_kind": "player_notice",
+                "player_name": "皆川岳飛",
+                "player_aliases": ["皆川岳飛", "皆川"],
+                "notice_type": "一軍登録",
+                "created_at": "2026-04-16T10:00:00+09:00",
+            },
+            media_quote_pool=[
+                {
+                    "source_name": "NPB公式X",
+                    "source_url": "https://twitter.com/npb/status/1",
+                    "title": "【公示】4/16 巨人・浅野翔吾を出場選手登録",
+                    "summary": "",
+                    "created_at": "2026-04-16T09:30:00+09:00",
+                }
+            ],
+        )
+
+        self.assertEqual(quotes, [])
+
+    def test_notice_story_rejects_npb_quote_when_outside_time_window(self):
+        quotes = select_media_quotes(
+            {
+                "source_type": "news",
+                "story_kind": "player_notice",
+                "player_name": "皆川岳飛",
+                "player_aliases": ["皆川岳飛", "皆川"],
+                "notice_type": "一軍登録",
+                "created_at": "2026-04-16T10:00:00+09:00",
+            },
+            media_quote_pool=[
+                {
+                    "source_name": "NPB公式X",
+                    "source_url": "https://twitter.com/npb/status/1",
+                    "title": "【公示】4/13 巨人・皆川岳飛を出場選手登録",
+                    "summary": "",
+                    "created_at": "2026-04-13T09:30:00+09:00",
+                }
+            ],
+        )
+
+        self.assertEqual(quotes, [])
+
 
 if __name__ == "__main__":
     unittest.main()

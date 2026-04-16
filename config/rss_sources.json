@@ -4,6 +4,7 @@
   {"name": "日刊スポーツX",        "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/nikkansports",  "type": "social_news"},
   {"name": "スポニチ野球記者X",    "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/SponichiYakyu", "type": "social_news"},
   {"name": "サンスポ巨人X",        "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/Sanspo_Giants", "type": "social_news"},
+  {"name": "NPB公式X",            "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/npb",          "type": "social_news", "role": "media_quote_only"},
   {"name": "日刊スポーツ 巨人",    "url": "https://www.nikkansports.com/rss/baseball/professional/atom/giants.xml", "type": "news"},
   {"name": "ベースボールキング",   "url": "https://baseballking.jp/feed",                                          "type": "news"},
   {"name": "Full-Count 巨人",     "url": "https://full-count.jp/tag/yomiuri-giants/feed/",                       "type": "news"},

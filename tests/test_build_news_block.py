@@ -326,6 +326,32 @@ class BuildNewsBlockTests(unittest.TestCase):
         self.assertLess(blocks.index("📌 関連ポスト"), blocks.index("【話題の要旨】"))
         self.assertEqual(blocks.count("https://platform.twitter.com/widgets.js"), 1)
 
+    def test_notice_article_renders_notice_media_quote_section(self):
+        media_quotes = [
+            {
+                "url": "https://twitter.com/npb/status/1",
+                "handle": "@npb",
+                "section_label": "📌 公示ポスト",
+                "match_reason": "composite",
+                "match_score": 157,
+            }
+        ]
+        with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+            with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                blocks, _ = rss_fetcher.build_news_block(
+                    title="皆川岳飛、一軍登録でどこを見たいか",
+                    summary="巨人・皆川岳飛外野手が出場選手登録された。",
+                    url="https://example.com/post",
+                    source_name="スポニチ",
+                    category="選手情報",
+                    has_game=False,
+                    source_type="news",
+                    media_quotes=media_quotes,
+                )
+
+        self.assertIn("📌 公示ポスト", blocks)
+        self.assertIn("https://twitter.com/npb/status/1", blocks)
+
     def test_news_article_does_not_render_media_quote_section(self):
         with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
             with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):

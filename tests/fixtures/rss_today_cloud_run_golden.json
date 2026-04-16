@@ -1,0 +1,182 @@
+[
+  {
+    "name": "player_quote_yoshikawa_hochi_social_news",
+    "source_type": "social_news",
+    "draft_only": true,
+    "featured_media": true,
+    "has_game": false,
+    "published_at": "2026-04-15T21:08:28+00:00",
+    "skip_check_now": "2026-04-16T02:05:00+00:00",
+    "title": "巨人・吉川尚輝がマルチ安打で調整上々「体もいい感じだし、しっかり野球をできた」１軍復帰へ着実",
+    "summary": "巨人・吉川尚輝がマルチ安打で調整上々「体もいい感じだし、しっかり野球をできた」１軍復帰へ着実<br />#巨人 #giants<br />https://hochi.news/articles/20260415-OHT1T51347.html",
+    "expected": {
+      "category": "選手情報",
+      "article_subtype": "player",
+      "player_mode": "player_quote",
+      "draft_title": "吉川尚輝、昇格・復帰でどこを見たいか",
+      "skip_reason": "draft_only"
+    }
+  },
+  {
+    "name": "player_status_nakayama_demoted_nikkan",
+    "source_type": "news",
+    "draft_only": true,
+    "featured_media": true,
+    "has_game": false,
+    "published_at": "2026-04-15T08:53:09+00:00",
+    "skip_check_now": "2026-04-16T02:05:00+00:00",
+    "title": "【巨人】中山礼都が今季初抹消 OPS.393と苦戦 代役はルーキー皆川岳飛「２つの気持ち」",
+    "summary": "巨人中山礼都外野手（24）が15日、今季初めて出場選手登録を抹消された。外野手に転向した今季はここまで12試合で打率1割4分7厘、OPS・393と苦しんでおり、前日の阪神戦（甲子園）では4打数無安打だった。代わりにドラフト4位の皆川岳飛が1軍に合流した。",
+    "expected": {
+      "category": "選手情報",
+      "article_subtype": "player",
+      "player_mode": "player_status",
+      "draft_title": "中山礼都の現状整理 いま何を見たいか",
+      "skip_reason": "draft_only"
+    }
+  },
+  {
+    "name": "player_mechanics_urata_from_today_instruction_theme",
+    "source_type": "social_news",
+    "draft_only": true,
+    "featured_media": true,
+    "has_game": false,
+    "published_at": "2026-04-15T11:23:39+00:00",
+    "skip_check_now": "2026-04-16T02:05:00+00:00",
+    "title": "巨人・浦田俊輔が打率改善へスイング修正に取り組む",
+    "summary": "巨人・浦田俊輔が打率改善へスイング修正に取り組む。足を上げないことで目線がブレにくくなる点を確認した。",
+    "expected": {
+      "category": "選手情報",
+      "article_subtype": "player",
+      "player_mode": "player_mechanics",
+      "draft_title": "浦田俊輔、フォーム変更のポイントはどこか",
+      "skip_reason": "draft_only"
+    }
+  },
+  {
+    "name": "manager_abe_dalbec_quote_hochi_social_news",
+    "source_type": "social_news",
+    "draft_only": true,
+    "featured_media": true,
+    "has_game": false,
+    "published_at": "2026-04-15T20:33:06+00:00",
+    "skip_check_now": "2026-04-16T02:05:00+00:00",
+    "title": "「彼が打ったらもっと打線が機能する」巨人・阿部監督、身ぶり手ぶりでダルベックを２０分間熱血指導",
+    "summary": "「彼が打ったらもっと打線が機能する」巨人・阿部監督、身ぶり手ぶりでダルベックを２０分間熱血指導<br />#巨人 #giants<br />https://hochi.news/articles/20260415-OHT1T51340.html",
+    "expected": {
+      "category": "首脳陣",
+      "article_subtype": "manager",
+      "player_mode": "",
+      "draft_title": "阿部監督「彼が打ったらもっと打線が機能する」 ベンチの狙いはどこか",
+      "skip_reason": "draft_only"
+    }
+  },
+  {
+    "name": "manager_urata_direct_instruction_hochi_social_news",
+    "source_type": "social_news",
+    "draft_only": true,
+    "featured_media": true,
+    "has_game": false,
+    "published_at": "2026-04-15T10:08:10+00:00",
+    "skip_check_now": "2026-04-16T02:05:00+00:00",
+    "title": "【巨人】浦田俊輔が阿部監督から直接指導「足を上げないことで目線がブレにくくなる」打撃不振脱却のヒント得る",
+    "summary": "【巨人】浦田俊輔が阿部監督から直接指導「足を上げないことで目線がブレにくくなる」打撃不振脱却のヒント得る<br />#巨人 #giants<br />https://hochi.news/articles/20260415-OHT1T51295.html",
+    "expected": {
+      "category": "首脳陣",
+      "article_subtype": "manager",
+      "player_mode": "",
+      "draft_title": "阿部監督「足を上げないことで目線がブレにくくなる」 ベンチの狙いはどこか",
+      "skip_reason": "draft_only"
+    }
+  },
+  {
+    "name": "game_note_tanaka_preview_tokyogiants_social_news",
+    "source_type": "social_news",
+    "draft_only": true,
+    "featured_media": true,
+    "has_game": false,
+    "published_at": "2026-04-15T09:30:18+00:00",
+    "skip_check_now": "2026-04-16T02:05:00+00:00",
+    "title": "【一軍】巨人 vs 阪神 4/16(木)18:00試合開始予定⚾ 阪神甲子園球場🏟 予告先発 #田中将大",
+    "summary": "【一軍】巨人 vs 阪神<br /><br />4/16(木)18:00試合開始予定⚾<br />阪神甲子園球場🏟<br /><br />予告先発<br />#田中将大<br /><img height=\"1920\" src=\"https://pbs.twimg.com/media/HF77Ob7agAA_PyF?format=jpg&name=orig\" width=\"1080\" />",
+    "expected": {
+      "category": "試合速報",
+      "article_subtype": "game_note",
+      "player_mode": "",
+      "draft_title": "巨人戦 試合前にどこを見たいか",
+      "skip_reason": "draft_only"
+    }
+  },
+  {
+    "name": "game_note_tanaka_slide_nikkan_news",
+    "source_type": "news",
+    "draft_only": true,
+    "featured_media": true,
+    "has_game": false,
+    "published_at": "2026-04-15T07:30:23+00:00",
+    "skip_check_now": "2026-04-16T02:05:00+00:00",
+    "title": "【巨人】雨天中止で先発予定だった田中将大は16日にスライド登板 村田善則コーチ明かす",
+    "summary": "巨人田中将大投手（37）が雨天中止にともなってスライド登板することになった。先発予定だった15日の阪神戦（甲子園）が雨天中止となり、16日の同戦にスライドすることになった。村田善則バッテリーチーフコーチ（51）は「明日はスライドでいっ…",
+    "expected": {
+      "category": "試合速報",
+      "article_subtype": "game_note",
+      "player_mode": "",
+      "draft_title": "巨人戦 試合前にどこを見たいか",
+      "skip_reason": "draft_only"
+    }
+  },
+  {
+    "name": "farm_result_tima_tokyogiants_social_news",
+    "source_type": "social_news",
+    "draft_only": true,
+    "featured_media": true,
+    "has_game": false,
+    "published_at": "2026-04-15T06:02:17+00:00",
+    "skip_check_now": "2026-04-16T02:05:00+00:00",
+    "title": "【二軍】巨人 4-0 ハヤテベンチャーズ静岡 #ティマ 選手が先制本塁打を放ち、#園田純規 投手が6回無失点で勝利に導いた試合を配信中👍 GIANTS TVでアーカイブ...",
+    "summary": "【二軍】巨人 4-0 ハヤテベンチャーズ静岡<br /><br />#ティマ 選手が先制本塁打を放ち、#園田純規 投手が6回無失点で勝利に導いた試合を配信中👍<br /><br />GIANTS TVでアーカイブ配信📺<br />https://tv.giants.jp/videos/3f25b49c-c41b-43f8-844d-101bd808f2ea<br /><img height=\"1080\" src=\"https://pbs.twimg.com/media/HF7LOJuasAEDp0Z?format=jpg&name=orig\" width=\"1920\" />",
+    "expected": {
+      "category": "ドラフト・育成",
+      "article_subtype": "farm",
+      "player_mode": "",
+      "draft_title": "巨人 4-0 ハヤテベンチャーズ静岡 #ティマ 選手が先制本塁打を放ち、",
+      "skip_reason": "draft_only"
+    }
+  },
+  {
+    "name": "farm_lineup_tokyogiants_missing_featured_media",
+    "source_type": "social_news",
+    "draft_only": true,
+    "featured_media": false,
+    "has_game": false,
+    "published_at": "2026-04-15T08:44:27+00:00",
+    "skip_check_now": "2026-04-16T02:05:00+00:00",
+    "title": "【二軍】巨人 vs ハヤテベンチャーズ静岡 しずてつスタジアム草薙 18時試合開始⚾ 1⃣浅野⑻ 2⃣吉川⑷ 3⃣石塚⑹ 4⃣藤井（D） 5⃣荒巻⑸ 6⃣ティマ⑶ 7⃣岡田...",
+    "summary": "【二軍】巨人 vs ハヤテベンチャーズ静岡<br />しずてつスタジアム草薙<br />18時試合開始⚾<br /><br />1⃣浅野⑻ <br />2⃣吉川⑷ <br />3⃣石塚⑹ <br />4⃣藤井（D）<br />5⃣荒巻⑸ <br />6⃣ティマ⑶ <br />7⃣岡田⑼ <br />8⃣小林⑵ <br />9⃣三塚⑺ <br />🅿️山城",
+    "expected": {
+      "category": "ドラフト・育成",
+      "article_subtype": "farm",
+      "player_mode": "",
+      "draft_title": "巨人 vs ハヤテベンチャーズ静岡 しずてつスタジアム草薙 18時試合開",
+      "skip_reason": "draft_only,featured_media_missing"
+    }
+  },
+  {
+    "name": "social_news_photo_booth_tokyogiants",
+    "source_type": "social_news",
+    "draft_only": true,
+    "featured_media": true,
+    "has_game": false,
+    "published_at": "2026-04-15T10:00:02+00:00",
+    "skip_check_now": "2026-04-16T02:05:00+00:00",
+    "title": "RT 【公式】ジャイアンツタウンスタジアム: ／ #Gタウン に新フォトブース登場📷✨ ＼ 4/17（金）より、選手の顔写真を選んで撮影が楽しめる「顔替えフォトパ...",
+    "summary": "RT 【公式】ジャイアンツタウンスタジアム<br />／<br />#Gタウン に新フォトブース登場📷✨<br />＼<br /><br />4/17（金）より、選手の顔写真を選んで撮影が楽しめる「顔替えフォトパネル」を #Gタウン 2階コンコースに設置します🎉<br /><br />#Gタウン ご来場の際は、特別な1枚が撮れるフォトブースへぜひお立ち寄りください💞<br /><br />※フォトブースはファーム公式戦開催日の開場から7回裏終了時まで設置します。<br />※撮影には入場チケットが必要です。",
+    "expected": {
+      "category": "ドラフト・育成",
+      "article_subtype": "farm",
+      "player_mode": "",
+      "draft_title": "RT 【公式】ジャイアンツタウンスタジアム: ／ #Gタウン に新フォトブー…",
+      "skip_reason": "draft_only"
+    }
+  }
+]

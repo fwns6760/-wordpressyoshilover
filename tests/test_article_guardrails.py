@@ -33,9 +33,10 @@ class ArticleGuardrailTests(unittest.TestCase):
             self.logger,
         )
         self.assertNotIn("3-2", guarded)
-        self.assertIn("【ニュースの整理】", guarded)
-        self.assertIn("整理すると、今回のニュースは3点です。", guarded)
-        self.assertIn("結果次第で序列や役割を動かす前提が見えてきた", guarded)
+        self.assertIn("【発言の要旨】", guarded)
+        self.assertIn("阿部監督が起用方針について語った。", guarded)
+        self.assertIn("【文脈と背景】", guarded)
+        self.assertIn("【次の注目】", guarded)
 
     def test_fake_citation_triggers_fallback(self):
         article = "【ニュースの整理】\n今季は上昇傾向です（npb.jp）。"

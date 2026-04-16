@@ -83,6 +83,13 @@ DEFAULT_PROMPT_SUMMARY_MAX_CHARS = 400
 STRICT_PROMPT_MAX_SOURCE_FACTS = 8
 STRICT_PROMPT_MAX_QUOTES = 2
 GEMINI_FLASH_THINKING_BUDGET = 0
+MANAGER_BODY_TEMPLATE_VERSION = "manager_v1"
+MANAGER_REQUIRED_HEADINGS = (
+    "【発言の要旨】",
+    "【発言内容】",
+    "【文脈と背景】",
+    "【次の注目】",
+)
 CONFIRMED_RESULT_MARKERS = ("勝利した", "勝利を飾", "白星を挙げ", "敗れた", "敗戦", "黒星", "引き分け", "サヨナラ勝", "連勝", "連敗", "完封勝", "完封負")
 DEFINITE_RESULT_MARKERS = ("勝利しました", "勝利を飾りました", "白星を挙げました", "敗れました", "敗戦でした", "黒星を喫しました", "引き分けました")
 GENERIC_REACTION_TERMS = {
@@ -473,6 +480,8 @@ def get_gemini_attempt_limit(strict_mode: bool) -> int:
 
 
 def _get_gemini_strict_min_chars(category: str, title: str, summary: str) -> int:
+    if category == "首脳陣":
+        return 160
     if category == "選手情報" and _is_notice_like_status_story(title, summary):
         return 160
     if category == "選手情報" and _detect_player_article_mode(title, summary, category) == "player_status":
@@ -1631,6 +1640,87 @@ def _build_player_status_strict_prompt(title: str, summary: str, source_day_labe
 """
 
 
+def _extract_manager_focus_axis(title: str, summary: str) -> str:
+    source_text = _strip_html(f"{title} {summary}")
+    if any(keyword in source_text for keyword in ("若手", "競争", "レギュラー", "固定", "序列")):
+        return "序列や競争"
+    if any(keyword in source_text for keyword in ("スタメン", "打順", "オーダー", "起用")):
+        return "スタメンや起用"
+    if any(keyword in source_text for keyword in ("継投", "采配", "代打", "守備固め", "ベンチ")):
+        return "采配やベンチワーク"
+    if any(keyword in source_text for keyword in ("指導", "助言", "熱血指導", "直接指導")):
+        return "指導の意図"
+    return "次のベンチ判断"
+
+
+def _manager_context_line(focus_axis: str) -> str:
+    if focus_axis == "序列や競争":
+        return "この話題は序列や競争をどう動かすか、という文脈で読む必要があります。"
+    if focus_axis == "スタメンや起用":
+        return "この話題はスタメンや起用をどう動かすか、という文脈で読む必要があります。"
+    if focus_axis == "采配やベンチワーク":
+        return "この話題は采配やベンチワークをどう動かすか、という文脈で読む必要があります。"
+    if focus_axis == "指導の意図":
+        return "この話題は、どんな指導を選手に求めているのかという文脈で読む必要があります。"
+    return "この話題は、次のベンチ判断をどう変えるかという文脈で読む必要があります。"
+
+
+def _manager_next_watch_line(focus_axis: str, reaction_line: str = "") -> str:
+    if reaction_line:
+        return reaction_line
+    if focus_axis == "序列や競争":
+        return "次に見たいのは、この発言が実際の序列や競争にどう出るかという点です。"
+    if focus_axis == "スタメンや起用":
+        return "次に見たいのは、この発言が実際のスタメンや起用にどう出るかという点です。"
+    if focus_axis == "采配やベンチワーク":
+        return "次に見たいのは、この発言が実際の采配やベンチワークにどう出るかという点です。"
+    if focus_axis == "指導の意図":
+        return "次に見たいのは、この言葉が選手の内容や調整にどう表れるかという点です。"
+    return "次に見たいのは、この発言が実際のベンチ判断にどう出るかという点です。"
+
+
+def _build_manager_strict_prompt(title: str, summary: str, source_fact_block: str, source_day_label: str = "") -> str:
+    subject = _extract_subject_label(title, summary, "首脳陣")
+    quote_phrases = _extract_quote_phrases(f"{title}\n{summary}", max_phrases=3)
+    focus_axis = _extract_manager_focus_axis(title, summary)
+    next_focus_instruction = {
+        "序列や競争": "序列や競争のどこが動くか",
+        "スタメンや起用": "スタメンや起用のどこが動くか",
+        "采配やベンチワーク": "采配やベンチワークのどこが動くか",
+        "指導の意図": "選手の内容や調整のどこに指導意図が出るか",
+    }.get(focus_axis, "次のベンチ判断のどこが動くか")
+    quote_instruction = (
+        "引用が2つ以上ある場合は、【発言内容】で2つまで並べて整理してください。"
+        if len(quote_phrases) >= 2
+        else "引用は1つだけでも構いません。元記事に引用がなければ発言内容を要約してください。"
+    )
+    time_rule = ""
+    if source_day_label:
+        time_rule = f"【発言の要旨】の1文目には「{source_day_label}時点」を自然に入れてください。\n"
+    return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
+以下の元記事タイトルと要約に含まれる事実だけを使って本文を書いてください。新しい事実・数字・比較・感想を足さないでください。
+
+【使ってよい事実】
+{source_fact_block}
+
+【厳守ルール】
+・ですます調、400〜800文字
+・発言者は必ず「{subject}」と明記する。「監督」「コーチ」「首脳陣」だけでぼかさない
+・見出しはこの4つをこの順番で使う
+・【発言の要旨】
+・【発言内容】
+・【文脈と背景】
+・【次の注目】
+・【発言の要旨】はH2相当の導入で、タイトルの繰り返しではなく、いつ・どこで・どんな状況での発言かを2〜3文で整理する
+{time_rule}・【発言内容】では引用を明示して整理する。{quote_instruction}
+・【文脈と背景】では、試合状況・選手状況・チーム状況のうち、元記事にある材料だけを使って背景を整理する
+・【次の注目】では、{next_focus_instruction}を1〜2文で具体的に書く
+・元記事にない数字、過去比較、一般論、精神論、推測は足さない
+・最後は読者視点の締め1〜2文で終え、「みなさんの意見はコメントで教えてください！」を入れる
+・HTMLタグなし、本文だけを出力する
+"""
+
+
 def _build_gemini_strict_prompt(
     title: str,
     summary: str,
@@ -1651,6 +1741,8 @@ def _build_gemini_strict_prompt(
         if player_mode == "player_quote":
             return _build_player_quote_strict_prompt(title, summary)
         return _build_player_status_strict_prompt(title, summary, source_day_label=source_day_label)
+    if category == "首脳陣":
+        return _build_manager_strict_prompt(title, summary, source_fact_block, source_day_label=source_day_label)
     opening_focus = "最初の1文でニュースの核心を書く"
     if category == "首脳陣":
         opening_focus = f"最初の1文で{subject}の発言より先に、ベンチが何を動かそうとしているのかを書く"
@@ -1922,6 +2014,21 @@ def _normalize_article_heading(heading: str, category: str, has_game: bool) -> s
     clean = (heading or "").strip()
     if not clean:
         return clean
+
+    if category == "首脳陣":
+        manager_heading_aliases = {
+            "【発言の要旨】": "【発言の要旨】",
+            "【発言内容】": "【発言内容】",
+            "【発言内容の整理】": "【発言内容】",
+            "【引用の整理】": "【発言内容】",
+            "【文脈と背景】": "【文脈と背景】",
+            "【背景と文脈】": "【文脈と背景】",
+            "【文脈】": "【文脈と背景】",
+            "【次の注目】": "【次の注目】",
+            "【今後の注目】": "【次の注目】",
+        }
+        if clean in manager_heading_aliases:
+            return manager_heading_aliases[clean]
 
     first, second, third = _article_section_headings(category, has_game)
     first_aliases = {
@@ -2331,6 +2438,94 @@ def _build_fan_reaction_queries(title: str, summary: str, category: str) -> list
     return _dedupe_preserve_order(queries)[:6]
 
 
+def _extract_article_heading_lines(text: str) -> list[str]:
+    return [
+        line.strip()
+        for line in (text or "").split("\n")
+        if line.strip().startswith("【") or line.strip().startswith("■") or line.strip().startswith("▶")
+    ]
+
+
+def _manager_section_count(text: str) -> int:
+    normalized = _normalize_article_text_structure(text or "", "首脳陣", False)
+    headings = _extract_article_heading_lines(normalized)
+    return len(_dedupe_preserve_order(headings))
+
+
+def _manager_quote_count(title: str, summary: str) -> int:
+    return len(_extract_quote_phrases(f"{title}\n{summary}", max_phrases=4))
+
+
+def _manager_body_has_required_structure(text: str, has_game: bool) -> bool:
+    normalized = _normalize_article_text_structure(text or "", "首脳陣", has_game)
+    headings = set(_extract_article_heading_lines(normalized))
+    return all(heading in headings for heading in MANAGER_REQUIRED_HEADINGS)
+
+
+def _build_manager_safe_fallback(title: str, summary: str, real_reactions: list[str] | None = None) -> str:
+    def _clean_manager_fact(sentence: str) -> str:
+        clean = _collapse_ws((sentence or "").replace("\n", " ").strip())
+        clean = _re.sub(r"^【[^】]+】", "", clean).strip()
+        return clean.rstrip("。")
+
+    facts = [_clean_manager_fact(sentence) for sentence in _extract_summary_sentences(summary, max_sentences=4)]
+    facts = [fact for fact in facts if fact]
+    if not facts:
+        title_text = _strip_title_prefix(title)
+        facts = [_clean_manager_fact(title_text) or "元記事の内容を確認中です"]
+
+    lead = facts[0]
+    detail = facts[1] if len(facts) > 1 else ""
+    extra = facts[2] if len(facts) > 2 else ""
+    subject = _extract_subject_label(title, summary, "首脳陣")
+    quote_phrases = _extract_quote_phrases(f"{title}\n{summary}", max_phrases=2)
+    focus_axis = _extract_manager_focus_axis(title, summary)
+    if quote_phrases and subject not in {"", "首脳陣"} and ("「" in lead or "『" in lead) and "」" not in lead and detail:
+        lead = f"{subject}が「{quote_phrases[0]}」と話した"
+        detail = ""
+
+    intro_lines = [MANAGER_REQUIRED_HEADINGS[0]]
+    intro_lines.append(f"{lead}。")
+    if detail:
+        intro_lines.append(f"{detail}。")
+    else:
+        intro_lines.append(f"この発言は、{subject}が{focus_axis}をどう動かそうとしているのかを見る材料です。")
+
+    quote_lines = [MANAGER_REQUIRED_HEADINGS[1]]
+    if quote_phrases:
+        quote_lines.append(f"今回の発言の軸は「{quote_phrases[0]}」という言葉です。")
+        if len(quote_phrases) >= 2:
+            quote_lines.append(f"あわせて「{quote_phrases[1]}」という表現も出ており、判断の置きどころがより見えやすくなっています。")
+        else:
+            quote_lines.append(f"{subject}の言葉をそのまま追うことで、どこを重く見ているのかが読み取りやすくなります。")
+    else:
+        quote_lines.append(f"今回の記事では、{subject}が{focus_axis}について考えを示したことが発言の芯です。")
+        quote_lines.append("言い回しの強さよりも、ベンチが何を動かそうとしているかに注目したいコメントです。")
+
+    background_lines = [MANAGER_REQUIRED_HEADINGS[2]]
+    if extra:
+        background_lines.append(f"{extra}。")
+    elif detail:
+        background_lines.append(f"{detail}。")
+    background_lines.append(_manager_context_line(focus_axis))
+
+    reaction_line = ""
+    if real_reactions:
+        snippets = []
+        for reaction in real_reactions[:2]:
+            clean = _clean_reaction_snippet(_reaction_body_text(reaction))
+            if clean:
+                snippets.append(clean)
+        if snippets:
+            reaction_line = f"反応を見ると、この発言の強さよりも、{focus_axis}が実際にどう動くかを見たい空気が強いです。"
+
+    next_lines = [MANAGER_REQUIRED_HEADINGS[3]]
+    next_lines.append(_manager_next_watch_line(focus_axis, reaction_line=reaction_line))
+    next_lines.append("みなさんの意見はコメントで教えてください！")
+
+    return "\n".join(intro_lines + quote_lines + background_lines + next_lines)
+
+
 def _build_safe_article_fallback(
     title: str,
     summary: str,
@@ -2338,6 +2533,9 @@ def _build_safe_article_fallback(
     has_game: bool,
     real_reactions: list[str] | None = None,
 ) -> str:
+    if category == "首脳陣":
+        return _build_manager_safe_fallback(title, summary, real_reactions=real_reactions)
+
     facts = _extract_summary_sentences(summary, max_sentences=4)
     if not facts:
         title_text = _strip_title_prefix(title)
@@ -3555,29 +3753,24 @@ def generate_article_with_gemini(
 ・最後は「みなさんの意見はコメントで！」で締める
 ・HTMLタグなし・本文のみ出力""",
 
-        "首脳陣": f"""あなたは読売ジャイアンツの熱狂的なファンブロガー兼データアナリストです。
-今日は{today_str}です。まずWeb検索でデータを調べてから、データで裏付けた采配分析記事を日本語で書いてください。
+        "首脳陣": f"""あなたは読売ジャイアンツ専門ブログの編集者です。
+今日は{today_str}です。まずWeb検索で必要な事実を確認してから、監督・コーチの発言を軸にした記事を日本語で書いてください。
 
 {data_sources}
 
 タイトル: {title}
 ニュース要約: {summary_clean}
 
-【記事に必ず入れる数字（Web検索で取得）】
-・今季チーム成績（勝率・得点・失点・防御率）
-・問題の采配に関連する選手成績データ
-・阿部監督の今季起用パターン・采配傾向
-・セ・リーグ順位表と得失点差
-・過去の同時期との比較データ
-
 {fan_section}
 
 【構成】
-・見出し4〜5個（【】か■で始める）
-・各セクション1〜2段落
-・500〜600文字
-・Web検索で確認できた数字は積極的に使い、末尾に「（npb.jp）」「（スポーツナビ）」「（1point02.jp）」など出典を括弧書きで付ける
-・確認できなかった数字は「〜とみられる」「〜程度」と明示（出典なし）
+・見出しは「【発言の要旨】」「【発言内容】」「【文脈と背景】」「【次の注目】」の4つをこの順番で使う
+・本文は400〜800文字
+・発言者を必ず明記する
+・引用が2つ以上ある場合は【発言内容】で並べて整理する
+・【文脈と背景】では試合状況、選手状況、チーム状況のどれかを必ず整理する
+・【次の注目】では次の起用、采配、役割変化のどこを見るかを具体的に書く
+・元記事にない数字、比較、一般論、精神論は足さない
 ・最後は「みなさんの意見はコメントで！」で締める
 ・HTMLタグなし・本文のみ出力""",
     }
@@ -3950,6 +4143,16 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             generation_category,
             subject,
         )
+    if generation_category == "首脳陣" and article_subtype == "manager":
+        normalized_manager_body = _normalize_article_text_structure(ai_body, generation_category, has_game)
+        if _manager_body_has_required_structure(normalized_manager_body, has_game):
+            ai_body = normalized_manager_body
+        else:
+            ai_body = _apply_editor_voice(
+                _build_manager_safe_fallback(title, summary_clean, real_reactions=real_reactions),
+                generation_category,
+                subject,
+            )
     if summary_block and not _text_is_safe(title, summary_clean, summary_block, has_game):
         logger.warning("SUMMARYブロックを破棄: 事実制約に違反")
         summary_block = ""
@@ -4425,7 +4628,12 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             if not current_heading and not current_paragraphs:
                 return
             if current_heading:
-                blocks += f'<!-- wp:heading {{"level":3}} -->\n<h3>{current_heading}</h3>\n<!-- /wp:heading -->\n\n'
+                heading_level = 2 if (category == "首脳陣" and article_subtype == "manager" and current_heading == "【発言の要旨】") else 3
+                blocks += (
+                    f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
+                    f'<h{heading_level}>{current_heading}</h{heading_level}>\n'
+                    f'<!-- /wp:heading -->\n\n'
+                )
             for paragraph in current_paragraphs:
                 blocks += _render_paragraph_with_media(paragraph)
             if (
@@ -5547,6 +5755,25 @@ def _log_title_template_selected(
     logger.info(json.dumps(payload, ensure_ascii=False))
 
 
+def _log_manager_body_template_applied(
+    logger: logging.Logger,
+    post_id: int,
+    title: str,
+    quote_count: int,
+    section_count: int,
+    template_version: str = MANAGER_BODY_TEMPLATE_VERSION,
+) -> None:
+    payload = {
+        "event": "manager_body_template_applied",
+        "post_id": post_id,
+        "title": title,
+        "quote_count": quote_count,
+        "section_count": section_count,
+        "template_version": template_version,
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
 def _counter_to_plain_dict(counter: Counter) -> dict[str, int]:
     return {key: counter[key] for key in sorted(counter) if counter[key]}
 
@@ -5947,6 +6174,14 @@ def _main(args, logger):
             success += 1
             created_category_counts[category] += 1
             created_subtype_counts[title_article_subtype] += 1
+            if category == "首脳陣" and title_article_subtype == "manager":
+                _log_manager_body_template_applied(
+                    logger,
+                    post_id,
+                    draft_title,
+                    _manager_quote_count(raw_title, summary),
+                    _manager_section_count(ai_body),
+                )
             time.sleep(1)
 
             publish_skip_reasons = get_publish_skip_reasons(

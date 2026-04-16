@@ -80,20 +80,27 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("投手は次回登板、野手は次の実戦出場、捕手は次の登録発表", prompt)
         self.assertIn("同じ事実を繰り返さないでください。", prompt)
 
-    def test_non_player_prompt_keeps_generic_strict_structure(self):
+    def test_manager_prompt_uses_manager_specific_structure(self):
         prompt = rss_fetcher._build_gemini_strict_prompt(
-            title="阿部監督が起用方針を説明",
+            title="阿部監督「結果残せば使います」「競争は続けます」",
             summary="阿部監督が起用方針について語った。",
             category="首脳陣",
-            source_fact_block="・阿部監督が起用方針を説明した",
+            source_fact_block="・阿部監督が起用方針を説明した\n・元記事中の表現: 「結果残せば使います」",
             win_loss_hint="",
             has_game=False,
             real_reactions=["起用の変化があるか見たい。"],
+            source_day_label="4月16日",
         )
 
-        self.assertIn("【使ってよい事実】", prompt)
-        self.assertIn("【参考にしてよいファンの反応の温度感】", prompt)
-        self.assertIn("一番上の見出しは必ず「【ニュースの整理】」", prompt)
+        self.assertIn("発言者は必ず", prompt)
+        self.assertIn("400〜800文字", prompt)
+        self.assertIn("【発言の要旨】", prompt)
+        self.assertIn("【発言内容】", prompt)
+        self.assertIn("【文脈と背景】", prompt)
+        self.assertIn("【次の注目】", prompt)
+        self.assertIn("【発言の要旨】の1文目には「4月16日時点」を自然に入れてください。", prompt)
+        self.assertIn("引用が2つ以上ある場合は、【発言内容】で2つまで並べて整理してください。", prompt)
+        self.assertIn("元記事にない数字、過去比較、一般論、精神論、推測は足さない", prompt)
 
 
 if __name__ == "__main__":

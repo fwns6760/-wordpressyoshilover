@@ -155,15 +155,15 @@ class BuildNewsBlockTests(unittest.TestCase):
                     has_game=False,
                 )
 
-        self.assertIn("整理すると、今回のニュースは3点です。", ai_body)
-        self.assertIn("まず、阿部監督が「レギュラーは決まってません。結果残せば使います」と話し、若手も含めて結果重視で競争を促す考えを出したことです。", ai_body)
-        self.assertIn("次に「レギュラーは決まってません。結果残せば使います」という言葉が出たことで、起用を固定しない姿勢がはっきりしました。", ai_body)
-        self.assertIn("そして、若手起用とセットで序列を動かす前提まで見えてきたのが今回の整理ポイントです。", ai_body)
-        self.assertIn("レギュラー固定でいかないという意思表示にも見えます。", ai_body)
-        self.assertIn("名前より結果で並びを動かす前提に見えてきます。", ai_body)
-        self.assertIn("既存の序列も安泰ではないという空気が出ています。", ai_body)
-        self.assertIn("次に見たいのは、この発言が実際のスタメンやベンチワークにどう出るかという点です。", ai_body)
-        self.assertNotIn("結果残せば使います」と話した。", ai_body)
+        self.assertIn("【発言の要旨】", ai_body)
+        self.assertIn("【発言内容】", ai_body)
+        self.assertIn("【文脈と背景】", ai_body)
+        self.assertIn("【次の注目】", ai_body)
+        self.assertIn("阿部監督が「レギュラーは決まってません。結果残せば使います」と話した。", ai_body)
+        self.assertIn("今回の発言の軸は「レギュラーは決まってません。結果残せば使います」という言葉です。", ai_body)
+        self.assertIn("この話題は序列や競争をどう動かすか、という文脈で読む必要があります。", ai_body)
+        self.assertIn("次に見たいのは、この発言が実際の序列や競争にどう出るかという点です。", ai_body)
+        self.assertNotIn("整理すると、今回のニュースは3点です。", ai_body)
 
     def test_manager_article_reaction_line_is_summarized_not_raw_quotes(self):
         title = "【巨人】阿部監督が起用の狙いを説明"
@@ -177,7 +177,7 @@ class BuildNewsBlockTests(unittest.TestCase):
             ],
         ):
             with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
-                _, ai_body = rss_fetcher.build_news_block(
+                blocks, ai_body = rss_fetcher.build_news_block(
                     title=title,
                     summary=summary,
                     url="https://example.com/post",
@@ -186,7 +186,11 @@ class BuildNewsBlockTests(unittest.TestCase):
                     has_game=False,
                 )
 
-        self.assertIn("次のスタメンや起用がどう動くかを見たい空気が強いです。", ai_body)
+        self.assertIn("反応を見ると、この発言の強さよりも、スタメンや起用が実際にどう動くかを見たい空気が強いです。", ai_body)
+        self.assertIn('<h2>【発言の要旨】</h2>', blocks)
+        self.assertIn('<h3>【発言内容】</h3>', blocks)
+        self.assertIn('<h3>【文脈と背景】</h3>', blocks)
+        self.assertIn('<h3>【次の注目】</h3>', blocks)
 
     def test_postgame_article_fallback_focuses_on_flow_and_next_game(self):
         title = "【巨人】阪神に3-2で勝利　岡田が決勝打"

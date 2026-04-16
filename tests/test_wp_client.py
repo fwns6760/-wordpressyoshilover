@@ -337,6 +337,24 @@ class TestWPClientDedup(unittest.TestCase):
         post_headers = mock_post.call_args.kwargs["headers"]
         self.assertEqual(post_headers["Content-Type"], "image/webp")
 
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_upload_image_from_url_skips_unsupported_content_types(self, mock_get, mock_post):
+        for content_type in ("text/html; charset=utf-8", "application/octet-stream"):
+            with self.subTest(content_type=content_type):
+                mock_get.return_value = Mock(
+                    status_code=200,
+                    headers={"Content-Type": content_type},
+                    content=b"not-an-allowed-image",
+                )
+                mock_get.return_value.raise_for_status = Mock()
+
+                media_id = self.wp.upload_image_from_url("https://example.com/not-image")
+
+                self.assertEqual(media_id, 0)
+                mock_post.assert_not_called()
+                mock_get.reset_mock()
+
     @patch("src.wp_client.requests.get")
     def test_list_posts_uses_edit_context_when_available(self, mock_get):
         mock_get.return_value = Mock(status_code=200, json=lambda: [{"id": 1}])

@@ -33,6 +33,11 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).parent.parent
 load_dotenv(ROOT / ".env")
 HTTP_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+ALLOWED_IMAGE_CONTENT_TYPES = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+}
 
 
 class WPClient:
@@ -220,7 +225,11 @@ class WPClient:
         for line in (header_text or "").splitlines():
             if line.lower().startswith("content-type:"):
                 content_type = line.split(":", 1)[1].strip()
-        return content_type.split(";", 1)[0].strip() or "image/jpeg"
+        return WPClient._normalize_content_type(content_type) or "image/jpeg"
+
+    @staticmethod
+    def _normalize_content_type(content_type: str) -> str:
+        return (content_type or "").split(";", 1)[0].strip().lower()
 
     @staticmethod
     def _download_image_via_curl(url: str, timeout: int = 15) -> tuple[bytes, str]:
@@ -246,6 +255,7 @@ class WPClient:
         """
         try:
             normalized_url = html.unescape((image_url or "").strip())
+            print(f"[WP] 画像アップロード開始 image_url={normalized_url}")
             try:
                 img_resp = requests.get(
                     normalized_url,
@@ -254,13 +264,23 @@ class WPClient:
                 )
                 img_resp.raise_for_status()
                 image_data = img_resp.content
-                content_type = img_resp.headers.get("Content-Type", "image/jpeg").split(";")[0]
+                content_type = self._normalize_content_type(img_resp.headers.get("Content-Type", "image/jpeg"))
             except Exception:
                 image_data, content_type = self._download_image_via_curl(normalized_url, timeout=15)
-            ext = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}.get(content_type, "jpg")
+                content_type = self._normalize_content_type(content_type)
+
+            print(f"[WP] 画像ダウンロード Content-Type={content_type or 'unknown'} image_url={normalized_url}")
+            ext = ALLOWED_IMAGE_CONTENT_TYPES.get(content_type)
+            if not ext:
+                print(
+                    "[WP] 画像アップロードskip: "
+                    f"unsupported_content_type={content_type or 'unknown'} image_url={normalized_url}"
+                )
+                return 0
             if not filename:
                 import hashlib
                 filename = hashlib.md5(normalized_url.encode()).hexdigest()[:12] + f".{ext}"
+            print(f"[WP] 画像アップロード filename={filename} Content-Type={content_type}")
 
             resp = requests.post(
                 f"{self.api}/media",

@@ -227,6 +227,27 @@ LOW_VALUE_SHARE_MARKERS = (
     "日テレNEWS", "日刊スポーツ", "デイリースポーツ", "スポーツ報知", "東スポ",
     "記事はこちら", "詳しくはこちら",
 )
+SOCIAL_PLAYER_NOTICE_RESCUE_KEYWORDS = (
+    "一軍登録",
+    "登録抹消",
+    "戦力外",
+    "復帰",
+    "合流",
+    "抹消",
+    "昇格",
+)
+SOCIAL_GAME_NOTICE_RESCUE_KEYWORDS = ("復帰", "合流")
+SOCIAL_COLUMN_NOTICE_RESCUE_KEYWORDS = (
+    "一軍登録",
+    "登録抹消",
+    "戦力外",
+    "抹消",
+)
+SOCIAL_COLUMN_RESCUE_PATTERNS = (
+    (_re.compile(r"初(?:１軍|1軍|一軍)?合流"), "column_escape_draft_join"),
+    (_re.compile(r"初(?:１軍|1軍|一軍)"), "column_escape_draft_join"),
+    (_re.compile(r"ドラ[1-7１-７](?:位)?"), "column_escape_draft_join"),
+)
 SOCIAL_VIDEO_SKIP_MARKERS = (
     "【動画】", "動画】", "DAZN BASEBALL", "#だったらDAZN", "月々2,300円",
     "年間プラン・月々払い", "見逃し配信", "ハイライト", "LIVE配信",
@@ -700,6 +721,24 @@ def _is_polluted_social_text(text: str) -> bool:
         return True
     lower_clean = clean.lower()
     return any(marker.lower() in lower_clean for marker in SOCIAL_TEXT_OUTLET_MARKERS)
+
+
+def _first_matching_keyword(text: str, keywords: tuple[str, ...]) -> str:
+    for keyword in keywords:
+        if keyword in text:
+            return keyword
+    return ""
+
+
+def _match_social_column_rescue(text: str) -> tuple[str, str]:
+    keyword = _first_matching_keyword(text, SOCIAL_COLUMN_NOTICE_RESCUE_KEYWORDS)
+    if keyword:
+        return "column_escape_notice_keyword", keyword
+    for pattern, rescue_reason in SOCIAL_COLUMN_RESCUE_PATTERNS:
+        match = pattern.search(text)
+        if match:
+            return rescue_reason, match.group(0)
+    return "", ""
 
 
 def _extract_subject_label(title: str, summary: str, category: str) -> str:
@@ -5092,25 +5131,79 @@ def classify_category(text: str, keywords: dict) -> str:
     return "コラム"
 
 
-def _is_authoritative_social_entry_worthy(title: str, summary: str, category: str, article_subtype: str) -> bool:
+def _evaluate_authoritative_social_entry(
+    title: str,
+    summary: str,
+    category: str,
+    article_subtype: str,
+) -> tuple[bool, dict | None]:
     text = _strip_html(f"{title} {summary}")
     if _is_promotional_video_entry(title, summary) or any(marker in text for marker in SOCIAL_VIDEO_SKIP_MARKERS):
-        return False
+        return False, None
     has_quote = "「" in text and "」" in text
 
     if article_subtype in {"lineup", "farm_lineup", "postgame"}:
-        return True
+        return True, None
     if article_subtype == "live_update":
-        return ENABLE_LIVE_UPDATE_ARTICLES
+        return ENABLE_LIVE_UPDATE_ARTICLES, None
     if category in {"首脳陣", "選手情報"} and has_quote:
-        return True
+        return True, None
+    if category == "選手情報":
+        matched_keyword = _first_matching_keyword(text, SOCIAL_PLAYER_NOTICE_RESCUE_KEYWORDS)
+        if matched_keyword:
+            return True, {
+                "rescue_reason": "player_notice_keyword",
+                "matched_word": matched_keyword,
+            }
+    if category == "ドラフト・育成" and "２軍" in text:
+        return True, {
+            "rescue_reason": "zenkaku_2gun",
+            "matched_word": "２軍",
+        }
     if category == "ドラフト・育成" and any(keyword in text for keyword in ("二軍", "2軍", "ファーム", "昇格", "支配下", "本塁打", "好投", "猛打賞", "マルチ", "適時打", "先発")):
-        return True
+        return True, None
+    if category == "試合速報":
+        matched_keyword = _first_matching_keyword(text, SOCIAL_GAME_NOTICE_RESCUE_KEYWORDS)
+        if matched_keyword:
+            return True, {
+                "rescue_reason": "game_notice_keyword",
+                "matched_word": matched_keyword,
+            }
     if category == "試合速報" and any(keyword in text for keyword in ("先発", "登録", "昇格", "抹消", "公示", "打順", "オーダー", "ベンチ入り")):
-        return True
+        return True, None
+    if category == "コラム":
+        rescue_reason, matched_word = _match_social_column_rescue(text)
+        if rescue_reason and matched_word:
+            return True, {
+                "rescue_reason": rescue_reason,
+                "matched_word": matched_word,
+            }
     if category == "補強・移籍" and any(keyword in text for keyword in ("獲得", "移籍", "トレード", "加入", "退団")):
-        return True
-    return False
+        return True, None
+    return False, None
+
+
+def _is_authoritative_social_entry_worthy(title: str, summary: str, category: str, article_subtype: str) -> bool:
+    worthy, _rescue_meta = _evaluate_authoritative_social_entry(title, summary, category, article_subtype)
+    return worthy
+
+
+def _log_sns_weak_rescue(
+    logger: logging.Logger,
+    source_url: str,
+    title: str,
+    rescue_meta: dict | None,
+) -> None:
+    if not rescue_meta:
+        return
+    payload = {
+        "event": "sns_weak_rescued",
+        "rescue_reason": rescue_meta.get("rescue_reason", ""),
+        "source_url": source_url,
+        "title": title,
+        "matched_word": rescue_meta.get("matched_word", ""),
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
 
 # ──────────────────────────────────────────────────────────
 # タイトル生成（投稿内容の先頭40字）
@@ -5456,7 +5549,10 @@ def _main(args, logger):
                         skip_filter += 1
                         continue
                 else:
-                    if not _is_authoritative_social_entry_worthy(title, summary, category, article_subtype):
+                    worthy, rescue_meta = _evaluate_authoritative_social_entry(title, summary, category, article_subtype)
+                    if rescue_meta:
+                        _log_sns_weak_rescue(logger, post_url, title, rescue_meta)
+                    if not worthy:
                         logger.debug(f"  [SKIP:SNS弱い] {title[:40]}")
                         skip_filter += 1
                         continue

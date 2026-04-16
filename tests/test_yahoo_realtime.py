@@ -609,6 +609,36 @@ class GameDayCheckTests(unittest.TestCase):
             )
         )
 
+    def test_authoritative_social_entry_rescues_player_notice_without_quote(self):
+        self.assertTrue(
+            rss_fetcher._is_authoritative_social_entry_worthy(
+                "ジャイアンツ球場 西舘勇陽選手がコンディション不良からの復帰へ向けてブルペンで投球練習中⚾️",
+                "",
+                "選手情報",
+                "player",
+            )
+        )
+
+    def test_authoritative_social_entry_rescues_column_notice_case(self):
+        self.assertTrue(
+            rss_fetcher._is_authoritative_social_entry_worthy(
+                "巨人ドラ４・皆川岳飛が初１軍合流 強肩が持ち味「やってやろうという気持ち」",
+                "",
+                "コラム",
+                "general",
+            )
+        )
+
+    def test_authoritative_social_entry_keeps_skipping_rainout_slide_post(self):
+        self.assertFalse(
+            rss_fetcher._is_authoritative_social_entry_worthy(
+                "【一軍】巨人 vs 阪神☔ 本日の雨天中止を受けて、あす4/16にスライド登板する 投手⚾",
+                "",
+                "試合速報",
+                "pregame",
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

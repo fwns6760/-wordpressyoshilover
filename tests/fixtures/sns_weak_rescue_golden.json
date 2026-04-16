@@ -1,0 +1,84 @@
+[
+  {
+    "name": "rescue_player_notice_recovery_without_quote",
+    "title": "ジャイアンツ球場 西舘勇陽選手がコンディション不良からの復帰へ向けてブルペンで投球練習中⚾️",
+    "summary": "",
+    "category": "選手情報",
+    "article_subtype": "player",
+    "source_url": "https://twitter.com/hochi_giants/status/2044575173316407802",
+    "expected_worthy": true,
+    "expected_log": {
+      "event": "sns_weak_rescued",
+      "rescue_reason": "player_notice_keyword",
+      "source_url": "https://twitter.com/hochi_giants/status/2044575173316407802",
+      "title": "ジャイアンツ球場 西舘勇陽選手がコンディション不良からの復帰へ向けてブルペンで投球練習中⚾️",
+      "matched_word": "復帰"
+    }
+  },
+  {
+    "name": "rescue_column_draft_join_case",
+    "title": "巨人ドラ４・皆川岳飛が初１軍合流 強肩が持ち味「やってやろうという気持ち」",
+    "summary": "",
+    "category": "コラム",
+    "article_subtype": "general",
+    "source_url": "https://twitter.com/hochi_giants/status/2044516995006079261",
+    "expected_worthy": true,
+    "expected_log": {
+      "event": "sns_weak_rescued",
+      "rescue_reason": "column_escape_draft_join",
+      "source_url": "https://twitter.com/hochi_giants/status/2044516995006079261",
+      "title": "巨人ドラ４・皆川岳飛が初１軍合流 強肩が持ち味「やってやろうという気持ち」",
+      "matched_word": "初１軍合流"
+    }
+  },
+  {
+    "name": "rescue_column_deregistration_case",
+    "title": "「巨人の若手選手は見てて歯がゆい」福本豊氏、チャンス逃す外野陣に苦言 抹消の中山礼都は「結果を欲しがりすぎ」",
+    "summary": "",
+    "category": "コラム",
+    "article_subtype": "general",
+    "source_url": "https://twitter.com/hochi_giants/status/2044520746085425657",
+    "expected_worthy": true,
+    "expected_log": {
+      "event": "sns_weak_rescued",
+      "rescue_reason": "column_escape_notice_keyword",
+      "source_url": "https://twitter.com/hochi_giants/status/2044520746085425657",
+      "title": "「巨人の若手選手は見てて歯がゆい」福本豊氏、チャンス逃す外野陣に苦言 抹消の中山礼都は「結果を欲しがりすぎ」",
+      "matched_word": "抹消"
+    }
+  },
+  {
+    "name": "rescue_farm_entry_with_zenkaku_2gun",
+    "title": "【巨人】２軍で実戦感覚を取り戻す若手外野手",
+    "summary": "",
+    "category": "ドラフト・育成",
+    "article_subtype": "farm",
+    "source_url": "https://twitter.com/hochi_giants/status/2044000000000000000",
+    "expected_worthy": true,
+    "expected_log": {
+      "event": "sns_weak_rescued",
+      "rescue_reason": "zenkaku_2gun",
+      "source_url": "https://twitter.com/hochi_giants/status/2044000000000000000",
+      "title": "【巨人】２軍で実戦感覚を取り戻す若手外野手",
+      "matched_word": "２軍"
+    }
+  },
+  {
+    "name": "keep_skipping_light_pregame_post",
+    "title": "【一軍】巨人 vs 阪神☔ キャップのツバがアゲアゲな 投手🤠",
+    "summary": "",
+    "category": "コラム",
+    "article_subtype": "general",
+    "source_url": "https://twitter.com/TokyoGiants/status/2044360648898048229",
+    "expected_worthy": false
+  },
+  {
+    "name": "keep_skipping_rainout_slide_post",
+    "title": "【一軍】巨人 vs 阪神☔ 本日の雨天中止を受けて、あす4/16にスライド登板する 投手⚾",
+    "summary": "",
+    "category": "試合速報",
+    "article_subtype": "pregame",
+    "source_url": "https://twitter.com/TokyoGiants/status/2044356325476647157",
+    "expected_worthy": false
+  }
+]

@@ -23,9 +23,8 @@ class DisplayTitleRewriteTests(unittest.TestCase):
                 if "expected_category" in case:
                     category = rss_fetcher.classify_category(f"{title} {summary}", keywords)
                     self.assertEqual(category, case["expected_category"])
-                production_title = title[:40].strip()
                 rewritten = rss_fetcher.rewrite_display_title(
-                    production_title,
+                    title,
                     summary,
                     category,
                     case.get("has_game", True),

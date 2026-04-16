@@ -5243,12 +5243,84 @@ PLAYER_DEREGISTER_TITLE_RE = _re.compile(r"(?:出場選手)?登録を?抹消|登
 PLAYER_REGISTER_TITLE_RE = _re.compile(r"(?:出場選手)?登録|一軍登録|再登録")
 PLAYER_RETURN_TITLE_RE = _re.compile(r"実戦復帰|復帰(?:へ前進|見込み|予定|間近)?")
 PLAYER_JOIN_TITLE_RE = _re.compile(r"(?:一軍|チーム)?合流|昇格")
+TITLE_VENUE_MARKERS = (
+    "甲子園",
+    "東京ドーム",
+    "ジャイアンツ球場",
+    "神宮",
+    "横浜",
+    "ナゴヤ",
+    "バンテリン",
+    "マツダ",
+    "ZOZOマリン",
+    "PayPay",
+    "楽天モバイル",
+    "京セラ",
+    "エスコン",
+    "しずてつスタジアム草薙",
+)
 
 
-def rewrite_display_title(title: str, summary: str, category: str, has_game: bool) -> str:
+def _extract_title_opponent(source_text: str) -> str:
+    for marker in NPB_TEAM_MARKERS:
+        if marker in {"巨人", "読売ジャイアンツ"}:
+            continue
+        if marker in source_text:
+            return marker
+    return ""
+
+
+def _extract_title_venue(source_text: str) -> str:
+    for marker in TITLE_VENUE_MARKERS:
+        if marker in source_text:
+            return marker
+    return ""
+
+
+def _has_pregame_numeric_hint(source_text: str) -> bool:
+    return bool(RECORD_TOKEN_RE.search(source_text) or LABELED_DECIMAL_TOKEN_RE.search(source_text))
+
+
+def _has_streaming_hint(source_text: str) -> bool:
+    return any(marker in source_text for marker in ("配信中", "アーカイブ", "GIANTS TV", "Giants TV", "GIANTS_TV"))
+
+
+def _extract_game_subject_fallback(source_text: str) -> str:
+    patterns = (
+        r"([一-龥々ァ-ヴー]{2,6})(?:投手|捕手|選手)?(?:\d+日)?スライド登板",
+        r"([一-龥々ァ-ヴー]{2,6})(?:投手|捕手|選手)?先発",
+    )
+    for pattern in patterns:
+        for match in _re.finditer(pattern, source_text):
+            candidate = match.group(1).strip()
+            if (
+                not candidate
+                or candidate in {"巨人", "読売ジャイアンツ"}
+                or candidate in {"予告先発", "先発"}
+                or candidate in NPB_TEAM_MARKERS
+                or candidate in TITLE_VENUE_MARKERS
+                or candidate.endswith("球場")
+            ):
+                continue
+            return candidate
+    return ""
+
+
+def _rewrite_display_title_with_template(title: str, summary: str, category: str, has_game: bool) -> tuple[str, str]:
     clean_title = _clean_display_title_text(title)
     clean_summary = _strip_html(summary or "").strip()
+    source_text = _strip_html(f"{title} {summary}")
     subject = _short_subject_name(title, summary, category) or "巨人"
+    if subject in TITLE_VENUE_MARKERS or subject.endswith("球場") or subject in {"予告先発", "先発"}:
+        subject = "巨人"
+    if category == "試合速報" and subject == "巨人":
+        player_subject = _compact_subject_label(title, summary, "選手情報")
+        if player_subject and player_subject not in TITLE_VENUE_MARKERS and not player_subject.endswith("球場"):
+            subject = player_subject
+        if subject == "巨人":
+            fallback_subject = _extract_game_subject_fallback(source_text)
+            if fallback_subject:
+                subject = fallback_subject
     manager_display_subject = subject
     if category == "首脳陣":
         manager_label = _extract_subject_label(title, summary, category)
@@ -5258,87 +5330,141 @@ def rewrite_display_title(title: str, summary: str, category: str, has_game: boo
     quote = _extract_quote_phrases(f"{title}\n{summary}", max_phrases=1)
     quote_text = quote[0] if quote else ""
     subtype = _detect_article_subtype(title, summary, category, has_game)
-    source_text = f"{clean_title} {clean_summary}"
+    opponent = _extract_title_opponent(source_text)
+    venue = _extract_title_venue(source_text)
+
+    def _result(text: str, template_key: str, max_chars: int = 38) -> tuple[str, str]:
+        return _trim_display_title(text, max_chars=max_chars), template_key
 
     if category == "選手情報":
         if "フォーム" in source_text or "助言" in source_text or "修正" in source_text:
-            return _trim_display_title(f"{subject}、フォーム変更のポイントはどこか")
+            return _result(f"{subject}、フォーム変更のポイントはどこか", "player_mechanics_generic")
         if PLAYER_DEREGISTER_TITLE_RE.search(source_text):
-            return _trim_display_title(f"{subject}、登録抹消後にどこを見たいか")
+            return _result(f"{subject}、登録抹消後にどこを見たいか", "player_status_deregister")
         if PLAYER_JOIN_TITLE_RE.search(source_text):
-            return _trim_display_title(f"{subject}、一軍合流でどこを見たいか")
+            return _result(f"{subject}、一軍合流でどこを見たいか", "player_status_join")
         if PLAYER_REGISTER_TITLE_RE.search(source_text):
-            return _trim_display_title(f"{subject}、登録後にどこを見たいか")
+            return _result(f"{subject}、登録後にどこを見たいか", "player_status_register")
         if PLAYER_RETURN_TITLE_RE.search(source_text) or "昇格" in source_text or "一軍" in source_text or "復帰" in source_text:
-            return _trim_display_title(f"{subject}、昇格・復帰でどこを見たいか")
+            return _result(f"{subject}、昇格・復帰でどこを見たいか", "player_status_return")
         if quote_text:
-            return _trim_display_title(f"{subject}「{quote_text}」 実戦で何を見せるか")
-        return _trim_display_title(f"{subject}の現状整理 いま何を見たいか")
+            return _result(f"{subject}「{quote_text}」 実戦で何を見せるか", "player_quote")
+        return _result(f"{subject}の現状整理 いま何を見たいか", "player_generic")
 
     if category == "首脳陣":
         if quote_text and ("若手" in source_text or "競争" in source_text):
-            return _trim_display_title(f"{manager_display_subject}「{quote_text}」 若手起用で序列はどう動くか", max_chars=40)
+            return _result(
+                f"{manager_display_subject}「{quote_text}」 若手起用で序列はどう動くか",
+                "manager_quote_youth",
+                max_chars=40,
+            )
         if quote_text and ("スタメン" in source_text or "打順" in source_text or "起用" in source_text):
-            return _trim_display_title(f"{manager_display_subject}「{quote_text}」 次のスタメンはどう動くか")
+            return _result(f"{manager_display_subject}「{quote_text}」 次のスタメンはどう動くか", "manager_quote_lineup")
         if quote_text:
-            return _trim_display_title(f"{manager_display_subject}「{quote_text}」 ベンチの狙いはどこか")
-        return _trim_display_title(f"{subject}コメント整理 ベンチは何を動かすのか")
+            return _result(f"{manager_display_subject}「{quote_text}」 ベンチの狙いはどこか", "manager_quote_generic")
+        return _result(f"{subject}コメント整理 ベンチは何を動かすのか", "manager_generic")
 
     if category == "試合速報":
-        if RAINOUT_SLIDE_TITLE_RE.search(source_text):
-            return _trim_display_title(f"{subject}、スライド登板で何を見たいか")
+        if "スライド登板" in source_text or RAINOUT_SLIDE_TITLE_RE.search(source_text):
+            if "雨天中止" in source_text or "雨で中止" in source_text:
+                return _result(f"{subject}、雨天中止スライド登板で何を見るか", "game_rainout_slide_rainout")
+            if venue:
+                return _result(f"{subject}、{venue}スライド登板で何を見るか", "game_rainout_slide_venue")
+            if opponent:
+                return _result(f"{subject}、{opponent}戦スライド登板で何を見るか", "game_rainout_slide_opponent")
+            return _result(f"{subject}、スライド登板で何を見たいか", "game_rainout_slide_generic")
         if subtype == "lineup":
             body = clean_title.replace("今日の", "").replace("スタメン発表", "").replace("発表", "").strip()
-            return _trim_display_title(f"巨人スタメン {body}でどこを動かしたか")
+            return _result(f"巨人スタメン {body}でどこを動かしたか", "game_lineup")
         if subtype == "live_update":
             state_match = _re.search(r"(\d+回[表裏]?)", source_text)
             score = SCORE_TOKEN_RE.search(source_text)
             state_label = state_match.group(1) if state_match else "途中経過"
             if any(marker in source_text for marker in ("勝ち越し", "逆転")) and score:
-                return _trim_display_title(f"巨人{state_label} {score.group(0)} どこで流れが変わったか")
+                return _result(f"巨人{state_label} {score.group(0)} どこで流れが変わったか", "game_live_swing")
             if "同点" in source_text and score:
-                return _trim_display_title(f"巨人{state_label} {score.group(0)} 同点でどこが動いたか")
+                return _result(f"巨人{state_label} {score.group(0)} 同点でどこが動いたか", "game_live_tie")
             if score:
-                return _trim_display_title(f"巨人{state_label} {score.group(0)} 途中経過のポイント")
-            return _trim_display_title(f"巨人{state_label} 途中経過のポイント")
+                return _result(f"巨人{state_label} {score.group(0)} 途中経過のポイント", "game_live_score")
+            return _result(f"巨人{state_label} 途中経過のポイント", "game_live_generic")
         if subtype == "postgame":
             score = SCORE_TOKEN_RE.search(source_text)
-            opponent = next(
-                (marker for marker in NPB_TEAM_MARKERS if marker not in {"巨人", "読売ジャイアンツ"} and marker in source_text),
-                "",
-            )
             if any(marker in source_text for marker in ("完封負け", "0封負け", "打線が沈黙", "攻略できず")):
                 base = f"巨人{opponent}戦 打線沈黙で何が止まったか" if opponent else "巨人 打線沈黙で何が止まったか"
-                return _trim_display_title(base)
+                return _result(base, "game_postgame_shutout")
             if any(marker in source_text for marker in ("決勝打", "サヨナラ", "逆転")):
                 base = f"巨人{opponent}戦 終盤の一打で何が動いたか" if opponent else "巨人戦 終盤の一打で何が動いたか"
-                return _trim_display_title(base)
+                return _result(base, "game_postgame_clutch")
             if score:
                 if any(marker in source_text for marker in ("敗れ", "敗戦", "黒星")):
-                    return _trim_display_title(f"巨人{score.group(0)} 敗戦の分岐点はどこだったか")
+                    return _result(f"巨人{score.group(0)} 敗戦の分岐点はどこだったか", "game_postgame_loss")
                 if any(marker in source_text for marker in ("勝利", "白星", "連勝")):
-                    return _trim_display_title(f"巨人{score.group(0)} 勝利の分岐点はどこだったか")
-                return _trim_display_title(f"巨人{score.group(0)} 試合の流れを分けたポイント")
+                    return _result(f"巨人{score.group(0)} 勝利の分岐点はどこだったか", "game_postgame_win")
+                return _result(f"巨人{score.group(0)} 試合の流れを分けたポイント", "game_postgame_score")
             if opponent:
-                return _trim_display_title(f"巨人{opponent}戦 試合の流れを分けたポイント")
-            return _trim_display_title("巨人戦 試合の流れを分けたポイント")
-        return _trim_display_title("巨人戦 試合前にどこを見たいか")
+                return _result(f"巨人{opponent}戦 試合の流れを分けたポイント", "game_postgame_opponent")
+            return _result("巨人戦 試合の流れを分けたポイント", "game_postgame_generic")
+        if subject not in {"", "巨人", "選手", "予告", "先発", "登板"} and any(marker in source_text for marker in ("予告先発", "先発", "登板")):
+            if opponent:
+                return _result(f"巨人{opponent}戦 {subject}先発でどこを見たいか", "game_pregame_subject_starter")
+            return _result(f"{subject}先発でどこを見たいか", "game_pregame_subject_starter")
+        if "予告先発" in source_text and _has_pregame_numeric_hint(source_text):
+            if opponent:
+                return _result(f"巨人{opponent}戦 予告先発の数字をどう見るか", "game_pregame_numeric")
+            return _result("巨人戦 予告先発の数字をどう見るか", "game_pregame_numeric")
+        if venue:
+            if opponent:
+                return _result(f"巨人{opponent}戦 {venue}で何を見たいか", "game_pregame_venue")
+            return _result(f"巨人戦 {venue}で何を見たいか", "game_pregame_venue")
+        if opponent:
+            return _result(f"巨人{opponent}戦 試合前にどこを見たいか", "game_pregame_opponent")
+        return _result("巨人戦 試合前にどこを見たいか", "game_pregame_generic")
 
     if category == "補強・移籍":
         if "外国人" in source_text:
-            return _trim_display_title("巨人の新外国人補強 どこの穴を埋めるのか")
+            return _result("巨人の新外国人補強 どこの穴を埋めるのか", "reinforcement_foreign")
         if "トレード" in source_text or "移籍" in source_text:
-            return _trim_display_title("巨人の補強・移籍 この動きをどう見るか")
-        return _trim_display_title("巨人補強の整理 どこを厚くするのか")
+            return _result("巨人の補強・移籍 この動きをどう見るか", "reinforcement_trade")
+        return _result("巨人補強の整理 どこを厚くするのか", "reinforcement_generic")
 
     if category == "ドラフト・育成":
         if subtype == "farm_lineup" or FARM_LINEUP_TITLE_RE.search(source_text):
-            return _trim_display_title("巨人二軍スタメン 若手をどう並べたか")
+            return _result("巨人二軍スタメン 若手をどう並べたか", "farm_lineup")
         score = SCORE_TOKEN_RE.search(source_text)
         if FARM_RESULT_TITLE_RE.search(source_text) and score:
-            return _trim_display_title(f"巨人二軍 {score.group(0)} 結果のポイント")
+            if _has_streaming_hint(source_text):
+                return _result(f"巨人二軍 {score.group(0)} 配信試合のポイント", "farm_result_stream")
+            if "降雨コールド" in source_text:
+                return _result(f"巨人二軍 {score.group(0)} 降雨コールドのポイント", "farm_result_rainout")
+            return _result(f"巨人二軍 {score.group(0)} 結果のポイント", "farm_result_score")
 
-    return _trim_display_title(clean_title or "巨人ニュース")
+    return _result(clean_title or "巨人ニュース", "fallback_clean_title")
+
+
+def rewrite_display_title(title: str, summary: str, category: str, has_game: bool) -> str:
+    rewritten_title, _template_key = _rewrite_display_title_with_template(title, summary, category, has_game)
+    return rewritten_title
+
+
+def _log_title_template_selected(
+    logger: logging.Logger,
+    source_url: str,
+    original_title: str,
+    rewritten_title: str,
+    template_key: str,
+    category: str,
+    article_subtype: str,
+) -> None:
+    payload = {
+        "event": "title_template_selected",
+        "source_url": source_url,
+        "category": category,
+        "article_subtype": article_subtype,
+        "template": template_key,
+        "original_title": original_title,
+        "rewritten_title": rewritten_title,
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
 
 # ──────────────────────────────────────────────────────────
 # X投稿URLを取得（twitter.com形式に統一）
@@ -5519,7 +5645,8 @@ def _main(args, logger):
                 continue
 
             category = classify_category(title_text, keywords)
-            title    = entry_title_clean[:40].strip() if entry_title_clean else make_title(entry)
+            raw_title = entry_title_clean.strip() if entry_title_clean else make_title(entry)
+            title    = raw_title[:40].strip() if raw_title else make_title(entry)
             summary  = entry_summary_clean
             entry_has_game = infer_article_has_game(title, summary, category, has_game)
             if _should_skip_stale_postgame_entry(category, title, summary, published_at):
@@ -5566,6 +5693,7 @@ def _main(args, logger):
                 "entry": entry,
                 "post_url": post_url,
                 "title_text": title_text,
+                "raw_title": raw_title,
                 "category": category,
                 "title": title,
                 "summary": summary,
@@ -5632,19 +5760,22 @@ def _main(args, logger):
         source_type = item["source_type"]
         category = item["category"]
         title = item["title"]
+        raw_title = item.get("raw_title") or title
         summary = item["summary"]
         post_url = item["post_url"]
         source_name = item["source_name"]
         entry_title_norm = item.get("entry_title_norm", "")
         entry_has_game = item["entry_has_game"]
         source_day_label = _format_source_day_label(item.get("published_at"))
+        title_article_subtype = _detect_article_subtype(raw_title, summary, category, entry_has_game)
 
         if item.get("merged_source_count", 0) > 1:
             logger.info(f"  [統合] {title[:40]} ← {item['merged_source_count']}ソース")
 
         if source_type in {"news", "social_news"}:
             if args.dry_run:
-                draft_title = rewrite_display_title(title, summary, category, entry_has_game)
+                draft_title, title_template_key = _rewrite_display_title_with_template(raw_title, summary, category, entry_has_game)
+                _log_title_template_selected(logger, post_url, raw_title, draft_title, title_template_key, category, title_article_subtype)
                 print(f"  DRY: [{category}] {draft_title[:50]}")
                 print(f"       {post_url}")
                 success += 1
@@ -5657,7 +5788,8 @@ def _main(args, logger):
                     _article_images = fetch_article_images(post_url, max_images=3)
             _article_images = _filter_image_candidates(_article_images, post_url, logger)
             _og_url  = _article_images[0] if _article_images else ""
-            draft_title = rewrite_display_title(title, summary, category, entry_has_game)
+            draft_title, title_template_key = _rewrite_display_title_with_template(raw_title, summary, category, entry_has_game)
+            _log_title_template_selected(logger, post_url, raw_title, draft_title, title_template_key, category, title_article_subtype)
             content, ai_body_for_x = build_news_block(
                 title,
                 summary,
@@ -5676,6 +5808,7 @@ def _main(args, logger):
             content = build_oembed_block(post_url)
             ai_body_for_x = ""
             draft_title = title
+            _log_title_template_selected(logger, post_url, raw_title, draft_title, "oembed_passthrough", category, title_article_subtype)
             if args.dry_run:
                 print(f"  DRY: [{category}] {draft_title[:50]}")
                 print(f"       {post_url}")
@@ -5727,7 +5860,7 @@ def _main(args, logger):
                 item.get("history_urls", [post_url]),
                 item.get("history_title_norms", [entry_title_norm] if entry_title_norm else []),
                 rewritten_title=draft_title,
-                original_title=title,
+                original_title=raw_title,
                 published=published,
                 publish_skip_reasons=publish_skip_reasons,
             )

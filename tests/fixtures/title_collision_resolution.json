@@ -1,0 +1,92 @@
+[
+  {
+    "name": "pregame_tokyogiants_venue_angle",
+    "group": "pregame_collision",
+    "title": "【一軍】巨人 vs 阪神 4/16(木)18:00試合開始予定⚾ 阪神甲子園球場",
+    "summary": "",
+    "category": "試合速報",
+    "has_game": true,
+    "expected_title": "巨人阪神戦 甲子園で何を見たいか"
+  },
+  {
+    "name": "pregame_hochi_starter_angle",
+    "group": "pregame_collision",
+    "title": "【１６日の予告先発】阪神・ルーカス―巨人・田中将大、ロッテ・木村優人―日本ハム・",
+    "summary": "",
+    "category": "試合速報",
+    "has_game": true,
+    "expected_title": "巨人阪神戦 田中将大先発でどこを見たいか"
+  },
+  {
+    "name": "pregame_sanspo_numeric_angle",
+    "group": "pregame_collision",
+    "title": "【4/16予告先発】 ー （甲子園、18:00) 巨人:(1勝0敗、防御率1.4",
+    "summary": "",
+    "category": "試合速報",
+    "has_game": true,
+    "expected_title": "巨人戦 予告先発の数字をどう見るか"
+  },
+  {
+    "name": "rainout_slide_rainout_angle",
+    "group": "slide_collision",
+    "title": "【巨人】雨天中止で先発予定だった田中将大は16日にスライド登板 村田善則コーチ明かす",
+    "summary": "巨人田中将大投手（37）が雨天中止にともなってスライド登板することになった。先発予定だった15日の阪神戦（甲子園）が雨天中止となり、16日の同戦にスライドすることになった。",
+    "category": "試合速報",
+    "has_game": false,
+    "expected_title": "田中将大、雨天中止スライド登板で何を見るか"
+  },
+  {
+    "name": "rainout_slide_venue_angle",
+    "group": "slide_collision",
+    "title": "【巨人】甲子園で勝てば16年ぶり 田中将大16日スライド登板「勝利につなげる投球」",
+    "summary": "",
+    "category": "試合速報",
+    "has_game": false,
+    "expected_title": "田中将大、甲子園スライド登板で何を見るか"
+  },
+  {
+    "name": "farm_result_rainout_angle",
+    "group": "farm_result_collision",
+    "title": "【二軍】巨人 3-1 ハヤテ（5回降雨コールド）☔ 選手がマルチ安打、 選手が2点本塁打の活躍👍",
+    "summary": "",
+    "category": "ドラフト・育成",
+    "has_game": false,
+    "expected_title": "巨人二軍 3-1 降雨コールドのポイント"
+  },
+  {
+    "name": "farm_result_stream_angle",
+    "group": "farm_result_collision",
+    "title": "【二軍】巨人 3-1 ハヤテ（5回降雨コールド）☔ 選手がマルチ安打、 選手が2点本塁打の活躍で勝利に導いた試合を配信中👍 GIANTS TVでアーカイブ配信",
+    "summary": "",
+    "category": "ドラフト・育成",
+    "has_game": false,
+    "expected_title": "巨人二軍 3-1 配信試合のポイント"
+  },
+  {
+    "name": "rescued_notice_nishidate_unique",
+    "group": "rescued_uniqueness",
+    "title": "ジャイアンツ球場 西舘勇陽選手がコンディション不良からの復帰へ向けてブルペンで投球練習中⚾️",
+    "summary": "",
+    "category": "選手情報",
+    "has_game": false,
+    "expected_title": "西舘勇陽選手、昇格・復帰でどこを見たいか"
+  },
+  {
+    "name": "rescued_notice_nakayama_unique",
+    "group": "rescued_uniqueness",
+    "title": "「巨人の若手選手は見てて歯がゆい」福本豊氏、チャンス逃す外野陣に苦言 抹消の中山礼都は「結果を欲しがりすぎ」",
+    "summary": "",
+    "category": "コラム",
+    "has_game": false,
+    "expected_title": "「巨人の若手選手は見てて歯がゆい」福本豊氏、チャンス逃す外野陣に苦言 抹消の…"
+  },
+  {
+    "name": "rescued_notice_minagawa_unique",
+    "group": "rescued_uniqueness",
+    "title": "巨人ドラ４・皆川岳飛が初１軍合流 強肩が持ち味「やってやろうという気持ち」",
+    "summary": "",
+    "category": "コラム",
+    "has_game": false,
+    "expected_title": "巨人ドラ４・皆川岳飛が初１軍合流 強肩が持ち味「やってやろうという気持ち」"
+  }
+]

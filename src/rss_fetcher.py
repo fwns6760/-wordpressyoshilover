@@ -28,6 +28,7 @@ import re as _re
 import html as _html
 
 from wp_client import WPClient
+from media_xpost_selector import select_media_quotes
 from wp_draft_creator import build_oembed_block, load_posted_urls, save_posted_url
 from x_post_generator import build_post as build_x_post_text
 
@@ -145,6 +146,7 @@ SOCIAL_REQUIRED_HEADINGS = (
     "【文脈と背景】",
     "【ファンの関心ポイント】",
 )
+MEDIA_XPOST_POSITION = "before_ai_body"
 DEFAULT_NOTICE_FALLBACK_IMAGE_URL = "https://yoshilover.com/wp-content/uploads/2025/07/j_RlNtbr_400x400-300x300-1.webp"
 NOTICE_RECORD_MARKERS = (
     "打率",
@@ -5725,7 +5727,7 @@ X検索で「{query_short} 巨人」に関するファンの声を{fan_reaction_
 # ──────────────────────────────────────────────────────────
 # ニュース記事ブロックHTML生成
 # ──────────────────────────────────────────────────────────
-def build_news_block(title: str, summary: str, url: str, source_name: str, category: str = "コラム", og_image_url: str = "", media_id: int = 0, extra_images: list = None, has_game: bool = True, article_ai_mode_override: str | None = None, source_links: list[dict] | None = None, source_day_label: str = "", source_type: str = "news") -> tuple[str, str]:
+def build_news_block(title: str, summary: str, url: str, source_name: str, category: str = "コラム", og_image_url: str = "", media_id: int = 0, extra_images: list = None, has_game: bool = True, article_ai_mode_override: str | None = None, source_links: list[dict] | None = None, source_day_label: str = "", source_type: str = "news", media_quotes: list[dict] | None = None) -> tuple[str, str]:
     import re
     summary_clean = re.sub(r"<[^>]+>", "", summary).strip()
     article_subtype = _detect_article_subtype(title, summary_clean, category, has_game)
@@ -6399,6 +6401,25 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         f'<!-- /wp:html -->\n\n'
     )
     blocks += _para(summary_text_to_show) + _sep()
+
+    if media_quotes:
+        blocks += (
+            '<!-- wp:heading {"level":3} -->\n'
+            '<h3>📌 関連ポスト</h3>\n'
+            '<!-- /wp:heading -->\n\n'
+        )
+        widget_script_included = False
+        for media_quote in media_quotes[:1]:
+            media_url = (media_quote.get("url") or "").strip()
+            if not media_url:
+                continue
+            blocks += build_oembed_block(
+                media_url,
+                compact=False,
+                include_script=not widget_script_included,
+            ) + "\n\n"
+            widget_script_included = True
+        blocks += _sep()
 
     # ──────────────────────────────────────────────────────────
     # ② 記事本文（ニュースの整理を最上段にする）
@@ -7733,6 +7754,27 @@ def _log_social_body_template_applied(
     logger.info(json.dumps(payload, ensure_ascii=False))
 
 
+def _log_media_xpost_embedded(
+    logger: logging.Logger,
+    post_id: int,
+    title: str,
+    source_type: str,
+    media_handle: str,
+    media_url: str,
+    position: str = MEDIA_XPOST_POSITION,
+) -> None:
+    payload = {
+        "event": "media_xpost_embedded",
+        "post_id": post_id,
+        "title": title,
+        "source_type": source_type,
+        "media_handle": media_handle,
+        "media_url": media_url,
+        "position": position,
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
 def _counter_to_plain_dict(counter: Counter) -> dict[str, int]:
     return {key: counter[key] for key in sorted(counter) if counter[key]}
 
@@ -8076,6 +8118,15 @@ def _main(args, logger):
                 print(f"       {post_url}")
                 success += 1
                 continue
+            media_quotes = select_media_quotes(
+                {
+                    "source_type": source_type,
+                    "source_url": post_url,
+                    "source_name": source_name,
+                    "created_at": item.get("published_at").isoformat() if item.get("published_at") else "",
+                },
+                max_count=1,
+            )
             if source_type == "news":
                 _article_images = fetch_article_images(post_url, max_images=3)
             else:
@@ -8101,6 +8152,7 @@ def _main(args, logger):
                 source_links=item.get("source_links"),
                 source_day_label=source_day_label,
                 source_type=source_type,
+                media_quotes=media_quotes,
             )
         else:
             content = build_oembed_block(post_url)
@@ -8145,6 +8197,16 @@ def _main(args, logger):
                     _social_section_count(ai_body_for_x),
                     _social_quote_count(raw_title, summary, ai_body_for_x),
                 )
+                if media_quotes:
+                    first_media_quote = media_quotes[0]
+                    _log_media_xpost_embedded(
+                        logger,
+                        post_id,
+                        draft_title,
+                        source_type,
+                        first_media_quote.get("handle", ""),
+                        first_media_quote.get("url", ""),
+                    )
             if category == "首脳陣" and title_article_subtype == "manager":
                 _log_manager_body_template_applied(
                     logger,

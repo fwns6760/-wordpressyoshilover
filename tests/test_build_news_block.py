@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from src import rss_fetcher
+from src.media_xpost_selector import select_media_quotes
 
 
 class BuildNewsBlockTests(unittest.TestCase):
@@ -285,6 +286,92 @@ class BuildNewsBlockTests(unittest.TestCase):
                 )
 
         self.assertLess(blocks.index("【変更情報の要旨】"), blocks.index("💬 ファンの声（Xより）"))
+
+    def test_social_news_inserts_media_quote_after_summary_and_before_ai_body(self):
+        media_quotes = select_media_quotes(
+            {
+                "source_type": "social_news",
+                "source_url": "https://twitter.com/hochi_giants/status/1",
+                "source_name": "スポーツ報知巨人班X",
+            }
+        )
+        with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+            with patch.object(
+                rss_fetcher,
+                "generate_article_with_gemini",
+                return_value=(
+                    "【話題の要旨】\n"
+                    "スポーツ報知巨人班Xが阿部監督のコメントを伝えた。\n"
+                    "【発信内容の要約】\n"
+                    "原文のニュアンスを残しながら内容を整理する。\n"
+                    "【文脈と背景】\n"
+                    "試合後コメントとして出た投稿だった。\n"
+                    "【ファンの関心ポイント】\n"
+                    "次の起用にどうつながるかが焦点になる。"
+                ),
+            ):
+                blocks, _ = rss_fetcher.build_news_block(
+                    title="阿部監督が起用意図を説明",
+                    summary="スポーツ報知巨人班Xが阿部監督のコメントを伝えた。",
+                    url="https://twitter.com/hochi_giants/status/1",
+                    source_name="スポーツ報知巨人班X",
+                    category="首脳陣",
+                    has_game=False,
+                    source_type="social_news",
+                    media_quotes=media_quotes,
+                )
+
+        self.assertIn("📌 関連ポスト", blocks)
+        self.assertIn("https://twitter.com/hochi_giants/status/1", blocks)
+        self.assertLess(blocks.index("📌 関連ポスト"), blocks.index("【話題の要旨】"))
+        self.assertEqual(blocks.count("https://platform.twitter.com/widgets.js"), 1)
+
+    def test_news_article_does_not_render_media_quote_section(self):
+        with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+            with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                blocks, _ = rss_fetcher.build_news_block(
+                    title="【巨人】則本昂大が先発へ",
+                    summary="巨人則本昂大投手が先発に向けて調整した。",
+                    url="https://example.com/post",
+                    source_name="日刊スポーツ 巨人",
+                    category="試合速報",
+                    has_game=True,
+                    source_type="news",
+                    media_quotes=[],
+                )
+
+        self.assertNotIn("📌 関連ポスト", blocks)
+
+    def test_social_media_quote_keeps_fan_reactions_at_tail(self):
+        media_quotes = select_media_quotes(
+            {
+                "source_type": "social_news",
+                "source_url": "https://twitter.com/TokyoGiants/status/1",
+                "source_name": "巨人公式X",
+            }
+        )
+        with patch.object(
+            rss_fetcher,
+            "fetch_fan_reactions_from_yahoo",
+            return_value=[
+                {"handle": "@gfan01", "text": "かなり楽しみ。", "url": "https://x.com/gfan01/status/1"},
+            ],
+        ):
+            with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                blocks, _ = rss_fetcher.build_news_block(
+                    title="巨人4-3 試合の流れを分けたポイント",
+                    summary="巨人公式Xが勝利を伝えた。",
+                    url="https://twitter.com/TokyoGiants/status/1",
+                    source_name="巨人公式X",
+                    category="試合速報",
+                    has_game=True,
+                    source_type="social_news",
+                    media_quotes=media_quotes,
+                )
+
+        self.assertLess(blocks.index("📌 関連ポスト"), blocks.index("【話題の要旨】"))
+        self.assertLess(blocks.index("【ファンの関心ポイント】"), blocks.index("💬 ファンの声（Xより）"))
+        self.assertIn("https://twitter.com/gfan01/status/1", blocks)
 
     def test_comment_cta_is_always_rendered_three_times_without_stats(self):
         with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):

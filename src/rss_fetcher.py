@@ -138,6 +138,13 @@ RECOVERY_REQUIRED_HEADINGS = (
     "【リハビリ状況・復帰見通し】",
     "【チームへの影響と今後の注目点】",
 )
+SOCIAL_BODY_TEMPLATE_VERSION = "social_v1"
+SOCIAL_REQUIRED_HEADINGS = (
+    "【話題の要旨】",
+    "【発信内容の要約】",
+    "【文脈と背景】",
+    "【ファンの関心ポイント】",
+)
 DEFAULT_NOTICE_FALLBACK_IMAGE_URL = "https://yoshilover.com/wp-content/uploads/2025/07/j_RlNtbr_400x400-300x300-1.webp"
 NOTICE_RECORD_MARKERS = (
     "打率",
@@ -1480,6 +1487,48 @@ def _display_source_name(name: str) -> str:
     return clean
 
 
+def _infer_social_source_indicator(source_name: str, tweet_url: str = "") -> str:
+    clean = _collapse_ws(source_name or "")
+    handle = _extract_handle_from_tweet_url(tweet_url).lower().lstrip("@")
+    official_markers = (
+        "公式",
+        "tokyogiants",
+        "giants_official",
+        "yomiuri",
+        "npb",
+        "ジャイアンツタウン",
+    )
+    media_markers = (
+        "報知",
+        "スポーツ報知",
+        "スポニチ",
+        "sponichi",
+        "日刊スポーツ",
+        "nikkansports",
+        "サンスポ",
+        "sanspo",
+        "full-count",
+        "baseball king",
+    )
+    if any(marker.lower() in clean.lower() for marker in official_markers) or any(marker in handle for marker in ("tokyogiants", "npb")):
+        return "official"
+    if any(marker.lower() in clean.lower() for marker in media_markers) or any(
+        marker in handle for marker in ("hochi", "sponichi", "sanspo", "nikkansports", "fullcount", "baseballking")
+    ):
+        return "media"
+    return "player"
+
+
+def _social_source_intro_label(source_name: str, tweet_url: str = "") -> str:
+    display = _display_source_name(source_name or "X")
+    indicator = _infer_social_source_indicator(source_name, tweet_url=tweet_url)
+    if indicator == "official":
+        return f"{display}の投稿"
+    if indicator == "media":
+        return f"{display}のX投稿"
+    return f"{display}本人の投稿"
+
+
 def _build_source_fact_block(
     title: str,
     summary: str,
@@ -2163,6 +2212,58 @@ def _build_notice_strict_prompt(title: str, summary: str, source_day_label: str 
 """
 
 
+def _social_background_focus_line(category: str) -> str:
+    if category == "試合速報":
+        return "試合前後の流れ、スタメン、先発、スコアなど、試合文脈があれば必ず整理する"
+    if category == "選手情報":
+        return "選手の調整状況、昇格・復帰、コメントの背景など、選手文脈があれば必ず整理する"
+    if category == "首脳陣":
+        return "監督・コーチの起用意図や指導の文脈があれば必ず整理する"
+    if category == "ドラフト・育成":
+        return "二軍、育成、ドラフト、支配下の文脈があれば必ず整理する"
+    return "球団やチームの状況のうち、元記事にある背景だけを整理する"
+
+
+def _build_social_strict_prompt(
+    title: str,
+    summary: str,
+    category: str,
+    source_name: str,
+    source_fact_block: str,
+    source_day_label: str = "",
+    tweet_url: str = "",
+) -> str:
+    source_label = _social_source_intro_label(source_name, tweet_url=tweet_url)
+    source_indicator = _infer_social_source_indicator(source_name, tweet_url=tweet_url)
+    indicator_line = {
+        "official": "発信元が球団公式・公式周辺アカウントなのか、本文冒頭で明確にする",
+        "media": "発信元がマスコミ記者・報道アカウントなのか、本文冒頭で明確にする",
+        "player": "発信元が選手本人や当事者側の発信なのか、本文冒頭で明確にする",
+    }[source_indicator]
+    time_rule = f"【話題の要旨】の1文目には「{source_day_label}時点」を自然に入れてください。\n" if source_day_label else ""
+    return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
+以下の元記事タイトルと要約に含まれる事実だけを使って本文を書いてください。新しい事実・数字・比較・感想を足さないでください。
+
+【使ってよい事実】
+{source_fact_block}
+
+【厳守ルール】
+・ですます調、380〜680文字
+・見出しは「【話題の要旨】」「【発信内容の要約】」「【文脈と背景】」「【ファンの関心ポイント】」の4つをこの順番で使う
+・【話題の要旨】では、{source_label}が何を伝えたのかを2〜3文で整理する
+・本文冒頭で発信者名または所属を必ず明記する
+・{indicator_line}
+・【発信内容の要約】では、Xポストの原文ニュアンスを『』で1〜2か所だけ残しながら整理する。全文転写はしない
+・【文脈と背景】では、{_social_background_focus_line(category)}
+・【ファンの関心ポイント】では、巨人ファンにとって何が意味を持つかを1〜2文で具体的に書く
+・元記事にない数字、比較、推測、精神論は足さない
+・Xポストの転写だけで終わらず、文脈補足を必ず入れる
+・source にある固有名詞、選手名、球場名、数字は省略しない
+・最後は読者視点の締め1〜2文で終え、「みなさんの意見はコメントで教えてください！」を入れる
+・HTMLタグなし、本文だけを出力する
+{time_rule}"""
+
+
 def _extract_manager_focus_axis(title: str, summary: str) -> str:
     source_text = _strip_html(f"{title} {summary}")
     if any(keyword in source_text for keyword in ("若手", "競争", "レギュラー", "固定", "序列")):
@@ -2409,6 +2510,26 @@ def _recovery_body_has_required_structure(text: str) -> bool:
     return all(heading in normalized for heading in _recovery_required_headings())
 
 
+def _social_required_headings() -> tuple[str, ...]:
+    return SOCIAL_REQUIRED_HEADINGS
+
+
+def _social_section_count(text: str) -> int:
+    normalized = _normalize_article_text_structure(text or "", "コラム", False, article_subtype="social_news")
+    return sum(1 for heading in _social_required_headings() if heading in normalized)
+
+
+def _social_body_has_required_structure(text: str) -> bool:
+    normalized = _normalize_article_text_structure(text or "", "コラム", False, article_subtype="social_news")
+    return all(heading in normalized for heading in _social_required_headings())
+
+
+def _social_quote_count(title: str, summary: str, article_text: str = "") -> int:
+    quote_count = len(_extract_quote_phrases(f"{title}\n{summary}", max_phrases=4))
+    body_quote_count = (article_text or "").count("『")
+    return max(quote_count, body_quote_count)
+
+
 def _notice_section_count(text: str) -> int:
     normalized = _normalize_article_text_structure(text or "", "選手情報", False, article_subtype="player_notice")
     return sum(1 for heading in _notice_required_headings() if heading in normalized)
@@ -2576,11 +2697,24 @@ def _build_gemini_strict_prompt(
     has_game: bool,
     real_reactions: list[str] | None = None,
     source_day_label: str = "",
+    source_name: str = "",
+    source_type: str = "news",
+    tweet_url: str = "",
 ) -> str:
     subject = _extract_subject_label(title, "", category)
     first_heading, second_heading, third_heading = _article_section_headings(category, category == "試合速報")
     article_subtype = _detect_article_subtype(title, summary, category, has_game)
     player_mode = _detect_player_article_mode(title, summary, category) if category == "選手情報" else ""
+    if source_type == "social_news":
+        return _build_social_strict_prompt(
+            title,
+            summary,
+            category,
+            source_name,
+            source_fact_block,
+            source_day_label=source_day_label,
+            tweet_url=tweet_url,
+        )
     if category == "選手情報":
         if _is_recovery_template_story(title, summary, category):
             return _build_recovery_strict_prompt(title, summary, source_day_label=source_day_label)
@@ -2984,6 +3118,21 @@ def _normalize_article_heading(heading: str, category: str, has_game: bool, arti
         }
         if clean in recovery_heading_aliases:
             return recovery_heading_aliases[clean]
+
+    if article_subtype == "social_news":
+        social_heading_aliases = {
+            "【話題の要旨】": "【話題の要旨】",
+            "【ニュースの整理】": "【話題の要旨】",
+            "【発信内容の要約】": "【発信内容の要約】",
+            "【発信内容】": "【発信内容の要約】",
+            "【引用の整理】": "【発信内容の要約】",
+            "【文脈と背景】": "【文脈と背景】",
+            "【背景】": "【文脈と背景】",
+            "【ファンの関心ポイント】": "【ファンの関心ポイント】",
+            "【次の注目】": "【ファンの関心ポイント】",
+        }
+        if clean in social_heading_aliases:
+            return social_heading_aliases[clean]
 
     first, second, third = _article_section_headings(category, has_game)
     first_aliases = {
@@ -3851,13 +4000,81 @@ def _build_farm_lineup_safe_fallback(title: str, summary: str, real_reactions: l
     return "\n".join(lead_lines + lineup_lines + watch_lines)
 
 
+def _build_social_safe_fallback(
+    title: str,
+    summary: str,
+    category: str,
+    source_name: str = "",
+    tweet_url: str = "",
+    source_day_label: str = "",
+    real_reactions: list[str] | None = None,
+) -> str:
+    facts = _extract_summary_sentences(summary, max_sentences=4)
+    if not facts:
+        title_text = _strip_title_prefix(title)
+        facts = [title_text or "X投稿で伝えられた内容を確認中です"]
+
+    source_label = _social_source_intro_label(source_name, tweet_url=tweet_url)
+    display_source = _display_source_name(source_name or "X")
+    quote_phrases = _extract_quote_phrases(f"{title}\n{summary}", max_phrases=2)
+    intro_prefix = f"（{source_day_label}時点）" if source_day_label else ""
+    lead_lines = [SOCIAL_REQUIRED_HEADINGS[0]]
+    lead_lines.append(f"{intro_prefix}{source_label}として、{facts[0]}。".strip())
+    if len(facts) > 1:
+        lead_lines.append(f"{facts[1]}。")
+    else:
+        lead_lines.append(f"{display_source}が伝えた要点を、まず押さえておきたい話題です。")
+
+    summary_lines = [SOCIAL_REQUIRED_HEADINGS[1]]
+    if quote_phrases:
+        summary_lines.append(f"{display_source}の投稿では『{quote_phrases[0]}』という言い回しが目を引きます。")
+    summary_lines.append(f"{facts[0]}。")
+    if len(facts) > 2:
+        summary_lines.append(f"{facts[2]}。")
+
+    background_lines = [SOCIAL_REQUIRED_HEADINGS[2]]
+    if len(facts) > 3:
+        background_lines.append(f"{facts[3]}。")
+    else:
+        background_lines.append(_social_background_focus_line(category) + "。")
+
+    reaction_line = ""
+    if real_reactions:
+        snippets = []
+        for reaction in real_reactions[:2]:
+            clean = _clean_reaction_snippet(_reaction_body_text(reaction))
+            if clean:
+                snippets.append(clean)
+        if snippets:
+            reaction_line = f"反応を見ると「{' / '.join(snippets)}」という温度感があり、この話題の受け止め方が分かれています。"
+
+    watch_lines = [SOCIAL_REQUIRED_HEADINGS[3]]
+    watch_lines.append(reaction_line or "巨人ファンにとっては、この発信が次の試合や起用、話題の広がりにどうつながるかが見どころです。")
+    watch_lines.append("発信内容そのものだけでなく、ここからどんな動きにつながるかを見たいところです。みなさんの意見はコメントで教えてください！")
+    return "\n".join(lead_lines + summary_lines + background_lines + watch_lines)
+
+
 def _build_safe_article_fallback(
     title: str,
     summary: str,
     category: str,
     has_game: bool,
+    source_name: str = "",
+    source_type: str = "news",
+    tweet_url: str = "",
+    source_day_label: str = "",
     real_reactions: list[str] | None = None,
 ) -> str:
+    if source_type == "social_news":
+        return _build_social_safe_fallback(
+            title,
+            summary,
+            category,
+            source_name=source_name,
+            tweet_url=tweet_url,
+            source_day_label=source_day_label,
+            real_reactions=real_reactions,
+        )
     if category == "首脳陣":
         return _build_manager_safe_fallback(title, summary, real_reactions=real_reactions)
     article_subtype = _detect_article_subtype(title, summary, category, has_game)
@@ -4913,6 +5130,8 @@ def generate_article_with_gemini(
     has_game: bool = True,
     source_name: str = "",
     source_day_label: str = "",
+    source_type: str = "news",
+    tweet_url: str = "",
 ) -> str:
     """Geminiで巨人ファン向け解説記事を生成。失敗時は空文字を返す。"""
     import urllib.request, urllib.error
@@ -4981,6 +5200,9 @@ def generate_article_with_gemini(
             has_game,
             real_reactions=real_reactions,
             source_day_label=source_day_label,
+            source_name=source_name,
+            source_type=source_type,
+            tweet_url=tweet_url,
         )
         payload = json.dumps({
             "contents": [{"parts": [{"text": prompt}]}],
@@ -5503,7 +5725,7 @@ X検索で「{query_short} 巨人」に関するファンの声を{fan_reaction_
 # ──────────────────────────────────────────────────────────
 # ニュース記事ブロックHTML生成
 # ──────────────────────────────────────────────────────────
-def build_news_block(title: str, summary: str, url: str, source_name: str, category: str = "コラム", og_image_url: str = "", media_id: int = 0, extra_images: list = None, has_game: bool = True, article_ai_mode_override: str | None = None, source_links: list[dict] | None = None, source_day_label: str = "") -> tuple[str, str]:
+def build_news_block(title: str, summary: str, url: str, source_name: str, category: str = "コラム", og_image_url: str = "", media_id: int = 0, extra_images: list = None, has_game: bool = True, article_ai_mode_override: str | None = None, source_links: list[dict] | None = None, source_day_label: str = "", source_type: str = "news") -> tuple[str, str]:
     import re
     summary_clean = re.sub(r"<[^>]+>", "", summary).strip()
     article_subtype = _detect_article_subtype(title, summary_clean, category, has_game)
@@ -5514,11 +5736,13 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         has_game,
         article_subtype=article_subtype,
     )
-    special_story_kind = _detect_player_special_template_kind(title, summary_clean) if generation_category == "選手情報" else ""
+    social_story = source_type == "social_news"
+    special_story_kind = _detect_player_special_template_kind(title, summary_clean) if generation_category == "選手情報" and not social_story else ""
     recovery_story = special_story_kind == "player_recovery"
     notice_story = special_story_kind == "player_notice"
     body_category = generation_category if special_story_kind else category
-    body_subtype = "player_recovery" if recovery_story else "player_notice" if notice_story else article_subtype
+    body_subtype = "social_news" if social_story else "player_recovery" if recovery_story else "player_notice" if notice_story else article_subtype
+    effective_generation_category = category if social_story else generation_category
     article_ai_mode = get_article_ai_mode(has_game, article_ai_mode_override) if use_ai_for_article else "none"
     fan_reaction_limit = get_fan_reaction_limit()
     logger = logging.getLogger("rss_fetcher")
@@ -5562,24 +5786,24 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             win_loss_hint = "※この試合は巨人が【敗戦】した試合です。負け試合として正直に書くこと。前向きに美化しない。"
 
     if article_ai_mode == "none":
-        real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, generation_category, source_name=source_name)
+        real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, effective_generation_category, source_name=source_name)
         ai_body = ""
         real_reactions = real_reactions_yahoo
         summary_block = ""
         stats_block = ""
         impression_block = ""
     elif article_ai_mode == "gemini":
-        real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, generation_category, source_name=source_name)
-        ai_body = generate_article_with_gemini(title, summary_clean, generation_category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label)
+        real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, effective_generation_category, source_name=source_name)
+        ai_body = generate_article_with_gemini(title, summary_clean, effective_generation_category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label, source_type=source_type, tweet_url=url)
         real_reactions = real_reactions_yahoo
         summary_block = ""
         stats_block = ""
         impression_block = ""
     elif article_ai_mode == "grok":
-        ai_body, real_reactions, summary_block, stats_block, impression_block = generate_article_with_grok(title, summary_clean, generation_category, win_loss_hint)
+        ai_body, real_reactions, summary_block, stats_block, impression_block = generate_article_with_grok(title, summary_clean, effective_generation_category, win_loss_hint)
         if not ai_body:
-            real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, generation_category, source_name=source_name)
-            ai_body = generate_article_with_gemini(title, summary_clean, generation_category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label)
+            real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, effective_generation_category, source_name=source_name)
+            ai_body = generate_article_with_gemini(title, summary_clean, effective_generation_category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label, source_type=source_type, tweet_url=url)
             real_reactions = real_reactions_yahoo
             summary_block = ""
             stats_block = ""
@@ -5587,36 +5811,74 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     else:
         # 試合あり → Grok（X検索でファンの声取得）、試合なし → Gemini直行（コスト削減）
         if has_game:
-            ai_body, real_reactions, summary_block, stats_block, impression_block = generate_article_with_grok(title, summary_clean, generation_category, win_loss_hint)
+            ai_body, real_reactions, summary_block, stats_block, impression_block = generate_article_with_grok(title, summary_clean, effective_generation_category, win_loss_hint)
             if not ai_body:
-                real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, generation_category, source_name=source_name)
-                ai_body = generate_article_with_gemini(title, summary_clean, generation_category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label)
+                real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, effective_generation_category, source_name=source_name)
+                ai_body = generate_article_with_gemini(title, summary_clean, effective_generation_category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label, source_type=source_type, tweet_url=url)
                 real_reactions = real_reactions_yahoo
                 summary_block = ""
                 stats_block = ""
                 impression_block = ""
         else:
-            real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, generation_category, source_name=source_name)
-            ai_body = generate_article_with_gemini(title, summary_clean, generation_category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label)
+            real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, effective_generation_category, source_name=source_name)
+            ai_body = generate_article_with_gemini(title, summary_clean, effective_generation_category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label, source_type=source_type, tweet_url=url)
             real_reactions = real_reactions_yahoo
             summary_block = ""
             stats_block = ""
             impression_block = ""
 
-    ai_body = _apply_article_guardrails(title, summary_clean, generation_category, ai_body, has_game, logger)
+    ai_body = _apply_article_guardrails(title, summary_clean, effective_generation_category, ai_body, has_game, logger)
     if not ai_body:
         logger.warning("記事本文が空のため、安全フォールバック本文を使用")
-        ai_body = _build_safe_article_fallback(title, summary_clean, generation_category, has_game, real_reactions=real_reactions)
-    subject = _extract_subject_label(title, summary_clean, generation_category)
-    ai_body = _apply_editor_voice(ai_body, generation_category, subject)
-    if _article_reads_too_generic(ai_body, generation_category):
+        ai_body = _build_safe_article_fallback(
+            title,
+            summary_clean,
+            effective_generation_category,
+            has_game,
+            source_name=source_name,
+            source_type=source_type,
+            tweet_url=url,
+            source_day_label=source_day_label,
+            real_reactions=real_reactions,
+        )
+    subject = _extract_subject_label(title, summary_clean, effective_generation_category)
+    ai_body = _apply_editor_voice(ai_body, effective_generation_category, subject)
+    if _article_reads_too_generic(ai_body, effective_generation_category):
         logger.info("記事本文が汎用表現に寄りすぎたため、安全版へ差し替え")
         ai_body = _apply_editor_voice(
-            _build_safe_article_fallback(title, summary_clean, generation_category, has_game, real_reactions=real_reactions),
-            generation_category,
+            _build_safe_article_fallback(
+                title,
+                summary_clean,
+                effective_generation_category,
+                has_game,
+                source_name=source_name,
+                source_type=source_type,
+                tweet_url=url,
+                source_day_label=source_day_label,
+                real_reactions=real_reactions,
+            ),
+            effective_generation_category,
             subject,
         )
-    if generation_category == "首脳陣" and article_subtype == "manager":
+    if social_story:
+        normalized_social_body = _normalize_article_text_structure(ai_body, body_category, has_game, article_subtype="social_news")
+        if _social_body_has_required_structure(normalized_social_body):
+            ai_body = normalized_social_body
+        else:
+            ai_body = _apply_editor_voice(
+                _build_social_safe_fallback(
+                    title,
+                    summary_clean,
+                    effective_generation_category,
+                    source_name=source_name,
+                    tweet_url=url,
+                    source_day_label=source_day_label,
+                    real_reactions=real_reactions,
+                ),
+                effective_generation_category,
+                subject,
+            )
+    elif generation_category == "首脳陣" and article_subtype == "manager":
         normalized_manager_body = _normalize_article_text_structure(ai_body, generation_category, has_game, article_subtype=article_subtype)
         if _manager_body_has_required_structure(normalized_manager_body, has_game):
             ai_body = normalized_manager_body
@@ -5626,7 +5888,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 generation_category,
                 subject,
             )
-    if generation_category == "試合速報" and _is_game_template_subtype(article_subtype):
+    elif generation_category == "試合速報" and _is_game_template_subtype(article_subtype):
         normalized_game_body = _normalize_article_text_structure(ai_body, generation_category, has_game, article_subtype=article_subtype)
         if _game_body_has_required_structure(normalized_game_body, article_subtype, has_game):
             ai_body = normalized_game_body
@@ -5642,7 +5904,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 generation_category,
                 subject,
             )
-    if generation_category == "ドラフト・育成" and _is_farm_template_subtype(article_subtype):
+    elif generation_category == "ドラフト・育成" and _is_farm_template_subtype(article_subtype):
         normalized_farm_body = _normalize_article_text_structure(ai_body, generation_category, has_game, article_subtype=article_subtype)
         if _farm_body_has_required_structure(normalized_farm_body, article_subtype):
             ai_body = normalized_farm_body
@@ -5653,7 +5915,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 else _build_farm_safe_fallback(title, summary_clean, real_reactions=real_reactions)
             )
             ai_body = _apply_editor_voice(farm_fallback, generation_category, subject)
-    if recovery_story:
+    elif recovery_story:
         normalized_recovery_body = _normalize_article_text_structure(ai_body, generation_category, False, article_subtype="player_recovery")
         if _recovery_body_has_required_structure(normalized_recovery_body):
             ai_body = normalized_recovery_body
@@ -6181,6 +6443,8 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                     heading_level = 2
                 if recovery_story and current_heading == RECOVERY_REQUIRED_HEADINGS[0]:
                     heading_level = 2
+                if body_subtype == "social_news" and current_heading == SOCIAL_REQUIRED_HEADINGS[0]:
+                    heading_level = 2
                 blocks += (
                     f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
                     f'<h{heading_level}>{current_heading}</h{heading_level}>\n'
@@ -6224,6 +6488,9 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 farm_slot_map = {"【二軍結果・活躍の要旨】": "news", "【一軍への示唆】": "next"}
             elif article_subtype == "farm_lineup":
                 farm_slot_map = {"【二軍試合概要】": "news", "【注目選手】": "next"}
+            social_slot_map = {}
+            if body_subtype == "social_news":
+                social_slot_map = {"【話題の要旨】": "news", "【ファンの関心ポイント】": "next"}
             section_slot = {
                 "【ニュースの整理】": "news",
                 "【次の注目】": "next",
@@ -6233,6 +6500,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 "【今後の注目点】": "next",
                 **game_slot_map,
                 **farm_slot_map,
+                **social_slot_map,
             }.get(current_heading)
             if section_slot:
                 blocks += _comment_button(section_slot)
@@ -7442,6 +7710,29 @@ def _log_recovery_body_template_applied(
     logger.info(json.dumps(payload, ensure_ascii=False))
 
 
+def _log_social_body_template_applied(
+    logger: logging.Logger,
+    post_id: int,
+    title: str,
+    final_category: str,
+    source_type_indicator: str,
+    section_count: int,
+    quote_count: int,
+    template_version: str = SOCIAL_BODY_TEMPLATE_VERSION,
+) -> None:
+    payload = {
+        "event": "social_body_template_applied",
+        "post_id": post_id,
+        "title": title,
+        "final_category": final_category,
+        "source_type_indicator": source_type_indicator,
+        "section_count": section_count,
+        "quote_count": quote_count,
+        "template_version": template_version,
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
 def _counter_to_plain_dict(counter: Counter) -> dict[str, int]:
     return {key: counter[key] for key in sorted(counter) if counter[key]}
 
@@ -7809,6 +8100,7 @@ def _main(args, logger):
                 article_ai_mode_override=args.article_ai_mode,
                 source_links=item.get("source_links"),
                 source_day_label=source_day_label,
+                source_type=source_type,
             )
         else:
             content = build_oembed_block(post_url)
@@ -7843,6 +8135,16 @@ def _main(args, logger):
             success += 1
             created_category_counts[category] += 1
             created_subtype_counts[title_article_subtype] += 1
+            if source_type == "social_news":
+                _log_social_body_template_applied(
+                    logger,
+                    post_id,
+                    draft_title,
+                    category,
+                    _infer_social_source_indicator(source_name, tweet_url=post_url),
+                    _social_section_count(ai_body_for_x),
+                    _social_quote_count(raw_title, summary, ai_body_for_x),
+                )
             if category == "首脳陣" and title_article_subtype == "manager":
                 _log_manager_body_template_applied(
                     logger,

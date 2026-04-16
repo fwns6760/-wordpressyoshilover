@@ -226,6 +226,30 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("一軍記事のような書き方をしない。二軍戦の並びであることを明確に書く", prompt)
         self.assertIn("数字、打順、選手名、球場名は source にある表記をそのまま残す", prompt)
 
+    def test_social_news_prompt_uses_social_specific_structure(self):
+        prompt = rss_fetcher._build_gemini_strict_prompt(
+            title="「彼が打ったらもっと打線が機能する」巨人・阿部監督、身ぶり手ぶりでダルベックを熱血指導",
+            summary="スポーツ報知巨人班Xが、阿部監督が「彼が打ったらもっと打線が機能する」と話し、ダルベックを熱血指導したと伝えた。",
+            category="首脳陣",
+            source_fact_block="・阿部監督がダルベックを熱血指導した\n・元記事中の表現: 「彼が打ったらもっと打線が機能する」",
+            win_loss_hint="",
+            has_game=False,
+            real_reactions=[],
+            source_name="スポーツ報知巨人班X",
+            source_type="social_news",
+            tweet_url="https://twitter.com/hochi_giants/status/1",
+            source_day_label="4月16日",
+        )
+
+        self.assertIn("【話題の要旨】", prompt)
+        self.assertIn("【発信内容の要約】", prompt)
+        self.assertIn("【文脈と背景】", prompt)
+        self.assertIn("【ファンの関心ポイント】", prompt)
+        self.assertIn("報知新聞 / スポーツ報知巨人班XのX投稿", prompt)
+        self.assertIn("『』で1〜2か所だけ残しながら整理する", prompt)
+        self.assertIn("発信元がマスコミ記者・報道アカウントなのか、本文冒頭で明確にする", prompt)
+        self.assertIn("4月16日時点", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

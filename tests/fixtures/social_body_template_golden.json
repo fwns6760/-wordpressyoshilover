@@ -1,0 +1,54 @@
+[
+  {
+    "name": "official_game_note",
+    "source_name": "巨人公式X",
+    "category": "試合速報",
+    "title": "【一軍】巨人 vs 阪神 4/16(木)18:00試合開始予定 阪神甲子園球場 予告先発 #田中将大",
+    "summary": "【一軍】巨人 vs 阪神 4/16(木)18:00試合開始予定。阪神甲子園球場。予告先発は田中将大投手。",
+    "required_strings": [
+      "巨人公式 / 巨人公式Xの投稿",
+      "田中将大",
+      "甲子園"
+    ],
+    "expected_indicator": "official"
+  },
+  {
+    "name": "media_manager_quote",
+    "source_name": "スポーツ報知巨人班X",
+    "category": "首脳陣",
+    "title": "「彼が打ったらもっと打線が機能する」巨人・阿部監督、身ぶり手ぶりでダルベックを熱血指導",
+    "summary": "スポーツ報知巨人班Xが、阿部監督が「彼が打ったらもっと打線が機能する」と話し、ダルベックを熱血指導したと伝えた。",
+    "required_strings": [
+      "報知新聞 / スポーツ報知巨人班XのX投稿",
+      "『彼が打ったらもっと打線が機能する』",
+      "阿部監督"
+    ],
+    "expected_indicator": "media"
+  },
+  {
+    "name": "player_self_post",
+    "source_name": "浅野翔吾X",
+    "category": "選手情報",
+    "title": "巨人・浅野翔吾が『しっかり準備します』と投稿",
+    "summary": "浅野翔吾が自身のXで『しっかり準備します』と伝えた。次の実戦へ向けた調整の様子が話題になっている。",
+    "required_strings": [
+      "浅野翔吾X本人の投稿",
+      "『しっかり準備します』",
+      "浅野翔吾"
+    ],
+    "expected_indicator": "player"
+  },
+  {
+    "name": "media_farm_update",
+    "source_name": "スポニチ野球記者X",
+    "category": "ドラフト・育成",
+    "title": "巨人ドラ３・山城京平が２軍で再出発 先発調整へ",
+    "summary": "スポニチ野球記者Xが、山城京平投手が２軍で再出発し、先発調整に入ると伝えた。",
+    "required_strings": [
+      "スポニチ / スポニチ野球記者XのX投稿",
+      "山城京平",
+      "２軍"
+    ],
+    "expected_indicator": "media"
+  }
+]

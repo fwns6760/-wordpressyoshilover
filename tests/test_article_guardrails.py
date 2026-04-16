@@ -90,6 +90,43 @@ class ArticleGuardrailTests(unittest.TestCase):
         )
         self.assertEqual(article, guarded)
 
+    def test_game_article_keeps_source_based_dates_scores_and_stats(self):
+        article = (
+            "【ニュースの整理】\n"
+            "4月16日の阪神戦で巨人は3-1で勝利した。\n"
+            "【試合のポイント】\n"
+            "田中将大投手は9回2失点で4勝8敗、防御率2.50となった。吉川尚輝は打率.285で2回に先制打を放った。阿部監督は20分間ベンチで動きを確認した。"
+        )
+        guarded = rss_fetcher._apply_article_guardrails(
+            "【巨人】4/16阪神戦は3-1で勝利",
+            "2026年4月16日の阪神戦で巨人は3-1で勝利した。田中将大投手は9回2失点で4勝8敗、防御率2.50。吉川尚輝は打率.285で2回に先制打を放った。阿部監督は２０分間ベンチで動きを確認した。",
+            "試合速報",
+            article,
+            True,
+            self.logger,
+        )
+        self.assertEqual(article, guarded)
+
+    def test_game_article_with_source_missing_number_falls_back(self):
+        article = (
+            "【ニュースの整理】\n"
+            "4月17日の阪神戦で巨人は5-0で勝利した。\n"
+            "【試合のポイント】\n"
+            "田中将大投手は9回2失点で4勝8敗、防御率2.50となった。"
+        )
+        guarded = rss_fetcher._apply_article_guardrails(
+            "【巨人】4/16阪神戦は3-1で勝利",
+            "2026年4月16日の阪神戦で巨人は3-1で勝利した。田中将大投手は9回2失点で4勝8敗、防御率2.50。",
+            "試合速報",
+            article,
+            True,
+            self.logger,
+        )
+        self.assertIn("【ニュースの整理】", guarded)
+        self.assertIn("みなさんの意見はコメントで教えてください！", guarded)
+        self.assertNotIn("5-0", guarded)
+        self.assertNotIn("4月17日", guarded)
+
 
 if __name__ == "__main__":
     unittest.main()

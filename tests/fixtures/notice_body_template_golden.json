@@ -18,11 +18,11 @@
     "expect_numeric": true
   },
   {
-    "name": "notice_return_nishidate",
-    "title": "【巨人】西舘勇陽が実戦復帰へ",
-    "summary": "西舘勇陽投手がコンディション不良からの実戦復帰へ向けて調整している。二軍で防御率2.50、10試合に登板した。ブルペンで投球練習を再開した。",
-    "required_strings": ["西舘勇陽", "実戦復帰", "防御率2.50", "10試合"],
-    "expected_notice_type": "復帰",
+    "name": "notice_promote_asano",
+    "title": "【巨人】浅野翔吾が一軍登録へ",
+    "summary": "浅野翔吾外野手が16日にも一軍登録される見通しとなった。今季二軍で打率.284、3本塁打を記録している。",
+    "required_strings": ["浅野翔吾", "一軍登録", "打率.284", "3本塁打"],
+    "expected_notice_type": "一軍登録",
     "expect_numeric": true
   },
   {

@@ -583,6 +583,40 @@ class BuildNewsBlockTests(unittest.TestCase):
         self.assertIn("【今後の注目点】", ai_body)
         self.assertIn("皆川岳飛が初１軍合流となり、試合前に抱負を語った。", ai_body)
 
+    def test_recovery_like_column_routes_to_recovery_template(self):
+        title = "【巨人】西舘勇陽がコンディション不良からの復帰へ向けてブルペン投球再開"
+        summary = "西舘勇陽投手がコンディション不良からの復帰へ向けてブルペンで投球練習を再開した。"
+        gemini_body = (
+            "【ニュースの整理】\n"
+            "西舘勇陽が復帰へ向けて調整している。\n"
+            "【次の注目】\n"
+            "今後の状態に注目です。"
+        )
+
+        with patch.dict(
+            "os.environ",
+            {"LOW_COST_MODE": "1", "AI_ENABLED_CATEGORIES": "試合速報,選手情報,首脳陣", "ARTICLE_AI_MODE": "gemini", "OFFDAY_ARTICLE_AI_MODE": "gemini"},
+            clear=False,
+        ):
+            with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+                with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=gemini_body) as gemini_mock:
+                    _, ai_body = rss_fetcher.build_news_block(
+                        title=title,
+                        summary=summary,
+                        url="https://example.com/nishidate",
+                        source_name="スポーツ報知巨人班X",
+                        category="コラム",
+                        has_game=False,
+                    )
+
+        gemini_mock.assert_called_once()
+        self.assertEqual(gemini_mock.call_args.args[2], "選手情報")
+        self.assertIn("【故障・復帰の要旨】", ai_body)
+        self.assertIn("【故障の詳細】", ai_body)
+        self.assertIn("【リハビリ状況・復帰見通し】", ai_body)
+        self.assertIn("【チームへの影響と今後の注目点】", ai_body)
+        self.assertIn("西舘勇陽投手がコンディション不良からの復帰へ向けてブルペンで投球練習を再開した。", ai_body)
+
     def test_farm_articles_route_to_gemini_even_in_low_cost_subset(self):
         title = "【二軍】巨人 3-1 ハヤテ（5回降雨コールド）"
         summary = "巨人が3-1で勝利し、若手が本塁打を放った。"

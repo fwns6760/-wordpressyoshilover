@@ -99,6 +99,24 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("選手名は見出し以外の本文にも必ず明記してください。", prompt)
         self.assertIn("公示の日付・区分", prompt)
 
+    def test_recovery_prompt_uses_injury_structure(self):
+        prompt = rss_fetcher._build_gemini_strict_prompt(
+            title="【巨人】坂本勇人が左ふくらはぎ肉離れで離脱",
+            summary="坂本勇人内野手が左ふくらはぎ肉離れと診断された。復帰時期は未定で、リハビリを開始した。代役は泉口友汰が務める見通しだ。",
+            category="選手情報",
+            source_fact_block="",
+            win_loss_hint="",
+            has_game=False,
+            real_reactions=[],
+            source_day_label="4月16日",
+        )
+
+        self.assertIn("坂本勇人", prompt)
+        self.assertIn("見出しは【故障・復帰の要旨】【故障の詳細】【リハビリ状況・復帰見通し】【チームへの影響と今後の注目点】", prompt)
+        self.assertIn("部位・期間・診断名など医療関連情報は source にある表現を正確に引用してください。", prompt)
+        self.assertIn("復帰時期の推測を足さない", prompt)
+        self.assertIn("本文の最初は必ず「（4月16日時点）」で始めてください。", prompt)
+
     def test_manager_prompt_uses_manager_specific_structure(self):
         prompt = rss_fetcher._build_gemini_strict_prompt(
             title="阿部監督「結果残せば使います」「競争は続けます」",

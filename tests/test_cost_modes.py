@@ -26,6 +26,19 @@ class CostModeTests(unittest.TestCase):
             self.assertEqual(effective_category, "選手情報")
             self.assertEqual(reason, "player_notice_route")
 
+    def test_recovery_like_column_routes_to_player_ai_category(self):
+        with patch.dict("os.environ", {"LOW_COST_MODE": "1", "AI_ENABLED_CATEGORIES": "試合速報,選手情報,首脳陣"}, clear=False):
+            use_ai, effective_category, reason = rss_fetcher._resolve_article_ai_strategy(
+                "コラム",
+                "【巨人】西舘勇陽がコンディション不良からの復帰へ向けてブルペン投球再開",
+                "西舘勇陽投手がコンディション不良からの復帰へ向けてブルペンで投球練習を再開した。",
+                has_game=False,
+                article_subtype="general",
+            )
+            self.assertTrue(use_ai)
+            self.assertEqual(effective_category, "選手情報")
+            self.assertEqual(reason, "player_recovery_route")
+
     def test_farm_articles_can_use_ai_even_when_category_is_not_enabled(self):
         with patch.dict("os.environ", {"LOW_COST_MODE": "1", "AI_ENABLED_CATEGORIES": "試合速報,選手情報,首脳陣"}, clear=False):
             use_ai, effective_category, reason = rss_fetcher._resolve_article_ai_strategy(

@@ -117,6 +117,13 @@ NOTICE_REQUIRED_HEADINGS = (
     "【公示の背景】",
     "【今後の注目点】",
 )
+RECOVERY_BODY_TEMPLATE_VERSION = "recovery_v1"
+RECOVERY_REQUIRED_HEADINGS = (
+    "【故障・復帰の要旨】",
+    "【故障の詳細】",
+    "【リハビリ状況・復帰見通し】",
+    "【チームへの影響と今後の注目点】",
+)
 DEFAULT_NOTICE_FALLBACK_IMAGE_URL = "https://yoshilover.com/wp-content/uploads/2025/07/j_RlNtbr_400x400-300x300-1.webp"
 NOTICE_RECORD_MARKERS = (
     "打率",
@@ -150,6 +157,67 @@ NOTICE_BACKGROUND_MARKERS = (
     "復帰",
     "昇格",
     "合流",
+)
+RECOVERY_STRONG_MARKERS = (
+    "離脱",
+    "故障",
+    "怪我",
+    "ケガ",
+    "負傷",
+    "リハビリ",
+    "回復",
+    "再起",
+    "戦列復帰",
+    "IL入り",
+    "手術",
+    "診断",
+    "療養",
+    "コンディション不良",
+    "患部",
+)
+RECOVERY_RETURN_MARKERS = (
+    "実戦復帰",
+    "戦列復帰",
+    "復帰",
+    "再起",
+    "回復",
+)
+RECOVERY_PROGRESS_MARKERS = (
+    "リハビリ",
+    "調整",
+    "ブルペン",
+    "キャッチボール",
+    "打撃練習",
+    "ノック",
+    "再開",
+    "段階",
+    "前進",
+    "見通し",
+    "予定",
+    "時期",
+    "メド",
+    "目安",
+    "未定",
+    "来月",
+    "今月",
+    "今季中",
+    "数週間",
+)
+RECOVERY_IMPACT_MARKERS = (
+    "代役",
+    "代替",
+    "先発",
+    "ローテ",
+    "スタメン",
+    "外野手争い",
+    "内野手争い",
+    "ベンチ入り",
+    "一軍",
+    "二軍",
+    "チーム事情",
+)
+RECOVERY_PART_PATTERNS = (
+    r"(?:右|左)?(?:肩|肘|膝|足首|足|腰|背中|脇腹|太もも|ふくらはぎ|手首|指|股関節|首|腹斜筋|前腕|下半身|上半身)(?:の(?:違和感|張り|炎症|損傷))?(?:痛|違和感|張り|炎症|損傷|骨折|肉離れ)?",
 )
 CONFIRMED_RESULT_MARKERS = ("勝利した", "勝利を飾", "白星を挙げ", "敗れた", "敗戦", "黒星", "引き分け", "サヨナラ勝", "連勝", "連敗", "完封勝", "完封負")
 DEFINITE_RESULT_MARKERS = ("勝利しました", "勝利を飾りました", "白星を挙げました", "敗れました", "敗戦でした", "黒星を喫しました", "引き分けました")
@@ -245,6 +313,23 @@ PLAYER_NOTICE_ROUTE_MARKERS = (
     "再登録",
     "実戦復帰",
     "再出発",
+)
+PLAYER_RECOVERY_ROUTE_MARKERS = (
+    "離脱",
+    "故障",
+    "怪我",
+    "ケガ",
+    "負傷",
+    "リハビリ",
+    "回復",
+    "復帰",
+    "再起",
+    "戦列復帰",
+    "IL入り",
+    "手術",
+    "診断",
+    "療養",
+    "コンディション不良",
 )
 PLAYER_QUOTE_CONTEXT_MARKERS = (
     "甲子園",
@@ -489,8 +574,114 @@ def _is_notice_like_status_story(title: str, summary: str) -> bool:
     return any(marker in source_text for marker in PLAYER_NOTICE_ROUTE_MARKERS)
 
 
+def _extract_player_subject_context_windows(title: str, summary: str, subject: str, radius: int = 56) -> list[str]:
+    source_text = _strip_html(f"{title} {summary}")
+    if not subject or subject in {"巨人", "選手", "出場選手"}:
+        return [source_text]
+    aliases = [subject]
+    family_name = _player_family_name_alias(title, summary, "選手情報")
+    if family_name and family_name not in aliases and family_name not in {"巨人", "選手"}:
+        aliases.append(family_name)
+    windows = []
+    for alias in aliases:
+        for match in _re.finditer(_re.escape(alias), source_text):
+            start = max(0, match.start() - radius)
+            end = min(len(source_text), match.end() + radius)
+            windows.append(source_text[start:end])
+    return windows or [source_text]
+
+
+def _extract_recovery_subject(title: str, summary: str) -> str:
+    notice_subject, _notice_type = _extract_notice_subject_and_type(title, summary)
+    if notice_subject and notice_subject not in {"巨人", "選手", "出場選手"}:
+        return notice_subject
+    return _short_subject_name(title, summary, "選手情報")
+
+
+def _extract_recovery_injury_part(title: str, summary: str, subject: str = "") -> str:
+    source_text = _strip_html(f"{title} {summary}")
+    recovery_subject = subject or _extract_recovery_subject(title, summary)
+    windows = _extract_player_subject_context_windows(title, summary, recovery_subject)
+    for window in windows + [source_text]:
+        for pattern in RECOVERY_PART_PATTERNS:
+            match = _re.search(pattern, window)
+            if match:
+                return match.group(0)
+    return ""
+
+
+def _extract_recovery_return_timing(title: str, summary: str, subject: str = "") -> str:
+    recovery_subject = subject or _extract_recovery_subject(title, summary)
+    family_name = _player_family_name_alias(title, summary, "選手情報")
+    sentences = _extract_prompt_fact_sentences(title, summary, max_sentences=6)
+    strong_timing_markers = (
+        "未定",
+        "今月",
+        "来月",
+        "今季中",
+        "数週間",
+        "予定",
+        "時期",
+        "見通し",
+        "メド",
+        "目安",
+        "視野",
+        "実戦復帰",
+        "戦列復帰",
+    )
+    timing_marker_sets = (
+        strong_timing_markers,
+        RECOVERY_RETURN_MARKERS + RECOVERY_PROGRESS_MARKERS,
+    )
+    for markers in timing_marker_sets:
+        for sentence in sentences:
+            fact = _ensure_fact_sentence(sentence)
+            if not fact or not any(marker in fact for marker in markers):
+                continue
+            if recovery_subject and recovery_subject not in fact and (not family_name or family_name not in fact):
+                # 復帰時期は主語が省略されやすいので、時期表現が強い文は許容する。
+                if markers is strong_timing_markers:
+                    return fact.rstrip("。")
+                if not any(marker in fact for marker in strong_timing_markers):
+                    continue
+            return fact.rstrip("。")
+    return ""
+
+
+def _is_recovery_like_status_story(title: str, summary: str) -> bool:
+    source_text = _strip_html(f"{title} {summary}")
+    if not any(marker in source_text for marker in PLAYER_RECOVERY_ROUTE_MARKERS):
+        return False
+    recovery_subject = _extract_recovery_subject(title, summary)
+    windows = _extract_player_subject_context_windows(title, summary, recovery_subject)
+    has_strong_signal = any(any(marker in window for marker in RECOVERY_STRONG_MARKERS) for window in windows)
+    has_return_signal = any(any(marker in window for marker in RECOVERY_RETURN_MARKERS) for window in windows)
+    has_progress_signal = any(any(marker in window for marker in RECOVERY_PROGRESS_MARKERS) for window in windows)
+    if has_strong_signal:
+        return True
+    if has_return_signal and has_progress_signal:
+        return True
+    if any(marker in source_text for marker in ("実戦復帰", "戦列復帰")):
+        return True
+    return False
+
+
+def _detect_player_special_template_kind(title: str, summary: str) -> str:
+    if _is_recovery_like_status_story(title, summary):
+        return "player_recovery"
+    if _is_notice_like_status_story(title, summary):
+        return "player_notice"
+    return ""
+
+
+def _is_recovery_template_story(title: str, summary: str, category: str = "選手情報") -> bool:
+    if category != "選手情報":
+        return False
+    return _detect_player_special_template_kind(title, summary) == "player_recovery"
+
+
 def _resolve_article_generation_category(category: str, title: str, summary: str) -> str:
-    if category in {"コラム", "ドラフト・育成"} and _is_notice_like_status_story(title, summary):
+    if category in {"コラム", "ドラフト・育成"} and _detect_player_special_template_kind(title, summary):
         return "選手情報"
     return category
 
@@ -504,6 +695,9 @@ def _resolve_article_ai_strategy(
 ) -> tuple[bool, str, str]:
     effective_category = _resolve_article_generation_category(category, title, summary)
     if effective_category != category and should_use_ai_for_category(effective_category):
+        special_kind = _detect_player_special_template_kind(title, summary)
+        if special_kind == "player_recovery":
+            return True, effective_category, "player_recovery_route"
         return True, effective_category, "player_notice_route"
 
     if should_use_ai_for_category(category):
@@ -548,7 +742,7 @@ def _get_gemini_strict_min_chars(category: str, title: str, summary: str) -> int
         return 160
     if category == "試合速報" and _is_game_template_subtype(_detect_article_subtype(title, summary, category, True)):
         return 160
-    if category == "選手情報" and _is_notice_like_status_story(title, summary):
+    if category == "選手情報" and _detect_player_special_template_kind(title, summary):
         return 160
     if category == "選手情報" and _detect_player_article_mode(title, summary, category) == "player_status":
         return 160
@@ -1780,7 +1974,74 @@ def _build_player_status_strict_prompt(title: str, summary: str, source_day_labe
 def _is_notice_template_story(title: str, summary: str, category: str = "選手情報") -> bool:
     if category != "選手情報":
         return False
-    return _is_notice_like_status_story(title, summary)
+    return _detect_player_special_template_kind(title, summary) == "player_notice"
+
+
+def _extract_recovery_detail_fact(title: str, summary: str, exclude: set[str] | None = None) -> str:
+    markers = RECOVERY_STRONG_MARKERS + tuple(marker for marker in RECOVERY_RETURN_MARKERS if marker != "復帰")
+    fact = _find_source_sentence_with_markers(title, summary, markers, exclude=exclude)
+    if fact:
+        return fact
+    return _next_unused_source_fact(title, summary, exclude or set())
+
+
+def _extract_recovery_progress_fact(title: str, summary: str, exclude: set[str] | None = None) -> str:
+    markers = RECOVERY_RETURN_MARKERS + RECOVERY_PROGRESS_MARKERS
+    fact = _find_source_sentence_with_markers(title, summary, markers, exclude=exclude)
+    if fact:
+        return fact
+    return _next_unused_source_fact(title, summary, exclude or set())
+
+
+def _extract_recovery_impact_fact(title: str, summary: str, exclude: set[str] | None = None) -> str:
+    fact = _find_source_sentence_with_markers(title, summary, RECOVERY_IMPACT_MARKERS, exclude=exclude)
+    if fact:
+        return fact
+    return _next_unused_source_fact(title, summary, exclude or set())
+
+
+def _build_recovery_strict_prompt(title: str, summary: str, source_day_label: str = "") -> str:
+    subject = _extract_recovery_subject(title, summary)
+    player_position = _extract_notice_player_position(title, summary, subject)
+    injury_part = _extract_recovery_injury_part(title, summary, subject)
+    return_timing = _extract_recovery_return_timing(title, summary, subject)
+    detail_fact = _extract_recovery_detail_fact(title, summary)
+    used_facts = {fact for fact in [detail_fact] if fact}
+    progress_fact = _extract_recovery_progress_fact(title, summary, exclude=used_facts)
+    if progress_fact:
+        used_facts.add(progress_fact)
+    impact_fact = _extract_recovery_impact_fact(title, summary, exclude=used_facts)
+    if not impact_fact:
+        impact_fact = progress_fact or detail_fact
+    if not detail_fact:
+        detail_fact = f"{subject}の故障や離脱の経緯は、元記事にある範囲で整理する。"
+    if not progress_fact:
+        progress_fact = f"{subject}のリハビリ状況と復帰見通しは、元記事で確認できる範囲に限って整理する。"
+    if not impact_fact:
+        impact_fact = f"{subject}が抜けた場合の起用や復帰後の役割は、元記事にある材料だけで整理する。"
+    injury_label = injury_part or "故障・復帰"
+    opening_time_rule = f"本文の最初は必ず「（{source_day_label}時点）」で始めてください。\n" if source_day_label else ""
+    return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
+以下の番号付き事実のみ使用可です。それ以外の情報・解釈・感想・一般論・医療的な推測を含む文は出力しないでください。
+1. {subject}は読売ジャイアンツの{player_position}である。
+2. {detail_fact}
+3. {progress_fact}
+4. {impact_fact}
+ですます調、350〜550文字で書いてください。ただし事実が薄い場合は350文字未満でも構いません。無理に話を広げないでください。
+{opening_time_rule}見出しは【故障・復帰の要旨】【故障の詳細】【リハビリ状況・復帰見通し】【チームへの影響と今後の注目点】の4つをこの順番で使ってください。
+【故障・復帰の要旨】では、{subject}の{injury_label}と現状を最初に整理してください。
+【故障の詳細】では、部位、原因、診断名、離脱の経緯のうち source にある事実だけを書いてください。
+【リハビリ状況・復帰見通し】では、現在の段階、再開したメニュー、復帰時期や見通しの表現を source のまま残してください。
+【チームへの影響と今後の注目点】では、代替選手、起用、ローテ、復帰後の役割のうち source にある材料だけを書いてください。
+選手本人や監督・コーチのコメントがあれば1つまで残してください。
+部位・期間・診断名など医療関連情報は source にある表現を正確に引用してください。
+選手名は見出し以外の本文にも必ず明記してください。
+事実にない数字・比較・断定・復帰時期の推測を足さないでください。
+同じ事実を繰り返さないでください。
+筆者の感想や精神論は書かないでください。
+最後は読者視点の締め1〜2文で終え、「みなさんの意見はコメントで教えてください！」を入れてください。
+本文だけを出力してください。
+"""
 
 
 def _extract_notice_record_fact(title: str, summary: str, exclude: set[str] | None = None) -> str:
@@ -2069,6 +2330,20 @@ def _notice_required_headings() -> tuple[str, ...]:
     return NOTICE_REQUIRED_HEADINGS
 
 
+def _recovery_required_headings() -> tuple[str, ...]:
+    return RECOVERY_REQUIRED_HEADINGS
+
+
+def _recovery_section_count(text: str) -> int:
+    normalized = _normalize_article_text_structure(text or "", "選手情報", False, article_subtype="player_recovery")
+    return sum(1 for heading in _recovery_required_headings() if heading in normalized)
+
+
+def _recovery_body_has_required_structure(text: str) -> bool:
+    normalized = _normalize_article_text_structure(text or "", "選手情報", False, article_subtype="player_recovery")
+    return all(heading in normalized for heading in _recovery_required_headings())
+
+
 def _notice_section_count(text: str) -> int:
     normalized = _normalize_article_text_structure(text or "", "選手情報", False, article_subtype="player_notice")
     return sum(1 for heading in _notice_required_headings() if heading in normalized)
@@ -2184,6 +2459,8 @@ def _build_gemini_strict_prompt(
     article_subtype = _detect_article_subtype(title, summary, category, has_game)
     player_mode = _detect_player_article_mode(title, summary, category) if category == "選手情報" else ""
     if category == "選手情報":
+        if _is_recovery_template_story(title, summary, category):
+            return _build_recovery_strict_prompt(title, summary, source_day_label=source_day_label)
         if _is_notice_template_story(title, summary, category):
             return _build_notice_strict_prompt(title, summary, source_day_label=source_day_label)
         if player_mode == "player_mechanics":
@@ -2528,6 +2805,23 @@ def _normalize_article_heading(heading: str, category: str, has_game: bool, arti
         }
         if clean in notice_heading_aliases:
             return notice_heading_aliases[clean]
+
+    if category == "選手情報" and article_subtype == "player_recovery":
+        recovery_heading_aliases = {
+            "【故障・復帰の要旨】": "【故障・復帰の要旨】",
+            "【ニュースの整理】": "【故障・復帰の要旨】",
+            "【故障の詳細】": "【故障の詳細】",
+            "【詳細】": "【故障の詳細】",
+            "【背景】": "【故障の詳細】",
+            "【リハビリ状況・復帰見通し】": "【リハビリ状況・復帰見通し】",
+            "【復帰見通し】": "【リハビリ状況・復帰見通し】",
+            "【リハビリ状況】": "【リハビリ状況・復帰見通し】",
+            "【チームへの影響と今後の注目点】": "【チームへの影響と今後の注目点】",
+            "【今後の注目点】": "【チームへの影響と今後の注目点】",
+            "【次の注目】": "【チームへの影響と今後の注目点】",
+        }
+        if clean in recovery_heading_aliases:
+            return recovery_heading_aliases[clean]
 
     first, second, third = _article_section_headings(category, has_game)
     first_aliases = {
@@ -3235,6 +3529,63 @@ def _build_notice_safe_fallback(
     next_lines.append(_notice_next_focus_sentence(notice_label, player_position, notice_subject))
     next_lines.append("みなさんの意見はコメントで教えてください！")
     return "\n".join(lead_lines + basic_lines + background_lines + next_lines)
+
+
+def _build_recovery_safe_fallback(
+    title: str,
+    summary: str,
+    real_reactions: list[str] | None = None,
+    source_day_label: str = "",
+) -> str:
+    facts = [fact.rstrip("。") for fact in _extract_summary_sentences(summary, max_sentences=6)]
+    if not facts:
+        facts = [_strip_title_prefix(title) or "元記事の内容を確認中です"]
+    subject = _extract_recovery_subject(title, summary)
+    player_position = _extract_notice_player_position(title, summary, subject)
+    injury_part = _extract_recovery_injury_part(title, summary, subject)
+    return_timing = _extract_recovery_return_timing(title, summary, subject)
+    detail_fact = _extract_recovery_detail_fact(title, summary)
+    progress_fact = _extract_recovery_progress_fact(title, summary, exclude={detail_fact} if detail_fact else set())
+    impact_fact = _extract_recovery_impact_fact(
+        title,
+        summary,
+        exclude={fact for fact in [detail_fact, progress_fact] if fact},
+    )
+    opening = f"（{source_day_label}時点）" if source_day_label else ""
+
+    lead_lines = [RECOVERY_REQUIRED_HEADINGS[0]]
+    lead_lines.append(f"{opening}{subject}の故障・復帰状況を整理します。".strip())
+    lead_lines.append(f"{facts[0]}。")
+    if len(facts) > 1:
+        lead_lines.append(f"{facts[1]}。")
+
+    detail_lines = [RECOVERY_REQUIRED_HEADINGS[1]]
+    if injury_part:
+        detail_lines.append(f"{subject}は{player_position}で、現在確認できる部位は{injury_part}です。")
+    else:
+        detail_lines.append(f"{subject}は読売ジャイアンツの{player_position}です。")
+    if detail_fact:
+        detail_lines.append(detail_fact)
+
+    progress_lines = [RECOVERY_REQUIRED_HEADINGS[2]]
+    if progress_fact:
+        progress_lines.append(progress_fact)
+    elif return_timing:
+        progress_lines.append(f"{subject}の復帰見通しは「{return_timing}」と整理できます。")
+    else:
+        progress_lines.append(f"{subject}のリハビリ状況や復帰の段階は、元記事の事実をそのまま追いたいところです。")
+
+    impact_lines = [RECOVERY_REQUIRED_HEADINGS[3]]
+    if impact_fact:
+        impact_lines.append(impact_fact)
+    elif len(facts) > 2:
+        impact_lines.append(f"{facts[2]}。")
+    else:
+        impact_lines.append(f"{subject}が戻るまでの代役や復帰後の起用がどう動くかを見たいところです。")
+    if real_reactions:
+        impact_lines.append(f"反応を見ると、{subject}の復帰時期と起用のされ方を見たい声があります。")
+    impact_lines.append("みなさんの意見はコメントで教えてください！")
+    return "\n".join(lead_lines + detail_lines + progress_lines + impact_lines)
 
 
 def _build_game_safe_fallback(
@@ -4478,6 +4829,35 @@ def generate_article_with_gemini(
             ・最後は「みなさんの意見はコメントで！」で締める
             ・HTMLタグなし・本文のみ出力"""
 
+    player_recovery_prompt = ""
+    if category == "選手情報" and _is_recovery_template_story(title, summary_clean, category):
+        recovery_subject = _extract_recovery_subject(title, summary_clean)
+        injury_part = _extract_recovery_injury_part(title, summary_clean, recovery_subject)
+        return_timing = _extract_recovery_return_timing(title, summary_clean, recovery_subject)
+        player_recovery_prompt = f"""あなたは読売ジャイアンツ専門ブログの編集者です。
+今日は{today_str}です。まずWeb検索で必要な事実を確認してから、故障・復帰関連の記事を日本語で書いてください。
+
+{data_sources}
+
+タイトル: {title}
+ニュース要約: {summary_clean}
+
+{fan_section}
+
+【構成】
+・見出しは「【故障・復帰の要旨】」「【故障の詳細】」「【リハビリ状況・復帰見通し】」「【チームへの影響と今後の注目点】」の4つをこの順番で使う
+・本文は350〜650文字
+・選手名はタイトルと本文の両方に必ず明記する
+・部位、診断名、期間、復帰時期は source にある表現を正確に残す
+・{injury_part or '故障部位'}や{return_timing or '復帰見通し'}の表現は source にない形へ言い換えない
+・【故障の詳細】では原因、診断、離脱の経緯を source にある範囲だけで整理する
+・【リハビリ状況・復帰見通し】では現在の段階、再開したメニュー、復帰時期の見通しを整理する
+・【チームへの影響と今後の注目点】では代替選手、起用、ローテへの影響を source にある材料だけで書く
+・選手本人や監督・コーチのコメントがあれば1つまで残す
+・推測、断定、精神論、医療判断の補完は書かない
+・最後は「みなさんの意見はコメントで！」で締める
+・HTMLタグなし・本文のみ出力"""
+
     player_notice_prompt = ""
     if category == "選手情報" and _is_notice_template_story(title, summary_clean, category):
         notice_subject, notice_type = _extract_notice_subject_and_type(title, summary_clean)
@@ -4536,7 +4916,7 @@ def generate_article_with_gemini(
 ・最後は「みなさんの意見はコメントで！」で締める
 ・HTMLタグなし・本文のみ出力""",
 
-        "選手情報": player_notice_prompt or f"""あなたは読売ジャイアンツの熱狂的なファンブロガー兼データアナリストです。
+        "選手情報": player_recovery_prompt or player_notice_prompt or f"""あなたは読売ジャイアンツの熱狂的なファンブロガー兼データアナリストです。
 今日は{today_str}です。まずWeb検索でデータを調べてから、データ豊富な選手分析コラムを日本語で書いてください。
 
 {data_sources}
@@ -4881,9 +5261,11 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         has_game,
         article_subtype=article_subtype,
     )
-    notice_story = generation_category == "選手情報" and _is_notice_template_story(title, summary_clean, generation_category)
-    body_category = generation_category if notice_story else category
-    body_subtype = "player_notice" if notice_story else article_subtype
+    special_story_kind = _detect_player_special_template_kind(title, summary_clean) if generation_category == "選手情報" else ""
+    recovery_story = special_story_kind == "player_recovery"
+    notice_story = special_story_kind == "player_notice"
+    body_category = generation_category if special_story_kind else category
+    body_subtype = "player_recovery" if recovery_story else "player_notice" if notice_story else article_subtype
     article_ai_mode = get_article_ai_mode(has_game, article_ai_mode_override) if use_ai_for_article else "none"
     fan_reaction_limit = get_fan_reaction_limit()
     logger = logging.getLogger("rss_fetcher")
@@ -5007,7 +5389,22 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 generation_category,
                 subject,
             )
-    if notice_story:
+    if recovery_story:
+        normalized_recovery_body = _normalize_article_text_structure(ai_body, generation_category, False, article_subtype="player_recovery")
+        if _recovery_body_has_required_structure(normalized_recovery_body):
+            ai_body = normalized_recovery_body
+        else:
+            ai_body = _apply_editor_voice(
+                _build_recovery_safe_fallback(
+                    title,
+                    summary_clean,
+                    real_reactions=real_reactions,
+                    source_day_label=source_day_label,
+                ),
+                generation_category,
+                subject,
+            )
+    elif notice_story:
         normalized_notice_body = _normalize_article_text_structure(ai_body, generation_category, False, article_subtype="player_notice")
         if _notice_body_has_required_structure(normalized_notice_body) and _notice_has_player_name(normalized_notice_body, title, summary_clean):
             ai_body = normalized_notice_body
@@ -5074,6 +5471,12 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             }
         elif category == "首脳陣":
             labels = _manager_cta_labels()
+        elif recovery_story:
+            labels = {
+                "news": "この復帰状況どう見る？",
+                "next": "復帰時期どうなる？",
+                "fans": "率直にどう思う？",
+            }
         elif notice_story:
             labels = {
                 "news": "この公示、どう見る？",
@@ -5510,6 +5913,8 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                     heading_level = 2
                 if notice_story and current_heading == NOTICE_REQUIRED_HEADINGS[0]:
                     heading_level = 2
+                if recovery_story and current_heading == RECOVERY_REQUIRED_HEADINGS[0]:
+                    heading_level = 2
                 blocks += (
                     f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
                     f'<h{heading_level}>{current_heading}</h{heading_level}>\n'
@@ -5551,6 +5956,8 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             section_slot = {
                 "【ニュースの整理】": "news",
                 "【次の注目】": "next",
+                "【故障・復帰の要旨】": "news",
+                "【チームへの影響と今後の注目点】": "next",
                 "【公示の要旨】": "news",
                 "【今後の注目点】": "next",
                 **game_slot_map,
@@ -6719,6 +7126,27 @@ def _log_notice_body_template_applied(
     logger.info(json.dumps(payload, ensure_ascii=False))
 
 
+def _log_recovery_body_template_applied(
+    logger: logging.Logger,
+    post_id: int,
+    title: str,
+    injury_part: str,
+    return_timing: str,
+    section_count: int,
+    template_version: str = RECOVERY_BODY_TEMPLATE_VERSION,
+) -> None:
+    payload = {
+        "event": "recovery_body_template_applied",
+        "post_id": post_id,
+        "title": title,
+        "injury_part": injury_part,
+        "return_timing": return_timing,
+        "section_count": section_count,
+        "template_version": template_version,
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
 def _counter_to_plain_dict(counter: Counter) -> dict[str, int]:
     return {key: counter[key] for key in sorted(counter) if counter[key]}
 
@@ -7138,7 +7566,18 @@ def _main(args, logger):
                     _game_numeric_count(raw_title, summary, ai_body_for_x),
                     _game_name_count(raw_title, summary, ai_body_for_x),
                 )
-            if _is_notice_template_story(raw_title, summary, _resolve_article_generation_category(category, raw_title, summary)):
+            effective_story_category = _resolve_article_generation_category(category, raw_title, summary)
+            if _is_recovery_template_story(raw_title, summary, effective_story_category):
+                recovery_subject = _extract_recovery_subject(raw_title, summary)
+                _log_recovery_body_template_applied(
+                    logger,
+                    post_id,
+                    draft_title,
+                    _extract_recovery_injury_part(raw_title, summary, recovery_subject),
+                    _extract_recovery_return_timing(raw_title, summary, recovery_subject),
+                    _recovery_section_count(ai_body_for_x),
+                )
+            if _is_notice_template_story(raw_title, summary, effective_story_category):
                 _notice_subject, notice_type = _extract_notice_subject_and_type(raw_title, summary)
                 _log_notice_body_template_applied(
                     logger,

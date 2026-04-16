@@ -1,0 +1,52 @@
+[
+  {
+    "name": "recovery_yamazaki_bullpen",
+    "title": "【巨人】山崎伊織が復帰へ前進「段階を踏んで上げて来られている」ブルペンで本格的な投球練習",
+    "summary": "山崎伊織投手が故障離脱からの復帰へ前進した。ブルペンで本格的な投球練習を再開し、首脳陣は段階を踏んで復帰させる方針を示した。",
+    "source_day_label": "4月15日",
+    "required_strings": ["山崎伊織", "復帰へ前進", "ブルペン", "段階"],
+    "expected_injury_part": "",
+    "expected_return_timing": "復帰",
+    "expect_recovery": true
+  },
+  {
+    "name": "recovery_nishidate_conditioning",
+    "title": "【巨人】西舘勇陽がコンディション不良からの復帰へ向けてブルペン投球再開",
+    "summary": "西舘勇陽投手がコンディション不良からの復帰へ向けてブルペンで投球練習を再開した。二軍で防御率2.50、10試合に登板している。",
+    "source_day_label": "4月16日",
+    "required_strings": ["西舘勇陽", "コンディション不良", "ブルペン", "防御率2.50"],
+    "expected_injury_part": "",
+    "expected_return_timing": "復帰",
+    "expect_recovery": true
+  },
+  {
+    "name": "recovery_sakamoto_injury",
+    "title": "【巨人】坂本勇人が左ふくらはぎ肉離れで離脱",
+    "summary": "坂本勇人内野手が左ふくらはぎ肉離れと診断された。復帰時期は未定で、リハビリを開始した。代役は泉口友汰が務める見通しだ。",
+    "source_day_label": "4月16日",
+    "required_strings": ["坂本勇人", "左ふくらはぎ肉離れ", "復帰時期は未定", "泉口友汰"],
+    "expected_injury_part": "左ふくらはぎ肉離れ",
+    "expected_return_timing": "復帰時期は未定",
+    "expect_recovery": true
+  },
+  {
+    "name": "recovery_togo_elbow",
+    "title": "【巨人】戸郷翔征が右肘の違和感から回復へ",
+    "summary": "戸郷翔征投手は右肘の違和感で別メニュー調整が続いていたが、キャッチボールを再開した。今月中の実戦復帰を目指す。",
+    "source_day_label": "4月16日",
+    "required_strings": ["戸郷翔征", "右肘の違和感", "キャッチボールを再開", "今月中の実戦復帰"],
+    "expected_injury_part": "右肘の違和感",
+    "expected_return_timing": "今月中の実戦復帰",
+    "expect_recovery": true
+  },
+  {
+    "name": "recovery_asano_return",
+    "title": "【巨人】浅野翔吾が戦列復帰へ前進",
+    "summary": "浅野翔吾外野手は右膝の負傷から回復が進み、今週末の二軍戦復帰を視野に入れている。外野争いの起用にも影響しそうだ。",
+    "source_day_label": "4月16日",
+    "required_strings": ["浅野翔吾", "右膝", "今週末の二軍戦復帰", "外野争い"],
+    "expected_injury_part": "右膝",
+    "expected_return_timing": "今週末の二軍戦復帰",
+    "expect_recovery": true
+  }
+]

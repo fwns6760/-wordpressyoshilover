@@ -1,0 +1,23 @@
+[
+  {
+    "name": "rewritten_title_collision_logs_warning",
+    "source_url": "https://twitter.com/TokyoGiants/status/2044347574963085511",
+    "rewritten_title": "巨人戦 試合前にどこを見たいか",
+    "history": {
+      "rewritten_title_norm:巨人戦試合前にどこを見たいか": {
+        "post_url": "https://twitter.com/hochi_giants/status/2044393676663664718",
+        "original_title": "【巨人】甲子園で勝てば16年ぶり 田中将大16日スライド登板",
+        "rewritten_title": "巨人戦 試合前にどこを見たいか",
+        "saved_at": "2026-04-16T00:00:43"
+      }
+    },
+    "expected_warning": {
+      "event": "title_collision_detected",
+      "source_url": "https://twitter.com/TokyoGiants/status/2044347574963085511",
+      "rewritten_title": "巨人戦 試合前にどこを見たいか",
+      "title_norm": "巨人戦試合前にどこを見たいか",
+      "existing_post_url": "https://twitter.com/hochi_giants/status/2044393676663664718",
+      "existing_title": "【巨人】甲子園で勝てば16年ぶり 田中将大16日スライド登板"
+    }
+  }
+]

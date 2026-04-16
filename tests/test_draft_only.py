@@ -58,6 +58,8 @@ class DraftOnlyTests(unittest.TestCase):
                     history,
                     ["https://example.com/article"],
                     ["titlenorm"],
+                    rewritten_title="巨人戦 試合前にどこを見たいか",
+                    original_title="【4/16予告先発】 巨人 vs 阪神",
                     published=False,
                     publish_skip_reasons=["draft_only"],
                 )
@@ -65,6 +67,11 @@ class DraftOnlyTests(unittest.TestCase):
             self.assertTrue(persisted)
             self.assertIn("https://example.com/article", history)
             self.assertIn("title_norm:titlenorm", history)
+            self.assertIn("rewritten_title_norm:巨人戦試合前にどこを見たいか", history)
+            self.assertEqual(
+                history["rewritten_title_norm:巨人戦試合前にどこを見たいか"]["original_title"],
+                "【4/16予告先発】 巨人 vs 阪神",
+            )
 
     def test_persist_processed_entry_history_skips_non_draft_only_unpublished_entries(self):
         with patch.object(rss_fetcher, "save_history_batch") as save_history_batch:

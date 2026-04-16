@@ -4558,6 +4558,12 @@ def save_history_batch(urls: list[str], history: dict, title_norms: list[str] | 
     persist_history(history)
 
 
+def _normalize_history_title(title: str) -> str:
+    import re as _re3
+
+    return _re3.sub(r"[\s　【】「」『』〔〕（）()・\-_]", "", (title or "")).lower()
+
+
 def _is_history_duplicate(post_url: str, entry_title_norm: str, history: dict) -> bool:
     if post_url and post_url in history:
         return True
@@ -4568,17 +4574,66 @@ def _is_history_duplicate(post_url: str, entry_title_norm: str, history: dict) -
     return False
 
 
+def _get_title_collision_meta(history: dict, rewritten_title_norm: str, source_url: str) -> dict | None:
+    if not rewritten_title_norm or len(rewritten_title_norm) <= 5:
+        return None
+    meta = history.get(f"rewritten_title_norm:{rewritten_title_norm[:60]}")
+    if not isinstance(meta, dict):
+        return None
+    existing_post_url = meta.get("post_url", "")
+    if not existing_post_url or existing_post_url == source_url:
+        return None
+    return meta
+
+
+def _log_title_collision_if_needed(
+    logger: logging.Logger,
+    history: dict,
+    source_url: str,
+    rewritten_title: str,
+) -> str:
+    rewritten_title_norm = _normalize_history_title(rewritten_title)
+    collision_meta = _get_title_collision_meta(history, rewritten_title_norm, source_url)
+    if collision_meta:
+        payload = {
+            "event": "title_collision_detected",
+            "source_url": source_url,
+            "rewritten_title": rewritten_title,
+            "title_norm": rewritten_title_norm[:60],
+            "existing_post_url": collision_meta.get("post_url", ""),
+            "existing_title": collision_meta.get("original_title", ""),
+        }
+        logger.warning(json.dumps(payload, ensure_ascii=False))
+    return rewritten_title_norm
+
+
 def persist_processed_entry_history(
     history: dict,
     history_urls: list[str],
     history_title_norms: list[str] | None = None,
+    rewritten_title: str = "",
+    original_title: str = "",
     published: bool = False,
     publish_skip_reasons: list[str] | None = None,
 ) -> bool:
     reasons = set(publish_skip_reasons or [])
     if not published and "draft_only" not in reasons:
         return False
-    save_history_batch(history_urls, history, history_title_norms)
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    for url in _dedupe_preserve_order([u for u in history_urls if u]):
+        history[url] = now_str
+    for title_norm in _dedupe_preserve_order(history_title_norms or []):
+        if title_norm and len(title_norm) > 5:
+            history[f"title_norm:{title_norm[:60]}"] = now_str
+    rewritten_title_norm = _normalize_history_title(rewritten_title)
+    if rewritten_title_norm and len(rewritten_title_norm) > 5:
+        history[f"rewritten_title_norm:{rewritten_title_norm[:60]}"] = {
+            "post_url": next((u for u in history_urls if u), ""),
+            "original_title": original_title,
+            "rewritten_title": rewritten_title,
+            "saved_at": now_str,
+        }
+    persist_history(history)
     return True
 
 
@@ -5495,6 +5550,7 @@ def _main(args, logger):
                 continue
 
         try:
+            _log_title_collision_if_needed(logger, history, post_url, draft_title)
             category_id = wp.resolve_category_id(category)
 
             featured_media = 0
@@ -5537,6 +5593,8 @@ def _main(args, logger):
                 history,
                 item.get("history_urls", [post_url]),
                 item.get("history_title_norms", [entry_title_norm] if entry_title_norm else []),
+                rewritten_title=draft_title,
+                original_title=title,
                 published=published,
                 publish_skip_reasons=publish_skip_reasons,
             )

@@ -7762,6 +7762,8 @@ def _log_media_xpost_embedded(
     source_type: str,
     media_handle: str,
     media_url: str,
+    quote_account: str = "",
+    embed_section_type: str = "",
     match_reason: str = "",
     match_score: int = 0,
     position: str = MEDIA_XPOST_POSITION,
@@ -7772,7 +7774,9 @@ def _log_media_xpost_embedded(
         "title": title,
         "source_type": source_type,
         "media_handle": media_handle,
+        "quote_account": quote_account or media_handle,
         "media_url": media_url,
+        "embed_section_type": embed_section_type,
         "match_reason": match_reason,
         "match_score": match_score,
         "position": position,
@@ -7918,7 +7922,19 @@ def _main(args, logger):
         name        = source["name"]
         url         = source["url"]
         source_type = source.get("type", "news")
-        source_role = source.get("role", "article")
+        raw_source_role = source.get("role")
+        if isinstance(raw_source_role, list):
+            source_roles = {
+                str(role).strip()
+                for role in raw_source_role
+                if str(role).strip()
+            }
+        elif isinstance(raw_source_role, str) and raw_source_role.strip():
+            source_roles = {raw_source_role.strip()}
+        else:
+            source_roles = {"article_source"}
+        should_add_to_media_quote_pool = bool(source_roles & {"media_quote_pool", "media_quote_only"})
+        should_articleize = "media_quote_only" not in source_roles
         logger.info(f"取得中: {name} ({url})")
 
         try:
@@ -7968,16 +7984,17 @@ def _main(args, logger):
                 skip_reason_counts["missing_published_at"] += 1
                 continue
 
-            if source_role == "media_quote_only":
+            if should_add_to_media_quote_pool:
                 media_quote_pool.append({
                     "source_name": name,
                     "source_type": source_type,
-                    "source_role": source_role,
+                    "source_roles": sorted(source_roles),
                     "source_url": post_url,
                     "title": entry_title_clean,
                     "summary": entry_summary_clean,
                     "created_at": published_at,
                 })
+            if not should_articleize:
                 continue
 
             if not is_giants_related(title_text):
@@ -8041,7 +8058,7 @@ def _main(args, logger):
                 "source_rank": source_rank,
                 "source_name": name,
                 "source_type": source_type,
-                "source_role": source_role,
+                "source_roles": sorted(source_roles),
                 "entry": entry,
                 "post_url": post_url,
                 "title_text": title_text,
@@ -8144,6 +8161,9 @@ def _main(args, logger):
                 if effective_story_category == "選手情報"
                 else ""
             )
+            media_story_kind = special_story_kind
+            manager_subject = ""
+            manager_aliases: list[str] = []
             notice_subject = ""
             notice_type = ""
             player_aliases: list[str] = []
@@ -8151,6 +8171,17 @@ def _main(args, logger):
                 notice_subject, notice_type = _extract_notice_subject_and_type(raw_title, summary)
                 family_alias = _player_family_name_alias(raw_title, summary, "選手情報")
                 player_aliases = _dedupe_preserve_order([alias for alias in [notice_subject, family_alias] if alias])
+            elif category == "首脳陣" and title_article_subtype == "manager":
+                media_story_kind = "manager_quote"
+                manager_subject = _extract_subject_label(raw_title, summary, "首脳陣")
+                compact_manager_subject = _re.sub(r"(監督|コーチ)$", "", manager_subject).strip()
+                manager_aliases = _dedupe_preserve_order(
+                    [
+                        alias
+                        for alias in [manager_subject, compact_manager_subject]
+                        if alias and alias not in {"首脳陣", "巨人"}
+                    ]
+                )
 
             media_quotes = select_media_quotes(
                 {
@@ -8158,10 +8189,14 @@ def _main(args, logger):
                     "source_url": post_url,
                     "source_name": source_name,
                     "created_at": item.get("published_at").isoformat() if item.get("published_at") else "",
-                    "story_kind": special_story_kind,
+                    "story_kind": media_story_kind,
                     "player_name": notice_subject,
                     "player_aliases": player_aliases,
                     "notice_type": notice_type,
+                    "manager_name": manager_subject,
+                    "manager_aliases": manager_aliases,
+                    "article_subtype": title_article_subtype,
+                    "category": category,
                 },
                 max_count=1,
                 media_quote_pool=media_quote_pool,
@@ -8235,6 +8270,8 @@ def _main(args, logger):
                     source_type,
                     first_media_quote.get("handle", ""),
                     first_media_quote.get("url", ""),
+                    quote_account=first_media_quote.get("quote_account", ""),
+                    embed_section_type=first_media_quote.get("section_label", ""),
                     match_reason=first_media_quote.get("match_reason", ""),
                     match_score=int(first_media_quote.get("match_score", 0) or 0),
                 )

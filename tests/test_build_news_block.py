@@ -352,6 +352,32 @@ class BuildNewsBlockTests(unittest.TestCase):
         self.assertIn("📌 公示ポスト", blocks)
         self.assertIn("https://twitter.com/npb/status/1", blocks)
 
+    def test_manager_article_renders_manager_media_quote_section(self):
+        media_quotes = [
+            {
+                "url": "https://twitter.com/hochi_giants/status/1",
+                "handle": "@hochi_giants",
+                "section_label": "📢 報道ポスト",
+                "match_reason": "composite",
+                "match_score": 145,
+            }
+        ]
+        with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+            with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                blocks, _ = rss_fetcher.build_news_block(
+                    title="阿部監督「彼が打ったらもっと打線が機能する」",
+                    summary="スポーツ報知巨人班Xが阿部監督のコメントを伝えた。",
+                    url="https://example.com/post",
+                    source_name="スポーツ報知 巨人",
+                    category="首脳陣",
+                    has_game=False,
+                    source_type="news",
+                    media_quotes=media_quotes,
+                )
+
+        self.assertIn("📢 報道ポスト", blocks)
+        self.assertIn("https://twitter.com/hochi_giants/status/1", blocks)
+
     def test_news_article_does_not_render_media_quote_section(self):
         with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
             with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):

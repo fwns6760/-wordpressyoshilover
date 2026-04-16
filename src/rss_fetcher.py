@@ -90,6 +90,26 @@ MANAGER_REQUIRED_HEADINGS = (
     "【文脈と背景】",
     "【次の注目】",
 )
+GAME_BODY_TEMPLATE_VERSION = "game_v1"
+GAME_REQUIRED_HEADINGS = {
+    "lineup": (
+        "【試合概要】",
+        "【スタメン一覧】",
+        "【先発投手】",
+        "【注目ポイント】",
+    ),
+    "postgame": (
+        "【試合結果】",
+        "【ハイライト】",
+        "【選手成績】",
+        "【試合展開】",
+    ),
+    "pregame": (
+        "【変更情報の要旨】",
+        "【具体的な変更内容】",
+        "【この変更が意味すること】",
+    ),
+}
 CONFIRMED_RESULT_MARKERS = ("勝利した", "勝利を飾", "白星を挙げ", "敗れた", "敗戦", "黒星", "引き分け", "サヨナラ勝", "連勝", "連敗", "完封勝", "完封負")
 DEFINITE_RESULT_MARKERS = ("勝利しました", "勝利を飾りました", "白星を挙げました", "敗れました", "敗戦でした", "黒星を喫しました", "引き分けました")
 GENERIC_REACTION_TERMS = {
@@ -481,6 +501,8 @@ def get_gemini_attempt_limit(strict_mode: bool) -> int:
 
 def _get_gemini_strict_min_chars(category: str, title: str, summary: str) -> int:
     if category == "首脳陣":
+        return 160
+    if category == "試合速報" and _is_game_template_subtype(_detect_article_subtype(title, summary, category, True)):
         return 160
     if category == "選手情報" and _is_notice_like_status_story(title, summary):
         return 160
@@ -1721,6 +1743,197 @@ def _build_manager_strict_prompt(title: str, summary: str, source_fact_block: st
 """
 
 
+def _is_game_template_subtype(article_subtype: str) -> bool:
+    return article_subtype in GAME_REQUIRED_HEADINGS
+
+
+def _game_required_headings(article_subtype: str) -> tuple[str, ...]:
+    return GAME_REQUIRED_HEADINGS.get(article_subtype, ())
+
+
+def _extract_game_score_token(source_text: str) -> str:
+    match = _re.search(r"(\d{1,2})[－\-–](\d{1,2})", source_text or "")
+    return match.group(0) if match else ""
+
+
+def _extract_game_time_token(source_text: str) -> str:
+    match = _re.search(r"(\d{1,2}:\d{2})", source_text or "")
+    return match.group(1) if match else ""
+
+
+def _extract_game_venue_label(source_text: str) -> str:
+    text = source_text or ""
+    for marker in TITLE_VENUE_MARKERS:
+        if marker and marker in text:
+            return marker
+    match = _re.search(r"([一-龥ァ-ヴーA-Za-z0-9・]+球場)", text)
+    return match.group(1) if match else ""
+
+
+def _extract_game_opponent_label(source_text: str) -> str:
+    text = source_text or ""
+    positions = []
+    for marker in NPB_TEAM_MARKERS:
+        if marker in {"巨人", "読売ジャイアンツ"}:
+            continue
+        idx = text.find(marker)
+        if idx >= 0:
+            positions.append((idx, marker))
+    if not positions:
+        return ""
+    positions.sort(key=lambda item: item[0])
+    return positions[0][1]
+
+
+def _extract_game_source_names(title: str, summary: str, lineup_rows: list[dict] | None = None) -> list[str]:
+    source_text = f"{title} {summary}"
+    names = []
+    for match in _re.finditer(r"([一-龥々ァ-ヴー]{1,6}(?:[ 　][一-龥々ァ-ヴー]{1,6})?)(?:投手|捕手|内野手|外野手|選手|監督|コーチ)", source_text):
+        candidate = _re.sub(r"\s+", "", match.group(1))
+        if candidate and candidate not in names:
+            names.append(candidate)
+    for match in _re.finditer(r"#([一-龥々ァ-ヴー]{2,8})", source_text):
+        candidate = _re.sub(r"\s+", "", match.group(1))
+        if candidate and candidate not in names:
+            names.append(candidate)
+    for row in lineup_rows or []:
+        candidate = _re.sub(r"\s+", "", str(row.get("name") or ""))
+        if candidate and candidate not in names:
+            names.append(candidate)
+    return names
+
+
+def _extract_game_numeric_tokens(title: str, summary: str) -> list[str]:
+    source_text = f"{title} {summary}"
+    patterns = [
+        r"\d{1,2}[－\-–]\d{1,2}",
+        r"\d{1,2}:\d{2}",
+        r"\d{1,2}回",
+        r"\d{1,2}安打",
+        r"\d{1,2}打点",
+        r"\d{1,2}得点",
+        r"\d{1,2}失点",
+        r"\d{1,2}奪三振",
+        r"\d{1,2}勝\d{1,2}敗",
+        r"\d{1,2}勝",
+        r"\d{1,2}敗",
+        r"防御率\d+\.\d+",
+        r"\.\d{3}",
+        r"\d番",
+        r"\d月\d{1,2}日",
+        r"\d{4}年",
+        r"\d{1,2}本",
+        r"\d{1,2}盗塁",
+    ]
+    tokens = []
+    for pattern in patterns:
+        for match in _re.finditer(pattern, source_text):
+            token = match.group(0)
+            if token not in tokens:
+                tokens.append(token)
+    return tokens
+
+
+def _game_numeric_count(title: str, summary: str, article_text: str) -> int:
+    body = article_text or ""
+    return sum(1 for token in _extract_game_numeric_tokens(title, summary) if token and token in body)
+
+
+def _game_name_count(title: str, summary: str, article_text: str, lineup_rows: list[dict] | None = None) -> int:
+    body_norm = _re.sub(r"\s+", "", article_text or "")
+    return sum(1 for token in _extract_game_source_names(title, summary, lineup_rows=lineup_rows) if token and token in body_norm)
+
+
+def _game_section_count(text: str, article_subtype: str) -> int:
+    normalized = _normalize_article_text_structure(text or "", "試合速報", True, article_subtype=article_subtype)
+    return sum(1 for heading in _game_required_headings(article_subtype) if heading in normalized)
+
+
+def _game_body_has_required_structure(text: str, article_subtype: str, has_game: bool) -> bool:
+    normalized = _normalize_article_text_structure(text or "", "試合速報", has_game, article_subtype=article_subtype)
+    required = _game_required_headings(article_subtype)
+    if not required:
+        return False
+    return all(heading in normalized for heading in required)
+
+
+def _build_game_strict_prompt(
+    title: str,
+    summary: str,
+    article_subtype: str,
+    source_fact_block: str,
+    source_day_label: str = "",
+) -> str:
+    source_text = f"{title} {summary}"
+    opponent = _extract_game_opponent_label(source_text)
+    venue = _extract_game_venue_label(source_text)
+    start_time = _extract_game_time_token(source_text)
+    score = _extract_game_score_token(source_text)
+    headings = _game_required_headings(article_subtype)
+    opening_time_rule = f"・{source_day_label}時点の情報であることが伝わるように書く\n" if source_day_label else ""
+
+    if article_subtype == "lineup":
+        return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
+以下の元記事タイトルと要約に含まれる事実だけを使って本文を書いてください。新しい事実・数字・比較・感想を足さないでください。
+
+【使ってよい事実】
+{source_fact_block}
+
+【厳守ルール】
+・ですます調、400〜800文字
+・見出しは「{headings[0]}」「{headings[1]}」「{headings[2]}」「{headings[3]}」の4つをこの順番で使う
+・選手名、球場名、開始時刻、打順、成績数字は source にある表記をそのまま残す
+・【試合概要】では、{opponent + '戦' if opponent else '対戦カード'}、{venue or '球場'}、{start_time or '開始時刻'}など source にある試合情報を最初に整理する
+・【スタメン一覧】では、source にある打順と選手名をそのまま並べる。元記事にない打順や選手は足さない
+・【先発投手】では、元記事にある予告先発や先発投手名、成績の数字だけを整理する
+・【注目ポイント】では、試合が始まったら最初にどこを見るかを1〜2文で具体的に書く
+・抽象的な期待論や結果予想で膨らませない
+・元記事にない数字、選手名、打順、成績、一般論は足さない
+・最後は読者視点の締め1〜2文で終え、「みなさんの意見はコメントで教えてください！」を入れる
+・HTMLタグなし、本文だけを出力する
+{opening_time_rule}"""
+
+    if article_subtype == "postgame":
+        score_rule = f"source にあるスコア {score} を必ず残してください。" if score else "source にあるスコアがあれば必ず残してください。"
+        return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
+以下の元記事タイトルと要約に含まれる事実だけを使って本文を書いてください。新しい事実・数字・比較・感想を足さないでください。
+
+【使ってよい事実】
+{source_fact_block}
+
+【厳守ルール】
+・ですます調、400〜800文字
+・見出しは「{headings[0]}」「{headings[1]}」「{headings[2]}」「{headings[3]}」の4つをこの順番で使う
+・{score_rule}
+・【試合結果】では勝敗とスコアを先に整理する
+・【ハイライト】では決勝打、好投、守備など source にある決め手だけを書く
+・【選手成績】では source にある安打数、打点、投球回、防御率などの数字をそのまま残す
+・【試合展開】では、どこで流れが動いたかを source にある事実だけで整理する
+・選手名と数字をぼかさない。source にある固有名詞は省略しない
+・元記事にない数字、選手名、比較、一般論は足さない
+・最後は読者視点の締め1〜2文で終え、「みなさんの意見はコメントで教えてください！」を入れる
+・HTMLタグなし、本文だけを出力する
+{opening_time_rule}"""
+
+    return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
+以下の元記事タイトルと要約に含まれる事実だけを使って本文を書いてください。新しい事実・数字・比較・感想を足さないでください。
+
+【使ってよい事実】
+{source_fact_block}
+
+【厳守ルール】
+・ですます調、350〜650文字
+・見出しは「{headings[0]}」「{headings[1]}」「{headings[2]}」の3つをこの順番で使う
+・【変更情報の要旨】では、中止、スライド登板、先発変更などの要点を最初に整理する
+・【具体的な変更内容】では、日付、球場、開始時刻、先発投手、引用など source にある変更点を順に整理する
+・【この変更が意味すること】では、結果予想はせず、次にどこを見るかだけを1〜2文で書く
+・選手名、日付、球場、開始時刻、引用は source の表記をそのまま残す
+・元記事にない数字、選手名、比較、結果予想、一般論は足さない
+・最後は読者視点の締め1〜2文で終え、「みなさんの意見はコメントで教えてください！」を入れる
+・HTMLタグなし、本文だけを出力する
+{opening_time_rule}"""
+
+
 def _build_gemini_strict_prompt(
     title: str,
     summary: str,
@@ -1743,6 +1956,8 @@ def _build_gemini_strict_prompt(
         return _build_player_status_strict_prompt(title, summary, source_day_label=source_day_label)
     if category == "首脳陣":
         return _build_manager_strict_prompt(title, summary, source_fact_block, source_day_label=source_day_label)
+    if category == "試合速報" and _is_game_template_subtype(article_subtype):
+        return _build_game_strict_prompt(title, summary, article_subtype, source_fact_block, source_day_label=source_day_label)
     opening_focus = "最初の1文でニュースの核心を書く"
     if category == "首脳陣":
         opening_focus = f"最初の1文で{subject}の発言より先に、ベンチが何を動かそうとしているのかを書く"
@@ -2010,7 +2225,7 @@ def _apply_editor_voice(text: str, category: str, subject: str) -> str:
     return "\n".join(lines)
 
 
-def _normalize_article_heading(heading: str, category: str, has_game: bool) -> str:
+def _normalize_article_heading(heading: str, category: str, has_game: bool, article_subtype: str = "") -> str:
     clean = (heading or "").strip()
     if not clean:
         return clean
@@ -2029,6 +2244,39 @@ def _normalize_article_heading(heading: str, category: str, has_game: bool) -> s
         }
         if clean in manager_heading_aliases:
             return manager_heading_aliases[clean]
+
+    if category == "試合速報" and _is_game_template_subtype(article_subtype):
+        game_heading_aliases = {}
+        if article_subtype == "lineup":
+            game_heading_aliases = {
+                "【試合概要】": "【試合概要】",
+                "【試合前情報】": "【試合概要】",
+                "【スタメン一覧】": "【スタメン一覧】",
+                "【スタメン】": "【スタメン一覧】",
+                "【打順】": "【スタメン一覧】",
+                "【先発投手】": "【先発投手】",
+                "【予告先発】": "【先発投手】",
+                "【注目ポイント】": "【注目ポイント】",
+                "【見どころ】": "【注目ポイント】",
+            }
+        elif article_subtype == "postgame":
+            game_heading_aliases = {
+                "【試合結果】": "【試合結果】",
+                "【ハイライト】": "【ハイライト】",
+                "【選手成績】": "【選手成績】",
+                "【個人成績】": "【選手成績】",
+                "【試合展開】": "【試合展開】",
+                "【勝負の分岐点】": "【試合展開】",
+            }
+        elif article_subtype == "pregame":
+            game_heading_aliases = {
+                "【変更情報の要旨】": "【変更情報の要旨】",
+                "【具体的な変更内容】": "【具体的な変更内容】",
+                "【この変更が意味すること】": "【この変更が意味すること】",
+                "【見どころ】": "【この変更が意味すること】",
+            }
+        if clean in game_heading_aliases:
+            return game_heading_aliases[clean]
 
     first, second, third = _article_section_headings(category, has_game)
     first_aliases = {
@@ -2063,7 +2311,7 @@ def _normalize_article_heading(heading: str, category: str, has_game: bool) -> s
     return clean
 
 
-def _normalize_article_text_structure(text: str, category: str, has_game: bool) -> str:
+def _normalize_article_text_structure(text: str, category: str, has_game: bool, article_subtype: str = "") -> str:
     normalized_lines = []
     seen_headings = set()
     for raw_line in (text or "").split("\n"):
@@ -2071,7 +2319,7 @@ def _normalize_article_text_structure(text: str, category: str, has_game: bool) 
         if not line:
             continue
         if line.startswith("【") or line.startswith("■") or line.startswith("▶"):
-            normalized = _normalize_article_heading(line, category, has_game)
+            normalized = _normalize_article_heading(line, category, has_game, article_subtype=article_subtype)
             if normalized in seen_headings:
                 continue
             seen_headings.add(normalized)
@@ -2447,7 +2695,7 @@ def _extract_article_heading_lines(text: str) -> list[str]:
 
 
 def _manager_section_count(text: str) -> int:
-    normalized = _normalize_article_text_structure(text or "", "首脳陣", False)
+    normalized = _normalize_article_text_structure(text or "", "首脳陣", False, article_subtype="manager")
     headings = _extract_article_heading_lines(normalized)
     return len(_dedupe_preserve_order(headings))
 
@@ -2457,7 +2705,7 @@ def _manager_quote_count(title: str, summary: str) -> int:
 
 
 def _manager_body_has_required_structure(text: str, has_game: bool) -> bool:
-    normalized = _normalize_article_text_structure(text or "", "首脳陣", has_game)
+    normalized = _normalize_article_text_structure(text or "", "首脳陣", has_game, article_subtype="manager")
     headings = set(_extract_article_heading_lines(normalized))
     return all(heading in headings for heading in MANAGER_REQUIRED_HEADINGS)
 
@@ -2524,6 +2772,184 @@ def _build_manager_safe_fallback(title: str, summary: str, real_reactions: list[
     next_lines.append("みなさんの意見はコメントで教えてください！")
 
     return "\n".join(intro_lines + quote_lines + background_lines + next_lines)
+
+
+def _extract_game_pitcher_lines(title: str, summary: str) -> list[str]:
+    source_text = f"{title} {summary}"
+    lines = []
+    source_names = _extract_game_source_names(title, summary)
+    pitcher_names = [name for name in source_names if f"{name}投手" in source_text]
+    if "予告先発" in source_text and pitcher_names:
+        if len(pitcher_names) >= 2:
+            lines.append(f"予告先発は{pitcher_names[0]}と{pitcher_names[1]}です。")
+        else:
+            lines.append(f"予告先発は{pitcher_names[0]}です。")
+    elif pitcher_names:
+        lines.append(f"先発投手として見たいのは{pitcher_names[0]}です。")
+
+    for fact in _extract_summary_sentences(summary, max_sentences=4):
+        clean = fact.strip().rstrip("。")
+        if any(token in clean for token in ("防御率", "勝", "敗", "WHIP", "奪三振", "先発")):
+            lines.append(f"{clean}。")
+    return _dedupe_preserve_order(lines)[:3]
+
+
+def _build_lineup_safe_fallback(
+    title: str,
+    summary: str,
+    lineup_rows: list[dict] | None = None,
+    real_reactions: list[str] | None = None,
+) -> str:
+    facts = [fact.rstrip("。") for fact in _extract_summary_sentences(summary, max_sentences=5)]
+    if not facts:
+        facts = [_strip_title_prefix(title) or "元記事の内容を確認中です"]
+    source_text = f"{title} {summary}"
+    opponent = _extract_game_opponent_label(source_text)
+    venue = _extract_game_venue_label(source_text)
+    start_time = _extract_game_time_token(source_text)
+    headings = _game_required_headings("lineup")
+
+    intro_lines = [headings[0]]
+    if opponent:
+        overview_line = f"巨人は{opponent}戦に臨みます"
+    else:
+        overview_line = "巨人の試合前情報です"
+    if venue:
+        overview_line += f"。球場は{venue}です"
+    if start_time:
+        overview_line += f"。開始は{start_time}です"
+    intro_lines.append(overview_line if overview_line.endswith("。") else f"{overview_line}。")
+    intro_lines.append(f"{facts[0]}。")
+    if len(facts) > 1:
+        intro_lines.append(f"{facts[1]}。")
+    else:
+        intro_lines.append("スタメン発表の時点で、打順や守備位置のどこが動いたかが最初の論点です。")
+
+    lineup_lines = [headings[1]]
+    if lineup_rows:
+        for row in lineup_rows[:9]:
+            order = str(row.get("order") or "").strip()
+            name = str(row.get("name") or "").strip()
+            position = str(row.get("position") or "").strip()
+            if order and name:
+                lineup_lines.append(f"{order}番 {name} {position}".strip())
+    else:
+        listed = False
+        for fact in facts[1:]:
+            if any(marker in fact for marker in ("1番", "2番", "3番", "4番", "5番", "6番", "7番", "8番", "9番")):
+                lineup_lines.append(f"{fact}。")
+                listed = True
+        if not listed:
+            lineup_lines.append("元記事で確認できた打順と選手名を、そのまま追っておきたい並びです。")
+
+    starter_lines = [headings[2]]
+    starter_lines.extend(_extract_game_pitcher_lines(title, summary))
+    if len(starter_lines) == 1:
+        starter_lines.append("先発投手の情報は、元記事で確認できる範囲をそのまま押さえておきたいです。")
+
+    watch_lines = [headings[3]]
+    if real_reactions:
+        watch_lines.append("反応を見ると、初回の入り方と上位打線の流れを早めに見たい空気が強いです。")
+    else:
+        watch_lines.append("まず見たいのは、この並びが初回の攻め方にどう出るかという点です。")
+    watch_lines.append("スタメンの意味は試合が始まってからはっきりします。みなさんの意見はコメントで教えてください！")
+    return "\n".join(intro_lines + lineup_lines + starter_lines + watch_lines)
+
+
+def _build_postgame_safe_fallback(title: str, summary: str, real_reactions: list[str] | None = None) -> str:
+    facts = [fact.rstrip("。") for fact in _extract_summary_sentences(summary, max_sentences=5)]
+    if not facts:
+        facts = [_strip_title_prefix(title) or "元記事の内容を確認中です"]
+    source_text = f"{title} {summary}"
+    score = _extract_game_score_token(source_text)
+    opponent = _extract_game_opponent_label(source_text) or "相手"
+    headings = _game_required_headings("postgame")
+
+    result_lines = [headings[0]]
+    result_sentence = facts[0]
+    if score and score not in result_sentence:
+        result_sentence = f"{result_sentence}。スコアは{score}でした"
+    result_lines.append(f"{result_sentence}。")
+    result_lines.append(f"{opponent}戦の勝敗とスコアを最初に押さえると、試合全体の見え方が揃います。")
+
+    highlight_lines = [headings[1]]
+    highlight_source = facts[1] if len(facts) > 1 else _strip_title_prefix(title)
+    highlight_lines.append(f"{highlight_source.rstrip('。')}。")
+    highlight_lines.append("決勝打や好投など、勝敗を動かした場面を先に追うと試合の芯が見えやすくなります。")
+
+    stat_lines = [headings[2]]
+    stat_facts = []
+    for fact in facts[1:]:
+        if any(token in fact for token in _extract_game_source_names(title, summary)) or _re.search(r"\d", fact):
+            stat_facts.append(f"{fact.rstrip('。')}。")
+    stat_lines.extend(_dedupe_preserve_order(stat_facts)[:2])
+    if len(stat_lines) == 1:
+        stat_lines.append("元記事にある数字と選手名を、そのまま並べて押さえておきたい試合です。")
+
+    flow_lines = [headings[3]]
+    if len(facts) > 2:
+        flow_lines.append(f"{facts[2]}。")
+    elif len(facts) > 1:
+        flow_lines.append(f"{facts[1]}。")
+    elif score:
+        flow_lines.append(f"{score}で決まるまで、どこで流れが動いたかを見ておきたい試合でした。")
+    else:
+        flow_lines.append("どこで流れが傾いたかを追うと、この試合の見え方が整理しやすくなります。")
+    if real_reactions:
+        flow_lines.append("反応を見ると、勝敗だけでなく次戦へどの流れを持ち込めるかを見たい空気があります。")
+    flow_lines.append("次戦にどの流れを持ち込めるかまで見ていきたいです。みなさんの意見はコメントで教えてください！")
+    return "\n".join(result_lines + highlight_lines + stat_lines + flow_lines)
+
+
+def _build_pregame_safe_fallback(title: str, summary: str, real_reactions: list[str] | None = None) -> str:
+    facts = [fact.rstrip("。") for fact in _extract_summary_sentences(summary, max_sentences=5)]
+    if not facts:
+        facts = [_strip_title_prefix(title) or "元記事の内容を確認中です"]
+    source_text = f"{title} {summary}"
+    headings = _game_required_headings("pregame")
+    opponent = _extract_game_opponent_label(source_text)
+    venue = _extract_game_venue_label(source_text)
+    start_time = _extract_game_time_token(source_text)
+
+    lead_lines = [headings[0]]
+    lead_lines.append(f"{facts[0]}。")
+    if opponent or venue or start_time:
+        details = []
+        if opponent:
+            details.append(f"{opponent}戦")
+        if venue:
+            details.append(venue)
+        if start_time:
+            details.append(start_time)
+        lead_lines.append(" / ".join(details) + "の試合前情報として整理します。")
+
+    detail_lines = [headings[1]]
+    for fact in facts[1:3]:
+        detail_lines.append(f"{fact}。")
+    if len(detail_lines) == 1:
+        detail_lines.append("元記事にある日程や先発情報を、そのまま押さえておきたい変更です。")
+
+    impact_lines = [headings[2]]
+    if real_reactions:
+        impact_lines.append("反応を見ると、変更そのものよりも次の試合前の入り方をどう整えるかに視線が向いています。")
+    else:
+        impact_lines.append("結果予想より先に、この変更で次の試合前をどう迎えるかがポイントです。")
+    impact_lines.append("変更の意味は実際の入り方にどう出るかで見えてきます。みなさんの意見はコメントで教えてください！")
+    return "\n".join(lead_lines + detail_lines + impact_lines)
+
+
+def _build_game_safe_fallback(
+    title: str,
+    summary: str,
+    article_subtype: str,
+    lineup_rows: list[dict] | None = None,
+    real_reactions: list[str] | None = None,
+) -> str:
+    if article_subtype == "lineup":
+        return _build_lineup_safe_fallback(title, summary, lineup_rows=lineup_rows, real_reactions=real_reactions)
+    if article_subtype == "postgame":
+        return _build_postgame_safe_fallback(title, summary, real_reactions=real_reactions)
+    return _build_pregame_safe_fallback(title, summary, real_reactions=real_reactions)
 
 
 def _build_safe_article_fallback(
@@ -3624,6 +4050,8 @@ def generate_article_with_gemini(
     elif any(w in (title + summary_clean) for w in ["敗れ", "敗戦", "連敗", "黒星", "完封負"]):
         win_loss_hint = "※この試合は巨人が【敗戦】した試合です。負け試合として正直に書くこと。前向きに美化しない。"
 
+    article_subtype = _detect_article_subtype(title, summary_clean, category, has_game)
+
     if strict_mode:
         attempt_limit = get_gemini_attempt_limit(strict_mode=True)
         min_chars = _get_gemini_strict_min_chars(category, title, summary_clean)
@@ -3670,9 +4098,76 @@ def generate_article_with_gemini(
         logger.error("Gemini strict fact mode が上限回数に達したため記事生成スキップ")
         return ""
 
+    game_category_prompt = ""
+    if category == "試合速報" and _is_game_template_subtype(article_subtype):
+        headings = _game_required_headings(article_subtype)
+        if article_subtype == "lineup":
+            game_category_prompt = f"""あなたは読売ジャイアンツ専門ブログの編集者です。
+今日は{today_str}です。まずWeb検索で必要な事実を確認してから、試合前のスタメン記事を日本語で書いてください。
+
+{data_sources}
+
+タイトル: {title}
+ニュース要約: {summary_clean}
+
+{fan_section}
+
+【構成】
+・見出しは「{headings[0]}」「{headings[1]}」「{headings[2]}」「{headings[3]}」の4つをこの順番で使う
+・本文は400〜800文字
+・対戦カード、球場、開始時刻、打順、先発投手、成績数字は source か Web検索で確認できた表記をそのまま残す
+・【スタメン一覧】では打順と選手名を具体的に整理する
+・【先発投手】では両軍の予告先発と、確認できた成績数字だけを残す
+・【注目ポイント】では試合が始まったら最初にどこを見るかを書く
+・抽象的な期待論や結果予想で膨らませない
+・最後は「みなさんの意見はコメントで！」で締める
+・HTMLタグなし・本文のみ出力"""
+        elif article_subtype == "postgame":
+            game_category_prompt = f"""あなたは読売ジャイアンツ専門ブログの編集者です。
+今日は{today_str}です。まずWeb検索で必要な事実を確認してから、試合後の記事を日本語で書いてください。
+
+{win_loss_hint}
+{data_sources}
+
+タイトル: {title}
+ニュース要約: {summary_clean}
+
+{fan_section}
+
+【構成】
+・見出しは「{headings[0]}」「{headings[1]}」「{headings[2]}」「{headings[3]}」の4つをこの順番で使う
+・本文は400〜800文字
+・スコア、勝敗、選手名、安打数、打点、投球回、防御率などの数字は必ず残す
+・【ハイライト】では決勝打、好投、守備など source にある決め手を整理する
+・【選手成績】では数字つきの個人成績を具体的に整理する
+・【試合展開】ではどこで流れが動いたかを source にある事実だけで書く
+・抽象的な総論で埋めず、数字と固有名詞を残す
+・最後は「みなさんの意見はコメントで！」で締める
+・HTMLタグなし・本文のみ出力"""
+        else:
+            game_category_prompt = f"""あなたは読売ジャイアンツ専門ブログの編集者です。
+今日は{today_str}です。まずWeb検索で必要な事実を確認してから、試合前の変更情報記事を日本語で書いてください。
+
+{data_sources}
+
+タイトル: {title}
+ニュース要約: {summary_clean}
+
+{fan_section}
+
+【構成】
+・見出しは「{headings[0]}」「{headings[1]}」「{headings[2]}」の3つをこの順番で使う
+・本文は350〜650文字
+・中止、スライド登板、先発変更、球場、開始時刻、日付、選手名は必ず残す
+・【具体的な変更内容】では新日程、新先発、引用など source にある事実を順に整理する
+・【この変更が意味すること】では結果予想はせず、次にどこを見るかだけを書く
+・抽象的な期待論や一般論で膨らませない
+・最後は「みなさんの意見はコメントで！」で締める
+・HTMLタグなし・本文のみ出力"""
+
     # カテゴリ別プロンプト
     category_prompts = {
-        "試合速報": f"""あなたは読売ジャイアンツの現実的なファンブロガー兼データアナリストです。
+        "試合速報": game_category_prompt or f"""あなたは読売ジャイアンツの現実的なファンブロガー兼データアナリストです。
 今日は{today_str}です。まずWeb検索でデータを調べてから、データ豊富な試合分析記事を日本語で書いてください。
 
 {win_loss_hint}
@@ -4144,12 +4639,28 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             subject,
         )
     if generation_category == "首脳陣" and article_subtype == "manager":
-        normalized_manager_body = _normalize_article_text_structure(ai_body, generation_category, has_game)
+        normalized_manager_body = _normalize_article_text_structure(ai_body, generation_category, has_game, article_subtype=article_subtype)
         if _manager_body_has_required_structure(normalized_manager_body, has_game):
             ai_body = normalized_manager_body
         else:
             ai_body = _apply_editor_voice(
                 _build_manager_safe_fallback(title, summary_clean, real_reactions=real_reactions),
+                generation_category,
+                subject,
+            )
+    if generation_category == "試合速報" and _is_game_template_subtype(article_subtype):
+        normalized_game_body = _normalize_article_text_structure(ai_body, generation_category, has_game, article_subtype=article_subtype)
+        if _game_body_has_required_structure(normalized_game_body, article_subtype, has_game):
+            ai_body = normalized_game_body
+        else:
+            ai_body = _apply_editor_voice(
+                _build_game_safe_fallback(
+                    title,
+                    summary_clean,
+                    article_subtype,
+                    lineup_rows=lineup_stat_rows if article_subtype == "lineup" else None,
+                    real_reactions=real_reactions,
+                ),
                 generation_category,
                 subject,
             )
@@ -4609,7 +5120,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             ai_body = '\n'.join(ai_body.strip().split('\n')[1:]).strip()
         ai_body = _re3.sub(r'.*ファンの声.*\n?', '', ai_body)
         ai_body = _re3.sub(r'.*Xより.*\n?', '', ai_body)
-        ai_body = _normalize_article_text_structure(ai_body, category, has_game)
+        ai_body = _normalize_article_text_structure(ai_body, category, has_game, article_subtype=article_subtype)
 
         para_count = 0
         seen_headings = set()
@@ -4628,7 +5139,11 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             if not current_heading and not current_paragraphs:
                 return
             if current_heading:
-                heading_level = 2 if (category == "首脳陣" and article_subtype == "manager" and current_heading == "【発言の要旨】") else 3
+                heading_level = 3
+                if category == "首脳陣" and article_subtype == "manager" and current_heading == "【発言の要旨】":
+                    heading_level = 2
+                if category == "試合速報" and _is_game_template_subtype(article_subtype) and current_heading == _game_required_headings(article_subtype)[0]:
+                    heading_level = 2
                 blocks += (
                     f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
                     f'<h{heading_level}>{current_heading}</h{heading_level}>\n'
@@ -4637,7 +5152,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             for paragraph in current_paragraphs:
                 blocks += _render_paragraph_with_media(paragraph)
             if (
-                current_heading == "【ニュースの整理】"
+                current_heading == ("【試合概要】" if article_subtype == "lineup" else "【ニュースの整理】")
                 and category == "試合速報"
                 and article_subtype == "lineup"
                 and lineup_stat_rows
@@ -4654,15 +5169,23 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 blocks += _livegame_result_block()
                 blocks += _livegame_watch_block()
             if (
-                current_heading == "【ニュースの整理】"
+                current_heading == "【試合結果】"
                 and category == "試合速報"
                 and article_subtype == "postgame"
             ):
                 blocks += _postgame_result_block()
                 blocks += _postgame_watch_block()
+            game_slot_map = {}
+            if article_subtype == "lineup":
+                game_slot_map = {"【試合概要】": "news", "【注目ポイント】": "next"}
+            elif article_subtype == "postgame":
+                game_slot_map = {"【試合結果】": "news", "【試合展開】": "next"}
+            elif article_subtype == "pregame":
+                game_slot_map = {"【変更情報の要旨】": "news", "【この変更が意味すること】": "next"}
             section_slot = {
                 "【ニュースの整理】": "news",
                 "【次の注目】": "next",
+                **game_slot_map,
             }.get(current_heading)
             if section_slot:
                 blocks += _comment_button(section_slot)
@@ -4671,7 +5194,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
 
         for p in [p.strip() for p in ai_body.split("\n") if p.strip()]:
             if p.startswith("【") or p.startswith("■") or p.startswith("▶"):
-                heading_text = _normalize_article_heading(p, category, has_game)
+                heading_text = _normalize_article_heading(p, category, has_game, article_subtype=article_subtype)
                 if heading_text in seen_headings:
                     continue
                 _flush_section()
@@ -5774,6 +6297,29 @@ def _log_manager_body_template_applied(
     logger.info(json.dumps(payload, ensure_ascii=False))
 
 
+def _log_game_body_template_applied(
+    logger: logging.Logger,
+    post_id: int,
+    title: str,
+    article_subtype: str,
+    section_count: int,
+    numeric_count: int,
+    name_count: int,
+    template_version: str = GAME_BODY_TEMPLATE_VERSION,
+) -> None:
+    payload = {
+        "event": "game_body_template_applied",
+        "post_id": post_id,
+        "title": title,
+        "subtype": article_subtype,
+        "section_count": section_count,
+        "numeric_count": numeric_count,
+        "name_count": name_count,
+        "template_version": template_version,
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
 def _counter_to_plain_dict(counter: Counter) -> dict[str, int]:
     return {key: counter[key] for key in sorted(counter) if counter[key]}
 
@@ -6181,6 +6727,16 @@ def _main(args, logger):
                     draft_title,
                     _manager_quote_count(raw_title, summary),
                     _manager_section_count(ai_body),
+                )
+            if category == "試合速報" and _is_game_template_subtype(title_article_subtype):
+                _log_game_body_template_applied(
+                    logger,
+                    post_id,
+                    draft_title,
+                    title_article_subtype,
+                    _game_section_count(ai_body, title_article_subtype),
+                    _game_numeric_count(raw_title, summary, ai_body),
+                    _game_name_count(raw_title, summary, ai_body),
                 )
             time.sleep(1)
 

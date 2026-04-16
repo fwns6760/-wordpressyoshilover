@@ -66,11 +66,11 @@ class BuildNewsBlockTests(unittest.TestCase):
                         has_game=True,
                     )
 
-        self.assertIn("【次の注目】", ai_body)
+        self.assertIn("【この変更が意味すること】", ai_body)
         self.assertIn("反応を見ると", ai_body)
-        self.assertIn("登板前ならではの緊張感", ai_body)
-        self.assertIn("試合前の記事だからこそ", ai_body)
-        self.assertGreater(len(ai_body), 320)
+        self.assertIn("次の試合前の入り方をどう整えるか", ai_body)
+        self.assertIn("阪神戦 / 甲子園の試合前情報として整理します。", ai_body)
+        self.assertGreater(len(ai_body), 200)
 
     def test_social_quote_player_fallback_stays_on_quote_and_makes_source_clear(self):
         title = "【巨人】田中将大「打線を線にしない」甲子園の“申し子”が移籍後初の阪神戦で好投誓う"
@@ -114,9 +114,12 @@ class BuildNewsBlockTests(unittest.TestCase):
                         has_game=True,
                     )
 
-        self.assertIn("まずは今日のスタメンでどこが動いたかを整理します。", ai_body)
-        self.assertIn("今日のスタメン記事で大事なのは、誰が入ったかだけでなく、打順や守備位置のどこが動いたかです。", ai_body)
-        self.assertIn("試合前にまず見たいのは、この並びが初回からどう機能するか", ai_body)
+        self.assertIn("【試合概要】", ai_body)
+        self.assertIn("【スタメン一覧】", ai_body)
+        self.assertIn("【先発投手】", ai_body)
+        self.assertIn("【注目ポイント】", ai_body)
+        self.assertIn("巨人は阪神戦に臨みます。", ai_body)
+        self.assertIn("まず見たいのは、この並びが初回の攻め方にどう出るかという点です。", ai_body)
 
     def test_farm_lineup_article_fallback_uses_separate_structure(self):
         title = "【二軍】巨人対DeNA 4番ショートでスタメン"
@@ -203,12 +206,16 @@ class BuildNewsBlockTests(unittest.TestCase):
                     summary=summary,
                     url="https://example.com/post",
                     source_name="報知 巨人",
-                    category="試合速報",
-                    has_game=True,
-                )
+                        category="試合速報",
+                        has_game=True,
+                    )
 
-        self.assertIn("結果だけを並べるより、どこで流れが動いたかを見ておきたい試合です。", ai_body)
-        self.assertIn("次に見たいのは、この試合で出た手応えや課題が次戦にも続くのかという点です。", ai_body)
+        self.assertIn("【試合結果】", ai_body)
+        self.assertIn("【ハイライト】", ai_body)
+        self.assertIn("【選手成績】", ai_body)
+        self.assertIn("【試合展開】", ai_body)
+        self.assertIn("巨人が阪神に3-2で勝利した。", ai_body)
+        self.assertIn("次戦にどの流れを持ち込めるかまで見ていきたいです。", ai_body)
 
     def test_roster_article_fallback_focuses_on_fit_and_competition(self):
         title = "【巨人】新外国人右腕を獲得へ"
@@ -275,7 +282,7 @@ class BuildNewsBlockTests(unittest.TestCase):
                     has_game=True,
                 )
 
-        self.assertLess(blocks.index("【ニュースの整理】"), blocks.index("💬 ファンの声（Xより）"))
+        self.assertLess(blocks.index("【変更情報の要旨】"), blocks.index("💬 ファンの声（Xより）"))
 
     def test_comment_cta_is_always_rendered_three_times_without_stats(self):
         with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
@@ -365,8 +372,8 @@ class BuildNewsBlockTests(unittest.TestCase):
                     has_game=True,
                 )
 
-        self.assertLess(blocks.index("【ニュースの整理】"), blocks.index("このニュース、どう見る？"))
-        self.assertLess(blocks.index("【次の注目】"), blocks.index("先に予想を書く？"))
+        self.assertLess(blocks.index("【変更情報の要旨】"), blocks.index("このニュース、どう見る？"))
+        self.assertLess(blocks.index("【この変更が意味すること】"), blocks.index("先に予想を書く？"))
         self.assertLess(blocks.index("💬 ファンの声（Xより）"), blocks.index("みんなの本音は？"))
 
     def test_editor_voice_rewrites_generic_phrases(self):
@@ -392,9 +399,11 @@ class BuildNewsBlockTests(unittest.TestCase):
                     has_game=True,
                 )
 
-        self.assertIn("巨人ファンが試合前から気にしていた論点", ai_body)
-        self.assertIn("G党の視線が集まっていました", ai_body)
-        self.assertIn("見え方が少し変わる一戦でした", ai_body)
+        self.assertIn("【変更情報の要旨】", ai_body)
+        self.assertIn("【具体的な変更内容】", ai_body)
+        self.assertIn("【この変更が意味すること】", ai_body)
+        self.assertIn("元記事にある日程や先発情報を、そのまま押さえておきたい変更です。", ai_body)
+        self.assertIn("結果予想より先に、この変更で次の試合前をどう迎えるかがポイントです。", ai_body)
 
     def test_editor_voice_softens_generic_player_language(self):
         raw = (
@@ -669,7 +678,7 @@ class BuildNewsBlockTests(unittest.TestCase):
                         has_game=True,
                     )
 
-        self.assertLess(blocks.index("【ニュースの整理】"), blocks.index("📊 今日のスタメンデータ"))
+        self.assertLess(blocks.index("【試合概要】"), blocks.index("📊 今日のスタメンデータ"))
         self.assertLess(blocks.index("📊 今日のスタメンデータ"), blocks.index("👀 スタメンの見どころ"))
         self.assertLess(blocks.index("👀 スタメンの見どころ"), blocks.index("このニュース、どう見る？"))
         self.assertIn("<li>1番丸 佳浩から4番岡田 悠希までの流れ。</li>", blocks)
@@ -699,7 +708,7 @@ class BuildNewsBlockTests(unittest.TestCase):
                     has_game=True,
                 )
 
-        self.assertLess(blocks.index("【ニュースの整理】"), blocks.index("📊 今日の試合結果"))
+        self.assertLess(blocks.index("【試合結果】"), blocks.index("📊 今日の試合結果"))
         self.assertLess(blocks.index("📊 今日の試合結果"), blocks.index("👀 勝負の分岐点"))
         self.assertLess(blocks.index("👀 勝負の分岐点"), blocks.index("この試合、どう見る？"))
         self.assertIn("巨人勝利", blocks)

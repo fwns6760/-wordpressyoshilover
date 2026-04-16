@@ -102,6 +102,58 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("引用が2つ以上ある場合は、【発言内容】で2つまで並べて整理してください。", prompt)
         self.assertIn("元記事にない数字、過去比較、一般論、精神論、推測は足さない", prompt)
 
+    def test_lineup_prompt_uses_game_specific_structure(self):
+        prompt = rss_fetcher._build_gemini_strict_prompt(
+            title="【巨人】今日のスタメン発表　1番丸、4番岡田",
+            summary="巨人が阪神戦のスタメンを発表した。1番に丸佳浩、4番に岡田悠希が入った。予告先発は田中将大投手。18:00開始予定。",
+            category="試合速報",
+            source_fact_block="・巨人が阪神戦のスタメンを発表\n・1番に丸佳浩、4番に岡田悠希\n・予告先発は田中将大投手\n・18:00開始予定",
+            win_loss_hint="",
+            has_game=True,
+            real_reactions=[],
+        )
+
+        self.assertIn("【試合概要】", prompt)
+        self.assertIn("【スタメン一覧】", prompt)
+        self.assertIn("【先発投手】", prompt)
+        self.assertIn("【注目ポイント】", prompt)
+        self.assertIn("選手名、球場名、開始時刻、打順、成績数字は source にある表記をそのまま残す", prompt)
+
+    def test_postgame_prompt_uses_game_specific_structure(self):
+        prompt = rss_fetcher._build_gemini_strict_prompt(
+            title="【巨人】阪神に3-2で勝利　岡田が決勝打",
+            summary="巨人が阪神に3-2で勝利した。終盤に岡田悠希の決勝打が飛び出した。田中将大投手は7回2失点だった。",
+            category="試合速報",
+            source_fact_block="・巨人が阪神に3-2で勝利\n・岡田悠希の決勝打\n・田中将大投手は7回2失点",
+            win_loss_hint="",
+            has_game=True,
+            real_reactions=[],
+        )
+
+        self.assertIn("【試合結果】", prompt)
+        self.assertIn("【ハイライト】", prompt)
+        self.assertIn("【選手成績】", prompt)
+        self.assertIn("【試合展開】", prompt)
+        self.assertIn("source にあるスコア 3-2 を必ず残してください。", prompt)
+
+    def test_pregame_prompt_uses_game_specific_structure(self):
+        prompt = rss_fetcher._build_gemini_strict_prompt(
+            title="【巨人】雨天中止で先発予定だった田中将大は16日にスライド登板",
+            summary="巨人田中将大投手が雨天中止にともなってスライド登板することになった。16日の同戦にスライドすることになった。",
+            category="試合速報",
+            source_fact_block="・雨天中止にともなってスライド登板\n・16日の同戦にスライド",
+            win_loss_hint="",
+            has_game=True,
+            real_reactions=[],
+            source_day_label="4月16日",
+        )
+
+        self.assertIn("【変更情報の要旨】", prompt)
+        self.assertIn("【具体的な変更内容】", prompt)
+        self.assertIn("【この変更が意味すること】", prompt)
+        self.assertIn("ですます調、350〜650文字", prompt)
+        self.assertIn("4月16日時点の情報であることが伝わるように書く", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

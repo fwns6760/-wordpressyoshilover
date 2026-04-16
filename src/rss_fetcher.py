@@ -160,6 +160,21 @@ PLAYER_STATUS_MARKERS = (
     "実戦復帰",
     "出場見込み",
 )
+PLAYER_NOTICE_ROUTE_MARKERS = (
+    "復帰",
+    "合流",
+    "初合流",
+    "初１軍",
+    "初一軍",
+    "一軍登録",
+    "出場選手登録を抹消",
+    "登録抹消",
+    "抹消",
+    "戦力外",
+    "昇格",
+    "実戦復帰",
+    "再出発",
+)
 PLAYER_QUOTE_CONTEXT_MARKERS = (
     "甲子園",
     "東京ドーム",
@@ -397,6 +412,38 @@ def should_use_ai_for_category(category: str) -> bool:
     return category in enabled
 
 
+def _is_notice_like_status_story(title: str, summary: str) -> bool:
+    source_text = _strip_html(f"{title} {summary}")
+    return any(marker in source_text for marker in PLAYER_NOTICE_ROUTE_MARKERS)
+
+
+def _resolve_article_generation_category(category: str, title: str, summary: str) -> str:
+    if category in {"コラム", "ドラフト・育成"} and _is_notice_like_status_story(title, summary):
+        return "選手情報"
+    return category
+
+
+def _resolve_article_ai_strategy(
+    category: str,
+    title: str,
+    summary: str,
+    has_game: bool,
+    article_subtype: str | None = None,
+) -> tuple[bool, str, str]:
+    effective_category = _resolve_article_generation_category(category, title, summary)
+    if effective_category != category and should_use_ai_for_category(effective_category):
+        return True, effective_category, "player_notice_route"
+
+    if should_use_ai_for_category(category):
+        return True, category, "category_enabled"
+
+    subtype = article_subtype or _detect_article_subtype(title, summary, category, has_game)
+    if category == "ドラフト・育成" and subtype in {"farm", "farm_lineup"}:
+        return True, category, "farm_article_route"
+
+    return False, effective_category, ""
+
+
 def get_article_ai_mode(has_game: bool, override: str | None = None) -> str:
     env_name = "ARTICLE_AI_MODE" if has_game else "OFFDAY_ARTICLE_AI_MODE"
     default_mode = "gemini" if has_game else "gemini" if low_cost_mode_enabled() else "auto"
@@ -422,6 +469,14 @@ def get_gemini_attempt_limit(strict_mode: bool) -> int:
         env_name = "GEMINI_GROUNDED_MAX_ATTEMPTS"
         upper = 2
     return max(1, min(_env_int(env_name, default_limit), upper))
+
+
+def _get_gemini_strict_min_chars(category: str, title: str, summary: str) -> int:
+    if category == "選手情報" and _is_notice_like_status_story(title, summary):
+        return 160
+    if category == "選手情報" and _detect_player_article_mode(title, summary, category) == "player_status":
+        return 160
+    return 220
 
 
 def get_fan_reaction_max_age_hours() -> int:
@@ -3372,6 +3427,7 @@ def generate_article_with_gemini(
 
     if strict_mode:
         attempt_limit = get_gemini_attempt_limit(strict_mode=True)
+        min_chars = _get_gemini_strict_min_chars(category, title, summary_clean)
         prompt = _build_gemini_strict_prompt(
             title,
             summary_clean,
@@ -3400,12 +3456,13 @@ def generate_article_with_gemini(
                     data = json.load(res)
                 parts = data["candidates"][0]["content"].get("parts", [])
                 raw_text = "".join(p.get("text", "") for p in parts if "text" in p).strip()
-                if raw_text and len(raw_text) > 220:
+                if raw_text and len(raw_text) >= min_chars:
                     logger.info(f"Gemini strict fact mode 生成成功 {len(raw_text)}文字")
                     return raw_text
                 logger.warning(
-                    "Gemini strict fact mode 応答が短すぎる（%d文字）、試行 %d/%d",
+                    "Gemini strict fact mode 応答が短すぎる（%d文字, 必要%d文字）、試行 %d/%d",
                     len(raw_text),
+                    min_chars,
                     attempt + 1,
                     attempt_limit,
                 )
@@ -3788,8 +3845,31 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     import re
     summary_clean = re.sub(r"<[^>]+>", "", summary).strip()
     article_subtype = _detect_article_subtype(title, summary_clean, category, has_game)
-    article_ai_mode = get_article_ai_mode(has_game, article_ai_mode_override) if should_use_ai_for_category(category) else "none"
+    use_ai_for_article, generation_category, ai_route_reason = _resolve_article_ai_strategy(
+        category,
+        title,
+        summary_clean,
+        has_game,
+        article_subtype=article_subtype,
+    )
+    article_ai_mode = get_article_ai_mode(has_game, article_ai_mode_override) if use_ai_for_article else "none"
     fan_reaction_limit = get_fan_reaction_limit()
+    logger = logging.getLogger("rss_fetcher")
+    if ai_route_reason and ai_route_reason != "category_enabled":
+        logger.info(
+            json.dumps(
+                {
+                    "event": "article_ai_route_override",
+                    "source_url": url,
+                    "original_category": category,
+                    "generation_category": generation_category,
+                    "article_subtype": article_subtype,
+                    "reason": ai_route_reason,
+                    "title": title,
+                },
+                ensure_ascii=False,
+            )
+        )
     lineup_stat_rows = []
     if category == "試合速報" and article_subtype == "lineup":
         try:
@@ -3815,24 +3895,24 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             win_loss_hint = "※この試合は巨人が【敗戦】した試合です。負け試合として正直に書くこと。前向きに美化しない。"
 
     if article_ai_mode == "none":
-        real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, category, source_name=source_name)
+        real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, generation_category, source_name=source_name)
         ai_body = ""
         real_reactions = real_reactions_yahoo
         summary_block = ""
         stats_block = ""
         impression_block = ""
     elif article_ai_mode == "gemini":
-        real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, category, source_name=source_name)
-        ai_body = generate_article_with_gemini(title, summary_clean, category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label)
+        real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, generation_category, source_name=source_name)
+        ai_body = generate_article_with_gemini(title, summary_clean, generation_category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label)
         real_reactions = real_reactions_yahoo
         summary_block = ""
         stats_block = ""
         impression_block = ""
     elif article_ai_mode == "grok":
-        ai_body, real_reactions, summary_block, stats_block, impression_block = generate_article_with_grok(title, summary_clean, category, win_loss_hint)
+        ai_body, real_reactions, summary_block, stats_block, impression_block = generate_article_with_grok(title, summary_clean, generation_category, win_loss_hint)
         if not ai_body:
-            real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, category, source_name=source_name)
-            ai_body = generate_article_with_gemini(title, summary_clean, category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label)
+            real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, generation_category, source_name=source_name)
+            ai_body = generate_article_with_gemini(title, summary_clean, generation_category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label)
             real_reactions = real_reactions_yahoo
             summary_block = ""
             stats_block = ""
@@ -3840,34 +3920,33 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     else:
         # 試合あり → Grok（X検索でファンの声取得）、試合なし → Gemini直行（コスト削減）
         if has_game:
-            ai_body, real_reactions, summary_block, stats_block, impression_block = generate_article_with_grok(title, summary_clean, category, win_loss_hint)
+            ai_body, real_reactions, summary_block, stats_block, impression_block = generate_article_with_grok(title, summary_clean, generation_category, win_loss_hint)
             if not ai_body:
-                real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, category, source_name=source_name)
-                ai_body = generate_article_with_gemini(title, summary_clean, category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label)
+                real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, generation_category, source_name=source_name)
+                ai_body = generate_article_with_gemini(title, summary_clean, generation_category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label)
                 real_reactions = real_reactions_yahoo
                 summary_block = ""
                 stats_block = ""
                 impression_block = ""
         else:
-            real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, category, source_name=source_name)
-            ai_body = generate_article_with_gemini(title, summary_clean, category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label)
+            real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, generation_category, source_name=source_name)
+            ai_body = generate_article_with_gemini(title, summary_clean, generation_category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label)
             real_reactions = real_reactions_yahoo
             summary_block = ""
             stats_block = ""
             impression_block = ""
 
-    logger = logging.getLogger("rss_fetcher")
-    ai_body = _apply_article_guardrails(title, summary_clean, category, ai_body, has_game, logger)
+    ai_body = _apply_article_guardrails(title, summary_clean, generation_category, ai_body, has_game, logger)
     if not ai_body:
         logger.warning("記事本文が空のため、安全フォールバック本文を使用")
-        ai_body = _build_safe_article_fallback(title, summary_clean, category, has_game, real_reactions=real_reactions)
-    subject = _extract_subject_label(title, summary_clean, category)
-    ai_body = _apply_editor_voice(ai_body, category, subject)
-    if _article_reads_too_generic(ai_body, category):
+        ai_body = _build_safe_article_fallback(title, summary_clean, generation_category, has_game, real_reactions=real_reactions)
+    subject = _extract_subject_label(title, summary_clean, generation_category)
+    ai_body = _apply_editor_voice(ai_body, generation_category, subject)
+    if _article_reads_too_generic(ai_body, generation_category):
         logger.info("記事本文が汎用表現に寄りすぎたため、安全版へ差し替え")
         ai_body = _apply_editor_voice(
-            _build_safe_article_fallback(title, summary_clean, category, has_game, real_reactions=real_reactions),
-            category,
+            _build_safe_article_fallback(title, summary_clean, generation_category, has_game, real_reactions=real_reactions),
+            generation_category,
             subject,
         )
     if summary_block and not _text_is_safe(title, summary_clean, summary_block, has_game):

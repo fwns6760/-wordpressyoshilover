@@ -13,6 +13,50 @@ class CostModeTests(unittest.TestCase):
             self.assertTrue(rss_fetcher.should_use_ai_for_category("首脳陣"))
             self.assertFalse(rss_fetcher.should_use_ai_for_category("コラム"))
 
+    def test_notice_like_column_routes_to_player_ai_category(self):
+        with patch.dict("os.environ", {"LOW_COST_MODE": "1", "AI_ENABLED_CATEGORIES": "試合速報,選手情報,首脳陣"}, clear=False):
+            use_ai, effective_category, reason = rss_fetcher._resolve_article_ai_strategy(
+                "コラム",
+                "【巨人】皆川岳飛が初１軍合流「やってやろうという気持ち」",
+                "皆川岳飛が初１軍合流となり、試合前に抱負を語った。",
+                has_game=False,
+                article_subtype="general",
+            )
+            self.assertTrue(use_ai)
+            self.assertEqual(effective_category, "選手情報")
+            self.assertEqual(reason, "player_notice_route")
+
+    def test_farm_articles_can_use_ai_even_when_category_is_not_enabled(self):
+        with patch.dict("os.environ", {"LOW_COST_MODE": "1", "AI_ENABLED_CATEGORIES": "試合速報,選手情報,首脳陣"}, clear=False):
+            use_ai, effective_category, reason = rss_fetcher._resolve_article_ai_strategy(
+                "ドラフト・育成",
+                "【二軍】巨人 3-1 ハヤテ（5回降雨コールド）",
+                "巨人が3-1で勝利し、若手が本塁打を放った。",
+                has_game=False,
+                article_subtype="farm",
+            )
+            self.assertTrue(use_ai)
+            self.assertEqual(effective_category, "ドラフト・育成")
+            self.assertEqual(reason, "farm_article_route")
+
+    def test_player_status_accepts_shorter_strict_output(self):
+        self.assertEqual(
+            rss_fetcher._get_gemini_strict_min_chars(
+                "選手情報",
+                "【巨人】中山礼都が登録抹消",
+                "中山礼都が出場選手登録を抹消された。",
+            ),
+            160,
+        )
+        self.assertEqual(
+            rss_fetcher._get_gemini_strict_min_chars(
+                "選手情報",
+                "【巨人】田中将大「打線を線にしない」",
+                "田中将大が阪神戦前にコメントした。",
+            ),
+            220,
+        )
+
     def test_article_categories_can_be_overridden(self):
         with patch.dict("os.environ", {"LOW_COST_MODE": "1", "AI_ENABLED_CATEGORIES": "試合速報,補強・移籍"}, clear=False):
             self.assertTrue(rss_fetcher.should_use_ai_for_category("補強・移籍"))

@@ -536,6 +536,66 @@ class BuildNewsBlockTests(unittest.TestCase):
         gemini_mock.assert_called_once()
         self.assertIn("佐々木俊輔外野手", ai_body)
 
+    def test_notice_like_column_routes_to_player_status_prompt(self):
+        title = "【巨人】皆川岳飛が初１軍合流「やってやろうという気持ち」"
+        summary = "皆川岳飛が初１軍合流となり、試合前に抱負を語った。"
+        gemini_body = (
+            "【ニュースの整理】\n"
+            "皆川岳飛が初１軍合流となった。\n"
+            "【次の注目】\n"
+            "次の出場機会でどこを見たいかに注目です。"
+        )
+
+        with patch.dict(
+            "os.environ",
+            {"LOW_COST_MODE": "1", "AI_ENABLED_CATEGORIES": "試合速報,選手情報,首脳陣", "ARTICLE_AI_MODE": "gemini", "OFFDAY_ARTICLE_AI_MODE": "gemini"},
+            clear=False,
+        ):
+            with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+                with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=gemini_body) as gemini_mock:
+                    _, ai_body = rss_fetcher.build_news_block(
+                        title=title,
+                        summary=summary,
+                        url="https://example.com/minagawa",
+                        source_name="スポーツ報知巨人班X",
+                        category="コラム",
+                        has_game=False,
+                    )
+
+        gemini_mock.assert_called_once()
+        self.assertEqual(gemini_mock.call_args.args[2], "選手情報")
+        self.assertIn("皆川岳飛が初１軍合流となった。", ai_body)
+
+    def test_farm_articles_route_to_gemini_even_in_low_cost_subset(self):
+        title = "【二軍】巨人 3-1 ハヤテ（5回降雨コールド）"
+        summary = "巨人が3-1で勝利し、若手が本塁打を放った。"
+        gemini_body = (
+            "【ニュースの整理】\n"
+            "巨人二軍が3-1で勝利した。\n"
+            "【次の注目】\n"
+            "若手の打席内容を次も見たいところです。"
+        )
+
+        with patch.dict(
+            "os.environ",
+            {"LOW_COST_MODE": "1", "AI_ENABLED_CATEGORIES": "試合速報,選手情報,首脳陣", "ARTICLE_AI_MODE": "gemini", "OFFDAY_ARTICLE_AI_MODE": "gemini"},
+            clear=False,
+        ):
+            with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+                with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=gemini_body) as gemini_mock:
+                    _, ai_body = rss_fetcher.build_news_block(
+                        title=title,
+                        summary=summary,
+                        url="https://example.com/farm",
+                        source_name="巨人公式X",
+                        category="ドラフト・育成",
+                        has_game=False,
+                    )
+
+        gemini_mock.assert_called_once()
+        self.assertEqual(gemini_mock.call_args.args[2], "ドラフト・育成")
+        self.assertIn("巨人二軍が3-1で勝利した。", ai_body)
+
     def test_source_links_render_multiple_references(self):
         with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
             with patch.object(rss_fetcher, "fetch_today_giants_lineup_stats_from_yahoo", return_value=[]):

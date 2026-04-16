@@ -549,7 +549,7 @@ class BuildNewsBlockTests(unittest.TestCase):
         gemini_mock.assert_called_once()
         self.assertIn("佐々木俊輔外野手", ai_body)
 
-    def test_notice_like_column_routes_to_player_status_prompt(self):
+    def test_notice_like_column_routes_to_notice_template(self):
         title = "【巨人】皆川岳飛が初１軍合流「やってやろうという気持ち」"
         summary = "皆川岳飛が初１軍合流となり、試合前に抱負を語った。"
         gemini_body = (
@@ -577,7 +577,11 @@ class BuildNewsBlockTests(unittest.TestCase):
 
         gemini_mock.assert_called_once()
         self.assertEqual(gemini_mock.call_args.args[2], "選手情報")
-        self.assertIn("皆川岳飛が初１軍合流となった。", ai_body)
+        self.assertIn("【公示の要旨】", ai_body)
+        self.assertIn("【対象選手の基本情報】", ai_body)
+        self.assertIn("【公示の背景】", ai_body)
+        self.assertIn("【今後の注目点】", ai_body)
+        self.assertIn("皆川岳飛が初１軍合流となり、試合前に抱負を語った。", ai_body)
 
     def test_farm_articles_route_to_gemini_even_in_low_cost_subset(self):
         title = "【二軍】巨人 3-1 ハヤテ（5回降雨コールド）"

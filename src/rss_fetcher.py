@@ -110,6 +110,47 @@ GAME_REQUIRED_HEADINGS = {
         "【この変更が意味すること】",
     ),
 }
+NOTICE_BODY_TEMPLATE_VERSION = "notice_v1"
+NOTICE_REQUIRED_HEADINGS = (
+    "【公示の要旨】",
+    "【対象選手の基本情報】",
+    "【公示の背景】",
+    "【今後の注目点】",
+)
+DEFAULT_NOTICE_FALLBACK_IMAGE_URL = "https://yoshilover.com/wp-content/uploads/2025/07/j_RlNtbr_400x400-300x300-1.webp"
+NOTICE_RECORD_MARKERS = (
+    "打率",
+    "防御率",
+    "OPS",
+    "本塁打",
+    "打点",
+    "安打",
+    "登板",
+    "試合",
+    "勝",
+    "敗",
+    "奪三振",
+    "WHIP",
+)
+NOTICE_BACKGROUND_MARKERS = (
+    "故障",
+    "コンディション",
+    "特例",
+    "二軍",
+    "２軍",
+    "2軍",
+    "ファーム",
+    "育成",
+    "リハビリ",
+    "再調整",
+    "ブルペン",
+    "出場",
+    "登録",
+    "抹消",
+    "復帰",
+    "昇格",
+    "合流",
+)
 CONFIRMED_RESULT_MARKERS = ("勝利した", "勝利を飾", "白星を挙げ", "敗れた", "敗戦", "黒星", "引き分け", "サヨナラ勝", "連勝", "連敗", "完封勝", "完封負")
 DEFINITE_RESULT_MARKERS = ("勝利しました", "勝利を飾りました", "白星を挙げました", "敗れました", "敗戦でした", "黒星を喫しました", "引き分けました")
 GENERIC_REACTION_TERMS = {
@@ -195,11 +236,13 @@ PLAYER_NOTICE_ROUTE_MARKERS = (
     "初１軍",
     "初一軍",
     "一軍登録",
+    "出場選手登録",
     "出場選手登録を抹消",
     "登録抹消",
     "抹消",
     "戦力外",
     "昇格",
+    "再登録",
     "実戦復帰",
     "再出発",
 )
@@ -362,6 +405,7 @@ AMBIGUOUS_PLAYER_SURNAMES = {
 SUBJECT_CANDIDATE_STOPWORDS = {
     "巨人",
     "ジャイアンツ",
+    "出場選手",
     "先発ローテ",
     "ローテ再編",
     "阪神3連戦",
@@ -826,6 +870,77 @@ def _match_social_column_rescue(text: str) -> tuple[str, str]:
         if match:
             return rescue_reason, match.group(0)
     return "", ""
+
+
+def get_notice_fallback_image_url() -> str:
+    return os.environ.get("NOTICE_FALLBACK_IMAGE_URL", DEFAULT_NOTICE_FALLBACK_IMAGE_URL).strip()
+
+
+def _extract_notice_type_label(text: str) -> str:
+    source_text = _strip_html(text or "")
+    checks = (
+        ("戦力外", "戦力外"),
+        ("再出発", "再出発"),
+        ("登録抹消", "登録抹消"),
+        ("出場選手登録を抹消", "登録抹消"),
+        ("初合流", "初合流"),
+        ("初１軍", "初一軍"),
+        ("初一軍", "初一軍"),
+        ("一軍登録", "一軍登録"),
+        ("出場選手登録", "一軍登録"),
+        ("再登録", "再登録"),
+        ("一軍合流", "一軍合流"),
+        ("チーム合流", "一軍合流"),
+        ("合流", "一軍合流"),
+        ("実戦復帰", "復帰"),
+        ("復帰", "復帰"),
+        ("昇格", "昇格"),
+    )
+    for marker, label in checks:
+        if marker in source_text:
+            return label
+    return ""
+
+
+def _extract_notice_subject_and_type(title: str, summary: str) -> tuple[str, str]:
+    source_text = _strip_html(f"{title} {summary}")
+    giants_patterns = (
+        r"(?:巨人|ジャイアンツ)\s*[・･]\s*([A-Za-zＡ-Ｚａ-ｚ一-龥々ァ-ヴーー\.\-．・]{2,24})(?:投手|捕手|内野手|外野手|選手)",
+        r"(?:巨人|ジャイアンツ)(?:】|の|[\s　])([A-Za-zＡ-Ｚａ-ｚ一-龥々ァ-ヴーー\.\-．・]{2,24})(?:投手|捕手|内野手|外野手|選手)",
+    )
+
+    for pattern in giants_patterns:
+        for match in _re.finditer(pattern, source_text):
+            candidate = _re.sub(r"\s+", "", match.group(1)).strip("・･")
+            if (
+                not candidate
+                or candidate in SUBJECT_LABEL_STOPWORDS
+                or any(stop in candidate for stop in SUBJECT_CANDIDATE_STOPWORDS)
+            ):
+                continue
+            nearby = source_text[max(0, match.start() - 48): min(len(source_text), match.end() + 32)]
+            notice_type = _extract_notice_type_label(nearby) or _extract_notice_type_label(source_text)
+            return candidate, notice_type
+
+    fallback_subject = _short_subject_name(title, summary, "選手情報")
+    fallback_type = _extract_notice_type_label(source_text)
+    return fallback_subject, fallback_type
+
+
+def _extract_notice_player_position(title: str, summary: str, subject: str = "") -> str:
+    source_text = _strip_html(f"{title} {summary}")
+    notice_subject = subject or _extract_notice_subject_and_type(title, summary)[0]
+    if notice_subject and notice_subject not in {"巨人", "選手", "出場選手"}:
+        role_pattern = "|".join(PLAYER_ROLE_SUFFIXES)
+        patterns = (
+            rf"(?:巨人|ジャイアンツ)\s*[・･]?\s*{_re.escape(notice_subject)}\s*({role_pattern})",
+            rf"{_re.escape(notice_subject)}\s*({role_pattern})",
+        )
+        for pattern in patterns:
+            match = _re.search(pattern, source_text)
+            if match:
+                return match.group(1)
+    return _extract_player_position(title, summary)
 
 
 def _extract_subject_label(title: str, summary: str, category: str) -> str:
@@ -1662,6 +1777,99 @@ def _build_player_status_strict_prompt(title: str, summary: str, source_day_labe
 """
 
 
+def _is_notice_template_story(title: str, summary: str, category: str = "選手情報") -> bool:
+    if category != "選手情報":
+        return False
+    return _is_notice_like_status_story(title, summary)
+
+
+def _extract_notice_record_fact(title: str, summary: str, exclude: set[str] | None = None) -> str:
+    exclude = exclude or set()
+    for sentence in _extract_prompt_fact_sentences(title, summary, max_sentences=5):
+        fact = _ensure_fact_sentence(sentence)
+        if not fact or fact in exclude:
+            continue
+        if any(marker in fact for marker in NOTICE_RECORD_MARKERS) or _re.search(r"(?:\.\d{3}|\d+)", fact):
+            return fact
+    return ""
+
+
+def _extract_notice_background_fact(title: str, summary: str, exclude: set[str] | None = None) -> str:
+    fact = _find_source_sentence_with_markers(title, summary, NOTICE_BACKGROUND_MARKERS, exclude=exclude)
+    if fact:
+        return fact
+    return _next_unused_source_fact(title, summary, exclude or set())
+
+
+def _notice_next_focus_sentence(notice_type: str, player_role: str, subject: str) -> str:
+    if notice_type in {"一軍登録", "再登録", "一軍合流", "初合流", "初一軍", "昇格", "復帰"}:
+        if player_role == "投手":
+            return f"{subject}が次回登板や一軍ベンチ入りのどこで役割を得るかがポイントです。"
+        if player_role == "捕手":
+            return f"{subject}が次の登録発表やマスク配分でどう扱われるかがポイントです。"
+        return f"{subject}が次の一軍出場やスタメン争いでどこに入るかがポイントです。"
+    if notice_type == "登録抹消":
+        return f"{subject}が次の実戦復帰へ向けてどの段階まで進むかを見たいところです。"
+    if notice_type == "戦力外":
+        return f"{subject}に関する次の発表や進路の動きがポイントです。"
+    if notice_type == "再出発":
+        return f"{subject}が次の実戦機会でどんな形を示すかがポイントです。"
+    return f"{subject}の次の起用や発表がポイントです。"
+
+
+def _build_notice_strict_prompt(title: str, summary: str, source_day_label: str = "") -> str:
+    subject, notice_type = _extract_notice_subject_and_type(title, summary)
+    player_position = _extract_notice_player_position(title, summary, subject)
+    notice_subject = subject or player_position
+    source_text = _strip_html(f"{title} {summary}")
+    notice_label = notice_type or _extract_notice_type_label(source_text) or "公示"
+    notice_fact = _find_source_sentence_with_markers(
+        title,
+        summary,
+        ("登録", "抹消", "合流", "復帰", "昇格", "戦力外", "再出発"),
+    )
+    used_facts = {fact for fact in [notice_fact] if fact}
+    record_fact = _extract_notice_record_fact(title, summary, exclude=used_facts)
+    if record_fact:
+        used_facts.add(record_fact)
+    background_fact = _extract_notice_background_fact(title, summary, exclude=used_facts)
+    if not notice_fact:
+        notice_fact = _next_unused_source_fact(title, summary, set()) or f"{notice_subject}が{notice_label}の状態にある。"
+        used_facts = {notice_fact}
+        if not record_fact:
+            record_fact = _extract_notice_record_fact(title, summary, exclude=used_facts)
+            if record_fact:
+                used_facts.add(record_fact)
+        if not background_fact:
+            background_fact = _extract_notice_background_fact(title, summary, exclude=used_facts)
+    if not record_fact:
+        record_fact = f"{notice_subject}の今季成績や現在地は、元記事で確認できる範囲に限って整理する。"
+    if not background_fact:
+        background_fact = notice_fact
+    opening_time_rule = f"本文の最初は必ず「（{source_day_label}時点）」で始めてください。\n" if source_day_label else ""
+    return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
+以下の番号付き事実のみ使用可です。それ以外の情報・解釈・感想・一般論を含む文は出力しないでください。
+1. {notice_subject}は読売ジャイアンツ所属である。
+2. {notice_subject}が{notice_label}の状態にある。
+3. {notice_fact}
+4. {record_fact}
+5. {background_fact}
+ですます調、350〜550文字で書いてください。ただし事実が薄い場合は350文字未満でも構いません。無理に話を広げないでください。
+{opening_time_rule}見出しは【公示の要旨】【対象選手の基本情報】【公示の背景】【今後の注目点】の4つをこの順番で使ってください。
+【公示の要旨】では、{notice_subject}に何の公示が出たかを最初に整理してください。
+【対象選手の基本情報】では、年齢・ポジション・今季成績など、source にある数字があれば必ず残してください。
+【公示の背景】では、故障、調整状況、二軍成績、チーム事情のうち source にある事実だけを書いてください。
+【今後の注目点】では、「{_notice_next_focus_sentence(notice_label, player_position, notice_subject)}」という方向だけを書いてください。
+選手名は見出し以外の本文にも必ず明記してください。
+公示の日付・区分（抹消、昇格、戦力外、復帰など）は source にある表記を残してください。
+事実にない数字・比較・推測を足さないでください。
+同じ事実を繰り返さないでください。
+筆者の感想や精神論は書かないでください。
+最後は読者視点の締め1〜2文で終え、「みなさんの意見はコメントで教えてください！」を入れてください。
+本文だけを出力してください。
+"""
+
+
 def _extract_manager_focus_axis(title: str, summary: str) -> str:
     source_text = _strip_html(f"{title} {summary}")
     if any(keyword in source_text for keyword in ("若手", "競争", "レギュラー", "固定", "序列")):
@@ -1857,6 +2065,33 @@ def _game_body_has_required_structure(text: str, article_subtype: str, has_game:
     return all(heading in normalized for heading in required)
 
 
+def _notice_required_headings() -> tuple[str, ...]:
+    return NOTICE_REQUIRED_HEADINGS
+
+
+def _notice_section_count(text: str) -> int:
+    normalized = _normalize_article_text_structure(text or "", "選手情報", False, article_subtype="player_notice")
+    return sum(1 for heading in _notice_required_headings() if heading in normalized)
+
+
+def _notice_body_has_required_structure(text: str) -> bool:
+    normalized = _normalize_article_text_structure(text or "", "選手情報", False, article_subtype="player_notice")
+    return all(heading in normalized for heading in _notice_required_headings())
+
+
+def _notice_has_player_name(text: str, title: str, summary: str) -> bool:
+    subject, _notice_type = _extract_notice_subject_and_type(title, summary)
+    candidate = subject or _short_subject_name(title, summary, "選手情報")
+    if not candidate or candidate in {"巨人", "選手", "出場選手"}:
+        return False
+    return _re.sub(r"\s+", "", candidate) in _re.sub(r"\s+", "", text or "")
+
+
+def _notice_has_numeric_record(text: str) -> bool:
+    body = text or ""
+    return any(marker in body for marker in NOTICE_RECORD_MARKERS) or bool(_re.search(r"(?:\.\d{3}|防御率\d+\.\d+|\d+試合|\d+打点|\d+本塁打)", body))
+
+
 def _build_game_strict_prompt(
     title: str,
     summary: str,
@@ -1949,6 +2184,8 @@ def _build_gemini_strict_prompt(
     article_subtype = _detect_article_subtype(title, summary, category, has_game)
     player_mode = _detect_player_article_mode(title, summary, category) if category == "選手情報" else ""
     if category == "選手情報":
+        if _is_notice_template_story(title, summary, category):
+            return _build_notice_strict_prompt(title, summary, source_day_label=source_day_label)
         if player_mode == "player_mechanics":
             return _build_player_mechanics_strict_prompt(title, summary)
         if player_mode == "player_quote":
@@ -2277,6 +2514,20 @@ def _normalize_article_heading(heading: str, category: str, has_game: bool, arti
             }
         if clean in game_heading_aliases:
             return game_heading_aliases[clean]
+
+    if category == "選手情報" and article_subtype == "player_notice":
+        notice_heading_aliases = {
+            "【公示の要旨】": "【公示の要旨】",
+            "【ニュースの整理】": "【公示の要旨】",
+            "【対象選手の基本情報】": "【対象選手の基本情報】",
+            "【基本情報】": "【対象選手の基本情報】",
+            "【公示の背景】": "【公示の背景】",
+            "【背景】": "【公示の背景】",
+            "【今後の注目点】": "【今後の注目点】",
+            "【次の注目】": "【今後の注目点】",
+        }
+        if clean in notice_heading_aliases:
+            return notice_heading_aliases[clean]
 
     first, second, third = _article_section_headings(category, has_game)
     first_aliases = {
@@ -2938,6 +3189,54 @@ def _build_pregame_safe_fallback(title: str, summary: str, real_reactions: list[
     return "\n".join(lead_lines + detail_lines + impact_lines)
 
 
+def _build_notice_safe_fallback(
+    title: str,
+    summary: str,
+    real_reactions: list[str] | None = None,
+    source_day_label: str = "",
+) -> str:
+    facts = [fact.rstrip("。") for fact in _extract_summary_sentences(summary, max_sentences=5)]
+    if not facts:
+        facts = [_strip_title_prefix(title) or "元記事の内容を確認中です"]
+    subject, notice_type = _extract_notice_subject_and_type(title, summary)
+    player_position = _extract_notice_player_position(title, summary, subject)
+    notice_subject = subject or player_position
+    notice_label = notice_type or _extract_notice_type_label(f"{title} {summary}") or "公示"
+    record_fact = _extract_notice_record_fact(title, summary)
+    background_fact = _extract_notice_background_fact(title, summary, exclude={record_fact} if record_fact else set())
+    opening = f"（{source_day_label}時点）" if source_day_label else ""
+
+    lead_lines = [NOTICE_REQUIRED_HEADINGS[0]]
+    lead_lines.append(f"{opening}{notice_subject}に{notice_label}の動きが出ました。".strip())
+    lead_lines.append(f"{facts[0]}。")
+    if len(facts) > 1:
+        lead_lines.append(f"{facts[1]}。")
+
+    basic_lines = [NOTICE_REQUIRED_HEADINGS[1]]
+    basic_lines.append(f"{notice_subject}は読売ジャイアンツの{player_position}です。")
+    if record_fact:
+        basic_lines.append(record_fact)
+    else:
+        basic_lines.append(f"{notice_subject}の今季成績や現在の立ち位置は、元記事で確認できる範囲を押さえておきたいところです。")
+
+    background_lines = [NOTICE_REQUIRED_HEADINGS[2]]
+    if background_fact:
+        background_lines.append(background_fact)
+    elif len(facts) > 2:
+        background_lines.append(f"{facts[2]}。")
+    else:
+        background_lines.append(f"{notice_subject}に今回の公示が出た背景は、元記事の事実を順に追うと見えやすくなります。")
+    if len(facts) > 3 and facts[3] not in background_lines:
+        background_lines.append(f"{facts[3]}。")
+
+    next_lines = [NOTICE_REQUIRED_HEADINGS[3]]
+    if real_reactions:
+        next_lines.append(f"反応を見ると、{notice_subject}が次にどんな役割を得るかを見たい空気があります。")
+    next_lines.append(_notice_next_focus_sentence(notice_label, player_position, notice_subject))
+    next_lines.append("みなさんの意見はコメントで教えてください！")
+    return "\n".join(lead_lines + basic_lines + background_lines + next_lines)
+
+
 def _build_game_safe_fallback(
     title: str,
     summary: str,
@@ -3575,6 +3874,20 @@ def _filter_image_candidates(
     return filtered
 
 
+def _ensure_notice_featured_images(
+    image_urls: list[str],
+    title: str,
+    summary: str,
+    category: str,
+) -> list[str]:
+    if image_urls:
+        return image_urls
+    if not _is_notice_template_story(title, summary, category):
+        return image_urls
+    fallback_url = get_notice_fallback_image_url()
+    return [fallback_url] if fallback_url else image_urls
+
+
 def fetch_article_images(url: str, max_images: int = 3) -> list:
     """記事ページから写真URLを最大 max_images 枚スクレイピングして返す。
     og:image を先頭に、本文中の <img> から大きそうなものを追加する。"""
@@ -4162,6 +4475,33 @@ def generate_article_with_gemini(
 ・【具体的な変更内容】では新日程、新先発、引用など source にある事実を順に整理する
 ・【この変更が意味すること】では結果予想はせず、次にどこを見るかだけを書く
 ・抽象的な期待論や一般論で膨らませない
+            ・最後は「みなさんの意見はコメントで！」で締める
+            ・HTMLタグなし・本文のみ出力"""
+
+    player_notice_prompt = ""
+    if category == "選手情報" and _is_notice_template_story(title, summary_clean, category):
+        notice_subject, notice_type = _extract_notice_subject_and_type(title, summary_clean)
+        notice_label = notice_type or _extract_notice_type_label(f"{title} {summary_clean}") or "公示"
+        player_notice_prompt = f"""あなたは読売ジャイアンツ専門ブログの編集者です。
+今日は{today_str}です。まずWeb検索で必要な事実を確認してから、公示・登録関連の記事を日本語で書いてください。
+
+{data_sources}
+
+タイトル: {title}
+ニュース要約: {summary_clean}
+
+{fan_section}
+
+【構成】
+・見出しは「【公示の要旨】」「【対象選手の基本情報】」「【公示の背景】」「【今後の注目点】」の4つをこの順番で使う
+・本文は350〜650文字
+・選手名はタイトルと本文の両方に必ず明記する
+・{notice_label}の区分、日付、登録・抹消・合流などの表記は source にある形を残す
+・数字があれば、打率、防御率、試合数、本塁打、打点など今季の具体数字を必ず残す
+・【対象選手の基本情報】では{notice_subject or '対象選手'}のポジションや現在地を整理する
+・【公示の背景】では故障、調整状況、二軍成績、チーム事情のうち source にある材料だけを書く
+・【今後の注目点】では次の登録、出場、復帰時期のどこを見るかだけを書く
+・推測、精神論、一般論で膨らませない
 ・最後は「みなさんの意見はコメントで！」で締める
 ・HTMLタグなし・本文のみ出力"""
 
@@ -4196,7 +4536,7 @@ def generate_article_with_gemini(
 ・最後は「みなさんの意見はコメントで！」で締める
 ・HTMLタグなし・本文のみ出力""",
 
-        "選手情報": f"""あなたは読売ジャイアンツの熱狂的なファンブロガー兼データアナリストです。
+        "選手情報": player_notice_prompt or f"""あなたは読売ジャイアンツの熱狂的なファンブロガー兼データアナリストです。
 今日は{today_str}です。まずWeb検索でデータを調べてから、データ豊富な選手分析コラムを日本語で書いてください。
 
 {data_sources}
@@ -4541,6 +4881,9 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         has_game,
         article_subtype=article_subtype,
     )
+    notice_story = generation_category == "選手情報" and _is_notice_template_story(title, summary_clean, generation_category)
+    body_category = generation_category if notice_story else category
+    body_subtype = "player_notice" if notice_story else article_subtype
     article_ai_mode = get_article_ai_mode(has_game, article_ai_mode_override) if use_ai_for_article else "none"
     fan_reaction_limit = get_fan_reaction_limit()
     logger = logging.getLogger("rss_fetcher")
@@ -4664,6 +5007,21 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 generation_category,
                 subject,
             )
+    if notice_story:
+        normalized_notice_body = _normalize_article_text_structure(ai_body, generation_category, False, article_subtype="player_notice")
+        if _notice_body_has_required_structure(normalized_notice_body) and _notice_has_player_name(normalized_notice_body, title, summary_clean):
+            ai_body = normalized_notice_body
+        else:
+            ai_body = _apply_editor_voice(
+                _build_notice_safe_fallback(
+                    title,
+                    summary_clean,
+                    real_reactions=real_reactions,
+                    source_day_label=source_day_label,
+                ),
+                generation_category,
+                subject,
+            )
     if summary_block and not _text_is_safe(title, summary_clean, summary_block, has_game):
         logger.warning("SUMMARYブロックを破棄: 事実制約に違反")
         summary_block = ""
@@ -4716,6 +5074,12 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             }
         elif category == "首脳陣":
             labels = _manager_cta_labels()
+        elif notice_story:
+            labels = {
+                "news": "この公示、どう見る？",
+                "next": "次の起用どうなる？",
+                "fans": "率直にどう思う？",
+            }
         label = labels.get(slot, labels["fans"])
         if slot in {"news", "next"}:
             return (
@@ -5120,7 +5484,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             ai_body = '\n'.join(ai_body.strip().split('\n')[1:]).strip()
         ai_body = _re3.sub(r'.*ファンの声.*\n?', '', ai_body)
         ai_body = _re3.sub(r'.*Xより.*\n?', '', ai_body)
-        ai_body = _normalize_article_text_structure(ai_body, category, has_game, article_subtype=article_subtype)
+        ai_body = _normalize_article_text_structure(ai_body, body_category, has_game, article_subtype=body_subtype)
 
         para_count = 0
         seen_headings = set()
@@ -5140,9 +5504,11 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 return
             if current_heading:
                 heading_level = 3
-                if category == "首脳陣" and article_subtype == "manager" and current_heading == "【発言の要旨】":
+                if body_category == "首脳陣" and article_subtype == "manager" and current_heading == "【発言の要旨】":
                     heading_level = 2
-                if category == "試合速報" and _is_game_template_subtype(article_subtype) and current_heading == _game_required_headings(article_subtype)[0]:
+                if body_category == "試合速報" and _is_game_template_subtype(article_subtype) and current_heading == _game_required_headings(article_subtype)[0]:
+                    heading_level = 2
+                if notice_story and current_heading == NOTICE_REQUIRED_HEADINGS[0]:
                     heading_level = 2
                 blocks += (
                     f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
@@ -5153,7 +5519,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 blocks += _render_paragraph_with_media(paragraph)
             if (
                 current_heading == ("【試合概要】" if article_subtype == "lineup" else "【ニュースの整理】")
-                and category == "試合速報"
+                and body_category == "試合速報"
                 and article_subtype == "lineup"
                 and lineup_stat_rows
                 and not lineup_stats_rendered
@@ -5163,14 +5529,14 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 lineup_stats_rendered = True
             if (
                 current_heading == "【ニュースの整理】"
-                and category == "試合速報"
+                and body_category == "試合速報"
                 and article_subtype == "live_update"
             ):
                 blocks += _livegame_result_block()
                 blocks += _livegame_watch_block()
             if (
                 current_heading == "【試合結果】"
-                and category == "試合速報"
+                and body_category == "試合速報"
                 and article_subtype == "postgame"
             ):
                 blocks += _postgame_result_block()
@@ -5185,6 +5551,8 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             section_slot = {
                 "【ニュースの整理】": "news",
                 "【次の注目】": "next",
+                "【公示の要旨】": "news",
+                "【今後の注目点】": "next",
                 **game_slot_map,
             }.get(current_heading)
             if section_slot:
@@ -5194,7 +5562,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
 
         for p in [p.strip() for p in ai_body.split("\n") if p.strip()]:
             if p.startswith("【") or p.startswith("■") or p.startswith("▶"):
-                heading_text = _normalize_article_heading(p, category, has_game, article_subtype=article_subtype)
+                heading_text = _normalize_article_heading(p, body_category, has_game, article_subtype=body_subtype)
                 if heading_text in seen_headings:
                     continue
                 _flush_section()
@@ -6122,6 +6490,12 @@ def _rewrite_display_title_with_template(title: str, summary: str, category: str
     clean_summary = _strip_html(summary or "").strip()
     source_text = _strip_html(f"{title} {summary}")
     subject = _short_subject_name(title, summary, category) or "巨人"
+    notice_subject = ""
+    notice_type = ""
+    if category == "選手情報" and _is_notice_template_story(title, summary, category):
+        notice_subject, notice_type = _extract_notice_subject_and_type(title, summary)
+        if notice_subject:
+            subject = notice_subject
     if subject in TITLE_VENUE_MARKERS or subject.endswith("球場") or subject in {"予告先発", "先発"}:
         subject = "巨人"
     if category == "試合速報" and subject == "巨人":
@@ -6155,6 +6529,8 @@ def _rewrite_display_title_with_template(title: str, summary: str, category: str
         if PLAYER_JOIN_TITLE_RE.search(source_text):
             return _result(f"{subject}、一軍合流でどこを見たいか", "player_status_join")
         if PLAYER_REGISTER_TITLE_RE.search(source_text):
+            if notice_type in {"一軍登録", "再登録"}:
+                return _result(f"{subject}、{notice_type}でどこを見たいか", "player_status_register")
             return _result(f"{subject}、登録後にどこを見たいか", "player_status_register")
         if PLAYER_RETURN_TITLE_RE.search(source_text) or "昇格" in source_text or "一軍" in source_text or "復帰" in source_text:
             return _result(f"{subject}、昇格・復帰でどこを見たいか", "player_status_return")
@@ -6315,6 +6691,29 @@ def _log_game_body_template_applied(
         "section_count": section_count,
         "numeric_count": numeric_count,
         "name_count": name_count,
+        "template_version": template_version,
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
+def _log_notice_body_template_applied(
+    logger: logging.Logger,
+    post_id: int,
+    title: str,
+    notice_type: str,
+    section_count: int,
+    has_player_name: bool,
+    has_numeric_record: bool,
+    template_version: str = NOTICE_BODY_TEMPLATE_VERSION,
+) -> None:
+    payload = {
+        "event": "notice_body_template_applied",
+        "post_id": post_id,
+        "title": title,
+        "notice_type": notice_type,
+        "section_count": section_count,
+        "has_player_name": has_player_name,
+        "has_numeric_record": has_numeric_record,
         "template_version": template_version,
     }
     logger.info(json.dumps(payload, ensure_ascii=False))
@@ -6670,6 +7069,7 @@ def _main(args, logger):
                 if not _article_images:
                     _article_images = fetch_article_images(post_url, max_images=3)
             _article_images = _filter_image_candidates(_article_images, post_url, logger)
+            _article_images = _ensure_notice_featured_images(_article_images, raw_title, summary, category)
             _og_url  = _article_images[0] if _article_images else ""
             draft_title, title_template_key = _rewrite_display_title_with_template(raw_title, summary, category, entry_has_game)
             _log_title_template_selected(logger, post_url, raw_title, draft_title, title_template_key, category, title_article_subtype)
@@ -6726,7 +7126,7 @@ def _main(args, logger):
                     post_id,
                     draft_title,
                     _manager_quote_count(raw_title, summary),
-                    _manager_section_count(ai_body),
+                    _manager_section_count(ai_body_for_x),
                 )
             if category == "試合速報" and _is_game_template_subtype(title_article_subtype):
                 _log_game_body_template_applied(
@@ -6734,9 +7134,20 @@ def _main(args, logger):
                     post_id,
                     draft_title,
                     title_article_subtype,
-                    _game_section_count(ai_body, title_article_subtype),
-                    _game_numeric_count(raw_title, summary, ai_body),
-                    _game_name_count(raw_title, summary, ai_body),
+                    _game_section_count(ai_body_for_x, title_article_subtype),
+                    _game_numeric_count(raw_title, summary, ai_body_for_x),
+                    _game_name_count(raw_title, summary, ai_body_for_x),
+                )
+            if _is_notice_template_story(raw_title, summary, _resolve_article_generation_category(category, raw_title, summary)):
+                _notice_subject, notice_type = _extract_notice_subject_and_type(raw_title, summary)
+                _log_notice_body_template_applied(
+                    logger,
+                    post_id,
+                    draft_title,
+                    notice_type or _extract_notice_type_label(f"{raw_title} {summary}") or "公示",
+                    _notice_section_count(ai_body_for_x),
+                    _notice_has_player_name(ai_body_for_x, raw_title, summary),
+                    _notice_has_numeric_record(ai_body_for_x),
                 )
             time.sleep(1)
 

@@ -1,0 +1,44 @@
+[
+  {
+    "name": "notice_register_mingawa",
+    "title": "【巨人】皆川岳飛が出場選手登録",
+    "summary": "皆川岳飛外野手が4月16日に出場選手登録された。今季二軍で打率.261、2本塁打を記録している。外野手争いの中で一軍の機会を待っていた。",
+    "source_day_label": "4月16日",
+    "required_strings": ["皆川岳飛", "打率.261", "2本塁打", "4月16日時点"],
+    "expected_notice_type": "一軍登録",
+    "expect_numeric": true
+  },
+  {
+    "name": "notice_deregister_nakayama",
+    "title": "【巨人】中山礼都が登録抹消",
+    "summary": "中山礼都内野手が4月16日に登録抹消となった。今季23試合で打率.238。再調整のために二軍で状態を整える見通し。",
+    "source_day_label": "4月16日",
+    "required_strings": ["中山礼都", "登録抹消", "23試合", "打率.238"],
+    "expected_notice_type": "登録抹消",
+    "expect_numeric": true
+  },
+  {
+    "name": "notice_return_nishidate",
+    "title": "【巨人】西舘勇陽が実戦復帰へ",
+    "summary": "西舘勇陽投手がコンディション不良からの実戦復帰へ向けて調整している。二軍で防御率2.50、10試合に登板した。ブルペンで投球練習を再開した。",
+    "required_strings": ["西舘勇陽", "実戦復帰", "防御率2.50", "10試合"],
+    "expected_notice_type": "復帰",
+    "expect_numeric": true
+  },
+  {
+    "name": "notice_war_luciano",
+    "title": "【巨人】ルシアーノが戦力外",
+    "summary": "ルシアーノ投手が戦力外となった。今季二軍12試合で防御率4.05だった。球団は今後の手続きを進める見通しだ。",
+    "required_strings": ["ルシアーノ", "戦力外", "12試合", "防御率4.05"],
+    "expected_notice_type": "戦力外",
+    "expect_numeric": true
+  },
+  {
+    "name": "notice_restart_richard",
+    "title": "【巨人】リチャードが再出発へ",
+    "summary": "リチャード内野手が再出発へ向けて二軍で調整を続けている。今季二軍で打率.280、4本塁打を記録している。",
+    "required_strings": ["リチャード", "再出発", "打率.280", "4本塁打"],
+    "expected_notice_type": "再出発",
+    "expect_numeric": true
+  }
+]

@@ -63,8 +63,8 @@ class GeminiPromptTests(unittest.TestCase):
 
     def test_player_status_prompt_uses_state_template(self):
         prompt = rss_fetcher._build_gemini_strict_prompt(
-            title="【巨人】佐々木俊輔が登録抹消",
-            summary="2025年9月1日、佐々木俊輔外野手が出場選手登録を抹消された。9月11日以後でなければ再登録はできない。",
+            title="【巨人】グリフィンが先発見込み",
+            summary="グリフィン投手が次回登板へ向けた調整段階にある。先発見込みとしてブルペンで投球練習を行った。",
             category="選手情報",
             source_fact_block="",
             win_loss_hint="",
@@ -73,12 +73,31 @@ class GeminiPromptTests(unittest.TestCase):
             source_day_label="9月1日",
         )
 
-        self.assertIn("佐々木俊輔外野手は読売ジャイアンツ所属である。", prompt)
+        self.assertIn("グリフィン投手は読売ジャイアンツ所属である。", prompt)
         self.assertIn("200〜350文字", prompt)
         self.assertIn("本文の最初は必ず「（9月1日時点）」で始めてください。", prompt)
         self.assertIn("見出しは【ニュースの整理】と【次の注目】の2つのみです。", prompt)
         self.assertIn("投手は次回登板、野手は次の実戦出場、捕手は次の登録発表", prompt)
         self.assertIn("同じ事実を繰り返さないでください。", prompt)
+
+    def test_notice_prompt_uses_public_notice_structure(self):
+        prompt = rss_fetcher._build_gemini_strict_prompt(
+            title="【巨人】皆川岳飛が出場選手登録",
+            summary="皆川岳飛外野手が4月16日に出場選手登録された。今季二軍で打率.261、2本塁打を記録している。",
+            category="選手情報",
+            source_fact_block="",
+            win_loss_hint="",
+            has_game=False,
+            real_reactions=[],
+            source_day_label="4月16日",
+        )
+
+        self.assertIn("皆川岳飛", prompt)
+        self.assertIn("読売ジャイアンツ所属である。", prompt)
+        self.assertIn("見出しは【公示の要旨】【対象選手の基本情報】【公示の背景】【今後の注目点】", prompt)
+        self.assertIn("本文の最初は必ず「（4月16日時点）」で始めてください。", prompt)
+        self.assertIn("選手名は見出し以外の本文にも必ず明記してください。", prompt)
+        self.assertIn("公示の日付・区分", prompt)
 
     def test_manager_prompt_uses_manager_specific_structure(self):
         prompt = rss_fetcher._build_gemini_strict_prompt(

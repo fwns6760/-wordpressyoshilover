@@ -188,7 +188,7 @@ gcloud builds submit \
 gcloud run deploy yoshilover-fetcher \
   --image asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/fetcher:local-test \
   --region asia-northeast1 \
-  --set-env-vars WP_URL=https://yoshilover.com,WP_USER=your_wp_username,GCS_BUCKET=yoshilover-history,RUN_AUTH_MODE=cloud_run,RUN_DRAFT_ONLY=1,RUN_OIDC_SERVICE_ACCOUNT=your-service-account,RUN_OIDC_AUDIENCE=https://your-service-url/run,LOW_COST_MODE=1,STRICT_FACT_MODE=1,ARTICLE_AI_MODE=gemini,OFFDAY_ARTICLE_AI_MODE=none,PUBLISH_REQUIRE_IMAGE=1,AUTO_TWEET_ENABLED=1,AUTO_TWEET_REQUIRE_IMAGE=1,ENABLE_X_COLLECT=0 \
+  --set-env-vars WP_URL=https://yoshilover.com,WP_USER=your_wp_username,GCS_BUCKET=yoshilover-history,RUN_AUTH_MODE=cloud_run,RUN_DRAFT_ONLY=1,RUN_OIDC_SERVICE_ACCOUNT=your-service-account,RUN_OIDC_AUDIENCE=https://your-service-url/run,LOW_COST_MODE=1,STRICT_FACT_MODE=1,ARTICLE_AI_MODE=gemini,OFFDAY_ARTICLE_AI_MODE=none,GEMINI_STRICT_MAX_ATTEMPTS=3,PUBLISH_REQUIRE_IMAGE=1,AUTO_TWEET_ENABLED=1,AUTO_TWEET_REQUIRE_IMAGE=1,ENABLE_X_COLLECT=0 \
   --set-secrets WP_APP_PASSWORD=yoshilover-wp-app-password:latest,RUN_SECRET=yoshilover-run-secret:latest,GEMINI_API_KEY=gemini-api-key:latest,GROK_API_KEY=yoshilover-grok-api-key:latest,X_API_KEY=yoshilover-x-api-key:latest,X_API_SECRET=yoshilover-x-api-secret:latest,X_ACCESS_TOKEN=yoshilover-x-access-token:latest,X_ACCESS_TOKEN_SECRET=yoshilover-x-access-token-secret:latest
 ```
 

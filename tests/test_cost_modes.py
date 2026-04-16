@@ -126,9 +126,9 @@ class CostModeTests(unittest.TestCase):
             )
         )
 
-    def test_gemini_attempt_limits_default_to_one_in_low_cost_mode(self):
+    def test_gemini_attempt_limits_default_to_three_in_low_cost_mode(self):
         with patch.dict("os.environ", {"LOW_COST_MODE": "1"}, clear=False):
-            self.assertEqual(rss_fetcher.get_gemini_attempt_limit(strict_mode=True), 1)
+            self.assertEqual(rss_fetcher.get_gemini_attempt_limit(strict_mode=True), 3)
             self.assertEqual(rss_fetcher.get_gemini_attempt_limit(strict_mode=False), 1)
 
     def test_gemini_attempt_limits_can_be_overridden(self):

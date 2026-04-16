@@ -376,7 +376,7 @@ def get_fan_reaction_limit() -> int:
 
 def get_gemini_attempt_limit(strict_mode: bool) -> int:
     if strict_mode:
-        default_limit = 1 if low_cost_mode_enabled() else 2
+        default_limit = 3
         env_name = "GEMINI_STRICT_MAX_ATTEMPTS"
         upper = 3
     else:

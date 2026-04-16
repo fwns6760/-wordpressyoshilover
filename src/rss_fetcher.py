@@ -12,6 +12,7 @@ import json
 import logging
 import argparse
 import subprocess
+from collections import Counter
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -5545,6 +5546,10 @@ def _log_title_template_selected(
     }
     logger.info(json.dumps(payload, ensure_ascii=False))
 
+
+def _counter_to_plain_dict(counter: Counter) -> dict[str, int]:
+    return {key: counter[key] for key in sorted(counter) if counter[key]}
+
 # ──────────────────────────────────────────────────────────
 # X投稿URLを取得（twitter.com形式に統一）
 # ──────────────────────────────────────────────────────────
@@ -5660,6 +5665,13 @@ def _main(args, logger):
         wp = WPClient()
 
     total = skip_dup = skip_filter = success = error = 0
+    skip_reason_counts: Counter[str] = Counter()
+    prepared_category_counts: Counter[str] = Counter()
+    prepared_subtype_counts: Counter[str] = Counter()
+    created_category_counts: Counter[str] = Counter()
+    created_subtype_counts: Counter[str] = Counter()
+    publish_skip_reason_counts: Counter[str] = Counter()
+    x_skip_reason_counts: Counter[str] = Counter()
     import time
 
     x_post_daily_limit = get_x_post_daily_limit()
@@ -5699,6 +5711,7 @@ def _main(args, logger):
                 if _is_polluted_social_text(entry_title_clean) or _is_polluted_social_text(entry_summary_clean):
                     logger.debug(f"  [SKIP:SNS汚染] {entry_title_raw[:40]}")
                     skip_filter += 1
+                    skip_reason_counts["sns_polluted"] += 1
                     continue
             else:
                 entry_title_clean = entry_title_raw
@@ -5710,17 +5723,20 @@ def _main(args, logger):
             if _is_history_duplicate(post_url, entry_title_norm, history):
                 logger.debug(f"  [SKIP:履歴重複] {entry_title_clean[:50]}")
                 skip_dup += 1
+                skip_reason_counts["history_duplicate"] += 1
                 continue
 
             published_at = _entry_published_datetime(entry)
             if not published_at:
                 logger.debug(f"  [SKIP:日付なし] {post_url}")
                 skip_filter += 1
+                skip_reason_counts["missing_published_at"] += 1
                 continue
 
             if not is_giants_related(title_text):
                 logger.debug(f"  [SKIP:フィルタ] {post_url}")
                 skip_filter += 1
+                skip_reason_counts["not_giants_related"] += 1
                 continue
 
             category = classify_category(title_text, keywords)
@@ -5731,21 +5747,25 @@ def _main(args, logger):
             if _should_skip_stale_postgame_entry(category, title, summary, published_at):
                 logger.debug(f"  [SKIP:postgame古い] {title[:40]}")
                 skip_filter += 1
+                skip_reason_counts["stale_postgame"] += 1
                 continue
             if _should_skip_stale_player_status_entry(category, title, summary, published_at):
                 logger.debug(f"  [SKIP:player_status古い] {title[:40]}")
                 skip_filter += 1
+                skip_reason_counts["stale_player_status"] += 1
                 continue
 
             if source_type in {"news", "social_news"}:
                 if _is_promotional_video_entry(entry_title_clean, summary):
                     logger.debug(f"  [SKIP:動画プロモ] {entry_title_clean[:40]}")
                     skip_filter += 1
+                    skip_reason_counts["video_promo"] += 1
                     continue
                 article_subtype = _detect_article_subtype(title, summary, category, entry_has_game)
                 if article_subtype == "live_update" and not ENABLE_LIVE_UPDATE_ARTICLES:
                     logger.debug(f"  [SKIP:途中経過停止中] {title[:40]}")
                     skip_filter += 1
+                    skip_reason_counts["live_update_disabled"] += 1
                     continue
                 has_comment = "「" in title_text
                 if source_type == "news":
@@ -5753,6 +5773,7 @@ def _main(args, logger):
                     if not has_comment and not allow_commentless_news:
                         logger.debug(f"  [SKIP:コメントなし] {title[:40]}")
                         skip_filter += 1
+                        skip_reason_counts["comment_required"] += 1
                         continue
                 else:
                     worthy, rescue_meta = _evaluate_authoritative_social_entry(title, summary, category, article_subtype)
@@ -5761,9 +5782,13 @@ def _main(args, logger):
                     if not worthy:
                         logger.debug(f"  [SKIP:SNS弱い] {title[:40]}")
                         skip_filter += 1
+                        skip_reason_counts["social_too_weak"] += 1
                         continue
 
             logger.info(f"  [HIT] {title[:40]} → {category}")
+            prepared_category_counts[category] += 1
+            if source_type in {"news", "social_news"}:
+                prepared_subtype_counts[article_subtype] += 1
             prepared_entries.append({
                 "entry_index": entry_index,
                 "source_rank": source_rank,
@@ -5810,6 +5835,8 @@ def _main(args, logger):
         synthetic_lineup = _build_yahoo_lineup_candidate(opponent, venue, yahoo_lineup_rows, entry_index)
         if synthetic_lineup and not any(history.get(url) for url in synthetic_lineup.get("history_urls", [])):
             logger.info("  [HIT] Yahoo固定ページからスタメン補完 → 試合速報")
+            prepared_category_counts["試合速報"] += 1
+            prepared_subtype_counts["lineup"] += 1
             prepared_entries.append(synthetic_lineup)
             prepared_entries = sorted(prepared_entries, key=lambda item: item.get("entry_index", 0))
 
@@ -5817,6 +5844,8 @@ def _main(args, logger):
         synthetic_live = _build_yahoo_live_update_candidate(opponent, venue, yahoo_game_status, entry_index, live_update_reason)
         if synthetic_live and not any(history.get(url) for url in synthetic_live.get("history_urls", [])):
             logger.info("  [HIT] Yahoo固定ページから途中経過補完 → 試合速報 (%s)", live_update_reason)
+            prepared_category_counts["試合速報"] += 1
+            prepared_subtype_counts["live_update"] += 1
             prepared_entries.append(synthetic_live)
             prepared_entries = sorted(prepared_entries, key=lambda item: item.get("entry_index", 0))
 
@@ -5824,6 +5853,8 @@ def _main(args, logger):
         synthetic_postgame = _build_yahoo_postgame_candidate(opponent, venue, yahoo_game_status, entry_index)
         if synthetic_postgame and not any(history.get(url) for url in synthetic_postgame.get("history_urls", [])):
             logger.info("  [HIT] Yahoo固定ページから試合後補完 → 試合速報")
+            prepared_category_counts["試合速報"] += 1
+            prepared_subtype_counts["postgame"] += 1
             prepared_entries.append(synthetic_postgame)
             prepared_entries = sorted(prepared_entries, key=lambda item: item.get("entry_index", 0))
 
@@ -5914,6 +5945,8 @@ def _main(args, logger):
                 featured_media=featured_media or None,
             )
             success += 1
+            created_category_counts[category] += 1
+            created_subtype_counts[title_article_subtype] += 1
             time.sleep(1)
 
             publish_skip_reasons = get_publish_skip_reasons(
@@ -5921,6 +5954,8 @@ def _main(args, logger):
                 draft_only=args.draft_only,
                 featured_media=featured_media,
             )
+            for reason in publish_skip_reasons:
+                publish_skip_reason_counts[reason] += 1
             if publish_skip_reasons:
                 logger.info(f"  [下書き止め] post_id={post_id} reason={','.join(publish_skip_reasons)}")
                 published = False
@@ -5959,6 +5994,8 @@ def _main(args, logger):
                 published=published,
                 article_url=article_url,
             )
+            for reason in x_skip_reasons:
+                x_skip_reason_counts[reason] += 1
 
             if not x_skip_reasons:
                 try:
@@ -5999,6 +6036,42 @@ def _main(args, logger):
     logger.info(
         f"=== 完了: 取得={total} / 投稿={success} / 重複スキップ={skip_dup} "
         f"/ フィルタスキップ={skip_filter} / エラー={error} ==="
+    )
+    logger.info(
+        json.dumps(
+            {
+                "event": "rss_fetcher_run_summary",
+                "dry_run": bool(args.dry_run),
+                "draft_only": bool(args.draft_only),
+                "has_game": bool(has_game),
+                "opponent": opponent,
+                "venue": venue,
+                "entry_limit": args.limit,
+                "total_entries": total,
+                "drafts_created": success,
+                "skip_duplicate": skip_dup,
+                "skip_filter": skip_filter,
+                "error_count": error,
+                "x_post_count": x_post_count,
+                "x_post_daily_limit": x_post_daily_limit,
+            },
+            ensure_ascii=False,
+        )
+    )
+    logger.info(
+        json.dumps(
+            {
+                "event": "rss_fetcher_flow_summary",
+                "skip_reasons": _counter_to_plain_dict(skip_reason_counts),
+                "prepared_category_counts": _counter_to_plain_dict(prepared_category_counts),
+                "prepared_subtype_counts": _counter_to_plain_dict(prepared_subtype_counts),
+                "created_category_counts": _counter_to_plain_dict(created_category_counts),
+                "created_subtype_counts": _counter_to_plain_dict(created_subtype_counts),
+                "publish_skip_reason_counts": _counter_to_plain_dict(publish_skip_reason_counts),
+                "x_skip_reason_counts": _counter_to_plain_dict(x_skip_reason_counts),
+            },
+            ensure_ascii=False,
+        )
     )
 
 

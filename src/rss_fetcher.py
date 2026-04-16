@@ -2820,6 +2820,42 @@ def _fetch_url_html(url: str, max_bytes: int = 200000, timeout: int = 12) -> str
             return ""
 
 
+def _get_image_candidate_exclusion_reason(image_url: str) -> str:
+    low = _html.unescape((image_url or "").strip()).lower()
+    if "abs-0.twimg.com/emoji/" in low:
+        return "emoji_svg_url"
+    return ""
+
+
+def _filter_image_candidates(
+    image_urls: list[str],
+    source_url: str = "",
+    logger: logging.Logger | None = None,
+) -> list[str]:
+    filtered = []
+    seen = set()
+    logger = logger or logging.getLogger("rss_fetcher")
+    normalized_source_url = _html.unescape((source_url or "").strip())
+
+    for image_url in image_urls or []:
+        normalized_url = _html.unescape((image_url or "").strip())
+        if not normalized_url or normalized_url in seen:
+            continue
+        reason = _get_image_candidate_exclusion_reason(normalized_url)
+        if reason:
+            payload = {
+                "event": "image_candidate_excluded",
+                "reason": reason,
+                "excluded_url": normalized_url,
+                "source_url": normalized_source_url,
+            }
+            logger.info(json.dumps(payload, ensure_ascii=False))
+            continue
+        seen.add(normalized_url)
+        filtered.append(normalized_url)
+    return filtered
+
+
 def fetch_article_images(url: str, max_images: int = 3) -> list:
     """記事ページから写真URLを最大 max_images 枚スクレイピングして返す。
     og:image を先頭に、本文中の <img> から大きそうなものを追加する。"""
@@ -5523,6 +5559,7 @@ def _main(args, logger):
                 _article_images = _extract_entry_image_urls(item.get("entry", {}), post_url, max_images=3)
                 if not _article_images:
                     _article_images = fetch_article_images(post_url, max_images=3)
+            _article_images = _filter_image_candidates(_article_images, post_url, logger)
             _og_url  = _article_images[0] if _article_images else ""
             draft_title = rewrite_display_title(title, summary, category, entry_has_game)
             content, ai_body_for_x = build_news_block(
@@ -5555,7 +5592,7 @@ def _main(args, logger):
 
             featured_media = 0
             if source_type in {"news", "social_news"} and _og_url:
-                featured_media = wp.upload_image_from_url(_og_url)
+                featured_media = wp.upload_image_from_url(_og_url, source_url=post_url)
 
             AUTO_POST_CATEGORY_ID = 673
             cats = [AUTO_POST_CATEGORY_ID]

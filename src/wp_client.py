@@ -58,6 +58,30 @@ class WPClient:
         return re.sub(r"[\s　【】「」『』〔〕（）()・\\/_-]", "", (title or "")).lower()
 
     @staticmethod
+    def _get_image_candidate_exclusion_reason(image_url: str) -> str:
+        low = html.unescape((image_url or "").strip()).lower()
+        if "abs-0.twimg.com/emoji/" in low:
+            return "emoji_svg_url"
+        return ""
+
+    @staticmethod
+    def _get_image_mime_exclusion_reason(content_type: str) -> str:
+        normalized = WPClient._normalize_content_type(content_type)
+        if normalized == "image/svg+xml":
+            return "svg_mime_type"
+        return ""
+
+    @staticmethod
+    def _log_image_candidate_excluded(reason: str, excluded_url: str, source_url: str = ""):
+        payload = {
+            "event": "image_candidate_excluded",
+            "reason": reason,
+            "excluded_url": html.unescape((excluded_url or "").strip()),
+            "source_url": html.unescape((source_url or "").strip()),
+        }
+        print(json.dumps(payload, ensure_ascii=False))
+
+    @staticmethod
     def _is_recent_post(post: dict, within_hours: int) -> bool:
         threshold = timedelta(hours=within_hours)
         now_utc = datetime.now(timezone.utc)
@@ -248,14 +272,23 @@ class WPClient:
         content_type = WPClient._parse_content_type(header_res.stdout.decode("iso-8859-1", errors="ignore"))
         return body_res.stdout, content_type
 
-    def upload_image_from_url(self, image_url: str, filename: str = None) -> int:
+    def upload_image_from_url(self, image_url: str, filename: str = None, source_url: str = "") -> int:
         """
         外部画像URLをダウンロードしてWPメディアライブラリにアップロード。
         Returns: media_id (int)、失敗時は 0
         """
         try:
             normalized_url = html.unescape((image_url or "").strip())
+            normalized_source_url = html.unescape((source_url or "").strip()) or normalized_url
             print(f"[WP] 画像アップロード開始 image_url={normalized_url}")
+            url_exclusion_reason = self._get_image_candidate_exclusion_reason(normalized_url)
+            if url_exclusion_reason:
+                self._log_image_candidate_excluded(url_exclusion_reason, normalized_url, normalized_source_url)
+                print(
+                    "[WP] 画像アップロードskip: "
+                    f"excluded_reason={url_exclusion_reason} image_url={normalized_url}"
+                )
+                return 0
             try:
                 img_resp = requests.get(
                     normalized_url,
@@ -270,6 +303,9 @@ class WPClient:
                 content_type = self._normalize_content_type(content_type)
 
             print(f"[WP] 画像ダウンロード Content-Type={content_type or 'unknown'} image_url={normalized_url}")
+            mime_exclusion_reason = self._get_image_mime_exclusion_reason(content_type)
+            if mime_exclusion_reason:
+                self._log_image_candidate_excluded(mime_exclusion_reason, normalized_url, normalized_source_url)
             ext = ALLOWED_IMAGE_CONTENT_TYPES.get(content_type)
             if not ext:
                 print(

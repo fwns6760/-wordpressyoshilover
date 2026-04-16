@@ -1,0 +1,57 @@
+[
+  {
+    "name": "exclude_emoji_svg_url_from_candidates",
+    "type": "candidate_filter",
+    "source_url": "https://twitter.com/TokyoGiants/status/2044384085616066802",
+    "candidate_urls": [
+      "https://abs-0.twimg.com/emoji/v2/svg/26a0.svg",
+      "https://pbs.twimg.com/media/HF77Ob7agAA_PyF?format=jpg&name=orig"
+    ],
+    "expected_urls": [
+      "https://pbs.twimg.com/media/HF77Ob7agAA_PyF?format=jpg&name=orig"
+    ],
+    "expected_log": {
+      "event": "image_candidate_excluded",
+      "reason": "emoji_svg_url",
+      "excluded_url": "https://abs-0.twimg.com/emoji/v2/svg/26a0.svg",
+      "source_url": "https://twitter.com/TokyoGiants/status/2044384085616066802"
+    }
+  },
+  {
+    "name": "exclude_svg_mime_on_upload",
+    "type": "upload_mime",
+    "source_url": "https://twitter.com/TokyoGiants/status/2044336036927656368",
+    "image_url": "https://example.com/hero.svg",
+    "content_type": "image/svg+xml",
+    "expected_log": {
+      "event": "image_candidate_excluded",
+      "reason": "svg_mime_type",
+      "excluded_url": "https://example.com/hero.svg",
+      "source_url": "https://twitter.com/TokyoGiants/status/2044336036927656368"
+    }
+  },
+  {
+    "name": "allow_raster_images",
+    "type": "candidate_filter",
+    "source_url": "https://twitter.com/hochi_giants/status/2044523273421979944",
+    "candidate_urls": [
+      "https://hochi.news/images/2026/04/15/20260415-OHT1I51357-L.jpg",
+      "https://example.com/hero.png",
+      "https://example.com/hero.webp"
+    ],
+    "expected_urls": [
+      "https://hochi.news/images/2026/04/15/20260415-OHT1I51357-L.jpg",
+      "https://example.com/hero.png",
+      "https://example.com/hero.webp"
+    ]
+  },
+  {
+    "name": "allow_raster_mime_types",
+    "type": "mime_allow",
+    "content_types": [
+      "image/jpeg",
+      "image/png",
+      "image/webp"
+    ]
+  }
+]

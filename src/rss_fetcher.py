@@ -4901,6 +4901,15 @@ def _trim_display_title(text: str, max_chars: int = 38) -> str:
     return clean[:max_chars].rstrip(" ・、。") + "…"
 
 
+RAINOUT_SLIDE_TITLE_RE = _re.compile(r"(?:雨天中止|雨で中止).*(?:スライド登板|先発予定)|(?:スライド登板).*(?:雨天中止|先発予定)")
+FARM_LINEUP_TITLE_RE = _re.compile(r"(?:二軍|２軍|2軍|ファーム).*(?:スタメン|オーダー|打順|1⃣|2⃣|3⃣|4⃣|1番|2番|3番|4番)|(?:スタメン|オーダー|打順|1⃣|2⃣|3⃣|4⃣|1番|2番|3番|4番).*(?:二軍|２軍|2軍|ファーム)")
+FARM_RESULT_TITLE_RE = _re.compile(r"(?:二軍|２軍|2軍|ファーム).*(?:\d+\s*[-－]\s*\d+|勝利|白星|敗戦|本塁打|無失点|猛打賞|マルチ)")
+PLAYER_DEREGISTER_TITLE_RE = _re.compile(r"(?:出場選手)?登録を?抹消|登録抹消")
+PLAYER_REGISTER_TITLE_RE = _re.compile(r"(?:出場選手)?登録|一軍登録|再登録")
+PLAYER_RETURN_TITLE_RE = _re.compile(r"実戦復帰|復帰(?:へ前進|見込み|予定|間近)?")
+PLAYER_JOIN_TITLE_RE = _re.compile(r"(?:一軍|チーム)?合流|昇格")
+
+
 def rewrite_display_title(title: str, summary: str, category: str, has_game: bool) -> str:
     clean_title = _clean_display_title_text(title)
     clean_summary = _strip_html(summary or "").strip()
@@ -4919,7 +4928,13 @@ def rewrite_display_title(title: str, summary: str, category: str, has_game: boo
     if category == "選手情報":
         if "フォーム" in source_text or "助言" in source_text or "修正" in source_text:
             return _trim_display_title(f"{subject}、フォーム変更のポイントはどこか")
-        if "昇格" in source_text or "一軍" in source_text or "復帰" in source_text:
+        if PLAYER_DEREGISTER_TITLE_RE.search(source_text):
+            return _trim_display_title(f"{subject}、登録抹消後にどこを見たいか")
+        if PLAYER_JOIN_TITLE_RE.search(source_text):
+            return _trim_display_title(f"{subject}、一軍合流でどこを見たいか")
+        if PLAYER_REGISTER_TITLE_RE.search(source_text):
+            return _trim_display_title(f"{subject}、登録後にどこを見たいか")
+        if PLAYER_RETURN_TITLE_RE.search(source_text) or "昇格" in source_text or "一軍" in source_text or "復帰" in source_text:
             return _trim_display_title(f"{subject}、昇格・復帰でどこを見たいか")
         if quote_text:
             return _trim_display_title(f"{subject}「{quote_text}」 実戦で何を見せるか")
@@ -4935,6 +4950,8 @@ def rewrite_display_title(title: str, summary: str, category: str, has_game: boo
         return _trim_display_title(f"{subject}コメント整理 ベンチは何を動かすのか")
 
     if category == "試合速報":
+        if RAINOUT_SLIDE_TITLE_RE.search(source_text):
+            return _trim_display_title(f"{subject}、スライド登板で何を見たいか")
         if subtype == "lineup":
             body = clean_title.replace("今日の", "").replace("スタメン発表", "").replace("発表", "").strip()
             return _trim_display_title(f"巨人スタメン {body}でどこを動かしたか")
@@ -4980,8 +4997,11 @@ def rewrite_display_title(title: str, summary: str, category: str, has_game: boo
         return _trim_display_title("巨人補強の整理 どこを厚くするのか")
 
     if category == "ドラフト・育成":
-        if subtype == "farm_lineup":
+        if subtype == "farm_lineup" or FARM_LINEUP_TITLE_RE.search(source_text):
             return _trim_display_title("巨人二軍スタメン 若手をどう並べたか")
+        score = SCORE_TOKEN_RE.search(source_text)
+        if FARM_RESULT_TITLE_RE.search(source_text) and score:
+            return _trim_display_title(f"巨人二軍 {score.group(0)} 結果のポイント")
 
     return _trim_display_title(clean_title or "巨人ニュース")
 

@@ -31,7 +31,7 @@
       "category": "選手情報",
       "article_subtype": "player",
       "player_mode": "player_status",
-      "draft_title": "中山礼都の現状整理 いま何を見たいか",
+      "draft_title": "中山礼都、登録抹消後にどこを見たいか",
       "skip_reason": "draft_only"
     }
   },
@@ -121,7 +121,7 @@
       "category": "試合速報",
       "article_subtype": "game_note",
       "player_mode": "",
-      "draft_title": "巨人戦 試合前にどこを見たいか",
+      "draft_title": "田中将大、スライド登板で何を見たいか",
       "skip_reason": "draft_only"
     }
   },
@@ -139,7 +139,7 @@
       "category": "ドラフト・育成",
       "article_subtype": "farm",
       "player_mode": "",
-      "draft_title": "巨人 4-0 ハヤテベンチャーズ静岡 #ティマ 選手が先制本塁打を放ち、",
+      "draft_title": "巨人二軍 4-0 結果のポイント",
       "skip_reason": "draft_only"
     }
   },
@@ -157,7 +157,7 @@
       "category": "ドラフト・育成",
       "article_subtype": "farm",
       "player_mode": "",
-      "draft_title": "巨人 vs ハヤテベンチャーズ静岡 しずてつスタジアム草薙 18時試合開",
+      "draft_title": "巨人二軍スタメン 若手をどう並べたか",
       "skip_reason": "draft_only,featured_media_missing"
     }
   },

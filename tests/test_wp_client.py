@@ -1,5 +1,6 @@
 import os
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import Mock, patch
 
 import requests
@@ -156,6 +157,24 @@ class TestWPClientDedup(unittest.TestCase):
 
         self.assertEqual(post_id, 123)
         mock_post.assert_not_called()
+
+    @patch("src.wp_client.requests.get")
+    def test_find_recent_post_by_title_uses_24_hour_window_by_default(self, mock_get):
+        class FixedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                base = datetime(2026, 4, 16, 12, 0, 0, tzinfo=timezone.utc)
+                if tz:
+                    return base.astimezone(tz)
+                return base.replace(tzinfo=None)
+
+        mock_get.return_value = Mock(status_code=200, json=lambda: [])
+
+        with patch("src.wp_client.datetime", FixedDateTime):
+            self.wp.find_recent_post_by_title("巨人戦 試合の流れを分けたポイント")
+
+        first_params = mock_get.call_args_list[0].kwargs["params"]
+        self.assertEqual(first_params["after"], "2026-04-15T12:00:00+00:00")
 
     @patch("src.wp_client.requests.post")
     @patch("src.wp_client.requests.get")

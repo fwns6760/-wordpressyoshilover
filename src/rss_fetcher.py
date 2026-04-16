@@ -4558,6 +4558,30 @@ def save_history_batch(urls: list[str], history: dict, title_norms: list[str] | 
     persist_history(history)
 
 
+def _is_history_duplicate(post_url: str, entry_title_norm: str, history: dict) -> bool:
+    if post_url and post_url in history:
+        return True
+    if entry_title_norm and len(entry_title_norm) > 5:
+        title_key = f"title_norm:{entry_title_norm[:60]}"
+        if title_key in history:
+            return True
+    return False
+
+
+def persist_processed_entry_history(
+    history: dict,
+    history_urls: list[str],
+    history_title_norms: list[str] | None = None,
+    published: bool = False,
+    publish_skip_reasons: list[str] | None = None,
+) -> bool:
+    reasons = set(publish_skip_reasons or [])
+    if not published and "draft_only" not in reasons:
+        return False
+    save_history_batch(history_urls, history, history_title_norms)
+    return True
+
+
 def _entry_day_key(entry: dict) -> str:
     published_at = _entry_published_datetime(entry)
     if not published_at:
@@ -5292,18 +5316,12 @@ def _main(args, logger):
                 entry_summary_clean = entry_summary_raw
             title_text = f"{entry_title_clean} {entry_summary_clean}".strip()
 
-            if post_url in history:
-                skip_dup += 1
-                continue
-
             import re as _re2
             entry_title_norm = _re2.sub(r"[\s　【】「」『』〔〕（）()・\-_]", "", entry_title_clean).lower()
-            if entry_title_norm and len(entry_title_norm) > 5:
-                title_key = f"title_norm:{entry_title_norm[:60]}"
-                if title_key in history:
-                    logger.debug(f"  [SKIP:タイトル重複] {entry_title_clean[:50]}")
-                    skip_dup += 1
-                    continue
+            if _is_history_duplicate(post_url, entry_title_norm, history):
+                logger.debug(f"  [SKIP:履歴重複] {entry_title_clean[:50]}")
+                skip_dup += 1
+                continue
 
             published_at = _entry_published_datetime(entry)
             if not published_at:
@@ -5515,11 +5533,13 @@ def _main(args, logger):
                     logger,
                     draft_only=False,
                 )
-            if published:
-                extra_history_urls = item.get("history_urls", [])
-                extra_history_norms = item.get("history_title_norms", [])
-                if len(extra_history_urls) > 1 or len(extra_history_norms) > 1:
-                    save_history_batch(extra_history_urls, history, extra_history_norms)
+            persist_processed_entry_history(
+                history,
+                item.get("history_urls", [post_url]),
+                item.get("history_title_norms", [entry_title_norm] if entry_title_norm else []),
+                published=published,
+                publish_skip_reasons=publish_skip_reasons,
+            )
 
             article_url = ""
             if published:

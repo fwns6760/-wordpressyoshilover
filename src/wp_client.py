@@ -79,7 +79,7 @@ class WPClient:
     def find_recent_post_by_title(
         self,
         title: str,
-        within_hours: int = 2,
+        within_hours: int = 24,
         reusable_statuses: set[str] | None = None,
     ) -> dict | None:
         """

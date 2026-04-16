@@ -1,0 +1,29 @@
+[
+  {
+    "name": "same_source_url_is_skipped_after_draft_only_history_save",
+    "post_url": "https://twitter.com/hochi_giants/status/2044363553461739656",
+    "entry_title_norm": "リチャード昇格復帰でどこを見たいか",
+    "history": {
+      "https://twitter.com/hochi_giants/status/2044363553461739656": "2026-04-16T00:01:36"
+    },
+    "expected_duplicate": true
+  },
+  {
+    "name": "new_source_url_is_not_skipped",
+    "post_url": "https://twitter.com/hochi_giants/status/2044523273421979944",
+    "entry_title_norm": "吉川尚輝昇格復帰でどこを見たいか",
+    "history": {
+      "https://twitter.com/hochi_giants/status/2044363553461739656": "2026-04-16T00:01:36"
+    },
+    "expected_duplicate": false
+  },
+  {
+    "name": "same_title_norm_is_still_skipped",
+    "post_url": "https://twitter.com/example/status/999999999999999999",
+    "entry_title_norm": "巨人戦試合前にどこを見たいか",
+    "history": {
+      "title_norm:巨人戦試合前にどこを見たいか": "2026-04-16T00:00:43"
+    },
+    "expected_duplicate": true
+  }
+]

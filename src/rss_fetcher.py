@@ -6410,10 +6410,24 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             '<!-- /wp:heading -->\n\n'
         )
         widget_script_included = False
-        for media_quote in media_quotes[:1]:
+        display_media_quotes = media_quotes[:2]
+        for index, media_quote in enumerate(display_media_quotes, start=1):
             media_url = (media_quote.get("url") or "").strip()
             if not media_url:
                 continue
+            if len(display_media_quotes) > 1:
+                source_label = (
+                    (media_quote.get("source_name") or "").strip()
+                    or (media_quote.get("quote_account") or "").strip()
+                    or (media_quote.get("handle") or "").strip()
+                )
+                if source_label:
+                    safe_source_label = source_label.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    blocks += (
+                        '<!-- wp:html -->\n'
+                        f'<div class="yoshilover-media-quote-source" style="font-size:0.78em;color:#666;font-weight:700;margin:0 0 8px;">{index}. {safe_source_label}</div>\n'
+                        '<!-- /wp:html -->\n\n'
+                    )
             blocks += build_oembed_block(
                 media_url,
                 compact=False,
@@ -7766,6 +7780,8 @@ def _log_media_xpost_embedded(
     embed_section_type: str = "",
     match_reason: str = "",
     match_score: int = 0,
+    quote_index: int = 1,
+    quote_count_in_article: int = 1,
     position: str = MEDIA_XPOST_POSITION,
 ) -> None:
     payload = {
@@ -7779,6 +7795,8 @@ def _log_media_xpost_embedded(
         "embed_section_type": embed_section_type,
         "match_reason": match_reason,
         "match_score": match_score,
+        "quote_index": quote_index,
+        "quote_count_in_article": quote_count_in_article,
         "position": position,
     }
     logger.info(json.dumps(payload, ensure_ascii=False))
@@ -8182,6 +8200,20 @@ def _main(args, logger):
                         if alias and alias not in {"首脳陣", "巨人"}
                     ]
                 )
+            topic_aliases = _dedupe_preserve_order(player_aliases or manager_aliases)
+            if not topic_aliases:
+                compact_subject = _compact_subject_label(raw_title, summary, effective_story_category)
+                if compact_subject and compact_subject not in {"巨人", "選手", "首脳陣"}:
+                    topic_aliases.append(compact_subject)
+                family_alias_for_topic = _player_family_name_alias(raw_title, summary, effective_story_category)
+                if family_alias_for_topic:
+                    topic_aliases.append(family_alias_for_topic)
+                topic_aliases = _dedupe_preserve_order(topic_aliases)
+            media_quote_max_count = 1
+            if media_story_kind in {"player_notice", "manager_quote"}:
+                media_quote_max_count = 2
+            elif source_type == "social_news" and category in {"試合速報", "選手情報", "首脳陣"}:
+                media_quote_max_count = 2
 
             media_quotes = select_media_quotes(
                 {
@@ -8197,8 +8229,9 @@ def _main(args, logger):
                     "manager_aliases": manager_aliases,
                     "article_subtype": title_article_subtype,
                     "category": category,
+                    "topic_aliases": topic_aliases,
                 },
-                max_count=1,
+                max_count=media_quote_max_count,
                 media_quote_pool=media_quote_pool,
             )
             if source_type == "news":
@@ -8262,19 +8295,22 @@ def _main(args, logger):
             created_category_counts[category] += 1
             created_subtype_counts[title_article_subtype] += 1
             if media_quotes:
-                first_media_quote = media_quotes[0]
-                _log_media_xpost_embedded(
-                    logger,
-                    post_id,
-                    draft_title,
-                    source_type,
-                    first_media_quote.get("handle", ""),
-                    first_media_quote.get("url", ""),
-                    quote_account=first_media_quote.get("quote_account", ""),
-                    embed_section_type=first_media_quote.get("section_label", ""),
-                    match_reason=first_media_quote.get("match_reason", ""),
-                    match_score=int(first_media_quote.get("match_score", 0) or 0),
-                )
+                total_media_quotes = len(media_quotes[:2])
+                for quote_index, media_quote in enumerate(media_quotes[:2], start=1):
+                    _log_media_xpost_embedded(
+                        logger,
+                        post_id,
+                        draft_title,
+                        source_type,
+                        media_quote.get("handle", ""),
+                        media_quote.get("url", ""),
+                        quote_account=media_quote.get("quote_account", ""),
+                        embed_section_type=media_quote.get("section_label", ""),
+                        match_reason=media_quote.get("match_reason", ""),
+                        match_score=int(media_quote.get("match_score", 0) or 0),
+                        quote_index=quote_index,
+                        quote_count_in_article=total_media_quotes,
+                    )
             if source_type == "social_news":
                 _log_social_body_template_applied(
                     logger,

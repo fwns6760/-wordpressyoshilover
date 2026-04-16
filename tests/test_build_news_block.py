@@ -352,6 +352,44 @@ class BuildNewsBlockTests(unittest.TestCase):
         self.assertIn("📌 公示ポスト", blocks)
         self.assertIn("https://twitter.com/npb/status/1", blocks)
 
+    def test_notice_article_renders_two_media_quotes_in_order(self):
+        media_quotes = [
+            {
+                "url": "https://twitter.com/npb/status/1",
+                "handle": "@npb",
+                "quote_account": "@npb",
+                "source_name": "NPB公式X",
+                "section_label": "📌 公示ポスト",
+                "match_reason": "composite",
+                "match_score": 157,
+            },
+            {
+                "url": "https://twitter.com/TokyoGiants/status/2",
+                "handle": "@TokyoGiants",
+                "quote_account": "@TokyoGiants",
+                "source_name": "巨人公式X",
+                "section_label": "📌 公示ポスト",
+                "match_reason": "composite",
+                "match_score": 140,
+            },
+        ]
+        with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+            with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                blocks, _ = rss_fetcher.build_news_block(
+                    title="皆川岳飛、一軍登録でどこを見たいか",
+                    summary="巨人・皆川岳飛外野手が出場選手登録された。",
+                    url="https://example.com/post",
+                    source_name="スポニチ",
+                    category="選手情報",
+                    has_game=False,
+                    source_type="news",
+                    media_quotes=media_quotes,
+                )
+
+        self.assertIn("1. NPB公式X", blocks)
+        self.assertIn("2. 巨人公式X", blocks)
+        self.assertLess(blocks.index("https://twitter.com/npb/status/1"), blocks.index("https://twitter.com/TokyoGiants/status/2"))
+
     def test_manager_article_renders_manager_media_quote_section(self):
         media_quotes = [
             {

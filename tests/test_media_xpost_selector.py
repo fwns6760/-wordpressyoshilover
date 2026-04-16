@@ -81,6 +81,39 @@ class MediaXpostSelectorTests(unittest.TestCase):
         self.assertIn(quotes[0]["match_reason"], {"composite", "player_name_match"})
         self.assertGreater(quotes[0]["match_score"], 100)
 
+    def test_notice_story_returns_second_quote_from_official_when_available(self):
+        quotes = select_media_quotes(
+            {
+                "source_type": "news",
+                "story_kind": "player_notice",
+                "player_name": "皆川岳飛",
+                "player_aliases": ["皆川岳飛", "皆川"],
+                "notice_type": "一軍登録",
+                "created_at": "2026-04-16T10:00:00+09:00",
+            },
+            max_count=2,
+            media_quote_pool=[
+                {
+                    "source_name": "NPB公式X",
+                    "source_url": "https://twitter.com/npb/status/1",
+                    "title": "【公示】4/16 巨人・皆川岳飛を出場選手登録",
+                    "summary": "",
+                    "created_at": "2026-04-16T09:30:00+09:00",
+                },
+                {
+                    "source_name": "巨人公式X",
+                    "source_url": "https://twitter.com/TokyoGiants/status/2",
+                    "title": "皆川岳飛が一軍に合流し、甲子園で練習に参加",
+                    "summary": "",
+                    "created_at": "2026-04-16T08:55:00+09:00",
+                },
+            ],
+        )
+
+        self.assertEqual(len(quotes), 2)
+        self.assertEqual(quotes[0]["handle"], "@npb")
+        self.assertEqual(quotes[1]["handle"], "@TokyoGiants")
+
     def test_notice_story_rejects_npb_quote_when_player_name_does_not_match(self):
         quotes = select_media_quotes(
             {
@@ -153,6 +186,38 @@ class MediaXpostSelectorTests(unittest.TestCase):
         self.assertEqual(quotes[0]["section_label"], "📌 公示ポスト")
         self.assertEqual(quotes[0]["source_class"], "official")
 
+    def test_notice_story_respects_max_count_one(self):
+        quotes = select_media_quotes(
+            {
+                "source_type": "news",
+                "story_kind": "player_notice",
+                "player_name": "皆川岳飛",
+                "player_aliases": ["皆川岳飛", "皆川"],
+                "notice_type": "一軍登録",
+                "created_at": "2026-04-16T10:00:00+09:00",
+            },
+            max_count=1,
+            media_quote_pool=[
+                {
+                    "source_name": "NPB公式X",
+                    "source_url": "https://twitter.com/npb/status/1",
+                    "title": "【公示】4/16 巨人・皆川岳飛を出場選手登録",
+                    "summary": "",
+                    "created_at": "2026-04-16T09:30:00+09:00",
+                },
+                {
+                    "source_name": "巨人公式X",
+                    "source_url": "https://twitter.com/TokyoGiants/status/2",
+                    "title": "皆川岳飛が一軍に合流し、甲子園で練習に参加",
+                    "summary": "",
+                    "created_at": "2026-04-16T08:55:00+09:00",
+                },
+            ],
+        )
+
+        self.assertEqual(len(quotes), 1)
+        self.assertEqual(quotes[0]["handle"], "@npb")
+
     def test_manager_story_matches_media_quote_by_manager_name_and_time(self):
         quotes = select_media_quotes(
             {
@@ -178,6 +243,37 @@ class MediaXpostSelectorTests(unittest.TestCase):
         self.assertEqual(quotes[0]["section_label"], "📢 報道ポスト")
         self.assertEqual(quotes[0]["source_class"], "media")
 
+    def test_manager_story_stays_single_when_only_media_exists(self):
+        quotes = select_media_quotes(
+            {
+                "source_type": "news",
+                "story_kind": "manager_quote",
+                "manager_name": "阿部監督",
+                "manager_aliases": ["阿部監督", "阿部"],
+                "created_at": "2026-04-16T10:00:00+09:00",
+            },
+            max_count=2,
+            media_quote_pool=[
+                {
+                    "source_name": "スポーツ報知巨人班X",
+                    "source_url": "https://twitter.com/hochi_giants/status/55",
+                    "title": "阿部監督が松本剛を高評価「自己犠牲ができる」",
+                    "summary": "",
+                    "created_at": "2026-04-16T09:15:00+09:00",
+                },
+                {
+                    "source_name": "報知野球X",
+                    "source_url": "https://twitter.com/hochi_baseball/status/56",
+                    "title": "阿部監督が継投を説明",
+                    "summary": "",
+                    "created_at": "2026-04-16T09:10:00+09:00",
+                },
+            ],
+        )
+
+        self.assertEqual(len(quotes), 1)
+        self.assertEqual(quotes[0]["handle"], "@hochi_giants")
+
     def test_manager_story_rejects_media_quote_when_name_does_not_match(self):
         quotes = select_media_quotes(
             {
@@ -199,6 +295,32 @@ class MediaXpostSelectorTests(unittest.TestCase):
         )
 
         self.assertEqual(quotes, [])
+
+    def test_social_news_can_append_second_media_quote_for_same_topic(self):
+        quotes = select_media_quotes(
+            {
+                "source_type": "social_news",
+                "source_url": "https://twitter.com/TokyoGiants/status/100",
+                "source_name": "巨人公式X",
+                "created_at": "2026-04-16T10:00:00+09:00",
+                "category": "選手情報",
+                "topic_aliases": ["皆川岳飛", "皆川"],
+            },
+            max_count=2,
+            media_quote_pool=[
+                {
+                    "source_name": "スポーツ報知巨人班X",
+                    "source_url": "https://twitter.com/hochi_giants/status/101",
+                    "title": "皆川岳飛が一軍に合流して練習",
+                    "summary": "",
+                    "created_at": "2026-04-16T09:45:00+09:00",
+                }
+            ],
+        )
+
+        self.assertEqual(len(quotes), 2)
+        self.assertEqual(quotes[0]["handle"], "@TokyoGiants")
+        self.assertEqual(quotes[1]["handle"], "@hochi_giants")
 
 
 if __name__ == "__main__":

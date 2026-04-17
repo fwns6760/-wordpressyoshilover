@@ -160,8 +160,8 @@ class CostModeTests(unittest.TestCase):
         )
 
     def test_yesterdays_postgame_entry_is_skipped(self):
-        yesterday_local = datetime.now().astimezone() - timedelta(hours=12)
-        if yesterday_local.date() == datetime.now().astimezone().date():
+        yesterday_local = datetime.now(rss_fetcher.JST) - timedelta(hours=12)
+        if yesterday_local.date() == datetime.now(rss_fetcher.JST).date():
             yesterday_local = yesterday_local - timedelta(days=1)
         self.assertTrue(
             rss_fetcher._should_skip_stale_postgame_entry(

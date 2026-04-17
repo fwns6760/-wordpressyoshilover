@@ -3,6 +3,7 @@
 Phase C は「カテゴリ単位で publish を段階的に有効化し、その後で X 自動投稿を段階的に有効化する」ための運用手順です。安全側の既定値は以下です。
 
 観察ログクエリ集は [docs/operation_logs.md](/home/fwns6/code/wordpressyoshilover/docs/operation_logs.md) を参照。
+朝の fact check メール初回セットアップは [docs/phase_3_step1_setup.md](/home/fwns6/code/wordpressyoshilover/docs/phase_3_step1_setup.md) を参照。
 
 - `RUN_DRAFT_ONLY=1`
 - `AUTO_TWEET_ENABLED=0`

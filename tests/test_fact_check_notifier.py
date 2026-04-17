@@ -78,12 +78,23 @@ class FactCheckNotifierTests(unittest.TestCase):
     @patch.object(fact_check_notifier, "send_email")
     def test_run_notification_sends_and_returns_summary(self, mock_send_email, mock_collect_reports):
         mock_collect_reports.return_value = [self._report(62500, "green")]
+        mock_send_email.return_value = {"mode": "smtp"}
         with patch.dict("os.environ", {"FACT_CHECK_EMAIL_TO": "fwns6760@gmail.com", "FACT_CHECK_EMAIL_FROM": "fwns6760@gmail.com"}, clear=False):
             payload = fact_check_notifier.run_notification(since="yesterday", send=True)
 
         self.assertTrue(payload["sent"])
         self.assertEqual(payload["green"], 1)
         mock_send_email.assert_called_once()
+
+    @patch.object(fact_check_notifier.acceptance_fact_check, "collect_reports")
+    @patch.object(fact_check_notifier, "_fetch_secret_from_secret_manager", side_effect=RuntimeError("missing secret"))
+    def test_send_email_falls_back_to_demo_mode_when_password_missing(self, _mock_secret, mock_collect_reports):
+        mock_collect_reports.return_value = [self._report(62502, "red")]
+        with patch.dict("os.environ", {"GMAIL_APP_PASSWORD": "", "FACT_CHECK_EMAIL_TO": "fwns6760@gmail.com", "FACT_CHECK_EMAIL_FROM": "fwns6760@gmail.com"}, clear=False):
+            payload = fact_check_notifier.run_notification(since="yesterday", send=True)
+
+        self.assertFalse(payload["sent"])
+        self.assertEqual(payload["delivery_mode"], "demo")
 
     @patch.object(fact_check_notifier.acceptance_fact_check, "collect_reports")
     @patch.object(fact_check_notifier, "send_email", side_effect=RuntimeError("smtp auth failed"))

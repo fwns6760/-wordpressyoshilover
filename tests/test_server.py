@@ -46,6 +46,16 @@ class AuthModeTests(unittest.TestCase):
             with patch.object(server, "_verify_oidc_token", return_value=True):
                 self.assertTrue(server._is_authorized(DummyHandler({"Authorization": "Bearer token"})))
 
+    def test_fact_check_notify_accepts_x_secret_even_in_cloud_run_mode(self):
+        with patch.dict("os.environ", {"RUN_AUTH_MODE": "cloud_run", "RUN_SECRET": "abc"}, clear=False):
+            from importlib import reload
+            import src.server as server
+
+            reload(server)
+            with patch.object(server, "_verify_oidc_token", return_value=False):
+                self.assertTrue(server._is_authorized_with_secret_fallback(DummyHandler({"X-Secret": "abc"})))
+                self.assertFalse(server._is_authorized_with_secret_fallback(DummyHandler({"X-Secret": "zzz"})))
+
 
 class RunFetcherTests(unittest.TestCase):
     def test_run_fetcher_success(self):

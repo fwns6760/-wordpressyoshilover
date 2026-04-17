@@ -81,6 +81,16 @@ def _is_authorized(handler: BaseHTTPRequestHandler) -> bool:
     return _secret_is_configured() and handler.headers.get("X-Secret", "") == SECRET
 
 
+def _is_secret_authorized(handler: BaseHTTPRequestHandler) -> bool:
+    return _secret_is_configured() and handler.headers.get("X-Secret", "") == SECRET
+
+
+def _is_authorized_with_secret_fallback(handler: BaseHTTPRequestHandler) -> bool:
+    if _is_secret_authorized(handler):
+        return True
+    return _is_authorized(handler)
+
+
 def _parse_limit(body: str, content_type: str = "") -> str:
     limit = None
 
@@ -234,7 +244,7 @@ class Handler(BaseHTTPRequestHandler):
             if not _uses_cloud_run_auth() and not _secret_is_configured():
                 self._respond(503, "RUN_SECRET is not configured")
                 return
-            if not _is_authorized(self):
+            if not _is_authorized_with_secret_fallback(self):
                 self._respond(403, "Forbidden")
                 return
             since = _parse_query_value(self.path, "since", "yesterday")

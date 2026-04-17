@@ -287,7 +287,10 @@ def _load_gmail_app_password() -> str:
     if direct:
         return direct
     secret_name = os.environ.get("GMAIL_APP_PASSWORD_SECRET_NAME", "").strip() or DEFAULT_GMAIL_APP_PASSWORD_SECRET
-    return _fetch_secret_from_secret_manager(secret_name).strip()
+    try:
+        return _fetch_secret_from_secret_manager(secret_name).strip()
+    except Exception:
+        return ""
 
 
 def _smtp_config() -> tuple[str, int]:
@@ -306,10 +309,19 @@ def send_email(
     text_body: str,
     to_email: str,
     from_email: str,
-) -> None:
+) -> dict[str, Any]:
     password = _load_gmail_app_password()
     if not password:
-        raise RuntimeError("GMAIL_APP_PASSWORD is empty")
+        preview = {
+            "mode": "demo",
+            "subject": subject,
+            "to_email": to_email,
+            "from_email": from_email,
+            "text_preview": text_body[:1200],
+        }
+        _log_event("fact_check_email_demo", **preview)
+        print(text_body, flush=True)
+        return preview
 
     msg = EmailMessage()
     msg["Subject"] = subject
@@ -322,6 +334,7 @@ def send_email(
     with smtplib.SMTP_SSL(host, port, timeout=20) as smtp:
         smtp.login(from_email, password)
         smtp.send_message(msg)
+    return {"mode": "smtp", "subject": subject, "to_email": to_email, "from_email": from_email}
 
 
 def run_notification(
@@ -357,6 +370,7 @@ def run_notification(
         "green": counts["green"],
         "subject": subject,
         "sent": False,
+        "delivery_mode": "none",
         "text_body": text_body,
         "reports": [
             asdict(report)
@@ -378,7 +392,7 @@ def run_notification(
     to_email = os.environ.get("FACT_CHECK_EMAIL_TO", "").strip() or DEFAULT_FACT_CHECK_EMAIL
     from_email = os.environ.get("FACT_CHECK_EMAIL_FROM", "").strip() or DEFAULT_FACT_CHECK_EMAIL
     try:
-        send_email(
+        delivery = send_email(
             subject=subject,
             html_body=html_body,
             text_body=text_body,
@@ -400,17 +414,30 @@ def run_notification(
         )
         raise
 
-    payload["sent"] = True
-    _log_event(
-        "fact_check_email_sent",
-        since=normalized_since,
-        checked_posts=counts["checked"],
-        red=counts["red"],
-        yellow=counts["yellow"],
-        green=counts["green"],
-        to_email=to_email,
-        subject=subject,
-    )
+    payload["delivery_mode"] = delivery.get("mode", "smtp")
+    payload["sent"] = payload["delivery_mode"] == "smtp"
+    if payload["sent"]:
+        _log_event(
+            "fact_check_email_sent",
+            since=normalized_since,
+            checked_posts=counts["checked"],
+            red=counts["red"],
+            yellow=counts["yellow"],
+            green=counts["green"],
+            to_email=to_email,
+            subject=subject,
+        )
+    else:
+        _log_event(
+            "fact_check_email_demo_ready",
+            since=normalized_since,
+            checked_posts=counts["checked"],
+            red=counts["red"],
+            yellow=counts["yellow"],
+            green=counts["green"],
+            to_email=to_email,
+            subject=subject,
+        )
     return payload
 
 

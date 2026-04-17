@@ -103,6 +103,46 @@ class RunFetcherTests(unittest.TestCase):
             timeout=server.RUN_SUBPROCESS_TIMEOUT,
         )
 
+    def test_run_fact_check_notify_success(self):
+        from importlib import reload
+        import src.server as server
+
+        reload(server)
+        with patch("src.fact_check_notifier.run_notification") as mock_run_notification:
+            mock_run_notification.return_value = {
+                "since": "yesterday",
+                "checked_posts": 6,
+                "red": 1,
+                "yellow": 2,
+                "green": 3,
+                "subject": "subject",
+                "sent": True,
+            }
+            code, body = server._run_fact_check_notify("yesterday", "20", category="postgame", send=True)
+
+        self.assertEqual(code, 200)
+        self.assertIn('"checked_posts": 6', body)
+        self.assertIn('"sent": true', body)
+        mock_run_notification.assert_called_once_with(
+            since="yesterday",
+            limit=20,
+            category="postgame",
+            send=True,
+        )
+
+    def test_run_fact_check_notify_failure_returns_500(self):
+        from importlib import reload
+        import src.server as server
+
+        reload(server)
+        with patch("src.fact_check_notifier.run_notification", side_effect=RuntimeError("smtp auth failed")):
+            code, body = server._run_fact_check_notify("yesterday", "oops", category="", send=False)
+
+        self.assertEqual(code, 500)
+        self.assertIn('"status": "error"', body)
+        self.assertIn('"limit": 20', body)
+        self.assertIn("smtp auth failed", body)
+
 
 class RunStartedLoggingTests(unittest.TestCase):
     def test_run_started_payload_reflects_current_runtime_guards(self):

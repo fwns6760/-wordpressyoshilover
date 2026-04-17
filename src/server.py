@@ -7,7 +7,7 @@ import json
 import os
 import subprocess
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlparse
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
 
@@ -108,6 +108,29 @@ def _parse_limit(body: str, content_type: str = "") -> str:
     return str(parsed)
 
 
+def _parse_query_value(path: str, key: str, default: str = "") -> str:
+    parsed = urlparse(path)
+    values = parse_qs(parsed.query, keep_blank_values=False).get(key)
+    if not values:
+        return default
+    return values[0]
+
+
+def _parse_bool_query(path: str, key: str, default: bool = False) -> bool:
+    value = _parse_query_value(path, key, "")
+    if not value:
+        return default
+    return value.strip().lower() in TRUE_VALUES
+
+
+def _normalize_positive_int(value: str, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
 def _run_started_payload() -> dict:
     return {
         "event": "run_started",
@@ -140,14 +163,55 @@ def _run_fetcher(limit: str) -> tuple[int, str]:
     return 200, "completed"
 
 
+def _run_fact_check_notify(since: str, limit: str, category: str = "", send: bool = True) -> tuple[int, str]:
+    normalized_limit = _normalize_positive_int(limit, 20)
+    try:
+        try:
+            from src.fact_check_notifier import run_notification
+        except ImportError:
+            from fact_check_notifier import run_notification
+
+        payload = run_notification(
+            since=since or "yesterday",
+            limit=normalized_limit,
+            category=category,
+            send=send,
+        )
+    except Exception as exc:
+        return 500, json.dumps(
+            {
+                "status": "error",
+                "error": str(exc),
+                "since": since or "yesterday",
+                "limit": normalized_limit,
+                "category": category,
+                "sent": False,
+            },
+            ensure_ascii=False,
+        )
+
+    response = {
+        "status": "ok",
+        "since": payload["since"],
+        "checked_posts": payload["checked_posts"],
+        "red": payload["red"],
+        "yellow": payload["yellow"],
+        "green": payload["green"],
+        "subject": payload["subject"],
+        "sent": payload["sent"],
+    }
+    return 200, json.dumps(response, ensure_ascii=False)
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass  # アクセスログ抑制
 
     def do_GET(self):
-        if self.path == "/health":
+        parsed = urlparse(self.path)
+        if parsed.path == "/health":
             self._respond(200, "OK")
-        elif self.path == "/test-gemini":
+        elif parsed.path == "/test-gemini":
             if not ENABLE_TEST_GEMINI:
                 self._respond(404, "Not Found")
                 return
@@ -166,6 +230,19 @@ class Handler(BaseHTTPRequestHandler):
                 self._respond(200, out[:500])
             except Exception as e:
                 self._respond(200, f"ERROR: {e}")
+        elif parsed.path == "/fact_check_notify":
+            if not _uses_cloud_run_auth() and not _secret_is_configured():
+                self._respond(503, "RUN_SECRET is not configured")
+                return
+            if not _is_authorized(self):
+                self._respond(403, "Forbidden")
+                return
+            since = _parse_query_value(self.path, "since", "yesterday")
+            category = _parse_query_value(self.path, "category", "")
+            limit = _parse_query_value(self.path, "limit", "20")
+            send = not _parse_bool_query(self.path, "dry_run", False)
+            code, body = _run_fact_check_notify(since, limit, category=category, send=send)
+            self._respond(code, body, content_type="application/json; charset=utf-8")
         else:
             self._respond(404, "Not Found")
 
@@ -187,9 +264,9 @@ class Handler(BaseHTTPRequestHandler):
         code, message = _run_fetcher(limit)
         self._respond(code, message)
 
-    def _respond(self, code, body):
+    def _respond(self, code, body, content_type="text/plain"):
         self.send_response(code)
-        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Type", content_type)
         self.end_headers()
         self.wfile.write(body.encode())
 

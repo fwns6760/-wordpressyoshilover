@@ -743,6 +743,34 @@ def _matches_category_filter(audited: dict, requested: str) -> bool:
     }
 
 
+def _normalize_since_filter(value: str | None) -> str:
+    normalized = (value or "today").strip().lower()
+    if not normalized:
+        return "today"
+    if normalized in {"today", "yesterday", "all"}:
+        return normalized
+    try:
+        return date.fromisoformat(normalized).isoformat()
+    except ValueError:
+        return "today"
+
+
+def _matches_since_filter(post: dict, since_filter: str) -> bool:
+    target = _normalize_since_filter(since_filter)
+    if target == "all":
+        return True
+
+    post_date = _post_local_date(post)
+    today = datetime.now(JST).date()
+    if target == "today":
+        expected_date = today
+    elif target == "yesterday":
+        expected_date = today - timedelta(days=1)
+    else:
+        expected_date = date.fromisoformat(target)
+    return post_date == expected_date
+
+
 def _select_posts(args: argparse.Namespace, wp: WPClient) -> tuple[list[dict], dict[int, str], dict[str, dict]]:
     categories = wp.get_categories()
     category_map = {int(row["id"]): row["name"] for row in categories}
@@ -760,10 +788,10 @@ def _select_posts(args: argparse.Namespace, wp: WPClient) -> tuple[list[dict], d
         context="edit",
         fields=["id", "date", "modified", "status", "title", "content", "categories", "link"],
     )
-    today = datetime.now(JST).date()
     selected: list[dict] = []
+    since_filter = _normalize_since_filter(getattr(args, "since", "today"))
     for post in posts:
-        if args.today_only and _post_local_date(post) != today:
+        if not _matches_since_filter(post, since_filter):
             continue
         audited = audit_post(post, category_map, source_catalog, wp.base_url)
         if not _matches_category_filter(audited, args.category):
@@ -772,6 +800,27 @@ def _select_posts(args: argparse.Namespace, wp: WPClient) -> tuple[list[dict], d
         if len(selected) >= args.limit:
             break
     return selected, category_map, source_catalog
+
+
+def collect_reports(
+    *,
+    post_id: int | None = None,
+    category: str = "",
+    limit: int = 10,
+    status: str = "draft",
+    since: str = "today",
+    wp: WPClient | None = None,
+) -> list[PostReport]:
+    args = argparse.Namespace(
+        post_id=post_id,
+        category=category,
+        limit=limit,
+        status=status,
+        since=since,
+    )
+    wp_client = wp or WPClient()
+    posts, category_map, source_catalog = _select_posts(args, wp_client)
+    return [build_post_report(post, category_map, source_catalog, wp_client.base_url) for post in posts]
 
 
 def _render_text_report(reports: list[PostReport]) -> str:
@@ -816,13 +865,17 @@ def main() -> None:
     parser.add_argument("--category", default="", help="primary category または article_subtype で絞る")
     parser.add_argument("--limit", type=int, default=10, help="監査件数")
     parser.add_argument("--status", default="draft", help="取得する投稿 status")
+    parser.add_argument("--since", default="today", help="today / yesterday / YYYY-MM-DD / all")
     parser.add_argument("--json", action="store_true", help="JSON で出力")
-    parser.add_argument("--today-only", action="store_true", default=True, help="今日更新された draft に限定")
     args = parser.parse_args()
 
-    wp = WPClient()
-    posts, category_map, source_catalog = _select_posts(args, wp)
-    reports = [build_post_report(post, category_map, source_catalog, wp.base_url) for post in posts]
+    reports = collect_reports(
+        post_id=args.post_id,
+        category=args.category,
+        limit=args.limit,
+        status=args.status,
+        since=args.since,
+    )
 
     if args.json:
         print(_report_to_json(reports))

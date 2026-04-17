@@ -1,7 +1,10 @@
 import unittest
 from unittest.mock import patch
+from datetime import datetime, timedelta, timezone
 
 from src import acceptance_fact_check
+
+JST = timezone(timedelta(hours=9))
 
 
 class AcceptanceFactCheckTests(unittest.TestCase):
@@ -204,6 +207,14 @@ class AcceptanceFactCheckTests(unittest.TestCase):
         self.assertTrue(acceptance_fact_check._matches_category_filter(audited, "postgame"))
         self.assertTrue(acceptance_fact_check._matches_category_filter(audited, "試合速報"))
         self.assertFalse(acceptance_fact_check._matches_category_filter(audited, "manager"))
+
+    def test_matches_since_filter_supports_yesterday(self):
+        yesterday = (datetime.now(JST) - timedelta(days=1)).strftime("%Y-%m-%dT06:55:00+09:00")
+        post = self._make_post("巨人メモ", "<p>本文</p>")
+        post["modified"] = yesterday
+
+        self.assertTrue(acceptance_fact_check._matches_since_filter(post, "yesterday"))
+        self.assertFalse(acceptance_fact_check._matches_since_filter(post, "today"))
 
 
 if __name__ == "__main__":

@@ -174,12 +174,14 @@ WordPress REST API で `status=draft` に戻す。
 
 ### 実際の確認ステップ
 
-1. `docs/operation_logs.md` の「朝の観察 10 項目」を上から見る
-2. `python3 -m src.acceptance_fact_check --category <subtype> --limit 10` で致命的な事実差分を先に洗う
-3. WP 管理画面で当日生成された draft を subtype ごとに 5-10 件開く
-4. `docs/acceptance_test_checklist.md` の該当 subtype の項目で採点する
-5. 合格なら subtype 単位で `ENABLE_PUBLISH_FOR_XXX=1` 候補に載せる
-6. 差し戻しなら post ID と問題点を添えて Codex に修正依頼する
+1. 朝 7:00 の fact check メールをスマホで開く
+2. `🔴` があれば WP 直リンクから該当 draft を先に確認し、publish 候補から外す
+3. `docs/operation_logs.md` の「朝の観察 10 項目」を上から見る
+4. 必要なら `python3 -m src.acceptance_fact_check --category <subtype> --limit 10` でローカル再確認する
+5. WP 管理画面で当日生成された draft を subtype ごとに 5-10 件開く
+6. `docs/acceptance_test_checklist.md` の該当 subtype の項目で採点する
+7. 合格なら subtype 単位で `ENABLE_PUBLISH_FOR_XXX=1` 候補に載せる
+8. 差し戻しなら post ID と問題点を添えて Codex に修正依頼する
 
 ### draft の見方
 
@@ -203,6 +205,36 @@ WordPress REST API で `status=draft` に戻す。
 - 本文崩れ
 - 事実誤認
 - X preview の明確な不自然さ
+
+## 7. 朝 7:00 fact check メール
+
+- Scheduler job: `fact-check-morning-report`
+- エンドポイント: `GET /fact_check_notify?since=yesterday`
+- 通知先: `FACT_CHECK_EMAIL_TO`
+- 送信元: `FACT_CHECK_EMAIL_FROM`
+
+初回セットアップ後の確認:
+
+1. `gcloud scheduler jobs describe fact-check-morning-report --project baseballsite --location asia-northeast1`
+2. `gcloud logging read 'resource.type="cloud_run_revision" AND textPayload:"fact_check_email_sent"' --project baseballsite --limit=20`
+3. Gmail で件名 `【ヨシラバー】MM/DD 事実チェック結果` を確認
+4. スマホで `🔴` セクションの WP 直リンクを開いて遷移確認
+
+### Gmail app password の今夜の準備
+
+1. Google アカウントで 2 段階認証を有効化する
+2. Google アカウント設定の「アプリ パスワード」で `Mail / Other (Cloud Run)` を作る
+3. 表示された 16 桁の app password を控える
+4. Secret Manager へ追加する
+
+```bash
+printf '%s' '取得した16桁のapp password' | \
+gcloud secrets versions add yoshilover-gmail-app-password \
+  --project baseballsite \
+  --data-file=-
+```
+
+5. Cloud Logging で `fact_check_email_failed` が消え、翌朝 `fact_check_email_sent` が出ることを確認する
 
 ### 受け入れ基準
 

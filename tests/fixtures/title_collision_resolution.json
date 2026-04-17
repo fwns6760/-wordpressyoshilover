@@ -88,5 +88,59 @@
     "category": "コラム",
     "has_game": false,
     "expected_title": "巨人ドラ４・皆川岳飛が初１軍合流 強肩が持ち味「やってやろうという気持ち」"
+  },
+  {
+    "name": "observed_collision_first_at_bat_angle",
+    "group": "observed_collision_pregame",
+    "title": "【巨人】ドラ４ルーキー皆川岳飛のプロ初打席は豪快な空振り三振「もっと勉強しないといけない」",
+    "summary": "阪神戦で皆川岳飛がプロ初打席に立った。",
+    "category": "試合速報",
+    "has_game": true,
+    "expected_title": "巨人阪神戦 初打席で何を見たいか"
+  },
+  {
+    "name": "observed_collision_opponent_slugger_angle",
+    "group": "observed_collision_pregame",
+    "title": "阪神・佐藤輝明、衝撃の一発！辻発彦氏「強振している感じがしない」",
+    "summary": "",
+    "category": "試合速報",
+    "has_game": true,
+    "expected_title": "巨人阪神戦 佐藤輝明をどう見るか"
+  },
+  {
+    "name": "observed_collision_postgame_win_angle",
+    "group": "observed_collision_postgame",
+    "title": "【巨人】田中将大が野茂英雄超え日米通算202勝目！伝統の一戦は昨季から10試合連続１点差",
+    "summary": "阪神戦で田中将大が勝利した。",
+    "category": "試合速報",
+    "has_game": true,
+    "expected_title": "巨人阪神戦 田中将大は何を見せたか"
+  },
+  {
+    "name": "observed_collision_postgame_qa_angle",
+    "group": "observed_collision_postgame",
+    "title": "【巨人】田中将大、初の「伝統の一戦」で野茂超え日米通算202勝目「皆に助けられた」一問一答",
+    "summary": "阪神戦後の一問一答。",
+    "category": "試合速報",
+    "has_game": true,
+    "expected_title": "巨人阪神戦 田中将大の試合後コメントをどう見るか"
+  },
+  {
+    "name": "observed_collision_postgame_support_angle",
+    "group": "observed_collision_postgame",
+    "title": "【とっておきメモ】２勝目巨人田中将大の強み「体をバランス良く使えている」ブルペン捕手が証言",
+    "summary": "阪神戦で田中将大を支えた要素を証言。",
+    "category": "試合速報",
+    "has_game": true,
+    "expected_title": "巨人阪神戦 勝利を支えた材料をどう見るか"
+  },
+  {
+    "name": "observed_collision_postgame_hero_angle",
+    "group": "observed_collision_postgame",
+    "title": "【一軍】巨人 4-3 阪神 本日のヒーロー✨ 3安打3打点1本塁打の活躍を見せた 選手💪 HERO IS HERE!",
+    "summary": "",
+    "category": "試合速報",
+    "has_game": true,
+    "expected_title": "巨人4-3 試合を決めた主役は誰だったか"
   }
 ]

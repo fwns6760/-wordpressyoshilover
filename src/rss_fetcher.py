@@ -150,6 +150,13 @@ SOCIAL_REQUIRED_HEADINGS = (
 )
 MEDIA_XPOST_POSITION = "before_ai_body"
 DEFAULT_NOTICE_FALLBACK_IMAGE_URL = "https://yoshilover.com/wp-content/uploads/2025/07/j_RlNtbr_400x400-300x300-1.webp"
+DEFAULT_GENERIC_FEATURED_FALLBACK_IMAGE_URL = DEFAULT_NOTICE_FALLBACK_IMAGE_URL
+FEATURED_FALLBACK_STORY_TARGETS = {
+    ("試合速報", "pregame"),
+    ("試合速報", "lineup"),
+    ("選手情報", "player"),
+    ("首脳陣", "manager"),
+}
 NOTICE_RECORD_MARKERS = (
     "打率",
     "防御率",
@@ -1286,6 +1293,15 @@ def _match_social_column_rescue(text: str) -> tuple[str, str]:
 
 def get_notice_fallback_image_url() -> str:
     return os.environ.get("NOTICE_FALLBACK_IMAGE_URL", DEFAULT_NOTICE_FALLBACK_IMAGE_URL).strip()
+
+
+def get_story_fallback_image_url(category: str, article_subtype: str) -> str:
+    if (category, article_subtype) not in FEATURED_FALLBACK_STORY_TARGETS:
+        return ""
+    return os.environ.get(
+        "FEATURED_IMAGE_FALLBACK_URL",
+        DEFAULT_GENERIC_FEATURED_FALLBACK_IMAGE_URL,
+    ).strip()
 
 
 def _extract_notice_type_label(text: str) -> str:
@@ -4965,6 +4981,74 @@ def _ensure_notice_featured_images(
     return [fallback_url] if fallback_url else image_urls
 
 
+def _refetch_article_images_if_empty(
+    image_urls: list[str],
+    page_url: str,
+    logger: logging.Logger | None = None,
+    max_images: int = 3,
+) -> list[str]:
+    if image_urls or not page_url:
+        return image_urls
+    logger = logger or logging.getLogger("rss_fetcher")
+    retry_images = _filter_image_candidates(
+        fetch_article_images(page_url, max_images=max_images),
+        page_url,
+        logger,
+    )
+    if retry_images:
+        logger.info(
+            json.dumps(
+                {
+                    "event": "article_image_refetched",
+                    "source_url": page_url,
+                    "image_count": len(retry_images),
+                    "first_image_url": retry_images[0],
+                },
+                ensure_ascii=False,
+            )
+        )
+    return retry_images or image_urls
+
+
+def _ensure_story_featured_images(
+    image_urls: list[str],
+    title: str,
+    summary: str,
+    category: str,
+    article_subtype: str,
+    source_url: str = "",
+    logger: logging.Logger | None = None,
+) -> list[str]:
+    if image_urls:
+        return image_urls
+    logger = logger or logging.getLogger("rss_fetcher")
+    fallback_url = ""
+    fallback_type = ""
+    if _is_notice_template_story(title, summary, category):
+        fallback_url = get_notice_fallback_image_url()
+        fallback_type = "notice"
+    else:
+        fallback_url = get_story_fallback_image_url(category, article_subtype)
+        if fallback_url:
+            fallback_type = f"{category}:{article_subtype}"
+    if not fallback_url:
+        return image_urls
+    logger.info(
+        json.dumps(
+            {
+                "event": "featured_image_fallback_applied",
+                "source_url": source_url,
+                "category": category,
+                "article_subtype": article_subtype,
+                "fallback_type": fallback_type,
+                "fallback_url": fallback_url,
+            },
+            ensure_ascii=False,
+        )
+    )
+    return [fallback_url]
+
+
 def fetch_article_images(url: str, max_images: int = 3) -> list:
     """記事ページから写真URLを最大 max_images 枚スクレイピングして返す。
     og:image を先頭に、本文中の <img> から大きそうなものを追加する。"""
@@ -7109,6 +7193,44 @@ def _log_title_collision_if_needed(
     return rewritten_title_norm
 
 
+def _resolve_effective_featured_media(
+    wp: WPClient,
+    post_id: int,
+    featured_media: int,
+    logger: logging.Logger | None = None,
+) -> int:
+    if featured_media:
+        return featured_media
+    logger = logger or logging.getLogger("rss_fetcher")
+    try:
+        post = wp.get_post(post_id)
+    except Exception as exc:
+        logger.info(
+            json.dumps(
+                {
+                    "event": "featured_media_lookup_failed",
+                    "post_id": post_id,
+                    "error": str(exc),
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 0
+    existing_featured_media = int(post.get("featured_media") or 0)
+    if existing_featured_media:
+        logger.info(
+            json.dumps(
+                {
+                    "event": "featured_media_reused_from_existing_post",
+                    "post_id": post_id,
+                    "featured_media": existing_featured_media,
+                },
+                ensure_ascii=False,
+            )
+        )
+    return existing_featured_media
+
+
 def persist_processed_entry_history(
     history: dict,
     history_urls: list[str],
@@ -7735,6 +7857,20 @@ def _extract_game_subject_fallback(source_text: str) -> str:
     return ""
 
 
+def _normalize_game_story_subject(subject: str) -> str:
+    normalized = (subject or "").strip()
+    for marker in NPB_TEAM_MARKERS:
+        normalized = _re.sub(rf"^{_re.escape(marker)}[・･]?", "", normalized)
+    normalized = _re.sub(r"(投手|捕手|内野手|外野手|選手)$", "", normalized).strip()
+    if (
+        not normalized
+        or normalized in {"巨人", "選手", "先発", "予告", "登板"}
+        or any(marker in normalized for marker in ("ブルペン", "打線", "ベンチ"))
+    ):
+        return ""
+    return normalized
+
+
 def _rewrite_display_title_with_template(title: str, summary: str, category: str, has_game: bool) -> tuple[str, str]:
     clean_title = _clean_display_title_text(title)
     clean_summary = _strip_html(summary or "").strip()
@@ -7767,6 +7903,7 @@ def _rewrite_display_title_with_template(title: str, summary: str, category: str
     subtype = _detect_article_subtype(title, summary, category, has_game)
     opponent = _extract_title_opponent(source_text)
     venue = _extract_title_venue(source_text)
+    game_subject = _normalize_game_story_subject(subject) if category == "試合速報" else ""
 
     def _result(text: str, template_key: str, max_chars: int = 38) -> tuple[str, str]:
         return _trim_display_title(text, max_chars=max_chars), template_key
@@ -7832,6 +7969,21 @@ def _rewrite_display_title_with_template(title: str, summary: str, category: str
             if any(marker in source_text for marker in ("決勝打", "サヨナラ", "逆転")):
                 base = f"巨人{opponent}戦 終盤の一打で何が動いたか" if opponent else "巨人戦 終盤の一打で何が動いたか"
                 return _result(base, "game_postgame_clutch")
+            if score and any(marker in source_text for marker in ("本日のヒーロー", "HERO IS HERE", "ヒーロー")):
+                return _result(f"巨人{score.group(0)} 試合を決めた主役は誰だったか", "game_postgame_hero")
+            if game_subject:
+                if "一問一答" in source_text or quote_text:
+                    base = f"巨人{opponent}戦 {game_subject}の試合後コメントをどう見るか" if opponent else f"{game_subject}の試合後コメントをどう見るか"
+                    return _result(base, "game_postgame_subject_comment")
+                if any(marker in source_text for marker in ("強み", "投球術", "分析")):
+                    base = f"巨人{opponent}戦 {game_subject}の強みをどう見るか" if opponent else f"{game_subject}の強みをどう見るか"
+                    return _result(base, "game_postgame_subject_analysis")
+                if any(marker in source_text for marker in ("勝目", "勝利", "白星", "好投", "快投", "本塁打", "打点", "猛打賞", "連勝")):
+                    base = f"巨人{opponent}戦 {game_subject}は何を見せたか" if opponent else f"{game_subject}は何を見せたか"
+                    return _result(base, "game_postgame_subject")
+            if any(marker in source_text for marker in ("とっておきメモ", "証言")):
+                base = f"巨人{opponent}戦 勝利を支えた材料をどう見るか" if opponent else "巨人戦 勝利を支えた材料をどう見るか"
+                return _result(base, "game_postgame_supporting_point")
             if score:
                 if any(marker in source_text for marker in ("敗れ", "敗戦", "黒星")):
                     return _result(f"巨人{score.group(0)} 敗戦の分岐点はどこだったか", "game_postgame_loss")
@@ -7849,6 +8001,14 @@ def _rewrite_display_title_with_template(title: str, summary: str, category: str
             if opponent:
                 return _result(f"巨人{opponent}戦 予告先発の数字をどう見るか", "game_pregame_numeric")
             return _result("巨人戦 予告先発の数字をどう見るか", "game_pregame_numeric")
+        if any(marker in source_text for marker in ("初打席", "プロ初")):
+            if opponent:
+                return _result(f"巨人{opponent}戦 初打席で何を見たいか", "game_pregame_first_at_bat")
+            return _result("初打席で何を見たいか", "game_pregame_first_at_bat")
+        if game_subject:
+            if opponent:
+                return _result(f"巨人{opponent}戦 {game_subject}をどう見るか", "game_pregame_subject")
+            return _result(f"{game_subject}をどう見るか", "game_pregame_subject")
         if venue:
             if opponent:
                 return _result(f"巨人{opponent}戦 {venue}で何を見たいか", "game_pregame_venue")
@@ -8525,7 +8685,16 @@ def _main(args, logger):
                 if not _article_images:
                     _article_images = fetch_article_images(post_url, max_images=3)
             _article_images = _filter_image_candidates(_article_images, post_url, logger)
-            _article_images = _ensure_notice_featured_images(_article_images, raw_title, summary, category)
+            _article_images = _refetch_article_images_if_empty(_article_images, post_url, logger, max_images=3)
+            _article_images = _ensure_story_featured_images(
+                _article_images,
+                raw_title,
+                summary,
+                category,
+                title_article_subtype,
+                source_url=post_url,
+                logger=logger,
+            )
             _og_url  = _article_images[0] if _article_images else ""
             draft_title, title_template_key = _rewrite_display_title_with_template(raw_title, summary, category, entry_has_game)
             _log_title_template_selected(logger, post_url, raw_title, draft_title, title_template_key, category, title_article_subtype)
@@ -8575,6 +8744,7 @@ def _main(args, logger):
                 status="draft",
                 featured_media=featured_media or None,
             )
+            effective_featured_media = _resolve_effective_featured_media(wp, post_id, featured_media, logger)
             success += 1
             created_category_counts[category] += 1
             created_subtype_counts[title_article_subtype] += 1
@@ -8659,7 +8829,7 @@ def _main(args, logger):
             publish_skip_reasons = get_publish_skip_reasons(
                 source_type=source_type,
                 draft_only=args.draft_only,
-                featured_media=featured_media,
+                featured_media=effective_featured_media,
             )
             for reason in publish_skip_reasons:
                 publish_skip_reason_counts[reason] += 1
@@ -8697,7 +8867,7 @@ def _main(args, logger):
                 draft_only=args.draft_only,
                 x_post_count=x_post_count,
                 x_post_daily_limit=x_post_daily_limit,
-                featured_media=featured_media,
+                featured_media=effective_featured_media,
                 published=published,
                 article_url=article_url,
             )
@@ -8729,11 +8899,11 @@ def _main(args, logger):
             else:
                 if published:
                     logger.info(f"  [X投稿スキップ] post_id={post_id} reason={','.join(x_skip_reasons)}")
-                    logger.info(f"  [公開] post_id={post_id} image={'あり' if featured_media else 'なし'}")
+                    logger.info(f"  [公開] post_id={post_id} image={'あり' if effective_featured_media else 'なし'}")
                 else:
                     logger.info(
                         f"  [下書き維持] post_id={post_id} reason={','.join(publish_skip_reasons)} "
-                        f"image={'あり' if featured_media else 'なし'}"
+                        f"image={'あり' if effective_featured_media else 'なし'}"
                     )
 
         except Exception as e:

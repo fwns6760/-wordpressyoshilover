@@ -59,6 +59,7 @@ STRUCTURED_NUMBER_TOKEN_RES = (
     LEADING_DECIMAL_TOKEN_RE,
 )
 NON_GAME_RESULT_WORDS = ("勝利", "敗戦", "白星", "黒星", "引き分け", "サヨナラ勝", "連勝", "連敗", "スコア")
+RESULT_MILESTONE_RE = _re.compile(r"(?:(?:今季|通算|日米通算)\d+勝目|\d+勝目|初勝利|勝ち星|敗戦投手)")
 FAKE_CITATION_MARKERS = ("npb.jp", "スポーツナビ", "1point02.jp", "Baseball Reference", "baseball.yahoo.co.jp")
 GAME_ARTICLE_KEYWORDS = ("試合結果", "スタメン", "先発", "登板", "白星", "黒星", "勝利", "敗戦", "引き分け", "サヨナラ", "試合")
 LINEUP_ARTICLE_KEYWORDS = ("スタメン", "スターティングメンバー", "オーダー", "打順", "1番", "2番", "3番", "4番")
@@ -1466,6 +1467,34 @@ def _should_skip_stale_postgame_entry(
 
     threshold = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
     return source_published_at < threshold
+
+
+def _game_status_indicates_started(game_status: dict | None) -> bool:
+    if not game_status:
+        return False
+    if game_status.get("ended"):
+        return True
+    state = _collapse_ws(str(game_status.get("state", "")))
+    if any(marker in state for marker in ("試合前", "開始前", "中止", "ノーゲーム")):
+        return False
+    return bool(state)
+
+
+def _should_skip_started_pregame_entry(
+    category: str,
+    title: str,
+    summary: str,
+    has_game: bool,
+    game_status: dict | None,
+) -> bool:
+    if category != "試合速報":
+        return False
+    if _detect_article_subtype(title, summary, category, has_game) != "pregame":
+        return False
+    source_text = _strip_html(f"{title} {summary}")
+    if any(marker in source_text for marker in ("あす", "明日", "翌日")):
+        return False
+    return _game_status_indicates_started(game_status)
 
 
 def _display_source_name(name: str) -> str:
@@ -4458,8 +4487,10 @@ def _source_has_confirmed_result(title: str, summary: str) -> bool:
     if SCORE_TOKEN_RE.search(source_text) or any(marker in source_text for marker in CONFIRMED_RESULT_MARKERS):
         return True
     soft_result_words = ("勝利", "敗戦", "白星", "黒星", "引き分け")
-    pregame_cues = ("狙", "目指", "かかる", "予定")
+    pregame_cues = ("狙", "目指", "かかる", "予定", "挑む", "挑戦", "あす", "明日", "翌日")
     if any(word in source_text for word in soft_result_words) and not any(cue in source_text for cue in pregame_cues):
+        return True
+    if RESULT_MILESTONE_RE.search(source_text) and not any(cue in source_text for cue in pregame_cues):
         return True
     return False
 
@@ -8103,6 +8134,23 @@ def _main(args, logger):
         except Exception as e:
             logger.warning("Yahoo試合固定ページ取得失敗: %s", e)
             yahoo_game_status = {}
+
+    if has_game and yahoo_game_status:
+        filtered_prepared_entries = []
+        for item in prepared_entries:
+            if _should_skip_started_pregame_entry(
+                item["category"],
+                item["title"],
+                item["summary"],
+                item.get("entry_has_game", True),
+                yahoo_game_status,
+            ):
+                logger.debug(f"  [SKIP:pregame開始後] {item['title'][:40]}")
+                skip_filter += 1
+                skip_reason_counts["pregame_started"] += 1
+                continue
+            filtered_prepared_entries.append(item)
+        prepared_entries = filtered_prepared_entries
 
     live_update_reason = ""
     game_id_for_live = yahoo_game_status.get("game_id", "")

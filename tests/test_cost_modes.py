@@ -183,6 +183,39 @@ class CostModeTests(unittest.TestCase):
             )
         )
 
+    def test_win_milestone_story_is_classified_as_postgame(self):
+        self.assertEqual(
+            rss_fetcher._detect_article_subtype(
+                "巨人・田中将大、“熟練の投球術”で2勝目",
+                "田中将大が熟練の投球術で今季2勝目を挙げた。",
+                "試合速報",
+                True,
+            ),
+            "postgame",
+        )
+
+    def test_started_game_skips_same_day_pregame_entry(self):
+        self.assertTrue(
+            rss_fetcher._should_skip_started_pregame_entry(
+                "試合速報",
+                "巨人阪神戦 田中将大先発でどこを見たいか",
+                "田中将大が阪神戦に先発する予定だった。",
+                True,
+                {"state": "6回表", "ended": False},
+            )
+        )
+
+    def test_future_day_pregame_preview_is_not_skipped_after_current_game_start(self):
+        self.assertFalse(
+            rss_fetcher._should_skip_started_pregame_entry(
+                "試合速報",
+                "あす巨人ヤクルト戦 田中将大先発でどこを見たいか",
+                "あすのヤクルト戦で田中将大が先発する見込みだ。",
+                True,
+                {"state": "6回表", "ended": False},
+            )
+        )
+
     def test_gemini_attempt_limits_default_to_three_in_low_cost_mode(self):
         with patch.dict("os.environ", {"LOW_COST_MODE": "1"}, clear=False):
             self.assertEqual(rss_fetcher.get_gemini_attempt_limit(strict_mode=True), 3)

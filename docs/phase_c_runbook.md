@@ -170,6 +170,39 @@ WordPress REST API で `status=draft` に戻す。
 
 ## 6. 受け入れフロー
 
+受け入れ試験の詳細チェックリストは [docs/acceptance_test_checklist.md](/home/fwns6/code/wordpressyoshilover/docs/acceptance_test_checklist.md) を参照。
+
+### 実際の確認ステップ
+
+1. `docs/operation_logs.md` の「朝の観察 10 項目」を上から見る
+2. WP 管理画面で当日生成された draft を subtype ごとに 5-10 件開く
+3. `docs/acceptance_test_checklist.md` の該当 subtype の項目で採点する
+4. 合格なら subtype 単位で `ENABLE_PUBLISH_FOR_XXX=1` 候補に載せる
+5. 差し戻しなら post ID と問題点を添えて Codex に修正依頼する
+
+### draft の見方
+
+- タイトルが巨人ファン視点で自然か
+- 本文の見出し構造が安定しているか
+- featured image が付いているか
+- B.5 対象記事なら引用が妥当か
+- X preview が不自然でないか
+
+### 合格 / 差し戻し基準
+
+- 合格: sample の 8 割以上が問題なし、重大欠陥 0
+- 条件付き合格: 軽微な言い回しだけなら 7 割以上でも可。ただし publish 前に修正タスク化する
+- 差し戻し: 重大欠陥が 1 件でもある、または 7 割未満
+
+### 重大欠陥の扱い
+
+- 誤分類
+- 誤公開リスク
+- アイキャッチ欠落
+- 本文崩れ
+- 事実誤認
+- X preview の明確な不自然さ
+
 ### 受け入れ基準
 
 - 本文型が期待どおり

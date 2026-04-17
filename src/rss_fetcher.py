@@ -41,6 +41,21 @@ TRUE_VALUES = {"1", "true", "yes", "on"}
 HTTP_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 DEFAULT_LOW_COST_AI_CATEGORIES = {"試合速報", "選手情報", "首脳陣"}
 DEFAULT_AUTO_TWEET_CATEGORIES = {"試合速報", "選手情報", "首脳陣", "ドラフト・育成"}
+PUBLISH_SUBTYPE_ENV_MAP = {
+    "postgame": "ENABLE_PUBLISH_FOR_POSTGAME",
+    "lineup": "ENABLE_PUBLISH_FOR_LINEUP",
+    "manager": "ENABLE_PUBLISH_FOR_MANAGER",
+    "notice": "ENABLE_PUBLISH_FOR_NOTICE",
+    "pregame": "ENABLE_PUBLISH_FOR_PREGAME",
+    "recovery": "ENABLE_PUBLISH_FOR_RECOVERY",
+    "farm": "ENABLE_PUBLISH_FOR_FARM",
+    "farm_lineup": "ENABLE_PUBLISH_FOR_FARM",
+    "social": "ENABLE_PUBLISH_FOR_SOCIAL",
+    "player": "ENABLE_PUBLISH_FOR_PLAYER",
+    "general": "ENABLE_PUBLISH_FOR_GENERAL",
+    "game_note": "ENABLE_PUBLISH_FOR_GENERAL",
+    "roster": "ENABLE_PUBLISH_FOR_GENERAL",
+}
 JST = timezone(timedelta(hours=9))
 ENABLE_LIVE_UPDATE_ARTICLES = os.getenv("ENABLE_LIVE_UPDATE_ARTICLES", "0").strip().lower() in TRUE_VALUES
 SCORE_TOKEN_RE = _re.compile(r"\d{1,2}\s*[－\-–]\s*\d{1,2}")
@@ -1008,8 +1023,36 @@ def auto_tweet_enabled() -> bool:
     return _env_flag("AUTO_TWEET_ENABLED", not low_cost_mode_enabled())
 
 
+def publish_enabled_for_subtype(article_subtype: str) -> bool:
+    env_name = PUBLISH_SUBTYPE_ENV_MAP.get(article_subtype or "", "ENABLE_PUBLISH_FOR_GENERAL")
+    return _env_flag(env_name, False)
+
+
 def x_post_for_live_update_enabled() -> bool:
     return _env_flag("ENABLE_X_POST_FOR_LIVE_UPDATE", False)
+
+
+def resolve_publish_gate_subtype(
+    title: str,
+    summary: str,
+    category: str,
+    article_subtype: str,
+    source_type: str,
+) -> str:
+    if source_type == "social_news":
+        return "social"
+    if category == "選手情報":
+        special_kind = _detect_player_special_template_kind(title, summary)
+        if special_kind == "player_notice":
+            return "notice"
+        if special_kind == "player_recovery":
+            return "recovery"
+        return "player"
+    if article_subtype in {"farm", "farm_lineup"}:
+        return "farm"
+    if article_subtype in {"game_note", "roster", "", "fallback"}:
+        return "general"
+    return article_subtype or "general"
 
 
 def _auto_tweet_source_allowed(source_type: str) -> bool:
@@ -1055,10 +1098,13 @@ def get_publish_skip_reasons(
     source_type: str,
     draft_only: bool,
     featured_media: int,
+    article_subtype: str = "",
 ) -> list[str]:
     reasons = []
     if draft_only:
         reasons.append("draft_only")
+    elif source_type in {"news", "social_news"} and article_subtype and not publish_enabled_for_subtype(article_subtype):
+        reasons.append("publish_disabled_for_subtype")
     if source_type in {"news", "social_news"} and publish_requires_featured_media() and not featured_media:
         reasons.append("featured_media_missing")
     return reasons
@@ -8326,6 +8372,24 @@ def _log_x_post_ai_failed(
     logger.info(json.dumps(payload, ensure_ascii=False))
 
 
+def _log_publish_disabled_for_subtype(
+    logger: logging.Logger,
+    post_id: int,
+    title: str,
+    article_subtype: str,
+    category: str,
+) -> None:
+    payload = {
+        "event": "publish_disabled_for_subtype",
+        "skip_reason": "publish_disabled_for_subtype",
+        "post_id": post_id,
+        "title": title,
+        "article_subtype": article_subtype,
+        "category": category,
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
 def _build_x_post_preview_for_observation(
     *,
     logger: logging.Logger,
@@ -9057,13 +9121,29 @@ def _main(args, logger):
             )
             time.sleep(1)
 
+            publish_gate_subtype = resolve_publish_gate_subtype(
+                raw_title,
+                summary,
+                category,
+                title_article_subtype,
+                source_type,
+            )
             publish_skip_reasons = get_publish_skip_reasons(
                 source_type=source_type,
                 draft_only=args.draft_only,
                 featured_media=effective_featured_media,
+                article_subtype=publish_gate_subtype,
             )
             for reason in publish_skip_reasons:
                 publish_skip_reason_counts[reason] += 1
+            if "publish_disabled_for_subtype" in publish_skip_reasons:
+                _log_publish_disabled_for_subtype(
+                    logger,
+                    post_id,
+                    draft_title,
+                    publish_gate_subtype,
+                    category,
+                )
             if publish_skip_reasons:
                 logger.info(f"  [下書き止め] post_id={post_id} reason={','.join(publish_skip_reasons)}")
                 published = False

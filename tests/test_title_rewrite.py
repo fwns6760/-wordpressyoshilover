@@ -152,6 +152,58 @@ class DisplayTitleRewriteTests(unittest.TestCase):
         self.assertEqual(subject, "田中将大")
         self.assertEqual(role_label, "田中将大投手")
 
+    def test_extract_subject_label_handles_name_after_initial_start_context(self):
+        title = "【巨人】伝統の一戦初先発の田中将大「投げる試合すべて勝つ気持ちで」２試合連続ＱＳで日米通算２０２勝マーク"
+
+        subject = rss_fetcher._extract_subject_label(title, "", "試合速報")
+
+        self.assertEqual(subject, "田中将大")
+
+    def test_game_pregame_title_keeps_name_after_initial_start_context(self):
+        title = "【巨人】伝統の一戦初先発の田中将大「投げる試合すべて勝つ気持ちで」２試合連続ＱＳで日米通算２０２勝マーク"
+
+        rewritten = rss_fetcher.rewrite_display_title(title, "", "試合速報", True)
+
+        self.assertEqual(rewritten, "田中将大先発でどこを見たいか")
+
+    def test_extract_subject_label_prefers_first_pitcher_after_context_phrase(self):
+        title = "今日の先発は戸郷、阿部監督が選んだのは菅野"
+
+        subject = rss_fetcher._extract_subject_label(title, "", "選手情報")
+
+        self.assertEqual(subject, "戸郷")
+
+    def test_extract_subject_label_handles_multiple_players_joined_by_middle_dot(self):
+        title = "坂本・丸が状態上向き、打線再編へ"
+
+        subject = rss_fetcher._extract_subject_label(title, "", "選手情報")
+
+        self.assertEqual(subject, "坂本・丸")
+
+    def test_player_title_handles_middle_dot_foreign_name_join_story(self):
+        title = "トラビス・バーンズが一軍合流へ"
+        summary = "トラビス・バーンズが合流へ。"
+
+        rewritten = rss_fetcher.rewrite_display_title(title, summary, "選手情報", False)
+
+        self.assertEqual(rewritten, "トラビス・バーンズ、一軍合流でどこを見たいか")
+
+    def test_player_title_handles_long_foreign_name_without_falling_back_to_generic_subject(self):
+        title = "カール・エドワーズ・ジュニアが来日初登板へ"
+        summary = "カール・エドワーズ・ジュニアが初登板へ。"
+
+        rewritten = rss_fetcher.rewrite_display_title(title, summary, "選手情報", False)
+
+        self.assertEqual(rewritten, "カール・エドワーズ・ジュニアの現状整理 いま何を見たいか")
+
+    def test_extract_subject_label_keeps_staff_role_compound(self):
+        title = "桑田投手コーチが見た戸郷の修正点"
+        summary = "桑田投手コーチが戸郷の修正点を語った。"
+
+        subject = rss_fetcher._extract_subject_label(title, summary, "首脳陣")
+
+        self.assertEqual(subject, "桑田投手コーチ")
+
     def test_lineup_title_drops_source_like_duplication(self):
         title = "【巨人】今日のスタメン発表　1番丸、4番岡田"
         summary = "巨人が阪神戦のスタメンを発表した。1番に丸佳浩、4番に岡田悠希が入った。"

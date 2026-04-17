@@ -1039,6 +1039,8 @@ def auto_tweet_enabled() -> bool:
 
 
 def publish_enabled_for_subtype(article_subtype: str) -> bool:
+    if article_subtype == "live_update":
+        return False
     env_name = PUBLISH_SUBTYPE_ENV_MAP.get(article_subtype or "", "ENABLE_PUBLISH_FOR_GENERAL")
     return _env_flag(env_name, False)
 
@@ -1132,10 +1134,29 @@ def get_publish_skip_reasons(
     if draft_only:
         reasons.append("draft_only")
     else:
-        if source_type in {"news", "social_news"} and article_subtype and not publish_enabled_for_subtype(article_subtype):
+        if source_type in {"news", "social_news"} and article_subtype == "live_update":
+            reasons.append("live_update_publish_disabled")
+        elif source_type in {"news", "social_news"} and article_subtype and not publish_enabled_for_subtype(article_subtype):
             reasons.append("publish_disabled_for_subtype")
         if source_type in {"news", "social_news"} and publish_requires_featured_media() and not featured_media:
             reasons.append("featured_media_missing")
+    return reasons
+
+
+def get_publish_observation_reasons(
+    *,
+    source_type: str,
+    draft_only: bool,
+    featured_media: int,
+) -> list[str]:
+    reasons = []
+    if (
+        draft_only
+        and source_type in {"news", "social_news"}
+        and publish_requires_featured_media()
+        and not featured_media
+    ):
+        reasons.append("featured_media_observation_missing")
     return reasons
 
 
@@ -8401,7 +8422,26 @@ def _log_x_post_ai_failed(
     logger.info(json.dumps(payload, ensure_ascii=False))
 
 
-def _log_publish_disabled_for_subtype(
+def _log_publish_gate_skipped(
+    logger: logging.Logger,
+    post_id: int,
+    title: str,
+    article_subtype: str,
+    category: str,
+    reason: str,
+) -> None:
+    payload = {
+        "event": reason,
+        "skip_reason": reason,
+        "post_id": post_id,
+        "title": title,
+        "article_subtype": article_subtype,
+        "category": category,
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
+def _log_featured_media_observation_missing(
     logger: logging.Logger,
     post_id: int,
     title: str,
@@ -8409,8 +8449,8 @@ def _log_publish_disabled_for_subtype(
     category: str,
 ) -> None:
     payload = {
-        "event": "publish_disabled_for_subtype",
-        "skip_reason": "publish_disabled_for_subtype",
+        "event": "featured_media_observation_missing",
+        "observation_only": True,
         "post_id": post_id,
         "title": title,
         "article_subtype": article_subtype,
@@ -8659,6 +8699,7 @@ def _main(args, logger):
     created_category_counts: Counter[str] = Counter()
     created_subtype_counts: Counter[str] = Counter()
     publish_skip_reason_counts: Counter[str] = Counter()
+    publish_observation_counts: Counter[str] = Counter()
     x_skip_reason_counts: Counter[str] = Counter()
     import time
 
@@ -9176,6 +9217,21 @@ def _main(args, logger):
                 title_article_subtype,
                 source_type,
             )
+            publish_observation_reasons = get_publish_observation_reasons(
+                source_type=source_type,
+                draft_only=args.draft_only,
+                featured_media=effective_featured_media,
+            )
+            for reason in publish_observation_reasons:
+                publish_observation_counts[reason] += 1
+            if "featured_media_observation_missing" in publish_observation_reasons:
+                _log_featured_media_observation_missing(
+                    logger,
+                    post_id,
+                    draft_title,
+                    publish_gate_subtype,
+                    category,
+                )
             publish_skip_reasons = get_publish_skip_reasons(
                 source_type=source_type,
                 draft_only=args.draft_only,
@@ -9185,12 +9241,22 @@ def _main(args, logger):
             for reason in publish_skip_reasons:
                 publish_skip_reason_counts[reason] += 1
             if "publish_disabled_for_subtype" in publish_skip_reasons:
-                _log_publish_disabled_for_subtype(
+                _log_publish_gate_skipped(
                     logger,
                     post_id,
                     draft_title,
                     publish_gate_subtype,
                     category,
+                    "publish_disabled_for_subtype",
+                )
+            if "live_update_publish_disabled" in publish_skip_reasons:
+                _log_publish_gate_skipped(
+                    logger,
+                    post_id,
+                    draft_title,
+                    publish_gate_subtype,
+                    category,
+                    "live_update_publish_disabled",
                 )
             if publish_skip_reasons:
                 logger.info(f"  [下書き止め] post_id={post_id} reason={','.join(publish_skip_reasons)}")
@@ -9330,6 +9396,7 @@ def _main(args, logger):
                 "created_category_counts": _counter_to_plain_dict(created_category_counts),
                 "created_subtype_counts": _counter_to_plain_dict(created_subtype_counts),
                 "publish_skip_reason_counts": _counter_to_plain_dict(publish_skip_reason_counts),
+                "publish_observation_counts": _counter_to_plain_dict(publish_observation_counts),
                 "x_skip_reason_counts": _counter_to_plain_dict(x_skip_reason_counts),
                 "x_ai_generation_count": history.get(f"x_ai_generation_count_{today_str}", x_ai_generation_count),
                 "x_ai_generation_limit": x_post_daily_limit,

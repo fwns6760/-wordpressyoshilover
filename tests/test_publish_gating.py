@@ -62,6 +62,20 @@ class PublishGatingTests(unittest.TestCase):
             )
         self.assertEqual(reasons, ["publish_disabled_for_subtype"])
 
+    def test_live_update_never_publishes_even_if_general_flag_is_enabled(self):
+        with patch.dict(
+            "os.environ",
+            {"ENABLE_PUBLISH_FOR_GENERAL": "1", "PUBLISH_REQUIRE_IMAGE": "1"},
+            clear=False,
+        ):
+            reasons = rss_fetcher.get_publish_skip_reasons(
+                source_type="news",
+                draft_only=False,
+                featured_media=123,
+                article_subtype="live_update",
+            )
+        self.assertEqual(reasons, ["live_update_publish_disabled"])
+
     def test_get_publish_skip_reasons_allows_enabled_subtype(self):
         with patch.dict("os.environ", {"ENABLE_PUBLISH_FOR_POSTGAME": "1", "PUBLISH_REQUIRE_IMAGE": "1"}, clear=False):
             reasons = rss_fetcher.get_publish_skip_reasons(
@@ -105,6 +119,33 @@ class PublishGatingTests(unittest.TestCase):
                 article_subtype="postgame",
             )
         self.assertEqual(reasons, ["draft_only"])
+
+    def test_get_publish_observation_reasons_detects_missing_featured_media_in_draft_only_mode(self):
+        with patch.dict("os.environ", {"PUBLISH_REQUIRE_IMAGE": "1"}, clear=False):
+            reasons = rss_fetcher.get_publish_observation_reasons(
+                source_type="news",
+                draft_only=True,
+                featured_media=0,
+            )
+        self.assertEqual(reasons, ["featured_media_observation_missing"])
+
+    def test_get_publish_observation_reasons_skips_articles_with_featured_media(self):
+        with patch.dict("os.environ", {"PUBLISH_REQUIRE_IMAGE": "1"}, clear=False):
+            reasons = rss_fetcher.get_publish_observation_reasons(
+                source_type="news",
+                draft_only=True,
+                featured_media=123,
+            )
+        self.assertEqual(reasons, [])
+
+    def test_get_publish_observation_reasons_is_observation_only_when_not_draft_only(self):
+        with patch.dict("os.environ", {"PUBLISH_REQUIRE_IMAGE": "1"}, clear=False):
+            reasons = rss_fetcher.get_publish_observation_reasons(
+                source_type="news",
+                draft_only=False,
+                featured_media=0,
+            )
+        self.assertEqual(reasons, [])
 
     def test_get_publish_skip_reasons_keeps_featured_media_guardrail(self):
         with patch.dict("os.environ", {"ENABLE_PUBLISH_FOR_MANAGER": "1", "PUBLISH_REQUIRE_IMAGE": "1"}, clear=False):
@@ -282,6 +323,55 @@ class PublishGatingTests(unittest.TestCase):
                 "category": "試合速報",
                 "article_subtype": "pregame",
                 "reason": "x_post_disabled_for_subtype",
+            },
+        )
+
+    def test_publish_gate_skipped_log_payload_uses_reason_as_event(self):
+        logger = Mock()
+
+        rss_fetcher._log_publish_gate_skipped(
+            logger,
+            456,
+            "巨人戦の速報",
+            "live_update",
+            "試合速報",
+            "live_update_publish_disabled",
+        )
+
+        payload = json.loads(logger.info.call_args.args[0])
+        self.assertEqual(
+            payload,
+            {
+                "event": "live_update_publish_disabled",
+                "skip_reason": "live_update_publish_disabled",
+                "post_id": 456,
+                "title": "巨人戦の速報",
+                "article_subtype": "live_update",
+                "category": "試合速報",
+            },
+        )
+
+    def test_featured_media_observation_missing_log_payload(self):
+        logger = Mock()
+
+        rss_fetcher._log_featured_media_observation_missing(
+            logger,
+            789,
+            "巨人スタメン 若手をどう並べたか",
+            "farm",
+            "ドラフト・育成",
+        )
+
+        payload = json.loads(logger.info.call_args.args[0])
+        self.assertEqual(
+            payload,
+            {
+                "event": "featured_media_observation_missing",
+                "observation_only": True,
+                "post_id": 789,
+                "title": "巨人スタメン 若手をどう並べたか",
+                "article_subtype": "farm",
+                "category": "ドラフト・育成",
             },
         )
 

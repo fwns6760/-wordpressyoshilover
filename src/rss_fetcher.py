@@ -56,6 +56,21 @@ PUBLISH_SUBTYPE_ENV_MAP = {
     "game_note": "ENABLE_PUBLISH_FOR_GENERAL",
     "roster": "ENABLE_PUBLISH_FOR_GENERAL",
 }
+X_POST_SUBTYPE_ENV_MAP = {
+    "postgame": "ENABLE_X_POST_FOR_POSTGAME",
+    "lineup": "ENABLE_X_POST_FOR_LINEUP",
+    "manager": "ENABLE_X_POST_FOR_MANAGER",
+    "notice": "ENABLE_X_POST_FOR_NOTICE",
+    "pregame": "ENABLE_X_POST_FOR_PREGAME",
+    "recovery": "ENABLE_X_POST_FOR_RECOVERY",
+    "farm": "ENABLE_X_POST_FOR_FARM",
+    "farm_lineup": "ENABLE_X_POST_FOR_FARM",
+    "social": "ENABLE_X_POST_FOR_SOCIAL",
+    "player": "ENABLE_X_POST_FOR_PLAYER",
+    "general": "ENABLE_X_POST_FOR_GENERAL",
+    "game_note": "ENABLE_X_POST_FOR_GENERAL",
+    "roster": "ENABLE_X_POST_FOR_GENERAL",
+}
 JST = timezone(timedelta(hours=9))
 ENABLE_LIVE_UPDATE_ARTICLES = os.getenv("ENABLE_LIVE_UPDATE_ARTICLES", "0").strip().lower() in TRUE_VALUES
 SCORE_TOKEN_RE = _re.compile(r"\d{1,2}\s*[－\-–]\s*\d{1,2}")
@@ -1028,6 +1043,11 @@ def publish_enabled_for_subtype(article_subtype: str) -> bool:
     return _env_flag(env_name, False)
 
 
+def x_post_enabled_for_subtype(article_subtype: str) -> bool:
+    env_name = X_POST_SUBTYPE_ENV_MAP.get(article_subtype or "", "ENABLE_X_POST_FOR_GENERAL")
+    return _env_flag(env_name, False)
+
+
 def x_post_for_live_update_enabled() -> bool:
     return _env_flag("ENABLE_X_POST_FOR_LIVE_UPDATE", False)
 
@@ -1076,8 +1096,16 @@ def get_auto_tweet_skip_reasons(
         reasons.append("source_type_not_supported")
     if category not in get_auto_tweet_categories():
         reasons.append("category_not_allowed")
-    if article_subtype == "live_update" and not x_post_for_live_update_enabled():
+    if published and article_subtype == "live_update" and not x_post_for_live_update_enabled():
         reasons.append("live_update_x_post_disabled")
+    elif (
+        published
+        and auto_tweet_enabled()
+        and article_subtype
+        and article_subtype != "live_update"
+        and not x_post_enabled_for_subtype(article_subtype)
+    ):
+        reasons.append("x_post_disabled_for_subtype")
     if draft_only:
         reasons.append("draft_only")
     if not auto_tweet_enabled():
@@ -1103,10 +1131,11 @@ def get_publish_skip_reasons(
     reasons = []
     if draft_only:
         reasons.append("draft_only")
-    elif source_type in {"news", "social_news"} and article_subtype and not publish_enabled_for_subtype(article_subtype):
-        reasons.append("publish_disabled_for_subtype")
-    if source_type in {"news", "social_news"} and publish_requires_featured_media() and not featured_media:
-        reasons.append("featured_media_missing")
+    else:
+        if source_type in {"news", "social_news"} and article_subtype and not publish_enabled_for_subtype(article_subtype):
+            reasons.append("publish_disabled_for_subtype")
+        if source_type in {"news", "social_news"} and publish_requires_featured_media() and not featured_media:
+            reasons.append("featured_media_missing")
     return reasons
 
 
@@ -8390,6 +8419,25 @@ def _log_publish_disabled_for_subtype(
     logger.info(json.dumps(payload, ensure_ascii=False))
 
 
+def _log_x_post_subtype_skipped(
+    logger: logging.Logger,
+    post_id: int,
+    title: str,
+    category: str,
+    article_subtype: str,
+    reason: str,
+) -> None:
+    payload = {
+        "event": "x_post_subtype_skipped",
+        "post_id": post_id,
+        "title": title,
+        "category": category,
+        "article_subtype": article_subtype,
+        "reason": reason,
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
 def _build_x_post_preview_for_observation(
     *,
     logger: logging.Logger,
@@ -9175,7 +9223,7 @@ def _main(args, logger):
             x_skip_reasons = get_auto_tweet_skip_reasons(
                 source_type=source_type,
                 category=category,
-                article_subtype=title_article_subtype,
+                article_subtype=publish_gate_subtype,
                 draft_only=args.draft_only,
                 x_post_count=x_post_count,
                 x_post_daily_limit=x_post_daily_limit,
@@ -9185,6 +9233,15 @@ def _main(args, logger):
             )
             for reason in x_skip_reasons:
                 x_skip_reason_counts[reason] += 1
+            if "x_post_disabled_for_subtype" in x_skip_reasons:
+                _log_x_post_subtype_skipped(
+                    logger,
+                    post_id,
+                    draft_title,
+                    category,
+                    publish_gate_subtype,
+                    "x_post_disabled_for_subtype",
+                )
 
             if not x_skip_reasons:
                 try:

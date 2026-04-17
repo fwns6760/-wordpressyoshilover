@@ -109,7 +109,15 @@ class CostModeTests(unittest.TestCase):
             self.assertEqual(reasons, ["auto_tweet_disabled"])
 
     def test_auto_tweet_accepts_social_news_when_enabled(self):
-        with patch.dict("os.environ", {"AUTO_TWEET_ENABLED": "1", "AUTO_TWEET_CATEGORIES": "ドラフト・育成"}, clear=False):
+        with patch.dict(
+            "os.environ",
+            {
+                "AUTO_TWEET_ENABLED": "1",
+                "AUTO_TWEET_CATEGORIES": "ドラフト・育成",
+                "ENABLE_X_POST_FOR_SOCIAL": "1",
+            },
+            clear=False,
+        ):
             reasons = rss_fetcher.get_auto_tweet_skip_reasons(
                 source_type="social_news",
                 category="ドラフト・育成",
@@ -178,6 +186,15 @@ class CostModeTests(unittest.TestCase):
             {
                 "AUTO_TWEET_ENABLED": "1",
                 "AUTO_TWEET_CATEGORIES": "試合速報,選手情報,首脳陣,ドラフト・育成",
+                "ENABLE_X_POST_FOR_LINEUP": "1",
+                "ENABLE_X_POST_FOR_POSTGAME": "1",
+                "ENABLE_X_POST_FOR_PREGAME": "1",
+                "ENABLE_X_POST_FOR_MANAGER": "1",
+                "ENABLE_X_POST_FOR_NOTICE": "1",
+                "ENABLE_X_POST_FOR_RECOVERY": "1",
+                "ENABLE_X_POST_FOR_FARM": "1",
+                "ENABLE_X_POST_FOR_SOCIAL": "1",
+                "ENABLE_X_POST_FOR_PLAYER": "1",
             },
             clear=False,
         ):

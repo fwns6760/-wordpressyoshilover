@@ -1,5 +1,6 @@
+import json
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from src import rss_fetcher
 
@@ -115,6 +116,36 @@ class PublishGatingTests(unittest.TestCase):
             )
         self.assertEqual(reasons, ["featured_media_missing"])
 
+    def test_get_publish_skip_reasons_allows_publish_without_image_when_guardrail_is_off(self):
+        with patch.dict("os.environ", {"ENABLE_PUBLISH_FOR_MANAGER": "1", "PUBLISH_REQUIRE_IMAGE": "0"}, clear=False):
+            reasons = rss_fetcher.get_publish_skip_reasons(
+                source_type="news",
+                draft_only=False,
+                featured_media=0,
+                article_subtype="manager",
+            )
+        self.assertEqual(reasons, [])
+
+    def test_get_publish_skip_reasons_requires_both_subtype_and_image_when_both_gates_apply(self):
+        with patch.dict("os.environ", {"ENABLE_PUBLISH_FOR_MANAGER": "0", "PUBLISH_REQUIRE_IMAGE": "1"}, clear=False):
+            reasons = rss_fetcher.get_publish_skip_reasons(
+                source_type="news",
+                draft_only=False,
+                featured_media=0,
+                article_subtype="manager",
+            )
+        self.assertEqual(reasons, ["publish_disabled_for_subtype", "featured_media_missing"])
+
+    def test_get_publish_skip_reasons_ignores_image_gate_in_draft_only_mode(self):
+        with patch.dict("os.environ", {"ENABLE_PUBLISH_FOR_MANAGER": "1", "PUBLISH_REQUIRE_IMAGE": "1"}, clear=False):
+            reasons = rss_fetcher.get_publish_skip_reasons(
+                source_type="news",
+                draft_only=True,
+                featured_media=0,
+                article_subtype="manager",
+            )
+        self.assertEqual(reasons, ["draft_only"])
+
     def test_get_publish_skip_reasons_safe_default_holds_general_story(self):
         with patch.dict("os.environ", {"PUBLISH_REQUIRE_IMAGE": "1"}, clear=False):
             reasons = rss_fetcher.get_publish_skip_reasons(
@@ -146,6 +177,113 @@ class PublishGatingTests(unittest.TestCase):
                 article_url="https://yoshilover.com/1",
             )
         self.assertEqual(reasons, ["not_published"])
+
+    def test_get_auto_tweet_skip_reasons_blocks_disabled_subtype_by_default(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "AUTO_TWEET_ENABLED": "1",
+                "AUTO_TWEET_CATEGORIES": "試合速報,選手情報,首脳陣,ドラフト・育成",
+            },
+            clear=False,
+        ):
+            reasons = rss_fetcher.get_auto_tweet_skip_reasons(
+                source_type="news",
+                category="試合速報",
+                article_subtype="postgame",
+                draft_only=False,
+                x_post_count=0,
+                x_post_daily_limit=5,
+                featured_media=123,
+                published=True,
+                article_url="https://yoshilover.com/1",
+            )
+        self.assertEqual(reasons, ["x_post_disabled_for_subtype"])
+
+    def test_get_auto_tweet_skip_reasons_allows_enabled_subtype(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "AUTO_TWEET_ENABLED": "1",
+                "AUTO_TWEET_CATEGORIES": "試合速報,選手情報,首脳陣,ドラフト・育成",
+                "ENABLE_X_POST_FOR_POSTGAME": "1",
+            },
+            clear=False,
+        ):
+            reasons = rss_fetcher.get_auto_tweet_skip_reasons(
+                source_type="news",
+                category="試合速報",
+                article_subtype="postgame",
+                draft_only=False,
+                x_post_count=0,
+                x_post_daily_limit=5,
+                featured_media=123,
+                published=True,
+                article_url="https://yoshilover.com/1",
+            )
+        self.assertEqual(reasons, [])
+
+    def test_each_x_post_flag_enables_its_target_subtype(self):
+        cases = {
+            ("news", "試合速報", "postgame"): "ENABLE_X_POST_FOR_POSTGAME",
+            ("news", "試合速報", "lineup"): "ENABLE_X_POST_FOR_LINEUP",
+            ("news", "首脳陣", "manager"): "ENABLE_X_POST_FOR_MANAGER",
+            ("news", "選手情報", "notice"): "ENABLE_X_POST_FOR_NOTICE",
+            ("news", "試合速報", "pregame"): "ENABLE_X_POST_FOR_PREGAME",
+            ("news", "選手情報", "recovery"): "ENABLE_X_POST_FOR_RECOVERY",
+            ("news", "ドラフト・育成", "farm"): "ENABLE_X_POST_FOR_FARM",
+            ("social_news", "試合速報", "social"): "ENABLE_X_POST_FOR_SOCIAL",
+            ("news", "選手情報", "player"): "ENABLE_X_POST_FOR_PLAYER",
+            ("news", "試合速報", "general"): "ENABLE_X_POST_FOR_GENERAL",
+        }
+        for (source_type, category, article_subtype), env_name in cases.items():
+            with self.subTest(source_type=source_type, category=category, article_subtype=article_subtype):
+                with patch.dict(
+                    "os.environ",
+                    {
+                        "AUTO_TWEET_ENABLED": "1",
+                        "AUTO_TWEET_CATEGORIES": "試合速報,選手情報,首脳陣,ドラフト・育成",
+                        env_name: "1",
+                    },
+                    clear=False,
+                ):
+                    reasons = rss_fetcher.get_auto_tweet_skip_reasons(
+                        source_type=source_type,
+                        category=category,
+                        article_subtype=article_subtype,
+                        draft_only=False,
+                        x_post_count=0,
+                        x_post_daily_limit=5,
+                        featured_media=123,
+                        published=True,
+                        article_url="https://yoshilover.com/1",
+                    )
+                self.assertEqual(reasons, [])
+
+    def test_x_post_subtype_skipped_log_payload(self):
+        logger = Mock()
+
+        rss_fetcher._log_x_post_subtype_skipped(
+            logger,
+            123,
+            "巨人ヤクルト戦 神宮18時開始",
+            "試合速報",
+            "pregame",
+            "x_post_disabled_for_subtype",
+        )
+
+        payload = json.loads(logger.info.call_args.args[0])
+        self.assertEqual(
+            payload,
+            {
+                "event": "x_post_subtype_skipped",
+                "post_id": 123,
+                "title": "巨人ヤクルト戦 神宮18時開始",
+                "category": "試合速報",
+                "article_subtype": "pregame",
+                "reason": "x_post_disabled_for_subtype",
+            },
+        )
 
 
 if __name__ == "__main__":

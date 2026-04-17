@@ -14,6 +14,16 @@ Phase C は「カテゴリ単位で publish を段階的に有効化し、その
 - `ENABLE_PUBLISH_FOR_SOCIAL=0`
 - `ENABLE_PUBLISH_FOR_PLAYER=0`
 - `ENABLE_PUBLISH_FOR_GENERAL=0`
+- `ENABLE_X_POST_FOR_POSTGAME=0`
+- `ENABLE_X_POST_FOR_LINEUP=0`
+- `ENABLE_X_POST_FOR_MANAGER=0`
+- `ENABLE_X_POST_FOR_NOTICE=0`
+- `ENABLE_X_POST_FOR_PREGAME=0`
+- `ENABLE_X_POST_FOR_RECOVERY=0`
+- `ENABLE_X_POST_FOR_FARM=0`
+- `ENABLE_X_POST_FOR_SOCIAL=0`
+- `ENABLE_X_POST_FOR_PLAYER=0`
+- `ENABLE_X_POST_FOR_GENERAL=0`
 
 ## 1. 公開の段階的有効化手順
 
@@ -62,17 +72,35 @@ bash scripts/cloud_run_smoke_test.sh
 前提:
 
 - 対象 subtype の `ENABLE_PUBLISH_FOR_XXX=1`
+- 対象 subtype の `ENABLE_X_POST_FOR_XXX=1`
 - 対象カテゴリが `AUTO_TWEET_CATEGORIES` に含まれている
 - `X_POST_AI_MODE=gemini`
 
+X 投稿フラグの対応は publish フラグと同じです。
+
+- `postgame` -> `ENABLE_X_POST_FOR_POSTGAME`
+- `lineup` -> `ENABLE_X_POST_FOR_LINEUP`
+- `manager` -> `ENABLE_X_POST_FOR_MANAGER`
+- `notice` -> `ENABLE_X_POST_FOR_NOTICE`
+- `pregame` -> `ENABLE_X_POST_FOR_PREGAME`
+- `recovery` -> `ENABLE_X_POST_FOR_RECOVERY`
+- `farm` / `farm_lineup` -> `ENABLE_X_POST_FOR_FARM`
+- `social` -> `ENABLE_X_POST_FOR_SOCIAL`
+- `player` -> `ENABLE_X_POST_FOR_PLAYER`
+- `general` / `game_note` / `roster` -> `ENABLE_X_POST_FOR_GENERAL`
+
 手順:
 
-1. `AUTO_TWEET_ENABLED=1` に切り替える
-2. 1時間観察する
-3. 以下を確認する
+1. まず `ENABLE_PUBLISH_FOR_XXX=1` の状態で数日観察し、公開品質を確認する
+2. 問題がなければ対象 subtype の `ENABLE_X_POST_FOR_XXX=1` に切り替える
+3. 1時間は `AUTO_TWEET_ENABLED=0` のまま draft 生成ログを観察し、`x_post_ai_generated` と preview 品質を確認する
+4. 問題がなければ `AUTO_TWEET_ENABLED=1` に切り替える
+5. さらに1時間観察する
+6. 以下を確認する
 
 - `[公開+X投稿]`
 - `[X投稿スキップ]`
+- `x_post_subtype_skipped`
 - `x_post_ai_generated`
 - `x_post_ai_failed`
 - `rss_fetcher_flow_summary.x_skip_reason_counts`
@@ -100,6 +128,13 @@ bash scripts/cloud_run_smoke_test.sh
 3. smoke test
 4. `[X投稿スキップ] reason=auto_tweet_disabled` を確認
 
+### ケースD: 特定 subtype の X 投稿だけ止める
+
+1. 対象 subtype の `ENABLE_X_POST_FOR_XXX=0`
+2. deploy
+3. smoke test
+4. `x_post_subtype_skipped` と `x_skip_reason_counts.x_post_disabled_for_subtype` を確認
+
 ## 4. 公開記事の draft 戻し手順
 
 WordPress REST API で `status=draft` に戻す。
@@ -121,6 +156,7 @@ WordPress REST API で `status=draft` に戻す。
 - 公開件数
 - `publish_skip_reason_counts`
 - `x_skip_reason_counts`
+- `x_post_subtype_skipped`
 - `x_post_ai_failed`
 
 週次:

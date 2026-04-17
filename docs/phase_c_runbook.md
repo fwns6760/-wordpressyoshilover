@@ -175,10 +175,11 @@ WordPress REST API で `status=draft` に戻す。
 ### 実際の確認ステップ
 
 1. `docs/operation_logs.md` の「朝の観察 10 項目」を上から見る
-2. WP 管理画面で当日生成された draft を subtype ごとに 5-10 件開く
-3. `docs/acceptance_test_checklist.md` の該当 subtype の項目で採点する
-4. 合格なら subtype 単位で `ENABLE_PUBLISH_FOR_XXX=1` 候補に載せる
-5. 差し戻しなら post ID と問題点を添えて Codex に修正依頼する
+2. `python3 -m src.acceptance_fact_check --category <subtype> --limit 10` で致命的な事実差分を先に洗う
+3. WP 管理画面で当日生成された draft を subtype ごとに 5-10 件開く
+4. `docs/acceptance_test_checklist.md` の該当 subtype の項目で採点する
+5. 合格なら subtype 単位で `ENABLE_PUBLISH_FOR_XXX=1` 候補に載せる
+6. 差し戻しなら post ID と問題点を添えて Codex に修正依頼する
 
 ### draft の見方
 

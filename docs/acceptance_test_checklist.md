@@ -24,6 +24,7 @@
 - 30分ごとに区切り、1ブロックで 1 subtype を見る
 - 1ブロック終了ごとに 5 分休憩を入れる
 - ADHD 配慮として「sample を全部見切る」より「重大欠陥の有無を早めに判定する」を優先する
+- draft を開く前に `python3 -m src.acceptance_fact_check --category postgame --limit 10` や `python3 -m src.acceptance_fact_check --post-id 62538` で事実差分を先に洗う
 
 ## 役割分担
 
@@ -34,6 +35,13 @@
 | 実装 | Codex | 差し戻し修正、テスト追加、deploy |
 
 ## 共通チェック項目
+
+実際の確認順:
+
+1. `docs/operation_logs.md` の朝の観察クエリで run の健全性を確認する
+2. `python3 -m src.acceptance_fact_check --category <subtype> --limit 10` で事実差分を確認する
+3. その後に WordPress 上で draft を開き、本文品質を人間が見る
+4. `合格 / 条件付き合格 / 差し戻し` を subtype 単位で決める
 
 全 subtype でまず見る項目:
 

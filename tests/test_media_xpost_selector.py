@@ -1,6 +1,6 @@
 import unittest
 
-from src.media_xpost_selector import select_media_quotes
+from src.media_xpost_selector import evaluate_media_quote_selection, select_media_quotes
 
 
 class MediaXpostSelectorTests(unittest.TestCase):
@@ -321,6 +321,95 @@ class MediaXpostSelectorTests(unittest.TestCase):
         self.assertEqual(len(quotes), 2)
         self.assertEqual(quotes[0]["handle"], "@TokyoGiants")
         self.assertEqual(quotes[1]["handle"], "@hochi_giants")
+
+    def test_evaluate_marks_social_news_as_target(self):
+        result = evaluate_media_quote_selection(
+            {
+                "source_type": "social_news",
+                "source_url": "https://twitter.com/TokyoGiants/status/100",
+                "source_name": "巨人公式X",
+                "created_at": "2026-04-16T10:00:00+09:00",
+                "category": "選手情報",
+            }
+        )
+
+        self.assertEqual(result["selector_type"], "own_source")
+        self.assertTrue(result["is_target"])
+        self.assertEqual(len(result["quotes"]), 1)
+        self.assertIsNone(result["skip_meta"])
+
+    def test_evaluate_returns_pool_empty_for_notice_without_candidates(self):
+        result = evaluate_media_quote_selection(
+            {
+                "source_type": "news",
+                "story_kind": "player_notice",
+                "player_name": "皆川岳飛",
+                "player_aliases": ["皆川岳飛", "皆川"],
+                "notice_type": "一軍登録",
+                "created_at": "2026-04-16T10:00:00+09:00",
+            },
+            media_quote_pool=[],
+        )
+
+        self.assertEqual(result["selector_type"], "npb_notice")
+        self.assertTrue(result["is_target"])
+        self.assertEqual(result["quotes"], [])
+        self.assertEqual(result["skip_meta"]["skip_reason"], "pool_empty")
+        self.assertEqual(result["skip_meta"]["pool_size_checked"], 0)
+        self.assertIsNone(result["skip_meta"]["best_candidate_score"])
+
+    def test_evaluate_returns_time_window_exceeded_for_old_notice_candidate(self):
+        result = evaluate_media_quote_selection(
+            {
+                "source_type": "news",
+                "story_kind": "player_notice",
+                "player_name": "皆川岳飛",
+                "player_aliases": ["皆川岳飛", "皆川"],
+                "notice_type": "一軍登録",
+                "created_at": "2026-04-16T10:00:00+09:00",
+            },
+            media_quote_pool=[
+                {
+                    "source_name": "NPB公式X",
+                    "source_url": "https://twitter.com/npb/status/1",
+                    "title": "【公示】4/13 巨人・皆川岳飛を出場選手登録",
+                    "summary": "",
+                    "created_at": "2026-04-13T09:30:00+09:00",
+                }
+            ],
+        )
+
+        self.assertEqual(result["quotes"], [])
+        self.assertEqual(result["skip_meta"]["skip_reason"], "time_window_exceeded")
+        self.assertEqual(result["skip_meta"]["best_candidate_handle"], "@npb")
+        self.assertGreater(result["skip_meta"]["best_candidate_age_hours"], 48)
+
+    def test_evaluate_returns_same_account_excluded_for_social_second_quote(self):
+        result = evaluate_media_quote_selection(
+            {
+                "source_type": "social_news",
+                "source_url": "https://twitter.com/hochi_giants/status/100",
+                "source_name": "スポーツ報知巨人班X",
+                "created_at": "2026-04-16T10:00:00+09:00",
+                "category": "選手情報",
+                "topic_aliases": ["皆川岳飛", "皆川"],
+            },
+            max_count=2,
+            media_quote_pool=[
+                {
+                    "source_name": "スポーツ報知巨人班X",
+                    "source_url": "https://twitter.com/hochi_giants/status/101",
+                    "title": "皆川岳飛が一軍に合流して練習",
+                    "summary": "",
+                    "created_at": "2026-04-16T09:45:00+09:00",
+                }
+            ],
+        )
+
+        self.assertEqual(len(result["quotes"]), 1)
+        self.assertEqual(result["skip_meta"]["skip_reason"], "same_account_excluded")
+        self.assertEqual(result["skip_meta"]["pool_size_checked"], 1)
+        self.assertEqual(result["skip_meta"]["best_candidate_handle"], "@hochi_giants")
 
 
 if __name__ == "__main__":

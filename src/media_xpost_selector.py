@@ -122,6 +122,273 @@ def _build_matched_quote(
     }
 
 
+def _selector_type(entry: dict[str, Any]) -> str:
+    source_type = (entry.get("source_type") or "").strip()
+    if source_type == "social_news":
+        return "own_source"
+
+    story_kind = (entry.get("story_kind") or "").strip()
+    if story_kind == "player_notice":
+        return "npb_notice"
+    if story_kind == "manager_quote":
+        return "manager_media"
+    return "none"
+
+
+def _effective_social_max_count(entry: dict[str, Any], max_count: int) -> int:
+    social_max_count = min(max_count, 1)
+    if (entry.get("category") or "").strip() in {"試合速報", "選手情報", "首脳陣"}:
+        social_max_count = max_count
+    return social_max_count
+
+
+def _candidate_media_url(candidate: dict[str, Any]) -> str:
+    return (
+        (candidate.get("source_url") or "").strip()
+        or (candidate.get("post_url") or "").strip()
+        or (candidate.get("url") or "").strip()
+    )
+
+
+def _candidate_display_handle(candidate: dict[str, Any]) -> str:
+    media_url = _candidate_media_url(candidate)
+    return _extract_handle(media_url) or (candidate.get("source_name") or "").strip()
+
+
+def _candidate_age_hours(article_time: datetime | None, candidate_time: datetime | None) -> float | None:
+    if not article_time or not candidate_time:
+        return None
+    return round(abs((article_time - candidate_time).total_seconds()) / 3600.0, 2)
+
+
+def _candidate_within_window(article_time: datetime | None, candidate_time: datetime | None) -> bool:
+    age_hours = _candidate_age_hours(article_time, candidate_time)
+    if age_hours is None:
+        return True
+    return age_hours <= _NOTICE_TWEET_WINDOW_HOURS
+
+
+def _prepare_route_candidates(
+    media_quote_pool: list[dict[str, Any]],
+    route: str,
+) -> list[dict[str, Any]]:
+    prepared: list[dict[str, Any]] = []
+    for candidate in media_quote_pool:
+        media_url = _candidate_media_url(candidate)
+        if not media_url:
+            continue
+        source_class = _candidate_source_class(candidate)
+        priority_score = _candidate_priority(route, source_class)
+        if priority_score <= 0:
+            continue
+        prepared.append(
+            {
+                "candidate": candidate,
+                "media_url": media_url,
+                "source_class": source_class,
+                "priority_score": priority_score,
+                "candidate_text": _normalize_name(
+                    f"{candidate.get('title', '')} {candidate.get('summary', '')}"
+                ),
+                "candidate_time": _parse_datetime(candidate.get("created_at")),
+            }
+        )
+    return prepared
+
+
+def _best_candidate_snapshot(
+    prepared_candidates: list[dict[str, Any]],
+    aliases: list[str],
+    article_time: datetime | None,
+    notice_type: str = "",
+) -> dict[str, Any]:
+    best_score = None
+    best_handle = ""
+    best_age_hours = None
+
+    for item in prepared_candidates:
+        score = int(item["priority_score"])
+        matched_alias = _match_alias(item["candidate_text"], aliases) if aliases else ""
+        if matched_alias:
+            score += 100
+        age_hours = _candidate_age_hours(article_time, item["candidate_time"])
+        if age_hours is not None and age_hours <= _NOTICE_TWEET_WINDOW_HOURS:
+            score += max(0, int(_NOTICE_TWEET_WINDOW_HOURS - age_hours))
+        if notice_type and notice_type in item["candidate_text"]:
+            score += 10
+
+        if best_score is None or score > best_score:
+            best_score = score
+            best_handle = _candidate_display_handle(item["candidate"])
+            best_age_hours = age_hours
+
+    return {
+        "best_candidate_score": best_score,
+        "best_candidate_handle": best_handle,
+        "best_candidate_age_hours": best_age_hours,
+    }
+
+
+def _build_skip_meta(
+    skip_reason: str,
+    prepared_candidates: list[dict[str, Any]],
+    aliases: list[str],
+    article_time: datetime | None,
+    notice_type: str = "",
+) -> dict[str, Any]:
+    payload = {
+        "skip_reason": skip_reason,
+        "pool_size_checked": len(prepared_candidates),
+        "best_candidate_score": None,
+        "best_candidate_handle": "",
+        "best_candidate_age_hours": None,
+    }
+    payload.update(
+        _best_candidate_snapshot(
+            prepared_candidates,
+            aliases,
+            article_time,
+            notice_type=notice_type,
+        )
+    )
+    return payload
+
+
+def _aliases_for_notice(entry: dict[str, Any]) -> list[str]:
+    aliases = [
+        _normalize_name(alias)
+        for alias in entry.get("player_aliases", [])
+        if _normalize_name(alias)
+    ]
+    if aliases:
+        return aliases
+    player_name = _normalize_name(entry.get("player_name", ""))
+    return [player_name] if player_name else []
+
+
+def _aliases_for_manager(entry: dict[str, Any]) -> list[str]:
+    aliases = [
+        _normalize_name(alias)
+        for alias in entry.get("manager_aliases", [])
+        if _normalize_name(alias)
+    ]
+    if aliases:
+        return aliases
+    manager_name = _normalize_name(entry.get("manager_name", ""))
+    return [manager_name] if manager_name else []
+
+
+def _aliases_for_social(entry: dict[str, Any]) -> list[str]:
+    return [
+        _normalize_name(alias)
+        for alias in entry.get("topic_aliases", [])
+        if _normalize_name(alias)
+    ]
+
+
+def _second_quote_skip_meta(
+    prepared_candidates: list[dict[str, Any]],
+    aliases: list[str],
+    article_time: datetime | None,
+    first_quote: dict[str, str],
+    allowed_source_classes: set[str],
+    notice_type: str = "",
+) -> dict[str, Any]:
+    if not allowed_source_classes:
+        return _build_skip_meta("other", [], aliases, article_time, notice_type=notice_type)
+
+    allowed_candidates = [
+        item for item in prepared_candidates if item.get("source_class") in allowed_source_classes
+    ]
+    if not allowed_candidates:
+        return _build_skip_meta("pool_empty", [], aliases, article_time, notice_type=notice_type)
+
+    valid_candidates = []
+    if aliases:
+        valid_candidates = [
+            item
+            for item in allowed_candidates
+            if _match_alias(item["candidate_text"], aliases)
+            and _candidate_within_window(article_time, item["candidate_time"])
+        ]
+    same_account_candidates = []
+    used_handles = {
+        (first_quote.get("handle") or "").lower(),
+        (first_quote.get("quote_account") or "").lower(),
+    }
+    for item in valid_candidates:
+        quote_handle = _candidate_display_handle(item["candidate"]).lower()
+        if item["media_url"] == first_quote.get("url"):
+            same_account_candidates.append(item)
+            continue
+        if quote_handle and quote_handle in used_handles:
+            same_account_candidates.append(item)
+    if valid_candidates and len(same_account_candidates) == len(valid_candidates):
+        return _build_skip_meta(
+            "same_account_excluded",
+            same_account_candidates,
+            aliases,
+            article_time,
+            notice_type=notice_type,
+        )
+
+    if aliases:
+        alias_matches = [
+            item for item in allowed_candidates if _match_alias(item["candidate_text"], aliases)
+        ]
+        if alias_matches and not any(
+            _candidate_within_window(article_time, item["candidate_time"])
+            for item in alias_matches
+        ):
+            return _build_skip_meta(
+                "time_window_exceeded",
+                alias_matches,
+                aliases,
+                article_time,
+                notice_type=notice_type,
+            )
+
+    return _build_skip_meta(
+        "score_below_threshold",
+        allowed_candidates,
+        aliases,
+        article_time,
+        notice_type=notice_type,
+    )
+
+
+def _primary_quote_skip_meta(
+    prepared_candidates: list[dict[str, Any]],
+    aliases: list[str],
+    article_time: datetime | None,
+    notice_type: str = "",
+) -> dict[str, Any]:
+    if not prepared_candidates:
+        return _build_skip_meta("pool_empty", [], aliases, article_time, notice_type=notice_type)
+    if not aliases:
+        return _build_skip_meta("other", prepared_candidates, aliases, article_time, notice_type=notice_type)
+
+    alias_matches = [item for item in prepared_candidates if _match_alias(item["candidate_text"], aliases)]
+    if alias_matches and not any(
+        _candidate_within_window(article_time, item["candidate_time"])
+        for item in alias_matches
+    ):
+        return _build_skip_meta(
+            "time_window_exceeded",
+            alias_matches,
+            aliases,
+            article_time,
+            notice_type=notice_type,
+        )
+    return _build_skip_meta(
+        "score_below_threshold",
+        prepared_candidates,
+        aliases,
+        article_time,
+        notice_type=notice_type,
+    )
+
+
 def _rank_pool_candidates(
     entry: dict[str, Any],
     media_quote_pool: list[dict[str, Any]],
@@ -347,6 +614,128 @@ def _select_social_source_quotes(
     return selected_quotes[:max_count]
 
 
+def evaluate_media_quote_selection(
+    entry: dict[str, Any],
+    max_count: int = 1,
+    media_quote_pool: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    selector_type = _selector_type(entry)
+    is_target = selector_type != "none"
+    if max_count <= 0:
+        return {
+            "quotes": [],
+            "selector_type": selector_type,
+            "is_target": is_target,
+            "skip_meta": None,
+        }
+
+    media_quote_pool = media_quote_pool or []
+    article_time = _parse_datetime(entry.get("created_at"))
+    source_type = (entry.get("source_type") or "").strip()
+    story_kind = (entry.get("story_kind") or "").strip()
+
+    if source_type == "social_news":
+        effective_max_count = _effective_social_max_count(entry, max_count)
+        quotes = _select_social_source_quotes(entry, media_quote_pool, effective_max_count)
+        skip_meta = None
+        if not quotes:
+            skip_meta = {
+                "skip_reason": "other",
+                "pool_size_checked": 0,
+                "best_candidate_score": None,
+                "best_candidate_handle": "",
+                "best_candidate_age_hours": None,
+            }
+        elif effective_max_count > len(quotes):
+            topic_aliases = _aliases_for_social(entry)
+            prepared_candidates = _prepare_route_candidates(media_quote_pool, "social_secondary")
+            if not topic_aliases:
+                skip_meta = _build_skip_meta("other", prepared_candidates, topic_aliases, article_time)
+            else:
+                skip_meta = _second_quote_skip_meta(
+                    prepared_candidates,
+                    topic_aliases,
+                    article_time,
+                    quotes[0],
+                    {"media"},
+                )
+        return {
+            "quotes": quotes,
+            "selector_type": selector_type,
+            "is_target": is_target,
+            "skip_meta": skip_meta,
+        }
+
+    if story_kind == "player_notice":
+        notice_aliases = _aliases_for_notice(entry)
+        notice_type = (entry.get("notice_type") or "").strip()
+        quotes = _select_notice_quote(entry, media_quote_pool, max_count) if media_quote_pool else []
+        skip_meta = None
+        if len(quotes) < max_count:
+            prepared_candidates = _prepare_route_candidates(media_quote_pool, "notice")
+            if not quotes:
+                skip_meta = _primary_quote_skip_meta(
+                    prepared_candidates,
+                    notice_aliases,
+                    article_time,
+                    notice_type=notice_type,
+                )
+            else:
+                allowed_second_classes = {
+                    "npb": {"official", "media"},
+                    "official": {"media"},
+                    "media": set(),
+                }.get(quotes[0].get("source_class"), set())
+                skip_meta = _second_quote_skip_meta(
+                    prepared_candidates,
+                    notice_aliases,
+                    article_time,
+                    quotes[0],
+                    allowed_second_classes,
+                    notice_type=notice_type,
+                )
+        return {
+            "quotes": quotes,
+            "selector_type": selector_type,
+            "is_target": is_target,
+            "skip_meta": skip_meta,
+        }
+
+    if story_kind == "manager_quote":
+        manager_aliases = _aliases_for_manager(entry)
+        quotes = _select_manager_quote(entry, media_quote_pool, max_count) if media_quote_pool else []
+        skip_meta = None
+        if len(quotes) < max_count:
+            prepared_candidates = _prepare_route_candidates(media_quote_pool, "manager")
+            if not quotes:
+                skip_meta = _primary_quote_skip_meta(prepared_candidates, manager_aliases, article_time)
+            else:
+                allowed_second_classes = {
+                    "official": {"media"},
+                    "media": set(),
+                }.get(quotes[0].get("source_class"), set())
+                skip_meta = _second_quote_skip_meta(
+                    prepared_candidates,
+                    manager_aliases,
+                    article_time,
+                    quotes[0],
+                    allowed_second_classes,
+                )
+        return {
+            "quotes": quotes,
+            "selector_type": selector_type,
+            "is_target": is_target,
+            "skip_meta": skip_meta,
+        }
+
+    return {
+        "quotes": [],
+        "selector_type": selector_type,
+        "is_target": is_target,
+        "skip_meta": None,
+    }
+
+
 def select_media_quotes(
     entry: dict[str, Any],
     max_count: int = 1,
@@ -360,25 +749,8 @@ def select_media_quotes(
     - source_type == social_news の記事は source_url / post_url を最大1件返す
     - それ以外の記事は空リスト
     """
-    if max_count <= 0:
-        return []
-
-    media_quote_pool = media_quote_pool or []
-    source_type = (entry.get("source_type") or "").strip()
-    if source_type == "social_news":
-        social_max_count = min(max_count, 1)
-        if (entry.get("category") or "").strip() in {"試合速報", "選手情報", "首脳陣"}:
-            social_max_count = max_count
-        return _select_social_source_quotes(entry, media_quote_pool, social_max_count)
-
-    story_kind = (entry.get("story_kind") or "").strip()
-    if story_kind == "player_notice" and media_quote_pool:
-        notice_quotes = _select_notice_quote(entry, media_quote_pool, max_count)
-        if notice_quotes:
-            return notice_quotes
-    if story_kind == "manager_quote" and media_quote_pool:
-        manager_quotes = _select_manager_quote(entry, media_quote_pool, max_count)
-        if manager_quotes:
-            return manager_quotes
-
-    return []
+    return evaluate_media_quote_selection(
+        entry,
+        max_count=max_count,
+        media_quote_pool=media_quote_pool,
+    )["quotes"]

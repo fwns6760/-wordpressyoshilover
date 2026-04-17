@@ -28,7 +28,7 @@ import re as _re
 import html as _html
 
 from wp_client import WPClient
-from media_xpost_selector import select_media_quotes
+from media_xpost_selector import evaluate_media_quote_selection
 from wp_draft_creator import build_oembed_block, load_posted_urls, save_posted_url
 from x_post_generator import build_post as build_x_post_text
 
@@ -8229,6 +8229,50 @@ def _log_media_xpost_embedded(
     logger.info(json.dumps(payload, ensure_ascii=False))
 
 
+def _log_media_xpost_evaluated(
+    logger: logging.Logger,
+    post_id: int,
+    title: str,
+    category: str,
+    article_subtype: str,
+    selector_type: str,
+    is_target: bool,
+) -> None:
+    payload = {
+        "event": "media_xpost_evaluated",
+        "post_id": post_id,
+        "title": title,
+        "category": category,
+        "article_subtype": article_subtype,
+        "selector_type": selector_type,
+        "is_target": bool(is_target),
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
+def _log_media_xpost_skipped(
+    logger: logging.Logger,
+    post_id: int,
+    title: str,
+    category: str,
+    article_subtype: str,
+    skip_meta: dict[str, object],
+) -> None:
+    payload = {
+        "event": "media_xpost_skipped",
+        "post_id": post_id,
+        "title": title,
+        "category": category,
+        "article_subtype": article_subtype,
+        "skip_reason": skip_meta.get("skip_reason", "other"),
+        "pool_size_checked": int(skip_meta.get("pool_size_checked", 0) or 0),
+        "best_candidate_score": skip_meta.get("best_candidate_score"),
+        "best_candidate_handle": skip_meta.get("best_candidate_handle", ""),
+        "best_candidate_age_hours": skip_meta.get("best_candidate_age_hours"),
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
 def _counter_to_plain_dict(counter: Counter) -> dict[str, int]:
     return {key: counter[key] for key in sorted(counter) if counter[key]}
 
@@ -8659,7 +8703,7 @@ def _main(args, logger):
             elif source_type == "social_news" and category in {"試合速報", "選手情報", "首脳陣"}:
                 media_quote_max_count = 2
 
-            media_quotes = select_media_quotes(
+            media_quote_evaluation = evaluate_media_quote_selection(
                 {
                     "source_type": source_type,
                     "source_url": post_url,
@@ -8678,6 +8722,7 @@ def _main(args, logger):
                 max_count=media_quote_max_count,
                 media_quote_pool=media_quote_pool,
             )
+            media_quotes = media_quote_evaluation["quotes"]
             if source_type == "news":
                 _article_images = fetch_article_images(post_url, max_images=3)
             else:
@@ -8748,6 +8793,24 @@ def _main(args, logger):
             success += 1
             created_category_counts[category] += 1
             created_subtype_counts[title_article_subtype] += 1
+            _log_media_xpost_evaluated(
+                logger,
+                post_id,
+                draft_title,
+                category,
+                title_article_subtype,
+                media_quote_evaluation.get("selector_type", "none"),
+                bool(media_quote_evaluation.get("is_target")),
+            )
+            if media_quote_evaluation.get("skip_meta"):
+                _log_media_xpost_skipped(
+                    logger,
+                    post_id,
+                    draft_title,
+                    category,
+                    title_article_subtype,
+                    media_quote_evaluation["skip_meta"],
+                )
             if media_quotes:
                 total_media_quotes = len(media_quotes[:2])
                 for quote_index, media_quote in enumerate(media_quotes[:2], start=1):

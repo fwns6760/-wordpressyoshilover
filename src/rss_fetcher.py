@@ -37,6 +37,7 @@ TRUE_VALUES = {"1", "true", "yes", "on"}
 HTTP_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 DEFAULT_LOW_COST_AI_CATEGORIES = {"試合速報", "選手情報", "首脳陣"}
 DEFAULT_AUTO_TWEET_CATEGORIES = {"試合速報", "選手情報", "首脳陣", "ドラフト・育成"}
+JST = timezone(timedelta(hours=9))
 ENABLE_LIVE_UPDATE_ARTICLES = os.getenv("ENABLE_LIVE_UPDATE_ARTICLES", "0").strip().lower() in TRUE_VALUES
 SCORE_TOKEN_RE = _re.compile(r"\d{1,2}\s*[－\-–]\s*\d{1,2}")
 NUMERIC_TOKEN_RE = _re.compile(r"\d+(?:\.\d+)?(?:[%％]|本|打点|勝|敗|回|失点|奪三振|号|位|年|月|日|人|円|試合|打席|安打|点|本塁打|打率|防御率|OPS|WHIP|WAR|wRC\+?|K/9)?")
@@ -1458,8 +1459,8 @@ def _should_skip_stale_postgame_entry(
     if _detect_article_subtype(title, summary, category, True) != "postgame":
         return False
 
-    local_published = source_published_at.astimezone()
-    local_now = datetime.now().astimezone()
+    local_published = source_published_at.astimezone(JST)
+    local_now = datetime.now(timezone.utc).astimezone(JST)
     if local_published.date() < local_now.date():
         return True
 

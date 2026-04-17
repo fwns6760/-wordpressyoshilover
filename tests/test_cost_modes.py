@@ -113,6 +113,7 @@ class CostModeTests(unittest.TestCase):
             reasons = rss_fetcher.get_auto_tweet_skip_reasons(
                 source_type="social_news",
                 category="ドラフト・育成",
+                article_subtype="social",
                 draft_only=False,
                 x_post_count=0,
                 x_post_daily_limit=5,
@@ -121,6 +122,79 @@ class CostModeTests(unittest.TestCase):
                 article_url="https://yoshilover.com/1",
             )
             self.assertEqual(reasons, [])
+
+    def test_live_update_x_post_is_disabled_by_default(self):
+        with patch.dict("os.environ", {"AUTO_TWEET_ENABLED": "1", "AUTO_TWEET_CATEGORIES": "試合速報"}, clear=False):
+            reasons = rss_fetcher.get_auto_tweet_skip_reasons(
+                source_type="news",
+                category="試合速報",
+                article_subtype="live_update",
+                draft_only=False,
+                x_post_count=0,
+                x_post_daily_limit=5,
+                featured_media=123,
+                published=True,
+                article_url="https://yoshilover.com/1",
+            )
+            self.assertEqual(reasons, ["live_update_x_post_disabled"])
+
+    def test_live_update_x_post_can_be_enabled(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "AUTO_TWEET_ENABLED": "1",
+                "AUTO_TWEET_CATEGORIES": "試合速報",
+                "ENABLE_X_POST_FOR_LIVE_UPDATE": "1",
+            },
+            clear=False,
+        ):
+            reasons = rss_fetcher.get_auto_tweet_skip_reasons(
+                source_type="news",
+                category="試合速報",
+                article_subtype="live_update",
+                draft_only=False,
+                x_post_count=0,
+                x_post_daily_limit=5,
+                featured_media=123,
+                published=True,
+                article_url="https://yoshilover.com/1",
+            )
+            self.assertEqual(reasons, [])
+
+    def test_non_live_update_subtypes_are_not_affected_by_live_update_flag(self):
+        cases = [
+            ("news", "試合速報", "lineup"),
+            ("news", "試合速報", "postgame"),
+            ("news", "試合速報", "pregame"),
+            ("news", "首脳陣", "manager"),
+            ("news", "選手情報", "notice"),
+            ("news", "選手情報", "recovery"),
+            ("news", "ドラフト・育成", "farm"),
+            ("social_news", "試合速報", "social"),
+            ("news", "選手情報", "player"),
+        ]
+        with patch.dict(
+            "os.environ",
+            {
+                "AUTO_TWEET_ENABLED": "1",
+                "AUTO_TWEET_CATEGORIES": "試合速報,選手情報,首脳陣,ドラフト・育成",
+            },
+            clear=False,
+        ):
+            for source_type, category, article_subtype in cases:
+                with self.subTest(source_type=source_type, category=category, article_subtype=article_subtype):
+                    reasons = rss_fetcher.get_auto_tweet_skip_reasons(
+                        source_type=source_type,
+                        category=category,
+                        article_subtype=article_subtype,
+                        draft_only=False,
+                        x_post_count=0,
+                        x_post_daily_limit=5,
+                        featured_media=123,
+                        published=True,
+                        article_url="https://yoshilover.com/1",
+                    )
+                    self.assertEqual(reasons, [])
 
     def test_gemini_cli_for_x_post_defaults_to_off(self):
         with patch.dict("os.environ", {"LOW_COST_MODE": "1"}, clear=False):

@@ -194,6 +194,88 @@ class XPostAiObservationLogTests(unittest.TestCase):
         self.assertEqual(failed_payload["error_type"], "missing_api_key")
         self.assertTrue(generated_payload["fallback_used"])
 
+    def test_preview_helper_skips_live_update_when_x_post_is_disabled(self):
+        logger = logging.getLogger("rss_fetcher")
+        history = {}
+
+        with patch.dict(
+            "os.environ",
+            {
+                "LOW_COST_MODE": "1",
+                "X_POST_AI_MODE": "gemini",
+                "X_POST_AI_CATEGORIES": "試合速報,選手情報,首脳陣",
+                "ENABLE_X_POST_FOR_LIVE_UPDATE": "0",
+            },
+            clear=False,
+        ):
+            with patch.object(rss_fetcher, "build_x_post_text_with_meta") as build_mock:
+                preview_text, meta = rss_fetcher._build_x_post_preview_for_observation(
+                    logger=logger,
+                    history=history,
+                    today_str="2026-04-17",
+                    x_post_daily_limit=10,
+                    post_id=62585,
+                    title="巨人ヤクルト戦 5回表 同点",
+                    article_url="https://yoshilover.com/62585",
+                    category="試合速報",
+                    summary="5回表に同点となった。",
+                    content_html="<p>5回表に同点となった。</p>",
+                    article_subtype="live_update",
+                    source_type="news",
+                    source_name="Yahoo!プロ野球",
+                )
+
+        build_mock.assert_not_called()
+        self.assertEqual(preview_text, "")
+        self.assertEqual(meta, {})
+
+    def test_preview_helper_allows_live_update_when_flag_is_enabled(self):
+        logger = logging.getLogger("rss_fetcher")
+        history = {}
+
+        with patch.dict(
+            "os.environ",
+            {
+                "LOW_COST_MODE": "1",
+                "X_POST_AI_MODE": "gemini",
+                "X_POST_AI_CATEGORIES": "試合速報,選手情報,首脳陣",
+                "ENABLE_X_POST_FOR_LIVE_UPDATE": "1",
+            },
+            clear=False,
+        ):
+            with patch.object(rss_fetcher, "build_x_post_text_with_meta") as build_mock:
+                build_mock.return_value = (
+                    "Gemini live preview text",
+                    {
+                        "article_subtype": "live_update",
+                        "effective_ai_mode": "gemini",
+                        "ai_attempted": True,
+                        "generated_length": 119,
+                        "fallback_used": False,
+                        "failure_reason": "",
+                    },
+                )
+                preview_text, meta = rss_fetcher._build_x_post_preview_for_observation(
+                    logger=logger,
+                    history=history,
+                    today_str="2026-04-17",
+                    x_post_daily_limit=10,
+                    post_id=62586,
+                    title="巨人ヤクルト戦 5回表 同点",
+                    article_url="https://yoshilover.com/62586",
+                    category="試合速報",
+                    summary="5回表に同点となった。",
+                    content_html="<p>5回表に同点となった。</p>",
+                    article_subtype="live_update",
+                    source_type="news",
+                    source_name="Yahoo!プロ野球",
+                )
+
+        build_mock.assert_called_once()
+        self.assertEqual(preview_text, "Gemini live preview text")
+        self.assertEqual(meta["effective_ai_mode"], "gemini")
+        self.assertEqual(history["x_ai_generation_count_2026-04-17"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

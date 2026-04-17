@@ -1008,6 +1008,10 @@ def auto_tweet_enabled() -> bool:
     return _env_flag("AUTO_TWEET_ENABLED", not low_cost_mode_enabled())
 
 
+def x_post_for_live_update_enabled() -> bool:
+    return _env_flag("ENABLE_X_POST_FOR_LIVE_UPDATE", False)
+
+
 def _auto_tweet_source_allowed(source_type: str) -> bool:
     return source_type in {"news", "social_news"}
 
@@ -1016,6 +1020,7 @@ def get_auto_tweet_skip_reasons(
     *,
     source_type: str,
     category: str,
+    article_subtype: str = "",
     draft_only: bool,
     x_post_count: int,
     x_post_daily_limit: int,
@@ -1028,6 +1033,8 @@ def get_auto_tweet_skip_reasons(
         reasons.append("source_type_not_supported")
     if category not in get_auto_tweet_categories():
         reasons.append("category_not_allowed")
+    if article_subtype == "live_update" and not x_post_for_live_update_enabled():
+        reasons.append("live_update_x_post_disabled")
     if draft_only:
         reasons.append("draft_only")
     if not auto_tweet_enabled():
@@ -8337,6 +8344,8 @@ def _build_x_post_preview_for_observation(
 ) -> tuple[str, dict]:
     if source_type not in {"news", "social_news"}:
         return "", {}
+    if article_subtype == "live_update" and not x_post_for_live_update_enabled():
+        return "", {}
 
     requested_ai_mode = resolve_effective_x_post_ai_mode(category)
     if requested_ai_mode == "none":
@@ -9086,6 +9095,7 @@ def _main(args, logger):
             x_skip_reasons = get_auto_tweet_skip_reasons(
                 source_type=source_type,
                 category=category,
+                article_subtype=title_article_subtype,
                 draft_only=args.draft_only,
                 x_post_count=x_post_count,
                 x_post_daily_limit=x_post_daily_limit,

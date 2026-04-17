@@ -840,6 +840,142 @@ def get_fan_reaction_excluded_handles() -> set[str]:
     return {handle.lower().lstrip("@") for handle in _env_csv_set("FAN_REACTION_EXCLUDE_HANDLES", DEFAULT_EXCLUDED_REACTION_HANDLES)}
 
 
+def enhanced_prompts_enabled() -> bool:
+    return os.getenv("ENABLE_ENHANCED_PROMPTS", "0").strip().lower() in TRUE_VALUES
+
+
+def _enhanced_next_focus_rules(section_name: str = "【次の注目】") -> str:
+    if not enhanced_prompts_enabled():
+        return ""
+    return (
+        f"{section_name}では、前の段落や source の言い換えだけで終えず、巨人ファンが次に1つだけ確認したい具体点を必ず書いてください。\n"
+        f"{section_name}では、『今後に注目』『期待が高まる』『どうつながるかが注目点』のような抽象語だけで締めないでください。\n"
+        f"{section_name}では、見たい場面・数字・起用・登録・打席・登板のどれかを1つに絞ってください。\n"
+    )
+
+
+def _enhanced_player_prompt_rules(player_mode: str) -> str:
+    if not enhanced_prompts_enabled():
+        return ""
+    if player_mode == "player_mechanics":
+        return (
+            "【ここに注目】では、フォーム修正や助言を一般論に広げず、source に出た動作や言葉をそのまま残してください。\n"
+            + _enhanced_next_focus_rules("【次の注目】")
+        )
+    if player_mode == "player_quote":
+        return (
+            "【ニュースの整理】では、コメントの内容を精神論に広げず、どの場面に向けた言葉かを先に固定してください。\n"
+            + _enhanced_next_focus_rules("【次の注目】")
+        )
+    return (
+        "【ニュースの整理】では、登録・昇格・合流・調整段階のどれなのかを最初に固定し、曖昧な現状整理でぼかさないでください。\n"
+        + _enhanced_next_focus_rules("【次の注目】")
+    )
+
+
+def _enhanced_recovery_prompt_rules() -> str:
+    if not enhanced_prompts_enabled():
+        return ""
+    return (
+        "【故障の詳細】では、部位が空なら空のまま扱い、元記事にない部位・診断・全治見込みを補わないでください。\n"
+        "【リハビリ状況・復帰見通し】では、『順調』『万全』などの断定を避け、source にある段階表現を優先してください。\n"
+        + _enhanced_next_focus_rules("【チームへの影響と今後の注目点】")
+    )
+
+
+def _enhanced_notice_prompt_rules() -> str:
+    if not enhanced_prompts_enabled():
+        return ""
+    return (
+        "【対象選手の基本情報】では、source に数字がある場合は年齢・成績・試合数のどれかを必ず1つ残してください。\n"
+        "【公示の要旨】では、登録・抹消・戦力外・復帰の時点をぼかさず、source にある日付や区分を優先してください。\n"
+        + _enhanced_next_focus_rules("【今後の注目点】")
+    )
+
+
+def _enhanced_manager_prompt_rules() -> str:
+    if not enhanced_prompts_enabled():
+        return ""
+    return (
+        "【文脈と背景】では、発言だけをなぞらず、巨人のスタメン・序列・継投・競争のどれを動かす話かを先に固定してください。\n"
+        + _enhanced_next_focus_rules("【次の注目】")
+    )
+
+
+def _enhanced_game_prompt_rules(article_subtype: str) -> str:
+    if not enhanced_prompts_enabled():
+        return ""
+    base = (
+        "source にある選手名・回・スコア・球場・打順・投球回・安打数などの固有情報を、抽象語に言い換えず残してください。\n"
+    )
+    if article_subtype == "lineup":
+        return base + _enhanced_next_focus_rules("【注目ポイント】")
+    if article_subtype == "postgame":
+        return (
+            base
+            + "【ハイライト】と【選手成績】で同じ要約文を繰り返さず、片方は流れ、片方は数字に寄せてください。\n"
+            + _enhanced_next_focus_rules("【試合展開】")
+        )
+    return (
+        base
+        + "【具体的な変更内容】では、変更点をそのまま再掲するだけでなく、誰がどう変わったかを1文ずつ分けて整理してください。\n"
+        + _enhanced_next_focus_rules("【この変更が意味すること】")
+    )
+
+
+def _enhanced_farm_prompt_rules(article_subtype: str) -> str:
+    if not enhanced_prompts_enabled():
+        return ""
+    if article_subtype == "farm_lineup":
+        return (
+            "【二軍試合概要】と【二軍スタメン一覧】では、一軍と混同しないよう『二軍』『ファーム』を明記してください。\n"
+            + _enhanced_next_focus_rules("【注目選手】")
+        )
+    return (
+        "【二軍個別選手成績】では、source に数字があるなら安打数・打点・投球回・失点のどれかを必ず残してください。\n"
+        "【一軍への示唆】では、昇格断定を避けつつ、二軍で何を示したかを1つに絞ってください。\n"
+        + _enhanced_next_focus_rules("【一軍への示唆】")
+    )
+
+
+def _enhanced_social_prompt_rules(category: str) -> str:
+    if not enhanced_prompts_enabled():
+        return ""
+    category_hint = {
+        "試合速報": "スコア・先発・打順・勝敗など試合の固有情報",
+        "選手情報": "選手の状態・昇格・コメント・役割",
+        "首脳陣": "監督・コーチ発言がどの起用や采配に結びつくか",
+        "ドラフト・育成": "二軍・育成・支配下・ドラフトのどの文脈か",
+    }.get(category, "元記事にあるチーム文脈")
+    return (
+        "ハッシュタグ、URL、媒体名の繰り返し、宣伝文句、SNSの定型句は本文に残さないでください。\n"
+        f"【文脈と背景】では、{category_hint} を source にある範囲で具体的に整理してください。\n"
+        "【ファンの関心ポイント】では、受け止めが分かれる話題でも、ファンの温度感の言い換えだけで終えず、次に何を見るかを1つだけ書いてください。\n"
+    )
+
+
+def _enhanced_grounded_rules(category: str, article_subtype: str = "", source_type: str = "news") -> str:
+    if not enhanced_prompts_enabled():
+        return ""
+    common = (
+        "・元記事や検索結果の要点を言い換えるだけで段落を埋めない\n"
+        "・各見出しで、固有名詞か数字のどちらかを最低1つは残す\n"
+    )
+    if source_type == "social_news":
+        return common + _enhanced_social_prompt_rules(category).replace("【", "・【")
+    if category == "首脳陣":
+        return common + _enhanced_manager_prompt_rules().replace("【", "・【")
+    if category == "選手情報":
+        return common + _enhanced_next_focus_rules("【次の注目】").replace("【", "・【")
+    if category == "試合速報":
+        target = "【注目ポイント】" if article_subtype == "lineup" else "【試合展開】" if article_subtype == "postgame" else "【この変更が意味すること】"
+        return common + _enhanced_next_focus_rules(target).replace("【", "・【")
+    if category == "ドラフト・育成":
+        target = "【注目選手】" if article_subtype == "farm_lineup" else "【一軍への示唆】"
+        return common + _enhanced_next_focus_rules(target).replace("【", "・【")
+    return common
+
+
 def get_x_post_daily_limit() -> int:
     default_limit = 5 if low_cost_mode_enabled() else 20
     return max(0, _env_int("X_POST_DAILY_LIMIT", default_limit))
@@ -2063,6 +2199,7 @@ def _build_player_quote_strict_prompt(title: str, summary: str) -> str:
     scene = _extract_player_quote_scene(title, summary)
     quote = _extract_quote_phrases(f"{title}\n{summary}", max_phrases=1)
     quote_text = quote[0] if quote else _strip_title_prefix(title)[:24]
+    enhanced_rules = _enhanced_player_prompt_rules("player_quote")
     return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
 以下の番号付き事実のみ使用可です。それ以外の情報・解釈・感想・一般論を含む文は出力しないでください。
 1. {player_role}は読売ジャイアンツ所属である。
@@ -2075,6 +2212,7 @@ def _build_player_quote_strict_prompt(title: str, summary: str) -> str:
 事実にない単語を1つでも足さないでください。事実の言い換えと、次の試合で見るべき点だけで構成してください。
 筆者の評価・感想・印象は書かないでください。
 【次の注目】内の全ての文で「注目されます」「注目が集まります」「期待されます」は使用禁止です。文末は「〜に注目です」「〜がポイントです」「〜を見たいところです」のどれかで終えてください。
+{enhanced_rules}\
 本文だけを出力してください。
 """
 
@@ -2082,6 +2220,7 @@ def _build_player_quote_strict_prompt(title: str, summary: str) -> str:
 def _build_player_mechanics_strict_prompt(title: str, summary: str) -> str:
     player_role = _extract_player_role_label(title, summary)
     topic = _extract_player_mechanics_topic(title, summary)
+    enhanced_rules = _enhanced_player_prompt_rules("player_mechanics")
     topic_fact = _ensure_fact_sentence(f"{player_role}が{topic}に取り組んでいる。")
     change_fact = _find_source_sentence_with_markers(
         title,
@@ -2113,6 +2252,7 @@ def _build_player_mechanics_strict_prompt(title: str, summary: str) -> str:
 同じ事実を繰り返さないでください。一度書いた内容は別の見出しで再度書かないでください。
 筆者の評価・感想・印象は書かないでください。
 【次の注目】内の全ての文で「注目されます」「注目が集まります」「期待されます」「反映されていくか」「着目していきます」は使用禁止です。文末は「〜に注目です」「〜がポイントです」「〜を見たいところです」のどれかで終えてください。
+{enhanced_rules}\
 本文だけを出力してください。
 """
 
@@ -2120,6 +2260,7 @@ def _build_player_mechanics_strict_prompt(title: str, summary: str) -> str:
 def _build_player_status_strict_prompt(title: str, summary: str, source_day_label: str = "") -> str:
     player_role = _extract_player_role_label(title, summary)
     status_topic = _extract_player_status_topic(title, summary)
+    enhanced_rules = _enhanced_player_prompt_rules("player_status")
     status_fact = _find_source_sentence_with_markers(title, summary, PLAYER_STATUS_MARKERS)
     used_facts = {fact for fact in [status_fact] if fact}
     context_fact = _next_unused_source_fact(title, summary, used_facts)
@@ -2145,6 +2286,7 @@ def _build_player_status_strict_prompt(title: str, summary: str, source_day_labe
 同じ事実を繰り返さないでください。一度書いた内容は別の見出しで再度書かないでください。
 筆者の評価・感想・印象は書かないでください。
 【次の注目】内の全ての文で「注目されます」「注目が集まります」「期待されます」「反映されていくか」「着目していきます」は使用禁止です。文末は「〜に注目です」「〜がポイントです」「〜を見たいところです」のどれかで終えてください。
+{enhanced_rules}\
 本文だけを出力してください。
 """
 
@@ -2182,6 +2324,7 @@ def _build_recovery_strict_prompt(title: str, summary: str, source_day_label: st
     subject = _extract_recovery_subject(title, summary)
     player_position = _extract_notice_player_position(title, summary, subject)
     injury_part = _extract_recovery_injury_part(title, summary, subject)
+    enhanced_rules = _enhanced_recovery_prompt_rules()
     return_timing = _extract_recovery_return_timing(title, summary, subject)
     detail_fact = _extract_recovery_detail_fact(title, summary)
     used_facts = {fact for fact in [detail_fact] if fact}
@@ -2218,6 +2361,7 @@ def _build_recovery_strict_prompt(title: str, summary: str, source_day_label: st
 同じ事実を繰り返さないでください。
 筆者の感想や精神論は書かないでください。
 最後は読者視点の締め1〜2文で終え、「みなさんの意見はコメントで教えてください！」を入れてください。
+{enhanced_rules}\
 本文だけを出力してください。
 """
 
@@ -2259,6 +2403,7 @@ def _notice_next_focus_sentence(notice_type: str, player_role: str, subject: str
 def _build_notice_strict_prompt(title: str, summary: str, source_day_label: str = "") -> str:
     subject, notice_type = _extract_notice_subject_and_type(title, summary)
     player_position = _extract_notice_player_position(title, summary, subject)
+    enhanced_rules = _enhanced_notice_prompt_rules()
     notice_subject = subject or player_position
     source_text = _strip_html(f"{title} {summary}")
     notice_label = notice_type or _extract_notice_type_label(source_text) or "公示"
@@ -2305,6 +2450,7 @@ def _build_notice_strict_prompt(title: str, summary: str, source_day_label: str 
 同じ事実を繰り返さないでください。
 筆者の感想や精神論は書かないでください。
 最後は読者視点の締め1〜2文で終え、「みなさんの意見はコメントで教えてください！」を入れてください。
+{enhanced_rules}\
 本文だけを出力してください。
 """
 
@@ -2332,6 +2478,7 @@ def _build_social_strict_prompt(
 ) -> str:
     source_label = _social_source_intro_label(source_name, tweet_url=tweet_url)
     source_indicator = _infer_social_source_indicator(source_name, tweet_url=tweet_url)
+    enhanced_rules = _enhanced_social_prompt_rules(category)
     indicator_line = {
         "official": "発信元が球団公式・公式周辺アカウントなのか、本文冒頭で明確にする",
         "media": "発信元がマスコミ記者・報道アカウントなのか、本文冒頭で明確にする",
@@ -2358,6 +2505,7 @@ def _build_social_strict_prompt(
 ・source にある固有名詞、選手名、球場名、数字は省略しない
 ・最後は読者視点の締め1〜2文で終え、「みなさんの意見はコメントで教えてください！」を入れる
 ・HTMLタグなし、本文だけを出力する
+{enhanced_rules}\
 {time_rule}"""
 
 
@@ -2404,6 +2552,7 @@ def _build_manager_strict_prompt(title: str, summary: str, source_fact_block: st
     subject = _extract_subject_label(title, summary, "首脳陣")
     quote_phrases = _extract_quote_phrases(f"{title}\n{summary}", max_phrases=3)
     focus_axis = _extract_manager_focus_axis(title, summary)
+    enhanced_rules = _enhanced_manager_prompt_rules()
     next_focus_instruction = {
         "序列や競争": "序列や競争のどこが動くか",
         "スタメンや起用": "スタメンや起用のどこが動くか",
@@ -2439,6 +2588,7 @@ def _build_manager_strict_prompt(title: str, summary: str, source_fact_block: st
 ・元記事にない数字、過去比較、一般論、精神論、推測は足さない
 ・最後は読者視点の締め1〜2文で終え、「みなさんの意見はコメントで教えてください！」を入れる
 ・HTMLタグなし、本文だけを出力する
+{enhanced_rules}\
 """
 
 
@@ -2662,6 +2812,7 @@ def _build_game_strict_prompt(
     venue = _extract_game_venue_label(source_text)
     start_time = _extract_game_time_token(source_text)
     score = _extract_game_score_token(source_text)
+    enhanced_rules = _enhanced_game_prompt_rules(article_subtype)
     headings = _game_required_headings(article_subtype)
     opening_time_rule = f"・{source_day_label}時点の情報であることが伝わるように書く\n" if source_day_label else ""
 
@@ -2684,6 +2835,7 @@ def _build_game_strict_prompt(
 ・元記事にない数字、選手名、打順、成績、一般論は足さない
 ・最後は読者視点の締め1〜2文で終え、「みなさんの意見はコメントで教えてください！」を入れる
 ・HTMLタグなし、本文だけを出力する
+{enhanced_rules}\
 {opening_time_rule}"""
 
     if article_subtype == "postgame":
@@ -2706,6 +2858,7 @@ def _build_game_strict_prompt(
 ・元記事にない数字、選手名、比較、一般論は足さない
 ・最後は読者視点の締め1〜2文で終え、「みなさんの意見はコメントで教えてください！」を入れる
 ・HTMLタグなし、本文だけを出力する
+{enhanced_rules}\
 {opening_time_rule}"""
 
     return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
@@ -2724,6 +2877,7 @@ def _build_game_strict_prompt(
 ・元記事にない数字、選手名、比較、結果予想、一般論は足さない
 ・最後は読者視点の締め1〜2文で終え、「みなさんの意見はコメントで教えてください！」を入れる
 ・HTMLタグなし、本文だけを出力する
+{enhanced_rules}\
 {opening_time_rule}"""
 
 
@@ -2739,6 +2893,7 @@ def _build_farm_strict_prompt(
     venue = _extract_game_venue_label(source_text)
     start_time = _extract_game_time_token(source_text)
     score = _extract_game_score_token(source_text)
+    enhanced_rules = _enhanced_farm_prompt_rules(article_subtype)
     headings = _farm_required_headings(article_subtype)
     opening_time_rule = f"・{source_day_label}時点の情報であることが伝わるように書く\n" if source_day_label else ""
 
@@ -2760,6 +2915,7 @@ def _build_farm_strict_prompt(
 ・元記事にない数字、選手名、成績、比較、一般論は足さない
 ・最後は読者視点の締め1〜2文で終え、「みなさんの意見はコメントで教えてください！」を入れる
 ・HTMLタグなし、本文だけを出力する
+{enhanced_rules}\
 {opening_time_rule}"""
 
     score_rule = f"source にあるスコア {score} を必ず残してください。" if score else "source にあるスコアがあれば必ず残してください。"
@@ -2782,6 +2938,7 @@ def _build_farm_strict_prompt(
 ・元記事にない数字、選手名、比較、一般論は足さない
 ・最後は読者視点の締め1〜2文で終え、「みなさんの意見はコメントで教えてください！」を入れる
 ・HTMLタグなし、本文だけを出力する
+{enhanced_rules}\
 {opening_time_rule}"""
 
 
@@ -5286,6 +5443,7 @@ def generate_article_with_gemini(
         win_loss_hint = "※この試合は巨人が【敗戦】した試合です。負け試合として正直に書くこと。前向きに美化しない。"
 
     article_subtype = _detect_article_subtype(title, summary_clean, category, has_game)
+    enhanced_grounded_rules = _enhanced_grounded_rules(category, article_subtype=article_subtype, source_type=source_type)
 
     if strict_mode:
         attempt_limit = get_gemini_attempt_limit(strict_mode=True)
@@ -5358,6 +5516,7 @@ def generate_article_with_gemini(
 ・【先発投手】では両軍の予告先発と、確認できた成績数字だけを残す
 ・【注目ポイント】では試合が始まったら最初にどこを見るかを書く
 ・抽象的な期待論や結果予想で膨らませない
+{enhanced_grounded_rules}\
 ・最後は「みなさんの意見はコメントで！」で締める
 ・HTMLタグなし・本文のみ出力"""
         elif article_subtype == "postgame":
@@ -5380,6 +5539,7 @@ def generate_article_with_gemini(
 ・【選手成績】では数字つきの個人成績を具体的に整理する
 ・【試合展開】ではどこで流れが動いたかを source にある事実だけで書く
 ・抽象的な総論で埋めず、数字と固有名詞を残す
+{enhanced_grounded_rules}\
 ・最後は「みなさんの意見はコメントで！」で締める
 ・HTMLタグなし・本文のみ出力"""
         else:
@@ -5400,8 +5560,9 @@ def generate_article_with_gemini(
 ・【具体的な変更内容】では新日程、新先発、引用など source にある事実を順に整理する
 ・【この変更が意味すること】では結果予想はせず、次にどこを見るかだけを書く
 ・抽象的な期待論や一般論で膨らませない
-            ・最後は「みなさんの意見はコメントで！」で締める
-            ・HTMLタグなし・本文のみ出力"""
+{enhanced_grounded_rules}\
+・最後は「みなさんの意見はコメントで！」で締める
+・HTMLタグなし・本文のみ出力"""
 
     player_recovery_prompt = ""
     if category == "選手情報" and _is_recovery_template_story(title, summary_clean, category):
@@ -5429,6 +5590,7 @@ def generate_article_with_gemini(
 ・【チームへの影響と今後の注目点】では代替選手、起用、ローテへの影響を source にある材料だけで書く
 ・選手本人や監督・コーチのコメントがあれば1つまで残す
 ・推測、断定、精神論、医療判断の補完は書かない
+{enhanced_grounded_rules}\
 ・最後は「みなさんの意見はコメントで！」で締める
 ・HTMLタグなし・本文のみ出力"""
 
@@ -5456,6 +5618,7 @@ def generate_article_with_gemini(
 ・【公示の背景】では故障、調整状況、二軍成績、チーム事情のうち source にある材料だけを書く
 ・【今後の注目点】では次の登録、出場、復帰時期のどこを見るかだけを書く
 ・推測、精神論、一般論で膨らませない
+{enhanced_grounded_rules}\
 ・最後は「みなさんの意見はコメントで！」で締める
 ・HTMLタグなし・本文のみ出力"""
 
@@ -5487,6 +5650,7 @@ def generate_article_with_gemini(
 ・500〜600文字
 ・Web検索で確認できた数字は積極的に使い、末尾に「（npb.jp）」「（スポーツナビ）」「（1point02.jp）」など出典を括弧書きで付ける
 ・確認できなかった数字は「〜とみられる」「〜程度」と明示（出典なし）
+{enhanced_grounded_rules}\
 ・最後は「みなさんの意見はコメントで！」で締める
 ・HTMLタグなし・本文のみ出力""",
 
@@ -5513,6 +5677,7 @@ def generate_article_with_gemini(
 ・500〜600文字
 ・Web検索で確認できた数字は積極的に使い、末尾に「（npb.jp）」「（スポーツナビ）」「（1point02.jp）」など出典を括弧書きで付ける
 ・確認できなかった数字は「〜とみられる」「〜程度」と明示（出典なし）
+{enhanced_grounded_rules}\
 ・最後は「みなさんの意見はコメントで！」で締める
 ・HTMLタグなし・本文のみ出力""",
 
@@ -5539,6 +5704,7 @@ def generate_article_with_gemini(
 ・500〜600文字
 ・Web検索で確認できた数字は積極的に使い、末尾に「（npb.jp）」「（スポーツナビ）」「（1point02.jp）」など出典を括弧書きで付ける
 ・確認できなかった数字は「〜とみられる」「〜程度」と明示（出典なし）
+{enhanced_grounded_rules}\
 ・最後は「みなさんの意見はコメントで！」で締める
 ・HTMLタグなし・本文のみ出力""",
 
@@ -5560,6 +5726,7 @@ def generate_article_with_gemini(
 ・【文脈と背景】では試合状況、選手状況、チーム状況のどれかを必ず整理する
 ・【次の注目】では次の起用、采配、役割変化のどこを見るかを具体的に書く
 ・元記事にない数字、比較、一般論、精神論は足さない
+{enhanced_grounded_rules}\
 ・最後は「みなさんの意見はコメントで！」で締める
 ・HTMLタグなし・本文のみ出力""",
     }
@@ -5587,6 +5754,7 @@ def generate_article_with_gemini(
 ・500〜600文字
 ・Web検索で確認できた数字は積極的に使い、末尾に「（npb.jp）」「（スポーツナビ）」「（1point02.jp）」など出典を括弧書きで付ける
 ・確認できなかった数字は「〜とみられる」「〜程度」と明示（出典なし）
+{enhanced_grounded_rules}\
 ・最後は「みなさんの意見はコメントで！」で締める
 ・HTMLタグなし・本文のみ出力""")
 

@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from src import rss_fetcher
 
@@ -249,6 +250,114 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("『』で1〜2か所だけ残しながら整理する", prompt)
         self.assertIn("発信元がマスコミ記者・報道アカウントなのか、本文冒頭で明確にする", prompt)
         self.assertIn("4月16日時点", prompt)
+
+    def test_enhanced_player_quote_prompt_adds_anti_paraphrase_rules(self):
+        with patch.dict("os.environ", {"ENABLE_ENHANCED_PROMPTS": "1"}, clear=False):
+            prompt = rss_fetcher._build_gemini_strict_prompt(
+                title="【巨人】田中将大「打線を線にしない」移籍後初の阪神戦へ",
+                summary="田中将大が甲子園での登板へ向けて「打線を線にしない」と話した。試合前コメントの記事である。",
+                category="選手情報",
+                source_fact_block="",
+                win_loss_hint="",
+                has_game=False,
+                real_reactions=[],
+            )
+
+        self.assertIn("どの場面に向けた言葉かを先に固定してください。", prompt)
+        self.assertIn("巨人ファンが次に1つだけ確認したい具体点を必ず書いてください。", prompt)
+
+    def test_enhanced_recovery_prompt_requires_precise_medical_scope(self):
+        with patch.dict("os.environ", {"ENABLE_ENHANCED_PROMPTS": "1"}, clear=False):
+            prompt = rss_fetcher._build_gemini_strict_prompt(
+                title="【巨人】坂本勇人が左ふくらはぎ肉離れで離脱",
+                summary="坂本勇人内野手が左ふくらはぎ肉離れと診断された。復帰時期は未定で、リハビリを開始した。代役は泉口友汰が務める見通しだ。",
+                category="選手情報",
+                source_fact_block="",
+                win_loss_hint="",
+                has_game=False,
+                real_reactions=[],
+            )
+
+        self.assertIn("部位が空なら空のまま扱い", prompt)
+        self.assertIn("『順調』『万全』などの断定を避け", prompt)
+
+    def test_enhanced_notice_prompt_requires_timing_and_numbers(self):
+        with patch.dict("os.environ", {"ENABLE_ENHANCED_PROMPTS": "1"}, clear=False):
+            prompt = rss_fetcher._build_gemini_strict_prompt(
+                title="【巨人】皆川岳飛が出場選手登録",
+                summary="皆川岳飛外野手が4月16日に出場選手登録された。今季二軍で打率.261、2本塁打を記録している。",
+                category="選手情報",
+                source_fact_block="",
+                win_loss_hint="",
+                has_game=False,
+                real_reactions=[],
+            )
+
+        self.assertIn("年齢・成績・試合数のどれかを必ず1つ残してください。", prompt)
+        self.assertIn("日付や区分を優先してください。", prompt)
+
+    def test_enhanced_manager_prompt_makes_next_focus_concrete(self):
+        with patch.dict("os.environ", {"ENABLE_ENHANCED_PROMPTS": "1"}, clear=False):
+            prompt = rss_fetcher._build_gemini_strict_prompt(
+                title="阿部監督「結果残せば使います」「競争は続けます」",
+                summary="阿部監督が起用方針について語った。",
+                category="首脳陣",
+                source_fact_block="・阿部監督が起用方針を説明した\n・元記事中の表現: 「結果残せば使います」",
+                win_loss_hint="",
+                has_game=False,
+                real_reactions=[],
+            )
+
+        self.assertIn("巨人のスタメン・序列・継投・競争のどれを動かす話かを先に固定してください。", prompt)
+        self.assertIn("見たい場面・数字・起用・登録・打席・登板のどれかを1つに絞ってください。", prompt)
+
+    def test_enhanced_game_prompt_preserves_numbers_and_splits_sections(self):
+        with patch.dict("os.environ", {"ENABLE_ENHANCED_PROMPTS": "1"}, clear=False):
+            prompt = rss_fetcher._build_gemini_strict_prompt(
+                title="【巨人】阪神に3-2で勝利　岡田が決勝打",
+                summary="巨人が阪神に3-2で勝利した。終盤に岡田悠希の決勝打が飛び出した。田中将大投手は7回2失点だった。",
+                category="試合速報",
+                source_fact_block="・巨人が阪神に3-2で勝利\n・岡田悠希の決勝打\n・田中将大投手は7回2失点",
+                win_loss_hint="",
+                has_game=True,
+                real_reactions=[],
+            )
+
+        self.assertIn("固有情報を、抽象語に言い換えず残してください。", prompt)
+        self.assertIn("片方は流れ、片方は数字に寄せてください。", prompt)
+
+    def test_enhanced_farm_prompt_prevents_first_team_mixup(self):
+        with patch.dict("os.environ", {"ENABLE_ENHANCED_PROMPTS": "1"}, clear=False):
+            prompt = rss_fetcher._build_gemini_strict_prompt(
+                title="【二軍】巨人 4-1 ロッテ　ティマが2安打3打点、山城京平は3回1失点",
+                summary="巨人二軍がロッテとの二軍戦に4-1で勝利した。ティマが2安打3打点を記録し、山城京平投手は3回1失点だった。",
+                category="ドラフト・育成",
+                source_fact_block="・巨人二軍がロッテとの二軍戦に4-1で勝利\n・ティマが2安打3打点\n・山城京平投手は3回1失点",
+                win_loss_hint="",
+                has_game=True,
+                real_reactions=[],
+            )
+
+        self.assertIn("安打数・打点・投球回・失点のどれかを必ず残してください。", prompt)
+        self.assertIn("昇格断定を避けつつ", prompt)
+
+    def test_enhanced_social_prompt_removes_sns_pollution_and_demands_context(self):
+        with patch.dict("os.environ", {"ENABLE_ENHANCED_PROMPTS": "1"}, clear=False):
+            prompt = rss_fetcher._build_gemini_strict_prompt(
+                title="「彼が打ったらもっと打線が機能する」巨人・阿部監督、身ぶり手ぶりでダルベックを熱血指導",
+                summary="スポーツ報知巨人班Xが、阿部監督が「彼が打ったらもっと打線が機能する」と話し、ダルベックを熱血指導したと伝えた。",
+                category="首脳陣",
+                source_fact_block="・阿部監督がダルベックを熱血指導した\n・元記事中の表現: 「彼が打ったらもっと打線が機能する」",
+                win_loss_hint="",
+                has_game=False,
+                real_reactions=[],
+                source_name="スポーツ報知巨人班X",
+                source_type="social_news",
+                tweet_url="https://twitter.com/hochi_giants/status/1",
+            )
+
+        self.assertIn("ハッシュタグ、URL、媒体名の繰り返し、宣伝文句、SNSの定型句は本文に残さないでください。", prompt)
+        self.assertIn("ファンの温度感の言い換えだけで終えず", prompt)
 
 
 if __name__ == "__main__":

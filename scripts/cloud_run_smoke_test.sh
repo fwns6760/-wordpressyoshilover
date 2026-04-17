@@ -25,12 +25,16 @@ service_json="$(gcloud run services describe "${SERVICE}" \
 latest_ready="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("status", {}).get("latestReadyRevisionName", ""))' <<<"${service_json}")"
 image="$(python3 -c 'import json,sys; data=json.load(sys.stdin); print(data["spec"]["template"]["spec"]["containers"][0].get("image", ""))' <<<"${service_json}")"
 run_draft_only="$(python3 -c 'import json,sys; data=json.load(sys.stdin); env=data["spec"]["template"]["spec"]["containers"][0].get("env", []); print({item.get("name"): item.get("value", "") for item in env}.get("RUN_DRAFT_ONLY", ""))' <<<"${service_json}")"
+auto_tweet_enabled="$(python3 -c 'import json,sys; data=json.load(sys.stdin); env=data["spec"]["template"]["spec"]["containers"][0].get("env", []); print({item.get("name"): item.get("value", "") for item in env}.get("AUTO_TWEET_ENABLED", ""))' <<<"${service_json}")"
+publish_require_image="$(python3 -c 'import json,sys; data=json.load(sys.stdin); env=data["spec"]["template"]["spec"]["containers"][0].get("env", []); print({item.get("name"): item.get("value", "") for item in env}.get("PUBLISH_REQUIRE_IMAGE", ""))' <<<"${service_json}")"
 traffic_revision="$(python3 -c 'import json,sys; data=json.load(sys.stdin); traffic=data.get("status", {}).get("traffic", []); print(next((item.get("revisionName", "") for item in traffic if item.get("percent") == 100), ""))' <<<"${service_json}")"
 
 echo "latest_ready_revision=${latest_ready}"
 echo "traffic_100_revision=${traffic_revision}"
 echo "image=${image}"
 echo "RUN_DRAFT_ONLY=${run_draft_only}"
+echo "AUTO_TWEET_ENABLED=${auto_tweet_enabled}"
+echo "PUBLISH_REQUIRE_IMAGE=${publish_require_image}"
 
 if [[ -z "${latest_ready}" ]]; then
   echo "ERROR: latest ready revision is empty" >&2
@@ -48,7 +52,17 @@ if [[ "${traffic_revision}" != "${latest_ready}" ]]; then
 fi
 
 if [[ "${run_draft_only}" != "1" ]]; then
-  echo "ERROR: RUN_DRAFT_ONLY must remain 1, got '${run_draft_only}'" >&2
+  echo "🔴 RUN_DRAFT_ONLY=${run_draft_only:-<unset>} detected. Expected 1. Rollback required." >&2
+  exit 1
+fi
+
+if [[ "${auto_tweet_enabled}" != "0" ]]; then
+  echo "🔴 AUTO_TWEET_ENABLED=${auto_tweet_enabled:-<unset>} detected. Expected 0. Rollback required." >&2
+  exit 1
+fi
+
+if [[ "${publish_require_image}" != "1" ]]; then
+  echo "🔴 PUBLISH_REQUIRE_IMAGE=${publish_require_image:-<unset>} detected. Expected 1. Rollback required." >&2
   exit 1
 fi
 
@@ -68,4 +82,4 @@ echo
 echo "recent logs for ${latest_ready}:"
 echo "${logs}"
 echo
-echo "OK: Cloud Run revision is serving, RUN_DRAFT_ONLY=1, and recent logs exist."
+echo "OK: Cloud Run revision is serving, RUN_DRAFT_ONLY=1, AUTO_TWEET_ENABLED=0, PUBLISH_REQUIRE_IMAGE=1, and recent logs exist."

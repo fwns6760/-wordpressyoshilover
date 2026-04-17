@@ -179,6 +179,34 @@ Cloud Run の `POST /run` は [src/server.py](src/server.py) から [src/rss_fet
 
 本番では `cloud_run` を使う想定です。
 
+## 本番デプロイ運用
+
+受け入れ試験中の本番基準は次です。
+
+- `RUN_DRAFT_ONLY=1`
+- `AUTO_TWEET_ENABLED=0`
+- `PUBLISH_REQUIRE_IMAGE=1`
+
+本番デプロイ後は必ず smoke test を実行します。
+
+```bash
+bash scripts/cloud_run_smoke_test.sh
+```
+
+運用ルール:
+
+- `RUN_DRAFT_ONLY=1` を維持したままデプロイする
+- `RUN_DRAFT_ONLY=1` 以外の変更は事前承認必須
+- smoke test が失敗した状態で Scheduler を継続稼働させない
+
+意図しない変更が見つかった場合の復旧手順:
+
+1. `gcloud run services describe yoshilover-fetcher --project baseballsite --region asia-northeast1`
+2. `bash scripts/cloud_run_smoke_test.sh` で逸脱項目を確認
+3. 直前の安全 revision に `gcloud run services update-traffic ... --to-revisions SAFE_REVISION=100` で戻す
+4. `RUN_DRAFT_ONLY=1` / `AUTO_TWEET_ENABLED=0` / `PUBLISH_REQUIRE_IMAGE=1` を再確認
+5. smoke test を再実行して成功を確認してから運用へ戻す
+
 ## デプロイ例
 
 ```bash

@@ -9,14 +9,25 @@ import subprocess
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
 
+TRUE_VALUES = {"1", "true", "yes", "on"}
+
 SECRET = os.environ.get("RUN_SECRET", "").strip()
 PORT   = int(os.environ.get("PORT", 8080))
-ENABLE_TEST_GEMINI = os.environ.get("ENABLE_TEST_GEMINI", "").strip().lower() in {"1", "true", "yes", "on"}
+ENABLE_TEST_GEMINI = os.environ.get("ENABLE_TEST_GEMINI", "").strip().lower() in TRUE_VALUES
 CLOUD_RUN_AUTH_MODES = {"cloud_run", "iam", "oidc"}
 OIDC_SERVICE_ACCOUNT = os.environ.get("RUN_OIDC_SERVICE_ACCOUNT", "").strip()
 OIDC_AUDIENCE = os.environ.get("RUN_OIDC_AUDIENCE", "").strip()
 RUN_SUBPROCESS_TIMEOUT = int(os.environ.get("RUN_SUBPROCESS_TIMEOUT", "285"))
-RUN_DRAFT_ONLY = os.environ.get("RUN_DRAFT_ONLY", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in TRUE_VALUES
+
+
+RUN_DRAFT_ONLY = _env_flag("RUN_DRAFT_ONLY", False)
 
 
 def _secret_is_configured() -> bool:
@@ -97,6 +108,20 @@ def _parse_limit(body: str, content_type: str = "") -> str:
     return str(parsed)
 
 
+def _run_started_payload() -> dict:
+    return {
+        "event": "run_started",
+        "run_draft_only": RUN_DRAFT_ONLY,
+        "auto_tweet_enabled": _env_flag("AUTO_TWEET_ENABLED", False),
+        "publish_require_image": _env_flag("PUBLISH_REQUIRE_IMAGE", True),
+        "revision": os.environ.get("K_REVISION", "").strip(),
+    }
+
+
+def _log_run_started() -> None:
+    print(json.dumps(_run_started_payload(), ensure_ascii=False), flush=True)
+
+
 def _run_fetcher(limit: str) -> tuple[int, str]:
     cmd = ["python3", "src/rss_fetcher.py", "--limit", limit]
     if RUN_DRAFT_ONLY:
@@ -158,6 +183,7 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length).decode() if length else ""
         limit = _parse_limit(body, self.headers.get("Content-Type", ""))
+        _log_run_started()
         code, message = _run_fetcher(limit)
         self._respond(code, message)
 

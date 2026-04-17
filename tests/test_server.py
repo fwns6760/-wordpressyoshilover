@@ -104,5 +104,61 @@ class RunFetcherTests(unittest.TestCase):
         )
 
 
+class RunStartedLoggingTests(unittest.TestCase):
+    def test_run_started_payload_reflects_current_runtime_guards(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "RUN_DRAFT_ONLY": "1",
+                "AUTO_TWEET_ENABLED": "0",
+                "PUBLISH_REQUIRE_IMAGE": "1",
+                "K_REVISION": "yoshilover-fetcher-00118-94p",
+            },
+            clear=False,
+        ):
+            from importlib import reload
+            import src.server as server
+
+            reload(server)
+            payload = server._run_started_payload()
+
+        self.assertEqual(
+            payload,
+            {
+                "event": "run_started",
+                "run_draft_only": True,
+                "auto_tweet_enabled": False,
+                "publish_require_image": True,
+                "revision": "yoshilover-fetcher-00118-94p",
+            },
+        )
+
+    def test_log_run_started_prints_json_payload(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "RUN_DRAFT_ONLY": "1",
+                "AUTO_TWEET_ENABLED": "0",
+                "PUBLISH_REQUIRE_IMAGE": "1",
+                "K_REVISION": "yoshilover-fetcher-00118-94p",
+            },
+            clear=False,
+        ):
+            from importlib import reload
+            import src.server as server
+
+            reload(server)
+            with patch("builtins.print") as mock_print:
+                server._log_run_started()
+
+        mock_print.assert_called_once()
+        logged_payload = mock_print.call_args.args[0]
+        self.assertIn('"event": "run_started"', logged_payload)
+        self.assertIn('"run_draft_only": true', logged_payload)
+        self.assertIn('"auto_tweet_enabled": false', logged_payload)
+        self.assertIn('"publish_require_image": true', logged_payload)
+        self.assertIn('"revision": "yoshilover-fetcher-00118-94p"', logged_payload)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -304,7 +304,37 @@ PLAYER_TAGS = {
     "泉口":      "#泉口友汰",
     "浅野":      "#浅野翔吾",
     "岡田":      "#岡田悠希",
+    "西舘":      "#西舘勇陽",
 }
+
+VALID_ARTICLE_SUBTYPES = {
+    "pregame",
+    "postgame",
+    "lineup",
+    "manager",
+    "notice",
+    "recovery",
+    "farm",
+    "farm_lineup",
+    "social",
+    "player",
+    "live_update",
+    "general",
+}
+VENUE_KEYWORDS = (
+    "東京ドーム",
+    "神宮",
+    "甲子園",
+    "横浜",
+    "マツダ",
+    "バンテリン",
+    "ベルーナ",
+    "ZOZOマリン",
+    "PayPayドーム",
+    "楽天モバイル",
+    "エスコン",
+    "京セラ",
+)
 
 
 def _extract_short_quote(text: str, max_chars: int = 22) -> str:
@@ -342,6 +372,128 @@ def _detect_earliest_player_tag(text: str) -> str:
             best_index = idx
             best_tag = tag
     return best_tag
+
+
+def _dedupe_preserve_order(items: list[str]) -> list[str]:
+    seen = set()
+    unique = []
+    for item in items:
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        unique.append(item)
+    return unique
+
+
+def _normalize_article_subtype(article_subtype: str = "") -> str:
+    normalized = (article_subtype or "").strip().lower()
+    if normalized == "social_news":
+        normalized = "social"
+    return normalized if normalized in VALID_ARTICLE_SUBTYPES else ""
+
+
+def _looks_like_pregame_post(title: str, summary: str) -> bool:
+    text = f"{title} {summary}"
+    if _looks_like_lineup_post(title, summary) or _looks_like_live_update_post(title, summary) or _looks_like_postgame_post(title, summary):
+        return False
+    return any(keyword in text for keyword in ("試合開始", "予告先発", "先発予定", "先発見込み", "プレーボール", "開始予定"))
+
+
+def _looks_like_notice_post(title: str, summary: str) -> bool:
+    text = f"{title} {summary}"
+    return any(
+        keyword in text
+        for keyword in (
+            "出場選手登録",
+            "登録抹消",
+            "公示",
+            "一軍登録",
+            "一軍昇格",
+            "一軍合流",
+            "合流",
+            "抹消",
+        )
+    )
+
+
+def _looks_like_recovery_post(title: str, summary: str) -> bool:
+    text = f"{title} {summary}"
+    return any(
+        keyword in text
+        for keyword in (
+            "復帰",
+            "復帰へ",
+            "実戦復帰",
+            "ブルペン再開",
+            "投球再開",
+            "キャッチボール再開",
+            "リハビリ",
+            "コンディション不良",
+        )
+    )
+
+
+def _resolve_post_subtype(
+    category: str,
+    title: str,
+    summary: str,
+    article_subtype: str = "",
+    source_type: str = "news",
+) -> str:
+    normalized = _normalize_article_subtype(article_subtype)
+    if normalized:
+        return normalized
+
+    if source_type == "social_news":
+        return "social"
+    if category == "試合速報":
+        if _looks_like_lineup_post(title, summary):
+            return "lineup"
+        if _looks_like_live_update_post(title, summary):
+            return "live_update"
+        if _looks_like_postgame_post(title, summary):
+            return "postgame"
+        if _looks_like_pregame_post(title, summary):
+            return "pregame"
+    if category == "選手情報":
+        if _looks_like_recovery_post(title, summary):
+            return "recovery"
+        if _looks_like_notice_post(title, summary):
+            return "notice"
+        return "player"
+    if category == "首脳陣":
+        return "manager"
+    if category == "ドラフト・育成":
+        return "farm"
+    return "general"
+
+
+def _weighted_x_length(text: str, url: str = "") -> int:
+    return len(text.replace(url, "x" * 23)) if url else len(text)
+
+
+def _finalize_post_text(text: str, url: str, hashtags: list[str], max_chars: int = 280) -> str:
+    if _weighted_x_length(text, url) <= max_chars:
+        return text
+
+    if not url or url not in text:
+        compact = text[: max_chars - 1].rstrip()
+        return compact + "…" if compact != text else compact
+
+    prefix, _, remainder = text.partition(url)
+    prefix = prefix.rstrip()
+    tag_line = " ".join(_dedupe_preserve_order(hashtags[:2] or hashtags))
+    suffix = f"\n\n{url}"
+    if tag_line:
+        suffix += f"\n{tag_line}"
+    allowed_prefix_len = max_chars - _weighted_x_length(suffix, url)
+    if allowed_prefix_len < 0:
+        allowed_prefix_len = 0
+    if _weighted_x_length(prefix, "") > allowed_prefix_len:
+        prefix = prefix[: max(0, allowed_prefix_len - 1)].rstrip()
+        if prefix:
+            prefix += "…"
+    return f"{prefix}{suffix}" if prefix else suffix.lstrip("\n")
 
 
 def _looks_like_lineup_post(title: str, summary: str) -> bool:
@@ -715,6 +867,175 @@ def _build_manager_post(title: str, url: str, summary: str, hashtag_str: str) ->
     question = _manager_post_question(title, summary)
     return f"{lead}\n\n{angle}\n{question}\n\n{url}\n{hashtag_str}"
 
+
+def _extract_pregame_context(title: str, summary: str) -> tuple[str, str, str]:
+    text = f"{title} {summary}"
+    opponent = ""
+    venue = next((name for name in VENUE_KEYWORDS if name in text), "")
+    time_label = ""
+
+    match = re.search(r"巨人\s*(?:vs\.?|対)?\s*([一-龥ァ-ヴーA-Za-z0-9]+)戦", text)
+    if match:
+        opponent = match.group(1)
+    else:
+        alt_match = re.search(r"([一-龥ァ-ヴーA-Za-z0-9]+)戦", text)
+        if alt_match and alt_match.group(1) != "巨人":
+            opponent = alt_match.group(1)
+
+    time_match = re.search(r"(\d{1,2}:\d{2})", text)
+    if time_match:
+        time_label = time_match.group(1)
+    else:
+        jp_time_match = re.search(r"(\d{1,2}時(?:\d{2}分)?)(?:試合開始|開始)?", text)
+        if jp_time_match:
+            raw = jp_time_match.group(1)
+            time_label = raw.replace("分", "").replace("時", "時")
+    return opponent, venue, time_label
+
+
+def _pregame_angle(title: str, summary: str) -> str:
+    text = f"{title} {summary}"
+    player_tag = _detect_earliest_player_tag(text)
+    player_name = player_tag.lstrip("#") if player_tag else ""
+    if "予告先発" in text or "先発" in text:
+        if player_name:
+            return f"先発は{player_name}。立ち上がりから注目です。"
+        return "先発投手の入り方がまず気になります。"
+    if _looks_like_lineup_post(title, summary) or any(keyword in text for keyword in ("スタメン", "オーダー", "打順")):
+        if player_name:
+            return f"スタメンでは{player_name}の起用が注目です。"
+        return "スタメンの並び方がポイントになりそうです。"
+    return "試合前の材料を見ると、入り方がかなり大事になりそうです。"
+
+
+def _build_pregame_post(title: str, url: str, summary: str, hashtag_str: str) -> str:
+    opponent, venue, time_label = _extract_pregame_context(title, summary)
+    if opponent or venue or time_label:
+        intro = "巨人"
+        if opponent:
+            intro += f"{opponent}戦"
+        if venue:
+            intro += f" {venue}"
+        if time_label:
+            intro += f"{time_label}開始"
+        intro += "。"
+    else:
+        intro = f"{_clean_title_for_x(title, max_chars=30)}。"
+    angle = _pregame_angle(title, summary)
+    return f"{intro}\n\n{angle}\n今日はどこを見る?\n\n{url}\n{hashtag_str}"
+
+
+def _notice_status_label(title: str, summary: str) -> str:
+    text = f"{title} {summary}"
+    if any(keyword in text for keyword in ("登録抹消", "抹消")):
+        return "登録抹消"
+    if any(keyword in text for keyword in ("一軍合流", "合流")):
+        return "一軍合流"
+    if any(keyword in text for keyword in ("一軍登録", "出場選手登録", "登録")):
+        return "一軍登録"
+    if "昇格" in text:
+        return "昇格"
+    return "公示"
+
+
+def _notice_background_line(title: str, summary: str) -> str:
+    status = _notice_status_label(title, summary)
+    if status == "一軍登録":
+        return "ここから出番が増えるかも気になります。"
+    if status == "一軍合流":
+        return "ここからベンチ入りまで進むかが焦点です。"
+    if status == "登録抹消":
+        return "チーム編成への影響も見ておきたい動きです。"
+    if status == "昇格":
+        return "ここから一軍の戦力図がどう動くかです。"
+    return "今回の公示、チームの流れにも関わってきそうです。"
+
+
+def _build_notice_post(title: str, url: str, summary: str, hashtag_str: str) -> str:
+    player_tag = _detect_primary_player_tag(title + " " + summary)
+    player_name = player_tag.lstrip("#") if player_tag else "この選手"
+    status = _notice_status_label(title, summary)
+    lead = f"{player_name}が{status}。"
+    angle = _notice_background_line(title, summary)
+    return f"{lead}\n\n{angle}\nこの動き、どう見ますか？\n\n{url}\n{hashtag_str}"
+
+
+def _recovery_stage_line(title: str, summary: str) -> str:
+    text = f"{title} {summary}"
+    if any(keyword in text for keyword in ("ブルペン再開", "投球再開")):
+        return "ブルペン段階まで戻ってきたのは前進です。"
+    if "実戦復帰" in text:
+        return "実戦復帰まで段階が進んできました。"
+    if "二軍" in text:
+        return "二軍での状態確認が次の焦点です。"
+    if any(keyword in text for keyword in ("キャッチボール再開", "リハビリ")):
+        return "リハビリの段階が一歩進んだ形です。"
+    return "復帰へ向けて状態が上向いてきました。"
+
+
+def _build_recovery_post(title: str, url: str, summary: str, hashtag_str: str) -> str:
+    player_tag = _detect_primary_player_tag(title + " " + summary)
+    player_name = player_tag.lstrip("#") if player_tag else "この選手"
+    lead = f"{player_name}の状態が上向いてきました。"
+    if any(keyword in f"{title} {summary}" for keyword in ("復帰", "実戦復帰", "ブルペン再開", "投球再開")):
+        lead = f"{player_name}が復帰へ前進。"
+    angle = _recovery_stage_line(title, summary)
+    return f"{lead}\n\n{angle}\n一軍復帰、いつがいいと思いますか？\n\n{url}\n{hashtag_str}"
+
+
+def _social_source_label(source_name: str) -> str:
+    source = (source_name or "").strip()
+    lowered = source.lower()
+    if "tokyogiants" in lowered or "巨人公式" in source or "読売ジャイアンツ" in source:
+        return "巨人公式"
+    if "報知" in source:
+        return "報知"
+    if "スポニチ" in source:
+        return "スポニチ"
+    if "日刊" in source:
+        return "日刊スポーツ"
+    if "サンスポ" in source:
+        return "サンスポ"
+    if "東スポ" in source:
+        return "東スポ"
+    if source.endswith("X"):
+        return source[:-1].strip()
+    return source or "この発信元"
+
+
+def _social_news_angle(category: str, article_subtype: str, title: str, summary: str) -> str:
+    text = f"{title} {summary}"
+    if article_subtype == "manager" or category == "首脳陣":
+        return "ベンチの狙いがどう見えるか、気になる話題です。"
+    if article_subtype == "pregame":
+        return "今日の見どころにも直結しそうです。"
+    if article_subtype == "notice":
+        return "チーム編成にも影響しそうな話題です。"
+    if "スタメン" in text or "オーダー" in text:
+        return "試合前の空気が変わるポイントかもしれません。"
+    return "巨人ファン目線でも反応が分かれそうな話題です。"
+
+
+def _build_social_news_post(
+    title: str,
+    url: str,
+    category: str,
+    summary: str,
+    hashtag_str: str,
+    source_name: str = "",
+    article_subtype: str = "social",
+) -> str:
+    source_label = _social_source_label(source_name)
+    clean_title = _clean_title_for_x(title, max_chars=28)
+    player_tag = _detect_primary_player_tag(title + " " + summary)
+    player_name = player_tag.lstrip("#") if player_tag else ""
+    if player_name and any(keyword in title + summary for keyword in ("について", "報じ", "伝え", "明かし", "説明")):
+        lead = f"{source_label}が{player_name}について報じています。"
+    else:
+        lead = f"{source_label}が{clean_title}。"
+    angle = _social_news_angle(category, article_subtype, title, summary)
+    return f"{lead}\n\n{angle}\n巨人ファン的にはどう見る?\n\n{url}\n{hashtag_str}"
+
 # ──────────────────────────────────────────────────────────
 # カテゴリ別テンプレート（{title} {url} {tags} を使用）
 # ──────────────────────────────────────────────────────────
@@ -778,9 +1099,25 @@ def detect_player_tags(text: str) -> list:
 # ──────────────────────────────────────────────────────────
 # ポスト文案組み立て
 # ──────────────────────────────────────────────────────────
-def build_post(title: str, url: str, category: str, summary: str = "", content_html: str = "") -> str:
+def build_post(
+    title: str,
+    url: str,
+    category: str,
+    summary: str = "",
+    content_html: str = "",
+    article_subtype: str = "",
+    source_type: str = "news",
+    source_name: str = "",
+) -> str:
     # 既存の接頭語を除去（テンプレートと重複しないよう）
     title = re.sub(r'^【(速報|選手情報|球団情報|首脳陣|育成情報|OB情報)】\s*', '', title)
+    resolved_subtype = _resolve_post_subtype(
+        category,
+        title,
+        summary,
+        article_subtype=article_subtype,
+        source_type=source_type,
+    )
 
     # ハッシュタグ収集
     tags = list(REQUIRED_TAGS)
@@ -796,48 +1133,81 @@ def build_post(title: str, url: str, category: str, summary: str = "", content_h
     else:
         tags += CATEGORY_TAGS.get(category, ["#プロ野球"])
         tags += player_tags
-    seen = set()
-    unique_tags = []
-    for t in tags:
-        if t not in seen:
-            seen.add(t)
-            unique_tags.append(t)
+    unique_tags = _dedupe_preserve_order(tags)
     hashtag_str = " ".join(unique_tags)
 
+    if source_type == "social_news" or resolved_subtype == "social":
+        social_tags = list(REQUIRED_TAGS)
+        if player_tags:
+            social_tags.append(player_tags[0])
+        social_tags = _dedupe_preserve_order(social_tags)
+        text = _build_social_news_post(
+            title,
+            url,
+            category,
+            summary,
+            " ".join(social_tags),
+            source_name=source_name,
+            article_subtype=resolved_subtype,
+        )
+        return _finalize_post_text(text, url, social_tags)
+    if category == "選手情報" and resolved_subtype == "notice":
+        notice_tags = _dedupe_preserve_order(list(REQUIRED_TAGS) + player_tags[:1])
+        text = _build_notice_post(title, url, summary, " ".join(notice_tags))
+        return _finalize_post_text(text, url, notice_tags)
+    if category == "選手情報" and resolved_subtype == "recovery":
+        recovery_tags = _dedupe_preserve_order(list(REQUIRED_TAGS) + player_tags[:1])
+        text = _build_recovery_post(title, url, summary, " ".join(recovery_tags))
+        return _finalize_post_text(text, url, recovery_tags)
+    if category == "試合速報" and resolved_subtype == "pregame":
+        pregame_tags = _dedupe_preserve_order(list(REQUIRED_TAGS) + player_tags[:1])
+        text = _build_pregame_post(title, url, summary, " ".join(pregame_tags))
+        return _finalize_post_text(text, url, pregame_tags)
     if category == "選手情報":
-        return _build_player_post(title, url, summary, hashtag_str)
+        text = _build_player_post(title, url, summary, hashtag_str)
+        return _finalize_post_text(text, url, unique_tags)
     if category == "首脳陣":
         manager_tags = list(REQUIRED_TAGS)
         if player_tags:
             manager_tags.append(player_tags[0])
-        manager_hashtag_str = " ".join(dict.fromkeys(manager_tags))
-        return _build_manager_post(title, url, summary, manager_hashtag_str)
-    if category == "試合速報" and _looks_like_lineup_post(title, summary):
-        lineup_tags = list(REQUIRED_TAGS) + player_tags[:2]
-        lineup_hashtag_str = " ".join(dict.fromkeys(lineup_tags))
-        return _build_lineup_post(title, url, summary, lineup_hashtag_str, content_html=content_html)
-    if category == "試合速報" and _looks_like_live_update_post(title, summary):
+        manager_tags = _dedupe_preserve_order(manager_tags)
+        manager_hashtag_str = " ".join(manager_tags)
+        text = _build_manager_post(title, url, summary, manager_hashtag_str)
+        return _finalize_post_text(text, url, manager_tags)
+    if category == "試合速報" and resolved_subtype == "lineup":
+        lineup_tags = _dedupe_preserve_order(list(REQUIRED_TAGS) + player_tags[:2])
+        lineup_hashtag_str = " ".join(lineup_tags)
+        text = _build_lineup_post(title, url, summary, lineup_hashtag_str, content_html=content_html)
+        return _finalize_post_text(text, url, lineup_tags)
+    if category == "試合速報" and resolved_subtype == "live_update":
         live_tags = list(REQUIRED_TAGS)
         live_tag = _detect_earliest_player_tag(title + " " + summary)
         if live_tag:
             live_tags.append(live_tag)
-        live_hashtag_str = " ".join(dict.fromkeys(live_tags))
-        return _build_live_update_post(title, url, summary, live_hashtag_str)
-    if category == "試合速報" and _looks_like_postgame_post(title, summary):
+        live_tags = _dedupe_preserve_order(live_tags)
+        live_hashtag_str = " ".join(live_tags)
+        text = _build_live_update_post(title, url, summary, live_hashtag_str)
+        return _finalize_post_text(text, url, live_tags)
+    if category == "試合速報" and resolved_subtype == "postgame":
         postgame_tags = list(REQUIRED_TAGS)
         postgame_tag = _detect_earliest_player_tag(title + " " + summary)
         if postgame_tag:
             postgame_tags.append(postgame_tag)
-        postgame_hashtag_str = " ".join(dict.fromkeys(postgame_tags))
-        return _build_postgame_post(title, url, summary, postgame_hashtag_str)
+        postgame_tags = _dedupe_preserve_order(postgame_tags)
+        postgame_hashtag_str = " ".join(postgame_tags)
+        text = _build_postgame_post(title, url, summary, postgame_hashtag_str)
+        return _finalize_post_text(text, url, postgame_tags)
     if category == "ドラフト・育成":
         farm_tags = list(REQUIRED_TAGS)
         if player_tags:
             farm_tags.append(player_tags[0])
-        farm_hashtag_str = " ".join(dict.fromkeys(farm_tags))
-        return _build_farm_post(title, url, summary, farm_hashtag_str)
+        farm_tags = _dedupe_preserve_order(farm_tags)
+        farm_hashtag_str = " ".join(farm_tags)
+        text = _build_farm_post(title, url, summary, farm_hashtag_str)
+        return _finalize_post_text(text, url, farm_tags)
     if category == "コラム" and ("出塁率" in title or "出塁率" in content_html):
-        return _build_data_obp_post(title, url, content_html=content_html)
+        text = _build_data_obp_post(title, url, content_html=content_html)
+        return _finalize_post_text(text, url, unique_tags)
 
     # スコア検出
     score = detect_score(title)
@@ -857,7 +1227,7 @@ def build_post(title: str, url: str, category: str, summary: str = "", content_h
 
     # タイトル文字数制限（URL=23字換算、テンプレート固定部分を除く）
     fixed_part = template.replace("{title}", "").replace("{url}", "x" * 23).replace("{tags}", hashtag_str)
-    title_limit = 140 - len(fixed_part) - 1
+    title_limit = 280 - len(fixed_part) - 1
     if len(title) > title_limit:
         title = title[:title_limit - 1] + "…"
 
@@ -876,16 +1246,11 @@ def build_post(title: str, url: str, category: str, summary: str = "", content_h
                 ai_comment = generate_with_gemini(title, category, score, summary=summary)
 
     if ai_comment:
-        # 140文字制限チェック（URL=23字換算）
         body = f"{ai_comment}\n{url}\n{hashtag_str}"
-        char_count = len(ai_comment) + 23 + 1 + len(hashtag_str) + 1
-        if char_count > 280:  # 余裕を持って280まで
-            # ハッシュタグを減らす
-            body = f"{ai_comment}\n{url}\n{' '.join(unique_tags[:2])}"
-        return body
+        return _finalize_post_text(body, url, unique_tags)
     else:
         text = template.format(title=title, url=url, tags=hashtag_str)
-        return text
+        return _finalize_post_text(text, url, unique_tags)
 
 # ──────────────────────────────────────────────────────────
 # CLIエントリーポイント
@@ -896,6 +1261,9 @@ def main():
     parser.add_argument("--url",      help="記事URL")
     parser.add_argument("--category", help="カテゴリ名", default="コラム")
     parser.add_argument("--post-id",  type=int, help="WP投稿ID（WPから自動取得）")
+    parser.add_argument("--article-subtype", help="記事subtype", default="")
+    parser.add_argument("--source-type", help="source_type", default="news")
+    parser.add_argument("--source-name", help="ソース名", default="")
     args = parser.parse_args()
 
     if args.post_id:
@@ -924,7 +1292,16 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    post_text = build_post(title, url, category, summary=summary, content_html=content_html)
+    post_text = build_post(
+        title,
+        url,
+        category,
+        summary=summary,
+        content_html=content_html,
+        article_subtype=args.article_subtype,
+        source_type=args.source_type,
+        source_name=args.source_name,
+    )
     char_count = len(post_text.replace(url, "x" * 23))
 
     print(post_text)

@@ -8942,7 +8942,16 @@ def _main(args, logger):
                     import tweepy
                     from dotenv import load_dotenv
                     load_dotenv(ROOT / ".env")
-                    tweet_text = build_x_post_text(draft_title, article_url, category, summary=ai_body_for_x or summary, content_html=content)
+                    tweet_text = build_x_post_text(
+                        draft_title,
+                        article_url,
+                        category,
+                        summary=ai_body_for_x or summary,
+                        content_html=content,
+                        article_subtype=title_article_subtype,
+                        source_type=source_type,
+                        source_name=source_name,
+                    )
                     x_client = tweepy.Client(
                         bearer_token=os.environ.get("X_BEARER_TOKEN"),
                         consumer_key=os.environ.get("X_API_KEY"),

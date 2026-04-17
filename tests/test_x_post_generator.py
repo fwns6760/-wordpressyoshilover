@@ -4,6 +4,142 @@ from src import x_post_generator
 
 
 class XPostGeneratorTests(unittest.TestCase):
+    def test_pregame_post_uses_explicit_article_subtype(self):
+        url = "https://yoshilover.com/62030"
+        text = x_post_generator.build_post(
+            title="巨人ヤクルト戦 プレビュー",
+            url=url,
+            category="試合速報",
+            summary="神宮18:00試合開始。先発は戸郷翔征で、序盤の入りが注目される。",
+            article_subtype="pregame",
+        )
+
+        self.assertIn("巨人ヤクルト戦 神宮18:00開始。", text)
+        self.assertIn("先発は戸郷翔征。立ち上がりから注目です。", text)
+        self.assertIn("今日はどこを見る?", text)
+
+    def test_pregame_post_falls_back_from_title_and_summary(self):
+        url = "https://yoshilover.com/62031"
+        text = x_post_generator.build_post(
+            title="巨人ヤクルト戦 神宮18時開始",
+            url=url,
+            category="試合速報",
+            summary="予告先発は戸郷翔征。試合前の材料がそろってきた。",
+        )
+
+        self.assertIn("巨人ヤクルト戦 神宮18時開始。", text)
+        self.assertIn("先発は戸郷翔征。立ち上がりから注目です。", text)
+        self.assertIn("今日はどこを見る?", text)
+
+    def test_notice_post_uses_explicit_article_subtype(self):
+        url = "https://yoshilover.com/62032"
+        text = x_post_generator.build_post(
+            title="浅野翔吾が一軍登録へ",
+            url=url,
+            category="選手情報",
+            summary="浅野翔吾外野手が一軍登録され、出番増も期待される。",
+            article_subtype="notice",
+        )
+
+        self.assertIn("浅野翔吾が一軍登録。", text)
+        self.assertIn("ここから出番が増えるかも気になります。", text)
+        self.assertIn("この動き、どう見ますか？", text)
+        self.assertIn("#巨人 #ジャイアンツ #浅野翔吾", text)
+
+    def test_notice_post_falls_back_from_notice_keywords(self):
+        url = "https://yoshilover.com/62033"
+        text = x_post_generator.build_post(
+            title="【巨人】浅野翔吾が出場選手登録",
+            url=url,
+            category="選手情報",
+            summary="公示で浅野翔吾外野手の出場選手登録が発表された。",
+        )
+
+        self.assertIn("浅野翔吾が一軍登録。", text)
+        self.assertIn("ここから出番が増えるかも気になります。", text)
+
+    def test_recovery_post_uses_explicit_article_subtype(self):
+        url = "https://yoshilover.com/62034"
+        text = x_post_generator.build_post(
+            title="西舘勇陽が復帰へ前進",
+            url=url,
+            category="選手情報",
+            summary="西舘勇陽投手がブルペン再開。実戦復帰へ向けて段階を上げている。",
+            article_subtype="recovery",
+        )
+
+        self.assertIn("西舘勇陽が復帰へ前進。", text)
+        self.assertIn("ブルペン段階まで戻ってきたのは前進です。", text)
+        self.assertIn("一軍復帰、いつがいいと思いますか？", text)
+
+    def test_recovery_post_falls_back_from_recovery_keywords(self):
+        url = "https://yoshilover.com/62035"
+        text = x_post_generator.build_post(
+            title="【巨人】西舘勇陽が実戦復帰へ",
+            url=url,
+            category="選手情報",
+            summary="コンディション不良からの復帰へ向けて二軍での状態確認が続く。",
+        )
+
+        self.assertIn("西舘勇陽が復帰へ前進。", text)
+        self.assertIn("実戦復帰まで段階が進んできました。", text)
+
+    def test_social_news_post_uses_explicit_source_type_and_subtype(self):
+        url = "https://yoshilover.com/62036"
+        text = x_post_generator.build_post(
+            title="阿部監督が若手起用を説明",
+            url=url,
+            category="首脳陣",
+            summary="スポーツ報知巨人班Xが阿部監督について報じている。",
+            article_subtype="social",
+            source_type="social_news",
+            source_name="スポーツ報知巨人班X",
+        )
+
+        self.assertIn("報知が阿部慎之助について報じています。", text)
+        self.assertIn("ベンチの狙いがどう見えるか、気になる話題です。", text)
+        self.assertIn("巨人ファン的にはどう見る?", text)
+        self.assertIn("#巨人 #ジャイアンツ #阿部慎之助", text)
+
+    def test_social_news_post_falls_back_from_source_type(self):
+        url = "https://yoshilover.com/62037"
+        text = x_post_generator.build_post(
+            title="巨人ヤクルト戦のスタメン発表",
+            url=url,
+            category="試合速報",
+            summary="巨人公式Xがスタメンを伝えた。",
+            source_type="social_news",
+            source_name="巨人公式X",
+        )
+
+        self.assertIn("巨人公式が巨人ヤクルト戦のスタメン発表。", text)
+        self.assertIn("試合前の空気が変わるポイントかもしれません。", text)
+        self.assertIn("巨人ファン的にはどう見る?", text)
+
+    def test_explicit_lineup_subtype_keeps_existing_branch(self):
+        text = x_post_generator.build_post(
+            title="巨人ヤクルト戦 先発メンバー",
+            url="https://yoshilover.com/62038",
+            category="試合速報",
+            summary="1番 丸佳浩 打率.281 3本 12打点 2盗塁 4番 岡田悠希 打率.298 5本 18打点 1盗塁",
+            article_subtype="lineup",
+        )
+
+        self.assertIn("1番丸佳浩 .281 3本 12打点 2盗塁", text)
+        self.assertIn("この並び、どう見ますか？", text)
+
+    def test_generated_post_text_stays_within_280_chars(self):
+        url = "https://yoshilover.com/62039"
+        text = x_post_generator.build_post(
+            title="巨人ヤクルト戦 神宮18時開始 予告先発は戸郷翔征で若手の起用も含めて気になる点が多いプレビュー",
+            url=url,
+            category="試合速報",
+            summary="神宮18時開始。予告先発は戸郷翔征。若手の起用、スタメン、終盤のベンチワークまで見どころが多い。",
+            article_subtype="pregame",
+        )
+
+        self.assertLessEqual(len(text.replace(url, "x" * 23)), 280)
+
     def test_player_post_uses_quote_angle_question_and_three_tags(self):
         text = x_post_generator.build_post(
             title="【巨人】大胆フォーム変更の戸郷翔征「人の助言を取り入れることも重要」久保コーチとの取り組み",

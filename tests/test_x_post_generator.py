@@ -394,6 +394,92 @@ class XPostGeneratorTests(unittest.TestCase):
         self.assertNotIn("#プロ野球", text)
         self.assertNotIn("#セリーグ", text)
 
+    def test_gemini_mode_applies_to_selected_specialized_categories(self):
+        cases = [
+            ("試合速報", "pregame", "巨人ヤクルト戦 プレビュー", "神宮18時開始。戸郷翔征が先発予定。"),
+            ("選手情報", "notice", "浅野翔吾が一軍登録へ", "浅野翔吾外野手が一軍登録される見込み。"),
+            ("首脳陣", "manager", "阿部監督が継投の意図を説明", "阿部監督が継投と代打の判断を説明した。"),
+        ]
+        with patch.dict(
+            "os.environ",
+            {"LOW_COST_MODE": "1", "X_POST_AI_MODE": "gemini", "X_POST_AI_CATEGORIES": "試合速報,選手情報,首脳陣"},
+            clear=False,
+        ):
+            with patch.object(x_post_generator, "generate_with_gemini", return_value="Gemini generated text") as gemini_mock:
+                for category, subtype, title, summary in cases:
+                    with self.subTest(category=category, subtype=subtype):
+                        text = x_post_generator.build_post(
+                            title=title,
+                            url=f"https://yoshilover.com/{subtype}",
+                            category=category,
+                            summary=summary,
+                            article_subtype=subtype,
+                        )
+                        self.assertIn("Gemini generated text", text)
+        self.assertEqual(gemini_mock.call_count, 3)
+
+    def test_gemini_mode_skips_non_target_categories(self):
+        with patch.dict(
+            "os.environ",
+            {"LOW_COST_MODE": "1", "X_POST_AI_MODE": "gemini", "X_POST_AI_CATEGORIES": "試合速報,選手情報,首脳陣"},
+            clear=False,
+        ):
+            with patch.object(x_post_generator, "generate_with_gemini", return_value="Gemini generated text") as gemini_mock:
+                farm_text = x_post_generator.build_post(
+                    title="【巨人2軍】浅野翔吾がマルチ安打",
+                    url="https://yoshilover.com/non-target-farm",
+                    category="ドラフト・育成",
+                    summary="浅野翔吾が2軍戦でマルチ安打を記録した。",
+                )
+                column_text = x_post_generator.build_post(
+                    title="巨人打線の出塁率を考える",
+                    url="https://yoshilover.com/non-target-column",
+                    category="コラム",
+                    summary="出塁率の観点から打線を整理する。",
+                )
+
+        gemini_mock.assert_not_called()
+        self.assertIn("浅野翔吾の2軍での動き、気になります。", farm_text)
+        self.assertIn("数字で見ると、打線の見え方が少し変わります。", column_text)
+
+    def test_gemini_failure_falls_back_to_deterministic_copy(self):
+        with patch.dict(
+            "os.environ",
+            {"LOW_COST_MODE": "1", "X_POST_AI_MODE": "gemini", "X_POST_AI_CATEGORIES": "選手情報"},
+            clear=False,
+        ):
+            with patch.object(x_post_generator, "generate_with_gemini", return_value=""):
+                text, meta = x_post_generator.build_post_with_meta(
+                    title="浅野翔吾が一軍登録へ",
+                    url="https://yoshilover.com/gemini-fallback",
+                    category="選手情報",
+                    summary="浅野翔吾外野手が一軍登録され、出番増も期待される。",
+                    article_subtype="notice",
+                )
+
+        self.assertIn("浅野翔吾が一軍登録。", text)
+        self.assertTrue(meta["fallback_used"])
+        self.assertEqual(meta["failure_reason"], "empty_response")
+
+    def test_ng_word_in_ai_output_falls_back_to_deterministic_copy(self):
+        with patch.dict(
+            "os.environ",
+            {"LOW_COST_MODE": "1", "X_POST_AI_MODE": "gemini", "X_POST_AI_CATEGORIES": "首脳陣"},
+            clear=False,
+        ):
+            with patch.object(x_post_generator, "generate_with_gemini", return_value="この選手は使えないので消えろ。"):
+                text, meta = x_post_generator.build_post_with_meta(
+                    title="阿部監督が起用方針を説明",
+                    url="https://yoshilover.com/ng-fallback",
+                    category="首脳陣",
+                    summary="阿部監督が起用方針を説明した。",
+                    article_subtype="manager",
+                )
+
+        self.assertIn("この発言", text)
+        self.assertTrue(meta["fallback_used"])
+        self.assertEqual(meta["failure_reason"], "blocked_phrase:消えろ")
+
     def test_explicit_live_update_subtype_uses_live_update_builder(self):
         with patch.object(x_post_generator, "_build_live_update_post", return_value="live-update-route") as live_mock:
             text = x_post_generator.build_post(

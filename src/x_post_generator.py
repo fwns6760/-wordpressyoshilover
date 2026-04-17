@@ -12,6 +12,7 @@ import random
 import argparse
 import os
 import json
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -31,6 +32,20 @@ TRUE_VALUES = {"1", "true", "yes", "on"}
 DEFAULT_LOW_COST_AI_CATEGORIES = {"試合速報", "選手情報", "首脳陣"}
 GEMINI_FLASH_MODEL = "gemini-2.5-flash"
 GEMINI_FLASH_THINKING_BUDGET = 0
+X_POST_AI_ALLOWED_MODES = {"auto", "grok", "gemini", "none"}
+X_POST_GEMINI_TIMEOUT_SECONDS = 8
+X_POST_GEMINI_MAX_ATTEMPTS = 2
+X_POST_GROK_TIMEOUT_SECONDS = 8
+X_POST_BLOCKED_PHRASES = (
+    "死ね",
+    "消えろ",
+    "ゴミ",
+    "役立たず",
+    "無能",
+    "使えない",
+    "終わってる",
+    "二度と見たくない",
+)
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -66,9 +81,20 @@ def should_use_ai_for_x_post(category: str) -> bool:
 def get_x_post_ai_mode() -> str:
     default_mode = "none" if low_cost_mode_enabled() else "auto"
     mode = os.environ.get("X_POST_AI_MODE", default_mode).strip().lower()
-    if mode in {"auto", "grok", "gemini", "none"}:
+    if mode in X_POST_AI_ALLOWED_MODES:
         return mode
     return default_mode
+
+
+def resolve_effective_x_post_ai_mode(category: str, ai_mode_override: str | None = None) -> str:
+    requested_mode = (ai_mode_override or get_x_post_ai_mode()).strip().lower()
+    if requested_mode not in X_POST_AI_ALLOWED_MODES:
+        requested_mode = get_x_post_ai_mode()
+    if requested_mode == "none":
+        return "none"
+    if not should_use_ai_for_x_post(category):
+        return "none"
+    return requested_mode
 
 
 def allow_gemini_cli_for_x_post() -> bool:
@@ -76,13 +102,81 @@ def allow_gemini_cli_for_x_post() -> bool:
 
 
 # ──────────────────────────────────────────────────────────
-# Gemini APIでツイート文生成
+# AIでツイート文生成
 # ──────────────────────────────────────────────────────────
-def generate_with_grok(title: str, category: str, score: str, summary: str = "") -> str:
+def _prompt_context_lines(
+    article_subtype: str = "",
+    source_type: str = "news",
+    source_name: str = "",
+) -> str:
+    lines = []
+    if article_subtype:
+        lines.append(f"記事タイプ: {article_subtype}")
+    if source_type:
+        lines.append(f"ソース種別: {source_type}")
+    if source_name:
+        lines.append(f"発信元: {source_name}")
+    return ("\n" + "\n".join(lines)) if lines else ""
+
+
+def _coerce_ai_result(result, provider: str) -> dict:
+    if isinstance(result, dict):
+        text = str(result.get("text", "") or "").strip()
+        return {
+            "text": text,
+            "error_type": str(result.get("error_type", "") or ("empty_response" if not text else "")),
+            "provider": str(result.get("provider", provider) or provider),
+            "attempted": bool(result.get("attempted", bool(text))),
+        }
+    text = str(result or "").strip()
+    return {
+        "text": text,
+        "error_type": "" if text else "empty_response",
+        "provider": provider,
+        "attempted": bool(text),
+    }
+
+
+def generate_with_grok(
+    title: str,
+    category: str,
+    score: str,
+    summary: str = "",
+    article_subtype: str = "",
+    source_type: str = "news",
+    source_name: str = "",
+    return_meta: bool = False,
+):
     """Grok Responses API（Web+X検索）でXポスト文を生成。失敗時は空文字を返す。"""
     api_key = os.environ.get("GROK_API_KEY", "")
     if not api_key:
-        return ""
+        result = {"text": "", "error_type": "missing_api_key", "provider": "grok", "attempted": False}
+        return result if return_meta else ""
+
+    result = _generate_with_grok_response(
+        title,
+        category,
+        score,
+        summary=summary,
+        article_subtype=article_subtype,
+        source_type=source_type,
+        source_name=source_name,
+    )
+    return result if return_meta else result["text"]
+
+
+def _generate_with_grok_response(
+    title: str,
+    category: str,
+    score: str,
+    summary: str = "",
+    article_subtype: str = "",
+    source_type: str = "news",
+    source_name: str = "",
+) -> dict:
+    api_key = os.environ.get("GROK_API_KEY", "")
+    if not api_key:
+        return {"text": "", "error_type": "missing_api_key", "provider": "grok", "attempted": False}
 
     from datetime import date, datetime, timedelta
     today = date.today().strftime("%Y年%m月%d日")
@@ -95,12 +189,14 @@ def generate_with_grok(title: str, category: str, score: str, summary: str = "")
     stats_info = f"\n記事内データ: {', '.join(decimal_stats[:5])}" if decimal_stats else ""
     article_excerpt = summary[:600] if summary else ""
 
+    context_lines = _prompt_context_lines(article_subtype, source_type, source_name)
     prompt = f"""あなたは読売ジャイアンツ専門のファンアカウントの中の人です。
 今日は{today}です。Web検索とX検索で最新情報を調べ、以下のニュースについてXポストを作ってください。
 
 ニュース: {title}{quote_info}{stats_info}
 カテゴリ: {category}
 記事抜粋: {article_excerpt}
+{context_lines}
 
 【パターン（状況に合うものを1つ選ぶ）】
 
@@ -152,7 +248,7 @@ def generate_with_grok(title: str, category: str, score: str, summary: str = "")
             data=payload,
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
         )
-        with urllib.request.urlopen(req, timeout=60) as res:
+        with urllib.request.urlopen(req, timeout=X_POST_GROK_TIMEOUT_SECONDS) as res:
             data = json.load(res)
         # output[] から type==message を探す
         for item in data.get("output", []):
@@ -161,14 +257,51 @@ def generate_with_grok(title: str, category: str, score: str, summary: str = "")
                     if isinstance(content, dict) and content.get("type") == "output_text":
                         text = content.get("text", "").strip()
                         if text and len(text) > 20:
-                            return text
-        return ""
+                            return {"text": text, "error_type": "", "provider": "grok", "attempted": True}
+        return {"text": "", "error_type": "empty_response", "provider": "grok", "attempted": True}
+    except urllib.error.HTTPError as exc:
+        return {"text": "", "error_type": f"http_{exc.code}", "provider": "grok", "attempted": True}
+    except urllib.error.URLError as exc:
+        error_type = "timeout" if isinstance(getattr(exc, "reason", None), TimeoutError) else "request_error"
+        return {"text": "", "error_type": error_type, "provider": "grok", "attempted": True}
+    except TimeoutError:
+        return {"text": "", "error_type": "timeout", "provider": "grok", "attempted": True}
     except Exception:
-        return ""
+        return {"text": "", "error_type": "request_error", "provider": "grok", "attempted": True}
 
 
-def generate_with_gemini(title: str, category: str, score: str, summary: str = "") -> str:
+def generate_with_gemini(
+    title: str,
+    category: str,
+    score: str,
+    summary: str = "",
+    article_subtype: str = "",
+    source_type: str = "news",
+    source_name: str = "",
+    return_meta: bool = False,
+):
     """GeminiでXポスト文を生成。CLIは明示 opt-in 時のみ使う。"""
+    result = _generate_with_gemini_response(
+        title,
+        category,
+        score,
+        summary=summary,
+        article_subtype=article_subtype,
+        source_type=source_type,
+        source_name=source_name,
+    )
+    return result if return_meta else result["text"]
+
+
+def _generate_with_gemini_response(
+    title: str,
+    category: str,
+    score: str,
+    summary: str = "",
+    article_subtype: str = "",
+    source_type: str = "news",
+    source_name: str = "",
+) -> dict:
     import subprocess, shutil
     api_key = os.environ.get("GEMINI_API_KEY", "")
 
@@ -181,6 +314,7 @@ def generate_with_gemini(title: str, category: str, score: str, summary: str = "
 
     from datetime import date
     today = date.today().strftime("%Y年%m月%d日")
+    context_lines = _prompt_context_lines(article_subtype, source_type, source_name)
     prompt = f"""あなたは読売ジャイアンツ専門のデータ系ファンアカウントの中の人です。
 今日は{today}です。Web検索して{today}現在の最新データを調べ、以下のニュースについてXポストを作ってください。
 
@@ -194,6 +328,7 @@ def generate_with_gemini(title: str, category: str, score: str, summary: str = "
 ニュース: {title}{quote_info}{stats_info}
 カテゴリ: {category}
 記事抜粋: {article_excerpt}
+{context_lines}
 
 【参考にするフォーマット（carp_buunスタイル）】
 
@@ -233,18 +368,20 @@ def generate_with_gemini(title: str, category: str, score: str, summary: str = "
         try:
             result = subprocess.run(
                 ["gemini", "-p", prompt],
-                capture_output=True, text=True, timeout=90,
+                capture_output=True, text=True, timeout=X_POST_GEMINI_TIMEOUT_SECONDS,
                 env={**os.environ, "GEMINI_API_KEY": api_key}
             )
             text = result.stdout.strip()
             if text and len(text) > 20:
-                return text
+                return {"text": text, "error_type": "", "provider": "gemini_cli", "attempted": True}
+        except subprocess.TimeoutExpired:
+            return {"text": "", "error_type": "timeout", "provider": "gemini_cli", "attempted": True}
         except Exception:
-            pass
+            return {"text": "", "error_type": "request_error", "provider": "gemini_cli", "attempted": True}
 
     # フォールバック：Gemini API Flash
     if not api_key:
-        return ""
+        return {"text": "", "error_type": "missing_api_key", "provider": "gemini", "attempted": False}
     payload = json.dumps({
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
@@ -253,15 +390,28 @@ def generate_with_gemini(title: str, category: str, score: str, summary: str = "
             "thinkingConfig": {"thinkingBudget": GEMINI_FLASH_THINKING_BUDGET},
         },
     }).encode("utf-8")
-    try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_FLASH_MODEL}:generateContent?key={api_key}"
-        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=10) as res:
-            data = json.load(res)
-        text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-        return text
-    except Exception:
-        return ""
+    last_error = "empty_response"
+    for _attempt in range(X_POST_GEMINI_MAX_ATTEMPTS):
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_FLASH_MODEL}:generateContent?key={api_key}"
+            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=X_POST_GEMINI_TIMEOUT_SECONDS) as res:
+                data = json.load(res)
+            text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            if text and len(text) > 20:
+                return {"text": text, "error_type": "", "provider": "gemini", "attempted": True}
+            last_error = "empty_response"
+        except urllib.error.HTTPError as exc:
+            last_error = f"http_{exc.code}"
+        except urllib.error.URLError as exc:
+            last_error = "timeout" if isinstance(getattr(exc, "reason", None), TimeoutError) else "request_error"
+        except TimeoutError:
+            last_error = "timeout"
+        except KeyError:
+            last_error = "invalid_response"
+        except Exception:
+            last_error = "request_error"
+    return {"text": "", "error_type": last_error, "provider": "gemini", "attempted": True}
 
 # ──────────────────────────────────────────────────────────
 # ハッシュタグ設定
@@ -494,6 +644,93 @@ def _finalize_post_text(text: str, url: str, hashtags: list[str], max_chars: int
         if prefix:
             prefix += "…"
     return f"{prefix}{suffix}" if prefix else suffix.lstrip("\n")
+
+
+def _sanitize_ai_generated_text(text: str) -> str:
+    cleaned = re.sub(r"https?://\S+", "", text or "")
+    cleaned = re.sub(r"(?:^|\s)#[^\s#]+", "", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
+def _blocked_phrase_in_text(text: str) -> str:
+    source = (text or "").strip()
+    for phrase in X_POST_BLOCKED_PHRASES:
+        if phrase in source:
+            return phrase
+    return ""
+
+
+def _compose_ai_post_body(ai_text: str, url: str, hashtags: list[str]) -> str:
+    tag_line = " ".join(hashtags)
+    return f"{ai_text}\n\n{url}\n{tag_line}" if ai_text else f"{url}\n{tag_line}".strip()
+
+
+def _generate_ai_comment(
+    ai_mode: str,
+    title: str,
+    category: str,
+    score: str,
+    summary: str = "",
+    article_subtype: str = "",
+    source_type: str = "news",
+    source_name: str = "",
+) -> dict:
+    if ai_mode == "none":
+        return {"text": "", "error_type": "", "provider": "none", "attempted": False}
+    if ai_mode == "gemini":
+        return _coerce_ai_result(
+            generate_with_gemini(
+                title,
+                category,
+                score,
+                summary=summary,
+                article_subtype=article_subtype,
+                source_type=source_type,
+                source_name=source_name,
+                return_meta=True,
+            ),
+            "gemini",
+        )
+
+    grok_result = _coerce_ai_result(
+        generate_with_grok(
+            title,
+            category,
+            score,
+            summary=summary,
+            article_subtype=article_subtype,
+            source_type=source_type,
+            source_name=source_name,
+            return_meta=True,
+        ),
+        "grok",
+    )
+    if grok_result["text"] or ai_mode == "grok":
+        return grok_result
+
+    gemini_result = _coerce_ai_result(
+        generate_with_gemini(
+            title,
+            category,
+            score,
+            summary=summary,
+            article_subtype=article_subtype,
+            source_type=source_type,
+            source_name=source_name,
+            return_meta=True,
+        ),
+        "gemini",
+    )
+    if gemini_result["text"]:
+        return gemini_result
+    error_type = gemini_result["error_type"] or grok_result["error_type"] or "empty_response"
+    return {
+        "text": "",
+        "error_type": error_type,
+        "provider": gemini_result["provider"],
+        "attempted": bool(grok_result.get("attempted")) or bool(gemini_result.get("attempted")),
+    }
 
 
 def _looks_like_lineup_post(title: str, summary: str) -> bool:
@@ -1099,6 +1336,188 @@ def detect_player_tags(text: str) -> list:
 # ──────────────────────────────────────────────────────────
 # ポスト文案組み立て
 # ──────────────────────────────────────────────────────────
+def _build_template_post(title: str, url: str, category: str, hashtag_str: str) -> str:
+    templates = TEMPLATES.get(category, DEFAULT_TEMPLATES)
+    template = random.choice(templates)
+    fixed_part = template.replace("{title}", "").replace("{url}", "x" * 23).replace("{tags}", hashtag_str)
+    title_limit = 280 - len(fixed_part) - 1
+    adjusted_title = title
+    if len(adjusted_title) > title_limit:
+        adjusted_title = adjusted_title[:title_limit - 1] + "…"
+    return template.format(title=adjusted_title, url=url, tags=hashtag_str)
+
+
+def _build_deterministic_post(
+    title: str,
+    url: str,
+    category: str,
+    summary: str = "",
+    content_html: str = "",
+    article_subtype: str = "",
+    source_type: str = "news",
+    source_name: str = "",
+) -> tuple[str, list[str], str]:
+    tags = list(REQUIRED_TAGS)
+    player_tags = detect_player_tags(title + " " + summary)
+    resolved_subtype = _resolve_post_subtype(
+        category,
+        title,
+        summary,
+        article_subtype=article_subtype,
+        source_type=source_type,
+    )
+
+    if source_type == "social_news" or resolved_subtype == "social":
+        social_tags = _dedupe_preserve_order(list(REQUIRED_TAGS) + player_tags[:1])
+        text = _build_social_news_post(
+            title,
+            url,
+            category,
+            summary,
+            " ".join(social_tags),
+            source_name=source_name,
+            article_subtype=resolved_subtype,
+        )
+        return text, social_tags, resolved_subtype
+
+    if category == "選手情報" and resolved_subtype == "notice":
+        notice_tags = _dedupe_preserve_order(list(REQUIRED_TAGS) + player_tags[:1])
+        text = _build_notice_post(title, url, summary, " ".join(notice_tags))
+        return text, notice_tags, resolved_subtype
+
+    if category == "選手情報" and resolved_subtype == "recovery":
+        recovery_tags = _dedupe_preserve_order(list(REQUIRED_TAGS) + player_tags[:1])
+        text = _build_recovery_post(title, url, summary, " ".join(recovery_tags))
+        return text, recovery_tags, resolved_subtype
+
+    if category == "試合速報" and resolved_subtype == "pregame":
+        pregame_tags = _dedupe_preserve_order(list(REQUIRED_TAGS) + player_tags[:1])
+        text = _build_pregame_post(title, url, summary, " ".join(pregame_tags))
+        return text, pregame_tags, resolved_subtype
+
+    if category == "試合速報" and resolved_subtype == "lineup":
+        lineup_tags = _dedupe_preserve_order(list(REQUIRED_TAGS) + player_tags[:2])
+        text = _build_lineup_post(title, url, summary, " ".join(lineup_tags), content_html=content_html)
+        return text, lineup_tags, resolved_subtype
+
+    if category == "試合速報" and resolved_subtype == "live_update":
+        live_tags = list(REQUIRED_TAGS)
+        live_tag = _detect_earliest_player_tag(title + " " + summary)
+        if live_tag:
+            live_tags.append(live_tag)
+        live_tags = _dedupe_preserve_order(live_tags)
+        text = _build_live_update_post(title, url, summary, " ".join(live_tags))
+        return text, live_tags, resolved_subtype
+
+    if category == "試合速報" and resolved_subtype == "postgame":
+        postgame_tags = list(REQUIRED_TAGS)
+        postgame_tag = _detect_earliest_player_tag(title + " " + summary)
+        if postgame_tag:
+            postgame_tags.append(postgame_tag)
+        postgame_tags = _dedupe_preserve_order(postgame_tags)
+        text = _build_postgame_post(title, url, summary, " ".join(postgame_tags))
+        return text, postgame_tags, resolved_subtype
+
+    if category == "選手情報":
+        tags += player_tags[:1]
+    elif category == "試合速報" and resolved_subtype == "postgame":
+        postgame_tag = _detect_earliest_player_tag(title + " " + summary)
+        if postgame_tag:
+            tags.append(postgame_tag)
+    elif category == "ドラフト・育成":
+        tags += player_tags[:1]
+    else:
+        tags += CATEGORY_TAGS.get(category, ["#プロ野球"])
+        tags += player_tags
+    if category == "選手情報":
+        unique_tags = _dedupe_preserve_order(tags)
+        return _build_player_post(title, url, summary, " ".join(unique_tags)), unique_tags, resolved_subtype
+    if category == "首脳陣":
+        manager_tags = list(REQUIRED_TAGS)
+        if player_tags:
+            manager_tags.append(player_tags[0])
+        manager_tags = _dedupe_preserve_order(manager_tags)
+        return _build_manager_post(title, url, summary, " ".join(manager_tags)), manager_tags, resolved_subtype
+    if category == "ドラフト・育成":
+        farm_tags = list(REQUIRED_TAGS)
+        if player_tags:
+            farm_tags.append(player_tags[0])
+        farm_tags = _dedupe_preserve_order(farm_tags)
+        return _build_farm_post(title, url, summary, " ".join(farm_tags)), farm_tags, resolved_subtype
+
+    unique_tags = _dedupe_preserve_order(tags)
+    if category == "コラム" and ("出塁率" in title or "出塁率" in content_html):
+        return _build_data_obp_post(title, url, content_html=content_html), unique_tags, resolved_subtype
+
+    return _build_template_post(title, url, category, " ".join(unique_tags)), unique_tags, resolved_subtype
+
+
+def build_post_with_meta(
+    title: str,
+    url: str,
+    category: str,
+    summary: str = "",
+    content_html: str = "",
+    article_subtype: str = "",
+    source_type: str = "news",
+    source_name: str = "",
+    ai_mode_override: str | None = None,
+) -> tuple[str, dict]:
+    clean_title = re.sub(r'^【(速報|選手情報|球団情報|首脳陣|育成情報|OB情報)】\s*', '', title)
+    deterministic_text, hashtags, resolved_subtype = _build_deterministic_post(
+        clean_title,
+        url,
+        category,
+        summary=summary,
+        content_html=content_html,
+        article_subtype=article_subtype,
+        source_type=source_type,
+        source_name=source_name,
+    )
+    fallback_text = _finalize_post_text(deterministic_text, url, hashtags)
+    weighted_fallback_length = _weighted_x_length(fallback_text, url)
+    effective_ai_mode = resolve_effective_x_post_ai_mode(category, ai_mode_override=ai_mode_override)
+    metadata = {
+        "category": category,
+        "article_subtype": resolved_subtype,
+        "requested_ai_mode": (ai_mode_override or get_x_post_ai_mode()).strip().lower(),
+        "effective_ai_mode": effective_ai_mode,
+        "ai_attempted": False,
+        "ai_used": False,
+        "fallback_used": False,
+        "failure_reason": "",
+        "generated_length": weighted_fallback_length,
+    }
+    if effective_ai_mode == "none":
+        return fallback_text, metadata
+
+    score = detect_score(clean_title)
+    ai_result = _generate_ai_comment(
+        effective_ai_mode,
+        clean_title,
+        category,
+        score,
+        summary=summary,
+        article_subtype=resolved_subtype,
+        source_type=source_type,
+        source_name=source_name,
+    )
+    metadata["ai_attempted"] = bool(ai_result.get("attempted"))
+    ai_text = _sanitize_ai_generated_text(ai_result.get("text", ""))
+    blocked_phrase = _blocked_phrase_in_text(ai_text)
+    if ai_text and not blocked_phrase:
+        final_text = _finalize_post_text(_compose_ai_post_body(ai_text, url, hashtags), url, hashtags)
+        metadata["ai_used"] = True
+        metadata["generated_length"] = _weighted_x_length(final_text, url)
+        return final_text, metadata
+
+    metadata["fallback_used"] = True
+    metadata["failure_reason"] = ai_result.get("error_type", "") or (
+        f"blocked_phrase:{blocked_phrase}" if blocked_phrase else "empty_response"
+    )
+    return fallback_text, metadata
+
+
 def build_post(
     title: str,
     url: str,
@@ -1109,148 +1528,17 @@ def build_post(
     source_type: str = "news",
     source_name: str = "",
 ) -> str:
-    # 既存の接頭語を除去（テンプレートと重複しないよう）
-    title = re.sub(r'^【(速報|選手情報|球団情報|首脳陣|育成情報|OB情報)】\s*', '', title)
-    resolved_subtype = _resolve_post_subtype(
-        category,
+    post_text, _metadata = build_post_with_meta(
         title,
-        summary,
+        url,
+        category,
+        summary=summary,
+        content_html=content_html,
         article_subtype=article_subtype,
         source_type=source_type,
+        source_name=source_name,
     )
-
-    # ハッシュタグ収集
-    tags = list(REQUIRED_TAGS)
-    player_tags = detect_player_tags(title + " " + summary)
-    if category == "選手情報":
-        tags += player_tags[:1]
-    elif category == "試合速報" and _looks_like_postgame_post(title, summary):
-        postgame_tag = _detect_earliest_player_tag(title + " " + summary)
-        if postgame_tag:
-            tags.append(postgame_tag)
-    elif category == "ドラフト・育成":
-        tags += player_tags[:1]
-    else:
-        tags += CATEGORY_TAGS.get(category, ["#プロ野球"])
-        tags += player_tags
-    unique_tags = _dedupe_preserve_order(tags)
-    hashtag_str = " ".join(unique_tags)
-
-    if source_type == "social_news" or resolved_subtype == "social":
-        social_tags = list(REQUIRED_TAGS)
-        if player_tags:
-            social_tags.append(player_tags[0])
-        social_tags = _dedupe_preserve_order(social_tags)
-        text = _build_social_news_post(
-            title,
-            url,
-            category,
-            summary,
-            " ".join(social_tags),
-            source_name=source_name,
-            article_subtype=resolved_subtype,
-        )
-        return _finalize_post_text(text, url, social_tags)
-    if category == "選手情報" and resolved_subtype == "notice":
-        notice_tags = _dedupe_preserve_order(list(REQUIRED_TAGS) + player_tags[:1])
-        text = _build_notice_post(title, url, summary, " ".join(notice_tags))
-        return _finalize_post_text(text, url, notice_tags)
-    if category == "選手情報" and resolved_subtype == "recovery":
-        recovery_tags = _dedupe_preserve_order(list(REQUIRED_TAGS) + player_tags[:1])
-        text = _build_recovery_post(title, url, summary, " ".join(recovery_tags))
-        return _finalize_post_text(text, url, recovery_tags)
-    if category == "試合速報" and resolved_subtype == "pregame":
-        pregame_tags = _dedupe_preserve_order(list(REQUIRED_TAGS) + player_tags[:1])
-        text = _build_pregame_post(title, url, summary, " ".join(pregame_tags))
-        return _finalize_post_text(text, url, pregame_tags)
-    if category == "選手情報":
-        text = _build_player_post(title, url, summary, hashtag_str)
-        return _finalize_post_text(text, url, unique_tags)
-    if category == "首脳陣":
-        manager_tags = list(REQUIRED_TAGS)
-        if player_tags:
-            manager_tags.append(player_tags[0])
-        manager_tags = _dedupe_preserve_order(manager_tags)
-        manager_hashtag_str = " ".join(manager_tags)
-        text = _build_manager_post(title, url, summary, manager_hashtag_str)
-        return _finalize_post_text(text, url, manager_tags)
-    if category == "試合速報" and resolved_subtype == "lineup":
-        lineup_tags = _dedupe_preserve_order(list(REQUIRED_TAGS) + player_tags[:2])
-        lineup_hashtag_str = " ".join(lineup_tags)
-        text = _build_lineup_post(title, url, summary, lineup_hashtag_str, content_html=content_html)
-        return _finalize_post_text(text, url, lineup_tags)
-    if category == "試合速報" and resolved_subtype == "live_update":
-        live_tags = list(REQUIRED_TAGS)
-        live_tag = _detect_earliest_player_tag(title + " " + summary)
-        if live_tag:
-            live_tags.append(live_tag)
-        live_tags = _dedupe_preserve_order(live_tags)
-        live_hashtag_str = " ".join(live_tags)
-        text = _build_live_update_post(title, url, summary, live_hashtag_str)
-        return _finalize_post_text(text, url, live_tags)
-    if category == "試合速報" and resolved_subtype == "postgame":
-        postgame_tags = list(REQUIRED_TAGS)
-        postgame_tag = _detect_earliest_player_tag(title + " " + summary)
-        if postgame_tag:
-            postgame_tags.append(postgame_tag)
-        postgame_tags = _dedupe_preserve_order(postgame_tags)
-        postgame_hashtag_str = " ".join(postgame_tags)
-        text = _build_postgame_post(title, url, summary, postgame_hashtag_str)
-        return _finalize_post_text(text, url, postgame_tags)
-    if category == "ドラフト・育成":
-        farm_tags = list(REQUIRED_TAGS)
-        if player_tags:
-            farm_tags.append(player_tags[0])
-        farm_tags = _dedupe_preserve_order(farm_tags)
-        farm_hashtag_str = " ".join(farm_tags)
-        text = _build_farm_post(title, url, summary, farm_hashtag_str)
-        return _finalize_post_text(text, url, farm_tags)
-    if category == "コラム" and ("出塁率" in title or "出塁率" in content_html):
-        text = _build_data_obp_post(title, url, content_html=content_html)
-        return _finalize_post_text(text, url, unique_tags)
-
-    # スコア検出
-    score = detect_score(title)
-    result_info = ""
-    score_line = ""
-    if score and category == "試合速報":
-        g, o = (score.replace("–", "-").split("-") + ["0"])[:2]
-        try:
-            result_info = "⭕ 勝利" if int(g) > int(o) else "❌ 敗戦" if int(g) < int(o) else "🟡 引き分け"
-        except Exception:
-            pass
-        score_line = f"\n巨人 {score} {result_info}" if result_info else ""
-
-    # テンプレート選択
-    templates = TEMPLATES.get(category, DEFAULT_TEMPLATES)
-    template = random.choice(templates)
-
-    # タイトル文字数制限（URL=23字換算、テンプレート固定部分を除く）
-    fixed_part = template.replace("{title}", "").replace("{url}", "x" * 23).replace("{tags}", hashtag_str)
-    title_limit = 280 - len(fixed_part) - 1
-    if len(title) > title_limit:
-        title = title[:title_limit - 1] + "…"
-
-    ai_comment = ""
-    ai_mode = get_x_post_ai_mode()
-    if should_use_ai_for_x_post(category):
-        if ai_mode == "grok":
-            ai_comment = generate_with_grok(title, category, score, summary=summary)
-            if not ai_comment:
-                ai_comment = generate_with_gemini(title, category, score, summary=summary)
-        elif ai_mode == "gemini":
-            ai_comment = generate_with_gemini(title, category, score, summary=summary)
-        elif ai_mode == "auto":
-            ai_comment = generate_with_grok(title, category, score, summary=summary)
-            if not ai_comment:
-                ai_comment = generate_with_gemini(title, category, score, summary=summary)
-
-    if ai_comment:
-        body = f"{ai_comment}\n{url}\n{hashtag_str}"
-        return _finalize_post_text(body, url, unique_tags)
-    else:
-        text = template.format(title=title, url=url, tags=hashtag_str)
-        return _finalize_post_text(text, url, unique_tags)
+    return post_text
 
 # ──────────────────────────────────────────────────────────
 # CLIエントリーポイント

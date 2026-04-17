@@ -30,7 +30,11 @@ import html as _html
 from wp_client import WPClient
 from media_xpost_selector import evaluate_media_quote_selection
 from wp_draft_creator import build_oembed_block, load_posted_urls, save_posted_url
-from x_post_generator import build_post as build_x_post_text
+from x_post_generator import (
+    build_post as build_x_post_text,
+    build_post_with_meta as build_x_post_text_with_meta,
+    resolve_effective_x_post_ai_mode,
+)
 
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
@@ -8273,6 +8277,143 @@ def _log_media_xpost_skipped(
     logger.info(json.dumps(payload, ensure_ascii=False))
 
 
+def _log_x_post_ai_generated(
+    logger: logging.Logger,
+    post_id: int,
+    category: str,
+    article_subtype: str,
+    ai_mode: str,
+    generated_length: int,
+    fallback_used: bool,
+    preview_text: str,
+) -> None:
+    payload = {
+        "event": "x_post_ai_generated",
+        "post_id": post_id,
+        "category": category,
+        "article_subtype": article_subtype,
+        "ai_mode": ai_mode,
+        "generated_length": generated_length,
+        "fallback_used": bool(fallback_used),
+        "preview_text": preview_text,
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
+def _log_x_post_ai_failed(
+    logger: logging.Logger,
+    post_id: int,
+    category: str,
+    error_type: str,
+    fallback_used: bool,
+    article_subtype: str = "",
+) -> None:
+    payload = {
+        "event": "x_post_ai_failed",
+        "post_id": post_id,
+        "category": category,
+        "article_subtype": article_subtype,
+        "error_type": error_type or "unknown",
+        "fallback_used": bool(fallback_used),
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
+def _build_x_post_preview_for_observation(
+    *,
+    logger: logging.Logger,
+    history: dict,
+    today_str: str,
+    x_post_daily_limit: int,
+    post_id: int,
+    title: str,
+    article_url: str,
+    category: str,
+    summary: str,
+    content_html: str,
+    article_subtype: str,
+    source_type: str,
+    source_name: str,
+) -> tuple[str, dict]:
+    if source_type not in {"news", "social_news"}:
+        return "", {}
+
+    requested_ai_mode = resolve_effective_x_post_ai_mode(category)
+    if requested_ai_mode == "none":
+        return "", {}
+
+    generation_key = f"x_ai_generation_count_{today_str}"
+    generation_count = int(history.get(generation_key, 0) or 0)
+    if generation_count >= x_post_daily_limit:
+        preview_text, meta = build_x_post_text_with_meta(
+            title,
+            article_url,
+            category,
+            summary=summary,
+            content_html=content_html,
+            article_subtype=article_subtype,
+            source_type=source_type,
+            source_name=source_name,
+            ai_mode_override="none",
+        )
+        meta["requested_ai_mode"] = requested_ai_mode
+        meta["fallback_used"] = True
+        meta["failure_reason"] = "daily_limit_reached"
+        meta["generated_length"] = len(preview_text.replace(article_url, "x" * 23)) if article_url else len(preview_text)
+        _log_x_post_ai_failed(
+            logger,
+            post_id,
+            category,
+            "daily_limit_reached",
+            True,
+            article_subtype=meta.get("article_subtype", article_subtype),
+        )
+        _log_x_post_ai_generated(
+            logger,
+            post_id,
+            category,
+            meta.get("article_subtype", article_subtype),
+            requested_ai_mode,
+            int(meta.get("generated_length", 0) or 0),
+            True,
+            preview_text,
+        )
+        return preview_text, meta
+
+    preview_text, meta = build_x_post_text_with_meta(
+        title,
+        article_url,
+        category,
+        summary=summary,
+        content_html=content_html,
+        article_subtype=article_subtype,
+        source_type=source_type,
+        source_name=source_name,
+    )
+    if meta.get("ai_attempted"):
+        history[generation_key] = generation_count + 1
+    if meta.get("failure_reason"):
+        _log_x_post_ai_failed(
+            logger,
+            post_id,
+            category,
+            str(meta.get("failure_reason", "")),
+            bool(meta.get("fallback_used")),
+            article_subtype=meta.get("article_subtype", article_subtype),
+        )
+    _log_x_post_ai_generated(
+        logger,
+        post_id,
+        category,
+        meta.get("article_subtype", article_subtype),
+        meta.get("effective_ai_mode", requested_ai_mode) or requested_ai_mode,
+        int(meta.get("generated_length", 0) or 0),
+        bool(meta.get("fallback_used")),
+        preview_text,
+    )
+    return preview_text, meta
+
+
 def _counter_to_plain_dict(counter: Counter) -> dict[str, int]:
     return {key: counter[key] for key in sorted(counter) if counter[key]}
 
@@ -8403,6 +8544,7 @@ def _main(args, logger):
     x_post_daily_limit = get_x_post_daily_limit()
     today_str = datetime.now().strftime("%Y-%m-%d")
     x_post_count = history.get(f"x_post_count_{today_str}", 0)
+    x_ai_generation_count = history.get(f"x_ai_generation_count_{today_str}", 0)
     prepared_entries = []
     media_quote_pool = []
     entry_index = 0
@@ -8790,6 +8932,8 @@ def _main(args, logger):
                 featured_media=featured_media or None,
             )
             effective_featured_media = _resolve_effective_featured_media(wp, post_id, featured_media, logger)
+            draft_post_data = wp.get_post(post_id)
+            draft_article_url = draft_post_data.get("link", "") or post_url
             success += 1
             created_category_counts[category] += 1
             created_subtype_counts[title_article_subtype] += 1
@@ -8887,6 +9031,21 @@ def _main(args, logger):
                     _notice_has_player_name(ai_body_for_x, raw_title, summary),
                     _notice_has_numeric_record(ai_body_for_x),
                 )
+            tweet_preview_text, tweet_preview_meta = _build_x_post_preview_for_observation(
+                logger=logger,
+                history=history,
+                today_str=today_str,
+                x_post_daily_limit=x_post_daily_limit,
+                post_id=post_id,
+                title=draft_title,
+                article_url=draft_article_url,
+                category=category,
+                summary=ai_body_for_x or summary,
+                content_html=content,
+                article_subtype=title_article_subtype,
+                source_type=source_type,
+                source_name=source_name,
+            )
             time.sleep(1)
 
             publish_skip_reasons = get_publish_skip_reasons(
@@ -8942,16 +9101,21 @@ def _main(args, logger):
                     import tweepy
                     from dotenv import load_dotenv
                     load_dotenv(ROOT / ".env")
-                    tweet_text = build_x_post_text(
-                        draft_title,
-                        article_url,
-                        category,
-                        summary=ai_body_for_x or summary,
-                        content_html=content,
-                        article_subtype=title_article_subtype,
-                        source_type=source_type,
-                        source_name=source_name,
-                    )
+                    if tweet_preview_text:
+                        tweet_text = tweet_preview_text
+                        if draft_article_url and article_url and draft_article_url != article_url:
+                            tweet_text = tweet_text.replace(draft_article_url, article_url, 1)
+                    else:
+                        tweet_text = build_x_post_text(
+                            draft_title,
+                            article_url,
+                            category,
+                            summary=ai_body_for_x or summary,
+                            content_html=content,
+                            article_subtype=title_article_subtype,
+                            source_type=source_type,
+                            source_name=source_name,
+                        )
                     x_client = tweepy.Client(
                         bearer_token=os.environ.get("X_BEARER_TOKEN"),
                         consumer_key=os.environ.get("X_API_KEY"),
@@ -9003,6 +9167,8 @@ def _main(args, logger):
                 "error_count": error,
                 "x_post_count": x_post_count,
                 "x_post_daily_limit": x_post_daily_limit,
+                "x_ai_generation_count": history.get(f"x_ai_generation_count_{today_str}", x_ai_generation_count),
+                "x_ai_generation_limit": x_post_daily_limit,
             },
             ensure_ascii=False,
         )
@@ -9018,6 +9184,8 @@ def _main(args, logger):
                 "created_subtype_counts": _counter_to_plain_dict(created_subtype_counts),
                 "publish_skip_reason_counts": _counter_to_plain_dict(publish_skip_reason_counts),
                 "x_skip_reason_counts": _counter_to_plain_dict(x_skip_reason_counts),
+                "x_ai_generation_count": history.get(f"x_ai_generation_count_{today_str}", x_ai_generation_count),
+                "x_ai_generation_limit": x_post_daily_limit,
             },
             ensure_ascii=False,
         )

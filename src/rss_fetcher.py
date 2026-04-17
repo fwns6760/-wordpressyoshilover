@@ -348,11 +348,33 @@ PLAYER_NOTICE_ROUTE_MARKERS = (
     "登録抹消",
     "抹消",
     "戦力外",
+    "戦力外通告",
+    "自由契約",
+    "契約解除",
+    "戦力構想外",
+    "来季構想外",
+    "来年構想外",
+    "構想外",
+    "現役引退",
+    "引退会見",
+    "引退",
     "昇格",
     "再登録",
     "実戦復帰",
     "再出発",
 )
+PLAYER_DISMISSAL_CATEGORY_MARKERS = (
+    "戦力外通告",
+    "戦力外",
+    "自由契約",
+    "契約解除",
+    "戦力構想外",
+    "来季構想外",
+    "来年構想外",
+    "現役引退",
+    "引退会見",
+)
+PLAYER_DISMISSAL_EXCLUDE_MARKERS = ("元巨人", "OB", "球団OB", "巨人OB")
 PLAYER_RECOVERY_ROUTE_MARKERS = (
     "離脱",
     "故障",
@@ -613,6 +635,21 @@ def should_use_ai_for_category(category: str) -> bool:
 def _is_notice_like_status_story(title: str, summary: str) -> bool:
     source_text = _strip_html(f"{title} {summary}")
     return any(marker in source_text for marker in PLAYER_NOTICE_ROUTE_MARKERS)
+
+
+def _is_giants_player_dismissal_story(text: str) -> bool:
+    source_text = _strip_html(text)
+    if not any(team in source_text for team in ("巨人", "ジャイアンツ")):
+        return False
+    if any(marker in source_text for marker in PLAYER_DISMISSAL_EXCLUDE_MARKERS):
+        return False
+    if any(marker in source_text for marker in PLAYER_DISMISSAL_CATEGORY_MARKERS):
+        return True
+    if "構想外" in source_text and not any(role in source_text for role in ("監督", "コーチ")):
+        return True
+    if "引退" in source_text and not any(role in source_text for role in ("監督", "コーチ")):
+        return True
+    return False
 
 
 def _extract_player_subject_context_windows(title: str, summary: str, subject: str, radius: int = 56) -> list[str]:
@@ -1118,7 +1155,17 @@ def get_notice_fallback_image_url() -> str:
 def _extract_notice_type_label(text: str) -> str:
     source_text = _strip_html(text or "")
     checks = (
+        ("戦力外通告", "戦力外"),
         ("戦力外", "戦力外"),
+        ("自由契約", "自由契約"),
+        ("契約解除", "契約解除"),
+        ("戦力構想外", "構想外"),
+        ("来季構想外", "構想外"),
+        ("来年構想外", "構想外"),
+        ("構想外", "構想外"),
+        ("現役引退", "引退"),
+        ("引退会見", "引退"),
+        ("引退", "引退"),
         ("再出発", "再出発"),
         ("登録抹消", "登録抹消"),
         ("出場選手登録を抹消", "登録抹消"),
@@ -7333,6 +7380,8 @@ def is_giants_related(text: str) -> bool:
 # カテゴリ自動分類
 # ──────────────────────────────────────────────────────────
 def classify_category(text: str, keywords: dict) -> str:
+    if _is_giants_player_dismissal_story(text):
+        return "選手情報"
     if _is_farm_lineup_text(text):
         return "ドラフト・育成"
     if any(marker in text for marker in ("二軍戦", "２軍戦", "2軍戦", "二軍", "２軍", "2軍", "ファーム", "育成")):

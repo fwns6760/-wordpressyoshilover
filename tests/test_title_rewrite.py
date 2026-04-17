@@ -94,6 +94,36 @@ class DisplayTitleRewriteTests(unittest.TestCase):
 
         self.assertEqual(category, "ドラフト・育成")
 
+    def test_dismissal_category_golden_cases_route_to_player_info(self):
+        with open(rss_fetcher.KEYWORDS_FILE, encoding="utf-8") as f:
+            keywords = json.load(f)
+
+        cases = [
+            "【巨人】ルシアーノに戦力外通告 支配下登録から再出発へ",
+            "【巨人】育成左腕を自由契約にすると発表 来季構想を見直し",
+            "【巨人】松田宣浩が現役引退を表明 引退会見は近日中に実施",
+        ]
+
+        for text in cases:
+            with self.subTest(text=text):
+                self.assertEqual(rss_fetcher.classify_category(text, keywords), "選手情報")
+
+    def test_ob_retirement_story_stays_out_of_player_info(self):
+        with open(rss_fetcher.KEYWORDS_FILE, encoding="utf-8") as f:
+            keywords = json.load(f)
+
+        category = rss_fetcher.classify_category(
+            "元巨人OBの名捕手が引退会見で語る セレモニーの舞台裏",
+            keywords,
+        )
+
+        self.assertEqual(category, "OB・解説者")
+
+    def test_notice_type_label_supports_dismissal_variants(self):
+        self.assertEqual(rss_fetcher._extract_notice_type_label("巨人が自由契約を発表"), "自由契約")
+        self.assertEqual(rss_fetcher._extract_notice_type_label("来季構想外が判明"), "構想外")
+        self.assertEqual(rss_fetcher._extract_notice_type_label("現役引退を表明"), "引退")
+
     def test_extract_player_status_topic_does_not_treat_farm_story_as_ichigun_shokaku(self):
         title = "巨人育成ドミニカンが２軍戦猛打＆Ｖ２号 同郷ルシアーノの支配下昇格が刺激…６年目"
         summary = "巨人育成ドミニカンのティマが２軍戦で猛打＆Ｖ２号。育成選手としてプレーしている。"

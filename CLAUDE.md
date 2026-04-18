@@ -15,12 +15,12 @@
 ### 役割分担
 - **Claude Code = 監査役**（このあなた）。read-only確認・ログ取得・Codex向け指示書ドラフト作成
 - **Codex = 実装担当**。env変更・deploy・コード実装はCodexの役割
-- **Yoshihiro = 判断者**。合格/差し戻し/修正方針の決定
+- **よしひろさん = 判断者**。合格/差し戻し/修正方針の決定
 
 ### Claude Codeがやらないこと
 - `gcloud run services update` など本番env変更
 - コードのデプロイ・git push以外のリモート操作
-- Yoshihiroへの承認なしで破壊的操作
+- よしひろさんへの承認なしで破壊的操作
 
 ### Claude Codeがやること
 - ログ確認・fact_check CLI実行（read-only）
@@ -29,8 +29,8 @@
 - セッション終了前に `docs/handoff/session_logs/YYYY-MM-DD_claude_code_audit.md` を更新
 
 ### 体力減らしモード
-- Yoshihiroに対して選択肢を並べて選ばせない。1つに絞って推奨を出す
-- Yoshihiroの判断は「合格/差し戻し」の2択に整える
+- よしひろさんに対して選択肢を並べて選ばせない。1つに絞って推奨を出す
+- よしひろさんの判断は「合格/差し戻し」の2択に整える
 - 質問は最小限に
 
 ## セッション終了前の手順
@@ -44,6 +44,6 @@
 
 2026-04-17、新規Claudeチャットから `RUN_DRAFT_ONLY=0` が設定され、4記事が意図せず公開された。
 これ以降、**env変更は必ず既存進行中のClaudeチャット経由（本Claude Codeセッションはそれに含む）**、
-かつ **Yoshihiroの明示承認あり、実行はCodex** のルールが確立された。
+かつ **よしひろさんの明示承認あり、実行はCodex** のルールが確立された。
 
 詳細は `docs/handoff/06_failure_patterns.md` を参照。

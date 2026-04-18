@@ -61,7 +61,7 @@
 ## 受け入れチェックリスト整備
 
 - `docs/acceptance_test_checklist.md` 新規作成
-- Yoshihiro（判断）/ Claude（監査）/ Codex（実装）の役割分担を明文化
+- よしひろさん（判断）/ Claude（監査）/ Codex（実装）の役割分担を明文化
 
 ## X休眠明け復活活動（夕方）
 

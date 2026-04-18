@@ -55,7 +55,7 @@ def main() -> int:
         "- env変更・deploy・gcloud run services update はやらない（Codexの役割）\n"
         "- 監査発見は tickets/OPEN.md に追記\n"
         "- セッション終了前に session_logs/ を更新\n"
-        "- Yoshihiroには選択肢を並べない、1つに絞って推奨（体力減らしモード）\n"
+        "- よしひろさんには選択肢を並べない、1つに絞って推奨（体力減らしモード）\n"
         "\n---\n\n"
         "## 未解決チケット（docs/handoff/tickets/OPEN.md）\n\n"
         f"{tickets_body}\n"

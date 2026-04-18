@@ -39,7 +39,7 @@ REST collection query からこのプラグインを除外する。
 - curl .../posts?status=draft&context=edit でdraftのみが返ること
 - curl .../posts?status=publish でpublishのみが返ること
 - テーマ側のフロント一覧で除外カテゴリ動作が保たれていること
-deployはYoshihiro承認後。
+deployはよしひろさん承認後。
 ```
 
 ---
@@ -94,7 +94,7 @@ deployはYoshihiro承認後。
 - T-002の6REDは過去（~4-14）のpublish記事。今朝のメールはこの6件を含むか？
 - 送信先: `fwns6760@gmail.com`
 
-**Yoshihiro側で確認が必要**: スマホのGmailで本日朝のメール本文の🔴セクションを見る
+**よしひろさん側で確認が必要**: スマホのGmailで本日朝のメール本文の🔴セクションを見る
 
 ---
 
@@ -111,10 +111,10 @@ deployはYoshihiro承認後。
 ## T-006 🟡 Phase 3段階1のメール実受信確認が未完了
 
 **発見日**: 2026-04-18
-**発見者**: Yoshihiro + Claude Code
+**発見者**: よしひろさん + Claude Code
 **影響**: 小。ログレベルでは送信成功を確認済み
 
-**対応**: Yoshihiro側でスマホのGmailを確認（朝のメールを見る）
+**対応**: よしひろさん側でスマホのGmailを確認（朝のメールを見る）
 
 **2026-04-18 午前追記（Codex報告経由）**:
 - Scheduler は 7:00 / 12:00 / 17:00 / 22:00 JST の1日4回に変更済
@@ -175,7 +175,7 @@ docs/handoff/codex_responses/2026-04-18.md の T-007 修正方針1〜4を実装:
 2. 以下 post_id を acceptance_fact_check で再判定し結果を
    docs/fix_logs/{date}_t007_post_fix_recheck.md に出力:
    62518 / 62527 / 62540 / 62044 / 61981 / 61886 / 61802 / 61770 / 61598
-3. deploy/env変更は本依頼では実施しない（Yoshihiro承認後）
+3. deploy/env変更は本依頼では実施しない（よしひろさん承認後）
 ```
 
 ---
@@ -191,7 +191,7 @@ docs/handoff/codex_responses/2026-04-18.md の T-007 修正方針1〜4を実装:
 - 実試合は巨人 vs ヤクルト
 - auto_fix 候補: WP title の `DeNA` → `ヤクルト` 置換（1箇所一致、whitelist 通過、楽観ロックあり）
 
-**Yoshihiroの判断が必要**: 自動修正を実行する / 手動で確認してから実行 / draft戻し
+**よしひろさんの判断が必要**: 自動修正を実行する / 手動で確認してから実行 / draft戻し
 
 **Codex向け指示書ドラフト（自動修正実行）**:
 ```

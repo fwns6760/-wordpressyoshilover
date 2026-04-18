@@ -1,6 +1,6 @@
 # Acceptance Test Checklist
 
-明日の受け入れ試験で subtype ごとに見る項目を固定する。判断者は Yoshihiro、監査役は Claude、修正実装は Codex。
+明日の受け入れ試験で subtype ごとに見る項目を固定する。判断者は よしひろさん、監査役は Claude、修正実装は Codex。
 
 ## 優先順位
 
@@ -31,7 +31,7 @@
 
 | 役割 | 担当 | 役割内容 |
 |---|---|---|
-| 判断 | Yoshihiro | 合格 / 差し戻しの最終判断、publish 解放判断 |
+| 判断 | よしひろさん | 合格 / 差し戻しの最終判断、publish 解放判断 |
 | 監査 | Claude | ログ確認、リスク指摘、判断材料の整理 |
 | 実装 | Codex | 差し戻し修正、テスト追加、deploy |
 

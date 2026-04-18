@@ -138,6 +138,7 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("【次の注目】", prompt)
         self.assertIn("【発言の要旨】の1文目には「4月16日時点」を自然に入れてください。", prompt)
         self.assertIn("引用が2つ以上ある場合は、【発言内容】で2つまで並べて整理してください。", prompt)
+        self.assertIn("【次の注目】は必ず「事実 → 解釈 → 感想」の順で流れを作る", prompt)
         self.assertIn("元記事にない数字、過去比較、一般論、精神論、推測は足さない", prompt)
 
     def test_lineup_prompt_uses_game_specific_structure(self):
@@ -155,6 +156,7 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("【スタメン一覧】", prompt)
         self.assertIn("【先発投手】", prompt)
         self.assertIn("【注目ポイント】", prompt)
+        self.assertIn("【注目ポイント】は必ず「事実 → 解釈 → 感想」の順で流れを作る", prompt)
         self.assertIn("選手名、球場名、開始時刻、打順、成績数字は source にある表記をそのまま残す", prompt)
 
     def test_postgame_prompt_uses_game_specific_structure(self):
@@ -172,6 +174,7 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("【ハイライト】", prompt)
         self.assertIn("【選手成績】", prompt)
         self.assertIn("【試合展開】", prompt)
+        self.assertIn("【試合展開】は必ず「事実 → 解釈 → 感想」の順で流れを作る", prompt)
         self.assertIn("source にあるスコア 3-2 を必ず残してください。", prompt)
 
     def test_pregame_prompt_uses_game_specific_structure(self):
@@ -189,6 +192,7 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("【変更情報の要旨】", prompt)
         self.assertIn("【具体的な変更内容】", prompt)
         self.assertIn("【この変更が意味すること】", prompt)
+        self.assertIn("【この変更が意味すること】は必ず「事実 → 解釈 → 感想」の順で流れを作る", prompt)
         self.assertIn("ですます調、350〜650文字", prompt)
         self.assertIn("4月16日時点の情報であることが伝わるように書く", prompt)
 
@@ -207,6 +211,7 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("【ファームのハイライト】", prompt)
         self.assertIn("【二軍個別選手成績】", prompt)
         self.assertIn("【一軍への示唆】", prompt)
+        self.assertIn("【一軍への示唆】は必ず「事実 → 解釈 → 感想」の順で流れを作る", prompt)
         self.assertIn("source にあるスコア 4-1 を必ず残してください。", prompt)
         self.assertIn("一軍記事と混同しないよう、「二軍」「ファーム」の文脈を明確にする", prompt)
 
@@ -224,6 +229,7 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("【二軍試合概要】", prompt)
         self.assertIn("【二軍スタメン一覧】", prompt)
         self.assertIn("【注目選手】", prompt)
+        self.assertIn("【注目選手】は必ず「事実 → 解釈 → 感想」の順で流れを作る", prompt)
         self.assertIn("一軍記事のような書き方をしない。二軍戦の並びであることを明確に書く", prompt)
         self.assertIn("数字、打順、選手名、球場名は source にある表記をそのまま残す", prompt)
 

@@ -15,8 +15,8 @@ import json
 import os
 import smtplib
 import sys
-from dataclasses import asdict
-from datetime import datetime, timedelta, timezone
+from dataclasses import asdict, dataclass, field
+from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
 from email.utils import make_msgid
 from pathlib import Path
@@ -36,6 +36,21 @@ DEFAULT_GMAIL_APP_PASSWORD_SECRET = "yoshilover-gmail-app-password"
 DEFAULT_SMTP_HOST = "smtp.gmail.com"
 DEFAULT_SMTP_PORT = 465
 MAX_FINDINGS_PER_REPORT = 3
+DEFAULT_CLOUD_RUN_SERVICE = "yoshilover-fetcher"
+OPERATION_SUMMARY_LOOKBACK_HOURS = 48
+OPERATION_SUMMARY_WINDOW_HOURS = 24
+
+
+@dataclass
+class OperationsSummary:
+    drafts_created: int = 0
+    created_subtype_counts: dict[str, int] = field(default_factory=dict)
+    publish_count: int | None = None
+    skip_duplicate: int = 0
+    skip_filter: int = 0
+    error_count: int = 0
+    x_post_count: int = 0
+    fetch_error: str = ""
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -49,13 +64,32 @@ def _log_event(event: str, **payload: Any) -> None:
     print(json.dumps({"event": event, **payload}, ensure_ascii=False), flush=True)
 
 
+def _now_jst() -> datetime:
+    return datetime.now(JST)
+
+
+def _parse_iso_datetime(value: str) -> datetime | None:
+    if not value:
+        return None
+    normalized = value.strip()
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=JST)
+    return parsed.astimezone(JST)
+
+
 def _normalize_since_filter(value: str | None) -> str:
     return acceptance_fact_check._normalize_since_filter(value)
 
 
 def _target_date_label(since: str) -> str:
     normalized = _normalize_since_filter(since)
-    today = datetime.now(JST).date()
+    today = _now_jst().date()
     if normalized == "today":
         target = today
     elif normalized == "yesterday":
@@ -65,6 +99,11 @@ def _target_date_label(since: str) -> str:
     else:
         target = datetime.strptime(normalized, "%Y-%m-%d").date()
     return target.strftime("%m/%d")
+
+
+def _target_hour_label(now: datetime | None = None) -> str:
+    target = (now or _now_jst()).astimezone(JST).replace(minute=0, second=0, microsecond=0)
+    return target.strftime("%m/%d %H:00")
 
 
 def _split_reports(reports: list[acceptance_fact_check.PostReport]) -> dict[str, list[acceptance_fact_check.PostReport]]:
@@ -85,12 +124,43 @@ def _summary_counts(reports: list[acceptance_fact_check.PostReport]) -> dict[str
     }
 
 
-def build_email_subject(reports: list[acceptance_fact_check.PostReport], *, since: str = "yesterday") -> str:
+def _reports_in_last_hour(
+    reports: list[acceptance_fact_check.PostReport],
+    *,
+    now: datetime | None = None,
+) -> list[acceptance_fact_check.PostReport]:
+    current = (now or _now_jst()).astimezone(JST)
+    window_start = current - timedelta(hours=1)
+    recent_reports: list[acceptance_fact_check.PostReport] = []
+    for report in reports:
+        modified_at = _parse_iso_datetime(report.modified)
+        if modified_at is None:
+            continue
+        if window_start <= modified_at <= current:
+            recent_reports.append(report)
+    return recent_reports
+
+
+def _should_send_email(
+    reports: list[acceptance_fact_check.PostReport],
+    posts_in_last_hour: list[acceptance_fact_check.PostReport],
+) -> tuple[bool, str]:
+    if posts_in_last_hour:
+        return True, "hourly_window_has_posts"
+    if any(report.result == "red" for report in reports):
+        return True, "red_present"
+    return False, "no_change_no_red"
+
+
+def build_email_subject(
+    reports: list[acceptance_fact_check.PostReport],
+    *,
+    since: str = "yesterday",
+    now: datetime | None = None,
+) -> str:
     counts = _summary_counts(reports)
-    return (
-        f"【ヨシラバー】{_target_date_label(since)} 事実チェック結果"
-        f"（🔴{counts['red']}件 / 🟡{counts['yellow']}件 / ✅{counts['green']}件）"
-    )
+    del since
+    return f"ヨシラバー {_target_hour_label(now)} 🔴{counts['red']} 🟡{counts['yellow']} ✅{counts['green']}"
 
 
 def _report_label(report: acceptance_fact_check.PostReport) -> str:
@@ -166,6 +236,65 @@ def _next_actions_html(counts: dict[str, int]) -> str:
     return f'<ul style="padding-left:20px;margin:8px 0 0;">{items}</ul>'
 
 
+def _format_created_subtype_counts(counts: dict[str, int]) -> str:
+    if not counts:
+        return "なし"
+    ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    return ", ".join(f"{name}={count}" for name, count in ordered)
+
+
+def _publish_summary_text(summary: OperationsSummary) -> str:
+    if summary.publish_count is None:
+        return "0件（Phase C 未解放）"
+    return f"{summary.publish_count}件"
+
+
+def _operations_summary_text(summary: OperationsSummary) -> list[str]:
+    lines = [
+        "📊 直近24h運用サマリ",
+        "─────────────",
+    ]
+    if summary.fetch_error:
+        lines.append(f"集計取得失敗: {summary.fetch_error}")
+        return lines
+    lines.extend(
+        [
+            f"📥 作成: {summary.drafts_created}件（{_format_created_subtype_counts(summary.created_subtype_counts)}）",
+            f"📤 公開: {_publish_summary_text(summary)}",
+            f"🔄 スキップ: 重複={summary.skip_duplicate} / フィルタ={summary.skip_filter} / エラー={summary.error_count}",
+            f"🐦 Xポスト: {summary.x_post_count}件",
+        ]
+    )
+    return lines
+
+
+def _operations_summary_html(summary: OperationsSummary) -> str:
+    if summary.fetch_error:
+        body = (
+            '<div style="color:#b06000;font-weight:700;">'
+            f'集計取得失敗: {html.escape(summary.fetch_error)}'
+            "</div>"
+        )
+    else:
+        rows = [
+            f"📥 作成: {summary.drafts_created}件（{html.escape(_format_created_subtype_counts(summary.created_subtype_counts))}）",
+            f"📤 公開: {html.escape(_publish_summary_text(summary))}",
+            f"🔄 スキップ: 重複={summary.skip_duplicate} / フィルタ={summary.skip_filter} / エラー={summary.error_count}",
+            f"🐦 Xポスト: {summary.x_post_count}件",
+        ]
+        body = "".join(
+            f'<div style="margin:4px 0;font-size:14px;">{html.escape(row)}</div>'
+            for row in rows
+        )
+    return (
+        '<div style="border:1px solid #ddd;border-left:4px solid #1a73e8;'
+        'border-radius:8px;padding:12px 14px;margin:12px 0;background:#fff;">'
+        '<div style="font-size:16px;font-weight:700;margin-bottom:8px;">📊 直近24h運用サマリ</div>'
+        f"{body}"
+        "</div>"
+    )
+
+
 def _render_fix_summary_card(title: str, items: list[acceptance_auto_fix.AutoFixDecision], *, accent: str) -> str:
     if not items:
         return "<p style=\"margin:8px 0 0;\">該当なし</p>"
@@ -197,11 +326,15 @@ def build_email_html(
     *,
     since: str = "yesterday",
     fix_summary: acceptance_auto_fix.AutoFixSummary | None = None,
+    operations_summary: OperationsSummary | None = None,
+    now: datetime | None = None,
 ) -> str:
     counts = _summary_counts(reports)
     grouped = _split_reports(reports)
     if fix_summary is None:
         fix_summary = acceptance_auto_fix.analyze_reports(reports, fetch_post_state=False)
+    if operations_summary is None:
+        operations_summary = OperationsSummary()
     red_section = (
         "".join(_render_report_card(report, highlight="#d93025") for report in grouped["red"])
         if grouped["red"]
@@ -218,11 +351,12 @@ def build_email_html(
 <html lang="ja">
   <body style="margin:0;padding:16px;background:#f5f5f0;color:#222;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
     <div style="max-width:720px;margin:0 auto;background:#ffffff;border-radius:12px;padding:20px;">
-      <h1 style="font-size:22px;margin:0 0 12px;">ヨシラバー 事実チェック結果 {_target_date_label(since)}</h1>
+      <h1 style="font-size:22px;margin:0 0 12px;">{html.escape(build_email_subject(reports, since=since, now=now))}</h1>
       <p style="margin:0 0 16px;font-size:15px;">
         サマリ: <strong>🔴{counts['red']}件</strong> / <strong>🟡{counts['yellow']}件</strong> /
         <strong>✅{counts['green']}件</strong> / checked={counts['checked']}
       </p>
+      {_operations_summary_html(operations_summary)}
 
       <h2 style="font-size:18px;border-left:4px solid #1a73e8;padding-left:10px;">自動修正候補</h2>
       {_render_fix_summary_card("自動修正候補", fix_summary.autofix_candidates, accent="#1a73e8")}
@@ -255,14 +389,20 @@ def build_email_text(
     *,
     since: str = "yesterday",
     fix_summary: acceptance_auto_fix.AutoFixSummary | None = None,
+    operations_summary: OperationsSummary | None = None,
+    now: datetime | None = None,
 ) -> str:
     counts = _summary_counts(reports)
     grouped = _split_reports(reports)
     if fix_summary is None:
         fix_summary = acceptance_auto_fix.analyze_reports(reports, fetch_post_state=False)
+    if operations_summary is None:
+        operations_summary = OperationsSummary()
     lines = [
-        f"ヨシラバー 事実チェック結果 {_target_date_label(since)}",
+        build_email_subject(reports, since=since, now=now),
         f"サマリ: 🔴{counts['red']}件 / 🟡{counts['yellow']}件 / ✅{counts['green']}件 / checked={counts['checked']}",
+        "",
+        *_operations_summary_text(operations_summary),
         "",
         "自動修正候補",
     ]
@@ -327,6 +467,167 @@ def _project_id() -> str:
         or os.environ.get("GCLOUD_PROJECT", "").strip()
         or ""
     )
+
+
+def _logging_service_name() -> str:
+    return os.environ.get("K_SERVICE", "").strip() or DEFAULT_CLOUD_RUN_SERVICE
+
+
+def _coerce_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _extract_log_payload(entry: dict[str, Any]) -> dict[str, Any]:
+    json_payload = entry.get("jsonPayload")
+    if isinstance(json_payload, dict):
+        return json_payload
+    text_payload = entry.get("textPayload", "")
+    if not isinstance(text_payload, str) or not text_payload.strip():
+        return {}
+    try:
+        parsed = json.loads(text_payload)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _merge_counter_values(target: dict[str, int], values: Any) -> None:
+    if not isinstance(values, dict):
+        return
+    for key, raw_value in values.items():
+        target[str(key)] = target.get(str(key), 0) + _coerce_int(raw_value)
+
+
+def _sum_cumulative_metric(
+    series: list[tuple[datetime, int]],
+    *,
+    window_start: datetime,
+) -> int:
+    ordered = sorted(series, key=lambda item: item[0])
+    total = 0
+    previous_value: int | None = None
+    previous_date: date | None = None
+    for timestamp, current_value in ordered:
+        local_date = timestamp.astimezone(JST).date()
+        if previous_value is None or previous_date != local_date or current_value < previous_value:
+            delta = current_value
+        else:
+            delta = current_value - previous_value
+        if timestamp >= window_start:
+            total += max(delta, 0)
+        previous_value = current_value
+        previous_date = local_date
+    return total
+
+
+def _fetch_logging_entries(
+    filter_text: str,
+    *,
+    max_entries: int = 200,
+) -> list[dict[str, Any]]:
+    from google.auth import default as google_auth_default
+    from google.auth.transport.requests import AuthorizedSession
+
+    project_id = _project_id()
+    credentials, discovered_project = google_auth_default(
+        scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
+    project_id = project_id or discovered_project or ""
+    if not project_id:
+        raise RuntimeError("logging project id is not available")
+
+    session = AuthorizedSession(credentials)
+    url = "https://logging.googleapis.com/v2/entries:list"
+    entries: list[dict[str, Any]] = []
+    page_token = ""
+    while True:
+        request_payload: dict[str, Any] = {
+            "resourceNames": [f"projects/{project_id}"],
+            "filter": filter_text,
+            "orderBy": "timestamp desc",
+            "pageSize": min(100, max_entries - len(entries)),
+        }
+        if page_token:
+            request_payload["pageToken"] = page_token
+        response = session.post(url, json=request_payload, timeout=20)
+        if response.status_code >= 400:
+            raise RuntimeError(f"logging read failed: {response.status_code} {response.text[:200]}")
+        data = response.json()
+        page_entries = data.get("entries", [])
+        if isinstance(page_entries, list):
+            entries.extend(entry for entry in page_entries if isinstance(entry, dict))
+        if len(entries) >= max_entries:
+            return entries[:max_entries]
+        page_token = data.get("nextPageToken", "")
+        if not page_token:
+            return entries
+
+
+def _load_recent_operations_summary(now: datetime | None = None) -> OperationsSummary:
+    current = (now or _now_jst()).astimezone(JST)
+    summary_window_start = current - timedelta(hours=OPERATION_SUMMARY_WINDOW_HOURS)
+    lookup_window_start = current - timedelta(hours=OPERATION_SUMMARY_LOOKBACK_HOURS)
+    service_name = _logging_service_name()
+    filter_text = "\n".join(
+        [
+            'resource.type="cloud_run_revision"',
+            f'resource.labels.service_name="{service_name}"',
+            f'timestamp>="{lookup_window_start.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")}"',
+            "(",
+            '  jsonPayload.event="rss_fetcher_run_summary"',
+            '  OR jsonPayload.event="rss_fetcher_flow_summary"',
+            '  OR textPayload:"rss_fetcher_run_summary"',
+            '  OR textPayload:"rss_fetcher_flow_summary"',
+            ")",
+        ]
+    )
+    try:
+        entries = _fetch_logging_entries(filter_text)
+    except Exception as exc:
+        return OperationsSummary(fetch_error=f"{type(exc).__name__}: {exc}")
+
+    summary = OperationsSummary()
+    x_post_series: list[tuple[datetime, int]] = []
+    publish_count_found = False
+    for entry in entries:
+        payload = _extract_log_payload(entry)
+        event = payload.get("event")
+        timestamp = _parse_iso_datetime(str(entry.get("timestamp", "")))
+        if not event or timestamp is None:
+            continue
+
+        if event == "rss_fetcher_run_summary":
+            x_post_series.append((timestamp, _coerce_int(payload.get("x_post_count", 0))))
+            if timestamp < summary_window_start:
+                continue
+            summary.drafts_created += _coerce_int(payload.get("drafts_created", 0))
+            summary.skip_duplicate += _coerce_int(payload.get("skip_duplicate", 0))
+            summary.skip_filter += _coerce_int(payload.get("skip_filter", 0))
+            summary.error_count += _coerce_int(payload.get("error_count", 0))
+            for key in ("publish_count", "published_count"):
+                if key in payload:
+                    if summary.publish_count is None:
+                        summary.publish_count = 0
+                    summary.publish_count += _coerce_int(payload.get(key, 0))
+                    publish_count_found = True
+        elif event == "rss_fetcher_flow_summary":
+            if timestamp < summary_window_start:
+                continue
+            _merge_counter_values(summary.created_subtype_counts, payload.get("created_subtype_counts"))
+            for key in ("publish_count", "published_count"):
+                if key in payload:
+                    if summary.publish_count is None:
+                        summary.publish_count = 0
+                    summary.publish_count += _coerce_int(payload.get(key, 0))
+                    publish_count_found = True
+
+    if not publish_count_found:
+        summary.publish_count = None
+    summary.x_post_count = _sum_cumulative_metric(x_post_series, window_start=summary_window_start)
+    return summary
 
 
 def _fetch_secret_from_secret_manager(secret_name: str) -> str:
@@ -465,6 +766,7 @@ def run_notification(
     send: bool = True,
 ) -> dict[str, Any]:
     normalized_since = _normalize_since_filter(since)
+    current_time = _now_jst()
     reports = acceptance_fact_check.collect_reports(
         post_id=post_id,
         category=category,
@@ -473,10 +775,9 @@ def run_notification(
         since=normalized_since,
     )
     counts = _summary_counts(reports)
-    fix_summary = acceptance_auto_fix.analyze_reports(reports, fetch_post_state=True)
-    subject = build_email_subject(reports, since=normalized_since)
-    html_body = build_email_html(reports, since=normalized_since, fix_summary=fix_summary)
-    text_body = build_email_text(reports, since=normalized_since, fix_summary=fix_summary)
+    posts_in_last_hour = _reports_in_last_hour(reports, now=current_time)
+    should_send, reason = _should_send_email(reports, posts_in_last_hour)
+    subject = build_email_subject(reports, since=normalized_since, now=current_time)
     payload = {
         "since": normalized_since,
         "post_id": post_id,
@@ -488,15 +789,20 @@ def run_notification(
         "yellow": counts["yellow"],
         "green": counts["green"],
         "subject": subject,
+        "reason": reason,
+        "should_send": should_send,
+        "posts_in_last_hour_count": len(posts_in_last_hour),
         "sent": False,
         "delivery_mode": "none",
-        "text_body": text_body,
+        "html_body": "",
+        "text_body": "",
         "autofix_summary": {
-            "autofix_candidates": [asdict(item) for item in fix_summary.autofix_candidates],
-            "rejects": [asdict(item) for item in fix_summary.rejects],
-            "manual_reviews": [asdict(item) for item in fix_summary.manual_reviews],
-            "no_action": [asdict(item) for item in fix_summary.no_action],
+            "autofix_candidates": [],
+            "rejects": [],
+            "manual_reviews": [],
+            "no_action": [],
         },
+        "operations_summary": asdict(OperationsSummary()),
         "reports": [
             asdict(report)
             for report in reports
@@ -509,9 +815,51 @@ def run_notification(
         red=counts["red"],
         yellow=counts["yellow"],
         green=counts["green"],
+        reason=reason,
+        posts_in_last_hour_count=len(posts_in_last_hour),
         send=send,
     )
+    if not send or should_send:
+        fix_summary = acceptance_auto_fix.analyze_reports(reports, fetch_post_state=True)
+        operations_summary = _load_recent_operations_summary(current_time)
+        payload["autofix_summary"] = {
+            "autofix_candidates": [asdict(item) for item in fix_summary.autofix_candidates],
+            "rejects": [asdict(item) for item in fix_summary.rejects],
+            "manual_reviews": [asdict(item) for item in fix_summary.manual_reviews],
+            "no_action": [asdict(item) for item in fix_summary.no_action],
+        }
+        payload["operations_summary"] = asdict(operations_summary)
+        payload["html_body"] = build_email_html(
+            reports,
+            since=normalized_since,
+            fix_summary=fix_summary,
+            operations_summary=operations_summary,
+            now=current_time,
+        )
+        payload["text_body"] = build_email_text(
+            reports,
+            since=normalized_since,
+            fix_summary=fix_summary,
+            operations_summary=operations_summary,
+            now=current_time,
+        )
+
     if not send:
+        return payload
+
+    if not should_send:
+        payload["delivery_mode"] = "skipped"
+        _log_event(
+            "fact_check_email_skipped",
+            since=normalized_since,
+            checked_posts=counts["checked"],
+            red=counts["red"],
+            yellow=counts["yellow"],
+            green=counts["green"],
+            reason=reason,
+            posts_in_last_hour_count=len(posts_in_last_hour),
+            subject=subject,
+        )
         return payload
 
     to_email = os.environ.get("FACT_CHECK_EMAIL_TO", "").strip() or DEFAULT_FACT_CHECK_EMAIL
@@ -519,8 +867,8 @@ def run_notification(
     try:
         delivery = send_email(
             subject=subject,
-            html_body=html_body,
-            text_body=text_body,
+            html_body=payload["html_body"],
+            text_body=payload["text_body"],
             to_email=to_email,
             from_email=from_email,
         )
@@ -533,6 +881,8 @@ def run_notification(
             red=counts["red"],
             yellow=counts["yellow"],
             green=counts["green"],
+            reason=reason,
+            posts_in_last_hour_count=len(posts_in_last_hour),
             error_type=type(exc).__name__,
             error=str(exc),
             to_email=to_email,
@@ -549,6 +899,8 @@ def run_notification(
             red=counts["red"],
             yellow=counts["yellow"],
             green=counts["green"],
+            reason=reason,
+            posts_in_last_hour_count=len(posts_in_last_hour),
             to_email=to_email,
             subject=subject,
             message_id=delivery.get("message_id"),
@@ -563,6 +915,8 @@ def run_notification(
             red=counts["red"],
             yellow=counts["yellow"],
             green=counts["green"],
+            reason=reason,
+            posts_in_last_hour_count=len(posts_in_last_hour),
             to_email=to_email,
             subject=subject,
         )

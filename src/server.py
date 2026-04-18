@@ -208,7 +208,10 @@ def _run_fact_check_notify(since: str, limit: str, category: str = "", send: boo
         "yellow": payload["yellow"],
         "green": payload["green"],
         "subject": payload["subject"],
+        "reason": payload.get("reason", ""),
+        "posts_in_last_hour_count": payload.get("posts_in_last_hour_count", 0),
         "sent": payload["sent"],
+        "delivery_mode": payload.get("delivery_mode", "none"),
     }
     return 200, json.dumps(response, ensure_ascii=False)
 

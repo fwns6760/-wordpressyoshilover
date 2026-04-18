@@ -1,6 +1,6 @@
 # 役割分担と運用ルール
 
-## 4者の役割
+## 5者の役割
 
 ### よしひろさん（オーナー・最終判断者）
 - 受け入れ試験の合否判断（publishするか/差し戻すか）
@@ -21,11 +21,19 @@
 - 独断でenv変更しない
 - 詳細は `AGENTS.md` を参照
 
-### Claude Code（補助・ドキュメント・探索）
+### Claude Code（監査・ドキュメント・探索）
+- 監査役の主担当
 - ファイル作成・ドキュメント整備
 - コードの確認・探索
-- 軽作業（Codexのquota節約）
+- Codex依頼書の起票
 - **env変更・コードの本番deploy系は行わない**
+
+### Gemini CLI（監査待機・代行）
+- 通常時は待機
+- **Claude Code が停止・quota 枯渇・セッション断で止まったときだけ**監査役を代行
+- 代行時は `CLAUDE.md` を起点に同じルールで読む
+- 代行範囲は監査・探索・Codex依頼書ドラフト・handoff docs 更新まで
+- **実装・deploy・env変更・git push は行わない**
 
 ## 体力減らしモード原則
 
@@ -85,9 +93,24 @@ Claude Opus
     ↓ 受け入れ判断（合格 or 差し戻し）
 ```
 
+## Claude Code 停止時の代行フロー
+
+```
+Claude Code 停止
+    ↓
+Gemini CLI 起動
+    ↓ `CLAUDE.md` を最初に読む
+OPEN.md / 最新 session_log / 07_current_position / 01_roles_and_rules / 06_failure_patterns を順に確認
+    ↓
+監査・事実確認・Codex依頼書ドラフトだけ実施
+    ↓
+Claude Code 復帰後に監査役を戻す
+```
+
 ## 重要な運用習慣
 
 - **smoke testは毎deploy後**: `bash scripts/cloud_run_smoke_test.sh`
 - **テスト354本**: 全変更後に `pytest` でグリーン確認（Codex担当）
 - **git pushはCodex担当**: Claude Codeは基本的にpushしない
+- **Gemini CLI も push しない**: 監査代行でも git 反映は Codex担当
 - **ログはCloud Logging**: `docs/operation_logs.md` のクエリ集を使う

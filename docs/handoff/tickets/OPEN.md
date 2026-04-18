@@ -109,24 +109,6 @@ deployはよしひろさん承認後。
 
 ---
 
-## T-013 🟠 T-012 修正を Cloud Run に反映（deploy 未実施）
-
-**発見日**: 2026-04-18
-**発見者**: Claude Code（監査役）
-**影響**: Cloud Run 上の `yoshilover-fetcher` は revision `00131-mpn` (`ba97edc`) のまま。T-012 の parser 改善 (`d6e19eb`) は反映されておらず、次の Scheduler 発火時も歴史参照 false positive が残る
-
-**未反映のcommit**:
-- `d6e19eb` fix: ignore historical game refs in fact check opponent detection（T-012）
-
-**必要な作業**:
-- Cloud Run `yoshilover-fetcher` に最新 master を deploy
-- env変更不要（`RUN_DRAFT_ONLY=1` / `AUTO_TWEET_ENABLED=0` / `PUBLISH_REQUIRE_IMAGE=1` 維持）
-- smoke test: revision 進捗確認、Scheduler 手動 trigger、`draft_only=true` と `error_count=0` を確認
-
-**Codex向け依頼書**: `docs/handoff/codex_requests/2026-04-18_08.md`
-
----
-
 ## チケット運用ルール
 
 - 新規発見: このファイルに追記、IDは連番（T-007, T-008...）

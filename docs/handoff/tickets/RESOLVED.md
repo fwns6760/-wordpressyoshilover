@@ -16,6 +16,25 @@
 
 ---
 
+## T-013 🟠 T-012 修正を Cloud Run に反映
+
+**発見日**: 2026-04-18
+**解決日**: 2026-04-18（第8便 Codex 実装）
+**解決者**: Codex（deploy 実行）/ Claude Code（依頼ドラフト）/ よしひろさん（承認）
+**対応内容**:
+- Cloud Run `yoshilover-fetcher` に master HEAD (`d6e19eb`) を source deploy
+- new revision: `yoshilover-fetcher-00132-lgv`
+- image digest: `sha256:f922ab5b43de664e84d1ca25d5acc8bd905a1aa12c1ba5f24b020c315ff72738`
+- env 変更なし（`RUN_DRAFT_ONLY=1` / `AUTO_TWEET_ENABLED=0` / `PUBLISH_REQUIRE_IMAGE=1` 維持）
+- smoke test 通過
+- scheduler 手動 trigger 成功、new revision `/run`: `draft_only=true`, `error_count=0`
+- `severity>=ERROR` on new revision: 0 件
+
+**関連commit**: `8db4fb4`
+**関連レポート**: `docs/handoff/codex_responses/2026-04-18_08.md`
+
+---
+
 ## T-012 🟡 acceptance_fact_check が歴史参照の「○日○○戦」を opponent と誤認する（false positive）
 
 **発見日**: 2026-04-18

@@ -338,3 +338,19 @@ T-007 の根本修正 → 9件 post_id の再判定 → T-002 の3分類（A/B/C
   - 第4便 Step 1 と同じ手順（`git archive HEAD` を tmp に展開 → source deploy）
   - env 変更なし、smoke test + scheduler 手動 trigger で確認
 - 最終 OPEN: T-001 / T-004 / T-005 / T-006 / T-010 / T-013
+
+### 追記: T-013 クローズ（Cloud Run deploy 完了）
+
+- 第8便 Codex 報告（`codex_responses/2026-04-18_08.md`）で deploy 完了
+  - new revision: `yoshilover-fetcher-00132-lgv`
+  - image digest: `sha256:f922ab5b43de664e84d1ca25d5acc8bd905a1aa12c1ba5f24b020c315ff72738`
+  - smoke test + scheduler 手動 trigger 成功
+  - `/run`: `draft_only=true`, `error_count=0`、ERROR 0 件
+  - commit `8db4fb4`
+- T-013 → RESOLVED へ移動
+- 最終 OPEN: T-001 / T-004 / T-005 / T-006 / T-010
+  - すべて待ち or 低優先度放置案件。Codex に即投げられるものはなし
+  - T-001: Xserver 接続情報待ち
+  - T-004 / T-006: よしひろさん側で Gmail 朝メール確認
+  - T-005 / T-010: 低優先度放置
+

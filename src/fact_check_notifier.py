@@ -18,6 +18,7 @@ import sys
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
+from email.utils import make_msgid
 from pathlib import Path
 from typing import Any
 
@@ -381,6 +382,33 @@ def _smtp_config() -> tuple[str, int]:
     return host, port
 
 
+def _decode_smtp_value(value: Any) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value or "")
+
+
+def _serialize_refused_recipients(refused: Any) -> dict[str, list[Any]]:
+    if not isinstance(refused, dict):
+        return {}
+    serialized: dict[str, list[Any]] = {}
+    for recipient, response in refused.items():
+        if isinstance(response, tuple) and len(response) >= 2:
+            code, message = response[0], response[1]
+        else:
+            code, message = 0, response
+        serialized[str(recipient)] = [int(code), _decode_smtp_value(message)]
+    return serialized
+
+
+def _serialize_smtp_response(code: Any, message: Any) -> list[Any]:
+    try:
+        numeric_code = int(code)
+    except Exception:
+        numeric_code = 0
+    return [numeric_code, _decode_smtp_value(message)]
+
+
 def send_email(
     *,
     subject: str,
@@ -402,18 +430,29 @@ def send_email(
         print(text_body, flush=True)
         return preview
 
+    message_id = make_msgid(domain="yoshilover.com")
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = from_email
     msg["To"] = to_email
+    msg["Message-ID"] = message_id
     msg.set_content(text_body)
     msg.add_alternative(html_body, subtype="html")
 
     host, port = _smtp_config()
     with smtplib.SMTP_SSL(host, port, timeout=20) as smtp:
         smtp.login(from_email, password)
-        smtp.send_message(msg)
-    return {"mode": "smtp", "subject": subject, "to_email": to_email, "from_email": from_email}
+        refused = smtp.send_message(msg)
+        smtp_response = _serialize_smtp_response(*smtp.noop())
+    return {
+        "mode": "smtp",
+        "subject": subject,
+        "to_email": to_email,
+        "from_email": from_email,
+        "message_id": message_id,
+        "refused_recipients": _serialize_refused_recipients(refused),
+        "smtp_response": smtp_response,
+    }
 
 
 def run_notification(
@@ -512,6 +551,9 @@ def run_notification(
             green=counts["green"],
             to_email=to_email,
             subject=subject,
+            message_id=delivery.get("message_id"),
+            refused_recipients=delivery.get("refused_recipients", {}),
+            smtp_response=delivery.get("smtp_response"),
         )
     else:
         _log_event(

@@ -120,19 +120,70 @@ class FactCheckNotifierTests(unittest.TestCase):
 
         self.assertEqual(secret, "abcd")
 
+    @patch.object(fact_check_notifier, "_load_gmail_app_password", return_value="abcd efgh ijkl mnop")
+    @patch.object(fact_check_notifier, "make_msgid", return_value="<test-message-id@yoshilover.com>")
+    @patch.object(fact_check_notifier.smtplib, "SMTP_SSL")
+    def test_send_email_returns_message_id_and_refused_recipients(
+        self,
+        mock_smtp_ssl,
+        _mock_make_msgid,
+        _mock_load_password,
+    ):
+        smtp = MagicMock()
+        smtp.send_message.return_value = {}
+        smtp.noop.return_value = (250, b"2.0.0 OK")
+        mock_smtp_ssl.return_value.__enter__.return_value = smtp
+
+        delivery = fact_check_notifier.send_email(
+            subject="テスト件名",
+            html_body="<p>html</p>",
+            text_body="text",
+            to_email="fwns6760@gmail.com",
+            from_email="fwns6760@gmail.com",
+        )
+
+        self.assertEqual(delivery["mode"], "smtp")
+        self.assertEqual(delivery["message_id"], "<test-message-id@yoshilover.com>")
+        self.assertEqual(delivery["refused_recipients"], {})
+        self.assertEqual(delivery["smtp_response"], [250, "2.0.0 OK"])
+        smtp.login.assert_called_once_with("fwns6760@gmail.com", "abcd efgh ijkl mnop")
+        smtp.send_message.assert_called_once()
+        smtp.noop.assert_called_once()
+
     @patch.object(fact_check_notifier.acceptance_fact_check, "collect_reports")
     @patch.object(fact_check_notifier.acceptance_auto_fix, "analyze_reports")
     @patch.object(fact_check_notifier, "send_email")
-    def test_run_notification_sends_and_returns_summary(self, mock_send_email, mock_analyze_reports, mock_collect_reports):
+    @patch.object(fact_check_notifier, "_log_event")
+    def test_run_notification_sends_and_returns_summary(
+        self,
+        mock_log_event,
+        mock_send_email,
+        mock_analyze_reports,
+        mock_collect_reports,
+    ):
         mock_collect_reports.return_value = [self._report(62500, "green")]
         mock_analyze_reports.return_value = acceptance_auto_fix.AutoFixSummary(1, [], [], [], [])
-        mock_send_email.return_value = {"mode": "smtp"}
+        mock_send_email.return_value = {
+            "mode": "smtp",
+            "message_id": "<fact-check-1@yoshilover.com>",
+            "refused_recipients": {},
+            "smtp_response": [250, "2.0.0 OK"],
+        }
         with patch.dict("os.environ", {"FACT_CHECK_EMAIL_TO": "fwns6760@gmail.com", "FACT_CHECK_EMAIL_FROM": "fwns6760@gmail.com"}, clear=False):
             payload = fact_check_notifier.run_notification(since="yesterday", send=True)
 
         self.assertTrue(payload["sent"])
         self.assertEqual(payload["green"], 1)
         mock_send_email.assert_called_once()
+        sent_calls = [
+            call for call in mock_log_event.call_args_list
+            if call.args and call.args[0] == "fact_check_email_sent"
+        ]
+        self.assertEqual(len(sent_calls), 1)
+        sent_payload = sent_calls[0].kwargs
+        self.assertEqual(sent_payload["message_id"], "<fact-check-1@yoshilover.com>")
+        self.assertEqual(sent_payload["refused_recipients"], {})
+        self.assertEqual(sent_payload["smtp_response"], [250, "2.0.0 OK"])
 
     @patch.object(fact_check_notifier.acceptance_fact_check, "collect_reports")
     @patch.object(fact_check_notifier.acceptance_auto_fix, "analyze_reports")

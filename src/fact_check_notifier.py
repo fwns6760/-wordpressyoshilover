@@ -26,6 +26,7 @@ if str(Path(__file__).parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).parent))
 
 import acceptance_fact_check
+import acceptance_auto_fix
 
 JST = timezone(timedelta(hours=9))
 TRUE_VALUES = {"1", "true", "yes", "on"}
@@ -164,9 +165,42 @@ def _next_actions_html(counts: dict[str, int]) -> str:
     return f'<ul style="padding-left:20px;margin:8px 0 0;">{items}</ul>'
 
 
-def build_email_html(reports: list[acceptance_fact_check.PostReport], *, since: str = "yesterday") -> str:
+def _render_fix_summary_card(title: str, items: list[acceptance_auto_fix.AutoFixDecision], *, accent: str) -> str:
+    if not items:
+        return "<p style=\"margin:8px 0 0;\">該当なし</p>"
+    rows: list[str] = []
+    for item in items:
+        causes = ", ".join(item.causes[:3]) if item.causes else "none"
+        notes = f"<div style=\"margin-top:4px;color:#666;\">{html.escape(' / '.join(item.notes[:2]))}</div>" if item.notes else ""
+        rows.append(
+            (
+                '<li style="margin-bottom:10px;">'
+                f'<strong>post_id={item.post_id}</strong> '
+                f'<a href="{html.escape(item.edit_url)}">{html.escape(item.title)}</a>'
+                f' <span style="color:#666;">({html.escape(item.primary_category)}/{html.escape(item.article_subtype)})</span>'
+                f'<div style="margin-top:4px;">cause: {html.escape(causes)}</div>'
+                f"{notes}"
+                "</li>"
+            )
+        )
+    return (
+        f'<div style="border:1px solid #ddd;border-left:4px solid {accent};border-radius:8px;'
+        'padding:12px 14px;margin:12px 0;background:#fff;">'
+        f'<ul style="padding-left:20px;margin:0;">{"".join(rows)}</ul>'
+        "</div>"
+    )
+
+
+def build_email_html(
+    reports: list[acceptance_fact_check.PostReport],
+    *,
+    since: str = "yesterday",
+    fix_summary: acceptance_auto_fix.AutoFixSummary | None = None,
+) -> str:
     counts = _summary_counts(reports)
     grouped = _split_reports(reports)
+    if fix_summary is None:
+        fix_summary = acceptance_auto_fix.analyze_reports(reports, fetch_post_state=False)
     red_section = (
         "".join(_render_report_card(report, highlight="#d93025") for report in grouped["red"])
         if grouped["red"]
@@ -189,6 +223,15 @@ def build_email_html(reports: list[acceptance_fact_check.PostReport], *, since: 
         <strong>✅{counts['green']}件</strong> / checked={counts['checked']}
       </p>
 
+      <h2 style="font-size:18px;border-left:4px solid #1a73e8;padding-left:10px;">自動修正候補</h2>
+      {_render_fix_summary_card("自動修正候補", fix_summary.autofix_candidates, accent="#1a73e8")}
+
+      <h2 style="font-size:18px;border-left:4px solid #d93025;padding-left:10px;">差し戻し推奨</h2>
+      {_render_fix_summary_card("差し戻し推奨", fix_summary.rejects, accent="#d93025")}
+
+      <h2 style="font-size:18px;border-left:4px solid #f9ab00;padding-left:10px;">手動確認必要</h2>
+      {_render_fix_summary_card("手動確認必要", fix_summary.manual_reviews, accent="#f9ab00")}
+
       <h2 style="font-size:18px;border-left:4px solid #d93025;padding-left:10px;">🔴 要対応</h2>
       {red_section}
 
@@ -206,15 +249,48 @@ def build_email_html(reports: list[acceptance_fact_check.PostReport], *, since: 
 """
 
 
-def build_email_text(reports: list[acceptance_fact_check.PostReport], *, since: str = "yesterday") -> str:
+def build_email_text(
+    reports: list[acceptance_fact_check.PostReport],
+    *,
+    since: str = "yesterday",
+    fix_summary: acceptance_auto_fix.AutoFixSummary | None = None,
+) -> str:
     counts = _summary_counts(reports)
     grouped = _split_reports(reports)
+    if fix_summary is None:
+        fix_summary = acceptance_auto_fix.analyze_reports(reports, fetch_post_state=False)
     lines = [
         f"ヨシラバー 事実チェック結果 {_target_date_label(since)}",
         f"サマリ: 🔴{counts['red']}件 / 🟡{counts['yellow']}件 / ✅{counts['green']}件 / checked={counts['checked']}",
         "",
-        "🔴 要対応",
+        "自動修正候補",
     ]
+    if not fix_summary.autofix_candidates:
+        lines.append("該当なし")
+    for item in fix_summary.autofix_candidates:
+        lines.append(f"- post_id={item.post_id} {item.title}")
+        lines.append(f"  {item.edit_url}")
+        if item.causes:
+            lines.append(f"  cause: {', '.join(item.causes[:3])}")
+    lines.extend(["", "差し戻し推奨"])
+    if not fix_summary.rejects:
+        lines.append("該当なし")
+    for item in fix_summary.rejects:
+        lines.append(f"- post_id={item.post_id} {item.title}")
+        lines.append(f"  {item.edit_url}")
+        if item.causes:
+            lines.append(f"  cause: {', '.join(item.causes[:3])}")
+        if item.notes:
+            lines.append(f"  notes: {' / '.join(item.notes[:2])}")
+    lines.extend(["", "手動確認必要"])
+    if not fix_summary.manual_reviews:
+        lines.append("該当なし")
+    for item in fix_summary.manual_reviews:
+        lines.append(f"- post_id={item.post_id} {item.title}")
+        lines.append(f"  {item.edit_url}")
+        if item.causes:
+            lines.append(f"  cause: {', '.join(item.causes[:3])}")
+    lines.extend(["", "🔴 要対応"])
     if not grouped["red"]:
         lines.append("重大な事実誤りは検出されませんでした。")
     for report in grouped["red"]:
@@ -358,9 +434,10 @@ def run_notification(
         since=normalized_since,
     )
     counts = _summary_counts(reports)
+    fix_summary = acceptance_auto_fix.analyze_reports(reports, fetch_post_state=True)
     subject = build_email_subject(reports, since=normalized_since)
-    html_body = build_email_html(reports, since=normalized_since)
-    text_body = build_email_text(reports, since=normalized_since)
+    html_body = build_email_html(reports, since=normalized_since, fix_summary=fix_summary)
+    text_body = build_email_text(reports, since=normalized_since, fix_summary=fix_summary)
     payload = {
         "since": normalized_since,
         "post_id": post_id,
@@ -375,6 +452,12 @@ def run_notification(
         "sent": False,
         "delivery_mode": "none",
         "text_body": text_body,
+        "autofix_summary": {
+            "autofix_candidates": [asdict(item) for item in fix_summary.autofix_candidates],
+            "rejects": [asdict(item) for item in fix_summary.rejects],
+            "manual_reviews": [asdict(item) for item in fix_summary.manual_reviews],
+            "no_action": [asdict(item) for item in fix_summary.no_action],
+        },
         "reports": [
             asdict(report)
             for report in reports

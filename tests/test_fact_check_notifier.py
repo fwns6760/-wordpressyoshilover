@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from src import fact_check_notifier
+from src import acceptance_auto_fix
 from src.acceptance_fact_check import Finding, PostReport
 
 
@@ -56,16 +57,33 @@ class FactCheckNotifierTests(unittest.TestCase):
             self._report(62484, "green", title="巨人ヤクルト戦 神宮18:00試合開始"),
         ]
 
-        html = fact_check_notifier.build_email_html(reports, since="yesterday")
+        fix_summary = acceptance_auto_fix.AutoFixSummary(
+            checked_posts=2,
+            autofix_candidates=[],
+            rejects=[],
+            manual_reviews=[],
+            no_action=[],
+        )
+        html = fact_check_notifier.build_email_html(reports, since="yesterday", fix_summary=fix_summary)
 
         self.assertIn("🔴 要対応", html)
         self.assertIn("✅ 公開候補", html)
+        self.assertIn("自動修正候補", html)
+        self.assertIn("差し戻し推奨", html)
+        self.assertIn("手動確認必要", html)
         self.assertIn("post_id=62483", html)
         self.assertIn("WPで開く", html)
         self.assertIn("https://yoshilover.com/wp-admin/post.php?post=62483&amp;action=edit", html)
 
     def test_build_email_html_shows_happy_path_when_no_red(self):
-        html = fact_check_notifier.build_email_html([self._report(62490, "green")], since="yesterday")
+        fix_summary = acceptance_auto_fix.AutoFixSummary(
+            checked_posts=1,
+            autofix_candidates=[],
+            rejects=[],
+            manual_reviews=[],
+            no_action=[],
+        )
+        html = fact_check_notifier.build_email_html([self._report(62490, "green")], since="yesterday", fix_summary=fix_summary)
 
         self.assertIn("重大な事実誤りは検出されませんでした", html)
 
@@ -103,9 +121,11 @@ class FactCheckNotifierTests(unittest.TestCase):
         self.assertEqual(secret, "abcd")
 
     @patch.object(fact_check_notifier.acceptance_fact_check, "collect_reports")
+    @patch.object(fact_check_notifier.acceptance_auto_fix, "analyze_reports")
     @patch.object(fact_check_notifier, "send_email")
-    def test_run_notification_sends_and_returns_summary(self, mock_send_email, mock_collect_reports):
+    def test_run_notification_sends_and_returns_summary(self, mock_send_email, mock_analyze_reports, mock_collect_reports):
         mock_collect_reports.return_value = [self._report(62500, "green")]
+        mock_analyze_reports.return_value = acceptance_auto_fix.AutoFixSummary(1, [], [], [], [])
         mock_send_email.return_value = {"mode": "smtp"}
         with patch.dict("os.environ", {"FACT_CHECK_EMAIL_TO": "fwns6760@gmail.com", "FACT_CHECK_EMAIL_FROM": "fwns6760@gmail.com"}, clear=False):
             payload = fact_check_notifier.run_notification(since="yesterday", send=True)
@@ -115,9 +135,11 @@ class FactCheckNotifierTests(unittest.TestCase):
         mock_send_email.assert_called_once()
 
     @patch.object(fact_check_notifier.acceptance_fact_check, "collect_reports")
+    @patch.object(fact_check_notifier.acceptance_auto_fix, "analyze_reports")
     @patch.object(fact_check_notifier, "_fetch_secret_from_secret_manager", side_effect=RuntimeError("missing secret"))
-    def test_send_email_falls_back_to_demo_mode_when_password_missing(self, _mock_secret, mock_collect_reports):
+    def test_send_email_falls_back_to_demo_mode_when_password_missing(self, _mock_secret, mock_analyze_reports, mock_collect_reports):
         mock_collect_reports.return_value = [self._report(62502, "red")]
+        mock_analyze_reports.return_value = acceptance_auto_fix.AutoFixSummary(1, [], [], [], [])
         with patch.dict("os.environ", {"GMAIL_APP_PASSWORD": "", "FACT_CHECK_EMAIL_TO": "fwns6760@gmail.com", "FACT_CHECK_EMAIL_FROM": "fwns6760@gmail.com"}, clear=False):
             payload = fact_check_notifier.run_notification(since="yesterday", send=True)
 
@@ -125,9 +147,11 @@ class FactCheckNotifierTests(unittest.TestCase):
         self.assertEqual(payload["delivery_mode"], "demo")
 
     @patch.object(fact_check_notifier.acceptance_fact_check, "collect_reports")
+    @patch.object(fact_check_notifier.acceptance_auto_fix, "analyze_reports")
     @patch.object(fact_check_notifier, "send_email", side_effect=RuntimeError("smtp auth failed"))
-    def test_run_notification_raises_when_send_fails(self, _mock_send_email, mock_collect_reports):
+    def test_run_notification_raises_when_send_fails(self, _mock_send_email, mock_analyze_reports, mock_collect_reports):
         mock_collect_reports.return_value = [self._report(62501, "yellow")]
+        mock_analyze_reports.return_value = acceptance_auto_fix.AutoFixSummary(1, [], [], [], [])
         with patch.dict("os.environ", {"FACT_CHECK_EMAIL_TO": "fwns6760@gmail.com", "FACT_CHECK_EMAIL_FROM": "fwns6760@gmail.com"}, clear=False):
             with self.assertRaisesRegex(RuntimeError, "smtp auth failed"):
                 fact_check_notifier.run_notification(since="yesterday", send=True)

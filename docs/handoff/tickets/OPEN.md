@@ -169,16 +169,17 @@ T-016 の第14便で SMTP 経路が健全と判明してる前提で本便に入
 - 主因: min_chars 低い (160/220) + source-only で差別化材料禁止
 - 推奨方針: 過去記事への内部リンク自動挿入（「ヨシラバーだから書ける」軸）
 
-**第27便（実装便、code + test）**: `docs/handoff/codex_requests/2026-04-18_27.md`
-- `build_news_block` 後段に `【関連記事】` セクション挿入
-- 選定優先度: 選手名一致 → 同 category+subtype → 同 category（30 日窓、最大 2 件）
-- 自記事除外、候補 0 件時はセクション省略
-- deploy は次便に分離
+**実装**: 第27便 `9ae1169`（src/rss_fetcher.py + tests、389 passed）
+**deploy**: 第28便 `ba81438` → revision `yoshilover-fetcher-00138-mqn`、traffic 100%
+
+**第28便 smoke 結果**:
+- 手動 trigger 200、drafts_created=2 / publish_count=0 / error_count=0
+- draft 62600 に `<div class="yoshilover-related-posts">` と `【関連記事】` を確認
+- draft 62598 は候補 0 件で省略（期待通り）
 
 **次アクション**:
-1. 第27便 で実装 + unit test
-2. 次便で deploy + 実公開記事で関連記事表示を目視確認
-3. 確認後、T-021 → RESOLVED
+1. 自然発火で publish が出たら、実公開記事で関連記事セクションを目視確認（Claude Code が WP REST で確認）
+2. 異常なしなら T-021 → RESOLVED
 
 ---
 

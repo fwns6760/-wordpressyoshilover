@@ -16,6 +16,25 @@
 
 ---
 
+## T-015 🟠 T-010 (a) 修正を Cloud Run に反映
+
+**発見日**: 2026-04-18
+**解決日**: 2026-04-18（第11便 Codex 実装）
+**解決者**: Codex（deploy 実行）/ Claude Code（依頼ドラフト）/ よしひろさん（承認）
+**対応内容**:
+- Cloud Run `yoshilover-fetcher` に master HEAD (`a08d875`) を source deploy（`git archive` 経由）
+- new revision: `yoshilover-fetcher-00133-gvf`
+- image digest: `sha256:0915cc1bfbef588ba62c638035cfecd128ddb4c971492418e1e09632480af71d`
+- env 変更なし（`RUN_DRAFT_ONLY=1` / `AUTO_TWEET_ENABLED=0` / `PUBLISH_REQUIRE_IMAGE=1` 維持）
+- smoke test 通過
+- scheduler `giants-weekend-pre` 手動 trigger 成功、new revision `/run`: `draft_only=true`, `error_count=0`
+- `severity>=ERROR` on new revision: 0 件
+
+**関連commit**: `396f238`
+**関連レポート**: `docs/handoff/codex_responses/2026-04-18_11.md`
+
+---
+
 ## T-013 🟠 T-012 修正を Cloud Run に反映
 
 **発見日**: 2026-04-18

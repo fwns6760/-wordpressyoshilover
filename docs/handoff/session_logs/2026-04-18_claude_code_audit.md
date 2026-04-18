@@ -405,3 +405,15 @@ T-007 の根本修正 → 9件 post_id の再判定 → T-002 の3分類（A/B/C
 - 第11便依頼書 `docs/handoff/codex_requests/2026-04-18_11.md` 作成（第8便と同手順）
 - 最終 OPEN: T-001 / T-004 / T-005 / T-006 / T-010（🟡 A=5）/ T-014（2件）/ T-015（🟠 deploy）
 
+
+### 追記: T-015 クローズ（Cloud Run deploy 完了）
+
+- 第11便 Codex 報告（`codex_responses/2026-04-18_11.md`）で deploy 完了
+  - new revision: `yoshilover-fetcher-00133-gvf`
+  - image digest: `sha256:0915cc1bfbef588ba62c638035cfecd128ddb4c971492418e1e09632480af71d`
+  - smoke test + scheduler 手動 trigger 成功
+  - `/run`: `draft_only=true`, `error_count=0`、ERROR 0 件
+  - commit `396f238`
+- T-015 → RESOLVED へ移動
+- 最終 OPEN: T-001 / T-004 / T-005 / T-006 / T-010（🟡 A=5）/ T-014（🟡 2件）
+

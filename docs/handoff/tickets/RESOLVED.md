@@ -16,6 +16,40 @@
 
 ---
 
+## T-010 🟡 旧記事の source_reference_missing（全クラス対応完了）
+
+**発見日**: 2026-04-18（T-007 再判定で分離）
+**解決日**: 2026-04-18（第10便 B+C 解消 + 第13便 A backfill）
+**解決者**: Codex（第10便: extractor拡張 / 第13便: 記事 backfill）/ Claude Code（依頼ドラフト）/ よしひろさん（承認）
+
+**経緯**:
+- 朝: 2件として起票（61770 / 61598）
+- 昼: publish 全量監査で 19 件に拡大（🟠 昇格）
+- 夕: 第10便 `a08d875` で **B+C=14件 全解消**（`extract_source_links()` に P1-P4 4パターン追加）
+- 夜: 第13便 で **A=5件 全 backfill**（nikkansports / baseballking / sanspo から source URL 特定 → WP 記事末尾に `出典:` ブロック追記）
+
+**第13便 backfill 実績**:
+| post_id | source_url | 再監査結果 |
+|---|---|---|
+| 61754 | nikkansports.com/.../202604120001706.html | yellow（別軸 subject → T-014） |
+| 61596 | baseballking.jp/ns/692717/ | green |
+| 61598 | baseballking.jp/ns/692712/ | green |
+| 61572 | nikkansports.com/.../202604120001188_m.html | green |
+| 61600 | baseballking.jp/ns/692702/ | green |
+
+**結論**:
+- `source_reference_missing` は publish 全量で 0 件
+- publish 全量 red 0 維持、yellow は `subject:needs_manual_review` 4件のみ（T-014 に集約）
+- regression なし（62527 / 61981 green 維持）
+
+**関連commit**: `a08d875`（第10便 extractor） / 第13便は WP 記事更新のみ（repo diff なし）
+**関連レポート**:
+- `docs/handoff/codex_responses/2026-04-18_09.md`（調査）
+- `docs/handoff/codex_responses/2026-04-18_10.md`（B+C 実装）
+- `docs/handoff/codex_responses/2026-04-18_13.md`（A backfill）
+
+---
+
 ## T-015 🟠 T-010 (a) 修正を Cloud Run に反映
 
 **発見日**: 2026-04-18

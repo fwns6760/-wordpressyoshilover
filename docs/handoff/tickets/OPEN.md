@@ -84,53 +84,38 @@ deployはよしひろさん承認後。
 
 ---
 
-## T-010 🟡 旧記事 5件の source_reference_missing（Aクラス残件）
-
-**発見日**: 2026-04-18（T-007 再判定で分離）
-**規模拡大・縮小の経緯**:
-- 2026-04-18 朝: 当初 2 件（61770 / 61598）として起票
-- 2026-04-18 昼: publish 全量監査で 19 件に拡大（🟠 昇格）
-- 2026-04-18 夕: 第10便 `a08d875` で **B+C=14件 全解消**、**A=5件のみ残** → 🟡 に戻す
-
-**現在の対象（A=5件）**:
-- 61754（lineup） — 本文 HTML 内に source URL 自体がない
-- 61596（postgame）
-- 61598（postgame）
-- 61572（lineup）
-- 61600（postgame）
-
-**特徴**: 本文 HTML 内に source URL 文字列が 0件。`extract_source_links()` 改修では回収不能な旧記事形式。
-
-**対応方針候補**（残 Aクラス用）:
-- (b) 記事側補填: 手動もしくはバッチで source URL を backfill
-  - 各記事の evidence URL を調査して WP 側に追記
-  - 5件なら手作業でも耐えられる規模
-- (c) 旧記事除外ルール: post date / modified date 閾値で source_reference 検査対象外化
-  - yellow を隠すだけで根治しない
-  - 5件だけなら無理に入れる必要性は薄い
-
-**推奨**: 5件なら (b) 手動 backfill が素直。ただしよしひろさん判断。
-
-**関連**:
-- 第9便調査: `docs/handoff/codex_responses/2026-04-18_09.md`
-- 第10便実装: `docs/handoff/codex_responses/2026-04-18_10.md`
-- 関連commit: `a08d875`
-
----
-
-## T-014 🟡 subject: needs_manual_review（2件、T-010 から分離）
+## T-014 🟡 subject: needs_manual_review（publish 全量残件）
 
 **発見日**: 2026-04-18（publish 全量 fact_check）
-**対象追加日**: 2026-04-18 夕（第10便 `a08d875` 後の再監査で 61779 が同パターンで露出）
+**対象拡張日**: 2026-04-18 夕（第13便 T-010 backfill 後の再監査で 61754/61897/61903 合流）
 **発見者**: Claude Code（監査役）/ Codex 再監査
 **影響**: 単発の yellow。受け入れ品質への影響は限定的
 
-**対象**:
+**対象（publish 側 4件）**:
 
-| post_id | status | title |
-|---|---|---|
-| 62003 | publish | 阿部監督「本当に自己犠牲ができる素晴らしい打者」 ベンチの狙いはどこか |
-| 61779 | publish | 6試合連続で3得点以下…貧打にあえぐ巨人打線　大矢明彦氏「我慢の時期かもしれない」 |
+| post_id | status | title | 分類（第12便準拠） |
+|---|---|---|---|
+| 61754 | publish | 【巨人】中山礼都、完全投球破る中前打　阿部監督サバイバル強調も「ダメだったら出られないだけ」 | 抽出ミス（候補）|
+| 61779 | publish | 6試合連続で3得点以下…貧打にあえぐ巨人打線　大矢明彦氏「我慢の時期かもしれない」 | (Y) 抽出ミス |
+| 61897 | publish | - | 未分類 |
+| 61903 | publish | - | 未分類 |
+
+**備考**:
+- 62003 は第12便調査で **非再現 green** 判明（対象外）
+- 61754 は第13便 T-010 backfill 後に subject yellow が顕在化
+- いずれも `field=subject`, `cause=needs_manual_review`
+
+**第12便 Codex 調査結果（要約）**:
+- 62003: 非再現（source_urls=[] で subject check 発火しない、(Z) source coverage 不足の過去痕跡）
+- 61779: `_extract_subject_label()` が本文後半の「阿部監督」を拾う、本来の主体は「大矢明彦氏」、(Y) 抽出ミス
+
+**推奨方針**: **WONTFIX 寄せ保留**
+- 根治するには `_extract_subject_label()` の狭いルール追加（title 側の `○○氏「...」` を優先）が必要だが、4件のため優先度低
+- 同じ傾向が systemic に拡大したら昇格検討
+
+**対象拡張確認タスク**（後日 or 次の余裕便で）:
+- 61897 / 61903 の finding 詳細取得（(X)/(Y)/(Z) 分類）
+- 4件全部が (Y) 抽出ミスなら狭い extract_subject_label() 修正の費用対効果が上がる
 
 **備考**:
 - 61779 は当初 T-010 (Bクラス) に属していたが、第10便で `source_reference_missing` 解消後に subject yellow が残って本チケットに合流
@@ -151,6 +136,54 @@ subject finding の詳細（current / expected / message）を取得。
 _extract_subject_label() のどの分岐で manual_review 判定になったかを
 ソース読み取りで特定し、原因種別（抽出失敗 / 値異常 / ルール側の問題）を切り分け。
 結果を codex_responses に記録。修正要否は分析結果で判断。
+```
+
+---
+
+## T-016 🔴 fact_check メール：ログ上は送信成功なのに Gmail に届かない
+
+**発見日**: 2026-04-18
+**発見者**: よしひろさん（受信未着申告） / Claude Code（ログ分析）
+**影響**: 運用通知が機能してない。red 発生時に気づけない可能性
+
+**事実**:
+- Scheduler `fact-check-morning-report`（7/12/17/22 JST）で `/fact_check_notify?since=yesterday` を叩いてる
+- 12:00 JST: `fact_check_email_sent` イベント出力（`smtp.login` 成功 + `smtp.send_message` 例外なし完了）
+- **受信側には届いてない**（Inbox/Spam/All Mail 全て未着 — よしひろさん確認済）
+
+**現在のコード挙動**（`src/fact_check_notifier.py:384-416`）:
+- `smtp.send_message(msg)` の戻り値（refused recipients dict）を破棄してる
+- Message-ID をログに残してない
+- `from=to=fwns6760@gmail.com`（自己宛）
+
+**仮説**:
+- (H1) `send_message` が refused recipients を返してるが無視されてる（silent drop）
+- (H2) Gmail 側が自己宛 app-password 送信をフィルタ破棄（稀）
+- (H3) SMTP が 250 OK 返すが relay 側で消失
+- (H4) Gmail フィルタ/振り分けで ゴミ箱直行
+
+**調査事項**:
+- `send_message` の戻り値を収集して refused recipients を可視化
+- `msg["Message-ID"]` を明示生成してログに残し、Gmail 受信時に対応付け
+- 1回だけ実送信トリガーして即 Gmail API or IMAP で受信確認
+
+**追加発見**:
+- 07:00 JST run は `fact_check_email_demo` に倒れてる（`_load_gmail_app_password()` が空を返す）
+- ただし `fact_check_secret_unavailable` イベントは出てない
+- → 起動直後 Secret Manager 取得のコールドスタート問題の可能性。本件とは別軸だが同時追跡
+
+**優先度**: 🔴（通知経路の品質問題、本番運用の根幹）
+
+**Codex向け指示書ドラフト（仮）**:
+```
+src/fact_check_notifier.py の send_email() を拡張:
+1. msg["Message-ID"] を make_msgid() で明示生成
+2. smtp.send_message(msg) の戻り値（refused dict）を戻り値に含める
+3. _log_event("fact_check_email_sent", ..., message_id=..., refused=...) に追記
+修正後、手動で /fact_check_notify?since=yesterday を 1回叩いて
+Cloud Logging で message_id / refused を確認。
+refused が空かつ message_id が記録されれば、あとは Gmail 側調査へ引き継ぎ。
+別件: 07:00 JST の Secret Manager コールド問題は切り分けて T-017 起票予定。
 ```
 
 ---

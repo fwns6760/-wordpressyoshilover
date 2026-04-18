@@ -264,7 +264,11 @@ class CostModeTests(unittest.TestCase):
         )
 
     def test_todays_postgame_entry_is_not_skipped(self):
-        fresh_dt = datetime.now(timezone.utc) - timedelta(hours=2)
+        now_local = datetime.now(rss_fetcher.JST)
+        fresh_local = now_local - timedelta(hours=2)
+        if fresh_local.date() != now_local.date():
+            fresh_local = now_local - timedelta(minutes=min(5, now_local.minute))
+        fresh_dt = fresh_local.astimezone(timezone.utc)
         self.assertFalse(
             rss_fetcher._should_skip_stale_postgame_entry(
                 "試合速報",

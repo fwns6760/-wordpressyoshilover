@@ -219,48 +219,110 @@ T-016 の第14便で SMTP 経路が健全と判明してる前提で本便に入
 
 ---
 
-## T-024 🟡 監査結果の自動メール通知（`/audit_notify` endpoint + Remote Trigger 接続）
+## T-024 🟡 監査結果の自動メール通知（`/audit_notify` endpoint + Cloud Scheduler）
 
-**発見日**: 2026-04-18 夜
+**発見日**: 2026-04-18 夜  
 **発見者**: よしひろさん（チャット中の運用要望）
-**影響**: 「問題が出ている時だけ確認すればよい」運用にしたい。現状は fact_check メール（07:00 JST 1回 + 1時間おき差分）以外は、Cloud Run log を Claude Code から都度確認しないと「いま問題があるか」が見えない。
 
-**要件（よしひろさん側コスト ゼロ）**:
+**現状**:
+- `yoshilover-fetcher` に `GET /audit_notify` を新設
+- 認証は `X-Secret: $RUN_SECRET`（既存 `/fact_check_notify` と同 secret を再利用）
+- 実行元は **Cloud Scheduler (GCP) 専用 job**
+- `Remote Trigger / OIDC` 前提の旧草案は破棄
+
+**実行経路**:
+- project: `baseballsite`
+- region: `asia-northeast1`
+- job 名: `audit-notify-6x`
+- cron: `0 2,4,6,8,11,14 * * *` UTC
+- target: `GET https://<prod-url>/audit_notify?window_minutes=60`
+- header: `X-Secret: $RUN_SECRET`
+- `giants-*` job 群とは分離
+- canary tag は deploy smoke 限定、本番定期実行には使わない
+
+**監査対象**:
+- WordPress posts
+- status = `draft` + `publish`
+- `window_minutes`（既定 60）内に **作成 or 更新** された記事
+
+**監査軸（4軸+pipeline）**:
+1. `title_body_mismatch`
+   - `acceptance_fact_check` の既存 fact 比較ロジックを流用
+2. `thin_body`
+   - `<div class="yoshilover-related-posts">` を除外したコア本文の実文字数
+   - 閾値:
+     - `postgame` / `lineup` = 280
+     - `column` / `manager` = 350
+3. `no_opinion`
+   - 主観マーカー語ベースのルール判定
+   - `AUDIT_OPINION_USE_LLM=0` が既定
+   - LLM 切替先は Gemini Flash 想定だが、本便の既定動作はルールベース
+4. `no_eyecatch`
+   - `featured_media` 欠損
+5. `pipeline_error`
+   - `error_count` と post_id 付き投稿失敗系イベントの既存ログを流用
+
+**本便スコープ外**:
+- `repetition` 軸は先送り
+- `/run` への統合はしない
+- `/fact_check_notify` 拡張もしない
+
+**戻り値 schema**:
+
+```json
+{
+  "window_minutes": 60,
+  "counts": {
+    "title_body_mismatch": 0,
+    "thin_body": 0,
+    "no_opinion": 0,
+    "no_eyecatch": 0,
+    "pipeline_error": 0
+  },
+  "total": 0,
+  "mail_sent": false,
+  "findings": [
+    {
+      "post_id": 12345,
+      "title": "...",
+      "status": "draft",
+      "primary_category": "試合速報",
+      "article_subtype": "postgame",
+      "edit_url": "https://.../wp-admin/post.php?post=12345&action=edit",
+      "axis": "thin_body",
+      "excerpt": "先頭200字"
+    }
+  ]
+}
+```
+
+**メール仕様**:
 - 送信先: `fwns6760@gmail.com`
-- 0 件時はメールを送らない（受信箱を汚さない）
-- 1 件以上時: 「問題 N 件 (内訳)」のサマリ本文 + 関連 post_id / log timestamp を含める
-- Gmail 送信は **Cloud Run 側 SMTP**（既存 `GMAIL_APP_PASSWORD_SECRET_NAME=yoshilover-gmail-app-password` を再利用、Gmail MCP 経由ではない）
+- 0 件時: 送信しない
+- 送信 util: `src/fact_check_notifier.py` の `send_email()` を再利用
+- 件名:
+  - `[yoshilover] 問題 N 件（タイトル矛盾 x / 薄さ x / 意見なし x / アイキャッチ x / pipeline x）`
+- 本文:
+  - 軸別件数
+  - `post_id`
+  - title
+  - WP 編集 URL
+  - 関連記事ブロック除外後のコア本文先頭200字
 
-**ルートの選択経緯**:
-- (A) Gmail MCP 経由で Claude Code 側から送信 → MCP 構成不明 / 認証保管場所が固まっていないため見送り
-- (B) Cloud Run endpoint 追加 + SMTP 直送 → 既存 secret 再利用で構築可能、運用が repo 内で完結 → **採用**
+**env / Secret**:
+- 既存再利用:
+  - `RUN_SECRET`
+  - `GMAIL_APP_PASSWORD_SECRET_NAME=yoshilover-gmail-app-password`
+- 新規追加可:
+  - `AUDIT_OPINION_USE_LLM=0`
 
-**Cron 制約**:
-- Remote Trigger 最小間隔 1 時間（`*/30` / `0,30` / `:10,:40` 系は弾かれる）
-- 候補:
-  - **(A) hourly :10**: `10 1-13 * * *` UTC = 10:10〜22:10 JST、13 fires/日。1 fire が 60 分窓を担当（Cloud Run 本体の `:00` / `:30` fire を後追いで両方拾う）
-  - (B) 2 時間おき: 7 fires/日（間引き過ぎ）
-- 推奨: **(A)**
-
-**実装の段取り（4 ステップ）**:
-1. **第33便 or 別便（Codex 実装）**: `yoshilover-fetcher` に `/audit_notify` endpoint 追加
-   - 入力: クエリ or body で window 指定（既定: 直近 60 分）
-   - 中身: 既存 fact_check / acceptance_fact_check / `error_count` / 投稿失敗系イベントを集計し、「問題件数 + 内訳 + post_id 一覧 + log timestamp」を返す
-   - 0 件: HTTP 200 + body `{"problem_count": 0, "skipped_email": true}`、メール送信なし
-   - 1 件以上: SMTP で `fwns6760@gmail.com` にメール送信 + HTTP 200 + body にサマリ
-   - SMTP は既存 `yoshilover-gmail-app-password` Secret 再利用、新規 secret 作成禁止
-   - unit test 必須（0 件 / 1 件 / N 件 / SMTP 失敗時のリトライ無し挙動）
-2. **deploy 便（Codex）**: 既存 deploy 手順で revision 切替、`/audit_notify` の手動 curl で 0 件 / 1 件 smoke
-3. **Remote Trigger 接続便（Claude Code 側）**: `10 1-13 * * *` UTC で `/audit_notify` を POST する Remote Trigger を作成、認証は OIDC token
-4. **観察**: 1〜2 日、誤検知 / 過剰通知 / 通知漏れがないことを確認、必要なら閾値調整
-
-**次アクション**:
-- T-021 第2弾（第32-34便）が落ち着いたタイミングで、第35便以降で Codex に endpoint 実装依頼書を投入する（Claude Code 起票）
-- それまでは現状の手動 log 確認を継続
-
-**備考**:
-- 本チケットは **新機能追加**。08_next_steps.md の「Phase C 期間中は実装タスクを増やさない」原則と緩く競合するが、運用負荷軽減目的なので Phase C 解放後 or 並行で OK
-- メール本文フォーマットは実装時に Codex から仮案を貰い、Claude Code が確認後に確定
+**成功条件**:
+- `GET /audit_notify?window_minutes=60` が HTTP 200
+- 0 件時は `mail_sent=false`
+- 非0件時は Gmail SMTP で通知
+- `python3 -m coverage run -m unittest discover -s tests` が green
+- Cloud Scheduler `audit-notify-6x` が作成済み
+- canary smoke 後に prod traffic 100% へ移行、前 revision は残存
 
 ---
 

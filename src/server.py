@@ -216,6 +216,32 @@ def _run_fact_check_notify(since: str, limit: str, category: str = "", send: boo
     return 200, json.dumps(response, ensure_ascii=False)
 
 
+def _run_audit_notify(window_minutes: str, send: bool = True) -> tuple[int, str]:
+    normalized_window_minutes = _normalize_positive_int(window_minutes, 60)
+    try:
+        try:
+            from src.audit_notify import run_audit_notification
+        except ImportError:
+            from audit_notify import run_audit_notification
+
+        payload = run_audit_notification(
+            window_minutes=normalized_window_minutes,
+            send=send,
+        )
+    except Exception as exc:
+        return 500, json.dumps(
+            {
+                "status": "error",
+                "error": str(exc),
+                "window_minutes": normalized_window_minutes,
+                "mail_sent": False,
+            },
+            ensure_ascii=False,
+        )
+
+    return 200, json.dumps(payload, ensure_ascii=False)
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass  # アクセスログ抑制
@@ -255,6 +281,17 @@ class Handler(BaseHTTPRequestHandler):
             limit = _parse_query_value(self.path, "limit", "20")
             send = not _parse_bool_query(self.path, "dry_run", False)
             code, body = _run_fact_check_notify(since, limit, category=category, send=send)
+            self._respond(code, body, content_type="application/json; charset=utf-8")
+        elif parsed.path == "/audit_notify":
+            if not _secret_is_configured():
+                self._respond(503, "RUN_SECRET is not configured")
+                return
+            if not _is_authorized_with_secret_fallback(self):
+                self._respond(403, "Forbidden")
+                return
+            window_minutes = _parse_query_value(self.path, "window_minutes", "60")
+            send = not _parse_bool_query(self.path, "dry_run", False)
+            code, body = _run_audit_notify(window_minutes, send=send)
             self._respond(code, body, content_type="application/json; charset=utf-8")
         else:
             self._respond(404, "Not Found")

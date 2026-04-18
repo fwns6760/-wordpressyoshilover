@@ -153,6 +153,45 @@ class RunFetcherTests(unittest.TestCase):
         self.assertIn('"limit": 20', body)
         self.assertIn("smtp auth failed", body)
 
+    def test_run_audit_notify_success(self):
+        from importlib import reload
+        import src.server as server
+
+        reload(server)
+        with patch("src.audit_notify.run_audit_notification") as mock_run_audit:
+            mock_run_audit.return_value = {
+                "window_minutes": 60,
+                "counts": {
+                    "title_body_mismatch": 1,
+                    "thin_body": 0,
+                    "no_opinion": 0,
+                    "no_eyecatch": 0,
+                    "pipeline_error": 0,
+                },
+                "total": 1,
+                "mail_sent": True,
+                "findings": [],
+            }
+            code, body = server._run_audit_notify("60", send=True)
+
+        self.assertEqual(code, 200)
+        self.assertIn('"window_minutes": 60', body)
+        self.assertIn('"mail_sent": true', body)
+        mock_run_audit.assert_called_once_with(window_minutes=60, send=True)
+
+    def test_run_audit_notify_failure_returns_500(self):
+        from importlib import reload
+        import src.server as server
+
+        reload(server)
+        with patch("src.audit_notify.run_audit_notification", side_effect=RuntimeError("audit exploded")):
+            code, body = server._run_audit_notify("oops", send=False)
+
+        self.assertEqual(code, 500)
+        self.assertIn('"status": "error"', body)
+        self.assertIn('"window_minutes": 60', body)
+        self.assertIn("audit exploded", body)
+
 
 class RunStartedLoggingTests(unittest.TestCase):
     def test_run_started_payload_reflects_current_runtime_guards(self):

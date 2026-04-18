@@ -88,6 +88,14 @@ LINEUP_ROW_RE = re.compile(
     r"<tr>\s*<td>(\d)</td>\s*<td>([^<]+)</td>\s*<td>([^<]+)</td>(?:\s*<td>([^<]+)</td>)?",
     re.I | re.S,
 )
+NPB_DATE_ROW_START_RE = re.compile(r'<tr id="date(?P<date>\d{4})"[^>]*>', re.I)
+NPB_ROW_RE = re.compile(r"<tr\b[^>]*>(.*?)</tr>", re.I | re.S)
+NPB_TEAM1_RE = re.compile(r'<div class="team1">(.*?)</div>', re.I | re.S)
+NPB_TEAM2_RE = re.compile(r'<div class="team2">(.*?)</div>', re.I | re.S)
+NPB_PLACE_RE = re.compile(r'<div class="place">(.*?)</div>', re.I | re.S)
+NPB_TIME_RE = re.compile(r'<div class="time">(.*?)</div>', re.I | re.S)
+NPB_SCORE1_RE = re.compile(r'<div class="score1">(.*?)</div>', re.I | re.S)
+NPB_SCORE2_RE = re.compile(r'<div class="score2">(.*?)</div>', re.I | re.S)
 
 
 @dataclass
@@ -123,14 +131,14 @@ def _strip_html_text(value: str) -> str:
 
 
 def _normalize_team(value: str) -> str:
-    text = html.unescape((value or "").strip())
+    text = re.sub(r"\s+", "", html.unescape((value or "").strip()))
     if not text:
         return ""
     return TEAM_ALIASES.get(text, text)
 
 
 def _normalize_venue(value: str) -> str:
-    text = html.unescape((value or "").strip())
+    text = re.sub(r"\s+", "", html.unescape((value or "").strip()))
     if not text:
         return ""
     return VENUE_ALIASES.get(text, text)
@@ -311,21 +319,28 @@ def _fetch_url_snapshot(url: str) -> dict[str, Any]:
 def _source_reference_facts(source_links: list[dict[str, str]]) -> dict[str, Any]:
     merged_text = ""
     snapshots = []
+    field_evidence_urls: dict[str, str] = {}
     for item in source_links[:MAX_SOURCE_SNAPSHOTS]:
         url = (item.get("url") or "").strip()
         if not url:
             continue
         snapshot = _fetch_url_snapshot(url)
         snapshots.append(snapshot)
-        merged_text += " " + " ".join([snapshot.get("title", ""), snapshot.get("description", ""), snapshot.get("text", "")[:800]])
+        snapshot_text = " ".join([snapshot.get("title", ""), snapshot.get("description", ""), snapshot.get("text", "")[:800]])
+        merged_text += " " + snapshot_text
+        if "opponent" not in field_evidence_urls and _extract_opponent(snapshot_text):
+            field_evidence_urls["opponent"] = snapshot.get("url", "")
+        if "time" not in field_evidence_urls and _extract_time(snapshot_text):
+            field_evidence_urls["time"] = snapshot.get("url", "")
     merged_text = merged_text.strip()
     return {
         "snapshots": snapshots,
         "opponent": _extract_opponent(merged_text),
-        "venue": _extract_venue(merged_text),
         "time": _extract_time(merged_text),
-        "score": _extract_score(merged_text),
+        "venue": "",
+        "score": "",
         "subject": merged_text,
+        "field_evidence_urls": field_evidence_urls,
     }
 
 
@@ -353,31 +368,103 @@ def _find_yahoo_game_id(target_date: str, opponent_hint: str = "") -> str:
     return candidate_ids[0] if candidate_ids else ""
 
 
+def _extract_npb_schedule_day_html(html_text: str, dt: date) -> str:
+    marker = f'date{dt.month:02d}{dt.day:02d}'
+    start = html_text.find(marker)
+    if start == -1:
+        return ""
+    row_start = html_text.rfind("<tr", 0, start)
+    if row_start == -1:
+        return ""
+    next_match = NPB_DATE_ROW_START_RE.search(html_text, row_start + 1)
+    row_end = next_match.start() if next_match else len(html_text)
+    return html_text[row_start:row_end]
+
+
+def _parse_npb_schedule_rows(day_html: str) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for row_html in NPB_ROW_RE.findall(day_html or ""):
+        team1_match = NPB_TEAM1_RE.search(row_html)
+        team2_match = NPB_TEAM2_RE.search(row_html)
+        place_match = NPB_PLACE_RE.search(row_html)
+        if not team1_match or not team2_match or not place_match:
+            continue
+        row = {
+            "team1": _normalize_team(_strip_html_text(team1_match.group(1))),
+            "team2": _normalize_team(_strip_html_text(team2_match.group(1))),
+            "place": _normalize_venue(_strip_html_text(place_match.group(1))),
+            "time": "",
+            "score": "",
+        }
+        time_match = NPB_TIME_RE.search(row_html)
+        if time_match:
+            row["time"] = _normalize_time(_strip_html_text(time_match.group(1)))
+        score1_match = NPB_SCORE1_RE.search(row_html)
+        score2_match = NPB_SCORE2_RE.search(row_html)
+        score1 = _normalize_score(_strip_html_text(score1_match.group(1))) if score1_match else ""
+        score2 = _normalize_score(_strip_html_text(score2_match.group(1))) if score2_match else ""
+        if score1 and score2:
+            row["score"] = f"{score1}-{score2}"
+        elif score1_match and score2_match:
+            raw1 = _strip_html_text(score1_match.group(1))
+            raw2 = _strip_html_text(score2_match.group(1))
+            if raw1.isdigit() and raw2.isdigit():
+                row["score"] = f"{int(raw1)}-{int(raw2)}"
+        rows.append(row)
+    return rows
+
+
+def _select_npb_schedule_row(rows: list[dict[str, str]], opponent_hint: str = "") -> dict[str, str]:
+    normalized_hint = _normalize_team(opponent_hint)
+    giants_names = {"巨人", "読売ジャイアンツ"}
+    for row in rows:
+        teams = {row.get("team1", ""), row.get("team2", "")}
+        if not teams & giants_names:
+            continue
+        if normalized_hint and normalized_hint not in teams:
+            continue
+        return row
+    for row in rows:
+        teams = {row.get("team1", ""), row.get("team2", "")}
+        if teams & giants_names:
+            return row
+    return {}
+
+
 @lru_cache(maxsize=64)
-def _fetch_npb_schedule_snapshot(target_date: str) -> dict[str, Any]:
+def _fetch_npb_schedule_snapshot(target_date: str, opponent_hint: str = "") -> dict[str, Any]:
     dt = datetime.strptime(target_date, "%Y-%m-%d").date()
     url = f"https://npb.jp/games/{dt.year}/schedule_{dt.month:02d}_detail.html"
     snapshot = _fetch_url_snapshot(url)
-    text = snapshot.get("text", "")
-    date_labels = [f"{dt.month}/{dt.day}", f"{dt.month}月{dt.day}日"]
-    block = text
-    for label in date_labels:
-        idx = text.find(label)
-        if idx != -1:
-            block = text[max(0, idx - 300): idx + 900]
-            break
+    day_html = _extract_npb_schedule_day_html(snapshot.get("html", ""), dt)
+    rows = _parse_npb_schedule_rows(day_html)
+    selected = _select_npb_schedule_row(rows, opponent_hint=opponent_hint)
+    score = ""
+    if selected.get("score"):
+        if selected.get("team1") in {"巨人", "読売ジャイアンツ"}:
+            score = selected["score"]
+        else:
+            first, second = selected["score"].split("-", 1)
+            score = f"{second}-{first}"
+    opponent = ""
+    if selected:
+        if selected.get("team1") in {"巨人", "読売ジャイアンツ"}:
+            opponent = selected.get("team2", "")
+        else:
+            opponent = selected.get("team1", "")
     return {
         "url": url,
-        "text": block,
-        "opponent": _extract_opponent(block),
-        "venue": _extract_venue(block),
-        "time": _extract_time(block),
+        "rows": rows,
+        "opponent": opponent,
+        "venue": selected.get("place", ""),
+        "time": selected.get("time", ""),
+        "score": score,
     }
 
 
 @lru_cache(maxsize=64)
 def _fetch_game_reference(target_date: str, opponent_hint: str = "") -> dict[str, Any]:
-    npb = _fetch_npb_schedule_snapshot(target_date)
+    npb = _fetch_npb_schedule_snapshot(target_date, opponent_hint=opponent_hint)
     game_id = _find_yahoo_game_id(target_date, opponent_hint=opponent_hint)
     if not game_id:
         return {
@@ -385,9 +472,16 @@ def _fetch_game_reference(target_date: str, opponent_hint: str = "") -> dict[str
             "opponent": npb.get("opponent", ""),
             "venue": npb.get("venue", ""),
             "time": npb.get("time", ""),
-            "score": "",
+            "score": npb.get("score", ""),
             "lineup_rows": [],
             "evidence_urls": [npb["url"]],
+            "evidence_by_field": {
+                "opponent": npb["url"],
+                "venue": npb["url"],
+                "time": npb["url"],
+                "score": npb["url"],
+                "lineup": npb["url"],
+            },
         }
 
     starters = get_starters(game_id)
@@ -403,13 +497,20 @@ def _fetch_game_reference(target_date: str, opponent_hint: str = "") -> dict[str
         "opponent": opponent,
         "venue": venue,
         "time": time_label,
-        "score": score,
+        "score": score or npb.get("score", ""),
         "lineup_rows": starters.get("giants", []),
         "evidence_urls": [
             f"https://baseball.yahoo.co.jp/npb/game/{game_id}/top",
             f"https://baseball.yahoo.co.jp/npb/game/{game_id}/score",
             npb["url"],
         ],
+        "evidence_by_field": {
+            "opponent": f"https://baseball.yahoo.co.jp/npb/game/{game_id}/top",
+            "venue": npb["url"],
+            "time": npb["url"],
+            "score": f"https://baseball.yahoo.co.jp/npb/game/{game_id}/score" if score else npb["url"],
+            "lineup": f"https://baseball.yahoo.co.jp/npb/game/{game_id}/top",
+        },
     }
 
 
@@ -515,6 +616,17 @@ def _append_warning(findings: list[Finding], *, field: str, message: str, eviden
     )
 
 
+def _pick_game_reference_value(field: str, reference: dict[str, Any], source_facts: dict[str, Any]) -> tuple[str, str]:
+    reference_value = (reference.get(field) or "").strip()
+    if reference_value:
+        evidence_by_field = reference.get("evidence_by_field", {})
+        return reference_value, evidence_by_field.get(field, reference.get("evidence_urls", [""])[0] if reference.get("evidence_urls") else "")
+    source_value = (source_facts.get(field) or "").strip()
+    if source_value:
+        return source_value, source_facts.get("field_evidence_urls", {}).get(field, "")
+    return "", ""
+
+
 def _check_game_facts(findings: list[Finding], post_facts: dict[str, Any], audited: dict[str, Any], source_facts: dict[str, Any]) -> None:
     subtype = audited["article_subtype"]
     if subtype not in {"postgame", "lineup", "pregame"}:
@@ -525,14 +637,17 @@ def _check_game_facts(findings: list[Finding], post_facts: dict[str, Any], audit
     source_text = " ".join(
         [snap.get("title", "") + " " + snap.get("description", "") for snap in source_facts.get("snapshots", [])]
     )
-    evidence_url = reference["evidence_urls"][0] if reference.get("evidence_urls") else ""
+    opponent_expected, opponent_evidence = _pick_game_reference_value("opponent", reference, source_facts)
+    venue_expected, venue_evidence = _pick_game_reference_value("venue", reference, source_facts)
+    time_expected, time_evidence = _pick_game_reference_value("time", reference, source_facts)
+    score_expected, score_evidence = _pick_game_reference_value("score", reference, source_facts)
 
     _append_scalar_finding(
         findings,
         field="opponent",
         current=post_facts.get("opponent", ""),
-        expected=reference.get("opponent", "") or source_facts.get("opponent", ""),
-        evidence_url=evidence_url,
+        expected=opponent_expected,
+        evidence_url=opponent_evidence,
         title=post_facts["title"],
         body=post_facts["plain_text"],
         source_text=source_text,
@@ -542,8 +657,8 @@ def _check_game_facts(findings: list[Finding], post_facts: dict[str, Any], audit
         findings,
         field="venue",
         current=post_facts.get("venue", ""),
-        expected=reference.get("venue", "") or source_facts.get("venue", ""),
-        evidence_url=evidence_url,
+        expected=venue_expected,
+        evidence_url=venue_evidence,
         title=post_facts["title"],
         body=post_facts["plain_text"],
         source_text=source_text,
@@ -554,8 +669,8 @@ def _check_game_facts(findings: list[Finding], post_facts: dict[str, Any], audit
             findings,
             field="time",
             current=post_facts.get("time", ""),
-            expected=reference.get("time", "") or source_facts.get("time", ""),
-            evidence_url=evidence_url,
+            expected=time_expected,
+            evidence_url=time_evidence,
             title=post_facts["title"],
             body=post_facts["plain_text"],
             source_text=source_text,
@@ -566,8 +681,8 @@ def _check_game_facts(findings: list[Finding], post_facts: dict[str, Any], audit
             findings,
             field="score",
             current=post_facts.get("score", ""),
-            expected=reference.get("score", "") or source_facts.get("score", ""),
-            evidence_url=evidence_url,
+            expected=score_expected,
+            evidence_url=score_evidence,
             title=post_facts["title"],
             body=post_facts["plain_text"],
             source_text=source_text,
@@ -592,7 +707,10 @@ def _check_game_facts(findings: list[Finding], post_facts: dict[str, Any], audit
                     field="lineup",
                     current=current_compact,
                     expected=expected_compact,
-                    evidence_url=evidence_url,
+                    evidence_url=reference.get("evidence_by_field", {}).get(
+                        "lineup",
+                        reference.get("evidence_urls", [""])[0] if reference.get("evidence_urls") else "",
+                    ),
                     message=f"スタメン上位打順が不一致: 記事 `{current_compact}` / 公式 `{expected_compact}`",
                     cause="game_fact_alignment_failure",
                     proposal=proposal,

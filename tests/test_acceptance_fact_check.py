@@ -8,6 +8,11 @@ JST = timezone(timedelta(hours=9))
 
 
 class AcceptanceFactCheckTests(unittest.TestCase):
+    def tearDown(self):
+        acceptance_fact_check._fetch_npb_schedule_snapshot.cache_clear()
+        acceptance_fact_check._fetch_game_reference.cache_clear()
+        acceptance_fact_check._find_yahoo_game_id.cache_clear()
+
     def _make_post(self, title: str, content_html: str, categories=None) -> dict:
         return {
             "id": 62538,
@@ -215,6 +220,150 @@ class AcceptanceFactCheckTests(unittest.TestCase):
 
         self.assertTrue(acceptance_fact_check._matches_since_filter(post, "yesterday"))
         self.assertFalse(acceptance_fact_check._matches_since_filter(post, "today"))
+
+    @patch.object(
+        acceptance_fact_check,
+        "_fetch_url_snapshot",
+        return_value={
+            "url": "https://baseball.yahoo.co.jp/npb/game/2021038726/top",
+            "ok": True,
+            "status_code": 200,
+            "title": "2026年4月17日 東京ヤクルトスワローズvs.読売ジャイアンツ - プロ野球 - スポーツナビ",
+            "description": "プロ野球 セ・リーグ 東京ヤクルトスワローズvs.読売ジャイアンツの試合のスコア、結果、成績、動画など最新情報をお届けします。",
+            "text": 'ya("init", "455de628b9d74646a383bef4947230f8", "37ced58c-4f9f-4725-97a1-572c21a9b7a9");',
+            "html": "",
+        },
+    )
+    def test_source_reference_facts_does_not_extract_score_from_uuid_noise(self, _mock_snapshot):
+        facts = acceptance_fact_check._source_reference_facts(
+            [{"url": "https://baseball.yahoo.co.jp/npb/game/2021038726/top"}]
+        )
+
+        self.assertEqual(facts["opponent"], "ヤクルト")
+        self.assertEqual(facts["score"], "")
+        self.assertEqual(facts["venue"], "")
+
+    @patch.object(
+        acceptance_fact_check,
+        "_fetch_url_snapshot",
+        return_value={
+            "url": "https://npb.jp/games/2026/schedule_04_detail.html",
+            "ok": True,
+            "status_code": 200,
+            "title": "",
+            "description": "",
+            "text": "",
+            "html": """
+            <table>
+              <tr id="date0417">
+                <th rowspan="2">4/17（金）</th>
+                <td><div class="team1">ヤクルト</div><a href="/scores/2026/0417/s-g-04/"><div class="score1">2</div><div class="state">試合終了</div><div class="score2">8</div></a><div class="team2">巨人</div></td>
+                <td><div class="place">神　宮</div><div class="time">18:00</div></td>
+              </tr>
+              <tr>
+                <td><div class="team1">ソフトバンク</div><a href="/scores/2026/0417/h-b-03/"><div class="score1">3</div><div class="state">試合終了</div><div class="score2">1</div></a><div class="team2">オリックス</div></td>
+                <td><div class="place">みずほPayPay</div><div class="time">18:00</div></td>
+              </tr>
+              <tr id="date0418">
+                <th>4/18（土）</th>
+                <td><div class="team1">ヤクルト</div><div class="team2">巨人</div></td>
+                <td><div class="place">神　宮</div><div class="time">18:00</div></td>
+              </tr>
+            </table>
+            """,
+        },
+    )
+    def test_fetch_npb_schedule_snapshot_uses_target_day_row_html(self, _mock_snapshot):
+        snapshot = acceptance_fact_check._fetch_npb_schedule_snapshot("2026-04-17", "ヤクルト")
+
+        self.assertEqual(snapshot["opponent"], "ヤクルト")
+        self.assertEqual(snapshot["venue"], "神宮")
+        self.assertEqual(snapshot["time"], "18:00")
+        self.assertEqual(snapshot["score"], "8-2")
+
+    def test_check_game_facts_uses_source_evidence_url_when_reference_is_empty(self):
+        findings = []
+        post_facts = {
+            "target_date": datetime(2026, 4, 17, tzinfo=JST).date(),
+            "opponent": "DeNA",
+            "venue": "神宮",
+            "time": "17:00",
+            "score": "",
+            "lineup_rows": [],
+            "title": "巨人DeNA戦 神宮17:00試合開始",
+            "plain_text": "巨人DeNA戦 神宮17:00試合開始",
+        }
+        audited = {"article_subtype": "pregame"}
+        source_facts = {
+            "snapshots": [{"url": "https://example.com/source", "title": "巨人ヤクルト戦 神宮18:00試合開始", "description": "", "text": ""}],
+            "opponent": "ヤクルト",
+            "time": "18:00",
+            "venue": "",
+            "score": "",
+            "field_evidence_urls": {"opponent": "https://example.com/source", "time": "https://example.com/source"},
+        }
+
+        with patch.object(
+            acceptance_fact_check,
+            "_fetch_game_reference",
+            return_value={
+                "game_id": "",
+                "opponent": "",
+                "venue": "神宮",
+                "time": "",
+                "score": "",
+                "lineup_rows": [],
+                "evidence_urls": ["https://npb.jp/games/2026/schedule_04_detail.html"],
+                "evidence_by_field": {"venue": "https://npb.jp/games/2026/schedule_04_detail.html"},
+            },
+        ):
+            acceptance_fact_check._check_game_facts(findings, post_facts, audited, source_facts)
+
+        opponent = next(item for item in findings if item.field == "opponent")
+        time = next(item for item in findings if item.field == "time")
+        self.assertEqual(opponent.evidence_url, "https://example.com/source")
+        self.assertEqual(time.evidence_url, "https://example.com/source")
+
+    def test_check_game_facts_uses_reference_evidence_url_for_score(self):
+        findings = []
+        post_facts = {
+            "target_date": datetime(2026, 4, 17, tzinfo=JST).date(),
+            "opponent": "ヤクルト",
+            "venue": "神宮",
+            "time": "",
+            "score": "5-3",
+            "lineup_rows": [],
+            "title": "巨人がヤクルトに5-3で勝利",
+            "plain_text": "巨人がヤクルトに5-3で勝利",
+        }
+        audited = {"article_subtype": "postgame"}
+        source_facts = {"snapshots": [], "opponent": "", "time": "", "venue": "", "score": "", "field_evidence_urls": {}}
+
+        with patch.object(
+            acceptance_fact_check,
+            "_fetch_game_reference",
+            return_value={
+                "game_id": "2026041701",
+                "opponent": "ヤクルト",
+                "venue": "神宮",
+                "time": "",
+                "score": "4-3",
+                "lineup_rows": [],
+                "evidence_urls": [
+                    "https://baseball.yahoo.co.jp/npb/game/2026041701/top",
+                    "https://baseball.yahoo.co.jp/npb/game/2026041701/score",
+                ],
+                "evidence_by_field": {
+                    "opponent": "https://baseball.yahoo.co.jp/npb/game/2026041701/top",
+                    "venue": "https://baseball.yahoo.co.jp/npb/game/2026041701/top",
+                    "score": "https://baseball.yahoo.co.jp/npb/game/2026041701/score",
+                },
+            },
+        ):
+            acceptance_fact_check._check_game_facts(findings, post_facts, audited, source_facts)
+
+        score = next(item for item in findings if item.field == "score")
+        self.assertEqual(score.evidence_url, "https://baseball.yahoo.co.jp/npb/game/2026041701/score")
 
 
 if __name__ == "__main__":

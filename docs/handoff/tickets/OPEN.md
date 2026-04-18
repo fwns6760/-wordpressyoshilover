@@ -158,27 +158,52 @@ T-016 の第14便で SMTP 経路が健全と判明してる前提で本便に入
 
 ---
 
-## T-019 🟡 post_id=62584（draft）にアイキャッチが設定されていない
+## T-019 🟠 post_id=62584（draft）にアイキャッチが設定されていない（調査完了、修正便起票済）
 
 **発見日**: 2026-04-18 夜
+**調査完了日**: 2026-04-18 夜（第19便 Codex 調査、`3fb5381`）
 **発見者**: よしひろさん（WP 目視）
-**影響**: 未知（systemic か単発か不明、同時期の他記事で同症状があるかで切り分け）
+**影響**: social_news / X 由来の一部記事で featured_media=0 確定（3件実測）
 
-**事実**:
-- 62584 は現在 draft（非公開）
-- WP 管理画面でアイキャッチが空
-- 今日のコード修正群（T-007 / T-010 / T-012 / T-016 / T-018 / T-001）は画像処理・アイキャッチ処理に一切触れていない → デグレ可能性は低い
-- `PUBLISH_REQUIRE_IMAGE=1` は publish 時のチェックなので、draft は画像なしで作られうる（仕様）
+**第19便調査結果（要約）**:
 
-**仮説（未検証）**:
-1. 生成時にソースの OGP 画像取得が失敗
-2. ソース側に適切な画像が存在しない
-3. 画像 URL はあったが WP への attach で失敗
-4. `rss_fetcher_flow_summary` 等のログに image 関連の warn/error が出ている
+- 62584 単発ではなく、**62584 / 62585 / 62587 の 3件が同一経路で再現**
+- 真因: 画像候補の先頭 URL が `https://abs.twimg.com/emoji/v2/svg/26a0.svg` (X 警告絵文字)、MIME `image/svg+xml` で upload 拒否
+- 既存 URL 除外は `abs-0.twimg.com/emoji/` のみ → `abs.twimg.com/emoji/` をすり抜ける
+- 近傍 draft 11 件中 7 件は画像あり（`7/11`）→ **global systemic ではない、social_news/X 由来の局所 systemic**
+- コード該当: `src/wp_client.py:61-65` / `src/rss_fetcher.py:5041-5045` / `src/rss_fetcher.py:9047, 9082-9083`
+- 先頭画像失敗時の fallback が存在しない（`_article_images[1:]` へ落ちる経路なし）
 
-**スコープ**: 本チケットは**調査のみ**。修正は原因判明後に別チケットで判断。
+**副次**:
+- 62560 も画像なしだが emoji SVG 経路ではない、別原因の可能性 → T-020 Step 7 で追跡
 
-**Codex向け指示書**: `docs/handoff/codex_requests/2026-04-18_19.md`（第19便、調査専念）
+**修正便**: T-020 🟠（第20便）として起票、本チケットは T-020 完了で RESOLVED
+
+---
+
+## T-020 🟠 アイキャッチ emoji SVG 経路の除外拡張 + fallback + unit test + deploy
+
+**起票日**: 2026-04-18 夜
+**依頼者**: Claude Code（T-019 第19便調査結果を受けて）
+**影響**: social_news / X 由来記事の featured_media 欠損率低減
+
+**対応内容（第20便指示書 `codex_requests/2026-04-18_20.md`）**:
+
+1. `_get_image_candidate_exclusion_reason()` に `abs.twimg.com/emoji/` を追加（`wp_client.py` + `rss_fetcher.py` 両方）
+2. `rss_fetcher.py:9081-9083` の画像 upload を `_article_images` の最初の成功まで順次試行する fallback に変更
+3. unit test 追加（emoji SVG URL 除外 + fallback 発火の最小ケース）
+4. deploy + 30 分自然発火観察
+5. 副次: 62560 の原因ログ追跡
+
+**成功判定**:
+- 379 → 381+ tests passed
+- 新 revision traffic 100%
+- env 維持（第18便と同じ `RUN_DRAFT_ONLY=0` / `POSTGAME=1` / `LINEUP=1`）
+- 30 分観察で `image_candidate_excluded reason=emoji_svg_url` が新たに発火、または `featured_media_fallback_used` で fallback が効く、ERROR 0件
+
+**失敗時**: rollback to `yoshilover-fetcher-00136-z7s` / コード差し戻し
+
+**Codex向け指示書**: `docs/handoff/codex_requests/2026-04-18_20.md`（第20便）
 
 ---
 

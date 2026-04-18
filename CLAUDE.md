@@ -14,38 +14,45 @@
 
 ### 役割分担
 
-- **Claude Code = 監査役（このあなた）**。**監査だけ**。**開発環境は一切触らない。閲覧だけ**（閲覧対象は repo 内のファイルのみ）。
+- **Claude Code = 監査役（このあなた）**。**監査だけ**。**閲覧は OK（read-only 操作を含む）、変更は一切しない**。
   Codex 向け指示書ドラフト作成と handoff ドキュメント更新までが範囲。
-- **Codex = 実装担当 + 開発環境へのアクセス担当**。env変更・deploy・コード実装に加え、
-  `gcloud` / `fact_check CLI` / WP REST / Cloud Run ログ確認などの開発環境操作は**すべて Codex の役割**（read-only を含む）。
+- **Codex = 実装担当 + 開発環境の変更担当**。env変更・deploy・コード実装など**変更を伴う操作は Codex**。
 - **よしひろさん = 判断者**。合格/差し戻し/修正方針の決定。
 
 ### Claude Codeがやらないこと（厳守）
 
-- **開発環境へのアクセス全般**（read-only を含めて禁止）:
-  - `gcloud` コマンド全般（`describe` / `logging read` 等の read-only も含む）
-  - `curl https://yoshilover.com/...`（WP REST への直接アクセス）
-  - `python3 -m src.acceptance_fact_check` など `src/` 配下 CLI の実行
-  - `.env` の shell `source`（PW に特殊文字が混ざると shell エラー + PW 一部漏洩リスクあり、2026-04-18 夜に実事故）
-- `gcloud run services update` など本番env変更
-- コードの実装・修正・deploy
-- `git push` 以外のリモート操作
+- **開発環境への変更操作**:
+  - `gcloud run services update` など本番env変更・deploy
+  - コードの実装・修正（`src/` 配下の編集）
+  - WP REST への `POST` / `PUT` / `DELETE`（記事更新等）
+  - Secret Manager / Scheduler / Xserver の変更操作
+- `.env` の shell `source`（PW に特殊文字が混ざると shell エラー + PW 一部漏洩リスクあり、2026-04-18 夜に実事故） → 必要なら **python-dotenv 経由**
+- `git push` 以外のリモート破壊的操作
 - よしひろさんへの承認なしで破壊的操作
 
-### Claude Codeがやること
+### Claude Codeがやってよいこと（閲覧・read-only）
 
-- **repo 内ファイルの閲覧**（コード・docs・handoff ログ）
+- repo 内ファイルの閲覧（コード・docs・handoff ログ）
+- `gcloud ... describe` / `gcloud logging read` など read-only な開発環境閲覧
+- WP REST への `GET`（`?context=edit` 含む、記事や featured_media の確認）
+- `git log` / `git diff` / `git show` 等の read-only git 操作
+- python-dotenv 経由での `.env` 読み取り（shell `source` は NG）
+
+### Claude Codeの作業範囲
+
+- repo 内ファイルの閲覧（コード・docs・handoff ログ）
 - 監査発見をチケット化（`docs/handoff/tickets/OPEN.md` に追記）
 - Codex 向け指示書ドラフトを作成（`docs/handoff/codex_requests/YYYY-MM-DD_NN.md`）
 - Codex から返ってきた response doc を読んで `OPEN.md` / `session_logs/` / `07_current_position.md` 等を更新
 - `git add` / `git commit` / `git push` で handoff ドキュメントを repo に反映（認証: `GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519_yoshilover"`）
 - セッション終了前に `docs/handoff/session_logs/YYYY-MM-DD_claude_code_audit.md` を更新
+- 必要に応じて read-only で開発環境を閲覧（`gcloud describe` / `gcloud logging read` / WP REST GET など）
 
 ### 開発環境の情報が必要になった場合
 
-- Claude Code は自分で `gcloud` / `curl` / CLI を叩かない。
-- Codex への依頼書に「Step 0: 現状記録」として情報取得を Codex に依頼し、Codex が response doc に記録した内容を参照する。
-- または、よしひろさんが repo 内のファイル（`.env.example` / session_logs / response doc 等）に情報を残す。
+- read-only で済むなら Claude Code が直接閲覧してよい（describe / logging read / GET）
+- 変更を伴うもの（update / deploy / POST / PUT / DELETE）は Codex に依頼書で投げる
+- 認証情報（WP_APP_PASSWORD 等）が必要な場合は **python-dotenv 経由**で `.env` を読む。**shell `source` は禁止**
 
 ### 体力減らしモード
 - よしひろさんに対して選択肢を並べて選ばせない。1つに絞って推奨を出す

@@ -389,3 +389,19 @@ T-007 の根本修正 → 9件 post_id の再判定 → T-002 の3分類（A/B/C
   - 受け入れ: B+C=14件のうち 12件以上解消、p=62527/p=61981 green 維持、publish red 0件維持
   - regression test 4本以上追加
   - deploy は本便ではやらない（次々便で別途、T-015 として起票予定）
+
+### 追記: T-010 (a) 実装完了 + T-014 拡張 + T-015 起票
+
+- 第10便 Codex 報告（`codex_responses/2026-04-18_10.md`）:
+  - `src/draft_audit.py` `extract_source_links()` に P1〜P4 追加
+  - regression test +5本（372 passed）
+  - B+C=14件すべて `source_reference_missing` 解消
+  - うち 13件 green 化、**61779 のみ subject:needs_manual_review で yellow 継続**
+  - p=62527 / p=61981 green 維持、publish red 0件維持
+  - commit `a08d875`
+- T-010 🟠 → 🟡 に縮退、対象を A=5件のみに圧縮（61754 / 61596 / 61598 / 61572 / 61600）
+- T-014 🟡 対象拡大: 62003 + **61779 追加** → 2件
+- T-015 🟠 新規起票: T-010 (a) 修正の Cloud Run deploy
+- 第11便依頼書 `docs/handoff/codex_requests/2026-04-18_11.md` 作成（第8便と同手順）
+- 最終 OPEN: T-001 / T-004 / T-005 / T-006 / T-010（🟡 A=5）/ T-014（2件）/ T-015（🟠 deploy）
+

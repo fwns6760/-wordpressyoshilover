@@ -84,105 +84,92 @@ deployはよしひろさん承認後。
 
 ---
 
-## T-010 🟠 publish 記事の source_reference_missing が系統的に発生（19件／過半）
+## T-010 🟡 旧記事 5件の source_reference_missing（Aクラス残件）
 
 **発見日**: 2026-04-18（T-007 再判定で分離）
-**規模拡大確認日**: 2026-04-18（publish 全量 fact_check で判明）
-**発見者**: Claude Code（監査役）
-**影響**: publish 記事 36 件中 **19 件** が `source_reference_missing` yellow。個別問題ではなく母集団全体に効く系統的問題。受け入れ品質指標の信頼性に影響
+**規模拡大・縮小の経緯**:
+- 2026-04-18 朝: 当初 2 件（61770 / 61598）として起票
+- 2026-04-18 昼: publish 全量監査で 19 件に拡大（🟠 昇格）
+- 2026-04-18 夕: 第10便 `a08d875` で **B+C=14件 全解消**、**A=5件のみ残** → 🟡 に戻す
 
-**実数**（2026-04-18 時点、`acceptance_fact_check --status publish --since all` 実行）:
+**現在の対象（A=5件）**:
+- 61754（lineup） — 本文 HTML 内に source URL 自体がない
+- 61596（postgame）
+- 61598（postgame）
+- 61572（lineup）
+- 61600（postgame）
 
-- publish total: **36件**
-- green: 16件
-- yellow: **20件**
-  - うち `source_reference_missing`: **19件**
-  - うち `subject: needs_manual_review`: 1件（**T-014** で分離）
-- red: 0件
+**特徴**: 本文 HTML 内に source URL 文字列が 0件。`extract_source_links()` 改修では回収不能な旧記事形式。
 
-**対象 post_id（19件全量）**:
-- 61947 / 61946 / 61939 / 61816 / 61812 / 61799 / 61779 / 61776 / 61773 / 61770 / 61754 / 61596 / 61572 / 61598 / 61600 / 61576 / 61574 / 61556 / 61554
+**対応方針候補**（残 Aクラス用）:
+- (b) 記事側補填: 手動もしくはバッチで source URL を backfill
+  - 各記事の evidence URL を調査して WP 側に追記
+  - 5件なら手作業でも耐えられる規模
+- (c) 旧記事除外ルール: post date / modified date 閾値で source_reference 検査対象外化
+  - yellow を隠すだけで根治しない
+  - 5件だけなら無理に入れる必要性は薄い
 
-**サンプル挙動**（p=61947）:
-```json
-{
-  "source_urls": [],
-  "findings": [{
-    "severity": "yellow",
-    "field": "source_reference",
-    "message": "参照元リンクが本文に見つからない",
-    "cause": "source_reference_missing",
-    "proposal": "source_url を再確認し、参照元ブロックを補う",
-    "fix_type": "manual_review"
-  }]
-}
-```
-`source_urls=[]` → `extract_source_links()` で参照元URLが**1本も検出できていない**。
+**推奨**: 5件なら (b) 手動 backfill が素直。ただしよしひろさん判断。
 
-**調査結果**（第9便 `codex_responses/2026-04-18_09.md`）:
-
-19件の分類結果（A=5 / B=12 / C=2）:
-
-| 分類 | 件数 | 意味 | 代表 post_id |
-|---|---:|---|---|
-| A | 5 | 旧記事形式。本文内に source URL 自体がない | 61754 / 61596 / 61598 / 61572 / 61600 |
-| B | 12 | URL はあるが source block 不在 or unsupported な裸リンク形式 | 61939 / 61816 / 61799 / 61576 / 61574 / 61556 / 61554 / 61773 / 61776 / 61812 / 61770 / 61779 |
-| C | 2 | 構造化参照ブロックはあるが extractor 未対応 | 61947 / 61946 |
-
-**主因**: 「source が無い記事」ではなく「source が本文にあるのに extractor が見えていない記事」が多い（B+C=14/19）。**parser coverage 問題**として整理するのが妥当。
-
-**抽出漏れパターン**:
-- `【引用元】` 見出し + 次段落アンカー（C）
-- `引用元:` / `出典:` / `参考:` ラベル付き段落（B）
-- 本文末尾の小文字 footer リンク（B）
-- `[[1]](url)` 形式（B）
-
-**対応方針（確定）**:
-- **第一優先: (a) `extract_source_links()` の抽出パターン拡張** → **19件中 14件を即時カバー見込み**
-- 残る A=5 は (a) 実装後に再監査し、(b) 記事側補填 / (c) 旧記事例外ルール のいずれかで処理
-
-**次便 (第10便) で依頼する実装スコープ**:
-- 対象: `src/draft_audit.py` の `extract_source_links()`
-- 追加パターン 4種（上記）+ `tests/` にregression テスト
-- 受け入れ: B+C=14件のうち 12件以上で `source_reference_missing` 解消、A=5 はそのまま残ってよい
-- deploy は本便ではやらない（次々便で別途）
-
-**優先度**: 🟠（red ではないが publish 半数以上に効いており、受け入れ品質指標の母集団に影響）
-
-**関連レポート**: `docs/handoff/codex_responses/2026-04-18_09.md`
+**関連**:
+- 第9便調査: `docs/handoff/codex_responses/2026-04-18_09.md`
+- 第10便実装: `docs/handoff/codex_responses/2026-04-18_10.md`
+- 関連commit: `a08d875`
 
 ---
 
-## T-014 🟡 p=62003 の subject: needs_manual_review（T-010 から分離）
+## T-014 🟡 subject: needs_manual_review（2件、T-010 から分離）
 
 **発見日**: 2026-04-18（publish 全量 fact_check）
-**発見者**: Claude Code（監査役）
+**対象追加日**: 2026-04-18 夕（第10便 `a08d875` 後の再監査で 61779 が同パターンで露出）
+**発見者**: Claude Code（監査役）/ Codex 再監査
 **影響**: 単発の yellow。受け入れ品質への影響は限定的
 
 **対象**:
-- post_id: 62003
-- title: 阿部監督「本当に自己犠牲ができる素晴らしい打者」 ベンチの狙いはどこか
-- status: publish
 
-**finding**:
-- `field=subject`, `cause=needs_manual_review`
-- T-010 の `source_reference_missing` とは原因も対処も異なるため分離
+| post_id | status | title |
+|---|---|---|
+| 62003 | publish | 阿部監督「本当に自己犠牲ができる素晴らしい打者」 ベンチの狙いはどこか |
+| 61779 | publish | 6試合連続で3得点以下…貧打にあえぐ巨人打線　大矢明彦氏「我慢の時期かもしれない」 |
+
+**備考**:
+- 61779 は当初 T-010 (Bクラス) に属していたが、第10便で `source_reference_missing` 解消後に subject yellow が残って本チケットに合流
+- 2件とも `field=subject`, `cause=needs_manual_review`
+- T-010 の `source_reference_missing` とは原因も対処も異なる
 
 **調査事項**:
 - subject 抽出ロジック（`_extract_subject_label()` 等）が何をもって manual_review に倒したか
-- 同様パターンが他記事にないか（本件は 62003 のみ）
+- 同様パターンが他記事にないか
 - subject の値が空／曖昧／複数候補のどれか
 
-**優先度**: 🟡（単発、systemic ではない）
+**優先度**: 🟡（2件、systemic ではない）
 
 **Codex向け指示書ドラフト（仮）**:
 ```
-p=62003 を `python3 -m src.acceptance_fact_check --post-id 62003 --json` で実行し、
+p=62003 と p=61779 を `python3 -m src.acceptance_fact_check --post-id <id> --json` で実行し、
 subject finding の詳細（current / expected / message）を取得。
 _extract_subject_label() のどの分岐で manual_review 判定になったかを
 ソース読み取りで特定し、原因種別（抽出失敗 / 値異常 / ルール側の問題）を切り分け。
 結果を codex_responses に記録。修正要否は分析結果で判断。
 ```
+
+---
+
+## T-015 🟠 T-010 (a) 修正を Cloud Run に反映（deploy 未実施）
+
+**発見日**: 2026-04-18（第10便コード commit 後）
+**発見者**: Claude Code（監査役）
+**影響**: Cloud Run は revision `00132-lgv` (`d6e19eb`) のまま。第10便 commit (`a08d875`) の `extract_source_links()` 拡張が本番環境に反映されておらず、次の Scheduler 発火時の fact_check メールに旧 coverage の結果が混じる
+
+**未反映のcommit**:
+- `a08d875` fix: expand source reference extraction coverage（T-010 (a)）
+
+**必要な作業**:
+- Cloud Run `yoshilover-fetcher` に最新 master を deploy（第4便 Step 1 / 第8便と同じ手順）
+- env変更不要（`RUN_DRAFT_ONLY=1` / `AUTO_TWEET_ENABLED=0` / `PUBLISH_REQUIRE_IMAGE=1` 維持）
+- smoke test + scheduler 手動 trigger + `/run` 実行で `draft_only=true`, `error_count=0` 確認
+
+**Codex向け依頼書**: `docs/handoff/codex_requests/2026-04-18_11.md`
 
 ---
 

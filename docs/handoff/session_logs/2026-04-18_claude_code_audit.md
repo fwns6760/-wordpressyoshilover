@@ -108,3 +108,57 @@
 1. `docs/handoff/README.md`
 2. `docs/handoff/tickets/OPEN.md` ← 今ここに未解決が溜まっている
 3. `docs/handoff/session_logs/2026-04-18_claude_code_audit.md`（このファイル）
+
+---
+
+## 作業6: 起動時自動ロード機構の設置（午前後半）
+
+**やったこと**:
+- `CLAUDE.md`（リポ直下）— 起動時必読ファイルの順序と監査役ルール
+- `.claude/settings.json` — SessionStart hook 登録
+- `.claude/session_start.py` — tickets/OPEN.md + 最新 session_log を
+  `additionalContext` として注入するスクリプト（5,946 bytes 注入）
+
+**目的**: チャット消失後の新規Claude Codeセッションでも、起動時に
+未解決チケットと直近作業が自動で文脈に入る。
+
+**commit**: `f068bf4`
+
+---
+
+## 作業7: Codex 本日報告の受信・監査
+
+**受信日時**: 2026-04-18 午前（Yoshihiro 経由）
+
+**Codex 報告の要点**:
+1. GMAIL_APP_PASSWORD 読み出し修正 + 再deploy → revision `00130-nxg`
+2. fact_check Scheduler を 7:00/12:00/17:00/22:00 JST の 4回化
+3. postgame/lineup 10件の fact_check 実施（62527=自動修正候補, 62518=差し戻し推奨, 残8=通過）
+4. `src/acceptance_auto_fix.py` 新規実装（dry-run、whitelist、楽観ロック）
+5. `docs/fix_logs/2026-04-18.md` 日次レポート出力
+6. fact_check メール本文に3セクション追加（自動修正候補/差し戻し推奨/手動確認必要）
+7. テスト 358 passed
+8. auto_fix + notifier 拡張は GitHub push 済み、Cloud Run へは未反映
+
+**監査役による物の確認**:
+- `src/acceptance_auto_fix.py` 存在（17,122 bytes）✅
+- `docs/fix_logs/2026-04-18.md` 存在、内容は報告と整合 ✅
+- commit `957f458 feat: add acceptance auto-fix dry run workflow` origin/master に存在 ✅
+- Scheduler cadence docs は `cb9c7e0` で更新済 ✅
+
+**監査発見（Codex報告に含まれていない重要事項）**:
+- **🔴 T-007 新規**: p=62518 の score 根拠データが `25-97`（明らかな異常値）。
+  スコア抽出パーサー or 根拠データ生成ロジックのバグ可能性。他記事への波及を調査すべき。
+- **🟡 T-008 新規**: p=62527 DeNA→ヤクルト 自動修正の実行判断が Yoshihiro に必要。
+  Codex向け指示書ドラフトを T-008 に添付済。
+
+**未進捗（Codex は今日触れていない）**:
+- T-001（list API draft フィルタ不全）
+- T-002（過去公開6件の RED）
+- T-003（現在の draft 件数不明）
+
+**Yoshihiro への推奨（体力減らしモード・1つに絞る）**:
+> まず T-007 を Codex に調査依頼。
+> 理由: T-008 の修正を急いでも、T-007 の根拠データバグが残っていれば
+> 今後も同種の auto_fix 候補（実は根拠側が壊れている）が量産される。
+> 根っこから。

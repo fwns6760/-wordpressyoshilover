@@ -131,6 +131,62 @@ Cloud Logging から直近7日間の `draft_created` / `draft_updated` を集計
 
 **対応**: Yoshihiro側でスマホのGmailを確認（朝のメールを見る）
 
+**2026-04-18 午前追記（Codex報告経由）**:
+- Scheduler は 7:00 / 12:00 / 17:00 / 22:00 JST の1日4回に変更済
+- `fact_check_email_sent` ログ確認済、実メール送信まで成功
+- メール本文に「自動修正候補 / 差し戻し推奨 / 手動確認必要」の3セクション追加済
+
+---
+
+## T-007 🔴 post_id 62518 で score が `25-97` という異常値
+
+**発見日**: 2026-04-18（Codex の acceptance_auto_fix dry-run 出力から）
+**発見者**: Claude Code（監査役）
+**影響**: 根拠データ生成ロジック（rewrite元）のバグ可能性。放置すると再発する
+
+**事実**（`docs/fix_logs/2026-04-18.md` より）:
+- p=62518 postgame「巨人8-2 勝利の分岐点はどこだったか」
+- fact_check の findings: `score` / `game_fact_alignment_failure`
+  - 記事側: `8-2`（正しい）
+  - 根拠側: `25-97`（明らかに異常）
+- auto_fix は「根拠側に合わせて 8-2 → 25-97 に置換」という提案を出している
+- Codex は score を whitelist 外にして自動修正から除外（正しい判断）
+
+**疑い**:
+- スコア抽出パーサーが誤った要素を拾っている（ページビュー数？打率？）
+- または別試合の数値が混入している
+- 同じ根拠データが他記事の判定にも使われている可能性
+
+**Codex向け指示書ドラフト（調査）**:
+```
+p=62518 の fact_check が参照している根拠データ（ref / source）を特定し、
+score に `25-97` が入った理由を調査。スコア抽出ロジックを点検し、
+他の post_id でも同種の異常値が出ていないか grep で確認。
+調査のみ、修正は別チケット。
+```
+
+---
+
+## T-008 🟡 post_id 62527 タイトル DeNA → ヤクルト の自動修正判断
+
+**発見日**: 2026-04-18
+**発見者**: Codex の acceptance_auto_fix dry-run
+**影響**: 公開中記事のタイトルに誤対戦相手。読者に誤情報
+
+**事実**（`docs/fix_logs/2026-04-18.md` より）:
+- p=62527 postgame「巨人DeNA戦 大城卓三は何を見せたか」
+- 実試合は巨人 vs ヤクルト
+- auto_fix 候補: WP title の `DeNA` → `ヤクルト` 置換（1箇所一致、whitelist 通過、楽観ロックあり）
+
+**Yoshihiroの判断が必要**: 自動修正を実行する / 手動で確認してから実行 / draft戻し
+
+**Codex向け指示書ドラフト（自動修正実行）**:
+```
+p=62527 に対して acceptance_auto_fix を dry-run ではなく本番モードで実行し、
+title の `DeNA` → `ヤクルト` 置換を適用。適用後に fact_check を再実行して
+title_rewrite_mismatch が解消したことを確認。status は publish のまま。
+```
+
 ---
 
 ## チケット運用ルール

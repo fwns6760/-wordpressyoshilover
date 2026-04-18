@@ -162,3 +162,33 @@
 > 理由: T-008 の修正を急いでも、T-007 の根拠データバグが残っていれば
 > 今後も同種の auto_fix 候補（実は根拠側が壊れている）が量産される。
 > 根っこから。
+
+---
+
+## 作業8: Codex 調査報告受信（T-007/T-001/T-003 完了）
+
+**受信**: 2026-04-18 昼頃、commit `10fa214`, テスト 362 passed, Yoshihiro 経由
+
+**主要発見**:
+
+- **T-007 真犯人**: `src/acceptance_fact_check.py:311-328` の `_source_reference_facts()` が
+  source URL の raw text に `_extract_score()` を直当てしており、UUID 断片 `4725-97a1` から
+  `25-97` を誤抽出。venue も `_fetch_npb_schedule_snapshot()` の切り出し誤り。
+- **T-001 真犯人**: `src/yoshilover-exclude-cat.php:16-44` の `pre_get_posts` が
+  REST リクエストも拾って `$query->set('post_status', 'publish')` を強制していた。
+  権限ではなくプラグイン側のバグ。
+- **T-003 解決**: `src/draft_inventory_from_logs.py` 追加。現在 draft=77件
+  （lineup=29, player=11, farm=11, postgame=9, manager=7, pregame=4 ほか）
+- **T-002 6件は疑陽性の可能性**: venue fallback バグ由来。61981/61598 は spot check で再現確認済
+
+**チケット更新**:
+- T-001: 優先度🔴→🟠へ降格（T-003 で代替手段ができたため）、修正指示書を差し替え
+- T-002: 優先度🔴→🟡へ降格（疑陽性疑い）、T-007 修正後に再判定する指示を記載
+- T-003: **RESOLVED** へ移動（`10fa214`）
+- T-007: 原因/影響範囲/修正方針を Codex 報告に基づき詳細化、実装指示書ドラフト差し替え
+
+**次の依頼**: `docs/handoff/codex_requests/2026-04-18_02.md`
+T-007 の根本修正 → 9件 post_id の再判定 → T-002 の3分類（A/B/C）。
+受け入れ試験の再開はこの再判定結果を見てから。
+
+**commit**: （本セッションの後続 commit で反映予定）

@@ -10,90 +10,75 @@
 
 ---
 
-## T-001 🔴 WP REST APIのstatus=draftフィルタが機能していない
+## T-001 🟠 WP REST APIのstatus=draftフィルタが機能していない（真犯人判明・修正待ち）
 
 **発見日**: 2026-04-18
+**原因特定日**: 2026-04-18（Codex 調査結果）
 **発見者**: Claude Code（監査役）
-**影響**: acceptance_fact_checkが意図と違う対象（publish記事）を監査している
+**影響**: acceptance_fact_checkがlistAPI経由でdraftを扱えない（T-003で代替手段確立済）
 
-**事実**:
-- `curl .../posts?status=draft&per_page=100&context=edit` で返る36件は全て `status=publish`
-- `curl .../posts?status=publish` でも同じ36件
-- `curl .../posts?status=any` でも同じ36件
-- 単独GET（例: `posts/62483`）では正しく `status=draft` が返る
-- つまり list API ではdraftが返らない（フィルタ不全 or WP側のカスタム挙動）
+**真犯人**: `src/yoshilover-exclude-cat.php` の `pre_get_posts` フック
+- `is_admin()` でスキップしているが REST リクエストでは admin 判定にならない
+- 結果として `$query->set('post_status', 'publish')` が REST collection query にも効き、
+  `?status=draft` / `?status=any` も publish に書き換わる
+- 単独 GET（`/posts/{id}`）は collection query を経由しないので影響なし
 
-**根本原因**: 未特定（WPのhook/plugin/filterの可能性）
+**暫定対応**: T-003 の `src/draft_inventory_from_logs.py` で代替可能（優先度🟠に降格）
 
-**暫定対応**:
-- 個別post_idでの確認は信頼できる
-- 件数カウントはSQLやWP管理画面を別途使う必要あり
+**修正方針**:
+1. `REST_REQUEST` 中はこの plugin を効かせない（`if (defined('REST_REQUEST') && REST_REQUEST) return;`）
+2. または true front-end query のみに条件を絞る
+3. `post_status=publish` の強制はテーマ用一覧 query のみに限定
 
-**Codex向け指示書（原因調査）**:
+**Codex向け指示書ドラフト（修正実装）**:
 ```
-WPのfunctions.phpやMU-plugin等で `pre_get_posts` / `rest_post_query` フィルタが
-status=draft を除外していないか調査。plugin一覧も確認。
-調査のみ。変更はしない。
+src/yoshilover-exclude-cat.php:16-44 の pre_get_posts フック先頭で
+`if (defined('REST_REQUEST') && REST_REQUEST) return;` を追加し、
+REST collection query からこのプラグインを除外する。
+修正後、WP に差し替えて以下を確認:
+- curl .../posts?status=draft&context=edit でdraftのみが返ること
+- curl .../posts?status=publish でpublishのみが返ること
+- テーマ側のフロント一覧で除外カテゴリ動作が保たれていること
+deployはYoshihiro承認後。
 ```
 
 ---
 
-## T-002 🔴 公開中の6記事にRED判定（事実誤記）
+## T-002 🟡 公開中の6記事RED判定 — **疑陽性の可能性（T-007パーサーバグ由来）**
 
 **発見日**: 2026-04-18
+**再評価日**: 2026-04-18（T-007 調査結果を受けて降格）
 **発見者**: Claude Code（監査役）
-**影響**: 公開済み記事に事実誤認が残っている（読者が誤情報に触れる状態）
+**影響**: 判定根拠が壊れている可能性があり、現状の判定では修正判断できない
 
 **対象（全て WP_status=publish、HTTP 200で閲覧可能）**:
 
-| post_id | subtype | 問題 |
-|---------|---------|------|
-| 62044 | lineup | venue: 甲子園 → 正: PayPay |
-| 61981 | postgame | opponent: **阪神 → 正: 楽天**（重大） + venue: 甲子園→PayPay |
-| 61886 | pregame | venue: 甲子園 → 正: PayPay |
-| 61802 | lineup | venue: 東京ドーム → 正: PayPay |
-| 61770 | lineup | venue: 東京ドーム → 正: PayPay + 参照元リンクなし |
-| 61598 | postgame | venue: 東京ドーム → 正: PayPay + 参照元リンクなし |
+| post_id | subtype | 当初の「問題」 | 信頼性 |
+|---------|---------|----------|--------|
+| 62044 | lineup | venue: 甲子園 → 正: PayPay | ⚠️ venue fallback疑陽性の可能性 |
+| 61981 | postgame | opponent: 阪神 → 正: 楽天 + venue | ⚠️ venue は疑陽性、opponent は未検証 |
+| 61886 | pregame | venue: 甲子園 → 正: PayPay | ⚠️ venue fallback疑陽性の可能性 |
+| 61802 | lineup | venue: 東京ドーム → 正: PayPay | ⚠️ venue fallback疑陽性の可能性 |
+| 61770 | lineup | venue + 参照元リンクなし | ⚠️ venue fallback疑陽性の可能性 |
+| 61598 | postgame | venue + 参照元リンクなし | ⚠️ Codex spot check で venue fallback 異常再現 |
 
-**注**: これら6記事は日付が 2026-04-14 またはそれ以前。Phase A/B/B.5実装前に
-生成/公開された可能性が高い（= 事故ではなく、旧ロジックの産物）。
+**重要な更新（T-007報告より）**:
+- `_fetch_npb_schedule_snapshot()` の date block 切り出しミスで venue が誤って `PayPay` に化ける
+- 61981 と 61598 は Codex の spot check で venue fallback の異常を再確認
+- つまり **T-002 の venue 判定は信用できない**（パーサーバグの疑陽性）
+- 61981 の opponent 阪神→楽天は別経路なので別途要確認
 
-**判断が必要**:
-- 即draft戻し（修正前の非公開化）
-- 自動fix実行（fact_checkの `auto_fix` フィールドに提案あり）
-- そのまま放置（旧記事の一部として扱う）
+**やるべきこと**: **T-007 のパーサー修正完了後、6件を再 fact_check**
+- もし全てgreenに転じたら T-002 は RESOLVED へ
+- もし本当にREDが残ったら、その時点で修正判断
+- 疑陽性のまま修正を走らせると、正しい記事を壊す危険あり
 
-**Codex向け指示書ドラフト（修正したい場合）**:
+**Codex向け指示書ドラフト（T-007 修正完了後に再実行）**:
 ```
-対象6記事に対して `python3 -m src.acceptance_auto_fix --post-id <id>` を実行し
-auto_fixの提案を適用する。その後 fact_check で green になることを確認。
-status=publish のまま修正する（draftに戻さない）。
-テスト: pytest 全PASS確認。
-```
-
----
-
-## T-003 🟠 ヨシラバーの「現在のdraft件数」が不明
-
-**発見日**: 2026-04-18
-**発見者**: Claude Code（監査役）
-**影響**: 受け入れ試験の計画が立てられない
-
-**事実**:
-- T-001でlist APIがdraft を返さない
-- 個別GETで少なくとも 62483/62486/62489/62493 の4件はdraft
-- 総draft数は不明（36ではない、それは全publish件数）
-
-**確認手段の候補**:
-- WP管理画面にログインして件数を見る
-- Cloud Logging の `rss_fetcher_run_summary` の `draft_created` 累計を読む
-- xserverのphpMyAdmin/SQLで `wp_posts WHERE post_status='draft'` をcount
-
-**Codex向け指示書ドラフト**:
-```
-Cloud Logging から直近7日間の `draft_created` / `draft_updated` を集計し、
-現在のdraft累計を推定。または rss_fetcher コードに「現在のdraft件数をログ出力」の
-一回限りエンドポイントを追加して結果を取得。
+以下6件を acceptance_fact_check で再判定:
+62044 / 61981 / 61886 / 61802 / 61770 / 61598
+結果を docs/fix_logs/{date}_t002_recheck.md に出力。
+修正は行わず判定のみ。
 ```
 
 ---
@@ -138,31 +123,59 @@ Cloud Logging から直近7日間の `draft_created` / `draft_updated` を集計
 
 ---
 
-## T-007 🔴 post_id 62518 で score が `25-97` という異常値
+## T-007 🔴 fact_check パーサーバグ — score/venue の fallback が誤値を拾う
 
-**発見日**: 2026-04-18（Codex の acceptance_auto_fix dry-run 出力から）
-**発見者**: Claude Code（監査役）
-**影響**: 根拠データ生成ロジック（rewrite元）のバグ可能性。放置すると再発する
+**発見日**: 2026-04-18
+**原因特定日**: 2026-04-18（Codex 調査結果）
+**発見者**: Claude Code（監査役）→ Codex 調査
+**影響**: **本件が直らない限り fact_check / auto_fix / 受け入れ試験の結果は信用できない**
 
-**事実**（`docs/fix_logs/2026-04-18.md` より）:
-- p=62518 postgame「巨人8-2 勝利の分岐点はどこだったか」
-- fact_check の findings: `score` / `game_fact_alignment_failure`
-  - 記事側: `8-2`（正しい）
-  - 根拠側: `25-97`（明らかに異常）
-- auto_fix は「根拠側に合わせて 8-2 → 25-97 に置換」という提案を出している
-- Codex は score を whitelist 外にして自動修正から除外（正しい判断）
+**真犯人**（Codex報告 `docs/handoff/codex_responses/2026-04-18.md`）:
 
-**疑い**:
-- スコア抽出パーサーが誤った要素を拾っている（ページビュー数？打率？）
-- または別試合の数値が混入している
-- 同じ根拠データが他記事の判定にも使われている可能性
+1. `src/acceptance_fact_check.py:311-328` `_source_reference_facts()`
+   - source URL の title/description/text を連結し、その raw 全文に `_extract_score()` をかけている
+2. `_extract_score()` のパターンが `(\d{1,2})[-－–](\d{1,2})` と素朴すぎる
+   - p=62518 の source URL に含まれる **UUID 断片 `4725-97a1` から `25-97` を誤抽出**
+3. `src/acceptance_fact_check.py:356-375` `_fetch_npb_schedule_snapshot()`
+   - 月間日程ページを文字数切り出しで処理しており、ズレると別試合の venue を拾う
+4. `src/acceptance_fact_check.py:518-570` `_check_game_facts()`
+   - `reference.get("score") or source_facts.get("score")` で、live reference が空だと
+     誤抽出値が採用される
+5. evidence URL は `reference["evidence_urls"][0]` 固定
+   - 実際は source URL 由来の誤値でもレポート上は NPB / Yahoo game ref のせいに見える
 
-**Codex向け指示書ドラフト（調査）**:
+**影響範囲（判明分）**:
+- **直接表面化**: 62518（score=25-97, venue=PayPay の両方）
+- **score 同種誤抽出（潜在）**: 62527, 62540 — いずれも source facts 側 score=19-4
+- **venue fallback 異常（疑陽性）**: T-002 の6件（62044/61981/61886/61802/61770/61598）
+  - Codex spot check で 61981, 61598 は再現確認済
+- **受け入れ試験全体**: 現在の fact_check 結果は全体として信用できない
+
+**修正方針**（Codex提案、未実装）:
+
+1. `source_facts` からの score 抽出を停止 — raw page text 全体への `_extract_score()` 禁止、
+   structured source のみ許可
+2. `_fetch_npb_schedule_snapshot()` の切り出しを文字数ベースから HTML 構造ベースに変更
+3. `_check_game_facts()` で expected 値の供給元に応じて evidence URL を分ける
+   - reference 由来 → game reference URL
+   - source_facts 由来 → source URL
+4. 62518 を regression test 化
+
+**Codex向け指示書ドラフト（修正実装）**:
 ```
-p=62518 の fact_check が参照している根拠データ（ref / source）を特定し、
-score に `25-97` が入った理由を調査。スコア抽出ロジックを点検し、
-他の post_id でも同種の異常値が出ていないか grep で確認。
-調査のみ、修正は別チケット。
+docs/handoff/codex_responses/2026-04-18.md の T-007 修正方針1〜4を実装:
+- _source_reference_facts() から score/venue の raw text 抽出経路を削除
+  （structured source のみ許可）
+- _fetch_npb_schedule_snapshot() を HTML 構造ベースの切り出しに書き換え
+- _check_game_facts() で evidence URL を supply origin ごとに分岐
+- regression test 追加: 62518 ケース + UUID 断片からの score 抽出が起きないこと
+
+修正後の検証:
+1. pytest 全 PASS (現状 362 tests)
+2. 以下 post_id を acceptance_fact_check で再判定し結果を
+   docs/fix_logs/{date}_t007_post_fix_recheck.md に出力:
+   62518 / 62527 / 62540 / 62044 / 61981 / 61886 / 61802 / 61770 / 61598
+3. deploy/env変更は本依頼では実施しない（Yoshihiro承認後）
 ```
 
 ---

@@ -317,3 +317,9 @@ T-007 の根本修正 → 9件 post_id の再判定 → T-002 の3分類（A/B/C
 - `~/.claude/projects/-home-fwns6-code/memory/feedback_codex_prompt_verbose.md`
 - Codex 依頼書は 7 要素（コマンド例 / 期待出力 / 成功判定 / 失敗時 / NG / 次の動き / 所要時間）を埋める
 
+
+### 追記: T-011 クローズ
+
+- T-011 は第4便 Step 1 で deploy 済み（revision `00131-mpn`、smoke test + `/run` 実行確認済）
+- よしひろさん承認のもと OPEN → RESOLVED へ移動
+- 最終 OPEN: T-001 / T-004 / T-005 / T-006 / T-010 / T-012

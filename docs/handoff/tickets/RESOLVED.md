@@ -16,6 +16,24 @@
 
 ---
 
+## T-011 🟠 T-007 修正 + auto_fix/notifier を Cloud Run に反映
+
+**発見日**: 2026-04-18
+**解決日**: 2026-04-18（第4便 Step 1）
+**解決者**: Codex（deploy 実行）/ Claude Code（依頼ドラフト）/ よしひろさん（承認）
+**対応内容**:
+- Cloud Run `yoshilover-fetcher` に master HEAD (`ba97edc`) を source deploy
+- new revision: `yoshilover-fetcher-00131-mpn`
+- env 変更なし（`RUN_DRAFT_ONLY=1` / `AUTO_TWEET_ENABLED=0` / `PUBLISH_REQUIRE_IMAGE=1` 維持）
+- smoke test 通過（traffic 100% / latest ready revision が `00131-mpn`）
+- scheduler 手動 trigger で `/run` 実行確認: `draft_only=true`, `error_count=0`
+
+**備考**: resolved by `00131-mpn` deploy + smoke test pass
+
+**関連レポート**: `docs/handoff/codex_responses/2026-04-18_04.md`
+
+---
+
 ## T-002 🟠 公開中 p=61981 の opponent 誤記（阪神→楽天）
 
 **発見日**: 2026-04-18

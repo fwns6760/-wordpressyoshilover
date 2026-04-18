@@ -141,39 +141,6 @@ src/acceptance_fact_check.py の opponent 抽出ロジックを見直し、
 
 ---
 
-## T-011 🟠 T-007 修正 + auto_fix/notifier を Cloud Run に反映（deploy 未実施）
-
-**発見日**: 2026-04-18
-**発見者**: Claude Code（監査役）
-**影響**: **Cloud Run は依然として旧 fact_check パーサー**。次の Scheduler 発火で新記事が誤判定される
-
-**未反映のcommit**:
-- `ba97edc` fix: harden fact check game reference parsing（T-007）
-- `957f458` feat: add acceptance auto-fix dry run workflow
-- `10fa214` T-003 draft_inventory_from_logs + 他
-
-**必要な作業**:
-- Cloud Build or `gcloud run deploy` で最新 master を Cloud Run に反映
-- env変更は不要（`RUN_DRAFT_ONLY=1` / `ENABLE_PUBLISH_FOR_*=0` 維持）
-- 反映後、次の Scheduler 発火（7:00/12:00/17:00/22:00 JST いずれか）で新パーサーの動作を確認
-
-**よしひろさんの承認が必要**: deploy 実行の是非
-
-**Codex向け指示書ドラフト**:
-```
-Cloud Run `yoshilover-fetcher` に最新 master (ba97edc) を deploy。
-env変数は現状維持（RUN_DRAFT_ONLY=1, ENABLE_PUBLISH_FOR_*=0）。
-deploy 後に以下を確認:
-1. revision が進んでいる（00131 以降）
-2. smoke test: scheduler の手動 trigger で新 revision が発火、
-   fact_check_email_sent ログが出る
-3. 次の scheduled 発火メール本文が正常
-差し戻しが出たら revision を 00130-nxg に戻す（rollback 手順を
-docs/phase_c_runbook.md 参照）。
-```
-
----
-
 ## チケット運用ルール
 
 - 新規発見: このファイルに追記、IDは連番（T-007, T-008...）

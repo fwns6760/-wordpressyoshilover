@@ -13,6 +13,7 @@ import re
 import sys
 from collections import Counter
 from pathlib import Path
+from urllib.parse import urlparse
 
 ROOT = Path(__file__).parent.parent
 if str(Path(__file__).parent) not in sys.path:
@@ -36,6 +37,40 @@ REFERENCE_SECTION_RE = re.compile(r"📰\s*参照元:\s*(.*?)</p>", re.S)
 ANCHOR_RE = re.compile(r'<a [^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', re.I | re.S)
 BADGE_RE = re.compile(r"📰\s*([^<]+)</span>", re.S)
 TAG_RE = re.compile(r"<[^>]+>")
+PARAGRAPH_RE = re.compile(r"<p\b([^>]*)>(.*?)</p>", re.I | re.S)
+REF_HEADING_RE = re.compile(
+    r"<h[1-6][^>]*>\s*【引用元】\s*</h[1-6]>(?:\s|<!--.*?-->)*(<p\b[^>]*>.*?</p>)",
+    re.I | re.S,
+)
+MARKDOWN_LINK_RE = re.compile(r"\[\[\d+\]\]\((https?://[^)\s]+)\)")
+SOURCE_LABEL_RE = re.compile(r"(引用元|出典|参考|参照元|source)\s*[:：]", re.I)
+FOOTER_STYLE_RE = re.compile(r"(font-size\s*:\s*(?:0\.8em|0\.9em|12px|13px))|(color\s*:\s*#(?:666|999))", re.I)
+SOURCE_HOST_PATTERNS = (
+    "npb.jp",
+    "baseball.yahoo.co.jp",
+    "sports.yahoo.co.jp",
+    "news.yahoo.co.jp",
+    "nikkansports.com",
+    "hochi.news",
+    "sponichi.co.jp",
+    "sanspo.com",
+    "baseballking.jp",
+    "full-count.jp",
+    "giants.jp",
+    "tokyo-sports.co.jp",
+    "daily.co.jp",
+    "chunichi.co.jp",
+    "number.bunshun.jp",
+)
+EXCLUDED_SOURCE_HOST_PATTERNS = (
+    "twitter.com",
+    "x.com",
+    "t.co",
+    "youtube.com",
+    "youtu.be",
+    "facebook.com",
+    "instagram.com",
+)
 
 
 def _strip_html(value: str) -> str:
@@ -60,6 +95,42 @@ def _dedupe_preserve_order(items: list[str]) -> list[str]:
     return result
 
 
+def _is_supported_source_url(url: str, strict: bool = True) -> bool:
+    try:
+        parsed = urlparse(html.unescape(url))
+        host = (parsed.hostname or "").lower()
+    except Exception:
+        return False
+    if parsed.scheme not in {"http", "https"} or not host:
+        return False
+    if any(pattern in host for pattern in EXCLUDED_SOURCE_HOST_PATTERNS):
+        return False
+    if not strict:
+        return True
+    return any(pattern in host for pattern in SOURCE_HOST_PATTERNS)
+
+
+def _extract_anchor_items(fragment: str, strict: bool = True) -> list[dict]:
+    items = []
+    for url, label in ANCHOR_RE.findall(fragment):
+        clean_url = html.unescape(url)
+        if not _is_supported_source_url(clean_url, strict=strict):
+            continue
+        name = _strip_html(label) or clean_url
+        items.append({"name": name, "url": clean_url})
+    return items
+
+
+def _append_unique_source_items(target: list[dict], items: list[dict]) -> None:
+    seen = {(item.get("url") or "", _normalize_key(item.get("name") or "")) for item in target}
+    for item in items:
+        key = (item.get("url") or "", _normalize_key(item.get("name") or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        target.append(item)
+
+
 def load_source_catalog() -> dict[str, dict]:
     if not SOURCE_CONFIG_FILE.exists():
         return {}
@@ -79,15 +150,35 @@ def load_source_catalog() -> dict[str, dict]:
 
 def extract_source_links(content_html: str) -> list[dict]:
     content_html = content_html or ""
+    found_items: list[dict] = []
+
     match = REFERENCE_SECTION_RE.search(content_html)
     if match:
-        items = []
-        for url, label in ANCHOR_RE.findall(match.group(1)):
-            name = _strip_html(label)
-            if name:
-                items.append({"name": name, "url": html.unescape(url)})
-        if items:
-            return items
+        _append_unique_source_items(found_items, _extract_anchor_items(match.group(1), strict=False))
+
+    for match in REF_HEADING_RE.finditer(content_html):
+        _append_unique_source_items(found_items, _extract_anchor_items(match.group(1), strict=False))
+
+    for attrs, body in PARAGRAPH_RE.findall(content_html):
+        paragraph_html = f"<p{attrs}>{body}</p>"
+        plain = _strip_html(body)
+        if SOURCE_LABEL_RE.search(plain):
+            _append_unique_source_items(found_items, _extract_anchor_items(paragraph_html, strict=False))
+            continue
+        style_attrs = attrs or ""
+        if FOOTER_STYLE_RE.search(style_attrs):
+            _append_unique_source_items(found_items, _extract_anchor_items(paragraph_html))
+
+    for url in MARKDOWN_LINK_RE.findall(content_html):
+        clean_url = html.unescape(url)
+        if _is_supported_source_url(clean_url):
+            _append_unique_source_items(
+                found_items,
+                [{"name": clean_url, "url": clean_url}],
+            )
+
+    if found_items:
+        return found_items
 
     badge_match = BADGE_RE.search(content_html)
     if not badge_match:

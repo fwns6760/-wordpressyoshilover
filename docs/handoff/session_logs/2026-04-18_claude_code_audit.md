@@ -417,3 +417,18 @@ T-007 の根本修正 → 9件 post_id の再判定 → T-002 の3分類（A/B/C
 - T-015 → RESOLVED へ移動
 - 最終 OPEN: T-001 / T-004 / T-005 / T-006 / T-010（🟡 A=5）/ T-014（🟡 2件）
 
+
+### 追記: 第12便（T-014 調査）+ 第13便（T-010 Aクラス backfill）並行投入
+
+- 打ち合わせ中のためよしひろさん判断待ちを減らす方針で、調査系と実装系を並行で投入
+- **第12便** `docs/handoff/codex_requests/2026-04-18_12.md`:
+  - T-014 対象 2件（62003 / 61779）の subject manual_review yellow を調査専念
+  - `_check_subject_facts()` の分岐特定、カテゴリ分類 (X/Y/Z)、修正案 (m1)〜(m4) 比較
+  - コード修正・WP更新なし
+- **第13便** `docs/handoff/codex_requests/2026-04-18_13.md`:
+  - T-010 残 A=5件の source URL 特定 → backfill
+  - 本文末尾に P2 パターン `出典: <a>...</a>` を追記
+  - 特定できない記事は見送り（除外ルール(c) 検討用にレポート）
+  - 受け入れ: 5件中 3件以上で yellow 解消、regression なし、publish red 0件維持
+- 両便ともコードに触らないため deploy 不要
+

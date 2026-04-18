@@ -232,3 +232,44 @@ T-007 の根本修正 → 9件 post_id の再判定 → T-002 の3分類（A/B/C
 **次の依頼**: `docs/handoff/codex_requests/2026-04-18_03.md`（deploy 依頼、よしひろさん承認後に投げる想定）
 
 **commit**: （本セッションの後続 commit で反映予定）
+
+---
+
+## 本日のクローズ（2026-04-18 終業時）
+
+**よしひろさんの意向**: 今日はもう判断したくない。他の作業中。気になる点があれば伝える。
+
+**持ち越し状態**:
+- **T-011 deploy は持ち越し**（Cloud Run は旧パーサーのまま）
+- T-002（61981 opponent）、T-008（62527 title）、T-010（yellow 2件）も持ち越し
+- `RUN_DRAFT_ONLY=1` / `ENABLE_PUBLISH_FOR_*=0` のまま、本番公開は解放されていない
+
+**リスク評価（持ち越しで発生し得ること）**:
+- 旧パーサーのまま Scheduler が 17:00 / 22:00 JST に発火
+- 新しい draft に対して旧 venue/score パーサーが誤判定する可能性
+- ただし `RUN_DRAFT_ONLY=1` なので誤判定記事は draft 止まり、公開はされない
+- → **事故リスクは低い**。メール通知に疑陽性が混じる程度。
+
+**明朝の自然なトリガー**:
+- 7:00 JST Scheduler 発火 → fact_check メール送信
+- よしひろさんがメール本文を見た時点で、疑陽性の量や新記事の判定結果から
+  「deploy を急ぐべきか」を自然に判断できる状態
+
+**次セッションのClaude Codeへ**:
+- まず `tickets/OPEN.md` の T-011 / T-002 / T-008 / T-010 / T-001 の現状を把握
+- `docs/handoff/codex_requests/2026-04-18_03.md` が deploy 依頼ドラフトとして準備済
+- よしひろさんから「deployしていいよ」の明示があったら、上記依頼書を Codex に投げる形をコピペで提示
+- よしひろさんが何も言わなければ、deploy を急かさない。監査役として黙って待つ。
+
+**本セッションの commit 群**:
+- `b35ff91` 初版 handoff docs
+- `02ae205` 抜け漏れ追記
+- `d520ac0` 監査インフラ（tickets/session_logs）
+- `f068bf4` 起動時自動ロード機構
+- `f07ca56` T-007/T-008 追加
+- `1087cae` codex_requests 第1便
+- `10fa214` Codex: T-001/T-003/T-007 調査結果
+- `dbd267e` チケット整理 + codex_requests 第2便
+- `414fd1f` Yoshihiro → よしひろさん 統一
+- `ba97edc` Codex: T-007 修正 + 再判定
+- `3a15ba3` T-007 RESOLVED + 再整理 + codex_requests 第3便

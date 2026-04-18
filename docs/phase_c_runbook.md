@@ -175,7 +175,7 @@ WordPress REST API で `status=draft` に戻す。
 
 ### 実際の確認ステップ
 
-1. 朝 7:00 の fact check メールをスマホで開く
+1. 最新の fact check メールをスマホで開く
 2. `🔴` があれば WP 直リンクから該当 draft を先に確認し、publish 候補から外す
 3. `docs/operation_logs.md` の「朝の観察 10 項目」を上から見る
 4. 必要なら `python3 -m src.acceptance_fact_check --category <subtype> --limit 10` でローカル再確認する
@@ -207,9 +207,10 @@ WordPress REST API で `status=draft` に戻す。
 - 事実誤認
 - X preview の明確な不自然さ
 
-## 7. 朝 7:00 fact check メール
+## 7. fact check メール（1日4回）
 
 - Scheduler job: `fact-check-morning-report`
+- 発火時刻: `7:00 / 12:00 / 17:00 / 22:00 JST`
 - エンドポイント: `GET /fact_check_notify?since=yesterday`
 - 通知先: `FACT_CHECK_EMAIL_TO`
 - 送信元: `FACT_CHECK_EMAIL_FROM`

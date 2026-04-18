@@ -6,6 +6,7 @@
 
 - Cloud Run revision は `yoshilover-fetcher-00128-hdh` 以降で `/fact_check_notify` を持っている
 - Scheduler job `fact-check-morning-report` は登録済み
+- 発火時刻は `7:00 / 12:00 / 17:00 / 22:00 JST`
 - `FACT_CHECK_EMAIL_TO` / `FACT_CHECK_EMAIL_FROM` / `GMAIL_APP_PASSWORD_SECRET_NAME` は本番へ反映済み
 - Gmail app password だけ未設定でも、デモモードで本文はログに出る
 
@@ -127,3 +128,5 @@ gcloud logging read 'resource.type="cloud_run_revision" AND textPayload:"fact_ch
 3. `gcloud scheduler jobs run fact-check-morning-report ...`
 4. Gmail を開く
 5. `🔴` から先に対応する
+
+以後は `7:00 / 12:00 / 17:00 / 22:00 JST` に自動で届きます。

@@ -26,7 +26,8 @@
 - `src/` / `tests/` / `scripts/` など**コードファイルの編集・追加**
 - `gcloud` / `gh` / `curl` 等で**本番リソースの変更**（update / deploy / POST / PUT / DELETE）
 - scheduler / secret / env / Xserver 設定の**変更**
-- 要するに「動くシステムそのものを書き換える・触る」行為はすべて開発
+- **`git add` / `git commit` / `git push` などリモートへ反映する git 操作**（`docs/` のみの commit でも Codex 管轄）
+- 要するに「動くシステムそのものを書き換える・触る」行為、および**リポジトリ履歴を確定する行為**はすべて開発
 
 **Claude Code がやる「ドキュメント作成」とは**:
 
@@ -37,12 +38,14 @@
 
 **判断基準**:
 
-- `src/` に commit する → 開発（NG）
-- `docs/handoff/` に commit する → ドキュメント作成（OK）
-- `gcloud run services update` → 開発（NG）
-- `gcloud run services describe` → 閲覧（OK）
-- Codex が実行すべきコマンドを依頼書に書く → ドキュメント作成（OK）
-- Claude Code 自身がそのコマンドを実行する → 開発（NG）
+- `src/` の編集 → 開発（Claude Code NG）
+- `docs/handoff/` のファイル編集 → ドキュメント作成（Claude Code OK）
+- `git add` / `git commit` / `git push`（対象が `docs/` でも） → 開発（Claude Code NG、Codex 管轄）
+- `gcloud run services update` → 開発（Claude Code NG）
+- `gcloud run services describe` → 閲覧（Claude Code OK）
+- `git log` / `git diff` / `git show` → 閲覧（Claude Code OK）
+- Codex が実行すべきコマンドを依頼書に書く → ドキュメント作成（Claude Code OK）
+- Claude Code 自身がそのコマンドを実行する → 開発（Claude Code NG）
 
 ### Claude Codeがやらないこと（厳守）
 
@@ -52,7 +55,7 @@
   - WP REST への `POST` / `PUT` / `DELETE`（記事更新等）
   - Secret Manager / Scheduler / Xserver の変更操作
 - `.env` の shell `source`（PW に特殊文字が混ざると shell エラー + PW 一部漏洩リスクあり、2026-04-18 夜に実事故） → 必要なら **python-dotenv 経由**
-- `git push` 以外のリモート破壊的操作
+- **`git add` / `git commit` / `git push` 等、リポジトリへの反映操作全般**（Codex 管轄、2026-04-18 にルール移管）
 - よしひろさんへの承認なしで破壊的操作
 
 ### Claude Codeがやってよいこと（閲覧・read-only）
@@ -69,7 +72,7 @@
 - 監査発見をチケット化（`docs/handoff/tickets/OPEN.md` に追記）
 - Codex 向け指示書ドラフトを作成（`docs/handoff/codex_requests/YYYY-MM-DD_NN.md`）
 - Codex から返ってきた response doc を読んで `OPEN.md` / `session_logs/` / `07_current_position.md` 等を更新
-- `git add` / `git commit` / `git push` で handoff ドキュメントを repo に反映（認証: `GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519_yoshilover"`）
+- **`git add` / `git commit` / `git push` は Codex 管轄**。Claude Code は `docs/` の編集のみ、commit/push は Codex 依頼書で渡す
 - セッション終了前に `docs/handoff/session_logs/YYYY-MM-DD_claude_code_audit.md` を更新
 - 必要に応じて read-only で開発環境を閲覧（`gcloud describe` / `gcloud logging read` / WP REST GET など）
 
@@ -113,7 +116,7 @@
 1. 新しい発見があればチケット化（`tickets/OPEN.md`）
 2. 解決したチケットは `tickets/RESOLVED.md` に移動
 3. `session_logs/` の今日のファイルに作業内容を追記
-4. commit & push（認証: `GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519_yoshilover"`）
+4. **commit & push は Codex 依頼書で依頼**（Claude Code 自身は commit/push しない）
 
 ## 事故事例（最重要）
 

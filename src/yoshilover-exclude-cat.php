@@ -14,6 +14,11 @@ define( 'YOSHILOVER_EXCLUDE_CAT', 672 );
  * また、ログイン中のAdmin閲覧時も非公開(private)記事を表示しないよう publish 限定にする。
  */
 add_action( 'pre_get_posts', function( WP_Query $query ) {
+    // REST リクエスト中はこのプラグインを効かせない（collection query の status フィルタ保護）
+    if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
+        return;
+    }
+
     if ( is_admin() ) {
         return;
     }
@@ -49,6 +54,10 @@ add_action( 'pre_get_posts', function( WP_Query $query ) {
  */
 add_filter( 'posts_where', function( $where, $query ) {
     global $wpdb;
+
+    if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
+        return $where;
+    }
 
     if ( is_admin() ) {
         return $where;

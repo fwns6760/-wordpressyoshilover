@@ -403,6 +403,23 @@ class TestWPClientDedup(unittest.TestCase):
         self.assertIn("context", first_params)
         self.assertNotIn("context", second_params)
 
+    def test_get_image_candidate_exclusion_reason_rejects_twimg_emoji_hosts(self):
+        for image_url in (
+            "https://abs-0.twimg.com/emoji/v2/svg/26a0.svg",
+            "https://abs.twimg.com/emoji/v2/svg/26a0.svg",
+        ):
+            with self.subTest(image_url=image_url):
+                self.assertEqual(
+                    self.wp._get_image_candidate_exclusion_reason(image_url),
+                    "emoji_svg_url",
+                )
+
+    def test_get_image_candidate_exclusion_reason_allows_regular_images(self):
+        self.assertEqual(
+            self.wp._get_image_candidate_exclusion_reason("https://example.com/foo.jpg"),
+            "",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

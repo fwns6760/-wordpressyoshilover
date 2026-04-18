@@ -60,7 +60,7 @@ class WPClient:
     @staticmethod
     def _get_image_candidate_exclusion_reason(image_url: str) -> str:
         low = html.unescape((image_url or "").strip()).lower()
-        if "abs-0.twimg.com/emoji/" in low:
+        if re.search(r"\babs(?:-\d+)?\.twimg\.com/emoji/", low):
             return "emoji_svg_url"
         return ""
 

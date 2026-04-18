@@ -5040,7 +5040,7 @@ def _fetch_url_html(url: str, max_bytes: int = 200000, timeout: int = 12) -> str
 
 def _get_image_candidate_exclusion_reason(image_url: str) -> str:
     low = _html.unescape((image_url or "").strip()).lower()
-    if "abs-0.twimg.com/emoji/" in low:
+    if _re.search(r"\babs(?:-\d+)?\.twimg\.com/emoji/", low):
         return "emoji_svg_url"
     return ""
 
@@ -5086,6 +5086,37 @@ def _ensure_notice_featured_images(
         return image_urls
     fallback_url = get_notice_fallback_image_url()
     return [fallback_url] if fallback_url else image_urls
+
+
+def _upload_featured_media_with_fallback(
+    wp: WPClient,
+    image_urls: list[str],
+    post_url: str,
+    logger: logging.Logger | None = None,
+) -> int:
+    logger = logger or logging.getLogger("rss_fetcher")
+    candidates = [_html.unescape((url or "").strip()) for url in (image_urls or []) if (url or "").strip()]
+    if not candidates:
+        return 0
+
+    primary_url = candidates[0]
+    for candidate_url in candidates:
+        featured_media = wp.upload_image_from_url(candidate_url, source_url=post_url)
+        if featured_media:
+            if candidate_url != primary_url:
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "featured_media_fallback_used",
+                            "post_url": post_url,
+                            "primary_url": primary_url,
+                            "fallback_url": candidate_url,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+            return featured_media
+    return 0
 
 
 def _refetch_article_images_if_empty(
@@ -8447,6 +8478,9 @@ def _log_featured_media_observation_missing(
     title: str,
     article_subtype: str,
     category: str,
+    primary_url: str = "",
+    candidate_count: int = 0,
+    source_type: str = "",
 ) -> None:
     payload = {
         "event": "featured_media_observation_missing",
@@ -8456,6 +8490,12 @@ def _log_featured_media_observation_missing(
         "article_subtype": article_subtype,
         "category": category,
     }
+    if primary_url:
+        payload["primary_url"] = primary_url
+    if candidate_count:
+        payload["candidate_count"] = candidate_count
+    if source_type:
+        payload["source_type"] = source_type
     logger.info(json.dumps(payload, ensure_ascii=False))
 
 
@@ -9079,8 +9119,13 @@ def _main(args, logger):
             category_id = wp.resolve_category_id(category)
 
             featured_media = 0
-            if source_type in {"news", "social_news"} and _og_url:
-                featured_media = wp.upload_image_from_url(_og_url, source_url=post_url)
+            if source_type in {"news", "social_news"}:
+                featured_media = _upload_featured_media_with_fallback(
+                    wp,
+                    _article_images,
+                    post_url,
+                    logger,
+                )
 
             AUTO_POST_CATEGORY_ID = 673
             cats = [AUTO_POST_CATEGORY_ID]
@@ -9231,6 +9276,9 @@ def _main(args, logger):
                     draft_title,
                     publish_gate_subtype,
                     category,
+                    primary_url=_og_url,
+                    candidate_count=len(_article_images),
+                    source_type=source_type,
                 )
             publish_skip_reasons = get_publish_skip_reasons(
                 source_type=source_type,

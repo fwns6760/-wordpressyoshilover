@@ -119,34 +119,37 @@ deployはよしひろさん承認後。
 ```
 `source_urls=[]` → `extract_source_links()` で参照元URLが**1本も検出できていない**。
 
-**原因仮説**:
-1. 旧記事フォーマットで source reference block（「参考: URL」「出典: …」等の構造化ブロック）が未導入
-2. 本文中に URL 文字列として埋まっているが、`extract_source_links()` の抽出パターンが追随していない
-3. 記事生成時点で source を埋め込んでいなかった世代（古い draft からの publish）
+**調査結果**（第9便 `codex_responses/2026-04-18_09.md`）:
 
-**対応方針候補**:
-- (a) `extract_source_links()` の抽出パターン拡張（本文 URL / footer リンクも拾う）
-- (b) 記事側を後追いで改修（source block を手動 or バッチで補填）
-- (c) 「古い記事は source_reference 検査対象外」の除外ルール（yellow を抑制）
-- 優先度: まず (a) の抽出ロジック拡張を試す。それでも拾えない記事があれば (b)／(c) を検討
+19件の分類結果（A=5 / B=12 / C=2）:
 
-**対応の切り分け**:
-- fact_check 側（パーサー）問題なら Codex 修正 → deploy
-- 記事側（コンテンツ）問題なら acceptance_auto_fix 拡張 or 手動補填
+| 分類 | 件数 | 意味 | 代表 post_id |
+|---|---:|---|---|
+| A | 5 | 旧記事形式。本文内に source URL 自体がない | 61754 / 61596 / 61598 / 61572 / 61600 |
+| B | 12 | URL はあるが source block 不在 or unsupported な裸リンク形式 | 61939 / 61816 / 61799 / 61576 / 61574 / 61556 / 61554 / 61773 / 61776 / 61812 / 61770 / 61779 |
+| C | 2 | 構造化参照ブロックはあるが extractor 未対応 | 61947 / 61946 |
+
+**主因**: 「source が無い記事」ではなく「source が本文にあるのに extractor が見えていない記事」が多い（B+C=14/19）。**parser coverage 問題**として整理するのが妥当。
+
+**抽出漏れパターン**:
+- `【引用元】` 見出し + 次段落アンカー（C）
+- `引用元:` / `出典:` / `参考:` ラベル付き段落（B）
+- 本文末尾の小文字 footer リンク（B）
+- `[[1]](url)` 形式（B）
+
+**対応方針（確定）**:
+- **第一優先: (a) `extract_source_links()` の抽出パターン拡張** → **19件中 14件を即時カバー見込み**
+- 残る A=5 は (a) 実装後に再監査し、(b) 記事側補填 / (c) 旧記事例外ルール のいずれかで処理
+
+**次便 (第10便) で依頼する実装スコープ**:
+- 対象: `src/draft_audit.py` の `extract_source_links()`
+- 追加パターン 4種（上記）+ `tests/` にregression テスト
+- 受け入れ: B+C=14件のうち 12件以上で `source_reference_missing` 解消、A=5 はそのまま残ってよい
+- deploy は本便ではやらない（次々便で別途）
 
 **優先度**: 🟠（red ではないが publish 半数以上に効いており、受け入れ品質指標の母集団に影響）
 
-**Codex向け指示書ドラフト（仮）**:
-```
-src/draft_audit.py の extract_source_links() と
-src/acceptance_fact_check.py の _source_reference_facts() を見直す。
-以下のいずれかで source URL を検出できるようにする:
-- 本文末尾の「参考:」「出典:」「source:」等のラベル付きブロック
-- 記事本文中の裸の URL（nikkansports.com / sponichi.co.jp / hochi.news 等の既知ドメイン）
-- 画像キャプション内のリンク
-修正後、p=61947 を含む T-010 対象 19 件で
-`extract_source_links()` が非空を返すようになった件数を確認。
-```
+**関連レポート**: `docs/handoff/codex_responses/2026-04-18_09.md`
 
 ---
 

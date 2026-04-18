@@ -374,3 +374,18 @@ T-007 の根本修正 → 9件 post_id の再判定 → T-002 の3分類（A/B/C
 
 **最終 OPEN**: T-001 / T-004 / T-005 / T-006 / T-010（拡張済・🟠）/ T-014（新規）
 
+
+### 追記: T-010 調査結果反映 + 第10便実装依頼
+
+- 第9便 Codex 調査レポート（`codex_responses/2026-04-18_09.md`）確認
+  - 分類: A=5 / B=12 / C=2（計19件）
+  - 主因は parser coverage 不足（source が本文にあるのに `extract_source_links()` が拾えていない）
+  - 方針 **(a) extract_source_links() 拡張** で B+C=14件を即時カバー見込み
+  - A=5件は (a) 実装後に (b) or (c) で別途判断
+- T-010 チケット更新: 調査結果（分類表・抽出漏れパターン・方針確定）を反映
+- 第10便依頼書 `docs/handoff/codex_requests/2026-04-18_10.md` 作成
+  - 対象: `src/draft_audit.py` の `extract_source_links()`
+  - 追加パターン 4種（P1〜P4）
+  - 受け入れ: B+C=14件のうち 12件以上解消、p=62527/p=61981 green 維持、publish red 0件維持
+  - regression test 4本以上追加
+  - deploy は本便ではやらない（次々便で別途、T-015 として起票予定）

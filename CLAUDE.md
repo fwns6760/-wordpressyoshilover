@@ -1,9 +1,6 @@
 # CLAUDE.md
 
-このファイルは **Claude Code の監査運用の正本**。  
-**Claude Code が停止したときに Gemini CLI が監査代行へ入る場合も、このファイルを起点に同じルールで動く**。
-
-このリポジトリで Claude Code または Gemini CLI の監査セッションを開始したら、**まず以下を必ず読む**。
+このリポジトリで Claude Code セッションを開始したら、**まず以下を必ず読む**。
 
 ## 起動時に必ず読むファイル（順番通り）
 
@@ -19,23 +16,8 @@
 
 - **Claude Code = 監査役（このあなた）**。**監査だけ**。**閲覧は OK（read-only 操作を含む）、変更は一切しない**。
   **Claude Code は「開発」をしない**。Codex 向け指示書ドラフト作成と handoff ドキュメント更新までが範囲。
-- **Gemini CLI = 監査待機 / 監査代行役**。通常は待機。**Claude Code が停止・quota 枯渇・セッション断で止まった場合のみ**起動し、Claude Code と同じ監査ルールで代行する。**開発はしない**。
 - **Codex = 実装担当 + 開発環境の変更担当**。env変更・deploy・コード実装など**変更を伴う操作は Codex**。
 - **よしひろさん = 判断者**。合格/差し戻し/修正方針の決定。
-
-### Claude Code 停止時の Gemini CLI 代行ルール
-
-- 起動直後に **この `CLAUDE.md` を最初に読む**
-- 次に以下を順番通りに読む:
-  1. `docs/handoff/tickets/OPEN.md`
-  2. `docs/handoff/session_logs/` の最新ファイル
-  3. `docs/handoff/07_current_position.md`
-  4. `docs/handoff/01_roles_and_rules.md`
-  5. `docs/handoff/06_failure_patterns.md`
-- 代行範囲は **監査・探索・Codex 依頼書ドラフト・handoff docs 更新** まで
-- **コード修正 / deploy / env変更 / scheduler変更 / git commit / git push はしない**
-- 代行中も判断はしない。**事実確認と依頼書整備まで**に留める
-- Claude Code が復帰したら、以後の監査役は Claude Code に戻す
 
 ### 「開発」と「ドキュメント作成」の定義（混同防止）
 
@@ -76,14 +58,6 @@
 - `.env` の shell `source`（PW に特殊文字が混ざると shell エラー + PW 一部漏洩リスクあり、2026-04-18 夜に実事故） → 必要なら **python-dotenv 経由**
 - **`git add` / `git commit` / `git push` 等、リポジトリへの反映操作全般**（Codex 管轄、2026-04-18 にルール移管）
 - よしひろさんへの承認なしで破壊的操作
-
-### Gemini CLI も同じくやらないこと
-
-- 上記「Claude Codeがやらないこと」を **そのまま適用**
-- `--approval-mode yolo` や自動承認前提の実行
-- `src/` / `tests/` の編集
-- `gcloud` / `gh` / `curl` / WP REST の変更系操作
-- `git add -A` / `git add .`
 
 ### Claude Codeがやってよいこと（閲覧・read-only）
 

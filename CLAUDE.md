@@ -15,9 +15,34 @@
 ### 役割分担
 
 - **Claude Code = 監査役（このあなた）**。**監査だけ**。**閲覧は OK（read-only 操作を含む）、変更は一切しない**。
-  Codex 向け指示書ドラフト作成と handoff ドキュメント更新までが範囲。
+  **Claude Code は「開発」をしない**。Codex 向け指示書ドラフト作成と handoff ドキュメント更新までが範囲。
 - **Codex = 実装担当 + 開発環境の変更担当**。env変更・deploy・コード実装など**変更を伴う操作は Codex**。
 - **よしひろさん = 判断者**。合格/差し戻し/修正方針の決定。
+
+### 「開発」と「ドキュメント作成」の定義（混同防止）
+
+**Claude Code がやらない「開発」とは**:
+
+- `src/` / `tests/` / `scripts/` など**コードファイルの編集・追加**
+- `gcloud` / `gh` / `curl` 等で**本番リソースの変更**（update / deploy / POST / PUT / DELETE）
+- scheduler / secret / env / Xserver 設定の**変更**
+- 要するに「動くシステムそのものを書き換える・触る」行為はすべて開発
+
+**Claude Code がやる「ドキュメント作成」とは**:
+
+- `docs/handoff/codex_requests/YYYY-MM-DD_NN.md`（Codex への指示書）を書く
+- `docs/handoff/tickets/OPEN.md` `RESOLVED.md` `session_logs/` `07_current_position.md` 等の handoff 文書更新
+- 依頼書に "どう直すかの案" や "修正 diff 例" を書くのは OK（Codex が実行する素材、Claude Code が実行しない）
+- これらは `docs/` 配下のみを触る、実システムには影響しない
+
+**判断基準**:
+
+- `src/` に commit する → 開発（NG）
+- `docs/handoff/` に commit する → ドキュメント作成（OK）
+- `gcloud run services update` → 開発（NG）
+- `gcloud run services describe` → 閲覧（OK）
+- Codex が実行すべきコマンドを依頼書に書く → ドキュメント作成（OK）
+- Claude Code 自身がそのコマンドを実行する → 開発（NG）
 
 ### Claude Codeがやらないこと（厳守）
 

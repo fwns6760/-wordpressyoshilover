@@ -253,13 +253,10 @@ def _project_id() -> str:
 
 
 def _fetch_secret_from_secret_manager(secret_name: str) -> str:
-    project_id = _project_id()
-    if not project_id:
-        raise RuntimeError("GOOGLE_CLOUD_PROJECT is not configured")
-
     from google.auth import default as google_auth_default
     from google.auth.transport.requests import AuthorizedSession
 
+    project_id = _project_id()
     credentials, discovered_project = google_auth_default(
         scopes=["https://www.googleapis.com/auth/cloud-platform"]
     )
@@ -289,7 +286,13 @@ def _load_gmail_app_password() -> str:
     secret_name = os.environ.get("GMAIL_APP_PASSWORD_SECRET_NAME", "").strip() or DEFAULT_GMAIL_APP_PASSWORD_SECRET
     try:
         return _fetch_secret_from_secret_manager(secret_name).strip()
-    except Exception:
+    except Exception as exc:
+        _log_event(
+            "fact_check_secret_unavailable",
+            secret_name=secret_name,
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
         return ""
 
 

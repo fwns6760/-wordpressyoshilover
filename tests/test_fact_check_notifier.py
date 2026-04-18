@@ -1,5 +1,7 @@
+import sys
+import types
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from src import fact_check_notifier
 from src.acceptance_fact_check import Finding, PostReport
@@ -73,6 +75,32 @@ class FactCheckNotifierTests(unittest.TestCase):
             password = fact_check_notifier._load_gmail_app_password()
 
         self.assertEqual(password, "abcd efgh ijkl mnop")
+
+    def test_fetch_secret_uses_discovered_project_when_env_missing(self):
+        mock_default = MagicMock(return_value=(object(), "baseballsite"))
+        mock_session = MagicMock()
+        mock_session.get.return_value.status_code = 200
+        mock_session.get.return_value.json.return_value = {"payload": {"data": "YWJjZA=="}}
+        mock_session_cls = MagicMock(return_value=mock_session)
+        google_module = types.ModuleType("google")
+        google_auth_module = types.ModuleType("google.auth")
+        google_auth_module.default = mock_default
+        google_transport_module = types.ModuleType("google.auth.transport")
+        google_requests_module = types.ModuleType("google.auth.transport.requests")
+        google_requests_module.AuthorizedSession = mock_session_cls
+        with patch.dict("os.environ", {"GOOGLE_CLOUD_PROJECT": "", "GCP_PROJECT": "", "GCLOUD_PROJECT": ""}, clear=False):
+            with patch.dict(
+                sys.modules,
+                {
+                    "google": google_module,
+                    "google.auth": google_auth_module,
+                    "google.auth.transport": google_transport_module,
+                    "google.auth.transport.requests": google_requests_module,
+                },
+            ):
+                secret = fact_check_notifier._fetch_secret_from_secret_manager("yoshilover-gmail-app-password")
+
+        self.assertEqual(secret, "abcd")
 
     @patch.object(fact_check_notifier.acceptance_fact_check, "collect_reports")
     @patch.object(fact_check_notifier, "send_email")

@@ -1588,6 +1588,262 @@ def _build_safe_summary_snippet(title: str, summary: str) -> str:
     return "巨人の最新ニュースを整理します。"
 
 
+def _extract_post_title_text(post: dict) -> str:
+    title_data = (post or {}).get("title") or {}
+    if isinstance(title_data, dict):
+        return _strip_html(title_data.get("rendered") or title_data.get("raw") or "")
+    return _strip_html(str(title_data or ""))
+
+
+def _extract_post_excerpt_text(post: dict) -> str:
+    excerpt_data = (post or {}).get("excerpt") or {}
+    if isinstance(excerpt_data, dict):
+        return _strip_html(excerpt_data.get("rendered") or excerpt_data.get("raw") or "")
+    return _strip_html(str(excerpt_data or ""))
+
+
+def _parse_wp_post_datetime(post: dict) -> datetime | None:
+    for field in ("date_gmt", "date"):
+        raw = (post or {}).get(field)
+        if not raw:
+            continue
+        try:
+            parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=JST)
+        return parsed.astimezone(timezone.utc)
+    return None
+
+
+def _resolve_related_story_subtype(
+    title: str,
+    summary: str,
+    category: str,
+    article_subtype: str,
+    has_game: bool,
+) -> str:
+    if category == "選手情報":
+        special_story_kind = _detect_player_special_template_kind(title, summary)
+        if special_story_kind in {"player_notice", "player_recovery"}:
+            return special_story_kind
+    return article_subtype or _detect_article_subtype(title, summary, category, has_game)
+
+
+def _candidate_related_story_subtype(post: dict, category: str, has_game: bool) -> str:
+    title = _extract_post_title_text(post)
+    summary = _extract_post_excerpt_text(post)
+    base_subtype = _detect_article_subtype(title, summary, category, has_game)
+    return _resolve_related_story_subtype(title, summary, category, base_subtype, has_game)
+
+
+def _search_recent_publish_posts(
+    wp: WPClient,
+    *,
+    search: str = "",
+    category_id: int = 0,
+    per_page: int = 5,
+    after_iso: str = "",
+) -> list[dict]:
+    import requests
+
+    params = {
+        "status": "publish",
+        "per_page": per_page,
+        "orderby": "date",
+        "order": "desc",
+        "_fields": "id,date,date_gmt,link,title,excerpt,categories",
+    }
+    if search:
+        params["search"] = search
+    if category_id:
+        params["categories"] = category_id
+    if after_iso:
+        params["after"] = after_iso
+
+    resp = requests.get(
+        f"{wp.api}/posts",
+        params=params,
+        auth=wp.auth,
+        timeout=30,
+    )
+    wp._raise_for_status(resp, "関連記事検索")
+    return resp.json()
+
+
+def _select_related_posts(
+    *,
+    player_posts: list[dict],
+    subtype_posts: list[dict],
+    category_posts: list[dict],
+    player_subject: str,
+    current_title: str,
+    current_url: str,
+    category: str,
+    article_subtype: str,
+    has_game: bool,
+    max_items: int = 2,
+    now: datetime | None = None,
+) -> list[dict]:
+    now_utc = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    cutoff = now_utc - timedelta(days=30)
+    current_title_norm = WPClient._normalize_title(current_title)
+    selected: list[dict] = []
+    seen_ids: set[int] = set()
+    seen_links: set[str] = set()
+
+    def _maybe_add(post: dict, *, require_player: bool = False, require_subtype: bool = False) -> None:
+        if len(selected) >= max_items:
+            return
+        title_text = _extract_post_title_text(post)
+        if not title_text:
+            return
+        title_norm = WPClient._normalize_title(title_text)
+        link = str((post or {}).get("link") or "").strip()
+        post_id = int((post or {}).get("id") or 0)
+        if current_title_norm and title_norm == current_title_norm:
+            return
+        if current_url and link and link == current_url:
+            return
+        if post_id and post_id in seen_ids:
+            return
+        if link and link in seen_links:
+            return
+
+        published_at = _parse_wp_post_datetime(post)
+        if published_at and published_at < cutoff:
+            return
+
+        if require_player and player_subject and player_subject not in title_text:
+            return
+        if require_subtype:
+            candidate_subtype = _candidate_related_story_subtype(post, category, has_game)
+            if candidate_subtype != article_subtype:
+                return
+
+        selected.append(
+            {
+                "id": post_id,
+                "title": title_text,
+                "link": link,
+                "published_at": published_at.isoformat() if published_at else "",
+            }
+        )
+        if post_id:
+            seen_ids.add(post_id)
+        if link:
+            seen_links.add(link)
+
+    for post in player_posts or []:
+        _maybe_add(post, require_player=True)
+    for post in subtype_posts or []:
+        _maybe_add(post, require_subtype=True)
+    for post in category_posts or []:
+        _maybe_add(post)
+    return selected
+
+
+def _find_related_posts_for_article(
+    *,
+    title: str,
+    summary: str,
+    category: str,
+    article_subtype: str,
+    current_url: str,
+    has_game: bool,
+    max_items: int = 2,
+    wp_factory=WPClient,
+    search_posts=None,
+    now: datetime | None = None,
+) -> list[dict]:
+    logger = logging.getLogger("rss_fetcher")
+    try:
+        wp = wp_factory()
+    except Exception as e:
+        logger.info("関連記事検索をスキップ: WP 初期化失敗: %s", e)
+        return []
+
+    try:
+        category_id = wp.resolve_category_id(category)
+    except Exception as e:
+        logger.info("関連記事検索をスキップ: カテゴリ解決失敗: %s", e)
+        category_id = 0
+
+    after_iso = ((now or datetime.now(timezone.utc)).astimezone(timezone.utc) - timedelta(days=30)).isoformat()
+    search_callable = search_posts or (
+        lambda *, search="", category_id=0, per_page=5, after_iso="": _search_recent_publish_posts(
+            wp,
+            search=search,
+            category_id=category_id,
+            per_page=per_page,
+            after_iso=after_iso,
+        )
+    )
+
+    player_subject = _compact_subject_label(title, summary, category)
+    player_posts: list[dict] = []
+    category_posts: list[dict] = []
+
+    if player_subject:
+        try:
+            player_posts = search_callable(search=player_subject, category_id=0, per_page=5, after_iso=after_iso) or []
+        except Exception as e:
+            logger.warning("関連記事検索失敗: player_subject=%s error=%s", player_subject, e)
+            player_posts = []
+
+    if category_id:
+        try:
+            category_posts = search_callable(search="", category_id=category_id, per_page=10, after_iso=after_iso) or []
+        except Exception as e:
+            logger.warning("関連記事検索失敗: category=%s error=%s", category, e)
+            category_posts = []
+
+    return _select_related_posts(
+        player_posts=player_posts,
+        subtype_posts=category_posts,
+        category_posts=category_posts,
+        player_subject=player_subject,
+        current_title=title,
+        current_url=current_url,
+        category=category,
+        article_subtype=article_subtype,
+        has_game=has_game,
+        max_items=max_items,
+        now=now,
+    )
+
+
+def _build_related_posts_section(related_posts: list[dict]) -> str:
+    if not related_posts:
+        return ""
+
+    items_html = []
+    for post in related_posts[:2]:
+        title = (post.get("title") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        link = (post.get("link") or "").replace("&", "&amp;")
+        if not title or not link:
+            continue
+        items_html.append(
+            '<li style="margin:0 0 10px;line-height:1.65;">'
+            f'<a href="{link}" style="font-weight:700;text-decoration:none;color:#001e62;" target="_blank" rel="noopener noreferrer">{title}</a>'
+            '</li>'
+        )
+    if not items_html:
+        return ""
+
+    return (
+        '<!-- wp:html -->\n'
+        '<div class="yoshilover-related-posts" style="border:1px solid #e6e6e6;border-radius:12px;padding:16px 18px;margin:12px 0;background:#fff;">'
+        '<div style="font-size:1.02em;font-weight:800;color:#111;margin:0 0 10px;">【関連記事】</div>'
+        '<ul style="margin:0;padding-left:1.2em;">'
+        f'{"".join(items_html)}'
+        '</ul>'
+        '</div>\n'
+        '<!-- /wp:html -->\n\n'
+    )
+
+
 def _player_article_is_mechanics_story(title: str, summary: str) -> bool:
     return _detect_player_article_mode(title, summary, "選手情報") == "player_mechanics"
 
@@ -7048,8 +7304,17 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             blocks += _comment_button("news")
         if "next" not in rendered_cta_slots:
             blocks += _comment_button("next")
+    related_posts = _find_related_posts_for_article(
+        title=title,
+        summary=summary_clean,
+        category=category,
+        article_subtype=body_subtype,
+        current_url=url,
+        has_game=has_game,
+    )
+    related_posts_section = _build_related_posts_section(related_posts)
+
     followup_section_rendered = False
-    mid_cta_rendered = False
 
     # ──────────────────────────────────────────────────────────
     # ③ 今日の記録（本文の後）
@@ -7098,9 +7363,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 widget_script_included = True
             else:
                 blocks += _x_card(reaction)
-        blocks += _comment_button("fans")
         followup_section_rendered = True
-        mid_cta_rendered = True
 
     # ──────────────────────────────────────────────────────────
     # ⑤ 感想（約300文字）
@@ -7116,10 +7379,15 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         )
         followup_section_rendered = True
 
-    if not mid_cta_rendered:
+    if related_posts_section:
         if not followup_section_rendered:
             blocks += _sep()
-        blocks += _comment_button("fans")
+        blocks += related_posts_section
+        followup_section_rendered = True
+
+    if not followup_section_rendered:
+        blocks += _sep()
+    blocks += _comment_button("fans")
 
     # ⑥ 出典
     blocks += _sep()

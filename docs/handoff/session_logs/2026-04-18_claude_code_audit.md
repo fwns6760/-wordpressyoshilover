@@ -354,3 +354,23 @@ T-007 の根本修正 → 9件 post_id の再判定 → T-002 の3分類（A/B/C
   - T-004 / T-006: よしひろさん側で Gmail 朝メール確認
   - T-005 / T-010: 低優先度放置
 
+
+### 追記: publish 全量 fact_check 監査（新parser）
+
+**実行**: `python3 -m src.acceptance_fact_check --status publish --since all --limit 50 --json`（T-001 影響で `--since 2026-02-18` だと list が空返し、`--since all` で取得）
+
+**結果**: publish 36件
+- green: 16件
+- yellow: 20件
+  - `source_reference_missing`: 19件（T-010 対象を 2→19 に拡大）
+  - `subject: needs_manual_review`: 1件（62003、T-014 へ分離）
+- red: **0件**（T-002/T-008/T-012 修正の成果確認）
+
+**チケット変動**:
+- **T-010 🟡 → 🟠 に昇格**、対象件数を 2件 → 19件 に更新、原因仮説・対応方針・Codex依頼書ドラフト追加
+- **T-014 🟡 新規起票**: p=62003 の subject needs_manual_review（T-010 から分離）
+
+**検出された publish red が 0 件** だったのは今日のT-002/T-008/T-012連戦の成果。新parserが既存公開記事を改めて精査しても新規redなし。
+
+**最終 OPEN**: T-001 / T-004 / T-005 / T-006 / T-010（拡張済・🟠）/ T-014（新規）
+

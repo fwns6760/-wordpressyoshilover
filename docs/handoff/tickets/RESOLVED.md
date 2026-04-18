@@ -16,6 +16,48 @@
 
 ---
 
+## T-007 🔴 fact_check パーサーバグ — score/venue の fallback が誤値を拾う
+
+**発見日**: 2026-04-18
+**解決日**: 2026-04-18
+**解決者**: Codex（実装・テスト・再判定）/ Claude Code（ドラフト・監査）
+**対応内容**:
+- `_source_reference_facts()` から raw text ベースの score/venue 抽出を停止
+- `_fetch_npb_schedule_snapshot()` を HTML 構造ベースへ書き換え
+- `_fetch_game_reference()` を structured fallback 化、`evidence_by_field` 導入
+- `_check_game_facts()` で evidence URL を supply origin 別に分岐
+- regression test 3本追加（UUID断片抽出しない / NPB row 正しく読む / evidence URL 分岐）
+- 366 passed
+
+**再判定結果**（`docs/fix_logs/2026-04-18_t007_post_fix_recheck.md`）:
+- 🔴 → ✅: 62518（完全解消）, 62044, 61886, 61802（T-002 Aクラス疑陽性）
+- 🔴 → 🟡: 61770, 61598（T-002 Cクラス、T-010 へ分離）
+- 🔴 → 🔴 継続: 62527（T-008、真の title mismatch）, 61981（T-002、真の opponent 誤記）
+- ✅ → ✅: 62540（変化なし）
+
+**関連commit**: `ba97edc`
+
+---
+
+## T-002 Aクラス（T-007疑陽性確定分） — 公開中 3件は green 確認済
+
+**発見日**: 2026-04-18
+**解決日**: 2026-04-18（T-007 修正後の再判定）
+**解決者**: Codex 再判定 / Claude Code 監査
+**対応内容**: fact_check パーサー修正により venue fallback 疑陽性が解消、いずれも green。実記事の修正は不要。
+
+- 62044 lineup（venue 甲子園→PayPay は疑陽性）
+- 61886 pregame（venue 甲子園→PayPay は疑陽性）
+- 61802 lineup（venue 東京ドーム→PayPay は疑陽性）
+
+**備考**: 真のRED扱いだった残り3件は以下に分割:
+- 61981（opponent 阪神→楽天、真のRED）→ **T-002（OPEN）**
+- 61770, 61598（source_reference_missing、yellow）→ **T-010（OPEN）**
+
+**関連commit**: `ba97edc`
+
+---
+
 ## T-003 🟠 ヨシラバーの「現在のdraft件数」が不明
 
 **発見日**: 2026-04-18

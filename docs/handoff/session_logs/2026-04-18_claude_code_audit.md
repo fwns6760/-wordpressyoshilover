@@ -192,3 +192,43 @@ T-007 の根本修正 → 9件 post_id の再判定 → T-002 の3分類（A/B/C
 受け入れ試験の再開はこの再判定結果を見てから。
 
 **commit**: （本セッションの後続 commit で反映予定）
+
+---
+
+## 作業9: Codex T-007 修正完了報告の受信・監査（午後）
+
+**受信**: 2026-04-18 昼過ぎ、commit `ba97edc`, テスト 366 passed
+
+**Codex 成果**:
+- `_source_reference_facts` から raw score/venue 抽出停止
+- `_fetch_npb_schedule_snapshot` HTML 構造ベース
+- `_fetch_game_reference` structured fallback 化 + `evidence_by_field`
+- `_check_game_facts` で evidence URL を supply origin 別に分岐
+- regression test 3本追加
+
+**再判定結果（9件）**:
+- 🔴→✅（疑陽性解消）: 62518, 62044, 61886, 61802
+- 🔴→🔴 継続（真のRED）: 62527（title）, 61981（opponent）
+- 🔴→🟡（source_reference_missing 残存）: 61770, 61598
+- ✅→✅: 62540
+
+**監査役チケット整理**:
+- **T-007 → RESOLVED**（`ba97edc`）
+- **T-002 Aクラス 3件 → RESOLVED** に疑陽性確定として記録（62044/61886/61802）
+- **T-002 縮小 → 61981 のみ**（opponent 阪神→楽天、真のRED、evidence: nikkansports）
+- **T-010 新規 🟡** → 61770/61598 の source_reference_missing を分離
+- **T-008 優先度維持 🟠** → parser 由来でないことが確定、auto_fix 実行判断が妥当
+- **T-011 新規 🟠** → T-007 修正 + auto_fix/notifier を Cloud Run に deploy
+
+**よしひろさんへの推奨（体力減らしモード・1つに絞る）**:
+> 今日の作業は T-011（deploy）までやるか、明朝に回すか、の 2択だけ。
+> 他の判断（T-002 の 61981 修正、T-008 の 62527 title 修正）は deploy 後でも
+> 実害がないので後回しで可。
+> 推奨: deploy は**今日のうちに**承認して Codex に実行させる。
+> 理由: 次の Scheduler 発火（17:00 or 22:00 JST）で新パーサーが動く。明日まで
+> 待つと1発火ぶん古いパーサー判定が積み増すだけ。deploy 内容は env 変更なし
+> （RUN_DRAFT_ONLY=1 維持）で公開は解放されないので、リスクは低い。
+
+**次の依頼**: `docs/handoff/codex_requests/2026-04-18_03.md`（deploy 依頼、よしひろさん承認後に投げる想定）
+
+**commit**: （本セッションの後続 commit で反映予定）

@@ -44,41 +44,34 @@ deployはよしひろさん承認後。
 
 ---
 
-## T-002 🟡 公開中の6記事RED判定 — **疑陽性の可能性（T-007パーサーバグ由来）**
+## T-002 🟠 公開中 p=61981 の opponent 誤記（阪神→楽天、真のRED）
 
 **発見日**: 2026-04-18
-**再評価日**: 2026-04-18（T-007 調査結果を受けて降格）
-**発見者**: Claude Code（監査役）
-**影響**: 判定根拠が壊れている可能性があり、現状の判定では修正判断できない
+**再判定日**: 2026-04-18（T-007 修正後、`docs/fix_logs/2026-04-18_t007_post_fix_recheck.md`）
+**発見者**: Claude Code（監査役）→ Codex 再判定
+**影響**: 公開中記事のタイトル・本文で対戦相手が誤っている（読者が誤情報に触れる状態）
 
-**対象（全て WP_status=publish、HTTP 200で閲覧可能）**:
+**対象（本物のRED、1件に縮小）**:
 
-| post_id | subtype | 当初の「問題」 | 信頼性 |
-|---------|---------|----------|--------|
-| 62044 | lineup | venue: 甲子園 → 正: PayPay | ⚠️ venue fallback疑陽性の可能性 |
-| 61981 | postgame | opponent: 阪神 → 正: 楽天 + venue | ⚠️ venue は疑陽性、opponent は未検証 |
-| 61886 | pregame | venue: 甲子園 → 正: PayPay | ⚠️ venue fallback疑陽性の可能性 |
-| 61802 | lineup | venue: 東京ドーム → 正: PayPay | ⚠️ venue fallback疑陽性の可能性 |
-| 61770 | lineup | venue + 参照元リンクなし | ⚠️ venue fallback疑陽性の可能性 |
-| 61598 | postgame | venue + 参照元リンクなし | ⚠️ Codex spot check で venue fallback 異常再現 |
+| post_id | subtype | 問題 | evidence |
+|---------|---------|------|---------|
+| 61981 | postgame | **opponent: 阪神 → 正: 楽天** | https://www.nikkansports.com/baseball/news/202604140001354.html |
 
-**重要な更新（T-007報告より）**:
-- `_fetch_npb_schedule_snapshot()` の date block 切り出しミスで venue が誤って `PayPay` に化ける
-- 61981 と 61598 は Codex の spot check で venue fallback の異常を再確認
-- つまり **T-002 の venue 判定は信用できない**（パーサーバグの疑陽性）
-- 61981 の opponent 阪神→楽天は別経路なので別途要確認
+**縮小経緯**:
+- 当初 6件の RED（62044/61981/61886/61802/61770/61598）
+- うち3件（62044 / 61886 / 61802）は T-007 パーサー疑陽性 → **green確認済**（RESOLVED へ記録）
+- うち2件（61770 / 61598）は `source_reference_missing` の yellow → **T-010 へ分離**
+- うち1件（61981）は opponent 誤記が本物 → 本チケットに残す
 
-**やるべきこと**: **T-007 のパーサー修正完了後、6件を再 fact_check**
-- もし全てgreenに転じたら T-002 は RESOLVED へ
-- もし本当にREDが残ったら、その時点で修正判断
-- 疑陽性のまま修正を走らせると、正しい記事を壊す危険あり
+**よしひろさんの判断が必要**: 修正 / 非公開化 / 放置
 
-**Codex向け指示書ドラフト（T-007 修正完了後に再実行）**:
+**Codex向け指示書ドラフト（修正実行）**:
 ```
-以下6件を acceptance_fact_check で再判定:
-62044 / 61981 / 61886 / 61802 / 61770 / 61598
-結果を docs/fix_logs/{date}_t002_recheck.md に出力。
-修正は行わず判定のみ。
+p=61981 の記事（title + 本文）の「阪神」を「楽天」に置換する。
+acceptance_auto_fix の whitelist に opponent が入っていない場合は
+手動で WPClient 経由の update_post を使う。
+修正後 acceptance_fact_check で green になることを確認。
+status=publish のまま。 deploy不要（データ修正のみ）。
 ```
 
 ---
@@ -123,72 +116,17 @@ deployはよしひろさん承認後。
 
 ---
 
-## T-007 🔴 fact_check パーサーバグ — score/venue の fallback が誤値を拾う
+## T-008 🟠 post_id 62527 タイトル DeNA → ヤクルト の自動修正判断（真のRED継続）
 
 **発見日**: 2026-04-18
-**原因特定日**: 2026-04-18（Codex 調査結果）
-**発見者**: Claude Code（監査役）→ Codex 調査
-**影響**: **本件が直らない限り fact_check / auto_fix / 受け入れ試験の結果は信用できない**
-
-**真犯人**（Codex報告 `docs/handoff/codex_responses/2026-04-18.md`）:
-
-1. `src/acceptance_fact_check.py:311-328` `_source_reference_facts()`
-   - source URL の title/description/text を連結し、その raw 全文に `_extract_score()` をかけている
-2. `_extract_score()` のパターンが `(\d{1,2})[-－–](\d{1,2})` と素朴すぎる
-   - p=62518 の source URL に含まれる **UUID 断片 `4725-97a1` から `25-97` を誤抽出**
-3. `src/acceptance_fact_check.py:356-375` `_fetch_npb_schedule_snapshot()`
-   - 月間日程ページを文字数切り出しで処理しており、ズレると別試合の venue を拾う
-4. `src/acceptance_fact_check.py:518-570` `_check_game_facts()`
-   - `reference.get("score") or source_facts.get("score")` で、live reference が空だと
-     誤抽出値が採用される
-5. evidence URL は `reference["evidence_urls"][0]` 固定
-   - 実際は source URL 由来の誤値でもレポート上は NPB / Yahoo game ref のせいに見える
-
-**影響範囲（判明分）**:
-- **直接表面化**: 62518（score=25-97, venue=PayPay の両方）
-- **score 同種誤抽出（潜在）**: 62527, 62540 — いずれも source facts 側 score=19-4
-- **venue fallback 異常（疑陽性）**: T-002 の6件（62044/61981/61886/61802/61770/61598）
-  - Codex spot check で 61981, 61598 は再現確認済
-- **受け入れ試験全体**: 現在の fact_check 結果は全体として信用できない
-
-**修正方針**（Codex提案、未実装）:
-
-1. `source_facts` からの score 抽出を停止 — raw page text 全体への `_extract_score()` 禁止、
-   structured source のみ許可
-2. `_fetch_npb_schedule_snapshot()` の切り出しを文字数ベースから HTML 構造ベースに変更
-3. `_check_game_facts()` で expected 値の供給元に応じて evidence URL を分ける
-   - reference 由来 → game reference URL
-   - source_facts 由来 → source URL
-4. 62518 を regression test 化
-
-**Codex向け指示書ドラフト（修正実装）**:
-```
-docs/handoff/codex_responses/2026-04-18.md の T-007 修正方針1〜4を実装:
-- _source_reference_facts() から score/venue の raw text 抽出経路を削除
-  （structured source のみ許可）
-- _fetch_npb_schedule_snapshot() を HTML 構造ベースの切り出しに書き換え
-- _check_game_facts() で evidence URL を supply origin ごとに分岐
-- regression test 追加: 62518 ケース + UUID 断片からの score 抽出が起きないこと
-
-修正後の検証:
-1. pytest 全 PASS (現状 362 tests)
-2. 以下 post_id を acceptance_fact_check で再判定し結果を
-   docs/fix_logs/{date}_t007_post_fix_recheck.md に出力:
-   62518 / 62527 / 62540 / 62044 / 61981 / 61886 / 61802 / 61770 / 61598
-3. deploy/env変更は本依頼では実施しない（よしひろさん承認後）
-```
-
----
-
-## T-008 🟡 post_id 62527 タイトル DeNA → ヤクルト の自動修正判断
-
-**発見日**: 2026-04-18
+**T-007再判定後**: 2026-04-18（parser由来ではなく真の title_rewrite_mismatch と確定）
 **発見者**: Codex の acceptance_auto_fix dry-run
 **影響**: 公開中記事のタイトルに誤対戦相手。読者に誤情報
 
-**事実**（`docs/fix_logs/2026-04-18.md` より）:
+**事実**:
 - p=62527 postgame「巨人DeNA戦 大城卓三は何を見せたか」
 - 実試合は巨人 vs ヤクルト
+- T-007 修正後も RED 継続、evidence が正しく source（nikkansports 2026-04-17）に切り替わり確定
 - auto_fix 候補: WP title の `DeNA` → `ヤクルト` 置換（1箇所一致、whitelist 通過、楽観ロックあり）
 
 **よしひろさんの判断が必要**: 自動修正を実行する / 手動で確認してから実行 / draft戻し
@@ -198,6 +136,64 @@ docs/handoff/codex_responses/2026-04-18.md の T-007 修正方針1〜4を実装:
 p=62527 に対して acceptance_auto_fix を dry-run ではなく本番モードで実行し、
 title の `DeNA` → `ヤクルト` 置換を適用。適用後に fact_check を再実行して
 title_rewrite_mismatch が解消したことを確認。status は publish のまま。
+```
+
+---
+
+## T-010 🟡 公開中 2件の source_reference_missing（yellow）
+
+**発見日**: 2026-04-18（T-007 再判定で分離）
+**発見者**: Claude Code（監査役）
+**影響**: 小。venue 疑陽性は解消したが、参照元リンクが欠落しており yellow 扱い
+
+**対象**:
+
+| post_id | subtype | title |
+|---------|---------|------|
+| 61770 | lineup | 【巨人】「レギュラーは決まってません。結果残せば使います」阿部監督… |
+| 61598 | postgame | 解説陣が巨人・坂本勇人にエール「背中でチームを引っ張って」 |
+
+**背景**: T-002 で当初 RED とされていた6件のうち、T-007 修正後に yellow に下がった2件。
+事実誤記ではなく、記事内の参照元（source）リンクが欠落している問題。
+
+**対応の選択肢**:
+- 放置（yellow許容）
+- 参照元を手動で埋める
+- 該当記事を draft 戻し
+
+**優先度**: 低。受け入れ試験の阻害にはならない。
+
+---
+
+## T-011 🟠 T-007 修正 + auto_fix/notifier を Cloud Run に反映（deploy 未実施）
+
+**発見日**: 2026-04-18
+**発見者**: Claude Code（監査役）
+**影響**: **Cloud Run は依然として旧 fact_check パーサー**。次の Scheduler 発火で新記事が誤判定される
+
+**未反映のcommit**:
+- `ba97edc` fix: harden fact check game reference parsing（T-007）
+- `957f458` feat: add acceptance auto-fix dry run workflow
+- `10fa214` T-003 draft_inventory_from_logs + 他
+
+**必要な作業**:
+- Cloud Build or `gcloud run deploy` で最新 master を Cloud Run に反映
+- env変更は不要（`RUN_DRAFT_ONLY=1` / `ENABLE_PUBLISH_FOR_*=0` 維持）
+- 反映後、次の Scheduler 発火（7:00/12:00/17:00/22:00 JST いずれか）で新パーサーの動作を確認
+
+**よしひろさんの承認が必要**: deploy 実行の是非
+
+**Codex向け指示書ドラフト**:
+```
+Cloud Run `yoshilover-fetcher` に最新 master (ba97edc) を deploy。
+env変数は現状維持（RUN_DRAFT_ONLY=1, ENABLE_PUBLISH_FOR_*=0）。
+deploy 後に以下を確認:
+1. revision が進んでいる（00131 以降）
+2. smoke test: scheduler の手動 trigger で新 revision が発火、
+   fact_check_email_sent ログが出る
+3. 次の scheduled 発火メール本文が正常
+差し戻しが出たら revision を 00130-nxg に戻す（rollback 手順を
+docs/phase_c_runbook.md 参照）。
 ```
 
 ---

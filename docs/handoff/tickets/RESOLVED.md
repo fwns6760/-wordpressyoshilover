@@ -16,6 +16,39 @@
 
 ---
 
+## T-019 🟠 post_id=62584 アイキャッチ欠損（調査 + 修正）
+
+**発見日**: 2026-04-18 夜（よしひろさん WP 目視）
+**解決日**: 2026-04-18 夜
+**解決者**: Codex（第19便調査、第20便修正）
+
+**対応内容**:
+- 第19便で 62584 / 62585 / 62587 の 3件が同一経路（X 警告絵文字 SVG URL `abs.twimg.com/emoji/v2/svg/26a0.svg`）で featured_media=0 と特定、social_news/X 由来の局所 systemic 判定
+- 第20便で修正 deploy（T-020 と一体）
+
+**関連 commit**: `3fb5381`（調査 response） / `ab4b978`（実装）
+
+---
+
+## T-020 🟠 アイキャッチ emoji SVG 除外拡張 + 画像 fallback + deploy
+
+**発見日**: 2026-04-18 夜（Claude Code、T-019 第19便結果から起票）
+**解決日**: 2026-04-18 夜
+**解決者**: Codex（第20便実装 + deploy）
+
+**対応内容**:
+- `src/wp_client.py` / `src/rss_fetcher.py` の `_get_image_candidate_exclusion_reason()` を `re.search(r"\babs(?:-\d+)?\.twimg\.com/emoji/", low)` に拡張（`abs-0` / `abs` / 将来の `abs-1..` を一網打尽）
+- `_upload_featured_media_with_fallback()` 追加、`_article_images` の 2件目以降へ順次 fallback、成功時は `featured_media_fallback_used` INFO
+- `featured_media_observation_missing` に `primary_url` / `candidate_count` / `source_type` 追加（空時は出さない）
+- unit test 追加: `test_wp_client.py` 2件 + `test_featured_media_fallback.py` 2件 = **383 passed**
+- deploy: revision `yoshilover-fetcher-00137-q77`（traffic 100%）
+- 62560 副次追跡: `_article_images` が空だった可能性、SVG 系とは別原因、本便では修正対象外
+
+**関連 commit**: `ab4b978`
+**新 revision**: `yoshilover-fetcher-00137-q77`
+
+---
+
 ## T-004 🟠 今朝の fact_check メールの中身を未確認
 
 **発見日**: 2026-04-18

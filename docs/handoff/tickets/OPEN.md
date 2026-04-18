@@ -158,52 +158,36 @@ T-016 の第14便で SMTP 経路が健全と判明してる前提で本便に入
 
 ---
 
-## T-019 🟠 post_id=62584（draft）にアイキャッチが設定されていない（調査完了、修正便起票済）
+## T-021 🟡 記事本文の「薄さ」現状調査（ヨシラバー × AI 視点）
 
 **発見日**: 2026-04-18 夜
-**調査完了日**: 2026-04-18 夜（第19便 Codex 調査、`3fb5381`）
-**発見者**: よしひろさん（WP 目視）
-**影響**: social_news / X 由来の一部記事で featured_media=0 確定（3件実測）
+**発見者**: よしひろさん（「今の記事の中身が薄い」「このサイトだから書けることを書く」「AI だから」）
+**影響**: 他サイト要約との差別化・読み応え
 
-**第19便調査結果（要約）**:
+**スコープ**: 調査のみ。コード修正はしない。第21便 response doc を元に次便（実装便）判断。
 
-- 62584 単発ではなく、**62584 / 62585 / 62587 の 3件が同一経路で再現**
-- 真因: 画像候補の先頭 URL が `https://abs.twimg.com/emoji/v2/svg/26a0.svg` (X 警告絵文字)、MIME `image/svg+xml` で upload 拒否
-- 既存 URL 除外は `abs-0.twimg.com/emoji/` のみ → `abs.twimg.com/emoji/` をすり抜ける
-- 近傍 draft 11 件中 7 件は画像あり（`7/11`）→ **global systemic ではない、social_news/X 由来の局所 systemic**
-- コード該当: `src/wp_client.py:61-65` / `src/rss_fetcher.py:5041-5045` / `src/rss_fetcher.py:9047, 9082-9083`
-- 先頭画像失敗時の fallback が存在しない（`_article_images[1:]` へ落ちる経路なし）
+**調査観点**:
+- 現行 `enhanced_prompts_enabled()` の本番値、subtype 別 prompt rules 全量
+- publish 済 3〜5 本サンプルで「本文量 / 構成 / 出典 / 差別化点」を定量化
+- ヨシラバー固有視点（過去文脈・長年視点）× AI の強み（広域参照・データ対比）が織り込めているか
 
-**副次**:
-- 62560 も画像なしだが emoji SVG 経路ではない、別原因の可能性 → T-020 Step 7 で追跡
-
-**修正便**: T-020 🟠（第20便）として起票、本チケットは T-020 完了で RESOLVED
+**Codex向け指示書**: `docs/handoff/codex_requests/2026-04-18_21.md`（第21便、調査のみ）
 
 ---
 
-## T-020 🟠 アイキャッチ emoji SVG 経路の除外拡張 + fallback + unit test + deploy
+## T-022 🟠 18 時付近の `/run` 発火が弱い疑い（時刻帯別 発火・記事生成分布 調査）
 
-**起票日**: 2026-04-18 夜
-**依頼者**: Claude Code（T-019 第19便調査結果を受けて）
-**影響**: social_news / X 由来記事の featured_media 欠損率低減
+**発見日**: 2026-04-18 夜
+**発見者**: よしひろさん（「18時発火よわい。昨日もだが」）
+**影響**: 夕方の RSS 取り込みが薄い → 記事が時刻帯で偏る可能性
 
-**対応内容（第20便指示書 `codex_requests/2026-04-18_20.md`）**:
+**観測された手がかり**（第20便 Step 6 response より）:
+- `giants-weekend-eve` ジョブ: schedule `0,30 20-22 * * 0,6`（**週末夜のみ**発火）
+- 平日 18:00 を叩く scheduler 構成が不明 → response doc で可視化する必要
 
-1. `_get_image_candidate_exclusion_reason()` に `abs.twimg.com/emoji/` を追加（`wp_client.py` + `rss_fetcher.py` 両方）
-2. `rss_fetcher.py:9081-9083` の画像 upload を `_article_images` の最初の成功まで順次試行する fallback に変更
-3. unit test 追加（emoji SVG URL 除外 + fallback 発火の最小ケース）
-4. deploy + 30 分自然発火観察
-5. 副次: 62560 の原因ログ追跡
+**スコープ**: 調査のみ。時刻帯別の発火回数 + 記事生成数（drafts_created / publish_count）の分布を出す。
 
-**成功判定**:
-- 379 → 381+ tests passed
-- 新 revision traffic 100%
-- env 維持（第18便と同じ `RUN_DRAFT_ONLY=0` / `POSTGAME=1` / `LINEUP=1`）
-- 30 分観察で `image_candidate_excluded reason=emoji_svg_url` が新たに発火、または `featured_media_fallback_used` で fallback が効く、ERROR 0件
-
-**失敗時**: rollback to `yoshilover-fetcher-00136-z7s` / コード差し戻し
-
-**Codex向け指示書**: `docs/handoff/codex_requests/2026-04-18_20.md`（第20便）
+**Codex向け指示書**: `docs/handoff/codex_requests/2026-04-18_22.md`（第22便、調査のみ）
 
 ---
 

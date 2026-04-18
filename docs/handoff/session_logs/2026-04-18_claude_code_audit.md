@@ -1,0 +1,110 @@
+# Claude Code セッションログ: 2026-04-18（監査役）
+
+担当: Claude Code（Sonnet 4.6 → 途中からOpus 4.7）
+役割: 監査役（実装はCodex、判断はYoshihiro）
+
+このログは repo にコミットされるので、チャット消失時もここから引き継げる。
+
+---
+
+## セッション開始時の状態
+
+- 稼働 revision: `yoshilover-fetcher-00130-nxg`
+- Phase 3段階1（メール通知）稼働開始済み
+- Yoshihiro: 今日の受け入れ試験を実施する方針
+
+---
+
+## 作業1: handoff docs 初版の作成（午前）
+
+**やったこと**:
+- `docs/handoff/` 配下に19ファイルを作成（README, 00-14, conversation_logs 3件）
+- 引き継ぎ情報を体系化
+
+**commit**: `b35ff91`
+
+---
+
+## 作業2: handoff docs の抜け漏れチェックと追記
+
+**Yoshihiroからの指摘**:
+- Gmail app password registered状態が未記載
+- Phase 3段階2-4のタイミングが曖昧
+
+**やったこと**:
+- `03_current_state.md` に Secret Manager状態を追記
+- `05_roadmap.md` に「段階2-4はPhase C安定後」と明記
+- テスト数を 354 → 358 に修正（実測）
+
+**commit**: `02ae205`
+
+---
+
+## 作業3: 引き継ぎ確認作業（事故4記事 + draft queue）
+
+**確認1: 事故4記事のdraft戻し**:
+- 62483: status=draft / URL=404 ✅
+- 62486: status=draft / URL=404 ✅
+- 62489: status=draft / URL=404 ✅
+- 62493: status=draft / URL=404 ✅
+- → **4件とも完了確認**
+
+**確認2: draft queue件数（初期調査、後に誤りと判明）**:
+- 当初報告: postgame 11件, lineup 6件, ... 合計36件
+- → これは誤り。後続の監査で全てWP_status=publish と判明（T-001参照）
+
+---
+
+## 作業4: 受け入れ試験の開始直前、重大異常発見 → ストップ
+
+**異常**: fact_check の出力を細かく見ると、`status=publish` ばかり返ってくる
+
+**Yoshihiro**: 「で、ストップ」
+
+**監査結果**:
+1. `overall_status` として拾った値は実はWP_statusだった（fact_checkの `result` フィールドが判定）
+2. list API の `?status=draft` フィルタが機能していない（36件全てpublish）
+3. 公開中の36記事のうち6件がRED判定（事実誤記あり、T-002）
+4. うち p=61981 は opponent が阪神→楽天という重大誤記
+
+**既存の誤情報を訂正**:
+- `08_next_steps.md` の「Step 0」で報告した「postgame 11件・lineup 6件」は drafts ではなく publishes だった
+- 実draft数は不明（T-003）
+
+---
+
+## 作業5: 監査インフラ構築（このセッション）
+
+**作成**:
+- `docs/handoff/tickets/OPEN.md` — 未解決チケット（T-001〜T-006）
+- `docs/handoff/tickets/RESOLVED.md` — 解決済みアーカイブ
+- `docs/handoff/session_logs/2026-04-18_claude_code_audit.md` — このファイル
+- `docs/handoff/README.md` に運用ルールを追記
+
+**目的**:
+- チャット消失時も repo から状況を復元できる
+- Yoshihiro の負荷を減らすため、チケット単位で Codex に丸投げできる形にする
+
+---
+
+## このセッションの結論
+
+**今日の受け入れ試験は、開始前に保留**:
+- 保留理由: T-001 の list API 不全 + T-003 の draft件数不明
+- draft が実際に何件あるのか、どのsubtypeにいくつあるのか、が不明な状態で
+  受け入れ試験は実施できない
+
+**優先順位の提案**:
+1. T-001 調査（Codex）: WP list API が何故 draft を返さないか
+2. T-003 解決（Codex）: 代替手段で draft件数を取得
+3. T-002 の判断（Yoshihiro）: 公開中の6記事をどうするか
+4. 上記解決後、postgame/lineup の受け入れ試験を再開
+
+---
+
+## Yoshihiro へ
+
+次回チャット開始時は、以下の順で読めば復帰できる:
+1. `docs/handoff/README.md`
+2. `docs/handoff/tickets/OPEN.md` ← 今ここに未解決が溜まっている
+3. `docs/handoff/session_logs/2026-04-18_claude_code_audit.md`（このファイル）

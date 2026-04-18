@@ -27,6 +27,17 @@
 ### 会話ログ（詳細な経緯）
 - [conversation_logs/](conversation_logs/) 配下
 
+### 監査・チケット（チャット消失時の引き継ぎ用）
+- [tickets/OPEN.md](tickets/OPEN.md) — **未解決チケット一覧（最重要）**
+- [tickets/RESOLVED.md](tickets/RESOLVED.md) — 解決済みアーカイブ
+- [session_logs/](session_logs/) — Claude Codeセッションの監査ログ
+
+**チャットが消えた時の復帰手順**:
+1. `README.md` を読む（このファイル）
+2. `tickets/OPEN.md` で未解決の課題を把握
+3. `session_logs/` の最新ファイルでClaude Codeが何をやっていたか確認
+4. `07_current_position.md` で全体の現在地を確認
+
 ## 最終更新
 2026-04-18 朝
 

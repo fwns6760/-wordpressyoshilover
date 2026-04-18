@@ -2,19 +2,27 @@
 
 詳細: [docs/roadmap.md](../roadmap.md)
 
-## 今日（2026-04-18）のゴール
+## 今日（2026-04-18）のゴール — 達成状況
 
-`postgame` / `lineup` の受け入れ試験を完了し、合格なら `ENABLE_PUBLISH_FOR_POSTGAME=1` / `ENABLE_PUBLISH_FOR_LINEUP=1` + `RUN_DRAFT_ONLY=0` への移行判断をする。
+当初のゴールは「`postgame` / `lineup` の受け入れ試験 → 合格なら Phase C 解放判断」だったが、
+実態は以下のとおり:
+
+- T-001 / T-002 / T-003 / T-007 / T-011 / T-012 / T-013 / T-015 / T-016 / T-018 の解決・修正に丸1日を使用
+- 新 parser で publish 全量 fact_check 監査を実施 → **red 0件**
+- T-001 コード修正完了（本番反映は第18便で Xserver 情報入手後）
+- Phase C 解放判断のゲートに到達（実施は明日以降でも可）
+
+詳細は `07_current_position.md` と `08_next_steps.md` を参照。
 
 ## 今週の想定スケジュール
 
 | 日 | 作業内容 |
 |----|---------|
-| 04-18（土） | postgame/lineup 受け入れ試験、合格なら publish解放 |
-| 04-19（日） | 試合日: publish後の実動作観察、manager/notice受け入れ |
-| 04-20（月） | pregame/recovery/farm 受け入れ（オフ日） |
-| 04-21〜 | social/player/general 順次受け入れ |
-| 今週末 | X投稿段階（ENABLE_X_POST_FOR_XXX=1）移行開始 |
+| 04-18（土） | **完了** — 品質修正群 + 全量監査 + T-001 コード修正 |
+| 04-19（日） | 試合日: Phase C 解放判断 → 解放後の実動作観察（or `postgame` / `lineup` のみ先行解放） |
+| 04-20（月） | manager / notice 受け入れ（オフ日で落ち着いて確認） |
+| 04-21〜 | pregame / recovery / farm / social / player / general 順次解放 |
+| 今週末 | X投稿段階（`ENABLE_X_POST_FOR_XXX=1`）移行開始 |
 
 ## Phase 3 スマホ完結運営（段階1〜4）
 

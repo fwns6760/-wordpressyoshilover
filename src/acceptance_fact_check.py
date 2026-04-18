@@ -77,6 +77,12 @@ TEAM_PATTERN = tuple(dict.fromkeys([*NPB_TEAM_MARKERS, *TEAM_ALIASES.keys()]))
 VENUE_PATTERN = tuple(
     dict.fromkeys([*TITLE_VENUE_MARKERS, *VENUE_ALIASES.keys(), "東京ドーム", "神宮", "甲子園", "横浜"])
 )
+TEAM_MATCH_RE = re.compile(
+    "|".join(re.escape(marker) for marker in sorted(TEAM_PATTERN, key=len, reverse=True))
+)
+HISTORICAL_GAME_REF_RE = re.compile(
+    rf"(?:\d{{1,2}}月)?\d{{1,2}}日(?:{ '|'.join(re.escape(marker) for marker in sorted(TEAM_PATTERN, key=len, reverse=True)) })戦"
+)
 SCORE_RE = re.compile(r"(\d{1,2})[－\-–](\d{1,2})")
 TIME_RE = re.compile(r"([01]?\d|2[0-3]):([0-5]\d)")
 DATE_RE = re.compile(r"(?:(\d{1,2})月(\d{1,2})日|(\d{1,2})/(\d{1,2}))")
@@ -170,17 +176,23 @@ def _find_first_marker(text: str, markers: tuple[str, ...], *, normalize=None, e
 
 def _extract_team_mentions(text: str) -> list[str]:
     found: list[str] = []
-    for marker in TEAM_PATTERN:
-        if marker in text:
-            normalized = _normalize_team(marker)
-            if normalized and normalized not in found:
-                found.append(normalized)
+    for match in TEAM_MATCH_RE.finditer(text or ""):
+        normalized = _normalize_team(match.group(0))
+        if normalized and normalized not in found:
+            found.append(normalized)
     return found
 
 
 def _extract_opponent(text: str) -> str:
-    mentions = [team for team in _extract_team_mentions(text) if team not in {"巨人", "読売ジャイアンツ"}]
-    return mentions[0] if mentions else ""
+    historical_spans = [match.span() for match in HISTORICAL_GAME_REF_RE.finditer(text or "")]
+    for match in TEAM_MATCH_RE.finditer(text or ""):
+        normalized = _normalize_team(match.group(0))
+        if not normalized or normalized in {"巨人", "読売ジャイアンツ"}:
+            continue
+        if any(start <= match.start() and match.end() <= end for start, end in historical_spans):
+            continue
+        return normalized
+    return ""
 
 
 def _extract_venue(text: str) -> str:

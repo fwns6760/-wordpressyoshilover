@@ -243,6 +243,17 @@ class AcceptanceFactCheckTests(unittest.TestCase):
         self.assertEqual(facts["score"], "")
         self.assertEqual(facts["venue"], "")
 
+    def test_extract_opponent_ignores_historical_game_reference(self):
+        current = acceptance_fact_check._extract_opponent(
+            "巨人ヤクルト戦 大城卓三は何を見せたか 巨人が首位ヤクルトに快勝し、4日DeNA戦と並んで今季最多8得点を挙げた。"
+        )
+        historical_only = acceptance_fact_check._extract_opponent(
+            "4日DeNA戦と並んで今季最多8得点を挙げた。"
+        )
+
+        self.assertEqual(current, "ヤクルト")
+        self.assertEqual(historical_only, "")
+
     @patch.object(
         acceptance_fact_check,
         "_fetch_url_snapshot",

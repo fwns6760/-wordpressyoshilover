@@ -459,3 +459,86 @@ T-007 の根本修正 → 9件 post_id の再判定 → T-002 の3分類（A/B/C
 
 **最終 OPEN**: T-001（本番反映待ち）/ T-004 / T-005 / T-006 / T-010（🟡 A=5）/ T-014（🟡 4件）
 
+---
+
+### 追記: 第18便（Phase C postgame/lineup 公開解放）
+
+**受信**: 2026-04-18 夜、response doc `67e2099`
+
+- revision: `00135-rpc` → **`00136-z7s`**（traffic 100%）
+- env 変更: `RUN_DRAFT_ONLY=0` / `ENABLE_PUBLISH_FOR_POSTGAME=1` / `ENABLE_PUBLISH_FOR_LINEUP=1`
+- 維持: `AUTO_TWEET_ENABLED=0` / `PUBLISH_REQUIRE_IMAGE=1` / 他 subtype の publish flag = 0
+- 手動 trigger 観察: `fact_check_email_skipped(reason=no_change_no_red)` 正常、ERROR 0 件
+- `07_current_position.md` を `00136-z7s` に追随（commit `7ae155a`）
+
+**残件**: 次の自然 `/run` 発火で postgame/lineup のみ publish されるか観察（他 subtype 混入したら即 rollback）
+
+---
+
+### 追記: 第19便（T-019 post_id=62584 アイキャッチ欠損調査）
+
+**起票**: 2026-04-18 夜、よしひろさん WP 目視で 62584（draft）にアイキャッチなしと報告
+
+- T-019 🟡 を OPEN に追加、調査のみの指示書 `codex_requests/2026-04-18_19.md` を作成（commit `babb237`）
+- 今日のコード修正群（T-007/T-010/T-012/T-016/T-018/T-001）は画像処理に一切触れてないのでデグレ可能性は低いと事前メモ
+- Step 0〜7 + systemic/単発の判定 + 改善方針提案まで依頼（修正は次便以降判断）
+- Codex 第19便: **未着手**（よしひろさんから Codex に投げる段階）
+
+---
+
+### 追記: 役割分担の明確化（CLAUDE.md 改訂）
+
+**経緯**:
+- 62584 について「Codex に依頼するか？なぜかあ」のよしひろさん発言に対し、私が一瞬「修正アプローチ」を検討しかけた
+- よしひろさんから **「君は監査だけだから開発はしない。開発はCODEX君は監査と役割がある」** と明示的に差し戻し
+- 続けて **「君は直さないよ。開発環境は触らないこと。」** と強調
+- さらに **「Claude.MD にClaudコードは監査だけであり、開発環境は触らないこと。閲覧だけと書いて」** の依頼
+
+**第一版（commit `5d51dec`）**: Claude Code = 監査のみ、**read-only も含めて開発環境一切禁止**、閲覧対象は repo 内ファイルのみ、に書き換え
+
+**よしひろさん差し戻し**: 「いや閲覧はしてよいよ。」
+
+**第二版（commit `4ec18de`）**: 閲覧/read-only は OK、変更系（update/deploy/POST/PUT/DELETE/shell source .env）だけ禁止、に修正
+- OK: `gcloud describe` / `gcloud logging read` / WP REST `GET` / python-dotenv 経由の `.env` 読み
+- NG: `gcloud ... update` / deploy / `src/` 編集 / WP の `POST`/`PUT`/`DELETE` / `.env` の shell `source`
+
+**memory 更新**: `project_yoshilover_roles.md` に「閲覧は OK、変更は NG」の明示ルール追加
+
+---
+
+### 事故記録: `.env` の shell source で PW 一部漏洩（2026-04-18 夜）
+
+**状況**: WP REST 401 を解決するため、Claude Code が `set -a && source .env` を実行
+
+**結果**:
+- `WP_APP_PASSWORD` に特殊文字が含まれていて、shell が PW の一部（`TczM`）を command と誤解
+- stdout にエラー表示として PW 一部が出力された（PW 一部漏洩）
+- dev 環境への変更は無し（read 失敗しただけ）
+
+**対策**:
+- CLAUDE.md に実事故として明記
+- 以後 `.env` 読み取りは **必ず python-dotenv 経由**、shell `source` は完全禁止
+- memory `project_yoshilover_roles.md` にも同ルール記載
+
+---
+
+### 自己監査: 今日 Claude Code が dev 環境に対して行った操作
+
+（よしひろさん「君が操作してしまったことある？」への回答）
+
+**コード変更（src/ 配下）**: **なし**
+- 今日の src/ commit（`f09cffc` / `ab349de` / `01ed7b2` / `a08d875` / `d6e19eb` / `ba97edc`）は**すべて Codex**
+- Claude Code の commit は `docs(handoff)` 系のみ
+
+**dev 環境の read-only 操作**:
+- `gcloud run services describe ...`（Phase C 確認用）
+- `gcloud logging read ...`（デバッグ閲覧）
+- → 新ルール（第二版 CLAUDE.md）で OK
+
+**dev 環境の変更操作**: **なし**
+- `gcloud ... update` / deploy / secret/scheduler 変更 / WP への書き込み 一度もなし
+
+**事故**: `.env` shell source 1件（上記「事故記録」参照、dev 環境は未変更）
+
+**結論**: Codex に直させる必要のある Claude Code 起因の dev 環境変更は **存在しない**
+

@@ -16,6 +16,26 @@
 
 ---
 
+## T-022 🟠 週末 18-19 時 JST の `/run` scheduler gap（解決）+ T-023 平日 18-19 時 filter（WONTFIX）
+
+**発見日**: 2026-04-18 夜（「18時発火よわい」）
+**解決日**: 2026-04-18 夜
+**解決者**: Codex（第22-23便調査+修正、第25便 WONTFIX 根拠）
+
+**T-022 対応**:
+- 第22便で土曜 18:00-19:59 の scheduler gap（`giants-weekend-eve: 0,30 20-22`）を定量化
+- 第23便で `giants-weekend-eve` を `0,30 18-22 * * 0,6` に更新（手動 trigger 200 / drafts_created=3 / rollback 不要）
+
+**T-023 WONTFIX 根拠（第25便）**:
+- 7d weekday 18-19 JST は 8 サンプル。pregame 11 prepared / 0 created / pass_rate 0%、postgame/lineup/farm は 100% 通過
+- 最多 skip_reason: `not_giants_related=474`, `sns_polluted=188`, `history_duplicate=175`
+- 高レバレッジ要因は `pregame_started` だが、2026-04-17 の 18:00 試合開始と同時発火 → 過剰ではない
+- policy として正常動作。18-19 時は pregame window と重なる構造的要因
+
+**関連 commit**: `f902b81`（23 response / scheduler fix） / `8c5a276`（25 response / WONTFIX 根拠）
+
+---
+
 ## T-019 🟠 post_id=62584 アイキャッチ欠損（調査 + 修正）
 
 **発見日**: 2026-04-18 夜（よしひろさん WP 目視）

@@ -109,35 +109,21 @@ deployはよしひろさん承認後。
 
 ---
 
-## T-012 🟡 acceptance_fact_check が歴史参照の「○日○○戦」を opponent と誤認する（false positive）
+## T-013 🟠 T-012 修正を Cloud Run に反映（deploy 未実施）
 
 **発見日**: 2026-04-18
-**発見経緯**: p=62527 修正時（第6便 Codex 報告）に顕在化
-**発見者**: Codex / Claude Code 監査
-**影響**: 記事側の修正が正しくても red 判定が継続することがある。受け入れ試験の信頼性に影響
+**発見者**: Claude Code（監査役）
+**影響**: Cloud Run 上の `yoshilover-fetcher` は revision `00131-mpn` (`ba97edc`) のまま。T-012 の parser 改善 (`d6e19eb`) は反映されておらず、次の Scheduler 発火時も歴史参照 false positive が残る
 
-**現象**:
-- 現状の `acceptance_fact_check` は、本文中の過去試合参照（例: `4日DeNA戦`）を current opponent と誤認して red 判定することがある。
-- 記事修正ではなく fact_check 判定ロジック側の改善対象。
+**未反映のcommit**:
+- `d6e19eb` fix: ignore historical game refs in fact check opponent detection（T-012）
 
-**実例**:
-- p=62527 でヤクルト戦の記事に残る `4日DeNA戦と並んで今季最多8得点` の記述（5箇所）を opponent=DeNA として拾い、summary 側修正後も red 継続
-- `docs/handoff/codex_responses/2026-04-18_06.md` 参照
+**必要な作業**:
+- Cloud Run `yoshilover-fetcher` に最新 master を deploy
+- env変更不要（`RUN_DRAFT_ONLY=1` / `AUTO_TWEET_ENABLED=0` / `PUBLISH_REQUIRE_IMAGE=1` 維持）
+- smoke test: revision 進捗確認、Scheduler 手動 trigger、`draft_only=true` と `error_count=0` を確認
 
-**修正方針（案）**:
-- 本文中の `○日○○戦` / `○月○日○○戦` のような過去試合参照パターンを opponent 抽出から除外
-- または、summary ブロック / title 側の opponent 表記を優先してマッチングし、本文は補助扱いにする
-- T-007 と似た構造のパーサー側補正
-
-**Codex向け指示書ドラフト**:
-```
-src/acceptance_fact_check.py の opponent 抽出ロジックを見直し、
-本文中の「○日○○戦」のような過去試合参照を current opponent から除外する。
-- 正規表現例: (\d{1,2}日)(DeNA|ヤクルト|阪神|広島|中日|巨人|ロッテ|楽天|...)戦
-- 既存の opponent 抽出に対して「先行する日付トークン」を持つものは skip
-- 修正後、p=62527（draft）で green になること、および
-  regression として「歴史参照を含む記事」のテストを1本追加する。
-```
+**Codex向け依頼書**: `docs/handoff/codex_requests/2026-04-18_08.md`
 
 ---
 

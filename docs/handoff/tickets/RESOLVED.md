@@ -16,6 +16,28 @@
 
 ---
 
+## T-012 🟡 acceptance_fact_check が歴史参照の「○日○○戦」を opponent と誤認する（false positive）
+
+**発見日**: 2026-04-18
+**解決日**: 2026-04-18（第7便 Codex 実装）
+**解決者**: Codex（実装・テスト）/ Claude Code（依頼ドラフト）/ よしひろさん（承認）
+**対応内容**:
+- `src/acceptance_fact_check.py` に `HISTORICAL_GAME_REF_RE` と `TEAM_MATCH_RE` を導入
+- `_extract_team_mentions()` を regex finditer による **本文出現順** 抽出に変更（従来は `TEAM_PATTERN` 定義順）
+- `_extract_opponent()` で historical reference span 内の team は current opponent 候補から除外
+- regression test 1 本追加（`test_extract_opponent_ignores_historical_game_reference`）
+- `python3 -m unittest discover -s tests` → **367 passed, OK**
+- live 再判定:
+  - p=62527 → `result=green`, `findings=[]`
+  - p=61981 → `result=green` 維持（regression なし）
+
+**備考**: parser 側修正のみ。Cloud Run への deploy は **T-013** で追跡。
+
+**関連commit**: `d6e19eb`
+**関連レポート**: `docs/handoff/codex_responses/2026-04-18_07.md`
+
+---
+
 ## T-011 🟠 T-007 修正 + auto_fix/notifier を Cloud Run に反映
 
 **発見日**: 2026-04-18

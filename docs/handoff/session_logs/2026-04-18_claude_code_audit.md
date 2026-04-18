@@ -323,3 +323,18 @@ T-007 の根本修正 → 9件 post_id の再判定 → T-002 の3分類（A/B/C
 - T-011 は第4便 Step 1 で deploy 済み（revision `00131-mpn`、smoke test + `/run` 実行確認済）
 - よしひろさん承認のもと OPEN → RESOLVED へ移動
 - 最終 OPEN: T-001 / T-004 / T-005 / T-006 / T-010 / T-012
+
+### 追記: T-012 クローズ + T-013 起票 + 第8便 deploy 依頼
+
+- 第7便 Codex 報告（`codex_responses/2026-04-18_07.md`）で T-012 修正完了
+  - `src/acceptance_fact_check.py` に `HISTORICAL_GAME_REF_RE` / `TEAM_MATCH_RE` 導入
+  - team 抽出を本文出現順に変更
+  - regression test 1 本追加、`367 passed`
+  - p=62527 / p=61981 ともに green 確認
+  - commit `d6e19eb`
+- T-012 → RESOLVED へ移動
+- T-013 🟠 起票: T-012 修正を Cloud Run に反映する deploy 依頼
+- 第8便依頼書 `docs/handoff/codex_requests/2026-04-18_08.md` 作成
+  - 第4便 Step 1 と同じ手順（`git archive HEAD` を tmp に展開 → source deploy）
+  - env 変更なし、smoke test + scheduler 手動 trigger で確認
+- 最終 OPEN: T-001 / T-004 / T-005 / T-006 / T-010 / T-013

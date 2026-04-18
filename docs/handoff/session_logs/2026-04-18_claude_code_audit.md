@@ -273,3 +273,47 @@ T-007 の根本修正 → 9件 post_id の再判定 → T-002 の3分類（A/B/C
 - `414fd1f` Yoshihiro → よしひろさん 統一
 - `ba97edc` Codex: T-007 修正 + 再判定
 - `3a15ba3` T-007 RESOLVED + 再整理 + codex_requests 第3便
+
+---
+
+## 2026-04-18 夕方〜夜（第4〜6便 + クロージング）
+
+**流れ**:
+1. 第4便（`codex_requests/2026-04-18_04.md`）で全量クロージング依頼
+   - Step 1 T-011 deploy → 成功（revision `yoshilover-fetcher-00131-mpn`）
+   - Step 2 T-001 WP plugin → Xserver 接続情報不足で停止（依頼書どおり中止）
+2. 第5便（`codex_requests/2026-04-18_05.md`）で T-001 をスキップして Step 3 以降を再開
+   - Step A: p=61981 opponent 阪神→楽天 修正 → green 確認
+   - Step B: p=62527 title DeNA→ヤクルト 修正 → title は直ったが body に `DeNA` 残って red 継続で停止
+3. 第6便（`codex_requests/2026-04-18_06.md`）で body 側の切り分けを明示
+   - summary 欄の `相手=DeNA` → `ヤクルト` 修正
+   - 本文中の `4日DeNA戦〜`（歴史参照）は 5 箇所とも保持
+   - 記事要件は満たしたが fact_check は歴史参照を opponent と誤認して red 継続
+4. よしひろさん切り分け判断:
+   - T-002 → RESOLVED（記事 green）
+   - T-008 → RESOLVED（記事要件満たしたため、red は fact_check 側 false positive）
+   - T-012 → 新規起票（fact_check が `○日○○戦` 歴史参照を opponent と誤認する false positive）
+
+**チケット変動**:
+- `OPEN.md`: T-002 / T-008 を削除、T-012 を追加
+- `RESOLVED.md`: T-002 / T-008 を追記
+
+**残 OPEN**:
+- T-001（Xserver 接続情報待ち）
+- T-004 / T-005 / T-006（既存低優先度）
+- T-010（yellow 2件、放置継続）
+- T-011（deploy 済み。クローズ可能だが本セッションでは触らず持ち越し）
+- T-012（新規、fact_check false positive）
+
+**関連 commit**:
+- `d2f6135` 第4便依頼書
+- `c180b60` 第4便 Codex 報告（Step 2 停止）
+- `b3da886` 第5便依頼書
+- `9f87059` 第5便 Codex 報告（Step B 停止）
+- `2ffa804` 第6便依頼書
+- `972e99d` 第6便 Codex 報告（記事 OK / fact_check red 継続）
+
+**フィードバック記憶化済み**:
+- `~/.claude/projects/-home-fwns6-code/memory/feedback_codex_prompt_verbose.md`
+- Codex 依頼書は 7 要素（コマンド例 / 期待出力 / 成功判定 / 失敗時 / NG / 次の動き / 所要時間）を埋める
+

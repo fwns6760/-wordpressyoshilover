@@ -16,6 +16,40 @@
 
 ---
 
+## T-002 🟠 公開中 p=61981 の opponent 誤記（阪神→楽天）
+
+**発見日**: 2026-04-18
+**解決日**: 2026-04-18（第5便 Codex 実装）
+**解決者**: Codex（実装）/ Claude Code（依頼ドラフト）/ よしひろさん（判断）
+**対応内容**:
+- `WPClient` 経由で live post `61981` を取得
+- title: `巨人阪神戦 試合の流れを分けたポイント` → `巨人楽天戦 試合の流れを分けたポイント`
+- summary ブロックの `相手=阪神` → `楽天`
+- 本文中の `大ファンだった阪神との初対戦` → `大ファンだった楽天との初対戦`（opponent 誤認箇所のみ）
+- `acceptance_fact_check --post-id 61981` → `result=green`, `findings=[]` 確認
+- status=publish のまま
+
+**関連レポート**: `docs/handoff/codex_responses/2026-04-18_05.md`
+
+---
+
+## T-008 🟠 post_id 62527 タイトル DeNA → ヤクルト の自動修正判断
+
+**発見日**: 2026-04-18
+**解決日**: 2026-04-18（第5便 title / 第6便 body summary）
+**解決者**: Codex（実装）/ Claude Code（依頼ドラフト）/ よしひろさん（切り分け判断）
+**対応内容**:
+- title: `巨人DeNA戦 大城卓三は何を見せたか` → `巨人ヤクルト戦 大城卓三は何を見せたか`（第5便）
+- summary ブロック `相手=DeNA` → `ヤクルト`（第6便）
+- 本文中の `4日DeNA戦と並んで今季最多8得点` は過去試合への言及なので **5箇所すべて保持**
+- 記事側の要件はすべて満たした
+
+**備考**: 記事側修正後も fact_check は `result=red` 継続だが、これは本文中の歴史参照（`4日DeNA戦`）を current opponent と誤認する false positive。記事問題ではないため T-008 は RESOLVED 扱い。fact_check 側は **T-012** で分離追跡。
+
+**関連レポート**: `docs/handoff/codex_responses/2026-04-18_05.md`, `docs/handoff/codex_responses/2026-04-18_06.md`
+
+---
+
 ## T-007 🔴 fact_check パーサーバグ — score/venue の fallback が誤値を拾う
 
 **発見日**: 2026-04-18

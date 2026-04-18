@@ -217,6 +217,32 @@ T-016 の第14便で SMTP 経路が健全と判明してる前提で本便に入
 
 ---
 
+## T-018 🟡 fact-check メールに運用サマリ（作成数・公開数）を追加
+
+**発見日**: 2026-04-18
+**発見者**: よしひろさん（機能要望）
+**影響**: 日々の運用可視性向上。現状はメール本文が「品質判定（red/yellow/green）」のみ。作成数・公開数が見えない
+
+**欲しい情報**:
+- 📥 直近 24h の drafts_created 件数（subtype 別内訳）
+- 📤 直近 24h の published 件数（subtype 別内訳、Phase C 有効後に顕在化）
+- 🔄 skip_duplicate / skip_filter / error_count のサマリ
+
+**データ源（既存）**:
+- `rss_fetcher_run_summary` ログイベント（`drafts_created`, `created_subtype_counts`, `skip_duplicate`, `skip_filter`, `error_count`, `x_post_count`）
+- publish カウントは Phase C 解放後、同ログに `published_count` 等を追加する形
+
+**対応方針**:
+- `src/fact_check_notifier.py` の `run_notification()` に「直近 24h の run_summary 集計」を追加
+- Cloud Logging から `rss_fetcher_run_summary` を集計する helper を書き、メール本文 1 セクション追加
+- 既存の 3 セクション（🔴要対応 / 🟡要確認 / ✅公開候補）の前に挿入
+
+**優先度**: 🟡（機能要望、運用品質向上）
+
+**Codex向け指示書ドラフト**: `docs/handoff/codex_requests/2026-04-18_16.md`（第16便、作成済）
+
+---
+
 ## チケット運用ルール
 
 - 新規発見: このファイルに追記、IDは連番（T-007, T-008...）

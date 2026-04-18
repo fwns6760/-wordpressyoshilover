@@ -177,9 +177,29 @@ T-016 の第14便で SMTP 経路が健全と判明してる前提で本便に入
 - draft 62600 に `<div class="yoshilover-related-posts">` と `【関連記事】` を確認
 - draft 62598 は候補 0 件で省略（期待通り）
 
-**次アクション**:
+**次アクション（第1弾・関連記事リンク）**:
 1. 自然発火で publish が出たら、実公開記事で関連記事セクションを目視確認（Claude Code が WP REST で確認）
-2. 異常なしなら T-021 → RESOLVED
+2. 異常なしなら T-021 第1弾は解消扱い
+
+---
+
+### 第2弾: team batting stats の opt-in 注入（flag 既定 OFF）
+
+**第29便 調査結論**（`codex_responses/2026-04-18_29.md`）:
+- 既存 `fetch_giants_batting_stats_from_yahoo()` は試合速報 lineup 以外で未使用
+- strict prompt 群には `source_fact_block` / `source_day_label` しか渡っておらず、数値材料が prompt に入っていない
+
+**実装**: 第30便 `b7f20d8`（src/rss_fetcher.py + `.env.example` + tests/test_team_stats_prompt.py、397 passed）
+- `_format_team_batting_stats_block` 追加
+- `_build_gemini_strict_prompt` / `_build_game_strict_prompt` / `_build_manager_strict_prompt` に `team_stats_block` 引数追加
+- env flag `ARTICLE_INJECT_TEAM_STATS`（既定 `"0"`）で制御、試合速報 / 首脳陣 のみ対象
+- 取得失敗は空文字で続行、flag OFF 時は現行と完全同一挙動（回帰テストで担保）
+
+**deploy**: 第31便予定（flag OFF のまま revision 切り替えのみ）
+
+**次アクション（第2弾）**:
+1. 第31便で deploy、flag OFF のまま手動 trigger smoke（既存の draft 生成が壊れないことだけ確認）
+2. 1〜2 日観察して異常なければ、別便で flag ON の staging / canary 検証（env 変更を伴うため本便では扱わない）
 
 ---
 

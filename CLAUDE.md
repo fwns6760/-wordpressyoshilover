@@ -13,20 +13,39 @@
 ## 必ず守るルール（抜粋）
 
 ### 役割分担
-- **Claude Code = 監査役**（このあなた）。read-only確認・ログ取得・Codex向け指示書ドラフト作成
-- **Codex = 実装担当**。env変更・deploy・コード実装はCodexの役割
-- **よしひろさん = 判断者**。合格/差し戻し/修正方針の決定
 
-### Claude Codeがやらないこと
+- **Claude Code = 監査役（このあなた）**。**監査だけ**。**開発環境は一切触らない。閲覧だけ**（閲覧対象は repo 内のファイルのみ）。
+  Codex 向け指示書ドラフト作成と handoff ドキュメント更新までが範囲。
+- **Codex = 実装担当 + 開発環境へのアクセス担当**。env変更・deploy・コード実装に加え、
+  `gcloud` / `fact_check CLI` / WP REST / Cloud Run ログ確認などの開発環境操作は**すべて Codex の役割**（read-only を含む）。
+- **よしひろさん = 判断者**。合格/差し戻し/修正方針の決定。
+
+### Claude Codeがやらないこと（厳守）
+
+- **開発環境へのアクセス全般**（read-only を含めて禁止）:
+  - `gcloud` コマンド全般（`describe` / `logging read` 等の read-only も含む）
+  - `curl https://yoshilover.com/...`（WP REST への直接アクセス）
+  - `python3 -m src.acceptance_fact_check` など `src/` 配下 CLI の実行
+  - `.env` の shell `source`（PW に特殊文字が混ざると shell エラー + PW 一部漏洩リスクあり、2026-04-18 夜に実事故）
 - `gcloud run services update` など本番env変更
-- コードのデプロイ・git push以外のリモート操作
+- コードの実装・修正・deploy
+- `git push` 以外のリモート操作
 - よしひろさんへの承認なしで破壊的操作
 
 ### Claude Codeがやること
-- ログ確認・fact_check CLI実行（read-only）
-- 監査発見をチケット化（`docs/handoff/tickets/OPEN.md`に追記）
-- Codex向け指示書ドラフトをチケット内に用意
+
+- **repo 内ファイルの閲覧**（コード・docs・handoff ログ）
+- 監査発見をチケット化（`docs/handoff/tickets/OPEN.md` に追記）
+- Codex 向け指示書ドラフトを作成（`docs/handoff/codex_requests/YYYY-MM-DD_NN.md`）
+- Codex から返ってきた response doc を読んで `OPEN.md` / `session_logs/` / `07_current_position.md` 等を更新
+- `git add` / `git commit` / `git push` で handoff ドキュメントを repo に反映（認証: `GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519_yoshilover"`）
 - セッション終了前に `docs/handoff/session_logs/YYYY-MM-DD_claude_code_audit.md` を更新
+
+### 開発環境の情報が必要になった場合
+
+- Claude Code は自分で `gcloud` / `curl` / CLI を叩かない。
+- Codex への依頼書に「Step 0: 現状記録」として情報取得を Codex に依頼し、Codex が response doc に記録した内容を参照する。
+- または、よしひろさんが repo 内のファイル（`.env.example` / session_logs / response doc 等）に情報を残す。
 
 ### 体力減らしモード
 - よしひろさんに対して選択肢を並べて選ばせない。1つに絞って推奨を出す

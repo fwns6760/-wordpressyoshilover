@@ -10,10 +10,11 @@
 
 ---
 
-## T-001 🟠 WP REST APIのstatus=draftフィルタが機能していない（真犯人判明・修正待ち）
+## T-001 🟠 WP REST APIのstatus=draftフィルタが機能していない（コード修正完了・本番未適用）
 
 **発見日**: 2026-04-18
 **原因特定日**: 2026-04-18（Codex 調査結果）
+**修正完了日**: 2026-04-18（第17便、`f09cffc`）
 **発見者**: Claude Code（監査役）
 **影響**: acceptance_fact_checkがlistAPI経由でdraftを扱えない（T-003で代替手段確立済）
 
@@ -23,24 +24,26 @@
   `?status=draft` / `?status=any` も publish に書き換わる
 - 単独 GET（`/posts/{id}`）は collection query を経由しないので影響なし
 
-**暫定対応**: T-003 の `src/draft_inventory_from_logs.py` で代替可能（優先度🟠に降格）
+**暫定対応**: T-003 の `src/draft_inventory_from_logs.py` で代替可能
 
-**修正方針**:
-1. `REST_REQUEST` 中はこの plugin を効かせない（`if (defined('REST_REQUEST') && REST_REQUEST) return;`）
-2. または true front-end query のみに条件を絞る
-3. `post_status=publish` の強制はテーマ用一覧 query のみに限定
+**第17便（2026-04-18 夜）コード修正完了**:
+- `src/yoshilover-exclude-cat.php` の `pre_get_posts` 先頭 + `posts_where` 先頭に REST ガード追加
+  ```php
+  if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) { return; }
+  ```
+- `php -l` OK / `git diff` 2箇所追加のみ / 379 tests passed
+- commit: `f09cffc fix(exclude-cat): skip REST requests so ?status=draft works`
+- response doc: `docs/handoff/codex_responses/2026-04-18_17.md`（`36785cf`）
+- WP (Xserver) への反映は未実施
 
-**Codex向け指示書ドラフト（修正実装）**:
-```
-src/yoshilover-exclude-cat.php:16-44 の pre_get_posts フック先頭で
-`if (defined('REST_REQUEST') && REST_REQUEST) return;` を追加し、
-REST collection query からこのプラグインを除外する。
-修正後、WP に差し替えて以下を確認:
-- curl .../posts?status=draft&context=edit でdraftのみが返ること
-- curl .../posts?status=publish でpublishのみが返ること
-- テーマ側のフロント一覧で除外カテゴリ動作が保たれていること
-deployはよしひろさん承認後。
-```
+**残タスク（第18便想定）**:
+1. 修正済み `src/yoshilover-exclude-cat.php` を WP 側へ差し替え
+2. 実機確認: `curl .../wp-json/wp/v2/posts?status=draft&context=edit` で draft が返ること
+3. `curl .../posts?status=publish` で publish のみが返ること
+4. テーマ側フロント一覧で除外カテゴリ動作が保たれていること
+5. 実機確認 OK なら T-001 → RESOLVED
+
+**ブロッカー**: Xserver SSH 接続情報、または WP admin での plugin 差し替え権限
 
 ---
 

@@ -432,3 +432,30 @@ T-007 の根本修正 → 9件 post_id の再判定 → T-002 の3分類（A/B/C
   - 受け入れ: 5件中 3件以上で yellow 解消、regression なし、publish red 0件維持
 - 両便ともコードに触らないため deploy 不要
 
+---
+
+### 追記: 第17便（T-001 REST_REQUEST ガード・コード修正完了）
+
+**受信**: 2026-04-18 夜、commit `f09cffc` + response doc `36785cf`、379 tests passed
+
+**経緯**:
+1. 第17便依頼書 `codex_requests/2026-04-18_17.md` で `src/yoshilover-exclude-cat.php` に REST ガード2箇所追加を依頼
+2. Codex 1回目: 2箇所追加 + python test 通過、ただし `php -l` が環境に PHP 未導入で実行不可。依頼書条件に従って commit/push 停止・判断を仰ぐ
+3. Codex 2回目: `sudo apt install -y php-cli` を試みるも passwordless sudo 不可で中止
+4. よしひろさん側で `! sudo apt install -y php-cli` 手動実行（PHP 8.3.6 導入、以後のローカル php lint は自動化可能）
+5. Codex 3回目（第17便完了）:
+   - `php -l src/yoshilover-exclude-cat.php` → `No syntax errors detected`
+   - `git diff` → `pre_get_posts` 先頭 + `posts_where` 先頭の REST ガード 2 箇所追加のみ
+   - `python3 -m unittest discover -s tests` → `Ran 379 tests ... OK`
+   - commit `f09cffc fix(exclude-cat): skip REST requests so ?status=draft works`
+   - response doc `36785cf docs(handoff): add codex response 17`
+
+**T-001 状態更新**: 「修正待ち」→「コード修正完了・本番未適用」
+- WP (Xserver) への反映は第18便で別途
+- ブロッカー: Xserver SSH 接続情報 or WP admin plugin 差し替え権限
+
+**ローカル環境**:
+- `php 8.3.6-0ubuntu0.24.04.8` をローカル導入済、以後の PHP 便で `php -l` は Codex 自律実行可能
+
+**最終 OPEN**: T-001（本番反映待ち）/ T-004 / T-005 / T-006 / T-010（🟡 A=5）/ T-014（🟡 4件）
+

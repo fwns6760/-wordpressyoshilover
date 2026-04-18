@@ -1,5 +1,28 @@
 # ここから進める具体的な一歩
 
+## Step 0: draft queue確認（2026-04-18朝 実測値）
+
+```
+2026-04-18朝 時点のdraft件数（acceptance_fact_check --since all --limit 50 実行結果）:
+  postgame:    11件 ✅ 試験可能
+  lineup:       6件 ✅ 試験可能
+  general:      7件
+  player:       3件
+  manager:      3件
+  live_update:  3件（publish禁止確認済み）
+  pregame:      2件
+  farm_lineup:  1件
+  notice:       0件
+  recovery:     0件
+  farm:         0件
+  social:       0件
+  合計:        36件
+```
+
+**判定ルール**: N≥5 → 試験開始可 / N<5 → 見送り（次回Scheduler発火後に再確認）
+
+postgame 11件・lineup 6件。**今日の試験は両方実施可能。**
+
 ## 直近の次の一手
 
 **postgame の受け入れ試験を実施する。**

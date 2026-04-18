@@ -63,10 +63,22 @@ GMAIL_APP_PASSWORD_SECRET_NAME=yoshilover-gmail-app-password
 | `rss-fetcher-scheduled` | 07:00/12:00/17:00/22:00 JST | 稼働中 |
 | `fact-check-morning-report` | 07:00/12:00/17:00/22:00 JST | 稼働中（2026-04-18朝から） |
 
+## Secret Manager状態
+
+| Secret名 | 状態 |
+|---------|------|
+| `yoshilover-gmail-app-password` | version 1 ENABLED（2026-04-18朝に登録済み） |
+| WP認証系 / X API系 | 登録済み（詳細は `.env.example` 参照） |
+
+確認コマンド:
+```bash
+gcloud secrets versions list yoshilover-gmail-app-password --project baseballsite
+```
+
 ## テスト数
 
 ```
-354テスト / 全PASS
+358テスト / 全PASS（2026-04-18朝時点）
 ```
 
 確認コマンド:

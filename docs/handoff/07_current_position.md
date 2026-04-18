@@ -31,12 +31,13 @@
 
 | 項目 | 状態 |
 |---|---|
-| Cloud Run revision | `yoshilover-fetcher-00135-rpc`（traffic 100%） |
-| origin/master 最新 | `3cb457b docs(handoff): close T-001 code fix, update session log for 便17` |
+| Cloud Run revision | **`yoshilover-fetcher-00136-z7s`（Phase C postgame/lineup 解放後、traffic 100%）** |
+| origin/master 最新 | 都度更新（第18便 Codex 報告時点で `67e2099`） |
 | テスト数 | 379 passed |
 | Scheduler `fact-check-morning-report` | `0 * * * *` Asia/Tokyo ENABLED（毎時 hourly） |
-| env | `RUN_DRAFT_ONLY=1` / `AUTO_TWEET_ENABLED=0` / `PUBLISH_REQUIRE_IMAGE=1` |
-| Phase C publish フラグ 20個 | 全て `0`（待機） |
+| env | **`RUN_DRAFT_ONLY=0`** / `ENABLE_PUBLISH_FOR_POSTGAME=1` / `ENABLE_PUBLISH_FOR_LINEUP=1` / `AUTO_TWEET_ENABLED=0` / `PUBLISH_REQUIRE_IMAGE=1` |
+| Phase C publish フラグ | postgame / lineup = `1`、他カテゴリ（manager/notice/pregame/recovery/farm/social/player/general）= `0`（継続待機） |
+| Phase C X投稿フラグ | 全カテゴリ `0`（未解放） |
 | ローカル環境 | `php 8.3.6` 導入済（以後 PHP 便で Codex が自律 lint 可能） |
 
 ## 残 OPEN チケット

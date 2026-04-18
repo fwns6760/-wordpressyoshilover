@@ -16,6 +16,47 @@
 
 ---
 
+## T-016 🔴 fact_check メール：ログ上は送信成功なのに Gmail に届かない（Gmail スレッド化誤検知）
+
+**発見日**: 2026-04-18
+**解決日**: 2026-04-18（第14便観測性 + 第15便 30min + 第16便 1h + skip）
+**解決者**: Codex（実装）/ Claude Code（依頼ドラフト・監査）/ よしひろさん（判断・受信確認）
+
+**経緯**:
+- 朝: よしひろさん「Gmail に届いてない」報告 → 配送バグ疑い（🔴 起票）
+- 第14便（`01ed7b2`）: `send_email()` に `Message-ID` / `refused_recipients` / `smtp_response` 追加
+- 調査結果: SMTP 経路健全（250 OK / refused={}）、**Gmail スレッド化で subject 同一メールがまとまって「1通しか届いてない」ように見えていた**（rfc822msgid 検索で Main tab に実在確認）
+- 第15便（`ab49c6c`）: Scheduler `0 7,12,17,22 * * *` → `*/30 * * * *`（30分おき）
+- 第16便（`ab349de`, revision `00135-rpc`）: Scheduler `0 * * * *` + `_should_send_email()` で skip-on-empty + 件名 `ヨシラバー MM/DD HH:00 🔴N 🟡M ✅K`
+
+**成果物**:
+- コード: `src/fact_check_notifier.py`（`_should_send_email` / 件名刷新 / 観測性維持）
+- Scheduler: `0 * * * *` Asia/Tokyo ENABLED
+- ログ: `fact_check_email_sent` / `fact_check_email_skipped` に `reason` / `posts_in_last_hour_count` 追加
+- 手動 trigger 観測: skip 分岐で `reason=no_change_no_red` 確認
+
+**関連commit**: `01ed7b2`, `ab49c6c`, `ab349de`, `157b4f0`
+
+---
+
+## T-018 🟡 fact-check メールに運用サマリ（作成数・公開数）を追加
+
+**発見日**: 2026-04-18
+**解決日**: 2026-04-18（第16便に統合）
+**解決者**: Codex（実装）/ Claude Code（依頼ドラフト・監査）/ よしひろさん（機能要望）
+
+**経緯**:
+- よしひろさん要望「何通作ったか、将来は何通ポストして公開したか見れるようになる」
+- 第16便で email 刷新と同時実装
+- Cloud Logging の `rss_fetcher_run_summary` / `rss_fetcher_flow_summary` を集計する helper を `src/fact_check_notifier.py` に追加
+- メール本文に📊セクション挿入（drafts_created / created_subtype_counts / skip_duplicate / skip_filter / error_count / x_post_count）
+- publish は Phase C 未解放のため `0件（Phase C 未解放）` 表示
+- 集計失敗時は `集計取得失敗` 表示で送信は継続
+
+**関連commit**: `ab349de`, `157b4f0`
+
+---
+
 ## T-010 🟡 旧記事の source_reference_missing（全クラス対応完了）
 
 **発見日**: 2026-04-18（T-007 再判定で分離）

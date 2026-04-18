@@ -2371,6 +2371,72 @@ def fetch_giants_batting_stats_from_yahoo() -> dict[str, dict]:
     return _parse_yahoo_team_batting_stats(html)
 
 
+def _format_team_batting_stats_block(team_stats: dict) -> str:
+    if not team_stats or not isinstance(team_stats, dict):
+        return ""
+
+    def _parse_avg(value) -> float | None:
+        text = _collapse_ws(str(value or "")).replace("．", ".")
+        if not text or text == "-":
+            return None
+        if text.startswith("."):
+            text = f"0{text}"
+        try:
+            return float(text)
+        except (TypeError, ValueError):
+            return None
+
+    def _parse_int(value) -> int | None:
+        text = _collapse_ws(str(value or "")).replace(",", "")
+        if not text or text == "-":
+            return None
+        match = _re.search(r"-?\d+", text)
+        if not match:
+            return None
+        try:
+            return int(match.group(0))
+        except (TypeError, ValueError):
+            return None
+
+    try:
+        rows = []
+        for entry in team_stats.values():
+            if not isinstance(entry, dict):
+                continue
+            name = _collapse_ws(entry.get("name") or "")
+            if not name:
+                continue
+            avg_value = _parse_avg(entry.get("avg"))
+            hr_value = _parse_int(entry.get("hr"))
+            rbi_value = _parse_int(entry.get("rbi"))
+            rows.append(
+                {
+                    "name": name,
+                    "avg_value": avg_value,
+                    "avg_display": _collapse_ws(entry.get("avg") or "").replace("．", ".") if avg_value is not None else "-",
+                    "hr_display": str(hr_value) if hr_value is not None else "-",
+                    "rbi_value": rbi_value,
+                    "rbi_display": str(rbi_value) if rbi_value is not None else "-",
+                }
+            )
+        if not rows:
+            return ""
+        rows.sort(
+            key=lambda item: (
+                item["avg_value"] is None,
+                -(item["avg_value"] if item["avg_value"] is not None else 0.0),
+                -(item["rbi_value"] if item["rbi_value"] is not None else -1),
+                item["name"],
+            )
+        )
+        return "\n".join(
+            f"・{row['name']} {row['avg_display']} / {row['hr_display']}本 / {row['rbi_display']}打点"
+            for row in rows[:5]
+        )
+    except Exception:
+        return ""
+
+
 def _normalize_target_day(target_day: str | None = None) -> str:
     clean = (target_day or "").strip()
     if _re.fullmatch(r"\d{8}", clean):
@@ -2927,7 +2993,13 @@ def _manager_next_watch_line(focus_axis: str, reaction_line: str = "") -> str:
     return "次に見たいのは、この発言が実際のベンチ判断にどう出るかという点です。"
 
 
-def _build_manager_strict_prompt(title: str, summary: str, source_fact_block: str, source_day_label: str = "") -> str:
+def _build_manager_strict_prompt(
+    title: str,
+    summary: str,
+    source_fact_block: str,
+    source_day_label: str = "",
+    team_stats_block: str = "",
+) -> str:
     subject = _extract_subject_label(title, summary, "首脳陣")
     quote_phrases = _extract_quote_phrases(f"{title}\n{summary}", max_phrases=3)
     focus_axis = _extract_manager_focus_axis(title, summary)
@@ -2946,11 +3018,19 @@ def _build_manager_strict_prompt(title: str, summary: str, source_fact_block: st
     time_rule = ""
     if source_day_label:
         time_rule = f"【発言の要旨】の1文目には「{source_day_label}時点」を自然に入れてください。\n"
+    team_stats_reference = ""
+    if team_stats_block:
+        team_stats_reference = (
+            "\n【参考：巨人打者の今季主要指標（下の数字そのものを本文に転記する場合は source facts と矛盾しないことを確認）】\n"
+            f"{team_stats_block}\n"
+            "・上記は参考値。source facts と食い違う場合は source facts を優先する\n"
+            "・個別選手の成績を本文に書くときは .xxx / 本 / 打点 の3点セットで並べる（他指標を勝手に足さない）"
+        )
     return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
 以下の元記事タイトルと要約に含まれる事実だけを使って本文を書いてください。新しい事実・数字・比較・感想を足さないでください。
 
 【使ってよい事実】
-{source_fact_block}
+{source_fact_block}{team_stats_reference}
 
 【厳守ルール】
 ・ですます調、400〜800文字
@@ -3185,6 +3265,7 @@ def _build_game_strict_prompt(
     article_subtype: str,
     source_fact_block: str,
     source_day_label: str = "",
+    team_stats_block: str = "",
 ) -> str:
     source_text = f"{title} {summary}"
     opponent = _extract_game_opponent_label(source_text)
@@ -3194,13 +3275,21 @@ def _build_game_strict_prompt(
     enhanced_rules = _enhanced_game_prompt_rules(article_subtype)
     headings = _game_required_headings(article_subtype)
     opening_time_rule = f"・{source_day_label}時点の情報であることが伝わるように書く\n" if source_day_label else ""
+    team_stats_reference = ""
+    if team_stats_block:
+        team_stats_reference = (
+            "\n【参考：巨人打者の今季主要指標（下の数字そのものを本文に転記する場合は source facts と矛盾しないことを確認）】\n"
+            f"{team_stats_block}\n"
+            "・上記は参考値。source facts と食い違う場合は source facts を優先する\n"
+            "・個別選手の成績を本文に書くときは .xxx / 本 / 打点 の3点セットで並べる（他指標を勝手に足さない）"
+        )
 
     if article_subtype == "lineup":
         return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
 以下の元記事タイトルと要約に含まれる事実だけを使って本文を書いてください。新しい事実・数字・比較・感想を足さないでください。
 
 【使ってよい事実】
-{source_fact_block}
+{source_fact_block}{team_stats_reference}
 
 【厳守ルール】
 ・ですます調、400〜800文字
@@ -3223,7 +3312,7 @@ def _build_game_strict_prompt(
 以下の元記事タイトルと要約に含まれる事実だけを使って本文を書いてください。新しい事実・数字・比較・感想を足さないでください。
 
 【使ってよい事実】
-{source_fact_block}
+{source_fact_block}{team_stats_reference}
 
 【厳守ルール】
 ・ですます調、400〜800文字
@@ -3244,7 +3333,7 @@ def _build_game_strict_prompt(
 以下の元記事タイトルと要約に含まれる事実だけを使って本文を書いてください。新しい事実・数字・比較・感想を足さないでください。
 
 【使ってよい事実】
-{source_fact_block}
+{source_fact_block}{team_stats_reference}
 
 【厳守ルール】
 ・ですます調、350〜650文字
@@ -3333,6 +3422,7 @@ def _build_gemini_strict_prompt(
     source_name: str = "",
     source_type: str = "news",
     tweet_url: str = "",
+    team_stats_block: str = "",
 ) -> str:
     subject = _extract_subject_label(title, "", category)
     first_heading, second_heading, third_heading = _article_section_headings(category, category == "試合速報")
@@ -3359,9 +3449,22 @@ def _build_gemini_strict_prompt(
             return _build_player_quote_strict_prompt(title, summary)
         return _build_player_status_strict_prompt(title, summary, source_day_label=source_day_label)
     if category == "首脳陣":
-        return _build_manager_strict_prompt(title, summary, source_fact_block, source_day_label=source_day_label)
+        return _build_manager_strict_prompt(
+            title,
+            summary,
+            source_fact_block,
+            source_day_label=source_day_label,
+            team_stats_block=team_stats_block,
+        )
     if category == "試合速報" and _is_game_template_subtype(article_subtype):
-        return _build_game_strict_prompt(title, summary, article_subtype, source_fact_block, source_day_label=source_day_label)
+        return _build_game_strict_prompt(
+            title,
+            summary,
+            article_subtype,
+            source_fact_block,
+            source_day_label=source_day_label,
+            team_stats_block=team_stats_block,
+        )
     if category == "ドラフト・育成" and _is_farm_template_subtype(article_subtype):
         return _build_farm_strict_prompt(title, summary, article_subtype, source_fact_block, source_day_label=source_day_label)
     opening_focus = "最初の1文でニュースの核心を書く"
@@ -3398,6 +3501,14 @@ def _build_gemini_strict_prompt(
                 + "・上の反応は事実として断定せず、期待・不安・注目点などの温度感として1〜2文に要約してよい\n"
                 + "・反応本文を長く引用しない\n"
             )
+    team_stats_reference = ""
+    if team_stats_block:
+        team_stats_reference = (
+            "\n【参考：巨人打者の今季主要指標（下の数字そのものを本文に転記する場合は source facts と矛盾しないことを確認）】\n"
+            f"{team_stats_block}\n"
+            "・上記は参考値。source facts と食い違う場合は source facts を優先する\n"
+            "・個別選手の成績を本文に書くときは .xxx / 本 / 打点 の3点セットで並べる（他指標を勝手に足さない）"
+        )
 
     category_rules = ""
     if category == "選手情報":
@@ -3461,7 +3572,7 @@ def _build_gemini_strict_prompt(
 以下の元記事タイトルと要約に含まれる事実だけを使って、読者が最後まで読める日本語の記事本文を書いてください。
 
 【使ってよい事実】
-{source_fact_block}
+{source_fact_block}{team_stats_reference}
 {fan_block}
 {win_loss_hint}
 
@@ -5922,10 +6033,19 @@ def generate_article_with_gemini(
 
     article_subtype = _detect_article_subtype(title, summary_clean, category, has_game)
     enhanced_grounded_rules = _enhanced_grounded_rules(category, article_subtype=article_subtype, source_type=source_type)
+    logger = logging.getLogger("rss_fetcher")
 
     if strict_mode:
         attempt_limit = get_gemini_attempt_limit(strict_mode=True)
         min_chars = _get_gemini_strict_min_chars(category, title, summary_clean)
+        team_stats_block = ""
+        if os.environ.get("ARTICLE_INJECT_TEAM_STATS", "0") == "1" and category in ("試合速報", "首脳陣"):
+            try:
+                team_stats = fetch_giants_batting_stats_from_yahoo()
+                team_stats_block = _format_team_batting_stats_block(team_stats)
+            except Exception as e:
+                logger.warning("team batting stats 取得失敗: %s", e)
+                team_stats_block = ""
         prompt = _build_gemini_strict_prompt(
             title,
             summary_clean,
@@ -5938,7 +6058,19 @@ def generate_article_with_gemini(
             source_name=source_name,
             source_type=source_type,
             tweet_url=tweet_url,
+            team_stats_block=team_stats_block,
         )
+        if team_stats_block:
+            logger.info(
+                json.dumps(
+                    {
+                        "event": "article_team_stats_injected",
+                        "category": category,
+                        "line_count": team_stats_block.count("\n") + 1,
+                    },
+                    ensure_ascii=False,
+                )
+            )
         payload = json.dumps({
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
@@ -5947,7 +6079,6 @@ def generate_article_with_gemini(
                 "thinkingConfig": {"thinkingBudget": GEMINI_FLASH_THINKING_BUDGET},
             }
         }).encode("utf-8")
-        logger = logging.getLogger("rss_fetcher")
         logger.info("Gemini strict fact mode で記事生成中（最大%d回試行）...", attempt_limit)
         for attempt in range(attempt_limit):
             try:

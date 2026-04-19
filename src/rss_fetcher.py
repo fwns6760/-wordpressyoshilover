@@ -9359,6 +9359,39 @@ def _build_x_post_preview_for_observation(
 def _counter_to_plain_dict(counter: Counter) -> dict[str, int]:
     return {key: counter[key] for key in sorted(counter) if counter[key]}
 
+
+def _matching_giants_keywords(text: str) -> list[str]:
+    return [keyword for keyword in GIANTS_KEYWORDS if keyword in (text or "")]
+
+
+def _skip_reasons_with_samples(
+    skip_reason_counts: Counter,
+    *,
+    not_giants_related_sample_titles: list[str] | None = None,
+) -> dict[str, object]:
+    payload: dict[str, object] = _counter_to_plain_dict(skip_reason_counts)
+    if not_giants_related_sample_titles:
+        payload["not_giants_related_sample_titles"] = not_giants_related_sample_titles[:3]
+    return payload
+
+
+def _log_not_giants_related_skip(
+    logger: logging.Logger,
+    *,
+    title: str,
+    post_url: str,
+    source_name: str,
+    detected_keywords: list[str],
+):
+    payload = {
+        "event": "not_giants_related_skip",
+        "title": title,
+        "post_url": post_url,
+        "source_name": source_name,
+        "detected_keywords": detected_keywords,
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
 # ──────────────────────────────────────────────────────────
 # X投稿URLを取得（twitter.com形式に統一）
 # ──────────────────────────────────────────────────────────
@@ -9491,6 +9524,8 @@ def _main(args, logger):
     prepared_entries = []
     media_quote_pool = []
     entry_index = 0
+    not_giants_related_info_count = 0
+    not_giants_related_sample_titles: list[str] = []
 
     for source_rank, source in enumerate(sources):
         name        = source["name"]
@@ -9573,6 +9608,17 @@ def _main(args, logger):
 
             if not is_giants_related(title_text):
                 logger.debug(f"  [SKIP:フィルタ] {post_url}")
+                if len(not_giants_related_sample_titles) < 3:
+                    not_giants_related_sample_titles.append(entry_title_clean[:80] or post_url)
+                if not_giants_related_info_count < 5:
+                    _log_not_giants_related_skip(
+                        logger,
+                        title=entry_title_clean[:160],
+                        post_url=post_url,
+                        source_name=name,
+                        detected_keywords=_matching_giants_keywords(title_text),
+                    )
+                    not_giants_related_info_count += 1
                 skip_filter += 1
                 skip_reason_counts["not_giants_related"] += 1
                 continue
@@ -10239,7 +10285,10 @@ def _main(args, logger):
         json.dumps(
             {
                 "event": "rss_fetcher_flow_summary",
-                "skip_reasons": _counter_to_plain_dict(skip_reason_counts),
+                "skip_reasons": _skip_reasons_with_samples(
+                    skip_reason_counts,
+                    not_giants_related_sample_titles=not_giants_related_sample_titles,
+                ),
                 "prepared_category_counts": _counter_to_plain_dict(prepared_category_counts),
                 "prepared_subtype_counts": _counter_to_plain_dict(prepared_subtype_counts),
                 "created_category_counts": _counter_to_plain_dict(created_category_counts),

@@ -3233,6 +3233,17 @@ def _strict_material_boundary_intro() -> str:
     )
 
 
+def _game_strict_material_boundary_intro() -> str:
+    return (
+        "以下の『使ってよい事実』に書かれた情報を材料に、巨人ファン向けに本文を書いてください。\n"
+        "『使ってよい事実』の範囲にある事実は自由に書いてよいが、そこに無い数字、選手名、比較、結果予想、推測、創作、誇張は書かないでください。\n"
+        "source / 材料 にない事実・数字・比較・推測は書かないでください。\n"
+        "source にある事実に基づく解釈と、巨人ファンとしての短い感想は、後述の「事実 → 解釈 → 感想」の流れで必ず書いてください。\n"
+        "感想は締めの1文だけに限定し、source にある事実に基づく短いファン視点として書いてください。\n"
+        "文章は「事実 → 解釈 → 感想」の順で流し、感想だけを先に書かない。"
+    )
+
+
 def _chain_of_reasoning_prompt_rules(section_name: str, interpretation_target: str) -> str:
     return (
         f"・{section_name}は必ず「事実 → 解釈 → 感想」の順で流れを作る\n"
@@ -3536,7 +3547,7 @@ def _build_game_strict_prompt(
 
     if article_subtype == "lineup":
         return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
-{_strict_material_boundary_intro()}
+{_game_strict_material_boundary_intro()}
 
 【使ってよい事実】
 {source_fact_block}{team_stats_reference}
@@ -3559,7 +3570,7 @@ def _build_game_strict_prompt(
     if article_subtype == "postgame":
         score_rule = f"source にあるスコア {score} を必ず残してください。" if score else "source にあるスコアがあれば必ず残してください。"
         return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
-{_strict_material_boundary_intro()}
+{_game_strict_material_boundary_intro()}
 
 【使ってよい事実】
 {source_fact_block}{team_stats_reference}
@@ -3580,7 +3591,7 @@ def _build_game_strict_prompt(
 {opening_time_rule}"""
 
     return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
-{_strict_material_boundary_intro()}
+{_game_strict_material_boundary_intro()}
 
 【使ってよい事実】
 {source_fact_block}{team_stats_reference}

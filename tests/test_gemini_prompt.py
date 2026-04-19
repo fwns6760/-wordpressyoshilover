@@ -194,6 +194,36 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("【試合展開】は必ず「事実 → 解釈 → 感想」の順で流れを作る", prompt)
         self.assertIn("source にあるスコア 3-2 を必ず残してください。", prompt)
 
+    def test_game_prompt_intro_allows_only_single_closing_fan_view(self):
+        cases = [
+            {
+                "title": "【巨人】今日のスタメン発表　1番丸、4番岡田",
+                "summary": "巨人が阪神戦のスタメンを発表した。1番に丸佳浩、4番に岡田悠希が入った。予告先発は田中将大投手。18:00開始予定。",
+                "source_fact_block": "・巨人が阪神戦のスタメンを発表\n・1番に丸佳浩、4番に岡田悠希\n・予告先発は田中将大投手\n・18:00開始予定",
+            },
+            {
+                "title": "【巨人】阪神に3-2で勝利　岡田が決勝打",
+                "summary": "巨人が阪神に3-2で勝利した。終盤に岡田悠希の決勝打が飛び出した。田中将大投手は7回2失点だった。",
+                "source_fact_block": "・巨人が阪神に3-2で勝利\n・岡田悠希の決勝打\n・田中将大投手は7回2失点",
+            },
+        ]
+
+        for case in cases:
+            with self.subTest(title=case["title"]):
+                prompt = rss_fetcher._build_gemini_strict_prompt(
+                    title=case["title"],
+                    summary=case["summary"],
+                    category="試合速報",
+                    source_fact_block=case["source_fact_block"],
+                    win_loss_hint="",
+                    has_game=True,
+                    real_reactions=[],
+                )
+
+                self.assertIn("source / 材料 にない事実・数字・比較・推測は書かないでください。", prompt)
+                self.assertIn("感想は締めの1文だけに限定し、source にある事実に基づく短いファン視点として書いてください。", prompt)
+                self.assertNotIn("感想を足さない", prompt[:300])
+
     def test_pregame_prompt_uses_game_specific_structure(self):
         prompt = rss_fetcher._build_gemini_strict_prompt(
             title="【巨人】雨天中止で先発予定だった田中将大は16日にスライド登板",

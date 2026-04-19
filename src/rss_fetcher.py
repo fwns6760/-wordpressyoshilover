@@ -5885,7 +5885,7 @@ def _split_text_sections(text: str) -> list[tuple[str, str]]:
     return sections
 
 
-def _evaluate_post_gen_validate(text: str) -> dict[str, object]:
+def _evaluate_post_gen_validate(text: str, article_subtype: str = "") -> dict[str, object]:
     clean_text = _collapse_ws(_strip_html(text or ""))
     fail_axes: list[str] = []
     if any(clean_text.startswith(prefix) for prefix in POST_GEN_INTRO_ECHO_PREFIXES):
@@ -5893,7 +5893,7 @@ def _evaluate_post_gen_validate(text: str) -> dict[str, object]:
 
     sections = _split_text_sections(text)
     final_section_text = sections[-1][1] if sections else clean_text
-    if not any(marker in final_section_text for marker in POST_GEN_CLOSE_MARKERS):
+    if article_subtype != "lineup" and not any(marker in final_section_text for marker in POST_GEN_CLOSE_MARKERS):
         fail_axes.append("close_marker")
 
     return {
@@ -8580,6 +8580,19 @@ def _aggregate_lineup_candidates(candidates: list[dict]) -> list[dict]:
     return sorted(aggregated, key=lambda item: item.get("entry_index", 0))
 
 
+def _prioritize_prepared_entries_for_creation(candidates: list[dict]) -> list[dict]:
+    def _is_priority_candidate(candidate: dict) -> bool:
+        subtype = _detect_article_subtype(
+            candidate.get("title", ""),
+            candidate.get("summary", ""),
+            candidate.get("category", ""),
+            candidate.get("entry_has_game", True),
+        )
+        return candidate.get("source_type") in {"news", "social_news"} and subtype in {"lineup", "farm_lineup"}
+
+    return sorted(candidates, key=lambda item: 0 if _is_priority_candidate(item) else 1)
+
+
 def _has_primary_lineup_candidate(candidates: list[dict]) -> bool:
     for candidate in candidates:
         subtype = _detect_article_subtype(
@@ -10208,6 +10221,8 @@ def _main(args, logger):
         _save_live_game_state(history, game_id_for_live, yahoo_game_status)
         persist_history(history)
 
+    prepared_entries = _prioritize_prepared_entries_for_creation(prepared_entries)
+
     for item in prepared_entries:
         if success >= args.limit:
             logger.info(f"上限{args.limit}件に達したため終了")
@@ -10361,7 +10376,7 @@ def _main(args, logger):
                 media_quotes=media_quotes,
                 source_entry=item.get("entry"),
             )
-            post_gen_validate = _evaluate_post_gen_validate(ai_body_for_x)
+            post_gen_validate = _evaluate_post_gen_validate(ai_body_for_x, article_subtype=title_article_subtype)
             if not post_gen_validate["ok"]:
                 skip_filter += 1
                 skip_reason_counts["post_gen_validate"] += 1

@@ -514,6 +514,16 @@ FAN_OPINION_MARKERS = (
     "と思う", "と思います", "見たい", "気になる", "ほしい", "楽しみ", "不安", "かなり",
     "やっぱり", "正直", "期待", "厳しい", "好き", "ハマる", "かな", "かも",
 )
+POST_GEN_CLOSE_MARKERS = (
+    "気になります",
+    "注目です",
+    "見たいところです",
+    "と思います",
+)
+POST_GEN_INTRO_ECHO_PREFIXES = (
+    "あなたは",
+    "読売ジャイアンツ専門ブログ",
+)
 FAN_COMMENTARY_MARKERS = (
     "なんで", "のか", "べき", "違う", "気がする", "見える", "ほうが", "してほしい",
     "いじらないで", "固定", "序列", "打順", "スタメン", "起用", "若手", "門脇", "浦田",
@@ -5442,6 +5452,67 @@ def _apply_article_guardrails(title: str, summary: str, category: str, article_t
     return clean_text
 
 
+def _split_text_sections(text: str) -> list[tuple[str, str]]:
+    clean_lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    if not clean_lines:
+        return []
+
+    sections: list[tuple[str, str]] = []
+    current_heading = ""
+    current_lines: list[str] = []
+    for line in clean_lines:
+        if line.startswith("【") and "】" in line:
+            if current_heading or current_lines:
+                sections.append((current_heading, "\n".join(current_lines).strip()))
+            current_heading = line
+            current_lines = []
+            continue
+        current_lines.append(line)
+    if current_heading or current_lines:
+        sections.append((current_heading, "\n".join(current_lines).strip()))
+    return sections
+
+
+def _evaluate_post_gen_validate(text: str) -> dict[str, object]:
+    clean_text = _collapse_ws(_strip_html(text or ""))
+    fail_axes: list[str] = []
+    if any(clean_text.startswith(prefix) for prefix in POST_GEN_INTRO_ECHO_PREFIXES):
+        fail_axes.append("intro_echo")
+
+    sections = _split_text_sections(text)
+    final_section_text = sections[-1][1] if sections else clean_text
+    if not any(marker in final_section_text for marker in POST_GEN_CLOSE_MARKERS):
+        fail_axes.append("close_marker")
+
+    return {
+        "ok": not fail_axes,
+        "fail_axes": fail_axes,
+        "final_section_heading": sections[-1][0] if sections else "",
+        "final_section_text": final_section_text,
+    }
+
+
+def _log_article_skipped_post_gen_validate(
+    logger: logging.Logger,
+    *,
+    title: str,
+    post_url: str,
+    category: str,
+    article_subtype: str,
+    fail_axes: list[str],
+):
+    payload = {
+        "event": "article_skipped_post_gen_validate",
+        "post_id": None,
+        "title": title,
+        "post_url": post_url,
+        "category": category,
+        "article_subtype": article_subtype,
+        "fail_axis": fail_axes,
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
 def _find_first_timeline_owner(obj):
     if isinstance(obj, dict):
         timeline = obj.get("timeline")
@@ -9741,6 +9812,19 @@ def _main(args, logger):
                 source_type=source_type,
                 media_quotes=media_quotes,
             )
+            post_gen_validate = _evaluate_post_gen_validate(ai_body_for_x)
+            if not post_gen_validate["ok"]:
+                skip_filter += 1
+                skip_reason_counts["post_gen_validate"] += 1
+                _log_article_skipped_post_gen_validate(
+                    logger,
+                    title=draft_title,
+                    post_url=post_url,
+                    category=category,
+                    article_subtype=title_article_subtype,
+                    fail_axes=list(post_gen_validate["fail_axes"]),
+                )
+                continue
         else:
             content = build_oembed_block(post_url)
             ai_body_for_x = ""

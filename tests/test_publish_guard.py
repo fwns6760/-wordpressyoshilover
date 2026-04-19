@@ -71,7 +71,7 @@ class ThinSourceFactBlockTests(unittest.TestCase):
         )
 
         self.assertIn("巨人が勝利", source_fact_block)
-        self.assertLess(source_fact_block_length, rss_fetcher.THIN_SOURCE_FACT_BLOCK_MIN_CHARS)
+        self.assertLess(source_fact_block_length, rss_fetcher.THIN_SOURCE_FACT_BLOCK_MIN_CHARS_DEFAULT)
 
     def test_source_fact_block_metrics_accepts_rich_source(self):
         source_fact_block, source_fact_block_length = rss_fetcher._source_fact_block_metrics(
@@ -81,7 +81,21 @@ class ThinSourceFactBlockTests(unittest.TestCase):
         )
 
         self.assertIn("戸郷翔征", source_fact_block)
-        self.assertGreaterEqual(source_fact_block_length, rss_fetcher.THIN_SOURCE_FACT_BLOCK_MIN_CHARS)
+        self.assertGreaterEqual(source_fact_block_length, rss_fetcher.THIN_SOURCE_FACT_BLOCK_MIN_CHARS_DEFAULT)
+
+    def test_social_news_threshold_allows_length_50(self):
+        self.assertEqual(rss_fetcher._thin_source_fact_block_min_chars("social_news"), 50)
+        self.assertFalse(rss_fetcher._is_thin_source_fact_block("social_news", 50))
+
+    def test_social_news_threshold_skips_length_49(self):
+        threshold = rss_fetcher._thin_source_fact_block_min_chars("social_news")
+        self.assertEqual(threshold, 50)
+        self.assertTrue(rss_fetcher._is_thin_source_fact_block("social_news", 49))
+
+    def test_default_news_threshold_keeps_99_thin(self):
+        threshold = rss_fetcher._thin_source_fact_block_min_chars("news")
+        self.assertEqual(threshold, 100)
+        self.assertTrue(rss_fetcher._is_thin_source_fact_block("news", 99))
 
 
 if __name__ == "__main__":

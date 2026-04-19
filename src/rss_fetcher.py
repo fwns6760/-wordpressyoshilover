@@ -120,7 +120,8 @@ STRICT_PROMPT_SUMMARY_MAX_CHARS = 800
 DEFAULT_PROMPT_SUMMARY_MAX_CHARS = 400
 STRICT_PROMPT_MAX_SOURCE_FACTS = 8
 STRICT_PROMPT_MAX_QUOTES = 2
-THIN_SOURCE_FACT_BLOCK_MIN_CHARS = 100
+THIN_SOURCE_FACT_BLOCK_MIN_CHARS_DEFAULT = 100
+THIN_SOURCE_FACT_BLOCK_MIN_CHARS_SOCIAL_NEWS = 50
 PUBLISH_QUALITY_MIN_CHARS_BY_SUBTYPE = {
     "postgame": 280,
     "lineup": 280,
@@ -2288,6 +2289,16 @@ def _build_source_fact_block(
 def _source_fact_block_metrics(title: str, summary: str) -> tuple[str, int]:
     source_fact_block = _build_source_fact_block(title, summary)
     return source_fact_block, len(source_fact_block)
+
+
+def _thin_source_fact_block_min_chars(source_type: str) -> int:
+    if source_type == "social_news":
+        return THIN_SOURCE_FACT_BLOCK_MIN_CHARS_SOCIAL_NEWS
+    return THIN_SOURCE_FACT_BLOCK_MIN_CHARS_DEFAULT
+
+
+def _is_thin_source_fact_block(source_type: str, source_fact_block_length: int) -> bool:
+    return source_fact_block_length < _thin_source_fact_block_min_chars(source_type)
 
 
 def _source_mentions_outcome_terms(title: str, summary: str) -> bool:
@@ -9579,7 +9590,8 @@ def _main(args, logger):
 
         if source_type in {"news", "social_news"}:
             source_fact_block, source_fact_block_length = _source_fact_block_metrics(raw_title, summary)
-            if source_fact_block_length < THIN_SOURCE_FACT_BLOCK_MIN_CHARS:
+            thin_source_min_chars = _thin_source_fact_block_min_chars(source_type)
+            if _is_thin_source_fact_block(source_type, source_fact_block_length):
                 logger.info(
                     json.dumps(
                         {
@@ -9590,7 +9602,7 @@ def _main(args, logger):
                             "article_subtype": title_article_subtype,
                             "source_type": source_type,
                             "source_fact_block_length": source_fact_block_length,
-                            "min_chars": THIN_SOURCE_FACT_BLOCK_MIN_CHARS,
+                            "min_chars": thin_source_min_chars,
                         },
                         ensure_ascii=False,
                     )

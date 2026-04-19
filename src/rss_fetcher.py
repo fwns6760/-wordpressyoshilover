@@ -3036,7 +3036,7 @@ def _build_social_strict_prompt(
     }[source_indicator]
     time_rule = f"【話題の要旨】の1文目には「{source_day_label}時点」を自然に入れてください。\n" if source_day_label else ""
     return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
-以下の元記事タイトルと要約に含まれる事実だけを使って本文を書いてください。新しい事実・数字・比較・感想を足さないでください。
+{_strict_material_boundary_intro()}
 
 【使ってよい事実】
 {source_fact_block}
@@ -3050,6 +3050,7 @@ def _build_social_strict_prompt(
 ・【発信内容の要約】では、Xポストの原文ニュアンスを『』で1〜2か所だけ残しながら整理する。全文転写はしない
 ・【文脈と背景】では、{_social_background_focus_line(category)}
 ・【ファンの関心ポイント】では、巨人ファンにとって何が意味を持つかを1〜2文で具体的に書く
+{_chain_of_reasoning_prompt_rules("【ファンの関心ポイント】", "この発信が次の起用や話題の広がり")}・【ファンの関心ポイント】の最後の1文より後に説明を足さない
 ・元記事にない数字、比較、推測、精神論は足さない
 ・Xポストの転写だけで終わらず、文脈補足を必ず入れる
 ・source にある固有名詞、選手名、球場名、数字は省略しない
@@ -3098,12 +3099,21 @@ def _manager_next_watch_line(focus_axis: str, reaction_line: str = "") -> str:
     return "次に見たいのは、この発言が実際のベンチ判断にどう出るかという点です。"
 
 
+def _strict_material_boundary_intro() -> str:
+    return (
+        "以下の『使ってよい事実』に書かれた情報を材料に、巨人ファン向けに本文を書いてください。\n"
+        "『使ってよい事実』の範囲にある事実は自由に書いてよいが、そこに無い数字、選手名、比較、結果予想、推測、創作、誇張は書かないでください。\n"
+        "source にある事実に基づく解釈と、巨人ファンとしての短い感想は、後述の「事実 → 解釈 → 感想」の流れで必ず書いてください。\n"
+        "文章は「事実 → 解釈 → 感想」の順で流し、感想だけを先に書かない。"
+    )
+
+
 def _chain_of_reasoning_prompt_rules(section_name: str, interpretation_target: str) -> str:
     return (
         f"・{section_name}は必ず「事実 → 解釈 → 感想」の順で流れを作る\n"
         f"・{section_name}の1文目では、source にある事実を1つだけ短く固定する\n"
         f"・{section_name}の2文目では、その事実が{interpretation_target}にどうつながるかを、source の範囲だけで整理する\n"
-        f"・{section_name}の最後の1文では、巨人ファンとして「気になります」「注目です」「見たいところです」「と思います」のどれかを使って締める\n"
+        f"・{section_name}の最後の1文では、巨人ファンとして「気になります」「注目です」「見たいところです」「と思います」のどれかを必ず使って締める\n"
         f"・{section_name}で感想だけを先に書かない。新事実、結果予想、過去比較は足さない\n"
     )
 
@@ -3142,10 +3152,7 @@ def _build_manager_strict_prompt(
             "・個別選手の成績を本文に書くときは .xxx / 本 / 打点 の3点セットで並べる（他指標を勝手に足さない）"
         )
     return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
-以下の『使ってよい事実』に書かれた情報を材料に、巨人ファン向けに本文を書いてください。
-『使ってよい事実』に無い数字、選手名、比較、結果予想は書かないでください。
-ただし、source にある事実を踏まえた解釈と、巨人ファンとしての短い感想は書いてよい。
-文章は「事実 → 解釈 → 感想」の順で流し、感想だけを先に書かない。
+{_strict_material_boundary_intro()}
 
 【使ってよい事実】
 {source_fact_block}{team_stats_reference}
@@ -3404,10 +3411,7 @@ def _build_game_strict_prompt(
 
     if article_subtype == "lineup":
         return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
-以下の『使ってよい事実』に書かれた情報を材料に、巨人ファン向けに本文を書いてください。
-『使ってよい事実』に無い数字、選手名、比較、結果予想は書かないでください。
-ただし、source にある事実を踏まえた解釈と、巨人ファンとしての短い感想は書いてよい。
-文章は「事実 → 解釈 → 感想」の順で流し、感想だけを先に書かない。
+{_strict_material_boundary_intro()}
 
 【使ってよい事実】
 {source_fact_block}{team_stats_reference}
@@ -3430,10 +3434,7 @@ def _build_game_strict_prompt(
     if article_subtype == "postgame":
         score_rule = f"source にあるスコア {score} を必ず残してください。" if score else "source にあるスコアがあれば必ず残してください。"
         return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
-以下の『使ってよい事実』に書かれた情報を材料に、巨人ファン向けに本文を書いてください。
-『使ってよい事実』に無い数字、選手名、比較、結果予想は書かないでください。
-ただし、source にある事実を踏まえた解釈と、巨人ファンとしての短い感想は書いてよい。
-文章は「事実 → 解釈 → 感想」の順で流し、感想だけを先に書かない。
+{_strict_material_boundary_intro()}
 
 【使ってよい事実】
 {source_fact_block}{team_stats_reference}
@@ -3454,10 +3455,7 @@ def _build_game_strict_prompt(
 {opening_time_rule}"""
 
     return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
-以下の『使ってよい事実』に書かれた情報を材料に、巨人ファン向けに本文を書いてください。
-『使ってよい事実』に無い数字、選手名、比較、結果予想は書かないでください。
-ただし、source にある事実を踏まえた解釈と、巨人ファンとしての短い感想は書いてよい。
-文章は「事実 → 解釈 → 感想」の順で流し、感想だけを先に書かない。
+{_strict_material_boundary_intro()}
 
 【使ってよい事実】
 {source_fact_block}{team_stats_reference}
@@ -3494,10 +3492,7 @@ def _build_farm_strict_prompt(
 
     if article_subtype == "farm_lineup":
         return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
-以下の『使ってよい事実』に書かれた情報を材料に、巨人ファン向けに本文を書いてください。
-『使ってよい事実』に無い数字、選手名、比較、結果予想は書かないでください。
-ただし、source にある事実を踏まえた解釈と、巨人ファンとしての短い感想は書いてよい。
-文章は「事実 → 解釈 → 感想」の順で流し、感想だけを先に書かない。
+{_strict_material_boundary_intro()}
 
 【使ってよい事実】
 {source_fact_block}
@@ -3518,10 +3513,7 @@ def _build_farm_strict_prompt(
 
     score_rule = f"source にあるスコア {score} を必ず残してください。" if score else "source にあるスコアがあれば必ず残してください。"
     return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
-以下の『使ってよい事実』に書かれた情報を材料に、巨人ファン向けに本文を書いてください。
-『使ってよい事実』に無い数字、選手名、比較、結果予想は書かないでください。
-ただし、source にある事実を踏まえた解釈と、巨人ファンとしての短い感想は書いてよい。
-文章は「事実 → 解釈 → 感想」の順で流し、感想だけを先に書かない。
+{_strict_material_boundary_intro()}
 
 【使ってよい事実】
 {source_fact_block}

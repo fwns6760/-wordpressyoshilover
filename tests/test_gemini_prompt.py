@@ -7,14 +7,15 @@ from src import rss_fetcher
 class GeminiPromptTests(unittest.TestCase):
     def assert_common_strict_intro(self, prompt: str):
         self.assertIn("以下の『使ってよい事実』に書かれた情報を材料に、巨人ファン向けに本文を書いてください。", prompt)
-        self.assertIn("『使ってよい事実』に無い数字、選手名、比較、結果予想は書かないでください。", prompt)
-        self.assertIn("ただし、source にある事実を踏まえた解釈と、巨人ファンとしての短い感想は書いてよい。", prompt)
+        self.assertIn("『使ってよい事実』の範囲にある事実は自由に書いてよい", prompt)
+        self.assertIn("そこに無い数字、選手名、比較、結果予想、推測、創作、誇張は書かないでください。", prompt)
+        self.assertIn("source にある事実に基づく解釈と、巨人ファンとしての短い感想は、後述の「事実 → 解釈 → 感想」の流れで必ず書いてください。", prompt)
         self.assertIn("文章は「事実 → 解釈 → 感想」の順で流し、感想だけを先に書かない。", prompt)
         self.assertIn("事実 → 解釈 → 感想", prompt)
         self.assertTrue(
             any(marker in prompt for marker in ("気になります", "注目です", "見たいところです", "と思います"))
         )
-        self.assertIn("感想は書いてよい", prompt)
+        self.assertIn("自由に書いてよい", prompt)
         self.assertTrue("結果予想" in prompt or "一般論" in prompt)
         self.assertNotIn("感想を足さない", prompt[:300])
 
@@ -275,6 +276,8 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("『』で1〜2か所だけ残しながら整理する", prompt)
         self.assertIn("発信元がマスコミ記者・報道アカウントなのか、本文冒頭で明確にする", prompt)
         self.assertIn("4月16日時点", prompt)
+        self.assert_common_strict_intro(prompt)
+        self.assertIn("【ファンの関心ポイント】は必ず「事実 → 解釈 → 感想」の順で流れを作る", prompt)
 
     def test_enhanced_player_quote_prompt_adds_anti_paraphrase_rules(self):
         with patch.dict("os.environ", {"ENABLE_ENHANCED_PROMPTS": "1"}, clear=False):

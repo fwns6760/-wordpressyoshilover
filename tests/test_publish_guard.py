@@ -96,6 +96,24 @@ class ThinSourceFactBlockTests(unittest.TestCase):
         self.assertEqual(rss_fetcher._thin_source_fact_block_min_chars("social_news"), 40)
         self.assertFalse(rss_fetcher._is_thin_source_fact_block("social_news", 45))
 
+    def test_social_news_fact_block_uses_entry_content_value(self):
+        source_fact_block, source_fact_block_length = rss_fetcher._source_fact_block_metrics(
+            "巨人・浅野翔吾が調整を続ける",
+            "",
+            source_type="social_news",
+            entry={
+                "summary": "巨人・浅野翔吾が調整を続ける",
+                "content": [
+                    {
+                        "value": "浅野翔吾が屋外でフリー打撃を再開した。次の実戦復帰へ向けて段階を上げている。"
+                    }
+                ],
+            },
+        )
+
+        self.assertIn("フリー打撃を再開", source_fact_block)
+        self.assertGreaterEqual(source_fact_block_length, 40)
+
     def test_default_news_threshold_keeps_99_thin(self):
         threshold = rss_fetcher._thin_source_fact_block_min_chars("news")
         self.assertEqual(threshold, 100)

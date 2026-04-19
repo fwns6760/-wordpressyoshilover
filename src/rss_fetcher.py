@@ -2302,14 +2302,60 @@ def _social_source_intro_label(source_name: str, tweet_url: str = "") -> str:
     return f"{display}本人の投稿"
 
 
+def _collect_social_source_material(entry: dict | None) -> str:
+    if not entry:
+        return ""
+
+    fragments: list[str] = []
+    for key in ("summary", "description"):
+        value = entry.get(key, "")
+        if value:
+            fragments.append(_clean_social_entry_text(str(value)))
+
+    content_items = entry.get("content") or []
+    if isinstance(content_items, list):
+        for item in content_items:
+            if isinstance(item, dict) and item.get("value"):
+                fragments.append(_clean_social_entry_text(str(item.get("value"))))
+
+    deduped: list[str] = []
+    seen = set()
+    total_chars = 0
+    for fragment in fragments:
+        clean = _collapse_ws(fragment).strip(" ・\t")
+        if not clean:
+            continue
+        key = clean.replace(" ", "").replace("　", "")
+        if key in seen:
+            continue
+        seen.add(key)
+        remaining = 300 - total_chars
+        if remaining <= 0:
+            break
+        if len(clean) > remaining:
+            clean = clean[:remaining].rstrip()
+        if clean:
+            deduped.append(clean)
+            total_chars += len(clean)
+    return "\n".join(deduped)
+
+
 def _build_source_fact_block(
     title: str,
     summary: str,
+    *,
+    source_type: str = "news",
+    entry: dict | None = None,
     max_sentences: int = STRICT_PROMPT_MAX_SOURCE_FACTS,
     max_quotes: int = STRICT_PROMPT_MAX_QUOTES,
 ) -> str:
-    facts = _extract_source_sentences(title, summary, max_sentences=max_sentences)
-    for phrase in _extract_quote_phrases(f"{title}\n{summary}", max_phrases=max_quotes):
+    extra_material = ""
+    if source_type == "social_news":
+        extra_material = _collect_social_source_material(entry)
+    combined_summary = "\n".join(part for part in [summary, extra_material] if part)
+
+    facts = _extract_source_sentences(title, combined_summary, max_sentences=max_sentences)
+    for phrase in _extract_quote_phrases(f"{title}\n{combined_summary}", max_phrases=max_quotes):
         if all(phrase not in fact for fact in facts):
             facts.append(f"元記事中の表現: 「{phrase}」")
     if not facts:
@@ -2317,8 +2363,14 @@ def _build_source_fact_block(
     return "\n".join(f"・{fact}" for fact in facts)
 
 
-def _source_fact_block_metrics(title: str, summary: str) -> tuple[str, int]:
-    source_fact_block = _build_source_fact_block(title, summary)
+def _source_fact_block_metrics(
+    title: str,
+    summary: str,
+    *,
+    source_type: str = "news",
+    entry: dict | None = None,
+) -> tuple[str, int]:
+    source_fact_block = _build_source_fact_block(title, summary, source_type=source_type, entry=entry)
     return source_fact_block, len(source_fact_block)
 
 
@@ -6235,6 +6287,7 @@ def generate_article_with_gemini(
     source_day_label: str = "",
     source_type: str = "news",
     tweet_url: str = "",
+    source_entry: dict | None = None,
 ) -> str:
     """Geminiで巨人ファン向け解説記事を生成。失敗時は空文字を返す。"""
     import urllib.request, urllib.error
@@ -6260,7 +6313,12 @@ def generate_article_with_gemini(
         fan_section = f"※以下は実際のXユーザーの声（記事には含めなくてよい、雰囲気の参考のみ）\n{fan_voices}"
     else:
         fan_section = ""
-    source_fact_block = _build_source_fact_block(title, summary_clean)
+    source_fact_block = _build_source_fact_block(
+        title,
+        summary_clean,
+        source_type=source_type,
+        entry=source_entry,
+    )
 
     data_sources = f"""【STEP1: まず以下のサイトをWeb検索して{today_str}現在の最新データを取得せよ】
 ① npb.jp → 今季個人成績・チーム成績・順位表（最優先）
@@ -6861,7 +6919,7 @@ X検索で「{query_short} 巨人」に関するファンの声を{fan_reaction_
 # ──────────────────────────────────────────────────────────
 # ニュース記事ブロックHTML生成
 # ──────────────────────────────────────────────────────────
-def build_news_block(title: str, summary: str, url: str, source_name: str, category: str = "コラム", og_image_url: str = "", media_id: int = 0, extra_images: list = None, has_game: bool = True, article_ai_mode_override: str | None = None, source_links: list[dict] | None = None, source_day_label: str = "", source_type: str = "news", media_quotes: list[dict] | None = None) -> tuple[str, str]:
+def build_news_block(title: str, summary: str, url: str, source_name: str, category: str = "コラム", og_image_url: str = "", media_id: int = 0, extra_images: list = None, has_game: bool = True, article_ai_mode_override: str | None = None, source_links: list[dict] | None = None, source_day_label: str = "", source_type: str = "news", media_quotes: list[dict] | None = None, source_entry: dict | None = None) -> tuple[str, str]:
     import re
     summary_clean = re.sub(r"<[^>]+>", "", summary).strip()
     article_subtype = _detect_article_subtype(title, summary_clean, category, has_game)
@@ -6930,7 +6988,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         impression_block = ""
     elif article_ai_mode == "gemini":
         real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, effective_generation_category, source_name=source_name)
-        ai_body = generate_article_with_gemini(title, summary_clean, effective_generation_category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label, source_type=source_type, tweet_url=url)
+        ai_body = generate_article_with_gemini(title, summary_clean, effective_generation_category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label, source_type=source_type, tweet_url=url, source_entry=source_entry)
         real_reactions = real_reactions_yahoo
         summary_block = ""
         stats_block = ""
@@ -6939,7 +6997,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         ai_body, real_reactions, summary_block, stats_block, impression_block = generate_article_with_grok(title, summary_clean, effective_generation_category, win_loss_hint)
         if not ai_body:
             real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, effective_generation_category, source_name=source_name)
-            ai_body = generate_article_with_gemini(title, summary_clean, effective_generation_category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label, source_type=source_type, tweet_url=url)
+            ai_body = generate_article_with_gemini(title, summary_clean, effective_generation_category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label, source_type=source_type, tweet_url=url, source_entry=source_entry)
             real_reactions = real_reactions_yahoo
             summary_block = ""
             stats_block = ""
@@ -6950,14 +7008,14 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             ai_body, real_reactions, summary_block, stats_block, impression_block = generate_article_with_grok(title, summary_clean, effective_generation_category, win_loss_hint)
             if not ai_body:
                 real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, effective_generation_category, source_name=source_name)
-                ai_body = generate_article_with_gemini(title, summary_clean, effective_generation_category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label, source_type=source_type, tweet_url=url)
+                ai_body = generate_article_with_gemini(title, summary_clean, effective_generation_category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label, source_type=source_type, tweet_url=url, source_entry=source_entry)
                 real_reactions = real_reactions_yahoo
                 summary_block = ""
                 stats_block = ""
                 impression_block = ""
         else:
             real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, effective_generation_category, source_name=source_name)
-            ai_body = generate_article_with_gemini(title, summary_clean, effective_generation_category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label, source_type=source_type, tweet_url=url)
+            ai_body = generate_article_with_gemini(title, summary_clean, effective_generation_category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label, source_type=source_type, tweet_url=url, source_entry=source_entry)
             real_reactions = real_reactions_yahoo
             summary_block = ""
             stats_block = ""
@@ -9686,7 +9744,12 @@ def _main(args, logger):
             logger.info(f"  [統合] {title[:40]} ← {item['merged_source_count']}ソース")
 
         if source_type in {"news", "social_news"}:
-            source_fact_block, source_fact_block_length = _source_fact_block_metrics(raw_title, summary)
+            source_fact_block, source_fact_block_length = _source_fact_block_metrics(
+                raw_title,
+                summary,
+                source_type=source_type,
+                entry=item.get("entry"),
+            )
             thin_source_min_chars = _thin_source_fact_block_min_chars(source_type)
             if _is_thin_source_fact_block(source_type, source_fact_block_length):
                 logger.info(
@@ -9811,6 +9874,7 @@ def _main(args, logger):
                 source_day_label=source_day_label,
                 source_type=source_type,
                 media_quotes=media_quotes,
+                source_entry=item.get("entry"),
             )
             post_gen_validate = _evaluate_post_gen_validate(ai_body_for_x)
             if not post_gen_validate["ok"]:

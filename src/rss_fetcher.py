@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import feedparser
 import re as _re
 import html as _html
+from html.parser import HTMLParser
 
 from wp_client import WPClient
 from media_xpost_selector import evaluate_media_quote_selection
@@ -119,6 +120,23 @@ STRICT_PROMPT_SUMMARY_MAX_CHARS = 800
 DEFAULT_PROMPT_SUMMARY_MAX_CHARS = 400
 STRICT_PROMPT_MAX_SOURCE_FACTS = 8
 STRICT_PROMPT_MAX_QUOTES = 2
+THIN_SOURCE_FACT_BLOCK_MIN_CHARS = 100
+PUBLISH_QUALITY_MIN_CHARS_BY_SUBTYPE = {
+    "postgame": 280,
+    "lineup": 280,
+    "manager": 350,
+    "pregame": 350,
+    "farm": 350,
+    "farm_lineup": 350,
+}
+PUBLISH_QUALITY_DEFAULT_MIN_CHARS = 350
+PUBLISH_QUALITY_LEAK_MARKERS = (
+    "があれば必ず整理する",
+    "を押さえておきたい話題です",
+    "の要点を、まず押さえておきたい",
+    "試合前後の流れ、スタメン、先発、スコアなど",
+    "どうつながるかが見どころです",
+)
 GEMINI_FLASH_THINKING_BUDGET = 0
 MANAGER_BODY_TEMPLATE_VERSION = "manager_v1"
 MANAGER_REQUIRED_HEADINGS = (
@@ -1160,12 +1178,94 @@ def get_publish_observation_reasons(
     return reasons
 
 
+class _CoreBodyHTMLStripper(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self._parts: list[str] = []
+        self._skip_div_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self._skip_div_depth:
+            if tag == "div":
+                self._skip_div_depth += 1
+            return
+        attrs_map = {key: value or "" for key, value in attrs}
+        classes = set((attrs_map.get("class") or "").split())
+        if tag == "div" and "yoshilover-related-posts" in classes:
+            self._skip_div_depth = 1
+            return
+        self._parts.append(self.get_starttag_text())
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._skip_div_depth:
+            if tag == "div":
+                self._skip_div_depth -= 1
+            return
+        self._parts.append(f"</{tag}>")
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self._skip_div_depth:
+            return
+        self._parts.append(self.get_starttag_text())
+
+    def handle_data(self, data: str) -> None:
+        if not self._skip_div_depth:
+            self._parts.append(data)
+
+    def handle_entityref(self, name: str) -> None:
+        if not self._skip_div_depth:
+            self._parts.append(f"&{name};")
+
+    def handle_charref(self, name: str) -> None:
+        if not self._skip_div_depth:
+            self._parts.append(f"&#{name};")
+
+    def get_html(self) -> str:
+        return "".join(self._parts)
+
+
+def _strip_related_posts_section(content_html: str) -> str:
+    parser = _CoreBodyHTMLStripper()
+    parser.feed(content_html or "")
+    parser.close()
+    return parser.get_html()
+
+
 def _strip_html(text: str) -> str:
     return _re.sub(r"<[^>]+>", "", text or "").strip()
 
 
 def _collapse_ws(text: str) -> str:
     return _re.sub(r"\s+", " ", text or "").strip()
+
+
+def _core_body_text(content_html: str) -> str:
+    return _collapse_ws(_html.unescape(_strip_html(_strip_related_posts_section(content_html or ""))))
+
+
+def _publish_quality_min_chars(article_subtype: str) -> int:
+    subtype = (article_subtype or "").strip().lower()
+    if subtype in PUBLISH_QUALITY_MIN_CHARS_BY_SUBTYPE:
+        return PUBLISH_QUALITY_MIN_CHARS_BY_SUBTYPE[subtype]
+    return PUBLISH_QUALITY_DEFAULT_MIN_CHARS
+
+
+def _evaluate_publish_quality_guard(*, content_html: str, article_subtype: str) -> dict[str, object]:
+    core_text = _core_body_text(content_html)
+    min_chars = _publish_quality_min_chars(article_subtype)
+    leak_markers = [marker for marker in PUBLISH_QUALITY_LEAK_MARKERS if marker in core_text]
+    reasons: list[str] = []
+    if len(core_text) < min_chars:
+        reasons.append("quality_guard_thin")
+    if leak_markers:
+        reasons.append("quality_guard_leak")
+    return {
+        "ok": not reasons,
+        "reasons": reasons,
+        "core_char_count": len(core_text),
+        "min_chars": min_chars,
+        "leak_markers": leak_markers,
+    }
 
 
 def _normalize_player_name_key(name: str) -> str:
@@ -2154,6 +2254,11 @@ def _build_source_fact_block(
     if not facts:
         return "・元記事タイトル以外の追加事実は不明"
     return "\n".join(f"・{fact}" for fact in facts)
+
+
+def _source_fact_block_metrics(title: str, summary: str) -> tuple[str, int]:
+    source_fact_block = _build_source_fact_block(title, summary)
+    return source_fact_block, len(source_fact_block)
 
 
 def _source_mentions_outcome_terms(title: str, summary: str) -> bool:
@@ -6067,7 +6172,7 @@ def generate_article_with_gemini(
         attempt_limit = get_gemini_attempt_limit(strict_mode=True)
         min_chars = _get_gemini_strict_min_chars(category, title, summary_clean)
         team_stats_block = ""
-        if os.environ.get("ARTICLE_INJECT_TEAM_STATS", "0") == "1" and category in ("試合速報", "首脳陣"):
+        if os.environ.get("ARTICLE_INJECT_TEAM_STATS", "1") == "1" and category in ("試合速報", "首脳陣"):
             try:
                 team_stats = fetch_giants_batting_stats_from_yahoo()
                 team_stats_block = _format_team_batting_stats_block(team_stats)
@@ -8899,6 +9004,30 @@ def _log_publish_gate_skipped(
     logger.info(json.dumps(payload, ensure_ascii=False))
 
 
+def _log_publish_blocked_by_quality_guard(
+    logger: logging.Logger,
+    post_id: int,
+    title: str,
+    article_subtype: str,
+    category: str,
+    quality_guard: dict[str, object],
+) -> None:
+    payload = {
+        "event": "publish_blocked_by_quality_guard",
+        "post_id": post_id,
+        "title": title,
+        "article_subtype": article_subtype,
+        "category": category,
+        "reasons": list(quality_guard.get("reasons") or []),
+        "core_char_count": int(quality_guard.get("core_char_count") or 0),
+        "min_chars": int(quality_guard.get("min_chars") or 0),
+    }
+    leak_markers = [marker for marker in quality_guard.get("leak_markers") or [] if marker]
+    if leak_markers:
+        payload["leak_markers"] = leak_markers
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
 def _log_featured_media_observation_missing(
     logger: logging.Logger,
     post_id: int,
@@ -9425,6 +9554,26 @@ def _main(args, logger):
             logger.info(f"  [統合] {title[:40]} ← {item['merged_source_count']}ソース")
 
         if source_type in {"news", "social_news"}:
+            source_fact_block, source_fact_block_length = _source_fact_block_metrics(raw_title, summary)
+            if source_fact_block_length < THIN_SOURCE_FACT_BLOCK_MIN_CHARS:
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "article_skipped_thin_source",
+                            "title": raw_title,
+                            "post_url": post_url,
+                            "category": category,
+                            "article_subtype": title_article_subtype,
+                            "source_type": source_type,
+                            "source_fact_block_length": source_fact_block_length,
+                            "min_chars": THIN_SOURCE_FACT_BLOCK_MIN_CHARS,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                skip_filter += 1
+                skip_reason_counts["thin_source_fact_block"] += 1
+                continue
             if args.dry_run:
                 draft_title, title_template_key = _rewrite_display_title_with_template(raw_title, summary, category, entry_has_game)
                 _log_title_template_selected(logger, post_url, raw_title, draft_title, title_template_key, category, title_article_subtype)
@@ -9713,6 +9862,21 @@ def _main(args, logger):
                 featured_media=effective_featured_media,
                 article_subtype=publish_gate_subtype,
             )
+            if source_type in {"news", "social_news"} and not args.draft_only:
+                quality_guard = _evaluate_publish_quality_guard(
+                    content_html=content,
+                    article_subtype=publish_gate_subtype,
+                )
+                if not quality_guard["ok"]:
+                    publish_skip_reasons.extend(list(quality_guard["reasons"]))
+                    _log_publish_blocked_by_quality_guard(
+                        logger,
+                        post_id,
+                        draft_title,
+                        publish_gate_subtype,
+                        category,
+                        quality_guard,
+                    )
             for reason in publish_skip_reasons:
                 publish_skip_reason_counts[reason] += 1
             if "publish_disabled_for_subtype" in publish_skip_reasons:

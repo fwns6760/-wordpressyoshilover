@@ -155,6 +155,46 @@ class TeamStatsPromptTests(unittest.TestCase):
 
         self.assertEqual(article, "これはテスト用の十分に長い本文です。")
 
+    def test_generate_article_with_gemini_fetches_team_stats_by_default(self):
+        fake_payload = {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {"text": "これはテスト用の十分に長い本文です。"}
+                        ]
+                    }
+                }
+            ]
+        }
+
+        fake_stats = {
+            "okamoto": {"name": "岡本和真", "avg": ".300", "hr": "8", "rbi": "25"},
+        }
+
+        with patch.dict(
+            "os.environ",
+            {
+                "GEMINI_API_KEY": "dummy-key",
+                "STRICT_FACT_MODE": "1",
+            },
+            clear=True,
+        ):
+            with patch.object(rss_fetcher, "strict_fact_mode_enabled", return_value=True):
+                with patch.object(rss_fetcher, "fetch_giants_batting_stats_from_yahoo", return_value=fake_stats) as mock_fetch:
+                    with patch.object(rss_fetcher, "_get_gemini_strict_min_chars", return_value=1):
+                        with patch("urllib.request.urlopen", return_value=_FakeGeminiResponse(fake_payload)):
+                            article = rss_fetcher.generate_article_with_gemini(
+                                title="【巨人】阪神に3-2で勝利　岡田が決勝打",
+                                summary="巨人が阪神に3-2で勝利した。終盤に岡田悠希の決勝打が飛び出した。田中将大投手は7回2失点だった。",
+                                category="試合速報",
+                                real_reactions=[],
+                                has_game=True,
+                            )
+
+        self.assertEqual(article, "これはテスト用の十分に長い本文です。")
+        mock_fetch.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

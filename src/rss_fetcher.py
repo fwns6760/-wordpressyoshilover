@@ -137,6 +137,10 @@ PUBLISH_QUALITY_LEAK_MARKERS = (
     "試合前後の流れ、スタメン、先発、スコアなど",
     "どうつながるかが見どころです",
 )
+PROMPT_ROLE_ECHO_PREFIXES = (
+    "あなたは読売ジャイアンツ専門ブログの編集者です。",
+    "読売ジャイアンツ専門ブログの編集者です。",
+)
 GEMINI_FLASH_THINKING_BUDGET = 0
 MANAGER_BODY_TEMPLATE_VERSION = "manager_v1"
 MANAGER_REQUIRED_HEADINGS = (
@@ -1019,6 +1023,21 @@ def _social_source_prefers_structured_template(category: str, article_subtype: s
     if category == "ドラフト・育成" and _is_farm_template_subtype(article_subtype):
         return True
     return False
+
+
+def _strip_prompt_role_echo(article_text: str) -> str:
+    text = (article_text or "").lstrip()
+    if not text:
+        return article_text
+    if not any(text.startswith(prefix) for prefix in PROMPT_ROLE_ECHO_PREFIXES):
+        return article_text
+    heading_index = text.find("【")
+    if heading_index >= 0:
+        return text[heading_index:].lstrip()
+    lines = text.splitlines()
+    while lines and any(lines[0].strip().startswith(prefix) for prefix in PROMPT_ROLE_ECHO_PREFIXES):
+        lines.pop(0)
+    return "\n".join(lines).lstrip()
 
 
 def _enhanced_grounded_rules(category: str, article_subtype: str = "", source_type: str = "news") -> str:
@@ -3054,6 +3073,7 @@ def _build_social_strict_prompt(
 【厳守ルール】
 ・ですます調、380〜680文字
 ・見出しは「【話題の要旨】」「【発信内容の要約】」「【文脈と背景】」「【ファンの関心ポイント】」の4つをこの順番で使う
+・上記の役割説明は本文に書かない。本文は必ず最初の見出し（【...】）から始める
 ・【話題の要旨】では、{source_label}が何を伝えたのかを2〜3文で整理する
 ・本文冒頭で発信者名または所属を必ず明記する
 ・{indicator_line}
@@ -6223,6 +6243,7 @@ def generate_article_with_gemini(
                     data = json.load(res)
                 parts = data["candidates"][0]["content"].get("parts", [])
                 raw_text = "".join(p.get("text", "") for p in parts if "text" in p).strip()
+                raw_text = _strip_prompt_role_echo(raw_text)
                 if raw_text and len(raw_text) >= min_chars:
                     logger.info(f"Gemini strict fact mode 生成成功 {len(raw_text)}文字")
                     return raw_text
@@ -6526,6 +6547,7 @@ def generate_article_with_gemini(
             # Google Searchツール使用時はpartsが複数になることがある。テキストのみ結合
             parts = data["candidates"][0]["content"].get("parts", [])
             raw_text = "".join(p.get("text", "") for p in parts if "text" in p).strip()
+            raw_text = _strip_prompt_role_echo(raw_text)
             if raw_text and len(raw_text) > 150:
                 logger.info(f"Gemini 2.5 Flash（Google検索付き）生成成功 {len(raw_text)}文字")
                 return raw_text

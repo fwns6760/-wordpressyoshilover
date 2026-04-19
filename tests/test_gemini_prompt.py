@@ -278,6 +278,7 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("4月16日時点", prompt)
         self.assert_common_strict_intro(prompt)
         self.assertIn("【ファンの関心ポイント】は必ず「事実 → 解釈 → 感想」の順で流れを作る", prompt)
+        self.assertIn("上記の役割説明は本文に書かない。本文は必ず最初の見出し（【...】）から始める", prompt)
 
     def test_social_news_postgame_prompt_prefers_game_structure(self):
         prompt = rss_fetcher._build_gemini_strict_prompt(
@@ -316,6 +317,15 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("【一軍への示唆】", prompt)
         self.assertNotIn("【話題の要旨】", prompt)
         self.assertNotIn("【ファンの関心ポイント】", prompt)
+
+    def test_strip_prompt_role_echo_removes_leading_role_line_before_heading(self):
+        article = "読売ジャイアンツ専門ブログの編集者です。\n\n【話題の要旨】\n阿部監督の発言を整理する。"
+        stripped = rss_fetcher._strip_prompt_role_echo(article)
+        self.assertEqual(stripped, "【話題の要旨】\n阿部監督の発言を整理する。")
+
+    def test_strip_prompt_role_echo_keeps_clean_heading_start_unchanged(self):
+        article = "【試合結果】\n巨人が3-2で勝利した。"
+        self.assertEqual(rss_fetcher._strip_prompt_role_echo(article), article)
 
     def test_enhanced_player_quote_prompt_adds_anti_paraphrase_rules(self):
         with patch.dict("os.environ", {"ENABLE_ENHANCED_PROMPTS": "1"}, clear=False):

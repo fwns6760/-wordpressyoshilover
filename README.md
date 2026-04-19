@@ -83,6 +83,7 @@ LOW_COST_MODE=1
 STRICT_FACT_MODE=1
 ARTICLE_AI_MODE=gemini
 OFFDAY_ARTICLE_AI_MODE=none
+ENABLE_ARTICLE_PARTS_RENDERER_POSTGAME=0
 PUBLISH_REQUIRE_IMAGE=1
 AUTO_TWEET_ENABLED=1
 AUTO_TWEET_REQUIRE_IMAGE=1
@@ -105,6 +106,7 @@ GCS_BUCKET=yoshilover-history
 - `AUTO_TWEET_REQUIRE_IMAGE=1`: アイキャッチがない記事は X 自動投稿しない
 - `ENABLE_X_COLLECT=0`: X API の収集を止め、read/search 課金を抑える
 - `LOW_COST_MODE=1`: AI 呼び出しをかなり絞る
+- `ENABLE_ARTICLE_PARTS_RENDERER_POSTGAME=0`: postgame 向け structured-parts renderer の待機フラグ。本便では live path 未接続
 
 ## ローカル実行
 

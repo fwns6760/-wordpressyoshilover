@@ -3671,6 +3671,67 @@ def _build_farm_strict_prompt(
 {opening_time_rule}"""
 
 
+def _build_game_parts_prompt_postgame(
+    title: str,
+    summary: str,
+    source_fact_block: str,
+    score: str,
+    win_loss_hint: str,
+    team_stats_reference: str,
+) -> str:
+    score_block = f"・score: {score}\n" if score else ""
+    win_loss_block = f"・win_loss_hint: {win_loss_hint}\n" if win_loss_hint else ""
+    team_stats_block = ""
+    if team_stats_reference:
+        team_stats_block = (
+            "\n【参考メモ】\n"
+            f"{team_stats_reference}\n"
+            "・参考メモを使う場合も、source / 材料 に明示された事実だけを採用する\n"
+        )
+
+    return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
+以下の source / 材料だけを使って、postgame 記事用の部品 JSON を1つ返してください。
+全文の HTML や template 構造は書かないでください。JSON object で返してください。コードフェンスも不要です。
+
+【source / 材料】
+・title: {title}
+・summary: {summary}
+{score_block}{win_loss_block}【source_fact_block】
+{source_fact_block}{team_stats_block}
+
+【返却 JSON schema】
+{{
+  "title": "str",
+  "fact_lead": "str",
+  "body_core": ["str"],
+  "game_context": "str",
+  "fan_view": "str",
+  "source_attribution": {{
+    "source_name": "str",
+    "source_url": "str"
+  }}
+}}
+
+【field rules】
+・title: 記事タイトル。H1 相当の文字列のみ。H タグを含めない
+・fact_lead: 事実リード。1〜2文。source / 材料にある事実だけで書く
+・body_core: 本文核。2〜5段落。各要素は1段落ぶんの文字列にし、source / 材料にある事実の言い換えだけで構成する
+・game_context: 試合文脈。1〜2文。source / 材料にある時系列または前後比較だけを書く
+・fan_view: ファン視点。1文のみ。source / 材料にある事実に基づく短い感想だけを書く。close marker の語尾は許可する
+・source_attribution: {{"source_name":"str","source_url":"str"}} の dict。source / 材料に明示された値だけを入れ、無い場合は空文字にする
+
+【禁止事項】
+・source / 材料 にない事実・数字・比較・推測は禁止
+・fan_view 以外で感想は禁止
+・H タグ禁止
+・全文 HTML 禁止
+・template 構造の文章化禁止
+・source_attribution 以外の追加 field 禁止
+・body_core を1段落だけにしない
+・source_attribution を文字列にしない
+"""
+
+
 def _build_gemini_strict_prompt(
     title: str,
     summary: str,

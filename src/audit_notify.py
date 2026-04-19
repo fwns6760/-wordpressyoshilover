@@ -70,6 +70,23 @@ OPINION_MARKERS = (
     "気になります",
     "見たいところです",
 )
+OPINION_MARKER_STEMS = (
+    "見たい",
+    "気になる",
+    "気になり",
+    "注目した",
+    "注目し",
+    "期待し",
+    "期待した",
+    "と感じ",
+    "と思い",
+    "と思う",
+    "ではないでしょうか",
+    "でしょう",
+    "ですね",
+    "個人的",
+    "不安",
+)
 PIPELINE_ERROR_EVENTS = {
     "featured_media_lookup_failed",
     "x_post_ai_failed",
@@ -334,7 +351,9 @@ def _no_opinion_finding(audited: dict[str, Any], post: dict[str, Any], excerpt: 
     core_text = _core_body_text(_post_content_html(post))
     if not core_text:
         return _build_finding(axis="no_opinion", audited=audited, excerpt=excerpt)
-    if any(marker in core_text for marker in OPINION_MARKERS):
+    if any(marker in core_text for marker in OPINION_MARKERS) or any(
+        stem in core_text for stem in OPINION_MARKER_STEMS
+    ):
         return None
     return _build_finding(axis="no_opinion", audited=audited, excerpt=excerpt)
 

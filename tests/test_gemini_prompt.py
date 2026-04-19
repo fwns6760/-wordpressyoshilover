@@ -5,6 +5,12 @@ from src import rss_fetcher
 
 
 class GeminiPromptTests(unittest.TestCase):
+    def assert_common_strict_intro(self, prompt: str):
+        self.assertIn("以下の『使ってよい事実』に書かれた情報を材料に、巨人ファン向けに本文を書いてください。", prompt)
+        self.assertIn("『使ってよい事実』に無い数字、選手名、比較、結果予想は書かないでください。", prompt)
+        self.assertIn("ただし、source にある事実を踏まえた解釈と、巨人ファンとしての短い感想は書いてよい。", prompt)
+        self.assertIn("文章は「事実 → 解釈 → 感想」の順で流し、感想だけを先に書かない。", prompt)
+
     def test_detect_player_article_mode_classifies_three_modes(self):
         self.assertEqual(
             rss_fetcher._detect_player_article_mode(
@@ -136,6 +142,7 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("【発言内容】", prompt)
         self.assertIn("【文脈と背景】", prompt)
         self.assertIn("【次の注目】", prompt)
+        self.assert_common_strict_intro(prompt)
         self.assertIn("【発言の要旨】の1文目には「4月16日時点」を自然に入れてください。", prompt)
         self.assertIn("引用が2つ以上ある場合は、【発言内容】で2つまで並べて整理してください。", prompt)
         self.assertIn("【次の注目】は必ず「事実 → 解釈 → 感想」の順で流れを作る", prompt)
@@ -156,6 +163,7 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("【スタメン一覧】", prompt)
         self.assertIn("【先発投手】", prompt)
         self.assertIn("【注目ポイント】", prompt)
+        self.assert_common_strict_intro(prompt)
         self.assertIn("【注目ポイント】は必ず「事実 → 解釈 → 感想」の順で流れを作る", prompt)
         self.assertIn("選手名、球場名、開始時刻、打順、成績数字は source にある表記をそのまま残す", prompt)
 
@@ -174,6 +182,7 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("【ハイライト】", prompt)
         self.assertIn("【選手成績】", prompt)
         self.assertIn("【試合展開】", prompt)
+        self.assert_common_strict_intro(prompt)
         self.assertIn("【試合展開】は必ず「事実 → 解釈 → 感想」の順で流れを作る", prompt)
         self.assertIn("source にあるスコア 3-2 を必ず残してください。", prompt)
 
@@ -192,6 +201,7 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("【変更情報の要旨】", prompt)
         self.assertIn("【具体的な変更内容】", prompt)
         self.assertIn("【この変更が意味すること】", prompt)
+        self.assert_common_strict_intro(prompt)
         self.assertIn("【この変更が意味すること】は必ず「事実 → 解釈 → 感想」の順で流れを作る", prompt)
         self.assertIn("ですます調、350〜650文字", prompt)
         self.assertIn("4月16日時点の情報であることが伝わるように書く", prompt)
@@ -211,6 +221,7 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("【ファームのハイライト】", prompt)
         self.assertIn("【二軍個別選手成績】", prompt)
         self.assertIn("【一軍への示唆】", prompt)
+        self.assert_common_strict_intro(prompt)
         self.assertIn("【一軍への示唆】は必ず「事実 → 解釈 → 感想」の順で流れを作る", prompt)
         self.assertIn("source にあるスコア 4-1 を必ず残してください。", prompt)
         self.assertIn("一軍記事と混同しないよう、「二軍」「ファーム」の文脈を明確にする", prompt)
@@ -229,6 +240,7 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("【二軍試合概要】", prompt)
         self.assertIn("【二軍スタメン一覧】", prompt)
         self.assertIn("【注目選手】", prompt)
+        self.assert_common_strict_intro(prompt)
         self.assertIn("【注目選手】は必ず「事実 → 解釈 → 感想」の順で流れを作る", prompt)
         self.assertIn("一軍記事のような書き方をしない。二軍戦の並びであることを明確に書く", prompt)
         self.assertIn("数字、打順、選手名、球場名は source にある表記をそのまま残す", prompt)

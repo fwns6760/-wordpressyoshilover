@@ -65,6 +65,47 @@ class CoreBodyTests(unittest.TestCase):
         self.assertNotIn("関連記事", core_text)
 
 
+class NoOpinionFindingTests(unittest.TestCase):
+    def _audited(self, post_id: int) -> dict[str, str | int]:
+        return {
+            "id": post_id,
+            "title": f"記事{post_id}",
+            "status": "draft",
+            "primary_category": "試合速報",
+            "article_subtype": "lineup",
+            "edit_url": f"https://yoshilover.com/wp-admin/post.php?post={post_id}&action=edit",
+        }
+
+    def test_no_opinion_finding_accepts_stem_match(self):
+        post = _post(
+            1101,
+            content_html="<p>戸郷翔征が先発します。この入り方は見たい空気が強いです。</p>",
+        )
+
+        finding = audit_notify._no_opinion_finding(
+            self._audited(1101),
+            post,
+            audit_notify._excerpt_from_post(post),
+        )
+
+        self.assertIsNone(finding)
+
+    def test_no_opinion_finding_flags_fact_dump_without_markers(self):
+        post = _post(
+            1102,
+            content_html="<p>巨人がヤクルトに2-1で勝利した。戸郷翔征は7回1失点だった。</p>",
+        )
+
+        finding = audit_notify._no_opinion_finding(
+            self._audited(1102),
+            post,
+            audit_notify._excerpt_from_post(post),
+        )
+
+        self.assertIsNotNone(finding)
+        self.assertEqual(finding.axis, "no_opinion")
+
+
 class RunAuditNotificationTests(unittest.TestCase):
     def _fixed_now(self) -> datetime:
         return datetime(2026, 4, 19, 10, 30, tzinfo=audit_notify.JST)

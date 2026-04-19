@@ -29,6 +29,7 @@ import re as _re
 import html as _html
 from html.parser import HTMLParser
 
+from article_parts_renderer import ArticleParts, render_postgame
 from wp_client import WPClient
 from media_xpost_selector import evaluate_media_quote_selection
 from wp_draft_creator import build_oembed_block, load_posted_urls, save_posted_url
@@ -686,6 +687,10 @@ def low_cost_mode_enabled() -> bool:
 
 def strict_fact_mode_enabled() -> bool:
     return _env_flag("STRICT_FACT_MODE", low_cost_mode_enabled())
+
+
+def article_parts_renderer_postgame_enabled() -> bool:
+    return _env_flag("ENABLE_ARTICLE_PARTS_RENDERER_POSTGAME", False)
 
 
 def _env_csv_set(name: str, default: set[str]) -> set[str]:
@@ -3678,9 +3683,17 @@ def _build_game_parts_prompt_postgame(
     score: str,
     win_loss_hint: str,
     team_stats_reference: str,
+    source_name: str = "",
+    source_url: str = "",
 ) -> str:
     score_block = f"・score: {score}\n" if score else ""
     win_loss_block = f"・win_loss_hint: {win_loss_hint}\n" if win_loss_hint else ""
+    source_attribution_block = ""
+    if source_name or source_url:
+        source_attribution_block = (
+            f"・source_name: {source_name}\n"
+            f"・source_url: {source_url}\n"
+        )
     team_stats_block = ""
     if team_stats_reference:
         team_stats_block = (
@@ -3697,7 +3710,8 @@ def _build_game_parts_prompt_postgame(
 ・title: {title}
 ・summary: {summary}
 {score_block}{win_loss_block}【source_fact_block】
-{source_fact_block}{team_stats_block}
+{source_fact_block}
+{source_attribution_block}{team_stats_block}
 
 【返却 JSON schema】
 {{
@@ -3730,6 +3744,279 @@ def _build_game_parts_prompt_postgame(
 ・body_core を1段落だけにしない
 ・source_attribution を文字列にしない
 """
+
+
+def _fetch_team_stats_block_for_strict_article(category: str, logger: logging.Logger) -> str:
+    team_stats_block = ""
+    if os.environ.get("ARTICLE_INJECT_TEAM_STATS", "1") == "1" and category in ("試合速報", "首脳陣"):
+        try:
+            team_stats = fetch_giants_batting_stats_from_yahoo()
+            team_stats_block = _format_team_batting_stats_block(team_stats)
+        except Exception as e:
+            logger.warning("team batting stats 取得失敗: %s", e)
+            team_stats_block = ""
+    if team_stats_block:
+        logger.info(
+            json.dumps(
+                {
+                    "event": "article_team_stats_injected",
+                    "category": category,
+                    "line_count": team_stats_block.count("\n") + 1,
+                },
+                ensure_ascii=False,
+            )
+        )
+    return team_stats_block
+
+
+def _request_gemini_strict_text(
+    *,
+    api_key: str,
+    prompt: str,
+    logger: logging.Logger,
+    attempt_limit: int,
+    min_chars: int,
+    log_label: str = "Gemini strict fact mode",
+) -> str:
+    import urllib.request
+
+    payload = json.dumps(
+        {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "maxOutputTokens": 1536,
+                "temperature": 0.35,
+                "thinkingConfig": {"thinkingBudget": GEMINI_FLASH_THINKING_BUDGET},
+            },
+        }
+    ).encode("utf-8")
+    logger.info("%s で記事生成中（最大%d回試行）...", log_label, attempt_limit)
+    for attempt in range(attempt_limit):
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=90) as res:
+                data = json.load(res)
+            parts = data["candidates"][0]["content"].get("parts", [])
+            raw_text = "".join(p.get("text", "") for p in parts if "text" in p).strip()
+            raw_text = _strip_prompt_role_echo(raw_text)
+            if raw_text and len(raw_text) >= min_chars:
+                logger.info("%s 生成成功 %d文字", log_label, len(raw_text))
+                return raw_text
+            logger.warning(
+                "%s 応答が短すぎる（%d文字, 必要%d文字）、試行 %d/%d",
+                log_label,
+                len(raw_text),
+                min_chars,
+                attempt + 1,
+                attempt_limit,
+            )
+        except Exception as e:
+            logger.warning("%s 失敗 試行%d/%d: %s", log_label, attempt + 1, attempt_limit, e)
+    logger.error("%s が上限回数に達したため記事生成スキップ", log_label)
+    return ""
+
+
+def _log_article_parts_applied(
+    logger: logging.Logger,
+    *,
+    title: str,
+    article_subtype: str,
+    body_core_count: int,
+) -> None:
+    payload = {
+        "event": "article_parts_applied",
+        "title": title,
+        "subtype": article_subtype,
+        "body_core_count": body_core_count,
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
+def _log_article_parts_fallback(
+    logger: logging.Logger,
+    *,
+    title: str,
+    article_subtype: str,
+    reason: str,
+) -> None:
+    payload = {
+        "event": "article_parts_fallback",
+        "title": title,
+        "subtype": article_subtype,
+        "reason": reason,
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
+def _validate_postgame_article_parts(payload: object) -> ArticleParts:
+    if not isinstance(payload, dict):
+        raise TypeError("payload_not_object")
+
+    def _require_str(data: dict, key: str, *, allow_empty: bool = False) -> str:
+        value = data.get(key)
+        if not isinstance(value, str):
+            raise TypeError(f"{key}_not_string")
+        normalized = value.strip()
+        if not normalized and not allow_empty:
+            raise ValueError(f"{key}_empty")
+        return normalized
+
+    body_core = payload.get("body_core")
+    if not isinstance(body_core, list):
+        raise TypeError("body_core_not_list")
+    normalized_body_core: list[str] = []
+    for index, paragraph in enumerate(body_core):
+        if not isinstance(paragraph, str):
+            raise TypeError(f"body_core_{index}_not_string")
+        normalized = paragraph.strip()
+        if not normalized:
+            raise ValueError(f"body_core_{index}_empty")
+        normalized_body_core.append(normalized)
+    if not normalized_body_core:
+        raise ValueError("body_core_empty")
+
+    source_attribution = payload.get("source_attribution")
+    if not isinstance(source_attribution, dict):
+        raise TypeError("source_attribution_not_object")
+
+    return {
+        "title": _require_str(payload, "title"),
+        "fact_lead": _require_str(payload, "fact_lead"),
+        "body_core": normalized_body_core,
+        "game_context": _require_str(payload, "game_context"),
+        "fan_view": _require_str(payload, "fan_view"),
+        "source_attribution": {
+            "source_name": _require_str(source_attribution, "source_name", allow_empty=True),
+            "source_url": _require_str(source_attribution, "source_url", allow_empty=True),
+        },
+    }
+
+
+def _build_postgame_ai_body_from_parts(parts: ArticleParts) -> str:
+    headings = GAME_REQUIRED_HEADINGS["postgame"]
+    body_core = list(parts["body_core"])
+    highlight_lines = body_core[:-1] or body_core
+    stat_lines = body_core[-1:] if body_core else [parts["game_context"]]
+    final_lines = [parts["game_context"]]
+    fan_view = (parts.get("fan_view") or "").strip()
+    if fan_view:
+        final_lines.append(fan_view)
+    return "\n".join(
+        [
+            headings[0],
+            parts["fact_lead"],
+            headings[1],
+            *highlight_lines,
+            headings[2],
+            *stat_lines,
+            headings[3],
+            *final_lines,
+        ]
+    )
+
+
+def _maybe_render_postgame_article_parts(
+    *,
+    title: str,
+    summary: str,
+    category: str,
+    has_game: bool,
+    source_name: str,
+    source_url: str,
+    source_type: str,
+    source_entry: dict | None,
+    win_loss_hint: str,
+    logger: logging.Logger,
+) -> tuple[str, str] | None:
+    article_subtype = _detect_article_subtype(title, summary, category, has_game)
+    if not (
+        strict_fact_mode_enabled()
+        and article_parts_renderer_postgame_enabled()
+        and category == "試合速報"
+        and article_subtype == "postgame"
+    ):
+        return None
+
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        return None
+
+    source_fact_block = _build_source_fact_block(
+        title,
+        summary,
+        source_type=source_type,
+        entry=source_entry,
+    )
+    score = _extract_game_score_token(f"{title} {summary}")
+    team_stats_block = _fetch_team_stats_block_for_strict_article(category, logger)
+    prompt = _build_game_parts_prompt_postgame(
+        title=title,
+        summary=summary,
+        source_fact_block=source_fact_block,
+        score=score,
+        win_loss_hint=win_loss_hint,
+        team_stats_reference=team_stats_block,
+        source_name=source_name,
+        source_url=source_url,
+    )
+    raw_text = _request_gemini_strict_text(
+        api_key=api_key,
+        prompt=prompt,
+        logger=logger,
+        attempt_limit=get_gemini_attempt_limit(strict_mode=True),
+        min_chars=1,
+        log_label="Gemini article parts mode",
+    )
+    if not raw_text:
+        _log_article_parts_fallback(
+            logger,
+            title=title,
+            article_subtype=article_subtype,
+            reason="empty_response",
+        )
+        return None
+
+    try:
+        payload = json.loads(raw_text)
+    except json.JSONDecodeError as e:
+        _log_article_parts_fallback(
+            logger,
+            title=title,
+            article_subtype=article_subtype,
+            reason=f"json_parse_error:{e.msg}",
+        )
+        return None
+
+    try:
+        parts = _validate_postgame_article_parts(payload)
+    except (TypeError, ValueError) as e:
+        _log_article_parts_fallback(
+            logger,
+            title=title,
+            article_subtype=article_subtype,
+            reason=f"schema_invalid:{e}",
+        )
+        return None
+
+    try:
+        rendered_html = render_postgame(parts)
+    except Exception as e:
+        _log_article_parts_fallback(
+            logger,
+            title=title,
+            article_subtype=article_subtype,
+            reason=f"render_error:{type(e).__name__}",
+        )
+        return None
+
+    _log_article_parts_applied(
+        logger,
+        title=title,
+        article_subtype=article_subtype,
+        body_core_count=len(parts["body_core"]),
+    )
+    return _build_postgame_ai_body_from_parts(parts), rendered_html
 
 
 def _build_gemini_strict_prompt(
@@ -6427,14 +6714,7 @@ def generate_article_with_gemini(
     if strict_mode:
         attempt_limit = get_gemini_attempt_limit(strict_mode=True)
         min_chars = _get_gemini_strict_min_chars(category, title, summary_clean)
-        team_stats_block = ""
-        if os.environ.get("ARTICLE_INJECT_TEAM_STATS", "1") == "1" and category in ("試合速報", "首脳陣"):
-            try:
-                team_stats = fetch_giants_batting_stats_from_yahoo()
-                team_stats_block = _format_team_batting_stats_block(team_stats)
-            except Exception as e:
-                logger.warning("team batting stats 取得失敗: %s", e)
-                team_stats_block = ""
+        team_stats_block = _fetch_team_stats_block_for_strict_article(category, logger)
         prompt = _build_gemini_strict_prompt(
             title,
             summary_clean,
@@ -6449,49 +6729,14 @@ def generate_article_with_gemini(
             tweet_url=tweet_url,
             team_stats_block=team_stats_block,
         )
-        if team_stats_block:
-            logger.info(
-                json.dumps(
-                    {
-                        "event": "article_team_stats_injected",
-                        "category": category,
-                        "line_count": team_stats_block.count("\n") + 1,
-                    },
-                    ensure_ascii=False,
-                )
-            )
-        payload = json.dumps({
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "maxOutputTokens": 1536,
-                "temperature": 0.35,
-                "thinkingConfig": {"thinkingBudget": GEMINI_FLASH_THINKING_BUDGET},
-            }
-        }).encode("utf-8")
-        logger.info("Gemini strict fact mode で記事生成中（最大%d回試行）...", attempt_limit)
-        for attempt in range(attempt_limit):
-            try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
-                req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
-                with urllib.request.urlopen(req, timeout=90) as res:
-                    data = json.load(res)
-                parts = data["candidates"][0]["content"].get("parts", [])
-                raw_text = "".join(p.get("text", "") for p in parts if "text" in p).strip()
-                raw_text = _strip_prompt_role_echo(raw_text)
-                if raw_text and len(raw_text) >= min_chars:
-                    logger.info(f"Gemini strict fact mode 生成成功 {len(raw_text)}文字")
-                    return raw_text
-                logger.warning(
-                    "Gemini strict fact mode 応答が短すぎる（%d文字, 必要%d文字）、試行 %d/%d",
-                    len(raw_text),
-                    min_chars,
-                    attempt + 1,
-                    attempt_limit,
-                )
-            except Exception as e:
-                logger.warning(f"Gemini strict fact mode 失敗 試行{attempt+1}/{attempt_limit}: {e}")
-        logger.error("Gemini strict fact mode が上限回数に達したため記事生成スキップ")
-        return ""
+        return _request_gemini_strict_text(
+            api_key=api_key,
+            prompt=prompt,
+            logger=logger,
+            attempt_limit=attempt_limit,
+            min_chars=min_chars,
+            log_label="Gemini strict fact mode",
+        )
 
     game_category_prompt = ""
     if category == "試合速報" and _is_game_template_subtype(article_subtype):
@@ -7013,6 +7258,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     article_ai_mode = get_article_ai_mode(has_game, article_ai_mode_override) if use_ai_for_article else "none"
     fan_reaction_limit = get_fan_reaction_limit()
     logger = logging.getLogger("rss_fetcher")
+    rendered_ai_body_html = ""
     if ai_route_reason and ai_route_reason != "category_enabled":
         logger.info(
             json.dumps(
@@ -7052,6 +7298,37 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         elif any(w in (title + summary_clean) for w in ["敗れ", "敗戦", "連敗", "黒星", "完封負"]):
             win_loss_hint = "※この試合は巨人が【敗戦】した試合です。負け試合として正直に書くこと。前向きに美化しない。"
 
+    def _generate_gemini_body() -> tuple[str, str]:
+        parts_rendered = _maybe_render_postgame_article_parts(
+            title=title,
+            summary=summary_clean,
+            category=effective_generation_category,
+            has_game=has_game,
+            source_name=source_name,
+            source_url=url,
+            source_type=source_type,
+            source_entry=source_entry,
+            win_loss_hint=win_loss_hint,
+            logger=logger,
+        )
+        if parts_rendered is not None:
+            return parts_rendered
+        return (
+            generate_article_with_gemini(
+                title,
+                summary_clean,
+                effective_generation_category,
+                real_reactions=real_reactions_yahoo,
+                has_game=has_game,
+                source_name=source_name,
+                source_day_label=source_day_label,
+                source_type=source_type,
+                tweet_url=url,
+                source_entry=source_entry,
+            ),
+            "",
+        )
+
     if article_ai_mode == "none":
         real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, effective_generation_category, source_name=source_name)
         ai_body = ""
@@ -7061,7 +7338,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         impression_block = ""
     elif article_ai_mode == "gemini":
         real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, effective_generation_category, source_name=source_name)
-        ai_body = generate_article_with_gemini(title, summary_clean, effective_generation_category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label, source_type=source_type, tweet_url=url, source_entry=source_entry)
+        ai_body, rendered_ai_body_html = _generate_gemini_body()
         real_reactions = real_reactions_yahoo
         summary_block = ""
         stats_block = ""
@@ -7070,7 +7347,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         ai_body, real_reactions, summary_block, stats_block, impression_block = generate_article_with_grok(title, summary_clean, effective_generation_category, win_loss_hint)
         if not ai_body:
             real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, effective_generation_category, source_name=source_name)
-            ai_body = generate_article_with_gemini(title, summary_clean, effective_generation_category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label, source_type=source_type, tweet_url=url, source_entry=source_entry)
+            ai_body, rendered_ai_body_html = _generate_gemini_body()
             real_reactions = real_reactions_yahoo
             summary_block = ""
             stats_block = ""
@@ -7081,39 +7358,24 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             ai_body, real_reactions, summary_block, stats_block, impression_block = generate_article_with_grok(title, summary_clean, effective_generation_category, win_loss_hint)
             if not ai_body:
                 real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, effective_generation_category, source_name=source_name)
-                ai_body = generate_article_with_gemini(title, summary_clean, effective_generation_category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label, source_type=source_type, tweet_url=url, source_entry=source_entry)
+                ai_body, rendered_ai_body_html = _generate_gemini_body()
                 real_reactions = real_reactions_yahoo
                 summary_block = ""
                 stats_block = ""
                 impression_block = ""
         else:
             real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, effective_generation_category, source_name=source_name)
-            ai_body = generate_article_with_gemini(title, summary_clean, effective_generation_category, real_reactions=real_reactions_yahoo, has_game=has_game, source_name=source_name, source_day_label=source_day_label, source_type=source_type, tweet_url=url, source_entry=source_entry)
+            ai_body, rendered_ai_body_html = _generate_gemini_body()
             real_reactions = real_reactions_yahoo
             summary_block = ""
             stats_block = ""
             impression_block = ""
 
-    ai_body = _apply_article_guardrails(title, summary_clean, effective_generation_category, ai_body, has_game, logger)
-    if not ai_body:
-        logger.warning("記事本文が空のため、安全フォールバック本文を使用")
-        ai_body = _build_safe_article_fallback(
-            title,
-            summary_clean,
-            effective_generation_category,
-            has_game,
-            source_name=source_name,
-            source_type=source_type,
-            tweet_url=url,
-            source_day_label=source_day_label,
-            real_reactions=real_reactions,
-        )
-    subject = _extract_subject_label(title, summary_clean, effective_generation_category)
-    ai_body = _apply_editor_voice(ai_body, effective_generation_category, subject)
-    if _article_reads_too_generic(ai_body, effective_generation_category):
-        logger.info("記事本文が汎用表現に寄りすぎたため、安全版へ差し替え")
-        ai_body = _apply_editor_voice(
-            _build_safe_article_fallback(
+    if not rendered_ai_body_html:
+        ai_body = _apply_article_guardrails(title, summary_clean, effective_generation_category, ai_body, has_game, logger)
+        if not ai_body:
+            logger.warning("記事本文が空のため、安全フォールバック本文を使用")
+            ai_body = _build_safe_article_fallback(
                 title,
                 summary_clean,
                 effective_generation_category,
@@ -7123,21 +7385,19 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 tweet_url=url,
                 source_day_label=source_day_label,
                 real_reactions=real_reactions,
-            ),
-            effective_generation_category,
-            subject,
-        )
-    if social_story:
-        normalized_social_body = _normalize_article_text_structure(ai_body, body_category, has_game, article_subtype="social_news")
-        if _social_body_has_required_structure(normalized_social_body):
-            ai_body = normalized_social_body
-        else:
+            )
+        subject = _extract_subject_label(title, summary_clean, effective_generation_category)
+        ai_body = _apply_editor_voice(ai_body, effective_generation_category, subject)
+        if _article_reads_too_generic(ai_body, effective_generation_category):
+            logger.info("記事本文が汎用表現に寄りすぎたため、安全版へ差し替え")
             ai_body = _apply_editor_voice(
-                _build_social_safe_fallback(
+                _build_safe_article_fallback(
                     title,
                     summary_clean,
                     effective_generation_category,
+                    has_game,
                     source_name=source_name,
+                    source_type=source_type,
                     tweet_url=url,
                     source_day_label=source_day_label,
                     real_reactions=real_reactions,
@@ -7145,73 +7405,91 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 effective_generation_category,
                 subject,
             )
-    elif generation_category == "首脳陣" and article_subtype == "manager":
-        normalized_manager_body = _normalize_article_text_structure(ai_body, generation_category, has_game, article_subtype=article_subtype)
-        if _manager_body_has_required_structure(normalized_manager_body, has_game):
-            ai_body = normalized_manager_body
-        else:
-            ai_body = _apply_editor_voice(
-                _build_manager_safe_fallback(title, summary_clean, real_reactions=real_reactions),
-                generation_category,
-                subject,
-            )
-    elif generation_category == "試合速報" and _is_game_template_subtype(article_subtype):
-        normalized_game_body = _normalize_article_text_structure(ai_body, generation_category, has_game, article_subtype=article_subtype)
-        if _game_body_has_required_structure(normalized_game_body, article_subtype, has_game):
-            ai_body = normalized_game_body
-        else:
-            ai_body = _apply_editor_voice(
-                _build_game_safe_fallback(
-                    title,
-                    summary_clean,
-                    article_subtype,
-                    lineup_rows=lineup_stat_rows if article_subtype == "lineup" else None,
-                    real_reactions=real_reactions,
-                ),
-                generation_category,
-                subject,
-            )
-    elif generation_category == "ドラフト・育成" and _is_farm_template_subtype(article_subtype):
-        normalized_farm_body = _normalize_article_text_structure(ai_body, generation_category, has_game, article_subtype=article_subtype)
-        if _farm_body_has_required_structure(normalized_farm_body, article_subtype):
-            ai_body = normalized_farm_body
-        else:
-            farm_fallback = (
-                _build_farm_lineup_safe_fallback(title, summary_clean, real_reactions=real_reactions)
-                if article_subtype == "farm_lineup"
-                else _build_farm_safe_fallback(title, summary_clean, real_reactions=real_reactions)
-            )
-            ai_body = _apply_editor_voice(farm_fallback, generation_category, subject)
-    elif recovery_story:
-        normalized_recovery_body = _normalize_article_text_structure(ai_body, generation_category, False, article_subtype="player_recovery")
-        if _recovery_body_has_required_structure(normalized_recovery_body):
-            ai_body = normalized_recovery_body
-        else:
-            ai_body = _apply_editor_voice(
-                _build_recovery_safe_fallback(
-                    title,
-                    summary_clean,
-                    real_reactions=real_reactions,
-                    source_day_label=source_day_label,
-                ),
-                generation_category,
-                subject,
-            )
-    elif notice_story:
-        normalized_notice_body = _normalize_article_text_structure(ai_body, generation_category, False, article_subtype="player_notice")
-        if _notice_body_has_required_structure(normalized_notice_body) and _notice_has_player_name(normalized_notice_body, title, summary_clean):
-            ai_body = normalized_notice_body
-        else:
-            ai_body = _apply_editor_voice(
-                _build_notice_safe_fallback(
-                    title,
-                    summary_clean,
-                    real_reactions=real_reactions,
-                    source_day_label=source_day_label,
-                ),
-                generation_category,
-                subject,
-            )
+        if social_story:
+            normalized_social_body = _normalize_article_text_structure(ai_body, body_category, has_game, article_subtype="social_news")
+            if _social_body_has_required_structure(normalized_social_body):
+                ai_body = normalized_social_body
+            else:
+                ai_body = _apply_editor_voice(
+                    _build_social_safe_fallback(
+                        title,
+                        summary_clean,
+                        effective_generation_category,
+                        source_name=source_name,
+                        tweet_url=url,
+                        source_day_label=source_day_label,
+                        real_reactions=real_reactions,
+                    ),
+                    effective_generation_category,
+                    subject,
+                )
+        elif generation_category == "首脳陣" and article_subtype == "manager":
+            normalized_manager_body = _normalize_article_text_structure(ai_body, generation_category, has_game, article_subtype=article_subtype)
+            if _manager_body_has_required_structure(normalized_manager_body, has_game):
+                ai_body = normalized_manager_body
+            else:
+                ai_body = _apply_editor_voice(
+                    _build_manager_safe_fallback(title, summary_clean, real_reactions=real_reactions),
+                    generation_category,
+                    subject,
+                )
+        elif generation_category == "試合速報" and _is_game_template_subtype(article_subtype):
+            normalized_game_body = _normalize_article_text_structure(ai_body, generation_category, has_game, article_subtype=article_subtype)
+            if _game_body_has_required_structure(normalized_game_body, article_subtype, has_game):
+                ai_body = normalized_game_body
+            else:
+                ai_body = _apply_editor_voice(
+                    _build_game_safe_fallback(
+                        title,
+                        summary_clean,
+                        article_subtype,
+                        lineup_rows=lineup_stat_rows if article_subtype == "lineup" else None,
+                        real_reactions=real_reactions,
+                    ),
+                    generation_category,
+                    subject,
+                )
+        elif generation_category == "ドラフト・育成" and _is_farm_template_subtype(article_subtype):
+            normalized_farm_body = _normalize_article_text_structure(ai_body, generation_category, has_game, article_subtype=article_subtype)
+            if _farm_body_has_required_structure(normalized_farm_body, article_subtype):
+                ai_body = normalized_farm_body
+            else:
+                farm_fallback = (
+                    _build_farm_lineup_safe_fallback(title, summary_clean, real_reactions=real_reactions)
+                    if article_subtype == "farm_lineup"
+                    else _build_farm_safe_fallback(title, summary_clean, real_reactions=real_reactions)
+                )
+                ai_body = _apply_editor_voice(farm_fallback, generation_category, subject)
+        elif recovery_story:
+            normalized_recovery_body = _normalize_article_text_structure(ai_body, generation_category, False, article_subtype="player_recovery")
+            if _recovery_body_has_required_structure(normalized_recovery_body):
+                ai_body = normalized_recovery_body
+            else:
+                ai_body = _apply_editor_voice(
+                    _build_recovery_safe_fallback(
+                        title,
+                        summary_clean,
+                        real_reactions=real_reactions,
+                        source_day_label=source_day_label,
+                    ),
+                    generation_category,
+                    subject,
+                )
+        elif notice_story:
+            normalized_notice_body = _normalize_article_text_structure(ai_body, generation_category, False, article_subtype="player_notice")
+            if _notice_body_has_required_structure(normalized_notice_body) and _notice_has_player_name(normalized_notice_body, title, summary_clean):
+                ai_body = normalized_notice_body
+            else:
+                ai_body = _apply_editor_voice(
+                    _build_notice_safe_fallback(
+                        title,
+                        summary_clean,
+                        real_reactions=real_reactions,
+                        source_day_label=source_day_label,
+                    ),
+                    generation_category,
+                    subject,
+                )
     if summary_block and not _text_is_safe(title, summary_clean, summary_block, has_game):
         logger.warning("SUMMARYブロックを破棄: 事実制約に違反")
         summary_block = ""
@@ -7704,7 +7982,11 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     # ──────────────────────────────────────────────────────────
     # ② 記事本文（ニュースの整理を最上段にする）
     # ──────────────────────────────────────────────────────────
-    if ai_body:
+    if rendered_ai_body_html:
+        blocks += rendered_ai_body_html
+        blocks += _comment_button("news")
+        blocks += _comment_button("next")
+    elif ai_body:
         ai_body = _re3.sub(r'\[\[\d+\]\]\([^)]+\)', '', ai_body)
         ai_body = _re3.sub(r'（\d+文字）', '', ai_body)
         first_line = ai_body.strip().split('\n')[0].strip()

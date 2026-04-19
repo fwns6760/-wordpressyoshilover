@@ -2207,6 +2207,27 @@ def _should_skip_started_pregame_entry(
     return _game_status_indicates_started(game_status)
 
 
+def _log_pregame_started_skip(
+    title: str,
+    summary: str,
+    post_url: str,
+    game_status: dict | None,
+    now: datetime | None = None,
+):
+    reference_now = now or datetime.now(JST)
+    source_text = _strip_html(f"{title} {summary}")
+    payload = {
+        "event": "pregame_started_skip",
+        "title": title,
+        "post_url": post_url,
+        "first_pitch_time": _extract_game_time_token(source_text),
+        "now": reference_now.isoformat(),
+        "game_state": _collapse_ws(str((game_status or {}).get("state", ""))),
+        "game_ended": bool((game_status or {}).get("ended")),
+    }
+    logging.getLogger("rss_fetcher").info(json.dumps(payload, ensure_ascii=False))
+
+
 def _display_source_name(name: str) -> str:
     clean = _collapse_ws(name or "スポーツニュース")
     if not clean:
@@ -9519,7 +9540,12 @@ def _main(args, logger):
                 item.get("entry_has_game", True),
                 yahoo_game_status,
             ):
-                logger.debug(f"  [SKIP:pregame開始後] {item['title'][:40]}")
+                _log_pregame_started_skip(
+                    item["title"],
+                    item.get("summary", ""),
+                    item.get("post_url", ""),
+                    yahoo_game_status,
+                )
                 skip_filter += 1
                 skip_reason_counts["pregame_started"] += 1
                 continue

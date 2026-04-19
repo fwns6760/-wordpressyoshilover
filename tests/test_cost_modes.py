@@ -1,6 +1,7 @@
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
+import json
 
 from src import rss_fetcher, x_post_generator
 
@@ -310,6 +311,24 @@ class CostModeTests(unittest.TestCase):
                 {"state": "6回表", "ended": False},
             )
         )
+
+    def test_pregame_started_skip_log_contains_title_and_timestamps(self):
+        now = datetime(2026, 4, 19, 11, 30, tzinfo=rss_fetcher.JST)
+        with self.assertLogs("rss_fetcher", level="INFO") as cm:
+            rss_fetcher._log_pregame_started_skip(
+                "巨人ヤクルト戦 18:00試合開始 先発は戸郷翔征",
+                "神宮で18:00開始予定。戸郷翔征投手が先発予定。",
+                "https://example.com/pregame",
+                {"state": "6回表", "ended": False},
+                now=now,
+            )
+        payload = json.loads(cm.output[0].split("INFO:rss_fetcher:", 1)[1])
+        self.assertEqual(payload["event"], "pregame_started_skip")
+        self.assertEqual(payload["title"], "巨人ヤクルト戦 18:00試合開始 先発は戸郷翔征")
+        self.assertEqual(payload["post_url"], "https://example.com/pregame")
+        self.assertEqual(payload["first_pitch_time"], "18:00")
+        self.assertEqual(payload["now"], "2026-04-19T11:30:00+09:00")
+        self.assertEqual(payload["game_state"], "6回表")
 
     def test_gemini_attempt_limits_default_to_three_in_low_cost_mode(self):
         with patch.dict("os.environ", {"LOW_COST_MODE": "1"}, clear=False):

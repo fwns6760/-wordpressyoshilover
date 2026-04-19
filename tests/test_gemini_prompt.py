@@ -10,6 +10,13 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("『使ってよい事実』に無い数字、選手名、比較、結果予想は書かないでください。", prompt)
         self.assertIn("ただし、source にある事実を踏まえた解釈と、巨人ファンとしての短い感想は書いてよい。", prompt)
         self.assertIn("文章は「事実 → 解釈 → 感想」の順で流し、感想だけを先に書かない。", prompt)
+        self.assertIn("事実 → 解釈 → 感想", prompt)
+        self.assertTrue(
+            any(marker in prompt for marker in ("気になります", "注目です", "見たいところです", "と思います"))
+        )
+        self.assertIn("感想は書いてよい", prompt)
+        self.assertTrue("結果予想" in prompt or "一般論" in prompt)
+        self.assertNotIn("感想を足さない", prompt[:300])
 
     def test_detect_player_article_mode_classifies_three_modes(self):
         self.assertEqual(

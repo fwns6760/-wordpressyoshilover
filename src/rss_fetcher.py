@@ -14,6 +14,7 @@ import argparse
 import subprocess
 from collections import Counter
 from datetime import datetime, timezone, timedelta
+from functools import lru_cache
 from pathlib import Path
 
 # vendorディレクトリをパスに追加（サーバー環境用）
@@ -7858,12 +7859,27 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
 # ──────────────────────────────────────────────────────────
 RSS_SOURCES_FILE  = ROOT / "config" / "rss_sources.json"
 KEYWORDS_FILE     = ROOT / "config" / "keywords.json"
+GIANTS_ROSTER_FILE = ROOT / "config" / "giants_roster.json"
 HISTORY_FILE      = ROOT / "data"   / "rss_history.json"
 GCS_BUCKET        = os.environ.get("GCS_BUCKET", "")
 GCS_HISTORY_KEY   = "rss_history.json"
 LOG_FILE          = ROOT / "logs"   / "rss_fetcher.log"
 
 GIANTS_KEYWORDS = ["巨人", "ジャイアンツ", "東京ドーム", "Giants", "TokyoGiants"]
+GIANTS_TRANSFER_CONTEXT_MARKERS = (
+    "FA",
+    "トレード",
+    "移籍",
+    "獲得",
+    "補強",
+    "退団",
+    "入団",
+    "加入",
+    "自由契約",
+    "人的補償",
+    "戦力外",
+)
+NON_GIANTS_TEAM_MARKERS = tuple(marker for marker in NPB_TEAM_MARKERS if marker != "巨人")
 
 # ──────────────────────────────────────────────────────────
 # ロガー設定
@@ -8518,8 +8534,77 @@ def _build_yahoo_live_update_candidate(opponent: str, venue: str, game_status: d
 # ──────────────────────────────────────────────────────────
 # 巨人キーワードフィルタ
 # ──────────────────────────────────────────────────────────
+def _normalize_roster_signal_text(text: str) -> str:
+    clean = _strip_html(text or "")
+    clean = _html.unescape(clean)
+    return _re.sub(r"[\s　【】「」『』〔〕（）()・･．\.,，/／\-ーｰ:：]", "", clean)
+
+
+@lru_cache(maxsize=1)
+def _load_giants_roster() -> tuple[dict, ...]:
+    try:
+        with open(GIANTS_ROSTER_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return ()
+    return tuple(entry for entry in data if isinstance(entry, dict))
+
+
+@lru_cache(maxsize=1)
+def _giants_roster_alias_index() -> tuple[dict, ...]:
+    index: list[dict] = []
+    for entry in _load_giants_roster():
+        aliases = [entry.get("name", "")] + list(entry.get("aliases") or [])
+        normalized_aliases: list[str] = []
+        seen_aliases: set[str] = set()
+        for alias in aliases:
+            normalized = _normalize_roster_signal_text(alias)
+            if len(normalized) < 2 or normalized in seen_aliases:
+                continue
+            normalized_aliases.append(normalized)
+            seen_aliases.add(normalized)
+        if normalized_aliases:
+            index.append(
+                {
+                    "name": entry.get("name", ""),
+                    "aliases": tuple(sorted(normalized_aliases, key=len, reverse=True)),
+                }
+            )
+    return tuple(index)
+
+
+def _matching_giants_roster_names(text: str) -> list[str]:
+    normalized_text = _normalize_roster_signal_text(text)
+    if not normalized_text:
+        return []
+    hits: list[str] = []
+    for entry in _giants_roster_alias_index():
+        if any(alias in normalized_text for alias in entry["aliases"]):
+            hits.append(entry["name"])
+    return hits
+
+
+def _is_other_team_transfer_story(text: str, roster_hits: list[str]) -> bool:
+    if not roster_hits:
+        return False
+    source_text = text or ""
+    if any(marker in source_text for marker in GIANTS_KEYWORDS):
+        return False
+    if "読売" in source_text:
+        return False
+    if not any(marker in source_text for marker in NON_GIANTS_TEAM_MARKERS):
+        return False
+    return any(marker in source_text for marker in GIANTS_TRANSFER_CONTEXT_MARKERS)
+
+
 def is_giants_related(text: str) -> bool:
-    return any(kw in text for kw in GIANTS_KEYWORDS)
+    source_text = text or ""
+    if any(kw in source_text for kw in GIANTS_KEYWORDS):
+        return True
+    roster_hits = _matching_giants_roster_names(source_text)
+    if not roster_hits:
+        return False
+    return not _is_other_team_transfer_story(source_text, roster_hits)
 
 # ──────────────────────────────────────────────────────────
 # カテゴリ自動分類

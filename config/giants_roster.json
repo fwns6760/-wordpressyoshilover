@@ -1,0 +1,282 @@
+[
+  {
+    "name": "阿部慎之助",
+    "aliases": ["阿部慎之助", "阿部慎之助監督", "阿部監督"],
+    "role": "manager",
+    "position": "監督",
+    "jersey_number": "83",
+    "active": true
+  },
+  {
+    "name": "橋上秀樹",
+    "aliases": ["橋上秀樹", "橋上秀樹コーチ", "橋上コーチ"],
+    "role": "coach",
+    "position": "オフェンスチーフコーチ",
+    "jersey_number": "73",
+    "active": true
+  },
+  {
+    "name": "川相昌弘",
+    "aliases": ["川相昌弘", "川相昌弘コーチ", "川相コーチ"],
+    "role": "coach",
+    "position": "ディフェンスチーフコーチ",
+    "jersey_number": "78",
+    "active": true
+  },
+  {
+    "name": "村田善則",
+    "aliases": ["村田善則", "村田善則コーチ", "村田コーチ"],
+    "role": "coach",
+    "position": "バッテリーチーフコーチ",
+    "jersey_number": "74",
+    "active": true
+  },
+  {
+    "name": "杉内俊哉",
+    "aliases": ["杉内俊哉", "杉内俊哉コーチ", "杉内コーチ"],
+    "role": "coach",
+    "position": "投手チーフコーチ",
+    "jersey_number": "81",
+    "active": true
+  },
+  {
+    "name": "内海哲也",
+    "aliases": ["内海哲也", "内海哲也コーチ", "内海コーチ"],
+    "role": "coach",
+    "position": "投手コーチ",
+    "jersey_number": "77",
+    "active": true
+  },
+  {
+    "name": "亀井善行",
+    "aliases": ["亀井善行", "亀井善行コーチ", "亀井コーチ"],
+    "role": "coach",
+    "position": "外野守備兼走塁コーチ",
+    "jersey_number": "79",
+    "active": true
+  },
+  {
+    "name": "石井琢朗",
+    "aliases": ["石井琢朗", "石井琢朗監督", "石井二軍監督"],
+    "role": "coach",
+    "position": "二軍監督",
+    "jersey_number": "75",
+    "active": true
+  },
+  {
+    "name": "田中将大",
+    "aliases": ["田中将大", "マー君"],
+    "role": "player",
+    "position": "投手",
+    "jersey_number": "11",
+    "active": true
+  },
+  {
+    "name": "大勢",
+    "aliases": ["大勢"],
+    "role": "player",
+    "position": "投手",
+    "jersey_number": "15",
+    "active": true
+  },
+  {
+    "name": "西舘勇陽",
+    "aliases": ["西舘勇陽", "西舘"],
+    "role": "player",
+    "position": "投手",
+    "jersey_number": "17",
+    "active": true
+  },
+  {
+    "name": "山﨑伊織",
+    "aliases": ["山﨑伊織", "山崎伊織"],
+    "role": "player",
+    "position": "投手",
+    "jersey_number": "19",
+    "active": true
+  },
+  {
+    "name": "戸郷翔征",
+    "aliases": ["戸郷翔征", "戸郷"],
+    "role": "player",
+    "position": "投手",
+    "jersey_number": "20",
+    "active": true
+  },
+  {
+    "name": "Ｆ．ウィットリー",
+    "aliases": ["Ｆ．ウィットリー", "F.ウィットリー", "ウィットリー"],
+    "role": "player",
+    "position": "投手",
+    "jersey_number": "26",
+    "active": true
+  },
+  {
+    "name": "中川皓太",
+    "aliases": ["中川皓太", "中川皓太投手"],
+    "role": "player",
+    "position": "投手",
+    "jersey_number": "41",
+    "active": true
+  },
+  {
+    "name": "高梨雄平",
+    "aliases": ["高梨雄平", "高梨"],
+    "role": "player",
+    "position": "投手",
+    "jersey_number": "53",
+    "active": true
+  },
+  {
+    "name": "井上温大",
+    "aliases": ["井上温大", "温大"],
+    "role": "player",
+    "position": "投手",
+    "jersey_number": "97",
+    "active": true
+  },
+  {
+    "name": "甲斐拓也",
+    "aliases": ["甲斐拓也", "甲斐"],
+    "role": "player",
+    "position": "捕手",
+    "jersey_number": "10",
+    "active": true
+  },
+  {
+    "name": "小林誠司",
+    "aliases": ["小林誠司", "小林誠司捕手"],
+    "role": "player",
+    "position": "捕手",
+    "jersey_number": "22",
+    "active": true
+  },
+  {
+    "name": "大城卓三",
+    "aliases": ["大城卓三", "大城卓三捕手"],
+    "role": "player",
+    "position": "捕手",
+    "jersey_number": "24",
+    "active": true
+  },
+  {
+    "name": "吉川尚輝",
+    "aliases": ["吉川尚輝", "尚輝"],
+    "role": "player",
+    "position": "内野手",
+    "jersey_number": "2",
+    "active": true
+  },
+  {
+    "name": "門脇誠",
+    "aliases": ["門脇誠", "門脇"],
+    "role": "player",
+    "position": "内野手",
+    "jersey_number": "5",
+    "active": true
+  },
+  {
+    "name": "坂本勇人",
+    "aliases": ["坂本勇人", "勇人"],
+    "role": "player",
+    "position": "内野手",
+    "jersey_number": "6",
+    "active": true
+  },
+  {
+    "name": "石塚裕惺",
+    "aliases": ["石塚裕惺", "石塚"],
+    "role": "player",
+    "position": "内野手",
+    "jersey_number": "23",
+    "active": true
+  },
+  {
+    "name": "浦田俊輔",
+    "aliases": ["浦田俊輔", "浦田"],
+    "role": "player",
+    "position": "内野手",
+    "jersey_number": "32",
+    "active": true
+  },
+  {
+    "name": "泉口友汰",
+    "aliases": ["泉口友汰", "泉口"],
+    "role": "player",
+    "position": "内野手",
+    "jersey_number": "35",
+    "active": true
+  },
+  {
+    "name": "リチャード",
+    "aliases": ["リチャード"],
+    "role": "player",
+    "position": "内野手",
+    "jersey_number": "52",
+    "active": true
+  },
+  {
+    "name": "丸佳浩",
+    "aliases": ["丸佳浩", "丸佳浩外野手"],
+    "role": "player",
+    "position": "外野手",
+    "jersey_number": "8",
+    "active": true
+  },
+  {
+    "name": "萩尾匡也",
+    "aliases": ["萩尾匡也", "萩尾"],
+    "role": "player",
+    "position": "外野手",
+    "jersey_number": "12",
+    "active": true
+  },
+  {
+    "name": "岡田悠希",
+    "aliases": ["岡田悠希", "岡田悠希外野手"],
+    "role": "player",
+    "position": "外野手",
+    "jersey_number": "38",
+    "active": true
+  },
+  {
+    "name": "中山礼都",
+    "aliases": ["中山礼都", "礼都"],
+    "role": "player",
+    "position": "外野手",
+    "jersey_number": "40",
+    "active": true
+  },
+  {
+    "name": "佐々木俊輔",
+    "aliases": ["佐々木俊輔", "佐々木俊輔外野手"],
+    "role": "player",
+    "position": "外野手",
+    "jersey_number": "44",
+    "active": true
+  },
+  {
+    "name": "浅野翔吾",
+    "aliases": ["浅野翔吾", "浅野"],
+    "role": "player",
+    "position": "外野手",
+    "jersey_number": "51",
+    "active": true
+  },
+  {
+    "name": "若林楽人",
+    "aliases": ["若林楽人", "若林楽人外野手"],
+    "role": "player",
+    "position": "外野手",
+    "jersey_number": "59",
+    "active": true
+  },
+  {
+    "name": "長野久義",
+    "aliases": ["長野久義", "長野久義外野手"],
+    "role": "player",
+    "position": "外野手",
+    "jersey_number": "7",
+    "active": true
+  }
+]

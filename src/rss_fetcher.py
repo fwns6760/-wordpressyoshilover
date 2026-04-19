@@ -1013,6 +1013,14 @@ def _enhanced_social_prompt_rules(category: str) -> str:
     )
 
 
+def _social_source_prefers_structured_template(category: str, article_subtype: str) -> bool:
+    if category == "試合速報" and _is_game_template_subtype(article_subtype):
+        return True
+    if category == "ドラフト・育成" and _is_farm_template_subtype(article_subtype):
+        return True
+    return False
+
+
 def _enhanced_grounded_rules(category: str, article_subtype: str = "", source_type: str = "news") -> str:
     if not enhanced_prompts_enabled():
         return ""
@@ -1020,7 +1028,7 @@ def _enhanced_grounded_rules(category: str, article_subtype: str = "", source_ty
         "・元記事や検索結果の要点を言い換えるだけで段落を埋めない\n"
         "・各見出しで、固有名詞か数字のどちらかを最低1つは残す\n"
     )
-    if source_type == "social_news":
+    if source_type == "social_news" and not _social_source_prefers_structured_template(category, article_subtype):
         return common + _enhanced_social_prompt_rules(category).replace("【", "・【")
     if category == "首脳陣":
         return common + _enhanced_manager_prompt_rules().replace("【", "・【")
@@ -1080,6 +1088,8 @@ def resolve_publish_gate_subtype(
     source_type: str,
 ) -> str:
     if source_type == "social_news":
+        if _social_source_prefers_structured_template(category, article_subtype):
+            return "farm" if article_subtype in {"farm", "farm_lineup"} else article_subtype
         return "social"
     if category == "選手情報":
         special_kind = _detect_player_special_template_kind(title, summary)
@@ -3007,13 +3017,13 @@ def _build_notice_strict_prompt(title: str, summary: str, source_day_label: str 
 
 def _social_background_focus_line(category: str) -> str:
     if category == "試合速報":
-        return "試合前後の流れ、スタメン、先発、スコアなど、試合文脈があれば必ず整理する"
+        return "試合の流れ、スタメン、先発、スコアのうち、source にある試合文脈だけを整理する"
     if category == "選手情報":
-        return "選手の調整状況、昇格・復帰、コメントの背景など、選手文脈があれば必ず整理する"
+        return "選手の調整状況、昇格・復帰、コメントの背景のうち、source にある選手文脈だけを整理する"
     if category == "首脳陣":
-        return "監督・コーチの起用意図や指導の文脈があれば必ず整理する"
+        return "監督・コーチの起用意図や指導の文脈を、source にある範囲だけで整理する"
     if category == "ドラフト・育成":
-        return "二軍、育成、ドラフト、支配下の文脈があれば必ず整理する"
+        return "二軍、育成、ドラフト、支配下の文脈を、source にある範囲だけで整理する"
     return "球団やチームの状況のうち、元記事にある背景だけを整理する"
 
 
@@ -3553,7 +3563,7 @@ def _build_gemini_strict_prompt(
     first_heading, second_heading, third_heading = _article_section_headings(category, category == "試合速報")
     article_subtype = _detect_article_subtype(title, summary, category, has_game)
     player_mode = _detect_player_article_mode(title, summary, category) if category == "選手情報" else ""
-    if source_type == "social_news":
+    if source_type == "social_news" and not _social_source_prefers_structured_template(category, article_subtype):
         return _build_social_strict_prompt(
             title,
             summary,
@@ -4892,7 +4902,7 @@ def _build_social_safe_fallback(
     if len(facts) > 1:
         lead_lines.append(f"{facts[1]}。")
     else:
-        lead_lines.append(f"{display_source}が伝えた要点を、まず押さえておきたい話題です。")
+        lead_lines.append(f"{display_source}が伝えた要点を、最初に整理したい話題です。")
 
     summary_lines = [SOCIAL_REQUIRED_HEADINGS[1]]
     if quote_phrases:
@@ -4918,7 +4928,7 @@ def _build_social_safe_fallback(
             reaction_line = f"反応を見ると「{' / '.join(snippets)}」という温度感があり、この話題の受け止め方が分かれています。"
 
     watch_lines = [SOCIAL_REQUIRED_HEADINGS[3]]
-    watch_lines.append(reaction_line or "巨人ファンにとっては、この発信が次の試合や起用、話題の広がりにどうつながるかが見どころです。")
+    watch_lines.append(reaction_line or "巨人ファンにとっては、この発信が次の試合や起用、話題の広がりにどう動くかを見ておきたいところです。")
     watch_lines.append("発信内容そのものだけでなく、ここからどんな動きにつながるかを見たいところです。みなさんの意見はコメントで教えてください！")
     return "\n".join(lead_lines + summary_lines + background_lines + watch_lines)
 
@@ -4934,7 +4944,8 @@ def _build_safe_article_fallback(
     source_day_label: str = "",
     real_reactions: list[str] | None = None,
 ) -> str:
-    if source_type == "social_news":
+    article_subtype = _detect_article_subtype(title, summary, category, has_game)
+    if source_type == "social_news" and not _social_source_prefers_structured_template(category, article_subtype):
         return _build_social_safe_fallback(
             title,
             summary,
@@ -4946,7 +4957,6 @@ def _build_safe_article_fallback(
         )
     if category == "首脳陣":
         return _build_manager_safe_fallback(title, summary, real_reactions=real_reactions)
-    article_subtype = _detect_article_subtype(title, summary, category, has_game)
     if category == "ドラフト・育成" and article_subtype == "farm":
         return _build_farm_safe_fallback(title, summary, real_reactions=real_reactions)
     if category == "ドラフト・育成" and article_subtype == "farm_lineup":
@@ -6737,7 +6747,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         has_game,
         article_subtype=article_subtype,
     )
-    social_story = source_type == "social_news"
+    social_story = source_type == "social_news" and not _social_source_prefers_structured_template(generation_category, article_subtype)
     special_story_kind = _detect_player_special_template_kind(title, summary_clean) if generation_category == "選手情報" and not social_story else ""
     recovery_story = special_story_kind == "player_recovery"
     notice_story = special_story_kind == "player_notice"
@@ -9747,7 +9757,7 @@ def _main(args, logger):
                         quote_index=quote_index,
                         quote_count_in_article=total_media_quotes,
                     )
-            if source_type == "social_news":
+            if source_type == "social_news" and not _social_source_prefers_structured_template(category, title_article_subtype):
                 _log_social_body_template_applied(
                     logger,
                     post_id,

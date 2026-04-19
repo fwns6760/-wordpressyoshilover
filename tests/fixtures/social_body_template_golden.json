@@ -37,18 +37,5 @@
       "浅野翔吾"
     ],
     "expected_indicator": "player"
-  },
-  {
-    "name": "media_farm_update",
-    "source_name": "スポニチ野球記者X",
-    "category": "ドラフト・育成",
-    "title": "巨人ドラ３・山城京平が２軍で再出発 先発調整へ",
-    "summary": "スポニチ野球記者Xが、山城京平投手が２軍で再出発し、先発調整に入ると伝えた。",
-    "required_strings": [
-      "スポニチ / スポニチ野球記者XのX投稿",
-      "山城京平",
-      "２軍"
-    ],
-    "expected_indicator": "media"
   }
 ]

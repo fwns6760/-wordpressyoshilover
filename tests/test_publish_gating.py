@@ -6,7 +6,7 @@ from src import rss_fetcher
 
 
 class PublishGatingTests(unittest.TestCase):
-    def test_resolve_publish_gate_subtype_routes_social_news_to_social(self):
+    def test_resolve_publish_gate_subtype_keeps_manager_social_news_on_social_gate(self):
         subtype = rss_fetcher.resolve_publish_gate_subtype(
             "報知が阿部監督コメントを投稿",
             "報知のX投稿から記事化した。",
@@ -15,6 +15,26 @@ class PublishGatingTests(unittest.TestCase):
             "social_news",
         )
         self.assertEqual(subtype, "social")
+
+    def test_resolve_publish_gate_subtype_prefers_game_subtype_for_social_news(self):
+        subtype = rss_fetcher.resolve_publish_gate_subtype(
+            "【巨人】阪神に3-2で勝利　岡田が決勝打",
+            "巨人が阪神に3-2で勝利した。終盤に岡田悠希の決勝打が飛び出した。",
+            "試合速報",
+            "postgame",
+            "social_news",
+        )
+        self.assertEqual(subtype, "postgame")
+
+    def test_resolve_publish_gate_subtype_prefers_farm_gate_for_social_news(self):
+        subtype = rss_fetcher.resolve_publish_gate_subtype(
+            "【二軍】巨人 4-0 ハヤテ　ティマが先制本塁打",
+            "巨人二軍が4-0で勝利した。ティマが先制本塁打を放った。",
+            "ドラフト・育成",
+            "farm_lineup",
+            "social_news",
+        )
+        self.assertEqual(subtype, "farm")
 
     def test_resolve_publish_gate_subtype_routes_notice_and_recovery_stories(self):
         notice_subtype = rss_fetcher.resolve_publish_gate_subtype(

@@ -92,6 +92,21 @@ class SocialBodyTemplateTests(unittest.TestCase):
         self.assertEqual(payload["quote_count"], 2)
         self.assertEqual(payload["template_version"], rss_fetcher.SOCIAL_BODY_TEMPLATE_VERSION)
 
+    def test_social_safe_fallback_avoids_publish_quality_leak_markers(self):
+        body = rss_fetcher._build_social_safe_fallback(
+            title="阿部監督が起用方針を説明",
+            summary="スポーツ報知巨人班Xが阿部監督の起用方針を伝えた。",
+            category="首脳陣",
+            source_name="スポーツ報知巨人班X",
+            tweet_url="https://twitter.com/hochi_giants/status/1",
+            source_day_label="4月19日",
+            real_reactions=[],
+        )
+
+        for marker in rss_fetcher.PUBLISH_QUALITY_LEAK_MARKERS:
+            with self.subTest(marker=marker):
+                self.assertNotIn(marker, body)
+
 
 if __name__ == "__main__":
     unittest.main()

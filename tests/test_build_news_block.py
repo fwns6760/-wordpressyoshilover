@@ -459,8 +459,8 @@ class BuildNewsBlockTests(unittest.TestCase):
                     media_quotes=media_quotes,
                 )
 
-        self.assertLess(blocks.index("📌 関連ポスト"), blocks.index("【話題の要旨】"))
-        self.assertLess(blocks.index("【ファンの関心ポイント】"), blocks.index("💬 ファンの声（Xより）"))
+        self.assertLess(blocks.index("📌 関連ポスト"), blocks.index("【試合結果】"))
+        self.assertLess(blocks.index("【試合展開】"), blocks.index("💬 ファンの声（Xより）"))
         self.assertIn("https://twitter.com/gfan01/status/1", blocks)
 
     def test_comment_cta_is_always_rendered_three_times_without_stats(self):

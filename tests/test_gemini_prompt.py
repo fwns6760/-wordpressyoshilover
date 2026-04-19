@@ -279,6 +279,44 @@ class GeminiPromptTests(unittest.TestCase):
         self.assert_common_strict_intro(prompt)
         self.assertIn("【ファンの関心ポイント】は必ず「事実 → 解釈 → 感想」の順で流れを作る", prompt)
 
+    def test_social_news_postgame_prompt_prefers_game_structure(self):
+        prompt = rss_fetcher._build_gemini_strict_prompt(
+            title="【巨人】阪神に3-2で勝利　岡田が決勝打",
+            summary="巨人公式Xが阪神戦の3-2勝利と岡田悠希の決勝打を伝えた。田中将大投手は7回2失点だった。",
+            category="試合速報",
+            source_fact_block="・巨人が阪神に3-2で勝利\n・岡田悠希の決勝打\n・田中将大投手は7回2失点",
+            win_loss_hint="",
+            has_game=True,
+            real_reactions=[],
+            source_name="巨人公式X",
+            source_type="social_news",
+            tweet_url="https://twitter.com/TokyoGiants/status/1",
+        )
+
+        self.assertIn("【試合結果】", prompt)
+        self.assertIn("【試合展開】", prompt)
+        self.assertNotIn("【話題の要旨】", prompt)
+        self.assertNotIn("【ファンの関心ポイント】", prompt)
+
+    def test_social_news_farm_prompt_prefers_farm_structure(self):
+        prompt = rss_fetcher._build_gemini_strict_prompt(
+            title="【二軍】巨人 4-0 ハヤテ　ティマが先制本塁打",
+            summary="巨人公式Xが二軍戦の4-0勝利を伝え、ティマの先制本塁打と園田純規投手の好投を紹介した。",
+            category="ドラフト・育成",
+            source_fact_block="・巨人二軍が4-0で勝利\n・ティマが先制本塁打\n・園田純規投手が好投",
+            win_loss_hint="",
+            has_game=True,
+            real_reactions=[],
+            source_name="巨人公式X",
+            source_type="social_news",
+            tweet_url="https://twitter.com/TokyoGiants/status/2",
+        )
+
+        self.assertIn("【二軍結果・活躍の要旨】", prompt)
+        self.assertIn("【一軍への示唆】", prompt)
+        self.assertNotIn("【話題の要旨】", prompt)
+        self.assertNotIn("【ファンの関心ポイント】", prompt)
+
     def test_enhanced_player_quote_prompt_adds_anti_paraphrase_rules(self):
         with patch.dict("os.environ", {"ENABLE_ENHANCED_PROMPTS": "1"}, clear=False):
             prompt = rss_fetcher._build_gemini_strict_prompt(

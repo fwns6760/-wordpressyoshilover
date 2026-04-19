@@ -86,6 +86,24 @@ class FarmBodyTemplateTests(unittest.TestCase):
         self.assertNotIn("【試合概要】", ai_body)
         self.assertNotIn("【先発投手】", ai_body)
 
+    def test_social_news_farm_story_prefers_farm_template(self):
+        with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+            with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                _, ai_body = rss_fetcher.build_news_block(
+                    title="【二軍】巨人 4-0 ハヤテ　ティマが先制本塁打",
+                    summary="巨人公式Xが二軍戦の4-0勝利を伝え、ティマの先制本塁打と園田純規投手の好投を紹介した。",
+                    url="https://twitter.com/TokyoGiants/status/2",
+                    source_name="巨人公式X",
+                    category="ドラフト・育成",
+                    has_game=True,
+                    source_type="social_news",
+                )
+
+        self.assertIn("【二軍結果・活躍の要旨】", ai_body)
+        self.assertIn("【ファームのハイライト】", ai_body)
+        self.assertIn("【一軍への示唆】", ai_body)
+        self.assertNotIn("【話題の要旨】", ai_body)
+
     def test_farm_body_template_applied_log_payload(self):
         logger = logging.getLogger("rss_fetcher")
         with self.assertLogs("rss_fetcher", level="INFO") as cm:

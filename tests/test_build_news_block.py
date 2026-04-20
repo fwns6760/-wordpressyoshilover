@@ -1001,5 +1001,165 @@ class BuildNewsBlockTests(unittest.TestCase):
         self.assertNotIn("wp-block-image", blocks)
 
 
+    def test_live_anchor_safe_fallback_uses_anchor_structure(self):
+        body = rss_fetcher._build_game_safe_fallback(
+            "【巨人】阪神戦 3回表終了時点 2-1",
+            "3回表終了時点で巨人が阪神に2-1。岡本和真の適時打で先制し、山崎伊織が3回まで無失点で抑えている。",
+            "live_anchor",
+        )
+
+        self.assertIn("【時点】", body)
+        self.assertIn("節目", body)
+        self.assertIn("【現在スコア】", body)
+        self.assertIn("現在スコア", body)
+        self.assertIn("【ファン視点】", body)
+        self.assertIn("気になります", body)
+
+    def test_fact_notice_safe_fallback_is_cautious_and_omits_cta(self):
+        body = rss_fetcher._build_safe_article_fallback(
+            title="【訂正】巨人戦の開始時刻を修正",
+            summary="スポーツ報知が4月21日配信記事を訂正した。訂正元URLを追記した。",
+            category="球団情報",
+            has_game=False,
+            source_name="スポーツ報知",
+            tweet_url="https://example.com/correction",
+            source_day_label="4月21日",
+        )
+
+        self.assertIn("【訂正の対象】", body)
+        self.assertIn("【訂正内容】", body)
+        self.assertIn("【訂正元】", body)
+        self.assertIn("【お詫び / ファン視点】", body)
+        self.assertIn("訂正", body)
+        self.assertRegex(body, "確認中|確認できた範囲|現時点")
+        self.assertNotIn("みなさんの意見はコメントで教えてください！", body)
+
+    def test_live_anchor_cta_slots_render_inline(self):
+        ai_body = """
+【時点】
+3回表終了時点という節目で、試合の流れを整理します。
+【現在スコア】
+現在スコアは阪神戦で2-1です。
+【直近のプレー】
+岡本和真の適時打で先制した。
+【ファン視点】
+この節目のあとに次の流れがどう動くかは気になります。
+""".strip()
+
+        with patch.object(rss_fetcher, "_detect_article_subtype", return_value="live_anchor"):
+            with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+                with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=ai_body):
+                    blocks, _ = rss_fetcher.build_news_block(
+                        title="【巨人】阪神戦 3回表終了時点 2-1",
+                        summary="3回表終了時点で巨人が阪神に2-1。岡本和真の適時打で先制し、山崎伊織が3回まで無失点で抑えている。",
+                        url="https://example.com/live-anchor",
+                        source_name="スポーツ報知",
+                        category="試合速報",
+                        has_game=True,
+                    )
+
+        self.assertEqual(blocks.count('href="#respond"'), 3)
+        self.assertLess(blocks.index("【時点】"), blocks.index("このニュース、どう見る？"))
+        self.assertLess(blocks.index("このニュース、どう見る？"), blocks.index("【現在スコア】"))
+        self.assertLess(blocks.index("【ファン視点】"), blocks.index("先に予想を書く？"))
+
+    def test_fact_notice_blocks_omit_comment_cta(self):
+        with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+            with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                blocks, ai_body = rss_fetcher.build_news_block(
+                    title="【訂正】巨人戦の開始時刻を修正",
+                    summary="スポーツ報知が4月21日配信記事を訂正した。訂正元URLを追記した。",
+                    url="https://example.com/correction",
+                    source_name="スポーツ報知",
+                    category="球団情報",
+                    has_game=False,
+                )
+
+        self.assertIn("【訂正の対象】", ai_body)
+        self.assertEqual(blocks.count('href="#respond"'), 0)
+        self.assertNotIn("みなさんの意見はコメントで教えてください！", ai_body)
+
+    def test_existing_safe_fallback_outputs_remain_unchanged(self):
+        self.assertEqual(
+            rss_fetcher._build_game_safe_fallback(
+                "【巨人】雨天中止で先発予定だった田中将大は16日にスライド登板 村田善則コーチ明かす",
+                "巨人田中将大投手が雨天中止にともなってスライド登板することになった。先発予定だった15日の阪神戦（甲子園）が雨天中止となり、16日の同戦にスライドすることになった。村田善則バッテリーチーフコーチは「明日はスライドでいってもらいます」と話した。",
+                "pregame",
+            ),
+            """
+【変更情報の要旨】
+巨人田中将大投手が雨天中止にともなってスライド登板することになった。
+阪神戦 / 甲子園の試合前情報として整理します。
+【具体的な変更内容】
+先発予定だった15日の阪神戦（甲子園）が雨天中止となり、16日の同戦にスライドすることになった。
+村田善則バッテリーチーフコーチは「明日はスライドでいってもらいます」と話した。
+【この変更が意味すること】
+結果予想より先に、この変更で次の試合前をどう迎えるかがポイントです。
+変更の意味は実際の入り方にどう出るかで見えてきます。みなさんの意見はコメントで教えてください！
+""".strip(),
+        )
+        self.assertEqual(
+            rss_fetcher._build_game_safe_fallback(
+                "【巨人】阪神に3-2で勝利　岡田が決勝打",
+                "巨人が阪神に3-2で勝利した。終盤に岡田悠希の決勝打が飛び出した。田中将大投手は7回2失点だった。",
+                "postgame",
+            ),
+            """
+【試合結果】
+巨人が阪神に3-2で勝利した。
+阪神戦の勝敗とスコアを最初に押さえると、試合全体の見え方が揃います。
+【ハイライト】
+終盤に岡田悠希の決勝打が飛び出した。
+決勝打や好投など、勝敗を動かした場面を先に追うと試合の芯が見えやすくなります。
+【選手成績】
+田中将大投手は7回2失点だった。
+【試合展開】
+田中将大投手は7回2失点だった。
+次戦にどの流れを持ち込めるかまで見ていきたいです。みなさんの意見はコメントで教えてください！
+""".strip(),
+        )
+        self.assertEqual(
+            rss_fetcher._build_farm_safe_fallback(
+                "【巨人2軍】日本ハムに4-2で勝利　浅野が2安打1打点",
+                "巨人2軍が日本ハムに4-2で勝利した。浅野翔吾が2安打1打点を記録した。先発の京本眞投手は5回1失点だった。",
+            ),
+            """
+【二軍結果・活躍の要旨】
+巨人二軍の試合は4-2という結果でした。
+巨人2軍が日本ハムに4-2で勝利した。
+浅野翔吾が2安打1打点を記録した。
+【ファームのハイライト】
+先発の京本眞投手は5回1失点だった。
+ファームの結果は、一軍へ上げたい選手がどこで数字を残したかを見る材料になります。
+【二軍個別選手成績】
+巨人2軍が日本ハムに4-2で勝利した。
+浅野翔吾が2安打1打点を記録した。
+【一軍への示唆】
+二軍での内容が次の一軍候補争いにどうつながるかを見たいところです。
+次にどんな数字を積み上げるかまで追っていきたいです。みなさんの意見はコメントで教えてください！
+""".strip(),
+        )
+        self.assertEqual(
+            rss_fetcher._build_safe_article_fallback(
+                "【巨人】3回表終了時点で阪神に2-1　岡本和真が先制打",
+                "3回表終了時点で巨人が阪神に2-1。岡本和真の適時打で先制し、山崎伊織が3回まで無失点で抑えている。",
+                "試合速報",
+                True,
+            ),
+            """
+【ニュースの整理】
+まずは今のスコアと流れが動いた場面を整理します。
+3回表終了時点で巨人が阪神に2-1。
+岡本和真の適時打で先制し、山崎伊織が3回まで無失点で抑えている。
+【試合のポイント】
+途中経過では、いまのスコアより先に流れがどこで動いたかを見るのが大事です。
+岡本和真の適時打で先制し、山崎伊織が3回まで無失点で抑えている。この場面が、いまの試合の空気を左右しています。
+【次の注目】
+ここから同点・勝ち越し・継投のどこが次に動くかが見どころです。
+途中経過の記事で大事なのは、スコアそのものより流れがどこで変わったかです。ここから次にどこを見るか、コメントで教えてください！
+""".strip(),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

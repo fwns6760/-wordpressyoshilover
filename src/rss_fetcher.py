@@ -5526,6 +5526,49 @@ def _build_game_safe_fallback(
     lineup_rows: list[dict] | None = None,
     real_reactions: list[str] | None = None,
 ) -> str:
+    if article_subtype == "live_anchor":
+        facts = [fact.rstrip("。") for fact in _extract_summary_sentences(summary, max_sentences=5)]
+        if not facts:
+            facts = [_strip_title_prefix(title) or "元記事の内容を確認中です"]
+        source_text = f"{title} {summary}"
+        headings = _game_required_headings("live_anchor")
+        state_match = _re.search(r"(\d+回(?:表|裏)(?:終了)?時点|\d+回\d死時点)", source_text)
+        state_label = state_match.group(1) if state_match else ""
+        score = _extract_game_score_token(source_text)
+        opponent = _extract_game_opponent_label(source_text) or "相手"
+
+        time_lines = [headings[0]]
+        if state_label:
+            time_lines.append(f"{state_label}という節目で、試合の流れを整理します。")
+        else:
+            time_lines.append("節目の時点は元記事で確認できる範囲を整理します。")
+
+        score_lines = [headings[1]]
+        if score:
+            score_lines.append(f"現在スコアは{opponent}戦で{score}です。")
+        else:
+            score_lines.append(f"現在スコアは{opponent}戦の途中経過として確認中です。")
+
+        play_lines = [headings[2]]
+        play_facts = []
+        for fact in facts:
+            clean = fact.rstrip("。")
+            if not clean:
+                continue
+            if state_label and state_label in clean and len(facts) > 1:
+                continue
+            if score and score in clean and len(facts) > 1:
+                continue
+            play_facts.append(f"{clean}。")
+        play_lines.extend(_dedupe_preserve_order(play_facts)[:2])
+        if len(play_lines) == 1:
+            play_lines.append("その時点までの主なプレーは、元記事で確認できる範囲を押さえておきたいです。")
+
+        fan_lines = [headings[3]]
+        if real_reactions:
+            fan_lines.append("反応を見ると、この節目のあとにどこで流れが動くかを見たい空気があります。")
+        fan_lines.append("この節目のあとに次の1点や継投がどう動くかは気になります。みなさんの意見はコメントで教えてください！")
+        return "\n".join(time_lines + score_lines + play_lines + fan_lines)
     if article_subtype == "lineup":
         return _build_lineup_safe_fallback(title, summary, lineup_rows=lineup_rows, real_reactions=real_reactions)
     if article_subtype == "postgame":
@@ -5707,6 +5750,43 @@ def _build_safe_article_fallback(
     if not facts:
         title_text = _strip_title_prefix(title)
         facts = [title_text or "元記事の内容を確認中です"]
+
+    if article_subtype == "fact_notice":
+        correction_headings = ("【訂正の対象】", "【訂正内容】", "【訂正元】", "【お詫び / ファン視点】")
+        title_target = _strip_title_prefix(title)
+        title_target = _re.sub(r"^(?:訂正|誤報|取り下げ)\s*", "", title_target).strip("　 。")
+        target_line = title_target or facts[0].rstrip("。")
+        correction_lines = []
+        for fact in facts:
+            clean = fact.rstrip("。")
+            if any(marker in clean for marker in FACT_NOTICE_PRIMARY_MARKERS) or any(
+                marker in clean for marker in ("正しくは", "誤って", "修正", "訂正内容")
+            ):
+                correction_lines.append(f"{clean}。")
+        source_meta = [item for item in (source_name, source_day_label, tweet_url) if item]
+
+        paragraphs = [
+            correction_headings[0],
+            f"訂正の対象は{target_line or '元記事で確認中の内容'}です。",
+        ]
+        if facts and target_line and target_line not in facts[0]:
+            paragraphs.append(f"{facts[0].rstrip('。')}。")
+        paragraphs.append(correction_headings[1])
+        if correction_lines:
+            paragraphs.extend(_dedupe_preserve_order(correction_lines)[:2])
+        else:
+            paragraphs.append("訂正内容は確認中です。")
+        paragraphs.append(correction_headings[2])
+        if source_meta:
+            paragraphs.append(f"訂正元は{' / '.join(source_meta)}です。")
+        else:
+            paragraphs.append("訂正元は元記事で確認中です。")
+        paragraphs.append(correction_headings[3])
+        if correction_lines:
+            paragraphs.append("現時点で確認できた範囲だけを整理しました。追加の訂正があれば追記します。")
+        else:
+            paragraphs.append("訂正内容は確認中です。確認できた事実だけを短く整理します。")
+        return "\n".join(paragraphs)
 
     lead = facts[0].rstrip("。")
     detail = facts[1].rstrip("。") if len(facts) > 1 else ""
@@ -7884,6 +7964,8 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             "fans": "率直にどう思う？",
         }
 
+    cta_enabled = article_subtype != "fact_notice"  # 訂正記事で議論喚起を避けるため。
+
     def _comment_button(slot: str = "fans") -> str:
         labels = {
             "news": "このニュース、どう見る？",
@@ -8340,15 +8422,29 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     # ──────────────────────────────────────────────────────────
     if rendered_ai_body_html:
         blocks += rendered_ai_body_html
-        blocks += _comment_button("news")
-        blocks += _comment_button("next")
+        if cta_enabled:
+            blocks += _comment_button("news")
+            blocks += _comment_button("next")
     elif ai_body:
         ai_body = _re3.sub(r'\[\[\d+\]\]\([^)]+\)', '', ai_body)
         ai_body = _re3.sub(r'（\d+文字）', '', ai_body)
         first_line = ai_body.strip().split('\n')[0].strip()
+        first_line_is_structured_heading = False
+        if body_category == "首脳陣" and article_subtype == "manager":
+            first_line_is_structured_heading = first_line in MANAGER_REQUIRED_HEADINGS
+        elif body_category == "試合速報" and _is_game_template_subtype(article_subtype):
+            first_line_is_structured_heading = first_line in _game_required_headings(article_subtype)
+        elif body_category == "ドラフト・育成" and _is_farm_template_subtype(article_subtype):
+            first_line_is_structured_heading = first_line in _farm_required_headings(article_subtype)
+        elif notice_story:
+            first_line_is_structured_heading = first_line in NOTICE_REQUIRED_HEADINGS
+        elif recovery_story:
+            first_line_is_structured_heading = first_line in RECOVERY_REQUIRED_HEADINGS
+        elif body_subtype == "social_news":
+            first_line_is_structured_heading = first_line in SOCIAL_REQUIRED_HEADINGS
         clean_title = _re3.sub(r'[【】\s]', '', title)
         clean_first = _re3.sub(r'[【】\s]', '', first_line)
-        if clean_title and clean_first and (clean_title in clean_first or clean_first in clean_title):
+        if not first_line_is_structured_heading and clean_title and clean_first and (clean_title in clean_first or clean_first in clean_title):
             ai_body = '\n'.join(ai_body.strip().split('\n')[1:]).strip()
         ai_body = _re3.sub(r'.*ファンの声.*\n?', '', ai_body)
         ai_body = _re3.sub(r'.*Xより.*\n?', '', ai_body)
@@ -8418,6 +8514,8 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             game_slot_map = {}
             if article_subtype == "lineup":
                 game_slot_map = {"【試合概要】": "news", "【注目ポイント】": "next"}
+            elif article_subtype == "live_anchor":
+                game_slot_map = {"【時点】": "news", "【ファン視点】": "next"}
             elif article_subtype == "postgame":
                 game_slot_map = {"【試合結果】": "news", "【試合展開】": "next"}
             elif article_subtype == "pregame":
@@ -8441,7 +8539,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 **farm_slot_map,
                 **social_slot_map,
             }.get(current_heading)
-            if section_slot:
+            if cta_enabled and section_slot:
                 blocks += _comment_button(section_slot)
                 rendered_cta_slots.add(section_slot)
             current_paragraphs = []
@@ -8460,9 +8558,9 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 current_paragraphs.append(p)
 
         _flush_section()
-        if "news" not in rendered_cta_slots:
+        if cta_enabled and "news" not in rendered_cta_slots:
             blocks += _comment_button("news")
-        if "next" not in rendered_cta_slots:
+        if cta_enabled and "next" not in rendered_cta_slots:
             blocks += _comment_button("next")
     related_posts = _find_related_posts_for_article(
         title=title,
@@ -8547,7 +8645,8 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
 
     if not followup_section_rendered:
         blocks += _sep()
-    blocks += _comment_button("fans")
+    if cta_enabled:
+        blocks += _comment_button("fans")
 
     # ⑥ 出典
     blocks += _sep()

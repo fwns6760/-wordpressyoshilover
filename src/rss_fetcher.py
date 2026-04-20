@@ -3273,6 +3273,47 @@ def _build_notice_strict_prompt(title: str, summary: str, source_day_label: str 
 """
 
 
+def _build_fact_notice_strict_prompt(
+    title: str,
+    summary: str,
+    source_fact_block: str,
+    source_day_label: str = "",
+    source_name: str = "",
+    tweet_url: str = "",
+) -> str:
+    source_meta = []
+    if source_name:
+        source_meta.append(source_name)
+    if source_day_label:
+        source_meta.append(source_day_label)
+    if tweet_url:
+        source_meta.append(tweet_url)
+    source_reference = " / ".join(source_meta) if source_meta else "source に明示された媒体名・日付・URL などの出典情報"
+    return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
+以下の『使ってよい事実』に書かれた訂正情報だけを使って、短い訂正記事の本文を書いてください。
+source にない訂正理由、経緯、評価、一般論、推測は足さないでください。
+
+【使ってよい事実】
+{source_fact_block}
+
+【厳守ルール】
+・ですます調
+・見出しは【訂正の対象】【訂正内容】【訂正元】【お詫び / ファン視点】の4つをこの順番で使う
+{NON_LINEUP_STARMEN_PROMPT_GUARD}
+・本文は次の4要素をこの順で満たす: 1. 訂正の対象 2. 訂正内容 3. 訂正元 4. ファン視点1文
+・本文は 200〜400 文字に収める(訂正記事は短く)
+・【訂正の対象】では、何の記事 / 何の事実に対する訂正かを source にある範囲で短く固定する
+・【訂正内容】では、元の誤り → 正しい事実を source に明示された表現だけで整理する。元の誤った内容を詳細に書き直さない
+・【訂正元】では、訂正元の媒体名と日付を明示する。URL があれば残す
+・【訂正元】では、{source_reference} を優先し、一次情報を核にする。X 単独情報だけで断定しない
+・訂正対象以外のトピックに拡張しない。元記事の事実関係の再解説はしない
+・推測で補完しない。source にある訂正事実だけを使う
+・断定語(『絶対』『必ず』等)は使わない
+・ファン視点は最後の1文だけ、中立または短いお詫びに留める。コメント参加を促す定型句は fact_notice では強要しない(訂正記事で議論喚起すると混乱を招く)
+・HTMLタグなし、本文だけを出力する
+"""
+
+
 def _social_background_focus_line(category: str) -> str:
     if category == "試合速報":
         return "試合の流れ、スタメン、先発、スコアのうち、source にある試合文脈だけを整理する"
@@ -4242,6 +4283,15 @@ def _build_gemini_strict_prompt(
     first_heading, second_heading, third_heading = _article_section_headings(category, category == "試合速報")
     article_subtype = _detect_article_subtype(title, summary, category, has_game)
     player_mode = _detect_player_article_mode(title, summary, category) if category == "選手情報" else ""
+    if article_subtype == "fact_notice":
+        return _build_fact_notice_strict_prompt(
+            title,
+            summary,
+            source_fact_block,
+            source_day_label=source_day_label,
+            source_name=source_name,
+            tweet_url=tweet_url,
+        )
     if source_type == "social_news" and not _social_source_prefers_structured_template(category, article_subtype):
         return _build_social_strict_prompt(
             title,

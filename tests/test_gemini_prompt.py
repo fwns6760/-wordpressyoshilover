@@ -221,6 +221,36 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("ファン視点は最後の1文だけにする。", prompt)
         self.assertIn("タイトル先頭や見出しで「巨人スタメン」を使わない。", prompt)
 
+    def test_fact_notice_prompt_uses_correction_structure(self):
+        prompt = rss_fetcher._build_gemini_strict_prompt(
+            title="【訂正】巨人戦の開始時刻を修正",
+            summary="スポーツ報知が4月21日配信記事の開始時刻表記を訂正した。誤って18時30分としていたが、正しくは18時00分。訂正記事のURLを追記した。",
+            category="球団情報",
+            source_fact_block="・4月21日配信記事の開始時刻表記を訂正\n・誤って18時30分としていたが、正しくは18時00分\n・訂正元はスポーツ報知、4月21日\n・URLは https://example.com/correction",
+            win_loss_hint="",
+            has_game=False,
+            real_reactions=[],
+            source_name="スポーツ報知",
+            source_type="social_news",
+            tweet_url="https://example.com/correction",
+            source_day_label="4月21日",
+        )
+
+        self.assertIn("【訂正の対象】", prompt)
+        self.assertIn("【訂正内容】", prompt)
+        self.assertIn("【訂正元】", prompt)
+        self.assertIn("【お詫び / ファン視点】", prompt)
+        self.assertIn("本文は次の4要素をこの順で満たす: 1. 訂正の対象 2. 訂正内容 3. 訂正元 4. ファン視点1文", prompt)
+        self.assertIn("本文は 200〜400 文字に収める(訂正記事は短く)", prompt)
+        self.assertIn("訂正対象以外のトピックに拡張しない。元記事の事実関係の再解説はしない", prompt)
+        self.assertIn("訂正元の媒体名と日付を明示する。URL があれば残す", prompt)
+        self.assertIn("推測で補完しない。source にある訂正事実だけを使う", prompt)
+        self.assertIn("断定語(『絶対』『必ず』等)は使わない", prompt)
+        self.assertIn("fact_notice では強要しない", prompt)
+        self.assertIn("タイトル先頭や見出しで「巨人スタメン」を使わない。", prompt)
+        self.assertNotIn("みなさんの意見はコメントで教えてください！", prompt)
+        self.assertNotIn("【話題の要旨】", prompt)
+
     def test_game_prompt_intro_allows_only_single_closing_fan_view(self):
         cases = [
             {

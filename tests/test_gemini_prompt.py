@@ -274,7 +274,13 @@ class GeminiPromptTests(unittest.TestCase):
         self.assert_common_strict_intro(prompt)
         self.assertIn("【一軍への示唆】は必ず「事実 → 解釈 → 感想」の順で流れを作る", prompt)
         self.assertIn("source にあるスコア 4-1 を必ず残してください。", prompt)
+        self.assertIn("本文は次の4要素をこの順で満たす: 1. 対象選手 / 対象試合 2. 事実核 3. 文脈 4. ファン視点1文", prompt)
+        self.assertIn("対象選手か対象試合のどちらを軸にする記事かを最初に固定", prompt)
+        self.assertIn("昇格・降格・復帰・試合結果などの事実核", prompt)
+        self.assertIn("source にある文脈を1〜2文で補う。数字は source にあるものだけ。二軍成績を推測で書かない", prompt)
+        self.assertIn("一軍の文脈を勝手に展開しない。一軍情報は source にあり、かつ二軍の出来事と直接関係する時のみ1文以内で触れる", prompt)
         self.assertIn("一軍記事と混同しないよう、「二軍」「ファーム」の文脈を明確にする", prompt)
+        self.assertIn("ファン視点は最後の1文だけにする。", prompt)
         self.assertIn("タイトル先頭や見出しで「巨人スタメン」を使わない。", prompt)
 
     def test_farm_lineup_prompt_uses_second_team_lineup_structure(self):

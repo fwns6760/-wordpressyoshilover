@@ -250,6 +250,11 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("ですます調、350〜650文字", prompt)
         self.assertIn("4月16日時点の情報であることが伝わるように書く", prompt)
         self.assertIn("タイトル先頭や見出しで「巨人スタメン」を使わない。", prompt)
+        self.assertIn("本文は次の5要素をこの順で満たす: 1. 先発予告 2. スタメン / 打順ステータス 3. 対戦相手ざっくり 4. 注目点1〜2 5. ファン視点1文", prompt)
+        self.assertIn("source に無い場合は「先発は公式発表待ち」とし、推測で投手名を書かない", prompt)
+        self.assertIn("打順リストやスタメン本体は pregame 本文に展開しない", prompt)
+        self.assertIn("X 単独の情報で先発やスタメンを断定しない。", prompt)
+        self.assertIn("ファン視点は最後の1文だけにする。", prompt)
 
     def test_farm_prompt_uses_second_team_specific_structure(self):
         prompt = rss_fetcher._build_gemini_strict_prompt(

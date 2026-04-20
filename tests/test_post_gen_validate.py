@@ -82,7 +82,6 @@ class PostGenValidateTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertIn("close_marker", result["fail_axes"])
 
-
     def test_post_gen_validate_rejects_live_update_lineup_structure(self):
         text = "\n".join(
             [
@@ -114,39 +113,178 @@ class PostGenValidateTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["fail_axes"], [])
 
-    def test_post_gen_validate_rejects_live_update_title_prefix(self):
-        text = "\n".join(
-            [
-                "【いま起きていること】",
-                "7回表は巨人が3-2でリードしています。",
-                "【流れが動いた場面】",
-                "6回に同点を許したあと、7回に勝ち越しました。",
-                "【次にどこを見るか】",
-                "次の継投で流れがどう動くか、みなさんの意見はコメントで教えてください！",
-            ]
-        )
-        result = rss_fetcher._evaluate_post_gen_validate(
-            text,
-            article_subtype="live_update",
-            title="巨人スタメン 7回表 3-2 途中経過",
-        )
-        self.assertFalse(result["ok"])
-        self.assertIn("live_update_title_prefix", result["fail_axes"])
+    def test_post_gen_validate_rejects_starmen_title_prefix_for_non_lineup_subtypes(self):
+        cases = [
+            (
+                "pregame",
+                "巨人スタメン 雨天中止で先発変更をどう見るか",
+                "\n".join(
+                    [
+                        "【変更情報の要旨】",
+                        "雨天中止で先発変更になった。",
+                        "【具体的な変更内容】",
+                        "先発が翌日にスライドした。",
+                        "【この変更が意味すること】",
+                        "入り方がどう変わるか、みなさんの意見はコメントで教えてください！",
+                    ]
+                ),
+            ),
+            (
+                "postgame",
+                "【巨人スタメン】阪神に3-2で勝利",
+                "\n".join(
+                    [
+                        "【試合結果】",
+                        "巨人が3-2で勝った。",
+                        "【ハイライト】",
+                        "終盤の決勝打が出た。",
+                        "【選手成績】",
+                        "先発が7回2失点だった。",
+                        "【試合展開】",
+                        "継投の切り替えがどう響いたか、みなさんの意見はコメントで教えてください！",
+                    ]
+                ),
+            ),
+            (
+                "farm",
+                "巨人スタメン 二軍4-1勝利をどう見るか",
+                "\n".join(
+                    [
+                        "【二軍結果・活躍の要旨】",
+                        "巨人二軍が4-1で勝った。",
+                        "【ファームのハイライト】",
+                        "ティマが2安打3打点だった。",
+                        "【二軍個別選手成績】",
+                        "先発は3回1失点だった。",
+                        "【一軍への示唆】",
+                        "次の昇格争いがどう動くか、みなさんの意見はコメントで教えてください！",
+                    ]
+                ),
+            ),
+            (
+                "live_update",
+                "巨人スタメン 7回表 3-2 途中経過",
+                "\n".join(
+                    [
+                        "【いま起きていること】",
+                        "7回表は巨人が3-2でリードしています。",
+                        "【流れが動いた場面】",
+                        "6回に同点を許したあと、7回に勝ち越しました。",
+                        "【次にどこを見るか】",
+                        "次の継投で流れがどう動くか、みなさんの意見はコメントで教えてください！",
+                    ]
+                ),
+            ),
+        ]
 
-    def test_post_gen_validate_rejects_live_update_h2_heading_prefix(self):
-        text = "\n".join(
-            [
-                "<h2>巨人スタメン 7回表 3-2</h2>",
-                "7回表は巨人が3-2でリードしています。",
-                "<h2>流れが動いた場面</h2>",
-                "6回に同点を許したあと、7回に勝ち越しました。",
-                "<h2>次にどこを見るか</h2>",
-                "次の継投で流れがどう動くか、みなさんの意見はコメントで教えてください！",
-            ]
-        )
-        result = rss_fetcher._evaluate_post_gen_validate(text, article_subtype="live_update")
-        self.assertFalse(result["ok"])
-        self.assertIn("live_update_heading_prefix", result["fail_axes"])
+        for article_subtype, title, text in cases:
+            with self.subTest(article_subtype=article_subtype):
+                result = rss_fetcher._evaluate_post_gen_validate(text, article_subtype=article_subtype, title=title)
+                self.assertFalse(result["ok"])
+                self.assertIn("starmen_title_prefix", result["fail_axes"])
+                self.assertEqual(result["stop_reason"], "starmen_prefix_guard")
+
+    def test_post_gen_validate_rejects_starmen_h2_heading_prefix_for_non_lineup_subtypes(self):
+        cases = [
+            (
+                "pregame",
+                "\n".join(
+                    [
+                        "<h2>巨人スタメン 雨天中止で先発変更</h2>",
+                        "変更点を整理する。",
+                        "<h2>具体的な変更内容</h2>",
+                        "先発が翌日にスライドした。",
+                        "<h2>この変更が意味すること</h2>",
+                        "入り方がどう変わるか、みなさんの意見はコメントで教えてください！",
+                    ]
+                ),
+            ),
+            (
+                "postgame",
+                "\n".join(
+                    [
+                        "<h2>巨人スタメン 阪神に3-2で勝利</h2>",
+                        "勝敗とスコアを整理する。",
+                        "<h2>ハイライト</h2>",
+                        "終盤の決勝打が出た。",
+                        "<h2>選手成績</h2>",
+                        "先発が7回2失点だった。",
+                        "<h2>試合展開</h2>",
+                        "継投の切り替えがどう響いたか、みなさんの意見はコメントで教えてください！",
+                    ]
+                ),
+            ),
+            (
+                "farm",
+                "\n".join(
+                    [
+                        "<h2>巨人スタメン 二軍4-1勝利</h2>",
+                        "結果を整理する。",
+                        "<h2>ファームのハイライト</h2>",
+                        "ティマが2安打3打点だった。",
+                        "<h2>二軍個別選手成績</h2>",
+                        "先発は3回1失点だった。",
+                        "<h2>一軍への示唆</h2>",
+                        "次の昇格争いがどう動くか、みなさんの意見はコメントで教えてください！",
+                    ]
+                ),
+            ),
+            (
+                "live_update",
+                "\n".join(
+                    [
+                        "<h2>巨人スタメン 7回表 3-2</h2>",
+                        "7回表は巨人が3-2でリードしています。",
+                        "<h2>流れが動いた場面</h2>",
+                        "6回に同点を許したあと、7回に勝ち越しました。",
+                        "<h2>次にどこを見るか</h2>",
+                        "次の継投で流れがどう動くか、みなさんの意見はコメントで教えてください！",
+                    ]
+                ),
+            ),
+        ]
+
+        for article_subtype, text in cases:
+            with self.subTest(article_subtype=article_subtype):
+                result = rss_fetcher._evaluate_post_gen_validate(text, article_subtype=article_subtype)
+                self.assertFalse(result["ok"])
+                self.assertIn("starmen_heading_prefix", result["fail_axes"])
+                self.assertEqual(result["stop_reason"], "starmen_prefix_guard")
+
+    def test_post_gen_validate_allows_starmen_prefix_for_lineup_and_farm_lineup(self):
+        cases = [
+            (
+                "lineup",
+                "巨人スタメン 1番丸 4番岡本",
+                "\n".join(
+                    [
+                        "<h2>巨人スタメン 1番丸 4番岡本</h2>",
+                        "並びの確認です。",
+                        "【注目ポイント】",
+                        "試合が始まって最初にどこを見るかまで、みなさんの意見はコメントで教えてください！",
+                    ]
+                ),
+            ),
+            (
+                "farm_lineup",
+                "巨人スタメン 二軍 1番浅野 4番ティマ",
+                "\n".join(
+                    [
+                        "<h2>巨人スタメン 二軍 1番浅野 4番ティマ</h2>",
+                        "二軍の並びを整理します。",
+                        "【注目選手】",
+                        "若手がどう見せるかは見たいところです。みなさんの意見はコメントで教えてください！",
+                    ]
+                ),
+            ),
+        ]
+
+        for article_subtype, title, text in cases:
+            with self.subTest(article_subtype=article_subtype):
+                result = rss_fetcher._evaluate_post_gen_validate(text, article_subtype=article_subtype, title=title)
+                self.assertTrue(result["ok"])
+                self.assertEqual(result["fail_axes"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

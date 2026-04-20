@@ -54,7 +54,7 @@ class LiveUpdateTemplateTests(unittest.TestCase):
             "・7回表 巨人3-2阪神\n・4番手の投手が継投に入った",
         )
         self.assertIn("1番〜9番を並べた一覧", prompt)
-        self.assertIn("巨人スタメン", prompt)
+        self.assertIn("タイトル先頭や見出しで「巨人スタメン」を使わない。", prompt)
         self.assertIn("「打順」「スタメン」「先発メンバー」を section heading にしない", prompt)
 
     def test_pregame_strict_prompt_still_uses_pregame_headings(self):
@@ -68,6 +68,7 @@ class LiveUpdateTemplateTests(unittest.TestCase):
             self.assertIn(heading, prompt)
         for heading in LIVE_UPDATE_HEADINGS:
             self.assertNotIn(heading, prompt)
+        self.assertIn("タイトル先頭や見出しで「巨人スタメン」を使わない。", prompt)
 
 
 if __name__ == "__main__":

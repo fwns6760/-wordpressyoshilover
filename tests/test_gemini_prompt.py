@@ -113,6 +113,7 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("本文の最初は必ず「（4月16日時点）」で始めてください。", prompt)
         self.assertIn("選手名は見出し以外の本文にも必ず明記してください。", prompt)
         self.assertIn("公示の日付・区分", prompt)
+        self.assertIn("タイトル先頭や見出しで「巨人スタメン」を使わない。", prompt)
 
     def test_recovery_prompt_uses_injury_structure(self):
         prompt = rss_fetcher._build_gemini_strict_prompt(
@@ -174,6 +175,7 @@ class GeminiPromptTests(unittest.TestCase):
         self.assert_common_strict_intro(prompt)
         self.assertIn("【注目ポイント】は必ず「事実 → 解釈 → 感想」の順で流れを作る", prompt)
         self.assertIn("選手名、球場名、開始時刻、打順、成績数字は source にある表記をそのまま残す", prompt)
+        self.assertNotIn("タイトル先頭や見出しで「巨人スタメン」を使わない。", prompt)
 
     def test_postgame_prompt_uses_game_specific_structure(self):
         prompt = rss_fetcher._build_gemini_strict_prompt(
@@ -193,6 +195,7 @@ class GeminiPromptTests(unittest.TestCase):
         self.assert_common_strict_intro(prompt)
         self.assertIn("【試合展開】は必ず「事実 → 解釈 → 感想」の順で流れを作る", prompt)
         self.assertIn("source にあるスコア 3-2 を必ず残してください。", prompt)
+        self.assertIn("タイトル先頭や見出しで「巨人スタメン」を使わない。", prompt)
 
     def test_game_prompt_intro_allows_only_single_closing_fan_view(self):
         cases = [
@@ -243,6 +246,7 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("【この変更が意味すること】は必ず「事実 → 解釈 → 感想」の順で流れを作る", prompt)
         self.assertIn("ですます調、350〜650文字", prompt)
         self.assertIn("4月16日時点の情報であることが伝わるように書く", prompt)
+        self.assertIn("タイトル先頭や見出しで「巨人スタメン」を使わない。", prompt)
 
     def test_farm_prompt_uses_second_team_specific_structure(self):
         prompt = rss_fetcher._build_gemini_strict_prompt(
@@ -263,6 +267,7 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("【一軍への示唆】は必ず「事実 → 解釈 → 感想」の順で流れを作る", prompt)
         self.assertIn("source にあるスコア 4-1 を必ず残してください。", prompt)
         self.assertIn("一軍記事と混同しないよう、「二軍」「ファーム」の文脈を明確にする", prompt)
+        self.assertIn("タイトル先頭や見出しで「巨人スタメン」を使わない。", prompt)
 
     def test_farm_lineup_prompt_uses_second_team_lineup_structure(self):
         prompt = rss_fetcher._build_gemini_strict_prompt(
@@ -282,6 +287,7 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("【注目選手】は必ず「事実 → 解釈 → 感想」の順で流れを作る", prompt)
         self.assertIn("一軍記事のような書き方をしない。二軍戦の並びであることを明確に書く", prompt)
         self.assertIn("数字、打順、選手名、球場名は source にある表記をそのまま残す", prompt)
+        self.assertNotIn("タイトル先頭や見出しで「巨人スタメン」を使わない。", prompt)
 
     def test_social_news_prompt_uses_social_specific_structure(self):
         prompt = rss_fetcher._build_gemini_strict_prompt(

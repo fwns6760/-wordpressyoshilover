@@ -147,6 +147,19 @@ PUBLISH_QUALITY_LEAK_MARKERS = (
 )
 LIVE_UPDATE_LINEUP_TITLE_PREFIX = "巨人スタメン"
 LIVE_UPDATE_LINEUP_HEADING_KEYWORDS = ("打順", "スタメン", "先発メンバー")
+NON_LINEUP_STARMEN_GUARD_SUBTYPES = {
+    "pregame",
+    "postgame",
+    "farm",
+    "live_update",
+    "live_anchor",
+    "fact_notice",
+    "player_notice",
+}
+NON_LINEUP_STARMEN_PROMPT_GUARD = (
+    f"・タイトル先頭や見出しで「{LIVE_UPDATE_LINEUP_TITLE_PREFIX}」を使わない。"
+    "「打順」「スタメン」「先発メンバー」を section heading にしない"
+)
 PROMPT_ROLE_ECHO_PREFIXES = (
     "あなたは読売ジャイアンツ専門ブログの編集者です。",
     "読売ジャイアンツ専門ブログの編集者です。",
@@ -3220,6 +3233,7 @@ def _build_notice_strict_prompt(title: str, summary: str, source_day_label: str 
 事実にない数字・比較・推測を足さないでください。
 同じ事実を繰り返さないでください。
 筆者の感想や精神論は書かないでください。
+{NON_LINEUP_STARMEN_PROMPT_GUARD}
 最後は読者視点の締め1〜2文で終え、「みなさんの意見はコメントで教えてください！」を入れてください。
 {enhanced_rules}\
 本文だけを出力してください。
@@ -3617,6 +3631,11 @@ def _notice_has_numeric_record(text: str) -> bool:
     return any(marker in body for marker in NOTICE_RECORD_MARKERS) or bool(_re.search(r"(?:\.\d{3}|防御率\d+\.\d+|\d+試合|\d+打点|\d+本塁打)", body))
 
 
+def _starts_with_starmen_prefix(text: str) -> bool:
+    clean = _collapse_ws(_strip_html(text or ""))
+    return bool(_re.search(rf"^[\s\u3000【\[\(（「『]*{_re.escape(LIVE_UPDATE_LINEUP_TITLE_PREFIX)}", clean))
+
+
 def _build_game_strict_prompt(
     title: str,
     summary: str,
@@ -3675,6 +3694,7 @@ def _build_game_strict_prompt(
 【厳守ルール】
 ・ですます調、400〜800文字
 ・見出しは「{headings[0]}」「{headings[1]}」「{headings[2]}」「{headings[3]}」の4つをこの順番で使う
+{NON_LINEUP_STARMEN_PROMPT_GUARD}
 ・{score_rule}
 ・【試合結果】では勝敗とスコアを先に整理する
 ・【ハイライト】では決勝打、好投、守備など source にある決め手だけを書く
@@ -3704,7 +3724,7 @@ def _build_game_strict_prompt(
 ・【流れが動いた場面】では、イニングごとの実況を時系列にだらだら並べない。source にある同点・勝ち越し・逆転・継投・満塁・3者凡退など、流れが動いた瞬間を1つか2つに絞って書く
 ・【次にどこを見るか】では、結果予想ではなく、このあとどの回・どの打順・どの投手継投に注目するかを source にある事実だけで1〜2文で書く
 ・スタメン発表記事に切り替えない。1番〜9番を並べた一覧、打順表、表組み、箇条書きは禁止
-・見出しで「{LIVE_UPDATE_LINEUP_TITLE_PREFIX}」を使わない。「打順」「スタメン」「先発メンバー」を section heading にしない
+{NON_LINEUP_STARMEN_PROMPT_GUARD}
 {_chain_of_reasoning_prompt_rules("【次にどこを見るか】", "いまのスコアと流れから次の見どころ")}・選手名、回、スコア、継投の表記は source のまま残す。source にない数字や選手名、比較、一般論は足さない
 ・最後は読者視点の締め1〜2文で終え、「みなさんの意見はコメントで教えてください！」を入れる
 ・HTMLタグなし、本文だけを出力する
@@ -3720,6 +3740,7 @@ def _build_game_strict_prompt(
 【厳守ルール】
 ・ですます調、350〜650文字
 ・見出しは「{headings[0]}」「{headings[1]}」「{headings[2]}」の3つをこの順番で使う
+{NON_LINEUP_STARMEN_PROMPT_GUARD}
 ・【変更情報の要旨】では、中止、スライド登板、先発変更などの要点を最初に整理する
 ・【具体的な変更内容】では、日付、球場、開始時刻、先発投手、引用など source にある変更点を順に整理する
 ・【この変更が意味すること】では、結果予想はせず、次にどこを見るかだけを1〜2文で書く
@@ -3778,6 +3799,7 @@ def _build_farm_strict_prompt(
 【厳守ルール】
 ・ですます調、380〜620文字
 ・見出しは「{headings[0]}」「{headings[1]}」「{headings[2]}」「{headings[3]}」の4つをこの順番で使う
+{NON_LINEUP_STARMEN_PROMPT_GUARD}
 ・{score_rule}
 ・【二軍結果・活躍の要旨】では、二軍試合の結果か選手活躍の要点を最初に整理する
 ・【ファームのハイライト】では、得点、好投、長打、降雨コールドなど source にある試合の動きだけを書く
@@ -6025,7 +6047,8 @@ def _evaluate_post_gen_validate(text: str, article_subtype: str = "", title: str
     if article_subtype != "lineup" and not any(marker in final_section_text for marker in POST_GEN_CLOSE_MARKERS):
         _append_fail_axis("close_marker")
 
-    if article_subtype == "live_update":
+    normalized_headings: list[str] = []
+    if article_subtype in NON_LINEUP_STARMEN_GUARD_SUBTYPES or article_subtype == "live_update":
         heading_candidates = [heading for heading, _body in sections if heading]
         heading_candidates.extend(
             match
@@ -6037,10 +6060,14 @@ def _evaluate_post_gen_validate(text: str, article_subtype: str = "", title: str
             for heading in heading_candidates
             if heading and _collapse_ws(_strip_html(heading))
         ]
-        if LIVE_UPDATE_LINEUP_TITLE_PREFIX in title_text:
-            _append_fail_axis("live_update_title_prefix")
-        if any(LIVE_UPDATE_LINEUP_TITLE_PREFIX in heading for heading in normalized_headings):
-            _append_fail_axis("live_update_heading_prefix")
+
+    if article_subtype in NON_LINEUP_STARMEN_GUARD_SUBTYPES:
+        if _starts_with_starmen_prefix(title_text):
+            _append_fail_axis("starmen_title_prefix")
+        if any(_starts_with_starmen_prefix(heading) for heading in normalized_headings):
+            _append_fail_axis("starmen_heading_prefix")
+
+    if article_subtype == "live_update":
         if any(any(keyword in heading for keyword in LIVE_UPDATE_LINEUP_HEADING_KEYWORDS) for heading in normalized_headings):
             _append_fail_axis("live_update_lineup_heading")
         batting_order_markers = {match.group(0) for match in _re.finditer(r"[1-9１-９]番", clean_text)}
@@ -6049,7 +6076,9 @@ def _evaluate_post_gen_validate(text: str, article_subtype: str = "", title: str
             _append_fail_axis("live_update_lineup_structure")
 
     stop_reason = ""
-    if any(axis.startswith("live_update_") for axis in fail_axes):
+    if any(axis.startswith("starmen_") for axis in fail_axes):
+        stop_reason = "starmen_prefix_guard"
+    elif any(axis.startswith("live_update_") for axis in fail_axes):
         stop_reason = "live_update_lineup_guard"
     elif fail_axes:
         stop_reason = fail_axes[0]

@@ -145,6 +145,8 @@ PUBLISH_QUALITY_LEAK_MARKERS = (
     "試合前後の流れ、スタメン、先発、スコアなど",
     "どうつながるかが見どころです",
 )
+LIVE_UPDATE_LINEUP_TITLE_PREFIX = "巨人スタメン"
+LIVE_UPDATE_LINEUP_HEADING_KEYWORDS = ("打順", "スタメン", "先発メンバー")
 PROMPT_ROLE_ECHO_PREFIXES = (
     "あなたは読売ジャイアンツ専門ブログの編集者です。",
     "読売ジャイアンツ専門ブログの編集者です。",
@@ -2413,6 +2415,43 @@ def _is_thin_source_fact_block(source_type: str, source_fact_block_length: int) 
     return source_fact_block_length < _thin_source_fact_block_min_chars(source_type)
 
 
+def _should_skip_thin_source_fact_block(
+    *,
+    draft_only: bool,
+    source_type: str,
+    source_fact_block_length: int,
+) -> bool:
+    return (not draft_only) and _is_thin_source_fact_block(source_type, source_fact_block_length)
+
+
+def _log_draft_observed_thin_source(
+    logger: logging.Logger,
+    *,
+    title: str,
+    post_url: str,
+    category: str,
+    article_subtype: str,
+    source_type: str,
+    source_fact_block_length: int,
+    min_chars: int,
+) -> None:
+    logger.info(
+        json.dumps(
+            {
+                "event": "draft_only_thin_source_allowed",
+                "title": title,
+                "post_url": post_url,
+                "category": category,
+                "article_subtype": article_subtype,
+                "source_type": source_type,
+                "source_fact_block_length": source_fact_block_length,
+                "min_chars": min_chars,
+            },
+            ensure_ascii=False,
+        )
+    )
+
+
 def _source_mentions_outcome_terms(title: str, summary: str) -> bool:
     source_text = _strip_html(f"{title} {summary}")
     return bool(SCORE_TOKEN_RE.search(source_text) or any(word in source_text for word in NON_GAME_RESULT_WORDS))
@@ -3664,6 +3703,8 @@ def _build_game_strict_prompt(
 ・【いま起きていること】では、現在のイニングとスコアを先に置き、source にある継投・打順・塁状況など「いまの状況」を1〜3文で整理する
 ・【流れが動いた場面】では、イニングごとの実況を時系列にだらだら並べない。source にある同点・勝ち越し・逆転・継投・満塁・3者凡退など、流れが動いた瞬間を1つか2つに絞って書く
 ・【次にどこを見るか】では、結果予想ではなく、このあとどの回・どの打順・どの投手継投に注目するかを source にある事実だけで1〜2文で書く
+・スタメン発表記事に切り替えない。1番〜9番を並べた一覧、打順表、表組み、箇条書きは禁止
+・見出しで「{LIVE_UPDATE_LINEUP_TITLE_PREFIX}」を使わない。「打順」「スタメン」「先発メンバー」を section heading にしない
 {_chain_of_reasoning_prompt_rules("【次にどこを見るか】", "いまのスコアと流れから次の見どころ")}・選手名、回、スコア、継投の表記は source のまま残す。source にない数字や選手名、比較、一般論は足さない
 ・最後は読者視点の締め1〜2文で終え、「みなさんの意見はコメントで教えてください！」を入れる
 ・HTMLタグなし、本文だけを出力する
@@ -5966,22 +6007,59 @@ def _split_text_sections(text: str) -> list[tuple[str, str]]:
     return sections
 
 
-def _evaluate_post_gen_validate(text: str, article_subtype: str = "") -> dict[str, object]:
-    clean_text = _collapse_ws(_strip_html(text or ""))
+def _evaluate_post_gen_validate(text: str, article_subtype: str = "", title: str = "") -> dict[str, object]:
+    raw_text = text or ""
+    clean_text = _collapse_ws(_strip_html(raw_text))
+    title_text = _collapse_ws(_strip_html(title or ""))
     fail_axes: list[str] = []
+
+    def _append_fail_axis(axis: str) -> None:
+        if axis not in fail_axes:
+            fail_axes.append(axis)
+
     if any(clean_text.startswith(prefix) for prefix in POST_GEN_INTRO_ECHO_PREFIXES):
-        fail_axes.append("intro_echo")
+        _append_fail_axis("intro_echo")
 
     sections = _split_text_sections(text)
     final_section_text = sections[-1][1] if sections else clean_text
     if article_subtype != "lineup" and not any(marker in final_section_text for marker in POST_GEN_CLOSE_MARKERS):
-        fail_axes.append("close_marker")
+        _append_fail_axis("close_marker")
+
+    if article_subtype == "live_update":
+        heading_candidates = [heading for heading, _body in sections if heading]
+        heading_candidates.extend(
+            match
+            for match in _re.findall(r"<h[23][^>]*>(.*?)</h[23]>", raw_text, flags=_re.IGNORECASE | _re.DOTALL)
+            if match
+        )
+        normalized_headings = [
+            _collapse_ws(_strip_html(heading)).strip("【】")
+            for heading in heading_candidates
+            if heading and _collapse_ws(_strip_html(heading))
+        ]
+        if LIVE_UPDATE_LINEUP_TITLE_PREFIX in title_text:
+            _append_fail_axis("live_update_title_prefix")
+        if any(LIVE_UPDATE_LINEUP_TITLE_PREFIX in heading for heading in normalized_headings):
+            _append_fail_axis("live_update_heading_prefix")
+        if any(any(keyword in heading for keyword in LIVE_UPDATE_LINEUP_HEADING_KEYWORDS) for heading in normalized_headings):
+            _append_fail_axis("live_update_lineup_heading")
+        batting_order_markers = {match.group(0) for match in _re.finditer(r"[1-9１-９]番", clean_text)}
+        has_lineup_table = "<table" in raw_text.lower() and any(keyword in clean_text for keyword in LIVE_UPDATE_LINEUP_HEADING_KEYWORDS)
+        if has_lineup_table or len(batting_order_markers) >= 4:
+            _append_fail_axis("live_update_lineup_structure")
+
+    stop_reason = ""
+    if any(axis.startswith("live_update_") for axis in fail_axes):
+        stop_reason = "live_update_lineup_guard"
+    elif fail_axes:
+        stop_reason = fail_axes[0]
 
     return {
         "ok": not fail_axes,
         "fail_axes": fail_axes,
         "final_section_heading": sections[-1][0] if sections else "",
         "final_section_text": final_section_text,
+        "stop_reason": stop_reason,
     }
 
 
@@ -5993,6 +6071,7 @@ def _log_article_skipped_post_gen_validate(
     category: str,
     article_subtype: str,
     fail_axes: list[str],
+    stop_reason: str = "",
 ):
     payload = {
         "event": "article_skipped_post_gen_validate",
@@ -6003,6 +6082,8 @@ def _log_article_skipped_post_gen_validate(
         "article_subtype": article_subtype,
         "fail_axis": fail_axes,
     }
+    if stop_reason:
+        payload["stop_reason"] = stop_reason
     logger.info(json.dumps(payload, ensure_ascii=False))
 
 
@@ -6864,6 +6945,30 @@ def generate_article_with_gemini(
 ・【選手成績】では数字つきの個人成績を具体的に整理する
 ・【試合展開】ではどこで流れが動いたかを source にある事実だけで書く
 ・抽象的な総論で埋めず、数字と固有名詞を残す
+{enhanced_grounded_rules}\
+・最後は「みなさんの意見はコメントで！」で締める
+・HTMLタグなし・本文のみ出力"""
+        elif article_subtype == "live_update":
+            game_category_prompt = f"""あなたは読売ジャイアンツ専門ブログの編集者です。
+今日は{today_str}です。まずWeb検索で必要な事実を確認してから、試合途中経過の記事を日本語で書いてください。
+
+{data_sources}
+
+タイトル: {title}
+ニュース要約: {summary_clean}
+
+{fan_section}
+
+【構成】
+・見出しは「{headings[0]}」「{headings[1]}」「{headings[2]}」の3つをこの順番で使う
+・本文は400〜700文字
+・現在のイニング、スコア、継投、打席、塁状況など source にある途中経過だけを残す
+・試合は進行中として書き、勝敗の断定、最終講評、結果予想は書かない
+・【流れが動いた場面】では実況を全イニング分並べず、同点・勝ち越し・逆転・継投など流れが動いた瞬間だけを絞って整理する
+・【次にどこを見るか】では、このあとどの回・どの打順・どの投手継投に注目するかを source にある事実だけで書く
+・スタメン発表記事に切り替えない。1番〜9番を並べた一覧、打順表、表組み、箇条書きは禁止
+・見出しで「{LIVE_UPDATE_LINEUP_TITLE_PREFIX}」を使わない。「打順」「スタメン」「先発メンバー」を section heading にしない
+・抽象的な期待論や一般論で膨らませない
 {enhanced_grounded_rules}\
 ・最後は「みなさんの意見はコメントで！」で締める
 ・HTMLタグなし・本文のみ出力"""
@@ -9936,11 +10041,31 @@ def _skip_reasons_with_samples(
     skip_reason_counts: Counter,
     *,
     not_giants_related_sample_titles: list[str] | None = None,
+    skip_reason_sample_titles: dict[str, list[str]] | None = None,
 ) -> dict[str, object]:
     payload: dict[str, object] = _counter_to_plain_dict(skip_reason_counts)
     if not_giants_related_sample_titles:
         payload["not_giants_related_sample_titles"] = not_giants_related_sample_titles[:3]
+    for reason, titles in sorted((skip_reason_sample_titles or {}).items()):
+        if titles:
+            payload[f"{reason}_sample_titles"] = titles[:3]
     return payload
+
+
+def _append_skip_reason_sample(
+    sample_titles: dict[str, list[str]],
+    reason: str,
+    title: str,
+    *,
+    limit: int = 3,
+) -> None:
+    clean = (title or "").strip()
+    if not clean:
+        return
+    bucket = sample_titles.setdefault(reason, [])
+    if clean in bucket or len(bucket) >= limit:
+        return
+    bucket.append(clean[:80])
 
 
 def _log_not_giants_related_skip(
@@ -10083,6 +10208,7 @@ def _main(args, logger):
     publish_skip_reason_counts: Counter[str] = Counter()
     publish_observation_counts: Counter[str] = Counter()
     x_skip_reason_counts: Counter[str] = Counter()
+    skip_reason_sample_titles: dict[str, list[str]] = {}
     import time
 
     x_post_daily_limit = get_x_post_daily_limit()
@@ -10152,6 +10278,7 @@ def _main(args, logger):
                 logger.debug(f"  [SKIP:履歴重複] {entry_title_clean[:50]}")
                 skip_dup += 1
                 skip_reason_counts["history_duplicate"] += 1
+                _append_skip_reason_sample(skip_reason_sample_titles, "history_duplicate", entry_title_clean or post_url)
                 continue
 
             published_at = _entry_published_datetime(entry)
@@ -10200,11 +10327,13 @@ def _main(args, logger):
                 logger.debug(f"  [SKIP:postgame古い] {title[:40]}")
                 skip_filter += 1
                 skip_reason_counts["stale_postgame"] += 1
+                _append_skip_reason_sample(skip_reason_sample_titles, "stale_postgame", title)
                 continue
             if _should_skip_stale_player_status_entry(category, title, summary, published_at):
                 logger.debug(f"  [SKIP:player_status古い] {title[:40]}")
                 skip_filter += 1
                 skip_reason_counts["stale_player_status"] += 1
+                _append_skip_reason_sample(skip_reason_sample_titles, "stale_player_status", title)
                 continue
 
             if source_type in {"news", "social_news"}:
@@ -10212,12 +10341,14 @@ def _main(args, logger):
                     logger.debug(f"  [SKIP:動画プロモ] {entry_title_clean[:40]}")
                     skip_filter += 1
                     skip_reason_counts["video_promo"] += 1
+                    _append_skip_reason_sample(skip_reason_sample_titles, "video_promo", title)
                     continue
                 article_subtype = _detect_article_subtype(title, summary, category, entry_has_game)
                 if article_subtype == "live_update" and not ENABLE_LIVE_UPDATE_ARTICLES:
                     logger.debug(f"  [SKIP:途中経過停止中] {title[:40]}")
                     skip_filter += 1
                     skip_reason_counts["live_update_disabled"] += 1
+                    _append_skip_reason_sample(skip_reason_sample_titles, "live_update_disabled", title)
                     continue
                 has_comment = "「" in title_text
                 if source_type == "news":
@@ -10226,6 +10357,7 @@ def _main(args, logger):
                         logger.debug(f"  [SKIP:コメントなし] {title[:40]}")
                         skip_filter += 1
                         skip_reason_counts["comment_required"] += 1
+                        _append_skip_reason_sample(skip_reason_sample_titles, "comment_required", title)
                         continue
                 else:
                     worthy, rescue_meta = _evaluate_authoritative_social_entry(title, summary, category, article_subtype)
@@ -10235,6 +10367,7 @@ def _main(args, logger):
                         logger.debug(f"  [SKIP:SNS弱い] {title[:40]}")
                         skip_filter += 1
                         skip_reason_counts["social_too_weak"] += 1
+                        _append_skip_reason_sample(skip_reason_sample_titles, "social_too_weak", title)
                         continue
 
             logger.info(f"  [HIT] {title[:40]} → {category}")
@@ -10291,6 +10424,7 @@ def _main(args, logger):
                 )
                 skip_filter += 1
                 skip_reason_counts["pregame_started"] += 1
+                _append_skip_reason_sample(skip_reason_sample_titles, "pregame_started", item["title"])
                 continue
             filtered_prepared_entries.append(item)
         prepared_entries = filtered_prepared_entries
@@ -10370,24 +10504,40 @@ def _main(args, logger):
             )
             thin_source_min_chars = _thin_source_fact_block_min_chars(source_type)
             if _is_thin_source_fact_block(source_type, source_fact_block_length):
-                logger.info(
-                    json.dumps(
-                        {
-                            "event": "article_skipped_thin_source",
-                            "title": raw_title,
-                            "post_url": post_url,
-                            "category": category,
-                            "article_subtype": title_article_subtype,
-                            "source_type": source_type,
-                            "source_fact_block_length": source_fact_block_length,
-                            "min_chars": thin_source_min_chars,
-                        },
-                        ensure_ascii=False,
+                if _should_skip_thin_source_fact_block(
+                    draft_only=bool(args.draft_only),
+                    source_type=source_type,
+                    source_fact_block_length=source_fact_block_length,
+                ):
+                    logger.info(
+                        json.dumps(
+                            {
+                                "event": "article_skipped_thin_source",
+                                "title": raw_title,
+                                "post_url": post_url,
+                                "category": category,
+                                "article_subtype": title_article_subtype,
+                                "source_type": source_type,
+                                "source_fact_block_length": source_fact_block_length,
+                                "min_chars": thin_source_min_chars,
+                            },
+                            ensure_ascii=False,
+                        )
                     )
+                    skip_filter += 1
+                    skip_reason_counts["thin_source_fact_block"] += 1
+                    _append_skip_reason_sample(skip_reason_sample_titles, "thin_source_fact_block", raw_title)
+                    continue
+                _log_draft_observed_thin_source(
+                    logger,
+                    title=raw_title,
+                    post_url=post_url,
+                    category=category,
+                    article_subtype=title_article_subtype,
+                    source_type=source_type,
+                    source_fact_block_length=source_fact_block_length,
+                    min_chars=thin_source_min_chars,
                 )
-                skip_filter += 1
-                skip_reason_counts["thin_source_fact_block"] += 1
-                continue
             if args.dry_run:
                 draft_title, title_template_key = _rewrite_display_title_with_template(raw_title, summary, category, entry_has_game)
                 _log_title_template_selected(logger, post_url, raw_title, draft_title, title_template_key, category, title_article_subtype)
@@ -10494,10 +10644,15 @@ def _main(args, logger):
                 media_quotes=media_quotes,
                 source_entry=item.get("entry"),
             )
-            post_gen_validate = _evaluate_post_gen_validate(ai_body_for_x, article_subtype=title_article_subtype)
+            post_gen_validate = _evaluate_post_gen_validate(
+                ai_body_for_x,
+                article_subtype=title_article_subtype,
+                title=draft_title,
+            )
             if not post_gen_validate["ok"]:
                 skip_filter += 1
                 skip_reason_counts["post_gen_validate"] += 1
+                _append_skip_reason_sample(skip_reason_sample_titles, "post_gen_validate", draft_title)
                 _log_article_skipped_post_gen_validate(
                     logger,
                     title=draft_title,
@@ -10505,6 +10660,7 @@ def _main(args, logger):
                     category=category,
                     article_subtype=title_article_subtype,
                     fail_axes=list(post_gen_validate["fail_axes"]),
+                    stop_reason=str(post_gen_validate.get("stop_reason") or ""),
                 )
                 continue
         else:
@@ -10865,6 +11021,7 @@ def _main(args, logger):
                 "skip_reasons": _skip_reasons_with_samples(
                     skip_reason_counts,
                     not_giants_related_sample_titles=not_giants_related_sample_titles,
+                    skip_reason_sample_titles=skip_reason_sample_titles,
                 ),
                 "prepared_category_counts": _counter_to_plain_dict(prepared_category_counts),
                 "prepared_subtype_counts": _counter_to_plain_dict(prepared_subtype_counts),

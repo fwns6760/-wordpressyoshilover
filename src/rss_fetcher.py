@@ -100,8 +100,13 @@ RESULT_MILESTONE_RE = _re.compile(r"(?:(?:今季|通算|日米通算)\d+勝目|\
 FAKE_CITATION_MARKERS = ("npb.jp", "スポーツナビ", "1point02.jp", "Baseball Reference", "baseball.yahoo.co.jp")
 GAME_ARTICLE_KEYWORDS = ("試合結果", "スタメン", "先発", "登板", "白星", "黒星", "勝利", "敗戦", "引き分け", "サヨナラ", "試合")
 LINEUP_ARTICLE_KEYWORDS = ("スタメン", "スターティングメンバー", "オーダー", "打順", "1番", "2番", "3番", "4番")
+LINEUP_CORE_KEYWORDS = ("スタメン", "スターティングメンバー", "オーダー")
 FARM_LINEUP_MARKERS = ("二軍", "2軍", "ファーム", "イースタン", "三軍")
 LIVE_UPDATE_KEYWORDS = ("途中経過", "試合中", "回表", "回裏", "勝ち越し", "同点", "逆転")
+LIVE_UPDATE_FRAGMENT_KEYWORDS = LIVE_UPDATE_KEYWORDS + ("継投", "満塁", "3者凡退", "サイクル", "サイクル安打", "王手")
+LINEUP_ORDER_SLOT_RE = _re.compile(r"(?<![0-9０-９])[1-9１-９]番(?!手)")
+LIVE_UPDATE_PITCHER_ORDER_RE = _re.compile(r"(?<![0-9０-９])[2-9２-９]番手")
+LIVE_UPDATE_INNING_RE = _re.compile(r"(?<![0-9０-９])(?:[1-9]|1\d|[１-９])回(?:表|裏|終了|途中|で)?")
 NPB_TEAM_MARKERS = (
     "巨人",
     "読売ジャイアンツ",
@@ -324,7 +329,7 @@ FARM_DRAFTED_PLAYER_MARKERS = (
 RECOVERY_PART_PATTERNS = (
     r"(?:右|左)?(?:肩|肘|膝|足首|足|腰|背中|脇腹|太もも|ふくらはぎ|手首|指|股関節|首|腹斜筋|前腕|下半身|上半身)(?:の(?:違和感|張り|炎症|損傷))?(?:痛|違和感|張り|炎症|損傷|骨折|肉離れ)?",
 )
-CONFIRMED_RESULT_MARKERS = ("勝利した", "勝利を飾", "白星を挙げ", "敗れた", "敗戦", "黒星", "引き分け", "サヨナラ勝", "連勝", "連敗", "完封勝", "完封負")
+CONFIRMED_RESULT_MARKERS = ("勝利した", "勝利を飾", "白星を挙げ", "敗れた", "敗戦", "黒星", "引き分け", "サヨナラ勝", "サヨナラ負", "連勝", "連敗", "完封勝", "完封負")
 DEFINITE_RESULT_MARKERS = ("勝利しました", "勝利を飾りました", "白星を挙げました", "敗れました", "敗戦でした", "黒星を喫しました", "引き分けました")
 GENERIC_REACTION_TERMS = {
     "巨人", "ジャイアンツ", "読売", "投手", "選手", "監督", "コーチ", "ファーム", "二軍", "2軍",
@@ -2395,12 +2400,40 @@ def _source_mentions_outcome_terms(title: str, summary: str) -> bool:
     return bool(SCORE_TOKEN_RE.search(source_text) or any(word in source_text for word in NON_GAME_RESULT_WORDS))
 
 
+def _has_explicit_confirmed_result(text: str) -> bool:
+    clean = _strip_html(text or "")
+    soft_result_words = ("勝利", "敗戦", "白星", "黒星", "引き分け")
+    pregame_cues = ("狙", "目指", "かかる", "予定", "挑む", "挑戦", "あす", "明日", "翌日")
+    if any(marker in clean for marker in CONFIRMED_RESULT_MARKERS):
+        return True
+    if any(word in clean for word in soft_result_words) and not any(cue in clean for cue in pregame_cues):
+        return True
+    if RESULT_MILESTONE_RE.search(clean) and not any(cue in clean for cue in pregame_cues):
+        return True
+    return False
+
+
+def _has_lineup_core(text: str) -> bool:
+    clean = _strip_html(text or "")
+    if any(keyword in clean for keyword in LINEUP_CORE_KEYWORDS):
+        return True
+    if "打順" in clean and LINEUP_ORDER_SLOT_RE.search(clean):
+        return True
+    return len(LINEUP_ORDER_SLOT_RE.findall(clean)) >= 2
+
+
+def _has_live_update_fragment(text: str) -> bool:
+    clean = _strip_html(text or "")
+    if any(keyword in clean for keyword in LIVE_UPDATE_FRAGMENT_KEYWORDS):
+        return True
+    if LIVE_UPDATE_PITCHER_ORDER_RE.search(clean):
+        return True
+    return bool(LIVE_UPDATE_INNING_RE.search(clean))
+
+
 def _is_farm_lineup_text(text: str) -> bool:
     clean = _strip_html(text or "")
-    return bool(
-        any(keyword in clean for keyword in LINEUP_ARTICLE_KEYWORDS)
-        and any(marker in clean for marker in FARM_LINEUP_MARKERS)
-    )
+    return bool(_has_lineup_core(clean) and any(marker in clean for marker in FARM_LINEUP_MARKERS))
 
 
 def _parse_yahoo_team_batting_stats(html: str) -> dict[str, dict]:
@@ -2836,12 +2869,14 @@ def _detect_article_subtype(title: str, summary: str, category: str, has_game: b
     if _is_farm_lineup_text(text):
         return "farm_lineup"
     if category == "試合速報":
-        if any(keyword in text for keyword in LINEUP_ARTICLE_KEYWORDS):
-            return "lineup"
-        if any(keyword in text for keyword in LIVE_UPDATE_KEYWORDS):
-            return "live_update"
-        if _source_has_confirmed_result(title, summary):
+        if _has_explicit_confirmed_result(text):
             return "postgame"
+        if _has_live_update_fragment(text):
+            return "live_update"
+        if SCORE_TOKEN_RE.search(text):
+            return "postgame"
+        if _has_lineup_core(text):
+            return "lineup"
         if has_game:
             return "pregame"
         return "game_note"
@@ -5805,15 +5840,9 @@ def _text_has_fake_citation(text: str) -> bool:
 
 def _source_has_confirmed_result(title: str, summary: str) -> bool:
     source_text = _strip_html(f"{title} {summary}")
-    if SCORE_TOKEN_RE.search(source_text) or any(marker in source_text for marker in CONFIRMED_RESULT_MARKERS):
+    if _has_explicit_confirmed_result(source_text):
         return True
-    soft_result_words = ("勝利", "敗戦", "白星", "黒星", "引き分け")
-    pregame_cues = ("狙", "目指", "かかる", "予定", "挑む", "挑戦", "あす", "明日", "翌日")
-    if any(word in source_text for word in soft_result_words) and not any(cue in source_text for cue in pregame_cues):
-        return True
-    if RESULT_MILESTONE_RE.search(source_text) and not any(cue in source_text for cue in pregame_cues):
-        return True
-    return False
+    return bool(SCORE_TOKEN_RE.search(source_text))
 
 
 def _is_pregame_article(title: str, summary: str, category: str, has_game: bool) -> bool:

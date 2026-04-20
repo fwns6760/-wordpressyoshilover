@@ -196,6 +196,9 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("【試合展開】は必ず「事実 → 解釈 → 感想」の順で流れを作る", prompt)
         self.assertIn("source にあるスコア 3-2 を必ず残してください。", prompt)
         self.assertIn("タイトル先頭や見出しで「巨人スタメン」を使わない。", prompt)
+        self.assertIn("本文は次の6要素をこの順で満たす", prompt)
+        self.assertIn("source が存在する場合のみ選手コメント欄を付ける。source がなければ欄ごと省略し、推測文を足さない", prompt)
+        self.assertIn("ファン視点は最後の1文だけにする。", prompt)
 
     def test_game_prompt_intro_allows_only_single_closing_fan_view(self):
         cases = [

@@ -147,6 +147,7 @@ PUBLISH_QUALITY_LEAK_MARKERS = (
 )
 LIVE_UPDATE_LINEUP_TITLE_PREFIX = "巨人スタメン"
 LIVE_UPDATE_LINEUP_HEADING_KEYWORDS = ("打順", "スタメン", "先発メンバー")
+CORE_SUBTYPES = ("pregame", "live_anchor", "postgame", "fact_notice", "farm")
 NON_LINEUP_STARMEN_GUARD_SUBTYPES = {
     "pregame",
     "postgame",
@@ -350,6 +351,7 @@ RECOVERY_PART_PATTERNS = (
     r"(?:右|左)?(?:肩|肘|膝|足首|足|腰|背中|脇腹|太もも|ふくらはぎ|手首|指|股関節|首|腹斜筋|前腕|下半身|上半身)(?:の(?:違和感|張り|炎症|損傷))?(?:痛|違和感|張り|炎症|損傷|骨折|肉離れ)?",
 )
 CONFIRMED_RESULT_MARKERS = ("勝利した", "勝利を飾", "白星を挙げ", "敗れた", "敗戦", "黒星", "引き分け", "サヨナラ勝", "サヨナラ負", "連勝", "連敗", "完封勝", "完封負")
+FACT_NOTICE_PRIMARY_MARKERS = ("訂正", "誤報", "取り下げ")
 DEFINITE_RESULT_MARKERS = ("勝利しました", "勝利を飾りました", "白星を挙げました", "敗れました", "敗戦でした", "黒星を喫しました", "引き分けました")
 GENERIC_REACTION_TERMS = {
     "巨人", "ジャイアンツ", "読売", "投手", "選手", "監督", "コーチ", "ファーム", "二軍", "2軍",
@@ -2949,16 +2951,28 @@ def _detect_article_subtype(title: str, summary: str, category: str, has_game: b
             return "lineup"
         if has_game:
             return "pregame"
-        return "game_note"
-    if category == "ドラフト・育成":
-        return "farm"
-    if category == "首脳陣":
-        return "manager"
-    if category == "補強・移籍":
-        return "roster"
-    if category == "選手情報":
-        return "player"
-    return "general"
+        subtype = "game_note"
+    elif category == "ドラフト・育成":
+        subtype = "farm"
+    elif category == "首脳陣":
+        subtype = "manager"
+    elif category == "補強・移籍":
+        subtype = "roster"
+    elif category == "選手情報":
+        subtype = "player"
+    else:
+        subtype = "general"
+
+    if subtype in {"game_note", "general"}:
+        score = _extract_game_score_token(text)
+        opponent = _extract_game_opponent_label(text)
+        if score and opponent:
+            # Keep result-shaped leftovers on the postgame rail instead of a generic default.
+            return "postgame"
+        if any(marker in text for marker in FACT_NOTICE_PRIMARY_MARKERS):
+            # Correction or retraction markers are safer to park in the fact_notice shell.
+            return "fact_notice"
+    return subtype
 
 
 def _is_promotional_video_entry(title: str, summary: str) -> bool:

@@ -181,6 +181,12 @@ GAME_REQUIRED_HEADINGS = {
         "【先発投手】",
         "【注目ポイント】",
     ),
+    "live_anchor": (
+        "【時点】",
+        "【現在スコア】",
+        "【直近のプレー】",
+        "【ファン視点】",
+    ),
     "postgame": (
         "【試合結果】",
         "【ハイライト】",
@@ -1017,6 +1023,13 @@ def _enhanced_game_prompt_rules(article_subtype: str) -> str:
     )
     if article_subtype == "lineup":
         return base + _enhanced_next_focus_rules("【注目ポイント】")
+    if article_subtype == "live_anchor":
+        return (
+            base
+            + "【時点】では、何回表/裏終了か、何回何死かなど、節目の時点を1文目で固定してください。\n"
+            + "【直近のプレー】では、重要プレーを1〜3点に絞り、未発生事象や予測語を足さないでください。\n"
+            + "【ファン視点】は最後の1文だけにしてください。\n"
+        )
     if article_subtype == "postgame":
         return (
             base
@@ -1106,6 +1119,12 @@ def _enhanced_grounded_rules(category: str, article_subtype: str = "", source_ty
     if category == "試合速報":
         if article_subtype == "lineup":
             target = "【注目ポイント】"
+        elif article_subtype == "live_anchor":
+            return common + (
+                "・【時点】では、何回表/裏終了時点か、何回何死時点かを最初に固定する\n"
+                "・【直近のプレー】では、重要プレーを1〜3点に絞り、未発生事象や予測語を足さない\n"
+                "・【ファン視点】は最後の1文だけにする\n"
+            )
         elif article_subtype == "postgame":
             target = "【試合展開】"
         elif article_subtype == "live_update":
@@ -3693,6 +3712,32 @@ def _build_game_strict_prompt(
 {_chain_of_reasoning_prompt_rules("【注目ポイント】", "この並びや先発情報が試合の入り方")}・抽象的な期待論や結果予想で膨らませない
 ・元記事にない数字、選手名、打順、成績、一般論は足さない
 ・最後は読者視点の締め1〜2文で終え、「みなさんの意見はコメントで教えてください！」を入れる
+・HTMLタグなし、本文だけを出力する
+{enhanced_rules}\
+{opening_time_rule}"""
+
+    if article_subtype == "live_anchor":
+        score_rule = f"source にあるスコア {score} を必ず残してください。" if score else "source にあるスコアがあれば必ず残してください。"
+        return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
+{_game_strict_material_boundary_intro()}
+
+【使ってよい事実】
+{source_fact_block}{team_stats_reference}
+
+【厳守ルール】
+・ですます調、350〜650文字
+・見出しは「{headings[0]}」「{headings[1]}」「{headings[2]}」「{headings[3]}」の4つをこの順番で使う
+{NON_LINEUP_STARMEN_PROMPT_GUARD}
+・{score_rule}
+・本文は次の4要素をこの順で満たす: 1. 節目の時点 2. 現在スコア + 対戦相手 3. その時点までの重要プレー1〜3点 4. ファン視点1文
+・時点は『X回表/裏終了時点』『X回Y死時点』等、いつの話か必ず明示する
+・【時点】では、節目の時点を最初に短く固定し、進行中の試合であることが伝わるように書く
+・【現在スコア】では、現在スコアと対戦相手を source にある表記のまま整理する。現在スコアは source にあるものだけ。未反映の得点を推測しない
+・【直近のプレー】では、その時点までの重要プレーを1〜3点に絞って事実だけで整理する。直近プレーは事実のみ。『勝ちそう』『逆転する』等の予測語は使わない
+・試合結果の断定、未発生事象の先行記述、終盤の結果予想はしない
+・X 単独情報で断定しない。公式 X または NPB ライブに裏付けがある事実のみ記載する
+・選手名、回、アウトカウント、スコア、対戦相手の表記は source のまま残す。source にない数字や比較、一般論は足さない
+・ファン視点は最後の1文だけにする。【ファン視点】は最後の1文だけにし、「気になります」「注目です」「見たいところです」「と思います」のどれかを使ってから、「みなさんの意見はコメントで教えてください！」を入れる
 ・HTMLタグなし、本文だけを出力する
 {enhanced_rules}\
 {opening_time_rule}"""
@@ -6996,6 +7041,30 @@ def generate_article_with_gemini(
 ・【選手成績】では数字つきの個人成績を具体的に整理する
 ・【試合展開】ではどこで流れが動いたかを source にある事実だけで書く
 ・抽象的な総論で埋めず、数字と固有名詞を残す
+{enhanced_grounded_rules}\
+・最後は「みなさんの意見はコメントで！」で締める
+・HTMLタグなし・本文のみ出力"""
+        elif article_subtype == "live_anchor":
+            game_category_prompt = f"""あなたは読売ジャイアンツ専門ブログの編集者です。
+今日は{today_str}です。まずWeb検索で必要な事実を確認してから、試合途中の節目を整理する記事を日本語で書いてください。
+
+{data_sources}
+
+タイトル: {title}
+ニュース要約: {summary_clean}
+
+{fan_section}
+
+【構成】
+・見出しは「{headings[0]}」「{headings[1]}」「{headings[2]}」「{headings[3]}」の4つをこの順番で使う
+・本文は350〜650文字
+・節目の時点、現在スコア、対戦相手、重要プレー1〜3点を source にある表記のまま残す
+・【時点】では、何回表/裏終了時点か、何回何死時点かを必ず明示する
+・【現在スコア】では source にあるスコアだけを使い、未反映の得点を推測しない
+・【直近のプレー】では、重要プレーを1〜3点に絞り、予測語や未発生事象を足さない
+・X単独で断定せず、公式XまたはNPBライブで裏付けられる事実だけを書く
+・【ファン視点】は最後の1文だけにする
+・見出しで「{LIVE_UPDATE_LINEUP_TITLE_PREFIX}」を使わない。「打順」「スタメン」「先発メンバー」を section heading にしない
 {enhanced_grounded_rules}\
 ・最後は「みなさんの意見はコメントで！」で締める
 ・HTMLタグなし・本文のみ出力"""

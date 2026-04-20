@@ -200,6 +200,27 @@ class GeminiPromptTests(unittest.TestCase):
         self.assertIn("source が存在する場合のみ選手コメント欄を付ける。source がなければ欄ごと省略し、推測文を足さない", prompt)
         self.assertIn("ファン視点は最後の1文だけにする。", prompt)
 
+    def test_live_anchor_prompt_uses_anchor_structure(self):
+        prompt = rss_fetcher._build_game_strict_prompt(
+            "【巨人】阪神戦 3回表終了時点 2-1",
+            "3回表終了時点で巨人が阪神に2-1。岡本和真の適時打で先制し、山崎伊織が3回まで無失点で抑えている。",
+            "live_anchor",
+            "・3回表終了時点で巨人が阪神に2-1\n・岡本和真の適時打で先制\n・山崎伊織が3回まで無失点",
+        )
+
+        self.assertIn("【時点】", prompt)
+        self.assertIn("【現在スコア】", prompt)
+        self.assertIn("【直近のプレー】", prompt)
+        self.assertIn("【ファン視点】", prompt)
+        self.assert_common_strict_intro(prompt)
+        self.assertIn("本文は次の4要素をこの順で満たす: 1. 節目の時点 2. 現在スコア + 対戦相手 3. その時点までの重要プレー1〜3点 4. ファン視点1文", prompt)
+        self.assertIn("時点は『X回表/裏終了時点』『X回Y死時点』等、いつの話か必ず明示する", prompt)
+        self.assertIn("現在スコアは source にあるものだけ。未反映の得点を推測しない", prompt)
+        self.assertIn("『勝ちそう』『逆転する』等の予測語は使わない", prompt)
+        self.assertIn("X 単独情報で断定しない。公式 X または NPB ライブに裏付けがある事実のみ記載", prompt)
+        self.assertIn("ファン視点は最後の1文だけにする。", prompt)
+        self.assertIn("タイトル先頭や見出しで「巨人スタメン」を使わない。", prompt)
+
     def test_game_prompt_intro_allows_only_single_closing_fan_view(self):
         cases = [
             {

@@ -38,6 +38,9 @@ from x_post_generator import (
     build_post_with_meta as build_x_post_text_with_meta,
     resolve_effective_x_post_ai_mode,
 )
+from src.source_trust import classify_url as _source_trust_classify_url, classify_handle as _source_trust_classify_handle
+from src.source_id import source_id as _source_id_key
+from src.tag_category_guard import validate_tags as _tc_validate_tags, validate_category as _tc_validate_category
 
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
@@ -10505,6 +10508,7 @@ def _main(args, logger):
             source_roles = {raw_source_role.strip()}
         else:
             source_roles = {"article_source"}
+        prepared_source_roles = sorted(source_roles)
         should_add_to_media_quote_pool = bool(source_roles & {"media_quote_pool", "media_quote_only"})
         should_articleize = "media_quote_only" not in source_roles
         logger.info(f"取得中: {name} ({url})")
@@ -10540,6 +10544,18 @@ def _main(args, logger):
                 entry_title_clean = entry_title_raw
                 entry_summary_clean = entry_summary_raw
             title_text = f"{entry_title_clean} {entry_summary_clean}".strip()
+            source_handle = _extract_handle_from_tweet_url(post_url)
+            source_trust = (
+                _source_trust_classify_handle(source_handle)
+                if source_handle
+                else _source_trust_classify_url(post_url)
+            )
+            logger.info(
+                "  [SOURCE] url=%s source_trust=%s source_id=%s",
+                post_url,
+                source_trust,
+                _source_id_key(post_url),
+            )
 
             import re as _re2
             entry_title_norm = _re2.sub(r"[\s　【】「」『』〔〕（）()・\-_]", "", entry_title_clean).lower()
@@ -10561,7 +10577,7 @@ def _main(args, logger):
                 media_quote_pool.append({
                     "source_name": name,
                     "source_type": source_type,
-                    "source_roles": sorted(source_roles),
+                    "source_roles": prepared_source_roles,
                     "source_url": post_url,
                     "title": entry_title_clean,
                     "summary": entry_summary_clean,
@@ -10591,6 +10607,17 @@ def _main(args, logger):
             raw_title = entry_title_clean.strip() if entry_title_clean else make_title(entry)
             title    = raw_title[:40].strip() if raw_title else make_title(entry)
             summary  = entry_summary_clean
+            # Observation only; later consumers decide whether to use normalized outputs.
+            _, category_guard_warnings = _tc_validate_category(category)
+            _, tag_guard_warnings = _tc_validate_tags(prepared_source_roles)
+            tag_category_warnings = category_guard_warnings + tag_guard_warnings
+            if tag_category_warnings:
+                logger.info(
+                    "  [CLASSIFY_OBSERVE] %s → %s tag_category_warnings=%s",
+                    title[:40],
+                    category,
+                    json.dumps(tag_category_warnings, ensure_ascii=False),
+                )
             entry_has_game = infer_article_has_game(title, summary, category, has_game)
             if _should_skip_stale_postgame_entry(category, title, summary, published_at):
                 logger.debug(f"  [SKIP:postgame古い] {title[:40]}")
@@ -10648,7 +10675,7 @@ def _main(args, logger):
                 "source_rank": source_rank,
                 "source_name": name,
                 "source_type": source_type,
-                "source_roles": sorted(source_roles),
+                "source_roles": prepared_source_roles,
                 "entry": entry,
                 "post_url": post_url,
                 "title_text": title_text,

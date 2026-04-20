@@ -176,6 +176,11 @@ GAME_REQUIRED_HEADINGS = {
         "【具体的な変更内容】",
         "【この変更が意味すること】",
     ),
+    "live_update": (
+        "【いま起きていること】",
+        "【流れが動いた場面】",
+        "【次にどこを見るか】",
+    ),
 }
 FARM_BODY_TEMPLATE_VERSION = "farm_v1"
 FARM_REQUIRED_HEADINGS = {
@@ -1001,6 +1006,12 @@ def _enhanced_game_prompt_rules(article_subtype: str) -> str:
             + "【ハイライト】と【選手成績】で同じ要約文を繰り返さず、片方は流れ、片方は数字に寄せてください。\n"
             + _enhanced_next_focus_rules("【試合展開】")
         )
+    if article_subtype == "live_update":
+        return (
+            base
+            + "【流れが動いた場面】では、イニングの実況を時系列にだらだら並べず、流れが動いた瞬間を1つか2つに絞って書いてください。\n"
+            + _enhanced_next_focus_rules("【次にどこを見るか】")
+        )
     return (
         base
         + "【具体的な変更内容】では、変更点をそのまま再掲するだけでなく、誰がどう変わったかを1文ずつ分けて整理してください。\n"
@@ -1076,7 +1087,14 @@ def _enhanced_grounded_rules(category: str, article_subtype: str = "", source_ty
     if category == "選手情報":
         return common + _enhanced_next_focus_rules("【次の注目】").replace("【", "・【")
     if category == "試合速報":
-        target = "【注目ポイント】" if article_subtype == "lineup" else "【試合展開】" if article_subtype == "postgame" else "【この変更が意味すること】"
+        if article_subtype == "lineup":
+            target = "【注目ポイント】"
+        elif article_subtype == "postgame":
+            target = "【試合展開】"
+        elif article_subtype == "live_update":
+            target = "【次にどこを見るか】"
+        else:
+            target = "【この変更が意味すること】"
         return common + _enhanced_next_focus_rules(target).replace("【", "・【")
     if category == "ドラフト・育成":
         target = "【注目選手】" if article_subtype == "farm_lineup" else "【一軍への示唆】"
@@ -3630,6 +3648,28 @@ def _build_game_strict_prompt(
 {enhanced_rules}\
 {opening_time_rule}"""
 
+    if article_subtype == "live_update":
+        score_rule = f"source にあるスコア {score} を必ず残してください。" if score else "source にあるスコアがあれば必ず残してください。"
+        return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
+{_game_strict_material_boundary_intro()}
+
+【使ってよい事実】
+{source_fact_block}{team_stats_reference}
+
+【厳守ルール】
+・ですます調、400〜700文字
+・見出しは「{headings[0]}」「{headings[1]}」「{headings[2]}」の3つをこの順番で使う
+・{score_rule}
+・試合は進行中として書く。勝敗の断定、終盤の結果予想、最終的な講評は書かない
+・【いま起きていること】では、現在のイニングとスコアを先に置き、source にある継投・打順・塁状況など「いまの状況」を1〜3文で整理する
+・【流れが動いた場面】では、イニングごとの実況を時系列にだらだら並べない。source にある同点・勝ち越し・逆転・継投・満塁・3者凡退など、流れが動いた瞬間を1つか2つに絞って書く
+・【次にどこを見るか】では、結果予想ではなく、このあとどの回・どの打順・どの投手継投に注目するかを source にある事実だけで1〜2文で書く
+{_chain_of_reasoning_prompt_rules("【次にどこを見るか】", "いまのスコアと流れから次の見どころ")}・選手名、回、スコア、継投の表記は source のまま残す。source にない数字や選手名、比較、一般論は足さない
+・最後は読者視点の締め1〜2文で終え、「みなさんの意見はコメントで教えてください！」を入れる
+・HTMLタグなし、本文だけを出力する
+{enhanced_rules}\
+{opening_time_rule}"""
+
     return f"""あなたは読売ジャイアンツ専門ブログの編集者です。
 {_game_strict_material_boundary_intro()}
 
@@ -4440,6 +4480,18 @@ def _normalize_article_heading(heading: str, category: str, has_game: bool, arti
                 "【具体的な変更内容】": "【具体的な変更内容】",
                 "【この変更が意味すること】": "【この変更が意味すること】",
                 "【見どころ】": "【この変更が意味すること】",
+            }
+        elif article_subtype == "live_update":
+            game_heading_aliases = {
+                "【いま起きていること】": "【いま起きていること】",
+                "【現状】": "【いま起きていること】",
+                "【現在のスコア】": "【いま起きていること】",
+                "【試合経過】": "【流れが動いた場面】",
+                "【流れが動いた場面】": "【流れが動いた場面】",
+                "【ハイライト】": "【流れが動いた場面】",
+                "【次にどこを見るか】": "【次にどこを見るか】",
+                "【今後の注目】": "【次にどこを見るか】",
+                "【見どころ】": "【次にどこを見るか】",
             }
         if clean in game_heading_aliases:
             return game_heading_aliases[clean]

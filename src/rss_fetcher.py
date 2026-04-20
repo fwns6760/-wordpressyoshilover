@@ -8447,6 +8447,41 @@ def _log_title_collision_if_needed(
     return rewritten_title_norm
 
 
+def _create_draft_with_same_fire_guard(
+    wp: WPClient,
+    logger: logging.Logger,
+    same_fire_source_urls: set[str],
+    same_fire_title_sources: dict[str, set[str]],
+    draft_title: str,
+    content: str,
+    categories: list,
+    source_url: str,
+    featured_media: int | None = None,
+) -> int:
+    normalized_source_url = _html.unescape((source_url or "").strip())
+    rewritten_title_norm = _normalize_history_title(draft_title)
+    if normalized_source_url:
+        same_fire_source_urls.add(normalized_source_url)
+        if rewritten_title_norm and len(rewritten_title_norm) > 5:
+            seen_sources = same_fire_title_sources.setdefault(rewritten_title_norm, set())
+            if seen_sources and normalized_source_url not in seen_sources:
+                logger.info(
+                    "same_fire_distinct_source_detected source_url=%s rewritten_title=%s",
+                    normalized_source_url,
+                    draft_title,
+                )
+            seen_sources.add(normalized_source_url)
+    return wp.create_post(
+        draft_title,
+        content,
+        categories=categories,
+        status="draft",
+        featured_media=featured_media or None,
+        source_url=normalized_source_url or None,
+        allow_title_only_reuse=False,
+    )
+
+
 def _resolve_effective_featured_media(
     wp: WPClient,
     post_id: int,
@@ -10251,6 +10286,8 @@ def _main(args, logger):
         persist_history(history)
 
     prepared_entries = _prioritize_prepared_entries_for_creation(prepared_entries)
+    same_fire_source_urls: set[str] = set()
+    same_fire_title_sources: dict[str, set[str]] = {}
 
     for item in prepared_entries:
         if success >= args.limit:
@@ -10447,11 +10484,16 @@ def _main(args, logger):
             if category_id:
                 cats.append(category_id)
 
-            post_id = wp.create_post(
-                draft_title, content,
-                categories=cats,
-                status="draft",
-                featured_media=featured_media or None,
+            post_id = _create_draft_with_same_fire_guard(
+                wp,
+                logger,
+                same_fire_source_urls,
+                same_fire_title_sources,
+                draft_title,
+                content,
+                cats,
+                post_url,
+                featured_media=featured_media,
             )
             effective_featured_media = _resolve_effective_featured_media(wp, post_id, featured_media, logger)
             draft_post_data = wp.get_post(post_id)

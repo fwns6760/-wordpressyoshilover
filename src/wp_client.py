@@ -41,6 +41,9 @@ ALLOWED_IMAGE_CONTENT_TYPES = {
 
 
 class WPClient:
+    SOURCE_URL_META_KEY = "_yoshilover_source_url"
+    SOURCE_URL_META_ALIASES = ("yl_source_url",)
+
     def __init__(self):
         self.base_url    = os.getenv("WP_URL", "").rstrip("/")
         self.user        = os.getenv("WP_USER", "")
@@ -56,6 +59,83 @@ class WPClient:
     @staticmethod
     def _normalize_title(title: str) -> str:
         return re.sub(r"[\s　【】「」『』〔〕（）()・\\/_-]", "", (title or "")).lower()
+
+    @staticmethod
+    def _normalize_source_url(source_url: str | None) -> str:
+        return html.unescape((source_url or "").strip())
+
+    @classmethod
+    def _source_url_meta_keys(cls) -> tuple[str, ...]:
+        return (cls.SOURCE_URL_META_KEY, *cls.SOURCE_URL_META_ALIASES)
+
+    @classmethod
+    def _get_source_url_meta(cls, post: dict) -> tuple[str, str]:
+        present_key = ""
+        meta = (post or {}).get("meta")
+        if isinstance(meta, dict):
+            for key in cls._source_url_meta_keys():
+                if key in meta:
+                    present_key = present_key or key
+                    value = cls._normalize_source_url(meta.get(key))
+                    if value:
+                        return key, value
+        for key in cls._source_url_meta_keys():
+            if key in (post or {}):
+                present_key = present_key or key
+                value = cls._normalize_source_url((post or {}).get(key))
+                if value:
+                    return key, value
+        return present_key or cls.SOURCE_URL_META_KEY, ""
+
+    @classmethod
+    def _build_source_url_meta_payload(
+        cls,
+        source_url: str | None,
+        preferred_key: str | None = None,
+    ) -> dict:
+        normalized_source_url = cls._normalize_source_url(source_url)
+        if not normalized_source_url:
+            return {}
+        target_key = preferred_key if preferred_key in cls._source_url_meta_keys() else cls.SOURCE_URL_META_KEY
+        return {target_key: normalized_source_url}
+
+    @staticmethod
+    def _mark_reuse_reason(post: dict, reuse_reason: str) -> dict:
+        marked = dict(post or {})
+        marked["_yoshilover_reuse_reason"] = reuse_reason
+        return marked
+
+    def _load_post_detail_for_reuse(self, post_id: int) -> dict | None:
+        detail_fields = ",".join(
+            [
+                "id",
+                "date",
+                "date_gmt",
+                "title",
+                "status",
+                "featured_media",
+                "categories",
+                "meta",
+                *self._source_url_meta_keys(),
+            ]
+        )
+        query_variants = [
+            {"context": "edit", "_fields": detail_fields},
+            {"_fields": detail_fields},
+        ]
+        for params in query_variants:
+            try:
+                resp = requests.get(
+                    f"{self.api}/posts/{post_id}",
+                    params=params,
+                    auth=self.auth,
+                    timeout=30,
+                )
+                self._raise_for_status(resp, f"既存記事詳細取得 post_id={post_id}")
+                return resp.json()
+            except Exception:
+                continue
+        return None
 
     @staticmethod
     def _get_image_candidate_exclusion_reason(image_url: str) -> str:
@@ -105,16 +185,32 @@ class WPClient:
         title: str,
         within_hours: int = 24,
         reusable_statuses: set[str] | None = None,
+        source_url: str | None = None,
+        allow_title_only_reuse: bool = False,
     ) -> dict | None:
         """
         同タイトルの直近投稿を返す。
         単発スクリプトの再送や確認失敗時の二重作成を防ぐために使う。
         """
         normalized = self._normalize_title(title)
+        normalized_source_url = self._normalize_source_url(source_url)
         if not normalized or len(normalized) < 6:
             return None
 
         after = (datetime.now(timezone.utc) - timedelta(hours=within_hours)).isoformat()
+        search_fields = ",".join(
+            [
+                "id",
+                "date",
+                "date_gmt",
+                "title",
+                "status",
+                "featured_media",
+                "categories",
+                "meta",
+                *self._source_url_meta_keys(),
+            ]
+        )
         query_variants = [
             {
                 "search": title[:40],
@@ -122,13 +218,13 @@ class WPClient:
                 "status": "any",
                 "context": "edit",
                 "after": after,
-                "_fields": "id,date,date_gmt,title,status,featured_media,categories",
+                "_fields": search_fields,
             },
             {
                 "search": title[:40],
                 "per_page": 20,
                 "after": after,
-                "_fields": "id,date,date_gmt,title,status,featured_media,categories",
+                "_fields": search_fields,
             },
         ]
 
@@ -151,7 +247,18 @@ class WPClient:
                     if not self._is_recent_post(post, within_hours):
                         continue
                     if self._normalize_title(rendered) == normalized:
-                        return post
+                        candidate = post
+                        if normalized_source_url:
+                            _, existing_source_url = self._get_source_url_meta(candidate)
+                            if not existing_source_url and candidate.get("id"):
+                                detailed = self._load_post_detail_for_reuse(int(candidate["id"]))
+                                if detailed:
+                                    candidate = detailed
+                                    _, existing_source_url = self._get_source_url_meta(candidate)
+                            if existing_source_url == normalized_source_url:
+                                return self._mark_reuse_reason(candidate, "source_url_match")
+                        if allow_title_only_reuse:
+                            return self._mark_reuse_reason(candidate, "title_fallback")
                 return None
             except Exception as e:
                 last_error = e
@@ -167,10 +274,13 @@ class WPClient:
         categories: list | None = None,
         status: str = "publish",
         featured_media: int | None = None,
+        source_url: str | None = None,
     ) -> int:
         post_id = existing["id"]
         existing_status = (existing.get("status") or "").lower()
         update_fields = {}
+        source_meta_key, existing_source_url = self._get_source_url_meta(existing)
+        normalized_source_url = self._normalize_source_url(source_url)
 
         if featured_media and not existing.get("featured_media"):
             update_fields["featured_media"] = featured_media
@@ -189,26 +299,45 @@ class WPClient:
         if requested_status == "publish" and existing_status != "publish":
             update_fields["status"] = "publish"
 
+        if normalized_source_url and not existing_source_url:
+            source_meta_payload = self._build_source_url_meta_payload(
+                normalized_source_url,
+                preferred_key=source_meta_key,
+            )
+            if source_meta_payload:
+                update_fields["meta"] = source_meta_payload
+
         if update_fields:
             self.update_post_fields(post_id, **update_fields)
             print(f"[WP] 既存記事を更新 post_id={post_id} fields={','.join(update_fields.keys())}")
 
-        print(f"[WP] 既存記事を再利用 post_id={post_id} title={title!r}")
+        reuse_reason = existing.get("_yoshilover_reuse_reason", "title_fallback")
+        print(f"[WP] 既存記事を再利用 post_id={post_id} title={title!r} reuse_reason={reuse_reason}")
         return post_id
 
     # ------------------------------------------------------------------
     # 記事投稿（status指定可）
     # ------------------------------------------------------------------
     def create_post(self, title: str, content: str, categories: list = None,
-                    status: str = "publish", featured_media: int = None) -> int:
+                    status: str = "publish", featured_media: int = None,
+                    source_url: str | None = None,
+                    allow_title_only_reuse: bool | None = None) -> int:
         requested_status = (status or "publish").lower()
+        normalized_source_url = self._normalize_source_url(source_url)
+        if allow_title_only_reuse is None:
+            allow_title_only_reuse = not bool(normalized_source_url)
         reusable_statuses = None
         if requested_status == "draft":
             reusable_statuses = {"draft", "pending", "future", "auto-draft"}
         elif requested_status == "publish":
             reusable_statuses = {"publish", "draft", "pending", "future", "auto-draft"}
 
-        existing = self.find_recent_post_by_title(title, reusable_statuses=reusable_statuses)
+        existing = self.find_recent_post_by_title(
+            title,
+            reusable_statuses=reusable_statuses,
+            source_url=normalized_source_url,
+            allow_title_only_reuse=allow_title_only_reuse,
+        )
         if existing:
             return self._reuse_existing_post(
                 existing,
@@ -216,6 +345,7 @@ class WPClient:
                 categories=categories,
                 status=status,
                 featured_media=featured_media,
+                source_url=normalized_source_url,
             )
 
         payload = {
@@ -227,6 +357,9 @@ class WPClient:
             payload["categories"] = categories
         if featured_media:
             payload["featured_media"] = featured_media
+        source_meta_payload = self._build_source_url_meta_payload(normalized_source_url)
+        if source_meta_payload:
+            payload["meta"] = source_meta_payload
 
         resp = requests.post(
             f"{self.api}/posts",
@@ -339,7 +472,15 @@ class WPClient:
     # ------------------------------------------------------------------
     # 下書き投稿
     # ------------------------------------------------------------------
-    def create_draft(self, title: str, content: str, categories: list = None, featured_media: int = None) -> int:
+    def create_draft(
+        self,
+        title: str,
+        content: str,
+        categories: list = None,
+        featured_media: int = None,
+        source_url: str | None = None,
+        allow_title_only_reuse: bool | None = None,
+    ) -> int:
         """
         WordPressに下書き記事を作成して post_id を返す。
 
@@ -351,9 +492,14 @@ class WPClient:
         Returns:
             作成された投稿の post_id (int)
         """
+        normalized_source_url = self._normalize_source_url(source_url)
+        if allow_title_only_reuse is None:
+            allow_title_only_reuse = not bool(normalized_source_url)
         existing = self.find_recent_post_by_title(
             title,
             reusable_statuses={"draft", "pending", "future", "auto-draft"},
+            source_url=normalized_source_url,
+            allow_title_only_reuse=allow_title_only_reuse,
         )
         if existing:
             return self._reuse_existing_post(
@@ -362,6 +508,7 @@ class WPClient:
                 categories=categories,
                 status="draft",
                 featured_media=featured_media,
+                source_url=normalized_source_url,
             )
 
         payload = {
@@ -373,6 +520,9 @@ class WPClient:
             payload["categories"] = categories
         if featured_media:
             payload["featured_media"] = featured_media
+        source_meta_payload = self._build_source_url_meta_payload(normalized_source_url)
+        if source_meta_payload:
+            payload["meta"] = source_meta_payload
 
         resp = requests.post(
             f"{self.api}/posts",

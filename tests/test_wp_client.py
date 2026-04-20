@@ -158,6 +158,95 @@ class TestWPClientDedup(unittest.TestCase):
         self.assertEqual(post_id, 123)
         mock_post.assert_not_called()
 
+    @patch.object(WPClient, "update_post_fields")
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_create_post_reuses_existing_draft_when_source_url_matches(self, mock_get, mock_post, mock_update):
+        source_url = "https://example.com/source/a"
+        mock_get.return_value = Mock(
+            status_code=200,
+            json=lambda: [
+                {
+                    "id": 333,
+                    "title": {"raw": "巨人戦 試合前にどこを見たいか"},
+                    "status": "draft",
+                    "date": "2099-04-14T17:39:28",
+                    "featured_media": 0,
+                    "categories": [673],
+                    "meta": {WPClient.SOURCE_URL_META_KEY: source_url},
+                }
+            ],
+        )
+
+        post_id = self.wp.create_post(
+            "巨人戦 試合前にどこを見たいか",
+            "<p>body</p>",
+            status="draft",
+            source_url=source_url,
+        )
+
+        self.assertEqual(post_id, 333)
+        mock_post.assert_not_called()
+        mock_update.assert_not_called()
+
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_create_post_creates_new_when_source_url_differs(self, mock_get, mock_post):
+        mock_get.return_value = Mock(
+            status_code=200,
+            json=lambda: [
+                {
+                    "id": 334,
+                    "title": {"raw": "巨人戦 試合前にどこを見たいか"},
+                    "status": "draft",
+                    "date": "2099-04-14T17:39:28",
+                    "meta": {WPClient.SOURCE_URL_META_KEY: "https://example.com/source/a"},
+                }
+            ],
+        )
+        mock_post.return_value = Mock(status_code=201, json=lambda: {"id": 335})
+
+        post_id = self.wp.create_post(
+            "巨人戦 試合前にどこを見たいか",
+            "<p>body</p>",
+            status="draft",
+            source_url="https://example.com/source/b",
+        )
+
+        self.assertEqual(post_id, 335)
+        mock_post.assert_called_once()
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(
+            payload["meta"],
+            {WPClient.SOURCE_URL_META_KEY: "https://example.com/source/b"},
+        )
+
+    @patch("src.wp_client.requests.get")
+    def test_find_recent_post_by_title_allows_title_only_reuse_when_enabled(self, mock_get):
+        mock_get.return_value = Mock(
+            status_code=200,
+            json=lambda: [
+                {
+                    "id": 336,
+                    "title": {"raw": "巨人戦 試合前にどこを見たいか"},
+                    "status": "draft",
+                    "date": "2099-04-14T17:39:28",
+                    "meta": {WPClient.SOURCE_URL_META_KEY: "https://example.com/source/a"},
+                }
+            ],
+        )
+
+        post = self.wp.find_recent_post_by_title(
+            "巨人戦 試合前にどこを見たいか",
+            reusable_statuses={"draft"},
+            source_url="https://example.com/source/b",
+            allow_title_only_reuse=True,
+        )
+
+        self.assertIsNotNone(post)
+        self.assertEqual(post["id"], 336)
+        self.assertEqual(post["_yoshilover_reuse_reason"], "title_fallback")
+
     @patch("src.wp_client.requests.get")
     def test_find_recent_post_by_title_uses_24_hour_window_by_default(self, mock_get):
         class FixedDateTime(datetime):
@@ -211,6 +300,25 @@ class TestWPClientDedup(unittest.TestCase):
 
         self.assertEqual(post_id, 456)
         mock_post.assert_called_once()
+
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_create_draft_saves_source_url_meta_on_new_post(self, mock_get, mock_post):
+        mock_get.return_value = Mock(status_code=200, json=lambda: [])
+        mock_post.return_value = Mock(status_code=201, json=lambda: {"id": 457})
+
+        post_id = self.wp.create_draft(
+            "新しい記事",
+            "<p>body</p>",
+            source_url="https://example.com/source/new",
+        )
+
+        self.assertEqual(post_id, 457)
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(
+            payload["meta"],
+            {WPClient.SOURCE_URL_META_KEY: "https://example.com/source/new"},
+        )
 
     @patch("src.wp_client.requests.post")
     @patch("src.wp_client.requests.get")

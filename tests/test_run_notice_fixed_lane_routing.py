@@ -144,7 +144,7 @@ class FixedLaneRouting028Tests(unittest.TestCase):
         routed, outcomes = lane._route_candidates([candidate])
 
         self.assertEqual(routed, [])
-        self.assertEqual(outcomes, [lane.ROUTE_AWAIT_PRIMARY])
+        self.assertEqual(outcomes, [lane.ROUTE_AWAIT_PRIMARY, lane.ROUTE_DEFERRED_PICKUP])
         self.assertEqual(candidate.metadata["source_bundle"], [])
         self.assertEqual(candidate.metadata["trigger_only_sources"][0]["trust_tier"], lane.TRUST_TIER_T3)
 
@@ -211,6 +211,7 @@ class FixedLaneRouting028Tests(unittest.TestCase):
 
         self.assertTrue(result.duplicate_skip)
         self.assertIn(lane.ROUTE_DUPLICATE_ABSORBED, result.route_outcomes)
+        self.assertIn(lane.ROUTE_DEFERRED_PICKUP, result.route_outcomes)
         create_mock.assert_not_called()
 
 

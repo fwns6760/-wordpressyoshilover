@@ -1,9 +1,10 @@
-"""Fixed-lane Draft runner with trust-tier routing for MVP notice families.
+"""Fixed-lane Draft runner with trust-tier routing for MVP + parity pickup.
 
 The default fetch path still targets the NPB roster notice page, while the
-routing layer accepts the wider 028 MVP family contract:
-``program_notice`` / ``transaction_notice`` / ``probable_pitcher`` /
-``farm_result``.
+routing layer accepts the wider 037 pickup contract. The original 028 MVP
+families still own fixed-lane draft creation. Parity-expansion families are
+picked up, normalized, de-duplicated, and labeled as deferred until a future
+lane consumes them.
 """
 
 from __future__ import annotations
@@ -39,19 +40,46 @@ TARGET_PARENT_CATEGORY_NAME = TARGET_TEAM
 TRUST_TIER_T1 = "T1"
 TRUST_TIER_T2 = "T2"
 TRUST_TIER_T3 = "T3"
+TARGET_LANE_FIXED = "fixed_lane"
+TARGET_LANE_AI = "ai_lane"
 ROUTE_FIXED_PRIMARY = "fixed_primary"
 ROUTE_AWAIT_PRIMARY = "await_primary"
 ROUTE_DUPLICATE_ABSORBED = "duplicate_absorbed"
 ROUTE_AMBIGUOUS_SUBJECT = "ambiguous_subject"
 ROUTE_OUT_OF_MVP_FAMILY = "out_of_mvp_family"
+ROUTE_DEFERRED_PICKUP = "deferred_pickup"
 ROUTE_OUTCOMES = (
     ROUTE_FIXED_PRIMARY,
     ROUTE_AWAIT_PRIMARY,
     ROUTE_DUPLICATE_ABSORBED,
     ROUTE_AMBIGUOUS_SUBJECT,
     ROUTE_OUT_OF_MVP_FAMILY,
+    ROUTE_DEFERRED_PICKUP,
 )
 _SOCIAL_HOSTS = {"x.com", "twitter.com"}
+
+SOURCE_KIND_OFFICIAL_WEB = "official_web"
+SOURCE_KIND_NPB = "npb"
+SOURCE_KIND_MAJOR_RSS = "major_rss"
+SOURCE_KIND_TEAM_X = "team_x"
+SOURCE_KIND_REPORTER_X = "reporter_x"
+SOURCE_KIND_PROGRAM_TABLE = "program_table"
+SOURCE_KIND_FARM_INFO = "farm_info"
+SOURCE_KIND_TV_RADIO_COMMENT = "tv_radio_comment"
+SOURCE_KIND_COMMENT_QUOTE = "comment_quote"
+SOURCE_KIND_PLAYER_STATS_FEED = "player_stats_feed"
+PICKUP_SOURCE_KINDS = (
+    SOURCE_KIND_OFFICIAL_WEB,
+    SOURCE_KIND_NPB,
+    SOURCE_KIND_MAJOR_RSS,
+    SOURCE_KIND_TEAM_X,
+    SOURCE_KIND_REPORTER_X,
+    SOURCE_KIND_PROGRAM_TABLE,
+    SOURCE_KIND_FARM_INFO,
+    SOURCE_KIND_TV_RADIO_COMMENT,
+    SOURCE_KIND_COMMENT_QUOTE,
+    SOURCE_KIND_PLAYER_STATS_FEED,
+)
 
 EXIT_OK = 0
 EXIT_WP_POST_DRY_RUN_FAILED = 40
@@ -89,6 +117,7 @@ class FamilySpec:
     category_name: str
     default_tags: tuple[str, ...]
     candidate_id_field: str
+    lane_target: str
 
 
 @dataclass(frozen=True)
@@ -126,13 +155,14 @@ class ProcessResult:
     attempted_create: bool = False
 
 
-FAMILY_SPECS: dict[str, FamilySpec] = {
+MVP_FAMILY_SPECS: dict[str, FamilySpec] = {
     "program_notice": FamilySpec(
         family="program_notice",
         subtype="fact_notice",
         category_name="球団情報",
         default_tags=("番組",),
         candidate_id_field="air_date",
+        lane_target=TARGET_LANE_FIXED,
     ),
     "transaction_notice": FamilySpec(
         family="transaction_notice",
@@ -140,6 +170,7 @@ FAMILY_SPECS: dict[str, FamilySpec] = {
         category_name="選手情報",
         default_tags=("公示",),
         candidate_id_field="notice_date",
+        lane_target=TARGET_LANE_FIXED,
     ),
     "probable_pitcher": FamilySpec(
         family="probable_pitcher",
@@ -147,6 +178,7 @@ FAMILY_SPECS: dict[str, FamilySpec] = {
         category_name="試合速報",
         default_tags=("予告先発",),
         candidate_id_field="game_id",
+        lane_target=TARGET_LANE_FIXED,
     ),
     "farm_result": FamilySpec(
         family="farm_result",
@@ -154,12 +186,66 @@ FAMILY_SPECS: dict[str, FamilySpec] = {
         category_name="ドラフト・育成",
         default_tags=("ファーム",),
         candidate_id_field="game_id",
+        lane_target=TARGET_LANE_FIXED,
     ),
 }
 
+PARITY_FAMILY_SPECS: dict[str, FamilySpec] = {
+    "lineup_notice": FamilySpec(
+        family="lineup_notice",
+        subtype="lineup",
+        category_name="試合速報",
+        default_tags=("スタメン",),
+        candidate_id_field="candidate_key",
+        lane_target=TARGET_LANE_AI,
+    ),
+    "comment_notice": FamilySpec(
+        family="comment_notice",
+        subtype="manager",
+        category_name="首脳陣",
+        default_tags=("コメント",),
+        candidate_id_field="candidate_key",
+        lane_target=TARGET_LANE_AI,
+    ),
+    "injury_notice": FamilySpec(
+        family="injury_notice",
+        subtype="fact_notice",
+        category_name="選手情報",
+        default_tags=("故障",),
+        candidate_id_field="candidate_key",
+        lane_target=TARGET_LANE_AI,
+    ),
+    "postgame_result": FamilySpec(
+        family="postgame_result",
+        subtype="postgame",
+        category_name="試合速報",
+        default_tags=("試合結果",),
+        candidate_id_field="candidate_key",
+        lane_target=TARGET_LANE_AI,
+    ),
+    "player_stat_update": FamilySpec(
+        family="player_stat_update",
+        subtype="fact_notice",
+        category_name="選手情報",
+        default_tags=("野球データ",),
+        candidate_id_field="candidate_key",
+        lane_target=TARGET_LANE_AI,
+    ),
+}
+
+FAMILY_SPECS: dict[str, FamilySpec] = {**MVP_FAMILY_SPECS, **PARITY_FAMILY_SPECS}
+
 
 def supported_mvp_families() -> tuple[str, ...]:
+    return tuple(MVP_FAMILY_SPECS.keys())
+
+
+def supported_pickup_families() -> tuple[str, ...]:
     return tuple(FAMILY_SPECS.keys())
+
+
+def supported_pickup_source_kinds() -> tuple[str, ...]:
+    return PICKUP_SOURCE_KINDS
 
 
 def _emit_event(event: str, **payload: Any) -> None:
@@ -206,6 +292,13 @@ def _build_family_candidate_key(
     air_date: str = "",
     program_slug: str = "",
     game_id: str = "",
+    lineup_kind: str = "",
+    speaker: str = "",
+    context_slug: str = "",
+    injury_status: str = "",
+    result_token: str = "",
+    stat_date: str = "",
+    metric_slug: str = "",
 ) -> str:
     if family == "program_notice":
         return f"program_notice:{air_date}:{program_slug}" if air_date and program_slug else ""
@@ -221,35 +314,106 @@ def _build_family_candidate_key(
     if family == "farm_result":
         normalized_game_id = _normalize_token(game_id)
         return f"farm_result:{normalized_game_id}" if normalized_game_id else ""
+    if family == "lineup_notice":
+        normalized_game_id = _normalize_token(game_id)
+        normalized_lineup_kind = _normalize_token(lineup_kind)
+        if not normalized_game_id or not normalized_lineup_kind:
+            return ""
+        return f"lineup_notice:{normalized_game_id}:{normalized_lineup_kind}"
+    if family == "comment_notice":
+        normalized_speaker = _normalize_subject(speaker)
+        normalized_context = _normalize_token(context_slug)
+        if not notice_date or not normalized_speaker or not normalized_context:
+            return ""
+        return f"comment_notice:{notice_date}:{normalized_speaker}:{normalized_context}"
+    if family == "injury_notice":
+        normalized_subject = _normalize_subject(subject)
+        normalized_status = _normalize_token(injury_status)
+        if not notice_date or not normalized_subject or not normalized_status:
+            return ""
+        return f"injury_notice:{notice_date}:{normalized_subject}:{normalized_status}"
+    if family == "postgame_result":
+        normalized_game_id = _normalize_token(game_id)
+        normalized_result = _normalize_token(result_token)
+        if not normalized_game_id or not normalized_result:
+            return ""
+        return f"postgame_result:{normalized_game_id}:{normalized_result}"
+    if family == "player_stat_update":
+        normalized_subject = _normalize_subject(subject)
+        normalized_metric = _normalize_token(metric_slug)
+        if not stat_date or not normalized_subject or not normalized_metric:
+            return ""
+        return f"player_stat_update:{stat_date}:{normalized_subject}:{normalized_metric}"
     return ""
 
 
-def _family_candidate_discriminator(spec: FamilySpec, *, notice_date: str, air_date: str, game_id: str) -> str:
+def _family_candidate_discriminator(
+    spec: FamilySpec,
+    *,
+    notice_date: str,
+    air_date: str,
+    game_id: str,
+    candidate_key: str,
+) -> str:
     if spec.candidate_id_field == "notice_date":
         return notice_date
     if spec.candidate_id_field == "air_date":
         return air_date
+    if spec.candidate_id_field == "candidate_key":
+        return candidate_key
     return _normalize_token(game_id)
 
 
-def _bundle_entry(source_url: str, trust_tier: str, *, role: str) -> dict[str, str]:
+def _infer_pickup_source_kind(source_url: str, trust_tier: str) -> str:
+    parsed = urlsplit(source_url)
+    host = (parsed.hostname or "").lower()
+    path = (parsed.path or "").lower()
+
+    if host.endswith("npb.jp"):
+        return SOURCE_KIND_NPB
+    if host in _SOCIAL_HOSTS:
+        if trust_tier == TRUST_TIER_T2:
+            return SOURCE_KIND_TEAM_X
+        if trust_tier == TRUST_TIER_T3:
+            return SOURCE_KIND_REPORTER_X
+    if "program" in path or "schedule" in path or "tv" in path:
+        return SOURCE_KIND_PROGRAM_TABLE
+    if "farm" in path or "2gun" in path or "minor" in path:
+        return SOURCE_KIND_FARM_INFO
+    if trust_tier == TRUST_TIER_T2:
+        return SOURCE_KIND_MAJOR_RSS
+    if trust_tier == TRUST_TIER_T1:
+        return SOURCE_KIND_OFFICIAL_WEB
+    return ""
+
+
+def _normalize_pickup_source_kind(raw_value: Any, source_url: str, trust_tier: str) -> str:
+    normalized = str(raw_value or "").strip().lower().replace("-", "_")
+    if normalized in PICKUP_SOURCE_KINDS:
+        return normalized
+    return _infer_pickup_source_kind(source_url, trust_tier)
+
+
+def _bundle_entry(source_url: str, trust_tier: str, *, role: str, source_kind: str) -> dict[str, str]:
     return {
         "url": source_url,
         "source_id": build_source_id(source_url),
         "trust_tier": trust_tier,
         "role": role,
+        "source_kind": source_kind,
     }
 
 
 def _dedupe_bundle_entries(entries: Sequence[dict[str, Any]]) -> list[dict[str, str]]:
     deduped: list[dict[str, str]] = []
-    seen: set[tuple[str, str, str]] = set()
+    seen: set[tuple[str, str, str, str]] = set()
     for entry in entries:
         url = str(entry.get("url") or "").strip()
         source_id = str(entry.get("source_id") or build_source_id(url)).strip()
         trust_tier = str(entry.get("trust_tier") or "").strip()
         role = str(entry.get("role") or "").strip()
-        marker = (source_id, trust_tier, role)
+        source_kind = _normalize_pickup_source_kind(entry.get("source_kind"), url, trust_tier)
+        marker = (source_id, trust_tier, role, source_kind)
         if not url or not source_id or marker in seen:
             continue
         seen.add(marker)
@@ -259,6 +423,7 @@ def _dedupe_bundle_entries(entries: Sequence[dict[str, Any]]) -> list[dict[str, 
                 "source_id": source_id,
                 "trust_tier": trust_tier,
                 "role": role,
+                "source_kind": source_kind,
             }
         )
     return deduped
@@ -319,6 +484,10 @@ def _merge_candidates(existing: NoticeCandidate, incoming: NoticeCandidate) -> N
     metadata["tags"] = normalize_tags(
         list(preferred.metadata.get("tags") or []) + list(other.metadata.get("tags") or [])
     )
+    metadata["pickup_source_kinds"] = _merge_source_lists(
+        preferred.metadata.get("pickup_source_kinds") or [],
+        other.metadata.get("pickup_source_kinds") or [],
+    )
     metadata["source_id"] = preferred.source_id
     metadata[WPClient.SOURCE_URL_META_KEY] = preferred.source_url
     metadata["primary_trust_tier"] = (
@@ -371,6 +540,14 @@ def _normalize_intake_item(item: dict[str, Any]) -> tuple[NoticeCandidate | None
     air_date = str(item.get("air_date") or "").strip()
     program_slug = str(item.get("program_slug") or "").strip()
     game_id = str(item.get("game_id") or "").strip()
+    lineup_kind = str(item.get("lineup_kind") or "").strip()
+    speaker = str(item.get("speaker") or "").strip()
+    context_slug = str(item.get("context_slug") or "").strip()
+    injury_status = str(item.get("injury_status") or "").strip()
+    result_token = str(item.get("result_token") or "").strip()
+    stat_date = str(item.get("stat_date") or "").strip()
+    metric_slug = str(item.get("metric_slug") or "").strip()
+    source_kind = _normalize_pickup_source_kind(item.get("source_kind"), source_url, trust_tier)
     candidate_key = _build_family_candidate_key(
         family,
         notice_date=notice_date,
@@ -379,6 +556,13 @@ def _normalize_intake_item(item: dict[str, Any]) -> tuple[NoticeCandidate | None
         air_date=air_date,
         program_slug=program_slug,
         game_id=game_id,
+        lineup_kind=lineup_kind,
+        speaker=speaker,
+        context_slug=context_slug,
+        injury_status=injury_status,
+        result_token=result_token,
+        stat_date=stat_date,
+        metric_slug=metric_slug,
     )
     if not candidate_key:
         return None, ROUTE_AMBIGUOUS_SUBJECT
@@ -387,15 +571,30 @@ def _normalize_intake_item(item: dict[str, Any]) -> tuple[NoticeCandidate | None
     source_bundle = []
     trigger_only_sources = []
     if trust_tier in {TRUST_TIER_T1, TRUST_TIER_T2} and source_url:
-        source_bundle = [_bundle_entry(source_url, trust_tier, role="primary" if trust_tier == TRUST_TIER_T1 else "bundle")]
+        source_bundle = [
+            _bundle_entry(
+                source_url,
+                trust_tier,
+                role="primary" if trust_tier == TRUST_TIER_T1 else "bundle",
+                source_kind=source_kind,
+            )
+        ]
     elif trust_tier == TRUST_TIER_T3 and source_url:
-        trigger_only_sources = [_bundle_entry(source_url, trust_tier, role="trigger")]
+        trigger_only_sources = [
+            _bundle_entry(
+                source_url,
+                trust_tier,
+                role="trigger",
+                source_kind=source_kind,
+            )
+        ]
 
     discriminator = _family_candidate_discriminator(
         spec,
         notice_date=notice_date,
         air_date=air_date,
         game_id=game_id,
+        candidate_key=candidate_key,
     )
     metadata: dict[str, Any] = {
         "subtype": spec.subtype,
@@ -408,6 +607,10 @@ def _normalize_intake_item(item: dict[str, Any]) -> tuple[NoticeCandidate | None
         "candidate_id": _build_candidate_id(source_url, family, discriminator),
         "candidate_key": candidate_key,
         "source_trust": "primary" if trust_tier == TRUST_TIER_T1 else "secondary",
+        "pickup_mode": "collect_wide_assert_narrow",
+        "pickup_source_kind": source_kind,
+        "pickup_source_kinds": [source_kind] if source_kind else [],
+        "lane_target": spec.lane_target,
         "batch_source": TARGET_BATCH_SOURCE,
         "source_id": source_id,
         "source_urls": [source_url] if source_url else [],
@@ -428,6 +631,20 @@ def _normalize_intake_item(item: dict[str, Any]) -> tuple[NoticeCandidate | None
         metadata["program_slug"] = program_slug
     if game_id:
         metadata["game_id"] = game_id
+    if lineup_kind:
+        metadata["lineup_kind"] = lineup_kind
+    if speaker:
+        metadata["speaker"] = speaker
+    if context_slug:
+        metadata["context_slug"] = context_slug
+    if injury_status:
+        metadata["injury_status"] = injury_status
+    if result_token:
+        metadata["result_token"] = result_token
+    if stat_date:
+        metadata["stat_date"] = stat_date
+    if metric_slug:
+        metadata["metric_slug"] = metric_slug
     metadata.update(dict(item.get("metadata") or {}))
     metadata["candidate_key"] = candidate_key
     metadata["source_urls"] = _merge_source_lists(metadata.get("source_urls") or [], [source_url])
@@ -436,6 +653,10 @@ def _normalize_intake_item(item: dict[str, Any]) -> tuple[NoticeCandidate | None
     )
     metadata["trigger_only_sources"] = _dedupe_bundle_entries(
         trigger_only_sources + list(metadata.get("trigger_only_sources") or [])
+    )
+    metadata["pickup_source_kinds"] = _merge_source_lists(
+        metadata.get("pickup_source_kinds") or [],
+        [source_kind] if source_kind else [],
     )
     metadata["tags"] = normalize_tags(metadata.get("tags") or [])
     metadata["source_id"] = source_id
@@ -788,8 +1009,12 @@ def _parse_latest_notice_from_html(html_text: str, source_url: str = NPB_NOTICE_
         "batch_source": TARGET_BATCH_SOURCE,
         "source_id": build_source_id(source_url),
         "source_urls": [source_url],
-        "source_bundle": [_bundle_entry(source_url, TRUST_TIER_T1, role="primary")],
+        "source_bundle": [_bundle_entry(source_url, TRUST_TIER_T1, role="primary", source_kind=SOURCE_KIND_NPB)],
         "trigger_only_sources": [],
+        "pickup_mode": "collect_wide_assert_narrow",
+        "pickup_source_kind": SOURCE_KIND_NPB,
+        "pickup_source_kinds": [SOURCE_KIND_NPB],
+        "lane_target": spec.lane_target,
         "primary_trust_tier": TRUST_TIER_T1,
         "notice_date": notice_date,
         "subject": subject,
@@ -1063,6 +1288,15 @@ def _create_notice_draft(
     return None
 
 
+def _candidate_lane_target(candidate: NoticeCandidate) -> str:
+    family = _candidate_metadata_family(candidate)
+    spec = FAMILY_SPECS.get(family)
+    if spec is None:
+        return TARGET_LANE_AI
+    lane_target = str(candidate.metadata.get("lane_target") or spec.lane_target).strip()
+    return lane_target or TARGET_LANE_AI
+
+
 def _route_candidates(candidates: Sequence[NoticeCandidate]) -> tuple[list[NoticeCandidate], list[str]]:
     grouped: dict[str, NoticeCandidate] = {}
     route_outcomes: list[str] = []
@@ -1083,10 +1317,33 @@ def _route_candidates(candidates: Sequence[NoticeCandidate]) -> tuple[list[Notic
 
     routed: list[NoticeCandidate] = []
     for candidate in grouped.values():
+        lane_target = _candidate_lane_target(candidate)
+        if lane_target != TARGET_LANE_FIXED:
+            route_outcomes.append(ROUTE_DEFERRED_PICKUP)
+            _emit_event(
+                "deferred_pickup",
+                reason="lane_target_not_fixed",
+                lane_target=lane_target,
+                family=_candidate_metadata_family(candidate),
+                candidate_key=_candidate_metadata_key(candidate),
+                source_bundle=_candidate_source_bundle(candidate),
+                trigger_only_sources=_candidate_trigger_sources(candidate),
+            )
+            continue
         if not _candidate_has_t1_source(candidate):
             route_outcomes.append(ROUTE_AWAIT_PRIMARY)
+            route_outcomes.append(ROUTE_DEFERRED_PICKUP)
             _emit_event(
                 "await_primary",
+                family=_candidate_metadata_family(candidate),
+                candidate_key=_candidate_metadata_key(candidate),
+                source_bundle=_candidate_source_bundle(candidate),
+                trigger_only_sources=_candidate_trigger_sources(candidate),
+            )
+            _emit_event(
+                "deferred_pickup",
+                reason="await_primary",
+                lane_target=lane_target,
                 family=_candidate_metadata_family(candidate),
                 candidate_key=_candidate_metadata_key(candidate),
                 source_bundle=_candidate_source_bundle(candidate),
@@ -1107,6 +1364,7 @@ def _process_candidates(wp: WPClient, candidates: Sequence[NoticeCandidate]) -> 
         if duplicates:
             duplicate_skip = True
             route_outcomes.append(ROUTE_DUPLICATE_ABSORBED)
+            route_outcomes.append(ROUTE_DEFERRED_PICKUP)
             _emit_event(
                 "duplicate_skip",
                 candidate_id=candidate.metadata["candidate_id"],

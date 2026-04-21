@@ -47,7 +47,7 @@ TODOの状態：`【】` 未着手 → `【×】` 完了
 | 034 | [034-official-x-attribution-rule.md](034-official-x-attribution-rule.md) | 公式 X / 公式媒体 X の attribution 付与ルールを正式化 | Codex B | 014, B8, 032 |
 | 035 | [035-close-marker-formalization.md](035-close-marker-formalization.md) | close_marker 判定を条件付き reserve として正式化 | Codex B | 032, 033, 034 |
 | 036 | [036-gemini25flash-fixed-lane-prompt-hardening.md](036-gemini25flash-fixed-lane-prompt-hardening.md) | Gemini 2.5 Flash 固定版レーン prompt contract hardening | Codex B | 030, 032, 033, 034 |
-| 037 | [037-nomotoke-pickup-parity-expansion.md](037-nomotoke-pickup-parity-expansion.md) | のもとけ比 pickup parity expansion | Codex A | 028 impl, 029, 036 accepted, 038 accepted |
+| 037 | [037-pickup-parity-expansion.md](037-pickup-parity-expansion.md) | pickup parity expansion と deferred_pickup route outcome | Codex A | 014, 023, 027, 028, 011, 019 |
 | 038 | [038-article-quality-ledger-and-template-promotion.md](038-article-quality-ledger-and-template-promotion.md) | 記事品質 ledger と template / prompt promotion loop 正式化 | Claude Code | 015, 036 accepted |
 | 039 | [039-quality-gmail-delivery-reliability.md](039-quality-gmail-delivery-reliability.md) | quality-gmail cron delivery reliability の切り分けと復旧 | Claude Code | 015, 現行 quality-gmail automation |
 | 040 | [040-codex-repair-playbook.md](040-codex-repair-playbook.md) | Codex repair playbook(記事をどう直すかの正式ルール) | Codex B | 030, 032, 033, 034, 036 accepted |
@@ -105,7 +105,7 @@ done
 - `029` は 027 canary success で unblock、READY。
 - `035` は `030〜034` 実施後も close_marker 系 fail が残った時だけ fire する dormant ticket。
 - 036 は Gemini 2.5 Flash 固定版レーン prompt contract hardening。validator 着地済を前提に、初稿側で fail を減らし Codex repair を minimum-diff に寄せる。
-- 037 はのもとけ比 pickup parity expansion。`036 / 038 / 028 impl / 029` 全 accepted 後に fire。
+- 037 は fixed lane runner の pickup parity expansion。028 の 4 family create path を維持したまま、pickup 層へ 5 parity family・10 source_kind・`deferred_pickup` を追加する。
 - 038 は Claude Code 管理の運用 ticket。Draft ごとに品質 ledger を残し、再発 fail だけを 036 / 037 / 035 に昇格させる loop を固定する。
 - 039 は Claude Code 管理の delivery 切り分け系 ticket。quality-gmail の cron fire → log read → mail send → 着信の 4 段階で delivery reliability を管理する。029(4 行の意味固定)とは独立で、本線 fire 順を止めない。
 - 040 は Codex B の repair playbook。036 minimum-diff rubric を repair 手順として固定し、038 ledger の `repair_closed / escalated / accept_draft` と 1 対 1 で対応させる。fixed / agent 両 lane で同じ playbook を適用。

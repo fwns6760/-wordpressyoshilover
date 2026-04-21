@@ -56,6 +56,7 @@ TODOの状態：`【】` 未着手 → `【×】` 完了
 | 043 | [043-local-runtime-auto-recovery.md](043-local-runtime-auto-recovery.md) | local runtime の再起動後 auto recovery を正式化 | Claude Code | 042, 現行 Codex automations |
 | 044 | [044-codex-startup-registration-and-reboot-smoke.md](044-codex-startup-registration-and-reboot-smoke.md) | Codex app startup 登録と reboot smoke 確認 | Claude Code | 039, 042, 043, 現行 Codex automations |
 | 045 | [045-non-npb-collector-wiring.md](045-non-npb-collector-wiring.md) | non-NPB collector wiring を 037 intake に接続する | Codex A | 028 impl accepted, 037 accepted, 038 active |
+| 046 | [046-pickup-parity-first-wave-promotion.md](046-pickup-parity-first-wave-promotion.md) | 037 first wave 4 family を trust 条件合致時だけ fixed lane Draft 候補へ昇格 | Codex A | 037 accepted, 041 accepted, 045 accepted |
 
 ---
 
@@ -115,6 +116,7 @@ done
 - 043 は Claude Code 管理の auto recovery 設計 ticket。042(手動復旧)を継承し、follow-up を `Codex app を Windows スタートアップフォルダへ配置する` 1 本に絞る。自動ログイン / Claude auto-start / missed run 自動補填は非対象。
 - 044 は Claude Code 管理の 043 follow-up 実施 ticket。Codex app スタートアップ配置(user 手動 1 本)と reboot smoke(3 automation 次 tick 復帰判定)を本文に固定し、失敗時 routing を 039 / 042 / 043 に閉じる。本線 fire 順は変更しない。
 - 045 は 037 の follow-up ticket(Codex A)。037 で pickup contract / candidate_key / deferred_pickup まで runner 層に固まったが、default fetch path は NPB roster 1 本固定のまま。**既存 local / repo 内 collector artifact** を 037 intake(`_normalize_intake_items`)に接続する optional intake path を追加し、fixed-lane 3 family(program_notice / probable_pitcher / farm_result)に live item を入れる。新外部 API / scraping は追加しない(blanket go 範囲外に広げない)。038 ledger の 2 件目以降の entry / 035 observation の空転防止がゴール。
+- 046 は 037 の follow-up ticket(Codex A)。pickup parity の first wave 4 family(`lineup_notice` / `comment_notice` / `injury_notice` / `postgame_result`)を、037 boundary を保ったまま trust 条件合致時だけ `deferred_pickup` から `fixed_primary` へ昇格させ、Draft 本数を直接増やす。
 - 更新 fire 順: `036 ✓ → [038 + 040 並走] → 029 → 028 impl → 037`(035 reserve 維持、039 delivery 切り分け / 041 eyecatch fallback / 042 手動復旧 / 043 auto recovery 設計 / 044 startup 登録 + smoke は独立並走)。
 - 役割固定(2026-04-21): Claude = 027/028/029/038/039/040 管理・route・accept/hold/escalated 判定 / Codex A = 027/028/037 開発 / Codex B = 036/040 開発 / Gemini 2.5 Flash = fixed lane 初稿 / Gemini Flash = agent lane 初稿 / user = 最終判断のみ。
 

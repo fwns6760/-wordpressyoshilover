@@ -43,6 +43,24 @@ _DATE_HEADING_RE = re.compile(r"(\d{4})年(\d{1,2})月(\d{1,2})日の出場選�
 _SCRIPT_STYLE_RE = re.compile(r"(?is)<(script|style)\b.*?>.*?</\1>")
 _COMMENT_RE = re.compile(r"(?s)<!--.*?-->")
 _TAG_RE = re.compile(r"<[^>]+>")
+_NUMBER_RE = re.compile(r"\d{1,3}")
+
+_NPB_TEAMS = {
+    "阪神タイガース",
+    "横浜DeNAベイスターズ",
+    "読売ジャイアンツ",
+    "中日ドラゴンズ",
+    "広島東洋カープ",
+    "東京ヤクルトスワローズ",
+    "福岡ソフトバンクホークス",
+    "北海道日本ハムファイターズ",
+    "オリックス・バファローズ",
+    "東北楽天ゴールデンイーグルス",
+    "埼玉西武ライオンズ",
+    "千葉ロッテマリーンズ",
+}
+_POSITION_LABELS = {"投手", "捕手", "内野手", "外野手"}
+_DUPLICATE_LOOKUP_FIELDS = ("id", "status", "slug", "title", "meta")
 
 
 @dataclass(frozen=True)
@@ -190,14 +208,15 @@ def _html_to_lines(html_text: str) -> list[str]:
     return lines
 
 
-def _parse_notice_row(line: str, action: str) -> NoticeEntry | None:
-    if not line.startswith(TARGET_TEAM):
+def _notice_entry_from_tokens(tokens: Sequence[str], action: str) -> NoticeEntry | None:
+    if len(tokens) < 4:
         return None
-    parts = line.split()
-    if len(parts) < 5:
-        return None
-    team, position, number, *name_parts = parts
+    team, position, number, *name_parts = tokens
     if team != TARGET_TEAM:
+        return None
+    if position not in _POSITION_LABELS:
+        return None
+    if not _NUMBER_RE.fullmatch(number):
         return None
     player_name = "".join(name_parts)
     if not player_name:
@@ -208,6 +227,31 @@ def _parse_notice_row(line: str, action: str) -> NoticeEntry | None:
         number=number,
         player_name=player_name,
     )
+
+
+def _parse_notice_row(lines: Sequence[str] | str, action: str) -> tuple[NoticeEntry | None, int]:
+    if not action:
+        return None, 1
+    candidate_lines = [lines] if isinstance(lines, str) else list(lines)
+    tokens: list[str] = []
+    consumed = 0
+
+    for raw_line in candidate_lines[:4]:
+        parts = raw_line.split()
+        if not parts:
+            continue
+        if consumed == 0 and parts[0] not in _NPB_TEAMS:
+            return None, 1
+        if consumed > 0 and parts[0] in _NPB_TEAMS:
+            break
+
+        tokens.extend(parts)
+        consumed += 1
+        entry = _notice_entry_from_tokens(tokens, action)
+        if entry is not None:
+            return entry, consumed
+
+    return None, max(consumed, 1)
 
 
 def _parse_latest_notice_from_html(html_text: str, source_url: str = NPB_NOTICE_URL) -> NoticeCandidate | None:
@@ -231,35 +275,46 @@ def _parse_latest_notice_from_html(html_text: str, source_url: str = NPB_NOTICE_
     deregistered: list[NoticeEntry] = []
     deregister_note = ""
 
-    for line in lines[date_index + 1:]:
+    body_lines = lines[date_index + 1:]
+    idx = 0
+    while idx < len(body_lines):
+        line = body_lines[idx]
         if line == "セントラル・リーグ":
             league = "central"
+            idx += 1
             continue
         if line == "パシフィック・リーグ":
             break
         if "出場選手一覧" in line:
             break
         if league != "central":
+            idx += 1
             continue
         if line == "出場選手登録":
             current_action = "register"
+            idx += 1
             continue
         if line in {"出場選手登録抹消", "登録抹消"}:
             current_action = "deregister"
+            idx += 1
             continue
         if line == "なし":
+            idx += 1
             continue
         if line.startswith("※"):
             if current_action == "deregister":
                 deregister_note = line
+            idx += 1
             continue
-        entry = _parse_notice_row(line, current_action)
+        entry, consumed = _parse_notice_row(body_lines[idx:], current_action)
         if entry is None:
+            idx += 1
             continue
         if entry.action == "register":
             registered.append(entry)
         elif entry.action == "deregister":
             deregistered.append(entry)
+        idx += consumed
 
     if not registered and not deregistered:
         return None
@@ -359,23 +414,59 @@ def _run_wp_post_dry_run(wp: WPClient, *, now: datetime | None = None) -> str:
     return "pass"
 
 
+def _post_candidate_id(post: dict[str, Any]) -> str:
+    meta = post.get("meta")
+    if not isinstance(meta, dict):
+        return ""
+    return str(meta.get("candidate_id") or "").strip()
+
+
+def _list_draft_posts_for_duplicate_check(wp: WPClient) -> list[dict[str, Any]]:
+    posts: list[dict[str, Any]] = []
+    page = 1
+    per_page = 100
+
+    while True:
+        resp = requests.get(
+            f"{wp.api}/posts",
+            params={
+                "status": "draft",
+                "per_page": per_page,
+                "page": page,
+                "orderby": "date",
+                "order": "desc",
+                "context": "edit",
+                "_fields": ",".join(_DUPLICATE_LOOKUP_FIELDS),
+            },
+            auth=wp.auth,
+            timeout=30,
+        )
+        wp._raise_for_status(resp, f"draft重複確認一覧取得 page={page}")
+        rows = resp.json()
+        if not isinstance(rows, list) or not rows:
+            break
+
+        posts.extend(rows)
+        total_pages = int(resp.headers.get("X-WP-TotalPages", "0") or 0)
+        if total_pages:
+            if page >= total_pages:
+                break
+            page += 1
+            continue
+        if len(rows) < per_page:
+            break
+        page += 1
+
+    return posts
+
+
 def _find_duplicate_posts(wp: WPClient, candidate_id: str) -> list[dict[str, Any]]:
-    resp = requests.get(
-        f"{wp.api}/posts",
-        params={
-            "status": "draft,publish",
-            "meta_key": "candidate_id",
-            "meta_value": candidate_id,
-            "per_page": 100,
-            "orderby": "date",
-            "order": "desc",
-        },
-        auth=wp.auth,
-        timeout=30,
-    )
-    wp._raise_for_status(resp, f"candidate_id重複確認 candidate_id={candidate_id}")
-    rows = resp.json()
-    return rows if isinstance(rows, list) else []
+    return [
+        post
+        for post in _list_draft_posts_for_duplicate_check(wp)
+        if str(post.get("status") or "").strip().lower() == "draft"
+        and _post_candidate_id(post) == candidate_id
+    ]
 
 
 def _create_notice_draft(wp: WPClient, candidate: NoticeCandidate, category_id: int) -> int | None:

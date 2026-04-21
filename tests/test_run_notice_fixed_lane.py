@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from src.tools import run_notice_fixed_lane as lane
+
+
+FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
+SPLIT_ROWS_FIXTURE = FIXTURES_DIR / "npb_roster_notice_20260420_split_rows.html"
 
 
 class _FakeWP:
@@ -25,6 +30,23 @@ class _FakeWP:
 
 
 class NoticeFixedLaneTests(unittest.TestCase):
+    def test_parse_notice_row_accepts_split_rows_for_target_team(self):
+        lines = lane._html_to_lines(SPLIT_ROWS_FIXTURE.read_text(encoding="utf-8"))
+        start_index = lines.index("読売ジャイアンツ 捕手")
+
+        entry, consumed = lane._parse_notice_row(lines[start_index:], "deregister")
+
+        self.assertEqual(consumed, 3)
+        self.assertEqual(
+            entry,
+            lane.NoticeEntry(
+                action="deregister",
+                position="捕手",
+                number="67",
+                player_name="山瀬慎之助",
+            ),
+        )
+
     def test_parse_latest_notice_from_html_extracts_giants_candidate(self):
         html_text = """
         <html><body>
@@ -56,6 +78,21 @@ class NoticeFixedLaneTests(unittest.TestCase):
         self.assertIn("丸佳浩", candidate.title)
         self.assertIn("再登録", candidate.body_html)
 
+    def test_parse_latest_notice_from_split_row_fixture_extracts_candidate_id(self):
+        candidate = lane._parse_latest_notice_from_html(
+            SPLIT_ROWS_FIXTURE.read_text(encoding="utf-8"),
+        )
+
+        self.assertIsNotNone(candidate)
+        assert candidate is not None
+        self.assertEqual(candidate.notice_date, "20260420")
+        self.assertEqual(
+            candidate.metadata["candidate_id"],
+            "https://npb.jp/announcement/roster:transaction_notice:20260420",
+        )
+        self.assertIn("山瀬慎之助", candidate.title)
+        self.assertIn("丸佳浩", candidate.title)
+
     @patch("src.tools.run_notice_fixed_lane.requests.delete")
     @patch("src.tools.run_notice_fixed_lane.requests.post")
     def test_wp_post_dry_run_success_creates_and_deletes_probe(self, mock_post, mock_delete):
@@ -83,16 +120,36 @@ class NoticeFixedLaneTests(unittest.TestCase):
                 self.assertEqual(result, expected)
 
     @patch("src.tools.run_notice_fixed_lane.requests.get")
-    def test_duplicate_detection_handles_exists_and_not_exists(self, mock_get):
-        cases = [
-            ([{"id": 10}], True),
-            ([], False),
+    def test_duplicate_detection_filters_candidate_id_from_draft_list(self, mock_get):
+        mock_get.side_effect = [
+            Mock(
+                status_code=200,
+                headers={"X-WP-TotalPages": "2"},
+                json=lambda: [
+                    {"id": 63056, "status": "draft", "meta": {"candidate_id": "candidate-1"}},
+                    {"id": 61000, "status": "draft", "meta": {"candidate_id": "candidate-x"}},
+                ],
+            ),
+            Mock(
+                status_code=200,
+                headers={"X-WP-TotalPages": "2"},
+                json=lambda: [
+                    {"id": 63082, "status": "draft", "meta": {"candidate_id": "candidate-1"}},
+                    {"id": 62000, "status": "publish", "meta": {"candidate_id": "candidate-1"}},
+                ],
+            ),
         ]
-        for rows, expected_exists in cases:
-            with self.subTest(rows=rows):
-                mock_get.return_value = Mock(status_code=200, json=lambda rows=rows: rows)
-                found = lane._find_duplicate_posts(_FakeWP(), "candidate-1")
-                self.assertEqual(bool(found), expected_exists)
+
+        found = lane._find_duplicate_posts(_FakeWP(), "candidate-1")
+
+        self.assertEqual([row["id"] for row in found], [63056, 63082])
+        first_call = mock_get.call_args_list[0]
+        self.assertEqual(first_call.kwargs["params"]["status"], "draft")
+        self.assertEqual(first_call.kwargs["params"]["context"], "edit")
+        self.assertEqual(
+            first_call.kwargs["params"]["_fields"],
+            "id,status,slug,title,meta",
+        )
 
     def test_build_candidate_id_matches_expected_format(self):
         candidate_id = lane._build_candidate_id("https://npb.jp/announcement/roster/", "20260420")
@@ -132,6 +189,34 @@ class NoticeFixedLaneTests(unittest.TestCase):
         self.assertFalse(duplicate_skip)
         self.assertEqual(create_mock.call_count, 1)
         self.assertEqual(create_mock.call_args.args[1].metadata["candidate_id"], "candidate-1")
+
+    def test_process_candidates_skips_create_when_duplicate_draft_exists(self):
+        candidate = lane.NoticeCandidate(
+            source_url="https://npb.jp/announcement/roster/",
+            source_id="https://npb.jp/announcement/roster",
+            notice_date="20260420",
+            title="duplicate",
+            body_html="<p>duplicate</p>",
+            metadata={"candidate_id": "candidate-1"},
+        )
+
+        with patch.object(
+            lane,
+            "_find_duplicate_posts",
+            return_value=[
+                {"id": 63056, "status": "draft", "meta": {"candidate_id": "candidate-1"}},
+                {"id": 63082, "status": "draft", "meta": {"candidate_id": "candidate-1"}},
+            ],
+        ), patch.object(lane, "_create_notice_draft") as create_mock:
+            post_id, duplicate_skip = lane._process_candidates(
+                _FakeWP(),
+                [candidate],
+                category_id=664,
+            )
+
+        self.assertIsNone(post_id)
+        self.assertTrue(duplicate_skip)
+        create_mock.assert_not_called()
 
 
 if __name__ == "__main__":

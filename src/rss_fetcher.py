@@ -30,6 +30,9 @@ import html as _html
 from html.parser import HTMLParser
 
 from article_parts_renderer import ArticleParts, render_postgame
+from title_validator import build_reroll_title as _build_title_reroll_title
+from title_validator import validate_title_candidate as _validate_title_candidate
+from title_validator import is_supported_subtype as _title_validator_supports_subtype
 from wp_client import WPClient
 from media_xpost_selector import evaluate_media_quote_selection
 from wp_draft_creator import build_oembed_block, load_posted_urls, save_posted_url
@@ -9839,7 +9842,12 @@ def _rewrite_display_title_with_template(title: str, summary: str, category: str
 
 
 def rewrite_display_title(title: str, summary: str, category: str, has_game: bool) -> str:
-    rewritten_title, _template_key = _rewrite_display_title_with_template(title, summary, category, has_game)
+    rewritten_title, _template_key = _rewrite_display_title_with_guard(
+        title,
+        summary,
+        category,
+        has_game,
+    )
     return rewritten_title
 
 
@@ -9862,6 +9870,72 @@ def _log_title_template_selected(
         "rewritten_title": rewritten_title,
     }
     logger.info(json.dumps(payload, ensure_ascii=False))
+
+
+def _log_title_validator_reroll(
+    logger: logging.Logger,
+    *,
+    source_url: str,
+    category: str,
+    article_subtype: str,
+    fail_axes: list[str],
+    inferred_subtype: str,
+    expected_first_block: str,
+    candidate_title: str,
+    rerolled_title: str,
+) -> None:
+    payload = {
+        "event": "title_validator_reroll",
+        "source_url": source_url,
+        "category": category,
+        "article_subtype": article_subtype,
+        "fail_axis": fail_axes,
+        "inferred_subtype": inferred_subtype,
+        "expected_first_block": expected_first_block,
+        "candidate_title": candidate_title,
+        "rerolled_title": rerolled_title,
+    }
+    logger.warning(json.dumps(payload, ensure_ascii=False))
+
+
+def _rewrite_display_title_with_guard(
+    title: str,
+    summary: str,
+    category: str,
+    has_game: bool,
+    *,
+    article_subtype: str = "",
+    logger: logging.Logger | None = None,
+    source_url: str = "",
+) -> tuple[str, str]:
+    resolved_subtype = article_subtype or _detect_article_subtype(title, summary, category, has_game)
+    rewritten_title, template_key = _rewrite_display_title_with_template(title, summary, category, has_game)
+    if not _title_validator_supports_subtype(resolved_subtype):
+        return rewritten_title, template_key
+
+    validation = _validate_title_candidate(rewritten_title, resolved_subtype)
+    if validation["ok"]:
+        return rewritten_title, template_key
+
+    rerolled_title = _trim_display_title(_build_title_reroll_title(rewritten_title, resolved_subtype))
+    rerolled_validation = _validate_title_candidate(rerolled_title, resolved_subtype)
+    if not rerolled_validation["ok"]:
+        rerolled_title = _trim_display_title(_build_title_reroll_title("", resolved_subtype))
+
+    if logger is not None:
+        _log_title_validator_reroll(
+            logger,
+            source_url=source_url,
+            category=category,
+            article_subtype=resolved_subtype,
+            fail_axes=list(validation["fail_axes"]),
+            inferred_subtype=str(validation.get("inferred_subtype") or ""),
+            expected_first_block=str(validation.get("expected_first_block") or ""),
+            candidate_title=rewritten_title,
+            rerolled_title=rerolled_title,
+        )
+
+    return rerolled_title, f"{template_key}_title_reroll"
 
 
 def _log_manager_body_template_applied(
@@ -10835,7 +10909,15 @@ def _main(args, logger):
                     min_chars=thin_source_min_chars,
                 )
             if args.dry_run:
-                draft_title, title_template_key = _rewrite_display_title_with_template(raw_title, summary, category, entry_has_game)
+                draft_title, title_template_key = _rewrite_display_title_with_guard(
+                    raw_title,
+                    summary,
+                    category,
+                    entry_has_game,
+                    article_subtype=title_article_subtype,
+                    logger=logger,
+                    source_url=post_url,
+                )
                 _log_title_template_selected(logger, post_url, raw_title, draft_title, title_template_key, category, title_article_subtype)
                 print(f"  DRY: [{category}] {draft_title[:50]}")
                 print(f"       {post_url}")
@@ -10921,7 +11003,15 @@ def _main(args, logger):
                 logger=logger,
             )
             _og_url  = _article_images[0] if _article_images else ""
-            draft_title, title_template_key = _rewrite_display_title_with_template(raw_title, summary, category, entry_has_game)
+            draft_title, title_template_key = _rewrite_display_title_with_guard(
+                raw_title,
+                summary,
+                category,
+                entry_has_game,
+                article_subtype=title_article_subtype,
+                logger=logger,
+                source_url=post_url,
+            )
             _log_title_template_selected(logger, post_url, raw_title, draft_title, title_template_key, category, title_article_subtype)
             content, ai_body_for_x = build_news_block(
                 title,

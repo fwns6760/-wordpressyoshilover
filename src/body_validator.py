@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import re
 
+try:
+    from source_attribution_validator import validate_source_attribution
+except ImportError:  # pragma: no cover - package import for tests
+    from src.source_attribution_validator import validate_source_attribution
+
 
 BODY_CONTRACTS: dict[str, tuple[str, ...]] = {
     "live_update": (
@@ -42,6 +47,7 @@ SOURCE_BLOCK_MARKERS = (
 
 HARD_FAIL_AXES = {
     "source_block_missing",
+    "source_attribution_ambiguous",
     "postgame_score_missing",
     "postgame_win_loss_missing",
     "postgame_decisive_event_missing",
@@ -184,6 +190,7 @@ def validate_body_candidate(
     article_subtype: str,
     *,
     rendered_html: str | None = None,
+    source_context: dict[str, object] | None = None,
 ) -> dict[str, object]:
     expected = list(expected_block_order(article_subtype))
     if not expected:
@@ -197,6 +204,13 @@ def validate_body_candidate(
             "actual_block_order": [],
             "missing_required_blocks": [],
             "has_source_block": True,
+            "source_attribution_required": False,
+            "source_attribution_ok": True,
+            "source_attribution_fail_axis": "",
+            "primary_source_kind": "",
+            "has_t1_web_source": False,
+            "required_sources": [],
+            "missing_required_sources": [],
             "stop_reason": "",
         }
 
@@ -215,10 +229,28 @@ def validate_body_candidate(
         fail_axes.append("block_order_mismatch")
 
     has_source_block = True
+    attribution_validation = {
+        "required": False,
+        "ok": True,
+        "fail_axis": "",
+        "primary_source_kind": "",
+        "has_t1_web_source": False,
+        "required_sources": [],
+        "missing_required_sources": [],
+    }
     if rendered_html is not None:
         has_source_block = _has_source_block(rendered_html)
         if not has_source_block:
             fail_axes.append("source_block_missing")
+        else:
+            attribution_validation = validate_source_attribution(
+                article_subtype,
+                rendered_html,
+                source_context,
+            )
+            attribution_fail_axis = str(attribution_validation.get("fail_axis") or "")
+            if attribution_fail_axis:
+                fail_axes.append(attribution_fail_axis)
 
     if article_subtype == "postgame":
         fail_axes.extend(_validate_postgame_fact_kernel(body_text))
@@ -243,5 +275,12 @@ def validate_body_candidate(
         "actual_block_order": actual_headings,
         "missing_required_blocks": missing_required_blocks,
         "has_source_block": has_source_block,
+        "source_attribution_required": bool(attribution_validation.get("required", False)),
+        "source_attribution_ok": bool(attribution_validation.get("ok", True)),
+        "source_attribution_fail_axis": str(attribution_validation.get("fail_axis") or ""),
+        "primary_source_kind": str(attribution_validation.get("primary_source_kind") or ""),
+        "has_t1_web_source": bool(attribution_validation.get("has_t1_web_source", False)),
+        "required_sources": list(attribution_validation.get("required_sources") or []),
+        "missing_required_sources": list(attribution_validation.get("missing_required_sources") or []),
         "stop_reason": stop_reason,
     }

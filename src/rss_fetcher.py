@@ -11123,6 +11123,12 @@ def _main(args, logger):
                 ai_body_for_x,
                 title_article_subtype,
                 rendered_html=content,
+                source_context={
+                    "source_name": source_name,
+                    "source_url": post_url,
+                    "source_type": source_type,
+                    "source_links": item.get("source_links"),
+                },
             )
             if not body_contract_validate["ok"]:
                 skip_filter += 1

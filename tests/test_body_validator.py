@@ -228,6 +228,125 @@ class BodyValidatorTests(unittest.TestCase):
         self.assertIn("postgame_comment_slot_before_fact_kernel", result["fail_axes"])
 
 
+class BodyValidatorSourceAttributionTests(unittest.TestCase):
+    @staticmethod
+    def _source_html(*items: tuple[str, str]) -> str:
+        links = " / ".join(f'<a href="{url}">{name}</a>' for name, url in items)
+        return (
+            '<div class="yoshilover-article-source">記事元を読む</div>'
+            f'<p style="font-size:0.8em;color:#999;">📰 参照元: {links}</p>'
+        )
+
+    def test_required_official_media_x_attribution_passes_when_source_block_names_it(self):
+        rendered_html = self._source_html(
+            ("スポーツ報知巨人班X", "https://twitter.com/hochi_giants/status/1"),
+        )
+
+        result = body_validator.validate_body_candidate(
+            VALID_CASES["live_update"],
+            "live_update",
+            rendered_html=rendered_html,
+            source_context={
+                "source_name": "スポーツ報知巨人班X",
+                "source_url": "https://twitter.com/hochi_giants/status/1",
+                "source_type": "social_news",
+            },
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "accept")
+        self.assertTrue(result["source_attribution_required"])
+        self.assertEqual(result["primary_source_kind"], "official_media_x")
+
+    def test_required_official_x_missing_in_source_block_requests_reroll(self):
+        rendered_html = self._source_html(
+            ("スポーツ報知", "https://hochi.news/articles/20260421-OHT1T51111.html"),
+        )
+
+        result = body_validator.validate_body_candidate(
+            VALID_CASES["pregame"],
+            "pregame",
+            rendered_html=rendered_html,
+            source_context={
+                "source_name": "巨人公式X",
+                "source_url": "https://twitter.com/TokyoGiants/status/1",
+                "source_type": "social_news",
+            },
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["action"], "reroll")
+        self.assertIn("source_attribution_missing", result["fail_axes"])
+        self.assertEqual(result["missing_required_sources"], ["巨人公式X"])
+
+    def test_postgame_allows_missing_x_attribution_when_t1_web_source_exists(self):
+        rendered_html = self._source_html(
+            ("スポーツ報知", "https://hochi.news/articles/20260421-OHT1T51111.html"),
+        )
+
+        result = body_validator.validate_body_candidate(
+            VALID_CASES["postgame"],
+            "postgame",
+            rendered_html=rendered_html,
+            source_context={
+                "source_type": "social_news",
+                "source_links": [
+                    {"name": "巨人公式X", "url": "https://twitter.com/TokyoGiants/status/1"},
+                    {"name": "スポーツ報知", "url": "https://hochi.news/articles/20260421-OHT1T51111.html"},
+                ],
+            },
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "accept")
+        self.assertFalse(result["source_attribution_required"])
+        self.assertTrue(result["has_t1_web_source"])
+
+    def test_ambiguous_x_source_is_hard_fail(self):
+        rendered_html = self._source_html(
+            ("球団X", "https://twitter.com/giants_info_clip/status/1"),
+        )
+
+        result = body_validator.validate_body_candidate(
+            VALID_CASES["fact_notice"],
+            "fact_notice",
+            rendered_html=rendered_html,
+            source_context={
+                "source_name": "球団X",
+                "source_url": "https://twitter.com/giants_info_clip/status/1",
+                "source_type": "social_news",
+            },
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["action"], "fail")
+        self.assertIn("source_attribution_ambiguous", result["fail_axes"])
+        self.assertEqual(result["stop_reason"], "source_attribution_ambiguous")
+
+    def test_pregame_requires_x_attribution_even_when_t1_web_source_exists(self):
+        rendered_html = self._source_html(
+            ("スポーツ報知", "https://hochi.news/articles/20260421-OHT1T51111.html"),
+        )
+
+        result = body_validator.validate_body_candidate(
+            VALID_CASES["pregame"],
+            "pregame",
+            rendered_html=rendered_html,
+            source_context={
+                "source_type": "social_news",
+                "source_links": [
+                    {"name": "巨人公式X", "url": "https://twitter.com/TokyoGiants/status/1"},
+                    {"name": "スポーツ報知", "url": "https://hochi.news/articles/20260421-OHT1T51111.html"},
+                ],
+            },
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["action"], "reroll")
+        self.assertTrue(result["source_attribution_required"])
+        self.assertIn("source_attribution_missing", result["fail_axes"])
+
+
 class BodyValidatorWireInTests(unittest.TestCase):
     def test_build_news_block_rerolls_pregame_body_contract_to_safe_fallback(self):
         bad_body = "\n".join(

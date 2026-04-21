@@ -9,13 +9,16 @@ lane consumes them.
 
 from __future__ import annotations
 
+import argparse
 import json
+import os
 import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha1
-from html import unescape
+from html import escape, unescape
+from pathlib import Path
 from typing import Any, Sequence
 from urllib.parse import urlsplit
 
@@ -85,12 +88,20 @@ EXIT_OK = 0
 EXIT_WP_POST_DRY_RUN_FAILED = 40
 EXIT_WP_POST_FAILED = 41
 EXIT_INPUT_ERROR = 42
+ENV_INTAKE_FILE = "NOTICE_FIXED_LANE_INTAKE_FILE"
+ENV_INTAKE_SOURCE = "NOTICE_FIXED_LANE_INTAKE_SOURCE"
+INTAKE_SOURCE_RSS_FETCHER_LOG = "rss_fetcher_log"
 
 _DATE_HEADING_RE = re.compile(r"(\d{4})年(\d{1,2})月(\d{1,2})日の出場選手登録、登録抹消")
 _SCRIPT_STYLE_RE = re.compile(r"(?is)<(script|style)\b.*?>.*?</\1>")
 _COMMENT_RE = re.compile(r"(?s)<!--.*?-->")
 _TAG_RE = re.compile(r"<[^>]+>")
 _NUMBER_RE = re.compile(r"\d{1,3}")
+_LOG_TIMESTAMP_RE = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
+_COMPACT_DATE_RE = re.compile(r"(?<!\d)(\d{4})(\d{2})(\d{2})(?!\d)")
+_DATE_SLASH_RE = re.compile(r"(?:(\d{4})/)?(\d{1,2})/(\d{1,2})")
+_DATE_JP_RE = re.compile(r"(?:(\d{4})年)?(\d{1,2})月(\d{1,2})日")
+_SCORE_TOKEN_RE = re.compile(r"(\d{1,2})\s*[-－–]\s*(\d{1,2})")
 
 _NPB_TEAMS = {
     "阪神タイガース",
@@ -108,6 +119,20 @@ _NPB_TEAMS = {
 }
 _POSITION_LABELS = {"投手", "捕手", "内野手", "外野手"}
 _DUPLICATE_LOOKUP_FIELDS = ("id", "status", "slug", "generated_slug", "title", "meta", "date")
+_TEAM_CODE_ALIASES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("t", ("阪神", "タイガース", "hanshin", "tigers")),
+    ("db", ("dena", "baystars", "ベイスターズ", "横浜")),
+    ("c", ("広島", "カープ", "hiroshima", "carp")),
+    ("d", ("中日", "ドラゴンズ", "chunichi", "dragons")),
+    ("s", ("ヤクルト", "スワローズ", "swallows")),
+    ("b", ("オリックス", "バファローズ", "orix", "buffaloes")),
+    ("m", ("ロッテ", "マリーンズ", "marines")),
+    ("e", ("楽天", "イーグルス", "eagles")),
+    ("h", ("ソフトバンク", "ホークス", "hawks")),
+    ("f", ("日本ハム", "ファイターズ", "日ハム", "fighters")),
+    ("l", ("西武", "ライオンズ", "lions")),
+    ("ht", ("ハヤテ", "hayate")),
+)
 
 
 @dataclass(frozen=True)
@@ -693,6 +718,234 @@ def _normalize_intake_items(items: Sequence[dict[str, Any]]) -> tuple[list[Notic
         if candidate is not None:
             candidates.append(candidate)
     return candidates, route_outcomes
+
+
+def _build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Run fixed-lane notice draft creation")
+    parser.add_argument("--intake-file", help="Optional collector artifact path")
+    parser.add_argument(
+        "--intake-source",
+        choices=(INTAKE_SOURCE_RSS_FETCHER_LOG,),
+        help="Optional collector artifact type",
+    )
+    return parser
+
+
+def _resolve_optional_intake(argv: Sequence[str] | None) -> tuple[str, str]:
+    parser = _build_arg_parser()
+    args = parser.parse_args(list(argv) if argv is not None else sys.argv[1:])
+    intake_file = str(args.intake_file or os.getenv(ENV_INTAKE_FILE) or "").strip()
+    intake_source = str(args.intake_source or os.getenv(ENV_INTAKE_SOURCE) or "").strip()
+    if not intake_file:
+        return "", ""
+    if not intake_source:
+        lowered_name = Path(intake_file).name.lower()
+        if lowered_name == "rss_fetcher.log":
+            intake_source = INTAKE_SOURCE_RSS_FETCHER_LOG
+    if intake_source != INTAKE_SOURCE_RSS_FETCHER_LOG:
+        raise ValueError("unsupported_intake_source")
+    return intake_file, intake_source
+
+
+def _log_timestamp(line: str) -> str:
+    match = _LOG_TIMESTAMP_RE.match(line)
+    return match.group(1) if match else ""
+
+
+def _extract_json_payload(line: str) -> dict[str, Any] | None:
+    start = line.find("{")
+    end = line.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        payload = json.loads(line[start : end + 1])
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _valid_compact_date(year: str, month: str, day: str) -> str:
+    try:
+        year_num = int(year)
+        month_num = int(month)
+        day_num = int(day)
+    except ValueError:
+        return ""
+    if month_num < 1 or month_num > 12 or day_num < 1 or day_num > 31:
+        return ""
+    return f"{year_num:04d}{month_num:02d}{day_num:02d}"
+
+
+def _extract_observed_date(text: str, observed_at: str) -> str:
+    for pattern in (_DATE_SLASH_RE, _DATE_JP_RE):
+        for match in pattern.finditer(text):
+            year = match.group(1) or (observed_at[:4] if observed_at else "")
+            compact = _valid_compact_date(year, match.group(2), match.group(3))
+            if compact:
+                return compact
+    for match in _COMPACT_DATE_RE.finditer(text):
+        compact = _valid_compact_date(match.group(1), match.group(2), match.group(3))
+        if compact:
+            return compact
+    if observed_at:
+        return observed_at[:10].replace("-", "")
+    return ""
+
+
+def _extract_opponent_code(text: str) -> str:
+    normalized = re.sub(r"[\s\u3000]+", "", unescape(text or "")).lower()
+    for code, aliases in _TEAM_CODE_ALIASES:
+        for alias in aliases:
+            alias_key = re.sub(r"[\s\u3000]+", "", alias).lower()
+            if alias_key and alias_key in normalized:
+                return code
+    return ""
+
+
+def _build_observed_game_id(text: str, observed_at: str, *, prefix: str = "") -> str:
+    observed_date = _extract_observed_date(text, observed_at)
+    opponent_code = _extract_opponent_code(text)
+    if not observed_date or not opponent_code:
+        return ""
+    return f"{prefix}{observed_date}-g-{opponent_code}"
+
+
+def _infer_result_token(text: str) -> str:
+    normalized = unescape(text or "")
+    if "引き分け" in normalized:
+        return "draw"
+    match = _SCORE_TOKEN_RE.search(normalized)
+    if match:
+        first = int(match.group(1))
+        second = int(match.group(2))
+        if first > second:
+            return "win"
+        if first < second:
+            return "lose"
+        return "draw"
+    if "勝利" in normalized or "白星" in normalized:
+        return "win"
+    if "敗戦" in normalized or "黒星" in normalized:
+        return "lose"
+    return ""
+
+
+def _build_artifact_body_html(*, intake_source: str, observed_at: str, title: str, original_title: str, template: str) -> str:
+    parts = [f"<p>{escape(title)}</p>"]
+    if original_title and original_title != title:
+        parts.append(f"<p>{escape(original_title)}</p>")
+    meta_bits = [f"collector_artifact={intake_source}"]
+    if observed_at:
+        meta_bits.append(f"observed_at={observed_at}")
+    if template:
+        meta_bits.append(f"template={template}")
+    parts.append(f"<p>{escape(' '.join(meta_bits))}</p>")
+    return "".join(parts)
+
+
+def _rss_fetcher_log_payload_to_intake_item(payload: dict[str, Any], observed_at: str) -> dict[str, Any] | None:
+    if str(payload.get("event") or "").strip() != "title_template_selected":
+        return None
+
+    source_url = str(payload.get("source_url") or "").strip()
+    article_subtype = str(payload.get("article_subtype") or "").strip().lower()
+    template = str(payload.get("template") or "").strip().lower()
+    original_title = str(payload.get("original_title") or "").strip()
+    rewritten_title = str(payload.get("rewritten_title") or "").strip()
+    title = rewritten_title or original_title
+    if not source_url or not title:
+        return None
+
+    observed_text = " ".join(part for part in (original_title, rewritten_title, template, source_url) if part)
+    item: dict[str, Any] = {
+        "source_url": source_url,
+        "trust_tier": _infer_trust_tier(source_url),
+        "title": title,
+        "body_html": _build_artifact_body_html(
+            intake_source=INTAKE_SOURCE_RSS_FETCHER_LOG,
+            observed_at=observed_at,
+            title=title,
+            original_title=original_title,
+            template=template,
+        ),
+    }
+    if article_subtype == "pregame":
+        game_id = _build_observed_game_id(observed_text, observed_at)
+        if not game_id:
+            return None
+        item.update(
+            {
+                "family": "probable_pitcher",
+                "game_id": game_id,
+                "category": "試合速報",
+                "tags": ["予告先発"],
+            }
+        )
+        return item
+    if article_subtype == "lineup":
+        game_id = _build_observed_game_id(observed_text, observed_at)
+        if not game_id:
+            return None
+        item.update(
+            {
+                "family": "lineup_notice",
+                "game_id": game_id,
+                "lineup_kind": "starting",
+                "category": "試合速報",
+                "tags": ["スタメン"],
+            }
+        )
+        return item
+    if article_subtype == "postgame":
+        game_id = _build_observed_game_id(observed_text, observed_at)
+        result_token = _infer_result_token(observed_text)
+        if not game_id or not result_token:
+            return None
+        item.update(
+            {
+                "family": "postgame_result",
+                "game_id": game_id,
+                "result_token": result_token,
+                "category": "試合速報",
+                "tags": ["試合結果"],
+            }
+        )
+        return item
+    if article_subtype == "farm" and template.startswith("farm_result"):
+        game_id = _build_observed_game_id(observed_text, observed_at, prefix="farm-")
+        if not game_id:
+            return None
+        item.update(
+            {
+                "family": "farm_result",
+                "game_id": game_id,
+                "category": "ドラフト・育成",
+                "tags": ["ファーム"],
+            }
+        )
+        return item
+    return None
+
+
+def _read_rss_fetcher_log_intake_items(path: Path) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        payload = _extract_json_payload(line)
+        if payload is None:
+            continue
+        item = _rss_fetcher_log_payload_to_intake_item(payload, _log_timestamp(line))
+        if item is not None:
+            items.append(item)
+    return items
+
+
+def _load_optional_intake_items(intake_file: str, intake_source: str) -> list[dict[str, Any]]:
+    path = Path(intake_file)
+    if not path.is_file():
+        raise ValueError("intake_file_not_found")
+    if intake_source == INTAKE_SOURCE_RSS_FETCHER_LOG:
+        return _read_rss_fetcher_log_intake_items(path)
+    raise ValueError("unsupported_intake_source")
 
 
 def _reason_from_response(resp: requests.Response) -> str:
@@ -1420,7 +1673,6 @@ def _process_candidates(wp: WPClient, candidates: Sequence[NoticeCandidate]) -> 
 
 
 def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, Any]]:
-    del argv
     summary: dict[str, Any] = {
         "wp_post_dry_run": "fail:not_run",
         "source_fetch": "skip:not_run",
@@ -1434,6 +1686,13 @@ def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, Any]]:
     }
 
     try:
+        intake_file, intake_source = _resolve_optional_intake(argv)
+    except (SystemExit, ValueError) as exc:
+        reason = _request_error_reason(exc)
+        summary["source_fetch"] = f"fail:{reason}"
+        return EXIT_INPUT_ERROR, summary
+
+    try:
         wp = WPClient()
     except Exception as exc:
         reason = _request_error_reason(exc)
@@ -1443,6 +1702,42 @@ def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, Any]]:
     summary["wp_post_dry_run"] = _run_wp_post_dry_run(wp)
     if summary["wp_post_dry_run"] != "pass":
         return EXIT_WP_POST_DRY_RUN_FAILED, summary
+
+    if intake_file:
+        try:
+            items = _load_optional_intake_items(intake_file, intake_source)
+        except Exception as exc:
+            reason = _request_error_reason(exc)
+            _emit_event("source_fetch_fail", reason=reason)
+            summary["source_fetch"] = f"fail:{reason}"
+            return EXIT_INPUT_ERROR, summary
+
+        if not items:
+            _emit_event("source_fetch_skip", reason="no_intake_candidates_found", intake_source=intake_source)
+            summary["source_fetch"] = "skip:no_intake_candidates_found"
+            return EXIT_OK, summary
+
+        candidates, normalized_outcomes = _normalize_intake_items(items)
+        summary["source_fetch"] = "pass"
+        if not candidates:
+            summary["route_outcomes"] = list(normalized_outcomes)
+            return EXIT_OK, summary
+
+        summary["canary_candidate_id"] = candidates[0].metadata["candidate_id"]
+        result = _process_candidates(wp, candidates)
+        summary["duplicate_skip"] = result.duplicate_skip
+        summary["route_outcomes"] = [*normalized_outcomes, *result.route_outcomes]
+        if result.created_post_id is None:
+            if result.error_reason == "category_resolve_failed":
+                return EXIT_INPUT_ERROR, summary
+            if result.error_reason == "draft_create_failed" or (
+                result.attempted_create and not result.duplicate_skip
+            ):
+                return EXIT_WP_POST_FAILED, summary
+            return EXIT_OK, summary
+
+        summary["canary_post_id"] = result.created_post_id
+        return EXIT_OK, summary
 
     try:
         candidate = _fetch_latest_notice_candidate()

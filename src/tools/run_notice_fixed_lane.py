@@ -24,6 +24,7 @@ from urllib.parse import urlsplit
 
 import requests
 
+from src.eyecatch_fallback import maybe_generate_structured_eyecatch_media
 from src.source_id import source_id as build_source_id
 from src.source_trust import classify_url
 from src.tag_category_guard import normalize_tags
@@ -1485,6 +1486,7 @@ def _create_notice_draft(
     category_ids: Sequence[int],
     tag_ids: Sequence[int],
 ) -> int | None:
+    featured_media = maybe_generate_structured_eyecatch_media(wp, candidate)
     payload = {
         "title": candidate.title,
         "content": candidate.body_html,
@@ -1494,6 +1496,8 @@ def _create_notice_draft(
         "tags": list(tag_ids),
         "meta": candidate.metadata,
     }
+    if featured_media:
+        payload["featured_media"] = featured_media
     last_reason = ""
     for attempt in range(1, 3):
         try:

@@ -469,6 +469,41 @@ class WPClient:
             print(f"[WP] 画像アップロード失敗（スキップ）: {e}")
             return 0
 
+    def upload_generated_image(self, image_data: bytes, filename: str, content_type: str) -> int:
+        """生成済みの画像bytesをWPメディアにアップロードする。"""
+        try:
+            normalized_content_type = self._normalize_content_type(content_type)
+            normalized_filename = (filename or "structured-eyecatch.svg").strip() or "structured-eyecatch.svg"
+            if not image_data:
+                print("[WP] 生成画像アップロードskip: empty_image_data")
+                return 0
+            if normalized_content_type not in {"image/svg+xml", "image/png", "image/jpeg", "image/webp"}:
+                print(
+                    "[WP] 生成画像アップロードskip: "
+                    f"unsupported_content_type={normalized_content_type or 'unknown'} filename={normalized_filename}"
+                )
+                return 0
+            resp = requests.post(
+                f"{self.api}/media",
+                data=image_data,
+                auth=self.auth,
+                headers={
+                    "Content-Disposition": f'attachment; filename="{normalized_filename}"',
+                    "Content-Type": normalized_content_type,
+                },
+                timeout=30,
+            )
+            self._raise_for_status(resp, "生成画像アップロード")
+            media_id = resp.json()["id"]
+            print(
+                f"[WP] 生成画像アップロード media_id={media_id} "
+                f"filename={normalized_filename} content_type={normalized_content_type}"
+            )
+            return int(media_id)
+        except Exception as e:
+            print(f"[WP] 生成画像アップロード失敗（スキップ）: {e}")
+            return 0
+
     # ------------------------------------------------------------------
     # 下書き投稿
     # ------------------------------------------------------------------

@@ -16,6 +16,53 @@
 
 ---
 
+## T-017 🟠 fact_check メール 07:00 JST demo 落ち（hourly 化 warm 維持で実質解消）
+
+**発見日**: 2026-04-18
+**解決日**: 2026-04-19（2 日観察後、Claude Code 判定）
+**解決者**: Codex（第16便 scheduler hourly 化） / Claude Code（MB-008 観察）
+
+**対応内容**:
+- Scheduler を `0 * * * *` hourly に変更（第16便 `ab349de`, revision `00135-rpc`）
+- Cloud Run が常時 warm となり cold start demo 落ちが実質解消
+
+**観察結果**:
+- 原インシデント: `2026-04-17T22:00:11 UTC` (= 2026-04-18 07:00 JST) で `fact_check_email_demo` 発火
+- 観察期間: 2026-04-18 〜 2026-04-19（48h 以上）
+- `2026-04-18T22:00 UTC` (= 2026-04-19 07:00 JST) で `fact_check_email_skipped`（正常 0 件 skip）、demo 落ちなし
+- `fact_check_email_demo` イベントは `2026-04-18T00:29 UTC` が最後、以降観測なし
+
+**判定**: 問題再発せず、hourly warm 維持で実質解消を確認。T-017 RESOLVED。
+
+**再発時の処置**（将来の参考）:
+- `src/fact_check_notifier.py:358-372` の `_load_gmail_app_password()` に secret empty retry を追加
+- `/fact_check_notify` handler 起動時の warm-up secret fetch 追加
+
+**関連 ticket**: MB-008（master_backlog 側の観察チケット、同時 close）
+
+---
+
+## T-024 🟡 監査結果の自動メール通知（`/audit_notify` endpoint + Cloud Scheduler）
+
+**発見日**: 2026-04-18 夜
+**解決日**: 2026-04-19（実装は第35便 deploy 時に完了、台帳移動は MB-009 として 2026-04-19 実施）
+**解決者**: Codex（第35便実装 + deploy） / Claude Code（台帳移動）
+
+**対応内容**:
+- `yoshilover-fetcher` に `GET /audit_notify` 新設（認証 `X-Secret: $RUN_SECRET` 再利用）
+- 監査軸 4 + pipeline: `title_body_mismatch` / `thin_body` / `no_opinion` / `no_eyecatch` / `pipeline_error`
+- Cloud Scheduler `audit-notify-6x` 作成、`0 2,4,6,8,11,14 * * *` UTC（JST 11/13/15/17/20/23）
+- 監査対象: `draft` + `publish`、`window_minutes` 既定 60 内に作成/更新された記事
+- `AUDIT_OPINION_USE_LLM=0` 既定（ルール判定）
+- 0 件時メール送信 skip、件名 `[yoshilover] 問題 N 件（...）`
+- 本便スコープ外: `repetition` 軸は先送り（→ Phase 2 MB-P2-04）
+
+**Prod revision**: `yoshilover-fetcher-00143-luj`（tag `audit-notify-canary` 残存、削除は MB-018）
+
+**関連**: 依頼書 `docs/handoff/codex_requests/2026-04-18_35.md` / 回答 `docs/handoff/codex_responses/2026-04-18_35.md`
+
+---
+
 ## T-022 🟠 週末 18-19 時 JST の `/run` scheduler gap（解決）+ T-023 平日 18-19 時 filter（WONTFIX）
 
 **発見日**: 2026-04-18 夜（「18時発火よわい」）

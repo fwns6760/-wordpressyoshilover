@@ -60,7 +60,7 @@ _NPB_TEAMS = {
     "千葉ロッテマリーンズ",
 }
 _POSITION_LABELS = {"投手", "捕手", "内野手", "外野手"}
-_DUPLICATE_LOOKUP_FIELDS = ("id", "status", "slug", "title", "meta")
+_DUPLICATE_LOOKUP_FIELDS = ("id", "status", "slug", "generated_slug", "title", "meta", "date")
 
 
 @dataclass(frozen=True)
@@ -79,6 +79,7 @@ class NoticeCandidate:
     title: str
     body_html: str
     metadata: dict[str, Any]
+    candidate_slug: str = ""
 
 
 def _emit_event(event: str, **payload: Any) -> None:
@@ -108,6 +109,20 @@ def _request_error_reason(exc: Exception) -> str:
         if normalized:
             return normalized[:120]
     return name
+
+
+def _response_text(resp: requests.Response) -> str:
+    encoding = (resp.encoding or "").lower()
+    apparent = (getattr(resp, "apparent_encoding", "") or "").lower()
+
+    # Some NPB pages omit a charset header, so requests falls back to ISO-8859-1
+    # even though the body is UTF-8. Prefer the apparent UTF-8-like encoding there.
+    if apparent and encoding in {"", "iso-8859-1"} and apparent != encoding:
+        try:
+            return resp.content.decode(apparent, errors="replace")
+        except LookupError:
+            pass
+    return resp.text
 
 
 def _notice_date_label(notice_date: str) -> str:
@@ -141,6 +156,10 @@ def _build_candidate_id(source_url: str, notice_date: str) -> str:
     return f"{build_source_id(source_url)}:{TARGET_ARTICLE_TYPE}:{notice_date}"
 
 
+def _build_candidate_slug(notice_date: str) -> str:
+    return f"{TARGET_ARTICLE_TYPE.replace('_', '-')}-giants-{notice_date}"
+
+
 def _build_summary_line(notice_date: str, registered: Sequence[NoticeEntry], deregistered: Sequence[NoticeEntry]) -> str:
     date_label = _notice_date_label(notice_date)
     if registered and deregistered:
@@ -169,6 +188,7 @@ def _build_body_html(
     deregistered: Sequence[NoticeEntry],
     source_url: str,
     deregister_note: str = "",
+    hidden_marker_html: str = "",
 ) -> str:
     summary_line = _build_summary_line(notice_date, registered, deregistered)
     note_html = f"<p>{deregister_note}</p>" if deregister_note else ""
@@ -187,6 +207,7 @@ def _build_body_html(
             note_html,
             "<h3>【今後の注目点】</h3>",
             "<p>起用の詳細や次の再登録タイミングは、球団発表と次の試合前情報で確認したいところです。</p>",
+            hidden_marker_html,
         ]
     )
 
@@ -319,6 +340,22 @@ def _parse_latest_notice_from_html(html_text: str, source_url: str = NPB_NOTICE_
     if not registered and not deregistered:
         return None
 
+    candidate_id = _build_candidate_id(source_url, notice_date)
+    candidate_slug = _build_candidate_slug(notice_date)
+    hidden_marker_html = (
+        "<!-- yoshilover_notice_meta: "
+        + json.dumps(
+            {
+                "candidate_id": candidate_id,
+                "candidate_key": candidate_slug,
+                "subtype": TARGET_SUBTYPE,
+                "source_trust": TARGET_SOURCE_TRUST,
+                "source_id": build_source_id(source_url),
+            },
+            ensure_ascii=False,
+        )
+        + " -->"
+    )
     title = _build_title(notice_date, registered, deregistered)
     body_html = _build_body_html(
         notice_date=notice_date,
@@ -326,8 +363,8 @@ def _parse_latest_notice_from_html(html_text: str, source_url: str = NPB_NOTICE_
         deregistered=deregistered,
         source_url=source_url,
         deregister_note=deregister_note,
+        hidden_marker_html=hidden_marker_html,
     )
-    candidate_id = _build_candidate_id(source_url, notice_date)
     metadata: dict[str, Any] = {
         "subtype": TARGET_SUBTYPE,
         "article_subtype": TARGET_SUBTYPE,
@@ -348,6 +385,7 @@ def _parse_latest_notice_from_html(html_text: str, source_url: str = NPB_NOTICE_
         title=title,
         body_html=body_html,
         metadata=metadata,
+        candidate_slug=candidate_slug,
     )
 
 
@@ -363,7 +401,7 @@ def _fetch_latest_notice_candidate(source_url: str = NPB_NOTICE_URL) -> NoticeCa
         resp.raise_for_status()
     except requests.RequestException as exc:
         raise RuntimeError(_request_error_reason(exc)) from exc
-    return _parse_latest_notice_from_html(resp.text, source_url=source_url)
+    return _parse_latest_notice_from_html(_response_text(resp), source_url=source_url)
 
 
 def _run_wp_post_dry_run(wp: WPClient, *, now: datetime | None = None) -> str:
@@ -421,60 +459,115 @@ def _post_candidate_id(post: dict[str, Any]) -> str:
     return str(meta.get("candidate_id") or "").strip()
 
 
-def _list_draft_posts_for_duplicate_check(wp: WPClient) -> list[dict[str, Any]]:
-    posts: list[dict[str, Any]] = []
-    page = 1
-    per_page = 100
-
-    while True:
-        resp = requests.get(
-            f"{wp.api}/posts",
-            params={
-                "status": "draft",
-                "per_page": per_page,
-                "page": page,
-                "orderby": "date",
-                "order": "desc",
-                "context": "edit",
-                "_fields": ",".join(_DUPLICATE_LOOKUP_FIELDS),
-            },
-            auth=wp.auth,
-            timeout=30,
-        )
-        wp._raise_for_status(resp, f"draft重複確認一覧取得 page={page}")
-        rows = resp.json()
-        if not isinstance(rows, list) or not rows:
-            break
-
-        posts.extend(rows)
-        total_pages = int(resp.headers.get("X-WP-TotalPages", "0") or 0)
-        if total_pages:
-            if page >= total_pages:
-                break
-            page += 1
-            continue
-        if len(rows) < per_page:
-            break
-        page += 1
-
-    return posts
+def _post_candidate_key(post: dict[str, Any]) -> str:
+    return str(post.get("slug") or post.get("generated_slug") or "").strip()
 
 
-def _find_duplicate_posts(wp: WPClient, candidate_id: str) -> list[dict[str, Any]]:
+def _post_title(post: dict[str, Any]) -> str:
+    title = post.get("title")
+    if isinstance(title, dict):
+        return str(title.get("raw") or title.get("rendered") or "").strip()
+    return str(title or "").strip()
+
+
+def _search_recent_posts_for_duplicate_check(wp: WPClient, title: str) -> list[dict[str, Any]]:
+    query_variants = [
+        {
+            "search": title[:40],
+            "per_page": 20,
+            "status": "any",
+            "context": "edit",
+            "_fields": ",".join(_DUPLICATE_LOOKUP_FIELDS),
+        },
+        {
+            "search": title[:40],
+            "per_page": 20,
+            "_fields": ",".join(_DUPLICATE_LOOKUP_FIELDS),
+        },
+    ]
+    last_error: Exception | None = None
+    for params in query_variants:
+        try:
+            resp = requests.get(
+                f"{wp.api}/posts",
+                params=params,
+                auth=wp.auth,
+                timeout=30,
+            )
+            wp._raise_for_status(resp, "draft重複確認検索")
+            rows = resp.json()
+            if isinstance(rows, list):
+                return rows
+        except Exception as exc:  # pragma: no cover - fallback path
+            last_error = exc
+    if last_error:
+        raise last_error
+    return []
+
+
+def _find_duplicate_posts(wp: WPClient, candidate: NoticeCandidate) -> list[dict[str, Any]]:
+    normalized_title = WPClient._normalize_title(candidate.title)
     return [
         post
-        for post in _list_draft_posts_for_duplicate_check(wp)
+        for post in _search_recent_posts_for_duplicate_check(wp, candidate.title)
         if str(post.get("status") or "").strip().lower() == "draft"
-        and _post_candidate_id(post) == candidate_id
+        and (
+            _post_candidate_id(post) == candidate.metadata["candidate_id"]
+            or _post_candidate_key(post) == candidate.candidate_slug
+            or WPClient._normalize_title(_post_title(post)) == normalized_title
+        )
     ]
 
 
-def _create_notice_draft(wp: WPClient, candidate: NoticeCandidate, category_id: int) -> int | None:
+def _find_or_create_tag_id(wp: WPClient, tag_name: str) -> int:
+    resp = requests.get(
+        f"{wp.api}/tags",
+        params={"search": tag_name, "per_page": 100},
+        auth=wp.auth,
+        timeout=30,
+    )
+    wp._raise_for_status(resp, f"tag検索 name={tag_name}")
+    for row in resp.json():
+        if str(row.get("name") or "").strip() == tag_name:
+            return int(row["id"])
+
+    create_resp = requests.post(
+        f"{wp.api}/tags",
+        json={"name": tag_name},
+        auth=wp.auth,
+        headers=wp.headers,
+        timeout=30,
+    )
+    if create_resp.status_code == 400:
+        try:
+            data = create_resp.json()
+        except ValueError:
+            data = {}
+        if data.get("code") == "term_exists":
+            term_id = ((data.get("data") or {}).get("term_id")) or 0
+            if term_id:
+                return int(term_id)
+    wp._raise_for_status(create_resp, f"tag作成 name={tag_name}")
+    return int(create_resp.json()["id"])
+
+
+def _resolve_tag_ids(wp: WPClient, tag_names: Sequence[str]) -> list[int]:
+    return [_find_or_create_tag_id(wp, tag_name) for tag_name in tag_names if str(tag_name or "").strip()]
+
+
+def _create_notice_draft(
+    wp: WPClient,
+    candidate: NoticeCandidate,
+    category_id: int,
+    tag_ids: Sequence[int],
+) -> int | None:
     payload = {
         "title": candidate.title,
         "content": candidate.body_html,
         "status": "draft",
         "categories": [category_id] if category_id else [],
+        "slug": candidate.candidate_slug,
+        "tags": list(tag_ids),
         "meta": candidate.metadata,
     }
     last_reason = ""
@@ -523,11 +616,12 @@ def _process_candidates(
     candidates: Sequence[NoticeCandidate],
     *,
     category_id: int,
+    tag_ids: Sequence[int],
 ) -> tuple[int | None, bool]:
     created_post_id: int | None = None
     duplicate_skip = False
     for candidate in list(candidates)[:MAX_CANARY_POSTS]:
-        duplicates = _find_duplicate_posts(wp, candidate.metadata["candidate_id"])
+        duplicates = _find_duplicate_posts(wp, candidate)
         if duplicates:
             duplicate_skip = True
             _emit_event(
@@ -536,7 +630,7 @@ def _process_candidates(
                 existing_post_ids=[row.get("id") for row in duplicates],
             )
             continue
-        created_post_id = _create_notice_draft(wp, candidate, category_id)
+        created_post_id = _create_notice_draft(wp, candidate, category_id, tag_ids)
     return created_post_id, duplicate_skip
 
 
@@ -584,11 +678,13 @@ def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, Any]]:
     if not category_id:
         _emit_event("category_resolve_fail", category=TARGET_CATEGORY_NAME)
         return EXIT_INPUT_ERROR, summary
+    tag_ids = _resolve_tag_ids(wp, TARGET_TAGS)
 
     created_post_id, duplicate_skip = _process_candidates(
         wp,
         [candidate],
         category_id=category_id,
+        tag_ids=tag_ids,
     )
     summary["duplicate_skip"] = duplicate_skip
     if created_post_id is None:

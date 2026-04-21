@@ -38,6 +38,23 @@ TODOの状態：`【】` 未着手 → `【×】` 完了
 | 025 | [025-gemini25flash-batch-result-loader.md](025-gemini25flash-batch-result-loader.md) | Batch 結果の Draft 取り込み | Codex A | 023, 024 |
 | 026 | [026-batch-lane-observation-and-cutover.md](026-batch-lane-observation-and-cutover.md) | Batch レーンの観測と段階切替 | Codex B | 023, 025 |
 | 027 | [027-fixed-lane-draft-mvp.md](027-fixed-lane-draft-mvp.md) | 固定版レーン MVP の Draft 作成経路を実装 | Codex A | 011, 014, 019 |
+| 028 | [028-fixed-lane-intake-route-memo.md](028-fixed-lane-intake-route-memo.md) | fixed lane の intake / trust / route を 027 注入用に短く固定 | Codex A | 011, 014, 019 |
+| 029 | [029-quality-progress-digest-formalization.md](029-quality-progress-digest-formalization.md) | quality-gmail の進捗4行と閾値を正式化 | Codex B | 015, 027 |
+| 030 | [030-title-assembly-rule.md](030-title-assembly-rule.md) | title assembly のルール固定と subtype-aware 生成 | Codex B | 010, 011, 014, A4, B2 |
+| 031 | [031-027-canary-success-gate.md](031-027-canary-success-gate.md) | 027 canary success 判定と証跡チェックリストを固定 | Claude Code | 027, 028 |
+| 032 | [032-subtype-body-contract.md](032-subtype-body-contract.md) | 本文ブロック順の正規化と subtype 別 body contract 固定 | Codex B | 011, A4, B3, B4, B5, B6, B7, B8, 030 |
+| 033 | [033-postgame-fact-kernel-hardening.md](033-postgame-fact-kernel-hardening.md) | postgame の fact kernel を hardening する | Codex B | 011, B3, 032 |
+| 034 | [034-official-x-attribution-rule.md](034-official-x-attribution-rule.md) | 公式 X / 公式媒体 X の attribution 付与ルールを正式化 | Codex B | 014, B8, 032 |
+| 035 | [035-close-marker-formalization.md](035-close-marker-formalization.md) | close_marker 判定を条件付き reserve として正式化 | Codex B | 032, 033, 034 |
+| 036 | [036-gemini25flash-fixed-lane-prompt-hardening.md](036-gemini25flash-fixed-lane-prompt-hardening.md) | Gemini 2.5 Flash 固定版レーン prompt contract hardening | Codex B | 030, 032, 033, 034 |
+| 037 | [037-nomotoke-pickup-parity-expansion.md](037-nomotoke-pickup-parity-expansion.md) | のもとけ比 pickup parity expansion | Codex A | 028 impl, 029, 036 accepted, 038 accepted |
+| 038 | [038-article-quality-ledger-and-template-promotion.md](038-article-quality-ledger-and-template-promotion.md) | 記事品質 ledger と template / prompt promotion loop 正式化 | Claude Code | 015, 036 accepted |
+| 039 | [039-quality-gmail-delivery-reliability.md](039-quality-gmail-delivery-reliability.md) | quality-gmail cron delivery reliability の切り分けと復旧 | Claude Code | 015, 現行 quality-gmail automation |
+| 040 | [040-codex-repair-playbook.md](040-codex-repair-playbook.md) | Codex repair playbook(記事をどう直すかの正式ルール) | Codex B | 030, 032, 033, 034, 036 accepted |
+| 042 | [042-local-runtime-reboot-recovery.md](042-local-runtime-reboot-recovery.md) | local runtime の reboot 監査と復旧手順固定 | Claude Code | 039, 現行 Codex automations |
+| 041 | [041-structured-eyecatch-fallback.md](041-structured-eyecatch-fallback.md) | 画像無し記事の structured eyecatch fallback を正式化 | Codex A | 027, 037, 019 |
+| 043 | [043-local-runtime-auto-recovery.md](043-local-runtime-auto-recovery.md) | local runtime の再起動後 auto recovery を正式化 | Claude Code | 042, 現行 Codex automations |
+| 044 | [044-codex-startup-registration-and-reboot-smoke.md](044-codex-startup-registration-and-reboot-smoke.md) | Codex app startup 登録と reboot smoke 確認 | Claude Code | 039, 042, 043, 現行 Codex automations |
 
 ---
 
@@ -80,6 +97,24 @@ done
   に寄せている
 - Claude Code はこれらを queue 在庫として管理し、依存が解けたら user 指示待ちに戻らず順次 fire する
 - 027 は固定版レーン MVP の Draft 作成経路。Draft が積みあがらない根本原因への対応として追加。
+- 028 は `027` に注入するための短メモ ticket。`collect wide / assert narrow`、4 family、`candidate_key`、`route outcome`、`読売ジャイアンツ` 親カテゴリ維持を固定する。
+- 029 は `quality-gmail` を進捗報告に正式化する ticket。`027 canary success` 後に fire する。
+- 030〜035 は DNS blocker と独立に前進する品質本線 / gate 在庫。
+- 固定 fire 順は `031 -> 030 -> 032 -> 033 -> 034`(全着地済)。
+- 027 canary は success 扱いで反映済(Draft 63175 / wp_post_dry_run=pass / duplicate_skip 再実行で観測)。
+- `029` は 027 canary success で unblock、READY。
+- `035` は `030〜034` 実施後も close_marker 系 fail が残った時だけ fire する dormant ticket。
+- 036 は Gemini 2.5 Flash 固定版レーン prompt contract hardening。validator 着地済を前提に、初稿側で fail を減らし Codex repair を minimum-diff に寄せる。
+- 037 はのもとけ比 pickup parity expansion。`036 / 038 / 028 impl / 029` 全 accepted 後に fire。
+- 038 は Claude Code 管理の運用 ticket。Draft ごとに品質 ledger を残し、再発 fail だけを 036 / 037 / 035 に昇格させる loop を固定する。
+- 039 は Claude Code 管理の delivery 切り分け系 ticket。quality-gmail の cron fire → log read → mail send → 着信の 4 段階で delivery reliability を管理する。029(4 行の意味固定)とは独立で、本線 fire 順を止めない。
+- 040 は Codex B の repair playbook。036 minimum-diff rubric を repair 手順として固定し、038 ledger の `repair_closed / escalated / accept_draft` と 1 対 1 で対応させる。fixed / agent 両 lane で同じ playbook を適用。
+- 042 は Claude Code 管理の runtime 監査 ticket。reboot で止まる local automation と、Codex / Claude を再起動した時に何が戻るかを固定する。quality-gmail を含む local cron の復旧手順を明記し、次 tick 再開を前提にする。
+- 041 は Codex A の補助 ticket。画像無し記事で共通 no-image を出さず、subtype ごとの情報から structured eyecatch を自動で組む(番組情報 / 公示 / 予告先発 / コメント / 怪我状況 / 試合結果 の 6 layout)。027 / 037 / 019 にぶら下がる補助で、本線 fire 順を止めない。
+- 043 は Claude Code 管理の auto recovery 設計 ticket。042(手動復旧)を継承し、follow-up を `Codex app を Windows スタートアップフォルダへ配置する` 1 本に絞る。自動ログイン / Claude auto-start / missed run 自動補填は非対象。
+- 044 は Claude Code 管理の 043 follow-up 実施 ticket。Codex app スタートアップ配置(user 手動 1 本)と reboot smoke(3 automation 次 tick 復帰判定)を本文に固定し、失敗時 routing を 039 / 042 / 043 に閉じる。本線 fire 順は変更しない。
+- 更新 fire 順: `036 ✓ → [038 + 040 並走] → 029 → 028 impl → 037`(035 reserve 維持、039 delivery 切り分け / 041 eyecatch fallback / 042 手動復旧 / 043 auto recovery 設計 / 044 startup 登録 + smoke は独立並走)。
+- 役割固定(2026-04-21): Claude = 027/028/029/038/039/040 管理・route・accept/hold/escalated 判定 / Codex A = 027/028/037 開発 / Codex B = 036/040 開発 / Gemini 2.5 Flash = fixed lane 初稿 / Gemini Flash = agent lane 初稿 / user = 最終判断のみ。
 
 ## Batch API 在庫(2026-04-21)
 

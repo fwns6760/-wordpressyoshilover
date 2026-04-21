@@ -121,3 +121,18 @@ user への要求は原則 go / stop / publish / hold の 4 択に固定。
 - 運用事故は session log に事故経緯 + 採用ルールで残す
 - §29 への恒久化は 1 週間の運用証拠を見てから判断
 - 事故再発時は印 + 日付 + post ID で追記
+
+## 2026-04-19 夜 postgame auto-publish 継続判断
+
+- user 判断: go（今夜の postgame auto-publish は通常フロー継続）
+- 範囲: 今夜は postgame のみ観察、他 subtype は広げない
+- 停止条件: 明らかな title-body mismatch、または事故が出た時点で即 stop 切替
+- 理由: 公開較正モードの主目的は「公開して判断できる状態を作ること」。ここを止めると今日の判断材料が増えない
+- 前提: 62591 事故は read-only 事前 status 確認ルールで再発防止済、revert 不要（ChatGPT 判断）
+
+## 2026-04-19 publish ON ルートの扱い（恒常化）
+
+- 通常時: publish ON ルート（postgame / lineup）はそのまま回す。毎回 go / hold を user に聞かない
+- Claude Code の responsibility: 事故・title-body mismatch・事実安全性の問題を検知した時だけ、その場で user に stop 判断を上げる
+- 例外時のみ user に 1 件上げる（go / hold を並べない）
+- Claude の通常返答 4 セクション: 結論 / publish ON ルートの状態 / 事故有無 / user 判断が必要な 1 件（ある時だけ）

@@ -1,14 +1,66 @@
 # CLAUDE.md
 
-このリポジトリで Claude Code セッションを開始したら、**まず以下を必ず読む**。
+> 重要:
+> この repo は **実装 repo** です。
+> 役割定義と運用体制の正本は `/home/fwns6/code/baseballwordpress/AGENTS.md`、`/home/fwns6/code/baseballwordpress/CLAUDE.md`、`/home/fwns6/code/baseballwordpress/docs/handoff/current_focus.md` です。
+> このファイル単独で Claude Code / Codex の役割や current state を判断しないでください。
+> 内容が競合したら **baseballwordpress 側を優先** してください。
+> **runtime trigger の親は役割文ではなく `automation.toml` / scheduler 定義で確認** してください。
+
+このリポジトリで Claude Code セッションを開始したら、**まず正本の役割文書を先に読む**。
 
 ## 起動時に必ず読むファイル（順番通り）
 
-1. `docs/handoff/tickets/OPEN.md` — 未解決チケット一覧（最優先）
-2. `docs/handoff/session_logs/` の最新ファイル — 前回Claude Codeが何をしていたか
-3. `docs/handoff/07_current_position.md` — 全体の現在地
-4. `docs/handoff/01_roles_and_rules.md` — 役割分担と運用ルール
-5. `docs/handoff/06_failure_patterns.md` — 過去の失敗（同じ過ちを繰り返さない）
+1. `/home/fwns6/code/baseballwordpress/AGENTS.md` — 起動時の読み順と役割の簡易地図
+2. `/home/fwns6/code/baseballwordpress/CLAUDE.md` — Claude Code の恒久ルール
+3. `/home/fwns6/code/baseballwordpress/docs/handoff/current_focus.md` — 現在地と次の 1 手
+4. `/home/fwns6/code/baseballwordpress/docs/handoff/agent_operating_model.md` — 役割の短い確認表
+5. その後に、この repo の `docs/handoff/` や `tickets` を参照する
+
+## 現在の運用体制（恒久ルール）
+
+### 役割分担（4 者）
+
+以下は **baseballwordpress 側の正本と一致する範囲でのみ有効**。競合したら正本を優先する。
+
+- **Claude Code = 現場管理**
+  責務: 状況復元、監査、handoff 整理、Codex に流す実装タスクの整理
+- **Codex = 開発担当**
+  責務: repo 内の実装、最小差分修正、必要なテスト、必要時の反映作業
+- **ChatGPT役 = 会議室での相談役**
+  責務: 論点整理、優先順位の圧縮、監査結果の解釈補助、Codex に流す前の短いレビュー
+- **user = 最終判断者**
+  責務: go / stop、scope、publish / hold、優先順位競合時の決定
+
+### 便の基本フロー
+
+- 毎便は **1 スレッド / 1 テーマ / 1 タスク** を原則とする
+- まず read-only で状況復元を行う
+- 次に単一タスクへ絞る
+- その後に監査便か実装便かを分けて進める
+- 実装便では最小差分修正と必要なテストだけを行う
+- deploy は原則別便とする
+
+### user が入る分岐点
+
+- deploy
+- publish
+- env / scheduler / secret の変更
+- scope が広がる時
+- 優先順位が競合する時
+
+### ChatGPT役を呼ぶ条件
+
+- 単一タスクをまだ絞れない時
+- 監査結果の解釈が割れる時
+- Codex に流す前に短いレビューを入れたい時
+
+### 運用体制の前提
+
+- `AGENTS.md` は開発エージェント（Codex）用の運用ルールとして扱う
+- `CLAUDE.md` には current state を書かない
+- current state は `docs/handoff/` 側で管理する
+- ChatGPT役は repo の正本運用を握らない。相談と整理に徹する
 
 ## 必ず守るルール（抜粋）
 

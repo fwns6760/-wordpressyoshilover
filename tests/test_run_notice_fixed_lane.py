@@ -7,6 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import requests
+
 from src.tools import run_notice_fixed_lane as lane
 
 
@@ -90,8 +92,10 @@ class NoticeFixedLaneTests(unittest.TestCase):
             candidate.metadata["candidate_id"],
             "https://npb.jp/announcement/roster:transaction_notice:20260420",
         )
+        self.assertEqual(candidate.candidate_slug, "transaction-notice-giants-20260420")
         self.assertIn("山瀬慎之助", candidate.title)
         self.assertIn("丸佳浩", candidate.title)
+        self.assertIn("yoshilover_notice_meta", candidate.body_html)
 
     @patch("src.tools.run_notice_fixed_lane.requests.delete")
     @patch("src.tools.run_notice_fixed_lane.requests.post")
@@ -107,6 +111,22 @@ class NoticeFixedLaneTests(unittest.TestCase):
         self.assertIn("canary-probe-20260421-073045", mock_post.call_args.kwargs["json"]["title"])
         self.assertEqual(mock_delete.call_args.kwargs["params"], {"force": "true"})
 
+    @patch("src.tools.run_notice_fixed_lane.requests.get")
+    def test_fetch_latest_notice_candidate_prefers_apparent_utf8_when_requests_defaults_to_latin1(self, mock_get):
+        response = requests.Response()
+        response.status_code = 200
+        response._content = SPLIT_ROWS_FIXTURE.read_bytes()
+        response.encoding = "ISO-8859-1"
+
+        mock_get.return_value = response
+
+        candidate = lane._fetch_latest_notice_candidate()
+
+        self.assertIsNotNone(candidate)
+        assert candidate is not None
+        self.assertEqual(candidate.notice_date, "20260420")
+        self.assertIn("山瀬慎之助", candidate.title)
+
     @patch("src.tools.run_notice_fixed_lane.requests.post")
     def test_wp_post_dry_run_failure_covers_401_and_403(self, mock_post):
         cases = [
@@ -121,35 +141,78 @@ class NoticeFixedLaneTests(unittest.TestCase):
 
     @patch("src.tools.run_notice_fixed_lane.requests.get")
     def test_duplicate_detection_filters_candidate_id_from_draft_list(self, mock_get):
+        candidate = lane.NoticeCandidate(
+            source_url="https://npb.jp/announcement/roster/",
+            source_id="https://npb.jp/announcement/roster",
+            notice_date="20260420",
+            title="【公示】4月20日 巨人は山瀬慎之助と丸佳浩を登録抹消",
+            body_html="<p>duplicate</p>",
+            metadata={"candidate_id": "candidate-1"},
+            candidate_slug="transaction-notice-giants-20260420",
+        )
         mock_get.side_effect = [
             Mock(
                 status_code=200,
-                headers={"X-WP-TotalPages": "2"},
                 json=lambda: [
                     {"id": 63056, "status": "draft", "meta": {"candidate_id": "candidate-1"}},
                     {"id": 61000, "status": "draft", "meta": {"candidate_id": "candidate-x"}},
-                ],
-            ),
-            Mock(
-                status_code=200,
-                headers={"X-WP-TotalPages": "2"},
-                json=lambda: [
                     {"id": 63082, "status": "draft", "meta": {"candidate_id": "candidate-1"}},
                     {"id": 62000, "status": "publish", "meta": {"candidate_id": "candidate-1"}},
                 ],
             ),
         ]
 
-        found = lane._find_duplicate_posts(_FakeWP(), "candidate-1")
+        found = lane._find_duplicate_posts(_FakeWP(), candidate)
 
         self.assertEqual([row["id"] for row in found], [63056, 63082])
         first_call = mock_get.call_args_list[0]
-        self.assertEqual(first_call.kwargs["params"]["status"], "draft")
+        self.assertEqual(first_call.kwargs["params"]["status"], "any")
+        self.assertEqual(first_call.kwargs["params"]["search"], candidate.title[:40])
         self.assertEqual(first_call.kwargs["params"]["context"], "edit")
         self.assertEqual(
             first_call.kwargs["params"]["_fields"],
-            "id,status,slug,title,meta",
+            "id,status,slug,generated_slug,title,meta,date",
         )
+
+    @patch("src.tools.run_notice_fixed_lane.requests.get")
+    def test_duplicate_detection_falls_back_to_slug_or_title_when_meta_is_missing(self, mock_get):
+        candidate = lane.NoticeCandidate(
+            source_url="https://npb.jp/announcement/roster/",
+            source_id="https://npb.jp/announcement/roster",
+            notice_date="20260420",
+            title="【公示】4月20日 巨人は山瀬慎之助と丸佳浩を登録抹消",
+            body_html="<p>duplicate</p>",
+            metadata={"candidate_id": "candidate-1"},
+            candidate_slug="transaction-notice-giants-20260420",
+        )
+        mock_get.return_value = Mock(
+            status_code=200,
+            headers={"X-WP-TotalPages": "1"},
+            json=lambda: [
+                {
+                    "id": 63161,
+                    "status": "draft",
+                    "slug": "transaction-notice-giants-20260420",
+                    "title": {"raw": "【公示】4月20日 巨人は山瀬慎之助と丸佳浩を登録抹消"},
+                    "meta": {},
+                }
+            ],
+        )
+
+        found = lane._find_duplicate_posts(_FakeWP(), candidate)
+
+        self.assertEqual([row["id"] for row in found], [63161])
+
+    @patch("src.tools.run_notice_fixed_lane.requests.post")
+    @patch("src.tools.run_notice_fixed_lane.requests.get")
+    def test_resolve_tag_ids_creates_missing_tag(self, mock_get, mock_post):
+        mock_get.return_value = Mock(status_code=200, json=lambda: [])
+        mock_post.return_value = Mock(status_code=201, json=lambda: {"id": 777})
+
+        tag_ids = lane._resolve_tag_ids(_FakeWP(), ["公示"])
+
+        self.assertEqual(tag_ids, [777])
+        self.assertEqual(mock_post.call_args.kwargs["json"], {"name": "公示"})
 
     def test_build_candidate_id_matches_expected_format(self):
         candidate_id = lane._build_candidate_id("https://npb.jp/announcement/roster/", "20260420")
@@ -164,6 +227,7 @@ class NoticeFixedLaneTests(unittest.TestCase):
             title="first",
             body_html="<p>first</p>",
             metadata={"candidate_id": "candidate-1"},
+            candidate_slug="candidate-1",
         )
         candidate2 = lane.NoticeCandidate(
             source_url="https://npb.jp/announcement/roster/",
@@ -172,6 +236,7 @@ class NoticeFixedLaneTests(unittest.TestCase):
             title="second",
             body_html="<p>second</p>",
             metadata={"candidate_id": "candidate-2"},
+            candidate_slug="candidate-2",
         )
 
         with patch.object(lane, "_find_duplicate_posts", return_value=[]), patch.object(
@@ -183,6 +248,7 @@ class NoticeFixedLaneTests(unittest.TestCase):
                 _FakeWP(),
                 [candidate1, candidate2],
                 category_id=664,
+                tag_ids=[777],
             )
 
         self.assertEqual(post_id, 900)
@@ -198,6 +264,7 @@ class NoticeFixedLaneTests(unittest.TestCase):
             title="duplicate",
             body_html="<p>duplicate</p>",
             metadata={"candidate_id": "candidate-1"},
+            candidate_slug="candidate-1",
         )
 
         with patch.object(
@@ -212,6 +279,7 @@ class NoticeFixedLaneTests(unittest.TestCase):
                 _FakeWP(),
                 [candidate],
                 category_id=664,
+                tag_ids=[777],
             )
 
         self.assertIsNone(post_id)

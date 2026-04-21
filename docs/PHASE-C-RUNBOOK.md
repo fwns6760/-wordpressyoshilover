@@ -1,7 +1,13 @@
 # Phase C Runbook
 
-2026-04-17 時点の公開運用切替 Runbook。  
+2026-04-17 時点の公開運用切替 Runbook。
 この文書は `実行手順書` であり、ここに書かれたコマンドは記録用です。実行は別途判断して行うこと。
+
+> **⚠ 2026-04-19 更新**: MVP 枠組みが「Phase C 段階」→「のもとけ再現 Phase 1」に切り替わったため、本 Runbook の内容は **保全用**。現行 release 進捗は `docs/handoff/master_backlog.md` を参照。
+>
+> - Stage 1（publish 限定開放）→ 既完了（postgame / lineup）
+> - Stage 2（X 自動投稿 優先カテゴリ）→ Phase 1 では postgame / lineup のみ解放予定（MB-006 / 007）
+> - Stage 3（フル運用）→ Phase 2 送り
 
 ## 1. Phase C の段階設計
 

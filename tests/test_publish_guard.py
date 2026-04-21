@@ -119,6 +119,24 @@ class ThinSourceFactBlockTests(unittest.TestCase):
         self.assertEqual(threshold, 100)
         self.assertTrue(rss_fetcher._is_thin_source_fact_block("news", 99))
 
+    def test_draft_only_does_not_skip_thin_source_fact_block(self):
+        self.assertFalse(
+            rss_fetcher._should_skip_thin_source_fact_block(
+                draft_only=True,
+                source_type="news",
+                source_fact_block_length=99,
+            )
+        )
+
+    def test_publish_mode_still_skips_thin_source_fact_block(self):
+        self.assertTrue(
+            rss_fetcher._should_skip_thin_source_fact_block(
+                draft_only=False,
+                source_type="news",
+                source_fact_block_length=99,
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

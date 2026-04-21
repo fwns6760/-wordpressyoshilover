@@ -26,10 +26,25 @@ class NotGiantsObservationTests(unittest.TestCase):
         payload = rss_fetcher._skip_reasons_with_samples(
             rss_fetcher.Counter({"not_giants_related": 12, "sns_polluted": 3}),
             not_giants_related_sample_titles=["A", "B", "C", "D"],
+            skip_reason_sample_titles={
+                "pregame_started": ["P1", "P2", "P3", "P4"],
+                "thin_source_fact_block": ["T1"],
+            },
         )
         self.assertEqual(payload["not_giants_related"], 12)
         self.assertEqual(payload["sns_polluted"], 3)
         self.assertEqual(payload["not_giants_related_sample_titles"], ["A", "B", "C"])
+        self.assertEqual(payload["pregame_started_sample_titles"], ["P1", "P2", "P3"])
+        self.assertEqual(payload["thin_source_fact_block_sample_titles"], ["T1"])
+
+    def test_append_skip_reason_sample_dedupes_and_clamps(self):
+        sample_titles = {}
+        rss_fetcher._append_skip_reason_sample(sample_titles, "history_duplicate", "A")
+        rss_fetcher._append_skip_reason_sample(sample_titles, "history_duplicate", "A")
+        rss_fetcher._append_skip_reason_sample(sample_titles, "history_duplicate", "B")
+        rss_fetcher._append_skip_reason_sample(sample_titles, "history_duplicate", "C")
+        rss_fetcher._append_skip_reason_sample(sample_titles, "history_duplicate", "D")
+        self.assertEqual(sample_titles["history_duplicate"], ["A", "B", "C"])
 
 
 if __name__ == "__main__":

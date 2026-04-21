@@ -1,8 +1,9 @@
-"""Canary fixed-lane runner for NPB transaction notices.
+"""Fixed-lane Draft runner with trust-tier routing for MVP notice families.
 
-This runner creates at most one Draft post per execution for the
-``fact_notice`` fixed lane. It only accepts the primary NPB notice page,
-checks ``candidate_id`` duplicates via WordPress REST, and never publishes.
+The default fetch path still targets the NPB roster notice page, while the
+routing layer accepts the wider 028 MVP family contract:
+``program_notice`` / ``transaction_notice`` / ``probable_pitcher`` /
+``farm_result``.
 """
 
 from __future__ import annotations
@@ -12,13 +13,16 @@ import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime
+from hashlib import sha1
 from html import unescape
 from typing import Any, Sequence
+from urllib.parse import urlsplit
 
 import requests
 
 from src.source_id import source_id as build_source_id
 from src.source_trust import classify_url
+from src.tag_category_guard import normalize_tags
 from src.wp_client import WPClient
 
 
@@ -27,12 +31,27 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 MAX_CANARY_POSTS = 1
 
 TARGET_SUBTYPE = "fact_notice"
-TARGET_CATEGORY_NAME = "選手情報"
-TARGET_TAGS = ["公示"]
 TARGET_ARTICLE_TYPE = "transaction_notice"
-TARGET_SOURCE_TRUST = "primary"
 TARGET_BATCH_SOURCE = "sync"
 TARGET_TEAM = "読売ジャイアンツ"
+TARGET_PARENT_CATEGORY_NAME = TARGET_TEAM
+
+TRUST_TIER_T1 = "T1"
+TRUST_TIER_T2 = "T2"
+TRUST_TIER_T3 = "T3"
+ROUTE_FIXED_PRIMARY = "fixed_primary"
+ROUTE_AWAIT_PRIMARY = "await_primary"
+ROUTE_DUPLICATE_ABSORBED = "duplicate_absorbed"
+ROUTE_AMBIGUOUS_SUBJECT = "ambiguous_subject"
+ROUTE_OUT_OF_MVP_FAMILY = "out_of_mvp_family"
+ROUTE_OUTCOMES = (
+    ROUTE_FIXED_PRIMARY,
+    ROUTE_AWAIT_PRIMARY,
+    ROUTE_DUPLICATE_ABSORBED,
+    ROUTE_AMBIGUOUS_SUBJECT,
+    ROUTE_OUT_OF_MVP_FAMILY,
+)
+_SOCIAL_HOSTS = {"x.com", "twitter.com"}
 
 EXIT_OK = 0
 EXIT_WP_POST_DRY_RUN_FAILED = 40
@@ -64,6 +83,15 @@ _DUPLICATE_LOOKUP_FIELDS = ("id", "status", "slug", "generated_slug", "title", "
 
 
 @dataclass(frozen=True)
+class FamilySpec:
+    family: str
+    subtype: str
+    category_name: str
+    default_tags: tuple[str, ...]
+    candidate_id_field: str
+
+
+@dataclass(frozen=True)
 class NoticeEntry:
     action: str
     position: str
@@ -80,10 +108,370 @@ class NoticeCandidate:
     body_html: str
     metadata: dict[str, Any]
     candidate_slug: str = ""
+    family: str = TARGET_ARTICLE_TYPE
+    candidate_key: str = ""
+    subject: str = ""
+    notice_kind: str = ""
+    air_date: str = ""
+    program_slug: str = ""
+    game_id: str = ""
+
+
+@dataclass(frozen=True)
+class ProcessResult:
+    created_post_id: int | None
+    duplicate_skip: bool
+    route_outcomes: tuple[str, ...] = ()
+    error_reason: str = ""
+    attempted_create: bool = False
+
+
+FAMILY_SPECS: dict[str, FamilySpec] = {
+    "program_notice": FamilySpec(
+        family="program_notice",
+        subtype="fact_notice",
+        category_name="球団情報",
+        default_tags=("番組",),
+        candidate_id_field="air_date",
+    ),
+    "transaction_notice": FamilySpec(
+        family="transaction_notice",
+        subtype="fact_notice",
+        category_name="選手情報",
+        default_tags=("公示",),
+        candidate_id_field="notice_date",
+    ),
+    "probable_pitcher": FamilySpec(
+        family="probable_pitcher",
+        subtype="pregame",
+        category_name="試合速報",
+        default_tags=("予告先発",),
+        candidate_id_field="game_id",
+    ),
+    "farm_result": FamilySpec(
+        family="farm_result",
+        subtype="farm",
+        category_name="ドラフト・育成",
+        default_tags=("ファーム",),
+        candidate_id_field="game_id",
+    ),
+}
+
+
+def supported_mvp_families() -> tuple[str, ...]:
+    return tuple(FAMILY_SPECS.keys())
 
 
 def _emit_event(event: str, **payload: Any) -> None:
     print(json.dumps({"event": event, **payload}, ensure_ascii=False))
+
+
+def _normalize_token(value: str) -> str:
+    text = re.sub(r"[\s\u3000]+", "", str(value or ""))
+    return text.replace("：", "-").replace(":", "-").strip("-")
+
+
+def _normalize_subject(value: str) -> str:
+    subject = _normalize_token(value)
+    subject = re.sub(r"[、,／/]+", "+", subject)
+    return re.sub(r"\++", "+", subject).strip("+")
+
+
+def _candidate_metadata_key(candidate: NoticeCandidate) -> str:
+    return str(candidate.metadata.get("candidate_key") or candidate.candidate_key or "").strip()
+
+
+def _candidate_metadata_family(candidate: NoticeCandidate) -> str:
+    return str(candidate.family or candidate.metadata.get("article_type") or "").strip()
+
+
+def _build_candidate_id(source_url: str, article_type: str, discriminator: str) -> str:
+    return f"{build_source_id(source_url)}:{article_type}:{discriminator}"
+
+
+def _build_candidate_slug(candidate_key: str) -> str:
+    family, _, remainder = candidate_key.partition(":")
+    family_slug = re.sub(r"[^a-z0-9]+", "-", family.replace("_", "-").lower()).strip("-") or "fixed-lane"
+    hint = re.sub(r"[^a-z0-9]+", "-", remainder.lower()).strip("-")[:32].strip("-")
+    digest = sha1(candidate_key.encode("utf-8")).hexdigest()[:10]
+    return f"{family_slug}-{hint}-{digest}" if hint else f"{family_slug}-{digest}"
+
+
+def _build_family_candidate_key(
+    family: str,
+    *,
+    notice_date: str = "",
+    subject: str = "",
+    notice_kind: str = "",
+    air_date: str = "",
+    program_slug: str = "",
+    game_id: str = "",
+) -> str:
+    if family == "program_notice":
+        return f"program_notice:{air_date}:{program_slug}" if air_date and program_slug else ""
+    if family == "transaction_notice":
+        normalized_subject = _normalize_subject(subject)
+        normalized_kind = _normalize_token(notice_kind)
+        if not notice_date or not normalized_subject or not normalized_kind:
+            return ""
+        return f"transaction_notice:{notice_date}:{normalized_subject}:{normalized_kind}"
+    if family == "probable_pitcher":
+        normalized_game_id = _normalize_token(game_id)
+        return f"probable_pitcher:{normalized_game_id}" if normalized_game_id else ""
+    if family == "farm_result":
+        normalized_game_id = _normalize_token(game_id)
+        return f"farm_result:{normalized_game_id}" if normalized_game_id else ""
+    return ""
+
+
+def _family_candidate_discriminator(spec: FamilySpec, *, notice_date: str, air_date: str, game_id: str) -> str:
+    if spec.candidate_id_field == "notice_date":
+        return notice_date
+    if spec.candidate_id_field == "air_date":
+        return air_date
+    return _normalize_token(game_id)
+
+
+def _bundle_entry(source_url: str, trust_tier: str, *, role: str) -> dict[str, str]:
+    return {
+        "url": source_url,
+        "source_id": build_source_id(source_url),
+        "trust_tier": trust_tier,
+        "role": role,
+    }
+
+
+def _dedupe_bundle_entries(entries: Sequence[dict[str, Any]]) -> list[dict[str, str]]:
+    deduped: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for entry in entries:
+        url = str(entry.get("url") or "").strip()
+        source_id = str(entry.get("source_id") or build_source_id(url)).strip()
+        trust_tier = str(entry.get("trust_tier") or "").strip()
+        role = str(entry.get("role") or "").strip()
+        marker = (source_id, trust_tier, role)
+        if not url or not source_id or marker in seen:
+            continue
+        seen.add(marker)
+        deduped.append(
+            {
+                "url": url,
+                "source_id": source_id,
+                "trust_tier": trust_tier,
+                "role": role,
+            }
+        )
+    return deduped
+
+
+def _merge_source_lists(*lists: Sequence[str]) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for values in lists:
+        for value in values:
+            normalized = str(value or "").strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            merged.append(normalized)
+    return merged
+
+
+def _candidate_source_bundle(candidate: NoticeCandidate) -> list[dict[str, str]]:
+    bundle = candidate.metadata.get("source_bundle") or []
+    return _dedupe_bundle_entries(bundle if isinstance(bundle, list) else [])
+
+
+def _candidate_trigger_sources(candidate: NoticeCandidate) -> list[dict[str, str]]:
+    trigger_sources = candidate.metadata.get("trigger_only_sources") or []
+    return _dedupe_bundle_entries(trigger_sources if isinstance(trigger_sources, list) else [])
+
+
+def _candidate_has_t1_source(candidate: NoticeCandidate) -> bool:
+    return any(entry.get("trust_tier") == TRUST_TIER_T1 for entry in _candidate_source_bundle(candidate))
+
+
+def _candidate_trust_rank(candidate: NoticeCandidate) -> int:
+    tiers = {entry.get("trust_tier") for entry in _candidate_source_bundle(candidate)}
+    if TRUST_TIER_T1 in tiers:
+        return 3
+    if TRUST_TIER_T2 in tiers:
+        return 2
+    if _candidate_trigger_sources(candidate):
+        return 1
+    return 0
+
+
+def _merge_candidates(existing: NoticeCandidate, incoming: NoticeCandidate) -> NoticeCandidate:
+    preferred = incoming if _candidate_trust_rank(incoming) > _candidate_trust_rank(existing) else existing
+    other = existing if preferred is incoming else incoming
+    metadata = dict(preferred.metadata)
+    metadata["source_urls"] = _merge_source_lists(
+        preferred.metadata.get("source_urls") or [],
+        other.metadata.get("source_urls") or [],
+    )
+    metadata["source_bundle"] = _dedupe_bundle_entries(
+        _candidate_source_bundle(preferred) + _candidate_source_bundle(other)
+    )
+    metadata["trigger_only_sources"] = _dedupe_bundle_entries(
+        _candidate_trigger_sources(preferred) + _candidate_trigger_sources(other)
+    )
+    metadata["tags"] = normalize_tags(
+        list(preferred.metadata.get("tags") or []) + list(other.metadata.get("tags") or [])
+    )
+    metadata["source_id"] = preferred.source_id
+    metadata[WPClient.SOURCE_URL_META_KEY] = preferred.source_url
+    metadata["primary_trust_tier"] = (
+        TRUST_TIER_T1
+        if _candidate_has_t1_source(preferred)
+        else metadata.get("primary_trust_tier") or other.metadata.get("primary_trust_tier")
+    )
+    return NoticeCandidate(
+        source_url=preferred.source_url,
+        source_id=preferred.source_id,
+        notice_date=preferred.notice_date or other.notice_date,
+        title=preferred.title,
+        body_html=preferred.body_html,
+        metadata=metadata,
+        candidate_slug=preferred.candidate_slug or other.candidate_slug,
+        family=_candidate_metadata_family(preferred) or _candidate_metadata_family(other),
+        candidate_key=_candidate_metadata_key(preferred) or _candidate_metadata_key(other),
+        subject=preferred.subject or other.subject,
+        notice_kind=preferred.notice_kind or other.notice_kind,
+        air_date=preferred.air_date or other.air_date,
+        program_slug=preferred.program_slug or other.program_slug,
+        game_id=preferred.game_id or other.game_id,
+    )
+
+
+def _infer_trust_tier(source_url: str) -> str:
+    host = (urlsplit(source_url).hostname or "").lower()
+    trust = classify_url(source_url)
+    if trust == "primary" and host not in _SOCIAL_HOSTS:
+        return TRUST_TIER_T1
+    if trust == "secondary":
+        return TRUST_TIER_T2
+    if host in _SOCIAL_HOSTS:
+        return TRUST_TIER_T2 if trust == "primary" else TRUST_TIER_T3
+    return ""
+
+
+def _normalize_intake_item(item: dict[str, Any]) -> tuple[NoticeCandidate | None, str | None]:
+    family = str(item.get("family") or "").strip()
+    spec = FAMILY_SPECS.get(family)
+    if spec is None:
+        return None, ROUTE_OUT_OF_MVP_FAMILY
+
+    source_url = str(item.get("source_url") or "").strip()
+    source_id = build_source_id(source_url)
+    trust_tier = str(item.get("trust_tier") or "").strip() or _infer_trust_tier(source_url)
+    notice_date = str(item.get("notice_date") or "").strip()
+    subject = str(item.get("subject") or "").strip()
+    notice_kind = str(item.get("notice_kind") or "").strip()
+    air_date = str(item.get("air_date") or "").strip()
+    program_slug = str(item.get("program_slug") or "").strip()
+    game_id = str(item.get("game_id") or "").strip()
+    candidate_key = _build_family_candidate_key(
+        family,
+        notice_date=notice_date,
+        subject=subject,
+        notice_kind=notice_kind,
+        air_date=air_date,
+        program_slug=program_slug,
+        game_id=game_id,
+    )
+    if not candidate_key:
+        return None, ROUTE_AMBIGUOUS_SUBJECT
+
+    candidate_slug = str(item.get("candidate_slug") or _build_candidate_slug(candidate_key))
+    source_bundle = []
+    trigger_only_sources = []
+    if trust_tier in {TRUST_TIER_T1, TRUST_TIER_T2} and source_url:
+        source_bundle = [_bundle_entry(source_url, trust_tier, role="primary" if trust_tier == TRUST_TIER_T1 else "bundle")]
+    elif trust_tier == TRUST_TIER_T3 and source_url:
+        trigger_only_sources = [_bundle_entry(source_url, trust_tier, role="trigger")]
+
+    discriminator = _family_candidate_discriminator(
+        spec,
+        notice_date=notice_date,
+        air_date=air_date,
+        game_id=game_id,
+    )
+    metadata: dict[str, Any] = {
+        "subtype": spec.subtype,
+        "article_subtype": spec.subtype,
+        "article_type": family,
+        "family": family,
+        "category": str(item.get("category") or spec.category_name),
+        "parent_category": str(item.get("parent_category") or TARGET_PARENT_CATEGORY_NAME),
+        "tags": normalize_tags([*spec.default_tags, *list(item.get("tags") or [])]),
+        "candidate_id": _build_candidate_id(source_url, family, discriminator),
+        "candidate_key": candidate_key,
+        "source_trust": "primary" if trust_tier == TRUST_TIER_T1 else "secondary",
+        "batch_source": TARGET_BATCH_SOURCE,
+        "source_id": source_id,
+        "source_urls": [source_url] if source_url else [],
+        "source_bundle": source_bundle,
+        "trigger_only_sources": trigger_only_sources,
+        "primary_trust_tier": trust_tier,
+        WPClient.SOURCE_URL_META_KEY: source_url,
+    }
+    if notice_date:
+        metadata["notice_date"] = notice_date
+    if subject:
+        metadata["subject"] = subject
+    if notice_kind:
+        metadata["notice_kind"] = notice_kind
+    if air_date:
+        metadata["air_date"] = air_date
+    if program_slug:
+        metadata["program_slug"] = program_slug
+    if game_id:
+        metadata["game_id"] = game_id
+    metadata.update(dict(item.get("metadata") or {}))
+    metadata["candidate_key"] = candidate_key
+    metadata["source_urls"] = _merge_source_lists(metadata.get("source_urls") or [], [source_url])
+    metadata["source_bundle"] = _dedupe_bundle_entries(
+        source_bundle + list(metadata.get("source_bundle") or [])
+    )
+    metadata["trigger_only_sources"] = _dedupe_bundle_entries(
+        trigger_only_sources + list(metadata.get("trigger_only_sources") or [])
+    )
+    metadata["tags"] = normalize_tags(metadata.get("tags") or [])
+    metadata["source_id"] = source_id
+    metadata[WPClient.SOURCE_URL_META_KEY] = source_url
+    return (
+        NoticeCandidate(
+            source_url=source_url,
+            source_id=source_id,
+            notice_date=notice_date,
+            title=str(item.get("title") or "").strip(),
+            body_html=str(item.get("body_html") or "").strip(),
+            metadata=metadata,
+            candidate_slug=candidate_slug,
+            family=family,
+            candidate_key=candidate_key,
+            subject=subject,
+            notice_kind=notice_kind,
+            air_date=air_date,
+            program_slug=program_slug,
+            game_id=game_id,
+        ),
+        None,
+    )
+
+
+def _normalize_intake_items(items: Sequence[dict[str, Any]]) -> tuple[list[NoticeCandidate], list[str]]:
+    candidates: list[NoticeCandidate] = []
+    route_outcomes: list[str] = []
+    for item in items:
+        candidate, outcome = _normalize_intake_item(dict(item))
+        if outcome:
+            route_outcomes.append(outcome)
+            continue
+        if candidate is not None:
+            candidates.append(candidate)
+    return candidates, route_outcomes
 
 
 def _reason_from_response(resp: requests.Response) -> str:
@@ -150,14 +538,6 @@ def _build_title(notice_date: str, registered: Sequence[NoticeEntry], deregister
     if registered:
         return f"【公示】{date_label} 巨人は{_format_name_list(registered)}を出場選手登録"
     return f"【公示】{date_label} 巨人は{_format_name_list(deregistered)}を登録抹消"
-
-
-def _build_candidate_id(source_url: str, notice_date: str) -> str:
-    return f"{build_source_id(source_url)}:{TARGET_ARTICLE_TYPE}:{notice_date}"
-
-
-def _build_candidate_slug(notice_date: str) -> str:
-    return f"{TARGET_ARTICLE_TYPE.replace('_', '-')}-giants-{notice_date}"
 
 
 def _build_summary_line(notice_date: str, registered: Sequence[NoticeEntry], deregistered: Sequence[NoticeEntry]) -> str:
@@ -275,6 +655,23 @@ def _parse_notice_row(lines: Sequence[str] | str, action: str) -> tuple[NoticeEn
     return None, max(consumed, 1)
 
 
+def _build_notice_subject_and_kind(
+    registered: Sequence[NoticeEntry],
+    deregistered: Sequence[NoticeEntry],
+) -> tuple[str, str]:
+    names: list[str] = []
+    seen: set[str] = set()
+    for entry in [*registered, *deregistered]:
+        if entry.player_name and entry.player_name not in seen:
+            seen.add(entry.player_name)
+            names.append(entry.player_name)
+    if registered and deregistered:
+        return "+".join(names), "register_deregister"
+    if registered:
+        return "+".join(names), "register"
+    return "+".join(names), "deregister"
+
+
 def _parse_latest_notice_from_html(html_text: str, source_url: str = NPB_NOTICE_URL) -> NoticeCandidate | None:
     lines = _html_to_lines(html_text)
     date_index = -1
@@ -340,16 +737,28 @@ def _parse_latest_notice_from_html(html_text: str, source_url: str = NPB_NOTICE_
     if not registered and not deregistered:
         return None
 
-    candidate_id = _build_candidate_id(source_url, notice_date)
-    candidate_slug = _build_candidate_slug(notice_date)
+    family = TARGET_ARTICLE_TYPE
+    spec = FAMILY_SPECS[family]
+    subject, notice_kind = _build_notice_subject_and_kind(registered, deregistered)
+    candidate_key = _build_family_candidate_key(
+        family,
+        notice_date=notice_date,
+        subject=subject,
+        notice_kind=notice_kind,
+    )
+    if not candidate_key:
+        raise ValueError(ROUTE_AMBIGUOUS_SUBJECT)
+    candidate_slug = _build_candidate_slug(candidate_key)
+    candidate_id = _build_candidate_id(source_url, family, notice_date)
     hidden_marker_html = (
         "<!-- yoshilover_notice_meta: "
         + json.dumps(
             {
                 "candidate_id": candidate_id,
-                "candidate_key": candidate_slug,
-                "subtype": TARGET_SUBTYPE,
-                "source_trust": TARGET_SOURCE_TRUST,
+                "candidate_key": candidate_key,
+                "family": family,
+                "subtype": spec.subtype,
+                "trust_tier": TRUST_TIER_T1,
                 "source_id": build_source_id(source_url),
             },
             ensure_ascii=False,
@@ -366,16 +775,25 @@ def _parse_latest_notice_from_html(html_text: str, source_url: str = NPB_NOTICE_
         hidden_marker_html=hidden_marker_html,
     )
     metadata: dict[str, Any] = {
-        "subtype": TARGET_SUBTYPE,
-        "article_subtype": TARGET_SUBTYPE,
-        "article_type": TARGET_ARTICLE_TYPE,
-        "category": TARGET_CATEGORY_NAME,
-        "tags": list(TARGET_TAGS),
+        "subtype": spec.subtype,
+        "article_subtype": spec.subtype,
+        "article_type": family,
+        "family": family,
+        "category": spec.category_name,
+        "parent_category": TARGET_PARENT_CATEGORY_NAME,
+        "tags": list(spec.default_tags),
         "candidate_id": candidate_id,
-        "source_trust": TARGET_SOURCE_TRUST,
+        "candidate_key": candidate_key,
+        "source_trust": "primary",
         "batch_source": TARGET_BATCH_SOURCE,
         "source_id": build_source_id(source_url),
         "source_urls": [source_url],
+        "source_bundle": [_bundle_entry(source_url, TRUST_TIER_T1, role="primary")],
+        "trigger_only_sources": [],
+        "primary_trust_tier": TRUST_TIER_T1,
+        "notice_date": notice_date,
+        "subject": subject,
+        "notice_kind": notice_kind,
         WPClient.SOURCE_URL_META_KEY: source_url,
     }
     return NoticeCandidate(
@@ -386,11 +804,15 @@ def _parse_latest_notice_from_html(html_text: str, source_url: str = NPB_NOTICE_
         body_html=body_html,
         metadata=metadata,
         candidate_slug=candidate_slug,
+        family=family,
+        candidate_key=candidate_key,
+        subject=subject,
+        notice_kind=notice_kind,
     )
 
 
 def _fetch_latest_notice_candidate(source_url: str = NPB_NOTICE_URL) -> NoticeCandidate | None:
-    if classify_url(source_url) != TARGET_SOURCE_TRUST:
+    if _infer_trust_tier(source_url) != TRUST_TIER_T1:
         return None
     try:
         resp = requests.get(
@@ -460,6 +882,11 @@ def _post_candidate_id(post: dict[str, Any]) -> str:
 
 
 def _post_candidate_key(post: dict[str, Any]) -> str:
+    meta = post.get("meta")
+    if isinstance(meta, dict):
+        candidate_key = str(meta.get("candidate_key") or "").strip()
+        if candidate_key:
+            return candidate_key
     return str(post.get("slug") or post.get("generated_slug") or "").strip()
 
 
@@ -507,16 +934,35 @@ def _search_recent_posts_for_duplicate_check(wp: WPClient, title: str) -> list[d
 
 def _find_duplicate_posts(wp: WPClient, candidate: NoticeCandidate) -> list[dict[str, Any]]:
     normalized_title = WPClient._normalize_title(candidate.title)
+    candidate_id = str(candidate.metadata.get("candidate_id") or "").strip()
+    candidate_key = _candidate_metadata_key(candidate)
     return [
         post
         for post in _search_recent_posts_for_duplicate_check(wp, candidate.title)
         if str(post.get("status") or "").strip().lower() == "draft"
         and (
-            _post_candidate_id(post) == candidate.metadata["candidate_id"]
-            or _post_candidate_key(post) == candidate.candidate_slug
+            (candidate_key and _post_candidate_key(post) == candidate_key)
+            or (candidate_id and _post_candidate_id(post) == candidate_id)
+            or (candidate.candidate_slug and _post_candidate_key(post) == candidate.candidate_slug)
             or WPClient._normalize_title(_post_title(post)) == normalized_title
         )
     ]
+
+
+def _resolve_category_ids(
+    wp: WPClient,
+    child_category_name: str,
+    *,
+    parent_category_name: str = TARGET_PARENT_CATEGORY_NAME,
+) -> list[int]:
+    child_id = wp.resolve_category_id(child_category_name) if child_category_name else 0
+    if not child_id:
+        return []
+    category_ids = [int(child_id)]
+    parent_id = wp.resolve_category_id(parent_category_name) if parent_category_name else 0
+    if parent_id and int(parent_id) not in category_ids:
+        category_ids.append(int(parent_id))
+    return category_ids
 
 
 def _find_or_create_tag_id(wp: WPClient, tag_name: str) -> int:
@@ -558,14 +1004,14 @@ def _resolve_tag_ids(wp: WPClient, tag_names: Sequence[str]) -> list[int]:
 def _create_notice_draft(
     wp: WPClient,
     candidate: NoticeCandidate,
-    category_id: int,
+    category_ids: Sequence[int],
     tag_ids: Sequence[int],
 ) -> int | None:
     payload = {
         "title": candidate.title,
         "content": candidate.body_html,
         "status": "draft",
-        "categories": [category_id] if category_id else [],
+        "categories": list(category_ids),
         "slug": candidate.candidate_slug,
         "tags": list(tag_ids),
         "meta": candidate.metadata,
@@ -590,6 +1036,8 @@ def _create_notice_draft(
                         "canary_post_created",
                         post_id=post_id,
                         candidate_id=candidate.metadata["candidate_id"],
+                        candidate_key=_candidate_metadata_key(candidate),
+                        family=_candidate_metadata_family(candidate),
                         attempt=attempt,
                     )
                     return int(post_id)
@@ -601,37 +1049,116 @@ def _create_notice_draft(
                 "canary_post_retry",
                 attempt=attempt,
                 candidate_id=candidate.metadata["candidate_id"],
+                candidate_key=_candidate_metadata_key(candidate),
+                family=_candidate_metadata_family(candidate),
                 reason=last_reason,
             )
     _emit_event(
         "canary_post_failed",
         candidate_id=candidate.metadata["candidate_id"],
+        candidate_key=_candidate_metadata_key(candidate),
+        family=_candidate_metadata_family(candidate),
         reason=last_reason or "unknown",
     )
     return None
 
 
-def _process_candidates(
-    wp: WPClient,
-    candidates: Sequence[NoticeCandidate],
-    *,
-    category_id: int,
-    tag_ids: Sequence[int],
-) -> tuple[int | None, bool]:
+def _route_candidates(candidates: Sequence[NoticeCandidate]) -> tuple[list[NoticeCandidate], list[str]]:
+    grouped: dict[str, NoticeCandidate] = {}
+    route_outcomes: list[str] = []
+    for candidate in candidates:
+        family = _candidate_metadata_family(candidate)
+        if family not in FAMILY_SPECS:
+            route_outcomes.append(ROUTE_OUT_OF_MVP_FAMILY)
+            continue
+        candidate_key = _candidate_metadata_key(candidate)
+        if not candidate_key:
+            route_outcomes.append(ROUTE_AMBIGUOUS_SUBJECT)
+            continue
+        if candidate_key in grouped:
+            grouped[candidate_key] = _merge_candidates(grouped[candidate_key], candidate)
+            route_outcomes.append(ROUTE_DUPLICATE_ABSORBED)
+            continue
+        grouped[candidate_key] = candidate
+
+    routed: list[NoticeCandidate] = []
+    for candidate in grouped.values():
+        if not _candidate_has_t1_source(candidate):
+            route_outcomes.append(ROUTE_AWAIT_PRIMARY)
+            _emit_event(
+                "await_primary",
+                family=_candidate_metadata_family(candidate),
+                candidate_key=_candidate_metadata_key(candidate),
+                source_bundle=_candidate_source_bundle(candidate),
+                trigger_only_sources=_candidate_trigger_sources(candidate),
+            )
+            continue
+        routed.append(candidate)
+    return routed, route_outcomes
+
+
+def _process_candidates(wp: WPClient, candidates: Sequence[NoticeCandidate]) -> ProcessResult:
     created_post_id: int | None = None
     duplicate_skip = False
-    for candidate in list(candidates)[:MAX_CANARY_POSTS]:
+    attempted_create = False
+    routed_candidates, route_outcomes = _route_candidates(candidates)
+    for candidate in list(routed_candidates)[:MAX_CANARY_POSTS]:
         duplicates = _find_duplicate_posts(wp, candidate)
         if duplicates:
             duplicate_skip = True
+            route_outcomes.append(ROUTE_DUPLICATE_ABSORBED)
             _emit_event(
                 "duplicate_skip",
                 candidate_id=candidate.metadata["candidate_id"],
+                candidate_key=_candidate_metadata_key(candidate),
+                family=_candidate_metadata_family(candidate),
                 existing_post_ids=[row.get("id") for row in duplicates],
             )
             continue
-        created_post_id = _create_notice_draft(wp, candidate, category_id, tag_ids)
-    return created_post_id, duplicate_skip
+
+        category_ids = _resolve_category_ids(
+            wp,
+            str(candidate.metadata.get("category") or "").strip(),
+            parent_category_name=str(candidate.metadata.get("parent_category") or TARGET_PARENT_CATEGORY_NAME),
+        )
+        if not category_ids:
+            _emit_event(
+                "category_resolve_fail",
+                family=_candidate_metadata_family(candidate),
+                category=candidate.metadata.get("category"),
+            )
+            return ProcessResult(
+                created_post_id=None,
+                duplicate_skip=duplicate_skip,
+                route_outcomes=tuple(route_outcomes),
+                error_reason="category_resolve_failed",
+                attempted_create=attempted_create,
+            )
+        tag_ids = _resolve_tag_ids(wp, candidate.metadata.get("tags") or [])
+        attempted_create = True
+        created_post_id = _create_notice_draft(wp, candidate, category_ids, tag_ids)
+        if created_post_id is None:
+            return ProcessResult(
+                created_post_id=None,
+                duplicate_skip=duplicate_skip,
+                route_outcomes=tuple(route_outcomes),
+                error_reason="draft_create_failed",
+                attempted_create=attempted_create,
+            )
+        route_outcomes.append(ROUTE_FIXED_PRIMARY)
+        return ProcessResult(
+            created_post_id=created_post_id,
+            duplicate_skip=duplicate_skip,
+            route_outcomes=tuple(route_outcomes),
+            attempted_create=attempted_create,
+        )
+
+    return ProcessResult(
+        created_post_id=created_post_id,
+        duplicate_skip=duplicate_skip,
+        route_outcomes=tuple(route_outcomes),
+        attempted_create=attempted_create,
+    )
 
 
 def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, Any]]:
@@ -645,6 +1172,7 @@ def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, Any]]:
         "duplicate_check_implemented": True,
         "max_canary_cap": MAX_CANARY_POSTS,
         "published_write": False,
+        "route_outcomes": [],
     }
 
     try:
@@ -674,25 +1202,19 @@ def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, Any]]:
     summary["source_fetch"] = "pass"
     summary["canary_candidate_id"] = candidate.metadata["candidate_id"]
 
-    category_id = wp.resolve_category_id(TARGET_CATEGORY_NAME)
-    if not category_id:
-        _emit_event("category_resolve_fail", category=TARGET_CATEGORY_NAME)
-        return EXIT_INPUT_ERROR, summary
-    tag_ids = _resolve_tag_ids(wp, TARGET_TAGS)
+    result = _process_candidates(wp, [candidate])
+    summary["duplicate_skip"] = result.duplicate_skip
+    summary["route_outcomes"] = list(result.route_outcomes)
+    if result.created_post_id is None:
+        if result.error_reason == "category_resolve_failed":
+            return EXIT_INPUT_ERROR, summary
+        if result.error_reason == "draft_create_failed" or (
+            result.attempted_create and not result.duplicate_skip
+        ):
+            return EXIT_WP_POST_FAILED, summary
+        return EXIT_OK, summary
 
-    created_post_id, duplicate_skip = _process_candidates(
-        wp,
-        [candidate],
-        category_id=category_id,
-        tag_ids=tag_ids,
-    )
-    summary["duplicate_skip"] = duplicate_skip
-    if created_post_id is None:
-        if duplicate_skip:
-            return EXIT_OK, summary
-        return EXIT_WP_POST_FAILED, summary
-
-    summary["canary_post_id"] = created_post_id
+    summary["canary_post_id"] = result.created_post_id
     return EXIT_OK, summary
 
 

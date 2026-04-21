@@ -30,6 +30,8 @@ import html as _html
 from html.parser import HTMLParser
 
 from article_parts_renderer import ArticleParts, render_postgame
+from body_validator import validate_body_candidate as _validate_body_candidate
+from body_validator import is_supported_subtype as _body_validator_supports_subtype
 from title_validator import build_reroll_title as _build_title_reroll_title
 from title_validator import validate_title_candidate as _validate_title_candidate
 from title_validator import is_supported_subtype as _title_validator_supports_subtype
@@ -7829,6 +7831,27 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 real_reactions=real_reactions,
             )
         subject = _extract_subject_label(title, summary_clean, effective_generation_category)
+
+        def _apply_body_contract_reroll(normalized_body: str, fallback_body: str) -> str:
+            if not _body_validator_supports_subtype(article_subtype):
+                return normalized_body
+            validation = _validate_body_candidate(normalized_body, article_subtype)
+            if validation["ok"] or validation["action"] != "reroll":
+                return normalized_body
+            _log_body_validator_reroll(
+                logger,
+                source_url=url,
+                category=category,
+                article_subtype=article_subtype,
+                fail_axes=list(validation["fail_axes"]),
+                expected_first_block=str(validation.get("expected_first_block") or ""),
+                actual_first_block=str(validation.get("actual_first_block") or ""),
+                missing_required_blocks=list(validation.get("missing_required_blocks") or []),
+                actual_block_order=list(validation.get("actual_block_order") or []),
+            )
+            rerolled_body = _apply_editor_voice(fallback_body, effective_generation_category, subject)
+            return _normalize_article_text_structure(rerolled_body, body_category, has_game, article_subtype=body_subtype)
+
         ai_body = _apply_editor_voice(ai_body, effective_generation_category, subject)
         if _article_reads_too_generic(ai_body, effective_generation_category):
             logger.info("記事本文が汎用表現に寄りすぎたため、安全版へ差し替え")
@@ -7877,31 +7900,44 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 )
         elif generation_category == "試合速報" and _is_game_template_subtype(article_subtype):
             normalized_game_body = _normalize_article_text_structure(ai_body, generation_category, has_game, article_subtype=article_subtype)
+            game_fallback = _build_game_safe_fallback(
+                title,
+                summary_clean,
+                article_subtype,
+                lineup_rows=lineup_stat_rows if article_subtype == "lineup" else None,
+                real_reactions=real_reactions,
+            )
             if _game_body_has_required_structure(normalized_game_body, article_subtype, has_game):
-                ai_body = normalized_game_body
+                ai_body = _apply_body_contract_reroll(normalized_game_body, game_fallback)
             else:
-                ai_body = _apply_editor_voice(
-                    _build_game_safe_fallback(
-                        title,
-                        summary_clean,
-                        article_subtype,
-                        lineup_rows=lineup_stat_rows if article_subtype == "lineup" else None,
-                        real_reactions=real_reactions,
-                    ),
-                    generation_category,
-                    subject,
-                )
+                ai_body = _apply_editor_voice(game_fallback, generation_category, subject)
         elif generation_category == "ドラフト・育成" and _is_farm_template_subtype(article_subtype):
             normalized_farm_body = _normalize_article_text_structure(ai_body, generation_category, has_game, article_subtype=article_subtype)
+            farm_fallback = (
+                _build_farm_lineup_safe_fallback(title, summary_clean, real_reactions=real_reactions)
+                if article_subtype == "farm_lineup"
+                else _build_farm_safe_fallback(title, summary_clean, real_reactions=real_reactions)
+            )
             if _farm_body_has_required_structure(normalized_farm_body, article_subtype):
-                ai_body = normalized_farm_body
+                ai_body = _apply_body_contract_reroll(normalized_farm_body, farm_fallback)
             else:
-                farm_fallback = (
-                    _build_farm_lineup_safe_fallback(title, summary_clean, real_reactions=real_reactions)
-                    if article_subtype == "farm_lineup"
-                    else _build_farm_safe_fallback(title, summary_clean, real_reactions=real_reactions)
-                )
                 ai_body = _apply_editor_voice(farm_fallback, generation_category, subject)
+        elif article_subtype == "fact_notice":
+            normalized_fact_notice_body = _normalize_article_text_structure(ai_body, body_category, has_game, article_subtype=article_subtype)
+            ai_body = _apply_body_contract_reroll(
+                normalized_fact_notice_body,
+                _build_safe_article_fallback(
+                    title,
+                    summary_clean,
+                    effective_generation_category,
+                    has_game,
+                    source_name=source_name,
+                    source_type=source_type,
+                    tweet_url=url,
+                    source_day_label=source_day_label,
+                    real_reactions=real_reactions,
+                ),
+            )
         elif recovery_story:
             normalized_recovery_body = _normalize_article_text_structure(ai_body, generation_category, False, article_subtype="player_recovery")
             if _recovery_body_has_required_structure(normalized_recovery_body):
@@ -9938,6 +9974,59 @@ def _rewrite_display_title_with_guard(
     return rerolled_title, f"{template_key}_title_reroll"
 
 
+def _log_body_validator_reroll(
+    logger: logging.Logger,
+    *,
+    source_url: str,
+    category: str,
+    article_subtype: str,
+    fail_axes: list[str],
+    expected_first_block: str,
+    actual_first_block: str,
+    missing_required_blocks: list[str],
+    actual_block_order: list[str],
+) -> None:
+    payload = {
+        "event": "body_validator_reroll",
+        "source_url": source_url,
+        "category": category,
+        "article_subtype": article_subtype,
+        "fail_axis": fail_axes,
+        "expected_first_block": expected_first_block,
+        "actual_first_block": actual_first_block,
+        "missing_required_blocks": missing_required_blocks,
+        "actual_block_order": actual_block_order,
+    }
+    logger.warning(json.dumps(payload, ensure_ascii=False))
+
+
+def _log_body_validator_fail(
+    logger: logging.Logger,
+    *,
+    source_url: str,
+    category: str,
+    article_subtype: str,
+    fail_axes: list[str],
+    expected_first_block: str,
+    actual_first_block: str,
+    has_source_block: bool,
+    stop_reason: str = "",
+) -> None:
+    payload = {
+        "event": "body_validator_fail",
+        "source_url": source_url,
+        "category": category,
+        "article_subtype": article_subtype,
+        "fail_axis": fail_axes,
+        "expected_first_block": expected_first_block,
+        "actual_first_block": actual_first_block,
+        "has_source_block": has_source_block,
+    }
+    if stop_reason:
+        payload["stop_reason"] = stop_reason
+    logger.warning(json.dumps(payload, ensure_ascii=False))
+
+
 def _log_manager_body_template_applied(
     logger: logging.Logger,
     post_id: int,
@@ -11030,6 +11119,40 @@ def _main(args, logger):
                 media_quotes=media_quotes,
                 source_entry=item.get("entry"),
             )
+            body_contract_validate = _validate_body_candidate(
+                ai_body_for_x,
+                title_article_subtype,
+                rendered_html=content,
+            )
+            if not body_contract_validate["ok"]:
+                skip_filter += 1
+                skip_reason_counts["body_contract_validate"] += 1
+                _append_skip_reason_sample(skip_reason_sample_titles, "body_contract_validate", draft_title)
+                if body_contract_validate["action"] == "fail":
+                    _log_body_validator_fail(
+                        logger,
+                        source_url=post_url,
+                        category=category,
+                        article_subtype=title_article_subtype,
+                        fail_axes=list(body_contract_validate["fail_axes"]),
+                        expected_first_block=str(body_contract_validate.get("expected_first_block") or ""),
+                        actual_first_block=str(body_contract_validate.get("actual_first_block") or ""),
+                        has_source_block=bool(body_contract_validate.get("has_source_block", False)),
+                        stop_reason=str(body_contract_validate.get("stop_reason") or ""),
+                    )
+                else:
+                    _log_body_validator_reroll(
+                        logger,
+                        source_url=post_url,
+                        category=category,
+                        article_subtype=title_article_subtype,
+                        fail_axes=list(body_contract_validate["fail_axes"]),
+                        expected_first_block=str(body_contract_validate.get("expected_first_block") or ""),
+                        actual_first_block=str(body_contract_validate.get("actual_first_block") or ""),
+                        missing_required_blocks=list(body_contract_validate.get("missing_required_blocks") or []),
+                        actual_block_order=list(body_contract_validate.get("actual_block_order") or []),
+                    )
+                continue
             post_gen_validate = _evaluate_post_gen_validate(
                 ai_body_for_x,
                 article_subtype=title_article_subtype,

@@ -2,9 +2,9 @@
 
 The default fetch path still targets the NPB roster notice page, while the
 routing layer accepts the wider 037 pickup contract. The original 028 MVP
-families still own fixed-lane draft creation. Parity-expansion families are
-picked up, normalized, de-duplicated, and labeled as deferred until a future
-lane consumes them.
+families still own fixed-lane draft creation. 046 promotes the first pickup
+wave into the fixed lane only when each family matches its approved trust
+boundary.
 """
 
 from __future__ import annotations
@@ -84,6 +84,26 @@ PICKUP_SOURCE_KINDS = (
     SOURCE_KIND_COMMENT_QUOTE,
     SOURCE_KIND_PLAYER_STATS_FEED,
 )
+FIRST_WAVE_PROMOTION_SOURCE_KINDS: dict[str, frozenset[str]] = {
+    "lineup_notice": frozenset({SOURCE_KIND_OFFICIAL_WEB, SOURCE_KIND_TEAM_X}),
+    "comment_notice": frozenset(
+        {
+            SOURCE_KIND_OFFICIAL_WEB,
+            SOURCE_KIND_TEAM_X,
+            SOURCE_KIND_MAJOR_RSS,
+            SOURCE_KIND_TV_RADIO_COMMENT,
+            SOURCE_KIND_COMMENT_QUOTE,
+        }
+    ),
+    "injury_notice": frozenset(
+        {
+            SOURCE_KIND_OFFICIAL_WEB,
+            SOURCE_KIND_TV_RADIO_COMMENT,
+            SOURCE_KIND_COMMENT_QUOTE,
+        }
+    ),
+    "postgame_result": frozenset({SOURCE_KIND_OFFICIAL_WEB, SOURCE_KIND_TEAM_X, SOURCE_KIND_NPB}),
+}
 
 EXIT_OK = 0
 EXIT_WP_POST_DRY_RUN_FAILED = 40
@@ -480,6 +500,48 @@ def _candidate_trigger_sources(candidate: NoticeCandidate) -> list[dict[str, str
 
 def _candidate_has_t1_source(candidate: NoticeCandidate) -> bool:
     return any(entry.get("trust_tier") == TRUST_TIER_T1 for entry in _candidate_source_bundle(candidate))
+
+
+def _entry_matches_first_wave_boundary(family: str, entry: dict[str, str]) -> bool:
+    source_kind = str(entry.get("source_kind") or "").strip()
+    allowed_source_kinds = FIRST_WAVE_PROMOTION_SOURCE_KINDS.get(family)
+    if not allowed_source_kinds or source_kind not in allowed_source_kinds:
+        return False
+    if source_kind in {SOURCE_KIND_OFFICIAL_WEB, SOURCE_KIND_TEAM_X}:
+        return classify_url(str(entry.get("url") or "").strip()) == "primary"
+    return True
+
+
+def _candidate_fixed_primary_entry(candidate: NoticeCandidate) -> dict[str, str]:
+    family = _candidate_metadata_family(candidate)
+    bundle = _candidate_source_bundle(candidate)
+    if family in MVP_FAMILY_SPECS:
+        for entry in bundle:
+            if entry.get("trust_tier") == TRUST_TIER_T1:
+                return entry
+        return {}
+
+    allowed_source_kinds = FIRST_WAVE_PROMOTION_SOURCE_KINDS.get(family)
+    if allowed_source_kinds:
+        for entry in bundle:
+            if _entry_matches_first_wave_boundary(family, entry):
+                return entry
+        return {}
+
+    return {}
+
+
+def _candidate_route_evidence_entry(candidate: NoticeCandidate) -> dict[str, str]:
+    fixed_primary_entry = _candidate_fixed_primary_entry(candidate)
+    if fixed_primary_entry:
+        return fixed_primary_entry
+    bundle = _candidate_source_bundle(candidate)
+    if bundle:
+        return bundle[0]
+    trigger_sources = _candidate_trigger_sources(candidate)
+    if trigger_sources:
+        return trigger_sources[0]
+    return {}
 
 
 def _candidate_trust_rank(candidate: NoticeCandidate) -> int:
@@ -1486,6 +1548,7 @@ def _create_notice_draft(
     category_ids: Sequence[int],
     tag_ids: Sequence[int],
 ) -> int | None:
+    route_evidence = _candidate_route_evidence_entry(candidate)
     featured_media = maybe_generate_structured_eyecatch_media(wp, candidate)
     payload = {
         "title": candidate.title,
@@ -1517,9 +1580,13 @@ def _create_notice_draft(
                     _emit_event(
                         "canary_post_created",
                         post_id=post_id,
+                        route=ROUTE_FIXED_PRIMARY,
+                        subtype=_candidate_metadata_family(candidate),
                         candidate_id=candidate.metadata["candidate_id"],
                         candidate_key=_candidate_metadata_key(candidate),
                         family=_candidate_metadata_family(candidate),
+                        source_kind=route_evidence.get("source_kind", ""),
+                        trust_tier=route_evidence.get("trust_tier", ""),
                         attempt=attempt,
                     )
                     return int(post_id)
@@ -1575,34 +1642,47 @@ def _route_candidates(candidates: Sequence[NoticeCandidate]) -> tuple[list[Notic
     routed: list[NoticeCandidate] = []
     for candidate in grouped.values():
         lane_target = _candidate_lane_target(candidate)
-        if lane_target != TARGET_LANE_FIXED:
+        fixed_primary_entry = _candidate_fixed_primary_entry(candidate)
+        route_evidence = fixed_primary_entry or _candidate_route_evidence_entry(candidate)
+        if lane_target != TARGET_LANE_FIXED and not fixed_primary_entry:
             route_outcomes.append(ROUTE_DEFERRED_PICKUP)
             _emit_event(
                 "deferred_pickup",
+                route=ROUTE_DEFERRED_PICKUP,
                 reason="lane_target_not_fixed",
                 lane_target=lane_target,
+                subtype=_candidate_metadata_family(candidate),
                 family=_candidate_metadata_family(candidate),
                 candidate_key=_candidate_metadata_key(candidate),
+                source_kind=route_evidence.get("source_kind", ""),
+                trust_tier=route_evidence.get("trust_tier", ""),
                 source_bundle=_candidate_source_bundle(candidate),
                 trigger_only_sources=_candidate_trigger_sources(candidate),
             )
             continue
-        if not _candidate_has_t1_source(candidate):
+        if lane_target == TARGET_LANE_FIXED and not fixed_primary_entry:
             route_outcomes.append(ROUTE_AWAIT_PRIMARY)
             route_outcomes.append(ROUTE_DEFERRED_PICKUP)
             _emit_event(
                 "await_primary",
+                subtype=_candidate_metadata_family(candidate),
                 family=_candidate_metadata_family(candidate),
                 candidate_key=_candidate_metadata_key(candidate),
+                source_kind=route_evidence.get("source_kind", ""),
+                trust_tier=route_evidence.get("trust_tier", ""),
                 source_bundle=_candidate_source_bundle(candidate),
                 trigger_only_sources=_candidate_trigger_sources(candidate),
             )
             _emit_event(
                 "deferred_pickup",
+                route=ROUTE_DEFERRED_PICKUP,
                 reason="await_primary",
                 lane_target=lane_target,
+                subtype=_candidate_metadata_family(candidate),
                 family=_candidate_metadata_family(candidate),
                 candidate_key=_candidate_metadata_key(candidate),
+                source_kind=route_evidence.get("source_kind", ""),
+                trust_tier=route_evidence.get("trust_tier", ""),
                 source_bundle=_candidate_source_bundle(candidate),
                 trigger_only_sources=_candidate_trigger_sources(candidate),
             )

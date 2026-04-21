@@ -169,9 +169,8 @@ class FixedLaneParity037Tests(unittest.TestCase):
         merged = lane._merge_candidates(official, rss)
         routed, outcomes = lane._route_candidates([official, rss])
 
-        self.assertEqual(routed, [])
+        self.assertEqual(len(routed), 1)
         self.assertIn(lane.ROUTE_DUPLICATE_ABSORBED, outcomes)
-        self.assertIn(lane.ROUTE_DEFERRED_PICKUP, outcomes)
         self.assertEqual(
             [entry["source_kind"] for entry in merged.metadata["source_bundle"]],
             [lane.SOURCE_KIND_OFFICIAL_WEB, lane.SOURCE_KIND_MAJOR_RSS],

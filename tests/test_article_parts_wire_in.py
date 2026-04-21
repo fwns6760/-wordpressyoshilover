@@ -10,7 +10,7 @@ class ArticlePartsWireInTests(unittest.TestCase):
         return "\n".join(
             [
                 "【試合結果】",
-                "巨人が阪神に3-2で勝利した。",
+                "4月21日、巨人が阪神に3-2で勝利した。",
                 "【ハイライト】",
                 "終盤に岡田悠希の決勝打が飛び出した。",
                 "【選手成績】",
@@ -24,7 +24,7 @@ class ArticlePartsWireInTests(unittest.TestCase):
         return json.dumps(
             {
                 "title": "巨人が阪神に3-2で勝利 岡田悠希が決勝打",
-                "fact_lead": "巨人が阪神に3-2で勝利し、終盤に岡田悠希の決勝打が出た。",
+                "fact_lead": "4月21日、巨人が阪神に3-2で勝利し、終盤に岡田悠希の決勝打が出た。",
                 "body_core": [
                     "先発の田中将大投手は7回2失点で試合をつくった。",
                     "打線は終盤まで同点のまま進み、終盤に勝ち越した。",
@@ -58,7 +58,7 @@ class ArticlePartsWireInTests(unittest.TestCase):
                                     with self.assertLogs("rss_fetcher", level="INFO") as logs:
                                         blocks, ai_body = rss_fetcher.build_news_block(
                                             title="【巨人】阪神に3-2で勝利　岡田が決勝打",
-                                            summary="巨人が阪神に3-2で勝利した。終盤に岡田悠希の決勝打が飛び出した。",
+                                            summary="4月21日、巨人が阪神に3-2で勝利した。終盤に岡田悠希の決勝打が飛び出した。",
                                             url="https://example.com/postgame",
                                             source_name="日刊スポーツ",
                                             category="試合速報",

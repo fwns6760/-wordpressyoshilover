@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 
 BODY_CONTRACTS: dict[str, tuple[str, ...]] = {
     "live_update": (
@@ -38,6 +40,50 @@ SOURCE_BLOCK_MARKERS = (
     "📰 ",
 )
 
+HARD_FAIL_AXES = {
+    "source_block_missing",
+    "postgame_score_missing",
+    "postgame_win_loss_missing",
+    "postgame_decisive_event_missing",
+}
+
+POSTGAME_RESULT_HEADING = "【試合結果】"
+POSTGAME_HIGHLIGHT_HEADING = "【ハイライト】"
+POSTGAME_SCORE_RE = re.compile(r"(?:\d{1,2}\s*[－\-–]\s*\d{1,2})|(?:\d{1,2}\s*対\s*\d{1,2})")
+POSTGAME_WIN_LOSS_RE = re.compile(
+    r"(勝利|敗戦|引き分け|引分け|勝った|競り勝った|制した|敗れた|敗れ|白星|黒星|ドロー)"
+)
+POSTGAME_OPPONENT_RE = re.compile(
+    r"(阪神|中日|ヤクルト|広島|DeNA|ＤｅＮＡ|横浜|日本ハム|ソフトバンク|楽天|ロッテ|西武|オリックス|相手)"
+)
+POSTGAME_DATE_RE = re.compile(
+    r"((?:\d{4}年)?\d{1,2}月\d{1,2}日)|(\d{4}[/-]\d{1,2}[/-]\d{1,2})|(\d{1,2}/\d{1,2})"
+)
+POSTGAME_DECISIVE_EVENT_RE = re.compile(
+    r"(決勝打|勝ち越し|サヨナラ|本塁打|ホームラン|逆転打|適時打|タイムリー|犠飛|押し出し|先制|同点|好守|好投|セーブ)"
+)
+POSTGAME_COMMENT_SLOT_RE = re.compile(
+    r"(コメントで教えてください|意見はコメントで|コメント欄で教えてください|感想・コメントをお願いします)"
+)
+POSTGAME_ABSTRACT_LEAD_PREFIXES = (
+    "激闘だった",
+    "激闘となった",
+    "悔しい敗戦だった",
+    "悔しい敗戦となった",
+    "惜しい敗戦だった",
+    "惜しい敗戦となった",
+    "白熱した一戦だった",
+    "白熱した一戦となった",
+    "熱戦だった",
+    "熱戦となった",
+    "劇的な勝利だった",
+    "劇的な勝利となった",
+    "劇的な敗戦だった",
+    "劇的な敗戦となった",
+    "見応えのある試合だった",
+    "見応えのある試合となった",
+)
+
 
 def is_supported_subtype(article_subtype: str) -> bool:
     return article_subtype in BODY_CONTRACTS
@@ -63,6 +109,74 @@ def _extract_headings(text: str) -> list[str]:
 
 def _has_source_block(rendered_html: str) -> bool:
     return any(marker in (rendered_html or "") for marker in SOURCE_BLOCK_MARKERS)
+
+
+def _extract_blocks(text: str) -> list[tuple[str, list[str]]]:
+    blocks: list[tuple[str, list[str]]] = []
+    current_heading = ""
+    current_lines: list[str] = []
+    for raw_line in (text or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("【") and "】" in line:
+            if current_heading:
+                blocks.append((current_heading, current_lines))
+            current_heading = line
+            current_lines = []
+            continue
+        if current_heading:
+            current_lines.append(line)
+    if current_heading:
+        blocks.append((current_heading, current_lines))
+    return blocks
+
+
+def _first_sentence(lines: list[str]) -> str:
+    text = " ".join(line.strip() for line in lines if line.strip())
+    if not text:
+        return ""
+    match = re.search(r".*?[。！？!?](?:\s|$)", text)
+    if match:
+        return match.group(0).strip()
+    return text.strip()
+
+
+def _looks_like_abstract_postgame_lead(sentence: str) -> bool:
+    trimmed = sentence.strip()
+    return any(trimmed.startswith(prefix) for prefix in POSTGAME_ABSTRACT_LEAD_PREFIXES)
+
+
+def _validate_postgame_fact_kernel(body_text: str) -> list[str]:
+    block_map: dict[str, list[str]] = {}
+    for heading, lines in _extract_blocks(body_text):
+        block_map.setdefault(heading, lines)
+
+    result_lines = block_map.get(POSTGAME_RESULT_HEADING, [])
+    highlight_lines = block_map.get(POSTGAME_HIGHLIGHT_HEADING, [])
+    if not result_lines:
+        return []
+
+    fail_axes: list[str] = []
+    result_text = "\n".join(result_lines)
+    highlight_text = "\n".join(highlight_lines)
+    first_sentence = _first_sentence(result_lines)
+
+    if _looks_like_abstract_postgame_lead(first_sentence):
+        fail_axes.append("postgame_abstract_lead")
+    if POSTGAME_COMMENT_SLOT_RE.search(result_text) or POSTGAME_COMMENT_SLOT_RE.search(highlight_text):
+        fail_axes.append("postgame_comment_slot_before_fact_kernel")
+    if not POSTGAME_SCORE_RE.search(result_text):
+        fail_axes.append("postgame_score_missing")
+    if not POSTGAME_WIN_LOSS_RE.search(result_text):
+        fail_axes.append("postgame_win_loss_missing")
+    if not POSTGAME_OPPONENT_RE.search(result_text):
+        fail_axes.append("postgame_opponent_missing")
+    if not POSTGAME_DATE_RE.search(result_text):
+        fail_axes.append("postgame_date_missing")
+    if not POSTGAME_DECISIVE_EVENT_RE.search(highlight_text):
+        fail_axes.append("postgame_decisive_event_missing")
+    return fail_axes
 
 
 def validate_body_candidate(
@@ -106,11 +220,15 @@ def validate_body_candidate(
         if not has_source_block:
             fail_axes.append("source_block_missing")
 
+    if article_subtype == "postgame":
+        fail_axes.extend(_validate_postgame_fact_kernel(body_text))
+
     stop_reason = ""
     action = "accept"
-    if "source_block_missing" in fail_axes:
+    hard_fail_axes = [axis for axis in fail_axes if axis in HARD_FAIL_AXES]
+    if hard_fail_axes:
         action = "fail"
-        stop_reason = "source_block_missing"
+        stop_reason = hard_fail_axes[0]
     elif fail_axes:
         action = "reroll"
         stop_reason = fail_axes[0]

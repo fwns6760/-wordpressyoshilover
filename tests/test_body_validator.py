@@ -21,9 +21,9 @@ VALID_CASES = {
     "postgame": "\n".join(
         [
             "【試合結果】",
-            "巨人が3-2で勝ちました。",
+            "4月21日、巨人が阪神に3-2で勝利した。",
             "【ハイライト】",
-            "終盤に決勝打が出ました。",
+            "終盤に岡田悠希の決勝打が出ました。",
             "【選手成績】",
             "先発は7回2失点でした。",
             "【試合展開】",
@@ -83,7 +83,7 @@ class BodyValidatorTests(unittest.TestCase):
                 "【ハイライト】",
                 "決勝打の場面です。",
                 "【試合結果】",
-                "巨人が3-2で勝ちました。",
+                "4月21日、巨人が阪神に3-2で勝利した。",
                 "【選手成績】",
                 "先発は7回2失点でした。",
                 "【試合展開】",
@@ -143,6 +143,89 @@ class BodyValidatorTests(unittest.TestCase):
         self.assertEqual(result["action"], "fail")
         self.assertIn("source_block_missing", result["fail_axes"])
         self.assertFalse(result["has_source_block"])
+
+    def test_postgame_abstract_lead_requests_reroll(self):
+        text = "\n".join(
+            [
+                "【試合結果】",
+                "激闘だった。4月21日、巨人が阪神に3-2で勝利した。",
+                "【ハイライト】",
+                "岡田悠希の決勝打で終盤に勝ち越した。",
+                "【選手成績】",
+                "先発は7回2失点でした。",
+                "【試合展開】",
+                "終盤の継投で逃げ切りました。",
+            ]
+        )
+
+        result = body_validator.validate_body_candidate(text, "postgame", rendered_html=SOURCE_HTML)
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["action"], "reroll")
+        self.assertIn("postgame_abstract_lead", result["fail_axes"])
+
+    def test_postgame_score_missing_is_hard_fail(self):
+        text = "\n".join(
+            [
+                "【試合結果】",
+                "4月21日、巨人が阪神に勝利した。",
+                "【ハイライト】",
+                "岡田悠希の決勝打で終盤に勝ち越した。",
+                "【選手成績】",
+                "先発は7回2失点でした。",
+                "【試合展開】",
+                "終盤の継投で逃げ切りました。",
+            ]
+        )
+
+        result = body_validator.validate_body_candidate(text, "postgame", rendered_html=SOURCE_HTML)
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["action"], "fail")
+        self.assertIn("postgame_score_missing", result["fail_axes"])
+        self.assertEqual(result["stop_reason"], "postgame_score_missing")
+
+    def test_postgame_decisive_event_missing_is_hard_fail(self):
+        text = "\n".join(
+            [
+                "【試合結果】",
+                "4月21日、巨人が阪神に3-2で勝利した。",
+                "【ハイライト】",
+                "終盤まで拮抗した展開が続いた。",
+                "【選手成績】",
+                "先発は7回2失点でした。",
+                "【試合展開】",
+                "終盤の継投で逃げ切りました。",
+            ]
+        )
+
+        result = body_validator.validate_body_candidate(text, "postgame", rendered_html=SOURCE_HTML)
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["action"], "fail")
+        self.assertIn("postgame_decisive_event_missing", result["fail_axes"])
+        self.assertEqual(result["stop_reason"], "postgame_decisive_event_missing")
+
+    def test_postgame_comment_slot_before_fact_kernel_requests_reroll(self):
+        text = "\n".join(
+            [
+                "【試合結果】",
+                "4月21日、巨人が阪神に3-2で勝利した。",
+                "みなさんの意見はコメントで教えてください！",
+                "【ハイライト】",
+                "岡田悠希の決勝打で終盤に勝ち越した。",
+                "【選手成績】",
+                "先発は7回2失点でした。",
+                "【試合展開】",
+                "終盤の継投で逃げ切りました。",
+            ]
+        )
+
+        result = body_validator.validate_body_candidate(text, "postgame", rendered_html=SOURCE_HTML)
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["action"], "reroll")
+        self.assertIn("postgame_comment_slot_before_fact_kernel", result["fail_axes"])
 
 
 class BodyValidatorWireInTests(unittest.TestCase):

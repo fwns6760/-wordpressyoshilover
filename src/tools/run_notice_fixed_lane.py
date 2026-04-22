@@ -25,6 +25,12 @@ from urllib.parse import urlsplit
 import requests
 
 from src.eyecatch_fallback import maybe_generate_structured_eyecatch_media
+from src.postgame_revisit_chain import (
+    ROUTE_DEFERRED_PICKUP_DERIVATIVE,
+    ROUTE_FIXED_PRIMARY_DERIVATIVE,
+    PostgameDerivativeCandidate,
+    aggregate_postgame_derivatives,
+)
 from src.source_id import source_id as build_source_id
 from src.source_trust import classify_url
 from src.tag_category_guard import normalize_tags
@@ -1547,6 +1553,11 @@ def _create_notice_draft(
     candidate: NoticeCandidate,
     category_ids: Sequence[int],
     tag_ids: Sequence[int],
+    *,
+    created_event: str = "canary_post_created",
+    route: str = ROUTE_FIXED_PRIMARY,
+    subtype: str | None = None,
+    family: str | None = None,
 ) -> int | None:
     route_evidence = _candidate_route_evidence_entry(candidate)
     featured_media = maybe_generate_structured_eyecatch_media(wp, candidate)
@@ -1578,13 +1589,13 @@ def _create_notice_draft(
                 post_id = resp.json().get("id")
                 if post_id:
                     _emit_event(
-                        "canary_post_created",
+                        created_event,
                         post_id=post_id,
-                        route=ROUTE_FIXED_PRIMARY,
-                        subtype=_candidate_metadata_family(candidate),
+                        route=route,
+                        subtype=subtype or _candidate_metadata_family(candidate),
                         candidate_id=candidate.metadata["candidate_id"],
                         candidate_key=_candidate_metadata_key(candidate),
-                        family=_candidate_metadata_family(candidate),
+                        family=family or _candidate_metadata_family(candidate),
                         source_kind=route_evidence.get("source_kind", ""),
                         trust_tier=route_evidence.get("trust_tier", ""),
                         attempt=attempt,
@@ -1691,6 +1702,202 @@ def _route_candidates(candidates: Sequence[NoticeCandidate]) -> tuple[list[Notic
     return routed, route_outcomes
 
 
+def _build_postgame_revisit_context(candidate: NoticeCandidate) -> dict[str, Any]:
+    route_evidence = _candidate_route_evidence_entry(candidate)
+    metadata = dict(candidate.metadata)
+    return {
+        "title": candidate.title,
+        "body_html": candidate.body_html,
+        "game_id": candidate.game_id or metadata.get("game_id") or "",
+        "result_token": metadata.get("result_token") or "",
+        "candidate_key": _candidate_metadata_key(candidate),
+        "source_url": route_evidence.get("url", candidate.source_url),
+        "source_kind": route_evidence.get("source_kind", metadata.get("pickup_source_kind", "")),
+        "trust_tier": route_evidence.get("trust_tier", metadata.get("primary_trust_tier", "")),
+        "metadata": metadata,
+    }
+
+
+def _build_postgame_derivative_candidate(
+    parent: NoticeCandidate, derivative: PostgameDerivativeCandidate
+) -> NoticeCandidate:
+    source_url = derivative.source_url or parent.source_url
+    trust_tier = derivative.trust_tier
+    source_kind = derivative.source_kind
+    source_bundle: list[dict[str, str]] = []
+    trigger_only_sources: list[dict[str, str]] = []
+    if source_url and trust_tier in {TRUST_TIER_T1, TRUST_TIER_T2}:
+        source_bundle = [
+            _bundle_entry(
+                source_url,
+                trust_tier,
+                role="primary" if trust_tier == TRUST_TIER_T1 else "bundle",
+                source_kind=source_kind,
+            )
+        ]
+    elif source_url:
+        trigger_only_sources = [
+            _bundle_entry(
+                source_url,
+                trust_tier or TRUST_TIER_T3,
+                role="trigger",
+                source_kind=source_kind,
+            )
+        ]
+
+    candidate_id = _build_candidate_id(source_url, derivative.family, derivative.discriminator)
+    metadata: dict[str, Any] = {
+        "subtype": derivative.subtype,
+        "article_subtype": derivative.subtype,
+        "article_type": derivative.family,
+        "family": derivative.family,
+        "category": derivative.category,
+        "parent_category": TARGET_PARENT_CATEGORY_NAME,
+        "tags": normalize_tags(list(derivative.tags)),
+        "candidate_id": candidate_id,
+        "candidate_key": derivative.candidate_key,
+        "source_trust": "primary" if trust_tier == TRUST_TIER_T1 else "secondary",
+        "pickup_mode": "collect_wide_assert_narrow",
+        "pickup_source_kind": source_kind,
+        "pickup_source_kinds": [source_kind] if source_kind else [],
+        "lane_target": TARGET_LANE_FIXED if derivative.route == ROUTE_FIXED_PRIMARY_DERIVATIVE else TARGET_LANE_AI,
+        "batch_source": TARGET_BATCH_SOURCE,
+        "source_id": build_source_id(source_url),
+        "source_urls": [source_url] if source_url else [],
+        "source_bundle": source_bundle,
+        "trigger_only_sources": trigger_only_sources,
+        "primary_trust_tier": trust_tier,
+        "game_id": parent.game_id or parent.metadata.get("game_id") or "",
+        "result_token": parent.metadata.get("result_token") or "",
+        WPClient.SOURCE_URL_META_KEY: source_url,
+    }
+    metadata.update(derivative.metadata)
+    metadata["candidate_id"] = candidate_id
+    metadata["candidate_key"] = derivative.candidate_key
+    metadata["tags"] = normalize_tags(list(metadata.get("tags") or derivative.tags))
+    metadata["source_urls"] = _merge_source_lists(metadata.get("source_urls") or [], [source_url])
+    metadata["source_bundle"] = _dedupe_bundle_entries(
+        source_bundle + list(metadata.get("source_bundle") or [])
+    )
+    metadata["trigger_only_sources"] = _dedupe_bundle_entries(
+        trigger_only_sources + list(metadata.get("trigger_only_sources") or [])
+    )
+    metadata["pickup_source_kinds"] = _merge_source_lists(
+        metadata.get("pickup_source_kinds") or [],
+        [source_kind] if source_kind else [],
+    )
+    metadata["source_id"] = build_source_id(source_url)
+    metadata[WPClient.SOURCE_URL_META_KEY] = source_url
+
+    return NoticeCandidate(
+        source_url=source_url,
+        source_id=build_source_id(source_url),
+        notice_date=parent.notice_date,
+        title=derivative.title,
+        body_html=derivative.body_html,
+        metadata=metadata,
+        candidate_slug=_build_candidate_slug(derivative.candidate_key),
+        family=derivative.family,
+        candidate_key=derivative.candidate_key,
+        subject=str(derivative.metadata.get("subject") or ""),
+        notice_kind=str(derivative.metadata.get("notice_kind") or ""),
+        air_date="",
+        program_slug="",
+        game_id=str(metadata.get("game_id") or ""),
+    )
+
+
+def _emit_postgame_derivative_route(
+    event: str,
+    derivative: PostgameDerivativeCandidate,
+    *,
+    route: str,
+    reason: str = "",
+    existing_post_ids: Sequence[Any] | None = None,
+) -> None:
+    payload: dict[str, Any] = {
+        "route": route,
+        "subtype": derivative.subtype,
+        "family": derivative.family,
+        "candidate_key": derivative.candidate_key,
+        "source_kind": derivative.source_kind,
+        "trust_tier": derivative.trust_tier,
+    }
+    if reason:
+        payload["reason"] = reason
+    if existing_post_ids is not None:
+        payload["existing_post_ids"] = list(existing_post_ids)
+    _emit_event(event, **payload)
+
+
+def _process_postgame_revisit_chain(wp: WPClient, candidate: NoticeCandidate) -> list[str]:
+    if _candidate_metadata_family(candidate) != "postgame_result":
+        return []
+
+    derivatives = aggregate_postgame_derivatives(_build_postgame_revisit_context(candidate))
+    route_outcomes: list[str] = []
+    for derivative in derivatives:
+        if derivative.route == ROUTE_DEFERRED_PICKUP_DERIVATIVE:
+            route_outcomes.append(ROUTE_DEFERRED_PICKUP_DERIVATIVE)
+            _emit_postgame_derivative_route(
+                "postgame_derivative_route",
+                derivative,
+                route=ROUTE_DEFERRED_PICKUP_DERIVATIVE,
+            )
+            continue
+
+        derivative_candidate = _build_postgame_derivative_candidate(candidate, derivative)
+        duplicates = _find_duplicate_posts(wp, derivative_candidate)
+        if duplicates:
+            route_outcomes.append(ROUTE_DUPLICATE_ABSORBED)
+            _emit_postgame_derivative_route(
+                "postgame_derivative_duplicate",
+                derivative,
+                route=ROUTE_DUPLICATE_ABSORBED,
+                existing_post_ids=[row.get("id") for row in duplicates],
+            )
+            continue
+
+        category_ids = _resolve_category_ids(
+            wp,
+            str(derivative_candidate.metadata.get("category") or "").strip(),
+            parent_category_name=str(
+                derivative_candidate.metadata.get("parent_category") or TARGET_PARENT_CATEGORY_NAME
+            ),
+        )
+        if not category_ids:
+            _emit_postgame_derivative_route(
+                "postgame_derivative_skip",
+                derivative,
+                route=ROUTE_FIXED_PRIMARY_DERIVATIVE,
+                reason="category_resolve_failed",
+            )
+            continue
+
+        tag_ids = _resolve_tag_ids(wp, derivative_candidate.metadata.get("tags") or [])
+        created_post_id = _create_notice_draft(
+            wp,
+            derivative_candidate,
+            category_ids,
+            tag_ids,
+            created_event="postgame_derivative_created",
+            route=ROUTE_FIXED_PRIMARY_DERIVATIVE,
+            subtype=derivative.subtype,
+            family=derivative.family,
+        )
+        if created_post_id is None:
+            _emit_postgame_derivative_route(
+                "postgame_derivative_skip",
+                derivative,
+                route=ROUTE_FIXED_PRIMARY_DERIVATIVE,
+                reason="draft_create_failed",
+            )
+            continue
+
+        route_outcomes.append(ROUTE_FIXED_PRIMARY_DERIVATIVE)
+    return route_outcomes
+
+
 def _process_candidates(wp: WPClient, candidates: Sequence[NoticeCandidate]) -> ProcessResult:
     created_post_id: int | None = None
     duplicate_skip = False
@@ -1741,6 +1948,7 @@ def _process_candidates(wp: WPClient, candidates: Sequence[NoticeCandidate]) -> 
                 attempted_create=attempted_create,
             )
         route_outcomes.append(ROUTE_FIXED_PRIMARY)
+        route_outcomes.extend(_process_postgame_revisit_chain(wp, candidate))
         return ProcessResult(
             created_post_id=created_post_id,
             duplicate_skip=duplicate_skip,

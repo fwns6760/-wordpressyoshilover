@@ -57,6 +57,11 @@ TODOの状態：`【】` 未着手 → `【×】` 完了
 | 044 | [044-codex-startup-registration-and-reboot-smoke.md](044-codex-startup-registration-and-reboot-smoke.md) | Codex app startup 登録と reboot smoke 確認 | Claude Code | 039, 042, 043, 現行 Codex automations |
 | 045 | [045-non-npb-collector-wiring.md](045-non-npb-collector-wiring.md) | non-NPB collector wiring を 037 intake に接続する | Codex A | 028 impl accepted, 037 accepted, 038 active |
 | 046 | [046-pickup-parity-first-wave-promotion.md](046-pickup-parity-first-wave-promotion.md) | 037 first wave 4 family を trust 条件合致時だけ fixed lane Draft 候補へ昇格 | Codex A | 037 accepted, 041 accepted, 045 accepted |
+| 047 | [047-postgame-revisit-chain-impl.md](047-postgame-revisit-chain-impl.md) | 020 postgame 連鎖 派生記事 emit 層(主役/監督/transaction/データ派生、最大4本/試合/24h) | Codex A | 046 accepted |
+| 048 | [048-repair-playbook-ledger-integration.md](048-repair-playbook-ledger-integration.md) | 040 repair playbook の次弾 ledger 連携(24h/7d fail_tag 昇格 formatter) | Codex B | 038 active, 040 accepted, 046 accepted, 047 accepted |
+| 060 | [060-sns-dual-account-draft-era-bridge.md](060-sns-dual-account-draft-era-bridge.md) | SNS 2 アカウント運用契約(公式 X / 中の人 X の Draft 連動と trust tier) | Claude Code | - |
+| 062 | [062-comment-first-topic-hub.md](062-comment-first-topic-hub.md) | コメント-first topic hub 契約(トップ中央 hub / 記事下 SNS 反応 / SEO 段階制) | Claude Code | 047 accepted |
+| 063 | [063-comment-first-topic-hub-impl.md](063-comment-first-topic-hub-impl.md) | 062 contract の front impl 在庫(owner pending) | front 実装 lane (TBD) | 062 accepted, 047 accepted |
 
 ---
 

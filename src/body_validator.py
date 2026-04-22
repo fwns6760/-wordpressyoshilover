@@ -7,6 +7,23 @@ try:
 except ImportError:  # pragma: no cover - package import for tests
     from src.source_attribution_validator import validate_source_attribution
 
+try:
+    from fact_conflict_guard import (
+        GAME_RESULT_CONTEXT_SUBTYPES,
+        TITLE_BODY_MISMATCH_SUBTYPES,
+        detect_game_result_conflict,
+        detect_no_game_but_result,
+        detect_title_body_entity_mismatch,
+    )
+except ImportError:  # pragma: no cover - package import for tests
+    from src.fact_conflict_guard import (
+        GAME_RESULT_CONTEXT_SUBTYPES,
+        TITLE_BODY_MISMATCH_SUBTYPES,
+        detect_game_result_conflict,
+        detect_no_game_but_result,
+        detect_title_body_entity_mismatch,
+    )
+
 
 BODY_CONTRACTS: dict[str, tuple[str, ...]] = {
     "live_update": (
@@ -46,6 +63,9 @@ SOURCE_BLOCK_MARKERS = (
 )
 
 HARD_FAIL_AXES = {
+    "GAME_RESULT_CONFLICT",
+    "NO_GAME_BUT_RESULT",
+    "TITLE_BODY_ENTITY_MISMATCH",
     "source_block_missing",
     "source_attribution_ambiguous",
     "postgame_score_missing",
@@ -88,6 +108,12 @@ POSTGAME_ABSTRACT_LEAD_PREFIXES = (
     "劇的な敗戦となった",
     "見応えのある試合だった",
     "見応えのある試合となった",
+)
+RESULT_NOTICE_CONTEXT_MARKERS = (
+    "試合結果",
+    "結果のポイント",
+    "試合終了",
+    "勝敗",
 )
 
 
@@ -151,6 +177,82 @@ def _first_sentence(lines: list[str]) -> str:
 def _looks_like_abstract_postgame_lead(sentence: str) -> bool:
     trimmed = sentence.strip()
     return any(trimmed.startswith(prefix) for prefix in POSTGAME_ABSTRACT_LEAD_PREFIXES)
+
+
+def _source_ref_texts(source_context: dict[str, object] | None) -> tuple[str, ...]:
+    if not source_context:
+        return ()
+    values: list[str] = []
+    for key in ("source_title", "summary", "source_summary", "description", "title"):
+        value = str(source_context.get(key) or "").strip()
+        if value:
+            values.append(value)
+    return tuple(values)
+
+
+def _guard_entity_tokens(title: str, source_context: dict[str, object] | None) -> tuple[str, ...]:
+    if not source_context:
+        return ()
+
+    tokens: list[str] = []
+    for key in ("opponent", "scoreline"):
+        value = str(source_context.get(key) or "").strip()
+        if value:
+            tokens.append(value)
+
+    raw_entity_tokens = source_context.get("entity_tokens")
+    if isinstance(raw_entity_tokens, str):
+        token = raw_entity_tokens.strip()
+        if token:
+            tokens.append(token)
+    elif isinstance(raw_entity_tokens, (list, tuple, set, frozenset)):
+        for item in raw_entity_tokens:
+            token = str(item or "").strip()
+            if token:
+                tokens.append(token)
+
+    derived_text = "\n".join(part for part in (title, *_source_ref_texts(source_context)) if part)
+    score_match = POSTGAME_SCORE_RE.search(derived_text)
+    if score_match:
+        tokens.append(score_match.group(0))
+    opponent_match = POSTGAME_OPPONENT_RE.search(derived_text)
+    if opponent_match:
+        tokens.append(opponent_match.group(1))
+
+    deduped: list[str] = []
+    for token in tokens:
+        if token in deduped:
+            continue
+        deduped.append(token)
+    return tuple(deduped)
+
+
+def _is_result_notice_context(title: str, body_text: str, source_context: dict[str, object] | None) -> bool:
+    combined = "\n".join(part for part in (title, body_text, *_source_ref_texts(source_context)) if part)
+    if not combined:
+        return False
+    if POSTGAME_SCORE_RE.search(combined):
+        return True
+    return any(marker in combined for marker in RESULT_NOTICE_CONTEXT_MARKERS)
+
+
+def _fact_conflict_payload(
+    *,
+    title: str,
+    body_text: str,
+    source_context: dict[str, object] | None,
+    entity_tokens: tuple[str, ...],
+) -> dict[str, object]:
+    source_context = source_context or {}
+    return {
+        "title": title,
+        "body_text": body_text,
+        "game_id": str(source_context.get("game_id") or "").strip(),
+        "scoreline": str(source_context.get("scoreline") or "").strip(),
+        "team_result": str(source_context.get("team_result") or "").strip(),
+        "opponent": str(source_context.get("opponent") or "").strip(),
+        "required_tokens": entity_tokens,
+    }
 
 
 def _validate_postgame_fact_kernel(body_text: str) -> list[str]:
@@ -218,6 +320,22 @@ def validate_body_candidate(
     actual_first_block = actual_headings[0] if actual_headings else ""
     missing_required_blocks = [heading for heading in expected if heading not in actual_headings]
     fail_axes: list[str] = []
+    title = str((source_context or {}).get("title") or "").strip()
+    entity_tokens = _guard_entity_tokens(title, source_context)
+    has_fact_conflict_context = bool(
+        title
+        or entity_tokens
+        or any(
+            str((source_context or {}).get(key) or "").strip()
+            for key in ("source_title", "summary", "source_summary", "game_id", "scoreline", "team_result", "opponent")
+        )
+    )
+    fact_conflict_payload = _fact_conflict_payload(
+        title=title,
+        body_text=body_text,
+        source_context=source_context,
+        entity_tokens=entity_tokens,
+    )
 
     if actual_first_block != expected[0]:
         fail_axes.append("first_block_mismatch")
@@ -251,6 +369,17 @@ def validate_body_candidate(
             attribution_fail_axis = str(attribution_validation.get("fail_axis") or "")
             if attribution_fail_axis:
                 fail_axes.append(attribution_fail_axis)
+
+    if has_fact_conflict_context:
+        apply_game_result_conflict_guard = article_subtype in GAME_RESULT_CONTEXT_SUBTYPES or (
+            article_subtype == "fact_notice" and _is_result_notice_context(title, body_text, source_context)
+        )
+        if apply_game_result_conflict_guard and detect_no_game_but_result(fact_conflict_payload, source_context):
+            fail_axes.append("NO_GAME_BUT_RESULT")
+        if apply_game_result_conflict_guard and detect_game_result_conflict(fact_conflict_payload, source_context):
+            fail_axes.append("GAME_RESULT_CONFLICT")
+        if article_subtype in TITLE_BODY_MISMATCH_SUBTYPES and detect_title_body_entity_mismatch(title, fact_conflict_payload):
+            fail_axes.append("TITLE_BODY_ENTITY_MISMATCH")
 
     if article_subtype == "postgame":
         fail_axes.extend(_validate_postgame_fact_kernel(body_text))

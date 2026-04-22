@@ -32,6 +32,11 @@ from html.parser import HTMLParser
 from article_parts_renderer import ArticleParts, render_postgame
 from body_validator import validate_body_candidate as _validate_body_candidate
 from body_validator import is_supported_subtype as _body_validator_supports_subtype
+from fact_conflict_guard import (
+    detect_game_result_conflict as _detect_game_result_conflict,
+    detect_no_game_but_result as _detect_no_game_but_result,
+    detect_title_body_entity_mismatch as _detect_title_body_entity_mismatch,
+)
 from title_validator import build_reroll_title as _build_title_reroll_title
 from title_validator import validate_title_candidate as _validate_title_candidate
 from title_validator import is_supported_subtype as _title_validator_supports_subtype
@@ -6234,11 +6239,17 @@ def _split_text_sections(text: str) -> list[tuple[str, str]]:
     return sections
 
 
-def _evaluate_post_gen_validate(text: str, article_subtype: str = "", title: str = "") -> dict[str, object]:
+def _evaluate_post_gen_validate(
+    text: str,
+    article_subtype: str = "",
+    title: str = "",
+    source_refs: dict[str, object] | None = None,
+) -> dict[str, object]:
     raw_text = text or ""
     clean_text = _collapse_ws(_strip_html(raw_text))
     title_text = _collapse_ws(_strip_html(title or ""))
     fail_axes: list[str] = []
+    source_refs = source_refs or {}
 
     def _append_fail_axis(axis: str) -> None:
         if axis not in fail_axes:
@@ -6279,6 +6290,39 @@ def _evaluate_post_gen_validate(text: str, article_subtype: str = "", title: str
         has_lineup_table = "<table" in raw_text.lower() and any(keyword in clean_text for keyword in LIVE_UPDATE_LINEUP_HEADING_KEYWORDS)
         if has_lineup_table or len(batting_order_markers) >= 4:
             _append_fail_axis("live_update_lineup_structure")
+
+    if article_subtype == "lineup":
+        lineup_tokens: list[str] = []
+        for key in ("opponent", "scoreline"):
+            value = _collapse_ws(_strip_html(str(source_refs.get(key) or "")))
+            if value:
+                lineup_tokens.append(value)
+
+        source_title_text = _collapse_ws(_strip_html(str(source_refs.get("source_title") or "")))
+        source_summary_text = _collapse_ws(_strip_html(str(source_refs.get("source_summary") or source_refs.get("summary") or "")))
+        context_text = "\n".join(part for part in (title_text, source_title_text, source_summary_text) if part)
+        score_match = _re.search(r"\d{1,2}\s*[－\-–]\s*\d{1,2}", context_text)
+        if score_match:
+            lineup_tokens.append(score_match.group(0))
+        opponent_match = _re.search(r"(阪神|中日|ヤクルト|広島|DeNA|ＤｅＮＡ|横浜|日本ハム|ソフトバンク|楽天|ロッテ|西武|オリックス)", context_text)
+        if opponent_match:
+            lineup_tokens.append(opponent_match.group(1))
+
+        fact_conflict_payload = {
+            "title": title_text,
+            "body_text": clean_text,
+            "game_id": str(source_refs.get("game_id") or "").strip(),
+            "scoreline": str(source_refs.get("scoreline") or "").strip(),
+            "team_result": str(source_refs.get("team_result") or "").strip(),
+            "opponent": str(source_refs.get("opponent") or "").strip(),
+            "required_tokens": tuple(dict.fromkeys(token for token in lineup_tokens if token)),
+        }
+        if _detect_no_game_but_result(fact_conflict_payload, source_refs):
+            _append_fail_axis("NO_GAME_BUT_RESULT")
+        if _detect_game_result_conflict(fact_conflict_payload, source_refs):
+            _append_fail_axis("GAME_RESULT_CONFLICT")
+        if _detect_title_body_entity_mismatch(title_text, fact_conflict_payload):
+            _append_fail_axis("TITLE_BODY_ENTITY_MISMATCH")
 
     stop_reason = ""
     if any(axis.startswith("starmen_") for axis in fail_axes):
@@ -11119,16 +11163,25 @@ def _main(args, logger):
                 media_quotes=media_quotes,
                 source_entry=item.get("entry"),
             )
+            fact_conflict_source_refs = {
+                "title": draft_title,
+                "source_title": raw_title,
+                "source_summary": summary,
+                "summary": summary,
+                "source_name": source_name,
+                "source_url": post_url,
+                "source_type": source_type,
+                "source_links": item.get("source_links"),
+                "game_id": item.get("game_id"),
+                "scoreline": item.get("scoreline") or item.get("score") or "",
+                "team_result": item.get("team_result") or "",
+                "opponent": item.get("opponent") or "",
+            }
             body_contract_validate = _validate_body_candidate(
                 ai_body_for_x,
                 title_article_subtype,
                 rendered_html=content,
-                source_context={
-                    "source_name": source_name,
-                    "source_url": post_url,
-                    "source_type": source_type,
-                    "source_links": item.get("source_links"),
-                },
+                source_context=fact_conflict_source_refs,
             )
             if not body_contract_validate["ok"]:
                 skip_filter += 1
@@ -11163,6 +11216,7 @@ def _main(args, logger):
                 ai_body_for_x,
                 article_subtype=title_article_subtype,
                 title=draft_title,
+                source_refs=fact_conflict_source_refs,
             )
             if not post_gen_validate["ok"]:
                 skip_filter += 1

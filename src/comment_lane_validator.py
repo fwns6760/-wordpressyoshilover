@@ -6,6 +6,19 @@ from dataclasses import dataclass
 import re
 from typing import Any, Mapping, Sequence
 
+try:
+    from fact_conflict_guard import (
+        detect_game_result_conflict,
+        detect_no_game_but_result,
+        detect_title_body_entity_mismatch,
+    )
+except ImportError:  # pragma: no cover - package import for tests
+    from src.fact_conflict_guard import (
+        detect_game_result_conflict,
+        detect_no_game_but_result,
+        detect_title_body_entity_mismatch,
+    )
+
 
 HARD_FAIL_TAGS = (
     "GAME_RESULT_CONFLICT",
@@ -43,10 +56,6 @@ FAIL_TAG_NORMALIZATION = {
 }
 
 EXPECTED_SLOT_ORDER = ("fact_header", "lede", "quote_block", "context", "related")
-RESULT_SCORE_RE = re.compile(r"(\d{1,2})\s*[－\-–]\s*(\d{1,2})")
-RESULT_ASSERTION_RE = re.compile(
-    r"(勝利|敗戦|引き分け|白星|黒星|競り勝った|敗れた|制した|\d{1,2}\s*[－\-–]\s*\d{1,2})"
-)
 HEADING_RE = re.compile(r"^\s*(?:##+|###|【[^】]+】|<h[23][^>]*>)", re.MULTILINE)
 PRONOUN_RE = re.compile(r"(彼|彼女|この人|この一言|その発言|それ|これ)")
 TITLE_GENERIC_PATTERNS = (
@@ -164,31 +173,6 @@ def _title_has_nucleus(title: str, draft: Mapping[str, Any]) -> bool:
     return nucleus in title
 
 
-def _contains_result_conflict(text: str, scoreline: str) -> bool:
-    expected = _text(scoreline)
-    if not expected:
-        return False
-    expected_normalized = re.sub(r"\s+", "", expected).replace("–", "-").replace("－", "-")
-    for match in RESULT_SCORE_RE.finditer(text):
-        candidate = f"{match.group(1)}-{match.group(2)}"
-        if candidate != expected_normalized:
-            return True
-    return False
-
-
-def _team_result_conflict(text: str, team_result: str) -> bool:
-    expected = _text(team_result).lower()
-    if not expected:
-        return False
-    if expected in {"win", "勝利"}:
-        return any(token in text for token in ("敗戦", "黒星", "敗れた"))
-    if expected in {"loss", "敗戦"}:
-        return any(token in text for token in ("勝利", "白星", "競り勝った", "制した"))
-    if expected in {"draw", "引き分け", "引分け"}:
-        return any(token in text for token in ("勝利", "敗戦", "白星", "黒星"))
-    return False
-
-
 def _quote_is_grounded(draft: Mapping[str, Any]) -> bool:
     source_ref = _text(draft.get("source_ref") or draft.get("quote_source"))
     if not source_ref or source_ref.lower().startswith("http"):
@@ -210,21 +194,6 @@ def _is_low_trust_source(draft: Mapping[str, Any]) -> bool:
         for token in ("reaction", "t3", "一般ファン", "fan", "quote / repost")
         if value
     )
-
-
-def _title_body_mismatch(title: str, draft: Mapping[str, Any], body_text: str) -> bool:
-    speaker = _text(draft.get("speaker_name") or draft.get("speaker"))
-    if speaker and speaker in title and speaker not in body_text:
-        return True
-
-    quoted = [item.strip() for item in QUOTE_RE.findall(title) if item.strip()]
-    if quoted and not all(item in body_text for item in quoted):
-        return True
-
-    for token in _scene_tokens(draft):
-        if token in title and token not in body_text:
-            return True
-    return False
 
 
 def _lede_is_too_vague(draft: Mapping[str, Any]) -> bool:
@@ -289,17 +258,13 @@ def validate_comment_lane_draft(draft: Mapping[str, Any]) -> CommentValidationRe
     if not _quote_is_grounded(draft):
         hard_fail_tags.append("QUOTE_UNGROUNDED")
 
-    has_game_context = any(_text(draft.get(key)) for key in ("game_id", "scoreline", "team_result"))
-    if not has_game_context and RESULT_ASSERTION_RE.search(body_text):
+    if detect_no_game_but_result(draft, draft):
         hard_fail_tags.append("NO_GAME_BUT_RESULT")
 
-    if _contains_result_conflict(body_text, _text(draft.get("scoreline"))) or _team_result_conflict(
-        body_text,
-        _text(draft.get("team_result")),
-    ):
+    if detect_game_result_conflict(draft, draft):
         hard_fail_tags.append("GAME_RESULT_CONFLICT")
 
-    if _title_body_mismatch(title, draft, body_text):
+    if detect_title_body_entity_mismatch(title, draft):
         hard_fail_tags.append("TITLE_BODY_ENTITY_MISMATCH")
 
     if _has_generic_title(title) or not _title_mentions_speaker(title, draft):

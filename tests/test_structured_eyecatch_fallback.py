@@ -135,13 +135,49 @@ class StructuredEyecatchFallbackTests(unittest.TestCase):
         self.assertNotIn("postgame-qa", rendered)
         self.assertIn("守備から入れた", rendered)
 
-    def test_existing_image_metadata_skips_fallback_generation(self):
-        candidate = self._make_candidate("postgame_result")
-        candidate.metadata["og_image_url"] = "https://example.com/hero.jpg"
+    def test_generic_image_metadata_does_not_skip_fallback_generation(self):
+        cases = [
+            ("og_image_url", "https://example.com/og.jpg"),
+            ("hero_image_url", "https://example.com/hero.jpg"),
+            ("thumbnail_url", "https://example.com/thumb.jpg"),
+            ("image_url", "https://example.com/image.jpg"),
+        ]
 
-        structured = eyecatch_fallback.build_structured_eyecatch(candidate)
+        for key, value in cases:
+            with self.subTest(key=key):
+                candidate = self._make_candidate("postgame_result")
+                candidate.metadata[key] = value
 
-        self.assertIsNone(structured)
+                structured = eyecatch_fallback.build_structured_eyecatch(candidate)
+
+                self.assertIsNotNone(structured)
+                assert structured is not None
+                self.assertEqual(structured.layout_key, "postgame_result")
+                rendered = structured.image_bytes.decode("utf-8")
+                self.assertIn("巨人 vs 阪神", rendered)
+                self.assertIn("3 - 2", rendered)
+
+    def test_explicit_featured_or_eyecatch_metadata_skips_fallback_generation(self):
+        cases = [
+            ("featured_media", 731),
+            ("featured_media_id", 732),
+            ("featured_image", "https://example.com/featured.jpg"),
+            ("featured_image_id", 811),
+            ("featured_image_url", "https://example.com/featured-url.jpg"),
+            ("eyecatch", "https://example.com/eyecatch.jpg"),
+            ("eyecatch_id", 901),
+            ("eyecatch_url", "https://example.com/eyecatch-url.jpg"),
+            ("eyecatch_image_url", "https://example.com/eyecatch-image.jpg"),
+        ]
+
+        for key, value in cases:
+            with self.subTest(key=key):
+                candidate = self._make_candidate("postgame_result")
+                candidate.metadata[key] = value
+
+                structured = eyecatch_fallback.build_structured_eyecatch(candidate)
+
+                self.assertIsNone(structured)
 
     @patch("src.tools.run_notice_fixed_lane.requests.post")
     def test_create_notice_draft_attaches_generated_featured_media(self, mock_post):

@@ -79,7 +79,7 @@ def aggregate_postgame_derivatives(
 ) -> list[PostgameDerivativeCandidate]:
     """Return derivative candidates for an accepted postgame context."""
 
-    current_time = _normalize_datetime(now or datetime.now())
+    current_time = _normalize_datetime(now) if now is not None else _accepted_at(postgame, datetime.now())
     if _is_live_state(postgame):
         return []
     if not _is_within_window(postgame, current_time, window_hours=window_hours):

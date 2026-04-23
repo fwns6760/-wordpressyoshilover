@@ -116,6 +116,7 @@ done
 - 038 は Claude Code 管理の運用 ticket。Draft ごとに品質 ledger を残し、再発 fail だけを 036 / 037 / 035 に昇格させる loop を固定する。
 - 039 は Claude Code 管理の delivery 切り分け系 ticket。quality-gmail の cron fire → log read → mail send → 着信の 4 段階で delivery reliability を管理する。029(4 行の意味固定)とは独立で、本線 fire 順を止めない。
 - 040 は Codex B の repair playbook。036 minimum-diff rubric を repair 手順として固定し、038 ledger の `repair_closed / escalated / accept_draft` と 1 対 1 で対応させる。fixed / agent 両 lane で同じ playbook を適用。
+- 048 は 040 repair playbook の ledger formatter 先行便。fixture ledger で 24h/7d 集計、user trigger(24h 2件+)と 036/037/035 昇格候補 formatter を固定済。実 ledger 接続 / automation 登録は後続。
 - 042 は Claude Code 管理の runtime 監査 ticket。reboot で止まる local automation と、Codex / Claude を再起動した時に何が戻るかを固定する。quality-gmail を含む local cron の復旧手順を明記し、次 tick 再開を前提にする。
 - 041 は Codex A の補助 ticket。画像無し記事で共通 no-image を出さず、subtype ごとの情報から structured eyecatch を自動で組む(番組情報 / 公示 / 予告先発 / コメント / 怪我状況 / 試合結果 の 6 layout)。027 / 037 / 019 にぶら下がる補助で、本線 fire 順を止めない。
 - 043 は Claude Code 管理の auto recovery 設計 ticket。042(手動復旧)を継承し、follow-up を `Codex app を Windows スタートアップフォルダへ配置する` 1 本に絞る。自動ログイン / Claude auto-start / missed run 自動補填は非対象。

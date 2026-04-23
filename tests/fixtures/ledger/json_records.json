@@ -1,0 +1,13 @@
+{
+  "records": [
+    {
+      "candidate_key": "kjson-1",
+      "subtype": "postgame",
+      "prompt_version": "v3",
+      "fail_tags": ["tags_category_minor"],
+      "source_family": "rss_media",
+      "ts": "2026-04-22T07:00:00+00:00",
+      "outcome": "repair_closed"
+    }
+  ]
+}

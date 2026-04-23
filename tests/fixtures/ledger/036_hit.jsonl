@@ -1,0 +1,5 @@
+{"candidate_key":"k036-1","subtype":"postgame","prompt_version":"v3","fail_tags":["thin_body"],"source_family":"official_x","ts":"2026-04-22T09:00:00+00:00","outcome":"escalated"}
+{"candidate_key":"k036-2","subtype":"postgame","prompt_version":"v3","fail_tags":["thin_body"],"source_family":"official_x","ts":"2026-04-22T10:00:00+00:00","outcome":"repair_closed"}
+{"candidate_key":"k036-3","subtype":"postgame","prompt_version":"v3","fail_tags":["thin_body"],"source_family":"official_x","ts":"2026-04-22T11:00:00+00:00","outcome":"escalated"}
+{"candidate_key":"k036-lineup-1","subtype":"lineup_notice","prompt_version":"v2","fail_tags":["thin_body"],"source_family":"official_x","ts":"2026-04-20T10:00:00+00:00","outcome":"escalated"}
+{"candidate_key":"k036-lineup-2","subtype":"lineup_notice","prompt_version":"v2","fail_tags":["thin_body"],"source_family":"official_x","ts":"2026-04-20T11:00:00+00:00","outcome":"repair_closed"}

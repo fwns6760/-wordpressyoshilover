@@ -1,0 +1,2 @@
+{"candidate_key":"kmiss-1","subtype":"postgame","prompt_version":"v3","fail_tags":["thin_body"],"source_family":"official_x","ts":"2026-04-22T08:00:00+00:00","outcome":"escalated"}
+{"candidate_key":"kmiss-clean","subtype":"postgame","prompt_version":"v3","fail_tags":[],"source_family":"official_x","ts":"2026-04-22T09:00:00+00:00","outcome":"accept_draft"}

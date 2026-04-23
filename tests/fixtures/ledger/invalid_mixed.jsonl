@@ -1,0 +1,4 @@
+{bad json
+{"candidate_key":"kbad-missing-subtype","prompt_version":"v3","fail_tags":["thin_body"],"source_family":"official_x","ts":"2026-04-22T08:00:00+00:00","outcome":"escalated"}
+{"candidate_key":"kbad-unknown-tag","subtype":"postgame","prompt_version":"v3","fail_tags":["unknown_tag"],"source_family":"official_x","ts":"2026-04-22T08:30:00+00:00","outcome":"escalated"}
+{"candidate_key":"kvalid-after-bad","subtype":"postgame","prompt_version":"v3","fail_tags":["attribution_missing"],"source_family":"official_x","ts":"2026-04-22T09:00:00+00:00","outcome":"escalated"}

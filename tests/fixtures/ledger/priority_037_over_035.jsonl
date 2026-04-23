@@ -1,0 +1,2 @@
+{"candidate_key":"kprio-1","subtype":"postgame","prompt_version":"v3","fail_tags":["close_marker"],"source_family":"official_x","ts":"2026-04-20T09:00:00+00:00","outcome":"escalated"}
+{"candidate_key":"kprio-2","subtype":"lineup_notice","prompt_version":"v3","fail_tags":["close_marker"],"source_family":"official_x","ts":"2026-04-20T10:00:00+00:00","outcome":"escalated"}

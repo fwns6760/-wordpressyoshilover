@@ -52,7 +52,7 @@
 
 ### 呼び出し経路
 
-- CLI エントリ: `python3 -m src.repair_playbook --aggregate --window 24h|7d`(新規サブコマンド、既存 CLI と衝突しない範囲で追加)。
+- CLI エントリ: `python3 -m src.tools.run_repair_playbook_aggregator --aggregate --window 24h|7d --ledger-dir <path>`(専用手動 entrypoint。既存 repair playbook API と runtime には接続しない)。
 - 自動起動は本便 scope 外。automation.toml / scheduler / cron には **登録しない**。Claude が手動または event-driven で回す。
 
 ### 不可触
@@ -133,20 +133,25 @@
 - new external dep(requests / urlopen / 新 subprocess)
 - pytest 失敗
 
+## 2026-04-23 formatter 先行便 着地範囲
+
+- fixture ledger(JSON / JSONL) の read-only 集計、24h / 7d window、user acceptance 層 trigger(24h 2 件+)と 036 / 037 / 035 昇格候補 formatter を先行実装。
+- 実 ledger 現物 read、038 昇格 loop 接続、`derivative_family` schema 追加、automation / scheduler 登録は未実施のまま後続 scope に残す。
+
 ## TODO(起票時点)
 
-【】`src/repair_playbook.py` に `aggregate_fail_tags()` / `format_promotion_summary()` を追加
-【】ledger jsonl を read-only で読み、3-4 軸集計を 24h / 7d window で実装
-【】038 §昇格基準の数値閾値を実装(036=24h 3 / 7d 5、037=2 subtype、035=2 件+ or 10%+)
-【】優先度 036 > 037 > 035 を candidate emit 並びに反映
-【】基準未満 fail は emit しない
-【】CLI サブコマンド `--aggregate --window 24h|7d` を追加
-【】既存 repair action / minimum-diff rubric / 1 Draft 1 回制限に diff を入れない
-【】038 ledger schema / Codex A 領域 / validator 本体に diff を入れない
-【】automation.toml / scheduler / cron に登録しない
-【】ledger に書き込まない(read-only、Claude 管理境界維持)
-【】tests(036/037/035 emit、基準未満非 emit、優先度順、formatter 1 行、CLI 正常 exit)
-【】doc/README.md に 048 行追加を cleanup commit で吸収
+【×】`src/repair_playbook.py` に `aggregate_fail_tags()` / `format_promotion_summary()` を追加
+【×】ledger jsonl を read-only で読み、3-4 軸集計を 24h / 7d window で実装
+【×】038 §昇格基準の数値閾値を実装(036=24h 3 / 7d 5、037=2 subtype、035=2 件+ or 10%+)
+【×】優先度 036 > 037 > 035 を candidate emit 並びに反映
+【×】基準未満 fail は emit しない
+【×】専用 CLI `python3 -m src.tools.run_repair_playbook_aggregator --aggregate --window 24h|7d --ledger-dir <path>` を追加
+【×】既存 repair action / minimum-diff rubric / 1 Draft 1 回制限に diff を入れない
+【×】038 ledger schema / Codex A 領域 / validator 本体に diff を入れない
+【×】automation.toml / scheduler / cron に登録しない
+【×】ledger に書き込まない(read-only、Claude 管理境界維持)
+【×】tests(036/037/035 emit、基準未満非 emit、優先度順、formatter 1 行、CLI 正常 exit)
+【×】doc/README.md に 048 formatter 先行便着地の 1 行を追加
 
 ## 本便の scope 外(再掲、混線防止)
 

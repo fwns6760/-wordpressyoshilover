@@ -62,6 +62,7 @@ TODOの状態：`【】` 未着手 → `【×】` 完了
 | 060 | [060-sns-dual-account-draft-era-bridge.md](060-sns-dual-account-draft-era-bridge.md) | SNS 2 アカウント運用契約(公式 X / 中の人 X の Draft 連動と trust tier) | Claude Code | - |
 | 062 | [062-comment-first-topic-hub.md](062-comment-first-topic-hub.md) | コメント-first topic hub 契約(トップ中央 hub / 記事下 SNS 反応 / SEO 段階制) | Claude Code | 047 accepted |
 | 063 | [063-comment-first-topic-hub-impl.md](063-comment-first-topic-hub-impl.md) | 062 contract の front impl 在庫(owner pending) | front 実装 lane (TBD) | 062 accepted, 047 accepted |
+| 070 | [070-ops-secretary-status-email-digest.md](070-ops-secretary-status-email-digest.md) | ops secretary status email digest(content renderer + dry-run、mail 送信なし) | Codex B | 039, 044, 069 |
 
 ---
 

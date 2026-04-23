@@ -1,0 +1,24 @@
+{
+  "in_flight": [
+    "B: 048 formatter in-flight (b82trkc9p)"
+  ],
+  "completed": [
+    "B: 065-B1 close",
+    "A: 041 close"
+  ],
+  "blocked_parked": [
+    "runtime: evidence parked",
+    "push: DNS blocker"
+  ],
+  "user_action_candidates": [
+    {
+      "kind": "ticket_decision",
+      "text": "048 close 後に 046-A1 fire 判断"
+    },
+    {
+      "kind": "info",
+      "text": "current_focus 確認"
+    }
+  ],
+  "next": "048 close 後に 046-A1 fixture dry-run fire 判断"
+}

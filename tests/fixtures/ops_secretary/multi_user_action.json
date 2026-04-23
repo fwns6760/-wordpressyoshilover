@@ -1,0 +1,31 @@
+{
+  "in_flight": [
+    "A: 046-A1 in-flight",
+    "B: 070 renderer in-flight"
+  ],
+  "completed": [
+    "B: 048 close"
+  ],
+  "blocked_parked": [
+    "runtime: parked"
+  ],
+  "user_action_candidates": [
+    {
+      "kind": "info",
+      "text": "current_focus 確認"
+    },
+    {
+      "kind": "ticket_decision",
+      "text": "070 close 判断"
+    },
+    {
+      "kind": "hard_blocker",
+      "text": "secret rotate stop 判断"
+    },
+    {
+      "kind": "hard_blocker",
+      "text": "publish hold 判断"
+    }
+  ],
+  "next": "070 close 後に mail 接続 ticket を判断"
+}

@@ -1,9 +1,36 @@
 # 063 — 062 comment-first topic hub impl(front 実装在庫)
 
-**フェーズ：** 062 contract の impl 便(front 実装在庫、fire 前提は owner 決定 + 実装経路確立)
-**担当：** `front 実装 lane (TBD) / owner pending`(2026-04-22 user 指示、Codex A/B に寄せない。front 書換が scope のため front 実装 lane が固まってから fire)
+**フェーズ：** 062 contract の impl 便(063-V1 close、063-V2 in progress)
+**担当：** `Codex front lane`(2026-04-24、063-V1 deploy / live smoke 完了)
 **依存：** 062 accepted(contract doc 確定、2026-04-22)、047 accepted(`da692fc`、派生記事 emit 層着地、062 hub の話題源泉供給成立)
-**状態：** QUEUED / OWNER PENDING(doc 起票のみ、fire は owner 決定後)
+**状態：** `063-V1 ACCEPTED / CLOSE`(2026-04-24、deploy + WP 実機 smoke 5/5 pass)、`063-V2 IN PROGRESS`(トップ一覧の情報密度強化、local impl + lint pass / live deploy pending)
+
+---
+
+## 2026-04-24 V1 close memo
+
+- plugin live 反映済み: `src/yoshilover-063-frontend.php`
+- SWELL 追加 CSS 反映済み: `src/custom.css` の 063 セクション
+- topic hub は `(a)` で確定: SWELL `front_top` = 「トップページ > 記事一覧上のコンテンツ」に `[yoshilover_topic_hub]` を配置
+- 検証用 meta 投入後、WP 実機 smoke `E-1〜E-5` は **all pass**
+- robots / noindex は `<meta name="robots">` 1 本に統合されることを実測確認
+- 063-V2 は未着手のまま切り分け済み。次は **トップ一覧の情報密度強化** に進む
+
+## next
+
+- 063-V2 はトップ一覧の情報密度強化に限定する
+- V1 の配置方針 `(a)`、plugin live、追加 CSS、Phase 1 noindex の挙動は維持する
+- route / pickup / validator / automation / scheduler / env / secret / published 書込経路は引き続き不可触
+
+## 2026-04-24 V2 implementation memo
+
+- `src/yoshilover-063-frontend.php` に home/front 専用の front-density patch を追加
+- 一覧カードに `subtype badge / phase / score / 要約 1 行` を後付けする
+- `live_update` は同日・同対戦相手の並びを数え、`連投 n本` chip を補助表示する
+- 判定は plugin 内に閉じ、`src` route / pickup / validator は不可触のまま維持
+- `src/custom.css` に一覧カード向け V2 style を追加
+- local verify は `php -l src/yoshilover-063-frontend.php` pass
+- live deploy は **pending**。今回の環境では Xserver / plugin upload の自動経路が未確認
 
 ---
 
@@ -14,12 +41,14 @@
 - user 固定優先順位 047→062→060→061(2026-04-22)に従い、047 accept 直後の impl 便在庫補充として本 ticket を起票。
 - 062 自体の non_goals「impl 便の起票」は 062 contract 内の制約で、impl 便は別番号で切る運用。本 ticket は 062 §本 ticket の運用「Claude Code: 047 accept 後に 062 impl 便(別番号)の起票可否を判断」を履行する。
 - 本 ticket は **起票は今やる、fire は owner / 実装経路が固まってから**(2026-04-22 user 指示)。fire 前提の「front 実装 lane 決定」までは QUEUED 維持。
+- 2026-04-23 方針: **X 手動開始の前提にしない**。063 はのもとけ式の巡回感を強める後続デザイン改修であり、060 に基づく manual X 運用は 063 未実装でも開始できる。
 
 ## purpose
 
 - 062 contract §2(トップ中央 topic hub)/ §3(記事下 SNS 反応表示)/ §5(SEO 段階制 Phase 1)を front 側に最小 impl で反映する在庫を確保する。
 - owner 決定 + 実装経路確立(SWELL theme 書換 or front component 追加 or WP block 新設のいずれ)までは fire しない。doc として in-memory に持つ。
 - Codex A / Codex B を無理に割り当てない。front 実装は src ではないため、既存 lane の scope 越境を避ける。
+- X 投稿開始後の回遊導線を補強する。トップ中央 topic hub / 記事下 SNS 反応 block / Phase 1 noindex を優先し、コメント欄は既存 SWELL 設定を維持する。
 
 ## scope
 
@@ -126,13 +155,14 @@
 
 ## TODO(起票時点、fire 後に進める)
 
-【】owner 決定(front 実装 lane specific name、user + Claude Code で固定)
-【】実装経路決定((a) SWELL widget / (b) WP block / (c) front static component)
-【】トップ中央 hub(3-5 件手動表示、Phase 1 `noindex`)の impl
-【】記事下 SNS 反応 block(公式 / 中の人 X oEmbed、条件付き表示)の impl
-【】SEO Phase 1 `noindex` の hub + コメント領域への適用
-【】src / automation / 062 contract / 047 impl / 060 contract 不可触の確認
-【】WP published 書込経路を触らない確認
+【×】owner 決定(front 実装 lane specific name、user + Claude Code で固定)
+【×】実装経路決定((a) SWELL widget / (b) WP block / (c) front static component)
+【×】トップ中央 hub(3-5 件手動表示、Phase 1 `noindex`)の impl
+【×】記事下 SNS 反応 block(公式 / 中の人 X oEmbed、条件付き表示)の impl
+【×】SEO Phase 1 `noindex` の hub + コメント領域への適用
+【×】src / automation / 062 contract / 047 impl / 060 contract 不可触の確認
+【×】WP published 書込経路を触らない確認
+【】063-V2: トップ一覧の情報密度強化(一覧カード / meta / 視認性の改善、V1 挙動維持、local impl 済 / live deploy pending)
 【】doc/README.md に 063 行追加を cleanup commit で吸収
 
 ## 本 ticket の運用

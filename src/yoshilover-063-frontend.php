@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。トップ中央 topic hub(手動表示) + 記事下 SNS 反応 block(公式 X / 中の人 X が per-post meta にある時だけ) + Phase 1 noindex。既存 SWELL コメント欄は触らない。
- * Version: 0.1.0
+ * Version: 0.2.0
  * Author: yoshilover
  */
 
@@ -263,6 +263,7 @@ function yoshilover_063_auto_inject_sns_reactions( $content ) {
 
 add_filter( 'wp_robots', 'yoshilover_063_phase1_noindex_robots' );
 add_action( 'send_headers', 'yoshilover_063_phase1_noindex_headers' );
+add_action( 'wp_enqueue_scripts', 'yoshilover_063_enqueue_front_density_assets' );
 
 function yoshilover_063_phase1_should_noindex() {
     if ( is_admin() ) {
@@ -321,7 +322,385 @@ function yoshilover_063_phase1_noindex_headers() {
 }
 
 /* ------------------------------------------------------------
- * 4) deploy / smoke helper (admin only)
+ * 4) トップ一覧の情報密度強化 (063-V2)
+ *
+ *    - front page / posts page の一覧カードにだけ補助 meta を差し込む
+ *    - src route / pickup / validator には触らない
+ *    - subtype / 試合状況 / 要約 1 行を client-side で安全に後付けする
+ * ---------------------------------------------------------- */
+
+function yoshilover_063_should_enhance_front_density() {
+    if ( is_admin() ) {
+        return false;
+    }
+    if ( is_feed() || is_singular() ) {
+        return false;
+    }
+    return is_front_page() || is_home();
+}
+
+function yoshilover_063_enqueue_front_density_assets() {
+    if ( ! yoshilover_063_should_enhance_front_density() ) {
+        return;
+    }
+
+    $cards = yoshilover_063_build_front_density_cards();
+    if ( empty( $cards ) ) {
+        return;
+    }
+
+    wp_register_script( 'yoshilover-063-front-density', false, array(), '0.2.0', true );
+    wp_enqueue_script( 'yoshilover-063-front-density' );
+
+    $payload = array(
+        'cards' => $cards,
+    );
+
+    $script = <<<'JS'
+(() => {
+  const config = window.yoshilover063FrontDensity || {};
+  const cards = config.cards || {};
+  const normalizePath = (href) => {
+    try {
+      const url = new URL(href, window.location.origin);
+      const path = (url.pathname || '').replace(/\/+$/, '');
+      return path || '/';
+    } catch (error) {
+      return href || '';
+    }
+  };
+  const createNode = (tag, className, text) => {
+    const node = document.createElement(tag);
+    node.className = className;
+    node.textContent = text;
+    return node;
+  };
+  const injectCard = (item, meta) => {
+    if (!item || !meta || item.dataset.yoshiFrontDensity === '1') {
+      return;
+    }
+    const body = item.querySelector('.p-postList__body');
+    const title = body ? body.querySelector('.p-postList__title, .p-postList__ttl, h2') : null;
+    if (!body || !title) {
+      return;
+    }
+
+    const metaRow = document.createElement('div');
+    metaRow.className = 'yoshi-front-card__meta';
+
+    if (meta.label) {
+      metaRow.appendChild(createNode('span', `yoshi-front-card__badge yoshi-front-card__badge--${meta.subtype || 'generic'}`, meta.label));
+    }
+    if (meta.phase) {
+      metaRow.appendChild(createNode('span', 'yoshi-front-card__chip yoshi-front-card__chip--phase', meta.phase));
+    }
+    if (meta.score) {
+      metaRow.appendChild(createNode('span', 'yoshi-front-card__chip yoshi-front-card__chip--score', meta.score));
+    }
+    if (meta.chain) {
+      metaRow.appendChild(createNode('span', 'yoshi-front-card__chip yoshi-front-card__chip--chain', meta.chain));
+    }
+    if (meta.summary) {
+      const summary = createNode('p', 'yoshi-front-card__summary', meta.summary);
+      title.insertAdjacentElement('afterend', summary);
+    }
+    if (metaRow.childNodes.length > 0) {
+      title.insertAdjacentElement('beforebegin', metaRow);
+    }
+
+    item.dataset.yoshiFrontDensity = '1';
+    item.classList.add('is-yoshi-front-density');
+    if (meta.subtype) {
+      item.classList.add(`is-yoshi-subtype-${meta.subtype}`);
+    }
+  };
+
+  document.querySelectorAll('.p-postList__item').forEach((item) => {
+    const link = item.querySelector('a[href]');
+    if (!link) {
+      return;
+    }
+    const meta = cards[normalizePath(link.href)];
+    if (meta) {
+      injectCard(item, meta);
+    }
+  });
+})();
+JS;
+
+    wp_add_inline_script(
+        'yoshilover-063-front-density',
+        'window.yoshilover063FrontDensity = ' . wp_json_encode( $payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ) . ';',
+        'before'
+    );
+    wp_add_inline_script( 'yoshilover-063-front-density', $script, 'after' );
+}
+
+function yoshilover_063_build_front_density_cards() {
+    global $wp_query;
+
+    $source_posts = array();
+    if ( $wp_query instanceof WP_Query && ! empty( $wp_query->posts ) && is_array( $wp_query->posts ) ) {
+        foreach ( $wp_query->posts as $post ) {
+            if ( $post instanceof WP_Post && $post->post_type === 'post' ) {
+                $source_posts[] = $post;
+            }
+        }
+    }
+
+    if ( empty( $source_posts ) ) {
+        $fallback_query = new WP_Query(
+            array(
+                'post_type'           => 'post',
+                'post_status'         => 'publish',
+                'posts_per_page'      => max( 6, (int) get_option( 'posts_per_page', 10 ) ),
+                'ignore_sticky_posts' => true,
+                'paged'               => max( 1, (int) get_query_var( 'paged' ) ),
+            )
+        );
+        $source_posts = is_array( $fallback_query->posts ) ? $fallback_query->posts : array();
+        wp_reset_postdata();
+    }
+
+    if ( empty( $source_posts ) ) {
+        return array();
+    }
+
+    $cards    = array();
+    $contexts = array();
+
+    foreach ( $source_posts as $post ) {
+        if ( ! ( $post instanceof WP_Post ) ) {
+            continue;
+        }
+
+        $card = yoshilover_063_build_front_density_card( $post );
+        if ( empty( $card['path'] ) ) {
+            continue;
+        }
+
+        $path = $card['path'];
+        unset( $card['path'] );
+        $cards[ $path ] = $card;
+
+        if ( ! empty( $card['context_key'] ) ) {
+            $contexts[] = $card['context_key'];
+        }
+    }
+
+    if ( ! empty( $contexts ) ) {
+        $counts = array_count_values( $contexts );
+        foreach ( $cards as $path => $card ) {
+            $context_key = isset( $card['context_key'] ) ? $card['context_key'] : '';
+            $count       = $context_key && isset( $counts[ $context_key ] ) ? (int) $counts[ $context_key ] : 0;
+            if ( $count > 1 && isset( $card['subtype'] ) && $card['subtype'] === 'live_update' ) {
+                $cards[ $path ]['chain'] = '連投 ' . $count . '本';
+            }
+        }
+    }
+
+    foreach ( array_keys( $cards ) as $path ) {
+        unset( $cards[ $path ]['context_key'] );
+    }
+
+    return $cards;
+}
+
+function yoshilover_063_build_front_density_card( $post ) {
+    $path    = yoshilover_063_normalize_front_card_path( get_permalink( $post ) );
+    $text    = yoshilover_063_front_density_text( $post );
+    $subtype = yoshilover_063_resolve_front_density_subtype( $post, $text );
+    $phase   = yoshilover_063_extract_front_density_phase( $post->post_title . ' ' . $text );
+    $score   = yoshilover_063_extract_front_density_score( $post->post_title . ' ' . $text );
+    $summary = yoshilover_063_build_front_density_summary( $post, $text, $phase );
+
+    return array(
+        'path'        => $path,
+        'subtype'     => $subtype,
+        'label'       => yoshilover_063_front_density_subtype_label( $subtype ),
+        'phase'       => $phase,
+        'score'       => $score,
+        'summary'     => $summary,
+        'context_key' => yoshilover_063_front_density_context_key( $post, $subtype, $post->post_title . ' ' . $text ),
+    );
+}
+
+function yoshilover_063_normalize_front_card_path( $url ) {
+    $path = wp_parse_url( (string) $url, PHP_URL_PATH );
+    if ( ! is_string( $path ) || $path === '' ) {
+        return '';
+    }
+    $path = '/' . ltrim( $path, '/' );
+    $path = rtrim( $path, '/' );
+    return $path === '' ? '/' : $path;
+}
+
+function yoshilover_063_front_density_text( $post ) {
+    $excerpt = trim( (string) $post->post_excerpt );
+    $source  = $excerpt !== '' ? $excerpt : (string) $post->post_content;
+    $source  = strip_shortcodes( $source );
+    $source  = preg_replace( '/<!--[\s\S]*?-->/', ' ', $source );
+    $source  = wp_strip_all_tags( $source, true );
+    return yoshilover_063_normalize_front_density_text( $source );
+}
+
+function yoshilover_063_normalize_front_density_text( $text ) {
+    $text = html_entity_decode( (string) $text, ENT_QUOTES, 'UTF-8' );
+    $text = preg_replace( '/[\x{00A0}\s]+/u', ' ', $text );
+    $text = preg_replace( '/\s+([、。！？】])/u', '$1', $text );
+    $text = preg_replace( '/([【（(])\s+/u', '$1', $text );
+    $text = preg_replace( '/\s+(投手|選手|監督)/u', '$1', $text );
+    return trim( (string) $text );
+}
+
+function yoshilover_063_resolve_front_density_subtype( $post, $text ) {
+    $meta_keys = array(
+        'article_subtype',
+        '_article_subtype',
+        'subtype',
+        'article_type',
+        '_article_type',
+    );
+
+    foreach ( $meta_keys as $meta_key ) {
+        $value = trim( (string) get_post_meta( $post->ID, $meta_key, true ) );
+        if ( $value !== '' ) {
+            return yoshilover_063_normalize_front_density_subtype( $value );
+        }
+    }
+
+    $haystack = yoshilover_063_normalize_front_density_text( $post->post_title . ' ' . $text );
+
+    if ( preg_match( '/(試合終了|サヨナラ|敗戦|勝利|終盤)/u', $haystack ) ) {
+        return 'postgame';
+    }
+    if ( preg_match( '/(回表|回裏|連投|登板|無失点)/u', $haystack ) ) {
+        return 'live_update';
+    }
+    if ( preg_match( '/(スタメン|先発投手|試合開始)/u', $haystack ) ) {
+        return 'lineup';
+    }
+    if ( preg_match( '/(予告先発|試合前)/u', $haystack ) ) {
+        return 'pregame';
+    }
+    if ( preg_match( '/(二軍|ファーム)/u', $haystack ) ) {
+        return 'farm';
+    }
+    return 'article';
+}
+
+function yoshilover_063_normalize_front_density_subtype( $value ) {
+    $value = strtolower( trim( (string) $value ) );
+    $value = str_replace( array( '-', ' ' ), '_', $value );
+
+    $map = array(
+        'postgame_result' => 'postgame',
+        'live_anchor'     => 'live_update',
+        'lineup_notice'   => 'lineup',
+        'farm_lineup'     => 'farm',
+        'fact_notice'     => 'article',
+    );
+
+    return isset( $map[ $value ] ) ? $map[ $value ] : $value;
+}
+
+function yoshilover_063_front_density_subtype_label( $subtype ) {
+    $labels = array(
+        'live_update' => '試合中',
+        'lineup'      => 'スタメン',
+        'postgame'    => '試合後',
+        'pregame'     => '試合前',
+        'farm'        => '二軍',
+        'article'     => '話題',
+    );
+
+    return isset( $labels[ $subtype ] ) ? $labels[ $subtype ] : '話題';
+}
+
+function yoshilover_063_extract_front_density_phase( $text ) {
+    if ( preg_match( '/【([^】]{1,20})】/u', (string) $text, $matches ) ) {
+        return trim( (string) $matches[1] );
+    }
+    if ( preg_match( '/(試合終了|試合開始|延長\d+回|[一二三四五六七八九十0-9]+回[表裏])/u', (string) $text, $matches ) ) {
+        return trim( (string) $matches[1] );
+    }
+    return '';
+}
+
+function yoshilover_063_extract_front_density_score( $text ) {
+    if ( preg_match( '/(\d+)\s*[-－]\s*(\d+)/u', (string) $text, $matches ) ) {
+        return $matches[1] . '-' . $matches[2];
+    }
+    return '';
+}
+
+function yoshilover_063_build_front_density_summary( $post, $text, $phase ) {
+    $summary = trim( (string) $text );
+
+    if ( $phase !== '' ) {
+        $summary = preg_replace( '/^【' . preg_quote( $phase, '/' ) . '】/u', '', $summary );
+    }
+    $summary = preg_replace( '/^📌\s*関連ポスト/u', '', $summary );
+    $summary = trim( (string) $summary );
+
+    $sentences = preg_split( '/(?<=[。！？])/u', $summary, -1, PREG_SPLIT_NO_EMPTY );
+    if ( is_array( $sentences ) && ! empty( $sentences[0] ) ) {
+        $summary = trim( (string) $sentences[0] );
+    }
+
+    if ( $summary === '' ) {
+        $summary = trim( (string) $post->post_title );
+    }
+
+    if ( function_exists( 'mb_strimwidth' ) ) {
+        $summary = mb_strimwidth( $summary, 0, 120, '…', 'UTF-8' );
+    } else {
+        $summary = substr( $summary, 0, 120 );
+    }
+
+    return yoshilover_063_normalize_front_density_text( $summary );
+}
+
+function yoshilover_063_front_density_context_key( $post, $subtype, $text ) {
+    if ( $subtype !== 'live_update' ) {
+        return '';
+    }
+
+    $opponent = yoshilover_063_front_density_extract_opponent( $text );
+    if ( $opponent === '' ) {
+        return '';
+    }
+
+    return get_the_date( 'Ymd', $post ) . ':' . $subtype . ':' . $opponent;
+}
+
+function yoshilover_063_front_density_extract_opponent( $text ) {
+    $teams = array(
+        'ヤクルト',
+        '阪神',
+        '広島',
+        'DeNA',
+        '横浜',
+        '中日',
+        '西武',
+        'ソフトバンク',
+        '日本ハム',
+        'ロッテ',
+        'オリックス',
+        '楽天',
+    );
+
+    foreach ( $teams as $team ) {
+        if ( false !== mb_strpos( (string) $text, $team ) ) {
+            return $team;
+        }
+    }
+
+    return '';
+}
+
+/* ------------------------------------------------------------
+ * 5) deploy / smoke helper (admin only)
  *
  *    live 反映は FTP upload 後に REST 経由で行う。
  *    公開フロントへの影響は manage_options 権限の POST に限定する。

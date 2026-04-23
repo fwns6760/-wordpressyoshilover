@@ -766,8 +766,88 @@ a:hover { color: var(--orange); opacity: 0.8; }
   word-break: break-all;
 }
 
+.is-yoshi-front-density .p-postList__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.yoshi-front-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 6px 0 4px;
+}
+.yoshi-front-card__badge,
+.yoshi-front-card__chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0.3px;
+}
+.yoshi-front-card__badge {
+  color: var(--white);
+}
+.yoshi-front-card__badge--live_update {
+  background: var(--orange);
+}
+.yoshi-front-card__badge--lineup {
+  background: var(--blue);
+}
+.yoshi-front-card__badge--postgame {
+  background: var(--dark-gray);
+}
+.yoshi-front-card__badge--pregame,
+.yoshi-front-card__badge--farm,
+.yoshi-front-card__badge--article,
+.yoshi-front-card__badge--generic {
+  background: var(--mid-gray);
+}
+.yoshi-front-card__chip {
+  background: var(--bg);
+  color: var(--dark-gray);
+  border: 1px solid var(--light-gray);
+}
+.yoshi-front-card__chip--score {
+  background: rgba(245, 129, 31, 0.08);
+  border-color: rgba(245, 129, 31, 0.22);
+  color: var(--orange);
+}
+.yoshi-front-card__chip--chain {
+  background: rgba(0, 61, 165, 0.06);
+  border-color: rgba(0, 61, 165, 0.18);
+  color: var(--blue);
+}
+.yoshi-front-card__summary {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--mid-gray);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.is-yoshi-front-density .p-postList__title,
+.is-yoshi-front-density .p-postList__ttl {
+  margin-top: 2px;
+}
+
 @media (max-width: 600px) {
   .yoshi-topic-hub { padding: 14px 14px 16px; }
   .yoshi-topic-hub__items { grid-template-columns: 1fr; }
   .yoshi-sns-reactions { padding: 14px 14px; }
+  .yoshi-front-card__meta {
+    gap: 4px;
+    margin-top: 4px;
+  }
+  .yoshi-front-card__summary {
+    font-size: 11px;
+    -webkit-line-clamp: 3;
+  }
 }

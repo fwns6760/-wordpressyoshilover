@@ -62,7 +62,7 @@ TODOの状態：`【】` 未着手 → `【×】` 完了
 | 048 | [048-repair-playbook-ledger-integration.md](048-repair-playbook-ledger-integration.md) | 040 repair playbook の次弾 ledger 連携(24h/7d fail_tag 昇格 formatter) | Codex B | 038 active, 040 accepted, 046 accepted, 047 accepted |
 | 060 | [060-sns-dual-account-draft-era-bridge.md](060-sns-dual-account-draft-era-bridge.md) | SNS 2 アカウント運用契約(公式 X / 中の人 X、今日から手動X開始可、Draft URL禁止) | Claude Code | - |
 | 062 | [062-comment-first-topic-hub.md](062-comment-first-topic-hub.md) | コメント-first topic hub 契約(トップ中央 hub / 記事下 SNS 反応 / SEO 段階制) | Claude Code | 047 accepted |
-| 063 | [063-comment-first-topic-hub-impl.md](063-comment-first-topic-hub-impl.md) | 062 contract の front impl 在庫(owner pending、X開始の前提にはしない) | front 実装 lane (TBD) | 062 accepted, 047 accepted |
+| 063 | [063-comment-first-topic-hub-impl.md](063-comment-first-topic-hub-impl.md) | 062 contract の front impl。063-V1 は close、063-V2 はトップ一覧の情報密度強化を local impl 中 | Codex front lane | 062 accepted, 047 accepted |
 | 064 | [064-x-source-three-tier-contract.md](064-x-source-three-tier-contract.md) | X source 3 区分 contract(fact / topic / reaction、広く拾う / 狭く断定する) | Claude Code | 014, 060, 062 |
 | 065 | [065-x-draft-email-delivery-bridge.md](065-x-draft-email-delivery-bridge.md) | X 下書きメール配送 bridge(runtime resume 後の中間段階、自動投稿ではなく mail で下書き) | Claude Code | 039, 060, 064 |
 | 066 | [066-project-onepager-and-anti-repeat-memo.md](066-project-onepager-and-anti-repeat-memo.md) | project one-pager + anti-repeat memo の固定(2 枚だけ、session 復元最短化 / 同じ迷い再発防止) | Claude Code | handoff 群 |

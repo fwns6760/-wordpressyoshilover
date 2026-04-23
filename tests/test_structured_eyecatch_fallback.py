@@ -96,9 +96,9 @@ class StructuredEyecatchFallbackTests(unittest.TestCase):
         cases = [
             ("program_notice", "fact_notice_program", "番組情報", ["ジャイアンツTV", "2026.04.21", "18:00"]),
             ("transaction_notice", "fact_notice_transaction", "公示", ["山瀬慎之助", "丸佳浩", "登録 / 抹消"]),
-            ("probable_pitcher", "pregame_probable_pitcher", "予告先発", ["巨人 vs 阪神", "田中将大", "才木浩人"]),
+            ("probable_pitcher", "probable_starter", "予告先発", ["巨人 vs 阪神", "田中将大", "才木浩人"]),
             ("comment_notice", "comment_notice", "コメント", ["阿部慎之助監督", "守備から入れた"]),
-            ("injury_notice", "injury_notice", "故障情報", ["浅野翔吾", "上半身の状態"]),
+            ("injury_notice", "injury_notice", "怪我状況", ["浅野翔吾", "上半身の状態"]),
             ("postgame_result", "postgame_result", "試合結果", ["巨人 vs 阪神", "3 - 2"]),
         ]
         for family, layout_key, label, expected_texts in cases:

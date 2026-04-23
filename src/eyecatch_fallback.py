@@ -11,10 +11,11 @@ import hashlib
 import html
 import re
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 
 SVG_CONTENT_TYPE = "image/svg+xml"
+_DRAFT_STATUSES = {"", "draft", "pending", "future", "auto-draft"}
 _IMAGE_METADATA_KEYS = (
     "featured_media",
     "featured_image",
@@ -74,6 +75,14 @@ _WHITESPACE_RE = re.compile(r"[\s　]+")
 
 
 @dataclass(frozen=True)
+class LayoutSpec:
+    layout_key: str
+    label: str
+    accent: str
+    extractor: Callable[[str, str, Mapping[str, Any]], tuple[str, tuple[str, ...]]]
+
+
+@dataclass(frozen=True)
 class StructuredEyecatch:
     layout_key: str
     label: str
@@ -84,16 +93,138 @@ class StructuredEyecatch:
     image_bytes: bytes
 
 
+def _extract_program_layout(title: str, body_html: str, metadata: Mapping[str, Any]) -> tuple[str, tuple[str, ...]]:
+    program_name = _first_nonempty(
+        str(metadata.get("program_name") or ""),
+        str(metadata.get("program_title") or ""),
+        _extract_program_name(title, body_html, str(metadata.get("program_slug") or "")),
+    )
+    when = _first_nonempty(
+        str(metadata.get("broadcast_datetime") or ""),
+        str(metadata.get("air_datetime") or ""),
+        str(metadata.get("broadcast_at") or ""),
+    )
+    if not when:
+        air_date = _format_compact_date(str(metadata.get("air_date") or ""))
+        time_text = _extract_time_text(title, body_html)
+        when = f"{air_date} {time_text}".strip() if air_date else time_text
+    return program_name or title, (f"放送日時 {when}" if when else "",)
+
+
+def _extract_transaction_layout(title: str, body_html: str, metadata: Mapping[str, Any]) -> tuple[str, tuple[str, ...]]:
+    subject = _first_nonempty(
+        _display_name_list(metadata.get("subject")),
+        _display_name_list(metadata.get("player_names")),
+        _display_name_list(metadata.get("players")),
+    )
+    notice_kind = _display_notice_kind(str(metadata.get("notice_kind") or metadata.get("transaction_type") or ""))
+    if not notice_kind:
+        notice_kind = _extract_notice_kind_text(title, body_html)
+    notice_date = _format_compact_date(str(metadata.get("notice_date") or metadata.get("date") or ""))
+    return subject or title, tuple(line for line in (notice_kind, notice_date) if line)
+
+
+def _extract_probable_starter_layout(title: str, body_html: str, metadata: Mapping[str, Any]) -> tuple[str, tuple[str, ...]]:
+    matchup = _first_nonempty(
+        str(metadata.get("matchup") or ""),
+        _extract_matchup(title, body_html, str(metadata.get("game_id") or "")),
+    )
+    pitchers = _first_nonempty(
+        _display_name_list(metadata.get("pitcher_names")),
+        _display_name_list(metadata.get("probable_starters")),
+        _extract_pitcher_line(title, body_html),
+    )
+    return matchup or title, (f"投手 {pitchers}" if pitchers else "",)
+
+
+def _extract_comment_layout(title: str, body_html: str, metadata: Mapping[str, Any]) -> tuple[str, tuple[str, ...]]:
+    speaker = str(metadata.get("speaker") or metadata.get("speaker_name") or "").strip()
+    scene = _first_nonempty(
+        str(metadata.get("scene") or ""),
+        str(metadata.get("short_heading") or ""),
+        str(metadata.get("comment_scene") or ""),
+        _extract_comment_heading(title, speaker),
+    )
+    return speaker or title, (scene,)
+
+
+def _extract_injury_layout(title: str, body_html: str, metadata: Mapping[str, Any]) -> tuple[str, tuple[str, ...]]:
+    subject = _first_nonempty(
+        str(metadata.get("player_name") or ""),
+        str(metadata.get("subject") or ""),
+    )
+    status = _first_nonempty(
+        _display_injury_status(str(metadata.get("injury_status") or "")),
+        str(metadata.get("status_text") or ""),
+        str(metadata.get("injury_summary") or ""),
+    )
+    return subject or title, (status,)
+
+
+def _extract_postgame_layout(title: str, body_html: str, metadata: Mapping[str, Any]) -> tuple[str, tuple[str, ...]]:
+    matchup = _first_nonempty(
+        str(metadata.get("matchup") or ""),
+        _extract_matchup(title, body_html, str(metadata.get("game_id") or "")),
+    )
+    score = _first_nonempty(
+        str(metadata.get("score") or ""),
+        _extract_score_text(title, body_html),
+        _display_result_token(str(metadata.get("result_token") or "")),
+    )
+    return matchup or title, (score,)
+
+
+LAYOUT_SPECS: dict[str, LayoutSpec] = {
+    "fact_notice_program": LayoutSpec(
+        layout_key="fact_notice_program",
+        label="番組情報",
+        accent="#f5811f",
+        extractor=_extract_program_layout,
+    ),
+    "fact_notice_transaction": LayoutSpec(
+        layout_key="fact_notice_transaction",
+        label="公示",
+        accent="#6b7280",
+        extractor=_extract_transaction_layout,
+    ),
+    "probable_starter": LayoutSpec(
+        layout_key="probable_starter",
+        label="予告先発",
+        accent="#003da5",
+        extractor=_extract_probable_starter_layout,
+    ),
+    "comment_notice": LayoutSpec(
+        layout_key="comment_notice",
+        label="コメント",
+        accent="#f59e0b",
+        extractor=_extract_comment_layout,
+    ),
+    "injury_notice": LayoutSpec(
+        layout_key="injury_notice",
+        label="怪我状況",
+        accent="#dc2626",
+        extractor=_extract_injury_layout,
+    ),
+    "postgame_result": LayoutSpec(
+        layout_key="postgame_result",
+        label="試合結果",
+        accent="#ea580c",
+        extractor=_extract_postgame_layout,
+    ),
+}
+
+
 def build_structured_eyecatch(candidate: Any) -> StructuredEyecatch | None:
     metadata = _candidate_metadata(candidate)
-    if has_existing_eyecatch(metadata):
+    if not _is_draft_like_candidate(candidate, metadata):
+        return None
+    if has_existing_eyecatch(_candidate_image_metadata(candidate, metadata)):
         return None
 
-    family = str(metadata.get("family") or metadata.get("article_type") or getattr(candidate, "family", "")).strip()
-    title = str(getattr(candidate, "title", "") or "").strip()
-    body_html = str(getattr(candidate, "body_html", "") or "").strip()
+    title = _candidate_title(candidate)
+    body_html = _candidate_body_html(candidate)
 
-    layout = _build_layout(family, title=title, body_html=body_html, metadata=metadata)
+    layout = _build_layout(candidate, title=title, body_html=body_html, metadata=metadata)
     if layout is None:
         return None
 
@@ -108,6 +239,11 @@ def build_structured_eyecatch(candidate: Any) -> StructuredEyecatch | None:
         content_type=SVG_CONTENT_TYPE,
         image_bytes=svg_text.encode("utf-8"),
     )
+
+
+def generate(draft: Any) -> StructuredEyecatch | None:
+    """Generate a structured eyecatch for a Draft-like object if eligible."""
+    return build_structured_eyecatch(draft)
 
 
 def maybe_generate_structured_eyecatch_media(wp: Any, candidate: Any) -> int:
@@ -136,8 +272,54 @@ def has_existing_eyecatch(metadata: Mapping[str, Any] | None) -> bool:
 
 
 def _candidate_metadata(candidate: Any) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    if isinstance(candidate, Mapping):
+        for key in ("meta", "metadata"):
+            value = candidate.get(key)
+            if isinstance(value, Mapping):
+                merged.update(dict(value))
+        return merged
     metadata = getattr(candidate, "metadata", {}) or {}
     return dict(metadata) if isinstance(metadata, Mapping) else {}
+
+
+def _candidate_image_metadata(candidate: Any, metadata: Mapping[str, Any]) -> dict[str, Any]:
+    image_metadata = dict(metadata)
+    if isinstance(candidate, Mapping):
+        for key in _IMAGE_METADATA_KEYS:
+            if key in candidate:
+                image_metadata[key] = candidate.get(key)
+        return image_metadata
+    for key in _IMAGE_METADATA_KEYS:
+        if hasattr(candidate, key):
+            image_metadata[key] = getattr(candidate, key)
+    return image_metadata
+
+
+def _is_draft_like_candidate(candidate: Any, metadata: Mapping[str, Any]) -> bool:
+    status = str(metadata.get("status") or "").strip().lower()
+    if isinstance(candidate, Mapping):
+        status = str(candidate.get("status") or status).strip().lower()
+    else:
+        status = str(getattr(candidate, "status", "") or status).strip().lower()
+    return status in _DRAFT_STATUSES
+
+
+def _candidate_title(candidate: Any) -> str:
+    raw = candidate.get("title") if isinstance(candidate, Mapping) else getattr(candidate, "title", "")
+    if isinstance(raw, Mapping):
+        raw = raw.get("raw") or raw.get("rendered") or ""
+    return _normalize_display_text(str(raw or ""))
+
+
+def _candidate_body_html(candidate: Any) -> str:
+    if isinstance(candidate, Mapping):
+        raw = candidate.get("body_html") or candidate.get("content") or ""
+    else:
+        raw = getattr(candidate, "body_html", "")
+    if isinstance(raw, Mapping):
+        raw = raw.get("raw") or raw.get("rendered") or ""
+    return str(raw or "").strip()
 
 
 def _has_image_value(value: Any) -> bool:
@@ -156,73 +338,55 @@ def _has_image_value(value: Any) -> bool:
     return False
 
 
-def _build_layout(family: str, *, title: str, body_html: str, metadata: Mapping[str, Any]) -> dict[str, Any] | None:
-    if family == "program_notice":
-        program_name = _extract_program_name(title, body_html, str(metadata.get("program_slug") or ""))
-        air_date = _format_compact_date(str(metadata.get("air_date") or ""))
-        time_text = _extract_time_text(title, body_html)
-        when = f"{air_date} {time_text}".strip() if air_date else time_text
-        return _layout(
-            layout_key="fact_notice_program",
-            label="番組情報",
-            headline=program_name or title,
-            detail_lines=(f"放送日時 {when}" if when else air_date or _strip_html(body_html),),
-            accent="#f5811f",
-        )
-    if family == "transaction_notice":
-        subject = _display_subjects(str(metadata.get("subject") or ""))
-        notice_kind = _display_notice_kind(str(metadata.get("notice_kind") or ""))
-        notice_date = _format_compact_date(str(metadata.get("notice_date") or ""))
-        return _layout(
-            layout_key="fact_notice_transaction",
-            label="公示",
-            headline=subject or title,
-            detail_lines=tuple(line for line in (notice_kind, notice_date) if line),
-            accent="#6b7280",
-        )
-    if family == "probable_pitcher":
-        matchup = _extract_matchup(title, body_html, str(metadata.get("game_id") or ""))
-        pitchers = _extract_pitcher_line(title, body_html)
-        return _layout(
-            layout_key="pregame_probable_pitcher",
-            label="予告先発",
-            headline=matchup or title,
-            detail_lines=(f"先発投手 {pitchers}" if pitchers else _first_nonempty(title, _strip_html(body_html)),),
-            accent="#003da5",
-        )
-    if family == "comment_notice":
-        speaker = str(metadata.get("speaker") or "").strip()
-        short_heading = _extract_comment_heading(title, speaker)
-        return _layout(
-            layout_key="comment_notice",
-            label="コメント",
-            headline=speaker or title,
-            detail_lines=(short_heading or title,),
-            accent="#f59e0b",
-        )
-    if family == "injury_notice":
-        subject = str(metadata.get("subject") or "").strip()
-        status = _display_injury_status(str(metadata.get("injury_status") or ""))
-        return _layout(
-            layout_key="injury_notice",
-            label="故障情報",
-            headline=subject or title,
-            detail_lines=(status or title,),
-            accent="#dc2626",
-        )
-    if family == "postgame_result":
-        matchup = _extract_matchup(title, body_html, str(metadata.get("game_id") or ""))
-        score = _extract_score_text(title, body_html)
-        if not score:
-            score = _display_result_token(str(metadata.get("result_token") or ""))
-        return _layout(
-            layout_key="postgame_result",
-            label="試合結果",
-            headline=matchup or title,
-            detail_lines=(score or _first_nonempty(title, _strip_html(body_html)),),
-            accent="#ea580c",
-        )
+def _build_layout(candidate: Any, *, title: str, body_html: str, metadata: Mapping[str, Any]) -> dict[str, Any] | None:
+    spec = _resolve_layout_spec(candidate, metadata)
+    if spec is None:
+        return None
+    headline, detail_lines = spec.extractor(title, body_html, metadata)
+    return _layout(
+        layout_key=spec.layout_key,
+        label=spec.label,
+        headline=headline,
+        detail_lines=detail_lines,
+        accent=spec.accent,
+    )
+
+
+def _resolve_layout_spec(candidate: Any, metadata: Mapping[str, Any]) -> LayoutSpec | None:
+    family = str(metadata.get("family") or metadata.get("article_type") or "").strip()
+    if not family and not isinstance(candidate, Mapping):
+        family = str(getattr(candidate, "family", "") or "").strip()
+    subtype = str(metadata.get("subtype") or metadata.get("article_subtype") or "").strip()
+    tags = _candidate_tags(candidate, metadata)
+
+    if family == "program_notice" or (subtype == "fact_notice" and "番組" in tags):
+        return LAYOUT_SPECS["fact_notice_program"]
+    if family == "transaction_notice" or (subtype == "fact_notice" and "公示" in tags):
+        return LAYOUT_SPECS["fact_notice_transaction"]
+    if (
+        family in {"probable_pitcher", "probable_starter"}
+        or subtype == "probable_starter"
+        or (subtype == "pregame" and "予告先発" in tags)
+    ):
+        return LAYOUT_SPECS["probable_starter"]
+    if family == "comment_notice" or subtype == "comment_notice":
+        return LAYOUT_SPECS["comment_notice"]
+    if family == "injury_notice" or subtype == "injury_notice":
+        return LAYOUT_SPECS["injury_notice"]
+    if family in {"postgame", "postgame_result"} or subtype in {"postgame", "postgame_result"}:
+        return LAYOUT_SPECS["postgame_result"]
     return None
+
+
+def _candidate_tags(candidate: Any, metadata: Mapping[str, Any]) -> tuple[str, ...]:
+    raw = metadata.get("tags")
+    if raw is None and isinstance(candidate, Mapping):
+        raw = candidate.get("tags")
+    if isinstance(raw, str):
+        return tuple(tag.strip() for tag in re.split(r"[,、\s]+", raw) if tag.strip())
+    if isinstance(raw, Sequence):
+        return tuple(str(tag).strip() for tag in raw if str(tag).strip())
+    return ()
 
 
 def _layout(*, layout_key: str, label: str, headline: str, detail_lines: tuple[str, ...] | list[str], accent: str) -> dict[str, Any] | None:
@@ -241,7 +405,7 @@ def _layout(*, layout_key: str, label: str, headline: str, detail_lines: tuple[s
 
 def _build_filename(candidate: Any, layout_key: str) -> str:
     metadata = _candidate_metadata(candidate)
-    seed = str(metadata.get("candidate_key") or getattr(candidate, "title", "") or layout_key)
+    seed = str(metadata.get("candidate_key") or _candidate_title(candidate) or layout_key)
     digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:12]
     return f"structured-eyecatch-{layout_key}-{digest}.svg"
 
@@ -282,9 +446,20 @@ def _format_compact_date(value: str) -> str:
     return f"{digits[0:4]}.{digits[4:6]}.{digits[6:8]}"
 
 
+def _display_name_list(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        names = [name.strip() for name in re.split(r"[+＋、,／/]+", value) if name.strip()]
+    elif isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray)):
+        names = [str(name).strip() for name in value if str(name).strip()]
+    else:
+        names = [str(value).strip()] if str(value).strip() else []
+    return " / ".join(_normalize_display_text(name) for name in names if _normalize_display_text(name))
+
+
 def _display_subjects(subject: str) -> str:
-    names = [name.strip() for name in subject.split("+") if name.strip()]
-    return " / ".join(names)
+    return _display_name_list(subject)
 
 
 def _display_notice_kind(value: str) -> str:
@@ -294,6 +469,19 @@ def _display_notice_kind(value: str) -> str:
         "register_deregister": "登録 / 抹消",
     }
     return mapping.get((value or "").strip(), _normalize_display_text(value))
+
+
+def _extract_notice_kind_text(title: str, body_html: str) -> str:
+    combined = "\n".join(part for part in (title, _strip_html(body_html)) if part)
+    has_register = any(token in combined for token in ("登録", "昇格"))
+    has_deregister = any(token in combined for token in ("抹消", "降格"))
+    if has_register and has_deregister:
+        return "登録 / 抹消"
+    if has_register:
+        return "出場選手登録"
+    if has_deregister:
+        return "登録抹消"
+    return ""
 
 
 def _extract_matchup(title: str, body_html: str, game_id: str) -> str:
@@ -348,7 +536,7 @@ def _extract_comment_heading(title: str, speaker: str) -> str:
     if speaker:
         trimmed = trimmed.replace(speaker, "").strip(" 　-:：")
     if trimmed in {"", "コメント"}:
-        return title.strip()
+        return ""
     return trimmed
 
 

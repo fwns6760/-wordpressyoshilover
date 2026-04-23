@@ -39,7 +39,7 @@
   - 選手名
   - 公示種別
   - 日付
-- **予告先発** (`subtype=pregame` / `tag=予告先発`)
+- **予告先発** (`subtype=probable_starter`; 既存互換 `family=probable_pitcher` / `subtype=pregame` / `tag=予告先発`)
   - ラベル: `予告先発`
   - 対戦カード
   - 先発投手
@@ -48,7 +48,7 @@
   - 話者名
   - 短い見出し(source から取れる範囲で)
 - **怪我状況** (037 parity expansion `injury_notice`)
-  - ラベル: `故障情報`
+  - ラベル: `怪我状況`
   - 選手名
   - 状況ラベル(球団公式発表 / 監督・コーチコメントまで、主要紙報道は対象外)
 - **試合結果** (037 parity expansion `postgame_result`)
@@ -120,6 +120,24 @@
 - 本線 `036 ✓ → [038 + 040 並走] → 029 → 028 impl → 037` は動かさない。
 - 041 は 027 着地済 / 037 spec 確定済の状態で **Codex A が手が空いた時にいつでも fire 可**。ただし 028 impl と同じ Codex A なので、028 impl fire 中は直列で待つ。
 
+## 実装対応表（2026-04-23 Codex A 041）
+
+| subtype / 判定 | layout_key | ラベル | 表示 fact | 実装 |
+|---|---|---|---|---|
+| `fact_notice` + `番組` | `fact_notice_program` | `番組情報` | 番組名 / 放送日時 | `src/eyecatch_fallback.py` |
+| `fact_notice` + `公示` | `fact_notice_transaction` | `公示` | 選手名 / 公示種別 / 日付 | `src/eyecatch_fallback.py` |
+| `probable_starter`（既存 `probable_pitcher` / `pregame` + `予告先発` 互換） | `probable_starter` | `予告先発` | 対戦カード / 投手名 | `src/eyecatch_fallback.py` |
+| `comment_notice` | `comment_notice` | `コメント` | speaker 名 / scene 一言 | `src/eyecatch_fallback.py` |
+| `injury_notice` | `injury_notice` | `怪我状況` | 選手名 / 状況短文 | `src/eyecatch_fallback.py` |
+| `postgame` / `postgame_result` | `postgame_result` | `試合結果` | スコア / 対戦カード | `src/eyecatch_fallback.py` |
+
+実装メモ:
+
+- Draft-like status（未指定 / `draft` / `pending` / `future` / `auto-draft`）だけ fallback 対象にする。`publish` は生成しない。
+- `featured_media` / featured image / eyecatch / OGP image metadata がある場合は fallback しない。
+- 画像生成は in-tree の SVG bytes 生成のみ。AI 画像生成、外部 API、新規 dependency は使わない。
+- Draft 保存経路は既存 hook `src/tools/run_notice_fixed_lane.py::_create_notice_draft()` から `maybe_generate_structured_eyecatch_media()` を呼ぶ。041 本便では hook file の追加変更はしない。
+
 ## TODO
 
 【×】発動条件(元画像が無い時だけ)を固定する
@@ -135,6 +153,8 @@
 【×】コメント系の表示は「誰が / どこで / 何を言ったか」のうち source から取れる範囲と明記する
 【×】fixed lane の速度を落とさないことを非機能要件として明記する
 【×】041 が 027 / 037 / 019 の補助 ticket であり、本線 fire 順を崩さないことを明記する
+【×】src/eyecatch_fallback.py に 6 layout spec / Draft-only 判定 / SVG bytes 生成を実装する
+【×】tests/test_eyecatch_fallback.py に発動条件・6 layout・幻覚防止・published 非影響 test を追加する
 
 ## 成功条件
 

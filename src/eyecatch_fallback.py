@@ -18,20 +18,12 @@ SVG_CONTENT_TYPE = "image/svg+xml"
 _DRAFT_STATUSES = {"", "draft", "pending", "future", "auto-draft"}
 _IMAGE_METADATA_KEYS = (
     "featured_media",
+    "featured_media_id",
     "featured_image",
     "featured_image_id",
     "featured_image_url",
-    "featured_image_urls",
-    "image_url",
-    "image_urls",
-    "hero_image_url",
-    "hero_image",
-    "media_url",
-    "thumbnail_url",
-    "thumbnail_urls",
-    "og_image_url",
-    "og_image",
     "eyecatch",
+    "eyecatch_id",
     "eyecatch_url",
     "eyecatch_image_url",
 )

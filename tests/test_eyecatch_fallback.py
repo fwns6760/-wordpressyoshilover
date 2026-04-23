@@ -14,6 +14,20 @@ class EyecatchFallbackContractTests(unittest.TestCase):
             "meta": {"candidate_key": title, **meta},
         }
 
+    def _postgame_draft(self, top_level: dict | None = None, **meta_overrides: object) -> dict:
+        draft = self._draft(
+            "巨人 3-2 阪神",
+            {
+                "subtype": "postgame",
+                "matchup": "巨人 vs 阪神",
+                "score": "3 - 2",
+                **meta_overrides,
+            },
+        )
+        if top_level:
+            draft.update(top_level)
+        return draft
+
     def test_six_subtype_layouts_resolve_from_subtype_and_tags(self):
         cases = [
             (
@@ -95,19 +109,38 @@ class EyecatchFallbackContractTests(unittest.TestCase):
 
         self.assertEqual(seen_layouts, set(eyecatch_fallback.LAYOUT_SPECS.keys()))
 
-    def test_featured_image_or_og_image_skips_fallback(self):
-        featured = self._draft(
-            "巨人 3-2 阪神",
-            {"subtype": "postgame", "matchup": "巨人 vs 阪神", "score": "3 - 2"},
-        )
-        featured["featured_media"] = 731
-        self.assertIsNone(eyecatch_fallback.generate(featured))
+    def test_generic_image_metadata_does_not_skip_fallback(self):
+        cases = [
+            ("og_image_url", "https://example.com/og.jpg"),
+            ("hero_image_url", "https://example.com/hero.jpg"),
+            ("thumbnail_url", "https://example.com/thumb.jpg"),
+        ]
 
-        og_image = self._draft(
-            "巨人 3-2 阪神",
-            {"subtype": "postgame", "matchup": "巨人 vs 阪神", "score": "3 - 2", "og_image_url": "https://example.com/og.jpg"},
-        )
-        self.assertIsNone(eyecatch_fallback.generate(og_image))
+        for key, value in cases:
+            with self.subTest(key=key):
+                structured = eyecatch_fallback.generate(self._postgame_draft(top_level={key: value}))
+
+                self.assertIsNotNone(structured)
+                assert structured is not None
+                self.assertEqual(structured.layout_key, "postgame_result")
+                rendered = structured.image_bytes.decode("utf-8")
+                self.assertIn("巨人 vs 阪神", rendered)
+                self.assertIn("3 - 2", rendered)
+
+    def test_explicit_featured_or_eyecatch_metadata_skips_fallback(self):
+        cases = [
+            ("featured_media", 731, True),
+            ("featured_media_id", 732, False),
+            ("featured_image_id", 811, False),
+            ("featured_image_url", "https://example.com/featured.jpg", False),
+            ("eyecatch_id", 901, False),
+            ("eyecatch_url", "https://example.com/eyecatch.jpg", False),
+        ]
+
+        for key, value, top_level in cases:
+            with self.subTest(key=key):
+                kwargs = {"top_level": {key: value}} if top_level else {key: value}
+                self.assertIsNone(eyecatch_fallback.generate(self._postgame_draft(**kwargs)))
 
     def test_published_post_is_not_touched(self):
         published = self._draft(

@@ -1,0 +1,13 @@
+{
+  "case_id": "comment_notice_deferred_pickup",
+  "expected_route": "deferred_pickup",
+  "candidates": [
+    {
+      "subtype": "comment_notice",
+      "candidate_key": "comment_notice:20260421:abe-shinnosuke:postgame-qa",
+      "source_kind": "reporter_x",
+      "trust_tier": "T3",
+      "source_url": "https://x.com/hochi_giants/status/2026042102"
+    }
+  ]
+}

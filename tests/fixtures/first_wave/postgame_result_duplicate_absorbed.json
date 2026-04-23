@@ -1,0 +1,14 @@
+{
+  "case_id": "postgame_result_duplicate_absorbed",
+  "expected_route": "duplicate_absorbed",
+  "existing_candidate_keys": ["postgame_result:20260421-g-t:win"],
+  "candidates": [
+    {
+      "subtype": "postgame_result",
+      "candidate_key": "postgame_result:20260421-g-t:win",
+      "source_kind": "npb",
+      "trust_tier": "T1",
+      "source_url": "https://npb.jp/games/20260421/g-t/scoreboard.html"
+    }
+  ]
+}

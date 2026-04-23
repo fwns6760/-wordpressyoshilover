@@ -1,0 +1,13 @@
+{
+  "case_id": "comment_notice_fixed_primary",
+  "expected_route": "fixed_primary",
+  "candidates": [
+    {
+      "subtype": "comment_notice",
+      "candidate_key": "comment_notice:20260421:abe-shinnosuke:postgame-qa",
+      "source_kind": "comment_quote",
+      "trust_tier": "T2",
+      "source_url": "https://hochi.news/articles/20260421-OHT1T51000.html"
+    }
+  ]
+}

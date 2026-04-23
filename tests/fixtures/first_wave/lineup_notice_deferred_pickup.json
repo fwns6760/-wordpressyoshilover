@@ -1,0 +1,13 @@
+{
+  "case_id": "lineup_notice_deferred_pickup",
+  "expected_route": "deferred_pickup",
+  "candidates": [
+    {
+      "subtype": "lineup_notice",
+      "candidate_key": "lineup_notice:20260421-g-t:starting",
+      "source_kind": "major_rss",
+      "trust_tier": "T2",
+      "source_url": "https://hochi.news/articles/20260421-OHT1T50000.html"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "case_id": "lineup_notice_fixed_primary",
+  "expected_route": "fixed_primary",
+  "candidates": [
+    {
+      "subtype": "lineup_notice",
+      "candidate_key": "lineup_notice:20260421-g-t:starting",
+      "source_kind": "team_x",
+      "trust_tier": "T2",
+      "source_url": "https://x.com/tokyogiants/status/2026042101"
+    }
+  ]
+}

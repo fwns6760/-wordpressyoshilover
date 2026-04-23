@@ -1,0 +1,13 @@
+{
+  "case_id": "injury_notice_fixed_primary",
+  "expected_route": "fixed_primary",
+  "candidates": [
+    {
+      "subtype": "injury_notice",
+      "candidate_key": "injury_notice:20260421:asano-shogo:upper-body",
+      "source_kind": "comment_quote",
+      "trust_tier": "T1",
+      "source_url": "https://www.giants.jp/news/20260421_1234/"
+    }
+  ]
+}

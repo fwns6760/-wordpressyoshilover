@@ -1,0 +1,14 @@
+{
+  "case_id": "lineup_notice_duplicate_absorbed",
+  "expected_route": "duplicate_absorbed",
+  "existing_candidate_keys": ["lineup_notice:20260421-g-t:starting"],
+  "candidates": [
+    {
+      "subtype": "lineup_notice",
+      "candidate_key": "lineup_notice:20260421-g-t:starting",
+      "source_kind": "team_x",
+      "trust_tier": "T2",
+      "source_url": "https://x.com/tokyogiants/status/2026042101"
+    }
+  ]
+}

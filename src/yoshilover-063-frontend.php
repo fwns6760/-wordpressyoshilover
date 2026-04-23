@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯と記事下回遊束まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.3.0
+ * Version: 0.4.0
  * Author: yoshilover
  */
 
@@ -34,6 +34,9 @@ add_action( 'rest_api_init', 'yoshilover_063_register_admin_routes' );
 
 add_shortcode( 'yoshilover_topic_hub', 'yoshilover_063_render_topic_hub' );
 add_shortcode( 'yoshilover_breaking_strip', 'yoshilover_063_render_breaking_strip' );
+add_shortcode( 'yoshilover_today_giants_box', 'yoshilover_063_render_today_giants_box' );
+add_shortcode( 'yoshilover_sidebar_rail', 'yoshilover_063_render_sidebar_rail' );
+add_action( 'dynamic_sidebar_before', 'yoshilover_063_auto_inject_sidebar_rail', 5, 2 );
 
 function yoshilover_063_get_topic_hub_items() {
     $items = get_option( 'yoshilover_topic_hub_items', array() );
@@ -233,6 +236,267 @@ function yoshilover_063_render_breaking_strip( $atts = array() ) {
     $html .= '</aside>';
 
     return $html;
+}
+
+function yoshilover_063_sidebar_primary_indexes() {
+    return array(
+        'sidebar-1',
+        'sidebar',
+        'swell_sidebar',
+        'widget-area',
+    );
+}
+
+function yoshilover_063_should_render_sidebar_rail() {
+    if ( is_admin() || is_feed() || is_search() || is_404() ) {
+        return false;
+    }
+
+    return is_front_page() || is_home() || is_singular( 'post' );
+}
+
+function yoshilover_063_is_primary_sidebar_index( $index ) {
+    $index = strtolower( trim( (string) $index ) );
+    if ( $index === '' ) {
+        return false;
+    }
+
+    if ( in_array( $index, yoshilover_063_sidebar_primary_indexes(), true ) ) {
+        return true;
+    }
+
+    return false !== strpos( $index, 'sidebar' ) && false === strpos( $index, 'footer' ) && false === strpos( $index, 'front_' );
+}
+
+function yoshilover_063_get_today_giants_box_items( $limit = 5 ) {
+    $limit = max( 1, min( 5, (int) $limit ) );
+    $items = array();
+    $seen  = array();
+
+    foreach ( yoshilover_063_get_breaking_strip_items( $limit ) as $item ) {
+        $url = isset( $item['url'] ) ? trim( (string) $item['url'] ) : '';
+        if ( $url === '' || isset( $seen[ $url ] ) ) {
+            continue;
+        }
+
+        $items[]      = array(
+            'type'    => 'news',
+            'subtype' => isset( $item['subtype'] ) ? $item['subtype'] : 'article',
+            'label'   => isset( $item['label'] ) ? $item['label'] : '話題',
+            'title'   => isset( $item['title'] ) ? $item['title'] : '',
+            'url'     => $url,
+            'phase'   => isset( $item['phase'] ) ? $item['phase'] : '',
+            'score'   => isset( $item['score'] ) ? $item['score'] : '',
+            'time'    => isset( $item['time'] ) ? $item['time'] : '',
+        );
+        $seen[ $url ] = true;
+
+        if ( count( $items ) >= $limit ) {
+            return $items;
+        }
+    }
+
+    foreach ( yoshilover_063_get_topic_hub_items() as $item ) {
+        $url = isset( $item['url'] ) ? trim( (string) $item['url'] ) : '';
+        if ( $url === '' || isset( $seen[ $url ] ) ) {
+            continue;
+        }
+
+        $badge = isset( $item['badge'] ) ? trim( (string) $item['badge'] ) : '';
+        $items[] = array(
+            'type'    => 'topic',
+            'subtype' => 'topic',
+            'label'   => $badge !== '' ? $badge : '注目',
+            'title'   => isset( $item['title'] ) ? trim( (string) $item['title'] ) : '',
+            'url'     => $url,
+            'phase'   => '',
+            'score'   => '',
+            'time'    => '',
+        );
+        $seen[ $url ] = true;
+
+        if ( count( $items ) >= $limit ) {
+            break;
+        }
+    }
+
+    return $items;
+}
+
+function yoshilover_063_get_sidebar_topic_links( $limit = 4 ) {
+    $items = array();
+    foreach ( yoshilover_063_get_topic_hub_items() as $item ) {
+        $title = isset( $item['title'] ) ? trim( (string) $item['title'] ) : '';
+        $url   = isset( $item['url'] ) ? trim( (string) $item['url'] ) : '';
+        if ( $title === '' || $url === '' ) {
+            continue;
+        }
+        $items[] = array(
+            'title' => $title,
+            'url'   => $url,
+            'badge' => isset( $item['badge'] ) ? trim( (string) $item['badge'] ) : '',
+        );
+        if ( count( $items ) >= $limit ) {
+            break;
+        }
+    }
+    return $items;
+}
+
+function yoshilover_063_get_sidebar_category_links( $limit = 6 ) {
+    $limit      = max( 1, min( 8, (int) $limit ) );
+    $categories = get_categories(
+        array(
+            'hide_empty' => true,
+            'orderby'    => 'count',
+            'order'      => 'DESC',
+            'number'     => $limit + 4,
+        )
+    );
+
+    $items = array();
+    foreach ( $categories as $category ) {
+        if ( ! ( $category instanceof WP_Term ) ) {
+            continue;
+        }
+
+        if ( in_array( $category->slug, array( 'uncategorized', 'old-articles' ), true ) ) {
+            continue;
+        }
+
+        $items[] = array(
+            'name'  => $category->name,
+            'url'   => get_category_link( $category ),
+            'count' => (int) $category->count,
+            'slug'  => (string) $category->slug,
+        );
+        if ( count( $items ) >= $limit ) {
+            break;
+        }
+    }
+
+    return $items;
+}
+
+function yoshilover_063_render_today_giants_box( $atts = array() ) {
+    $atts = shortcode_atts(
+        array(
+            'heading' => '今日の巨人',
+            'limit'   => 5,
+        ),
+        $atts,
+        'yoshilover_today_giants_box'
+    );
+
+    $items = yoshilover_063_get_today_giants_box_items( (int) $atts['limit'] );
+    if ( empty( $items ) ) {
+        return '';
+    }
+
+    $html  = '<section class="yoshi-today-giants" aria-label="今日の巨人" data-yoshi-phase="4">';
+    $html .= '<div class="yoshi-today-giants__head">';
+    $html .= '<h2 class="yoshi-today-giants__heading">' . esc_html( $atts['heading'] ) . '</h2>';
+    $html .= '<span class="yoshi-today-giants__note">速報 / 公示 / 話題を右カラムで圧縮表示</span>';
+    $html .= '</div>';
+    $html .= '<ul class="yoshi-today-giants__list">';
+
+    foreach ( $items as $item ) {
+        $html .= '<li class="yoshi-today-giants__item yoshi-today-giants__item--' . esc_attr( $item['subtype'] ) . '">';
+        $html .= '<a class="yoshi-today-giants__link" href="' . esc_url( $item['url'] ) . '">';
+        $html .= '<span class="yoshi-today-giants__meta">';
+        $html .= '<span class="yoshi-today-giants__badge yoshi-today-giants__badge--' . esc_attr( $item['subtype'] ) . '">' . esc_html( $item['label'] ) . '</span>';
+        if ( $item['phase'] !== '' ) {
+            $html .= '<span class="yoshi-today-giants__chip">' . esc_html( $item['phase'] ) . '</span>';
+        }
+        if ( $item['score'] !== '' ) {
+            $html .= '<span class="yoshi-today-giants__chip yoshi-today-giants__chip--score">' . esc_html( $item['score'] ) . '</span>';
+        }
+        if ( $item['time'] !== '' ) {
+            $html .= '<time class="yoshi-today-giants__time">' . esc_html( $item['time'] ) . '</time>';
+        }
+        $html .= '</span>';
+        $html .= '<span class="yoshi-today-giants__title">' . esc_html( $item['title'] ) . '</span>';
+        $html .= '</a>';
+        $html .= '</li>';
+    }
+
+    $html .= '</ul>';
+    $html .= '</section>';
+
+    return $html;
+}
+
+function yoshilover_063_render_sidebar_rail( $atts = array() ) {
+    $today_box   = yoshilover_063_render_today_giants_box();
+    $topics      = yoshilover_063_get_sidebar_topic_links( 4 );
+    $categories  = yoshilover_063_get_sidebar_category_links( 6 );
+
+    if ( $today_box === '' && empty( $topics ) && empty( $categories ) ) {
+        return '';
+    }
+
+    $html  = '<aside class="yoshi-sidebar-rail" aria-label="右カラム導線" data-yoshi-phase="4">';
+    if ( $today_box !== '' ) {
+        $html .= $today_box;
+    }
+
+    if ( ! empty( $topics ) ) {
+        $html .= '<section class="yoshi-sidebar-rail__section yoshi-sidebar-rail__section--topics" aria-label="注目トピック">';
+        $html .= '<h3 class="yoshi-sidebar-rail__title">注目トピック</h3>';
+        $html .= '<ul class="yoshi-sidebar-rail__topic-list">';
+        foreach ( $topics as $item ) {
+            $html .= '<li class="yoshi-sidebar-rail__topic-item">';
+            $html .= '<a class="yoshi-sidebar-rail__topic-link" href="' . esc_url( $item['url'] ) . '">';
+            if ( $item['badge'] !== '' ) {
+                $html .= '<span class="yoshi-sidebar-rail__topic-badge">' . esc_html( $item['badge'] ) . '</span>';
+            }
+            $html .= '<span class="yoshi-sidebar-rail__topic-title">' . esc_html( $item['title'] ) . '</span>';
+            $html .= '</a>';
+            $html .= '</li>';
+        }
+        $html .= '</ul>';
+        $html .= '</section>';
+    }
+
+    if ( ! empty( $categories ) ) {
+        $html .= '<section class="yoshi-sidebar-rail__section yoshi-sidebar-rail__section--categories" aria-label="カテゴリ導線">';
+        $html .= '<h3 class="yoshi-sidebar-rail__title">カテゴリ導線</h3>';
+        $html .= '<div class="yoshi-sidebar-rail__category-chips">';
+        foreach ( $categories as $item ) {
+            $html .= '<a class="yoshi-sidebar-rail__category-chip yoshi-sidebar-rail__category-chip--' . esc_attr( $item['slug'] ) . '" href="' . esc_url( $item['url'] ) . '">';
+            $html .= '<span class="yoshi-sidebar-rail__category-name">' . esc_html( $item['name'] ) . '</span>';
+            $html .= '<span class="yoshi-sidebar-rail__category-count">' . esc_html( (string) $item['count'] ) . '</span>';
+            $html .= '</a>';
+        }
+        $html .= '</div>';
+        $html .= '</section>';
+    }
+
+    $html .= '</aside>';
+
+    return $html;
+}
+
+function yoshilover_063_auto_inject_sidebar_rail( $index, $has_widgets ) {
+    static $rendered = false;
+
+    if ( $rendered ) {
+        return;
+    }
+    if ( ! yoshilover_063_should_render_sidebar_rail() ) {
+        return;
+    }
+    if ( ! yoshilover_063_is_primary_sidebar_index( $index ) ) {
+        return;
+    }
+
+    $rail = yoshilover_063_render_sidebar_rail();
+    if ( $rail === '' ) {
+        return;
+    }
+
+    echo $rail; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+    $rendered = true;
 }
 
 /* ------------------------------------------------------------
@@ -549,7 +813,7 @@ function yoshilover_063_enqueue_front_density_assets() {
         return;
     }
 
-    wp_register_script( 'yoshilover-063-front-density', false, array(), '0.3.0', true );
+    wp_register_script( 'yoshilover-063-front-density', false, array(), '0.4.0', true );
     wp_enqueue_script( 'yoshilover-063-front-density' );
 
     $payload = array(

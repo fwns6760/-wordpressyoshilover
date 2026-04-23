@@ -1,9 +1,9 @@
 # 063 — 062 comment-first topic hub impl(front 実装在庫)
 
-**フェーズ：** 062 contract の impl 便(063-V1/V2 close、063-V3 in progress)
+**フェーズ：** 062 contract の impl 便(063-V1/V2 close、063-V3/V4 in progress)
 **担当：** `Codex front lane`(2026-04-24、063-V2 live smoke pass 後に V3 着手)
 **依存：** 062 accepted(contract doc 確定、2026-04-22)、047 accepted(`da692fc`、派生記事 emit 層着地、062 hub の話題源泉供給成立)
-**状態：** `063-V1 ACCEPTED / CLOSE`(2026-04-24、deploy + WP 実機 smoke 5/5 pass)、`063-V2 ACCEPTED / CLOSE`(2026-04-24、一覧 density live 反映 + E-2 re-smoke pass)、`063-V3 IN PROGRESS`(トップ速報帯 + 記事下回遊束、local impl)
+**状態：** `063-V1 ACCEPTED / CLOSE`(2026-04-24、deploy + WP 実機 smoke 5/5 pass)、`063-V2 ACCEPTED / CLOSE`(2026-04-24、一覧 density live 反映 + E-2 re-smoke pass)、`063-V3 IN PROGRESS`(トップ速報帯 + 記事下回遊束、local impl / live pending)、`063-V4 IN PROGRESS`(sidebar redesign + 今日の巨人 box、local impl)
 
 ---
 
@@ -18,8 +18,8 @@
 
 ## next
 
-- 063-V3 はトップ速報帯 + 記事下回遊束に限定する
-- V1/V2 の配置方針 `(a)`、plugin live、追加 CSS、Phase 1 noindex、front density の挙動は維持する
+- 063-V4 は sidebar redesign + 今日の巨人 box に限定する
+- V1/V2/V3 の配置方針 `(a)`、plugin live、追加 CSS、Phase 1 noindex、front density、breaking strip、article bundles の挙動は維持する
 - route / pickup / validator / automation / scheduler / env / secret / published 書込経路は引き続き不可触
 
 ## 2026-04-24 V2 implementation memo
@@ -42,6 +42,15 @@
 - `set_front_top_widget_stack` admin helper を追加し、`[yoshilover_breaking_strip]` と `[yoshilover_topic_hub]` を front_top に直列配置できるようにする
 - `src/custom.css` は速報帯 / 回遊束 style を追加し、SWELL に馴染ませつつ情報密度だけ上げる
 - `scripts/build_063_wp_admin_bundle.py` は plugin header version から `build/063-v3-wp-admin/` を自動生成するよう更新
+
+## 2026-04-24 V4 implementation memo
+
+- `src/yoshilover-063-frontend.php` に `yoshilover_today_giants_box` / `yoshilover_sidebar_rail` shortcode を追加
+- `dynamic_sidebar_before` を使い、`sidebar-1 / sidebar / swell_sidebar / widget-area` の primary sidebar 先頭に rail を 1 回だけ差し込む
+- 今日の巨人 box は `試合中 / スタメン / 公示 / 予告先発 / 試合後` の速報帯ソースを優先し、足りない時だけ topic hub の注目話題で最大 5 件まで補完する
+- sidebar rail には `今日の巨人 / 注目トピック / カテゴリ導線` の 3 セクションを置き、既存 widget 群は残したまま上部に足す
+- `src/custom.css` では right column の密度を少しだけ上げ、390px 幅でも badge / chip / time / summary が折り返せるよう mobile rule を追加した
+- close 条件の mobile gate は今回から必須扱いとし、local impl 時点では static CSS audit まで、WP 実機 smoke は deploy 後に別途確認する
 
 ---
 

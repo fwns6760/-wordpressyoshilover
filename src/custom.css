@@ -705,6 +705,249 @@ a:hover { color: var(--orange); opacity: 0.8; }
   line-height: 1.5;
   color: var(--mid-gray);
 }
+.yoshi-topic-hub__title,
+.yoshi-topic-hub__lead,
+.yoshi-breaking-strip__title,
+.yoshi-today-giants__title,
+.yoshi-sidebar-rail__topic-title,
+.yoshi-article-bundles__title,
+.yoshi-article-bundles__summary,
+.yoshi-front-card__summary {
+  overflow-wrap: anywhere;
+}
+
+.l-sidebar .widget {
+  border: 1px solid var(--light-gray);
+  box-shadow: 0 1px 0 rgba(26, 26, 26, 0.04);
+  margin-bottom: 14px;
+}
+.l-sidebar .widget-title,
+.l-sidebar .widgetTitle,
+.l-sidebar .c-widget__title {
+  padding: 9px 14px !important;
+  font-size: 12px !important;
+}
+.l-sidebar .widget ul li a {
+  padding: 9px 14px;
+  font-size: 12px;
+  line-height: 1.45;
+  align-items: flex-start;
+}
+
+.yoshi-sidebar-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.yoshi-today-giants {
+  background: linear-gradient(180deg, rgba(26, 26, 26, 0.98), rgba(43, 43, 43, 0.98));
+  border-top: 3px solid var(--orange);
+  border-radius: 4px;
+  padding: 12px 12px 14px;
+  color: var(--white);
+}
+.yoshi-today-giants__head {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 10px;
+}
+.yoshi-today-giants__heading {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-family: 'Oswald', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  color: var(--white);
+}
+.yoshi-today-giants__note {
+  font-size: 10px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.68);
+}
+.yoshi-today-giants__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.yoshi-today-giants__item {
+  min-width: 0;
+}
+.yoshi-today-giants__link {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: inherit;
+  text-decoration: none;
+}
+.yoshi-today-giants__item:last-child .yoshi-today-giants__link {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+.yoshi-today-giants__link:hover {
+  opacity: 1;
+  color: inherit;
+}
+.yoshi-today-giants__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.yoshi-today-giants__badge,
+.yoshi-today-giants__chip,
+.yoshi-today-giants__time {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: 0.3px;
+}
+.yoshi-today-giants__badge {
+  background: var(--orange);
+  color: var(--white);
+}
+.yoshi-today-giants__badge--lineup {
+  background: var(--blue);
+}
+.yoshi-today-giants__badge--postgame {
+  background: #50555b;
+}
+.yoshi-today-giants__badge--notice {
+  background: #ba2c3f;
+}
+.yoshi-today-giants__badge--probable_starter {
+  background: #5e6b7a;
+}
+.yoshi-today-giants__badge--topic {
+  background: #737373;
+}
+.yoshi-today-giants__chip {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.88);
+}
+.yoshi-today-giants__chip--score {
+  background: rgba(245, 129, 31, 0.18);
+  color: #ffd8b0;
+}
+.yoshi-today-giants__time {
+  padding-left: 0;
+  color: rgba(255, 255, 255, 0.6);
+}
+.yoshi-today-giants__title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.yoshi-sidebar-rail__section {
+  background: var(--white);
+  border: 1px solid var(--light-gray);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.yoshi-sidebar-rail__title {
+  margin: 0;
+  padding: 9px 14px;
+  background: #f7f7f3;
+  border-left: 3px solid var(--orange);
+  font-family: 'Oswald', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--dark-gray);
+}
+.yoshi-sidebar-rail__topic-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.yoshi-sidebar-rail__topic-item + .yoshi-sidebar-rail__topic-item {
+  border-top: 1px solid var(--light-gray);
+}
+.yoshi-sidebar-rail__topic-link {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  color: inherit;
+  text-decoration: none;
+}
+.yoshi-sidebar-rail__topic-link:hover {
+  background: var(--orange-light);
+  opacity: 1;
+}
+.yoshi-sidebar-rail__topic-badge {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  min-height: 18px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(245, 129, 31, 0.12);
+  color: var(--orange);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: 0.3px;
+}
+.yoshi-sidebar-rail__topic-title {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--dark-gray);
+}
+.yoshi-sidebar-rail__category-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 14px 14px;
+}
+.yoshi-sidebar-rail__category-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--light-gray);
+  color: var(--dark-gray);
+  text-decoration: none;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.yoshi-sidebar-rail__category-chip:hover {
+  background: var(--orange-light);
+  opacity: 1;
+}
+.yoshi-sidebar-rail__category-name {
+  overflow-wrap: anywhere;
+}
+.yoshi-sidebar-rail__category-count {
+  color: var(--mid-gray);
+  font-size: 10px;
+}
 
 .yoshi-breaking-strip {
   margin: 14px 0 18px;
@@ -1111,6 +1354,20 @@ a:hover { color: var(--orange); opacity: 0.8; }
 @media (max-width: 600px) {
   .yoshi-topic-hub { padding: 14px 14px 16px; }
   .yoshi-topic-hub__items { grid-template-columns: 1fr; }
+  .l-sidebar .widget ul li a {
+    padding: 8px 12px;
+  }
+  .yoshi-sidebar-rail {
+    gap: 10px;
+  }
+  .yoshi-today-giants {
+    padding: 11px 11px 13px;
+  }
+  .yoshi-sidebar-rail__topic-link,
+  .yoshi-sidebar-rail__category-chips {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
   .yoshi-breaking-strip {
     padding: 12px 12px 14px;
   }
@@ -1136,5 +1393,39 @@ a:hover { color: var(--orange); opacity: 0.8; }
   .yoshi-article-bundles__groups {
     grid-template-columns: 1fr;
     gap: 10px;
+  }
+}
+
+@media (max-width: 390px) {
+  .yoshi-front-card__meta,
+  .yoshi-breaking-strip__eyebrow,
+  .yoshi-today-giants__meta,
+  .yoshi-article-bundles__meta {
+    gap: 4px;
+  }
+  .yoshi-topic-hub,
+  .yoshi-breaking-strip,
+  .yoshi-sns-reactions,
+  .yoshi-article-bundles,
+  .yoshi-today-giants {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+  .yoshi-topic-hub__title,
+  .yoshi-breaking-strip__title,
+  .yoshi-today-giants__title,
+  .yoshi-article-bundles__title,
+  .yoshi-sidebar-rail__topic-title {
+    font-size: 11px;
+    line-height: 1.45;
+  }
+  .yoshi-topic-hub__lead,
+  .yoshi-front-card__summary,
+  .yoshi-article-bundles__summary {
+    font-size: 10px;
+  }
+  .yoshi-sidebar-rail__category-chip {
+    width: 100%;
+    justify-content: space-between;
   }
 }

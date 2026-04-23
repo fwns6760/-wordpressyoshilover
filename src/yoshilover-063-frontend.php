@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
- * Description: 062 contract §2 §3 §5 の front impl。トップ中央 topic hub(手動表示) + 記事下 SNS 反応 block(公式 X / 中の人 X が per-post meta にある時だけ) + Phase 1 noindex。既存 SWELL コメント欄は触らない。
- * Version: 0.2.0
+ * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯と記事下回遊束まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
+ * Version: 0.3.0
  * Author: yoshilover
  */
 
@@ -33,6 +33,7 @@ add_action( 'rest_api_init', 'yoshilover_063_register_admin_routes' );
  * ---------------------------------------------------------- */
 
 add_shortcode( 'yoshilover_topic_hub', 'yoshilover_063_render_topic_hub' );
+add_shortcode( 'yoshilover_breaking_strip', 'yoshilover_063_render_breaking_strip' );
 
 function yoshilover_063_get_topic_hub_items() {
     $items = get_option( 'yoshilover_topic_hub_items', array() );
@@ -126,6 +127,114 @@ function yoshilover_063_render_topic_hub( $atts = array() ) {
     return $html;
 }
 
+function yoshilover_063_breaking_strip_target_subtypes() {
+    return array(
+        'live_update',
+        'lineup',
+        'notice',
+        'probable_starter',
+        'postgame',
+    );
+}
+
+function yoshilover_063_get_breaking_strip_items( $limit = 5 ) {
+    $limit = max( 1, min( 5, (int) $limit ) );
+    $query = new WP_Query(
+        array(
+            'post_type'              => 'post',
+            'post_status'            => 'publish',
+            'posts_per_page'         => 24,
+            'ignore_sticky_posts'    => true,
+            'no_found_rows'          => true,
+            'update_post_meta_cache' => true,
+            'update_post_term_cache' => false,
+        )
+    );
+
+    $items   = array();
+    $targets = yoshilover_063_breaking_strip_target_subtypes();
+
+    foreach ( $query->posts as $post ) {
+        if ( ! ( $post instanceof WP_Post ) ) {
+            continue;
+        }
+
+        $text    = yoshilover_063_front_density_text( $post );
+        $blob    = yoshilover_063_normalize_front_density_text( $post->post_title . ' ' . $text );
+        $subtype = yoshilover_063_resolve_front_density_subtype( $post, $text );
+
+        if ( ! in_array( $subtype, $targets, true ) ) {
+            continue;
+        }
+
+        $items[] = array(
+            'subtype' => $subtype,
+            'label'   => yoshilover_063_front_density_subtype_label( $subtype ),
+            'title'   => trim( (string) $post->post_title ),
+            'url'     => get_permalink( $post ),
+            'phase'   => yoshilover_063_extract_front_density_phase( $blob ),
+            'score'   => yoshilover_063_extract_front_density_score( $blob ),
+            'time'    => yoshilover_063_format_compact_post_time( $post ),
+        );
+
+        if ( count( $items ) >= $limit ) {
+            break;
+        }
+    }
+
+    wp_reset_postdata();
+
+    return $items;
+}
+
+function yoshilover_063_render_breaking_strip( $atts = array() ) {
+    $atts = shortcode_atts(
+        array(
+            'heading' => '速報帯',
+            'limit'   => 5,
+        ),
+        $atts,
+        'yoshilover_breaking_strip'
+    );
+
+    $items = yoshilover_063_get_breaking_strip_items( (int) $atts['limit'] );
+    if ( empty( $items ) ) {
+        return '';
+    }
+
+    $html  = '<aside class="yoshi-breaking-strip" aria-label="速報帯" data-yoshi-phase="3">';
+    $html .= '<div class="yoshi-breaking-strip__head">';
+    $html .= '<h2 class="yoshi-breaking-strip__heading">' . esc_html( $atts['heading'] ) . '</h2>';
+    $html .= '<span class="yoshi-breaking-strip__note">試合中 / スタメン / 公示 / 予告先発 / 試合後</span>';
+    $html .= '</div>';
+    $html .= '<ul class="yoshi-breaking-strip__list">';
+
+    foreach ( $items as $item ) {
+        $html .= '<li class="yoshi-breaking-strip__item yoshi-breaking-strip__item--' . esc_attr( $item['subtype'] ) . '">';
+        $html .= '<a class="yoshi-breaking-strip__link" href="' . esc_url( $item['url'] ) . '">';
+        $html .= '<span class="yoshi-breaking-strip__eyebrow">';
+        $html .= '<span class="yoshi-breaking-strip__badge">' . esc_html( $item['label'] ) . '</span>';
+        if ( $item['phase'] !== '' ) {
+            $html .= '<span class="yoshi-breaking-strip__chip yoshi-breaking-strip__chip--phase">' . esc_html( $item['phase'] ) . '</span>';
+        }
+        if ( $item['score'] !== '' ) {
+            $html .= '<span class="yoshi-breaking-strip__chip yoshi-breaking-strip__chip--score">' . esc_html( $item['score'] ) . '</span>';
+        }
+        if ( $item['time'] !== '' ) {
+            $html .= '<time class="yoshi-breaking-strip__time">' . esc_html( $item['time'] ) . '</time>';
+        }
+        $html .= '</span>';
+        $html .= '<span class="yoshi-breaking-strip__title">' . esc_html( $item['title'] ) . '</span>';
+        $html .= '</a>';
+        $html .= '</li>';
+    }
+
+    $html .= '</ul>';
+    $html .= '</aside>';
+
+    return $html;
+}
+
 /* ------------------------------------------------------------
  * 2) 記事下 SNS 反応 block (062 §3 / 063 §2)
  *
@@ -140,7 +249,9 @@ function yoshilover_063_render_topic_hub( $atts = array() ) {
  * ---------------------------------------------------------- */
 
 add_shortcode( 'yoshilover_sns_reactions', 'yoshilover_063_render_sns_reactions' );
+add_shortcode( 'yoshilover_article_bundles', 'yoshilover_063_render_article_bundles' );
 add_filter( 'the_content', 'yoshilover_063_auto_inject_sns_reactions', 20 );
+add_filter( 'the_content', 'yoshilover_063_auto_inject_article_bundles', 21 );
 
 function yoshilover_063_is_x_url( $url ) {
     if ( ! is_string( $url ) || $url === '' ) {
@@ -246,6 +357,95 @@ function yoshilover_063_auto_inject_sns_reactions( $content ) {
     return $content . yoshilover_063_render_sns_reactions();
 }
 
+function yoshilover_063_render_article_bundles( $atts = array() ) {
+    $post = get_post();
+    if ( ! ( $post instanceof WP_Post ) || $post->post_type !== 'post' ) {
+        return '';
+    }
+
+    $groups = yoshilover_063_build_article_bundles_for_post( $post );
+    if ( empty( $groups ) ) {
+        return '';
+    }
+
+    $html  = '<section class="yoshi-article-bundles" aria-label="次に読みたい記事" data-yoshi-phase="3">';
+    $html .= '<div class="yoshi-article-bundles__head">';
+    $html .= '<h3 class="yoshi-article-bundles__heading">次に読みたい記事</h3>';
+    $html .= '<p class="yoshi-article-bundles__lead">同じ試合・同じ選手・同じ話題で続けて追える束だけを出します。</p>';
+    $html .= '</div>';
+    $html .= '<div class="yoshi-article-bundles__groups">';
+
+    foreach ( $groups as $group ) {
+        if ( empty( $group['items'] ) ) {
+            continue;
+        }
+        $html .= '<section class="yoshi-article-bundles__group yoshi-article-bundles__group--' . esc_attr( $group['key'] ) . '">';
+        $html .= '<h4 class="yoshi-article-bundles__group-heading">' . esc_html( $group['heading'] ) . '</h4>';
+        $html .= '<ul class="yoshi-article-bundles__list">';
+
+        foreach ( $group['items'] as $item ) {
+            $html .= '<li class="yoshi-article-bundles__item">';
+            $html .= '<a class="yoshi-article-bundles__link" href="' . esc_url( $item['url'] ) . '">';
+            $html .= '<span class="yoshi-article-bundles__meta">';
+            if ( $item['label'] !== '' ) {
+                $html .= '<span class="yoshi-article-bundles__badge yoshi-article-bundles__badge--' . esc_attr( $item['subtype'] ) . '">' . esc_html( $item['label'] ) . '</span>';
+            }
+            if ( $item['phase'] !== '' ) {
+                $html .= '<span class="yoshi-article-bundles__chip">' . esc_html( $item['phase'] ) . '</span>';
+            }
+            if ( $item['score'] !== '' ) {
+                $html .= '<span class="yoshi-article-bundles__chip yoshi-article-bundles__chip--score">' . esc_html( $item['score'] ) . '</span>';
+            }
+            if ( $item['time'] !== '' ) {
+                $html .= '<time class="yoshi-article-bundles__time">' . esc_html( $item['time'] ) . '</time>';
+            }
+            $html .= '</span>';
+            $html .= '<span class="yoshi-article-bundles__title">' . esc_html( $item['title'] ) . '</span>';
+            if ( $item['summary'] !== '' ) {
+                $html .= '<span class="yoshi-article-bundles__summary">' . esc_html( $item['summary'] ) . '</span>';
+            }
+            $html .= '</a>';
+            $html .= '</li>';
+        }
+
+        $html .= '</ul>';
+        $html .= '</section>';
+    }
+
+    $html .= '</div>';
+    $html .= '</section>';
+
+    return $html;
+}
+
+function yoshilover_063_auto_inject_article_bundles( $content ) {
+    if ( is_admin() ) {
+        return $content;
+    }
+    if ( ! in_the_loop() || ! is_main_query() ) {
+        return $content;
+    }
+    if ( ! is_singular( 'post' ) ) {
+        return $content;
+    }
+
+    $post = get_post();
+    if ( ! ( $post instanceof WP_Post ) || $post->post_type !== 'post' ) {
+        return $content;
+    }
+
+    if ( strpos( (string) $content, 'yoshi-article-bundles' ) !== false ) {
+        return $content;
+    }
+
+    $bundles = yoshilover_063_render_article_bundles();
+    if ( $bundles === '' ) {
+        return $content;
+    }
+
+    return $content . $bundles;
+}
+
 /* ------------------------------------------------------------
  * 3) Phase 1 noindex (062 §5 / 063 §3)
  *
@@ -349,7 +549,7 @@ function yoshilover_063_enqueue_front_density_assets() {
         return;
     }
 
-    wp_register_script( 'yoshilover-063-front-density', false, array(), '0.2.0', true );
+    wp_register_script( 'yoshilover-063-front-density', false, array(), '0.3.0', true );
     wp_enqueue_script( 'yoshilover-063-front-density' );
 
     $payload = array(
@@ -580,7 +780,13 @@ function yoshilover_063_resolve_front_density_subtype( $post, $text ) {
     if ( preg_match( '/(スタメン|先発投手|試合開始)/u', $haystack ) ) {
         return 'lineup';
     }
-    if ( preg_match( '/(予告先発|試合前)/u', $haystack ) ) {
+    if ( preg_match( '/(公示|登録|抹消|昇格|降格|合流)/u', $haystack ) ) {
+        return 'notice';
+    }
+    if ( preg_match( '/(予告先発)/u', $haystack ) ) {
+        return 'probable_starter';
+    }
+    if ( preg_match( '/(試合前)/u', $haystack ) ) {
         return 'pregame';
     }
     if ( preg_match( '/(二軍|ファーム)/u', $haystack ) ) {
@@ -594,11 +800,17 @@ function yoshilover_063_normalize_front_density_subtype( $value ) {
     $value = str_replace( array( '-', ' ' ), '_', $value );
 
     $map = array(
-        'postgame_result' => 'postgame',
-        'live_anchor'     => 'live_update',
-        'lineup_notice'   => 'lineup',
-        'farm_lineup'     => 'farm',
-        'fact_notice'     => 'article',
+        'postgame_result'   => 'postgame',
+        'live_anchor'       => 'live_update',
+        'lineup_notice'     => 'lineup',
+        'farm_lineup'       => 'farm',
+        'fact_notice'       => 'article',
+        'probablestarter'   => 'probable_starter',
+        'probable_starter'  => 'probable_starter',
+        'notice'            => 'notice',
+        'comment_notice'    => 'notice',
+        'roster_notice'     => 'notice',
+        'transaction'       => 'notice',
     );
 
     return isset( $map[ $value ] ) ? $map[ $value ] : $value;
@@ -606,12 +818,14 @@ function yoshilover_063_normalize_front_density_subtype( $value ) {
 
 function yoshilover_063_front_density_subtype_label( $subtype ) {
     $labels = array(
-        'live_update' => '試合中',
-        'lineup'      => 'スタメン',
-        'postgame'    => '試合後',
-        'pregame'     => '試合前',
-        'farm'        => '二軍',
-        'article'     => '話題',
+        'live_update'      => '試合中',
+        'lineup'           => 'スタメン',
+        'postgame'         => '試合後',
+        'pregame'          => '試合前',
+        'probable_starter' => '予告先発',
+        'notice'           => '公示',
+        'farm'             => '二軍',
+        'article'          => '話題',
     );
 
     return isset( $labels[ $subtype ] ) ? $labels[ $subtype ] : '話題';
@@ -674,8 +888,8 @@ function yoshilover_063_front_density_context_key( $post, $subtype, $text ) {
     return get_the_date( 'Ymd', $post ) . ':' . $subtype . ':' . $opponent;
 }
 
-function yoshilover_063_front_density_extract_opponent( $text ) {
-    $teams = array(
+function yoshilover_063_opponent_team_names() {
+    return array(
         'ヤクルト',
         '阪神',
         '広島',
@@ -689,14 +903,490 @@ function yoshilover_063_front_density_extract_opponent( $text ) {
         'オリックス',
         '楽天',
     );
+}
 
-    foreach ( $teams as $team ) {
+function yoshilover_063_front_density_extract_opponent( $text ) {
+    foreach ( yoshilover_063_opponent_team_names() as $team ) {
         if ( false !== mb_strpos( (string) $text, $team ) ) {
             return $team;
         }
     }
 
     return '';
+}
+
+function yoshilover_063_format_compact_post_time( $post ) {
+    $timestamp = (int) get_post_time( 'U', true, $post );
+    if ( $timestamp <= 0 ) {
+        return '';
+    }
+
+    $now    = function_exists( 'current_time' ) ? (int) current_time( 'timestamp', true ) : time();
+    $format = wp_date( 'Ymd', $timestamp ) === wp_date( 'Ymd', $now ) ? 'H:i' : 'm/d H:i';
+    return wp_date( $format, $timestamp );
+}
+
+function yoshilover_063_first_non_empty_meta( $post_id, $keys ) {
+    foreach ( (array) $keys as $key ) {
+        $value = trim( (string) get_post_meta( (int) $post_id, (string) $key, true ) );
+        if ( $value !== '' ) {
+            return $value;
+        }
+    }
+    return '';
+}
+
+function yoshilover_063_is_gameish_subtype( $subtype ) {
+    return in_array(
+        (string) $subtype,
+        array( 'live_update', 'lineup', 'postgame', 'pregame', 'probable_starter', 'farm' ),
+        true
+    );
+}
+
+function yoshilover_063_get_post_term_names( $post_id, $taxonomy ) {
+    $terms = wp_get_post_terms( (int) $post_id, (string) $taxonomy );
+    if ( is_wp_error( $terms ) || ! is_array( $terms ) ) {
+        return array();
+    }
+
+    $names = array();
+    foreach ( $terms as $term ) {
+        if ( ! ( $term instanceof WP_Term ) ) {
+            continue;
+        }
+        $name = trim( (string) $term->name );
+        if ( $name !== '' ) {
+            $names[] = $name;
+        }
+    }
+
+    return yoshilover_063_unique_tokens( $names );
+}
+
+function yoshilover_063_normalize_lookup_token( $token ) {
+    $token = trim( (string) $token );
+    if ( $token === '' ) {
+        return '';
+    }
+    if ( function_exists( 'mb_strtolower' ) ) {
+        return mb_strtolower( $token, 'UTF-8' );
+    }
+    return strtolower( $token );
+}
+
+function yoshilover_063_unique_tokens( $tokens ) {
+    $unique = array();
+    foreach ( (array) $tokens as $token ) {
+        $token = trim( (string) $token );
+        $norm  = yoshilover_063_normalize_lookup_token( $token );
+        if ( $norm === '' ) {
+            continue;
+        }
+        if ( ! isset( $unique[ $norm ] ) ) {
+            $unique[ $norm ] = $token;
+        }
+    }
+    return array_values( $unique );
+}
+
+function yoshilover_063_shared_tokens( $left, $right ) {
+    $right_map = array();
+    foreach ( (array) $right as $token ) {
+        $norm = yoshilover_063_normalize_lookup_token( $token );
+        if ( $norm !== '' ) {
+            $right_map[ $norm ] = trim( (string) $token );
+        }
+    }
+
+    $shared = array();
+    foreach ( (array) $left as $token ) {
+        $norm = yoshilover_063_normalize_lookup_token( $token );
+        if ( $norm !== '' && isset( $right_map[ $norm ] ) ) {
+            $shared[ $norm ] = trim( (string) $token );
+        }
+    }
+
+    return array_values( $shared );
+}
+
+function yoshilover_063_strip_person_suffix( $token ) {
+    $token = trim( (string) $token );
+    $token = preg_replace( '/(投手|選手|捕手|内野手|外野手)$/u', '', $token );
+    return trim( (string) $token );
+}
+
+function yoshilover_063_looks_like_player_token( $token ) {
+    $token = yoshilover_063_strip_person_suffix( $token );
+    if ( $token === '' ) {
+        return false;
+    }
+
+    $blocked = array_merge(
+        array(
+            '巨人',
+            'ジャイアンツ',
+            '読売',
+            '東京ドーム',
+            'セリーグ',
+            'パリーグ',
+            'スタメン',
+            '予告先発',
+            '公示',
+            '試合前',
+            '試合中',
+            '試合後',
+        ),
+        yoshilover_063_opponent_team_names()
+    );
+
+    if ( in_array( $token, $blocked, true ) ) {
+        return false;
+    }
+
+    return (bool) preg_match(
+        "/^(?:[一-龠々]{2,4}|[ァ-ヴー]{2,12}|[A-Za-z][A-Za-z'\\- ]{1,20})$/u",
+        $token
+    );
+}
+
+function yoshilover_063_extract_player_tokens( $text, $tags = array() ) {
+    $tokens = array();
+
+    foreach ( (array) $tags as $tag ) {
+        if ( yoshilover_063_looks_like_player_token( $tag ) ) {
+            $tokens[] = yoshilover_063_strip_person_suffix( $tag );
+        }
+    }
+
+    if ( preg_match_all( "/((?:[一-龠々]{2,4}|[ァ-ヴー]{2,12}|[A-Za-z][A-Za-z'\\- ]{1,20}))(?:投手|選手|捕手|内野手|外野手)/u", (string) $text, $matches ) ) {
+        foreach ( $matches[1] as $match ) {
+            if ( yoshilover_063_looks_like_player_token( $match ) ) {
+                $tokens[] = yoshilover_063_strip_person_suffix( $match );
+            }
+        }
+    }
+
+    return array_slice( yoshilover_063_unique_tokens( $tokens ), 0, 4 );
+}
+
+function yoshilover_063_is_noise_topic_token( $token ) {
+    $noise = array(
+        'ニュース',
+        '話題',
+        '記事',
+        '速報',
+        '巨人',
+        'ジャイアンツ',
+        '読売',
+        '試合速報',
+        '未分類',
+    );
+
+    return in_array( trim( (string) $token ), $noise, true );
+}
+
+function yoshilover_063_extract_topic_tokens( $text, $tags = array(), $subtype = 'article', $player_tokens = array() ) {
+    $tokens        = array();
+    $player_lookup = array();
+
+    foreach ( (array) $player_tokens as $player_token ) {
+        $norm = yoshilover_063_normalize_lookup_token( $player_token );
+        if ( $norm !== '' ) {
+            $player_lookup[ $norm ] = true;
+        }
+    }
+
+    $label = yoshilover_063_front_density_subtype_label( $subtype );
+    if ( $label !== '' && $label !== '話題' ) {
+        $tokens[] = $label;
+    }
+
+    foreach ( (array) $tags as $tag ) {
+        $tag  = trim( (string) $tag );
+        $norm = yoshilover_063_normalize_lookup_token( $tag );
+        if ( $tag === '' || isset( $player_lookup[ $norm ] ) || yoshilover_063_is_noise_topic_token( $tag ) ) {
+            continue;
+        }
+        $tokens[] = $tag;
+    }
+
+    $patterns = array(
+        '/公示|登録|抹消|昇格|降格/u'   => '公示',
+        '/予告先発/u'                    => '予告先発',
+        '/スタメン/u'                    => 'スタメン',
+        '/試合終了|サヨナラ|敗戦|勝利/u' => '試合後',
+        '/回表|回裏/u'                    => '試合中',
+        '/二軍|ファーム/u'                => '二軍',
+        '/本塁打|打点|安打/u'             => '打撃',
+        '/先発|登板|無失点|セーブ/u'       => '投手',
+        '/故障|離脱|復帰/u'               => 'コンディション',
+        '/ドラフト|育成/u'               => 'ドラフト',
+    );
+
+    foreach ( $patterns as $pattern => $label_token ) {
+        if ( preg_match( $pattern, (string) $text ) ) {
+            $tokens[] = $label_token;
+        }
+    }
+
+    return array_slice( yoshilover_063_unique_tokens( $tokens ), 0, 6 );
+}
+
+function yoshilover_063_build_article_context( $post ) {
+    if ( ! ( $post instanceof WP_Post ) ) {
+        return array();
+    }
+
+    $text          = yoshilover_063_front_density_text( $post );
+    $blob          = yoshilover_063_normalize_front_density_text( $post->post_title . ' ' . $text );
+    $subtype       = yoshilover_063_resolve_front_density_subtype( $post, $text );
+    $phase         = yoshilover_063_extract_front_density_phase( $blob );
+    $categories    = yoshilover_063_get_post_term_names( $post->ID, 'category' );
+    $tags          = yoshilover_063_get_post_term_names( $post->ID, 'post_tag' );
+    $player_tokens = yoshilover_063_extract_player_tokens( $blob, $tags );
+
+    return array(
+        'id'         => (int) $post->ID,
+        'post'       => $post,
+        'subtype'    => $subtype,
+        'label'      => yoshilover_063_front_density_subtype_label( $subtype ),
+        'title'      => trim( (string) $post->post_title ),
+        'url'        => get_permalink( $post ),
+        'summary'    => yoshilover_063_build_front_density_summary( $post, $text, $phase ),
+        'phase'      => $phase,
+        'score'      => yoshilover_063_extract_front_density_score( $blob ),
+        'time'       => yoshilover_063_format_compact_post_time( $post ),
+        'timestamp'  => (int) get_post_time( 'U', true, $post ),
+        'date_key'   => get_the_date( 'Ymd', $post ),
+        'game_id'    => yoshilover_063_first_non_empty_meta( $post->ID, array( 'game_id', '_game_id' ) ),
+        'opponent'   => yoshilover_063_front_density_extract_opponent( $blob ),
+        'categories' => $categories,
+        'topic_tags' => array_values(
+            array_filter(
+                $tags,
+                function( $tag ) use ( $player_tokens ) {
+                    return empty( yoshilover_063_shared_tokens( array( $tag ), $player_tokens ) ) && ! yoshilover_063_is_noise_topic_token( $tag );
+                }
+            )
+        ),
+        'players'    => $player_tokens,
+        'topics'     => yoshilover_063_extract_topic_tokens( $blob, $tags, $subtype, $player_tokens ),
+    );
+}
+
+function yoshilover_063_get_article_bundle_candidates( $exclude_post_id ) {
+    $query = new WP_Query(
+        array(
+            'post_type'              => 'post',
+            'post_status'            => 'publish',
+            'post__not_in'           => array( (int) $exclude_post_id ),
+            'posts_per_page'         => 36,
+            'ignore_sticky_posts'    => true,
+            'no_found_rows'          => true,
+            'update_post_meta_cache' => true,
+            'update_post_term_cache' => true,
+        )
+    );
+
+    $contexts = array();
+    foreach ( $query->posts as $post ) {
+        if ( $post instanceof WP_Post ) {
+            $contexts[] = yoshilover_063_build_article_context( $post );
+        }
+    }
+
+    wp_reset_postdata();
+
+    return $contexts;
+}
+
+function yoshilover_063_prepare_article_bundle_item( $context ) {
+    return array(
+        'post_id'  => (int) $context['id'],
+        'url'      => (string) $context['url'],
+        'title'    => (string) $context['title'],
+        'summary'  => (string) $context['summary'],
+        'subtype'  => (string) $context['subtype'],
+        'label'    => (string) $context['label'],
+        'phase'    => (string) $context['phase'],
+        'score'    => (string) $context['score'],
+        'time'     => (string) $context['time'],
+    );
+}
+
+function yoshilover_063_finalize_article_bundle_selection( $ranked, &$used_ids, $limit = 3 ) {
+    if ( empty( $ranked ) ) {
+        return array();
+    }
+
+    usort(
+        $ranked,
+        function( $left, $right ) {
+            if ( $left['score'] === $right['score'] ) {
+                return (int) $right['context']['timestamp'] <=> (int) $left['context']['timestamp'];
+            }
+            return (int) $right['score'] <=> (int) $left['score'];
+        }
+    );
+
+    $items = array();
+    foreach ( $ranked as $row ) {
+        $context = $row['context'];
+        $post_id = isset( $context['id'] ) ? (int) $context['id'] : 0;
+        if ( $post_id <= 0 || isset( $used_ids[ $post_id ] ) ) {
+            continue;
+        }
+        $items[]            = yoshilover_063_prepare_article_bundle_item( $context );
+        $used_ids[ $post_id ] = true;
+        if ( count( $items ) >= $limit ) {
+            break;
+        }
+    }
+
+    return $items;
+}
+
+function yoshilover_063_select_same_game_bundle_items( $context, $candidate_contexts, &$used_ids ) {
+    if ( empty( $context['game_id'] ) && ( empty( $context['opponent'] ) || ! yoshilover_063_is_gameish_subtype( $context['subtype'] ) ) ) {
+        return array();
+    }
+
+    $ranked = array();
+    foreach ( $candidate_contexts as $candidate_context ) {
+        if ( empty( $candidate_context['id'] ) || isset( $used_ids[ (int) $candidate_context['id'] ] ) ) {
+            continue;
+        }
+
+        $score = 0;
+        if ( $context['game_id'] !== '' && $candidate_context['game_id'] !== '' && $context['game_id'] === $candidate_context['game_id'] ) {
+            $score = 100;
+        } elseif (
+            $context['opponent'] !== '' &&
+            $candidate_context['opponent'] === $context['opponent'] &&
+            yoshilover_063_is_gameish_subtype( $candidate_context['subtype'] ) &&
+            abs( (int) $candidate_context['timestamp'] - (int) $context['timestamp'] ) <= ( DAY_IN_SECONDS * 2 )
+        ) {
+            $score = 75;
+        }
+
+        if ( $score <= 0 ) {
+            continue;
+        }
+        if ( $candidate_context['subtype'] !== $context['subtype'] ) {
+            $score += 4;
+        }
+
+        $ranked[] = array(
+            'score'   => $score,
+            'context' => $candidate_context,
+        );
+    }
+
+    return yoshilover_063_finalize_article_bundle_selection( $ranked, $used_ids, 3 );
+}
+
+function yoshilover_063_select_same_player_bundle_items( $context, $candidate_contexts, &$used_ids ) {
+    if ( empty( $context['players'] ) ) {
+        return array();
+    }
+
+    $ranked = array();
+    foreach ( $candidate_contexts as $candidate_context ) {
+        if ( empty( $candidate_context['id'] ) || isset( $used_ids[ (int) $candidate_context['id'] ] ) ) {
+            continue;
+        }
+
+        $shared_players = yoshilover_063_shared_tokens( $context['players'], $candidate_context['players'] );
+        if ( empty( $shared_players ) ) {
+            continue;
+        }
+
+        $score = 50 + ( count( $shared_players ) * 12 );
+        if ( $candidate_context['subtype'] === $context['subtype'] ) {
+            $score += 3;
+        }
+
+        $ranked[] = array(
+            'score'   => $score,
+            'context' => $candidate_context,
+        );
+    }
+
+    return yoshilover_063_finalize_article_bundle_selection( $ranked, $used_ids, 3 );
+}
+
+function yoshilover_063_select_same_topic_bundle_items( $context, $candidate_contexts, &$used_ids ) {
+    $ranked = array();
+    foreach ( $candidate_contexts as $candidate_context ) {
+        if ( empty( $candidate_context['id'] ) || isset( $used_ids[ (int) $candidate_context['id'] ] ) ) {
+            continue;
+        }
+
+        $shared_topics     = yoshilover_063_shared_tokens( $context['topics'], $candidate_context['topics'] );
+        $shared_topic_tags = yoshilover_063_shared_tokens( $context['topic_tags'], $candidate_context['topic_tags'] );
+        $shared_categories = yoshilover_063_shared_tokens( $context['categories'], $candidate_context['categories'] );
+
+        $score = ( count( $shared_topics ) * 6 ) + ( count( $shared_topic_tags ) * 4 ) + ( count( $shared_categories ) * 2 );
+        if ( $candidate_context['subtype'] === $context['subtype'] ) {
+            $score += 2;
+        }
+
+        if ( $score <= 0 ) {
+            continue;
+        }
+
+        $ranked[] = array(
+            'score'   => $score,
+            'context' => $candidate_context,
+        );
+    }
+
+    return yoshilover_063_finalize_article_bundle_selection( $ranked, $used_ids, 3 );
+}
+
+function yoshilover_063_build_article_bundles_for_post( $post ) {
+    $context = yoshilover_063_build_article_context( $post );
+    if ( empty( $context ) ) {
+        return array();
+    }
+
+    $candidate_contexts = yoshilover_063_get_article_bundle_candidates( $post->ID );
+    if ( empty( $candidate_contexts ) ) {
+        return array();
+    }
+
+    $used_ids = array();
+    $groups   = array();
+
+    $same_game = yoshilover_063_select_same_game_bundle_items( $context, $candidate_contexts, $used_ids );
+    if ( ! empty( $same_game ) ) {
+        $groups[] = array(
+            'key'     => 'same_game',
+            'heading' => '同じ試合',
+            'items'   => $same_game,
+        );
+    }
+
+    $same_player = yoshilover_063_select_same_player_bundle_items( $context, $candidate_contexts, $used_ids );
+    if ( ! empty( $same_player ) ) {
+        $groups[] = array(
+            'key'     => 'same_player',
+            'heading' => '同じ選手',
+            'items'   => $same_player,
+        );
+    }
+
+    $same_topic = yoshilover_063_select_same_topic_bundle_items( $context, $candidate_contexts, $used_ids );
+    if ( ! empty( $same_topic ) ) {
+        $groups[] = array(
+            'key'     => 'same_topic',
+            'heading' => '同じ話題',
+            'items'   => $same_topic,
+        );
+    }
+
+    return $groups;
 }
 
 /* ------------------------------------------------------------
@@ -736,6 +1426,8 @@ function yoshilover_063_handle_admin_request( $request ) {
             return yoshilover_063_rest_set_topic_hub_items( $request );
         case 'set_front_top_topic_hub_widget':
             return yoshilover_063_rest_set_front_top_topic_hub_widget( $request );
+        case 'set_front_top_widget_stack':
+            return yoshilover_063_rest_set_front_top_widget_stack( $request );
         case 'set_post_meta':
             return yoshilover_063_rest_set_post_meta( $request );
         case 'get_post_meta':
@@ -894,12 +1586,56 @@ function yoshilover_063_rest_set_topic_hub_items( $request ) {
     );
 }
 
-function yoshilover_063_rest_set_front_top_topic_hub_widget( $request ) {
-    $shortcode = trim( (string) $request->get_param( 'shortcode' ) );
-    if ( $shortcode === '' ) {
-        $shortcode = '[yoshilover_topic_hub]';
+function yoshilover_063_extract_shortcode_tag( $shortcode ) {
+    if ( preg_match( '/\[([a-z0-9_-]+)/i', (string) $shortcode, $matches ) ) {
+        return sanitize_key( (string) $matches[1] );
+    }
+    return '';
+}
+
+function yoshilover_063_upsert_text_widget_shortcode( &$text_widgets, $shortcode ) {
+    $widget_id = '';
+    $tag       = yoshilover_063_extract_shortcode_tag( $shortcode );
+
+    foreach ( $text_widgets as $number => $widget ) {
+        if ( ! is_numeric( $number ) || ! is_array( $widget ) ) {
+            continue;
+        }
+        $text = isset( $widget['text'] ) ? trim( (string) $widget['text'] ) : '';
+        if ( $text === $shortcode || ( $tag !== '' && false !== strpos( $text, '[' . $tag ) ) ) {
+            $widget_id = 'text-' . $number;
+            $text_widgets[ $number ]['title']  = '';
+            $text_widgets[ $number ]['text']   = $shortcode;
+            $text_widgets[ $number ]['filter'] = true;
+            $text_widgets[ $number ]['visual'] = false;
+            break;
+        }
     }
 
+    if ( $widget_id !== '' ) {
+        return $widget_id;
+    }
+
+    $max_number = 0;
+    foreach ( array_keys( $text_widgets ) as $number ) {
+        if ( is_numeric( $number ) ) {
+            $max_number = max( $max_number, (int) $number );
+        }
+    }
+
+    $next_number                  = $max_number + 1;
+    $widget_id                    = 'text-' . $next_number;
+    $text_widgets[ $next_number ] = array(
+        'title'  => '',
+        'text'   => $shortcode,
+        'filter' => true,
+        'visual' => false,
+    );
+
+    return $widget_id;
+}
+
+function yoshilover_063_ensure_front_top_widget_stack( $shortcodes ) {
     $sidebar_id = 'front_top';
     $sidebars   = get_option( 'sidebars_widgets', array() );
     if ( ! is_array( $sidebars ) ) {
@@ -911,38 +1647,23 @@ function yoshilover_063_rest_set_front_top_topic_hub_widget( $request ) {
         $text_widgets = array();
     }
 
-    $widget_id = '';
-    foreach ( $text_widgets as $number => $widget ) {
-        if ( ! is_numeric( $number ) || ! is_array( $widget ) ) {
-            continue;
-        }
-        $text = isset( $widget['text'] ) ? trim( (string) $widget['text'] ) : '';
-        if ( $text === $shortcode || false !== strpos( $text, '[yoshilover_topic_hub' ) ) {
-            $widget_id = 'text-' . $number;
-            $text_widgets[ $number ]['title']  = '';
-            $text_widgets[ $number ]['text']   = $shortcode;
-            $text_widgets[ $number ]['filter'] = true;
-            $text_widgets[ $number ]['visual'] = false;
-            break;
-        }
-    }
+    $shortcodes = array_values(
+        array_filter(
+            array_map(
+                function( $shortcode ) {
+                    return trim( (string) $shortcode );
+                },
+                (array) $shortcodes
+            )
+        )
+    );
 
-    if ( $widget_id === '' ) {
-        $max_number = 0;
-        foreach ( array_keys( $text_widgets ) as $number ) {
-            if ( is_numeric( $number ) ) {
-                $max_number = max( $max_number, (int) $number );
-            }
+    $widget_ids = array();
+    foreach ( $shortcodes as $shortcode ) {
+        $widget_id = yoshilover_063_upsert_text_widget_shortcode( $text_widgets, $shortcode );
+        if ( $widget_id !== '' ) {
+            $widget_ids[] = $widget_id;
         }
-
-        $next_number                = $max_number + 1;
-        $widget_id                  = 'text-' . $next_number;
-        $text_widgets[ $next_number ] = array(
-            'title'  => '',
-            'text'   => $shortcode,
-            'filter' => true,
-            'visual' => false,
-        );
     }
 
     update_option( 'widget_text', $text_widgets, false );
@@ -955,21 +1676,44 @@ function yoshilover_063_rest_set_front_top_topic_hub_widget( $request ) {
     $front_top = array_values(
         array_filter(
             $front_top,
-            function( $id ) use ( $widget_id ) {
-                return is_string( $id ) && $id !== $widget_id;
+            function( $id ) use ( $widget_ids ) {
+                return is_string( $id ) && ! in_array( $id, $widget_ids, true );
             }
         )
     );
-    array_unshift( $front_top, $widget_id );
-    $sidebars[ $sidebar_id ] = $front_top;
+
+    $sidebars[ $sidebar_id ] = array_merge( $widget_ids, $front_top );
     update_option( 'sidebars_widgets', $sidebars, false );
 
     return array(
         'sidebar'   => $sidebar_id,
-        'widget_id' => $widget_id,
         'widgets'   => $sidebars[ $sidebar_id ],
+        'widget_ids'=> $widget_ids,
         'instance'  => get_option( 'widget_text', array() ),
     );
+}
+
+function yoshilover_063_rest_set_front_top_topic_hub_widget( $request ) {
+    $shortcode = trim( (string) $request->get_param( 'shortcode' ) );
+    if ( $shortcode === '' ) {
+        $shortcode = '[yoshilover_topic_hub]';
+    }
+
+    $result              = yoshilover_063_ensure_front_top_widget_stack( array( $shortcode ) );
+    $result['widget_id'] = ! empty( $result['widget_ids'][0] ) ? $result['widget_ids'][0] : '';
+    return $result;
+}
+
+function yoshilover_063_rest_set_front_top_widget_stack( $request ) {
+    $shortcodes = $request->get_param( 'shortcodes' );
+    if ( ! is_array( $shortcodes ) || empty( $shortcodes ) ) {
+        $shortcodes = array(
+            '[yoshilover_breaking_strip]',
+            '[yoshilover_topic_hub]',
+        );
+    }
+
+    return yoshilover_063_ensure_front_top_widget_stack( $shortcodes );
 }
 
 function yoshilover_063_rest_allowed_meta_keys() {

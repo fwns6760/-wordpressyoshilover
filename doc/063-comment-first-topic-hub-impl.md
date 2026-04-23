@@ -1,9 +1,9 @@
 # 063 — 062 comment-first topic hub impl(front 実装在庫)
 
-**フェーズ：** 062 contract の impl 便(063-V1 close、063-V2 in progress)
-**担当：** `Codex front lane`(2026-04-24、063-V1 deploy / live smoke 完了)
+**フェーズ：** 062 contract の impl 便(063-V1/V2 close、063-V3 in progress)
+**担当：** `Codex front lane`(2026-04-24、063-V2 live smoke pass 後に V3 着手)
 **依存：** 062 accepted(contract doc 確定、2026-04-22)、047 accepted(`da692fc`、派生記事 emit 層着地、062 hub の話題源泉供給成立)
-**状態：** `063-V1 ACCEPTED / CLOSE`(2026-04-24、deploy + WP 実機 smoke 5/5 pass)、`063-V2 IN PROGRESS`(トップ一覧の情報密度強化、local impl + lint pass / live deploy pending)
+**状態：** `063-V1 ACCEPTED / CLOSE`(2026-04-24、deploy + WP 実機 smoke 5/5 pass)、`063-V2 ACCEPTED / CLOSE`(2026-04-24、一覧 density live 反映 + E-2 re-smoke pass)、`063-V3 IN PROGRESS`(トップ速報帯 + 記事下回遊束、local impl)
 
 ---
 
@@ -18,8 +18,8 @@
 
 ## next
 
-- 063-V2 はトップ一覧の情報密度強化に限定する
-- V1 の配置方針 `(a)`、plugin live、追加 CSS、Phase 1 noindex の挙動は維持する
+- 063-V3 はトップ速報帯 + 記事下回遊束に限定する
+- V1/V2 の配置方針 `(a)`、plugin live、追加 CSS、Phase 1 noindex、front density の挙動は維持する
 - route / pickup / validator / automation / scheduler / env / secret / published 書込経路は引き続き不可触
 
 ## 2026-04-24 V2 implementation memo
@@ -31,6 +31,17 @@
 - `src/custom.css` に一覧カード向け V2 style を追加
 - local verify は `php -l src/yoshilover-063-frontend.php` pass
 - live deploy は **pending**。今回の環境では Xserver / plugin upload の自動経路が未確認
+
+## 2026-04-24 V3 implementation memo
+
+- `src/yoshilover-063-frontend.php` に `yoshilover_breaking_strip` shortcode を追加
+- top front では `試合中 / スタメン / 公示 / 予告先発 / 試合後` の最新 5 件前後だけを高密度に束ね、空なら非表示
+- `src/yoshilover-063-frontend.php` に `yoshilover_article_bundles` shortcode + `the_content` filter を追加
+- 記事下は `同じ試合 / 同じ選手 / 同じ話題` の 3 束を最大 3 件ずつ出し、空束は描画しない
+- 挿入順は `本文末尾(既存 related 含む) -> SNS block -> 回遊束 -> SWELL share/comments` を維持する
+- `set_front_top_widget_stack` admin helper を追加し、`[yoshilover_breaking_strip]` と `[yoshilover_topic_hub]` を front_top に直列配置できるようにする
+- `src/custom.css` は速報帯 / 回遊束 style を追加し、SWELL に馴染ませつつ情報密度だけ上げる
+- `scripts/build_063_wp_admin_bundle.py` は plugin header version から `build/063-v3-wp-admin/` を自動生成するよう更新
 
 ---
 

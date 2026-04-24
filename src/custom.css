@@ -4421,6 +4421,157 @@ ol.yoshi-ranking > li:nth-child(3)::before { background: #C8A060; color: var(--w
   text-transform: uppercase;
 }
 
+/* ====================================================================
+   各種 notice variant (orange / red / dark / green)
+   ==================================================================== */
+.yoshi-notice {
+  padding: 10px 14px;
+  border-left: 4px solid var(--orange);
+  background: rgba(245, 129, 31, 0.06);
+  margin: 14px 0;
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--black);
+  border-radius: 2px;
+}
+.yoshi-notice.-danger {
+  border-left-color: #E53935;
+  background: rgba(229, 57, 53, 0.06);
+}
+.yoshi-notice.-dark {
+  border-left-color: var(--black);
+  background: rgba(26, 26, 26, 0.04);
+}
+.yoshi-notice.-success {
+  border-left-color: #2E8B57;
+  background: rgba(46, 139, 87, 0.06);
+}
+.yoshi-notice.-warn {
+  border-left-color: #F9A825;
+  background: rgba(249, 168, 37, 0.08);
+}
+
+/* ====================================================================
+   スマホで 1 タップ大きい tap target 保証 (Google Core Web Vitals 対策)
+   ==================================================================== */
+@media (max-width: 768px) {
+  a,
+  button,
+  .c-btn,
+  .wp-block-button__link,
+  .comment-reply-link,
+  input[type="submit"],
+  .p-pager a {
+    min-height: 36px;
+    min-width: 36px;
+  }
+  /* インライン link (本文中) は min 制限外す (文中 wrap しないで) */
+  .post_content a,
+  .entry-content a {
+    min-height: auto;
+    min-width: auto;
+    display: inline;
+  }
+}
+
+/* ====================================================================
+   記事詳細 title の emoji を 固定サイズ (絵文字フォントが巨大化しない)
+   ==================================================================== */
+.c-postTitle__ttl img.emoji,
+.p-postList__ttl img.emoji,
+.yoshi-topic-hub__title img.emoji {
+  width: 1em !important;
+  height: 1em !important;
+  vertical-align: -0.1em;
+}
+
+/* ====================================================================
+   SWELL の 「いいね / シェア数」 バッジがあれば巨人色に
+   ==================================================================== */
+.c-likeBtn,
+.c-postLike,
+.p-postLike {
+  color: var(--orange) !important;
+  font-family: 'Oswald', sans-serif;
+}
+.c-likeBtn.is-liked,
+.c-postLike.is-liked {
+  background: var(--orange) !important;
+  color: var(--white) !important;
+}
+
+/* ====================================================================
+   SWELL フッタ「表示する」戻り button 類の統一
+   ==================================================================== */
+.c-returnLink,
+.c-backLink,
+.more-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: 'Oswald', sans-serif;
+  font-size: 12px;
+  color: var(--orange) !important;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  padding: 6px 0;
+  border-bottom: 2px solid transparent;
+  transition: border-bottom-color 0.18s;
+}
+.c-returnLink:hover,
+.c-backLink:hover,
+.more-link:hover {
+  border-bottom-color: var(--orange);
+}
+
+/* ====================================================================
+   input range / select / checkbox の色統一
+   ==================================================================== */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--orange);
+}
+input[type="range"] {
+  accent-color: var(--orange);
+}
+select {
+  border: 1.5px solid var(--light-gray);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-family: inherit;
+  background: var(--white);
+}
+select:focus {
+  border-color: var(--orange);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(245, 129, 31, 0.2);
+}
+
+/* ====================================================================
+   記事タイトル (home / archive) の先頭 emoji 位置 fine-tune
+   ==================================================================== */
+.p-postList__ttl::first-letter,
+.c-postTitle__ttl::first-letter {
+  /* 絵文字で始まる時の位置 fine-tune */
+  vertical-align: baseline;
+}
+
+/* ====================================================================
+   SWELL の c-infoBar (画面上通知バー) を 巨人カラーに
+   ==================================================================== */
+.c-infoBar {
+  background: var(--black) !important;
+  color: var(--white) !important;
+  border-bottom: 3px solid var(--orange) !important;
+}
+.c-infoBar__btn {
+  background: var(--orange) !important;
+  color: var(--white) !important;
+  border-radius: 999px !important;
+  font-family: 'Oswald', sans-serif !important;
+  font-weight: 700 !important;
+}
+
 /* ── モバイル 投稿/固定ページの上部 (breadcrumb / metas / title / eyecatch) 間隔圧縮 ── */
 @media (max-width: 768px) {
   /* パン屑 padding 圧縮 + 文字小 */

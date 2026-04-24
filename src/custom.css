@@ -3716,6 +3716,177 @@ body.page .entry-content .wp-block-heading {
   color: var(--orange);
 }
 
+/* ── 記事本文 番号付きリストの マーカー強化 ── */
+.post_content > ol,
+.entry-content > ol {
+  list-style: none;
+  counter-reset: yoshilo-num;
+  padding-left: 0;
+}
+.post_content > ol > li,
+.entry-content > ol > li {
+  counter-increment: yoshilo-num;
+  position: relative;
+  padding-left: 36px;
+  margin-bottom: 8px;
+  min-height: 28px;
+}
+.post_content > ol > li::before,
+.entry-content > ol > li::before {
+  content: counter(yoshilo-num);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 26px;
+  height: 26px;
+  background: var(--orange);
+  color: var(--white);
+  font-family: 'Oswald', sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  box-shadow: 0 2px 4px rgba(245, 129, 31, 0.28);
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+/* ── 記事本文 ul を カスタム bullet ── */
+.post_content > ul,
+.entry-content > ul {
+  list-style: none;
+  padding-left: 0;
+}
+.post_content > ul > li,
+.entry-content > ul > li {
+  position: relative;
+  padding-left: 22px;
+  margin-bottom: 6px;
+}
+.post_content > ul > li::before,
+.entry-content > ul > li::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 10px;
+  width: 8px;
+  height: 8px;
+  background: var(--orange);
+  border-radius: 2px;
+  transform: rotate(45deg);
+}
+
+/* ── キーワード マーカー (::selection 以外で本文内の黄色蛍光ペン風) ── */
+.post_content mark,
+.entry-content mark,
+.is-style-yoshi-highlight {
+  background: linear-gradient(180deg, transparent 60%, rgba(245, 129, 31, 0.38) 60%);
+  padding: 0 2px;
+  color: inherit;
+  font-weight: 700;
+}
+
+/* ── 記事タイトル上の category label に absolute hover ── */
+.p-articleMetas__termList .c-categoryList__link {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* ── Home Hero ribbon 用の class (将来 DOM 注入用) ── */
+.yoshi-home-ribbon {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--black);
+  border-left: 5px solid var(--orange);
+  border-radius: 3px;
+  margin: 14px 0;
+  color: var(--white);
+  font-family: 'Oswald', sans-serif;
+}
+.yoshi-home-ribbon__label {
+  background: var(--orange);
+  color: var(--white);
+  padding: 2px 8px;
+  border-radius: 2px;
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+}
+.yoshi-home-ribbon__text {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+/* ── 記事内 image + caption pair (figure) ── */
+.post_content figure:not(.wp-block-table),
+.entry-content figure:not(.wp-block-table) {
+  margin: 18px 0;
+}
+
+/* ── WP の自動生成 gallery ── */
+.wp-block-gallery {
+  gap: 8px !important;
+}
+.wp-block-gallery .wp-block-image img {
+  border-radius: 3px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.wp-block-gallery .wp-block-image:hover img {
+  transform: scale(1.02);
+  box-shadow: 0 4px 10px rgba(26, 26, 26, 0.18);
+}
+
+/* ── 記事メタ 日付 icon 付き ── */
+.c-postTimes__posted.icon-posted::before,
+.c-postTimes__modified.icon-modified::before {
+  font-family: 'Oswald', sans-serif;
+  color: var(--orange);
+  margin-right: 3px;
+}
+
+/* ── 記事下 「詳しくはこちら」リンク arrow ── */
+.read-more,
+.more-link,
+.p-postList__more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--orange) !important;
+  font-family: 'Oswald', sans-serif;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: 4px 0;
+  border-bottom: 2px solid transparent;
+  transition: border-bottom-color 0.18s;
+  text-decoration: none !important;
+}
+.read-more:hover,
+.more-link:hover,
+.p-postList__more:hover {
+  border-bottom-color: var(--orange);
+}
+.read-more::after,
+.more-link::after,
+.p-postList__more::after {
+  content: '›';
+  font-size: 14px;
+  line-height: 1;
+  margin-left: 2px;
+  transition: margin-left 0.18s;
+}
+.read-more:hover::after,
+.more-link:hover::after,
+.p-postList__more:hover::after {
+  margin-left: 6px;
+}
+
 /* ── ブロッククォート ── */
 .wp-block-quote,
 .post_content blockquote,

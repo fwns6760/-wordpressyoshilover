@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
- * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯と記事下回遊束まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.4.0
+ * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビまで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
+ * Version: 0.5.0
  * Author: yoshilover
  */
 
@@ -33,6 +33,7 @@ add_action( 'rest_api_init', 'yoshilover_063_register_admin_routes' );
  * ---------------------------------------------------------- */
 
 add_shortcode( 'yoshilover_topic_hub', 'yoshilover_063_render_topic_hub' );
+add_shortcode( 'yoshilover_dense_nav', 'yoshilover_063_render_dense_nav' );
 add_shortcode( 'yoshilover_breaking_strip', 'yoshilover_063_render_breaking_strip' );
 add_shortcode( 'yoshilover_today_giants_box', 'yoshilover_063_render_today_giants_box' );
 add_shortcode( 'yoshilover_sidebar_rail', 'yoshilover_063_render_sidebar_rail' );
@@ -126,6 +127,170 @@ function yoshilover_063_render_topic_hub( $atts = array() ) {
 
     $html .= '</ul>';
     $html .= '</aside>';
+
+    return $html;
+}
+
+function yoshilover_063_get_term_link_candidates( $taxonomy, $candidate_keys ) {
+    $items = array();
+
+    foreach ( (array) $candidate_keys as $candidate_key ) {
+        $candidate_key = trim( (string) $candidate_key );
+        if ( $candidate_key === '' ) {
+            continue;
+        }
+
+        $term = get_term_by( 'slug', sanitize_title( $candidate_key ), $taxonomy );
+        if ( ! $term instanceof WP_Term ) {
+            $term = get_term_by( 'name', $candidate_key, $taxonomy );
+        }
+        if ( ! $term instanceof WP_Term ) {
+            continue;
+        }
+
+        $url = get_term_link( $term );
+        if ( is_wp_error( $url ) || ! is_string( $url ) || $url === '' ) {
+            continue;
+        }
+
+        $items[] = array(
+            'label' => $term->name,
+            'url'   => $url,
+        );
+        break;
+    }
+
+    return $items;
+}
+
+function yoshilover_063_get_dense_nav_items() {
+    $items = array(
+        array(
+            'label' => 'HOME',
+            'url'   => home_url( '/' ),
+            'tone'  => 'home',
+        ),
+        array(
+            'label' => '全記事',
+            'url'   => home_url( '/' ),
+            'tone'  => 'all',
+        ),
+    );
+
+    $maps = array(
+        array(
+            'label'      => '選手',
+            'taxonomy'   => 'post_tag',
+            'candidates' => array( '選手', 'player', 'players', '読売ジャイアンツ', '巨人' ),
+            'tone'       => 'players',
+        ),
+        array(
+            'label'      => '監督',
+            'taxonomy'   => 'post_tag',
+            'candidates' => array( '監督', '阿部慎之助', '阿部監督', 'manager' ),
+            'tone'       => 'manager',
+        ),
+        array(
+            'label'      => '公示',
+            'taxonomy'   => 'category',
+            'candidates' => array( '公示', 'notice', '支配下登録', '昇格', '抹消' ),
+            'tone'       => 'notice',
+        ),
+        array(
+            'label'      => '試合結果',
+            'taxonomy'   => 'category',
+            'candidates' => array( '試合結果', '試合後', 'postgame', '試合' ),
+            'tone'       => 'postgame',
+        ),
+        array(
+            'label'      => 'ドラフト',
+            'taxonomy'   => 'category',
+            'candidates' => array( 'ドラフト', 'draft' ),
+            'tone'       => 'draft',
+        ),
+        array(
+            'label'      => '球団情報',
+            'taxonomy'   => 'category',
+            'candidates' => array( '球団情報', '巨人', 'ジャイアンツ', 'team', '球団' ),
+            'tone'       => 'team',
+        ),
+    );
+
+    foreach ( $maps as $map ) {
+        $matched = yoshilover_063_get_term_link_candidates( $map['taxonomy'], $map['candidates'] );
+        if ( empty( $matched ) ) {
+            continue;
+        }
+
+        $items[] = array(
+            'label' => $map['label'],
+            'url'   => $matched[0]['url'],
+            'tone'  => $map['tone'],
+        );
+    }
+
+    $items = apply_filters( 'yoshilover_063_dense_nav_items', $items );
+    if ( ! is_array( $items ) ) {
+        return array();
+    }
+
+    $seen = array();
+    $sanitized = array();
+    foreach ( $items as $item ) {
+        if ( ! is_array( $item ) ) {
+            continue;
+        }
+
+        $label = isset( $item['label'] ) ? trim( (string) $item['label'] ) : '';
+        $url   = isset( $item['url'] ) ? trim( (string) $item['url'] ) : '';
+        $tone  = isset( $item['tone'] ) ? sanitize_key( (string) $item['tone'] ) : 'default';
+        if ( $label === '' || $url === '' ) {
+            continue;
+        }
+        $key = $label . '|' . $url;
+        if ( isset( $seen[ $key ] ) ) {
+            continue;
+        }
+        $seen[ $key ] = true;
+        $sanitized[]  = array(
+            'label' => $label,
+            'url'   => esc_url_raw( $url ),
+            'tone'  => $tone !== '' ? $tone : 'default',
+        );
+    }
+
+    return array_slice( $sanitized, 0, 10 );
+}
+
+function yoshilover_063_render_dense_nav( $atts = array() ) {
+    $atts = shortcode_atts(
+        array(
+            'heading' => '回遊ナビ',
+        ),
+        $atts,
+        'yoshilover_dense_nav'
+    );
+
+    $items = yoshilover_063_get_dense_nav_items();
+    if ( empty( $items ) ) {
+        return '';
+    }
+
+    $html  = '<nav class="yoshi-dense-nav" aria-label="' . esc_attr( $atts['heading'] ) . '" data-yoshi-phase="5">';
+    $html .= '<div class="yoshi-dense-nav__scroll">';
+    $html .= '<ul class="yoshi-dense-nav__list">';
+
+    foreach ( $items as $item ) {
+        $html .= '<li class="yoshi-dense-nav__item">';
+        $html .= '<a class="yoshi-dense-nav__link yoshi-dense-nav__link--' . esc_attr( $item['tone'] ) . '" href="' . esc_url( $item['url'] ) . '">';
+        $html .= '<span class="yoshi-dense-nav__label">' . esc_html( $item['label'] ) . '</span>';
+        $html .= '</a>';
+        $html .= '</li>';
+    }
+
+    $html .= '</ul>';
+    $html .= '</div>';
+    $html .= '</nav>';
 
     return $html;
 }
@@ -1972,6 +2137,7 @@ function yoshilover_063_rest_set_front_top_widget_stack( $request ) {
     $shortcodes = $request->get_param( 'shortcodes' );
     if ( ! is_array( $shortcodes ) || empty( $shortcodes ) ) {
         $shortcodes = array(
+            '[yoshilover_dense_nav]',
             '[yoshilover_breaking_strip]',
             '[yoshilover_topic_hub]',
         );

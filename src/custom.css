@@ -949,6 +949,80 @@ a:hover { color: var(--orange); opacity: 0.8; }
   font-size: 10px;
 }
 
+
+.yoshi-dense-nav {
+  margin: 10px 0 12px;
+  padding: 0;
+}
+.yoshi-dense-nav__scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.yoshi-dense-nav__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 4px;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+.yoshi-dense-nav__item {
+  flex: 0 0 auto;
+}
+.yoshi-dense-nav__link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 7px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--light-gray);
+  background: var(--white);
+  color: var(--dark-gray);
+  text-decoration: none;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+.yoshi-dense-nav__link:hover {
+  background: var(--orange-light);
+  border-color: rgba(245, 129, 31, 0.4);
+  opacity: 1;
+}
+.yoshi-dense-nav__link--home,
+.yoshi-dense-nav__link--all {
+  background: rgba(26, 26, 26, 0.96);
+  border-color: rgba(26, 26, 26, 0.96);
+  color: var(--white);
+}
+.yoshi-dense-nav__link--players {
+  border-color: rgba(245, 129, 31, 0.34);
+  color: var(--orange);
+}
+.yoshi-dense-nav__link--manager {
+  border-color: rgba(34, 107, 167, 0.3);
+  color: var(--blue);
+}
+.yoshi-dense-nav__link--notice {
+  border-color: rgba(186, 44, 63, 0.25);
+  color: #ba2c3f;
+}
+.yoshi-dense-nav__link--postgame {
+  border-color: rgba(80, 85, 91, 0.28);
+  color: #50555b;
+}
+.yoshi-dense-nav__link--draft {
+  border-color: rgba(103, 85, 164, 0.26);
+  color: #6755a4;
+}
+.yoshi-dense-nav__link--team {
+  border-color: rgba(32, 132, 94, 0.25);
+  color: #20845e;
+}
+
 .yoshi-breaking-strip {
   margin: 14px 0 18px;
   padding: 14px 16px 16px;
@@ -1427,5 +1501,22 @@ a:hover { color: var(--orange); opacity: 0.8; }
   .yoshi-sidebar-rail__category-chip {
     width: 100%;
     justify-content: space-between;
+  }
+  .yoshi-dense-nav {
+    margin-top: 8px;
+    margin-bottom: 10px;
+  }
+  .yoshi-dense-nav__scroll {
+    margin-left: -2px;
+    margin-right: -2px;
+    padding-bottom: 2px;
+  }
+  .yoshi-dense-nav__list {
+    gap: 6px;
+  }
+  .yoshi-dense-nav__link {
+    min-height: 30px;
+    padding: 6px 10px;
+    font-size: 10px;
   }
 }

@@ -20,6 +20,36 @@ SUCCESS_BODY = (
 )
 
 
+def _decorated_body_attrs(width: int = 4) -> str:
+    return " ".join(f'data-lane-{idx}="{"y" * 90}"' for idx in range(width))
+
+
+def _build_html_heavy_short_prose_body() -> str:
+    attrs = _decorated_body_attrs()
+    sections = [
+        ("【試合結果】", "結果の要点を整理します。" * 16),
+        ("【ハイライト】", "流れを左右した場面をまとめます。" * 14),
+        ("【選手成績】", "主力選手の内容を振り返ります。" * 14),
+        ("【試合展開】", "終盤までの運びを簡潔に整理します。" * 13),
+    ]
+    return "".join(
+        f'<section class="lane-block" {attrs}>'
+        f'<div class="lane-block__head" {attrs}><h2>{heading}</h2></div>'
+        f'<div class="lane-block__body" {attrs}><p>{text}</p></div>'
+        f'<footer class="lane-block__footer" {attrs}></footer>'
+        f"</section>"
+        for heading, text in sections
+    )
+
+
+def _build_true_prose_too_long_body() -> str:
+    return (
+        "【試合結果】\n"
+        + ("あ" * 1300)
+        + "\n【ハイライト】\n簡潔です。\n【選手成績】\n簡潔です。\n【試合展開】\n簡潔です。"
+    )
+
+
 def _make_post(
     post_id: int,
     *,
@@ -124,6 +154,31 @@ def _run_main(argv, *, wp=None, run_editor_side_effect=None, touched_ids=None, l
         if isolated_tmp is not None:
             isolated_tmp.cleanup()
     return code, stdout.getvalue(), stderr.getvalue(), wp, make_wp_client, editor_mock
+
+
+class TestBodyTooLongUsesProseLength(unittest.TestCase):
+    def test_html_heavy_short_prose_stays_editable(self):
+        now = lane._now_jst("2026-04-20T10:00:00+09:00")
+        post = _make_post(1101, body=_build_html_heavy_short_prose_body())
+        self.assertGreater(len(post["content"]["raw"]), lane.CURRENT_BODY_MAX_CHARS)
+        self.assertLess(
+            len(lane._extract_prose_text(post["content"]["raw"])),
+            lane.CURRENT_BODY_MAX_CHARS,
+        )
+        for checker in (lane._draft_looks_editable, lane._list_level_looks_editable):
+            with self.subTest(checker=checker.__name__):
+                self.assertEqual(checker(post, now, set()), (True, "ok"))
+
+    def test_true_prose_too_long_is_rejected(self):
+        now = lane._now_jst("2026-04-20T10:00:00+09:00")
+        post = _make_post(1102, body=_build_true_prose_too_long_body())
+        self.assertGreater(
+            len(lane._extract_prose_text(post["content"]["raw"])),
+            lane.CURRENT_BODY_MAX_CHARS,
+        )
+        for checker in (lane._draft_looks_editable, lane._list_level_looks_editable):
+            with self.subTest(checker=checker.__name__):
+                self.assertEqual(checker(post, now, set()), (False, "body_too_long"))
 
 
 class TestLaneMain(unittest.TestCase):

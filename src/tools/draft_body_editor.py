@@ -27,6 +27,7 @@ import socket
 import sys
 import urllib.error
 import urllib.request
+from html.parser import HTMLParser
 from typing import Iterable, Sequence
 
 
@@ -99,10 +100,95 @@ GEMINI_RETRY = 1
 CURRENT_BODY_MAX_CHARS = 1200
 CHAR_RATIO_MIN = 0.6
 CHAR_RATIO_MAX = 1.4
+_PROSE_SEPARATOR_TAGS = {
+    "address",
+    "article",
+    "aside",
+    "blockquote",
+    "br",
+    "dd",
+    "div",
+    "dl",
+    "dt",
+    "figcaption",
+    "figure",
+    "footer",
+    "form",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "header",
+    "hr",
+    "li",
+    "main",
+    "nav",
+    "ol",
+    "p",
+    "pre",
+    "section",
+    "table",
+    "td",
+    "th",
+    "tr",
+    "ul",
+}
 
 
 class GeminiAPIError(RuntimeError):
     """Raised when the Gemini REST call cannot be completed."""
+
+
+class _ProseTextExtractor(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._chunks: list[str] = []
+        self._skip_text_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        normalized = tag.lower()
+        if normalized in {"script", "style"}:
+            self._skip_text_depth += 1
+            return
+        if normalized in _PROSE_SEPARATOR_TAGS:
+            self._chunks.append(" ")
+
+    def handle_endtag(self, tag: str) -> None:
+        normalized = tag.lower()
+        if normalized in {"script", "style"}:
+            if self._skip_text_depth:
+                self._skip_text_depth -= 1
+            return
+        if normalized in _PROSE_SEPARATOR_TAGS:
+            self._chunks.append(" ")
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() in _PROSE_SEPARATOR_TAGS:
+            self._chunks.append(" ")
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_text_depth:
+            return
+        self._chunks.append(data)
+
+    def get_text(self) -> str:
+        return "".join(self._chunks)
+
+
+def _extract_prose_text(body_html: str) -> str:
+    body_html = body_html or ""
+    if not body_html:
+        return ""
+
+    parser = _ProseTextExtractor()
+    try:
+        parser.feed(body_html)
+        parser.close()
+    except Exception:
+        return body_html
+    return re.sub(r"\s+", " ", parser.get_text()).strip()
 
 
 def _lookup_required_headings(subtype: str) -> tuple[str, ...]:
@@ -351,9 +437,10 @@ def _validate_inputs(args: argparse.Namespace) -> tuple[list[str], str, str] | N
     if not current_body.strip():
         print("current_body is empty", file=sys.stderr)
         return None
-    if len(current_body) > CURRENT_BODY_MAX_CHARS:
+    prose_body = _extract_prose_text(current_body)
+    if len(prose_body) > CURRENT_BODY_MAX_CHARS:
         print(
-            f"current_body exceeds {CURRENT_BODY_MAX_CHARS} chars (got {len(current_body)})",
+            f"current_body exceeds {CURRENT_BODY_MAX_CHARS} prose chars (got {len(prose_body)})",
             file=sys.stderr,
         )
         return None

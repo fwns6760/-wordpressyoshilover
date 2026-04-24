@@ -118,6 +118,41 @@ SUBTYPE_FIXTURES = {
 }
 
 
+def _decorated_attrs(width: int = 4) -> str:
+    return " ".join(f'data-deco-{idx}="{"x" * 90}"' for idx in range(width))
+
+
+def _build_full_template_postgame_body() -> str:
+    attrs = _decorated_attrs()
+    sections = [
+        ("【試合結果】", "結果の要点を整理します。" * 16),
+        ("【ハイライト】", "流れを左右した場面をまとめます。" * 14),
+        ("【選手成績】", "主力選手の内容を振り返ります。" * 14),
+        ("【試合展開】", "終盤までの運びを簡潔に整理します。" * 13),
+    ]
+    return "".join(
+        f'<section class="news-block" {attrs}>'
+        f'<div class="news-block__head" {attrs}><h2>{heading}</h2></div>'
+        f'<div class="news-block__body" {attrs}><p>{text}</p></div>'
+        f'<footer class="news-block__footer" {attrs}></footer>'
+        f"</section>"
+        for heading, text in sections
+    )
+
+
+def _build_short_notice_postgame_body() -> str:
+    sections = [
+        ("【試合結果】", "結果の要点です。"),
+        ("【ハイライト】", "決定打の場面です。"),
+        ("【選手成績】", "主力の内容です。"),
+        ("【試合展開】", "終盤の流れです。"),
+    ]
+    return "".join(
+        f"<article><h2>{heading}</h2><p>{text}</p></article>"
+        for heading, text in sections
+    )
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -265,13 +300,35 @@ class TestValidation(unittest.TestCase):
             self.assertEqual(code, 30)
             self.assertIn("invalid fail axis", stderr)
 
-    def test_current_body_too_long(self):
+    def test_current_body_true_prose_too_long_rejects(self):
         with _tmp_workspace() as ws:
             long_body = "【試合結果】\n" + ("あ" * 1300) + "\n【ハイライト】\n...\n【選手成績】\n...\n【試合展開】\n..."
             argv = _make_argv(ws, subtype="postgame", current_body=long_body)
             code, _, stderr = _run_main(argv, gemini_return=POSTGAME_NEW)
             self.assertEqual(code, 30)
-            self.assertIn("exceeds", stderr)
+            self.assertIn("prose chars", stderr)
+
+    def test_current_body_full_template_short_prose_passes(self):
+        with _tmp_workspace() as ws:
+            current_body = _build_full_template_postgame_body()
+            self.assertGreater(len(current_body), dbe.CURRENT_BODY_MAX_CHARS)
+            self.assertLess(len(dbe._extract_prose_text(current_body)), dbe.CURRENT_BODY_MAX_CHARS)
+            argv = _make_argv(ws, subtype="postgame", current_body=current_body)
+            code, stdout, stderr = _run_main(argv, gemini_return=current_body)
+            self.assertEqual(code, 0, msg=stderr)
+            payload = json.loads(stdout.strip())
+            self.assertEqual(payload["guards"], "pass")
+
+    def test_current_body_short_notice_passes(self):
+        with _tmp_workspace() as ws:
+            current_body = _build_short_notice_postgame_body()
+            self.assertLess(len(current_body), dbe.CURRENT_BODY_MAX_CHARS)
+            self.assertLess(len(dbe._extract_prose_text(current_body)), dbe.CURRENT_BODY_MAX_CHARS)
+            argv = _make_argv(ws, subtype="postgame", current_body=current_body)
+            code, stdout, stderr = _run_main(argv, gemini_return=current_body)
+            self.assertEqual(code, 0, msg=stderr)
+            payload = json.loads(stdout.strip())
+            self.assertEqual(payload["guards"], "pass")
 
     def test_current_body_empty(self):
         with _tmp_workspace() as ws:
@@ -383,6 +440,35 @@ class TestGuardA(unittest.TestCase):
             # Guard A passes; the outcome is either 0 or a Guard C failure,
             # but never 10. This test asserts Guard A did not catch the name.
             self.assertNotEqual(code, 10, msg=f"expected Guard A to pass; stderr={stderr}")
+
+
+# ---------------------------------------------------------------------------
+# Prose extraction helper
+# ---------------------------------------------------------------------------
+
+
+class TestExtractProseText(unittest.TestCase):
+    def test_empty_input_returns_empty_string(self):
+        self.assertEqual(dbe._extract_prose_text(""), "")
+
+    def test_plain_text_is_preserved(self):
+        self.assertEqual(dbe._extract_prose_text("foo bar"), "foo bar")
+
+    def test_adjacent_paragraphs_are_joined_with_space(self):
+        self.assertEqual(dbe._extract_prose_text("<p>foo</p><p>bar</p>"), "foo bar")
+
+    def test_script_and_style_contents_are_excluded(self):
+        html = "<p>foo</p><script>alert(1)</script><style>.x{}</style><p>bar</p>"
+        self.assertEqual(dbe._extract_prose_text(html), "foo bar")
+
+    def test_consecutive_whitespace_is_normalized(self):
+        html = "<div>foo \n\t bar</div><div> baz </div>"
+        self.assertEqual(dbe._extract_prose_text(html), "foo bar baz")
+
+    def test_parse_failure_falls_back_to_raw_html(self):
+        html = "<p>foo</p>"
+        with patch.object(dbe.HTMLParser, "feed", side_effect=RuntimeError("boom")):
+            self.assertEqual(dbe._extract_prose_text(html), html)
 
 
 # ---------------------------------------------------------------------------

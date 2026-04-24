@@ -29,6 +29,8 @@ from typing import Any, Sequence
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
+from src.tools.draft_body_editor import _extract_prose_text
+
 
 JST = ZoneInfo("Asia/Tokyo")
 # Default edit hours align with the quality-gmail notification window.
@@ -506,7 +508,7 @@ def _draft_looks_editable(post: dict[str, Any], now: datetime, touched_ids: set[
 
     title = _extract_title(post)
     body = _extract_content_raw(post)
-    if len(body) > CURRENT_BODY_MAX_CHARS:
+    if len(_extract_prose_text(body)) > CURRENT_BODY_MAX_CHARS:
         return False, "body_too_long"
     if EMBED_MARKER in body or EMBED_MARKER in title:
         return False, "contains_embed"
@@ -564,7 +566,7 @@ def _list_level_looks_editable(post: dict[str, Any], now: datetime, touched_ids:
 
     title = _extract_title(post)
     body = _extract_content_raw(post)
-    if len(body) > CURRENT_BODY_MAX_CHARS:
+    if len(_extract_prose_text(body)) > CURRENT_BODY_MAX_CHARS:
         return False, "body_too_long"
     if EMBED_MARKER in body or EMBED_MARKER in title:
         return False, "contains_embed"

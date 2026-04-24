@@ -1727,6 +1727,25 @@ body > .google-vignette,
 .l-header__bar {
   z-index: 9999 !important;
 }
+
+/* ── スマホヘッダ swiper メニュー (運営者会社・仕事依頼 / お問合せ) を非表示 ── */
+/* p-spHeadMenu = l-header__spNav 配下の横スクロール swiper、今は不要項目のみ */
+.l-header__spNav,
+.p-spHeadMenu,
+ul.p-spHeadMenu,
+.l-header .swiper-slide.menu-item-55464,
+.l-header .swiper-slide.menu-item-55465,
+.menu-item-55464,
+.menu-item-55465 {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  max-height: 0 !important;
+  overflow: hidden !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
 /* header が sticky で自前 bg が無いと透ける問題対応 */
 .l-header,
 .l-header__inner {

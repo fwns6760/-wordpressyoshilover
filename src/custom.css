@@ -1849,6 +1849,81 @@ select:focus-visible,
   }
 }
 
+/* ── モバイル header shrink (SWELL -parallel 2 段構成でデカ問題対応) ── */
+@media (max-width: 768px) {
+  /* キャッチコピーはモバイルでは隠す (スペース節約) */
+  .l-header .c-catchphrase,
+  .l-header .p-headerLogo__catch,
+  .l-header .c-logo__desc,
+  .l-header .p-logo__desc { display: none !important; }
+
+  /* 上段 (logo 行) */
+  .l-header__inner {
+    min-height: 48px !important;
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+  }
+  /* 下段 (nav 行) */
+  .l-header__barInner {
+    min-height: 40px !important;
+    padding-top: 2px !important;
+    padding-bottom: 2px !important;
+  }
+  /* logo 文字 small */
+  .l-header .c-logo__text,
+  .l-header .site-name-text,
+  .l-header .p-logo__title {
+    font-size: 16px !important;
+    letter-spacing: 1.2px !important;
+  }
+  /* logo image 高さ */
+  .l-header .c-logo img,
+  .l-header .p-logo img {
+    max-height: 32px !important;
+    width: auto;
+  }
+  /* header border-bottom 薄く */
+  .l-header { border-bottom-width: 3px !important; }
+  /* gnav (header下のカテゴリ帯) も 1 段圧縮 */
+  .c-gnav, .l-gnav, .p-gnav { padding: 0 !important; }
+  .c-gnav__item > a,
+  .l-gnav__item > a,
+  .p-gnav__item > a { padding: 8px 10px !important; font-size: 12px !important; }
+}
+
+@media (max-width: 480px) {
+  .l-header__inner { min-height: 44px !important; }
+  .l-header__barInner { min-height: 36px !important; }
+  .l-header .c-logo__text,
+  .l-header .site-name-text,
+  .l-header .p-logo__title {
+    font-size: 15px !important;
+    letter-spacing: 1px !important;
+  }
+  .l-header .c-logo img,
+  .l-header .p-logo img { max-height: 28px !important; }
+  .c-gnav__item > a,
+  .l-gnav__item > a,
+  .p-gnav__item > a { padding: 7px 9px !important; font-size: 11.5px !important; }
+}
+
+@media (max-width: 390px) {
+  .l-header__inner { min-height: 40px !important; padding-left: 10px !important; padding-right: 6px !important; }
+  .l-header__barInner { min-height: 34px !important; }
+  .l-header .c-logo__text,
+  .l-header .site-name-text,
+  .l-header .p-logo__title {
+    font-size: 14px !important;
+    letter-spacing: 0.8px !important;
+  }
+  .l-header .c-logo img,
+  .l-header .p-logo img { max-height: 24px !important; }
+  /* header-x-link / search icon も小さく */
+  .l-header .header-x-link,
+  .l-header .p-headerSearch,
+  .l-header .c-searchIcon { font-size: 11px !important; }
+}
+
 /* ── 記事リスト item shadow + hover elevation ── */
 .-type-list .p-postList__item,
 .p-postList.-list .p-postList__item {

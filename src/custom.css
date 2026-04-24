@@ -1924,6 +1924,64 @@ select:focus-visible,
   .l-header .c-searchIcon { font-size: 11px !important; }
 }
 
+/* ── モバイル全般コンパクト化 (hero blocks / 記事タイトル / list) ── */
+@media (max-width: 600px) {
+  /* 記事タイトル hero の padding 詰める */
+  .p-articleHead.c-postTitle,
+  .c-postTitle { padding: 10px 0 10px 10px !important; margin-bottom: 10px !important; border-left-width: 4px !important; }
+  .c-postTitle__ttl { font-size: clamp(17px, 4.2vw, 20px) !important; }
+  /* archive page title も詰める */
+  .c-pageTitle { padding: 10px 12px !important; border-left-width: 4px !important; }
+  /* p-toc padding 詰める */
+  .p-toc { padding: 10px 12px 12px !important; margin: 14px 0 16px !important; }
+  /* breaking-strip padding */
+  .yoshi-breaking-strip { padding: 11px 12px 13px !important; margin: 10px 0 14px !important; }
+  .yoshi-breaking-strip__heading { font-size: 14px !important; letter-spacing: 1.3px !important; }
+  .yoshi-breaking-strip__heading::after { font-size: 8px !important; padding: 1px 5px !important; }
+  /* article-bundles padding */
+  .yoshi-article-bundles { padding: 12px 12px 14px !important; }
+  .yoshi-article-bundles__heading { font-size: 14px !important; letter-spacing: 1.3px !important; }
+  /* SNS reactions */
+  .yoshi-sns-reactions { padding: 12px 12px !important; }
+  .yoshi-sns-reactions__heading { font-size: 13px !important; letter-spacing: 1.3px !important; }
+  /* related posts */
+  .yoshilover-related-posts { padding: 10px 12px !important; }
+  /* 記事内 h2 padding 詰める */
+  .post_content h2,
+  .entry-content h2 { padding: 10px 12px !important; font-size: 15px !important; border-left-width: 5px !important; }
+  .post_content h3,
+  .entry-content h3 { padding: 3px 0 5px 10px !important; font-size: 14.5px !important; }
+  /* 記事本文 font-size & line-height */
+  .post_content,
+  .entry-content { font-size: 14.5px !important; line-height: 1.78 !important; }
+  .post_content > p:first-of-type,
+  .entry-content > p:first-of-type { font-size: 15px !important; }
+  /* comment area compact */
+  .p-commentArea { padding: 12px 12px 14px !important; }
+  /* pagerPosts / shareBtns 既に 1col だが要素 padding 詰める */
+  .p-pagerPosts > a,
+  .c-pagerPosts > a,
+  .p-postNav > a { padding: 10px 12px !important; min-height: 62px; }
+}
+
+@media (max-width: 390px) {
+  .p-articleHead.c-postTitle,
+  .c-postTitle { padding: 8px 0 8px 9px !important; }
+  .c-postTitle__ttl { font-size: 16px !important; line-height: 1.42 !important; }
+  .c-pageTitle { padding: 9px 10px !important; }
+  .post_content,
+  .entry-content { font-size: 14px !important; line-height: 1.75 !important; }
+  .post_content > p:first-of-type,
+  .entry-content > p:first-of-type { font-size: 14.5px !important; }
+  .post_content h2,
+  .entry-content h2 { padding: 9px 11px !important; font-size: 14px !important; letter-spacing: 0.3px !important; }
+  .yoshi-breaking-strip__heading,
+  .yoshi-article-bundles__heading { font-size: 13px !important; letter-spacing: 1.1px !important; }
+  /* eyecatch の下辺 orange 3→2 */
+  .p-articleThumb,
+  .p-entryEyeCatch { border-bottom-width: 2px !important; }
+}
+
 /* ── 記事リスト item shadow + hover elevation ── */
 .-type-list .p-postList__item,
 .p-postList.-list .p-postList__item {

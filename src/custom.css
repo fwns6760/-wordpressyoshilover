@@ -1975,6 +1975,40 @@ ins.adsbygoogle::before {
   opacity: 0.7;
 }
 
+/* AdSense anchor ad の MAX z-index 系全殺し (2147483647 は i32 max、Google の定番値) */
+body > [style*="z-index: 2147483647"],
+body > [style*="z-index:2147483647"],
+body > [style*="z-index: 214748"],
+body > [style*="z-index:214748"],
+body > [aria-label="Advertisement"],
+body > [aria-label="広告"],
+body > [aria-label*="sponsored"],
+body > [aria-label*="スポンサー"],
+html > [style*="z-index: 2147483647"] {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  max-height: 0 !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+}
+/* Google の anchor ad ラッパー変種 (body や html 直下以外の位置) */
+div[data-anchor-status],
+div[data-adbreak-test],
+ins[data-anchor-status] {
+  display: none !important;
+}
+
+/* google-vignette (全画面) を再度明示的に殺す */
+.google-vignette,
+html.google-vignette-active,
+body.google-vignette-active,
+body > .google-vignette,
+div[id*="vignette"] {
+  display: none !important;
+  visibility: hidden !important;
+}
+
 /* Anchor ad (画面下追従) も全殺し (ユーザビリティ最優先、2026-04-24 よしひろさん判断) */
 body > [id^="aswift_"][style*="bottom"],
 body > [id^="aswift_"][style*="position: fixed"],

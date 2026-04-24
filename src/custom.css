@@ -3817,6 +3817,105 @@ body.yoshi-theme-soft .yoshi-topic-hub__heading {
   .p-authorBox__desc { font-size: 11.5px !important; }
 }
 
+/* ====================================================================
+   のもとけ風: モバイルでの「圧縮した」コメント+ 関連記事 の統合 feel
+   ==================================================================== */
+@media (max-width: 600px) {
+  /* コメントフォームの横並び 3col が潰れてたら stack */
+  .comment-form .comment-form-author,
+  .comment-form .comment-form-email,
+  .comment-form .comment-form-url {
+    width: 100% !important;
+    margin-right: 0 !important;
+    margin-bottom: 8px !important;
+  }
+  .comment-form .comment-form-author input,
+  .comment-form .comment-form-email input,
+  .comment-form .comment-form-url input {
+    font-size: 13.5px !important;
+    padding: 10px 12px !important;
+  }
+  .comment-form textarea {
+    min-height: 100px !important;
+    font-size: 13.5px !important;
+    padding: 10px 12px !important;
+  }
+  .comment-form label {
+    font-size: 9px !important;
+    letter-spacing: 1.2px !important;
+    margin-bottom: 3px !important;
+  }
+  /* コメント一覧 item padding 10 */
+  .commentlist > li,
+  .comment-list > li {
+    padding: 10px 12px !important;
+    margin-bottom: 8px !important;
+  }
+  .commentlist .avatar,
+  .comment-list .avatar {
+    width: 38px !important;
+    height: 38px !important;
+    margin: 0 10px 4px 0 !important;
+  }
+  .comment-author { font-size: 12.5px !important; }
+  .comment-content,
+  .commentlist p,
+  .comment-list p { font-size: 13px !important; line-height: 1.7 !important; }
+  .comment-reply-link { font-size: 9px !important; padding: 3px 9px !important; }
+}
+
+/* ====================================================================
+   モバイル キーボード開いた時 (input focus) のレイアウト崩れ防止
+   ==================================================================== */
+@media (max-width: 768px) {
+  input, textarea, select {
+    font-size: 16px !important; /* iOS Safari の auto-zoom 防止 (16px 以上で拡大しない) */
+  }
+  /* 一方で display サイズは CSS で調整 */
+  .comment-form input[type="text"],
+  .comment-form input[type="email"],
+  .comment-form input[type="url"],
+  .comment-form textarea,
+  .c-searchBox__input,
+  .p-headerSearch__input,
+  .c-searchForm__s {
+    font-size: 16px !important;
+  }
+}
+
+/* ====================================================================
+   SWELL 広告位置 (モバイルヘッダー上 / 記事本文上 / 記事下 / 記事内) label 付与
+   ==================================================================== */
+[class*="p-entryContent__ad"]::before,
+[class*="swell-ad"]::before,
+[class*="c-postAd"]::before {
+  content: 'PR';
+  display: inline-block;
+  font-family: 'Oswald', sans-serif;
+  font-size: 9px;
+  letter-spacing: 1.4px;
+  color: var(--mid-gray);
+  padding: 2px 6px;
+  border: 1px solid var(--light-gray);
+  border-radius: 2px;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  opacity: 0.65;
+}
+
+/* ====================================================================
+   最終 fallback: 不明の sticky 広告でも position:fixed ＋ bottom 系 + 多数の Google signature なら死ぬ
+   ==================================================================== */
+body > [id^="aswift"][style*="bottom:"],
+body > [id^="aswift"][style*="bottom "],
+body > [class*="google-auto-placed"][style*="bottom"],
+body > [data-google-container-id],
+body > [data-ad-client] {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 /* ── モバイル 投稿/固定ページの上部 (breadcrumb / metas / title / eyecatch) 間隔圧縮 ── */
 @media (max-width: 768px) {
   /* パン屑 padding 圧縮 + 文字小 */

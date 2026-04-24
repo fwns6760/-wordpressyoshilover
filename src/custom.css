@@ -1809,24 +1809,76 @@ body > [id^="aswift_"][style*="bottom"] {
   z-index: 50 !important;
 }
 
-/* ── 画面上に追従する広告は全殺し (AdSense anchor-top / vignette) ── */
+/* ── 画面上に追従する広告は全殺し (広範囲カバー) ── */
+/* 1. body 直下の fixed top 要素 */
 body > div[style*="position: fixed"][style*="top: 0"],
 body > ins[style*="position: fixed"][style*="top: 0"],
 body > div[style*="position:fixed"][style*="top:0"],
-body > [id^="aswift_"][style*="top"],
-body > div[id*="anchor"][style*="top"],
-body > div[id^="google_ads_"][style*="top"],
-body > iframe[id^="google_ads_iframe"][name*="anchor"][style*="top"],
-body > [data-google-query-id][style*="top: 0"],
-body > [data-google-query-id][style*="top:0"],
+body > ins[style*="position:fixed"][style*="top:0"],
+body > [id^="aswift_"],
+body > div[id*="anchor"],
+body > div[id^="google_ads_"],
+body > iframe[id^="google_ads_iframe"][name*="anchor"],
+body > [data-google-query-id],
 body > .google-vignette,
-.google-vignette {
+.google-vignette,
+
+/* 2. AdSense auto ad 全般 (anchor / top / overlay) */
+.google-auto-placed[style*="position:fixed"],
+.google-auto-placed[style*="position: fixed"],
+ins.adsbygoogle[style*="position: fixed"],
+ins.adsbygoogle[data-anchor-status],
+ins.adsbygoogle[data-overlays],
+
+/* 3. WP ad plugins の sticky / anchor クラス系 */
+.advanced-ads-sticky,
+.aasa-sticky,
+.ai-sticky,
+.ai-anchor-top,
+.qads-sticky,
+.adrotate-sticky,
+.wp-insert-sticky,
+[class*="sticky-ad"],
+[class*="sticky_ad"],
+[class*="ad-sticky"],
+[class*="ad_sticky"],
+[class*="anchor-ad"],
+[class*="anchor_ad"],
+[class*="-ad-top"],
+[class*="_ad_top"],
+[class*="top-ad"][class*="fixed"],
+
+/* 4. よくある浮遊広告コンテナ id */
+#sticky-ad-top,
+#top-fixed-ad,
+#fixed-ad-top,
+#ad-fixed-top,
+#header-ad-sticky,
+#floating-ad-top,
+
+/* 5. SWELL 「モバイルヘッダー上」広告スロット (スクロール時残る) */
+.c-mobileTopAd,
+.p-mobileTopAd,
+.swell-mobile-top-ad,
+.swell-top-sticky,
+.l-header + [class*="ad"][class*="fixed"],
+
+/* 6. rinker / amazon widget 系で固定されうる */
+.yyi-rinker-fixed,
+.yyi-rinker-sticky,
+.yyi-rinker-top {
   display: none !important;
   visibility: hidden !important;
   max-height: 0 !important;
   height: 0 !important;
   overflow: hidden !important;
   pointer-events: none !important;
+}
+
+/* 7. body 配下で top 0~80px の fixed 要素 (header / menu 以外) 保険 */
+body > div:not([class*="l-header"]):not([class*="l-spMenu"]):not([class*="p-scrollTop"]):not([class*="p-fixBottomMenu"]):not([class*="c-spBottomMenu"])[style*="position:fixed"],
+body > div:not([class*="l-header"]):not([class*="l-spMenu"]):not([class*="p-scrollTop"]):not([class*="p-fixBottomMenu"]):not([class*="c-spBottomMenu"])[style*="position: fixed"] {
+  display: none !important;
 }
 
 /* header を最前面に確保 (広告より上に表示) */

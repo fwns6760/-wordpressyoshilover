@@ -619,66 +619,81 @@ a:hover { color: var(--orange); opacity: 0.8; }
 }
 
 /* ============================================================
-   063 — topic hub / 記事下 SNS 反応 block (062 §2 §3 §5 impl)
-   ・トップ中央手動表示前提
+   063 — topic hub / 記事下 SNS 反応 block
+   ・トップ front_top widget に常設 (「今週の話題」)
    ・SNS block は公式 X / 中の人 X が per-post meta にある時だけ
-   ・既存 SWELL に馴染む最小改修(bold な新デザインに寄せない)
+   ・2026-04-24: 巨人オレンジ hero strip に格上げ(orange/black/white のみ)
    ============================================================ */
 
 .yoshi-topic-hub {
-  background: var(--white);
-  border-top: 3px solid var(--orange);
-  border-bottom: 1px solid var(--light-gray);
+  background: var(--black);
+  border-top: 5px solid var(--orange);
   border-radius: 4px;
-  padding: 16px 20px 20px;
+  padding: 14px 14px 16px;
   margin: 20px 0;
+  box-shadow: 0 2px 12px rgba(26, 26, 26, 0.12);
 }
 .yoshi-topic-hub__heading {
   font-family: 'Oswald', sans-serif;
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 700;
-  letter-spacing: 1.5px;
-  color: var(--dark-gray);
+  letter-spacing: 2px;
+  color: var(--white);
   margin: 0 0 12px;
-  padding: 0;
+  padding: 0 2px;
   border: none;
   background: transparent;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  text-transform: uppercase;
 }
 .yoshi-topic-hub__heading::before {
   content: '';
   display: inline-block;
-  width: 10px;
-  height: 10px;
+  width: 5px;
+  height: 22px;
   background: var(--orange);
-  border-radius: 2px;
+  border-radius: 1px;
   flex-shrink: 0;
+}
+.yoshi-topic-hub__heading::after {
+  content: 'THIS WEEK';
+  font-family: 'Oswald', sans-serif;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 2.5px;
+  color: var(--orange);
+  margin-left: auto;
+  padding-right: 2px;
+  align-self: center;
+  line-height: 1;
 }
 .yoshi-topic-hub__items {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
 }
 .yoshi-topic-hub__item {
-  background: var(--bg);
-  border-left: 3px solid var(--orange);
-  border-radius: 2px;
-  transition: background 0.15s, border-left-width 0.15s;
+  background: var(--white);
+  border-left: 4px solid var(--orange);
+  border-radius: 3px;
+  transition: background 0.18s, transform 0.18s, box-shadow 0.18s;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
 }
 .yoshi-topic-hub__item:hover {
   background: var(--orange-light);
-  border-left-width: 5px;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(245, 129, 31, 0.22);
 }
 .yoshi-topic-hub__link {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 10px 12px;
+  gap: 6px;
+  padding: 12px 14px 13px;
   text-decoration: none;
   color: inherit;
 }
@@ -686,23 +701,25 @@ a:hover { color: var(--orange); opacity: 0.8; }
   display: inline-block;
   background: var(--orange);
   color: var(--white);
+  font-family: 'Oswald', sans-serif;
   font-size: 10px;
   font-weight: 700;
-  padding: 2px 6px;
+  padding: 3px 9px;
   border-radius: 2px;
   align-self: flex-start;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.8px;
   line-height: 1.4;
+  text-transform: uppercase;
 }
 .yoshi-topic-hub__title {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
-  line-height: 1.4;
-  color: var(--dark-gray);
+  line-height: 1.45;
+  color: var(--black);
 }
 .yoshi-topic-hub__lead {
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 12.5px;
+  line-height: 1.55;
   color: var(--mid-gray);
 }
 .yoshi-topic-hub__title,
@@ -1603,8 +1620,11 @@ a:hover { color: var(--orange); opacity: 0.8; }
 }
 
 @media (max-width: 600px) {
-  .yoshi-topic-hub { padding: 14px 14px 16px; }
-  .yoshi-topic-hub__items { grid-template-columns: 1fr; }
+  .yoshi-topic-hub { padding: 12px 12px 14px; }
+  .yoshi-topic-hub__heading { font-size: 16px; letter-spacing: 1.5px; }
+  .yoshi-topic-hub__heading::after { font-size: 9px; letter-spacing: 2px; }
+  .yoshi-topic-hub__items { grid-template-columns: 1fr; gap: 10px; }
+  .yoshi-topic-hub__item:hover { transform: none; }
   .l-sidebar .widget ul li a {
     padding: 8px 12px;
   }
@@ -1666,7 +1686,6 @@ a:hover { color: var(--orange); opacity: 0.8; }
     padding-left: 10px;
     padding-right: 10px;
   }
-  .yoshi-topic-hub__title,
   .yoshi-breaking-strip__title,
   .yoshi-today-giants__title,
   .yoshi-article-bundles__title,
@@ -1674,7 +1693,15 @@ a:hover { color: var(--orange); opacity: 0.8; }
     font-size: 11px;
     line-height: 1.45;
   }
-  .yoshi-topic-hub__lead,
+  .yoshi-topic-hub__title {
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .yoshi-topic-hub__heading { font-size: 15px; }
+  .yoshi-topic-hub__heading::before { height: 18px; }
+  .yoshi-topic-hub__lead {
+    font-size: 11px;
+  }
   .yoshi-front-card__summary,
   .yoshi-article-bundles__summary {
     font-size: 10px;

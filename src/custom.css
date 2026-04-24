@@ -1112,12 +1112,35 @@ a:hover { color: var(--orange); opacity: 0.8; }
 
 /* ── コメントエリア (p-commentArea) ── */
 .p-commentArea {
-  background: var(--white);
+  background:
+    linear-gradient(180deg, var(--white), var(--white)),
+    linear-gradient(135deg, rgba(245, 129, 31, 0.06) 0%, rgba(26, 26, 26, 0.03) 100%);
+  background-clip: padding-box, border-box;
+  background-origin: padding-box, border-box;
   border: 1px solid var(--light-gray);
   border-top: 4px solid var(--orange);
-  border-radius: 4px;
-  padding: 18px 18px 16px;
-  margin: 24px 0 20px;
+  border-radius: 6px;
+  padding: 22px 22px 18px;
+  margin: 28px 0 22px;
+  box-shadow: 0 2px 14px rgba(26, 26, 26, 0.06);
+  position: relative;
+}
+/* コメント欄全体の hero ribbon (上辺に白抜きマーク) */
+.p-commentArea::before {
+  content: 'COMMENTS';
+  position: absolute;
+  top: -12px;
+  left: 16px;
+  background: var(--orange);
+  color: var(--white);
+  font-family: 'Oswald', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  box-shadow: 0 2px 6px rgba(245, 129, 31, 0.4);
+  line-height: 1;
 }
 .p-commentArea__title,
 .p-commentArea h3,
@@ -1135,24 +1158,135 @@ a:hover { color: var(--orange); opacity: 0.8; }
   border-left: 4px solid var(--orange) !important;
   background: transparent !important;
 }
+/* コメントフォーム 全体 */
+.comment-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 6px;
+}
+.comment-form p {
+  margin: 0 !important;
+  position: relative;
+}
+.comment-form label {
+  display: block;
+  font-family: 'Oswald', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  color: var(--mid-gray);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+  transition: color 0.18s;
+}
+.comment-form p:focus-within label {
+  color: var(--orange);
+}
+/* required マーク * を orange に */
+.comment-form label .required,
+.comment-form .required {
+  color: var(--orange);
+  font-weight: 700;
+  margin-left: 2px;
+}
 .comment-form input[type="text"],
 .comment-form input[type="email"],
 .comment-form input[type="url"],
 .comment-form textarea {
-  border: 1px solid var(--light-gray) !important;
-  border-radius: 3px !important;
-  padding: 9px 12px !important;
+  width: 100%;
+  border: 1.5px solid var(--light-gray) !important;
+  border-radius: 4px !important;
+  padding: 11px 14px !important;
   background: var(--white) !important;
-  font-size: 13.5px;
-  transition: border-color 0.18s, box-shadow 0.18s;
+  font-size: 14px !important;
+  font-family: inherit;
+  color: var(--black);
+  line-height: 1.5;
+  transition: border-color 0.18s, box-shadow 0.18s, background 0.18s !important;
+  box-shadow: inset 0 1px 0 rgba(26, 26, 26, 0.03);
+}
+.comment-form input[type="text"]:hover,
+.comment-form input[type="email"]:hover,
+.comment-form input[type="url"]:hover,
+.comment-form textarea:hover {
+  border-color: rgba(245, 129, 31, 0.5) !important;
 }
 .comment-form input[type="text"]:focus,
 .comment-form input[type="email"]:focus,
 .comment-form input[type="url"]:focus,
 .comment-form textarea:focus {
   border-color: var(--orange) !important;
-  box-shadow: 0 0 0 2px rgba(245, 129, 31, 0.18) !important;
+  box-shadow: 0 0 0 3px rgba(245, 129, 31, 0.2) !important;
+  background: rgba(255, 243, 232, 0.35) !important;
   outline: none !important;
+}
+.comment-form textarea {
+  min-height: 120px;
+  resize: vertical;
+  line-height: 1.7;
+  padding: 14px 14px !important;
+  font-size: 14.5px !important;
+}
+.comment-form textarea::placeholder,
+.comment-form input::placeholder {
+  color: rgba(102, 102, 102, 0.5);
+  font-weight: 400;
+}
+/* name / email / url を横並び (desktop, 任意) */
+@media (min-width: 768px) {
+  .comment-form .comment-form-author,
+  .comment-form .comment-form-email,
+  .comment-form .comment-form-url {
+    display: inline-block;
+    width: calc(33.333% - 9px);
+    vertical-align: top;
+  }
+  .comment-form .comment-form-author,
+  .comment-form .comment-form-email { margin-right: 12px !important; }
+}
+/* consent cookies checkbox */
+.comment-form .comment-form-cookies-consent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--mid-gray);
+  padding: 6px 0;
+}
+.comment-form .comment-form-cookies-consent input[type="checkbox"] {
+  accent-color: var(--orange);
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+}
+.comment-form .comment-form-cookies-consent label {
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--mid-gray);
+  margin-bottom: 0;
+  font-weight: 400;
+  cursor: pointer;
+}
+/* comment-notes / info block */
+.comment-notes,
+.logged-in-as,
+.must-log-in {
+  font-size: 12px;
+  color: var(--mid-gray);
+  padding: 8px 12px;
+  background: rgba(26, 26, 26, 0.03);
+  border-left: 3px solid var(--orange);
+  border-radius: 2px;
+  margin-bottom: 8px !important;
+}
+.comment-notes a,
+.logged-in-as a {
+  color: var(--orange) !important;
+  font-weight: 700;
 }
 .comment-form .submit,
 #submit {
@@ -1174,18 +1308,161 @@ a:hover { color: var(--orange); opacity: 0.8; }
   opacity: 0.9;
   transform: translateY(-1px);
 }
+.commentlist,
+.comment-list {
+  list-style: none !important;
+  padding: 0 !important;
+  margin: 10px 0 18px !important;
+}
 .commentlist > li,
 .comment-list > li {
-  border-left: 3px solid var(--light-gray);
-  padding: 10px 12px !important;
+  list-style: none !important;
+  border: 1px solid var(--light-gray);
+  border-left: 3px solid var(--orange);
+  padding: 12px 14px !important;
   margin: 0 0 10px !important;
   background: var(--white);
-  border-radius: 2px;
-  transition: border-left-color 0.18s;
+  border-radius: 4px;
+  transition: border-left-color 0.18s, box-shadow 0.18s, transform 0.18s;
+  position: relative;
 }
 .commentlist > li:hover,
 .comment-list > li:hover {
   border-left-color: var(--orange);
+  box-shadow: 0 4px 12px rgba(26, 26, 26, 0.08);
+  transform: translateX(1px);
+}
+/* avatar を左に丸く */
+.commentlist .avatar,
+.comment-list .avatar,
+.comment-author .avatar {
+  border-radius: 999px !important;
+  border: 2px solid var(--orange);
+  padding: 1px;
+  background: var(--white);
+  float: left;
+  margin: 0 12px 6px 0;
+}
+/* comment meta (author + date) */
+.comment-author,
+.commentlist .fn,
+.comment-list .fn {
+  font-family: 'Oswald', sans-serif;
+  font-weight: 700;
+  font-size: 13.5px;
+  letter-spacing: 0.4px;
+  color: var(--black) !important;
+}
+.comment-author a,
+.comment-list .fn a {
+  color: var(--black) !important;
+  text-decoration: none;
+}
+.comment-author a:hover,
+.comment-list .fn a:hover {
+  color: var(--orange) !important;
+}
+.comment-meta,
+.comment-date {
+  font-family: 'Oswald', sans-serif;
+  font-size: 10px !important;
+  letter-spacing: 0.6px;
+  color: var(--mid-gray) !important;
+  margin-bottom: 6px;
+}
+.comment-meta a {
+  color: var(--mid-gray) !important;
+  text-decoration: none;
+}
+.comment-meta a:hover {
+  color: var(--orange) !important;
+}
+/* comment body text */
+.comment-content,
+.commentlist p,
+.comment-list p {
+  font-size: 13.5px !important;
+  line-height: 1.75;
+  color: var(--dark-gray);
+  margin: 6px 0 8px !important;
+}
+/* reply link */
+.comment-reply-link {
+  display: inline-block;
+  font-family: 'Oswald', sans-serif;
+  font-size: 10px !important;
+  letter-spacing: 1px !important;
+  text-transform: uppercase;
+  background: rgba(245, 129, 31, 0.1);
+  color: var(--orange) !important;
+  padding: 3px 10px !important;
+  border-radius: 999px;
+  border: 1px solid rgba(245, 129, 31, 0.3);
+  text-decoration: none !important;
+  transition: background 0.18s, color 0.18s;
+  margin-top: 4px;
+}
+.comment-reply-link:hover {
+  background: var(--orange);
+  color: var(--white) !important;
+}
+/* nested children (reply to reply) */
+.children,
+.commentlist .children,
+.comment-list .children {
+  list-style: none !important;
+  padding-left: 20px !important;
+  margin-top: 10px !important;
+  border-left: 2px dashed rgba(245, 129, 31, 0.3);
+}
+.children > li {
+  border-left-color: #666 !important;
+}
+/* no comments yet */
+.no-comments,
+.nocomments {
+  font-family: 'Oswald', sans-serif;
+  font-size: 13px;
+  color: var(--mid-gray);
+  text-align: center;
+  padding: 20px 10px;
+  letter-spacing: 0.6px;
+  background: rgba(245, 129, 31, 0.04);
+  border-radius: 4px;
+  border: 1px dashed rgba(245, 129, 31, 0.3);
+}
+.no-comments::before {
+  content: '💬 ';
+  margin-right: 4px;
+}
+/* pingback / trackback items */
+.pingback,
+.trackback {
+  font-size: 12px !important;
+  color: var(--mid-gray) !important;
+  background: rgba(26, 26, 26, 0.03) !important;
+  border-left-color: var(--mid-gray) !important;
+}
+
+/* 「コメントをどうぞ」= cancel-comment-reply-link */
+#cancel-comment-reply-link {
+  display: inline-block;
+  font-family: 'Oswald', sans-serif;
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--mid-gray) !important;
+  padding: 3px 10px;
+  border: 1px solid var(--light-gray);
+  border-radius: 999px;
+  margin-left: 8px;
+  text-decoration: none !important;
+  transition: background 0.18s, color 0.18s;
+}
+#cancel-comment-reply-link:hover {
+  background: var(--black);
+  color: var(--white) !important;
+  border-color: var(--black);
 }
 
 /* ── 目次 (p-toc) ── */

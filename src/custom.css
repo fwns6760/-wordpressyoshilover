@@ -3455,6 +3455,134 @@ body.yoshi-mobile-simple .yoshi-topic-hub__lead {
   display: none !important;
 }
 
+/* ====================================================================
+   モバイル contrast / readability 強化 (のもとけ 風「見やすい」狙い)
+   ==================================================================== */
+@media (max-width: 768px) {
+  /* 本文 color を真っ黒に (light gray は読みにくい) */
+  .post_content,
+  .entry-content,
+  .post_content p,
+  .entry-content p,
+  .post_content li,
+  .entry-content li {
+    color: #1a1a1a !important;
+  }
+  /* 太字も真っ黒で強調 */
+  .post_content strong,
+  .post_content b,
+  .entry-content strong,
+  .entry-content b {
+    color: #000 !important;
+    font-weight: 800 !important;
+  }
+  /* リンクの下線を常時 (見やすさ) */
+  .post_content a:not(.wp-block-button__link):not(.c-btn),
+  .entry-content a:not(.wp-block-button__link):not(.c-btn) {
+    text-decoration: underline !important;
+    text-decoration-color: rgba(245, 129, 31, 0.5) !important;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1.5px;
+  }
+
+  /* h2 の文字を白 + 太字で確実に visible (contrast 圧縮対策) */
+  .post_content h2,
+  .entry-content h2 {
+    color: var(--white) !important;
+    font-weight: 800 !important;
+  }
+
+  /* 記事一覧タイトル 完全黒 */
+  .p-postList__ttl,
+  .c-secTitle { color: #1a1a1a !important; }
+
+  /* コメント本文 完全黒 */
+  .commentlist p,
+  .comment-list p,
+  .comment-content { color: #1a1a1a !important; }
+
+  /* topic-hub titles 完全黒 */
+  .yoshi-topic-hub__title { color: #1a1a1a !important; }
+
+  /* p-breadcrumb 各区切り細く */
+  .p-breadcrumb__list > li + li::before,
+  .p-breadcrumb__item + .p-breadcrumb__item::before {
+    margin: 0 4px !important;
+    font-size: 9px !important;
+  }
+
+  /* 記事先頭 metas (日付/カテゴリ) モバイルでは非表示にして title 上の情報を圧縮 */
+  /* (ユーザー好み分かれるが、のもとけ風なら省略) */
+  .p-articleMetas.-top .p-articleMetas__times,
+  .p-articleMetas.-top .c-postTimes__modified,
+  .p-articleMetas.-top .c-meta__modified {
+    /* modified はまず非表示 (posted のみ残す) */
+    display: none !important;
+  }
+}
+
+/* ====================================================================
+   リーダーフォーカスモード (distraction-free 記事閲覧用、body にクラスで ON)
+   ==================================================================== */
+body.yoshi-reader-focus .l-sidebar,
+body.yoshi-reader-focus .l-footer,
+body.yoshi-reader-focus .yoshi-breaking-strip,
+body.yoshi-reader-focus .yoshi-topic-hub,
+body.yoshi-reader-focus .yoshi-article-bundles,
+body.yoshi-reader-focus .p-commentArea,
+body.yoshi-reader-focus .c-shareBtns,
+body.yoshi-reader-focus .p-articleMetas,
+body.yoshi-reader-focus .p-breadcrumb,
+body.yoshi-reader-focus .c-pagerPosts,
+body.yoshi-reader-focus .p-pagerPosts,
+body.yoshi-reader-focus ins.adsbygoogle,
+body.yoshi-reader-focus .google-auto-placed {
+  display: none !important;
+}
+body.yoshi-reader-focus .l-mainContent {
+  max-width: 720px;
+  margin: 0 auto;
+}
+body.yoshi-reader-focus .post_content,
+body.yoshi-reader-focus .entry-content {
+  font-size: 17px !important;
+  line-height: 1.95 !important;
+  color: #1a1a1a !important;
+}
+
+/* ====================================================================
+   モバイル フロー改善: 記事読了率を上げる tweaks
+   ==================================================================== */
+@media (max-width: 768px) {
+  /* 記事本文 p の間隔を広く */
+  .post_content > p + p,
+  .entry-content > p + p {
+    margin-top: 0.6em !important;
+  }
+  /* 記事本文の 1em 単位を読みやすく調整 */
+  .post_content,
+  .entry-content { font-size: 15px; line-height: 1.82 !important; }
+  /* 記事本文の 見出し h2 font-size を確実に視認 */
+  .post_content h2,
+  .entry-content h2 {
+    font-size: 16px !important;
+    padding: 11px 14px !important;
+    margin: 22px 0 14px !important;
+  }
+  /* 記事本文の h3 */
+  .post_content h3,
+  .entry-content h3 {
+    font-size: 14.5px !important;
+    padding: 4px 0 5px 11px !important;
+    margin: 20px 0 10px !important;
+  }
+  /* モバイルで iframe の max-width 100 (Twitter 等) */
+  .wp-block-embed-twitter iframe,
+  .yoshilover-x-embed iframe,
+  .wp-block-embed iframe,
+  .twitter-tweet { max-width: 100% !important; }
+}
+
 /* ── モバイル 投稿/固定ページの上部 (breadcrumb / metas / title / eyecatch) 間隔圧縮 ── */
 @media (max-width: 768px) {
   /* パン屑 padding 圧縮 + 文字小 */

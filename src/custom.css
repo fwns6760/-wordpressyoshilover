@@ -1784,6 +1784,71 @@ body.author .c-pageTitle { border-left-color: var(--black) !important; }
 /* ── 月別ページ (date archive) 用 ── */
 body.date .c-pageTitle { border-left-color: var(--mid-gray) !important; }
 
+/* ── テキスト選択色を巨人オレンジに ── */
+::selection {
+  background: rgba(245, 129, 31, 0.45);
+  color: var(--black);
+}
+::-moz-selection {
+  background: rgba(245, 129, 31, 0.45);
+  color: var(--black);
+}
+
+/* ── グローバル focus ring (a11y + 巨人色) ── */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--orange);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ── strong marker の scope 絞り (見出し / table / button / badge 系では発動させない) ── */
+.post_content h1 strong, .post_content h2 strong, .post_content h3 strong,
+.post_content h4 strong, .post_content h5 strong, .post_content h6 strong,
+.entry-content h1 strong, .entry-content h2 strong, .entry-content h3 strong,
+.entry-content h4 strong, .entry-content h5 strong, .entry-content h6 strong,
+.post_content table strong, .entry-content table strong,
+.post_content .wp-block-button strong, .entry-content .wp-block-button strong,
+.post_content .c-cat-label strong,
+.post_content code strong, .post_content pre strong {
+  background: transparent !important;
+  padding: 0 !important;
+  color: inherit !important;
+  font-weight: inherit !important;
+}
+
+/* ── スクロールバー tint (Chrome/Edge/Safari) ── */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: rgba(245, 129, 31, 0.55);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--orange); }
+::-webkit-scrollbar-track { background: rgba(26, 26, 26, 0.05); }
+
+/* ── print 最小 ── */
+@media print {
+  .l-header, .l-footer, .l-sidebar, .p-fixBottomMenu,
+  .yoshi-breaking-strip, .yoshi-topic-hub, .yoshi-article-bundles,
+  .yoshi-sns-reactions, .c-shareBtns, .p-commentArea { display: none !important; }
+  .post_content, .entry-content { font-size: 12pt; line-height: 1.7; color: #000; }
+  a { color: #000 !important; text-decoration: underline !important; }
+}
+
+/* ── reduced motion 尊重 ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* ── 検索バー / 検索フォーム ── */
 .c-searchBox__input,
 .p-headerSearch__input,

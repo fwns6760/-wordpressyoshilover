@@ -5181,6 +5181,181 @@ body { background: #fafafa !important; }
   }
 }
 
+/* ====================================================================
+   WP admin bar (ログイン中のみ表示) 巨人カラー
+   ==================================================================== */
+#wpadminbar {
+  background: var(--black) !important;
+  border-bottom: 2px solid var(--orange) !important;
+}
+#wpadminbar a:hover,
+#wpadminbar li:hover > a,
+#wpadminbar li.hover > a { color: var(--orange) !important; }
+#wpadminbar .ab-icon { color: var(--orange) !important; }
+
+/* admin bar 高さ分下げる必要ある時 (SWELL で対応済だが念のため) */
+html[lang] { scroll-padding-top: 32px; }
+@media (max-width: 782px) {
+  html[lang] { scroll-padding-top: 46px; }
+}
+
+/* ====================================================================
+   loading spinner (SVG-less、CSS only)
+   ==================================================================== */
+.yoshi-spinner {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  border: 3px solid rgba(245, 129, 31, 0.2);
+  border-top-color: var(--orange);
+  border-radius: 999px;
+  animation: yoshiloSpin 0.8s linear infinite;
+}
+@keyframes yoshiloSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* ====================================================================
+   toast (右上通知、CSS-only)
+   ==================================================================== */
+.yoshi-toast {
+  position: fixed;
+  top: 60px;
+  right: 12px;
+  z-index: 10000;
+  background: var(--black);
+  color: var(--white);
+  padding: 10px 16px;
+  border-left: 3px solid var(--orange);
+  border-radius: 3px;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.5;
+  box-shadow: 0 6px 18px rgba(26, 26, 26, 0.3);
+  animation: yoshiloToastIn 0.28s cubic-bezier(0.2, 1, 0.4, 1) backwards;
+  max-width: 320px;
+}
+.yoshi-toast.-success { border-left-color: #2E8B57; }
+.yoshi-toast.-error { border-left-color: #E53935; }
+@keyframes yoshiloToastIn {
+  from { transform: translateX(30px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* ====================================================================
+   モーダル (overlay) 用 helper
+   ==================================================================== */
+.yoshi-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(26, 26, 26, 0.55);
+  backdrop-filter: blur(4px);
+  z-index: 10000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.yoshi-modal[open],
+.yoshi-modal.-open {
+  display: flex;
+}
+.yoshi-modal__panel {
+  background: var(--white);
+  border-radius: 8px;
+  border-top: 4px solid var(--orange);
+  max-width: 480px;
+  width: 100%;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  padding: 20px 22px 18px;
+  animation: yoshiloModalIn 0.25s ease backwards;
+}
+@keyframes yoshiloModalIn {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.yoshi-modal__title {
+  font-family: 'Oswald', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  color: var(--black);
+  padding-left: 12px;
+  border-left: 4px solid var(--orange);
+  margin: 0 0 12px;
+  text-transform: uppercase;
+}
+.yoshi-modal__close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--light-gray);
+  color: var(--black);
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  transition: background 0.18s;
+}
+.yoshi-modal__close:hover {
+  background: var(--orange);
+  color: var(--white);
+}
+
+/* ====================================================================
+   記事タイトル 先頭に「🔥」「⚾」等 絵文字 icon を自動配色
+   ==================================================================== */
+.c-postTitle__ttl::first-line,
+.p-postList__ttl::first-line {
+  /* 先頭行の可読性確保 (text-shadow が効く時の保険) */
+  text-shadow: inherit;
+}
+
+/* ====================================================================
+   カテゴリ バッジ hover で小さく shake
+   ==================================================================== */
+@media (hover: hover) {
+  .c-categoryList__link:active,
+  .c-cat-label:active {
+    animation: yoshiloWiggle 0.25s ease;
+  }
+}
+@keyframes yoshiloWiggle {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-1px); }
+  75% { transform: translateX(1px); }
+}
+
+/* ====================================================================
+   記事タイトル 大きめ (特定 category 専用、例: 「column」 のコラム記事のみ)
+   ==================================================================== */
+body.category-column .c-postTitle__ttl,
+body.single-post.category-column .c-postTitle__ttl {
+  font-family: serif;
+  letter-spacing: 1.2px;
+}
+
+/* ====================================================================
+   試合速報記事のタイトルは Oswald (データ感)
+   ==================================================================== */
+body.category-shiai-sokuho .c-postTitle__ttl {
+  letter-spacing: 0.2px;
+}
+
+/* ====================================================================
+   CSS variables exposed on body (opt-in で user が runtime 調整)
+   ==================================================================== */
+body {
+  --yoshi-article-max: 860px;
+  --yoshi-sidebar-max: 340px;
+  --yoshi-gutter: 16px;
+}
+
 /* ── モバイル 投稿/固定ページの上部 (breadcrumb / metas / title / eyecatch) 間隔圧縮 ── */
 @media (max-width: 768px) {
   /* パン屑 padding 圧縮 + 文字小 */

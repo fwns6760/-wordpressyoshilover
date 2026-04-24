@@ -459,6 +459,114 @@ figure figcaption {
   overflow-y: auto;
 }
 
+/* ── デスクトップ sidebar の TOC widget を sticky 化 (長い記事で追従) ── */
+@media (min-width: 1024px) {
+  .l-sidebar .ez-toc-widget-container,
+  .l-sidebar .widget_swell_widget_toc,
+  .l-sidebar .widget[class*="toc"],
+  .l-sidebar .widget .c-tocBox,
+  .l-sidebar .widget-toc {
+    position: sticky;
+    top: 80px;
+    max-height: calc(100vh - 110px);
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+  .l-sidebar .widget[class*="toc"]::-webkit-scrollbar { width: 5px; }
+  .l-sidebar .widget[class*="toc"]::-webkit-scrollbar-thumb { background: var(--orange); border-radius: 999px; }
+}
+
+/* ── 読了時間 chip (手書き風 / 将来 plugin 側で .yoshi-read-time.__chip を流し込む用) ── */
+.yoshi-read-time,
+.c-postTimes__readtime,
+.p-postReadTime {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: 'Oswald', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--mid-gray);
+  background: rgba(26, 26, 26, 0.04);
+  border: 1px solid rgba(26, 26, 26, 0.08);
+  padding: 1px 8px;
+  border-radius: 999px;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+.yoshi-read-time::before,
+.c-postTimes__readtime::before,
+.p-postReadTime::before {
+  content: '⏱';
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+/* ── モバイル menu パネル polish (SWELL の l-spMenu / p-spNav 等) ── */
+.l-spMenu,
+.p-spNav,
+.c-spMenu {
+  background: var(--black) !important;
+  color: var(--white) !important;
+  box-shadow: -2px 0 20px rgba(0, 0, 0, 0.4);
+}
+.l-spMenu .menu-item a,
+.p-spNav .menu-item a,
+.c-spMenu .menu-item a {
+  color: var(--white) !important;
+  font-family: 'Oswald', sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  padding: 12px 16px !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  transition: background 0.18s, color 0.18s, padding-left 0.18s;
+}
+.l-spMenu .menu-item a:hover,
+.l-spMenu .menu-item a:active,
+.p-spNav .menu-item a:hover,
+.p-spNav .menu-item a:active,
+.c-spMenu .menu-item a:hover {
+  background: rgba(245, 129, 31, 0.14) !important;
+  color: var(--orange) !important;
+  padding-left: 22px !important;
+}
+/* モバイル menu のタイトルラベル (カテゴリ / タグ 等) */
+.l-spMenu__label,
+.p-spNav__label,
+.c-spMenu__label {
+  background: rgba(245, 129, 31, 0.12) !important;
+  color: var(--orange) !important;
+  font-family: 'Oswald', sans-serif !important;
+  font-size: 10px !important;
+  letter-spacing: 1.6px !important;
+  padding: 6px 14px !important;
+  text-transform: uppercase;
+  border-top: 1px solid rgba(245, 129, 31, 0.2);
+  border-bottom: 1px solid rgba(245, 129, 31, 0.2);
+  margin: 0 !important;
+}
+
+/* ── モバイル menu の close ボタン orange ── */
+.l-spMenu__close,
+.c-hamburger.-open span,
+.p-hamburger.-open span {
+  background: var(--orange) !important;
+}
+
+/* ── モバイル menu の内部 search form orange ── */
+.l-spMenu .c-searchForm__s,
+.p-spNav .c-searchForm__s {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border: 2px solid var(--orange) !important;
+  color: var(--black) !important;
+}
+.l-spMenu .c-searchForm__submit,
+.p-spNav .c-searchForm__submit {
+  background: var(--orange) !important;
+  color: var(--white) !important;
+}
+
 /* ── 共通 notice / alert box (is-style-notice 等) ── */
 .is-style-notice,
 .is-style-info,

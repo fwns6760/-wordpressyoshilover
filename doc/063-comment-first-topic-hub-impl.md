@@ -1,6 +1,6 @@
 # 063 — 062 comment-first topic hub impl(front 実装在庫)
 
-**フェーズ：** 062 contract の impl 便(063-V1/V2 close、063-V3/V4 deploy 待ち、063-V5 local impl)
+**フェーズ：** 062 contract の impl 便(063-V1/V2 close、063-V3/V4 deploy 待ち、063-V5 live、063-V6 local impl)
 **担当：** `Codex front lane`(2026-04-24、063-V2 live smoke pass 後に V3 着手)
 **依存：** 062 accepted(contract doc 確定、2026-04-22)、047 accepted(`da692fc`、派生記事 emit 層着地、062 hub の話題源泉供給成立)
 **状態：** `063-V1 ACCEPTED / CLOSE`(2026-04-24、deploy + WP 実機 smoke 5/5 pass)、`063-V2 ACCEPTED / CLOSE`(2026-04-24、一覧 density live 反映 + E-2 re-smoke pass)、`063-V3 IN PROGRESS`(トップ速報帯 + 記事下回遊束、local impl / live pending)、`063-V4 IN PROGRESS`(sidebar redesign + 今日の巨人 box、local impl)
@@ -59,6 +59,13 @@
 - `set_front_top_widget_stack` の既定順を `[yoshilover_dense_nav] -> [yoshilover_breaking_strip] -> [yoshilover_topic_hub]` に更新し、上部導線 / 速報 / 話題 の役割を分けた
 - `src/custom.css` に dense nav rail の style を追加し、390px 幅では横スクロール許容 + chip 縮小で崩れない前提にした
 - V5 でも route / pickup / validator / automation / published 書込経路は不可触、WP admin bundle は plugin version 追随で `build/063-v5-wp-admin/` に生成する
+
+## 2026-04-24 V6 implementation memo
+
+- `src/yoshilover-063-frontend.php` に `最近3日間の人気記事` box 用の renderer を追加し、最近3日以内の公開記事を `comment_count` 優先 + 新しさ補正で並べる近似ロジックを入れた
+- 右カラム rail は `今日の巨人 -> 最近3日間の人気記事 -> 注目トピック -> カテゴリ導線` の順に整理し、既存 widget 群はそのまま残す
+- `src/custom.css` では人気記事 box の順位番号、badge、コメント数、時刻、2行タイトルを追加し、390px 幅では rank とタイトルが潰れないように調整した
+- V6 でも route / pickup / validator / automation / published 書込経路は不可触、WP admin bundle は plugin version 追随で `build/063-v6-wp-admin/` に生成する
 
 ---
 

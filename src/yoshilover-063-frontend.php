@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
- * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビまで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.5.0
+ * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
+ * Version: 0.6.0
  * Author: yoshilover
  */
 
@@ -543,6 +543,115 @@ function yoshilover_063_get_sidebar_category_links( $limit = 6 ) {
     return $items;
 }
 
+function yoshilover_063_get_sidebar_popular_items( $limit = 8 ) {
+    $limit = max( 1, min( 10, (int) $limit ) );
+    $window_start = strtotime( '-3 days', current_time( 'timestamp' ) );
+
+    $query = new WP_Query(
+        array(
+            'post_type'              => 'post',
+            'post_status'            => 'publish',
+            'posts_per_page'         => 24,
+            'ignore_sticky_posts'    => true,
+            'no_found_rows'          => true,
+            'date_query'             => array(
+                array(
+                    'after'     => gmdate( 'Y-m-d H:i:s', $window_start ),
+                    'inclusive' => true,
+                    'column'    => 'post_date_gmt',
+                ),
+            ),
+            'orderby'                => 'date',
+            'order'                  => 'DESC',
+            'update_post_meta_cache' => true,
+            'update_post_term_cache' => true,
+        )
+    );
+
+    $ranked = array();
+    foreach ( $query->posts as $post ) {
+        if ( ! ( $post instanceof WP_Post ) ) {
+            continue;
+        }
+
+        $comment_count = max( 0, (int) $post->comment_count );
+        $age_hours     = max( 1, (int) floor( ( current_time( 'timestamp' ) - get_post_timestamp( $post ) ) / HOUR_IN_SECONDS ) );
+        $freshness     = max( 1, 72 - $age_hours );
+        $score         = ( $comment_count * 10 ) + $freshness;
+        $text          = yoshilover_063_front_density_text( $post );
+        $subtype       = yoshilover_063_resolve_front_density_subtype( $post, $text );
+
+        $ranked[] = array(
+            'score'         => $score,
+            'comment_count' => $comment_count,
+            'time'          => yoshilover_063_format_compact_post_time( $post ),
+            'label'         => yoshilover_063_front_density_subtype_label( $subtype ),
+            'subtype'       => $subtype,
+            'title'         => trim( (string) $post->post_title ),
+            'url'           => get_permalink( $post ),
+        );
+    }
+
+    wp_reset_postdata();
+
+    usort(
+        $ranked,
+        function( $a, $b ) {
+            if ( $a['score'] === $b['score'] ) {
+                return strcmp( (string) $b['time'], (string) $a['time'] );
+            }
+            return $b['score'] <=> $a['score'];
+        }
+    );
+
+    return array_slice( $ranked, 0, $limit );
+}
+
+function yoshilover_063_render_sidebar_popular_box( $atts = array() ) {
+    $atts = shortcode_atts(
+        array(
+            'heading' => '最近3日間の人気記事',
+            'limit'   => 8,
+        ),
+        $atts,
+        'yoshilover_sidebar_popular'
+    );
+
+    $items = yoshilover_063_get_sidebar_popular_items( (int) $atts['limit'] );
+    if ( empty( $items ) ) {
+        return '';
+    }
+
+    $html  = '<section class="yoshi-sidebar-rail__section yoshi-sidebar-rail__section--popular" aria-label="人気記事" data-yoshi-phase="6">';
+    $html .= '<h3 class="yoshi-sidebar-rail__title">' . esc_html( $atts['heading'] ) . '</h3>';
+    $html .= '<ol class="yoshi-sidebar-rail__popular-list">';
+
+    foreach ( $items as $index => $item ) {
+        $html .= '<li class="yoshi-sidebar-rail__popular-item">';
+        $html .= '<a class="yoshi-sidebar-rail__popular-link" href="' . esc_url( $item['url'] ) . '">';
+        $html .= '<span class="yoshi-sidebar-rail__popular-rank">' . esc_html( (string) ( $index + 1 ) ) . '</span>';
+        $html .= '<span class="yoshi-sidebar-rail__popular-body">';
+        $html .= '<span class="yoshi-sidebar-rail__popular-meta">';
+        $html .= '<span class="yoshi-sidebar-rail__popular-badge yoshi-sidebar-rail__popular-badge--' . esc_attr( $item['subtype'] ) . '">' . esc_html( $item['label'] ) . '</span>';
+        if ( $item['comment_count'] > 0 ) {
+            $html .= '<span class="yoshi-sidebar-rail__popular-comments">コメント ' . esc_html( (string) $item['comment_count'] ) . '</span>';
+        }
+        if ( $item['time'] !== '' ) {
+            $html .= '<time class="yoshi-sidebar-rail__popular-time">' . esc_html( $item['time'] ) . '</time>';
+        }
+        $html .= '</span>';
+        $html .= '<span class="yoshi-sidebar-rail__popular-title">' . esc_html( $item['title'] ) . '</span>';
+        $html .= '</span>';
+        $html .= '</a>';
+        $html .= '</li>';
+    }
+
+    $html .= '</ol>';
+    $html .= '</section>';
+
+    return $html;
+}
+
 function yoshilover_063_render_today_giants_box( $atts = array() ) {
     $atts = shortcode_atts(
         array(
@@ -593,16 +702,21 @@ function yoshilover_063_render_today_giants_box( $atts = array() ) {
 
 function yoshilover_063_render_sidebar_rail( $atts = array() ) {
     $today_box   = yoshilover_063_render_today_giants_box();
+    $popular_box = yoshilover_063_render_sidebar_popular_box();
     $topics      = yoshilover_063_get_sidebar_topic_links( 4 );
     $categories  = yoshilover_063_get_sidebar_category_links( 6 );
 
-    if ( $today_box === '' && empty( $topics ) && empty( $categories ) ) {
+    if ( $today_box === '' && $popular_box === '' && empty( $topics ) && empty( $categories ) ) {
         return '';
     }
 
     $html  = '<aside class="yoshi-sidebar-rail" aria-label="右カラム導線" data-yoshi-phase="4">';
     if ( $today_box !== '' ) {
         $html .= $today_box;
+    }
+
+    if ( $popular_box !== '' ) {
+        $html .= $popular_box;
     }
 
     if ( ! empty( $topics ) ) {

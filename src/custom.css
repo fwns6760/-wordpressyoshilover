@@ -915,6 +915,98 @@ a:hover { color: var(--orange); opacity: 0.8; }
   line-height: 1.45;
   color: var(--dark-gray);
 }
+
+.yoshi-sidebar-rail__popular-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.yoshi-sidebar-rail__popular-item + .yoshi-sidebar-rail__popular-item {
+  border-top: 1px solid var(--light-gray);
+}
+.yoshi-sidebar-rail__popular-link {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px 14px;
+  color: inherit;
+  text-decoration: none;
+}
+.yoshi-sidebar-rail__popular-link:hover {
+  background: var(--orange-light);
+  opacity: 1;
+}
+.yoshi-sidebar-rail__popular-rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(26, 26, 26, 0.96);
+  color: var(--white);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+.yoshi-sidebar-rail__popular-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.yoshi-sidebar-rail__popular-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+.yoshi-sidebar-rail__popular-badge,
+.yoshi-sidebar-rail__popular-comments,
+.yoshi-sidebar-rail__popular-time {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.yoshi-sidebar-rail__popular-badge {
+  background: rgba(245, 129, 31, 0.12);
+  color: var(--orange);
+}
+.yoshi-sidebar-rail__popular-badge--lineup {
+  background: rgba(34, 107, 167, 0.12);
+  color: var(--blue);
+}
+.yoshi-sidebar-rail__popular-badge--postgame {
+  background: rgba(80, 85, 91, 0.12);
+  color: #50555b;
+}
+.yoshi-sidebar-rail__popular-badge--notice {
+  background: rgba(186, 44, 63, 0.12);
+  color: #ba2c3f;
+}
+.yoshi-sidebar-rail__popular-comments {
+  background: rgba(26, 26, 26, 0.06);
+  color: var(--mid-gray);
+}
+.yoshi-sidebar-rail__popular-time {
+  padding-left: 0;
+  color: var(--mid-gray);
+}
+.yoshi-sidebar-rail__popular-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--dark-gray);
+}
 .yoshi-sidebar-rail__category-chips {
   display: flex;
   flex-wrap: wrap;
@@ -1501,6 +1593,20 @@ a:hover { color: var(--orange); opacity: 0.8; }
   .yoshi-sidebar-rail__category-chip {
     width: 100%;
     justify-content: space-between;
+  }
+  .yoshi-sidebar-rail__popular-link {
+    grid-template-columns: 24px minmax(0, 1fr);
+    gap: 8px;
+    padding: 10px 12px;
+  }
+  .yoshi-sidebar-rail__popular-rank {
+    width: 24px;
+    height: 24px;
+    font-size: 11px;
+  }
+  .yoshi-sidebar-rail__popular-title {
+    font-size: 11px;
+    line-height: 1.45;
   }
   .yoshi-dense-nav {
     margin-top: 8px;

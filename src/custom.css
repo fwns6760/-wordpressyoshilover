@@ -3916,6 +3916,113 @@ body > [data-ad-client] {
   pointer-events: none !important;
 }
 
+/* ====================================================================
+   ヒーロー / イベント / 試合予定 用の 帯 (CSS-only、DOM 注入用の class ready)
+   ==================================================================== */
+.yoshi-game-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: linear-gradient(90deg, var(--orange) 0%, #E06010 100%);
+  color: var(--white);
+  border-radius: 3px;
+  margin: 12px 0 14px;
+  box-shadow: 0 2px 8px rgba(245, 129, 31, 0.32);
+}
+.yoshi-game-strip__label {
+  font-family: 'Oswald', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  padding: 2px 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 2px;
+  text-transform: uppercase;
+}
+.yoshi-game-strip__text {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+.yoshi-game-strip__time {
+  font-family: 'Oswald', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+}
+
+/* ====================================================================
+   共通 pill label 巨人オレンジ (汎用 helper)
+   ==================================================================== */
+.yoshi-pill {
+  display: inline-block;
+  font-family: 'Oswald', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  color: var(--white);
+  background: var(--orange);
+  padding: 2px 9px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  line-height: 1.4;
+}
+.yoshi-pill.-dark { background: var(--black); color: var(--orange); }
+.yoshi-pill.-outline { background: transparent; color: var(--orange); border: 1px solid var(--orange); }
+
+/* ====================================================================
+   巨大 数字 / スコア display 用 class (「巨人 3-1 阪神」等)
+   ==================================================================== */
+.yoshi-score {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: 'Oswald', sans-serif;
+  font-weight: 700;
+}
+.yoshi-score__team {
+  font-size: 14px;
+  letter-spacing: 0.4px;
+  color: var(--dark-gray);
+}
+.yoshi-score__num {
+  font-size: 28px;
+  color: var(--orange);
+  line-height: 1;
+}
+.yoshi-score__sep {
+  font-size: 22px;
+  color: var(--mid-gray);
+  line-height: 1;
+}
+
+/* ====================================================================
+   見出し (c-secTitle) の SWELL default デザイン統一
+   ==================================================================== */
+.c-secTitle:not(.-widget),
+.p-front__heading {
+  font-family: 'Oswald', sans-serif !important;
+  font-size: 18px !important;
+  letter-spacing: 1.6px !important;
+  color: var(--black) !important;
+  text-transform: uppercase;
+  position: relative;
+  padding: 4px 0 6px 14px !important;
+  border-left: 5px solid var(--orange) !important;
+  margin: 24px 0 14px !important;
+}
+@media (max-width: 600px) {
+  .c-secTitle:not(.-widget),
+  .p-front__heading {
+    font-size: 15px !important;
+    letter-spacing: 1.2px !important;
+    padding: 3px 0 5px 11px !important;
+    border-left-width: 4px !important;
+  }
+}
+
 /* ── モバイル 投稿/固定ページの上部 (breadcrumb / metas / title / eyecatch) 間隔圧縮 ── */
 @media (max-width: 768px) {
   /* パン屑 padding 圧縮 + 文字小 */

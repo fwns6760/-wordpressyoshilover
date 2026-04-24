@@ -1982,6 +1982,141 @@ select:focus-visible,
   .p-entryEyeCatch { border-bottom-width: 2px !important; }
 }
 
+/* ── モバイル post list thumb を大きめ + 2 行タイトル ── */
+@media (max-width: 768px) {
+  .-type-list .p-postList__eyecatch,
+  .p-postList.-list .p-postList__eyecatch {
+    width: 100px !important;
+    height: 68px !important;
+    border-radius: 3px !important;
+  }
+  .-type-list .p-postList__item a,
+  .p-postList.-list .p-postList__item a { padding: 10px 12px !important; gap: 10px !important; }
+  .-type-list .p-postList__ttl,
+  .p-postList.-list .p-postList__ttl { font-size: 13.5px !important; -webkit-line-clamp: 3 !important; }
+}
+@media (max-width: 390px) {
+  .-type-list .p-postList__eyecatch,
+  .p-postList.-list .p-postList__eyecatch {
+    width: 82px !important;
+    height: 58px !important;
+  }
+  .-type-list .p-postList__item a,
+  .p-postList.-list .p-postList__item a { padding: 9px 10px !important; gap: 8px !important; }
+  .-type-list .p-postList__ttl,
+  .p-postList.-list .p-postList__ttl { font-size: 12.5px !important; line-height: 1.4 !important; }
+}
+
+/* ── モバイル main padding 圧縮 (l-mainContent__inner 左右の余白) ── */
+@media (max-width: 600px) {
+  .l-mainContent__inner,
+  .l-main__inner,
+  .l-wrap__inner { padding-left: 10px !important; padding-right: 10px !important; }
+}
+@media (max-width: 390px) {
+  .l-mainContent__inner,
+  .l-main__inner,
+  .l-wrap__inner { padding-left: 8px !important; padding-right: 8px !important; }
+}
+
+/* ── モバイル sidebar はメイン下回り込み時の top margin + widget 間圧縮 ── */
+@media (max-width: 1023px) {
+  .l-sidebar { position: static !important; max-height: none !important; overflow: visible !important; margin-top: 18px; }
+  .l-sidebar .widget { margin-bottom: 12px !important; }
+}
+
+/* ── scroll-top btn モバイル位置 + safe-area 対応 (iPhone) ── */
+.p-scrollTopBtn,
+.c-scrollTopBtn {
+  bottom: max(14px, env(safe-area-inset-bottom)) !important;
+  right: 12px !important;
+  box-shadow: 0 4px 12px rgba(26, 26, 26, 0.28);
+}
+@media (max-width: 600px) {
+  .p-scrollTopBtn,
+  .c-scrollTopBtn {
+    width: 38px !important;
+    height: 38px !important;
+    font-size: 14px !important;
+  }
+}
+
+/* ── モバイル bottom-fix menu の安全域 padding ── */
+.p-fixBottomMenu,
+.c-spBottomMenu {
+  padding-bottom: env(safe-area-inset-bottom) !important;
+}
+/* bottom-fix menu 表示時、本文最下端が隠れないよう padding 確保 */
+@media (max-width: 960px) {
+  body:has(.p-fixBottomMenu),
+  body:has(.c-spBottomMenu) {
+    padding-bottom: calc(56px + env(safe-area-inset-bottom));
+  }
+}
+
+/* ── モバイル footer を薄く ── */
+@media (max-width: 600px) {
+  .l-footer { padding: 20px 0 14px !important; margin-top: 28px; border-top-width: 4px !important; }
+  .l-footer .c-logo__text,
+  .l-footer .site-name-text,
+  .l-footer .p-logo__title { font-size: 17px !important; letter-spacing: 1.8px !important; }
+  .l-footer__nav { gap: 10px !important; font-size: 11px !important; }
+  .l-footer .c-copy { font-size: 10px !important; }
+}
+@media (max-width: 390px) {
+  .l-footer { padding: 16px 0 12px !important; }
+  .l-footer__nav { gap: 8px !important; }
+}
+
+/* ── topic-hub item タブレットで 2 col (600-900) ── */
+@media (min-width: 601px) and (max-width: 900px) {
+  .yoshi-topic-hub__items { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}
+
+/* ── article-bundles groups タブレットで 1 col (600-768) ── */
+@media (min-width: 601px) and (max-width: 768px) {
+  .yoshi-article-bundles__groups { grid-template-columns: 1fr !important; }
+}
+
+/* ── モバイル table は scroll 可能に (巨人打者指標 等で横溢) ── */
+@media (max-width: 600px) {
+  .post_content table,
+  .entry-content table,
+  .wp-block-table { font-size: 12.5px !important; }
+  .post_content table th,
+  .entry-content table th { padding: 8px 10px !important; }
+  .post_content table td,
+  .entry-content table td { padding: 7px 10px !important; }
+  .wp-block-table,
+  .post_content .yoshilover-lineup-stats { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}
+
+/* ── モバイル p-articleMetas (タイトル上のカテゴリ/日付) 縦方向ギャップ ── */
+@media (max-width: 600px) {
+  .p-articleMetas.-top { gap: 6px 10px !important; }
+  .p-articleMetas__termList .c-categoryList__link,
+  .c-categoryList__link { font-size: 9.5px !important; padding: 2px 8px !important; }
+}
+
+/* ── モバイル sns-reactions embed の最大幅 ── */
+@media (max-width: 600px) {
+  .yoshi-sns-reactions__embed { max-width: 100% !important; }
+  .yoshi-sns-reactions__embed .twitter-tweet { max-width: 100% !important; }
+}
+
+/* ── モバイル TOC 折りたたみ時 compact ── */
+@media (max-width: 600px) {
+  .p-toc__ttl { font-size: 12.5px !important; }
+  .p-toc a { font-size: 12px !important; }
+  .p-toc li { margin-bottom: 3px !important; padding-left: 12px !important; }
+}
+
+/* ── iOS Safari の 100vh 問題対応 (全画面 menu 等で使う場合) ── */
+@supports (height: 100dvh) {
+  .l-sidebar[data-sticky="true"] { max-height: calc(100dvh - 90px); }
+  body:has(.yoshi-spMenu-open) .yoshi-spMenu { height: 100dvh; }
+}
+
 /* ── 記事リスト item shadow + hover elevation ── */
 .-type-list .p-postList__item,
 .p-postList.-list .p-postList__item {

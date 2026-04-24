@@ -9843,17 +9843,17 @@ def _rewrite_display_title_with_template(title: str, summary: str, category: str
         if "フォーム" in source_text or "助言" in source_text or "修正" in source_text:
             return _result(f"{subject}、フォーム変更のポイントはどこか", "player_mechanics_generic")
         if PLAYER_DEREGISTER_TITLE_RE.search(source_text):
-            return _result(f"{subject}、登録抹消後にどこを見たいか", "player_status_deregister")
+            return _result(f"{subject}、登録抹消 関連情報", "player_status_deregister")
         if PLAYER_JOIN_TITLE_RE.search(source_text):
-            return _result(f"{subject}、一軍合流でどこを見たいか", "player_status_join")
+            return _result(f"{subject}、一軍合流 関連情報", "player_status_join")
         if PLAYER_REGISTER_TITLE_RE.search(source_text):
             if notice_type in {"一軍登録", "再登録"}:
-                return _result(f"{subject}、{notice_type}でどこを見たいか", "player_status_register")
-            return _result(f"{subject}、登録後にどこを見たいか", "player_status_register")
+                return _result(f"{subject}、{notice_type} 関連情報", "player_status_register")
+            return _result(f"{subject}、登録に関する関連情報", "player_status_register")
         if PLAYER_RETURN_TITLE_RE.search(source_text) or "昇格" in source_text or "一軍" in source_text or "復帰" in source_text:
-            return _result(f"{subject}、昇格・復帰でどこを見たいか", "player_status_return")
+            return _result(f"{subject}、昇格・復帰 関連情報", "player_status_return")
         if quote_text:
-            return _result(f"{subject}「{quote_text}」 実戦で何を見せるか", "player_quote")
+            return _result(f"{subject}「{quote_text}」 関連発言", "player_quote")
         return _result(f"{subject}の現状整理 いま何を見たいか", "player_generic")
 
     if category == "首脳陣":
@@ -9864,7 +9864,7 @@ def _rewrite_display_title_with_template(title: str, summary: str, category: str
                 max_chars=40,
             )
         if quote_text and ("スタメン" in source_text or "打順" in source_text or "起用" in source_text):
-            return _result(f"{manager_display_subject}「{quote_text}」 次のスタメンはどう動くか", "manager_quote_lineup")
+            return _result(f"{manager_display_subject}「{quote_text}」 スタメン関連発言", "manager_quote_lineup")
         if quote_text:
             return _result(f"{manager_display_subject}「{quote_text}」 ベンチの狙いはどこか", "manager_quote_generic")
         return _result(f"{subject}コメント整理 ベンチは何を動かすのか", "manager_generic")
@@ -9872,12 +9872,12 @@ def _rewrite_display_title_with_template(title: str, summary: str, category: str
     if category == "試合速報":
         if "スライド登板" in source_text or RAINOUT_SLIDE_TITLE_RE.search(source_text):
             if "雨天中止" in source_text or "雨で中止" in source_text:
-                return _result(f"{subject}、雨天中止スライド登板で何を見るか", "game_rainout_slide_rainout")
+                return _result(f"{subject}、雨天中止スライド登板 関連情報", "game_rainout_slide_rainout")
             if venue:
-                return _result(f"{subject}、{venue}スライド登板で何を見るか", "game_rainout_slide_venue")
+                return _result(f"{subject}、{venue}スライド登板 関連情報", "game_rainout_slide_venue")
             if opponent:
-                return _result(f"{subject}、{opponent}戦スライド登板で何を見るか", "game_rainout_slide_opponent")
-            return _result(f"{subject}、スライド登板で何を見たいか", "game_rainout_slide_generic")
+                return _result(f"{subject}、{opponent}戦スライド登板 関連情報", "game_rainout_slide_opponent")
+            return _result(f"{subject}、スライド登板 関連情報", "game_rainout_slide_generic")
         if subtype == "lineup":
             body = clean_title.replace("今日の", "").replace("スタメン発表", "").replace("発表", "").strip()
             capped = body[:25].rstrip()
@@ -9891,7 +9891,7 @@ def _rewrite_display_title_with_template(title: str, summary: str, category: str
             if any(marker in source_text for marker in ("勝ち越し", "逆転")) and score:
                 return _result(f"巨人{state_label} {score.group(0)} どこで流れが変わったか", "game_live_swing")
             if "同点" in source_text and score:
-                return _result(f"巨人{state_label} {score.group(0)} 同点でどこが動いたか", "game_live_tie")
+                return _result(f"巨人{state_label} {score.group(0)} 同点の試合状況", "game_live_tie")
             if score:
                 return _result(f"巨人{state_label} {score.group(0)} 途中経過のポイント", "game_live_score")
             return _result(f"巨人{state_label} 途中経過のポイント", "game_live_generic")

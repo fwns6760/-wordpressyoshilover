@@ -24,7 +24,7 @@ class TestWPClientDedup(unittest.TestCase):
             json=lambda: [
                 {
                     "id": 456,
-                    "title": {"raw": "田中将大「打線を線にしない」 実戦で何を見せるか"},
+                    "title": {"raw": "田中将大「打線を線にしない」 関連発言"},
                     "status": "draft",
                     "date": "2099-04-14T17:39:28",
                     "featured_media": 0,
@@ -34,7 +34,7 @@ class TestWPClientDedup(unittest.TestCase):
         )
 
         post_id = self.wp.create_draft(
-            "田中将大「打線を線にしない」 実戦で何を見せるか",
+            "田中将大「打線を線にしない」 関連発言",
             "<p>body</p>",
             categories=[663],
             featured_media=62100,
@@ -121,7 +121,7 @@ class TestWPClientDedup(unittest.TestCase):
         mock_post.return_value = Mock(status_code=201, json=lambda: {"id": 987})
 
         post_id = self.wp.create_post(
-            "松本剛「甘いところを絞って打ちに行こう」 実戦で何を見せるか",
+            "松本剛「甘いところを絞って打ちに行こう」 関連発言",
             "<p>body</p>",
             status="draft",
         )

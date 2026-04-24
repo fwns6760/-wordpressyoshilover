@@ -5,7 +5,7 @@
     "summary": "",
     "category": "選手情報",
     "has_game": true,
-    "expected_title": "松本剛「甘いところを絞って打ちに行こう」 実戦で何を見せるか"
+    "expected_title": "松本剛「甘いところを絞って打ちに行こう」 関連発言"
   },
   {
     "name": "player_quote_middle_dot_after_team",
@@ -13,7 +13,7 @@
     "summary": "田中将大が移籍後初の阪神戦に向け「打線を線にしない」と話した。",
     "category": "選手情報",
     "has_game": true,
-    "expected_title": "田中将大「打線を線にしない」 実戦で何を見せるか"
+    "expected_title": "田中将大「打線を線にしない」 関連発言"
   },
   {
     "name": "player_status_return_from_injury",
@@ -21,7 +21,7 @@
     "summary": "山崎伊織が復帰へ前進し、ブルペンで本格的な投球練習を行った。",
     "category": "選手情報",
     "has_game": false,
-    "expected_title": "山崎伊織、昇格・復帰でどこを見たいか"
+    "expected_title": "山崎伊織、昇格・復帰 関連情報"
   },
   {
     "name": "farm_development_fullwidth_2gun",
@@ -37,7 +37,7 @@
     "summary": "巨人田中将大投手（37）が雨天中止にともなってスライド登板することになった。先発予定だった15日の阪神戦（甲子園）が雨天中止となり、16日の同戦にスライドすることになった。",
     "category": "試合速報",
     "has_game": false,
-    "expected_title": "田中将大、雨天中止スライド登板で何を見るか"
+    "expected_title": "田中将大、雨天中止スライド登板 関連情報"
   },
   {
     "name": "farm_lineup_from_today_rss",
@@ -61,7 +61,7 @@
     "summary": "巨人中山礼都外野手（24）が15日、今季初めて出場選手登録を抹消された。外野手に転向した今季はここまで12試合で打率1割4分7厘、OPS・393と苦しんでおり、前日の阪神戦（甲子園）では4打数無安打だった。代わりにドラフト4位の皆川岳飛が1軍に合流した。",
     "category": "選手情報",
     "has_game": false,
-    "expected_title": "中山礼都、登録抹消後にどこを見たいか"
+    "expected_title": "中山礼都、登録抹消 関連情報"
   },
   {
     "name": "player_status_return_from_today_rss",
@@ -69,7 +69,7 @@
     "summary": "巨人・吉川尚輝がマルチ安打で調整上々「体もいい感じだし、しっかり野球をできた」１軍復帰へ着実",
     "category": "選手情報",
     "has_game": false,
-    "expected_title": "吉川尚輝、昇格・復帰でどこを見たいか"
+    "expected_title": "吉川尚輝、昇格・復帰 関連情報"
   },
   {
     "name": "player_status_foreign_join",
@@ -77,6 +77,6 @@
     "summary": "先発ローテ候補として一軍に合流した。次回登板へ向けた調整段階にある。",
     "category": "選手情報",
     "has_game": false,
-    "expected_title": "グリフィン、一軍合流でどこを見たいか"
+    "expected_title": "グリフィン、一軍合流 関連情報"
   }
 ]

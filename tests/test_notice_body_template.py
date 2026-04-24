@@ -76,7 +76,7 @@ class NoticeBodyTemplateTests(unittest.TestCase):
             rss_fetcher._log_notice_body_template_applied(
                 logger,
                 post_id=62396,
-                title="皆川岳飛、一軍登録でどこを見たいか",
+                title="皆川岳飛、一軍登録 関連情報",
                 notice_type="一軍登録",
                 section_count=4,
                 has_player_name=True,
@@ -97,7 +97,7 @@ class NoticeBodyTemplateTests(unittest.TestCase):
 
         rewritten = rss_fetcher.rewrite_display_title(title, "", "選手情報", False)
 
-        self.assertEqual(rewritten, "皆川岳飛、一軍登録でどこを見たいか")
+        self.assertEqual(rewritten, "皆川岳飛、一軍登録 関連情報")
 
     def test_notice_position_prefers_giants_subject_over_other_team_player(self):
         title = "◇セ・リーグ公示（１６日） 【出場選手登録】 ＤｅＮＡ・Ｊ．デュプランティエ投手（ＮＰＢ感染症特例から復帰） 巨人・皆川岳飛外野手 【同抹消】 ＤｅＮＡ・..."

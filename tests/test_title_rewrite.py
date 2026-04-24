@@ -163,7 +163,7 @@ class DisplayTitleRewriteTests(unittest.TestCase):
 
         rewritten = rss_fetcher.rewrite_display_title(title, summary, "選手情報", False)
 
-        self.assertEqual(rewritten, "田中将大「打線を線にしない」 実戦で何を見せるか")
+        self.assertEqual(rewritten, "田中将大「打線を線にしない」 関連発言")
 
     def test_extract_subject_label_finds_name_from_rotation_context(self):
         title = "巨人が１４日からの阪神３連戦で先発ローテを再編 初戦は則本昂大 第２戦は田中将大"
@@ -217,7 +217,7 @@ class DisplayTitleRewriteTests(unittest.TestCase):
 
         rewritten = rss_fetcher.rewrite_display_title(title, summary, "選手情報", False)
 
-        self.assertEqual(rewritten, "トラビス・バーンズ、一軍合流でどこを見たいか")
+        self.assertEqual(rewritten, "トラビス・バーンズ、一軍合流 関連情報")
 
     def test_player_title_handles_long_foreign_name_without_falling_back_to_generic_subject(self):
         title = "カール・エドワーズ・ジュニアが来日初登板へ"

@@ -33,7 +33,7 @@
     "summary": "巨人田中将大投手（37）が雨天中止にともなってスライド登板することになった。先発予定だった15日の阪神戦（甲子園）が雨天中止となり、16日の同戦にスライドすることになった。",
     "category": "試合速報",
     "has_game": false,
-    "expected_title": "田中将大、雨天中止スライド登板で何を見るか"
+    "expected_title": "田中将大、雨天中止スライド登板 関連情報"
   },
   {
     "name": "rainout_slide_venue_angle",
@@ -42,7 +42,7 @@
     "summary": "",
     "category": "試合速報",
     "has_game": false,
-    "expected_title": "田中将大、甲子園スライド登板で何を見るか"
+    "expected_title": "田中将大、甲子園スライド登板 関連情報"
   },
   {
     "name": "farm_result_rainout_angle",
@@ -69,7 +69,7 @@
     "summary": "",
     "category": "選手情報",
     "has_game": false,
-    "expected_title": "西舘勇陽選手、昇格・復帰でどこを見たいか"
+    "expected_title": "西舘勇陽選手、昇格・復帰 関連情報"
   },
   {
     "name": "rescued_notice_nakayama_unique",

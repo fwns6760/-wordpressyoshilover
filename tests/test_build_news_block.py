@@ -339,7 +339,7 @@ class BuildNewsBlockTests(unittest.TestCase):
         with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
             with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
                 blocks, _ = rss_fetcher.build_news_block(
-                    title="皆川岳飛、一軍登録でどこを見たいか",
+                    title="皆川岳飛、一軍登録 関連情報",
                     summary="巨人・皆川岳飛外野手が出場選手登録された。",
                     url="https://example.com/post",
                     source_name="スポニチ",
@@ -376,7 +376,7 @@ class BuildNewsBlockTests(unittest.TestCase):
         with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
             with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
                 blocks, _ = rss_fetcher.build_news_block(
-                    title="皆川岳飛、一軍登録でどこを見たいか",
+                    title="皆川岳飛、一軍登録 関連情報",
                     summary="巨人・皆川岳飛外野手が出場選手登録された。",
                     url="https://example.com/post",
                     source_name="スポニチ",

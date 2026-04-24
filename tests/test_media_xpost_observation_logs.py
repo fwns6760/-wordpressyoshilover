@@ -41,7 +41,7 @@ class MediaXpostObservationLogTests(unittest.TestCase):
             rss_fetcher._log_media_xpost_skipped(
                 logger,
                 post_id=62551,
-                title="皆川岳飛、一軍登録でどこを見たいか",
+                title="皆川岳飛、一軍登録 関連情報",
                 category="選手情報",
                 article_subtype="notice",
                 skip_meta={
@@ -59,7 +59,7 @@ class MediaXpostObservationLogTests(unittest.TestCase):
             {
                 "event": "media_xpost_skipped",
                 "post_id": 62551,
-                "title": "皆川岳飛、一軍登録でどこを見たいか",
+                "title": "皆川岳飛、一軍登録 関連情報",
                 "category": "選手情報",
                 "article_subtype": "notice",
                 "skip_reason": "score_below_threshold",

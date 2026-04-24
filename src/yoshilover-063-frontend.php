@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.6.0
+ * Version: 0.7.0
  * Author: yoshilover
  */
 
@@ -1092,7 +1092,7 @@ function yoshilover_063_enqueue_front_density_assets() {
         return;
     }
 
-    wp_register_script( 'yoshilover-063-front-density', false, array(), '0.4.0', true );
+    wp_register_script( 'yoshilover-063-front-density', false, array(), '0.7.0', true );
     wp_enqueue_script( 'yoshilover-063-front-density' );
 
     $payload = array(
@@ -1143,9 +1143,34 @@ function yoshilover_063_enqueue_front_density_assets() {
     if (meta.chain) {
       metaRow.appendChild(createNode('span', 'yoshi-front-card__chip yoshi-front-card__chip--chain', meta.chain));
     }
+    const detailRow = document.createElement('div');
+    detailRow.className = 'yoshi-front-card__detail';
+    if (meta.is_new) {
+      detailRow.appendChild(createNode('span', 'yoshi-front-card__detail-chip yoshi-front-card__detail-chip--new', 'NEW'));
+    }
+    if (meta.relative_time) {
+      detailRow.appendChild(createNode('time', 'yoshi-front-card__detail-chip yoshi-front-card__detail-chip--time', meta.relative_time));
+    }
+    if (meta.comment_count && Number(meta.comment_count) > 0) {
+      detailRow.appendChild(createNode('span', 'yoshi-front-card__detail-chip yoshi-front-card__detail-chip--comments', `コメント ${meta.comment_count}`));
+    }
+    if (meta.opponent) {
+      detailRow.appendChild(createNode('span', 'yoshi-front-card__detail-chip yoshi-front-card__detail-chip--opponent', meta.opponent));
+    }
+    if (meta.primary_category) {
+      detailRow.appendChild(createNode('span', 'yoshi-front-card__detail-chip yoshi-front-card__detail-chip--category', meta.primary_category));
+    }
+    if (meta.primary_tag) {
+      detailRow.appendChild(createNode('span', 'yoshi-front-card__detail-chip yoshi-front-card__detail-chip--tag', meta.primary_tag));
+    }
     if (meta.summary) {
       const summary = createNode('p', 'yoshi-front-card__summary', meta.summary);
       title.insertAdjacentElement('afterend', summary);
+      if (detailRow.childNodes.length > 0) {
+        summary.insertAdjacentElement('afterend', detailRow);
+      }
+    } else if (detailRow.childNodes.length > 0) {
+      title.insertAdjacentElement('afterend', detailRow);
     }
     if (metaRow.childNodes.length > 0) {
       title.insertAdjacentElement('beforebegin', metaRow);
@@ -1250,21 +1275,36 @@ function yoshilover_063_build_front_density_cards() {
 }
 
 function yoshilover_063_build_front_density_card( $post ) {
-    $path    = yoshilover_063_normalize_front_card_path( get_permalink( $post ) );
-    $text    = yoshilover_063_front_density_text( $post );
-    $subtype = yoshilover_063_resolve_front_density_subtype( $post, $text );
-    $phase   = yoshilover_063_extract_front_density_phase( $post->post_title . ' ' . $text );
-    $score   = yoshilover_063_extract_front_density_score( $post->post_title . ' ' . $text );
-    $summary = yoshilover_063_build_front_density_summary( $post, $text, $phase );
+    $path            = yoshilover_063_normalize_front_card_path( get_permalink( $post ) );
+    $text            = yoshilover_063_front_density_text( $post );
+    $subtype         = yoshilover_063_resolve_front_density_subtype( $post, $text );
+    $combined_text   = $post->post_title . ' ' . $text;
+    $phase           = yoshilover_063_extract_front_density_phase( $combined_text );
+    $score           = yoshilover_063_extract_front_density_score( $combined_text );
+    $summary         = yoshilover_063_build_front_density_summary( $post, $text, $phase );
+    $categories      = yoshilover_063_get_post_term_names( $post->ID, 'category' );
+    $tags            = yoshilover_063_get_post_term_names( $post->ID, 'post_tag' );
+    $comment_count   = max( 0, (int) $post->comment_count );
+    $relative_time   = yoshilover_063_format_relative_post_time( $post );
+    $compact_time    = yoshilover_063_format_compact_post_time( $post );
+    $primary_category = ! empty( $categories[0] ) ? (string) $categories[0] : '';
+    $primary_tag      = ! empty( $tags[0] ) ? (string) $tags[0] : '';
+    $opponent        = yoshilover_063_front_density_extract_opponent( $combined_text );
 
     return array(
-        'path'        => $path,
-        'subtype'     => $subtype,
-        'label'       => yoshilover_063_front_density_subtype_label( $subtype ),
-        'phase'       => $phase,
-        'score'       => $score,
-        'summary'     => $summary,
-        'context_key' => yoshilover_063_front_density_context_key( $post, $subtype, $post->post_title . ' ' . $text ),
+        'path'             => $path,
+        'subtype'          => $subtype,
+        'label'            => yoshilover_063_front_density_subtype_label( $subtype ),
+        'phase'            => $phase,
+        'score'            => $score,
+        'summary'          => $summary,
+        'is_new'           => yoshilover_063_is_recent_post( $post, DAY_IN_SECONDS ),
+        'relative_time'    => $relative_time !== '' ? $relative_time : $compact_time,
+        'comment_count'    => $comment_count,
+        'primary_category' => $primary_category,
+        'primary_tag'      => $primary_tag,
+        'opponent'         => $opponent,
+        'context_key'      => yoshilover_063_front_density_context_key( $post, $subtype, $combined_text ),
     );
 }
 
@@ -1467,6 +1507,40 @@ function yoshilover_063_format_compact_post_time( $post ) {
     $now    = function_exists( 'current_time' ) ? (int) current_time( 'timestamp', true ) : time();
     $format = wp_date( 'Ymd', $timestamp ) === wp_date( 'Ymd', $now ) ? 'H:i' : 'm/d H:i';
     return wp_date( $format, $timestamp );
+}
+
+function yoshilover_063_is_recent_post( $post, $window = DAY_IN_SECONDS ) {
+    $timestamp = (int) get_post_time( 'U', true, $post );
+    if ( $timestamp <= 0 ) {
+        return false;
+    }
+
+    $now = function_exists( 'current_time' ) ? (int) current_time( 'timestamp', true ) : time();
+    return ( $now - $timestamp ) <= (int) $window;
+}
+
+function yoshilover_063_format_relative_post_time( $post ) {
+    $timestamp = (int) get_post_time( 'U', true, $post );
+    if ( $timestamp <= 0 ) {
+        return '';
+    }
+
+    $now   = function_exists( 'current_time' ) ? (int) current_time( 'timestamp', true ) : time();
+    $diff  = max( 0, $now - $timestamp );
+    $day   = DAY_IN_SECONDS;
+    $hour  = HOUR_IN_SECONDS;
+    $min   = MINUTE_IN_SECONDS;
+
+    if ( $diff > $day ) {
+        return '';
+    }
+    if ( $diff < $hour ) {
+        $minutes = max( 1, (int) floor( $diff / $min ) );
+        return $minutes . '分前';
+    }
+
+    $hours = max( 1, (int) floor( $diff / $hour ) );
+    return $hours . '時間前';
 }
 
 function yoshilover_063_first_non_empty_meta( $post_id, $keys ) {

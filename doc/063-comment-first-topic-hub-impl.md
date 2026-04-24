@@ -1,6 +1,6 @@
 # 063 — 062 comment-first topic hub impl(front 実装在庫)
 
-**フェーズ：** 062 contract の impl 便(063-V1/V2 close、063-V3/V4 deploy 待ち、063-V5 live、063-V6 local impl)
+**フェーズ：** 062 contract の impl 便(063-V1/V2 close、063-V3/V4 deploy 待ち、063-V5 live、063-V6 live close 前提、063-V7 local impl)
 **担当：** `Codex front lane`(2026-04-24、063-V2 live smoke pass 後に V3 着手)
 **依存：** 062 accepted(contract doc 確定、2026-04-22)、047 accepted(`da692fc`、派生記事 emit 層着地、062 hub の話題源泉供給成立)
 **状態：** `063-V1 ACCEPTED / CLOSE`(2026-04-24、deploy + WP 実機 smoke 5/5 pass)、`063-V2 ACCEPTED / CLOSE`(2026-04-24、一覧 density live 反映 + E-2 re-smoke pass)、`063-V3 IN PROGRESS`(トップ速報帯 + 記事下回遊束、local impl / live pending)、`063-V4 IN PROGRESS`(sidebar redesign + 今日の巨人 box、local impl)
@@ -66,6 +66,14 @@
 - 右カラム rail は `今日の巨人 -> 最近3日間の人気記事 -> 注目トピック -> カテゴリ導線` の順に整理し、既存 widget 群はそのまま残す
 - `src/custom.css` では人気記事 box の順位番号、badge、コメント数、時刻、2行タイトルを追加し、390px 幅では rank とタイトルが潰れないように調整した
 - V6 でも route / pickup / validator / automation / published 書込経路は不可触、WP admin bundle は plugin version 追随で `build/063-v6-wp-admin/` に生成する
+
+## 2026-04-24 V7 implementation memo
+
+- `src/yoshilover-063-frontend.php` の front density payload に `NEW / 相対時刻 / コメント数 / primary category / primary tag / opponent` を追加した
+- `NEW` は公開から24時間以内、相対時刻は 24 時間以内だけ `n分前 / n時間前`、それ以外は既存 compact time を使う
+- 一覧カードでは既存の `badge / phase / score / summary / chain chip` を維持したまま、summary の下に補助メタ行を追加する
+- `src/custom.css` に一覧補助メタ行の style を追加し、390px 幅では自然に折り返すように調整した
+- V7 でも route / pickup / validator / automation / published 書込経路は不可触、WP admin bundle は plugin version 追随で `build/063-v7-wp-admin/` に生成する
 
 ---
 

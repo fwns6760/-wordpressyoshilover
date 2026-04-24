@@ -111,6 +111,7 @@ NUMERIC_PATTERNS = (
 HEADING_PATTERN = re.compile(r"【[^】]+】")
 HREF_URL_PATTERN = re.compile(r'''href=["']([^"']+)["']''', re.IGNORECASE)
 RAW_URL_PATTERN = re.compile(r'''https?://[^\s"'<>]+''', re.IGNORECASE)
+SOURCE_FOOTER_URL_PATTERN = re.compile(r'参照元[:\s]*<a[^>]+href="([^"]+)"')
 STRIP_HTML_PATTERN = re.compile(r"<[^>]+>")
 AI_TONE_PATTERN = re.compile(r"(でしょう|かもしれません|と言えそうです|と言えるでしょう)")
 KANJI_TOKEN_PATTERN = re.compile(r"[一-龥]{2,}")
@@ -392,10 +393,6 @@ def _extract_source_urls(post: dict[str, Any]) -> list[str]:
         if isinstance(value, str) and value.strip():
             urls.append(_normalize_url(value))
 
-    body = _extract_content_raw(post)
-    urls.extend(_normalize_url(match) for match in HREF_URL_PATTERN.findall(body))
-    urls.extend(_normalize_url(match) for match in RAW_URL_PATTERN.findall(body))
-
     deduped: list[str] = []
     seen = set()
     for url in urls:
@@ -403,7 +400,18 @@ def _extract_source_urls(post: dict[str, Any]) -> list[str]:
             continue
         seen.add(url)
         deduped.append(url)
-    return deduped
+    if deduped:
+        return deduped
+
+    body = _extract_content_raw(post)
+    match = SOURCE_FOOTER_URL_PATTERN.search(body)
+    if not match:
+        return []
+
+    fallback_url = _normalize_url(match.group(1))
+    if not fallback_url or not _is_primary_source_url(fallback_url):
+        return []
+    return [fallback_url]
 
 
 def _extract_fact_tokens(text: str) -> list[str]:

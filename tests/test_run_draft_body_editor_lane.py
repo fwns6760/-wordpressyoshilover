@@ -509,5 +509,62 @@ class TestCollectPaginatedCandidates(unittest.TestCase):
         self.assertEqual(skip_counter, {})
 
 
+class TestExtractSourceUrls(unittest.TestCase):
+    def test_extract_source_urls_meta_present_uses_meta(self):
+        post = _make_post(
+            1401,
+            source_urls=["https://www.giants.jp/game/20260420/preview/"],
+            body=(
+                '<p>本文</p>'
+                '参照元: <a href="https://www.nikkansports.com/baseball/news/202604200001234.html">日刊</a>'
+            ),
+        )
+
+        self.assertEqual(
+            lane._extract_source_urls(post),
+            ["https://www.giants.jp/game/20260420/preview/"],
+        )
+
+    def test_extract_source_urls_meta_empty_falls_back_to_body_footer(self):
+        post = _make_post(
+            1402,
+            source_urls=[],
+            body=(
+                '<p>本文</p>'
+                '参照元: <a href="https://www.nikkansports.com/baseball/news/202604200001234.html">日刊</a>'
+            ),
+        )
+
+        self.assertEqual(
+            lane._extract_source_urls(post),
+            ["https://www.nikkansports.com/baseball/news/202604200001234.html"],
+        )
+
+    def test_extract_source_urls_meta_empty_body_no_footer_returns_empty(self):
+        post = _make_post(
+            1403,
+            source_urls=[],
+            body='<p>本文 <a href="https://www.nikkansports.com/baseball/news/202604200001234.html">関連</a></p>',
+        )
+
+        self.assertEqual(lane._extract_source_urls(post), [])
+
+    def test_extract_source_urls_meta_empty_body_multiple_footers_uses_first(self):
+        post = _make_post(
+            1404,
+            source_urls=[],
+            body=(
+                '参照元: <a href="https://www.nikkansports.com/baseball/news/202604200001234.html">日刊</a>'
+                '<p>本文</p>'
+                '参照元: <a href="https://hochi.news/articles/20260420-OHT1T51000.html">報知</a>'
+            ),
+        )
+
+        self.assertEqual(
+            lane._extract_source_urls(post),
+            ["https://www.nikkansports.com/baseball/news/202604200001234.html"],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

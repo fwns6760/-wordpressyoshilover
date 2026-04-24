@@ -2673,36 +2673,67 @@ img[loading="lazy"][data-loaded="true"] {
   font-weight: 700;
 }
 
-/* ── ボタンブロック ── */
+/* ── CTA ボタン: 全て orange 背景 + 白文字 (巨人統一) ── */
 .wp-block-button .wp-block-button__link,
+.wp-block-button.is-style-outline .wp-block-button__link,
+.wp-block-button.is-style-fill .wp-block-button__link,
 .c-btn,
-.swell-block-button a {
+.swell-block-button a,
+.swell-block-button.is-style-outline a,
+.swell-block-button.is-style-fill a,
+.p-loadMoreBtn,
+.c-loadMore__btn,
+.p-article__readMore,
+.c-readMore__btn,
+.yoshi-x-follow-cta__btn,
+.comment-form .submit,
+#submit,
+.c-searchBox__btn,
+.p-headerSearch__btn,
+.c-searchForm__submit,
+a[href="#respond"].wp-block-button__link,
+a[href*="#respond"].wp-block-button__link,
+button.cta,
+.yoshi-cta-btn {
   background: var(--orange) !important;
+  background-color: var(--orange) !important;
   color: var(--white) !important;
-  border-color: var(--orange) !important;
+  border: 2px solid var(--orange) !important;
   border-radius: 999px !important;
   font-weight: 700 !important;
-  letter-spacing: 0.6px !important;
+  font-family: 'Oswald', sans-serif !important;
+  letter-spacing: 0.8px !important;
   padding: 12px 26px !important;
-  transition: transform 0.18s, box-shadow 0.18s, opacity 0.18s !important;
+  text-decoration: none !important;
+  transition: transform 0.18s, box-shadow 0.18s, opacity 0.18s, background 0.18s !important;
+  display: inline-block;
+  text-align: center;
 }
 .wp-block-button .wp-block-button__link:hover,
-.c-btn:hover,
-.swell-block-button a:hover {
-  opacity: 0.95 !important;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 14px rgba(245, 129, 31, 0.32) !important;
-}
-/* is-style-outline (border だけ) variant */
-.wp-block-button.is-style-outline .wp-block-button__link,
-.swell-block-button.is-style-outline a {
-  background: transparent !important;
-  color: var(--orange) !important;
-  border: 2px solid var(--orange) !important;
-}
 .wp-block-button.is-style-outline .wp-block-button__link:hover,
-.swell-block-button.is-style-outline a:hover {
+.c-btn:hover,
+.swell-block-button a:hover,
+.p-loadMoreBtn:hover,
+.c-readMore__btn:hover,
+.p-article__readMore:hover,
+.yoshi-x-follow-cta__btn:hover,
+.comment-form .submit:hover,
+#submit:hover,
+.c-searchForm__submit:hover,
+button.cta:hover,
+.yoshi-cta-btn:hover {
   background: var(--orange) !important;
+  background-color: var(--orange) !important;
+  color: var(--white) !important;
+  opacity: 0.92 !important;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(245, 129, 31, 0.38) !important;
+}
+/* CTA 内部 span / i / img の色も白に継承 */
+.wp-block-button .wp-block-button__link *,
+.swell-block-button a *,
+.c-btn *,
+.yoshi-cta-btn * {
   color: var(--white) !important;
 }
 

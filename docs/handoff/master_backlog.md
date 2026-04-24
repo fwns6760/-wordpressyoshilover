@@ -152,6 +152,8 @@ Phase 1 前後問わず **Claude が自律的に回し続ける**監査。one-sh
 - 【×】 **T-022** 土曜 18-19 JST scheduler gap 解消（`f902b81`）
 - 【×】 **T-023** 平日 18-19 JST filter WONTFIX 根拠（`8c5a276`）
 - 【×】 **T-024** `/audit_notify` endpoint + `audit-notify-6x` scheduler（revision `00143-luj`、実態 done / 台帳整合は MB-009）
+- 【×】 **079** nucleus ledger emitter: `run_notice_fixed_lane` hook + local JSONL sink + CLI dry-run（env gate `NUCLEUS_LEDGER_EMIT_ENABLED=0` 既定、2026-04-24 commit `4412c60` / origin landed）
+- 【×】 **080** social_video_notice_lane: instagram / youtube 独立記事化（contract + builder + validator + dry-run CLI + tests 34 本、X 非対象、2026-04-24 commit `27ad571` / origin landed、merge `08e4e1d` / post-merge suite 1012 pass）
 
 ---
 

@@ -3887,6 +3887,128 @@ body.page .entry-content .wp-block-heading {
   margin-left: 6px;
 }
 
+/* ── 本文先頭 category chip pill + 日付 を横並び ── */
+.p-articleMetas__termList .c-categoryList__link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 12px !important;
+  border-radius: 999px !important;
+}
+
+/* ── ホーム topic-hub item の最上位 (最初の 1) にも NEW tape 付与 ── */
+.yoshi-topic-hub__items > .yoshi-topic-hub__item:first-child {
+  position: relative;
+  transform: translateY(0);
+}
+.yoshi-topic-hub__items > .yoshi-topic-hub__item:first-child::before {
+  content: 'HOT';
+  position: absolute;
+  top: -6px;
+  right: 10px;
+  background: var(--orange);
+  color: var(--white);
+  font-family: 'Oswald', sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  padding: 2px 8px;
+  border-radius: 2px;
+  box-shadow: 0 1px 3px rgba(245, 129, 31, 0.5);
+  z-index: 2;
+  line-height: 1.4;
+}
+
+/* ── in-view 反応 (IntersectionObserver + .is-inview class を JS で付ける前提、fallback 自動 fade) ── */
+.yoshi-topic-hub__item,
+.yoshi-article-bundles__item,
+.yoshi-breaking-strip__item,
+.yoshilover-related-posts li,
+.p-relatedPosts__item,
+.p-relatedPosts li {
+  animation: yoshiloFadeInUpSoft 0.5s ease backwards;
+}
+@keyframes yoshiloFadeInUpSoft {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.yoshi-topic-hub__item:nth-child(1) { animation-delay: 0.05s; }
+.yoshi-topic-hub__item:nth-child(2) { animation-delay: 0.10s; }
+.yoshi-topic-hub__item:nth-child(3) { animation-delay: 0.15s; }
+.yoshi-topic-hub__item:nth-child(4) { animation-delay: 0.20s; }
+
+.yoshi-article-bundles__item:nth-child(1) { animation-delay: 0.05s; }
+.yoshi-article-bundles__item:nth-child(2) { animation-delay: 0.10s; }
+.yoshi-article-bundles__item:nth-child(3) { animation-delay: 0.15s; }
+
+/* ── sidebar widget にも subtle fade ── */
+.l-sidebar .widget {
+  animation: yoshiloFadeInUpSoft 0.5s ease backwards;
+}
+.l-sidebar .widget:nth-child(1) { animation-delay: 0.06s; }
+.l-sidebar .widget:nth-child(2) { animation-delay: 0.12s; }
+.l-sidebar .widget:nth-child(3) { animation-delay: 0.18s; }
+.l-sidebar .widget:nth-child(4) { animation-delay: 0.24s; }
+.l-sidebar .widget:nth-child(5) { animation-delay: 0.30s; }
+
+/* ── 記事タイトルの subtle fade ── */
+.c-postTitle__ttl,
+.c-pageTitle {
+  animation: yoshiloFadeInUpSoft 0.42s ease backwards;
+}
+
+/* ── モバイルヘッダ バウンス回避 (overscroll behavior) ── */
+html, body {
+  overscroll-behavior-x: none;
+}
+
+/* ── 記事本文 の 注意書き赤文字 (inline style color: red など) の統一 ── */
+.post_content [style*="color:#e53935"],
+.post_content [style*="color:#E53935"],
+.entry-content [style*="color:red"],
+.post_content [style*="color:red"] {
+  color: var(--red) !important;
+  font-weight: 700;
+}
+
+/* ── prev/next 記事ナビ title が長いときの 2 行省略 ── */
+.p-pagerPosts__title,
+.p-postNav__title,
+.p-pagerPosts .__title,
+.p-postNav .__title {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* ── コメントに画像 (Gravatar fallback) の default colour ── */
+.commentlist .avatar[src*="gravatar.com/avatar/00000000000000000000000000000000"],
+.comment-list .avatar[alt=""] {
+  background: linear-gradient(135deg, var(--orange), #E06010);
+}
+
+/* ── 固定 post-detail の p-articleHeader 印象強化 (eyecatch 下に影 skew) ── */
+.p-articleThumb::after,
+.p-entryEyeCatch::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -6px;
+  width: 48px;
+  height: 3px;
+  background: linear-gradient(90deg, var(--orange), transparent);
+  pointer-events: none;
+}
+.p-articleThumb,
+.p-entryEyeCatch {
+  position: relative;
+}
+
 /* ── ブロッククォート ── */
 .wp-block-quote,
 .post_content blockquote,

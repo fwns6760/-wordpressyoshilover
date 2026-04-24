@@ -53,13 +53,30 @@ class YahooFanReactionQueryTests(unittest.TestCase):
         self.assertIn("戸郷翔征投手 巨人", queries)
         self.assertIn("戸郷翔征 フォーム", queries)
         self.assertTrue(any("久保" in q or "助言" in q or "フォーム" in q for q in queries[:2]))
+        self.assertNotIn("戸郷翔征投手", queries)
+        self.assertNotIn("戸郷翔征", queries)
         self.assertNotEqual(queries[0], "巨人 大胆フォーム変更の戸郷翔征人の助言を取り")
+
+        manager_queries = rss_fetcher._build_fan_reaction_queries(
+            "【巨人】阿部監督が若手起用の狙いを説明",
+            "阿部監督がスタメン起用の意図と若手競争について説明した。",
+            "首脳陣",
+        )
+        self.assertNotIn("阿部監督", manager_queries)
+        self.assertNotIn("阿部", manager_queries)
+        self.assertTrue(any(query.startswith("阿部監督 ") for query in manager_queries))
+
+        transfer_queries = rss_fetcher._build_fan_reaction_queries(
+            "【巨人】甲斐拓也獲得調査が進む",
+            "巨人が甲斐拓也獲得へ向けた調査を進めている。捕手補強が焦点になっている。",
+            "補強・移籍",
+        )
+        self.assertNotIn("甲斐拓也", transfer_queries)
+        self.assertTrue(any("補強" in query or "獲得" in query or "巨人" in query for query in transfer_queries))
 
     def test_fetch_fan_reactions_retries_with_multiple_queries(self):
         def fake_entries(keyword: str):
-            if keyword == "戸郷翔征投手 巨人":
-                return []
-            if keyword == "戸郷翔征投手":
+            if keyword.endswith("巨人"):
                 return [
                     {"summary": "戸郷のフォーム修正、かなり良さそう。次の登板が楽しみ。", "link": "https://x.com/togofan/status/1"},
                     {"summary": "久保コーチと進めるフォーム変更、焦らず仕上げてほしい。", "link": "https://x.com/giants_love/status/2"},
@@ -195,18 +212,18 @@ class YahooFanReactionQueryTests(unittest.TestCase):
         def fake_entries(keyword: str):
             return [
                 {
-                    "summary": "戸郷のフォーム修正、かなり良さそう。次の登板が楽しみ。",
-                    "link": "https://x.com/togofan/status/1",
+                    "summary": "このコメント、次のスタメンをかなり動かしそうで気になる。",
+                    "link": "https://x.com/gfan_note/status/1",
                     "created_at": fresh_ts,
                 },
                 {
-                    "summary": "戸郷はまだ時間かかるかも。でも応援したい。",
-                    "link": "https://x.com/togo_note/status/2",
+                    "summary": "レギュラー固定じゃないなら、打順をもっと柔軟に見たい。",
+                    "link": "https://x.com/order_watch/status/2",
                     "created_at": fresh_ts,
                 },
                 {
-                    "summary": "久保コーチとやってるのは分かるし、変化は見たい。",
-                    "link": "https://x.com/giants_eye/status/3",
+                    "summary": "若手を使うなら序列を早く固めすぎないでほしい。",
+                    "link": "https://x.com/youth_note/status/3",
                     "created_at": fresh_ts,
                 },
             ]
@@ -214,13 +231,13 @@ class YahooFanReactionQueryTests(unittest.TestCase):
         with patch.object(rss_fetcher, "fetch_yahoo_realtime_entries", side_effect=fake_entries):
             with patch.object(rss_fetcher, "get_fan_reaction_limit", return_value=3):
                 reactions = rss_fetcher.fetch_fan_reactions_from_yahoo(
-                    "【巨人】大胆フォーム変更の戸郷翔征「人の助言を取り入れることも重要」久保コーチとの取り組み",
-                    "ファームでフォーム改造中の巨人戸郷翔征投手（26）が13日、ジャイアンツ球場での先発投手練習に参加した。",
-                    "選手情報",
+                    "【巨人】阿部監督が若手起用の狙いを説明",
+                    "阿部監督がスタメン起用の意図と若手競争について説明した。",
+                    "首脳陣",
                 )
 
         self.assertEqual(len(reactions), 3)
-        self.assertEqual(reactions[0]["handle"], "@togofan")
+        self.assertEqual({reaction["handle"] for reaction in reactions}, {"@gfan_note", "@order_watch", "@youth_note"})
 
     def test_fetch_fan_reactions_for_social_quote_article_requires_precise_match(self):
         fresh_ts = int(__import__("time").time()) - 900
@@ -248,6 +265,136 @@ class YahooFanReactionQueryTests(unittest.TestCase):
             )
 
         self.assertEqual([reaction["handle"] for reaction in reactions], ["@gfan_quote"])
+
+    def test_fetch_fan_reactions_rejects_same_player_name_post_without_topic_match(self):
+        fresh_ts = int(__import__("time").time()) - 900
+
+        def fake_entries(keyword: str):
+            return [
+                {
+                    "summary": "戸郷翔征投手、お誕生日おめでとう！",
+                    "link": "https://x.com/birthday_only/status/1",
+                    "created_at": fresh_ts,
+                },
+                {
+                    "summary": "戸郷の二軍戦復帰、投げ終わった後の状態をまず見たい。",
+                    "link": "https://x.com/return_watch/status/2",
+                    "created_at": fresh_ts,
+                },
+            ]
+
+        with patch.object(rss_fetcher, "fetch_yahoo_realtime_entries", side_effect=fake_entries):
+            reactions = rss_fetcher.fetch_fan_reactions_from_yahoo(
+                "【巨人】戸郷翔征が二軍戦で実戦復帰へ",
+                "巨人戸郷翔征投手が二軍戦で実戦復帰する見通しとなった。",
+                "選手情報",
+            )
+
+        self.assertEqual([reaction["handle"] for reaction in reactions], ["@return_watch"])
+
+    def test_fetch_fan_reactions_rejects_manager_general_comment_without_usage_context(self):
+        fresh_ts = int(__import__("time").time()) - 900
+
+        def fake_entries(keyword: str):
+            return [
+                {
+                    "summary": "阿部監督かっこいいし今日も応援してる。",
+                    "link": "https://x.com/general_abe/status/1",
+                    "created_at": fresh_ts,
+                },
+                {
+                    "summary": "レギュラー固定じゃないなら、門脇と浦田をもっと競わせてほしい。",
+                    "link": "https://x.com/usage_watch/status/2",
+                    "created_at": fresh_ts,
+                },
+            ]
+
+        with patch.object(rss_fetcher, "fetch_yahoo_realtime_entries", side_effect=fake_entries):
+            reactions = rss_fetcher.fetch_fan_reactions_from_yahoo(
+                "【巨人】阿部監督が若手起用の狙いを説明",
+                "阿部監督がスタメン起用の意図と若手競争について説明した。",
+                "首脳陣",
+            )
+
+        self.assertEqual([reaction["handle"] for reaction in reactions], ["@usage_watch"])
+
+    def test_fetch_fan_reactions_rejects_transfer_name_only_chatter(self):
+        fresh_ts = int(__import__("time").time()) - 900
+
+        def fake_entries(keyword: str):
+            return [
+                {
+                    "summary": "甲斐拓也ほんと好きな選手。",
+                    "link": "https://x.com/name_only/status/1",
+                    "created_at": fresh_ts,
+                },
+                {
+                    "summary": "甲斐拓也獲得なら捕手補強としてかなり大きいと思う。",
+                    "link": "https://x.com/transfer_fit/status/2",
+                    "created_at": fresh_ts,
+                },
+            ]
+
+        with patch.object(rss_fetcher, "fetch_yahoo_realtime_entries", side_effect=fake_entries):
+            reactions = rss_fetcher.fetch_fan_reactions_from_yahoo(
+                "【巨人】甲斐拓也獲得調査が進む",
+                "巨人が甲斐拓也獲得へ向けた調査を進めている。捕手補強が焦点になっている。",
+                "補強・移籍",
+            )
+
+        self.assertEqual([reaction["handle"] for reaction in reactions], ["@transfer_fit"])
+
+    def test_fetch_fan_reactions_keeps_precise_manager_context_match(self):
+        fresh_ts = int(__import__("time").time()) - 900
+
+        def fake_entries(keyword: str):
+            return [
+                {
+                    "summary": "『レギュラーは決まってません』なら門脇と浦田の起用を最後まで見たい。",
+                    "link": "https://x.com/quote_watch/status/1",
+                    "created_at": fresh_ts,
+                },
+                {
+                    "summary": "阿部監督応援してる！",
+                    "link": "https://x.com/cheer_only/status/2",
+                    "created_at": fresh_ts,
+                },
+            ]
+
+        with patch.object(rss_fetcher, "fetch_yahoo_realtime_entries", side_effect=fake_entries):
+            reactions = rss_fetcher.fetch_fan_reactions_from_yahoo(
+                "【巨人】「レギュラーは決まってません」阿部監督、若手積極起用で競争期待",
+                "阿部監督が「レギュラーは決まってません」と話し、若手起用の競争を促した。",
+                "首脳陣",
+            )
+
+        self.assertEqual([reaction["handle"] for reaction in reactions], ["@quote_watch"])
+
+    def test_fetch_fan_reactions_returns_empty_when_only_noisy_reserve_exists(self):
+        fresh_ts = int(__import__("time").time()) - 900
+
+        def fake_entries(keyword: str):
+            return [
+                {
+                    "summary": "阿部監督応援してる！",
+                    "link": "https://x.com/cheer_only/status/1",
+                    "created_at": fresh_ts,
+                },
+                {
+                    "summary": "阿部監督お誕生日おめでとう！",
+                    "link": "https://x.com/birthday_only/status/2",
+                    "created_at": fresh_ts,
+                },
+            ]
+
+        with patch.object(rss_fetcher, "fetch_yahoo_realtime_entries", side_effect=fake_entries):
+            reactions = rss_fetcher.fetch_fan_reactions_from_yahoo(
+                "【巨人】阿部監督が若手起用の狙いを説明",
+                "阿部監督がスタメン起用の意図と若手競争について説明した。",
+                "首脳陣",
+            )
+
+        self.assertEqual(reactions, [])
 
 
 class ArticleImageFetchTests(unittest.TestCase):

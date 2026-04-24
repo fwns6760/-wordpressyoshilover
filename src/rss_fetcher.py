@@ -707,6 +707,8 @@ CATEGORY_REACTION_TERMS = {
     "選手情報": ("フォーム", "助言", "修正", "昇格", "復帰", "二軍", "2軍", "調整"),
     "補強・移籍": ("補強", "獲得", "トレード", "FA", "支配下", "枠", "外国人"),
 }
+SUBJECT_ONLY_FAN_REACTION_QUERY_BLOCK_CATEGORIES = {"選手情報", "首脳陣", "補強・移籍"}
+ALWAYS_PRECISE_FAN_REACTION_CATEGORIES = {"首脳陣", "補強・移籍"}
 DEFAULT_EXCLUDED_REACTION_HANDLES = {"yoshilover6760"}
 
 
@@ -4977,6 +4979,40 @@ def _reaction_has_subject_context(text: str, title: str, summary: str, category:
     return False
 
 
+def _reaction_context_hit_flags(
+    text: str,
+    title: str,
+    summary: str,
+    category: str,
+    focus_terms: list[str] | None = None,
+) -> dict[str, bool]:
+    clean = _strip_html(text or "")
+    subject = _extract_subject_label(title, summary, category)
+    compact_subject = _compact_subject_label(title, summary, category)
+    family_name_alias = _player_family_name_alias(title, summary, category)
+    ignored_terms = {term for term in (subject, compact_subject, family_name_alias) if term}
+    topical_terms = focus_terms if focus_terms is not None else _build_fan_reaction_focus_terms(title, summary, category)
+    topical_hit = any(
+        term in clean
+        for term in topical_terms
+        if term and term not in GENERIC_REACTION_TERMS and term not in ignored_terms
+    )
+    quote_hit = any(phrase in clean for phrase in _extract_quote_phrases(f"{title}\n{summary}", max_phrases=2))
+    status_terms = _extract_player_status_terms(title, summary) if category == "選手情報" else []
+    status_hit = any(term in clean for term in status_terms if term and term not in GENERIC_REACTION_TERMS)
+    category_hit = any(
+        term in clean
+        for term in CATEGORY_REACTION_TERMS.get(category, ())
+        if term and term not in GENERIC_REACTION_TERMS
+    )
+    return {
+        "topical_hit": topical_hit,
+        "quote_hit": quote_hit,
+        "status_hit": status_hit,
+        "category_hit": category_hit,
+    }
+
+
 def _reaction_can_fill_shortage(
     text: str,
     title: str,
@@ -4985,20 +5021,24 @@ def _reaction_can_fill_shortage(
     opinion_score: int,
     commentary_score: int,
     focus_score: int,
+    focus_terms: list[str] | None = None,
 ) -> bool:
     clean = _strip_html(text or "")
     subject = _extract_subject_label(title, summary, category)
     compact_subject = _compact_subject_label(title, summary, category)
     family_name_alias = _player_family_name_alias(title, summary, category)
     player_mode = _detect_player_article_mode(title, summary, category) if category == "選手情報" else ""
+    context_flags = _reaction_context_hit_flags(clean, title, summary, category, focus_terms=focus_terms)
     if focus_score >= 2:
         return False
+    if not any(context_flags.values()):
+        return False
     if category == "選手情報" and player_mode == "player_quote":
-        quote_hit = any(phrase in clean for phrase in _extract_quote_phrases(f"{title}\n{summary}", max_phrases=2))
-        context_hits = sum(1 for term in _extract_player_quote_context_terms(title, summary) if term in clean)
+        quote_hit = context_flags["quote_hit"]
+        context_term_hits = sum(1 for term in _extract_player_quote_context_terms(title, summary) if term in clean)
         return (
             _reaction_has_subject_context(clean, title, summary, category)
-            and (quote_hit or context_hits >= 1)
+            and (quote_hit or context_term_hits >= 1)
             and (opinion_score >= 1 or commentary_score >= 1)
         )
     if category == "選手情報" and player_mode == "player_status":
@@ -5025,7 +5065,9 @@ def _reaction_can_fill_shortage(
 
 def _source_requires_precise_fan_reactions(source_name: str, category: str) -> bool:
     clean = source_name or ""
-    return category in {"選手情報", "首脳陣"} and ("X" in clean or "公式" in clean)
+    if category in ALWAYS_PRECISE_FAN_REACTION_CATEGORIES:
+        return True
+    return category == "選手情報" and ("X" in clean or "公式" in clean)
 
 
 def _reaction_matches_precise_source_context(
@@ -5036,28 +5078,23 @@ def _reaction_matches_precise_source_context(
     focus_terms: list[str],
 ) -> bool:
     clean = _strip_html(text or "")
-    subject = _extract_subject_label(title, summary, category)
     player_mode = _detect_player_article_mode(title, summary, category) if category == "選手情報" else ""
+    context_flags = _reaction_context_hit_flags(clean, title, summary, category, focus_terms=focus_terms)
     if category == "選手情報" and player_mode == "player_quote":
-        quote_hit = any(phrase in clean for phrase in _extract_quote_phrases(f"{title}\n{summary}", max_phrases=2))
-        context_hits = sum(1 for term in _extract_player_quote_context_terms(title, summary) if term in clean)
-        return quote_hit or (_reaction_has_subject_context(clean, title, summary, category) and context_hits >= 1)
+        context_term_hits = sum(1 for term in _extract_player_quote_context_terms(title, summary) if term in clean)
+        return context_flags["quote_hit"] or (
+            _reaction_has_subject_context(clean, title, summary, category) and context_term_hits >= 1
+        )
     if category == "選手情報" and player_mode == "player_status":
         status_hits = sum(1 for term in _extract_player_status_terms(title, summary) if term in clean)
         return _reaction_has_subject_context(clean, title, summary, category) and status_hits >= 1
-    if any(phrase in clean for phrase in _extract_quote_phrases(f"{title}\n{summary}", max_phrases=2)):
+    if context_flags["quote_hit"]:
         return True
-
-    generic_subjects = {"巨人", "選手", "首脳陣"}
-    if subject and subject not in generic_subjects and subject in clean:
-        topical_hits = sum(
-            1
-            for term in focus_terms[:4]
-            if term and term not in GENERIC_REACTION_TERMS and term != subject and term in clean
-        )
-        return topical_hits >= 1 or category == "首脳陣"
-
-    return False
+    if category in ALWAYS_PRECISE_FAN_REACTION_CATEGORIES:
+        return any(context_flags.values())
+    return _reaction_has_subject_context(clean, title, summary, category) and (
+        context_flags["topical_hit"] or context_flags["category_hit"] or context_flags["status_hit"]
+    )
 
 
 def _reaction_is_low_value_share(
@@ -5112,6 +5149,7 @@ def _build_fan_reaction_queries(title: str, summary: str, category: str) -> list
     topic = _re.sub(r"[「」『』【】\[\]]", "", topic)
     topic = topic[:24].strip("。 ")
     generic_subjects = {"選手", "首脳陣", "巨人"}
+    allow_subject_only_queries = category not in SUBJECT_ONLY_FAN_REACTION_QUERY_BLOCK_CATEGORIES
     queries = []
 
     if category == "選手情報" and player_mode == "player_quote":
@@ -5138,7 +5176,6 @@ def _build_fan_reaction_queries(title: str, summary: str, category: str) -> list
             for term in status_terms[:3]:
                 queries.append(f"{subject} {term}")
             queries.append(f"{subject} 巨人")
-            queries.append(subject)
         if compact_subject and compact_subject not in generic_subjects and compact_subject != subject:
             for term in status_terms[:2]:
                 queries.append(f"{compact_subject} {term}")
@@ -5151,13 +5188,15 @@ def _build_fan_reaction_queries(title: str, summary: str, category: str) -> list
         for term in focus_terms[:2]:
             queries.append(f"{subject} {term}")
         queries.append(f"{subject} 巨人")
-        queries.append(subject)
+        if allow_subject_only_queries:
+            queries.append(subject)
 
     if compact_subject and compact_subject not in generic_subjects and compact_subject != subject:
         for term in focus_terms[:2]:
             queries.append(f"{compact_subject} {term}")
         queries.append(f"{compact_subject} 巨人")
-        queries.append(compact_subject)
+        if allow_subject_only_queries:
+            queries.append(compact_subject)
 
     for phrase in _extract_quote_phrases(title) + _extract_quote_phrases(summary):
         if subject and subject not in generic_subjects:
@@ -6886,7 +6925,16 @@ def fetch_fan_reactions_from_yahoo(
             reaction["focus_score"] = focus_score
             if focus_score >= 2:
                 primary_candidates.append(reaction)
-            elif _reaction_can_fill_shortage(text, title, summary, category, opinion_score, commentary_score, focus_score):
+            elif _reaction_can_fill_shortage(
+                text,
+                title,
+                summary,
+                category,
+                opinion_score,
+                commentary_score,
+                focus_score,
+                focus_terms=focus_terms,
+            ):
                 reserve_candidates.append(reaction)
 
     for candidates in (primary_candidates, reserve_candidates):

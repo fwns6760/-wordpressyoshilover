@@ -794,6 +794,11 @@ function yoshilover_063_auto_inject_sidebar_rail( $index, $has_widgets ) {
 add_shortcode( 'yoshilover_sns_reactions', 'yoshilover_063_render_sns_reactions' );
 add_shortcode( 'yoshilover_article_bundles', 'yoshilover_063_render_article_bundles' );
 add_shortcode( 'yoshilover_x_follow_cta', 'yoshilover_063_render_x_follow_cta' );
+add_shortcode( 'yoshilover_game_today', 'yoshilover_063_render_game_today_shortcode' );
+add_shortcode( 'yoshilover_result_panel', 'yoshilover_063_render_result_panel_shortcode' );
+add_shortcode( 'yoshilover_lead_info', 'yoshilover_063_render_lead_info_shortcode' );
+add_shortcode( 'yoshilover_summary_box', 'yoshilover_063_render_summary_box_shortcode' );
+add_shortcode( 'yoshilover_pill', 'yoshilover_063_render_pill_shortcode' );
 add_filter( 'the_content', 'yoshilover_063_auto_inject_sns_reactions', 20 );
 add_filter( 'the_content', 'yoshilover_063_auto_inject_article_bundles', 21 );
 add_filter( 'the_content', 'yoshilover_063_auto_inject_x_follow_cta', 22 );
@@ -1078,6 +1083,116 @@ function yoshilover_063_auto_inject_x_follow_cta( $content ) {
     }
 
     return $content . $cta;
+}
+
+/* ------------------------------------------------------------
+ * 追加 shortcode (筆者が記事内で自由に埋め込める composable block)
+ * ---------------------------------------------------------- */
+
+/**
+ * [yoshilover_game_today label="LIVE" title="巨人 vs ヤクルト" time="18:00"]
+ */
+function yoshilover_063_render_game_today_shortcode( $atts = array() ) {
+    $atts = shortcode_atts(
+        array(
+            'label' => 'TODAY',
+            'title' => '',
+            'time'  => '',
+            'logo'  => '⚾',
+        ),
+        $atts,
+        'yoshilover_game_today'
+    );
+    if ( $atts['title'] === '' ) {
+        return '';
+    }
+
+    $html  = '<div class="yoshi-game-today" aria-label="本日の試合">';
+    $html .= '<div class="yoshi-game-today__logo" aria-hidden="true">' . esc_html( $atts['logo'] ) . '</div>';
+    $html .= '<div class="yoshi-game-today__body">';
+    $html .= '<div class="yoshi-game-today__label">' . esc_html( $atts['label'] ) . '</div>';
+    $html .= '<div class="yoshi-game-today__title">' . esc_html( $atts['title'] ) . '</div>';
+    $html .= '</div>';
+    if ( $atts['time'] !== '' ) {
+        $html .= '<div class="yoshi-game-today__time">' . esc_html( $atts['time'] ) . '</div>';
+    }
+    $html .= '</div>';
+    return $html;
+}
+
+/**
+ * [yoshilover_result_panel home="巨人" home_score="3" away_score="1" away="阪神" win="巨人勝利"]
+ */
+function yoshilover_063_render_result_panel_shortcode( $atts = array() ) {
+    $atts = shortcode_atts(
+        array(
+            'home'       => '',
+            'away'       => '',
+            'home_score' => '',
+            'away_score' => '',
+            'win'        => '',
+        ),
+        $atts,
+        'yoshilover_result_panel'
+    );
+    if ( $atts['home'] === '' || $atts['away'] === '' ) {
+        return '';
+    }
+
+    $html  = '<div class="yoshi-result-panel" aria-label="試合結果">';
+    $html .= '<div class="yoshi-result-panel__team -home">' . esc_html( $atts['home'] ) . '</div>';
+    $html .= '<div class="yoshi-result-panel__score">';
+    $html .= '<span class="yoshi-result-panel__num">' . esc_html( $atts['home_score'] ) . '</span>';
+    $html .= '<span class="yoshi-result-panel__sep">-</span>';
+    $html .= '<span class="yoshi-result-panel__num">' . esc_html( $atts['away_score'] ) . '</span>';
+    $html .= '</div>';
+    $html .= '<div class="yoshi-result-panel__team -away">' . esc_html( $atts['away'] ) . '</div>';
+    if ( $atts['win'] !== '' ) {
+        $html .= '<div class="yoshi-result-panel__win" style="grid-column: 1 / -1;">' . esc_html( $atts['win'] ) . '</div>';
+    }
+    $html .= '</div>';
+    return $html;
+}
+
+/**
+ * [yoshilover_lead_info]本文[/yoshilover_lead_info]
+ */
+function yoshilover_063_render_lead_info_shortcode( $atts = array(), $content = '' ) {
+    if ( $content === null || $content === '' ) {
+        return '';
+    }
+    return '<div class="yoshi-lead-info">' . do_shortcode( $content ) . '</div>';
+}
+
+/**
+ * [yoshilover_summary_box]本文[/yoshilover_summary_box]
+ */
+function yoshilover_063_render_summary_box_shortcode( $atts = array(), $content = '' ) {
+    if ( $content === null || $content === '' ) {
+        return '';
+    }
+    return '<div class="yoshi-summary-box">' . do_shortcode( $content ) . '</div>';
+}
+
+/**
+ * [yoshilover_pill variant="dark"]FOLLOW[/yoshilover_pill]
+ */
+function yoshilover_063_render_pill_shortcode( $atts = array(), $content = '' ) {
+    $atts = shortcode_atts(
+        array(
+            'variant' => '',
+        ),
+        $atts,
+        'yoshilover_pill'
+    );
+    if ( $content === null || $content === '' ) {
+        return '';
+    }
+    $classes = 'yoshi-pill';
+    if ( in_array( $atts['variant'], array( 'dark', 'outline' ), true ) ) {
+        $classes .= ' -' . $atts['variant'];
+    }
+    return '<span class="' . esc_attr( $classes ) . '">' . esc_html( trim( wp_strip_all_tags( $content ) ) ) . '</span>';
 }
 
 /* ------------------------------------------------------------

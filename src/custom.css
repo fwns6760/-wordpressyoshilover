@@ -1281,6 +1281,118 @@ body.search-no-results .l-mainContent::after {
   font-weight: 700;
 }
 
+/* ── 記事内 table が横はみ出し時 scroll shadow (見切れ視認) ── */
+.post_content .wp-block-table,
+.entry-content .wp-block-table,
+.post_content .yoshilover-lineup-stats,
+.post_content table:not(.wp-block-table) {
+  position: relative;
+  background:
+    linear-gradient(90deg, var(--white) 30%, rgba(255,255,255,0)) 0 0 / 24px 100% no-repeat,
+    linear-gradient(90deg, rgba(255,255,255,0), var(--white) 70%) 100% 0 / 24px 100% no-repeat,
+    linear-gradient(90deg, rgba(26,26,26,0.08), rgba(26,26,26,0)) 0 0 / 12px 100% no-repeat,
+    linear-gradient(90deg, rgba(26,26,26,0), rgba(26,26,26,0.08)) 100% 0 / 12px 100% no-repeat;
+  background-attachment: local, local, scroll, scroll;
+}
+
+/* ── anchor jump scroll offset (見出しリンク / TOC 先) ── */
+h2[id], h3[id], h4[id],
+.post_content h2[id],
+.post_content h3[id],
+.entry-content h2[id],
+.entry-content h3[id] {
+  scroll-margin-top: 80px;
+}
+@media (max-width: 768px) {
+  h2[id], h3[id], h4[id],
+  .post_content h2[id],
+  .post_content h3[id],
+  .entry-content h2[id],
+  .entry-content h3[id] {
+    scroll-margin-top: 64px;
+  }
+}
+
+/* ── a11y: キーボード focus 強化 (focus-visible より強く) ── */
+.wp-block-button__link:focus-visible,
+.c-btn:focus-visible,
+a[href]:focus-visible {
+  outline: 3px solid var(--orange) !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 6px rgba(245, 129, 31, 0.22) !important;
+}
+
+/* ── footer: social icons 並び強化 (SWELL の footer ソーシャル) ── */
+.l-footer .c-iconList,
+.l-footer .p-socialList,
+.l-footer .wp-block-social-links {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px 0 !important;
+  list-style: none !important;
+}
+.l-footer .c-iconList__link,
+.l-footer .wp-block-social-link a,
+.l-footer .p-socialList a {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: var(--white) !important;
+  transition: background 0.18s, color 0.18s, transform 0.18s !important;
+}
+.l-footer .c-iconList__link:hover,
+.l-footer .wp-block-social-link a:hover,
+.l-footer .p-socialList a:hover {
+  background: var(--orange) !important;
+  color: var(--white) !important;
+  transform: translateY(-2px);
+}
+
+/* ── リード段落 subtle accent (記事本文の最初の p に薄 orange 縦バー) ── */
+body.single-post .post_content > p:first-of-type,
+body.single-post .entry-content > p:first-of-type {
+  padding: 4px 0 4px 12px;
+  border-left: 2px solid rgba(245, 129, 31, 0.35);
+  margin-left: -4px;
+}
+
+/* ── 記事末 まとめ風 「いかがでしたか」box 汎用 (is-style-summary) ── */
+.is-style-summary,
+.p-articleFoot__summary,
+.yoshi-summary-box {
+  background: linear-gradient(135deg, rgba(245, 129, 31, 0.08) 0%, rgba(26, 26, 26, 0.03) 100%);
+  border: 1px solid var(--light-gray);
+  border-left: 4px solid var(--orange);
+  border-radius: 4px;
+  padding: 16px 18px;
+  margin: 22px 0 18px;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--black);
+  position: relative;
+}
+.is-style-summary::before,
+.p-articleFoot__summary::before,
+.yoshi-summary-box::before {
+  content: 'SUMMARY';
+  position: absolute;
+  top: -10px;
+  left: 14px;
+  background: var(--orange);
+  color: var(--white);
+  font-family: 'Oswald', sans-serif;
+  font-size: 10px;
+  letter-spacing: 1.8px;
+  padding: 2px 10px;
+  border-radius: 2px;
+  line-height: 1.4;
+}
+
 /* ── コメントエリア (p-commentArea) ── */
 .p-commentArea {
   background:

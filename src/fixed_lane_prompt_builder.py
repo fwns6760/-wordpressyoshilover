@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, Sequence
 
-from src import body_validator, rss_fetcher, source_attribution_validator, title_validator
+from src import body_validator, rss_fetcher, source_attribution_validator, title_style_validator, title_validator
 
 
 PromptMode = Literal["initial", "repair"]
@@ -60,8 +60,8 @@ def _postgame_fact_kernel_line() -> str:
 CONTRACTS: dict[str, FixedLanePromptContract] = {
     "program": FixedLanePromptContract(
         subtype="program",
-        title_template="[放送日MM/DD] [番組名] 放送予定",
-        sample_title="[04/21] ジャイアンツTV 放送予定",
+        title_template="[番組名]「[内容]」([日付] [時刻]放送)",
+        sample_title='GIANTS TV「練習後インタビュー」(4月21日 20:00放送)',
         required_blocks=PROGRAM_REQUIRED_BLOCKS,
         title_body_coherence=(
             "title は放送日・番組名・放送予定の3点を先頭で確定させる。",
@@ -79,8 +79,8 @@ CONTRACTS: dict[str, FixedLanePromptContract] = {
     ),
     "notice": FixedLanePromptContract(
         subtype="notice",
-        title_template="[選手名] [公示種別]",
-        sample_title="【公示】4月21日 巨人は浅野翔吾を出場選手登録",
+        title_template="巨人、[選手名]を[対象]に[事象]",
+        sample_title='巨人・戸郷翔征、右肘違和感で"離脱回避"！！！',
         required_blocks=tuple(rss_fetcher.NOTICE_REQUIRED_HEADINGS),
         title_body_coherence=(
             "title は選手名と公示種別を先頭で一致させ、本文1文目でも同じ対象を言い換えず確認する。",
@@ -98,8 +98,8 @@ CONTRACTS: dict[str, FixedLanePromptContract] = {
     ),
     "probable_starter": FixedLanePromptContract(
         subtype="probable_starter",
-        title_template="[試合日MM/DD] 予告先発 巨人[投手] vs [対戦][対戦投手]",
-        sample_title="【4/21予告先発】 巨人 vs 阪神",
+        title_template="4月X日(曜)の予告先発が発表される！！！",
+        sample_title="4月21日(月)の予告先発が発表される！！！",
         required_blocks=tuple(body_validator.expected_block_order("pregame")),
         title_body_coherence=(
             "030 pregame rail に合わせて、title と本文は『先発情報 / 予告先発 / 試合前』の語彙で揃える。",
@@ -117,8 +117,8 @@ CONTRACTS: dict[str, FixedLanePromptContract] = {
     ),
     "farm_result": FixedLanePromptContract(
         subtype="farm_result",
-        title_template="二軍 [日付] [対戦] [スコア]",
-        sample_title="巨人二軍 4-0 結果のポイント",
+        title_template="巨人二軍 [選手名]、[事象]！！！",
+        sample_title="巨人二軍 浅野翔吾、2安打マルチヒット！！！",
         required_blocks=tuple(body_validator.expected_block_order("farm")),
         title_body_coherence=(
             "title と本文は『二軍 / ファーム』の語彙を維持し、一軍記事の文脈に混ぜない。",
@@ -136,8 +136,8 @@ CONTRACTS: dict[str, FixedLanePromptContract] = {
     ),
     "postgame": FixedLanePromptContract(
         subtype="postgame",
-        title_template="試合結果 [相手] [スコア] [勝敗]",
-        sample_title="試合結果 巨人 3-2 阪神",
+        title_template="巨人・[選手名]、[事象]！！！",
+        sample_title="巨人・岡本和真、決勝ホームラン！！！",
         required_blocks=tuple(body_validator.expected_block_order("postgame")),
         title_body_coherence=(
             f"030 postgame rail に合わせて、title と本文の重心は『{title_validator.TITLE_PREFIX_BY_SUBTYPE['postgame']}』側へ固定する。",
@@ -179,6 +179,11 @@ def _render_source_facts(source_facts: Sequence[str] | str) -> str:
 
 def _render_lines(lines: Sequence[str]) -> str:
     return "\n".join(f"- {line}" for line in lines)
+
+
+def _title_style_lines(contract: FixedLanePromptContract) -> tuple[str, ...]:
+    editorial_subtype = title_style_validator.fixed_lane_to_editorial_subtype(contract.subtype)
+    return title_style_validator.build_title_style_prompt_lines(editorial_subtype)
 
 
 def _attribution_lines(contract: FixedLanePromptContract) -> tuple[str, ...]:
@@ -240,6 +245,8 @@ def build_fixed_lane_prompt(
         ),
         "title_body_coherence:",
         _render_lines(contract.title_body_coherence),
+        "title_style_contract:",
+        _render_lines(_title_style_lines(contract)),
         "abstract_lead_ban:",
         _render_lines(contract.abstract_lead_ban),
         "attribution_condition:",

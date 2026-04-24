@@ -25,6 +25,7 @@ from urllib.parse import urlsplit
 import requests
 
 from src.eyecatch_fallback import maybe_generate_structured_eyecatch_media
+from src.nucleus_ledger_emitter import DraftMeta, emit_nucleus_ledger_entry
 from src.postgame_revisit_chain import (
     ROUTE_DEFERRED_PICKUP_DERIVATIVE,
     ROUTE_FIXED_PRIMARY_DERIVATIVE,
@@ -1949,6 +1950,24 @@ def _process_candidates(wp: WPClient, candidates: Sequence[NoticeCandidate]) -> 
             )
         route_outcomes.append(ROUTE_FIXED_PRIMARY)
         route_outcomes.extend(_process_postgame_revisit_chain(wp, candidate))
+        try:
+            emit_nucleus_ledger_entry(
+                DraftMeta(
+                    draft_id=created_post_id,
+                    candidate_key=_candidate_metadata_key(candidate) or candidate.candidate_key or None,
+                    subtype=str(candidate.metadata.get("subtype") or "").strip() or None,
+                    source_trust=str(candidate.metadata.get("source_trust") or "").strip() or None,
+                    source_family=_candidate_metadata_family(candidate) or None,
+                    chosen_lane="fixed",
+                    chosen_model=str(candidate.metadata.get("chosen_model") or "").strip() or None,
+                    prompt_version=str(candidate.metadata.get("prompt_version") or "").strip() or None,
+                    template_version=str(candidate.metadata.get("template_version") or "").strip() or None,
+                ),
+                title=candidate.title,
+                body=candidate.body_html,
+            )
+        except Exception as _nucleus_emit_err:
+            print(f"[WARN] nucleus ledger emit failed: {_nucleus_emit_err}", file=sys.stderr)
         return ProcessResult(
             created_post_id=created_post_id,
             duplicate_skip=duplicate_skip,

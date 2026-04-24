@@ -5046,6 +5046,141 @@ a[href="#"] {
   box-shadow: 0 2px 6px rgba(245, 129, 31, 0.35);
 }
 
+/* ====================================================================
+   ホーム 「最近の投稿」 widget の 上辺セパレータ + 件数 chip (実際 CSS で counter 計算不可だが飾り)
+   ==================================================================== */
+.w-frontTop .widget_recent_entries {
+  padding: 14px 12px 6px !important;
+  background: var(--white);
+  border: 1px solid var(--light-gray);
+  border-radius: 4px;
+  margin-bottom: 14px;
+  position: relative;
+}
+.w-frontTop .widget_recent_entries > .c-secTitle.-widget::before,
+.w-frontTop .widget_recent_entries > .c-secTitle::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 14px;
+  background: var(--orange);
+  margin-right: 8px;
+  vertical-align: middle;
+  border-radius: 1px;
+}
+
+/* ====================================================================
+   ヘッダー + 下ライン で 「巨人」 アクセント
+   ==================================================================== */
+.l-header {
+  background-image:
+    linear-gradient(var(--black), var(--black)),
+    repeating-linear-gradient(45deg, rgba(255,255,255,0.02) 0 4px, transparent 4px 8px) !important;
+  background-blend-mode: normal, multiply;
+}
+
+/* ====================================================================
+   SWELL のサイト全体 background (plain white)
+   ==================================================================== */
+#page,
+#main,
+body { background: #fafafa !important; }
+
+/* ====================================================================
+   SWELL の記事区切り "-- もっと読む --" (wp-block-more)
+   ==================================================================== */
+.wp-block-more {
+  border: none !important;
+  border-top: 1px dashed var(--orange) !important;
+  padding: 18px 0 !important;
+  margin: 20px 0 !important;
+  color: var(--orange);
+  font-family: 'Oswald', sans-serif;
+  font-size: 10px;
+  letter-spacing: 1.6px;
+  text-align: center;
+  text-transform: uppercase;
+}
+.wp-block-more::after {
+  content: 'READ MORE';
+  color: var(--orange);
+}
+
+/* ====================================================================
+   モバイルで longpress 時のハイライト色を巨人オレンジに
+   ==================================================================== */
+* { -webkit-tap-highlight-color: rgba(245, 129, 31, 0.2); }
+
+/* ====================================================================
+   記事タイトル 長文の省略 (3 行まで表示し ... で省略)
+   ==================================================================== */
+.c-postTitle__ttl {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+@media (max-width: 600px) {
+  .c-postTitle__ttl {
+    -webkit-line-clamp: 4;
+  }
+}
+
+/* ====================================================================
+   ホーム トップに巨人 「YG」ロゴ feel (CSS-only、SVG 代用の飾り)
+   ==================================================================== */
+.yoshi-yg-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: var(--orange);
+  color: var(--white);
+  font-family: 'Oswald', serif;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: -1px;
+  border-radius: 2px;
+  box-shadow: 0 2px 4px rgba(245, 129, 31, 0.35);
+}
+.yoshi-yg-mark::before { content: 'YG'; }
+
+/* ====================================================================
+   ニュース一覧 (SWELL p-postList) モバイル最適化の最終形
+   ==================================================================== */
+@media (max-width: 600px) {
+  /* 先頭 li の gradient + NEW tape は上で消してあるが、優先度揺れ対策で改めて明示 */
+  .-type-list .p-postList__item:first-child,
+  .p-postList.-list .p-postList__item:first-child {
+    background: var(--white) !important;
+  }
+  /* SWELL 記事一覧 item 同士の border-bottom 1 本のみ (のもとけ風) */
+  .-type-list .p-postList__item,
+  .p-postList.-list .p-postList__item {
+    border-top: none !important;
+    border-bottom: 1px solid var(--light-gray) !important;
+    border-left: none !important;
+    border-right: none !important;
+    border-radius: 0 !important;
+  }
+  .-type-list .p-postList__item:last-child,
+  .p-postList.-list .p-postList__item:last-child {
+    border-bottom: none !important;
+  }
+}
+
+/* ====================================================================
+   デスクトップ 記事一覧は item 同士の間隔をゆったり
+   ==================================================================== */
+@media (min-width: 1024px) {
+  .-type-list .p-postList__item,
+  .p-postList.-list .p-postList__item {
+    margin-bottom: 8px !important;
+    border-radius: 4px;
+  }
+}
+
 /* ── モバイル 投稿/固定ページの上部 (breadcrumb / metas / title / eyecatch) 間隔圧縮 ── */
 @media (max-width: 768px) {
   /* パン屑 padding 圧縮 + 文字小 */

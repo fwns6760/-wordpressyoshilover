@@ -3602,12 +3602,118 @@ img[loading="lazy"][data-loaded="true"] {
 .p-spNav__item,
 .l-spMenu__item { border-bottom: 1px solid #333 !important; }
 
-/* ── スクロールトップボタン ── */
+/* ── スクロールトップボタン (巨人 orange 円 + hover 黒) ── */
 .p-scrollTopBtn,
 .c-scrollTopBtn {
   background: var(--orange) !important;
   color: var(--white) !important;
-  border-radius: 4px !important;
+  border-radius: 999px !important;
+  width: 44px !important;
+  height: 44px !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px !important;
+  box-shadow: 0 4px 14px rgba(245, 129, 31, 0.36) !important;
+  transition: background 0.18s, transform 0.18s, box-shadow 0.18s !important;
+  border: none !important;
+}
+.p-scrollTopBtn:hover,
+.c-scrollTopBtn:hover {
+  background: var(--black) !important;
+  color: var(--orange) !important;
+  transform: translateY(-3px);
+  box-shadow: 0 6px 18px rgba(26, 26, 26, 0.35) !important;
+}
+/* スクロールトップ icon (i tag inside) 中央配置 */
+.p-scrollTopBtn i,
+.c-scrollTopBtn i,
+.p-scrollTopBtn svg,
+.c-scrollTopBtn svg {
+  line-height: 1;
+}
+
+/* ── ホーム の widget_recent_entries 最初の li を hero 化 (first-child 強調) ── */
+.w-frontTop .widget_recent_entries > ul > li:first-child {
+  background: linear-gradient(135deg, var(--white) 0%, rgba(245, 129, 31, 0.06) 100%) !important;
+  border-left-width: 5px !important;
+  border-left-color: var(--orange) !important;
+  position: relative;
+}
+.w-frontTop .widget_recent_entries > ul > li:first-child::before {
+  content: 'NEW';
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  background: var(--orange);
+  color: var(--white);
+  font-family: 'Oswald', sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  padding: 2px 7px;
+  border-radius: 2px;
+  line-height: 1.4;
+  box-shadow: 0 1px 3px rgba(245, 129, 31, 0.4);
+}
+.w-frontTop .widget_recent_entries > ul > li:first-child > a {
+  font-size: 14.5px !important;
+  padding: 13px 14px 13px 16px !important;
+}
+
+/* ── SWELL 記事一覧 first item 強調 (category / home post list) ── */
+.-type-list .p-postList__item:first-child,
+.p-postList.-list .p-postList__item:first-child {
+  background: linear-gradient(180deg, var(--white) 0%, rgba(245, 129, 31, 0.04) 100%) !important;
+}
+.-type-list .p-postList__item:first-child .p-postList__ttl,
+.p-postList.-list .p-postList__item:first-child .p-postList__ttl {
+  font-size: 16px !important;
+}
+@media (max-width: 600px) {
+  .-type-list .p-postList__item:first-child .p-postList__ttl,
+  .p-postList.-list .p-postList__item:first-child .p-postList__ttl {
+    font-size: 14px !important;
+  }
+}
+
+/* ── 固定ページ (body.page) の wp-block-heading 巨人 accent ── */
+body.page .post_content .wp-block-heading,
+body.page .entry-content .wp-block-heading {
+  padding-left: 10px;
+  border-left: 4px solid var(--orange);
+  line-height: 1.5;
+}
+
+/* ── 著者 avatar in author box 拡大 ── */
+.c-author__avatar img,
+.p-authorBox__avatar img {
+  border-radius: 999px !important;
+  border: 2px solid var(--orange) !important;
+  padding: 1px;
+  background: var(--white);
+  width: 54px;
+  height: 54px;
+}
+
+/* ── wp-block-quote の引用元 cite ── */
+.wp-block-quote cite,
+.post_content blockquote cite,
+.entry-content blockquote cite {
+  display: block;
+  margin-top: 8px;
+  font-family: 'Oswald', sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  color: var(--orange);
+  font-style: normal;
+  text-transform: uppercase;
+}
+.wp-block-quote cite::before,
+.post_content blockquote cite::before,
+.entry-content blockquote cite::before {
+  content: '— ';
+  color: var(--orange);
 }
 
 /* ── ブロッククォート ── */

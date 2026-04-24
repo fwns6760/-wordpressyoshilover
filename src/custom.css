@@ -6444,6 +6444,277 @@ article.sticky::before,
   50% { transform: scale(1.08); }
 }
 
+/* ====================================================================
+   SWELL 実 DOM 追加カバー (cached HTML から拾った未スタイル class)
+   ==================================================================== */
+
+/* c-headLogo (ヘッダ logo wrapper) */
+.c-headLogo {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+.c-headLogo__link {
+  color: var(--white) !important;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* c-iconBtn (アイコンボタン、ハンバーガー等) */
+.c-iconBtn {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.18s, color 0.18s;
+}
+.c-iconBtn:hover { opacity: 0.85; }
+.c-iconBtn__icon {
+  color: inherit;
+}
+.c-plainBtn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* l-articleBottom (記事下セクション群) */
+.l-articleBottom {
+  margin-top: 24px;
+}
+.l-articleBottom__section {
+  margin-bottom: 22px;
+}
+.l-articleBottom__title {
+  font-family: 'Oswald', sans-serif !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  letter-spacing: 1.4px !important;
+  color: var(--black) !important;
+  padding: 4px 0 6px 12px !important;
+  margin: 0 0 12px !important;
+  border-left: 5px solid var(--orange) !important;
+  text-transform: uppercase;
+  background: transparent !important;
+}
+@media (max-width: 600px) {
+  .l-articleBottom {
+    margin-top: 18px;
+  }
+  .l-articleBottom__section {
+    margin-bottom: 16px;
+  }
+  .l-articleBottom__title {
+    font-size: 13.5px !important;
+    padding: 3px 0 5px 10px !important;
+    border-left-width: 4px !important;
+    margin-bottom: 10px !important;
+  }
+}
+
+/* p-spMenu (SWELL mobile full-screen menu) */
+.p-spMenu {
+  background: var(--black) !important;
+  color: var(--white) !important;
+}
+.p-spMenu__overlay {
+  background: rgba(0, 0, 0, 0.75) !important;
+  backdrop-filter: blur(4px);
+}
+.p-spMenu__body,
+.p-spMenu__inner {
+  background: var(--black) !important;
+  color: var(--white) !important;
+}
+.p-spMenu__nav .menu-item a {
+  color: var(--white) !important;
+  padding: 12px 18px !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+  font-family: 'Oswald', sans-serif;
+  font-size: 13px;
+  letter-spacing: 0.8px;
+  transition: background 0.18s, color 0.18s, padding-left 0.18s;
+}
+.p-spMenu__nav .menu-item a:hover,
+.p-spMenu__nav .menu-item.current-menu-item a {
+  background: rgba(245, 129, 31, 0.14) !important;
+  color: var(--orange) !important;
+  padding-left: 22px !important;
+}
+.p-spMenu__closeBtn {
+  color: var(--orange) !important;
+  font-size: 24px !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 8px !important;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* p-searchModal (検索モーダル) */
+.p-searchModal {
+  background: rgba(0, 0, 0, 0.85) !important;
+  backdrop-filter: blur(6px);
+}
+.p-searchModal__inner {
+  background: var(--black) !important;
+  border-radius: 4px;
+  border-top: 4px solid var(--orange);
+  padding: 20px;
+  max-width: 520px;
+  width: 92%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+
+/* p-indexModal (メニュー index モーダル) */
+.p-indexModal {
+  background: rgba(0, 0, 0, 0.75) !important;
+  backdrop-filter: blur(4px);
+}
+.p-indexModal__inner {
+  background: var(--white) !important;
+  border-radius: 4px;
+  border-top: 4px solid var(--orange);
+  padding: 20px;
+}
+
+/* c-fixBtn (画面下に追従する iconic button) */
+.c-fixBtn {
+  background: var(--orange) !important;
+  color: var(--white) !important;
+  border: none !important;
+  border-radius: 999px !important;
+  box-shadow: 0 4px 12px rgba(245, 129, 31, 0.3) !important;
+  transition: transform 0.18s, box-shadow 0.18s;
+}
+.c-fixBtn:hover {
+  background: var(--black) !important;
+  color: var(--orange) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(26, 26, 26, 0.3) !important;
+}
+.c-fixBtn__icon {
+  color: inherit;
+  line-height: 1;
+}
+.p-fixBtnWrap {
+  bottom: max(14px, env(safe-area-inset-bottom)) !important;
+}
+
+/* c-urlcopy (URL をコピーした時の toast) */
+.c-urlcopy,
+.c-copyedPoppup {
+  background: var(--black) !important;
+  color: var(--white) !important;
+  border-radius: 3px !important;
+  border-left: 3px solid var(--orange) !important;
+  padding: 10px 14px !important;
+  font-family: 'Oswald', sans-serif;
+  font-size: 12px !important;
+  letter-spacing: 0.8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35) !important;
+}
+.c-urlcopy__content {
+  font-family: inherit;
+  color: inherit;
+}
+
+/* c-modal (SWELL 汎用 modal) */
+.c-modal {
+  background: rgba(0, 0, 0, 0.7) !important;
+  backdrop-filter: blur(4px);
+}
+.c-modal__close {
+  color: var(--orange) !important;
+  background: transparent !important;
+  border: none !important;
+  font-size: 22px !important;
+  padding: 6px 10px;
+  transition: color 0.18s, transform 0.18s;
+}
+.c-modal__close:hover {
+  color: var(--white) !important;
+  transform: rotate(90deg);
+}
+
+/* c-overlay (汎用 overlay) */
+.c-overlay {
+  background: rgba(0, 0, 0, 0.6) !important;
+  backdrop-filter: blur(3px);
+}
+
+/* c-listMenu (list menu ナビ) */
+.c-listMenu {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.c-listMenu > li > a {
+  display: block;
+  padding: 10px 14px;
+  font-family: 'Oswald', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--dark-gray) !important;
+  border-bottom: 1px solid var(--light-gray);
+  transition: background 0.18s, padding-left 0.18s, color 0.18s;
+}
+.c-listMenu > li > a:hover {
+  background: var(--orange-light) !important;
+  color: var(--orange) !important;
+  padding-left: 18px;
+}
+
+/* l-scrollObserver (内部観測用 placeholder、見た目 0) */
+.l-scrollObserver {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+/* c-iconList__item / __icon (SWELL social icons 等) */
+.c-iconList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.c-iconList__item {
+  flex-shrink: 0;
+}
+.c-iconList__icon {
+  font-size: 16px;
+  color: currentColor;
+}
+
+/* p-breadcrumb__text (パン屑の補助) */
+.p-breadcrumb__text {
+  color: inherit;
+}
+
+/* u-bg-main / u-fz-14 等 utility class */
+.u-bg-main { background: var(--orange) !important; }
+.u-fz-14 { font-size: 14px !important; }
+
+/* c-shareBtns__icon (シェアボタン中の icon) */
+.c-shareBtns__icon {
+  font-size: 16px;
+  color: inherit;
+  margin-right: 4px;
+}
+
 /* ── モバイル 投稿/固定ページの上部 (breadcrumb / metas / title / eyecatch) 間隔圧縮 ── */
 @media (max-width: 768px) {
   /* パン屑 padding 圧縮 + 文字小 */

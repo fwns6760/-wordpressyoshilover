@@ -1657,6 +1657,55 @@ a[href="#respond"].wp-block-button__link {
   letter-spacing: 0.8px !important;
 }
 
+/* ── ホーム p-postList の card 感強化 (is-yoshi-front-density JS が有効な前提) ── */
+/* JS で is-yoshi-front-density が付いた li を狙う */
+.p-postList__item.is-yoshi-front-density {
+  border-left: 3px solid var(--orange);
+}
+.p-postList__item.is-yoshi-front-density:hover {
+  border-left-width: 4px;
+}
+/* subtype 別 border accent (JS が is-yoshi-subtype-* を付ける) */
+.p-postList__item.is-yoshi-subtype-lineup { border-left-color: var(--blue); }
+.p-postList__item.is-yoshi-subtype-postgame { border-left-color: #50555b; }
+.p-postList__item.is-yoshi-subtype-notice { border-left-color: #ba2c3f; }
+.p-postList__item.is-yoshi-subtype-probable_starter,
+.p-postList__item.is-yoshi-subtype-pregame { border-left-color: #5e6b7a; }
+.p-postList__item.is-yoshi-subtype-live_update { border-left-color: var(--orange); }
+
+/* ── 日付 c-postTimes を Oswald 固定 ── */
+.c-postTimes,
+.c-postTimes__posted,
+.c-postTimes__modified,
+.p-postList__times,
+.c-meta__date {
+  font-family: 'Oswald', sans-serif;
+  letter-spacing: 0.5px;
+  font-weight: 500;
+}
+.c-postTimes__posted.icon-posted::before,
+.c-postTimes__modified.icon-modified::before {
+  color: var(--orange);
+}
+
+/* ── コメント数 c-meta__comment / __comment pill 化 ── */
+.p-postList__comment,
+.c-meta__comment,
+.post-comments-count {
+  background: rgba(245, 129, 31, 0.1);
+  border: 1px solid rgba(245, 129, 31, 0.28);
+  color: var(--orange) !important;
+  font-family: 'Oswald', sans-serif;
+  font-size: 10px !important;
+  letter-spacing: 0.6px !important;
+  padding: 1px 8px !important;
+  border-radius: 999px !important;
+  margin-left: 6px !important;
+  line-height: 1.5;
+}
+
+/* 記事詳細の eyecatch は既に orange 下辺 / hover zoom 済。幅はテーマに従う */
+
 /* ── 検索バー / 検索フォーム ── */
 .c-searchBox__input,
 .p-headerSearch__input,

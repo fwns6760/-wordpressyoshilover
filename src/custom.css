@@ -1298,9 +1298,10 @@ a:hover { color: var(--orange); opacity: 0.8; }
   margin: 14px 0 18px;
   padding: 14px 16px 16px;
   background: linear-gradient(180deg, rgba(26, 26, 26, 0.96), rgba(34, 34, 34, 0.98));
-  border-top: 3px solid var(--orange);
+  border-top: 5px solid var(--orange);
   border-radius: 4px;
   color: var(--white);
+  box-shadow: 0 2px 12px rgba(26, 26, 26, 0.18);
 }
 .yoshi-breaking-strip__head {
   display: flex;
@@ -1311,14 +1312,40 @@ a:hover { color: var(--orange); opacity: 0.8; }
 }
 .yoshi-breaking-strip__heading {
   font-family: 'Oswald', sans-serif;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
-  letter-spacing: 1.4px;
+  letter-spacing: 1.8px;
   margin: 0;
-  padding: 0;
+  padding: 0 0 0 2px;
   border: none;
   background: transparent;
   color: var(--white);
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.yoshi-breaking-strip__heading::before {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 18px;
+  background: var(--orange);
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+.yoshi-breaking-strip__heading::after {
+  content: 'LIVE';
+  font-family: 'Oswald', sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--black);
+  background: var(--orange);
+  padding: 2px 7px;
+  border-radius: 2px;
+  line-height: 1;
+  margin-left: 4px;
 }
 .yoshi-breaking-strip__note {
   font-size: 10px;
@@ -1650,8 +1677,9 @@ a:hover { color: var(--orange); opacity: 0.8; }
   padding: 18px 18px 20px;
   background: linear-gradient(180deg, rgba(245, 245, 240, 0.96), rgba(255, 255, 255, 0.98));
   border: 1px solid var(--light-gray);
-  border-top: 3px solid var(--orange);
+  border-top: 5px solid var(--orange);
   border-radius: 4px;
+  box-shadow: 0 1px 0 rgba(26, 26, 26, 0.04);
 }
 .yoshi-article-bundles__head {
   display: flex;
@@ -1661,14 +1689,27 @@ a:hover { color: var(--orange); opacity: 0.8; }
 }
 .yoshi-article-bundles__heading {
   font-family: 'Oswald', sans-serif;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
-  letter-spacing: 1.3px;
+  letter-spacing: 1.8px;
   margin: 0;
-  padding: 0;
+  padding: 0 0 0 2px;
   border: none;
   background: transparent;
-  color: var(--dark-gray);
+  color: var(--black);
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.yoshi-article-bundles__heading::before {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 18px;
+  background: var(--orange);
+  border-radius: 1px;
+  flex-shrink: 0;
 }
 .yoshi-article-bundles__lead {
   margin: 0;

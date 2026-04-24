@@ -1975,13 +1975,49 @@ ins.adsbygoogle::before {
   opacity: 0.7;
 }
 
-/* Anchor ad (画面下追従): Google が body 直下に生成、高さ制限 */
-.google-auto-placed,
+/* Anchor ad (画面下追従) も全殺し (ユーザビリティ最優先、2026-04-24 よしひろさん判断) */
+body > [id^="aswift_"][style*="bottom"],
+body > [id^="aswift_"][style*="position: fixed"],
+body > [id^="aswift_"][style*="position:fixed"],
 body > div[id^="google_ads_frame"],
 body > iframe[id^="google_ads_iframe"][name*="anchor"],
-body > [id^="aswift_"][style*="bottom"] {
-  max-height: 60px !important;
-  z-index: 50 !important;
+body > iframe[id^="google_ads_iframe"][style*="bottom"],
+body > div[style*="position: fixed"][style*="bottom: 0"],
+body > div[style*="position:fixed"][style*="bottom:0"],
+body > ins[style*="position: fixed"][style*="bottom: 0"],
+body > ins[style*="position:fixed"][style*="bottom:0"],
+body > .google-auto-placed,
+.google-auto-placed[style*="position: fixed"],
+.google-auto-placed[style*="position:fixed"] {
+  display: none !important;
+  visibility: hidden !important;
+  max-height: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+}
+
+/* 画面中央の巨大 inline display 広告 (post_content 内) も縮める */
+/* Auto Ad 「inline placed」対策: ins.adsbygoogle で height 320 超えるのは cap */
+.post_content ins.adsbygoogle,
+.entry-content ins.adsbygoogle,
+.post_content .google-auto-placed,
+.entry-content .google-auto-placed {
+  max-height: 280px !important;
+  overflow: hidden !important;
+  margin: 14px auto !important;
+}
+/* 記事本文内の ins.adsbygoogle が 2 個目以降なら thumbnail 風に cap */
+.post_content ins.adsbygoogle:nth-of-type(n+2),
+.entry-content ins.adsbygoogle:nth-of-type(n+2) {
+  max-height: 200px !important;
+}
+/* 記事本文内の ins.adsbygoogle が 4 個目以降は非表示 */
+.post_content ins.adsbygoogle:nth-of-type(n+4),
+.entry-content ins.adsbygoogle:nth-of-type(n+4),
+.post_content .google-auto-placed:nth-of-type(n+4),
+.entry-content .google-auto-placed:nth-of-type(n+4) {
+  display: none !important;
 }
 
 /* ── 画面上に追従する広告は全殺し (広範囲カバー) ── */

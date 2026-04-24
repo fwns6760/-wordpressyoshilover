@@ -361,6 +361,96 @@ h2.swell-block-heading {
   font-family: 'Oswald', sans-serif;
 }
 
+/* ── home の widget 見出し (c-secTitle -widget) を hero-lite 化 ── */
+/* 対象: w-frontTop 内の widget_recent_entries などの見出し (最近の投稿 等)    */
+/* sidebar 側 (.l-sidebar) は既存の黒バー見出しを維持するため scope 限定        */
+.w-frontTop .c-secTitle.-widget,
+.w-frontTop .c-widget > .c-secTitle {
+  position: relative;
+  margin: 0 0 10px !important;
+  padding: 10px 12px 10px 14px !important;
+  font-family: 'Oswald', sans-serif !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  letter-spacing: 1.6px !important;
+  color: var(--black) !important;
+  background: var(--white) !important;
+  border-left: 5px solid var(--orange) !important;
+  border-bottom: 2px solid rgba(26, 26, 26, 0.08) !important;
+  border-radius: 2px;
+  box-shadow: 0 1px 0 rgba(26, 26, 26, 0.04);
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+}
+.w-frontTop .c-secTitle.-widget > span,
+.w-frontTop .c-widget > .c-secTitle > span {
+  font-family: inherit;
+  color: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+}
+.w-frontTop .c-secTitle.-widget::after,
+.w-frontTop .c-widget > .c-secTitle::after {
+  content: '';
+  flex: 0 0 auto;
+  margin-left: auto;
+  width: 32px;
+  height: 2px;
+  background: var(--orange);
+  opacity: 0.6;
+}
+
+/* ── home の widget_recent_entries (最近の投稿) を card-list 化 ── */
+.w-frontTop .widget_recent_entries > ul {
+  list-style: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: transparent;
+}
+.w-frontTop .widget_recent_entries > ul > li {
+  list-style: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: var(--white);
+  border: 1px solid var(--light-gray);
+  border-left: 4px solid transparent;
+  border-radius: 2px;
+  transition: border-left-color 0.18s, background 0.18s, transform 0.18s, box-shadow 0.18s;
+}
+.w-frontTop .widget_recent_entries > ul > li:hover {
+  background: var(--orange-light);
+  border-left-color: var(--orange);
+  transform: translateX(1px);
+  box-shadow: 0 1px 8px rgba(245, 129, 31, 0.18);
+}
+.w-frontTop .widget_recent_entries > ul > li > a {
+  display: block;
+  padding: 11px 14px;
+  color: var(--black) !important;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-decoration: none;
+  letter-spacing: 0.2px;
+}
+.w-frontTop .widget_recent_entries > ul > li > a:hover {
+  color: var(--orange) !important;
+  opacity: 1;
+}
+.w-frontTop .widget_recent_entries > ul > li .post-date,
+.w-frontTop .widget_recent_entries > ul > li .rss-date {
+  display: inline-block;
+  margin-top: 4px;
+  font-family: 'Oswald', sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  color: var(--mid-gray);
+}
+
 /* ── リンク色 ── */
 a { color: var(--orange); }
 a:hover { color: var(--orange); opacity: 0.8; }
@@ -401,19 +491,90 @@ a:hover { color: var(--orange); opacity: 0.8; }
   font-weight: 700;
   transition: background 0.2s;
 }
-.l-sidebar .widget ul li a:hover { background: var(--orange-light); }
+.l-sidebar .widget ul li {
+  border-left: 3px solid transparent;
+  transition: border-left-color 0.18s, background 0.18s;
+}
+.l-sidebar .widget ul li:hover {
+  border-left-color: var(--orange);
+}
+.l-sidebar .widget ul li a:hover {
+  background: var(--orange-light);
+  color: var(--black);
+}
 .l-sidebar .widget_categories .cat-item a { justify-content: space-between; }
 .l-sidebar .widget_categories .cat-item a::before {
   content: '';
   display: inline-block;
-  width: 6px; height: 6px;
+  width: 7px; height: 7px;
   border-radius: 50%;
   background: var(--orange);
   flex-shrink: 0;
+  margin-right: 4px;
 }
 .l-sidebar .widget_archive a {
   color: var(--dark-gray);
   font-size: 13px;
+  justify-content: space-between;
+}
+/* 件数 "(12)" 系を Oswald orange tint で数字圧強化 */
+.l-sidebar .widget_categories .cat-item a,
+.l-sidebar .widget_archive li a {
+  position: relative;
+}
+.l-sidebar .widget_categories .cat-item a > .count,
+.l-sidebar .widget_archive li a > .count,
+.l-sidebar .widget ul li a .count {
+  font-family: 'Oswald', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: var(--orange);
+  background: rgba(245, 129, 31, 0.08);
+  border: 1px solid rgba(245, 129, 31, 0.2);
+  padding: 1px 7px;
+  border-radius: 999px;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+/* SWELL が文字列 "(12)" をリンク末尾に直接書く場合の tint(pseudo)*/
+.l-sidebar .widget_categories .cat-item,
+.l-sidebar .widget_archive li {
+  font-variant-numeric: tabular-nums;
+}
+/* widget 区切りを orange 細ラインに(タイトル前の隙間を締める) */
+.l-sidebar .widget + .widget {
+  position: relative;
+}
+.l-sidebar .widget + .widget::before {
+  content: '';
+  display: block;
+  width: 36px;
+  height: 2px;
+  background: var(--orange);
+  opacity: 0.45;
+  margin: 0 0 14px 0;
+}
+/* tag cloud の chip 化 */
+.l-sidebar .widget_tag_cloud .tagcloud a,
+.l-sidebar .tagcloud a {
+  display: inline-block;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  color: var(--dark-gray) !important;
+  background: var(--white);
+  border: 1px solid var(--light-gray);
+  border-radius: 999px;
+  padding: 4px 10px !important;
+  margin: 2px 3px;
+  line-height: 1.5;
+  transition: all 0.18s;
+}
+.l-sidebar .widget_tag_cloud .tagcloud a:hover,
+.l-sidebar .tagcloud a:hover {
+  background: var(--orange);
+  color: var(--white) !important;
+  border-color: var(--orange);
 }
 
 /* ── Xバナー ── */
@@ -1255,19 +1416,34 @@ a:hover { color: var(--orange); opacity: 0.8; }
   padding: 16px 18px;
   background: var(--white);
   border: 1px solid var(--light-gray);
-  border-left: 4px solid var(--blue);
+  border-left: 4px solid var(--orange);
+  border-top: 3px solid var(--black);
   border-radius: 3px;
+  box-shadow: 0 1px 0 rgba(26, 26, 26, 0.04);
 }
 .yoshi-sns-reactions__heading {
   font-family: 'Oswald', sans-serif;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
-  letter-spacing: 1.5px;
-  color: var(--dark-gray);
-  margin: 0 0 10px;
-  padding: 0;
+  letter-spacing: 1.8px;
+  color: var(--black);
+  margin: 0 0 12px;
+  padding: 4px 0 6px;
   border: none;
   background: transparent;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.yoshi-sns-reactions__heading::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 18px;
+  background: var(--orange);
+  border-radius: 1px;
+  flex-shrink: 0;
 }
 .yoshi-sns-reactions__list {
   list-style: none;
@@ -1299,15 +1475,19 @@ a:hover { color: var(--orange); opacity: 0.8; }
   color: var(--white);
 }
 .yoshi-sns-reactions__item--insider .yoshi-sns-reactions__label {
-  background: var(--blue);
+  background: var(--black);
   color: var(--white);
 }
 .yoshi-sns-reactions__embed { max-width: 550px; }
 .yoshi-sns-reactions__embed .twitter-tweet { margin: 0 auto !important; }
 .yoshi-sns-reactions__fallback {
   font-size: 12px;
-  color: var(--blue);
+  color: var(--orange);
   word-break: break-all;
+  font-weight: 700;
+}
+.yoshi-sns-reactions__fallback:hover {
+  text-decoration: underline;
 }
 
 .is-yoshi-front-density .p-postList__body {
@@ -1625,6 +1805,11 @@ a:hover { color: var(--orange); opacity: 0.8; }
   .yoshi-topic-hub__heading::after { font-size: 9px; letter-spacing: 2px; }
   .yoshi-topic-hub__items { grid-template-columns: 1fr; gap: 10px; }
   .yoshi-topic-hub__item:hover { transform: none; }
+
+  .w-frontTop .c-secTitle.-widget,
+  .w-frontTop .c-widget > .c-secTitle { font-size: 15px !important; padding: 9px 10px 9px 12px !important; }
+  .w-frontTop .widget_recent_entries > ul > li:hover { transform: none; box-shadow: none; }
+  .w-frontTop .widget_recent_entries > ul > li > a { padding: 10px 12px; font-size: 13px; }
   .l-sidebar .widget ul li a {
     padding: 8px 12px;
   }
@@ -1702,6 +1887,9 @@ a:hover { color: var(--orange); opacity: 0.8; }
   .yoshi-topic-hub__lead {
     font-size: 11px;
   }
+  .w-frontTop .c-secTitle.-widget,
+  .w-frontTop .c-widget > .c-secTitle { font-size: 14px !important; letter-spacing: 1.2px !important; }
+  .w-frontTop .widget_recent_entries > ul > li > a { font-size: 12.5px; padding: 9px 11px; }
   .yoshi-front-card__summary,
   .yoshi-article-bundles__summary {
     font-size: 10px;

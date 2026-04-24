@@ -1517,6 +1517,59 @@ a:hover { color: var(--orange); opacity: 0.8; }
   text-decoration: underline;
 }
 
+/* ── 記事詳細: yoshilover-related-posts (【関連記事】block、inline-style 上書き) ── */
+/* ブロック自体が inline-style で組まれているため !important で最低限の巨人色に寄せる */
+.yoshilover-related-posts {
+  border: 1px solid var(--light-gray) !important;
+  border-top: 4px solid var(--orange) !important;
+  border-radius: 4px !important;
+  padding: 14px 16px !important;
+  background: var(--white) !important;
+  box-shadow: 0 1px 0 rgba(26, 26, 26, 0.04);
+}
+/* 見出し 【関連記事】(最初の div) を hero-lite */
+.yoshilover-related-posts > div:first-child {
+  font-family: 'Oswald', sans-serif !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  letter-spacing: 1.4px !important;
+  color: var(--black) !important;
+  text-transform: uppercase;
+  padding: 4px 0 6px 10px !important;
+  margin: 0 0 10px !important;
+  border-left: 4px solid var(--orange);
+  background: transparent !important;
+}
+.yoshilover-related-posts ul {
+  list-style: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+.yoshilover-related-posts ul > li {
+  background: var(--white);
+  border-left: 3px solid var(--light-gray);
+  padding: 8px 10px !important;
+  margin: 0 0 6px !important;
+  line-height: 1.5 !important;
+  transition: border-left-color 0.18s, background 0.18s;
+  border-radius: 2px;
+}
+.yoshilover-related-posts ul > li:hover {
+  background: var(--orange-light);
+  border-left-color: var(--orange);
+}
+.yoshilover-related-posts a {
+  color: var(--black) !important;
+  font-weight: 700 !important;
+  font-size: 13.5px;
+  text-decoration: none !important;
+  line-height: 1.5;
+}
+.yoshilover-related-posts a:hover {
+  color: var(--orange) !important;
+  text-decoration: underline !important;
+}
+
 .is-yoshi-front-density .p-postList__body {
   display: flex;
   flex-direction: column;
@@ -1761,13 +1814,24 @@ a:hover { color: var(--orange); opacity: 0.8; }
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding-bottom: 10px;
+  padding: 6px 8px 10px;
+  margin: 0 -8px;
   border-bottom: 1px dashed var(--light-gray);
+  border-left: 3px solid transparent;
   color: inherit;
   text-decoration: none;
+  transition: background 0.15s, border-left-color 0.15s, transform 0.15s;
+}
+.yoshi-article-bundles__link:hover {
+  background: var(--orange-light);
+  border-left-color: var(--orange);
+  transform: translateX(2px);
+}
+.yoshi-article-bundles__link:hover .yoshi-article-bundles__title {
+  color: var(--black);
 }
 .yoshi-article-bundles__item:last-child .yoshi-article-bundles__link {
-  padding-bottom: 0;
+  padding-bottom: 4px;
   border-bottom: none;
 }
 .yoshi-article-bundles__meta {

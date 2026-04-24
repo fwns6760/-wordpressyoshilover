@@ -16,6 +16,25 @@
 
 ---
 
+## T-028 🟡 `yoshi-front-card` の `.is-yoshi-front-density` scope（**false positive / 誤発見**）
+
+**発見日**: 2026-04-24
+**解決日**: 2026-04-24
+**解決者**: Claude Code（front owner、再確認で誤発見と判明）
+
+**対応内容**:
+- 初回 curl では `yoshi-front-card` / `is-yoshi-front-density` が DOM 0 件で「未配線」と誤認識
+- 再確認で `src/yoshilover-063-frontend.php:1085-1211` の `yoshilover_063_enqueue_front_density_assets()` が home/front_page で inline JS を出力し、`document.querySelectorAll('.p-postList__item').forEach(...)` で **クライアント側 DOM に `is-yoshi-front-density` と `yoshi-front-card__*` を注入**していることを確認
+- `window.yoshilover063FrontDensity.cards` payload (15 件) と live HTML の `p-postList__item` link (15 件) が完全一致 → 実ブラウザでは正常動作
+- curl は JS 実行しないため DOM 0 に見えるだけ
+- `custom.css` の density scope は正しく効いている
+
+**判定**: 誤発見。既存挙動で OK、修正不要。
+
+**教訓**: JS 注入系の block を curl だけで検証するのは不十分。ブラウザでの実測 or JS に依存しない server-side スタイル検証が必要。
+
+---
+
 ## T-017 🟠 fact_check メール 07:00 JST demo 落ち（hourly 化 warm 維持で実質解消）
 
 **発見日**: 2026-04-18

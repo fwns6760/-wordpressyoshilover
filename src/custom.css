@@ -1849,25 +1849,36 @@ select:focus-visible,
   }
 }
 
-/* ── モバイル header shrink (SWELL -parallel 2 段構成でデカ問題対応) ── */
+/* ── モバイル header shrink (SWELL default の logo padding 16px 0 を殺す) ── */
 @media (max-width: 768px) {
-  /* キャッチコピーはモバイルでは隠す (スペース節約) */
+  /* キャッチコピー完全非表示 (全セレクタ) */
   .l-header .c-catchphrase,
+  .l-header__bar .c-catchphrase,
+  .l-header__logo .c-catchphrase,
   .l-header .p-headerLogo__catch,
   .l-header .c-logo__desc,
   .l-header .p-logo__desc { display: none !important; }
 
-  /* 上段 (logo 行) */
-  .l-header__inner {
-    min-height: 48px !important;
-    padding-top: 4px !important;
-    padding-bottom: 4px !important;
+  /* 真犯人: SWELL の .l-header__logo { padding: 16px 0 } を潰す */
+  .l-header__logo {
+    padding: 4px 2vw !important;
+    line-height: 1 !important;
   }
-  /* 下段 (nav 行) */
-  .l-header__barInner {
-    min-height: 40px !important;
+  /* .l-header__inner SWELL が 8px 8px pad 設定、さらに詰める */
+  .l-header__inner {
     padding-top: 2px !important;
     padding-bottom: 2px !important;
+    min-height: 44px !important;
+  }
+  /* 下段 (gnav / bar) */
+  .l-header__barInner {
+    min-height: 36px !important;
+    padding-top: 2px !important;
+    padding-bottom: 2px !important;
+  }
+  /* header 全体 max-height でキャップ (保険) */
+  .l-header:not(.-fixed) {
+    max-height: 56px;
   }
   /* logo 文字 small */
   .l-header .c-logo__text,
@@ -1875,15 +1886,23 @@ select:focus-visible,
   .l-header .p-logo__title {
     font-size: 16px !important;
     letter-spacing: 1.2px !important;
+    line-height: 1.1 !important;
   }
   /* logo image 高さ */
   .l-header .c-logo img,
   .l-header .p-logo img {
-    max-height: 32px !important;
+    max-height: 30px !important;
     width: auto;
   }
   /* header border-bottom 薄く */
   .l-header { border-bottom-width: 3px !important; }
+  /* sp ハンバーガー/カスタムボタン タップ領域 */
+  .l-header__menuBtn,
+  .l-header__customBtn {
+    height: 44px !important;
+    width: 44px !important;
+    line-height: 1 !important;
+  }
   /* gnav (header下のカテゴリ帯) も 1 段圧縮 */
   .c-gnav, .l-gnav, .p-gnav { padding: 0 !important; }
   .c-gnav__item > a,
@@ -1892,8 +1911,10 @@ select:focus-visible,
 }
 
 @media (max-width: 480px) {
-  .l-header__inner { min-height: 44px !important; }
-  .l-header__barInner { min-height: 36px !important; }
+  .l-header__logo { padding: 3px 2vw !important; }
+  .l-header__inner { min-height: 40px !important; }
+  .l-header__barInner { min-height: 34px !important; }
+  .l-header:not(.-fixed) { max-height: 52px; }
   .l-header .c-logo__text,
   .l-header .site-name-text,
   .l-header .p-logo__title {
@@ -1901,15 +1922,19 @@ select:focus-visible,
     letter-spacing: 1px !important;
   }
   .l-header .c-logo img,
-  .l-header .p-logo img { max-height: 28px !important; }
+  .l-header .p-logo img { max-height: 26px !important; }
+  .l-header__menuBtn,
+  .l-header__customBtn { height: 40px !important; width: 40px !important; }
   .c-gnav__item > a,
   .l-gnav__item > a,
   .p-gnav__item > a { padding: 7px 9px !important; font-size: 11.5px !important; }
 }
 
 @media (max-width: 390px) {
-  .l-header__inner { min-height: 40px !important; padding-left: 10px !important; padding-right: 6px !important; }
-  .l-header__barInner { min-height: 34px !important; }
+  .l-header__logo { padding: 2px 10px !important; }
+  .l-header__inner { min-height: 38px !important; padding-left: 0 !important; padding-right: 0 !important; }
+  .l-header__barInner { min-height: 32px !important; }
+  .l-header:not(.-fixed) { max-height: 48px; }
   .l-header .c-logo__text,
   .l-header .site-name-text,
   .l-header .p-logo__title {
@@ -1917,8 +1942,9 @@ select:focus-visible,
     letter-spacing: 0.8px !important;
   }
   .l-header .c-logo img,
-  .l-header .p-logo img { max-height: 24px !important; }
-  /* header-x-link / search icon も小さく */
+  .l-header .p-logo img { max-height: 22px !important; }
+  .l-header__menuBtn,
+  .l-header__customBtn { height: 38px !important; width: 38px !important; }
   .l-header .header-x-link,
   .l-header .p-headerSearch,
   .l-header .c-searchIcon { font-size: 11px !important; }

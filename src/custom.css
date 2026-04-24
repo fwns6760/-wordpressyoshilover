@@ -4115,6 +4115,125 @@ body.yoshi-unpublished::before {
   box-shadow: 0 2px 6px rgba(186, 44, 63, 0.3);
 }
 
+/* ====================================================================
+   よしひろ Admin 用: 記事 preview mode の toggle class helper
+   ==================================================================== */
+body.yoshi-draft-mode::after {
+  content: 'DRAFT';
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  z-index: 9998;
+  background: #ba2c3f;
+  color: var(--white);
+  font-family: 'Oswald', sans-serif;
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  padding: 3px 9px;
+  border-radius: 2px;
+  box-shadow: 0 2px 6px rgba(186, 44, 63, 0.4);
+  pointer-events: none;
+}
+
+/* ====================================================================
+   SWELL 既定の「記事上 広告」スロット 完全非表示 (非公開中)
+   ==================================================================== */
+.p-entryContent > .swell-ad,
+.p-entryContent::before:has(.swell-ad),
+.p-entry > .ad_widget,
+.p-article__ad,
+.widget_swell_ad_widget,
+[data-swell-ad],
+.c-prBanner {
+  display: none !important;
+  height: 0 !important;
+  margin: 0 !important;
+}
+
+/* ====================================================================
+   モバイルで 「記事タイトル下 カテゴリ + 日付」1 行 left-align
+   ==================================================================== */
+@media (max-width: 600px) {
+  .p-articleMetas.-top {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 6px 10px !important;
+    align-items: center;
+  }
+  .p-articleMetas__termList {
+    flex: 0 0 auto;
+    gap: 4px !important;
+  }
+  .p-articleMetas__times {
+    font-size: 10.5px !important;
+    color: var(--mid-gray);
+  }
+  .c-postTimes__posted.icon-posted::before { font-size: 11px; margin-right: 2px; }
+}
+
+/* ====================================================================
+   SWELL の「この記事を書いた人」 / 署名 小型
+   ==================================================================== */
+.p-articleFoot__author,
+.p-writerInfo {
+  padding: 14px 16px !important;
+  border: 1px solid var(--light-gray) !important;
+  border-left: 4px solid var(--orange) !important;
+  border-radius: 4px;
+  background: var(--white);
+}
+.p-writerInfo__name {
+  font-family: 'Oswald', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--black);
+}
+.p-writerInfo__desc {
+  font-size: 12px;
+  color: var(--mid-gray);
+  line-height: 1.6;
+}
+
+/* ====================================================================
+   SWELL の related posts (p-related / c-relatedPosts) refine
+   ==================================================================== */
+.c-relatedPosts__title,
+.p-related__title,
+.p-relatedPosts__title {
+  font-family: 'Oswald', sans-serif !important;
+  font-size: 16px !important;
+  letter-spacing: 1.6px !important;
+  color: var(--black) !important;
+  text-transform: uppercase;
+  padding: 4px 0 6px 12px !important;
+  margin: 20px 0 12px !important;
+  border-left: 5px solid var(--orange) !important;
+}
+@media (max-width: 600px) {
+  .c-relatedPosts__title,
+  .p-related__title,
+  .p-relatedPosts__title {
+    font-size: 14px !important;
+    padding: 3px 0 5px 10px !important;
+    border-left-width: 4px !important;
+    margin: 16px 0 10px !important;
+  }
+}
+
+/* ====================================================================
+   モバイル + PC 共通: 「最新記事」「人気記事」 等の SWELL 一覧を 2col grid 化 (desktop)
+   ==================================================================== */
+@media (min-width: 1024px) {
+  .p-related,
+  .p-relatedPosts {
+    display: block;
+  }
+  .p-relatedPosts__list,
+  .p-relatedPosts > ul {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+}
+
 /* ── モバイル 投稿/固定ページの上部 (breadcrumb / metas / title / eyecatch) 間隔圧縮 ── */
 @media (max-width: 768px) {
   /* パン屑 padding 圧縮 + 文字小 */

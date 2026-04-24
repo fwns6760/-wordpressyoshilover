@@ -1875,11 +1875,7 @@ ins.adsbygoogle[data-overlays],
   pointer-events: none !important;
 }
 
-/* 7. body 配下で top 0~80px の fixed 要素 (header / menu 以外) 保険 */
-body > div:not([class*="l-header"]):not([class*="l-spMenu"]):not([class*="p-scrollTop"]):not([class*="p-fixBottomMenu"]):not([class*="c-spBottomMenu"])[style*="position:fixed"],
-body > div:not([class*="l-header"]):not([class*="l-spMenu"]):not([class*="p-scrollTop"]):not([class*="p-fixBottomMenu"]):not([class*="c-spBottomMenu"])[style*="position: fixed"] {
-  display: none !important;
-}
+/* (保険の broad sweep は正規要素を誤爆する恐れがあるため削除。specific クラスのみで運用) */
 
 /* header を最前面に確保 (広告より上に表示) */
 .l-header,

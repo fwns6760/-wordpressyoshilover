@@ -1444,6 +1444,91 @@ a:hover { color: var(--orange); opacity: 0.8; }
   filter: saturate(1.08);
 }
 
+/* ── アイキャッチ 16:9 ratio lock (記事一覧型カード・サムネイル) ── */
+/* list 型 (横並び) は既に 120×80 で固定なので対象外、card / grid 型だけに */
+.-type-card .p-postList__eyecatch,
+.p-postList.-card .p-postList__eyecatch,
+.-type-grid .p-postList__eyecatch,
+.p-postList.-grid .p-postList__eyecatch {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  width: 100% !important;
+  height: auto !important;
+  overflow: hidden;
+}
+.-type-card .p-postList__eyecatch img,
+.p-postList.-card .p-postList__eyecatch img,
+.-type-grid .p-postList__eyecatch img,
+.p-postList.-grid .p-postList__eyecatch img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+/* カード eyecatch に hover で orange オーバーレイ 0.18 */
+.-type-card .p-postList__item,
+.p-postList.-card .p-postList__item,
+.-type-grid .p-postList__item,
+.p-postList.-grid .p-postList__item {
+  position: relative;
+  overflow: hidden;
+}
+.-type-card .p-postList__eyecatch::after,
+.p-postList.-card .p-postList__eyecatch::after,
+.-type-grid .p-postList__eyecatch::after,
+.p-postList.-grid .p-postList__eyecatch::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(26, 26, 26, 0) 55%, rgba(26, 26, 26, 0.38) 100%);
+  opacity: 0;
+  transition: opacity 0.22s ease;
+  pointer-events: none;
+}
+.-type-card .p-postList__item:hover .p-postList__eyecatch::after,
+.p-postList.-card .p-postList__item:hover .p-postList__eyecatch::after,
+.-type-grid .p-postList__item:hover .p-postList__eyecatch::after,
+.p-postList.-grid .p-postList__item:hover .p-postList__eyecatch::after {
+  opacity: 1;
+}
+
+/* ── c-cat-label (記事詳細 + 一覧) を巨人圧化 ── */
+/* 既存の background-color (カテゴリ色) は line 327+ で設定済、ここでは formatting のみ */
+.c-cat-label,
+.cat-label,
+.p-postList__cats .c-cat-label,
+.p-articleMetas__termList .c-categoryList__link {
+  font-family: 'Oswald', sans-serif !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 1px !important;
+  padding: 3px 10px !important;
+  border-radius: 2px !important;
+  text-transform: uppercase;
+  color: var(--white) !important;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
+  line-height: 1.5;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.c-cat-label:hover,
+.p-postList__cats .c-cat-label:hover,
+.p-articleMetas__termList .c-categoryList__link:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  transition: transform 0.18s, opacity 0.18s;
+}
+/* 記事詳細 eyecatch の上に cat-label を浮かせる版 */
+.p-articleThumb > .c-cat-label,
+.p-entryEyeCatch > .c-cat-label,
+.p-articleThumb .c-cat-label {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+  box-shadow: 0 2px 6px rgba(26, 26, 26, 0.28);
+}
+
 /* ── 検索バー / 検索フォーム ── */
 .c-searchBox__input,
 .p-headerSearch__input,

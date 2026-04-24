@@ -1529,6 +1529,134 @@ a:hover { color: var(--orange); opacity: 0.8; }
   box-shadow: 0 2px 6px rgba(26, 26, 26, 0.28);
 }
 
+/* ── 404 / 検索結果 empty state ── */
+.p-404,
+.p-notFound,
+.p-search__noResult,
+.p-search .no-results,
+body.error404 .l-mainContent,
+body.search-no-results .l-mainContent {
+  text-align: center;
+}
+body.error404 .c-pageTitle,
+body.search-no-results .c-pageTitle {
+  /* 既存 hero スタイル維持、text-align は中央寄せ */
+  justify-content: center;
+}
+.p-404 h1,
+.p-404 h2,
+.p-notFound h1,
+.p-notFound h2 {
+  font-family: 'Oswald', sans-serif !important;
+  font-size: clamp(36px, 9vw, 64px) !important;
+  letter-spacing: 2px !important;
+  color: var(--black) !important;
+  margin: 18px 0 8px !important;
+}
+.p-404 h1::before,
+.p-notFound h1::before {
+  content: '404';
+  display: block;
+  font-size: clamp(60px, 18vw, 140px);
+  color: var(--orange);
+  line-height: 1;
+  opacity: 0.9;
+  letter-spacing: 4px;
+  margin-bottom: 4px;
+}
+.p-404__desc,
+.p-notFound__desc,
+.p-search__noResult p,
+body.error404 .l-mainContent p {
+  font-size: 14px;
+  color: var(--mid-gray);
+  line-height: 1.8;
+  max-width: 480px;
+  margin: 12px auto 18px;
+}
+/* empty state の検索フォームを目立たせる */
+body.error404 .c-searchForm,
+body.search-no-results .c-searchForm,
+.p-404 .c-searchForm,
+.p-notFound .c-searchForm {
+  max-width: 420px;
+  margin: 16px auto 28px;
+  border: 2px solid var(--orange);
+  border-radius: 999px;
+  padding: 2px 4px 2px 14px;
+  background: var(--white);
+}
+
+/* ── X フォロー CTA バー (記事末、wrappable) ── */
+/* 用途: 記事末の「X フォローしてね」ブロック。既存 inline HTML は無いが、        */
+/*      .yoshi-x-follow-cta クラスの div を将来差し込めば巨人圧で光る            */
+.yoshi-x-follow-cta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  background: var(--black);
+  border-left: 5px solid var(--orange);
+  border-radius: 3px;
+  color: var(--white);
+  margin: 22px 0 20px;
+  box-shadow: 0 2px 10px rgba(26, 26, 26, 0.22);
+}
+.yoshi-x-follow-cta__logo {
+  font-family: 'Oswald', sans-serif;
+  font-size: 24px;
+  color: var(--orange);
+  line-height: 1;
+  flex-shrink: 0;
+}
+.yoshi-x-follow-cta__body {
+  flex: 1;
+  min-width: 0;
+}
+.yoshi-x-follow-cta__lead {
+  font-family: 'Oswald', sans-serif;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  color: var(--orange);
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+.yoshi-x-follow-cta__title {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--white);
+}
+.yoshi-x-follow-cta__btn {
+  flex-shrink: 0;
+  background: var(--orange);
+  color: var(--white) !important;
+  font-family: 'Oswald', sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  font-size: 12px;
+  padding: 8px 18px !important;
+  border-radius: 999px;
+  text-decoration: none !important;
+  transition: transform 0.18s, opacity 0.18s;
+}
+.yoshi-x-follow-cta__btn:hover {
+  transform: translateY(-1px);
+  opacity: 0.92;
+}
+
+/* ── inline 「💬 みんなの本音は？」 button を巨人 pill に統一 ── */
+/* 記事末に出る inline-style button の宿命、対象は a[href="#respond"] 全般 */
+.wp-block-button__link[href*="#respond"],
+a.wp-block-button__link[href^="#respond"],
+a[href="#respond"].wp-block-button__link {
+  background-color: var(--orange) !important;
+  color: var(--white) !important;
+  border-radius: 999px !important;
+  font-family: 'Oswald', sans-serif !important;
+  letter-spacing: 0.8px !important;
+}
+
 /* ── 検索バー / 検索フォーム ── */
 .c-searchBox__input,
 .p-headerSearch__input,

@@ -1706,6 +1706,84 @@ a[href="#respond"].wp-block-button__link {
 
 /* 記事詳細の eyecatch は既に orange 下辺 / hover zoom 済。幅はテーマに従う */
 
+/* ── カテゴリ別アクセント (body class に応じた h2 / page title / eyecatch 左バー) ── */
+/* 試合速報 (shiai-sokuho) = orange (default) */
+body.category-shiai-sokuho .c-pageTitle,
+body.single-post.category-shiai-sokuho .p-articleThumb,
+body.category-shiai-sokuho .p-articleHead.c-postTitle { border-left-color: #F5811F !important; }
+body.category-shiai-sokuho .post_content h2,
+body.category-shiai-sokuho .entry-content h2 { border-left-color: #F5811F !important; }
+
+/* 選手情報 (senshu-joho) = blue */
+body.category-senshu-joho .c-pageTitle,
+body.single-post.category-senshu-joho .p-articleThumb,
+body.category-senshu-joho .p-articleHead.c-postTitle { border-left-color: #003DA5 !important; }
+body.category-senshu-joho .post_content h2,
+body.category-senshu-joho .entry-content h2 { border-left-color: #003DA5 !important; }
+body.category-senshu-joho .p-articleThumb { border-bottom-color: #003DA5 !important; }
+
+/* 首脳陣 (syuno) = dark gray */
+body.category-syuno .c-pageTitle,
+body.single-post.category-syuno .p-articleThumb,
+body.category-syuno .p-articleHead.c-postTitle { border-left-color: #555555 !important; }
+body.category-syuno .post_content h2,
+body.category-syuno .entry-content h2 { border-left-color: #555555 !important; }
+body.category-syuno .p-articleThumb { border-bottom-color: #555555 !important; }
+
+/* ドラフト・育成 (draft-ikusei) = green */
+body.category-draft-ikusei .c-pageTitle,
+body.single-post.category-draft-ikusei .p-articleThumb,
+body.category-draft-ikusei .p-articleHead.c-postTitle { border-left-color: #2E8B57 !important; }
+body.category-draft-ikusei .post_content h2,
+body.category-draft-ikusei .entry-content h2 { border-left-color: #2E8B57 !important; }
+body.category-draft-ikusei .p-articleThumb { border-bottom-color: #2E8B57 !important; }
+
+/* OB・解説者 (ob-kaisetsusha) = purple */
+body.category-ob-kaisetsusha .c-pageTitle,
+body.single-post.category-ob-kaisetsusha .p-articleThumb,
+body.category-ob-kaisetsusha .p-articleHead.c-postTitle { border-left-color: #7B4DAA !important; }
+body.category-ob-kaisetsusha .post_content h2,
+body.category-ob-kaisetsusha .entry-content h2 { border-left-color: #7B4DAA !important; }
+body.category-ob-kaisetsusha .p-articleThumb { border-bottom-color: #7B4DAA !important; }
+
+/* 補強・移籍 (hoko-iseki) = red */
+body.category-hoko-iseki .c-pageTitle,
+body.single-post.category-hoko-iseki .p-articleThumb,
+body.category-hoko-iseki .p-articleHead.c-postTitle { border-left-color: #E53935 !important; }
+body.category-hoko-iseki .post_content h2,
+body.category-hoko-iseki .entry-content h2 { border-left-color: #E53935 !important; }
+body.category-hoko-iseki .p-articleThumb { border-bottom-color: #E53935 !important; }
+
+/* 球団情報 (kyudan-joho) = gold */
+body.category-kyudan-joho .c-pageTitle,
+body.single-post.category-kyudan-joho .p-articleThumb,
+body.category-kyudan-joho .p-articleHead.c-postTitle { border-left-color: #F9A825 !important; }
+body.category-kyudan-joho .post_content h2,
+body.category-kyudan-joho .entry-content h2 { border-left-color: #F9A825 !important; }
+body.category-kyudan-joho .p-articleThumb { border-bottom-color: #F9A825 !important; }
+
+/* コラム (column) = black */
+body.category-column .c-pageTitle,
+body.single-post.category-column .p-articleThumb,
+body.category-column .p-articleHead.c-postTitle { border-left-color: #1A1A1A !important; }
+body.category-column .post_content h2,
+body.category-column .entry-content h2 { border-left-color: #1A1A1A !important; }
+
+/* ── プラス: tag archive page 用ヘッダ tint ── */
+body.tag .c-pageTitle { border-left-color: var(--orange) !important; }
+body.tag .c-pageTitle__subTitle::before {
+  content: '#';
+  color: var(--orange);
+  font-weight: 700;
+  margin-right: 2px;
+}
+
+/* ── 著者ページ用ヘッダ tint ── */
+body.author .c-pageTitle { border-left-color: var(--black) !important; }
+
+/* ── 月別ページ (date archive) 用 ── */
+body.date .c-pageTitle { border-left-color: var(--mid-gray) !important; }
+
 /* ── 検索バー / 検索フォーム ── */
 .c-searchBox__input,
 .p-headerSearch__input,

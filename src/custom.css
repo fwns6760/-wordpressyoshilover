@@ -1748,27 +1748,49 @@ body.single-post .entry-content > p:first-of-type {
   border-color: var(--black);
 }
 
-/* ── X / Twitter 埋め込み 枠 polish ── */
-.wp-block-embed-twitter,
-.yoshilover-x-embed,
-.twitter-tweet {
-  border-radius: 8px !important;
-  overflow: hidden;
-}
+/* ── X / Twitter 埋め込み 枠 polish (Twitter widget.js の rendering を阻害しないよう調整) ── */
+/* twitter-tweet 自体には overflow/radius つけない (widget.js 化で iframe 差し替わる) */
 .wp-block-embed-twitter,
 .yoshilover-x-embed {
   background: var(--white);
-  border: 1px solid var(--light-gray);
-  border-left: 3px solid var(--orange);
-  padding: 8px 8px 4px !important;
-  margin: 20px auto !important;
+  border-radius: 8px !important;
+  /* overflow: visible で iframe resize 許可 */
+  overflow: visible !important;
   max-width: 560px !important;
-  box-shadow: 0 1px 6px rgba(26, 26, 26, 0.06);
-  transition: box-shadow 0.2s;
+  margin: 20px auto !important;
+  padding: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+.wp-block-embed-twitter > .wp-block-embed__wrapper,
+.yoshilover-x-embed {
+  padding: 0 !important;
 }
 .wp-block-embed-twitter:hover,
 .yoshilover-x-embed:hover {
-  box-shadow: 0 4px 14px rgba(26, 26, 26, 0.12);
+  box-shadow: none !important;
+}
+.twitter-tweet,
+blockquote.twitter-tweet {
+  display: block !important;
+  overflow: visible !important;
+  max-width: 100% !important;
+  margin: 0 auto !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+}
+/* Twitter の widget iframe (platform.twitter.com) を確実に見せる */
+iframe.twitter-tweet,
+iframe[src*="platform.twitter.com"],
+iframe[src*="syndication.twitter.com"],
+iframe[id*="twitter-widget"] {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  max-width: 100% !important;
+  overflow: visible !important;
+  pointer-events: auto !important;
 }
 
 /* ── タグ一覧 (記事末) / c-tagList ── */

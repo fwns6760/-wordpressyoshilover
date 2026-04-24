@@ -4695,6 +4695,191 @@ a[href="#"] {
   font-size: 14px;
 }
 
+/* ====================================================================
+   巨人試合日の hero banner (将来 plugin 側で class 付与、CSS は ready)
+   ==================================================================== */
+.yoshi-game-today {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #0b0b0b 0%, #1f1f1f 70%, #2a2a2a 100%);
+  color: var(--white);
+  border-radius: 4px;
+  border-top: 4px solid var(--orange);
+  margin: 14px 0 18px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+  position: relative;
+}
+.yoshi-game-today::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 90% 50%, rgba(245, 129, 31, 0.12), transparent 60%);
+  pointer-events: none;
+}
+.yoshi-game-today__logo {
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  background: var(--orange);
+  color: var(--white);
+  font-family: 'Oswald', sans-serif;
+  font-weight: 700;
+  font-size: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 10px rgba(245, 129, 31, 0.45);
+  flex-shrink: 0;
+}
+.yoshi-game-today__body {
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+}
+.yoshi-game-today__label {
+  font-family: 'Oswald', sans-serif;
+  font-size: 10px;
+  letter-spacing: 1.8px;
+  color: var(--orange);
+  text-transform: uppercase;
+  margin-bottom: 3px;
+}
+.yoshi-game-today__title {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--white);
+}
+.yoshi-game-today__time {
+  font-family: 'Oswald', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--orange);
+  white-space: nowrap;
+}
+@media (max-width: 480px) {
+  .yoshi-game-today {
+    grid-template-columns: auto 1fr;
+    gap: 10px;
+    padding: 10px 12px;
+  }
+  .yoshi-game-today__time {
+    grid-column: 1 / -1;
+    font-size: 15px;
+    margin-top: 4px;
+  }
+  .yoshi-game-today__logo { width: 40px; height: 40px; font-size: 16px; }
+  .yoshi-game-today__title { font-size: 13.5px; }
+}
+
+/* ====================================================================
+   3D tilt card hover (適用時に雰囲気 up、デスクトップのみ)
+   ==================================================================== */
+@media (hover: hover) and (pointer: fine) {
+  .yoshi-tilt-card,
+  .yoshi-topic-hub__item,
+  .yoshi-article-bundles__item {
+    transform-style: preserve-3d;
+    transition: transform 0.28s ease, box-shadow 0.28s ease;
+  }
+  .yoshi-tilt-card:hover,
+  .yoshi-topic-hub__item:hover {
+    transform: translateY(-2px) rotateX(1deg);
+  }
+}
+
+/* ====================================================================
+   タイトル text-shadow (subtle hero feel)
+   ==================================================================== */
+.c-postTitle__ttl,
+.c-pageTitle {
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.yoshi-breaking-strip__heading,
+.yoshi-today-giants__heading {
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+/* ====================================================================
+   ホーム カテゴリバナー grid (将来 DOM 注入用 class、実装なしでも CSS は ready)
+   ==================================================================== */
+.yoshi-cat-banners {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 18px 0;
+}
+.yoshi-cat-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px 10px;
+  background: var(--white);
+  border: 1px solid var(--light-gray);
+  border-top: 3px solid var(--orange);
+  border-radius: 3px;
+  font-family: 'Oswald', sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.4px;
+  color: var(--black);
+  text-decoration: none;
+  transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
+}
+.yoshi-cat-banner:hover {
+  transform: translateY(-2px);
+  background: var(--orange-light);
+  box-shadow: 0 4px 12px rgba(26, 26, 26, 0.1);
+}
+.yoshi-cat-banner__icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+/* ====================================================================
+   モバイル 最下段 back-to-top floating (既存 p-scrollTopBtn と併用)
+   ==================================================================== */
+@media (max-width: 600px) {
+  .p-scrollTopBtn,
+  .c-scrollTopBtn {
+    bottom: max(12px, env(safe-area-inset-bottom)) !important;
+    right: 8px !important;
+  }
+}
+
+/* ====================================================================
+   パルスアニメ (新着 / LIVE 等)
+   ==================================================================== */
+.yoshi-pulse {
+  animation: yoshiloPulse 1.6s ease-in-out infinite;
+}
+@keyframes yoshiloPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.03); }
+}
+
+/* ====================================================================
+   LIVE dot (放送中マーク)
+   ==================================================================== */
+.yoshi-live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: #E53935;
+  border-radius: 999px;
+  margin-right: 4px;
+  animation: yoshiloLivePulse 1.2s ease-in-out infinite;
+}
+@keyframes yoshiloLivePulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.45); }
+  50% { opacity: 0.9; box-shadow: 0 0 0 6px rgba(229, 57, 53, 0); }
+}
+
 /* ── モバイル 投稿/固定ページの上部 (breadcrumb / metas / title / eyecatch) 間隔圧縮 ── */
 @media (max-width: 768px) {
   /* パン屑 padding 圧縮 + 文字小 */

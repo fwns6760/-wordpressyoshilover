@@ -704,7 +704,10 @@ def _collect_paginated_candidates(
                 context="edit",
                 fields=list_fields,
             )
-        except Exception:
+        except Exception as e:
+            if "rest_post_invalid_page_number" in str(e):
+                stats["pages_fetched"] += 1
+                break
             return None, "draft_list_paginated", stats, skip_counter
 
         stats["pages_fetched"] += 1

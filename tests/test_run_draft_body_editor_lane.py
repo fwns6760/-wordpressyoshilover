@@ -435,5 +435,79 @@ class TestLaneMain(unittest.TestCase):
         self.assertEqual(payload["aggregate_counts"]["pages_fetched"], 1)
 
 
+class TestCollectPaginatedCandidates(unittest.TestCase):
+    def test_page_overflow_gracefully_returns_collected_candidates(self):
+        now = lane._now_jst("2026-04-20T10:00:00+09:00")
+        paged_posts = {
+            1: [_make_post(1201, modified="2026-04-20T08:00:00+09:00")],
+            2: [_make_post(1202, modified="2026-04-20T08:10:00+09:00")],
+        }
+
+        def _list_posts(**kwargs):
+            page = int(kwargs["page"])
+            if page == 3:
+                raise RuntimeError("400 rest_post_invalid_page_number")
+            return list(paged_posts.get(page, []))
+
+        wp = Mock()
+        wp.list_posts.side_effect = _list_posts
+
+        candidates, fetch_mode, stats, skip_counter = lane._collect_paginated_candidates(
+            wp,
+            now=now,
+            touched_ids=set(),
+        )
+
+        self.assertEqual(fetch_mode, "draft_list_paginated")
+        self.assertEqual(candidates, [
+            {"post_id": 1201, "modified_at": lane._parse_post_datetime(paged_posts[1][0], "modified_gmt", "modified", "date_gmt", "date")},
+            {"post_id": 1202, "modified_at": lane._parse_post_datetime(paged_posts[2][0], "modified_gmt", "modified", "date_gmt", "date")},
+        ])
+        self.assertEqual(stats, {"pages_fetched": 3, "posts_seen": 2})
+        self.assertEqual(skip_counter, {})
+
+    def test_page_one_overflow_returns_empty_candidates(self):
+        now = lane._now_jst("2026-04-20T10:00:00+09:00")
+        wp = Mock()
+        wp.list_posts.side_effect = RuntimeError("400 rest_post_invalid_page_number")
+
+        candidates, fetch_mode, stats, skip_counter = lane._collect_paginated_candidates(
+            wp,
+            now=now,
+            touched_ids=set(),
+        )
+
+        self.assertEqual(fetch_mode, "draft_list_paginated")
+        self.assertEqual(candidates, [])
+        self.assertEqual(stats, {"pages_fetched": 1, "posts_seen": 0})
+        self.assertEqual(skip_counter, {})
+
+    def test_non_overflow_runtime_error_still_returns_none(self):
+        now = lane._now_jst("2026-04-20T10:00:00+09:00")
+        paged_posts = {
+            1: [_make_post(1301, modified="2026-04-20T08:00:00+09:00")],
+        }
+
+        def _list_posts(**kwargs):
+            page = int(kwargs["page"])
+            if page == 2:
+                raise RuntimeError("network down")
+            return list(paged_posts.get(page, []))
+
+        wp = Mock()
+        wp.list_posts.side_effect = _list_posts
+
+        candidates, fetch_mode, stats, skip_counter = lane._collect_paginated_candidates(
+            wp,
+            now=now,
+            touched_ids=set(),
+        )
+
+        self.assertIsNone(candidates)
+        self.assertEqual(fetch_mode, "draft_list_paginated")
+        self.assertEqual(stats, {"pages_fetched": 1, "posts_seen": 1})
+        self.assertEqual(skip_counter, {})
+
+
 if __name__ == "__main__":
     unittest.main()

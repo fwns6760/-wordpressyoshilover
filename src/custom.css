@@ -3361,6 +3361,98 @@ select:focus-visible,
     font-size: 14px !important;
     box-shadow: 0 2px 6px rgba(245, 129, 31, 0.24) !important;
   }
+
+  /* ── のもとけ風 mobile: 記事一覧を超シンプルに ── */
+  /* post list item の box-shadow / animation / border 装飾を外して plain に */
+  .-type-list .p-postList__item,
+  .p-postList.-list .p-postList__item {
+    box-shadow: none !important;
+    border: none !important;
+    border-bottom: 1px solid var(--light-gray) !important;
+    border-radius: 0 !important;
+    background: var(--white) !important;
+    margin-bottom: 0 !important;
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .-type-list .p-postList__item a,
+  .p-postList.-list .p-postList__item a {
+    padding: 10px 8px !important;
+    gap: 10px !important;
+  }
+  /* ttl (タイトル) を太く + 2 行省略 */
+  .-type-list .p-postList__ttl,
+  .p-postList.-list .p-postList__ttl {
+    font-size: 13.5px !important;
+    line-height: 1.4 !important;
+    -webkit-line-clamp: 2 !important;
+    font-weight: 700 !important;
+  }
+  /* 最初の li の NEW tape / gradient もモバイルでは外す */
+  .-type-list .p-postList__item:first-child,
+  .p-postList.-list .p-postList__item:first-child {
+    background: var(--white) !important;
+  }
+  .-type-list .p-postList__item:first-child .p-postList__ttl,
+  .p-postList.-list .p-postList__item:first-child .p-postList__ttl {
+    font-size: 13.5px !important;
+  }
+
+  /* ── breadcrumb のスクロール可を前提に max-width 制限 ── */
+  .p-breadcrumb {
+    font-size: 10px !important;
+    max-width: 100%;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .p-breadcrumb::-webkit-scrollbar { display: none; }
+
+  /* ── yoshi-sns-reactions / article-bundles の border-top を薄く ── */
+  .yoshi-sns-reactions,
+  .yoshi-article-bundles {
+    border-top-width: 3px !important;
+    padding: 10px 12px !important;
+  }
+
+  /* ── タグ chip やや小さく ── */
+  a[rel="tag"],
+  .c-tagList__link,
+  .p-tagList__link {
+    font-size: 10.5px !important;
+    padding: 2px 9px !important;
+  }
+
+  /* ── share btn モバイルで 4col 相当 (最少) ── */
+  .c-shareBtns__list { gap: 5px !important; }
+  .c-shareBtns__btn {
+    padding: 8px 4px !important;
+    font-size: 10.5px !important;
+  }
+
+  /* ── p-toc モバイルで展開 openness ── */
+  .p-toc {
+    padding: 10px 12px !important;
+    margin: 12px 0 !important;
+  }
+  .p-toc li {
+    margin-bottom: 2px !important;
+  }
+
+  /* ── widget 中の画像を最大幅 100 に ── */
+  .l-sidebar .widget img,
+  .w-frontTop .widget img { max-width: 100% !important; height: auto !important; }
+}
+
+/* ====================================================================
+   body.yoshi-mobile-simple : 実機判定で更に simplify (将来 JS で付けたら発動)
+   ==================================================================== */
+body.yoshi-mobile-simple .yoshi-breaking-strip__note,
+body.yoshi-mobile-simple .yoshi-article-bundles__lead,
+body.yoshi-mobile-simple .yoshi-topic-hub__lead {
+  display: none !important;
 }
 
 /* ── モバイル 投稿/固定ページの上部 (breadcrumb / metas / title / eyecatch) 間隔圧縮 ── */

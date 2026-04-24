@@ -3581,6 +3581,121 @@ body.yoshi-reader-focus .entry-content {
   .yoshilover-x-embed iframe,
   .wp-block-embed iframe,
   .twitter-tweet { max-width: 100% !important; }
+
+  /* ── SWELL 記事一覧カード型のモバイル 1col (のもとけ風) ── */
+  .-type-card .p-postList,
+  .p-postList.-card,
+  .-type-grid .p-postList,
+  .p-postList.-grid {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+  .-type-card .p-postList__item,
+  .p-postList.-card .p-postList__item {
+    display: flex !important;
+    flex-direction: row !important;
+    background: var(--white) !important;
+    border: none !important;
+    border-bottom: 1px solid var(--light-gray) !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+  .-type-card .p-postList__eyecatch,
+  .p-postList.-card .p-postList__eyecatch {
+    width: 90px !important;
+    height: 60px !important;
+    aspect-ratio: auto !important;
+    flex-shrink: 0;
+  }
+  .-type-card .p-postList__body,
+  .p-postList.-card .p-postList__body {
+    padding: 0 0 0 10px !important;
+  }
+
+  /* ── モバイル header の x-link を非表示 (画面幅が狭くなる時) ── */
+  .l-header .header-x-link {
+    display: none !important;
+  }
+
+  /* ── モバイル 検索アイコン のみ表示 (input field 隠す、開いたら出る) ── */
+  .l-header .c-searchBox__input,
+  .l-header .p-headerSearch__input {
+    display: none !important;
+  }
+
+  /* ── 記事末 related posts のタイトル padding 詰める ── */
+  .yoshilover-related-posts {
+    padding: 10px 12px !important;
+    margin: 16px 0 !important;
+  }
+  .yoshilover-related-posts ul > li {
+    padding: 6px 8px !important;
+  }
+  .yoshilover-related-posts a {
+    font-size: 13px !important;
+  }
+
+  /* ── モバイルでコメント area の heading ribbon 小型 ── */
+  .p-commentArea {
+    padding: 16px 14px 14px !important;
+    margin: 20px 0 16px !important;
+  }
+  .p-commentArea::before {
+    font-size: 9px !important;
+    padding: 3px 9px !important;
+    top: -10px !important;
+    letter-spacing: 1.6px !important;
+  }
+}
+
+/* ====================================================================
+   巨人カラー Variant: user が色を変えたい時の override class
+   ==================================================================== */
+body.yoshi-theme-soft .yoshi-topic-hub {
+  background: var(--white) !important;
+  border-top-color: var(--orange) !important;
+}
+body.yoshi-theme-soft .yoshi-topic-hub__heading {
+  color: var(--black) !important;
+}
+
+/* ====================================================================
+   大型ディスプレイ (>1400px) で行幅キャップ + サイドバー余白
+   ==================================================================== */
+@media (min-width: 1400px) {
+  .post_content,
+  .entry-content {
+    max-width: 780px;
+  }
+  .l-sidebar { max-width: 340px; }
+}
+
+/* ====================================================================
+   Print mode (印刷時の見た目、念入り)
+   ==================================================================== */
+@media print {
+  * { animation: none !important; transition: none !important; box-shadow: none !important; }
+  .p-scrollTopBtn, .c-scrollTopBtn,
+  ins.adsbygoogle, .adsbygoogle,
+  .google-auto-placed,
+  .p-commentArea,
+  .p-pagerPosts, .c-pagerPosts, .p-postNav {
+    display: none !important;
+  }
+  .c-postTitle__ttl { font-size: 22pt !important; }
+  .post_content h2, .entry-content h2 {
+    background: none !important;
+    color: #000 !important;
+    border: none !important;
+    border-left: 4px solid #000 !important;
+    padding: 6pt 10pt !important;
+    font-size: 16pt !important;
+  }
+  .post_content, .entry-content {
+    font-size: 11pt !important;
+    line-height: 1.6 !important;
+    color: #000 !important;
+  }
 }
 
 /* ── モバイル 投稿/固定ページの上部 (breadcrumb / metas / title / eyecatch) 間隔圧縮 ── */

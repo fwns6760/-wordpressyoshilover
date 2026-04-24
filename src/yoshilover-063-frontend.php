@@ -793,8 +793,10 @@ function yoshilover_063_auto_inject_sidebar_rail( $index, $has_widgets ) {
 
 add_shortcode( 'yoshilover_sns_reactions', 'yoshilover_063_render_sns_reactions' );
 add_shortcode( 'yoshilover_article_bundles', 'yoshilover_063_render_article_bundles' );
+add_shortcode( 'yoshilover_x_follow_cta', 'yoshilover_063_render_x_follow_cta' );
 add_filter( 'the_content', 'yoshilover_063_auto_inject_sns_reactions', 20 );
 add_filter( 'the_content', 'yoshilover_063_auto_inject_article_bundles', 21 );
+add_filter( 'the_content', 'yoshilover_063_auto_inject_x_follow_cta', 22 );
 
 function yoshilover_063_is_x_url( $url ) {
     if ( ! is_string( $url ) || $url === '' ) {
@@ -987,6 +989,95 @@ function yoshilover_063_auto_inject_article_bundles( $content ) {
     }
 
     return $content . $bundles;
+}
+
+/**
+ * X フォロー CTA block 設定取得。
+ *
+ * option `yoshilover_063_x_follow_cta` で以下キーを受け付ける:
+ *   - enabled (bool): default false (opt-in)
+ *   - handle  (string): X のアカウント (既定 yoshilover6760)
+ *   - lead    (string): 上部小ラベル (既定 FOLLOW ON X)
+ *   - title   (string): メイン訴求文 (既定「最新情報を X で追いかけよう」)
+ *   - btn     (string): ボタン文言 (既定 FOLLOW)
+ */
+function yoshilover_063_get_x_follow_cta_settings() {
+    $defaults = array(
+        'enabled' => false,
+        'handle'  => 'yoshilover6760',
+        'lead'    => 'FOLLOW ON X',
+        'title'   => '最新情報を X で追いかけよう',
+        'btn'     => 'FOLLOW',
+    );
+    $raw = get_option( 'yoshilover_063_x_follow_cta', array() );
+    if ( ! is_array( $raw ) ) {
+        $raw = array();
+    }
+    return array_merge( $defaults, $raw );
+}
+
+function yoshilover_063_render_x_follow_cta( $atts = array() ) {
+    $atts = shortcode_atts(
+        array(
+            'handle' => '',
+            'lead'   => '',
+            'title'  => '',
+            'btn'    => '',
+        ),
+        $atts,
+        'yoshilover_x_follow_cta'
+    );
+
+    $settings = yoshilover_063_get_x_follow_cta_settings();
+    $handle   = $atts['handle'] !== '' ? $atts['handle'] : $settings['handle'];
+    $lead     = $atts['lead']   !== '' ? $atts['lead']   : $settings['lead'];
+    $title    = $atts['title']  !== '' ? $atts['title']  : $settings['title'];
+    $btn      = $atts['btn']    !== '' ? $atts['btn']    : $settings['btn'];
+
+    $handle = ltrim( (string) $handle, '@' );
+    if ( $handle === '' ) {
+        return '';
+    }
+    $url = 'https://x.com/' . rawurlencode( $handle );
+
+    $html  = '<aside class="yoshi-x-follow-cta" aria-label="X フォロー CTA" data-yoshi-phase="7">';
+    $html .= '<span class="yoshi-x-follow-cta__logo" aria-hidden="true">𝕏</span>';
+    $html .= '<div class="yoshi-x-follow-cta__body">';
+    $html .= '<div class="yoshi-x-follow-cta__lead">' . esc_html( $lead ) . '</div>';
+    $html .= '<div class="yoshi-x-follow-cta__title">' . esc_html( $title ) . ' <span style="color:var(--orange);font-weight:700;">@' . esc_html( $handle ) . '</span></div>';
+    $html .= '</div>';
+    $html .= '<a class="yoshi-x-follow-cta__btn" href="' . esc_url( $url ) . '" rel="noopener" target="_blank">' . esc_html( $btn ) . '</a>';
+    $html .= '</aside>';
+
+    return $html;
+}
+
+function yoshilover_063_auto_inject_x_follow_cta( $content ) {
+    if ( is_admin() ) {
+        return $content;
+    }
+    if ( ! in_the_loop() || ! is_main_query() ) {
+        return $content;
+    }
+    if ( ! is_singular( 'post' ) ) {
+        return $content;
+    }
+
+    $settings = yoshilover_063_get_x_follow_cta_settings();
+    if ( empty( $settings['enabled'] ) ) {
+        return $content;
+    }
+
+    if ( strpos( (string) $content, 'yoshi-x-follow-cta' ) !== false ) {
+        return $content;
+    }
+
+    $cta = yoshilover_063_render_x_follow_cta();
+    if ( $cta === '' ) {
+        return $content;
+    }
+
+    return $content . $cta;
 }
 
 /* ------------------------------------------------------------

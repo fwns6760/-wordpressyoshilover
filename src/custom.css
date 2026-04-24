@@ -4572,6 +4572,129 @@ select:focus {
   font-weight: 700 !important;
 }
 
+/* ====================================================================
+   ダークモード サポート (ユーザー OS 設定尊重、opt-in で body.yoshi-dark で強制 ON)
+   ==================================================================== */
+@media (prefers-color-scheme: dark) {
+  body.yoshi-auto-dark:not(.yoshi-no-dark) {
+    background: #111 !important;
+    color: #eaeaea !important;
+  }
+  body.yoshi-auto-dark:not(.yoshi-no-dark) .post_content,
+  body.yoshi-auto-dark:not(.yoshi-no-dark) .entry-content {
+    color: #eaeaea !important;
+  }
+  body.yoshi-auto-dark:not(.yoshi-no-dark) .post_content strong,
+  body.yoshi-auto-dark:not(.yoshi-no-dark) .entry-content strong {
+    color: #fff !important;
+  }
+  body.yoshi-auto-dark:not(.yoshi-no-dark) .l-mainContent,
+  body.yoshi-auto-dark:not(.yoshi-no-dark) article {
+    background: #1a1a1a !important;
+  }
+  body.yoshi-auto-dark:not(.yoshi-no-dark) .p-articleHead.c-postTitle,
+  body.yoshi-auto-dark:not(.yoshi-no-dark) .c-postTitle {
+    background: #1a1a1a !important;
+  }
+  body.yoshi-auto-dark:not(.yoshi-no-dark) .c-postTitle__ttl {
+    color: #f5f5f5 !important;
+  }
+  body.yoshi-auto-dark:not(.yoshi-no-dark) .yoshi-topic-hub__item,
+  body.yoshi-auto-dark:not(.yoshi-no-dark) .p-postList__item {
+    background: #222 !important;
+    color: #eaeaea !important;
+  }
+  body.yoshi-auto-dark:not(.yoshi-no-dark) .yoshi-topic-hub__title {
+    color: #fff !important;
+  }
+}
+
+/* 強制 dark mode (body.yoshi-dark で opt-in) */
+body.yoshi-dark,
+body.yoshi-dark .post_content,
+body.yoshi-dark .entry-content {
+  background: #111 !important;
+  color: #eaeaea !important;
+}
+body.yoshi-dark .post_content strong,
+body.yoshi-dark .entry-content strong { color: #fff !important; }
+body.yoshi-dark .c-postTitle { background: #1a1a1a !important; }
+body.yoshi-dark .c-postTitle__ttl { color: #f5f5f5 !important; }
+
+/* ====================================================================
+   スクロールスナップ (横スライダー 系 widget の scroll UX)
+   ==================================================================== */
+.yoshi-slider {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  gap: 10px;
+  padding: 4px 0;
+  scrollbar-width: thin;
+}
+.yoshi-slider > * {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+  min-width: 180px;
+}
+
+/* ====================================================================
+   見出し number marker (.post_content h2:nth-of-type(n)::before)
+   ==================================================================== */
+/* 記事内 h2 に 01 / 02 / 03 ... の Oswald orange 小番号を前置 */
+/*  - body.yoshi-chapter-number を付けた時だけ発動 (opt-in) */
+body.yoshi-chapter-number .post_content {
+  counter-reset: yoshi-chapter;
+}
+body.yoshi-chapter-number .post_content > h2 {
+  counter-increment: yoshi-chapter;
+  position: relative;
+  padding-left: 60px !important;
+}
+body.yoshi-chapter-number .post_content > h2::before {
+  content: counter(yoshi-chapter, decimal-leading-zero);
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: 'Oswald', sans-serif;
+  font-size: 22px;
+  color: var(--orange);
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+/* ====================================================================
+   画像圧縮 tag (avatar / 小 icon は別扱い)
+   ==================================================================== */
+.post_content img:not([src*=".svg"]):not([data-no-lazy]),
+.entry-content img:not([src*=".svg"]):not([data-no-lazy]) {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ====================================================================
+   ページ上部に戻る link (最下部テキスト)
+   ==================================================================== */
+.yoshi-back-to-top-link,
+a[href="#top"],
+a[href="#"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: 'Oswald', sans-serif;
+  font-size: 11px;
+  color: var(--orange);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.yoshi-back-to-top-link::before {
+  content: '↑';
+  font-size: 14px;
+}
+
 /* ── モバイル 投稿/固定ページの上部 (breadcrumb / metas / title / eyecatch) 間隔圧縮 ── */
 @media (max-width: 768px) {
   /* パン屑 padding 圧縮 + 文字小 */

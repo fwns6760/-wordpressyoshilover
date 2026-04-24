@@ -3698,6 +3698,125 @@ body.yoshi-theme-soft .yoshi-topic-hub__heading {
   }
 }
 
+/* ====================================================================
+   モバイル 投稿フッタ (カテゴリ / タグ / シェア) 超コンパクト
+   ==================================================================== */
+@media (max-width: 600px) {
+  /* 記事末 カテゴリ + タグ list を縦スタック + 小型化 */
+  .c-tagList,
+  .p-tagList {
+    gap: 4px !important;
+    margin: 12px 0 10px !important;
+  }
+  a[rel="tag"] {
+    font-size: 10px !important;
+    padding: 2px 8px !important;
+  }
+
+  /* 記事末 シェア shareBtns 上の「SHARE」message を非表示 (スペース節約) */
+  .c-shareBtns__message {
+    display: none !important;
+  }
+  .c-shareBtns {
+    margin: 14px 0 12px !important;
+  }
+  .c-shareBtns__btn {
+    border-radius: 2px !important;
+  }
+
+  /* 記事詳細 下部のコメント誘導 (💬 本音は / 💬 このニュース 系) 3 つボタン
+     3 つ並べるにはスマホ狭いので stack + 小 */
+  .wp-block-button[class*="is-style-outline"] + .wp-block-button,
+  .wp-block-button + .wp-block-button {
+    margin-top: 8px !important;
+  }
+  .wp-block-button__link {
+    padding: 10px 18px !important;
+    font-size: 13px !important;
+  }
+
+  /* breadcrumb 完全非表示 (スペース最優先) */
+  .p-breadcrumb {
+    padding: 2px 0 3px !important;
+    opacity: 0.75;
+  }
+}
+
+/* ====================================================================
+   スマホで 目立ちすぎる装飾の選択的削減
+   ==================================================================== */
+@media (max-width: 480px) {
+  /* eyecatch 下の orange 小 tail 削除 (ごちゃつき回避) */
+  .p-articleThumb::after,
+  .p-entryEyeCatch::after {
+    display: none !important;
+  }
+  /* NEW tape / HOT tape も小さく */
+  .w-frontTop .widget_recent_entries > ul > li:first-child::before,
+  .yoshi-topic-hub__items > .yoshi-topic-hub__item:first-child::before {
+    font-size: 8px !important;
+    padding: 1px 5px !important;
+    letter-spacing: 1px !important;
+  }
+  /* CTA ボタン padding 更に圧縮 */
+  .wp-block-button .wp-block-button__link,
+  .swell-block-button a {
+    padding: 9px 16px !important;
+    font-size: 12px !important;
+    letter-spacing: 0.4px !important;
+  }
+}
+
+/* ====================================================================
+   ホーム TOP: よしひろ 投稿の「読む順」hero を意識
+   ==================================================================== */
+/* 記事詳細の breadcrumb に [マーカー] + [ラベル] の装飾を控えめに */
+.p-breadcrumb__item:first-child a::before {
+  width: 4px !important;
+  height: 4px !important;
+}
+
+/* ====================================================================
+   SWELL の「記事間 広告」広告位置を識別 (SWELL 設定で ON の時のみ出る)
+   ==================================================================== */
+.p-article__ad,
+.p-postList__ad,
+.c-postAd {
+  max-height: 280px !important;
+  overflow: hidden !important;
+  margin: 16px auto !important;
+  opacity: 0.92;
+}
+@media (max-width: 600px) {
+  .p-article__ad,
+  .p-postList__ad,
+  .c-postAd {
+    max-height: 220px !important;
+    margin: 12px auto !important;
+  }
+}
+
+/* ====================================================================
+   モバイル で 記事末 author box / profile を簡素化
+   ==================================================================== */
+@media (max-width: 600px) {
+  .c-author,
+  .p-authorBox {
+    padding: 10px 12px !important;
+    margin: 18px 0 14px !important;
+  }
+  .c-author__avatar img,
+  .p-authorBox__avatar img {
+    width: 44px !important;
+    height: 44px !important;
+    border-width: 1.5px !important;
+  }
+  .c-author__name,
+  .p-authorBox__name { font-size: 13px !important; }
+  .c-author__desc,
+  .p-authorBox__desc { font-size: 11.5px !important; }
+}
+
 /* ── モバイル 投稿/固定ページの上部 (breadcrumb / metas / title / eyecatch) 間隔圧縮 ── */
 @media (max-width: 768px) {
   /* パン屑 padding 圧縮 + 文字小 */

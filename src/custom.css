@@ -1701,8 +1701,8 @@ body > [id^="aswift_"][style*="bottom"] {
   z-index: 50 !important;
 }
 
-/* ── 画面上に追従する広告を完全に殺す (AdSense anchor-top / top-sticky ad) ── */
-/* header を常に最前面に置き、上 fix 広告は display:none で */
+/* ── 画面上に追従する広告を小さく圧縮 (AdSense anchor-top の高さ cap) ── */
+/* 収益は残し、画面占有だけ削る (40px cap) */
 body > div[style*="position: fixed"][style*="top: 0"],
 body > ins[style*="position: fixed"][style*="top: 0"],
 body > div[style*="position:fixed"][style*="top:0"],
@@ -1710,14 +1710,24 @@ body > [id^="aswift_"][style*="top"],
 body > div[id*="anchor"][style*="top"],
 body > div[id^="google_ads_"][style*="top"],
 body > iframe[id^="google_ads_iframe"][name*="anchor"][style*="top"],
-body > .google-vignette,
 body > [data-google-query-id][style*="top: 0"],
 body > [data-google-query-id][style*="top:0"] {
-  display: none !important;
-  visibility: hidden !important;
-  max-height: 0 !important;
-  height: 0 !important;
+  max-height: 40px !important;
+  height: 40px !important;
   overflow: hidden !important;
+  z-index: 40 !important;  /* header (9999) より下 */
+}
+/* 内部 iframe も高さを縮める */
+body > [id^="aswift_"][style*="top"] iframe,
+body > div[id*="anchor"][style*="top"] iframe,
+body > div[id^="google_ads_"][style*="top"] iframe {
+  max-height: 40px !important;
+  height: 40px !important;
+}
+/* vignette (全画面) だけは消す */
+body > .google-vignette,
+.google-vignette {
+  display: none !important;
 }
 
 /* header を最前面に確保 (広告より上に表示) */

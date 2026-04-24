@@ -2143,6 +2143,108 @@ select:focus-visible,
   body:has(.yoshi-spMenu-open) .yoshi-spMenu { height: 100dvh; }
 }
 
+/* ── モバイル 投稿/固定ページの上部 (breadcrumb / metas / title / eyecatch) 間隔圧縮 ── */
+@media (max-width: 768px) {
+  /* パン屑 padding 圧縮 + 文字小 */
+  .p-breadcrumb {
+    padding: 4px 0 6px !important;
+    font-size: 10.5px !important;
+    letter-spacing: 0.3px !important;
+  }
+  /* 記事上部 metas (category + 日付) */
+  .p-articleMetas.-top {
+    margin-bottom: 6px !important;
+    gap: 4px 10px !important;
+  }
+  /* 記事タイトルをさらに絞る (batch 24 の上書き) */
+  .p-articleHead.c-postTitle,
+  .c-postTitle {
+    padding: 8px 0 9px 10px !important;
+    margin-bottom: 8px !important;
+    border-left-width: 4px !important;
+  }
+  .c-postTitle__ttl {
+    font-size: clamp(16px, 4.2vw, 19px) !important;
+    line-height: 1.38 !important;
+    font-weight: 800 !important;
+  }
+  .c-postTitle__date {
+    font-size: 11px !important;
+    margin-top: 4px;
+  }
+  /* eyecatch は画面の 38% 最大にキャップ (縦方向で取りすぎないよう) */
+  .p-articleThumb,
+  .p-entryEyeCatch {
+    max-height: 38vh;
+    overflow: hidden;
+    margin-bottom: 10px !important;
+    border-bottom-width: 2px !important;
+  }
+  .p-articleThumb__img,
+  .p-entryEyeCatch__img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    max-height: 38vh;
+  }
+  /* 記事本文の最初の段落も上余白少なめ */
+  .post_content > p:first-child,
+  .entry-content > p:first-child {
+    margin-top: 0 !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .p-breadcrumb { padding: 3px 0 5px !important; font-size: 10px !important; }
+  .c-postTitle__ttl { font-size: clamp(15px, 4.2vw, 17px) !important; line-height: 1.38 !important; }
+  .p-articleThumb, .p-entryEyeCatch {
+    max-height: 34vh;
+    margin-bottom: 8px !important;
+  }
+  .p-articleThumb__img, .p-entryEyeCatch__img { max-height: 34vh; }
+  .p-articleMetas.-top { margin-bottom: 4px !important; }
+}
+
+@media (max-width: 390px) {
+  .c-postTitle__ttl { font-size: 15px !important; line-height: 1.4 !important; }
+  .p-articleThumb, .p-entryEyeCatch {
+    max-height: 30vh;
+    margin-bottom: 6px !important;
+  }
+  .p-articleThumb__img, .p-entryEyeCatch__img { max-height: 30vh; }
+  .p-breadcrumb {
+    padding: 2px 0 4px !important;
+    white-space: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .p-breadcrumb::-webkit-scrollbar { display: none; }
+  /* title の左オレンジ bar 細く */
+  .p-articleHead.c-postTitle,
+  .c-postTitle { border-left-width: 3px !important; padding-left: 9px !important; }
+}
+
+/* ── モバイル 固定ページ (page) 特有の調整 ── */
+@media (max-width: 768px) {
+  body.page .p-articleHead.c-postTitle,
+  body.page .c-postTitle {
+    /* 固定ページは eyecatch ないことが多いので title 下余白やや大きめ */
+    margin-bottom: 12px !important;
+  }
+}
+
+/* ── sticky header が scroll で縮む演出 (class はテーマ or JS 任せ、無くても害なし) ── */
+.l-header.-scrolled,
+.l-header.is-sticky-scrolled {
+  box-shadow: 0 4px 18px rgba(26, 26, 26, 0.28);
+}
+@media (max-width: 768px) {
+  .l-header.-scrolled .l-header__logo,
+  .l-header.is-sticky-scrolled .l-header__logo { padding: 2px 2vw !important; }
+  .l-header.-scrolled .l-header__inner,
+  .l-header.is-sticky-scrolled .l-header__inner { min-height: 40px !important; }
+}
+
 /* ── 記事リスト item shadow + hover elevation ── */
 .-type-list .p-postList__item,
 .p-postList.-list .p-postList__item {

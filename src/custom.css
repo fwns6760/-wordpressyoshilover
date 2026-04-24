@@ -1728,6 +1728,77 @@ body > .google-vignette,
   z-index: 9999 !important;
 }
 
+/* ── 記事本文 drop cap (最初の段落の先頭 1 文字を大きく) ── */
+/* single post のみ、最初の p の最初の文字 (opt-in は body class 方式) */
+body.single-post .post_content > p:first-of-type::first-letter,
+body.single-post .entry-content > p:first-of-type::first-letter {
+  float: left;
+  font-family: 'Oswald', serif;
+  font-size: 3.2em;
+  line-height: 0.9;
+  font-weight: 700;
+  color: var(--orange);
+  padding: 4px 8px 0 0;
+  margin-right: 2px;
+  background: linear-gradient(180deg, var(--orange) 0%, #E06010 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+@media (max-width: 600px) {
+  body.single-post .post_content > p:first-of-type::first-letter,
+  body.single-post .entry-content > p:first-of-type::first-letter {
+    font-size: 2.6em;
+  }
+}
+
+/* ── 記事本文の画像 drop shadow + 縁 ── */
+.post_content .wp-block-image img,
+.entry-content .wp-block-image img,
+.post_content .wp-block-image figure,
+.post_content img:not(.avatar):not(.c-cat-label img):not([class*="emoji"]) {
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(26, 26, 26, 0.08);
+}
+.post_content .wp-block-image:hover img,
+.entry-content .wp-block-image:hover img {
+  box-shadow: 0 4px 18px rgba(26, 26, 26, 0.16);
+  transition: box-shadow 0.25s ease;
+}
+
+/* ── 強調引用 (大きく目立つ pull-quote) as helper .pull-quote ── */
+.post_content .pull-quote,
+.entry-content .pull-quote,
+.is-style-pull-quote {
+  position: relative;
+  background: linear-gradient(180deg, rgba(245, 129, 31, 0.08) 0%, rgba(245, 129, 31, 0.02) 100%);
+  border: none;
+  border-top: 3px solid var(--orange);
+  border-bottom: 3px solid var(--orange);
+  padding: 20px 24px !important;
+  margin: 24px 0;
+  font-size: 1.15em;
+  line-height: 1.6;
+  color: var(--black);
+  font-weight: 700;
+  font-style: normal;
+  text-align: center;
+}
+.post_content .pull-quote::before,
+.entry-content .pull-quote::before,
+.is-style-pull-quote::before {
+  content: '\201C';
+  position: absolute;
+  top: -8px;
+  left: 16px;
+  background: var(--white);
+  padding: 0 6px;
+  font-family: 'Oswald', Georgia, serif;
+  font-size: 28px;
+  line-height: 1;
+  color: var(--orange);
+}
+
 /* ── スマホヘッダ swiper メニュー (運営者会社・仕事依頼 / お問合せ) を非表示 ── */
 /* p-spHeadMenu = l-header__spNav 配下の横スクロール swiper、今は不要項目のみ */
 .l-header__spNav,

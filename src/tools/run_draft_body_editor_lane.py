@@ -58,6 +58,8 @@ PRIMARY_SOURCE_DOMAINS = (
     "nikkei.com",
     "yomiuri.co.jp",
     "daily.co.jp",
+    "twitter.com",
+    "x.com",
 )
 
 EXIT_WP_GET_FAILED = 40

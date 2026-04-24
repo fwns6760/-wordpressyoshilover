@@ -509,6 +509,46 @@ class TestCollectPaginatedCandidates(unittest.TestCase):
         self.assertEqual(skip_counter, {})
 
 
+class TestPrimarySourceUrl(unittest.TestCase):
+    def test_is_primary_source_accepts_twitter_team_official(self):
+        self.assertTrue(
+            lane._is_primary_source_url("https://twitter.com/TokyoGiants/status/1915758888888888888")
+        )
+
+    def test_is_primary_source_accepts_twitter_press_official(self):
+        urls = (
+            "https://twitter.com/hochi_giants/status/1915758888888888888",
+            "https://twitter.com/sanspo_giants/status/1915758888888888888",
+        )
+
+        for url in urls:
+            with self.subTest(url=url):
+                self.assertTrue(lane._is_primary_source_url(url))
+
+    def test_is_primary_source_accepts_x_com_alias(self):
+        self.assertTrue(
+            lane._is_primary_source_url("https://x.com/TokyoGiants/status/1915758888888888888")
+        )
+
+    def test_is_primary_source_still_accepts_news_domains(self):
+        urls = (
+            "https://www.nikkansports.com/baseball/news/202604200001234.html",
+            "https://www.sanspo.com/article/20260420-ABCDE12345/",
+            "https://www.sponichi.co.jp/baseball/news/2026/04/20/kiji/20260420s00001173000000c.html",
+            "https://hochi.news/articles/20260420-OHT1T51000.html",
+            "https://www.nikkei.com/article/DGXZQOUC000000Q6A420C2000000/",
+            "https://www.yomiuri.co.jp/sports/npb/20260420-OYT1T50123/",
+            "https://www.daily.co.jp/baseball/2026/04/20/0018588888.shtml",
+        )
+
+        for url in urls:
+            with self.subTest(url=url):
+                self.assertTrue(lane._is_primary_source_url(url))
+
+    def test_is_primary_source_rejects_non_whitelisted(self):
+        self.assertFalse(lane._is_primary_source_url("https://example.com/article"))
+
+
 class TestExtractSourceUrls(unittest.TestCase):
     def test_extract_source_urls_meta_present_uses_meta(self):
         post = _make_post(

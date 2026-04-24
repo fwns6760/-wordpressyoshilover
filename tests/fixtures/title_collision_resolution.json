@@ -6,7 +6,7 @@
     "summary": "",
     "category": "試合速報",
     "has_game": true,
-    "expected_title": "巨人阪神戦 甲子園で何を見たいか"
+    "expected_title": "巨人阪神戦 甲子園に関する試合前情報"
   },
   {
     "name": "pregame_hochi_starter_angle",
@@ -96,7 +96,7 @@
     "summary": "阪神戦で皆川岳飛がプロ初打席に立った。",
     "category": "試合速報",
     "has_game": true,
-    "expected_title": "巨人阪神戦 初打席で何を見たいか"
+    "expected_title": "巨人阪神戦 初打席の注目選手"
   },
   {
     "name": "observed_collision_opponent_slugger_angle",
@@ -105,7 +105,7 @@
     "summary": "",
     "category": "試合速報",
     "has_game": true,
-    "expected_title": "巨人阪神戦 佐藤輝明をどう見るか"
+    "expected_title": "巨人阪神戦 佐藤輝明に関する試合前情報"
   },
   {
     "name": "observed_collision_postgame_win_angle",

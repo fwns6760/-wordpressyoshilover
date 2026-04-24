@@ -9934,30 +9934,30 @@ def _rewrite_display_title_with_template(title: str, summary: str, category: str
             return _result("巨人戦 予告先発の数字をどう見るか", "game_pregame_numeric")
         if any(marker in source_text for marker in ("初打席", "プロ初")):
             if opponent:
-                return _result(f"巨人{opponent}戦 初打席で何を見たいか", "game_pregame_first_at_bat")
-            return _result("初打席で何を見たいか", "game_pregame_first_at_bat")
+                return _result(f"巨人{opponent}戦 初打席の注目選手", "game_pregame_first_at_bat")
+            return _result("巨人戦 初打席の注目選手情報", "game_pregame_first_at_bat")
         if game_subject:
             if opponent:
-                return _result(f"巨人{opponent}戦 {game_subject}をどう見るか", "game_pregame_subject")
-            return _result(f"{game_subject}をどう見るか", "game_pregame_subject")
+                return _result(f"巨人{opponent}戦 {game_subject}に関する試合前情報", "game_pregame_subject")
+            return _result(f"巨人戦 {game_subject}に関する試合前情報", "game_pregame_subject")
         if venue:
             if opponent:
-                return _result(f"巨人{opponent}戦 {venue}で何を見たいか", "game_pregame_venue")
-            return _result(f"巨人戦 {venue}で何を見たいか", "game_pregame_venue")
+                return _result(f"巨人{opponent}戦 {venue}に関する試合前情報", "game_pregame_venue")
+            return _result(f"巨人戦 {venue}に関する試合前情報", "game_pregame_venue")
         if opponent:
-            return _result(f"巨人{opponent}戦 試合前にどこを見たいか", "game_pregame_opponent")
-        return _result("巨人戦 試合前にどこを見たいか", "game_pregame_generic")
+            return _result(f"巨人{opponent}戦 当日カードの試合前情報", "game_pregame_opponent")
+        return _result("巨人戦 当日カードの試合前情報", "game_pregame_generic")
 
     if category == "補強・移籍":
         if "外国人" in source_text:
-            return _result("巨人の新外国人補強 どこの穴を埋めるのか", "reinforcement_foreign")
+            return _result("巨人の新外国人補強 関連情報", "reinforcement_foreign")
         if "トレード" in source_text or "移籍" in source_text:
-            return _result("巨人の補強・移籍 この動きをどう見るか", "reinforcement_trade")
-        return _result("巨人補強の整理 どこを厚くするのか", "reinforcement_generic")
+            return _result("巨人の補強・移籍 最新関連情報", "reinforcement_trade")
+        return _result("巨人補強の整理 関連トピック", "reinforcement_generic")
 
     if category == "ドラフト・育成":
         if subtype == "farm_lineup" or FARM_LINEUP_TITLE_RE.search(source_text):
-            return _result("巨人二軍スタメン 若手をどう並べたか", "farm_lineup")
+            return _result("巨人二軍スタメン 当日カード試合前情報", "farm_lineup")
         score = SCORE_TOKEN_RE.search(source_text)
         if FARM_RESULT_TITLE_RE.search(source_text) and score:
             if _has_streaming_hint(source_text):

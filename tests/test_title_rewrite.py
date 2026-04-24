@@ -248,7 +248,7 @@ class DisplayTitleRewriteTests(unittest.TestCase):
 
         rewritten = rss_fetcher.rewrite_display_title(title, summary, "ドラフト・育成", True)
 
-        self.assertEqual(rewritten, "巨人二軍スタメン 若手をどう並べたか")
+        self.assertEqual(rewritten, "巨人二軍スタメン 当日カード試合前情報")
 
     def test_postgame_title_prefers_reader_angle_over_generic_flow_label(self):
         title = "【巨人】今季２度目の０封負けで連敗　井上温大は６回２失点も打線が沈黙"

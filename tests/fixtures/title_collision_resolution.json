@@ -15,7 +15,7 @@
     "summary": "",
     "category": "試合速報",
     "has_game": true,
-    "expected_title": "巨人阪神戦 田中将大先発でどこを見たいか"
+    "expected_title": "巨人阪神戦 田中将大先発 試合前情報"
   },
   {
     "name": "pregame_sanspo_numeric_angle",
@@ -24,7 +24,7 @@
     "summary": "",
     "category": "試合速報",
     "has_game": true,
-    "expected_title": "巨人戦 予告先発の数字をどう見るか"
+    "expected_title": "巨人戦 予告先発 関連数字情報"
   },
   {
     "name": "rainout_slide_rainout_angle",
@@ -114,7 +114,7 @@
     "summary": "阪神戦で田中将大が勝利した。",
     "category": "試合速報",
     "has_game": true,
-    "expected_title": "巨人阪神戦 田中将大は何を見せたか"
+    "expected_title": "巨人阪神戦 田中将大、試合での見せ場"
   },
   {
     "name": "observed_collision_postgame_qa_angle",
@@ -123,7 +123,7 @@
     "summary": "阪神戦後の一問一答。",
     "category": "試合速報",
     "has_game": true,
-    "expected_title": "巨人阪神戦 田中将大の試合後コメントをどう見るか"
+    "expected_title": "巨人阪神戦 田中将大の試合後発言整理"
   },
   {
     "name": "observed_collision_postgame_support_angle",
@@ -132,7 +132,7 @@
     "summary": "阪神戦で田中将大を支えた要素を証言。",
     "category": "試合速報",
     "has_game": true,
-    "expected_title": "巨人阪神戦 勝利を支えた材料をどう見るか"
+    "expected_title": "巨人阪神戦 勝利を支えた材料の整理"
   },
   {
     "name": "observed_collision_postgame_hero_angle",
@@ -141,6 +141,6 @@
     "summary": "",
     "category": "試合速報",
     "has_game": true,
-    "expected_title": "巨人4-3 試合を決めた主役は誰だったか"
+    "expected_title": "巨人4-3 試合を決めたヒーロー"
   }
 ]

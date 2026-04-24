@@ -9898,43 +9898,43 @@ def _rewrite_display_title_with_template(title: str, summary: str, category: str
         if subtype == "postgame":
             score = SCORE_TOKEN_RE.search(source_text)
             if any(marker in source_text for marker in ("完封負け", "0封負け", "打線が沈黙", "攻略できず")):
-                base = f"巨人{opponent}戦 打線沈黙で何が止まったか" if opponent else "巨人 打線沈黙で何が止まったか"
+                base = f"巨人{opponent}戦 打線沈黙 試合内容の整理" if opponent else "巨人戦 打線沈黙 試合内容の整理"
                 return _result(base, "game_postgame_shutout")
             if any(marker in source_text for marker in ("決勝打", "サヨナラ", "逆転")):
-                base = f"巨人{opponent}戦 終盤の一打で何が動いたか" if opponent else "巨人戦 終盤の一打で何が動いたか"
+                base = f"巨人{opponent}戦 終盤の一打で動いた試合" if opponent else "巨人戦 終盤の一打で動いた試合"
                 return _result(base, "game_postgame_clutch")
             if score and any(marker in source_text for marker in ("本日のヒーロー", "HERO IS HERE", "ヒーロー")):
-                return _result(f"巨人{score.group(0)} 試合を決めた主役は誰だったか", "game_postgame_hero")
+                return _result(f"巨人{score.group(0)} 試合を決めたヒーロー", "game_postgame_hero")
             if game_subject:
                 if "一問一答" in source_text or quote_text:
-                    base = f"巨人{opponent}戦 {game_subject}の試合後コメントをどう見るか" if opponent else f"{game_subject}の試合後コメントをどう見るか"
+                    base = f"巨人{opponent}戦 {game_subject}の試合後発言整理" if opponent else f"巨人戦 {game_subject}の試合後発言整理"
                     return _result(base, "game_postgame_subject_comment")
                 if any(marker in source_text for marker in ("強み", "投球術", "分析")):
-                    base = f"巨人{opponent}戦 {game_subject}の強みをどう見るか" if opponent else f"{game_subject}の強みをどう見るか"
+                    base = f"巨人{opponent}戦 {game_subject}の強み 試合後の整理" if opponent else f"巨人戦 {game_subject}の強み 試合後の整理"
                     return _result(base, "game_postgame_subject_analysis")
                 if any(marker in source_text for marker in ("勝目", "勝利", "白星", "好投", "快投", "本塁打", "打点", "猛打賞", "連勝")):
-                    base = f"巨人{opponent}戦 {game_subject}は何を見せたか" if opponent else f"{game_subject}は何を見せたか"
+                    base = f"巨人{opponent}戦 {game_subject}、試合での見せ場" if opponent else f"巨人戦 {game_subject}、試合での見せ場"
                     return _result(base, "game_postgame_subject")
             if any(marker in source_text for marker in ("とっておきメモ", "証言")):
-                base = f"巨人{opponent}戦 勝利を支えた材料をどう見るか" if opponent else "巨人戦 勝利を支えた材料をどう見るか"
+                base = f"巨人{opponent}戦 勝利を支えた材料の整理" if opponent else "巨人戦 勝利を支えた材料の整理"
                 return _result(base, "game_postgame_supporting_point")
             if score:
                 if any(marker in source_text for marker in ("敗れ", "敗戦", "黒星")):
-                    return _result(f"巨人{score.group(0)} 敗戦の分岐点はどこだったか", "game_postgame_loss")
+                    return _result(f"巨人{score.group(0)} 敗戦の分岐点 試合の流れ", "game_postgame_loss")
                 if any(marker in source_text for marker in ("勝利", "白星", "連勝")):
-                    return _result(f"巨人{score.group(0)} 勝利の分岐点はどこだったか", "game_postgame_win")
+                    return _result(f"巨人{score.group(0)} 勝利の分岐点 試合の流れ", "game_postgame_win")
                 return _result(f"巨人{score.group(0)} 試合の流れを分けたポイント", "game_postgame_score")
             if opponent:
                 return _result(f"巨人{opponent}戦 試合の流れを分けたポイント", "game_postgame_opponent")
             return _result("巨人戦 試合の流れを分けたポイント", "game_postgame_generic")
         if subject not in {"", "巨人", "選手", "予告", "先発", "登板"} and any(marker in source_text for marker in ("予告先発", "先発", "登板")):
             if opponent:
-                return _result(f"巨人{opponent}戦 {subject}先発でどこを見たいか", "game_pregame_subject_starter")
-            return _result(f"{subject}先発でどこを見たいか", "game_pregame_subject_starter")
+                return _result(f"巨人{opponent}戦 {subject}先発 試合前情報", "game_pregame_subject_starter")
+            return _result(f"巨人戦 {subject}先発 試合前情報", "game_pregame_subject_starter")
         if "予告先発" in source_text and _has_pregame_numeric_hint(source_text):
             if opponent:
-                return _result(f"巨人{opponent}戦 予告先発の数字をどう見るか", "game_pregame_numeric")
-            return _result("巨人戦 予告先発の数字をどう見るか", "game_pregame_numeric")
+                return _result(f"巨人{opponent}戦 予告先発 関連数字情報", "game_pregame_numeric")
+            return _result("巨人戦 予告先発 関連数字情報", "game_pregame_numeric")
         if any(marker in source_text for marker in ("初打席", "プロ初")):
             if opponent:
                 return _result(f"巨人{opponent}戦 初打席の注目選手", "game_pregame_first_at_bat")

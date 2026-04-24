@@ -44,7 +44,7 @@ REJECT_CASES = (
         "title": "【巨人】阪神戦スタメン発表 1番丸、4番岡本",
         "summary": "9回裏 巨人2-4阪神。6番手の投手が2点を失いサヨナラ負けを喫した。",
         "expected_subtype": "postgame",
-        "expected_title": "巨人阪神戦 終盤の一打で何が動いたか",
+        "expected_title": "巨人阪神戦 終盤の一打で動いた試合",
     },
 )
 

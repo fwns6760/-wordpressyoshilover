@@ -195,7 +195,7 @@ class DisplayTitleRewriteTests(unittest.TestCase):
 
         rewritten = rss_fetcher.rewrite_display_title(title, "", "試合速報", True)
 
-        self.assertEqual(rewritten, "田中将大先発でどこを見たいか")
+        self.assertEqual(rewritten, "巨人戦 田中将大先発 試合前情報")
 
     def test_extract_subject_label_prefers_first_pitcher_after_context_phrase(self):
         title = "今日の先発は戸郷、阿部監督が選んだのは菅野"
@@ -313,7 +313,7 @@ class DisplayTitleRewriteTests(unittest.TestCase):
 
         rewritten = rss_fetcher.rewrite_display_title(title, summary, "試合速報", True)
 
-        self.assertEqual(rewritten, "巨人ヤクルト戦 打線沈黙で何が止まったか")
+        self.assertEqual(rewritten, "巨人ヤクルト戦 打線沈黙 試合内容の整理")
 
     def test_parse_yahoo_team_batting_stats_extracts_core_stats(self):
         html = """

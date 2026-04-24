@@ -1701,6 +1701,44 @@ body > [id^="aswift_"][style*="bottom"] {
   z-index: 50 !important;
 }
 
+/* ── 画面上に追従する広告を完全に殺す (AdSense anchor-top / top-sticky ad) ── */
+/* header を常に最前面に置き、上 fix 広告は display:none で */
+body > div[style*="position: fixed"][style*="top: 0"],
+body > ins[style*="position: fixed"][style*="top: 0"],
+body > div[style*="position:fixed"][style*="top:0"],
+body > [id^="aswift_"][style*="top"],
+body > div[id*="anchor"][style*="top"],
+body > div[id^="google_ads_"][style*="top"],
+body > iframe[id^="google_ads_iframe"][name*="anchor"][style*="top"],
+body > .google-vignette,
+body > [data-google-query-id][style*="top: 0"],
+body > [data-google-query-id][style*="top:0"] {
+  display: none !important;
+  visibility: hidden !important;
+  max-height: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+}
+
+/* header を最前面に確保 (広告より上に表示) */
+.l-header,
+.l-header__inner,
+.l-header__bar {
+  z-index: 9999 !important;
+}
+/* header が sticky で自前 bg が無いと透ける問題対応 */
+.l-header,
+.l-header__inner {
+  background-color: var(--black) !important;
+}
+/* もし「半透明ヘッダ」にしたい場合は以下 class を body/html に付ける (オプション) */
+body.yoshi-header-translucent .l-header,
+body.yoshi-header-translucent .l-header__inner {
+  background-color: rgba(26, 26, 26, 0.82) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
 /* Vignette (全画面インタースティシャル): display-none 保険 */
 /* Google 側 URL 判定で効く時だけ (#google_vignette 付き navigation) */
 body:has(.google-vignette),

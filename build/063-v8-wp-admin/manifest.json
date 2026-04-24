@@ -1,0 +1,17 @@
+{
+  "generated_at": "2026-04-24T10:15:00+09:00",
+  "git_head": "0deb077",
+  "plugin_version": "0.8.0",
+  "plugin_source": "src/yoshilover-063-frontend.php",
+  "css_source": "src/custom.css",
+  "artifacts": {
+    "plugin_zip": "build/063-v8-wp-admin/yoshilover-063-frontend.zip",
+    "css_snippet": "build/063-v8-wp-admin/063-v8-custom.css",
+    "windows_zip": "C:\\Users\\fwns6\\Downloads\\yoshilover-063-frontend.zip"
+  },
+  "changes": [
+    "add [yoshilover_x_follow_cta] shortcode + the_content filter (opt-in default OFF)",
+    "add 5 composable shortcodes: game_today / result_panel / lead_info / summary_box / pill",
+    "bump version 0.7.0 → 0.8.0"
+  ]
+}

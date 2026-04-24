@@ -254,29 +254,258 @@ body {
   box-shadow: 0 4px 16px rgba(0,0,0,0.12);
 }
 
-/* ── もっと見るボタン ── */
+/* ── ページネーション ── */
+.wp-pagenavi,
+.swell-block-pagenavi,
+.p-pagination,
+.p-pager,
+.c-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin: 22px 0 !important;
+}
 .wp-pagenavi a,
 .wp-pagenavi span,
 .swell-block-pagenavi a,
 .p-pagination a,
+.p-pagination span,
 .p-pagination .current,
-.p-pager a {
-  border-color: var(--orange) !important;
+.p-pager a,
+.c-pagination a,
+.c-pagination span,
+[class*="page-numbers"] {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px !important;
+  min-height: 38px !important;
+  padding: 0 10px !important;
+  border: 2px solid var(--orange) !important;
+  background: var(--white) !important;
   color: var(--orange) !important;
-  font-weight: 700;
-  border-radius: 4px;
+  font-family: 'Oswald', sans-serif !important;
+  font-weight: 700 !important;
+  font-size: 13px !important;
+  letter-spacing: 0.4px !important;
+  border-radius: 999px !important;
+  text-decoration: none !important;
+  transition: background 0.18s, color 0.18s, transform 0.18s !important;
 }
 .wp-pagenavi a:hover,
 .p-pagination a:hover,
-.p-pager a:hover {
+.p-pager a:hover,
+.c-pagination a:hover,
+[class*="page-numbers"]:hover:not(.current):not(.dots) {
   background: var(--orange) !important;
   color: var(--white) !important;
+  transform: translateY(-1px);
 }
 .wp-pagenavi span.current,
-.p-pagination .current {
+.p-pagination .current,
+.c-pagination .current,
+[class*="page-numbers"].current {
   background: var(--orange) !important;
   color: var(--white) !important;
   border-color: var(--orange) !important;
+  pointer-events: none;
+}
+.wp-pagenavi .extend,
+.p-pagination .dots,
+[class*="page-numbers"].dots {
+  border-color: transparent !important;
+  color: var(--mid-gray) !important;
+  background: transparent !important;
+}
+
+/* ── モバイルボトム固定メニュー (p-fixBottomMenu) ── */
+.p-fixBottomMenu,
+.p-fixBottom,
+.c-spBottomMenu {
+  background: var(--black) !important;
+  border-top: 3px solid var(--orange) !important;
+  box-shadow: 0 -2px 12px rgba(26, 26, 26, 0.28) !important;
+}
+.p-fixBottomMenu a,
+.p-fixBottomMenu__link,
+.c-spBottomMenu a {
+  color: var(--white) !important;
+  font-family: 'Oswald', sans-serif;
+  font-size: 10px !important;
+  letter-spacing: 0.6px;
+  transition: color 0.18s, background 0.18s !important;
+}
+.p-fixBottomMenu a:hover,
+.p-fixBottomMenu a.-current,
+.p-fixBottomMenu a[aria-current],
+.c-spBottomMenu a:hover {
+  color: var(--orange) !important;
+  background: rgba(245, 129, 31, 0.12) !important;
+}
+
+/* ── 画像 + figcaption ── */
+.wp-block-image figcaption,
+.wp-caption-text,
+figure figcaption {
+  font-family: 'Oswald', sans-serif;
+  font-size: 11px !important;
+  letter-spacing: 0.5px;
+  color: var(--mid-gray) !important;
+  text-align: center;
+  padding: 6px 4px 2px;
+  text-transform: uppercase;
+}
+.wp-block-image img {
+  border-radius: 3px;
+}
+.wp-block-image.is-style-rounded img {
+  border-radius: 999px;
+}
+/* 画像に hover すると軽く saturate */
+.wp-block-image:hover img {
+  filter: saturate(1.06);
+  transition: filter 0.2s;
+}
+
+/* ── SWELL 吹き出し (swell-block-balloon) ── */
+.swell-block-balloon {
+  margin: 16px 0 !important;
+}
+.swell-block-balloon__body {
+  background: var(--white) !important;
+  border: 1px solid var(--light-gray) !important;
+  border-radius: 10px !important;
+  padding: 10px 14px !important;
+  position: relative;
+  color: var(--black);
+  line-height: 1.55;
+}
+.swell-block-balloon__body::before,
+.swell-block-balloon__body::after {
+  /* SWELL が生成する quote tail を orange 系に寄せる */
+  border-right-color: var(--light-gray) !important;
+  border-left-color: var(--light-gray) !important;
+}
+.swell-block-balloon__name {
+  font-family: 'Oswald', sans-serif;
+  font-size: 10px !important;
+  letter-spacing: 0.8px;
+  color: var(--mid-gray) !important;
+  text-transform: uppercase;
+  text-align: center;
+}
+.swell-block-balloon__icon {
+  border: 2px solid var(--orange) !important;
+  border-radius: 999px !important;
+  overflow: hidden;
+}
+/* is-style-think → 点線フキダシ */
+.swell-block-balloon.is-style-think .swell-block-balloon__body {
+  border-style: dashed !important;
+  border-color: var(--orange) !important;
+}
+/* is-style-speech → orange 背景 */
+.swell-block-balloon.is-style-speech .swell-block-balloon__body {
+  background: var(--orange-light) !important;
+  border-color: var(--orange) !important;
+  color: var(--black) !important;
+}
+
+/* ── SWELL ブログカード (swell-block-blogCard) ── */
+.swell-block-blogCard,
+.swell-block-blogCard__inner,
+.wp-block-swellBlogCard {
+  border: 1px solid var(--light-gray) !important;
+  border-left: 4px solid var(--orange) !important;
+  border-radius: 4px !important;
+  background: var(--white) !important;
+  transition: transform 0.18s, box-shadow 0.18s, border-color 0.18s !important;
+  margin: 18px 0 !important;
+}
+.swell-block-blogCard:hover,
+.swell-block-blogCard__inner:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(26, 26, 26, 0.12);
+  border-left-color: var(--orange) !important;
+}
+.swell-block-blogCard__title {
+  font-weight: 700 !important;
+  color: var(--black) !important;
+  font-size: 14px !important;
+  line-height: 1.45 !important;
+}
+.swell-block-blogCard__label,
+.swell-block-blogCard__externalLink {
+  font-family: 'Oswald', sans-serif !important;
+  font-size: 10px !important;
+  letter-spacing: 1px !important;
+  color: var(--orange) !important;
+  text-transform: uppercase;
+}
+.swell-block-blogCard__excerpt {
+  font-size: 12px !important;
+  color: var(--mid-gray) !important;
+}
+
+/* ── 目次 sticky (デスクトップ widget 版) ── */
+/* SWELL には sidebar 目次 widget がある場合、ここで sticky 化 */
+.l-sidebar .widget.ez-toc-widget-container,
+.l-sidebar .widget.swell_widget_toc,
+.l-sidebar .widget .c-tocBox {
+  position: sticky;
+  top: 72px;
+  max-height: calc(100vh - 90px);
+  overflow-y: auto;
+}
+
+/* ── 共通 notice / alert box (is-style-notice 等) ── */
+.is-style-notice,
+.is-style-info,
+.is-style-alert,
+.is-style-warning,
+.p-noticeBox {
+  border: 1px solid var(--light-gray);
+  border-left: 4px solid var(--orange) !important;
+  background: var(--orange-light) !important;
+  padding: 12px 16px;
+  border-radius: 3px;
+  margin: 14px 0;
+  color: var(--black);
+}
+.is-style-alert,
+.is-style-warning {
+  border-left-color: #E53935 !important;
+  background: rgba(229, 57, 53, 0.08) !important;
+}
+.is-style-info {
+  border-left-color: var(--black) !important;
+  background: rgba(26, 26, 26, 0.04) !important;
+}
+
+/* ── 著者 byline / c-author ── */
+.c-author,
+.p-authorBox,
+.p-articleFoot__author {
+  background: var(--white);
+  border: 1px solid var(--light-gray);
+  border-top: 3px solid var(--orange);
+  border-radius: 4px;
+  padding: 14px 16px;
+  margin: 22px 0 18px;
+}
+.c-author__name,
+.p-authorBox__name {
+  font-family: 'Oswald', sans-serif;
+  font-weight: 700 !important;
+  color: var(--black) !important;
+  letter-spacing: 0.4px;
+}
+.c-author__desc,
+.p-authorBox__desc {
+  font-size: 12px;
+  color: var(--mid-gray);
+  line-height: 1.6;
 }
 
 /* SWELLの「もっと見る」ボタン */
@@ -614,23 +843,52 @@ a:hover { color: var(--orange); opacity: 0.8; }
 /* ── フッター ── */
 .l-footer {
   background: var(--black) !important;
-  border-top: 4px solid var(--orange) !important;
-  color: #666 !important;
-  margin-top: 40px;
+  border-top: 5px solid var(--orange) !important;
+  color: #9b9b9b !important;
+  margin-top: 44px;
+  padding: 28px 0 18px !important;
+  box-shadow: 0 -2px 18px rgba(26, 26, 26, 0.18);
 }
-.l-footer a { color: #666 !important; font-size: 12px; transition: color 0.2s; }
-.l-footer a:hover { color: var(--orange) !important; }
+.l-footer a { color: #9b9b9b !important; font-size: 12px; transition: color 0.2s, transform 0.18s; }
+.l-footer a:hover { color: var(--orange) !important; transform: translateY(-1px); }
 .l-footer .c-logo__text,
 .l-footer .site-name-text,
 .l-footer .p-logo__title {
   font-family: 'Oswald', sans-serif !important;
   font-weight: 700 !important;
   color: var(--white) !important;
-  font-size: 18px !important;
-  letter-spacing: 2px;
+  font-size: 20px !important;
+  letter-spacing: 2.5px;
 }
-.l-footer__inner { color: #666; }
-.l-footer .c-copy { font-size: 11px; color: #444; border-top: 1px solid #2a2a2a; padding-top: 16px; }
+.l-footer__inner { color: #9b9b9b; }
+/* footer nav (menu list) */
+.l-footer__nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px !important;
+  justify-content: center;
+  padding: 6px 0 14px !important;
+  border-bottom: 1px solid rgba(245, 129, 31, 0.18);
+  margin-bottom: 14px !important;
+}
+.l-footer__nav a {
+  font-family: 'Oswald', sans-serif;
+  letter-spacing: 0.8px;
+  font-weight: 700 !important;
+  border-right: none !important;
+  padding: 0 4px !important;
+}
+.l-footer__nav li:first-child a { border-left: none !important; }
+/* footer bottom copy line */
+.l-footer .c-copy,
+.l-footer__foot {
+  font-size: 11px !important;
+  color: #555 !important;
+  border-top: 1px solid rgba(255,255,255,0.08) !important;
+  padding-top: 12px !important;
+  font-family: 'Oswald', sans-serif;
+  letter-spacing: 0.6px;
+}
 
 /* ── 記事内見出し ── */
 .post_content h2,
@@ -716,6 +974,69 @@ a:hover { color: var(--orange); opacity: 0.8; }
 
 /* ── メインコンテンツ幅 ── */
 .l-main, .l-wrap { max-width: 1200px; }
+
+/* 記事詳細本体の読みやすさ調整 (幅は SWELL layout に従う、行間のみ調整) */
+/* 本文 p / li の行間 + 文字サイズ可読域に揃える */
+.post_content,
+.entry-content {
+  font-size: 15.5px;
+  line-height: 1.85;
+  color: var(--dark-gray);
+  letter-spacing: 0.2px;
+}
+.post_content > p,
+.entry-content > p {
+  margin: 0 0 1.1em;
+}
+.post_content > p + p,
+.entry-content > p + p {
+  margin-top: 0;
+}
+/* リード文っぽい最初の p は少し大きく */
+.post_content > p:first-of-type,
+.entry-content > p:first-of-type {
+  font-size: 16px;
+  line-height: 1.85;
+  color: var(--black);
+}
+/* 強調 strong / em を巨人色で */
+.post_content strong,
+.entry-content strong {
+  color: var(--black);
+  font-weight: 800;
+  background: linear-gradient(transparent 62%, rgba(245, 129, 31, 0.22) 62%);
+  padding: 0 2px;
+}
+.post_content em,
+.entry-content em {
+  font-style: normal;
+  color: var(--orange);
+  font-weight: 700;
+}
+/* 文中 code */
+.post_content code,
+.entry-content code {
+  background: rgba(26, 26, 26, 0.06);
+  color: var(--black);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 0.88em;
+  font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+  border: 1px solid rgba(26, 26, 26, 0.08);
+}
+/* pre block */
+.post_content pre,
+.entry-content pre,
+.wp-block-code {
+  background: var(--black) !important;
+  color: #eee !important;
+  padding: 14px 16px !important;
+  border-radius: 3px !important;
+  border-left: 4px solid var(--orange) !important;
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+  overflow-x: auto !important;
+}
 
 /* ── 記事詳細ページ ── */
 .p-entryTitle { font-size: 20px; font-weight: 700; line-height: 1.5; }
@@ -1053,19 +1374,112 @@ a:hover { color: var(--orange); opacity: 0.8; }
   margin-top: 3px;
 }
 
-/* ── 検索バー ── */
+/* ── アーカイブページ h1 (c-pageTitle) を hero 化 ── */
+/* カテゴリ / タグ / 月別 / 検索結果 すべて共通 */
+.c-pageTitle {
+  font-size: clamp(18px, 3.4vw, 22px) !important;
+  line-height: 1.4 !important;
+  position: relative;
+  padding: 14px 16px !important;
+  margin-bottom: 18px !important;
+  background: var(--black) !important;
+  color: var(--white) !important;
+  border-left: 6px solid var(--orange) !important;
+  border-radius: 2px !important;
+  box-shadow: 0 1px 4px rgba(26, 26, 26, 0.12);
+  font-weight: 800 !important;
+}
+.c-pageTitle[data-style="b_bottom"] {
+  border-bottom: none !important;
+}
+.c-pageTitle__inner {
+  display: inline-flex !important;
+  align-items: baseline !important;
+  gap: 10px;
+  border-bottom: none !important;
+  float: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  color: var(--white) !important;
+}
+.c-pageTitle__subTitle {
+  font-style: normal !important;
+  font-family: 'Oswald', sans-serif !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 1.8px !important;
+  color: var(--orange) !important;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  background: rgba(245, 129, 31, 0.12);
+  border: 1px solid rgba(245, 129, 31, 0.4);
+  border-radius: 999px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+/* ── eyecatch / サムネイル hover zoom ── */
+/* 記事詳細の eyecatch は既に orange 下辺アクセント済、ここでは画像 zoom のみ */
+/* 一覧サムネイル + 記事詳細 eyecatch の両方 */
+.p-articleThumb,
+.p-entryEyeCatch,
+.p-postList__eyecatch,
+.c-postThumb,
+.p-postList__thumb {
+  overflow: hidden;
+}
+.p-articleThumb .p-articleThumb__img,
+.p-entryEyeCatch .p-entryEyeCatch__img,
+.p-postList__eyecatch img,
+.p-postList__thumb img,
+.c-postThumb__img {
+  transition: transform 0.35s ease, filter 0.35s ease !important;
+}
+.p-articleThumb:hover .p-articleThumb__img,
+.p-entryEyeCatch:hover .p-entryEyeCatch__img,
+.p-postList__item:hover .p-postList__eyecatch img,
+.p-postList__item:hover .p-postList__thumb img,
+.p-postList__item:hover .c-postThumb__img {
+  transform: scale(1.045);
+  filter: saturate(1.08);
+}
+
+/* ── 検索バー / 検索フォーム ── */
 .c-searchBox__input,
-.p-headerSearch__input {
-  border: 2px solid var(--light-gray);
-  border-radius: 20px;
-  padding: 6px 14px;
-  font-size: 13px;
-  transition: border-color 0.2s;
+.p-headerSearch__input,
+.c-searchForm__s {
+  border: 2px solid var(--light-gray) !important;
+  border-radius: 999px !important;
+  padding: 8px 16px !important;
+  font-size: 13px !important;
+  background: var(--white) !important;
+  transition: border-color 0.18s, box-shadow 0.18s !important;
 }
 .c-searchBox__input:focus,
-.p-headerSearch__input:focus { border-color: var(--orange); outline: none; }
+.p-headerSearch__input:focus,
+.c-searchForm__s:focus {
+  border-color: var(--orange) !important;
+  box-shadow: 0 0 0 3px rgba(245, 129, 31, 0.2) !important;
+  outline: none !important;
+}
 .c-searchBox__btn,
-.p-headerSearch__btn { background: var(--orange) !important; color: var(--white) !important; }
+.p-headerSearch__btn,
+.c-searchForm__submit {
+  background: var(--orange) !important;
+  color: var(--white) !important;
+  border-radius: 999px !important;
+  font-family: 'Oswald', sans-serif !important;
+  letter-spacing: 0.6px !important;
+  transition: opacity 0.18s !important;
+}
+.c-searchBox__btn:hover,
+.p-headerSearch__btn:hover,
+.c-searchForm__submit:hover { opacity: 0.88 !important; }
+.c-searchForm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 
 /* ── スマホ開閉メニュー ── */
 .p-spNav,
@@ -1199,12 +1613,112 @@ a:hover { color: var(--orange); opacity: 0.8; }
   background: var(--orange) !important;
   color: var(--white) !important;
   border-color: var(--orange) !important;
-  border-radius: 4px !important;
+  border-radius: 999px !important;
   font-weight: 700 !important;
-  transition: opacity 0.2s !important;
+  letter-spacing: 0.6px !important;
+  padding: 12px 26px !important;
+  transition: transform 0.18s, box-shadow 0.18s, opacity 0.18s !important;
 }
 .wp-block-button .wp-block-button__link:hover,
-.c-btn:hover { opacity: 0.85 !important; }
+.c-btn:hover,
+.swell-block-button a:hover {
+  opacity: 0.95 !important;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(245, 129, 31, 0.32) !important;
+}
+/* is-style-outline (border だけ) variant */
+.wp-block-button.is-style-outline .wp-block-button__link,
+.swell-block-button.is-style-outline a {
+  background: transparent !important;
+  color: var(--orange) !important;
+  border: 2px solid var(--orange) !important;
+}
+.wp-block-button.is-style-outline .wp-block-button__link:hover,
+.swell-block-button.is-style-outline a:hover {
+  background: var(--orange) !important;
+  color: var(--white) !important;
+}
+
+/* ── SWELL キャプションボックス (swell-block-capbox) ── */
+.swell-block-capbox,
+.p-capBox,
+.is-style-capbox,
+.is-style-capbox1,
+.is-style-capbox2 {
+  background: var(--white) !important;
+  border: 1px solid var(--light-gray) !important;
+  border-top: 4px solid var(--orange) !important;
+  border-radius: 4px !important;
+  padding: 14px 16px !important;
+  box-shadow: 0 1px 0 rgba(26, 26, 26, 0.04);
+  margin: 18px 0;
+}
+.swell-block-capbox__label,
+.p-capBox__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'Oswald', sans-serif !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  letter-spacing: 1.2px !important;
+  color: var(--black) !important;
+  padding: 2px 10px !important;
+  border-radius: 999px !important;
+  background: rgba(245, 129, 31, 0.12) !important;
+  border: 1px solid rgba(245, 129, 31, 0.35) !important;
+  text-transform: uppercase;
+}
+
+/* ── SWELL FAQ / アコーディオン ── */
+.swell-block-faq,
+.swell-block-accordion {
+  border-radius: 4px !important;
+  overflow: hidden;
+  border: 1px solid var(--light-gray) !important;
+  margin: 14px 0;
+}
+.swell-block-faq__item,
+.swell-block-accordion__item {
+  border-bottom: 1px solid var(--light-gray) !important;
+}
+.swell-block-faq__item:last-child,
+.swell-block-accordion__item:last-child { border-bottom: none !important; }
+.swell-block-faq__q,
+.swell-block-accordion__title {
+  background: var(--white) !important;
+  padding: 12px 14px !important;
+  font-weight: 700 !important;
+  color: var(--black) !important;
+  border-left: 4px solid var(--orange) !important;
+  transition: background 0.15s !important;
+}
+.swell-block-faq__q:hover,
+.swell-block-accordion__title:hover { background: var(--orange-light) !important; }
+
+/* ── SWELL ステップ ── */
+.swell-block-step__number,
+.p-stepList__number {
+  background: var(--orange) !important;
+  color: var(--white) !important;
+  font-family: 'Oswald', sans-serif !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.6px !important;
+}
+.swell-block-step__title,
+.p-stepList__title {
+  color: var(--black) !important;
+  font-weight: 700 !important;
+}
+.swell-block-step__body,
+.p-stepList__body {
+  border-left: 2px solid rgba(245, 129, 31, 0.3);
+  padding-left: 14px;
+}
+
+/* ── SWELL 枠 (is-style-*) 汎用 ── */
+.is-style-sticky-orange { border-left: 4px solid var(--orange) !important; background: var(--orange-light) !important; padding: 12px 16px !important; border-radius: 2px; }
+.is-style-sticky-black  { border-left: 4px solid var(--black)  !important; background: rgba(26,26,26,0.04) !important; padding: 12px 16px !important; border-radius: 2px; }
 
 /* ── レスポンシブ ── */
 @media (max-width: 768px) {
@@ -2449,6 +2963,9 @@ a:hover { color: var(--orange); opacity: 0.8; }
   .p-postNav { grid-template-columns: 1fr; }
   .p-toc__ttl { font-size: 13px !important; letter-spacing: 1.2px !important; }
   .p-toc a { font-size: 12.5px !important; }
+  .c-pageTitle { padding: 11px 12px !important; }
+  .c-pageTitle__inner { flex-wrap: wrap; gap: 6px; }
+  .c-pageTitle__subTitle { font-size: 9px !important; letter-spacing: 1.4px !important; padding: 1px 7px; }
   .yoshi-front-card__summary,
   .yoshi-article-bundles__summary {
     font-size: 10px;

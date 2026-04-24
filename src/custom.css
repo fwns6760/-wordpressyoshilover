@@ -4023,6 +4023,98 @@ body > [data-ad-client] {
   }
 }
 
+/* ====================================================================
+   現時点で巨大化してきた広告 全般 全殺し (非公開中なので strong kill)
+   ==================================================================== */
+/* AdSense 全要素 (公開前は完全停止) */
+ins.adsbygoogle,
+.adsbygoogle,
+ins[data-ad-client],
+.google-auto-placed,
+div[id^="google_ads_"],
+div[id^="aswift_"],
+iframe[id^="google_ads_iframe"],
+iframe[src*="googleads"],
+iframe[src*="googlesyndication"],
+iframe[src*="doubleclick"],
+iframe[src*="adservice.google"],
+[data-google-query-id],
+[data-ad-slot],
+.google-vignette,
+div[data-anchor-status],
+div[data-adbreak-test],
+[aria-label="Advertisement"],
+[aria-label="広告"],
+[aria-label*="sponsored" i],
+[aria-label*="スポンサー"] {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  max-height: 0 !important;
+  width: 0 !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* スポンサーリンク ラベル (::before) も非表示に */
+ins.adsbygoogle::before { display: none !important; content: none !important; }
+
+/* ====================================================================
+   モバイル 高密度 読みやすさ の最終段 (横ドラッグ / 折返し 調整)
+   ==================================================================== */
+@media (max-width: 600px) {
+  /* 長い URL / 英数字 の強制折返し */
+  .post_content,
+  .entry-content,
+  .post_content p,
+  .entry-content p,
+  .yoshilover-related-posts a,
+  .p-postList__ttl,
+  .c-postTitle__ttl,
+  .yoshi-topic-hub__title,
+  .yoshi-breaking-strip__title,
+  .yoshi-article-bundles__title {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    hyphens: auto;
+  }
+  /* 外溢を防ぐ container 保険 */
+  .l-mainContent,
+  .post_content,
+  .entry-content,
+  .yoshi-topic-hub,
+  .yoshi-breaking-strip,
+  .yoshi-article-bundles,
+  .p-commentArea,
+  .yoshilover-related-posts {
+    max-width: 100%;
+    overflow-wrap: break-word;
+  }
+}
+
+/* ====================================================================
+   非公開モード bar (body class で切替、公開前確認用)
+   ==================================================================== */
+body.yoshi-unpublished::before {
+  content: '🚧 非公開プレビュー — 本番公開前 (広告 OFF)';
+  display: block;
+  position: sticky;
+  top: 0;
+  z-index: 10000;
+  background: #ba2c3f;
+  color: var(--white);
+  font-family: 'Oswald', sans-serif;
+  font-size: 11px;
+  letter-spacing: 1.4px;
+  padding: 4px 12px;
+  text-align: center;
+  text-transform: uppercase;
+  box-shadow: 0 2px 6px rgba(186, 44, 63, 0.3);
+}
+
 /* ── モバイル 投稿/固定ページの上部 (breadcrumb / metas / title / eyecatch) 間隔圧縮 ── */
 @media (max-width: 768px) {
   /* パン屑 padding 圧縮 + 文字小 */

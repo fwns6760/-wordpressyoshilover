@@ -721,6 +721,152 @@ a:hover { color: var(--orange); opacity: 0.8; }
 .p-entryTitle { font-size: 20px; font-weight: 700; line-height: 1.5; }
 .c-meta { font-size: 12px; color: var(--mid-gray); }
 
+/* 記事タイトル (SWELL: .c-postTitle / .c-postTitle__ttl) を hero 化 */
+.p-articleHead.c-postTitle,
+.c-postTitle {
+  position: relative;
+  padding: 14px 0 12px 14px !important;
+  margin-bottom: 14px;
+  border-left: 5px solid var(--orange);
+  background: var(--white);
+}
+.c-postTitle__ttl {
+  font-size: clamp(20px, 4.4vw, 26px) !important;
+  line-height: 1.45 !important;
+  font-weight: 800 !important;
+  color: var(--black) !important;
+  letter-spacing: 0.2px;
+}
+.c-postTitle__date {
+  font-family: 'Oswald', sans-serif;
+  letter-spacing: 0.8px;
+  color: var(--orange) !important;
+  font-weight: 700;
+}
+/* 記事カテゴリリスト (title 下) */
+.p-articleMetas__termList .c-categoryList__link,
+.c-categoryList__link {
+  font-weight: 700 !important;
+  letter-spacing: 0.4px !important;
+  border-radius: 2px !important;
+  padding: 2px 10px !important;
+}
+/* 記事投稿時刻 (upper) を Oswald に */
+.p-articleMetas .c-postTimes__posted,
+.p-articleMetas .c-postTimes__modified {
+  font-family: 'Oswald', sans-serif;
+  letter-spacing: 0.6px;
+  color: var(--mid-gray);
+}
+/* 記事サムネイル (eyecatch) に下辺 orange アクセント */
+.p-articleThumb,
+.p-entryEyeCatch,
+.c-postThumb.-eyeCatch {
+  position: relative;
+  border-bottom: 3px solid var(--orange);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+.p-articleThumb__img,
+.p-entryEyeCatch__img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* パン屑 (breadcrumb) を Oswald + orange current */
+.p-breadcrumb {
+  font-size: 11px !important;
+  font-family: 'Oswald', sans-serif;
+  letter-spacing: 0.5px;
+  color: var(--mid-gray);
+  padding: 6px 0 8px !important;
+}
+.p-breadcrumb a { color: var(--mid-gray) !important; font-weight: 700; }
+.p-breadcrumb a:hover { color: var(--orange) !important; opacity: 1; }
+.p-breadcrumb__item.-current,
+.p-breadcrumb li:last-child,
+.p-breadcrumb__current { color: var(--black) !important; font-weight: 700; }
+
+/* ── コメントエリア (p-commentArea) ── */
+.p-commentArea {
+  background: var(--white);
+  border: 1px solid var(--light-gray);
+  border-top: 4px solid var(--orange);
+  border-radius: 4px;
+  padding: 18px 18px 16px;
+  margin: 24px 0 20px;
+}
+.p-commentArea__title,
+.p-commentArea h3,
+.p-commentArea .comments-title,
+#comments > h2,
+#reply-title {
+  font-family: 'Oswald', sans-serif !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  letter-spacing: 1.4px !important;
+  color: var(--black) !important;
+  text-transform: uppercase;
+  padding: 4px 0 6px 10px !important;
+  margin: 0 0 12px !important;
+  border-left: 4px solid var(--orange) !important;
+  background: transparent !important;
+}
+.comment-form input[type="text"],
+.comment-form input[type="email"],
+.comment-form input[type="url"],
+.comment-form textarea {
+  border: 1px solid var(--light-gray) !important;
+  border-radius: 3px !important;
+  padding: 9px 12px !important;
+  background: var(--white) !important;
+  font-size: 13.5px;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+.comment-form input[type="text"]:focus,
+.comment-form input[type="email"]:focus,
+.comment-form input[type="url"]:focus,
+.comment-form textarea:focus {
+  border-color: var(--orange) !important;
+  box-shadow: 0 0 0 2px rgba(245, 129, 31, 0.18) !important;
+  outline: none !important;
+}
+.comment-form .submit,
+#submit {
+  background: var(--orange) !important;
+  color: var(--white) !important;
+  border: none !important;
+  border-radius: 999px !important;
+  padding: 10px 26px !important;
+  font-family: 'Oswald', sans-serif !important;
+  font-weight: 700 !important;
+  font-size: 13px !important;
+  letter-spacing: 1.4px !important;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: opacity 0.18s, transform 0.18s;
+}
+.comment-form .submit:hover,
+#submit:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+.commentlist > li,
+.comment-list > li {
+  border-left: 3px solid var(--light-gray);
+  padding: 10px 12px !important;
+  margin: 0 0 10px !important;
+  background: var(--white);
+  border-radius: 2px;
+  transition: border-left-color 0.18s;
+}
+.commentlist > li:hover,
+.comment-list > li:hover {
+  border-left-color: var(--orange);
+}
+
 /* ── 検索バー ── */
 .c-searchBox__input,
 .p-headerSearch__input {

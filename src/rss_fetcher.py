@@ -9880,7 +9880,10 @@ def _rewrite_display_title_with_template(title: str, summary: str, category: str
             return _result(f"{subject}、スライド登板で何を見たいか", "game_rainout_slide_generic")
         if subtype == "lineup":
             body = clean_title.replace("今日の", "").replace("スタメン発表", "").replace("発表", "").strip()
-            return _result(f"巨人スタメン {body}でどこを動かしたか", "game_lineup")
+            capped = body[:25].rstrip()
+            if capped:
+                return _result(f"巨人スタメン {capped}", "game_lineup")
+            return _result("巨人スタメン", "game_lineup")
         if subtype == "live_update":
             state_match = _re.search(r"(\d+回[表裏]?)", source_text)
             score = SCORE_TOKEN_RE.search(source_text)

@@ -102,7 +102,7 @@ class OptionalIntake045Tests(unittest.TestCase):
                     "article_subtype": "lineup",
                     "template": "game_lineup",
                     "original_title": "甲子園 スタメン 【巨人】 【阪神】 8松本 8近本 9佐々木 4中野",
-                    "rewritten_title": "巨人スタメン 甲子園でどこを動かしたか",
+                    "rewritten_title": "4月25日(土) セ・リーグ公式戦「巨人vs阪神」 巨人、スタメン発表！！！",
                 }
             ]
         )

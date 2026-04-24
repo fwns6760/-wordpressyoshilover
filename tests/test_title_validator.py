@@ -9,7 +9,7 @@ from src import title_validator
 class TitleValidatorTests(unittest.TestCase):
     def test_title_validator_accepts_matching_lineup_title(self):
         result = title_validator.validate_title_candidate(
-            "巨人スタメン 1番丸、4番岡本でどこを動かしたか",
+            "巨人スタメン ドラフト4位・皆川岳飛が「7番・右翼」でプロ初スタ",
             "lineup",
         )
 

@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from src import rss_fetcher
+from src.title_style_validator import validate_title_style
 
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
@@ -240,7 +241,63 @@ class DisplayTitleRewriteTests(unittest.TestCase):
 
         rewritten = rss_fetcher.rewrite_display_title(title, summary, "試合速報", True)
 
-        self.assertEqual(rewritten, "巨人スタメン 1番丸、4番岡田でどこを動かしたか")
+        self.assertEqual(rewritten, "巨人スタメン 1番丸、4番岡田")
+
+    def test_lineup_template_no_speculative_suffix(self):
+        title = "【巨人】今日のスタメン発表 ドラフト4位・皆川岳飛が「7番・右翼」でプロ初スタメン"
+        summary = "巨人がスタメンを発表し、ドラフト4位の皆川岳飛が7番右翼でプロ初スタメンとなった。"
+
+        rewritten, template_key = rss_fetcher._rewrite_display_title_with_template(
+            title,
+            summary,
+            "試合速報",
+            True,
+        )
+
+        self.assertEqual(template_key, "game_lineup")
+        self.assertNotIn("でどこを動かしたか", rewritten)
+
+    def test_lineup_template_body_capped_at_25(self):
+        title = "【巨人】今日のスタメン発表 ドラフト4位・皆川岳飛が「7番・右翼」でプロ初スタメン"
+        summary = "巨人がスタメンを発表し、ドラフト4位の皆川岳飛が7番右翼でプロ初スタメンとなった。"
+
+        rewritten, template_key = rss_fetcher._rewrite_display_title_with_template(
+            title,
+            summary,
+            "試合速報",
+            True,
+        )
+
+        self.assertEqual(template_key, "game_lineup")
+        self.assertEqual(rewritten, "巨人スタメン ドラフト4位・皆川岳飛が「7番・右翼」でプロ初スタ")
+        self.assertEqual(len(rewritten[len("巨人スタメン ") :]), 25)
+        self.assertNotIn("…", rewritten)
+
+    def test_lineup_template_empty_body_fallback(self):
+        rewritten, template_key = rss_fetcher._rewrite_display_title_with_template(
+            "今日のスタメン発表",
+            "",
+            "試合速報",
+            True,
+        )
+
+        self.assertEqual(template_key, "game_lineup")
+        self.assertEqual(rewritten, "巨人スタメン")
+
+    def test_lineup_template_passes_title_style_validator_when_body_is_long_enough(self):
+        title = "【巨人】今日のスタメン発表 ドラフト4位・皆川岳飛が「7番・右翼」でプロ初スタメン"
+        summary = "巨人がスタメンを発表し、ドラフト4位の皆川岳飛が7番右翼でプロ初スタメンとなった。"
+
+        rewritten, _template_key = rss_fetcher._rewrite_display_title_with_template(
+            title,
+            summary,
+            "試合速報",
+            True,
+        )
+
+        result = validate_title_style(rewritten, "lineup")
+
+        self.assertTrue(result.ok, msg=str(result))
 
     def test_farm_lineup_title_gets_separate_angle(self):
         title = "【二軍】巨人対DeNA 4番ショートでスタメン"

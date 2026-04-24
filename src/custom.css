@@ -1648,6 +1648,94 @@ a[rel="tag"]:hover::before {
   .yoshi-x-follow-cta__btn { padding: 8px 20px !important; }
 }
 
+/* ── 広告コンテナ 視覚抑制 (Google AdSense / 自動広告の暴走防止) ── */
+/* 完全には Google 側の挙動を止められないが、UX 圧迫は減らせる */
+
+/* adsbygoogle 本体: 最低限の余白 + max-height キャップ */
+ins.adsbygoogle,
+.adsbygoogle {
+  display: block !important;
+  max-height: 320px !important;
+  overflow: hidden !important;
+  margin: 18px auto !important;
+  background: rgba(26, 26, 26, 0.02);
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgba(26, 26, 26, 0.04) inset;
+}
+/* 大型 rectangle / billboard は少し大きめを許容 */
+ins.adsbygoogle[data-ad-format="rectangle"],
+ins.adsbygoogle[data-ad-format="auto"] {
+  max-height: 280px !important;
+}
+ins.adsbygoogle[data-ad-format="fluid"] {
+  max-height: 200px !important;
+}
+
+/* 連続広告の間に最低 32px の間隔を強制 */
+ins.adsbygoogle + ins.adsbygoogle,
+.adsbygoogle + .adsbygoogle,
+div[id^="google_ads_iframe"] + div[id^="google_ads_iframe"] {
+  margin-top: 32px !important;
+}
+/* 広告 wrapper に「広告」ラベル (日本で景表法/AdSense ガイドライン準拠) */
+ins.adsbygoogle::before {
+  content: 'スポンサーリンク';
+  display: block;
+  font-family: 'Oswald', sans-serif;
+  font-size: 9px;
+  letter-spacing: 1.6px;
+  color: var(--mid-gray);
+  text-transform: uppercase;
+  text-align: center;
+  padding: 4px 0 0;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+/* Anchor ad (画面下追従): Google が body 直下に生成、高さ制限 */
+.google-auto-placed,
+body > div[id^="google_ads_frame"],
+body > iframe[id^="google_ads_iframe"][name*="anchor"],
+body > [id^="aswift_"][style*="bottom"] {
+  max-height: 60px !important;
+  z-index: 50 !important;
+}
+
+/* Vignette (全画面インタースティシャル): display-none 保険 */
+/* Google 側 URL 判定で効く時だけ (#google_vignette 付き navigation) */
+body:has(.google-vignette),
+body.google-vignette-active {
+  overflow: auto !important;
+}
+.google-vignette,
+div[id*="vignette"][aria-label*="広告"] {
+  display: none !important;
+}
+
+/* Side rail (PC 画面端追従広告) のマージン調整 */
+div[id^="google_ads_iframe_"][data-ad-slot][style*="position: fixed"] {
+  max-width: 160px !important;
+  max-height: 600px !important;
+}
+
+/* 同一 container 内の広告を 3 つ以上は隠す (dev 側で流し過ぎ防止) */
+.post_content ins.adsbygoogle:nth-of-type(n+4),
+.entry-content ins.adsbygoogle:nth-of-type(n+4) {
+  display: none !important;
+}
+
+/* モバイル広告はさらに控えめに */
+@media (max-width: 600px) {
+  ins.adsbygoogle,
+  .adsbygoogle {
+    max-height: 260px !important;
+    margin: 14px auto !important;
+  }
+  ins.adsbygoogle[data-ad-format="fluid"] {
+    max-height: 160px !important;
+  }
+}
+
 /* ── 目次 (p-toc) ── */
 .p-toc {
   background: var(--white) !important;

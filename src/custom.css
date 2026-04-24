@@ -1980,17 +1980,38 @@ body > [style*="z-index: 2147483647"],
 body > [style*="z-index:2147483647"],
 body > [style*="z-index: 214748"],
 body > [style*="z-index:214748"],
+body > [style*="z-index: 2147483"],
+body > [style*="z-index:2147483"],
 body > [aria-label="Advertisement"],
 body > [aria-label="広告"],
 body > [aria-label*="sponsored"],
 body > [aria-label*="スポンサー"],
-html > [style*="z-index: 2147483647"] {
+html > [style*="z-index: 2147483647"],
+/* AdSense wrapper 全般 (scroll でも残る系) */
+body > ins,
+body > iframe[src*="googleads"],
+body > iframe[src*="doubleclick"],
+body > iframe[src*="googlesyndication"],
+body > iframe[src*="adservice.google"],
+body > div[id^="google_ads_"],
+body > div[id^="aswift"],
+body > div[id*="google_ads_iframe"],
+/* fixed position で高い z-index を持つ overlay (ad 疑義) */
+body > div[style*="position:fixed"][style*="z-index"][style*="9999"],
+body > div[style*="position: fixed"][style*="z-index"][style*="9999"] {
   display: none !important;
   visibility: hidden !important;
   height: 0 !important;
   max-height: 0 !important;
   overflow: hidden !important;
   pointer-events: none !important;
+  opacity: 0 !important;
+}
+
+/* body の padding-bottom が anchor ad 分押し下がるの防止 (Google AdSense が body style 注入) */
+body[style*="padding-bottom"][style*="!important"],
+html[style*="padding-bottom"] {
+  padding-bottom: 0 !important;
 }
 /* Google の anchor ad ラッパー変種 (body や html 直下以外の位置) */
 div[data-anchor-status],
@@ -3219,6 +3240,127 @@ select:focus-visible,
 @supports (height: 100dvh) {
   .l-sidebar[data-sticky="true"] { max-height: calc(100dvh - 90px); }
   body:has(.yoshi-spMenu-open) .yoshi-spMenu { height: 100dvh; }
+}
+
+/* ====================================================================
+   モバイル のもとけ風 (simple / readable / ad-quiet) モード
+   ==================================================================== */
+@media (max-width: 768px) {
+  /* 全体: 過度なアニメと gradient を抑制 */
+  * { animation-duration: 0.25s !important; }
+  .yoshi-topic-hub,
+  .yoshi-breaking-strip,
+  .yoshi-article-bundles,
+  .p-commentArea {
+    box-shadow: none !important;
+  }
+  /* topic-hub 黒 panel → white + orange 左 に簡素化 (圧は残す) */
+  .yoshi-topic-hub {
+    background: var(--white) !important;
+    border-top: 3px solid var(--orange) !important;
+    border-left: 4px solid var(--orange);
+    padding: 10px 12px !important;
+    margin: 10px 0 14px !important;
+  }
+  .yoshi-topic-hub__heading {
+    color: var(--black) !important;
+    font-size: 14px !important;
+  }
+  .yoshi-topic-hub__heading::before {
+    background: var(--orange) !important;
+    height: 14px !important;
+  }
+  .yoshi-topic-hub__heading::after { display: none !important; }
+  .yoshi-topic-hub__items {
+    gap: 6px !important;
+  }
+  .yoshi-topic-hub__item {
+    background: var(--bg) !important;
+    border-left-width: 3px !important;
+  }
+  .yoshi-topic-hub__title { font-size: 13px !important; }
+  .yoshi-topic-hub__lead { font-size: 11.5px !important; }
+
+  /* breaking-strip も簡素化 */
+  .yoshi-breaking-strip {
+    background: #222 !important;
+    border-top-width: 3px !important;
+    padding: 10px 12px !important;
+  }
+  .yoshi-breaking-strip__heading::after {
+    display: none !important;
+  }
+
+  /* 記事本文 line-height やや詰めて密度 up (のもとけ風) */
+  .post_content,
+  .entry-content {
+    font-size: 15px !important;
+    line-height: 1.78 !important;
+    letter-spacing: 0 !important;
+  }
+  .post_content > p:first-of-type,
+  .entry-content > p:first-of-type {
+    border-left: none !important;
+    padding-left: 0 !important;
+    margin-left: 0 !important;
+  }
+
+  /* drop cap は モバイルで消す (狭い画面で浮き気味) */
+  body.single-post .post_content > p:first-of-type::first-letter,
+  body.single-post .entry-content > p:first-of-type::first-letter {
+    float: none !important;
+    font-size: inherit !important;
+    color: inherit !important;
+    -webkit-text-fill-color: initial !important;
+    background: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* strong marker (orange gradient) もモバイルでは無効 (読みにくさ回避) */
+  .post_content strong,
+  .entry-content strong {
+    background: none !important;
+    color: var(--black) !important;
+    font-weight: 700 !important;
+    padding: 0 !important;
+  }
+
+  /* h2 の letter-spacing 詰める */
+  .post_content h2,
+  .entry-content h2 {
+    letter-spacing: 0 !important;
+  }
+
+  /* 記事一覧 item の subtle fade を省いて即表示 */
+  .yoshi-topic-hub__item,
+  .yoshi-article-bundles__item,
+  .yoshilover-related-posts li,
+  .p-relatedPosts__item {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+
+  /* 記事タイトル hero の shadow を外す (シンプル) */
+  .post_content h2,
+  .entry-content h2 {
+    box-shadow: none !important;
+  }
+
+  /* 記事カードの hover 演出を弱める (タップ環境) */
+  .p-postList__item:hover {
+    transform: none !important;
+    box-shadow: 0 1px 0 rgba(26,26,26,0.06) !important;
+  }
+
+  /* scroll-top ボタンを小型化 */
+  .p-scrollTopBtn,
+  .c-scrollTopBtn {
+    width: 36px !important;
+    height: 36px !important;
+    font-size: 14px !important;
+    box-shadow: 0 2px 6px rgba(245, 129, 31, 0.24) !important;
+  }
 }
 
 /* ── モバイル 投稿/固定ページの上部 (breadcrumb / metas / title / eyecatch) 間隔圧縮 ── */

@@ -6715,6 +6715,156 @@ article.sticky::before,
   margin-right: 4px;
 }
 
+/* ====================================================================
+   デスクトップ home top 見た目 refinement
+   ==================================================================== */
+@media (min-width: 1024px) {
+  /* home の yoshi-topic-hub を 4col に強制 (480px min → auto-fit は 3col 弱) */
+  body.home .yoshi-topic-hub__items {
+    grid-template-columns: repeat(4, 1fr) !important;
+  }
+  /* デスクトップ home の widget_recent_entries リスト最大 6 件表示風 (実際は WP option で制御) */
+  body.home .w-frontTop .widget_recent_entries > ul > li {
+    border-radius: 3px;
+  }
+}
+
+/* ====================================================================
+   PC マウス hover 時の card ripple 風アニメ (desktop only)
+   ==================================================================== */
+@media (hover: hover) and (pointer: fine) and (min-width: 1024px) {
+  .yoshi-topic-hub__item,
+  .yoshi-article-bundles__item,
+  .p-postList__item {
+    transition: transform 0.22s ease, box-shadow 0.22s ease, background 0.22s ease;
+  }
+  .yoshi-topic-hub__item:hover,
+  .yoshi-article-bundles__item:hover {
+    transform: translateY(-2px) scale(1.01);
+  }
+}
+
+/* ====================================================================
+   記事詳細 上部の 「この記事は約X分で読めます」 chip 配置 helper
+   ==================================================================== */
+.yoshi-meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 6px 0 10px;
+  border-bottom: 1px dashed var(--light-gray);
+  margin-bottom: 14px;
+  font-family: 'Oswald', sans-serif;
+  font-size: 11px;
+  color: var(--mid-gray);
+  letter-spacing: 0.4px;
+}
+.yoshi-meta-line > * {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.yoshi-meta-line .-date { color: var(--orange); }
+.yoshi-meta-line .-author { color: var(--black); font-weight: 700; }
+.yoshi-meta-line .-read-time { color: var(--mid-gray); }
+.yoshi-meta-line .-comment-count { color: var(--orange); }
+
+/* ====================================================================
+   投稿 / カテゴリ ページ の 広告 (広告コード挿入位置) 完全抑制
+   ==================================================================== */
+.l-article__ad,
+.l-post__ad,
+.l-category__ad,
+.l-archive__ad,
+.p-article__ad-top,
+.p-article__ad-middle,
+.p-article__ad-bottom {
+  display: none !important;
+}
+
+/* ====================================================================
+   画面外 要素 (aria-hidden=true) は clip
+   ==================================================================== */
+[aria-hidden="true"]:not([class*="yoshi"]):not(.swell-block-*) {
+  pointer-events: none;
+}
+
+/* ====================================================================
+   巨人 ロゴ 風 text logo (YOSHILOVER / 巨人)
+   ==================================================================== */
+.yoshi-brand-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'Oswald', sans-serif;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--white);
+  font-size: 20px;
+  text-decoration: none;
+}
+.yoshi-brand-logo__text {
+  color: var(--white);
+}
+.yoshi-brand-logo__text strong {
+  color: var(--orange);
+}
+.yoshi-brand-logo__badge {
+  background: var(--orange);
+  color: var(--white);
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0;
+  padding: 2px 6px;
+  border-radius: 2px;
+  font-weight: 700;
+}
+
+/* ====================================================================
+   補助: 右下 floating CTA (fixed button、「トップへ戻る」補助)
+   ==================================================================== */
+.yoshi-fab {
+  position: fixed;
+  bottom: max(80px, calc(60px + env(safe-area-inset-bottom)));
+  right: 12px;
+  z-index: 90;
+  background: var(--orange);
+  color: var(--white);
+  border-radius: 999px;
+  width: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(245, 129, 31, 0.4);
+  transition: transform 0.18s, box-shadow 0.18s;
+  font-size: 20px;
+  border: none;
+  cursor: pointer;
+}
+.yoshi-fab:hover {
+  transform: scale(1.08);
+  box-shadow: 0 6px 18px rgba(245, 129, 31, 0.5);
+}
+
+/* ====================================================================
+   「文字サイズ切替」 button style (CSS-only state は JS で toggle)
+   ==================================================================== */
+body.yoshi-font-large {
+  --yoshi-body-size: 17px;
+}
+body.yoshi-font-large .post_content,
+body.yoshi-font-large .entry-content {
+  font-size: var(--yoshi-body-size) !important;
+  line-height: 1.9 !important;
+}
+body.yoshi-font-xlarge .post_content,
+body.yoshi-font-xlarge .entry-content {
+  font-size: 18px !important;
+  line-height: 1.95 !important;
+}
+
 /* ── モバイル 投稿/固定ページの上部 (breadcrumb / metas / title / eyecatch) 間隔圧縮 ── */
 @media (max-width: 768px) {
   /* パン屑 padding 圧縮 + 文字小 */

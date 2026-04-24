@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.8.0
+ * Version: 0.9.0
  * Author: yoshilover
  */
 
@@ -802,6 +802,7 @@ add_shortcode( 'yoshilover_pill', 'yoshilover_063_render_pill_shortcode' );
 add_filter( 'the_content', 'yoshilover_063_auto_inject_sns_reactions', 20 );
 add_filter( 'the_content', 'yoshilover_063_auto_inject_article_bundles', 21 );
 add_filter( 'the_content', 'yoshilover_063_auto_inject_x_follow_cta', 22 );
+add_filter( 'the_content', 'yoshilover_063_auto_prepend_meta_line', 5 );
 
 function yoshilover_063_is_x_url( $url ) {
     if ( ! is_string( $url ) || $url === '' ) {
@@ -1193,6 +1194,114 @@ function yoshilover_063_render_pill_shortcode( $atts = array(), $content = '' ) 
         $classes .= ' -' . $atts['variant'];
     }
     return '<span class="' . esc_attr( $classes ) . '">' . esc_html( trim( wp_strip_all_tags( $content ) ) ) . '</span>';
+}
+
+/**
+ * 読了時間計算 (日本語は 400 chars/min 想定、英数字は単語換算)
+ */
+function yoshilover_063_estimate_read_minutes( $post_id ) {
+    $post_id = (int) $post_id;
+    if ( $post_id <= 0 ) {
+        return 1;
+    }
+    $text = (string) get_post_field( 'post_content', $post_id );
+    $text = wp_strip_all_tags( $text, true );
+    $text = preg_replace( '/\s+/u', '', $text );
+    $char_count = mb_strlen( $text, 'UTF-8' );
+    if ( $char_count <= 0 ) {
+        return 1;
+    }
+    $minutes = (int) ceil( $char_count / 400 );
+    return max( 1, min( 60, $minutes ) );
+}
+
+/**
+ * .yoshi-meta-line を本文先頭に自動 prepend
+ *
+ * option `yoshilover_063_meta_line` で制御 (default enabled)
+ *   - enabled (bool): default true
+ *   - show_read_time (bool): default true
+ *   - show_comment_count (bool): default true
+ *   - show_date (bool): default true
+ */
+function yoshilover_063_get_meta_line_settings() {
+    $defaults = array(
+        'enabled'            => true,
+        'show_read_time'     => true,
+        'show_comment_count' => true,
+        'show_date'          => true,
+    );
+    $raw = get_option( 'yoshilover_063_meta_line', array() );
+    if ( ! is_array( $raw ) ) {
+        $raw = array();
+    }
+    return array_merge( $defaults, $raw );
+}
+
+function yoshilover_063_render_meta_line( $post_id ) {
+    $settings = yoshilover_063_get_meta_line_settings();
+    if ( empty( $settings['enabled'] ) ) {
+        return '';
+    }
+    $post_id = (int) $post_id;
+    if ( $post_id <= 0 ) {
+        return '';
+    }
+
+    $parts = array();
+
+    if ( ! empty( $settings['show_date'] ) ) {
+        $date = get_the_date( 'Y.m.d', $post_id );
+        if ( $date ) {
+            $parts[] = '<span class="-date">' . esc_html( $date ) . '</span>';
+        }
+    }
+
+    if ( ! empty( $settings['show_read_time'] ) ) {
+        $minutes = yoshilover_063_estimate_read_minutes( $post_id );
+        $parts[] = '<span class="-read-time">⏱ ' . esc_html( (string) $minutes ) . 'min</span>';
+    }
+
+    if ( ! empty( $settings['show_comment_count'] ) ) {
+        $comments = (int) get_comments_number( $post_id );
+        if ( $comments > 0 ) {
+            $parts[] = '<span class="-comment-count">💬 ' . esc_html( (string) $comments ) . '</span>';
+        }
+    }
+
+    if ( empty( $parts ) ) {
+        return '';
+    }
+
+    return '<div class="yoshi-meta-line" aria-label="記事メタ" data-yoshi-phase="8">' . implode( '', $parts ) . '</div>';
+}
+
+function yoshilover_063_auto_prepend_meta_line( $content ) {
+    if ( is_admin() ) {
+        return $content;
+    }
+    if ( ! in_the_loop() || ! is_main_query() ) {
+        return $content;
+    }
+    if ( ! is_singular( 'post' ) ) {
+        return $content;
+    }
+
+    $post_id = get_the_ID();
+    if ( ! $post_id ) {
+        return $content;
+    }
+
+    if ( strpos( (string) $content, 'yoshi-meta-line' ) !== false ) {
+        return $content;
+    }
+
+    $line = yoshilover_063_render_meta_line( $post_id );
+    if ( $line === '' ) {
+        return $content;
+    }
+
+    return $line . $content;
 }
 
 /* ------------------------------------------------------------

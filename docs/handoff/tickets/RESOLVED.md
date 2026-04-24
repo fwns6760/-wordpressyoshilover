@@ -16,6 +16,28 @@
 
 ---
 
+## T-027 🟡 `yoshi-sidebar-rail` auto-inject が届いていない（**sidebar widget area が空が原因、dummy widget 追加で解消可能**）
+
+**発見日**: 2026-04-24
+**解決日**: 2026-04-24
+**解決者**: Claude Code（front owner、PHP plugin flow 追跡）
+
+**対応内容（root cause 特定）**:
+- plugin は `add_action( 'dynamic_sidebar_before', 'yoshilover_063_auto_inject_sidebar_rail', 5, 2 )` で登録済
+- `yoshilover_063_is_primary_sidebar_index()` は `'sidebar'` index を whitelist に含む（判定 OK）
+- しかし `dynamic_sidebar_before` は **`dynamic_sidebar()` 関数が呼ばれた時のみ** fire する
+- SWELL の sidebar.php は `is_active_sidebar('sidebar')` で条件チェック、**widget 0 件 → dynamic_sidebar() 呼ばれない → hook 発火しない**
+- 実測: live の `<aside id="sidebar" class="l-sidebar">` 内部は空（widget 0）
+
+**実質的な解消法（user 任意）**:
+- WP admin → 外観 → ウィジェット → "sidebar" widget area に **任意の widget を 1 つ追加**（例: カスタム HTML に `[yoshilover_sidebar_rail]` shortcode）
+- これで `dynamic_sidebar()` が呼ばれ、rail が auto-inject される
+- もしくは plugin 側を `get_sidebar` action 等へ hook 変更するが、テンプレート配置的に副作用ありのため実施せず
+
+**判定**: plugin bug ではなく WP の仕様 + SWELL のテンプレート条件。**widget 追加で即解消**する運用課題。
+
+---
+
 ## T-028 🟡 `yoshi-front-card` の `.is-yoshi-front-density` scope（**false positive / 誤発見**）
 
 **発見日**: 2026-04-24

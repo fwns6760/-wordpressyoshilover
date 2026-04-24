@@ -1991,6 +1991,130 @@ body,
   .p-relatedPosts ul { grid-template-columns: 1fr !important; }
 }
 
+/* ── smooth scroll (anchor ジャンプが TOC → 見出し等で滑らか) ── */
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 80px;  /* sticky header 分オフセット */
+}
+
+/* ── モバイルメニュー open 時の overlay (SWELL default では薄い) ── */
+body.menu-open::after,
+body.is-spMenuOpen::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: rgba(26, 26, 26, 0.55);
+  z-index: 90;
+  backdrop-filter: blur(3px);
+  pointer-events: none;
+  animation: yoshiloFadeIn 0.22s ease forwards;
+}
+@keyframes yoshiloFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── 画像 lazy load shimmer (loading="lazy" で placeholder アニメ) ── */
+img[loading="lazy"] {
+  background: linear-gradient(
+    90deg,
+    rgba(26, 26, 26, 0.04) 0%,
+    rgba(245, 129, 31, 0.08) 50%,
+    rgba(26, 26, 26, 0.04) 100%
+  );
+  background-size: 200% 100%;
+  animation: yoshiloShimmer 1.4s ease-in-out infinite;
+}
+img[loading="lazy"].lazyloaded,
+img[loading="lazy"][decoded],
+img[loading="lazy"][data-loaded="true"] {
+  background: none;
+  animation: none;
+}
+@keyframes yoshiloShimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── 記事タイトル上のメタ (日付 / カテゴリ) 位置調整 ── */
+.p-articleMetas.-top {
+  margin-bottom: 10px !important;
+  padding: 0 4px !important;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: center;
+}
+.p-articleMetas__termList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 !important;
+}
+
+/* ── SWELL の「▼ もっと読む」記事内アコーディオンラベル ── */
+.swell-block-accordion__label,
+.swell-block-accordion summary {
+  position: relative;
+  padding-right: 30px !important;
+}
+.swell-block-accordion__label::after,
+.swell-block-accordion summary::after {
+  content: '▾';
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--orange);
+  font-size: 14px;
+  transition: transform 0.2s;
+}
+.swell-block-accordion.is-open .swell-block-accordion__label::after,
+.swell-block-accordion[open] summary::after {
+  transform: translateY(-50%) rotate(180deg);
+}
+
+/* ── 記事詳細の「次に読みたい記事」見出し (article-bundles の外 lead) ── */
+.yoshi-article-bundles__lead {
+  font-size: 12.5px !important;
+  letter-spacing: 0.3px;
+  color: var(--mid-gray);
+}
+.yoshi-article-bundles__lead::before {
+  content: '▶ ';
+  color: var(--orange);
+  font-weight: 700;
+}
+
+/* ── 記事タイトル上のカテゴリチップをより目立たせる ── */
+.p-articleMetas__termList .c-categoryList__link {
+  transition: background 0.18s, transform 0.18s, box-shadow 0.18s !important;
+}
+.p-articleMetas__termList .c-categoryList__link:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(26, 26, 26, 0.15);
+}
+
+/* ── 記事内の wp-block-columns (2/3/4 カラム) に gap 調整 ── */
+.wp-block-columns {
+  gap: 16px !important;
+}
+.wp-block-column {
+  padding: 2px;
+}
+
+/* ── 数字強調 (巨人試合スコア 等) の Oswald auto-apply ── */
+.post_content .u-num,
+.entry-content .u-num,
+.post_content [class*="score"],
+.entry-content [class*="score"],
+.yoshilover-lineup-stats td[align="center"],
+.yoshilover-lineup-stats th[align="center"] {
+  font-family: 'Oswald', sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
 /* ── 検索バー / 検索フォーム ── */
 .c-searchBox__input,
 .p-headerSearch__input,

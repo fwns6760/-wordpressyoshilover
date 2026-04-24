@@ -75,7 +75,7 @@ class ManagerBodyTemplateTests(unittest.TestCase):
             rss_fetcher._log_manager_body_template_applied(
                 logger,
                 post_id=321,
-                title="阿部監督「結果残せば使います」 ベンチの狙いはどこか",
+                title="阿部監督「結果残せば使います」 ベンチ関連発言",
                 quote_count=1,
                 section_count=4,
             )

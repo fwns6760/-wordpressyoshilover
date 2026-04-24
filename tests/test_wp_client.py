@@ -86,7 +86,7 @@ class TestWPClientDedup(unittest.TestCase):
             json=lambda: [
                 {
                     "id": 654,
-                    "title": {"raw": "阿部監督「粘り勝った」 ベンチの狙いはどこか"},
+                    "title": {"raw": "阿部監督「粘り勝った」 ベンチ関連発言"},
                     "status": "draft",
                     "date": "2099-04-14T17:39:28",
                     "featured_media": 0,
@@ -96,7 +96,7 @@ class TestWPClientDedup(unittest.TestCase):
         )
 
         post_id = self.wp.create_post(
-            "阿部監督「粘り勝った」 ベンチの狙いはどこか",
+            "阿部監督「粘り勝った」 ベンチ関連発言",
             "<p>body</p>",
             categories=[673, 663],
             status="publish",

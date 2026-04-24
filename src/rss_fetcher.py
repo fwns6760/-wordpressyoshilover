@@ -9841,7 +9841,7 @@ def _rewrite_display_title_with_template(title: str, summary: str, category: str
 
     if category == "選手情報":
         if "フォーム" in source_text or "助言" in source_text or "修正" in source_text:
-            return _result(f"{subject}、フォーム変更のポイントはどこか", "player_mechanics_generic")
+            return _result(f"{subject}、フォーム変更 関連情報", "player_mechanics_generic")
         if PLAYER_DEREGISTER_TITLE_RE.search(source_text):
             return _result(f"{subject}、登録抹消 関連情報", "player_status_deregister")
         if PLAYER_JOIN_TITLE_RE.search(source_text):
@@ -9854,7 +9854,7 @@ def _rewrite_display_title_with_template(title: str, summary: str, category: str
             return _result(f"{subject}、昇格・復帰 関連情報", "player_status_return")
         if quote_text:
             return _result(f"{subject}「{quote_text}」 関連発言", "player_quote")
-        return _result(f"{subject}の現状整理 いま何を見たいか", "player_generic")
+        return _result(f"{subject}の現状整理 関連情報", "player_generic")
 
     if category == "首脳陣":
         if quote_text and ("若手" in source_text or "競争" in source_text):
@@ -9866,8 +9866,8 @@ def _rewrite_display_title_with_template(title: str, summary: str, category: str
         if quote_text and ("スタメン" in source_text or "打順" in source_text or "起用" in source_text):
             return _result(f"{manager_display_subject}「{quote_text}」 スタメン関連発言", "manager_quote_lineup")
         if quote_text:
-            return _result(f"{manager_display_subject}「{quote_text}」 ベンチの狙いはどこか", "manager_quote_generic")
-        return _result(f"{subject}コメント整理 ベンチは何を動かすのか", "manager_generic")
+            return _result(f"{manager_display_subject}「{quote_text}」 ベンチ関連発言", "manager_quote_generic")
+        return _result(f"{subject}コメント整理 ベンチ関連の発言ポイント", "manager_generic")
 
     if category == "試合速報":
         if "スライド登板" in source_text or RAINOUT_SLIDE_TITLE_RE.search(source_text):

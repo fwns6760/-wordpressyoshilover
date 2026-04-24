@@ -147,7 +147,7 @@ class DisplayTitleRewriteTests(unittest.TestCase):
 
         rewritten = rss_fetcher.rewrite_display_title(title, summary, "選手情報", False)
 
-        self.assertEqual(rewritten, "戸郷翔征、フォーム変更のポイントはどこか")
+        self.assertEqual(rewritten, "戸郷翔征、フォーム変更 関連情報")
 
     def test_player_title_keeps_full_name_without_role_suffix(self):
         title = "【巨人】田中将大が２軍戦で先発へ"
@@ -155,7 +155,7 @@ class DisplayTitleRewriteTests(unittest.TestCase):
 
         rewritten = rss_fetcher.rewrite_display_title(title, summary, "選手情報", False)
 
-        self.assertEqual(rewritten, "田中将大の現状整理 いま何を見たいか")
+        self.assertEqual(rewritten, "田中将大の現状整理 関連情報")
 
     def test_player_quote_title_prefers_game_angle_over_generic_change_label(self):
         title = "【巨人】田中将大「打線を線にしない」甲子園の“申し子”が移籍後初の阪神戦で好投誓う"
@@ -225,7 +225,7 @@ class DisplayTitleRewriteTests(unittest.TestCase):
 
         rewritten = rss_fetcher.rewrite_display_title(title, summary, "選手情報", False)
 
-        self.assertEqual(rewritten, "カール・エドワーズ・ジュニアの現状整理 いま何を見たいか")
+        self.assertEqual(rewritten, "カール・エドワーズ・ジュニアの現状整理 関連情報")
 
     def test_extract_subject_label_keeps_staff_role_compound(self):
         title = "桑田投手コーチが見た戸郷の修正点"

@@ -989,7 +989,8 @@ a:hover { color: var(--orange); opacity: 0.8; }
   background: rgba(186, 44, 63, 0.12);
   color: #ba2c3f;
 }
-.yoshi-sidebar-rail__popular-comments {
+.yoshi-sidebar-rail__popular-comments,
+.yoshi-front-card__chip--comments {
   background: rgba(26, 26, 26, 0.06);
   color: var(--mid-gray);
 }
@@ -1303,6 +1304,11 @@ a:hover { color: var(--orange); opacity: 0.8; }
   gap: 6px;
   align-items: center;
   margin: 6px 0 4px;
+  min-width: 0;
+}
+.yoshi-front-card__meta > * {
+  min-width: 0;
+  max-width: 100%;
 }
 .yoshi-front-card__badge,
 .yoshi-front-card__chip {
@@ -1342,6 +1348,37 @@ a:hover { color: var(--orange); opacity: 0.8; }
 .yoshi-front-card__chip--score {
   background: rgba(245, 129, 31, 0.08);
   border-color: rgba(245, 129, 31, 0.22);
+  color: var(--orange);
+}
+.yoshi-front-card__chip--comments {
+  border-color: rgba(26, 26, 26, 0.12);
+}
+.yoshi-front-card__chip--player {
+  max-width: min(100%, 9.5em);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: rgba(0, 61, 165, 0.06);
+  border-color: rgba(0, 61, 165, 0.16);
+  color: var(--blue);
+}
+.yoshi-front-card__chip--read {
+  justify-content: center;
+  min-width: 28px;
+}
+.yoshi-front-card__chip--read-short {
+  background: rgba(26, 26, 26, 0.04);
+  border-color: rgba(26, 26, 26, 0.1);
+  color: var(--mid-gray);
+}
+.yoshi-front-card__chip--read-mid {
+  background: rgba(0, 61, 165, 0.07);
+  border-color: rgba(0, 61, 165, 0.16);
+  color: var(--blue);
+}
+.yoshi-front-card__chip--read-long {
+  background: rgba(245, 129, 31, 0.12);
+  border-color: rgba(245, 129, 31, 0.24);
   color: var(--orange);
 }
 .yoshi-front-card__chip--chain {
@@ -1644,6 +1681,19 @@ a:hover { color: var(--orange); opacity: 0.8; }
   }
   .yoshi-front-card__detail {
     gap: 4px;
+  }
+  .yoshi-front-card__badge,
+  .yoshi-front-card__chip {
+    min-height: 20px;
+    padding: 1px 6px;
+    font-size: 9px;
+  }
+  .yoshi-front-card__chip--player {
+    max-width: min(100%, 7.2em);
+  }
+  .yoshi-front-card__chip--comments,
+  .yoshi-front-card__chip--read {
+    flex: 0 1 auto;
   }
   .yoshi-front-card__detail-chip {
     font-size: 9px;

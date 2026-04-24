@@ -69,11 +69,12 @@
 
 ## 2026-04-24 V7 implementation memo
 
-- `src/yoshilover-063-frontend.php` の front density payload に `NEW / 相対時刻 / コメント数 / primary category / primary tag / opponent` を追加した
-- `NEW` は公開から24時間以内、相対時刻は 24 時間以内だけ `n分前 / n時間前`、それ以外は既存 compact time を使う
-- 一覧カードでは既存の `badge / phase / score / summary / chain chip` を維持したまま、summary の下に補助メタ行を追加する
-- `src/custom.css` に一覧補助メタ行の style を追加し、390px 幅では自然に折り返すように調整した
-- V7 でも route / pickup / validator / automation / published 書込経路は不可触、WP admin bundle は plugin version 追随で `build/063-v7-wp-admin/` に生成する
+- `src/yoshilover-063-frontend.php` の front density meta row に `💬 n` comment badge / tags + categories 走査の primary player chip / 文字数 3 段階の読了目安 badge を追加した
+- comment badge は `get_comments_number( $post_id )` を使い、`0` は非表示、`1+` のときだけ表示する
+- primary player は既存の player token 判定 helper を流用しつつ generic term を除外して 1 件だけ出し、見つからない場合は空描画しない
+- 読了目安は `wp_strip_all_tags( get_the_content() )` 相当の文字数を `短(<500) / 中(500-1500) / 長(>1500)` に分け、`live_update` subtype では非表示にする
+- `src/custom.css` では V6 popular comment の見た目を list card comment badge に再利用し、390px 幅で badge 群が wrap / truncate を維持するよう player chip 幅と chip padding を調整した
+- V7 でも route / pickup / validator / automation / published 書込経路は不可触で、`src/` 配下の Python file / automation.toml / doc/062 / doc/047 / doc/060 / doc/061* には差分を入れない
 
 ---
 

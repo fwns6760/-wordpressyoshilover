@@ -66,9 +66,9 @@ If this file conflicts with an individual ticket doc:
 - **blocked_by**: none
 - **user_action_required**: none
 - **write_scope**: `doc/102-ticket-index-and-priority-board.md`
-- **acceptance**: 102-116 rows are present, old 104-wait contradiction removed, A/B next actions clear
-- **repo_state**: modified
-- **commit_state**: uncommitted update after `d6548ba`
+- **acceptance**: 102-122 rows are present, old 104-wait contradiction removed, X unlock sequence explicit, A/B next actions clear
+- **repo_state**: committed
+- **commit_state**: current X ticket sync commit
 - **next_prompt_path**: -
 - **last_commit**: `42d279b` board source-of-truth cross-ref
 
@@ -176,10 +176,10 @@ If this file conflicts with an individual ticket doc:
 - **user_action_required**: none; any WP write/apply belongs to a later ticket
 - **write_scope**: proposed read-only module/tool/tests only; no WP write path
 - **acceptance**: published articles are audited, cleanup candidates are emitted as JSON/human summary, fixtures pass, WP write zero
-- **repo_state**: doc exists untracked
-- **commit_state**: uncommitted doc
+- **repo_state**: pushed
+- **commit_state**: `79ab94b`
 - **next_prompt_path**: create at fire time
-- **last_commit**: -
+- **last_commit**: `79ab94b` docs for 108-112
 
 ### 109 missing-primary-source-blocker-reduction
 
@@ -248,10 +248,10 @@ If this file conflicts with an individual ticket doc:
 - **user_action_required**: none
 - **write_scope**: new tests only; no source changes unless a failing fixture exposes a minimal fix request
 - **acceptance**: fixture set proves 104 behavior and guards prefix misuse without touching production code
-- **repo_state**: doc exists untracked
-- **commit_state**: uncommitted doc
+- **repo_state**: pushed
+- **commit_state**: `79ab94b`
 - **next_prompt_path**: create at fire time
-- **last_commit**: -
+- **last_commit**: `79ab94b` docs for 108-112
 
 ### 113 halluc-lane-002-llm-fact-check-augmentation
 
@@ -274,16 +274,16 @@ If this file conflicts with an individual ticket doc:
 ### 114 x-post-gate-live-helper
 
 - **alias**: PUB-005-B
-- **priority**: P2
-- **status**: BLOCKED_USER
-- **owner**: Codex A or B after user go
+- **priority**: P1
+- **status**: PARKED(umbrella; child tickets 119-122 govern execution)
+- **owner**: Claude Code / Codex A or B per child ticket
 - **lane**: either
 - **ready_for**: none
-- **next_action**: wait for explicit user go; live X post remains prohibited
-- **blocked_by**: X live post / user explicit go
-- **user_action_required**: explicit X live helper go and credential boundary approval
-- **write_scope**: not assigned until unblocked
-- **acceptance**: no X API live post without user trigger and final approval
+- **next_action**: execute child tickets in order: 119 -> 120 -> 121 -> 122
+- **blocked_by**: 119/120 prerequisites and one-time live unlock at 121
+- **user_action_required**: only for 121 X live unlock / credential boundary
+- **write_scope**: umbrella only; child tickets define concrete write scopes
+- **acceptance**: Green-only controlled autopost path is split into safe child tickets; no direct 114 fire
 - **repo_state**: parent doc-first exists
 - **commit_state**: committed doc
 - **next_prompt_path**: none until unblocked
@@ -338,15 +338,91 @@ If this file conflicts with an individual ticket doc:
 - **user_action_required**: 「広告方針 A / B / C で」と明示
 - **write_scope**: `src/custom.css` の AdSense 全殺し section のみ(backend Python / publish runner / WP REST 触らない)
 - **acceptance**: user 明示後着手 / 解除対象 CSS 明確 / mobile/desktop 表示破綻なし / anchor/vignette が方針通り / backend 差分なし
-- **repo_state**: doc 起票 untracked
-- **commit_state**: uncommitted doc
+- **repo_state**: pushed
+- **commit_state**: `0c883ba`
 - **next_prompt_path**: -(Claude 自身で実装、user 明示後)
-- **last_commit**: -
+- **last_commit**: `0c883ba`
 - **policy A**: UI 優先、anchor/vignette 殺し、記事内広告最大 3 枠
 - **policy B**: 自動広告フル解除
 - **policy C**: 広告 OFF 維持(現状)
 - **source_of_truth**: `docs/handoff/ad_policy_memo_post_launch.md`(A/B/C 方針正本)
 - **parent**: 087(器 = AdSense slot 枠 既設)
+
+### 119 x-post-eligibility-evaluator
+
+- **alias**: PUB-005-A
+- **priority**: P0.5
+- **status**: READY
+- **owner**: Codex B
+- **lane**: B
+- **ready_for**: B
+- **next_action**: fire read-only evaluator for published Green-only X candidates
+- **blocked_by**: none
+- **user_action_required**: none
+- **write_scope**: `src/x_post_eligibility_evaluator.py`, `src/tools/run_x_post_eligibility_evaluator.py`, `tests/test_x_post_eligibility_evaluator.py`
+- **acceptance**: published-only / Green-only eligible list, Yellow/Red/X-side Red refused with reasons, JSON + human summary, WP write zero, X API zero
+- **repo_state**: doc exists
+- **commit_state**: current X ticket sync commit
+- **next_prompt_path**: create at fire time
+- **last_commit**: current X ticket sync commit
+- **parent**: 114 / PUB-005
+
+### 120 x-post-autopost-queue-and-ledger
+
+- **alias**: PUB-005-A3
+- **priority**: P1
+- **status**: PARKED
+- **owner**: Codex A or either after 119 close
+- **lane**: A/either
+- **ready_for**: none
+- **next_action**: wait for 119 close, then queue eligible + 107 template candidates with candidate_hash dedup
+- **blocked_by**: 119 close
+- **user_action_required**: none
+- **write_scope**: `src/x_post_autopost_queue.py`, `src/tools/run_x_post_autopost_queue.py`, `tests/test_x_post_autopost_queue.py`
+- **acceptance**: queue/ledger fields present, duplicate queue/post prevented, dry-run summary, X API zero
+- **repo_state**: doc exists
+- **commit_state**: current X ticket sync commit
+- **next_prompt_path**: create after 119 close
+- **last_commit**: current X ticket sync commit
+- **parent**: 114 / PUB-005
+
+### 121 x-post-live-helper-one-shot-smoke
+
+- **alias**: PUB-005-B1
+- **priority**: P1
+- **status**: BLOCKED_USER
+- **owner**: Codex A after user unlock
+- **lane**: A
+- **ready_for**: none
+- **next_action**: wait for 120 close + one-time X live unlock / credential boundary
+- **blocked_by**: X live unlock / credential boundary / 120 close
+- **user_action_required**: explicit one-time X live unlock before implementation or live smoke
+- **write_scope**: `src/x_post_live_helper.py`, `src/tools/run_x_post_live_helper.py`, `tests/test_x_post_live_helper.py`
+- **acceptance**: dry-run default, `--live` required, one candidate only, ledger updated on success, duplicate refused, secret values never printed
+- **repo_state**: doc exists
+- **commit_state**: current X ticket sync commit
+- **next_prompt_path**: none until unblocked
+- **last_commit**: current X ticket sync commit
+- **parent**: 114 / PUB-005
+
+### 122 x-post-controlled-autopost-rollout
+
+- **alias**: PUB-005-C
+- **priority**: P1.5
+- **status**: PARKED
+- **owner**: Codex A after 121 smoke success
+- **lane**: A
+- **ready_for**: none
+- **next_action**: wait for 121 smoke success, then start daily cap 1 controlled rollout
+- **blocked_by**: 121 smoke success
+- **user_action_required**: none after 121 one-time unlock unless cron/live policy changes
+- **write_scope**: `src/x_post_controlled_rollout.py`, `src/tools/run_x_post_controlled_rollout.py`, `tests/test_x_post_controlled_rollout.py`
+- **acceptance**: daily cap enforced, duplicate prevented, refusal/failure reasons recorded, Green-only gate cannot be bypassed
+- **repo_state**: doc exists
+- **commit_state**: current X ticket sync commit
+- **next_prompt_path**: create after 121 smoke success
+- **last_commit**: current X ticket sync commit
+- **parent**: 114 / PUB-005
 
 ## lane inventory rule
 
@@ -368,8 +444,8 @@ Current inventory:
 | lane | READY count | tickets |
 |---|---:|---|
 | A | 0 direct implementation tickets | use 105 Claude orchestration, then replenish A if needed |
-| B | 5 | 108 / 109 / 110 / 111 / 112 |
-| either | 0 unblocked live tickets | 114 blocked by user |
+| B | 6 | 108 / 109 / 110 / 111 / 112 / 119 |
+| either | 0 unblocked live tickets | 114 umbrella parked; 120 parked until 119 close |
 
 ## pull rule
 
@@ -389,15 +465,16 @@ Current inventory:
 ## next actions
 
 - **A slot next**: 105 dry-run / dry-run result presentation. If 105 is parked after user review, replenish A with a new ops/doc/test ticket.
-- **B slot next**: 108 or 112.
+- **B slot next**: 119 first for X unlock path, otherwise 108 or 112.
 - **Live 105 ramp**: only after 105 dry-run result is shown and user explicitly says go.
-- **Do not advance 113 / 114 / 115 / 116** without user action or external precondition.
+- **Do not advance 113 / 115 / 116 / 121** without user action or external precondition.
+- **Do not fire 114 directly**; use 119 -> 120 -> 121 -> 122.
 
 ## dependency locks
 
 - 104 before 105: satisfied (`78f965d`).
 - 103 before/near 105: satisfied (`d6548ba`).
-- X live post: blocked until explicit user trigger.
+- X live post: blocked until 121 one-time live unlock / credential boundary; after that, controlled autopost follows 122 daily cap.
 - HALLUC-LANE-002 real LLM/API: blocked until explicit user go.
 - `RUN_DRAFT_ONLY=False`: prohibited here.
 - Cloud Run env changes: prohibited here.
@@ -408,20 +485,22 @@ Current inventory:
 102 board の整合修正方針をCodex側で反映しました。
 
 修正内容:
-- 104はCLOSEDで固定し、旧前提文言を削除
-- 105はREADY、blocked_byなし。ただしlive rampはdry-run後のuser判断待ち
-- 103/106/107はCLOSED
-- 093は115、095-Eは116へalias整理
-- PUB-002-B/C/Dは109/110/111へalias整理
-- HALLUC-LANE-002は113、X live helperは114へalias整理
-- 108〜116を102 boardへ追加
-- B slot在庫として108/109/110/111/112をREADY化
-- 113/114/115/116はBLOCKED_USER扱い
+- PUB-005の古い毎回確認 / 自律投稿禁止前提を置換
+- 114はX live helper umbrellaとしてPARKED化し、直接fireしない
+- 119〜122をX unlock sequenceとして追加
+- 119はREADY、B slot first候補
+- 120はPARKED、119 close後
+- 121はBLOCKED_USER、X live unlock / credential boundary
+- 122はPARKED、121 smoke成功後
+- Grok / xAI API禁止、X検索 / X収集は別laneと明記
+- controlled autopostはdaily cap初期1件、安定後3件
 
 次の実行:
-- A slot next: 105 dry-run / dry-run結果提示
-- B slot next: 108または112
-- 105 live rampはuserの明示go後のみ
+- B slot next: 119
+- 119 close後: 120
+- 121はone-time X live unlock後のみ
+- 122は121 smoke成功後のみ
+- 105 live rampは引き続きuser判断待ち
 
 注意:
 既存docリネームなし。
@@ -436,8 +515,11 @@ git add -A禁止。
 
 - `git diff -- doc/102-ticket-index-and-priority-board.md`
 - 104 is only represented as `CLOSED`; no old "104 wait" next-action remains.
-- 105 has `blocked_by: none`; live ramp is still user-gated after dry-run.
-- 108-116 are present.
+- 105 live ramp remains user-gated after the all-red dry-run result.
+- 108-122 are present.
+- 119 is READY.
+- 121 is BLOCKED_USER.
+- 114 is umbrella/PARKED and not a direct fire target.
 - A slot next and B slot next are explicit.
 
 ## related files
@@ -448,4 +530,8 @@ git add -A禁止。
 - `doc/PUB-002-C-subtype-unresolved-publish-blocker-reduction.md`
 - `doc/PUB-002-D-long-body-draft-compression-or-exclusion-policy.md`
 - `doc/PUB-005-x-post-gate.md`
+- `doc/119-x-post-eligibility-evaluator.md`
+- `doc/120-x-post-autopost-queue-and-ledger.md`
+- `doc/121-x-post-live-helper-one-shot-smoke.md`
+- `doc/122-x-post-controlled-autopost-rollout.md`
 - `doc/HALLUC-LANE-002-llm-based-fact-check-augmentation.md`

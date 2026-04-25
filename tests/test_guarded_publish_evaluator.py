@@ -8,8 +8,17 @@ from src.guarded_publish_evaluator import evaluate_raw_posts, scan_wp_drafts
 FIXED_NOW = datetime.fromisoformat("2026-04-25T21:00:00+09:00")
 
 
-def _post(post_id, title, body_html, *, featured_media=10, modified="2026-04-25T18:00:00", date="2026-04-25T17:00:00"):
-    return {
+def _post(
+    post_id,
+    title,
+    body_html,
+    *,
+    featured_media=10,
+    modified="2026-04-25T18:00:00",
+    date="2026-04-25T17:00:00",
+    meta=None,
+):
+    payload = {
         "id": post_id,
         "title": {"raw": title},
         "content": {"raw": body_html},
@@ -19,6 +28,9 @@ def _post(post_id, title, body_html, *, featured_media=10, modified="2026-04-25T
         "categories": [],
         "tags": [],
     }
+    if meta is not None:
+        payload["meta"] = meta
+    return payload
 
 
 class GuardedPublishEvaluatorTests(unittest.TestCase):
@@ -107,6 +119,62 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
             ),
             featured_media=0,
         )
+        self.lineup_hochi_post = _post(
+            109,
+            "巨人スタメン 1番丸 4番岡本",
+            (
+                "<p>巨人のスタメンが発表された。スポーツ報知によると、1番丸、4番岡本で先発する。</p>"
+                "<p>参照元: スポーツ報知 https://hochi.news/articles/20260425-OHT1T51000.html</p>"
+            ),
+            meta={
+                "article_subtype": "lineup",
+                "candidate_key": "lineup_notice:20260425-g-t:starting",
+                "game_id": "20260425-g-t",
+                "_yoshilover_source_url": "https://hochi.news/articles/20260425-OHT1T51000.html",
+            },
+        )
+        self.lineup_other_post = _post(
+            110,
+            "巨人スタメン 1番丸 4番岡本",
+            (
+                "<p>巨人のスタメンが発表された。スポニチによると、1番丸、4番岡本で先発する。</p>"
+                "<p>参照元: スポニチ https://www.sponichi.co.jp/baseball/news/2026/04/25/kiji.html</p>"
+            ),
+            meta={
+                "article_subtype": "lineup",
+                "candidate_key": "lineup_notice:20260425-g-t:starting",
+                "game_id": "20260425-g-t",
+                "_yoshilover_source_url": "https://www.sponichi.co.jp/baseball/news/2026/04/25/kiji.html",
+            },
+        )
+        self.lineup_no_hochi_post = _post(
+            111,
+            "巨人スタメン 1番丸 4番岡本",
+            (
+                "<p>巨人のスタメンが発表された。スポニチによると、1番丸、4番岡本で先発する。</p>"
+                "<p>参照元: スポニチ https://www.sponichi.co.jp/baseball/news/2026/04/26/kiji.html</p>"
+            ),
+            meta={
+                "article_subtype": "lineup",
+                "candidate_key": "lineup_notice:20260426-g-c:starting",
+                "game_id": "20260426-g-c",
+                "_yoshilover_source_url": "https://www.sponichi.co.jp/baseball/news/2026/04/26/kiji.html",
+            },
+        )
+        self.prefix_misuse_post = _post(
+            112,
+            "巨人スタメン 阪神に3-2で勝利",
+            (
+                "<p>巨人が阪神に3-2で勝利した。スポーツ報知によると、終盤の継投が勝敗を分けた。</p>"
+                "<p>参照元: スポーツ報知 https://hochi.news/articles/20260425-OHT1T51001.html</p>"
+            ),
+            meta={
+                "article_subtype": "postgame",
+                "candidate_key": "postgame_result:20260425-g-t:win",
+                "game_id": "20260425-g-t",
+                "_yoshilover_source_url": "https://hochi.news/articles/20260425-OHT1T51001.html",
+            },
+        )
 
     def _evaluate(self, posts):
         return evaluate_raw_posts(posts, window_hours=96, max_pool=100, now=FIXED_NOW)
@@ -163,6 +231,39 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         yellow_entry = report["yellow"][0]
         self.assertIn("missing_featured_media", yellow_entry["yellow_reasons"])
         self.assertIn("missing_primary_source", yellow_entry["yellow_reasons"])
+
+    def test_lineup_duplicate_absorbed_by_hochi_is_red(self):
+        report = self._evaluate([self.lineup_hochi_post, self.lineup_other_post])
+
+        self.assertEqual(report["summary"]["green_count"], 1)
+        self.assertEqual(report["summary"]["red_count"], 1)
+        self.assertEqual(report["summary"]["lineup_representative_count"], 1)
+        self.assertEqual(report["summary"]["lineup_duplicate_absorbed_count"], 1)
+        self.assertEqual(report["green"][0]["post_id"], 109)
+        self.assertEqual(report["green"][0]["lineup_priority_status"], "representative")
+        self.assertEqual(report["green"][0]["game_id"], "20260425-g-t")
+        red_entry = report["red"][0]
+        self.assertEqual(red_entry["post_id"], 110)
+        self.assertIn("lineup_duplicate_absorbed_by_hochi", red_entry["red_flags"])
+        self.assertEqual(red_entry["representative_post_id"], 109)
+
+    def test_lineup_without_hochi_source_is_red(self):
+        report = self._evaluate([self.lineup_no_hochi_post])
+
+        self.assertEqual(report["summary"]["red_count"], 1)
+        self.assertEqual(report["summary"]["lineup_deferred_count"], 1)
+        red_entry = report["red"][0]
+        self.assertIn("lineup_no_hochi_source", red_entry["red_flags"])
+        self.assertEqual(red_entry["lineup_priority_status"], "deferred")
+
+    def test_non_lineup_starmen_prefix_is_red_when_meta_subtype_disagrees(self):
+        report = self._evaluate([self.prefix_misuse_post])
+
+        self.assertEqual(report["summary"]["red_count"], 1)
+        self.assertEqual(report["summary"]["lineup_prefix_violation_count"], 1)
+        red_entry = report["red"][0]
+        self.assertIn("lineup_prefix_misuse", red_entry["red_flags"])
+        self.assertEqual(red_entry["subtype"], "postgame")
 
     def test_summary_counts_are_consistent(self):
         report = self._evaluate(

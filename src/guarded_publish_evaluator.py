@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from src.lineup_source_priority import compute_lineup_dedup
 from src.pre_publish_fact_check import extractor
 from src.title_body_nucleus_validator import validate_title_body_nucleus
 
@@ -381,6 +382,67 @@ def _evaluate_record(raw_post: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _lineup_red_flags(decision: dict[str, Any] | None) -> list[str]:
+    if not decision:
+        return []
+    status = str(decision.get("status") or "").strip().lower()
+    if status == "duplicate_absorbed":
+        return ["lineup_duplicate_absorbed_by_hochi"]
+    if status == "deferred":
+        return ["lineup_no_hochi_source"]
+    if status == "prefix_violation":
+        return ["lineup_prefix_misuse"]
+    return []
+
+
+def _merge_lineup_decision(entry: dict[str, Any], decision: dict[str, Any] | None) -> dict[str, Any]:
+    if not decision:
+        return entry
+    merged = dict(entry)
+    merged["lineup_priority_status"] = decision.get("status")
+    merged["lineup_priority_reason"] = decision.get("reason")
+    for key in (
+        "candidate_key",
+        "game_id",
+        "source_url",
+        "source_name",
+        "source_domain",
+        "is_hochi_source",
+        "representative_post_id",
+        "representative_source_url",
+        "subtype",
+    ):
+        value = decision.get(key)
+        if value not in (None, ""):
+            merged[key] = value
+    return merged
+
+
+def _apply_lineup_guard(
+    evaluated: dict[str, Any],
+    decision: dict[str, Any] | None,
+) -> dict[str, Any]:
+    merged_entry = _merge_lineup_decision(evaluated["entry"], decision)
+    extra_red_flags = _lineup_red_flags(decision)
+    if not extra_red_flags:
+        return {
+            "judgment": evaluated["judgment"],
+            "entry": merged_entry,
+            "cleanup_candidate": evaluated["cleanup_candidate"],
+        }
+
+    entry = dict(merged_entry)
+    existing_flags = list(entry.get("red_flags") or [])
+    entry["red_flags"] = list(dict.fromkeys(existing_flags + extra_red_flags))
+    entry.pop("reason_summary", None)
+    cleanup_candidate = None
+    return {
+        "judgment": "red",
+        "entry": entry,
+        "cleanup_candidate": cleanup_candidate,
+    }
+
+
 def _published_today_keys(raw_posts: list[dict[str, Any]], *, now: datetime) -> tuple[set[str], set[str]]:
     title_keys: set[str] = set()
     game_keys: set[str] = set()
@@ -428,8 +490,17 @@ def evaluate_raw_posts(
                 continue
         filtered.append(raw_post)
 
+    lineup_dedup = compute_lineup_dedup(filtered)
+    lineup_by_post_id = {
+        int(post_id): decision
+        for post_id, decision in lineup_dedup.get("by_post_id", {}).items()
+        if str(post_id).strip()
+    }
+
     for raw_post in filtered:
         evaluated = _evaluate_record(raw_post)
+        decision = lineup_by_post_id.get(int(evaluated["entry"]["post_id"]))
+        evaluated = _apply_lineup_guard(evaluated, decision)
         judgment = evaluated["judgment"]
         if judgment == "green":
             green.append(evaluated["entry"])
@@ -452,6 +523,7 @@ def evaluate_raw_posts(
         "yellow": yellow,
         "red": red,
         "cleanup_candidates": cleanup_candidates,
+        "lineup_dedup": lineup_dedup,
         "summary": {
             "green_count": len(green),
             "yellow_count": len(yellow),
@@ -459,6 +531,10 @@ def evaluate_raw_posts(
             "cleanup_count": len(cleanup_candidates),
             "publishable_count": len(green) + len(yellow),
             "publishable_minus_cleanup_pending": (len(green) + len(yellow)) - len(cleanup_post_ids),
+            "lineup_representative_count": int(lineup_dedup["summary"]["representative_count"]),
+            "lineup_duplicate_absorbed_count": int(lineup_dedup["summary"]["duplicate_absorbed_count"]),
+            "lineup_deferred_count": int(lineup_dedup["summary"]["deferred_count"]),
+            "lineup_prefix_violation_count": int(lineup_dedup["summary"]["prefix_violation_count"]),
         },
     }
     return report

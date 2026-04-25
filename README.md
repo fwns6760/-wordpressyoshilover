@@ -10,6 +10,19 @@ RSS と記者・球団 X アカウントを監視し、記事候補を作って 
 - 品質調整が終わるまでは、人が下書きを見て公開判断する前提
 - `PUBLISH_REQUIRE_IMAGE=1` により、`news` / `social_news` でアイキャッチが取れない記事は公開しない
 
+## 2026-04-25 公開開始マイルストーン
+
+YOSHILOVER は draft-only から **少量手動公開** へ段階を進めました。
+
+- 1 本目の公開: post 63405 を WP admin で手動 publish
+- `publish-notice mail chain` 起動: 公開時に Gmail 通知が届く(`src/tools/run_publish_notice_email_dry_run.py`)
+- 公開前 fact-check 土台: `HALLUC-LANE-001`(`src/tools/run_pre_publish_fact_check.py`)= extract / detect dry / approve YAML / backup / apply 5-gate refuse まで dry-run default。実 LLM 判定は `HALLUC-LANE-002`(escalate)へ分離
+- 公開開始の主線: `PUB-002 少量手動公開と記事品質改善レーン`(`doc/PUB-002-launch-small-manual-publish-and-quality-improvement.md`)= 1 日 1〜3 本、Green / Yellow / Red 判定 + user の publish/hold 1 ワード判断
+- CI: GitHub Actions `Tests` workflow の pytest 不足を修復(`requirements-dev.txt` に `pytest` 追加)
+- 関連 ticket: `088 publish-notice real-send smoke`(close 候補)/ `093 automation tick recovery`(進行中)/ `095 publish-notice cron activation`(BLOCKED on 088 + 093)
+
+`RUN_DRAFT_ONLY=1` は維持。自動公開はまだしない。
+
 ## 何をするコードか
 
 中心は [src/rss_fetcher.py](src/rss_fetcher.py) です。ざっくりこの流れで動きます。

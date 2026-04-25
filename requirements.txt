@@ -3,3 +3,4 @@ python-dotenv
 feedparser
 tweepy
 google-cloud-storage
+pyyaml

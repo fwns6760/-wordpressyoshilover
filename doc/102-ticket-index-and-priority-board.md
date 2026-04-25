@@ -325,6 +325,29 @@ If this file conflicts with an individual ticket doc:
 - **next_prompt_path**: -
 - **last_commit**: docs synced in recent publish-notice docs
 
+### 117 adsense-ad-unlock-policy-and-css-toggle
+
+- **alias**: 087-A
+- **priority**: P1.5(105 公開 ramp より後、今すぐはやらない)
+- **status**: BLOCKED_USER
+- **owner**: **Claude-managed front-scope**(Front-Claude 不在、Claude 自身が front-scope を管理)
+- **lane**: either / front-scope
+- **ready_for**: none(user choice 待ち)
+- **next_action**: user が A / B / C を明示 → `src/custom.css` AdSense 全殺し section の read-only 確認 → 選択 pattern に応じた CSS 解除
+- **blocked_by**: **user choice A / B / C + AdSense account 状態確認**
+- **user_action_required**: 「広告方針 A / B / C で」と明示
+- **write_scope**: `src/custom.css` の AdSense 全殺し section のみ(backend Python / publish runner / WP REST 触らない)
+- **acceptance**: user 明示後着手 / 解除対象 CSS 明確 / mobile/desktop 表示破綻なし / anchor/vignette が方針通り / backend 差分なし
+- **repo_state**: doc 起票 untracked
+- **commit_state**: uncommitted doc
+- **next_prompt_path**: -(Claude 自身で実装、user 明示後)
+- **last_commit**: -
+- **policy A**: UI 優先、anchor/vignette 殺し、記事内広告最大 3 枠
+- **policy B**: 自動広告フル解除
+- **policy C**: 広告 OFF 維持(現状)
+- **source_of_truth**: `docs/handoff/ad_policy_memo_post_launch.md`(A/B/C 方針正本)
+- **parent**: 087(器 = AdSense slot 枠 既設)
+
 ## lane inventory rule
 
 Goal:

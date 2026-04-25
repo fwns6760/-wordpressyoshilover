@@ -9,6 +9,16 @@ URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
 TAG_RE = re.compile(r"<[^>]+>")
 SOURCE_BLOCK_RE = re.compile(r"(参照元\s*[：:]\s*[\s\S]*)$", re.MULTILINE)
 SCORE_RE = re.compile(r"\d+-\d+")
+COACH_COMMENT_C_RE = re.compile(r"(?<![A-Za-zＡ-Ｚａ-ｚ])(?:Ｃ|C)(?![A-Za-zＡ-Ｚａ-ｚ])")
+PITCHER_FOCUS_K_RE = re.compile(r"(?:[0-9０-９]+[KＫ]|(?<![A-Za-zＡ-Ｚａ-ｚ])(?:K|Ｋ)(?![A-Za-zＡ-Ｚａ-ｚ]))")
+
+FARM_KEYWORDS = ("二軍", "2軍", "２軍", "ファーム")
+ROSTER_MOVE_KEYWORDS = ("昇格", "合流", "帯同")
+ROSTER_MOVE_EXCLUSION_KEYWORDS = ("抹消", "故障", "離脱")
+BATTER_FOCUS_KEYWORDS = ("猛打賞", "マルチ安打", "適時打", "決勝打", "初安打")
+PITCHER_FOCUS_KEYWORDS = ("完封", "降板", "奪三振", "無失点", "先発投手")
+PROMOTIONAL_EVENT_KEYWORDS = ("Ｔシャツ", "グッズ", "ＣＬＵＢ ＧＩＡＮＴＳ", "CLUB GIANTS", "会員限定", "販売開始")
+QUOTE_CHARS = ("「", "」", "『", "』")
 
 
 def _title_value(post: dict[str, Any]) -> str:
@@ -62,26 +72,60 @@ def _extract_source_block(body_html: str) -> str | None:
     return match.group(1).strip() or None
 
 
+def _contains_any(value: str, keywords: tuple[str, ...]) -> bool:
+    return any(keyword in value for keyword in keywords)
+
+
+def _has_quote_signal(value: str) -> bool:
+    return any(quote in value for quote in QUOTE_CHARS)
+
+
+def _is_coach_comment_title(value: str) -> bool:
+    if not _has_quote_signal(value):
+        return False
+    return "監督" in value or "コーチ" in value or bool(COACH_COMMENT_C_RE.search(value))
+
+
+def _is_roster_move_title(value: str) -> bool:
+    if not _contains_any(value, ROSTER_MOVE_KEYWORDS):
+        return False
+    return not _contains_any(value, ROSTER_MOVE_EXCLUSION_KEYWORDS)
+
+
+def _is_pitcher_focus_title(value: str) -> bool:
+    return _contains_any(value, PITCHER_FOCUS_KEYWORDS) or bool(PITCHER_FOCUS_K_RE.search(value))
+
+
 def infer_subtype(title: str) -> str:
     value = title or ""
     if value.startswith("巨人スタメン"):
         return "lineup"
     if "予告先発" in value:
         return "probable_starter"
-    if "二軍" in value or "ファーム" in value:
+    if _contains_any(value, FARM_KEYWORDS):
         return "farm"
+    if _is_roster_move_title(value):
+        return "notice"
     if "公示" in value:
         return "notice"
+    if _is_coach_comment_title(value):
+        return "comment"
     if value.startswith("【コメント】") or ("コメント" in value and "試合" in value):
         return "comment"
     if "故障" in value or "離脱" in value or "登録抹消" in value:
         return "injury"
+    if _contains_any(value, BATTER_FOCUS_KEYWORDS):
+        return "postgame"
+    if _is_pitcher_focus_title(value):
+        return "postgame"
     if "試合終了" in value or "勝利" in value or "敗戦" in value or SCORE_RE.search(value):
         return "postgame"
     if value.startswith("明日") or value.startswith("試合前"):
         return "pregame"
     if "テレビ" in value or "ラジオ" in value or "出演" in value or "放送" in value:
         return "program"
+    if _contains_any(value, PROMOTIONAL_EVENT_KEYWORDS):
+        return "off_field"
     return "other"
 
 

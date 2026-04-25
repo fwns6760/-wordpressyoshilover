@@ -463,6 +463,25 @@ If this file conflicts with an individual ticket doc:
 - **last_commit**: -
 - **parent**: 105 / PUB-004-D
 
+### 124 published-cleanup-apply-runner
+
+- **alias**: -
+- **priority**: P1
+- **status**: READY (doc-first spec) / live 適用は BLOCKED_USER
+- **owner**: Claude Code (spec) / Codex A (後続実装、user 判断後)
+- **lane**: A
+- **ready_for**: A (124-A 実装便、user 1 ワード判断後)
+- **next_action**: spec doc commit + push、user `124-A go` 後 Codex A で 124-A 実装 fire
+- **blocked_by**: live 適用 = user 判断(本日 publish 8 件 post-hoc cleanup 開始)
+- **user_action_required**: 124-A 実装 fire の go / hold (1 ワード)
+- **write_scope**: doc/124 (本 ticket = doc-first); 124-A 実装は src/published_cleanup_apply.py + src/tools/run_published_cleanup_apply.py + tests/test_published_cleanup_apply.py
+- **acceptance**: 108 audit input → WP REST update_post_fields apply / 3-gate refuse / backup / history 記録 / PUB-004-B 同形 contract
+- **repo_state**: doc 起票 untracked
+- **commit_state**: pending sync (本 commit便で push)
+- **next_prompt_path**: 124-A fire 時に Claude が用意
+- **last_commit**: -
+- **parent**: 108 (audit) / PUB-004-B (cleanup contract pre-publish 版)
+
 ## lane inventory rule
 
 Goal:

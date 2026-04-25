@@ -5,7 +5,7 @@
 - owner: Claude Code(棚卸し + 設計、実装は Codex 便)
 - type: ops / publish blocker reduction / source recovery
 - status: READY(72h draft 棚卸し未着手)
-- priority: P1(095-D 完了後、PUB-002-A の Green G2 hit 率向上)
+- priority: P2(**PUB-004 安定運用後の品質改善**として後続、PUB-002-A の Green G2 hit 率向上 = PUB-004-B publish 候補増加に直結、user policy 2026-04-25 21:55 lock)
 - parent: PUB-002 / PUB-002-A
 - created: 2026-04-25
 

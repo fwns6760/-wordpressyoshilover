@@ -8,11 +8,32 @@
 - parent: PUB-002(少量手動公開と記事品質改善レーン)
 - consolidates: PUB-002 / 085(title style)/ 040(repair playbook)/ 071(title-body-nucleus-validator)/ 078(nucleus-ledger-adapter)/ 079(nucleus-ledger-emitter)
 - created: 2026-04-25
+- updated: 2026-04-25 21:55(WP publish vs X/SNS で判定厳しさを変える明記、user policy lock)
 
 ## purpose
 
 noindex 小規模公開で「どの記事を publish してよいか」「文章がどうならOKか」を **1 枚に固定** する。
 PUB-002 / 085 / 040 / 071 / 078 / 079 に散らばった条件を統合し、Claude が毎回迷わず **Green / Yellow / Red 判定**できる状態にする。
+
+## 適用先で判定厳しさを変える(2026-04-25 21:55 lock)
+
+本判定表は **WordPress publish と X / SNS POST で適用厳しさを変える**:
+
+| 適用先 | 採用 ticket | publish/POST 対象 | refuse 対象 |
+|---|---|---|---|
+| **WordPress publish** | PUB-004 | **Green + Yellow**(危険な Red だけ止める方針) | Red |
+| **X / SNS POST** | PUB-005 | **Green only** + 追加 X-side strict 条件 + user 確認 fixed | Yellow + Red + X-side Red |
+
+→ 同 draft でも、WP publish では Yellow なら publish OK、X POST では Yellow は除外。
+
+X-side 追加 strict 条件(PUB-005 詳細):
+- source 弱い(primary 1 件未満 / Twitter only)
+- title speculative
+- title-body 不一致
+- injury / death / 抹消 系
+- 同一試合 24h 以内 重複
+- 数値リスト型
+- quote-heavy で出典不明確
 
 ## 前提
 

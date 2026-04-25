@@ -1,8 +1,18 @@
 # PUB-002 少量手動公開と記事品質改善レーン
 
+## 後継 ticket(2026-04-25 21:55 update)
+
+本 ticket は **少量手動公開フェーズ** の起点 ticket。完了後の自動化は以下に分岐:
+
+- **PUB-004 guarded-wordpress-publish-runner**: WordPress publish の autonomous runner(Red 以外 publish、Yellow も改善ログ付きで publish、daily 10 / burst 3、user 確認原則不要)
+- **PUB-005 x-sns-post-gate**: X / SNS POST の strict gate(Green only + user 確認 fixed、autonomous POST なし)
+- **PUB-002-B/C/D**: Green/Yellow 候補を増やす品質改善(missing-source / subtype-unresolved / long-body)、PUB-004 安定後の品質 uplift
+
+WordPress publish と X / SNS POST は **lane 分離**(同 draft でも厳しさ違う)。判定 contract は PUB-002-A、適用厳しさは PUB-004 / PUB-005 で別管理。
+
 ## priority
 
-P0.5 / P1 HIGH
+P0.5 / P1 HIGH(本日 publish 8 件 達成、今後 PUB-004 へ移行)
 
 ## priority_reason
 

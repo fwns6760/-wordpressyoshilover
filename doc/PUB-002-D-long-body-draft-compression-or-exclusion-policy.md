@@ -5,7 +5,7 @@
 - owner: Claude Code(policy 設計、実装は narrow Codex 便)
 - type: ops / publish blocker reduction / prose length policy
 - status: READY(72h draft 棚卸し未着手)
-- priority: P2(095-D / PUB-002-B / PUB-002-C 完了後)
+- priority: P3(**PUB-004 安定運用後の品質改善**として後続、user policy 2026-04-25 21:55 lock)
 - parent: PUB-002 / PUB-002-A
 - created: 2026-04-25
 

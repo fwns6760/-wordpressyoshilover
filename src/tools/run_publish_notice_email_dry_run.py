@@ -9,6 +9,8 @@ from pathlib import Path
 import sys
 from typing import Any, Sequence
 
+from dotenv import load_dotenv
+
 if __package__ in {None, ""}:  # pragma: no cover - direct script execution support
     REPO_ROOT = Path(__file__).resolve().parents[2]
     if str(REPO_ROOT) not in sys.path:
@@ -81,6 +83,7 @@ def _print_result(request: PublishNoticeRequest, result: Any) -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     try:
+        load_dotenv()
         args = _parse_args(argv)
         send_enabled = args.send_enabled or str(os.environ.get("PUBLISH_NOTICE_EMAIL_ENABLED", "")).strip() == "1"
         dry_run = not args.send

@@ -16,33 +16,160 @@
 - 102 以降の新規 doc は数字先頭で命名
 - 古い alias は次の集中整理タイミングで `<number>-...md` に redirect or merge 候補
 
-## 現行 active ticket 一覧(2026-04-26 22:00 JST 時点、8 列 + 状態反映)
+## 現行 active ticket 一覧(2026-04-26 23:30 JST 時点、dispatch board)
 
-| number | alias | title | priority | status | owner | next_action | blocked_by | user_action_required | repo_state | commit_state |
-|---|---|---|---|---|---|---|---|---|---|---|
-| **102** | - | ticket index and priority board | meta | READY | Claude Code | doc commit便で 102/103/PUB-004-D 一括 sync | - | なし | doc/102-...md(本 doc、untracked)| **uncommitted** |
-| **103** | - | publish-notice cron health check (dry-run) | P1 | READY(doc 起票完了)| Claude Code(doc)/ Codex(impl)| 104 close 後の slot で Codex impl fire、4 軸切り分け、実メール送信なし | 104 close(slot 開放)| なし | doc/103-...md(untracked)、src 未実装 | **uncommitted** |
-| **104** | PUB-002-E | lineup-hochi-only duplicate suppression | **P0.5** | **IN-FLIGHT** | Codex B `bo6ivxsje` | 完了通知 → §31-A → Claude push | - | なし(autonomous) | 実装中: src/lineup_source_priority.py + tools + tests + PUB-004-A hook | **in flight** |
-| **105** | PUB-004-D | all-eligible-draft-backlog publish ramp | **P0.5** | READY(orchestration、新規 code なし) | Claude Code | 104 close 後、PUB-004-A で全 draft 棚卸し dry-run、件数表 user 報告 | 104(lineup 重複抑制) | dry-run 件数表受領後に **`live publish ramp go` 1 ワード判断** | doc/PUB-004-D-...md(untracked、`PUB-004-D` alias)| **uncommitted**(105 番号で 102 から参照) |
-| **106** | SPEECH-001 | speech-seed-intake dry-run | P1 | **CLOSED** | Codex B 完了 | 既存 comment_notice / fixed lane / PUB-004 への配線(別 ticket) | - | なし | 実装済: src/speech_seed_intake.py + tools + tests | **`4f4b70d`**(push 済) |
-| **107** | PUB-005-A2 | x-post template-candidate dry-run | P1 | **CLOSED** | Codex A 完了 | live X 投稿は PUB-005-B 以降 user 明示 trigger まで保留 | - | なし | 実装済: src/x_post_template_candidates.py + tools + tests | **`34a1bfa`**(push 済) |
+各 ticket = 1 row。下表で **priority / status / owner / lane / ready_for / next_action / blocked_by / user_action_required / write_scope / acceptance / repo_state / commit_state / next_prompt_path / last_commit** を確認。
 
-### 次に動かすべき 1 本
+### 102 ticket-index-and-priority-board
 
-**A: doc commit便 fire(102 + 103 + PUB-004-D 3 doc 一括 sync、Codex commit only / Claude push)**
+- **priority**: P0(meta dispatch board)
+- **status**: READY(本 doc)
+- **owner**: Claude Code
+- **lane**: -(meta、Codex 不要)
+- **ready_for**: 常時参照可
+- **next_action**: doc commit便で 102/103/PUB-004-D + AGENTS/CLAUDE/README/current_focus 一括 sync
+- **blocked_by**: -
+- **user_action_required**: なし
+- **write_scope**: doc/102-...md
+- **acceptance**: 全 102-107 row が dispatch board 形式で記載 + Codex A/B pull rule 明文化
+- **repo_state**: untracked(本セッション内更新中)
+- **commit_state**: uncommitted
+- **next_prompt_path**: -
+- **last_commit**: -(初回 commit `4741eee` で 1 度 sync 済、以降 update が untracked)
+
+### 103 publish-notice-cron-health-check (alias: -)
+
+- **priority**: P0.5
+- **status**: IN-FLIGHT(Codex A `b3m1kmcwy`、本セッション内 fire 済)
+- **owner**: Codex A
+- **lane**: A
+- **ready_for**: -(in flight)
+- **next_action**: 完了通知 → §31-A → Claude push
+- **blocked_by**: -
+- **user_action_required**: なし(autonomous)
+- **write_scope**: src/publish_notice_cron_health.py + src/tools/run_publish_notice_cron_health_check.py + tests/test_publish_notice_cron_health.py
+- **acceptance**: 4 軸切り分け(cron/publish/log/SMTP/history) + secret 値非表示 + dry-run only + tests pass
+- **repo_state**: src 実装中、doc/103-...md は commit `4741eee` 済
+- **commit_state**: in flight
+- **next_prompt_path**: /tmp/codex_103_impl_prompt.txt
+- **last_commit**: doc 部分 = `4741eee`(2026-04-26)
+
+### 104 lineup-hochi-only-duplicate-suppression (alias: PUB-002-E)
+
+- **priority**: P0.5
+- **status**: **CLOSED**(commit `78f965d`、push 済、2026-04-26 07:07)
+- **owner**: Codex B 完了
+- **lane**: B
+- **ready_for**: -
+- **next_action**: 105 ramp 実行で本 ticket の効果(lineup 重複抑制)を live verify
+- **blocked_by**: -
+- **user_action_required**: なし
+- **write_scope**: src/lineup_source_priority.py + tools + tests + src/guarded_publish_evaluator.py hook + tests/test_guarded_publish_evaluator.py
+- **acceptance**: 報知ソース最優先 / game_id 単位 1 本 / 報知なし lineup_notice 除外 / prefix violation 検出 / 既存 17 tests + 新 9 tests pass
+- **repo_state**: pushed
+- **commit_state**: `78f965d`
+- **next_prompt_path**: -
+- **last_commit**: `78f965d`(2026-04-26)
+
+### 105 all-eligible-draft-backlog-publish-ramp (alias: PUB-004-D)
+
+- **priority**: P0.5
+- **status**: READY(orchestration、新規 code なし)
+- **owner**: Claude Code(autonomous orchestration)
+- **lane**: -(Codex 不要、PUB-004-A + B 流用)
+- **ready_for**: 即実行可(104 close 済)
+- **next_action**: PUB-004-A で全 draft 棚卸し dry-run、件数表を user に報告
+- **blocked_by**: なし(104 close 済)
+- **user_action_required**: dry-run 件数表受領後に **`live publish ramp go` 1 ワード判断**
+- **write_scope**: なし(read-only smoke + autonomous report)
+- **acceptance**: 全 draft 件数表(Green / Yellow / Red / cleanup 件数) + user 1 ワード判断後の live ramp 開始(burst 3 / daily 10 cap 内)
+- **repo_state**: doc/PUB-004-D-...md = commit `4741eee` 済
+- **commit_state**: doc only `4741eee`(execution は 102 board が指揮)
+- **next_prompt_path**: -(直接 `python3 -m src.tools.run_guarded_publish_evaluator --window-hours 999999 --max-pool 500 --format json`)
+- **last_commit**: doc `4741eee`(2026-04-26)
+
+### 106 speech-seed-intake-dry-run (alias: SPEECH-001)
+
+- **priority**: P1
+- **status**: **CLOSED**(commit `4f4b70d`、push 済、2026-04-26 06:52)
+- **owner**: Codex B 完了
+- **lane**: B(完了)
+- **ready_for**: -
+- **next_action**: 既存 comment_notice / fixed lane / PUB-004 への配線(別 ticket、本 ticket scope 外)
+- **blocked_by**: -
+- **user_action_required**: なし
+- **write_scope**: src/speech_seed_intake.py + src/tools/run_speech_seed_intake_dry_run.py + tests/test_speech_seed_intake.py
+- **acceptance**: comment_candidate / deferred_pickup / duplicate_like / reject 判定 + 8 tests pass + 既存 comment 系 29 tests pass
+- **repo_state**: pushed
+- **commit_state**: `4f4b70d`
+- **next_prompt_path**: -
+- **last_commit**: `4f4b70d`(2026-04-26)
+
+### 107 x-post-template-candidate-dry-run (alias: PUB-005-A2)
+
+- **priority**: P2
+- **status**: **CLOSED**(commit `34a1bfa`、push 済、2026-04-26 06:58)
+- **owner**: Codex A 完了
+- **lane**: A(完了)
+- **ready_for**: -
+- **next_action**: live X 投稿は **PUB-005-B 以降 user 明示 trigger まで保留**(autonomous POST なし)
+- **blocked_by**: -
+- **user_action_required**: なし(live X = user judgment fixed、本 ticket scope 外)
+- **write_scope**: src/x_post_template_candidates.py + src/tools/run_x_post_template_candidates_dry_run.py + tests/test_x_post_template_candidates.py
+- **acceptance**: 4 template_type(quote_clip / fan_reaction_hook / program_memo / small_note)+ 280 chars + URL 含 + history dedup + 7 tests pass
+- **repo_state**: pushed
+- **commit_state**: `34a1bfa`
+- **next_prompt_path**: -
+- **last_commit**: `34a1bfa`(2026-04-26)
+
+## Codex A / B pull rule(2026-04-26 lock)
+
+### Codex A が空いた時
+
+1. 102 board で `lane=A` かつ `status=READY` の最高 priority ticket を pull
+2. 該当 ticket の `next_prompt_path` から prompt を読む
+3. `--full-auto --skip-git-repo-check -C /home/fwns6/code/wordpressyoshilover` で fire
+4. 完了通知 → Claude が §31-A 追認 → Claude push → 102 board 更新
+
+### Codex B が空いた時
+
+1. 102 board で `lane=B` かつ `status=READY` の最高 priority ticket を pull
+2. なければ `lane=-`(任意 lane)で `status=READY` の bounded task(read-only docs / Article Safety / Quality / Tests / Docs)を pull
+3. **Codex A と同 file を同時に触らない**(102 board の `write_scope` で衝突確認)
+4. 持たない: front / .env / secret / Cloud Run env / `RUN_DRAFT_ONLY` / X 投稿
+5. 同様に prompt 読む → fire → §31-A → push → board 更新
+
+### 並走衝突防止
+
+- 102 board の `write_scope` 列で disjoint かどうか確認
+- `src/guarded_publish_evaluator.py` のような共通 hub を 2 lane が同時に触らない(直前 ticket land 待ち)
+- `.git/index.lock` 衝突時は plumbing 3 段 fallback(prompt 標準装備)
+
+## 採番 / alias 運用
+
+- 102 以降は **数字連番**(`<number>-<topic>.md`)
+- 既存 alias(PUB-002-E / PUB-004-D / SPEECH-001 / PUB-005-A2 等)は **維持**(既存 doc リネームしない)
+- 新規 ticket = 102 board に 1 行追加 + `<number>-<topic>.md` 作成 + 既存 alias は cross-ref に書く
+
+## 重要依存
+
+- **105 の前に 104 close 必須**(✓ 達成、`78f965d`)
+- 103 は 105 前に入れるのが望ましい(現 in flight)
+- 106 は 105 後でよい(✓ 既に done、配線は別 ticket)
+- 107 は外部拡散なので最後でよい(✓ done だが live POST は user 判断)
+- **X live 投稿禁止**(PUB-005 lane で user 明示後のみ)
+- **`RUN_DRAFT_ONLY=False` 禁止**
+- **Cloud Run env 変更禁止**
+
+## 次に動かすべき 1 本(2026-04-26 23:30 JST)
+
+**105 dry-run 実行(Claude autonomous)= 全 draft 棚卸し件数表 → user 1 ワード判断**
 
 理由:
-- 3 doc untracked → chat 切れ lost リスク解消
-- A slot 即 fire 可、disjoint(B = 104 src 改修、本便 = doc only)
-- cap reset 維持(現 0 ahead)、軽量
-
-### 続く chain
-
-1. doc commit便完了 + Claude push → A slot 開放
-2. **B: 103 publish-notice cron health check 実装 fire**(Codex A、scope: src/publish_notice_cron_health.py + tools + tests)
-3. 104(B 並走中)完了 → push → B slot 開放
-4. **105 dry-run 実行**(Claude autonomous、PUB-004-A で全 draft 棚卸し、件数表 user 報告)
-5. user `live publish ramp go` 1 ワード → 105 live ramp(burst 3 / daily 10 cap 内)
+- 104 close 済(lineup 重複抑制 land)= 105 前提達成
+- 103(in flight)とは disjoint(105 = 既存 PUB-004-A + B 流用、新規 code なし)
+- A/B 並走と無干渉で実行可(read-only smoke)
+- user 報告後の live ramp 開始判断が今夜 / 明日朝の主線
 
 ## 関連 ticket(別 priority、参考)
 

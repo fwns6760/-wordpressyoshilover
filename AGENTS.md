@@ -6,6 +6,18 @@
 > 現在の正しい役割分担は **Codex = 実装 / テスト / 必要時 deploy**、**Claude Code = 監査 / queue / 起票 / read-only 観測** である。
 > **runtime trigger の親は役割文ではなく `automation.toml` / scheduler 定義で確認する。**
 
+## 実装 Codex の運用ルール(2026-04-26 lock)
+
+- **実装前に `doc/102-ticket-index-and-priority-board.md` を確認する**(現行 dispatch board)
+- assigned ticket の **write_scope / acceptance / 不可触**を守る
+- **102 範囲外の ticket を勝手に実装しない**(他 ticket は Claude が次便として fire する)
+- **`git push` 禁止**(commit までで終わる、push は Claude が外部から実行)
+- **`git add -A` 禁止**(明示 path のみ stage)
+- front / log / env / secrets / `.env` / Cloud Run env / `RUN_DRAFT_ONLY` flip は **絶対に巻き込まない**
+- X / SNS POST / X API call も禁止(本 repo の Codex は WP write までで止まる、X 系は別 lane = PUB-005)
+- `.git/index.lock` 衝突時は plumbing 3 段 fallback(`git write-tree` / `git commit-tree` / `git update-ref`)
+- 本 repo の Codex 2 lane(A / B)分担は 102 board の `lane` 列で確認
+
 > Claude Code 用設計書。PDF「サイトリニューアル要件定義書兼設計書 v1.0 MVP」(2026-04-08) の内容をエージェントが読める形式に変換。
 
 ---

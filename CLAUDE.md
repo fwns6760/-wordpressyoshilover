@@ -7,6 +7,16 @@
 > 内容が競合したら **baseballwordpress 側を優先** してください。
 > **runtime trigger の親は役割文ではなく `automation.toml` / scheduler 定義で確認** してください。
 
+## 現行作業キューの正本(2026-04-26 lock)
+
+- **現行作業キューの正本 = `doc/102-ticket-index-and-priority-board.md`**(本 repo dispatch board)
+- Claude Code は新規作業判断前に **必ず 102 を見る**(priority / status / owner / lane / ready_for / blocked_by)
+- Codex A / Codex B へ fire する時は **102 の priority / lane / ready_for / blocked_by に従う**
+- 102 と個別 ticket doc が矛盾する場合:
+  - **実行順 / status / owner は 102 を優先**
+  - 仕様詳細(scope / acceptance / 不可触 等)は **個別 ticket doc を優先**
+- 採番方針: 102 以降は **数字連番**(`<number>-<topic>.md`)、既存 alias(PUB-002-E / PUB-004-D / SPEECH-001 等)は維持
+
 このリポジトリで Claude Code セッションを開始したら、**まず正本の役割文書を先に読む**。
 
 ## 起動時に必ず読むファイル（順番通り）

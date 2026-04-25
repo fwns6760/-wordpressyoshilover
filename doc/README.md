@@ -5,6 +5,14 @@ AGENTS.md の機能をチケットに分割したもの。
 
 TODOの状態：`【】` 未着手 → `【×】` 完了
 
+## 現行実行キューの正本(2026-04-26 lock)
+
+- **現行作業キュー / 実行順 / Codex A/B dispatch の正本 = [`102-ticket-index-and-priority-board.md`](102-ticket-index-and-priority-board.md)**
+- 本 README の番号順チケット一覧は **歴史的構築順**(001-099 = MVP foundation 系)
+- 102 以降は **実行 dispatch board** = 現在の作業キュー
+- Claude / Codex は実行判断時にまず **102 を見る**
+- 102 と本 README が矛盾する場合、**実行順は 102 を優先**
+
 ---
 
 ## チケット一覧

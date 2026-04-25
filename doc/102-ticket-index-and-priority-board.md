@@ -116,8 +116,8 @@ If this file conflicts with an individual ticket doc:
 - **owner**: Claude Code(orchestration)
 - **lane**: Claude
 - **ready_for**: live ramp = user judgment 待ち / dry-run = 完了済
-- **next_action**: present Red reason top 5 to user → user 1 ワード判断(go / no-go / retune filter)
-- **blocked_by**: user ramp decision after dry-run result
+- **next_action**: run/refresh 123 readiness guard → present Red reason top 5 + readiness classification → user 1 ワード判断(go / no-go / retune filter)
+- **blocked_by**: all-red dry-run result + user ramp decision + no PUB-004 auto-publish cron line
 - **user_action_required**: **YES**(live publish ramp の go / no-go / filter retune の最終判断)
 - **write_scope**: none for dry-run(完了済); live ramp は PUB-004-B gates 経由のみ、user go 後
 - **acceptance**: total draft count + Green/Yellow/Red/cleanup counts + top refusal reasons + lineup effect が user に提示済
@@ -348,6 +348,26 @@ If this file conflicts with an individual ticket doc:
 - **source_of_truth**: `docs/handoff/ad_policy_memo_post_launch.md`(A/B/C 方針正本)
 - **parent**: 087(器 = AdSense slot 枠 既設)
 
+### 118 pub004-red-reason-decision-pack
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: REVIEW_NEEDED
+- **owner**: Claude Code
+- **lane**: A / Claude orchestration
+- **ready_for**: Claude
+- **next_action**: present or refresh decision pack from `/tmp/pub004d/full_eval.json`; do not retune filters here
+- **blocked_by**: none for read-only summary; live ramp remains blocked by 105 / 123
+- **user_action_required**: none for summary generation; live ramp decision remains user boundary
+- **write_scope**: report/doc only; no src changes required
+- **acceptance**: Red top reasons, representative post_ids, absolute Red, cleanup-rescuable candidates, and next action are visible
+- **repo_state**: doc exists
+- **commit_state**: pending 118/123 sync
+- **next_prompt_path**: -
+- **last_commit**: -
+- **artifact**: `/tmp/pub004d/decision_pack.json`
+- **parent**: 105 / PUB-004-D
+
 ### 119 x-post-eligibility-evaluator
 
 - **alias**: PUB-005-A
@@ -424,6 +444,25 @@ If this file conflicts with an individual ticket doc:
 - **last_commit**: current X ticket sync commit
 - **parent**: 114 / PUB-005
 
+### 123 pub004-auto-publish-readiness-and-regression-guard
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: READY
+- **owner**: Claude Code / Codex A if implementation is needed
+- **lane**: A / Claude orchestration
+- **ready_for**: A / Claude
+- **next_action**: classify current no-auto-publish state without live publish; protect against filter/cron regressions
+- **blocked_by**: none for read-only readiness; live publish remains blocked by 105 user decision
+- **user_action_required**: none for readiness check; yes for any live publish or cron activation
+- **write_scope**: `doc/123-pub004-auto-publish-readiness-and-regression-guard.md` / optional read-only report only
+- **acceptance**: current state classified, guarded publish tests pass, no cron activation, no WP write, no filter retune
+- **repo_state**: doc exists
+- **commit_state**: pending 118/123 sync
+- **next_prompt_path**: create at fire time if Codex is used
+- **last_commit**: -
+- **parent**: 105 / PUB-004-D
+
 ## lane inventory rule
 
 Goal:
@@ -443,7 +482,7 @@ Current inventory:
 
 | lane | READY count | tickets |
 |---|---:|---|
-| A | 0 direct implementation tickets | use 105 Claude orchestration, then replenish A if needed |
+| A | 1 | 123 |
 | B | 6 | 108 / 109 / 110 / 111 / 112 / 119 |
 | either | 0 unblocked live tickets | 114 umbrella parked; 120 parked until 119 close |
 
@@ -464,9 +503,10 @@ Current inventory:
 
 ## next actions
 
-- **A slot next**: 105 dry-run / dry-run result presentation. If 105 is parked after user review, replenish A with a new ops/doc/test ticket.
+- **A slot next**: 123 readiness/regression guard for no-auto-publish state; then 105 decision presentation.
 - **B slot next**: 119 first for X unlock path, otherwise 108 or 112.
 - **Live 105 ramp**: only after 105 dry-run result is shown and user explicitly says go.
+- **PUB-004-C auto-publish cron**: do not add until 123 says ready and at least one safe live burst succeeds.
 - **Do not advance 113 / 115 / 116 / 121** without user action or external precondition.
 - **Do not fire 114 directly**; use 119 -> 120 -> 121 -> 122.
 
@@ -516,7 +556,8 @@ git add -A禁止。
 - `git diff -- doc/102-ticket-index-and-priority-board.md`
 - 104 is only represented as `CLOSED`; no old "104 wait" next-action remains.
 - 105 live ramp remains user-gated after the all-red dry-run result.
-- 108-122 are present.
+- 108-123 are present.
+- 123 is READY for no-auto-publish readiness/regression guard.
 - 119 is READY.
 - 121 is BLOCKED_USER.
 - 114 is umbrella/PARKED and not a direct fire target.
@@ -526,6 +567,8 @@ git add -A禁止。
 
 - `doc/103-publish-notice-cron-health-check.md`
 - `doc/PUB-004-D-all-eligible-draft-backlog-publish-ramp.md`
+- `doc/118-pub004-red-reason-decision-pack.md`
+- `doc/123-pub004-auto-publish-readiness-and-regression-guard.md`
 - `doc/PUB-002-B-missing-primary-source-publish-blocker-reduction.md`
 - `doc/PUB-002-C-subtype-unresolved-publish-blocker-reduction.md`
 - `doc/PUB-002-D-long-body-draft-compression-or-exclusion-policy.md`

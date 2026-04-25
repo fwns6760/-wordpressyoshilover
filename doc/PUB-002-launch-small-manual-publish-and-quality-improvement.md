@@ -10,6 +10,19 @@
 
 WordPress publish と X / SNS POST は **lane 分離**(同 draft でも厳しさ違う)。判定 contract は PUB-002-A、適用厳しさは PUB-004 / PUB-005 で別管理。
 
+## 現運用(2026-04-25 21:55 以降、本 ticket は **親 runbook**)
+
+本 ticket は **親 runbook**(段階公開フェーズの起点)。
+**現在の実行 ticket は PUB-004 / PUB-005**。
+
+| 適用先 | 現運用 ticket | 主要パラメータ |
+|---|---|---|
+| **WordPress publish** | **PUB-004** | daily cap 10 / burst cap 3 / Red のみ refuse / Green+Yellow publish / user 確認原則不要 |
+| **X / SNS POST** | **PUB-005** | Green only + 追加 X-side strict / user 確認 fixed / autonomous POST なし |
+
+判定 contract = `PUB-002-A`(WP / X で適用厳しさ別)。
+本 ticket 内の `publish_volume` / `workflow` / `user_interface` 節は **旧手動運用フェーズの記録**(参考、現在の運用は PUB-004 / PUB-005 を見ること)。
+
 ## priority
 
 P0.5 / P1 HIGH(本日 publish 8 件 達成、今後 PUB-004 へ移行)
@@ -53,21 +66,26 @@ READY after 088 smoke success(2026-04-25 10:15 JST 達成)
 - 095 publish-notice cron activation は 088 + 093 後のみ
 - `RUN_DRAFT_ONLY` は維持(自動公開はまだしない)
 
-## purpose
+## purpose(初版、2026-04-25 12:00 起票時点)
 
 YOSHILOVER を段階公開へ進める。
-一括公開や自動公開ではなく、1 記事ずつ選び、良い記事だけを少量手動公開する。
+**(初版当時)**「一括公開や自動公開ではなく、1 記事ずつ選び、良い記事だけを少量手動公開する」。
 4/17 事故と同質のリスクを避けながら、公開運用を止めずに文章品質を上げる。
 
-## launch_priority_order
+→ **現在(2026-04-25 21:55 以降)**: 「自動公開ではなく」「1 記事ずつ」は **旧フェーズの方針**。
+「Red 以外は autonomous WP publish(PUB-004、daily 10 / burst 3)」「X / SNS は Green only + user 確認(PUB-005)」へ移行済。
 
-1. **PUB-002**: 少量手動公開と記事品質改善レーン
-2. HALLUC-LANE-002: Gemini 実検出の追加
-3. 093: cron tick recovery
-4. 095: publish-notice cron activation
-5. 073/074/075 dotenv load 横展開
-6. `RUN_DRAFT_ONLY=False` 検討
-7. front / plugin 改修
+## launch_priority_order(2026-04-25 21:55 以降)
+
+1. **PUB-004 guarded-wordpress-publish-runner**(WP publish 主線、Red 以外 publish、daily 10 / burst 3、autonomous)
+2. **PUB-005 x-sns-post-gate**(X / SNS lane、Green only + user 確認 fixed、本 ticket 完了は doc-first まで)
+3. HALLUC-LANE-002: Gemini 実検出の追加(LLM 判定で G3/G7/G8 完全 verify)
+4. PUB-002-B / C / D: 品質改善(missing-source / subtype-unresolved / long-body)、PUB-004 安定後
+5. 093: cron tick recovery(user op = app restart)
+6. 095-E: WSL cron reboot resilience(user op = PC reboot)
+7. 073/074/075 dotenv load 横展開(各 sender live 化時)
+8. `RUN_DRAFT_ONLY=False` 検討(最後)
+9. front / plugin 改修(別 Claude owner)
 
 補足:
 - 093 は重要だが、手動公開開始の絶対ブロッカーではない
@@ -119,7 +137,14 @@ YOSHILOVER を段階公開へ進める。
 - 試合結果 / 選手状態 / 故障 / 登録抹消が怪しい
 - 4/17 事故と同質リスク
 
-## workflow
+---
+
+## 旧手動運用 (PUB-004 移行前、2026-04-25 21:55 以前、参考用)
+
+以下 3 節(`workflow` / `publish_volume` / `user_interface`)は **旧フェーズの記録**。
+現在の WP publish 運用は **PUB-004**、X / SNS POST 運用は **PUB-005** を見ること。
+
+### workflow(旧、参考)
 
 1. Claude が次の公開候補を 1 本だけ選ぶ
 2. HALLUC-LANE-001 extract で title / body / source を確認
@@ -132,36 +157,36 @@ YOSHILOVER を段階公開へ進める。
 9. publish-notice メール着信を確認
 10. 気になった悪い型を記録し、template / prompt 改善へ回す
 
-## publish_volume
+→ 現在は **PUB-004-A dry-run evaluator** + **PUB-004-B guarded live publish** が autonomous で同 flow をバッチ処理(Step 1-9 を Claude / runner 自動化、Step 10 = Yellow 改善ログを `logs/guarded_publish_yellow_log.jsonl` に記録)。
 
-- HALLUC-LANE-002 までは 1 日 1 本、多くても 3 本まで
-- 376 drafts 一括 publish 禁止
-- 自動 publish 禁止
-- `RUN_DRAFT_ONLY=False` 禁止
+### publish_volume(旧、参考)
 
-## user_interface
+- (旧) HALLUC-LANE-002 までは 1 日 1 本、多くても 3 本まで
+- (旧) 376 drafts 一括 publish 禁止
+- (旧) 自動 publish 禁止
+- (旧) `RUN_DRAFT_ONLY=False` 禁止
 
-user に広く聞かない。
-候補を複数並べて選ばせない。
-Claude が候補を 1 本に絞り、user には以下だけ聞く。
+→ 現在は **PUB-004 daily cap 10 / burst cap 3 / mail burst 5 通超で分割 / Red のみ refuse**。
+`RUN_DRAFT_ONLY=False` 禁止 / 376 drafts 一括禁止 は引き続き有効。
 
-```text
-次の公開候補は post_id=XXXXX です。
-判定: Green / Yellow / Red
-理由: <1-3行>
-公開するなら publish、止めるなら hold と返してください。
-```
+### user_interface(旧、参考)
 
-(本 ticket 受領時の user 提供 template、user_interface 節は上記までで原文準拠)
+(旧) user に候補 1 本提示 + `publish` / `hold` 1 ワード判断。
 
-## acceptance(本 ticket、launch runbook)
+→ 現在は **PUB-004 で user 確認原則不要**(Red 以外 autonomous publish)。
+user 判断が必要なのは Red に近い危険記事 publish 時のみ(本 runner は Red を refuse するので通常発生しない)。
+**X / SNS POST だけは PUB-005 で user 確認 fixed**(approve / reject 1 ワード)。
 
-1. PUB-002 が公開開始の主線として明記され、093 / 095 / HALLUC-LANE-002 / front / plugin より優先順位が上
-2. 1 日の publish_volume(1〜3 本)が固定
-3. workflow 10 step が固定
-4. article_judgment Green / Yellow / Red の 3 段階基準が固定
-5. user_interface が「候補 1 本 + Green/Yellow/Red 判定 + 1 ワード返答」に固定
-6. 4/17 事故と同質リスクを Red として明示禁止
+## acceptance(本 ticket、親 runbook)
+
+(2026-04-25 21:55 update)本 ticket は **親 runbook として完了済**、現在の実行 ticket は PUB-004 / PUB-005。
+
+1. ✓ PUB-002 が公開開始の起点 ticket として完了、後継 PUB-004 / PUB-005 起票済
+2. ✓ 旧手動運用フェーズ(1〜3 本 / 日)は本日 publish 8 件達成で次フェーズへ移行
+3. ✓ workflow 10 step は PUB-004-A/B が autonomous 化
+4. ✓ article_judgment Green / Yellow / Red は PUB-002-A に正本化、適用厳しさは PUB-004 / PUB-005 で別管理
+5. ✓ user_interface は PUB-004 で「原則不要」、PUB-005 で「user 確認 fixed」に分離
+6. ✓ 4/17 事故同質リスクは PUB-002-A R8 として固定、PUB-004 で refuse
 
 ## stop 条件
 

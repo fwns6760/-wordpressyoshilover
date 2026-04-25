@@ -112,17 +112,56 @@ X / SNS への POST は本 ticket scope **外**(PUB-005 で別 lane 管理)。
 - LLM call **なし**(pure Python、既存 071 validator 流用)
 - 既存 `src/pre_publish_fact_check/extractor.py` の input 抽出経路を再利用
 
-#### LLM 不在の暫定判定(HALLUC-LANE-002 待ち)
+#### G3/G7/G8 の rule-based 部分検査 + 限界明記(2026-04-25 22:30 lock)
 
-PUB-002-A の Green 10 条件のうち、本来 LLM 判定領域:
-- **G3**(title-body 主語・事象 一致):071 validator で部分カバー、完全な意味整合は LLM 必要
-- **G7**(数字 source 矛盾なし):打率異常値(`.400` 超)等の regex check のみ、source 一次照合は LLM 必要
-- **G8**(source にない断定なし):body 内 named-fact と source_block / source_urls の cross-check は heuristic のみ
+「assumed pass」ではなく、**できる範囲で検査し、限界を明記**する方針。
+完全 verify は HALLUC-LANE-002(品質強化レーン、別 ticket)で後追い統合。
 
-→ **PUB-004-A は G3/G7/G8 を `assumed pass` として処理**。
-   出力 JSON の Green entry に `needs_hallucinate_re_evaluation: true` flag を付け、HALLUC-LANE-002 land 後に整合 re-evaluate する。
+| 項目 | 071 既存 | PUB-004-A で追加 | 限界(HALLUC-LANE-002 待ち) |
+|---|---|---|---|
+| **G3** title-body | SUBJECT_ABSENT / EVENT_DIVERGE / MULTIPLE_NUCLEI | title 主語 token 抽出 + body 先頭 200 chars 出現 check | 意味整合(同義語 / 言い換え) |
+| **G7** 数字 source 矛盾 | なし | 異常値 regex(`.400+` 打率 / 試合スコア > 99 / 異常な戦数 等)+ 数字出現箇所 ±50 chars source_block 近傍 token check | 一次照合(実値 vs source 記載値) |
+| **G8** source 不在断定 | なし | body 内 player name 抽出 + source_urls/source_block の token 覆い率 ≥ X% 判定 | 文意レベルの「source にない断定」検出 |
 
 その他 Green 条件(G1 featured / G2 source URL / G4 fact-first title / G5 speculative なし / G6 冒頭 出典 / G9 noindex / G10 X 配線)は pure Python で完全判定可能。
+
+PUB-004-A 出力 JSON の Green/Yellow entry に `needs_hallucinate_re_evaluation: true` flag を付け、HALLUC-LANE-002 land 後に再 evaluate。
+
+#### 追加検査(本文構造 + cleanup 候補、2026-04-25 22:30 lock)
+
+PUB-002-A R2 (title-body mismatch) / R8 (4/17 同質) に加えて、本文構造系を別判定:
+
+| 検出名 | 検査内容 | 既定扱い |
+|---|---|---|
+| `heading_sentence_as_h3` | H3 が 30 chars 以上 + 文末 keyword 含 + 句読点「。」or 主述判定 + 数字 / 選手名含有 = 本文文が H3 化 | **`auto_cleanup_candidate`**(Red ではない、cleanup で p に戻す) |
+| `dev_log_contamination` | 連続 5 行以上に dev keyword 2 種 + 含む / `<pre>` `<code>` block / Codex / Claude / Traceback 等含有 | **`auto_cleanup_candidate`**(削除明確なら publish 可、曖昧なら hold)|
+| `weird_heading_label` | ラベル H3 だが内容が合っていない(後続段落と subject 不一致) | **Yellow**(改善ログ、publish OK) |
+| `site_component_mixed_into_body` | `💬 〜?` `【関連記事】` 等の site 部品が本文に混入 | 末尾 30% 集中 = **Yellow** / 中盤 30-70% 範囲 = **Red** |
+
+**heading_sentence_as_h3 検出条件(doc 固定)**:
+- H3 が 30 chars 以上
+- 以下の文末 keyword いずれか含む: `〜した` / `〜している` / `〜していた` / `〜と語った` / `〜と話した` / `〜を確認した` / `〜を記録した` / `〜と発表した` / `〜となった` / `〜を達成した`
+- または H3 内に句読点 `。` 含有
+- かつ 数字 or 選手名 含有
+- かつ 見出しではなく本文 1 文に見える(主語+述語が成立)
+
+**短いラベル型 H3 は許容**(`試合結果` `スタメン` `出典` `関連情報` `ファンの声` `コメント` `2軍戦` `今日のポイント` 等、ラベルと中身が合っていない場合のみ `weird_heading_label` Yellow)。
+
+**dev_log_contamination 検出 pattern(doc 固定)**:
+- `Traceback (most recent call last)` / `^[a-zA-Z_]+Error: `
+- `python3 -m` / `git diff` / `git log` / `git push`
+- `wsl.exe` / `cmd /c` / `bash -lc`
+- `<pre>` / `<code>` block 全文
+- `--full-auto` / `--skip-git-repo-check`
+- `commit_hash` / `task_id` / `bg_id` / `bg_`(以降 8 桁英数)
+- `[scan] emitted=` / `[result] post_id=` / `status=sent` / `status=suppressed`
+- `tokens used` / `changed_files` / `open_questions`
+- 上記 pattern いずれかが連続 5 行以上に **2 種以上**含まれる block を検出
+
+**site_component_mixed_into_body 中盤判定**:
+- 出現位置 = prose 文字数ベースで判定
+- 末尾 30%(全体の後ろ 30% 範囲)集中 → Yellow(削除しても本文成立)
+- 中盤 30-70% 範囲に存在 → Red(文脈分断)
 
 #### CLI
 ```
@@ -141,16 +180,51 @@ python3 -m src.tools.run_guarded_publish_evaluator \
 
 ---
 
-### PUB-004-B: guarded live publish(最大 3 件 / 1 回、最大 10 件 / 日、Green + Yellow publish / Red refuse)
+### PUB-004-B: guarded live publish(最大 3 件 / 1 回、最大 10 件 / 日、Green + Yellow publish / Red refuse、cleanup 込)
 
 #### scope
 - 新規 file: `src/tools/run_guarded_publish.py`
 - input: PUB-004-A evaluator output JSON(またはその場で再 evaluate)
-- 各 Green candidate に対し **PUB-003 contract** を流用:
-  1. preflight(status=draft, non-empty)
-  2. backup(`backups/wp_publish/YYYY-MM-DD/post_<id>_<UTCISO>.json`)
-  3. WP REST `update_post_status('publish')`
-  4. postcheck(REST status=publish + public URL HTTP 200)
+- 各 Green / Yellow candidate に対し **PUB-004 専用 publish-with-cleanup contract**(PUB-003 とは別契約、PUB-003 は status flip のみの最小契約として保持):
+  1. **preflight**(status=draft, non-empty title / content)
+  2. **backup**(cleanup 前 1 本、`backups/wp_publish/YYYY-MM-DD/post_<id>_<UTCISO>.json`、cleanup 込みで rollback 可能)
+  3. **cleanup**(必要時のみ、下記 「cleanup 仕様」 参照)
+  4. **cleanup 後の本文 check**(空 / 核崩れ / source 表記消失 = abort、publish しない)
+  5. **WP REST publish**(`update_post_fields(post_id, status='publish', content=cleaned_html)` または content 不変の場合は `update_post_status`)
+  6. **postcheck**(REST status=publish + public URL HTTP 200)
+  7. **log 記録**:
+     - `cleanup_log`: cleanup 内容の before/after diff
+     - `yellow_log`: Yellow 判定 + 改善対象記録
+     - `history_log`: publish attempt 全件(成功/失敗)
+
+#### cleanup 仕様(PUB-004 専用 contract、PUB-003 と分離)
+
+cleanup 対象(PUB-004-A で `auto_cleanup_candidate` 判定された場合のみ):
+- **`heading_sentence_as_h3`** → 該当 H3 を `<p>` に変換(タグ置換のみ、内容は不変)
+- **`dev_log_contamination`** → 該当 block を削除(削除明確な場合のみ)
+- 削除が曖昧(dev keyword が散在 / コードブロック境界不明) → cleanup せず hold
+
+cleanup 後 abort 条件(publish しない):
+- 本文が空(prose < 100 chars)
+- 記事核が崩れる(title の主語 token が body から消失)
+- source 表記消失(source_block / source_urls が cleanup で削除されてしまう)
+
+cleanup 安全装置:
+- backup 必須(cleanup 前)、backup 失敗で cleanup 中止
+- diff log 必須(cleanup 内容の before/after を `logs/guarded_publish_cleanup_log.jsonl` に記録)
+- 1 invocation 内で max 3 件 cleanup、それ以上は次 invocation へ持ち越し
+
+#### cleanup_log format
+
+```jsonl
+{"post_id": 63278, "ts": "2026-04-26T08:00:00+09:00", "cleanups": [{"type": "heading_sentence_as_h3", "before": "<h3>...</h3>", "after": "<p>...</p>", "reason": "30+ chars + 文末 keyword + 数字含有"}, {"type": "dev_log_contamination", "before": "Traceback...", "after": "(deleted)", "reason": "連続 5 行 dev keyword 2 種"}], "publish_link": "https://yoshilover.com/63278"}
+```
+
+#### original PUB-003 contract との関係
+
+- **PUB-003**: 単発 publish、status flip のみ、content 不変、cleanup なし(最小契約)
+- **PUB-004 publish-with-cleanup**: batch publish、status flip + content update + cleanup 副作用、本 ticket 専用契約
+- 両者は併存(PUB-003 は手動 publish 用に保持、PUB-004 は autonomous batch 用)
 - burst cap: 1 invocation で **max 3 件**
 - daily cap: history file `logs/guarded_publish_history.jsonl` で **当日 publish 数を tally、JST 0:00 reset**
 - daily cap **10 件超過で stop**(skip 残り、refuse log)

@@ -9,6 +9,19 @@
 - consolidates: PUB-002 / 085(title style)/ 040(repair playbook)/ 071(title-body-nucleus-validator)/ 078(nucleus-ledger-adapter)/ 079(nucleus-ledger-emitter)
 - created: 2026-04-25
 - updated: 2026-04-25 21:55(WP publish vs X/SNS で判定厳しさを変える明記、user policy lock)
+- updated: 2026-04-25 22:30(title-body / source-body の深い矛盾検査は HALLUC-LANE-002 で完全 verify、PUB-004-A で rule-based 部分検査 + 限界明記)
+
+## title-body mismatch / source-body contradiction の検査現状(2026-04-25 22:30 lock)
+
+R2(title-body mismatch)/ G3(主語・事象 一致)/ G7(数字 source 矛盾なし)/ G8(source にない断定なし)の検査は **2 段階構成**:
+
+| 段階 | 担当 | 検査範囲 | 限界 |
+|---|---|---|---|
+| **Phase 1**(現状、PUB-004-A) | 071/078/079 + rule-based | SUBJECT_ABSENT / EVENT_DIVERGE / MULTIPLE_NUCLEI / 異常値 regex / token 覆い率 | 意味整合 / 一次照合 / 文意レベル不足 |
+| **Phase 2**(後続、HALLUC-LANE-002) | Gemini Flash adapter | 完全 verify(意味整合 + 一次照合 + unsupported claim 文意検出) | API 課金、user judgment 必要 |
+
+PUB-004-A は Phase 1 で運用開始、Phase 2 は **品質強化レーン**(PUB-004 の前提**ではない**)として後追い統合。
+詳細は `doc/HALLUC-LANE-002-llm-based-fact-check-augmentation.md`。
 
 ## purpose
 

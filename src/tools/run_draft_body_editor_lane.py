@@ -878,6 +878,7 @@ def _run_fallback_controller(
         "dry_run": bool(dry_run),
         "provider": result.provider,
         "fallback_used": result.fallback_used,
+        "wp_write_allowed": result.wp_write_allowed,
     }, "", new_body
 
 
@@ -1475,29 +1476,33 @@ def main(argv: Sequence[str] | None = None) -> int:
                 break
 
             put_status = "dry_run"
+            wp_write_allowed = bool(exec_payload.get("wp_write_allowed", True))
             if not args.dry_run:
-                try:
-                    _put_content_only(wp, candidate["post_id"], new_body)
-                    put_status = "ok"
-                except Exception as e:
-                    put_fail_count += 1
-                    _append_skip_outcome(per_post_outcomes, process_skip_counter, post_id=candidate["post_id"], reason="put_fail")
-                    _append_session_log(
-                        now,
-                        {
-                            "event": "put_fail",
-                            "post_id": candidate["post_id"],
-                            "provider": args.provider,
-                            "subtype": candidate["subtype"],
-                            "fail_axes": candidate["fail_axes"],
-                            "put_status": f"error:{type(e).__name__}",
-                            "violation": str(e),
-                        },
-                    )
-                    if put_fail_count >= 2:
-                        stop_reason = "put_fail"
-                        break
-                    continue
+                if not wp_write_allowed:
+                    put_status = "shadow_only"
+                else:
+                    try:
+                        _put_content_only(wp, candidate["post_id"], new_body)
+                        put_status = "ok"
+                    except Exception as e:
+                        put_fail_count += 1
+                        _append_skip_outcome(per_post_outcomes, process_skip_counter, post_id=candidate["post_id"], reason="put_fail")
+                        _append_session_log(
+                            now,
+                            {
+                                "event": "put_fail",
+                                "post_id": candidate["post_id"],
+                                "provider": args.provider,
+                                "subtype": candidate["subtype"],
+                                "fail_axes": candidate["fail_axes"],
+                                "put_status": f"error:{type(e).__name__}",
+                                "violation": str(e),
+                            },
+                        )
+                        if put_fail_count >= 2:
+                            stop_reason = "put_fail"
+                            break
+                        continue
 
             put_ok += 1
             per_post_outcomes.append({
@@ -1508,7 +1513,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             _append_session_log(
                 now,
                 {
-                    "event": "put_ok" if put_status == "ok" else "dry_run",
+                    "event": "put_ok" if put_status == "ok" else ("shadow_only" if put_status == "shadow_only" else "dry_run"),
                     "post_id": candidate["post_id"],
                     "provider": exec_payload.get("provider"),
                     "fallback_used": exec_payload.get("fallback_used"),

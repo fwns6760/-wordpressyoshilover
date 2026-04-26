@@ -6,6 +6,7 @@ import json
 import os
 import random
 import socket
+import subprocess
 import time
 import urllib.error
 from dataclasses import dataclass
@@ -14,6 +15,7 @@ from typing import Any
 from uuid import uuid4
 
 from src import repair_provider_ledger
+from src.codex_cli_shadow import CodexAuthError, CodexSchemaError, call_codex
 from src.tools import draft_body_editor
 
 
@@ -45,9 +47,16 @@ class RepairResult:
     fallback_used: bool
     body_text: str | None
     failure_chain: list[FailureRecord]
+    wp_write_allowed: bool = True
 
 
 def classify_error(exception: BaseException, http_code: int | None = None) -> str:
+    if isinstance(exception, CodexAuthError):
+        return "auth_fail_401"
+    if isinstance(exception, CodexSchemaError):
+        return "schema_invalid"
+    if isinstance(exception, subprocess.TimeoutExpired):
+        return "timeout"
     code = http_code
     if code is None and isinstance(exception, urllib.error.HTTPError):
         code = exception.code
@@ -139,10 +148,6 @@ def _call_stub_provider(provider_name: str, prompt: str, api_key: str) -> tuple[
     _raise_stub_error(provider_name, mode)
 
 
-def call_codex_stub(prompt: str, api_key: str) -> tuple[str, dict[str, Any]]:
-    return _call_stub_provider("codex", prompt, api_key)
-
-
 def call_openai_api_stub(prompt: str, api_key: str) -> tuple[str, dict[str, Any]]:
     return _call_stub_provider("openai_api", prompt, api_key)
 
@@ -155,10 +160,15 @@ def call_provider(provider_name: str, prompt: str, api_key: str) -> tuple[str, d
             "raw_response_size": len(body_text.encode("utf-8")),
         }
     if provider_name == "codex":
-        return call_codex_stub(prompt, api_key)
+        del api_key
+        return call_codex(prompt)
     if provider_name == "openai_api":
         return call_openai_api_stub(prompt, api_key)
     raise ValueError(f"unsupported provider: {provider_name!r}")
+
+
+def _wp_write_allowed(provider_name: str) -> bool:
+    return provider_name != "codex"
 
 
 class RepairFallbackController:
@@ -188,6 +198,7 @@ class RepairFallbackController:
         )
         if primary_success:
             body_text, meta, started_at, finished_at, latency_ms = primary_payload
+            wp_write_allowed = _wp_write_allowed(self.primary_provider)
             self._write_entry(
                 run_id=run_id,
                 provider=self.primary_provider,
@@ -196,7 +207,7 @@ class RepairFallbackController:
                 artifact_uri=artifact_uri,
                 current_body=body_before,
                 body_text=body_text,
-                status="success",
+                status="success" if wp_write_allowed else "shadow_only",
                 error_code=None,
                 started_at=started_at,
                 finished_at=finished_at,
@@ -204,13 +215,14 @@ class RepairFallbackController:
                 meta=meta,
                 fallback_from=None,
                 fallback_reason=None,
-                quality_flags=[],
+                quality_flags=[] if wp_write_allowed else ["shadow_only"],
             )
             return RepairResult(
                 provider=self.primary_provider,
                 fallback_used=False,
                 body_text=body_text,
                 failure_chain=[],
+                wp_write_allowed=wp_write_allowed,
             )
 
         primary_exc, primary_started_at, primary_finished_at, primary_latency_ms = primary_payload
@@ -246,6 +258,10 @@ class RepairFallbackController:
         )
         if fallback_success:
             body_text, meta, started_at, finished_at, latency_ms = fallback_payload
+            wp_write_allowed = _wp_write_allowed(self.fallback_provider)
+            quality_flags = ["fallback_used"]
+            if not wp_write_allowed:
+                quality_flags.append("shadow_only")
             self._write_entry(
                 run_id=run_id,
                 provider=self.fallback_provider,
@@ -254,7 +270,7 @@ class RepairFallbackController:
                 artifact_uri=artifact_uri,
                 current_body=body_before,
                 body_text=body_text,
-                status="success",
+                status="success" if wp_write_allowed else "shadow_only",
                 error_code=None,
                 started_at=started_at,
                 finished_at=finished_at,
@@ -262,13 +278,14 @@ class RepairFallbackController:
                 meta=meta,
                 fallback_from=self.primary_provider,
                 fallback_reason=primary_error_class,
-                quality_flags=["fallback_used"],
+                quality_flags=quality_flags,
             )
             return RepairResult(
                 provider=self.fallback_provider,
                 fallback_used=True,
                 body_text=body_text,
                 failure_chain=[primary_failure],
+                wp_write_allowed=wp_write_allowed,
             )
 
         fallback_exc, fallback_started_at, fallback_finished_at, fallback_latency_ms = fallback_payload
@@ -302,6 +319,7 @@ class RepairFallbackController:
             fallback_used=True,
             body_text=None,
             failure_chain=[primary_failure, fallback_failure],
+            wp_write_allowed=_wp_write_allowed(self.fallback_provider),
         )
 
     def _attempt_provider(
@@ -410,7 +428,6 @@ __all__ = [
     "FailureRecord",
     "RepairFallbackController",
     "RepairResult",
-    "call_codex_stub",
     "call_openai_api_stub",
     "call_provider",
     "classify_error",

@@ -757,6 +757,7 @@ class TestLaneMain(unittest.TestCase):
                         latency_ms=8000,
                     )
                 ],
+                wp_write_allowed=True,
             )
             wp = _FakeWP()
             with patch(
@@ -782,6 +783,44 @@ class TestLaneMain(unittest.TestCase):
         self.assertEqual(payload["put_ok"], 1)
         self.assertEqual(payload["per_post_outcomes"], [
             {"post_id": 882, "verdict": "edited", "edited": "ok"}
+        ])
+
+    def test_provider_fallback_controller_codex_shadow_only_skips_wp_put(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            queue_path = Path(tmpdir) / "repair_queue.jsonl"
+            queue_post = _make_post(883, modified="2026-04-20T08:00:00+09:00")
+            _write_queue_file(queue_path, queue_post)
+            controller_instance = Mock()
+            controller_instance.execute.return_value = lane.repair_fallback_controller.RepairResult(
+                provider="codex",
+                fallback_used=False,
+                body_text=SUCCESS_BODY,
+                failure_chain=[],
+                wp_write_allowed=False,
+            )
+            wp = _FakeWP()
+            with patch(
+                "src.tools.run_draft_body_editor_lane.repair_fallback_controller.RepairFallbackController",
+                return_value=controller_instance,
+            ):
+                code, stdout, _, wp, _, editor_mock = _run_main(
+                    [
+                        "--now-iso", "2026-04-20T10:00:00+09:00",
+                        "--queue-path", str(queue_path),
+                        "--provider", "codex",
+                    ],
+                    wp=wp,
+                    log_root=Path(tmpdir) / "lane_logs",
+                )
+
+        self.assertEqual(code, 0)
+        self.assertFalse(editor_mock.called)
+        controller_instance.execute.assert_called_once()
+        self.assertEqual(wp.put_calls, [])
+        payload = json.loads(stdout.strip())
+        self.assertEqual(payload["put_ok"], 1)
+        self.assertEqual(payload["per_post_outcomes"], [
+            {"post_id": 883, "verdict": "edited", "edited": "shadow_only"}
         ])
 
     def test_put_fail_twice_stops(self):

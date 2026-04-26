@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 import urllib.error
@@ -44,7 +45,7 @@ class RepairFallbackControllerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             ledger_path = Path(tmpdir) / "repair-ledger.jsonl"
             writer = repair_provider_ledger.JsonlLedgerWriter(ledger_path)
-            fake_meta = {"model": "codex-stub", "raw_response_size": len(SUCCESS_BODY.encode("utf-8"))}
+            fake_meta = {"model": "chatgpt-pro", "raw_response_size": len(SUCCESS_BODY.encode("utf-8"))}
             with patch(
                 "src.repair_fallback_controller.call_provider",
                 return_value=(SUCCESS_BODY, fake_meta),
@@ -61,9 +62,10 @@ class RepairFallbackControllerTests(unittest.TestCase):
         self.assertFalse(result.fallback_used)
         self.assertEqual(result.body_text, SUCCESS_BODY)
         self.assertEqual(result.failure_chain, [])
+        self.assertFalse(result.wp_write_allowed)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["provider"], "codex")
-        self.assertEqual(rows[0]["status"], "success")
+        self.assertEqual(rows[0]["status"], "shadow_only")
         self.assertIsNone(rows[0]["provider_meta"]["fallback_from"])
         self.assertIsNone(rows[0]["error_code"])
 
@@ -125,6 +127,7 @@ class RepairFallbackControllerTests(unittest.TestCase):
                 self.assertEqual(result.body_text, SUCCESS_BODY)
                 self.assertEqual(len(result.failure_chain), 1)
                 self.assertEqual(result.failure_chain[0].error_class, expected_class)
+                self.assertTrue(result.wp_write_allowed)
                 self.assertEqual(len(rows), 2)
                 self.assertEqual(rows[0]["provider"], "codex")
                 self.assertEqual(rows[0]["status"], "failed")
@@ -162,6 +165,7 @@ class RepairFallbackControllerTests(unittest.TestCase):
         self.assertTrue(result.fallback_used)
         self.assertIsNone(result.body_text)
         self.assertEqual([item.error_class for item in result.failure_chain], ["rate_limit_429", "network_error"])
+        self.assertTrue(result.wp_write_allowed)
         self.assertEqual(len(rows), 2)
         self.assertEqual([row["status"] for row in rows], ["failed", "failed"])
         self.assertEqual(rows[1]["provider_meta"]["fallback_from"], "codex")
@@ -169,12 +173,8 @@ class RepairFallbackControllerTests(unittest.TestCase):
 
     def test_classify_error_covers_all_six_classes(self):
         cases = [
-            (TimeoutError("slow"), None, "timeout"),
-            (
-                urllib.error.HTTPError("https://stub.invalid", 401, "Unauthorized", hdrs=None, fp=None),
-                None,
-                "auth_fail_401",
-            ),
+            (subprocess.TimeoutExpired(cmd="codex", timeout=120), None, "timeout"),
+            (controller.CodexAuthError("401 unauthorized"), None, "auth_fail_401"),
             (
                 urllib.error.HTTPError("https://stub.invalid", 429, "Too Many Requests", hdrs=None, fp=None),
                 None,
@@ -186,39 +186,40 @@ class RepairFallbackControllerTests(unittest.TestCase):
                 "provider_error",
             ),
             (urllib.error.URLError("down"), None, "network_error"),
-            (json.JSONDecodeError("bad", "{}", 0), None, "schema_invalid"),
+            (controller.CodexSchemaError("bad schema"), None, "schema_invalid"),
         ]
 
         for exc, http_code, expected in cases:
             with self.subTest(expected=expected):
                 self.assertEqual(controller.classify_error(exc, http_code=http_code), expected)
 
-    def test_stub_interface_supports_env_success_and_random_toggle(self):
-        provider_cases = (
-            ("codex", controller.call_codex_stub),
-            ("openai_api", controller.call_openai_api_stub),
-        )
-        for provider_name, stub_func in provider_cases:
-            env_key = f"REPAIR_PROVIDER_STUB_MODE_{provider_name.upper()}"
-            text_key = f"REPAIR_PROVIDER_STUB_TEXT_{provider_name.upper()}"
-            with self.subTest(provider=provider_name, mode="success"):
-                with patch.dict(os.environ, {env_key: "success", text_key: SUCCESS_BODY}, clear=False):
-                    body_text, meta = stub_func(PROMPT, "")
-                self.assertEqual(body_text, SUCCESS_BODY)
-                self.assertEqual(meta["model"], f"{provider_name}-stub")
+    def test_call_provider_uses_call_codex_for_codex_primary(self):
+        fake_meta = {"model": "chatgpt-pro", "raw_response_size": len(SUCCESS_BODY.encode("utf-8"))}
+        with patch("src.repair_fallback_controller.call_codex", return_value=(SUCCESS_BODY, fake_meta)) as mocked_call:
+            body_text, meta = controller.call_provider("codex", PROMPT, "")
 
-            with self.subTest(provider=provider_name, mode="random-success"):
-                with patch.dict(os.environ, {env_key: "random", text_key: SUCCESS_BODY}, clear=False), \
-                     patch("src.repair_fallback_controller.random.choice", return_value="success"):
-                    body_text, meta = stub_func(PROMPT, "")
-                self.assertEqual(body_text, SUCCESS_BODY)
-                self.assertEqual(meta["stub_mode"], "success")
+        mocked_call.assert_called_once_with(PROMPT)
+        self.assertEqual(body_text, SUCCESS_BODY)
+        self.assertEqual(meta, fake_meta)
 
-            with self.subTest(provider=provider_name, mode="random-failure"):
-                with patch.dict(os.environ, {env_key: "random"}, clear=False), \
-                     patch("src.repair_fallback_controller.random.choice", return_value="provider_error"):
-                    with self.assertRaises(RuntimeError):
-                        stub_func(PROMPT, "")
+    def test_openai_stub_interface_supports_env_success_and_random_toggle(self):
+        env_key = "REPAIR_PROVIDER_STUB_MODE_OPENAI_API"
+        text_key = "REPAIR_PROVIDER_STUB_TEXT_OPENAI_API"
+        with patch.dict(os.environ, {env_key: "success", text_key: SUCCESS_BODY}, clear=False):
+            body_text, meta = controller.call_openai_api_stub(PROMPT, "")
+        self.assertEqual(body_text, SUCCESS_BODY)
+        self.assertEqual(meta["model"], "openai_api-stub")
+
+        with patch.dict(os.environ, {env_key: "random", text_key: SUCCESS_BODY}, clear=False), \
+             patch("src.repair_fallback_controller.random.choice", return_value="success"):
+            body_text, meta = controller.call_openai_api_stub(PROMPT, "")
+        self.assertEqual(body_text, SUCCESS_BODY)
+        self.assertEqual(meta["stub_mode"], "success")
+
+        with patch.dict(os.environ, {env_key: "random"}, clear=False), \
+             patch("src.repair_fallback_controller.random.choice", return_value="provider_error"):
+            with self.assertRaises(RuntimeError):
+                controller.call_openai_api_stub(PROMPT, "")
 
 
 if __name__ == "__main__":

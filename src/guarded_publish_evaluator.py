@@ -15,6 +15,7 @@ from src.title_body_nucleus_validator import validate_title_body_nucleus
 
 
 JST = ZoneInfo("Asia/Tokyo")
+RELAXED_FOR_BREAKING_BOARD_FLAGS = frozenset({"subtype_unresolved", "heading_sentence_as_h3"})
 
 HARD_STOP_FLAGS = frozenset(
     {
@@ -31,14 +32,12 @@ HARD_STOP_FLAGS = frozenset(
 )
 REPAIRABLE_FLAGS = frozenset(
     {
-        "heading_sentence_as_h3",
         "weird_heading_label",
         "dev_log_contamination",
         "site_component_mixed_into_body",
         "ai_tone_heading_or_lead",
         "light_structure_break",
         "weak_source_display",
-        "subtype_unresolved",
         "long_body",
         "missing_primary_source",
         "missing_featured_media",
@@ -50,7 +49,7 @@ REPAIRABLE_FLAGS = frozenset(
         "injury_death",
         "lineup_duplicate_excessive",
     }
-)
+) | RELAXED_FOR_BREAKING_BOARD_FLAGS
 SOFT_CLEANUP_FLAGS = REPAIRABLE_FLAGS
 
 PRIMARY_SRC_RE = re.compile(

@@ -16,9 +16,13 @@ import sys
 import json
 import argparse
 import html
+import random
 import re
 import subprocess
+import time
+import urllib.error
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 
 # vendorディレクトリをパスに追加（サーバー環境用）
 _vendor = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'vendor')
@@ -38,6 +42,29 @@ ALLOWED_IMAGE_CONTENT_TYPES = {
     "image/png": "png",
     "image/webp": "webp",
 }
+WP_REST_RETRY = 3
+WP_REST_MAX_SLEEP = 30
+
+
+def _parse_retry_after_seconds(value: str | None) -> float | None:
+    text = (value or "").strip()
+    if not text:
+        return None
+    try:
+        return max(float(int(text)), 0.0)
+    except ValueError:
+        pass
+    try:
+        retry_at = parsedate_to_datetime(text)
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return None
+    if retry_at.tzinfo is None:
+        return None
+    return max(retry_at.timestamp() - time.time(), 0.0)
+
+
+def _compute_retry_sleep(attempt: int, max_delay: int) -> float:
+    return min((2 ** attempt) + random.uniform(0, 1), max_delay)
 
 
 class WPClient:
@@ -55,6 +82,62 @@ class WPClient:
         self.auth    = (self.user, self.app_password)
         self.api     = f"{self.base_url}/wp-json/wp/v2"
         self.headers = {"Content-Type": "application/json"}
+
+    def _request_with_retry(
+        self,
+        method,
+        url: str,
+        *,
+        action: str,
+        retry: int = WP_REST_RETRY,
+        timeout: int = 30,
+        **kwargs,
+    ) -> requests.Response:
+        attempts = retry + 1
+        last_err: Exception | None = None
+        request_kwargs = dict(kwargs)
+        request_kwargs.setdefault("auth", self.auth)
+        request_kwargs.setdefault("timeout", timeout)
+
+        for attempt in range(attempts):
+            try:
+                resp = method(url, **request_kwargs)
+            except (
+                requests.ConnectionError,
+                requests.Timeout,
+                ConnectionError,
+                TimeoutError,
+                urllib.error.URLError,
+            ) as e:
+                last_err = e
+                if attempt >= retry:
+                    break
+                time.sleep(_compute_retry_sleep(attempt, WP_REST_MAX_SLEEP))
+                continue
+
+            if resp.status_code == 429:
+                if attempt >= retry:
+                    self._raise_for_status(resp, action)
+                retry_after = _parse_retry_after_seconds(
+                    (resp.headers or {}).get("Retry-After")
+                )
+                time.sleep(
+                    retry_after
+                    if retry_after is not None
+                    else _compute_retry_sleep(attempt, WP_REST_MAX_SLEEP)
+                )
+                continue
+
+            if 500 <= resp.status_code < 600:
+                if attempt >= retry:
+                    self._raise_for_status(resp, action)
+                time.sleep(_compute_retry_sleep(attempt, WP_REST_MAX_SLEEP))
+                continue
+
+            self._raise_for_status(resp, action)
+            return resp
+
+        raise RuntimeError(f"[WP] request failed after {attempts} attempts ({action}): {last_err!r}")
 
     @staticmethod
     def _normalize_title(title: str) -> str:
@@ -125,13 +208,12 @@ class WPClient:
         ]
         for params in query_variants:
             try:
-                resp = requests.get(
+                resp = self._request_with_retry(
+                    requests.get,
                     f"{self.api}/posts/{post_id}",
+                    action=f"既存記事詳細取得 post_id={post_id}",
                     params=params,
-                    auth=self.auth,
-                    timeout=30,
                 )
-                self._raise_for_status(resp, f"既存記事詳細取得 post_id={post_id}")
                 return resp.json()
             except Exception:
                 continue
@@ -231,13 +313,12 @@ class WPClient:
         last_error = None
         for params in query_variants:
             try:
-                resp = requests.get(
+                resp = self._request_with_retry(
+                    requests.get,
                     f"{self.api}/posts",
+                    action="既存記事検索",
                     params=params,
-                    auth=self.auth,
-                    timeout=30,
                 )
-                self._raise_for_status(resp, "既存記事検索")
                 for post in resp.json():
                     title_data = post.get("title") or {}
                     rendered = title_data.get("raw") or title_data.get("rendered") or ""
@@ -361,14 +442,13 @@ class WPClient:
         if source_meta_payload:
             payload["meta"] = source_meta_payload
 
-        resp = requests.post(
+        resp = self._request_with_retry(
+            requests.post,
             f"{self.api}/posts",
+            action=f"記事{status}",
             json=payload,
-            auth=self.auth,
             headers=self.headers,
-            timeout=30,
         )
-        self._raise_for_status(resp, f"記事{status}")
         post_id = resp.json()["id"]
         print(f"[WP] 記事{status} post_id={post_id} title={title!r}")
         return post_id
@@ -451,17 +531,16 @@ class WPClient:
                 filename = hashlib.md5(normalized_url.encode()).hexdigest()[:12] + f".{ext}"
             print(f"[WP] 画像アップロード filename={filename} Content-Type={content_type}")
 
-            resp = requests.post(
+            resp = self._request_with_retry(
+                requests.post,
                 f"{self.api}/media",
+                action="画像アップロード",
                 data=image_data,
-                auth=self.auth,
                 headers={
                     "Content-Disposition": f'attachment; filename="{filename}"',
                     "Content-Type": content_type,
                 },
-                timeout=30,
             )
-            self._raise_for_status(resp, "画像アップロード")
             media_id = resp.json()["id"]
             print(f"[WP] 画像アップロード media_id={media_id}")
             return media_id
@@ -483,17 +562,16 @@ class WPClient:
                     f"unsupported_content_type={normalized_content_type or 'unknown'} filename={normalized_filename}"
                 )
                 return 0
-            resp = requests.post(
+            resp = self._request_with_retry(
+                requests.post,
                 f"{self.api}/media",
+                action="生成画像アップロード",
                 data=image_data,
-                auth=self.auth,
                 headers={
                     "Content-Disposition": f'attachment; filename="{normalized_filename}"',
                     "Content-Type": normalized_content_type,
                 },
-                timeout=30,
             )
-            self._raise_for_status(resp, "生成画像アップロード")
             media_id = resp.json()["id"]
             print(
                 f"[WP] 生成画像アップロード media_id={media_id} "
@@ -559,14 +637,13 @@ class WPClient:
         if source_meta_payload:
             payload["meta"] = source_meta_payload
 
-        resp = requests.post(
+        resp = self._request_with_retry(
+            requests.post,
             f"{self.api}/posts",
+            action="下書き作成",
             json=payload,
-            auth=self.auth,
             headers=self.headers,
-            timeout=30,
         )
-        self._raise_for_status(resp, "下書き作成")
         post_id = resp.json()["id"]
         print(f"[WP] 下書き作成 post_id={post_id} title={title!r}")
         return post_id
@@ -576,13 +653,13 @@ class WPClient:
         payload = {k: v for k, v in fields.items() if v is not None}
         if not payload:
             return
-        resp = requests.post(
+        resp = self._request_with_retry(
+            requests.post,
             f"{self.api}/posts/{post_id}",
+            action=f"記事更新 post_id={post_id}",
             auth=self.auth,
             json=payload,
-            timeout=30,
         )
-        self._raise_for_status(resp, f"記事更新 post_id={post_id}")
 
     # ------------------------------------------------------------------
     # 記事取得
@@ -591,12 +668,11 @@ class WPClient:
         """
         投稿IDで記事を取得して dict を返す。
         """
-        resp = requests.get(
+        resp = self._request_with_retry(
+            requests.get,
             f"{self.api}/posts/{post_id}",
-            auth=self.auth,
-            timeout=30,
+            action=f"記事取得 post_id={post_id}",
         )
-        self._raise_for_status(resp, f"記事取得 post_id={post_id}")
         return resp.json()
 
     def list_posts(
@@ -654,13 +730,12 @@ class WPClient:
                 continue
             seen.add(key)
             try:
-                resp = requests.get(
+                resp = self._request_with_retry(
+                    requests.get,
                     f"{self.api}/posts",
+                    action=f"記事一覧取得 status={status}",
                     params=variant,
-                    auth=self.auth,
-                    timeout=30,
                 )
-                self._raise_for_status(resp, f"記事一覧取得 status={status}")
                 return resp.json()
             except Exception as e:
                 last_error = e
@@ -671,13 +746,12 @@ class WPClient:
 
     def update_post_status(self, post_id: int, status: str) -> None:
         """記事のステータスを更新（draft → publish など）"""
-        resp = requests.post(
+        resp = self._request_with_retry(
+            requests.post,
             f"{self.api}/posts/{post_id}",
-            auth=self.auth,
+            action=f"ステータス更新 post_id={post_id}",
             json={"status": status},
-            timeout=30,
         )
-        self._raise_for_status(resp, f"ステータス更新 post_id={post_id}")
 
     # ------------------------------------------------------------------
     # カテゴリ一覧
@@ -686,13 +760,12 @@ class WPClient:
         """
         カテゴリ一覧を [{id, name, slug}, ...] で返す。
         """
-        resp = requests.get(
+        resp = self._request_with_retry(
+            requests.get,
             f"{self.api}/categories",
+            action="カテゴリ取得",
             params={"per_page": 100},
-            auth=self.auth,
-            timeout=30,
         )
-        self._raise_for_status(resp, "カテゴリ取得")
         return [{"id": c["id"], "name": c["name"], "slug": c["slug"]}
                 for c in resp.json()]
 

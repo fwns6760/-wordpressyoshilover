@@ -14,7 +14,7 @@ import unittest
 import urllib.error
 from contextlib import contextmanager
 from typing import Iterable, Sequence
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from src.tools import draft_body_editor as dbe
 
@@ -151,6 +151,24 @@ def _build_short_notice_postgame_body() -> str:
         f"<article><h2>{heading}</h2><p>{text}</p></article>"
         for heading, text in sections
     )
+
+
+class _FakeGeminiResponse(io.BytesIO):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
+
+
+def _gemini_response(text: str) -> _FakeGeminiResponse:
+    payload = {
+        "candidates": [
+            {"content": {"parts": [{"text": text}]}}
+        ]
+    }
+    return _FakeGeminiResponse(json.dumps(payload).encode("utf-8"))
 
 
 # ---------------------------------------------------------------------------
@@ -656,12 +674,35 @@ class TestAPIErrors(unittest.TestCase):
 
 class TestCallGeminiInternals(unittest.TestCase):
     def test_timeout_retries_then_fails(self):
-        with patch("urllib.request.urlopen") as mock_urlopen:
+        with patch("urllib.request.urlopen") as mock_urlopen, \
+             patch("src.tools.draft_body_editor.random.uniform", return_value=0.5), \
+             patch("src.tools.draft_body_editor.time.sleep") as mock_sleep:
             mock_urlopen.side_effect = TimeoutError("slow")
             with self.assertRaises(dbe.GeminiAPIError):
                 dbe.call_gemini("p", "k", timeout=1, retry=1)
             # retry=1 means 1 initial + 1 retry == 2 calls total.
             self.assertEqual(mock_urlopen.call_count, 2)
+            mock_sleep.assert_called_once_with(1.5)
+
+    def test_429_retry_after_retries_then_succeeds(self):
+        http_err = urllib.error.HTTPError(
+            url="https://example.invalid",
+            code=429,
+            msg="Too Many Requests",
+            hdrs={"Retry-After": "7"},  # type: ignore[arg-type]
+            fp=None,
+        )
+        with patch("urllib.request.urlopen") as mock_urlopen, \
+             patch("src.tools.draft_body_editor.random.uniform") as mock_uniform, \
+             patch("src.tools.draft_body_editor.time.sleep") as mock_sleep:
+            mock_urlopen.side_effect = [http_err, _gemini_response("improved body")]
+
+            text = dbe.call_gemini("p", "k", timeout=1, retry=1)
+
+            self.assertEqual(text, "improved body")
+            self.assertEqual(mock_urlopen.call_count, 2)
+            mock_sleep.assert_called_once_with(7.0)
+            mock_uniform.assert_not_called()
 
     def test_4xx_raises_without_retry(self):
         http_err = urllib.error.HTTPError(
@@ -678,7 +719,7 @@ class TestCallGeminiInternals(unittest.TestCase):
             self.assertIn("HTTP 400", str(ctx.exception))
             self.assertEqual(mock_urlopen.call_count, 1)
 
-    def test_5xx_retries(self):
+    def test_5xx_retries_with_backoff_then_fails(self):
         http_err = urllib.error.HTTPError(
             url="https://example.invalid",
             code=503,
@@ -686,11 +727,14 @@ class TestCallGeminiInternals(unittest.TestCase):
             hdrs={},  # type: ignore[arg-type]
             fp=None,
         )
-        with patch("urllib.request.urlopen") as mock_urlopen:
+        with patch("urllib.request.urlopen") as mock_urlopen, \
+             patch("src.tools.draft_body_editor.random.uniform", return_value=0.25), \
+             patch("src.tools.draft_body_editor.time.sleep") as mock_sleep:
             mock_urlopen.side_effect = http_err
             with self.assertRaises(dbe.GeminiAPIError):
-                dbe.call_gemini("p", "k", timeout=1, retry=1)
-            self.assertEqual(mock_urlopen.call_count, 2)
+                dbe.call_gemini("p", "k", timeout=1, retry=2)
+            self.assertEqual(mock_urlopen.call_count, 3)
+            self.assertEqual(mock_sleep.call_args_list, [call(1.25), call(2.25)])
 
 
 # ---------------------------------------------------------------------------

@@ -22,11 +22,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import re
 import socket
 import sys
+import time
 import urllib.error
 import urllib.request
+from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from typing import Iterable, Sequence
 
@@ -249,6 +252,27 @@ def build_prompt(
     )
 
 
+def _parse_retry_after_seconds(value: str | None) -> float | None:
+    text = (value or "").strip()
+    if not text:
+        return None
+    try:
+        return max(float(int(text)), 0.0)
+    except ValueError:
+        pass
+    try:
+        retry_at = parsedate_to_datetime(text)
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return None
+    if retry_at.tzinfo is None:
+        return None
+    return max(retry_at.timestamp() - time.time(), 0.0)
+
+
+def _compute_retry_sleep(attempt: int, max_delay: int) -> float:
+    return min((2 ** attempt) + random.uniform(0, 1), max_delay)
+
+
 def call_gemini(
     prompt: str,
     api_key: str,
@@ -280,12 +304,26 @@ def call_gemini(
             with urllib.request.urlopen(req, timeout=timeout) as res:
                 data = json.load(res)
         except urllib.error.HTTPError as e:
-            if 400 <= e.code < 500:
+            if 400 <= e.code < 500 and e.code != 429:
                 raise GeminiAPIError(f"HTTP {e.code}") from e
             last_err = e
+            if attempt >= retry:
+                break
+            headers = getattr(e, "headers", None) or getattr(e, "hdrs", None)
+            retry_after = _parse_retry_after_seconds(
+                headers.get("Retry-After") if headers else None
+            )
+            time.sleep(
+                retry_after
+                if retry_after is not None
+                else _compute_retry_sleep(attempt, 60)
+            )
             continue
         except (urllib.error.URLError, TimeoutError, socket.timeout) as e:
             last_err = e
+            if attempt >= retry:
+                break
+            time.sleep(_compute_retry_sleep(attempt, 60))
             continue
 
         try:

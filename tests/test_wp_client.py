@@ -1,11 +1,27 @@
 import os
 import unittest
+import urllib.error
 from datetime import datetime, timezone
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 import requests
 
 from src.wp_client import WPClient
+
+
+def _mock_response(
+    status_code: int,
+    *,
+    json_data=None,
+    text: str = "",
+    headers: dict | None = None,
+):
+    resp = Mock(status_code=status_code, text=text, headers=headers or {})
+    resp.json = Mock(return_value=json_data)
+    resp.raise_for_status = Mock()
+    if status_code >= 400:
+        resp.raise_for_status.side_effect = requests.HTTPError(f"HTTP {status_code}")
+    return resp
 
 
 class TestWPClientDedup(unittest.TestCase):
@@ -527,6 +543,73 @@ class TestWPClientDedup(unittest.TestCase):
             self.wp._get_image_candidate_exclusion_reason("https://example.com/foo.jpg"),
             "",
         )
+
+
+class TestWPClientRetryHandling(unittest.TestCase):
+    def setUp(self):
+        os.environ["WP_URL"] = "https://example.com"
+        os.environ["WP_USER"] = "user"
+        os.environ["WP_APP_PASSWORD"] = "pass"
+        self.wp = WPClient()
+
+    @patch("src.wp_client.requests.get")
+    def test_get_post_retries_429_retry_after_then_succeeds(self, mock_get):
+        mock_get.side_effect = [
+            _mock_response(
+                429,
+                headers={"Retry-After": "Fri, 01 Jan 2021 00:00:07 GMT"},
+                text="too many requests",
+            ),
+            _mock_response(200, json_data={"id": 42}),
+        ]
+
+        with patch("src.wp_client.time.time", return_value=1609459200.0), \
+             patch("src.wp_client.time.sleep") as mock_sleep:
+            post = self.wp.get_post(42)
+
+        self.assertEqual(post, {"id": 42})
+        self.assertEqual(mock_get.call_count, 2)
+        mock_sleep.assert_called_once_with(7.0)
+
+    @patch("src.wp_client.requests.get")
+    def test_get_post_retries_5xx_with_backoff_then_fails(self, mock_get):
+        mock_get.return_value = _mock_response(503, text="service unavailable")
+
+        with patch("src.wp_client.random.uniform", return_value=0.25), \
+             patch("src.wp_client.time.sleep") as mock_sleep:
+            with self.assertRaises(RuntimeError) as ctx:
+                self.wp.get_post(99)
+
+        self.assertIn("HTTPエラー", str(ctx.exception))
+        self.assertEqual(mock_get.call_count, 4)
+        self.assertEqual(mock_sleep.call_args_list, [call(1.25), call(2.25), call(4.25)])
+
+    @patch("src.wp_client.requests.get")
+    def test_get_post_4xx_non_429_fails_without_retry(self, mock_get):
+        mock_get.return_value = _mock_response(404, text="missing")
+
+        with patch("src.wp_client.time.sleep") as mock_sleep:
+            with self.assertRaises(RuntimeError) as ctx:
+                self.wp.get_post(100)
+
+        self.assertIn("HTTPエラー", str(ctx.exception))
+        self.assertEqual(mock_get.call_count, 1)
+        mock_sleep.assert_not_called()
+
+    @patch("src.wp_client.requests.get")
+    def test_get_post_retries_urlerror_then_succeeds(self, mock_get):
+        mock_get.side_effect = [
+            urllib.error.URLError("temporary outage"),
+            _mock_response(200, json_data={"id": 55}),
+        ]
+
+        with patch("src.wp_client.random.uniform", return_value=0.5), \
+             patch("src.wp_client.time.sleep") as mock_sleep:
+            post = self.wp.get_post(55)
+
+        self.assertEqual(post, {"id": 55})
+        self.assertEqual(mock_get.call_count, 2)
+        mock_sleep.assert_called_once_with(1.5)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-04-27 JST(ticket 188 publish-notice手動X案を追加、187 verify hold 維持)
+最終更新: 2026-04-27 JST(ticket 188 publish-notice手動X案 CLOSED、187 verify hold 維持)
 
 ## 最初に読む
 
@@ -36,7 +36,6 @@
 |---|---|---|---|---|
 | **179 repair learning log Firestore + GCS** | P0 | READY / 即fire | Codex B → Codex-GCP | FirestoreLedgerWriter + ArtifactUploaderを実装し、GCP実行へ接続 |
 | **180 SNS topic intake lane separation** | P0.5 | READY | Claude / Codex B → Codex-GCP | SNS入口とX出口の境界をdoc-onlyで明文化し、SNS topic処理をGCP実行前提に整理 |
-| **188 publish-notice manual X post candidates** | P0.5 | READY | Codex B | 公開通知メール本文に手動X投稿候補3件を追加。X API / queue / GCP liveなし |
 | **162 gemini_audit GCP migration** | P1 | QUEUED / 後回し可 | Claude / A | 残WSL cronはgemini_auditのみ。影響軽微なので急がない |
 | **163 quality-monitor / quality-gmail GCP migration** | P1 | QUEUED | Claude / A → Codex-GCP | quality monitor / quality mail本文生成をGCP化 |
 | **149 X Phase 2 manual live 1** | P0.5 | READY / user境界 | Claude / A | userのX live unlock後、1件だけmanual post |
@@ -64,6 +63,7 @@
 | **177** | CLOSED `a5ef56a` | Codex shadow GCP deploy完了 |
 | **178** | CLOSED `9754b53` | GCP Codex primary wp_write enable。Codex-GCPが記事修復/書き込みを担う前提を解禁 |
 | **181** | CLOSED `5b21543` | タイトル主語欠落 + 本文可読性narrow fix完了 |
+| **188** | CLOSED | 公開通知メールに手動X投稿候補3件を追加。X API / queue / GCP liveなし |
 | **168-173** | CLOSED | repair provider ledger、job skeleton、fallback、Codex shadow runner、auth writeback、X queue ledger完了 |
 | **176** | CLOSED `91069f0` | share buttons Twitter/Facebook fix完了。live deploy後の目視smokeは別途 |
 

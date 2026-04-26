@@ -21,6 +21,7 @@ DEFAULT_DAILY_CAP = 100
 DEFAULT_DUPLICATE_WINDOW = timedelta(minutes=30)
 _WHITESPACE_RE = re.compile(r"\s+")
 _SUMMARY_TITLE_LIMIT = 80
+MAX_MANUAL_X_POST_LENGTH = 280
 _ALERT_LABELS = {
     "publish_failure": "publish failure",
     "hard_stop": "hard stop",
@@ -178,6 +179,70 @@ def _collapse_title(value: str) -> str:
     return compact[: _SUMMARY_TITLE_LIMIT - 1] + "…"
 
 
+def _manual_x_context(subtype: str) -> tuple[str, str, str]:
+    normalized = str(subtype or "").strip().lower()
+    if "lineup" in normalized or "スタメン" in normalized:
+        return (
+            "巨人のスタメン情報を更新しました。",
+            "このスタメン、巨人ファンはどう見る？",
+            "この起用は試合前に見ておきたい。",
+        )
+    if "postgame" in normalized or "result" in normalized or "試合結果" in normalized:
+        return (
+            "巨人の試合結果を更新しました。",
+            "この試合、巨人ファンはどう見る？",
+            "これは試合後にもう一度見たいポイント。",
+        )
+    if "farm" in normalized or "二軍" in normalized or "2軍" in normalized:
+        return (
+            "巨人の二軍情報を更新しました。",
+            "この二軍の動き、巨人ファンはどう見る？",
+            "二軍の動きも追っておきたい。",
+        )
+    if "notice" in normalized or "transaction" in normalized or "roster" in normalized or "公示" in normalized:
+        return (
+            "巨人の公示・選手動向を更新しました。",
+            "この動き、巨人ファンはどう見る？",
+            "この動きは後で効いてくるかもしれません。",
+        )
+    if "program" in normalized or "tv" in normalized or "番組" in normalized:
+        return (
+            "巨人関連の番組情報を更新しました。",
+            "この番組情報、巨人ファンはどう見る？",
+            "見逃し注意の巨人関連情報です。",
+        )
+    return (
+        "巨人ニュースを更新しました。",
+        "この話題、巨人ファンはどう見る？",
+        "これはちょっと見逃せない動きですね。",
+    )
+
+
+def _trim_manual_x_post_text(value: str) -> str:
+    compact = _WHITESPACE_RE.sub(" ", str(value or "").strip())
+    if len(compact) <= MAX_MANUAL_X_POST_LENGTH:
+        return compact
+    return compact[: MAX_MANUAL_X_POST_LENGTH - 1].rstrip() + "…"
+
+
+def build_manual_x_post_candidates(request: PublishNoticeRequest) -> list[tuple[str, str]]:
+    """Return deterministic manual-copy X post candidates for a publish notice."""
+
+    title = _collapse_title(request.title) or "巨人ニュース"
+    url = str(request.canonical_url or "").strip()
+    summary = _normalize_summary(request.summary)
+    hook_source = summary if summary != "(なし)" else title
+    article_intro, reaction_hook, inside_voice = _manual_x_context(request.subtype)
+
+    with_url_suffix = f" {url}" if url else ""
+    candidates = [
+        ("x_post_1_article_intro", f"{article_intro}{title}{with_url_suffix}"),
+        ("x_post_2_reaction_hook", f"{reaction_hook} {hook_source}{with_url_suffix}"),
+        ("x_post_3_inside_voice", f"{inside_voice}{title}"),
+    ]
+    return [(label, _trim_manual_x_post_text(text)) for label, text in candidates]
+
+
 def _load_queue_entries(path: str | Path | None) -> list[dict[str, Any]]:
     if path is None:
         return []
@@ -261,13 +326,17 @@ def resolve_recipients(override: list[str] | None) -> list[str]:
 
 
 def build_body_text(request: PublishNoticeRequest) -> str:
+    manual_x_candidates = build_manual_x_post_candidates(request)
     lines = [
         f"title: {str(request.title or '').strip()}",
         f"url: {str(request.canonical_url or '').strip()}",
         f"subtype: {str(request.subtype or '').strip() or 'unknown'}",
         f"publish time: {_format_publish_time_jst(request.publish_time_iso)}",
         f"summary: {_normalize_summary(request.summary)}",
+        "manual_x_post_candidates:",
+        f"article_url: {str(request.canonical_url or '').strip()}",
     ]
+    lines.extend(f"{label}: {text}" for label, text in manual_x_candidates)
     return "\n".join(lines)
 
 
@@ -566,6 +635,7 @@ __all__ = [
     "build_body_text",
     "build_burst_summary_requests",
     "build_emergency_subject",
+    "build_manual_x_post_candidates",
     "build_subject",
     "build_summary_body_text",
     "build_summary_subject",

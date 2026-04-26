@@ -55,7 +55,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
                 with patch.dict("os.environ", env_map, clear=True):
                     self.assertEqual(sender.resolve_recipients(override), expected)
 
-    def test_build_body_text_uses_five_line_plain_text_format(self):
+    def test_build_body_text_includes_manual_x_post_candidates(self):
         body = sender.build_body_text(self._request())
 
         self.assertEqual(
@@ -66,6 +66,11 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
                 "subtype: postgame",
                 "publish time: 2026-04-24 21:15 JST",
                 "summary: 終盤の継投と一打が勝敗を分けた。",
+                "manual_x_post_candidates:",
+                "article_url: https://yoshilover.com/post-123/",
+                "x_post_1_article_intro: 巨人の試合結果を更新しました。巨人が接戦を制した https://yoshilover.com/post-123/",
+                "x_post_2_reaction_hook: この試合、巨人ファンはどう見る？ 終盤の継投と一打が勝敗を分けた。 https://yoshilover.com/post-123/",
+                "x_post_3_inside_voice: これは試合後にもう一度見たいポイント。巨人が接戦を制した",
             ],
         )
 
@@ -73,7 +78,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         summary = "あ" * 130
         body = sender.build_body_text(self._request(summary=summary))
 
-        self.assertEqual(body.splitlines()[-1], f"summary: {'あ' * 119}…")
+        self.assertIn(f"summary: {'あ' * 119}…", body.splitlines())
 
     def test_build_body_text_uses_none_marker_for_blank_summary(self):
         cases = [None, "", " \n\t "]
@@ -81,7 +86,18 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         for summary in cases:
             with self.subTest(summary=summary):
                 body = sender.build_body_text(self._request(summary=summary))
-                self.assertEqual(body.splitlines()[-1], "summary: (なし)")
+                self.assertIn("summary: (なし)", body.splitlines())
+
+    def test_manual_x_post_candidates_stay_within_x_limit(self):
+        request = self._request(title="巨人" * 80, summary="終盤の継投と一打が勝敗を分けた。" * 20)
+
+        candidates = sender.build_manual_x_post_candidates(request)
+
+        self.assertEqual(
+            [label for label, _text in candidates],
+            ["x_post_1_article_intro", "x_post_2_reaction_hook", "x_post_3_inside_voice"],
+        )
+        self.assertTrue(all(len(text) <= sender.MAX_MANUAL_X_POST_LENGTH for _label, text in candidates))
 
     def test_send_dry_run_default_skips_bridge_call(self):
         request = self._request()
@@ -164,6 +180,11 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
                 "subtype: postgame",
                 "publish time: 2026-04-24 21:15 JST",
                 "summary: 終盤の継投と一打が勝敗を分けた。",
+                "manual_x_post_candidates:",
+                "article_url: https://yoshilover.com/post-123/",
+                "x_post_1_article_intro: 巨人の試合結果を更新しました。巨人が接戦を制した https://yoshilover.com/post-123/",
+                "x_post_2_reaction_hook: この試合、巨人ファンはどう見る？ 終盤の継投と一打が勝敗を分けた。 https://yoshilover.com/post-123/",
+                "x_post_3_inside_voice: これは試合後にもう一度見たいポイント。巨人が接戦を制した",
             ],
         )
         self.assertEqual(mail_request.metadata["post_id"], 123)

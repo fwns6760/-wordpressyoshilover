@@ -28,18 +28,6 @@ DEFAULT_HISTORY_PATH = ROOT / "logs" / "guarded_publish_history.jsonl"
 DEFAULT_YELLOW_LOG_PATH = ROOT / "logs" / "guarded_publish_yellow_log.jsonl"
 DEFAULT_CLEANUP_LOG_PATH = ROOT / "logs" / "guarded_publish_cleanup_log.jsonl"
 DEFAULT_MIN_PROSE_AFTER_CLEANUP = 50
-TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
-POST_CLEANUP_STRICT_ENV_BY_FLAG = {
-    "title_subject_missing": "STRICT_TITLE_SUBJECT",
-    "source_anchor_missing": "STRICT_SOURCE_ANCHOR",
-    "source_url_missing": "STRICT_SOURCE_HOSTS",
-}
-POST_CLEANUP_WARNING_REASON_BY_FLAG = {
-    "title_subject_missing": "warning_only:post_cleanup_title_subject_relaxed",
-    "source_anchor_missing": "warning_only:post_cleanup_source_anchor_relaxed",
-    "source_url_missing": "warning_only:post_cleanup_source_hosts_relaxed",
-}
-RELAXED_FOR_BREAKING_BOARD_REASON = "warning_only:relaxed_for_breaking_board"
 
 TAG_RE = re.compile(r"<[^>]+>")
 WHITESPACE_RE = re.compile(r"\s+")
@@ -233,11 +221,6 @@ def _min_prose_after_cleanup() -> int:
     return int(os.environ.get("MIN_PROSE_AFTER_CLEANUP", str(DEFAULT_MIN_PROSE_AFTER_CLEANUP)))
 
 
-def _env_truthy(name: str) -> bool:
-    value = str(os.environ.get(name) or "").strip().lower()
-    return value in TRUTHY_ENV_VALUES
-
-
 def _post_record_with_content(post: dict[str, Any], body_html: str) -> dict[str, Any]:
     synthetic = dict(post)
     synthetic["content"] = {"raw": body_html, "rendered": body_html}
@@ -247,7 +230,6 @@ def _post_record_with_content(post: dict[str, Any], body_html: str) -> dict[str,
 def _post_cleanup_check(post: dict[str, Any], cleaned_html: str) -> tuple[bool, str]:
     original_record = extractor.extract_post_record(post)
     cleaned_record = _post_record_with_content(post, cleaned_html)
-    warning_flags: list[str] = []
     if not _strip_html(cleaned_html):
         return False, "body_empty"
     prose_chars = _prose_char_count(str(cleaned_record.get("body_text") or ""))
@@ -262,9 +244,7 @@ def _post_cleanup_check(post: dict[str, Any], cleaned_html: str) -> tuple[bool, 
         before_present = _subject_present_in_body(title_subject, str(original_record.get("body_text") or ""))
         after_present = _subject_present_in_body(title_subject, str(cleaned_record.get("body_text") or ""))
         if before_present and not after_present:
-            if _env_truthy(POST_CLEANUP_STRICT_ENV_BY_FLAG["title_subject_missing"]):
-                return False, "title_subject_missing"
-            warning_flags.append("title_subject_missing")
+            return False, "title_subject_missing"
 
     before_has_source = bool(
         original_record.get("source_block") or SOURCE_LABEL_RE.search(str(original_record.get("body_text") or ""))
@@ -273,26 +253,19 @@ def _post_cleanup_check(post: dict[str, Any], cleaned_html: str) -> tuple[bool, 
         cleaned_record.get("source_block") or SOURCE_LABEL_RE.search(str(cleaned_record.get("body_text") or ""))
     )
     if before_has_source and not after_has_source:
-        if _env_truthy(POST_CLEANUP_STRICT_ENV_BY_FLAG["source_anchor_missing"]):
-            return False, "source_anchor_missing"
-        warning_flags.append("source_anchor_missing")
+        return False, "source_anchor_missing"
     before_hosts = {
         urlparse(str(url)).hostname
         for url in (original_record.get("source_urls") or [])
         if urlparse(str(url)).hostname
     }
-    if after_has_source:
-        after_hosts = {
-            urlparse(str(url)).hostname
-            for url in (cleaned_record.get("source_urls") or [])
-            if urlparse(str(url)).hostname
-        }
-        if before_hosts and not before_hosts.intersection(after_hosts):
-            if _env_truthy(POST_CLEANUP_STRICT_ENV_BY_FLAG["source_url_missing"]):
-                return False, "source_url_missing"
-            warning_flags.append("source_url_missing")
-    if warning_flags:
-        return True, "warning_only:" + "|".join(warning_flags)
+    after_hosts = {
+        urlparse(str(url)).hostname
+        for url in (cleaned_record.get("source_urls") or [])
+        if urlparse(str(url)).hostname
+    }
+    if before_hosts and not before_hosts.intersection(after_hosts):
+        return False, "source_url_missing"
     return True, "ok"
 
 
@@ -619,26 +592,6 @@ def _warning_only_flag_cleanup(
     return body_html, [_cleanup_action_payload(flag, preview, preview, reason=reason)]
 
 
-def _post_cleanup_warning_actions(
-    cleanup_check: str,
-    post: dict[str, Any],
-    body_html: str,
-) -> list[dict[str, str]]:
-    if not cleanup_check.startswith("warning_only:"):
-        return []
-    flags = [flag for flag in cleanup_check.removeprefix("warning_only:").split("|") if flag]
-    actions: list[dict[str, str]] = []
-    for flag in flags:
-        _, flag_actions = _warning_only_flag_cleanup(
-            flag,
-            post,
-            body_html,
-            reason=POST_CLEANUP_WARNING_REASON_BY_FLAG.get(flag, "warning_only:post_cleanup_relaxed"),
-        )
-        actions.extend(flag_actions)
-    return actions
-
-
 def _merge_meta(post: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
     merged = dict((post or {}).get("meta") or {})
     merged.update(updates)
@@ -780,16 +733,6 @@ def _build_plan(
         if action_name is None:
             raise CandidateRefusedError("cleanup_action_unmapped", f"cleanup_action_unmapped:{flag}")
 
-        if flag in publish_evaluator.RELAXED_FOR_BREAKING_BOARD_FLAGS and len(repairable_flags_list) == 1:
-            cleaned_html, relaxed_actions = _warning_only_flag_cleanup(
-                flag,
-                post,
-                cleaned_html,
-                reason=RELAXED_FOR_BREAKING_BOARD_REASON,
-            )
-            cleanup_actions.extend(relaxed_actions)
-            continue
-
         if flag == "heading_sentence_as_h3":
             cleaned_html, heading_actions = _replace_heading_sentence_h3(cleaned_html)
             if not heading_actions:
@@ -894,7 +837,6 @@ def _build_plan(
         ok, cleanup_check = _post_cleanup_check(post, cleaned_html)
         if not ok:
             raise CandidateRefusedError("post_cleanup_abort", cleanup_check)
-        cleanup_actions.extend(_post_cleanup_warning_actions(cleanup_check, post, cleaned_html))
         cleanup_success = True
 
     return {

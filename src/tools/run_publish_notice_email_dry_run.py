@@ -26,13 +26,18 @@ from src.publish_notice_email_sender import (  # noqa: E402
     EmergencyMailRequest,
     PublishNoticeRequest,
     build_burst_summary_requests,
+    build_alert_body_text,
+    build_body_text,
     build_emergency_subject,
+    build_summary_body_text,
     emit_emergency_hook,
     send,
     send_alert,
     send_summary,
 )
 from src.publish_notice_scanner import JST, scan  # noqa: E402
+from src import repair_provider_ledger  # noqa: E402
+from src import runner_ledger_integration  # noqa: E402
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
@@ -169,12 +174,75 @@ def _print_result(notice_kind: str, post_id: int | str, result: Any) -> None:
     )
 
 
+def _notice_status(result: Any) -> str:
+    if str(getattr(result, "status", "")).strip() == "sent":
+        return "success"
+    return "skipped"
+
+
+def _result_text(result: Any) -> str:
+    return json.dumps(
+        {
+            "status": str(getattr(result, "status", "")).strip(),
+            "reason": getattr(result, "reason", None),
+            "subject": str(getattr(result, "subject", "")).strip(),
+            "recipients": list(getattr(result, "recipients", []) or []),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+
+
+def _emit_notice_ledger(
+    ledger_sink: runner_ledger_integration.BestEffortLedgerSink,
+    *,
+    notice_kind: str,
+    post_id: int | str | None,
+    before_body: str,
+    result: Any,
+    input_payload: dict[str, Any],
+) -> None:
+    if not ledger_sink.enabled:
+        return
+    quality_flags = ["publish_notice", notice_kind, str(getattr(result, "status", "")).strip() or "unknown"]
+    entry = runner_ledger_integration.build_entry(
+        lane="publish_notice",
+        provider="gemini",
+        model="publish-notice-email-sender",
+        source_post_id=int(post_id) if str(post_id or "").isdigit() else 0,
+        before_body=before_body,
+        after_body=_result_text(result),
+        status=_notice_status(result),
+        error_code=None if _notice_status(result) == "success" else getattr(result, "reason", None),
+        quality_flags=quality_flags,
+        input_payload=input_payload,
+        artifact_uri="memory://publish_notice",
+    )
+    ledger_sink.persist(
+        entry,
+        before_body=before_body,
+        after_body=_result_text(result),
+        extra_meta={
+            "notice_kind": notice_kind,
+            "post_id": post_id,
+            "status": getattr(result, "status", None),
+            "reason": getattr(result, "reason", None),
+            "subject": getattr(result, "subject", None),
+            "recipients": list(getattr(result, "recipients", []) or []),
+        },
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     try:
         load_dotenv()
         args = _parse_args(argv)
         send_enabled = args.send_enabled or str(os.environ.get("PUBLISH_NOTICE_EMAIL_ENABLED", "")).strip() == "1"
         dry_run = not args.send
+        ledger_sink = runner_ledger_integration.BestEffortLedgerSink(
+            collection_name=runner_ledger_integration.DEFAULT_NOTICE_COLLECTION,
+            fallback_path=repair_provider_ledger.resolve_jsonl_ledger_path(),
+        )
 
         if args.scan:
             result = scan(
@@ -205,6 +273,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                     recipients=mail_result.recipients,
                     publish_time_iso=request.publish_time_iso,
                 )
+                _emit_notice_ledger(
+                    ledger_sink,
+                    notice_kind="per_post",
+                    post_id=request.post_id,
+                    before_body=build_body_text(request),
+                    result=mail_result,
+                    input_payload={
+                        "notice_kind": "per_post",
+                        "request": {
+                            "post_id": request.post_id,
+                            "title": request.title,
+                            "canonical_url": request.canonical_url,
+                            "subtype": request.subtype,
+                            "publish_time_iso": request.publish_time_iso,
+                        },
+                    },
+                )
                 _print_result("per_post", request.post_id, mail_result)
             summary_requests = build_burst_summary_requests(
                 [_summary_entry_from_request(request) for request in result.emitted],
@@ -226,6 +311,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                     reason=summary_result.reason,
                     subject=summary_result.subject,
                     recipients=summary_result.recipients,
+                )
+                _emit_notice_ledger(
+                    ledger_sink,
+                    notice_kind="summary",
+                    post_id=summary_post_id,
+                    before_body=build_summary_body_text(summary_request),
+                    result=summary_result,
+                    input_payload={
+                        "notice_kind": "summary",
+                        "summary_post_id": summary_post_id,
+                        "cumulative_published_count": summary_request.cumulative_published_count,
+                    },
                 )
                 _print_result("summary", summary_post_id, summary_result)
             return 0
@@ -258,6 +355,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                         recipients=result.recipients,
                         publish_time_iso=request.publish_time_iso,
                     )
+                    _emit_notice_ledger(
+                        ledger_sink,
+                        notice_kind="per_post",
+                        post_id=request.post_id,
+                        before_body=build_body_text(request),
+                        result=result,
+                        input_payload={"notice_kind": "per_post", "request": item},
+                    )
                     _print_result("per_post", request.post_id, result)
                     continue
                 if notification_type == "summary":
@@ -277,6 +382,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                         subject=result.subject,
                         recipients=result.recipients,
                     )
+                    _emit_notice_ledger(
+                        ledger_sink,
+                        notice_kind="summary",
+                        post_id=summary_post_id,
+                        before_body=build_summary_body_text(summary_request),
+                        result=result,
+                        input_payload={"notice_kind": "summary", "request": item},
+                    )
                     _print_result("summary", summary_post_id, result)
                     continue
                 if notification_type == "alert":
@@ -295,6 +408,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                         reason=result.reason,
                         subject=result.subject,
                         recipients=result.recipients,
+                    )
+                    _emit_notice_ledger(
+                        ledger_sink,
+                        notice_kind="alert",
+                        post_id=alert_post_id,
+                        before_body=build_alert_body_text(alert_request),
+                        result=result,
+                        input_payload={"notice_kind": "alert", "request": item},
                     )
                     _print_result("alert", alert_post_id, result)
                     continue
@@ -325,6 +446,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             subject=result.subject,
             recipients=result.recipients,
             publish_time_iso=request.publish_time_iso,
+        )
+        _emit_notice_ledger(
+            ledger_sink,
+            notice_kind="per_post",
+            post_id=request.post_id,
+            before_body=build_body_text(request),
+            result=result,
+            input_payload={"notice_kind": "per_post", "request": payload},
         )
         _print_result("per_post", request.post_id, result)
         return 0

@@ -26,6 +26,18 @@ LINEUP_BODY = (
 )
 
 
+class _FakeResponse:
+    def __init__(self, status_code: int, payload: dict | None = None, text: str = "") -> None:
+        self.status_code = status_code
+        self._payload = payload
+        self.text = text
+
+    def json(self) -> dict:
+        if self._payload is None:
+            raise ValueError("no json body")
+        return self._payload
+
+
 def _decorated_body_attrs(width: int = 4) -> str:
     return " ".join(f'data-lane-{idx}="{"y" * 90}"' for idx in range(width))
 
@@ -1036,6 +1048,92 @@ class TestExtractSourceUrls(unittest.TestCase):
             lane._extract_source_urls(post),
             ["https://www.nikkansports.com/baseball/news/202604200001234.html"],
         )
+
+
+class TestCloudLedgerIntegration(unittest.TestCase):
+    def test_cloud_ledger_opt_in_is_best_effort(self):
+        post = _make_post(1501, modified="2026-04-20T08:00:00+09:00")
+        completed = lane.subprocess.CompletedProcess(args=[], returncode=0, stdout=b"token\n", stderr=b"")
+
+        for mode in ("success", "firestore_failure"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmpdir:
+                artifact_uris: list[str] = []
+
+                def fake_requests(method, url, **kwargs):
+                    if method == "POST" and "repair_ledger_locks" in url:
+                        return _FakeResponse(200, {"name": "lock-doc"})
+                    if method == "GET" and "repair_ledger/" in url:
+                        return _FakeResponse(404, {"error": {"message": "missing"}})
+                    if method == "POST" and "repair_ledger" in url:
+                        if mode == "firestore_failure":
+                            raise lane.repair_provider_ledger.requests.RequestException("firestore down")
+                        artifact_uris.append(kwargs["json"]["fields"]["artifact_uri"]["stringValue"])
+                        return _FakeResponse(200, {"name": "ledger-doc"})
+                    if method == "DELETE" and "repair_ledger_locks" in url:
+                        return _FakeResponse(200, {})
+                    raise AssertionError(f"unexpected request: {method} {url}")
+
+                def fake_run_editor(candidate, *, dry_run, ledger_path, now):
+                    entry = lane.runner_ledger_integration.build_entry(
+                        lane="repair",
+                        provider="gemini",
+                        model="gemini-2.5-flash",
+                        source_post_id=candidate["post_id"],
+                        before_body=candidate["current_body"],
+                        after_body="" if dry_run else SUCCESS_BODY,
+                        status="success",
+                        quality_flags=["dry_run" if dry_run else "exec"],
+                        input_payload={
+                            "post_id": candidate["post_id"],
+                            "dry_run": dry_run,
+                        },
+                        artifact_uri="file:///tmp/local-artifact.json",
+                    )
+                    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+                    with ledger_path.open("a", encoding="utf-8") as handle:
+                        handle.write(json.dumps(entry.to_dict(), ensure_ascii=False) + "\n")
+                    return (
+                        0,
+                        {"guards": "pass", "provider": "gemini", "fallback_used": False, "wp_write_allowed": True},
+                        "",
+                        SUCCESS_BODY if not dry_run else None,
+                    )
+
+                wp = _FakeWP(paged_posts={1: [post], 2: []}, get_post_map={1501: post})
+                with patch.dict(
+                    "os.environ",
+                    {
+                        lane.runner_ledger_integration.ENV_LEDGER_FIRESTORE_ENABLED: "true",
+                        lane.runner_ledger_integration.ENV_LEDGER_GCS_ARTIFACT_ENABLED: "true",
+                        "GOOGLE_CLOUD_PROJECT": "project-id",
+                    },
+                    clear=False,
+                ), patch(
+                    "src.repair_provider_ledger.subprocess.run",
+                    return_value=completed,
+                ), patch(
+                    "src.cloud_run_persistence.subprocess.run",
+                    return_value=completed,
+                ), patch(
+                    "src.repair_provider_ledger.requests.request",
+                    side_effect=fake_requests,
+                ):
+                    code, stdout, stderr, wp, _, _ = _run_main(
+                        ["--now-iso", "2026-04-20T10:00:00+09:00"],
+                        wp=wp,
+                        run_editor_side_effect=fake_run_editor,
+                        log_root=Path(tmpdir) / "lane_logs",
+                    )
+
+                self.assertEqual(code, 0)
+                self.assertEqual(wp.put_calls, [(1501, {"content": SUCCESS_BODY})])
+                payload = json.loads(stdout.strip())
+                self.assertEqual(payload["put_ok"], 1)
+                if mode == "success":
+                    self.assertTrue(artifact_uris)
+                    self.assertTrue(all(uri.startswith("gs://yoshilover-history/repair_artifacts/") for uri in artifact_uris))
+                else:
+                    self.assertIn("firestore write failed", stderr)
 
 
 if __name__ == "__main__":

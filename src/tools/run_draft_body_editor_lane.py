@@ -32,6 +32,7 @@ from zoneinfo import ZoneInfo
 
 from src import repair_fallback_controller
 from src import repair_provider_ledger
+from src import runner_ledger_integration
 from src.tools import draft_body_editor
 from src.tools.draft_body_editor import _extract_prose_text
 
@@ -742,6 +743,10 @@ def _resolve_ledger_path(raw_path: str, *, now: datetime) -> Path:
     return repair_provider_ledger.resolve_jsonl_ledger_path(now=now)
 
 
+def _ledger_file_size(path: Path) -> int:
+    return path.stat().st_size if path.exists() else 0
+
+
 def _mirror_appended_ledger_bytes(source_path: Path, target_path: Path, start_offset: int) -> None:
     if source_path == target_path or not source_path.exists():
         return
@@ -811,6 +816,37 @@ def _run_editor(
                 payload = None
         new_body = out_path.read_text(encoding="utf-8") if out_path.exists() else None
         return completed.returncode, payload, stderr, new_body
+
+
+def _entry_after_body(
+    entry: repair_provider_ledger.RepairLedgerEntry,
+    new_body: str | None,
+) -> str:
+    if entry.output_hash == repair_provider_ledger.compute_output_hash(""):
+        return ""
+    return str(new_body or "")
+
+
+def _persist_appended_ledger_entries(
+    ledger_sink: runner_ledger_integration.BestEffortLedgerSink,
+    *,
+    ledger_path: Path,
+    start_offset: int,
+    candidate: dict[str, Any],
+    new_body: str | None,
+) -> None:
+    if not ledger_sink.enabled:
+        return
+    for entry in runner_ledger_integration.read_entries_from_offset(ledger_path, start_offset):
+        ledger_sink.persist(
+            entry,
+            before_body=str(candidate.get("current_body") or ""),
+            after_body=_entry_after_body(entry, new_body),
+            extra_meta={
+                "subtype": str(candidate.get("subtype") or ""),
+                "fail_axes": list(candidate.get("fail_axes") or []),
+            },
+        )
 
 
 def _format_failure_chain(
@@ -1129,6 +1165,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     now = _now_jst(args.now_iso)
     ledger_path = _resolve_ledger_path(args.ledger_path, now=now)
+    ledger_sink = runner_ledger_integration.BestEffortLedgerSink(
+        collection_name=repair_provider_ledger.DEFAULT_FIRESTORE_COLLECTION,
+    )
     queue_path = Path(args.queue_path) if args.queue_path.strip() else None
     per_post_outcomes: list[dict[str, Any]] = []
     empty_counter: Counter[str] = Counter()
@@ -1402,11 +1441,19 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if args.provider != "gemini":
             try:
+                ledger_offset = _ledger_file_size(ledger_path)
                 exec_code, exec_payload, exec_stderr, new_body = _run_fallback_controller(
                     candidate,
                     provider=args.provider,
                     ledger_path=ledger_path,
                     dry_run=bool(args.dry_run),
+                )
+                _persist_appended_ledger_entries(
+                    ledger_sink,
+                    ledger_path=ledger_path,
+                    start_offset=ledger_offset,
+                    candidate=candidate,
+                    new_body=new_body,
                 )
             except (
                 repair_provider_ledger.LedgerLockError,
@@ -1527,11 +1574,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             continue
 
+        dry_ledger_offset = _ledger_file_size(ledger_path)
         dry_code, _, dry_stderr, _ = _run_editor(
             candidate,
             dry_run=True,
             ledger_path=ledger_path,
             now=now,
+        )
+        _persist_appended_ledger_entries(
+            ledger_sink,
+            ledger_path=ledger_path,
+            start_offset=dry_ledger_offset,
+            candidate=candidate,
+            new_body="",
         )
         if dry_code in {10, 11, 12}:
             reject_count += 1
@@ -1559,11 +1614,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             continue
 
         if dry_code == 20:
+            retry_ledger_offset = _ledger_file_size(ledger_path)
             retry_code, _, retry_stderr, _ = _run_editor(
                 candidate,
                 dry_run=True,
                 ledger_path=ledger_path,
                 now=now,
+            )
+            _persist_appended_ledger_entries(
+                ledger_sink,
+                ledger_path=ledger_path,
+                start_offset=retry_ledger_offset,
+                candidate=candidate,
+                new_body="",
             )
             if retry_code != 0:
                 _append_skip_outcome(per_post_outcomes, process_skip_counter, post_id=candidate["post_id"], reason="api_fail")
@@ -1598,11 +1661,19 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         reject_streak = 0
 
+        exec_ledger_offset = _ledger_file_size(ledger_path)
         exec_code, exec_payload, exec_stderr, new_body = _run_editor(
             candidate,
             dry_run=False,
             ledger_path=ledger_path,
             now=now,
+        )
+        _persist_appended_ledger_entries(
+            ledger_sink,
+            ledger_path=ledger_path,
+            start_offset=exec_ledger_offset,
+            candidate=candidate,
+            new_body=new_body,
         )
         if exec_code in {10, 11, 12}:
             reject_count += 1

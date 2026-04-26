@@ -2,7 +2,6 @@ import unittest
 from datetime import datetime
 from unittest import mock
 
-from src import guarded_publish_evaluator as evaluator_module
 from src.guarded_publish_evaluator import evaluate_raw_posts, render_human_report, scan_wp_drafts
 
 
@@ -244,34 +243,6 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
             sorted(cleanup_entry["cleanup_types"]),
             ["dev_log_contamination", "heading_sentence_as_h3"],
         )
-
-    def test_heading_sentence_as_h3_stays_repairable_for_breaking_board(self):
-        report = self._evaluate([self.heading_and_devlog_post])
-
-        entry = self._find_entry(report, 103)
-        self.assertIn("heading_sentence_as_h3", evaluator_module.RELAXED_FOR_BREAKING_BOARD_FLAGS)
-        self.assertTrue(entry["publishable"])
-        self.assertIn("heading_sentence_as_h3", entry["repairable_flags"])
-        self.assertNotIn("heading_sentence_as_h3", entry["hard_stop_flags"])
-
-    def test_subtype_unresolved_stays_repairable_for_breaking_board(self):
-        unresolved_post = _post(
-            111,
-            "ベンチの狙いを整理",
-            (
-                "<p>巨人ベンチが終盤の狙いを整理した。スポーツ報知によると、阿部監督が起用の意図を説明した。</p>"
-                "<p>参照元: スポーツ報知 https://example.com/source-z</p>"
-            ),
-            meta={"article_subtype": "other"},
-        )
-
-        report = self._evaluate([unresolved_post])
-
-        entry = self._find_entry(report, 111)
-        self.assertIn("subtype_unresolved", evaluator_module.RELAXED_FOR_BREAKING_BOARD_FLAGS)
-        self.assertTrue(entry["publishable"])
-        self.assertIn("subtype_unresolved", entry["repairable_flags"])
-        self.assertNotIn("subtype_unresolved", entry["hard_stop_flags"])
 
     def test_site_component_reasons_keep_legacy_yellow_reason_but_use_repairable_flag(self):
         report = self._evaluate([self.site_component_post])

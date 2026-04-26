@@ -22,7 +22,7 @@
 | **135** freshness gate | P0 | CLOSED 済 → REVIEW | Claude / B | 142 で freshness 降格済、今後 hard_stop に戻すか判断保留 |
 | **123** readiness guard | P1 | READY | Claude or A | 130 land 後 read-only 検査(105 ramp 安定性) |
 | **124** cleanup apply | P1 | READY | Codex A | 130 land 後、site_component cleanup を 8 publish 済記事に live apply |
-| **125** AdSense slot | P1 | READY | Claude(front-scope) | `.yoshi-ad--*` wrapper を `src/custom.css` + `src/yoshilover-063-frontend.php` に追加 |
+| **125** AdSense slot | P1 | **IN_FLIGHT** | Codex A | `.yoshi-ad--*` wrapper(087 spec)を `src/custom.css` + `src/yoshilover-063-frontend.php` に追加(autonomous fire 中)|
 | **PUB-002-A** | reference | active | (parent runbook) | 130 evaluator base、現役参照 |
 
 ### 止まってる(waiting)

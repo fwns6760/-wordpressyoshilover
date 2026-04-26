@@ -2,6 +2,12 @@
 
 最終更新: 2026-04-27 JST(Codex-GCP追加、Codex B開発担当化、CLOSED履歴圧縮)
 
+## 最初に読む
+
+- `/home/fwns6/code/wordpressyoshilover/doc/active/OPERATING_LOCK.md`
+- `/home/fwns6/code/wordpressyoshilover/doc/README.md`
+- `/home/fwns6/code/wordpressyoshilover/doc/active/assignments.md`
+
 ## 役割一覧
 
 | 略号 | 役割 | 変更OK | 原則NG |

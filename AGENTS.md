@@ -6,6 +6,17 @@
 > 現在の正しい役割分担は **Codex = 実装 / テスト / 必要時 deploy**、**Claude Code = 監査 / queue / 起票 / read-only 観測** である。
 > **runtime trigger の親は役割文ではなく `automation.toml` / scheduler 定義で確認する。**
 
+## 最初に必ず読む運用ロック(2026-04-27)
+
+全 Claude / Codex / Codex-M セッションは、作業前に必ず以下を読む。
+
+1. `/home/fwns6/code/wordpressyoshilover/doc/active/OPERATING_LOCK.md`
+2. `/home/fwns6/code/wordpressyoshilover/doc/README.md`
+3. `/home/fwns6/code/wordpressyoshilover/doc/active/assignments.md`
+
+`OPERATING_LOCK.md` は、hard stop / 役割分担 / status移動 / Claude抱え込み防止の最小ルールである。
+個別 ticket より先に読み、競合する場合は危険側に倒して止める。
+
 ## 2026-04-26 PM GCP Cloud Run Job 移行 方針 lock(最優先)
 
 **正本**: `/home/fwns6/code/baseballwordpress/AGENTS.md` § 7.5 / `/home/fwns6/code/baseballwordpress/docs/handoff/session_logs/2026-04-26_pm_gcp_migration_policy_lock.md`

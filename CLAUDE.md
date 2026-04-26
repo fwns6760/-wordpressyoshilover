@@ -7,6 +7,18 @@
 > 内容が競合したら **baseballwordpress 側を優先** してください。
 > **runtime trigger の親は役割文ではなく `automation.toml` / scheduler 定義で確認** してください。
 
+## 最初に必ず読む運用ロック(2026-04-27)
+
+全 Claude / Codex / Codex-M セッションは、作業前に必ず以下を読む。
+
+1. `/home/fwns6/code/wordpressyoshilover/doc/active/OPERATING_LOCK.md`
+2. `/home/fwns6/code/wordpressyoshilover/doc/README.md`
+3. `/home/fwns6/code/wordpressyoshilover/doc/active/assignments.md`
+
+`OPERATING_LOCK.md` は、hard stop / 役割分担 / status移動 / Claude抱え込み防止の最小ルールである。
+Claude Code は現場管理人であり、既定の実行者ではない。
+Codex-M/A/Bで安全にできる棚卸し・doc整理・status整合・実装を抱え込まない。
+
 ## 2026-04-26 PM GCP Cloud Run Job 移行 方針 lock(最優先)
 
 **正本**: `/home/fwns6/code/baseballwordpress/AGENTS.md` § 7.5 / `/home/fwns6/code/baseballwordpress/CLAUDE.md` GCP migration section / `/home/fwns6/code/baseballwordpress/docs/handoff/session_logs/2026-04-26_pm_gcp_migration_policy_lock.md`

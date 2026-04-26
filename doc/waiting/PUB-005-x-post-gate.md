@@ -16,7 +16,14 @@
 |---|---|---|
 | X / SNS / 外部 POST | 本 ticket(PUB-005)= Green only + controlled autopost + daily cap | - |
 | WordPress publish | 触らない | PUB-004(Red 以外 publish、autonomous) |
-| X 検索 / X 収集 | 触らない | 別 lane |
+| X 検索 / X 収集(記事ネタ入口) | 触らない | **180 SNS lane separation**(SNS 由来は別経路、本 ticket は出口) |
+
+## SNS 由来記事の追加 gate(2026-04-26 追記、180 land 後の運用ルール)
+
+- **初期(PUB-005 unlock 直後 1-2 weeks)**: SNS 由来記事(`source_origin == "sns_topic"` flag 持ち)は **X 自動投稿対象外**(controlled autopost queue にも入れない)
+- **以降**: 119 X eligibility evaluator に SNS 由来 flag を見るよう拡張 → 追加 gate(daily cap 別枠 / 人手 review 必須 等)で扱う
+- 通常 publish(WP)経路は SNS 由来も他経路と同 PUB-004 gate を通れば OK、X 投稿だけ厳しくする
+- 詳細は `doc/active/180-sns-topic-intake-to-publish-lane-separation.md` 参照
 
 ## priority
 

@@ -7,8 +7,8 @@
 - lane: A
 - priority: P1
 - status: PARKED
-- blocked_by: 127 close + PUB-004 readiness
-- parent: 127 / PUB-004 / PUB-002-A
+- blocked_by: 127 close + PUB-004 readiness + **180 SNS lane separation 完了**(2026-04-26 追加、180 で SNS 判定 5 種 / reject 条件 / X 投稿境界 明文化が前提)
+- parent: 127 / PUB-004 / PUB-002-A / 180
 - created: 2026-04-26
 
 ## purpose

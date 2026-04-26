@@ -604,8 +604,8 @@ doc/
 - **owner**: Codex A / Claude orchestration after 127 close
 - **lane**: A
 - **ready_for**: none
-- **next_action**: wait for 123 readiness re-run + 105 ramp stabilization, then publish source-rechecked drafts through PUB-004 gate
-- **blocked_by**: 123 readiness re-run + 105 ramp stabilization
+- **next_action**: wait for **180 SNS lane separation 完了** + 123 readiness re-run + 105 ramp stabilization, then publish source-rechecked drafts through PUB-004 gate
+- **blocked_by**: **180 SNS lane separation 完了** + 123 readiness re-run + 105 ramp stabilization
 - **user_action_required**: none per article once 127/128 automation is activated; no raw SNS direct publish
 - **write_scope**: `src/sns_topic_publish_bridge.py`, `src/tools/run_sns_topic_publish_bridge.py`, `tests/test_sns_topic_publish_bridge.py`
 - **doc_path**: `doc/waiting/128-sns-topic-auto-publish-through-pub004.md`
@@ -615,6 +615,25 @@ doc/
 - **next_prompt_path**: create after 123 readiness re-run + 105 ramp stabilization
 - **last_commit**: -
 - **parent**: 127 / PUB-004
+
+### 180 sns-topic-intake-to-publish-lane-separation
+
+- **alias**: -
+- **priority**: **P0.5**
+- **status**: **READY**(doc-only 整理、即着手可)
+- **owner**: Claude Code(設計 / 起票)/ Codex B(必要時実装、本 ticket は doc-only)
+- **lane**: B
+- **ready_for**: doc-only 着手
+- **next_action**: SNS 入口 lane(126/127/128)と X 出口 lane(PUB-005 / 147-175)の境界を明文化、判定 5 種 / reject 条件 / SNS 由来記事の X 自動投稿境界を固定
+- **blocked_by**: none
+- **user_action_required**: none(doc-only、code 変更なし)
+- **write_scope**: `doc/active/180-sns-topic-intake-to-publish-lane-separation.md` + `doc/README.md`(本セクション)+ `doc/active/assignments.md` + `doc/waiting/128-...md`(blocked_by 追記)+ `doc/waiting/PUB-005-x-post-gate.md`(SNS 由来記事の X 自動投稿境界 追記)
+- **doc_path**: `doc/active/180-sns-topic-intake-to-publish-lane-separation.md`
+- **acceptance**: 180 doc 作成 / README 180 row / assignments 180 row / 128 blocked_by に 180 / PUB-005 に SNS 由来記事の X 自動投稿境界記述 / code/WP/X/mail/env 一切触らず
+- **repo_state**: doc 配置済
+- **commit_state**: doc-only commit 予定
+- **next_prompt_path**: -
+- **parent**: 126 / 127 / 128 / PUB-004 / PUB-005
 
 ### 130 pub004-hard-stop-vs-repairable-before-publish
 

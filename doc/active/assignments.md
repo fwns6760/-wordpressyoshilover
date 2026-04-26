@@ -50,6 +50,7 @@
 | **172** cloud-run-secret-auth-writeback | P0 | **CLOSED `cbe05b0`** → done/ 移動済 | B 完了 | SecretAuthManager + entrypoint script、auth.json 内容ログ禁止 |
 | **173** x-post-cloud-queue-ledger v0 | P0.5 | **CLOSED `9ef3772`** → done/ 移動済 | A 完了 | X 投稿 lane foundation、unlock 時即動 |
 | **162** Phase 4 gemini_audit GCP migration | P1 | QUEUED(user 判断保留中、影響軽微なので後回し可)| Claude / A | 残 WSL cron = gemini_audit のみ、autonomous touch せず |
+| **180** SNS topic intake to publish lane separation | P0.5 | **READY**(doc-only 整理)| Claude / B | SNS 入口 lane と X 出口 lane の境界明文化、128 再開前提 |
 | **163** Phase 5 quality-monitor / quality-gmail GCP migration | P1 | QUEUED | Claude / A | 162 land 後 fire 可 |
 | **174** x-api-cloud-run-live-smoke | P0.5 | BLOCKED_USER(149 X live unlock 後)| User → A | live X API smoke 1 回 |
 | **175** x-controlled-autopost-cloud-rollout | P0.5 | BLOCKED(174 後)| Claude / A | daily cap ramp |

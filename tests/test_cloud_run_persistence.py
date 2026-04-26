@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import io
+import json
 import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -101,6 +103,78 @@ class GCSStateManagerTests(unittest.TestCase):
 
         mocked_download.assert_called_once_with("cursor.txt", target)
         mocked_upload.assert_called_once_with(target, "cursor.txt")
+
+
+class ArtifactUploaderTests(unittest.TestCase):
+    def test_upload_success_returns_gcs_uri(self) -> None:
+        fixed_now = datetime.fromisoformat("2026-04-26T19:10:00+09:00")
+        captured: dict[str, object] = {}
+
+        def fake_upload(local_path, remote_name):
+            captured["remote_name"] = remote_name
+            captured["payload"] = json.loads(Path(local_path).read_text(encoding="utf-8"))
+
+        with patch("src.cloud_run_persistence._now_jst", return_value=fixed_now), patch.object(
+            cloud_run_persistence.GCSStateManager,
+            "upload",
+            side_effect=fake_upload,
+        ):
+            uploader = cloud_run_persistence.ArtifactUploader(
+                bucket_name="yoshilover-history",
+                prefix="repair_artifacts",
+                project_id="project-id",
+            )
+            uri = uploader.upload(
+                post_id=63105,
+                provider="codex",
+                run_id="run-1",
+                before_body="Alpha\nBeta",
+                after_body="Alpha\nGamma\nBeta",
+                extra_meta={"lane": "repair"},
+            )
+
+        self.assertEqual(uri, "gs://yoshilover-history/repair_artifacts/2026-04-26/63105_codex_run-1.json")
+        self.assertEqual(captured["remote_name"], "2026-04-26/63105_codex_run-1.json")
+        payload = captured["payload"]
+        assert isinstance(payload, dict)
+        self.assertEqual(payload["post_id"], 63105)
+        self.assertEqual(payload["provider"], "codex")
+        self.assertEqual(payload["extra_meta"]["lane"], "repair")
+        self.assertEqual(payload["diff_summary"]["line_count_delta"], 1)
+        self.assertIn("Gamma", payload["diff_summary"]["added_keywords"])
+
+    def test_upload_subprocess_failure_raises_gcs_access_error(self) -> None:
+        error = subprocess.CalledProcessError(
+            returncode=1,
+            cmd=["gcloud"],
+            stderr=b"AccessDeniedException: upload blocked",
+        )
+        with patch("subprocess.run", side_effect=error):
+            uploader = cloud_run_persistence.ArtifactUploader(
+                bucket_name="yoshilover-history",
+                prefix="repair_artifacts",
+                project_id="project-id",
+            )
+            with self.assertRaises(cloud_run_persistence.GCSAccessError):
+                uploader.upload(
+                    post_id=63105,
+                    provider="gemini",
+                    run_id="run-2",
+                    before_body="Before",
+                    after_body="After",
+                )
+
+    def test_compute_diff_summary_reports_line_char_and_keyword_delta(self) -> None:
+        summary = cloud_run_persistence.ArtifactUploader.compute_diff_summary(
+            "Alpha\nBeta",
+            "Alpha\nGamma\nBeta",
+        )
+        self.assertEqual(summary["line_count_before"], 2)
+        self.assertEqual(summary["line_count_after"], 3)
+        self.assertEqual(summary["line_count_delta"], 1)
+        self.assertEqual(summary["char_delta"], len("Alpha\nGamma\nBeta") - len("Alpha\nBeta"))
+        self.assertEqual(summary["added_keywords"], ["Gamma"])
+        self.assertEqual(summary["removed_keywords"], [])
 
 
 class PublishNoticeEntrypointTests(unittest.TestCase):

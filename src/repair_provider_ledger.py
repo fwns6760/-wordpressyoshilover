@@ -5,13 +5,17 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import subprocess
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterator
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
+
+import requests
 
 
 SCHEMA_VERSION = "repair_ledger_v0"
@@ -19,6 +23,8 @@ JST = ZoneInfo("Asia/Tokyo")
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_LEDGER_DIR = ROOT / "logs" / "repair_provider_ledger"
 ENV_LEDGER_DIR = "REPAIR_PROVIDER_LEDGER_DIR"
+DEFAULT_PROJECT_ID = "baseballsite"
+DEFAULT_FIRESTORE_COLLECTION = "repair_ledger"
 _LOCK_DIRNAME = ".locks"
 _ALLOWED_PROVIDERS = frozenset({"gemini", "codex", "openai_api"})
 _ALLOWED_STATUSES = frozenset({"success", "failed", "skipped", "shadow_only"})
@@ -44,6 +50,13 @@ class LedgerLockError(RuntimeError):
 
 class LedgerWriteError(RuntimeError):
     """Raised when a ledger sink cannot persist an entry."""
+
+
+class _FirestoreAPIError(RuntimeError):
+    def __init__(self, status_code: int, detail: str) -> None:
+        self.status_code = int(status_code)
+        self.detail = str(detail)
+        super().__init__(f"firestore api failed({self.status_code}): {self.detail}")
 
 
 def _now_jst(now: datetime | None = None) -> datetime:
@@ -93,6 +106,68 @@ def resolve_jsonl_ledger_path(
 ) -> Path:
     current = _now_jst(now)
     return resolve_jsonl_ledger_dir(sink_dir) / f"{current.date().isoformat()}.jsonl"
+
+
+def _default_project_id() -> str:
+    for key in ("GOOGLE_CLOUD_PROJECT", "GCP_PROJECT", "PROJECT_ID"):
+        value = str(os.environ.get(key, "")).strip()
+        if value:
+            return value
+    return DEFAULT_PROJECT_ID
+
+
+def _decode_text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
+
+
+def _firestore_document_id(idempotency_key: str) -> str:
+    return hashlib.sha256(str(idempotency_key).encode("utf-8")).hexdigest()
+
+
+def _firestore_value(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"nullValue": None}
+    if isinstance(value, bool):
+        return {"booleanValue": value}
+    if isinstance(value, int):
+        return {"integerValue": str(value)}
+    if isinstance(value, float):
+        return {"doubleValue": value}
+    if isinstance(value, (list, tuple)):
+        return {"arrayValue": {"values": [_firestore_value(item) for item in value]}}
+    if isinstance(value, dict):
+        return {
+            "mapValue": {
+                "fields": {
+                    str(key): _firestore_value(item)
+                    for key, item in value.items()
+                }
+            }
+        }
+    return {"stringValue": str(value)}
+
+
+def _firestore_fields(payload: dict[str, Any]) -> dict[str, Any]:
+    return {str(key): _firestore_value(value) for key, value in payload.items()}
+
+
+def _firestore_error_detail(response: requests.Response) -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, dict):
+            message = error.get("message") or error.get("status")
+            if message:
+                return str(message)
+    text = _decode_text(getattr(response, "text", "")).strip()
+    return text or f"http {response.status_code}"
 
 
 def compute_input_hash(post: Any) -> str:
@@ -273,21 +348,239 @@ class JsonlLedgerWriter(LedgerWriter):
 
 
 class FirestoreLedgerWriter(LedgerWriter):
-    """Stub adapter for the future Firestore-backed ledger."""
+    """Firestore-backed repair ledger writer with idempotency locks."""
 
-    def __init__(self, client: Any, collection: str) -> None:
-        self.client = client
-        self.collection = collection
+    def __init__(
+        self,
+        project_id: str | Any | None = None,
+        collection_name: str = DEFAULT_FIRESTORE_COLLECTION,
+        *,
+        client: Any | None = None,
+        collection: str | None = None,
+        lock_collection_name: str | None = None,
+        timeout: float = 15.0,
+    ) -> None:
+        legacy_client = client
+        if legacy_client is None and project_id is not None and not isinstance(project_id, str):
+            legacy_client = project_id
+            project_id = None
+
+        resolved_collection = str(collection or collection_name or DEFAULT_FIRESTORE_COLLECTION).strip()
+        if not resolved_collection:
+            raise ValueError("collection_name must not be empty")
+
+        self.client = legacy_client
+        self.project_id = str(project_id or _default_project_id()).strip()
+        self.collection = resolved_collection
+        self.collection_name = resolved_collection
+        self.lock_collection_name = str(
+            lock_collection_name or f"{self.collection_name}_locks"
+        ).strip()
+        self.timeout = float(timeout)
+        self._cached_access_token: str | None = None
+
+    def _database_base_url(self) -> str:
+        project_id = self.project_id or _default_project_id()
+        return (
+            "https://firestore.googleapis.com/v1/"
+            f"projects/{quote(project_id, safe='')}/databases/(default)/documents"
+        )
+
+    def _collection_url(self, collection_name: str) -> str:
+        return f"{self._database_base_url()}/{quote(collection_name, safe='')}"
+
+    def _document_url(self, collection_name: str, document_id: str) -> str:
+        return f"{self._collection_url(collection_name)}/{quote(document_id, safe='')}"
+
+    def _access_token(self) -> str:
+        if self._cached_access_token:
+            return self._cached_access_token
+        commands = (
+            ["gcloud", "auth", "application-default", "print-access-token"],
+            ["gcloud", "auth", "print-access-token"],
+        )
+        failures: list[str] = []
+        for command in commands:
+            try:
+                completed = subprocess.run(
+                    command,
+                    capture_output=True,
+                    check=True,
+                )
+            except FileNotFoundError as exc:
+                raise LedgerWriteError("failed to access Firestore: gcloud CLI not found") from exc
+            except subprocess.CalledProcessError as exc:
+                detail = _decode_text(exc.stderr).strip() or _decode_text(exc.stdout).strip()
+                failures.append(detail or "gcloud access token command failed")
+                continue
+            token = _decode_text(completed.stdout).strip()
+            if token:
+                self._cached_access_token = token
+                return token
+            failures.append("gcloud access token command returned empty stdout")
+        raise LedgerWriteError(
+            "failed to obtain Firestore access token: "
+            + "; ".join(detail for detail in failures if detail)
+        )
+
+    def _request_json(
+        self,
+        method: str,
+        url: str,
+        *,
+        expected_statuses: tuple[int, ...],
+        json_payload: dict[str, Any] | None = None,
+        params: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        headers = {"Authorization": f"Bearer {self._access_token()}"}
+        try:
+            response = requests.request(
+                method,
+                url,
+                headers=headers,
+                json=json_payload,
+                params=params,
+                timeout=self.timeout,
+            )
+        except requests.RequestException as exc:
+            raise LedgerWriteError(
+                f"failed to connect Firestore API: {self.collection_name}"
+            ) from exc
+        if response.status_code not in expected_statuses:
+            raise _FirestoreAPIError(response.status_code, _firestore_error_detail(response))
+        try:
+            return response.json()
+        except ValueError:
+            return {}
+
+    def _create_document(
+        self,
+        collection_name: str,
+        document_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        return self._request_json(
+            "POST",
+            self._collection_url(collection_name),
+            expected_statuses=(200, 201),
+            json_payload={"fields": _firestore_fields(payload)},
+            params={"documentId": document_id},
+        )
+
+    def _delete_document(self, collection_name: str, document_id: str) -> None:
+        self._request_json(
+            "DELETE",
+            self._document_url(collection_name, document_id),
+            expected_statuses=(200,),
+        )
+
+    def _document_exists(self, collection_name: str, document_id: str) -> bool:
+        try:
+            self._request_json(
+                "GET",
+                self._document_url(collection_name, document_id),
+                expected_statuses=(200,),
+            )
+        except _FirestoreAPIError as exc:
+            if exc.status_code == 404:
+                return False
+            raise
+        return True
+
+    @contextmanager
+    def with_lock(self, idempotency_key: str) -> Iterator[str]:
+        lock_doc_id = _firestore_document_id(idempotency_key)
+        lock_payload = {
+            "idempotency_key": idempotency_key,
+            "created_at": _now_jst().isoformat(),
+        }
+
+        if self.client is not None:
+            lock_ref = self.client.collection(self.lock_collection_name).document(lock_doc_id)
+            try:
+                snapshot = lock_ref.get() if hasattr(lock_ref, "get") else None
+                if snapshot is not None and bool(getattr(snapshot, "exists", False)):
+                    raise LedgerLockError(f"duplicate idempotency lock: {idempotency_key}")
+                if hasattr(lock_ref, "create"):
+                    lock_ref.create(lock_payload)
+                else:
+                    lock_ref.set(lock_payload)
+            except LedgerLockError:
+                raise
+            except Exception as exc:  # pragma: no cover - legacy client fallback
+                text = str(exc)
+                if "ALREADY_EXISTS" in text or "already exists" in text.lower():
+                    raise LedgerLockError(f"duplicate idempotency lock: {idempotency_key}") from exc
+                raise LedgerWriteError(
+                    f"failed to acquire Firestore ledger lock: {self.lock_collection_name}"
+                ) from exc
+            try:
+                yield lock_doc_id
+            finally:
+                try:
+                    if hasattr(lock_ref, "delete"):
+                        lock_ref.delete()
+                except Exception:
+                    pass
+            return
+
+        try:
+            self._create_document(self.lock_collection_name, lock_doc_id, lock_payload)
+        except _FirestoreAPIError as exc:
+            if exc.status_code == 409 or "ALREADY_EXISTS" in exc.detail:
+                raise LedgerLockError(f"duplicate idempotency lock: {idempotency_key}") from exc
+            raise LedgerWriteError(
+                f"failed to acquire Firestore ledger lock: {self.lock_collection_name}"
+            ) from exc
+        try:
+            yield lock_doc_id
+        finally:
+            try:
+                self._delete_document(self.lock_collection_name, lock_doc_id)
+            except (LedgerWriteError, _FirestoreAPIError):
+                pass
 
     def write(self, entry: RepairLedgerEntry) -> None:
         payload = entry.to_dict()
+        if self.client is not None:
+            try:
+                with self.with_lock(entry.idempotency_key):
+                    collection_ref = self.client.collection(self.collection_name)
+                    document_ref = collection_ref.document(entry.idempotency_key)
+                    if hasattr(document_ref, "get"):
+                        snapshot = document_ref.get()
+                        if snapshot is not None and bool(getattr(snapshot, "exists", False)):
+                            raise LedgerLockError(
+                                f"duplicate idempotency_key: {entry.idempotency_key}"
+                            )
+                    document_ref.set(payload)
+                return
+            except (LedgerLockError, LedgerWriteError):
+                raise
+            except Exception as exc:  # pragma: no cover - exercised through mocks
+                raise LedgerWriteError(
+                    f"failed to write Firestore ledger entry: {self.collection_name}"
+                ) from exc
+
+        document_id = _firestore_document_id(entry.idempotency_key)
         try:
-            collection_ref = self.client.collection(self.collection)
-            document_ref = collection_ref.document(entry.idempotency_key)
-            document_ref.set(payload)
-        except Exception as exc:  # pragma: no cover - exercised through mocks
+            with self.with_lock(entry.idempotency_key):
+                if self._document_exists(self.collection_name, document_id):
+                    raise LedgerLockError(f"duplicate idempotency_key: {entry.idempotency_key}")
+                self._create_document(self.collection_name, document_id, payload)
+        except LedgerLockError:
+            raise
+        except _FirestoreAPIError as exc:
+            if exc.status_code == 409 or "ALREADY_EXISTS" in exc.detail:
+                raise LedgerLockError(f"duplicate idempotency_key: {entry.idempotency_key}") from exc
             raise LedgerWriteError(
-                f"failed to write Firestore ledger entry: {self.collection}"
+                f"failed to write Firestore ledger entry: {self.collection_name}"
+            ) from exc
+        except LedgerWriteError:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive
+            raise LedgerWriteError(
+                f"failed to write Firestore ledger entry: {self.collection_name}"
             ) from exc
 
 

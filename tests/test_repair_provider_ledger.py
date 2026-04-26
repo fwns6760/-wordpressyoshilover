@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from src import repair_provider_ledger as ledger
 from src.tools import draft_body_editor as dbe
@@ -36,6 +36,19 @@ NEW_BODY = (
     "本文Dです。"
 )
 SOURCE_BLOCK = "・本文A\n・本文B\n・本文C\n・本文D"
+
+
+class _FakeResponse:
+    def __init__(self, status_code: int, payload: dict | None = None, text: str = "") -> None:
+        self.status_code = status_code
+        self._payload = payload
+        self.text = text
+        self.content = json.dumps(payload).encode("utf-8") if payload is not None else b""
+
+    def json(self) -> dict:
+        if self._payload is None:
+            raise ValueError("no json body")
+        return self._payload
 
 
 class RepairProviderLedgerTests(unittest.TestCase):
@@ -172,18 +185,66 @@ class RepairProviderLedgerTests(unittest.TestCase):
         self.assertEqual(payload["provider_meta"]["fallback_from"], "codex")
         self.assertEqual(payload["provider_meta"]["fallback_reason"], "gemini_timeout")
 
-    def test_firestore_writer_stub_calls_mock_interface(self):
-        client = Mock()
-        collection_ref = client.collection.return_value
-        document_ref = collection_ref.document.return_value
-        writer = ledger.FirestoreLedgerWriter(client, "repair-ledger")
+    def test_firestore_writer_write_success_via_rest(self):
+        entry = self._entry()
+        calls: list[tuple[str, str]] = []
+
+        def fake_request(method, url, **kwargs):
+            calls.append((method, url))
+            if method == "POST" and "repair-ledger_locks" in url:
+                return _FakeResponse(200, {"name": "lock-doc"})
+            if method == "GET" and "repair-ledger/" in url:
+                return _FakeResponse(404, {"error": {"message": "missing"}})
+            if method == "POST" and "repair-ledger" in url:
+                return _FakeResponse(200, {"name": "ledger-doc"})
+            if method == "DELETE" and "repair-ledger_locks" in url:
+                return _FakeResponse(200, {})
+            raise AssertionError(f"unexpected request: {method} {url}")
+
+        with patch(
+            "src.repair_provider_ledger.subprocess.run",
+            return_value=ledger.subprocess.CompletedProcess(args=[], returncode=0, stdout=b"token\n", stderr=b""),
+        ) as mocked_gcloud, patch("src.repair_provider_ledger.requests.request", side_effect=fake_request):
+            writer = ledger.FirestoreLedgerWriter("project-1", "repair-ledger")
+            writer.write(entry)
+
+        mocked_gcloud.assert_called_once_with(
+            ["gcloud", "auth", "application-default", "print-access-token"],
+            capture_output=True,
+            check=True,
+        )
+        self.assertEqual([method for method, _ in calls], ["POST", "GET", "POST", "DELETE"])
+        self.assertTrue(any("repair-ledger_locks" in url for _, url in calls))
+        self.assertTrue(any("repair-ledger" in url for _, url in calls))
+
+    def test_firestore_writer_duplicate_idempotency_key_raises_lock_error(self):
         entry = self._entry()
 
-        writer.write(entry)
+        def fake_request(method, url, **kwargs):
+            if method == "POST" and "repair-ledger_locks" in url:
+                return _FakeResponse(409, {"error": {"message": "ALREADY_EXISTS: lock"}})
+            raise AssertionError(f"unexpected request: {method} {url}")
 
-        client.collection.assert_called_once_with("repair-ledger")
-        collection_ref.document.assert_called_once_with(entry.idempotency_key)
-        document_ref.set.assert_called_once_with(entry.to_dict())
+        with patch(
+            "src.repair_provider_ledger.subprocess.run",
+            return_value=ledger.subprocess.CompletedProcess(args=[], returncode=0, stdout=b"token\n", stderr=b""),
+        ), patch("src.repair_provider_ledger.requests.request", side_effect=fake_request):
+            writer = ledger.FirestoreLedgerWriter("project-1", "repair-ledger")
+            with self.assertRaises(ledger.LedgerLockError):
+                writer.write(entry)
+
+    def test_firestore_writer_connection_fail_raises_write_error(self):
+        entry = self._entry()
+        with patch(
+            "src.repair_provider_ledger.subprocess.run",
+            return_value=ledger.subprocess.CompletedProcess(args=[], returncode=0, stdout=b"token\n", stderr=b""),
+        ), patch(
+            "src.repair_provider_ledger.requests.request",
+            side_effect=ledger.requests.RequestException("boom"),
+        ):
+            writer = ledger.FirestoreLedgerWriter("project-1", "repair-ledger")
+            with self.assertRaises(ledger.LedgerWriteError):
+                writer.write(entry)
 
     def test_draft_body_editor_dry_run_writes_shadow_only_ledger_row(self):
         with tempfile.TemporaryDirectory() as tmpdir:

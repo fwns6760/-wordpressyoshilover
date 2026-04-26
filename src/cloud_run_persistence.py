@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import re
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import uuid
 from typing import Iterator, Sequence
+from zoneinfo import ZoneInfo
 
 
 DEFAULT_PROJECT_ID = "baseballsite"
@@ -19,6 +24,10 @@ DEFAULT_RUNNER_MODULE = "src.tools.run_publish_notice_email_dry_run"
 DEFAULT_CURSOR_PATH = "/tmp/publish_notice_cursor.txt"
 DEFAULT_HISTORY_PATH = "/tmp/publish_notice_history.json"
 DEFAULT_QUEUE_PATH = "/tmp/publish_notice_queue.jsonl"
+DEFAULT_ARTIFACT_BUCKET_NAME = "yoshilover-history"
+DEFAULT_ARTIFACT_PREFIX = "repair_artifacts"
+JST = ZoneInfo("Asia/Tokyo")
+_KEYWORD_PATTERN = re.compile(r"[A-Za-z0-9_]{2,}|[一-龯ぁ-んァ-ヴー]{2,}")
 _MISSING_OBJECT_MARKERS = (
     "No URLs matched",
     "NotFoundException",
@@ -57,8 +66,24 @@ def _default_project_id() -> str:
     return DEFAULT_PROJECT_ID
 
 
+def _now_jst(now: datetime | None = None) -> datetime:
+    if now is None:
+        return datetime.now(JST)
+    if now.tzinfo is None:
+        return now.replace(tzinfo=JST)
+    return now.astimezone(JST)
+
+
 def _path(value: str | os.PathLike[str]) -> Path:
     return value if isinstance(value, Path) else Path(value)
+
+
+def _extract_keywords(text: str) -> set[str]:
+    return {
+        token
+        for token in _KEYWORD_PATTERN.findall(str(text or ""))
+        if len(token.strip()) >= 2
+    }
 
 
 class GCSStateManager:
@@ -136,6 +161,84 @@ class GCSStateManager:
             source = _path(local_path)
             if source.exists():
                 self.upload(source, remote_name)
+
+
+class ArtifactUploader:
+    """Upload repair before/after artifacts to a dedicated GCS prefix."""
+
+    def __init__(
+        self,
+        bucket_name: str = DEFAULT_ARTIFACT_BUCKET_NAME,
+        prefix: str = DEFAULT_ARTIFACT_PREFIX,
+        project_id: str | None = None,
+    ) -> None:
+        self.bucket_name = str(bucket_name).strip()
+        self.prefix = str(prefix).strip().strip("/")
+        self.project_id = str(project_id or _default_project_id()).strip()
+        self.manager = GCSStateManager(
+            bucket_name=self.bucket_name,
+            prefix=self.prefix,
+            project_id=self.project_id,
+        )
+
+    @staticmethod
+    def compute_diff_summary(before: str, after: str) -> dict[str, object]:
+        before_text = str(before or "")
+        after_text = str(after or "")
+        before_lines = [line for line in before_text.splitlines() if line.strip()]
+        after_lines = [line for line in after_text.splitlines() if line.strip()]
+        before_keywords = _extract_keywords(before_text)
+        after_keywords = _extract_keywords(after_text)
+        return {
+            "line_count_before": len(before_lines),
+            "line_count_after": len(after_lines),
+            "line_count_delta": len(after_lines) - len(before_lines),
+            "char_count_before": len(before_text),
+            "char_count_after": len(after_text),
+            "char_delta": len(after_text) - len(before_text),
+            "added_keywords": sorted(after_keywords - before_keywords),
+            "removed_keywords": sorted(before_keywords - after_keywords),
+        }
+
+    def upload(
+        self,
+        post_id: int | str,
+        provider: str,
+        run_id: str,
+        before_body: str,
+        after_body: str,
+        extra_meta: dict[str, object] | None = None,
+    ) -> str:
+        current_date = _now_jst().date().isoformat()
+        remote_name = f"{current_date}/{post_id}_{provider}_{run_id}.json"
+        payload = {
+            "post_id": post_id,
+            "provider": provider,
+            "run_id": run_id,
+            "before_body": before_body,
+            "after_body": after_body,
+            "diff_summary": self.compute_diff_summary(before_body, after_body),
+        }
+        if extra_meta is not None:
+            payload["extra_meta"] = dict(extra_meta)
+
+        temp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                suffix=".json",
+                delete=False,
+            ) as handle:
+                json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
+                handle.write("\n")
+                temp_path = Path(handle.name)
+            self.manager.upload(temp_path, remote_name)
+        finally:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
+
+        return self.manager._remote_uri(remote_name)
 
 
 def _parse_entrypoint_args(argv: Sequence[str] | None) -> argparse.Namespace:

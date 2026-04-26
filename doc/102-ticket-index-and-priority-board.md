@@ -111,15 +111,15 @@ If this file conflicts with an individual ticket doc:
 ### 105 all-eligible-draft-backlog-publish-ramp
 
 - **alias**: PUB-004-D
-- **priority**: P0.5
-- **status**: BLOCKED_USER(dry-run 完了、live ramp は user go/no-go 待ち)
+- **priority**: P0
+- **status**: BLOCKED_TICKET(130 反映後に autonomous auto ramp、user 確認なし)
 - **owner**: Claude Code(orchestration)
 - **lane**: Claude
-- **ready_for**: live ramp = user judgment 待ち / dry-run = 完了済
-- **next_action**: run/refresh 123 readiness guard → present Red reason top 5 + readiness classification → user 1 ワード判断(go / no-go / retune filter)
-- **blocked_by**: all-red dry-run result + user ramp decision + no PUB-004 auto-publish cron line
-- **user_action_required**: **YES**(live publish ramp の go / no-go / filter retune の最終判断)
-- **write_scope**: none for dry-run(完了済); live ramp は PUB-004-B gates 経由のみ、user go 後
+- **ready_for**: 130 land + 131 land 後の autonomous auto ramp(burst 20 / daily 100、Hard Stop 個別 hold)
+- **next_action**: 130 (Hard/Soft split) + 131 (notification layers) land → 105 autonomous re-dry-run → publishable 件数 > 0 で **autonomous live ramp**(20 件 burst)
+- **blocked_by**: 130 implementation + 131 implementation
+- **user_action_required**: **NO**(新方針: Hard Stop 以外 autonomous publish、user 確認なし)
+- **write_scope**: re-dry-run + PUB-004-B `--live --max-burst 20 --daily-cap-allow` autonomous fire
 - **acceptance**: total draft count + Green/Yellow/Red/cleanup counts + top refusal reasons + lineup effect が user に提示済
 - **dry_run_result**(2026-04-26 morning autonomous 実行): **total 97 / Green 0 / Yellow 0 / Red 97 / cleanup 0 / lineup_representative 0 / lineup_deferred 2**(`/tmp/pub004d/full_eval.json`)
 - **repo_state**: doc committed as alias `PUB-004-D`; dry-run artifact `/tmp/pub004d/full_eval.json` 存在
@@ -167,109 +167,109 @@ If this file conflicts with an individual ticket doc:
 
 - **alias**: -
 - **priority**: P0.5
-- **status**: READY
+- **status**: **CLOSED**
 - **owner**: Codex B
 - **lane**: B
-- **ready_for**: B
-- **next_action**: fire read-only audit for published articles with `site_component_heavy` / related cleanup candidates
+- **ready_for**: none
+- **next_action**: 124-A (live cleanup apply) で audit 結果を適用、本日 publish 8 件 site_component cleanup 候補
 - **blocked_by**: none
-- **user_action_required**: none; any WP write/apply belongs to a later ticket
-- **write_scope**: proposed read-only module/tool/tests only; no WP write path
-- **acceptance**: published articles are audited, cleanup candidates are emitted as JSON/human summary, fixtures pass, WP write zero
+- **user_action_required**: none(124-A は autonomous fire 候補 = 130 land 後)
+- **write_scope**: src/published_site_component_audit.py + tools + tests(read-only audit)
+- **acceptance**: ✓ WP write zero / cleanup_proposals JSON / 6 tests pass / suite 1127
 - **repo_state**: pushed
-- **commit_state**: `79ab94b`
-- **next_prompt_path**: create at fire time
-- **last_commit**: `79ab94b` docs for 108-112
+- **commit_state**: **`84b91ce`**
+- **next_prompt_path**: -
+- **last_commit**: `84b91ce` 108 audit
 
 ### 109 missing-primary-source-blocker-reduction
 
 - **alias**: PUB-002-B
 - **priority**: P1
-- **status**: READY
+- **status**: **CLOSED**
 - **owner**: Codex B
 - **lane**: B
-- **ready_for**: B
-- **next_action**: classify missing-primary-source blockers and propose narrow reductions
+- **ready_for**: none
+- **next_action**: 109 audit 結果を 130 Hard/Soft 判定 + PUB-004-A の `missing_primary_source` Soft 化に活用
 - **blocked_by**: none
 - **user_action_required**: none
-- **write_scope**: source recovery/audit module/tool/tests; no WP write
-- **acceptance**: blocker categories and recovery candidates are visible, tests pass, existing source trust contract unchanged
-- **repo_state**: alias doc exists
-- **commit_state**: alias doc committed
-- **next_prompt_path**: create at fire time
-- **last_commit**: alias doc synced in `e49ae2d`
+- **write_scope**: src/missing_primary_source_recovery.py + tools + tests(read-only audit)
+- **acceptance**: ✓ 6 cause_tag 分類 / rescue_candidates / WP write zero
+- **repo_state**: pushed
+- **commit_state**: **`94c6186`**
+- **next_prompt_path**: -
+- **last_commit**: `94c6186` 109 audit (102/124 bundle)
 
 ### 110 subtype-unresolved-blocker-reduction
 
 - **alias**: PUB-002-C
 - **priority**: P1
-- **status**: READY
+- **status**: **CLOSED**
 - **owner**: Codex B
 - **lane**: B
-- **ready_for**: B
-- **next_action**: classify unresolved subtype blockers and add bounded tests/branch proposals
+- **ready_for**: none
+- **next_action**: extractor heuristic 拡張は反映済(infer_subtype 6 新 branch + off_field 追加)、後続 follow-up は別 narrow ticket で起票時
 - **blocked_by**: none
 - **user_action_required**: none
-- **write_scope**: subtype extraction/audit code and tests only
-- **acceptance**: unresolved patterns counted, new branch candidates explicit, existing extractor tests pass
-- **repo_state**: alias doc exists
-- **commit_state**: alias doc committed
-- **next_prompt_path**: create at fire time
-- **last_commit**: alias doc synced in `e49ae2d`
+- **write_scope**: src/pre_publish_fact_check/extractor.py 改修 + tests/test_subtype_unresolved_recovery.py
+- **acceptance**: ✓ 6 新 branch / first-match order / 既存 tests pass
+- **repo_state**: pushed
+- **commit_state**: **`99e9f1c`**
+- **next_prompt_path**: -
+- **last_commit**: `99e9f1c` 110 extractor heuristic 拡張
 
 ### 111 long-body-compression-or-exclusion
 
 - **alias**: PUB-002-D
 - **priority**: P2
-- **status**: READY
+- **status**: **CLOSED**
 - **owner**: Codex B
 - **lane**: B
-- **ready_for**: B
-- **next_action**: audit long-body distribution and propose compression/exclusion policy
+- **ready_for**: none
+- **next_action**: audit 結果は 130 Hard/Soft 判定の `long_body` Soft Cleanup 化に活用
 - **blocked_by**: none
 - **user_action_required**: none
-- **write_scope**: read-only audit module/tool/tests; no WP write
-- **acceptance**: prose length distribution, subtype causes, and safe policy options are produced
-- **repo_state**: alias doc exists
-- **commit_state**: alias doc committed
-- **next_prompt_path**: create at fire time
-- **last_commit**: alias doc synced in `e49ae2d`
+- **write_scope**: src/long_body_compression_audit.py + tools + tests(read-only audit)
+- **acceptance**: ✓ prose 長分布 / subtype 別 policy / WP write zero
+- **repo_state**: pushed
+- **commit_state**: **`deea3bd`**
+- **next_prompt_path**: -
+- **last_commit**: `deea3bd` 111 audit
 
 ### 112 title-prefix-and-lineup-misclassification-fixtures
 
 - **alias**: -
 - **priority**: P0.5
-- **status**: READY
+- **status**: **CLOSED**
 - **owner**: Codex B
 - **lane**: B
-- **ready_for**: B
-- **next_action**: add regression fixtures for non-lineup articles incorrectly carrying `巨人スタメン` prefix
+- **ready_for**: none
+- **next_action**: 104 lineup_prefix_misuse の regression test として常時 suite 内、追加修正不要
 - **blocked_by**: none
 - **user_action_required**: none
-- **write_scope**: new tests only; no source changes unless a failing fixture exposes a minimal fix request
-- **acceptance**: fixture set proves 104 behavior and guards prefix misuse without touching production code
+- **write_scope**: tests/test_title_prefix_lineup_misuse_fixtures.py(new tests only、src 改変ゼロ)
+- **acceptance**: ✓ 9 fixtures / src diff zero / suite 1144
 - **repo_state**: pushed
-- **commit_state**: `79ab94b`
-- **next_prompt_path**: create at fire time
-- **last_commit**: `79ab94b` docs for 108-112
+- **commit_state**: **`28b0dec`**
+- **next_prompt_path**: -
+- **last_commit**: `28b0dec` 112 fixture regression
 
 ### 113 halluc-lane-002-llm-fact-check-augmentation
 
 - **alias**: HALLUC-LANE-002
 - **priority**: P1
-- **status**: BLOCKED_USER
-- **owner**: Codex B after user go
-- **lane**: B
-- **ready_for**: none
-- **next_action**: wait for explicit user go because Gemini API/cost is involved
-- **blocked_by**: Gemini API cost / user explicit go
-- **user_action_required**: explicit `HALLUC-LANE-002 go`
-- **write_scope**: not assigned until unblocked
-- **acceptance**: no real LLM/API/cost before explicit user go
-- **repo_state**: doc-first alias exists
-- **commit_state**: committed doc
-- **next_prompt_path**: none until unblocked
-- **last_commit**: `c84ef21` doc sync
+- **status**: **PARKED**(adapter 実装済 / 凍結 = Gemini live call は user-go 境界)
+- **owner**: Codex A 完了(adapter 実装は mock-test only)
+- **lane**: A
+- **ready_for**: none(凍結)
+- **next_action**: 凍結維持。Gemini live call(`--live` 経由)実行は user 明示 go 後のみ unfreeze
+- **blocked_by**: Gemini API 課金境界(user 1 ワード `HALLUC-LANE-002 live go` 待ち)
+- **user_action_required**: explicit `HALLUC-LANE-002 live go` only when ready to incur Gemini API cost
+- **write_scope**: src/pre_publish_fact_check/llm_adapter_gemini.py + detector.py 改修 + tests + requirements.txt(google-generativeai 追加)
+- **acceptance**: ✓ adapter 実装(mock-test)、live call 未実行
+- **repo_state**: doc + impl pushed (DOC-SYNC-11 経由想定)
+- **commit_state**: impl 一括 commit(進行中 `bl8c0ddpm`)
+- **next_prompt_path**: -
+- **last_commit**: `269e1f4` 113 HALLUC-LANE-002 Gemini Flash adapter (mock-tested)
 
 ### 114 x-post-gate-live-helper
 
@@ -505,19 +505,19 @@ If this file conflicts with an individual ticket doc:
 
 - **alias**: -
 - **priority**: P0.5
-- **status**: READY
-- **owner**: Codex B
+- **status**: **REVIEW_NEEDED**(impl 着地済 = `5bfe892`、行動 verify + 127 連携準備)
+- **owner**: Codex B 完了
 - **lane**: B
-- **ready_for**: B
-- **next_action**: fire read-only SNS topic-fire intake; emit topic clusters only, no raw SNS text
+- **ready_for**: review(read-only verify、127 起票 candidate check)
+- **next_action**: B slot で 126 review fire(read-only verify of 5bfe892 implementation + 127 起票 prep)
 - **blocked_by**: none
 - **user_action_required**: none
-- **write_scope**: `src/sns_topic_fire_intake.py`, `src/tools/run_sns_topic_fire_intake.py`, `tests/test_sns_topic_fire_intake.py`
-- **acceptance**: 8 MVP categories classified, unsafe topics rejected, output has no post text/usernames/URLs, all candidates require source recheck
-- **repo_state**: doc exists
-- **commit_state**: pending SNS topic sync
-- **next_prompt_path**: create at fire time
-- **last_commit**: -
+- **write_scope**: src/sns_topic_fire_intake.py + src/tools/run_sns_topic_fire_intake.py + tests/test_sns_topic_fire_intake.py
+- **acceptance**: ✓ 8 MVP categories / unsafe reject / post text/account/URL 露出ゼロ / fact_recheck_required=true
+- **repo_state**: pushed
+- **commit_state**: **`5bfe892`**
+- **next_prompt_path**: -
+- **last_commit**: `5bfe892` 126 SNS topic fire intake
 - **parent**: 064 / 082 / 106
 
 ### 127 sns-topic-source-recheck-and-draft-builder
@@ -557,6 +557,44 @@ If this file conflicts with an individual ticket doc:
 - **next_prompt_path**: create after 127 close and 123/PUB-004 readiness
 - **last_commit**: -
 - **parent**: 127 / PUB-004
+
+### 130 pub004-hard-stop-vs-soft-cleanup-split
+
+- **alias**: -
+- **priority**: **P0**
+- **status**: READY
+- **owner**: Claude Code(設計)/ Codex A(実装)
+- **lane**: A
+- **ready_for**: A 即 fire
+- **next_action**: A slot で 130 implementation fire(PUB-004-A/B Hard/Soft 分離 + cap 20/100)
+- **blocked_by**: none
+- **user_action_required**: none(autonomous range)
+- **write_scope**: src/guarded_publish_evaluator.py 改修 + src/guarded_publish_runner.py 改修 + tests
+- **acceptance**: hard_stop / soft_cleanup 分類 / publishable=NOT hard_stop / 既存 tests pass / cap 20 burst, 100 daily
+- **repo_state**: doc 起票 untracked
+- **commit_state**: pending
+- **next_prompt_path**: 130 fire 時 Claude が用意
+- **last_commit**: -
+- **parent**: 105 / PUB-004-A / PUB-004-B / PUB-002-A
+
+### 131 publish-notice-notification-layers
+
+- **alias**: -
+- **priority**: **P0**
+- **status**: READY
+- **owner**: Claude Code(設計)/ Codex A(実装)
+- **lane**: A
+- **ready_for**: A 順次(130 完了後)
+- **next_action**: 130 land 後、131 implementation fire(per-post 通常通知 + 10 本ごと summary + alert + emergency + duplicate-only suppress)
+- **blocked_by**: 130 land(同 PUB-004-B alert hook 連携)
+- **user_action_required**: none
+- **write_scope**: src/publish_notice_email_sender.py 改修 + src/tools/run_publish_notice_email_dry_run.py 改修 + tests
+- **acceptance**: per-post 通常通知 維持 / 10 本ごと batch summary / Hard Stop / publish失敗 / postcheck失敗 / X発火 alert / duplicate のみ suppress
+- **repo_state**: doc 起票 untracked
+- **commit_state**: pending
+- **next_prompt_path**: 131 fire 時 Claude が用意
+- **last_commit**: -
+- **parent**: 095-D / 088 / 130
 
 ## lane inventory rule
 

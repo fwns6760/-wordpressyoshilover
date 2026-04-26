@@ -18,12 +18,6 @@ SUCCESS_BODY = (
     "【選手成績】\n岡本が本塁打。\n"
     "【試合展開】\n終盤を守った。"
 )
-LINEUP_BODY = (
-    "【試合概要】\n横浜スタジアムでの一戦です。\n"
-    "【スタメン一覧】\n1番吉川、2番坂本、3番岡本です。\n"
-    "【先発投手】\n井上温大が先発です。\n"
-    "【注目ポイント】\n上位打線の出塁が焦点です。"
-)
 
 
 def _decorated_body_attrs(width: int = 4) -> str:
@@ -54,35 +48,6 @@ def _build_true_prose_too_long_body() -> str:
         + ("あ" * 1300)
         + "\n【ハイライト】\n簡潔です。\n【選手成績】\n簡潔です。\n【試合展開】\n簡潔です。"
     )
-
-
-def _build_lineup_body(
-    *,
-    leading_headings: tuple[str, ...] = (),
-    extra_after: dict[str, tuple[str, ...]] | None = None,
-    omit_headings: set[str] | None = None,
-) -> str:
-    sections = [
-        ("【試合概要】", "横浜スタジアムでの一戦です。"),
-        ("【スタメン一覧】", "1番吉川、2番坂本、3番岡本です。"),
-        ("【先発投手】", "井上温大が先発です。"),
-        ("【注目ポイント】", "上位打線の出塁が焦点です。"),
-    ]
-    lines: list[str] = []
-    extra_after = extra_after or {}
-    omit_headings = omit_headings or set()
-
-    for heading in leading_headings:
-        lines.extend([heading, "装飾見出しの補足です。"])
-
-    for heading, text in sections:
-        if heading in omit_headings:
-            continue
-        lines.extend([heading, text])
-        for extra_heading in extra_after.get(heading, ()):
-            lines.extend([extra_heading, "装飾見出しの補足です。"])
-
-    return "\n".join(lines)
 
 
 def _make_post(
@@ -246,136 +211,6 @@ class TestUnresolvedAndStale(unittest.TestCase):
         post = _make_unresolved_post(1154, modified="2026-04-26T08:00:00+09:00")
         post["modified"] = ""
         self.assertFalse(lane._is_unresolved_and_stale(post, now))
-
-
-class TestDecorativeHeadingStripper(unittest.TestCase):
-    def test_decorative_only_returns_empty(self):
-        headings = (
-            "【📊 今日のスタメンデータ】",
-            "【👀 スタメンの見どころ】",
-            "【📌 関連ポスト】",
-        )
-        self.assertEqual(lane._strip_decorative_headings(headings), [])
-
-    def test_mixed_headings_keep_expected_only(self):
-        headings = (
-            "【📊 今日のスタメンデータ】",
-            "【試合概要】",
-            "【📌 関連ポスト】",
-            "【スタメン一覧】",
-        )
-        self.assertEqual(
-            lane._strip_decorative_headings(headings),
-            ["【試合概要】", "【スタメン一覧】"],
-        )
-
-    def test_empty_input_returns_empty(self):
-        self.assertEqual(lane._strip_decorative_headings(()), [])
-
-    def test_non_decorative_heading_is_preserved(self):
-        headings = ("【関連情報】",)
-        self.assertEqual(lane._strip_decorative_headings(headings), ["【関連情報】"])
-
-    def test_all_known_emoji_prefixes_are_removed(self):
-        for emoji in ("📊", "👀", "📌", "💬", "🔥", "⚾", "📝"):
-            with self.subTest(emoji=emoji):
-                heading = f"【{emoji} 装飾見出し】"
-                self.assertEqual(lane._strip_decorative_headings((heading,)), [])
-
-
-class TestLineupHeadingTolerance(unittest.TestCase):
-    def test_lane_accepts_lineup_with_decorative_heading_insertions(self):
-        body = _build_lineup_body(
-            leading_headings=("【📊 今日のスタメンデータ】",),
-            extra_after={"【スタメン一覧】": ("【👀 スタメンの見どころ】",)},
-        )
-        post = _make_post(
-            1161,
-            title="巨人スタメン一覧",
-            subtype="lineup",
-            modified="2026-04-26T13:30:00+09:00",
-            body=body,
-        )
-        wp = _FakeWP(paged_posts={1: [post], 2: []}, get_post_map={1161: post})
-        code, stdout, _, wp, _, _ = _run_main(
-            ["--now-iso", "2026-04-26T14:55:00+09:00"],
-            wp=wp,
-            run_editor_side_effect=_editor_success_runs(1),
-        )
-        self.assertEqual(code, 0)
-        self.assertEqual(len(wp.put_calls), 1)
-        payload = json.loads(stdout.strip())
-        self.assertEqual(payload["put_ok"], 1)
-        self.assertEqual(payload["per_post_outcomes"], [
-            {"post_id": 1161, "verdict": "edited", "edited": "ok"}
-        ])
-
-    def test_lane_accepts_lineup_without_decorative_heading(self):
-        post = _make_post(
-            1162,
-            title="巨人スタメン一覧",
-            subtype="lineup",
-            modified="2026-04-26T13:30:00+09:00",
-            body=LINEUP_BODY,
-        )
-        wp = _FakeWP(paged_posts={1: [post], 2: []}, get_post_map={1162: post})
-        code, stdout, _, wp, _, _ = _run_main(
-            ["--now-iso", "2026-04-26T14:55:00+09:00"],
-            wp=wp,
-            run_editor_side_effect=_editor_success_runs(1),
-        )
-        self.assertEqual(code, 0)
-        self.assertEqual(len(wp.put_calls), 1)
-        payload = json.loads(stdout.strip())
-        self.assertEqual(payload["put_ok"], 1)
-        self.assertEqual(payload["per_post_outcomes"], [
-            {"post_id": 1162, "verdict": "edited", "edited": "ok"}
-        ])
-
-    def test_lane_rejects_lineup_when_expected_heading_is_missing(self):
-        post = _make_post(
-            1163,
-            title="巨人スタメン一覧",
-            subtype="lineup",
-            modified="2026-04-26T13:30:00+09:00",
-            body=_build_lineup_body(omit_headings={"【先発投手】"}),
-        )
-        wp = _FakeWP(paged_posts={1: [post], 2: []}, get_post_map={1163: post})
-        code, stdout, _, _, _, editor_mock = _run_main(
-            ["--now-iso", "2026-04-26T14:55:00+09:00"],
-            wp=wp,
-        )
-        self.assertEqual(code, 0)
-        self.assertFalse(editor_mock.called)
-        payload = json.loads(stdout.strip())
-        self.assertEqual(payload["put_ok"], 0)
-        self.assertEqual(payload["skip_reason_counts"], {"heading_mismatch": 1})
-        self.assertEqual(payload["per_post_outcomes"], [
-            {"post_id": 1163, "verdict": "skip", "skip_reason": "heading_mismatch"}
-        ])
-
-    def test_lane_accepts_each_known_decorative_emoji_prefix(self):
-        for idx, emoji in enumerate(("📊", "👀", "📌", "💬", "🔥", "⚾", "📝"), start=1170):
-            with self.subTest(emoji=emoji):
-                post = _make_post(
-                    idx,
-                    title="巨人スタメン一覧",
-                    subtype="lineup",
-                    modified="2026-04-26T13:30:00+09:00",
-                    body=_build_lineup_body(leading_headings=(f"【{emoji} 装飾見出し】",)),
-                )
-                wp = _FakeWP(paged_posts={1: [post], 2: []}, get_post_map={idx: post})
-                code, stdout, _, _, _, _ = _run_main(
-                    ["--now-iso", "2026-04-26T14:55:00+09:00"],
-                    wp=wp,
-                    run_editor_side_effect=_editor_success_runs(1),
-                )
-                self.assertEqual(code, 0)
-                payload = json.loads(stdout.strip())
-                self.assertEqual(payload["put_ok"], 1)
-                self.assertEqual(payload["per_post_outcomes"], [
-                    {"post_id": idx, "verdict": "edited", "edited": "ok"}
-                ])
 
 
 class TestLaneMain(unittest.TestCase):

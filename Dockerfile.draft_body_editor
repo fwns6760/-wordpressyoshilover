@@ -1,0 +1,25 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+WORKDIR /app
+
+COPY requirements.txt ./requirements.txt
+COPY requirements-dev.txt ./requirements-dev.txt
+
+RUN python3 -m pip install --no-cache-dir --upgrade pip \
+    && python3 -m pip install --no-cache-dir -r requirements.txt
+
+COPY src/ ./src/
+COPY vendor/ ./vendor/
+
+RUN useradd --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser \
+    && mkdir -p /app/logs /app/data \
+    && chown -R appuser:appuser /app /home/appuser
+
+USER appuser
+
+ENTRYPOINT ["python3", "-m", "src.tools.run_draft_body_editor_lane"]
+CMD ["--max-posts", "3"]

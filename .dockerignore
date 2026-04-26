@@ -1,0 +1,9 @@
+*
+!.dockerignore
+!Dockerfile.draft_body_editor
+!requirements.txt
+!requirements-dev.txt
+!src/
+!src/**
+!vendor/
+!vendor/**

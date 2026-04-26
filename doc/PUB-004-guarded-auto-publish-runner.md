@@ -244,7 +244,7 @@ format: 1 line = 1 publish attempt(成功/失敗 とも record)
 - **JST 0:00 reset**: ts (JST) の date 部分が 当日 のものだけを daily cap count に含める
 - **失敗候補は自動再試行しない**: 同 post_id が `status=refused` で record されている場合、次回 invocation で skip(reattempt は手動明示で history line 削除 or override flag 必要)
 - 成功 record も skip 対象(同 post_id の重複 publish 防止)
-- daily cap 計上対象は `status in {sent, refused}` 両方(skip は count しない、明確に publish 試行した数)
+- daily cap 計上対象は `status == sent` のみ(refused / skipped は count しない、実際に publish できた件数だけを budget として扱う)
 
 #### Yellow 改善ログ(別 file)
 

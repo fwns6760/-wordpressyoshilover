@@ -466,7 +466,7 @@ def _history_attempted_post_ids(rows: Sequence[dict[str, Any]]) -> set[int]:
 def _daily_attempt_count(rows: Sequence[dict[str, Any]], day: date) -> int:
     count = 0
     for row in rows:
-        if str(row.get("status") or "") not in {"sent", "refused"}:
+        if str(row.get("status") or "") != "sent":
             continue
         ts = _parse_iso_to_jst(row.get("ts"))
         if ts is None or ts.date() != day:

@@ -268,6 +268,134 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         self.assertEqual(len(skipped), 1)
         self.assertEqual(result["refused"][-1]["reason"], "daily_cap")
 
+    def test_daily_cap_counts_sent_only_not_refused(self):
+        post = _post(
+            1010,
+            "巨人が広島に3-1で勝利",
+            f"<p>巨人が広島に3-1で勝利した。序盤に主導権を握り、投手陣もリードを守り切った。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/source</p>",
+        )
+        report = _report(green=[_green_entry(1010, post["title"]["raw"])])
+        wp = FakeWPClient({1010: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.jsonl"
+            history_lines = [
+                json.dumps(
+                    {
+                        "post_id": 1200 + index,
+                        "ts": "2026-04-26T01:00:00+09:00",
+                        "status": "refused",
+                        "backup_path": None,
+                        "error": "hard_stop:freshness_window",
+                        "judgment": "hard_stop",
+                    },
+                    ensure_ascii=False,
+                )
+                for index in range(100)
+            ]
+            history_path.write_text("\n".join(history_lines) + "\n", encoding="utf-8")
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=history_path,
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual([item["status"] for item in result["executed"]], ["sent"])
+        self.assertEqual(result["refused"], [])
+
+    def test_daily_cap_counts_sent_only_not_skipped(self):
+        post = _post(
+            1011,
+            "巨人がDeNAに2-1で勝利",
+            f"<p>巨人がDeNAに2-1で勝利した。終盤の一打で均衡を破り、救援陣もリードを守った。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/source</p>",
+        )
+        report = _report(green=[_green_entry(1011, post["title"]["raw"])])
+        wp = FakeWPClient({1011: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.jsonl"
+            history_lines = [
+                json.dumps(
+                    {
+                        "post_id": 1300 + index,
+                        "ts": "2026-04-26T01:00:00+09:00",
+                        "status": "skipped",
+                        "backup_path": None,
+                        "error": "daily_cap",
+                        "judgment": "green",
+                        "hold_reason": "daily_cap",
+                    },
+                    ensure_ascii=False,
+                )
+                for index in range(100)
+            ]
+            history_path.write_text("\n".join(history_lines) + "\n", encoding="utf-8")
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=history_path,
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual([item["status"] for item in result["executed"]], ["sent"])
+        self.assertEqual(result["refused"], [])
+
+    def test_daily_cap_100_sent_blocks_next_sent(self):
+        posts = {
+            1012: _post(1012, "巨人がヤクルトに5-2で勝利", f"<p>巨人がヤクルトに5-2で勝利した。主砲の一発で流れを引き寄せ、終盤も突き放した。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/source</p>"),
+            1013: _post(1013, "巨人が中日に6-3で勝利", f"<p>巨人が中日に6-3で勝利した。序盤から得点を重ね、投手陣も粘って逃げ切った。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/source</p>"),
+        }
+        report = _report(
+            green=[
+                _green_entry(1012, posts[1012]["title"]["raw"]),
+                _green_entry(1013, posts[1013]["title"]["raw"]),
+            ]
+        )
+        wp = FakeWPClient(posts)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.jsonl"
+            history_lines = [
+                json.dumps(
+                    {
+                        "post_id": 1400 + index,
+                        "ts": "2026-04-26T01:00:00+09:00",
+                        "status": "sent",
+                        "backup_path": "/tmp/backup.json",
+                        "error": None,
+                        "judgment": "green",
+                    },
+                    ensure_ascii=False,
+                )
+                for index in range(100)
+            ]
+            history_path.write_text("\n".join(history_lines) + "\n", encoding="utf-8")
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=history_path,
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual([item["status"] for item in result["executed"]], ["skipped", "skipped"])
+        self.assertEqual([item["reason"] for item in result["refused"]], ["daily_cap", "daily_cap"])
+
     def test_hard_stop_post_skipped_no_global_abort(self):
         green_post = _post(
             801,

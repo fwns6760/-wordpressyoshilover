@@ -25,6 +25,11 @@ If this file conflicts with an individual ticket doc:
 - execution order / status / owner / lane / blocked state: follow this file
 - detailed implementation contract: follow the individual ticket doc
 
+Current publish-policy reference:
+
+- `doc/active/154-publish-policy-2026-04-26-PM.md` = current publish-policy
+- `doc/done/2026-04/PUB-002-A-publish-candidate-gate-and-article-prose-contract.md` = superseded archive
+
 ## numbering policy
 
 - Continue the existing numeric ticket sequence: `102`, `103`, `104`, ...
@@ -48,13 +53,13 @@ If this file conflicts with an individual ticket doc:
 ```
 doc/
 ├── README.md  ← board 本体(root 唯一)
-├── active/    READY / IN_FLIGHT / REVIEW_NEEDED(PUB-002-A 含む)
+├── active/    READY / IN_FLIGHT / REVIEW_NEEDED(154 publish-policy 含む)
 ├── waiting/   BLOCKED_USER / BLOCKED_EXTERNAL / PARKED(PUB-005 含む)
 └── done/YYYY-MM/  CLOSED(PUB-004-guarded 含む)
 ```
 
 - doc/ root = **102 board のみ**(.md 1 file)
-- READY / IN_FLIGHT / REVIEW_NEEDED → `doc/active/`(PUB-002-A 等 parent runbook も active なら ここ)
+- READY / IN_FLIGHT / REVIEW_NEEDED → `doc/active/`(154 publish-policy 等 current runbook も active なら ここ)
 - BLOCKED_USER / BLOCKED_EXTERNAL / PARKED → `doc/waiting/`
 - CLOSED → `doc/done/YYYY-MM/`
 - **優先順位はフォルダではなく、本 102 board の `priority` / `next_action` で判別**
@@ -721,7 +726,7 @@ doc/
 
 - **alias**: -
 - **priority**: **P0**(critical safety、105 ramp halt blocker)
-- **status**: **READY**(A 即 fire、user 指定 134 はリナンバーで 135、user 指定 134 は doc reorg で `35fb67c` 使用済)
+- **status**: **CLOSED**(`ef9e21d` push 済、pytest 1318 → 1321、3 hard_stop flag + 4 出力 field + 3 summary count 実装)
 - **owner**: Claude Code(設計)/ Codex A(実装)
 - **lane**: A
 - **ready_for**: A 即 fire
@@ -736,9 +741,9 @@ doc/
   - comment/speech/program/off_field/farm_feature: 48h 超 hold(`stale_for_breaking_board`)
   - default: 24h 超 hold(`stale_for_breaking_board`)
 - **content_date 算出**: source date 優先 → 本文内日付表現 → created_at(modified は **使わない**)
-- **spec_doc**: `doc/active/135-pub004-breaking-news-freshness-gate.md`
+- **spec_doc**: `doc/done/2026-04/135-pub004-breaking-news-freshness-gate.md`
 - **write_scope**: `src/guarded_publish_evaluator.py` + `tests/test_guarded_publish_evaluator.py` + 必要なら `src/pre_publish_fact_check/extractor.py`
-- **doc_path**: `doc/active/135-pub004-breaking-news-freshness-gate.md`
+- **doc_path**: `doc/done/2026-04/135-pub004-breaking-news-freshness-gate.md`
 - **acceptance**: 3 新 hard_stop flag / freshness 出力 4 field / summary 3 count / 既存 evaluator/runner tests pass / 新 tests 追加 / suite 1248 baseline 維持(0 failed)
 - **repo_state**: spec doc 配置済
 - **commit_state**: pending impl

@@ -112,17 +112,18 @@ If this file conflicts with an individual ticket doc:
 
 - **alias**: PUB-004-D
 - **priority**: P0
-- **status**: BLOCKED_TICKET(130 反映後に autonomous auto ramp、user 確認なし)
+- **status**: BLOCKED_TICKET(130 land 後 autonomous re-dry-run + auto ramp、user 確認なし)
 - **owner**: Claude Code(orchestration)
 - **lane**: Claude
-- **ready_for**: 130 land + 131 land 後の autonomous auto ramp(burst 20 / daily 100、Hard Stop 個別 hold)
-- **next_action**: 130 (Hard/Soft split) + 131 (notification layers) land → 105 autonomous re-dry-run → publishable 件数 > 0 で **autonomous live ramp**(20 件 burst)
-- **blocked_by**: 130 implementation + 131 implementation
-- **user_action_required**: **NO**(新方針: Hard Stop 以外 autonomous publish、user 確認なし)
+- **ready_for**: 130 land 後 autonomous re-dry-run → publish_clean + repaired_publishable 件数 > 0 → **autonomous live ramp**(burst 20 / hard cap 30 / daily 100、hard_stop 個別 hold、repairable 前 cleanup → verify)
+- **next_action**: 130 (3 分類 + publish 前 cleanup chain) land → 105 autonomous re-dry-run → 出力 4 件数(publish_clean / repaired_publishable / hard_stop / hold_due_cleanup_failure)確認 → 20 件 burst autonomous live publish
+- **blocked_by**: 130 implementation
+- **user_action_required**: **NO**(新方針: hard_stop 以外 autonomous publish、user 確認なし)
+- **cap**: max_burst default **20** / hard cap **30** / daily **100**(JST 0:00 reset 既設)
 - **write_scope**: re-dry-run + PUB-004-B `--live --max-burst 20 --daily-cap-allow` autonomous fire
-- **acceptance**: total draft count + Green/Yellow/Red/cleanup counts + top refusal reasons + lineup effect が user に提示済
-- **dry_run_result**(2026-04-26 morning autonomous 実行): **total 97 / Green 0 / Yellow 0 / Red 97 / cleanup 0 / lineup_representative 0 / lineup_deferred 2**(`/tmp/pub004d/full_eval.json`)
-- **repo_state**: doc committed as alias `PUB-004-D`; dry-run artifact `/tmp/pub004d/full_eval.json` 存在
+- **acceptance**: 4 件数(publish_clean / repaired_publishable / hard_stop / hold_due_cleanup_failure)出力 + top refusal reasons + lineup effect が visible
+- **dry_run_result**(2026-04-26 旧 spec、filter 過 strict): total 97 / Green 0 / Yellow 0 / Red 97 / cleanup 0 / lineup_representative 0 / lineup_deferred 2(`/tmp/pub004d/full_eval.json`、130 実装後 obsolete)
+- **repo_state**: 130 land 後に再 dry-run 必須
 - **commit_state**: doc alias `4741eee`
 - **next_prompt_path**: -
 - **last_commit**: `4741eee` docs for 105/PUB-004-D
@@ -372,19 +373,20 @@ If this file conflicts with an individual ticket doc:
 
 - **alias**: PUB-005-A
 - **priority**: P0.5
-- **status**: READY
+- **status**: **CLOSED**(impl 着地済 `0253b2a`、Green-only X candidates 評価器、X API zero)
 - **owner**: Codex B
 - **lane**: B
-- **ready_for**: B
-- **next_action**: fire read-only evaluator for published Green-only X candidates
+- **ready_for**: none
+- **next_action**: 120 / 121 / 122 fire 時に再開(WP 公開済 Green 候補増えてから順次)
 - **blocked_by**: none
 - **user_action_required**: none
 - **write_scope**: `src/x_post_eligibility_evaluator.py`, `src/tools/run_x_post_eligibility_evaluator.py`, `tests/test_x_post_eligibility_evaluator.py`
-- **acceptance**: published-only / Green-only eligible list, Yellow/Red/X-side Red refused with reasons, JSON + human summary, WP write zero, X API zero
-- **repo_state**: doc exists
-- **commit_state**: current X ticket sync commit
-- **next_prompt_path**: create at fire time
-- **last_commit**: current X ticket sync commit
+- **acceptance**: ✓ published-only / Green-only eligible list, Yellow/Red/X-side Red refused with reasons, JSON + human summary, WP write zero, X API zero
+- **repo_state**: pushed
+- **commit_state**: **`0253b2a`**
+- **next_prompt_path**: -
+- **last_commit**: `0253b2a` 119 x-post-eligibility-evaluator (read-only, X API zero)
+- **known_issues**: 1227 suite に test_x_post_eligibility_evaluator の 2 fail(127 land 後の baseline)、follow-up narrow ticket で別途修正
 - **parent**: 114 / PUB-005
 
 ### 120 x-post-autopost-queue-and-ledger
@@ -505,38 +507,39 @@ If this file conflicts with an individual ticket doc:
 
 - **alias**: -
 - **priority**: P0.5
-- **status**: **REVIEW_NEEDED**(impl 着地済 = `5bfe892`、行動 verify + 127 連携準備)
+- **status**: **CLOSED**(impl `5bfe892` + B review OK 10/10、suite 1227 pass、SNS 露出 zero、LLM SDK zero、WP write zero)
 - **owner**: Codex B 完了
 - **lane**: B
-- **ready_for**: review(read-only verify、127 起票 candidate check)
-- **next_action**: B slot で 126 review fire(read-only verify of 5bfe892 implementation + 127 起票 prep)
+- **ready_for**: none
+- **next_action**: 127 (`2669faa`) で SNS topic source recheck → draft builder 経路に接続済
 - **blocked_by**: none
 - **user_action_required**: none
 - **write_scope**: src/sns_topic_fire_intake.py + src/tools/run_sns_topic_fire_intake.py + tests/test_sns_topic_fire_intake.py
-- **acceptance**: ✓ 8 MVP categories / unsafe reject / post text/account/URL 露出ゼロ / fact_recheck_required=true
+- **acceptance**: ✓ 8 MVP categories / unsafe reject / post text/account/URL 露出ゼロ / fact_recheck_required=true / B review pass 10/10
 - **repo_state**: pushed
 - **commit_state**: **`5bfe892`**
 - **next_prompt_path**: -
 - **last_commit**: `5bfe892` 126 SNS topic fire intake
+- **follow_up**: private-person reject heuristic 拡張(narrow ticket 候補、現状 family-centric なため非家族 private-person fixture 追加)
 - **parent**: 064 / 082 / 106
 
 ### 127 sns-topic-source-recheck-and-draft-builder
 
 - **alias**: -
 - **priority**: P1
-- **status**: PARKED
-- **owner**: Codex A or B after 126 close
-- **lane**: A/either
+- **status**: **CLOSED**(impl 着地済 `2669faa`、5 route 分類 + 10 new tests、resolver mock-injectable、leak guard、WP write zero、LLM SDK zero、live HTTP zero)
+- **owner**: Codex B 完了
+- **lane**: B
 - **ready_for**: none
-- **next_action**: wait for 126 close, then source-recheck candidates and auto-create WP drafts for `draft_ready`
-- **blocked_by**: 126 close
-- **user_action_required**: none for verified draft generation
+- **next_action**: 128(SNS topic auto-publish through PUB-004 gate)で draft → publish 経路に接続(130 land 後)
+- **blocked_by**: none
+- **user_action_required**: none
 - **write_scope**: `src/sns_topic_source_recheck.py`, `src/tools/run_sns_topic_source_recheck.py`, `tests/test_sns_topic_source_recheck.py`
-- **acceptance**: non-SNS source required, weak/sensitive/duplicate topics held, draft body has no raw SNS text/account identifiers, no publish
-- **repo_state**: doc exists
-- **commit_state**: pending SNS topic sync
-- **next_prompt_path**: create after 126 close
-- **last_commit**: -
+- **acceptance**: ✓ 5 route 分類(draft_ready / candidate_only / hold_sensitive / duplicate_news / reject)/ resolver mock / SNS 漏洩 zero / `source_recheck_passed=true` / `publish_gate_required=true`
+- **repo_state**: pushed
+- **commit_state**: **`2669faa`**
+- **next_prompt_path**: -
+- **last_commit**: `2669faa` 127 sns-topic-source-recheck-and-draft-builder
 - **parent**: 126 / PUB-002-A
 
 ### 128 sns-topic-auto-publish-through-pub004
@@ -558,39 +561,43 @@ If this file conflicts with an individual ticket doc:
 - **last_commit**: -
 - **parent**: 127 / PUB-004
 
-### 130 pub004-hard-stop-vs-soft-cleanup-split
+### 130 pub004-hard-stop-vs-repairable-before-publish
 
 - **alias**: -
 - **priority**: **P0**
-- **status**: READY
+- **status**: **READY**(A slot next、即 fire)
 - **owner**: Claude Code(設計)/ Codex A(実装)
 - **lane**: A
 - **ready_for**: A 即 fire
-- **next_action**: A slot で 130 implementation fire(PUB-004-A/B Hard/Soft 分離 + cap 20/100)
+- **next_action**: A slot で 130 implementation fire(3 分類 hard_stop / repairable_before_publish / publish_clean + 公開前 cleanup → verify → publish + cap 20 burst / hard 30 / daily 100)
 - **blocked_by**: none
 - **user_action_required**: none(autonomous range)
-- **write_scope**: src/guarded_publish_evaluator.py 改修 + src/guarded_publish_runner.py 改修 + tests
-- **acceptance**: hard_stop / soft_cleanup 分類 / publishable=NOT hard_stop / 既存 tests pass / cap 20 burst, 100 daily
-- **repo_state**: doc 起票 untracked
+- **spec_doc**: `doc/130-pub004-hard-stop-vs-repairable-before-publish.md`(新 spec、旧 file `130-pub004-hard-stop-vs-soft-cleanup-split.md` は本 file が supersede)
+- **policy_revised**: 2026-04-26(Soft Cleanup の publish 後ログ → **公開前 cleanup → verify → publish** に変更)
+- **write_scope**: `src/guarded_publish_evaluator.py` + `src/guarded_publish_runner.py` + `src/tools/run_guarded_publish.py` + `tests/test_guarded_publish_evaluator.py` + `tests/test_guarded_publish_runner.py`
+- **acceptance**: 3 分類 / publishable=NOT hard_stop / cleanup_required=repairable / publish 前 cleanup → verify → publish / cleanup 失敗で hold(全体 abort なし)/ cap 20/30/100 / CLI help "max 3" 文言消滅 / 既存 tests pass
+- **repo_state**: 新 spec doc untracked、旧 spec doc `130-pub004-hard-stop-vs-soft-cleanup-split.md` 削除予定
 - **commit_state**: pending
-- **next_prompt_path**: 130 fire 時 Claude が用意
+- **next_prompt_path**: `/tmp/codex_130_impl_prompt.txt`(Claude が refire 時 rewrite)
 - **last_commit**: -
 - **parent**: 105 / PUB-004-A / PUB-004-B / PUB-002-A
 
-### 131 publish-notice-notification-layers
+### 131 publish-notice-burst-summary-and-alerts
 
 - **alias**: -
-- **priority**: **P0**
-- **status**: READY
+- **priority**: **P0.5**
+- **status**: READY(130 land 後 fire)
 - **owner**: Claude Code(設計)/ Codex A(実装)
 - **lane**: A
-- **ready_for**: A 順次(130 完了後)
-- **next_action**: 130 land 後、131 implementation fire(per-post 通常通知 + 10 本ごと summary + alert + emergency + duplicate-only suppress)
-- **blocked_by**: 130 land(同 PUB-004-B alert hook 連携)
+- **ready_for**: 130 land 後
+- **next_action**: 130 land 後、131 implementation fire(per-post 通常通知 **suppress しない** + 10 本ごと summary + alert + emergency + duplicate のみ抑止)
+- **blocked_by**: 130 land(PUB-004-B alert hook 連携)
 - **user_action_required**: none
+- **spec_doc**: `doc/131-publish-notice-burst-summary-and-alerts.md`(新 spec、旧 file `131-publish-notice-batch-suppress.md` は本 file が supersede)
+- **policy_lock**: publish-notice mail を **suppress しない**。layer 5(同 post_id 30 分内重複)のみ抑止
 - **write_scope**: src/publish_notice_email_sender.py 改修 + src/tools/run_publish_notice_email_dry_run.py 改修 + tests
-- **acceptance**: per-post 通常通知 維持 / 10 本ごと batch summary / Hard Stop / publish失敗 / postcheck失敗 / X発火 alert / duplicate のみ suppress
-- **repo_state**: doc 起票 untracked
+- **acceptance**: per-post 通常通知 維持 / 10 本ごと batch summary / Hard Stop / publish 失敗 / postcheck 失敗 / X 発火 alert / duplicate のみ suppress / mock SMTP test
+- **repo_state**: 新 spec doc untracked、旧 spec doc `131-publish-notice-batch-suppress.md` 削除予定
 - **commit_state**: pending
 - **next_prompt_path**: 131 fire 時 Claude が用意
 - **last_commit**: -
@@ -611,13 +618,20 @@ Operational rule:
 - Codex A replenishment should come from ops, mail, cron, publish runner, WP REST, backup/history/queue, or doc commit work.
 - Each READY ticket should include `next_prompt_path`, `write_scope`, `acceptance`, and a test command or verification command before fire.
 
-Current inventory:
+Current inventory(2026-04-26 16:00 JST sync):
 
 | lane | READY count | tickets |
 |---|---:|---|
-| A | 1 | 123 |
-| B | 7 | 108 / 109 / 110 / 111 / 112 / 119 / 126 |
-| either | 0 unblocked live tickets | 114 umbrella parked; 120 parked until 119 close |
+| A | 3 | 123(readiness/regression guard) / **130**(P0、即 fire) / 131(130 land 後)|
+| B | 0 | 119 / 126 / 127 close 後のため READY 在庫なし。次の narrow B ticket を Claude が補充 |
+| Claude | 1 | 125 AdSense slot 自律実装(front-scope、user 待ちなし)|
+| either | 0 unblocked live tickets | 114 umbrella parked; 120 parked until live ramp |
+
+Closed today:
+- 108 / 109 / 110 / 111 / 112(commit hashes 各 row 参照)
+- 117 B(`0555733`)/ 119(`0253b2a`)
+- 126(`5bfe892` + B review OK 10/10)/ 127(`2669faa`)
+- 113(`269e1f4`、PARKED with Gemini live = user-go 境界)
 
 ## pull rule
 
@@ -634,14 +648,15 @@ Current inventory:
 3. Do not collide with Codex A write scopes.
 4. Do not touch `.env`, secrets, Cloud Run env, `RUN_DRAFT_ONLY`, X live post, or front/plugin.
 
-## next actions
+## next actions(2026-04-26 PM 同期)
 
-- **A slot next**: 123 readiness/regression guard for no-auto-publish state; then 105 decision presentation.
-- **B slot next**: 126 first for SNS topic-fire intake, then 119 or 108/112.
-- **Live 105 ramp**: only after 105 dry-run result is shown and user explicitly says go.
-- **PUB-004-C auto-publish cron**: do not add until 123 says ready and at least one safe live burst succeeds.
-- **SNS topic auto-publish path**: 126 -> 127 -> 128. Never publish directly from raw SNS; publish only after source recheck and PUB-004 gate.
-- **Do not advance 113 / 115 / 116 / 121** without user action or external precondition.
+- **A slot next**: **130**(PUB-004 hard_stop / repairable_before_publish / publish_clean 3 分類 + 公開前 cleanup → verify → publish + cap 20/30/100)→ 131(suppress しない通知 layering)→ 123(readiness/regression guard の read-only confirm)。
+- **B slot next**: 119 / 126 / 127 は **CLOSED**(`0253b2a` / `5bfe892` review OK / `2669faa`)。新規 narrow B ticket 補充までは待機、128 prep は 130 land 後の A lane で扱う。
+- **Claude 直**: 125 AdSense slot 実装(`.yoshi-ad--*` wrapper を `src/yoshilover-063-frontend.php` + `src/custom.css` に追加、ad unit ID 差し替えのみ user op)。並行で 123 readiness guard を 130 land 後に挟む(read-only)。
+- **Live 105 ramp**: 130 land → 105 autonomous re-dry-run → publish_clean + repaired_publishable 件数 > 0 → **autonomous live ramp 20 件 burst**(user 確認なし、新方針)。
+- **PUB-004-C auto-publish cron**: 105 1 回目 burst が安全に通った後に追加検討。
+- **SNS topic auto-publish path**: 126(`5bfe892`)→ 127(`2669faa`)→ 128(130 land 後)。raw SNS から直接 publish しない。
+- **Do not advance 113 / 115 / 116 / 121** without user action or external precondition. 113 = Gemini live = user-go 境界(`HALLUC-LANE-002 live go`)で凍結。
 - **Do not fire 114 directly**; use 119 -> 120 -> 121 -> 122.
 
 ## dependency locks

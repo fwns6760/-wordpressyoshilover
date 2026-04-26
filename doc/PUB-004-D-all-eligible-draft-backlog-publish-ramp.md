@@ -46,39 +46,41 @@
 |---|---|---|
 | 1 | 全 draft pool 棚卸し | `python3 -m src.tools.run_guarded_publish_evaluator --window-hours 999999 --max-pool 500 --format json --output /tmp/pub004d_full_eval.json --exclude-published-today` |
 | 2 | 件数表確認 | jq で `summary` 部分抽出、Green / Yellow / Red / cleanup_candidate 件数を user に報告 |
-| 3 | dry-run with PUB-004-B | `python3 -m src.tools.run_guarded_publish --input-from /tmp/pub004d_full_eval.json --max-burst 3 --format json` |
+| 3 | dry-run with PUB-004-B | `python3 -m src.tools.run_guarded_publish --input-from /tmp/pub004d_full_eval.json --max-burst 20 --format json` |
 | 4 | proposed list 確認 | refused 件 / would_publish 件、daily cap 残量を確認 |
-| 5 | live publish(burst 3) | `python3 -m src.tools.run_guarded_publish --input-from /tmp/pub004d_full_eval.json --max-burst 3 --live --daily-cap-allow` |
-| 6 | postcheck | public URL HTTP 200、history.jsonl の sent 行 |
-| 7 | 095 cron で mail 自動配信 | 次の :15 tick で 3 通(burst cap 内) |
-| 8 | 翌日以降繰り返し | daily cap 10 内で 1 日 1-3 invocation |
+| 5 | live publish(burst 20) | `python3 -m src.tools.run_guarded_publish --input-from /tmp/pub004d_full_eval.json --max-burst 20 --live --daily-cap-allow` |
+| 6 | postcheck | public URL HTTP 200、history.jsonl の sent 行(10 件ごと round trip) |
+| 7 | 095 cron で mail 自動配信 | 131 layering(per-post + 10 件 summary + alert) |
+| 8 | 翌日以降繰り返し | daily cap 100 内で 1 日 1-5 invocation |
 
-## 段階的 ramp 案(daily cap 上げ判断)
+## 段階的 ramp 案(2026-04-26 policy revision)
 
-| 段階 | daily cap | burst cap | 観察期間 | 上げる条件 |
-|---|---|---|---|---|
-| 初期(現状)| 10 | 3 | 1 週間 | mail 配信全 OK / Gmail filter spam なし / Red 誤判定なし / 公開記事 quality 確認 |
-| 中期 | 20 | 5 | 1 週間 | 同上、cron ramp 安定 |
-| 後期 | 30 | 5 | 続き | 同上、運用負荷確認 |
-| 最終 | 50 | 5 | continuous | bulk drain 完了に近づいたら自然減 |
+新方針:
+- 初期から **daily cap 100 / burst cap 20(hard cap 30)** で運用
+- 130 (3 分類 + 公開前 cleanup → verify → publish) land 後の autonomous ramp
+- ramp の段階分けは廃止(cap 上げ判断 = 不要)
 
-cap 上げは本 ticket scope 外、段階毎に user 判断 escalate(別 narrow ticket)。
+| 設定 | 値 | 根拠 |
+|---|---|---|
+| burst cap default | **20** | 1 invocation で 20 件、mail layering(131)で per-post + 10 件 summary |
+| burst cap hard | **30** | host code で 1-30 range enforce、それ以上は CLI reject |
+| daily cap | **100** | JST 0:00 reset、超過で残 skip |
 
 ## 受け入れ条件
 
 1. dry-run で全 draft の判定表(Green / Yellow / Red / cleanup_candidate 件数)が出る
 2. Red 理由(R1-R8)が見える(`refused` 配列の `reasons`)
-3. Green / Yellow / cleanup_candidate の公開候補リストが出る
-4. live 時は burst cap 3 / daily cap 10 を守る
-5. 公開後に public URL HTTP 200 確認
+3. publish_clean / repaired_publishable / hard_stop / hold_due_cleanup_failure の 4 件数が出る(130 land 後)
+4. live 時は burst cap 20(hard 30)/ daily cap 100 を守る
+5. 公開後に public URL HTTP 200 確認(10 件ごと round trip)
 6. publish history(`logs/guarded_publish_history.jsonl`)/ yellow_log / cleanup_log が残る
 7. 同一記事の二重 publish 防止(history dedup)
 8. X / SNS 投稿が発火しない(verified 2026-04-25、WP REST status flip 単独で X 配線 fire しない)
 
 ## stop 条件
 
-- mail burst > 5 通予測 → invocation 内で 3 件で打ち切り(PUB-004-B 既装)
-- daily cap 10 到達 → 翌日繰り越し(PUB-004-B 既装、JST 0:00 reset)
+- daily cap 100 到達 → 翌日繰り越し(JST 0:00 reset、PUB-004-B 既装)
+- burst hard cap 30 超指定 → CLI reject(host code で enforce)
 - Red 誤判定発生(明らか Red を Green と判定 → publish 事故)→ 即停止 + escalate user
 - mail 全件 spam 振り分け → 095 cron 一旦 disable + escalate
 - Yoshilover X timeline に自動投稿が出現 → 即 PUB-004-B disable + escalate
@@ -97,4 +99,4 @@ cap 上げは本 ticket scope 外、段階毎に user 判断 escalate(別 narrow
 ## 次の cron 化(PUB-004-C)
 
 PUB-004-D 安定運用 1〜2 日 + 失敗 0 件確認後、PUB-004-C で WSL cron 自動化。
-朝 / 昼 / 夜 = `0 8,13,20 * * *` 等で 1 日 3 回起動 → daily cap 10 内で 9 件 / 日 自動 publish 想定。
+朝 / 昼 / 夜 = `0 8,13,20 * * *` 等で 1 日 3 回起動 → daily cap 100 内で 60 件 / 日 自動 publish 想定(burst 20 × 3 invocation)。

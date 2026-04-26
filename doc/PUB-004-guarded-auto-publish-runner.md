@@ -46,13 +46,13 @@ X / SNS への POST は本 ticket scope **外**(PUB-005 で別 lane 管理)。
 - **`.env` / secret 表示禁止**(App Password 含む)
 - **front / plugin / build artifacts 触らない**
 - **publish-notice mail は既存 095 WSL cron に任せる**(本 runner は send 配線を持たない)
-- **1 回最大 3 件**(burst cap、PUB-002-A 連動)
-- **1 日最大 10 件**(daily cap、history 管理、JST 0:00 reset)
-- **mail burst 5 通超で分割**(PUB-004-B が runner 内で 1 回 publish 数を制限、095 cron tick あたりの mail 配信を 5 通以下に保つ)
+- **1 回最大 20 件(default) / hard cap 30 件**(burst cap、host code で 1-30 range enforce)
+- **1 日最大 100 件**(daily cap、history 管理、JST 0:00 reset)
+- **mail burst は 131 layering 前提**(per-post 通知 + 10 件ごと summary + alert、runner 側 suppress なし)
 - **Red のみ publish 禁止**(本 runner は **Red 以外 = Green + Yellow を publish**、user policy 2026-04-25 21:50 lock)
 - **Yellow は publish 後に改善ログへ記録**(後続 PUB-002-B/C/D の input、サイト上で見ながら改善する方針)
 - **dry-run default**(`--live` 明示 gate 必須)
-- live publish は `--live` + `--max <N≤3>` + `--daily-cap-allow` の 3 重 gate
+- live publish は `--live` + `--max-burst <N≤30>` + `--daily-cap-allow` の 3 重 gate
 
 ## 判定 → 行動 (user policy 2026-04-25 21:50 lock)
 
@@ -66,7 +66,7 @@ X / SNS への POST は本 ticket scope **外**(PUB-005 で別 lane 管理)。
 
 - **user 確認は原則不要**。Green 判定後、Claude は autonomous で `--live` publish 可
 - user judgment が必要なのは **Red に近い危険記事を publish したくなった時のみ**(本 runner は Red を refuse するので通常発生しない)
-- daily cap 10 / burst cap 3 / mail burst 5 / Green only / 上記 「重要制約」は host code で enforced(env / flag では緩められない)
+- daily cap **100** / burst cap default **20**(hard cap **30**)/ Green + repaired_publishable / 上記 「重要制約」は host code で enforced(env / flag では緩められない)
 
 ## 不可触
 
@@ -180,7 +180,7 @@ python3 -m src.tools.run_guarded_publish_evaluator \
 
 ---
 
-### PUB-004-B: guarded live publish(最大 3 件 / 1 回、最大 10 件 / 日、Green + Yellow publish / Red refuse、cleanup 込)
+### PUB-004-B: guarded live publish(最大 20 件 / 1 回 default、hard cap 30、最大 100 件 / 日、Green + Yellow publish / Red refuse、cleanup 込)
 
 #### scope
 - 新規 file: `src/tools/run_guarded_publish.py`
@@ -212,7 +212,7 @@ cleanup 後 abort 条件(publish しない):
 cleanup 安全装置:
 - backup 必須(cleanup 前)、backup 失敗で cleanup 中止
 - diff log 必須(cleanup 内容の before/after を `logs/guarded_publish_cleanup_log.jsonl` に記録)
-- 1 invocation 内で max 3 件 cleanup、それ以上は次 invocation へ持ち越し
+- 1 invocation 内で max 20 件 cleanup(burst cap default、hard cap 30)、それ以上は次 invocation へ持ち越し
 
 #### cleanup_log format
 
@@ -225,12 +225,12 @@ cleanup 安全装置:
 - **PUB-003**: 単発 publish、status flip のみ、content 不変、cleanup なし(最小契約)
 - **PUB-004 publish-with-cleanup**: batch publish、status flip + content update + cleanup 副作用、本 ticket 専用契約
 - 両者は併存(PUB-003 は手動 publish 用に保持、PUB-004 は autonomous batch 用)
-- burst cap: 1 invocation で **max 3 件**
+- burst cap: 1 invocation で default **20 件**(hard cap 30、host code で 1-30 range enforce)
 - daily cap: history file `logs/guarded_publish_history.jsonl` で **当日 publish 数を tally、JST 0:00 reset**
-- daily cap **10 件超過で stop**(skip 残り、refuse log)
-- mail burst control: 1 invocation で publish 数 = 次 095 cron tick (`:15`) で送信される mail 数。**5 通超を予測したら invocation 内で publish を 3 件で打ち切り**(残りは次 invocation へ)
+- daily cap **100 件超過で stop**(skip 残り、refuse log)
+- mail burst control: 131 layering(per-post 通知 + 10 件ごと summary + alert)で suppress しない
 - dry-run default(`--live` なしで 「proposed publish list」 + diff だけ出す)
-- `--live + --max-burst <=3 + --daily-cap-allow` 3 重 gate
+- `--live + --max-burst <=30 + --daily-cap-allow` 3 重 gate
 
 #### history.jsonl 仕様
 
@@ -258,7 +258,7 @@ publish 後に Yellow 候補のみ追記:
 ```
 python3 -m src.tools.run_guarded_publish \
   --input-from /tmp/pub004a_eval.json \
-  --max-burst 3 \
+  --max-burst 20 \
   [--live]
   [--daily-cap-allow]
   --backup-dir /home/fwns6/code/wordpressyoshilover/backups/wp_publish/ \
@@ -267,8 +267,8 @@ python3 -m src.tools.run_guarded_publish \
 
 #### 完了条件
 - dry-run で proposed list 出力(WP write 0)
-- live で max 3 件 publish + backup + postcheck 全 pass
-- daily cap 5 超過で 6 件目以降 refuse
+- live で max 20 件 publish(hard cap 30)+ backup + postcheck 全 pass(10 件ごと round trip)
+- daily cap 100 超過で 101 件目以降 refuse
 - 既存 095 WSL cron が次 :15 tick で publish-notice mail を 1 件 / publish で送信(本 runner は mail 配線なし)
 - 失敗時 routing: backup 失敗 / preflight refuse / WP write 5xx で per-item refuse + JSON summary
 
@@ -281,18 +281,18 @@ python3 -m src.tools.run_guarded_publish \
 - WSL cron に PUB-004-B の `--live` 実行を **1 日数回**(例: 朝 / 昼 / 夜 = `0 8,13,20 * * *`)で登録
 - 毎時起動はしない(mail burst リスク + daily cap 余裕保持)
 - crontab marker: `# PUB-004-WSL-CRON-AUTO-PUBLISH`
-- burst cap 3 / daily cap 10 維持
+- burst cap default 20(hard 30)/ daily cap 100 維持
 - 095 publish-notice cron(`# 095-WSL-CRON-FALLBACK`)とは独立、別 line
-- mail burst control: 1 cron tick で publish 数 ≤ 3 → 次 :15 095 cron tick で mail 配信 ≤ 3 通(burst cap 5 内)
+- mail burst control: 131 layering で per-post + 10 件 summary + alert(suppress しない)
 
 #### 失敗 routing
-- daily cap 超過: 何度 fire しても 6 件目以降 refuse(history で防御)
+- daily cap 超過: 何度 fire しても 101 件目以降 refuse(history で防御)
 - WP REST 5xx: per-item refuse、次 cron tick で再試行
 - backup 失敗: per-item refuse、no WP write
 - 連続 3 cron tick 失敗 → `# PUB-004-WSL-CRON-AUTO-PUBLISH` 行を comment-out で disable + escalate
 
 #### 完了条件
-- cron 1 周回 安定運用(daily 1-3 publish + mail send + dedup 全 pass)
+- cron 1 周回 安定運用(daily 1-60 publish + mail send + dedup 全 pass)
 - rollback 経路明記(crontab 1 行 comment-out)
 
 ---
@@ -324,14 +324,14 @@ python3 -m src.tools.run_guarded_publish \
 
 1. PUB-004-A dry-run evaluator が pure Python で動く
 2. PUB-004-B guarded publish が dry-run + live 両 mode で動く
-3. burst cap 3 / daily cap 5 が host code で enforced(env / flag では緩められない)
+3. burst cap default 20(hard 30) / daily cap 100 が host code で enforced(env / flag では緩められない)
 4. 既存 095 cron で publish-notice mail が自動配信される
 5. 1 週間 安定運用後、PUB-004-C cron activation で完全自動化
 6. 失敗時の rollback 経路が doc 化(crontab 1 行 comment-out)
 
 ## stop 条件
 
-- daily cap 超過で 6 件目 publish 試行 → host code refuse、escalate
+- daily cap 超過で 101 件目 publish 試行 → host code refuse、escalate
 - backup 失敗で WP write → 本 ticket 違反、即停止
 - noindex / X / Cloud Run env 触る変更 → scope 外、別 ticket
 - LLM call が必要 → HALLUC-LANE-002 待ち、本 ticket scope 外

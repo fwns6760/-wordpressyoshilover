@@ -36,7 +36,9 @@
 | **161** Phase 3 publish-notice GCP migration | P0.5 | **CLOSED `7655d9f`** → done/ 移動済 | A 完了 | image push + Job create + Scheduler 15 * * * *、placeholder /data 残(158 で解消) |
 | **165** Gemini + WP REST resilience | P0.5 | **CLOSED `3aa2cd1`** → done/ 移動済 | A 完了 | API 一時 outage で cron 無駄停止しない |
 | **166** Cloud Run failure alert | P1 | **CLOSED `985e9e7`** → done/ 移動済(2 alert policy + email channel + auto-close 30min)| A 完了 | **user mail verification 1 click 必要**(channel 7008520332246366374) |
-| **167** GCP billing alert | P1 | **REWORK 必要**(JPY billing で USD budget reject)| Claude / A | $10/30/50 → ¥1500/4500/7500 で再 fire |
+| **167** GCP billing alert | P1 | **CLOSED `6fd5b00`** → done/ 移動済(JPY ¥1500/¥4500/¥7500 × 50/90/100% threshold)| A 完了 | 月 0-9 通 alert(同事象 dedup) |
+| **159** Phase 1e WSL cron 042 + 095 disable | P1 | **CLOSED**(`crontab` 編集、コメント化、backup `/tmp/crontab_backup_20260426_183147_before_159.bak`)| Claude 完了 | GCP 042 + 095 + Cloud Scheduler のみ稼働 |
+| **160** Phase 2 PUB-004-C GCP migration | P0 | READY → 即 fire | A | WSL PUB-004-C disable 解除条件、最後の publish lane GCP 化 |
 | **168** repair-provider-ledger v0 | P0 | **CLOSED `70009aa`** → done/ 移動済 | B 完了 | GCP migration foundation、schema v0 18 fields |
 | **169** cloud-run-repair-job-skeleton | P0 | **CLOSED `85ae5a6`** → done/ 移動済 | B 完了 | --provider / --queue-path / --ledger-path 追加 |
 | **170** repair-fallback-controller | P0 | **CLOSED `d56e298`** → done/ 移動済 | B 完了 | 6 failure class + Gemini fallback chain |

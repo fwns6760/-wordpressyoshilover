@@ -1416,6 +1416,41 @@ def evaluate_raw_posts(
     return report
 
 
+def _list_posts_upto_limit(
+    wp_client,
+    *,
+    status: str,
+    total_limit: int,
+    orderby: str,
+    order: str,
+    context: str | None,
+) -> list[dict[str, Any]]:
+    limit = max(1, int(total_limit))
+    collected: list[dict[str, Any]] = []
+    page = 1
+    while len(collected) < limit:
+        batch_size = min(limit - len(collected), 100)
+        try:
+            batch = wp_client.list_posts(
+                status=status,
+                per_page=batch_size,
+                page=page,
+                orderby=orderby,
+                order=order,
+                context=context,
+            )
+        except Exception:
+            break
+        batch_list = list(batch or [])
+        if not batch_list:
+            break
+        collected.extend(batch_list)
+        if len(batch_list) < batch_size:
+            break
+        page += 1
+    return collected[:limit]
+
+
 def scan_wp_drafts(
     wp_client,
     *,
@@ -1424,19 +1459,21 @@ def scan_wp_drafts(
     exclude_published_today: bool = False,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    scan_limit = max(1, min(int(max_pool), 100))
-    raw_posts = wp_client.list_posts(
+    scan_limit = max(1, int(max_pool))
+    raw_posts = _list_posts_upto_limit(
+        wp_client,
         status="draft",
-        per_page=scan_limit,
+        total_limit=scan_limit,
         orderby="modified",
         order="desc",
         context="edit",
     )
     published_today_raw_posts: list[dict[str, Any]] | None = None
     if exclude_published_today:
-        published_today_raw_posts = wp_client.list_posts(
+        published_today_raw_posts = _list_posts_upto_limit(
+            wp_client,
             status="publish",
-            per_page=scan_limit,
+            total_limit=scan_limit,
             orderby="date",
             order="desc",
             context="edit",

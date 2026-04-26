@@ -4,7 +4,7 @@ import html
 import json
 import os
 import re
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Sequence
 from urllib.parse import urlparse
@@ -28,6 +28,7 @@ DEFAULT_HISTORY_PATH = ROOT / "logs" / "guarded_publish_history.jsonl"
 DEFAULT_YELLOW_LOG_PATH = ROOT / "logs" / "guarded_publish_yellow_log.jsonl"
 DEFAULT_CLEANUP_LOG_PATH = ROOT / "logs" / "guarded_publish_cleanup_log.jsonl"
 DEFAULT_MIN_PROSE_AFTER_CLEANUP = 50
+REFUSED_DEDUP_WINDOW_HOURS = 24
 TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
 POST_CLEANUP_STRICT_ENV_BY_FLAG = {
     "title_subject_missing": "STRICT_TITLE_SUBJECT",
@@ -947,10 +948,21 @@ def _append_jsonl(path: str | Path, payload: dict[str, Any]) -> None:
         handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
 
-def _history_attempted_post_ids(rows: Sequence[dict[str, Any]]) -> set[int]:
+def _history_attempted_post_ids(rows: Sequence[dict[str, Any]], *, now: datetime | None = None) -> set[int]:
     attempted: set[int] = set()
+    refused_cutoff = _now_jst(now) - timedelta(hours=REFUSED_DEDUP_WINDOW_HOURS)
     for row in rows:
-        if str(row.get("status") or "") not in {"sent", "refused"}:
+        status = str(row.get("status") or "")
+        if status == "sent":
+            try:
+                attempted.add(int(row.get("post_id")))
+            except (TypeError, ValueError):
+                continue
+            continue
+        if status != "refused":
+            continue
+        ts = _parse_iso_to_jst(row.get("ts"))
+        if ts is not None and ts < refused_cutoff:
             continue
         try:
             attempted.add(int(row.get("post_id")))
@@ -1252,7 +1264,7 @@ def run_guarded_publish(
     now_jst = _now_jst(now)
     now_iso = now_jst.isoformat()
     history_rows = _read_jsonl(history_path)
-    attempted_post_ids = _history_attempted_post_ids(history_rows)
+    attempted_post_ids = _history_attempted_post_ids(history_rows, now=now_jst)
     daily_sent_count = _daily_sent_count(history_rows, now_jst.date())
 
     refused: list[dict[str, Any]] = []

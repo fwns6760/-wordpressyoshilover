@@ -160,6 +160,19 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
                     return entry
         raise AssertionError(f"post_id={post_id} not found")
 
+    def _make_clean_posts(self, start_post_id, count):
+        return [
+            _post(
+                start_post_id + index,
+                f"巨人が試合{start_post_id + index}に勝利",
+                (
+                    f"<p>巨人が試合{start_post_id + index}に勝利した。スポーツ報知によると、投打の流れを整理できる内容だった。</p>"
+                    "<p>参照元: スポーツ報知 https://example.com/source</p>"
+                ),
+            )
+            for index in range(count)
+        ]
+
     def test_clean_post_returns_publishable_true_and_cleanup_required_false(self):
         report = self._evaluate([self.clean_post])
 
@@ -879,6 +892,7 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         wp_client.list_posts.assert_called_once_with(
             status="draft",
             per_page=10,
+            page=1,
             orderby="modified",
             order="desc",
             context="edit",
@@ -886,6 +900,60 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         wp_client.update_post_fields.assert_not_called()
         wp_client.update_post_status.assert_not_called()
         wp_client.get_post.assert_not_called()
+
+    def test_scan_wp_drafts_honors_max_pool_300_with_pagination(self):
+        wp_client = mock.Mock()
+        wp_client.list_posts.side_effect = [
+            self._make_clean_posts(3000, 100),
+            self._make_clean_posts(3100, 100),
+            self._make_clean_posts(3200, 100),
+        ]
+
+        report = scan_wp_drafts(wp_client, window_hours=96, max_pool=300, now=FIXED_NOW)
+
+        self.assertEqual(report["summary"]["green_count"], 300)
+        self.assertEqual(
+            wp_client.list_posts.call_args_list,
+            [
+                mock.call(status="draft", per_page=100, page=1, orderby="modified", order="desc", context="edit"),
+                mock.call(status="draft", per_page=100, page=2, orderby="modified", order="desc", context="edit"),
+                mock.call(status="draft", per_page=100, page=3, orderby="modified", order="desc", context="edit"),
+            ],
+        )
+
+    def test_scan_wp_drafts_max_pool_100_keeps_single_page_behavior(self):
+        wp_client = mock.Mock()
+        wp_client.list_posts.return_value = self._make_clean_posts(3300, 100)
+
+        report = scan_wp_drafts(wp_client, window_hours=96, max_pool=100, now=FIXED_NOW)
+
+        self.assertEqual(report["summary"]["green_count"], 100)
+        wp_client.list_posts.assert_called_once_with(
+            status="draft",
+            per_page=100,
+            page=1,
+            orderby="modified",
+            order="desc",
+            context="edit",
+        )
+
+    def test_scan_wp_drafts_allows_partial_results_when_later_page_fails(self):
+        wp_client = mock.Mock()
+        wp_client.list_posts.side_effect = [
+            self._make_clean_posts(3400, 100),
+            RuntimeError("wp rest page 2 failed"),
+        ]
+
+        report = scan_wp_drafts(wp_client, window_hours=96, max_pool=101, now=FIXED_NOW)
+
+        self.assertEqual(report["summary"]["green_count"], 100)
+        self.assertEqual(
+            wp_client.list_posts.call_args_list,
+            [
+                mock.call(status="draft", per_page=100, page=1, orderby="modified", order="desc", context="edit"),
+                mock.call(status="draft", per_page=1, page=2, orderby="modified", order="desc", context="edit"),
+            ],
+        )
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@ import io
 import json
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -357,6 +357,151 @@ class GuardedPublishRunnerTests(unittest.TestCase):
 
         self.assertEqual([item["status"] for item in result["executed"]], ["sent"])
         self.assertEqual(result["refused"], [])
+
+    def test_recent_refused_history_within_24h_stays_skipped(self):
+        post = _post(
+            1012,
+            "巨人が広島に2-0で勝利",
+            f"<p>巨人が広島に2-0で勝利した。試合の核が冒頭で分かり、投打の流れも整理されている。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/source</p>",
+        )
+        report = _report(green=[_green_entry(1012, post["title"]["raw"])])
+        wp = FakeWPClient({1012: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.jsonl"
+            history_path.write_text(
+                json.dumps(
+                    {
+                        "post_id": 1012,
+                        "ts": (FIXED_NOW - timedelta(hours=23)).isoformat(),
+                        "status": "refused",
+                        "backup_path": None,
+                        "error": "hard_stop:freshness_window",
+                        "judgment": "hard_stop",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                history_path=history_path,
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual(result["summary"]["proposed_count"], 0)
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(wp.get_post_calls, [])
+
+    def test_old_refused_history_over_24h_can_be_reproposed(self):
+        post = _post(
+            1013,
+            "巨人が中日に3-1で勝利",
+            f"<p>巨人が中日に3-1で勝利した。試合の核が冒頭で分かり、投打の流れも整理されている。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/source</p>",
+        )
+        report = _report(green=[_green_entry(1013, post["title"]["raw"])])
+        wp = FakeWPClient({1013: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.jsonl"
+            history_path.write_text(
+                json.dumps(
+                    {
+                        "post_id": 1013,
+                        "ts": (FIXED_NOW - timedelta(hours=25)).isoformat(),
+                        "status": "refused",
+                        "backup_path": None,
+                        "error": "hard_stop:freshness_window",
+                        "judgment": "hard_stop",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                history_path=history_path,
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual(result["summary"]["proposed_count"], 1)
+        self.assertEqual([item["post_id"] for item in result["proposed"]], [1013])
+
+    def test_sent_history_remains_permanently_skipped(self):
+        post = _post(
+            1015,
+            "巨人がヤクルトに4-2で勝利",
+            f"<p>巨人がヤクルトに4-2で勝利した。試合の核が冒頭で分かり、投打の流れも整理されている。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/source</p>",
+        )
+        report = _report(green=[_green_entry(1015, post["title"]["raw"])])
+        wp = FakeWPClient({1015: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.jsonl"
+            history_path.write_text(
+                json.dumps(
+                    {
+                        "post_id": 1015,
+                        "ts": "2026-04-20T08:00:00+09:00",
+                        "status": "sent",
+                        "backup_path": "/tmp/backup.json",
+                        "error": None,
+                        "judgment": "green",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                history_path=history_path,
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual(result["summary"]["proposed_count"], 0)
+        self.assertEqual(result["proposed"], [])
+
+    def test_refused_history_with_unparseable_ts_stays_skipped_for_safety(self):
+        post = _post(
+            1016,
+            "巨人が阪神に5-3で勝利",
+            f"<p>巨人が阪神に5-3で勝利した。試合の核が冒頭で分かり、投打の流れも整理されている。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/source</p>",
+        )
+        report = _report(green=[_green_entry(1016, post["title"]["raw"])])
+        wp = FakeWPClient({1016: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.jsonl"
+            history_path.write_text(
+                json.dumps(
+                    {
+                        "post_id": 1016,
+                        "ts": "not-a-timestamp",
+                        "status": "refused",
+                        "backup_path": None,
+                        "error": "hard_stop:freshness_window",
+                        "judgment": "hard_stop",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                history_path=history_path,
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual(result["summary"]["proposed_count"], 0)
+        self.assertEqual(result["proposed"], [])
 
     def test_daily_cap_current_run_hard_stop_does_not_burn_sent_budget(self):
         post = _post(

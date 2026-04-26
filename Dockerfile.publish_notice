@@ -6,6 +6,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
+       | gpg --dearmor -o /etc/apt/keyrings/google-cloud.gpg \
+    && echo 'deb [signed-by=/etc/apt/keyrings/google-cloud.gpg] https://packages.cloud.google.com/apt cloud-sdk main' \
+       > /etc/apt/sources.list.d/google-cloud-sdk.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends google-cloud-cli \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt ./requirements.txt
 COPY requirements-dev.txt ./requirements-dev.txt
 
@@ -15,11 +26,23 @@ RUN python3 -m pip install --no-cache-dir --upgrade pip \
 COPY src/ ./src/
 COPY vendor/ ./vendor/
 
+RUN mkdir -p /app/bin \
+    && printf '%s\n' \
+       '#!/usr/bin/env bash' \
+       'set -euo pipefail' \
+       '' \
+       'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' \
+       'REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"' \
+       '' \
+       'cd "${REPO_ROOT}"' \
+       'exec python3 -m src.cloud_run_persistence entrypoint "$@"' \
+       > /app/bin/publish_notice_entrypoint.sh
+
 RUN useradd --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser \
-    && mkdir -p /app/logs /app/data /data \
-    && chown -R appuser:appuser /app /home/appuser /data
+    && mkdir -p /app/logs /app/data /tmp/publish_notice \
+    && chmod +x /app/bin/publish_notice_entrypoint.sh \
+    && chown -R appuser:appuser /app /home/appuser /tmp/publish_notice
 
 USER appuser
 
-ENTRYPOINT ["python3", "-m", "src.tools.run_publish_notice_email_dry_run"]
-CMD ["--scan", "--send", "--cursor-path", "/data/publish_notice_cursor.txt", "--history-path", "/data/publish_notice_history.json", "--queue-path", "/data/publish_notice_queue.jsonl"]
+ENTRYPOINT ["/app/bin/publish_notice_entrypoint.sh"]

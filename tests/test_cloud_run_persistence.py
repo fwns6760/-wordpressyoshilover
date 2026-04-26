@@ -1,0 +1,216 @@
+from __future__ import annotations
+
+import io
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from src import cloud_run_persistence
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "bin" / "publish_notice_entrypoint.sh"
+
+
+class GCSStateManagerTests(unittest.TestCase):
+    def test_download_returns_true_when_object_exists(self) -> None:
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout=b"", stderr=b"")
+        with tempfile.TemporaryDirectory() as tmpdir, patch("subprocess.run", return_value=completed) as mocked_run:
+            manager = cloud_run_persistence.GCSStateManager(
+                bucket_name="bucket-name",
+                prefix="publish_notice",
+                project_id="project-id",
+            )
+            target = Path(tmpdir) / "state" / "cursor.txt"
+            downloaded = manager.download("cursor.txt", target)
+            self.assertTrue(target.parent.exists())
+
+        self.assertTrue(downloaded)
+        self.assertEqual(
+            mocked_run.call_args.args[0],
+            [
+                "gcloud",
+                "--project",
+                "project-id",
+                "storage",
+                "cp",
+                "gs://bucket-name/publish_notice/cursor.txt",
+                str(target),
+                "--quiet",
+            ],
+        )
+
+    def test_download_returns_false_when_object_is_missing(self) -> None:
+        error = subprocess.CalledProcessError(
+            returncode=1,
+            cmd=["gcloud"],
+            stderr=b"CommandException: No URLs matched: gs://bucket-name/publish_notice/cursor.txt",
+        )
+        with tempfile.TemporaryDirectory() as tmpdir, patch("subprocess.run", side_effect=error):
+            manager = cloud_run_persistence.GCSStateManager("bucket-name", "publish_notice", "project-id")
+            downloaded = manager.download("cursor.txt", Path(tmpdir) / "cursor.txt")
+
+        self.assertFalse(downloaded)
+
+    def test_download_failure_raises_gcs_access_error(self) -> None:
+        error = subprocess.CalledProcessError(
+            returncode=1,
+            cmd=["gcloud"],
+            stderr=b"AccessDeniedException: 403 forbidden",
+        )
+        with tempfile.TemporaryDirectory() as tmpdir, patch("subprocess.run", side_effect=error):
+            manager = cloud_run_persistence.GCSStateManager("bucket-name", "publish_notice", "project-id")
+            with self.assertRaises(cloud_run_persistence.GCSAccessError) as ctx:
+                manager.download("cursor.txt", Path(tmpdir) / "cursor.txt")
+
+        self.assertIn("403 forbidden", str(ctx.exception))
+
+    def test_upload_writes_via_temp_object_then_moves_into_place(self) -> None:
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout=b"", stderr=b"")
+        with tempfile.TemporaryDirectory() as tmpdir, patch("subprocess.run", return_value=completed) as mocked_run:
+            local_path = Path(tmpdir) / "history.json"
+            local_path.write_text("{}\n", encoding="utf-8")
+            manager = cloud_run_persistence.GCSStateManager("bucket-name", "publish_notice", "project-id")
+
+            manager.upload(local_path, "history.json")
+
+        first_call = mocked_run.call_args_list[0].args[0]
+        second_call = mocked_run.call_args_list[1].args[0]
+        self.assertEqual(first_call[:6], ["gcloud", "--project", "project-id", "storage", "cp", str(local_path)])
+        self.assertTrue(first_call[6].startswith("gs://bucket-name/publish_notice/history.json.uploading-"))
+        self.assertEqual(first_call[7], "--quiet")
+        self.assertEqual(second_call[:5], ["gcloud", "--project", "project-id", "storage", "mv"])
+        self.assertEqual(second_call[5], first_call[6])
+        self.assertEqual(second_call[6], "gs://bucket-name/publish_notice/history.json")
+        self.assertEqual(second_call[7], "--quiet")
+
+    def test_with_state_uploads_updated_file_on_exit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager = cloud_run_persistence.GCSStateManager("bucket-name", "publish_notice", "project-id")
+            target = Path(tmpdir) / "cursor.txt"
+
+            with patch.object(manager, "download", return_value=False) as mocked_download, patch.object(
+                manager, "upload"
+            ) as mocked_upload:
+                with manager.with_state("cursor.txt", target) as downloaded:
+                    self.assertFalse(downloaded)
+                    target.write_text("cursor\n", encoding="utf-8")
+
+        mocked_download.assert_called_once_with("cursor.txt", target)
+        mocked_upload.assert_called_once_with(target, "cursor.txt")
+
+
+class PublishNoticeEntrypointTests(unittest.TestCase):
+    def test_entrypoint_runs_runner_and_persists_cursor_and_history(self) -> None:
+        runner_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cursor_path = Path(tmpdir) / "cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+
+            def fake_run(cmd, **kwargs):
+                if cmd[0] == "gcloud" and cmd[4] == "cp" and cmd[5].startswith("gs://"):
+                    error = subprocess.CalledProcessError(returncode=1, cmd=cmd, stderr=b"CommandException: No URLs matched")
+                    raise error
+                if cmd[0] == sys.executable:
+                    cursor_path.write_text("cursor\n", encoding="utf-8")
+                    history_path.write_text("{}\n", encoding="utf-8")
+                    return runner_result
+                if cmd[0] == "gcloud" and cmd[4] in {"cp", "mv"}:
+                    return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=b"", stderr=b"")
+                raise AssertionError(f"unexpected command: {cmd}")
+
+            with patch("subprocess.run", side_effect=fake_run) as mocked_run:
+                exit_code = cloud_run_persistence.run_publish_notice_entrypoint(
+                    [
+                        "--bucket-name",
+                        "bucket-name",
+                        "--prefix",
+                        "publish_notice",
+                        "--project-id",
+                        "project-id",
+                        "--cursor-path",
+                        str(cursor_path),
+                        "--history-path",
+                        str(history_path),
+                        "--queue-path",
+                        str(Path(tmpdir) / "queue.jsonl"),
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            mocked_run.call_args_list[2].args[0],
+            [
+                sys.executable,
+                "-m",
+                "src.tools.run_publish_notice_email_dry_run",
+                "--scan",
+                "--send",
+                "--cursor-path",
+                str(cursor_path),
+                "--history-path",
+                str(history_path),
+                "--queue-path",
+                str(Path(tmpdir) / "queue.jsonl"),
+            ],
+        )
+
+    def test_entrypoint_returns_runner_exit_code(self) -> None:
+        runner_result = subprocess.CompletedProcess(args=[], returncode=7, stdout="", stderr="")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cursor_path = Path(tmpdir) / "cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+
+            def fake_run(cmd, **kwargs):
+                if cmd[0] == "gcloud" and cmd[4] == "cp" and cmd[5].startswith("gs://"):
+                    raise subprocess.CalledProcessError(
+                        returncode=1,
+                        cmd=cmd,
+                        stderr=b"CommandException: No URLs matched",
+                    )
+                if cmd[0] == sys.executable:
+                    cursor_path.write_text("cursor\n", encoding="utf-8")
+                    history_path.write_text("{}\n", encoding="utf-8")
+                    return runner_result
+                if cmd[0] == "gcloud":
+                    return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=b"", stderr=b"")
+                raise AssertionError(f"unexpected command: {cmd}")
+
+            with patch("subprocess.run", side_effect=fake_run):
+                exit_code = cloud_run_persistence.run_publish_notice_entrypoint(
+                    [
+                        "--cursor-path",
+                        str(cursor_path),
+                        "--history-path",
+                        str(history_path),
+                        "--queue-path",
+                        str(queue_path),
+                    ]
+                )
+
+        self.assertEqual(exit_code, 7)
+
+    def test_main_reports_errors_to_stderr(self) -> None:
+        stderr_buffer = io.StringIO()
+        with patch(
+            "src.cloud_run_persistence.run_publish_notice_entrypoint",
+            side_effect=cloud_run_persistence.GCSAccessError("denied"),
+        ), patch("sys.stderr", stderr_buffer):
+            exit_code = cloud_run_persistence.main(["entrypoint"])
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("gcloud storage access failed: denied", stderr_buffer.getvalue())
+
+    def test_shell_script_is_thin_python_wrapper(self) -> None:
+        script_text = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("set -euo pipefail", script_text)
+        self.assertIn("python3 -m src.cloud_run_persistence entrypoint", script_text)
+
+
+if __name__ == "__main__":
+    unittest.main()

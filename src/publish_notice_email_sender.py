@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
+import json
 import os
+from pathlib import Path
 import re
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
@@ -14,7 +16,18 @@ from src.mail_delivery_bridge import send as bridge_send_default
 
 
 JST = ZoneInfo("Asia/Tokyo")
+DEFAULT_SUMMARY_EVERY = 10
+DEFAULT_DAILY_CAP = 100
+DEFAULT_DUPLICATE_WINDOW = timedelta(minutes=30)
 _WHITESPACE_RE = re.compile(r"\s+")
+_SUMMARY_TITLE_LIMIT = 80
+_ALERT_LABELS = {
+    "publish_failure": "publish failure",
+    "hard_stop": "hard stop",
+    "postcheck_failure": "postcheck failure",
+    "cleanup_hold": "cleanup hold",
+    "x_sns_auto_post_risk": "X/SNS auto-post risk",
+}
 
 
 @dataclass(frozen=True)
@@ -25,6 +38,53 @@ class PublishNoticeRequest:
     subtype: str
     publish_time_iso: str
     summary: str | None = None
+
+
+@dataclass(frozen=True)
+class BurstSummaryEntry:
+    post_id: int | str
+    title: str
+    category: str
+    publishable: bool
+    cleanup_required: bool
+    cleanup_success: bool | None
+
+
+@dataclass(frozen=True)
+class BurstSummaryRequest:
+    entries: list[BurstSummaryEntry]
+    cumulative_published_count: int
+    daily_cap: int = DEFAULT_DAILY_CAP
+    hard_stop_count: int = 0
+    hold_count: int = 0
+
+
+@dataclass(frozen=True)
+class AlertMailRequest:
+    alert_type: Literal[
+        "publish_failure",
+        "hard_stop",
+        "postcheck_failure",
+        "cleanup_hold",
+        "x_sns_auto_post_risk",
+    ]
+    post_id: int | str | None = None
+    title: str | None = None
+    category: str | None = None
+    reason: str | None = None
+    detail: str | None = None
+    publishable: bool | None = None
+    cleanup_required: bool | None = None
+    cleanup_success: bool | None = None
+    hold_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class EmergencyMailRequest:
+    post_id: int | str | None = None
+    title: str | None = None
+    reason: str | None = None
+    detail: str | None = None
 
 
 @dataclass(frozen=True)
@@ -48,6 +108,11 @@ class _BridgeMailRequest:
 
 
 BridgeSend = Callable[..., object]
+EmergencyHook = Callable[[EmergencyMailRequest], object | None]
+
+
+def _path(value: str | Path) -> Path:
+    return value if isinstance(value, Path) else Path(value)
 
 
 def _normalized_recipients(values: list[str]) -> list[str]:
@@ -60,18 +125,34 @@ def _normalized_recipients(values: list[str]) -> list[str]:
     return recipients
 
 
+def _coerce_now(now: datetime | None) -> datetime:
+    if now is None:
+        return datetime.now(JST)
+    if now.tzinfo is None:
+        return now.replace(tzinfo=JST)
+    return now.astimezone(JST)
+
+
+def _parse_datetime_to_jst(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        current = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if current.tzinfo is None:
+        return current.replace(tzinfo=JST)
+    return current.astimezone(JST)
+
+
 def _format_publish_time_jst(value: str) -> str:
     text = str(value or "").strip()
     if not text:
         return ""
-    try:
-        current = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
+    current = _parse_datetime_to_jst(text)
+    if current is None:
         return text
-    if current.tzinfo is None:
-        current = current.replace(tzinfo=JST)
-    else:
-        current = current.astimezone(JST)
     return current.strftime("%Y-%m-%d %H:%M JST")
 
 
@@ -84,11 +165,88 @@ def _normalize_summary(summary: str | None) -> str:
     return compact
 
 
+def _normalize_bool(value: bool | None) -> str:
+    if value is None:
+        return "none"
+    return "true" if value else "false"
+
+
+def _collapse_title(value: str) -> str:
+    compact = _WHITESPACE_RE.sub(" ", str(value or "").strip())
+    if len(compact) <= _SUMMARY_TITLE_LIMIT:
+        return compact
+    return compact[: _SUMMARY_TITLE_LIMIT - 1] + "…"
+
+
+def _load_queue_entries(path: str | Path | None) -> list[dict[str, Any]]:
+    if path is None:
+        return []
+    target = _path(path)
+    if not target.exists():
+        return []
+    entries: list[dict[str, Any]] = []
+    with target.open(encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line:
+                continue
+            payload = json.loads(line)
+            if isinstance(payload, dict):
+                entries.append(payload)
+    return entries
+
+
+def _is_recent_per_post_duplicate(
+    post_id: int | str,
+    *,
+    history_path: str | Path | None,
+    now: datetime | None = None,
+    duplicate_window: timedelta = DEFAULT_DUPLICATE_WINDOW,
+) -> bool:
+    if history_path is None:
+        return False
+    current_now = _coerce_now(now)
+    target_post_id = str(post_id)
+    for entry in reversed(_load_queue_entries(history_path)):
+        notice_kind = str(entry.get("notice_kind") or "per_post").strip() or "per_post"
+        if notice_kind != "per_post":
+            continue
+        if str(entry.get("status") or "").strip() != "sent":
+            continue
+        if str(entry.get("post_id")) != target_post_id:
+            continue
+        recorded_at = _parse_datetime_to_jst(entry.get("sent_at") or entry.get("recorded_at"))
+        if recorded_at is None:
+            continue
+        delta = current_now - recorded_at
+        if timedelta(0) <= delta <= duplicate_window:
+            return True
+    return False
+
+
 def build_subject(title: str, publish_dt_jst: str | None = None, override: str | None = None) -> str:
     del publish_dt_jst
     if override is not None:
         return str(override)
     return f"[公開通知] Giants {title}"
+
+
+def build_summary_subject(request: BurstSummaryRequest) -> str:
+    return (
+        "[YOSHILOVER] Publish Burst Summary — "
+        f"{len(request.entries)} posts (cumulative {int(request.cumulative_published_count)} / cap {int(request.daily_cap)})"
+    )
+
+
+def build_alert_subject(request: AlertMailRequest) -> str:
+    label = _ALERT_LABELS.get(request.alert_type, str(request.alert_type).replace("_", " "))
+    post_label = f" - post_id={request.post_id}" if request.post_id is not None else ""
+    return f"[ALERT] YOSHILOVER {label}{post_label}"
+
+
+def build_emergency_subject(request: EmergencyMailRequest) -> str:
+    post_label = f" - post_id={request.post_id}" if request.post_id is not None else ""
+    return f"[EMERGENCY] YOSHILOVER X/SNS unintended post detected{post_label}"
 
 
 def resolve_recipients(override: list[str] | None) -> list[str]:
@@ -113,6 +271,70 @@ def build_body_text(request: PublishNoticeRequest) -> str:
     return "\n".join(lines)
 
 
+def build_summary_body_text(request: BurstSummaryRequest) -> str:
+    daily_cap_remaining = max(0, int(request.daily_cap) - int(request.cumulative_published_count))
+    lines = [
+        f"summary_posts: {len(request.entries)}",
+        f"cumulative_published_count: {int(request.cumulative_published_count)}",
+        f"daily_cap_remaining: {daily_cap_remaining}",
+        f"hard_stop_count: {int(request.hard_stop_count)}",
+        f"hold_count: {int(request.hold_count)}",
+        "recent_posts:",
+    ]
+    for entry in request.entries:
+        lines.append(
+            "  - "
+            f"post_id={entry.post_id} | "
+            f"title={_collapse_title(entry.title)} | "
+            f"category={str(entry.category or '').strip() or 'unknown'} | "
+            f"publishable={_normalize_bool(entry.publishable)} | "
+            f"cleanup_required={_normalize_bool(entry.cleanup_required)} | "
+            f"cleanup_success={_normalize_bool(entry.cleanup_success)}"
+        )
+    return "\n".join(lines)
+
+
+def build_alert_body_text(request: AlertMailRequest) -> str:
+    lines = [
+        f"alert_type: {request.alert_type}",
+        f"post_id: {'' if request.post_id is None else request.post_id}",
+        f"title: {str(request.title or '').strip()}",
+        f"category: {str(request.category or '').strip() or 'unknown'}",
+        f"reason: {str(request.reason or '').strip() or '(none)'}",
+        f"detail: {str(request.detail or '').strip() or '(none)'}",
+        f"publishable: {_normalize_bool(request.publishable)}",
+        f"cleanup_required: {_normalize_bool(request.cleanup_required)}",
+        f"cleanup_success: {_normalize_bool(request.cleanup_success)}",
+        f"hold_reason: {str(request.hold_reason or '').strip() or '(none)'}",
+    ]
+    return "\n".join(lines)
+
+
+def build_burst_summary_requests(
+    entries: Sequence[BurstSummaryEntry],
+    *,
+    summary_every: int = DEFAULT_SUMMARY_EVERY,
+    cumulative_before: int = 0,
+    daily_cap: int = DEFAULT_DAILY_CAP,
+) -> list[BurstSummaryRequest]:
+    if int(summary_every) <= 0:
+        raise ValueError("summary_every must be > 0")
+    requests: list[BurstSummaryRequest] = []
+    summary_size = int(summary_every)
+    for start in range(0, len(entries), summary_size):
+        chunk = list(entries[start : start + summary_size])
+        if len(chunk) < summary_size:
+            break
+        requests.append(
+            BurstSummaryRequest(
+                entries=chunk,
+                cumulative_published_count=int(cumulative_before) + start + len(chunk),
+                daily_cap=int(daily_cap),
+            )
+        )
+    return requests
+
+
 def _suppressed(
     reason: str,
     *,
@@ -129,69 +351,14 @@ def _suppressed(
     )
 
 
-def send(
-    request: PublishNoticeRequest,
+def _bridge_result_to_email_result(
     *,
-    dry_run: bool = True,
-    send_enabled: bool | None = None,
-    bridge_send: BridgeSend = bridge_send_default,
-    override_recipient: list[str] | None = None,
-    override_subject: str | None = None,
+    subject: str,
+    recipients: list[str],
+    bridge_result: object,
 ) -> PublishNoticeEmailResult:
-    normalized_title = str(request.title or "").strip()
-    subject = build_subject(normalized_title, override=override_subject)
-    if not normalized_title:
-        return _suppressed("EMPTY_TITLE", subject=subject)
-
-    normalized_url = str(request.canonical_url or "").strip()
-    if not normalized_url:
-        return _suppressed("MISSING_URL", subject=subject)
-
-    recipients = resolve_recipients(override_recipient)
-    if not recipients:
-        return _suppressed("NO_RECIPIENT", subject=subject, recipients=recipients)
-
-    normalized_request = PublishNoticeRequest(
-        post_id=request.post_id,
-        title=normalized_title,
-        canonical_url=normalized_url,
-        subtype=str(request.subtype or "").strip() or "unknown",
-        publish_time_iso=str(request.publish_time_iso or "").strip(),
-        summary=request.summary,
-    )
-    body_text = build_body_text(normalized_request)
-
-    if dry_run:
-        return PublishNoticeEmailResult(
-            status="dry_run",
-            reason=None,
-            subject=subject,
-            recipients=recipients,
-            bridge_result=None,
-        )
-
-    active_send_enabled = (
-        send_enabled
-        if send_enabled is not None
-        else str(os.environ.get("PUBLISH_NOTICE_EMAIL_ENABLED", "")).strip() == "1"
-    )
-    if not active_send_enabled:
-        return _suppressed("GATE_OFF", subject=subject, recipients=recipients)
-
-    mail_request = _BridgeMailRequest(
-        to=recipients,
-        subject=subject,
-        text_body=body_text,
-        metadata={
-            "post_id": normalized_request.post_id,
-            "subtype": normalized_request.subtype,
-            "publish_time_iso": normalized_request.publish_time_iso,
-        },
-    )
-    bridge_result = bridge_send(mail_request, dry_run=False)
     bridge_status = str(getattr(bridge_result, "status", "") or "")
     bridge_reason = getattr(bridge_result, "reason", None)
-
     if bridge_status == "suppressed":
         return _suppressed(
             str(bridge_reason or "UNKNOWN_BRIDGE_SUPPRESSION"),
@@ -216,12 +383,195 @@ def send(
     )
 
 
+def _deliver_mail(
+    *,
+    subject: str,
+    body_text: str,
+    metadata: dict[str, Any],
+    dry_run: bool,
+    send_enabled: bool | None,
+    bridge_send: BridgeSend,
+    override_recipient: list[str] | None = None,
+    duplicate_history_path: str | Path | None = None,
+    dedupe_post_id: int | str | None = None,
+    now: datetime | None = None,
+    duplicate_window: timedelta = DEFAULT_DUPLICATE_WINDOW,
+) -> PublishNoticeEmailResult:
+    normalized_subject = str(subject or "").strip()
+    recipients = resolve_recipients(override_recipient)
+    if not normalized_subject:
+        return _suppressed("EMPTY_SUBJECT", subject=normalized_subject, recipients=recipients)
+    if not body_text.strip():
+        return _suppressed("EMPTY_BODY", subject=normalized_subject, recipients=recipients)
+    if not recipients:
+        return _suppressed("NO_RECIPIENT", subject=normalized_subject, recipients=recipients)
+    if dry_run:
+        return PublishNoticeEmailResult(
+            status="dry_run",
+            reason=None,
+            subject=normalized_subject,
+            recipients=recipients,
+            bridge_result=None,
+        )
+
+    active_send_enabled = (
+        send_enabled
+        if send_enabled is not None
+        else str(os.environ.get("PUBLISH_NOTICE_EMAIL_ENABLED", "")).strip() == "1"
+    )
+    if not active_send_enabled:
+        return _suppressed("GATE_OFF", subject=normalized_subject, recipients=recipients)
+    if dedupe_post_id is not None and _is_recent_per_post_duplicate(
+        dedupe_post_id,
+        history_path=duplicate_history_path,
+        now=now,
+        duplicate_window=duplicate_window,
+    ):
+        return _suppressed("DUPLICATE_WITHIN_30MIN", subject=normalized_subject, recipients=recipients)
+
+    mail_request = _BridgeMailRequest(
+        to=recipients,
+        subject=normalized_subject,
+        text_body=body_text,
+        metadata=dict(metadata),
+    )
+    bridge_result = bridge_send(mail_request, dry_run=False)
+    return _bridge_result_to_email_result(
+        subject=normalized_subject,
+        recipients=recipients,
+        bridge_result=bridge_result,
+    )
+
+
+def send(
+    request: PublishNoticeRequest,
+    *,
+    dry_run: bool = True,
+    send_enabled: bool | None = None,
+    bridge_send: BridgeSend = bridge_send_default,
+    override_recipient: list[str] | None = None,
+    override_subject: str | None = None,
+    duplicate_history_path: str | Path | None = None,
+    now: datetime | None = None,
+    duplicate_window: timedelta = DEFAULT_DUPLICATE_WINDOW,
+) -> PublishNoticeEmailResult:
+    normalized_title = str(request.title or "").strip()
+    subject = build_subject(normalized_title, override=override_subject)
+    if not normalized_title:
+        return _suppressed("EMPTY_TITLE", subject=subject)
+
+    normalized_url = str(request.canonical_url or "").strip()
+    if not normalized_url:
+        return _suppressed("MISSING_URL", subject=subject)
+
+    normalized_request = PublishNoticeRequest(
+        post_id=request.post_id,
+        title=normalized_title,
+        canonical_url=normalized_url,
+        subtype=str(request.subtype or "").strip() or "unknown",
+        publish_time_iso=str(request.publish_time_iso or "").strip(),
+        summary=request.summary,
+    )
+    return _deliver_mail(
+        subject=subject,
+        body_text=build_body_text(normalized_request),
+        metadata={
+            "post_id": normalized_request.post_id,
+            "subtype": normalized_request.subtype,
+            "publish_time_iso": normalized_request.publish_time_iso,
+            "notice_kind": "per_post",
+        },
+        dry_run=dry_run,
+        send_enabled=send_enabled,
+        bridge_send=bridge_send,
+        override_recipient=override_recipient,
+        duplicate_history_path=duplicate_history_path,
+        dedupe_post_id=normalized_request.post_id,
+        now=now,
+        duplicate_window=duplicate_window,
+    )
+
+
+def send_summary(
+    request: BurstSummaryRequest,
+    *,
+    dry_run: bool = True,
+    send_enabled: bool | None = None,
+    bridge_send: BridgeSend = bridge_send_default,
+    override_recipient: list[str] | None = None,
+) -> PublishNoticeEmailResult:
+    return _deliver_mail(
+        subject=build_summary_subject(request),
+        body_text=build_summary_body_text(request),
+        metadata={
+            "notice_kind": "summary",
+            "summary_posts": len(request.entries),
+            "cumulative_published_count": int(request.cumulative_published_count),
+            "daily_cap": int(request.daily_cap),
+        },
+        dry_run=dry_run,
+        send_enabled=send_enabled,
+        bridge_send=bridge_send,
+        override_recipient=override_recipient,
+    )
+
+
+def send_alert(
+    request: AlertMailRequest,
+    *,
+    dry_run: bool = True,
+    send_enabled: bool | None = None,
+    bridge_send: BridgeSend = bridge_send_default,
+    override_recipient: list[str] | None = None,
+) -> PublishNoticeEmailResult:
+    return _deliver_mail(
+        subject=build_alert_subject(request),
+        body_text=build_alert_body_text(request),
+        metadata={
+            "notice_kind": "alert",
+            "alert_type": request.alert_type,
+            "post_id": request.post_id,
+            "hold_reason": request.hold_reason,
+        },
+        dry_run=dry_run,
+        send_enabled=send_enabled,
+        bridge_send=bridge_send,
+        override_recipient=override_recipient,
+    )
+
+
+def emit_emergency_hook(
+    request: EmergencyMailRequest,
+    *,
+    hook: EmergencyHook | None = None,
+) -> object | None:
+    if hook is None:
+        return None
+    return hook(request)
+
+
 __all__ = [
+    "AlertMailRequest",
+    "BurstSummaryEntry",
+    "BurstSummaryRequest",
+    "DEFAULT_DAILY_CAP",
+    "DEFAULT_DUPLICATE_WINDOW",
+    "DEFAULT_SUMMARY_EVERY",
+    "EmergencyMailRequest",
     "JST",
     "PublishNoticeEmailResult",
     "PublishNoticeRequest",
+    "build_alert_body_text",
+    "build_alert_subject",
     "build_body_text",
+    "build_burst_summary_requests",
+    "build_emergency_subject",
     "build_subject",
+    "build_summary_body_text",
+    "build_summary_subject",
+    "emit_emergency_hook",
     "resolve_recipients",
     "send",
+    "send_alert",
+    "send_summary",
 ]

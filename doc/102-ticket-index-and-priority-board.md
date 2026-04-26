@@ -43,22 +43,24 @@ If this file conflicts with an individual ticket doc:
 - `CLOSED`: done and accepted
 - `PARKED`: intentionally deferred
 
-## ticket folder policy(2026-04-26 PM 第 2 次 simplification)
+## ticket folder policy(2026-04-26 PM 第 4 次 final、3 分類シンプル化、優先度はフォルダでなく row で判別)
 
 ```
 doc/
-├── active/
-│   ├── now/    P0 = 今 fire 中 / orchestration 必須(102 board / 105 ramp)
-│   ├── next/   P1 = 次着手(123 readiness / 124 cleanup apply 等)
-│   └── later/  P1.5+ = 後で(125 AdSense / 128 SNS / reference contracts)
-└── archived/YYYY-MM/  CLOSED + BLOCKED_USER + PARKED 全部統合
+├── 102-ticket-index-and-priority-board.md  ← board 本体
+├── PUB-002-A-publish-candidate-gate-and-article-prose-contract.md  ← parent runbook
+├── PUB-004-guarded-auto-publish-runner.md  ← parent runbook
+├── PUB-005-x-post-gate.md  ← parent runbook
+├── active/    今動かす / 次動かす / 近いうち動かす(READY / IN_FLIGHT / REVIEW_NEEDED)
+├── waiting/   止めてる(BLOCKED_USER / BLOCKED_EXTERNAL / PARKED / 依存待ち)
+└── done/YYYY-MM/  終わった(CLOSED)
 ```
 
-- **doc/ root は空(.md ファイルなし)**。102 board 自身も `doc/active/now/` に配置
-- IN_FLIGHT / 高優先 → `doc/active/now/`
-- READY 次着手 → `doc/active/next/`
-- READY 後回し or reference → `doc/active/later/`
-- CLOSED / BLOCKED_USER / PARKED → `doc/archived/YYYY-MM/`(status 詳細は 102 board row)
+- READY / IN_FLIGHT / REVIEW_NEEDED → `doc/active/`
+- BLOCKED_USER / BLOCKED_EXTERNAL / PARKED → `doc/waiting/`
+- CLOSED → `doc/done/YYYY-MM/`
+- doc/ root: 102 board + 親 runbook(PUB-*)のみ
+- **優先順位はフォルダではなく、本 102 board の `priority` / `next_action` で判別**
 - status 変更時 doc_path も同 commit で更新
 - `git add -A` 禁止、明示 path stage
 
@@ -104,7 +106,7 @@ doc/
 - **blocked_by**: none
 - **user_action_required**: none
 - **write_scope**: `src/publish_notice_cron_health.py`, `src/tools/run_publish_notice_cron_health_check.py`, `tests/test_publish_notice_cron_health.py`
-- **doc_path**: `doc/archived/2026-04/103-publish-notice-cron-health-check.md`
+- **doc_path**: `doc/done/2026-04/103-publish-notice-cron-health-check.md`
 - **acceptance**: cron/publish/log/SMTP/history are distinguished, dry-run only, secret values are never displayed
 - **repo_state**: pushed
 - **commit_state**: `d6548ba`
@@ -204,7 +206,7 @@ doc/
 - **blocked_by**: none
 - **user_action_required**: none(124-A は autonomous fire 候補)
 - **write_scope**: src/published_site_component_audit.py + tools + tests(read-only audit)
-- **doc_path**: `doc/archived/2026-04/108-existing-published-site-component-cleanup-audit.md`
+- **doc_path**: `doc/done/2026-04/108-existing-published-site-component-cleanup-audit.md`
 - **acceptance**: ✓ WP write zero / cleanup_proposals JSON / 6 tests pass / suite 1127
 - **repo_state**: pushed
 - **commit_state**: **`84b91ce`**
@@ -223,7 +225,7 @@ doc/
 - **blocked_by**: none
 - **user_action_required**: none
 - **write_scope**: src/missing_primary_source_recovery.py + tools + tests(read-only audit)
-- **doc_path**: `doc/archived/2026-04/109-missing-primary-source-blocker-reduction.md`
+- **doc_path**: `doc/done/2026-04/109-missing-primary-source-blocker-reduction.md`
 - **acceptance**: ✓ 6 cause_tag 分類 / rescue_candidates / WP write zero
 - **repo_state**: pushed
 - **commit_state**: **`94c6186`**
@@ -242,7 +244,7 @@ doc/
 - **blocked_by**: none
 - **user_action_required**: none
 - **write_scope**: src/pre_publish_fact_check/extractor.py 改修 + tests/test_subtype_unresolved_recovery.py
-- **doc_path**: `doc/archived/2026-04/110-subtype-unresolved-blocker-reduction.md`
+- **doc_path**: `doc/done/2026-04/110-subtype-unresolved-blocker-reduction.md`
 - **acceptance**: ✓ 6 新 branch / first-match order / 既存 tests pass
 - **repo_state**: pushed
 - **commit_state**: **`99e9f1c`**
@@ -261,7 +263,7 @@ doc/
 - **blocked_by**: none
 - **user_action_required**: none
 - **write_scope**: src/long_body_compression_audit.py + tools + tests(read-only audit)
-- **doc_path**: `doc/archived/2026-04/111-long-body-compression-or-exclusion.md`
+- **doc_path**: `doc/done/2026-04/111-long-body-compression-or-exclusion.md`
 - **acceptance**: ✓ prose 長分布 / subtype 別 policy / WP write zero
 - **repo_state**: pushed
 - **commit_state**: **`deea3bd`**
@@ -280,7 +282,7 @@ doc/
 - **blocked_by**: none
 - **user_action_required**: none
 - **write_scope**: tests/test_title_prefix_lineup_misuse_fixtures.py(new tests only、src 改変ゼロ)
-- **doc_path**: `doc/archived/2026-04/112-title-prefix-and-lineup-misclassification-fixtures.md`
+- **doc_path**: `doc/done/2026-04/112-title-prefix-and-lineup-misclassification-fixtures.md`
 - **acceptance**: ✓ 9 fixtures / src diff zero / suite 1144
 - **repo_state**: pushed
 - **commit_state**: **`28b0dec`**
@@ -318,7 +320,7 @@ doc/
 - **blocked_by**: 119/120 prerequisites and one-time live unlock at 121
 - **user_action_required**: only for 121 X live unlock / credential boundary
 - **write_scope**: umbrella only; child tickets define concrete write scopes
-- **doc_path**: `doc/blocked/PUB-005-x-post-gate.md`
+- **doc_path**: `doc/PUB-005-x-post-gate.md`
 - **acceptance**: Green-only controlled autopost path is split into safe child tickets; no direct 114 fire
 - **repo_state**: parent doc-first exists
 - **commit_state**: committed doc
@@ -375,7 +377,7 @@ doc/
 - **blocked_by**: none
 - **user_action_required**: **none**(2026-04-26 user 明示: 「あとでチューニングするから、君の中で作業が終ればクローズ」)
 - **write_scope**: `src/custom.css` の AdSense 全殺し section(完了済)
-- **doc_path**: `doc/archived/2026-04/117-adsense-ad-unlock-policy-and-css-toggle.md`
+- **doc_path**: `doc/done/2026-04/117-adsense-ad-unlock-policy-and-css-toggle.md`
 - **acceptance**: ✓ CSS kill 全削除完了(`0555733` + `5855591` reader-focus / print AdSense 削除)/ AdSense pattern grep 0 hit / mobile/desktop 表示維持 / backend 差分ゼロ
 - **repo_state**: pushed
 - **commit_state**: **`0555733`** + `5855591`(reader-focus / print AdSense 追加削除)
@@ -397,7 +399,7 @@ doc/
 - **blocked_by**: none for read-only summary; live ramp remains blocked by 105 / 123
 - **user_action_required**: none for summary generation; live ramp decision remains user boundary
 - **write_scope**: report/doc only; no src changes required
-- **doc_path**: `doc/archived/2026-04/118-pub004-red-reason-decision-pack.md`
+- **doc_path**: `doc/done/2026-04/118-pub004-red-reason-decision-pack.md`
 - **acceptance**: Red top reasons, representative post_ids, absolute Red, cleanup-rescuable candidates, and next action are visible
 - **repo_state**: doc exists
 - **commit_state**: pending 118/123 sync
@@ -418,7 +420,7 @@ doc/
 - **blocked_by**: none
 - **user_action_required**: none
 - **write_scope**: `src/x_post_eligibility_evaluator.py`, `src/tools/run_x_post_eligibility_evaluator.py`, `tests/test_x_post_eligibility_evaluator.py`
-- **doc_path**: `doc/archived/2026-04/119-x-post-eligibility-evaluator.md`
+- **doc_path**: `doc/done/2026-04/119-x-post-eligibility-evaluator.md`
 - **acceptance**: ✓ published-only / Green-only eligible list, Yellow/Red/X-side Red refused with reasons, JSON + human summary, WP write zero, X API zero
 - **repo_state**: pushed
 - **commit_state**: **`0253b2a`**
@@ -439,7 +441,7 @@ doc/
 - **blocked_by**: 119 close
 - **user_action_required**: none
 - **write_scope**: `src/x_post_autopost_queue.py`, `src/tools/run_x_post_autopost_queue.py`, `tests/test_x_post_autopost_queue.py`
-- **doc_path**: `doc/blocked/120-x-post-autopost-queue-and-ledger.md`
+- **doc_path**: `doc/waiting/120-x-post-autopost-queue-and-ledger.md`
 - **acceptance**: queue/ledger fields present, duplicate queue/post prevented, dry-run summary, X API zero
 - **repo_state**: doc exists
 - **commit_state**: current X ticket sync commit
@@ -459,7 +461,7 @@ doc/
 - **blocked_by**: X live unlock / credential boundary / 120 close
 - **user_action_required**: explicit one-time X live unlock before implementation or live smoke
 - **write_scope**: `src/x_post_live_helper.py`, `src/tools/run_x_post_live_helper.py`, `tests/test_x_post_live_helper.py`
-- **doc_path**: `doc/blocked/121-x-post-live-helper-one-shot-smoke.md`
+- **doc_path**: `doc/waiting/121-x-post-live-helper-one-shot-smoke.md`
 - **acceptance**: dry-run default, `--live` required, one candidate only, ledger updated on success, duplicate refused, secret values never printed
 - **repo_state**: doc exists
 - **commit_state**: current X ticket sync commit
@@ -479,7 +481,7 @@ doc/
 - **blocked_by**: 121 smoke success
 - **user_action_required**: none after 121 one-time unlock unless cron/live policy changes
 - **write_scope**: `src/x_post_controlled_rollout.py`, `src/tools/run_x_post_controlled_rollout.py`, `tests/test_x_post_controlled_rollout.py`
-- **doc_path**: `doc/blocked/122-x-post-controlled-autopost-rollout.md`
+- **doc_path**: `doc/waiting/122-x-post-controlled-autopost-rollout.md`
 - **acceptance**: daily cap enforced, duplicate prevented, refusal/failure reasons recorded, Green-only gate cannot be bypassed
 - **repo_state**: doc exists
 - **commit_state**: current X ticket sync commit
@@ -559,7 +561,7 @@ doc/
 - **blocked_by**: none
 - **user_action_required**: none
 - **write_scope**: src/sns_topic_fire_intake.py + src/tools/run_sns_topic_fire_intake.py + tests/test_sns_topic_fire_intake.py
-- **doc_path**: `doc/archived/2026-04/126-sns-topic-fire-intake-dry-run.md`
+- **doc_path**: `doc/done/2026-04/126-sns-topic-fire-intake-dry-run.md`
 - **acceptance**: ✓ 8 MVP categories / unsafe reject / post text/account/URL 露出ゼロ / fact_recheck_required=true / B review pass 10/10
 - **repo_state**: pushed
 - **commit_state**: **`5bfe892`**
@@ -580,7 +582,7 @@ doc/
 - **blocked_by**: none
 - **user_action_required**: none
 - **write_scope**: `src/sns_topic_source_recheck.py`, `src/tools/run_sns_topic_source_recheck.py`, `tests/test_sns_topic_source_recheck.py`
-- **doc_path**: `doc/archived/2026-04/127-sns-topic-source-recheck-and-draft-builder.md`
+- **doc_path**: `doc/done/2026-04/127-sns-topic-source-recheck-and-draft-builder.md`
 - **acceptance**: ✓ 5 route 分類(draft_ready / candidate_only / hold_sensitive / duplicate_news / reject)/ resolver mock / SNS 漏洩 zero / `source_recheck_passed=true` / `publish_gate_required=true`
 - **repo_state**: pushed
 - **commit_state**: **`2669faa`**
@@ -600,7 +602,7 @@ doc/
 - **blocked_by**: 123 readiness re-run + 105 ramp stabilization
 - **user_action_required**: none per article once 127/128 automation is activated; no raw SNS direct publish
 - **write_scope**: `src/sns_topic_publish_bridge.py`, `src/tools/run_sns_topic_publish_bridge.py`, `tests/test_sns_topic_publish_bridge.py`
-- **doc_path**: `doc/active/128-sns-topic-auto-publish-through-pub004.md`
+- **doc_path**: `doc/waiting/128-sns-topic-auto-publish-through-pub004.md`
 - **acceptance**: 127 source-rechecked drafts only, PUB-004 evaluator mandatory, Red refused, dry-run would_publish visible, live respects PUB-004 caps/history/backup
 - **repo_state**: doc exists
 - **commit_state**: pending SNS topic sync
@@ -621,7 +623,7 @@ doc/
 - **user_action_required**: none
 - **spec_doc**: `doc/130-pub004-hard-stop-vs-repairable-before-publish.md`
 - **write_scope**: ✓ src/guarded_publish_evaluator.py + src/guarded_publish_runner.py + src/tools/run_guarded_publish.py + 2 tests
-- **doc_path**: `doc/archived/2026-04/130-pub004-hard-stop-vs-repairable-before-publish.md`
+- **doc_path**: `doc/done/2026-04/130-pub004-hard-stop-vs-repairable-before-publish.md`
 - **acceptance**: ✓ 3 分類(hard_stop / repairable / clean)/ publishable=NOT hard_stop / 公開前 cleanup → verify(prose>=100 / source URL残存 / title subject残存)→ publish / cleanup 失敗 hold(全体 abort なし)/ cap 20/30/100 / CLI help "max 3" 文言消滅 / 既存 tests pass
 - **5_point_audit**: ✓ git log + git status clean + grep + pytest collect 1238 + pytest pass 1238/0 fail
 - **live_validation**: 105 burst_1 で 20 件 sent / 40 hard_stop hold / 40 cap skip / postcheck 2 round
@@ -645,7 +647,7 @@ doc/
 - **spec_doc**: `doc/131-publish-notice-burst-summary-and-alerts.md`(新 spec、旧 file `131-publish-notice-batch-suppress.md` は本 file が supersede)
 - **policy_lock**: publish-notice mail を **suppress しない**。layer 5(同 post_id 30 分内重複)のみ抑止
 - **write_scope**: src/publish_notice_email_sender.py 改修 + src/tools/run_publish_notice_email_dry_run.py 改修 + tests
-- **doc_path**: `doc/archived/2026-04/131-publish-notice-burst-summary-and-alerts.md`
+- **doc_path**: `doc/done/2026-04/131-publish-notice-burst-summary-and-alerts.md`
 - **acceptance**: per-post 通常通知 維持 / 10 本ごと batch summary / Hard Stop / publish 失敗 / postcheck 失敗 / X 発火 alert / duplicate のみ suppress / mock SMTP test
 - **repo_state**: 新 spec doc pushed `73bbdf0`、implementation in flight
 - **commit_state**: A `b5fmteg53` 進行中
@@ -707,7 +709,7 @@ doc/
 - **blocked_by**: none
 - **user_action_required**: none
 - **write_scope**: 113 doc files reorg + doc/102 doc_path fields
-- **doc_path**: `doc/archived/2026-04/134-doc-ticket-archive-and-folder-policy.md`(本 commit 後 Claude が mv)
+- **doc_path**: `doc/done/2026-04/134-doc-ticket-archive-and-folder-policy.md`(本 commit 後 Claude が mv)
 - **acceptance**: ✓ active/review/blocked/archived/2026-04 folder 作成、doc/ root = 102 + PUB-* 9 件のみ、102 board doc_path field 全反映
 - **repo_state**: pushed
 - **commit_state**: **`35fb67c`**
@@ -867,10 +869,10 @@ git add -A禁止。
 - `doc/active/PUB-004-D-all-eligible-draft-backlog-publish-ramp.md`
 - `doc/118-pub004-red-reason-decision-pack.md`
 - `doc/123-pub004-auto-publish-readiness-and-regression-guard.md`
-- `doc/archived/2026-04/PUB-002-B-missing-primary-source-publish-blocker-reduction.md`
-- `doc/archived/2026-04/PUB-002-C-subtype-unresolved-publish-blocker-reduction.md`
-- `doc/archived/2026-04/PUB-002-D-long-body-draft-compression-or-exclusion-policy.md`
-- `doc/blocked/PUB-005-x-post-gate.md`
+- `doc/done/2026-04/PUB-002-B-missing-primary-source-publish-blocker-reduction.md`
+- `doc/done/2026-04/PUB-002-C-subtype-unresolved-publish-blocker-reduction.md`
+- `doc/done/2026-04/PUB-002-D-long-body-draft-compression-or-exclusion-policy.md`
+- `doc/PUB-005-x-post-gate.md`
 - `doc/119-x-post-eligibility-evaluator.md`
 - `doc/120-x-post-autopost-queue-and-ledger.md`
 - `doc/121-x-post-live-helper-one-shot-smoke.md`

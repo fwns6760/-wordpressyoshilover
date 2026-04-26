@@ -1,0 +1,46 @@
+substitutions:
+  _REGION: asia-northeast1
+  _PROJECT_ID: baseballsite
+  _IMAGE_NAME: guarded-publish
+  _TAG: latest
+
+steps:
+  - id: prepare guarded-publish build context
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -lc
+      - |
+        set -euo pipefail
+        CONTEXT_DIR=/workspace/.cloudbuild-guarded-publish
+        rm -rf "$${CONTEXT_DIR}"
+        mkdir -p "$${CONTEXT_DIR}/bin"
+        cp /workspace/Dockerfile.guarded_publish "$${CONTEXT_DIR}/Dockerfile.guarded_publish"
+        cp /workspace/requirements.txt /workspace/requirements-dev.txt "$${CONTEXT_DIR}/"
+        cp -R /workspace/src "$${CONTEXT_DIR}/src"
+        cp -R /workspace/vendor "$${CONTEXT_DIR}/vendor"
+        cp /workspace/bin/guarded_publish_entrypoint.sh "$${CONTEXT_DIR}/bin/guarded_publish_entrypoint.sh"
+
+  - id: build guarded-publish image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - /workspace/.cloudbuild-guarded-publish/Dockerfile.guarded_publish
+      - -t
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/yoshilover/${_IMAGE_NAME}:${_TAG}
+      - /workspace/.cloudbuild-guarded-publish
+
+  - id: push guarded-publish image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/yoshilover/${_IMAGE_NAME}:${_TAG}
+
+images:
+  - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/yoshilover/${_IMAGE_NAME}:${_TAG}
+
+timeout: 600s
+
+options:
+  machineType: E2_MEDIUM

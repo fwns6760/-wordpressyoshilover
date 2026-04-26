@@ -170,6 +170,82 @@ class SNSTopicSourceRecheckTests(unittest.TestCase):
         self.assertEqual(proposal["topic_category"], "player")
         self.assertEqual(proposal["source_urls"], ["https://hochi.news/example"])
 
+    def test_draft_proposal_includes_mock_draft_id(self):
+        candidate = self._candidate()
+        decisions = evaluate_sns_topic_source_recheck_batch(
+            [candidate],
+            lambda _: {
+                "official": True,
+                "rss_match": False,
+                "rumor_risk": False,
+                "source_urls": ["https://hochi.news/example"],
+            },
+        )
+
+        proposal = build_draft_proposals(decisions)[0]
+
+        self.assertIn("mock_draft_id", proposal.as_dict())
+        self.assertTrue(proposal.mock_draft_id)
+
+    def test_top_level_draft_ids_array_matches_proposals(self):
+        candidate = self._candidate()
+        decisions = evaluate_sns_topic_source_recheck_batch(
+            [candidate],
+            lambda _: {
+                "official": True,
+                "rss_match": False,
+                "rumor_risk": False,
+                "source_urls": ["https://hochi.news/example"],
+            },
+        )
+
+        payload = json.loads(dump_sns_topic_source_recheck_report(decisions, fmt="json"))
+
+        self.assertEqual(payload["draft_ids"], [payload["draft_proposals"][0]["mock_draft_id"]])
+
+    def test_mock_draft_id_is_deterministic_from_topic_key(self):
+        candidate = self._candidate()
+        decisions_first = evaluate_sns_topic_source_recheck_batch(
+            [candidate],
+            lambda _: {
+                "official": True,
+                "rss_match": False,
+                "rumor_risk": False,
+                "source_urls": ["https://hochi.news/example"],
+            },
+        )
+        decisions_second = evaluate_sns_topic_source_recheck_batch(
+            [candidate],
+            lambda _: {
+                "official": True,
+                "rss_match": False,
+                "rumor_risk": False,
+                "source_urls": ["https://hochi.news/example"],
+            },
+        )
+
+        proposal_first = build_draft_proposals(decisions_first)[0]
+        proposal_second = build_draft_proposals(decisions_second)[0]
+
+        self.assertEqual(proposal_first.mock_draft_id, proposal_second.mock_draft_id)
+
+    def test_mock_draft_id_starts_with_mock_prefix(self):
+        candidate = self._candidate()
+        decisions = evaluate_sns_topic_source_recheck_batch(
+            [candidate],
+            lambda _: {
+                "official": True,
+                "rss_match": False,
+                "rumor_risk": False,
+                "source_urls": ["https://hochi.news/example"],
+            },
+        )
+
+        proposal = build_draft_proposals(decisions)[0]
+
+        self.assertTrue(proposal.mock_draft_id.startswith("mock_draft_"))
+        self.assertEqual(len(proposal.mock_draft_id), len("mock_draft_") + 16)
+
 
 class RunSNSTopicSourceRecheckTests(unittest.TestCase):
     def _fixture_payload(self):
@@ -223,6 +299,20 @@ class RunSNSTopicSourceRecheckTests(unittest.TestCase):
         self.assertIn("SNS Topic Source Recheck Dry Run", output)
         self.assertIn("draft_ready: 1", output)
         self.assertIn("title_hint:", output)
+
+    def test_human_format_includes_draft_ids_count(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fixture_path = Path(tmpdir) / "fixture.json"
+            fixture_path.write_text(json.dumps(self._fixture_payload(), ensure_ascii=False), encoding="utf-8")
+
+            stdout = io.StringIO()
+            with patch("sys.stdout", stdout):
+                code = dry_run.main(["--fixture", str(fixture_path), "--format", "human"])
+
+        self.assertEqual(code, 0)
+        output = stdout.getvalue()
+        self.assertIn("draft_ids_count: 1", output)
+        self.assertIn("mock_draft_id:", output)
 
 
 if __name__ == "__main__":

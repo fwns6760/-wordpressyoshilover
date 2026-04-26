@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import asdict, dataclass, is_dataclass
+import hashlib
 import json
 import re
 from typing import Any, Callable, Mapping, Sequence
@@ -113,6 +114,7 @@ class SourceRecheckDecision:
 @dataclass(frozen=True)
 class DraftProposal:
     topic_key: str
+    mock_draft_id: str
     title_hint: str
     lead_hint: str
     source_urls: tuple[str, ...]
@@ -148,6 +150,7 @@ def build_draft_proposals(decisions: Sequence[SourceRecheckDecision]) -> tuple[D
         proposals.append(
             DraftProposal(
                 topic_key=decision.topic_key,
+                mock_draft_id=_build_mock_draft_id(decision.topic_key),
                 title_hint=_build_title_hint(decision),
                 lead_hint=_build_lead_hint(decision),
                 source_urls=decision.source_urls,
@@ -170,6 +173,7 @@ def dump_sns_topic_source_recheck_report(
         "dry_run": True,
         "items": len(decisions),
         "routed_candidates": _build_routed_candidate_summary(decisions),
+        "draft_ids": [proposal.mock_draft_id for proposal in proposals],
         "draft_proposals": [proposal.as_dict() for proposal in proposals],
     }
     return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
@@ -188,6 +192,7 @@ def render_sns_topic_source_recheck_human(
     ]
     for route in _ROUTES:
         lines.append(f"{route}: {counts.get(route, 0)}")
+    lines.append(f"draft_ids_count: {len(draft_proposals)}")
 
     if draft_proposals:
         lines.extend(["", "draft proposals"])
@@ -195,6 +200,7 @@ def render_sns_topic_source_recheck_human(
             lines.extend(
                 [
                     f"{index}. topic_key: {proposal.topic_key}",
+                    f"   mock_draft_id: {proposal.mock_draft_id}",
                     f"   topic_category: {proposal.topic_category}",
                     f"   title_hint: {proposal.title_hint}",
                     f"   source_urls: {', '.join(proposal.source_urls)}",
@@ -329,6 +335,11 @@ def _build_lead_hint(decision: SourceRecheckDecision) -> str:
     )
 
 
+def _build_mock_draft_id(topic_key: str) -> str:
+    digest = hashlib.sha256(topic_key.encode("utf-8")).hexdigest()[:16]
+    return f"mock_draft_{digest}"
+
+
 def _normalize_candidate(candidate: Mapping[str, Any] | Any) -> dict[str, Any]:
     if isinstance(candidate, Mapping):
         payload = dict(candidate)
@@ -460,4 +471,3 @@ def _is_sns_url(value: str) -> bool:
 def _default_resolver(candidate: Mapping[str, Any]) -> dict[str, Any]:
     del candidate
     return {"official": False, "rss_match": False, "rumor_risk": False, "source_urls": []}
-

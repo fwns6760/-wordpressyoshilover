@@ -20,11 +20,9 @@ HARD_STOP_FLAGS = frozenset(
     {
         "unsupported_named_fact",
         "obvious_misinformation",
-        "injury_death",
         "title_body_mismatch_strict",
         "cross_article_contamination",
         "x_sns_auto_post_risk",
-        "lineup_duplicate_excessive",
         "ranking_list_only",
         "lineup_no_hochi_source",
         "lineup_prefix_misuse",
@@ -49,6 +47,8 @@ REPAIRABLE_FLAGS = frozenset(
         "missing_featured_media",
         "title_body_mismatch_partial",
         "numerical_anomaly_low_severity",
+        "injury_death",
+        "lineup_duplicate_excessive",
     }
 )
 SOFT_CLEANUP_FLAGS = REPAIRABLE_FLAGS

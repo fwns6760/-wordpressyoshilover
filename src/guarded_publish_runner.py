@@ -703,6 +703,8 @@ REPAIRABLE_FLAG_ACTION_MAP = {
     "stale_for_breaking_board": "freshness_audit_only_no_op",
     "expired_lineup_or_pregame": "freshness_audit_only_no_op",
     "expired_game_context": "freshness_audit_only_no_op",
+    "injury_death": "user_overide_full_publish_no_op",
+    "lineup_duplicate_excessive": "user_overide_full_publish_no_op",
 }
 
 

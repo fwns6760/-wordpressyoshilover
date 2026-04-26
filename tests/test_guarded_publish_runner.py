@@ -897,11 +897,12 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         self.assertEqual(cleanup_row["cleanups"][0]["reason"], "warning_only:freshness_audit_only_no_op")
 
     def test_repairable_post_cleanup_failed_post_condition_held_prose_short(self):
+        short_prose = "巨人が阪神に1-0で勝利した。" + ("あ" * 34)
         post = _post(
             302,
             "巨人が阪神に1-0で勝利",
             (
-                "<p>巨人が勝った。</p>"
+                f"<p>{short_prose}</p>"
                 "<pre>"
                 "python3 -m src.tools.run_guarded_publish\n"
                 "git diff --stat\n"
@@ -936,8 +937,135 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         self.assertEqual(result["executed"][0]["status"], "refused")
         self.assertEqual(result["executed"][0]["hold_reason"], "cleanup_failed_post_condition")
         self.assertEqual(history_row["hold_reason"], "cleanup_failed_post_condition")
+        self.assertEqual(history_row["error"], "prose_lt_100")
         self.assertTrue(history_row["backup_path"])
         self.assertEqual(wp.update_post_fields_calls, [])
+        self.assertEqual(wp.update_post_status_calls, [])
+
+    def test_repairable_post_cleanup_50_chars_publishes(self):
+        prose = "巨人が阪神に1-0で勝利した。" + ("あ" * 35)
+        post = _post(
+            313,
+            "巨人が阪神に1-0で勝利",
+            (
+                f"<p>{prose}</p>"
+                "<pre>"
+                "python3 -m src.tools.run_guarded_publish\n"
+                "git diff --stat\n"
+                "commit_hash=abc12345\n"
+                "changed_files=3\n"
+                "tokens used: 10\n"
+                "</pre>"
+                "<p>参照元: スポーツ報知 https://example.com/source</p>"
+            ),
+        )
+        report = _report(
+            yellow=[_repairable_entry(313, post["title"]["raw"], "dev_log_contamination", yellow_reasons=["dev_log_contamination"])],
+            cleanup_candidates=[{"post_id": 313, "cleanup_types": ["dev_log_contamination"]}],
+        )
+        wp = FakeWPClient({313: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual(result["executed"][0]["status"], "sent")
+        self.assertEqual(wp.update_post_fields_calls[0][0], 313)
+        self.assertEqual(wp.update_post_fields_calls[0][1]["status"], "publish")
+        self.assertNotIn("<pre>", wp.update_post_fields_calls[0][1]["content"])
+        self.assertEqual(wp.update_post_status_calls, [])
+
+    def test_repairable_post_cleanup_80_chars_publishes(self):
+        prose = "巨人が阪神に1-0で勝利した。" + ("あ" * 65)
+        post = _post(
+            314,
+            "巨人が阪神に1-0で勝利",
+            (
+                f"<p>{prose}</p>"
+                "<pre>"
+                "python3 -m src.tools.run_guarded_publish\n"
+                "git diff --stat\n"
+                "commit_hash=abc12345\n"
+                "changed_files=3\n"
+                "tokens used: 10\n"
+                "</pre>"
+                "<p>参照元: スポーツ報知 https://example.com/source</p>"
+            ),
+        )
+        report = _report(
+            yellow=[_repairable_entry(314, post["title"]["raw"], "dev_log_contamination", yellow_reasons=["dev_log_contamination"])],
+            cleanup_candidates=[{"post_id": 314, "cleanup_types": ["dev_log_contamination"]}],
+        )
+        wp = FakeWPClient({314: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual(result["executed"][0]["status"], "sent")
+        self.assertEqual(wp.update_post_fields_calls[0][0], 314)
+        self.assertEqual(wp.update_post_fields_calls[0][1]["status"], "publish")
+        self.assertNotIn("<pre>", wp.update_post_fields_calls[0][1]["content"])
+        self.assertEqual(wp.update_post_status_calls, [])
+
+    def test_repairable_post_cleanup_env_override_allows_40_chars(self):
+        prose = "巨人が阪神に1-0で勝利した。" + ("あ" * 25)
+        post = _post(
+            315,
+            "巨人が阪神に1-0で勝利",
+            (
+                f"<p>{prose}</p>"
+                "<pre>"
+                "python3 -m src.tools.run_guarded_publish\n"
+                "git diff --stat\n"
+                "commit_hash=abc12345\n"
+                "changed_files=3\n"
+                "tokens used: 10\n"
+                "</pre>"
+                "<p>参照元: スポーツ報知 https://example.com/source</p>"
+            ),
+        )
+        report = _report(
+            yellow=[_repairable_entry(315, post["title"]["raw"], "dev_log_contamination", yellow_reasons=["dev_log_contamination"])],
+            cleanup_candidates=[{"post_id": 315, "cleanup_types": ["dev_log_contamination"]}],
+        )
+        wp = FakeWPClient({315: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict("os.environ", {"MIN_PROSE_AFTER_CLEANUP": "30"}, clear=False):
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual(result["executed"][0]["status"], "sent")
+        self.assertEqual(wp.update_post_fields_calls[0][0], 315)
+        self.assertEqual(wp.update_post_fields_calls[0][1]["status"], "publish")
+        self.assertNotIn("<pre>", wp.update_post_fields_calls[0][1]["content"])
         self.assertEqual(wp.update_post_status_calls, [])
 
     def test_repairable_post_cleanup_source_lost_held(self):

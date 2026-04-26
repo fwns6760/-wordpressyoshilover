@@ -27,6 +27,7 @@ DEFAULT_BACKUP_DIR = ROOT / "logs" / "cleanup_backup"
 DEFAULT_HISTORY_PATH = ROOT / "logs" / "guarded_publish_history.jsonl"
 DEFAULT_YELLOW_LOG_PATH = ROOT / "logs" / "guarded_publish_yellow_log.jsonl"
 DEFAULT_CLEANUP_LOG_PATH = ROOT / "logs" / "guarded_publish_cleanup_log.jsonl"
+DEFAULT_MIN_PROSE_AFTER_CLEANUP = 50
 
 TAG_RE = re.compile(r"<[^>]+>")
 WHITESPACE_RE = re.compile(r"\s+")
@@ -216,6 +217,10 @@ def _prose_char_count(body_text: str) -> int:
     return len("".join(chunks))
 
 
+def _min_prose_after_cleanup() -> int:
+    return int(os.environ.get("MIN_PROSE_AFTER_CLEANUP", str(DEFAULT_MIN_PROSE_AFTER_CLEANUP)))
+
+
 def _post_record_with_content(post: dict[str, Any], body_html: str) -> dict[str, Any]:
     synthetic = dict(post)
     synthetic["content"] = {"raw": body_html, "rendered": body_html}
@@ -228,7 +233,7 @@ def _post_cleanup_check(post: dict[str, Any], cleaned_html: str) -> tuple[bool, 
     if not _strip_html(cleaned_html):
         return False, "body_empty"
     prose_chars = _prose_char_count(str(cleaned_record.get("body_text") or ""))
-    if prose_chars < 100:
+    if prose_chars < _min_prose_after_cleanup():
         return False, "prose_lt_100"
 
     title = str(cleaned_record.get("title") or "")

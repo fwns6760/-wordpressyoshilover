@@ -3309,9 +3309,7 @@ body.yoshi-reader-focus .c-shareBtns,
 body.yoshi-reader-focus .p-articleMetas,
 body.yoshi-reader-focus .p-breadcrumb,
 body.yoshi-reader-focus .c-pagerPosts,
-body.yoshi-reader-focus .p-pagerPosts,
-body.yoshi-reader-focus ins.adsbygoogle,
-body.yoshi-reader-focus .google-auto-placed {
+body.yoshi-reader-focus .p-pagerPosts {
   display: none !important;
 }
 body.yoshi-reader-focus .l-mainContent {
@@ -3451,8 +3449,6 @@ body.yoshi-theme-soft .yoshi-topic-hub__heading {
 @media print {
   * { animation: none !important; transition: none !important; box-shadow: none !important; }
   .p-scrollTopBtn, .c-scrollTopBtn,
-  ins.adsbygoogle, .adsbygoogle,
-  .google-auto-placed,
   .p-commentArea,
   .p-pagerPosts, .c-pagerPosts, .p-postNav {
     display: none !important;

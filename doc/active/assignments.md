@@ -18,10 +18,10 @@
 | ticket | priority | status | 担当 | 次 action |
 |---|---|---|---|---|
 | **README**(旧 102) | P0 | READY | Claude | board 維持 / dispatch 正本 |
-| **PUB-004-D / 105** | P0 | IN_FLIGHT | Claude | 翌 JST 0:00 cap reset 後 fresh-only ramp(135 復活で stale 自動公開停止)|
+| **PUB-004-D / 105** | P0 | **AUTO 5min cron**(PUB-004-C 化、2026-04-26 PM 起動)| Cron + Claude 監視 | RSS 新着 → 5-15 分内 auto publish、daily cap 100 件 / 24h |
+| **124** cleanup apply | P1 | CLOSED `d25d02c` | A 完了 | live apply は Claude が手動 trigger(--live)|
 | **135** freshness gate | P0 | **REVERTED 142 → HARD_STOP 復活**(`e302187`)| Claude | 古い draft 自動公開停止、新着のみ ramp |
 | **123** readiness guard | P1 | CLOSED `77d4c8b` | A | history audit module land、105 ramp 監視に使用 |
-| **124** cleanup apply | P1 | READY | Codex A | 130 land 後、site_component cleanup を 8 publish 済記事に live apply |
 | **147** X auto-post 親 ramp | P0.5 | READY | Claude | Phase 1-5 設計 / orchestration |
 | **148** X Phase 1 dry-run mail | P0.5 | **CLOSED `cc9fe16`** | Codex A 完了 | 直近 publish 5 件文案 build + mail、X API zero、user 文案確認 待ち |
 | **149** X Phase 2 manual live 1 | P0.5 | READY(148 done)| Claude / A | user 確認後 1 件 manual_post live |

@@ -1,0 +1,25 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+WORKDIR /app
+
+COPY requirements.txt ./requirements.txt
+COPY requirements-dev.txt ./requirements-dev.txt
+
+RUN python3 -m pip install --no-cache-dir --upgrade pip \
+    && python3 -m pip install --no-cache-dir -r requirements.txt
+
+COPY src/ ./src/
+COPY vendor/ ./vendor/
+
+RUN useradd --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser \
+    && mkdir -p /app/logs /app/data /data \
+    && chown -R appuser:appuser /app /home/appuser /data
+
+USER appuser
+
+ENTRYPOINT ["python3", "-m", "src.tools.run_publish_notice_email_dry_run"]
+CMD ["--scan", "--send", "--cursor-path", "/data/publish_notice_cursor.txt", "--history-path", "/data/publish_notice_history.json", "--queue-path", "/data/publish_notice_queue.jsonl"]

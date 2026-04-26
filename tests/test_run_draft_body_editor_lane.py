@@ -90,6 +90,15 @@ def _make_post(
     }
 
 
+def _make_unresolved_post(post_id: int, *, modified: str) -> dict:
+    return _make_post(
+        post_id,
+        title="巨人スタメン発表",
+        subtype=None,
+        modified=modified,
+    )
+
+
 class _FakeWP:
     def __init__(self, *, paged_posts=None, get_post_map=None, put_side_effect=None, raise_on_page=None):
         self.paged_posts = paged_posts or {1: []}
@@ -179,6 +188,29 @@ class TestBodyTooLongUsesProseLength(unittest.TestCase):
         for checker in (lane._draft_looks_editable, lane._list_level_looks_editable):
             with self.subTest(checker=checker.__name__):
                 self.assertEqual(checker(post, now, set()), (False, "body_too_long"))
+
+
+class TestUnresolvedAndStale(unittest.TestCase):
+    def test_resolved_subtype_old_post_returns_false(self):
+        now = lane._now_jst("2026-04-26T14:30:00+09:00")
+        post = _make_post(1151, subtype="postgame", modified="2026-04-24T09:00:00+09:00")
+        self.assertFalse(lane._is_unresolved_and_stale(post, now))
+
+    def test_unresolved_subtype_twelve_hours_old_returns_false(self):
+        now = lane._now_jst("2026-04-26T14:30:00+09:00")
+        post = _make_unresolved_post(1152, modified="2026-04-26T02:30:00+09:00")
+        self.assertFalse(lane._is_unresolved_and_stale(post, now))
+
+    def test_unresolved_subtype_thirty_hours_old_returns_true(self):
+        now = lane._now_jst("2026-04-26T14:30:00+09:00")
+        post = _make_unresolved_post(1153, modified="2026-04-25T08:30:00+09:00")
+        self.assertTrue(lane._is_unresolved_and_stale(post, now))
+
+    def test_unresolved_subtype_without_modified_returns_false(self):
+        now = lane._now_jst("2026-04-26T14:30:00+09:00")
+        post = _make_unresolved_post(1154, modified="2026-04-26T08:00:00+09:00")
+        post["modified"] = ""
+        self.assertFalse(lane._is_unresolved_and_stale(post, now))
 
 
 class TestLaneMain(unittest.TestCase):
@@ -296,6 +328,46 @@ class TestLaneMain(unittest.TestCase):
         self.assertEqual(payload["stop_reason"], "no_candidate")
         self.assertEqual(payload["candidates_before_filter"], 1)
         self.assertEqual(payload["skip_reason_counts"], {"recently_edited_by_lane": 1})
+
+    def test_unresolved_and_stale_is_skipped_before_slot_selection(self):
+        stale_unresolved = _make_unresolved_post(451, modified="2026-04-24T08:00:00+09:00")
+        stale_resolved = _make_post(452, subtype="postgame", modified="2026-04-24T09:00:00+09:00")
+        wp = _FakeWP(
+            paged_posts={1: [stale_unresolved, stale_resolved], 2: []},
+            get_post_map={452: stale_resolved},
+        )
+        code, stdout, _, wp, _, _ = _run_main(
+            ["--now-iso", "2026-04-26T14:30:00+09:00", "--max-posts", "1"],
+            wp=wp,
+            run_editor_side_effect=_editor_success_runs(1),
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(wp.get_post_calls, [452])
+        payload = json.loads(stdout.strip())
+        self.assertEqual(payload["put_ok"], 1)
+        self.assertEqual(payload["skip_reason_counts"], {"unresolved_and_stale": 1})
+        self.assertEqual(payload["aggregate_counts"]["selected_for_processing"], 1)
+        self.assertEqual(payload["per_post_outcomes"], [
+            {"post_id": 452, "verdict": "edited", "edited": "ok"}
+        ])
+
+    def test_fresh_unresolved_keeps_existing_subtype_unresolved_skip(self):
+        fresh_unresolved = _make_unresolved_post(461, modified="2026-04-26T08:00:00+09:00")
+        wp = _FakeWP(
+            paged_posts={1: [fresh_unresolved], 2: []},
+            get_post_map={461: fresh_unresolved},
+        )
+        code, stdout, _, _, _, editor_mock = _run_main(
+            ["--now-iso", "2026-04-26T14:30:00+09:00"],
+            wp=wp,
+        )
+        self.assertEqual(code, 0)
+        self.assertFalse(editor_mock.called)
+        payload = json.loads(stdout.strip())
+        self.assertEqual(payload["skip_reason_counts"], {"subtype_unresolved": 1})
+        self.assertEqual(payload["per_post_outcomes"], [
+            {"post_id": 461, "verdict": "skip", "skip_reason": "subtype_unresolved"}
+        ])
 
     def test_editor_input_error_stops(self):
         post = _make_post(501)

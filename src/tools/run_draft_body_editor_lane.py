@@ -323,6 +323,20 @@ def _within_edit_window(post: dict[str, Any], now: datetime) -> bool:
     return timedelta(minutes=15) <= age <= timedelta(hours=72)
 
 
+def _is_unresolved_and_stale(
+    post: dict[str, Any],
+    now: datetime,
+    *,
+    max_age_hours: int = 24,
+) -> bool:
+    if _infer_subtype(post) is not None:
+        return False
+    modified = _parse_post_datetime(post, "modified_gmt", "modified", "date_gmt", "date")
+    if modified is None:
+        return False
+    return (now - modified) > timedelta(hours=max_age_hours)
+
+
 def _body_headings(body: str) -> tuple[str, ...]:
     return tuple(HEADING_PATTERN.findall(_strip_html(body)))
 
@@ -570,6 +584,8 @@ def _list_level_looks_editable(post: dict[str, Any], now: datetime, touched_ids:
         return False, "recently_touched"
     if age > timedelta(hours=72):
         return False, "outside_edit_window"
+    if _is_unresolved_and_stale(post, now):
+        return False, "unresolved_and_stale"
 
     if _resolved_live_update(post):
         return False, "live_update_excluded"

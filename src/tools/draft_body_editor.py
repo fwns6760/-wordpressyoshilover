@@ -29,9 +29,14 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
+from pathlib import Path
 from typing import Iterable, Sequence
+from uuid import uuid4
+
+from src import repair_provider_ledger
 
 
 VALID_SUBTYPES = ("pregame", "postgame", "lineup", "manager", "farm")
@@ -412,6 +417,101 @@ def _load_dotenv_if_available() -> None:
     load_dotenv()
 
 
+def _path_to_file_uri(path: str) -> str:
+    return Path(path).resolve().as_uri()
+
+
+def _emit_repair_provider_ledger(
+    *,
+    post_id: int,
+    subtype: str,
+    fail_axes: Sequence[str],
+    dry_run: bool,
+    current_body: str,
+    source_block: str,
+    out_path: str,
+    new_body: str,
+    status: str,
+    started_at: datetime,
+    finished_at: datetime,
+    hard_stop_flags_resolved: bool,
+    no_new_forbidden_claim: bool,
+    quality_flags: Sequence[str] = (),
+    error_code: str | None = None,
+) -> None:
+    body_len_before = len(current_body)
+    body_len_after = len(new_body)
+    body_len_delta_pct = repair_provider_ledger.compute_body_len_delta_pct(
+        body_len_before,
+        body_len_after,
+    )
+    input_hash = repair_provider_ledger.compute_input_hash(
+        {
+            "post_id": post_id,
+            "subtype": subtype,
+            "fail_axes": list(fail_axes),
+            "dry_run": dry_run,
+            "current_body": current_body,
+            "source_block": source_block,
+        }
+    )
+    entry = repair_provider_ledger.RepairLedgerEntry(
+        schema_version=repair_provider_ledger.SCHEMA_VERSION,
+        run_id=str(uuid4()),
+        lane="repair",
+        provider="gemini",
+        model="gemini-2.5-flash",
+        source_post_id=post_id,
+        input_hash=input_hash,
+        output_hash=repair_provider_ledger.compute_output_hash(new_body),
+        artifact_uri=_path_to_file_uri(out_path),
+        status=status,
+        strict_pass=False,
+        error_code=error_code,
+        idempotency_key=repair_provider_ledger.make_idempotency_key(
+            post_id,
+            input_hash,
+            "gemini",
+        ),
+        created_at=finished_at.isoformat(),
+        started_at=started_at.isoformat(),
+        finished_at=finished_at.isoformat(),
+        metrics={
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "latency_ms": max(int((finished_at - started_at).total_seconds() * 1000), 0),
+            "body_len_before": body_len_before,
+            "body_len_after": body_len_after,
+            "body_len_delta_pct": body_len_delta_pct,
+        },
+        provider_meta={
+            "raw_response_size": len(new_body.encode("utf-8")),
+            "fallback_from": None,
+            "fallback_reason": None,
+            "quality_flags": list(quality_flags),
+        },
+    )
+    entry.strict_pass = repair_provider_ledger.judge_strict_pass(
+        entry,
+        hard_stop_flags_resolved=hard_stop_flags_resolved,
+        fact_check_pass=True,
+        no_new_forbidden=no_new_forbidden_claim,
+        body_len_delta_pct=body_len_delta_pct,
+    )
+    writer = repair_provider_ledger.JsonlLedgerWriter(
+        repair_provider_ledger.resolve_jsonl_ledger_path(now=finished_at)
+    )
+    try:
+        writer.write(entry)
+    except (
+        repair_provider_ledger.LedgerLockError,
+        repair_provider_ledger.LedgerWriteError,
+        ValueError,
+        OSError,
+    ) as exc:
+        print(f"[ledger] repair_provider_ledger emit failed: {exc}", file=sys.stderr)
+
+
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="draft_body_editor",
@@ -510,41 +610,182 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 20
 
     prompt = build_prompt(args.subtype, fail_axes, current_body, source_block, headings)
+    started_at = repair_provider_ledger._now_jst()
 
     try:
         new_body = call_gemini(prompt, api_key)
     except GeminiAPIError as e:
+        _emit_repair_provider_ledger(
+            post_id=args.post_id,
+            subtype=args.subtype,
+            fail_axes=fail_axes,
+            dry_run=bool(args.dry_run),
+            current_body=current_body,
+            source_block=source_block,
+            out_path=args.out,
+            new_body="",
+            status="failed",
+            started_at=started_at,
+            finished_at=repair_provider_ledger._now_jst(),
+            hard_stop_flags_resolved=False,
+            no_new_forbidden_claim=False,
+            quality_flags=["gemini_api_error"],
+            error_code="gemini_api_error",
+        )
         print(f"Gemini API failed: {e}", file=sys.stderr)
         return 20
 
     if not new_body.strip():
+        _emit_repair_provider_ledger(
+            post_id=args.post_id,
+            subtype=args.subtype,
+            fail_axes=fail_axes,
+            dry_run=bool(args.dry_run),
+            current_body=current_body,
+            source_block=source_block,
+            out_path=args.out,
+            new_body=new_body,
+            status="failed",
+            started_at=started_at,
+            finished_at=repair_provider_ledger._now_jst(),
+            hard_stop_flags_resolved=False,
+            no_new_forbidden_claim=False,
+            quality_flags=["empty_body"],
+            error_code="gemini_empty_body",
+        )
         print("Gemini returned empty body", file=sys.stderr)
         return 20
 
     violations_a = guard_a_source_grounding(new_body, current_body, source_block)
+    violations_b = guard_b_heading_invariant(new_body, headings)
+    violations_c = guard_c_scope_invariant(new_body, current_body)
+    quality_flags: list[str] = []
     if violations_a:
+        quality_flags.append("guard_a_source_grounding")
+    if violations_b:
+        quality_flags.append("guard_b_heading_invariant")
+    if violations_c:
+        quality_flags.append("guard_c_scope_invariant")
+
+    if violations_a:
+        _emit_repair_provider_ledger(
+            post_id=args.post_id,
+            subtype=args.subtype,
+            fail_axes=fail_axes,
+            dry_run=bool(args.dry_run),
+            current_body=current_body,
+            source_block=source_block,
+            out_path=args.out,
+            new_body=new_body,
+            status="failed",
+            started_at=started_at,
+            finished_at=repair_provider_ledger._now_jst(),
+            hard_stop_flags_resolved=not (violations_b or violations_c),
+            no_new_forbidden_claim=False,
+            quality_flags=quality_flags,
+            error_code="guard_a_source_grounding",
+        )
         _emit_violations("Guard A", violations_a)
         return 10
 
-    violations_b = guard_b_heading_invariant(new_body, headings)
     if violations_b:
+        _emit_repair_provider_ledger(
+            post_id=args.post_id,
+            subtype=args.subtype,
+            fail_axes=fail_axes,
+            dry_run=bool(args.dry_run),
+            current_body=current_body,
+            source_block=source_block,
+            out_path=args.out,
+            new_body=new_body,
+            status="failed",
+            started_at=started_at,
+            finished_at=repair_provider_ledger._now_jst(),
+            hard_stop_flags_resolved=False,
+            no_new_forbidden_claim=True,
+            quality_flags=quality_flags,
+            error_code="guard_b_heading_invariant",
+        )
         _emit_violations("Guard B", violations_b)
         return 11
 
-    violations_c = guard_c_scope_invariant(new_body, current_body)
     if violations_c:
+        _emit_repair_provider_ledger(
+            post_id=args.post_id,
+            subtype=args.subtype,
+            fail_axes=fail_axes,
+            dry_run=bool(args.dry_run),
+            current_body=current_body,
+            source_block=source_block,
+            out_path=args.out,
+            new_body=new_body,
+            status="failed",
+            started_at=started_at,
+            finished_at=repair_provider_ledger._now_jst(),
+            hard_stop_flags_resolved=False,
+            no_new_forbidden_claim=True,
+            quality_flags=quality_flags,
+            error_code="guard_c_scope_invariant",
+        )
         _emit_violations("Guard C", violations_c)
         return 12
 
     if args.dry_run:
+        _emit_repair_provider_ledger(
+            post_id=args.post_id,
+            subtype=args.subtype,
+            fail_axes=fail_axes,
+            dry_run=bool(args.dry_run),
+            current_body=current_body,
+            source_block=source_block,
+            out_path=args.out,
+            new_body=new_body,
+            status="shadow_only",
+            started_at=started_at,
+            finished_at=repair_provider_ledger._now_jst(),
+            hard_stop_flags_resolved=True,
+            no_new_forbidden_claim=True,
+        )
         print("[dry-run] guards passed; --out not written", file=sys.stderr)
     else:
         try:
             with open(args.out, "w", encoding="utf-8") as f:
                 f.write(new_body)
         except OSError as e:
+            _emit_repair_provider_ledger(
+                post_id=args.post_id,
+                subtype=args.subtype,
+                fail_axes=fail_axes,
+                dry_run=bool(args.dry_run),
+                current_body=current_body,
+                source_block=source_block,
+                out_path=args.out,
+                new_body=new_body,
+                status="failed",
+                started_at=started_at,
+                finished_at=repair_provider_ledger._now_jst(),
+                hard_stop_flags_resolved=False,
+                no_new_forbidden_claim=True,
+                quality_flags=["write_output_failed"],
+                error_code="write_output_failed",
+            )
             print(f"failed to write --out: {e}", file=sys.stderr)
             return 30
+        _emit_repair_provider_ledger(
+            post_id=args.post_id,
+            subtype=args.subtype,
+            fail_axes=fail_axes,
+            dry_run=bool(args.dry_run),
+            current_body=current_body,
+            source_block=source_block,
+            out_path=args.out,
+            new_body=new_body,
+            status="success",
+            started_at=started_at,
+            finished_at=repair_provider_ledger._now_jst(),
+            hard_stop_flags_resolved=True,
+            no_new_forbidden_claim=True,
+        )
 
     result = {
         "post_id": args.post_id,

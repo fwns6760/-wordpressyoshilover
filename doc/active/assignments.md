@@ -37,8 +37,10 @@
 | **165** Gemini + WP REST resilience | P0.5 | **CLOSED `3aa2cd1`** → done/ 移動済 | A 完了 | API 一時 outage で cron 無駄停止しない |
 | **166** Cloud Run failure alert | P1 | **CLOSED `985e9e7`** → done/ 移動済(2 alert policy + email channel + auto-close 30min)| A 完了 | **user mail verification 1 click 必要**(channel 7008520332246366374) |
 | **167** GCP billing alert | P1 | **CLOSED `6fd5b00`** → done/ 移動済(JPY ¥1500/¥4500/¥7500 × 50/90/100% threshold)| A 完了 | 月 0-9 通 alert(同事象 dedup) |
-| **159** Phase 1e WSL cron 042 + 095 disable | P1 | **CLOSED**(`crontab` 編集、コメント化、backup `/tmp/crontab_backup_20260426_183147_before_159.bak`)| Claude 完了 | GCP 042 + 095 + Cloud Scheduler のみ稼働 |
-| **160** Phase 2 PUB-004-C GCP migration | P0 | **IN_FLIGHT `b3ngiu1an`** | A | WSL PUB-004-C disable 解除条件、最後の publish lane GCP 化 |
+| **159** Phase 1e WSL cron 042 + 095 + PUB-004-C disable | P1 | **CLOSED**(crontab 全 publish lane コメント化、GCP のみ稼働)| Claude 完了 | 残 WSL = gemini_audit のみ |
+| **160** Phase 2 PUB-004-C GCP migration | P0 | **CLOSED `e5818f6`** → done/ 移動済(Cloud Run Job + Scheduler 18:55 JST 自動稼働開始)| A 完了 | GCS persistence + smoke pass、WSL PUB-004-C 同時 disable 完了 |
+| **178** Codex primary wp_write enable | P0.5 | READY(177 land 後 fire)| B | env CODEX_WP_WRITE_ALLOWED で本線昇格 opt-in |
+| **179** repair learning log Firestore + GCS | P0 | **READY → 即 fire** | B | FirestoreLedgerWriter 本実装 + ArtifactUploader、038 ledger system の GCP bridge |
 | **176** share buttons Twitter/Facebook fix | P1 | **CLOSED `91069f0`** → done/ 移動済(custom.css の SWELL `-twitter-x` class 追従)| B 完了 | live deploy 後 smoke 必要(user 目視) |
 | **177** Codex shadow GCP deploy | P0 | **IN_FLIGHT `b200f9azk`** | A | Cloud Run Job + Secret Manager auth.json + Cloud Scheduler |
 | **168** repair-provider-ledger v0 | P0 | **CLOSED `70009aa`** → done/ 移動済 | B 完了 | GCP migration foundation、schema v0 18 fields |

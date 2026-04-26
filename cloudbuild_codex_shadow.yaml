@@ -1,0 +1,46 @@
+substitutions:
+  _REGION: asia-northeast1
+  _PROJECT_ID: baseballsite
+  _IMAGE_NAME: codex-shadow
+  _TAG: latest
+
+steps:
+  - id: prepare codex-shadow build context
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -lc
+      - |
+        set -euo pipefail
+        CONTEXT=/workspace/.codex-shadow-build
+        rm -rf "$$CONTEXT"
+        mkdir -p "$$CONTEXT/bin"
+        cp Dockerfile.codex_shadow "$$CONTEXT/Dockerfile.codex_shadow"
+        cp requirements.txt requirements-dev.txt "$$CONTEXT/"
+        cp -r src "$$CONTEXT/src"
+        cp -r vendor "$$CONTEXT/vendor"
+        cp bin/codex_shadow_entrypoint.sh "$$CONTEXT/bin/codex_shadow_entrypoint.sh"
+
+  - id: build codex-shadow image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - /workspace/.codex-shadow-build/Dockerfile.codex_shadow
+      - -t
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/yoshilover/${_IMAGE_NAME}:${_TAG}
+      - /workspace/.codex-shadow-build
+
+  - id: push codex-shadow image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/yoshilover/${_IMAGE_NAME}:${_TAG}
+
+images:
+  - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/yoshilover/${_IMAGE_NAME}:${_TAG}
+
+timeout: 1200s
+
+options:
+  machineType: E2_MEDIUM

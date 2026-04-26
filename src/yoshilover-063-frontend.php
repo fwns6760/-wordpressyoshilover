@@ -37,6 +37,7 @@ add_shortcode( 'yoshilover_dense_nav', 'yoshilover_063_render_dense_nav' );
 add_shortcode( 'yoshilover_breaking_strip', 'yoshilover_063_render_breaking_strip' );
 add_shortcode( 'yoshilover_today_giants_box', 'yoshilover_063_render_today_giants_box' );
 add_shortcode( 'yoshilover_sidebar_rail', 'yoshilover_063_render_sidebar_rail' );
+add_action( 'dynamic_sidebar_before', 'yoshilover_063_auto_inject_sidebar_top_ad_slot', 4, 2 );
 add_action( 'dynamic_sidebar_before', 'yoshilover_063_auto_inject_sidebar_rail', 5, 2 );
 
 function yoshilover_063_get_topic_hub_items() {
@@ -778,6 +779,77 @@ function yoshilover_063_auto_inject_sidebar_rail( $index, $has_widgets ) {
     $rendered = true;
 }
 
+function yoshilover_063_render_ad_slot( $slot_id, $extra_classes = '', $args = array() ) {
+    $slot_id = sanitize_key( (string) $slot_id );
+    if ( $slot_id === '' ) {
+        return '';
+    }
+
+    $args = wp_parse_args(
+        $args,
+        array(
+            'wrapper'    => 'aside',
+            'aria_label' => 'おすすめ導線',
+            'label'      => 'PICK UP',
+            'title'      => '最新の巨人ニュースをまとめて追う',
+            'copy'       => '速報・選手情報・球団ニュースを一覧で確認できます。',
+            'url'        => home_url( '/' ),
+            'link_label' => '最新記事へ',
+        )
+    );
+
+    $wrapper = in_array( $args['wrapper'], array( 'aside', 'section', 'div' ), true ) ? $args['wrapper'] : 'div';
+    $classes = trim( 'yoshi-ad ' . (string) $extra_classes );
+
+    $html  = '<' . $wrapper . ' class="' . esc_attr( $classes ) . '" data-ad-slot-id="' . esc_attr( $slot_id ) . '" aria-label="' . esc_attr( $args['aria_label'] ) . '">';
+    $html .= '<!-- TODO: insert <ins class="adsbygoogle" data-ad-slot="${SLOT_ID}"> -->';
+    $html .= '<div class="yoshi-ad__placeholder" aria-hidden="true"></div>';
+    $html .= '<div class="yoshi-ad__fallback yoshi-ad-fallback">';
+    $html .= '<a class="yoshi-ad__fallback-link" href="' . esc_url( $args['url'] ) . '">';
+    $html .= '<span class="yoshi-ad__fallback-label">' . esc_html( $args['label'] ) . '</span>';
+    $html .= '<strong class="yoshi-ad__fallback-title">' . esc_html( $args['title'] ) . '</strong>';
+    $html .= '<span class="yoshi-ad__fallback-copy">' . esc_html( $args['copy'] ) . '</span>';
+    $html .= '<span class="yoshi-ad__fallback-cta">' . esc_html( $args['link_label'] ) . '</span>';
+    $html .= '</a>';
+    $html .= '</div>';
+    $html .= '</' . $wrapper . '>';
+
+    return $html;
+}
+
+function yoshilover_063_auto_inject_sidebar_top_ad_slot( $index, $has_widgets ) {
+    static $rendered = false;
+
+    if ( $rendered ) {
+        return;
+    }
+    if ( ! yoshilover_063_should_render_sidebar_rail() ) {
+        return;
+    }
+    if ( ! yoshilover_063_is_primary_sidebar_index( $index ) ) {
+        return;
+    }
+
+    $slot = yoshilover_063_render_ad_slot(
+        'sidebar-top',
+        'yoshi-ad--sidebar-top',
+        array(
+            'aria_label' => 'サイドバー上部のおすすめ導線',
+            'label'      => 'SIDEBAR PICK',
+            'title'      => '最新の巨人ニュースをまとめてチェック',
+            'copy'       => '速報・選手情報・公示を右カラムからすぐ追えます。',
+            'link_label' => '一覧を見る',
+        )
+    );
+
+    if ( $slot === '' ) {
+        return;
+    }
+
+    echo $slot; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+    $rendered = true;
+}
+
 /* ------------------------------------------------------------
  * 2) 記事下 SNS 反応 block (062 §3 / 063 §2)
  *
@@ -799,10 +871,102 @@ add_shortcode( 'yoshilover_result_panel', 'yoshilover_063_render_result_panel_sh
 add_shortcode( 'yoshilover_lead_info', 'yoshilover_063_render_lead_info_shortcode' );
 add_shortcode( 'yoshilover_summary_box', 'yoshilover_063_render_summary_box_shortcode' );
 add_shortcode( 'yoshilover_pill', 'yoshilover_063_render_pill_shortcode' );
+add_filter( 'the_content', 'yoshilover_063_auto_inject_article_inline_ad_slot', 12 );
 add_filter( 'the_content', 'yoshilover_063_auto_inject_sns_reactions', 20 );
 add_filter( 'the_content', 'yoshilover_063_auto_inject_article_bundles', 21 );
 add_filter( 'the_content', 'yoshilover_063_auto_inject_x_follow_cta', 22 );
+add_filter( 'the_content', 'yoshilover_063_auto_inject_article_bottom_ad_slot', 23 );
 add_filter( 'the_content', 'yoshilover_063_auto_prepend_meta_line', 5 );
+
+function yoshilover_063_is_singular_post_content_context() {
+    if ( is_admin() ) {
+        return false;
+    }
+    if ( ! in_the_loop() || ! is_main_query() ) {
+        return false;
+    }
+    return is_singular( 'post' );
+}
+
+function yoshilover_063_insert_html_before_nth_tag( $content, $html, $tag_name, $occurrence ) {
+    $content    = (string) $content;
+    $html       = (string) $html;
+    $tag_name   = trim( (string) $tag_name );
+    $occurrence = (int) $occurrence;
+
+    if ( $content === '' || $html === '' || $tag_name === '' || $occurrence <= 0 ) {
+        return $content;
+    }
+
+    $pattern = '/<' . preg_quote( $tag_name, '/' ) . '\b[^>]*>/i';
+    $matches = array();
+    if ( ! preg_match_all( $pattern, $content, $matches, PREG_OFFSET_CAPTURE ) ) {
+        return $content;
+    }
+    if ( ! isset( $matches[0][ $occurrence - 1 ][1] ) ) {
+        return $content;
+    }
+
+    $offset = (int) $matches[0][ $occurrence - 1 ][1];
+    return substr( $content, 0, $offset ) . $html . substr( $content, $offset );
+}
+
+function yoshilover_063_insert_html_before_first_marker( $content, $html, $markers ) {
+    $content = (string) $content;
+    $html    = (string) $html;
+    $offsets = array();
+
+    if ( $content === '' || $html === '' ) {
+        return $content;
+    }
+
+    foreach ( (array) $markers as $marker ) {
+        $marker = (string) $marker;
+        if ( $marker === '' ) {
+            continue;
+        }
+        $offset = strpos( $content, $marker );
+        if ( false !== $offset ) {
+            $offsets[] = (int) $offset;
+        }
+    }
+
+    if ( empty( $offsets ) ) {
+        return $content . $html;
+    }
+
+    $offset = min( $offsets );
+    return substr( $content, 0, $offset ) . $html . substr( $content, $offset );
+}
+
+function yoshilover_063_auto_inject_article_inline_ad_slot( $content ) {
+    if ( ! yoshilover_063_is_singular_post_content_context() ) {
+        return $content;
+    }
+
+    if ( false !== strpos( (string) $content, 'data-ad-slot-id="article-inline"' ) ) {
+        return $content;
+    }
+
+    $slot = yoshilover_063_render_ad_slot(
+        'article-inline',
+        'yoshi-ad--article-inline',
+        array(
+            'wrapper'    => 'section',
+            'aria_label' => '記事途中のおすすめ導線',
+            'label'      => 'MORE',
+            'title'      => 'このあとも巨人ニュースを続けて追う',
+            'copy'       => 'モバイルで同じ流れの関連記事を開きやすい位置に置いています。',
+            'link_label' => '関連記事を見る',
+        )
+    );
+
+    if ( $slot === '' ) {
+        return $content;
+    }
+
+    return yoshilover_063_insert_html_before_nth_tag( $content, $slot, 'h2', 2 );
+}
 
 function yoshilover_063_is_x_url( $url ) {
     if ( ! is_string( $url ) || $url === '' ) {
@@ -1084,6 +1248,43 @@ function yoshilover_063_auto_inject_x_follow_cta( $content ) {
     }
 
     return $content . $cta;
+}
+
+function yoshilover_063_auto_inject_article_bottom_ad_slot( $content ) {
+    if ( ! yoshilover_063_is_singular_post_content_context() ) {
+        return $content;
+    }
+
+    if ( false !== strpos( (string) $content, 'data-ad-slot-id="article-bottom"' ) ) {
+        return $content;
+    }
+
+    $slot = yoshilover_063_render_ad_slot(
+        'article-bottom',
+        'yoshi-ad--article-bottom',
+        array(
+            'wrapper'    => 'section',
+            'aria_label' => '記事下のおすすめ導線',
+            'label'      => 'NEXT READ',
+            'title'      => '本文の続きとして追いやすい記事をまとめて見る',
+            'copy'       => '試合後記事や選手ニュースへ自然に回遊できる導線です。',
+            'link_label' => '最新記事を見る',
+        )
+    );
+
+    if ( $slot === '' ) {
+        return $content;
+    }
+
+    return yoshilover_063_insert_html_before_first_marker(
+        $content,
+        $slot,
+        array(
+            'class="yoshi-sns-reactions',
+            'class="yoshi-article-bundles',
+            'class="yoshi-x-follow-cta',
+        )
+    );
 }
 
 /* ------------------------------------------------------------

@@ -8965,3 +8965,188 @@ button.cta:hover,
     font-size: 10px;
   }
 }
+
+/* ====================================================================
+   125 / 087 AdSense slot scaffolding (wrapper only, no real ad unit IDs)
+   ==================================================================== */
+.yoshi-ad {
+  position: relative;
+  width: 100%;
+  margin: 24px 0;
+}
+
+.yoshi-ad__placeholder {
+  width: 100%;
+}
+
+.yoshi-ad__placeholder:empty {
+  display: none;
+}
+
+.yoshi-ad__placeholder:not(:empty) {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 18px;
+}
+
+.yoshi-ad__fallback,
+.yoshi-ad-fallback {
+  display: none;
+}
+
+.yoshi-ad__placeholder:empty + .yoshi-ad__fallback,
+.yoshi-ad__placeholder:empty + .yoshi-ad-fallback {
+  display: block;
+}
+
+.yoshi-ad__placeholder:not(:empty) + .yoshi-ad__fallback,
+.yoshi-ad__placeholder:not(:empty) + .yoshi-ad-fallback {
+  display: none;
+}
+
+.yoshi-ad__fallback-link {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  color: var(--dark-gray);
+  text-decoration: none;
+  background: linear-gradient(135deg, rgba(245, 129, 31, 0.12), rgba(255, 255, 255, 0.96));
+  border: 1px solid rgba(245, 129, 31, 0.22);
+  border-radius: 18px;
+  box-shadow: 0 10px 24px rgba(26, 26, 26, 0.06);
+}
+
+.yoshi-ad__fallback-link:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(26, 26, 26, 0.08);
+}
+
+.yoshi-ad__fallback-label {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 22px;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(26, 26, 26, 0.9);
+  color: var(--white);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.yoshi-ad__fallback-title {
+  display: block;
+  color: var(--black);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.yoshi-ad__fallback-copy {
+  display: block;
+  color: var(--mid-gray);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.yoshi-ad__fallback-cta {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 24px;
+  align-items: center;
+  gap: 6px;
+  color: var(--orange);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.yoshi-ad__fallback-cta::after {
+  content: "→";
+  font-size: 13px;
+}
+
+.yoshi-ad--sidebar-top {
+  position: sticky;
+  top: 96px;
+  max-width: 300px;
+  margin: 0 0 18px;
+  z-index: 3;
+}
+
+.yoshi-ad--sidebar-top .yoshi-ad__placeholder:not(:empty) {
+  min-height: 250px;
+}
+
+.yoshi-ad--article-bottom {
+  max-width: min(100%, 728px);
+  margin: 28px auto 30px;
+}
+
+.yoshi-ad--article-bottom .yoshi-ad__placeholder:not(:empty) {
+  min-height: clamp(100px, 28vw, 280px);
+}
+
+.yoshi-ad--article-inline {
+  display: none;
+  max-width: min(100%, 336px);
+  margin: 20px auto;
+}
+
+.yoshi-ad--article-inline .yoshi-ad__placeholder:not(:empty) {
+  min-height: clamp(100px, 64vw, 250px);
+}
+
+.yoshi-ad--collapsed {
+  display: none !important;
+  margin: 0 !important;
+}
+
+.yoshi-ad--collapsed .yoshi-ad__fallback,
+.yoshi-ad--collapsed .yoshi-ad-fallback {
+  display: none !important;
+}
+
+@media (max-width: 960px) {
+  .yoshi-ad--sidebar-top {
+    display: none;
+  }
+
+  .yoshi-ad--article-bottom {
+    margin: 24px auto 26px;
+  }
+}
+
+@media (max-width: 768px) {
+  .yoshi-ad {
+    margin: 20px 0;
+  }
+
+  .yoshi-ad--article-bottom {
+    max-width: min(100%, 336px);
+  }
+
+  .yoshi-ad--article-bottom .yoshi-ad__placeholder:not(:empty) {
+    min-height: clamp(100px, 58vw, 280px);
+  }
+
+  .yoshi-ad--article-inline {
+    display: block;
+  }
+
+  .yoshi-ad__fallback-link {
+    gap: 7px;
+    padding: 12px 14px;
+    border-radius: 16px;
+  }
+
+  .yoshi-ad__fallback-title {
+    font-size: 14px;
+  }
+
+  .yoshi-ad__fallback-copy,
+  .yoshi-ad__fallback-cta {
+    font-size: 11px;
+  }
+}

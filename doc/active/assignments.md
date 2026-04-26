@@ -19,9 +19,10 @@
 |---|---|---|---|---|
 | **README**(旧 102) | P0 | READY | Claude | board 維持 / dispatch 正本 |
 | **PUB-004-D / 105** | P0 | IN_FLIGHT | Claude | 翌 JST 0:00 cap reset 後 ramp 再開(本日 66 件 publish 完了) |
-| **135** freshness gate | P0 | CLOSED 済 → REVIEW | Claude / B | 142 で freshness 降格済、今後 hard_stop に戻すか判断保留 |
-| **123** readiness guard | P1 | READY | Claude or A | 130 land 後 read-only 検査(105 ramp 安定性) |
+| **135** freshness gate | P0 | CLOSED → audit | Claude / B | 142 で freshness 降格済 |
+| **123** readiness guard | P1 | CLOSED `77d4c8b` | A | history audit module land、105 ramp 監視に使用 |
 | **124** cleanup apply | P1 | READY | Codex A | 130 land 後、site_component cleanup を 8 publish 済記事に live apply |
+| **147** X auto-post resume | P0.5 | **READY** | Claude / A | Phase 1 = 148 fire(dry-run 5 件 mail 確認)|
 | **PUB-002-A** | reference | active | (parent runbook) | 130 evaluator base、現役参照 |
 
 ### 止まってる(waiting)
@@ -29,7 +30,8 @@
 | ticket | priority | status | 待ち | 担当 |
 |---|---|---|---|---|
 | **128** SNS auto-publish | P1 | PARKED | 130 安定 + 127 連携 | Codex A 後で |
-| **120 / 121 / 122** X chain | P1 | BLOCKED_USER | X live unlock(user) | User → A/B |
+| **120 / 121 / 122** X chain | P1 | **SUPERSEDED by 147** | 147 ramp で代替 | A |
+| **152** X 全カテゴリ拡張 | P2 | PARKED | 147 phase 5 stable 後 | Future |
 | **HALLUC-LANE-002 / 113** | P1 | PARKED | Gemini live cost 境界 | User go 待ち |
 | **095-E** WSL cron reboot | P2 | BLOCKED_USER | PC reboot | User |
 | **PUB-005** X gate parent | P1 | PARKED | X live unlock | User → A |

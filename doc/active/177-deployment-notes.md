@@ -155,3 +155,125 @@ Reason:
 ## next required fix
 
 Make the container run a Python version that supports `typing.NotRequired` and rerun the manual smoke before creating the scheduler.
+
+## fix rerun (2026-04-26 JST)
+
+### repo change
+
+- `Dockerfile.codex_shadow`
+  - base image changed from `node:22-bullseye-slim` to `python:3.12-slim`
+  - Node 22 is now installed explicitly from NodeSource during image build
+  - this keeps `python3` on the image-native 3.12 toolchain and avoids the Debian bullseye Python 3.9 import failure
+
+### cloud build retry sequence
+
+First retry used `node:22-bookworm-slim` and failed at build time because Debian bookworm marked the system Python environment as externally managed (PEP 668), so `python3 -m pip install ...` was rejected.
+
+- failed retry build ID: `4993a7ff-8b53-405b-8a69-027ca6ac2be2`
+- failed retry tag: `177-fix-20260426-191134`
+- failed retry stop point: Docker build step 1 / pip install
+
+Second retry switched to `python:3.12-slim` and succeeded.
+
+- successful retry build ID: `4f03f2bf-ffb0-4814-bf57-f1df5f39e28d`
+- successful retry tag: `177-fix-20260426-191134-py312`
+- successful image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/codex-shadow:177-fix-20260426-191134-py312`
+- successful digest: `sha256:6ba7d75668070282f642a46a1fe72150013ed04de6226186568afc62c4722fc8`
+- build status: `SUCCESS`
+
+### cloud run job update
+
+Job image update command:
+
+```bash
+gcloud run jobs update codex-shadow \
+  --image=asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/codex-shadow@sha256:6ba7d75668070282f642a46a1fe72150013ed04de6226186568afc62c4722fc8 \
+  --region=asia-northeast1 \
+  --project=baseballsite
+```
+
+Verified job state after update:
+
+- image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/codex-shadow@sha256:6ba7d75668070282f642a46a1fe72150013ed04de6226186568afc62c4722fc8`
+- parallelism: `1`
+- taskCount: `1`
+- maxRetries: `0`
+- timeoutSeconds: `600`
+- service account: `487178857517-compute@developer.gserviceaccount.com`
+
+### manual smoke reruns
+
+Default smoke:
+
+- execution: `codex-shadow-w6lnx`
+- command: existing job args (`--provider codex --max-posts 3`)
+- result: `exit 0`
+- completion: `Execution completed successfully in 45.66s.`
+- stdout summary:
+  - `processed: 3`
+  - `edited: 0`
+  - `put_ok: 0`
+  - `stop_reason: completed`
+
+Expanded smoke 1:
+
+- execution: `codex-shadow-9fv4v`
+- command override: `--provider codex --max-posts 10`
+- result: `exit 0`
+- completion: `Execution completed successfully in 43.41s.`
+- stdout summary:
+  - `processed: 10`
+  - `edited: 0`
+  - `put_ok: 0`
+  - `stop_reason: completed`
+
+Expanded smoke 2:
+
+- execution: `codex-shadow-qk6m2`
+- command override: `--provider codex --max-posts 25`
+- result: `exit 0`
+- completion: `Execution completed successfully in 41.69s.`
+- stdout summary:
+  - `processed: 18`
+  - `edited: 0`
+  - `put_ok: 0`
+  - `stop_reason: completed`
+
+Interpretation:
+
+- the original import failure is resolved; all three executions completed successfully on the new image
+- `put_ok: 0` across all reruns verified **WP write 0**
+- current live draft pool did not yield an editable candidate during the reruns (`guard_fail` / `heading_mismatch` / `subtype_unresolved` only), so a live Cloud Logging observation of a new `shadow_only` row was not available from these three executions
+- the codex shadow-only write-skip path was additionally verified by the existing unit test:
+  - `python3 -m unittest tests.test_run_draft_body_editor_lane.TestLaneMain.test_provider_fallback_controller_codex_shadow_only_skips_wp_put`
+  - result: `OK`
+
+### cloud scheduler
+
+Scheduler create command:
+
+```bash
+gcloud scheduler jobs create http codex-shadow-trigger \
+  --location=asia-northeast1 \
+  --project=baseballsite \
+  --schedule='5,15,25,35,45,55 * * * *' \
+  --time-zone='Asia/Tokyo' \
+  --uri='https://asia-northeast1-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/baseballsite/jobs/codex-shadow:run' \
+  --http-method=POST \
+  --oauth-service-account-email='487178857517-compute@developer.gserviceaccount.com' \
+  --oauth-token-scope='https://www.googleapis.com/auth/cloud-platform' \
+  --attempt-deadline=180s
+```
+
+Scheduler verify:
+
+- name: `projects/baseballsite/locations/asia-northeast1/jobs/codex-shadow-trigger`
+- schedule: `5,15,25,35,45,55 * * * *`
+- time zone: `Asia/Tokyo`
+- state: `ENABLED`
+- next schedule after create: `2026-04-26T10:45:00Z`
+
+### auth handling
+
+- auth secret content remained masked throughout the rerun work
+- no auth.json payload, token field, or secret value was printed to chat / log / commit text

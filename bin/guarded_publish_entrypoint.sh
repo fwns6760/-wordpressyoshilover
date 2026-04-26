@@ -50,8 +50,7 @@ python3 -m src.tools.run_guarded_publish_evaluator \
   --window-hours 999999 \
   --max-pool 500 \
   --format json \
-  --output "${CRON_EVAL_PATH}" \
-  --exclude-published-today
+  --output "${CRON_EVAL_PATH}"
 
 python3 -m src.tools.run_guarded_publish \
   --input-from "${CRON_EVAL_PATH}" \

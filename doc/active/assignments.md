@@ -1,6 +1,6 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-04-27 JST(Codex-GCP追加、Codex B開発担当化、CLOSED履歴圧縮)
+最終更新: 2026-04-27 JST(ticket 187 verify hold 追加、Codex-GCP追加、Codex B開発担当化、CLOSED履歴圧縮)
 
 ## 最初に読む
 
@@ -23,6 +23,7 @@
 | ticket | priority | status | 担当 | 次 action |
 |---|---|---|---|---|
 | **README**(旧102) | P0 | READY | Claude | dispatch board正本を維持 |
+| **187 publish-notice scheduler URI v1 verify** | P0.5 | REVIEW_NEEDED | Codex / Claude | step 1 は確認済。step 2-4 を user shell か別環境で再実行し、`PERMISSION_DENIED` 解消と新 execution を確認 |
 | **105 / PUB-004-D** | P0 | AUTO 5min cron | Codex-GCP + Claude監視 | RSS新着を5-15分内にauto publish、daily cap 100 |
 | **042 draft-body-editor** | P0 | GCP本線 / 残WSLはgemini_auditのみ | Codex-GCP + Claude監視 | GCP上のCodex/Gemini repair、WP article write、品質/メール系実行を監視。WSL本線依存を戻さない |
 | **155 GCP migration master** | P0.5 | IN_FLIGHT | Claude / A | 主要移行は完了。残りは162/163とX live系 |

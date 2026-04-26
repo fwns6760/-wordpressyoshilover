@@ -6,7 +6,7 @@
 - type: execution queue / Codex A-B dispatch board
 - status: READY
 - created: 2026-04-26
-- updated: 2026-04-26
+- updated: 2026-04-27
 - source_of_truth: current execution order, status, owner, lane, and blocked state
 
 ## role
@@ -634,6 +634,26 @@ doc/
 - **commit_state**: doc-only commit 予定
 - **next_prompt_path**: -
 - **parent**: 126 / 127 / 128 / PUB-004 / PUB-005
+
+### 187 publish-notice-scheduler-uri-v1-fix-verification
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: **REVIEW_NEEDED**(step 1 config verify 完了、step 2-4 は Codex sandbox の DNS 制約で未実行)
+- **owner**: Codex(A) / Claude follow-up
+- **lane**: A
+- **ready_for**: user shell または別の non-sandbox 環境で step 2-4 を再実行
+- **next_action**: `gcloud scheduler jobs run publish-notice-trigger` と後続の logging / execution list を外部 shell で実行し、成功したら `doc/done/2026-04/` へ移動して close
+- **blocked_by**: Codex sandbox から `cloudscheduler.googleapis.com` を解決できない
+- **user_action_required**: yes(`2026-04-27 09:15 JST` の自然 tick 観測または手動 gcloud verify)
+- **write_scope**: `doc/active/187-publish-notice-scheduler-uri-v1-fix.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/active/187-publish-notice-scheduler-uri-v1-fix.md`
+- **acceptance**: step 1 で v1 URI / ENABLED / `15 * * * *` verify、step 2-4 は external shell で `PERMISSION_DENIED` 解消と新 execution 起動を確認
+- **repo_state**: local doc-only record
+- **commit_state**: local doc-only commit
+- **next_prompt_path**: -
+- **last_commit**: -
+- **parent**: 161 / 103
 
 ### 130 pub004-hard-stop-vs-repairable-before-publish
 

@@ -47,7 +47,7 @@ If this file conflicts with an individual ticket doc:
 
 ```
 doc/
-├── 102-ticket-index-and-priority-board.md  ← board 本体(root 唯一)
+├── README.md  ← board 本体(root 唯一)
 ├── active/    READY / IN_FLIGHT / REVIEW_NEEDED(PUB-002-A 含む)
 ├── waiting/   BLOCKED_USER / BLOCKED_EXTERNAL / PARKED(PUB-005 含む)
 └── done/YYYY-MM/  CLOSED(PUB-004-guarded 含む)
@@ -83,8 +83,8 @@ doc/
 - **next_action**: keep this board current after each close/fire; stage only this doc when syncing
 - **blocked_by**: none
 - **user_action_required**: none
-- **write_scope**: `doc/102-ticket-index-and-priority-board.md`
-- **doc_path**: `doc/102-ticket-index-and-priority-board.md`
+- **write_scope**: `doc/README.md`
+- **doc_path**: `doc/README.md`
 - **acceptance**: 102-122 rows are present, old 104-wait contradiction removed, X unlock sequence explicit, A/B next actions clear
 - **repo_state**: committed
 - **commit_state**: current X ticket sync commit
@@ -848,7 +848,7 @@ git add -A禁止。
 
 ## verification checklist
 
-- `git diff -- doc/102-ticket-index-and-priority-board.md`
+- `git diff -- doc/README.md`
 - 104 is only represented as `CLOSED`; no old "104 wait" next-action remains.
 - 105 is `IN_FLIGHT` with burst_1 sent 20 and daily cap 80 remaining.
 - 108-133 are present.

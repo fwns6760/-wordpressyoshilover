@@ -18,8 +18,8 @@
 | ticket | priority | status | 担当 | 次 action |
 |---|---|---|---|---|
 | **README**(旧 102) | P0 | READY | Claude | board 維持 / dispatch 正本 |
-| **PUB-004-D / 105** | P0 | IN_FLIGHT | Claude | 翌 JST 0:00 cap reset 後 ramp 再開(本日 66 件 publish 完了) |
-| **135** freshness gate | P0 | CLOSED → audit | Claude / B | 142 で freshness 降格済 |
+| **PUB-004-D / 105** | P0 | IN_FLIGHT | Claude | 翌 JST 0:00 cap reset 後 fresh-only ramp(135 復活で stale 自動公開停止)|
+| **135** freshness gate | P0 | **REVERTED 142 → HARD_STOP 復活**(`e302187`)| Claude | 古い draft 自動公開停止、新着のみ ramp |
 | **123** readiness guard | P1 | CLOSED `77d4c8b` | A | history audit module land、105 ramp 監視に使用 |
 | **124** cleanup apply | P1 | READY | Codex A | 130 land 後、site_component cleanup を 8 publish 済記事に live apply |
 | **147** X auto-post 親 ramp | P0.5 | READY | Claude | Phase 1-5 設計 / orchestration |

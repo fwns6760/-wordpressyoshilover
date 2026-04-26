@@ -671,6 +671,42 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         self.assertIn("<p>戸郷が7回1失点で今季3勝目となったことを球団が試合後に発表した</p>", wp.update_post_fields_calls[0][1]["content"])
         self.assertNotIn("python3 -m src.tools.run_guarded_publish", wp.update_post_fields_calls[0][1]["content"])
 
+    def test_heading_sentence_relaxed_warning_only_publishes(self):
+        body_html = (
+            "<p>巨人が中日に5-1で勝利した。戸郷が7回1失点で今季3勝目を挙げた。</p>"
+            f"<p>{LONG_EXTRA}</p>"
+            "<p>参照元: スポーツ報知 https://example.com/source</p>"
+            "<h3>戸郷が7回1失点で今季3勝目となったことを球団が試合後に発表した</h3>"
+        )
+        post = _post(316, "巨人が中日に5-1で勝利", body_html)
+        report = _report(
+            yellow=[_repairable_entry(316, post["title"]["raw"], "heading_sentence_as_h3", yellow_reasons=["heading_sentence_as_h3"])],
+            cleanup_candidates=[{"post_id": 316, "repairable_flags": ["heading_sentence_as_h3"]}],
+        )
+        wp = FakeWPClient({316: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cleanup_log_path = Path(tmpdir) / "cleanup.jsonl"
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=cleanup_log_path,
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+            cleanup_row = json.loads(cleanup_log_path.read_text(encoding="utf-8").strip())
+
+        self.assertEqual(result["executed"][0]["status"], "sent")
+        self.assertEqual(wp.update_post_fields_calls, [])
+        self.assertEqual(wp.update_post_status_calls, [(316, "publish")])
+        self.assertEqual(cleanup_row["applied_flags"], ["heading_sentence_as_h3"])
+        self.assertEqual(cleanup_row["cleanups"][0]["type"], "heading_sentence_as_h3")
+        self.assertEqual(cleanup_row["cleanups"][0]["reason"], "warning_only:relaxed_for_breaking_board")
+
     def test_weak_source_display_cleanup_appends_source_url(self):
         body_html = (
             "<p>巨人が中日に4-1で勝利した。序盤に主導権を握り、継投でも流れを渡さなかった。</p>"
@@ -732,7 +768,7 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         self.assertLess(len(cleaned_html), len(body_html))
         self.assertIn("参照元: スポーツ報知 https://example.com/source", cleaned_html)
 
-    def test_subtype_unresolved_cleanup_uses_extractor(self):
+    def test_subtype_unresolved_relaxed_warning_only_publishes(self):
         body_html = (
             "<p>巨人ベンチが終盤の狙いを整理した。阿部監督の説明を踏まえ、起用の意図も追える内容だった。</p>"
             f"<p>{LONG_EXTRA}</p>"
@@ -747,22 +783,26 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         wp = FakeWPClient({308: post})
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.object(runner.extractor, "infer_subtype", return_value="comment"):
-                result = runner.run_guarded_publish(
-                    input_from=self._write_input(tmpdir, report),
-                    live=True,
-                    daily_cap_allow=True,
-                    history_path=Path(tmpdir) / "history.jsonl",
-                    backup_dir=Path(tmpdir) / "cleanup_backup",
-                    yellow_log_path=Path(tmpdir) / "yellow.jsonl",
-                    cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
-                    wp_client=wp,
-                    now=FIXED_NOW,
-                )
+            cleanup_log_path = Path(tmpdir) / "cleanup.jsonl"
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=cleanup_log_path,
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+            cleanup_row = json.loads(cleanup_log_path.read_text(encoding="utf-8").strip())
 
         self.assertEqual(result["executed"][0]["status"], "sent")
-        self.assertEqual(wp.update_post_fields_calls[0][1]["meta"]["article_subtype"], "comment")
-        self.assertEqual(wp.update_post_status_calls, [])
+        self.assertEqual(wp.update_post_fields_calls, [])
+        self.assertEqual(wp.update_post_status_calls, [(308, "publish")])
+        self.assertEqual(cleanup_row["applied_flags"], ["subtype_unresolved"])
+        self.assertEqual(cleanup_row["cleanups"][0]["type"], "subtype_unresolved")
+        self.assertEqual(cleanup_row["cleanups"][0]["reason"], "warning_only:relaxed_for_breaking_board")
 
     def test_light_structure_break_cleanup_regex(self):
         body_html = (
@@ -1068,7 +1108,136 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         self.assertNotIn("<pre>", wp.update_post_fields_calls[0][1]["content"])
         self.assertEqual(wp.update_post_status_calls, [])
 
-    def test_repairable_post_cleanup_source_lost_held(self):
+    def test_post_cleanup_title_subject_missing_warning_only_by_default(self):
+        post = _post(
+            317,
+            "岡本和真が阪神戦で決勝打",
+            (
+                "<p>阪神戦で勝ち越し打が飛び出し、終盤の一打で流れを引き寄せた。</p>"
+                "<pre>岡本和真は今日も決勝打</pre>"
+                f"<p>{LONG_EXTRA}</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source</p>"
+            ),
+        )
+        cleaned_html = (
+            "<p>阪神戦で勝ち越し打が飛び出し、終盤の一打で流れを引き寄せた。</p>"
+            f"<p>{LONG_EXTRA}</p>"
+            "<p>参照元: スポーツ報知 https://example.com/source</p>"
+        )
+
+        ok, result = runner._post_cleanup_check(post, cleaned_html)
+
+        self.assertTrue(ok)
+        self.assertEqual(result, "warning_only:title_subject_missing")
+
+    def test_post_cleanup_title_subject_missing_strict_rejects(self):
+        post = _post(
+            318,
+            "岡本和真が阪神戦で決勝打",
+            (
+                "<p>阪神戦で勝ち越し打が飛び出し、終盤の一打で流れを引き寄せた。</p>"
+                "<pre>岡本和真は今日も決勝打</pre>"
+                f"<p>{LONG_EXTRA}</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source</p>"
+            ),
+        )
+        cleaned_html = (
+            "<p>阪神戦で勝ち越し打が飛び出し、終盤の一打で流れを引き寄せた。</p>"
+            f"<p>{LONG_EXTRA}</p>"
+            "<p>参照元: スポーツ報知 https://example.com/source</p>"
+        )
+
+        with patch.dict("os.environ", {"STRICT_TITLE_SUBJECT": "true"}, clear=False):
+            ok, result = runner._post_cleanup_check(post, cleaned_html)
+
+        self.assertFalse(ok)
+        self.assertEqual(result, "title_subject_missing")
+
+    def test_post_cleanup_source_anchor_missing_warning_only_by_default(self):
+        post = _post(
+            319,
+            "巨人がヤクルトに3-2で勝利",
+            (
+                "<p>巨人がヤクルトに3-2で勝利した。終盤の一打で試合を決め、継投でも逃げ切った。</p>"
+                f"<p>{LONG_EXTRA}</p>"
+                "<pre>参照元: スポーツ報知 https://example.com/source</pre>"
+            ),
+        )
+        cleaned_html = (
+            "<p>巨人がヤクルトに3-2で勝利した。終盤の一打で試合を決め、継投でも逃げ切った。</p>"
+            f"<p>{LONG_EXTRA}</p>"
+        )
+
+        ok, result = runner._post_cleanup_check(post, cleaned_html)
+
+        self.assertTrue(ok)
+        self.assertEqual(result, "warning_only:source_anchor_missing")
+
+    def test_post_cleanup_source_anchor_missing_strict_rejects(self):
+        post = _post(
+            320,
+            "巨人がヤクルトに3-2で勝利",
+            (
+                "<p>巨人がヤクルトに3-2で勝利した。終盤の一打で試合を決め、継投でも逃げ切った。</p>"
+                f"<p>{LONG_EXTRA}</p>"
+                "<pre>参照元: スポーツ報知 https://example.com/source</pre>"
+            ),
+        )
+        cleaned_html = (
+            "<p>巨人がヤクルトに3-2で勝利した。終盤の一打で試合を決め、継投でも逃げ切った。</p>"
+            f"<p>{LONG_EXTRA}</p>"
+        )
+
+        with patch.dict("os.environ", {"STRICT_SOURCE_ANCHOR": "true"}, clear=False):
+            ok, result = runner._post_cleanup_check(post, cleaned_html)
+
+        self.assertFalse(ok)
+        self.assertEqual(result, "source_anchor_missing")
+
+    def test_post_cleanup_source_hosts_mismatch_warning_only_by_default(self):
+        post = _post(
+            321,
+            "巨人が広島に4-2で勝利",
+            (
+                "<p>巨人が広島に4-2で勝利した。中盤に勝ち越し、終盤の継投でも流れを渡さなかった。</p>"
+                f"<p>{LONG_EXTRA}</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source</p>"
+            ),
+        )
+        cleaned_html = (
+            "<p>巨人が広島に4-2で勝利した。中盤に勝ち越し、終盤の継投でも流れを渡さなかった。</p>"
+            f"<p>{LONG_EXTRA}</p>"
+            "<p>参照元: スポーツ報知 https://other.example.net/source</p>"
+        )
+
+        ok, result = runner._post_cleanup_check(post, cleaned_html)
+
+        self.assertTrue(ok)
+        self.assertEqual(result, "warning_only:source_url_missing")
+
+    def test_post_cleanup_source_hosts_mismatch_strict_rejects(self):
+        post = _post(
+            322,
+            "巨人が広島に4-2で勝利",
+            (
+                "<p>巨人が広島に4-2で勝利した。中盤に勝ち越し、終盤の継投でも流れを渡さなかった。</p>"
+                f"<p>{LONG_EXTRA}</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source</p>"
+            ),
+        )
+        cleaned_html = (
+            "<p>巨人が広島に4-2で勝利した。中盤に勝ち越し、終盤の継投でも流れを渡さなかった。</p>"
+            f"<p>{LONG_EXTRA}</p>"
+            "<p>参照元: スポーツ報知 https://other.example.net/source</p>"
+        )
+
+        with patch.dict("os.environ", {"STRICT_SOURCE_HOSTS": "true"}, clear=False):
+            ok, result = runner._post_cleanup_check(post, cleaned_html)
+
+        self.assertFalse(ok)
+        self.assertEqual(result, "source_url_missing")
+
+    def test_repairable_post_cleanup_source_lost_warning_only_publishes(self):
         post = _post(
             303,
             "巨人がヤクルトに3-2で勝利",
@@ -1092,6 +1261,7 @@ class GuardedPublishRunnerTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             history_path = Path(tmpdir) / "history.jsonl"
+            cleanup_log_path = Path(tmpdir) / "cleanup.jsonl"
             result = runner.run_guarded_publish(
                 input_from=self._write_input(tmpdir, report),
                 live=True,
@@ -1099,17 +1269,19 @@ class GuardedPublishRunnerTests(unittest.TestCase):
                 history_path=history_path,
                 backup_dir=Path(tmpdir) / "cleanup_backup",
                 yellow_log_path=Path(tmpdir) / "yellow.jsonl",
-                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                cleanup_log_path=cleanup_log_path,
                 wp_client=wp,
                 now=FIXED_NOW,
             )
             history_row = json.loads(history_path.read_text(encoding="utf-8").strip())
+            cleanup_row = json.loads(cleanup_log_path.read_text(encoding="utf-8").strip())
 
-        self.assertEqual(result["executed"][0]["status"], "refused")
-        self.assertEqual(history_row["hold_reason"], "cleanup_failed_post_condition")
-        self.assertIn("source_", history_row["error"])
+        self.assertEqual(result["executed"][0]["status"], "sent")
+        self.assertIsNone(history_row["hold_reason"])
+        self.assertEqual(wp.update_post_fields_calls[0][0], 303)
+        self.assertIn("source_anchor_missing", [item["type"] for item in cleanup_row["cleanups"]])
 
-    def test_repairable_post_cleanup_title_subject_lost_held(self):
+    def test_repairable_post_cleanup_title_subject_lost_warning_only_publishes(self):
         post = _post(
             304,
             "岡本和真が阪神戦で決勝打",
@@ -1134,6 +1306,7 @@ class GuardedPublishRunnerTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             history_path = Path(tmpdir) / "history.jsonl"
+            cleanup_log_path = Path(tmpdir) / "cleanup.jsonl"
             result = runner.run_guarded_publish(
                 input_from=self._write_input(tmpdir, report),
                 live=True,
@@ -1141,15 +1314,17 @@ class GuardedPublishRunnerTests(unittest.TestCase):
                 history_path=history_path,
                 backup_dir=Path(tmpdir) / "cleanup_backup",
                 yellow_log_path=Path(tmpdir) / "yellow.jsonl",
-                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                cleanup_log_path=cleanup_log_path,
                 wp_client=wp,
                 now=FIXED_NOW,
             )
             history_row = json.loads(history_path.read_text(encoding="utf-8").strip())
+            cleanup_row = json.loads(cleanup_log_path.read_text(encoding="utf-8").strip())
 
-        self.assertEqual(result["executed"][0]["status"], "refused")
-        self.assertEqual(history_row["hold_reason"], "cleanup_failed_post_condition")
-        self.assertIn("title_subject_missing", history_row["error"])
+        self.assertEqual(result["executed"][0]["status"], "sent")
+        self.assertIsNone(history_row["hold_reason"])
+        self.assertEqual(wp.update_post_fields_calls[0][0], 304)
+        self.assertIn("title_subject_missing", [item["type"] for item in cleanup_row["cleanups"]])
 
     def test_postcheck_every_10_posts_round_trip(self):
         posts = {

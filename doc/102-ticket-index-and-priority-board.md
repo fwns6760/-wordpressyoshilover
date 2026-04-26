@@ -48,7 +48,7 @@ If this file conflicts with an individual ticket doc:
 Ticket archive rule:
 When a ticket status changes, move its doc to the matching folder in the same commit:
 `doc/active/`, `doc/review/`, `doc/blocked/`, or `doc/archived/YYYY-MM/`.
-Keep 102 board and parent runbooks in `doc/` root.
+Keep only the 102 board in `doc/` root.
 Do not leave CLOSED tickets in `doc/` root.
 Do not use `git add -A`.
 
@@ -56,7 +56,7 @@ Do not use `git add -A`.
 - REVIEW_NEEDED -> `doc/review/`
 - BLOCKED_USER / BLOCKED_EXTERNAL / PARKED -> `doc/blocked/`
 - CLOSED -> `doc/archived/YYYY-MM/`
-- Parent runbooks and 102 board stay in `doc/` root.
+- Only the 102 board stays in `doc/` root.
 - Any status change must update `doc_path` in the same commit.
 
 ## lane definitions
@@ -131,16 +131,16 @@ Do not use `git add -A`.
 
 - **alias**: PUB-004-D
 - **priority**: P0
-- **status**: **IN_FLIGHT**(2026-04-26 PM 第 1 burst = 20 件 sent、daily cap 80 件残、autonomous 継続)
+- **status**: **HALTED**(135 freshness gate land 待ち、4/24 created を今日新着で publish した疑いで第 2 burst 中止)
 - **owner**: Claude Code(orchestration)
 - **lane**: Claude
-- **ready_for**: 24h 内に追加 invocation 可(daily cap 100 内 残 80 件)
-- **next_action**: 1) cleanup chain 結果観察(20 件 sent の本文崩れ有無 visual / mail check)2) 残 40 件 publishable から次 burst 20 件 fire 3) 最終 60 件完了で daily cap reset 待ち
-- **blocked_by**: none
-- **user_action_required**: **NO**(autonomous lock)
+- **ready_for**: 135 freshness gate land 後の **fresh-only re-dry-run** → fresh_count > 0 でのみ次 burst
+- **next_action**: 1) **135 freshness gate impl land 待ち** 2) 105 dry-run 再実行で fresh_count / stale_hold_count / expired_hold_count 確認 3) **fresh のみ** 20 件 burst fire 4) 別途 4/26 10:23 publish 済 20 件の possibly_stale_published audit(read-only)
+- **blocked_by**: **135 freshness gate**
+- **user_action_required**: **NO**(135 land 後 autonomous fresh-only ramp)
 - **cap**: max_burst default **20** / hard cap **30** / daily **100**(JST 0:00 reset 既設)
 - **write_scope**: PUB-004-B `--live --max-burst 20 --daily-cap-allow` autonomous fire
-- **doc_path**: `-(board row only)`
+- **doc_path**: `doc/active/PUB-004-D-all-eligible-draft-backlog-publish-ramp.md`
 - **acceptance**: ✓ 4 件数 visible(publish_clean / repaired_publishable / hard_stop / hold_due_cleanup_failure)
 - **dry_run_result**(2026-04-26 PM 新 spec): total 100 / hard_stop 40 / repairable 60 / clean 0 / publishable 60 / publishable_minus_cleanup_pending 43(`/tmp/pub004d/full_eval_v2.json`)
 - **live_burst_1_result**(2026-04-26 PM): **sent 20** / refused 40(hard_stop) / skipped 40(cap)/ postcheck batch 2(10 件ごと round trip 通り)
@@ -314,7 +314,7 @@ Do not use `git add -A`.
 - **blocked_by**: 119/120 prerequisites and one-time live unlock at 121
 - **user_action_required**: only for 121 X live unlock / credential boundary
 - **write_scope**: umbrella only; child tickets define concrete write scopes
-- **doc_path**: `-(board row only)`
+- **doc_path**: `doc/blocked/PUB-005-x-post-gate.md`
 - **acceptance**: Green-only controlled autopost path is split into safe child tickets; no direct 114 fire
 - **repo_state**: parent doc-first exists
 - **commit_state**: committed doc
@@ -695,20 +695,49 @@ Do not use `git add -A`.
 
 - **alias**: -
 - **priority**: P0.5
-- **status**: READY
-- **owner**: Claude Code(設計) / Codex C
-- **lane**: Claude
-- **ready_for**: C / Claude-managed doc sync
-- **next_action**: archive root-level closed docs, relocate active/blocked docs, and sync 102 `doc_path` fields in one doc-only commit
+- **status**: **CLOSED**(`35fb67c`、113 file reorg = M:1 + R:107 + A:5、doc/ root 9 files only、folder policy 永続 lock memory 化)
+- **owner**: Codex C 完了
+- **lane**: C
+- **ready_for**: none
+- **next_action**: 全 Codex 便で folder mv contract 遵守(永続 rule)
 - **blocked_by**: none
 - **user_action_required**: none
-- **write_scope**: `doc/102-ticket-index-and-priority-board.md`, `doc/active/134-doc-ticket-archive-and-folder-policy.md`, `doc/active/`, `doc/review/`, `doc/blocked/`, `doc/archived/2026-04/`
-- **doc_path**: `doc/active/134-doc-ticket-archive-and-folder-policy.md`
-- **acceptance**: active/review/blocked/archived folders exist, root `doc/*.md` residents are reduced to 102 + parent runbooks, and 102 board doc_path fields match moved docs
-- **repo_state**: spec doc exists
-- **commit_state**: pending doc reorg commit
-- **next_prompt_path**: task prompt
+- **write_scope**: 113 doc files reorg + doc/102 doc_path fields
+- **doc_path**: `doc/archived/2026-04/134-doc-ticket-archive-and-folder-policy.md`(本 commit 後 Claude が mv)
+- **acceptance**: ✓ active/review/blocked/archived/2026-04 folder 作成、doc/ root = 102 + PUB-* 9 件のみ、102 board doc_path field 全反映
+- **repo_state**: pushed
+- **commit_state**: **`35fb67c`**
+- **next_prompt_path**: -
+- **last_commit**: `35fb67c` 134 doc folder reorg
+
+### 135 pub004-breaking-news-freshness-gate
+
+- **alias**: -
+- **priority**: **P0**(critical safety、105 ramp halt blocker)
+- **status**: **READY**(A 即 fire、user 指定 134 はリナンバーで 135、user 指定 134 は doc reorg で `35fb67c` 使用済)
+- **owner**: Claude Code(設計)/ Codex A(実装)
+- **lane**: A
+- **ready_for**: A 即 fire
+- **next_action**: A slot で 135 implementation fire(evaluator に subtype 別 freshness threshold + 3 新 hard_stop flag + content_date / freshness_age_hours 出力)
+- **blocked_by**: none
+- **user_action_required**: none
+- **incident**: 2026-04-26 10:23 PM 105 第 1 burst で **4/24 created の draft が 4/26 新着扱いで publish された**疑い → 速報掲示板 brand 損傷 risk → 第 2 burst halt + freshness gate 必須化
+- **policy**:
+  - lineup/pregame/probable_starter: 6h 超 hold(`expired_lineup_or_pregame`)
+  - postgame/game_result: 24h 超 hold(`expired_game_context`)
+  - roster/injury/registration/recovery: 24h 超 hold(既 `injury_death` も維持)
+  - comment/speech/program/off_field/farm_feature: 48h 超 hold(`stale_for_breaking_board`)
+  - default: 24h 超 hold(`stale_for_breaking_board`)
+- **content_date 算出**: source date 優先 → 本文内日付表現 → created_at(modified は **使わない**)
+- **spec_doc**: `doc/active/135-pub004-breaking-news-freshness-gate.md`
+- **write_scope**: `src/guarded_publish_evaluator.py` + `tests/test_guarded_publish_evaluator.py` + 必要なら `src/pre_publish_fact_check/extractor.py`
+- **doc_path**: `doc/active/135-pub004-breaking-news-freshness-gate.md`
+- **acceptance**: 3 新 hard_stop flag / freshness 出力 4 field / summary 3 count / 既存 evaluator/runner tests pass / 新 tests 追加 / suite 1248 baseline 維持(0 failed)
+- **repo_state**: spec doc 配置済
+- **commit_state**: pending impl
+- **next_prompt_path**: `/tmp/codex_135_freshness_gate_prompt.txt`
 - **last_commit**: -
+- **parent**: 130 / 105
 
 ## lane inventory rule
 
@@ -831,13 +860,13 @@ git add -A禁止。
 ## related files
 
 - `doc/103-publish-notice-cron-health-check.md`
-- `doc/PUB-004-D-all-eligible-draft-backlog-publish-ramp.md`
+- `doc/active/PUB-004-D-all-eligible-draft-backlog-publish-ramp.md`
 - `doc/118-pub004-red-reason-decision-pack.md`
 - `doc/123-pub004-auto-publish-readiness-and-regression-guard.md`
-- `doc/PUB-002-B-missing-primary-source-publish-blocker-reduction.md`
-- `doc/PUB-002-C-subtype-unresolved-publish-blocker-reduction.md`
-- `doc/PUB-002-D-long-body-draft-compression-or-exclusion-policy.md`
-- `doc/PUB-005-x-post-gate.md`
+- `doc/archived/2026-04/PUB-002-B-missing-primary-source-publish-blocker-reduction.md`
+- `doc/archived/2026-04/PUB-002-C-subtype-unresolved-publish-blocker-reduction.md`
+- `doc/archived/2026-04/PUB-002-D-long-body-draft-compression-or-exclusion-policy.md`
+- `doc/blocked/PUB-005-x-post-gate.md`
 - `doc/119-x-post-eligibility-evaluator.md`
 - `doc/120-x-post-autopost-queue-and-ledger.md`
 - `doc/121-x-post-live-helper-one-shot-smoke.md`

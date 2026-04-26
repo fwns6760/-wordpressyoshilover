@@ -4,3 +4,4 @@ feedparser
 tweepy
 google-cloud-storage
 pyyaml
+google-generativeai

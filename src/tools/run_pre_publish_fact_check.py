@@ -2,17 +2,16 @@
 
 Modes:
   extract  -> WordPress draft(s) to contract input JSON.
-  detect   -> dry-run stub findings. ``--live`` is reserved for the real Gemini
-              adapter and intentionally raises ``NotImplementedError`` in
-              HALLUC-LANE-001.
+  detect   -> dry-run stub findings, or Gemini-backed live detection with
+              graceful stub fallback when ``--live`` is supplied.
   approve  -> detector JSON to local approval YAML.
   apply    -> approval YAML to proposed diff or live WordPress patch.
 
 ``--live`` mode-specific meaning (SAFE BY DEFAULT; omit for dry-run):
   - extract --live: no effect (always read-only WP GET).
-  - detect  --live: would invoke real LLM (Gemini Flash). NOT IMPLEMENTED in
-                    HALLUC-LANE-001. Raises ``NotImplementedError`` pointing to
-                    HALLUC-LANE-002 (escalate-only, cost-bearing).
+  - detect  --live: invokes the Gemini Flash adapter. The adapter enforces
+                    ``--max-llm-calls`` per invocation, uses a local cache,
+                    and falls back to the dry stub on API/JSON errors.
   - approve --live: no effect (always local YAML I/O).
   - apply   --live: ENABLES WP write. Without this flag, apply only prints the
                     proposed diff and exits. Apply also requires
@@ -38,8 +37,8 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_BACKUP_DIR = ROOT / "backups" / "pre_publish_fact_check"
 LIVE_HELP = """Mode-specific live-effect flag. SAFE BY DEFAULT (omit = dry-run).
         - extract --live: no effect (always read-only WP GET).
-        - detect  --live: would invoke real LLM (Gemini Flash). NOT IMPLEMENTED in HALLUC-LANE-001.
-                          Raises NotImplementedError pointing to HALLUC-LANE-002 (escalate-only, cost-bearing).
+        - detect  --live: invokes the Gemini Flash adapter with local cache, graceful stub fallback,
+                          and per-invocation cap controlled by --max-llm-calls.
         - approve --live: no effect (always local YAML I/O).
         - apply   --live: ENABLES WP write. Without this flag, apply only prints proposed diff and exits.
                           Apply also requires --approve-yaml, valid backup creation, approve:true findings,
@@ -62,7 +61,7 @@ def _make_wp_client() -> WPClient:
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="python3 -m src.tools.run_pre_publish_fact_check",
-        description="Pre-publish fact-check lane (HALLUC-LANE-001 foundation, no live LLM call).",
+        description="Pre-publish fact-check lane with dry stub detection and optional Gemini-backed live detection.",
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument("--post-id", type=int, help="Target WordPress post ID.")
@@ -74,6 +73,12 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help="Lane mode to execute.",
     )
     parser.add_argument("--live", action="store_true", help=LIVE_HELP)
+    parser.add_argument(
+        "--max-llm-calls",
+        type=int,
+        default=5,
+        help="Maximum Gemini adapter calls per detect invocation when --live is used. Default: 5",
+    )
     parser.add_argument("--input-from", help="Path to previous phase output.")
     parser.add_argument("--output", help="Write output to this path instead of stdout.")
     parser.add_argument("--approve-yaml", help="Approval YAML path. Required for apply.")
@@ -113,10 +118,15 @@ def _run_extract(args: argparse.Namespace) -> str:
 def _run_detect(args: argparse.Namespace) -> str:
     if not args.input_from:
         raise ValueError("detect requires --input-from")
+    _load_dotenv_if_available()
     extracted_posts = _read_json(args.input_from)
     if not isinstance(extracted_posts, list):
         raise ValueError("detect input must be a JSON list")
-    results = detector.detect_posts(extracted_posts, live=args.live)
+    results = detector.detect_posts(
+        extracted_posts,
+        live=args.live,
+        max_llm_calls=args.max_llm_calls,
+    )
     return json.dumps(results, ensure_ascii=False, indent=2)
 
 

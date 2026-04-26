@@ -40,9 +40,12 @@ def detect_posts(
     *,
     live: bool = False,
     adapter: LLMAdapter | None = None,
+    max_llm_calls: int = 5,
 ) -> list[dict[str, Any]]:
-    if live:
-        raise NotImplementedError(NOT_IMPLEMENTED_MESSAGE)
+    if live and adapter is None:
+        from src.pre_publish_fact_check.llm_adapter_gemini import GeminiFlashAdapter
+
+        adapter = GeminiFlashAdapter(max_calls=max_llm_calls)
     if adapter is not None:
         return [adapter.detect(post) for post in extracted_posts]
     return [build_stub_result(post) for post in extracted_posts]

@@ -476,11 +476,87 @@ If this file conflicts with an individual ticket doc:
 - **user_action_required**: 124-A 実装 fire の go / hold (1 ワード)
 - **write_scope**: doc/124 (本 ticket = doc-first); 124-A 実装は src/published_cleanup_apply.py + src/tools/run_published_cleanup_apply.py + tests/test_published_cleanup_apply.py
 - **acceptance**: 108 audit input → WP REST update_post_fields apply / 3-gate refuse / backup / history 記録 / PUB-004-B 同形 contract
-- **repo_state**: doc 起票 untracked
-- **commit_state**: pending sync (本 commit便で push)
+- **repo_state**: pushed
+- **commit_state**: `94c6186`
 - **next_prompt_path**: 124-A fire 時に Claude が用意
-- **last_commit**: -
+- **last_commit**: `94c6186` doc sync
 - **parent**: 108 (audit) / PUB-004-B (cleanup contract pre-publish 版)
+
+### 125 adsense-manual-ad-unit-embed
+
+- **alias**: 087-B
+- **priority**: P1.5
+- **status**: BLOCKED_USER
+- **owner**: Claude-managed front-scope
+- **lane**: either / front-scope
+- **ready_for**: none
+- **next_action**: wait for AdSense Auto ads OFF + ad unit ID user operation
+- **blocked_by**: user op(AdSense dashboard / ad unit ID)
+- **user_action_required**: Auto ads OFF + ad unit ID provision
+- **write_scope**: WP theme functions/template for ad unit embed; no backend Python
+- **acceptance**: manual ad units placed in 087 slots, IDs not displayed, no backend diff, no double script insertion
+- **repo_state**: doc exists untracked
+- **commit_state**: pending doc sync
+- **next_prompt_path**: `/tmp/codex_125_impl_prompt.txt` after user op
+- **last_commit**: -
+- **parent**: 087 / 117
+
+### 126 sns-topic-fire-intake-dry-run
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: READY
+- **owner**: Codex B
+- **lane**: B
+- **ready_for**: B
+- **next_action**: fire read-only SNS topic-fire intake; emit topic clusters only, no raw SNS text
+- **blocked_by**: none
+- **user_action_required**: none
+- **write_scope**: `src/sns_topic_fire_intake.py`, `src/tools/run_sns_topic_fire_intake.py`, `tests/test_sns_topic_fire_intake.py`
+- **acceptance**: 8 MVP categories classified, unsafe topics rejected, output has no post text/usernames/URLs, all candidates require source recheck
+- **repo_state**: doc exists
+- **commit_state**: pending SNS topic sync
+- **next_prompt_path**: create at fire time
+- **last_commit**: -
+- **parent**: 064 / 082 / 106
+
+### 127 sns-topic-source-recheck-and-draft-builder
+
+- **alias**: -
+- **priority**: P1
+- **status**: PARKED
+- **owner**: Codex A or B after 126 close
+- **lane**: A/either
+- **ready_for**: none
+- **next_action**: wait for 126 close, then source-recheck candidates and auto-create WP drafts for `draft_ready`
+- **blocked_by**: 126 close
+- **user_action_required**: none for verified draft generation
+- **write_scope**: `src/sns_topic_source_recheck.py`, `src/tools/run_sns_topic_source_recheck.py`, `tests/test_sns_topic_source_recheck.py`
+- **acceptance**: non-SNS source required, weak/sensitive/duplicate topics held, draft body has no raw SNS text/account identifiers, no publish
+- **repo_state**: doc exists
+- **commit_state**: pending SNS topic sync
+- **next_prompt_path**: create after 126 close
+- **last_commit**: -
+- **parent**: 126 / PUB-002-A
+
+### 128 sns-topic-auto-publish-through-pub004
+
+- **alias**: -
+- **priority**: P1
+- **status**: PARKED
+- **owner**: Codex A / Claude orchestration after 127 close
+- **lane**: A
+- **ready_for**: none
+- **next_action**: wait for 127 close + PUB-004 readiness, then publish source-rechecked drafts through PUB-004 gate
+- **blocked_by**: 127 close + PUB-004 readiness
+- **user_action_required**: none per article once 127/128 automation is activated; no raw SNS direct publish
+- **write_scope**: `src/sns_topic_publish_bridge.py`, `src/tools/run_sns_topic_publish_bridge.py`, `tests/test_sns_topic_publish_bridge.py`
+- **acceptance**: 127 source-rechecked drafts only, PUB-004 evaluator mandatory, Red refused, dry-run would_publish visible, live respects PUB-004 caps/history/backup
+- **repo_state**: doc exists
+- **commit_state**: pending SNS topic sync
+- **next_prompt_path**: create after 127 close and 123/PUB-004 readiness
+- **last_commit**: -
+- **parent**: 127 / PUB-004
 
 ## lane inventory rule
 
@@ -502,7 +578,7 @@ Current inventory:
 | lane | READY count | tickets |
 |---|---:|---|
 | A | 1 | 123 |
-| B | 6 | 108 / 109 / 110 / 111 / 112 / 119 |
+| B | 7 | 108 / 109 / 110 / 111 / 112 / 119 / 126 |
 | either | 0 unblocked live tickets | 114 umbrella parked; 120 parked until 119 close |
 
 ## pull rule
@@ -523,9 +599,10 @@ Current inventory:
 ## next actions
 
 - **A slot next**: 123 readiness/regression guard for no-auto-publish state; then 105 decision presentation.
-- **B slot next**: 119 first for X unlock path, otherwise 108 or 112.
+- **B slot next**: 126 first for SNS topic-fire intake, then 119 or 108/112.
 - **Live 105 ramp**: only after 105 dry-run result is shown and user explicitly says go.
 - **PUB-004-C auto-publish cron**: do not add until 123 says ready and at least one safe live burst succeeds.
+- **SNS topic auto-publish path**: 126 -> 127 -> 128. Never publish directly from raw SNS; publish only after source recheck and PUB-004 gate.
 - **Do not advance 113 / 115 / 116 / 121** without user action or external precondition.
 - **Do not fire 114 directly**; use 119 -> 120 -> 121 -> 122.
 
@@ -553,9 +630,16 @@ Current inventory:
 - 122はPARKED、121 smoke成功後
 - Grok / xAI API禁止、X検索 / X収集は別laneと明記
 - controlled autopostはdaily cap初期1件、安定後3件
+- 125をAdSense手動ad unit ticketとしてboardへ追加
+- 126〜128をSNS話題検知→source recheck→PUB-004自動publish pathとして追加
+- 126はREADY、SNS本文/アカウント/URLを出さないtopic-fire intake
+- 127はPARKED、126 close後にsource recheck + WP draft自動生成
+- 128はPARKED、127 close + PUB-004 readiness後に自動publish bridge
 
 次の実行:
-- B slot next: 119
+- B slot next: 126
+- 126 close後: 127
+- 127 close後: 128(PUB-004 readiness 必須)
 - 119 close後: 120
 - 121はone-time X live unlock後のみ
 - 122は121 smoke成功後のみ
@@ -575,8 +659,10 @@ git add -A禁止。
 - `git diff -- doc/102-ticket-index-and-priority-board.md`
 - 104 is only represented as `CLOSED`; no old "104 wait" next-action remains.
 - 105 live ramp remains user-gated after the all-red dry-run result.
-- 108-123 are present.
+- 108-128 are present.
 - 123 is READY for no-auto-publish readiness/regression guard.
+- 126 is READY.
+- 127/128 are PARKED until dependencies close.
 - 119 is READY.
 - 121 is BLOCKED_USER.
 - 114 is umbrella/PARKED and not a direct fire target.
@@ -596,4 +682,8 @@ git add -A禁止。
 - `doc/120-x-post-autopost-queue-and-ledger.md`
 - `doc/121-x-post-live-helper-one-shot-smoke.md`
 - `doc/122-x-post-controlled-autopost-rollout.md`
+- `doc/125-adsense-manual-ad-unit-embed.md`
+- `doc/126-sns-topic-fire-intake-dry-run.md`
+- `doc/127-sns-topic-source-recheck-and-draft-builder.md`
+- `doc/128-sns-topic-auto-publish-through-pub004.md`
 - `doc/HALLUC-LANE-002-llm-based-fact-check-augmentation.md`

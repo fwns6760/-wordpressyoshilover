@@ -675,6 +675,26 @@ doc/
 - **last_commit**: -
 - **parent**: 161 / 187 / 160
 
+### 189 publish-notice-contextual-manual-x-candidates
+
+- **alias**: -
+- **priority**: **P0.5**
+- **status**: **READY**
+- **owner**: Codex B
+- **lane**: B
+- **ready_for**: implementation
+- **next_action**: publish notice mail の手動X投稿候補を subtype selector 方式に拡張。X API / queue / GCP live は触らない
+- **blocked_by**: none
+- **user_action_required**: none
+- **write_scope**: `src/publish_notice_email_sender.py`, `tests/test_publish_notice_email_sender.py`, `doc/active/189-publish-notice-contextual-manual-x-candidates.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/active/189-publish-notice-contextual-manual-x-candidates.md`
+- **acceptance**: subtype別出力 / notice fan hookなし / 怪我・復帰ワード fan hookなし / inside_voice 条件付き / 280字以内 / URL付き最大3 / `tests/test_publish_notice_email_sender.py` pass
+- **repo_state**: ticket ready
+- **commit_state**: pending
+- **next_prompt_path**: -
+- **last_commit**: -
+- **parent**: 188 / 095-D / 131 / PUB-005
+
 ### 130 pub004-hard-stop-vs-repairable-before-publish
 
 - **alias**: -

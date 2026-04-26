@@ -200,6 +200,21 @@ def _run_main(argv, *, wp=None, run_editor_side_effect=None, touched_ids=None, l
     return code, stdout.getvalue(), stderr.getvalue(), wp, make_wp_client, editor_mock
 
 
+def _write_queue_file(path: Path, *posts: dict) -> None:
+    path.write_text(
+        "\n".join(json.dumps(post, ensure_ascii=False) for post in posts) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _read_jsonl_rows(path: Path) -> list[dict]:
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
 class TestBodyTooLongUsesProseLength(unittest.TestCase):
     def test_html_heavy_short_prose_stays_editable(self):
         now = lane._now_jst("2026-04-20T10:00:00+09:00")
@@ -627,6 +642,93 @@ class TestLaneMain(unittest.TestCase):
         self.assertEqual(wp.put_calls[0][1], {"content": SUCCESS_BODY})
         self.assertEqual(set(wp.put_calls[0][1].keys()), {"content"})
         self.assertEqual(len(wp.put_calls[0][1]), 1)
+
+    def test_limit_alias_caps_processing_count(self):
+        paged_posts = {
+            1: [
+                _make_post(861, modified="2026-04-20T08:00:00+09:00"),
+                _make_post(862, modified="2026-04-20T08:10:00+09:00"),
+            ],
+            2: [],
+        }
+        get_post_map = {
+            861: _make_post(861, modified="2026-04-20T08:00:00+09:00"),
+            862: _make_post(862, modified="2026-04-20T08:10:00+09:00"),
+        }
+        wp = _FakeWP(paged_posts=paged_posts, get_post_map=get_post_map)
+        code, stdout, _, wp, _, _ = _run_main(
+            ["--now-iso", "2026-04-20T10:00:00+09:00", "--limit", "1"],
+            wp=wp,
+            run_editor_side_effect=_editor_success_runs(1),
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(wp.get_post_calls, [861])
+        self.assertEqual(len(wp.put_calls), 1)
+        payload = json.loads(stdout.strip())
+        self.assertEqual(payload["put_ok"], 1)
+        self.assertEqual(payload["aggregate_counts"]["selected_for_processing"], 1)
+
+    def test_queue_path_uses_jsonl_without_wp_reads(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            queue_path = Path(tmpdir) / "repair_queue.jsonl"
+            queue_post = _make_post(871, modified="2026-04-20T08:00:00+09:00")
+            _write_queue_file(queue_path, queue_post)
+            wp = _FakeWP(paged_posts={1: [_make_post(9999)]}, get_post_map={9999: _make_post(9999)})
+            code, stdout, _, wp, make_wp_client, _ = _run_main(
+                [
+                    "--now-iso", "2026-04-20T10:00:00+09:00",
+                    "--queue-path", str(queue_path),
+                    "--dry-run",
+                ],
+                wp=wp,
+                run_editor_side_effect=_editor_success_runs(1),
+                log_root=Path(tmpdir) / "lane_logs",
+            )
+        self.assertEqual(code, 0)
+        self.assertFalse(make_wp_client.called)
+        self.assertEqual(wp.list_calls, [])
+        self.assertEqual(wp.get_post_calls, [])
+        self.assertEqual(wp.put_calls, [])
+        payload = json.loads(stdout.strip())
+        self.assertEqual(payload["fetch_mode"], lane.QUEUE_FETCH_MODE)
+        self.assertEqual(payload["put_ok"], 1)
+        self.assertEqual(payload["per_post_outcomes"], [
+            {"post_id": 871, "verdict": "edited", "edited": "dry_run"}
+        ])
+
+    def test_provider_stubs_write_skipped_ledger_and_exit_zero(self):
+        for idx, provider in enumerate(("codex", "openai_api"), start=881):
+            with self.subTest(provider=provider):
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    queue_path = Path(tmpdir) / "repair_queue.jsonl"
+                    ledger_path = Path(tmpdir) / f"{provider}-ledger.jsonl"
+                    queue_post = _make_post(idx, modified="2026-04-20T08:00:00+09:00")
+                    _write_queue_file(queue_path, queue_post)
+                    code, stdout, _, _, make_wp_client, editor_mock = _run_main(
+                        [
+                            "--now-iso", "2026-04-20T10:00:00+09:00",
+                            "--queue-path", str(queue_path),
+                            "--provider", provider,
+                            "--dry-run",
+                            "--ledger-path", str(ledger_path),
+                        ],
+                        log_root=Path(tmpdir) / "lane_logs",
+                    )
+                    rows = _read_jsonl_rows(ledger_path)
+
+                    self.assertEqual(code, 0)
+                    self.assertFalse(make_wp_client.called)
+                    self.assertFalse(editor_mock.called)
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]["provider"], provider)
+                self.assertEqual(rows[0]["status"], "skipped")
+                self.assertEqual(rows[0]["error_code"], lane.PROVIDER_STUB_ERROR_CODE)
+                payload = json.loads(stdout.strip())
+                self.assertEqual(payload["put_ok"], 0)
+                self.assertEqual(payload["skip_reason_counts"], {lane.PROVIDER_STUB_ERROR_CODE: 1})
+                self.assertEqual(payload["per_post_outcomes"], [
+                    {"post_id": idx, "verdict": "skip", "skip_reason": lane.PROVIDER_STUB_ERROR_CODE}
+                ])
 
     def test_put_fail_twice_stops(self):
         paged_posts = {

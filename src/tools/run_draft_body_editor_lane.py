@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import os
 import re
 import subprocess
 import sys
@@ -27,8 +28,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Sequence
 from urllib.parse import urlparse
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+from src import repair_provider_ledger
 from src.tools.draft_body_editor import _extract_prose_text
 
 
@@ -67,6 +70,9 @@ EXIT_INPUT_ERROR = 42
 EXIT_REJECT_STREAK = 43
 EXIT_API_FAIL = 44
 EXIT_PUT_FAIL = 45
+QUEUE_FETCH_MODE = "queue_jsonl"
+PROVIDER_STUB_ERROR_CODE = "provider_not_implemented_yet"
+VALID_REPAIR_PROVIDERS = ("gemini", "codex", "openai_api")
 
 TEAM_NAMES = (
     "巨人", "読売", "ジャイアンツ",
@@ -148,7 +154,29 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         default=DEFAULT_MAX_POSTS,
         help="Maximum posts to edit per run (recommended: 3-5)",
     )
+    parser.add_argument(
+        "--limit",
+        dest="max_posts",
+        type=int,
+        help="Alias for --max-posts",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Run the editor but do not PUT back to WordPress")
+    parser.add_argument(
+        "--provider",
+        choices=VALID_REPAIR_PROVIDERS,
+        default="gemini",
+        help="Repair provider to use",
+    )
+    parser.add_argument(
+        "--queue-path",
+        default="",
+        help="JSONL queue path. When omitted, fetch recent drafts from WordPress.",
+    )
+    parser.add_argument(
+        "--ledger-path",
+        default="",
+        help="Override repair-provider ledger output path",
+    )
     parser.add_argument("--now-iso", default="", help="Override the current JST timestamp for tests")
     parser.add_argument("--edit-window-start-jst", default="", help="Edit window start in JST (HH:MM)")
     parser.add_argument("--edit-window-end-jst", default="", help="Edit window end in JST (HH:MM)")
@@ -645,6 +673,37 @@ def _build_candidate(post: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _build_queue_candidate(post: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
+    subtype = _infer_subtype(post)
+    if subtype is None:
+        return None, "subtype_unresolved"
+    if subtype not in VALID_SUBTYPES:
+        return None, "subtype_unsupported"
+
+    title = _extract_title(post)
+    body = _extract_content_raw(post)
+    if len(_extract_prose_text(body)) > CURRENT_BODY_MAX_CHARS:
+        return None, "body_too_long"
+    if EMBED_MARKER in body or EMBED_MARKER in title:
+        return None, "contains_embed"
+    if any(keyword in title for keyword in TITLE_SKIP_KEYWORDS):
+        return None, "title_skip_keyword"
+    if not _extract_source_urls(post):
+        return None, "missing_primary_source"
+
+    fail_axes = _infer_fail_axes(post, subtype)
+    if fail_axes is None:
+        return None, "title_axis_scope_out"
+
+    headings = REQUIRED_HEADINGS[subtype]
+    found_headings = _body_headings(body)
+    normalized_headings = tuple(_strip_decorative_headings(found_headings))
+    if found_headings and normalized_headings[: len(headings)] != headings:
+        return None, "heading_mismatch"
+
+    return _build_candidate(post), "ok"
+
+
 def _editor_command(
     *,
     post_id: int,
@@ -677,7 +736,37 @@ def _editor_command(
     return cmd
 
 
-def _run_editor(candidate: dict[str, Any], *, dry_run: bool) -> tuple[int, dict[str, Any] | None, str, str | None]:
+def _resolve_ledger_path(raw_path: str, *, now: datetime) -> Path:
+    if raw_path.strip():
+        return Path(raw_path)
+    return repair_provider_ledger.resolve_jsonl_ledger_path(now=now)
+
+
+def _mirror_appended_ledger_bytes(source_path: Path, target_path: Path, start_offset: int) -> None:
+    if source_path == target_path or not source_path.exists():
+        return
+    if start_offset < 0:
+        start_offset = 0
+    source_size = source_path.stat().st_size
+    if source_size <= start_offset:
+        return
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    with source_path.open("rb") as src:
+        src.seek(start_offset)
+        payload = src.read()
+    if not payload:
+        return
+    with target_path.open("ab") as dst:
+        dst.write(payload)
+
+
+def _run_editor(
+    candidate: dict[str, Any],
+    *,
+    dry_run: bool,
+    ledger_path: Path,
+    now: datetime,
+) -> tuple[int, dict[str, Any] | None, str, str | None]:
     with tempfile.TemporaryDirectory(prefix="draft_body_editor_") as tmp:
         tmpdir = Path(tmp)
         current_path = tmpdir / "current.txt"
@@ -696,13 +785,22 @@ def _run_editor(candidate: dict[str, Any], *, dry_run: bool) -> tuple[int, dict[
             dry_run=dry_run,
         )
 
+        env = os.environ.copy()
+        env[repair_provider_ledger.ENV_LEDGER_DIR] = str(ledger_path.parent)
+        editor_ledger_path = repair_provider_ledger.resolve_jsonl_ledger_path(
+            now=now,
+            sink_dir=ledger_path.parent,
+        )
+        ledger_offset = editor_ledger_path.stat().st_size if editor_ledger_path.exists() else 0
         completed = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=120,
             cwd=str(ROOT),
+            env=env,
         )
+        _mirror_appended_ledger_bytes(editor_ledger_path, ledger_path, ledger_offset)
         stdout = (completed.stdout or "").strip()
         stderr = (completed.stderr or "").strip()
         payload = None
@@ -720,6 +818,46 @@ def _make_wp_client():
 
     _load_dotenv_if_available()
     return WPClient()
+
+
+def _normalize_queue_post(payload: dict[str, Any], *, queue_path: Path, line_no: int) -> dict[str, Any]:
+    post = dict(payload)
+    if "id" not in post:
+        if "post_id" not in post:
+            raise ValueError(f"queue row missing post_id: {queue_path}:{line_no}")
+        post["id"] = post["post_id"]
+    try:
+        post["id"] = int(post["id"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"queue row has non-numeric post_id: {queue_path}:{line_no}") from exc
+    return post
+
+
+def _collect_queue_candidates(
+    queue_path: Path,
+) -> tuple[list[dict[str, Any]], str, dict[str, int], Counter[str]]:
+    candidates: list[dict[str, Any]] = []
+    skip_counter: Counter[str] = Counter()
+    stats = {"pages_fetched": 0, "posts_seen": 0}
+
+    with queue_path.open(encoding="utf-8") as f:
+        for line_no, line in enumerate(f, start=1):
+            text = line.strip()
+            if not text:
+                continue
+            try:
+                payload = json.loads(text)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"queue row is not valid JSON: {queue_path}:{line_no}") from exc
+            if not isinstance(payload, dict):
+                raise ValueError(f"queue row must be an object: {queue_path}:{line_no}")
+            post = _normalize_queue_post(payload, queue_path=queue_path, line_no=line_no)
+            candidates.append({
+                "post_id": post["id"],
+                "post": post,
+            })
+            stats["posts_seen"] += 1
+    return candidates, QUEUE_FETCH_MODE, stats, skip_counter
 
 
 def _collect_paginated_candidates(
@@ -876,6 +1014,63 @@ def _exit_code_for_stop_reason(stop_reason: str) -> int:
     }.get(stop_reason, 0)
 
 
+def _write_provider_stub_ledger(
+    *,
+    candidate: dict[str, Any],
+    provider: str,
+    ledger_path: Path,
+    now: datetime,
+) -> None:
+    body_len_before = len(candidate["current_body"])
+    input_hash = repair_provider_ledger.compute_input_hash(
+        {
+            "post_id": candidate["post_id"],
+            "subtype": candidate["subtype"],
+            "fail_axes": list(candidate["fail_axes"]),
+            "dry_run": True,
+            "current_body": candidate["current_body"],
+            "source_block": candidate["source_block"],
+        }
+    )
+    entry = repair_provider_ledger.RepairLedgerEntry(
+        schema_version=repair_provider_ledger.SCHEMA_VERSION,
+        run_id=str(uuid4()),
+        lane="repair",
+        provider=provider,
+        model=f"{provider}-stub",
+        source_post_id=candidate["post_id"],
+        input_hash=input_hash,
+        output_hash=repair_provider_ledger.compute_output_hash(candidate["current_body"]),
+        artifact_uri=ledger_path.resolve().as_uri(),
+        status="skipped",
+        strict_pass=False,
+        error_code=PROVIDER_STUB_ERROR_CODE,
+        idempotency_key=repair_provider_ledger.make_idempotency_key(
+            candidate["post_id"],
+            input_hash,
+            provider,
+        ),
+        created_at=now.isoformat(),
+        started_at=now.isoformat(),
+        finished_at=now.isoformat(),
+        metrics={
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "latency_ms": 0,
+            "body_len_before": body_len_before,
+            "body_len_after": body_len_before,
+            "body_len_delta_pct": 0.0,
+        },
+        provider_meta={
+            "raw_response_size": 0,
+            "fallback_from": None,
+            "fallback_reason": None,
+            "quality_flags": ["provider_stub_not_implemented"],
+        },
+    )
+    repair_provider_ledger.JsonlLedgerWriter(ledger_path).write(entry)
+
+
 def _emit_run_result(
     now: datetime,
     *,
@@ -921,6 +1116,8 @@ def _emit_run_result(
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     now = _now_jst(args.now_iso)
+    ledger_path = _resolve_ledger_path(args.ledger_path, now=now)
+    queue_path = Path(args.queue_path) if args.queue_path.strip() else None
     per_post_outcomes: list[dict[str, Any]] = []
     empty_counter: Counter[str] = Counter()
 
@@ -1012,43 +1209,76 @@ def main(argv: Sequence[str] | None = None) -> int:
         _emit_summary(now, payload)
         return 0
 
-    try:
-        wp = _make_wp_client()
-    except Exception as e:
-        print(f"failed to init WP client: {e}", file=sys.stderr)
-        payload = _build_summary_payload(
-            candidates=0,
-            put_ok=0,
-            reject=0,
-            skip=0,
-            stop_reason="wp_init_failed",
-            next_run_hint="fix WP env before retry",
-            fetch_mode="none",
-            candidates_before_filter=0,
-            skip_reason_counts={},
-            per_post_outcomes=[],
-            aggregate_counts={
-                "list_seen": 0,
-                "list_level_skips": 0,
-                "eligible_after_list_filters": 0,
-                "selected_for_processing": 0,
-                "processed": 0,
-                "edited": 0,
-                "guard_fail": 0,
-                "processed_skip": 0,
-                "pages_fetched": 0,
-            },
-            edit_window_jst=edit_window_jst,
-        )
-        _emit_summary(now, payload)
-        return EXIT_WP_GET_FAILED
+    wp = None
+    if queue_path is None:
+        try:
+            wp = _make_wp_client()
+        except Exception as e:
+            print(f"failed to init WP client: {e}", file=sys.stderr)
+            payload = _build_summary_payload(
+                candidates=0,
+                put_ok=0,
+                reject=0,
+                skip=0,
+                stop_reason="wp_init_failed",
+                next_run_hint="fix WP env before retry",
+                fetch_mode="none",
+                candidates_before_filter=0,
+                skip_reason_counts={},
+                per_post_outcomes=[],
+                aggregate_counts={
+                    "list_seen": 0,
+                    "list_level_skips": 0,
+                    "eligible_after_list_filters": 0,
+                    "selected_for_processing": 0,
+                    "processed": 0,
+                    "edited": 0,
+                    "guard_fail": 0,
+                    "processed_skip": 0,
+                    "pages_fetched": 0,
+                },
+                edit_window_jst=edit_window_jst,
+            )
+            _emit_summary(now, payload)
+            return EXIT_WP_GET_FAILED
 
-    touched_ids = _read_recent_touched_post_ids(now)
-    candidates, fetch_mode, pagination_stats, list_skip_counter = _collect_paginated_candidates(
-        wp,
-        now=now,
-        touched_ids=touched_ids,
-    )
+        touched_ids = _read_recent_touched_post_ids(now)
+        candidates, fetch_mode, pagination_stats, list_skip_counter = _collect_paginated_candidates(
+            wp,
+            now=now,
+            touched_ids=touched_ids,
+        )
+    else:
+        try:
+            candidates, fetch_mode, pagination_stats, list_skip_counter = _collect_queue_candidates(queue_path)
+        except (OSError, ValueError) as e:
+            print(f"failed to load queue-path: {e}", file=sys.stderr)
+            payload = _build_summary_payload(
+                candidates=0,
+                put_ok=0,
+                reject=0,
+                skip=0,
+                stop_reason="input_error",
+                next_run_hint="fix CLI args before retry",
+                fetch_mode=QUEUE_FETCH_MODE,
+                candidates_before_filter=0,
+                skip_reason_counts={},
+                per_post_outcomes=[],
+                aggregate_counts={
+                    "list_seen": 0,
+                    "list_level_skips": 0,
+                    "eligible_after_list_filters": 0,
+                    "selected_for_processing": 0,
+                    "processed": 0,
+                    "edited": 0,
+                    "guard_fail": 0,
+                    "processed_skip": 0,
+                    "pages_fetched": 0,
+                },
+                edit_window_jst=edit_window_jst,
+            )
+            _emit_summary(now, payload)
+            return EXIT_INPUT_ERROR
     candidates_before_filter = pagination_stats["posts_seen"]
     if candidates is None:
         _emit_run_result(
@@ -1071,6 +1301,38 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     selected_candidates = candidates[: args.max_posts]
     selected_count = len(selected_candidates)
+    if queue_path is not None and args.provider == "gemini" and not args.dry_run:
+        try:
+            wp = _make_wp_client()
+        except Exception as e:
+            print(f"failed to init WP client: {e}", file=sys.stderr)
+            payload = _build_summary_payload(
+                candidates=0,
+                put_ok=0,
+                reject=0,
+                skip=0,
+                stop_reason="wp_init_failed",
+                next_run_hint="fix WP env before retry",
+                fetch_mode=fetch_mode,
+                candidates_before_filter=candidates_before_filter,
+                skip_reason_counts={},
+                per_post_outcomes=[],
+                aggregate_counts={
+                    "list_seen": 0,
+                    "list_level_skips": 0,
+                    "eligible_after_list_filters": 0,
+                    "selected_for_processing": 0,
+                    "processed": 0,
+                    "edited": 0,
+                    "guard_fail": 0,
+                    "processed_skip": 0,
+                    "pages_fetched": 0,
+                },
+                edit_window_jst=edit_window_jst,
+            )
+            _emit_summary(now, payload)
+            return EXIT_WP_GET_FAILED
+
     if not candidates:
         _emit_run_result(
             now,
@@ -1099,25 +1361,77 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     for candidate_ref in selected_candidates:
         post_id = candidate_ref["post_id"]
-        try:
-            post = wp.get_post(post_id)
-        except Exception as e:
-            print(f"failed to get WP post_id={post_id}: {e}", file=sys.stderr)
-            _append_skip_outcome(per_post_outcomes, process_skip_counter, post_id=post_id, reason="wp_get_failed")
-            stop_reason = "wp_get_failed"
-            break
+        post = candidate_ref.get("post")
+        if post is None:
+            try:
+                post = wp.get_post(post_id)
+            except Exception as e:
+                print(f"failed to get WP post_id={post_id}: {e}", file=sys.stderr)
+                _append_skip_outcome(per_post_outcomes, process_skip_counter, post_id=post_id, reason="wp_get_failed")
+                stop_reason = "wp_get_failed"
+                break
 
         if _resolved_live_update(post):
             _append_skip_outcome(per_post_outcomes, process_skip_counter, post_id=post_id, reason="live_update_excluded")
             continue
 
-        ok, reason = _draft_looks_editable(post, now, set())
-        if not ok:
-            _append_skip_outcome(per_post_outcomes, process_skip_counter, post_id=post_id, reason=reason)
+        candidate = None
+        if queue_path is None:
+            ok, reason = _draft_looks_editable(post, now, set())
+            if not ok:
+                _append_skip_outcome(per_post_outcomes, process_skip_counter, post_id=post_id, reason=reason)
+                continue
+            candidate = _build_candidate(post)
+        else:
+            candidate, reason = _build_queue_candidate(post)
+            if candidate is None:
+                _append_skip_outcome(per_post_outcomes, process_skip_counter, post_id=post_id, reason=reason)
+                continue
+
+        if args.provider != "gemini":
+            try:
+                _write_provider_stub_ledger(
+                    candidate=candidate,
+                    provider=args.provider,
+                    ledger_path=ledger_path,
+                    now=now,
+                )
+            except (
+                repair_provider_ledger.LedgerLockError,
+                repair_provider_ledger.LedgerWriteError,
+                ValueError,
+                OSError,
+            ) as e:
+                print(f"failed to write provider stub ledger post_id={post_id}: {e}", file=sys.stderr)
+                _append_skip_outcome(per_post_outcomes, process_skip_counter, post_id=post_id, reason="input_error")
+                stop_reason = "input_error"
+                break
+            _append_skip_outcome(
+                per_post_outcomes,
+                process_skip_counter,
+                post_id=post_id,
+                reason=PROVIDER_STUB_ERROR_CODE,
+            )
+            _append_session_log(
+                now,
+                {
+                    "event": "provider_stub_skipped",
+                    "post_id": candidate["post_id"],
+                    "provider": args.provider,
+                    "subtype": candidate["subtype"],
+                    "fail_axes": candidate["fail_axes"],
+                    "put_status": "skipped",
+                    "error_code": PROVIDER_STUB_ERROR_CODE,
+                },
+            )
             continue
 
-        candidate = _build_candidate(post)
-        dry_code, _, dry_stderr, _ = _run_editor(candidate, dry_run=True)
+        dry_code, _, dry_stderr, _ = _run_editor(
+            candidate,
+            dry_run=True,
+            ledger_path=ledger_path,
+            now=now,
+        )
         if dry_code in {10, 11, 12}:
             reject_count += 1
             reject_streak += 1
@@ -1144,7 +1458,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             continue
 
         if dry_code == 20:
-            retry_code, _, retry_stderr, _ = _run_editor(candidate, dry_run=True)
+            retry_code, _, retry_stderr, _ = _run_editor(
+                candidate,
+                dry_run=True,
+                ledger_path=ledger_path,
+                now=now,
+            )
             if retry_code != 0:
                 _append_skip_outcome(per_post_outcomes, process_skip_counter, post_id=candidate["post_id"], reason="api_fail")
                 _append_session_log(
@@ -1178,7 +1497,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         reject_streak = 0
 
-        exec_code, exec_payload, exec_stderr, new_body = _run_editor(candidate, dry_run=False)
+        exec_code, exec_payload, exec_stderr, new_body = _run_editor(
+            candidate,
+            dry_run=False,
+            ledger_path=ledger_path,
+            now=now,
+        )
         if exec_code in {10, 11, 12}:
             reject_count += 1
             per_post_outcomes.append({

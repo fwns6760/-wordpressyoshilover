@@ -655,6 +655,26 @@ doc/
 - **last_commit**: -
 - **parent**: 161 / 103
 
+### 188 publish-notice-manual-x-post-candidates
+
+- **alias**: -
+- **priority**: **P0.5**
+- **status**: **READY**
+- **owner**: Codex B
+- **lane**: B
+- **ready_for**: implementation
+- **next_action**: per-post publish notice mail body に手動X投稿候補3件を追加。X API / queue / GCP live は触らない
+- **blocked_by**: none
+- **user_action_required**: none
+- **write_scope**: `src/publish_notice_email_sender.py`, `tests/test_publish_notice_email_sender.py`, `doc/active/188-publish-notice-manual-x-post-candidates.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/active/188-publish-notice-manual-x-post-candidates.md`
+- **acceptance**: `build_body_text()` に `manual_x_post_candidates` block / 3候補280字以内 / blank summary safe / send real path body更新 / `tests/test_publish_notice_email_sender.py` pass
+- **repo_state**: ticket ready
+- **commit_state**: pending
+- **next_prompt_path**: -
+- **last_commit**: -
+- **parent**: 095-D / 131 / PUB-005
+
 ### 130 pub004-hard-stop-vs-repairable-before-publish
 
 - **alias**: -

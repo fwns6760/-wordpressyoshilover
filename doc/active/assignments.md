@@ -1,6 +1,6 @@
 # assignments — ticket 担当者割り当て
 
-最終更新: 2026-04-26 PM(GCP 移行 phasing 168-175 反映、ChatGPT Plan mode A-G 結論受領)
+最終更新: 2026-04-26 evening(13 ticket close + done/ 移動、158 in flight、159 user judgment 待ち)
 
 ## エージェント
 
@@ -29,14 +29,25 @@
 | **150** X Phase 3 trigger ON cap 1 | P0.5 | BLOCKED(149) | Claude / A | 149 OK 後 env auto + daily 1、WP trigger 連動 |
 | **PUB-002-A** | reference | done | (parent runbook supersede 154) | 130 evaluator base、移動済 `doc/done/2026-04/` |
 | **154** publish-policy(現行)| reference | active | (current runbook) | 130 / 135 / 137 / 141-146 反映 |
-| **155** GCP migration master | P0.5 | READY(Phase 1a done `88391d0`、1b done `c5adfa3`)| Claude / A | Phase 1c 以降は 168-175 chain で展開 |
-| **156** Phase 1b 042 Cloud Run deploy | P0.5 | **CLOSED `c5adfa3`**(image push + Job create + smoke pass)| A 完了 | WSL cron 042 並走中、disable は Phase 1e |
-| **165** Gemini + WP REST resilience | P0.5 | **CLOSED `3aa2cd1`**(retry/backoff/429/Retry-After、pytest 1338→1343)| A 完了 | API 一時 outage で cron 無駄停止しない |
-| **166** Cloud Run failure alert | P1 | BLOCKED(155 deploy 後) | Claude / A | mail 通知配線、169 着地後 fire |
-| **167** GCP billing alert | P1 | **REWORK 必要**(JPY billing で USD budget reject、再 fire 時 ¥ 換算)| Claude / A | $10/30/50 → ¥1500/4500/7500 で再 fire |
-| **168** repair-provider-ledger v0 | P0 | **IN_FLIGHT `bx8ao0it9`** | B(`codex exec`) | GCP migration foundation、schema v0 確定 |
-| **173** x-post-cloud-queue-ledger v0 | P0.5 | **IN_FLIGHT `bgn2tj0bp`** | A(`codex exec`、168 と並走) | X 投稿 lane foundation、unlock 時即動 |
-| **169-172, 174-175** | P0.5 | QUEUED | Claude(起票)/ Codex(実装) | 168 着地後順次起票 + fire(ChatGPT phasing 順)|
+| **155** GCP migration master | P0.5 | IN_FLIGHT(Phase 1a-1c / 165 / 168-173 done、158/159/162-164/174-175 残)| Claude / A | 158 in flight、その後 Phase 1e (159 WSL disable) は user 判断 |
+| **156** Phase 1b 042 Cloud Run deploy | P0.5 | **CLOSED `c5adfa3`** → done/ 移動済 | A 完了 | WSL cron 042 並走中、disable は Phase 1e (159) |
+| **157** Phase 1c Cloud Scheduler trigger 042 | P0.5 | **CLOSED `94f4784`** → done/ 移動済 | A 完了 | 17:32 JST tick auto execute pass、WSL 042 並走中 |
+| **158** Phase 1d Secret Manager + GCS persistence | P0 | **IN_FLIGHT `bsyflz2d0`**(v2 再 fire、stop 条件訂正後) | A | env Secret 化 + cursor 永続化、WSL 042/095 disable 解除条件 |
+| **161** Phase 3 publish-notice GCP migration | P0.5 | **CLOSED `7655d9f`** → done/ 移動済 | A 完了 | image push + Job create + Scheduler 15 * * * *、placeholder /data 残(158 で解消) |
+| **165** Gemini + WP REST resilience | P0.5 | **CLOSED `3aa2cd1`** → done/ 移動済 | A 完了 | API 一時 outage で cron 無駄停止しない |
+| **166** Cloud Run failure alert | P1 | BLOCKED(157 deploy 後 fire 可)| Claude / A | mail 通知配線、近日 fire |
+| **167** GCP billing alert | P1 | **REWORK 必要**(JPY billing で USD budget reject)| Claude / A | $10/30/50 → ¥1500/4500/7500 で再 fire |
+| **168** repair-provider-ledger v0 | P0 | **CLOSED `70009aa`** → done/ 移動済 | B 完了 | GCP migration foundation、schema v0 18 fields |
+| **169** cloud-run-repair-job-skeleton | P0 | **CLOSED `85ae5a6`** → done/ 移動済 | B 完了 | --provider / --queue-path / --ledger-path 追加 |
+| **170** repair-fallback-controller | P0 | **CLOSED `d56e298`** → done/ 移動済 | B 完了 | 6 failure class + Gemini fallback chain |
+| **171** codex-cli-shadow-runner | P0 | **CLOSED `0981ee2`** → done/ 移動済 | B 完了 | call_codex 実装、shadow lane invariant(WP write 禁止)|
+| **172** cloud-run-secret-auth-writeback | P0 | **CLOSED `cbe05b0`** → done/ 移動済 | B 完了 | SecretAuthManager + entrypoint script、auth.json 内容ログ禁止 |
+| **173** x-post-cloud-queue-ledger v0 | P0.5 | **CLOSED `9ef3772`** → done/ 移動済 | A 完了 | X 投稿 lane foundation、unlock 時即動 |
+| **159** Phase 1e WSL cron 042 disable | P1 | BLOCKED_USER(158 land + observation 1 日後) | User → Claude | 1 ワード go で WSL cron 行 disable |
+| **162** Phase 4 gemini_audit GCP migration | P1 | QUEUED | Claude / A | 158 land 後 fire 可 |
+| **163** Phase 5 quality-monitor / quality-gmail GCP migration | P1 | QUEUED | Claude / A | 162 land 後 fire 可 |
+| **174** x-api-cloud-run-live-smoke | P0.5 | BLOCKED_USER(149 X live unlock 後)| User → A | live X API smoke 1 回 |
+| **175** x-controlled-autopost-cloud-rollout | P0.5 | BLOCKED(174 後)| Claude / A | daily cap ramp |
 
 ### 止まってる(waiting)
 

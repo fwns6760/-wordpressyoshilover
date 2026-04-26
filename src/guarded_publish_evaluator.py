@@ -3,12 +3,13 @@ from __future__ import annotations
 import html
 import json
 import re
+import unicodedata
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from src.lineup_source_priority import compute_lineup_dedup
+from src.lineup_source_priority import compute_lineup_dedup, extract_game_id
 from src.pre_publish_fact_check import extractor
 from src.title_body_nucleus_validator import validate_title_body_nucleus
 
@@ -91,6 +92,8 @@ TIME_TAIL_RE = re.compile(r"^[\sT　]*(?:(\d{1,2}):(\d{2})|(\d{1,2})時(?:\s*(\d
 GAME_START_TIME_RE = re.compile(
     r"(?:試合開始|開始予定|開始時刻|プレーボール|開始)\D{0,8}(?:(\d{1,2}):(\d{2})|(\d{1,2})時(?:\s*(\d{1,2})分?)?)"
 )
+TITLE_DUPLICATE_SUFFIX_RE = re.compile(r"(?:\s*(?:\(\s*\d+\s*\)|（\s*\d+\s*）|[-－ー]\s*\d+))+$")
+TITLE_NUMBER_TOKEN_RE = re.compile(r"\d+")
 DEFAULT_GAME_START_HOUR = 18
 FRESHNESS_THRESHOLDS_HOURS: dict[str, float] = {
     "lineup": 6.0,
@@ -115,6 +118,9 @@ FRESHNESS_THRESHOLDS_HOURS: dict[str, float] = {
 }
 LINEUP_FRESHNESS_SUBTYPES = frozenset({"lineup", "pregame", "probable_starter", "farm_lineup"})
 GAME_CONTEXT_FRESHNESS_SUBTYPES = frozenset({"postgame", "game_result"})
+LINEUP_TITLE_TOKEN_MATCH_SUBTYPES = frozenset(
+    {"lineup", "lineup_notice", "pregame", "probable_starter", "farm_lineup"}
+)
 SOURCE_DATE_META_FIELDS = (
     "source_published_at",
     "published_at",
@@ -191,6 +197,42 @@ def _parse_wp_datetime(value: str, *, fallback_now: datetime | None = None) -> d
 
 def _normalize_title_key(title: str) -> str:
     return re.sub(r"\s+", "", title or "").strip().lower()
+
+
+def _normalize_title_text(title: str) -> str:
+    normalized = unicodedata.normalize("NFKC", html.unescape(title or ""))
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _strip_title_duplicate_suffix(title: str) -> str:
+    normalized = _normalize_title_text(title)
+    while normalized:
+        stripped = TITLE_DUPLICATE_SUFFIX_RE.sub("", normalized).strip()
+        if stripped == normalized:
+            return normalized
+        normalized = stripped
+    return ""
+
+
+def _exact_title_duplicate_key(title: str) -> str:
+    return _normalize_title_key(_normalize_title_text(title))
+
+
+def _normalized_title_duplicate_key(title: str) -> str:
+    return _normalize_title_key(_strip_title_duplicate_suffix(title))
+
+
+def _lineup_title_token_duplicate_key(title: str) -> str | None:
+    normalized = _strip_title_duplicate_suffix(title)
+    if not normalized:
+        return None
+    number_tokens = TITLE_NUMBER_TOKEN_RE.findall(normalized)
+    if not number_tokens:
+        return None
+    prefix = normalized[:30].casefold().strip()
+    if not prefix:
+        return None
+    return f"{prefix}::{'/'.join(number_tokens)}"
 
 
 def _parse_optional_wp_datetime(value: Any) -> datetime | None:
@@ -1053,6 +1095,89 @@ def _lineup_red_flags(decision: dict[str, Any] | None) -> list[str]:
     return []
 
 
+def _duplicate_guard_game_id(raw_post: dict[str, Any]) -> str:
+    meta = (raw_post or {}).get("meta") or {}
+    for value in (meta.get("game_id"), raw_post.get("game_id")):
+        normalized = str(value or "").strip()
+        if normalized:
+            return normalized
+    extracted = str(extract_game_id(raw_post) or "").strip()
+    return extracted
+
+
+def _title_duplicate_cluster_requires_hard_stop(candidates: list[dict[str, Any]]) -> bool:
+    game_ids = {str(candidate.get("game_id") or "").strip() for candidate in candidates if str(candidate.get("game_id") or "").strip()}
+    missing_game_id = any(not str(candidate.get("game_id") or "").strip() for candidate in candidates)
+    return missing_game_id or len(game_ids) > 1
+
+
+def _append_title_duplicate_matches(
+    grouped_candidates: dict[str, list[dict[str, Any]]],
+    *,
+    match_type: str,
+    by_post_id: dict[int, dict[str, Any]],
+) -> None:
+    for candidates in grouped_candidates.values():
+        if len(candidates) < 2 or not _title_duplicate_cluster_requires_hard_stop(candidates):
+            continue
+        for candidate in candidates:
+            post_id = int(candidate["post_id"])
+            payload = by_post_id.setdefault(
+                post_id,
+                {
+                    "post_id": post_id,
+                    "status": "title_duplicate_cluster",
+                    "reason": "title_duplicate_cluster",
+                    "match_types": [],
+                },
+            )
+            match_types = payload["match_types"]
+            if match_type not in match_types:
+                match_types.append(match_type)
+
+
+def _title_duplicate_decisions(raw_posts: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
+    by_exact_key: dict[str, list[dict[str, Any]]] = {}
+    by_normalized_key: dict[str, list[dict[str, Any]]] = {}
+    by_token_key: dict[str, list[dict[str, Any]]] = {}
+
+    for raw_post in raw_posts:
+        record = extractor.extract_post_record(raw_post)
+        post_id = int(record["post_id"])
+        title = str(record.get("title") or "")
+        subtype = _resolved_subtype(raw_post, record)
+        candidate = {
+            "post_id": post_id,
+            "title": title,
+            "subtype": subtype,
+            "game_id": _duplicate_guard_game_id(raw_post),
+        }
+
+        exact_key = _exact_title_duplicate_key(title)
+        if exact_key:
+            by_exact_key.setdefault(exact_key, []).append(candidate)
+
+        normalized_key = _normalized_title_duplicate_key(title)
+        if normalized_key:
+            by_normalized_key.setdefault(normalized_key, []).append(candidate)
+
+        if subtype in LINEUP_TITLE_TOKEN_MATCH_SUBTYPES:
+            token_key = _lineup_title_token_duplicate_key(title)
+            if token_key:
+                by_token_key.setdefault(token_key, []).append(candidate)
+
+    by_post_id: dict[int, dict[str, Any]] = {}
+    _append_title_duplicate_matches(by_exact_key, match_type="exact_title_match", by_post_id=by_post_id)
+    _append_title_duplicate_matches(
+        by_normalized_key,
+        match_type="normalized_suffix_title_match",
+        by_post_id=by_post_id,
+    )
+    _append_title_duplicate_matches(by_token_key, match_type="lineup_title_token_match", by_post_id=by_post_id)
+
+    return by_post_id
+
+
 def _merge_lineup_decision(entry: dict[str, Any], decision: dict[str, Any] | None) -> dict[str, Any]:
     if not decision:
         return entry
@@ -1124,6 +1249,42 @@ def _apply_lineup_guard(
     }
 
 
+def _apply_title_duplicate_guard(
+    evaluated: dict[str, Any],
+    decision: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if not decision:
+        return evaluated
+
+    entry = dict(evaluated["entry"])
+    reasons = list(entry.get("reasons") or [])
+    entry["duplicate_title_match_types"] = list(decision.get("match_types") or [])
+    if "lineup_duplicate_excessive" not in _reason_flags(reasons, "hard_stop"):
+        _append_reason(
+            reasons,
+            flag="lineup_duplicate_excessive",
+            category="hard_stop",
+            detail=";".join(entry["duplicate_title_match_types"]) or str(decision.get("reason") or ""),
+        )
+    entry["reasons"] = reasons
+    entry["hard_stop_flags"] = _reason_flags(reasons, "hard_stop")
+    entry["repairable_flags"] = _reason_flags(reasons, "repairable")
+    entry["soft_cleanup_flags"] = entry["repairable_flags"]
+    entry["publishable"] = False
+    entry["cleanup_required"] = False
+    entry["category"] = "hard_stop"
+    yellow_reasons = _legacy_flags(reasons, "repairable")
+    entry["red_flags"] = _merge_legacy_flags(_legacy_flags(reasons, "hard_stop"), yellow_reasons)
+    if yellow_reasons:
+        entry["yellow_reasons"] = yellow_reasons
+    entry.pop("reason_summary", None)
+    return {
+        "judgment": "red",
+        "entry": entry,
+        "cleanup_candidate": None,
+    }
+
+
 def _published_today_keys(raw_posts: list[dict[str, Any]], *, now: datetime) -> tuple[set[str], set[str]]:
     title_keys: set[str] = set()
     game_keys: set[str] = set()
@@ -1172,6 +1333,7 @@ def evaluate_raw_posts(
         filtered.append(raw_post)
 
     lineup_dedup = compute_lineup_dedup(filtered)
+    title_duplicate_by_post_id = _title_duplicate_decisions(filtered)
     lineup_by_post_id = {
         int(post_id): decision
         for post_id, decision in lineup_dedup.get("by_post_id", {}).items()
@@ -1182,6 +1344,8 @@ def evaluate_raw_posts(
         evaluated = _evaluate_record(raw_post, now=now_jst)
         decision = lineup_by_post_id.get(int(evaluated["entry"]["post_id"]))
         evaluated = _apply_lineup_guard(evaluated, decision)
+        title_duplicate_decision = title_duplicate_by_post_id.get(int(evaluated["entry"]["post_id"]))
+        evaluated = _apply_title_duplicate_guard(evaluated, title_duplicate_decision)
         judgment = evaluated["judgment"]
         if judgment == "green":
             green.append(evaluated["entry"])

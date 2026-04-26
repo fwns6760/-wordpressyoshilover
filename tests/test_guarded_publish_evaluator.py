@@ -265,6 +265,181 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         self.assertIn("lineup_duplicate_absorbed_by_hochi", red_entry["red_flags"])
         self.assertEqual(red_entry["representative_post_id"], 109)
 
+    def test_lineup_duplicate_3_same_title_all_hard_stop(self):
+        posts = [
+            _post(
+                1501,
+                "巨人二軍スタメン 若手をどう並べたか",
+                (
+                    "<p>巨人のスタメンが発表された。スポーツ報知によると、若手中心の並びになった。</p>"
+                    "<p>試合開始 23:59</p>"
+                    "<p>参照元: スポーツ報知 https://example.com/source-a</p>"
+                ),
+                meta={"article_subtype": "lineup", "game_id": "farm-a"},
+            ),
+            _post(
+                1502,
+                "巨人二軍スタメン 若手をどう並べたか",
+                (
+                    "<p>巨人のスタメンが発表された。日刊スポーツによると、若手中心の並びになった。</p>"
+                    "<p>試合開始 23:59</p>"
+                    "<p>参照元: 日刊スポーツ https://example.com/source-b</p>"
+                ),
+                meta={"article_subtype": "lineup", "game_id": "farm-b"},
+            ),
+            _post(
+                1503,
+                "巨人二軍スタメン 若手をどう並べたか",
+                (
+                    "<p>巨人のスタメンが発表された。スポニチによると、若手中心の並びになった。</p>"
+                    "<p>試合開始 23:59</p>"
+                    "<p>参照元: スポニチ https://example.com/source-c</p>"
+                ),
+                meta={"article_subtype": "lineup"},
+            ),
+        ]
+
+        report = self._evaluate(posts)
+
+        self.assertEqual(report["summary"]["green_count"], 0)
+        self.assertEqual(report["summary"]["yellow_count"], 0)
+        self.assertEqual(report["summary"]["red_count"], 3)
+        for post_id in (1501, 1502, 1503):
+            entry = self._find_entry(report, post_id)
+            self.assertFalse(entry["publishable"])
+            self.assertIn("lineup_duplicate_excessive", entry["hard_stop_flags"])
+            self.assertIn("exact_title_match", entry["duplicate_title_match_types"])
+
+    def test_lineup_duplicate_2_normalized_suffix_hard_stop(self):
+        posts = [
+            _post(
+                1511,
+                "巨人DeNA戦 Deは何を見せたか-2",
+                (
+                    "<p>巨人とDeNAの一戦を整理した。スポーツ報知によると、守備面の対応が焦点になった。</p>"
+                    "<p>参照元: スポーツ報知 https://example.com/source-d</p>"
+                ),
+                meta={"article_subtype": "comment"},
+            ),
+            _post(
+                1512,
+                "巨人DeNA戦 Deは何を見せたか-3",
+                (
+                    "<p>巨人とDeNAの一戦を整理した。日刊スポーツによると、守備面の対応が焦点になった。</p>"
+                    "<p>参照元: 日刊スポーツ https://example.com/source-e</p>"
+                ),
+                meta={"article_subtype": "comment"},
+            ),
+        ]
+
+        report = self._evaluate(posts)
+
+        self.assertEqual(report["summary"]["red_count"], 2)
+        for post_id in (1511, 1512):
+            entry = self._find_entry(report, post_id)
+            self.assertIn("lineup_duplicate_excessive", entry["hard_stop_flags"])
+            self.assertIn("normalized_suffix_title_match", entry["duplicate_title_match_types"])
+            self.assertNotIn("exact_title_match", entry["duplicate_title_match_types"])
+
+    def test_lineup_duplicate_subtype_lineup_token_match(self):
+        posts = [
+            _post(
+                1521,
+                "巨人スタメン 横浜スタジアム 8佐々木 3吉川 4岡本 守備配置確認",
+                (
+                    "<p>巨人のスタメンが発表された。スポーツ報知によると、8佐々木、3吉川、4岡本、先発戸郷で臨む。</p>"
+                    "<p>試合開始 23:59</p>"
+                    "<p>参照元: スポーツ報知 https://example.com/source-f</p>"
+                ),
+                meta={"article_subtype": "lineup"},
+            ),
+            _post(
+                1522,
+                "巨人スタメン 横浜スタジアム 8佐々木 3吉川 4岡本 守備配置注目",
+                (
+                    "<p>巨人のスタメンが発表された。日刊スポーツによると、8佐々木、3吉川、4岡本の並びが維持された。</p>"
+                    "<p>試合開始 23:59</p>"
+                    "<p>参照元: 日刊スポーツ https://example.com/source-g</p>"
+                ),
+                meta={"article_subtype": "lineup"},
+            ),
+        ]
+
+        report = self._evaluate(posts)
+
+        self.assertEqual(report["summary"]["red_count"], 2)
+        for post_id in (1521, 1522):
+            entry = self._find_entry(report, post_id)
+            self.assertIn("lineup_duplicate_excessive", entry["hard_stop_flags"])
+            self.assertIn("lineup_title_token_match", entry["duplicate_title_match_types"])
+
+    def test_unique_title_no_duplicate_flag(self):
+        posts = [
+            _post(
+                1531,
+                "巨人が阪神に3-2で勝利",
+                (
+                    "<p>巨人が阪神に3-2で勝利した。スポーツ報知によると、戸郷が7回2失点と好投した。</p>"
+                    "<p>参照元: スポーツ報知 https://example.com/source-h</p>"
+                ),
+            ),
+            _post(
+                1532,
+                "阿部監督が打線の状態を確認",
+                (
+                    "<p>阿部監督が打線の状態を確認した。スポーツ報知によると、フリー打撃の内容を評価した。</p>"
+                    "<p>参照元: スポーツ報知 https://example.com/source-i</p>"
+                ),
+                meta={"article_subtype": "comment"},
+            ),
+        ]
+
+        report = self._evaluate(posts)
+
+        self.assertEqual(report["summary"]["publishable_count"], 2)
+        for post_id in (1531, 1532):
+            entry = self._find_entry(report, post_id)
+            self.assertNotIn("lineup_duplicate_excessive", entry["hard_stop_flags"])
+            self.assertNotIn("duplicate_title_match_types", entry)
+
+    def test_duplicate_detection_post_freshness_check(self):
+        posts = [
+            _post(
+                1541,
+                "巨人スタメン 横浜スタジアム 8佐々木",
+                (
+                    "<p>巨人のスタメンが発表された。スポーツ報知によると、8佐々木で先発する。</p>"
+                    "<p>参照元: スポーツ報知 https://example.com/source-j</p>"
+                ),
+                date="2026-04-25T14:00:00",
+                modified="2026-04-25T20:30:00",
+                meta={"article_subtype": "lineup", "game_id": "g-db-c"},
+            ),
+            _post(
+                1542,
+                "巨人スタメン 横浜スタジアム 8佐々木",
+                (
+                    "<p>巨人のスタメンが発表された。日刊スポーツによると、8佐々木で先発する。</p>"
+                    "<p>試合開始 23:59</p>"
+                    "<p>参照元: 日刊スポーツ https://example.com/source-k</p>"
+                ),
+                date="2026-04-25T20:00:00",
+                modified="2026-04-25T20:30:00",
+                meta={"article_subtype": "lineup", "game_id": "g-db-d"},
+            ),
+        ]
+
+        report = self._evaluate(posts)
+
+        stale_entry = self._find_entry(report, 1541)
+        fresh_entry = self._find_entry(report, 1542)
+        self.assertIn("lineup_duplicate_excessive", stale_entry["hard_stop_flags"])
+        self.assertIn("expired_lineup_or_pregame", stale_entry["hard_stop_flags"])
+        self.assertEqual(stale_entry["freshness_class"], "expired")
+        self.assertIn("lineup_duplicate_excessive", fresh_entry["hard_stop_flags"])
+        self.assertNotIn("expired_lineup_or_pregame", fresh_entry["hard_stop_flags"])
+        self.assertEqual(fresh_entry["freshness_class"], "fresh")
+
     def test_stale_lineup_6h_over_is_hard_stop(self):
         stale_lineup = _post(
             201,

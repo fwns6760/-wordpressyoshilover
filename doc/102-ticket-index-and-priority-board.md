@@ -485,20 +485,20 @@ If this file conflicts with an individual ticket doc:
 ### 125 adsense-manual-ad-unit-embed
 
 - **alias**: 087-B
-- **priority**: P1.5
-- **status**: BLOCKED_USER
-- **owner**: Claude-managed front-scope
-- **lane**: either / front-scope
-- **ready_for**: none
-- **next_action**: wait for AdSense Auto ads OFF + ad unit ID user operation
-- **blocked_by**: user op(AdSense dashboard / ad unit ID)
-- **user_action_required**: Auto ads OFF + ad unit ID provision
-- **write_scope**: WP theme functions/template for ad unit embed; no backend Python
-- **acceptance**: manual ad units placed in 087 slots, IDs not displayed, no backend diff, no double script insertion
-- **repo_state**: doc exists untracked
-- **commit_state**: pending doc sync
-- **next_prompt_path**: `/tmp/codex_125_impl_prompt.txt` after user op
-- **last_commit**: -
+- **priority**: P0.5(autonomous front-scope work、user op 不要部分先行)
+- **status**: **READY**(Claude-managed front-scope 自律進行、user op 待ちにしない)
+- **owner**: **Claude-managed front-scope**(Front-Claude 不在のため Claude 自身が CSS/slot/template を直接編集)
+- **lane**: Claude / front-scope
+- **ready_for**: Claude 自律実装(slot scaffolding + CSS + template wrapper、ad unit ID 不要部分)
+- **next_action**: Claude が autonomous で `.yoshi-ad--*` slot wrapper を WP theme template に追加、CSS で slot 寸法/余白を整備、ad unit ID 挿入箇所だけ後で差し替え可能な placeholder で wire up
+- **blocked_by**: none for slot/CSS/template scaffolding。**ad unit ID 実値挿入のみ user op 必要**(AdSense dashboard で発行された unit ID 提供のとき Claude が差し替え)
+- **user_action_required**: **none for scaffolding**。ad unit ID 実値が必要になった段階で Claude が「この slot の ID をください」と最小限要求するだけ
+- **write_scope**: `src/custom.css` の AdSense slot 整備 + WP theme template の `.yoshi-ad--*` wrapper(backend Python / publish runner / WP REST / .env / secret 触らない)
+- **acceptance**: slot wrapper が 087 設計通りの位置に配置 / CSS で破綻なし / placeholder で ad unit ID 差し替え可能 / backend 差分ゼロ / double script なし
+- **repo_state**: doc committed `72a3ccd`
+- **commit_state**: doc committed
+- **next_prompt_path**: -(Claude 自身で実装)
+- **last_commit**: `72a3ccd` 102 board sync
 - **parent**: 087 / 117
 
 ### 126 sns-topic-fire-intake-dry-run

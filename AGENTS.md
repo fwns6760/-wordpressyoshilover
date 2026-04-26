@@ -17,6 +17,7 @@
 - X / SNS POST / X API call も禁止(本 repo の Codex は WP write までで止まる、X 系は別 lane = PUB-005)
 - `.git/index.lock` 衝突時は plumbing 3 段 fallback(`git write-tree` / `git commit-tree` / `git update-ref`)
 - 本 repo の Codex 2 lane(A / B)分担は 102 board の `lane` 列で確認
+- **Ticket archive rule**: When a ticket status changes, move its doc to the matching folder in the same commit: `doc/active/`, `doc/review/`, `doc/blocked/`, or `doc/archived/YYYY-MM/`. Keep 102 board and parent runbooks in `doc/` root. Do not leave CLOSED tickets in `doc/` root. Do not use `git add -A`.
 
 > Claude Code 用設計書。PDF「サイトリニューアル要件定義書兼設計書 v1.0 MVP」(2026-04-08) の内容をエージェントが読める形式に変換。
 

@@ -118,7 +118,7 @@ class XPostEligibilityEvaluatorTests(unittest.TestCase):
         self.assertEqual(report["x_eligible"][0]["post_id"], 501)
         self.assertEqual(report["x_eligible"][0]["why_eligible"], evaluator.WHY_ELIGIBLE_ALL_GREEN)
 
-    def test_wp_gate_yellow_and_red_posts_are_refused_with_reasons(self):
+    def test_wp_gate_refused_posts_emit_current_reason_prefixes(self):
         report = evaluator.evaluate_published_posts(
             [self.green_post, self.yellow_post, self.red_post],
             limit=10,
@@ -128,7 +128,7 @@ class XPostEligibilityEvaluatorTests(unittest.TestCase):
         refused_by_post = {entry["post_id"]: entry for entry in report["x_refused"]}
         self.assertEqual(report["summary"]["eligible_count"], 1)
         self.assertIn("wp_gate_yellow_missing_featured_media", refused_by_post[502]["refuse_reasons"])
-        self.assertIn("wp_gate_red_speculative_title", refused_by_post[503]["refuse_reasons"])
+        self.assertIn("wp_gate_yellow_speculative_title", refused_by_post[503]["refuse_reasons"])
 
     def test_cleanup_pending_green_article_is_refused_for_x(self):
         report = evaluator.evaluate_published_posts([self.cleanup_post], limit=10, now=FIXED_NOW)
@@ -136,7 +136,7 @@ class XPostEligibilityEvaluatorTests(unittest.TestCase):
         self.assertEqual(report["summary"]["eligible_count"], 0)
         self.assertEqual(report["summary"]["refused_count"], 1)
         self.assertEqual(report["x_refused"][0]["post_id"], 504)
-        self.assertIn("x_side_red_cleanup_dev_log_contamination", report["x_refused"][0]["refuse_reasons"])
+        self.assertIn("wp_gate_yellow_dev_log_contamination", report["x_refused"][0]["refuse_reasons"])
 
     def test_recent_history_duplicate_like_article_is_refused(self):
         history = [

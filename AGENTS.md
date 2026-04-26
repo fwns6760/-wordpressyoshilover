@@ -6,6 +6,25 @@
 > 現在の正しい役割分担は **Codex = 実装 / テスト / 必要時 deploy**、**Claude Code = 監査 / queue / 起票 / read-only 観測** である。
 > **runtime trigger の親は役割文ではなく `automation.toml` / scheduler 定義で確認する。**
 
+## 2026-04-26 PM GCP Cloud Run Job 移行 方針 lock(最優先)
+
+**正本**: `/home/fwns6/code/baseballwordpress/AGENTS.md` § 7.5 / `/home/fwns6/code/baseballwordpress/docs/handoff/session_logs/2026-04-26_pm_gcp_migration_policy_lock.md`
+
+要点:
+
+- WSL cron / Codex Desktop 修復続行は **終了**、GCP Cloud Run Job 起点運用へ正式移行
+- 本線 = Gemini Flash、shadow = Codex CLI(ChatGPT Pro auth.json、parallelism=1、WP write 禁止)、fallback = OpenAI API key
+- Codex 認証 = ローカル `~/.codex/auth.json` を Secret Manager `codex-auth-json` 経由
+- 採用 ticket chain: 168 / 173 / 169 / 170 / 171 / 172 / 174 / 175(168/173/169 着地済)
+- 本 repo の WSL cron 4 lane(042 / PUB-004-C / 095 / gemini_audit)は GCP 同 lane 安定後に各々 disable、**新規 WSL cron 追加禁止**
+
+絶対禁止:
+
+- `auth.json` の中身を chat / log / commit / mail に出す
+- Codex 並列実行(parallelism=1 lock)
+- Codex shadow → WP write
+- PC cron / WSL cron 本線復活
+
 ## 実装 Codex の運用ルール(2026-04-26 lock)
 
 - **実装前に `doc/102-ticket-index-and-priority-board.md` を確認する**(現行 dispatch board)

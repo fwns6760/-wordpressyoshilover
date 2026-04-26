@@ -7,15 +7,61 @@
 > 内容が競合したら **baseballwordpress 側を優先** してください。
 > **runtime trigger の親は役割文ではなく `automation.toml` / scheduler 定義で確認** してください。
 
-## 現行作業キューの正本(2026-04-26 lock)
+## 2026-04-26 PM GCP Cloud Run Job 移行 方針 lock(最優先)
 
-- **現行作業キューの正本 = `doc/102-ticket-index-and-priority-board.md`**(本 repo dispatch board)
-- Claude Code は新規作業判断前に **必ず 102 を見る**(priority / status / owner / lane / ready_for / blocked_by)
-- Codex A / Codex B へ fire する時は **102 の priority / lane / ready_for / blocked_by に従う**
-- 102 と個別 ticket doc が矛盾する場合:
-  - **実行順 / status / owner は 102 を優先**
+**正本**: `/home/fwns6/code/baseballwordpress/AGENTS.md` § 7.5 / `/home/fwns6/code/baseballwordpress/CLAUDE.md` GCP migration section / `/home/fwns6/code/baseballwordpress/docs/handoff/session_logs/2026-04-26_pm_gcp_migration_policy_lock.md`
+
+要点:
+
+- WSL cron / Codex Desktop 修復続行は **終了**、GCP Cloud Run Job 起点運用へ正式移行
+- 本線 = Gemini Flash、shadow = Codex CLI(ChatGPT Pro auth.json、parallelism=1、WP write 禁止)、fallback = OpenAI API key
+- 次セッションは AGENTS.md / CLAUDE.md / 上記 session log / `doc/active/assignments.md` / `doc/active/155-gcp-cron-migration.md` を読んでから着手
+- 採用 ticket chain: 168 / 173 / 169 / 170 / 171 / 172 / 174 / 175(168/173/169 着地済、170 in flight)
+- 本 repo の WSL cron 4 lane(042 / PUB-004-C / 095 / gemini_audit)は GCP 同 lane 安定後に各々 disable、**新規 WSL cron 追加禁止**
+
+絶対禁止:
+
+- `auth.json` の中身を chat / log / commit / mail に出す
+- Codex 並列実行(parallelism=1 lock)
+- Codex shadow → WP write
+- PC cron / WSL cron 本線復活
+
+## 子repo wordpressyoshilover のチケット運用(2026-04-26 PM lock)
+
+- **詳細boardの正本 = `/home/fwns6/code/wordpressyoshilover/doc/README.md`**
+  - 旧 `102-ticket-index-and-priority-board.md`
+  - priority / status / owner / lane / ready_for / blocked_by / doc_path の正本
+- **見える化dashboard = `/home/fwns6/code/wordpressyoshilover/doc/active/assignments.md`**
+  - user が 1 page で「誰が何をやる / 何待ち / 何が完了」を把握するための一覧
+  - ticket fire / accept / status変更 / commit のたびに更新する
+- Claude Code は新規作業判断前に **必ず README と assignments を見る**
+- Codex A / Codex B へ fire する時は **README の priority / lane / ready_for / blocked_by に従う**
+- README と個別 ticket doc が矛盾する場合:
+  - **実行順 / status / owner / lane / blocked state / doc_path は README を優先**
   - 仕様詳細(scope / acceptance / 不可触 等)は **個別 ticket doc を優先**
 - 採番方針: 102 以降は **数字連番**(`<number>-<topic>.md`)、既存 alias(PUB-002-E / PUB-004-D / SPEECH-001 等)は維持
+
+### ticket folder policy
+
+- `doc/active/`
+  - 今動いている、または近いうち動かすもの
+  - READY / IN_FLIGHT / REVIEW_NEEDED
+- `doc/waiting/`
+  - 今は止めているもの
+  - user待ち / 外部待ち / 依存待ち / parked
+  - BLOCKED_USER / BLOCKED_EXTERNAL / PARKED
+- `doc/done/YYYY-MM/`
+  - 終了済み
+  - CLOSED
+
+### ticket status変更時の必須更新
+
+- statusを変えたら、同じcommitで ticket doc を該当フォルダへ移動する
+- statusを変えたら、同じcommitで README の `doc_path` を更新する
+- statusを変えたら、同じcommitまたは直後のdoc-only commitで `assignments.md` を更新する
+- CLOSED ticket を `doc/active/` や `doc/waiting/` に残さない
+- 優先順位はフォルダ名ではなく、README の `priority` / `next_action` で判断する
+- `git add -A`は禁止。移動・更新したpathだけ明示stageする
 
 このリポジトリで Claude Code セッションを開始したら、**まず正本の役割文書を先に読む**。
 

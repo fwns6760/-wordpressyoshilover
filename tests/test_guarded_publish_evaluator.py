@@ -439,13 +439,13 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         stale_entry = self._find_entry(report, 1541)
         fresh_entry = self._find_entry(report, 1542)
         self.assertIn("lineup_duplicate_excessive", stale_entry["hard_stop_flags"])
-        self.assertIn("expired_lineup_or_pregame", stale_entry["repairable_flags"])
+        self.assertIn("expired_lineup_or_pregame", stale_entry["hard_stop_flags"])
         self.assertEqual(stale_entry["freshness_class"], "expired")
         self.assertIn("lineup_duplicate_excessive", fresh_entry["hard_stop_flags"])
         self.assertNotIn("expired_lineup_or_pregame", fresh_entry["hard_stop_flags"])
         self.assertEqual(fresh_entry["freshness_class"], "fresh")
 
-    def test_stale_lineup_6h_over_is_repairable(self):
+    def test_stale_lineup_6h_over_is_hard_stop(self):
         stale_lineup = _post(
             201,
             "巨人スタメン 1番丸 4番岡本",
@@ -461,19 +461,13 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         report = self._evaluate([stale_lineup])
 
         entry = self._find_entry(report, 201)
-        self.assertEqual(entry["category"], "repairable")
-        self.assertTrue(entry["publishable"])
-        self.assertTrue(entry["cleanup_required"])
+        self.assertFalse(entry["publishable"])
         self.assertEqual(entry["freshness_class"], "expired")
         self.assertEqual(entry["content_date"], "2026-04-25")
-        self.assertEqual(
-            entry["reasons"],
-            [{"flag": "expired_lineup_or_pregame", "category": "repairable"}],
-        )
-        self.assertIn("expired_lineup_or_pregame", entry["repairable_flags"])
+        self.assertIn("expired_lineup_or_pregame", entry["hard_stop_flags"])
         self.assertIn("threshold=6h", entry["freshness_reason"])
 
-    def test_stale_postgame_24h_over_is_repairable(self):
+    def test_stale_postgame_24h_over_is_hard_stop(self):
         stale_postgame = _post(
             202,
             "巨人が阪神に3-2で勝利",
@@ -489,17 +483,11 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         report = self._evaluate([stale_postgame])
 
         entry = self._find_entry(report, 202)
-        self.assertEqual(entry["category"], "repairable")
-        self.assertTrue(entry["publishable"])
-        self.assertTrue(entry["cleanup_required"])
+        self.assertFalse(entry["publishable"])
         self.assertEqual(entry["freshness_class"], "expired")
-        self.assertEqual(
-            entry["reasons"],
-            [{"flag": "expired_game_context", "category": "repairable"}],
-        )
-        self.assertIn("expired_game_context", entry["repairable_flags"])
+        self.assertIn("expired_game_context", entry["hard_stop_flags"])
 
-    def test_stale_default_24h_over_is_repairable(self):
+    def test_stale_default_24h_over_is_hard_stop(self):
         stale_default = _post(
             203,
             "巨人トピック整理",
@@ -514,16 +502,9 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         report = self._evaluate([stale_default])
 
         entry = self._find_entry(report, 203)
-        self.assertEqual(entry["category"], "repairable")
-        self.assertTrue(entry["publishable"])
-        self.assertTrue(entry["cleanup_required"])
+        self.assertFalse(entry["publishable"])
         self.assertEqual(entry["freshness_class"], "stale")
-        self.assertIn("subtype_unresolved", entry["repairable_flags"])
-        self.assertIn("stale_for_breaking_board", entry["repairable_flags"])
-        self.assertIn(
-            {"flag": "stale_for_breaking_board", "category": "repairable"},
-            entry["reasons"],
-        )
+        self.assertIn("stale_for_breaking_board", entry["hard_stop_flags"])
 
     def test_comment_48h_within_is_publishable(self):
         fresh_comment = _post(
@@ -546,7 +527,7 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         self.assertEqual(entry["content_date"], "2026-04-23")
         self.assertEqual(entry["hard_stop_flags"], [])
 
-    def test_comment_48h_over_is_repairable(self):
+    def test_comment_48h_over_is_hard_stop(self):
         stale_comment = _post(
             205,
             "阿部監督「状態は上がってきた」 打線の手応えを語る",
@@ -562,15 +543,9 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         report = self._evaluate([stale_comment])
 
         entry = self._find_entry(report, 205)
-        self.assertEqual(entry["category"], "repairable")
-        self.assertTrue(entry["publishable"])
-        self.assertTrue(entry["cleanup_required"])
+        self.assertFalse(entry["publishable"])
         self.assertEqual(entry["freshness_class"], "stale")
-        self.assertEqual(
-            entry["reasons"],
-            [{"flag": "stale_for_breaking_board", "category": "repairable"}],
-        )
-        self.assertIn("stale_for_breaking_board", entry["repairable_flags"])
+        self.assertIn("stale_for_breaking_board", entry["hard_stop_flags"])
 
     def test_modified_is_not_used_for_freshness(self):
         old_postgame = _post(
@@ -589,10 +564,8 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
 
         entry = self._find_entry(report, 206)
         self.assertEqual(entry["content_date"], "2026-04-21")
-        self.assertEqual(entry["category"], "repairable")
-        self.assertTrue(entry["publishable"])
-        self.assertTrue(entry["cleanup_required"])
-        self.assertIn("expired_game_context", entry["repairable_flags"])
+        self.assertFalse(entry["publishable"])
+        self.assertIn("expired_game_context", entry["hard_stop_flags"])
         self.assertIn("detected_by=created_at", entry["freshness_reason"])
 
     def test_source_date_takes_priority_over_created_at(self):
@@ -628,7 +601,7 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
                     meta={"article_subtype": "comment"},
                 ),
                 "2026-04-23",
-                True,
+                False,
                 "stale",
             ),
         ]

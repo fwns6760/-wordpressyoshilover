@@ -43,21 +43,24 @@ If this file conflicts with an individual ticket doc:
 - `CLOSED`: done and accepted
 - `PARKED`: intentionally deferred
 
-## ticket folder policy
+## ticket folder policy(2026-04-26 PM 第 2 次 simplification)
 
-Ticket archive rule:
-When a ticket status changes, move its doc to the matching folder in the same commit:
-`doc/active/`, `doc/review/`, `doc/blocked/`, or `doc/archived/YYYY-MM/`.
-Keep only the 102 board in `doc/` root.
-Do not leave CLOSED tickets in `doc/` root.
-Do not use `git add -A`.
+```
+doc/
+├── active/
+│   ├── now/    P0 = 今 fire 中 / orchestration 必須(102 board / 105 ramp)
+│   ├── next/   P1 = 次着手(123 readiness / 124 cleanup apply 等)
+│   └── later/  P1.5+ = 後で(125 AdSense / 128 SNS / reference contracts)
+└── archived/YYYY-MM/  CLOSED + BLOCKED_USER + PARKED 全部統合
+```
 
-- READY / IN_FLIGHT -> `doc/active/`
-- REVIEW_NEEDED -> `doc/review/`
-- BLOCKED_USER / BLOCKED_EXTERNAL / PARKED -> `doc/blocked/`
-- CLOSED -> `doc/archived/YYYY-MM/`
-- Only the 102 board stays in `doc/` root.
-- Any status change must update `doc_path` in the same commit.
+- **doc/ root は空(.md ファイルなし)**。102 board 自身も `doc/active/now/` に配置
+- IN_FLIGHT / 高優先 → `doc/active/now/`
+- READY 次着手 → `doc/active/next/`
+- READY 後回し or reference → `doc/active/later/`
+- CLOSED / BLOCKED_USER / PARKED → `doc/archived/YYYY-MM/`(status 詳細は 102 board row)
+- status 変更時 doc_path も同 commit で更新
+- `git add -A` 禁止、明示 path stage
 
 ## lane definitions
 

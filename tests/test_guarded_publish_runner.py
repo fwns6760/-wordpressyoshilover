@@ -864,6 +864,38 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         self.assertEqual(wp.update_post_status_calls, [(311, "publish")])
         self.assertEqual(cleanup_row["cleanups"][0]["type"], "ai_tone_heading_or_lead")
 
+    def test_freshness_repairable_no_op_publishes_and_logs_observation(self):
+        body_html = (
+            "<p>巨人が阪神に3-2で勝利した。終盤の継投まで整理され、試合の核も十分に追える。</p>"
+            f"<p>{LONG_EXTRA}</p>"
+            "<p>参照元: スポーツ報知 https://example.com/source</p>"
+        )
+        post = _post(312, "巨人が阪神に3-2で勝利", body_html)
+        report = _report(yellow=[_repairable_entry(312, post["title"]["raw"], "stale_for_breaking_board")])
+        wp = FakeWPClient({312: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cleanup_log_path = Path(tmpdir) / "cleanup.jsonl"
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=cleanup_log_path,
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+            cleanup_row = json.loads(cleanup_log_path.read_text(encoding="utf-8").strip())
+
+        self.assertEqual(result["executed"][0]["status"], "sent")
+        self.assertEqual(wp.update_post_fields_calls, [])
+        self.assertEqual(wp.update_post_status_calls, [(312, "publish")])
+        self.assertEqual(cleanup_row["applied_flags"], ["stale_for_breaking_board"])
+        self.assertEqual(cleanup_row["cleanups"][0]["type"], "stale_for_breaking_board")
+        self.assertEqual(cleanup_row["cleanups"][0]["reason"], "warning_only:freshness_audit_only_no_op")
+
     def test_repairable_post_cleanup_failed_post_condition_held_prose_short(self):
         post = _post(
             302,

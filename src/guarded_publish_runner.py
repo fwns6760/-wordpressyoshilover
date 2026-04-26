@@ -816,6 +816,16 @@ def _build_plan(
             cleanup_actions.extend(legacy_actions)
             continue
 
+        if action_name == "freshness_audit_only_no_op":
+            cleaned_html, freshness_actions = _warning_only_flag_cleanup(
+                flag,
+                post,
+                cleaned_html,
+                reason="warning_only:freshness_audit_only_no_op",
+            )
+            cleanup_actions.extend(freshness_actions)
+            continue
+
     cleanup_check = "not_required"
     cleanup_success: bool | None = None
     if cleanup_required:

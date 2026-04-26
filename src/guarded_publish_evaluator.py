@@ -27,9 +27,6 @@ HARD_STOP_FLAGS = frozenset(
         "lineup_no_hochi_source",
         "lineup_prefix_misuse",
         "dev_log_contamination_scattered",
-        "stale_for_breaking_board",
-        "expired_lineup_or_pregame",
-        "expired_game_context",
     }
 )
 REPAIRABLE_FLAGS = frozenset(
@@ -47,6 +44,9 @@ REPAIRABLE_FLAGS = frozenset(
         "missing_featured_media",
         "title_body_mismatch_partial",
         "numerical_anomaly_low_severity",
+        "stale_for_breaking_board",
+        "expired_lineup_or_pregame",
+        "expired_game_context",
         "injury_death",
         "lineup_duplicate_excessive",
     }
@@ -1012,7 +1012,9 @@ def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -
     freshness = freshness_check(raw_post, record, now=now)
     enforce_freshness = str(raw_post.get("status") or "").strip().lower() != "publish"
     if enforce_freshness and freshness["hard_stop_flag"] is not None:
-        _append_reason(reasons, flag=str(freshness["hard_stop_flag"]), category="hard_stop")
+        freshness_flag = str(freshness["hard_stop_flag"])
+        freshness_category = "repairable" if freshness_flag in REPAIRABLE_FLAGS else "hard_stop"
+        _append_reason(reasons, flag=freshness_flag, category=freshness_category)
 
     hard_stop_flags = _reason_flags(reasons, "hard_stop")
     repairable_flags = _reason_flags(reasons, "repairable")

@@ -255,15 +255,20 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         self.assertIn("weak_source_display", entry["repairable_flags"])
         self.assertIn("missing_primary_source", entry["yellow_reasons"])
 
-    def test_lineup_duplicate_absorbed_by_hochi_keeps_legacy_red_flag(self):
+    def test_lineup_duplicate_absorbed_by_hochi_keeps_strict_metadata_but_all_hold(self):
         report = self._evaluate([self.lineup_hochi_post, self.lineup_other_post])
 
-        self.assertEqual(report["summary"]["green_count"], 1)
-        self.assertEqual(report["summary"]["red_count"], 1)
-        red_entry = report["red"][0]
-        self.assertIn("lineup_duplicate_excessive", red_entry["hard_stop_flags"])
-        self.assertIn("lineup_duplicate_absorbed_by_hochi", red_entry["red_flags"])
-        self.assertEqual(red_entry["representative_post_id"], 109)
+        self.assertEqual(report["summary"]["green_count"], 0)
+        self.assertEqual(report["summary"]["red_count"], 2)
+        self.assertEqual(report["summary"]["lineup_representative_count"], 1)
+        self.assertEqual(report["summary"]["lineup_duplicate_absorbed_count"], 1)
+        representative_entry = self._find_entry(report, 109)
+        absorbed_entry = self._find_entry(report, 110)
+        self.assertIn("lineup_duplicate_excessive", representative_entry["hard_stop_flags"])
+        self.assertIn("exact_title_match", representative_entry["duplicate_title_match_types"])
+        self.assertIn("lineup_duplicate_excessive", absorbed_entry["hard_stop_flags"])
+        self.assertIn("lineup_duplicate_absorbed_by_hochi", absorbed_entry["red_flags"])
+        self.assertEqual(absorbed_entry["representative_post_id"], 109)
 
     def test_lineup_duplicate_3_same_title_all_hard_stop(self):
         posts = [

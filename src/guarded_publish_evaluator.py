@@ -1108,7 +1108,10 @@ def _duplicate_guard_game_id(raw_post: dict[str, Any]) -> str:
 def _title_duplicate_cluster_requires_hard_stop(candidates: list[dict[str, Any]]) -> bool:
     game_ids = {str(candidate.get("game_id") or "").strip() for candidate in candidates if str(candidate.get("game_id") or "").strip()}
     missing_game_id = any(not str(candidate.get("game_id") or "").strip() for candidate in candidates)
-    return missing_game_id or len(game_ids) > 1
+    if missing_game_id or len(game_ids) > 1:
+        return True
+    subtypes = {str(candidate.get("subtype") or "").strip().lower() for candidate in candidates}
+    return subtypes != {"lineup_notice"}
 
 
 def _append_title_duplicate_matches(

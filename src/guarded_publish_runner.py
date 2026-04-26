@@ -10,6 +10,7 @@ from typing import Any, Sequence
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
+from src import guarded_publish_evaluator as publish_evaluator
 from src.pre_publish_fact_check import extractor
 from src.title_body_nucleus_validator import validate_title_body_nucleus
 from src.wp_client import WPClient
@@ -35,6 +36,14 @@ H3_RE = re.compile(r"(?is)<h3\b[^>]*>(.*?)</h3>")
 PRE_BLOCK_RE = re.compile(r"(?is)<pre\b[^>]*>(.*?)</pre>")
 CODE_BLOCK_RE = re.compile(r"(?is)<code\b[^>]*>(.*?)</code>")
 PARAGRAPH_BLOCK_RE = re.compile(r"(?is)<(p|li)\b[^>]*>.*?</\1>")
+HTML_BLOCK_RE = re.compile(r"(?is)<(?P<tag>p|h[1-6]|pre|blockquote|ul|ol|div)\b[^>]*>.*?</(?P=tag)>")
+RELATED_POSTS_BLOCK_RE = re.compile(
+    r'(?is)<div\b[^>]*class=["\'][^"\']*yoshilover-related-posts[^"\']*["\'][^>]*>.*?</div>'
+)
+SITE_COMPONENT_LABEL_TAG_RE = re.compile(
+    r"(?is)<(?P<tag>p|div|h[1-6])\b[^>]*>\s*(?P<label>【関連記事】|💬\s*[^<]{0,120})\s*</(?P=tag)>"
+)
+LIGHT_STRUCTURE_BREAK_RE = re.compile(r"(?is)<p\b[^>]*>\s*(?:&nbsp;|\s|<br\s*/?>)*</p>|(?:<br\s*/?>\s*){2,}")
 HEADING_SENTENCE_END_RE = re.compile(
     r"(した|している|していた|と語った|と話した|を確認した|を記録した|と発表した|となった|を達成した)$"
 )
@@ -66,11 +75,60 @@ class BackupError(RuntimeError):
     pass
 
 
+def _cleanup_action_payload(action_type: str, before: Any, after: Any, *, reason: str) -> dict[str, str]:
+    before_text = str(before or "")
+    after_text = str(after or "")
+    return {
+        "type": action_type,
+        "before": _collapse_snippet(before_text),
+        "after": _collapse_snippet(after_text),
+        "reason": reason,
+        "preview_diff": _preview_diff(before_text, after_text),
+    }
+
+
 def _load_report(path: str | Path) -> dict[str, Any]:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError("guarded publish input must be a JSON object")
     return payload
+
+
+def _load_verdict_rows(path: str | Path) -> list[dict[str, Any]]:
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        raise ValueError("verdict JSON must be a list")
+    rows: list[dict[str, Any]] = []
+    seen_post_ids: set[int] = set()
+    for index, item in enumerate(payload, start=1):
+        if not isinstance(item, dict):
+            raise ValueError(f"verdict row must be an object: {path}:{index}")
+        try:
+            post_id = int(item["post_id"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"verdict row missing valid post_id: {path}:{index}") from exc
+        verdict = str(item.get("verdict") or "").strip().lower()
+        if verdict not in {"ok", "ng"}:
+            raise ValueError(f"verdict row must use ok|ng: {path}:{index}")
+        if post_id in seen_post_ids:
+            raise ValueError(f"duplicate verdict post_id={post_id}: {path}:{index}")
+        raw_reasons = item.get("reasons")
+        if raw_reasons is None:
+            reasons: list[str] = []
+        elif isinstance(raw_reasons, list):
+            reasons = [str(reason).strip() for reason in raw_reasons if str(reason).strip()]
+        else:
+            reason_text = str(raw_reasons).strip()
+            reasons = [reason_text] if reason_text else []
+        rows.append(
+            {
+                "post_id": post_id,
+                "verdict": verdict,
+                "reasons": reasons,
+            }
+        )
+        seen_post_ids.add(post_id)
+    return rows
 
 
 def _path(value: str | Path) -> Path:
@@ -360,6 +418,260 @@ def _remove_dev_log_contamination(body_html: str) -> tuple[str, list[dict[str, s
     return cleaned, actions
 
 
+def _append_weak_source_display(body_html: str, post: dict[str, Any]) -> tuple[str, list[dict[str, str]]]:
+    record = _post_record_with_content(post, body_html)
+    source_urls = [str(url).strip() for url in (record.get("source_urls") or []) if str(url).strip()]
+    if not source_urls:
+        raise CandidateRefusedError("cleanup_ambiguous", "weak_source_display_missing_source_url")
+
+    source_url = source_urls[0]
+    appended_line = f"出典: {source_url}"
+    body_text = _strip_html(body_html)
+    if appended_line in body_text:
+        return body_html, [
+            _cleanup_action_payload(
+                "weak_source_display",
+                appended_line,
+                appended_line,
+                reason="warning_only:explicit_source_anchor_already_present",
+            )
+        ]
+
+    anchor_html = html.escape(source_url, quote=True)
+    appended_html = f'<p>出典: <a href="{anchor_html}">{html.escape(source_url)}</a></p>'
+    before = body_html.rstrip()
+    joiner = "\n" if before else ""
+    cleaned = f"{before}{joiner}{appended_html}"
+    return cleaned, [
+        _cleanup_action_payload(
+            "weak_source_display",
+            body_html[-200:],
+            appended_html,
+            reason="append explicit source anchor using first extracted source URL",
+        )
+    ]
+
+
+def _remove_light_structure_breaks(body_html: str) -> tuple[str, list[dict[str, str]]]:
+    cleaned = re.sub(r"(?is)<p\b[^>]*>\s*(?:&nbsp;|\s|<br\s*/?>)*</p>", "", body_html or "")
+    cleaned = re.sub(r"(?is)(?:<br\s*/?>\s*){2,}", "<br />", cleaned)
+    if cleaned == (body_html or ""):
+        return body_html, [
+            _cleanup_action_payload(
+                "light_structure_break",
+                _collapse_snippet(body_html),
+                _collapse_snippet(body_html),
+                reason="warning_only:structure_break_already_normalized",
+            )
+        ]
+    return cleaned, [
+        _cleanup_action_payload(
+            "light_structure_break",
+            body_html,
+            cleaned,
+            reason="remove empty paragraphs and collapse repeated br tags",
+        )
+    ]
+
+
+def _remove_site_component_mixed_into_body(body_html: str) -> tuple[str, list[dict[str, str]]]:
+    actions: list[dict[str, str]] = []
+    cleaned = body_html or ""
+
+    def remove_related(match: re.Match[str]) -> str:
+        raw_html = match.group(0)
+        actions.append(
+            _cleanup_action_payload(
+                "site_component_mixed_into_body",
+                raw_html,
+                "(deleted)",
+                reason="remove related-posts component block",
+            )
+        )
+        return ""
+
+    cleaned = RELATED_POSTS_BLOCK_RE.sub(remove_related, cleaned)
+
+    def remove_label(match: re.Match[str]) -> str:
+        raw_html = match.group(0)
+        actions.append(
+            _cleanup_action_payload(
+                "site_component_mixed_into_body",
+                raw_html,
+                "(deleted)",
+                reason="remove standalone site component label from article body",
+            )
+        )
+        return ""
+
+    cleaned = SITE_COMPONENT_LABEL_TAG_RE.sub(remove_label, cleaned)
+    if actions:
+        return cleaned, actions
+    return body_html, [
+        _cleanup_action_payload(
+            "site_component_mixed_into_body",
+            _collapse_snippet(body_html),
+            _collapse_snippet(body_html),
+            reason="warning_only:site_component_label_not_found_after_prior_cleanup",
+        )
+    ]
+
+
+def _remove_weird_heading_labels(body_html: str) -> tuple[str, list[dict[str, str]]]:
+    hits = publish_evaluator._weird_heading_labels(body_html)
+    if not hits:
+        return body_html, [
+            _cleanup_action_payload(
+                "weird_heading_label",
+                _collapse_snippet(body_html),
+                _collapse_snippet(body_html),
+                reason="warning_only:weird_heading_not_found_after_prior_cleanup",
+            )
+        ]
+
+    remaining_by_heading: dict[str, int] = {}
+    for hit in hits:
+        heading = str(hit.get("heading") or "")
+        remaining_by_heading[heading] = remaining_by_heading.get(heading, 0) + 1
+
+    actions: list[dict[str, str]] = []
+
+    def repl(match: re.Match[str]) -> str:
+        heading_text = _strip_html(match.group(1))
+        remaining = remaining_by_heading.get(heading_text, 0)
+        if remaining <= 0:
+            return match.group(0)
+        remaining_by_heading[heading_text] = remaining - 1
+        raw_html = match.group(0)
+        actions.append(
+            _cleanup_action_payload(
+                "weird_heading_label",
+                raw_html,
+                "(deleted)",
+                reason="remove mismatched helper heading label",
+            )
+        )
+        return ""
+
+    cleaned = H3_RE.sub(repl, body_html or "")
+    if not actions:
+        raise CandidateRefusedError("cleanup_ambiguous", "weird_heading_label_missing")
+    return cleaned, actions
+
+
+def _warning_only_ai_tone_cleanup(post: dict[str, Any], body_html: str) -> tuple[str, list[dict[str, str]]]:
+    record = _post_record_with_content(post, body_html)
+    lead = "\n".join(line.strip() for line in str(record.get("body_text") or "").splitlines()[:3] if line.strip())
+    preview = f"{record.get('title') or ''} // {lead}".strip(" /")
+    return body_html, [
+        _cleanup_action_payload(
+            "ai_tone_heading_or_lead",
+            preview,
+            preview,
+            reason="warning_only:no_safe_regex_cleanup_in_141",
+        )
+    ]
+
+
+def _warning_only_flag_cleanup(
+    flag: str,
+    post: dict[str, Any],
+    body_html: str,
+    *,
+    reason: str,
+) -> tuple[str, list[dict[str, str]]]:
+    record = _post_record_with_content(post, body_html)
+    preview = f"{record.get('title') or ''} // {str(record.get('body_text') or '').splitlines()[0] if str(record.get('body_text') or '').splitlines() else ''}".strip(
+        " /"
+    )
+    return body_html, [_cleanup_action_payload(flag, preview, preview, reason=reason)]
+
+
+def _merge_meta(post: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
+    merged = dict((post or {}).get("meta") or {})
+    merged.update(updates)
+    return merged
+
+
+def _resolve_subtype_cleanup(post: dict[str, Any], body_html: str) -> tuple[str, list[dict[str, str]], dict[str, Any]]:
+    title = str(extractor.extract_post_record(post).get("title") or "")
+    inferred = str(extractor.infer_subtype(title) or "").strip().lower()
+    meta = dict((post or {}).get("meta") or {})
+    existing = str(meta.get("article_subtype") or (post or {}).get("article_subtype") or "").strip().lower()
+    resolved = inferred if inferred and inferred != "other" else existing if existing and existing != "other" else ""
+    if not resolved:
+        raise CandidateRefusedError("cleanup_ambiguous", "subtype_unresolved_no_resolution")
+    action = _cleanup_action_payload(
+        "subtype_unresolved",
+        existing or "(empty)",
+        resolved,
+        reason="set meta.article_subtype from extractor heuristic",
+    )
+    return body_html, [action], {"article_subtype": resolved}
+
+
+def _is_source_like_block(block_html: str) -> bool:
+    block_text = _strip_html(block_html)
+    return bool(SOURCE_LABEL_RE.search(block_text) or SOURCE_URL_RE.fullmatch(block_text))
+
+
+def _compress_long_body(body_html: str, post: dict[str, Any]) -> tuple[str, list[dict[str, str]]]:
+    record = _post_record_with_content(post, body_html)
+    prose_chars = _prose_char_count(str(record.get("body_text") or ""))
+    if prose_chars <= 5000:
+        return body_html, [
+            _cleanup_action_payload(
+                "long_body",
+                f"prose_chars={prose_chars}",
+                f"prose_chars={prose_chars}",
+                reason="warning_only:below_5000_safe_trim_threshold",
+            )
+        ]
+
+    blocks = [match.group(0) for match in HTML_BLOCK_RE.finditer(body_html or "")]
+    if not blocks:
+        raise CandidateRefusedError("cleanup_ambiguous", "long_body_no_html_blocks")
+
+    source_blocks = [block for block in blocks if _is_source_like_block(block)]
+    prose_blocks = [block for block in blocks if block not in source_blocks]
+    if len(prose_blocks) <= 1:
+        raise CandidateRefusedError("cleanup_ambiguous", "long_body_not_enough_blocks")
+
+    keep_target = max(100, int(prose_chars * 0.7))
+    kept_blocks: list[str] = []
+    kept_chars = 0
+    for index, block in enumerate(prose_blocks):
+        block_chars = len(_strip_html(block))
+        if kept_blocks and kept_chars >= keep_target:
+            break
+        kept_blocks.append(block)
+        kept_chars += block_chars
+        if index == 0 and kept_chars >= keep_target:
+            break
+
+    if len(kept_blocks) >= len(prose_blocks):
+        return body_html, [
+            _cleanup_action_payload(
+                "long_body",
+                f"prose_chars={prose_chars}",
+                f"prose_chars={prose_chars}",
+                reason="warning_only:no_trimmable_tail_detected",
+            )
+        ]
+
+    removed_blocks = prose_blocks[len(kept_blocks) :]
+    cleaned = "".join(kept_blocks + source_blocks)
+    removed_preview = _strip_html("".join(removed_blocks))
+    return cleaned, [
+        _cleanup_action_payload(
+            "long_body",
+            removed_preview,
+            "(trimmed trailing 30% prose tail)",
+            reason=f"trim trailing prose tail above 5000 chars (before={prose_chars}, kept~{kept_chars})",
+        )
+    ]
+
+
 def _preflight_post(post: dict[str, Any]) -> tuple[str, str]:
     record = extractor.extract_post_record(post)
     status = str((post or {}).get("status") or "").strip().lower()
@@ -374,6 +686,23 @@ def _preflight_post(post: dict[str, Any]) -> tuple[str, str]:
     return title, body_html
 
 
+REPAIRABLE_FLAG_ACTION_MAP = {
+    "heading_sentence_as_h3": "h3_to_p_demotion",
+    "weird_heading_label": "remove_weird_heading_label",
+    "dev_log_contamination": "remove_dev_log_block",
+    "site_component_mixed_into_body": "remove_site_component_block",
+    "ai_tone_heading_or_lead": "warning_only_ai_tone",
+    "light_structure_break": "normalize_structure_break",
+    "weak_source_display": "append_source_anchor",
+    "subtype_unresolved": "set_meta_article_subtype",
+    "long_body": "trim_trailing_prose_tail",
+    "missing_primary_source": "warning_only_missing_primary_source",
+    "missing_featured_media": "warning_only_missing_featured_media",
+    "title_body_mismatch_partial": "warning_only_partial_mismatch",
+    "numerical_anomaly_low_severity": "warning_only_low_severity_numeric",
+}
+
+
 def _build_plan(
     post: dict[str, Any],
     *,
@@ -385,19 +714,102 @@ def _build_plan(
     title, body_html = _preflight_post(post)
     cleaned_html = body_html
     cleanup_actions: list[dict[str, str]] = []
-    cleanup_types = [str(value) for value in ((cleanup_candidate or {}).get("cleanup_types") or [])]
     repairable_flags_list = list(dict.fromkeys(str(value) for value in (repairable_flags or []) if str(value)))
     cleanup_required = bool(repairable_flags_list)
+    meta_updates: dict[str, Any] = {}
 
-    if "heading_sentence_as_h3" in cleanup_types:
-        cleaned_html, heading_actions = _replace_heading_sentence_h3(cleaned_html)
-        if not heading_actions:
-            raise CandidateRefusedError("cleanup_ambiguous", "heading_sentence_as_h3_missing")
-        cleanup_actions.extend(heading_actions)
+    for flag in repairable_flags_list:
+        action_name = REPAIRABLE_FLAG_ACTION_MAP.get(flag)
+        if action_name is None:
+            raise CandidateRefusedError("cleanup_action_unmapped", f"cleanup_action_unmapped:{flag}")
 
-    if "dev_log_contamination" in cleanup_types:
-        cleaned_html, dev_actions = _remove_dev_log_contamination(cleaned_html)
-        cleanup_actions.extend(dev_actions)
+        if flag == "heading_sentence_as_h3":
+            cleaned_html, heading_actions = _replace_heading_sentence_h3(cleaned_html)
+            if not heading_actions:
+                raise CandidateRefusedError("cleanup_ambiguous", "heading_sentence_as_h3_missing")
+            cleanup_actions.extend(heading_actions)
+            continue
+
+        if flag == "weird_heading_label":
+            cleaned_html, weird_actions = _remove_weird_heading_labels(cleaned_html)
+            cleanup_actions.extend(weird_actions)
+            continue
+
+        if flag == "dev_log_contamination":
+            cleaned_html, dev_actions = _remove_dev_log_contamination(cleaned_html)
+            cleanup_actions.extend(dev_actions)
+            continue
+
+        if flag == "site_component_mixed_into_body":
+            cleaned_html, site_actions = _remove_site_component_mixed_into_body(cleaned_html)
+            cleanup_actions.extend(site_actions)
+            continue
+
+        if flag == "ai_tone_heading_or_lead":
+            cleaned_html, ai_actions = _warning_only_ai_tone_cleanup(post, cleaned_html)
+            cleanup_actions.extend(ai_actions)
+            continue
+
+        if flag == "light_structure_break":
+            cleaned_html, structure_actions = _remove_light_structure_breaks(cleaned_html)
+            cleanup_actions.extend(structure_actions)
+            continue
+
+        if flag == "weak_source_display":
+            cleaned_html, source_actions = _append_weak_source_display(cleaned_html, post)
+            cleanup_actions.extend(source_actions)
+            continue
+
+        if flag == "subtype_unresolved":
+            cleaned_html, subtype_actions, subtype_meta_updates = _resolve_subtype_cleanup(post, cleaned_html)
+            cleanup_actions.extend(subtype_actions)
+            meta_updates.update(subtype_meta_updates)
+            continue
+
+        if flag == "long_body":
+            cleaned_html, long_body_actions = _compress_long_body(cleaned_html, post)
+            cleanup_actions.extend(long_body_actions)
+            continue
+
+        if flag == "missing_primary_source":
+            cleaned_html, legacy_actions = _warning_only_flag_cleanup(
+                flag,
+                post,
+                cleaned_html,
+                reason="warning_only:legacy_repairable_missing_primary_source",
+            )
+            cleanup_actions.extend(legacy_actions)
+            continue
+
+        if flag == "missing_featured_media":
+            cleaned_html, legacy_actions = _warning_only_flag_cleanup(
+                flag,
+                post,
+                cleaned_html,
+                reason="warning_only:legacy_repairable_missing_featured_media",
+            )
+            cleanup_actions.extend(legacy_actions)
+            continue
+
+        if flag == "title_body_mismatch_partial":
+            cleaned_html, legacy_actions = _warning_only_flag_cleanup(
+                flag,
+                post,
+                cleaned_html,
+                reason="warning_only:legacy_repairable_title_body_mismatch_partial",
+            )
+            cleanup_actions.extend(legacy_actions)
+            continue
+
+        if flag == "numerical_anomaly_low_severity":
+            cleaned_html, legacy_actions = _warning_only_flag_cleanup(
+                flag,
+                post,
+                cleaned_html,
+                reason="warning_only:legacy_repairable_numerical_anomaly_low_severity",
+            )
+            cleanup_actions.extend(legacy_actions)
+            continue
 
     cleanup_check = "not_required"
     cleanup_success: bool | None = None
@@ -421,6 +833,12 @@ def _build_plan(
         "post_cleanup_check": cleanup_check,
         "cleaned_html": cleaned_html,
         "requires_content_update": cleaned_html != body_html,
+        "meta_updates": dict(meta_updates),
+        "requires_meta_update": bool(meta_updates),
+        "update_fields": {
+            **({"content": cleaned_html} if cleaned_html != body_html else {}),
+            **({"meta": _merge_meta(post, meta_updates)} if meta_updates else {}),
+        },
         "publish_link": str((post or {}).get("link") or ""),
         "post": post,
         "original_html": body_html,
@@ -545,6 +963,61 @@ def _iter_publishable_entries(report: dict[str, Any]) -> list[dict[str, Any]]:
     return entries
 
 
+def _normalize_hold_reason_token(value: Any) -> str:
+    token = re.sub(r"[^\w]+", "_", str(value or "").strip(), flags=re.UNICODE)
+    return token.strip("_").lower()
+
+
+def _codex_review_ng_hold_reason(reasons: Sequence[str]) -> str:
+    if not reasons:
+        return "codex_review_ng"
+    token = _normalize_hold_reason_token(reasons[0])
+    if not token:
+        return "codex_review_ng"
+    return f"codex_review_ng_{token}"
+
+
+def _apply_verdict_filter(
+    entries: Sequence[dict[str, Any]],
+    verdict_path: str | Path,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    verdict_by_post_id = {
+        row["post_id"]: row
+        for row in _load_verdict_rows(verdict_path)
+    }
+    approved: list[dict[str, Any]] = []
+    held: list[dict[str, Any]] = []
+    for entry in entries:
+        post_id = int(entry["post_id"])
+        verdict = verdict_by_post_id.get(post_id)
+        if verdict is None:
+            held.append(
+                {
+                    **entry,
+                    "reason": "codex_review_missing_verdict",
+                    "hold_reason": "codex_review_missing_verdict",
+                    "error": "codex_review_missing_verdict",
+                }
+            )
+            continue
+        if verdict["verdict"] == "ok":
+            approved.append(dict(entry))
+            continue
+        hold_reason = _codex_review_ng_hold_reason(verdict["reasons"])
+        error = "codex_review_ng"
+        if verdict["reasons"]:
+            error = f"{error}:{','.join(verdict['reasons'])}"
+        held.append(
+            {
+                **entry,
+                "reason": "codex_review_ng",
+                "hold_reason": hold_reason,
+                "error": error,
+            }
+        )
+    return approved, held
+
+
 def _iter_red_entries(report: dict[str, Any]) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     for entry in report.get("red", []) or []:
@@ -605,6 +1078,14 @@ def _history_row(
         "cleanup_success": cleanup_success,
         "hold_reason": hold_reason,
     }
+
+
+def _hold_reason_for_candidate_error(cleanup_required: bool, exc: CandidateRefusedError) -> str:
+    if exc.reason == "cleanup_action_unmapped":
+        return "cleanup_action_unmapped"
+    if cleanup_required:
+        return "cleanup_failed_post_condition"
+    return exc.reason
 
 
 def _postcheck_batch(wp_client: Any, post_ids: Sequence[int]) -> dict[str, Any]:
@@ -671,6 +1152,7 @@ def _write_live_success_logs(
 def run_guarded_publish(
     *,
     input_from: str | Path,
+    filter_verdict: str | Path | None = None,
     live: bool = False,
     max_burst: int = DEFAULT_MAX_BURST,
     daily_cap_allow: bool = False,
@@ -769,7 +1251,48 @@ def run_guarded_publish(
                 }
             )
 
-    for entry in _iter_publishable_entries(report):
+    publishable_entries = [
+        entry
+        for entry in _iter_publishable_entries(report)
+        if int(entry["post_id"]) not in attempted_post_ids
+    ]
+    held_entries: list[dict[str, Any]] = []
+    if filter_verdict is not None:
+        publishable_entries, held_entries = _apply_verdict_filter(publishable_entries, filter_verdict)
+
+    for held_entry in held_entries:
+        refused.append(
+            {
+                "post_id": held_entry["post_id"],
+                "reason": held_entry["reason"],
+                "hold_reason": held_entry["hold_reason"],
+            }
+        )
+        if live:
+            row = _history_row(
+                post_id=held_entry["post_id"],
+                judgment=held_entry["judgment"],
+                status="skipped",
+                ts=now_iso,
+                backup_path=None,
+                error=held_entry["error"],
+                publishable=True,
+                cleanup_required=bool(held_entry["cleanup_required"]),
+                cleanup_success=False,
+                hold_reason=held_entry["hold_reason"],
+            )
+            live_history_rows.append(row)
+            executed.append(
+                {
+                    "post_id": held_entry["post_id"],
+                    "status": "skipped",
+                    "backup_path": None,
+                    "publish_link": "",
+                    "hold_reason": held_entry["hold_reason"],
+                }
+            )
+
+    for entry in publishable_entries:
         post_id = entry["post_id"]
         if post_id in attempted_post_ids:
             continue
@@ -840,6 +1363,9 @@ def run_guarded_publish(
                     "cleanup_candidate": entry["cleanup_candidate"],
                     "cleanup_plan": [],
                     "post_cleanup_check": "pending_live_verify",
+                    "meta_updates": {},
+                    "requires_meta_update": False,
+                    "update_fields": {},
                     "publish_link": str((post or {}).get("link") or ""),
                     "post": post,
                 }
@@ -852,11 +1378,12 @@ def run_guarded_publish(
                     cleanup_candidate=entry["cleanup_candidate"],
                 )
         except CandidateRefusedError as exc:
+            hold_reason = _hold_reason_for_candidate_error(bool(entry["cleanup_required"]), exc)
             refused.append(
                 {
                     "post_id": post_id,
                     "reason": exc.reason,
-                    "hold_reason": "cleanup_failed_post_condition" if entry["cleanup_required"] else exc.reason,
+                    "hold_reason": hold_reason,
                 }
             )
             if live:
@@ -870,7 +1397,7 @@ def run_guarded_publish(
                     publishable=True,
                     cleanup_required=bool(entry["cleanup_required"]),
                     cleanup_success=False,
-                    hold_reason="cleanup_failed_post_condition" if entry["cleanup_required"] else exc.reason,
+                    hold_reason=hold_reason,
                 )
                 live_history_rows.append(row)
                 executed.append(
@@ -879,7 +1406,7 @@ def run_guarded_publish(
                         "status": "refused",
                         "backup_path": None,
                         "publish_link": str((post or {}).get("link") or ""),
-                        "hold_reason": "cleanup_failed_post_condition" if entry["cleanup_required"] else exc.reason,
+                        "hold_reason": hold_reason,
                     }
                 )
             continue
@@ -910,12 +1437,8 @@ def run_guarded_publish(
                     cleanup_candidate=plan["cleanup_candidate"],
                 )
                 cleanup_success = live_plan["cleanup_success"]
-                if live_plan["requires_content_update"]:
-                    get_wp().update_post_fields(
-                        live_plan["post_id"],
-                        status="publish",
-                        content=live_plan["cleaned_html"],
-                    )
+                if live_plan["update_fields"]:
+                    get_wp().update_post_fields(live_plan["post_id"], status="publish", **live_plan["update_fields"])
                 else:
                     get_wp().update_post_status(live_plan["post_id"], "publish")
                 _write_live_success_logs(
@@ -937,7 +1460,7 @@ def run_guarded_publish(
             except CandidateRefusedError as exc:
                 status = "refused"
                 error = exc.detail
-                hold_reason = "cleanup_failed_post_condition" if plan["cleanup_required"] else exc.reason
+                hold_reason = _hold_reason_for_candidate_error(bool(plan["cleanup_required"]), exc)
                 cleanup_success = False
             except Exception as exc:
                 status = "refused"
@@ -989,6 +1512,8 @@ def run_guarded_publish(
         "refused": refused,
         "summary": summary,
     }
+    if filter_verdict is not None:
+        payload["scan_meta"]["filter_verdict"] = str(filter_verdict)
     if live:
         payload["executed"] = executed
         payload["postcheck_batches"] = postcheck_batches

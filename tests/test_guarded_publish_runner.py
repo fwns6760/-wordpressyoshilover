@@ -103,6 +103,8 @@ class FakeWPClient:
             post["status"] = fields["status"]
         if "content" in fields:
             post["content"] = {"raw": fields["content"], "rendered": fields["content"]}
+        if "meta" in fields:
+            post["meta"] = dict(fields["meta"])
 
     def update_post_status(self, post_id: int, status: str) -> None:
         self.update_post_status_calls.append((post_id, status))
@@ -112,6 +114,11 @@ class FakeWPClient:
 class GuardedPublishRunnerTests(unittest.TestCase):
     def _write_input(self, tmpdir: str, payload: dict) -> Path:
         path = Path(tmpdir) / "input.json"
+        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        return path
+
+    def _write_verdict(self, tmpdir: str, payload: list[dict]) -> Path:
+        path = Path(tmpdir) / "verdict.json"
         path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
         return path
 
@@ -428,6 +435,142 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         self.assertEqual([item["status"] for item in result["executed"]], ["skipped", "skipped"])
         self.assertEqual([item["reason"] for item in result["refused"]], ["daily_cap", "daily_cap"])
 
+    def test_filter_verdict_ok_publishes(self):
+        posts = {
+            2001: _post(2001, "巨人が阪神に3-2で勝利", f"<p>巨人が阪神に3-2で勝利した。試合の核が冒頭で分かり、投打の流れも整理されている。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/source</p>"),
+            2002: _post(2002, "巨人が中日に4-1で勝利", f"<p>巨人が中日に4-1で勝利した。先発が試合をつくり、打線も中盤に追加点を挙げた。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/source</p>"),
+        }
+        report = _report(
+            green=[
+                _green_entry(2001, posts[2001]["title"]["raw"]),
+                _green_entry(2002, posts[2002]["title"]["raw"]),
+            ]
+        )
+        wp = FakeWPClient(posts)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                filter_verdict=self._write_verdict(
+                    tmpdir,
+                    [
+                        {"post_id": 2001, "verdict": "ok", "reasons": []},
+                        {"post_id": 2002, "verdict": "ng", "reasons": ["duplicate_title"]},
+                    ],
+                ),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        sent_ids = [item["post_id"] for item in result["executed"] if item["status"] == "sent"]
+        self.assertEqual(sent_ids, [2001])
+        self.assertEqual(wp.update_post_status_calls, [(2001, "publish")])
+        self.assertEqual(result["summary"]["proposed_count"], 1)
+
+    def test_filter_verdict_ng_held_with_reason(self):
+        post = _post(
+            2101,
+            "巨人が広島に3-1で勝利",
+            f"<p>巨人が広島に3-1で勝利した。序盤に主導権を握り、投手陣もリードを守り切った。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/source</p>",
+        )
+        report = _report(green=[_green_entry(2101, post["title"]["raw"])])
+        wp = FakeWPClient({2101: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.jsonl"
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                filter_verdict=self._write_verdict(
+                    tmpdir,
+                    [{"post_id": 2101, "verdict": "ng", "reasons": ["duplicate title"]}],
+                ),
+                live=True,
+                daily_cap_allow=True,
+                history_path=history_path,
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+            history_row = json.loads(history_path.read_text(encoding="utf-8").strip())
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["refused"][0]["hold_reason"], "codex_review_ng_duplicate_title")
+        self.assertEqual(result["executed"][0]["status"], "skipped")
+        self.assertEqual(history_row["status"], "skipped")
+        self.assertEqual(history_row["hold_reason"], "codex_review_ng_duplicate_title")
+        self.assertEqual(wp.update_post_status_calls, [])
+
+    def test_filter_verdict_missing_post_id_held(self):
+        posts = {
+            2201: _post(2201, "巨人がヤクルトに5-2で勝利", f"<p>巨人がヤクルトに5-2で勝利した。主砲の一発で流れを引き寄せ、終盤も突き放した。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/source</p>"),
+            2202: _post(2202, "巨人がDeNAに2-1で勝利", f"<p>巨人がDeNAに2-1で勝利した。終盤の一打で均衡を破り、救援陣もリードを守った。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/source</p>"),
+        }
+        report = _report(
+            green=[
+                _green_entry(2201, posts[2201]["title"]["raw"]),
+                _green_entry(2202, posts[2202]["title"]["raw"]),
+            ]
+        )
+        wp = FakeWPClient(posts)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.jsonl"
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                filter_verdict=self._write_verdict(
+                    tmpdir,
+                    [{"post_id": 2201, "verdict": "ok", "reasons": []}],
+                ),
+                live=True,
+                daily_cap_allow=True,
+                history_path=history_path,
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+            rows = [json.loads(line) for line in history_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+        self.assertEqual([item["post_id"] for item in result["executed"] if item["status"] == "sent"], [2201])
+        self.assertEqual(result["refused"][0]["hold_reason"], "codex_review_missing_verdict")
+        self.assertEqual(rows[0]["hold_reason"], "codex_review_missing_verdict")
+        self.assertEqual(rows[0]["status"], "skipped")
+
+    def test_no_filter_verdict_backward_compat(self):
+        post = _post(
+            2301,
+            "巨人が中日に4-1で勝利",
+            f"<p>巨人が中日に4-1で勝利した。先発が試合をつくり、打線も中盤に追加点を挙げた。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/source</p>",
+        )
+        report = _report(green=[_green_entry(2301, post["title"]["raw"])])
+        wp = FakeWPClient({2301: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual([item["status"] for item in result["executed"]], ["sent"])
+        self.assertEqual(result["refused"], [])
+        self.assertEqual(wp.update_post_status_calls, [(2301, "publish")])
+
     def test_hard_stop_post_skipped_no_global_abort(self):
         green_post = _post(
             801,
@@ -527,6 +670,199 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         self.assertEqual(wp.update_post_fields_calls[0][0], 301)
         self.assertIn("<p>戸郷が7回1失点で今季3勝目となったことを球団が試合後に発表した</p>", wp.update_post_fields_calls[0][1]["content"])
         self.assertNotIn("python3 -m src.tools.run_guarded_publish", wp.update_post_fields_calls[0][1]["content"])
+
+    def test_weak_source_display_cleanup_appends_source_url(self):
+        body_html = (
+            "<p>巨人が中日に4-1で勝利した。序盤に主導権を握り、継投でも流れを渡さなかった。</p>"
+            f"<p>{LONG_EXTRA}</p>"
+            "<p>参照元: https://example.com/source</p>"
+        )
+        post = _post(306, "巨人が中日に4-1で勝利", body_html)
+        report = _report(
+            yellow=[_repairable_entry(306, post["title"]["raw"], "weak_source_display", yellow_reasons=["missing_primary_source"])],
+            cleanup_candidates=[{"post_id": 306, "repairable_flags": ["weak_source_display"]}],
+        )
+        wp = FakeWPClient({306: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual(result["executed"][0]["status"], "sent")
+        cleaned_html = wp.update_post_fields_calls[0][1]["content"]
+        self.assertIn('出典: <a href="https://example.com/source">https://example.com/source</a>', cleaned_html)
+
+    def test_long_body_cleanup_trims_above_5000_chars(self):
+        repeated = "".join(
+            f"<p>巨人が流れを引き寄せた第{index}段落。攻守の切り替えと継投の意図を整理し、打線のつながりも追える内容だった。</p>"
+            for index in range(1, 140)
+        )
+        body_html = repeated + "<p>参照元: スポーツ報知 https://example.com/source</p>"
+        post = _post(307, "巨人が流れを引き寄せた", body_html)
+        report = _report(
+            yellow=[_repairable_entry(307, post["title"]["raw"], "long_body", yellow_reasons=["long_body"])],
+            cleanup_candidates=[{"post_id": 307, "repairable_flags": ["long_body"]}],
+        )
+        wp = FakeWPClient({307: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual(result["executed"][0]["status"], "sent")
+        cleaned_html = wp.update_post_fields_calls[0][1]["content"]
+        self.assertLess(len(cleaned_html), len(body_html))
+        self.assertIn("参照元: スポーツ報知 https://example.com/source", cleaned_html)
+
+    def test_subtype_unresolved_cleanup_uses_extractor(self):
+        body_html = (
+            "<p>巨人ベンチが終盤の狙いを整理した。阿部監督の説明を踏まえ、起用の意図も追える内容だった。</p>"
+            f"<p>{LONG_EXTRA}</p>"
+            "<p>参照元: スポーツ報知 https://example.com/source</p>"
+        )
+        post = _post(308, "ベンチの狙いを整理", body_html)
+        post["meta"] = {"article_subtype": "other"}
+        report = _report(
+            yellow=[_repairable_entry(308, post["title"]["raw"], "subtype_unresolved", yellow_reasons=["subtype_unresolved"])],
+            cleanup_candidates=[{"post_id": 308, "repairable_flags": ["subtype_unresolved"]}],
+        )
+        wp = FakeWPClient({308: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.object(runner.extractor, "infer_subtype", return_value="comment"):
+                result = runner.run_guarded_publish(
+                    input_from=self._write_input(tmpdir, report),
+                    live=True,
+                    daily_cap_allow=True,
+                    history_path=Path(tmpdir) / "history.jsonl",
+                    backup_dir=Path(tmpdir) / "cleanup_backup",
+                    yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                    cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                    wp_client=wp,
+                    now=FIXED_NOW,
+                )
+
+        self.assertEqual(result["executed"][0]["status"], "sent")
+        self.assertEqual(wp.update_post_fields_calls[0][1]["meta"]["article_subtype"], "comment")
+        self.assertEqual(wp.update_post_status_calls, [])
+
+    def test_light_structure_break_cleanup_regex(self):
+        body_html = (
+            "<p>巨人が終盤に突き放した。試合の分岐点と継投の意図が見える内容だった。</p>"
+            "<p> </p><br><br><p>追加点の意味も整理でき、次戦への視点も残る。</p>"
+            f"<p>{LONG_EXTRA}</p>"
+            "<p>参照元: スポーツ報知 https://example.com/source</p>"
+        )
+        post = _post(309, "巨人が終盤に突き放した", body_html)
+        report = _report(
+            yellow=[_repairable_entry(309, post["title"]["raw"], "light_structure_break", yellow_reasons=["light_structure_break"])],
+            cleanup_candidates=[{"post_id": 309, "repairable_flags": ["light_structure_break"]}],
+        )
+        wp = FakeWPClient({309: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual(result["executed"][0]["status"], "sent")
+        cleaned_html = wp.update_post_fields_calls[0][1]["content"]
+        self.assertNotIn("<p> </p>", cleaned_html)
+        self.assertNotIn("<br><br>", cleaned_html)
+        self.assertIn("<br />", cleaned_html)
+
+    def test_unmapped_repairable_flag_held_with_reason(self):
+        body_html = (
+            "<p>巨人が接戦をものにした。冒頭で試合の核が分かり、投打の流れも追える内容だった。</p>"
+            f"<p>{LONG_EXTRA}</p>"
+            "<p>参照元: スポーツ報知 https://example.com/source</p>"
+        )
+        post = _post(310, "巨人が接戦をものにした", body_html)
+        report = _report(
+            yellow=[_repairable_entry(310, post["title"]["raw"], "totally_unmapped_flag", yellow_reasons=["totally_unmapped_flag"])],
+            cleanup_candidates=[{"post_id": 310, "repairable_flags": ["totally_unmapped_flag"]}],
+        )
+        wp = FakeWPClient({310: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.jsonl"
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=history_path,
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+            history_row = json.loads(history_path.read_text(encoding="utf-8").strip())
+
+        self.assertEqual(result["executed"][0]["status"], "refused")
+        self.assertEqual(result["executed"][0]["hold_reason"], "cleanup_action_unmapped")
+        self.assertEqual(history_row["hold_reason"], "cleanup_action_unmapped")
+        self.assertEqual(wp.update_post_fields_calls, [])
+        self.assertEqual(wp.update_post_status_calls, [])
+
+    def test_ai_tone_repairable_warning_only_publishes(self):
+        body_html = (
+            "<p>注目したいのは継投のタイミングだ。巨人が終盤まで主導権を握り、試合の核も十分に追える。</p>"
+            f"<p>{LONG_EXTRA}</p>"
+            "<p>参照元: スポーツ報知 https://example.com/source</p>"
+        )
+        post = _post(311, "巨人はどう動く？継投の狙い", body_html)
+        report = _report(
+            yellow=[_repairable_entry(311, post["title"]["raw"], "ai_tone_heading_or_lead", yellow_reasons=["speculative_title"])],
+            cleanup_candidates=[{"post_id": 311, "repairable_flags": ["ai_tone_heading_or_lead"]}],
+        )
+        wp = FakeWPClient({311: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cleanup_log_path = Path(tmpdir) / "cleanup.jsonl"
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=cleanup_log_path,
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+            cleanup_row = json.loads(cleanup_log_path.read_text(encoding="utf-8").strip())
+
+        self.assertEqual(result["executed"][0]["status"], "sent")
+        self.assertEqual(wp.update_post_fields_calls, [])
+        self.assertEqual(wp.update_post_status_calls, [(311, "publish")])
+        self.assertEqual(cleanup_row["cleanups"][0]["type"], "ai_tone_heading_or_lead")
 
     def test_repairable_post_cleanup_failed_post_condition_held_prose_short(self):
         post = _post(

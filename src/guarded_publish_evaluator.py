@@ -28,6 +28,9 @@ HARD_STOP_FLAGS = frozenset(
         "lineup_no_hochi_source",
         "lineup_prefix_misuse",
         "dev_log_contamination_scattered",
+        "stale_for_breaking_board",
+        "expired_lineup_or_pregame",
+        "expired_game_context",
     }
 )
 REPAIRABLE_FLAGS = frozenset(
@@ -77,6 +80,53 @@ POSTCHECK_META_RE = re.compile(r"(tweet_id|x_post_id|posted_to_x|posted_to_twitt
 LIGHT_STRUCTURE_BREAK_RE = re.compile(r"(?is)<p\b[^>]*>\s*(?:&nbsp;|\s|<br\s*/?>)*</p>|(?:<br\s*/?>\s*){2,}")
 AI_TONE_LEAD_RE = re.compile(
     r"(注目したい|注目ポイント|見どころ|ポイントは|どう見る|どう動く|狙いはどこ|気になる)"
+)
+URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
+ISO_YMD_RE = re.compile(r"(?<!\d)(20\d{2})[/-](\d{1,2})[/-](\d{1,2})(?!\d)")
+COMPACT_YMD_RE = re.compile(r"(?<!\d)(20\d{2})(\d{2})(\d{2})(?!\d)")
+JP_YMD_RE = re.compile(r"(?<!\d)(20\d{2})年\s*(\d{1,2})月\s*(\d{1,2})日")
+JP_MD_RE = re.compile(r"(?<!\d)(\d{1,2})月\s*(\d{1,2})日")
+SLASH_MD_RE = re.compile(r"(?<!\d)(\d{1,2})/(\d{1,2})(?!/\d)")
+TIME_TAIL_RE = re.compile(r"^[\sT　]*(?:(\d{1,2}):(\d{2})|(\d{1,2})時(?:\s*(\d{1,2})分?)?)")
+GAME_START_TIME_RE = re.compile(
+    r"(?:試合開始|開始予定|開始時刻|プレーボール|開始)\D{0,8}(?:(\d{1,2}):(\d{2})|(\d{1,2})時(?:\s*(\d{1,2})分?)?)"
+)
+DEFAULT_GAME_START_HOUR = 18
+FRESHNESS_THRESHOLDS_HOURS: dict[str, float] = {
+    "lineup": 6.0,
+    "pregame": 6.0,
+    "probable_starter": 6.0,
+    "farm_lineup": 6.0,
+    "postgame": 24.0,
+    "game_result": 24.0,
+    "roster": 24.0,
+    "injury": 24.0,
+    "registration": 24.0,
+    "recovery": 24.0,
+    "notice": 24.0,
+    "player_notice": 24.0,
+    "player_recovery": 24.0,
+    "comment": 48.0,
+    "speech": 48.0,
+    "manager": 48.0,
+    "program": 48.0,
+    "off_field": 48.0,
+    "farm_feature": 48.0,
+}
+LINEUP_FRESHNESS_SUBTYPES = frozenset({"lineup", "pregame", "probable_starter", "farm_lineup"})
+GAME_CONTEXT_FRESHNESS_SUBTYPES = frozenset({"postgame", "game_result"})
+SOURCE_DATE_META_FIELDS = (
+    "source_published_at",
+    "published_at",
+    "source_datetime",
+    "source_date",
+    "article_date",
+    "source_created_at",
+)
+SOURCE_URL_META_FIELDS = (
+    "_yoshilover_source_url",
+    "source_url",
+    "canonical_source_url",
 )
 
 SITE_COMPONENT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -141,6 +191,349 @@ def _parse_wp_datetime(value: str, *, fallback_now: datetime | None = None) -> d
 
 def _normalize_title_key(title: str) -> str:
     return re.sub(r"\s+", "", title or "").strip().lower()
+
+
+def _parse_optional_wp_datetime(value: Any) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        return _parse_wp_datetime(raw)
+    except ValueError:
+        return None
+
+
+def _safe_datetime(
+    year: int,
+    month: int,
+    day: int,
+    *,
+    hour: int = 0,
+    minute: int = 0,
+) -> datetime | None:
+    try:
+        return datetime(year, month, day, hour, minute, tzinfo=JST)
+    except ValueError:
+        return None
+
+
+def _infer_year(month: int, day: int, *, now: datetime) -> int:
+    candidate = _safe_datetime(now.year, month, day)
+    if candidate is None:
+        return now.year
+    if candidate - now > timedelta(days=45):
+        return now.year - 1
+    if now - candidate > timedelta(days=330):
+        return now.year + 1
+    return now.year
+
+
+def _time_from_tail(tail: str) -> tuple[int, int] | None:
+    match = TIME_TAIL_RE.search(tail[:12])
+    if not match:
+        return None
+    if match.group(1) is not None and match.group(2) is not None:
+        return int(match.group(1)), int(match.group(2))
+    if match.group(3) is not None:
+        return int(match.group(3)), int(match.group(4) or 0)
+    return None
+
+
+def _append_date_candidate(
+    candidates: list[tuple[datetime, bool]],
+    seen: set[str],
+    dt: datetime | None,
+    *,
+    has_explicit_time: bool,
+) -> None:
+    if dt is None:
+        return
+    key = f"{dt.isoformat()}::{int(has_explicit_time)}"
+    if key in seen:
+        return
+    seen.add(key)
+    candidates.append((dt, has_explicit_time))
+
+
+def _extract_date_candidates(value: Any, *, now: datetime) -> list[tuple[datetime, bool]]:
+    text = html.unescape(str(value or ""))
+    if not text.strip():
+        return []
+    candidates: list[tuple[datetime, bool]] = []
+    seen: set[str] = set()
+
+    for match in ISO_YMD_RE.finditer(text):
+        time_hint = _time_from_tail(text[match.end() :])
+        hour, minute = time_hint if time_hint is not None else (0, 0)
+        _append_date_candidate(
+            candidates,
+            seen,
+            _safe_datetime(int(match.group(1)), int(match.group(2)), int(match.group(3)), hour=hour, minute=minute),
+            has_explicit_time=time_hint is not None,
+        )
+
+    for match in COMPACT_YMD_RE.finditer(text):
+        _append_date_candidate(
+            candidates,
+            seen,
+            _safe_datetime(int(match.group(1)), int(match.group(2)), int(match.group(3))),
+            has_explicit_time=False,
+        )
+
+    for match in JP_YMD_RE.finditer(text):
+        time_hint = _time_from_tail(text[match.end() :])
+        hour, minute = time_hint if time_hint is not None else (0, 0)
+        _append_date_candidate(
+            candidates,
+            seen,
+            _safe_datetime(int(match.group(1)), int(match.group(2)), int(match.group(3)), hour=hour, minute=minute),
+            has_explicit_time=time_hint is not None,
+        )
+
+    for match in JP_MD_RE.finditer(text):
+        year = _infer_year(int(match.group(1)), int(match.group(2)), now=now)
+        time_hint = _time_from_tail(text[match.end() :])
+        hour, minute = time_hint if time_hint is not None else (0, 0)
+        _append_date_candidate(
+            candidates,
+            seen,
+            _safe_datetime(year, int(match.group(1)), int(match.group(2)), hour=hour, minute=minute),
+            has_explicit_time=time_hint is not None,
+        )
+
+    for match in SLASH_MD_RE.finditer(text):
+        year = _infer_year(int(match.group(1)), int(match.group(2)), now=now)
+        time_hint = _time_from_tail(text[match.end() :])
+        hour, minute = time_hint if time_hint is not None else (0, 0)
+        _append_date_candidate(
+            candidates,
+            seen,
+            _safe_datetime(year, int(match.group(1)), int(match.group(2)), hour=hour, minute=minute),
+            has_explicit_time=time_hint is not None,
+        )
+
+    return candidates
+
+
+def _resolved_subtype(raw_post: dict[str, Any], record: dict[str, Any]) -> str:
+    meta = (raw_post or {}).get("meta") or {}
+    for candidate in (meta.get("article_subtype"), raw_post.get("article_subtype"), record.get("inferred_subtype")):
+        value = str(candidate or "").strip().lower()
+        if value:
+            return value
+    return "other"
+
+
+def _freshness_threshold_hours(subtype: str) -> float:
+    return float(FRESHNESS_THRESHOLDS_HOURS.get((subtype or "").strip().lower(), 24.0))
+
+
+def _source_url_candidates(raw_post: dict[str, Any], record: dict[str, Any]) -> list[str]:
+    urls: list[str] = [str(value) for value in (record.get("source_urls") or []) if str(value).strip()]
+    meta = (raw_post or {}).get("meta") or {}
+    for container in (meta, raw_post):
+        for key in SOURCE_URL_META_FIELDS:
+            value = container.get(key)
+            if isinstance(value, str) and value.strip() and value not in urls:
+                urls.append(value)
+        links = container.get("source_links")
+        if isinstance(links, list):
+            for item in links:
+                if isinstance(item, str) and item.strip() and item not in urls:
+                    urls.append(item)
+                elif isinstance(item, dict):
+                    for key in ("url", "href", "link"):
+                        candidate = str(item.get(key) or "").strip()
+                        if candidate and candidate not in urls:
+                            urls.append(candidate)
+    return urls
+
+
+def _body_text_without_source(record: dict[str, Any]) -> str:
+    body_text = str(record.get("body_text") or "")
+    source_block = str(record.get("source_block") or "")
+    if source_block:
+        body_text = body_text.replace(source_block, "")
+    return URL_RE.sub("", body_text)
+
+
+def _resolve_content_datetime(raw_post: dict[str, Any], record: dict[str, Any], *, now: datetime) -> dict[str, Any]:
+    created_at = _parse_optional_wp_datetime(record.get("created_at"))
+    meta = (raw_post or {}).get("meta") or {}
+
+    for container_name, container in (("raw_post", raw_post or {}), ("meta", meta)):
+        for key in SOURCE_DATE_META_FIELDS:
+            if key not in container:
+                continue
+            raw_value = container.get(key)
+            parsed = _parse_optional_wp_datetime(raw_value)
+            if parsed is not None:
+                return {
+                    "content_date": parsed.date().isoformat(),
+                    "age_reference_dt": parsed,
+                    "detected_dt": parsed,
+                    "priority_rank": 1,
+                    "detected_by": f"{container_name}.{key}",
+                    "age_basis": "exact_source_datetime",
+                }
+            for candidate_dt, has_explicit_time in _extract_date_candidates(raw_value, now=now):
+                age_reference_dt = candidate_dt
+                age_basis = "source_text_date_only"
+                if not has_explicit_time and created_at is not None and created_at.date() == candidate_dt.date():
+                    age_reference_dt = created_at
+                    age_basis = "created_at_same_day_precision"
+                elif has_explicit_time:
+                    age_basis = "exact_source_datetime"
+                return {
+                    "content_date": candidate_dt.date().isoformat(),
+                    "age_reference_dt": age_reference_dt,
+                    "detected_dt": candidate_dt,
+                    "priority_rank": 1,
+                    "detected_by": f"{container_name}.{key}",
+                    "age_basis": age_basis,
+                }
+
+    source_block = str(record.get("source_block") or "")
+    for candidate_dt, has_explicit_time in _extract_date_candidates(source_block, now=now):
+        age_reference_dt = candidate_dt
+        age_basis = "source_block_date_only"
+        if not has_explicit_time and created_at is not None and created_at.date() == candidate_dt.date():
+            age_reference_dt = created_at
+            age_basis = "created_at_same_day_precision"
+        elif has_explicit_time:
+            age_basis = "exact_source_datetime"
+        return {
+            "content_date": candidate_dt.date().isoformat(),
+            "age_reference_dt": age_reference_dt,
+            "detected_dt": candidate_dt,
+            "priority_rank": 1,
+            "detected_by": "source_block",
+            "age_basis": age_basis,
+        }
+
+    for source_url in _source_url_candidates(raw_post, record):
+        for candidate_dt, _ in _extract_date_candidates(source_url, now=now):
+            age_reference_dt = candidate_dt
+            age_basis = "source_url_date_only"
+            if created_at is not None and created_at.date() == candidate_dt.date():
+                age_reference_dt = created_at
+                age_basis = "created_at_same_day_precision"
+            return {
+                "content_date": candidate_dt.date().isoformat(),
+                "age_reference_dt": age_reference_dt,
+                "detected_dt": candidate_dt,
+                "priority_rank": 1,
+                "detected_by": "source_url",
+                "age_basis": age_basis,
+            }
+
+    for candidate_dt, has_explicit_time in _extract_date_candidates(_body_text_without_source(record), now=now):
+        age_reference_dt = candidate_dt
+        age_basis = "body_date_only"
+        if not has_explicit_time and created_at is not None and created_at.date() == candidate_dt.date():
+            age_reference_dt = created_at
+            age_basis = "created_at_same_day_precision"
+        elif has_explicit_time:
+            age_basis = "exact_body_datetime"
+        return {
+            "content_date": candidate_dt.date().isoformat(),
+            "age_reference_dt": age_reference_dt,
+            "detected_dt": candidate_dt,
+            "priority_rank": 2,
+            "detected_by": "body_date",
+            "age_basis": age_basis,
+        }
+
+    if created_at is not None:
+        return {
+            "content_date": created_at.date().isoformat(),
+            "age_reference_dt": created_at,
+            "detected_dt": created_at,
+            "priority_rank": 3,
+            "detected_by": "created_at",
+            "age_basis": "created_at",
+        }
+
+    return {
+        "content_date": now.date().isoformat(),
+        "age_reference_dt": now,
+        "detected_dt": now,
+        "priority_rank": 4,
+        "detected_by": "fallback_now",
+        "age_basis": "fallback_now",
+    }
+
+
+def _estimate_game_start_dt(reference_date: str, title: str, body_text: str) -> tuple[datetime, str]:
+    base_date = datetime.fromisoformat(reference_date).date()
+    search_text = "\n".join((title or "", body_text or "")).strip()
+    match = GAME_START_TIME_RE.search(search_text)
+    if match:
+        if match.group(1) is not None and match.group(2) is not None:
+            hour, minute = int(match.group(1)), int(match.group(2))
+        else:
+            hour, minute = int(match.group(3) or 0), int(match.group(4) or 0)
+        return datetime(base_date.year, base_date.month, base_date.day, hour, minute, tzinfo=JST), "explicit"
+    return (
+        datetime(base_date.year, base_date.month, base_date.day, DEFAULT_GAME_START_HOUR, 0, tzinfo=JST),
+        "default",
+    )
+
+
+def freshness_check(raw_post: dict[str, Any], record: dict[str, Any], *, now: datetime | None = None) -> dict[str, Any]:
+    now_jst = _now_jst(now)
+    subtype = _resolved_subtype(raw_post, record)
+    threshold_hours = _freshness_threshold_hours(subtype)
+    content_info = _resolve_content_datetime(raw_post, record, now=now_jst)
+    age_reference_dt = content_info["age_reference_dt"]
+    age_hours = max(0.0, (now_jst - age_reference_dt).total_seconds() / 3600.0)
+    freshness_class = "fresh"
+    hard_stop_flag: str | None = None
+    reason_parts = [
+        f"subtype={subtype}",
+        f"threshold={threshold_hours:g}h",
+        f"priority={content_info['priority_rank']}",
+        f"detected_by={content_info['detected_by']}",
+        f"age_basis={content_info['age_basis']}",
+        f"content_date={content_info['content_date']}",
+        f"age_hours={age_hours:.2f}",
+    ]
+
+    if subtype in LINEUP_FRESHNESS_SUBTYPES:
+        game_start_dt, start_source = _estimate_game_start_dt(
+            str(content_info["content_date"]),
+            str(record.get("title") or ""),
+            str(record.get("body_text") or ""),
+        )
+        if now_jst >= game_start_dt:
+            freshness_class = "expired"
+            hard_stop_flag = "expired_lineup_or_pregame"
+            reason_parts.append(
+                f"game_start_estimate={game_start_dt.strftime('%Y-%m-%dT%H:%M:%S%z')}({start_source})"
+            )
+        elif age_hours > threshold_hours:
+            freshness_class = "expired"
+            hard_stop_flag = "expired_lineup_or_pregame"
+    elif subtype in GAME_CONTEXT_FRESHNESS_SUBTYPES and age_hours > threshold_hours:
+        freshness_class = "expired"
+        hard_stop_flag = "expired_game_context"
+    elif age_hours > threshold_hours:
+        freshness_class = "stale"
+        hard_stop_flag = "stale_for_breaking_board"
+
+    if hard_stop_flag is None:
+        reason_parts.append("status=fresh")
+    else:
+        reason_parts.append(f"hard_stop={hard_stop_flag}")
+
+    return {
+        "subtype": subtype,
+        "content_date": str(content_info["content_date"]),
+        "freshness_age_hours": round(age_hours, 2),
+        "freshness_class": freshness_class,
+        "freshness_reason": "; ".join(reason_parts),
+        "hard_stop_flag": hard_stop_flag,
+    }
 
 
 def _build_game_key(record: dict[str, Any]) -> str:
@@ -484,7 +877,7 @@ def _detect_dev_log_blocks(body_html: str, body_text: str) -> tuple[list[dict[st
     return clear_blocks, scattered_blocks
 
 
-def _evaluate_record(raw_post: dict[str, Any]) -> dict[str, Any]:
+def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -> dict[str, Any]:
     record = extractor.extract_post_record(raw_post)
     title = str(record.get("title") or "")
     body_html = str(record.get("body_html") or "")
@@ -573,6 +966,11 @@ def _evaluate_record(raw_post: dict[str, Any]) -> dict[str, Any]:
     if _has_low_severity_numerical_anomaly(body_text):
         _append_reason(reasons, flag="numerical_anomaly_low_severity", category="repairable")
 
+    freshness = freshness_check(raw_post, record, now=now)
+    enforce_freshness = str(raw_post.get("status") or "").strip().lower() != "publish"
+    if enforce_freshness and freshness["hard_stop_flag"] is not None:
+        _append_reason(reasons, flag=str(freshness["hard_stop_flag"]), category="hard_stop")
+
     hard_stop_flags = _reason_flags(reasons, "hard_stop")
     repairable_flags = _reason_flags(reasons, "repairable")
     red_flags = _legacy_flags(reasons, "hard_stop")
@@ -587,6 +985,7 @@ def _evaluate_record(raw_post: dict[str, Any]) -> dict[str, Any]:
         "title": title,
         "modified": modified,
         "game_key": game_key,
+        "subtype": freshness["subtype"],
         "category": entry_category,
         "publishable": publishable,
         "cleanup_required": cleanup_required,
@@ -594,6 +993,10 @@ def _evaluate_record(raw_post: dict[str, Any]) -> dict[str, Any]:
         "hard_stop_flags": hard_stop_flags,
         "repairable_flags": repairable_flags,
         "soft_cleanup_flags": repairable_flags,
+        "content_date": freshness["content_date"],
+        "freshness_age_hours": freshness["freshness_age_hours"],
+        "freshness_class": freshness["freshness_class"],
+        "freshness_reason": freshness["freshness_reason"],
     }
 
     if red_flags:
@@ -776,7 +1179,7 @@ def evaluate_raw_posts(
     }
 
     for raw_post in filtered:
-        evaluated = _evaluate_record(raw_post)
+        evaluated = _evaluate_record(raw_post, now=now_jst)
         decision = lineup_by_post_id.get(int(evaluated["entry"]["post_id"]))
         evaluated = _apply_lineup_guard(evaluated, decision)
         judgment = evaluated["judgment"]
@@ -790,6 +1193,24 @@ def evaluate_raw_posts(
             cleanup_candidates.append(evaluated["cleanup_candidate"])
 
     cleanup_post_ids = {candidate["post_id"] for candidate in cleanup_candidates}
+    all_entries = [*green, *yellow, *red]
+    stale_top_list = sorted(
+        (
+            {
+                "post_id": int(entry["post_id"]),
+                "title": str(entry["title"]),
+                "content_date": str(entry.get("content_date") or ""),
+                "age_hours": float(entry.get("freshness_age_hours") or 0.0),
+                "subtype": str(entry.get("subtype") or ""),
+                "freshness_class": str(entry.get("freshness_class") or "fresh"),
+                "freshness_reason": str(entry.get("freshness_reason") or ""),
+            }
+            for entry in all_entries
+            if entry.get("freshness_class") in {"stale", "expired"}
+        ),
+        key=lambda item: item["age_hours"],
+        reverse=True,
+    )[:10]
     report = {
         "scan_meta": {
             "window_hours": int(window_hours),
@@ -802,6 +1223,7 @@ def evaluate_raw_posts(
         "red": red,
         "cleanup_candidates": cleanup_candidates,
         "lineup_dedup": lineup_dedup,
+        "stale_top_list": stale_top_list,
         "summary": {
             "green_count": len(green),
             "yellow_count": len(yellow),
@@ -813,6 +1235,9 @@ def evaluate_raw_posts(
             "soft_cleanup_count": len(yellow),
             "publishable_count": len(green) + len(yellow),
             "publishable_minus_cleanup_pending": (len(green) + len(yellow)) - len(cleanup_post_ids),
+            "fresh_count": sum(1 for entry in all_entries if entry.get("freshness_class") == "fresh"),
+            "stale_hold_count": sum(1 for entry in all_entries if entry.get("freshness_class") == "stale"),
+            "expired_hold_count": sum(1 for entry in all_entries if entry.get("freshness_class") == "expired"),
             "lineup_representative_count": int(lineup_dedup["summary"]["representative_count"]),
             "lineup_duplicate_absorbed_count": int(lineup_dedup["summary"]["duplicate_absorbed_count"]),
             "lineup_deferred_count": int(lineup_dedup["summary"]["deferred_count"]),
@@ -875,6 +1300,9 @@ def render_human_report(report: dict[str, Any]) -> str:
         f"cleanup  {summary['cleanup_count']}",
         f"publishable {summary['publishable_count']}",
         f"publishable_minus_cleanup_pending {summary['publishable_minus_cleanup_pending']}",
+        f"fresh {summary['fresh_count']}",
+        f"stale_hold {summary['stale_hold_count']}",
+        f"expired_hold {summary['expired_hold_count']}",
     ]
 
     for label in ("green", "yellow", "red"):
@@ -887,6 +1315,17 @@ def render_human_report(report: dict[str, Any]) -> str:
             flags = entry.get("yellow_reasons") or entry.get("red_flags") or []
             suffix = f" [{', '.join(flags)}]" if flags else ""
             lines.append(f"- {entry['post_id']} | {entry['title']}{suffix}")
+    lines.extend(["", "Freshness Hold Top"])
+    stale_top_list = report.get("stale_top_list") or []
+    if not stale_top_list:
+        lines.append("- none")
+    else:
+        for item in stale_top_list:
+            lines.append(
+                "- "
+                f"{item['post_id']} | {item['title']} | {item['content_date']} | "
+                f"{item['age_hours']:.2f}h | {item['subtype']} | {item['freshness_class']} | {item['freshness_reason']}"
+            )
     return "\n".join(lines) + "\n"
 
 

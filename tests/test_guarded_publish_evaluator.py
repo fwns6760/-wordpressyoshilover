@@ -2,7 +2,7 @@ import unittest
 from datetime import datetime
 from unittest import mock
 
-from src.guarded_publish_evaluator import evaluate_raw_posts, scan_wp_drafts
+from src.guarded_publish_evaluator import evaluate_raw_posts, render_human_report, scan_wp_drafts
 
 
 FIXED_NOW = datetime.fromisoformat("2026-04-25T21:00:00+09:00")
@@ -119,6 +119,7 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
             "巨人スタメン 1番丸 4番岡本",
             (
                 "<p>巨人のスタメンが発表された。スポーツ報知によると、1番丸、4番岡本で先発する。</p>"
+                "<p>試合開始 23:59</p>"
                 "<p>参照元: スポーツ報知 https://hochi.news/articles/20260425-OHT1T51000.html</p>"
             ),
             meta={
@@ -133,6 +134,7 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
             "巨人スタメン 1番丸 4番岡本",
             (
                 "<p>巨人のスタメンが発表された。スポニチによると、1番丸、4番岡本で先発する。</p>"
+                "<p>試合開始 23:59</p>"
                 "<p>参照元: スポニチ https://www.sponichi.co.jp/baseball/news/2026/04/25/kiji.html</p>"
             ),
             meta={
@@ -145,6 +147,13 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
 
     def _evaluate(self, posts):
         return evaluate_raw_posts(posts, window_hours=96, max_pool=100, now=FIXED_NOW)
+
+    def _find_entry(self, report, post_id):
+        for bucket in ("green", "yellow", "red"):
+            for entry in report[bucket]:
+                if entry["post_id"] == post_id:
+                    return entry
+        raise AssertionError(f"post_id={post_id} not found")
 
     def test_clean_post_returns_publishable_true_and_cleanup_required_false(self):
         report = self._evaluate([self.clean_post])
@@ -255,6 +264,277 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         self.assertIn("lineup_duplicate_excessive", red_entry["hard_stop_flags"])
         self.assertIn("lineup_duplicate_absorbed_by_hochi", red_entry["red_flags"])
         self.assertEqual(red_entry["representative_post_id"], 109)
+
+    def test_stale_lineup_6h_over_is_hard_stop(self):
+        stale_lineup = _post(
+            201,
+            "巨人スタメン 1番丸 4番岡本",
+            (
+                "<p>巨人のスタメンが発表された。スポーツ報知によると、1番丸、4番岡本で先発する。</p>"
+                "<p>参照元: スポーツ報知 https://hochi.news/articles/20260425-OHT1T51000.html</p>"
+            ),
+            date="2026-04-25T14:00:00",
+            modified="2026-04-25T20:30:00",
+            meta={"article_subtype": "lineup"},
+        )
+
+        report = self._evaluate([stale_lineup])
+
+        entry = self._find_entry(report, 201)
+        self.assertFalse(entry["publishable"])
+        self.assertEqual(entry["freshness_class"], "expired")
+        self.assertEqual(entry["content_date"], "2026-04-25")
+        self.assertIn("expired_lineup_or_pregame", entry["hard_stop_flags"])
+        self.assertIn("threshold=6h", entry["freshness_reason"])
+
+    def test_stale_postgame_24h_over_is_hard_stop(self):
+        stale_postgame = _post(
+            202,
+            "巨人が阪神に3-2で勝利",
+            (
+                "<p>巨人が阪神に3-2で勝利した。スポーツ報知によると、戸郷が7回2失点と好投した。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source</p>"
+            ),
+            date="2026-04-24T20:00:00",
+            modified="2026-04-25T20:30:00",
+            meta={"article_subtype": "postgame"},
+        )
+
+        report = self._evaluate([stale_postgame])
+
+        entry = self._find_entry(report, 202)
+        self.assertFalse(entry["publishable"])
+        self.assertEqual(entry["freshness_class"], "expired")
+        self.assertIn("expired_game_context", entry["hard_stop_flags"])
+
+    def test_stale_default_24h_over_is_hard_stop(self):
+        stale_default = _post(
+            203,
+            "巨人トピック整理",
+            (
+                "<p>巨人の周辺情報を整理した。スポーツ報知によると、練習内容が更新された。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source</p>"
+            ),
+            date="2026-04-24T20:00:00",
+            modified="2026-04-25T20:30:00",
+        )
+
+        report = self._evaluate([stale_default])
+
+        entry = self._find_entry(report, 203)
+        self.assertFalse(entry["publishable"])
+        self.assertEqual(entry["freshness_class"], "stale")
+        self.assertIn("stale_for_breaking_board", entry["hard_stop_flags"])
+
+    def test_comment_48h_within_is_publishable(self):
+        fresh_comment = _post(
+            204,
+            "阿部監督「状態は上がってきた」 打線の手応えを語る",
+            (
+                "<p>阿部監督は『状態は上がってきた』と語った。スポーツ報知によると、打線の反応を前向きに見ている。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source</p>"
+            ),
+            date="2026-04-23T22:30:00",
+            modified="2026-04-25T20:30:00",
+            meta={"article_subtype": "comment"},
+        )
+
+        report = self._evaluate([fresh_comment])
+
+        entry = self._find_entry(report, 204)
+        self.assertTrue(entry["publishable"])
+        self.assertEqual(entry["freshness_class"], "fresh")
+        self.assertEqual(entry["content_date"], "2026-04-23")
+        self.assertEqual(entry["hard_stop_flags"], [])
+
+    def test_comment_48h_over_is_hard_stop(self):
+        stale_comment = _post(
+            205,
+            "阿部監督「状態は上がってきた」 打線の手応えを語る",
+            (
+                "<p>阿部監督は『状態は上がってきた』と語った。スポーツ報知によると、打線の反応を前向きに見ている。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source</p>"
+            ),
+            date="2026-04-23T19:30:00",
+            modified="2026-04-25T20:30:00",
+            meta={"article_subtype": "comment"},
+        )
+
+        report = self._evaluate([stale_comment])
+
+        entry = self._find_entry(report, 205)
+        self.assertFalse(entry["publishable"])
+        self.assertEqual(entry["freshness_class"], "stale")
+        self.assertIn("stale_for_breaking_board", entry["hard_stop_flags"])
+
+    def test_modified_is_not_used_for_freshness(self):
+        old_postgame = _post(
+            206,
+            "巨人が阪神に3-2で勝利",
+            (
+                "<p>巨人が阪神に3-2で勝利した。スポーツ報知によると、戸郷が7回2失点と好投した。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source</p>"
+            ),
+            date="2026-04-21T20:30:00",
+            modified="2026-04-25T21:00:00",
+            meta={"article_subtype": "postgame"},
+        )
+
+        report = self._evaluate([old_postgame])
+
+        entry = self._find_entry(report, 206)
+        self.assertEqual(entry["content_date"], "2026-04-21")
+        self.assertFalse(entry["publishable"])
+        self.assertIn("expired_game_context", entry["hard_stop_flags"])
+        self.assertIn("detected_by=created_at", entry["freshness_reason"])
+
+    def test_source_date_takes_priority_over_created_at(self):
+        cases = [
+            (
+                "newer_source_date_keeps_post_publishable",
+                _post(
+                    207,
+                    "巨人が阪神に3-2で勝利",
+                    (
+                        "<p>巨人が阪神に3-2で勝利した。スポーツ報知によると、戸郷が7回2失点と好投した。</p>"
+                        "<p>参照元: スポーツ報知 https://www.sponichi.co.jp/baseball/news/2026/04/25/kiji.html</p>"
+                    ),
+                    date="2026-04-24T10:00:00",
+                    modified="2026-04-25T20:30:00",
+                    meta={"article_subtype": "postgame"},
+                ),
+                "2026-04-25",
+                True,
+                "fresh",
+            ),
+            (
+                "older_source_date_forces_stale_hold",
+                _post(
+                    208,
+                    "阿部監督「状態は上がってきた」 打線の手応えを語る",
+                    (
+                        "<p>阿部監督は『状態は上がってきた』と語った。スポーツ報知によると、打線の反応を前向きに見ている。</p>"
+                        "<p>参照元: スポーツ報知 https://www.sponichi.co.jp/baseball/news/2026/04/23/kiji.html</p>"
+                    ),
+                    date="2026-04-25T16:00:00",
+                    modified="2026-04-25T20:30:00",
+                    meta={"article_subtype": "comment"},
+                ),
+                "2026-04-23",
+                False,
+                "stale",
+            ),
+        ]
+
+        for label, post, expected_date, expected_publishable, expected_class in cases:
+            with self.subTest(label=label):
+                report = self._evaluate([post])
+                entry = self._find_entry(report, post["id"])
+                self.assertEqual(entry["content_date"], expected_date)
+                self.assertEqual(entry["publishable"], expected_publishable)
+                self.assertEqual(entry["freshness_class"], expected_class)
+                self.assertIn("priority=1", entry["freshness_reason"])
+                self.assertRegex(entry["freshness_reason"], r"detected_by=source_(block|url)")
+
+    def test_body_date_used_when_source_date_missing(self):
+        body_dated_post = _post(
+            209,
+            "巨人が阪神に3-2で勝利",
+            (
+                "<p>4月24日に東京ドームで行われた阪神戦で巨人が3-2で勝利した。スポーツ報知によると、戸郷が7回2失点と好投した。</p>"
+                "<p>参照元: スポーツ報知</p>"
+            ),
+            date="2026-04-25T20:30:00",
+            modified="2026-04-25T20:40:00",
+            meta={"article_subtype": "postgame"},
+        )
+
+        report = self._evaluate([body_dated_post])
+
+        entry = self._find_entry(report, 209)
+        self.assertEqual(entry["content_date"], "2026-04-24")
+        self.assertEqual(entry["freshness_class"], "expired")
+        self.assertIn("detected_by=body_date", entry["freshness_reason"])
+        self.assertIn("priority=2", entry["freshness_reason"])
+
+    def test_summary_includes_fresh_stale_expired_counts(self):
+        report = self._evaluate(
+            [
+                _post(
+                    210,
+                    "阿部監督「状態は上がってきた」 打線の手応えを語る",
+                    (
+                        "<p>阿部監督は『状態は上がってきた』と語った。スポーツ報知によると、打線の反応を前向きに見ている。</p>"
+                        "<p>参照元: スポーツ報知 https://example.com/source</p>"
+                    ),
+                    date="2026-04-23T22:30:00",
+                    modified="2026-04-25T20:30:00",
+                    meta={"article_subtype": "comment"},
+                ),
+                _post(
+                    211,
+                    "阿部監督「状態は上がってきた」 打線の手応えを語る",
+                    (
+                        "<p>阿部監督は『状態は上がってきた』と語った。スポーツ報知によると、打線の反応を前向きに見ている。</p>"
+                        "<p>参照元: スポーツ報知 https://example.com/source</p>"
+                    ),
+                    date="2026-04-23T19:30:00",
+                    modified="2026-04-25T20:30:00",
+                    meta={"article_subtype": "comment"},
+                ),
+                _post(
+                    212,
+                    "巨人スタメン 1番丸 4番岡本",
+                    (
+                        "<p>巨人のスタメンが発表された。スポーツ報知によると、1番丸、4番岡本で先発する。</p>"
+                        "<p>参照元: スポーツ報知 https://hochi.news/articles/20260425-OHT1T51000.html</p>"
+                    ),
+                    date="2026-04-25T14:00:00",
+                    modified="2026-04-25T20:30:00",
+                    meta={"article_subtype": "lineup"},
+                ),
+            ]
+        )
+
+        self.assertEqual(report["summary"]["fresh_count"], 1)
+        self.assertEqual(report["summary"]["stale_hold_count"], 1)
+        self.assertEqual(report["summary"]["expired_hold_count"], 1)
+
+    def test_human_summary_includes_stale_top_list(self):
+        report = self._evaluate(
+            [
+                _post(
+                    213,
+                    "阿部監督「状態は上がってきた」 打線の手応えを語る",
+                    (
+                        "<p>阿部監督は『状態は上がってきた』と語った。スポーツ報知によると、打線の反応を前向きに見ている。</p>"
+                        "<p>参照元: スポーツ報知 https://example.com/source</p>"
+                    ),
+                    date="2026-04-23T19:30:00",
+                    modified="2026-04-25T20:30:00",
+                    meta={"article_subtype": "comment"},
+                ),
+                _post(
+                    214,
+                    "巨人が阪神に3-2で勝利",
+                    (
+                        "<p>巨人が阪神に3-2で勝利した。スポーツ報知によると、戸郷が7回2失点と好投した。</p>"
+                        "<p>参照元: スポーツ報知 https://example.com/source</p>"
+                    ),
+                    date="2026-04-24T19:00:00",
+                    modified="2026-04-25T20:30:00",
+                    meta={"article_subtype": "postgame"},
+                ),
+            ]
+        )
+
+        rendered = render_human_report(report)
+
+        self.assertEqual(len(report["stale_top_list"]), 2)
+        self.assertIn("Freshness Hold Top", rendered)
+        self.assertIn("213 | 阿部監督", rendered)
+        self.assertIn("214 | 巨人が阪神に3-2で勝利", rendered)
+        self.assertIn("2026-04-23", rendered)
 
     def test_scan_wp_drafts_only_reads_wordpress(self):
         wp_client = mock.Mock()

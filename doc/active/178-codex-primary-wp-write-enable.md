@@ -174,3 +174,50 @@ git commit -m "178: Codex primary wp_write enable via CODEX_WP_WRITE_ALLOWED env
 - **178b**: 177 で land 済 Cloud Run Job `codex-shadow` の env に `CODEX_WP_WRITE_ALLOWED=true` 追加(gcloud run jobs update)→ 本線稼働開始
 - 178b 後 1-2 日 observation、ledger で品質確認
 - 品質悪化検知時、env=false に戻し shadow 復帰(rollback 1 コマンド)
+
+## 2026-04-26 evening combined result(178 + 178b)
+
+### code
+
+- `src/repair_fallback_controller.py`
+  - `CODEX_WP_WRITE_ALLOWED` env を追加
+  - default は `false` のまま維持
+  - `provider="codex"` のときだけ env を見て `wp_write_allowed` を切替
+- `tests/test_repair_fallback_controller.py`
+  - codex env false の既存 shadow case を env 固定
+  - codex env true で `status="success"` / `wp_write_allowed=True` を確認する test を追加
+  - provider matrix(gemini/openai_api は env 非依存)を追加
+
+### pytest
+
+- targeted: `8 passed`
+- full suite: `1411 passed`
+- collect: `1411`
+- fire-time baseline `1409` に対して +2 は今回追加 test ぶん
+
+### deploy
+
+- Cloud Run Job `codex-shadow`
+  - env 追加: `CODEX_WP_WRITE_ALLOWED`, `MAX_POSTS_PER_RUN`
+  - 既存 env 更新: `CODEX_SHADOW_MAX_POSTS=5`
+  - job args 更新: `--provider codex --max-posts 5`
+- Cloud Scheduler `codex-shadow-trigger`
+  - schedule: `*/5 * * * *`
+
+### smoke / observation
+
+- execution `codex-shadow-k7nxp`: success(exit 0), ただし job args 旧 `--max-posts 3`
+- execution `codex-shadow-xkdsq`: success(exit 0), job args `--max-posts 5`
+- one-off execution `codex-shadow-pq49d`: success(exit 0), override args `--max-posts 20` で全 eligible draft を走査
+- Cloud Logging summary:
+  - current draft pool は `eligible_after_list_filters=18`
+  - `processed=18` まで広げても `put_ok=0`
+  - skip / reject reason は `guard_b`, `heading_mismatch`, `title_axis_scope_out`, `subtype_unresolved`
+
+### note
+
+- `MAX_POSTS_PER_RUN=5` の追加だけでは実効値は変わらないことを確認したため、job args と `CODEX_SHADOW_MAX_POSTS` も `5` に合わせた
+- `wp_write_allowed=true` の deploy は完了
+- **実 WP write は未観測**
+  - 理由: 現在の draft pool に guard を通って PUT まで進む候補が存在しなかったため
+  - したがって ledger `status="success"` は code/tests と `guard_fail` 到達ログからは整合するが、Cloud Run 上の実 ledger 行は今回の smoke では直接回収していない

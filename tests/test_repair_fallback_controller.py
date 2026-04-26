@@ -46,14 +46,15 @@ class RepairFallbackControllerTests(unittest.TestCase):
             ledger_path = Path(tmpdir) / "repair-ledger.jsonl"
             writer = repair_provider_ledger.JsonlLedgerWriter(ledger_path)
             fake_meta = {"model": "chatgpt-pro", "raw_response_size": len(SUCCESS_BODY.encode("utf-8"))}
-            with patch(
-                "src.repair_fallback_controller.call_provider",
-                return_value=(SUCCESS_BODY, fake_meta),
-            ) as mocked_call:
-                result = controller.RepairFallbackController(
-                    primary_provider="codex",
-                    ledger_writer=writer,
-                ).execute(dict(POST), PROMPT)
+            with patch.dict(os.environ, {"CODEX_WP_WRITE_ALLOWED": "false"}, clear=False):
+                with patch(
+                    "src.repair_fallback_controller.call_provider",
+                    return_value=(SUCCESS_BODY, fake_meta),
+                ) as mocked_call:
+                    result = controller.RepairFallbackController(
+                        primary_provider="codex",
+                        ledger_writer=writer,
+                    ).execute(dict(POST), PROMPT)
             rows = self._read_rows(ledger_path)
 
         self.assertEqual(mocked_call.call_count, 1)
@@ -68,6 +69,53 @@ class RepairFallbackControllerTests(unittest.TestCase):
         self.assertEqual(rows[0]["status"], "shadow_only")
         self.assertIsNone(rows[0]["provider_meta"]["fallback_from"])
         self.assertIsNone(rows[0]["error_code"])
+
+    def test_primary_success_allows_wp_write_for_codex_when_env_enabled(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ledger_path = Path(tmpdir) / "repair-ledger.jsonl"
+            writer = repair_provider_ledger.JsonlLedgerWriter(ledger_path)
+            fake_meta = {"model": "chatgpt-pro", "raw_response_size": len(SUCCESS_BODY.encode("utf-8"))}
+            with patch.dict(os.environ, {"CODEX_WP_WRITE_ALLOWED": "true"}, clear=False):
+                with patch(
+                    "src.repair_fallback_controller.call_provider",
+                    return_value=(SUCCESS_BODY, fake_meta),
+                ):
+                    result = controller.RepairFallbackController(
+                        primary_provider="codex",
+                        ledger_writer=writer,
+                    ).execute(dict(POST), PROMPT)
+            rows = self._read_rows(ledger_path)
+
+        self.assertEqual(result.provider, "codex")
+        self.assertFalse(result.fallback_used)
+        self.assertEqual(result.body_text, SUCCESS_BODY)
+        self.assertTrue(result.wp_write_allowed)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["provider"], "codex")
+        self.assertEqual(rows[0]["status"], "success")
+        self.assertEqual(rows[0]["provider_meta"]["quality_flags"], [])
+
+    def test_wp_write_allowed_env_gate_only_affects_codex(self):
+        cases = [
+            ("env_unset_codex", {}, "codex", False),
+            ("env_false_codex", {"CODEX_WP_WRITE_ALLOWED": "false"}, "codex", False),
+            ("env_true_codex", {"CODEX_WP_WRITE_ALLOWED": "true"}, "codex", True),
+            ("env_mixed_case_codex", {"CODEX_WP_WRITE_ALLOWED": "TrUe"}, "codex", True),
+            ("env_unset_gemini", {}, "gemini", True),
+            ("env_false_gemini", {"CODEX_WP_WRITE_ALLOWED": "false"}, "gemini", True),
+            ("env_true_gemini", {"CODEX_WP_WRITE_ALLOWED": "true"}, "gemini", True),
+            ("env_false_openai", {"CODEX_WP_WRITE_ALLOWED": "false"}, "openai_api", True),
+            ("env_true_openai", {"CODEX_WP_WRITE_ALLOWED": "true"}, "openai_api", True),
+        ]
+
+        for label, env_overrides, provider_name, expected in cases:
+            with self.subTest(label=label):
+                with patch.dict(os.environ, env_overrides, clear=False):
+                    if "CODEX_WP_WRITE_ALLOWED" not in env_overrides:
+                        with patch.dict(os.environ, {}, clear=True):
+                            self.assertEqual(controller._wp_write_allowed(provider_name), expected)
+                    else:
+                        self.assertEqual(controller._wp_write_allowed(provider_name), expected)
 
     def test_primary_failures_trigger_fallback_and_write_two_ledger_entries(self):
         failure_cases = [

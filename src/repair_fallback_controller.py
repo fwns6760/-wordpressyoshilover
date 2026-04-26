@@ -21,6 +21,7 @@ from src.tools import draft_body_editor
 
 _STUB_MODE_ENV = "REPAIR_PROVIDER_STUB_MODE"
 _STUB_TEXT_ENV = "REPAIR_PROVIDER_STUB_TEXT"
+_CODEX_WP_WRITE_ALLOWED_ENV = "CODEX_WP_WRITE_ALLOWED"
 _SUCCESS_TEXT_TEMPLATE = (
     "【試合結果】\n"
     "{provider} stub 成功です。\n"
@@ -168,7 +169,9 @@ def call_provider(provider_name: str, prompt: str, api_key: str) -> tuple[str, d
 
 
 def _wp_write_allowed(provider_name: str) -> bool:
-    return provider_name != "codex"
+    if provider_name != "codex":
+        return True
+    return os.getenv(_CODEX_WP_WRITE_ALLOWED_ENV, "false").strip().lower() == "true"
 
 
 class RepairFallbackController:

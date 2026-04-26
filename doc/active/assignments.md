@@ -1,6 +1,6 @@
 # assignments — ticket 担当者割り当て
 
-最終更新: 2026-04-26
+最終更新: 2026-04-26 PM(GCP 移行 phasing 168-175 反映、ChatGPT Plan mode A-G 結論受領)
 
 ## エージェント
 
@@ -27,7 +27,16 @@
 | **148** X Phase 1 dry-run mail | P0.5 | **CLOSED `cc9fe16`** | Codex A 完了 | 直近 publish 5 件文案 build + mail、X API zero、user 文案確認 待ち |
 | **149** X Phase 2 manual live 1 | P0.5 | READY(148 done)| Claude / A | user 確認後 1 件 manual_post live |
 | **150** X Phase 3 trigger ON cap 1 | P0.5 | BLOCKED(149) | Claude / A | 149 OK 後 env auto + daily 1、WP trigger 連動 |
-| **PUB-002-A** | reference | active | (parent runbook) | 130 evaluator base、現役参照 |
+| **PUB-002-A** | reference | done | (parent runbook supersede 154) | 130 evaluator base、移動済 `doc/done/2026-04/` |
+| **154** publish-policy(現行)| reference | active | (current runbook) | 130 / 135 / 137 / 141-146 反映 |
+| **155** GCP migration master | P0.5 | READY(Phase 1a done `88391d0`、1b done `c5adfa3`)| Claude / A | Phase 1c 以降は 168-175 chain で展開 |
+| **156** Phase 1b 042 Cloud Run deploy | P0.5 | **CLOSED `c5adfa3`**(image push + Job create + smoke pass)| A 完了 | WSL cron 042 並走中、disable は Phase 1e |
+| **165** Gemini + WP REST resilience | P0.5 | **CLOSED `3aa2cd1`**(retry/backoff/429/Retry-After、pytest 1338→1343)| A 完了 | API 一時 outage で cron 無駄停止しない |
+| **166** Cloud Run failure alert | P1 | BLOCKED(155 deploy 後) | Claude / A | mail 通知配線、169 着地後 fire |
+| **167** GCP billing alert | P1 | **REWORK 必要**(JPY billing で USD budget reject、再 fire 時 ¥ 換算)| Claude / A | $10/30/50 → ¥1500/4500/7500 で再 fire |
+| **168** repair-provider-ledger v0 | P0 | **IN_FLIGHT `bx8ao0it9`** | B(`codex exec`) | GCP migration foundation、schema v0 確定 |
+| **173** x-post-cloud-queue-ledger v0 | P0.5 | **IN_FLIGHT `bgn2tj0bp`** | A(`codex exec`、168 と並走) | X 投稿 lane foundation、unlock 時即動 |
+| **169-172, 174-175** | P0.5 | QUEUED | Claude(起票)/ Codex(実装) | 168 着地後順次起票 + fire(ChatGPT phasing 順)|
 
 ### 止まってる(waiting)
 

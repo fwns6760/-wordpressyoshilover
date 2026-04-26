@@ -696,39 +696,93 @@ class TestLaneMain(unittest.TestCase):
             {"post_id": 871, "verdict": "edited", "edited": "dry_run"}
         ])
 
-    def test_provider_stubs_write_skipped_ledger_and_exit_zero(self):
-        for idx, provider in enumerate(("codex", "openai_api"), start=881):
-            with self.subTest(provider=provider):
-                with tempfile.TemporaryDirectory() as tmpdir:
-                    queue_path = Path(tmpdir) / "repair_queue.jsonl"
-                    ledger_path = Path(tmpdir) / f"{provider}-ledger.jsonl"
-                    queue_post = _make_post(idx, modified="2026-04-20T08:00:00+09:00")
-                    _write_queue_file(queue_path, queue_post)
-                    code, stdout, _, _, make_wp_client, editor_mock = _run_main(
-                        [
-                            "--now-iso", "2026-04-20T10:00:00+09:00",
-                            "--queue-path", str(queue_path),
-                            "--provider", provider,
-                            "--dry-run",
-                            "--ledger-path", str(ledger_path),
-                        ],
-                        log_root=Path(tmpdir) / "lane_logs",
+    def test_provider_fallback_controller_dry_run_edits_without_subprocess(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            queue_path = Path(tmpdir) / "repair_queue.jsonl"
+            queue_post = _make_post(881, modified="2026-04-20T08:00:00+09:00")
+            _write_queue_file(queue_path, queue_post)
+            controller_instance = Mock()
+            controller_instance.execute.return_value = lane.repair_fallback_controller.RepairResult(
+                provider="gemini",
+                fallback_used=True,
+                body_text=SUCCESS_BODY,
+                failure_chain=[
+                    lane.repair_fallback_controller.FailureRecord(
+                        provider="codex",
+                        error_class="timeout",
+                        error_message="primary timeout",
+                        latency_ms=120000,
                     )
-                    rows = _read_jsonl_rows(ledger_path)
+                ],
+            )
+            with patch(
+                "src.tools.run_draft_body_editor_lane.repair_fallback_controller.RepairFallbackController",
+                return_value=controller_instance,
+            ):
+                code, stdout, _, _, make_wp_client, editor_mock = _run_main(
+                    [
+                        "--now-iso", "2026-04-20T10:00:00+09:00",
+                        "--queue-path", str(queue_path),
+                        "--provider", "codex",
+                        "--dry-run",
+                    ],
+                    log_root=Path(tmpdir) / "lane_logs",
+                )
 
-                    self.assertEqual(code, 0)
-                    self.assertFalse(make_wp_client.called)
-                    self.assertFalse(editor_mock.called)
-                self.assertEqual(len(rows), 1)
-                self.assertEqual(rows[0]["provider"], provider)
-                self.assertEqual(rows[0]["status"], "skipped")
-                self.assertEqual(rows[0]["error_code"], lane.PROVIDER_STUB_ERROR_CODE)
-                payload = json.loads(stdout.strip())
-                self.assertEqual(payload["put_ok"], 0)
-                self.assertEqual(payload["skip_reason_counts"], {lane.PROVIDER_STUB_ERROR_CODE: 1})
-                self.assertEqual(payload["per_post_outcomes"], [
-                    {"post_id": idx, "verdict": "skip", "skip_reason": lane.PROVIDER_STUB_ERROR_CODE}
-                ])
+        self.assertEqual(code, 0)
+        self.assertFalse(make_wp_client.called)
+        self.assertFalse(editor_mock.called)
+        controller_instance.execute.assert_called_once()
+        payload = json.loads(stdout.strip())
+        self.assertEqual(payload["put_ok"], 1)
+        self.assertEqual(payload["per_post_outcomes"], [
+            {"post_id": 881, "verdict": "edited", "edited": "dry_run"}
+        ])
+
+    def test_provider_fallback_controller_live_puts_content_when_body_exists(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            queue_path = Path(tmpdir) / "repair_queue.jsonl"
+            queue_post = _make_post(882, modified="2026-04-20T08:00:00+09:00")
+            _write_queue_file(queue_path, queue_post)
+            controller_instance = Mock()
+            controller_instance.execute.return_value = lane.repair_fallback_controller.RepairResult(
+                provider="gemini",
+                fallback_used=True,
+                body_text=SUCCESS_BODY,
+                failure_chain=[
+                    lane.repair_fallback_controller.FailureRecord(
+                        provider="openai_api",
+                        error_class="rate_limit_429",
+                        error_message="primary rate limit",
+                        latency_ms=8000,
+                    )
+                ],
+            )
+            wp = _FakeWP()
+            with patch(
+                "src.tools.run_draft_body_editor_lane.repair_fallback_controller.RepairFallbackController",
+                return_value=controller_instance,
+            ):
+                code, stdout, _, wp, make_wp_client, editor_mock = _run_main(
+                    [
+                        "--now-iso", "2026-04-20T10:00:00+09:00",
+                        "--queue-path", str(queue_path),
+                        "--provider", "openai_api",
+                    ],
+                    wp=wp,
+                    log_root=Path(tmpdir) / "lane_logs",
+                )
+
+        self.assertEqual(code, 0)
+        self.assertTrue(make_wp_client.called)
+        self.assertFalse(editor_mock.called)
+        controller_instance.execute.assert_called_once()
+        self.assertEqual(wp.put_calls, [(882, {"content": SUCCESS_BODY})])
+        payload = json.loads(stdout.strip())
+        self.assertEqual(payload["put_ok"], 1)
+        self.assertEqual(payload["per_post_outcomes"], [
+            {"post_id": 882, "verdict": "edited", "edited": "ok"}
+        ])
 
     def test_put_fail_twice_stops(self):
         paged_posts = {

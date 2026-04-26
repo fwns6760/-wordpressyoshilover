@@ -28,10 +28,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Sequence
 from urllib.parse import urlparse
-from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+from src import repair_fallback_controller
 from src import repair_provider_ledger
+from src.tools import draft_body_editor
 from src.tools.draft_body_editor import _extract_prose_text
 
 
@@ -71,7 +72,6 @@ EXIT_REJECT_STREAK = 43
 EXIT_API_FAIL = 44
 EXIT_PUT_FAIL = 45
 QUEUE_FETCH_MODE = "queue_jsonl"
-PROVIDER_STUB_ERROR_CODE = "provider_not_implemented_yet"
 VALID_REPAIR_PROVIDERS = ("gemini", "codex", "openai_api")
 
 TEAM_NAMES = (
@@ -813,6 +813,74 @@ def _run_editor(
         return completed.returncode, payload, stderr, new_body
 
 
+def _format_failure_chain(
+    failure_chain: Sequence[repair_fallback_controller.FailureRecord],
+) -> str:
+    if not failure_chain:
+        return "provider failure"
+    return " | ".join(
+        f"{item.provider}:{item.error_class}:{item.error_message}"
+        for item in failure_chain
+    )
+
+
+def _run_fallback_controller(
+    candidate: dict[str, Any],
+    *,
+    provider: str,
+    ledger_path: Path,
+    dry_run: bool,
+) -> tuple[int, dict[str, Any] | None, str, str | None]:
+    headings = draft_body_editor._lookup_required_headings(candidate["subtype"])
+    prompt = draft_body_editor.build_prompt(
+        candidate["subtype"],
+        candidate["fail_axes"],
+        candidate["current_body"],
+        candidate["source_block"],
+        headings,
+    )
+    controller = repair_fallback_controller.RepairFallbackController(
+        primary_provider=provider,
+        fallback_provider="gemini",
+        ledger_writer=repair_provider_ledger.JsonlLedgerWriter(ledger_path),
+    )
+    result = controller.execute(candidate, prompt)
+    if result.body_text is None:
+        return 20, None, _format_failure_chain(result.failure_chain), None
+
+    new_body = result.body_text
+    violations_a = draft_body_editor.guard_a_source_grounding(
+        new_body,
+        candidate["current_body"],
+        candidate["source_block"],
+    )
+    if violations_a:
+        return 10, None, "\n".join(violations_a), None
+
+    violations_b = draft_body_editor.guard_b_heading_invariant(new_body, headings)
+    if violations_b:
+        return 11, None, "\n".join(violations_b), None
+
+    violations_c = draft_body_editor.guard_c_scope_invariant(
+        new_body,
+        candidate["current_body"],
+    )
+    if violations_c:
+        return 12, None, "\n".join(violations_c), None
+
+    return 0, {
+        "post_id": candidate["post_id"],
+        "subtype": candidate["subtype"],
+        "fail": list(candidate["fail_axes"]),
+        "chars_before": len(candidate["current_body"]),
+        "chars_after": len(new_body),
+        "guards": "pass",
+        "dry_run": bool(dry_run),
+        "provider": result.provider,
+        "fallback_used": result.fallback_used,
+    }, "", new_body
+
+
 def _make_wp_client():
     from src.wp_client import WPClient
 
@@ -1012,63 +1080,6 @@ def _exit_code_for_stop_reason(stop_reason: str) -> int:
         "api_fail": EXIT_API_FAIL,
         "put_fail": EXIT_PUT_FAIL,
     }.get(stop_reason, 0)
-
-
-def _write_provider_stub_ledger(
-    *,
-    candidate: dict[str, Any],
-    provider: str,
-    ledger_path: Path,
-    now: datetime,
-) -> None:
-    body_len_before = len(candidate["current_body"])
-    input_hash = repair_provider_ledger.compute_input_hash(
-        {
-            "post_id": candidate["post_id"],
-            "subtype": candidate["subtype"],
-            "fail_axes": list(candidate["fail_axes"]),
-            "dry_run": True,
-            "current_body": candidate["current_body"],
-            "source_block": candidate["source_block"],
-        }
-    )
-    entry = repair_provider_ledger.RepairLedgerEntry(
-        schema_version=repair_provider_ledger.SCHEMA_VERSION,
-        run_id=str(uuid4()),
-        lane="repair",
-        provider=provider,
-        model=f"{provider}-stub",
-        source_post_id=candidate["post_id"],
-        input_hash=input_hash,
-        output_hash=repair_provider_ledger.compute_output_hash(candidate["current_body"]),
-        artifact_uri=ledger_path.resolve().as_uri(),
-        status="skipped",
-        strict_pass=False,
-        error_code=PROVIDER_STUB_ERROR_CODE,
-        idempotency_key=repair_provider_ledger.make_idempotency_key(
-            candidate["post_id"],
-            input_hash,
-            provider,
-        ),
-        created_at=now.isoformat(),
-        started_at=now.isoformat(),
-        finished_at=now.isoformat(),
-        metrics={
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "latency_ms": 0,
-            "body_len_before": body_len_before,
-            "body_len_after": body_len_before,
-            "body_len_delta_pct": 0.0,
-        },
-        provider_meta={
-            "raw_response_size": 0,
-            "fallback_from": None,
-            "fallback_reason": None,
-            "quality_flags": ["provider_stub_not_implemented"],
-        },
-    )
-    repair_provider_ledger.JsonlLedgerWriter(ledger_path).write(entry)
 
 
 def _emit_run_result(
@@ -1301,7 +1312,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     selected_candidates = candidates[: args.max_posts]
     selected_count = len(selected_candidates)
-    if queue_path is not None and args.provider == "gemini" and not args.dry_run:
+    if queue_path is not None and not args.dry_run:
         try:
             wp = _make_wp_client()
         except Exception as e:
@@ -1390,11 +1401,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if args.provider != "gemini":
             try:
-                _write_provider_stub_ledger(
-                    candidate=candidate,
+                exec_code, exec_payload, exec_stderr, new_body = _run_fallback_controller(
+                    candidate,
                     provider=args.provider,
                     ledger_path=ledger_path,
-                    now=now,
+                    dry_run=bool(args.dry_run),
                 )
             except (
                 repair_provider_ledger.LedgerLockError,
@@ -1402,26 +1413,111 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ValueError,
                 OSError,
             ) as e:
-                print(f"failed to write provider stub ledger post_id={post_id}: {e}", file=sys.stderr)
+                print(f"failed to run fallback controller post_id={post_id}: {e}", file=sys.stderr)
                 _append_skip_outcome(per_post_outcomes, process_skip_counter, post_id=post_id, reason="input_error")
                 stop_reason = "input_error"
                 break
-            _append_skip_outcome(
-                per_post_outcomes,
-                process_skip_counter,
-                post_id=post_id,
-                reason=PROVIDER_STUB_ERROR_CODE,
-            )
+
+            if exec_code in {10, 11, 12}:
+                reject_count += 1
+                per_post_outcomes.append({
+                    "post_id": candidate["post_id"],
+                    "verdict": "guard_fail",
+                    "guard_fail": _guard_fail_label(exec_code),
+                })
+                _append_session_log(
+                    now,
+                    {
+                        "event": "editor_reject",
+                        "post_id": candidate["post_id"],
+                        "provider": args.provider,
+                        "subtype": candidate["subtype"],
+                        "fail_axes": candidate["fail_axes"],
+                        "editor_exit": exec_code,
+                        "violation": exec_stderr,
+                        "put_status": "skipped",
+                    },
+                )
+                continue
+
+            if exec_code == 20:
+                _append_skip_outcome(per_post_outcomes, process_skip_counter, post_id=candidate["post_id"], reason="api_fail")
+                _append_session_log(
+                    now,
+                    {
+                        "event": "editor_api_fail",
+                        "post_id": candidate["post_id"],
+                        "provider": args.provider,
+                        "subtype": candidate["subtype"],
+                        "editor_exit": exec_code,
+                        "violation": exec_stderr,
+                        "put_status": "skipped",
+                    },
+                )
+                stop_reason = "api_fail"
+                break
+
+            if exec_code == 30 or new_body is None or exec_payload is None:
+                _append_skip_outcome(per_post_outcomes, process_skip_counter, post_id=candidate["post_id"], reason="input_error")
+                _append_session_log(
+                    now,
+                    {
+                        "event": "editor_input_error",
+                        "post_id": candidate["post_id"],
+                        "provider": args.provider,
+                        "subtype": candidate["subtype"],
+                        "editor_exit": exec_code,
+                        "violation": exec_stderr or "missing_output",
+                        "put_status": "skipped",
+                    },
+                )
+                stop_reason = "input_error"
+                break
+
+            put_status = "dry_run"
+            if not args.dry_run:
+                try:
+                    _put_content_only(wp, candidate["post_id"], new_body)
+                    put_status = "ok"
+                except Exception as e:
+                    put_fail_count += 1
+                    _append_skip_outcome(per_post_outcomes, process_skip_counter, post_id=candidate["post_id"], reason="put_fail")
+                    _append_session_log(
+                        now,
+                        {
+                            "event": "put_fail",
+                            "post_id": candidate["post_id"],
+                            "provider": args.provider,
+                            "subtype": candidate["subtype"],
+                            "fail_axes": candidate["fail_axes"],
+                            "put_status": f"error:{type(e).__name__}",
+                            "violation": str(e),
+                        },
+                    )
+                    if put_fail_count >= 2:
+                        stop_reason = "put_fail"
+                        break
+                    continue
+
+            put_ok += 1
+            per_post_outcomes.append({
+                "post_id": candidate["post_id"],
+                "verdict": "edited",
+                "edited": put_status,
+            })
             _append_session_log(
                 now,
                 {
-                    "event": "provider_stub_skipped",
+                    "event": "put_ok" if put_status == "ok" else "dry_run",
                     "post_id": candidate["post_id"],
-                    "provider": args.provider,
+                    "provider": exec_payload.get("provider"),
+                    "fallback_used": exec_payload.get("fallback_used"),
                     "subtype": candidate["subtype"],
                     "fail_axes": candidate["fail_axes"],
-                    "put_status": "skipped",
-                    "error_code": PROVIDER_STUB_ERROR_CODE,
+                    "chars_before": candidate["chars_before"],
+                    "chars_after": len(new_body),
+                    "guards": exec_payload.get("guards"),
+                    "put_status": put_status,
                 },
             )
             continue

@@ -69,8 +69,9 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
                 "manual_x_post_candidates:",
                 "article_url: https://yoshilover.com/post-123/",
                 "x_post_1_article_intro: 巨人の試合結果を更新しました。巨人が接戦を制した https://yoshilover.com/post-123/",
-                "x_post_2_reaction_hook: この試合、巨人ファンはどう見る？ 終盤の継投と一打が勝敗を分けた。 https://yoshilover.com/post-123/",
-                "x_post_3_inside_voice: これは試合後にもう一度見たいポイント。巨人が接戦を制した",
+                "x_post_2_postgame_turning_point: 試合の分岐点を整理。終盤の継投と一打が勝敗を分けた。 https://yoshilover.com/post-123/",
+                "x_post_3_fan_reaction_hook: この試合、巨人ファンはどう見る？ 終盤の継投と一打が勝敗を分けた。 https://yoshilover.com/post-123/",
+                "x_post_4_inside_voice: これは試合後にもう一度見たいポイント。巨人が接戦を制した",
             ],
         )
 
@@ -95,9 +96,63 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
 
         self.assertEqual(
             [label for label, _text in candidates],
-            ["x_post_1_article_intro", "x_post_2_reaction_hook", "x_post_3_inside_voice"],
+            [
+                "x_post_1_article_intro",
+                "x_post_2_postgame_turning_point",
+                "x_post_3_fan_reaction_hook",
+                "x_post_4_inside_voice",
+            ],
         )
         self.assertTrue(all(len(text) <= sender.MAX_MANUAL_X_POST_LENGTH for _label, text in candidates))
+
+    def test_manual_x_post_candidates_vary_by_subtype(self):
+        lineup_labels = [
+            label for label, _text in sender.build_manual_x_post_candidates(self._request(subtype="lineup"))
+        ]
+        program_labels = [
+            label for label, _text in sender.build_manual_x_post_candidates(self._request(subtype="program"))
+        ]
+        default_labels = [
+            label for label, _text in sender.build_manual_x_post_candidates(self._request(subtype="other"))
+        ]
+
+        self.assertIn("x_post_2_lineup_focus", lineup_labels)
+        self.assertIn("x_post_2_program_memo", program_labels)
+        self.assertNotEqual(lineup_labels, default_labels)
+
+    def test_manual_x_notice_omits_fan_reaction_hook(self):
+        candidates = sender.build_manual_x_post_candidates(self._request(subtype="notice"))
+
+        self.assertEqual(len(candidates), 3)
+        self.assertFalse(any("fan_reaction_hook" in label for label, _text in candidates))
+
+    def test_manual_x_sensitive_words_omit_fan_reaction_hook(self):
+        candidates = sender.build_manual_x_post_candidates(
+            self._request(title="巨人主力が怪我から復帰へ", subtype="postgame")
+        )
+
+        self.assertFalse(any("fan_reaction_hook" in label for label, _text in candidates))
+
+    def test_manual_x_inside_voice_is_conditional(self):
+        farm_labels = [label for label, _text in sender.build_manual_x_post_candidates(self._request(subtype="farm"))]
+        default_labels = [
+            label for label, _text in sender.build_manual_x_post_candidates(self._request(subtype="default"))
+        ]
+        notice_labels = [
+            label for label, _text in sender.build_manual_x_post_candidates(self._request(subtype="notice"))
+        ]
+
+        self.assertTrue(any("inside_voice" in label for label in farm_labels))
+        self.assertFalse(any("inside_voice" in label for label in default_labels))
+        self.assertFalse(any("inside_voice" in label for label in notice_labels))
+
+    def test_manual_x_post_candidates_limit_url_candidates_to_three(self):
+        candidates = sender.build_manual_x_post_candidates(self._request(subtype="program"))
+
+        self.assertLessEqual(
+            sum("https://yoshilover.com/post-123/" in text for _label, text in candidates),
+            3,
+        )
 
     def test_send_dry_run_default_skips_bridge_call(self):
         request = self._request()
@@ -183,8 +238,9 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
                 "manual_x_post_candidates:",
                 "article_url: https://yoshilover.com/post-123/",
                 "x_post_1_article_intro: 巨人の試合結果を更新しました。巨人が接戦を制した https://yoshilover.com/post-123/",
-                "x_post_2_reaction_hook: この試合、巨人ファンはどう見る？ 終盤の継投と一打が勝敗を分けた。 https://yoshilover.com/post-123/",
-                "x_post_3_inside_voice: これは試合後にもう一度見たいポイント。巨人が接戦を制した",
+                "x_post_2_postgame_turning_point: 試合の分岐点を整理。終盤の継投と一打が勝敗を分けた。 https://yoshilover.com/post-123/",
+                "x_post_3_fan_reaction_hook: この試合、巨人ファンはどう見る？ 終盤の継投と一打が勝敗を分けた。 https://yoshilover.com/post-123/",
+                "x_post_4_inside_voice: これは試合後にもう一度見たいポイント。巨人が接戦を制した",
             ],
         )
         self.assertEqual(mail_request.metadata["post_id"], 123)

@@ -1,7 +1,7 @@
 # 189 publish-notice contextual manual X candidates
 
 - priority: P0.5
-- status: READY
+- status: CLOSED
 - owner: Codex B
 - lane: B
 - parent: 188 / 095-D / 131 / PUB-005
@@ -42,10 +42,15 @@ X API の URL 付き投稿は行わず、運営者がメールからコピペで
 
 ## Acceptance
 
-- subtype 別に出力候補が変わる。
-- `notice` で `fan_reaction_hook` が出ない。
-- 怪我・復帰ワードで `fan_reaction_hook` が出ない。
-- `inside_voice` が条件付きで出る。
-- 全候補が 280 字以内。
-- URL付き候補が最大 3 本。
-- `python3 -m pytest tests/test_publish_notice_email_sender.py` が通る。
+- [x] subtype 別に出力候補が変わる。
+- [x] `notice` で `fan_reaction_hook` が出ない。
+- [x] 怪我・復帰ワードで `fan_reaction_hook` が出ない。
+- [x] `inside_voice` が条件付きで出る。
+- [x] 全候補が 280 字以内。
+- [x] URL付き候補が最大 3 本。
+- [x] `python3 -m pytest tests/test_publish_notice_email_sender.py` が通る。
+
+## Verification
+
+- `python3 -m pytest tests/test_publish_notice_email_sender.py`
+- result: 22 passed, 3 warnings

@@ -22,6 +22,47 @@ DEFAULT_DUPLICATE_WINDOW = timedelta(minutes=30)
 _WHITESPACE_RE = re.compile(r"\s+")
 _SUMMARY_TITLE_LIMIT = 80
 MAX_MANUAL_X_POST_LENGTH = 280
+_MANUAL_X_TEMPLATE_TYPES = (
+    "article_intro",
+    "why_it_matters",
+    "fan_reaction_hook",
+    "lineup_focus",
+    "lineup_order_note",
+    "postgame_turning_point",
+    "postgame_recheck",
+    "farm_watch",
+    "notice_note",
+    "notice_careful",
+    "program_memo",
+    "inside_voice",
+)
+_MANUAL_X_URL_TEMPLATES = frozenset(
+    {
+        "article_intro",
+        "why_it_matters",
+        "fan_reaction_hook",
+        "lineup_focus",
+        "lineup_order_note",
+        "postgame_turning_point",
+        "postgame_recheck",
+        "farm_watch",
+        "notice_note",
+        "notice_careful",
+        "program_memo",
+    }
+)
+_MANUAL_X_SENSITIVE_WORDS = (
+    "怪我",
+    "けが",
+    "ケガ",
+    "負傷",
+    "故障",
+    "違和感",
+    "リハビリ",
+    "復帰",
+    "手術",
+    "診断",
+)
 _ALERT_LABELS = {
     "publish_failure": "publish failure",
     "hard_stop": "hard stop",
@@ -179,43 +220,108 @@ def _collapse_title(value: str) -> str:
     return compact[: _SUMMARY_TITLE_LIMIT - 1] + "…"
 
 
-def _manual_x_context(subtype: str) -> tuple[str, str, str]:
+def _manual_x_article_type(subtype: str) -> str:
     normalized = str(subtype or "").strip().lower()
     if "lineup" in normalized or "スタメン" in normalized:
-        return (
-            "巨人のスタメン情報を更新しました。",
-            "このスタメン、巨人ファンはどう見る？",
-            "この起用は試合前に見ておきたい。",
-        )
+        return "lineup"
     if "postgame" in normalized or "result" in normalized or "試合結果" in normalized:
-        return (
-            "巨人の試合結果を更新しました。",
-            "この試合、巨人ファンはどう見る？",
-            "これは試合後にもう一度見たいポイント。",
-        )
+        return "postgame"
     if "farm" in normalized or "二軍" in normalized or "2軍" in normalized:
-        return (
-            "巨人の二軍情報を更新しました。",
-            "この二軍の動き、巨人ファンはどう見る？",
-            "二軍の動きも追っておきたい。",
-        )
+        return "farm"
     if "notice" in normalized or "transaction" in normalized or "roster" in normalized or "公示" in normalized:
-        return (
-            "巨人の公示・選手動向を更新しました。",
-            "この動き、巨人ファンはどう見る？",
-            "この動きは後で効いてくるかもしれません。",
-        )
+        return "notice"
     if "program" in normalized or "tv" in normalized or "番組" in normalized:
-        return (
-            "巨人関連の番組情報を更新しました。",
-            "この番組情報、巨人ファンはどう見る？",
-            "見逃し注意の巨人関連情報です。",
-        )
-    return (
-        "巨人ニュースを更新しました。",
-        "この話題、巨人ファンはどう見る？",
-        "これはちょっと見逃せない動きですね。",
-    )
+        return "program"
+    return "default"
+
+
+def _manual_x_has_sensitive_word(title: str, summary: str) -> bool:
+    combined = f"{title} {summary}"
+    return any(word in combined for word in _MANUAL_X_SENSITIVE_WORDS)
+
+
+def _manual_x_template_sequence(article_type: str, *, sensitive: bool) -> list[str]:
+    if article_type == "lineup":
+        templates = ["article_intro", "lineup_focus", "fan_reaction_hook", "inside_voice"]
+    elif article_type == "postgame":
+        templates = ["article_intro", "postgame_turning_point", "fan_reaction_hook", "inside_voice"]
+    elif article_type == "farm":
+        templates = ["article_intro", "farm_watch", "why_it_matters", "inside_voice"]
+    elif article_type == "notice":
+        templates = ["article_intro", "notice_note", "notice_careful"]
+    elif article_type == "program":
+        templates = ["article_intro", "program_memo", "why_it_matters", "inside_voice"]
+    else:
+        templates = ["article_intro", "why_it_matters", "fan_reaction_hook"]
+
+    if sensitive or article_type == "notice":
+        templates = [template for template in templates if template != "fan_reaction_hook"]
+    if article_type not in {"lineup", "postgame", "farm", "program"}:
+        templates = [template for template in templates if template != "inside_voice"]
+    return [template for template in templates if template in _MANUAL_X_TEMPLATE_TYPES]
+
+
+def _manual_x_article_intro_lead(article_type: str) -> str:
+    return {
+        "lineup": "巨人のスタメン情報を更新しました。",
+        "postgame": "巨人の試合結果を更新しました。",
+        "farm": "巨人の二軍情報を更新しました。",
+        "notice": "巨人の公示・選手動向を整理しました。",
+        "program": "巨人関連の番組情報を更新しました。",
+    }.get(article_type, "巨人ニュースを更新しました。")
+
+
+def _manual_x_fan_reaction_lead(article_type: str) -> str:
+    return {
+        "lineup": "このスタメン、巨人ファンはどう見る？",
+        "postgame": "この試合、巨人ファンはどう見る？",
+    }.get(article_type, "この話題、巨人ファンはどう見る？")
+
+
+def _manual_x_inside_voice(article_type: str) -> str:
+    return {
+        "lineup": "この起用は試合前に見ておきたい。",
+        "postgame": "これは試合後にもう一度見たいポイント。",
+        "farm": "二軍の動きも追っておきたい。",
+        "program": "見逃し注意の巨人関連情報です。",
+    }.get(article_type, "")
+
+
+def _render_manual_x_template(
+    template_type: str,
+    *,
+    article_type: str,
+    title: str,
+    hook_source: str,
+    url: str,
+    include_url: bool,
+) -> str:
+    suffix = f" {url}" if include_url and url else ""
+    if template_type == "article_intro":
+        return f"{_manual_x_article_intro_lead(article_type)}{title}{suffix}"
+    if template_type == "why_it_matters":
+        return f"押さえておきたいポイント。{hook_source}{suffix}"
+    if template_type == "fan_reaction_hook":
+        return f"{_manual_x_fan_reaction_lead(article_type)} {hook_source}{suffix}"
+    if template_type == "lineup_focus":
+        return f"試合前に確認したい起用ポイント。{title}{suffix}"
+    if template_type == "lineup_order_note":
+        return f"打順と起用の意図が気になるスタメン。{title}{suffix}"
+    if template_type == "postgame_turning_point":
+        return f"試合の分岐点を整理。{hook_source}{suffix}"
+    if template_type == "postgame_recheck":
+        return f"試合後にもう一度見たい場面。{title}{suffix}"
+    if template_type == "farm_watch":
+        return f"二軍の動きも追っておきたい。{title}{suffix}"
+    if template_type == "notice_note":
+        return f"公示・選手動向を整理。{title}{suffix}"
+    if template_type == "notice_careful":
+        return f"事実関係を確認しながら見たい動き。{hook_source}{suffix}"
+    if template_type == "program_memo":
+        return f"見逃し注意の巨人関連情報。{title}{suffix}"
+    if template_type == "inside_voice":
+        return f"{_manual_x_inside_voice(article_type)}{title}"
+    return f"{title}{suffix}"
 
 
 def _trim_manual_x_post_text(value: str) -> str:
@@ -232,15 +338,29 @@ def build_manual_x_post_candidates(request: PublishNoticeRequest) -> list[tuple[
     url = str(request.canonical_url or "").strip()
     summary = _normalize_summary(request.summary)
     hook_source = summary if summary != "(なし)" else title
-    article_intro, reaction_hook, inside_voice = _manual_x_context(request.subtype)
+    article_type = _manual_x_article_type(request.subtype)
+    template_sequence = _manual_x_template_sequence(
+        article_type,
+        sensitive=_manual_x_has_sensitive_word(title, summary),
+    )
 
-    with_url_suffix = f" {url}" if url else ""
-    candidates = [
-        ("x_post_1_article_intro", f"{article_intro}{title}{with_url_suffix}"),
-        ("x_post_2_reaction_hook", f"{reaction_hook} {hook_source}{with_url_suffix}"),
-        ("x_post_3_inside_voice", f"{inside_voice}{title}"),
-    ]
-    return [(label, _trim_manual_x_post_text(text)) for label, text in candidates]
+    candidates: list[tuple[str, str]] = []
+    url_candidate_count = 0
+    for template_type in template_sequence:
+        wants_url = template_type in _MANUAL_X_URL_TEMPLATES
+        include_url = wants_url and url_candidate_count < 3
+        if include_url:
+            url_candidate_count += 1
+        text = _render_manual_x_template(
+            template_type,
+            article_type=article_type,
+            title=title,
+            hook_source=hook_source,
+            url=url,
+            include_url=include_url,
+        )
+        candidates.append((f"x_post_{len(candidates) + 1}_{template_type}", _trim_manual_x_post_text(text)))
+    return candidates
 
 
 def _load_queue_entries(path: str | Path | None) -> list[dict[str, Any]]:

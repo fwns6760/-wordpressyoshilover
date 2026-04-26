@@ -133,22 +133,26 @@ doc/
 
 - **alias**: PUB-004-D
 - **priority**: P0
-- **status**: **IN_FLIGHT**(2026-04-26 PM 累計 38 件 publish、daily cap 残 62、autonomous 継続)
+- **status**: **IN_FLIGHT**(2026-04-26 累計 **66 件 publish**、daily cap 残 34、pool 枯渇で本日実質完了)
 - **owner**: Claude Code(orchestration)
 - **lane**: Claude
-- **ready_for**: 24h 内追加 invocation 可、翌 JST 0:00 reset 後 backlog 残 drain
-- **next_action**: 1) burst 観察 + 24h 内追加 publish 2) 翌日 daily cap reset 後再 ramp 3) 124-A live cleanup apply
-- **blocked_by**: none
+- **ready_for**: 翌 JST 0:00 reset 後 RSS fetcher 新着 + 残 cleanup_failed retry
+- **next_action**: 1) 翌日 daily cap reset 後再 ramp 2) 124-A live cleanup apply 3) 残 cleanup_failed の cleanup chain 改善
+- **blocked_by**: none(pool 枯渇のみ、技術的 blocker なし)
 - **user_action_required**: **NO**(autonomous lock、142 freshness 降格 + 145 mapping fix 適用済)
 - **cap**: max_burst default **20** / hard cap **30** / daily **100**(JST 0:00 reset 既設、137 sent-only count)
 - **write_scope**: PUB-004-B `--live --max-burst 20 --daily-cap-allow` autonomous fire
 - **doc_path**: `doc/active/PUB-004-D-all-eligible-draft-backlog-publish-ramp.md`
 - **gates_applied**: 130(hard_stop)/ 135(freshness audit、142 で降格)/ 136(lineup_dup)/ 137(cap sent only)/ 141(cleanup chain)/ 142(freshness REPAIRABLE)/ 145(freshness no-op mapping)
 - **burst_chain_2026-04-26**:
-  - **burst 1**(10:23 AM 旧 spec): 20 sent(63531/63523/63515/63510/63509/63505/63497/63495/63493/63487/63483/63480/63479/63466/63464/63463/63429/63398/63393/63383)= 全 stale だった事故、135 で gate 化
+  - **burst 1**(10:23 AM 旧 spec): 20 sent(63531-63383 列、全 stale 事故 → 135 gate 化)
   - **burst 3**(11:36 PM 137 後): 1 sent(63321 farm)
-  - **burst 6**(12:01 AM 142+145 後): 17 sent(63282/63276/63272/63265/63263/63249/63247/63243/63238/63236/63234/63230/63226/63222/63211/63209/63205)
-  - 累計: **38 sent**
+  - **burst 6**(12:01 AM 142+145 後): 17 sent(63282-63205 列)
+  - **burst 7**(12:10 AM): 4 sent(63199/63193/63153/63151)
+  - **burst 8**(12:15 AM history clear 後): 18 sent(63358-63284 列)
+  - **burst 9**(12:20 AM): 6 sent(63149/63145/63133/63125/63107/63105)
+  - **burst 10**(12:25 AM): 0 sent(残 11 件 cleanup_failed = pool 枯渇)
+  - **累計: 66 sent**(burst1 stale 20 含む)
 - **commit_state**: orchestration ticket、code commit は 130/135/136/137/141/142/145 で個別反映
 - **next_prompt_path**: -
 - **last_commit**: `5b01662` 145 freshness flags no-op cleanup mapping

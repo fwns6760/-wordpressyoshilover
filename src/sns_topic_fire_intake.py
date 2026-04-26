@@ -142,18 +142,60 @@ _ACCOUNT_EXPOSURE_TERMS = (
     "あの人",
     "鍵垢",
 )
-_PRIVATE_OR_FAMILY_TERMS = (
+_FAMILY_TERMS = (
     "家族",
     "嫁",
     "妻",
+    "夫",
     "彼女",
     "子供",
     "息子",
     "娘",
+    "不倫",
+)
+_PRIVATE_PERSON_GENERAL_TERMS = (
+    "一般人",
+    "市民",
+    "通行人",
+    "見知らぬ",
+    "近所",
+    "子供さん",
+    "お子さん",
+)
+_PRIVATE_PERSON_IDENTITY_HINTS = (
+    "名前を見つけた",
+    "特定された",
+)
+_PRIVATE_PERSON_IDENTITY_PATTERNS = (
+    re.compile(r"[一-龥々ぁ-んァ-ヴーA-Za-z0-9]{1,20}さんという方"),
+)
+_PERSONAL_INFO_TERMS = (
     "自宅",
     "住所",
     "学校",
-    "不倫",
+    "職場",
+)
+_PUBLIC_FIGURE_TERMS = (
+    "監督",
+    "コーチ",
+    "投手",
+    "捕手",
+    "内野手",
+    "外野手",
+    "選手",
+    "球団",
+    "フロント",
+    "球団関係者",
+    "報知",
+    "スポーツ報知",
+    "日刊",
+    "日刊スポーツ",
+    "スポニチ",
+    "記者",
+    "番記者",
+    "報道",
+    "解説者",
+    "OB",
 )
 _RUMOR_TERMS = (
     "らしい",
@@ -406,7 +448,7 @@ def _extract_signal_features(signal: Mapping[str, Any]) -> _SignalFeatures:
         signal_tokens=signal_tokens,
         has_quote_like=has_quote_like,
         account_exposure_risk=_has_account_exposure_risk(signal, raw_text),
-        private_or_family_risk=bool(signal.get("private_or_family")) or _contains_any(raw_text, _PRIVATE_OR_FAMILY_TERMS),
+        private_or_family_risk=_has_private_or_family_risk(signal, text, entities),
         rumor_risk=bool(signal.get("rumor")) or (_contains_any(raw_text, _RUMOR_TERMS) and not category in {"player", "bullpen", "lineup", "farm"}),
         inflammatory_risk=bool(signal.get("inflammatory")) or _contains_any(raw_text, _INSULT_TERMS),
         sensitive_assertion_risk=sensitive_assertion_risk,
@@ -574,6 +616,42 @@ def _has_account_exposure_risk(signal: Mapping[str, Any], text: str) -> bool:
     if _contains_any(text, _ACCOUNT_EXPOSURE_TERMS):
         return True
     return bool(_HANDLE_RE.search(text))
+
+
+def _has_private_or_family_risk(
+    signal: Mapping[str, Any],
+    text: str,
+    entities: Sequence[str],
+) -> bool:
+    if bool(signal.get("private_or_family")):
+        return True
+    if _contains_any(text, _FAMILY_TERMS):
+        return True
+    return _has_non_family_private_person_risk(text, entities)
+
+
+def _has_non_family_private_person_risk(text: str, entities: Sequence[str]) -> bool:
+    if _contains_any(text, _PRIVATE_PERSON_GENERAL_TERMS):
+        return True
+
+    identity_hint = _contains_any(text, _PRIVATE_PERSON_IDENTITY_HINTS) or any(
+        pattern.search(text)
+        for pattern in _PRIVATE_PERSON_IDENTITY_PATTERNS
+    )
+    public_figure_context = _has_public_figure_context(text, entities)
+    personal_info_hits = sum(1 for term in _PERSONAL_INFO_TERMS if term in text)
+
+    if identity_hint and not public_figure_context:
+        return True
+    if personal_info_hits >= 2:
+        return not public_figure_context or identity_hint
+    if personal_info_hits >= 1 and identity_hint:
+        return True
+    return False
+
+
+def _has_public_figure_context(text: str, entities: Sequence[str]) -> bool:
+    return bool(entities) or _contains_any(text, _PUBLIC_FIGURE_TERMS)
 
 
 def _first_non_empty(signal: Mapping[str, Any], *keys: str) -> str:

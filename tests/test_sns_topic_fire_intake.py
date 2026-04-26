@@ -115,6 +115,76 @@ class SNSTopicFireIntakeTests(unittest.TestCase):
         self.assertEqual(overlap_candidates[0].route_hint, ROUTE_REJECT)
         self.assertIn("recent_news_overlap", overlap_candidates[0].unsafe_flags)
 
+    def test_private_person_general_citizen_rejected(self):
+        candidates = evaluate_sns_topic_fire_batch(
+            self._signals(
+                "一般人の名前を見つけたという話が広がっていて危ない。",
+                "一般人まで特定されたという流れは記事化候補にできない。",
+                "一般人の話題で特定されたと騒ぐのは避けるべきだ。",
+                category="player",
+            ),
+            [],
+        )
+
+        self.assertEqual(candidates[0].route_hint, ROUTE_REJECT)
+        self.assertIn("private_family_or_rumor", candidates[0].unsafe_flags)
+
+    def test_private_person_neighbor_rejected(self):
+        candidates = evaluate_sns_topic_fire_batch(
+            self._signals(
+                "近所の人まで特定されたという話は扱えない。",
+                "近所の方の名前を見つけたという投稿が広がっている。",
+                "近所の第三者個人が話題の中心になるのは危ない。",
+                category="player",
+            ),
+            [],
+        )
+
+        self.assertEqual(candidates[0].route_hint, ROUTE_REJECT)
+        self.assertIn("private_family_or_rumor", candidates[0].unsafe_flags)
+
+    def test_private_person_child_rejected(self):
+        candidates = evaluate_sns_topic_fire_batch(
+            self._signals(
+                "お子さんのことまで話題にしているのは危ない。",
+                "子供さんの情報を特定されたという流れは扱えない。",
+                "お子さんの名前を見つけたという投稿は候補から外すべきだ。",
+                category="player",
+            ),
+            [],
+        )
+
+        self.assertEqual(candidates[0].route_hint, ROUTE_REJECT)
+        self.assertIn("private_family_or_rumor", candidates[0].unsafe_flags)
+
+    def test_private_person_address_school_combo_rejected(self):
+        candidates = evaluate_sns_topic_fire_batch(
+            self._signals(
+                "住所と学校まで広がっている話は記事化できない。",
+                "住所と学校が特定されたという流れは危ない。",
+                "住所も学校も出てくる話題は避けるべきだ。",
+                category="player",
+            ),
+            [],
+        )
+
+        self.assertEqual(candidates[0].route_hint, ROUTE_REJECT)
+        self.assertIn("private_family_or_rumor", candidates[0].unsafe_flags)
+
+    def test_known_public_figure_not_falsely_rejected(self):
+        candidates = evaluate_sns_topic_fire_batch(
+            self._signals(
+                "スポーツ報知の記者が阿部監督の学校時代も交えて起用方針を報じた。",
+                "日刊スポーツの番記者が阿部監督と田中将大の起用方針を伝えている。",
+                "スポニチの報道でも阿部監督と田中将大の起用方針が話題だ。",
+                category="manager_strategy",
+            ),
+            [],
+        )
+
+        self.assertEqual(candidates[0].route_hint, ROUTE_SOURCE_RECHECK)
+        self.assertNotIn("private_family_or_rumor", candidates[0].unsafe_flags)
+
     def test_report_never_contains_raw_sns_text_or_urls(self):
         unique_phrase = "独自フレーズ生文"
         candidates = evaluate_sns_topic_fire_batch(

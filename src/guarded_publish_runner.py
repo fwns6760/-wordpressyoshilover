@@ -463,7 +463,7 @@ def _history_attempted_post_ids(rows: Sequence[dict[str, Any]]) -> set[int]:
     return attempted
 
 
-def _daily_attempt_count(rows: Sequence[dict[str, Any]], day: date) -> int:
+def _daily_sent_count(rows: Sequence[dict[str, Any]], day: date) -> int:
     count = 0
     for row in rows:
         if str(row.get("status") or "") != "sent":
@@ -693,7 +693,7 @@ def run_guarded_publish(
     now_iso = now_jst.isoformat()
     history_rows = _read_jsonl(history_path)
     attempted_post_ids = _history_attempted_post_ids(history_rows)
-    daily_attempts = _daily_attempt_count(history_rows, now_jst.date())
+    daily_sent_count = _daily_sent_count(history_rows, now_jst.date())
 
     refused: list[dict[str, Any]] = []
     proposed_public: list[dict[str, Any]] = []
@@ -702,6 +702,7 @@ def run_guarded_publish(
     live_history_rows: list[dict[str, Any]] = []
     postcheck_batches: list[dict[str, Any]] = []
     wp: Any | None = None
+    planned_count = 0
 
     def get_wp() -> Any:
         nonlocal wp
@@ -709,11 +710,10 @@ def run_guarded_publish(
             wp = wp_client or WPClient()
         return wp
 
-    attempt_slots_used = 0
     for red_entry in _iter_red_entries(report):
         if red_entry["post_id"] in attempted_post_ids:
             continue
-        if daily_attempts + attempt_slots_used >= DAILY_CAP_HARD_CAP:
+        if daily_sent_count + planned_count >= DAILY_CAP_HARD_CAP:
             refused.append({"post_id": red_entry["post_id"], "reason": "daily_cap"})
             if live:
                 row = _history_row(
@@ -745,7 +745,6 @@ def run_guarded_publish(
                 "hold_reason": red_entry["hold_reason"],
             }
         )
-        attempt_slots_used += 1
         if live:
             detail = ",".join(red_entry["hard_stop_flags"] or red_entry["red_flags"]) or "hard_stop"
             row = _history_row(
@@ -770,7 +769,6 @@ def run_guarded_publish(
                 }
             )
 
-    planned_count = 0
     for entry in _iter_publishable_entries(report):
         post_id = entry["post_id"]
         if post_id in attempted_post_ids:
@@ -802,7 +800,7 @@ def run_guarded_publish(
                 )
             continue
 
-        if daily_attempts + attempt_slots_used >= DAILY_CAP_HARD_CAP:
+        if daily_sent_count + planned_count >= DAILY_CAP_HARD_CAP:
             refused.append({"post_id": post_id, "reason": "daily_cap"})
             if live:
                 row = _history_row(
@@ -861,7 +859,6 @@ def run_guarded_publish(
                     "hold_reason": "cleanup_failed_post_condition" if entry["cleanup_required"] else exc.reason,
                 }
             )
-            attempt_slots_used += 1
             if live:
                 row = _history_row(
                     post_id=post_id,
@@ -890,7 +887,6 @@ def run_guarded_publish(
         proposed_internal.append(plan)
         proposed_public.append(_public_plan(plan))
         planned_count += 1
-        attempt_slots_used += 1
 
     if live:
         for row in live_history_rows:

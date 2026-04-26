@@ -351,6 +351,38 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         self.assertEqual([item["status"] for item in result["executed"]], ["sent"])
         self.assertEqual(result["refused"], [])
 
+    def test_daily_cap_current_run_hard_stop_does_not_burn_sent_budget(self):
+        post = _post(
+            1014,
+            "巨人が広島に4-2で勝利",
+            f"<p>巨人が広島に4-2で勝利した。中盤に勝ち越し、終盤の継投でも流れを渡さなかった。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/source</p>",
+        )
+        report = _report(
+            green=[_green_entry(1014, post["title"]["raw"])],
+            red=[_hard_stop_entry(1500 + index, f"hard stop {index}", "freshness_window") for index in range(100)],
+        )
+        wp = FakeWPClient({1014: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.jsonl"
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=history_path,
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        sent = [item for item in result["executed"] if item["status"] == "sent"]
+        refused = [item for item in result["executed"] if item["status"] == "refused"]
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(len(refused), 100)
+        self.assertNotIn("daily_cap", [item["reason"] for item in result["refused"]])
+
     def test_daily_cap_100_sent_blocks_next_sent(self):
         posts = {
             1012: _post(1012, "巨人がヤクルトに5-2で勝利", f"<p>巨人がヤクルトに5-2で勝利した。主砲の一発で流れを引き寄せ、終盤も突き放した。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/source</p>"),

@@ -42,7 +42,8 @@
 | **178** Codex primary wp_write enable | P0.5 | READY(177 land 後 fire)| B | env CODEX_WP_WRITE_ALLOWED で本線昇格 opt-in |
 | **179** repair learning log Firestore + GCS | P0 | **READY → 即 fire** | B | FirestoreLedgerWriter 本実装 + ArtifactUploader、038 ledger system の GCP bridge |
 | **176** share buttons Twitter/Facebook fix | P1 | **CLOSED `91069f0`** → done/ 移動済(custom.css の SWELL `-twitter-x` class 追従)| B 完了 | live deploy 後 smoke 必要(user 目視) |
-| **177** Codex shadow GCP deploy | P0 | **IN_FLIGHT `b200f9azk`** | A | Cloud Run Job + Secret Manager auth.json + Cloud Scheduler |
+| **177** Codex shadow GCP deploy | P0 | **CLOSED `a5ef56a`** → done/ 移動済(image py312 + Cloud Run Job + Cloud Scheduler 5,15,25,35,45,55 ENABLED + 3 smoke exit 0)| A 完了 | Codex shadow lane live、178 で本線昇格 |
+| **181** readability audit & narrow fix(title 主語欠落 + 本文可読性)| P0.5 | **READY → 即 fire**(Q2=auto、user 指示)| B | 63668 / 63375 主語欠落 audit + 読者可読性 narrow fix |
 | **168** repair-provider-ledger v0 | P0 | **CLOSED `70009aa`** → done/ 移動済 | B 完了 | GCP migration foundation、schema v0 18 fields |
 | **169** cloud-run-repair-job-skeleton | P0 | **CLOSED `85ae5a6`** → done/ 移動済 | B 完了 | --provider / --queue-path / --ledger-path 追加 |
 | **170** repair-fallback-controller | P0 | **CLOSED `d56e298`** → done/ 移動済 | B 完了 | 6 failure class + Gemini fallback chain |

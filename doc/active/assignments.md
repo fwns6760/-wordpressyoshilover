@@ -1,79 +1,69 @@
-# assignments — ticket 担当者割り当て
+# assignments — 現場担当と次アクション
 
-最終更新: 2026-04-26 evening(159 統合済、177-fix in flight、178/180 auto-fire chain 待ち)
+最終更新: 2026-04-27 JST(Codex-GCP追加、Codex B開発担当化、CLOSED履歴圧縮)
 
-## エージェント
+## 役割一覧
 
-| 略号 | 担当 | 主な仕事 | 不可触 |
+| 略号 | 役割 | 変更OK | 原則NG |
 |---|---|---|---|
-| **Claude** | 現場管理 / 私 | 監査 / 起票 / Codex 便 accept(5 点追認)/ git push / doc 整理 / 105 ramp orchestration | src/tests 直接編集(緊急 narrow fix のみ) |
-| **Codex A** | 実装本線 | ops / publish runner / mail / cron / WP REST / backup / history / commit(push なし) | git push / live publish / X / SNS / .env / scheduler |
-| **Codex B** | 品質改善 + review | evaluator / validator / duplicate / source / subtype / tests / review / narrow fix | A と src 衝突避ける / git push / WP write / live publish |
-| **User** | 最終判断 | publish 公開許可 / X live unlock / scheduler / .env 値 / scope 拡張 | - |
+| **Claude** | 現場管理 / accept / push / 危険境界判断 | doc整理、Codex便accept、git push、read-only監査 | src/tests直接編集(緊急narrow fixのみ)、secret表示、live境界越え |
+| **Codex A** | ops / GCP / WP / mail / publish runner 開発 | WP REST、publish runner、mail、cron、GCP deploy helper、persistence、backup、queue、history、対応tests | X live post、secret表示、front dirty、Codex Bが同時に触る品質系ファイル |
+| **Codex B** | 品質 / evaluator / validator / SEO / SNS / X gate / mail本文系の開発担当 | `src/*evaluator*`, `src/*validator*`, `src/*audit*`, `src/*quality*`, `src/*source*`, `src/*title*`, `src/*sns*`, `src/*x_post*`, mail本文/digest系のdry-run/gate/queue/ledger、対応`tests/test_*`、該当ticket doc。作った処理は原則GCP実行へ寄せる | `.env`, `logs/`, `build/`, Cloud Run/Scheduler/Secret Manager live変更、WP live write、X live post、front dirty、Codex Aが同時に触るopsファイル |
+| **Codex-GCP** | Cloud Run / Scheduler 上で動く自動実行レーン | 設定済みJob/Schedulerの定期実行、GCS/Secret経由の状態利用、Cloud Logging出力、既存gate内の記事修復、`CODEX_WP_WRITE_ALLOWED` 等で許可済みのWP article write、SNS topic処理、SEO/quality監視、mail本文/digest生成、X gate/queueのdry-run実行 | repo編集、git操作、secret表示、未許可live scope拡張、未解禁X live post、Cloud Run/Scheduler/Secret Managerの新規変更 |
+| **User** | 最終判断 | X live unlock、secret/env/scheduler/scope拡張、重要な公開方針判断 | - |
 
-## 現在のチケット担当 (doc/active/ + doc/waiting/)
-
-### 今動かす(active)
+## 今の主線
 
 | ticket | priority | status | 担当 | 次 action |
 |---|---|---|---|---|
-| **README**(旧 102) | P0 | READY | Claude | board 維持 / dispatch 正本 |
-| **PUB-004-D / 105** | P0 | **AUTO 5min cron**(PUB-004-C 化、2026-04-26 PM 起動)| Cron + Claude 監視 | RSS 新着 → 5-15 分内 auto publish、daily cap 100 件 / 24h |
-| **124** cleanup apply | P1 | CLOSED `d25d02c` | A 完了 | live apply は Claude が手動 trigger(--live)|
-| **135** freshness gate | P0 | **CLOSED `ef9e21d`**(impl + 3 hard_stop flag + 4 出力 field、pytest 1321 pass)| A 完了 | 速報掲示板 stale-publish 防止 gate 稼働 |
-| **042** draft-body-editor WSL cron | P0 | **LIVE `2,12,22,32,42,52`**(2026-04-26 14:12 JST 起動、--max-posts 3、Gemini Flash 課金許容)| Cron + Claude 監視 | 376 backlog → ~1.5 日消化見込 |
-| **123** readiness guard | P1 | CLOSED `77d4c8b` | A | history audit module land、105 ramp 監視に使用 |
-| **147** X auto-post 親 ramp | P0.5 | READY | Claude | Phase 1-5 設計 / orchestration |
-| **148** X Phase 1 dry-run mail | P0.5 | **CLOSED `cc9fe16`** | Codex A 完了 | 直近 publish 5 件文案 build + mail、X API zero、user 文案確認 待ち |
-| **149** X Phase 2 manual live 1 | P0.5 | READY(148 done)| Claude / A | user 確認後 1 件 manual_post live |
-| **150** X Phase 3 trigger ON cap 1 | P0.5 | BLOCKED(149) | Claude / A | 149 OK 後 env auto + daily 1、WP trigger 連動 |
-| **PUB-002-A** | reference | done | (parent runbook supersede 154) | 130 evaluator base、移動済 `doc/done/2026-04/` |
-| **154** publish-policy(現行)| reference | active | (current runbook) | 130 / 135 / 137 / 141-146 反映 |
-| **155** GCP migration master | P0.5 | IN_FLIGHT(Phase 1a-1c / 165 / 168-173 done、158/159/162-164/174-175 残)| Claude / A | 158 in flight、その後 Phase 1e (159 WSL disable) は user 判断 |
-| **156** Phase 1b 042 Cloud Run deploy | P0.5 | **CLOSED `c5adfa3`** → done/ 移動済 | A 完了 | WSL cron 042 並走中、disable は Phase 1e (159) |
-| **157** Phase 1c Cloud Scheduler trigger 042 | P0.5 | **CLOSED `94f4784`** → done/ 移動済 | A 完了 | 17:32 JST tick auto execute pass、WSL 042 並走中 |
-| **158** Phase 1d Secret Manager + GCS persistence | P0 | **CLOSED `a472d39`** → done/ 移動済(11 secret + GCS bucket + 2-run cursor 引継 verify、pytest 1395→1404)| A 完了 | **WSL 042/095 disable 解除条件達成、159 user judgment 待ち** |
-| **161** Phase 3 publish-notice GCP migration | P0.5 | **CLOSED `7655d9f`** → done/ 移動済 | A 完了 | image push + Job create + Scheduler 15 * * * *、placeholder /data 残(158 で解消) |
-| **165** Gemini + WP REST resilience | P0.5 | **CLOSED `3aa2cd1`** → done/ 移動済 | A 完了 | API 一時 outage で cron 無駄停止しない |
-| **166** Cloud Run failure alert | P1 | **CLOSED `985e9e7`** → done/ 移動済(2 alert policy + email channel + auto-close 30min)| A 完了 | **user mail verification 1 click 必要**(channel 7008520332246366374) |
-| **167** GCP billing alert | P1 | **CLOSED `6fd5b00`** → done/ 移動済(JPY ¥1500/¥4500/¥7500 × 50/90/100% threshold)| A 完了 | 月 0-9 通 alert(同事象 dedup) |
-| **159** Phase 1e WSL cron 042 + 095 + PUB-004-C disable | P1 | **CLOSED**(crontab 全 publish lane コメント化、GCP のみ稼働)| Claude 完了 | 残 WSL = gemini_audit のみ |
-| **160** Phase 2 PUB-004-C GCP migration | P0 | **CLOSED `e5818f6`** → done/ 移動済(Cloud Run Job + Scheduler 18:55 JST 自動稼働開始)| A 完了 | GCS persistence + smoke pass、WSL PUB-004-C 同時 disable 完了 |
-| **178** Codex primary wp_write enable | P0.5 | **CLOSED `9754b53`** → done/ 移動済(env=true 適用 + Cloud Run Job env update + Scheduler */5 + max-posts 5、shadow_only 卒業)| B 完了 | live 稼働開始(初回 smoke で put_ok=0、修復品質 issue 浮上 → 181 land で改善見込)|
-| **179** repair learning log Firestore + GCS | P0 | **READY → 即 fire** | B | FirestoreLedgerWriter 本実装 + ArtifactUploader、038 ledger system の GCP bridge |
-| **176** share buttons Twitter/Facebook fix | P1 | **CLOSED `91069f0`** → done/ 移動済(custom.css の SWELL `-twitter-x` class 追従)| B 完了 | live deploy 後 smoke 必要(user 目視) |
-| **177** Codex shadow GCP deploy | P0 | **CLOSED `a5ef56a`** → done/ 移動済(image py312 + Cloud Run Job + Cloud Scheduler 5,15,25,35,45,55 ENABLED + 3 smoke exit 0)| A 完了 | Codex shadow lane live、178 で本線昇格 |
-| **181** readability audit & narrow fix(title 主語欠落 + 本文可読性)| P0.5 | **CLOSED `5b21543`** → done/ 移動済(rss_fetcher full title + subject_label fallback + opening duplicate 除去、pytest 1411→1416)| B 完了 | 次 publish で改善 verify、178 wp_write も再評価 |
-| **168** repair-provider-ledger v0 | P0 | **CLOSED `70009aa`** → done/ 移動済 | B 完了 | GCP migration foundation、schema v0 18 fields |
-| **169** cloud-run-repair-job-skeleton | P0 | **CLOSED `85ae5a6`** → done/ 移動済 | B 完了 | --provider / --queue-path / --ledger-path 追加 |
-| **170** repair-fallback-controller | P0 | **CLOSED `d56e298`** → done/ 移動済 | B 完了 | 6 failure class + Gemini fallback chain |
-| **171** codex-cli-shadow-runner | P0 | **CLOSED `0981ee2`** → done/ 移動済 | B 完了 | call_codex 実装、shadow lane invariant(WP write 禁止)|
-| **172** cloud-run-secret-auth-writeback | P0 | **CLOSED `cbe05b0`** → done/ 移動済 | B 完了 | SecretAuthManager + entrypoint script、auth.json 内容ログ禁止 |
-| **173** x-post-cloud-queue-ledger v0 | P0.5 | **CLOSED `9ef3772`** → done/ 移動済 | A 完了 | X 投稿 lane foundation、unlock 時即動 |
-| **162** Phase 4 gemini_audit GCP migration | P1 | QUEUED(user 判断保留中、影響軽微なので後回し可)| Claude / A | 残 WSL cron = gemini_audit のみ、autonomous touch せず |
-| **180** SNS topic intake to publish lane separation | P0.5 | **READY**(doc-only 整理)| Claude / B | SNS 入口 lane と X 出口 lane の境界明文化、128 再開前提 |
-| **163** Phase 5 quality-monitor / quality-gmail GCP migration | P1 | QUEUED | Claude / A | 162 land 後 fire 可 |
-| **174** x-api-cloud-run-live-smoke | P0.5 | BLOCKED_USER(149 X live unlock 後)| User → A | live X API smoke 1 回 |
-| **175** x-controlled-autopost-cloud-rollout | P0.5 | BLOCKED(174 後)| Claude / A | daily cap ramp |
+| **README**(旧102) | P0 | READY | Claude | dispatch board正本を維持 |
+| **105 / PUB-004-D** | P0 | AUTO 5min cron | Codex-GCP + Claude監視 | RSS新着を5-15分内にauto publish、daily cap 100 |
+| **042 draft-body-editor** | P0 | GCP本線 / 残WSLはgemini_auditのみ | Codex-GCP + Claude監視 | GCP上のCodex/Gemini repair、WP article write、品質/メール系実行を監視。WSL本線依存を戻さない |
+| **155 GCP migration master** | P0.5 | IN_FLIGHT | Claude / A | 主要移行は完了。残りは162/163とX live系 |
+| **147 X auto-post親ramp** | P0.5 | READY | Claude | 149/174 live smoke前提を整理 |
+| **154 publish-policy** | reference | active | Claude | 現行公開方針の参照元 |
 
-### 止まってる(waiting)
+## 次に動かすREADY
+
+| ticket | priority | status | 担当 | 次 action |
+|---|---|---|---|---|
+| **179 repair learning log Firestore + GCS** | P0 | READY / 即fire | Codex B → Codex-GCP | FirestoreLedgerWriter + ArtifactUploaderを実装し、GCP実行へ接続 |
+| **180 SNS topic intake lane separation** | P0.5 | READY | Claude / Codex B → Codex-GCP | SNS入口とX出口の境界をdoc-onlyで明文化し、SNS topic処理をGCP実行前提に整理 |
+| **162 gemini_audit GCP migration** | P1 | QUEUED / 後回し可 | Claude / A | 残WSL cronはgemini_auditのみ。影響軽微なので急がない |
+| **163 quality-monitor / quality-gmail GCP migration** | P1 | QUEUED | Claude / A → Codex-GCP | quality monitor / quality mail本文生成をGCP化 |
+| **149 X Phase 2 manual live 1** | P0.5 | READY / user境界 | Claude / A | userのX live unlock後、1件だけmanual post |
+
+## user / 外部待ち
 
 | ticket | priority | status | 待ち | 担当 |
 |---|---|---|---|---|
-| **128** SNS auto-publish | P1 | PARKED | 130 安定 + 127 連携 | Codex A 後で |
-| **151** X Phase 4 cap 3 ramp | P1 | PARKED | 150 + 7 日 stable | Claude / A |
-| **152** X 全カテゴリ拡張 | P2 | PARKED | 147 phase 5 stable 後 | Future |
-| **HALLUC-LANE-002 / 113** | P1 | PARKED | Gemini live cost 境界 | User go 待ち |
-| **095-E** WSL cron reboot | P2 | BLOCKED_USER | PC reboot | User |
-| **PUB-005** X gate parent | P1 | PARKED | X live unlock | User → A |
+| **174 x-api-cloud-run-live-smoke** | P0.5 | BLOCKED_USER | 149のX live unlock後 | User → A |
+| **175 x-controlled-autopost-cloud-rollout** | P0.5 | BLOCKED | 174 smoke成功 | Claude / A |
+| **128 SNS auto-publish** | P1 | PARKED | 180で入口/出口境界整理後 | Codex A |
+| **151 X Phase 4 cap3 ramp** | P1 | PARKED | 150 + 7日stable | Claude / A |
+| **152 X全カテゴリ拡張** | P2 | PARKED | 147 phase 5 stable | Future |
+| **113 / HALLUC-LANE-002** | P1 | PARKED | Gemini live cost境界 | User go待ち |
+| **095-E WSL cron reboot** | P2 | BLOCKED_USER | PC reboot時 | User |
+| **PUB-005 X gate parent** | P1 | PARKED | X live unlock | User → A |
+
+## 最近完了した大物
+
+| ticket | 状態 | 意味 |
+|---|---|---|
+| **156 / 157 / 158** | CLOSED | 042 Cloud Run deploy、Scheduler、Secret Manager + GCS persistence完了 |
+| **159 / 160 / 161** | CLOSED | WSL publish lane disable、PUB-004-C GCP化、publish-notice GCP化完了 |
+| **165 / 166 / 167** | CLOSED | Gemini/WP REST resilience、Cloud Run failure alert、billing alert完了 |
+| **177** | CLOSED `a5ef56a` | Codex shadow GCP deploy完了 |
+| **178** | CLOSED `9754b53` | GCP Codex primary wp_write enable。Codex-GCPが記事修復/書き込みを担う前提を解禁 |
+| **181** | CLOSED `5b21543` | タイトル主語欠落 + 本文可読性narrow fix完了 |
+| **168-173** | CLOSED | repair provider ledger、job skeleton、fallback、Codex shadow runner、auth writeback、X queue ledger完了 |
+| **176** | CLOSED `91069f0` | share buttons Twitter/Facebook fix完了。live deploy後の目視smokeは別途 |
 
 ## fire rule(autonomous lock)
 
-- Claude が READY/IN_FLIGHT を「即 fire 可」に判断したら、user 確認なしで Codex A/B に投げる
-- live publish / WP write / X / SNS / scheduler / .env 関連は user 判断
-- デグレなし lock: 全 prompt に baseline 数値 + 維持 contract embed、accept 時 5 点追認
-- doc folder policy: status 変更時 git mv + doc_path 更新を同 commit で
-
-## 本日完了便(2026-04-26、commit hash 順)
-
-`0253b2a` 119 / `5bfe892` 126 / `269e1f4` 113 adapter / `2669faa` 127 / `147507c` 132 / `867d90f` 130 / `06a1315` 133 / `6979899` 131 / `35fb67c` 134 reorg / `573a169` 140 / `5f27058` 142 / `4f7963d` 141 / `5b01662` 145 / `afc7ba9` 125 AdSense slot / `c433b89` 146 SNS reject 拡張 / 加 105 ramp 66 件 publish 実行
+- Claude がREADY/IN_FLIGHTを「即fire可」に判断したら、user確認なしでCodex A/Bに投げる
+- live publish / WP write / X / SNS / scheduler / `.env` / secret / scope拡張はuser判断
+- Codex-GCPはGCP上の記事修復・許可済みWP article write・SNS topic処理・SEO/quality監視・mail本文/digest生成・X gate dry-runの実行レーンであり、repo編集者ではない
+- デグレなしlock: 全promptにbaseline数値 + 維持contractを入れ、accept時は5点追認
+- status変更時は ticket doc移動 + README `doc_path` + assignments更新を同commitまたは直後doc-only commitで揃える
+- `git add -A`禁止。変更pathだけ明示stage

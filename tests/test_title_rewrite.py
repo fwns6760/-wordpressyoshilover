@@ -190,6 +190,41 @@ class DisplayTitleRewriteTests(unittest.TestCase):
 
         self.assertEqual(subject, "田中将大")
 
+    def test_prepare_source_title_context_keeps_full_title_for_processing(self):
+        title = "戸郷翔征がＧＷ９連戦で今季初１軍昇格へ 阿部監督「たぶん９連戦のどこかで入れると思います」"
+
+        raw_title, preview_title = rss_fetcher._prepare_source_title_context(title, {})
+
+        self.assertEqual(raw_title, title)
+        self.assertEqual(preview_title, title[:40].strip())
+        self.assertGreater(len(raw_title), len(preview_title))
+
+    def test_extract_subject_label_falls_back_to_summary_when_title_starts_with_particle(self):
+        title = "が28日からの9連戦で1軍昇格へ 阿部監督「どこかで入れると思います」"
+        summary = "戸郷翔征投手がファーム中日戦で7回無失点の好投を見せ、阿部監督が1軍昇格を示唆した。"
+
+        subject = rss_fetcher._extract_subject_label(title, summary, "選手情報")
+
+        self.assertEqual(subject, "戸郷翔征")
+
+    def test_extract_subject_label_falls_back_to_summary_when_title_uses_generic_player_placeholder(self):
+        title = "選手「初出場初安打」 実戦で何を見せるか"
+        summary = "浅野翔吾が初出場初安打を記録し、次の実戦での起用も注目される。"
+
+        subject = rss_fetcher._extract_subject_label(title, summary, "試合速報")
+
+        self.assertEqual(subject, "浅野翔吾")
+
+    def test_rewrite_display_title_recovers_subject_from_summary_when_title_is_generic(self):
+        title = "選手「初出場初安打」 実戦で何を見せるか"
+        summary = "浅野翔吾が初出場初安打を記録し、次の実戦での起用も注目される。"
+
+        rewritten = rss_fetcher.rewrite_display_title(title, summary, "試合速報", True)
+
+        self.assertIn("浅野翔吾", rewritten)
+        self.assertNotIn("何を見せるか", rewritten)
+        self.assertFalse(rewritten.startswith("選手"))
+
     def test_game_pregame_title_keeps_name_after_initial_start_context(self):
         title = "【巨人】伝統の一戦初先発の田中将大「投げる試合すべて勝つ気持ちで」２試合連続ＱＳで日米通算２０２勝マーク"
 

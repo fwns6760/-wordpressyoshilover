@@ -675,6 +675,7 @@ AMBIGUOUS_PLAYER_SURNAMES = {
 SUBJECT_CANDIDATE_STOPWORDS = {
     "巨人",
     "ジャイアンツ",
+    "出場",
     "出場選手",
     "先発ローテ",
     "ローテ再編",
@@ -1753,26 +1754,52 @@ def _extract_subject_label(title: str, summary: str, category: str) -> str:
             return False
         return True
 
-    for pattern in priority_patterns:
-        for match in _re.finditer(pattern, text):
-            label = _re.sub(r"\s+", "", match.group(1)).strip("・･")
-            if label.startswith("巨人") and len(label) > 4:
-                label = label[2:].strip("・･")
-            if _is_valid_subject_candidate(label):
-                return label
+    def _find_subject(source_text: str) -> str:
+        for pattern in priority_patterns:
+            for match in _re.finditer(pattern, source_text):
+                label = _re.sub(r"\s+", "", match.group(1)).strip("・･")
+                if label.startswith("巨人") and len(label) > 4:
+                    label = label[2:].strip("・･")
+                label = _re.sub(r"(投手|捕手|内野手|外野手|選手)$", "", label).strip()
+                if _is_valid_subject_candidate(label):
+                    return label
 
-    for pattern in patterns:
-        matches = list(_re.finditer(pattern, text))
-        if not matches:
-            continue
-        iterator = reversed(matches) if pattern in named_subject_patterns else matches
-        for match in iterator:
-            label = _re.sub(r"\s+", "", match.group(1)).strip("・･")
-            if label.startswith("巨人") and len(label) > 4:
-                label = label[2:].strip("・･")
-            if not _is_valid_subject_candidate(label):
+        for pattern in patterns:
+            matches = list(_re.finditer(pattern, source_text))
+            if not matches:
                 continue
-            return label
+            iterator = reversed(matches) if pattern in named_subject_patterns else matches
+            for match in iterator:
+                label = _re.sub(r"\s+", "", match.group(1)).strip("・･")
+                if label.startswith("巨人") and len(label) > 4:
+                    label = label[2:].strip("・･")
+                label = _re.sub(r"(投手|捕手|内野手|外野手|選手)$", "", label).strip()
+                if not _is_valid_subject_candidate(label):
+                    continue
+                return label
+        return ""
+
+    label = _find_subject(text)
+    if label:
+        return label
+
+    summary_text = _strip_html(summary)
+    if summary_text:
+        summary_label = _find_subject(summary_text)
+        if summary_label:
+            summary_label = _re.sub(r"(投手|捕手|内野手|外野手|選手)$", "", summary_label).strip()
+        if summary_label and summary_label not in {"巨人", "選手", "首脳陣"}:
+            return summary_label
+        summary_match = _re.search(
+            rf"^({japanese_subject_pattern})(?:投手|捕手|内野手|外野手|選手)?(?:が|は|も)",
+            summary_text,
+        )
+        if summary_match:
+            summary_label = _re.sub(r"\s+", "", summary_match.group(1)).strip("・･")
+            if summary_label.startswith("巨人") and len(summary_label) > 4:
+                summary_label = summary_label[2:].strip("・･")
+            if _is_valid_subject_candidate(summary_label) and summary_label not in {"巨人", "選手", "首脳陣"}:
+                return summary_label
     if category == "首脳陣":
         return "首脳陣"
     if category == "選手情報":
@@ -2103,6 +2130,17 @@ def _extract_player_role_label(title: str, summary: str) -> str:
     if not name:
         return f"この{role}"
     return f"{name}{role}"
+
+
+def _player_team_query_subject(title: str, summary: str, subject: str) -> str:
+    role_label = _extract_player_role_label(title, summary)
+    if (
+        role_label
+        and not role_label.startswith("この")
+        and role_label.endswith(("投手", "捕手", "内野手", "外野手"))
+    ):
+        return role_label
+    return subject
 
 
 def _extract_prompt_fact_sentences(title: str, summary: str, max_sentences: int = 5) -> list[str]:
@@ -5143,6 +5181,7 @@ def _build_fan_reaction_focus_terms(title: str, summary: str, category: str) -> 
 def _build_fan_reaction_queries(title: str, summary: str, category: str) -> list[str]:
     subject = _extract_subject_label(title, summary, category)
     compact_subject = _compact_subject_label(title, summary, category)
+    team_query_subject = _player_team_query_subject(title, summary, subject) if category == "選手情報" else subject
     focus_terms = _build_fan_reaction_focus_terms(title, summary, category)
     player_mode = _detect_player_article_mode(title, summary, category) if category == "選手情報" else ""
     topic = _strip_title_prefix(title)
@@ -5160,7 +5199,7 @@ def _build_fan_reaction_queries(title: str, summary: str, category: str) -> list
                 queries.append(f"{subject} {phrase}")
             for term in context_terms[:2]:
                 queries.append(f"{subject} {term}")
-            queries.append(f"{subject} 巨人")
+            queries.append(f"{team_query_subject} 巨人")
         if compact_subject and compact_subject not in generic_subjects and compact_subject != subject:
             for phrase in quote_terms[:1]:
                 queries.append(f"{compact_subject} {phrase}")
@@ -5175,7 +5214,7 @@ def _build_fan_reaction_queries(title: str, summary: str, category: str) -> list
         if subject and subject not in generic_subjects:
             for term in status_terms[:3]:
                 queries.append(f"{subject} {term}")
-            queries.append(f"{subject} 巨人")
+            queries.append(f"{team_query_subject} 巨人")
         if compact_subject and compact_subject not in generic_subjects and compact_subject != subject:
             for term in status_terms[:2]:
                 queries.append(f"{compact_subject} {term}")
@@ -5187,7 +5226,7 @@ def _build_fan_reaction_queries(title: str, summary: str, category: str) -> list
     if subject and subject not in generic_subjects:
         for term in focus_terms[:2]:
             queries.append(f"{subject} {term}")
-        queries.append(f"{subject} 巨人")
+        queries.append(f"{team_query_subject} 巨人")
         if allow_subject_only_queries:
             queries.append(subject)
 
@@ -5209,7 +5248,7 @@ def _build_fan_reaction_queries(title: str, summary: str, category: str) -> list
         queries.append(f"巨人 {topic}")
 
     if subject and category == "選手情報":
-        queries.append(f"ジャイアンツ {subject}")
+        queries.append(f"ジャイアンツ {team_query_subject}")
 
     return _dedupe_preserve_order(queries)[:6]
 
@@ -5853,10 +5892,11 @@ def _build_safe_article_fallback(
     player_quote_story = player_mode == "player_quote"
     player_status_story = player_mode == "player_status"
     player_status_terms = _extract_player_status_terms(title, summary) if category == "選手情報" else []
+    subject_display = _extract_player_role_label(title, summary) if category == "選手情報" and player_mechanics_story else subject
     intro = "まずは今回のニュースで押さえておきたいポイントから整理します。"
     if category == "選手情報":
         if player_mechanics_story:
-            intro = f"{subject}が何を変えているのか整理します。"
+            intro = f"{subject_display}が何を変えているのか整理します。"
         elif player_quote_story:
             intro = f"{subject}のコメントと試合前の論点を整理します。"
         else:
@@ -8576,6 +8616,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             first_line_is_structured_heading = first_line in RECOVERY_REQUIRED_HEADINGS
         elif body_subtype == "social_news":
             first_line_is_structured_heading = first_line in SOCIAL_REQUIRED_HEADINGS
+        first_line_looks_like_heading = first_line.startswith("【") or first_line.startswith("■") or first_line.startswith("▶")
         clean_title = _re3.sub(r'[【】\s]', '', title)
         clean_first = _re3.sub(r'[【】\s]', '', first_line)
         if not first_line_is_structured_heading and clean_title and clean_first and (clean_title in clean_first or clean_first in clean_title):
@@ -8583,6 +8624,26 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         ai_body = _re3.sub(r'.*ファンの声.*\n?', '', ai_body)
         ai_body = _re3.sub(r'.*Xより.*\n?', '', ai_body)
         ai_body = _normalize_article_text_structure(ai_body, body_category, has_game, article_subtype=body_subtype)
+        render_lines = [p.strip() for p in ai_body.split("\n") if p.strip()]
+
+        def _normalize_rendered_opening(value: str) -> str:
+            normalized = _strip_html(value or "")
+            normalized = _re3.sub(r"[【】「」『』（）()\s]", "", normalized)
+            return normalized.strip("。・")
+
+        summary_signature = _normalize_rendered_opening(summary_text_to_show)
+        if summary_signature and (first_line_is_structured_heading or first_line_looks_like_heading):
+            deduped_render_lines = []
+            section_index = 0
+            for line in render_lines:
+                if line.startswith("【") or line.startswith("■") or line.startswith("▶"):
+                    section_index += 1
+                    deduped_render_lines.append(line)
+                    continue
+                if section_index >= 1 and _normalize_rendered_opening(line) == summary_signature:
+                    continue
+                deduped_render_lines.append(line)
+            render_lines = deduped_render_lines
 
         para_count = 0
         seen_headings = set()
@@ -8678,7 +8739,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 rendered_cta_slots.add(section_slot)
             current_paragraphs = []
 
-        for p in [p.strip() for p in ai_body.split("\n") if p.strip()]:
+        for p in render_lines:
             if p.startswith("【") or p.startswith("■") or p.startswith("▶"):
                 heading_text = _normalize_article_heading(p, body_category, has_game, article_subtype=body_subtype)
                 if heading_text in seen_headings:
@@ -9699,6 +9760,13 @@ def make_title(entry) -> str:
     return text if text else f"X投稿 {datetime.now().strftime('%Y-%m-%d')}"
 
 
+def _prepare_source_title_context(entry_title_clean: str, entry: dict | None = None) -> tuple[str, str]:
+    raw_title = entry_title_clean.strip() if entry_title_clean else make_title(entry or {})
+    raw_title = _strip_html(raw_title).strip()
+    preview_title = raw_title[:40].strip() if raw_title else ""
+    return raw_title, preview_title or raw_title
+
+
 def _clean_display_title_text(text: str) -> str:
     clean = _strip_html(text or "")
     clean = _re.sub(r"^【[^】]+】", "", clean).strip()
@@ -9807,22 +9875,40 @@ def _rewrite_display_title_with_template(title: str, summary: str, category: str
     clean_summary = _strip_html(summary or "").strip()
     source_text = _strip_html(f"{title} {summary}")
     subject = _short_subject_name(title, summary, category) or "巨人"
+    status_subject = subject
+    generic_player_status_subject = ""
+    if category == "選手情報":
+        role_label = _extract_player_role_label(title, summary)
+        if (
+            role_label
+            and role_label.endswith("選手")
+            and not role_label.startswith("この")
+            and role_label.startswith(subject)
+            and f"{subject}選手" in source_text
+        ):
+            generic_player_status_subject = role_label
     notice_subject = ""
     notice_type = ""
     if category == "選手情報" and _is_notice_template_story(title, summary, category):
         notice_subject, notice_type = _extract_notice_subject_and_type(title, summary)
         if notice_subject:
             subject = notice_subject
+            status_subject = notice_subject
+        if generic_player_status_subject and notice_subject and generic_player_status_subject.startswith(notice_subject):
+            status_subject = generic_player_status_subject
     if subject in TITLE_VENUE_MARKERS or subject.endswith("球場") or subject in {"予告先発", "先発"}:
         subject = "巨人"
+        status_subject = subject
     if category == "試合速報" and subject == "巨人":
         player_subject = _compact_subject_label(title, summary, "選手情報")
         if player_subject and player_subject not in TITLE_VENUE_MARKERS and not player_subject.endswith("球場"):
             subject = player_subject
+            status_subject = player_subject
         if subject == "巨人":
             fallback_subject = _extract_game_subject_fallback(source_text)
             if fallback_subject:
                 subject = fallback_subject
+                status_subject = fallback_subject
     manager_display_subject = subject
     if category == "首脳陣":
         manager_label = _extract_subject_label(title, summary, category)
@@ -9843,15 +9929,17 @@ def _rewrite_display_title_with_template(title: str, summary: str, category: str
         if "フォーム" in source_text or "助言" in source_text or "修正" in source_text:
             return _result(f"{subject}、フォーム変更 関連情報", "player_mechanics_generic")
         if PLAYER_DEREGISTER_TITLE_RE.search(source_text):
-            return _result(f"{subject}、登録抹消 関連情報", "player_status_deregister")
+            return _result(f"{status_subject}、登録抹消 関連情報", "player_status_deregister")
         if PLAYER_JOIN_TITLE_RE.search(source_text):
-            return _result(f"{subject}、一軍合流 関連情報", "player_status_join")
+            return _result(f"{status_subject}、一軍合流 関連情報", "player_status_join")
         if PLAYER_REGISTER_TITLE_RE.search(source_text):
             if notice_type in {"一軍登録", "再登録"}:
-                return _result(f"{subject}、{notice_type} 関連情報", "player_status_register")
-            return _result(f"{subject}、登録に関する関連情報", "player_status_register")
+                return _result(f"{status_subject}、{notice_type} 関連情報", "player_status_register")
+            return _result(f"{status_subject}、登録に関する関連情報", "player_status_register")
         if PLAYER_RETURN_TITLE_RE.search(source_text) or "昇格" in source_text or "一軍" in source_text or "復帰" in source_text:
-            return _result(f"{subject}、昇格・復帰 関連情報", "player_status_return")
+            if generic_player_status_subject:
+                status_subject = generic_player_status_subject
+            return _result(f"{status_subject}、昇格・復帰 関連情報", "player_status_return")
         if quote_text:
             return _result(f"{subject}「{quote_text}」 関連発言", "player_quote")
         return _result(f"{subject}の現状整理 関連情報", "player_generic")
@@ -10862,8 +10950,8 @@ def _main(args, logger):
                 continue
 
             category = classify_category(title_text, keywords)
-            raw_title = entry_title_clean.strip() if entry_title_clean else make_title(entry)
-            title    = raw_title[:40].strip() if raw_title else make_title(entry)
+            raw_title, title_preview = _prepare_source_title_context(entry_title_clean, entry)
+            title = raw_title
             summary  = entry_summary_clean
             # Observation only; later consumers decide whether to use normalized outputs.
             _, category_guard_warnings = _tc_validate_category(category)
@@ -10872,19 +10960,19 @@ def _main(args, logger):
             if tag_category_warnings:
                 logger.info(
                     "  [CLASSIFY_OBSERVE] %s → %s tag_category_warnings=%s",
-                    title[:40],
+                    title_preview[:40],
                     category,
                     json.dumps(tag_category_warnings, ensure_ascii=False),
                 )
             entry_has_game = infer_article_has_game(title, summary, category, has_game)
             if _should_skip_stale_postgame_entry(category, title, summary, published_at):
-                logger.debug(f"  [SKIP:postgame古い] {title[:40]}")
+                logger.debug(f"  [SKIP:postgame古い] {title_preview[:40]}")
                 skip_filter += 1
                 skip_reason_counts["stale_postgame"] += 1
                 _append_skip_reason_sample(skip_reason_sample_titles, "stale_postgame", title)
                 continue
             if _should_skip_stale_player_status_entry(category, title, summary, published_at):
-                logger.debug(f"  [SKIP:player_status古い] {title[:40]}")
+                logger.debug(f"  [SKIP:player_status古い] {title_preview[:40]}")
                 skip_filter += 1
                 skip_reason_counts["stale_player_status"] += 1
                 _append_skip_reason_sample(skip_reason_sample_titles, "stale_player_status", title)
@@ -10892,14 +10980,14 @@ def _main(args, logger):
 
             if source_type in {"news", "social_news"}:
                 if _is_promotional_video_entry(entry_title_clean, summary):
-                    logger.debug(f"  [SKIP:動画プロモ] {entry_title_clean[:40]}")
+                    logger.debug(f"  [SKIP:動画プロモ] {title_preview[:40]}")
                     skip_filter += 1
                     skip_reason_counts["video_promo"] += 1
                     _append_skip_reason_sample(skip_reason_sample_titles, "video_promo", title)
                     continue
                 article_subtype = _detect_article_subtype(title, summary, category, entry_has_game)
                 if article_subtype == "live_update" and not ENABLE_LIVE_UPDATE_ARTICLES:
-                    logger.debug(f"  [SKIP:途中経過停止中] {title[:40]}")
+                    logger.debug(f"  [SKIP:途中経過停止中] {title_preview[:40]}")
                     skip_filter += 1
                     skip_reason_counts["live_update_disabled"] += 1
                     _append_skip_reason_sample(skip_reason_sample_titles, "live_update_disabled", title)
@@ -10908,7 +10996,7 @@ def _main(args, logger):
                 if source_type == "news":
                     allow_commentless_news = article_subtype in {"lineup", "farm_lineup", "postgame"}
                     if not has_comment and not allow_commentless_news:
-                        logger.debug(f"  [SKIP:コメントなし] {title[:40]}")
+                        logger.debug(f"  [SKIP:コメントなし] {title_preview[:40]}")
                         skip_filter += 1
                         skip_reason_counts["comment_required"] += 1
                         _append_skip_reason_sample(skip_reason_sample_titles, "comment_required", title)
@@ -10918,13 +11006,13 @@ def _main(args, logger):
                     if rescue_meta:
                         _log_sns_weak_rescue(logger, post_url, title, rescue_meta)
                     if not worthy:
-                        logger.debug(f"  [SKIP:SNS弱い] {title[:40]}")
+                        logger.debug(f"  [SKIP:SNS弱い] {title_preview[:40]}")
                         skip_filter += 1
                         skip_reason_counts["social_too_weak"] += 1
                         _append_skip_reason_sample(skip_reason_sample_titles, "social_too_weak", title)
                         continue
 
-            logger.info(f"  [HIT] {title[:40]} → {category}")
+            logger.info(f"  [HIT] {title_preview[:40]} → {category}")
             prepared_category_counts[category] += 1
             if source_type in {"news", "social_news"}:
                 prepared_subtype_counts[article_subtype] += 1

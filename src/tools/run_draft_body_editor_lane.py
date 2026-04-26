@@ -118,6 +118,8 @@ STRIP_HTML_PATTERN = re.compile(r"<[^>]+>")
 AI_TONE_PATTERN = re.compile(r"(でしょう|かもしれません|と言えそうです|と言えるでしょう)")
 KANJI_TOKEN_PATTERN = re.compile(r"[一-龥]{2,}")
 KATAKANA_TOKEN_PATTERN = re.compile(r"[ァ-ヴー]{2,}")
+DECORATIVE_HEADING_EMOJI = frozenset({"📊", "👀", "📌", "💬", "🔥", "⚾", "📝"})
+DECORATIVE_HEADING_LABELS = frozenset({"📌 関連ポスト"})
 TITLE_GENERIC_TOKENS = {
     "巨人", "読売", "ジャイアンツ",
     "試合", "結果", "勝利", "敗戦", "要点", "ポイント", "注目",
@@ -341,6 +343,18 @@ def _body_headings(body: str) -> tuple[str, ...]:
     return tuple(HEADING_PATTERN.findall(_strip_html(body)))
 
 
+def _strip_decorative_headings(headings: Sequence[str]) -> list[str]:
+    filtered: list[str] = []
+    for heading in headings:
+        inner = heading.strip()
+        if inner.startswith("【") and inner.endswith("】"):
+            inner = inner[1:-1].strip()
+        if inner in DECORATIVE_HEADING_LABELS or (inner and inner[0] in DECORATIVE_HEADING_EMOJI):
+            continue
+        filtered.append(heading)
+    return filtered
+
+
 def _infer_subtype(post: dict[str, Any]) -> str | None:
     meta = _extract_meta(post)
     meta_subtype = str(meta.get("article_subtype") or "").strip().lower()
@@ -560,7 +574,8 @@ def _draft_looks_editable(post: dict[str, Any], now: datetime, touched_ids: set[
 
     headings = REQUIRED_HEADINGS[subtype]
     found_headings = _body_headings(body)
-    if found_headings and found_headings[: len(headings)] != headings:
+    normalized_headings = tuple(_strip_decorative_headings(found_headings))
+    if found_headings and normalized_headings[: len(headings)] != headings:
         return False, "heading_mismatch"
 
     return True, "ok"

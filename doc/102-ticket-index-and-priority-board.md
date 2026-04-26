@@ -131,24 +131,25 @@ Do not use `git add -A`.
 
 - **alias**: PUB-004-D
 - **priority**: P0
-- **status**: **HALTED**(135 freshness gate land 待ち、4/24 created を今日新着で publish した疑いで第 2 burst 中止)
+- **status**: **IN_FLIGHT**(2026-04-26 PM 累計 38 件 publish、daily cap 残 62、autonomous 継続)
 - **owner**: Claude Code(orchestration)
 - **lane**: Claude
-- **ready_for**: 135 freshness gate land 後の **fresh-only re-dry-run** → fresh_count > 0 でのみ次 burst
-- **next_action**: 1) **135 freshness gate impl land 待ち** 2) 105 dry-run 再実行で fresh_count / stale_hold_count / expired_hold_count 確認 3) **fresh のみ** 20 件 burst fire 4) 別途 4/26 10:23 publish 済 20 件の possibly_stale_published audit(read-only)
-- **blocked_by**: **135 freshness gate**
-- **user_action_required**: **NO**(135 land 後 autonomous fresh-only ramp)
-- **cap**: max_burst default **20** / hard cap **30** / daily **100**(JST 0:00 reset 既設)
+- **ready_for**: 24h 内追加 invocation 可、翌 JST 0:00 reset 後 backlog 残 drain
+- **next_action**: 1) burst 観察 + 24h 内追加 publish 2) 翌日 daily cap reset 後再 ramp 3) 124-A live cleanup apply
+- **blocked_by**: none
+- **user_action_required**: **NO**(autonomous lock、142 freshness 降格 + 145 mapping fix 適用済)
+- **cap**: max_burst default **20** / hard cap **30** / daily **100**(JST 0:00 reset 既設、137 sent-only count)
 - **write_scope**: PUB-004-B `--live --max-burst 20 --daily-cap-allow` autonomous fire
 - **doc_path**: `doc/active/PUB-004-D-all-eligible-draft-backlog-publish-ramp.md`
-- **acceptance**: ✓ 4 件数 visible(publish_clean / repaired_publishable / hard_stop / hold_due_cleanup_failure)
-- **dry_run_result**(2026-04-26 PM 新 spec): total 100 / hard_stop 40 / repairable 60 / clean 0 / publishable 60 / publishable_minus_cleanup_pending 43(`/tmp/pub004d/full_eval_v2.json`)
-- **live_burst_1_result**(2026-04-26 PM): **sent 20** / refused 40(hard_stop) / skipped 40(cap)/ postcheck batch 2(10 件ごと round trip 通り)
-- **sent_post_ids_burst_1**: 63531 / 63523 / 63515 / 63510 / 63509 / 63505 / 63497 / 63495 / 63493 / 63487 / 63483 / 63480 / 63479 / 63466 / 63464 / 63463 / 63429 / 63398 / 63393 / 63383
-- **repo_state**: live publish 1 burst 完了
-- **commit_state**: -(orchestration ticket、code commit なし)
+- **gates_applied**: 130(hard_stop)/ 135(freshness audit、142 で降格)/ 136(lineup_dup)/ 137(cap sent only)/ 141(cleanup chain)/ 142(freshness REPAIRABLE)/ 145(freshness no-op mapping)
+- **burst_chain_2026-04-26**:
+  - **burst 1**(10:23 AM 旧 spec): 20 sent(63531/63523/63515/63510/63509/63505/63497/63495/63493/63487/63483/63480/63479/63466/63464/63463/63429/63398/63393/63383)= 全 stale だった事故、135 で gate 化
+  - **burst 3**(11:36 PM 137 後): 1 sent(63321 farm)
+  - **burst 6**(12:01 AM 142+145 後): 17 sent(63282/63276/63272/63265/63263/63249/63247/63243/63238/63236/63234/63230/63226/63222/63211/63209/63205)
+  - 累計: **38 sent**
+- **commit_state**: orchestration ticket、code commit は 130/135/136/137/141/142/145 で個別反映
 - **next_prompt_path**: -
-- **last_commit**: `4741eee` docs for 105/PUB-004-D(orchestration history)
+- **last_commit**: `5b01662` 145 freshness flags no-op cleanup mapping
 
 ### 106 speech-seed-intake-dry-run
 

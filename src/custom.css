@@ -2172,24 +2172,13 @@ body.yoshi-header-translucent .l-header__inner {
   box-shadow: 0 4px 10px rgba(26, 26, 26, 0.18);
   opacity: 0.95;
 }
-/* SWELL 現行の -twitter-x / currentColor 実装にも追従させる */
-.c-shareBtns__item.-twitter,
-.c-shareBtns__item.-twitter-x,
-.c-shareBtns__item.-x {
-  color: var(--black) !important;
-}
-.c-shareBtns__item.-facebook {
-  color: #1877F2 !important;
-}
+/* default 色を SWELL に任せつつ -twitter / -x / -line を巨人寄りに微調整 */
 .c-shareBtns__item.-twitter .c-shareBtns__btn,
-.c-shareBtns__item.-twitter-x .c-shareBtns__btn,
 .c-shareBtns__item.-x .c-shareBtns__btn {
-  background-color: var(--black) !important;
-  border-color: var(--black) !important;
+  background: var(--black) !important;
 }
 .c-shareBtns__item.-facebook .c-shareBtns__btn {
-  background-color: #1877F2 !important;
-  border-color: #1877F2 !important;
+  background: #1877F2 !important;
 }
 .c-shareBtns__item.-line .c-shareBtns__btn {
   background: #06C755 !important;

@@ -542,7 +542,7 @@ doc/
 - **blocked_by**: none for slot/CSS/template scaffolding。**ad unit ID 実値挿入のみ user op 必要**(AdSense dashboard で発行された unit ID 提供のとき Claude が差し替え)
 - **user_action_required**: **none for scaffolding**。ad unit ID 実値が必要になった段階で Claude が「この slot の ID をください」と最小限要求するだけ
 - **write_scope**: `src/custom.css` の AdSense slot 整備 + WP theme template の `.yoshi-ad--*` wrapper(backend Python / publish runner / WP REST / .env / secret 触らない)
-- **doc_path**: `doc/active/125-adsense-manual-ad-unit-embed.md`
+- **doc_path**: `doc/done/2026-04/125-adsense-manual-ad-unit-embed.md`
 - **acceptance**: slot wrapper が 087 設計通りの位置に配置 / CSS で破綻なし / placeholder で ad unit ID 差し替え可能 / backend 差分ゼロ / double script なし
 - **repo_state**: doc committed `72a3ccd`
 - **commit_state**: doc committed

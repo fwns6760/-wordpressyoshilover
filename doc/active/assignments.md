@@ -22,7 +22,6 @@
 | **135** freshness gate | P0 | CLOSED 済 → REVIEW | Claude / B | 142 で freshness 降格済、今後 hard_stop に戻すか判断保留 |
 | **123** readiness guard | P1 | READY | Claude or A | 130 land 後 read-only 検査(105 ramp 安定性) |
 | **124** cleanup apply | P1 | READY | Codex A | 130 land 後、site_component cleanup を 8 publish 済記事に live apply |
-| **125** AdSense slot | P1 | **IN_FLIGHT** | Codex A | `.yoshi-ad--*` wrapper(087 spec)を `src/custom.css` + `src/yoshilover-063-frontend.php` に追加(autonomous fire 中)|
 | **PUB-002-A** | reference | active | (parent runbook) | 130 evaluator base、現役参照 |
 
 ### 止まってる(waiting)
@@ -44,4 +43,4 @@
 
 ## 本日完了便(2026-04-26、commit hash 順)
 
-`0253b2a` 119 / `5bfe892` 126 / `269e1f4` 113 adapter / `2669faa` 127 / `147507c` 132 / `867d90f` 130 / `06a1315` 133 / `6979899` 131 / `35fb67c` 134 reorg / `573a169` 140 / `5f27058` 142 / `4f7963d` 141 / `5b01662` 145 / 加 105 ramp 66 件 publish 実行
+`0253b2a` 119 / `5bfe892` 126 / `269e1f4` 113 adapter / `2669faa` 127 / `147507c` 132 / `867d90f` 130 / `06a1315` 133 / `6979899` 131 / `35fb67c` 134 reorg / `573a169` 140 / `5f27058` 142 / `4f7963d` 141 / `5b01662` 145 / `afc7ba9` 125 AdSense slot / `c433b89` 146 SNS reject 拡張 / 加 105 ramp 66 件 publish 実行

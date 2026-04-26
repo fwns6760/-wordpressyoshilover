@@ -1,6 +1,6 @@
 # assignments — ticket 担当者割り当て
 
-最終更新: 2026-04-26 evening(13 ticket close + done/ 移動、158 in flight、159 user judgment 待ち)
+最終更新: 2026-04-26 evening(159 統合済、177-fix in flight、178/180 auto-fire chain 待ち)
 
 ## エージェント
 
@@ -49,8 +49,7 @@
 | **171** codex-cli-shadow-runner | P0 | **CLOSED `0981ee2`** → done/ 移動済 | B 完了 | call_codex 実装、shadow lane invariant(WP write 禁止)|
 | **172** cloud-run-secret-auth-writeback | P0 | **CLOSED `cbe05b0`** → done/ 移動済 | B 完了 | SecretAuthManager + entrypoint script、auth.json 内容ログ禁止 |
 | **173** x-post-cloud-queue-ledger v0 | P0.5 | **CLOSED `9ef3772`** → done/ 移動済 | A 完了 | X 投稿 lane foundation、unlock 時即動 |
-| **159** Phase 1e WSL cron 042 disable | P1 | BLOCKED_USER(158 land + observation 1 日後) | User → Claude | 1 ワード go で WSL cron 行 disable |
-| **162** Phase 4 gemini_audit GCP migration | P1 | QUEUED | Claude / A | 158 land 後 fire 可 |
+| **162** Phase 4 gemini_audit GCP migration | P1 | QUEUED(user 判断保留中、影響軽微なので後回し可)| Claude / A | 残 WSL cron = gemini_audit のみ、autonomous touch せず |
 | **163** Phase 5 quality-monitor / quality-gmail GCP migration | P1 | QUEUED | Claude / A | 162 land 後 fire 可 |
 | **174** x-api-cloud-run-live-smoke | P0.5 | BLOCKED_USER(149 X live unlock 後)| User → A | live X API smoke 1 回 |
 | **175** x-controlled-autopost-cloud-rollout | P0.5 | BLOCKED(174 後)| Claude / A | daily cap ramp |

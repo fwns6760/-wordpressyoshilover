@@ -700,6 +700,9 @@ REPAIRABLE_FLAG_ACTION_MAP = {
     "missing_featured_media": "warning_only_missing_featured_media",
     "title_body_mismatch_partial": "warning_only_partial_mismatch",
     "numerical_anomaly_low_severity": "warning_only_low_severity_numeric",
+    "stale_for_breaking_board": "freshness_audit_only_no_op",
+    "expired_lineup_or_pregame": "freshness_audit_only_no_op",
+    "expired_game_context": "freshness_audit_only_no_op",
 }
 
 

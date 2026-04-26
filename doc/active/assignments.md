@@ -23,8 +23,8 @@
 | **123** readiness guard | P1 | CLOSED `77d4c8b` | A | history audit module land、105 ramp 監視に使用 |
 | **124** cleanup apply | P1 | READY | Codex A | 130 land 後、site_component cleanup を 8 publish 済記事に live apply |
 | **147** X auto-post 親 ramp | P0.5 | READY | Claude | Phase 1-5 設計 / orchestration |
-| **148** X Phase 1 dry-run mail | P0.5 | **READY** | Codex A | 直近 publish 5 件文案 build + mail 送信、X API zero |
-| **149** X Phase 2 manual live 1 | P0.5 | BLOCKED(148) | Claude / A | 148 OK 後 1 件 manual_post live |
+| **148** X Phase 1 dry-run mail | P0.5 | **CLOSED `cc9fe16`** | Codex A 完了 | 直近 publish 5 件文案 build + mail、X API zero、user 文案確認 待ち |
+| **149** X Phase 2 manual live 1 | P0.5 | READY(148 done)| Claude / A | user 確認後 1 件 manual_post live |
 | **150** X Phase 3 trigger ON cap 1 | P0.5 | BLOCKED(149) | Claude / A | 149 OK 後 env auto + daily 1、WP trigger 連動 |
 | **PUB-002-A** | reference | active | (parent runbook) | 130 evaluator base、現役参照 |
 

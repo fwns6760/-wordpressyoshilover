@@ -118,6 +118,7 @@ FRESHNESS_THRESHOLDS_HOURS: dict[str, float] = {
 }
 LINEUP_FRESHNESS_SUBTYPES = frozenset({"lineup", "pregame", "probable_starter", "farm_lineup"})
 GAME_CONTEXT_FRESHNESS_SUBTYPES = frozenset({"postgame", "game_result"})
+FRESHNESS_HOLD_CLASSES = frozenset({"stale", "expired"})
 LINEUP_TITLE_TOKEN_MATCH_SUBTYPES = frozenset(
     {"lineup", "lineup_notice", "pregame", "probable_starter", "farm_lineup"}
 )
@@ -1373,7 +1374,7 @@ def evaluate_raw_posts(
                 "freshness_reason": str(entry.get("freshness_reason") or ""),
             }
             for entry in all_entries
-            if entry.get("freshness_class") in {"stale", "expired"}
+            if entry.get("freshness_class") in FRESHNESS_HOLD_CLASSES
         ),
         key=lambda item: item["age_hours"],
         reverse=True,

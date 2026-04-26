@@ -6,6 +6,7 @@ from src.guarded_publish_evaluator import evaluate_raw_posts, render_human_repor
 
 
 FIXED_NOW = datetime.fromisoformat("2026-04-25T21:00:00+09:00")
+FIRE_TIME_NOW = datetime.fromisoformat("2026-04-26T14:25:00+09:00")
 
 
 def _post(
@@ -147,6 +148,9 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
 
     def _evaluate(self, posts):
         return evaluate_raw_posts(posts, window_hours=96, max_pool=100, now=FIXED_NOW)
+
+    def _evaluate_at(self, posts, now):
+        return evaluate_raw_posts(posts, window_hours=96, max_pool=100, now=now)
 
     def _find_entry(self, report, post_id):
         for bucket in ("green", "yellow", "red"):
@@ -715,6 +719,86 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         self.assertIn("213 | 阿部監督", rendered)
         self.assertIn("214 | 巨人が阪神に3-2で勝利", rendered)
         self.assertIn("2026-04-23", rendered)
+
+    def test_created_424_draft_is_held_on_426_even_if_modified_on_426(self):
+        stale_backlog_post = _post(
+            215,
+            "巨人が阪神に3-2で勝利",
+            (
+                "<p>巨人が阪神に3-2で勝利した。スポーツ報知によると、戸郷が7回2失点と好投した。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source</p>"
+            ),
+            date="2026-04-24T19:30:00",
+            modified="2026-04-26T09:15:00",
+            meta={"article_subtype": "postgame"},
+        )
+
+        report = self._evaluate_at([stale_backlog_post], FIRE_TIME_NOW)
+
+        entry = self._find_entry(report, 215)
+        self.assertFalse(entry["publishable"])
+        self.assertEqual(entry["content_date"], "2026-04-24")
+        self.assertEqual(entry["freshness_class"], "expired")
+        self.assertIn("expired_game_context", entry["hard_stop_flags"])
+        self.assertIn("detected_by=created_at", entry["freshness_reason"])
+        self.assertNotIn("2026-04-26", entry["freshness_reason"])
+
+    def test_pregame_6h_over_is_hard_stop(self):
+        stale_pregame = _post(
+            216,
+            "試合前に確認したい巨人打線のポイント",
+            (
+                "<p>巨人は今日の試合前練習で打線の並びを確認した。スポーツ報知によると、先発候補の状態も整理された。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source</p>"
+            ),
+            date="2026-04-26T06:00:00",
+            modified="2026-04-26T12:00:00",
+            meta={"article_subtype": "pregame"},
+        )
+
+        report = self._evaluate_at([stale_pregame], FIRE_TIME_NOW)
+
+        entry = self._find_entry(report, 216)
+        self.assertFalse(entry["publishable"])
+        self.assertEqual(entry["freshness_class"], "expired")
+        self.assertIn("expired_lineup_or_pregame", entry["hard_stop_flags"])
+        self.assertIn("threshold=6h", entry["freshness_reason"])
+
+    def test_program_and_off_field_within_48h_remain_publishable(self):
+        report = self._evaluate_at(
+            [
+                _post(
+                    217,
+                    "巨人戦の中継予定を整理 テレビ放送とラジオ出演情報",
+                    (
+                        "<p>巨人戦の放送予定が更新された。スポーツ報知によると、テレビ中継とラジオ出演情報がまとまった。</p>"
+                        "<p>参照元: スポーツ報知 https://example.com/program</p>"
+                    ),
+                    date="2026-04-24T18:00:00",
+                    modified="2026-04-26T08:00:00",
+                    meta={"article_subtype": "program"},
+                ),
+                _post(
+                    218,
+                    "巨人グッズ新作が販売開始 東京ドームイベント情報も更新",
+                    (
+                        "<p>巨人グッズの販売開始情報が更新された。スポーツ報知によると、東京ドームのイベント案内も追加された。</p>"
+                        "<p>参照元: スポーツ報知 https://example.com/off-field</p>"
+                    ),
+                    date="2026-04-24T17:30:00",
+                    modified="2026-04-26T08:30:00",
+                    meta={"article_subtype": "off_field"},
+                ),
+            ],
+            FIRE_TIME_NOW,
+        )
+
+        for post_id in (217, 218):
+            with self.subTest(post_id=post_id):
+                entry = self._find_entry(report, post_id)
+                self.assertTrue(entry["publishable"])
+                self.assertEqual(entry["freshness_class"], "fresh")
+                self.assertEqual(entry["hard_stop_flags"], [])
 
     def test_scan_wp_drafts_only_reads_wordpress(self):
         wp_client = mock.Mock()

@@ -39,11 +39,11 @@
 | **167** GCP billing alert | P1 | **CLOSED `6fd5b00`** → done/ 移動済(JPY ¥1500/¥4500/¥7500 × 50/90/100% threshold)| A 完了 | 月 0-9 通 alert(同事象 dedup) |
 | **159** Phase 1e WSL cron 042 + 095 + PUB-004-C disable | P1 | **CLOSED**(crontab 全 publish lane コメント化、GCP のみ稼働)| Claude 完了 | 残 WSL = gemini_audit のみ |
 | **160** Phase 2 PUB-004-C GCP migration | P0 | **CLOSED `e5818f6`** → done/ 移動済(Cloud Run Job + Scheduler 18:55 JST 自動稼働開始)| A 完了 | GCS persistence + smoke pass、WSL PUB-004-C 同時 disable 完了 |
-| **178** Codex primary wp_write enable | P0.5 | READY(177 land 後 fire)| B | env CODEX_WP_WRITE_ALLOWED で本線昇格 opt-in |
+| **178** Codex primary wp_write enable | P0.5 | **CLOSED `9754b53`** → done/ 移動済(env=true 適用 + Cloud Run Job env update + Scheduler */5 + max-posts 5、shadow_only 卒業)| B 完了 | live 稼働開始(初回 smoke で put_ok=0、修復品質 issue 浮上 → 181 land で改善見込)|
 | **179** repair learning log Firestore + GCS | P0 | **READY → 即 fire** | B | FirestoreLedgerWriter 本実装 + ArtifactUploader、038 ledger system の GCP bridge |
 | **176** share buttons Twitter/Facebook fix | P1 | **CLOSED `91069f0`** → done/ 移動済(custom.css の SWELL `-twitter-x` class 追従)| B 完了 | live deploy 後 smoke 必要(user 目視) |
 | **177** Codex shadow GCP deploy | P0 | **CLOSED `a5ef56a`** → done/ 移動済(image py312 + Cloud Run Job + Cloud Scheduler 5,15,25,35,45,55 ENABLED + 3 smoke exit 0)| A 完了 | Codex shadow lane live、178 で本線昇格 |
-| **181** readability audit & narrow fix(title 主語欠落 + 本文可読性)| P0.5 | **READY → 即 fire**(Q2=auto、user 指示)| B | 63668 / 63375 主語欠落 audit + 読者可読性 narrow fix |
+| **181** readability audit & narrow fix(title 主語欠落 + 本文可読性)| P0.5 | **CLOSED `5b21543`** → done/ 移動済(rss_fetcher full title + subject_label fallback + opening duplicate 除去、pytest 1411→1416)| B 完了 | 次 publish で改善 verify、178 wp_write も再評価 |
 | **168** repair-provider-ledger v0 | P0 | **CLOSED `70009aa`** → done/ 移動済 | B 完了 | GCP migration foundation、schema v0 18 fields |
 | **169** cloud-run-repair-job-skeleton | P0 | **CLOSED `85ae5a6`** → done/ 移動済 | B 完了 | --provider / --queue-path / --ledger-path 追加 |
 | **170** repair-fallback-controller | P0 | **CLOSED `d56e298`** → done/ 移動済 | B 完了 | 6 failure class + Gemini fallback chain |

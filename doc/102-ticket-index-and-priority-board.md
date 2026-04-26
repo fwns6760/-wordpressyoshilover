@@ -43,23 +43,20 @@ If this file conflicts with an individual ticket doc:
 - `CLOSED`: done and accepted
 - `PARKED`: intentionally deferred
 
-## ticket folder policy(2026-04-26 PM 第 4 次 final、3 分類シンプル化、優先度はフォルダでなく row で判別)
+## ticket folder policy(2026-04-26 PM 第 5 次 final、PUB-* runbook も status 別へ、root = 102 のみ)
 
 ```
 doc/
-├── 102-ticket-index-and-priority-board.md  ← board 本体
-├── PUB-002-A-publish-candidate-gate-and-article-prose-contract.md  ← parent runbook
-├── PUB-004-guarded-auto-publish-runner.md  ← parent runbook
-├── PUB-005-x-post-gate.md  ← parent runbook
-├── active/    今動かす / 次動かす / 近いうち動かす(READY / IN_FLIGHT / REVIEW_NEEDED)
-├── waiting/   止めてる(BLOCKED_USER / BLOCKED_EXTERNAL / PARKED / 依存待ち)
-└── done/YYYY-MM/  終わった(CLOSED)
+├── 102-ticket-index-and-priority-board.md  ← board 本体(root 唯一)
+├── active/    READY / IN_FLIGHT / REVIEW_NEEDED(PUB-002-A 含む)
+├── waiting/   BLOCKED_USER / BLOCKED_EXTERNAL / PARKED(PUB-005 含む)
+└── done/YYYY-MM/  CLOSED(PUB-004-guarded 含む)
 ```
 
-- READY / IN_FLIGHT / REVIEW_NEEDED → `doc/active/`
+- doc/ root = **102 board のみ**(.md 1 file)
+- READY / IN_FLIGHT / REVIEW_NEEDED → `doc/active/`(PUB-002-A 等 parent runbook も active なら ここ)
 - BLOCKED_USER / BLOCKED_EXTERNAL / PARKED → `doc/waiting/`
 - CLOSED → `doc/done/YYYY-MM/`
-- doc/ root: 102 board + 親 runbook(PUB-*)のみ
 - **優先順位はフォルダではなく、本 102 board の `priority` / `next_action` で判別**
 - status 変更時 doc_path も同 commit で更新
 - `git add -A` 禁止、明示 path stage
@@ -320,7 +317,7 @@ doc/
 - **blocked_by**: 119/120 prerequisites and one-time live unlock at 121
 - **user_action_required**: only for 121 X live unlock / credential boundary
 - **write_scope**: umbrella only; child tickets define concrete write scopes
-- **doc_path**: `doc/PUB-005-x-post-gate.md`
+- **doc_path**: `doc/waiting/PUB-005-x-post-gate.md`
 - **acceptance**: Green-only controlled autopost path is split into safe child tickets; no direct 114 fire
 - **repo_state**: parent doc-first exists
 - **commit_state**: committed doc
@@ -872,7 +869,7 @@ git add -A禁止。
 - `doc/done/2026-04/PUB-002-B-missing-primary-source-publish-blocker-reduction.md`
 - `doc/done/2026-04/PUB-002-C-subtype-unresolved-publish-blocker-reduction.md`
 - `doc/done/2026-04/PUB-002-D-long-body-draft-compression-or-exclusion-policy.md`
-- `doc/PUB-005-x-post-gate.md`
+- `doc/waiting/PUB-005-x-post-gate.md`
 - `doc/119-x-post-eligibility-evaluator.md`
 - `doc/120-x-post-autopost-queue-and-ledger.md`
 - `doc/121-x-post-live-helper-one-shot-smoke.md`

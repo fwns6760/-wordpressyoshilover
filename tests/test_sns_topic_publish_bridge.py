@@ -98,7 +98,7 @@ class SNSTopicPublishBridgeTests(unittest.TestCase):
                 }
 
             with patch("src.sns_topic_publish_bridge.evaluate_post", side_effect=_fake_evaluate_post), patch(
-                "src.sns_topic_publish_bridge.run_guarded_publish",
+                "src.sns_topic_publish_bridge._run_guarded_publish",
                 return_value={"proposed": [], "refused": [], "summary": {}, "scan_meta": {}},
             ):
                 report = bridge.run_sns_topic_publish_bridge(fixture_path=fixture_path, now=FIXED_NOW)
@@ -153,7 +153,7 @@ class SNSTopicPublishBridgeTests(unittest.TestCase):
                 }
 
             with patch("src.sns_topic_publish_bridge.evaluate_post", side_effect=_fake_evaluate_post), patch(
-                "src.sns_topic_publish_bridge.run_guarded_publish",
+                "src.sns_topic_publish_bridge._run_guarded_publish",
                 side_effect=_fake_runner,
             ):
                 report = bridge.run_sns_topic_publish_bridge(fixture_path=fixture_path, now=FIXED_NOW)

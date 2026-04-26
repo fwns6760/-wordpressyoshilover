@@ -13,18 +13,16 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from src.guarded_publish_evaluator import evaluate_raw_posts
-from src.guarded_publish_runner import (
-    DEFAULT_BACKUP_DIR,
-    DEFAULT_CLEANUP_LOG_PATH,
-    DEFAULT_HISTORY_PATH,
-    DEFAULT_MAX_BURST,
-    DEFAULT_YELLOW_LOG_PATH,
-    run_guarded_publish,
-)
 
 
+ROOT = Path(__file__).resolve().parent.parent
 JST = ZoneInfo("Asia/Tokyo")
 DEFAULT_EVALUATOR_WINDOW_HOURS = 24 * 365 * 10
+DEFAULT_MAX_BURST = 20
+DEFAULT_BACKUP_DIR = ROOT / "logs" / "cleanup_backup"
+DEFAULT_HISTORY_PATH = ROOT / "logs" / "guarded_publish_history.jsonl"
+DEFAULT_YELLOW_LOG_PATH = ROOT / "logs" / "guarded_publish_yellow_log.jsonl"
+DEFAULT_CLEANUP_LOG_PATH = ROOT / "logs" / "guarded_publish_cleanup_log.jsonl"
 HOST_SOURCE_LABELS = {
     "hochi.news": "スポーツ報知",
     "www.hochi.news": "スポーツ報知",
@@ -44,6 +42,12 @@ HOST_SOURCE_LABELS = {
     "giants.jp": "読売新聞",
 }
 DEFAULT_SOURCE_LABEL = "スポーツ報知"
+
+
+def _run_guarded_publish(**kwargs: Any) -> dict[str, Any]:
+    from src.guarded_publish_runner import run_guarded_publish
+
+    return run_guarded_publish(**kwargs)
 
 
 class SyntheticDraftWPClient:
@@ -451,7 +455,7 @@ def run_sns_topic_publish_bridge(
                 json.dump(runner_input, handle, ensure_ascii=False, indent=2)
                 handle.flush()
                 tmp_path = handle.name
-            runner_report = run_guarded_publish(
+            runner_report = _run_guarded_publish(
                 input_from=tmp_path,
                 live=live,
                 max_burst=max_burst,

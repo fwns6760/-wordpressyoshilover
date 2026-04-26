@@ -4,7 +4,6 @@ import argparse
 import sys
 from typing import Sequence
 
-from src.guarded_publish_runner import GuardedPublishAbortError
 from src.sns_topic_publish_bridge import dump_sns_topic_publish_bridge_report, run_sns_topic_publish_bridge
 
 
@@ -39,7 +38,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_burst=args.max_burst,
             daily_cap_allow=args.daily_cap_allow,
         )
-    except (GuardedPublishAbortError, OSError, ValueError) as exc:
+    except (OSError, ValueError, RuntimeError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
 

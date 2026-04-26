@@ -32,7 +32,7 @@
 | **155** GCP migration master | P0.5 | IN_FLIGHT(Phase 1a-1c / 165 / 168-173 done、158/159/162-164/174-175 残)| Claude / A | 158 in flight、その後 Phase 1e (159 WSL disable) は user 判断 |
 | **156** Phase 1b 042 Cloud Run deploy | P0.5 | **CLOSED `c5adfa3`** → done/ 移動済 | A 完了 | WSL cron 042 並走中、disable は Phase 1e (159) |
 | **157** Phase 1c Cloud Scheduler trigger 042 | P0.5 | **CLOSED `94f4784`** → done/ 移動済 | A 完了 | 17:32 JST tick auto execute pass、WSL 042 並走中 |
-| **158** Phase 1d Secret Manager + GCS persistence | P0 | **IN_FLIGHT `bsyflz2d0`**(v2 再 fire、stop 条件訂正後) | A | env Secret 化 + cursor 永続化、WSL 042/095 disable 解除条件 |
+| **158** Phase 1d Secret Manager + GCS persistence | P0 | **CLOSED `a472d39`** → done/ 移動済(11 secret + GCS bucket + 2-run cursor 引継 verify、pytest 1395→1404)| A 完了 | **WSL 042/095 disable 解除条件達成、159 user judgment 待ち** |
 | **161** Phase 3 publish-notice GCP migration | P0.5 | **CLOSED `7655d9f`** → done/ 移動済 | A 完了 | image push + Job create + Scheduler 15 * * * *、placeholder /data 残(158 で解消) |
 | **165** Gemini + WP REST resilience | P0.5 | **CLOSED `3aa2cd1`** → done/ 移動済 | A 完了 | API 一時 outage で cron 無駄停止しない |
 | **166** Cloud Run failure alert | P1 | BLOCKED(157 deploy 後 fire 可)| Claude / A | mail 通知配線、近日 fire |

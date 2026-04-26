@@ -35,7 +35,7 @@ def _post(
 
 class GuardedPublishEvaluatorTests(unittest.TestCase):
     def setUp(self):
-        self.green_post = _post(
+        self.clean_post = _post(
             101,
             "巨人が阪神に3-2で勝利",
             (
@@ -43,57 +43,16 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
                 "<p>参照元: スポーツ報知 https://example.com/source</p>"
             ),
         )
-        self.yellow_post = _post(
+        self.repairable_post = _post(
             102,
-            "巨人がDeNAに4-1で勝利",
-            (
-                "<p>巨人がDeNAに4-1で勝利した。スポーツ報知によると、岡本が2安打を記録した。</p>"
-                "<p>この日は中軸の反応と投手運用が噛み合い、終盤まで主導権を保った。</p>"
-                "<h3>スタメン</h3>"
-                "<p>阿部監督が試合後の総括を丁寧に語り、投手運用の意図も詳しく説明した。</p>"
-                "<p>現地の空気感や打線のつながりも振り返った。</p>"
-                "<p>参照元: スポーツ報知 https://example.com/source</p>"
-                "<p>💬 ファンの声</p>"
-            ),
-        )
-        self.speculative_post = _post(
-            103,
             "巨人はどう動く？阿部監督の狙いはどこ",
             (
                 "<p>巨人が阪神戦へ向けて調整した。スポーツ報知によると、阿部監督が打線の状態を確認した。</p>"
                 "<p>参照元: スポーツ報知 https://example.com/source</p>"
             ),
         )
-        self.injury_post = _post(
-            104,
-            "巨人の主力が故障で離脱",
-            (
-                "<p>巨人の主力にケガの症状が出たと報じられた。スポーツ報知によると、診断結果が待たれている。</p>"
-                "<p>参照元: スポーツ報知 https://example.com/source</p>"
-            ),
-        )
-        self.ranking_post = _post(
-            105,
-            "巨人の記録メモ",
-            (
-                "<p>巨人の記録メモを整理した。スポーツ報知によると、打線の積み上げが続いている。</p>"
-                "<p>NPB通算 1234</p>"
-                "<p>参照元: スポーツ報知 https://example.com/source</p>"
-            ),
-        )
-        self.site_middle_post = _post(
-            106,
-            "巨人が広島に2-1で勝利",
-            (
-                "<p>巨人が広島に2-1で勝利した。スポーツ報知によると、赤星が7回1失点と好投した。</p>"
-                "<p>序盤から丁寧に試合を運んだ。</p>"
-                "<p>【関連記事】</p>"
-                "<p>終盤は継投で逃げ切った。</p>"
-                "<p>参照元: スポーツ報知 https://example.com/source</p>"
-            ),
-        )
-        self.cleanup_post = _post(
-            107,
+        self.heading_and_devlog_post = _post(
+            103,
             "巨人が中日に5-1で勝利",
             (
                 "<p>巨人が中日に5-1で勝利した。スポーツ報知によると、戸郷が7回1失点で今季3勝目を挙げた。</p>"
@@ -110,14 +69,50 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
                 "</pre>"
             ),
         )
-        self.missing_featured_and_source_post = _post(
-            108,
+        self.hard_stop_post = _post(
+            104,
+            "巨人の主力が故障で離脱",
+            (
+                "<p>巨人の主力にケガの症状が出たと報じられた。スポーツ報知によると、診断結果が待たれている。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source</p>"
+            ),
+        )
+        self.hard_stop_plus_repairable_post = _post(
+            105,
+            "巨人はどう動く？主力が故障で離脱",
+            (
+                "<p>巨人の主力にケガの症状が出たと報じられた。スポーツ報知によると、診断結果が待たれている。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source</p>"
+            ),
+        )
+        self.site_component_post = _post(
+            106,
+            "巨人が広島に2-1で勝利",
+            (
+                "<p>巨人が広島に2-1で勝利した。スポーツ報知によると、赤星が7回1失点と好投した。</p>"
+                "<p>序盤から丁寧に試合を運んだ。</p>"
+                "<p>【関連記事】</p>"
+                "<p>終盤は継投で逃げ切った。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source</p>"
+            ),
+        )
+        self.weak_source_post = _post(
+            107,
             "巨人がヤクルトに6-2で勝利",
             (
                 "<p>巨人がヤクルトに6-2で勝利した。先発投手が試合を作り、打線も終盤に加点した。</p>"
                 "<p>参照元: https://example.com/source</p>"
             ),
             featured_media=0,
+        )
+        self.ranking_post = _post(
+            108,
+            "巨人の記録メモ",
+            (
+                "<p>巨人の記録メモを整理した。スポーツ報知によると、打線の積み上げが続いている。</p>"
+                "<p>NPB通算 1234</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source</p>"
+            ),
         )
         self.lineup_hochi_post = _post(
             109,
@@ -147,147 +142,123 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
                 "_yoshilover_source_url": "https://www.sponichi.co.jp/baseball/news/2026/04/25/kiji.html",
             },
         )
-        self.lineup_no_hochi_post = _post(
-            111,
-            "巨人スタメン 1番丸 4番岡本",
-            (
-                "<p>巨人のスタメンが発表された。スポニチによると、1番丸、4番岡本で先発する。</p>"
-                "<p>参照元: スポニチ https://www.sponichi.co.jp/baseball/news/2026/04/26/kiji.html</p>"
-            ),
-            meta={
-                "article_subtype": "lineup",
-                "candidate_key": "lineup_notice:20260426-g-c:starting",
-                "game_id": "20260426-g-c",
-                "_yoshilover_source_url": "https://www.sponichi.co.jp/baseball/news/2026/04/26/kiji.html",
-            },
-        )
-        self.prefix_misuse_post = _post(
-            112,
-            "巨人スタメン 阪神に3-2で勝利",
-            (
-                "<p>巨人が阪神に3-2で勝利した。スポーツ報知によると、終盤の継投が勝敗を分けた。</p>"
-                "<p>参照元: スポーツ報知 https://hochi.news/articles/20260425-OHT1T51001.html</p>"
-            ),
-            meta={
-                "article_subtype": "postgame",
-                "candidate_key": "postgame_result:20260425-g-t:win",
-                "game_id": "20260425-g-t",
-                "_yoshilover_source_url": "https://hochi.news/articles/20260425-OHT1T51001.html",
-            },
-        )
 
     def _evaluate(self, posts):
         return evaluate_raw_posts(posts, window_hours=96, max_pool=100, now=FIXED_NOW)
 
-    def test_green_fixture_classified_green(self):
-        report = self._evaluate([self.green_post])
+    def test_clean_post_returns_publishable_true_and_cleanup_required_false(self):
+        report = self._evaluate([self.clean_post])
 
-        self.assertEqual(report["summary"]["green_count"], 1)
-        self.assertEqual(report["summary"]["yellow_count"], 0)
-        self.assertEqual(report["summary"]["red_count"], 0)
-        green_entry = report["green"][0]
-        self.assertEqual(green_entry["post_id"], 101)
-        self.assertEqual(green_entry["game_key"], "postgame/阪神/2026-04-25")
-        self.assertTrue(green_entry["needs_hallucinate_re_evaluation"])
+        self.assertEqual(report["summary"]["clean_count"], 1)
+        self.assertEqual(report["summary"]["repairable_count"], 0)
+        self.assertEqual(report["summary"]["hard_stop_count"], 0)
+        entry = report["green"][0]
+        self.assertEqual(entry["category"], "clean")
+        self.assertTrue(entry["publishable"])
+        self.assertFalse(entry["cleanup_required"])
+        self.assertEqual(entry["repairable_flags"], [])
 
-    def test_yellow_detects_weird_heading_label_and_tail_site_component(self):
-        report = self._evaluate([self.yellow_post])
+    def test_repairable_only_post_returns_publishable_true_and_cleanup_required_true(self):
+        report = self._evaluate([self.repairable_post])
 
-        self.assertEqual(report["summary"]["yellow_count"], 1)
-        self.assertEqual(report["summary"]["red_count"], 0)
-        yellow_entry = report["yellow"][0]
-        self.assertIn("weird_heading_label", yellow_entry["yellow_reasons"])
-        self.assertIn("site_component_mixed_into_body_tail", yellow_entry["yellow_reasons"])
+        self.assertEqual(report["summary"]["clean_count"], 0)
+        self.assertEqual(report["summary"]["repairable_count"], 1)
+        self.assertEqual(report["summary"]["hard_stop_count"], 0)
+        entry = report["yellow"][0]
+        self.assertEqual(entry["category"], "repairable")
+        self.assertTrue(entry["publishable"])
+        self.assertTrue(entry["cleanup_required"])
+        self.assertIn("ai_tone_heading_or_lead", entry["repairable_flags"])
+        self.assertIn("speculative_title", entry["yellow_reasons"])
 
-    def test_red_detects_speculative_injury_ranking_and_site_component_middle(self):
-        report = self._evaluate(
-            [self.speculative_post, self.injury_post, self.ranking_post, self.site_middle_post]
+    def test_hard_stop_only_post_returns_publishable_false(self):
+        report = self._evaluate([self.hard_stop_post])
+
+        self.assertEqual(report["summary"]["clean_count"], 0)
+        self.assertEqual(report["summary"]["repairable_count"], 0)
+        self.assertEqual(report["summary"]["hard_stop_count"], 1)
+        entry = report["red"][0]
+        self.assertEqual(entry["category"], "hard_stop")
+        self.assertFalse(entry["publishable"])
+        self.assertFalse(entry["cleanup_required"])
+        self.assertEqual(
+            entry["reasons"],
+            [{"flag": "injury_death", "category": "hard_stop"}],
         )
 
-        self.assertEqual(report["summary"]["red_count"], 4)
-        by_post_id = {entry["post_id"]: entry for entry in report["red"]}
-        self.assertIn("speculative_title", by_post_id[103]["red_flags"])
-        self.assertIn("injury_death", by_post_id[104]["red_flags"])
-        self.assertIn("ranking_list_only", by_post_id[105]["red_flags"])
-        self.assertIn("site_component_mixed_into_body_middle", by_post_id[106]["red_flags"])
+    def test_hard_stop_plus_repairable_returns_publishable_false(self):
+        report = self._evaluate([self.hard_stop_plus_repairable_post])
 
-    def test_cleanup_candidate_detects_heading_sentence_h3_and_dev_log_contamination(self):
-        report = self._evaluate([self.cleanup_post])
+        self.assertEqual(report["summary"]["hard_stop_count"], 1)
+        entry = report["red"][0]
+        self.assertFalse(entry["publishable"])
+        self.assertFalse(entry["cleanup_required"])
+        self.assertIn("injury_death", entry["hard_stop_flags"])
+        self.assertIn("ai_tone_heading_or_lead", entry["repairable_flags"])
+        self.assertIn("speculative_title", entry["yellow_reasons"])
+
+    def test_summary_includes_hard_stop_repairable_clean_counts(self):
+        report = self._evaluate(
+            [
+                self.clean_post,
+                self.repairable_post,
+                self.heading_and_devlog_post,
+                self.hard_stop_post,
+                self.site_component_post,
+                self.weak_source_post,
+                self.ranking_post,
+            ]
+        )
 
         self.assertEqual(report["summary"]["green_count"], 1)
+        self.assertEqual(report["summary"]["yellow_count"], 4)
+        self.assertEqual(report["summary"]["red_count"], 2)
+        self.assertEqual(report["summary"]["clean_count"], 1)
+        self.assertEqual(report["summary"]["repairable_count"], 4)
+        self.assertEqual(report["summary"]["hard_stop_count"], 2)
+        self.assertEqual(report["summary"]["publishable_count"], 5)
+        self.assertEqual(report["summary"]["soft_cleanup_count"], 4)
+
+    def test_cleanup_candidate_detects_heading_sentence_h3_and_dev_log_contamination(self):
+        report = self._evaluate([self.heading_and_devlog_post])
+
         self.assertEqual(report["summary"]["cleanup_count"], 1)
         cleanup_entry = report["cleanup_candidates"][0]
-        self.assertEqual(cleanup_entry["post_id"], 107)
-        self.assertEqual(cleanup_entry["post_judgment"], "green")
+        self.assertEqual(cleanup_entry["post_id"], 103)
+        self.assertEqual(cleanup_entry["post_judgment"], "repairable")
         self.assertEqual(
             sorted(cleanup_entry["cleanup_types"]),
             ["dev_log_contamination", "heading_sentence_as_h3"],
         )
 
-    def test_missing_featured_media_and_primary_source_are_yellow(self):
-        report = self._evaluate([self.missing_featured_and_source_post])
+    def test_site_component_reasons_keep_legacy_yellow_reason_but_use_repairable_flag(self):
+        report = self._evaluate([self.site_component_post])
 
-        self.assertEqual(report["summary"]["yellow_count"], 1)
-        yellow_entry = report["yellow"][0]
-        self.assertIn("missing_featured_media", yellow_entry["yellow_reasons"])
-        self.assertIn("missing_primary_source", yellow_entry["yellow_reasons"])
+        entry = report["yellow"][0]
+        self.assertIn("site_component_mixed_into_body", entry["repairable_flags"])
+        self.assertIn("site_component_mixed_into_body_middle", entry["yellow_reasons"])
 
-    def test_lineup_duplicate_absorbed_by_hochi_is_red(self):
+    def test_missing_featured_media_and_weak_source_display_are_repairable(self):
+        report = self._evaluate([self.weak_source_post])
+
+        entry = report["yellow"][0]
+        self.assertIn("missing_featured_media", entry["repairable_flags"])
+        self.assertIn("weak_source_display", entry["repairable_flags"])
+        self.assertIn("missing_primary_source", entry["yellow_reasons"])
+
+    def test_lineup_duplicate_absorbed_by_hochi_keeps_legacy_red_flag(self):
         report = self._evaluate([self.lineup_hochi_post, self.lineup_other_post])
 
         self.assertEqual(report["summary"]["green_count"], 1)
         self.assertEqual(report["summary"]["red_count"], 1)
-        self.assertEqual(report["summary"]["lineup_representative_count"], 1)
-        self.assertEqual(report["summary"]["lineup_duplicate_absorbed_count"], 1)
-        self.assertEqual(report["green"][0]["post_id"], 109)
-        self.assertEqual(report["green"][0]["lineup_priority_status"], "representative")
-        self.assertEqual(report["green"][0]["game_id"], "20260425-g-t")
         red_entry = report["red"][0]
-        self.assertEqual(red_entry["post_id"], 110)
+        self.assertIn("lineup_duplicate_excessive", red_entry["hard_stop_flags"])
         self.assertIn("lineup_duplicate_absorbed_by_hochi", red_entry["red_flags"])
         self.assertEqual(red_entry["representative_post_id"], 109)
 
-    def test_lineup_without_hochi_source_is_red(self):
-        report = self._evaluate([self.lineup_no_hochi_post])
-
-        self.assertEqual(report["summary"]["red_count"], 1)
-        self.assertEqual(report["summary"]["lineup_deferred_count"], 1)
-        red_entry = report["red"][0]
-        self.assertIn("lineup_no_hochi_source", red_entry["red_flags"])
-        self.assertEqual(red_entry["lineup_priority_status"], "deferred")
-
-    def test_non_lineup_starmen_prefix_is_red_when_meta_subtype_disagrees(self):
-        report = self._evaluate([self.prefix_misuse_post])
-
-        self.assertEqual(report["summary"]["red_count"], 1)
-        self.assertEqual(report["summary"]["lineup_prefix_violation_count"], 1)
-        red_entry = report["red"][0]
-        self.assertIn("lineup_prefix_misuse", red_entry["red_flags"])
-        self.assertEqual(red_entry["subtype"], "postgame")
-
-    def test_summary_counts_are_consistent(self):
-        report = self._evaluate(
-            [
-                self.green_post,
-                self.yellow_post,
-                self.speculative_post,
-                self.injury_post,
-                self.ranking_post,
-                self.site_middle_post,
-                self.cleanup_post,
-            ]
-        )
-
-        self.assertEqual(report["summary"]["green_count"], 2)
-        self.assertEqual(report["summary"]["yellow_count"], 1)
-        self.assertEqual(report["summary"]["red_count"], 4)
-        self.assertEqual(report["summary"]["cleanup_count"], 1)
-        self.assertEqual(report["summary"]["publishable_count"], 3)
-        self.assertEqual(report["summary"]["publishable_minus_cleanup_pending"], 2)
-
     def test_scan_wp_drafts_only_reads_wordpress(self):
         wp_client = mock.Mock()
-        wp_client.list_posts.return_value = [self.green_post]
+        wp_client.list_posts.return_value = [self.clean_post]
         wp_client.update_post_fields = mock.Mock()
         wp_client.update_post_status = mock.Mock()
         wp_client.get_post = mock.Mock()

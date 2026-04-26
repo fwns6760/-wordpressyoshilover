@@ -9,6 +9,7 @@ from src.guarded_publish_runner import (
     DEFAULT_BACKUP_DIR,
     DEFAULT_CLEANUP_LOG_PATH,
     DEFAULT_HISTORY_PATH,
+    DEFAULT_MAX_BURST,
     DEFAULT_YELLOW_LOG_PATH,
     GuardedPublishAbortError,
     dump_guarded_publish_report,
@@ -39,7 +40,12 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         description="PUB-004-B guarded publish runner (dry-run default, live publish gated).",
     )
     parser.add_argument("--input-from", required=True, help="PUB-004-A evaluator JSON path.")
-    parser.add_argument("--max-burst", type=int, required=True, help="Per invocation publish cap (hard max 3).")
+    parser.add_argument(
+        "--max-burst",
+        type=int,
+        default=DEFAULT_MAX_BURST,
+        help="Per invocation publish cap (default 20, hard max 30).",
+    )
     parser.add_argument("--format", choices=("json", "human"), default="json", help="Output format.")
     parser.add_argument("--output", help="Write output to this path instead of stdout.")
     parser.add_argument("--live", action="store_true", help="Enable live WordPress write path.")

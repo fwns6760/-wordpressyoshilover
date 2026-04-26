@@ -7,6 +7,7 @@ import re
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from src.pre_publish_fact_check import extractor
@@ -17,9 +18,11 @@ from src.wp_client import WPClient
 ROOT = Path(__file__).resolve().parent.parent
 JST = ZoneInfo("Asia/Tokyo")
 UTC = timezone.utc
-MAX_BURST_HARD_CAP = 3
-DAILY_CAP_HARD_CAP = 10
-DEFAULT_BACKUP_DIR = ROOT / "backups" / "wp_publish"
+DEFAULT_MAX_BURST = 20
+MAX_BURST_HARD_CAP = 30
+DAILY_CAP_HARD_CAP = 100
+POSTCHECK_BATCH_SIZE = 10
+DEFAULT_BACKUP_DIR = ROOT / "logs" / "cleanup_backup"
 DEFAULT_HISTORY_PATH = ROOT / "logs" / "guarded_publish_history.jsonl"
 DEFAULT_YELLOW_LOG_PATH = ROOT / "logs" / "guarded_publish_yellow_log.jsonl"
 DEFAULT_CLEANUP_LOG_PATH = ROOT / "logs" / "guarded_publish_cleanup_log.jsonl"
@@ -164,6 +167,8 @@ def _post_record_with_content(post: dict[str, Any], body_html: str) -> dict[str,
 def _post_cleanup_check(post: dict[str, Any], cleaned_html: str) -> tuple[bool, str]:
     original_record = extractor.extract_post_record(post)
     cleaned_record = _post_record_with_content(post, cleaned_html)
+    if not _strip_html(cleaned_html):
+        return False, "body_empty"
     prose_chars = _prose_char_count(str(cleaned_record.get("body_text") or ""))
     if prose_chars < 100:
         return False, "prose_lt_100"
@@ -185,7 +190,19 @@ def _post_cleanup_check(post: dict[str, Any], cleaned_html: str) -> tuple[bool, 
         cleaned_record.get("source_block") or SOURCE_LABEL_RE.search(str(cleaned_record.get("body_text") or ""))
     )
     if before_has_source and not after_has_source:
-        return False, "source_missing"
+        return False, "source_anchor_missing"
+    before_hosts = {
+        urlparse(str(url)).hostname
+        for url in (original_record.get("source_urls") or [])
+        if urlparse(str(url)).hostname
+    }
+    after_hosts = {
+        urlparse(str(url)).hostname
+        for url in (cleaned_record.get("source_urls") or [])
+        if urlparse(str(url)).hostname
+    }
+    if before_hosts and not before_hosts.intersection(after_hosts):
+        return False, "source_url_missing"
     return True, "ok"
 
 
@@ -362,12 +379,15 @@ def _build_plan(
     *,
     judgment: str,
     yellow_reasons: Sequence[str] | None,
+    repairable_flags: Sequence[str] | None,
     cleanup_candidate: dict[str, Any] | None,
 ) -> dict[str, Any]:
     title, body_html = _preflight_post(post)
     cleaned_html = body_html
     cleanup_actions: list[dict[str, str]] = []
     cleanup_types = [str(value) for value in ((cleanup_candidate or {}).get("cleanup_types") or [])]
+    repairable_flags_list = list(dict.fromkeys(str(value) for value in (repairable_flags or []) if str(value)))
+    cleanup_required = bool(repairable_flags_list)
 
     if "heading_sentence_as_h3" in cleanup_types:
         cleaned_html, heading_actions = _replace_heading_sentence_h3(cleaned_html)
@@ -379,22 +399,31 @@ def _build_plan(
         cleaned_html, dev_actions = _remove_dev_log_contamination(cleaned_html)
         cleanup_actions.extend(dev_actions)
 
-    ok, cleanup_check = _post_cleanup_check(post, cleaned_html)
-    if not ok:
-        raise CandidateRefusedError("post_cleanup_abort", cleanup_check)
+    cleanup_check = "not_required"
+    cleanup_success: bool | None = None
+    if cleanup_required:
+        ok, cleanup_check = _post_cleanup_check(post, cleaned_html)
+        if not ok:
+            raise CandidateRefusedError("post_cleanup_abort", cleanup_check)
+        cleanup_success = True
 
     return {
         "post_id": int((post or {}).get("id")),
         "title": title,
         "judgment": judgment,
         "yellow_reasons": list(yellow_reasons or []),
+        "repairable_flags": repairable_flags_list,
+        "cleanup_required": cleanup_required,
+        "cleanup_success": cleanup_success,
+        "cleanup_candidate": cleanup_candidate,
         "cleanup_actions": cleanup_actions,
         "cleanup_plan": [{"type": action["type"], "preview_diff": action["preview_diff"]} for action in cleanup_actions],
-        "post_cleanup_check": "ok",
+        "post_cleanup_check": cleanup_check,
         "cleaned_html": cleaned_html,
         "requires_content_update": cleaned_html != body_html,
         "publish_link": str((post or {}).get("link") or ""),
         "post": post,
+        "original_html": body_html,
     }
 
 
@@ -468,10 +497,10 @@ def create_publish_backup(
 ) -> Path:
     current_jst = _now_jst(now)
     current_utc = current_jst.astimezone(UTC)
-    day_dir = _path(backup_dir) / current_jst.date().isoformat()
-    day_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"post_{int((post or {}).get('id'))}_{current_utc.strftime('%Y%m%dT%H%M%S')}.json"
-    destination = day_dir / filename
+    target_dir = _path(backup_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{int((post or {}).get('id'))}_{current_utc.strftime('%Y%m%dT%H%M%S')}.json"
+    destination = target_dir / filename
     temp_path = destination.with_name(f"{destination.name}.tmp")
     payload = _build_backup_payload(post, fetched_at=current_utc)
     try:
@@ -508,6 +537,8 @@ def _iter_publishable_entries(report: dict[str, Any]) -> list[dict[str, Any]]:
                     "title": str(entry.get("title") or ""),
                     "judgment": judgment,
                     "yellow_reasons": list(entry.get("yellow_reasons") or []),
+                    "repairable_flags": list(entry.get("repairable_flags") or entry.get("soft_cleanup_flags") or []),
+                    "cleanup_required": bool(entry.get("cleanup_required")),
                     "cleanup_candidate": cleanup_map.get(post_id),
                 }
             )
@@ -519,11 +550,16 @@ def _iter_red_entries(report: dict[str, Any]) -> list[dict[str, Any]]:
     for entry in report.get("red", []) or []:
         if not isinstance(entry, dict):
             continue
+        hard_stop_flags = list(entry.get("hard_stop_flags") or [])
+        legacy_red_flags = list(entry.get("red_flags") or hard_stop_flags)
         entries.append(
             {
                 "post_id": int(entry["post_id"]),
                 "title": str(entry.get("title") or ""),
-                "reason": "red",
+                "reason": "hard_stop",
+                "hard_stop_flags": hard_stop_flags,
+                "red_flags": legacy_red_flags,
+                "hold_reason": f"hard_stop_{(hard_stop_flags or legacy_red_flags or ['unknown'])[0]}",
             }
         )
     return entries
@@ -534,8 +570,10 @@ def _public_plan(plan: dict[str, Any]) -> dict[str, Any]:
         "post_id": plan["post_id"],
         "title": plan["title"],
         "judgment": plan["judgment"],
+        "cleanup_required": bool(plan["cleanup_required"]),
         "cleanup_plan": plan["cleanup_plan"],
         "post_cleanup_check": plan["post_cleanup_check"],
+        "repairable_flags": list(plan["repairable_flags"]),
     }
     if plan["judgment"] == "yellow":
         payload["yellow_reasons"] = list(plan["yellow_reasons"])
@@ -550,6 +588,10 @@ def _history_row(
     ts: str,
     backup_path: str | None,
     error: str | None,
+    publishable: bool | None = None,
+    cleanup_required: bool | None = None,
+    cleanup_success: bool | None = None,
+    hold_reason: str | None = None,
 ) -> dict[str, Any]:
     return {
         "post_id": post_id,
@@ -558,6 +600,29 @@ def _history_row(
         "backup_path": backup_path,
         "error": error,
         "judgment": judgment,
+        "publishable": publishable,
+        "cleanup_required": cleanup_required,
+        "cleanup_success": cleanup_success,
+        "hold_reason": hold_reason,
+    }
+
+
+def _postcheck_batch(wp_client: Any, post_ids: Sequence[int]) -> dict[str, Any]:
+    results: list[dict[str, Any]] = []
+    for post_id in post_ids:
+        post = wp_client.get_post(post_id)
+        status = str((post or {}).get("status") or "").strip().lower()
+        results.append(
+            {
+                "post_id": int(post_id),
+                "status": status,
+                "ok": status == "publish",
+            }
+        )
+    return {
+        "post_ids": [int(post_id) for post_id in post_ids],
+        "results": results,
+        "all_ok": all(item["ok"] for item in results),
     }
 
 
@@ -568,23 +633,27 @@ def _write_live_success_logs(
     yellow_log_path: str | Path,
     cleanup_log_path: str | Path,
 ) -> None:
-    if plan["judgment"] == "yellow":
+    if plan["cleanup_required"]:
         _append_jsonl(
             yellow_log_path,
             {
                 "post_id": plan["post_id"],
                 "ts": ts,
                 "title": plan["title"],
+                "applied_flags": list(plan["repairable_flags"]),
                 "yellow_reasons": list(plan["yellow_reasons"]),
                 "publish_link": plan["publish_link"],
             },
         )
-    if plan["cleanup_actions"]:
+    if plan["cleanup_required"]:
         _append_jsonl(
             cleanup_log_path,
             {
                 "post_id": plan["post_id"],
                 "ts": ts,
+                "before_excerpt": _collapse_snippet(_strip_html(plan["original_html"])),
+                "after_excerpt": _collapse_snippet(_strip_html(plan["cleaned_html"])),
+                "applied_flags": list(plan["repairable_flags"]),
                 "cleanups": [
                     {
                         "type": action["type"],
@@ -603,7 +672,7 @@ def run_guarded_publish(
     *,
     input_from: str | Path,
     live: bool = False,
-    max_burst: int = MAX_BURST_HARD_CAP,
+    max_burst: int = DEFAULT_MAX_BURST,
     daily_cap_allow: bool = False,
     backup_dir: str | Path = DEFAULT_BACKUP_DIR,
     history_path: str | Path = DEFAULT_HISTORY_PATH,
@@ -631,6 +700,7 @@ def run_guarded_publish(
     proposed_internal: list[dict[str, Any]] = []
     executed: list[dict[str, Any]] = []
     live_history_rows: list[dict[str, Any]] = []
+    postcheck_batches: list[dict[str, Any]] = []
     wp: Any | None = None
 
     def get_wp() -> Any:
@@ -639,10 +709,66 @@ def run_guarded_publish(
             wp = wp_client or WPClient()
         return wp
 
+    attempt_slots_used = 0
     for red_entry in _iter_red_entries(report):
         if red_entry["post_id"] in attempted_post_ids:
             continue
-        refused.append({"post_id": red_entry["post_id"], "reason": red_entry["reason"]})
+        if daily_attempts + attempt_slots_used >= DAILY_CAP_HARD_CAP:
+            refused.append({"post_id": red_entry["post_id"], "reason": "daily_cap"})
+            if live:
+                row = _history_row(
+                    post_id=red_entry["post_id"],
+                    judgment="hard_stop",
+                    status="skipped",
+                    ts=now_iso,
+                    backup_path=None,
+                    error="daily_cap",
+                    publishable=False,
+                    cleanup_required=False,
+                    cleanup_success=False,
+                    hold_reason="daily_cap",
+                )
+                live_history_rows.append(row)
+                executed.append(
+                    {
+                        "post_id": red_entry["post_id"],
+                        "status": "skipped",
+                        "backup_path": None,
+                        "publish_link": "",
+                    }
+                )
+            continue
+        refused.append(
+            {
+                "post_id": red_entry["post_id"],
+                "reason": red_entry["reason"],
+                "hold_reason": red_entry["hold_reason"],
+            }
+        )
+        attempt_slots_used += 1
+        if live:
+            detail = ",".join(red_entry["hard_stop_flags"] or red_entry["red_flags"]) or "hard_stop"
+            row = _history_row(
+                post_id=red_entry["post_id"],
+                judgment="hard_stop",
+                status="refused",
+                ts=now_iso,
+                backup_path=None,
+                error=f"hard_stop:{detail}",
+                publishable=False,
+                cleanup_required=False,
+                cleanup_success=False,
+                hold_reason=red_entry["hold_reason"],
+            )
+            live_history_rows.append(row)
+            executed.append(
+                {
+                    "post_id": red_entry["post_id"],
+                    "status": "refused",
+                    "backup_path": None,
+                    "publish_link": "",
+                }
+            )
 
     planned_count = 0
     for entry in _iter_publishable_entries(report):
@@ -660,6 +786,10 @@ def run_guarded_publish(
                     ts=now_iso,
                     backup_path=None,
                     error="burst_cap",
+                    publishable=True,
+                    cleanup_required=bool(entry["cleanup_required"]),
+                    cleanup_success=False,
+                    hold_reason="burst_cap",
                 )
                 live_history_rows.append(row)
                 executed.append(
@@ -672,7 +802,7 @@ def run_guarded_publish(
                 )
             continue
 
-        if daily_attempts + planned_count >= DAILY_CAP_HARD_CAP:
+        if daily_attempts + attempt_slots_used >= DAILY_CAP_HARD_CAP:
             refused.append({"post_id": post_id, "reason": "daily_cap"})
             if live:
                 row = _history_row(
@@ -682,6 +812,10 @@ def run_guarded_publish(
                     ts=now_iso,
                     backup_path=None,
                     error="daily_cap",
+                    publishable=True,
+                    cleanup_required=bool(entry["cleanup_required"]),
+                    cleanup_success=False,
+                    hold_reason="daily_cap",
                 )
                 live_history_rows.append(row)
                 executed.append(
@@ -696,14 +830,38 @@ def run_guarded_publish(
 
         post = get_wp().get_post(post_id)
         try:
-            plan = _build_plan(
-                post,
-                judgment=entry["judgment"],
-                yellow_reasons=entry["yellow_reasons"],
-                cleanup_candidate=entry["cleanup_candidate"],
-            )
+            if live:
+                title, _ = _preflight_post(post)
+                plan = {
+                    "post_id": post_id,
+                    "title": title,
+                    "judgment": entry["judgment"],
+                    "yellow_reasons": list(entry["yellow_reasons"]),
+                    "repairable_flags": list(entry["repairable_flags"]),
+                    "cleanup_required": bool(entry["cleanup_required"]),
+                    "cleanup_candidate": entry["cleanup_candidate"],
+                    "cleanup_plan": [],
+                    "post_cleanup_check": "pending_live_verify",
+                    "publish_link": str((post or {}).get("link") or ""),
+                    "post": post,
+                }
+            else:
+                plan = _build_plan(
+                    post,
+                    judgment=entry["judgment"],
+                    yellow_reasons=entry["yellow_reasons"],
+                    repairable_flags=entry["repairable_flags"],
+                    cleanup_candidate=entry["cleanup_candidate"],
+                )
         except CandidateRefusedError as exc:
-            refused.append({"post_id": post_id, "reason": exc.reason})
+            refused.append(
+                {
+                    "post_id": post_id,
+                    "reason": exc.reason,
+                    "hold_reason": "cleanup_failed_post_condition" if entry["cleanup_required"] else exc.reason,
+                }
+            )
+            attempt_slots_used += 1
             if live:
                 row = _history_row(
                     post_id=post_id,
@@ -712,6 +870,10 @@ def run_guarded_publish(
                     ts=now_iso,
                     backup_path=None,
                     error=exc.detail,
+                    publishable=True,
+                    cleanup_required=bool(entry["cleanup_required"]),
+                    cleanup_success=False,
+                    hold_reason="cleanup_failed_post_condition" if entry["cleanup_required"] else exc.reason,
                 )
                 live_history_rows.append(row)
                 executed.append(
@@ -720,6 +882,7 @@ def run_guarded_publish(
                         "status": "refused",
                         "backup_path": None,
                         "publish_link": str((post or {}).get("link") or ""),
+                        "hold_reason": "cleanup_failed_post_condition" if entry["cleanup_required"] else exc.reason,
                     }
                 )
             continue
@@ -727,35 +890,64 @@ def run_guarded_publish(
         proposed_internal.append(plan)
         proposed_public.append(_public_plan(plan))
         planned_count += 1
+        attempt_slots_used += 1
 
     if live:
         for row in live_history_rows:
             _append_jsonl(history_path, row)
 
+        pending_postcheck_ids: list[int] = []
         for plan in proposed_internal:
             backup_path: str | None = None
             status = "sent"
             error: str | None = None
+            hold_reason: str | None = None
+            cleanup_success: bool | None = None
             try:
                 backup = create_publish_backup(plan["post"], backup_dir, now=now_jst)
                 backup_path = str(backup)
-                if plan["requires_content_update"]:
+                live_plan = _build_plan(
+                    plan["post"],
+                    judgment=plan["judgment"],
+                    yellow_reasons=plan["yellow_reasons"],
+                    repairable_flags=plan["repairable_flags"],
+                    cleanup_candidate=plan["cleanup_candidate"],
+                )
+                cleanup_success = live_plan["cleanup_success"]
+                if live_plan["requires_content_update"]:
                     get_wp().update_post_fields(
-                        plan["post_id"],
+                        live_plan["post_id"],
                         status="publish",
-                        content=plan["cleaned_html"],
+                        content=live_plan["cleaned_html"],
                     )
                 else:
-                    get_wp().update_post_status(plan["post_id"], "publish")
+                    get_wp().update_post_status(live_plan["post_id"], "publish")
                 _write_live_success_logs(
-                    plan=plan,
+                    plan=live_plan,
                     ts=now_iso,
                     yellow_log_path=yellow_log_path,
                     cleanup_log_path=cleanup_log_path,
                 )
+                pending_postcheck_ids.append(int(live_plan["post_id"]))
+                if len(pending_postcheck_ids) >= POSTCHECK_BATCH_SIZE:
+                    postcheck_batches.append(_postcheck_batch(get_wp(), pending_postcheck_ids))
+                    pending_postcheck_ids = []
+                plan = live_plan
+            except BackupError as exc:
+                status = "refused"
+                error = str(exc)
+                hold_reason = "cleanup_backup_failed"
+                cleanup_success = False
+            except CandidateRefusedError as exc:
+                status = "refused"
+                error = exc.detail
+                hold_reason = "cleanup_failed_post_condition" if plan["cleanup_required"] else exc.reason
+                cleanup_success = False
             except Exception as exc:
                 status = "refused"
                 error = str(exc)
+                hold_reason = "cleanup_failed_post_condition" if plan["cleanup_required"] else "publish_failed"
+                cleanup_success = False
             finally:
                 row = _history_row(
                     post_id=plan["post_id"],
@@ -764,6 +956,10 @@ def run_guarded_publish(
                     ts=now_iso,
                     backup_path=backup_path,
                     error=error,
+                    publishable=True,
+                    cleanup_required=bool(plan["cleanup_required"]),
+                    cleanup_success=cleanup_success if plan["cleanup_required"] else None,
+                    hold_reason=hold_reason,
                 )
                 _append_jsonl(history_path, row)
                 executed.append(
@@ -772,14 +968,19 @@ def run_guarded_publish(
                         "status": status,
                         "backup_path": backup_path,
                         "publish_link": plan["publish_link"],
+                        "hold_reason": hold_reason,
                     }
                 )
+
+        if pending_postcheck_ids:
+            postcheck_batches.append(_postcheck_batch(get_wp(), pending_postcheck_ids))
 
     summary = {
         "proposed_count": len(proposed_public),
         "refused_count": len(refused),
         "would_publish": len(proposed_public) if not live else sum(1 for item in executed if item["status"] == "sent"),
         "would_skip": len(refused) if not live else sum(1 for item in executed if item["status"] != "sent"),
+        "postcheck_batch_count": len(postcheck_batches),
     }
     payload: dict[str, Any] = {
         "scan_meta": {
@@ -794,6 +995,7 @@ def run_guarded_publish(
     }
     if live:
         payload["executed"] = executed
+        payload["postcheck_batches"] = postcheck_batches
     return payload
 
 
@@ -851,6 +1053,7 @@ __all__ = [
     "BackupError",
     "CandidateRefusedError",
     "DAILY_CAP_HARD_CAP",
+    "DEFAULT_MAX_BURST",
     "DEFAULT_BACKUP_DIR",
     "DEFAULT_CLEANUP_LOG_PATH",
     "DEFAULT_HISTORY_PATH",

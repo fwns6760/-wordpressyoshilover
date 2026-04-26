@@ -15,6 +15,40 @@ from src.title_body_nucleus_validator import validate_title_body_nucleus
 
 JST = ZoneInfo("Asia/Tokyo")
 
+HARD_STOP_FLAGS = frozenset(
+    {
+        "unsupported_named_fact",
+        "obvious_misinformation",
+        "injury_death",
+        "title_body_mismatch_strict",
+        "cross_article_contamination",
+        "x_sns_auto_post_risk",
+        "lineup_duplicate_excessive",
+        "ranking_list_only",
+        "lineup_no_hochi_source",
+        "lineup_prefix_misuse",
+        "dev_log_contamination_scattered",
+    }
+)
+REPAIRABLE_FLAGS = frozenset(
+    {
+        "heading_sentence_as_h3",
+        "weird_heading_label",
+        "dev_log_contamination",
+        "site_component_mixed_into_body",
+        "ai_tone_heading_or_lead",
+        "light_structure_break",
+        "weak_source_display",
+        "subtype_unresolved",
+        "long_body",
+        "missing_primary_source",
+        "missing_featured_media",
+        "title_body_mismatch_partial",
+        "numerical_anomaly_low_severity",
+    }
+)
+SOFT_CLEANUP_FLAGS = REPAIRABLE_FLAGS
+
 PRIMARY_SRC_RE = re.compile(
     r"(Yahoo!プロ野球|報知|スポーツナビ|日刊スポーツ|スポニチ|デイリー|サンケイ|スポーツ報知|読売新聞)"
 )
@@ -36,6 +70,14 @@ HEADING_SENTENCE_END_RE = re.compile(
     r"(した|している|していた|と語った|と話した|を確認した|を記録した|と発表した|となった|を達成した)$"
 )
 PLAYER_HEURISTIC_RE = re.compile(r"([一-龯々]{2,4}(?:投手|捕手|内野手|外野手|選手|監督)?|[A-Za-z]{2,}[0-9]*|[一-龯々]{2,4}[A-Za-z0-9]+)")
+LINEUP_SIGNAL_RE = re.compile(r"(スタメン|先発オーダー|オーダー|先発投手|予告先発|[1-9１-９]番)")
+POSTGAME_SIGNAL_RE = re.compile(r"(試合結果|勝利|敗戦|引き分け|[0-9０-９]+\s*[-－ー]\s*[0-9０-９]+)")
+LOW_SEVERITY_NUMERIC_RE = re.compile(r"打率\s*(?:0|０)?[\.．]([4-9][0-9０-９]{2})")
+POSTCHECK_META_RE = re.compile(r"(tweet_id|x_post_id|posted_to_x|posted_to_twitter|auto_tweet|auto_post_to_x|sns_posted)")
+LIGHT_STRUCTURE_BREAK_RE = re.compile(r"(?is)<p\b[^>]*>\s*(?:&nbsp;|\s|<br\s*/?>)*</p>|(?:<br\s*/?>\s*){2,}")
+AI_TONE_LEAD_RE = re.compile(
+    r"(注目したい|注目ポイント|見どころ|ポイントは|どう見る|どう動く|狙いはどこ|気になる)"
+)
 
 SITE_COMPONENT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("fan_voice", re.compile(r"💬\s*[^。\n]{0,120}")),
@@ -123,24 +165,51 @@ def _has_featured_media(raw_post: dict[str, Any]) -> bool:
         return False
 
 
-def _collect_site_component_flags(body_text: str) -> tuple[list[str], list[str]]:
-    red_flags: list[str] = []
-    yellow_reasons: list[str] = []
+def _prose_char_count(body_text: str) -> int:
+    chunks: list[str] = []
+    for raw_line in body_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("参照元"):
+            continue
+        if re.fullmatch(r"https?://[^\s]+", line):
+            continue
+        if any(pattern.search(line) for _, pattern in SITE_COMPONENT_PATTERNS):
+            continue
+        chunks.append(line)
+    return len("".join(chunks))
+
+
+def _collect_site_component_flags(body_text: str) -> list[dict[str, str]]:
+    findings: list[dict[str, str]] = []
     total_chars = len(body_text)
     if total_chars <= 0:
-        return red_flags, yellow_reasons
+        return findings
 
     positions: list[float] = []
     for _, pattern in SITE_COMPONENT_PATTERNS:
         positions.extend(match.start() / total_chars for match in pattern.finditer(body_text))
     if not positions:
-        return red_flags, yellow_reasons
+        return findings
 
     if any(position < 0.7 for position in positions):
-        red_flags.append("site_component_mixed_into_body_middle")
+        findings.append(
+            {
+                "flag": "site_component_mixed_into_body",
+                "legacy_flag": "site_component_mixed_into_body_middle",
+                "detail": "middle",
+            }
+        )
     else:
-        yellow_reasons.append("site_component_mixed_into_body_tail")
-    return red_flags, yellow_reasons
+        findings.append(
+            {
+                "flag": "site_component_mixed_into_body",
+                "legacy_flag": "site_component_mixed_into_body_tail",
+                "detail": "tail",
+            }
+        )
+    return findings
 
 
 def _body_for_nucleus_validator(body_html: str) -> str:
@@ -168,6 +237,50 @@ def _body_for_nucleus_validator(body_html: str) -> str:
 
 def _normalize_heading_label(text: str) -> str:
     return re.sub(r"\s+", "", text).replace("：", "").replace(":", "").strip()
+
+
+def _append_reason(
+    reasons: list[dict[str, Any]],
+    *,
+    flag: str,
+    category: str,
+    legacy_flag: str | None = None,
+    detail: str | None = None,
+) -> None:
+    payload = {
+        "flag": flag,
+        "category": category,
+    }
+    if legacy_flag:
+        payload["legacy_flag"] = legacy_flag
+    if detail:
+        payload["detail"] = detail
+    if payload not in reasons:
+        reasons.append(payload)
+
+
+def _reason_flags(reasons: list[dict[str, Any]], category: str) -> list[str]:
+    return [str(item["flag"]) for item in reasons if item.get("category") == category]
+
+
+def _legacy_flags(reasons: list[dict[str, Any]], category: str) -> list[str]:
+    legacy: list[str] = []
+    for item in reasons:
+        if item.get("category") != category:
+            continue
+        flag = str(item.get("legacy_flag") or item["flag"])
+        if flag not in legacy:
+            legacy.append(flag)
+    return legacy
+
+
+def _merge_legacy_flags(*flag_groups: list[str]) -> list[str]:
+    merged: list[str] = []
+    for group in flag_groups:
+        for flag in group:
+            if flag not in merged:
+                merged.append(flag)
+    return merged
 
 
 def _heading_sentence_as_h3_hits(body_html: str) -> list[dict[str, str]]:
@@ -202,6 +315,102 @@ def _weird_heading_labels(body_html: str) -> list[dict[str, str]]:
             continue
         findings.append({"type": "weird_heading_label", "heading": heading_text})
     return findings
+
+
+def _iter_meta_nodes(value: Any):
+    if isinstance(value, dict):
+        yield value
+        for nested in value.values():
+            yield from _iter_meta_nodes(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            yield from _iter_meta_nodes(nested)
+
+
+def _coerce_meta_truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if value is None:
+        return False
+    normalized = str(value).strip().lower()
+    if not normalized or normalized in {"0", "false", "off", "no", "none", "null"}:
+        return False
+    return True
+
+
+def _fact_check_risk_flags(raw_post: dict[str, Any]) -> list[str]:
+    flags: list[str] = []
+    meta = (raw_post or {}).get("meta")
+    for node in _iter_meta_nodes(meta):
+        risk_type = str(node.get("risk_type") or "").strip()
+        if risk_type in {
+            "unsupported_named_fact",
+            "unsupported_numeric_fact",
+            "unsupported_date_time_fact",
+            "unsupported_quote",
+            "unsupported_attribution",
+        }:
+            if "unsupported_named_fact" not in flags:
+                flags.append("unsupported_named_fact")
+        elif risk_type in {"contradiction", "source_mismatch"}:
+            if "obvious_misinformation" not in flags:
+                flags.append("obvious_misinformation")
+    return flags
+
+
+def _has_x_sns_auto_post_risk(raw_post: dict[str, Any]) -> bool:
+    meta = (raw_post or {}).get("meta")
+    for node in _iter_meta_nodes(meta):
+        for key, value in node.items():
+            if not POSTCHECK_META_RE.search(str(key).lower()):
+                continue
+            if _coerce_meta_truthy(value):
+                return True
+    return False
+
+
+def _strict_title_body_mismatch(
+    title: str,
+    body_text: str,
+    nucleus_reason_code: str | None,
+) -> bool:
+    if nucleus_reason_code not in {"SUBJECT_ABSENT", "EVENT_DIVERGE"}:
+        return False
+    opening = "\n".join(line.strip() for line in body_text.splitlines()[:4] if line.strip())
+    title_has_lineup = bool(LINEUP_SIGNAL_RE.search(title))
+    body_has_lineup = bool(LINEUP_SIGNAL_RE.search(opening))
+    title_has_postgame = bool(POSTGAME_SIGNAL_RE.search(title))
+    body_has_postgame = bool(POSTGAME_SIGNAL_RE.search(opening))
+    if title_has_lineup and body_has_postgame and not body_has_lineup:
+        return True
+    if title_has_postgame and body_has_lineup and not body_has_postgame:
+        return True
+    return False
+
+
+def _title_body_reason_flag(title: str, body_text: str, nucleus_reason_code: str | None) -> str:
+    if nucleus_reason_code == "MULTIPLE_NUCLEI":
+        return "cross_article_contamination"
+    if _strict_title_body_mismatch(title, body_text, nucleus_reason_code):
+        return "title_body_mismatch_strict"
+    return "title_body_mismatch_partial"
+
+
+def _has_low_severity_numerical_anomaly(body_text: str) -> bool:
+    return bool(LOW_SEVERITY_NUMERIC_RE.search(body_text))
+
+
+def _has_light_structure_break(body_html: str) -> bool:
+    return bool(LIGHT_STRUCTURE_BREAK_RE.search(body_html or ""))
+
+
+def _has_ai_tone_heading_or_lead(title: str, body_text: str) -> bool:
+    if SPECULATIVE_TITLE_RE.search(title):
+        return True
+    lead = "\n".join(line.strip() for line in body_text.splitlines()[:3] if line.strip())
+    return bool(AI_TONE_LEAD_RE.search(lead))
 
 
 def _dev_line_categories(line: str) -> set[str]:
@@ -283,24 +492,44 @@ def _evaluate_record(raw_post: dict[str, Any]) -> dict[str, Any]:
     modified = str(record.get("modified_at") or "")
     game_key = _build_game_key(record)
 
-    red_flags: list[str] = []
-    yellow_reasons: list[str] = []
+    reasons: list[dict[str, Any]] = []
     cleanup_details: list[dict[str, Any]] = []
 
     if not _has_featured_media(raw_post):
-        yellow_reasons.append("missing_featured_media")
+        _append_reason(reasons, flag="missing_featured_media", category="repairable")
     if not _contains_primary_source(record):
-        yellow_reasons.append("missing_primary_source")
-    if SPECULATIVE_TITLE_RE.search(title):
-        red_flags.append("speculative_title")
+        repairable_flag = "weak_source_display" if record.get("source_urls") else "missing_primary_source"
+        _append_reason(
+            reasons,
+            flag=repairable_flag,
+            category="repairable",
+            legacy_flag="missing_primary_source" if repairable_flag == "weak_source_display" else None,
+        )
+    if _has_ai_tone_heading_or_lead(title, body_text):
+        _append_reason(
+            reasons,
+            flag="ai_tone_heading_or_lead",
+            category="repairable",
+            legacy_flag="speculative_title" if SPECULATIVE_TITLE_RE.search(title) else None,
+        )
     if INJURY_DEATH_RE.search(title) or INJURY_DEATH_RE.search(body_text):
-        red_flags.append("injury_death")
+        _append_reason(reasons, flag="injury_death", category="hard_stop")
     if RANKING_LIST_ONLY_RE.search(body_text):
-        red_flags.append("ranking_list_only")
+        _append_reason(reasons, flag="ranking_list_only", category="hard_stop")
 
-    site_red, site_yellow = _collect_site_component_flags(body_text)
-    red_flags.extend(site_red)
-    yellow_reasons.extend(site_yellow)
+    for risk_flag in _fact_check_risk_flags(raw_post):
+        _append_reason(reasons, flag=risk_flag, category="hard_stop")
+    if _has_x_sns_auto_post_risk(raw_post):
+        _append_reason(reasons, flag="x_sns_auto_post_risk", category="hard_stop")
+
+    for site_flag in _collect_site_component_flags(body_text):
+        _append_reason(
+            reasons,
+            flag=site_flag["flag"],
+            category="repairable",
+            legacy_flag=site_flag.get("legacy_flag"),
+            detail=site_flag.get("detail"),
+        )
 
     nucleus_result = validate_title_body_nucleus(
         title,
@@ -308,35 +537,70 @@ def _evaluate_record(raw_post: dict[str, Any]) -> dict[str, Any]:
         str(record.get("inferred_subtype") or ""),
     )
     if not nucleus_result.aligned:
-        red_flags.append("title_body_mismatch")
+        mismatch_flag = _title_body_reason_flag(title, body_text, nucleus_result.reason_code)
+        mismatch_category = "hard_stop" if mismatch_flag in HARD_STOP_FLAGS else "repairable"
+        _append_reason(
+            reasons,
+            flag=mismatch_flag,
+            category=mismatch_category,
+            legacy_flag="title_body_mismatch" if mismatch_category == "hard_stop" else None,
+            detail=nucleus_result.reason_code,
+        )
 
     heading_hits = _heading_sentence_as_h3_hits(body_html)
     cleanup_details.extend(heading_hits)
+    if heading_hits:
+        _append_reason(reasons, flag="heading_sentence_as_h3", category="repairable")
 
     weird_label_hits = _weird_heading_labels(body_html)
     if weird_label_hits:
-        yellow_reasons.append("weird_heading_label")
+        _append_reason(reasons, flag="weird_heading_label", category="repairable")
 
     dev_log_blocks, scattered_dev_logs = _detect_dev_log_blocks(body_html, body_text)
     for detail in dev_log_blocks:
         cleanup_details.append({"type": "dev_log_contamination", **detail})
+    if dev_log_blocks:
+        _append_reason(reasons, flag="dev_log_contamination", category="repairable")
     if scattered_dev_logs and not dev_log_blocks:
-        red_flags.append("dev_log_contamination_scattered")
+        _append_reason(reasons, flag="dev_log_contamination_scattered", category="hard_stop")
 
-    red_flags = list(dict.fromkeys(red_flags))
-    yellow_reasons = list(dict.fromkeys(yellow_reasons))
+    if _has_light_structure_break(body_html):
+        _append_reason(reasons, flag="light_structure_break", category="repairable")
+    if str(record.get("inferred_subtype") or "") == "other":
+        _append_reason(reasons, flag="subtype_unresolved", category="repairable")
+    if _prose_char_count(body_text) > 3500:
+        _append_reason(reasons, flag="long_body", category="repairable")
+    if _has_low_severity_numerical_anomaly(body_text):
+        _append_reason(reasons, flag="numerical_anomaly_low_severity", category="repairable")
+
+    hard_stop_flags = _reason_flags(reasons, "hard_stop")
+    repairable_flags = _reason_flags(reasons, "repairable")
+    red_flags = _legacy_flags(reasons, "hard_stop")
+    yellow_reasons = _legacy_flags(reasons, "repairable")
     cleanup_types = list(dict.fromkeys(detail["type"] for detail in cleanup_details))
+    publishable = not bool(hard_stop_flags)
+    cleanup_required = bool(repairable_flags) and publishable
+    entry_category = "hard_stop" if hard_stop_flags else "repairable" if repairable_flags else "clean"
 
     entry = {
         "post_id": int(record["post_id"]),
         "title": title,
         "modified": modified,
         "game_key": game_key,
+        "category": entry_category,
+        "publishable": publishable,
+        "cleanup_required": cleanup_required,
+        "reasons": reasons,
+        "hard_stop_flags": hard_stop_flags,
+        "repairable_flags": repairable_flags,
+        "soft_cleanup_flags": repairable_flags,
     }
 
     if red_flags:
-        entry["red_flags"] = red_flags
-        if "title_body_mismatch" in red_flags:
+        entry["red_flags"] = _merge_legacy_flags(red_flags, yellow_reasons)
+        if yellow_reasons:
+            entry["yellow_reasons"] = yellow_reasons
+        if any(flag in {"title_body_mismatch_strict", "title_body_mismatch_partial", "cross_article_contamination"} for flag in hard_stop_flags + repairable_flags):
             entry["nucleus_reason_code"] = nucleus_result.reason_code
         return {
             "judgment": "red",
@@ -354,8 +618,9 @@ def _evaluate_record(raw_post: dict[str, Any]) -> dict[str, Any]:
                 "title": title,
                 "game_key": game_key,
                 "cleanup_types": cleanup_types,
+                "repairable_flags": repairable_flags,
                 "details": cleanup_details,
-                "post_judgment": "yellow",
+                "post_judgment": "repairable",
             }
         return {
             "judgment": "yellow",
@@ -365,20 +630,10 @@ def _evaluate_record(raw_post: dict[str, Any]) -> dict[str, Any]:
 
     entry["needs_hallucinate_re_evaluation"] = True
     entry["reason_summary"] = "featured_media, primary_source, title_body_aligned"
-    cleanup_candidate = None
-    if cleanup_types:
-        cleanup_candidate = {
-            "post_id": entry["post_id"],
-            "title": title,
-            "game_key": game_key,
-            "cleanup_types": cleanup_types,
-            "details": cleanup_details,
-            "post_judgment": "green",
-        }
     return {
         "judgment": "green",
         "entry": entry,
-        "cleanup_candidate": cleanup_candidate,
+        "cleanup_candidate": None,
     }
 
 
@@ -387,7 +642,7 @@ def _lineup_red_flags(decision: dict[str, Any] | None) -> list[str]:
         return []
     status = str(decision.get("status") or "").strip().lower()
     if status == "duplicate_absorbed":
-        return ["lineup_duplicate_absorbed_by_hochi"]
+        return ["lineup_duplicate_excessive"]
     if status == "deferred":
         return ["lineup_no_hochi_source"]
     if status == "prefix_violation":
@@ -432,8 +687,31 @@ def _apply_lineup_guard(
         }
 
     entry = dict(merged_entry)
-    existing_flags = list(entry.get("red_flags") or [])
-    entry["red_flags"] = list(dict.fromkeys(existing_flags + extra_red_flags))
+    reasons = list(entry.get("reasons") or [])
+    legacy_map = {
+        "lineup_duplicate_excessive": "lineup_duplicate_absorbed_by_hochi",
+        "lineup_no_hochi_source": "lineup_no_hochi_source",
+        "lineup_prefix_misuse": "lineup_prefix_misuse",
+    }
+    for flag in extra_red_flags:
+        _append_reason(
+            reasons,
+            flag=flag,
+            category="hard_stop",
+            legacy_flag=legacy_map.get(flag),
+            detail=str(decision.get("reason") or ""),
+        )
+    entry["reasons"] = reasons
+    entry["hard_stop_flags"] = _reason_flags(reasons, "hard_stop")
+    entry["repairable_flags"] = _reason_flags(reasons, "repairable")
+    entry["soft_cleanup_flags"] = entry["repairable_flags"]
+    entry["publishable"] = False
+    entry["cleanup_required"] = False
+    entry["category"] = "hard_stop"
+    yellow_reasons = _legacy_flags(reasons, "repairable")
+    entry["red_flags"] = _merge_legacy_flags(_legacy_flags(reasons, "hard_stop"), yellow_reasons)
+    if yellow_reasons:
+        entry["yellow_reasons"] = yellow_reasons
     entry.pop("reason_summary", None)
     cleanup_candidate = None
     return {
@@ -529,6 +807,10 @@ def evaluate_raw_posts(
             "yellow_count": len(yellow),
             "red_count": len(red),
             "cleanup_count": len(cleanup_candidates),
+            "hard_stop_count": len(red),
+            "repairable_count": len(yellow),
+            "clean_count": len(green),
+            "soft_cleanup_count": len(yellow),
             "publishable_count": len(green) + len(yellow),
             "publishable_minus_cleanup_pending": (len(green) + len(yellow)) - len(cleanup_post_ids),
             "lineup_representative_count": int(lineup_dedup["summary"]["representative_count"]),
@@ -586,6 +868,10 @@ def render_human_report(report: dict[str, Any]) -> str:
         f"green    {summary['green_count']}",
         f"yellow   {summary['yellow_count']}",
         f"red      {summary['red_count']}",
+        f"hard_stop {summary['hard_stop_count']}",
+        f"repairable {summary['repairable_count']}",
+        f"clean {summary['clean_count']}",
+        f"soft_cleanup {summary['soft_cleanup_count']}",
         f"cleanup  {summary['cleanup_count']}",
         f"publishable {summary['publishable_count']}",
         f"publishable_minus_cleanup_pending {summary['publishable_minus_cleanup_pending']}",

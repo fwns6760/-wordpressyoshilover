@@ -17,7 +17,13 @@
 - X / SNS POST / X API call も禁止(本 repo の Codex は WP write までで止まる、X 系は別 lane = PUB-005)
 - `.git/index.lock` 衝突時は plumbing 3 段 fallback(`git write-tree` / `git commit-tree` / `git update-ref`)
 - 本 repo の Codex 2 lane(A / B)分担は 102 board の `lane` 列で確認
-- **Ticket archive rule**: When a ticket status changes, move its doc to the matching folder in the same commit: `doc/active/`, `doc/review/`, `doc/blocked/`, or `doc/archived/YYYY-MM/`. Keep 102 board and parent runbooks in `doc/` root. Do not leave CLOSED tickets in `doc/` root. Do not use `git add -A`.
+- **Ticket archive rule**(2026-04-26 PM 第 5 次 final): status 変更時、同 commit で folder mv:
+  - READY / IN_FLIGHT / REVIEW_NEEDED → `doc/active/`
+  - BLOCKED_USER / BLOCKED_EXTERNAL / PARKED → `doc/waiting/`
+  - CLOSED → `doc/done/YYYY-MM/`
+  - doc/ root = `doc/README.md`(旧 102 board)のみ
+  - 優先度はフォルダでなく README の `priority` / `next_action` で判別
+- **assignments.md 常時 maintain**(2026-04-26 PM lock): `doc/active/assignments.md` を ticket × 担当者 matrix の **単一 visible 状態 file** として維持。ticket fire / accept / status 変更 / commit のたびに **同 commit で更新**(または直後に doc-only 更新 commit)。user が 1 page で「誰が何やる / 何待ち / 何完了」を即把握できる single source として運用。README(詳細台帳)+ assignments.md(概要 dashboard)の両建て。
 
 > Claude Code 用設計書。PDF「サイトリニューアル要件定義書兼設計書 v1.0 MVP」(2026-04-08) の内容をエージェントが読める形式に変換。
 

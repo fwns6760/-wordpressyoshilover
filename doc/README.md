@@ -655,25 +655,25 @@ doc/
 - **last_commit**: -
 - **parent**: 161 / 103
 
-### 188 publish-notice-manual-x-post-candidates
+### 188 publish-notice-scheduler-iam-fix
 
 - **alias**: -
 - **priority**: **P0.5**
-- **status**: **CLOSED**
-- **owner**: Codex B
-- **lane**: B
-- **ready_for**: none
-- **next_action**: none
-- **blocked_by**: none
-- **user_action_required**: none
-- **write_scope**: `src/publish_notice_email_sender.py`, `tests/test_publish_notice_email_sender.py`, `doc/done/2026-04/188-publish-notice-manual-x-post-candidates.md`, `doc/README.md`, `doc/active/assignments.md`
-- **doc_path**: `doc/done/2026-04/188-publish-notice-manual-x-post-candidates.md`
-- **acceptance**: ✓ `build_body_text()` に `manual_x_post_candidates` block / 3候補280字以内 / blank summary safe / send real path body更新 / `tests/test_publish_notice_email_sender.py` pass
-- **repo_state**: local implementation committed
-- **commit_state**: local commit
+- **status**: **REVIEW_NEEDED**(read-only compare 完了、user shell で live fix を 1 本適用待ち)
+- **owner**: Codex A / Claude follow-up / User shell execute
+- **lane**: A
+- **ready_for**: Fix A(job-level `roles/run.invoker`)を user shell で適用し、manual run + logging + execution verify
+- **next_action**: `publish-notice-trigger` の caller SA `seo-scheduler-invoker@...` に `run.jobs.run` を与える。推奨は `gcloud run jobs add-iam-policy-binding publish-notice --member=serviceAccount:seo-scheduler-invoker@... --role=roles/run.invoker`
+- **blocked_by**: Codex は live IAM / Scheduler write を打たない。user shell での実行が必要
+- **user_action_required**: yes(Fix A 実行、必要なら Fix B で scheduler caller SA を compute SA に寄せる)
+- **write_scope**: `doc/active/188-publish-notice-scheduler-iam-fix.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/active/188-publish-notice-scheduler-iam-fix.md`
+- **acceptance**: scheduler YAML diff と IAM compare が記録済み、真因が caller SA 権限不足で説明されている、Fix A/B/C のコピペ可能 gcloud runbook、verify/rollback 手順、secret 非表示
+- **repo_state**: local doc-only record
+- **commit_state**: local doc-only commit
 - **next_prompt_path**: -
 - **last_commit**: -
-- **parent**: 095-D / 131 / PUB-005
+- **parent**: 161 / 187 / 160
 
 ### 130 pub004-hard-stop-vs-repairable-before-publish
 

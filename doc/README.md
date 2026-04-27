@@ -813,6 +813,26 @@ doc/
 - **last_commit**: `b6b2b2b` 188 ticket publish notice manual X candidates
 - **parent**: 095-D / 131 / PUB-005
 
+### 194 publish-notice-scheduler-5min
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: **REVIEW_NEEDED**(`publish-notice-trigger` schedule を `15 * * * *` -> `*/5 * * * *` に変更済み。`2026-04-27 09:40 JST` natural tick execution `publish-notice-6x7f5` も確認済みで、Claude close 待ち)
+- **owner**: Codex / Claude follow-up
+- **lane**: A
+- **ready_for**: Claude close
+- **next_action**: ticket doc の verify / rollback 記録を元に close 判定。cadence を戻す場合は doc 記載の rollback を実行
+- **blocked_by**: none
+- **user_action_required**: none(user request reflected)
+- **write_scope**: `doc/active/194-publish-notice-scheduler-5min.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/active/194-publish-notice-scheduler-5min.md`
+- **acceptance**: `publish-notice-trigger` schedule が `*/5 * * * *`、他 scheduler / Cloud Run Job env/image/IAM 不変、自然 tick で新 execution を確認、rollback command 記録済み
+- **repo_state**: local doc update
+- **commit_state**: pending ticket commit
+- **next_prompt_path**: -
+- **last_commit**: -
+- **parent**: 161 / 187 / 188 / 189 / 105
+
 ### 130 pub004-hard-stop-vs-repairable-before-publish
 
 - **alias**: -

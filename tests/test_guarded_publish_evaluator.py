@@ -8,6 +8,7 @@ from src.guarded_publish_evaluator import evaluate_raw_posts, render_human_repor
 
 FIXED_NOW = datetime.fromisoformat("2026-04-25T21:00:00+09:00")
 FIRE_TIME_NOW = datetime.fromisoformat("2026-04-26T14:25:00+09:00")
+FOLLOWUP_NOW = datetime.fromisoformat("2026-04-27T12:00:00+09:00")
 
 
 def _post(
@@ -1077,6 +1078,134 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         self.assertIn("stale_for_breaking_board", entry["repairable_flags"])
         self.assertNotIn("stale_for_breaking_board", entry["hard_stop_flags"])
         self.assertEqual(entry["freshness_class"], "stale")
+
+    def test_stale_x_post_5days_old_is_backlog_only(self):
+        stale_x_post = _post(
+            220,
+            "阿部監督「状態は上がってきた」 打線の手応えを語る",
+            (
+                "<p>阿部監督は『状態は上がってきた』と語った。スポーツ報知によると、打線の反応を前向きに見ている。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source</p>"
+            ),
+            date="2026-04-27T09:00:00",
+            modified="2026-04-27T09:30:00",
+            meta={
+                "article_subtype": "comment",
+                "x_post_date": "2026-04-22T08:30:00+09:00",
+                "source_date": "2026-04-27",
+            },
+        )
+
+        report = self._evaluate_at([stale_x_post], FOLLOWUP_NOW)
+
+        entry = self._find_entry(report, 220)
+        self.assertTrue(entry["publishable"])
+        self.assertEqual(entry["content_date"], "2026-04-22")
+        self.assertEqual(entry["freshness_source"], "x_post_date")
+        self.assertEqual(entry["freshness_class"], "stale")
+        self.assertTrue(entry["backlog_only"])
+        self.assertIn("stale_for_breaking_board", entry["repairable_flags"])
+        self.assertIn("freshness_source=x_post_date", entry["freshness_reason"])
+
+    def test_stale_rss_published_2days_old_lineup_is_backlog_only(self):
+        stale_lineup = _post(
+            221,
+            "巨人スタメン 1番丸 4番岡本",
+            (
+                "<p>巨人のスタメンが発表された。スポーツ報知によると、1番丸、4番岡本で先発する。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/lineup</p>"
+            ),
+            date="2026-04-27T10:00:00",
+            modified="2026-04-27T10:15:00",
+            meta={
+                "article_subtype": "lineup",
+                "rss_published": "2026-04-25T07:00:00+09:00",
+            },
+        )
+
+        report = self._evaluate_at([stale_lineup], FOLLOWUP_NOW)
+
+        entry = self._find_entry(report, 221)
+        self.assertTrue(entry["publishable"])
+        self.assertEqual(entry["content_date"], "2026-04-25")
+        self.assertEqual(entry["freshness_source"], "rss_published")
+        self.assertEqual(entry["freshness_class"], "expired")
+        self.assertTrue(entry["backlog_only"])
+        self.assertIn("expired_lineup_or_pregame", entry["repairable_flags"])
+
+    def test_fresh_postgame_within_24h_publishable(self):
+        fresh_postgame = _post(
+            222,
+            "巨人が阪神に3-2で勝利",
+            (
+                "<p>巨人が阪神に3-2で勝利した。スポーツ報知によると、戸郷が7回2失点と好投した。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/postgame</p>"
+            ),
+            date="2026-04-22T12:00:00",
+            modified="2026-04-27T09:00:00",
+            meta={
+                "article_subtype": "postgame",
+                "rss_published": "2026-04-27T06:00:00+09:00",
+            },
+        )
+
+        report = self._evaluate_at([fresh_postgame], FOLLOWUP_NOW)
+
+        entry = self._find_entry(report, 222)
+        self.assertTrue(entry["publishable"])
+        self.assertEqual(entry["content_date"], "2026-04-27")
+        self.assertEqual(entry["freshness_source"], "rss_published")
+        self.assertEqual(entry["freshness_class"], "fresh")
+        self.assertFalse(entry["backlog_only"])
+        self.assertEqual(entry["repairable_flags"], [])
+
+    def test_content_date_unknown_warning_only(self):
+        unknown_dated_post = _post(
+            223,
+            "巨人が阪神に3-2で勝利",
+            (
+                "<p>巨人が阪神に3-2で勝利した。スポーツ報知によると、戸郷が7回2失点と好投した。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source</p>"
+            ),
+            date="",
+            modified="2026-04-27T10:00:00",
+            meta={"article_subtype": "postgame"},
+        )
+
+        report = self._evaluate_at([unknown_dated_post], FOLLOWUP_NOW)
+
+        entry = self._find_entry(report, 223)
+        self.assertTrue(entry["publishable"])
+        self.assertFalse(entry["cleanup_required"])
+        self.assertEqual(entry["freshness_source"], "unknown")
+        self.assertEqual(entry["content_date"], "")
+        self.assertEqual(entry["hard_stop_flags"], [])
+        self.assertFalse(entry["backlog_only"])
+        self.assertIn("content_date_unknown", entry["repairable_flags"])
+        self.assertIn("warning=content_date_unknown", entry["freshness_reason"])
+
+    def test_future_dated_notice_event_allowed(self):
+        future_notice = _post(
+            224,
+            "巨人が5月3日に東京ドームでイベント開催",
+            (
+                "<p>巨人は5月3日に東京ドームでイベントを開催する。スポーツ報知によると、当日は限定グッズの販売も予定されている。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/event</p>"
+            ),
+            date="2026-04-27T09:30:00",
+            modified="2026-04-27T09:45:00",
+            meta={"article_subtype": "notice"},
+        )
+
+        report = self._evaluate_at([future_notice], FOLLOWUP_NOW)
+
+        entry = self._find_entry(report, 224)
+        self.assertTrue(entry["publishable"])
+        self.assertEqual(entry["content_date"], "2026-05-03")
+        self.assertEqual(entry["freshness_source"], "source_date")
+        self.assertEqual(entry["freshness_class"], "fresh")
+        self.assertEqual(entry["hard_stop_flags"], [])
+        self.assertFalse(entry["backlog_only"])
 
     def test_scan_wp_drafts_only_reads_wordpress(self):
         wp_client = mock.Mock()

@@ -4,9 +4,10 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from src import guarded_publish_runner as runner
+from src import publish_notice_email_sender as notice_sender
 from src.tools import run_guarded_publish as cli
 
 
@@ -1349,37 +1350,110 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         self.assertEqual(wp.update_post_status_calls, [(311, "publish")])
         self.assertEqual(cleanup_row["cleanups"][0]["type"], "ai_tone_heading_or_lead")
 
-    def test_freshness_repairable_no_op_publishes_and_logs_observation(self):
+    def test_freshness_source_logged_on_sent_yellow_publish(self):
         body_html = (
             "<p>巨人が阪神に3-2で勝利した。終盤の継投まで整理され、試合の核も十分に追える。</p>"
             f"<p>{LONG_EXTRA}</p>"
             "<p>参照元: スポーツ報知 https://example.com/source</p>"
         )
         post = _post(312, "巨人が阪神に3-2で勝利", body_html)
-        report = _report(yellow=[_repairable_entry(312, post["title"]["raw"], "stale_for_breaking_board")])
+        report = _report(
+            yellow=[
+                _repairable_entry(
+                    312,
+                    post["title"]["raw"],
+                    "ai_tone_heading_or_lead",
+                    yellow_reasons=["speculative_title"],
+                    freshness_source="x_post_date",
+                )
+            ]
+        )
         wp = FakeWPClient({312: post})
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            cleanup_log_path = Path(tmpdir) / "cleanup.jsonl"
+            history_path = Path(tmpdir) / "history.jsonl"
+            yellow_log_path = Path(tmpdir) / "yellow.jsonl"
             result = runner.run_guarded_publish(
                 input_from=self._write_input(tmpdir, report),
                 live=True,
                 daily_cap_allow=True,
-                history_path=Path(tmpdir) / "history.jsonl",
+                history_path=history_path,
                 backup_dir=Path(tmpdir) / "cleanup_backup",
-                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
-                cleanup_log_path=cleanup_log_path,
+                yellow_log_path=yellow_log_path,
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
                 wp_client=wp,
                 now=FIXED_NOW,
             )
-            cleanup_row = json.loads(cleanup_log_path.read_text(encoding="utf-8").strip())
+            yellow_row = json.loads(yellow_log_path.read_text(encoding="utf-8").strip())
+            history_rows = [json.loads(line) for line in history_path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
         self.assertEqual(result["executed"][0]["status"], "sent")
+        self.assertEqual(yellow_row["freshness_source"], "x_post_date")
+        self.assertEqual(history_rows[-1]["freshness_source"], "x_post_date")
+
+    def test_backlog_only_skips_per_post_mail(self):
+        body_html = (
+            "<p>巨人が阪神に3-2で勝利した。終盤の継投まで整理され、試合の核も十分に追える。</p>"
+            f"<p>{LONG_EXTRA}</p>"
+            "<p>参照元: スポーツ報知 https://example.com/source</p>"
+        )
+        post = _post(312, "巨人が阪神に3-2で勝利", body_html)
+        report = _report(
+            yellow=[
+                _repairable_entry(
+                    312,
+                    post["title"]["raw"],
+                    "stale_for_breaking_board",
+                    freshness_age_hours=120.0,
+                    freshness_source="x_post_date",
+                    backlog_only=True,
+                )
+            ]
+        )
+        wp = FakeWPClient({312: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            "os.environ",
+            {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com"},
+            clear=True,
+        ):
+            history_path = Path(tmpdir) / "history.jsonl"
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=history_path,
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+            history_rows = [json.loads(line) for line in history_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+            mail_result = notice_sender.send(
+                notice_sender.PublishNoticeRequest(
+                    post_id=312,
+                    title=post["title"]["raw"],
+                    canonical_url=post["link"],
+                    subtype="postgame",
+                    publish_time_iso=FIXED_NOW.isoformat(),
+                    summary="stale entry should stay backlog-only",
+                ),
+                dry_run=False,
+                send_enabled=True,
+                bridge_send=MagicMock(),
+                guarded_publish_history_path=history_path,
+            )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["executed"][0]["status"], "skipped")
+        self.assertEqual(result["refused"][0]["reason"], "backlog_only")
+        self.assertEqual(history_rows[-1]["is_backlog"], True)
+        self.assertEqual(history_rows[-1]["freshness_source"], "x_post_date")
         self.assertEqual(wp.update_post_fields_calls, [])
-        self.assertEqual(wp.update_post_status_calls, [(312, "publish")])
-        self.assertEqual(cleanup_row["applied_flags"], ["stale_for_breaking_board"])
-        self.assertEqual(cleanup_row["cleanups"][0]["type"], "stale_for_breaking_board")
-        self.assertEqual(cleanup_row["cleanups"][0]["reason"], "warning_only:freshness_audit_only_no_op")
+        self.assertEqual(wp.update_post_status_calls, [])
+        self.assertEqual(mail_result.status, "suppressed")
+        self.assertEqual(mail_result.reason, "BACKLOG_SUMMARY_ONLY")
 
     def test_repairable_post_cleanup_failed_post_condition_publishes_warning(self):
         short_prose = "巨人が阪神に1-0で勝利した。" + ("あ" * 34)

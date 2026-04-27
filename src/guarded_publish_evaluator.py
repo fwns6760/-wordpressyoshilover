@@ -17,7 +17,9 @@ from src.title_body_nucleus_validator import validate_title_body_nucleus
 
 JST = ZoneInfo("Asia/Tokyo")
 RELAXED_FOR_BREAKING_BOARD_FLAGS = frozenset({"subtype_unresolved", "heading_sentence_as_h3"})
-NO_CLEANUP_REQUIRED_FLAGS = frozenset({"roster_movement_yellow", "awkward_role_phrasing", "subtype_unresolved"})
+NO_CLEANUP_REQUIRED_FLAGS = frozenset(
+    {"roster_movement_yellow", "awkward_role_phrasing", "subtype_unresolved", "content_date_unknown"}
+)
 UNKNOWN_SUBTYPE_VALUES = frozenset({"", "other", "unknown"})
 DEFAULT_FALLBACK_SUBTYPE = "default"
 
@@ -51,12 +53,20 @@ REPAIRABLE_FLAGS = frozenset(
         "stale_for_breaking_board",
         "expired_lineup_or_pregame",
         "expired_game_context",
+        "content_date_unknown",
         "roster_movement_yellow",
         "awkward_role_phrasing",
         "lineup_duplicate_excessive",
     }
 ) | RELAXED_FOR_BREAKING_BOARD_FLAGS
 SOFT_CLEANUP_FLAGS = REPAIRABLE_FLAGS
+BACKLOG_ONLY_FRESHNESS_FLAGS = frozenset(
+    {
+        "stale_for_breaking_board",
+        "expired_lineup_or_pregame",
+        "expired_game_context",
+    }
+)
 
 PRIMARY_SRC_RE = re.compile(
     r"(Yahoo!プロ野球|報知|スポーツナビ|日刊スポーツ|スポニチ|デイリー|サンケイ|スポーツ報知|読売新聞)"
@@ -154,6 +164,10 @@ SOURCE_URL_META_FIELDS = (
     "_yoshilover_source_url",
     "source_url",
     "canonical_source_url",
+)
+PRIMARY_FRESHNESS_META_FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("rss_published", ("rss_published",)),
+    ("x_post_date", ("x_post_date",)),
 )
 
 SITE_COMPONENT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -475,6 +489,65 @@ def _source_url_candidates(raw_post: dict[str, Any], record: dict[str, Any]) -> 
     return urls
 
 
+def _content_datetime_payload(
+    *,
+    candidate_dt: datetime | None,
+    age_reference_dt: datetime | None,
+    priority_rank: int,
+    detected_by: str,
+    age_basis: str,
+    freshness_source: str,
+) -> dict[str, Any]:
+    return {
+        "content_date": candidate_dt.date().isoformat() if candidate_dt is not None else "",
+        "age_reference_dt": age_reference_dt,
+        "detected_dt": candidate_dt,
+        "priority_rank": priority_rank,
+        "detected_by": detected_by,
+        "age_basis": age_basis,
+        "freshness_source": freshness_source,
+    }
+
+
+def _resolve_content_datetime_value(
+    raw_value: Any,
+    *,
+    now: datetime,
+    created_at: datetime | None,
+    priority_rank: int,
+    detected_by: str,
+    freshness_source: str,
+) -> dict[str, Any] | None:
+    parsed = _parse_optional_wp_datetime(raw_value)
+    if parsed is not None:
+        return _content_datetime_payload(
+            candidate_dt=parsed,
+            age_reference_dt=parsed,
+            priority_rank=priority_rank,
+            detected_by=detected_by,
+            age_basis="exact_source_datetime",
+            freshness_source=freshness_source,
+        )
+
+    for candidate_dt, has_explicit_time in _extract_date_candidates(raw_value, now=now):
+        age_reference_dt = candidate_dt
+        age_basis = "source_text_date_only"
+        if not has_explicit_time and created_at is not None and created_at.date() == candidate_dt.date():
+            age_reference_dt = created_at
+            age_basis = "created_at_same_day_precision"
+        elif has_explicit_time:
+            age_basis = "exact_source_datetime"
+        return _content_datetime_payload(
+            candidate_dt=candidate_dt,
+            age_reference_dt=age_reference_dt,
+            priority_rank=priority_rank,
+            detected_by=detected_by,
+            age_basis=age_basis,
+            freshness_source=freshness_source,
+        )
+    return None
+
+
 def _body_text_without_source(record: dict[str, Any]) -> str:
     body_text = str(record.get("body_text") or "")
     source_block = str(record.get("source_block") or "")
@@ -487,107 +560,94 @@ def _resolve_content_datetime(raw_post: dict[str, Any], record: dict[str, Any], 
     created_at = _parse_optional_wp_datetime(record.get("created_at"))
     meta = (raw_post or {}).get("meta") or {}
 
+    for freshness_source, keys in PRIMARY_FRESHNESS_META_FIELDS:
+        for container_name, container in (("meta", meta), ("raw_post", raw_post or {})):
+            for key in keys:
+                if key not in container:
+                    continue
+                resolved = _resolve_content_datetime_value(
+                    container.get(key),
+                    now=now,
+                    created_at=created_at,
+                    priority_rank=1,
+                    detected_by=f"{container_name}.{key}",
+                    freshness_source=freshness_source,
+                )
+                if resolved is not None:
+                    return resolved
+
     for container_name, container in (("raw_post", raw_post or {}), ("meta", meta)):
         for key in SOURCE_DATE_META_FIELDS:
             if key not in container:
                 continue
-            raw_value = container.get(key)
-            parsed = _parse_optional_wp_datetime(raw_value)
-            if parsed is not None:
-                return {
-                    "content_date": parsed.date().isoformat(),
-                    "age_reference_dt": parsed,
-                    "detected_dt": parsed,
-                    "priority_rank": 1,
-                    "detected_by": f"{container_name}.{key}",
-                    "age_basis": "exact_source_datetime",
-                }
-            for candidate_dt, has_explicit_time in _extract_date_candidates(raw_value, now=now):
-                age_reference_dt = candidate_dt
-                age_basis = "source_text_date_only"
-                if not has_explicit_time and created_at is not None and created_at.date() == candidate_dt.date():
-                    age_reference_dt = created_at
-                    age_basis = "created_at_same_day_precision"
-                elif has_explicit_time:
-                    age_basis = "exact_source_datetime"
-                return {
-                    "content_date": candidate_dt.date().isoformat(),
-                    "age_reference_dt": age_reference_dt,
-                    "detected_dt": candidate_dt,
-                    "priority_rank": 1,
-                    "detected_by": f"{container_name}.{key}",
-                    "age_basis": age_basis,
-                }
+            resolved = _resolve_content_datetime_value(
+                container.get(key),
+                now=now,
+                created_at=created_at,
+                priority_rank=1,
+                detected_by=f"{container_name}.{key}",
+                freshness_source="source_date",
+            )
+            if resolved is not None:
+                return resolved
 
     source_block = str(record.get("source_block") or "")
-    for candidate_dt, has_explicit_time in _extract_date_candidates(source_block, now=now):
-        age_reference_dt = candidate_dt
-        age_basis = "source_block_date_only"
-        if not has_explicit_time and created_at is not None and created_at.date() == candidate_dt.date():
-            age_reference_dt = created_at
-            age_basis = "created_at_same_day_precision"
-        elif has_explicit_time:
-            age_basis = "exact_source_datetime"
-        return {
-            "content_date": candidate_dt.date().isoformat(),
-            "age_reference_dt": age_reference_dt,
-            "detected_dt": candidate_dt,
-            "priority_rank": 1,
-            "detected_by": "source_block",
-            "age_basis": age_basis,
-        }
+    resolved = _resolve_content_datetime_value(
+        source_block,
+        now=now,
+        created_at=created_at,
+        priority_rank=1,
+        detected_by="source_block",
+        freshness_source="source_date",
+    )
+    if resolved is not None:
+        return resolved
 
     for source_url in _source_url_candidates(raw_post, record):
-        for candidate_dt, _ in _extract_date_candidates(source_url, now=now):
-            age_reference_dt = candidate_dt
-            age_basis = "source_url_date_only"
-            if created_at is not None and created_at.date() == candidate_dt.date():
-                age_reference_dt = created_at
-                age_basis = "created_at_same_day_precision"
-            return {
-                "content_date": candidate_dt.date().isoformat(),
-                "age_reference_dt": age_reference_dt,
-                "detected_dt": candidate_dt,
-                "priority_rank": 1,
-                "detected_by": "source_url",
-                "age_basis": age_basis,
-            }
+        resolved = _resolve_content_datetime_value(
+            source_url,
+            now=now,
+            created_at=created_at,
+            priority_rank=1,
+            detected_by="source_url",
+            freshness_source="source_date",
+        )
+        if resolved is not None:
+            return resolved
 
-    for candidate_dt, has_explicit_time in _extract_date_candidates(_body_text_without_source(record), now=now):
-        age_reference_dt = candidate_dt
-        age_basis = "body_date_only"
-        if not has_explicit_time and created_at is not None and created_at.date() == candidate_dt.date():
-            age_reference_dt = created_at
-            age_basis = "created_at_same_day_precision"
-        elif has_explicit_time:
-            age_basis = "exact_body_datetime"
-        return {
-            "content_date": candidate_dt.date().isoformat(),
-            "age_reference_dt": age_reference_dt,
-            "detected_dt": candidate_dt,
-            "priority_rank": 2,
-            "detected_by": "body_date",
-            "age_basis": age_basis,
-        }
+    body_resolved = _resolve_content_datetime_value(
+        _body_text_without_source(record),
+        now=now,
+        created_at=created_at,
+        priority_rank=2,
+        detected_by="body_date",
+        freshness_source="source_date",
+    )
+    if body_resolved is not None:
+        if body_resolved["age_basis"] == "exact_source_datetime":
+            body_resolved["age_basis"] = "exact_body_datetime"
+        elif body_resolved["age_basis"] == "source_text_date_only":
+            body_resolved["age_basis"] = "body_date_only"
+        return body_resolved
 
     if created_at is not None:
-        return {
-            "content_date": created_at.date().isoformat(),
-            "age_reference_dt": created_at,
-            "detected_dt": created_at,
-            "priority_rank": 3,
-            "detected_by": "created_at",
-            "age_basis": "created_at",
-        }
+        return _content_datetime_payload(
+            candidate_dt=created_at,
+            age_reference_dt=created_at,
+            priority_rank=3,
+            detected_by="created_at",
+            age_basis="created_at",
+            freshness_source="created_at",
+        )
 
-    return {
-        "content_date": now.date().isoformat(),
-        "age_reference_dt": now,
-        "detected_dt": now,
-        "priority_rank": 4,
-        "detected_by": "fallback_now",
-        "age_basis": "fallback_now",
-    }
+    return _content_datetime_payload(
+        candidate_dt=None,
+        age_reference_dt=None,
+        priority_rank=4,
+        detected_by="unknown",
+        age_basis="unknown",
+        freshness_source="unknown",
+    )
 
 
 def _estimate_game_start_dt(reference_date: str, title: str, body_text: str) -> tuple[datetime, str]:
@@ -612,20 +672,26 @@ def freshness_check(raw_post: dict[str, Any], record: dict[str, Any], *, now: da
     threshold_hours = _freshness_threshold_hours(subtype)
     content_info = _resolve_content_datetime(raw_post, record, now=now_jst)
     age_reference_dt = content_info["age_reference_dt"]
-    age_hours = max(0.0, (now_jst - age_reference_dt).total_seconds() / 3600.0)
+    age_hours = 0.0
+    if age_reference_dt is not None:
+        age_hours = max(0.0, (now_jst - age_reference_dt).total_seconds() / 3600.0)
     freshness_class = "fresh"
     hard_stop_flag: str | None = None
+    content_date_unknown = str(content_info["freshness_source"]) == "unknown"
     reason_parts = [
         f"subtype={subtype}",
         f"threshold={threshold_hours:g}h",
         f"priority={content_info['priority_rank']}",
+        f"freshness_source={content_info['freshness_source']}",
         f"detected_by={content_info['detected_by']}",
         f"age_basis={content_info['age_basis']}",
-        f"content_date={content_info['content_date']}",
+        f"content_date={content_info['content_date'] or 'unknown'}",
         f"age_hours={age_hours:.2f}",
     ]
 
-    if subtype in LINEUP_FRESHNESS_SUBTYPES:
+    if content_date_unknown:
+        reason_parts.append("warning=content_date_unknown")
+    elif subtype in LINEUP_FRESHNESS_SUBTYPES:
         game_start_dt, start_source = _estimate_game_start_dt(
             str(content_info["content_date"]),
             str(record.get("title") or ""),
@@ -659,6 +725,9 @@ def freshness_check(raw_post: dict[str, Any], record: dict[str, Any], *, now: da
         "freshness_class": freshness_class,
         "freshness_reason": "; ".join(reason_parts),
         "hard_stop_flag": hard_stop_flag,
+        "freshness_source": str(content_info["freshness_source"]),
+        "content_date_unknown": content_date_unknown,
+        "backlog_only": hard_stop_flag in BACKLOG_ONLY_FRESHNESS_FLAGS,
     }
 
 
@@ -1167,6 +1236,8 @@ def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -
 
     freshness = freshness_check(raw_post, record, now=now)
     enforce_freshness = str(raw_post.get("status") or "").strip().lower() != "publish"
+    if freshness["content_date_unknown"]:
+        _append_reason(reasons, flag="content_date_unknown", category="repairable")
     if enforce_freshness and freshness["hard_stop_flag"] is not None:
         freshness_flag = str(freshness["hard_stop_flag"])
         freshness_category = "repairable" if freshness_flag in REPAIRABLE_FLAGS else "hard_stop"
@@ -1199,6 +1270,8 @@ def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -
         "freshness_age_hours": freshness["freshness_age_hours"],
         "freshness_class": freshness["freshness_class"],
         "freshness_reason": freshness["freshness_reason"],
+        "freshness_source": freshness["freshness_source"],
+        "backlog_only": bool(freshness["backlog_only"]),
     }
 
     if hard_stop_flags:

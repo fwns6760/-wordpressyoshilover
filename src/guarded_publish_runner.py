@@ -858,6 +858,7 @@ def _build_plan(
     cleanup_required: bool,
     cleanup_candidate: dict[str, Any] | None,
     resolved_subtype: str | None = None,
+    freshness_source: str | None = None,
 ) -> dict[str, Any]:
     title, body_html = _preflight_post(post)
     cleaned_html = body_html
@@ -1024,6 +1025,7 @@ def _build_plan(
             **({"meta": _merge_meta(post, meta_updates)} if meta_updates else {}),
         },
         "publish_link": str((post or {}).get("link") or ""),
+        "freshness_source": str(freshness_source or "").strip(),
         "post": post,
         "original_html": body_html,
     }
@@ -1170,6 +1172,8 @@ def _iter_publishable_entries(report: dict[str, Any]) -> list[dict[str, Any]]:
                     "resolved_subtype": str(entry.get("resolved_subtype") or entry.get("subtype") or ""),
                     "content_date": str(entry.get("content_date") or ""),
                     "freshness_age_hours": entry.get("freshness_age_hours"),
+                    "freshness_source": str(entry.get("freshness_source") or ""),
+                    "backlog_only": bool(entry.get("backlog_only")),
                     "modified": str(entry.get("modified") or ""),
                 }
             )
@@ -1196,6 +1200,8 @@ def _entry_freshness_age_hours(entry: dict[str, Any], *, now: datetime) -> float
 
 
 def _is_backlog_entry(entry: dict[str, Any], *, now: datetime) -> bool:
+    if bool(entry.get("backlog_only")):
+        return True
     age_hours = _entry_freshness_age_hours(entry, now=now)
     return age_hours is not None and age_hours > BACKLOG_FRESHNESS_CUTOFF_HOURS
 
@@ -1305,6 +1311,7 @@ def _history_row(
     cleanup_success: bool | None = None,
     hold_reason: str | None = None,
     is_backlog: bool | None = None,
+    freshness_source: str | None = None,
 ) -> dict[str, Any]:
     return {
         "post_id": post_id,
@@ -1318,6 +1325,7 @@ def _history_row(
         "cleanup_success": cleanup_success,
         "hold_reason": hold_reason,
         "is_backlog": None if is_backlog is None else bool(is_backlog),
+        "freshness_source": str(freshness_source or "").strip() or None,
     }
 
 
@@ -1374,6 +1382,7 @@ def _write_live_success_logs(
                 "warning_lines": warning_lines,
                 "manual_x_post_blocked": manual_x_post_block_reason is not None,
                 "manual_x_post_block_reason": manual_x_post_block_reason,
+                "freshness_source": str(plan.get("freshness_source") or "").strip() or None,
                 "publish_link": plan["publish_link"],
             },
         )
@@ -1536,6 +1545,7 @@ def run_guarded_publish(
                 cleanup_success=False,
                 hold_reason=held_entry["hold_reason"],
                 is_backlog=is_backlog,
+                freshness_source=str(held_entry.get("freshness_source") or ""),
             )
             live_history_rows.append(row)
             executed.append(
@@ -1545,6 +1555,42 @@ def run_guarded_publish(
                     "backup_path": None,
                     "publish_link": "",
                     "hold_reason": held_entry["hold_reason"],
+                }
+            )
+
+    backlog_only_entries = [entry for entry in publishable_entries if bool(entry.get("backlog_only"))]
+    publishable_entries = [entry for entry in publishable_entries if not bool(entry.get("backlog_only"))]
+    for backlog_only_entry in backlog_only_entries:
+        refused.append(
+            {
+                "post_id": backlog_only_entry["post_id"],
+                "reason": "backlog_only",
+                "hold_reason": "backlog_only",
+            }
+        )
+        if live:
+            row = _history_row(
+                post_id=backlog_only_entry["post_id"],
+                judgment=backlog_only_entry["judgment"],
+                status="skipped",
+                ts=now_iso,
+                backup_path=None,
+                error="backlog_only",
+                publishable=True,
+                cleanup_required=bool(backlog_only_entry["cleanup_required"]),
+                cleanup_success=False,
+                hold_reason="backlog_only",
+                is_backlog=True,
+                freshness_source=str(backlog_only_entry.get("freshness_source") or ""),
+            )
+            live_history_rows.append(row)
+            executed.append(
+                {
+                    "post_id": backlog_only_entry["post_id"],
+                    "status": "skipped",
+                    "backup_path": None,
+                    "publish_link": "",
+                    "hold_reason": "backlog_only",
                 }
             )
 
@@ -1574,6 +1620,7 @@ def run_guarded_publish(
                 cleanup_success=False,
                 hold_reason="backlog_deferred_for_fresh",
                 is_backlog=True,
+                freshness_source=str(backlog_entry.get("freshness_source") or ""),
             )
             live_history_rows.append(row)
             executed.append(
@@ -1607,6 +1654,7 @@ def run_guarded_publish(
                     cleanup_success=False,
                     hold_reason="hourly_cap",
                     is_backlog=is_backlog,
+                    freshness_source=str(entry.get("freshness_source") or ""),
                 )
                 live_history_rows.append(row)
                 executed.append(
@@ -1634,6 +1682,7 @@ def run_guarded_publish(
                     cleanup_success=False,
                     hold_reason="burst_cap",
                     is_backlog=is_backlog,
+                    freshness_source=str(entry.get("freshness_source") or ""),
                 )
                 live_history_rows.append(row)
                 executed.append(
@@ -1661,6 +1710,7 @@ def run_guarded_publish(
                     cleanup_success=False,
                     hold_reason="daily_cap",
                     is_backlog=is_backlog,
+                    freshness_source=str(entry.get("freshness_source") or ""),
                 )
                 live_history_rows.append(row)
                 executed.append(
@@ -1693,6 +1743,7 @@ def run_guarded_publish(
                     "requires_meta_update": False,
                     "update_fields": {},
                     "publish_link": str((post or {}).get("link") or ""),
+                    "freshness_source": str(entry.get("freshness_source") or ""),
                     "post": post,
                 }
             else:
@@ -1704,6 +1755,7 @@ def run_guarded_publish(
                     cleanup_required=bool(entry["cleanup_required"]),
                     cleanup_candidate=entry["cleanup_candidate"],
                     resolved_subtype=str(entry.get("resolved_subtype") or ""),
+                    freshness_source=str(entry.get("freshness_source") or ""),
                 )
         except CandidateRefusedError as exc:
             hold_reason = _hold_reason_for_candidate_error(bool(entry["cleanup_required"]), exc)
@@ -1727,6 +1779,7 @@ def run_guarded_publish(
                     cleanup_success=False,
                     hold_reason=hold_reason,
                     is_backlog=is_backlog,
+                    freshness_source=str(entry.get("freshness_source") or ""),
                 )
                 live_history_rows.append(row)
                 executed.append(
@@ -1766,6 +1819,7 @@ def run_guarded_publish(
                     cleanup_required=bool(plan["cleanup_required"]),
                     cleanup_candidate=plan["cleanup_candidate"],
                     resolved_subtype=str(plan.get("resolved_subtype") or ""),
+                    freshness_source=str(plan.get("freshness_source") or ""),
                 )
                 cleanup_success = live_plan["cleanup_success"]
                 if live_plan["update_fields"]:
@@ -1811,6 +1865,7 @@ def run_guarded_publish(
                     cleanup_success=cleanup_success if plan["cleanup_required"] else None,
                     hold_reason=hold_reason,
                     is_backlog=is_backlog,
+                    freshness_source=str(plan.get("freshness_source") or ""),
                 )
                 _append_jsonl(history_path, row)
                 executed.append(

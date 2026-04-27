@@ -23,6 +23,8 @@ _DEFAULT_WP_API_BASE = "https://yoshilover.com/wp-json/wp/v2"
 _PARAGRAPH_RE = re.compile(r"<p\b[^>]*>(.*?)</p>", re.IGNORECASE | re.DOTALL)
 _TAG_RE = re.compile(r"<[^>]+>")
 _WHITESPACE_RE = re.compile(r"\s+")
+_LINEUP_ORDER_RE = re.compile(r"(?<![0-9０-９])[1-9１-９]\s*番")
+_SCORE_RE = re.compile(r"(?<![0-9０-９])[0-9０-９]+\s*[-－ー]\s*[0-9０-９]+(?![0-9０-９])")
 _HISTORY_WINDOW = timedelta(hours=24)
 
 
@@ -168,17 +170,96 @@ def _extract_title(post: Mapping[str, Any]) -> str:
     return _strip_html(_extract_rendered(post.get("title")))
 
 
+def _extract_plain_text(post: Mapping[str, Any], key: str) -> str:
+    return _strip_html(_extract_rendered(post.get(key)))
+
+
+def _has_any_keyword(text: str, keywords: tuple[str, ...]) -> bool:
+    return any(keyword in text for keyword in keywords)
+
+
+def _matches_lineup(text: str, text_lower: str) -> bool:
+    return (
+        _has_any_keyword(text, ("スタメン", "先発", "打順"))
+        or _has_any_keyword(text_lower, ("lineup", "starting"))
+        or _LINEUP_ORDER_RE.search(text) is not None
+    )
+
+
+def _matches_postgame(text: str, text_lower: str) -> bool:
+    return (
+        _has_any_keyword(text, ("勝利", "敗戦", "結果", "試合後", "コメント"))
+        or _has_any_keyword(text_lower, ("postgame", "result"))
+        or _SCORE_RE.search(text) is not None
+    )
+
+
+def _matches_farm(text: str, text_lower: str) -> bool:
+    return _has_any_keyword(text, ("2軍", "二軍", "ファーム", "3軍", "三軍", "育成")) or _has_any_keyword(
+        text_lower, ("farm",)
+    )
+
+
+def _matches_notice(text: str, text_lower: str) -> bool:
+    return _has_any_keyword(text, ("公示", "登録", "抹消", "離脱", "復帰", "FA", "トレード", "移籍", "獲得", "契約")) or _has_any_keyword(
+        text_lower, ("notice", "transaction", "roster")
+    )
+
+
+def _matches_program(text: str, text_lower: str) -> bool:
+    return _has_any_keyword(text, ("番組", "テレビ", "中継", "Hulu", "DAZN")) or _has_any_keyword(
+        text_lower, ("program", "broadcast", "tv", "hulu", "dazn")
+    )
+
+
+def _infer_subtype(post: Mapping[str, Any]) -> str:
+    title = _extract_title(post)
+    title_compact = _WHITESPACE_RE.sub("", title)
+    title_lower = title.lower()
+    title_checks = (
+        ("lineup", _matches_lineup(title, title_lower)),
+        ("farm", _matches_farm(title, title_lower)),
+        ("notice", _matches_notice(title, title_lower)),
+        ("program", _matches_program(title, title_lower)),
+        ("postgame", _matches_postgame(title, title_lower)),
+    )
+    if len(title_compact) < 5 and not any(matched for _subtype, matched in title_checks):
+        return "default"
+    for subtype, matched in title_checks:
+        if matched:
+            return subtype
+
+    supplemental_text = " ".join(
+        part for part in (_extract_plain_text(post, "excerpt"), _extract_plain_text(post, "content")) if part
+    )
+    supplemental_lower = supplemental_text.lower()
+    if _matches_lineup(supplemental_text, supplemental_lower):
+        return "lineup"
+    if _matches_farm(supplemental_text, supplemental_lower):
+        return "farm"
+    if _matches_notice(supplemental_text, supplemental_lower):
+        return "notice"
+    if _matches_program(supplemental_text, supplemental_lower):
+        return "program"
+    if _matches_postgame(supplemental_text, supplemental_lower):
+        return "postgame"
+    return "default"
+
+
 def _extract_subtype(post: Mapping[str, Any]) -> str:
     meta = post.get("meta")
     if isinstance(meta, Mapping):
-        subtype = str(meta.get("article_subtype") or meta.get("subtype") or "").strip().lower()
+        subtype = str(meta.get("article_subtype") or "").strip().lower()
+        if subtype:
+            return subtype
+        subtype = str(meta.get("subtype") or "").strip().lower()
         if subtype:
             return subtype
     for key in ("article_subtype", "subtype"):
         subtype = str(post.get(key) or "").strip().lower()
         if subtype:
             return subtype
-    return "unknown"
+    return _infer_subtype(post)
 
 
 def _append_queue_log(

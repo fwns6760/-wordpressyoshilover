@@ -351,6 +351,72 @@ class PublishNoticeScannerTests(unittest.TestCase):
         self.assertEqual([item.post_id for item in result.emitted], [801])
         self.assertEqual(result.skipped, [(801, "RECENT_DUPLICATE")])
 
+    def test_extract_subtype_from_rest_article_subtype(self):
+        subtype = scanner._extract_subtype(
+            self._post(meta={"article_subtype": "lineup"}, subtype="program", article_subtype="notice")
+        )
+
+        self.assertEqual(subtype, "lineup")
+
+    def test_extract_subtype_from_rest_subtype(self):
+        subtype = scanner._extract_subtype(self._post(meta={}, article_subtype="", subtype="program"))
+
+        self.assertEqual(subtype, "program")
+
+    def test_extract_subtype_fallback_lineup(self):
+        subtype = scanner._extract_subtype(self._post(title={"rendered": "スタメン"}, meta={}, article_subtype="", subtype=""))
+
+        self.assertEqual(subtype, "lineup")
+
+    def test_extract_subtype_fallback_postgame(self):
+        subtype = scanner._extract_subtype(
+            self._post(title={"rendered": "巨人 7-2 勝利"}, meta={}, article_subtype="", subtype="")
+        )
+
+        self.assertEqual(subtype, "postgame")
+
+    def test_extract_subtype_fallback_farm(self):
+        subtype = scanner._extract_subtype(
+            self._post(title={"rendered": "巨人二軍 4-0"}, meta={}, article_subtype="", subtype="")
+        )
+
+        self.assertEqual(subtype, "farm")
+
+    def test_extract_subtype_fallback_notice_injury(self):
+        subtype = scanner._extract_subtype(
+            self._post(title={"rendered": "○○が抹消"}, meta={}, article_subtype="", subtype="")
+        )
+
+        self.assertEqual(subtype, "notice")
+
+    def test_extract_subtype_fallback_notice_recovery(self):
+        subtype = scanner._extract_subtype(
+            self._post(title={"rendered": "○○が復帰"}, meta={}, article_subtype="", subtype="")
+        )
+
+        self.assertEqual(subtype, "notice")
+
+    def test_extract_subtype_fallback_program(self):
+        subtype = scanner._extract_subtype(
+            self._post(title={"rendered": "番組情報"}, meta={}, article_subtype="", subtype="")
+        )
+
+        self.assertEqual(subtype, "program")
+
+    def test_extract_subtype_fallback_default(self):
+        subtype = scanner._extract_subtype(
+            self._post(title={"rendered": "雑感"}, meta={}, article_subtype="", subtype="")
+        )
+
+        self.assertEqual(subtype, "default")
+
+    def test_extract_subtype_fallback_priority_lineup_over_postgame(self):
+        subtype = scanner._extract_subtype(
+            self._post(title={"rendered": "スタメン発表 試合結果も速報"}, meta={}, article_subtype="", subtype="")
+        )
+
+        self.assertEqual(subtype, "lineup")
+
 
 if __name__ == "__main__":
     unittest.main()

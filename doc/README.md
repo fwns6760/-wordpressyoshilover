@@ -833,6 +833,46 @@ doc/
 - **last_commit**: -
 - **parent**: 161 / 187 / 188 / 189 / 105
 
+### 195 article-footer-manual-x-share-corner
+
+- **alias**: B1
+- **priority**: P0.5
+- **status**: **REVIEW_NEEDED**(singular post footer に 3-candidate 手動 X share corner を追加済み。copy button / X intent link / canary toggle 付き、deploy は未実施)
+- **owner**: Codex / Claude follow-up
+- **lane**: Front-Claude
+- **ready_for**: Claude review / canary deploy 別便
+- **next_action**: WP canary deploy 前提で frontend render を review し、toggle 初期値と card wording を確認
+- **blocked_by**: deploy 別便
+- **user_action_required**: none for code review; deploy judgement は別便
+- **write_scope**: `src/yoshilover-063-frontend.php`, `doc/active/195-article-footer-manual-x-share-corner.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/active/195-article-footer-manual-x-share-corner.md`
+- **acceptance**: single post publish 記事のみ / heading「この記事を X でシェア」/ 3 候補 fixed / copy + intent / permalink + `#巨人 #ジャイアンツ` 含む / option+env toggle / `php -l` pass
+- **repo_state**: local code+doc update
+- **commit_state**: pending ticket commit
+- **next_prompt_path**: -
+- **last_commit**: -
+- **parent**: 190 / 191 / 176
+
+### 196 ingestion-realtime-5min-trigger
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: **REVIEW_NEEDED**(`giants-realtime-trigger` を `*/5 * * * *` で新規作成済み。既存 `giants-*` と同じ `yoshilover-fetcher /run` + `seo-web-runtime@baseballsite.iam.gserviceaccount.com` を使用し、`2026-04-27 09:55 JST` の初回 natural tick で HTTP 200 を確認)
+- **owner**: Codex / Claude follow-up
+- **lane**: A
+- **ready_for**: Claude close
+- **next_action**: `doc/active/196-ingestion-realtime-strategy.md` の verify をもとに close 判定。1-2 週間観察後、別 ticket で既存 `giants-*` の削減または cadence 再整理を判断
+- **blocked_by**: none
+- **user_action_required**: none(user request reflected)
+- **write_scope**: `doc/active/196-ingestion-realtime-strategy.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/active/196-ingestion-realtime-strategy.md`
+- **acceptance**: `giants-realtime-trigger` が `*/5 * * * *` / `Asia/Tokyo` / `attemptDeadline=180s` で存在し、既存 `giants-*` と同じ URI/SA を使用、既存 schedule 不変、`yoshilover-fetcher-job` は PAUSED のまま、初回 natural tick HTTP 200 を確認
+- **repo_state**: local doc update + live scheduler create
+- **commit_state**: pending ticket commit
+- **next_prompt_path**: -
+- **last_commit**: -
+- **parent**: 042 / 155 / 194
+
 ### 130 pub004-hard-stop-vs-repairable-before-publish
 
 - **alias**: -

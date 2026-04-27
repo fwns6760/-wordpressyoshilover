@@ -1,6 +1,6 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-04-27 JST(194 publish-notice 5分cron化 + 192 doc hygiene retry + 188/187/186/185/184/183 close + 190/191 番号衝突整理)
+最終更新: 2026-04-27 JST(196 ingestion 5分リアルタイム trigger 追加 + 195 article footer 手動X share corner 実装 + 194 publish-notice 5分cron化 + 192 doc hygiene retry + 188/187/186/185/184/183 close + 190/191 番号衝突整理)
 
 ## 最初に読む
 
@@ -28,6 +28,8 @@
 | **190 publish-notice manual X candidates impl** | P0.5 | REVIEW_NEEDED | Claude / User | `1ac710b` で impl 先行着地。元依頼は design-only だったため、keep か差分是正かを判断 |
 | **191 publish-notice manual X candidates spec** | P0.5 | REVIEW_NEEDED | Claude / User | `b6b2b2b` の元 spec と 190/189 landed behavior の差分を確定し、正式 scope を freeze |
 | **194 publish-notice scheduler 5分毎化** | P0.5 | REVIEW_NEEDED | Codex / Claude | `publish-notice-trigger` を `*/5 * * * *` へ変更済み。`2026-04-27 09:40 JST` natural tick execution `publish-notice-6x7f5` と rollback は `doc/active/194-publish-notice-scheduler-5min.md` に記録 |
+| **195 article footer manual X share corner** | P0.5 | REVIEW_NEEDED | Codex / Claude | `src/yoshilover-063-frontend.php` に singular post footer の 3-candidate X share corner を追加。copy/intent/toggle 付き、deploy/canary は別便 |
+| **196 ingestion 5分毎リアルタイム化** | P0.5 | REVIEW_NEEDED | Codex / Claude | `giants-realtime-trigger` を `*/5 * * * *` で新規作成済み。既存 `giants-*` と同じ `yoshilover-fetcher /run` + `seo-web-runtime@baseballsite.iam.gserviceaccount.com` を使用し、`2026-04-27 09:55 JST` natural tick HTTP 200 を確認 |
 | **105 / PUB-004-D** | P0 | AUTO 5min cron | Codex-GCP + Claude監視 | RSS新着を5-15分内にauto publish、daily cap 100 |
 | **042 draft-body-editor** | P0 | GCP本線 / 残WSLはgemini_auditのみ | Codex-GCP + Claude監視 | GCP上のCodex/Gemini repair、WP article write、品質/メール系実行を監視。WSL本線依存を戻さない |
 | **155 GCP migration master** | P0.5 | IN_FLIGHT | Claude / A | 主要移行は完了。残りは162/163とX live系 |

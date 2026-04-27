@@ -874,6 +874,7 @@ add_shortcode( 'yoshilover_pill', 'yoshilover_063_render_pill_shortcode' );
 add_filter( 'the_content', 'yoshilover_063_auto_inject_article_inline_ad_slot', 12 );
 add_filter( 'the_content', 'yoshilover_063_auto_inject_sns_reactions', 20 );
 add_filter( 'the_content', 'yoshilover_063_auto_inject_article_bundles', 21 );
+add_filter( 'the_content', 'yoshilover_063_auto_inject_manual_x_share_corner', 22 );
 add_filter( 'the_content', 'yoshilover_063_auto_inject_x_follow_cta', 22 );
 add_filter( 'the_content', 'yoshilover_063_auto_inject_article_bottom_ad_slot', 23 );
 add_filter( 'the_content', 'yoshilover_063_auto_prepend_meta_line', 5 );
@@ -1159,6 +1160,335 @@ function yoshilover_063_auto_inject_article_bundles( $content ) {
     }
 
     return $content . $bundles;
+}
+
+/**
+ * 記事下の手動 X 投稿シェアコーナー設定。
+ *
+ * option `yoshilover_063_manual_x_share_corner` で以下キーを受け付ける:
+ *   - enabled (bool): default true
+ *   - heading (string): default 「この記事を X でシェア」
+ *
+ * env `YOSHILOVER_063_MANUAL_X_SHARE_CORNER` が設定されている場合は
+ * enabled の上書きを優先する。
+ */
+function yoshilover_063_get_manual_x_share_corner_settings() {
+    $defaults = array(
+        'enabled' => true,
+        'heading' => 'この記事を X でシェア',
+        'eyebrow' => 'MANUAL X SHARE',
+    );
+
+    $raw = get_option( 'yoshilover_063_manual_x_share_corner', array() );
+    if ( ! is_array( $raw ) ) {
+        $raw = array();
+    }
+
+    $settings = array_merge( $defaults, $raw );
+    $env_flag = getenv( 'YOSHILOVER_063_MANUAL_X_SHARE_CORNER' );
+    if ( false !== $env_flag && $env_flag !== '' ) {
+        $settings['enabled'] = yoshilover_063_parse_env_bool( $env_flag, ! empty( $defaults['enabled'] ) );
+    }
+
+    return $settings;
+}
+
+function yoshilover_063_parse_env_bool( $value, $default = true ) {
+    $value = strtolower( trim( (string) $value ) );
+    if ( $value === '' ) {
+        return (bool) $default;
+    }
+    if ( in_array( $value, array( '0', 'false', 'off', 'no', 'disable', 'disabled' ), true ) ) {
+        return false;
+    }
+    if ( in_array( $value, array( '1', 'true', 'on', 'yes', 'enable', 'enabled' ), true ) ) {
+        return true;
+    }
+    return (bool) $default;
+}
+
+function yoshilover_063_should_render_manual_x_share_corner() {
+    if ( is_admin() ) {
+        return false;
+    }
+    if ( ! is_singular( 'post' ) ) {
+        return false;
+    }
+
+    $post_id = get_queried_object_id();
+    if ( $post_id <= 0 ) {
+        return false;
+    }
+    if ( get_post_status( $post_id ) !== 'publish' ) {
+        return false;
+    }
+
+    $settings = yoshilover_063_get_manual_x_share_corner_settings();
+    return ! empty( $settings['enabled'] );
+}
+
+function yoshilover_063_resolve_manual_x_share_subtype( $post ) {
+    if ( ! ( $post instanceof WP_Post ) ) {
+        return 'default';
+    }
+
+    $text   = yoshilover_063_front_density_text( $post );
+    $type   = strtolower( trim( (string) yoshilover_063_resolve_front_density_subtype( $post, $text ) ) );
+    $blob   = yoshilover_063_normalize_front_density_text(
+        $post->post_title . ' ' . $text . ' ' .
+        implode( ' ', yoshilover_063_get_post_term_names( $post->ID, 'category' ) ) . ' ' .
+        implode( ' ', yoshilover_063_get_post_term_names( $post->ID, 'post_tag' ) )
+    );
+    $mapped = array( 'lineup', 'postgame', 'farm', 'notice', 'program' );
+
+    if ( in_array( $type, $mapped, true ) ) {
+        return $type;
+    }
+    if ( preg_match( '/(program|tv|番組|放送|配信|テレビ)/u', $type . ' ' . $blob ) ) {
+        return 'program';
+    }
+
+    return 'default';
+}
+
+function yoshilover_063_manual_x_share_hashtags( $subtype ) {
+    $hashtags = array( '#巨人', '#ジャイアンツ' );
+    $extra    = array(
+        'lineup'   => '#スタメン',
+        'postgame' => '#試合結果',
+        'farm'     => '#二軍',
+        'notice'   => '#公示',
+        'program'  => '#放送予定',
+    );
+
+    if ( isset( $extra[ $subtype ] ) ) {
+        $hashtags[] = $extra[ $subtype ];
+    }
+
+    return implode( ' ', array_values( array_unique( $hashtags ) ) );
+}
+
+function yoshilover_063_trim_manual_x_share_text( $text, $limit = 280 ) {
+    $text  = yoshilover_063_normalize_front_density_text( $text );
+    $limit = max( 40, (int) $limit );
+
+    if ( function_exists( 'mb_strlen' ) && function_exists( 'mb_substr' ) ) {
+        if ( mb_strlen( $text, 'UTF-8' ) <= $limit ) {
+            return $text;
+        }
+        return rtrim( mb_substr( $text, 0, $limit - 1, 'UTF-8' ) ) . '…';
+    }
+
+    if ( strlen( $text ) <= $limit ) {
+        return $text;
+    }
+    return rtrim( substr( $text, 0, $limit - 1 ) ) . '…';
+}
+
+function yoshilover_063_compose_manual_x_share_text( $base, $permalink, $hashtags, $limit = 280 ) {
+    $suffix     = yoshilover_063_normalize_front_density_text( trim( $permalink . ' ' . $hashtags ) );
+    $suffix_len = function_exists( 'mb_strlen' ) ? mb_strlen( $suffix, 'UTF-8' ) : strlen( $suffix );
+    $body_limit = max( 40, (int) $limit - $suffix_len - 1 );
+    $body       = yoshilover_063_trim_manual_x_share_text( $base, $body_limit );
+    return trim( $body . ' ' . $suffix );
+}
+
+function yoshilover_063_render_manual_x_share_pattern_text( $pattern, $subtype, $title, $summary ) {
+    $hook_source = $summary !== '' ? $summary : $title;
+
+    $patterns = array(
+        'lineup' => array(
+            'update' => '巨人のスタメン情報を更新しました。%s',
+            'fan'    => 'このスタメン、巨人ファンはどう見る？ %s',
+            'focus'  => '試合前に確認したい起用ポイント。%s',
+        ),
+        'postgame' => array(
+            'update'  => '巨人の試合結果を更新しました。%s',
+            'fan'     => 'この試合、巨人ファンはどう見る？ %s',
+            'recheck' => 'これは試合後にもう一度見たいポイント。%s',
+        ),
+        'farm' => array(
+            'update' => '巨人の二軍情報を更新しました。%s',
+            'fan'    => 'この動き、巨人ファンはどう見る？ %s',
+            'follow' => '二軍の動きも追っておきたい。%s',
+        ),
+        'notice' => array(
+            'update' => '巨人の公示・選手動向を整理しました。%s',
+            'motion' => '公示・選手動向を整理。%s',
+            'later'  => '今後の動きも見ながら押さえたい内容。%s',
+        ),
+        'program' => array(
+            'update' => '巨人関連の番組情報を更新しました。%s',
+            'fan'    => '巨人ファン目線で押さえておきたい番組。%s',
+            'watch'  => '見逃し注意の巨人関連情報です。%s',
+        ),
+        'default' => array(
+            'update' => '巨人ニュースを更新しました。%s',
+            'fan'    => 'この話題、巨人ファンはどう見る？ %s',
+            'watch'  => '見逃せない巨人ニュース。%s',
+        ),
+    );
+
+    $template = isset( $patterns[ $subtype ][ $pattern ] ) ? $patterns[ $subtype ][ $pattern ] : '%s';
+    $source   = in_array( $pattern, array( 'fan', 'motion', 'later' ), true ) ? $hook_source : $title;
+    return sprintf( $template, $source );
+}
+
+function yoshilover_063_build_manual_x_share_candidates( $post ) {
+    if ( ! ( $post instanceof WP_Post ) ) {
+        return array();
+    }
+
+    $permalink = get_permalink( $post );
+    if ( ! is_string( $permalink ) || $permalink === '' ) {
+        return array();
+    }
+
+    $text        = yoshilover_063_front_density_text( $post );
+    $subtype     = yoshilover_063_resolve_manual_x_share_subtype( $post );
+    $phase       = yoshilover_063_extract_front_density_phase( $post->post_title . ' ' . $text );
+    $summary     = yoshilover_063_build_front_density_summary( $post, $text, $phase );
+    $title       = yoshilover_063_normalize_front_density_text( wp_strip_all_tags( get_the_title( $post ), true ) );
+    $hashtags    = yoshilover_063_manual_x_share_hashtags( $subtype );
+    $definitions = array(
+        'lineup' => array(
+            array( 'key' => 'update', 'label' => '更新' ),
+            array( 'key' => 'fan', 'label' => 'ファン視点' ),
+            array( 'key' => 'focus', 'label' => '試合前注目' ),
+        ),
+        'postgame' => array(
+            array( 'key' => 'update', 'label' => '更新' ),
+            array( 'key' => 'fan', 'label' => '試合観' ),
+            array( 'key' => 'recheck', 'label' => '後で見直し' ),
+        ),
+        'farm' => array(
+            array( 'key' => 'update', 'label' => '更新' ),
+            array( 'key' => 'fan', 'label' => 'ファン視点' ),
+            array( 'key' => 'follow', 'label' => '動向 follow' ),
+        ),
+        'notice' => array(
+            array( 'key' => 'update', 'label' => '更新' ),
+            array( 'key' => 'motion', 'label' => '動向' ),
+            array( 'key' => 'later', 'label' => '後効き' ),
+        ),
+        'program' => array(
+            array( 'key' => 'update', 'label' => '更新' ),
+            array( 'key' => 'fan', 'label' => 'ファン視点' ),
+            array( 'key' => 'watch', 'label' => '見逃し注意' ),
+        ),
+        'default' => array(
+            array( 'key' => 'update', 'label' => '更新' ),
+            array( 'key' => 'fan', 'label' => 'ファン視点' ),
+            array( 'key' => 'watch', 'label' => '見逃せない' ),
+        ),
+    );
+
+    if ( $title === '' ) {
+        $title = '巨人ニュース';
+    }
+
+    $candidates = array();
+    foreach ( $definitions[ $subtype ] as $definition ) {
+        $base = yoshilover_063_render_manual_x_share_pattern_text(
+            $definition['key'],
+            $subtype,
+            $title,
+            $summary
+        );
+        $text = yoshilover_063_compose_manual_x_share_text(
+            $base,
+            $permalink,
+            $hashtags
+        );
+
+        $candidates[] = array(
+            'key'        => (string) $definition['key'],
+            'label'      => (string) $definition['label'],
+            'text'       => $text,
+            'intent_url' => 'https://twitter.com/intent/tweet?text=' . rawurlencode( $text ),
+        );
+    }
+
+    return $candidates;
+}
+
+function yoshilover_063_render_manual_x_share_corner( $post_id = 0 ) {
+    $settings = yoshilover_063_get_manual_x_share_corner_settings();
+    if ( empty( $settings['enabled'] ) ) {
+        return '';
+    }
+
+    $post = get_post( $post_id ? (int) $post_id : get_the_ID() );
+    if ( ! ( $post instanceof WP_Post ) ) {
+        return '';
+    }
+    if ( $post->post_type !== 'post' || $post->post_status !== 'publish' ) {
+        return '';
+    }
+
+    $subtype    = yoshilover_063_resolve_manual_x_share_subtype( $post );
+    $candidates = yoshilover_063_build_manual_x_share_candidates( $post );
+    if ( empty( $candidates ) ) {
+        return '';
+    }
+
+    $title_id  = 'yoshi-x-share-corner-title-' . (int) $post->ID;
+    $status_id = 'yoshi-x-share-corner-status-' . (int) $post->ID;
+    $html      = '<section class="yoshi-x-share-corner is-yoshi-share-subtype-' . esc_attr( $subtype ) . '" aria-labelledby="' . esc_attr( $title_id ) . '">';
+    $html     .= '<div class="yoshi-x-share-corner__header">';
+    $html     .= '<span class="yoshi-x-share-corner__eyebrow">' . esc_html( (string) $settings['eyebrow'] ) . '</span>';
+    $html     .= '<div id="' . esc_attr( $title_id ) . '" class="yoshi-x-share-corner__title" role="heading" aria-level="2">' . esc_html( (string) $settings['heading'] ) . '</div>';
+    $html     .= '<p class="yoshi-x-share-corner__lead">候補をコピーして X に貼り付け、必要なら一言だけ整えて投稿できます。</p>';
+    $html     .= '</div>';
+    $html     .= '<div class="yoshi-x-share-corner__grid">';
+
+    foreach ( $candidates as $index => $candidate ) {
+        $field_id = 'yoshi-x-share-text-' . (int) $post->ID . '-' . (int) $index;
+        $html    .= '<article class="yoshi-x-share-corner__card">';
+        $html    .= '<div class="yoshi-x-share-corner__meta">';
+        $html    .= '<span class="yoshi-x-share-corner__badge">' . esc_html( (string) $candidate['label'] ) . '</span>';
+        $html    .= '<span class="yoshi-x-share-corner__subtype">' . esc_html( yoshilover_063_front_density_subtype_label( $subtype ) ) . '</span>';
+        $html    .= '</div>';
+        $html    .= '<textarea readonly class="yoshi-x-share-corner__text" id="' . esc_attr( $field_id ) . '" rows="5" aria-label="' . esc_attr( 'X投稿候補 ' . (string) $candidate['label'] ) . '">' . esc_textarea( (string) $candidate['text'] ) . '</textarea>';
+        $html    .= '<div class="yoshi-x-share-corner__actions">';
+        $html    .= '<button type="button" class="yoshi-x-share-corner__copy" data-copy-target="' . esc_attr( $field_id ) . '">コピー</button>';
+        $html    .= '<a class="yoshi-x-share-corner__intent" href="' . esc_url( (string) $candidate['intent_url'] ) . '" rel="noopener noreferrer" target="_blank">Xで開く</a>';
+        $html    .= '</div>';
+        $html    .= '</article>';
+    }
+
+    $html .= '</div>';
+    $html .= '<p class="yoshi-x-share-corner__status" id="' . esc_attr( $status_id ) . '" aria-live="polite"></p>';
+    $html .= '</section>';
+
+    return $html;
+}
+
+function yoshilover_063_auto_inject_manual_x_share_corner( $content ) {
+    if ( ! yoshilover_063_is_singular_post_content_context() ) {
+        return $content;
+    }
+
+    $post_id = get_the_ID();
+    if ( ! $post_id ) {
+        return $content;
+    }
+    if ( get_post_status( $post_id ) !== 'publish' ) {
+        return $content;
+    }
+    if ( strpos( (string) $content, 'yoshi-x-share-corner' ) !== false ) {
+        return $content;
+    }
+    if ( ! yoshilover_063_should_render_manual_x_share_corner() ) {
+        return $content;
+    }
+
+    $corner = yoshilover_063_render_manual_x_share_corner( $post_id );
+    if ( $corner === '' ) {
+        return $content;
+    }
+
+    return $content . $corner;
 }
 
 /**
@@ -1523,6 +1853,7 @@ function yoshilover_063_auto_prepend_meta_line( $content ) {
 add_filter( 'wp_robots', 'yoshilover_063_phase1_noindex_robots' );
 add_action( 'send_headers', 'yoshilover_063_phase1_noindex_headers' );
 add_action( 'wp_enqueue_scripts', 'yoshilover_063_enqueue_front_density_assets' );
+add_action( 'wp_enqueue_scripts', 'yoshilover_063_enqueue_manual_x_share_corner_assets' );
 
 function yoshilover_063_phase1_should_noindex() {
     if ( is_admin() ) {
@@ -1724,6 +2055,218 @@ JS;
         'before'
     );
     wp_add_inline_script( 'yoshilover-063-front-density', $script, 'after' );
+}
+
+function yoshilover_063_enqueue_manual_x_share_corner_assets() {
+    if ( ! yoshilover_063_should_render_manual_x_share_corner() ) {
+        return;
+    }
+
+    wp_register_style( 'yoshilover-063-manual-x-share-corner', false, array(), '0.1.0' );
+    wp_enqueue_style( 'yoshilover-063-manual-x-share-corner' );
+
+    $styles = <<<'CSS'
+.yoshi-x-share-corner {
+  --yoshi-share-accent: var(--orange, #F5811F);
+  margin: 32px 0 28px;
+  padding: 24px;
+  border: 1px solid rgba(26, 26, 26, 0.08);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fffdf8 0%, #fff8ec 100%);
+  box-shadow: 0 16px 34px rgba(26, 26, 26, 0.08);
+}
+.yoshi-x-share-corner.is-yoshi-share-subtype-lineup { --yoshi-share-accent: #003DA5; }
+.yoshi-x-share-corner.is-yoshi-share-subtype-postgame { --yoshi-share-accent: #F5811F; }
+.yoshi-x-share-corner.is-yoshi-share-subtype-farm { --yoshi-share-accent: #2E8B57; }
+.yoshi-x-share-corner.is-yoshi-share-subtype-notice { --yoshi-share-accent: #D1495B; }
+.yoshi-x-share-corner.is-yoshi-share-subtype-program { --yoshi-share-accent: #C08A00; }
+.yoshi-x-share-corner.is-yoshi-share-subtype-default { --yoshi-share-accent: #1A1A1A; }
+.yoshi-x-share-corner__header {
+  margin-bottom: 18px;
+}
+.yoshi-x-share-corner__eyebrow {
+  display: inline-block;
+  margin-bottom: 8px;
+  color: var(--yoshi-share-accent);
+  font-family: 'Oswald', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+.yoshi-x-share-corner__title {
+  color: #1A1A1A;
+  font-family: 'Oswald', sans-serif;
+  font-size: clamp(22px, 2vw, 28px);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: 0.02em;
+}
+.yoshi-x-share-corner__lead {
+  margin: 10px 0 0;
+  color: #4B4B4B;
+  font-size: 14px;
+  line-height: 1.75;
+}
+.yoshi-x-share-corner__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.yoshi-x-share-corner__card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 100%;
+  padding: 16px;
+  border: 1px solid rgba(26, 26, 26, 0.08);
+  border-top: 4px solid var(--yoshi-share-accent);
+  border-radius: 14px;
+  background: #fff;
+}
+.yoshi-x-share-corner__meta,
+.yoshi-x-share-corner__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.yoshi-x-share-corner__badge,
+.yoshi-x-share-corner__subtype {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.yoshi-x-share-corner__badge {
+  background: var(--yoshi-share-accent);
+  color: #fff;
+}
+.yoshi-x-share-corner__subtype {
+  background: rgba(26, 26, 26, 0.06);
+  color: #333;
+}
+.yoshi-x-share-corner__text {
+  width: 100%;
+  min-height: 10.5em;
+  margin: 0;
+  padding: 12px 13px;
+  border: 1px solid rgba(26, 26, 26, 0.12);
+  border-radius: 12px;
+  background: #FFFCF7;
+  color: #1A1A1A;
+  font-size: 14px;
+  line-height: 1.7;
+  resize: vertical;
+}
+.yoshi-x-share-corner__copy,
+.yoshi-x-share-corner__intent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  border-radius: 999px;
+  padding: 0 16px;
+  font-family: 'Oswald', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-decoration: none;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+}
+.yoshi-x-share-corner__copy {
+  border: 0;
+  background: #1A1A1A;
+  color: #fff;
+  cursor: pointer;
+}
+.yoshi-x-share-corner__intent {
+  background: var(--yoshi-share-accent);
+  color: #fff;
+}
+.yoshi-x-share-corner__copy:hover,
+.yoshi-x-share-corner__intent:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(26, 26, 26, 0.14);
+  opacity: 0.96;
+}
+.yoshi-x-share-corner__status {
+  min-height: 1.4em;
+  margin: 12px 0 0;
+  color: #4B4B4B;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+@media (max-width: 960px) {
+  .yoshi-x-share-corner__grid {
+    grid-template-columns: 1fr;
+  }
+}
+CSS;
+    wp_add_inline_style( 'yoshilover-063-manual-x-share-corner', $styles );
+
+    wp_register_script( 'yoshilover-063-manual-x-share-corner', false, array(), '0.1.0', true );
+    wp_enqueue_script( 'yoshilover-063-manual-x-share-corner' );
+
+    $script = <<<'JS'
+(() => {
+  const resetButton = (button, label) => {
+    window.setTimeout(() => {
+      button.textContent = label;
+      button.disabled = false;
+    }, 1800);
+  };
+
+  const fallbackCopy = (field) => {
+    field.focus();
+    field.select();
+    field.setSelectionRange(0, field.value.length);
+    return document.execCommand('copy');
+  };
+
+  document.addEventListener('click', async (event) => {
+    const button = event.target.closest('.yoshi-x-share-corner__copy');
+    if (!button) {
+      return;
+    }
+
+    const fieldId = button.getAttribute('data-copy-target');
+    const field = fieldId ? document.getElementById(fieldId) : null;
+    if (!field) {
+      return;
+    }
+
+    const corner = button.closest('.yoshi-x-share-corner');
+    const status = corner ? corner.querySelector('.yoshi-x-share-corner__status') : null;
+    const originalLabel = button.textContent || 'コピー';
+    const text = field.value || field.textContent || '';
+
+    button.disabled = true;
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(text);
+      } else if (!fallbackCopy(field)) {
+        throw new Error('clipboard fallback failed');
+      }
+      button.textContent = 'コピー済み';
+      if (status) {
+        status.textContent = 'X投稿候補をコピーしました。';
+      }
+    } catch (error) {
+      button.textContent = '再試行';
+      if (status) {
+        status.textContent = 'コピーに失敗しました。もう一度押してください。';
+      }
+    }
+
+    resetButton(button, originalLabel);
+  });
+})();
+JS;
+    wp_add_inline_script( 'yoshilover-063-manual-x-share-corner', $script, 'after' );
 }
 
 function yoshilover_063_build_front_density_cards() {

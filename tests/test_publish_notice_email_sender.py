@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 from unittest.mock import MagicMock, patch
 
 from src import mail_delivery_bridge
@@ -258,6 +259,9 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
 
     def test_build_body_text_includes_manual_x_post_candidates(self):
         body = sender.build_body_text(self._request())
+        text_1 = "巨人の試合結果を更新しました。巨人が接戦を制した https://yoshilover.com/post-123/"
+        text_2 = "試合の分岐点を整理。終盤の継投と一打が勝敗を分けた。 https://yoshilover.com/post-123/"
+        text_3 = "これは試合後にもう一度見たいポイント。巨人が接戦を制した"
 
         self.assertEqual(
             body.splitlines(),
@@ -279,11 +283,94 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
                 "summary: 終盤の継投と一打が勝敗を分けた。",
                 "manual_x_post_candidates:",
                 "article_url: https://yoshilover.com/post-123/",
-                "x_post_1_article_intro: 巨人の試合結果を更新しました。巨人が接戦を制した https://yoshilover.com/post-123/",
-                "x_post_2_postgame_turning_point: 試合の分岐点を整理。終盤の継投と一打が勝敗を分けた。 https://yoshilover.com/post-123/",
-                "x_post_3_inside_voice: これは試合後にもう一度見たいポイント。巨人が接戦を制した",
+                f"投稿文1: {text_1}",
+                f"文字数: {len(text_1)}",
+                f"Xで開く: {sender._build_x_intent_url(text_1)}",
+                f"投稿文2: {text_2}",
+                f"文字数: {len(text_2)}",
+                f"Xで開く: {sender._build_x_intent_url(text_2)}",
+                f"投稿文3: {text_3}",
+                f"文字数: {len(text_3)}",
+                f"Xで開く: {sender._build_x_intent_url(text_3)}",
             ],
         )
+
+    def test_intent_link_added_for_x_candidate_class(self):
+        body_lines = sender.build_body_text(self._request()).splitlines()
+
+        self.assertIn("投稿文1: 巨人の試合結果を更新しました。巨人が接戦を制した https://yoshilover.com/post-123/", body_lines)
+        self.assertIn(
+            "Xで開く: "
+            "https://twitter.com/intent/tweet?text=%E5%B7%A8%E4%BA%BA%E3%81%AE%E8%A9%A6%E5%90%88%E7%B5%90%E6%9E%9C%E3%82%92%E6%9B%B4%E6%96%B0%E3%81%97%E3%81%BE%E3%81%97%E3%81%9F%E3%80%82%E5%B7%A8%E4%BA%BA%E3%81%8C%E6%8E%A5%E6%88%A6%E3%82%92%E5%88%B6%E3%81%97%E3%81%9F%20https%3A%2F%2Fyoshilover.com%2Fpost-123%2F",
+            body_lines,
+        )
+        self.assertFalse(any("(コピー用)" in line for line in body_lines))
+
+    def test_no_intent_link_for_review_class(self):
+        request = self._request(
+            subtype="default",
+            title="巨人イベント情報を更新",
+            summary="📰 報知新聞 / ⚾ GIANTS TV 【巨人】イベント告知 […]",
+        )
+        classification = sender._classify_mail(request)
+        body_lines = sender.build_body_text(request, classification=classification).splitlines()
+
+        self.assertEqual(classification["mail_class"], "review")
+        self.assertTrue(any(line.startswith("投稿文1(コピー用): ") for line in body_lines))
+        self.assertFalse(any(line.startswith("Xで開く: ") for line in body_lines))
+
+    def test_no_intent_link_for_warning_class(self):
+        request = self._request()
+        classification = {
+            **sender._classify_mail(request),
+            "mail_class": "warning",
+            "action": "check_article",
+            "priority": "high",
+        }
+        body_lines = sender.build_body_text(request, classification=classification).splitlines()
+
+        self.assertTrue(any(line.startswith("投稿文1(コピー用): ") for line in body_lines))
+        self.assertFalse(any(line.startswith("Xで開く: ") for line in body_lines))
+
+    def test_no_intent_link_for_urgent_class(self):
+        request = self._request()
+        classification = {
+            **sender._classify_mail(request),
+            "mail_class": "urgent",
+            "action": "check_x_now",
+            "priority": "urgent",
+        }
+        body_lines = sender.build_body_text(request, classification=classification).splitlines()
+
+        self.assertTrue(any(line.startswith("投稿文1(コピー用): ") for line in body_lines))
+        self.assertFalse(any(line.startswith("Xで開く: ") for line in body_lines))
+
+    def test_no_intent_link_when_x_post_not_ready(self):
+        request = self._request()
+        classification = {
+            **sender._classify_mail(request),
+            "x_post_ready": "false",
+        }
+        body_lines = sender.build_body_text(request, classification=classification).splitlines()
+
+        self.assertTrue(any(line.startswith("投稿文1(コピー用): ") for line in body_lines))
+        self.assertFalse(any(line.startswith("Xで開く: ") for line in body_lines))
+
+    def test_intent_url_encoding_japanese(self):
+        text = "巨人が勝利しました https://yoshilover.com/post-123/"
+
+        self.assertEqual(
+            sender._build_x_intent_url(text),
+            f"https://twitter.com/intent/tweet?text={quote(text, safe='')}",
+        )
+
+    def test_intent_url_encoding_special_chars(self):
+        text = "#巨人 #ジャイアンツ https://yoshilover.com/post-123/"
+        intent_url = sender._build_x_intent_url(text)
+
+        self.assertEqual(intent_url, f"https://twitter.com/intent/tweet?text={quote(text, safe='')}")
+        self.assertIn("%23%E5%B7%A8%E4%BA%BA", intent_url)
+        self.assertIn("%23%E3%82%B8%E3%83%A3%E3%82%A4%E3%82%A2%E3%83%B3%E3%83%84", intent_url)
 
     def test_build_body_text_truncates_summary_over_120_chars(self):
         summary = "あ" * 130
@@ -365,9 +452,8 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         self.assertEqual(candidates, [])
         self.assertIn("warning: [Warning] roster movement 系記事、X 自動投稿対象外", body.splitlines())
         self.assertIn("suppressed: roster_movement_yellow", body.splitlines())
-        self.assertFalse(
-            any(re.match(r"^x_post_\d+_", line) for line in body.splitlines())
-        )
+        self.assertTrue(any(line.startswith("投稿文1(コピー用): ") for line in body.splitlines()))
+        self.assertFalse(any(line.startswith("Xで開く: ") for line in body.splitlines()))
 
     def test_manual_x_inside_voice_is_conditional(self):
         farm_labels = [label for label, _text in sender.build_manual_x_post_candidates(self._request(subtype="farm"))]
@@ -484,6 +570,12 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
             ],
         )
 
+    def test_280_char_limit_unchanged(self):
+        request = self._request(title="巨人" * 80, summary="終盤の継投と一打が勝敗を分けた。" * 20)
+        candidates = sender.build_manual_x_post_candidates(request)
+
+        self.assertTrue(all(len(text) <= sender.MAX_MANUAL_X_POST_LENGTH for _label, text in candidates))
+
     def test_send_dry_run_default_skips_bridge_call(self):
         request = self._request()
         bridge_send = MagicMock()
@@ -554,6 +646,9 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         self.assertEqual(result.status, "sent")
         bridge_send.assert_called_once()
         mail_request = bridge_send.call_args.args[0]
+        text_1 = "巨人の試合結果を更新しました。巨人が接戦を制した https://yoshilover.com/post-123/"
+        text_2 = "試合の分岐点を整理。終盤の継投と一打が勝敗を分けた。 https://yoshilover.com/post-123/"
+        text_3 = "これは試合後にもう一度見たいポイント。巨人が接戦を制した"
         self.assertEqual(bridge_send.call_args.kwargs, {"dry_run": False})
         self.assertEqual(mail_request.to, ["notice@example.com"])
         self.assertEqual(mail_request.subject, "【投稿候補】巨人が接戦を制した | YOSHILOVER")
@@ -577,9 +672,15 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
                 "summary: 終盤の継投と一打が勝敗を分けた。",
                 "manual_x_post_candidates:",
                 "article_url: https://yoshilover.com/post-123/",
-                "x_post_1_article_intro: 巨人の試合結果を更新しました。巨人が接戦を制した https://yoshilover.com/post-123/",
-                "x_post_2_postgame_turning_point: 試合の分岐点を整理。終盤の継投と一打が勝敗を分けた。 https://yoshilover.com/post-123/",
-                "x_post_3_inside_voice: これは試合後にもう一度見たいポイント。巨人が接戦を制した",
+                f"投稿文1: {text_1}",
+                f"文字数: {len(text_1)}",
+                f"Xで開く: {sender._build_x_intent_url(text_1)}",
+                f"投稿文2: {text_2}",
+                f"文字数: {len(text_2)}",
+                f"Xで開く: {sender._build_x_intent_url(text_2)}",
+                f"投稿文3: {text_3}",
+                f"文字数: {len(text_3)}",
+                f"Xで開く: {sender._build_x_intent_url(text_3)}",
             ],
         )
         self.assertEqual(mail_request.metadata["post_id"], 123)

@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 from typing import Any, Literal
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from src.mail_delivery_bridge import send as bridge_send_default
@@ -649,6 +650,49 @@ def _trim_manual_x_post_text(value: str) -> str:
     return compact[: MAX_MANUAL_X_POST_LENGTH - 1].rstrip() + "…"
 
 
+def _build_x_intent_url(text: str) -> str:
+    encoded = quote(str(text or "").strip(), safe="")
+    return f"https://twitter.com/intent/tweet?text={encoded}"
+
+
+def _render_manual_x_post_candidates(context: ManualXContext) -> list[tuple[str, str]]:
+    template_sequence = _manual_x_template_sequence(
+        context.article_type,
+        sensitive=_manual_x_has_sensitive_word(context.title, context.cleaned_summary),
+    )
+
+    candidates: list[tuple[str, str]] = []
+    seen_texts: set[str] = set()
+    url_candidate_count = 0
+    for template_type in template_sequence:
+        if len(candidates) >= 3:
+            break
+        wants_url = template_type in _MANUAL_X_URL_TEMPLATES
+        include_url = wants_url and url_candidate_count < 3
+        if include_url:
+            url_candidate_count += 1
+        text = _render_manual_x_template(
+            template_type,
+            article_type=context.article_type,
+            title=context.title,
+            hook_source=context.hook_source,
+            summary_fallback=context.summary_fallback,
+            event_subject=context.event_subject,
+            event_title=context.event_title,
+            event_name=context.event_name,
+            event_dates=context.event_dates,
+            event_actor=context.event_actor,
+            url=context.url,
+            include_url=include_url,
+        )
+        trimmed = _trim_manual_x_post_text(text)
+        if not trimmed or trimmed in seen_texts:
+            continue
+        seen_texts.add(trimmed)
+        candidates.append((f"x_post_{len(candidates) + 1}_{template_type}", trimmed))
+    return candidates
+
+
 def _manual_x_candidate_suppression_reason(
     request: PublishNoticeRequest,
     *,
@@ -706,41 +750,7 @@ def build_manual_x_post_candidates(
     if _manual_x_candidate_suppression_reason(request, yellow_log_path=yellow_log_path):
         return []
     context = _manual_x_context(request)
-    template_sequence = _manual_x_template_sequence(
-        context.article_type,
-        sensitive=_manual_x_has_sensitive_word(context.title, context.cleaned_summary),
-    )
-
-    candidates: list[tuple[str, str]] = []
-    seen_texts: set[str] = set()
-    url_candidate_count = 0
-    for template_type in template_sequence:
-        if len(candidates) >= 3:
-            break
-        wants_url = template_type in _MANUAL_X_URL_TEMPLATES
-        include_url = wants_url and url_candidate_count < 3
-        if include_url:
-            url_candidate_count += 1
-        text = _render_manual_x_template(
-            template_type,
-            article_type=context.article_type,
-            title=context.title,
-            hook_source=context.hook_source,
-            summary_fallback=context.summary_fallback,
-            event_subject=context.event_subject,
-            event_title=context.event_title,
-            event_name=context.event_name,
-            event_dates=context.event_dates,
-            event_actor=context.event_actor,
-            url=context.url,
-            include_url=include_url,
-        )
-        trimmed = _trim_manual_x_post_text(text)
-        if not trimmed or trimmed in seen_texts:
-            continue
-        seen_texts.add(trimmed)
-        candidates.append((f"x_post_{len(candidates) + 1}_{template_type}", trimmed))
-    return candidates
+    return _render_manual_x_post_candidates(context)
 
 
 def _subject_body(value: str) -> str:
@@ -785,6 +795,21 @@ def _mail_class_config(mail_class: str) -> dict[str, str]:
     return dict(_MAIL_CLASS_CONFIGS.get(str(mail_class or "").strip(), _MAIL_CLASS_CONFIGS["publish"]))
 
 
+def _manual_x_candidate_body_lines(
+    candidates: Sequence[tuple[str, str]],
+    *,
+    include_intent_link: bool,
+) -> list[str]:
+    lines: list[str] = []
+    for index, (_label, text) in enumerate(candidates, start=1):
+        line_label = f"投稿文{index}" if include_intent_link else f"投稿文{index}(コピー用)"
+        lines.append(f"{line_label}: {text}")
+        lines.append(f"文字数: {len(text)}")
+        if include_intent_link:
+            lines.append(f"Xで開く: {_build_x_intent_url(text)}")
+    return lines
+
+
 def _per_post_mail_state(
     request: PublishNoticeRequest,
     *,
@@ -793,7 +818,8 @@ def _per_post_mail_state(
     raw_summary = _WHITESPACE_RE.sub(" ", str(request.summary or "").strip())
     context = _manual_x_context(request)
     suppression_reason = _manual_x_candidate_suppression_reason(request, yellow_log_path=yellow_log_path)
-    manual_x_candidates = build_manual_x_post_candidates(request, yellow_log_path=yellow_log_path)
+    display_manual_x_candidates = _render_manual_x_post_candidates(context)
+    manual_x_candidates = [] if suppression_reason else list(display_manual_x_candidates)
     safe_x_candidate = (
         bool(manual_x_candidates)
         and context.cleaned_summary != "(なし)"
@@ -842,6 +868,7 @@ def _per_post_mail_state(
         "x_post_ready": _normalize_bool(mail_class == "x_candidate"),
         "reason": reason,
         "manual_x_candidates": manual_x_candidates,
+        "manual_x_display_candidates": display_manual_x_candidates,
         "suppression_reason": suppression_reason,
     }
 
@@ -980,12 +1007,20 @@ def build_body_text(
     classification: dict[str, Any] | None = None,
 ) -> str:
     mail_state = classification or _classify_mail(request, yellow_log_path=yellow_log_path)
+    mail_class = str(mail_state.get("mail_class") or "publish").strip() or "publish"
     suppression_reason = mail_state.get("suppression_reason")
-    manual_x_candidates = list(mail_state.get("manual_x_candidates") or [])
+    manual_x_candidates = list(
+        mail_state.get("manual_x_display_candidates") or mail_state.get("manual_x_candidates") or []
+    )
+    include_intent_link = (
+        mail_class == "x_candidate"
+        and str(mail_state.get("x_post_ready") or "").strip().lower() == "true"
+        and not suppression_reason
+    )
     lines = _mail_metadata_block(
         {
             "mail_type": mail_state.get("mail_type"),
-            "mail_class": mail_state.get("mail_class"),
+            "mail_class": mail_class,
             "action": mail_state.get("action"),
             "priority": mail_state.get("priority"),
             "post_id": request.post_id,
@@ -1013,8 +1048,7 @@ def build_body_text(
     )
     if suppression_reason:
         lines.append(f"suppressed: {suppression_reason}")
-    else:
-        lines.extend(f"{label}: {text}" for label, text in manual_x_candidates)
+    lines.extend(_manual_x_candidate_body_lines(manual_x_candidates, include_intent_link=include_intent_link))
     return "\n".join(lines)
 
 

@@ -50,8 +50,15 @@ def _green_entry(post_id: int, title: str) -> dict:
     }
 
 
-def _repairable_entry(post_id: int, title: str, *flags: str, yellow_reasons=None, cleanup_required: bool = True) -> dict:
-    return {
+def _repairable_entry(
+    post_id: int,
+    title: str,
+    *flags: str,
+    yellow_reasons=None,
+    cleanup_required: bool = True,
+    **overrides,
+) -> dict:
+    payload = {
         "post_id": post_id,
         "title": title,
         "category": "repairable",
@@ -60,6 +67,8 @@ def _repairable_entry(post_id: int, title: str, *flags: str, yellow_reasons=None
         "repairable_flags": list(flags),
         "yellow_reasons": list(yellow_reasons or []),
     }
+    payload.update(overrides)
+    return payload
 
 
 def _hard_stop_entry(post_id: int, title: str, *flags: str) -> dict:
@@ -1035,32 +1044,92 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         post = _post(308, "ベンチの狙いを整理", body_html)
         post["meta"] = {"article_subtype": "other"}
         report = _report(
-            yellow=[_repairable_entry(308, post["title"]["raw"], "subtype_unresolved", yellow_reasons=["subtype_unresolved"])],
-            cleanup_candidates=[{"post_id": 308, "repairable_flags": ["subtype_unresolved"]}],
+            yellow=[
+                _repairable_entry(
+                    308,
+                    post["title"]["raw"],
+                    "subtype_unresolved",
+                    yellow_reasons=["subtype_unresolved"],
+                    cleanup_required=False,
+                    resolved_subtype="default",
+                )
+            ],
         )
         wp = FakeWPClient({308: post})
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            cleanup_log_path = Path(tmpdir) / "cleanup.jsonl"
+            yellow_log_path = Path(tmpdir) / "yellow.jsonl"
             result = runner.run_guarded_publish(
                 input_from=self._write_input(tmpdir, report),
                 live=True,
                 daily_cap_allow=True,
                 history_path=Path(tmpdir) / "history.jsonl",
                 backup_dir=Path(tmpdir) / "cleanup_backup",
-                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
-                cleanup_log_path=cleanup_log_path,
+                yellow_log_path=yellow_log_path,
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
                 wp_client=wp,
                 now=FIXED_NOW,
             )
-            cleanup_row = json.loads(cleanup_log_path.read_text(encoding="utf-8").strip())
+            yellow_row = json.loads(yellow_log_path.read_text(encoding="utf-8").strip())
 
         self.assertEqual(result["executed"][0]["status"], "sent")
-        self.assertEqual(wp.update_post_fields_calls, [])
-        self.assertEqual(wp.update_post_status_calls, [(308, "publish")])
-        self.assertEqual(cleanup_row["applied_flags"], ["subtype_unresolved"])
-        self.assertEqual(cleanup_row["cleanups"][0]["type"], "subtype_unresolved")
-        self.assertEqual(cleanup_row["cleanups"][0]["reason"], "warning_only:relaxed_for_breaking_board")
+        self.assertEqual(wp.update_post_status_calls, [])
+        self.assertEqual(wp.update_post_fields_calls[0][0], 308)
+        self.assertEqual(wp.update_post_fields_calls[0][1]["status"], "publish")
+        self.assertEqual(wp.update_post_fields_calls[0][1]["meta"]["article_subtype"], "default")
+        self.assertEqual(yellow_row["applied_flags"], ["subtype_unresolved"])
+        self.assertEqual(yellow_row["warning_lines"], ["[Warning] subtype unresolved; using default fallback"])
+
+    def test_subtype_unresolved_with_other_cleanup_flag_uses_safe_meta_fallback(self):
+        body_html = (
+            "<p>主力の動向を整理した。公示で登録と抹消が発表され、ベンチの判断材料も見えてきた。</p>"
+            "<p> </p><br><br><p>復帰時期の見立ても含めて全体像を追える内容だった。</p>"
+            f"<p>{LONG_EXTRA}</p>"
+            "<p>参照元: スポーツ報知 https://example.com/source-subtype-combo</p>"
+        )
+        post = _post(324, "主力の動向を整理", body_html)
+        post["meta"] = {"article_subtype": "other"}
+        report = _report(
+            yellow=[
+                _repairable_entry(
+                    324,
+                    post["title"]["raw"],
+                    "subtype_unresolved",
+                    "light_structure_break",
+                    yellow_reasons=["subtype_unresolved", "light_structure_break"],
+                    resolved_subtype="notice",
+                )
+            ],
+            cleanup_candidates=[
+                {
+                    "post_id": 324,
+                    "repairable_flags": ["subtype_unresolved", "light_structure_break"],
+                    "cleanup_types": ["light_structure_break"],
+                }
+            ],
+        )
+        wp = FakeWPClient({324: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yellow_log_path = Path(tmpdir) / "yellow.jsonl"
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=yellow_log_path,
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+            yellow_row = json.loads(yellow_log_path.read_text(encoding="utf-8").strip())
+
+        self.assertEqual(result["executed"][0]["status"], "sent")
+        self.assertEqual(wp.update_post_status_calls, [])
+        self.assertEqual(wp.update_post_fields_calls[0][1]["status"], "publish")
+        self.assertEqual(wp.update_post_fields_calls[0][1]["meta"]["article_subtype"], "notice")
+        self.assertEqual(yellow_row["warning_lines"], ["[Warning] subtype unresolved; using notice fallback"])
 
     def test_light_structure_break_cleanup_regex(self):
         body_html = (
@@ -1194,7 +1263,7 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         self.assertEqual(cleanup_row["cleanups"][0]["type"], "stale_for_breaking_board")
         self.assertEqual(cleanup_row["cleanups"][0]["reason"], "warning_only:freshness_audit_only_no_op")
 
-    def test_repairable_post_cleanup_failed_post_condition_held_prose_short(self):
+    def test_repairable_post_cleanup_failed_post_condition_publishes_warning(self):
         short_prose = "巨人が阪神に1-0で勝利した。" + ("あ" * 34)
         post = _post(
             302,
@@ -1219,6 +1288,63 @@ class GuardedPublishRunnerTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             history_path = Path(tmpdir) / "history.jsonl"
+            yellow_log_path = Path(tmpdir) / "yellow.jsonl"
+            cleanup_log_path = Path(tmpdir) / "cleanup.jsonl"
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=history_path,
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=yellow_log_path,
+                cleanup_log_path=cleanup_log_path,
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+            history_row = json.loads(history_path.read_text(encoding="utf-8").strip())
+            yellow_row = json.loads(yellow_log_path.read_text(encoding="utf-8").strip())
+            cleanup_row = json.loads(cleanup_log_path.read_text(encoding="utf-8").strip())
+
+        self.assertEqual(result["executed"][0]["status"], "sent")
+        self.assertIsNone(result["executed"][0]["hold_reason"])
+        self.assertIsNone(history_row["hold_reason"])
+        self.assertEqual(history_row["cleanup_success"], False)
+        self.assertIsNone(history_row["error"])
+        self.assertTrue(history_row["backup_path"])
+        self.assertEqual(wp.update_post_fields_calls, [])
+        self.assertEqual(wp.update_post_status_calls, [(302, "publish")])
+        self.assertEqual(
+            yellow_row["warning_lines"],
+            ["[Warning] cleanup_failed_post_condition fallback: prose_lt_100"],
+        )
+        self.assertEqual(cleanup_row["cleanups"][0]["type"], "cleanup_failed_post_condition")
+        self.assertEqual(
+            cleanup_row["cleanups"][0]["reason"],
+            "warning_only:cleanup_failed_post_condition_fallback:prose_lt_100",
+        )
+
+    def test_cleanup_failed_with_empty_body_still_refused(self):
+        post = _post(
+            323,
+            "巨人のメモ",
+            (
+                "<pre>"
+                "python3 -m src.tools.run_guarded_publish\n"
+                "git diff --stat\n"
+                "commit_hash=abc12345\n"
+                "changed_files=3\n"
+                "tokens used: 10\n"
+                "</pre>"
+            ),
+        )
+        report = _report(
+            yellow=[_repairable_entry(323, post["title"]["raw"], "dev_log_contamination", yellow_reasons=["dev_log_contamination"])],
+            cleanup_candidates=[{"post_id": 323, "cleanup_types": ["dev_log_contamination"]}],
+        )
+        wp = FakeWPClient({323: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.jsonl"
             result = runner.run_guarded_publish(
                 input_from=self._write_input(tmpdir, report),
                 live=True,
@@ -1235,8 +1361,7 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         self.assertEqual(result["executed"][0]["status"], "refused")
         self.assertEqual(result["executed"][0]["hold_reason"], "cleanup_failed_post_condition")
         self.assertEqual(history_row["hold_reason"], "cleanup_failed_post_condition")
-        self.assertEqual(history_row["error"], "prose_lt_100")
-        self.assertTrue(history_row["backup_path"])
+        self.assertEqual(history_row["error"], "body_empty")
         self.assertEqual(wp.update_post_fields_calls, [])
         self.assertEqual(wp.update_post_status_calls, [])
 

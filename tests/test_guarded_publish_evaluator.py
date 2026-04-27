@@ -421,8 +421,69 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         entry = self._find_entry(report, 111)
         self.assertIn("subtype_unresolved", evaluator_module.RELAXED_FOR_BREAKING_BOARD_FLAGS)
         self.assertTrue(entry["publishable"])
+        self.assertFalse(entry["cleanup_required"])
         self.assertIn("subtype_unresolved", entry["repairable_flags"])
         self.assertNotIn("subtype_unresolved", entry["hard_stop_flags"])
+        self.assertEqual(entry["resolved_subtype"], "default")
+        self.assertEqual(entry["subtype_resolution_source"], "default_fallback")
+
+    def test_subtype_unresolved_with_body_notice_fallback_publishable(self):
+        post = _post(
+            115,
+            "編成の動きを整理",
+            (
+                "<p>巨人は公示で浅野翔吾の一軍登録を発表した。スポーツ報知によると、週末の合流も見込まれている。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-notice-fallback</p>"
+            ),
+            meta={"article_subtype": "other"},
+        )
+
+        report = self._evaluate([post])
+
+        entry = self._find_entry(report, 115)
+        self.assertTrue(entry["publishable"])
+        self.assertFalse(entry["cleanup_required"])
+        self.assertNotIn("subtype_unresolved", entry["repairable_flags"])
+        self.assertEqual(entry["resolved_subtype"], "notice")
+        self.assertEqual(entry["subtype_resolution_source"], "body_fallback")
+
+    def test_subtype_unresolved_with_title_lineup_fallback_publishable(self):
+        post = _post(
+            116,
+            "スタメン発表 1番丸 4番岡本",
+            (
+                "<p>巨人のオーダーが示され、1番丸佳浩、4番岡本和真の並びになった。スポーツ報知によると、上位打線の組み替えが焦点になっている。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-lineup-fallback</p>"
+            ),
+            meta={"article_subtype": "other"},
+        )
+
+        report = self._evaluate([post])
+
+        entry = self._find_entry(report, 116)
+        self.assertTrue(entry["publishable"])
+        self.assertFalse(entry["cleanup_required"])
+        self.assertNotIn("subtype_unresolved", entry["repairable_flags"])
+        self.assertEqual(entry["resolved_subtype"], "lineup")
+        self.assertEqual(entry["subtype_resolution_source"], "title_fallback")
+
+    def test_subtype_unresolved_with_unsupported_named_fact_still_refused(self):
+        post = _post(
+            117,
+            "ベンチの狙いを整理",
+            (
+                "<p>巨人ベンチの狙いを整理した。スポーツ報知によると、終盤の継投判断が注目された。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-risk-unresolved</p>"
+            ),
+            meta={"article_subtype": "other", "risk_type": "unsupported_named_fact"},
+        )
+
+        report = self._evaluate([post])
+
+        entry = self._find_entry(report, 117)
+        self.assertFalse(entry["publishable"])
+        self.assertIn("unsupported_named_fact", entry["hard_stop_flags"])
+        self.assertIn("subtype_unresolved", entry["repairable_flags"])
 
     def test_site_component_reasons_keep_legacy_yellow_reason_but_use_repairable_flag(self):
         report = self._evaluate([self.site_component_post])

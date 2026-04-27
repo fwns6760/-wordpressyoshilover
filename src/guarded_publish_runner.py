@@ -646,19 +646,40 @@ def _merge_meta(post: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]
     return merged
 
 
+def _current_article_subtype(post: dict[str, Any]) -> str:
+    meta = dict((post or {}).get("meta") or {})
+    for candidate in (meta.get("article_subtype"), (post or {}).get("article_subtype")):
+        value = str(candidate or "").strip().lower()
+        if value:
+            return value
+    return ""
+
+
+def _resolved_subtype_meta_updates(post: dict[str, Any], resolved_subtype: str | None) -> dict[str, Any]:
+    normalized = str(resolved_subtype or "").strip().lower()
+    if not normalized:
+        return {}
+    current = _current_article_subtype(post)
+    if current and current not in publish_evaluator.UNKNOWN_SUBTYPE_VALUES:
+        return {}
+    if current == normalized:
+        return {}
+    return {"article_subtype": normalized}
+
+
 def _resolve_subtype_cleanup(post: dict[str, Any], body_html: str) -> tuple[str, list[dict[str, str]], dict[str, Any]]:
-    title = str(extractor.extract_post_record(post).get("title") or "")
-    inferred = str(extractor.infer_subtype(title) or "").strip().lower()
+    record = extractor.extract_post_record(post)
+    resolution = publish_evaluator.resolve_guarded_publish_subtype(post, record)
     meta = dict((post or {}).get("meta") or {})
     existing = str(meta.get("article_subtype") or (post or {}).get("article_subtype") or "").strip().lower()
-    resolved = inferred if inferred and inferred != "other" else existing if existing and existing != "other" else ""
-    if not resolved:
+    resolved = str(resolution.get("resolved_subtype") or "").strip().lower()
+    if not resolved or resolved in publish_evaluator.UNKNOWN_SUBTYPE_VALUES:
         raise CandidateRefusedError("cleanup_ambiguous", "subtype_unresolved_no_resolution")
     action = _cleanup_action_payload(
         "subtype_unresolved",
         existing or "(empty)",
         resolved,
-        reason="set meta.article_subtype from extractor heuristic",
+        reason=f"set meta.article_subtype from {resolution.get('resolution_source') or 'fallback'}",
     )
     return body_html, [action], {"article_subtype": resolved}
 
@@ -725,6 +746,32 @@ def _compress_long_body(body_html: str, post: dict[str, Any]) -> tuple[str, list
     ]
 
 
+def _record_has_minimum_source(record: dict[str, Any]) -> bool:
+    return bool(record.get("source_block") or record.get("source_urls"))
+
+
+def _cleanup_failure_fallback(
+    post: dict[str, Any],
+    original_html: str,
+    cleanup_check: str,
+) -> tuple[str, list[dict[str, str]], list[str], bool] | None:
+    if cleanup_check in {"body_empty", "title_subject_missing", "source_anchor_missing", "source_url_missing"}:
+        return None
+    original_record = _post_record_with_content(post, original_html)
+    if _prose_char_count(str(original_record.get("body_text") or "")) <= 0:
+        return None
+    if not _record_has_minimum_source(original_record):
+        return None
+    _, fallback_actions = _warning_only_flag_cleanup(
+        "cleanup_failed_post_condition",
+        post,
+        original_html,
+        reason=f"warning_only:cleanup_failed_post_condition_fallback:{cleanup_check}",
+    )
+    warning_line = f"[Warning] cleanup_failed_post_condition fallback: {cleanup_check}"
+    return original_html, fallback_actions, [warning_line], False
+
+
 def _preflight_post(post: dict[str, Any]) -> tuple[str, str]:
     record = extractor.extract_post_record(post)
     status = str((post or {}).get("status") or "").strip().lower()
@@ -769,12 +816,19 @@ def _build_plan(
     repairable_flags: Sequence[str] | None,
     cleanup_required: bool,
     cleanup_candidate: dict[str, Any] | None,
+    resolved_subtype: str | None = None,
 ) -> dict[str, Any]:
     title, body_html = _preflight_post(post)
     cleaned_html = body_html
     cleanup_actions: list[dict[str, str]] = []
     repairable_flags_list = list(dict.fromkeys(str(value) for value in (repairable_flags or []) if str(value)))
     meta_updates: dict[str, Any] = {}
+    warning_lines: list[str] = []
+    resolved_subtype_value = str(resolved_subtype or "").strip().lower()
+
+    meta_updates.update(_resolved_subtype_meta_updates(post, resolved_subtype_value))
+    if "subtype_unresolved" in repairable_flags_list and resolved_subtype_value:
+        warning_lines.append(f"[Warning] subtype unresolved; using {resolved_subtype_value} fallback")
 
     for flag in repairable_flags_list:
         if flag in publish_evaluator.NO_CLEANUP_REQUIRED_FLAGS:
@@ -896,9 +950,15 @@ def _build_plan(
     if cleanup_required:
         ok, cleanup_check = _post_cleanup_check(post, cleaned_html)
         if not ok:
-            raise CandidateRefusedError("post_cleanup_abort", cleanup_check)
-        cleanup_actions.extend(_post_cleanup_warning_actions(cleanup_check, post, cleaned_html))
-        cleanup_success = True
+            fallback = _cleanup_failure_fallback(post, body_html, cleanup_check)
+            if fallback is None:
+                raise CandidateRefusedError("post_cleanup_abort", cleanup_check)
+            cleaned_html, cleanup_actions, fallback_warning_lines, cleanup_success = fallback
+            warning_lines.extend(fallback_warning_lines)
+            cleanup_check = f"warning_only:cleanup_failed_post_condition:{cleanup_check}"
+        else:
+            cleanup_actions.extend(_post_cleanup_warning_actions(cleanup_check, post, cleaned_html))
+            cleanup_success = True
 
     return {
         "post_id": int((post or {}).get("id")),
@@ -914,6 +974,8 @@ def _build_plan(
         "post_cleanup_check": cleanup_check,
         "cleaned_html": cleaned_html,
         "requires_content_update": cleaned_html != body_html,
+        "resolved_subtype": resolved_subtype_value,
+        "warning_lines": warning_lines,
         "meta_updates": dict(meta_updates),
         "requires_meta_update": bool(meta_updates),
         "update_fields": {
@@ -1050,6 +1112,7 @@ def _iter_publishable_entries(report: dict[str, Any]) -> list[dict[str, Any]]:
                     "repairable_flags": list(entry.get("repairable_flags") or entry.get("soft_cleanup_flags") or []),
                     "cleanup_required": bool(entry.get("cleanup_required")),
                     "cleanup_candidate": cleanup_map.get(post_id),
+                    "resolved_subtype": str(entry.get("resolved_subtype") or entry.get("subtype") or ""),
                 }
             )
     return entries
@@ -1142,6 +1205,8 @@ def _public_plan(plan: dict[str, Any]) -> dict[str, Any]:
     }
     if plan["judgment"] == "yellow":
         payload["yellow_reasons"] = list(plan["yellow_reasons"])
+    if plan.get("resolved_subtype"):
+        payload["resolved_subtype"] = str(plan["resolved_subtype"])
     return payload
 
 
@@ -1207,9 +1272,11 @@ def _write_live_success_logs(
     cleanup_log_path: str | Path,
 ) -> None:
     manual_x_post_block_reason = "roster_movement_yellow" if "roster_movement_yellow" in plan["repairable_flags"] else None
-    warning_lines: list[str] = []
+    warning_lines: list[str] = list(plan.get("warning_lines") or [])
     if manual_x_post_block_reason == "roster_movement_yellow":
-        warning_lines.append("[Warning] roster movement 系記事、X 自動投稿対象外")
+        roster_warning = "[Warning] roster movement 系記事、X 自動投稿対象外"
+        if roster_warning not in warning_lines:
+            warning_lines.append(roster_warning)
     if plan["judgment"] == "yellow":
         _append_jsonl(
             yellow_log_path,
@@ -1461,8 +1528,10 @@ def run_guarded_publish(
                     "repairable_flags": list(entry["repairable_flags"]),
                     "cleanup_required": bool(entry["cleanup_required"]),
                     "cleanup_candidate": entry["cleanup_candidate"],
+                    "resolved_subtype": str(entry.get("resolved_subtype") or ""),
                     "cleanup_plan": [],
                     "post_cleanup_check": "pending_live_verify",
+                    "warning_lines": [],
                     "meta_updates": {},
                     "requires_meta_update": False,
                     "update_fields": {},
@@ -1477,6 +1546,7 @@ def run_guarded_publish(
                     repairable_flags=entry["repairable_flags"],
                     cleanup_required=bool(entry["cleanup_required"]),
                     cleanup_candidate=entry["cleanup_candidate"],
+                    resolved_subtype=str(entry.get("resolved_subtype") or ""),
                 )
         except CandidateRefusedError as exc:
             hold_reason = _hold_reason_for_candidate_error(bool(entry["cleanup_required"]), exc)
@@ -1537,6 +1607,7 @@ def run_guarded_publish(
                     repairable_flags=plan["repairable_flags"],
                     cleanup_required=bool(plan["cleanup_required"]),
                     cleanup_candidate=plan["cleanup_candidate"],
+                    resolved_subtype=str(plan.get("resolved_subtype") or ""),
                 )
                 cleanup_success = live_plan["cleanup_success"]
                 if live_plan["update_fields"]:

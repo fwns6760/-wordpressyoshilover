@@ -17,7 +17,9 @@ from src.title_body_nucleus_validator import validate_title_body_nucleus
 
 JST = ZoneInfo("Asia/Tokyo")
 RELAXED_FOR_BREAKING_BOARD_FLAGS = frozenset({"subtype_unresolved", "heading_sentence_as_h3"})
-NO_CLEANUP_REQUIRED_FLAGS = frozenset({"roster_movement_yellow", "awkward_role_phrasing"})
+NO_CLEANUP_REQUIRED_FLAGS = frozenset({"roster_movement_yellow", "awkward_role_phrasing", "subtype_unresolved"})
+UNKNOWN_SUBTYPE_VALUES = frozenset({"", "other", "unknown"})
+DEFAULT_FALLBACK_SUBTYPE = "default"
 
 HARD_STOP_FLAGS = frozenset(
     {
@@ -88,6 +90,11 @@ HEADING_SENTENCE_END_RE = re.compile(
 PLAYER_HEURISTIC_RE = re.compile(r"([一-龯々]{2,4}(?:投手|捕手|内野手|外野手|選手|監督)?|[A-Za-z]{2,}[0-9]*|[一-龯々]{2,4}[A-Za-z0-9]+)")
 LINEUP_SIGNAL_RE = re.compile(r"(スタメン|先発オーダー|オーダー|先発投手|予告先発|[1-9１-９]番)")
 POSTGAME_SIGNAL_RE = re.compile(r"(試合結果|勝利|敗戦|引き分け|[0-9０-９]+\s*[-－ー]\s*[0-9０-９]+)")
+SAFE_LINEUP_SIGNAL_RE = re.compile(r"(スタメン|打順|オーダー|先発メンバー)")
+FARM_SIGNAL_RE = re.compile(r"(?:2軍|二軍|２軍|3軍|三軍|ファーム|育成)")
+NOTICE_SIGNAL_RE = re.compile(r"(公示|登録|抹消|離脱|復帰|昇格|合流|帯同|FA|トレード|移籍|獲得|契約)")
+PROGRAM_SIGNAL_RE = re.compile(r"(番組|テレビ|中継|放送|出演|Hulu|DAZN|GIANTS TV)")
+PREGAME_SIGNAL_RE = re.compile(r"(予告先発|試合前|見どころ|プレビュー|開始予定|プレーボール)")
 LOW_SEVERITY_NUMERIC_RE = re.compile(r"打率\s*(?:0|０)?[\.．]([4-9][0-9０-９]{2})")
 POSTCHECK_META_RE = re.compile(r"(tweet_id|x_post_id|posted_to_x|posted_to_twitter|auto_tweet|auto_post_to_x|sns_posted)")
 LIGHT_STRUCTURE_BREAK_RE = re.compile(r"(?is)<p\b[^>]*>\s*(?:&nbsp;|\s|<br\s*/?>)*</p>|(?:<br\s*/?>\s*){2,}")
@@ -378,6 +385,69 @@ def _resolved_subtype(raw_post: dict[str, Any], record: dict[str, Any]) -> str:
         if value:
             return value
     return "other"
+
+
+def _normalized_subtype(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def _fallback_subtype_from_text(title: str, body_text: str) -> tuple[str, str]:
+    title_text = str(title or "")
+    title_lower = title_text.lower()
+    body_value = str(body_text or "")
+    body_lower = body_value.lower()
+
+    def detect(value: str, lowered: str, source: str) -> tuple[str, str] | None:
+        if SAFE_LINEUP_SIGNAL_RE.search(value):
+            return "lineup", source
+        if NOTICE_SIGNAL_RE.search(value) or any(token in lowered for token in ("notice", "transaction", "roster")):
+            return "notice", source
+        if FARM_SIGNAL_RE.search(value) or "farm" in lowered:
+            return "farm", source
+        if PROGRAM_SIGNAL_RE.search(value) or any(token in lowered for token in ("program", "broadcast", "tv", "hulu", "dazn")):
+            return "program", source
+        if POSTGAME_SIGNAL_RE.search(value) or any(token in lowered for token in ("postgame", "result")):
+            return "postgame", source
+        if PREGAME_SIGNAL_RE.search(value) or any(token in lowered for token in ("pregame", "preview")):
+            return "pregame", source
+        return None
+
+    detected = detect(title_text, title_lower, "title_fallback")
+    if detected is not None:
+        return detected
+    detected = detect(body_value, body_lower, "body_fallback")
+    if detected is not None:
+        return detected
+    return DEFAULT_FALLBACK_SUBTYPE, "default_fallback"
+
+
+def resolve_guarded_publish_subtype(raw_post: dict[str, Any], record: dict[str, Any] | None = None) -> dict[str, Any]:
+    current_record = record or extractor.extract_post_record(raw_post)
+    meta = (raw_post or {}).get("meta") or {}
+    for source, candidate in (
+        ("meta_article_subtype", meta.get("article_subtype")),
+        ("raw_article_subtype", raw_post.get("article_subtype")),
+        ("inferred_subtype", current_record.get("inferred_subtype")),
+    ):
+        normalized = _normalized_subtype(candidate)
+        if normalized and normalized not in UNKNOWN_SUBTYPE_VALUES:
+            return {
+                "resolved_subtype": normalized,
+                "resolution_source": source,
+                "original_unresolved": False,
+                "needs_warning": False,
+            }
+
+    resolved_subtype, resolution_source = _fallback_subtype_from_text(
+        str(current_record.get("title") or ""),
+        str(current_record.get("body_text") or ""),
+    )
+    return {
+        "resolved_subtype": resolved_subtype,
+        "resolution_source": resolution_source,
+        "original_unresolved": True,
+        "needs_warning": resolved_subtype == DEFAULT_FALLBACK_SUBTYPE,
+    }
 
 
 def _freshness_threshold_hours(subtype: str) -> float:
@@ -991,6 +1061,7 @@ def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -
     body_text = str(record.get("body_text") or "")
     modified = str(record.get("modified_at") or "")
     game_key = _build_game_key(record)
+    subtype_resolution = resolve_guarded_publish_subtype(raw_post, record)
 
     reasons: list[dict[str, Any]] = []
     cleanup_details: list[dict[str, Any]] = []
@@ -1074,8 +1145,13 @@ def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -
 
     if _has_light_structure_break(body_html):
         _append_reason(reasons, flag="light_structure_break", category="repairable")
-    if str(record.get("inferred_subtype") or "") == "other":
-        _append_reason(reasons, flag="subtype_unresolved", category="repairable")
+    if subtype_resolution["needs_warning"]:
+        _append_reason(
+            reasons,
+            flag="subtype_unresolved",
+            category="repairable",
+            detail=f"resolved_subtype={subtype_resolution['resolved_subtype']}",
+        )
     if _prose_char_count(body_text) > 3500:
         _append_reason(reasons, flag="long_body", category="repairable")
     if _has_low_severity_numerical_anomaly(body_text):
@@ -1109,7 +1185,9 @@ def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -
         "title": title,
         "modified": modified,
         "game_key": game_key,
-        "subtype": freshness["subtype"],
+        "subtype": str(subtype_resolution["resolved_subtype"] or freshness["subtype"]),
+        "resolved_subtype": str(subtype_resolution["resolved_subtype"] or ""),
+        "subtype_resolution_source": str(subtype_resolution["resolution_source"] or ""),
         "category": entry_category,
         "publishable": publishable,
         "cleanup_required": cleanup_required,

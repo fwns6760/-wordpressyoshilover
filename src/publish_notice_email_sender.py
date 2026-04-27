@@ -972,6 +972,22 @@ def _manual_x_candidate_body_lines(
     return lines
 
 
+def _manual_x_candidate_display_mode(mail_state: dict[str, Any]) -> tuple[bool, bool]:
+    mail_class = str(mail_state.get("mail_class") or "publish").strip() or "publish"
+    x_post_ready = str(mail_state.get("x_post_ready") or "").strip().lower() == "true"
+    show_candidates = mail_class == "x_candidate" and x_post_ready and not mail_state.get("suppression_reason")
+    show_hidden_notice = (
+        not show_candidates
+        and (mail_class in {"review", "warning", "urgent"} or (not x_post_ready and mail_class != "publish"))
+    )
+    return show_candidates, show_hidden_notice
+
+
+def _manual_x_hidden_notice_line(mail_state: dict[str, Any], *, suppression_reason: Any = None) -> str:
+    reason = str(mail_state.get("reason") or suppression_reason or "review_required").strip() or "review_required"
+    return f"[X 投稿候補] 要確認のため非表示(reason: {reason})"
+
+
 def _per_post_mail_state(
     request: PublishNoticeRequest,
     *,
@@ -1182,11 +1198,8 @@ def build_body_text(
     manual_x_candidates = list(
         mail_state.get("manual_x_display_candidates") or mail_state.get("manual_x_candidates") or []
     )
-    include_intent_link = (
-        mail_class == "x_candidate"
-        and str(mail_state.get("x_post_ready") or "").strip().lower() == "true"
-        and not suppression_reason
-    )
+    show_manual_x_candidates, show_hidden_notice = _manual_x_candidate_display_mode(mail_state)
+    include_intent_link = show_manual_x_candidates
     lines = _mail_metadata_block(
         {
             "mail_type": mail_state.get("mail_type"),
@@ -1210,15 +1223,16 @@ def build_body_text(
     )
     if suppression_reason == "roster_movement_yellow":
         lines.append("warning: [Warning] roster movement 系記事、X 自動投稿対象外")
-    lines.extend(
-        [
-            "manual_x_post_candidates:",
-            f"article_url: {str(request.canonical_url or '').strip()}",
-        ]
-    )
-    if suppression_reason:
-        lines.append(f"suppressed: {suppression_reason}")
-    lines.extend(_manual_x_candidate_body_lines(manual_x_candidates, include_intent_link=include_intent_link))
+    if show_manual_x_candidates:
+        lines.extend(
+            [
+                "manual_x_post_candidates:",
+                f"article_url: {str(request.canonical_url or '').strip()}",
+            ]
+        )
+        lines.extend(_manual_x_candidate_body_lines(manual_x_candidates, include_intent_link=include_intent_link))
+    elif show_hidden_notice:
+        lines.append(_manual_x_hidden_notice_line(mail_state, suppression_reason=suppression_reason))
     return "\n".join(lines)
 
 

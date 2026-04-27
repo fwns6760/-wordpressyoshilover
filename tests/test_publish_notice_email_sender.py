@@ -295,10 +295,11 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
             ],
         )
 
-    def test_intent_link_added_for_x_candidate_class(self):
+    def test_x_candidate_class_still_shows(self):
         body_lines = sender.build_body_text(self._request()).splitlines()
 
         self.assertIn("投稿文1: 巨人の試合結果を更新しました。巨人が接戦を制した https://yoshilover.com/post-123/", body_lines)
+        self.assertIn("manual_x_post_candidates:", body_lines)
         self.assertIn(
             "Xで開く: "
             "https://twitter.com/intent/tweet?text=%E5%B7%A8%E4%BA%BA%E3%81%AE%E8%A9%A6%E5%90%88%E7%B5%90%E6%9E%9C%E3%82%92%E6%9B%B4%E6%96%B0%E3%81%97%E3%81%BE%E3%81%97%E3%81%9F%E3%80%82%E5%B7%A8%E4%BA%BA%E3%81%8C%E6%8E%A5%E6%88%A6%E3%82%92%E5%88%B6%E3%81%97%E3%81%9F%20https%3A%2F%2Fyoshilover.com%2Fpost-123%2F",
@@ -306,46 +307,123 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         )
         self.assertFalse(any("(コピー用)" in line for line in body_lines))
 
-    def test_no_intent_link_for_review_class(self):
+    def test_63323_review_class_no_candidate_displayed(self):
         request = self._request(
-            subtype="default",
-            title="巨人イベント情報を更新",
-            summary="📰 報知新聞 / ⚾ GIANTS TV 【巨人】イベント告知 […]",
+            post_id=63323,
+            subtype="notice",
+            title="巨人戦の観戦案内を更新",
+            summary="対象試合と受付条件を整理した。",
         )
         classification = sender._classify_mail(request)
         body_lines = sender.build_body_text(request, classification=classification).splitlines()
 
         self.assertEqual(classification["mail_class"], "review")
-        self.assertTrue(any(line.startswith("投稿文1(コピー用): ") for line in body_lines))
+        self.assertEqual(classification["x_post_ready"], "false")
+        self.assertEqual(classification["reason"], "cautious_subtype_review")
+        self.assertNotIn("manual_x_post_candidates:", body_lines)
+        self.assertFalse(any(line.startswith("article_url: ") for line in body_lines))
+        self.assertFalse(any(line.startswith("投稿文") for line in body_lines))
+
+    def test_review_class_shows_alternative_message(self):
+        request = self._request(
+            post_id=63323,
+            subtype="notice",
+            title="巨人戦の観戦案内を更新",
+            summary="対象試合と受付条件を整理した。",
+        )
+        classification = sender._classify_mail(request)
+        body_lines = sender.build_body_text(request, classification=classification).splitlines()
+
+        self.assertIn("[X 投稿候補] 要確認のため非表示(reason: cautious_subtype_review)", body_lines)
+
+    def test_review_class_no_intent_link(self):
+        request = self._request(
+            post_id=63323,
+            subtype="notice",
+            title="巨人戦の観戦案内を更新",
+            summary="対象試合と受付条件を整理した。",
+        )
+        classification = sender._classify_mail(request)
+        body_lines = sender.build_body_text(request, classification=classification).splitlines()
+
         self.assertFalse(any(line.startswith("Xで開く: ") for line in body_lines))
 
-    def test_no_intent_link_for_warning_class(self):
+    def test_review_class_still_builds_internal_candidates(self):
+        request = self._request(
+            post_id=63323,
+            subtype="notice",
+            title="巨人戦の観戦案内を更新",
+            summary="対象試合と受付条件を整理した。",
+        )
+        body_lines = sender.build_body_text(request).splitlines()
+
+        self.assertTrue(sender.build_manual_x_post_candidates(request))
+        self.assertIn("[X 投稿候補] 要確認のため非表示(reason: cautious_subtype_review)", body_lines)
+        self.assertFalse(any(line.startswith("投稿文") for line in body_lines))
+
+    def test_warning_class_no_candidate(self):
         request = self._request()
         classification = {
             **sender._classify_mail(request),
             "mail_class": "warning",
             "action": "check_article",
             "priority": "high",
+            "reason": "SMTPServerDisconnected",
+            "x_post_ready": "false",
         }
         body_lines = sender.build_body_text(request, classification=classification).splitlines()
 
-        self.assertTrue(any(line.startswith("投稿文1(コピー用): ") for line in body_lines))
+        self.assertIn("[X 投稿候補] 要確認のため非表示(reason: SMTPServerDisconnected)", body_lines)
+        self.assertNotIn("manual_x_post_candidates:", body_lines)
+        self.assertFalse(any(line.startswith("投稿文") for line in body_lines))
         self.assertFalse(any(line.startswith("Xで開く: ") for line in body_lines))
 
-    def test_no_intent_link_for_urgent_class(self):
+    def test_warning_class_hides_article_url_section(self):
+        request = self._request()
+        classification = {
+            **sender._classify_mail(request),
+            "mail_class": "warning",
+            "action": "check_article",
+            "priority": "high",
+            "reason": "SMTPServerDisconnected",
+            "x_post_ready": "false",
+        }
+        body_lines = sender.build_body_text(request, classification=classification).splitlines()
+
+        self.assertFalse(any(line.startswith("article_url: ") for line in body_lines))
+
+    def test_urgent_class_no_candidate(self):
         request = self._request()
         classification = {
             **sender._classify_mail(request),
             "mail_class": "urgent",
             "action": "check_x_now",
             "priority": "urgent",
+            "reason": "urgent_keyword_detected",
+            "x_post_ready": "false",
         }
         body_lines = sender.build_body_text(request, classification=classification).splitlines()
 
-        self.assertTrue(any(line.startswith("投稿文1(コピー用): ") for line in body_lines))
+        self.assertIn("[X 投稿候補] 要確認のため非表示(reason: urgent_keyword_detected)", body_lines)
+        self.assertNotIn("manual_x_post_candidates:", body_lines)
+        self.assertFalse(any(line.startswith("投稿文") for line in body_lines))
         self.assertFalse(any(line.startswith("Xで開く: ") for line in body_lines))
 
-    def test_no_intent_link_when_x_post_not_ready(self):
+    def test_urgent_class_hides_article_url_section(self):
+        request = self._request()
+        classification = {
+            **sender._classify_mail(request),
+            "mail_class": "urgent",
+            "action": "check_x_now",
+            "priority": "urgent",
+            "reason": "urgent_keyword_detected",
+            "x_post_ready": "false",
+        }
+        body_lines = sender.build_body_text(request, classification=classification).splitlines()
+
+        self.assertFalse(any(line.startswith("article_url: ") for line in body_lines))
+
+    def test_x_post_not_ready_override_shows_alternative_message(self):
         request = self._request()
         classification = {
             **sender._classify_mail(request),
@@ -353,8 +431,21 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         }
         body_lines = sender.build_body_text(request, classification=classification).splitlines()
 
-        self.assertTrue(any(line.startswith("投稿文1(コピー用): ") for line in body_lines))
+        self.assertIn("[X 投稿候補] 要確認のため非表示(reason: manual_x_candidates_clean)", body_lines)
+        self.assertNotIn("manual_x_post_candidates:", body_lines)
         self.assertFalse(any(line.startswith("Xで開く: ") for line in body_lines))
+
+    def test_publish_class_default_no_candidate(self):
+        request = self._request(summary=None)
+        classification = sender._classify_mail(request)
+        body_lines = sender.build_body_text(request, classification=classification).splitlines()
+
+        self.assertEqual(classification["mail_class"], "publish")
+        self.assertEqual(classification["x_post_ready"], "false")
+        self.assertNotIn("manual_x_post_candidates:", body_lines)
+        self.assertFalse(any(line.startswith("投稿文") for line in body_lines))
+        self.assertFalse(any(line.startswith("Xで開く: ") for line in body_lines))
+        self.assertFalse(any(line.startswith("[X 投稿候補] ") for line in body_lines))
 
     def test_intent_url_encoding_japanese(self):
         text = "巨人が勝利しました https://yoshilover.com/post-123/"
@@ -451,8 +542,9 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
 
         self.assertEqual(candidates, [])
         self.assertIn("warning: [Warning] roster movement 系記事、X 自動投稿対象外", body.splitlines())
-        self.assertIn("suppressed: roster_movement_yellow", body.splitlines())
-        self.assertTrue(any(line.startswith("投稿文1(コピー用): ") for line in body.splitlines()))
+        self.assertIn("[X 投稿候補] 要確認のため非表示(reason: roster_movement_yellow_x_blocked)", body.splitlines())
+        self.assertNotIn("manual_x_post_candidates:", body.splitlines())
+        self.assertFalse(any(line.startswith("投稿文") for line in body.splitlines()))
         self.assertFalse(any(line.startswith("Xで開く: ") for line in body.splitlines()))
 
     def test_manual_x_inside_voice_is_conditional(self):
@@ -522,7 +614,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         self.assertEqual(sender.build_manual_x_post_candidates(request), [])
         self.assertEqual(classification["reason"], "sensitive_content_x_blocked")
         self.assertEqual(classification["suppression_reason"], "sensitive_content_x_blocked")
-        self.assertIn("suppressed: sensitive_content_x_blocked", body_lines)
+        self.assertIn("[X 投稿候補] 要確認のため非表示(reason: sensitive_content_x_blocked)", body_lines)
         self.assertFalse(any(line.startswith("投稿文1") for line in body_lines))
 
     def test_sensitive_injury_long_term_blocks(self):

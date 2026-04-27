@@ -1167,6 +1167,26 @@ doc/
 - **last_commit**: `b03890c` 217 add death_or_grave_incident to hard-stop set
 - **parent**: 183 / 200
 
+### 219 publish-notice-marketing-mail-classification
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: READY
+- **owner**: Codex B / Claude
+- **lane**: mail本文・マーケ運用
+- **ready_for**: implementation
+- **next_action**: publish-notice mail の件名先頭を `【投稿候補】/【公開済】/【要確認】/【警告】/【まとめ】/【緊急】` に分類し、本文先頭metadata / mail class selector と合わせて Gmail filterで仕分けできる形にする
+- **blocked_by**: none
+- **user_action_required**: none
+- **write_scope**: `src/publish_notice_email_sender.py`, `tests/test_publish_notice_email_sender.py`
+- **doc_path**: `doc/active/219-publish-notice-marketing-mail-classification.md`
+- **acceptance**: `【投稿候補】/【公開済】/【要確認】/【警告】/【まとめ】/【緊急】` が件名先頭に出る、件名末尾に `| YOSHILOVER` を残す、本文先頭 metadata、Gmail filter 前提の安定 prefix、既存 manual_x_post_candidates 非破壊、tests pass
+- **repo_state**: planned
+- **commit_state**: -
+- **next_prompt_path**: `doc/active/219-publish-notice-marketing-mail-classification.md`
+- **last_commit**: -
+- **parent**: 189 / 190 / 191 / 207
+
 ### 130 pub004-hard-stop-vs-repairable-before-publish
 
 - **alias**: -

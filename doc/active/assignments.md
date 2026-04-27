@@ -43,6 +43,7 @@
 | **209 source coverage and topic sensor audit** | P0.5 | REVIEW_NEEDED | Codex-M / Claude | `7b1bb7d` で source coverage / SNS topic sensor / duplicate suppression を棚卸し。次便 210 で primary source expansion 優先度を判断 |
 | **210 primary source expansion plan** | P0.5 | REVIEW_NEEDED | Claude / Codex | `4acda2b` で giants.jp / npb.jp / 各紙 web / Yahoo 配信元 7 source 候補と重複対策 5 項目を documented。次便 210a source_trust 拡張 |
 | **217 wp publish all-mode hotfix** | P0 | REVIEW_NEEDED | Codex / Claude | `b03890c` で injury_death を death_or_grave_incident hard_stop + roster_movement_yellow publishable に分解。GCP 反映待ち、反映後 63795 再判定 |
+| **219 publish-notice marketing mail classification** | P0.5 | READY | Codex B / Claude | 件名先頭を `【投稿候補】/【公開済】/【要確認】...` にして、Gmail一覧だけで次アクションが分かるようにする |
 | **105 / PUB-004-D** | P0 | AUTO 5min cron | Codex-GCP + Claude監視 | RSS新着を5-15分内にauto publish、daily cap 100 |
 | **042 draft-body-editor** | P0 | GCP本線 / 残WSLはgemini_auditのみ | Codex-GCP + Claude監視 | GCP上のCodex/Gemini repair、WP article write、品質/メール系実行を監視。WSL本線依存を戻さない |
 | **155 GCP migration master** | P0.5 | IN_FLIGHT | Claude / A | 主要移行は完了。残りは162/163とX live系 |
@@ -54,6 +55,7 @@
 | ticket | priority | status | 担当 | 次 action |
 |---|---|---|---|---|
 | **179 repair learning log Firestore + GCS** | P0 | READY / 即fire | Codex B → Codex-GCP | FirestoreLedgerWriter + ArtifactUploaderを実装し、GCP実行へ接続 |
+| **219 publish-notice marketing mail classification** | P0.5 | READY / 急ぎ | Codex B | 件名先頭だけで `投稿候補 / 公開済 / 要確認` が分かるようにし、X投稿候補メールをマーケ作業へつなげる |
 | **180 SNS topic intake lane separation** | P0.5 | READY | Claude / Codex B → Codex-GCP | SNS入口とX出口の境界をdoc-onlyで明文化し、SNS topic処理をGCP実行前提に整理 |
 | **205 GCP runtime drift audit** | P0.5 | READY | Codex A / Claude | Cloud Run Job image / Scheduler / WSL cron / latest execution / publish-notice mail / GCS history の drift を read-only 監査 |
 | **201 readiness_guard flaky** | P1 | READY | Codex B | `tests/test_guarded_publish_readiness_guard.py::test_human_format_renders_summary` の real-now 依存を fixed `now` 注入または狭い assertion 調整で解消 |

@@ -1047,6 +1047,86 @@ doc/
 - **last_commit**: -
 - **parent**: 155 / 199 / 200 / 202
 
+### 207 publish-notice-send-result-persistence-and-alert
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: **CLOSED**(`a4c3974`、publish-notice の `queue.jsonl` / send-result summary を GCS に残し、`emit > 0` なのに `sent = 0` の全抑止ケースで alert log を出す repo 実装を追加)
+- **owner**: Codex A
+- **lane**: A
+- **ready_for**: none
+- **next_action**: 208 / 199 の read-only verify で live image 反映有無と mail 本文差分を継続確認
+- **blocked_by**: none
+- **user_action_required**: none
+- **write_scope**: `src/cloud_run_persistence.py`, `src/publish_notice_email_sender.py`, `src/tools/run_publish_notice_email_dry_run.py`, `tests/test_cloud_run_persistence.py`, `tests/test_publish_notice_email_sender.py`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `-(board row only)`
+- **acceptance**: publish-notice の durable artifact に per-post status / reason / subject が残り、`emit > 0` かつ `sent = 0` のとき Cloud Logging で追跡しやすい alert 行が出る。SMTP / Scheduler / WP / X 挙動は変えない
+- **repo_state**: committed(local)
+- **commit_state**: `a4c3974`
+- **next_prompt_path**: -
+- **last_commit**: `a4c3974` 207 publish-notice send result GCS 永続化 + emit>0 sent=0 alert log(queue.jsonl persist、reason 内訳付き summary、alert 検出可能化)
+- **parent**: 199 / 206
+
+### 208 gcp-lane-result-log-persistence-audit
+
+- **alias**: -
+- **priority**: P1.5
+- **status**: **REVIEW_NEEDED**(GCP mainline 各 lane の durable evidence を横断し、HIGH / MED / LOW severity と follow-up 候補を整理)
+- **owner**: Codex-M / Claude
+- **lane**: Codex-M
+- **ready_for**: follow-up prioritization
+- **next_action**: 207 live verify、draft-body-editor ledger persistence、codex-shadow repair artifact persistence、163 quality monitor GCP migration を board 優先度に反映
+- **blocked_by**: none
+- **user_action_required**: none
+- **write_scope**: `doc/active/208-gcp-lane-result-log-persistence-audit.md`
+- **doc_path**: `doc/active/208-gcp-lane-result-log-persistence-audit.md`
+- **acceptance**: lane matrix に current persistence / missing evidence / severity / follow-up 候補が残り、read-only だけで次の persistence 改善 ticket を切れる
+- **repo_state**: committed(local)
+- **commit_state**: `3fb80d1`
+- **next_prompt_path**: -
+- **last_commit**: `3fb80d1` 208 GCP lane result log persistence audit(read-only、レーン別 evidence 表 + severity + follow-up 推奨、修正なし)
+- **parent**: 155 / 163 / 199 / 206
+
+### 209 source-coverage-and-topic-sensor-audit
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: **REVIEW_NEEDED**(source coverage / SNS topic sensor の現行入口、primary gap、重複抑止、dry-run lane を整理)
+- **owner**: Codex-M / Claude
+- **lane**: Codex-M
+- **ready_for**: next source-expansion planning
+- **next_action**: 210 で primary source expansion / SNS sensor boundary / source_trust drift のどれを先に詰めるかを board 判断する
+- **blocked_by**: none
+- **user_action_required**: none
+- **write_scope**: `doc/active/209-source-coverage-and-topic-sensor-audit.md`
+- **doc_path**: `doc/active/209-source-coverage-and-topic-sensor-audit.md`
+- **acceptance**: 現行 source inventory、primary / secondary gap、SNS is signal not fact の境界、既存 duplicate suppression が doc-only で再構成されている
+- **repo_state**: committed(local)
+- **commit_state**: `7b1bb7d`
+- **next_prompt_path**: -
+- **last_commit**: `7b1bb7d` 209 source coverage and topic sensor audit
+- **parent**: 005 / 014 / 064 / 128 / 180
+
+### 211 restore-202-203-205-docs-after-207-commit-accident
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: **CLOSED**(`ad729b4`、207 commit 時に巻き戻された 199 / 202 / 203 / 205 の active doc と board 反映を `210ce41` 基準で復元)
+- **owner**: Codex-M
+- **lane**: Codex-M
+- **ready_for**: none
+- **next_action**: none(復元後の board reconcile は 213 で実施)
+- **blocked_by**: none
+- **user_action_required**: none
+- **write_scope**: `doc/README.md`, `doc/active/199-publish-notice-rebuild-a9c2814.md`, `doc/active/202-gcp-deploy-executor-boundary.md`, `doc/active/203-ticket-number-reservation-rule.md`, `doc/active/205-gcp-runtime-drift-audit.md`, `doc/active/assignments.md`, `doc/active/OPERATING_LOCK.md`, `doc/waiting/197-195-live-deploy.md`
+- **doc_path**: `-(board row only)`
+- **acceptance**: 199 / 202 / 203 / 205 の active doc と README / assignments の整合が復元され、src / tests / live mutation は含まれない
+- **repo_state**: committed(local)
+- **commit_state**: `ad729b4`
+- **next_prompt_path**: -
+- **last_commit**: `ad729b4` 211 restore 202/203/205 docs after 207 commit accident
+- **parent**: 199 / 202 / 203 / 205 / 207
+
 ### 130 pub004-hard-stop-vs-repairable-before-publish
 
 - **alias**: -

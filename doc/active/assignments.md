@@ -1,6 +1,6 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-04-27 JST(202-205 operating policy clarify + 199 live verify / review-needed 化 + 197 ready-for-auth-executor 化 + 200 scanner subtype fallback close + 201 readiness_guard flaky ticket 追加 + 198 190/191 keep ratify close + 196 ingestion 5分リアルタイム trigger 追加 + 195 article footer 手動X share corner 実装 + 194 publish-notice 5分cron化 + 192 doc hygiene retry + 188/187/186/185/184/183 close)
+最終更新: 2026-04-27 JST(213 reconciliation で 207/208/209/211 row 整合 + 202-205 operating policy clarify + 199 live verify / review-needed 化 + 197 ready-for-auth-executor 化 + 200 scanner subtype fallback close + 201 readiness_guard flaky ticket 追加 + 198 190/191 keep ratify close + 196 ingestion 5分リアルタイム trigger 追加 + 195 article footer 手動X share corner 実装 + 194 publish-notice 5分cron化 + 192 doc hygiene retry + 188/187/186/185/184/183 close)
 
 ## 最初に読む
 
@@ -39,6 +39,8 @@
 | **199 publish-notice rebuild a9c2814** | P0.5 | REVIEW_NEEDED | Codex / Claude | read-only verify で live image `23853cd` / latest execution `publish-notice-wspgg` success / Gmail着信を確認。sample mail に `manual_x_post_candidates` が見えず、review継続 |
 | **202 GCP executor boundary** | P0.5 | REVIEW_NEEDED | Codex-M / Claude | Codex repo work と authenticated executor の live mutation 境界、`READY_FOR_AUTH_EXECUTOR` の使い分けを doc 化 |
 | **203 ticket number reservation rule** | P0.5 | REVIEW_NEEDED | Codex-M / Claude | README で番号予約先行、`1番号 = 1スコープ`、`<number>: <summary>` を固定 |
+| **208 GCP lane result log persistence audit** | P1.5 | REVIEW_NEEDED | Codex-M / Claude | `3fb80d1` でレーン別 evidence / severity / follow-up 候補を read-only 監査。publish-notice / codex-shadow / draft-body-editor の durable gap を整理 |
+| **209 source coverage and topic sensor audit** | P0.5 | REVIEW_NEEDED | Codex-M / Claude | `7b1bb7d` で source coverage / SNS topic sensor / duplicate suppression を棚卸し。次便 210 で primary source expansion 優先度を判断 |
 | **105 / PUB-004-D** | P0 | AUTO 5min cron | Codex-GCP + Claude監視 | RSS新着を5-15分内にauto publish、daily cap 100 |
 | **042 draft-body-editor** | P0 | GCP本線 / 残WSLはgemini_auditのみ | Codex-GCP + Claude監視 | GCP上のCodex/Gemini repair、WP article write、品質/メール系実行を監視。WSL本線依存を戻さない |
 | **155 GCP migration master** | P0.5 | IN_FLIGHT | Claude / A | 主要移行は完了。残りは162/163とX live系 |
@@ -83,6 +85,8 @@
 | **181** | CLOSED `5b21543` | タイトル主語欠落 + 本文可読性narrow fix完了 |
 | **200** | CLOSED `e78f088` | publish_notice_scanner に REST subtype 欠落時の fallback 推論を追加し、lineup/postgame/farm/notice/program/default の 5+1 分類と scanner tests を着地 |
 | **204** | CLOSED | 195 / 197 の live state 表示を修正し、195はREVIEW_NEEDED維持、197はREADY_FOR_AUTH_EXECUTORへ正規化 |
+| **207** | CLOSED `a4c3974` | publish-notice の `queue.jsonl` / send-result summary を GCS 永続化し、`emit > 0` なのに `sent = 0` の全抑止ケースで alert log を追加 |
+| **211** | CLOSED `ad729b4` | 207 commit accident で巻き戻った 199 / 202 / 203 / 205 の active doc と board 反映を `210ce41` 基準で復元 |
 | **183 / 184 / 185 / 186** | CLOSED | publish gate 緩和、ledger integration、entrypoint `--exclude-published-today` 一時除去、scan_limit/history dedup narrow 完了 |
 | **187 / 188** | CLOSED | publish-notice scheduler URI v1 verify と IAM fix runbook整理、Fix A 実行 + execution `9rsjt` で 20 mail verify 完了 |
 | **189** | CLOSED | 公開通知メールの手動X投稿候補を subtype selector 方式へ拡張。notice/sensitive gate、inside_voice条件、URL最大3 |

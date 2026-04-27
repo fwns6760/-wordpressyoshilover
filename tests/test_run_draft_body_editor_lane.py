@@ -989,6 +989,17 @@ class TestPrimarySourceUrl(unittest.TestCase):
             with self.subTest(url=url):
                 self.assertTrue(lane._is_primary_source_url(url))
 
+    def test_is_primary_source_accepts_210a_family_domains(self):
+        urls = (
+            "https://www.giants.jp/game/20260420/preview/",
+            "https://www.npb.jp/news/20260427/notice.html",
+            "https://news.yahoo.co.jp/articles/abcdef1234567890",
+        )
+
+        for url in urls:
+            with self.subTest(url=url):
+                self.assertTrue(lane._is_primary_source_url(url))
+
     def test_is_primary_source_rejects_non_whitelisted(self):
         self.assertFalse(lane._is_primary_source_url("https://example.com/article"))
 

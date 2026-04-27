@@ -5,9 +5,19 @@ import re
 from typing import Any
 
 try:
-    from source_trust import classify_url as _classify_url
+    from source_trust import (
+        classify_handle_family as _classify_handle_family,
+        classify_url as _classify_url,
+        classify_url_family as _classify_url_family,
+        get_family_trust_level as _get_family_trust_level,
+    )
 except ImportError:  # pragma: no cover - package import for tests
-    from src.source_trust import classify_url as _classify_url
+    from src.source_trust import (
+        classify_handle_family as _classify_handle_family,
+        classify_url as _classify_url,
+        classify_url_family as _classify_url_family,
+        get_family_trust_level as _get_family_trust_level,
+    )
 
 
 SPECIAL_REQUIRED_SUBTYPES = {"live_update", "lineup", "fact_notice", "pregame"}
@@ -46,6 +56,7 @@ _MEDIA_MARKERS = (
     "sanspo",
     "nikkansports",
 )
+_RECOGNIZED_WEB_TRUST_LEVELS = {"high", "mid-high", "mid"}
 
 
 def _normalize_key(value: str) -> str:
@@ -79,6 +90,15 @@ def _looks_like_x_source(name: str, url: str, source_type: str) -> bool:
     return False
 
 
+def _resolve_source_family(url: str) -> str:
+    if _is_x_url(url):
+        handle = _extract_handle(url)
+        family = _classify_handle_family(handle) if handle else "unknown"
+        if family != "unknown":
+            return family
+    return _classify_url_family(url or "")
+
+
 def _classify_source_kind(name: str, url: str, source_type: str) -> str:
     normalized = _normalize_key(name)
     if any(marker in normalized for marker in _MEDIA_MARKERS):
@@ -86,15 +106,17 @@ def _classify_source_kind(name: str, url: str, source_type: str) -> str:
     if any(marker in normalized for marker in _OFFICIAL_MARKERS):
         return "official_x"
 
+    source_family = _resolve_source_family(url or "")
+    family_trust = _get_family_trust_level(source_family)
     trust_level = _classify_url(url or "")
     if _is_x_url(url):
-        if trust_level == "primary":
+        if source_family in {"giants_official", "npb_official"} or trust_level == "primary":
             return "official_x"
-        if trust_level == "secondary":
+        if family_trust in {"mid", "mid-high"} or trust_level == "secondary":
             return "official_media_x"
         return "ambiguous_x" if _looks_like_x_source(name, url, source_type) else "other"
 
-    if trust_level in {"primary", "secondary"}:
+    if family_trust in _RECOGNIZED_WEB_TRUST_LEVELS or trust_level in {"primary", "secondary"}:
         return "t1_web"
     if _looks_like_x_source(name, url, source_type):
         return "ambiguous_x"

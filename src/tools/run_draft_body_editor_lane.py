@@ -36,6 +36,11 @@ from src import runner_ledger_integration
 from src.tools import draft_body_editor
 from src.tools.draft_body_editor import _extract_prose_text
 
+try:
+    from source_trust import classify_url_family as _classify_url_family
+except ImportError:  # pragma: no cover - package import for tests
+    from src.source_trust import classify_url_family as _classify_url_family
+
 
 JST = ZoneInfo("Asia/Tokyo")
 # Default edit hours align with the quality-gmail notification window.
@@ -63,8 +68,22 @@ PRIMARY_SOURCE_DOMAINS = (
     "nikkei.com",
     "yomiuri.co.jp",
     "daily.co.jp",
+    "news.yahoo.co.jp",
     "twitter.com",
     "x.com",
+)
+PRIMARY_SOURCE_FAMILIES = frozenset(
+    {
+        "giants_official",
+        "npb_official",
+        "hochi",
+        "nikkansports",
+        "sponichi",
+        "sanspo",
+        "daily",
+        "yomiuri_online",
+        "yahoo_news_aggregator",
+    }
 )
 
 EXIT_WP_GET_FAILED = 40
@@ -433,7 +452,9 @@ def _is_primary_source_url(url: str) -> bool:
         return False
     if not host:
         return False
-    return any(host == domain or host.endswith(f".{domain}") for domain in PRIMARY_SOURCE_DOMAINS)
+    if any(host == domain or host.endswith(f".{domain}") for domain in PRIMARY_SOURCE_DOMAINS):
+        return True
+    return _classify_url_family(url) in PRIMARY_SOURCE_FAMILIES
 
 
 def _extract_source_urls(post: dict[str, Any]) -> list[str]:

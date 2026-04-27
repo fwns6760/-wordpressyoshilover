@@ -24,6 +24,22 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         payload.update(overrides)
         return sender.PublishNoticeRequest(**payload)
 
+    def _event_notice_request(self, **overrides):
+        payload = {
+            "post_id": 63797,
+            "title": "隠善智也監督「伝統の一戦」 ベンチの狙いはどこか",
+            "canonical_url": "https://yoshilover.com/63797",
+            "subtype": "default",
+            "publish_time_iso": "2026-04-27T10:05:00+09:00",
+            "summary": (
+                "📰 報知新聞 / スポーツ報知巨人班X⚾ GIANTS MANAGER NOTE "
+                "【巨人】女子チームの「伝統の一戦」を6・27と7・18に開催 "
+                "隠善智也監督「見応 【巨人】女子チームの「伝統の一戦」を6・27と7・18に […]"
+            ),
+        }
+        payload.update(overrides)
+        return sender.PublishNoticeRequest(**payload)
+
     def test_build_subject_formats_publish_notice_prefix(self):
         self.assertEqual(
             sender.build_subject("巨人が接戦を制した"),
@@ -76,8 +92,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
                 "article_url: https://yoshilover.com/post-123/",
                 "x_post_1_article_intro: 巨人の試合結果を更新しました。巨人が接戦を制した https://yoshilover.com/post-123/",
                 "x_post_2_postgame_turning_point: 試合の分岐点を整理。終盤の継投と一打が勝敗を分けた。 https://yoshilover.com/post-123/",
-                "x_post_3_fan_reaction_hook: この試合、巨人ファンはどう見る？ 終盤の継投と一打が勝敗を分けた。 https://yoshilover.com/post-123/",
-                "x_post_4_inside_voice: これは試合後にもう一度見たいポイント。巨人が接戦を制した",
+                "x_post_3_inside_voice: これは試合後にもう一度見たいポイント。巨人が接戦を制した",
             ],
         )
 
@@ -105,8 +120,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
             [
                 "x_post_1_article_intro",
                 "x_post_2_postgame_turning_point",
-                "x_post_3_fan_reaction_hook",
-                "x_post_4_inside_voice",
+                "x_post_3_inside_voice",
             ],
         )
         self.assertTrue(all(len(text) <= sender.MAX_MANUAL_X_POST_LENGTH for _label, text in candidates))
@@ -124,6 +138,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
 
         self.assertIn("x_post_2_lineup_focus", lineup_labels)
         self.assertIn("x_post_2_program_memo", program_labels)
+        self.assertIn("x_post_3_inside_voice", lineup_labels)
         self.assertNotEqual(lineup_labels, default_labels)
 
     def test_manual_x_notice_omits_fan_reaction_hook(self):
@@ -182,6 +197,100 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         self.assertLessEqual(
             sum("https://yoshilover.com/post-123/" in text for _label, text in candidates),
             3,
+        )
+
+    def test_summary_cleanup_removes_source_header(self):
+        cleaned = sender._clean_summary_for_x_candidate(
+            "📰 報知新聞 / スポーツ報知巨人班X 巨人が逆転勝ち",
+            title="巨人が逆転勝ち",
+        )
+
+        self.assertEqual(cleaned, "巨人が逆転勝ち")
+
+    def test_summary_cleanup_removes_emoji_and_label(self):
+        cleaned = sender._clean_summary_for_x_candidate(
+            "⚾ GIANTS MANAGER NOTE 隠善智也監督が見どころを説明",
+            title="隠善智也監督が見どころを説明",
+        )
+
+        self.assertEqual(cleaned, "隠善智也監督が見どころを説明")
+
+    def test_summary_cleanup_removes_title_duplicate(self):
+        cleaned = sender._clean_summary_for_x_candidate(
+            "【巨人】阿部監督が方針説明 今回の狙いを整理 【巨人】阿部監督が方針説明",
+            title="【巨人】阿部監督が方針説明",
+        )
+
+        self.assertEqual(cleaned, "今回の狙いを整理")
+
+    def test_summary_cleanup_handles_truncation_marker(self):
+        cleaned = sender._clean_summary_for_x_candidate(
+            "巨人女子チームのイベント情報を更新 […]",
+            title="巨人女子チームのイベント情報を更新",
+        )
+
+        self.assertEqual(cleaned, "巨人女子チームのイベント情報を更新")
+
+    def test_summary_cleanup_short_falls_back_to_title(self):
+        context = sender._manual_x_context(
+            self._request(
+                subtype="default",
+                title="巨人ニュースを整理",
+                summary="📰 報知新聞 / ⚾ GIANTS TV 【巨人】速報 […]",
+            )
+        )
+
+        self.assertTrue(context.summary_fallback)
+        self.assertEqual(context.hook_source, "巨人ニュースを整理")
+
+    def test_notice_event_subtype_detected_for_event_announcement(self):
+        context = sender._manual_x_context(self._event_notice_request())
+
+        self.assertEqual(context.article_type, "notice_event")
+
+    def test_notice_event_no_fan_reaction_hook(self):
+        candidates = sender.build_manual_x_post_candidates(self._event_notice_request())
+
+        self.assertEqual(
+            [label for label, _text in candidates],
+            [
+                "x_post_1_article_intro",
+                "x_post_2_event_detail",
+                "x_post_3_event_inside_voice",
+            ],
+        )
+        self.assertFalse(any("fan_reaction_hook" in label for label, _text in candidates))
+
+    def test_default_subtype_skips_dirty_summary(self):
+        candidates = sender.build_manual_x_post_candidates(
+            self._request(
+                subtype="default",
+                title="巨人イベント情報を更新",
+                summary="📰 報知新聞 / ⚾ GIANTS TV 【巨人】イベント告知 […]",
+            )
+        )
+
+        candidate_map = dict(candidates)
+        self.assertIn("x_post_3_fan_reaction_hook", candidate_map)
+        self.assertTrue(candidate_map["x_post_3_fan_reaction_hook"].startswith("巨人ニュースを更新しました。"))
+        self.assertNotIn("どう見る？", candidate_map["x_post_3_fan_reaction_hook"])
+        self.assertNotIn("📰", candidate_map["x_post_3_fan_reaction_hook"])
+
+    def test_63797_full_candidates_are_copy_ready(self):
+        candidates = sender.build_manual_x_post_candidates(self._event_notice_request())
+
+        self.assertEqual(len(candidates), 3)
+        self.assertTrue(all(len(text) <= sender.MAX_MANUAL_X_POST_LENGTH for _label, text in candidates))
+        self.assertTrue(all("https://yoshilover.com/63797" in text for _label, text in candidates))
+        self.assertTrue(all("📰" not in text and "GIANTS MANAGER NOTE" not in text for _label, text in candidates))
+        self.assertTrue(all("[…]" not in text and "..." not in text for _label, text in candidates))
+        self.assertEqual(
+            [text for _label, text in candidates],
+            [
+                "巨人女子チームの「伝統の一戦」開催情報を更新しました。隠善智也監督のコメントも紹介しています。 https://yoshilover.com/63797",
+                "巨人女子チームの注目イベント「伝統の一戦」。開催日程と隠善智也監督のコメントを整理しました。 https://yoshilover.com/63797",
+                "6月27日と7月18日に行われる巨人女子チームの「伝統の一戦」。試合前に押さえておきたいポイントです。 https://yoshilover.com/63797",
+            ],
         )
 
     def test_send_dry_run_default_skips_bridge_call(self):
@@ -269,8 +378,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
                 "article_url: https://yoshilover.com/post-123/",
                 "x_post_1_article_intro: 巨人の試合結果を更新しました。巨人が接戦を制した https://yoshilover.com/post-123/",
                 "x_post_2_postgame_turning_point: 試合の分岐点を整理。終盤の継投と一打が勝敗を分けた。 https://yoshilover.com/post-123/",
-                "x_post_3_fan_reaction_hook: この試合、巨人ファンはどう見る？ 終盤の継投と一打が勝敗を分けた。 https://yoshilover.com/post-123/",
-                "x_post_4_inside_voice: これは試合後にもう一度見たいポイント。巨人が接戦を制した",
+                "x_post_3_inside_voice: これは試合後にもう一度見たいポイント。巨人が接戦を制した",
             ],
         )
         self.assertEqual(mail_request.metadata["post_id"], 123)

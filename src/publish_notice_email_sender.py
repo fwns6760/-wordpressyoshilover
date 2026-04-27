@@ -36,6 +36,8 @@ _MANUAL_X_TEMPLATE_TYPES = (
     "farm_watch",
     "notice_note",
     "notice_careful",
+    "event_detail",
+    "event_inside_voice",
     "program_memo",
     "inside_voice",
 )
@@ -51,6 +53,8 @@ _MANUAL_X_URL_TEMPLATES = frozenset(
         "farm_watch",
         "notice_note",
         "notice_careful",
+        "event_detail",
+        "event_inside_voice",
         "program_memo",
     }
 )
@@ -65,6 +69,42 @@ _MANUAL_X_SENSITIVE_WORDS = (
     "復帰",
     "手術",
     "診断",
+)
+_MANUAL_X_PREFIX_TRIM_CHARS = " /／|｜:：-・、"
+_MANUAL_X_SUMMARY_SOURCE_PREFIX_RE = re.compile(
+    r"^(?:"
+    r"報知新聞|"
+    r"スポーツ報知巨人班X|"
+    r"スポーツ報知X|"
+    r"スポーツ報知|"
+    r"報知野球X|"
+    r"日刊スポーツ(?:\s*X)?|"
+    r"スポニチ野球記者X|"
+    r"スポニチ|"
+    r"サンスポ巨人X|"
+    r"サンスポ|"
+    r"巨人公式X|"
+    r"読売ジャイアンツX|"
+    r"Yahoo!?スポーツ(?:ナビ)?|"
+    r"Yahoo!ニュース"
+    r")\s*(?:/|／|\||｜|:|：)?\s*"
+)
+_MANUAL_X_SUMMARY_LABEL_PREFIX_RE = re.compile(
+    r"^(?:GIANTS(?:\s+[A-Z]+){0,4}|BREAKING(?:\s+[A-Z]+){0,4}|LIVE(?:\s+[A-Z]+){0,4}|TV(?:\s+[A-Z]+){0,4})\s*"
+)
+_MANUAL_X_SUMMARY_ARTICLE_PREFIX_RE = re.compile(r"^【巨人】\s*")
+_MANUAL_X_SUMMARY_TRUNCATION_RE = re.compile(r"(?:\s*(?:\[\.\.\.\]|\[\u2026\]|…|\.\.\.))+\s*$")
+_MANUAL_X_DATE_RE = re.compile(r"(?:(\d{1,2})月(\d{1,2})日|(\d{1,2})[/.・](\d{1,2})(?:日)?)")
+_MANUAL_X_EVENT_ACTOR_RE = re.compile(r"([一-龯々ぁ-んァ-ヴー]{2,12}(?:監督|コーチ|投手|捕手|内野手|外野手|選手))")
+_MANUAL_X_NOTICE_EVENT_KEYWORDS = (
+    "開催",
+    "日程",
+    "予定",
+    "イベント",
+    "伝統の一戦",
+    "女子チーム",
+    "ファンフェス",
+    "GIANTS MANAGER NOTE",
 )
 _ALERT_LABELS = {
     "publish_failure": "publish failure",
@@ -83,6 +123,21 @@ class PublishNoticeRequest:
     subtype: str
     publish_time_iso: str
     summary: str | None = None
+
+
+@dataclass(frozen=True)
+class ManualXContext:
+    article_type: str
+    title: str
+    url: str
+    cleaned_summary: str
+    hook_source: str
+    summary_fallback: bool
+    event_subject: str
+    event_title: str
+    event_name: str
+    event_dates: str
+    event_actor: str
 
 
 @dataclass(frozen=True)
@@ -264,7 +319,141 @@ def _collapse_title(value: str) -> str:
     return compact[: _SUMMARY_TITLE_LIMIT - 1] + "…"
 
 
-def _manual_x_article_type(subtype: str) -> str:
+def _trim_manual_x_prefix_noise(value: str) -> str:
+    compact = _WHITESPACE_RE.sub(" ", str(value or "").strip())
+    while compact:
+        trimmed = compact.lstrip(_MANUAL_X_PREFIX_TRIM_CHARS)
+        trimmed = re.sub(r"^[📰⚾📺🎥📻🗞️🔥✨⭐️❗‼]+\s*", "", trimmed)
+        trimmed = _MANUAL_X_SUMMARY_SOURCE_PREFIX_RE.sub("", trimmed)
+        trimmed = trimmed.lstrip(_MANUAL_X_PREFIX_TRIM_CHARS)
+        trimmed = re.sub(r"^[📰⚾📺🎥📻🗞️🔥✨⭐️❗‼]+\s*", "", trimmed)
+        trimmed = _MANUAL_X_SUMMARY_LABEL_PREFIX_RE.sub("", trimmed)
+        trimmed = trimmed.lstrip(_MANUAL_X_PREFIX_TRIM_CHARS)
+        trimmed = _MANUAL_X_SUMMARY_ARTICLE_PREFIX_RE.sub("", trimmed)
+        trimmed = trimmed.lstrip(_MANUAL_X_PREFIX_TRIM_CHARS)
+        if trimmed == compact:
+            return trimmed
+        compact = trimmed
+    return compact
+
+
+def _remove_title_duplicate_from_summary(summary: str, title: str) -> str:
+    compact = _WHITESPACE_RE.sub(" ", str(summary or "").strip())
+    compact_title = _WHITESPACE_RE.sub(" ", str(title or "").strip())
+    title_variants: list[str] = []
+    if compact_title:
+        title_variants.append(compact_title)
+    stripped_title = re.sub(r"^【[^】]+】\s*", "", compact_title)
+    if stripped_title and stripped_title not in title_variants:
+        title_variants.append(stripped_title)
+    for variant in title_variants:
+        if not variant:
+            continue
+        if compact == variant:
+            continue
+        if compact.startswith(variant):
+            compact = compact[len(variant) :].lstrip(" 　:：-、。")
+        elif variant in compact:
+            compact = compact.replace(variant, " ").strip()
+    return _WHITESPACE_RE.sub(" ", compact).strip()
+
+
+def _strip_repeated_article_prefix(summary: str) -> str:
+    positions = [match.start() for match in re.finditer(r"【巨人】", summary)]
+    if len(positions) >= 2:
+        return summary[: positions[1]].rstrip(" 　、,。")
+    return summary
+
+
+def _clean_summary_for_x_candidate(summary: str | None, *, title: str = "") -> str:
+    compact = _WHITESPACE_RE.sub(" ", str(summary or "").strip())
+    if not compact:
+        return "(なし)"
+    compact = _MANUAL_X_SUMMARY_TRUNCATION_RE.sub("", compact).rstrip(" 　、,")
+    compact = _trim_manual_x_prefix_noise(compact)
+    compact = _remove_title_duplicate_from_summary(compact, title)
+    compact = _strip_repeated_article_prefix(compact)
+    compact = _trim_manual_x_prefix_noise(compact)
+    compact = _MANUAL_X_SUMMARY_TRUNCATION_RE.sub("", compact).rstrip(" 　、,")
+    compact = _WHITESPACE_RE.sub(" ", compact).strip()
+    return compact or "(なし)"
+
+
+def _manual_x_summary_falls_back_to_title(summary: str | None, cleaned_summary: str, title: str) -> bool:
+    if cleaned_summary == "(なし)":
+        return True
+    if len(cleaned_summary) < 30 and not cleaned_summary.endswith(("。", "！", "?", "？", "」")):
+        return True
+    raw_summary = _WHITESPACE_RE.sub(" ", str(summary or "").strip())
+    if _MANUAL_X_SUMMARY_TRUNCATION_RE.search(raw_summary):
+        return True
+    if cleaned_summary.count("「") > cleaned_summary.count("」"):
+        return True
+    if cleaned_summary.count("『") > cleaned_summary.count("』"):
+        return True
+    return cleaned_summary == title
+
+
+def _manual_x_is_notice_event(title: str, summary: str, raw_summary: str) -> bool:
+    combined = " ".join(
+        item for item in (_WHITESPACE_RE.sub(" ", str(title or "").strip()), summary, raw_summary) if item
+    )
+    if not combined:
+        return False
+    if not any(keyword in combined for keyword in _MANUAL_X_NOTICE_EVENT_KEYWORDS):
+        return False
+    return bool(_MANUAL_X_DATE_RE.search(combined)) or "GIANTS MANAGER NOTE" in combined.upper()
+
+
+def _manual_x_event_subject(title: str, summary: str) -> str:
+    combined = f"{summary} {title}"
+    if "女子チーム" in combined:
+        return "巨人女子チーム"
+    if "ファンフェス" in combined:
+        return "巨人ファンフェス"
+    if "イベント" in combined:
+        return "巨人イベント"
+    return "巨人"
+
+
+def _manual_x_event_title(title: str, summary: str) -> str:
+    combined = f"{summary} {title}"
+    quoted_match = re.search(r"「[^」]+」", combined)
+    if quoted_match:
+        return quoted_match.group(0)
+    for keyword in ("伝統の一戦", "ファンフェス"):
+        if keyword in combined:
+            return keyword
+    return ""
+
+
+def _manual_x_event_name(subject: str, event_title: str) -> str:
+    if event_title:
+        if event_title.startswith("「"):
+            return f"{subject}の{event_title}".strip()
+        return f"{subject} {event_title}".strip()
+    return subject or "巨人イベント"
+
+
+def _manual_x_event_dates(title: str, summary: str) -> str:
+    dates: list[str] = []
+    for match in _MANUAL_X_DATE_RE.finditer(f"{title} {summary}"):
+        month = match.group(1) or match.group(3)
+        day = match.group(2) or match.group(4)
+        if not month or not day:
+            continue
+        normalized = f"{int(month)}月{int(day)}日"
+        if normalized not in dates:
+            dates.append(normalized)
+    return "と".join(dates)
+
+
+def _manual_x_event_actor(title: str, summary: str) -> str:
+    match = _MANUAL_X_EVENT_ACTOR_RE.search(f"{title} {summary}")
+    return match.group(1) if match else ""
+
+
+def _manual_x_article_type(subtype: str, *, title: str = "", summary: str = "", raw_summary: str = "") -> str:
     normalized = str(subtype or "").strip().lower()
     if "lineup" in normalized or "スタメン" in normalized:
         return "lineup"
@@ -272,6 +461,8 @@ def _manual_x_article_type(subtype: str) -> str:
         return "postgame"
     if "farm" in normalized or "二軍" in normalized or "2軍" in normalized:
         return "farm"
+    if _manual_x_is_notice_event(title, summary, raw_summary):
+        return "notice_event"
     if "notice" in normalized or "transaction" in normalized or "roster" in normalized or "公示" in normalized:
         return "notice"
     if "program" in normalized or "tv" in normalized or "番組" in normalized:
@@ -286,19 +477,21 @@ def _manual_x_has_sensitive_word(title: str, summary: str) -> bool:
 
 def _manual_x_template_sequence(article_type: str, *, sensitive: bool) -> list[str]:
     if article_type == "lineup":
-        templates = ["article_intro", "lineup_focus", "fan_reaction_hook", "inside_voice"]
+        templates = ["article_intro", "lineup_focus", "inside_voice", "fan_reaction_hook"]
     elif article_type == "postgame":
-        templates = ["article_intro", "postgame_turning_point", "fan_reaction_hook", "inside_voice"]
+        templates = ["article_intro", "postgame_turning_point", "inside_voice", "fan_reaction_hook"]
     elif article_type == "farm":
-        templates = ["article_intro", "farm_watch", "why_it_matters", "inside_voice"]
+        templates = ["article_intro", "farm_watch", "inside_voice", "why_it_matters"]
+    elif article_type == "notice_event":
+        templates = ["article_intro", "event_detail", "event_inside_voice"]
     elif article_type == "notice":
         templates = ["article_intro", "notice_note", "notice_careful"]
     elif article_type == "program":
-        templates = ["article_intro", "program_memo", "why_it_matters", "inside_voice"]
+        templates = ["article_intro", "program_memo", "inside_voice", "why_it_matters"]
     else:
         templates = ["article_intro", "why_it_matters", "fan_reaction_hook"]
 
-    if sensitive or article_type == "notice":
+    if sensitive or article_type in {"notice", "notice_event"}:
         templates = [template for template in templates if template != "fan_reaction_hook"]
     if article_type not in {"lineup", "postgame", "farm", "program"}:
         templates = [template for template in templates if template != "inside_voice"]
@@ -337,15 +530,29 @@ def _render_manual_x_template(
     article_type: str,
     title: str,
     hook_source: str,
+    summary_fallback: bool,
+    event_subject: str,
+    event_title: str,
+    event_name: str,
+    event_dates: str,
+    event_actor: str,
     url: str,
     include_url: bool,
 ) -> str:
     suffix = f" {url}" if include_url and url else ""
     if template_type == "article_intro":
+        if article_type == "notice_event":
+            detail = f"{event_actor}のコメントも紹介しています。" if event_actor else "見どころも紹介しています。"
+            subject = event_name or title or "巨人イベント"
+            return f"{subject}開催情報を更新しました。{detail}{suffix}"
         return f"{_manual_x_article_intro_lead(article_type)}{title}{suffix}"
     if template_type == "why_it_matters":
+        if summary_fallback and article_type == "default":
+            return f"押さえておきたいポイントを記事にまとめました。{title}{suffix}"
         return f"押さえておきたいポイント。{hook_source}{suffix}"
     if template_type == "fan_reaction_hook":
+        if summary_fallback and article_type == "default":
+            return f"巨人ニュースを更新しました。記事でポイントを整理しています。{suffix}".strip()
         return f"{_manual_x_fan_reaction_lead(article_type)} {hook_source}{suffix}"
     if template_type == "lineup_focus":
         return f"試合前に確認したい起用ポイント。{title}{suffix}"
@@ -361,6 +568,14 @@ def _render_manual_x_template(
         return f"公示・選手動向を整理。{title}{suffix}"
     if template_type == "notice_careful":
         return f"事実関係を確認しながら見たい動き。{hook_source}{suffix}"
+    if template_type == "event_detail":
+        event_label = f"{event_subject}の注目イベント{event_title}" if event_title else event_name or title
+        detail = f"開催日程と{event_actor}のコメントを整理しました。" if event_actor else "開催日程と注目ポイントを整理しました。"
+        return f"{event_label}。{detail}{suffix}"
+    if template_type == "event_inside_voice":
+        lead = f"{event_dates}に行われる" if event_dates else "開催前に確認しておきたい"
+        subject = event_name or title or "巨人イベント"
+        return f"{lead}{subject}。試合前に押さえておきたいポイントです。{suffix}".strip()
     if template_type == "program_memo":
         return f"見逃し注意の巨人関連情報。{title}{suffix}"
     if template_type == "inside_voice":
@@ -392,6 +607,36 @@ def _manual_x_candidate_suppression_reason(
     return None
 
 
+def _manual_x_context(request: PublishNoticeRequest) -> ManualXContext:
+    title = _collapse_title(request.title) or "巨人ニュース"
+    url = str(request.canonical_url or "").strip()
+    raw_summary = _WHITESPACE_RE.sub(" ", str(request.summary or "").strip())
+    cleaned_summary = _clean_summary_for_x_candidate(request.summary, title=title)
+    article_type = _manual_x_article_type(
+        request.subtype,
+        title=title,
+        summary=cleaned_summary,
+        raw_summary=raw_summary,
+    )
+    summary_fallback = _manual_x_summary_falls_back_to_title(request.summary, cleaned_summary, title)
+    hook_source = cleaned_summary if cleaned_summary != "(なし)" and not summary_fallback else title
+    event_subject = _manual_x_event_subject(title, cleaned_summary)
+    event_title = _manual_x_event_title(title, cleaned_summary)
+    return ManualXContext(
+        article_type=article_type,
+        title=title,
+        url=url,
+        cleaned_summary=cleaned_summary,
+        hook_source=hook_source,
+        summary_fallback=summary_fallback,
+        event_subject=event_subject,
+        event_title=event_title,
+        event_name=_manual_x_event_name(event_subject, event_title),
+        event_dates=_manual_x_event_dates(title, cleaned_summary),
+        event_actor=_manual_x_event_actor(title, cleaned_summary),
+    )
+
+
 def build_manual_x_post_candidates(
     request: PublishNoticeRequest,
     *,
@@ -401,32 +646,41 @@ def build_manual_x_post_candidates(
 
     if _manual_x_candidate_suppression_reason(request, yellow_log_path=yellow_log_path):
         return []
-    title = _collapse_title(request.title) or "巨人ニュース"
-    url = str(request.canonical_url or "").strip()
-    summary = _normalize_summary(request.summary)
-    hook_source = summary if summary != "(なし)" else title
-    article_type = _manual_x_article_type(request.subtype)
+    context = _manual_x_context(request)
     template_sequence = _manual_x_template_sequence(
-        article_type,
-        sensitive=_manual_x_has_sensitive_word(title, summary),
+        context.article_type,
+        sensitive=_manual_x_has_sensitive_word(context.title, context.cleaned_summary),
     )
 
     candidates: list[tuple[str, str]] = []
+    seen_texts: set[str] = set()
     url_candidate_count = 0
     for template_type in template_sequence:
+        if len(candidates) >= 3:
+            break
         wants_url = template_type in _MANUAL_X_URL_TEMPLATES
         include_url = wants_url and url_candidate_count < 3
         if include_url:
             url_candidate_count += 1
         text = _render_manual_x_template(
             template_type,
-            article_type=article_type,
-            title=title,
-            hook_source=hook_source,
-            url=url,
+            article_type=context.article_type,
+            title=context.title,
+            hook_source=context.hook_source,
+            summary_fallback=context.summary_fallback,
+            event_subject=context.event_subject,
+            event_title=context.event_title,
+            event_name=context.event_name,
+            event_dates=context.event_dates,
+            event_actor=context.event_actor,
+            url=context.url,
             include_url=include_url,
         )
-        candidates.append((f"x_post_{len(candidates) + 1}_{template_type}", _trim_manual_x_post_text(text)))
+        trimmed = _trim_manual_x_post_text(text)
+        if not trimmed or trimmed in seen_texts:
+            continue
+        seen_texts.add(trimmed)
+        candidates.append((f"x_post_{len(candidates) + 1}_{template_type}", trimmed))
     return candidates
 
 

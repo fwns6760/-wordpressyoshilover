@@ -20,6 +20,7 @@ NO_CLEANUP_REQUIRED_FLAGS = frozenset({"roster_movement_yellow"})
 
 HARD_STOP_FLAGS = frozenset(
     {
+        "death_or_grave_incident",
         "unsupported_named_fact",
         "obvious_misinformation",
         "title_body_mismatch_strict",

@@ -1107,6 +1107,26 @@ doc/
 - **last_commit**: `7b1bb7d` 209 source coverage and topic sensor audit
 - **parent**: 005 / 014 / 064 / 128 / 180
 
+### 210 primary-source-expansion-plan
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: **REVIEW_NEEDED**(7 source 候補 + 重複対策 5 項目 + sub-ticket outline を doc-only で整理、実装は別 ticket)
+- **owner**: Claude(spec) / Codex(将来実装)
+- **lane**: Claude / Codex
+- **ready_for**: user 確認後 sub-ticket 起票
+- **next_action**: user 確認後 210a source_trust family 拡張から実装を開始するか判断
+- **blocked_by**: none
+- **user_action_required**: 実装 priority 判断
+- **write_scope**: `doc/active/210-primary-source-expansion-plan.md`(本便 spec のみ、実装は別 ticket)
+- **doc_path**: `doc/active/210-primary-source-expansion-plan.md`
+- **acceptance**: 7 source 候補 + 重複対策 5 項目 + sub-ticket outline が documented
+- **repo_state**: pushed
+- **commit_state**: `4acda2b`
+- **next_prompt_path**: -
+- **last_commit**: `4acda2b` 210 primary source expansion plan
+- **parent**: 209
+
 ### 211 restore-202-203-205-docs-after-207-commit-accident
 
 - **alias**: -

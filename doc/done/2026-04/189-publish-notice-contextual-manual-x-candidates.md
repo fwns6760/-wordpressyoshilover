@@ -4,7 +4,7 @@
 - status: CLOSED
 - owner: Codex B
 - lane: B
-- parent: 188 / 095-D / 131 / PUB-005
+- parent: 190 / 191 / 095-D / 131 / PUB-005
 
 ## Purpose
 

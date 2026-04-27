@@ -635,44 +635,122 @@ doc/
 - **next_prompt_path**: -
 - **parent**: 126 / 127 / 128 / PUB-004 / PUB-005
 
+### 183 publish-gate-aggressive-relax
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: **CLOSED**
+- **owner**: Codex B
+- **lane**: B
+- **ready_for**: none
+- **next_action**: none
+- **blocked_by**: none
+- **user_action_required**: none
+- **write_scope**: `src/guarded_publish_runner.py`, `src/guarded_publish_evaluator.py`, `tests/test_guarded_publish_runner.py`, `tests/test_guarded_publish_evaluator.py`
+- **doc_path**: `doc/done/2026-04/183-publish-gate-aggressive-relax.md`
+- **acceptance**: ✓ post-cleanup verify 3 種 warning_only 化 / env strict 復元可 / hard_stop 2 件 repairable 降格 / full pytest pass
+- **repo_state**: pushed
+- **commit_state**: `f5b91a3`
+- **next_prompt_path**: -
+- **last_commit**: `f5b91a3` 183 publish-gate aggressive relax
+
+### 184 ledger-integration-cloud-run
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: **CLOSED**
+- **owner**: Codex B
+- **lane**: B
+- **ready_for**: none
+- **next_action**: none
+- **blocked_by**: none
+- **user_action_required**: none
+- **write_scope**: `src/guarded_publish_evaluator.py`, `src/guarded_publish_runner.py`, `src/runner_ledger_integration.py`, `src/tools/run_draft_body_editor_lane.py`, `src/tools/run_guarded_publish.py`, `src/tools/run_publish_notice_email_dry_run.py`, related tests
+- **doc_path**: `doc/done/2026-04/184-ledger-integration-cloud-run.md`
+- **acceptance**: ✓ 4 runner に Firestore/GCS ledger wire-up / env opt-in / failure tolerant / full pytest pass
+- **repo_state**: pushed
+- **commit_state**: `59b2438`
+- **next_prompt_path**: -
+- **last_commit**: `59b2438` 184 ledger integration
+- **parent**: 168 / 179 / 177 / 160 / 161
+
+### 185 guarded-publish-entrypoint-exclude-published-today-relax
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: **CLOSED**
+- **owner**: Codex A
+- **lane**: A
+- **ready_for**: none
+- **next_action**: none
+- **blocked_by**: none
+- **user_action_required**: none
+- **write_scope**: `bin/guarded_publish_entrypoint.sh`
+- **doc_path**: `-(board row only)`
+- **acceptance**: ✓ entrypoint の `--exclude-published-today` を一時除去し、same-day publish 済み記事との `game_key` 衝突で draft が silent 除外される経路を止血
+- **repo_state**: pushed
+- **commit_state**: `1842fb8`
+- **next_prompt_path**: -
+- **last_commit**: `1842fb8` 185 entrypoint exclude-published-today 一時除去
+
+### 186 scan-limit-pagination-and-history-dedup-narrow
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: **CLOSED**
+- **owner**: Codex A
+- **lane**: A
+- **ready_for**: none
+- **next_action**: none
+- **blocked_by**: none
+- **user_action_required**: none
+- **write_scope**: `src/guarded_publish_evaluator.py`, `src/guarded_publish_runner.py`, `tests/test_guarded_publish_evaluator.py`, `tests/test_guarded_publish_runner.py`
+- **doc_path**: `doc/done/2026-04/186-scan-limit-pagination-and-history-dedup-narrow.md`
+- **acceptance**: ✓ `max_pool` honor pagination / refused history dedup を 24h window に narrow / tests +7 / pytest 1431→1438
+- **repo_state**: pushed
+- **commit_state**: `26c6ae2`
+- **next_prompt_path**: -
+- **last_commit**: `26c6ae2` 186 scan_limit cap 緩和 + history dedup refused 24h narrow
+- **parent**: 105 / 145 / guarded-publish history
+
 ### 187 publish-notice-scheduler-uri-v1-fix-verification
 
 - **alias**: -
 - **priority**: P0.5
-- **status**: **REVIEW_NEEDED**(step 1 config verify 完了、step 2-4 は Codex sandbox の DNS 制約で未実行)
-- **owner**: Codex(A) / Claude follow-up
+- **status**: **CLOSED**(step 1 config verify は `0cc7cc3` で記録済み、step 2-4 は 188 Fix A 適用 + manual trigger success で実質解決)
+- **owner**: Codex(A) / Claude
 - **lane**: A
-- **ready_for**: user shell または別の non-sandbox 環境で step 2-4 を再実行
-- **next_action**: `gcloud scheduler jobs run publish-notice-trigger` と後続の logging / execution list を外部 shell で実行し、成功したら `doc/done/2026-04/` へ移動して close
-- **blocked_by**: Codex sandbox から `cloudscheduler.googleapis.com` を解決できない
-- **user_action_required**: yes(`2026-04-27 09:15 JST` の自然 tick 観測または手動 gcloud verify)
+- **ready_for**: none
+- **next_action**: none(ticket scope close。`2026-04-27 09:15 JST` の自然 tick 観測は別 follow-up)
+- **blocked_by**: none
+- **user_action_required**: none
 - **write_scope**: `doc/active/187-publish-notice-scheduler-uri-v1-fix.md`, `doc/README.md`, `doc/active/assignments.md`
-- **doc_path**: `doc/active/187-publish-notice-scheduler-uri-v1-fix.md`
-- **acceptance**: step 1 で v1 URI / ENABLED / `15 * * * *` verify、step 2-4 は external shell で `PERMISSION_DENIED` 解消と新 execution 起動を確認
-- **repo_state**: local doc-only record
-- **commit_state**: local doc-only commit
+- **doc_path**: `doc/done/2026-04/187-publish-notice-scheduler-uri-v1-fix.md`
+- **acceptance**: ✓ v1 URI / ENABLED / `15 * * * *` verify 記録済み、後続 trigger/execution 確認は 188 IAM fix 適用後 `publish-notice-9rsjt` success で担保
+- **repo_state**: pushed
+- **commit_state**: `0cc7cc3`
 - **next_prompt_path**: -
-- **last_commit**: -
+- **last_commit**: `74ccef6` 188 IAM fix + manual trigger success で 187 実質 close
 - **parent**: 161 / 103
 
 ### 188 publish-notice-scheduler-iam-fix
 
 - **alias**: -
 - **priority**: **P0.5**
-- **status**: **REVIEW_NEEDED**(read-only compare 完了、user shell で live fix を 1 本適用待ち)
-- **owner**: Codex A / Claude follow-up / User shell execute
+- **status**: **CLOSED**(Fix A runbook `74ccef6` 着地、`seo-scheduler-invoker` に invoker 付与済み、manual trigger `publish-notice-9rsjt` で 20 mail 送信成功)
+- **owner**: Codex A / User / Claude
 - **lane**: A
-- **ready_for**: Fix A(job-level `roles/run.invoker`)を user shell で適用し、manual run + logging + execution verify
-- **next_action**: `publish-notice-trigger` の caller SA `seo-scheduler-invoker@...` に `run.jobs.run` を与える。推奨は `gcloud run jobs add-iam-policy-binding publish-notice --member=serviceAccount:seo-scheduler-invoker@... --role=roles/run.invoker`
-- **blocked_by**: Codex は live IAM / Scheduler write を打たない。user shell での実行が必要
-- **user_action_required**: yes(Fix A 実行、必要なら Fix B で scheduler caller SA を compute SA に寄せる)
+- **ready_for**: none
+- **next_action**: none(ticket scope close。自然 tick 09:15 JST の観測は別 follow-up)
+- **blocked_by**: none
+- **user_action_required**: none
 - **write_scope**: `doc/active/188-publish-notice-scheduler-iam-fix.md`, `doc/README.md`, `doc/active/assignments.md`
-- **doc_path**: `doc/active/188-publish-notice-scheduler-iam-fix.md`
-- **acceptance**: scheduler YAML diff と IAM compare が記録済み、真因が caller SA 権限不足で説明されている、Fix A/B/C のコピペ可能 gcloud runbook、verify/rollback 手順、secret 非表示
-- **repo_state**: local doc-only record
-- **commit_state**: local doc-only commit
+- **doc_path**: `doc/done/2026-04/188-publish-notice-scheduler-iam-fix.md`
+- **acceptance**: ✓ YAML/IAM 差分比較 / Fix A-B-C runbook / caller SA 真因説明 / Fix A 実行後 `publish-notice-9rsjt` success
+- **repo_state**: pushed
+- **commit_state**: `74ccef6`
 - **next_prompt_path**: -
-- **last_commit**: -
+- **last_commit**: `74ccef6` 188 publish-notice scheduler IAM 修正 runbook
 - **parent**: 161 / 187 / 160
 
 ### 189 publish-notice-contextual-manual-x-candidates
@@ -689,11 +767,51 @@ doc/
 - **write_scope**: `src/publish_notice_email_sender.py`, `tests/test_publish_notice_email_sender.py`, `doc/done/2026-04/189-publish-notice-contextual-manual-x-candidates.md`, `doc/README.md`, `doc/active/assignments.md`
 - **doc_path**: `doc/done/2026-04/189-publish-notice-contextual-manual-x-candidates.md`
 - **acceptance**: ✓ subtype別出力 / notice fan hookなし / 怪我・復帰ワード fan hookなし / inside_voice 条件付き / 280字以内 / URL付き最大3 / `tests/test_publish_notice_email_sender.py` pass
-- **repo_state**: local implementation committed
-- **commit_state**: local commit
+- **repo_state**: pushed
+- **commit_state**: `b7a9e1f`
 - **next_prompt_path**: -
-- **last_commit**: -
-- **parent**: 188 / 095-D / 131 / PUB-005
+- **last_commit**: `b7a9e1f` 189 contextual manual X candidates for publish notices
+- **parent**: 190 / 191 / 095-D / 131 / PUB-005
+
+### 190 publish-notice-manual-x-candidates-impl
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: **REVIEW_NEEDED**(impl は `1ac710b` で land 済みだが、元依頼は design-only で user spec freeze 前の着地)
+- **owner**: Claude / User follow-up
+- **lane**: B
+- **ready_for**: user spec 確認
+- **next_action**: `1ac710b` の manual X candidate 実装を keep するか、191 spec に合わせて再整理するかを user 判断
+- **blocked_by**: user spec confirmation
+- **user_action_required**: yes(impl 先行の扱い判断)
+- **write_scope**: `src/publish_notice_email_sender.py`, `tests/test_publish_notice_email_sender.py`, `doc/active/190-publish-notice-manual-x-candidates-impl.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/active/190-publish-notice-manual-x-candidates-impl.md`
+- **acceptance**: impl 内容が記録され、元要望との差分(hashtags 不在 / design-only 先行逸脱)が明記されている
+- **repo_state**: pushed
+- **commit_state**: `1ac710b`
+- **next_prompt_path**: -
+- **last_commit**: `1ac710b` 188 add manual X candidates to publish notices
+- **parent**: 191 / 095-D / 131 / PUB-005
+
+### 191 publish-notice-manual-x-candidates-spec
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: **REVIEW_NEEDED**(spec doc `b6b2b2b` は存在するが、実装 190/189 が先行しているため整合判断が必要)
+- **owner**: Claude / User follow-up
+- **lane**: B
+- **ready_for**: user spec 確認
+- **next_action**: 元 user 要望(design-only / hashtag 付き / 自動 X 投稿中止)を正式 spec として確定し、190/189 着地との差分を判断
+- **blocked_by**: user spec confirmation
+- **user_action_required**: yes(spec freeze)
+- **write_scope**: `doc/active/191-publish-notice-manual-x-candidates-spec.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/active/191-publish-notice-manual-x-candidates-spec.md`
+- **acceptance**: 元 user 要望、`b6b2b2b` doc 内容、190/189 実装との差分が一望できる
+- **repo_state**: pushed
+- **commit_state**: `b6b2b2b`
+- **next_prompt_path**: -
+- **last_commit**: `b6b2b2b` 188 ticket publish notice manual X candidates
+- **parent**: 095-D / 131 / PUB-005
 
 ### 130 pub004-hard-stop-vs-repairable-before-publish
 

@@ -893,6 +893,26 @@ doc/
 - **last_commit**: -
 - **parent**: 195 / 176
 
+### 199 publish-notice-rebuild-a9c2814
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: **BLOCKED_USER**(`publish-notice` の `a9c2814` rebuild + deploy は user 明示 GO 済みだが、Codex sandbox では `gcloud` active account に有効 credential がなく、`gcloud run jobs describe publish-notice` の read-only verify 時点で停止)
+- **owner**: Codex / User / Claude follow-up
+- **lane**: A
+- **ready_for**: user shell rerun with valid gcloud auth
+- **next_action**: 1) user shell で Cloud Build / Cloud Run Job update を runbook 通り実行 2) `publish-notice` の latest execution log で `manual_x_post_candidates:` を確認 3) 成功後に Claude が close
+- **blocked_by**: user-side gcloud auth / shell execution
+- **user_action_required**: **YES**(user shell で `publish-notice` build/update/verify を実行)
+- **write_scope**: `doc/waiting/199-publish-notice-rebuild-a9c2814.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/waiting/199-publish-notice-rebuild-a9c2814.md`
+- **acceptance**: auth failure の exact point を記録し、`publish-notice` のみを対象にした user-shell runbook / verify / rollback を残し、他 Job / env / scheduler / secret / WP / X に未変更で止まっている
+- **repo_state**: local doc update
+- **commit_state**: pending ticket commit
+- **next_prompt_path**: -
+- **last_commit**: -
+- **parent**: 188 / 189 / 194
+
 ### 130 pub004-hard-stop-vs-repairable-before-publish
 
 - **alias**: -

@@ -1,6 +1,6 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-04-27 JST(197 195 live deploy runbook / blocked-user 追加 + 198 190/191 keep ratify close + 196 ingestion 5分リアルタイム trigger 追加 + 195 article footer 手動X share corner 実装 + 194 publish-notice 5分cron化 + 192 doc hygiene retry + 188/187/186/185/184/183 close)
+最終更新: 2026-04-27 JST(199 publish-notice rebuild runbook / blocked-user 追加 + 197 195 live deploy runbook / blocked-user 追加 + 198 190/191 keep ratify close + 196 ingestion 5分リアルタイム trigger 追加 + 195 article footer 手動X share corner 実装 + 194 publish-notice 5分cron化 + 192 doc hygiene retry + 188/187/186/185/184/183 close)
 
 ## 最初に読む
 
@@ -50,6 +50,7 @@
 |---|---|---|---|---|
 | **174 x-api-cloud-run-live-smoke** | P0.5 | BLOCKED_USER | 149のX live unlock後 | User → A |
 | **197 195 live deploy manual X share corner** | P0.5 | BLOCKED_USER | Xserver 実接続情報 + WP root path + option false を先置きできる user-side shell / WP admin access | User / Claude |
+| **199 publish-notice rebuild a9c2814** | P0.5 | BLOCKED_USER | user shell で `publish-notice` の Cloud Build / Job image update / verify を実行。Codex sandbox の `gcloud` は active account credential invalid で read-only verify 時点停止 | User / Claude |
 | **175 x-controlled-autopost-cloud-rollout** | P0.5 | BLOCKED | 174 smoke成功 | Claude / A |
 | **128 SNS auto-publish** | P1 | PARKED | 180で入口/出口境界整理後 | Codex A |
 | **151 X Phase 4 cap3 ramp** | P1 | PARKED | 150 + 7日stable | Claude / A |

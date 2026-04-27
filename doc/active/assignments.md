@@ -1,6 +1,6 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-04-27 JST(217 board 反映 + 3 commit 記録 / 番号衝突 b36c30c→218 注記 + 214 worktree cleanup + 210 board 追加、213 reconciliation で 207/208/209/211 row 整合 + 202-205 operating policy clarify + 199 live verify / review-needed 化 + 197 ready-for-auth-executor 化 + 200 scanner subtype fallback close + 201 readiness_guard flaky ticket 追加 + 198 190/191 keep ratify close + 196 ingestion 5分リアルタイム trigger 追加 + 195 article footer 手動X share corner 実装 + 194 publish-notice 5分cron化 + 192 doc hygiene retry + 188/187/186/185/184/183 close)
+最終更新: 2026-04-27 JST(220 marketing board split / MKT-001 setup + 217 board 反映 + 3 commit 記録 / 番号衝突 b36c30c→218 注記 + 214 worktree cleanup + 210 board 追加、213 reconciliation で 207/208/209/211 row 整合 + 202-205 operating policy clarify + 199 live verify / review-needed 化 + 197 ready-for-auth-executor 化 + 200 scanner subtype fallback close + 201 readiness_guard flaky ticket 追加 + 198 190/191 keep ratify close + 196 ingestion 5分リアルタイム trigger 追加 + 195 article footer 手動X share corner 実装 + 194 publish-notice 5分cron化 + 192 doc hygiene retry + 188/187/186/185/184/183 close)
 
 ## 最初に読む
 
@@ -43,7 +43,7 @@
 | **209 source coverage and topic sensor audit** | P0.5 | REVIEW_NEEDED | Codex-M / Claude | `7b1bb7d` で source coverage / SNS topic sensor / duplicate suppression を棚卸し。次便 210 で primary source expansion 優先度を判断 |
 | **210 primary source expansion plan** | P0.5 | REVIEW_NEEDED | Claude / Codex | `4acda2b` で giants.jp / npb.jp / 各紙 web / Yahoo 配信元 7 source 候補と重複対策 5 項目を documented。次便 210a source_trust 拡張 |
 | **217 wp publish all-mode hotfix** | P0 | REVIEW_NEEDED | Codex / Claude | `b03890c` で injury_death を death_or_grave_incident hard_stop + roster_movement_yellow publishable に分解。GCP 反映待ち、反映後 63795 再判定 |
-| **219 publish-notice marketing mail classification** | P0.5 | READY | Codex B / Claude | 件名先頭を `【投稿候補】/【公開済】/【要確認】...` にして、Gmail一覧だけで次アクションが分かるようにする |
+| **MKT-001 / 219 publish-notice marketing mail classification** | P0.5 | IN_FLIGHT | Codex B / Claude | `bh1vb526h` 並走で src/tests 実装中。marketing 正本は `doc/marketing/README.md` と `doc/marketing/active/MKT-001-publish-notice-marketing-mail-classification.md` |
 | **105 / PUB-004-D** | P0 | AUTO 5min cron | Codex-GCP + Claude監視 | RSS新着を5-15分内にauto publish、daily cap 100 |
 | **042 draft-body-editor** | P0 | GCP本線 / 残WSLはgemini_auditのみ | Codex-GCP + Claude監視 | GCP上のCodex/Gemini repair、WP article write、品質/メール系実行を監視。WSL本線依存を戻さない |
 | **155 GCP migration master** | P0.5 | IN_FLIGHT | Claude / A | 主要移行は完了。残りは162/163とX live系 |
@@ -55,13 +55,23 @@
 | ticket | priority | status | 担当 | 次 action |
 |---|---|---|---|---|
 | **179 repair learning log Firestore + GCS** | P0 | READY / 即fire | Codex B → Codex-GCP | FirestoreLedgerWriter + ArtifactUploaderを実装し、GCP実行へ接続 |
-| **219 publish-notice marketing mail classification** | P0.5 | READY / 急ぎ | Codex B | 件名先頭だけで `投稿候補 / 公開済 / 要確認` が分かるようにし、X投稿候補メールをマーケ作業へつなげる |
 | **180 SNS topic intake lane separation** | P0.5 | READY | Claude / Codex B → Codex-GCP | SNS入口とX出口の境界をdoc-onlyで明文化し、SNS topic処理をGCP実行前提に整理 |
 | **205 GCP runtime drift audit** | P0.5 | READY | Codex A / Claude | Cloud Run Job image / Scheduler / WSL cron / latest execution / publish-notice mail / GCS history の drift を read-only 監査 |
 | **201 readiness_guard flaky** | P1 | READY | Codex B | `tests/test_guarded_publish_readiness_guard.py::test_human_format_renders_summary` の real-now 依存を fixed `now` 注入または狭い assertion 調整で解消 |
 | **162 gemini_audit GCP migration** | P1 | QUEUED / 後回し可 | Claude / A | 残WSL cronはgemini_auditのみ。影響軽微なので急がない |
 | **163 quality-monitor / quality-gmail GCP migration** | P1 | QUEUED | Claude / A → Codex-GCP | quality monitor / quality mail本文生成をGCP化 |
 | **149 X Phase 2 manual live 1** | P0.5 | READY / user境界 | Claude / A | userのX live unlock後、1件だけmanual post |
+
+## マーケ主線
+
+| ticket | priority | status | 担当 | 次 action |
+|---|---|---|---|---|
+| **MKT-001 publish-notice marketing mail classification** | P0.5 | IN_FLIGHT | Codex B / Claude | `bh1vb526h` 並走で `src/publish_notice_email_sender.py` と `tests/test_publish_notice_email_sender.py` を実装中。doc 側の正本は `doc/marketing/README.md` |
+| **MKT-002 gmail label filter color runbook** | P1 | PARKED | Claude / Codex-M | `MKT-001` の件名 prefix と metadata block が安定した後に Gmail label/filter/color runbook を spec 化 |
+| **MKT-003 daily manual x posting workflow** | P1 | PARKED | Claude / Codex-M | `MKT-001` 実装後に手動 X 投稿の daily workflow を分解 |
+| **MKT-004 x candidate quality scoring** | P1 | PARKED | Claude / Codex-M | `MKT-001` の出力例を前提に X 候補の quality scoring 軸を定義 |
+| **MKT-005 weekly marketing digest** | P1.5 | PARKED | Claude / Codex-M | 日次運用の安定後に weekly digest の項目と書式を決める |
+| **MKT-006 manual x feedback ledger** | P1.5 | PARKED | Claude / Codex-M | 手動 X 投稿の feedback ledger の残し方を固める |
 
 ## user / 外部待ち / auth executor
 

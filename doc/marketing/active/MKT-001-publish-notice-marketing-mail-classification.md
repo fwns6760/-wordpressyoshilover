@@ -1,4 +1,36 @@
-# 219 publish-notice marketing mail classification
+# MKT-001 publish-notice marketing mail classification
+
+## Meta
+
+- number: MKT-001
+- alias: 219
+- status: IN_FLIGHT
+- priority: P0.5
+- note: parallel implementation is active in `bh1vb526h`; the original 219 spec body below is preserved and this doc is now the marketing-source path
+
+## Alias Note
+
+This doc inherits the original `219 publish-notice marketing mail classification` content with a historical alias retained for the repo-wide board and implementation references.
+
+## Fixed Subject Prefixes
+
+- `【投稿候補】`
+- `【公開済】`
+- `【要確認】`
+- `【警告】`
+- `【まとめ】`
+- `【緊急】`
+
+## Fixed Body Metadata Fields
+
+- `mail_type`
+- `mail_class`
+- `action`
+- `priority`
+- `post_id`
+- `subtype`
+- `x_post_ready`
+- `reason`
 
 ## Summary
 

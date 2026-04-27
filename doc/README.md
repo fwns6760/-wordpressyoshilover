@@ -1147,6 +1147,26 @@ doc/
 - **last_commit**: `ad729b4` 211 restore 202/203/205 docs after 207 commit accident
 - **parent**: 199 / 202 / 203 / 205 / 207
 
+### 217 wp-publish-all-mode-hotfix
+
+- **alias**: -
+- **priority**: P0(緊急 hotfix)
+- **status**: REVIEW_NEEDED
+- **owner**: Codex(impl)/ Claude(dispatch)
+- **lane**: Codex
+- **ready_for**: GCP authenticated executor
+- **next_action**: GCP 反映(guarded-publish + publish-notice rebuild + Job update b03890c tag)、反映後 63795 再判定
+- **blocked_by**: GCP authenticated executor 待ち
+- **user_action_required**: deploy 実行(authenticated executor)
+- **write_scope**: src/guarded_publish_evaluator.py + src/guarded_publish_runner.py + src/publish_notice_email_sender.py + tests + src/rss_fetcher.py(b36c30c は実質 218、番号衝突)
+- **doc_path**: doc/active/217-wp-publish-all-mode-hotfix.md
+- **acceptance**: 63795 publishable Yellow / death 系 hard_stop 維持 / pytest 1498 pass
+- **repo_state**: pushed
+- **commit_state**: `b03890c`(本体 `579401a` + 補完 `b03890c`、番号衝突 `b36c30c` は実質 218)
+- **next_prompt_path**: -
+- **last_commit**: `b03890c` 217 add death_or_grave_incident to hard-stop set
+- **parent**: 183 / 200
+
 ### 130 pub004-hard-stop-vs-repairable-before-publish
 
 - **alias**: -

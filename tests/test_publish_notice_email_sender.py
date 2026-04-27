@@ -476,6 +476,85 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
             3,
         )
 
+    def test_polish_normalizes_consecutive_spaces(self):
+        self.assertEqual(sender._polish_x_post_text("巨人  勝利"), "巨人 勝利")
+
+    def test_polish_normalizes_full_width_space(self):
+        self.assertEqual(sender._polish_x_post_text("巨人　勝利"), "巨人 勝利")
+
+    def test_polish_limits_repeated_punctuation(self):
+        self.assertEqual(sender._polish_x_post_text("巨人勝利!!! すごい……"), "巨人勝利! すごい…")
+
+    def test_polish_dedupes_hashtags(self):
+        self.assertEqual(
+            sender._polish_x_post_text("巨人勝利 #巨人 #ジャイアンツ #巨人"),
+            "巨人勝利 #巨人 #ジャイアンツ",
+        )
+
+    def test_polish_orders_hashtags_standard(self):
+        self.assertEqual(
+            sender._polish_x_post_text("巨人勝利 #ジャイアンツ #巨人"),
+            "巨人勝利 #巨人 #ジャイアンツ",
+        )
+
+    def test_polish_url_trailing_whitespace_removed(self):
+        self.assertEqual(
+            sender._polish_x_post_text("巨人勝利。https://yoshilover.com/post-123/ \n"),
+            "巨人勝利。 https://yoshilover.com/post-123/",
+        )
+
+    def test_truncation_at_punctuation(self):
+        text = ("あ" * 265) + "。 " + ("い" * 30)
+        trimmed = sender._trim_manual_x_post_text(text)
+
+        self.assertLessEqual(len(trimmed), sender.MAX_MANUAL_X_POST_LENGTH)
+        self.assertTrue(trimmed.endswith("。…"))
+        self.assertNotIn("い", trimmed)
+
+    def test_sensitive_keyword_blocks_x_candidates(self):
+        request = self._request(
+            subtype="default",
+            summary="球団OBの死去を受けてコメントを更新した。",
+        )
+        classification = sender._classify_mail(request)
+        body_lines = sender.build_body_text(request, classification=classification).splitlines()
+
+        self.assertEqual(sender.build_manual_x_post_candidates(request), [])
+        self.assertEqual(classification["reason"], "sensitive_content_x_blocked")
+        self.assertEqual(classification["suppression_reason"], "sensitive_content_x_blocked")
+        self.assertIn("suppressed: sensitive_content_x_blocked", body_lines)
+        self.assertFalse(any(line.startswith("投稿文1") for line in body_lines))
+
+    def test_sensitive_injury_long_term_blocks(self):
+        request = self._request(
+            subtype="postgame",
+            summary="主力選手は全治 6 ヶ月の見込みと発表された。",
+        )
+        classification = sender._classify_mail(request)
+
+        self.assertEqual(sender.build_manual_x_post_candidates(request), [])
+        self.assertEqual(classification["reason"], "sensitive_content_x_blocked")
+        self.assertEqual(classification["suppression_reason"], "sensitive_content_x_blocked")
+
+    def test_existing_218_cleanup_preserved(self):
+        cleaned = sender._clean_summary_for_x_candidate(
+            "📰 報知新聞 / スポーツ報知巨人班X 巨人が逆転勝ち",
+            title="巨人が逆転勝ち",
+        )
+
+        self.assertEqual(cleaned, "巨人が逆転勝ち")
+
+    def test_existing_222_intent_url_preserved(self):
+        text = "巨人の試合結果を更新しました。巨人が接戦を制した https://yoshilover.com/post-123/"
+
+        self.assertEqual(
+            sender._build_x_intent_url(text),
+            "https://twitter.com/intent/tweet?text="
+            "%E5%B7%A8%E4%BA%BA%E3%81%AE%E8%A9%A6%E5%90%88%E7%B5%90%E6%9E%9C%E3%82%92%E6%9B%B4%E6%96%B0"
+            "%E3%81%97%E3%81%BE%E3%81%97%E3%81%9F%E3%80%82%E5%B7%A8%E4%BA%BA%E3%81%8C%E6%8E%A5%E6%88%A6"
+            "%E3%82%92%E5%88%B6%E3%81%97%E3%81%9F%20https%3A%2F%2Fyoshilover.com%2Fpost-123%2F",
+        )
+
     def test_summary_cleanup_removes_source_header(self):
         cleaned = sender._clean_summary_for_x_candidate(
             "📰 報知新聞 / スポーツ報知巨人班X 巨人が逆転勝ち",

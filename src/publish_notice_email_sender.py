@@ -59,6 +59,7 @@ _MANUAL_X_URL_TEMPLATES = frozenset(
         "program_memo",
     }
 )
+_MANUAL_X_STANDARD_HASHTAGS = ("#巨人", "#ジャイアンツ")
 _MANUAL_X_SENSITIVE_WORDS = (
     "怪我",
     "けが",
@@ -72,6 +73,7 @@ _MANUAL_X_SENSITIVE_WORDS = (
     "診断",
 )
 _MANUAL_X_PREFIX_TRIM_CHARS = " /／|｜:：-・、"
+_MANUAL_X_TRAILING_URL_RE = re.compile(r"^(?P<body>.*?)(?P<url>https?://\S+)$")
 _MANUAL_X_SUMMARY_SOURCE_PREFIX_RE = re.compile(
     r"^(?:"
     r"報知新聞|"
@@ -97,6 +99,7 @@ _MANUAL_X_SUMMARY_ARTICLE_PREFIX_RE = re.compile(r"^【巨人】\s*")
 _MANUAL_X_SUMMARY_TRUNCATION_RE = re.compile(r"(?:\s*(?:\[\.\.\.\]|\[\u2026\]|…|\.\.\.))+\s*$")
 _MANUAL_X_DATE_RE = re.compile(r"(?:(\d{1,2})月(\d{1,2})日|(\d{1,2})[/.・](\d{1,2})(?:日)?)")
 _MANUAL_X_EVENT_ACTOR_RE = re.compile(r"([一-龯々ぁ-んァ-ヴー]{2,12}(?:監督|コーチ|投手|捕手|内野手|外野手|選手))")
+_MANUAL_X_LONG_TERM_INJURY_RE = re.compile(r"全治\s*(\d+)\s*(?:ヶ月|か月|ヵ月|カ月)")
 _MANUAL_X_NOTICE_EVENT_KEYWORDS = (
     "開催",
     "日程",
@@ -107,6 +110,24 @@ _MANUAL_X_NOTICE_EVENT_KEYWORDS = (
     "ファンフェス",
     "GIANTS MANAGER NOTE",
 )
+_MANUAL_X_SENSITIVE_SUBTYPE_KEYWORDS = (
+    "injury",
+    "injured",
+    "death",
+    "obituary",
+    "grave_incident",
+    "重大事故",
+)
+_MANUAL_X_SENSITIVE_CONTENT_KEYWORDS = (
+    "死去",
+    "逝去",
+    "危篤",
+    "重症",
+    "重大事故",
+    "抹消",
+    "登録抹消",
+)
+_MANUAL_X_TRUNCATION_PUNCTUATION = "、。!！?？"
 _ALERT_LABELS = {
     "publish_failure": "publish failure",
     "hard_stop": "hard stop",
@@ -198,6 +219,7 @@ class ManualXContext:
     event_name: str
     event_dates: str
     event_actor: str
+    sensitive_x_block_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -535,6 +557,36 @@ def _manual_x_has_sensitive_word(title: str, summary: str) -> bool:
     return any(word in combined for word in _MANUAL_X_SENSITIVE_WORDS)
 
 
+def _manual_x_sensitive_block_reason(
+    request: PublishNoticeRequest,
+    *,
+    article_type: str,
+    title: str,
+    cleaned_summary: str,
+    raw_summary: str,
+) -> str | None:
+    subtype = str(request.subtype or "").strip()
+    normalized_subtype = subtype.lower()
+    combined = " ".join(
+        item for item in (title, cleaned_summary, raw_summary) if item and item != "(なし)"
+    )
+
+    if any(keyword in normalized_subtype or keyword in subtype for keyword in _MANUAL_X_SENSITIVE_SUBTYPE_KEYWORDS):
+        return "sensitive_content_x_blocked"
+    if any(keyword in combined for keyword in _MANUAL_X_SENSITIVE_CONTENT_KEYWORDS):
+        return "sensitive_content_x_blocked"
+    injury_match = _MANUAL_X_LONG_TERM_INJURY_RE.search(combined)
+    if injury_match:
+        try:
+            if int(injury_match.group(1)) >= 1:
+                return "sensitive_content_x_blocked"
+        except ValueError:
+            pass
+    if article_type == "notice" and any(keyword in combined for keyword in ("抹消", "登録抹消")):
+        return "sensitive_content_x_blocked"
+    return None
+
+
 def _manual_x_template_sequence(article_type: str, *, sensitive: bool) -> list[str]:
     if article_type == "lineup":
         templates = ["article_intro", "lineup_focus", "inside_voice", "fan_reaction_hook"]
@@ -643,11 +695,111 @@ def _render_manual_x_template(
     return f"{title}{suffix}"
 
 
+def _split_manual_x_trailing_hashtags(text: str) -> tuple[str, list[str]]:
+    parts = [part for part in str(text or "").split(" ") if part]
+    hashtags: list[str] = []
+    while parts and parts[-1].startswith("#"):
+        hashtags.append(parts.pop())
+    hashtags.reverse()
+    return " ".join(parts).strip(), hashtags
+
+
+def _split_manual_x_trailing_url(text: str) -> tuple[str, str]:
+    match = _MANUAL_X_TRAILING_URL_RE.match(str(text or "").strip())
+    if not match:
+        return str(text or "").strip(), ""
+
+    body = match.group("body").rstrip()
+    raw_url = match.group("url").strip()
+    trimmed_url = raw_url.rstrip("、。,.!?！？")
+    trailing = raw_url[len(trimmed_url) :]
+    if body and trailing:
+        body = f"{body}{trailing}"
+    return body.rstrip(), trimmed_url
+
+
+def _normalize_manual_x_hashtags(hashtags: Sequence[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for tag in hashtags:
+        normalized = _WHITESPACE_RE.sub(" ", str(tag or "").replace("\u3000", " ").strip())
+        if not normalized or not normalized.startswith("#") or normalized in seen:
+            continue
+        seen.add(normalized)
+        ordered.append(normalized)
+
+    preferred = [tag for tag in _MANUAL_X_STANDARD_HASHTAGS if tag in seen]
+    extras = [tag for tag in ordered if tag not in _MANUAL_X_STANDARD_HASHTAGS]
+    return preferred + extras
+
+
+def _limit_manual_x_repeated_punctuation(text: str) -> str:
+    compact = str(text or "")
+    compact = re.sub(r"!{2,}", "!", compact)
+    compact = re.sub(r"\?{2,}", "?", compact)
+    compact = re.sub(r"！{2,}", "！", compact)
+    compact = re.sub(r"？{2,}", "？", compact)
+    compact = re.sub(r"…{2,}", "…", compact)
+    return compact
+
+
+def _polish_x_post_text(text: str) -> str:
+    compact = _WHITESPACE_RE.sub(" ", str(text or "").replace("\u3000", " ").strip())
+    if not compact:
+        return ""
+
+    body, hashtags = _split_manual_x_trailing_hashtags(compact)
+    body, url = _split_manual_x_trailing_url(body)
+    body = _limit_manual_x_repeated_punctuation(body).strip()
+    normalized_hashtags = _normalize_manual_x_hashtags(hashtags)
+
+    parts = [part for part in (body, url, " ".join(normalized_hashtags)) if part]
+    return _WHITESPACE_RE.sub(" ", " ".join(parts)).strip()
+
+
+def _truncate_manual_x_body(text: str, max_length: int) -> str:
+    compact = str(text or "").rstrip()
+    if len(compact) <= max_length:
+        return compact
+    if max_length <= 1:
+        return "…"[:max_length]
+
+    cutoff = max_length - 1
+    candidate = compact[:cutoff].rstrip()
+    if not candidate:
+        return "…"
+
+    tail_window_start = max(0, len(candidate) - 40)
+    punctuation_index = max(candidate.rfind(mark) for mark in _MANUAL_X_TRUNCATION_PUNCTUATION)
+    if punctuation_index >= tail_window_start:
+        candidate = candidate[: punctuation_index + 1].rstrip()
+    else:
+        last_space = candidate.rfind(" ")
+        if last_space >= max(0, len(candidate) - 20):
+            candidate = candidate[:last_space].rstrip()
+        candidate = candidate.rstrip("、。,. ")
+
+    return f"{candidate or compact[:cutoff].rstrip()}…"
+
+
 def _trim_manual_x_post_text(value: str) -> str:
-    compact = _WHITESPACE_RE.sub(" ", str(value or "").strip())
+    compact = _polish_x_post_text(value)
     if len(compact) <= MAX_MANUAL_X_POST_LENGTH:
         return compact
-    return compact[: MAX_MANUAL_X_POST_LENGTH - 1].rstrip() + "…"
+
+    body, hashtags = _split_manual_x_trailing_hashtags(compact)
+    body, url = _split_manual_x_trailing_url(body)
+    suffix_parts = [part for part in (url, " ".join(hashtags)) if part]
+    suffix = " ".join(suffix_parts).strip()
+    if suffix:
+        body_limit = MAX_MANUAL_X_POST_LENGTH - len(suffix) - (1 if body else 0)
+        if body_limit > 0:
+            trimmed_body = _truncate_manual_x_body(body, body_limit)
+            rebuilt = f"{trimmed_body} {suffix}" if trimmed_body else suffix
+            if len(rebuilt) <= MAX_MANUAL_X_POST_LENGTH:
+                return rebuilt
+
+    return _truncate_manual_x_body(compact, MAX_MANUAL_X_POST_LENGTH)
 
 
 def _build_x_intent_url(text: str) -> str:
@@ -725,6 +877,13 @@ def _manual_x_context(request: PublishNoticeRequest) -> ManualXContext:
     hook_source = cleaned_summary if cleaned_summary != "(なし)" and not summary_fallback else title
     event_subject = _manual_x_event_subject(title, cleaned_summary)
     event_title = _manual_x_event_title(title, cleaned_summary)
+    sensitive_x_block_reason = _manual_x_sensitive_block_reason(
+        request,
+        article_type=article_type,
+        title=title,
+        cleaned_summary=cleaned_summary,
+        raw_summary=raw_summary,
+    )
     return ManualXContext(
         article_type=article_type,
         title=title,
@@ -737,6 +896,7 @@ def _manual_x_context(request: PublishNoticeRequest) -> ManualXContext:
         event_name=_manual_x_event_name(event_subject, event_title),
         event_dates=_manual_x_event_dates(title, cleaned_summary),
         event_actor=_manual_x_event_actor(title, cleaned_summary),
+        sensitive_x_block_reason=sensitive_x_block_reason,
     )
 
 
@@ -747,9 +907,11 @@ def build_manual_x_post_candidates(
 ) -> list[tuple[str, str]]:
     """Return deterministic manual-copy X post candidates for a publish notice."""
 
+    context = _manual_x_context(request)
     if _manual_x_candidate_suppression_reason(request, yellow_log_path=yellow_log_path):
         return []
-    context = _manual_x_context(request)
+    if context.sensitive_x_block_reason:
+        return []
     return _render_manual_x_post_candidates(context)
 
 
@@ -817,8 +979,13 @@ def _per_post_mail_state(
 ) -> dict[str, Any]:
     raw_summary = _WHITESPACE_RE.sub(" ", str(request.summary or "").strip())
     context = _manual_x_context(request)
-    suppression_reason = _manual_x_candidate_suppression_reason(request, yellow_log_path=yellow_log_path)
-    display_manual_x_candidates = _render_manual_x_post_candidates(context)
+    suppression_reason = _manual_x_candidate_suppression_reason(
+        request,
+        yellow_log_path=yellow_log_path,
+    ) or context.sensitive_x_block_reason
+    display_manual_x_candidates = (
+        [] if context.sensitive_x_block_reason else _render_manual_x_post_candidates(context)
+    )
     manual_x_candidates = [] if suppression_reason else list(display_manual_x_candidates)
     safe_x_candidate = (
         bool(manual_x_candidates)
@@ -834,13 +1001,16 @@ def _per_post_mail_state(
     )
     if any(keyword in combined_text for keyword in _URGENT_KEYWORDS):
         mail_class = "urgent"
-        reason = "urgent_keyword_detected"
+        reason = str(suppression_reason or "urgent_keyword_detected")
     elif safe_x_candidate:
         mail_class = "x_candidate"
         reason = "manual_x_candidates_clean"
     elif suppression_reason == "roster_movement_yellow":
         mail_class = "review"
         reason = "roster_movement_yellow_x_blocked"
+    elif suppression_reason == "sensitive_content_x_blocked":
+        mail_class = "review"
+        reason = "sensitive_content_x_blocked"
     elif context.article_type in _CAUTIOUS_REVIEW_ARTICLE_TYPES:
         mail_class = "review"
         reason = "cautious_subtype_review"

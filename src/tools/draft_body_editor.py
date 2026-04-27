@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Iterable, Sequence
 from uuid import uuid4
 
+from src import llm_call_dedupe
 from src import repair_provider_ledger
 
 
@@ -512,6 +513,30 @@ def _emit_repair_provider_ledger(
         print(f"[ledger] repair_provider_ledger emit failed: {exc}", file=sys.stderr)
 
 
+def _emit_llm_event(event: str, **payload: object) -> None:
+    print(
+        json.dumps({"event": event, **payload}, ensure_ascii=False, default=str),
+        file=sys.stderr,
+    )
+
+
+def _dedupe_record_extra(payload: dict[str, object]) -> dict[str, object]:
+    return {
+        "provider": payload.get("provider"),
+        "model": payload.get("model"),
+        "body_text": payload.get("body_text"),
+        "error_code": payload.get("error_code"),
+        "dry_run": payload.get("dry_run"),
+        "token_in": payload.get("token_in"),
+        "token_out": payload.get("token_out"),
+        "cost": payload.get("cost"),
+        "fallback_used": payload.get("fallback_used"),
+        "wp_write_allowed": payload.get("wp_write_allowed"),
+        "failure_chain": payload.get("failure_chain"),
+        "reused_from_timestamp": payload.get("timestamp"),
+    }
+
+
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="draft_body_editor",
@@ -603,63 +628,190 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(str(e), file=sys.stderr)
         return 30
 
-    _load_dotenv_if_available()
-    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
-    if not api_key:
-        print("GEMINI_API_KEY is not set", file=sys.stderr)
-        return 20
-
     prompt = build_prompt(args.subtype, fail_axes, current_body, source_block, headings)
     started_at = repair_provider_ledger._now_jst()
+    content_hash = llm_call_dedupe.compute_content_hash(args.post_id, current_body)
+    llm_skip_reason: str | None = None
+    quality_flags: list[str] = []
+    dedupe_record = llm_call_dedupe.find_recent_record(
+        args.post_id,
+        content_hash,
+        llm_call_dedupe.DEFAULT_LEDGER_PATH,
+        now=started_at,
+    )
 
-    try:
-        new_body = call_gemini(prompt, api_key)
-    except GeminiAPIError as e:
-        _emit_repair_provider_ledger(
-            post_id=args.post_id,
-            subtype=args.subtype,
-            fail_axes=fail_axes,
-            dry_run=bool(args.dry_run),
-            current_body=current_body,
-            source_block=source_block,
-            out_path=args.out,
-            new_body="",
-            status="failed",
-            started_at=started_at,
-            finished_at=repair_provider_ledger._now_jst(),
-            hard_stop_flags_resolved=False,
-            no_new_forbidden_claim=False,
-            quality_flags=["gemini_api_error"],
-            error_code="gemini_api_error",
+    if dedupe_record is not None:
+        llm_skip_reason = "content_hash_dedupe"
+        quality_flags.append(llm_skip_reason)
+        llm_call_dedupe.record_call(
+            args.post_id,
+            content_hash,
+            str(dedupe_record.get("result") or "generated"),
+            llm_skip_reason,
+            ledger_path=llm_call_dedupe.DEFAULT_LEDGER_PATH,
+            now=started_at,
+            **_dedupe_record_extra(dedupe_record),
         )
-        print(f"Gemini API failed: {e}", file=sys.stderr)
-        return 20
+        _emit_llm_event(
+            "llm_skip",
+            post_id=args.post_id,
+            content_hash=content_hash,
+            skip_reason=llm_skip_reason,
+            result=dedupe_record.get("result"),
+            provider=dedupe_record.get("provider"),
+            model=dedupe_record.get("model"),
+        )
+        new_body = str(dedupe_record.get("body_text") or "")
+        if not new_body:
+            error_code = str(dedupe_record.get("error_code") or "content_hash_dedupe")
+            _emit_repair_provider_ledger(
+                post_id=args.post_id,
+                subtype=args.subtype,
+                fail_axes=fail_axes,
+                dry_run=bool(args.dry_run),
+                current_body=current_body,
+                source_block=source_block,
+                out_path=args.out,
+                new_body="",
+                status="failed",
+                started_at=started_at,
+                finished_at=repair_provider_ledger._now_jst(),
+                hard_stop_flags_resolved=False,
+                no_new_forbidden_claim=False,
+                quality_flags=quality_flags + [error_code],
+                error_code=error_code,
+            )
+            print(
+                f"Gemini API skipped: {llm_skip_reason} previous_error={error_code}",
+                file=sys.stderr,
+            )
+            return 20
+    else:
+        _load_dotenv_if_available()
+        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+        if not api_key:
+            print("GEMINI_API_KEY is not set", file=sys.stderr)
+            return 20
 
-    if not new_body.strip():
-        _emit_repair_provider_ledger(
-            post_id=args.post_id,
-            subtype=args.subtype,
-            fail_axes=fail_axes,
+        try:
+            new_body = call_gemini(prompt, api_key)
+        except GeminiAPIError as e:
+            llm_call_dedupe.record_call(
+                args.post_id,
+                content_hash,
+                "failed",
+                ledger_path=llm_call_dedupe.DEFAULT_LEDGER_PATH,
+                now=started_at,
+                provider="gemini",
+                model="gemini-2.5-flash",
+                body_text="",
+                dry_run=bool(args.dry_run),
+                error_code="gemini_api_error",
+                token_in=None,
+                token_out=None,
+                cost=None,
+            )
+            _emit_llm_event(
+                "llm_call",
+                post_id=args.post_id,
+                content_hash=content_hash,
+                provider="gemini",
+                model="gemini-2.5-flash",
+                result="failed",
+                error_code="gemini_api_error",
+            )
+            _emit_repair_provider_ledger(
+                post_id=args.post_id,
+                subtype=args.subtype,
+                fail_axes=fail_axes,
+                dry_run=bool(args.dry_run),
+                current_body=current_body,
+                source_block=source_block,
+                out_path=args.out,
+                new_body="",
+                status="failed",
+                started_at=started_at,
+                finished_at=repair_provider_ledger._now_jst(),
+                hard_stop_flags_resolved=False,
+                no_new_forbidden_claim=False,
+                quality_flags=["gemini_api_error"],
+                error_code="gemini_api_error",
+            )
+            print(f"Gemini API failed: {e}", file=sys.stderr)
+            return 20
+
+        if not new_body.strip():
+            llm_call_dedupe.record_call(
+                args.post_id,
+                content_hash,
+                "failed",
+                ledger_path=llm_call_dedupe.DEFAULT_LEDGER_PATH,
+                now=started_at,
+                provider="gemini",
+                model="gemini-2.5-flash",
+                body_text="",
+                dry_run=bool(args.dry_run),
+                error_code="gemini_empty_body",
+                token_in=None,
+                token_out=None,
+                cost=None,
+            )
+            _emit_llm_event(
+                "llm_call",
+                post_id=args.post_id,
+                content_hash=content_hash,
+                provider="gemini",
+                model="gemini-2.5-flash",
+                result="failed",
+                error_code="gemini_empty_body",
+            )
+            _emit_repair_provider_ledger(
+                post_id=args.post_id,
+                subtype=args.subtype,
+                fail_axes=fail_axes,
+                dry_run=bool(args.dry_run),
+                current_body=current_body,
+                source_block=source_block,
+                out_path=args.out,
+                new_body=new_body,
+                status="failed",
+                started_at=started_at,
+                finished_at=repair_provider_ledger._now_jst(),
+                hard_stop_flags_resolved=False,
+                no_new_forbidden_claim=False,
+                quality_flags=["empty_body"],
+                error_code="gemini_empty_body",
+            )
+            print("Gemini returned empty body", file=sys.stderr)
+            return 20
+
+        llm_call_dedupe.record_call(
+            args.post_id,
+            content_hash,
+            "generated",
+            ledger_path=llm_call_dedupe.DEFAULT_LEDGER_PATH,
+            now=started_at,
+            provider="gemini",
+            model="gemini-2.5-flash",
+            body_text=new_body,
             dry_run=bool(args.dry_run),
-            current_body=current_body,
-            source_block=source_block,
-            out_path=args.out,
-            new_body=new_body,
-            status="failed",
-            started_at=started_at,
-            finished_at=repair_provider_ledger._now_jst(),
-            hard_stop_flags_resolved=False,
-            no_new_forbidden_claim=False,
-            quality_flags=["empty_body"],
-            error_code="gemini_empty_body",
+            error_code=None,
+            token_in=None,
+            token_out=None,
+            cost=None,
         )
-        print("Gemini returned empty body", file=sys.stderr)
-        return 20
+        _emit_llm_event(
+            "llm_call",
+            post_id=args.post_id,
+            content_hash=content_hash,
+            provider="gemini",
+            model="gemini-2.5-flash",
+            result="generated",
+        )
 
     violations_a = guard_a_source_grounding(new_body, current_body, source_block)
     violations_b = guard_b_heading_invariant(new_body, headings)
     violations_c = guard_c_scope_invariant(new_body, current_body)
-    quality_flags: list[str] = []
     if violations_a:
         quality_flags.append("guard_a_source_grounding")
     if violations_b:
@@ -745,6 +897,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             finished_at=repair_provider_ledger._now_jst(),
             hard_stop_flags_resolved=True,
             no_new_forbidden_claim=True,
+            quality_flags=quality_flags,
         )
         print("[dry-run] guards passed; --out not written", file=sys.stderr)
     else:
@@ -785,6 +938,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             finished_at=repair_provider_ledger._now_jst(),
             hard_stop_flags_resolved=True,
             no_new_forbidden_claim=True,
+            quality_flags=quality_flags,
         )
 
     result = {
@@ -795,7 +949,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "chars_after": len(new_body),
         "guards": "pass",
         "dry_run": bool(args.dry_run),
+        "content_hash": content_hash,
     }
+    if llm_skip_reason:
+        result["llm_skip_reason"] = llm_skip_reason
     print(json.dumps(result, ensure_ascii=False))
     return 0
 

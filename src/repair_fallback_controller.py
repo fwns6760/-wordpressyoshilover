@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from src import llm_call_dedupe
 from src import repair_provider_ledger
 from src.codex_cli_shadow import CodexAuthError, CodexSchemaError, call_codex
 from src.tools import draft_body_editor
@@ -49,6 +50,8 @@ class RepairResult:
     body_text: str | None
     failure_chain: list[FailureRecord]
     wp_write_allowed: bool = True
+    llm_skip_reason: str | None = None
+    content_hash: str | None = None
 
 
 def classify_error(exception: BaseException, http_code: int | None = None) -> str:
@@ -185,6 +188,7 @@ class RepairFallbackController:
     def execute(self, post: dict[str, Any], prompt: str) -> RepairResult:
         post_id = _resolve_post_id(post)
         body_before = str(post.get("current_body") or post.get("body") or "")
+        content_hash = llm_call_dedupe.compute_content_hash(post_id, body_before)
         input_hash = repair_provider_ledger.compute_input_hash(
             {
                 "post_id": post_id,
@@ -194,6 +198,63 @@ class RepairFallbackController:
         )
         artifact_uri = _artifact_uri_for_writer(self.ledger_writer)
         run_id = str(uuid4())
+        now = repair_provider_ledger._now_jst()
+        dedupe_record = llm_call_dedupe.find_recent_record(
+            post_id,
+            content_hash,
+            llm_call_dedupe.DEFAULT_LEDGER_PATH,
+            now=now,
+        )
+        if dedupe_record is not None:
+            result = str(dedupe_record.get("result") or "generated")
+            cached_failure_chain = _failure_chain_from_payload(dedupe_record.get("failure_chain"))
+            if not cached_failure_chain and not str(dedupe_record.get("body_text") or ""):
+                cached_failure_chain = [
+                    FailureRecord(
+                        provider=str(dedupe_record.get("provider") or self.primary_provider),
+                        error_class=str(dedupe_record.get("error_code") or "provider_error"),
+                        error_message="cached failure",
+                        latency_ms=0,
+                    )
+                ]
+            llm_call_dedupe.record_call(
+                post_id,
+                content_hash,
+                result,
+                "content_hash_dedupe",
+                ledger_path=llm_call_dedupe.DEFAULT_LEDGER_PATH,
+                now=now,
+                provider=dedupe_record.get("provider"),
+                model=dedupe_record.get("model"),
+                body_text=dedupe_record.get("body_text"),
+                error_code=dedupe_record.get("error_code"),
+                token_in=dedupe_record.get("token_in"),
+                token_out=dedupe_record.get("token_out"),
+                cost=dedupe_record.get("cost"),
+                fallback_used=dedupe_record.get("fallback_used"),
+                wp_write_allowed=dedupe_record.get("wp_write_allowed"),
+                failure_chain=dedupe_record.get("failure_chain"),
+                reused_from_timestamp=dedupe_record.get("timestamp"),
+            )
+            if str(dedupe_record.get("body_text") or ""):
+                return RepairResult(
+                    provider=str(dedupe_record.get("provider") or self.primary_provider),
+                    fallback_used=bool(dedupe_record.get("fallback_used", False)),
+                    body_text=str(dedupe_record.get("body_text") or ""),
+                    failure_chain=cached_failure_chain,
+                    wp_write_allowed=bool(dedupe_record.get("wp_write_allowed", True)),
+                    llm_skip_reason="content_hash_dedupe",
+                    content_hash=content_hash,
+                )
+            return RepairResult(
+                provider=str(dedupe_record.get("provider") or self.primary_provider),
+                fallback_used=bool(dedupe_record.get("fallback_used", False)),
+                body_text=None,
+                failure_chain=cached_failure_chain,
+                wp_write_allowed=bool(dedupe_record.get("wp_write_allowed", True)),
+                llm_skip_reason="content_hash_dedupe",
+                content_hash=content_hash,
+            )
 
         primary_success, primary_payload = self._attempt_provider(
             provider=self.primary_provider,
@@ -220,12 +281,30 @@ class RepairFallbackController:
                 fallback_reason=None,
                 quality_flags=[] if wp_write_allowed else ["shadow_only"],
             )
+            llm_call_dedupe.record_call(
+                post_id,
+                content_hash,
+                "generated",
+                ledger_path=llm_call_dedupe.DEFAULT_LEDGER_PATH,
+                now=finished_at,
+                provider=self.primary_provider,
+                model=meta.get("model"),
+                body_text=body_text,
+                error_code=None,
+                token_in=None,
+                token_out=None,
+                cost=None,
+                fallback_used=False,
+                wp_write_allowed=wp_write_allowed,
+                failure_chain=[],
+            )
             return RepairResult(
                 provider=self.primary_provider,
                 fallback_used=False,
                 body_text=body_text,
                 failure_chain=[],
                 wp_write_allowed=wp_write_allowed,
+                content_hash=content_hash,
             )
 
         primary_exc, primary_started_at, primary_finished_at, primary_latency_ms = primary_payload
@@ -283,12 +362,30 @@ class RepairFallbackController:
                 fallback_reason=primary_error_class,
                 quality_flags=quality_flags,
             )
+            llm_call_dedupe.record_call(
+                post_id,
+                content_hash,
+                "generated",
+                ledger_path=llm_call_dedupe.DEFAULT_LEDGER_PATH,
+                now=finished_at,
+                provider=self.fallback_provider,
+                model=meta.get("model"),
+                body_text=body_text,
+                error_code=None,
+                token_in=None,
+                token_out=None,
+                cost=None,
+                fallback_used=True,
+                wp_write_allowed=wp_write_allowed,
+                failure_chain=_failure_chain_to_payload([primary_failure]),
+            )
             return RepairResult(
                 provider=self.fallback_provider,
                 fallback_used=True,
                 body_text=body_text,
                 failure_chain=[primary_failure],
                 wp_write_allowed=wp_write_allowed,
+                content_hash=content_hash,
             )
 
         fallback_exc, fallback_started_at, fallback_finished_at, fallback_latency_ms = fallback_payload
@@ -317,12 +414,30 @@ class RepairFallbackController:
             fallback_reason=primary_error_class,
             quality_flags=["fallback_used", "fallback_failed"],
         )
+        llm_call_dedupe.record_call(
+            post_id,
+            content_hash,
+            "failed",
+            ledger_path=llm_call_dedupe.DEFAULT_LEDGER_PATH,
+            now=fallback_finished_at,
+            provider=self.fallback_provider,
+            model=None,
+            body_text="",
+            error_code=fallback_error_class,
+            token_in=None,
+            token_out=None,
+            cost=None,
+            fallback_used=True,
+            wp_write_allowed=_wp_write_allowed(self.fallback_provider),
+            failure_chain=_failure_chain_to_payload([primary_failure, fallback_failure]),
+        )
         return RepairResult(
             provider=self.fallback_provider,
             fallback_used=True,
             body_text=None,
             failure_chain=[primary_failure, fallback_failure],
             wp_write_allowed=_wp_write_allowed(self.fallback_provider),
+            content_hash=content_hash,
         )
 
     def _attempt_provider(
@@ -425,6 +540,36 @@ def _artifact_uri_for_writer(writer: Any) -> str:
     if collection:
         return f"firestore://{collection}"
     return f"memory://{writer.__class__.__name__}"
+
+
+def _failure_chain_to_payload(chain: list[FailureRecord]) -> list[dict[str, Any]]:
+    return [
+        {
+            "provider": item.provider,
+            "error_class": item.error_class,
+            "error_message": item.error_message,
+            "latency_ms": item.latency_ms,
+        }
+        for item in chain
+    ]
+
+
+def _failure_chain_from_payload(payload: Any) -> list[FailureRecord]:
+    if not isinstance(payload, list):
+        return []
+    chain: list[FailureRecord] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        chain.append(
+            FailureRecord(
+                provider=str(item.get("provider") or "unknown"),
+                error_class=str(item.get("error_class") or "provider_error"),
+                error_message=str(item.get("error_message") or "cached failure"),
+                latency_ms=int(item.get("latency_ms") or 0),
+            )
+        )
+    return chain
 
 
 __all__ = [

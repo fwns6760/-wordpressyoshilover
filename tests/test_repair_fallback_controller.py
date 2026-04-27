@@ -34,6 +34,20 @@ PROMPT = "repair prompt"
 
 
 class RepairFallbackControllerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._dedupe_tmpdir = tempfile.TemporaryDirectory()
+        self._dedupe_path = Path(self._dedupe_tmpdir.name) / "llm_call_dedupe.jsonl"
+        self._dedupe_patcher = patch.object(
+            controller.llm_call_dedupe,
+            "DEFAULT_LEDGER_PATH",
+            self._dedupe_path,
+        )
+        self._dedupe_patcher.start()
+
+    def tearDown(self) -> None:
+        self._dedupe_patcher.stop()
+        self._dedupe_tmpdir.cleanup()
+
     def _read_rows(self, path: Path) -> list[dict]:
         return [
             json.loads(line)
@@ -95,6 +109,64 @@ class RepairFallbackControllerTests(unittest.TestCase):
         self.assertEqual(rows[0]["status"], "success")
         self.assertEqual(rows[0]["provider_meta"]["quality_flags"], [])
 
+    def test_cached_generated_result_skips_provider_call(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ledger_path = Path(tmpdir) / "repair-ledger.jsonl"
+            dedupe_path = Path(tmpdir) / "llm_call_dedupe.jsonl"
+            writer = repair_provider_ledger.JsonlLedgerWriter(ledger_path)
+            content_hash = controller.llm_call_dedupe.compute_content_hash(POST["post_id"], POST["current_body"])
+            controller.llm_call_dedupe.record_call(
+                POST["post_id"],
+                content_hash,
+                "generated",
+                ledger_path=dedupe_path,
+                provider="gemini",
+                model="gemini-2.5-flash",
+                body_text=SUCCESS_BODY,
+                fallback_used=False,
+                wp_write_allowed=True,
+            )
+            with patch.object(controller.llm_call_dedupe, "DEFAULT_LEDGER_PATH", dedupe_path), \
+                 patch("src.repair_fallback_controller.call_provider") as mocked_call:
+                result = controller.RepairFallbackController(
+                    primary_provider="codex",
+                    ledger_writer=writer,
+                ).execute(dict(POST), PROMPT)
+
+        mocked_call.assert_not_called()
+        self.assertEqual(result.provider, "gemini")
+        self.assertEqual(result.body_text, SUCCESS_BODY)
+        self.assertEqual(result.llm_skip_reason, "content_hash_dedupe")
+
+    def test_cached_failed_result_skips_provider_call(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ledger_path = Path(tmpdir) / "repair-ledger.jsonl"
+            dedupe_path = Path(tmpdir) / "llm_call_dedupe.jsonl"
+            writer = repair_provider_ledger.JsonlLedgerWriter(ledger_path)
+            content_hash = controller.llm_call_dedupe.compute_content_hash(POST["post_id"], POST["current_body"])
+            controller.llm_call_dedupe.record_call(
+                POST["post_id"],
+                content_hash,
+                "failed",
+                ledger_path=dedupe_path,
+                provider="gemini",
+                model="gemini-2.5-flash",
+                body_text="",
+                error_code="gemini_api_error",
+                failure_chain=[{"provider": "gemini", "error_class": "gemini_api_error", "error_message": "cached failure", "latency_ms": 0}],
+            )
+            with patch.object(controller.llm_call_dedupe, "DEFAULT_LEDGER_PATH", dedupe_path), \
+                 patch("src.repair_fallback_controller.call_provider") as mocked_call:
+                result = controller.RepairFallbackController(
+                    primary_provider="codex",
+                    ledger_writer=writer,
+                ).execute(dict(POST), PROMPT)
+
+        mocked_call.assert_not_called()
+        self.assertIsNone(result.body_text)
+        self.assertEqual(result.llm_skip_reason, "content_hash_dedupe")
+        self.assertEqual(result.failure_chain[0].error_class, "gemini_api_error")
+
     def test_wp_write_allowed_env_gate_only_affects_codex(self):
         cases = [
             ("env_unset_codex", {}, "codex", False),
@@ -149,6 +221,7 @@ class RepairFallbackControllerTests(unittest.TestCase):
 
         for label, primary_exc, expected_class in failure_cases:
             with self.subTest(label=label):
+                self._dedupe_path.unlink(missing_ok=True)
                 with tempfile.TemporaryDirectory() as tmpdir:
                     ledger_path = Path(tmpdir) / f"{label}.jsonl"
                     writer = repair_provider_ledger.JsonlLedgerWriter(ledger_path)

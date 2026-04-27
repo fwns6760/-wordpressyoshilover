@@ -30,6 +30,7 @@ from typing import Any, Sequence
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
+from src import llm_call_dedupe
 from src import repair_fallback_controller
 from src import repair_provider_ledger
 from src import runner_ledger_integration
@@ -52,6 +53,8 @@ DEFAULT_LIST_PER_PAGE = 100
 CURRENT_BODY_MAX_CHARS = 1200
 ROOT = Path(__file__).resolve().parents[2]
 LOG_ROOT = ROOT / "logs" / "draft_body_editor"
+LLM_DEDUPE_LEDGER_PATH = llm_call_dedupe.DEFAULT_LEDGER_PATH
+GUARDED_PUBLISH_HISTORY_PATH = llm_call_dedupe.DEFAULT_GUARDED_PUBLISH_HISTORY_PATH
 
 VALID_SUBTYPES = {"pregame", "postgame", "lineup", "manager", "farm"}
 FACT_CHECK_BLOCK_VALUES = {"fail", "flagged", "pending"}
@@ -936,6 +939,8 @@ def _run_fallback_controller(
         "provider": result.provider,
         "fallback_used": result.fallback_used,
         "wp_write_allowed": result.wp_write_allowed,
+        "llm_skip_reason": result.llm_skip_reason,
+        "content_hash": result.content_hash,
     }, "", new_body
 
 
@@ -1066,6 +1071,18 @@ def _append_skip_outcome(
         "verdict": "skip",
         "skip_reason": reason,
     })
+
+
+def _recent_guarded_publish_refused(
+    post_id: int,
+    *,
+    now: datetime,
+) -> dict[str, Any] | None:
+    return llm_call_dedupe.find_recent_refused_history(
+        post_id,
+        history_path=GUARDED_PUBLISH_HISTORY_PATH,
+        now=now,
+    )
 
 
 def _build_aggregate_counts(
@@ -1460,6 +1477,53 @@ def main(argv: Sequence[str] | None = None) -> int:
                 _append_skip_outcome(per_post_outcomes, process_skip_counter, post_id=post_id, reason=reason)
                 continue
 
+        content_hash = llm_call_dedupe.compute_content_hash(
+            candidate["post_id"],
+            str(candidate.get("current_body") or ""),
+        )
+        recent_refused = _recent_guarded_publish_refused(candidate["post_id"], now=now)
+        if recent_refused is not None:
+            llm_call_dedupe.record_call(
+                candidate["post_id"],
+                content_hash,
+                "refused",
+                "refused_cooldown",
+                ledger_path=LLM_DEDUPE_LEDGER_PATH,
+                now=now,
+                provider=args.provider,
+                model=None,
+                body_text="",
+                error_code=str(recent_refused.get("error") or "guarded_publish_refused"),
+                token_in=None,
+                token_out=None,
+                cost=None,
+                fallback_used=False,
+                wp_write_allowed=False,
+                failure_chain=[],
+                hold_reason=recent_refused.get("hold_reason"),
+                guarded_publish_ts=recent_refused.get("ts"),
+            )
+            _append_skip_outcome(
+                per_post_outcomes,
+                process_skip_counter,
+                post_id=candidate["post_id"],
+                reason="refused_cooldown",
+            )
+            _append_session_log(
+                now,
+                {
+                    "event": "llm_skip",
+                    "post_id": candidate["post_id"],
+                    "provider": args.provider,
+                    "subtype": candidate["subtype"],
+                    "content_hash": content_hash,
+                    "llm_skip_reason": "refused_cooldown",
+                    "hold_reason": recent_refused.get("hold_reason"),
+                    "history_error": recent_refused.get("error"),
+                },
+            )
+            continue
+
         if args.provider != "gemini":
             try:
                 ledger_offset = _ledger_file_size(ledger_path)
@@ -1590,6 +1654,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "chars_before": candidate["chars_before"],
                     "chars_after": len(new_body),
                     "guards": exec_payload.get("guards"),
+                    "content_hash": exec_payload.get("content_hash"),
+                    "llm_skip_reason": exec_payload.get("llm_skip_reason"),
                     "put_status": put_status,
                 },
             )
@@ -1789,6 +1855,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "chars_before": candidate["chars_before"],
                 "chars_after": len(new_body),
                 "guards": exec_payload.get("guards"),
+                "content_hash": exec_payload.get("content_hash"),
+                "llm_skip_reason": exec_payload.get("llm_skip_reason"),
                 "put_status": put_status,
             },
         )

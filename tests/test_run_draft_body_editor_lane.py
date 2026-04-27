@@ -521,6 +521,43 @@ class TestLaneMain(unittest.TestCase):
         self.assertEqual(payload["candidates_before_filter"], 1)
         self.assertEqual(payload["skip_reason_counts"], {"recently_edited_by_lane": 1})
 
+    def test_recent_guarded_publish_refused_skips_llm_call(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            dedupe_path = Path(tmpdir) / "llm_call_dedupe.jsonl"
+            history_path.write_text(
+                json.dumps(
+                    {
+                        "post_id": 402,
+                        "ts": "2026-04-20T08:30:00+09:00",
+                        "status": "refused",
+                        "error": "hard_stop:freshness_window",
+                        "hold_reason": "hard_stop_freshness_window",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            wp = _FakeWP(
+                paged_posts={1: [_make_post(402, modified="2026-04-20T09:00:00+09:00")], 2: []},
+                get_post_map={402: _make_post(402, modified="2026-04-20T09:00:00+09:00")},
+            )
+            with patch.object(lane, "GUARDED_PUBLISH_HISTORY_PATH", history_path), \
+                 patch.object(lane, "LLM_DEDUPE_LEDGER_PATH", dedupe_path):
+                code, stdout, _, _, _, editor_mock = _run_main(
+                    ["--now-iso", "2026-04-20T10:00:00+09:00"],
+                    wp=wp,
+                )
+
+        self.assertEqual(code, 0)
+        self.assertFalse(editor_mock.called)
+        payload = json.loads(stdout.strip())
+        self.assertEqual(payload["per_post_outcomes"], [
+            {"post_id": 402, "verdict": "skip", "skip_reason": "refused_cooldown"}
+        ])
+        self.assertEqual(payload["skip_reason_counts"]["refused_cooldown"], 1)
+
     def test_unresolved_and_stale_is_skipped_before_slot_selection(self):
         stale_unresolved = _make_unresolved_post(451, modified="2026-04-24T08:00:00+09:00")
         stale_resolved = _make_post(452, subtype="postgame", modified="2026-04-24T09:00:00+09:00")

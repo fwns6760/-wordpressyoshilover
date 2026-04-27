@@ -13,6 +13,7 @@ import tempfile
 import unittest
 import urllib.error
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Iterable, Sequence
 from unittest.mock import call, patch
 
@@ -224,14 +225,17 @@ def _run_main(argv: Sequence[str], *, gemini_return: str | None = None,
               gemini_side_effect: Exception | None = None) -> tuple[int, str, str]:
     stdout = io.StringIO()
     stderr = io.StringIO()
-    with patch("src.tools.draft_body_editor.call_gemini") as mock_call, \
-         patch("sys.stdout", stdout), patch("sys.stderr", stderr), \
-         patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}, clear=False):
-        if gemini_side_effect is not None:
-            mock_call.side_effect = gemini_side_effect
-        else:
-            mock_call.return_value = gemini_return or ""
-        exit_code = dbe.main(list(argv))
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ledger_path = Path(tmpdir) / "llm_call_dedupe.jsonl"
+        with patch.object(dbe.llm_call_dedupe, "DEFAULT_LEDGER_PATH", ledger_path), \
+             patch("src.tools.draft_body_editor.call_gemini") as mock_call, \
+             patch("sys.stdout", stdout), patch("sys.stderr", stderr), \
+             patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}, clear=False):
+            if gemini_side_effect is not None:
+                mock_call.side_effect = gemini_side_effect
+            else:
+                mock_call.return_value = gemini_return or ""
+            exit_code = dbe.main(list(argv))
     return exit_code, stdout.getvalue(), stderr.getvalue()
 
 
@@ -653,18 +657,75 @@ class TestAPIErrors(unittest.TestCase):
             self.assertIn("empty body", stderr)
 
     def test_missing_api_key(self):
-        with _tmp_workspace() as ws:
+        with _tmp_workspace() as ws, tempfile.TemporaryDirectory() as tmpdir:
             argv = _make_argv(ws, subtype="postgame")
             stdout = io.StringIO()
             stderr = io.StringIO()
+            ledger_path = Path(tmpdir) / "llm_call_dedupe.jsonl"
             # Run without patching call_gemini: the missing key check
             # should fire before any API call.
-            with patch("sys.stdout", stdout), patch("sys.stderr", stderr), \
+            with patch.object(dbe.llm_call_dedupe, "DEFAULT_LEDGER_PATH", ledger_path), \
+                 patch("sys.stdout", stdout), patch("sys.stderr", stderr), \
                  patch.dict(os.environ, {"GEMINI_API_KEY": ""}, clear=False), \
                  patch("src.tools.draft_body_editor._load_dotenv_if_available"):
                 code = dbe.main(list(argv))
             self.assertEqual(code, 20)
             self.assertIn("GEMINI_API_KEY", stderr.getvalue())
+
+    def test_cached_generated_body_skips_gemini_call(self):
+        with _tmp_workspace() as ws, tempfile.TemporaryDirectory() as tmpdir:
+            argv = _make_argv(ws, subtype="postgame")
+            out_path = argv[argv.index("--out") + 1]
+            ledger_path = Path(tmpdir) / "llm_call_dedupe.jsonl"
+            content_hash = dbe.llm_call_dedupe.compute_content_hash(1234, POSTGAME_BODY)
+            dbe.llm_call_dedupe.record_call(
+                1234,
+                content_hash,
+                "generated",
+                ledger_path=ledger_path,
+                provider="gemini",
+                model="gemini-2.5-flash",
+                body_text=POSTGAME_NEW,
+            )
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with patch.object(dbe.llm_call_dedupe, "DEFAULT_LEDGER_PATH", ledger_path), \
+                 patch("src.tools.draft_body_editor.call_gemini") as mock_call, \
+                 patch("sys.stdout", stdout), patch("sys.stderr", stderr), \
+                 patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}, clear=False):
+                code = dbe.main(list(argv))
+            self.assertEqual(code, 0)
+            mock_call.assert_not_called()
+            payload = json.loads(stdout.getvalue().strip())
+            self.assertEqual(payload["llm_skip_reason"], "content_hash_dedupe")
+            with open(out_path, encoding="utf-8") as handle:
+                self.assertEqual(handle.read(), POSTGAME_NEW)
+
+    def test_cached_failed_result_skips_gemini_call(self):
+        with _tmp_workspace() as ws, tempfile.TemporaryDirectory() as tmpdir:
+            argv = _make_argv(ws, subtype="postgame")
+            ledger_path = Path(tmpdir) / "llm_call_dedupe.jsonl"
+            content_hash = dbe.llm_call_dedupe.compute_content_hash(1234, POSTGAME_BODY)
+            dbe.llm_call_dedupe.record_call(
+                1234,
+                content_hash,
+                "failed",
+                ledger_path=ledger_path,
+                provider="gemini",
+                model="gemini-2.5-flash",
+                body_text="",
+                error_code="gemini_api_error",
+            )
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with patch.object(dbe.llm_call_dedupe, "DEFAULT_LEDGER_PATH", ledger_path), \
+                 patch("src.tools.draft_body_editor.call_gemini") as mock_call, \
+                 patch("sys.stdout", stdout), patch("sys.stderr", stderr), \
+                 patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}, clear=False):
+                code = dbe.main(list(argv))
+            self.assertEqual(code, 20)
+            mock_call.assert_not_called()
+            self.assertIn("content_hash_dedupe", stderr.getvalue())
 
 
 # ---------------------------------------------------------------------------

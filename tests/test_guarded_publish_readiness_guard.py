@@ -2,15 +2,17 @@ import io
 import json
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 from src.guarded_publish_readiness_guard import evaluate_guarded_publish_readiness
 from src.tools import run_guarded_publish_readiness_check as cli
 
 
 FIXED_NOW = datetime.fromisoformat("2026-04-26T12:30:00+09:00")
+JST = ZoneInfo("Asia/Tokyo")
 
 
 def _row(
@@ -148,10 +150,19 @@ class GuardedPublishReadinessGuardTests(unittest.TestCase):
         self.assertEqual(report["metrics"]["daily_cap"]["window_daily_cap_skip_count"], 1)
 
     def test_human_format_renders_summary(self):
+        now = datetime.now(JST)
         history_path = self._write_history(
             [
-                _row(701, "2026-04-26T08:00:00+09:00", status="sent"),
-                _row(702, "2026-04-26T09:00:00+09:00", status="refused", error="hard_stop:injury_death", hold_reason="hard_stop_injury_death", judgment="hard_stop", publishable=False),
+                _row(701, (now - timedelta(hours=2)).isoformat(), status="sent"),
+                _row(
+                    702,
+                    (now - timedelta(hours=1)).isoformat(),
+                    status="refused",
+                    error="hard_stop:injury_death",
+                    hold_reason="hard_stop_injury_death",
+                    judgment="hard_stop",
+                    publishable=False,
+                ),
             ]
         )
         stdout = io.StringIO()

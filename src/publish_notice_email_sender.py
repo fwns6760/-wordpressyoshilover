@@ -17,9 +17,11 @@ from src.mail_delivery_bridge import send as bridge_send_default
 
 
 JST = ZoneInfo("Asia/Tokyo")
+ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SUMMARY_EVERY = 10
 DEFAULT_DAILY_CAP = 100
 DEFAULT_DUPLICATE_WINDOW = timedelta(minutes=30)
+DEFAULT_GUARDED_PUBLISH_YELLOW_LOG_PATH = ROOT / "logs" / "guarded_publish_yellow_log.jsonl"
 _WHITESPACE_RE = re.compile(r"\s+")
 _SUMMARY_TITLE_LIMIT = 80
 MAX_MANUAL_X_POST_LENGTH = 280
@@ -170,6 +172,33 @@ EmergencyHook = Callable[[EmergencyMailRequest], object | None]
 
 def _path(value: str | Path) -> Path:
     return value if isinstance(value, Path) else Path(value)
+
+
+def _latest_yellow_log_entry_for_post(
+    post_id: int | str,
+    *,
+    yellow_log_path: str | Path = DEFAULT_GUARDED_PUBLISH_YELLOW_LOG_PATH,
+) -> dict[str, Any] | None:
+    path = _path(yellow_log_path)
+    if not path.exists():
+        return None
+    target = str(post_id)
+    matched: dict[str, Any] | None = None
+    with path.open(encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            if str(payload.get("post_id", "")) != target:
+                continue
+            matched = payload
+    return matched
 
 
 def _normalized_recipients(values: list[str]) -> list[str]:
@@ -346,9 +375,32 @@ def _trim_manual_x_post_text(value: str) -> str:
     return compact[: MAX_MANUAL_X_POST_LENGTH - 1].rstrip() + "…"
 
 
-def build_manual_x_post_candidates(request: PublishNoticeRequest) -> list[tuple[str, str]]:
+def _manual_x_candidate_suppression_reason(
+    request: PublishNoticeRequest,
+    *,
+    yellow_log_path: str | Path = DEFAULT_GUARDED_PUBLISH_YELLOW_LOG_PATH,
+) -> str | None:
+    yellow_entry = _latest_yellow_log_entry_for_post(request.post_id, yellow_log_path=yellow_log_path)
+    if yellow_entry is None:
+        return None
+    block_reason = str(yellow_entry.get("manual_x_post_block_reason") or "").strip()
+    if block_reason:
+        return block_reason
+    applied_flags = {str(flag) for flag in (yellow_entry.get("applied_flags") or []) if str(flag)}
+    if "roster_movement_yellow" in applied_flags:
+        return "roster_movement_yellow"
+    return None
+
+
+def build_manual_x_post_candidates(
+    request: PublishNoticeRequest,
+    *,
+    yellow_log_path: str | Path = DEFAULT_GUARDED_PUBLISH_YELLOW_LOG_PATH,
+) -> list[tuple[str, str]]:
     """Return deterministic manual-copy X post candidates for a publish notice."""
 
+    if _manual_x_candidate_suppression_reason(request, yellow_log_path=yellow_log_path):
+        return []
     title = _collapse_title(request.title) or "巨人ニュース"
     url = str(request.canonical_url or "").strip()
     summary = _normalize_summary(request.summary)
@@ -460,18 +512,32 @@ def resolve_recipients(override: list[str] | None) -> list[str]:
     return _normalized_recipients([os.environ.get("MAIL_BRIDGE_TO", "")])
 
 
-def build_body_text(request: PublishNoticeRequest) -> str:
-    manual_x_candidates = build_manual_x_post_candidates(request)
+def build_body_text(
+    request: PublishNoticeRequest,
+    *,
+    yellow_log_path: str | Path = DEFAULT_GUARDED_PUBLISH_YELLOW_LOG_PATH,
+) -> str:
+    suppression_reason = _manual_x_candidate_suppression_reason(request, yellow_log_path=yellow_log_path)
+    manual_x_candidates = build_manual_x_post_candidates(request, yellow_log_path=yellow_log_path)
     lines = [
         f"title: {str(request.title or '').strip()}",
         f"url: {str(request.canonical_url or '').strip()}",
         f"subtype: {str(request.subtype or '').strip() or 'unknown'}",
         f"publish time: {_format_publish_time_jst(request.publish_time_iso)}",
         f"summary: {_normalize_summary(request.summary)}",
+    ]
+    if suppression_reason == "roster_movement_yellow":
+        lines.append("warning: [Warning] roster movement 系記事、X 自動投稿対象外")
+    lines.extend(
+        [
         "manual_x_post_candidates:",
         f"article_url: {str(request.canonical_url or '').strip()}",
-    ]
-    lines.extend(f"{label}: {text}" for label, text in manual_x_candidates)
+        ]
+    )
+    if suppression_reason:
+        lines.append(f"suppressed: {suppression_reason}")
+    else:
+        lines.extend(f"{label}: {text}" for label, text in manual_x_candidates)
     return "\n".join(lines)
 
 

@@ -139,6 +139,30 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
 
         self.assertFalse(any("fan_reaction_hook" in label for label, _text in candidates))
 
+    def test_manual_x_candidates_skipped_for_roster_movement(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yellow_log_path = Path(tmpdir) / "yellow.jsonl"
+            yellow_log_path.write_text(
+                json.dumps(
+                    {
+                        "post_id": 123,
+                        "applied_flags": ["roster_movement_yellow"],
+                        "manual_x_post_block_reason": "roster_movement_yellow",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            candidates = sender.build_manual_x_post_candidates(self._request(), yellow_log_path=yellow_log_path)
+            body = sender.build_body_text(self._request(), yellow_log_path=yellow_log_path)
+
+        self.assertEqual(candidates, [])
+        self.assertIn("warning: [Warning] roster movement 系記事、X 自動投稿対象外", body.splitlines())
+        self.assertIn("suppressed: roster_movement_yellow", body.splitlines())
+        self.assertFalse(any(line.startswith("x_post_") for line in body.splitlines()))
+
     def test_manual_x_inside_voice_is_conditional(self):
         farm_labels = [label for label, _text in sender.build_manual_x_post_candidates(self._request(subtype="farm"))]
         default_labels = [

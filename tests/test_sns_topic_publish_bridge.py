@@ -162,7 +162,7 @@ class SNSTopicPublishBridgeTests(unittest.TestCase):
         self.assertEqual(report["summary"]["publishable_count"], 1)
         self.assertEqual(report["summary"]["hard_stop_count"], 0)
 
-    def test_hard_stop_draft_is_refused(self):
+    def test_roster_movement_draft_is_publishable_yellow(self):
         fixture = _fixture(
             _proposal(
                 "mock_draft_injury",
@@ -175,11 +175,12 @@ class SNSTopicPublishBridgeTests(unittest.TestCase):
             fixture_path = self._write_fixture(tmpdir, fixture)
             report = bridge.run_sns_topic_publish_bridge(fixture_path=fixture_path, now=FIXED_NOW)
 
-        self.assertEqual(report["summary"]["hard_stop_count"], 1)
-        self.assertEqual(report["summary"]["publishable_count"], 0)
-        self.assertEqual(report["proposed"], [])
-        self.assertEqual(report["refused"][0]["reason"], "hard_stop")
-        self.assertEqual(report["routed_drafts"][0]["evaluator_judgment"], "red")
+        self.assertEqual(report["summary"]["hard_stop_count"], 0)
+        self.assertEqual(report["summary"]["publishable_count"], 1)
+        self.assertEqual(report["refused"], [])
+        self.assertEqual(report["routed_drafts"][0]["evaluator_judgment"], "yellow")
+        self.assertFalse(report["routed_drafts"][0]["cleanup_required"])
+        self.assertEqual(report["routed_drafts"][0]["repairable_flags"], ["roster_movement_yellow"])
 
     def test_repairable_draft_goes_through_cleanup_chain(self):
         body_html = (

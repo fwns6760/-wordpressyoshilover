@@ -50,13 +50,13 @@ def _green_entry(post_id: int, title: str) -> dict:
     }
 
 
-def _repairable_entry(post_id: int, title: str, *flags: str, yellow_reasons=None) -> dict:
+def _repairable_entry(post_id: int, title: str, *flags: str, yellow_reasons=None, cleanup_required: bool = True) -> dict:
     return {
         "post_id": post_id,
         "title": title,
         "category": "repairable",
         "publishable": True,
-        "cleanup_required": True,
+        "cleanup_required": cleanup_required,
         "repairable_flags": list(flags),
         "yellow_reasons": list(yellow_reasons or []),
     }
@@ -728,7 +728,7 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         )
         report = _report(
             green=[_green_entry(801, green_post["title"]["raw"])],
-            red=[_hard_stop_entry(800, "巨人の主力が故障で離脱", "injury_death")],
+            red=[_hard_stop_entry(800, "巨人の主力が重症で入院", "death_or_grave_incident")],
         )
         wp = FakeWPClient({801: green_post})
 
@@ -748,8 +748,121 @@ class GuardedPublishRunnerTests(unittest.TestCase):
             rows = [json.loads(line) for line in history_path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
         self.assertEqual([item["status"] for item in result["executed"]], ["refused", "sent"])
-        self.assertEqual(rows[0]["hold_reason"], "hard_stop_injury_death")
+        self.assertEqual(rows[0]["hold_reason"], "hard_stop_death_or_grave_incident")
         self.assertEqual(wp.update_post_status_calls, [(801, "publish")])
+
+    def test_roster_movement_yellow_published(self):
+        post = _post(
+            802,
+            "巨人主力が登録抹消 復帰目処を待つ",
+            (
+                "<p>巨人主力が登録抹消となった。スポーツ報知によると、復帰目処を見極めながら再調整を進める。</p>"
+                f"<p>{LONG_EXTRA}</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-roster</p>"
+            ),
+        )
+        report = _report(
+            yellow=[
+                _repairable_entry(
+                    802,
+                    post["title"]["raw"],
+                    "roster_movement_yellow",
+                    yellow_reasons=["roster_movement_yellow"],
+                    cleanup_required=False,
+                )
+            ]
+        )
+        wp = FakeWPClient({802: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.jsonl"
+            yellow_log_path = Path(tmpdir) / "yellow.jsonl"
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=history_path,
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=yellow_log_path,
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+            history_row = json.loads(history_path.read_text(encoding="utf-8").splitlines()[-1])
+            yellow_row = json.loads(yellow_log_path.read_text(encoding="utf-8").strip())
+
+        self.assertEqual(result["executed"][0]["status"], "sent")
+        self.assertEqual(history_row["judgment"], "yellow")
+        self.assertFalse(history_row["cleanup_required"])
+        self.assertIsNone(history_row["cleanup_success"])
+        self.assertEqual(wp.update_post_fields_calls, [])
+        self.assertEqual(wp.update_post_status_calls, [(802, "publish")])
+        self.assertEqual(yellow_row["manual_x_post_block_reason"], "roster_movement_yellow")
+
+    def test_death_grave_incident_refused(self):
+        report = _report(red=[_hard_stop_entry(803, "巨人OBの訃報", "death_or_grave_incident")])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.jsonl"
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=history_path,
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=FakeWPClient({}),
+                now=FIXED_NOW,
+            )
+            row = json.loads(history_path.read_text(encoding="utf-8").strip())
+
+        self.assertEqual(result["executed"][0]["status"], "refused")
+        self.assertEqual(row["error"], "hard_stop:death_or_grave_incident")
+        self.assertEqual(row["hold_reason"], "hard_stop_death_or_grave_incident")
+
+    def test_yellow_log_records_roster_movement_reason(self):
+        post = _post(
+            804,
+            "巨人若手が一軍昇格 チームに合流",
+            (
+                "<p>巨人若手が一軍昇格し、チームに合流した。日刊スポーツによると、即戦力として起用が検討されている。</p>"
+                f"<p>{LONG_EXTRA}</p>"
+                "<p>参照元: 日刊スポーツ https://example.com/source-promotion</p>"
+            ),
+        )
+        report = _report(
+            yellow=[
+                _repairable_entry(
+                    804,
+                    post["title"]["raw"],
+                    "roster_movement_yellow",
+                    yellow_reasons=["roster_movement_yellow"],
+                    cleanup_required=False,
+                )
+            ]
+        )
+        wp = FakeWPClient({804: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yellow_log_path = Path(tmpdir) / "yellow.jsonl"
+            runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=yellow_log_path,
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+            yellow_row = json.loads(yellow_log_path.read_text(encoding="utf-8").strip())
+
+        self.assertEqual(yellow_row["applied_flags"], ["roster_movement_yellow"])
+        self.assertFalse(yellow_row["cleanup_required"])
+        self.assertTrue(yellow_row["manual_x_post_blocked"])
+        self.assertEqual(yellow_row["warning_lines"], ["[Warning] roster movement 系記事、X 自動投稿対象外"])
 
     def test_repairable_post_cleanup_then_publish(self):
         body_html = (

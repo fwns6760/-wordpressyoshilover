@@ -767,16 +767,18 @@ def _build_plan(
     judgment: str,
     yellow_reasons: Sequence[str] | None,
     repairable_flags: Sequence[str] | None,
+    cleanup_required: bool,
     cleanup_candidate: dict[str, Any] | None,
 ) -> dict[str, Any]:
     title, body_html = _preflight_post(post)
     cleaned_html = body_html
     cleanup_actions: list[dict[str, str]] = []
     repairable_flags_list = list(dict.fromkeys(str(value) for value in (repairable_flags or []) if str(value)))
-    cleanup_required = bool(repairable_flags_list)
     meta_updates: dict[str, Any] = {}
 
     for flag in repairable_flags_list:
+        if flag in publish_evaluator.NO_CLEANUP_REQUIRED_FLAGS:
+            continue
         action_name = REPAIRABLE_FLAG_ACTION_MAP.get(flag)
         if action_name is None:
             raise CandidateRefusedError("cleanup_action_unmapped", f"cleanup_action_unmapped:{flag}")
@@ -1204,7 +1206,11 @@ def _write_live_success_logs(
     yellow_log_path: str | Path,
     cleanup_log_path: str | Path,
 ) -> None:
-    if plan["cleanup_required"]:
+    manual_x_post_block_reason = "roster_movement_yellow" if "roster_movement_yellow" in plan["repairable_flags"] else None
+    warning_lines: list[str] = []
+    if manual_x_post_block_reason == "roster_movement_yellow":
+        warning_lines.append("[Warning] roster movement 系記事、X 自動投稿対象外")
+    if plan["judgment"] == "yellow":
         _append_jsonl(
             yellow_log_path,
             {
@@ -1213,6 +1219,10 @@ def _write_live_success_logs(
                 "title": plan["title"],
                 "applied_flags": list(plan["repairable_flags"]),
                 "yellow_reasons": list(plan["yellow_reasons"]),
+                "cleanup_required": bool(plan["cleanup_required"]),
+                "warning_lines": warning_lines,
+                "manual_x_post_blocked": manual_x_post_block_reason is not None,
+                "manual_x_post_block_reason": manual_x_post_block_reason,
                 "publish_link": plan["publish_link"],
             },
         )
@@ -1465,6 +1475,7 @@ def run_guarded_publish(
                     judgment=entry["judgment"],
                     yellow_reasons=entry["yellow_reasons"],
                     repairable_flags=entry["repairable_flags"],
+                    cleanup_required=bool(entry["cleanup_required"]),
                     cleanup_candidate=entry["cleanup_candidate"],
                 )
         except CandidateRefusedError as exc:
@@ -1524,6 +1535,7 @@ def run_guarded_publish(
                     judgment=plan["judgment"],
                     yellow_reasons=plan["yellow_reasons"],
                     repairable_flags=plan["repairable_flags"],
+                    cleanup_required=bool(plan["cleanup_required"]),
                     cleanup_candidate=plan["cleanup_candidate"],
                 )
                 cleanup_success = live_plan["cleanup_success"]

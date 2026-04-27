@@ -16,6 +16,7 @@ from src.title_body_nucleus_validator import validate_title_body_nucleus
 
 JST = ZoneInfo("Asia/Tokyo")
 RELAXED_FOR_BREAKING_BOARD_FLAGS = frozenset({"subtype_unresolved", "heading_sentence_as_h3"})
+NO_CLEANUP_REQUIRED_FLAGS = frozenset({"roster_movement_yellow"})
 
 HARD_STOP_FLAGS = frozenset(
     {
@@ -46,7 +47,7 @@ REPAIRABLE_FLAGS = frozenset(
         "stale_for_breaking_board",
         "expired_lineup_or_pregame",
         "expired_game_context",
-        "injury_death",
+        "roster_movement_yellow",
         "lineup_duplicate_excessive",
     }
 ) | RELAXED_FOR_BREAKING_BOARD_FLAGS
@@ -60,9 +61,18 @@ SPECULATIVE_TITLE_RE = re.compile(
     r"どう並べ|どう動く|どう攻め|どう戦|誰だ|どう打|どう起用|どうな[るた]|なぜ|何が|[？?]|"
     r"ポイント[はが]|順調ならば|週明けにも.*か$)"
 )
-INJURY_DEATH_RE = re.compile(
-    r"(故障|離脱|登録抹消|抹消|コンディション不良|アクシデント|復帰|亡くな|天国|死去|【コメント】|引退|交代|診断|症状|ケガ)"
+INJURY_ROSTER_SIGNAL_RE = re.compile(
+    r"(故障|負傷|離脱|登録抹消|抹消|登録|昇格|降格|合流|復帰|復活|再昇格|再登録|"
+    r"一軍合流|二軍降格|軽症|コンディション不良|アクシデント|診断|症状|ケガ|けが|怪我|"
+    r"戦線離脱|復帰目処|復帰めど|故障者リスト|\bIL\b|入団|引退|全治)"
 )
+DEATH_OR_GRAVE_INCIDENT_RE = re.compile(
+    r"(死亡|死去|逝去|亡くな|危篤|重体|重症|重傷|意識不明|入院|手術)"
+)
+# Compatibility alias for X-side gating that still treats broad roster/injury stories as no-auto-post.
+INJURY_DEATH_RE = INJURY_ROSTER_SIGNAL_RE
+LONG_RECOVERY_MONTH_RE = re.compile(r"全治\s*([0-9０-９]+)\s*(?:ヶ|か|カ|ヵ)?月")
+LONG_RECOVERY_WEEK_RE = re.compile(r"全治\s*([0-9０-９]+)\s*(?:週間|週)")
 RANKING_LIST_ONLY_RE = re.compile(r"(①.*②|⑤|通算安打.*：|順位.*ranking|NPB通算)", re.IGNORECASE | re.DOTALL)
 TAG_RE = re.compile(r"<[^>]+>")
 H3_RE = re.compile(r"(?is)<h3\b[^>]*>(.*?)</h3>")
@@ -94,6 +104,7 @@ GAME_START_TIME_RE = re.compile(
 TITLE_DUPLICATE_SUFFIX_RE = re.compile(r"(?:\s*(?:\(\s*\d+\s*\)|（\s*\d+\s*）|[-－ー]\s*\d+))+$")
 TITLE_NUMBER_TOKEN_RE = re.compile(r"\d+")
 DEFAULT_GAME_START_HOUR = 18
+FULLWIDTH_DIGITS = str.maketrans("０１２３４５６７８９", "0123456789")
 FRESHNESS_THRESHOLDS_HOURS: dict[str, float] = {
     "lineup": 6.0,
     "pregame": 6.0,
@@ -593,6 +604,41 @@ def _contains_primary_source(record: dict[str, Any]) -> bool:
     return bool(PRIMARY_SRC_RE.search(body_text) or PRIMARY_SRC_RE.search(source_block))
 
 
+def _has_primary_source_link(record: dict[str, Any]) -> bool:
+    source_block = str(record.get("source_block") or "")
+    if source_block and PRIMARY_SRC_RE.search(source_block) and URL_RE.search(source_block):
+        return True
+    return bool(_contains_primary_source(record) and record.get("source_urls"))
+
+
+def _parse_fullwidth_int(value: str | None) -> int | None:
+    text = str(value or "").translate(FULLWIDTH_DIGITS).strip()
+    if not text.isdigit():
+        return None
+    return int(text)
+
+
+def _is_long_term_recovery_story(text: str) -> bool:
+    month_match = LONG_RECOVERY_MONTH_RE.search(text)
+    if month_match and (_parse_fullwidth_int(month_match.group(1)) or 0) >= 1:
+        return True
+    week_match = LONG_RECOVERY_WEEK_RE.search(text)
+    return bool(week_match and (_parse_fullwidth_int(week_match.group(1)) or 0) >= 4)
+
+
+def _medical_roster_flag(record: dict[str, Any]) -> str | None:
+    title = str(record.get("title") or "")
+    body_text = str(record.get("body_text") or "")
+    combined = "\n".join(part for part in (title, body_text) if part)
+    if DEATH_OR_GRAVE_INCIDENT_RE.search(combined) or _is_long_term_recovery_story(combined):
+        return "death_or_grave_incident"
+    if not INJURY_ROSTER_SIGNAL_RE.search(combined):
+        return None
+    if not _has_primary_source_link(record):
+        return "death_or_grave_incident"
+    return "roster_movement_yellow"
+
+
 def _has_featured_media(raw_post: dict[str, Any]) -> bool:
     try:
         return int(raw_post.get("featured_media") or 0) > 0
@@ -716,6 +762,14 @@ def _merge_legacy_flags(*flag_groups: list[str]) -> list[str]:
             if flag not in merged:
                 merged.append(flag)
     return merged
+
+
+def _legacy_red_flags(reasons: list[dict[str, Any]]) -> list[str]:
+    red_flags = _legacy_flags(reasons, "hard_stop")
+    repairable_flags = _reason_flags(reasons, "repairable")
+    if red_flags and "roster_movement_yellow" in repairable_flags and "injury_death" not in red_flags:
+        red_flags = _merge_legacy_flags(red_flags, ["injury_death"])
+    return _merge_legacy_flags(red_flags, _legacy_flags(reasons, "repairable"))
 
 
 def _heading_sentence_as_h3_hits(body_html: str) -> list[dict[str, str]]:
@@ -947,8 +1001,16 @@ def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -
             category="repairable",
             legacy_flag="speculative_title" if SPECULATIVE_TITLE_RE.search(title) else None,
         )
-    if INJURY_DEATH_RE.search(title) or INJURY_DEATH_RE.search(body_text):
-        _append_reason(reasons, flag="injury_death", category="hard_stop")
+    medical_roster_flag = _medical_roster_flag(record)
+    if medical_roster_flag == "death_or_grave_incident":
+        _append_reason(
+            reasons,
+            flag="death_or_grave_incident",
+            category="hard_stop",
+            legacy_flag="injury_death",
+        )
+    elif medical_roster_flag == "roster_movement_yellow":
+        _append_reason(reasons, flag="roster_movement_yellow", category="repairable")
     if RANKING_LIST_ONLY_RE.search(body_text):
         _append_reason(reasons, flag="ranking_list_only", category="hard_stop")
 
@@ -1017,11 +1079,10 @@ def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -
 
     hard_stop_flags = _reason_flags(reasons, "hard_stop")
     repairable_flags = _reason_flags(reasons, "repairable")
-    red_flags = _legacy_flags(reasons, "hard_stop")
     yellow_reasons = _legacy_flags(reasons, "repairable")
     cleanup_types = list(dict.fromkeys(detail["type"] for detail in cleanup_details))
     publishable = not bool(hard_stop_flags)
-    cleanup_required = bool(repairable_flags) and publishable
+    cleanup_required = publishable and any(flag not in NO_CLEANUP_REQUIRED_FLAGS for flag in repairable_flags)
     entry_category = "hard_stop" if hard_stop_flags else "repairable" if repairable_flags else "clean"
 
     entry = {
@@ -1043,8 +1104,8 @@ def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -
         "freshness_reason": freshness["freshness_reason"],
     }
 
-    if red_flags:
-        entry["red_flags"] = _merge_legacy_flags(red_flags, yellow_reasons)
+    if hard_stop_flags:
+        entry["red_flags"] = _legacy_red_flags(reasons)
         if yellow_reasons:
             entry["yellow_reasons"] = yellow_reasons
         if any(flag in {"title_body_mismatch_strict", "title_body_mismatch_partial", "cross_article_contamination"} for flag in hard_stop_flags + repairable_flags):
@@ -1242,7 +1303,7 @@ def _apply_lineup_guard(
     entry["cleanup_required"] = False
     entry["category"] = "hard_stop"
     yellow_reasons = _legacy_flags(reasons, "repairable")
-    entry["red_flags"] = _merge_legacy_flags(_legacy_flags(reasons, "hard_stop"), yellow_reasons)
+    entry["red_flags"] = _legacy_red_flags(reasons)
     if yellow_reasons:
         entry["yellow_reasons"] = yellow_reasons
     entry.pop("reason_summary", None)
@@ -1279,7 +1340,7 @@ def _apply_title_duplicate_guard(
     entry["cleanup_required"] = False
     entry["category"] = "hard_stop"
     yellow_reasons = _legacy_flags(reasons, "repairable")
-    entry["red_flags"] = _merge_legacy_flags(_legacy_flags(reasons, "hard_stop"), yellow_reasons)
+    entry["red_flags"] = _legacy_red_flags(reasons)
     if yellow_reasons:
         entry["yellow_reasons"] = yellow_reasons
     entry.pop("reason_summary", None)

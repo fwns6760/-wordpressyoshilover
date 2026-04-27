@@ -73,19 +73,21 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         )
         self.hard_stop_post = _post(
             104,
-            "巨人の主力が故障で離脱",
+            "巨人の主力が重症で入院 手術へ",
             (
-                "<p>巨人の主力にケガの症状が出たと報じられた。スポーツ報知によると、診断結果が待たれている。</p>"
+                "<p>巨人の主力が重症のため入院し、手術を受ける予定だと報じられた。スポーツ報知によると、球団も経過を説明した。</p>"
                 "<p>参照元: スポーツ報知 https://example.com/source</p>"
             ),
+            meta={"article_subtype": "injury"},
         )
         self.hard_stop_plus_repairable_post = _post(
             105,
-            "巨人はどう動く？主力が故障で離脱",
+            "巨人はどう動く？主力が重症で入院",
             (
-                "<p>巨人の主力にケガの症状が出たと報じられた。スポーツ報知によると、診断結果が待たれている。</p>"
+                "<p>巨人の主力が重症のため入院した。スポーツ報知によると、手術の予定も検討されている。</p>"
                 "<p>参照元: スポーツ報知 https://example.com/source</p>"
             ),
+            meta={"article_subtype": "injury"},
         )
         self.site_component_post = _post(
             106,
@@ -208,9 +210,9 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         self.assertEqual(entry["category"], "hard_stop")
         self.assertFalse(entry["publishable"])
         self.assertFalse(entry["cleanup_required"])
-        self.assertEqual(
+        self.assertIn(
+            {"flag": "death_or_grave_incident", "category": "hard_stop", "legacy_flag": "injury_death"},
             entry["reasons"],
-            [{"flag": "injury_death", "category": "hard_stop"}],
         )
 
     def test_hard_stop_plus_repairable_returns_publishable_false(self):
@@ -220,9 +222,101 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         entry = report["red"][0]
         self.assertFalse(entry["publishable"])
         self.assertFalse(entry["cleanup_required"])
-        self.assertIn("injury_death", entry["hard_stop_flags"])
+        self.assertIn("death_or_grave_incident", entry["hard_stop_flags"])
         self.assertIn("ai_tone_heading_or_lead", entry["repairable_flags"])
         self.assertIn("speculative_title", entry["yellow_reasons"])
+
+    def test_63795_roster_movement_publishable_yellow(self):
+        post = _post(
+            63795,
+            "巨人主力が登録抹消 復帰目処を待つ",
+            (
+                "<p>巨人主力が登録抹消となった。スポーツ報知によると、復帰目処を見極めながら再調整を進める。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-63795</p>"
+            ),
+            meta={"article_subtype": "injury"},
+        )
+
+        report = self._evaluate([post])
+
+        entry = report["yellow"][0]
+        self.assertTrue(entry["publishable"])
+        self.assertFalse(entry["cleanup_required"])
+        self.assertIn("roster_movement_yellow", entry["repairable_flags"])
+        self.assertEqual(entry["hard_stop_flags"], [])
+
+    def test_death_keyword_remains_hard_stop(self):
+        post = _post(
+            112,
+            "巨人OBの訃報 球団が死去を発表",
+            (
+                "<p>巨人OBが死去したと球団が発表した。スポーツ報知によると、追悼のコメントも出された。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-death</p>"
+            ),
+        )
+
+        report = self._evaluate([post])
+
+        entry = report["red"][0]
+        self.assertIn("death_or_grave_incident", entry["hard_stop_flags"])
+        self.assertFalse(entry["publishable"])
+
+    def test_grave_incident_remains_hard_stop(self):
+        report = self._evaluate([self.hard_stop_post])
+
+        entry = report["red"][0]
+        self.assertIn("death_or_grave_incident", entry["hard_stop_flags"])
+        self.assertFalse(entry["publishable"])
+
+    def test_source_missing_diagnosis_hard_stop(self):
+        post = _post(
+            113,
+            "巨人主力が骨折と診断 復帰時期は未定",
+            "<p>巨人主力が骨折と診断された。復帰時期は未定とだけ記され、出典リンクはない。</p>",
+            meta={"article_subtype": "injury"},
+        )
+
+        report = self._evaluate([post])
+
+        entry = report["red"][0]
+        self.assertIn("death_or_grave_incident", entry["hard_stop_flags"])
+        self.assertFalse(entry["publishable"])
+
+    def test_promotion_publishable_yellow(self):
+        post = _post(
+            114,
+            "巨人若手が一軍昇格 チームに合流",
+            (
+                "<p>巨人若手が一軍昇格し、チームに合流した。日刊スポーツによると、即戦力として起用が検討されている。</p>"
+                "<p>参照元: 日刊スポーツ https://example.com/source-promotion</p>"
+            ),
+            meta={"article_subtype": "notice"},
+        )
+
+        report = self._evaluate([post])
+
+        entry = report["yellow"][0]
+        self.assertTrue(entry["publishable"])
+        self.assertFalse(entry["cleanup_required"])
+        self.assertIn("roster_movement_yellow", entry["repairable_flags"])
+
+    def test_demotion_publishable_yellow(self):
+        post = _post(
+            115,
+            "巨人主力が二軍降格 再調整へ",
+            (
+                "<p>巨人主力が二軍降格となった。スポニチによると、再調整後の再昇格を目指す方針だ。</p>"
+                "<p>参照元: スポニチ https://example.com/source-demotion</p>"
+            ),
+            meta={"article_subtype": "notice"},
+        )
+
+        report = self._evaluate([post])
+
+        entry = report["yellow"][0]
+        self.assertTrue(entry["publishable"])
+        self.assertFalse(entry["cleanup_required"])
+        self.assertIn("roster_movement_yellow", entry["repairable_flags"])
 
     def test_summary_includes_hard_stop_repairable_clean_counts(self):
         report = self._evaluate(

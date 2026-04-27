@@ -711,6 +711,119 @@ CATEGORY_REACTION_TERMS = {
 SUBJECT_ONLY_FAN_REACTION_QUERY_BLOCK_CATEGORIES = {"選手情報", "首脳陣", "補強・移籍"}
 ALWAYS_PRECISE_FAN_REACTION_CATEGORIES = {"首脳陣", "補強・移籍"}
 DEFAULT_EXCLUDED_REACTION_HANDLES = {"yoshilover6760"}
+TRUSTED_SOCIAL_SOURCE_NAMES = {
+    "巨人公式X",
+    "読売ジャイアンツX",
+    "スポーツ報知巨人班X",
+    "日刊スポーツX",
+    "スポニチ野球記者X",
+    "サンスポ巨人X",
+    "スポーツ報知X",
+    "報知野球X",
+    "NPB公式X",
+}
+GIANTS_EXCLUSIVE_SOCIAL_SOURCE_NAMES = {
+    "巨人公式X",
+    "読売ジャイアンツX",
+    "スポーツ報知巨人班X",
+    "サンスポ巨人X",
+}
+TRUSTED_SOCIAL_SOURCE_HANDLES = {
+    "yoshilover6760",
+    "tokyogiants",
+    "yomiuri_giants",
+    "yomiurigiants",
+    "hochi_giants",
+    "sanspo_giants",
+    "sportshochi",
+    "hochi_baseball",
+    "sponichiyakyu",
+    "nikkansports",
+    "npb",
+    "npb_official",
+}
+GIANTS_EXCLUSIVE_SOCIAL_HANDLES = {
+    "tokyogiants",
+    "yomiuri_giants",
+    "yomiurigiants",
+    "hochi_giants",
+    "sanspo_giants",
+}
+GIANTS_ROSTER_EXTRA_ALIASES = {
+    "オコエ瑠偉": ("オコエ瑠偉", "オコエ"),
+    "岡本和真": ("岡本和真",),
+    "山﨑伊織": ("山﨑伊織", "山崎伊織"),
+    "菅野智之": ("菅野智之", "菅野"),
+    "中田翔": ("中田翔",),
+    "戸根千明": ("戸根千明", "戸根"),
+}
+TRUSTED_SOCIAL_REPORTABLE_MARKERS = {
+    "試合速報": (
+        "先発",
+        "予告先発",
+        "登録",
+        "抹消",
+        "昇格",
+        "公示",
+        "打順",
+        "オーダー",
+        "スタメン",
+        "勝利",
+        "白星",
+        "敗戦",
+        "黒星",
+        "同点",
+        "逆転",
+        "先制",
+        "本塁打",
+        "決勝打",
+        "好投",
+        "完封",
+        "復帰",
+        "合流",
+    ),
+    "選手情報": (
+        "復帰",
+        "合流",
+        "昇格",
+        "抹消",
+        "登録",
+        "先発",
+        "実戦",
+        "打撃練習",
+        "守備練習",
+        "ブルペン",
+        "調整",
+        "コメント",
+    ),
+    "首脳陣": (
+        "監督",
+        "コーチ",
+        "起用",
+        "打順",
+        "スタメン",
+        "オーダー",
+        "競争",
+        "コメント",
+    ),
+    "ドラフト・育成": (
+        "二軍",
+        "２軍",
+        "2軍",
+        "ファーム",
+        "育成",
+        "支配下",
+        "昇格",
+        "先発",
+        "好投",
+        "本塁打",
+        "マルチ",
+        "適時打",
+    ),
+    "補強・移籍": ("獲得", "移籍", "トレード", "加入", "退団", "調査"),
+    "コラム": ("一軍登録", "登録抹消", "戦力外", "合流", "昇格", "初１軍", "初1軍", "初一軍"),
+    "球団情報": ("発表", "公示", "開催", "中止", "チケット", "グッズ", "イベント"),
+}
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -1585,6 +1698,28 @@ def _clean_social_entry_text(text: str) -> str:
     return clean.strip(" ・\t")
 
 
+def _normalize_social_handle(handle: str) -> str:
+    return (handle or "").strip().lower().lstrip("@")
+
+
+def _normalize_social_source_name(source_name: str) -> str:
+    return _collapse_ws(source_name or "")
+
+
+def _is_trusted_social_source(source_handle: str = "", source_name: str = "") -> bool:
+    handle = _normalize_social_handle(source_handle)
+    if handle in TRUSTED_SOCIAL_SOURCE_HANDLES:
+        return True
+    return _normalize_social_source_name(source_name) in TRUSTED_SOCIAL_SOURCE_NAMES
+
+
+def _is_giants_exclusive_social_source(source_handle: str = "", source_name: str = "") -> bool:
+    handle = _normalize_social_handle(source_handle)
+    if handle in GIANTS_EXCLUSIVE_SOCIAL_HANDLES:
+        return True
+    return _normalize_social_source_name(source_name) in GIANTS_EXCLUSIVE_SOCIAL_SOURCE_NAMES
+
+
 def _is_polluted_social_text(text: str) -> bool:
     clean = _html.unescape(_strip_html(text or "")).strip()
     if not clean:
@@ -1599,6 +1734,18 @@ def _is_polluted_social_text(text: str) -> bool:
         return True
     lower_clean = clean.lower()
     return any(marker.lower() in lower_clean for marker in SOCIAL_TEXT_OUTLET_MARKERS)
+
+
+def _is_polluted_social_entry(
+    title: str,
+    summary: str,
+    *,
+    source_name: str = "",
+    post_url: str = "",
+) -> bool:
+    if _is_trusted_social_source(_extract_handle_from_tweet_url(post_url), source_name):
+        return False
+    return _is_polluted_social_text(title) or _is_polluted_social_text(summary)
 
 
 def _first_matching_keyword(text: str, keywords: tuple[str, ...]) -> str:
@@ -2300,7 +2447,7 @@ def _should_skip_stale_postgame_entry(
 
     local_published = source_published_at.astimezone(JST)
     local_now = datetime.now(timezone.utc).astimezone(JST)
-    if local_published.date() < local_now.date():
+    if max_age_hours <= 24 and local_published.date() < local_now.date():
         return True
 
     threshold = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
@@ -8869,7 +9016,22 @@ GCS_BUCKET        = os.environ.get("GCS_BUCKET", "")
 GCS_HISTORY_KEY   = "rss_history.json"
 LOG_FILE          = ROOT / "logs"   / "rss_fetcher.log"
 
-GIANTS_KEYWORDS = ["巨人", "ジャイアンツ", "東京ドーム", "Giants", "TokyoGiants"]
+GIANTS_KEYWORDS = [
+    "巨人",
+    "ジャイアンツ",
+    "読売ジャイアンツ",
+    "東京ドーム",
+    "Giants",
+    "GIANTS",
+    "TokyoGiants",
+    "Tokyo Giants",
+    "yomiurigiants",
+    "YOMIURIGIANTS",
+    "#yomiurigiants",
+    "#YOMIURIGIANTS",
+    "#GIANTS",
+    "#巨人ファン",
+]
 GIANTS_TRANSFER_CONTEXT_MARKERS = (
     "FA",
     "トレード",
@@ -9604,21 +9766,33 @@ def _load_giants_roster() -> tuple[dict, ...]:
 
 @lru_cache(maxsize=1)
 def _giants_roster_alias_index() -> tuple[dict, ...]:
-    index: list[dict] = []
+    alias_map: dict[str, set[str]] = {}
     for entry in _load_giants_roster():
-        aliases = [entry.get("name", "")] + list(entry.get("aliases") or [])
-        normalized_aliases: list[str] = []
-        seen_aliases: set[str] = set()
+        name = (entry.get("name") or "").strip()
+        if not name:
+            continue
+        alias_bucket = alias_map.setdefault(name, set())
+        aliases = [name] + list(entry.get("aliases") or [])
         for alias in aliases:
             normalized = _normalize_roster_signal_text(alias)
-            if len(normalized) < 2 or normalized in seen_aliases:
+            if len(normalized) < 2:
                 continue
-            normalized_aliases.append(normalized)
-            seen_aliases.add(normalized)
+            alias_bucket.add(normalized)
+
+    for name, aliases in GIANTS_ROSTER_EXTRA_ALIASES.items():
+        alias_bucket = alias_map.setdefault(name, set())
+        for alias in aliases:
+            normalized = _normalize_roster_signal_text(alias)
+            if len(normalized) >= 2:
+                alias_bucket.add(normalized)
+
+    index: list[dict] = []
+    for name, alias_bucket in alias_map.items():
+        normalized_aliases = sorted(alias_bucket, key=len, reverse=True)
         if normalized_aliases:
             index.append(
                 {
-                    "name": entry.get("name", ""),
+                    "name": name,
                     "aliases": tuple(sorted(normalized_aliases, key=len, reverse=True)),
                 }
             )
@@ -9649,9 +9823,21 @@ def _is_other_team_transfer_story(text: str, roster_hits: list[str]) -> bool:
     return any(marker in source_text for marker in GIANTS_TRANSFER_CONTEXT_MARKERS)
 
 
-def is_giants_related(text: str) -> bool:
+def _trusted_social_signal_match(text: str, category: str, article_subtype: str) -> str:
+    markers = list(TRUSTED_SOCIAL_REPORTABLE_MARKERS.get(category, ()))
+    if article_subtype == "pregame":
+        markers.extend(("先発", "予告先発", "スタメン", "打順", "オーダー"))
+    for marker in markers:
+        if marker in text:
+            return marker
+    return ""
+
+
+def is_giants_related(text: str, source_name: str = "", post_url: str = "") -> bool:
     source_text = text or ""
     if any(kw in source_text for kw in GIANTS_KEYWORDS):
+        return True
+    if _is_giants_exclusive_social_source(_extract_handle_from_tweet_url(post_url), source_name):
         return True
     roster_hits = _matching_giants_roster_names(source_text)
     if not roster_hits:
@@ -9679,8 +9865,11 @@ def _evaluate_authoritative_social_entry(
     summary: str,
     category: str,
     article_subtype: str,
+    source_name: str = "",
+    source_handle: str = "",
 ) -> tuple[bool, dict | None]:
     text = _strip_html(f"{title} {summary}")
+    trusted_source = _is_trusted_social_source(source_handle, source_name)
     if _is_promotional_video_entry(title, summary) or any(marker in text for marker in SOCIAL_VIDEO_SKIP_MARKERS):
         return False, None
     has_quote = "「" in text and "」" in text
@@ -9723,6 +9912,13 @@ def _evaluate_authoritative_social_entry(
             }
     if category == "補強・移籍" and any(keyword in text for keyword in ("獲得", "移籍", "トレード", "加入", "退団")):
         return True, None
+    if trusted_source:
+        matched_signal = _trusted_social_signal_match(text, category, article_subtype)
+        if matched_signal:
+            return True, {
+                "rescue_reason": "trusted_social_source",
+                "matched_word": matched_signal,
+            }
     return False, None
 
 
@@ -10876,12 +11072,18 @@ def _main(args, logger):
 
         for entry in entries:
             post_url = get_post_url(entry)
+            source_handle = _extract_handle_from_tweet_url(post_url)
             entry_title_raw = (entry.get("title", "") or "").strip()
             entry_summary_raw = entry.get("summary", "") or entry.get("description", "")
             if source_type == "social_news":
                 entry_title_clean = _clean_social_entry_text(entry_title_raw)
                 entry_summary_clean = _clean_social_entry_text(entry_summary_raw)
-                if _is_polluted_social_text(entry_title_clean) or _is_polluted_social_text(entry_summary_clean):
+                if _is_polluted_social_entry(
+                    entry_title_raw,
+                    entry_summary_raw,
+                    source_name=name,
+                    post_url=post_url,
+                ):
                     logger.debug(f"  [SKIP:SNS汚染] {entry_title_raw[:40]}")
                     skip_filter += 1
                     skip_reason_counts["sns_polluted"] += 1
@@ -10890,7 +11092,6 @@ def _main(args, logger):
                 entry_title_clean = entry_title_raw
                 entry_summary_clean = entry_summary_raw
             title_text = f"{entry_title_clean} {entry_summary_clean}".strip()
-            source_handle = _extract_handle_from_tweet_url(post_url)
             source_trust = (
                 _source_trust_classify_handle(source_handle)
                 if source_handle
@@ -10932,7 +11133,15 @@ def _main(args, logger):
             if not should_articleize:
                 continue
 
-            if not is_giants_related(title_text):
+            giants_signal_text = title_text
+            if source_type == "social_news":
+                giants_signal_text = " ".join(
+                    part
+                    for part in (entry_title_raw, entry_summary_raw, entry_title_clean, entry_summary_clean)
+                    if part
+                )
+
+            if not is_giants_related(giants_signal_text, source_name=name, post_url=post_url):
                 logger.debug(f"  [SKIP:フィルタ] {post_url}")
                 if len(not_giants_related_sample_titles) < 3:
                     not_giants_related_sample_titles.append(entry_title_clean[:80] or post_url)
@@ -10942,7 +11151,7 @@ def _main(args, logger):
                         title=entry_title_clean[:160],
                         post_url=post_url,
                         source_name=name,
-                        detected_keywords=_matching_giants_keywords(title_text),
+                        detected_keywords=_matching_giants_keywords(giants_signal_text),
                     )
                     not_giants_related_info_count += 1
                 skip_filter += 1
@@ -10965,7 +11174,7 @@ def _main(args, logger):
                     json.dumps(tag_category_warnings, ensure_ascii=False),
                 )
             entry_has_game = infer_article_has_game(title, summary, category, has_game)
-            if _should_skip_stale_postgame_entry(category, title, summary, published_at):
+            if _should_skip_stale_postgame_entry(category, title, summary, published_at, max_age_hours=36):
                 logger.debug(f"  [SKIP:postgame古い] {title_preview[:40]}")
                 skip_filter += 1
                 skip_reason_counts["stale_postgame"] += 1
@@ -11002,7 +11211,14 @@ def _main(args, logger):
                         _append_skip_reason_sample(skip_reason_sample_titles, "comment_required", title)
                         continue
                 else:
-                    worthy, rescue_meta = _evaluate_authoritative_social_entry(title, summary, category, article_subtype)
+                    worthy, rescue_meta = _evaluate_authoritative_social_entry(
+                        title,
+                        summary,
+                        category,
+                        article_subtype,
+                        source_name=name,
+                        source_handle=source_handle,
+                    )
                     if rescue_meta:
                         _log_sns_weak_rescue(logger, post_url, title, rescue_meta)
                     if not worthy:

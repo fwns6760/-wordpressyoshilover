@@ -57,6 +57,8 @@ TRUE_VALUES = {"1", "true", "yes", "on"}
 HTTP_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 DEFAULT_LOW_COST_AI_CATEGORIES = {"試合速報", "選手情報", "首脳陣"}
 DEFAULT_AUTO_TWEET_CATEGORIES = {"試合速報", "選手情報", "首脳陣", "ドラフト・育成"}
+AUTO_POST_CATEGORY_ID = 673
+DRAFT_CATEGORY_FALLBACK_NAME = "コラム"
 PUBLISH_SUBTYPE_ENV_MAP = {
     "postgame": "ENABLE_PUBLISH_FOR_POSTGAME",
     "lineup": "ENABLE_PUBLISH_FOR_LINEUP",
@@ -9860,6 +9862,33 @@ def classify_category(text: str, keywords: dict) -> str:
     return "コラム"
 
 
+def _resolve_draft_category_ids(
+    wp: WPClient,
+    category: str,
+    logger: logging.Logger | None = None,
+) -> list[int]:
+    requested_category = (category or "").strip() or DRAFT_CATEGORY_FALLBACK_NAME
+    category_names = [requested_category]
+    if requested_category != DRAFT_CATEGORY_FALLBACK_NAME:
+        category_names.append(DRAFT_CATEGORY_FALLBACK_NAME)
+
+    for index, category_name in enumerate(category_names):
+        category_id = int(wp.resolve_category_id(category_name) or 0)
+        if not category_id:
+            continue
+        if index > 0 and logger is not None:
+            logger.warning(
+                "draft category fallback applied requested=%s fallback=%s",
+                requested_category,
+                category_name,
+            )
+        return [category_id]
+
+    raise ValueError(
+        f"draft category resolution failed requested={requested_category} fallback={DRAFT_CATEGORY_FALLBACK_NAME}"
+    )
+
+
 def _evaluate_authoritative_social_entry(
     title: str,
     summary: str,
@@ -11600,7 +11629,7 @@ def _main(args, logger):
 
         try:
             _log_title_collision_if_needed(logger, history, post_url, draft_title)
-            category_id = wp.resolve_category_id(category)
+            cats = _resolve_draft_category_ids(wp, category, logger)
 
             featured_media = 0
             if source_type in {"news", "social_news"}:
@@ -11610,11 +11639,6 @@ def _main(args, logger):
                     post_url,
                     logger,
                 )
-
-            AUTO_POST_CATEGORY_ID = 673
-            cats = [AUTO_POST_CATEGORY_ID]
-            if category_id:
-                cats.append(category_id)
 
             post_id = _create_draft_with_same_fire_guard(
                 wp,

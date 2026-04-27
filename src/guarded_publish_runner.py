@@ -19,9 +19,11 @@ from src.wp_client import WPClient
 ROOT = Path(__file__).resolve().parent.parent
 JST = ZoneInfo("Asia/Tokyo")
 UTC = timezone.utc
-DEFAULT_MAX_BURST = 20
+DEFAULT_MAX_BURST = 3
 MAX_BURST_HARD_CAP = 30
 DAILY_CAP_HARD_CAP = 100
+DEFAULT_MAX_PUBLISH_PER_HOUR = 10
+BACKLOG_FRESHNESS_CUTOFF_HOURS = 6
 POSTCHECK_BATCH_SIZE = 10
 DEFAULT_BACKUP_DIR = ROOT / "logs" / "cleanup_backup"
 DEFAULT_HISTORY_PATH = ROOT / "logs" / "guarded_publish_history.jsonl"
@@ -159,6 +161,45 @@ def _now_jst(now: datetime | None = None) -> datetime:
 
 def _now_utc(now: datetime | None = None) -> datetime:
     return _now_jst(now).astimezone(UTC)
+
+
+def _env_int(name: str, *, default: int, minimum: int = 1, maximum: int | None = None) -> int:
+    raw_value = str(os.environ.get(name, "")).strip()
+    if not raw_value:
+        value = int(default)
+    else:
+        try:
+            value = int(raw_value)
+        except ValueError as exc:
+            raise GuardedPublishAbortError(f"{name} must be an integer") from exc
+    if value < int(minimum):
+        raise GuardedPublishAbortError(f"{name} must be >= {int(minimum)}")
+    if maximum is not None and value > int(maximum):
+        raise GuardedPublishAbortError(f"{name} must be <= {int(maximum)}")
+    return value
+
+
+def _effective_max_burst_per_run(requested_max_burst: int) -> int:
+    raw_configured = str(os.environ.get("MAX_BURST_PER_RUN", "")).strip()
+    if not raw_configured:
+        return int(requested_max_burst)
+    configured = _env_int(
+        "MAX_BURST_PER_RUN",
+        default=DEFAULT_MAX_BURST,
+        minimum=1,
+        maximum=MAX_BURST_HARD_CAP,
+    )
+    requested = int(requested_max_burst)
+    if requested == DEFAULT_MAX_BURST:
+        return configured
+    return min(requested, configured)
+
+
+def _max_publish_per_hour(requested_max_burst: int) -> int:
+    raw_configured = str(os.environ.get("MAX_PUBLISH_PER_HOUR", "")).strip()
+    if not raw_configured and int(requested_max_burst) != DEFAULT_MAX_BURST:
+        return DAILY_CAP_HARD_CAP
+    return _env_int("MAX_PUBLISH_PER_HOUR", default=DEFAULT_MAX_PUBLISH_PER_HOUR, minimum=1)
 
 
 def _parse_iso_to_jst(value: Any) -> datetime | None:
@@ -1047,6 +1088,20 @@ def _daily_sent_count(rows: Sequence[dict[str, Any]], day: date) -> int:
     return count
 
 
+def _hourly_sent_count(rows: Sequence[dict[str, Any]], now: datetime) -> int:
+    cutoff = _now_jst(now) - timedelta(hours=1)
+    current_now = _now_jst(now)
+    count = 0
+    for row in rows:
+        if str(row.get("status") or "") != "sent":
+            continue
+        ts = _parse_iso_to_jst(row.get("ts"))
+        if ts is None or ts < cutoff or ts > current_now:
+            continue
+        count += 1
+    return count
+
+
 def _build_backup_payload(post: dict[str, Any], *, fetched_at: datetime) -> dict[str, Any]:
     return {
         "id": post.get("id"),
@@ -1113,9 +1168,36 @@ def _iter_publishable_entries(report: dict[str, Any]) -> list[dict[str, Any]]:
                     "cleanup_required": bool(entry.get("cleanup_required")),
                     "cleanup_candidate": cleanup_map.get(post_id),
                     "resolved_subtype": str(entry.get("resolved_subtype") or entry.get("subtype") or ""),
+                    "content_date": str(entry.get("content_date") or ""),
+                    "freshness_age_hours": entry.get("freshness_age_hours"),
+                    "modified": str(entry.get("modified") or ""),
                 }
             )
     return entries
+
+
+def _entry_freshness_age_hours(entry: dict[str, Any], *, now: datetime) -> float | None:
+    raw_age_hours = entry.get("freshness_age_hours")
+    try:
+        if raw_age_hours is not None:
+            age_hours = float(raw_age_hours)
+            if age_hours >= 0:
+                return age_hours
+    except (TypeError, ValueError):
+        pass
+
+    for key in ("created_at", "date", "modified"):
+        parsed = _parse_iso_to_jst(entry.get(key))
+        if parsed is None:
+            continue
+        delta = _now_jst(now) - parsed
+        return max(0.0, delta.total_seconds() / 3600.0)
+    return None
+
+
+def _is_backlog_entry(entry: dict[str, Any], *, now: datetime) -> bool:
+    age_hours = _entry_freshness_age_hours(entry, now=now)
+    return age_hours is not None and age_hours > BACKLOG_FRESHNESS_CUTOFF_HOURS
 
 
 def _normalize_hold_reason_token(value: Any) -> str:
@@ -1222,6 +1304,7 @@ def _history_row(
     cleanup_required: bool | None = None,
     cleanup_success: bool | None = None,
     hold_reason: str | None = None,
+    is_backlog: bool | None = None,
 ) -> dict[str, Any]:
     return {
         "post_id": post_id,
@@ -1234,6 +1317,7 @@ def _history_row(
         "cleanup_required": cleanup_required,
         "cleanup_success": cleanup_success,
         "hold_reason": hold_reason,
+        "is_backlog": None if is_backlog is None else bool(is_backlog),
     }
 
 
@@ -1336,6 +1420,7 @@ def run_guarded_publish(
         raise GuardedPublishAbortError(f"--max-burst must be <= {MAX_BURST_HARD_CAP}")
     if live and not daily_cap_allow:
         raise GuardedPublishAbortError("--live requires --daily-cap-allow")
+    effective_max_burst = _effective_max_burst_per_run(int(max_burst))
 
     report = _load_report(input_from)
     now_jst = _now_jst(now)
@@ -1343,6 +1428,8 @@ def run_guarded_publish(
     history_rows = _read_jsonl(history_path)
     attempted_post_ids = _history_attempted_post_ids(history_rows, now=now_jst)
     daily_sent_count = _daily_sent_count(history_rows, now_jst.date())
+    hourly_sent_count = _hourly_sent_count(history_rows, now_jst)
+    max_publish_per_hour = _max_publish_per_hour(int(max_burst))
 
     refused: list[dict[str, Any]] = []
     proposed_public: list[dict[str, Any]] = []
@@ -1428,6 +1515,7 @@ def run_guarded_publish(
         publishable_entries, held_entries = _apply_verdict_filter(publishable_entries, filter_verdict)
 
     for held_entry in held_entries:
+        is_backlog = _is_backlog_entry(held_entry, now=now_jst)
         refused.append(
             {
                 "post_id": held_entry["post_id"],
@@ -1447,6 +1535,7 @@ def run_guarded_publish(
                 cleanup_required=bool(held_entry["cleanup_required"]),
                 cleanup_success=False,
                 hold_reason=held_entry["hold_reason"],
+                is_backlog=is_backlog,
             )
             live_history_rows.append(row)
             executed.append(
@@ -1459,12 +1548,78 @@ def run_guarded_publish(
                 }
             )
 
+    fresh_entries = [entry for entry in publishable_entries if not _is_backlog_entry(entry, now=now_jst)]
+    backlog_entries = [entry for entry in publishable_entries if _is_backlog_entry(entry, now=now_jst)]
+    deferred_backlog_entries = backlog_entries if fresh_entries else []
+    publishable_entries = fresh_entries if fresh_entries else backlog_entries
+
+    for backlog_entry in deferred_backlog_entries:
+        refused.append(
+            {
+                "post_id": backlog_entry["post_id"],
+                "reason": "backlog_deferred_for_fresh",
+                "hold_reason": "backlog_deferred_for_fresh",
+            }
+        )
+        if live:
+            row = _history_row(
+                post_id=backlog_entry["post_id"],
+                judgment=backlog_entry["judgment"],
+                status="skipped",
+                ts=now_iso,
+                backup_path=None,
+                error="backlog_deferred_for_fresh",
+                publishable=True,
+                cleanup_required=bool(backlog_entry["cleanup_required"]),
+                cleanup_success=False,
+                hold_reason="backlog_deferred_for_fresh",
+                is_backlog=True,
+            )
+            live_history_rows.append(row)
+            executed.append(
+                {
+                    "post_id": backlog_entry["post_id"],
+                    "status": "skipped",
+                    "backup_path": None,
+                    "publish_link": "",
+                    "hold_reason": "backlog_deferred_for_fresh",
+                }
+            )
+
     for entry in publishable_entries:
         post_id = entry["post_id"]
+        is_backlog = _is_backlog_entry(entry, now=now_jst)
         if post_id in attempted_post_ids:
             continue
 
-        if planned_count >= int(max_burst):
+        if hourly_sent_count + planned_count >= max_publish_per_hour:
+            refused.append({"post_id": post_id, "reason": "hourly_cap"})
+            if live:
+                row = _history_row(
+                    post_id=post_id,
+                    judgment=entry["judgment"],
+                    status="skipped",
+                    ts=now_iso,
+                    backup_path=None,
+                    error="hourly_cap",
+                    publishable=True,
+                    cleanup_required=bool(entry["cleanup_required"]),
+                    cleanup_success=False,
+                    hold_reason="hourly_cap",
+                    is_backlog=is_backlog,
+                )
+                live_history_rows.append(row)
+                executed.append(
+                    {
+                        "post_id": post_id,
+                        "status": "skipped",
+                        "backup_path": None,
+                        "publish_link": "",
+                    }
+                )
+            continue
+
+        if planned_count >= effective_max_burst:
             refused.append({"post_id": post_id, "reason": "burst_cap"})
             if live:
                 row = _history_row(
@@ -1478,6 +1633,7 @@ def run_guarded_publish(
                     cleanup_required=bool(entry["cleanup_required"]),
                     cleanup_success=False,
                     hold_reason="burst_cap",
+                    is_backlog=is_backlog,
                 )
                 live_history_rows.append(row)
                 executed.append(
@@ -1504,6 +1660,7 @@ def run_guarded_publish(
                     cleanup_required=bool(entry["cleanup_required"]),
                     cleanup_success=False,
                     hold_reason="daily_cap",
+                    is_backlog=is_backlog,
                 )
                 live_history_rows.append(row)
                 executed.append(
@@ -1569,6 +1726,7 @@ def run_guarded_publish(
                     cleanup_required=bool(entry["cleanup_required"]),
                     cleanup_success=False,
                     hold_reason=hold_reason,
+                    is_backlog=is_backlog,
                 )
                 live_history_rows.append(row)
                 executed.append(
@@ -1652,6 +1810,7 @@ def run_guarded_publish(
                     cleanup_required=bool(plan["cleanup_required"]),
                     cleanup_success=cleanup_success if plan["cleanup_required"] else None,
                     hold_reason=hold_reason,
+                    is_backlog=is_backlog,
                 )
                 _append_jsonl(history_path, row)
                 executed.append(
@@ -1679,7 +1838,8 @@ def run_guarded_publish(
             "input_from": str(input_from),
             "ts": now_iso,
             "live": live,
-            "max_burst": int(max_burst),
+            "max_burst": int(effective_max_burst),
+            "max_publish_per_hour": int(max_publish_per_hour),
         },
         "proposed": proposed_public,
         "refused": refused,

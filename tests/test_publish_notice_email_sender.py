@@ -83,6 +83,14 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         payload.update(overrides)
         return sender.AlertMailRequest(**payload)
 
+    def _bridge_result(self):
+        return mail_delivery_bridge.MailResult(
+            status="sent",
+            refused_recipients={},
+            smtp_response=[250, "ok"],
+            reason=None,
+        )
+
     def test_build_subject_formats_publish_notice_prefix(self):
         self.assertEqual(
             sender.build_subject("巨人が接戦を制した"),
@@ -801,6 +809,172 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         self.assertEqual(result.status, "suppressed")
         self.assertEqual(result.reason, "GATE_OFF")
         bridge_send.assert_not_called()
+
+    def test_backlog_post_skips_per_post_mail(self):
+        bridge_send = MagicMock(return_value=self._bridge_result())
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            "os.environ",
+            {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com"},
+            clear=True,
+        ):
+            history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            history_path.write_text(
+                json.dumps(
+                    {
+                        "post_id": 123,
+                        "ts": "2026-04-24T21:15:10+09:00",
+                        "status": "sent",
+                        "judgment": "green",
+                        "is_backlog": True,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result = sender.send(
+                self._request(),
+                dry_run=False,
+                send_enabled=True,
+                bridge_send=bridge_send,
+                guarded_publish_history_path=history_path,
+            )
+
+        self.assertEqual(result.status, "suppressed")
+        self.assertEqual(result.reason, "BACKLOG_SUMMARY_ONLY")
+        bridge_send.assert_not_called()
+
+    def test_fresh_post_sends_per_post_mail(self):
+        bridge_send = MagicMock(return_value=self._bridge_result())
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            "os.environ",
+            {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com"},
+            clear=True,
+        ):
+            history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            history_path.write_text(
+                json.dumps(
+                    {
+                        "post_id": 123,
+                        "ts": "2026-04-24T21:15:10+09:00",
+                        "status": "sent",
+                        "judgment": "green",
+                        "is_backlog": False,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result = sender.send(
+                self._request(),
+                dry_run=False,
+                send_enabled=True,
+                bridge_send=bridge_send,
+                guarded_publish_history_path=history_path,
+            )
+
+        self.assertEqual(result.status, "sent")
+        bridge_send.assert_called_once()
+
+    def test_burst_over_10_forces_summary_mode(self):
+        bridge_send = MagicMock(return_value=self._bridge_result())
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            "os.environ",
+            {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com"},
+            clear=True,
+        ):
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            recorded_at = "2026-04-27T11:31:14+09:00"
+            queue_path.write_text(
+                "\n".join(
+                    json.dumps(
+                        {
+                            "status": "queued",
+                            "reason": None,
+                            "subject": f"queued-{index}",
+                            "recipients": [],
+                            "post_id": 8000 + index,
+                            "recorded_at": recorded_at,
+                        },
+                        ensure_ascii=False,
+                    )
+                    for index in range(11)
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            history_path.write_text("", encoding="utf-8")
+            result = sender.send(
+                self._request(),
+                dry_run=False,
+                send_enabled=True,
+                bridge_send=bridge_send,
+                duplicate_history_path=queue_path,
+                guarded_publish_history_path=history_path,
+            )
+
+        self.assertEqual(result.status, "suppressed")
+        self.assertEqual(result.reason, "BURST_SUMMARY_ONLY")
+        bridge_send.assert_not_called()
+
+    def test_summary_mail_aggregates_backlog(self):
+        bridge_send = MagicMock(return_value=self._bridge_result())
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            "os.environ",
+            {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com"},
+            clear=True,
+        ):
+            history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            history_path.write_text(
+                "\n".join(
+                    json.dumps(
+                        {
+                            "post_id": 9100 + index,
+                            "ts": "2026-04-27T09:05:37+09:00",
+                            "status": "sent",
+                            "judgment": "green",
+                            "is_backlog": True,
+                        },
+                        ensure_ascii=False,
+                    )
+                    for index in range(3)
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            summary_requests = sender.build_burst_summary_requests(
+                [
+                    sender.BurstSummaryEntry(
+                        post_id=9100 + index,
+                        title=f"backlog-{index}",
+                        category="試合速報",
+                        publishable=True,
+                        cleanup_required=False,
+                        cleanup_success=True,
+                    )
+                    for index in range(3)
+                ],
+                guarded_publish_history_path=history_path,
+            )
+            result = sender.send_summary(
+                summary_requests[0],
+                dry_run=False,
+                send_enabled=True,
+                bridge_send=bridge_send,
+            )
+
+        self.assertEqual(len(summary_requests), 1)
+        self.assertEqual(summary_requests[0].summary_mode, "backlog_only")
+        self.assertEqual([entry.post_id for entry in summary_requests[0].entries], [9100, 9101, 9102])
+        self.assertEqual(result.status, "sent")
+        self.assertEqual(bridge_send.call_args.args[0].subject, "【まとめ】直近3件 | YOSHILOVER")
+        self.assertIn("summary_posts: 3", bridge_send.call_args.args[0].text_body)
 
     def test_send_real_path_calls_bridge_once(self):
         bridge_result = mail_delivery_bridge.MailResult(

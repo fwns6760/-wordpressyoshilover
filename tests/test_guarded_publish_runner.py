@@ -39,8 +39,8 @@ def _post(
     }
 
 
-def _green_entry(post_id: int, title: str) -> dict:
-    return {
+def _green_entry(post_id: int, title: str, **overrides) -> dict:
+    payload = {
         "post_id": post_id,
         "title": title,
         "category": "clean",
@@ -48,6 +48,8 @@ def _green_entry(post_id: int, title: str) -> dict:
         "cleanup_required": False,
         "repairable_flags": [],
     }
+    payload.update(overrides)
+    return payload
 
 
 def _repairable_entry(
@@ -198,7 +200,7 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         self.assertEqual(exit_code, 1)
         self.assertIn("--live requires --daily-cap-allow", stderr.getvalue())
 
-    def test_cap_default_20_burst_enforced(self):
+    def test_max_burst_per_run_default_3(self):
         posts = {
             900 + index: _post(
                 900 + index,
@@ -209,7 +211,7 @@ class GuardedPublishRunnerTests(unittest.TestCase):
                     "<p>参照元: スポーツ報知 https://example.com/source</p>"
                 ),
             )
-            for index in range(21)
+            for index in range(4)
         }
         report = _report(green=[_green_entry(post_id, post["title"]["raw"]) for post_id, post in posts.items()])
         wp = FakeWPClient(posts)
@@ -231,10 +233,126 @@ class GuardedPublishRunnerTests(unittest.TestCase):
 
         sent = [item for item in result["executed"] if item["status"] == "sent"]
         skipped = [item for item in result["executed"] if item["status"] == "skipped"]
-        self.assertEqual(len(sent), 20)
+        self.assertEqual(len(sent), 3)
         self.assertEqual(len(skipped), 1)
         self.assertEqual(result["refused"][-1]["reason"], "burst_cap")
         self.assertEqual([row["hold_reason"] for row in rows if row["status"] == "skipped"], ["burst_cap"])
+
+    def test_env_override_max_burst(self):
+        posts = {
+            950 + index: _post(
+                950 + index,
+                f"巨人が第{index + 1}戦に勝利",
+                (
+                    f"<p>巨人が第{index + 1}戦に勝利した。試合の核が冒頭で分かり、投打の流れも整理されている。</p>"
+                    f"<p>{LONG_EXTRA}</p>"
+                    "<p>参照元: スポーツ報知 https://example.com/source</p>"
+                ),
+            )
+            for index in range(6)
+        }
+        report = _report(green=[_green_entry(post_id, post["title"]["raw"]) for post_id, post in posts.items()])
+        wp = FakeWPClient(posts)
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict("os.environ", {"MAX_BURST_PER_RUN": "5"}, clear=False):
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        sent = [item for item in result["executed"] if item["status"] == "sent"]
+        skipped = [item for item in result["executed"] if item["status"] == "skipped"]
+        self.assertEqual(len(sent), 5)
+        self.assertEqual(len(skipped), 1)
+        self.assertEqual(result["scan_meta"]["max_burst"], 5)
+
+    def test_max_publish_per_hour_caps_at_10(self):
+        post = _post(
+            980,
+            "巨人がヤクルトに3-2で勝利",
+            f"<p>巨人がヤクルトに3-2で勝利した。投打が噛み合い、終盤まで試合を支配した。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/source</p>",
+        )
+        report = _report(green=[_green_entry(980, post["title"]["raw"])])
+        wp = FakeWPClient({980: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.jsonl"
+            history_path.write_text(
+                "\n".join(
+                    json.dumps(
+                        {
+                            "post_id": 3000 + index,
+                            "ts": (FIXED_NOW - timedelta(minutes=30)).isoformat(),
+                            "status": "sent",
+                            "backup_path": "/tmp/backup.json",
+                            "error": None,
+                            "judgment": "green",
+                            "is_backlog": False,
+                        },
+                        ensure_ascii=False,
+                    )
+                    for index in range(10)
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=history_path,
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual(result["summary"]["would_publish"], 0)
+        self.assertEqual(result["executed"][0]["status"], "skipped")
+        self.assertEqual(result["refused"][0]["reason"], "hourly_cap")
+
+    def test_fresh_publish_priority_over_backlog(self):
+        fresh_post = _post(
+            990,
+            "巨人が中日に4-1で勝利",
+            f"<p>巨人が中日に4-1で勝利した。試合の核が冒頭で分かり、投打の流れも整理されている。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/source</p>",
+        )
+        backlog_post = _post(
+            991,
+            "巨人OB戦の振り返り",
+            f"<p>巨人OB戦の振り返りを整理した。試合の核が冒頭で分かり、流れも整理されている。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/source</p>",
+        )
+        report = _report(
+            green=[
+                _green_entry(991, backlog_post["title"]["raw"], freshness_age_hours=12.0),
+                _green_entry(990, fresh_post["title"]["raw"], freshness_age_hours=1.5),
+            ]
+        )
+        wp = FakeWPClient({990: fresh_post, 991: backlog_post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual([item["post_id"] for item in result["proposed"]], [990])
+        self.assertIn({"post_id": 991, "reason": "backlog_deferred_for_fresh", "hold_reason": "backlog_deferred_for_fresh"}, result["refused"])
 
     def test_daily_cap_100_enforced(self):
         posts = {
@@ -1725,7 +1843,11 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         report = _report(green=[_green_entry(post_id, post["title"]["raw"]) for post_id, post in posts.items()])
         wp = FakeWPClient(posts)
 
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            "os.environ",
+            {"MAX_BURST_PER_RUN": "11", "MAX_PUBLISH_PER_HOUR": "11"},
+            clear=False,
+        ):
             result = runner.run_guarded_publish(
                 input_from=self._write_input(tmpdir, report),
                 live=True,

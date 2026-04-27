@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 import json
 import os
@@ -23,6 +23,9 @@ DEFAULT_SUMMARY_EVERY = 10
 DEFAULT_DAILY_CAP = 100
 DEFAULT_DUPLICATE_WINDOW = timedelta(minutes=30)
 DEFAULT_GUARDED_PUBLISH_YELLOW_LOG_PATH = ROOT / "logs" / "guarded_publish_yellow_log.jsonl"
+DEFAULT_GUARDED_PUBLISH_HISTORY_PATH = ROOT / "logs" / "guarded_publish_history.jsonl"
+FORCED_SUMMARY_THRESHOLD = 10
+_SUMMARY_ONLY_SUPPRESSION_REASONS = frozenset({"BACKLOG_SUMMARY_ONLY", "BURST_SUMMARY_ONLY"})
 _WHITESPACE_RE = re.compile(r"\s+")
 _SUMMARY_TITLE_LIMIT = 80
 MAX_MANUAL_X_POST_LENGTH = 280
@@ -204,6 +207,7 @@ class PublishNoticeRequest:
     subtype: str
     publish_time_iso: str
     summary: str | None = None
+    is_backlog: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -230,6 +234,7 @@ class BurstSummaryEntry:
     publishable: bool
     cleanup_required: bool
     cleanup_success: bool | None
+    is_backlog: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -239,6 +244,7 @@ class BurstSummaryRequest:
     daily_cap: int = DEFAULT_DAILY_CAP
     hard_stop_count: int = 0
     hold_count: int = 0
+    summary_mode: Literal["default", "backlog_only", "burst_forced"] = "default"
 
 
 @dataclass(frozen=True)
@@ -285,11 +291,17 @@ class PublishNoticeExecutionSummary:
     suppressed: int
     errors: int
     dry_run: int
+    summary_only_suppressed: int
     reasons: dict[str, int]
 
     @property
     def should_alert(self) -> bool:
-        return self.emitted > 0 and self.sent == 0 and self.dry_run == 0
+        return (
+            self.emitted > 0
+            and self.sent == 0
+            and self.dry_run == 0
+            and self.summary_only_suppressed < self.emitted
+        )
 
 
 @dataclass(frozen=True)
@@ -309,6 +321,75 @@ EmergencyHook = Callable[[EmergencyMailRequest], object | None]
 
 def _path(value: str | Path) -> Path:
     return value if isinstance(value, Path) else Path(value)
+
+
+def _load_jsonl_entries(path: str | Path | None) -> list[dict[str, Any]]:
+    if path is None:
+        return []
+    target = _path(path)
+    if not target.exists():
+        return []
+    entries: list[dict[str, Any]] = []
+    with target.open(encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line:
+                continue
+            payload = json.loads(line)
+            if isinstance(payload, dict):
+                entries.append(payload)
+    return entries
+
+
+def _latest_guarded_publish_history_entry(
+    post_id: int | str,
+    *,
+    history_path: str | Path = DEFAULT_GUARDED_PUBLISH_HISTORY_PATH,
+) -> dict[str, Any] | None:
+    target_post_id = str(post_id)
+    matched: dict[str, Any] | None = None
+    for entry in _load_jsonl_entries(history_path):
+        if str(entry.get("post_id")) != target_post_id:
+            continue
+        matched = entry
+    return matched
+
+
+def _resolve_is_backlog(
+    post_id: int | str,
+    explicit_is_backlog: bool | None,
+    *,
+    history_path: str | Path = DEFAULT_GUARDED_PUBLISH_HISTORY_PATH,
+    allow_history_lookup: bool = True,
+) -> bool:
+    if explicit_is_backlog is not None:
+        return bool(explicit_is_backlog)
+    if not allow_history_lookup:
+        return False
+    matched = _latest_guarded_publish_history_entry(post_id, history_path=history_path)
+    if not matched:
+        return False
+    return bool(matched.get("is_backlog"))
+
+
+def _current_queued_batch_size(queue_path: str | Path | None) -> int:
+    latest_recorded_at: datetime | None = None
+    batch_key: str | None = None
+    batch_post_ids: dict[str, set[str]] = {}
+    for entry in _load_jsonl_entries(queue_path):
+        if str(entry.get("status") or "").strip() != "queued":
+            continue
+        recorded_at = _parse_datetime_to_jst(entry.get("recorded_at"))
+        if recorded_at is None:
+            continue
+        key = recorded_at.isoformat()
+        batch_post_ids.setdefault(key, set()).add(str(entry.get("post_id") or ""))
+        if latest_recorded_at is None or recorded_at > latest_recorded_at:
+            latest_recorded_at = recorded_at
+            batch_key = key
+    if batch_key is None:
+        return 0
+    return len([post_id for post_id in batch_post_ids.get(batch_key, set()) if post_id])
 
 
 def _latest_yellow_log_entry_for_post(
@@ -1070,12 +1151,16 @@ def _classify_mail(
         return _per_post_mail_state(request, yellow_log_path=yellow_log_path)
     if isinstance(request, BurstSummaryRequest):
         mail_config = _mail_class_config("summary")
+        reason = {
+            "backlog_only": "backlog_summary_ready",
+            "burst_forced": "burst_summary_ready",
+        }.get(str(request.summary_mode or "default").strip(), "batch_summary_ready")
         return {
             "mail_type": "batch_summary",
             "mail_class": "summary",
             "action": mail_config["action"],
             "priority": mail_config["priority"],
-            "reason": "batch_summary_ready",
+            "reason": reason,
         }
     if isinstance(request, AlertMailRequest):
         mail_config = _mail_class_config("warning")
@@ -1099,21 +1184,7 @@ def _classify_mail(
 
 
 def _load_queue_entries(path: str | Path | None) -> list[dict[str, Any]]:
-    if path is None:
-        return []
-    target = _path(path)
-    if not target.exists():
-        return []
-    entries: list[dict[str, Any]] = []
-    with target.open(encoding="utf-8") as handle:
-        for raw_line in handle:
-            line = raw_line.strip()
-            if not line:
-                continue
-            payload = json.loads(line)
-            if isinstance(payload, dict):
-                entries.append(payload)
-    return entries
+    return _load_jsonl_entries(path)
 
 
 def _is_recent_per_post_duplicate(
@@ -1314,19 +1385,63 @@ def build_burst_summary_requests(
     summary_every: int = DEFAULT_SUMMARY_EVERY,
     cumulative_before: int = 0,
     daily_cap: int = DEFAULT_DAILY_CAP,
+    guarded_publish_history_path: str | Path = DEFAULT_GUARDED_PUBLISH_HISTORY_PATH,
 ) -> list[BurstSummaryRequest]:
     if int(summary_every) <= 0:
         raise ValueError("summary_every must be > 0")
+    resolved_entries: list[BurstSummaryEntry] = []
+    history_resolved_count = 0
+    for entry in entries:
+        matched_history = None
+        if entry.is_backlog is not None:
+            history_resolved_count += 1
+        else:
+            matched_history = _latest_guarded_publish_history_entry(
+                entry.post_id,
+                history_path=guarded_publish_history_path,
+            )
+            if matched_history is not None:
+                history_resolved_count += 1
+        resolved_entries.append(
+            replace(
+                entry,
+                is_backlog=bool(entry.is_backlog)
+                if entry.is_backlog is not None
+                else bool((matched_history or {}).get("is_backlog")),
+            )
+        )
+    if len(resolved_entries) > FORCED_SUMMARY_THRESHOLD and history_resolved_count == len(resolved_entries):
+        return [
+            BurstSummaryRequest(
+                entries=resolved_entries,
+                cumulative_published_count=int(cumulative_before) + len(resolved_entries),
+                daily_cap=int(daily_cap),
+                summary_mode="burst_forced",
+            )
+        ]
+
+    backlog_entries = [entry for entry in resolved_entries if bool(entry.is_backlog)]
+    fresh_entries = [entry for entry in resolved_entries if not bool(entry.is_backlog)]
     requests: list[BurstSummaryRequest] = []
+    if backlog_entries:
+        requests.append(
+            BurstSummaryRequest(
+                entries=backlog_entries,
+                cumulative_published_count=int(cumulative_before) + len(resolved_entries),
+                daily_cap=int(daily_cap),
+                summary_mode="backlog_only",
+            )
+        )
     summary_size = int(summary_every)
-    for start in range(0, len(entries), summary_size):
-        chunk = list(entries[start : start + summary_size])
+    fresh_offset = len(backlog_entries)
+    for start in range(0, len(fresh_entries), summary_size):
+        chunk = list(fresh_entries[start : start + summary_size])
         if len(chunk) < summary_size:
             break
         requests.append(
             BurstSummaryRequest(
                 entries=chunk,
-                cumulative_published_count=int(cumulative_before) + start + len(chunk),
+                cumulative_published_count=int(cumulative_before) + fresh_offset + start + len(chunk),
                 daily_cap=int(daily_cap),
             )
         )
@@ -1475,6 +1590,7 @@ def send(
     override_recipient: list[str] | None = None,
     override_subject: str | None = None,
     duplicate_history_path: str | Path | None = None,
+    guarded_publish_history_path: str | Path = DEFAULT_GUARDED_PUBLISH_HISTORY_PATH,
     now: datetime | None = None,
     duplicate_window: timedelta = DEFAULT_DUPLICATE_WINDOW,
 ) -> PublishNoticeEmailResult:
@@ -1494,10 +1610,24 @@ def send(
         subtype=str(request.subtype or "").strip() or "unknown",
         publish_time_iso=str(request.publish_time_iso or "").strip(),
         summary=request.summary,
+        is_backlog=request.is_backlog,
     )
     mail_state = _classify_mail(normalized_request)
+    recipients = resolve_recipients(override_recipient)
+    subject = build_subject(normalized_title, override=override_subject, classification=mail_state)
+    if _current_queued_batch_size(duplicate_history_path) > FORCED_SUMMARY_THRESHOLD:
+        return _suppressed("BURST_SUMMARY_ONLY", subject=subject, recipients=recipients)
+    is_backlog = _resolve_is_backlog(
+        normalized_request.post_id,
+        normalized_request.is_backlog,
+        history_path=guarded_publish_history_path,
+        allow_history_lookup=duplicate_history_path is not None
+        or _path(guarded_publish_history_path) != DEFAULT_GUARDED_PUBLISH_HISTORY_PATH,
+    )
+    if is_backlog:
+        return _suppressed("BACKLOG_SUMMARY_ONLY", subject=subject, recipients=recipients)
     return _deliver_mail(
-        subject=build_subject(normalized_title, override=override_subject, classification=mail_state),
+        subject=subject,
         body_text=build_body_text(normalized_request, classification=mail_state),
         metadata={
             "post_id": normalized_request.post_id,
@@ -1508,7 +1638,7 @@ def send(
         dry_run=dry_run,
         send_enabled=send_enabled,
         bridge_send=bridge_send,
-        override_recipient=override_recipient,
+        override_recipient=recipients,
         duplicate_history_path=duplicate_history_path,
         dedupe_post_id=normalized_request.post_id,
         now=now,
@@ -1634,12 +1764,19 @@ def summarize_execution_results(
         for result in results
         if str(result.reason or "").strip()
     )
+    summary_only_suppressed = sum(
+        1
+        for result in results
+        if str(result.status).strip() == "suppressed"
+        and str(result.reason or "").strip() in _SUMMARY_ONLY_SUPPRESSION_REASONS
+    )
     return PublishNoticeExecutionSummary(
         emitted=int(emitted),
         sent=int(status_counter.get("sent", 0)),
         suppressed=int(status_counter.get("suppressed", 0)),
         errors=int(status_counter.get("error", 0)),
         dry_run=int(status_counter.get("dry_run", 0)),
+        summary_only_suppressed=int(summary_only_suppressed),
         reasons=dict(sorted(reason_counter.items())),
     )
 

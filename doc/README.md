@@ -777,18 +777,18 @@ doc/
 
 - **alias**: -
 - **priority**: P0.5
-- **status**: **REVIEW_NEEDED**(impl は `1ac710b` で land 済みだが、元依頼は design-only で user spec freeze 前の着地)
+- **status**: **CLOSED**(2026-04-27 user 認容「ポストも乗るんだよね。公開記事に。」を keep ratify として採用)
 - **owner**: Claude / User follow-up
 - **lane**: B
-- **ready_for**: user spec 確認
-- **next_action**: `1ac710b` の manual X candidate 実装を keep するか、191 spec に合わせて再整理するかを user 判断
-- **blocked_by**: user spec confirmation
-- **user_action_required**: yes(impl 先行の扱い判断)
-- **write_scope**: `src/publish_notice_email_sender.py`, `tests/test_publish_notice_email_sender.py`, `doc/active/190-publish-notice-manual-x-candidates-impl.md`, `doc/README.md`, `doc/active/assignments.md`
-- **doc_path**: `doc/active/190-publish-notice-manual-x-candidates-impl.md`
-- **acceptance**: impl 内容が記録され、元要望との差分(hashtags 不在 / design-only 先行逸脱)が明記されている
-- **repo_state**: pushed
-- **commit_state**: `1ac710b`
+- **ready_for**: none
+- **next_action**: none; `1ac710b` / `b7a9e1f` landed behavior を keep し、`195` frontend share corner との整合込みで正式 scope を freeze
+- **blocked_by**: none
+- **user_action_required**: none(keep ratify 済み)
+- **write_scope**: `src/publish_notice_email_sender.py`, `tests/test_publish_notice_email_sender.py`, `doc/done/2026-04/190-publish-notice-manual-x-candidates-impl.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/done/2026-04/190-publish-notice-manual-x-candidates-impl.md`
+- **acceptance**: `1ac710b` 実装 keep ratify、`9vd48` / `9rsjt` / `pwh4r` 配信実績記録、`195` frontend share corner との整合確認が記録されている
+- **repo_state**: local doc update
+- **commit_state**: pending ticket 198 close commit
 - **next_prompt_path**: -
 - **last_commit**: `1ac710b` 188 add manual X candidates to publish notices
 - **parent**: 191 / 095-D / 131 / PUB-005
@@ -797,18 +797,18 @@ doc/
 
 - **alias**: -
 - **priority**: P0.5
-- **status**: **REVIEW_NEEDED**(spec doc `b6b2b2b` は存在するが、実装 190/189 が先行しているため整合判断が必要)
+- **status**: **CLOSED**(`b6b2b2b` の spec 起点を `1ac710b` / `b7a9e1f` / `195` landed behavior で keep ratify し、正式 scope を freeze)
 - **owner**: Claude / User follow-up
 - **lane**: B
-- **ready_for**: user spec 確認
-- **next_action**: 元 user 要望(design-only / hashtag 付き / 自動 X 投稿中止)を正式 spec として確定し、190/189 着地との差分を判断
-- **blocked_by**: user spec confirmation
-- **user_action_required**: yes(spec freeze)
-- **write_scope**: `doc/active/191-publish-notice-manual-x-candidates-spec.md`, `doc/README.md`, `doc/active/assignments.md`
-- **doc_path**: `doc/active/191-publish-notice-manual-x-candidates-spec.md`
-- **acceptance**: 元 user 要望、`b6b2b2b` doc 内容、190/189 実装との差分が一望できる
-- **repo_state**: pushed
-- **commit_state**: `b6b2b2b`
+- **ready_for**: none
+- **next_action**: none; subtype × pattern mapping(`lineup / postgame / farm / notice / program / default`)と base 文 only / hashtag user 任意追記の扱いを正式 spec として lock
+- **blocked_by**: none
+- **user_action_required**: none(spec freeze 済み)
+- **write_scope**: `doc/done/2026-04/191-publish-notice-manual-x-candidates-spec.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/done/2026-04/191-publish-notice-manual-x-candidates-spec.md`
+- **acceptance**: `188` impl + `189` contextual selector + `195` frontend 整合を前提に、subtype mapping と hashtag 任意運用が lock されている
+- **repo_state**: local doc update
+- **commit_state**: pending ticket 198 close commit
 - **next_prompt_path**: -
 - **last_commit**: `b6b2b2b` 188 ticket publish notice manual X candidates
 - **parent**: 095-D / 131 / PUB-005
@@ -847,10 +847,10 @@ doc/
 - **write_scope**: `src/yoshilover-063-frontend.php`, `doc/active/195-article-footer-manual-x-share-corner.md`, `doc/README.md`, `doc/active/assignments.md`
 - **doc_path**: `doc/active/195-article-footer-manual-x-share-corner.md`
 - **acceptance**: single post publish 記事のみ / heading「この記事を X でシェア」/ 3 候補 fixed / copy + intent / permalink + `#巨人 #ジャイアンツ` 含む / option+env toggle / `php -l` pass
-- **repo_state**: local code+doc update
-- **commit_state**: pending ticket commit
+- **repo_state**: pushed
+- **commit_state**: `26fc0ca`
 - **next_prompt_path**: -
-- **last_commit**: -
+- **last_commit**: `26fc0ca` 195 article footer 手動 X 投稿シェアコーナー(B1)
 - **parent**: 190 / 191 / 176
 
 ### 196 ingestion-realtime-5min-trigger
@@ -872,6 +872,26 @@ doc/
 - **next_prompt_path**: -
 - **last_commit**: -
 - **parent**: 042 / 155 / 194
+
+### 197 195-live-deploy-manual-x-share-corner
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: **BLOCKED_USER**(195 の live deploy 経路は WP admin zip upload / Xserver 上の plugin file 直接置換までは特定したが、disabled start に必要な option false 書込みは user-side WP access or remote shell が必要。repo 既存 artifact も stale)
+- **owner**: Codex / Claude follow-up
+- **lane**: Front-Claude
+- **ready_for**: user-side WP shell / WP admin access
+- **next_action**: 1) `python3 scripts/build_063_wp_admin_bundle.py` で最新 zip 再生成 2) remote shell + WP-CLI で `yoshilover_063_manual_x_share_corner.enabled=false` を先置き 3) plugin file 差し替え 4) disabled verify 後に enable
+- **blocked_by**: Xserver 実接続情報 / WP root path / user-side option write 手段
+- **user_action_required**: **YES**(Option A canary deploy は user shell or WP admin/option editor が必要)
+- **write_scope**: `doc/waiting/197-195-live-deploy.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/waiting/197-195-live-deploy.md`
+- **acceptance**: deploy route 明記 / Option A 推奨理由 / stale artifact 指摘 / user shell runbook / rollback 手順 / live write 未実行を記録
+- **repo_state**: local doc update
+- **commit_state**: pending ticket commit
+- **next_prompt_path**: -
+- **last_commit**: -
+- **parent**: 195 / 176
 
 ### 130 pub004-hard-stop-vs-repairable-before-publish
 

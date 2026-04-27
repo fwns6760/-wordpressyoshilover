@@ -1,6 +1,6 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-04-27 JST(196 ingestion 5分リアルタイム trigger 追加 + 195 article footer 手動X share corner 実装 + 194 publish-notice 5分cron化 + 192 doc hygiene retry + 188/187/186/185/184/183 close + 190/191 番号衝突整理)
+最終更新: 2026-04-27 JST(197 195 live deploy runbook / blocked-user 追加 + 198 190/191 keep ratify close + 196 ingestion 5分リアルタイム trigger 追加 + 195 article footer 手動X share corner 実装 + 194 publish-notice 5分cron化 + 192 doc hygiene retry + 188/187/186/185/184/183 close)
 
 ## 最初に読む
 
@@ -25,10 +25,8 @@
 | **README**(旧102) | P0 | READY | Claude | dispatch board正本を維持 |
 | **187 publish-notice scheduler URI v1 verify** | P0.5 | CLOSED | Codex / Claude | v1 URI verify は `0cc7cc3` に記録済み。step 2-4 は 188 Fix A 後の manual trigger success で実質完了 |
 | **188 publish-notice scheduler IAM fix** | P0.5 | CLOSED | Codex / User / Claude | `74ccef6` runbook + invoker bind 完了。manual trigger `publish-notice-9rsjt` で 20 mail 送信成功 |
-| **190 publish-notice manual X candidates impl** | P0.5 | REVIEW_NEEDED | Claude / User | `1ac710b` で impl 先行着地。元依頼は design-only だったため、keep か差分是正かを判断 |
-| **191 publish-notice manual X candidates spec** | P0.5 | REVIEW_NEEDED | Claude / User | `b6b2b2b` の元 spec と 190/189 landed behavior の差分を確定し、正式 scope を freeze |
 | **194 publish-notice scheduler 5分毎化** | P0.5 | REVIEW_NEEDED | Codex / Claude | `publish-notice-trigger` を `*/5 * * * *` へ変更済み。`2026-04-27 09:40 JST` natural tick execution `publish-notice-6x7f5` と rollback は `doc/active/194-publish-notice-scheduler-5min.md` に記録 |
-| **195 article footer manual X share corner** | P0.5 | REVIEW_NEEDED | Codex / Claude | `src/yoshilover-063-frontend.php` に singular post footer の 3-candidate X share corner を追加。copy/intent/toggle 付き、deploy/canary は別便 |
+| **195 article footer manual X share corner** | P0.5 | REVIEW_NEEDED | Codex / Claude | `src/yoshilover-063-frontend.php` に singular post footer の 3-candidate X share corner を追加。copy/intent/toggle 付き。live deploy は `197` runbook/user-side WP access 待ち |
 | **196 ingestion 5分毎リアルタイム化** | P0.5 | REVIEW_NEEDED | Codex / Claude | `giants-realtime-trigger` を `*/5 * * * *` で新規作成済み。既存 `giants-*` と同じ `yoshilover-fetcher /run` + `seo-web-runtime@baseballsite.iam.gserviceaccount.com` を使用し、`2026-04-27 09:55 JST` natural tick HTTP 200 を確認 |
 | **105 / PUB-004-D** | P0 | AUTO 5min cron | Codex-GCP + Claude監視 | RSS新着を5-15分内にauto publish、daily cap 100 |
 | **042 draft-body-editor** | P0 | GCP本線 / 残WSLはgemini_auditのみ | Codex-GCP + Claude監視 | GCP上のCodex/Gemini repair、WP article write、品質/メール系実行を監視。WSL本線依存を戻さない |
@@ -51,6 +49,7 @@
 | ticket | priority | status | 待ち | 担当 |
 |---|---|---|---|---|
 | **174 x-api-cloud-run-live-smoke** | P0.5 | BLOCKED_USER | 149のX live unlock後 | User → A |
+| **197 195 live deploy manual X share corner** | P0.5 | BLOCKED_USER | Xserver 実接続情報 + WP root path + option false を先置きできる user-side shell / WP admin access | User / Claude |
 | **175 x-controlled-autopost-cloud-rollout** | P0.5 | BLOCKED | 174 smoke成功 | Claude / A |
 | **128 SNS auto-publish** | P1 | PARKED | 180で入口/出口境界整理後 | Codex A |
 | **151 X Phase 4 cap3 ramp** | P1 | PARKED | 150 + 7日stable | Claude / A |
@@ -72,6 +71,7 @@
 | **183 / 184 / 185 / 186** | CLOSED | publish gate 緩和、ledger integration、entrypoint `--exclude-published-today` 一時除去、scan_limit/history dedup narrow 完了 |
 | **187 / 188** | CLOSED | publish-notice scheduler URI v1 verify と IAM fix runbook整理、Fix A 実行 + execution `9rsjt` で 20 mail verify 完了 |
 | **189** | CLOSED | 公開通知メールの手動X投稿候補を subtype selector 方式へ拡張。notice/sensitive gate、inside_voice条件、URL最大3 |
+| **190 / 191** | CLOSED | publish-notice mail の manual X candidates を keep ratify。user 認容「ポストも乗るんだよね。公開記事に。」、`1ac710b` / `b7a9e1f` freeze、`195` frontend 整合確認まで正式 scope 化 |
 | **168-173** | CLOSED | repair provider ledger、job skeleton、fallback、Codex shadow runner、auth writeback、X queue ledger完了 |
 | **176** | CLOSED `91069f0` | share buttons Twitter/Facebook fix完了。live deploy後の目視smokeは別途 |
 

@@ -1,7 +1,7 @@
 # 190 publish-notice manual X candidates impl
 
 - priority: P0.5
-- status: REVIEW_NEEDED
+- status: CLOSED
 - owner: Claude / User follow-up
 - lane: B
 - parent: 191 / 095-D / 131 / PUB-005
@@ -45,8 +45,9 @@
 - user 要望は **design-only** だったが、`1ac710b` は code と tests まで land している
 - その後 `189`(`b7a9e1f`) で selector 方式まで拡張されており、spec freeze 前に scope が前進している
 
-## Review Needed
+## Ratify
 
-- `1ac710b` の動作をそのまま正式採用するか
-- 191 spec を優先して hashtags 追加や wording 調整を別便で行うか
-- spec 先行原則とのズレを accept するか
+- 2026-04-27 user 認容: 「ポストも乗るんだよね。公開記事に。」を、publish-notice mail の manual X candidates 挙動 keep として正式採用する。
+- `188` / `189` commit(`1ac710b` / `b7a9e1f`)で landed した backend manual X candidates 実装を正式 scope として freeze する。
+- `9vd48` / `9rsjt` / `pwh4r` execution で X candidates 入り mail が user 受信済みであり、実運用上も keep 前提で整合している。
+- `195` で同 selector / wording 系 logic を frontend share corner に流用済みであり、mail / frontend 間の整合確認も完了している。

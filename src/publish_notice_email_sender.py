@@ -113,6 +113,65 @@ _ALERT_LABELS = {
     "cleanup_hold": "cleanup hold",
     "x_sns_auto_post_risk": "X/SNS auto-post risk",
 }
+_SUBJECT_BRAND_SUFFIX = " | YOSHILOVER"
+_SUBJECT_BODY_LIMIT = 80
+_MAIL_CLASS_CONFIGS = {
+    "publish": {
+        "prefix": "【公開済】",
+        "action": "check_article",
+        "priority": "normal",
+    },
+    "x_candidate": {
+        "prefix": "【投稿候補】",
+        "action": "copy_x_post",
+        "priority": "normal",
+    },
+    "review": {
+        "prefix": "【要確認】",
+        "action": "review_article",
+        "priority": "high",
+    },
+    "warning": {
+        "prefix": "【警告】",
+        "action": "inspect_system",
+        "priority": "high",
+    },
+    "summary": {
+        "prefix": "【まとめ】",
+        "action": "batch_review",
+        "priority": "low",
+    },
+    "urgent": {
+        "prefix": "【緊急】",
+        "action": "urgent_check",
+        "priority": "urgent",
+    },
+}
+_SAFE_X_CANDIDATE_ARTICLE_TYPES = frozenset({"default", "lineup", "postgame", "farm", "program"})
+_CAUTIOUS_REVIEW_ARTICLE_TYPES = frozenset({"notice", "notice_event"})
+_MANUAL_X_DIRTY_MARKERS = (
+    "📰",
+    "⚾",
+    "GIANTS MANAGER NOTE",
+    "報知新聞",
+    "スポーツ報知",
+    "スポニチ",
+    "サンスポ",
+    "Yahoo!",
+    "[…]",
+    "[...]",
+)
+_URGENT_KEYWORDS = (
+    "訃報",
+    "死去",
+    "逝去",
+    "急逝",
+    "死亡",
+    "重体",
+    "重傷",
+    "心肺停止",
+    "緊急",
+)
 
 
 @dataclass(frozen=True)
@@ -684,6 +743,148 @@ def build_manual_x_post_candidates(
     return candidates
 
 
+def _subject_body(value: str) -> str:
+    compact = _WHITESPACE_RE.sub(" ", str(value or "").strip()) or "無題"
+    if len(compact) <= _SUBJECT_BODY_LIMIT:
+        return compact
+    return compact[: _SUBJECT_BODY_LIMIT - 1] + "…"
+
+
+def _looks_dirty_manual_x_candidate(text: str) -> bool:
+    normalized = str(text or "").strip()
+    if not normalized:
+        return True
+    if len(normalized) > MAX_MANUAL_X_POST_LENGTH:
+        return True
+    return any(marker in normalized for marker in _MANUAL_X_DIRTY_MARKERS)
+
+
+def _mail_metadata_block(metadata: dict[str, Any]) -> list[str]:
+    lines = ["---"]
+    for key in (
+        "mail_type",
+        "mail_class",
+        "action",
+        "priority",
+        "post_id",
+        "subtype",
+        "x_post_ready",
+        "reason",
+    ):
+        if key not in metadata:
+            continue
+        value = metadata.get(key)
+        if value is None or value == "":
+            continue
+        lines.append(f"{key}: {value}")
+    lines.append("---")
+    return lines
+
+
+def _mail_class_config(mail_class: str) -> dict[str, str]:
+    return dict(_MAIL_CLASS_CONFIGS.get(str(mail_class or "").strip(), _MAIL_CLASS_CONFIGS["publish"]))
+
+
+def _per_post_mail_state(
+    request: PublishNoticeRequest,
+    *,
+    yellow_log_path: str | Path = DEFAULT_GUARDED_PUBLISH_YELLOW_LOG_PATH,
+) -> dict[str, Any]:
+    raw_summary = _WHITESPACE_RE.sub(" ", str(request.summary or "").strip())
+    context = _manual_x_context(request)
+    suppression_reason = _manual_x_candidate_suppression_reason(request, yellow_log_path=yellow_log_path)
+    manual_x_candidates = build_manual_x_post_candidates(request, yellow_log_path=yellow_log_path)
+    safe_x_candidate = (
+        bool(manual_x_candidates)
+        and context.cleaned_summary != "(なし)"
+        and context.article_type in _SAFE_X_CANDIDATE_ARTICLE_TYPES
+        and not suppression_reason
+        and not _manual_x_has_sensitive_word(context.title, context.cleaned_summary)
+        and not (raw_summary and context.summary_fallback)
+        and not any(_looks_dirty_manual_x_candidate(text) for _label, text in manual_x_candidates)
+    )
+    combined_text = " ".join(
+        item for item in (context.title, context.cleaned_summary, raw_summary) if item and item != "(なし)"
+    )
+    if any(keyword in combined_text for keyword in _URGENT_KEYWORDS):
+        mail_class = "urgent"
+        reason = "urgent_keyword_detected"
+    elif safe_x_candidate:
+        mail_class = "x_candidate"
+        reason = "manual_x_candidates_clean"
+    elif suppression_reason == "roster_movement_yellow":
+        mail_class = "review"
+        reason = "roster_movement_yellow_x_blocked"
+    elif context.article_type in _CAUTIOUS_REVIEW_ARTICLE_TYPES:
+        mail_class = "review"
+        reason = "cautious_subtype_review"
+    elif _manual_x_has_sensitive_word(context.title, context.cleaned_summary):
+        mail_class = "review"
+        reason = "sensitive_gate_review"
+    elif raw_summary and context.summary_fallback:
+        mail_class = "review"
+        reason = "summary_dirty_review"
+    elif any(_looks_dirty_manual_x_candidate(text) for _label, text in manual_x_candidates):
+        mail_class = "review"
+        reason = "candidate_copy_review"
+    else:
+        mail_class = "publish"
+        reason = "publish_notice_default"
+
+    mail_config = _mail_class_config(mail_class)
+    return {
+        "mail_type": "per_post",
+        "mail_class": mail_class,
+        "action": mail_config["action"],
+        "priority": mail_config["priority"],
+        "post_id": request.post_id,
+        "subtype": str(request.subtype or "").strip() or "unknown",
+        "x_post_ready": _normalize_bool(mail_class == "x_candidate"),
+        "reason": reason,
+        "manual_x_candidates": manual_x_candidates,
+        "suppression_reason": suppression_reason,
+    }
+
+
+def _classify_mail(
+    request: PublishNoticeRequest | BurstSummaryRequest | AlertMailRequest | EmergencyMailRequest,
+    *,
+    send_result: PublishNoticeEmailResult | None = None,
+    yellow_log_path: str | Path = DEFAULT_GUARDED_PUBLISH_YELLOW_LOG_PATH,
+) -> dict[str, Any]:
+    del send_result
+    if isinstance(request, PublishNoticeRequest):
+        return _per_post_mail_state(request, yellow_log_path=yellow_log_path)
+    if isinstance(request, BurstSummaryRequest):
+        mail_config = _mail_class_config("summary")
+        return {
+            "mail_type": "batch_summary",
+            "mail_class": "summary",
+            "action": mail_config["action"],
+            "priority": mail_config["priority"],
+            "reason": "batch_summary_ready",
+        }
+    if isinstance(request, AlertMailRequest):
+        mail_config = _mail_class_config("warning")
+        return {
+            "mail_type": "alert",
+            "mail_class": "warning",
+            "action": mail_config["action"],
+            "priority": mail_config["priority"],
+            "post_id": request.post_id,
+            "reason": str(request.reason or request.alert_type).strip() or "system_warning",
+        }
+    mail_config = _mail_class_config("urgent")
+    return {
+        "mail_type": "alert",
+        "mail_class": "urgent",
+        "action": mail_config["action"],
+        "priority": mail_config["priority"],
+        "post_id": request.post_id,
+        "reason": str(request.reason or "urgent_check").strip() or "urgent_check",
+    }
+
+
 def _load_queue_entries(path: str | Path | None) -> list[dict[str, Any]]:
     if path is None:
         return []
@@ -730,29 +931,35 @@ def _is_recent_per_post_duplicate(
     return False
 
 
-def build_subject(title: str, publish_dt_jst: str | None = None, override: str | None = None) -> str:
+def build_subject(
+    title: str,
+    publish_dt_jst: str | None = None,
+    override: str | None = None,
+    classification: dict[str, Any] | None = None,
+) -> str:
     del publish_dt_jst
     if override is not None:
         return str(override)
-    return f"[公開通知] Giants {title}"
+    mail_class = str((classification or {}).get("mail_class") or "publish").strip() or "publish"
+    prefix = _mail_class_config(mail_class)["prefix"]
+    return f"{prefix}{_subject_body(title)}{_SUBJECT_BRAND_SUFFIX}"
 
 
 def build_summary_subject(request: BurstSummaryRequest) -> str:
-    return (
-        "[YOSHILOVER] Publish Burst Summary — "
-        f"{len(request.entries)} posts (cumulative {int(request.cumulative_published_count)} / cap {int(request.daily_cap)})"
-    )
+    prefix = _mail_class_config("summary")["prefix"]
+    return f"{prefix}直近{len(request.entries)}件{_SUBJECT_BRAND_SUFFIX}"
 
 
 def build_alert_subject(request: AlertMailRequest) -> str:
-    label = _ALERT_LABELS.get(request.alert_type, str(request.alert_type).replace("_", " "))
-    post_label = f" - post_id={request.post_id}" if request.post_id is not None else ""
-    return f"[ALERT] YOSHILOVER {label}{post_label}"
+    prefix = _mail_class_config("warning")["prefix"]
+    post_label = request.post_id if request.post_id is not None else "unknown"
+    return f"{prefix}post_id={post_label}{_SUBJECT_BRAND_SUFFIX}"
 
 
 def build_emergency_subject(request: EmergencyMailRequest) -> str:
-    post_label = f" - post_id={request.post_id}" if request.post_id is not None else ""
-    return f"[EMERGENCY] YOSHILOVER X/SNS unintended post detected{post_label}"
+    del request
+    prefix = _mail_class_config("urgent")["prefix"]
+    return f"{prefix}X/SNS 確認{_SUBJECT_BRAND_SUFFIX}"
 
 
 def resolve_recipients(override: list[str] | None) -> list[str]:
@@ -770,22 +977,38 @@ def build_body_text(
     request: PublishNoticeRequest,
     *,
     yellow_log_path: str | Path = DEFAULT_GUARDED_PUBLISH_YELLOW_LOG_PATH,
+    classification: dict[str, Any] | None = None,
 ) -> str:
-    suppression_reason = _manual_x_candidate_suppression_reason(request, yellow_log_path=yellow_log_path)
-    manual_x_candidates = build_manual_x_post_candidates(request, yellow_log_path=yellow_log_path)
-    lines = [
+    mail_state = classification or _classify_mail(request, yellow_log_path=yellow_log_path)
+    suppression_reason = mail_state.get("suppression_reason")
+    manual_x_candidates = list(mail_state.get("manual_x_candidates") or [])
+    lines = _mail_metadata_block(
+        {
+            "mail_type": mail_state.get("mail_type"),
+            "mail_class": mail_state.get("mail_class"),
+            "action": mail_state.get("action"),
+            "priority": mail_state.get("priority"),
+            "post_id": request.post_id,
+            "subtype": str(request.subtype or "").strip() or "unknown",
+            "x_post_ready": mail_state.get("x_post_ready"),
+            "reason": mail_state.get("reason"),
+        }
+    )
+    lines.extend(
+        [
         f"title: {str(request.title or '').strip()}",
         f"url: {str(request.canonical_url or '').strip()}",
         f"subtype: {str(request.subtype or '').strip() or 'unknown'}",
         f"publish time: {_format_publish_time_jst(request.publish_time_iso)}",
         f"summary: {_normalize_summary(request.summary)}",
-    ]
+        ]
+    )
     if suppression_reason == "roster_movement_yellow":
         lines.append("warning: [Warning] roster movement 系記事、X 自動投稿対象外")
     lines.extend(
         [
-        "manual_x_post_candidates:",
-        f"article_url: {str(request.canonical_url or '').strip()}",
+            "manual_x_post_candidates:",
+            f"article_url: {str(request.canonical_url or '').strip()}",
         ]
     )
     if suppression_reason:
@@ -795,16 +1018,32 @@ def build_body_text(
     return "\n".join(lines)
 
 
-def build_summary_body_text(request: BurstSummaryRequest) -> str:
+def build_summary_body_text(
+    request: BurstSummaryRequest,
+    *,
+    classification: dict[str, Any] | None = None,
+) -> str:
+    mail_state = classification or _classify_mail(request)
     daily_cap_remaining = max(0, int(request.daily_cap) - int(request.cumulative_published_count))
-    lines = [
+    lines = _mail_metadata_block(
+        {
+            "mail_type": mail_state.get("mail_type"),
+            "mail_class": mail_state.get("mail_class"),
+            "action": mail_state.get("action"),
+            "priority": mail_state.get("priority"),
+            "reason": mail_state.get("reason"),
+        }
+    )
+    lines.extend(
+        [
         f"summary_posts: {len(request.entries)}",
         f"cumulative_published_count: {int(request.cumulative_published_count)}",
         f"daily_cap_remaining: {daily_cap_remaining}",
         f"hard_stop_count: {int(request.hard_stop_count)}",
         f"hold_count: {int(request.hold_count)}",
         "recent_posts:",
-    ]
+        ]
+    )
     for entry in request.entries:
         lines.append(
             "  - "
@@ -818,8 +1057,24 @@ def build_summary_body_text(request: BurstSummaryRequest) -> str:
     return "\n".join(lines)
 
 
-def build_alert_body_text(request: AlertMailRequest) -> str:
-    lines = [
+def build_alert_body_text(
+    request: AlertMailRequest,
+    *,
+    classification: dict[str, Any] | None = None,
+) -> str:
+    mail_state = classification or _classify_mail(request)
+    lines = _mail_metadata_block(
+        {
+            "mail_type": mail_state.get("mail_type"),
+            "mail_class": mail_state.get("mail_class"),
+            "action": mail_state.get("action"),
+            "priority": mail_state.get("priority"),
+            "post_id": request.post_id,
+            "reason": mail_state.get("reason"),
+        }
+    )
+    lines.extend(
+        [
         f"alert_type: {request.alert_type}",
         f"post_id: {'' if request.post_id is None else request.post_id}",
         f"title: {str(request.title or '').strip()}",
@@ -830,7 +1085,8 @@ def build_alert_body_text(request: AlertMailRequest) -> str:
         f"cleanup_required: {_normalize_bool(request.cleanup_required)}",
         f"cleanup_success: {_normalize_bool(request.cleanup_success)}",
         f"hold_reason: {str(request.hold_reason or '').strip() or '(none)'}",
-    ]
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -1021,9 +1277,10 @@ def send(
         publish_time_iso=str(request.publish_time_iso or "").strip(),
         summary=request.summary,
     )
+    mail_state = _classify_mail(normalized_request)
     return _deliver_mail(
-        subject=subject,
-        body_text=build_body_text(normalized_request),
+        subject=build_subject(normalized_title, override=override_subject, classification=mail_state),
+        body_text=build_body_text(normalized_request, classification=mail_state),
         metadata={
             "post_id": normalized_request.post_id,
             "subtype": normalized_request.subtype,
@@ -1049,9 +1306,10 @@ def send_summary(
     bridge_send: BridgeSend = bridge_send_default,
     override_recipient: list[str] | None = None,
 ) -> PublishNoticeEmailResult:
+    mail_state = _classify_mail(request)
     return _deliver_mail(
         subject=build_summary_subject(request),
-        body_text=build_summary_body_text(request),
+        body_text=build_summary_body_text(request, classification=mail_state),
         metadata={
             "notice_kind": "summary",
             "summary_posts": len(request.entries),
@@ -1073,9 +1331,10 @@ def send_alert(
     bridge_send: BridgeSend = bridge_send_default,
     override_recipient: list[str] | None = None,
 ) -> PublishNoticeEmailResult:
+    mail_state = _classify_mail(request)
     return _deliver_mail(
         subject=build_alert_subject(request),
-        body_text=build_alert_body_text(request),
+        body_text=build_alert_body_text(request, classification=mail_state),
         metadata={
             "notice_kind": "alert",
             "alert_type": request.alert_type,

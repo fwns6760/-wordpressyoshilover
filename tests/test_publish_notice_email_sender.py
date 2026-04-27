@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import smtplib
 import tempfile
 import unittest
@@ -40,10 +41,51 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         payload.update(overrides)
         return sender.PublishNoticeRequest(**payload)
 
+    def _summary_request(self, **overrides):
+        payload = {
+            "entries": [
+                sender.BurstSummaryEntry(
+                    post_id=123,
+                    title="巨人が接戦を制した",
+                    category="試合速報",
+                    publishable=True,
+                    cleanup_required=False,
+                    cleanup_success=True,
+                ),
+                sender.BurstSummaryEntry(
+                    post_id=124,
+                    title="巨人の先発が決定",
+                    category="選手情報",
+                    publishable=True,
+                    cleanup_required=False,
+                    cleanup_success=True,
+                ),
+            ],
+            "cumulative_published_count": 12,
+            "daily_cap": 100,
+        }
+        payload.update(overrides)
+        return sender.BurstSummaryRequest(**payload)
+
+    def _alert_request(self, **overrides):
+        payload = {
+            "alert_type": "publish_failure",
+            "post_id": 123,
+            "title": "巨人が接戦を制した",
+            "category": "試合速報",
+            "reason": "SMTPServerDisconnected",
+            "detail": "lost connection",
+            "publishable": True,
+            "cleanup_required": False,
+            "cleanup_success": True,
+        }
+        payload.update(overrides)
+        return sender.AlertMailRequest(**payload)
+
     def test_build_subject_formats_publish_notice_prefix(self):
         self.assertEqual(
             sender.build_subject("巨人が接戦を制した"),
-            "[公開通知] Giants 巨人が接戦を制した",
+            "【公開済】巨人が接戦を制した | YOSHILOVER",
         )
 
     def test_build_subject_uses_override(self):
@@ -51,6 +93,143 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
             sender.build_subject("ignored", override="[override] manual subject"),
             "[override] manual subject",
         )
+
+    def test_subject_prefix_x_candidate(self):
+        request = self._request()
+        classification = sender._classify_mail(request)
+
+        self.assertEqual(classification["mail_class"], "x_candidate")
+        self.assertEqual(
+            sender.build_subject(request.title, classification=classification),
+            "【投稿候補】巨人が接戦を制した | YOSHILOVER",
+        )
+
+    def test_subject_prefix_publish(self):
+        request = self._request(summary=None)
+        classification = sender._classify_mail(request)
+
+        self.assertEqual(classification["mail_class"], "publish")
+        self.assertEqual(
+            sender.build_subject(request.title, classification=classification),
+            "【公開済】巨人が接戦を制した | YOSHILOVER",
+        )
+
+    def test_subject_prefix_review_dirty_summary(self):
+        request = self._request(
+            subtype="default",
+            title="巨人イベント情報を更新",
+            summary="📰 報知新聞 / ⚾ GIANTS TV 【巨人】イベント告知 […]",
+        )
+        classification = sender._classify_mail(request)
+
+        self.assertEqual(classification["mail_class"], "review")
+        self.assertEqual(classification["reason"], "summary_dirty_review")
+        self.assertEqual(
+            sender.build_subject(request.title, classification=classification),
+            "【要確認】巨人イベント情報を更新 | YOSHILOVER",
+        )
+
+    def test_subject_prefix_review_roster_movement_yellow(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yellow_log_path = Path(tmpdir) / "yellow.jsonl"
+            yellow_log_path.write_text(
+                json.dumps(
+                    {
+                        "post_id": 123,
+                        "applied_flags": ["roster_movement_yellow"],
+                        "manual_x_post_block_reason": "roster_movement_yellow",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            classification = sender._classify_mail(self._request(), yellow_log_path=yellow_log_path)
+
+        self.assertEqual(classification["mail_class"], "review")
+        self.assertEqual(classification["reason"], "roster_movement_yellow_x_blocked")
+        self.assertEqual(
+            sender.build_subject("巨人が接戦を制した", classification=classification),
+            "【要確認】巨人が接戦を制した | YOSHILOVER",
+        )
+
+    def test_subject_prefix_warning_smtp_error(self):
+        self.assertEqual(
+            sender.build_alert_subject(self._alert_request()),
+            "【警告】post_id=123 | YOSHILOVER",
+        )
+
+    def test_subject_prefix_summary_batch(self):
+        self.assertEqual(
+            sender.build_summary_subject(self._summary_request()),
+            "【まとめ】直近2件 | YOSHILOVER",
+        )
+
+    def test_body_metadata_block_format(self):
+        body_lines = sender.build_body_text(self._request()).splitlines()
+
+        self.assertEqual(
+            body_lines[:10],
+            [
+                "---",
+                "mail_type: per_post",
+                "mail_class: x_candidate",
+                "action: copy_x_post",
+                "priority: normal",
+                "post_id: 123",
+                "subtype: postgame",
+                "x_post_ready: true",
+                "reason: manual_x_candidates_clean",
+                "---",
+            ],
+        )
+
+    def test_classify_mail_publish_default(self):
+        classification = sender._classify_mail(self._request(summary=None))
+
+        self.assertEqual(classification["mail_class"], "publish")
+        self.assertEqual(classification["action"], "check_article")
+        self.assertEqual(classification["priority"], "normal")
+        self.assertEqual(classification["x_post_ready"], "false")
+        self.assertEqual(classification["reason"], "publish_notice_default")
+
+    def test_classify_mail_x_candidate_safe(self):
+        classification = sender._classify_mail(self._request())
+
+        self.assertEqual(classification["mail_class"], "x_candidate")
+        self.assertEqual(classification["action"], "copy_x_post")
+        self.assertEqual(classification["priority"], "normal")
+        self.assertEqual(classification["x_post_ready"], "true")
+        self.assertEqual(classification["reason"], "manual_x_candidates_clean")
+
+    def test_existing_manual_x_post_candidates_unchanged(self):
+        self.assertEqual(
+            sender.build_manual_x_post_candidates(self._request()),
+            [
+                (
+                    "x_post_1_article_intro",
+                    "巨人の試合結果を更新しました。巨人が接戦を制した https://yoshilover.com/post-123/",
+                ),
+                (
+                    "x_post_2_postgame_turning_point",
+                    "試合の分岐点を整理。終盤の継投と一打が勝敗を分けた。 https://yoshilover.com/post-123/",
+                ),
+                (
+                    "x_post_3_inside_voice",
+                    "これは試合後にもう一度見たいポイント。巨人が接戦を制した",
+                ),
+            ],
+        )
+
+    def test_subject_long_title_truncation(self):
+        long_title = "巨人" * 50
+        classification = {"mail_class": "publish"}
+        subject = sender.build_subject(long_title, classification=classification)
+
+        self.assertTrue(subject.startswith("【公開済】"))
+        self.assertTrue(subject.endswith(" | YOSHILOVER"))
+        self.assertIn("… | YOSHILOVER", subject)
+        self.assertNotIn(long_title, subject)
 
     def test_resolve_recipients_uses_expected_precedence(self):
         cases = [
@@ -83,6 +262,16 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         self.assertEqual(
             body.splitlines(),
             [
+                "---",
+                "mail_type: per_post",
+                "mail_class: x_candidate",
+                "action: copy_x_post",
+                "priority: normal",
+                "post_id: 123",
+                "subtype: postgame",
+                "x_post_ready: true",
+                "reason: manual_x_candidates_clean",
+                "---",
                 "title: 巨人が接戦を制した",
                 "url: https://yoshilover.com/post-123/",
                 "subtype: postgame",
@@ -176,7 +365,9 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         self.assertEqual(candidates, [])
         self.assertIn("warning: [Warning] roster movement 系記事、X 自動投稿対象外", body.splitlines())
         self.assertIn("suppressed: roster_movement_yellow", body.splitlines())
-        self.assertFalse(any(line.startswith("x_post_") for line in body.splitlines()))
+        self.assertFalse(
+            any(re.match(r"^x_post_\d+_", line) for line in body.splitlines())
+        )
 
     def test_manual_x_inside_voice_is_conditional(self):
         farm_labels = [label for label, _text in sender.build_manual_x_post_candidates(self._request(subtype="farm"))]
@@ -302,7 +493,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
 
         self.assertEqual(result.status, "dry_run")
         self.assertIsNone(result.reason)
-        self.assertEqual(result.subject, "[公開通知] Giants 巨人が接戦を制した")
+        self.assertEqual(result.subject, "【投稿候補】巨人が接戦を制した | YOSHILOVER")
         self.assertEqual(result.recipients, ["notice@example.com"])
         self.assertIsNone(result.bridge_result)
         bridge_send.assert_not_called()
@@ -365,10 +556,20 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         mail_request = bridge_send.call_args.args[0]
         self.assertEqual(bridge_send.call_args.kwargs, {"dry_run": False})
         self.assertEqual(mail_request.to, ["notice@example.com"])
-        self.assertEqual(mail_request.subject, "[公開通知] Giants 巨人が接戦を制した")
+        self.assertEqual(mail_request.subject, "【投稿候補】巨人が接戦を制した | YOSHILOVER")
         self.assertEqual(
             mail_request.text_body.splitlines(),
             [
+                "---",
+                "mail_type: per_post",
+                "mail_class: x_candidate",
+                "action: copy_x_post",
+                "priority: normal",
+                "post_id: 123",
+                "subtype: postgame",
+                "x_post_ready: true",
+                "reason: manual_x_candidates_clean",
+                "---",
                 "title: 巨人が接戦を制した",
                 "url: https://yoshilover.com/post-123/",
                 "subtype: postgame",
@@ -466,7 +667,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
             result = sender.PublishNoticeEmailResult(
                 status="sent",
                 reason=None,
-                subject="[公開通知] Giants 巨人が接戦を制した",
+                subject="【公開済】巨人が接戦を制した | YOSHILOVER",
                 recipients=["notice@example.com"],
             )
 
@@ -491,7 +692,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
             {
                 "status": "sent",
                 "reason": None,
-                "subject": "[公開通知] Giants 巨人が接戦を制した",
+                "subject": "【公開済】巨人が接戦を制した | YOSHILOVER",
                 "recipients": ["notice@example.com"],
                 "post_id": 63781,
                 "recorded_at": "2026-04-27T11:31:14+09:00",
@@ -507,7 +708,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
             result = sender.PublishNoticeEmailResult(
                 status="suppressed",
                 reason="NO_RECIPIENT",
-                subject="[公開通知] Giants 巨人が接戦を制した",
+                subject="【公開済】巨人が接戦を制した | YOSHILOVER",
                 recipients=[],
             )
 
@@ -558,7 +759,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         self.assertEqual(result.reason, "SMTPServerDisconnected")
         self.assertEqual(row["status"], "error")
         self.assertEqual(row["reason"], "SMTPServerDisconnected")
-        self.assertEqual(row["subject"], "[公開通知] Giants 巨人が接戦を制した")
+        self.assertEqual(row["subject"], "【投稿候補】巨人が接戦を制した | YOSHILOVER")
 
     def test_alert_log_when_emit_gt_zero_sent_zero(self):
         summary = sender.summarize_execution_results(

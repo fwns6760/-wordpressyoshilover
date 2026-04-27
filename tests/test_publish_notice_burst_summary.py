@@ -73,7 +73,14 @@ class PublishNoticeBurstSummaryTests(unittest.TestCase):
         self.assertEqual([result.status for result in results], ["sent", "sent", "sent"])
         self.assertEqual(bridge_send.call_count, 3)
         subjects = [call.args[0].subject for call in bridge_send.call_args_list]
-        self.assertEqual(subjects, ["[公開通知] Giants 公開1", "[公開通知] Giants 公開2", "[公開通知] Giants 公開3"])
+        self.assertEqual(
+            subjects,
+            [
+                "【投稿候補】公開1 | YOSHILOVER",
+                "【投稿候補】公開2 | YOSHILOVER",
+                "【投稿候補】公開3 | YOSHILOVER",
+            ],
+        )
 
     def test_layer2_summary_mail_sent_every_10_posts(self):
         bridge_send = MagicMock(return_value=self._bridge_result())
@@ -104,8 +111,8 @@ class PublishNoticeBurstSummaryTests(unittest.TestCase):
         self.assertEqual(
             [call.args[0].subject for call in bridge_send.call_args_list],
             [
-                "[YOSHILOVER] Publish Burst Summary — 10 posts (cumulative 10 / cap 100)",
-                "[YOSHILOVER] Publish Burst Summary — 10 posts (cumulative 20 / cap 100)",
+                "【まとめ】直近10件 | YOSHILOVER",
+                "【まとめ】直近10件 | YOSHILOVER",
             ],
         )
         first_body = bridge_send.call_args_list[0].args[0].text_body
@@ -123,8 +130,7 @@ class PublishNoticeBurstSummaryTests(unittest.TestCase):
 
         self.assertEqual(result.status, "sent")
         mail_request = bridge_send.call_args.args[0]
-        self.assertTrue(mail_request.subject.startswith("[ALERT]"))
-        self.assertIn("publish failure", mail_request.subject)
+        self.assertEqual(mail_request.subject, "【警告】post_id=501 | YOSHILOVER")
         self.assertIn("reason: wp_rest_500", mail_request.text_body)
 
     def test_layer3_alert_mail_for_hard_stop(self):
@@ -141,7 +147,7 @@ class PublishNoticeBurstSummaryTests(unittest.TestCase):
 
         self.assertEqual(result.status, "sent")
         mail_request = bridge_send.call_args.args[0]
-        self.assertIn("hard stop", mail_request.subject)
+        self.assertEqual(mail_request.subject, "【警告】post_id=501 | YOSHILOVER")
         self.assertIn("publishable: false", mail_request.text_body)
 
     def test_layer3_alert_mail_for_postcheck_failure(self):
@@ -157,7 +163,7 @@ class PublishNoticeBurstSummaryTests(unittest.TestCase):
 
         self.assertEqual(result.status, "sent")
         mail_request = bridge_send.call_args.args[0]
-        self.assertIn("postcheck failure", mail_request.subject)
+        self.assertEqual(mail_request.subject, "【警告】post_id=501 | YOSHILOVER")
         self.assertIn("detail: GET status=draft after publish attempt", mail_request.text_body)
 
     def test_layer3_alert_mail_for_cleanup_hold(self):
@@ -176,7 +182,7 @@ class PublishNoticeBurstSummaryTests(unittest.TestCase):
 
         self.assertEqual(result.status, "sent")
         mail_request = bridge_send.call_args.args[0]
-        self.assertIn("cleanup hold", mail_request.subject)
+        self.assertEqual(mail_request.subject, "【警告】post_id=501 | YOSHILOVER")
         self.assertIn("cleanup_required: true", mail_request.text_body)
         self.assertIn("cleanup_success: false", mail_request.text_body)
 
@@ -193,7 +199,7 @@ class PublishNoticeBurstSummaryTests(unittest.TestCase):
 
         self.assertEqual(result.status, "sent")
         mail_request = bridge_send.call_args.args[0]
-        self.assertIn("X/SNS auto-post risk", mail_request.subject)
+        self.assertEqual(mail_request.subject, "【警告】post_id=501 | YOSHILOVER")
         self.assertIn("reason: x_sns_auto_post_risk", mail_request.text_body)
 
     def test_layer4_emergency_hook_signature_present(self):
@@ -202,7 +208,7 @@ class PublishNoticeBurstSummaryTests(unittest.TestCase):
         request = sender.EmergencyMailRequest(post_id=777, title="緊急通知")
         result = sender.emit_emergency_hook(request, hook=lambda payload: payload.post_id)
         self.assertEqual(result, 777)
-        self.assertTrue(sender.build_emergency_subject(request).startswith("[EMERGENCY]"))
+        self.assertEqual(sender.build_emergency_subject(request), "【緊急】X/SNS 確認 | YOSHILOVER")
 
     def test_layer5_duplicate_within_30min_suppressed(self):
         bridge_send = MagicMock(return_value=self._bridge_result())

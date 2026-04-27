@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from src.article_entity_role_consistency import safe_rewrite_role_phrasing
 from src.lineup_source_priority import compute_lineup_dedup, extract_game_id
 from src.pre_publish_fact_check import extractor
 from src.title_body_nucleus_validator import validate_title_body_nucleus
@@ -16,7 +17,7 @@ from src.title_body_nucleus_validator import validate_title_body_nucleus
 
 JST = ZoneInfo("Asia/Tokyo")
 RELAXED_FOR_BREAKING_BOARD_FLAGS = frozenset({"subtype_unresolved", "heading_sentence_as_h3"})
-NO_CLEANUP_REQUIRED_FLAGS = frozenset({"roster_movement_yellow"})
+NO_CLEANUP_REQUIRED_FLAGS = frozenset({"roster_movement_yellow", "awkward_role_phrasing"})
 
 HARD_STOP_FLAGS = frozenset(
     {
@@ -49,6 +50,7 @@ REPAIRABLE_FLAGS = frozenset(
         "expired_lineup_or_pregame",
         "expired_game_context",
         "roster_movement_yellow",
+        "awkward_role_phrasing",
         "lineup_duplicate_excessive",
     }
 ) | RELAXED_FOR_BREAKING_BOARD_FLAGS
@@ -741,6 +743,14 @@ def _append_reason(
         reasons.append(payload)
 
 
+def _awkward_role_warning_detail(rewrite_count: int, skipped_cases: list[dict[str, Any]]) -> str:
+    samples = ", ".join(
+        f"{case['match']}[{case['reason']}]"
+        for case in skipped_cases[:3]
+    )
+    return f"rewrite_count={rewrite_count};skip_count={len(skipped_cases)};samples={samples}"
+
+
 def _reason_flags(reasons: list[dict[str, Any]], category: str) -> list[str]:
     return [str(item["flag"]) for item in reasons if item.get("category") == category]
 
@@ -1070,6 +1080,14 @@ def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -
         _append_reason(reasons, flag="long_body", category="repairable")
     if _has_low_severity_numerical_anomaly(body_text):
         _append_reason(reasons, flag="numerical_anomaly_low_severity", category="repairable")
+    _, awkward_role_rewrite_count, awkward_role_skips = safe_rewrite_role_phrasing(body_text)
+    if awkward_role_skips:
+        _append_reason(
+            reasons,
+            flag="awkward_role_phrasing",
+            category="repairable",
+            detail=_awkward_role_warning_detail(awkward_role_rewrite_count, awkward_role_skips),
+        )
 
     freshness = freshness_check(raw_post, record, now=now)
     enforce_freshness = str(raw_post.get("status") or "").strip().lower() != "publish"

@@ -245,6 +245,50 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         self.assertIn("roster_movement_yellow", entry["repairable_flags"])
         self.assertEqual(entry["hard_stop_flags"], [])
 
+    def test_awkward_role_phrasing_rewriteable_case_stays_clean(self):
+        post = _post(
+            113,
+            "巨人が阪神に3-2で勝利 戸郷翔征が7回2失点",
+            (
+                "<p>巨人が阪神に3-2で勝利した。戸郷翔征投手となって7回2失点と好投した。スポーツ報知によると、テンポ良く試合を作った。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-role-clean</p>"
+            ),
+        )
+
+        report = self._evaluate([post])
+
+        entry = report["green"][0]
+        self.assertTrue(entry["publishable"])
+        self.assertFalse(entry["cleanup_required"])
+        self.assertNotIn("awkward_role_phrasing", entry["repairable_flags"])
+
+    def test_awkward_role_phrasing_skip_warning(self):
+        post = _post(
+            114,
+            "阿部慎之助監督「次戦へ向けて準備を進める」",
+            (
+                "<p>阿部慎之助監督が試合後に総括した。スポーツ報知によると、次戦へ向けた準備を進める。</p>"
+                "<p>阿部慎之助監督となって。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-role-yellow</p>"
+            ),
+        )
+
+        report = self._evaluate([post])
+
+        entry = report["yellow"][0]
+        self.assertTrue(entry["publishable"])
+        self.assertFalse(entry["cleanup_required"])
+        self.assertIn("awkward_role_phrasing", entry["repairable_flags"])
+        self.assertIn("awkward_role_phrasing", entry["yellow_reasons"])
+        self.assertIn(
+            {
+                "flag": "awkward_role_phrasing",
+                "category": "repairable",
+                "detail": "rewrite_count=0;skip_count=1;samples=阿部慎之助監督となって[sentence_end]",
+            },
+            entry["reasons"],
+        )
+
     def test_death_keyword_remains_hard_stop(self):
         post = _post(
             112,

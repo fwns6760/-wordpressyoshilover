@@ -1189,19 +1189,19 @@ doc/
 
 - **alias**: `MKT-008`
 - **priority**: P0.5
-- **status**: READY(impl 未起票、224 後 or 並走可能で起票)
+- **status**: REOPENED(225 本体 `873fcf0` 着地、225-A safety fix 進行中 `bss84x1u1`)
 - **owner**: Codex B
 - **lane**: marketing / mail body
-- **ready_for**: implementation(224 並走可能 file-disjoint)
-- **next_action**: スペース / 記号 / ハッシュタグ / URL / 280 字直前 truncation 整形 + sensitive subtype 候補抑止強化
-- **blocked_by**: none(224 と file-disjoint で並走可能)
-- **user_action_required**: none
+- **ready_for**: 225-A 完了後 publish-notice rebuild(authenticated executor)
+- **next_action**: 225-A safety fix(x_post_ready=false で本文表示抑止)→ rebuild + Job update
+- **blocked_by**: none
+- **user_action_required**: 225-A 完了後の publish-notice rebuild 判断
 - **write_scope**: `src/publish_notice_email_sender.py` + tests
 - **doc_path**: `doc/marketing/active/MKT-008-x-post-candidate-text-quality-hardening.md`
-- **acceptance**: 218 / 222 logic 不変 + スペース/記号/ハッシュタグ/URL/280 字整形 + sensitive 抑止
-- **repo_state**: doc 起票済、impl 未着手
-- **commit_state**: -
-- **parent**: MKT-001 (219) / 218 / 222
+- **acceptance**: 225 本体(整形 + sensitive 抑止)+ 225-A(x_post_ready=false 本文非表示)、内部生成 logic 不変
+- **repo_state**: 225 本体 push 済、225-A impl 進行中
+- **commit_state**: `873fcf0`(本体)、225-A は `bss84x1u1` 着地予定
+- **parent**: MKT-001 (219) / 218 / 222 / 225 本体
 
 ### 219 publish-notice-marketing-mail-classification
 

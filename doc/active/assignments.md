@@ -14,7 +14,7 @@
 |---|---|---|---|
 | **226 guarded publish unblock** | P0.5 | IN_FLIGHT(`bhnmw4tc7`) | 63809/63811 が `subtype_unresolved_no_resolution` で refused、safe case を Yellow に降格 |
 | **224 entity-role consistency** | P0.5 | IN_FLIGHT(`bif6lgn6p` 着地済 `84ed848`) | `〜投手となって` 等不自然構文 detector + safe rewrite + Yellow flag |
-| **225 / MKT-008 X candidate quality** | P0.5 | CLOSED `873fcf0` | 218/222 後の最終研磨層、空白/記号/ハッシュタグ/URL/280字 整形 + sensitive 抑止 |
+| **225 / MKT-008 X candidate quality** | P0.5 | REOPENED(本体 `873fcf0`、225-A safety fix `bss84x1u1` 進行中) | x_post_ready=false で manual_x_post_candidates 本文非表示 + X intent link 抑止(post_id 63323 相当) |
 
 ## 役割一覧
 
@@ -69,7 +69,7 @@
 |---|---|---|---|
 | **MKT-001 / 219 mail classification** | live | Codex B / Claude | 件名 prefix + metadata 反映済 |
 | **MKT-007 / 223 Gmail triage ops** | doc 完了 | User | Gmail label/filter 手動設定 |
-| **MKT-008 / 225 X candidate quality** | live | Codex B | 整形 + sensitive 抑止反映済 |
+| **MKT-008 / 225 X candidate quality** | REOPENED(本体着地、225-A safety fix 進行中) | Codex B | x_post_ready=false で本文表示抑止、修正完了後 publish-notice rebuild |
 | **MKT-002 gmail label runbook** | PARKED | Claude / Codex-M | MKT-001/MKT-007 安定後 |
 | **MKT-003 daily manual X workflow** | PARKED | Claude / Codex-M | MKT-001 後 |
 | **MKT-004 X candidate quality scoring** | PARKED | Claude / Codex-M | MKT-001 出力例前提 |

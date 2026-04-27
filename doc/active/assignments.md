@@ -1,6 +1,6 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-04-27 JST(199 publish-notice rebuild runbook / blocked-user 追加 + 197 195 live deploy runbook / blocked-user 追加 + 198 190/191 keep ratify close + 196 ingestion 5分リアルタイム trigger 追加 + 195 article footer 手動X share corner 実装 + 194 publish-notice 5分cron化 + 192 doc hygiene retry + 188/187/186/185/184/183 close)
+最終更新: 2026-04-27 JST(200 scanner subtype fallback close + 201 readiness_guard flaky ticket 追加 + 199 publish-notice rebuild runbook / blocked-user 追加 + 197 195 live deploy runbook / blocked-user 追加 + 198 190/191 keep ratify close + 196 ingestion 5分リアルタイム trigger 追加 + 195 article footer 手動X share corner 実装 + 194 publish-notice 5分cron化 + 192 doc hygiene retry + 188/187/186/185/184/183 close)
 
 ## 最初に読む
 
@@ -40,6 +40,7 @@
 |---|---|---|---|---|
 | **179 repair learning log Firestore + GCS** | P0 | READY / 即fire | Codex B → Codex-GCP | FirestoreLedgerWriter + ArtifactUploaderを実装し、GCP実行へ接続 |
 | **180 SNS topic intake lane separation** | P0.5 | READY | Claude / Codex B → Codex-GCP | SNS入口とX出口の境界をdoc-onlyで明文化し、SNS topic処理をGCP実行前提に整理 |
+| **201 readiness_guard flaky** | P1 | READY | Codex B | `tests/test_guarded_publish_readiness_guard.py::test_human_format_renders_summary` の real-now 依存を fixed `now` 注入または狭い assertion 調整で解消 |
 | **162 gemini_audit GCP migration** | P1 | QUEUED / 後回し可 | Claude / A | 残WSL cronはgemini_auditのみ。影響軽微なので急がない |
 | **163 quality-monitor / quality-gmail GCP migration** | P1 | QUEUED | Claude / A → Codex-GCP | quality monitor / quality mail本文生成をGCP化 |
 | **149 X Phase 2 manual live 1** | P0.5 | READY / user境界 | Claude / A | userのX live unlock後、1件だけmanual post |
@@ -69,6 +70,7 @@
 | **177** | CLOSED `a5ef56a` | Codex shadow GCP deploy完了 |
 | **178** | CLOSED `9754b53` | GCP Codex primary wp_write enable。Codex-GCPが記事修復/書き込みを担う前提を解禁 |
 | **181** | CLOSED `5b21543` | タイトル主語欠落 + 本文可読性narrow fix完了 |
+| **200** | CLOSED `e78f088` | publish_notice_scanner に REST subtype 欠落時の fallback 推論を追加し、lineup/postgame/farm/notice/program/default の 5+1 分類と scanner tests を着地 |
 | **183 / 184 / 185 / 186** | CLOSED | publish gate 緩和、ledger integration、entrypoint `--exclude-published-today` 一時除去、scan_limit/history dedup narrow 完了 |
 | **187 / 188** | CLOSED | publish-notice scheduler URI v1 verify と IAM fix runbook整理、Fix A 実行 + execution `9rsjt` で 20 mail verify 完了 |
 | **189** | CLOSED | 公開通知メールの手動X投稿候補を subtype selector 方式へ拡張。notice/sensitive gate、inside_voice条件、URL最大3 |

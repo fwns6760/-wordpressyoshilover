@@ -913,6 +913,46 @@ doc/
 - **last_commit**: -
 - **parent**: 188 / 189 / 194
 
+### 200 publish-notice-scanner-subtype-fallback
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: **CLOSED**(`e78f088`、REST subtype 欠落時の fallback 推論を scanner に追加し、manual X candidate の default 偏りを緩和)
+- **owner**: Codex B
+- **lane**: B
+- **ready_for**: none
+- **next_action**: none(scanner fix は着地、既存 flaky は 201 へ分離)
+- **blocked_by**: none
+- **user_action_required**: none
+- **write_scope**: `src/publish_notice_scanner.py`, `tests/test_publish_notice_scanner.py`
+- **doc_path**: `doc/done/2026-04/200-publish-notice-scanner-subtype-fallback.md`
+- **acceptance**: REST `article_subtype` / `subtype` 欠落時でも lineup / postgame / farm / notice / program / default の 5+1 分類へ倒せる、scanner 専用 tests 追加、`src/publish_notice_email_sender.py` 不可触
+- **repo_state**: committed(local)
+- **commit_state**: `e78f088`
+- **next_prompt_path**: -
+- **last_commit**: `e78f088` 200 publish-notice scanner subtype fallback 推論(REST 欠落時 lineup/postgame/farm/notice/program/default 5+1 分類、X candidates default 偏り解消)
+- **parent**: 188 / 189 / 190 / 191 / 199
+
+### 201 readiness-guard-test-time-dependent-flaky
+
+- **alias**: -
+- **priority**: P1
+- **status**: **READY**(full pytest residual 1 fail を別 ticket 化。scanner 変更とは write scope / failure cause ともに disjoint)
+- **owner**: Codex B
+- **lane**: B
+- **ready_for**: next Codex narrow fix
+- **next_action**: `tests/test_guarded_publish_readiness_guard.py::test_human_format_renders_summary` の real-now 依存を fixed `now` 注入または狭い assertion 調整で除去し、full pytest residual fail を解消
+- **blocked_by**: none
+- **user_action_required**: none
+- **write_scope**: `tests/test_guarded_publish_readiness_guard.py`、必要最小限で `src/tools/run_guarded_publish_readiness_check.py` または `src/guarded_publish_readiness_guard.py`
+- **doc_path**: `doc/active/201-readiness-guard-test-time-dependent-flaky.md`
+- **acceptance**: `summary: sent=1 refused=1 skipped=0` 前提の human-format test が実行日時に依存せず stable pass、200 scanner fix と scope 分離維持、`src/publish_notice_email_sender.py` 不可触
+- **repo_state**: local doc update
+- **commit_state**: pending ticket commit
+- **next_prompt_path**: -
+- **last_commit**: -
+- **parent**: 200 / 123
+
 ### 130 pub004-hard-stop-vs-repairable-before-publish
 
 - **alias**: -

@@ -1,7 +1,7 @@
 # 197 / 195 article footer X share corner live deploy(canary disabled start)
 
 - priority: P0.5
-- status: BLOCKED_USER
+- status: READY_FOR_AUTH_EXECUTOR
 - owner: Codex / Claude follow-up
 - lane: Front-Claude
 - parent: 195 / 176
@@ -9,12 +9,13 @@
 ## Background
 
 - `26fc0ca` で `src/yoshilover-063-frontend.php` に article footer の manual X share corner 実装は着地済み
-- current repo `HEAD` は `a1b89ed`
+- current repo `HEAD` は `c4fc838`
 - 195 の toggle contract:
   - WP option `yoshilover_063_manual_x_share_corner`
   - env override `YOSHILOVER_063_MANUAL_X_SHARE_CORNER`
   - precedence は `env override > WP option > default(true)`
 - goal は live frontend へ安全に反映し、初期は disabled のまま deploy、確認後に enable すること
+- 202 policy により、この ticket は `BLOCKED_USER` ではなく `READY_FOR_AUTH_EXECUTOR` として扱う
 
 ## Scope
 
@@ -68,6 +69,7 @@
   - default enabled のまま upload すると即 visible になり、mobile/layout smoke 前に live へ出る
   - 195 の canary toggle は「初期 false を先に書ける」場合にだけ安全に使える
 - ただし、この sandbox からは remote shell / WP admin upload / option write を完結できないため、**runbook 出力で停止**
+- この停止理由は policy 上の `READY_FOR_AUTH_EXECUTOR` であり、repo 実装 failure ではない
 
 ## Why Deploy Stopped
 

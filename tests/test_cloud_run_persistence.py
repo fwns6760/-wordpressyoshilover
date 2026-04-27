@@ -217,7 +217,7 @@ class PublishNoticeEntrypointTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(
-            mocked_run.call_args_list[2].args[0],
+            mocked_run.call_args_list[3].args[0],
             [
                 sys.executable,
                 "-m",
@@ -231,6 +231,78 @@ class PublishNoticeEntrypointTests(unittest.TestCase):
                 "--queue-path",
                 str(Path(tmpdir) / "queue.jsonl"),
             ],
+        )
+
+    def test_run_publish_notice_entrypoint_queue_path_download_upload(self) -> None:
+        runner_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cursor_path = Path(tmpdir) / "cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+
+            def fake_run(cmd, **kwargs):
+                if cmd[0] == "gcloud" and cmd[4] == "cp" and cmd[5].startswith("gs://"):
+                    if cmd[5].endswith("/queue.jsonl"):
+                        queue_path.write_text('{"status":"queued"}\n', encoding="utf-8")
+                        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=b"", stderr=b"")
+                    raise subprocess.CalledProcessError(
+                        returncode=1,
+                        cmd=cmd,
+                        stderr=b"CommandException: No URLs matched",
+                    )
+                if cmd[0] == sys.executable:
+                    cursor_path.write_text("cursor\n", encoding="utf-8")
+                    history_path.write_text("{}\n", encoding="utf-8")
+                    queue_path.write_text('{"status":"queued"}\n{"status":"sent"}\n', encoding="utf-8")
+                    return runner_result
+                if cmd[0] == "gcloud" and cmd[4] in {"cp", "mv"}:
+                    return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=b"", stderr=b"")
+                raise AssertionError(f"unexpected command: {cmd}")
+
+            with patch("subprocess.run", side_effect=fake_run) as mocked_run:
+                exit_code = cloud_run_persistence.run_publish_notice_entrypoint(
+                    [
+                        "--bucket-name",
+                        "bucket-name",
+                        "--prefix",
+                        "publish_notice",
+                        "--project-id",
+                        "project-id",
+                        "--cursor-path",
+                        str(cursor_path),
+                        "--history-path",
+                        str(history_path),
+                        "--queue-path",
+                        str(queue_path),
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        commands = [call.args[0] for call in mocked_run.call_args_list]
+        self.assertIn(
+            [
+                "gcloud",
+                "--project",
+                "project-id",
+                "storage",
+                "cp",
+                "gs://bucket-name/publish_notice/queue.jsonl",
+                str(queue_path),
+                "--quiet",
+            ],
+            commands,
+        )
+        queue_upload_cp = [
+            command
+            for command in commands
+            if command[:6] == ["gcloud", "--project", "project-id", "storage", "cp", str(queue_path)]
+        ]
+        self.assertTrue(queue_upload_cp)
+        self.assertTrue(queue_upload_cp[0][6].startswith("gs://bucket-name/publish_notice/queue.jsonl.uploading-"))
+        self.assertIn(
+            ["gcloud", "--project", "project-id", "storage", "mv", queue_upload_cp[0][6], "gs://bucket-name/publish_notice/queue.jsonl", "--quiet"],
+            commands,
         )
 
     def test_entrypoint_returns_runner_exit_code(self) -> None:

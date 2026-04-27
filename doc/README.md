@@ -37,18 +37,12 @@ Current publish-policy reference:
 - Keep old names such as `PUB-004-D`, `SPEECH-001`, and `PUB-005-A2` as aliases.
 - Do not rename existing ticket docs.
 - New execution tickets should use `<number>-<topic>.md`.
-- Reserve the next number in `doc/README.md` before handing work to Claude / Codex / Codex-M.
-- `1 number = 1 scope`; do not mix separate purposes under one number.
-- Multiple commits are allowed under one number when they belong to the same scope, such as spec / impl / doc sync.
-- Commit message default: `<number>: <summary>`.
-- If a historical number conflict is found later, record the cleanup in the next doc-only board sync instead of silently reusing the number.
 
 ## status definitions
 
 - `READY`: can be fired or executed now within its constraints
 - `IN_FLIGHT`: currently running in Claude/Codex
 - `REVIEW_NEEDED`: implementation returned and needs verification
-- `READY_FOR_AUTH_EXECUTOR`: implementation and runbook are ready; an authenticated live executor must perform the remaining mutation step
 - `BLOCKED_USER`: explicit user judgment or user-side operation required
 - `BLOCKED_EXTERNAL`: external system/precondition required
 - `CLOSED`: done and accepted
@@ -60,13 +54,13 @@ Current publish-policy reference:
 doc/
 ├── README.md  ← board 本体(root 唯一)
 ├── active/    READY / IN_FLIGHT / REVIEW_NEEDED(154 publish-policy 含む)
-├── waiting/   READY_FOR_AUTH_EXECUTOR / BLOCKED_USER / BLOCKED_EXTERNAL / PARKED(PUB-005 含む)
+├── waiting/   BLOCKED_USER / BLOCKED_EXTERNAL / PARKED(PUB-005 含む)
 └── done/YYYY-MM/  CLOSED(PUB-004-guarded 含む)
 ```
 
 - doc/ root = **102 board のみ**(.md 1 file)
 - READY / IN_FLIGHT / REVIEW_NEEDED → `doc/active/`(154 publish-policy 等 current runbook も active なら ここ)
-- READY_FOR_AUTH_EXECUTOR / BLOCKED_USER / BLOCKED_EXTERNAL / PARKED → `doc/waiting/`
+- BLOCKED_USER / BLOCKED_EXTERNAL / PARKED → `doc/waiting/`
 - CLOSED → `doc/done/YYYY-MM/`
 - **優先順位はフォルダではなく、本 102 board の `priority` / `next_action` で判別**
 - status 変更時 doc_path も同 commit で更新
@@ -76,18 +70,10 @@ doc/
 
 - `A`: Codex A lane, ops / mail / cron / publish runner / WP REST / backup / history / queue / doc commit work
 - `B`: Codex B lane, evaluator / validator / article quality / duplicate suppression / source / subtype / tests / audit work
-- `Codex-M`: board hygiene / status reconciliation / numbering / prompt-prep lane when Claude is unavailable or needs narrow doc work
 - `either`: either Codex lane can take it after write-scope check
 - `Claude`: Claude orchestration or read-only operation
 - `User`: user-side operation or final judgment
 - `Front-Claude`: front/plugin lane outside backend ownership
-
-## authenticated executor boundary
-
-- Codex owns repo implementation, tests, Docker / Cloud Build config changes, deploy runbooks, and read-only verification.
-- Live GCP mutation is executed by an authenticated executor: Claude shell, user shell, or a future dedicated deploy executor.
-- Live mutation includes Cloud Build submit, Cloud Run Job create/update, Scheduler create/update, IAM changes, Secret Manager changes, and live env changes.
-- When user go is already present and only the authenticated shell is missing, use `READY_FOR_AUTH_EXECUTOR` instead of treating Codex auth failure as ticket failure.
 
 ## active execution board
 
@@ -851,13 +837,13 @@ doc/
 
 - **alias**: B1
 - **priority**: P0.5
-- **status**: **REVIEW_NEEDED**(repo 実装は `26fc0ca` で着地済み。ただし live frontend 未反映のため CLOSE 不可)
+- **status**: **REVIEW_NEEDED**(singular post footer に 3-candidate 手動 X share corner を追加済み。copy button / X intent link / canary toggle 付き、deploy は未実施)
 - **owner**: Codex / Claude follow-up
 - **lane**: Front-Claude
-- **ready_for**: 197 live deploy handoff + post-deploy review
-- **next_action**: repo 側の render / copy / toggle 実装は維持しつつ、`197` の default-off canary deploy と WP 側反映確認を待つ
-- **blocked_by**: `197` live deploy handoff
-- **user_action_required**: none for repo code review; live reflect は `197`
+- **ready_for**: Claude review / canary deploy 別便
+- **next_action**: WP canary deploy 前提で frontend render を review し、toggle 初期値と card wording を確認
+- **blocked_by**: deploy 別便
+- **user_action_required**: none for code review; deploy judgement は別便
 - **write_scope**: `src/yoshilover-063-frontend.php`, `doc/active/195-article-footer-manual-x-share-corner.md`, `doc/README.md`, `doc/active/assignments.md`
 - **doc_path**: `doc/active/195-article-footer-manual-x-share-corner.md`
 - **acceptance**: single post publish 記事のみ / heading「この記事を X でシェア」/ 3 候補 fixed / copy + intent / permalink + `#巨人 #ジャイアンツ` 含む / option+env toggle / `php -l` pass
@@ -891,16 +877,16 @@ doc/
 
 - **alias**: -
 - **priority**: P0.5
-- **status**: **READY_FOR_AUTH_EXECUTOR**(195 の repo 実装と runbook は揃っており、残りは authenticated executor による live deploy のみ。repo 既存 artifact は stale のため fresh zip が前提)
+- **status**: **BLOCKED_USER**(195 の live deploy 経路は WP admin zip upload / Xserver 上の plugin file 直接置換までは特定したが、disabled start に必要な option false 書込みは user-side WP access or remote shell が必要。repo 既存 artifact も stale)
 - **owner**: Codex / Claude follow-up
 - **lane**: Front-Claude
-- **ready_for**: authenticated executor shell / WP admin access
-- **next_action**: 1) fresh zip / artifact 再生成 2) default-off canary を先置き 3) WP 側反映確認 4) enable 5) rollback 手順の実行可否を同じ authenticated executor で保持
-- **blocked_by**: authenticated executor 側の Xserver / WP access
-- **user_action_required**: no new policy judgment; live mutation を実行できる authenticated executor が必要
+- **ready_for**: user-side WP shell / WP admin access
+- **next_action**: 1) `python3 scripts/build_063_wp_admin_bundle.py` で最新 zip 再生成 2) remote shell + WP-CLI で `yoshilover_063_manual_x_share_corner.enabled=false` を先置き 3) plugin file 差し替え 4) disabled verify 後に enable
+- **blocked_by**: Xserver 実接続情報 / WP root path / user-side option write 手段
+- **user_action_required**: **YES**(Option A canary deploy は user shell or WP admin/option editor が必要)
 - **write_scope**: `doc/waiting/197-195-live-deploy.md`, `doc/README.md`, `doc/active/assignments.md`
 - **doc_path**: `doc/waiting/197-195-live-deploy.md`
-- **acceptance**: deploy route 明記 / fresh zip 前提 / default-off canary / WP 側反映確認 / enable / rollback 手順 / live write 未実行を記録
+- **acceptance**: deploy route 明記 / Option A 推奨理由 / stale artifact 指摘 / user shell runbook / rollback 手順 / live write 未実行を記録
 - **repo_state**: local doc update
 - **commit_state**: pending ticket commit
 - **next_prompt_path**: -
@@ -911,16 +897,16 @@ doc/
 
 - **alias**: -
 - **priority**: P0.5
-- **status**: **REVIEW_NEEDED**(read-only verify で live image が `23853cd`、latest execution が success、Gmail 着信も確認。いっぽう sample mail 本文では `manual_x_post_candidates` block をまだ確認できていない)
-- **owner**: Codex / Claude follow-up
+- **status**: **BLOCKED_USER**(`publish-notice` の `a9c2814` rebuild + deploy は user 明示 GO 済みだが、Codex sandbox では `gcloud` active account に有効 credential がなく、`gcloud run jobs describe publish-notice` の read-only verify 時点で停止)
+- **owner**: Codex / User / Claude follow-up
 - **lane**: A
-- **ready_for**: live body / runtime drift review
-- **next_action**: 1) `23853cd` live image と repo expectation の差分を read-only で照合 2) sample mail で `manual_x_post_candidates` 不在の理由を切り分け 3) 必要なら narrow follow-up or redeploy ticket を起票
-- **blocked_by**: none for read-only review
-- **user_action_required**: none for current verification; mutationが必要なら別便で executor handoff
-- **write_scope**: `doc/active/199-publish-notice-rebuild-a9c2814.md`, `doc/README.md`, `doc/active/assignments.md`
-- **doc_path**: `doc/active/199-publish-notice-rebuild-a9c2814.md`
-- **acceptance**: live image tag / latest execution / Gmail 着信の read-only 事実を記録し、未確認点(`manual_x_post_candidates`)を review item として残す
+- **ready_for**: user shell rerun with valid gcloud auth
+- **next_action**: 1) user shell で Cloud Build / Cloud Run Job update を runbook 通り実行 2) `publish-notice` の latest execution log で `manual_x_post_candidates:` を確認 3) 成功後に Claude が close
+- **blocked_by**: user-side gcloud auth / shell execution
+- **user_action_required**: **YES**(user shell で `publish-notice` build/update/verify を実行)
+- **write_scope**: `doc/waiting/199-publish-notice-rebuild-a9c2814.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/waiting/199-publish-notice-rebuild-a9c2814.md`
+- **acceptance**: auth failure の exact point を記録し、`publish-notice` のみを対象にした user-shell runbook / verify / rollback を残し、他 Job / env / scheduler / secret / WP / X に未変更で止まっている
 - **repo_state**: local doc update
 - **commit_state**: pending ticket commit
 - **next_prompt_path**: -
@@ -966,86 +952,6 @@ doc/
 - **next_prompt_path**: -
 - **last_commit**: -
 - **parent**: 200 / 123
-
-### 202 gcp-deploy-executor-boundary
-
-- **alias**: -
-- **priority**: P0.5
-- **status**: **REVIEW_NEEDED**(Codex repo workと authenticated executor の live mutation 境界を doc 化)
-- **owner**: Codex-M / Claude
-- **lane**: Codex-M
-- **ready_for**: next live-mutation ticket adoption
-- **next_action**: `READY_FOR_AUTH_EXECUTOR` を live GCP / live WP deploy handoff に適用し、Codex auth fail を generic failure 扱いしない
-- **blocked_by**: none
-- **user_action_required**: none
-- **write_scope**: `doc/active/202-gcp-deploy-executor-boundary.md`, `doc/active/OPERATING_LOCK.md`, `doc/README.md`, `doc/active/assignments.md`
-- **doc_path**: `doc/active/202-gcp-deploy-executor-boundary.md`
-- **acceptance**: Codexのrepo責務 / authenticated executor責務 / `READY_FOR_AUTH_EXECUTOR` 定義 / secret/env hard stop 維持が明文化されている
-- **repo_state**: local doc update
-- **commit_state**: pending ticket commit
-- **next_prompt_path**: -
-- **last_commit**: -
-- **parent**: 155 / 177 / 197 / 199
-
-### 203 ticket-number-reservation-rule
-
-- **alias**: -
-- **priority**: P0.5
-- **status**: **REVIEW_NEEDED**(ticket 採番の事前予約と `1 number = 1 scope` を明文化)
-- **owner**: Codex-M / Claude
-- **lane**: Codex-M
-- **ready_for**: next ticket fire
-- **next_action**: 新規 ticket を fire する前に README へ番号予約し、別用途の番号混在を止める
-- **blocked_by**: none
-- **user_action_required**: none
-- **write_scope**: `doc/active/203-ticket-number-reservation-rule.md`, `doc/README.md`, `doc/active/assignments.md`
-- **doc_path**: `doc/active/203-ticket-number-reservation-rule.md`
-- **acceptance**: 番号予約 / `1 number = 1 scope` / commit message 基本形 / 衝突発見時の整理ルールが明文化されている
-- **repo_state**: local doc update
-- **commit_state**: pending ticket commit
-- **next_prompt_path**: -
-- **last_commit**: -
-- **parent**: 188 / 189 / 192 / 200 / 201
-
-### 204 195-live-state-clarify
-
-- **alias**: -
-- **priority**: P0.5
-- **status**: **CLOSED**(195 は REVIEW_NEEDED 維持、197 は READY_FOR_AUTH_EXECUTOR へ正規化し、README / assignments の見え方を修正)
-- **owner**: Codex-M
-- **lane**: Codex-M
-- **ready_for**: none
-- **next_action**: none
-- **blocked_by**: none
-- **user_action_required**: none
-- **write_scope**: `doc/README.md`, `doc/active/assignments.md`, `doc/waiting/197-195-live-deploy.md`
-- **doc_path**: `-(board row only)`
-- **acceptance**: 195 が live 未反映のまま CLOSED 扱いされず、197 の live 手順が fresh zip / canary / verify / enable / rollback まで board に反映されている
-- **repo_state**: local doc update
-- **commit_state**: pending ticket commit
-- **next_prompt_path**: -
-- **last_commit**: -
-- **parent**: 195 / 197 / 202
-
-### 205 gcp-runtime-drift-audit
-
-- **alias**: -
-- **priority**: P0.5
-- **status**: **READY**(GCP 移行後の repo/runtime drift を read-only 監査するための ticket)
-- **owner**: Codex A / Claude
-- **lane**: A
-- **ready_for**: next read-only audit pass
-- **next_action**: Cloud Run Job image tag / Scheduler state / WSL cron 残骸 / latest execution / publish-notice mail / GCS history の drift を read-only 監査する
-- **blocked_by**: none
-- **user_action_required**: none
-- **write_scope**: `doc/active/205-gcp-runtime-drift-audit.md`, read-only `gcloud` / Gmail / local cron evidence, `doc/README.md`, `doc/active/assignments.md`
-- **doc_path**: `doc/active/205-gcp-runtime-drift-audit.md`
-- **acceptance**: audit 対象が列挙され、mutation禁止が明記され、修正・deploy・WP write が別 ticket であることが固定されている
-- **repo_state**: local doc update
-- **commit_state**: pending ticket commit
-- **next_prompt_path**: -
-- **last_commit**: -
-- **parent**: 155 / 199 / 200 / 202
 
 ### 130 pub004-hard-stop-vs-repairable-before-publish
 

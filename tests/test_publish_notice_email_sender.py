@@ -1,4 +1,10 @@
+import json
+import logging
+import smtplib
+import tempfile
 import unittest
+from datetime import datetime
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from src import mail_delivery_bridge
@@ -321,6 +327,168 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         self.assertEqual(result.status, "suppressed")
         self.assertEqual(result.reason, "EMPTY_BODY")
         self.assertIs(result.bridge_result, bridge_result)
+
+    def test_send_result_logged_to_queue_path_sent(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            queue_path = f"{tmpdir}/queue.jsonl"
+            result = sender.PublishNoticeEmailResult(
+                status="sent",
+                reason=None,
+                subject="[公開通知] Giants 巨人が接戦を制した",
+                recipients=["notice@example.com"],
+            )
+
+            sender.append_send_result(
+                queue_path,
+                notice_kind="per_post",
+                post_id=63781,
+                result=result,
+                publish_time_iso="2026-04-27T09:05:37+09:00",
+                recorded_at=datetime.fromisoformat("2026-04-27T11:31:14+09:00"),
+            )
+
+            rows = [
+                json.loads(line)
+                for line in Path(queue_path).read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(
+            rows[0],
+            {
+                "status": "sent",
+                "reason": None,
+                "subject": "[公開通知] Giants 巨人が接戦を制した",
+                "recipients": ["notice@example.com"],
+                "post_id": 63781,
+                "recorded_at": "2026-04-27T11:31:14+09:00",
+                "sent_at": "2026-04-27T11:31:14+09:00",
+                "notice_kind": "per_post",
+                "publish_time_iso": "2026-04-27T09:05:37+09:00",
+            },
+        )
+
+    def test_send_result_logged_to_queue_path_suppressed_no_recipient(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            queue_path = f"{tmpdir}/queue.jsonl"
+            result = sender.PublishNoticeEmailResult(
+                status="suppressed",
+                reason="NO_RECIPIENT",
+                subject="[公開通知] Giants 巨人が接戦を制した",
+                recipients=[],
+            )
+
+            sender.append_send_result(
+                queue_path,
+                notice_kind="per_post",
+                post_id=63781,
+                result=result,
+                publish_time_iso="2026-04-27T09:05:37+09:00",
+                recorded_at=datetime.fromisoformat("2026-04-27T11:31:14+09:00"),
+            )
+
+            row = json.loads(Path(queue_path).read_text(encoding="utf-8").strip())
+
+        self.assertEqual(row["status"], "suppressed")
+        self.assertEqual(row["reason"], "NO_RECIPIENT")
+        self.assertEqual(row["recipients"], [])
+        self.assertEqual(row["notice_kind"], "per_post")
+        self.assertEqual(row["publish_time_iso"], "2026-04-27T09:05:37+09:00")
+
+    def test_send_result_logged_to_queue_path_smtp_error(self):
+        def raising_bridge(*_args, **_kwargs):
+            raise smtplib.SMTPServerDisconnected("lost connection")
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            "os.environ",
+            {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com"},
+            clear=True,
+        ):
+            queue_path = f"{tmpdir}/queue.jsonl"
+            result = sender.send(
+                self._request(),
+                dry_run=False,
+                send_enabled=True,
+                bridge_send=raising_bridge,
+            )
+            sender.append_send_result(
+                queue_path,
+                notice_kind="per_post",
+                post_id=63781,
+                result=result,
+                publish_time_iso="2026-04-27T09:05:37+09:00",
+                recorded_at=datetime.fromisoformat("2026-04-27T11:31:14+09:00"),
+            )
+            row = json.loads(Path(queue_path).read_text(encoding="utf-8").strip())
+
+        self.assertEqual(result.status, "error")
+        self.assertEqual(result.reason, "SMTPServerDisconnected")
+        self.assertEqual(row["status"], "error")
+        self.assertEqual(row["reason"], "SMTPServerDisconnected")
+        self.assertEqual(row["subject"], "[公開通知] Giants 巨人が接戦を制した")
+
+    def test_alert_log_when_emit_gt_zero_sent_zero(self):
+        summary = sender.summarize_execution_results(
+            [
+                sender.PublishNoticeEmailResult(
+                    status="suppressed",
+                    reason="NO_RECIPIENT",
+                    subject="subject-a",
+                    recipients=[],
+                ),
+                sender.PublishNoticeEmailResult(
+                    status="error",
+                    reason="SMTPServerDisconnected",
+                    subject="subject-b",
+                    recipients=["notice@example.com"],
+                ),
+            ],
+            emitted=2,
+        )
+
+        summary_line = sender.build_execution_summary_log(summary)
+        alert_line = sender.build_zero_sent_alert_log(summary)
+
+        self.assertTrue(summary.should_alert)
+        self.assertEqual(summary.sent, 0)
+        self.assertEqual(summary.suppressed, 1)
+        self.assertEqual(summary.errors, 1)
+        self.assertEqual(summary.reasons, {"NO_RECIPIENT": 1, "SMTPServerDisconnected": 1})
+        self.assertIn("[summary] sent=0 suppressed=1 errors=1", summary_line)
+        self.assertIsNotNone(alert_line)
+        self.assertIn("emitted=2 but sent=0", alert_line)
+        with self.assertLogs(level="WARNING") as captured:
+            logging.warning(alert_line)
+        self.assertIn("[ALERT] publish-notice emitted=2 but sent=0", captured.output[0])
+
+    def test_no_alert_when_some_sent(self):
+        summary = sender.summarize_execution_results(
+            [
+                sender.PublishNoticeEmailResult(
+                    status="sent",
+                    reason=None,
+                    subject="subject-a",
+                    recipients=["notice@example.com"],
+                ),
+                sender.PublishNoticeEmailResult(
+                    status="suppressed",
+                    reason="NO_RECIPIENT",
+                    subject="subject-b",
+                    recipients=[],
+                ),
+            ],
+            emitted=2,
+        )
+
+        self.assertFalse(summary.should_alert)
+        self.assertIsNone(sender.build_zero_sent_alert_log(summary))
+
+    def test_no_alert_when_emit_zero(self):
+        summary = sender.summarize_execution_results([], emitted=0)
+
+        self.assertFalse(summary.should_alert)
+        self.assertIsNone(sender.build_zero_sent_alert_log(summary))
 
 
 if __name__ == "__main__":

@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
 import json
+import logging
 import os
 from pathlib import Path
 import sys
@@ -29,13 +29,17 @@ from src.publish_notice_email_sender import (  # noqa: E402
     build_alert_body_text,
     build_body_text,
     build_emergency_subject,
+    build_execution_summary_log,
     build_summary_body_text,
+    build_zero_sent_alert_log,
     emit_emergency_hook,
+    append_send_result,
     send,
     send_alert,
     send_summary,
+    summarize_execution_results,
 )
-from src.publish_notice_scanner import JST, scan  # noqa: E402
+from src.publish_notice_scanner import scan  # noqa: E402
 from src import repair_provider_ledger  # noqa: E402
 from src import runner_ledger_integration  # noqa: E402
 
@@ -137,36 +141,6 @@ def _emergency_request_from_payload(payload: dict[str, Any]) -> EmergencyMailReq
     )
 
 
-def _queue_result(
-    queue_path: str | Path,
-    *,
-    notice_kind: str,
-    post_id: int | str,
-    status: str,
-    reason: str | None,
-    subject: str,
-    recipients: list[str],
-    publish_time_iso: str | None = None,
-) -> None:
-    path = Path(queue_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    sent_at_iso = datetime.now(JST).isoformat()
-    payload = {
-        "status": status,
-        "reason": reason,
-        "subject": subject,
-        "recipients": recipients,
-        "post_id": post_id,
-        "recorded_at": sent_at_iso,
-        "sent_at": sent_at_iso,
-        "notice_kind": notice_kind,
-    }
-    if publish_time_iso is not None:
-        payload["publish_time_iso"] = str(publish_time_iso or "")
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
-
-
 def _print_result(notice_kind: str, post_id: int | str, result: Any) -> None:
     print(
         f"[result] kind={notice_kind} post_id={post_id} status={result.status} reason={result.reason} "
@@ -250,6 +224,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 history_path=args.history_path,
                 queue_path=args.queue_path,
             )
+            per_post_results = []
             print(
                 f"[scan] emitted={len(result.emitted)} skipped={len(result.skipped)} "
                 f"cursor_before={result.cursor_before} cursor_after={result.cursor_after}"
@@ -263,16 +238,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                     send_enabled=send_enabled,
                     duplicate_history_path=args.queue_path,
                 )
-                _queue_result(
+                append_send_result(
                     args.queue_path,
                     notice_kind="per_post",
                     post_id=request.post_id,
-                    status=mail_result.status,
-                    reason=mail_result.reason,
-                    subject=mail_result.subject,
-                    recipients=mail_result.recipients,
+                    result=mail_result,
                     publish_time_iso=request.publish_time_iso,
                 )
+                per_post_results.append(mail_result)
                 _emit_notice_ledger(
                     ledger_sink,
                     notice_kind="per_post",
@@ -303,14 +276,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                     send_enabled=send_enabled,
                 )
                 summary_post_id = f"summary:{summary_request.cumulative_published_count}"
-                _queue_result(
+                append_send_result(
                     args.queue_path,
                     notice_kind="summary",
                     post_id=summary_post_id,
-                    status=summary_result.status,
-                    reason=summary_result.reason,
-                    subject=summary_result.subject,
-                    recipients=summary_result.recipients,
+                    result=summary_result,
                 )
                 _emit_notice_ledger(
                     ledger_sink,
@@ -325,6 +295,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                     },
                 )
                 _print_result("summary", summary_post_id, summary_result)
+            execution_summary = summarize_execution_results(per_post_results, emitted=len(result.emitted))
+            print(build_execution_summary_log(execution_summary))
+            alert_line = build_zero_sent_alert_log(execution_summary)
+            if alert_line is not None:
+                logging.warning(alert_line)
             return 0
 
         if args.stdin:
@@ -345,14 +320,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                         send_enabled=send_enabled,
                         duplicate_history_path=args.queue_path,
                     )
-                    _queue_result(
+                    append_send_result(
                         args.queue_path,
                         notice_kind="per_post",
                         post_id=request.post_id,
-                        status=result.status,
-                        reason=result.reason,
-                        subject=result.subject,
-                        recipients=result.recipients,
+                        result=result,
                         publish_time_iso=request.publish_time_iso,
                     )
                     _emit_notice_ledger(
@@ -373,14 +345,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                         send_enabled=send_enabled,
                     )
                     summary_post_id = f"summary:{summary_request.cumulative_published_count}"
-                    _queue_result(
+                    append_send_result(
                         args.queue_path,
                         notice_kind="summary",
                         post_id=summary_post_id,
-                        status=result.status,
-                        reason=result.reason,
-                        subject=result.subject,
-                        recipients=result.recipients,
+                        result=result,
                     )
                     _emit_notice_ledger(
                         ledger_sink,
@@ -400,14 +369,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                         send_enabled=send_enabled,
                     )
                     alert_post_id = alert_request.post_id if alert_request.post_id is not None else f"alert:{index}"
-                    _queue_result(
+                    append_send_result(
                         args.queue_path,
                         notice_kind="alert",
                         post_id=alert_post_id,
-                        status=result.status,
-                        reason=result.reason,
-                        subject=result.subject,
-                        recipients=result.recipients,
+                        result=result,
                     )
                     _emit_notice_ledger(
                         ledger_sink,
@@ -437,14 +403,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             send_enabled=send_enabled,
             duplicate_history_path=args.queue_path,
         )
-        _queue_result(
+        append_send_result(
             args.queue_path,
             notice_kind="per_post",
             post_id=request.post_id,
-            status=result.status,
-            reason=result.reason,
-            subject=result.subject,
-            recipients=result.recipients,
+            result=result,
             publish_time_iso=request.publish_time_iso,
         )
         _emit_notice_ledger(

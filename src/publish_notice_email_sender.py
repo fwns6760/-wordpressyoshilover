@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -131,11 +132,25 @@ class EmergencyMailRequest:
 
 @dataclass(frozen=True)
 class PublishNoticeEmailResult:
-    status: Literal["sent", "dry_run", "suppressed"]
+    status: Literal["sent", "dry_run", "suppressed", "error"]
     reason: str | None
     subject: str
     recipients: list[str]
     bridge_result: object | None = None
+
+
+@dataclass(frozen=True)
+class PublishNoticeExecutionSummary:
+    emitted: int
+    sent: int
+    suppressed: int
+    errors: int
+    dry_run: int
+    reasons: dict[str, int]
+
+    @property
+    def should_alert(self) -> bool:
+        return self.emitted > 0 and self.sent == 0 and self.dry_run == 0
 
 
 @dataclass(frozen=True)
@@ -540,6 +555,23 @@ def _suppressed(
     )
 
 
+def _error_result(
+    *,
+    subject: str,
+    recipients: list[str] | None = None,
+    reason: str | None = None,
+    bridge_result: object | None = None,
+) -> PublishNoticeEmailResult:
+    normalized_reason = str(reason or "").strip() or "UNKNOWN_ERROR"
+    return PublishNoticeEmailResult(
+        status="error",
+        reason=normalized_reason,
+        subject=str(subject or "").strip(),
+        recipients=list(recipients or []),
+        bridge_result=bridge_result,
+    )
+
+
 def _bridge_result_to_email_result(
     *,
     subject: str,
@@ -624,7 +656,15 @@ def _deliver_mail(
         text_body=body_text,
         metadata=dict(metadata),
     )
-    bridge_result = bridge_send(mail_request, dry_run=False)
+    try:
+        bridge_result = bridge_send(mail_request, dry_run=False)
+    except Exception as exc:
+        return _error_result(
+            subject=normalized_subject,
+            recipients=recipients,
+            reason=type(exc).__name__,
+            bridge_result=exc,
+        )
     return _bridge_result_to_email_result(
         subject=normalized_subject,
         recipients=recipients,
@@ -739,6 +779,91 @@ def emit_emergency_hook(
     return hook(request)
 
 
+def build_send_result_entry(
+    *,
+    notice_kind: str,
+    post_id: int | str,
+    result: PublishNoticeEmailResult,
+    publish_time_iso: str | None = None,
+    recorded_at: datetime | None = None,
+) -> dict[str, Any]:
+    sent_at_iso = _coerce_now(recorded_at).isoformat()
+    payload = {
+        "status": str(result.status).strip(),
+        "reason": None if result.reason is None else str(result.reason),
+        "subject": str(result.subject or "").strip(),
+        "recipients": list(result.recipients or []),
+        "post_id": post_id,
+        "recorded_at": sent_at_iso,
+        "sent_at": sent_at_iso,
+        "notice_kind": str(notice_kind or "").strip() or "per_post",
+    }
+    if publish_time_iso is not None:
+        payload["publish_time_iso"] = str(publish_time_iso or "")
+    return payload
+
+
+def append_send_result(
+    queue_path: str | Path,
+    *,
+    notice_kind: str,
+    post_id: int | str,
+    result: PublishNoticeEmailResult,
+    publish_time_iso: str | None = None,
+    recorded_at: datetime | None = None,
+) -> dict[str, Any]:
+    payload = build_send_result_entry(
+        notice_kind=notice_kind,
+        post_id=post_id,
+        result=result,
+        publish_time_iso=publish_time_iso,
+        recorded_at=recorded_at,
+    )
+    path = _path(queue_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    return payload
+
+
+def summarize_execution_results(
+    results: Sequence[PublishNoticeEmailResult],
+    *,
+    emitted: int,
+) -> PublishNoticeExecutionSummary:
+    status_counter = Counter(str(result.status).strip() for result in results)
+    reason_counter = Counter(
+        str(result.reason).strip()
+        for result in results
+        if str(result.reason or "").strip()
+    )
+    return PublishNoticeExecutionSummary(
+        emitted=int(emitted),
+        sent=int(status_counter.get("sent", 0)),
+        suppressed=int(status_counter.get("suppressed", 0)),
+        errors=int(status_counter.get("error", 0)),
+        dry_run=int(status_counter.get("dry_run", 0)),
+        reasons=dict(sorted(reason_counter.items())),
+    )
+
+
+def build_execution_summary_log(summary: PublishNoticeExecutionSummary) -> str:
+    return (
+        f"[summary] sent={summary.sent} suppressed={summary.suppressed} "
+        f"errors={summary.errors} reasons={json.dumps(summary.reasons, ensure_ascii=False, sort_keys=True)}"
+    )
+
+
+def build_zero_sent_alert_log(summary: PublishNoticeExecutionSummary) -> str | None:
+    if not summary.should_alert:
+        return None
+    return (
+        f"[ALERT] publish-notice emitted={summary.emitted} but sent=0 "
+        f"(suppressed={summary.suppressed} errors={summary.errors}, "
+        f"reasons={json.dumps(summary.reasons, ensure_ascii=False, sort_keys=True)})"
+    )
+
+
 __all__ = [
     "AlertMailRequest",
     "BurstSummaryEntry",
@@ -754,14 +879,20 @@ __all__ = [
     "build_alert_subject",
     "build_body_text",
     "build_burst_summary_requests",
+    "build_execution_summary_log",
     "build_emergency_subject",
     "build_manual_x_post_candidates",
+    "build_send_result_entry",
     "build_subject",
     "build_summary_body_text",
     "build_summary_subject",
+    "build_zero_sent_alert_log",
     "emit_emergency_hook",
+    "append_send_result",
+    "PublishNoticeExecutionSummary",
     "resolve_recipients",
     "send",
     "send_alert",
     "send_summary",
+    "summarize_execution_results",
 ]

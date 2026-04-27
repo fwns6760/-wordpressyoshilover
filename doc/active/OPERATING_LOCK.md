@@ -17,7 +17,6 @@ Every Claude / Codex / Codex-M session must read this file before acting.
 - Codex B: quality / evaluator / validator / SEO / SNS / X gate / mail-body implementation
 - Codex-GCP: GCP runtime for repair, allowed WP article write, SNS topic processing, SEO/quality monitoring, mail digest generation, and X gate dry-run
 - Codex-M: temporary manager when Claude is unavailable; board hygiene, status reconciliation, prompt preparation
-- Authenticated executor: Claude shell / user shell / future deploy executor for live GCP mutation after repo work is ready
 - User: live unlock, secret/env/scheduler/scope expansion, major policy decisions
 
 ## hard stops
@@ -31,23 +30,13 @@ Every Claude / Codex / Codex-M session must read this file before acting.
 - Do not bypass PUB-004 publish gates or PUB-005 X gates.
 - Do not publish raw SNS signals directly; SNS topics must pass source recheck and publish gates.
 
-## GCP live boundary
-
-- Codex may implement repo changes, tests, Docker / Cloud Build config, deploy runbooks, and read-only GCP verification.
-- Cloud Build submit, Cloud Run Job create/update, Scheduler create/update, IAM changes, Secret Manager changes, and live env changes must run through an authenticated executor.
-- Codex auth failure on a live GCP mutation step is not treated as implementation failure when repo work and runbook are complete.
-- Secret display and env mutation remain hard stops even for handoff-ready tickets.
-
 ## status rule
 
 - Status changes require ticket doc move + README `doc_path` update + assignments update in the same commit, or an immediate doc-only follow-up commit.
 - READY / IN_FLIGHT / REVIEW_NEEDED tickets live in `doc/active/`.
-- READY_FOR_AUTH_EXECUTOR tickets live in `doc/waiting/` until an authenticated executor performs the live step.
 - BLOCKED_USER / BLOCKED_EXTERNAL / PARKED tickets live in `doc/waiting/`.
 - CLOSED tickets live in `doc/done/YYYY-MM/`.
 - Do not leave CLOSED tickets in `doc/active/` or `doc/waiting/`.
-- Use `BLOCKED_USER` when a decision, approval, or user-owned access handoff is still missing.
-- Use `READY_FOR_AUTH_EXECUTOR` when implementation, runbook, and validation steps are ready and only an authenticated live executor remains.
 
 ## delegation rule
 
@@ -67,3 +56,4 @@ After reading this file, an agent should report or internally lock:
 - user / external blockers
 - hard stops relevant to the task
 - exact paths it may touch
+

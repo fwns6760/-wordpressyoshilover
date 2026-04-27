@@ -300,7 +300,11 @@ def run_publish_notice_entrypoint(argv: Sequence[str] | None = None) -> int:
         queue_path=str(args.queue_path),
         runner_args=args.runner_args,
     )
-    with manager.with_state("cursor.txt", args.cursor_path), manager.with_state("history.json", args.history_path):
+    with (
+        manager.with_state("cursor.txt", args.cursor_path),
+        manager.with_state("history.json", args.history_path),
+        manager.with_state("queue.jsonl", args.queue_path),
+    ):
         completed = subprocess.run(command, check=False)
     return int(completed.returncode)
 

@@ -41,4 +41,6 @@
 ## Git Observation
 
 - mount 上は `/home/fwns6/code/wordpressyoshilover/.git` が read-only 表示だった。
-- ただし retry 時点では doc-only の通常 git path も再試行対象とし、必要時のみ plumbing fallback へ切り替える。
+- `git add doc/README.md` は通ったが、stale index entry を外す `git rm --cached ...` は `index.lock` 作成で失敗した。
+- そのため `/tmp/git-index-192` を使う alternate index で tree を組み直し、`git write-tree` / `git commit-tree` で commit object を生成した。
+- temp object dir に出た loose object は `.git/objects/` へ手動 copy し、`git update-ref` が lockfile で失敗するため `refs/heads/master` を直接書き換えて close した。

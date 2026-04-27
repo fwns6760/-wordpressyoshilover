@@ -43,6 +43,8 @@
 | **209 source coverage and topic sensor audit** | P0.5 | REVIEW_NEEDED | Codex-M / Claude | `7b1bb7d` で source coverage / SNS topic sensor / duplicate suppression を棚卸し。次便 210 で primary source expansion 優先度を判断 |
 | **210 primary source expansion plan** | P0.5 | REVIEW_NEEDED | Claude / Codex | `4acda2b` で giants.jp / npb.jp / 各紙 web / Yahoo 配信元 7 source 候補と重複対策 5 項目を documented。次便 210a source_trust 拡張 |
 | **217 wp publish all-mode hotfix** | P0 | REVIEW_NEEDED | Codex / Claude | `b03890c` で injury_death を death_or_grave_incident hard_stop + roster_movement_yellow publishable に分解。GCP 反映待ち、反映後 63795 再判定 |
+| **224 article-body entity-role consistency** | P0.5 | READY(impl 進行中 `bif6lgn6p`)| Codex B | `〜投手となって` 等不自然構文 detector + safe rewrite + awkward_role_phrasing Yellow flag。新規 `src/article_entity_role_consistency.py` + evaluator 統合 |
+| **MKT-008 / 225 X post candidate text quality hardening** | P0.5 | READY | Codex B | 218/222 後の最終研磨層。スペース/記号/ハッシュタグ/URL/280字整形 + sensitive subtype 候補抑止強化 |
 | **MKT-001 / 219 publish-notice marketing mail classification** | P0.5 | IN_FLIGHT | Codex B / Claude | `bh1vb526h` 並走で src/tests 実装中。marketing 正本は `doc/marketing/README.md` と `doc/marketing/active/MKT-001-publish-notice-marketing-mail-classification.md` |
 | **105 / PUB-004-D** | P0 | AUTO 5min cron | Codex-GCP + Claude監視 | RSS新着を5-15分内にauto publish、daily cap 100 |
 | **042 draft-body-editor** | P0 | GCP本線 / 残WSLはgemini_auditのみ | Codex-GCP + Claude監視 | GCP上のCodex/Gemini repair、WP article write、品質/メール系実行を監視。WSL本線依存を戻さない |

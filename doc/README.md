@@ -1167,6 +1167,42 @@ doc/
 - **last_commit**: `b03890c` 217 add death_or_grave_incident to hard-stop set
 - **parent**: 183 / 200
 
+### 224 article-body-entity-role-consistency-awkward-rewrite-guard
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: READY(impl 進行中 `bif6lgn6p`)
+- **owner**: Codex B
+- **lane**: dev / quality
+- **ready_for**: implementation
+- **next_action**: detector + safe_rewrite + awkward_role_phrasing flag を Yellow 扱いで evaluator 統合、`bif6lgn6p` 着地後 verify
+- **blocked_by**: none
+- **user_action_required**: none
+- **write_scope**: `src/article_entity_role_consistency.py`(新規)+ `src/guarded_publish_evaluator.py` + tests
+- **doc_path**: `doc/active/224-article-body-entity-role-consistency-awkward-rewrite-guard.md`
+- **acceptance**: 不自然 `人名+肩書き+となって/となり` 検出 + safe rewrite + Yellow flag、既存 hard_stop 不変
+- **repo_state**: doc 起票済、impl 進行中
+- **commit_state**: `bif6lgn6p` in flight
+- **parent**: 217 / 200
+
+### 225 / MKT-008 x-post-candidate-text-quality-hardening
+
+- **alias**: `MKT-008`
+- **priority**: P0.5
+- **status**: READY(impl 未起票、224 後 or 並走可能で起票)
+- **owner**: Codex B
+- **lane**: marketing / mail body
+- **ready_for**: implementation(224 並走可能 file-disjoint)
+- **next_action**: スペース / 記号 / ハッシュタグ / URL / 280 字直前 truncation 整形 + sensitive subtype 候補抑止強化
+- **blocked_by**: none(224 と file-disjoint で並走可能)
+- **user_action_required**: none
+- **write_scope**: `src/publish_notice_email_sender.py` + tests
+- **doc_path**: `doc/marketing/active/MKT-008-x-post-candidate-text-quality-hardening.md`
+- **acceptance**: 218 / 222 logic 不変 + スペース/記号/ハッシュタグ/URL/280 字整形 + sensitive 抑止
+- **repo_state**: doc 起票済、impl 未着手
+- **commit_state**: -
+- **parent**: MKT-001 (219) / 218 / 222
+
 ### 219 publish-notice-marketing-mail-classification
 
 - **alias**: `MKT-001`

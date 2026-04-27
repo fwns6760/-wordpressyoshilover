@@ -91,6 +91,30 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
             reason=None,
         )
 
+    def _per_post_metadata_lines(
+        self,
+        *,
+        mail_class="x_candidate",
+        action="copy_x_post",
+        priority="normal",
+        post_id=123,
+        subtype="postgame",
+        x_post_ready="true",
+        reason="manual_x_candidates_clean",
+    ):
+        return [
+            "--- metadata ---",
+            "mail_type: per_post",
+            f"mail_class: {mail_class}",
+            f"action: {action}",
+            f"priority: {priority}",
+            f"post_id: {post_id}",
+            f"subtype: {subtype}",
+            f"x_post_ready: {x_post_ready}",
+            f"reason: {reason}",
+            "---",
+        ]
+
     def test_build_subject_formats_publish_notice_prefix(self):
         self.assertEqual(
             sender.build_subject("巨人が接戦を制した"),
@@ -159,7 +183,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         self.assertEqual(classification["reason"], "roster_movement_yellow_x_blocked")
         self.assertEqual(
             sender.build_subject("巨人が接戦を制した", classification=classification),
-            "【要確認】巨人が接戦を制した | YOSHILOVER",
+            "【要確認・X見送り】巨人が接戦を制した | YOSHILOVER",
         )
 
     def test_subject_prefix_warning_smtp_error(self):
@@ -174,23 +198,43 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
             "【まとめ】直近2件 | YOSHILOVER",
         )
 
+    def test_review_subject_x_block_prefix_sensitive(self):
+        request = self._request(
+            subtype="postgame",
+            summary="主力選手は全治 6 ヶ月の見込みと発表された。",
+        )
+        classification = sender._classify_mail(request)
+
+        self.assertEqual(classification["mail_class"], "review")
+        self.assertEqual(classification["reason"], "sensitive_content_x_blocked")
+        self.assertEqual(
+            sender.build_subject(request.title, classification=classification),
+            "【要確認・X見送り】巨人が接戦を制した | YOSHILOVER",
+        )
+
+    def test_review_subject_general_prefix_cautious_subtype(self):
+        request = self._request(
+            post_id=63323,
+            subtype="notice",
+            title="巨人戦の観戦案内を更新",
+            summary="対象試合と受付条件を整理した。",
+        )
+        classification = sender._classify_mail(request)
+
+        self.assertEqual(classification["mail_class"], "review")
+        self.assertEqual(classification["reason"], "cautious_subtype_review")
+        self.assertEqual(
+            sender.build_subject(request.title, classification=classification),
+            "【要確認】巨人戦の観戦案内を更新 | YOSHILOVER",
+        )
+
     def test_body_metadata_block_format(self):
         body_lines = sender.build_body_text(self._request()).splitlines()
 
+        self.assertEqual(body_lines[0], "次アクション: 内容確認後 X 投稿候補から選んで投稿")
         self.assertEqual(
-            body_lines[:10],
-            [
-                "---",
-                "mail_type: per_post",
-                "mail_class: x_candidate",
-                "action: copy_x_post",
-                "priority: normal",
-                "post_id: 123",
-                "subtype: postgame",
-                "x_post_ready: true",
-                "reason: manual_x_candidates_clean",
-                "---",
-            ],
+            body_lines[-10:],
+            self._per_post_metadata_lines(),
         )
 
     def test_classify_mail_publish_default(self):
@@ -274,16 +318,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         self.assertEqual(
             body.splitlines(),
             [
-                "---",
-                "mail_type: per_post",
-                "mail_class: x_candidate",
-                "action: copy_x_post",
-                "priority: normal",
-                "post_id: 123",
-                "subtype: postgame",
-                "x_post_ready: true",
-                "reason: manual_x_candidates_clean",
-                "---",
+                "次アクション: 内容確認後 X 投稿候補から選んで投稿",
                 "title: 巨人が接戦を制した",
                 "url: https://yoshilover.com/post-123/",
                 "subtype: postgame",
@@ -300,6 +335,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
                 f"投稿文3: {text_3}",
                 f"文字数: {len(text_3)}",
                 f"Xで開く: {sender._build_x_intent_url(text_3)}",
+                *self._per_post_metadata_lines(),
             ],
         )
 
@@ -342,7 +378,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         classification = sender._classify_mail(request)
         body_lines = sender.build_body_text(request, classification=classification).splitlines()
 
-        self.assertIn("[X 投稿候補] 要確認のため非表示(reason: cautious_subtype_review)", body_lines)
+        self.assertIn("[X 投稿候補] 非表示: 本文確認後に必要なら手動で判断してください", body_lines)
 
     def test_review_class_no_intent_link(self):
         request = self._request(
@@ -356,6 +392,252 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
 
         self.assertFalse(any(line.startswith("Xで開く: ") for line in body_lines))
 
+    def test_review_reason_japanese_label_summary_dirty(self):
+        request = self._request(
+            subtype="default",
+            title="巨人イベント情報を更新",
+            summary="📰 報知新聞 / ⚾ GIANTS TV 【巨人】イベント告知 […]",
+        )
+        classification = sender._classify_mail(request)
+        body_lines = sender.build_body_text(request, classification=classification).splitlines()
+
+        self.assertEqual(classification["reason"], "summary_dirty_review")
+        self.assertIn("判定: 要確認", body_lines)
+        self.assertIn("理由: 要約に元記事断片や重複文が混ざっています(本文確認推奨)", body_lines)
+
+    def test_review_reason_japanese_label_roster_movement(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yellow_log_path = Path(tmpdir) / "yellow.jsonl"
+            yellow_log_path.write_text(
+                json.dumps(
+                    {
+                        "post_id": 123,
+                        "applied_flags": ["roster_movement_yellow"],
+                        "manual_x_post_block_reason": "roster_movement_yellow",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            request = self._request()
+            classification = sender._classify_mail(request, yellow_log_path=yellow_log_path)
+            body_lines = sender.build_body_text(
+                request,
+                yellow_log_path=yellow_log_path,
+                classification=classification,
+            ).splitlines()
+
+        self.assertIn("判定: 見送り推奨", body_lines)
+        self.assertIn("理由: 登録/抹消/復帰系のため X 投稿候補なし", body_lines)
+
+    def test_review_reason_japanese_label_cautious_subtype(self):
+        request = self._request(
+            post_id=63323,
+            subtype="notice",
+            title="巨人戦の観戦案内を更新",
+            summary="対象試合と受付条件を整理した。",
+        )
+        classification = sender._classify_mail(request)
+        body_lines = sender.build_body_text(request, classification=classification).splitlines()
+
+        self.assertIn("判定: 要確認", body_lines)
+        self.assertIn("理由: 公示・注意系の記事です(本文確認推奨)", body_lines)
+
+    def test_review_reason_japanese_label_sensitive(self):
+        request = self._request(
+            subtype="postgame",
+            summary="主力選手は全治 6 ヶ月の見込みと発表された。",
+        )
+        classification = sender._classify_mail(request)
+        body_lines = sender.build_body_text(request, classification=classification).splitlines()
+
+        self.assertEqual(classification["reason"], "sensitive_content_x_blocked")
+        self.assertIn("判定: 見送り", body_lines)
+        self.assertIn("理由: センシティブ要素のため X 投稿候補なし", body_lines)
+
+    def test_next_action_line_for_review_x_block(self):
+        request = self._request(
+            subtype="postgame",
+            summary="主力選手は全治 6 ヶ月の見込みと発表された。",
+        )
+        classification = sender._classify_mail(request)
+        body_lines = sender.build_body_text(request, classification=classification).splitlines()
+
+        self.assertEqual(body_lines[0], "次アクション: 記事だけ確認。X 投稿は見送り")
+
+    def test_next_action_line_for_review_summary_dirty(self):
+        request = self._request(
+            subtype="default",
+            title="巨人イベント情報を更新",
+            summary="📰 報知新聞 / ⚾ GIANTS TV 【巨人】イベント告知 […]",
+        )
+        classification = sender._classify_mail(request)
+        body_lines = sender.build_body_text(request, classification=classification).splitlines()
+
+        self.assertEqual(body_lines[0], "次アクション: 後で確認。急ぎ投稿不要")
+
+    def test_next_action_line_for_publish(self):
+        request = self._request(summary=None)
+        classification = sender._classify_mail(request)
+        body_lines = sender.build_body_text(request, classification=classification).splitlines()
+
+        self.assertEqual(classification["mail_class"], "publish")
+        self.assertEqual(body_lines[0], "次アクション: 問題なければ放置")
+
+    def test_dirty_summary_truncated_to_short_form(self):
+        dirty_summary = "📰 報知新聞 / " + ("【巨人】イベント情報を更新 " * 20) + "[…]"
+        request = self._request(
+            subtype="default",
+            title="巨人イベント情報を更新",
+            summary=dirty_summary,
+        )
+        classification = {
+            **sender._classify_mail(self._request(summary=None)),
+            "mail_class": "review",
+            "action": "review_article",
+            "priority": "high",
+            "reason": "summary_dirty_review",
+            "x_post_ready": "false",
+        }
+        body_lines = sender.build_body_text(request, classification=classification).splitlines()
+
+        self.assertIn("summary: 要約は確認用に短縮表示(本文 URL を確認してください)", body_lines)
+        excerpt_line = next(line for line in body_lines if line.startswith("summary_excerpt: "))
+        excerpt = excerpt_line.removeprefix("summary_excerpt: ")
+        self.assertLessEqual(len(excerpt), 100)
+        self.assertTrue(excerpt.endswith("…"))
+        self.assertNotIn(dirty_summary, body_lines)
+
+    def test_x_candidates_hidden_for_review_classes(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yellow_log_path = Path(tmpdir) / "yellow.jsonl"
+            yellow_log_path.write_text(
+                json.dumps(
+                    {
+                        "post_id": 123,
+                        "applied_flags": ["roster_movement_yellow"],
+                        "manual_x_post_block_reason": "roster_movement_yellow",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            review_cases = [
+                (
+                    "summary_dirty_review",
+                    self._request(
+                        subtype="default",
+                        title="巨人イベント情報を更新",
+                        summary="📰 報知新聞 / ⚾ GIANTS TV 【巨人】イベント告知 […]",
+                    ),
+                    sender._classify_mail(
+                        self._request(
+                            subtype="default",
+                            title="巨人イベント情報を更新",
+                            summary="📰 報知新聞 / ⚾ GIANTS TV 【巨人】イベント告知 […]",
+                        )
+                    ),
+                ),
+                (
+                    "cautious_subtype_review",
+                    self._request(
+                        post_id=63323,
+                        subtype="notice",
+                        title="巨人戦の観戦案内を更新",
+                        summary="対象試合と受付条件を整理した。",
+                    ),
+                    sender._classify_mail(
+                        self._request(
+                            post_id=63323,
+                            subtype="notice",
+                            title="巨人戦の観戦案内を更新",
+                            summary="対象試合と受付条件を整理した。",
+                        )
+                    ),
+                ),
+                (
+                    "roster_movement_yellow_x_blocked",
+                    self._request(),
+                    sender._classify_mail(self._request(), yellow_log_path=yellow_log_path),
+                ),
+                (
+                    "sensitive_content_x_blocked",
+                    self._request(
+                        subtype="postgame",
+                        summary="主力選手は全治 6 ヶ月の見込みと発表された。",
+                    ),
+                    sender._classify_mail(
+                        self._request(
+                            subtype="postgame",
+                            summary="主力選手は全治 6 ヶ月の見込みと発表された。",
+                        )
+                    ),
+                ),
+            ]
+
+            for reason, request, classification in review_cases:
+                with self.subTest(reason=reason):
+                    body_lines = sender.build_body_text(
+                        request,
+                        yellow_log_path=yellow_log_path,
+                        classification=classification,
+                    ).splitlines()
+                    self.assertNotIn("manual_x_post_candidates:", body_lines)
+                    self.assertFalse(any(line.startswith("article_url: ") for line in body_lines))
+                    self.assertFalse(any(line.startswith("投稿文") for line in body_lines))
+                    self.assertFalse(any(line.startswith("Xで開く: ") for line in body_lines))
+
+    def test_x_candidate_mail_unchanged(self):
+        request = self._request()
+        classification = sender._classify_mail(request)
+        body_lines = sender.build_body_text(request, classification=classification).splitlines()
+
+        self.assertEqual(classification["mail_class"], "x_candidate")
+        self.assertEqual(sender.build_subject(request.title, classification=classification), "【投稿候補】巨人が接戦を制した | YOSHILOVER")
+        self.assertIn("manual_x_post_candidates:", body_lines)
+        self.assertIn("次アクション: 内容確認後 X 投稿候補から選んで投稿", body_lines)
+        self.assertEqual(body_lines[-10:], self._per_post_metadata_lines())
+
+    def test_publish_mail_unchanged(self):
+        request = self._request(summary=None)
+        classification = sender._classify_mail(request)
+        body_lines = sender.build_body_text(request, classification=classification).splitlines()
+
+        self.assertEqual(classification["mail_class"], "publish")
+        self.assertEqual(sender.build_subject(request.title, classification=classification), "【公開済】巨人が接戦を制した | YOSHILOVER")
+        self.assertEqual(body_lines[0], "次アクション: 問題なければ放置")
+        self.assertNotIn("manual_x_post_candidates:", body_lines)
+        self.assertEqual(
+            body_lines[-10:],
+            self._per_post_metadata_lines(
+                mail_class="publish",
+                action="check_article",
+                priority="normal",
+                x_post_ready="false",
+                reason="publish_notice_default",
+            ),
+        )
+
+    def test_metadata_block_keeps_internal_codes(self):
+        request = self._request(
+            subtype="default",
+            title="巨人イベント情報を更新",
+            summary="📰 報知新聞 / ⚾ GIANTS TV 【巨人】イベント告知 […]",
+        )
+        classification = sender._classify_mail(request)
+        body_lines = sender.build_body_text(request, classification=classification).splitlines()
+
+        self.assertEqual(body_lines[-10:], self._per_post_metadata_lines(
+            mail_class="review",
+            action="review_article",
+            priority="high",
+            subtype="default",
+            x_post_ready="false",
+            reason="summary_dirty_review",
+        ))
+
     def test_review_class_still_builds_internal_candidates(self):
         request = self._request(
             post_id=63323,
@@ -366,7 +648,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         body_lines = sender.build_body_text(request).splitlines()
 
         self.assertTrue(sender.build_manual_x_post_candidates(request))
-        self.assertIn("[X 投稿候補] 要確認のため非表示(reason: cautious_subtype_review)", body_lines)
+        self.assertIn("[X 投稿候補] 非表示: 本文確認後に必要なら手動で判断してください", body_lines)
         self.assertFalse(any(line.startswith("投稿文") for line in body_lines))
 
     def test_warning_class_no_candidate(self):
@@ -381,7 +663,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         }
         body_lines = sender.build_body_text(request, classification=classification).splitlines()
 
-        self.assertIn("[X 投稿候補] 要確認のため非表示(reason: SMTPServerDisconnected)", body_lines)
+        self.assertIn("[X 投稿候補] 非表示: 警告対応を優先してください", body_lines)
         self.assertNotIn("manual_x_post_candidates:", body_lines)
         self.assertFalse(any(line.startswith("投稿文") for line in body_lines))
         self.assertFalse(any(line.startswith("Xで開く: ") for line in body_lines))
@@ -412,7 +694,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         }
         body_lines = sender.build_body_text(request, classification=classification).splitlines()
 
-        self.assertIn("[X 投稿候補] 要確認のため非表示(reason: urgent_keyword_detected)", body_lines)
+        self.assertIn("[X 投稿候補] 非表示: 緊急確認を優先してください", body_lines)
         self.assertNotIn("manual_x_post_candidates:", body_lines)
         self.assertFalse(any(line.startswith("投稿文") for line in body_lines))
         self.assertFalse(any(line.startswith("Xで開く: ") for line in body_lines))
@@ -439,7 +721,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         }
         body_lines = sender.build_body_text(request, classification=classification).splitlines()
 
-        self.assertIn("[X 投稿候補] 要確認のため非表示(reason: manual_x_candidates_clean)", body_lines)
+        self.assertIn("[X 投稿候補] 非表示: X 投稿候補を表示できません", body_lines)
         self.assertNotIn("manual_x_post_candidates:", body_lines)
         self.assertFalse(any(line.startswith("Xで開く: ") for line in body_lines))
 
@@ -550,7 +832,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
 
         self.assertEqual(candidates, [])
         self.assertIn("warning: [Warning] roster movement 系記事、X 自動投稿対象外", body.splitlines())
-        self.assertIn("[X 投稿候補] 要確認のため非表示(reason: roster_movement_yellow_x_blocked)", body.splitlines())
+        self.assertIn("[X 投稿候補] 非表示: X 投稿は見送りです", body.splitlines())
         self.assertNotIn("manual_x_post_candidates:", body.splitlines())
         self.assertFalse(any(line.startswith("投稿文") for line in body.splitlines()))
         self.assertFalse(any(line.startswith("Xで開く: ") for line in body.splitlines()))
@@ -620,9 +902,10 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         body_lines = sender.build_body_text(request, classification=classification).splitlines()
 
         self.assertEqual(sender.build_manual_x_post_candidates(request), [])
+        self.assertEqual(classification["mail_class"], "urgent")
         self.assertEqual(classification["reason"], "sensitive_content_x_blocked")
         self.assertEqual(classification["suppression_reason"], "sensitive_content_x_blocked")
-        self.assertIn("[X 投稿候補] 要確認のため非表示(reason: sensitive_content_x_blocked)", body_lines)
+        self.assertIn("[X 投稿候補] 非表示: 緊急確認を優先してください", body_lines)
         self.assertFalse(any(line.startswith("投稿文1") for line in body_lines))
 
     def test_sensitive_injury_long_term_blocks(self):
@@ -1000,16 +1283,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         self.assertEqual(
             mail_request.text_body.splitlines(),
             [
-                "---",
-                "mail_type: per_post",
-                "mail_class: x_candidate",
-                "action: copy_x_post",
-                "priority: normal",
-                "post_id: 123",
-                "subtype: postgame",
-                "x_post_ready: true",
-                "reason: manual_x_candidates_clean",
-                "---",
+                "次アクション: 内容確認後 X 投稿候補から選んで投稿",
                 "title: 巨人が接戦を制した",
                 "url: https://yoshilover.com/post-123/",
                 "subtype: postgame",
@@ -1026,6 +1300,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
                 f"投稿文3: {text_3}",
                 f"文字数: {len(text_3)}",
                 f"Xで開く: {sender._build_x_intent_url(text_3)}",
+                *self._per_post_metadata_lines(),
             ],
         )
         self.assertEqual(mail_request.metadata["post_id"], 123)

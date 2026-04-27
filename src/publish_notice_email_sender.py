@@ -172,6 +172,35 @@ _MAIL_CLASS_CONFIGS = {
         "priority": "urgent",
     },
 }
+_REVIEW_X_BLOCK_REASONS = frozenset(
+    {
+        "roster_movement_yellow_x_blocked",
+        "sensitive_content_x_blocked",
+    }
+)
+_REVIEW_REASON_LABELS: dict[str | None, tuple[str, str]] = {
+    "summary_dirty_review": (
+        "要確認",
+        "要約に元記事断片や重複文が混ざっています(本文確認推奨)",
+    ),
+    "cautious_subtype_review": (
+        "要確認",
+        "公示・注意系の記事です(本文確認推奨)",
+    ),
+    "roster_movement_yellow_x_blocked": (
+        "見送り推奨",
+        "登録/抹消/復帰系のため X 投稿候補なし",
+    ),
+    "sensitive_content_x_blocked": (
+        "見送り",
+        "センシティブ要素のため X 投稿候補なし",
+    ),
+    None: (
+        "要確認",
+        "本文を確認してください",
+    ),
+}
+_DIRTY_REVIEW_SUMMARY_LIMIT = 100
 _SAFE_X_CANDIDATE_ARTICLE_TYPES = frozenset({"default", "lineup", "postgame", "farm", "program"})
 _CAUTIOUS_REVIEW_ARTICLE_TYPES = frozenset({"notice", "notice_event"})
 _MANUAL_X_DIRTY_MARKERS = (
@@ -1034,8 +1063,76 @@ def _mail_metadata_block(metadata: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _per_post_metadata_block(metadata: dict[str, Any]) -> list[str]:
+    lines = ["--- metadata ---"]
+    for key in (
+        "mail_type",
+        "mail_class",
+        "action",
+        "priority",
+        "post_id",
+        "subtype",
+        "x_post_ready",
+        "reason",
+    ):
+        if key not in metadata:
+            continue
+        value = metadata.get(key)
+        if value is None or value == "":
+            continue
+        lines.append(f"{key}: {value}")
+    lines.append("---")
+    return lines
+
+
 def _mail_class_config(mail_class: str) -> dict[str, str]:
     return dict(_MAIL_CLASS_CONFIGS.get(str(mail_class or "").strip(), _MAIL_CLASS_CONFIGS["publish"]))
+
+
+def _format_review_reason_label(reason: str | None) -> tuple[str, str]:
+    normalized_reason = str(reason or "").strip() or None
+    return _REVIEW_REASON_LABELS.get(normalized_reason, _REVIEW_REASON_LABELS[None])
+
+
+def _subject_prefix_for_classification(classification: dict[str, Any] | None) -> str:
+    mail_class = str((classification or {}).get("mail_class") or "publish").strip() or "publish"
+    reason = str((classification or {}).get("reason") or "").strip() or None
+    if mail_class == "review" and reason in _REVIEW_X_BLOCK_REASONS:
+        return "【要確認・X見送り】"
+    return _mail_class_config(mail_class)["prefix"]
+
+
+def _format_next_action_line(mail_class: str, reason: str | None) -> str:
+    normalized_class = str(mail_class or "").strip() or "publish"
+    normalized_reason = str(reason or "").strip() or None
+    if normalized_class == "review":
+        if normalized_reason in _REVIEW_X_BLOCK_REASONS:
+            return "次アクション: 記事だけ確認。X 投稿は見送り"
+        return "次アクション: 後で確認。急ぎ投稿不要"
+    if normalized_class == "publish":
+        return "次アクション: 問題なければ放置"
+    if normalized_class == "x_candidate":
+        return "次アクション: 内容確認後 X 投稿候補から選んで投稿"
+    if normalized_class == "urgent":
+        return "次アクション: 即確認"
+    if normalized_class == "warning":
+        return "次アクション: 警告内容を確認"
+    return ""
+
+
+def _format_summary_lines(summary: str | None, *, reason: str | None) -> list[str]:
+    if str(reason or "").strip() == "summary_dirty_review":
+        compact = _WHITESPACE_RE.sub(" ", str(summary or "").strip())
+        if not compact:
+            return ["summary: (なし)"]
+        excerpt = compact
+        if len(excerpt) > _DIRTY_REVIEW_SUMMARY_LIMIT:
+            excerpt = f"{excerpt[: _DIRTY_REVIEW_SUMMARY_LIMIT - 1]}…"
+        return [
+            "summary: 要約は確認用に短縮表示(本文 URL を確認してください)",
+            f"summary_excerpt: {excerpt}",
+        ]
+    return [f"summary: {_normalize_summary(summary)}"]
 
 
 def _manual_x_candidate_body_lines(
@@ -1066,7 +1163,18 @@ def _manual_x_candidate_display_mode(mail_state: dict[str, Any]) -> tuple[bool, 
 
 def _manual_x_hidden_notice_line(mail_state: dict[str, Any], *, suppression_reason: Any = None) -> str:
     reason = str(mail_state.get("reason") or suppression_reason or "review_required").strip() or "review_required"
-    return f"[X 投稿候補] 要確認のため非表示(reason: {reason})"
+    mail_class = str(mail_state.get("mail_class") or "publish").strip() or "publish"
+    if mail_class == "review":
+        if reason in _REVIEW_X_BLOCK_REASONS:
+            return "[X 投稿候補] 非表示: X 投稿は見送りです"
+        return "[X 投稿候補] 非表示: 本文確認後に必要なら手動で判断してください"
+    if mail_class == "warning":
+        return "[X 投稿候補] 非表示: 警告対応を優先してください"
+    if mail_class == "urgent":
+        return "[X 投稿候補] 非表示: 緊急確認を優先してください"
+    if mail_class == "x_candidate":
+        return "[X 投稿候補] 非表示: X 投稿候補を表示できません"
+    return "[X 投稿候補] 非表示"
 
 
 def _per_post_mail_state(
@@ -1224,8 +1332,7 @@ def build_subject(
     del publish_dt_jst
     if override is not None:
         return str(override)
-    mail_class = str((classification or {}).get("mail_class") or "publish").strip() or "publish"
-    prefix = _mail_class_config(mail_class)["prefix"]
+    prefix = _subject_prefix_for_classification(classification)
     return f"{prefix}{_subject_body(title)}{_SUBJECT_BRAND_SUFFIX}"
 
 
@@ -1265,33 +1372,34 @@ def build_body_text(
 ) -> str:
     mail_state = classification or _classify_mail(request, yellow_log_path=yellow_log_path)
     mail_class = str(mail_state.get("mail_class") or "publish").strip() or "publish"
+    reason = str(mail_state.get("reason") or "").strip() or None
     suppression_reason = mail_state.get("suppression_reason")
     manual_x_candidates = list(
         mail_state.get("manual_x_display_candidates") or mail_state.get("manual_x_candidates") or []
     )
     show_manual_x_candidates, show_hidden_notice = _manual_x_candidate_display_mode(mail_state)
     include_intent_link = show_manual_x_candidates
-    lines = _mail_metadata_block(
-        {
-            "mail_type": mail_state.get("mail_type"),
-            "mail_class": mail_class,
-            "action": mail_state.get("action"),
-            "priority": mail_state.get("priority"),
-            "post_id": request.post_id,
-            "subtype": str(request.subtype or "").strip() or "unknown",
-            "x_post_ready": mail_state.get("x_post_ready"),
-            "reason": mail_state.get("reason"),
-        }
-    )
+    lines: list[str] = []
+    next_action_line = _format_next_action_line(mail_class, reason)
+    if next_action_line:
+        lines.append(next_action_line)
+    if mail_class == "review":
+        action_hint, review_description = _format_review_reason_label(reason)
+        lines.extend(
+            [
+                f"判定: {action_hint}",
+                f"理由: {review_description}",
+            ]
+        )
     lines.extend(
         [
-        f"title: {str(request.title or '').strip()}",
-        f"url: {str(request.canonical_url or '').strip()}",
-        f"subtype: {str(request.subtype or '').strip() or 'unknown'}",
-        f"publish time: {_format_publish_time_jst(request.publish_time_iso)}",
-        f"summary: {_normalize_summary(request.summary)}",
+            f"title: {str(request.title or '').strip()}",
+            f"url: {str(request.canonical_url or '').strip()}",
+            f"subtype: {str(request.subtype or '').strip() or 'unknown'}",
+            f"publish time: {_format_publish_time_jst(request.publish_time_iso)}",
         ]
     )
+    lines.extend(_format_summary_lines(request.summary, reason=reason))
     if suppression_reason == "roster_movement_yellow":
         lines.append("warning: [Warning] roster movement 系記事、X 自動投稿対象外")
     if show_manual_x_candidates:
@@ -1304,6 +1412,20 @@ def build_body_text(
         lines.extend(_manual_x_candidate_body_lines(manual_x_candidates, include_intent_link=include_intent_link))
     elif show_hidden_notice:
         lines.append(_manual_x_hidden_notice_line(mail_state, suppression_reason=suppression_reason))
+    lines.extend(
+        _per_post_metadata_block(
+            {
+                "mail_type": mail_state.get("mail_type"),
+                "mail_class": mail_class,
+                "action": mail_state.get("action"),
+                "priority": mail_state.get("priority"),
+                "post_id": request.post_id,
+                "subtype": str(request.subtype or "").strip() or "unknown",
+                "x_post_ready": mail_state.get("x_post_ready"),
+                "reason": mail_state.get("reason"),
+            }
+        )
+    )
     return "\n".join(lines)
 
 

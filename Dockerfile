@@ -23,6 +23,7 @@ COPY src/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
 ENV HOME=/root
 
 CMD ["/entrypoint.sh"]

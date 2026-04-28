@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from src.article_entity_team_mismatch import detect_other_team_player_in_giants_article
 from src.article_entity_role_consistency import safe_rewrite_role_phrasing
+from src.baseball_numeric_fact_consistency import check_consistency
 from src.lineup_source_priority import compute_lineup_dedup, extract_game_id
 from src.pre_publish_fact_check import extractor
 from src.title_body_nucleus_validator import validate_title_body_nucleus
@@ -19,7 +20,14 @@ from src.title_body_nucleus_validator import validate_title_body_nucleus
 JST = ZoneInfo("Asia/Tokyo")
 RELAXED_FOR_BREAKING_BOARD_FLAGS = frozenset({"subtype_unresolved", "heading_sentence_as_h3"})
 NO_CLEANUP_REQUIRED_FLAGS = frozenset(
-    {"roster_movement_yellow", "awkward_role_phrasing", "subtype_unresolved", "content_date_unknown"}
+    {
+        "roster_movement_yellow",
+        "awkward_role_phrasing",
+        "subtype_unresolved",
+        "content_date_unknown",
+        "x_post_numeric_mismatch",
+        "x_post_unverified_player_name",
+    }
 )
 UNKNOWN_SUBTYPE_VALUES = frozenset({"", "other", "unknown"})
 DEFAULT_FALLBACK_SUBTYPE = "default"
@@ -37,12 +45,21 @@ HARD_STOP_FLAGS = frozenset(
         "lineup_no_hochi_source",
         "lineup_prefix_misuse",
         "dev_log_contamination_scattered",
+        "numeric_fact_mismatch",
+        "score_order_mismatch",
+        "win_loss_score_conflict",
+        "pitcher_team_stat_confusion",
+        "date_fact_mismatch",
     }
 )
 REVIEW_FLAGS = frozenset(
     {
         "farm_result_required_facts_weak_review",
         "farm_result_h3_over_limit_review",
+        "score_order_mismatch_review",
+        "win_loss_score_conflict_review",
+        "pitcher_team_stat_confusion_review",
+        "date_fact_mismatch_review",
     }
 )
 REPAIRABLE_FLAGS = frozenset(
@@ -67,6 +84,8 @@ REPAIRABLE_FLAGS = frozenset(
         "awkward_role_phrasing",
         "other_team_player_contamination",
         "lineup_duplicate_excessive",
+        "x_post_numeric_mismatch",
+        "x_post_unverified_player_name",
     }
 ) | RELAXED_FOR_BREAKING_BOARD_FLAGS
 SOFT_CLEANUP_FLAGS = REPAIRABLE_FLAGS
@@ -699,6 +718,42 @@ def _post_source_summary_text(raw_post: dict[str, Any]) -> str:
         if text:
             return text
     return ""
+
+
+def _post_manual_x_candidate_texts(raw_post: dict[str, Any]) -> list[str]:
+    candidates = (
+        (raw_post or {}).get("manual_x_post_candidates")
+        or (raw_post or {}).get("x_post_candidates")
+        or ((raw_post or {}).get("meta") or {}).get("manual_x_post_candidates")
+        or ()
+    )
+    texts: list[str] = []
+    for candidate in candidates:
+        if isinstance(candidate, str):
+            text = candidate.strip()
+        elif isinstance(candidate, (list, tuple)) and len(candidate) >= 2:
+            text = str(candidate[1] or "").strip()
+        elif isinstance(candidate, dict):
+            text = _coerce_text_field(
+                candidate.get("text") or candidate.get("body") or candidate.get("candidate") or candidate.get("value")
+            )
+        else:
+            text = str(candidate or "").strip()
+        if text:
+            texts.append(text)
+    return texts
+
+
+def _consistency_detail_text(detail: str, context: dict[str, Any]) -> str:
+    parts = [str(detail or "").strip()]
+    for key, value in context.items():
+        if isinstance(value, list):
+            rendered = ",".join(str(item) for item in value)
+        else:
+            rendered = str(value)
+        if rendered:
+            parts.append(f"{key}={rendered}")
+    return "; ".join(part for part in parts if part)
 
 
 def _opening_heading_text(body_html: str) -> str:
@@ -1667,6 +1722,52 @@ def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -
                 f"{detail['name']}({detail['owning_team']})" for detail in contamination_details
             ),
         )
+    source_summary_text = _post_source_summary_text(raw_post)
+    x_candidate_texts = _post_manual_x_candidate_texts(raw_post)
+    consistency_report = check_consistency(
+        source_text="\n".join(
+            part for part in (title, source_summary_text, str(record.get("source_block") or "").strip()) if part
+        ),
+        generated_body=_body_text_without_source(record),
+        x_candidates=x_candidate_texts,
+        metadata={
+            **(((raw_post or {}).get("meta") or {}) if isinstance((raw_post or {}).get("meta"), dict) else {}),
+            "article_title": title,
+            "source_summary": source_summary_text,
+        },
+        publish_time_iso=str(raw_post.get("date") or record.get("created_at") or modified or ""),
+    )
+    x_candidate_suppress_flags = list(consistency_report.x_candidate_suppress_flags)
+    x_candidate_suppress_details = [
+        {
+            "flag": finding.flag,
+            "detail": finding.detail,
+            "context": dict(finding.context),
+        }
+        for finding in consistency_report.findings
+        if finding.scope == "x_candidate"
+    ]
+    for finding in consistency_report.findings:
+        if finding.scope == "x_candidate":
+            _append_reason(
+                reasons,
+                flag=finding.flag,
+                category="repairable",
+                detail=_consistency_detail_text(finding.detail, finding.context),
+            )
+            continue
+        if finding.severity == "hard_stop":
+            category = "hard_stop"
+        elif finding.severity == "review":
+            category = "review"
+        else:
+            continue
+        _append_reason(
+            reasons,
+            flag=finding.flag,
+            category=category,
+            detail=_consistency_detail_text(finding.detail, finding.context),
+        )
     farm_result_classifier = _farm_result_candidate_context(
         raw_post,
         record,
@@ -1815,6 +1916,11 @@ def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -
         "freshness_source": freshness["freshness_source"],
         "backlog_only": bool(freshness["backlog_only"]),
     }
+    if x_candidate_texts:
+        entry["x_post_ready"] = not bool(x_candidate_suppress_flags)
+    if x_candidate_suppress_flags:
+        entry["x_candidate_suppress_flags"] = x_candidate_suppress_flags
+        entry["x_candidate_suppress_details"] = x_candidate_suppress_details
 
     if hard_stop_flags:
         entry["red_flags"] = _legacy_red_flags(reasons)

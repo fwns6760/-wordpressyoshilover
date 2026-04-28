@@ -1957,6 +1957,64 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
             ],
         )
 
+    def test_numeric_fact_mismatch_hard_stop_blocks_publish(self):
+        post = _post(
+            2441,
+            "巨人 1-11 楽天",
+            (
+                "<p>巨人が楽天に19-1で勝利した。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-2441</p>"
+            ),
+        )
+
+        report = self._evaluate([post])
+        entry = self._find_entry(report, 2441)
+
+        self.assertEqual(entry["category"], "hard_stop")
+        self.assertFalse(entry["publishable"])
+        self.assertIn("numeric_fact_mismatch", entry["hard_stop_flags"])
+
+    def test_numeric_fact_ambiguous_source_stays_review_not_hard_stop(self):
+        post = _post(
+            2442,
+            "巨人戦の速報",
+            (
+                "<p>巨人が楽天戦を振り返った。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-2442</p>"
+            ),
+            meta={"source_summary": "巨人 1-11 楽天。別稿では巨人 11-1 楽天とも記されている。"},
+        )
+
+        report = self._evaluate([post])
+        entry = self._find_entry(report, 2442)
+
+        self.assertEqual(entry["category"], "review")
+        self.assertFalse(entry["publishable"])
+        self.assertEqual(entry["hard_stop_flags"], [])
+        self.assertIn("score_order_mismatch_review", entry["review_flags"])
+
+    def test_numeric_fact_x_candidate_only_suppresses_x_without_blocking_article(self):
+        post = _post(
+            2443,
+            "巨人 1-11 楽天",
+            (
+                "<p>巨人は楽天に1-11で敗れた。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-2443</p>"
+            ),
+            extra={"manual_x_post_candidates": ["巨人が楽天に19-1で勝利。https://yoshilover.com/2443"]},
+        )
+
+        report = self._evaluate([post])
+        entry = self._find_entry(report, 2443)
+
+        self.assertTrue(entry["publishable"])
+        self.assertEqual(entry["category"], "repairable")
+        self.assertEqual(entry["hard_stop_flags"], [])
+        self.assertEqual(entry["review_flags"], [])
+        self.assertFalse(entry["x_post_ready"])
+        self.assertIn("x_post_numeric_mismatch", entry["x_candidate_suppress_flags"])
+        self.assertIn("x_post_numeric_mismatch", entry["repairable_flags"])
+
 
 if __name__ == "__main__":
     unittest.main()

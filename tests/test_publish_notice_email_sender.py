@@ -1662,6 +1662,39 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         self.assertFalse(summary.should_alert)
         self.assertIsNone(sender.build_zero_sent_alert_log(summary))
 
+    def test_numeric_mismatch_suppresses_x_candidates_only(self):
+        request = self._request(
+            title="巨人 1-11 楽天",
+            summary="巨人が楽天に19-1で勝利した。終盤も主導権を握った。",
+        )
+
+        classification = sender._classify_mail(request)
+        body_lines = sender.build_body_text(request, classification=classification).splitlines()
+
+        self.assertEqual(classification["mail_class"], "publish")
+        self.assertEqual(classification["x_post_ready"], "false")
+        self.assertEqual(classification["suppression_reason"], "x_post_numeric_mismatch")
+        self.assertEqual(sender.build_manual_x_post_candidates(request), [])
+        self.assertNotIn("manual_x_post_candidates:", body_lines)
+
+    def test_unverified_player_name_suppresses_x_candidates_only(self):
+        request = self._request(
+            title="巨人が楽天に3-2で勝利",
+            summary="巨人が楽天に3-2で勝利した。継投で逃げ切った。",
+        )
+        patched_candidates = [("x_post_1_article_intro", "戸郷翔征が完投した試合を更新。https://yoshilover.com/post-123/")]
+
+        with patch.object(sender, "_render_manual_x_post_candidates", return_value=patched_candidates):
+            classification = sender._classify_mail(request)
+            body_lines = sender.build_body_text(request, classification=classification).splitlines()
+            candidates = sender.build_manual_x_post_candidates(request)
+
+        self.assertEqual(classification["mail_class"], "publish")
+        self.assertEqual(classification["x_post_ready"], "false")
+        self.assertEqual(classification["suppression_reason"], "x_post_unverified_player_name")
+        self.assertEqual(candidates, [])
+        self.assertNotIn("manual_x_post_candidates:", body_lines)
+
 
 if __name__ == "__main__":
     unittest.main()

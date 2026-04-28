@@ -14,6 +14,7 @@ from typing import Any, Literal
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
+from src.baseball_numeric_fact_consistency import check_consistency
 from src.mail_delivery_bridge import send as bridge_send_default
 
 
@@ -991,16 +992,36 @@ def _manual_x_candidate_suppression_reason(
     request: PublishNoticeRequest,
     *,
     yellow_log_path: str | Path = DEFAULT_GUARDED_PUBLISH_YELLOW_LOG_PATH,
+    rendered_candidates: Sequence[tuple[str, str]] | None = None,
 ) -> str | None:
     yellow_entry = _latest_yellow_log_entry_for_post(request.post_id, yellow_log_path=yellow_log_path)
     if yellow_entry is None:
-        return None
-    block_reason = str(yellow_entry.get("manual_x_post_block_reason") or "").strip()
-    if block_reason:
-        return block_reason
-    applied_flags = {str(flag) for flag in (yellow_entry.get("applied_flags") or []) if str(flag)}
+        applied_flags: set[str] = set()
+    else:
+        block_reason = str(yellow_entry.get("manual_x_post_block_reason") or "").strip()
+        if block_reason:
+            return block_reason
+        applied_flags = {str(flag) for flag in (yellow_entry.get("applied_flags") or []) if str(flag)}
+
     if "roster_movement_yellow" in applied_flags:
         return "roster_movement_yellow"
+    if "x_post_numeric_mismatch" in applied_flags:
+        return "x_post_numeric_mismatch"
+    if "x_post_unverified_player_name" in applied_flags:
+        return "x_post_unverified_player_name"
+    if rendered_candidates:
+        detector_report = check_consistency(
+            source_text=str(request.title or "").strip(),
+            generated_body=str(request.summary or request.title or "").strip(),
+            x_candidates=[text for _label, text in rendered_candidates if str(text or "").strip()],
+            metadata={
+                "article_title": str(request.title or "").strip(),
+                "summary": str(request.summary or "").strip(),
+            },
+            publish_time_iso=str(request.publish_time_iso or "").strip(),
+        )
+        if detector_report.x_candidate_suppress_flags:
+            return str(detector_report.x_candidate_suppress_flags[0])
     return None
 
 
@@ -1081,11 +1102,16 @@ def build_manual_x_post_candidates(
     """Return deterministic manual-copy X post candidates for a publish notice."""
 
     context = _manual_x_context(request)
-    if _manual_x_candidate_suppression_reason(request, yellow_log_path=yellow_log_path):
-        return []
     if context.sensitive_x_block_reason:
         return []
-    return _render_manual_x_post_candidates(context)
+    rendered_candidates = _render_manual_x_post_candidates(context)
+    if _manual_x_candidate_suppression_reason(
+        request,
+        yellow_log_path=yellow_log_path,
+        rendered_candidates=rendered_candidates,
+    ):
+        return []
+    return rendered_candidates
 
 
 def _subject_body(value: str) -> str:
@@ -1247,13 +1273,14 @@ def _per_post_mail_state(
 ) -> dict[str, Any]:
     raw_summary = _WHITESPACE_RE.sub(" ", str(request.summary or "").strip())
     context = _manual_x_context(request)
-    suppression_reason = _manual_x_candidate_suppression_reason(
-        request,
-        yellow_log_path=yellow_log_path,
-    ) or context.sensitive_x_block_reason
     display_manual_x_candidates = (
         [] if context.sensitive_x_block_reason else _render_manual_x_post_candidates(context)
     )
+    suppression_reason = _manual_x_candidate_suppression_reason(
+        request,
+        yellow_log_path=yellow_log_path,
+        rendered_candidates=display_manual_x_candidates,
+    ) or context.sensitive_x_block_reason
     manual_x_candidates = [] if suppression_reason else list(display_manual_x_candidates)
     safe_x_candidate = (
         bool(manual_x_candidates)

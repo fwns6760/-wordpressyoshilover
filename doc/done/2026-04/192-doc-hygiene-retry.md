@@ -5,7 +5,7 @@
 - number: 192
 - owner: Codex
 - type: doc-only / git retry
-- status: COMPLETED
+- status: CLOSED
 - priority: P0.5
 - lane: B
 - created: 2026-04-27

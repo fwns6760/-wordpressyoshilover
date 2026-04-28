@@ -1,10 +1,15 @@
 # 199 publish-notice rebuild a9c2814 live-state verify
 
 - priority: P0.5
-- status: REVIEW_NEEDED
+- status: CLOSED(superseded by later publish-notice rebuild `25f176b`)
 - owner: Codex / Claude follow-up
 - lane: A
 - parent: 188 / 189 / 194
+
+## Close note(2026-04-28)
+
+- `a9c2814` 向け検証は後続の publish-notice image `25f176b` rebuild / smoke で superseded。
+- MKT-001 / 222 / 241 は `25f176b` live image で確認済み。
 
 ## Background
 

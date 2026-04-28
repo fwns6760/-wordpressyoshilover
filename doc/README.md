@@ -37,7 +37,7 @@ Current publish-policy reference:
 - Keep old names such as `PUB-004-D`, `SPEECH-001`, and `PUB-005-A2` as aliases.
 - Do not rename existing ticket docs.
 - New execution tickets should use `<number>-<topic>.md`.
-- Reserve the next number in `doc/README.md` before handing work to Claude / Codex / Codex-M.
+- Reserve the next number in `doc/README.md` before handing work to Claude / Codex A / Codex B.
 - `1 number = 1 scope`; do not mix separate purposes under one number.
 - Multiple commits are allowed under one number when they belong to the same scope, such as spec / impl / doc sync.
 - Commit message default: `<number>: <summary>`.
@@ -837,15 +837,15 @@ Current lane lock(2026-04-28 JST):
 
 - **alias**: -
 - **priority**: P0.5
-- **status**: **REVIEW_NEEDED**(`publish-notice-trigger` schedule を `15 * * * *` -> `*/5 * * * *` に変更済み。`2026-04-27 09:40 JST` natural tick execution `publish-notice-6x7f5` も確認済みで、Claude close 待ち)
+- **status**: **CLOSED**(`publish-notice-trigger` schedule `*/5 * * * *` 反映済み。後続 241 / 242 作業で publish-notice image `25f176b` へ更新済み)
 - **owner**: Codex / Claude follow-up
 - **lane**: A
-- **ready_for**: Claude close
-- **next_action**: ticket doc の verify / rollback 記録を元に close 判定。cadence を戻す場合は doc 記載の rollback を実行
+- **ready_for**: none
+- **next_action**: none
 - **blocked_by**: none
 - **user_action_required**: none(user request reflected)
-- **write_scope**: `doc/active/194-publish-notice-scheduler-5min.md`, `doc/README.md`, `doc/active/assignments.md`
-- **doc_path**: `doc/active/194-publish-notice-scheduler-5min.md`
+- **write_scope**: `doc/done/2026-04/194-publish-notice-scheduler-5min.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/done/2026-04/194-publish-notice-scheduler-5min.md`
 - **acceptance**: `publish-notice-trigger` schedule が `*/5 * * * *`、他 scheduler / Cloud Run Job env/image/IAM 不変、自然 tick で新 execution を確認、rollback command 記録済み
 - **repo_state**: local doc update
 - **commit_state**: pending ticket commit
@@ -857,15 +857,15 @@ Current lane lock(2026-04-28 JST):
 
 - **alias**: B1
 - **priority**: P0.5
-- **status**: **REVIEW_NEEDED**(repo 実装は `26fc0ca` で着地済み。ただし live frontend 未反映のため CLOSE 不可)
+- **status**: **READY_FOR_AUTH_EXECUTOR**(repo 実装は `26fc0ca` で着地済み。ただし live frontend 未反映のため waiting へ退避)
 - **owner**: Codex / Claude follow-up
 - **lane**: Front-Claude
 - **ready_for**: 197 live deploy handoff + post-deploy review
 - **next_action**: repo 側の render / copy / toggle 実装は維持しつつ、`197` の default-off canary deploy と WP 側反映確認を待つ
 - **blocked_by**: `197` live deploy handoff
 - **user_action_required**: none for repo code review; live reflect は `197`
-- **write_scope**: `src/yoshilover-063-frontend.php`, `doc/active/195-article-footer-manual-x-share-corner.md`, `doc/README.md`, `doc/active/assignments.md`
-- **doc_path**: `doc/active/195-article-footer-manual-x-share-corner.md`
+- **write_scope**: `src/yoshilover-063-frontend.php`, `doc/waiting/195-article-footer-manual-x-share-corner.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/waiting/195-article-footer-manual-x-share-corner.md`
 - **acceptance**: single post publish 記事のみ / heading「この記事を X でシェア」/ 3 候補 fixed / copy + intent / permalink + `#巨人 #ジャイアンツ` 含む / option+env toggle / `php -l` pass
 - **repo_state**: pushed
 - **commit_state**: `26fc0ca`
@@ -877,15 +877,15 @@ Current lane lock(2026-04-28 JST):
 
 - **alias**: -
 - **priority**: P0.5
-- **status**: **REVIEW_NEEDED**(`giants-realtime-trigger` を `*/5 * * * *` で新規作成済み。既存 `giants-*` と同じ `yoshilover-fetcher /run` + `seo-web-runtime@baseballsite.iam.gserviceaccount.com` を使用し、`2026-04-27 09:55 JST` の初回 natural tick で HTTP 200 を確認)
+- **status**: **CLOSED**(`giants-realtime-trigger` を `*/5 * * * *` で新規作成済み。既存 `giants-*` と同じ `yoshilover-fetcher /run` + `seo-web-runtime@baseballsite.iam.gserviceaccount.com` を使用し、初回 natural tick HTTP 200 も確認済み)
 - **owner**: Codex / Claude follow-up
 - **lane**: A
-- **ready_for**: Claude close
-- **next_action**: `doc/active/196-ingestion-realtime-strategy.md` の verify をもとに close 判定。1-2 週間観察後、別 ticket で既存 `giants-*` の削減または cadence 再整理を判断
+- **ready_for**: none
+- **next_action**: cadence 再整理が必要なら別 ticket で扱う
 - **blocked_by**: none
 - **user_action_required**: none(user request reflected)
-- **write_scope**: `doc/active/196-ingestion-realtime-strategy.md`, `doc/README.md`, `doc/active/assignments.md`
-- **doc_path**: `doc/active/196-ingestion-realtime-strategy.md`
+- **write_scope**: `doc/done/2026-04/196-ingestion-realtime-strategy.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/done/2026-04/196-ingestion-realtime-strategy.md`
 - **acceptance**: `giants-realtime-trigger` が `*/5 * * * *` / `Asia/Tokyo` / `attemptDeadline=180s` で存在し、既存 `giants-*` と同じ URI/SA を使用、既存 schedule 不変、`yoshilover-fetcher-job` は PAUSED のまま、初回 natural tick HTTP 200 を確認
 - **repo_state**: local doc update + live scheduler create
 - **commit_state**: pending ticket commit
@@ -917,15 +917,15 @@ Current lane lock(2026-04-28 JST):
 
 - **alias**: -
 - **priority**: P0.5
-- **status**: **REVIEW_NEEDED**(read-only verify で live image が `23853cd`、latest execution が success、Gmail 着信も確認。いっぽう sample mail 本文では `manual_x_post_candidates` block をまだ確認できていない)
+- **status**: **CLOSED**(old publish-notice rebuild verify。後続 `25f176b` rebuild と 241 smoke で superseded)
 - **owner**: Codex / Claude follow-up
 - **lane**: A
-- **ready_for**: live body / runtime drift review
-- **next_action**: 1) `23853cd` live image と repo expectation の差分を read-only で照合 2) sample mail で `manual_x_post_candidates` 不在の理由を切り分け 3) 必要なら narrow follow-up or redeploy ticket を起票
+- **ready_for**: none
+- **next_action**: none
 - **blocked_by**: none for read-only review
 - **user_action_required**: none for current verification; mutationが必要なら別便で executor handoff
-- **write_scope**: `doc/active/199-publish-notice-rebuild-a9c2814.md`, `doc/README.md`, `doc/active/assignments.md`
-- **doc_path**: `doc/active/199-publish-notice-rebuild-a9c2814.md`
+- **write_scope**: `doc/done/2026-04/199-publish-notice-rebuild-a9c2814.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/done/2026-04/199-publish-notice-rebuild-a9c2814.md`
 - **acceptance**: live image tag / latest execution / Gmail 着信の read-only 事実を記録し、未確認点(`manual_x_post_candidates`)を review item として残す
 - **repo_state**: local doc update
 - **commit_state**: pending ticket commit
@@ -977,15 +977,15 @@ Current lane lock(2026-04-28 JST):
 
 - **alias**: -
 - **priority**: P0.5
-- **status**: **REVIEW_NEEDED**(Codex repo workと authenticated executor の live mutation 境界を doc 化)
-- **owner**: Codex-M / Claude
-- **lane**: Codex-M
-- **ready_for**: next live-mutation ticket adoption
-- **next_action**: `READY_FOR_AUTH_EXECUTOR` を live GCP / live WP deploy handoff に適用し、Codex auth fail を generic failure 扱いしない
+- **status**: **CLOSED**(Codex repo work と authenticated executor の live mutation 境界を doc 化し、以後の運用 lock に反映済み)
+- **owner**: Claude / Codex A
+- **lane**: A
+- **ready_for**: none
+- **next_action**: none
 - **blocked_by**: none
 - **user_action_required**: none
-- **write_scope**: `doc/active/202-gcp-deploy-executor-boundary.md`, `doc/active/OPERATING_LOCK.md`, `doc/README.md`, `doc/active/assignments.md`
-- **doc_path**: `doc/active/202-gcp-deploy-executor-boundary.md`
+- **write_scope**: `doc/done/2026-04/202-gcp-deploy-executor-boundary.md`, `doc/active/OPERATING_LOCK.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/done/2026-04/202-gcp-deploy-executor-boundary.md`
 - **acceptance**: Codexのrepo責務 / authenticated executor責務 / `READY_FOR_AUTH_EXECUTOR` 定義 / secret/env hard stop 維持が明文化されている
 - **repo_state**: local doc update
 - **commit_state**: pending ticket commit
@@ -997,15 +997,15 @@ Current lane lock(2026-04-28 JST):
 
 - **alias**: -
 - **priority**: P0.5
-- **status**: **REVIEW_NEEDED**(ticket 採番の事前予約と `1 number = 1 scope` を明文化)
-- **owner**: Codex-M / Claude
-- **lane**: Codex-M
-- **ready_for**: next ticket fire
-- **next_action**: 新規 ticket を fire する前に README へ番号予約し、別用途の番号混在を止める
+- **status**: **CLOSED**(ticket 採番の事前予約と `1 number = 1 scope` を明文化し、dispatch rule に反映済み)
+- **owner**: Claude / Codex A or B
+- **lane**: either
+- **ready_for**: none
+- **next_action**: none
 - **blocked_by**: none
 - **user_action_required**: none
-- **write_scope**: `doc/active/203-ticket-number-reservation-rule.md`, `doc/README.md`, `doc/active/assignments.md`
-- **doc_path**: `doc/active/203-ticket-number-reservation-rule.md`
+- **write_scope**: `doc/done/2026-04/203-ticket-number-reservation-rule.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/done/2026-04/203-ticket-number-reservation-rule.md`
 - **acceptance**: 番号予約 / `1 number = 1 scope` / commit message 基本形 / 衝突発見時の整理ルールが明文化されている
 - **repo_state**: local doc update
 - **commit_state**: pending ticket commit
@@ -1018,8 +1018,8 @@ Current lane lock(2026-04-28 JST):
 - **alias**: -
 - **priority**: P0.5
 - **status**: **CLOSED**(195 は REVIEW_NEEDED 維持、197 は READY_FOR_AUTH_EXECUTOR へ正規化し、README / assignments の見え方を修正)
-- **owner**: Codex-M
-- **lane**: Codex-M
+- **owner**: Claude / Codex A or B
+- **lane**: either
 - **ready_for**: none
 - **next_action**: none
 - **blocked_by**: none
@@ -1077,15 +1077,15 @@ Current lane lock(2026-04-28 JST):
 
 - **alias**: -
 - **priority**: P1.5
-- **status**: **REVIEW_NEEDED**(GCP mainline 各 lane の durable evidence を横断し、HIGH / MED / LOW severity と follow-up 候補を整理)
-- **owner**: Codex-M / Claude
-- **lane**: Codex-M
-- **ready_for**: follow-up prioritization
-- **next_action**: 207 live verify、draft-body-editor ledger persistence、codex-shadow repair artifact persistence、163 quality monitor GCP migration を board 優先度に反映
+- **status**: **CLOSED**(GCP mainline 各 lane の durable evidence を横断し、HIGH / MED / LOW severity と follow-up 候補を整理済み)
+- **owner**: Claude / Codex A
+- **lane**: A
+- **ready_for**: none
+- **next_action**: follow-up は 207 live verify / draft-body-editor ledger persistence / 163 quality monitor GCP migration 側で扱う
 - **blocked_by**: none
 - **user_action_required**: none
-- **write_scope**: `doc/active/208-gcp-lane-result-log-persistence-audit.md`
-- **doc_path**: `doc/active/208-gcp-lane-result-log-persistence-audit.md`
+- **write_scope**: `doc/done/2026-04/208-gcp-lane-result-log-persistence-audit.md`
+- **doc_path**: `doc/done/2026-04/208-gcp-lane-result-log-persistence-audit.md`
 - **acceptance**: lane matrix に current persistence / missing evidence / severity / follow-up 候補が残り、read-only だけで次の persistence 改善 ticket を切れる
 - **repo_state**: committed(local)
 - **commit_state**: `3fb80d1`
@@ -1097,15 +1097,15 @@ Current lane lock(2026-04-28 JST):
 
 - **alias**: -
 - **priority**: P0.5
-- **status**: **REVIEW_NEEDED**(source coverage / SNS topic sensor の現行入口、primary gap、重複抑止、dry-run lane を整理)
-- **owner**: Codex-M / Claude
-- **lane**: Codex-M
-- **ready_for**: next source-expansion planning
-- **next_action**: 210 で primary source expansion / SNS sensor boundary / source_trust drift のどれを先に詰めるかを board 判断する
+- **status**: **CLOSED**(source coverage / SNS topic sensor の現行入口、primary gap、重複抑止、dry-run lane を整理済み)
+- **owner**: Claude / Codex B
+- **lane**: B
+- **ready_for**: none
+- **next_action**: 210 / 210b / 210e など source expansion 系で継続
 - **blocked_by**: none
 - **user_action_required**: none
-- **write_scope**: `doc/active/209-source-coverage-and-topic-sensor-audit.md`
-- **doc_path**: `doc/active/209-source-coverage-and-topic-sensor-audit.md`
+- **write_scope**: `doc/done/2026-04/209-source-coverage-and-topic-sensor-audit.md`
+- **doc_path**: `doc/done/2026-04/209-source-coverage-and-topic-sensor-audit.md`
 - **acceptance**: 現行 source inventory、primary / secondary gap、SNS is signal not fact の境界、既存 duplicate suppression が doc-only で再構成されている
 - **repo_state**: committed(local)
 - **commit_state**: `7b1bb7d`
@@ -1138,13 +1138,13 @@ Current lane lock(2026-04-28 JST):
 - **alias**: -
 - **priority**: P0.5
 - **status**: **CLOSED**(`ad729b4`、207 commit 時に巻き戻された 199 / 202 / 203 / 205 の active doc と board 反映を `210ce41` 基準で復元)
-- **owner**: Codex-M
-- **lane**: Codex-M
+- **owner**: Claude / Codex A or B
+- **lane**: either
 - **ready_for**: none
 - **next_action**: none(復元後の board reconcile は 213 で実施)
 - **blocked_by**: none
 - **user_action_required**: none
-- **write_scope**: `doc/README.md`, `doc/active/199-publish-notice-rebuild-a9c2814.md`, `doc/active/202-gcp-deploy-executor-boundary.md`, `doc/active/203-ticket-number-reservation-rule.md`, `doc/active/205-gcp-runtime-drift-audit.md`, `doc/active/assignments.md`, `doc/active/OPERATING_LOCK.md`, `doc/waiting/197-195-live-deploy.md`
+- **write_scope**: `doc/README.md`, `doc/done/2026-04/199-publish-notice-rebuild-a9c2814.md`, `doc/done/2026-04/202-gcp-deploy-executor-boundary.md`, `doc/done/2026-04/203-ticket-number-reservation-rule.md`, `doc/active/205-gcp-runtime-drift-audit.md`, `doc/active/assignments.md`, `doc/active/OPERATING_LOCK.md`, `doc/waiting/197-195-live-deploy.md`
 - **doc_path**: `-(board row only)`
 - **acceptance**: 199 / 202 / 203 / 205 の active doc と README / assignments の整合が復元され、src / tests / live mutation は含まれない
 - **repo_state**: committed(local)
@@ -1214,20 +1214,20 @@ Current lane lock(2026-04-28 JST):
 
 - **alias**: `MKT-001`
 - **priority**: P0.5
-- **status**: IN_FLIGHT
-- **owner**: Codex B / Claude
+- **status**: CLOSED
+- **owner**: Codex B / Claude 完了
 - **lane**: mail本文・マーケ運用
-- **ready_for**: parallel implementation(`bh1vb526h`)
-- **next_action**: `MKT-001` の正本を `doc/marketing/README.md` に分離しつつ、publish-notice mail の件名先頭を `【投稿候補】/【公開済】/【要確認】/【警告】/【まとめ】/【緊急】` に分類し、本文先頭metadata / mail class selector と合わせて Gmail filterで仕分けできる形にする
+- **ready_for**: none
+- **next_action**: marketing board の `MKT-008` / parked runbooks へ後続を分離。MKT-001 本体は live 運用中。
 - **blocked_by**: none
 - **user_action_required**: none
 - **write_scope**: `src/publish_notice_email_sender.py`, `tests/test_publish_notice_email_sender.py`
-- **doc_path**: `doc/marketing/active/MKT-001-publish-notice-marketing-mail-classification.md`
+- **doc_path**: `doc/marketing/done/2026-04/MKT-001-publish-notice-marketing-mail-classification.md`
 - **acceptance**: `【投稿候補】/【公開済】/【要確認】/【警告】/【まとめ】/【緊急】` が件名先頭に出る、件名末尾に `| YOSHILOVER` を残す、本文先頭 metadata、Gmail filter 前提の安定 prefix、既存 manual_x_post_candidates 非破壊、tests pass
-- **repo_state**: parallel implementation in progress
-- **commit_state**: `bh1vb526h`(src/tests parallel lane, no doc commit in that lane yet)
-- **next_prompt_path**: `doc/marketing/active/MKT-001-publish-notice-marketing-mail-classification.md`
-- **last_commit**: -
+- **repo_state**: pushed + publish-notice image `25f176b` live
+- **commit_state**: live via publish-notice image `25f176b`
+- **next_prompt_path**: -
+- **last_commit**: `25f176b` live image includes MKT-001 behavior
 - **parent**: 189 / 190 / 191 / 207
 
 ### 241 mail-header-reply-to-self-recipient-investigation
@@ -1442,8 +1442,8 @@ Current lane lock(2026-04-28 JST):
 - **alias**: -
 - **priority**: P0.5
 - **status**: **CLOSED**(`35fb67c`、113 file reorg = M:1 + R:107 + A:5、doc/ root 9 files only、folder policy 永続 lock memory 化)
-- **owner**: Codex C 完了
-- **lane**: C
+- **owner**: Codex A/B 完了(archive cleanup historical row)
+- **lane**: either
 - **ready_for**: none
 - **next_action**: 全 Codex 便で folder mv contract 遵守(永続 rule)
 - **blocked_by**: none
@@ -1592,7 +1592,7 @@ git add -A禁止。
 ## verification checklist
 
 - `git diff -- doc/README.md`
-- 219 row carries alias `MKT-001` and points to `doc/marketing/active/MKT-001-publish-notice-marketing-mail-classification.md`.
+- 219 row carries alias `MKT-001` and points to `doc/marketing/done/2026-04/MKT-001-publish-notice-marketing-mail-classification.md`.
 - 104 is only represented as `CLOSED`; no old "104 wait" next-action remains.
 - 105 is `IN_FLIGHT` with burst_1 sent 20 and daily cap 80 remaining.
 - 108-133 are present.

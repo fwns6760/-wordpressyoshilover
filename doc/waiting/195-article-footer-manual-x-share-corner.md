@@ -1,7 +1,7 @@
 # 195 article footer 手動 X 投稿シェアコーナー(B1)
 
 - priority: P0.5
-- status: REVIEW_NEEDED
+- status: READY_FOR_AUTH_EXECUTOR
 - owner: Codex / Claude follow-up
 - lane: Front-Claude
 - parent: 190 / 191 / 176 / B1
@@ -16,7 +16,7 @@
 ## Scope
 
 - `src/yoshilover-063-frontend.php`
-- `doc/active/195-article-footer-manual-x-share-corner.md`
+- `doc/waiting/195-article-footer-manual-x-share-corner.md`
 - `doc/README.md`
 - `doc/active/assignments.md`
 

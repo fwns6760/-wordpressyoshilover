@@ -4,9 +4,9 @@
 
 - number: MKT-001
 - alias: 219
-- status: IN_FLIGHT
+- status: CLOSED
 - priority: P0.5
-- note: parallel implementation is active in `bh1vb526h`; the original 219 spec body below is preserved and this doc is now the marketing-source path
+- note: implementation is live via publish-notice image `25f176b`; the original 219 spec body below is preserved as the marketing-source archive
 
 ## Alias Note
 
@@ -41,11 +41,17 @@ This doc inherits the original `219 publish-notice marketing mail classification
 ## Priority
 
 - priority: P0.5
-- status: READY
+- status: CLOSED
 - owner: Codex B / Claude
 - lane: mail本文・マーケ運用
-- ready_for: implementation
+- ready_for: none
 - blocked_by: none
+
+## Close note(2026-04-28)
+
+- 件名 prefix 6 class と本文 metadata は live 運用中。
+- publish-notice image `25f176b` に反映済み。
+- Gmail通知は 241 rebuild 後の smoke v5 で PC / mobile とも通知成功。
 
 ## Background
 

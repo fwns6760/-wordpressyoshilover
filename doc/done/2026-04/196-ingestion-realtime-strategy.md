@@ -1,10 +1,15 @@
 # 196 記事 ingestion 5 分毎リアルタイム化
 
 - priority: P0.5
-- status: REVIEW_NEEDED
+- status: CLOSED
 - owner: Codex / Claude follow-up
 - lane: A
 - parent: 042 / 155
+
+## Close note(2026-04-28)
+
+- `giants-realtime-trigger` 5分化は live 作成・natural tick HTTP 200 確認済み。
+- scheduler overlap / cadence再整理は別 ticket で扱う。
 
 ## Background
 

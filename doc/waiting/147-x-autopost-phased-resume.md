@@ -6,7 +6,7 @@
 - alias: PUB-005-resume / 120-122 統合
 - owner: Claude Code(orchestration)/ Codex A(env / smoke 実装)
 - type: ops / X live post 段階解禁
-- status: READY(P0.5、user 経路選択済)
+- status: PARKED(X API live automation paused; manual X posting via GPTs/Gmail flow is current)
 - priority: P0.5(MVP 公開後拡散導線、X 復活)
 - lane: A
 - created: 2026-04-26

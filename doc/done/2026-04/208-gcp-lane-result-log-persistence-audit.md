@@ -1,11 +1,16 @@
 # 208 GCP lane result log persistence audit
 
 - number: 208
-- status: REVIEW_NEEDED
+- status: CLOSED
 - priority: P1.5
-- lane: Claude/Codex-M
+- lane: Claude/Codex A
 - created: 2026-04-27
 - type: read-only audit
+
+## close note(2026-04-28)
+
+- read-only audit is complete and follow-up persistence work is tracked separately.
+- Codex-M is not an active dispatch lane in current operations.
 
 ## background
 

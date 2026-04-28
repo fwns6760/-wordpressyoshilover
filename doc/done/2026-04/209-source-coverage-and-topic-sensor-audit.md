@@ -3,10 +3,16 @@
 ## meta
 
 - number: 209
-- status: REVIEW_NEEDED
+- status: CLOSED
 - priority: P0.5
-- lane: Claude/Codex-M
+- lane: Claude/Codex B
 - created: 2026-04-27
+
+## close note(2026-04-28)
+
+- read-only source coverage audit is complete.
+- follow-up planning lives in 210 / 180 / source expansion tickets.
+- Codex-M is not an active dispatch lane in current operations.
 
 ## 既存確認結果
 

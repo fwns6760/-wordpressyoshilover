@@ -76,14 +76,14 @@
 
 | ticket | status | 担当 | 次 action |
 |---|---|---|---|
-| **MKT-001 / 219 mail classification** | live | Codex B / Claude | 件名 prefix + metadata 反映済 |
-| **MKT-007 / 223 Gmail triage ops** | doc 完了 | User | Gmail label/filter 手動設定 |
+| **MKT-001 / 219 mail classification** | CLOSED / live | Codex B / Claude 完了 | 件名 prefix + metadata 反映済、marketing done へ移動済 |
+| **MKT-007 / 223 Gmail triage ops** | CLOSED(doc 完了) | User | runbook は done へ移動済、Gmail label/filter 手動設定はuser運用 |
 | **MKT-008 / 225 X candidate quality** | REOPENED(本体着地、225-A safety fix `bss84x1u1` 進行中) | Codex B | x_post_ready=false で本文表示抑止、修正完了後 publish-notice rebuild |
-| **MKT-002 gmail label runbook** | PARKED | Claude / Codex A | MKT-001/MKT-007 安定後 |
-| **MKT-003 daily manual X workflow** | PARKED | Claude / Codex A | MKT-001 後 |
-| **MKT-004 X candidate quality scoring** | PARKED | Claude / Codex A | MKT-001 出力例前提 |
-| **MKT-005 weekly marketing digest** | PARKED | Claude / Codex A | 日次運用安定後 |
-| **MKT-006 manual X feedback ledger** | PARKED | Claude / Codex A | 手動 X 投稿 feedback 蓄積方針 |
+| **MKT-002 gmail label runbook** | PARKED(waiting) | Claude / Codex A | MKT-001/MKT-007 安定後 |
+| **MKT-003 daily manual X workflow** | PARKED(waiting) | Claude / Codex A | MKT-001 後 |
+| **MKT-004 X candidate quality scoring** | PARKED(waiting) | Claude / Codex A | MKT-001 出力例前提 |
+| **MKT-005 weekly marketing digest** | PARKED(waiting) | Claude / Codex A | 日次運用安定後 |
+| **MKT-006 manual X feedback ledger** | PARKED(waiting) | Claude / Codex A | 手動 X 投稿 feedback 蓄積方針 |
 
 ## 4. 待ち(user / 外部 / auth executor)
 

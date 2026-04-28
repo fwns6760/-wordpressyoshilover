@@ -1,10 +1,15 @@
 # 203 ticket number reservation rule
 
 - priority: P0.5
-- status: REVIEW_NEEDED
-- owner: Codex-M / Claude
-- lane: Codex-M
+- status: CLOSED
+- owner: Claude / Codex A or B
+- lane: either
 - parent: 188 / 189 / 192 / 200 / 201
+
+## Close note(2026-04-28)
+
+- numbering / reservation rule is reflected in `doc/README.md`.
+- current active lanes are Codex A / Codex B only; Codex-M is not an active dispatch target.
 
 ## Goal
 
@@ -13,7 +18,7 @@
 
 ## Rule
 
-- reserve a new number in `doc/README.md` before firing work to Claude / Codex / Codex-M
+- reserve a new number in `doc/README.md` before firing work to Claude / Codex A / Codex B
 - `1 number = 1 scope`
 - multiple commits under the same number are allowed only when they belong to that one scope:
   - spec

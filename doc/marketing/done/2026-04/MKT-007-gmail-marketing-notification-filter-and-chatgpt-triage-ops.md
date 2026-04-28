@@ -5,12 +5,18 @@
 - number: MKT-007
 - alias: 223
 - type: ops runbook
-- status: REVIEW_NEEDED
+- status: CLOSED
 - priority: P0.5
 - lane: marketing / user 運用
 - created: 2026-04-27
 - parent: MKT-001(219 mail classification) / 222 / 221
 - relation: MKT-002 Gmail label/filter/color runbook(本便で具体化)
+
+## close note(2026-04-28)
+
+- Gmail label / filter / notification / ChatGPT triage ops runbook として確定。
+- Gmail通知の実送信経路は 241 / publish-notice image `25f176b` で PC / mobile 通知成功。
+- 実際の Gmail filter 手動設定は user 運用タスクとして残すが、本 ticket の文書化 scope は完了。
 
 ## 2. background
 

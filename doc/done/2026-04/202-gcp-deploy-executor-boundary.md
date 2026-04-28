@@ -1,10 +1,15 @@
 # 202 GCP deploy executor boundary
 
 - priority: P0.5
-- status: REVIEW_NEEDED
-- owner: Codex-M / Claude
-- lane: Codex-M
+- status: CLOSED
+- owner: Claude / Codex A
+- lane: A
 - parent: 155 / 177 / 197 / 199
+
+## Close note(2026-04-28)
+
+- authenticated executor boundary is now reflected in the root board / assignments operating model.
+- current active lanes are Codex A / Codex B only; Codex-M is not an active dispatch target.
 
 ## Background
 

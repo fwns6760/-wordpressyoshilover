@@ -1,10 +1,15 @@
 # 194 publish-notice scheduler 5 分毎化
 
 - priority: P0.5
-- status: REVIEW_NEEDED
+- status: CLOSED
 - owner: Codex / Claude follow-up
 - lane: A
 - parent: 161 / 187 / 188 / 189 / 105
+
+## Close note(2026-04-28)
+
+- `publish-notice-trigger` 5分化は live 運用済み。
+- 後続の publish-notice image `25f176b` rebuild / smoke で通知経路も確認済み。
 
 ## Background
 

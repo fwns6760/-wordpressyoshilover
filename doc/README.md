@@ -1243,6 +1243,46 @@ doc/
 - **last_commit**: -
 - **parent**: 240 / 219 / 222
 
+### 242 auto-publish-gate-regression-off-topic-published-and-eligible-held
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: REVIEW_NEEDED
+- **owner**: Codex B / Claude
+- **lane**: B
+- **ready_for**: Claude review / 242-B and 242-C follow-up split
+- **next_action**: 242-A landed as narrow fix; Claude should review the regression coverage, then fire 242-B(entity-role mismatch) and arrange 242-C live verify / handoff
+- **blocked_by**: none
+- **user_action_required**: none
+- **write_scope**: `doc/active/242-auto-publish-gate-regression-off-topic-published-and-eligible-held.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/active/242-auto-publish-gate-regression-off-topic-published-and-eligible-held.md`
+- **acceptance**: incident trace / root cause / 242-A narrow fix summary / 242-B and 242-C boundaries are all documented without touching env, secret, or live publish policy
+- **repo_state**: local impl + tests pass
+- **commit_state**: pending 242-A commit
+- **next_prompt_path**: `doc/active/242-auto-publish-gate-regression-off-topic-published-and-eligible-held.md`
+- **last_commit**: -
+- **parent**: 105 / 154 / 217 / 226
+
+### 242-A narrow-farm-lineup-medical-roster-false-positive-fix
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: REVIEW_NEEDED
+- **owner**: Codex B
+- **lane**: B
+- **ready_for**: Claude review / authenticated executor dry-run-canary verify
+- **next_action**: review `_medical_roster_flag()` narrow subtype branch, then run the pending dry-run/canary diff against recent guarded-publish history
+- **blocked_by**: authenticated executor verify not yet run
+- **user_action_required**: none
+- **write_scope**: `src/guarded_publish_evaluator.py`, `tests/test_guarded_publish_evaluator.py`, `tests/test_guarded_publish_runner.py`, `doc/active/242-auto-publish-gate-regression-off-topic-published-and-eligible-held.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/active/242-auto-publish-gate-regression-off-topic-published-and-eligible-held.md`
+- **acceptance**: 63841/63845 型 farm or lineup source-missing roster-signal cases no longer escalate to `death_or_grave_incident`, true grave/death/long-recovery cases stay hard-stop, generic non-farm/lineup missing-source escalate path stays unchanged, and the 63844 visibility fixture remains yellow-visible for 242-B
+- **repo_state**: local impl + targeted pytest pass
+- **commit_state**: pending 242-A commit
+- **next_prompt_path**: `doc/active/242-auto-publish-gate-regression-off-topic-published-and-eligible-held.md`
+- **last_commit**: -
+- **parent**: 242
+
 ### 130 pub004-hard-stop-vs-repairable-before-publish
 
 - **alias**: -

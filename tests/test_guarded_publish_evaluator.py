@@ -327,6 +327,98 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         self.assertIn("death_or_grave_incident", entry["hard_stop_flags"])
         self.assertFalse(entry["publishable"])
 
+    def test_farm_lineup_source_missing_roster_signal_stays_yellow(self):
+        record = {
+            "title": "巨人二軍スタメン 楽天戦の先発メンバー",
+            "body_text": "森林どりスタジアムで行われる巨人対楽天の二軍戦は、支配下登録後初スタメンの若手を含む先発メンバーが発表された。",
+            "source_block": "",
+            "source_urls": [],
+        }
+
+        flag = evaluator_module._medical_roster_flag(record, subtype="farm_lineup")
+
+        self.assertEqual(flag, "roster_movement_yellow")
+
+    def test_farm_result_source_missing_roster_signal_stays_yellow(self):
+        record = {
+            "title": "巨人二軍 3-6 楽天 結果のポイント",
+            "body_text": "森林どりスタジアムで行われた巨人対楽天の二軍戦は3-6で敗れ、支配下登録を目指す若手が9回に追い上げを見せた。",
+            "source_block": "",
+            "source_urls": [],
+        }
+
+        flag = evaluator_module._medical_roster_flag(record, subtype="farm")
+
+        self.assertEqual(flag, "roster_movement_yellow")
+
+    def test_true_medical_incidents_remain_hard_stop(self):
+        cases = (
+            (
+                116,
+                {
+                    "title": "巨人の主力選手が重症で入院",
+                    "body_text": "巨人の主力選手が重症で入院した。スポーツ報知によると、球団が経過を説明した。",
+                    "source_block": "参照元: スポーツ報知 https://example.com/source-grave",
+                    "source_urls": ["https://example.com/source-grave"],
+                },
+                "injury",
+            ),
+            (
+                117,
+                {
+                    "title": "巨人OBの訃報 球団が追悼コメント",
+                    "body_text": "巨人OBが死去したと伝えられ、球団が追悼コメントを発表した。",
+                    "source_block": "参照元: スポーツ報知 https://example.com/source-obit",
+                    "source_urls": ["https://example.com/source-obit"],
+                },
+                "",
+            ),
+            (
+                118,
+                {
+                    "title": "巨人主力が2か月の離脱へ",
+                    "body_text": "巨人主力が全治2か月の離脱となる見込みだ。スポーツ報知によると、復帰までは長期調整が必要になる。",
+                    "source_block": "参照元: スポーツ報知 https://example.com/source-recovery",
+                    "source_urls": ["https://example.com/source-recovery"],
+                },
+                "injury",
+            ),
+        )
+
+        for post_id, record, subtype in cases:
+            with self.subTest(post_id=post_id):
+                flag = evaluator_module._medical_roster_flag(record, subtype=subtype)
+                self.assertEqual(flag, "death_or_grave_incident")
+
+    def test_generic_source_missing_roster_signal_stays_hard_stop(self):
+        record = {
+            "title": "巨人主力が登録抹消 再調整へ",
+            "body_text": "巨人主力が登録抹消となり、再調整へ入るとだけ記され、出典リンクはない。",
+            "source_block": "",
+            "source_urls": [],
+        }
+
+        flag = evaluator_module._medical_roster_flag(record, subtype="notice")
+
+        self.assertEqual(flag, "death_or_grave_incident")
+
+    def test_entity_role_mismatch_fixture_remains_visible_for_242b_followup(self):
+        post = _post(
+            63844,
+            "巨人―広島戦の見どころ どこに注目？",
+            (
+                "<p>巨人は広島戦へ向かう。巨人:則本昂大 という表記が混ざるが、試合前の論点整理として本文は続いている。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-63844</p>"
+            ),
+        )
+
+        report = self._evaluate([post])
+
+        entry = report["yellow"][0]
+        self.assertTrue(entry["publishable"])
+        self.assertIn("ai_tone_heading_or_lead", entry["repairable_flags"])
+        self.assertNotIn("death_or_grave_incident", entry["hard_stop_flags"])
+
     def test_promotion_publishable_yellow(self):
         post = _post(
             114,

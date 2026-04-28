@@ -1,6 +1,6 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-04-28 JST(241 Reply-To self-recipient omit 実装)
+最終更新: 2026-04-28 JST(242-A farm/lineup medical_roster false positive narrow fix 実装)
 
 ## 最初に読む
 
@@ -40,6 +40,8 @@
 | ticket | status | 担当 | 次 action |
 |---|---|---|---|
 | **241 mail-header reply-to self-recipient** | REVIEW_NEEDED | Codex B → Claude/auth executor | `MAIL_BRIDGE_REPLY_TO=fwns6760@gmail.com` を戻した publish-notice smoke で Reply-To omit と通知を確認 |
+| **242 auto-publish gate regression incident** | REVIEW_NEEDED | Claude / Codex B | 242-A 実装 diff を review し、242-B(entity-role mismatch) と 242-C(auth executor verify) を次便化 |
+| **242-A farm/lineup medical_roster narrow fix** | REVIEW_NEEDED | Codex B → Claude/auth executor | `_medical_roster_flag()` の source-missing escalate を farm/lineup 系だけ Yellow 化、dry-run/canary diff verify 待ち |
 | **226 publish gate unblock** | IN_FLIGHT(`bhnmw4tc7`) | Codex B | subtype_unresolved + cleanup_failed_post_condition の safe case を Yellow 降格 |
 | **224 entity-role consistency** | 完了済(`84ed848`)、deploy 待ち | Codex B | guarded-publish rebuild に同梱 |
 | **217 wp publish all-mode hotfix** | REVIEW_NEEDED(`b03890c`)、deploy 待ち | Authenticated executor | guarded-publish + publish-notice rebuild、63795 再判定 |

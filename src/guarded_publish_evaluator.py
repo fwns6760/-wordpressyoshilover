@@ -152,6 +152,7 @@ FRESHNESS_HOLD_CLASSES = frozenset({"stale", "expired"})
 LINEUP_TITLE_TOKEN_MATCH_SUBTYPES = frozenset(
     {"lineup", "lineup_notice", "pregame", "probable_starter", "farm_lineup"}
 )
+MEDICAL_ROSTER_SOFT_SUBTYPE_EXACT = frozenset({"lineup", "lineup_notice"})
 SOURCE_DATE_META_FIELDS = (
     "source_published_at",
     "published_at",
@@ -768,7 +769,12 @@ def _is_long_term_recovery_story(text: str) -> bool:
     return bool(week_match and (_parse_fullwidth_int(week_match.group(1)) or 0) >= 4)
 
 
-def _medical_roster_flag(record: dict[str, Any]) -> str | None:
+def _is_medical_roster_soft_subtype(subtype: Any) -> bool:
+    normalized = _normalized_subtype(subtype)
+    return normalized.startswith("farm") or normalized in MEDICAL_ROSTER_SOFT_SUBTYPE_EXACT
+
+
+def _medical_roster_flag(record: dict[str, Any], *, subtype: Any = "") -> str | None:
     title = str(record.get("title") or "")
     body_text = str(record.get("body_text") or "")
     combined = "\n".join(part for part in (title, body_text) if part)
@@ -777,6 +783,8 @@ def _medical_roster_flag(record: dict[str, Any]) -> str | None:
     if not INJURY_ROSTER_SIGNAL_RE.search(combined):
         return None
     if not _has_primary_source_link(record):
+        if _is_medical_roster_soft_subtype(subtype):
+            return "roster_movement_yellow"
         return "death_or_grave_incident"
     return "roster_movement_yellow"
 
@@ -1152,7 +1160,7 @@ def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -
             category="repairable",
             legacy_flag="speculative_title" if SPECULATIVE_TITLE_RE.search(title) else None,
         )
-    medical_roster_flag = _medical_roster_flag(record)
+    medical_roster_flag = _medical_roster_flag(record, subtype=subtype_resolution["resolved_subtype"])
     if medical_roster_flag == "death_or_grave_incident":
         _append_reason(
             reasons,

@@ -2,7 +2,7 @@
 
 - number: 242
 - type: incident + investigation + fix
-- status: READY
+- status: REVIEW_NEEDED
 - priority: P0.5
 - parent: -
 - related: 105 / PUB-004-D, 154, 217, 218, 226, 200, 234
@@ -100,6 +100,24 @@ related:226 (`subtype_unresolved + cleanup_failed_post_condition` を Yellow 降
 - 直近候補(過去 24h 程度)に対して **hard_stop 件数が不自然に減りすぎていないか** 確認
 - 63841/63845 相当だけ救えて、危険記事まで通していないことを件数 + sample で目視
 - baseline 値と diff を 242-A の verify section に記録
+
+## 242-A implementation summary
+
+- pytest diff: `101 collected / 101 passed` → `106 collected / 106 passed`
+- 採用 logic: `_medical_roster_flag()` は `INJURY_ROSTER_SIGNAL_RE` 発火 + primary source link 不在でも、resolved subtype が `farm*` または `lineup` / `lineup_notice` のときだけ `death_or_grave_incident` へ escalate せず `roster_movement_yellow` を返す
+- subtype 判定経路: `_evaluate_record()` → `resolve_guarded_publish_subtype(raw_post, record)` → `_medical_roster_flag(record, subtype=resolved_subtype)`
+- fixture 5 種:
+  - 63841 型: `farm_lineup` + source 不在 + roster signal でも `roster_movement_yellow`
+  - 63845 型: `farm` + source 不在 + roster signal でも `roster_movement_yellow`
+  - 真陽性維持: `重症/入院`、`死去`、`全治2か月` は `death_or_grave_incident`
+  - source なし一般記事 guard 維持: non-farm/lineup subtype の `登録抹消` は従来通り escalate
+  - 63844 型 visibility: `巨人:則本昂大` fixture は現状 detector で Yellow 可視のままにして 242-B follow-up を残す
+
+## 242-A live verify pending
+
+- TODO(authenticated executor): recent guarded-publish history の dry-run / canary で `death_or_grave_incident` 件数を 242-A 前 baseline と比較する
+- TODO(authenticated executor): 63841/63845 相当の `farm` / `farm_lineup` / `lineup` 候補が `hard_stop` ではなく `yellow/repairable` に落ちる sample を確認する
+- TODO(authenticated executor): non-farm/lineup の source 不在 + roster signal 記事が従来通り escalate することを sample で再確認する
 
 ## first triage(Claude 実施済、本 ticket 起票時点)
 

@@ -1,6 +1,6 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-04-28 JST(241/242-D/242-D2 CLOSED + doc/done move反映 + 242-E narrow 起票 + image rebuild `25f176b` 反映済)
+最終更新: 2026-04-28 JST(242-E 実装 + targeted pytest `130 passed` 反映、63475/63470 は image rebuild 待ち)
 
 ## 最初に読む
 
@@ -12,7 +12,7 @@
 
 | ticket | priority | status | 1 行要約 |
 |---|---|---|---|
-| **242-E DEATH family-context** | P0.5 | READY | 祖父/祖母/おじいちゃん 等家族死を player-self death と区別、63475/63470 false positive を救う narrow fix |
+| **242-E DEATH family-context** | P0.5 | REVIEW_NEEDED | family-context skip helper + 6 fixture 着地、63475/63470 false positive を救う narrow fix を review / rebuild 待ち |
 | **226 guarded publish unblock** | P0.5 | IN_FLIGHT(`bhnmw4tc7` 着地済 `357a53c`) | 63809/63811 が `subtype_unresolved_no_resolution` で refused、safe case を Yellow に降格(doc-only close cleanup pending) |
 | **224 entity-role consistency** | P0.5 | IN_FLIGHT(`bif6lgn6p` 着地済 `84ed848`) | `〜投手となって` 等不自然構文 detector + safe rewrite + Yellow flag(doc-only close cleanup pending) |
 
@@ -38,8 +38,8 @@
 
 | ticket | status | 担当 | 次 action |
 |---|---|---|---|
-| **242-E DEATH family-context narrow** | READY | Codex B → Claude/auth executor | `DEATH_OR_GRAVE_INCIDENT_RE` 発火直前に family-context 共起 skip を追加、63475/63470 type 救う、player-self death/grave injury 真陽性は維持 |
-| **63475 / 63470 手動 publish 判断** | pending(本文確認済、family death 文脈、placeholder なし) | User → Claude | 242-E live 反映 or user 直接判断後に手動 publish |
+| **242-E DEATH family-context narrow** | REVIEW_NEEDED | Codex B → Claude/auth executor | family-context skip helper + 6 fixture は着地、Claude review 後に image rebuild / live verify で 63475/63470 type hard_stop 解除確認 |
+| **63475 / 63470 手動 publish 判断** | pending(本文確認済、family death 文脈、placeholder なし、242-E commit 済 / image rebuild 待ち) | User → Claude | 242-E live 反映後に hard_stop 解除を確認し、手動 publish 判断 |
 | **226 doc-only close cleanup** | pending(commit 済、doc IN_FLIGHT のまま) | Codex C / Codex-M | 226 status を CLOSED へ更新 + doc/done/2026-04 へ移動 |
 | **224 doc-only close cleanup** | pending(commit 済、doc IN_FLIGHT のまま) | Codex C / Codex-M | 224 status を CLOSED へ更新 + doc/done/2026-04 へ移動 |
 | **217 wp publish all-mode hotfix** | live 反映済(`b03890c` → image rebuild `25f176b` で deploy) | - | 完了扱い、follow-up は別 ticket |
@@ -97,7 +97,7 @@
 | **095-E WSL cron reboot** | BLOCKED_USER | PC reboot 時 | User |
 | **PUB-005 X gate parent** | PARKED | X live unlock | User → A |
 | **63844 (則本 hallucination)** | draft 隔離中、242-B 起票待ち | User → Codex B | 242-B(他球団選手 entity-role mismatch detector)を実装後、本文修正 or 削除判断 |
-| **63475 / 63470 (家族死 false positive)** | draft 隔離中、242-E 着地待ち | Codex B → User | 242-E narrow fix landed + image rebuild 後、live verify で hard_stop 解除確認 → 手動 publish 判断 |
+| **63475 / 63470 (家族死 false positive)** | draft 隔離中、242-E commit 済 / image rebuild 待ち | Codex B → User | 242-E live verify で hard_stop 解除確認 → 手動 publish 判断 |
 
 ## 5. 完了大物(圧縮)
 

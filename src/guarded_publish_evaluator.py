@@ -92,6 +92,11 @@ INJURY_ROSTER_SIGNAL_RE = re.compile(
 DEATH_OR_GRAVE_INCIDENT_RE = re.compile(
     r"(死亡|死去|逝去|亡くな|危篤|重体|重症|重傷|意識不明|入院|手術)"
 )
+FAMILY_DEATH_KEYWORD_RE = re.compile(r"(死亡|死去|逝去|亡くな|急逝|他界|訃報|天国)")
+SELF_DEATH_SUBJECT_PREFIX_RE = re.compile(
+    r"(?:[一-龯々]{2,8}(?:投手|捕手|内野手|外野手|選手|監督|コーチ)?|[A-Za-z][A-Za-z0-9]{1,}|"
+    r"巨人OB|球団OB|OB|主力選手|主力|ルーキー|氏)(?:が|は)"
+)
 # Compatibility alias for X-side gating that still treats broad roster/injury stories as no-auto-post.
 INJURY_DEATH_RE = INJURY_ROSTER_SIGNAL_RE
 LONG_RECOVERY_MONTH_RE = re.compile(r"全治\s*([0-9０-９]+)\s*(?:ヶ|か|カ|ヵ)?月")
@@ -142,6 +147,30 @@ TITLE_DUPLICATE_SUFFIX_RE = re.compile(r"(?:\s*(?:\(\s*\d+\s*\)|（\s*\d+\s*）|
 TITLE_NUMBER_TOKEN_RE = re.compile(r"\d+")
 DEFAULT_GAME_START_HOUR = 18
 FULLWIDTH_DIGITS = str.maketrans("０１２３４５６７８９", "0123456789")
+FAMILY_CONTEXT_MARKERS: tuple[str, ...] = (
+    "お祖父さん",
+    "お祖母さん",
+    "おじいちゃん",
+    "おばあちゃん",
+    "お父さん",
+    "お母さん",
+    "奥さん",
+    "祖父",
+    "祖母",
+    "家族",
+    "親戚",
+    "息子",
+    "娘",
+    "妻",
+    "兄",
+    "弟",
+    "姉",
+    "妹",
+    "父",
+    "母",
+    "夫",
+)
+FAMILY_CONTEXT_MARKER_FOLLOW_CHARS = frozenset(" \t\r\n　、。！？!?・,:：;；)]）］｝」』\"'のがはにをへともで")
 FRESHNESS_THRESHOLDS_HOURS: dict[str, float] = {
     "lineup": 6.0,
     "pregame": 6.0,
@@ -1026,6 +1055,64 @@ def _parse_fullwidth_int(value: str | None) -> int | None:
     return int(text)
 
 
+def _split_into_sentences(text: str) -> list[str]:
+    normalized = _normalize_plain_text(text)
+    if not normalized:
+        return []
+    return [segment.strip() for segment in re.split(r"[。！？!?]+|\n+", normalized) if segment.strip()]
+
+
+def _contains_family_context_marker(text: str) -> bool:
+    if not text:
+        return False
+    normalized = _normalize_plain_text(text)
+    for marker in FAMILY_CONTEXT_MARKERS:
+        start = 0
+        while True:
+            index = normalized.find(marker, start)
+            if index < 0:
+                break
+            marker_end = index + len(marker)
+            if marker_end >= len(normalized) or normalized[marker_end] in FAMILY_CONTEXT_MARKER_FOLLOW_CHARS:
+                return True
+            start = index + 1
+    return False
+
+
+def _has_family_context_death_window(*texts: str) -> bool:
+    for text in texts:
+        sentences = _split_into_sentences(text)
+        for index, sentence in enumerate(sentences):
+            windows = [sentence]
+            if index + 1 < len(sentences):
+                windows.append(f"{sentence} {sentences[index + 1]}")
+            for window in windows:
+                if not FAMILY_DEATH_KEYWORD_RE.search(window):
+                    continue
+                if not _contains_family_context_marker(window):
+                    continue
+                if _has_self_death_subject(window):
+                    continue
+                return True
+    return False
+
+
+def _has_self_death_subject(text: str) -> bool:
+    for match in SELF_DEATH_SUBJECT_PREFIX_RE.finditer(text):
+        subject_text = match.group(0)[:-1]
+        if _contains_family_context_marker(subject_text):
+            continue
+        death_match = FAMILY_DEATH_KEYWORD_RE.search(text, match.end())
+        if death_match is None:
+            continue
+        if death_match.start() - match.end() > 12:
+            continue
+        if _contains_family_context_marker(text[match.end() : death_match.start()]):
+            continue
+        return True
+    return False
+
+
 def _is_long_term_recovery_story(text: str) -> bool:
     month_match = LONG_RECOVERY_MONTH_RE.search(text)
     if month_match and (_parse_fullwidth_int(month_match.group(1)) or 0) >= 1:
@@ -1043,7 +1130,10 @@ def _medical_roster_flag(record: dict[str, Any], *, subtype: Any = "") -> str | 
     title = str(record.get("title") or "")
     body_text = str(record.get("body_text") or "")
     combined = "\n".join(part for part in (title, body_text) if part)
-    if DEATH_OR_GRAVE_INCIDENT_RE.search(combined) or _is_long_term_recovery_story(combined):
+    family_context_death = _has_family_context_death_window(title, body_text)
+    if (DEATH_OR_GRAVE_INCIDENT_RE.search(combined) and not family_context_death) or _is_long_term_recovery_story(
+        combined
+    ):
         return "death_or_grave_incident"
     if not INJURY_ROSTER_SIGNAL_RE.search(combined):
         return None

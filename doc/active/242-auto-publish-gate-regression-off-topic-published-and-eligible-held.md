@@ -76,6 +76,7 @@ related:226 (`subtype_unresolved + cleanup_failed_post_condition` を Yellow 降
 - **242-D(body quality placeholder blocker、P0.5)**: `doc/active/242-D-farm-result-placeholder-body-publish-blocker.md` 参照。63845 型の「先発の 投手 / 選手の適時打 / 試合の詳細はこちら」placeholder 連発を subtype 限定 detector で hard_stop / repairable に分岐し、Gemini 補完なしで publish skip に倒す
 - **242-B(false positive 抑止、P1)**: 63844 の「実在選手・他球団所属」hallucination を検出する entity-role / roster mismatch detector(224 と統合候補)+ tests
 - **242-C(止血、auth executor)**: 63841 / 63845 の手動 publish 判断(user 判断)+ 63844 の修正/draft 戻し判断(user 判断)
+- **242-E(family death precision、P0.5)**: `doc/active/242-E-death-or-grave-family-context-precision.md` 参照。63475 / 63470 type の family death(祖父 / おじいちゃん等)を player-self death と分離する narrow skip を `DEATH_OR_GRAVE_INCIDENT_RE` 前段に追加
 
 ## 242-A narrow fix design lock(2026-04-28 user 指示)
 

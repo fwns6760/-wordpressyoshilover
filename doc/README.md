@@ -1327,18 +1327,18 @@ doc/
 
 - **alias**: -
 - **priority**: P0.5
-- **status**: READY
+- **status**: REVIEW_NEEDED
 - **owner**: Codex B(implementation)/ Claude(dispatch + accept + push + live verify)
 - **lane**: B
-- **ready_for**: Codex B narrow fix fire
-- **next_action**: `DEATH_OR_GRAVE_INCIDENT_RE` 発火直前に family-context 共起チェックを追加し、family death(祖父/祖母/おじいちゃん/おばあちゃん/父/母/家族 etc.)を player-self death と区別する narrow skip
+- **ready_for**: Claude review / authenticated executor live verify
+- **next_action**: family-context skip helper と 6 fixture の regression coverage を review し、image rebuild 後に 63475 / 63470 type の live verify を実施する
 - **blocked_by**: none
 - **user_action_required**: none(scope 確定済み、Codex B fire 可)
 - **write_scope**: `src/guarded_publish_evaluator.py`, `tests/test_guarded_publish_evaluator.py`, `doc/active/242-E-death-or-grave-family-context-precision.md`, `doc/active/242-auto-publish-gate-regression-off-topic-published-and-eligible-held.md`, `doc/README.md`, `doc/active/assignments.md`
 - **doc_path**: `doc/active/242-E-death-or-grave-family-context-precision.md`
-- **acceptance**: 63475/63470 type(family death co-occurrence)が hard_stop しない / player-self death/grave injury 真陽性は hard_stop 維持 / 242-A/D/D2 既存挙動不変 / Gemini/LLM call 追加なし / pytest 124 baseline + 6 fixture 全 pass
-- **repo_state**: doc 起票済(active untracked)
-- **commit_state**: pending Codex B implementation
+- **acceptance**: 63475/63470 type(family death co-occurrence)が hard_stop しない / player-self death・grave injury・long-term recovery 真陽性は hard_stop 維持 / 242-A/D/D2 既存挙動不変 / Gemini/LLM call 追加なし / pytest `124 → 130`(6 fixture 追加) 全 pass
+- **repo_state**: local impl + targeted pytest pass
+- **commit_state**: local impl ready for Claude review / push (`124 → 130`, 14 subtests pass)
 - **next_prompt_path**: `doc/active/242-E-death-or-grave-family-context-precision.md`
 - **last_commit**: -
 - **parent**: 242 / 242-A

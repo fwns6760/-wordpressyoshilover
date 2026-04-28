@@ -2,7 +2,7 @@
 
 - number: 242-E
 - type: incident follow-up / narrow precision correction
-- status: READY
+- status: REVIEW_NEEDED
 - priority: P0.5
 - parent: 242 / 242-A
 - related: 242, 242-A, 242-D, 242-D2, 154 publish-policy
@@ -119,6 +119,19 @@ This is a correction ticket for the existing `DEATH_OR_GRAVE_INCIDENT_RE` regex 
 1. **着地**: 1 commit に上記 4-6 path を含める(git add -A 禁止、明示 path のみ)
 2. **挙動**: pytest 124 baseline + 新規 6 fixture = 130+ collected、全 pass、subtests も全 pass
 3. **境界**: 既存 hard_stop / freshness / lineup_dup / cleanup gate / 242-A 挙動 / 242-D placeholder / 242-D2 classifier / regex 発火条件(family-context 部分以外)不変、env / secret / WP / X / Scheduler 不変、LLM call 件数増加なし
+
+## 242-E implementation summary
+
+- pytest diff: `124 collected / 124 passed / 14 subtests passed` → `130 collected / 130 passed / 14 subtests passed`
+- 採用 logic: `_medical_roster_flag()` は `DEATH_OR_GRAVE_INCIDENT_RE` 発火時でも `_has_family_context_death_window(title, body_text)` が family death(同一文 or 隣接1文)を高 confidence で検出したときだけ hard-stop を skip し、player-self death / grave injury / long-term recovery は従来通り維持する
+- family-context check 経路: `_medical_roster_flag()` → `_has_family_context_death_window()` → `_split_into_sentences()` / `_contains_family_context_marker()` / `_has_self_death_subject()`
+- 追加 fixture 数: `6`
+
+## 242-E live verify pending
+
+- TODO(authenticated executor): recent guarded-publish history / dry-run / canary で 63475 / 63470 type が `hard_stop:death_or_grave_incident` を外れることを確認する
+- TODO(authenticated executor): player-self death / grave injury / long-term recovery sample が従来通り `death_or_grave_incident` hard-stop のまま残ることを確認する
+- TODO(authenticated executor): live verify 結果(image rebuild / tick time / sample post_ids)を本 doc に追記する
 
 ## commit 規約
 

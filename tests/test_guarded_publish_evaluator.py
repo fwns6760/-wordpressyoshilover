@@ -311,6 +311,96 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         self.assertIn("death_or_grave_incident", entry["hard_stop_flags"])
         self.assertFalse(entry["publishable"])
 
+    def test_family_death_title_63475_type_skips_death_hard_stop(self):
+        post = _post(
+            63475,
+            "巨人スタメン 皆川岳飛、亡くなったおじいちゃんに記念ボール",
+            (
+                "<p>巨人の皆川岳飛は試合前、おじいちゃんへの思いを胸にグラウンドへ向かった。"
+                "スポーツ報知によると、家族の前で記念ボールを届けたいと話した。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-63475</p>"
+            ),
+            meta={"article_subtype": "lineup"},
+        )
+
+        report = self._evaluate([post])
+
+        entry = self._find_entry(report, 63475)
+        self.assertTrue(entry["publishable"])
+        self.assertNotIn("death_or_grave_incident", entry["hard_stop_flags"])
+
+    def test_family_death_title_63470_type_skips_death_hard_stop(self):
+        post = _post(
+            63470,
+            "皆川岳飛 天国で見てくれているおじいちゃんに",
+            (
+                "<p>皆川岳飛は天国で見てくれているおじいちゃんに結果を届けたいと語った。"
+                "スポーツ報知によると、父も背中を押したという。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-63470</p>"
+            ),
+            meta={"article_subtype": "player_notice"},
+        )
+
+        report = self._evaluate([post])
+
+        entry = self._find_entry(report, 63470)
+        self.assertTrue(entry["publishable"])
+        self.assertNotIn("death_or_grave_incident", entry["hard_stop_flags"])
+
+    def test_player_self_death_fixture_remains_hard_stop(self):
+        record = {
+            "title": "巨人OBの高田氏が逝去",
+            "body_text": "巨人OBの高田氏が逝去したと球団が発表した。",
+            "source_block": "参照元: スポーツ報知 https://example.com/source-self-death",
+            "source_urls": ["https://example.com/source-self-death"],
+        }
+
+        flag = evaluator_module._medical_roster_flag(record, subtype="comment")
+
+        self.assertEqual(flag, "death_or_grave_incident")
+
+    def test_player_self_grave_injury_fixture_remains_hard_stop(self):
+        record = {
+            "title": "巨人主力が脳梗塞で意識不明",
+            "body_text": "巨人主力が脳梗塞で意識不明となり、家族が病院へ駆けつけた。",
+            "source_block": "参照元: スポーツ報知 https://example.com/source-grave-self",
+            "source_urls": ["https://example.com/source-grave-self"],
+        }
+
+        flag = evaluator_module._medical_roster_flag(record, subtype="injury")
+
+        self.assertEqual(flag, "death_or_grave_incident")
+
+    def test_family_death_player_absent_fixture_stays_publishable(self):
+        post = _post(
+            63471,
+            "巨人の若手選手 祖父が亡くなり試合を欠場",
+            (
+                "<p>巨人の若手選手は祖父が亡くなり、この日の試合を欠場した。"
+                "スポーツ報知によると、球団は家族を優先する判断だと説明した。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-63471</p>"
+            ),
+            meta={"article_subtype": "player_notice"},
+        )
+
+        report = self._evaluate([post])
+
+        entry = self._find_entry(report, 63471)
+        self.assertTrue(entry["publishable"])
+        self.assertNotIn("death_or_grave_incident", entry["hard_stop_flags"])
+
+    def test_family_marker_adjacent_sentence_skips_death_hard_stop(self):
+        record = {
+            "title": "巨人の若手が祖父への思いを胸に出場",
+            "body_text": "巨人の若手は祖父への思いを胸に出場した。天国へ届ける一打を誓った。",
+            "source_block": "参照元: スポーツ報知 https://example.com/source-adjacent-family",
+            "source_urls": ["https://example.com/source-adjacent-family"],
+        }
+
+        flag = evaluator_module._medical_roster_flag(record, subtype="player_notice")
+
+        self.assertIsNone(flag)
+
     def test_grave_incident_remains_hard_stop(self):
         report = self._evaluate([self.hard_stop_post])
 

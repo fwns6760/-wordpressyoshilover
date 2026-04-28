@@ -43,6 +43,7 @@
 | **fetcher canary traffic switch** | READY_FOR_AUTH_EXECUTOR | Authenticated executor / User | `yoshilover-fetcher-00177-hip` (c328772) に 100% traffic 切替、env 不変、235/236-A live 化 |
 | **63475 / 63470 手動 publish 判断** | BLOCKED_USER | User → Claude (auth executor PATCH) | 242-E live で hard_stop 解除済、user が「publish / draft 維持 / 削除」を 1 ワード判断 |
 | **63844 / 242-B 起票候補** | READY(spec 未起票) | Claude (spec) / Codex B (impl) | 別 commit で 242-B spec doc 起票 → Codex B narrow fix fire 候補(entity-role mismatch 検出)|
+| **244 numeric fact consistency guard** | READY | Codex B | score / date / win-loss / pitcher stats / player name mismatch を LLMなしの deterministic check で止める |
 | **draft-body-editor live (232 + 229-B + 229-A)** | live(`c328772` で反映、cron 動作中) | Codex-GCP + Claude 監視 | 次 cron tick 以降の no_op_skip / content_hash_skip / cooldown 系 log 観察、24h Gemini cost diff 確認 |
 | **guarded-publish live (217 / 224 / 226 / 242-A / 242-D / 242-D2 / 242-E)** | live(`25f176b` + `c328772` で反映、cron 動作中) | Codex-GCP + Claude 監視 | 通常 cron 動作、必要に応じ guarded-publish history で boundary 観察 |
 | **publish-notice live (241 Reply-To omit / MKT-001 mail classification)** | live(`25f176b` deploy 済) | Codex-GCP + Claude 監視 | mail 通知正常、Reply-To omit + PC/mobile 通知発火確認済 |

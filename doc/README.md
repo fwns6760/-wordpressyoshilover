@@ -1352,6 +1352,26 @@ Current lane lock(2026-04-28 JST):
 - **last_commit**: `c328772` 242-E: DEATH_OR_GRAVE_INCIDENT_RE family-context precision narrow fix (63475/63470 type) + fixtures
 - **parent**: 242 / 242-A
 
+### 244 baseball-numeric-fact-consistency-guard
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: **READY**
+- **owner**: Codex B
+- **lane**: B
+- **ready_for**: Codex B narrow audit + implementation
+- **next_action**: source title/body/meta/generated body/manual X candidate の score / date / win-loss / pitcher stats / player name consistency を deterministic check で守る。LLM / Web / external API 追加なし
+- **blocked_by**: none
+- **user_action_required**: none
+- **write_scope**: `doc/active/244-baseball-numeric-fact-consistency-guard.md`, likely `src/guarded_publish_evaluator.py`, `tests/test_guarded_publish_evaluator.py`; X candidate path touched only if needed
+- **doc_path**: `doc/active/244-baseball-numeric-fact-consistency-guard.md`
+- **acceptance**: `1-11` -> `19-1` 誤変換防止、score mismatch / win-loss conflict / pitcher-team stats confusion を publish 前に止め、X candidate mismatch は X suppress。Gemini call / Web / API / prompt 全体改修なし
+- **repo_state**: local doc update
+- **commit_state**: pending
+- **next_prompt_path**: -
+- **last_commit**: -
+- **parent**: 234 / 242 / MKT-008
+
 ### 130 pub004-hard-stop-vs-repairable-before-publish
 
 - **alias**: -

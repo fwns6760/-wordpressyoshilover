@@ -48,7 +48,12 @@ from x_post_generator import (
     build_post_with_meta as build_x_post_text_with_meta,
     resolve_effective_x_post_ai_mode,
 )
-from src.source_trust import classify_url as _source_trust_classify_url, classify_handle as _source_trust_classify_handle
+from src.source_trust import (
+    classify_url as _source_trust_classify_url,
+    classify_handle as _source_trust_classify_handle,
+    classify_url_family as _source_trust_classify_url_family,
+    get_family_trust_level as _source_trust_get_family_trust_level,
+)
 from src.source_id import source_id as _source_id_key
 from src.tag_category_guard import validate_tags as _tc_validate_tags, validate_category as _tc_validate_category
 
@@ -144,6 +149,7 @@ STRICT_PROMPT_MAX_SOURCE_FACTS = 8
 STRICT_PROMPT_MAX_QUOTES = 2
 THIN_SOURCE_FACT_BLOCK_MIN_CHARS_DEFAULT = 100
 THIN_SOURCE_FACT_BLOCK_MIN_CHARS_SOCIAL_NEWS = 40
+RSS_DUPLICATE_COOLDOWN_HOURS_DEFAULT = 6
 PUBLISH_QUALITY_MIN_CHARS_BY_SUBTYPE = {
     "postgame": 280,
     "lineup": 280,
@@ -8070,7 +8076,7 @@ X検索で「{query_short} 巨人」に関するファンの声を{fan_reaction_
 # ──────────────────────────────────────────────────────────
 # ニュース記事ブロックHTML生成
 # ──────────────────────────────────────────────────────────
-def build_news_block(title: str, summary: str, url: str, source_name: str, category: str = "コラム", og_image_url: str = "", media_id: int = 0, extra_images: list = None, has_game: bool = True, article_ai_mode_override: str | None = None, source_links: list[dict] | None = None, source_day_label: str = "", source_type: str = "news", media_quotes: list[dict] | None = None, source_entry: dict | None = None) -> tuple[str, str]:
+def build_news_block(title: str, summary: str, url: str, source_name: str, category: str = "コラム", og_image_url: str = "", media_id: int = 0, extra_images: list = None, has_game: bool = True, article_ai_mode_override: str | None = None, source_links: list[dict] | None = None, source_day_label: str = "", source_type: str = "news", media_quotes: list[dict] | None = None, source_entry: dict | None = None, duplicate_guard_context: dict | None = None) -> tuple[str, str]:
     import re
     summary_clean = re.sub(r"<[^>]+>", "", summary).strip()
     article_subtype = _detect_article_subtype(title, summary_clean, category, has_game)
@@ -8146,6 +8152,22 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         )
         if parts_rendered is not None:
             return parts_rendered
+        duplicate_context = duplicate_guard_context or _build_duplicate_news_context(
+            source_url=url,
+            title=title,
+            summary=summary_clean,
+            category=effective_generation_category,
+            source_type=source_type,
+            has_game=has_game,
+            source_entry=source_entry,
+            source_name=source_name,
+        )
+        if _evaluate_pre_gemini_duplicate_guard(logger, duplicate_context) == "skip":
+            if isinstance(duplicate_guard_context, dict):
+                duplicate_guard_context.update(duplicate_context)
+            return "", ""
+        if isinstance(duplicate_guard_context, dict):
+            duplicate_guard_context.update(duplicate_context)
         return (
             generate_article_with_gemini(
                 title,
@@ -8203,6 +8225,9 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             summary_block = ""
             stats_block = ""
             impression_block = ""
+
+    if duplicate_guard_context and duplicate_guard_context.get("guard_outcome") == "skip":
+        return "", ""
 
     if not rendered_ai_body_html:
         ai_body = _apply_article_guardrails(title, summary_clean, effective_generation_category, ai_body, has_game, logger)
@@ -9295,6 +9320,723 @@ def _normalize_history_title(title: str) -> str:
     import re as _re3
 
     return _re3.sub(r"[\s　【】「」『』〔〕（）()・\-_]", "", (title or "")).lower()
+
+
+def _normalize_title_for_dedupe(title: str) -> str:
+    import re as _re3
+    import unicodedata
+
+    if not title:
+        return ""
+    normalized = unicodedata.normalize("NFKC", str(title).strip())
+    normalized = _re3.sub(r"[\s　,.、。!?！？「」『』【】<>＜＞・…\"'“”‘’]+", " ", normalized)
+    return normalized.strip().lower()
+
+
+def _normalize_duplicate_subject(subject: str) -> str:
+    normalized = _normalize_title_for_dedupe(subject)
+    return normalized.replace(" ", "")
+
+
+def _normalize_duplicate_canonical_url(url: str | None) -> str:
+    from urllib.parse import urlparse, urlunparse
+
+    raw = _html.unescape(str(url or "")).strip()
+    if not raw:
+        return ""
+    try:
+        parsed = urlparse(raw)
+    except Exception:
+        return raw.lower()
+    if not parsed.scheme or not parsed.netloc:
+        return raw.lower()
+    cleaned = parsed._replace(
+        scheme=parsed.scheme.lower(),
+        netloc=parsed.netloc.lower(),
+        fragment="",
+    )
+    return urlunparse(cleaned)
+
+
+def _extract_source_family(source_url: str) -> str:
+    from urllib.parse import urlparse
+
+    raw = _html.unescape(str(source_url or "")).strip()
+    if not raw:
+        return "unknown"
+    family = _source_trust_classify_url_family(raw)
+    if family and family != "unknown":
+        return str(family)
+    try:
+        host = urlparse(raw).netloc.lower()
+    except Exception:
+        return "unknown"
+    return host or "unknown"
+
+
+def _duplicate_source_family_priority(family: str) -> int:
+    normalized = str(family or "").strip()
+    explicit = {
+        "giants_official": 0,
+        "npb_official": 0,
+        "yomiuri_online": 1,
+        "hochi": 2,
+        "nikkansports": 2,
+        "sponichi": 2,
+        "sanspo": 2,
+        "daily": 2,
+        "yahoo_news_aggregator": 3,
+    }
+    if normalized in explicit:
+        return explicit[normalized]
+    trust_level = _source_trust_get_family_trust_level(normalized)
+    if trust_level == "high":
+        return 0
+    if trust_level == "mid-high":
+        return 1
+    if trust_level == "mid":
+        return 2
+    return 4
+
+
+def _is_first_tier_duplicate_family(family: str) -> bool:
+    normalized = str(family or "").strip()
+    if not normalized or normalized == "yahoo_news_aggregator":
+        return False
+    return _duplicate_source_family_priority(normalized) <= 2
+
+
+def _hash_duplicate_guard_value(value: str | None) -> str:
+    import hashlib
+
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _extract_duplicate_game_id(source_url: str, explicit_game_id: str = "") -> str:
+    explicit = str(explicit_game_id or "").strip()
+    if explicit:
+        return explicit
+    match = _re.search(r"/game/([0-9]{8,})/", str(source_url or ""))
+    if match:
+        return match.group(1)
+    return ""
+
+
+def _extract_entry_canonical_url(entry: dict | None) -> str:
+    if not isinstance(entry, dict):
+        return ""
+    for key in ("canonical_url", "canonical", "resolved_url", "original_url", "feedburner_origlink"):
+        value = _normalize_duplicate_canonical_url(entry.get(key))
+        if value:
+            return value
+    for link in entry.get("links") or []:
+        if not isinstance(link, dict):
+            continue
+        rel = str(link.get("rel") or "").strip().lower()
+        href = _normalize_duplicate_canonical_url(link.get("href") or link.get("url"))
+        if rel == "canonical" and href:
+            return href
+    return ""
+
+
+def _extract_duplicate_player(title: str, summary: str, category: str) -> str:
+    if category == "選手情報":
+        return _normalize_duplicate_subject(
+            _compact_subject_label(title, summary, category) or _extract_subject_label(title, summary, category)
+        )
+    if category == "首脳陣":
+        manager_subject = _extract_subject_label(title, summary, category)
+        manager_subject = _re.sub(r"(監督|コーチ)$", "", manager_subject).strip()
+        return _normalize_duplicate_subject(manager_subject)
+    return ""
+
+
+def _duplicate_key_basis(
+    *,
+    canonical_url: str,
+    game_id: str,
+    player: str,
+    subtype: str,
+) -> str:
+    if canonical_url:
+        return "canonical"
+    if game_id and subtype:
+        return "game_subtype"
+    if player and subtype:
+        return "player_subtype_title"
+    return "title_family"
+
+
+def compute_duplicate_key(
+    *,
+    source_url: str | None,
+    canonical_url: str | None,
+    title: str,
+    source_family: str | None = None,
+    game_id: str | None = None,
+    player: str | None = None,
+    subtype: str | None = None,
+    topic_key: str | None = None,
+) -> str:
+    import hashlib
+
+    title_norm = _normalize_title_for_dedupe(title or "")
+    canonical_value = _normalize_duplicate_canonical_url(canonical_url)
+    resolved_subtype = str(subtype or "").strip().lower()
+    resolved_player = _normalize_duplicate_subject(player or "")
+    resolved_game_id = str(game_id or "").strip().lower()
+    resolved_topic_key = _normalize_duplicate_subject(topic_key or "")
+    if canonical_value:
+        return hashlib.sha256(f"canonical:{canonical_value}".encode("utf-8")).hexdigest()[:16]
+    if resolved_game_id and resolved_subtype:
+        base = f"game:{resolved_game_id}:subtype:{resolved_subtype}"
+    elif resolved_player and resolved_subtype:
+        base = f"player:{resolved_player}:subtype:{resolved_subtype}:title:{title_norm[:80]}"
+    else:
+        family = str(source_family or _extract_source_family(source_url or "")).strip().lower() or "unknown"
+        base = f"title:{title_norm[:120]}:family:{family}"
+    parts = [base]
+    if resolved_topic_key:
+        parts.append(f"topic:{resolved_topic_key}")
+    if resolved_subtype:
+        parts.append(f"sub:{resolved_subtype}")
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:16]
+
+
+def _compute_duplicate_group_signature(
+    *,
+    canonical_url: str,
+    title: str,
+    game_id: str = "",
+    player: str = "",
+    subtype: str = "",
+    topic_key: str = "",
+) -> str:
+    title_norm = _normalize_title_for_dedupe(title or "")
+    if canonical_url:
+        return f"canonical:{canonical_url}"
+    if game_id and subtype:
+        return f"game:{game_id}:{subtype}"
+    if player and subtype:
+        return f"player:{player}:{subtype}:{title_norm[:80]}"
+    if topic_key:
+        return f"topic:{topic_key}:{subtype or 'none'}"
+    if title_norm:
+        return f"title:{title_norm[:120]}"
+    return ""
+
+
+def _duplicate_guard_enabled_for_subtype(article_subtype: str) -> bool:
+    return str(article_subtype or "").strip().lower() != "lineup"
+
+
+def _parse_duplicate_ledger_datetime(value: object) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _duplicate_candidate_time_sort_value(value: object) -> float:
+    if isinstance(value, datetime):
+        target = value
+    else:
+        parsed = _parse_duplicate_ledger_datetime(value)
+        if parsed is None:
+            return float("inf")
+        target = parsed
+    if target.tzinfo is None:
+        target = target.replace(tzinfo=timezone.utc)
+    return target.astimezone(timezone.utc).timestamp()
+
+
+def _duplicate_hours_gap(existing: object, current: object) -> float | None:
+    existing_dt = _parse_duplicate_ledger_datetime(existing)
+    current_dt = _parse_duplicate_ledger_datetime(current)
+    if existing_dt is None or current_dt is None:
+        return None
+    return abs((current_dt - existing_dt).total_seconds()) / 3600.0
+
+
+def _duplicate_candidate_priority_sort_key(candidate: dict) -> tuple[object, ...]:
+    return (
+        int(candidate.get("source_family_priority", 4) or 4),
+        0 if candidate.get("canonical_url") else 1,
+        -int(candidate.get("body_length", 0) or 0),
+        _duplicate_candidate_time_sort_value(candidate.get("published_at")),
+        int(candidate.get("source_rank", 0) or 0),
+        int(candidate.get("entry_index", 0) or 0),
+    )
+
+
+def _duplicate_candidate_record_comparison_key(payload: dict) -> tuple[object, ...]:
+    return (
+        int(payload.get("source_family_priority", 4) or 4),
+        0 if payload.get("canonical_url") or payload.get("canonical_present") else 1,
+        -int(payload.get("body_length", 0) or 0),
+        _duplicate_candidate_time_sort_value(payload.get("published_at")),
+    )
+
+
+def _duplicate_record_priority_sort_key(record: dict) -> tuple[object, ...]:
+    return (
+        int(record.get("source_family_priority", 4) or 4),
+        0 if record.get("canonical_present") else 1,
+        -int(record.get("body_length", 0) or 0),
+        _duplicate_candidate_time_sort_value(record.get("published_at")),
+        0 if record.get("primary") else 1,
+        _duplicate_candidate_time_sort_value(record.get("timestamp")),
+    )
+
+
+def _duplicate_guard_cooldown_hours() -> int:
+    raw = os.getenv("RSS_DUPLICATE_COOLDOWN_HOURS", str(RSS_DUPLICATE_COOLDOWN_HOURS_DEFAULT)).strip()
+    try:
+        return max(int(raw), 0)
+    except ValueError:
+        return RSS_DUPLICATE_COOLDOWN_HOURS_DEFAULT
+
+
+class _DuplicateNewsLedger:
+    _shared_instance: "_DuplicateNewsLedger | None" = None
+
+    def __init__(
+        self,
+        ledger_path: str | Path | None = None,
+        cooldown_hours: int | None = None,
+        *,
+        now: datetime | None = None,
+    ):
+        self.ledger_path = Path(ledger_path) if ledger_path is not None else ROOT / "logs" / "rss_fetcher_duplicate_ledger.jsonl"
+        self.cooldown_hours = _duplicate_guard_cooldown_hours() if cooldown_hours is None else max(int(cooldown_hours), 0)
+        self._memory_by_key: dict[str, dict] = {}
+        self._memory_by_group: dict[str, dict] = {}
+        self._load_recent(now=now)
+
+    @classmethod
+    def shared(cls) -> "_DuplicateNewsLedger":
+        if cls._shared_instance is None:
+            cls._shared_instance = cls()
+        return cls._shared_instance
+
+    @classmethod
+    def reset_shared(cls) -> None:
+        cls._shared_instance = None
+
+    def _threshold(self, now: datetime | None = None) -> datetime:
+        reference_now = now or datetime.now(timezone.utc)
+        if reference_now.tzinfo is None:
+            reference_now = reference_now.replace(tzinfo=timezone.utc)
+        return reference_now.astimezone(timezone.utc) - timedelta(hours=self.cooldown_hours)
+
+    def _load_recent(self, *, now: datetime | None = None) -> None:
+        if not self.ledger_path.exists():
+            return
+        threshold = self._threshold(now=now)
+        try:
+            with self.ledger_path.open("r", encoding="utf-8") as handle:
+                for raw_line in handle:
+                    line = raw_line.strip()
+                    if not line:
+                        continue
+                    try:
+                        payload = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(payload, dict):
+                        continue
+                    timestamp = _parse_duplicate_ledger_datetime(payload.get("timestamp"))
+                    if timestamp is None or timestamp < threshold:
+                        continue
+                    self._remember(payload)
+        except OSError:
+            return
+
+    def _remember(self, payload: dict) -> None:
+        duplicate_key = str(payload.get("duplicate_key") or "").strip()
+        group_signature = str(payload.get("group_signature") or "").strip()
+        if duplicate_key:
+            current = self._memory_by_key.get(duplicate_key)
+            if current is None or _duplicate_record_priority_sort_key(payload) < _duplicate_record_priority_sort_key(current):
+                self._memory_by_key[duplicate_key] = dict(payload)
+        if group_signature:
+            current_group = self._memory_by_group.get(group_signature)
+            if current_group is None or _duplicate_record_priority_sort_key(payload) < _duplicate_record_priority_sort_key(current_group):
+                self._memory_by_group[group_signature] = dict(payload)
+
+    def find_recent(self, duplicate_key: str, group_signature: str = "") -> dict | None:
+        if duplicate_key:
+            hit = self._memory_by_key.get(duplicate_key)
+            if hit is not None:
+                return dict(hit)
+        if group_signature:
+            hit = self._memory_by_group.get(group_signature)
+            if hit is not None:
+                return dict(hit)
+        return None
+
+    def record(
+        self,
+        *,
+        duplicate_key: str,
+        group_signature: str,
+        source_url_hash: str,
+        source_family: str,
+        source_family_priority: int,
+        title_norm: str,
+        subtype: str,
+        post_id: int | str | None,
+        primary: bool,
+        canonical_present: bool,
+        body_length: int,
+        published_at: str = "",
+        player: str = "",
+        game_id: str = "",
+        topic_key: str = "",
+        match_basis: str = "",
+        now: datetime | None = None,
+    ) -> dict:
+        reference_now = now or datetime.now(timezone.utc)
+        if reference_now.tzinfo is None:
+            reference_now = reference_now.replace(tzinfo=timezone.utc)
+        payload = {
+            "timestamp": reference_now.astimezone(JST).isoformat(),
+            "duplicate_key": str(duplicate_key or ""),
+            "group_signature": str(group_signature or ""),
+            "source_url_hash": str(source_url_hash or ""),
+            "source_family": str(source_family or "unknown"),
+            "source_family_priority": int(source_family_priority or 0),
+            "title_norm": str(title_norm or "")[:80],
+            "subtype": str(subtype or ""),
+            "post_id": int(post_id) if isinstance(post_id, int) or str(post_id or "").isdigit() else None,
+            "primary": bool(primary),
+            "canonical_present": bool(canonical_present),
+            "body_length": int(body_length or 0),
+            "published_at": str(published_at or ""),
+            "player": str(player or ""),
+            "game_id": str(game_id or ""),
+            "topic_key": str(topic_key or ""),
+            "match_basis": str(match_basis or ""),
+        }
+        self.ledger_path.parent.mkdir(parents=True, exist_ok=True)
+        with self.ledger_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=False, default=str))
+            handle.write("\n")
+        self._remember(payload)
+        return payload
+
+
+def _emit_duplicate_news_structured(
+    logger: logging.Logger,
+    *,
+    event: str,
+    duplicate_key: str,
+    title_norm: str,
+    subtype: str,
+    source_family: str,
+    skipped_source_url_hash: str = "",
+    candidate_source_url_hash: str = "",
+    primary_source_url_hash: str = "",
+    existing_source_url_hash: str = "",
+    primary_post_id: int | None = None,
+    ambiguity_reason: str = "",
+) -> None:
+    payload = {
+        "event": event,
+        "duplicate_key": str(duplicate_key or ""),
+        "title_norm": str(title_norm or "")[:80],
+        "subtype": str(subtype or ""),
+        "source_family": str(source_family or "unknown"),
+        "timestamp": datetime.now(JST).isoformat(),
+    }
+    if skipped_source_url_hash:
+        payload["skipped_source_url_hash"] = skipped_source_url_hash
+    if candidate_source_url_hash:
+        payload["candidate_source_url_hash"] = candidate_source_url_hash
+    if primary_source_url_hash:
+        payload["primary_source_url_hash"] = primary_source_url_hash
+    if existing_source_url_hash:
+        payload["existing_source_url_hash"] = existing_source_url_hash
+    if primary_post_id is not None:
+        payload["primary_post_id"] = primary_post_id
+    if ambiguity_reason:
+        payload["ambiguity_reason"] = ambiguity_reason
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
+def _is_duplicate_review_ambiguous(existing: dict, current: dict) -> tuple[bool, str]:
+    current_player = str(current.get("player") or "")
+    existing_player = str(existing.get("player") or "")
+    current_subtype = str(current.get("subtype") or "")
+    existing_subtype = str(existing.get("subtype") or "")
+    if (
+        current_player
+        and current_player == existing_player
+        and current_subtype
+        and current_subtype == existing_subtype
+        and not str(current.get("game_id") or "")
+        and not str(existing.get("game_id") or "")
+    ):
+        gap_hours = _duplicate_hours_gap(existing.get("published_at"), current.get("published_at"))
+        if gap_hours is not None and gap_hours > _duplicate_guard_cooldown_hours():
+            return True, "player_subtype_match_time_gap"
+    current_title_norm = str(current.get("title_norm") or "")
+    existing_title_norm = str(existing.get("title_norm") or "")
+    current_family = str(current.get("source_family") or "")
+    existing_family = str(existing.get("source_family") or "")
+    if (
+        current_title_norm
+        and current_title_norm == existing_title_norm
+        and current_family
+        and existing_family
+        and current_family != existing_family
+        and _is_first_tier_duplicate_family(current_family)
+        and _is_first_tier_duplicate_family(existing_family)
+    ):
+        return True, "title_match_different_family"
+    return False, ""
+
+
+def _build_duplicate_news_context(
+    *,
+    source_url: str,
+    title: str,
+    summary: str,
+    category: str,
+    source_type: str,
+    has_game: bool,
+    source_entry: dict | None = None,
+    game_id: str = "",
+    source_name: str = "",
+    published_at: datetime | None = None,
+    source_rank: int = 0,
+    entry_index: int = 0,
+) -> dict | None:
+    if source_type not in {"news", "social_news"}:
+        return None
+    article_subtype = _detect_article_subtype(title, summary, category, has_game)
+    if not _duplicate_guard_enabled_for_subtype(article_subtype):
+        return None
+    canonical_url = _extract_entry_canonical_url(source_entry)
+    source_family = _extract_source_family(source_url)
+    player = _extract_duplicate_player(title, summary, category)
+    resolved_game_id = _extract_duplicate_game_id(source_url, explicit_game_id=game_id)
+    topic_key = ""
+    duplicate_key = compute_duplicate_key(
+        source_url=source_url,
+        canonical_url=canonical_url,
+        title=title,
+        source_family=source_family,
+        game_id=resolved_game_id,
+        player=player,
+        subtype=article_subtype,
+        topic_key=topic_key,
+    )
+    group_signature = _compute_duplicate_group_signature(
+        canonical_url=canonical_url,
+        title=title,
+        game_id=resolved_game_id,
+        player=player,
+        subtype=article_subtype,
+        topic_key=topic_key,
+    )
+    if not duplicate_key or not group_signature:
+        return None
+    return {
+        "duplicate_key": duplicate_key,
+        "group_signature": group_signature,
+        "match_basis": _duplicate_key_basis(
+            canonical_url=canonical_url,
+            game_id=resolved_game_id,
+            player=player,
+            subtype=article_subtype,
+        ),
+        "source_url_hash": _hash_duplicate_guard_value(source_url),
+        "source_family": source_family,
+        "source_family_priority": _duplicate_source_family_priority(source_family),
+        "canonical_url": canonical_url,
+        "title_norm": _normalize_title_for_dedupe(title),
+        "subtype": article_subtype,
+        "player": player,
+        "game_id": resolved_game_id,
+        "topic_key": topic_key,
+        "published_at": published_at.isoformat() if isinstance(published_at, datetime) else "",
+        "body_length": len(_strip_html(f"{title} {summary}")),
+        "source_name": source_name,
+        "source_type": source_type,
+        "source_rank": int(source_rank or 0),
+        "entry_index": int(entry_index or 0),
+        "guard_outcome": "allow",
+    }
+
+
+def _build_duplicate_news_context_from_prepared_entry(item: dict) -> dict | None:
+    return _build_duplicate_news_context(
+        source_url=str(item.get("post_url") or ""),
+        title=str(item.get("raw_title") or item.get("title") or ""),
+        summary=str(item.get("summary") or ""),
+        category=str(item.get("category") or ""),
+        source_type=str(item.get("source_type") or ""),
+        has_game=bool(item.get("entry_has_game", True)),
+        source_entry=item.get("entry"),
+        game_id=str(item.get("game_id") or ""),
+        source_name=str(item.get("source_name") or ""),
+        published_at=item.get("published_at"),
+        source_rank=int(item.get("source_rank", 0) or 0),
+        entry_index=int(item.get("entry_index", 0) or 0),
+    )
+
+
+def _annotate_duplicate_guard_contexts(candidates: list[dict]) -> list[dict]:
+    annotated: list[dict] = []
+    groups: dict[str, list[dict]] = {}
+
+    for item in candidates:
+        context = _build_duplicate_news_context_from_prepared_entry(item)
+        if context is None:
+            annotated.append(item)
+            continue
+        cloned = dict(item)
+        cloned["duplicate_guard_context"] = context
+        annotated.append(cloned)
+        groups.setdefault(context["group_signature"], []).append(context)
+
+    for contexts in groups.values():
+        primary = min(contexts, key=_duplicate_candidate_priority_sort_key)
+        for context in contexts:
+            context["same_run_group_size"] = len(contexts)
+            context["same_run_primary"] = context is primary
+            context["same_run_primary_source_url_hash"] = primary.get("source_url_hash", "")
+            context["same_run_primary_post_id"] = primary.get("post_id")
+            if context is primary:
+                continue
+            ambiguous, reason = _is_duplicate_review_ambiguous(primary, context)
+            context["same_run_ambiguous"] = ambiguous
+            context["same_run_ambiguity_reason"] = reason
+    return annotated
+
+
+def _evaluate_pre_gemini_duplicate_guard(
+    logger: logging.Logger,
+    duplicate_guard_context: dict | None,
+) -> str:
+    if not isinstance(duplicate_guard_context, dict) or not duplicate_guard_context.get("duplicate_key"):
+        return "allow"
+
+    duplicate_guard_context["guard_outcome"] = "allow"
+
+    if (
+        int(duplicate_guard_context.get("same_run_group_size", 1) or 1) > 1
+        and not bool(duplicate_guard_context.get("same_run_primary", True))
+    ):
+        if duplicate_guard_context.get("same_run_ambiguous"):
+            _emit_duplicate_news_structured(
+                logger,
+                event="candidate_duplicate_review",
+                duplicate_key=str(duplicate_guard_context.get("duplicate_key") or ""),
+                candidate_source_url_hash=str(duplicate_guard_context.get("source_url_hash") or ""),
+                existing_source_url_hash=str(duplicate_guard_context.get("same_run_primary_source_url_hash") or ""),
+                primary_post_id=duplicate_guard_context.get("same_run_primary_post_id"),
+                title_norm=str(duplicate_guard_context.get("title_norm") or ""),
+                subtype=str(duplicate_guard_context.get("subtype") or ""),
+                source_family=str(duplicate_guard_context.get("source_family") or ""),
+                ambiguity_reason=str(duplicate_guard_context.get("same_run_ambiguity_reason") or ""),
+            )
+            duplicate_guard_context["guard_outcome"] = "review"
+            return "review"
+        _emit_duplicate_news_structured(
+            logger,
+            event="duplicate_news_pre_gemini_skip",
+            duplicate_key=str(duplicate_guard_context.get("duplicate_key") or ""),
+            skipped_source_url_hash=str(duplicate_guard_context.get("source_url_hash") or ""),
+            primary_source_url_hash=str(duplicate_guard_context.get("same_run_primary_source_url_hash") or ""),
+            primary_post_id=duplicate_guard_context.get("same_run_primary_post_id"),
+            title_norm=str(duplicate_guard_context.get("title_norm") or ""),
+            subtype=str(duplicate_guard_context.get("subtype") or ""),
+            source_family=str(duplicate_guard_context.get("source_family") or ""),
+        )
+        duplicate_guard_context["guard_outcome"] = "skip"
+        return "skip"
+
+    ledger = _DuplicateNewsLedger.shared()
+    recent = ledger.find_recent(
+        str(duplicate_guard_context.get("duplicate_key") or ""),
+        str(duplicate_guard_context.get("group_signature") or ""),
+    )
+    if recent is None:
+        return "allow"
+
+    if _duplicate_candidate_record_comparison_key(duplicate_guard_context) < _duplicate_candidate_record_comparison_key(recent):
+        return "allow"
+
+    ambiguous, reason = _is_duplicate_review_ambiguous(recent, duplicate_guard_context)
+    if ambiguous:
+        _emit_duplicate_news_structured(
+            logger,
+            event="candidate_duplicate_review",
+            duplicate_key=str(duplicate_guard_context.get("duplicate_key") or ""),
+            candidate_source_url_hash=str(duplicate_guard_context.get("source_url_hash") or ""),
+            existing_source_url_hash=str(recent.get("source_url_hash") or ""),
+            primary_post_id=recent.get("post_id"),
+            title_norm=str(duplicate_guard_context.get("title_norm") or ""),
+            subtype=str(duplicate_guard_context.get("subtype") or ""),
+            source_family=str(duplicate_guard_context.get("source_family") or ""),
+            ambiguity_reason=reason,
+        )
+        duplicate_guard_context["guard_outcome"] = "review"
+        return "review"
+
+    _emit_duplicate_news_structured(
+        logger,
+        event="duplicate_news_pre_gemini_skip",
+        duplicate_key=str(duplicate_guard_context.get("duplicate_key") or ""),
+        skipped_source_url_hash=str(duplicate_guard_context.get("source_url_hash") or ""),
+        primary_source_url_hash=str(recent.get("source_url_hash") or ""),
+        primary_post_id=recent.get("post_id"),
+        title_norm=str(duplicate_guard_context.get("title_norm") or ""),
+        subtype=str(duplicate_guard_context.get("subtype") or ""),
+        source_family=str(duplicate_guard_context.get("source_family") or ""),
+    )
+    duplicate_guard_context["guard_outcome"] = "skip"
+    return "skip"
+
+
+def _record_duplicate_guard_success(duplicate_guard_context: dict | None, post_id: int | None) -> None:
+    if not isinstance(duplicate_guard_context, dict):
+        return
+    if duplicate_guard_context.get("guard_outcome") == "skip":
+        return
+    duplicate_key = str(duplicate_guard_context.get("duplicate_key") or "").strip()
+    group_signature = str(duplicate_guard_context.get("group_signature") or "").strip()
+    if not duplicate_key or not group_signature:
+        return
+    _DuplicateNewsLedger.shared().record(
+        duplicate_key=duplicate_key,
+        group_signature=group_signature,
+        source_url_hash=str(duplicate_guard_context.get("source_url_hash") or ""),
+        source_family=str(duplicate_guard_context.get("source_family") or "unknown"),
+        source_family_priority=int(duplicate_guard_context.get("source_family_priority", 4) or 4),
+        title_norm=str(duplicate_guard_context.get("title_norm") or ""),
+        subtype=str(duplicate_guard_context.get("subtype") or ""),
+        post_id=post_id,
+        primary=bool(duplicate_guard_context.get("same_run_primary", True)),
+        canonical_present=bool(duplicate_guard_context.get("canonical_url")),
+        body_length=int(duplicate_guard_context.get("body_length", 0) or 0),
+        published_at=str(duplicate_guard_context.get("published_at") or ""),
+        player=str(duplicate_guard_context.get("player") or ""),
+        game_id=str(duplicate_guard_context.get("game_id") or ""),
+        topic_key=str(duplicate_guard_context.get("topic_key") or ""),
+        match_basis=str(duplicate_guard_context.get("match_basis") or ""),
+    )
 
 
 def _is_history_duplicate(post_url: str, entry_title_norm: str, history: dict) -> bool:
@@ -11467,6 +12209,7 @@ def _main(args, logger):
         persist_history(history)
 
     prepared_entries = _prioritize_prepared_entries_for_creation(prepared_entries)
+    prepared_entries = _annotate_duplicate_guard_contexts(prepared_entries)
     same_fire_source_urls: set[str] = set()
     same_fire_title_sources: dict[str, set[str]] = {}
 
@@ -11654,7 +12397,14 @@ def _main(args, logger):
                 source_type=source_type,
                 media_quotes=media_quotes,
                 source_entry=item.get("entry"),
+                duplicate_guard_context=item.get("duplicate_guard_context"),
             )
+            duplicate_guard_context = item.get("duplicate_guard_context")
+            if isinstance(duplicate_guard_context, dict) and duplicate_guard_context.get("guard_outcome") == "skip":
+                skip_filter += 1
+                skip_reason_counts["duplicate_news_pre_gemini_skip"] += 1
+                _append_skip_reason_sample(skip_reason_sample_titles, "duplicate_news_pre_gemini_skip", draft_title)
+                continue
             fact_conflict_source_refs = {
                 "title": draft_title,
                 "source_title": raw_title,
@@ -11763,6 +12513,7 @@ def _main(args, logger):
             draft_post_data = wp.get_post(post_id)
             draft_article_url = draft_post_data.get("link", "") or post_url
             success += 1
+            _record_duplicate_guard_success(item.get("duplicate_guard_context"), post_id)
             created_category_counts[category] += 1
             created_subtype_counts[title_article_subtype] += 1
             _log_media_xpost_evaluated(

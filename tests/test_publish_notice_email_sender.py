@@ -1306,6 +1306,31 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         self.assertEqual(mail_request.metadata["post_id"], 123)
         self.assertEqual(result.bridge_result, bridge_result)
 
+    def test_send_keeps_yoshilover_subject_when_sender_envs_change(self):
+        bridge_result = mail_delivery_bridge.MailResult(
+            status="sent",
+            refused_recipients={},
+            smtp_response=[250, "ok"],
+            reason=None,
+        )
+        bridge_send = MagicMock(return_value=bridge_result)
+
+        with patch.dict(
+            "os.environ",
+            {
+                "PUBLISH_NOTICE_EMAIL_TO": "fwns6760@gmail.com",
+                "MAIL_BRIDGE_SMTP_USERNAME": "y.sebata@shiny-lab.org",
+                "MAIL_BRIDGE_FROM": "y.sebata@shiny-lab.org",
+                "MAIL_BRIDGE_REPLY_TO": "fwns6760@gmail.com",
+            },
+            clear=True,
+        ):
+            result = sender.send(self._request(), dry_run=False, send_enabled=True, bridge_send=bridge_send)
+
+        self.assertEqual(result.status, "sent")
+        self.assertEqual(result.subject, "【投稿候補】巨人が接戦を制した | YOSHILOVER")
+        self.assertEqual(bridge_send.call_args.args[0].subject, "【投稿候補】巨人が接戦を制した | YOSHILOVER")
+
     def test_send_includes_bridge_result_object(self):
         bridge_result = mail_delivery_bridge.MailResult(
             status="sent",

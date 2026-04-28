@@ -282,6 +282,37 @@ class MailDeliveryBridgeTests(unittest.TestCase):
     @patch.dict(
         "os.environ",
         {
+            "MAIL_BRIDGE_GMAIL_APP_PASSWORD": "primary-pass",
+            "MAIL_BRIDGE_GMAIL_APP_PASSWORD_SECRET_NAME": "bridge-secret",
+        },
+        clear=True,
+    )
+    @patch.object(mail_delivery_bridge, "_load_secret", return_value="secret-pass")
+    def test_load_credentials_prefers_direct_app_password_over_secret_name(self, mock_load_secret):
+        credentials = mail_delivery_bridge.load_credentials_from_env()
+
+        self.assertEqual(credentials.app_password, "primary-pass")
+        mock_load_secret.assert_not_called()
+
+    @patch.dict(
+        "os.environ",
+        {
+            "MAIL_BRIDGE_GMAIL_APP_PASSWORD_SECRET_NAME": "bridge-secret",
+        },
+        clear=True,
+    )
+    @patch.object(mail_delivery_bridge, "_load_secret", return_value="secret-pass")
+    def test_load_credentials_uses_mail_bridge_secret_name_when_direct_password_unset(self, mock_load_secret):
+        credentials = mail_delivery_bridge.load_credentials_from_env()
+
+        self.assertEqual(credentials.app_password, "secret-pass")
+        mock_load_secret.assert_called_once_with("bridge-secret")
+        self.assertEqual(credentials.smtp_host, "smtp.gmail.com")
+        self.assertEqual(credentials.smtp_port, 465)
+
+    @patch.dict(
+        "os.environ",
+        {
             "MAIL_BRIDGE_GMAIL_APP_PASSWORD": "",
             "GMAIL_APP_PASSWORD": "fallback-pass",
             "FACT_CHECK_SMTP_HOST": "fact.smtp.example.com",

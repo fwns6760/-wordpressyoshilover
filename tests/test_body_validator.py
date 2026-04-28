@@ -227,6 +227,130 @@ class BodyValidatorTests(unittest.TestCase):
         self.assertEqual(result["action"], "reroll")
         self.assertIn("postgame_comment_slot_before_fact_kernel", result["fail_axes"])
 
+    def test_postgame_first_team_player_unverified_blocks(self):
+        text = "\n".join(
+            [
+                "【試合結果】",
+                "4月21日、巨人が阪神に3-2で勝利した。",
+                "【ハイライト】",
+                "終盤に岡本の決勝打が出た。",
+                "【選手成績】",
+                "先発の戸郷は7回1失点で好投した。",
+                "【試合展開】",
+                "中盤から流れを引き戻して逃げ切った。",
+            ]
+        )
+
+        result = body_validator.validate_body_candidate(
+            text,
+            "postgame",
+            rendered_html=SOURCE_HTML,
+            source_context={
+                "title": "試合結果 巨人 3-2 阪神",
+                "summary": "4月21日、巨人が阪神に3-2で勝利した。戸郷翔征が7回1失点で試合をつくった。",
+                "scoreline": "3-2",
+                "opponent": "阪神",
+            },
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["action"], "fail")
+        self.assertIn("postgame_first_team_player_unverified", result["fail_axes"])
+        self.assertEqual(result["stop_reason"], "postgame_first_team_player_unverified")
+
+    def test_postgame_first_team_score_fabrication_blocks(self):
+        text = "\n".join(
+            [
+                "【試合結果】",
+                "4月21日、巨人が阪神に19対1で勝利した。",
+                "【ハイライト】",
+                "終盤に勝ち越し打が出た。",
+                "【選手成績】",
+                "先発は7回1失点だった。",
+                "【試合展開】",
+                "中盤以降に試合の流れをつかんだ。",
+            ]
+        )
+
+        result = body_validator.validate_body_candidate(
+            text,
+            "postgame",
+            rendered_html=SOURCE_HTML,
+            source_context={
+                "title": "巨人阪神戦 試合結果",
+                "summary": "4月21日、巨人が阪神に1-11で試合を終えた。",
+                "scoreline": "1-11",
+                "opponent": "阪神",
+            },
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["action"], "fail")
+        self.assertIn("postgame_first_team_score_fabrication", result["fail_axes"])
+        self.assertEqual(result["stop_reason"], "postgame_first_team_score_fabrication")
+
+    def test_postgame_with_full_source_facts_passes(self):
+        text = "\n".join(
+            [
+                "【試合結果】",
+                "4月21日、巨人が阪神に3-2で勝利した。",
+                "【ハイライト】",
+                "終盤に岡本の決勝打が出た。",
+                "【選手成績】",
+                "先発の戸郷は7回1失点で好投した。",
+                "【試合展開】",
+                "終盤の継投で逃げ切った。",
+            ]
+        )
+
+        result = body_validator.validate_body_candidate(
+            text,
+            "postgame",
+            rendered_html=SOURCE_HTML,
+            source_context={
+                "title": "試合結果 巨人 3-2 阪神",
+                "summary": "4月21日、巨人が阪神に3-2で勝利した。戸郷翔征が7回1失点で試合をつくり、岡本和真が決勝打を放った。",
+                "scoreline": "3-2",
+                "opponent": "阪神",
+            },
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "accept")
+        self.assertNotIn("postgame_first_team_player_unverified", result["fail_axes"])
+        self.assertNotIn("postgame_first_team_score_fabrication", result["fail_axes"])
+
+    def test_postgame_with_farm_marker_skips_first_team_check(self):
+        text = "\n".join(
+            [
+                "【試合結果】",
+                "4月21日、巨人二軍が楽天に19対1で勝利した。",
+                "【ハイライト】",
+                "浅野の決勝打が出た。",
+                "【選手成績】",
+                "先発は7回1失点だった。",
+                "【試合展開】",
+                "終盤まで主導権を渡さなかった。",
+            ]
+        )
+
+        result = body_validator.validate_body_candidate(
+            text,
+            "postgame",
+            rendered_html=SOURCE_HTML,
+            source_context={
+                "title": "巨人二軍 試合結果",
+                "summary": "巨人二軍の試合後記事を整理する。",
+                "scoreline": "19-1",
+                "opponent": "楽天",
+            },
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "accept")
+        self.assertNotIn("postgame_first_team_player_unverified", result["fail_axes"])
+        self.assertNotIn("postgame_first_team_score_fabrication", result["fail_axes"])
+
 
 class BodyValidatorSourceAttributionTests(unittest.TestCase):
     @staticmethod

@@ -71,6 +71,8 @@ HARD_FAIL_AXES = {
     "postgame_score_missing",
     "postgame_win_loss_missing",
     "postgame_decisive_event_missing",
+    "postgame_first_team_player_unverified",
+    "postgame_first_team_score_fabrication",
 }
 
 POSTGAME_RESULT_HEADING = "【試合結果】"
@@ -90,6 +92,37 @@ POSTGAME_DECISIVE_EVENT_RE = re.compile(
 )
 POSTGAME_COMMENT_SLOT_RE = re.compile(
     r"(コメントで教えてください|意見はコメントで|コメント欄で教えてください|感想・コメントをお願いします)"
+)
+_FARM_MARKER_RE = re.compile(r"(二軍|三軍|ファーム|farm|Farm|FARM)")
+_SCORE_TOKEN_RE = re.compile(r"\d+\s*(?:[－\-–]|対)\s*\d+")
+_NAME_TOKEN_RE = re.compile(r"[一-龥々ァ-ヴーA-Za-z]{2,10}")
+_FIRST_TEAM_POSTGAME_NAME_KEYWORDS = ("決勝打", "先発", "好投", "本塁打")
+_GENERIC_NAME_EXCLUSIONS = frozenset(
+    {
+        "試合結果",
+        "ハイライト",
+        "選手成績",
+        "試合展開",
+        "巨人",
+        "一軍",
+        "二軍",
+        "三軍",
+        "ファーム",
+        "相手",
+        "先発",
+        "好投",
+        "本塁打",
+        "決勝打",
+        "勝利",
+        "敗戦",
+        "引分け",
+        "引き分け",
+        "終盤",
+        "流れ",
+        "継投",
+        "投手",
+        "打線",
+    }
 )
 POSTGAME_ABSTRACT_LEAD_PREFIXES = (
     "激闘だった",
@@ -188,6 +221,82 @@ def _source_ref_texts(source_context: dict[str, object] | None) -> tuple[str, ..
         if value:
             values.append(value)
     return tuple(values)
+
+
+def _normalize_score_token(token: str) -> str:
+    return re.sub(r"\s+", "", token or "").replace("－", "-").replace("–", "-")
+
+
+def _is_probable_name_token(token: str) -> bool:
+    candidate = str(token or "").strip()
+    if not candidate or not _NAME_TOKEN_RE.fullmatch(candidate):
+        return False
+    return candidate not in _GENERIC_NAME_EXCLUSIONS
+
+
+def _is_first_team_postgame(title: str, body_text: str) -> bool:
+    blob = f"{title}\n{body_text}"
+    return not bool(_FARM_MARKER_RE.search(blob))
+
+
+def _validate_first_team_postgame_anchor(
+    title: str,
+    body_text: str,
+    source_context: dict[str, object] | None,
+) -> list[str]:
+    fail_axes: list[str] = []
+    if not _is_first_team_postgame(title, body_text):
+        return fail_axes
+
+    source_context = source_context or {}
+    source_parts = list(_source_ref_texts(source_context))
+    for key in ("scoreline", "opponent"):
+        value = str(source_context.get(key) or "").strip()
+        if value:
+            source_parts.append(value)
+    raw_entity_tokens = source_context.get("entity_tokens")
+    if isinstance(raw_entity_tokens, str):
+        token = raw_entity_tokens.strip()
+        if token:
+            source_parts.append(token)
+    elif isinstance(raw_entity_tokens, (list, tuple, set, frozenset)):
+        for item in raw_entity_tokens:
+            token = str(item or "").strip()
+            if token:
+                source_parts.append(token)
+
+    source_blob = " ".join(part for part in source_parts if part)
+    if not source_blob.strip():
+        return fail_axes
+
+    source_scores = {_normalize_score_token(match.group(0)) for match in _SCORE_TOKEN_RE.finditer(source_blob)}
+    body_scores = {_normalize_score_token(match.group(0)) for match in _SCORE_TOKEN_RE.finditer(body_text)}
+    if body_scores and not body_scores.issubset(source_scores):
+        fail_axes.append("postgame_first_team_score_fabrication")
+
+    source_names = {
+        token
+        for token in _NAME_TOKEN_RE.findall(source_blob)
+        if _is_probable_name_token(token)
+    }
+    body_names = {
+        token
+        for token in _NAME_TOKEN_RE.findall(body_text)
+        if _is_probable_name_token(token)
+    }
+
+    suspect_names = {
+        name
+        for name in body_names
+        if not any(name in source_name or source_name in name for source_name in source_names)
+    }
+    for name in sorted(suspect_names, key=len, reverse=True):
+        for match in re.finditer(re.escape(name), body_text):
+            window = body_text[max(0, match.start() - 20):match.end() + 20]
+            if any(keyword in window for keyword in _FIRST_TEAM_POSTGAME_NAME_KEYWORDS):
+                fail_axes.append("postgame_first_team_player_unverified")
+                return fail_axes
+    return fail_axes
 
 
 def _guard_entity_tokens(title: str, source_context: dict[str, object] | None) -> tuple[str, ...]:
@@ -383,6 +492,7 @@ def validate_body_candidate(
 
     if article_subtype == "postgame":
         fail_axes.extend(_validate_postgame_fact_kernel(body_text))
+        fail_axes.extend(_validate_first_team_postgame_anchor(title, body_text, source_context))
 
     stop_reason = ""
     action = "accept"

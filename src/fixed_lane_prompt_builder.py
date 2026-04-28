@@ -150,6 +150,8 @@ CONTRACTS: dict[str, FixedLanePromptContract] = {
         fallback_copy=(
             "事実が薄い場合でも、score / opponent / win-loss / decisive event / source link だけは残す。",
             "不足分を感想や一般論で埋めない。fan_view は最後の1文だけにする。",
+            "source/meta にない数字(スコア・打数・投球回・本塁打数等)を本文に書かない。score がない場合は『公式発表待ち』『source 記載なし』で止める。",
+            "source/meta にない選手名を本文に書かない。一軍 postgame 記事で対戦相手選手を巨人選手として扱わない。",
         ),
         validator_subtype="postgame",
     ),

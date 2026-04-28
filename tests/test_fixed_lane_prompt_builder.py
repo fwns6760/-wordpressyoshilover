@@ -75,6 +75,11 @@ class FixedLanePromptBuilderTests(unittest.TestCase):
         self.assertIn("勝敗を動かした出来事を最低1つ入れる", prompt)
         self.assertIn(body_validator.POSTGAME_HIGHLIGHT_HEADING, prompt)
 
+    def test_postgame_contract_fallback_copy_includes_no_fabrication_anchor(self):
+        prompt = self._build_prompt("postgame")
+        self.assertIn("source/meta にない数字(スコア・打数・投球回・本塁打数等)を本文に書かない。", prompt)
+        self.assertIn("source/meta にない選手名を本文に書かない。", prompt)
+
     def test_special_subtypes_require_explicit_x_attribution(self):
         for subtype in ("program", "notice", "probable_starter"):
             with self.subTest(subtype=subtype):

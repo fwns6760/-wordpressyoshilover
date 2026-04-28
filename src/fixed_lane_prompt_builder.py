@@ -131,6 +131,8 @@ CONTRACTS: dict[str, FixedLanePromptContract] = {
         fallback_copy=(
             "個別成績が不足する場合は score と主な出来事だけに絞る。",
             "一軍昇格の示唆は source に無ければ『今後の材料として見たい』程度に止める。",
+            "source/meta にない数字(安打数・打点・投球回・失点等)を本文に書かない。numeric weak の場合は『二軍試合速報待ち』『source 記載なし』で止める。",
+            "source/meta にない選手名を本文に書かない。一軍昇格断定や決勝打・好投の主語を source 外の名前で書かない。",
         ),
         validator_subtype="farm",
     ),

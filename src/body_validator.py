@@ -68,6 +68,9 @@ HARD_FAIL_AXES = {
     "TITLE_BODY_ENTITY_MISMATCH",
     "source_block_missing",
     "source_attribution_ambiguous",
+    "farm_result_player_unverified",
+    "farm_result_numeric_fabrication",
+    "farm_lineup_lineup_missing",
     "postgame_score_missing",
     "postgame_win_loss_missing",
     "postgame_decisive_event_missing",
@@ -94,6 +97,8 @@ POSTGAME_COMMENT_SLOT_RE = re.compile(
     r"(コメントで教えてください|意見はコメントで|コメント欄で教えてください|感想・コメントをお願いします)"
 )
 _FARM_MARKER_RE = re.compile(r"(二軍|三軍|ファーム|farm|Farm|FARM)")
+_FARM_POSITIVE_MARKER_RE = re.compile(r"(二軍|三軍|ファーム|farm|Farm|FARM)")
+_LINEUP_MARKER_RE = re.compile(r"(1番|2番|3番|4番|5番|先発|スタメン)")
 _SCORE_TOKEN_RE = re.compile(r"\d+\s*(?:[－\-–]|対)\s*\d+")
 _NAME_TOKEN_RE = re.compile(r"[一-龥々ァ-ヴーA-Za-z]{2,10}")
 _FIRST_TEAM_POSTGAME_NAME_KEYWORDS = ("決勝打", "先発", "好投", "本塁打")
@@ -299,6 +304,104 @@ def _validate_first_team_postgame_anchor(
     return fail_axes
 
 
+def _is_farm_result_article(title: str, body_text: str, subtype: str) -> bool:
+    if str(subtype or "").strip().lower() != "farm_result":
+        return False
+    blob = f"{title}\n{body_text}"
+    return bool(_FARM_POSITIVE_MARKER_RE.search(blob))
+
+
+def _is_farm_lineup_article(title: str, body_text: str, subtype: str) -> bool:
+    if str(subtype or "").strip().lower() != "farm_lineup":
+        return False
+    blob = f"{title}\n{body_text}"
+    return bool(_FARM_POSITIVE_MARKER_RE.search(blob))
+
+
+def _validate_farm_result_anchor(
+    title: str,
+    body_text: str,
+    source_context: dict[str, object] | None,
+) -> list[str]:
+    fail_axes: list[str] = []
+    if not _is_farm_result_article(title, body_text, "farm_result"):
+        return fail_axes
+
+    source_context = source_context or {}
+    source_parts = list(_source_ref_texts(source_context))
+    for key in ("scoreline", "opponent"):
+        value = str(source_context.get(key) or "").strip()
+        if value:
+            source_parts.append(value)
+    raw_entity_tokens = source_context.get("entity_tokens")
+    if isinstance(raw_entity_tokens, str):
+        token = raw_entity_tokens.strip()
+        if token:
+            source_parts.append(token)
+    elif isinstance(raw_entity_tokens, (list, tuple, set, frozenset)):
+        for item in raw_entity_tokens:
+            token = str(item or "").strip()
+            if token:
+                source_parts.append(token)
+
+    source_blob = " ".join(part for part in source_parts if part)
+    body_fact_text = "\n".join(
+        line
+        for _, lines in _extract_blocks(body_text)
+        for line in lines
+    ) or body_text
+    body_numbers = set(re.findall(r"\d+", body_fact_text))
+    source_numbers = set(re.findall(r"\d+", source_blob))
+    if body_numbers and not body_numbers.issubset(source_numbers):
+        fail_axes.append("farm_result_numeric_fabrication")
+
+    def _is_probable_farm_name(token: str) -> bool:
+        candidate = str(token or "").strip()
+        if not _is_probable_name_token(candidate):
+            return False
+        if "昇格" in candidate:
+            return False
+        return candidate not in {"候補", "注目", "示唆"}
+
+    source_names = {
+        token
+        for token in _NAME_TOKEN_RE.findall(source_blob)
+        if _is_probable_farm_name(token)
+    }
+    body_names = {
+        token
+        for token in _NAME_TOKEN_RE.findall(body_fact_text)
+        if _is_probable_farm_name(token)
+    }
+
+    suspect_names = {
+        name
+        for name in body_names
+        if not any(name in source_name or source_name in name for source_name in source_names)
+    }
+    for name in sorted(suspect_names, key=len, reverse=True):
+        for match in re.finditer(re.escape(name), body_fact_text):
+            window = body_fact_text[max(0, match.start() - 20):match.end() + 20]
+            if any(keyword in window for keyword in ("好投", "本塁打", "決勝", "昇格")):
+                fail_axes.append("farm_result_player_unverified")
+                return fail_axes
+    return fail_axes
+
+
+def _validate_farm_lineup_anchor(
+    title: str,
+    body_text: str,
+    source_context: dict[str, object] | None,
+) -> list[str]:
+    del source_context
+    fail_axes: list[str] = []
+    if not _is_farm_lineup_article(title, body_text, "farm_lineup"):
+        return fail_axes
+    if not _LINEUP_MARKER_RE.search(body_text):
+        fail_axes.append("farm_lineup_lineup_missing")
+    return fail_axes
+
+
 def _guard_entity_tokens(title: str, source_context: dict[str, object] | None) -> tuple[str, ...]:
     if not source_context:
         return ()
@@ -403,12 +506,27 @@ def validate_body_candidate(
     rendered_html: str | None = None,
     source_context: dict[str, object] | None = None,
 ) -> dict[str, object]:
+    title = str((source_context or {}).get("title") or "").strip()
     expected = list(expected_block_order(article_subtype))
     if not expected:
+        fail_axes: list[str] = []
+        if article_subtype == "farm_result":
+            fail_axes.extend(_validate_farm_result_anchor(title, body_text, source_context))
+        elif article_subtype == "farm_lineup":
+            fail_axes.extend(_validate_farm_lineup_anchor(title, body_text, source_context))
+        stop_reason = ""
+        action = "accept"
+        hard_fail_axes = [axis for axis in fail_axes if axis in HARD_FAIL_AXES]
+        if hard_fail_axes:
+            action = "fail"
+            stop_reason = hard_fail_axes[0]
+        elif fail_axes:
+            action = "reroll"
+            stop_reason = fail_axes[0]
         return {
-            "ok": True,
-            "action": "accept",
-            "fail_axes": [],
+            "ok": not fail_axes,
+            "action": action,
+            "fail_axes": fail_axes,
             "expected_first_block": "",
             "actual_first_block": "",
             "expected_block_order": [],
@@ -422,14 +540,13 @@ def validate_body_candidate(
             "has_t1_web_source": False,
             "required_sources": [],
             "missing_required_sources": [],
-            "stop_reason": "",
+            "stop_reason": stop_reason,
         }
 
     actual_headings = _extract_headings(body_text)
     actual_first_block = actual_headings[0] if actual_headings else ""
     missing_required_blocks = [heading for heading in expected if heading not in actual_headings]
     fail_axes: list[str] = []
-    title = str((source_context or {}).get("title") or "").strip()
     entity_tokens = _guard_entity_tokens(title, source_context)
     has_fact_conflict_context = bool(
         title
@@ -493,6 +610,10 @@ def validate_body_candidate(
     if article_subtype == "postgame":
         fail_axes.extend(_validate_postgame_fact_kernel(body_text))
         fail_axes.extend(_validate_first_team_postgame_anchor(title, body_text, source_context))
+    elif article_subtype == "farm_result":
+        fail_axes.extend(_validate_farm_result_anchor(title, body_text, source_context))
+    elif article_subtype == "farm_lineup":
+        fail_axes.extend(_validate_farm_lineup_anchor(title, body_text, source_context))
 
     stop_reason = ""
     action = "accept"

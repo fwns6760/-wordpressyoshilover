@@ -351,6 +351,124 @@ class BodyValidatorTests(unittest.TestCase):
         self.assertNotIn("postgame_first_team_player_unverified", result["fail_axes"])
         self.assertNotIn("postgame_first_team_score_fabrication", result["fail_axes"])
 
+    def test_farm_result_player_unverified_blocks(self):
+        text = "\n".join(
+            [
+                "【二軍結果・活躍の要旨】",
+                "4月21日、巨人二軍が楽天に3-2で勝利した。",
+                "【ファームのハイライト】",
+                "終盤に山瀬の決勝打が出た。",
+                "【二軍個別選手成績】",
+                "又木は5回1失点で好投した。",
+                "【一軍への示唆】",
+                "この内容を次戦にもつなげたい。",
+            ]
+        )
+
+        result = body_validator.validate_body_candidate(
+            text,
+            "farm_result",
+            rendered_html=SOURCE_HTML,
+            source_context={
+                "title": "巨人二軍 3-2 楽天",
+                "summary": "4月21日、巨人二軍が楽天に3-2で勝利した。又木鉄平が5回1失点で試合をつくった。",
+                "scoreline": "3-2",
+                "opponent": "楽天",
+            },
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["action"], "fail")
+        self.assertIn("farm_result_player_unverified", result["fail_axes"])
+        self.assertEqual(result["stop_reason"], "farm_result_player_unverified")
+
+    def test_farm_result_numeric_fabrication_blocks(self):
+        text = "\n".join(
+            [
+                "【二軍結果・活躍の要旨】",
+                "4月21日、巨人二軍が楽天に19対1で勝利した。",
+                "【ファームのハイライト】",
+                "終盤まで主導権を渡さなかった。",
+                "【二軍個別選手成績】",
+                "投手陣が流れをつくった。",
+                "【一軍への示唆】",
+                "次戦でも継続したい内容だった。",
+            ]
+        )
+
+        result = body_validator.validate_body_candidate(
+            text,
+            "farm_result",
+            rendered_html=SOURCE_HTML,
+            source_context={
+                "title": "巨人二軍 1-11 楽天",
+                "summary": "4月21日、巨人二軍が楽天に1-11で敗れた。",
+                "scoreline": "1-11",
+                "opponent": "楽天",
+            },
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["action"], "fail")
+        self.assertIn("farm_result_numeric_fabrication", result["fail_axes"])
+        self.assertEqual(result["stop_reason"], "farm_result_numeric_fabrication")
+
+    def test_farm_lineup_missing_lineup_marker_blocks(self):
+        text = "\n".join(
+            [
+                "【二軍試合概要】",
+                "4月21日、巨人二軍が楽天戦に向けて調整を進める。",
+                "【注目ポイント】",
+                "攻守の組み合わせをどこまで見せるかが焦点になる。",
+            ]
+        )
+
+        result = body_validator.validate_body_candidate(
+            text,
+            "farm_lineup",
+            rendered_html=SOURCE_HTML,
+            source_context={
+                "title": "巨人二軍 楽天戦のメンバー発表",
+                "summary": "4月21日の楽天戦へ向けた二軍の試合前情報を整理する。",
+            },
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["action"], "fail")
+        self.assertIn("farm_lineup_lineup_missing", result["fail_axes"])
+        self.assertEqual(result["stop_reason"], "farm_lineup_lineup_missing")
+
+    def test_farm_result_with_full_source_facts_passes(self):
+        text = "\n".join(
+            [
+                "【二軍結果・活躍の要旨】",
+                "4月21日、巨人二軍が楽天に3-2で勝利した。",
+                "【ファームのハイライト】",
+                "浅野の決勝打で終盤に勝ち越した。",
+                "【二軍個別選手成績】",
+                "浅野は2安打、又木は5回1失点で好投した。",
+                "【一軍への示唆】",
+                "浅野は一軍昇格候補として次戦でも注目される。",
+            ]
+        )
+
+        result = body_validator.validate_body_candidate(
+            text,
+            "farm_result",
+            rendered_html=SOURCE_HTML,
+            source_context={
+                "title": "巨人二軍 3-2 楽天",
+                "summary": "4月21日、巨人二軍が楽天に3-2で勝利した。浅野翔吾が2安打の決勝打を放ち、又木鉄平が5回1失点で好投した。浅野翔吾は一軍昇格候補として次戦でも注目される。",
+                "scoreline": "3-2",
+                "opponent": "楽天",
+            },
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "accept")
+        self.assertNotIn("farm_result_player_unverified", result["fail_axes"])
+        self.assertNotIn("farm_result_numeric_fabrication", result["fail_axes"])
+
 
 class BodyValidatorSourceAttributionTests(unittest.TestCase):
     @staticmethod

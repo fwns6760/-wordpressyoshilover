@@ -80,6 +80,11 @@ class FixedLanePromptBuilderTests(unittest.TestCase):
         self.assertIn("source/meta にない数字(スコア・打数・投球回・本塁打数等)を本文に書かない。", prompt)
         self.assertIn("source/meta にない選手名を本文に書かない。", prompt)
 
+    def test_farm_result_contract_fallback_copy_includes_source_anchor_lines(self):
+        prompt = self._build_prompt("farm_result")
+        self.assertIn("source/meta にない数字(安打数・打点・投球回・失点等)を本文に書かない。", prompt)
+        self.assertIn("source/meta にない選手名を本文に書かない。", prompt)
+
     def test_special_subtypes_require_explicit_x_attribution(self):
         for subtype in ("program", "notice", "probable_starter"):
             with self.subTest(subtype=subtype):

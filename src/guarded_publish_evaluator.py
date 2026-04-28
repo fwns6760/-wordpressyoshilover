@@ -1736,6 +1736,7 @@ def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -
             "source_summary": source_summary_text,
         },
         publish_time_iso=str(raw_post.get("date") or record.get("created_at") or modified or ""),
+        subtype=str(subtype_resolution["resolved_subtype"] or record.get("article_subtype", "")),
     )
     x_candidate_suppress_flags = list(consistency_report.x_candidate_suppress_flags)
     x_candidate_suppress_details = [

@@ -111,6 +111,8 @@ NAME_STOPWORDS = frozenset(
         "東京ドーム",
     }
 )
+STRICT_SUBTYPES = frozenset({"postgame", "farm_result", "lineup", "farm_lineup", "pregame", "probable_starter"})
+LENIENT_SUBTYPES = frozenset({"manager_comment", "player_comment", "sns_topic", "rumor_market"})
 
 
 @dataclass(frozen=True)
@@ -479,6 +481,49 @@ def _source_metadata_text(metadata: Mapping[str, Any] | None) -> str:
             if text:
                 parts.append(text)
     return "\n".join(parts)
+
+
+def _normalized_subtype(subtype: str) -> str:
+    return str(subtype or "").strip().lower()
+
+
+def _effective_article_severity(*, subtype: str, scope: str, severity: str) -> str:
+    normalized_subtype = _normalized_subtype(subtype)
+    if scope != "article" or severity != "hard_stop":
+        return severity
+    if normalized_subtype in STRICT_SUBTYPES:
+        return severity
+    if normalized_subtype in LENIENT_SUBTYPES:
+        return "review"
+    return "review"
+
+
+def _apply_subtype_severity(
+    findings: Sequence[ConsistencyFinding],
+    *,
+    subtype: str,
+) -> tuple[ConsistencyFinding, ...]:
+    adjusted: list[ConsistencyFinding] = []
+    for finding in findings:
+        effective_severity = _effective_article_severity(
+            subtype=subtype,
+            scope=finding.scope,
+            severity=finding.severity,
+        )
+        if effective_severity == finding.severity:
+            adjusted.append(finding)
+            continue
+        adjusted.append(
+            ConsistencyFinding(
+                flag=finding.flag,
+                severity=effective_severity,
+                axis=finding.axis,
+                scope=finding.scope,
+                detail=finding.detail,
+                context=dict(finding.context),
+            )
+        )
+    return tuple(adjusted)
 
 
 def _choose_unique_score(tokens: Sequence[ScoreToken]) -> tuple[ScoreToken | None, bool]:
@@ -880,6 +925,7 @@ def check_consistency(
     x_candidates: Sequence[str],
     metadata: Mapping[str, Any] | None,
     publish_time_iso: str,
+    subtype: str = "",
 ) -> ConsistencyReport:
     normalized_source = "\n".join(part for part in (str(source_text or ""), _source_metadata_text(metadata)) if part)
     normalized_body = str(generated_body or "")
@@ -916,11 +962,12 @@ def check_consistency(
         metadata=metadata,
         publish_time_iso=publish_time_iso,
     )
+    effective_findings = _apply_subtype_severity(findings, subtype=subtype)
 
-    hard_stop_flags = _dedupe(finding.flag for finding in findings if finding.severity == "hard_stop")
-    review_flags = _dedupe(finding.flag for finding in findings if finding.severity == "review")
+    hard_stop_flags = _dedupe(finding.flag for finding in effective_findings if finding.severity == "hard_stop")
+    review_flags = _dedupe(finding.flag for finding in effective_findings if finding.severity == "review")
     x_candidate_suppress_flags = _dedupe(
-        finding.flag for finding in findings if finding.severity == "x_candidate_suppress"
+        finding.flag for finding in effective_findings if finding.severity == "x_candidate_suppress"
     )
     severity = "pass"
     if hard_stop_flags:
@@ -931,7 +978,7 @@ def check_consistency(
         severity = "x_candidate_suppress"
     return ConsistencyReport(
         severity=severity,
-        findings=tuple(findings),
+        findings=effective_findings,
         hard_stop_flags=hard_stop_flags,
         review_flags=review_flags,
         x_candidate_suppress_flags=x_candidate_suppress_flags,

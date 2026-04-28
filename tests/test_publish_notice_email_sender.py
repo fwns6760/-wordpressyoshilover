@@ -991,6 +991,74 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
             "【要確認】【巨人】浅野翔吾が出場選手登録 | YOSHILOVER",
         )
 
+    def test_injury_recovery_notice_helper_hits_for_kega_marker(self):
+        request = self._request(
+            subtype="notice",
+            title="【巨人】赤星優志が右肩離脱",
+            summary="別メニュー調整となった。",
+        )
+
+        self.assertTrue(sender._is_injury_recovery_notice(request.title, request.summary or "", request.subtype))
+
+    def test_injury_recovery_notice_review_forces_x_post_off(self):
+        request = self._request(
+            subtype="notice",
+            title="【巨人】赤星優志が右肩離脱",
+            summary="状態を見ながら調整する。",
+        )
+        context = sender._manual_x_context(request)
+        with patch.object(sender, "_CAUTIOUS_REVIEW_ARTICLE_TYPES", frozenset()):
+            classification = sender._classify_mail(request)
+
+        self.assertEqual(
+            sender._injury_recovery_notice_review_reason(request, context),
+            "injury_recovery_notice_review",
+        )
+        self.assertEqual(classification["mail_class"], "review")
+        self.assertEqual(classification["reason"], "injury_recovery_notice_review")
+        self.assertEqual(classification["x_post_ready"], "false")
+
+    def test_default_review_helper_hits_for_unknown_subtype(self):
+        self.assertTrue(sender._is_default_review("default"))
+        self.assertTrue(sender._is_default_review(""))
+
+    def test_default_review_forces_x_post_off(self):
+        request = self._request(
+            subtype="default",
+            title="巨人イベント情報を更新",
+            summary=None,
+        )
+        classification = sender._classify_mail(request)
+
+        self.assertEqual(classification["mail_class"], "review")
+        self.assertEqual(classification["reason"], "default_review")
+        self.assertEqual(classification["x_post_ready"], "false")
+        self.assertEqual(
+            sender.build_subject(request.title, classification=classification),
+            "【要確認】巨人イベント情報を更新 | YOSHILOVER",
+        )
+
+    def test_clean_injury_with_full_diagnosis_keeps_x_candidate(self):
+        request = self._request(
+            subtype="notice",
+            title="【巨人】赤星優志が右肩離脱",
+            summary="右肩の張りと診断され、復帰時期は5月上旬を見込む。",
+        )
+        context = sender._manual_x_context(request)
+        with patch.object(
+            sender,
+            "_SAFE_X_CANDIDATE_ARTICLE_TYPES",
+            sender._SAFE_X_CANDIDATE_ARTICLE_TYPES | frozenset({"notice"}),
+        ), patch.object(sender, "_CAUTIOUS_REVIEW_ARTICLE_TYPES", frozenset()), patch.object(
+            sender, "_manual_x_has_sensitive_word", return_value=False
+        ):
+            classification = sender._classify_mail(request)
+
+        self.assertIsNone(sender._injury_recovery_notice_review_reason(request, context))
+        self.assertEqual(classification["mail_class"], "x_candidate")
+        self.assertEqual(classification["reason"], "manual_x_candidates_clean")
+        self.assertEqual(classification["x_post_ready"], "true")
+
     def test_clean_program_with_full_metadata_keeps_x_candidate(self):
         request = self._request(
             subtype="program",

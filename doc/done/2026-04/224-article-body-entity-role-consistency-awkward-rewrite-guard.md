@@ -4,12 +4,14 @@
 
 - number: 224
 - type: dev / quality
-- status: READY(impl 進行中、`bif6lgn6p`)
+- status: **CLOSED**(2026-04-28、commit `84ed848` landed、guarded-publish image rebuild `25f176b` で live 反映、awkward_role_phrasing flag pattern 動作確認)
 - priority: P0.5
 - lane: Codex B
 - created: 2026-04-27
+- closed: 2026-04-28
 - parent: 217 publish gate hotfix / 200 scanner subtype fallback
 - related: 225(X candidate text quality hardening)
+- last_commit: `84ed848` 224: article body entity-role consistency awkward rewrite guard
 
 ## background
 

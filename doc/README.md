@@ -76,11 +76,17 @@ doc/
 
 - `A`: Codex A lane, ops / mail / cron / publish runner / WP REST / backup / history / queue / doc commit work
 - `B`: Codex B lane, evaluator / validator / article quality / duplicate suppression / source / subtype / tests / audit work
-- `Codex-M`: board hygiene / status reconciliation / numbering / prompt-prep lane when Claude is unavailable or needs narrow doc work
 - `either`: either Codex lane can take it after write-scope check
 - `Claude`: Claude orchestration or read-only operation
 - `User`: user-side operation or final judgment
 - `Front-Claude`: front/plugin lane outside backend ownership
+
+Current lane lock(2026-04-28 JST):
+
+- Active implementation lanes are **Codex A** and **Codex B** only.
+- Do not dispatch to `Codex C`.
+- Do not dispatch to `Codex-M` in current active operations. Older docs may mention it as a historical / parked helper lane, but it is not available unless explicitly reintroduced.
+- Doc-only close cleanup that requires a commit must be assigned to Codex A or Codex B explicitly; Claude does not commit.
 
 ## authenticated executor boundary
 
@@ -1171,18 +1177,19 @@ doc/
 
 - **alias**: -
 - **priority**: P0.5
-- **status**: READY(impl 進行中 `bif6lgn6p`)
-- **owner**: Codex B
-- **lane**: dev / quality
-- **ready_for**: implementation
-- **next_action**: detector + safe_rewrite + awkward_role_phrasing flag を Yellow 扱いで evaluator 統合、`bif6lgn6p` 着地後 verify
+- **status**: **CLOSED**(2026-04-28、commit `84ed848` landed、guarded-publish image rebuild `25f176b` で live 反映)
+- **owner**: Codex B(impl)/ Claude(dispatch + accept + push)
+- **lane**: B
+- **ready_for**: none
+- **next_action**: none(awkward_role_phrasing detector landed + live)
 - **blocked_by**: none
 - **user_action_required**: none
 - **write_scope**: `src/article_entity_role_consistency.py`(新規)+ `src/guarded_publish_evaluator.py` + tests
-- **doc_path**: `doc/active/224-article-body-entity-role-consistency-awkward-rewrite-guard.md`
-- **acceptance**: 不自然 `人名+肩書き+となって/となり` 検出 + safe rewrite + Yellow flag、既存 hard_stop 不変
-- **repo_state**: doc 起票済、impl 進行中
-- **commit_state**: `bif6lgn6p` in flight
+- **doc_path**: `doc/done/2026-04/224-article-body-entity-role-consistency-awkward-rewrite-guard.md`
+- **acceptance**: ✓ 不自然 `人名+肩書き+となって/となり` 検出 + safe rewrite + Yellow flag、既存 hard_stop 不変、guarded-publish live で動作中
+- **repo_state**: pushed
+- **commit_state**: `84ed848`
+- **last_commit**: `84ed848` 224: article body entity-role consistency awkward rewrite guard
 - **parent**: 217 / 200
 
 ### 225 / MKT-008 x-post-candidate-text-quality-hardening
@@ -1327,20 +1334,20 @@ doc/
 
 - **alias**: -
 - **priority**: P0.5
-- **status**: REVIEW_NEEDED
-- **owner**: Codex B(implementation)/ Claude(dispatch + accept + push + live verify)
+- **status**: **CLOSED**(2026-04-28、commit `c328772` landed、guarded-publish image rebuild `c328772` で live 反映、family-context dry-run + boundary fixture verify pass)
+- **owner**: Codex B(impl)/ Claude(dispatch + accept + push + live verify)
 - **lane**: B
-- **ready_for**: Claude review / authenticated executor live verify
-- **next_action**: family-context skip helper と 6 fixture の regression coverage を review し、image rebuild 後に 63475 / 63470 type の live verify を実施する
+- **ready_for**: none
+- **next_action**: none(narrow design 動作確認済み、63475/63470 type は hard_stop 解除、player-self serious 真陽性維持)
 - **blocked_by**: none
-- **user_action_required**: none(scope 確定済み、Codex B fire 可)
-- **write_scope**: `src/guarded_publish_evaluator.py`, `tests/test_guarded_publish_evaluator.py`, `doc/active/242-E-death-or-grave-family-context-precision.md`, `doc/active/242-auto-publish-gate-regression-off-topic-published-and-eligible-held.md`, `doc/README.md`, `doc/active/assignments.md`
-- **doc_path**: `doc/active/242-E-death-or-grave-family-context-precision.md`
-- **acceptance**: 63475/63470 type(family death co-occurrence)が hard_stop しない / player-self death・grave injury・long-term recovery 真陽性は hard_stop 維持 / 242-A/D/D2 既存挙動不変 / Gemini/LLM call 追加なし / pytest `124 → 130`(6 fixture 追加) 全 pass
-- **repo_state**: local impl + targeted pytest pass
-- **commit_state**: local impl ready for Claude review / push (`124 → 130`, 14 subtests pass)
-- **next_prompt_path**: `doc/active/242-E-death-or-grave-family-context-precision.md`
-- **last_commit**: -
+- **user_action_required**: none
+- **write_scope**: `src/guarded_publish_evaluator.py`, `tests/test_guarded_publish_evaluator.py`, `doc/done/2026-04/242-E-death-or-grave-family-context-precision.md`, `doc/active/242-auto-publish-gate-regression-off-topic-published-and-eligible-held.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/done/2026-04/242-E-death-or-grave-family-context-precision.md`
+- **acceptance**: ✓ 63475/63470 type(family death co-occurrence)が hard_stop skip 確認 / player-self death・grave injury・long-term recovery 真陽性は hard_stop 維持 / 242-A/D/D2 既存挙動不変 / Gemini/LLM call 追加なし / pytest 130/130/14 subtests pass
+- **repo_state**: pushed
+- **commit_state**: `c328772`
+- **next_prompt_path**: -
+- **last_commit**: `c328772` 242-E: DEATH_OR_GRAVE_INCIDENT_RE family-context precision narrow fix (63475/63470 type) + fixtures
 - **parent**: 242 / 242-A
 
 ### 130 pub004-hard-stop-vs-repairable-before-publish

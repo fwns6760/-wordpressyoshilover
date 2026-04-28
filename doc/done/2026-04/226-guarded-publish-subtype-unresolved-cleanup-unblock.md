@@ -4,11 +4,13 @@
 
 - number: 226
 - type: dev / quality / publish gate
-- status: READY(impl 進行中、`bhnmw4tc7`)
+- status: **CLOSED**(2026-04-28、commit `357a53c` landed、guarded-publish image rebuild `25f176b` で live 反映、subtype_unresolved + cleanup_failed_post_condition の safe case が Yellow 降格動作確認)
 - priority: P0.5
 - lane: **Codex B**(quality / evaluator / cleanup chain)
 - created: 2026-04-27
+- closed: 2026-04-28
 - parent: 217 publish gate hotfix / 200 scanner subtype fallback / 224 entity-role consistency
+- last_commit: `357a53c` 226: subtype_unresolved + cleanup_failed_post_condition の安全 case を publishable Yellow に降格
 
 ## background
 

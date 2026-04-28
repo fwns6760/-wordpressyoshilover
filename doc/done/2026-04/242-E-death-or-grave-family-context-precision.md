@@ -2,7 +2,7 @@
 
 - number: 242-E
 - type: incident follow-up / narrow precision correction
-- status: REVIEW_NEEDED
+- status: **CLOSED**(2026-04-28、image rebuild `c328772` で live 反映、dry-run + boundary fixture verify で narrow 設計通り動作確認)
 - priority: P0.5
 - parent: 242 / 242-A
 - related: 242, 242-A, 242-D, 242-D2, 154 publish-policy

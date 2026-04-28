@@ -163,12 +163,18 @@ class _FakeGeminiResponse(io.BytesIO):
         return False
 
 
-def _gemini_response(text: str) -> _FakeGeminiResponse:
+def _gemini_response(
+    text: str,
+    *,
+    usage_metadata: dict[str, int] | None = None,
+) -> _FakeGeminiResponse:
     payload = {
         "candidates": [
             {"content": {"parts": [{"text": text}]}}
         ]
     }
+    if usage_metadata is not None:
+        payload["usageMetadata"] = usage_metadata
     return _FakeGeminiResponse(json.dumps(payload).encode("utf-8"))
 
 
@@ -691,11 +697,16 @@ class TestAPIErrors(unittest.TestCase):
             stderr = io.StringIO()
             with patch.object(dbe.llm_call_dedupe, "DEFAULT_LEDGER_PATH", ledger_path), \
                  patch("src.tools.draft_body_editor.call_gemini") as mock_call, \
+                 patch("src.tools.draft_body_editor.llm_cost_emitter.emit_llm_cost") as mock_emit, \
                  patch("sys.stdout", stdout), patch("sys.stderr", stderr), \
                  patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}, clear=False):
                 code = dbe.main(list(argv))
             self.assertEqual(code, 0)
             mock_call.assert_not_called()
+            mock_emit.assert_called_once()
+            self.assertEqual(mock_emit.call_args.kwargs["call_site"], "draft_body_editor.dedupe_skip")
+            self.assertTrue(mock_emit.call_args.kwargs["cache_hit"])
+            self.assertEqual(mock_emit.call_args.kwargs["skip_reason"], "content_hash_dedupe")
             payload = json.loads(stdout.getvalue().strip())
             self.assertEqual(payload["llm_skip_reason"], "content_hash_dedupe")
             with open(out_path, encoding="utf-8") as handle:
@@ -764,6 +775,32 @@ class TestCallGeminiInternals(unittest.TestCase):
             self.assertEqual(mock_urlopen.call_count, 2)
             mock_sleep.assert_called_once_with(7.0)
             mock_uniform.assert_not_called()
+
+    def test_call_gemini_emits_llm_cost_on_success(self):
+        with patch("urllib.request.urlopen", return_value=_gemini_response(
+            "improved body",
+            usage_metadata={"promptTokenCount": 12, "candidatesTokenCount": 7},
+        )), patch("src.tools.draft_body_editor.llm_cost_emitter.emit_llm_cost") as mock_emit:
+            text = dbe.call_gemini(
+                "prompt body",
+                "test-key",
+                timeout=1,
+                retry=0,
+                post_id=1234,
+                content_hash="hash-1",
+            )
+
+        self.assertEqual(text, "improved body")
+        mock_emit.assert_called_once()
+        kwargs = mock_emit.call_args.kwargs
+        self.assertEqual(kwargs["lane"], "draft_body_editor")
+        self.assertEqual(kwargs["call_site"], "draft_body_editor.call_gemini")
+        self.assertEqual(kwargs["post_id"], 1234)
+        self.assertEqual(kwargs["content_hash"], "hash-1")
+        self.assertEqual(kwargs["token_in"], 12)
+        self.assertEqual(kwargs["token_out"], 7)
+        self.assertEqual(kwargs["output_chars"], len("improved body"))
+        self.assertTrue(kwargs["success"])
 
     def test_4xx_raises_without_retry(self):
         http_err = urllib.error.HTTPError(

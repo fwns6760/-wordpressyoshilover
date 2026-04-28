@@ -37,6 +37,7 @@ from typing import Iterable, Sequence
 from uuid import uuid4
 
 from src import llm_call_dedupe
+from src import llm_cost_emitter
 from src import repair_provider_ledger
 
 
@@ -285,6 +286,8 @@ def call_gemini(
     *,
     timeout: int = GEMINI_TIMEOUT_SEC,
     retry: int = GEMINI_RETRY,
+    post_id: int | None = None,
+    content_hash: str | None = None,
 ) -> str:
     """Call Gemini 2.5 Flash via the REST API and return the text response."""
     payload = json.dumps(
@@ -300,6 +303,7 @@ def call_gemini(
 
     last_err: Exception | None = None
     attempts = retry + 1
+    input_chars = len(prompt)
     for attempt in range(attempts):
         try:
             req = urllib.request.Request(
@@ -310,6 +314,22 @@ def call_gemini(
             with urllib.request.urlopen(req, timeout=timeout) as res:
                 data = json.load(res)
         except urllib.error.HTTPError as e:
+            llm_cost_emitter.emit_llm_cost(
+                lane="draft_body_editor",
+                call_site="draft_body_editor.call_gemini",
+                post_id=post_id,
+                source_url=None,
+                content_hash=content_hash,
+                model="gemini-2.5-flash",
+                input_chars=input_chars,
+                output_chars=0,
+                token_in=None,
+                token_out=None,
+                cache_hit=False,
+                skip_reason=None,
+                success=False,
+                error_class=type(e).__name__,
+            )
             if 400 <= e.code < 500 and e.code != 429:
                 raise GeminiAPIError(f"HTTP {e.code}") from e
             last_err = e
@@ -326,6 +346,22 @@ def call_gemini(
             )
             continue
         except (urllib.error.URLError, TimeoutError, socket.timeout) as e:
+            llm_cost_emitter.emit_llm_cost(
+                lane="draft_body_editor",
+                call_site="draft_body_editor.call_gemini",
+                post_id=post_id,
+                source_url=None,
+                content_hash=content_hash,
+                model="gemini-2.5-flash",
+                input_chars=input_chars,
+                output_chars=0,
+                token_in=None,
+                token_out=None,
+                cache_hit=False,
+                skip_reason=None,
+                success=False,
+                error_class=type(e).__name__,
+            )
             last_err = e
             if attempt >= retry:
                 break
@@ -335,9 +371,43 @@ def call_gemini(
         try:
             parts = data["candidates"][0]["content"].get("parts", [])
         except (KeyError, IndexError, TypeError) as e:
+            token_in, token_out = llm_cost_emitter.extract_usage_metadata(data)
+            llm_cost_emitter.emit_llm_cost(
+                lane="draft_body_editor",
+                call_site="draft_body_editor.call_gemini",
+                post_id=post_id,
+                source_url=None,
+                content_hash=content_hash,
+                model="gemini-2.5-flash",
+                input_chars=input_chars,
+                output_chars=0,
+                token_in=token_in,
+                token_out=token_out,
+                cache_hit=False,
+                skip_reason=None,
+                success=False,
+                error_class="GeminiAPIError",
+            )
             raise GeminiAPIError(f"response parse error: {e}") from e
 
         text = "".join(p.get("text", "") for p in parts if "text" in p).strip()
+        token_in, token_out = llm_cost_emitter.extract_usage_metadata(data)
+        llm_cost_emitter.emit_llm_cost(
+            lane="draft_body_editor",
+            call_site="draft_body_editor.call_gemini",
+            post_id=post_id,
+            source_url=None,
+            content_hash=content_hash,
+            model="gemini-2.5-flash",
+            input_chars=input_chars,
+            output_chars=len(text),
+            token_in=token_in,
+            token_out=token_out,
+            cache_hit=False,
+            skip_reason=None,
+            success=True,
+            error_class=None,
+        )
         return text
 
     raise GeminiAPIError(f"all {attempts} attempts failed: {last_err!r}")
@@ -661,6 +731,22 @@ def main(argv: Sequence[str] | None = None) -> int:
             provider=dedupe_record.get("provider"),
             model=dedupe_record.get("model"),
         )
+        llm_cost_emitter.emit_llm_cost(
+            lane="draft_body_editor",
+            call_site="draft_body_editor.dedupe_skip",
+            post_id=args.post_id,
+            source_url=None,
+            content_hash=content_hash,
+            model="gemini-2.5-flash",
+            input_chars=len(current_body or ""),
+            output_chars=0,
+            token_in=0,
+            token_out=0,
+            cache_hit=True,
+            skip_reason=llm_skip_reason,
+            success=True,
+            error_class=None,
+        )
         new_body = str(dedupe_record.get("body_text") or "")
         if not new_body:
             error_code = str(dedupe_record.get("error_code") or "content_hash_dedupe")
@@ -694,7 +780,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 20
 
         try:
-            new_body = call_gemini(prompt, api_key)
+            new_body = call_gemini(
+                prompt,
+                api_key,
+                post_id=args.post_id,
+                content_hash=content_hash,
+            )
         except GeminiAPIError as e:
             llm_call_dedupe.record_call(
                 args.post_id,

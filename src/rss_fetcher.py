@@ -4225,8 +4225,10 @@ def _request_gemini_strict_text(
     attempt_limit: int,
     min_chars: int,
     log_label: str = "Gemini strict fact mode",
+    source_url: str | None = None,
 ) -> str:
     import urllib.request
+    from src import llm_cost_emitter as _llm_cost
 
     payload = json.dumps(
         {
@@ -4248,6 +4250,23 @@ def _request_gemini_strict_text(
             parts = data["candidates"][0]["content"].get("parts", [])
             raw_text = "".join(p.get("text", "") for p in parts if "text" in p).strip()
             raw_text = _strip_prompt_role_echo(raw_text)
+            token_in, token_out = _llm_cost.extract_usage_metadata(data)
+            _llm_cost.emit_llm_cost(
+                lane="rss_fetcher_strict",
+                call_site="rss_fetcher._request_gemini_strict_text",
+                post_id=None,
+                source_url=source_url,
+                content_hash=None,
+                model="gemini-2.5-flash",
+                input_chars=len(prompt),
+                output_chars=len(raw_text),
+                token_in=token_in,
+                token_out=token_out,
+                cache_hit=False,
+                skip_reason=None,
+                success=True,
+                error_class=None,
+            )
             if raw_text and len(raw_text) >= min_chars:
                 logger.info("%s 生成成功 %d文字", log_label, len(raw_text))
                 return raw_text
@@ -4260,6 +4279,22 @@ def _request_gemini_strict_text(
                 attempt_limit,
             )
         except Exception as e:
+            _llm_cost.emit_llm_cost(
+                lane="rss_fetcher_strict",
+                call_site="rss_fetcher._request_gemini_strict_text",
+                post_id=None,
+                source_url=source_url,
+                content_hash=None,
+                model="gemini-2.5-flash",
+                input_chars=len(prompt),
+                output_chars=0,
+                token_in=None,
+                token_out=None,
+                cache_hit=False,
+                skip_reason=None,
+                success=False,
+                error_class=type(e).__name__,
+            )
             logger.warning("%s 失敗 試行%d/%d: %s", log_label, attempt + 1, attempt_limit, e)
     logger.error("%s が上限回数に達したため記事生成スキップ", log_label)
     return ""
@@ -7256,6 +7291,7 @@ def _fact_check_article(title: str, article_text: str, api_key: str) -> str:
     import re
     import shutil
     from datetime import date
+    from src import llm_cost_emitter as _llm_cost
     logger = logging.getLogger("rss_fetcher")
 
     # 数値が含まれるか確認（打率・防御率・本塁打・勝率など）
@@ -7300,12 +7336,45 @@ def _fact_check_article(title: str, article_text: str, api_key: str) -> str:
         with _ureq.urlopen(req, timeout=30) as res:
             data = json.load(res)
         checked = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        token_in, token_out = _llm_cost.extract_usage_metadata(data)
+        _llm_cost.emit_llm_cost(
+            lane="rss_fetcher_fact_check",
+            call_site="rss_fetcher._fact_check_article",
+            post_id=None,
+            source_url=None,
+            content_hash=None,
+            model="gemini-2.0-flash",
+            input_chars=len(check_prompt),
+            output_chars=len(checked),
+            token_in=token_in,
+            token_out=token_out,
+            cache_hit=False,
+            skip_reason=None,
+            success=True,
+            error_class=None,
+        )
         if checked and len(checked) > 100:
             logger.info(f"ハルシネーションチェック完了（{len(article_text)}→{len(checked)}文字）")
             article_text = checked
         else:
             logger.warning("チェック結果が短すぎる → 元の記事を維持")
     except Exception as e:
+        _llm_cost.emit_llm_cost(
+            lane="rss_fetcher_fact_check",
+            call_site="rss_fetcher._fact_check_article",
+            post_id=None,
+            source_url=None,
+            content_hash=None,
+            model="gemini-2.0-flash",
+            input_chars=len(check_prompt),
+            output_chars=0,
+            token_in=None,
+            token_out=None,
+            cache_hit=False,
+            skip_reason=None,
+            success=False,
+            error_class=type(e).__name__,
+        )
         logger.warning(f"ハルシネーションチェック失敗 → 元の記事を維持: {e}")
 
     return article_text
@@ -7329,6 +7398,7 @@ def generate_article_with_gemini(
     """Geminiで巨人ファン向け解説記事を生成。失敗時は空文字を返す。"""
     import urllib.request, urllib.error
     from dotenv import load_dotenv
+    from src import llm_cost_emitter as _llm_cost
     load_dotenv(ROOT / ".env")
     api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
@@ -7356,6 +7426,10 @@ def generate_article_with_gemini(
         source_type=source_type,
         entry=source_entry,
     )
+    source_url_for_cost = tweet_url or ""
+    if not source_url_for_cost and isinstance(source_entry, dict):
+        source_url_for_cost = str(source_entry.get("url") or source_entry.get("link") or "")
+    source_url_for_cost = source_url_for_cost or None
 
     data_sources = f"""【STEP1: まず以下のサイトをWeb検索して{today_str}現在の最新データを取得せよ】
 ① npb.jp → 今季個人成績・チーム成績・順位表（最優先）
@@ -7413,6 +7487,7 @@ def generate_article_with_gemini(
             attempt_limit=attempt_limit,
             min_chars=min_chars,
             log_label="Gemini strict fact mode",
+            source_url=source_url_for_cost,
         )
 
     game_category_prompt = ""
@@ -7752,11 +7827,44 @@ def generate_article_with_gemini(
             parts = data["candidates"][0]["content"].get("parts", [])
             raw_text = "".join(p.get("text", "") for p in parts if "text" in p).strip()
             raw_text = _strip_prompt_role_echo(raw_text)
+            token_in, token_out = _llm_cost.extract_usage_metadata(data)
+            _llm_cost.emit_llm_cost(
+                lane="rss_fetcher_grounded",
+                call_site="rss_fetcher.generate_article_with_gemini",
+                post_id=None,
+                source_url=source_url_for_cost,
+                content_hash=None,
+                model="gemini-2.5-flash",
+                input_chars=len(prompt),
+                output_chars=len(raw_text),
+                token_in=token_in,
+                token_out=token_out,
+                cache_hit=False,
+                skip_reason=None,
+                success=True,
+                error_class=None,
+            )
             if raw_text and len(raw_text) > 150:
                 logger.info(f"Gemini 2.5 Flash（Google検索付き）生成成功 {len(raw_text)}文字")
                 return raw_text
             logger.warning("Gemini応答が短すぎる（%d文字）、試行 %d/%d", len(raw_text), attempt + 1, attempt_limit)
         except Exception as e:
+            _llm_cost.emit_llm_cost(
+                lane="rss_fetcher_grounded",
+                call_site="rss_fetcher.generate_article_with_gemini",
+                post_id=None,
+                source_url=source_url_for_cost,
+                content_hash=None,
+                model="gemini-2.5-flash",
+                input_chars=len(prompt),
+                output_chars=0,
+                token_in=None,
+                token_out=None,
+                cache_hit=False,
+                skip_reason=None,
+                success=False,
+                error_class=type(e).__name__,
+            )
             logger.warning(f"Gemini 2.5 Flash失敗 試行{attempt+1}/{attempt_limit}: {e}")
 
     logger.error("Gemini 2.5 Flash（Google検索付き）が上限回数に達したため記事生成スキップ")

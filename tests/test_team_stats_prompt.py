@@ -1,4 +1,5 @@
 import json
+import logging
 import unittest
 from unittest.mock import patch
 
@@ -194,6 +195,128 @@ class TeamStatsPromptTests(unittest.TestCase):
 
         self.assertEqual(article, "これはテスト用の十分に長い本文です。")
         mock_fetch.assert_called_once()
+
+    def test_request_gemini_strict_text_emits_llm_cost(self):
+        fake_payload = {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {"text": "十分に長い strict 応答です。"}
+                        ]
+                    }
+                }
+            ],
+            "usageMetadata": {
+                "promptTokenCount": 33,
+                "candidatesTokenCount": 11,
+            },
+        }
+
+        with patch("urllib.request.urlopen", return_value=_FakeGeminiResponse(fake_payload)):
+            with patch("src.llm_cost_emitter.emit_llm_cost") as mock_emit:
+                text = rss_fetcher._request_gemini_strict_text(
+                    api_key="dummy-key",
+                    prompt="strict prompt",
+                    logger=logging.getLogger("rss_fetcher"),
+                    attempt_limit=1,
+                    min_chars=1,
+                    source_url="https://example.com/strict",
+                )
+
+        self.assertEqual(text, "十分に長い strict 応答です。")
+        mock_emit.assert_called_once()
+        kwargs = mock_emit.call_args.kwargs
+        self.assertEqual(kwargs["lane"], "rss_fetcher_strict")
+        self.assertEqual(kwargs["call_site"], "rss_fetcher._request_gemini_strict_text")
+        self.assertEqual(kwargs["source_url"], "https://example.com/strict")
+        self.assertEqual(kwargs["token_in"], 33)
+        self.assertEqual(kwargs["token_out"], 11)
+        self.assertTrue(kwargs["success"])
+
+    def test_fact_check_article_emits_llm_cost(self):
+        checked_body = "修正文です。" * 30
+        fake_payload = {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {"text": checked_body}
+                        ]
+                    }
+                }
+            ],
+            "usageMetadata": {
+                "promptTokenCount": 44,
+                "candidatesTokenCount": 22,
+            },
+        }
+
+        with patch("shutil.which", return_value="/usr/bin/gemini"):
+            with patch("urllib.request.urlopen", return_value=_FakeGeminiResponse(fake_payload)):
+                with patch("src.llm_cost_emitter.emit_llm_cost") as mock_emit:
+                    text = rss_fetcher._fact_check_article(
+                        "【巨人】阪神に3-2で勝利",
+                        "巨人が3-2で勝利し、打率.312の主力が活躍した。",
+                        "dummy-key",
+                    )
+
+        self.assertEqual(text, checked_body)
+        mock_emit.assert_called_once()
+        kwargs = mock_emit.call_args.kwargs
+        self.assertEqual(kwargs["lane"], "rss_fetcher_fact_check")
+        self.assertEqual(kwargs["call_site"], "rss_fetcher._fact_check_article")
+        self.assertEqual(kwargs["token_in"], 44)
+        self.assertEqual(kwargs["token_out"], 22)
+        self.assertTrue(kwargs["success"])
+
+    def test_generate_article_with_gemini_emits_llm_cost(self):
+        fake_payload = {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {"text": "これは十分に長い通常生成の本文です。" * 12}
+                        ]
+                    }
+                }
+            ],
+            "usageMetadata": {
+                "promptTokenCount": 55,
+                "candidatesTokenCount": 34,
+            },
+        }
+
+        with patch.dict(
+            "os.environ",
+            {"GEMINI_API_KEY": "dummy-key", "STRICT_FACT_MODE": "0"},
+            clear=False,
+        ):
+            with patch.object(rss_fetcher, "strict_fact_mode_enabled", return_value=False):
+                with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+                    with patch.object(rss_fetcher, "_build_source_fact_block", return_value="・元記事の事実"):
+                        with patch.object(rss_fetcher, "_enhanced_grounded_rules", return_value=""):
+                            with patch.object(rss_fetcher, "get_gemini_attempt_limit", return_value=1):
+                                with patch("urllib.request.urlopen", return_value=_FakeGeminiResponse(fake_payload)):
+                                    with patch("src.llm_cost_emitter.emit_llm_cost") as mock_emit:
+                                        text = rss_fetcher.generate_article_with_gemini(
+                                            title="【巨人】阪神に3-2で勝利",
+                                            summary="巨人が阪神に3-2で勝利した。",
+                                            category="試合速報",
+                                            real_reactions=[],
+                                            has_game=True,
+                                            source_entry={"url": "https://example.com/grounded"},
+                                        )
+
+        self.assertIn("通常生成の本文", text)
+        mock_emit.assert_called_once()
+        kwargs = mock_emit.call_args.kwargs
+        self.assertEqual(kwargs["lane"], "rss_fetcher_grounded")
+        self.assertEqual(kwargs["call_site"], "rss_fetcher.generate_article_with_gemini")
+        self.assertEqual(kwargs["source_url"], "https://example.com/grounded")
+        self.assertEqual(kwargs["token_in"], 55)
+        self.assertEqual(kwargs["token_out"], 34)
+        self.assertTrue(kwargs["success"])
 
 
 if __name__ == "__main__":

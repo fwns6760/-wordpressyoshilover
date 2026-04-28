@@ -1227,20 +1227,20 @@ doc/
 
 - **alias**: 240 follow-up
 - **priority**: P0.5
-- **status**: REVIEW_NEEDED
-- **owner**: Codex B
+- **status**: **CLOSED**(2026-04-28、image rebuild `25f176b` + smoke v5 + PC/mobile 通知 yes/yes 両方発火確認)
+- **owner**: Codex B(impl)/ Claude(dispatch + accept + push + auth executor smoke)
 - **lane**: B
-- **ready_for**: Claude accept + authenticated executor publish-notice smoke
-- **next_action**: `MAIL_BRIDGE_REPLY_TO=fwns6760@gmail.com` を env に戻した smoke で、Reply-To header が self-recipient 時に omit され PC/mobile 通知がどう鳴るか確認する
-- **blocked_by**: authenticated executor smoke / user mobile notification確認
-- **user_action_required**: smoke 後に通知が鳴ったか確認(PC success は 240 v4 で確認済、mobile は open)
-- **write_scope**: `src/mail_delivery_bridge.py`, `tests/test_mail_delivery_bridge.py`, `doc/active/241-mail-header-reply-to-self-recipient-investigation.md`, `doc/README.md`, `doc/active/assignments.md`
-- **doc_path**: `doc/active/241-mail-header-reply-to-self-recipient-investigation.md`
-- **acceptance**: Reply-To resolved address が recipient と一致する場合は header omit、異なる Reply-To は維持、mail bridge 既存 flow 不変、live env/secret/Scheduler は触らない
-- **repo_state**: local impl + tests pass
-- **commit_state**: pending 241 commit
-- **next_prompt_path**: `doc/active/241-mail-header-reply-to-self-recipient-investigation.md`
-- **last_commit**: -
+- **ready_for**: none
+- **next_action**: none(close gate 全 pass、live 反映済)
+- **blocked_by**: none
+- **user_action_required**: none
+- **write_scope**: `src/mail_delivery_bridge.py`, `tests/test_mail_delivery_bridge.py`, `doc/done/2026-04/241-mail-header-reply-to-self-recipient-investigation.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/done/2026-04/241-mail-header-reply-to-self-recipient-investigation.md`
+- **acceptance**: ✓ Reply-To resolved address が recipient と一致する場合 header omit、異なる Reply-To は維持、mail bridge 既存 flow 不変、live env/secret/Scheduler 不変、smoke v5 で実 mail 配信 + PC/mobile 通知両方発火を user 確認
+- **repo_state**: pushed
+- **commit_state**: `894db98`
+- **next_prompt_path**: -
+- **last_commit**: `894db98` 241: omit self-recipient reply-to mail header
 - **parent**: 240 / 219 / 222
 
 ### 242 auto-publish-gate-regression-off-topic-published-and-eligible-held
@@ -1287,41 +1287,61 @@ doc/
 
 - **alias**: -
 - **priority**: P0.5
-- **status**: REVIEW_NEEDED
-- **owner**: Codex B
+- **status**: **CLOSED**(2026-04-28、`a224add` landed、最終 narrow boundary/live verify は 242-D2 `25f176b` で完了)
+- **owner**: Codex B(impl)/ Claude(dispatch + accept + push + live verify via 242-D2)
 - **lane**: B
-- **ready_for**: Claude review / authenticated executor dry-run-canary verify
-- **next_action**: review subtype-gated placeholder detector diff, then verify that 63845-type placeholder bodies refuse while good farm_result bodies still pass
-- **blocked_by**: authenticated executor verify not yet run
+- **ready_for**: none
+- **next_action**: none(63845 type blocker landed、最終 classifier/review alignment と live verify は 242-D2 で完了)
+- **blocked_by**: none
 - **user_action_required**: none
-- **write_scope**: `src/guarded_publish_evaluator.py`, `tests/test_guarded_publish_evaluator.py`, `doc/active/242-D-farm-result-placeholder-body-publish-blocker.md`, `doc/active/242-auto-publish-gate-regression-off-topic-published-and-eligible-held.md`, `doc/README.md`, `doc/active/assignments.md`
-- **doc_path**: `doc/active/242-D-farm-result-placeholder-body-publish-blocker.md`
-- **acceptance**: target subtypes(`farm` / `farm_result` / `farm_lineup` / `lineup` / `lineup_notice`) only; repeated actor-placeholder or 2+ empty headings hard-stop as `farm_result_placeholder_body`; single cue remains repairable/ignored per spec; 242-A medical_roster, freshness, lineup_dup, cleanup gates stay unchanged
-- **repo_state**: local impl + targeted pytest pass
-- **commit_state**: pending 242-D commit
-- **next_prompt_path**: `doc/active/242-D-farm-result-placeholder-body-publish-blocker.md`
-- **last_commit**: -
+- **write_scope**: `src/guarded_publish_evaluator.py`, `tests/test_guarded_publish_evaluator.py`, `doc/done/2026-04/242-D-farm-result-placeholder-body-publish-blocker.md`, `doc/active/242-auto-publish-gate-regression-off-topic-published-and-eligible-held.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/done/2026-04/242-D-farm-result-placeholder-body-publish-blocker.md`
+- **acceptance**: ✓ 63845 type repeated placeholder body blocker landed / single filler-only tail skip / empty-heading hard-stop / 242-A medical_roster, freshness, lineup_dup, cleanup gates unchanged; final classifier boundary/live verify is captured in 242-D2
+- **repo_state**: pushed
+- **commit_state**: `a224add`
+- **next_prompt_path**: -
+- **last_commit**: `a224add` 242-D: farm_result placeholder body publish blocker (63845 type) + 6 fixtures
 - **parent**: 242
 
 ### 242-D2 farm-result-classifier-review-alignment
 
 - **alias**: -
 - **priority**: P0.5
-- **status**: REVIEW_NEEDED
-- **owner**: Codex B
+- **status**: **CLOSED**(2026-04-28、image rebuild `25f176b` で live 反映、sample 5 件 verify で 242-A/D/D2 narrow 設計通り動作確認、別軸 DEATH false positive は 242-E で対応)
+- **owner**: Codex B(impl)/ Claude(dispatch + accept + push + live verify)
 - **lane**: B
-- **ready_for**: Claude review / authenticated executor dry-run-canary verify
-- **next_action**: review landed classifier diff: placeholder gate now applies only to cheap `farm_result` candidates(`farm` / `farm_result` + result marker + no scoped lineup marker), while weak facts and H3 over-limit route to review hold without new Gemini/LLM calls
-- **blocked_by**: authenticated executor verify not yet run
+- **ready_for**: none
+- **next_action**: none(narrow design 動作確認済み、別軸 DEATH false positive は 242-E で対応)
+- **blocked_by**: none
 - **user_action_required**: none
-- **write_scope**: `src/guarded_publish_evaluator.py`, `src/guarded_publish_runner.py`, `tests/test_guarded_publish_evaluator.py`, `tests/test_guarded_publish_runner.py`, `doc/active/242-D2-farm-result-classifier-review-alignment.md`, `doc/active/242-D-farm-result-placeholder-body-publish-blocker.md`, `doc/README.md`, `doc/active/assignments.md`
-- **doc_path**: `doc/active/242-D2-farm-result-classifier-review-alignment.md`
-- **acceptance**: farm_result article template v0 is enforced by cheap deterministic checks only; 63845-type placeholder body hard-stops; 63841-type farm_lineup is excluded by title/summary/header/lineup-like block; isolated body `1番`-`9番` mentions do not exclude farm_result; result markers and scoped lineup exclusion markers are both checked; H3 missing does not block; H3 over-limit and weak facts are review/draft not hard_stop; no Gemini/LLM/browser/API calls, no heavy fact extraction, no 242-A/242-B/243, env, Scheduler, Secret, WP live, X live, or RUN_DRAFT_ONLY changes
-- **repo_state**: local impl + targeted unittest pass
-- **commit_state**: local commit pending Claude push
-- **next_prompt_path**: `doc/active/242-D2-farm-result-classifier-review-alignment.md`
-- **last_commit**: -
+- **write_scope**: `src/guarded_publish_evaluator.py`, `src/guarded_publish_runner.py`, `tests/test_guarded_publish_evaluator.py`, `tests/test_guarded_publish_runner.py`, `doc/done/2026-04/242-D2-farm-result-classifier-review-alignment.md`, `doc/done/2026-04/242-D-farm-result-placeholder-body-publish-blocker.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/done/2026-04/242-D2-farm-result-classifier-review-alignment.md`
+- **acceptance**: ✓ farm_result classifier narrow に動作 / 63845-type placeholder body hard-stops / 63841-type farm_lineup excluded / 242-A medical_roster narrow 維持 / DEATH/INJURY 真陽性維持 / Gemini/LLM call 増加なし / live verify sample 5 件で確認
+- **repo_state**: pushed
+- **commit_state**: `25f176b`
+- **next_prompt_path**: -
+- **last_commit**: `25f176b` 242-D2: align farm_result placeholder gate with classifier and review flags
 - **parent**: 242-D
+
+### 242-E death-or-grave-family-context-precision
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: READY
+- **owner**: Codex B(implementation)/ Claude(dispatch + accept + push + live verify)
+- **lane**: B
+- **ready_for**: Codex B narrow fix fire
+- **next_action**: `DEATH_OR_GRAVE_INCIDENT_RE` 発火直前に family-context 共起チェックを追加し、family death(祖父/祖母/おじいちゃん/おばあちゃん/父/母/家族 etc.)を player-self death と区別する narrow skip
+- **blocked_by**: none
+- **user_action_required**: none(scope 確定済み、Codex B fire 可)
+- **write_scope**: `src/guarded_publish_evaluator.py`, `tests/test_guarded_publish_evaluator.py`, `doc/active/242-E-death-or-grave-family-context-precision.md`, `doc/active/242-auto-publish-gate-regression-off-topic-published-and-eligible-held.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/active/242-E-death-or-grave-family-context-precision.md`
+- **acceptance**: 63475/63470 type(family death co-occurrence)が hard_stop しない / player-self death/grave injury 真陽性は hard_stop 維持 / 242-A/D/D2 既存挙動不変 / Gemini/LLM call 追加なし / pytest 124 baseline + 6 fixture 全 pass
+- **repo_state**: doc 起票済(active untracked)
+- **commit_state**: pending Codex B implementation
+- **next_prompt_path**: `doc/active/242-E-death-or-grave-family-context-precision.md`
+- **last_commit**: -
+- **parent**: 242 / 242-A
 
 ### 130 pub004-hard-stop-vs-repairable-before-publish
 

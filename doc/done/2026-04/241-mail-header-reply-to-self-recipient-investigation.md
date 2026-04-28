@@ -126,3 +126,19 @@ probe 結果次第:
 - repo 修正: `_reply_to_matches_recipient()` を追加し、`EmailMessage` 生成時に Reply-To address と recipient address を `email.utils.getaddresses()` + casefold で比較。self-recipient 一致時は `Reply-To` header を omit
 - tests: `tests/test_mail_delivery_bridge.py` に env Reply-To self omit / request Reply-To self omit を追加し、異なる Reply-To 維持・未設定 omit の既存 flow を維持
 - 修正 landed 後、Claude/auth executor が `MAIL_BRIDGE_REPLY_TO=fwns6760@gmail.com` を env に戻して動作 verify(Reply-To header が omit されることを smoke で確認)
+
+## live verify + close evidence(2026-04-28 JST)
+
+- repo commit: `894db98` 241: omit self-recipient reply-to mail header(+228/-5、5 path)
+- image rebuild: `publish-notice:25f176b` (rebuild commit base = 242-D2 着地後の `25f176b`、Cloud Build success)
+- Cloud Run Job update: `gcloud run jobs update publish-notice --image=...:25f176b` 完了
+- env restore: `MAIL_BRIDGE_REPLY_TO=fwns6760@gmail.com` 復元
+- smoke v5 execution: `publish-notice-9t59j` exit(0)、`status=sent reason=None`
+- subject: `[smoke 240 v5 post-rebuild] From=y.sebata@shiny-lab.org Reply-To=self omit test`
+- user 報告: **PC 通知 yes / モバイル通知 yes**(両方発火、Reply-To header omit が live で動作確認)
+
+→ **241 CLOSED**(2026-04-28 JST)。close gate(env restore smoke + PC/mobile 通知確認)全部 pass。
+
+横展開候補(別 ticket):
+- 他 mail sender(`x_draft_email_sender.py` / `ops_status_email_sender.py` / `morning_analyst_email_sender.py`)も同 `mail_delivery_bridge.py` 経由 = 修正自動適用済み、ただし各 sender 固有の reply_to override の有無は未 grep。run-time で問題が出たら narrow ticket で起票
+- `MAIL_BRIDGE_GMAIL_APP_PASSWORD_SECRET_NAME` 経路の例外握り潰し bug は別 narrow ticket 候補(現状 secret-backed env injection 経路で運用は通っている)

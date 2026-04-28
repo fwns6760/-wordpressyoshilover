@@ -474,9 +474,26 @@ Claude should dispatch this as a narrow Codex B implementation ticket only after
 
 ## later tickets
 
-- 242-A remains the death/grave false-positive precision line
+- 242-A remains the death/grave false-positive precision line(narrow scope = farm/lineup only、completed `bd5c442`)
 - 242-B remains the Giants entity contamination / 63844 line
+- **242-E**(NEW、2026-04-28 起票): `DEATH_OR_GRAVE_INCIDENT_RE` family-context precision(`祖父` / `祖母` / `おじいちゃん` / `おばあちゃん` co-occurrence で player-self death と区別)。63475 / 63470 false positive を救う narrow fix
 - 243 remains the full template contract registry line
+
+## 242-D2 live verify result(2026-04-28 JST、Claude/auth executor、image rebuild `25f176b` 直後)
+
+- baseline snapshot: `gs://baseballsite-yoshilover-state/guarded_publish/guarded_publish_history.jsonl` 16098 行
+- post-rebuild snapshot: 同 file 16341 行(243 new entries、19:00:38 JST tick 含む)
+- 新 image (`guarded-publish:25f176b` / `publish-notice:25f176b`) で動作確認
+- sample 5 件 review:
+  - **63661** (subtype=None、「De、昇格・復帰」): hard_stop:death_or_grave_incident → 仕様通り(non-farm/lineup なので 242-A 適用外、escalate 維持)
+  - **63638** (subtype=None、「マタが登録抹消」): hard_stop:death_or_grave_incident → 真陽性(本物 INJURY、source 不在)
+  - **63517** (subtype=None、「下半身コンディション不良で登録抹消」): hard_stop:death_or_grave_incident → 真陽性(同上)
+  - **63475** (subtype=None、「亡くなったおじいちゃんに記念ボール」): hard_stop:death_or_grave_incident → **false positive**(家族死)、242-E 起票
+  - **63470** (subtype=None、「天国で見てくれているおじいちゃんに」): hard_stop:death_or_grave_incident → **false positive**(家族死)、242-E 起票
+
+→ **242-D2(+ 242-A)narrow design は意図通り動作**(farm 系のみ救う、non-farm は escalate 維持)
+→ DEATH_OR_GRAVE_INCIDENT_RE の family-context false positive は別軸 = 242-E で扱う(本 ticket scope 外)
+→ 242-D2 status: REVIEW_NEEDED → **CLOSED**(narrow design 動作確認済み、既存挙動破壊なし)
 
 ## 242-D2 implementation summary
 

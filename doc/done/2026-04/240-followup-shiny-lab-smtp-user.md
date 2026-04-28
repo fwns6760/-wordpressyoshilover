@@ -2,13 +2,17 @@
 
 - number: 240-followup
 - type: minimal impl + runbook
-- status: REVIEW_NEEDED
+- status: CLOSED
 - priority: P0.5
 - parent: 240
 - related: 219, 222, 223, 231
 - owner: Codex A
 - lane: A
 - created: 2026-04-28
+
+## Close note(2026-04-28)
+
+Workspace SMTP sender switch was applied through publish-notice runtime, then 241 added self-recipient Reply-To omit. Smoke v5 confirmed PC/mobile notification delivery.
 
 ## Background
 

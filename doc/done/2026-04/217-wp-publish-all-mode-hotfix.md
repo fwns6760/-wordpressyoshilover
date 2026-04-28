@@ -3,11 +3,15 @@
 ## meta
 - number: 217
 - type: hotfix / dev
-- status: REVIEW_NEEDED
+- status: CLOSED
 - priority: P0(緊急 hotfix)
 - lane: Codex(impl)/ Claude(dispatch)
 - created: 2026-04-27
 - parent: 183 publish gate aggressive relax / 200 scanner subtype fallback
+
+## Close note(2026-04-28)
+
+Follow-up guarded-publish images `25f176b` / `c328772` superseded this live handoff. Current precision fixes are tracked in 242-A / 242-D / 242-D2 / 242-E and the remaining 242-B candidate.
 
 ## background
 - 63795 が `hard_stop:injury_death` で refused 連発

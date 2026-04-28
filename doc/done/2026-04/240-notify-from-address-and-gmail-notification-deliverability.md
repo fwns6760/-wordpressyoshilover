@@ -2,13 +2,17 @@
 
 - number: 240
 - type: audit + minimal impl + runbook
-- status: REVIEW_NEEDED
+- status: CLOSED
 - priority: P0.5
 - parent: -
 - related: 219, 222, 223, 225, 231
 - owner: Codex A
 - lane: A
 - created: 2026-04-28
+
+## Close note(2026-04-28)
+
+Superseded by 240-followup and 241. Current state: From/SMTP sender uses `y.sebata@shiny-lab.org`, self-recipient Reply-To is omitted by code, and PC/mobile notifications were confirmed.
 
 ## Background
 
@@ -98,7 +102,7 @@ Files changed:
 - `src/mail_delivery_bridge.py`
 - `tests/test_mail_delivery_bridge.py`
 - `tests/test_publish_notice_email_sender.py`
-- `doc/active/240-notify-from-address-and-gmail-notification-deliverability.md`
+- `doc/done/2026-04/240-notify-from-address-and-gmail-notification-deliverability.md`
 
 Diff summary:
 

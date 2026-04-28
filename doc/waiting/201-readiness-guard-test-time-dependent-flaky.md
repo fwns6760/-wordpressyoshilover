@@ -59,6 +59,6 @@
 
 ## 関連ファイル更新先
 
-- 新規: `doc/active/201-readiness-guard-test-time-dependent-flaky.md`
+- 新規: `doc/waiting/201-readiness-guard-test-time-dependent-flaky.md`
 - 更新: `doc/README.md`
 - 更新: `doc/active/assignments.md`

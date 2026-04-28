@@ -27,7 +27,7 @@ If this file conflicts with an individual ticket doc:
 
 Current publish-policy reference:
 
-- `doc/active/154-publish-policy-2026-04-26-PM.md` = current publish-policy
+- `doc/reference/154-publish-policy-2026-04-26-PM.md` = current publish-policy
 - `doc/done/2026-04/PUB-002-A-publish-candidate-gate-and-article-prose-contract.md` = superseded archive
 
 ## numbering policy
@@ -59,14 +59,16 @@ Current publish-policy reference:
 ```
 doc/
 ├── README.md  ← board 本体(root 唯一)
-├── active/    READY / IN_FLIGHT / REVIEW_NEEDED(154 publish-policy 含む)
-├── waiting/   READY_FOR_AUTH_EXECUTOR / BLOCKED_USER / BLOCKED_EXTERNAL / PARKED(PUB-005 含む)
+├── active/    今すぐ見る ticket / live運用中の current work / hard-stop lock
+├── waiting/   READY_FOR_AUTH_EXECUTOR / BLOCKED_USER / BLOCKED_EXTERNAL / PARKED / READYだが今は見ない ticket
+├── reference/ 方針・契約・運用プロトコルなど、実作業ではなく参照する文書
 └── done/YYYY-MM/  CLOSED(PUB-004-guarded 含む)
 ```
 
 - doc/ root = **102 board のみ**(.md 1 file)
-- READY / IN_FLIGHT / REVIEW_NEEDED → `doc/active/`(154 publish-policy 等 current runbook も active なら ここ)
-- READY_FOR_AUTH_EXECUTOR / BLOCKED_USER / BLOCKED_EXTERNAL / PARKED → `doc/waiting/`
+- active は **今の3本 / current cost-quality work / hard-stop lock** に限定する
+- READY でも今やらないもの、user判断待ち、live executor待ちは `doc/waiting/`
+- 方針・contract・protocol は `doc/reference/`
 - CLOSED → `doc/done/YYYY-MM/`
 - **優先順位はフォルダではなく、本 102 board の `priority` / `next_action` で判別**
 - status 変更時 doc_path も同 commit で更新
@@ -167,7 +169,7 @@ Current lane lock(2026-04-28 JST):
 - **user_action_required**: **NO**(autonomous lock、142 freshness 降格 + 145 mapping fix 適用済)
 - **cap**: max_burst default **20** / hard cap **30** / daily **100**(JST 0:00 reset 既設、137 sent-only count)
 - **write_scope**: PUB-004-B `--live --max-burst 20 --daily-cap-allow` autonomous fire
-- **doc_path**: `doc/active/PUB-004-D-all-eligible-draft-backlog-publish-ramp.md`
+- **doc_path**: `doc/waiting/PUB-004-D-all-eligible-draft-backlog-publish-ramp.md`
 - **gates_applied**: 130(hard_stop)/ 135(freshness audit、142 で降格)/ 136(lineup_dup)/ 137(cap sent only)/ 141(cleanup chain)/ 142(freshness REPAIRABLE)/ 145(freshness no-op mapping)
 - **burst_chain_2026-04-26**:
   - **burst 1**(10:23 AM 旧 spec): 20 sent(63531-63383 列、全 stale 事故 → 135 gate 化)
@@ -647,8 +649,8 @@ Current lane lock(2026-04-28 JST):
 - **next_action**: SNS 入口 lane(126/127/128)と X 出口 lane(PUB-005 / 147-175)の境界を明文化、判定 5 種 / reject 条件 / SNS 由来記事の X 自動投稿境界を固定
 - **blocked_by**: none
 - **user_action_required**: none(doc-only、code 変更なし)
-- **write_scope**: `doc/active/180-sns-topic-intake-to-publish-lane-separation.md` + `doc/README.md`(本セクション)+ `doc/active/assignments.md` + `doc/waiting/128-...md`(blocked_by 追記)+ `doc/waiting/PUB-005-x-post-gate.md`(SNS 由来記事の X 自動投稿境界 追記)
-- **doc_path**: `doc/active/180-sns-topic-intake-to-publish-lane-separation.md`
+- **write_scope**: `doc/waiting/180-sns-topic-intake-to-publish-lane-separation.md` + `doc/README.md`(本セクション)+ `doc/active/assignments.md` + `doc/waiting/128-...md`(blocked_by 追記)+ `doc/waiting/PUB-005-x-post-gate.md`(SNS 由来記事の X 自動投稿境界 追記)
+- **doc_path**: `doc/waiting/180-sns-topic-intake-to-publish-lane-separation.md`
 - **acceptance**: 180 doc 作成 / README 180 row / assignments 180 row / 128 blocked_by に 180 / PUB-005 に SNS 由来記事の X 自動投稿境界記述 / code/WP/X/mail/env 一切触らず
 - **repo_state**: doc 配置済
 - **commit_state**: doc-only commit 予定
@@ -965,7 +967,7 @@ Current lane lock(2026-04-28 JST):
 - **blocked_by**: none
 - **user_action_required**: none
 - **write_scope**: `tests/test_guarded_publish_readiness_guard.py`、必要最小限で `src/tools/run_guarded_publish_readiness_check.py` または `src/guarded_publish_readiness_guard.py`
-- **doc_path**: `doc/active/201-readiness-guard-test-time-dependent-flaky.md`
+- **doc_path**: `doc/waiting/201-readiness-guard-test-time-dependent-flaky.md`
 - **acceptance**: `summary: sent=1 refused=1 skipped=0` 前提の human-format test が実行日時に依存せず stable pass、200 scanner fix と scope 分離維持、`src/publish_notice_email_sender.py` 不可触
 - **repo_state**: local doc update
 - **commit_state**: pending ticket commit
@@ -1124,8 +1126,8 @@ Current lane lock(2026-04-28 JST):
 - **next_action**: user 確認後 210a source_trust family 拡張から実装を開始するか判断
 - **blocked_by**: none
 - **user_action_required**: 実装 priority 判断
-- **write_scope**: `doc/active/210-primary-source-expansion-plan.md`(本便 spec のみ、実装は別 ticket)
-- **doc_path**: `doc/active/210-primary-source-expansion-plan.md`
+- **write_scope**: `doc/waiting/210-primary-source-expansion-plan.md`(本便 spec のみ、実装は別 ticket)
+- **doc_path**: `doc/waiting/210-primary-source-expansion-plan.md`
 - **acceptance**: 7 source 候補 + 重複対策 5 項目 + sub-ticket outline が documented
 - **repo_state**: pushed
 - **commit_state**: `4acda2b`
@@ -1157,15 +1159,15 @@ Current lane lock(2026-04-28 JST):
 
 - **alias**: -
 - **priority**: P0(緊急 hotfix)
-- **status**: REVIEW_NEEDED
+- **status**: **CLOSED**(217 系 hotfix は後続 guarded-publish image `25f176b` / `c328772` で live 反映済み)
 - **owner**: Codex(impl)/ Claude(dispatch)
 - **lane**: Codex
-- **ready_for**: GCP authenticated executor
-- **next_action**: GCP 反映(guarded-publish + publish-notice rebuild + Job update b03890c tag)、反映後 63795 再判定
-- **blocked_by**: GCP authenticated executor 待ち
-- **user_action_required**: deploy 実行(authenticated executor)
+- **ready_for**: none
+- **next_action**: none
+- **blocked_by**: none
+- **user_action_required**: none
 - **write_scope**: src/guarded_publish_evaluator.py + src/guarded_publish_runner.py + src/publish_notice_email_sender.py + tests + src/rss_fetcher.py(b36c30c は実質 218、番号衝突)
-- **doc_path**: doc/active/217-wp-publish-all-mode-hotfix.md
+- **doc_path**: `doc/done/2026-04/217-wp-publish-all-mode-hotfix.md`
 - **acceptance**: 63795 publishable Yellow / death 系 hard_stop 維持 / pytest 1498 pass
 - **repo_state**: pushed
 - **commit_state**: `b03890c`(本体 `579401a` + 補完 `b03890c`、番号衝突 `b36c30c` は実質 218)
@@ -1613,7 +1615,7 @@ git add -A禁止。
 ## related files
 
 - `doc/103-publish-notice-cron-health-check.md`
-- `doc/active/PUB-004-D-all-eligible-draft-backlog-publish-ramp.md`
+- `doc/waiting/PUB-004-D-all-eligible-draft-backlog-publish-ramp.md`
 - `doc/118-pub004-red-reason-decision-pack.md`
 - `doc/123-pub004-auto-publish-readiness-and-regression-guard.md`
 - `doc/done/2026-04/PUB-002-B-missing-primary-source-publish-blocker-reduction.md`

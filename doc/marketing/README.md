@@ -38,7 +38,7 @@
 
 ## related existing tickets(reference only, no move)
 
-- [180 sns topic intake to publish lane separation](/home/fwns6/code/wordpressyoshilover/doc/active/180-sns-topic-intake-to-publish-lane-separation.md)
+- [180 sns topic intake to publish lane separation](/home/fwns6/code/wordpressyoshilover/doc/waiting/180-sns-topic-intake-to-publish-lane-separation.md)
 - [128 sns-topic-auto-publish-through-pub004](/home/fwns6/code/wordpressyoshilover/doc/waiting/128-sns-topic-auto-publish-through-pub004.md)
 - [147 x autopost phased resume](/home/fwns6/code/wordpressyoshilover/doc/waiting/147-x-autopost-phased-resume.md)
 - [149 x autopost phase 2 manual live 1](/home/fwns6/code/wordpressyoshilover/doc/waiting/149-x-autopost-phase2-manual-live-1.md)

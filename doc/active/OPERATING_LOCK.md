@@ -1,12 +1,12 @@
 # OPERATING_LOCK — agent startup and hard-stop rules
 
-Every Claude / Codex / Codex-M session must read this file before acting.
+Every Claude / Codex session must read this file before acting.
 
 ## source of truth
 
 - Detailed board: `/home/fwns6/code/wordpressyoshilover/doc/README.md`
 - Visible dashboard: `/home/fwns6/code/wordpressyoshilover/doc/active/assignments.md`
-- Ticket folders: `doc/active/`, `doc/waiting/`, `doc/done/YYYY-MM/`
+- Ticket folders: `doc/active/`, `doc/waiting/`, `doc/reference/`, `doc/done/YYYY-MM/`
 - Execution order / status / owner / lane / blocked state / doc_path: follow `doc/README.md`
 - Scope / acceptance / do-not-touch rules: follow the individual ticket doc
 
@@ -16,7 +16,6 @@ Every Claude / Codex / Codex-M session must read this file before acting.
 - Codex A: ops / GCP / WP / mail / publish runner implementation
 - Codex B: quality / evaluator / validator / SEO / SNS / X gate / mail-body implementation
 - Codex-GCP: GCP runtime for repair, allowed WP article write, SNS topic processing, SEO/quality monitoring, mail digest generation, and X gate dry-run
-- Codex-M: temporary manager when Claude is unavailable; board hygiene, status reconciliation, prompt preparation
 - Authenticated executor: Claude shell / user shell / future deploy executor for live GCP mutation after repo work is ready
 - User: live unlock, secret/env/scheduler/scope expansion, major policy decisions
 

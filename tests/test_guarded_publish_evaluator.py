@@ -419,6 +419,202 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         self.assertIn("ai_tone_heading_or_lead", entry["repairable_flags"])
         self.assertNotIn("death_or_grave_incident", entry["hard_stop_flags"])
 
+    def test_placeholder_body_repeated_missing_actor_farm_result_hard_stop(self):
+        post = _post(
+            63845,
+            "巨人二軍 3-6 楽天 結果のポイント",
+            (
+                "<p>【二軍】巨人 3-6 楽天 先発の 投手は5回3失点。9回に 選手の適時打などで追い上げるも敗戦した。</p>"
+                "<p>【二軍】巨人 3-6 楽天 先発の 投手は5回3失点。試合の詳細はこちら。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-63845</p>"
+            ),
+            meta={"article_subtype": "farm_result"},
+        )
+
+        report = self._evaluate([post])
+
+        entry = self._find_entry(report, 63845)
+        self.assertFalse(entry["publishable"])
+        self.assertIn("farm_result_placeholder_body", entry["hard_stop_flags"])
+        self.assertNotIn("placeholder_body_repairable", entry["repairable_flags"])
+
+    def test_placeholder_body_named_actor_farm_result_stays_publishable(self):
+        post = _post(
+            63846,
+            "巨人二軍が楽天に4-2で勝利 山崎伊織が5回1失点",
+            (
+                "<p>巨人二軍が楽天に4-2で勝利した。先発の山崎伊織は5回1失点と試合を作り、岡本和真の適時打で主導権を握った。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-63846</p>"
+            ),
+            meta={"article_subtype": "farm_result"},
+        )
+
+        report = self._evaluate([post])
+
+        entry = self._find_entry(report, 63846)
+        self.assertTrue(entry["publishable"])
+        self.assertNotIn("farm_result_placeholder_body", entry["hard_stop_flags"])
+        self.assertNotIn("placeholder_body_repairable", entry["repairable_flags"])
+
+    def test_placeholder_body_double_empty_heading_is_hard_stop(self):
+        post = _post(
+            63847,
+            "巨人二軍 3-6 楽天 試合メモ",
+            (
+                "<h2></h2>"
+                "<p>巨人二軍は楽天に3-6で敗れた。先発の山崎伊織は5回3失点で、秋広優人の適時打が出た。</p>"
+                "<h3>   </h3>"
+                "<p>参照元: スポーツ報知 https://example.com/source-63847</p>"
+            ),
+            meta={"article_subtype": "farm"},
+        )
+
+        report = self._evaluate([post])
+
+        entry = self._find_entry(report, 63847)
+        self.assertFalse(entry["publishable"])
+        self.assertIn("farm_result_placeholder_body", entry["hard_stop_flags"])
+
+    def test_placeholder_body_skips_notice_and_column_subtypes(self):
+        posts = [
+            _post(
+                63848,
+                "巨人編成メモ 定型文の残り方を整理",
+                (
+                    "<p>編成メモでは「先発の 投手」「選手の適時打」といった placeholder 例を紹介した。</p>"
+                    "<p>参照元: スポーツ報知 https://example.com/source-63848</p>"
+                ),
+                meta={"article_subtype": "notice"},
+            ),
+            _post(
+                63849,
+                "巨人コラム 定型文の危うさを検証",
+                (
+                    "<p>コラムでは「先発の 投手」「選手の適時打」が残ると読み味が崩れる例を取り上げた。</p>"
+                    "<p>参照元: スポーツ報知 https://example.com/source-63849</p>"
+                ),
+                meta={"article_subtype": "column"},
+            ),
+        ]
+
+        report = self._evaluate(posts)
+
+        for post_id in (63848, 63849):
+            entry = self._find_entry(report, post_id)
+            self.assertTrue(entry["publishable"])
+            self.assertNotIn("farm_result_placeholder_body", entry["hard_stop_flags"])
+            self.assertNotIn("placeholder_body_repairable", entry["repairable_flags"])
+
+    def test_placeholder_body_filler_only_short_article_is_ignored(self):
+        post = _post(
+            63850,
+            "巨人二軍 試合の詳細はこちら",
+            (
+                "<p>試合の詳細はこちら。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-63850</p>"
+            ),
+            meta={"article_subtype": "farm_result"},
+        )
+
+        report = self._evaluate([post])
+
+        entry = self._find_entry(report, 63850)
+        self.assertTrue(entry["publishable"])
+        self.assertNotIn("farm_result_placeholder_body", entry["hard_stop_flags"])
+        self.assertNotIn("placeholder_body_repairable", entry["repairable_flags"])
+
+    def test_placeholder_body_regression_preserves_242a_medical_roster_matrix(self):
+        farm_lineup_post = _post(
+            63841,
+            "巨人二軍スタメン 楽天戦の先発メンバー",
+            (
+                "<p>森林どりスタジアムで行われる巨人対楽天の二軍戦は、支配下登録後初スタメンの若手を含む先発メンバーが発表された。</p>"
+            ),
+            meta={"article_subtype": "farm_lineup"},
+        )
+        farm_result_post = _post(
+            63851,
+            "巨人二軍 3-6 楽天 二軍戦の結果",
+            (
+                "<p>森林どりスタジアムで行われた巨人対楽天の二軍戦は3-6で敗れ、支配下登録を目指す若手が9回に追い上げを見せた。</p>"
+            ),
+            meta={"article_subtype": "farm"},
+        )
+
+        report = self._evaluate([farm_lineup_post, farm_result_post])
+
+        lineup_entry = self._find_entry(report, 63841)
+        result_entry = self._find_entry(report, 63851)
+        self.assertIn("roster_movement_yellow", lineup_entry["repairable_flags"])
+        self.assertIn("roster_movement_yellow", result_entry["repairable_flags"])
+        self.assertNotIn("death_or_grave_incident", lineup_entry["hard_stop_flags"])
+        self.assertNotIn("death_or_grave_incident", result_entry["hard_stop_flags"])
+        self.assertNotIn("farm_result_placeholder_body", lineup_entry["hard_stop_flags"])
+        self.assertNotIn("farm_result_placeholder_body", result_entry["hard_stop_flags"])
+
+        helper_cases = (
+            (
+                "grave_incident",
+                {
+                    "title": "巨人の主力選手が重症で入院",
+                    "body_text": "巨人の主力選手が重症で入院した。スポーツ報知によると、球団が経過を説明した。",
+                    "source_block": "参照元: スポーツ報知 https://example.com/source-grave-regression",
+                    "source_urls": ["https://example.com/source-grave-regression"],
+                },
+                "injury",
+                "death_or_grave_incident",
+            ),
+            (
+                "obituary",
+                {
+                    "title": "巨人OBの訃報 球団が追悼コメント",
+                    "body_text": "巨人OBが死去したと伝えられ、球団が追悼コメントを発表した。",
+                    "source_block": "参照元: スポーツ報知 https://example.com/source-obit-regression",
+                    "source_urls": ["https://example.com/source-obit-regression"],
+                },
+                "",
+                "death_or_grave_incident",
+            ),
+            (
+                "long_recovery",
+                {
+                    "title": "巨人主力が2か月の離脱へ",
+                    "body_text": "巨人主力が全治2か月の離脱となる見込みだ。スポーツ報知によると、復帰までは長期調整が必要になる。",
+                    "source_block": "参照元: スポーツ報知 https://example.com/source-recovery-regression",
+                    "source_urls": ["https://example.com/source-recovery-regression"],
+                },
+                "injury",
+                "death_or_grave_incident",
+            ),
+            (
+                "generic_missing_source_notice",
+                {
+                    "title": "巨人主力が登録抹消 再調整へ",
+                    "body_text": "巨人主力が登録抹消となり、再調整へ入るとだけ記され、出典リンクはない。",
+                    "source_block": "",
+                    "source_urls": [],
+                },
+                "notice",
+                "death_or_grave_incident",
+            ),
+            (
+                "farm_lineup_soft_subtype",
+                {
+                    "title": "巨人二軍スタメン 楽天戦の先発メンバー",
+                    "body_text": "森林どりスタジアムで行われる巨人対楽天の二軍戦は、支配下登録後初スタメンの若手を含む先発メンバーが発表された。",
+                    "source_block": "",
+                    "source_urls": [],
+                },
+                "farm_lineup",
+                "roster_movement_yellow",
+            ),
+        )
+
+        for label, record, subtype, expected in helper_cases:
+            with self.subTest(label=label):
+                flag = evaluator_module._medical_roster_flag(record, subtype=subtype)
+                self.assertEqual(flag, expected)
+
     def test_promotion_publishable_yellow(self):
         post = _post(
             114,

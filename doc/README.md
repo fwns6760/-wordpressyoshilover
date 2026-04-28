@@ -1283,6 +1283,26 @@ doc/
 - **last_commit**: -
 - **parent**: 242
 
+### 242-D farm-result-placeholder-body-publish-blocker
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: REVIEW_NEEDED
+- **owner**: Codex B
+- **lane**: B
+- **ready_for**: Claude review / authenticated executor dry-run-canary verify
+- **next_action**: review subtype-gated placeholder detector diff, then verify that 63845-type placeholder bodies refuse while good farm_result bodies still pass
+- **blocked_by**: authenticated executor verify not yet run
+- **user_action_required**: none
+- **write_scope**: `src/guarded_publish_evaluator.py`, `tests/test_guarded_publish_evaluator.py`, `doc/active/242-D-farm-result-placeholder-body-publish-blocker.md`, `doc/active/242-auto-publish-gate-regression-off-topic-published-and-eligible-held.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/active/242-D-farm-result-placeholder-body-publish-blocker.md`
+- **acceptance**: target subtypes(`farm` / `farm_result` / `farm_lineup` / `lineup` / `lineup_notice`) only; repeated actor-placeholder or 2+ empty headings hard-stop as `farm_result_placeholder_body`; single cue remains repairable/ignored per spec; 242-A medical_roster, freshness, lineup_dup, cleanup gates stay unchanged
+- **repo_state**: local impl + targeted pytest pass
+- **commit_state**: pending 242-D commit
+- **next_prompt_path**: `doc/active/242-D-farm-result-placeholder-body-publish-blocker.md`
+- **last_commit**: -
+- **parent**: 242
+
 ### 130 pub004-hard-stop-vs-repairable-before-publish
 
 - **alias**: -

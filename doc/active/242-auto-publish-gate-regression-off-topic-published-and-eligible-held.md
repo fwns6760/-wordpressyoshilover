@@ -73,6 +73,7 @@ related:226 (`subtype_unresolved + cleanup_failed_post_condition` を Yellow 降
 具体的な code 修正は子 ticket に分解する:
 
 - **242-A(false negative narrow fix、P0.5)**: 下記「242-A narrow fix design lock」参照。`_medical_roster_flag()` を丸ごと弱めず、farm / farm_lineup / lineup subtype の **63841/63845 型 false positive のみ** を Yellow/repairable に降格。本物の injury/death/recovery/release は hard_stop 維持
+- **242-D(body quality placeholder blocker、P0.5)**: `doc/active/242-D-farm-result-placeholder-body-publish-blocker.md` 参照。63845 型の「先発の 投手 / 選手の適時打 / 試合の詳細はこちら」placeholder 連発を subtype 限定 detector で hard_stop / repairable に分岐し、Gemini 補完なしで publish skip に倒す
 - **242-B(false positive 抑止、P1)**: 63844 の「実在選手・他球団所属」hallucination を検出する entity-role / roster mismatch detector(224 と統合候補)+ tests
 - **242-C(止血、auth executor)**: 63841 / 63845 の手動 publish 判断(user 判断)+ 63844 の修正/draft 戻し判断(user 判断)
 

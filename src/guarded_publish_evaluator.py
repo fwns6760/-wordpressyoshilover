@@ -26,6 +26,7 @@ DEFAULT_FALLBACK_SUBTYPE = "default"
 HARD_STOP_FLAGS = frozenset(
     {
         "death_or_grave_incident",
+        "farm_result_placeholder_body",
         "unsupported_named_fact",
         "obvious_misinformation",
         "title_body_mismatch_strict",
@@ -55,6 +56,7 @@ REPAIRABLE_FLAGS = frozenset(
         "expired_game_context",
         "content_date_unknown",
         "roster_movement_yellow",
+        "placeholder_body_repairable",
         "awkward_role_phrasing",
         "lineup_duplicate_excessive",
     }
@@ -111,6 +113,8 @@ LIGHT_STRUCTURE_BREAK_RE = re.compile(r"(?is)<p\b[^>]*>\s*(?:&nbsp;|\s|<br\s*/?>
 AI_TONE_LEAD_RE = re.compile(
     r"(注目したい|注目ポイント|見どころ|ポイントは|どう見る|どう動く|狙いはどこ|気になる)"
 )
+EMPTY_HEADING_RE = re.compile(r"(?is)<h[1-6]\b[^>]*>\s*</h[1-6]>")
+PLACEHOLDER_FILLER_OUTRO_RE = re.compile(r"^(?:試合の詳細はこちら|詳細はこちら|詳しくはこちら)[。．!！?？]*$")
 URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
 ISO_YMD_RE = re.compile(r"(?<!\d)(20\d{2})[/-](\d{1,2})[/-](\d{1,2})(?!\d)")
 COMPACT_YMD_RE = re.compile(r"(?<!\d)(20\d{2})(\d{2})(\d{2})(?!\d)")
@@ -153,6 +157,7 @@ LINEUP_TITLE_TOKEN_MATCH_SUBTYPES = frozenset(
     {"lineup", "lineup_notice", "pregame", "probable_starter", "farm_lineup"}
 )
 MEDICAL_ROSTER_SOFT_SUBTYPE_EXACT = frozenset({"lineup", "lineup_notice"})
+PLACEHOLDER_BODY_TARGET_SUBTYPES = frozenset({"farm", "farm_result", "farm_lineup", "lineup", "lineup_notice"})
 SOURCE_DATE_META_FIELDS = (
     "source_published_at",
     "published_at",
@@ -175,6 +180,14 @@ SITE_COMPONENT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("fan_voice", re.compile(r"💬\s*[^。\n]{0,120}")),
     ("related_articles", re.compile(r"【関連記事】")),
     ("fan_voice_label", re.compile(r"💬\s*ファンの声")),
+)
+PLACEHOLDER_ACTOR_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("starting_pitcher_missing_name", re.compile(r"先発の\s*投手(?:は[0-9０-９]+回[0-9０-９]+失点)?")),
+    ("pitching_line_missing_name", re.compile(r"(?:^|[。！？!?「『（\(])\s*投手は[0-9０-９]+回[0-9０-９]+失点")),
+    (
+        "player_action_missing_name",
+        re.compile(r"(?<![一-龯々ぁ-んァ-ヶA-Za-z0-9])選手の\s*(?:適時打|安打|ホームラン|本塁打|二塁打|三塁打|犠飛|タイムリー)"),
+    ),
 )
 
 LABEL_EXPECTATIONS: dict[str, tuple[re.Pattern[str], ...]] = {
@@ -1060,6 +1073,112 @@ def _has_ai_tone_heading_or_lead(title: str, body_text: str) -> bool:
     return bool(AI_TONE_LEAD_RE.search(lead))
 
 
+def _placeholder_body_target_subtype(subtype: Any) -> bool:
+    return _normalized_subtype(subtype) in PLACEHOLDER_BODY_TARGET_SUBTYPES
+
+
+def _placeholder_body_sentences(body_text: str) -> list[str]:
+    sentences: list[str] = []
+    for line in body_text.splitlines():
+        stripped_line = line.strip()
+        if not stripped_line:
+            continue
+        for chunk in re.split(r"(?<=[。！？!?])", stripped_line):
+            sentence = chunk.strip()
+            if sentence:
+                sentences.append(sentence)
+    return sentences
+
+
+def _placeholder_actor_hits(sentence: str) -> list[str]:
+    hits: list[str] = []
+    for label, pattern in PLACEHOLDER_ACTOR_PATTERNS:
+        for match in pattern.finditer(sentence):
+            snippet = re.sub(r"\s+", " ", match.group(0)).strip()
+            hits.append(f"{label}:{snippet}")
+    return hits
+
+
+def _placeholder_actor_signal(body_text: str) -> tuple[str, str] | None:
+    sentences = _placeholder_body_sentences(body_text)
+    if not sentences:
+        return None
+
+    hits_by_sentence = [_placeholder_actor_hits(sentence) for sentence in sentences]
+    total_hits = sum(len(hits) for hits in hits_by_sentence)
+    if total_hits == 0:
+        return None
+
+    for index, hits in enumerate(hits_by_sentence):
+        if len(hits) >= 2:
+            return (
+                "hard_stop",
+                f"actor_placeholder_hits={len(hits)};window=sentence:{index + 1};samples={','.join(hits[:3])}",
+            )
+        if index + 1 >= len(hits_by_sentence):
+            continue
+        adjacent_hits = hits + hits_by_sentence[index + 1]
+        if len(adjacent_hits) >= 2:
+            return (
+                "hard_stop",
+                (
+                    f"actor_placeholder_hits={len(adjacent_hits)};"
+                    f"window=sentences:{index + 1}-{index + 2};samples={','.join(adjacent_hits[:3])}"
+                ),
+            )
+
+    first_hits = next((hits for hits in hits_by_sentence if hits), [])
+    return "repairable", f"actor_placeholder_hits={total_hits};samples={','.join(first_hits[:2])}"
+
+
+def _placeholder_filler_outro_detail(body_text: str) -> str | None:
+    lines = [line.strip() for line in body_text.splitlines() if line.strip()]
+    if len(lines) < 2:
+        return None
+    last_line = lines[-1]
+    if not PLACEHOLDER_FILLER_OUTRO_RE.fullmatch(last_line):
+        return None
+    prose_before = "".join(lines[:-1]).strip()
+    if len(prose_before) < 40:
+        return None
+    return f"filler_outro=1;tail={re.sub(r'\s+', ' ', last_line).strip()}"
+
+
+def _placeholder_body_reason(body_html: str, body_text: str, *, subtype: Any) -> dict[str, str] | None:
+    if not _placeholder_body_target_subtype(subtype):
+        return None
+
+    detail_parts: list[str] = []
+    hard_stop = False
+
+    actor_signal = _placeholder_actor_signal(body_text)
+    if actor_signal is not None:
+        if actor_signal[0] == "hard_stop":
+            hard_stop = True
+        detail_parts.append(actor_signal[1])
+
+    empty_heading_count = len(EMPTY_HEADING_RE.findall(body_html or ""))
+    if empty_heading_count >= 2:
+        hard_stop = True
+        detail_parts.append(f"empty_heading_count={empty_heading_count}")
+    elif empty_heading_count == 1:
+        detail_parts.append("empty_heading_count=1")
+
+    if not detail_parts:
+        filler_detail = _placeholder_filler_outro_detail(body_text)
+        if filler_detail is not None:
+            detail_parts.append(filler_detail)
+
+    if not detail_parts:
+        return None
+
+    return {
+        "flag": "farm_result_placeholder_body" if hard_stop else "placeholder_body_repairable",
+        "category": "hard_stop" if hard_stop else "repairable",
+        "detail": "; ".join(detail_parts),
+    }
+
+
 def _dev_line_categories(line: str) -> set[str]:
     categories: set[str] = set()
     if "Traceback (most recent call last)" in line or re.search(r"^[A-Za-z_]+Error:\s", line):
@@ -1170,6 +1289,18 @@ def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -
         )
     elif medical_roster_flag == "roster_movement_yellow":
         _append_reason(reasons, flag="roster_movement_yellow", category="repairable")
+    placeholder_body_reason = _placeholder_body_reason(
+        body_html,
+        _body_text_without_source(record),
+        subtype=subtype_resolution["resolved_subtype"],
+    )
+    if placeholder_body_reason is not None:
+        _append_reason(
+            reasons,
+            flag=placeholder_body_reason["flag"],
+            category=placeholder_body_reason["category"],
+            detail=placeholder_body_reason["detail"],
+        )
     if RANKING_LIST_ONLY_RE.search(body_text):
         _append_reason(reasons, flag="ranking_list_only", category="hard_stop")
 

@@ -227,6 +227,29 @@ def _read_jsonl_rows(path: Path) -> list[dict]:
     ]
 
 
+def _stdout_json_lines(stdout: str) -> list[dict]:
+    return [
+        json.loads(line)
+        for line in stdout.splitlines()
+        if line.strip()
+    ]
+
+
+def _summary_payload(stdout: str) -> dict:
+    lines = _stdout_json_lines(stdout)
+    if not lines:
+        raise AssertionError("stdout did not contain any JSON lines")
+    return lines[-1]
+
+
+def _event_payloads(stdout: str, event: str) -> list[dict]:
+    return [
+        payload
+        for payload in _stdout_json_lines(stdout)
+        if payload.get("event") == event
+    ]
+
+
 class TestBodyTooLongUsesProseLength(unittest.TestCase):
     def test_html_heavy_short_prose_stays_editable(self):
         now = lane._now_jst("2026-04-20T10:00:00+09:00")
@@ -420,12 +443,65 @@ class TestLaneMain(unittest.TestCase):
         wp = _FakeWP(paged_posts={1: []})
         code, stdout, _, _, _, _ = _run_main(["--now-iso", "2026-04-20T10:00:00+09:00"], wp=wp)
         self.assertEqual(code, 0)
-        payload = json.loads(stdout.strip())
+        no_op_events = _event_payloads(stdout, "no_op_skip")
+        self.assertEqual(len(no_op_events), 1)
+        self.assertEqual(no_op_events[0]["reason"], "no_repair_candidates")
+        self.assertEqual(no_op_events[0]["provider"], "gemini")
+        payload = _summary_payload(stdout)
         self.assertEqual(payload["stop_reason"], "no_candidate")
         self.assertEqual(payload["put_ok"], 0)
         self.assertEqual(payload["candidates_before_filter"], 0)
         self.assertEqual(payload["skip_reason_counts"], {})
         self.assertEqual(payload["fetch_mode"], "draft_list_paginated")
+
+    def test_no_op_skip_emitted_for_codex_provider(self):
+        wp = _FakeWP(paged_posts={1: []})
+        with patch(
+            "src.tools.run_draft_body_editor_lane.repair_fallback_controller.RepairFallbackController"
+        ) as controller_cls:
+            code, stdout, _, _, _, editor_mock = _run_main(
+                ["--now-iso", "2026-04-20T10:00:00+09:00", "--provider", "codex"],
+                wp=wp,
+            )
+        self.assertEqual(code, 0)
+        self.assertFalse(editor_mock.called)
+        controller_cls.assert_not_called()
+        no_op_events = _event_payloads(stdout, "no_op_skip")
+        self.assertEqual(len(no_op_events), 1)
+        self.assertEqual(no_op_events[0]["provider"], "codex")
+        self.assertEqual(no_op_events[0]["reason"], "no_repair_candidates")
+        self.assertEqual(_summary_payload(stdout)["stop_reason"], "no_candidate")
+
+    def test_no_op_skip_emitted_for_gemini_provider(self):
+        wp = _FakeWP(paged_posts={1: []})
+        code, stdout, _, _, _, editor_mock = _run_main(
+            ["--now-iso", "2026-04-20T10:00:00+09:00", "--provider", "gemini"],
+            wp=wp,
+        )
+        self.assertEqual(code, 0)
+        self.assertFalse(editor_mock.called)
+        no_op_events = _event_payloads(stdout, "no_op_skip")
+        self.assertEqual(len(no_op_events), 1)
+        self.assertEqual(no_op_events[0]["provider"], "gemini")
+        self.assertEqual(no_op_events[0]["reason"], "no_repair_candidates")
+        self.assertEqual(_summary_payload(stdout)["stop_reason"], "no_candidate")
+
+    def test_no_op_skip_event_payload_schema(self):
+        wp = _FakeWP(paged_posts={1: []})
+        code, stdout, _, _, _, _ = _run_main(["--now-iso", "2026-04-20T10:00:00+09:00"], wp=wp)
+        self.assertEqual(code, 0)
+        event = _event_payloads(stdout, "no_op_skip")[0]
+        self.assertEqual(
+            set(event.keys()),
+            {"event", "lane", "provider", "reason", "candidates_count", "timestamp"},
+        )
+        self.assertEqual(event["event"], "no_op_skip")
+        self.assertEqual(event["lane"], "draft_body_editor_lane")
+        self.assertEqual(event["candidates_count"], 0)
+        self.assertNotIn("current_body", event)
+        self.assertNotIn("body_text", event)
+        self.assertNotIn("secret", event)
+        self.assertNotIn("token", event)
 
     def test_pagination_across_three_pages_with_mixed_outcomes(self):
         paged_posts = {
@@ -516,10 +592,42 @@ class TestLaneMain(unittest.TestCase):
             touched_ids={401},
         )
         self.assertEqual(code, 0)
-        payload = json.loads(stdout.strip())
+        payload = _summary_payload(stdout)
         self.assertEqual(payload["stop_reason"], "no_candidate")
         self.assertEqual(payload["candidates_before_filter"], 1)
         self.assertEqual(payload["skip_reason_counts"], {"recently_edited_by_lane": 1})
+
+    def test_no_op_skip_does_not_call_gemini_when_filters_remove_last_candidate(self):
+        wp = _FakeWP(paged_posts={1: [_make_post(403)], 2: []})
+        code, stdout, _, _, _, editor_mock = _run_main(
+            ["--now-iso", "2026-04-20T10:00:00+09:00", "--provider", "gemini"],
+            wp=wp,
+            touched_ids={403},
+        )
+        self.assertEqual(code, 0)
+        self.assertFalse(editor_mock.called)
+        no_op_events = _event_payloads(stdout, "no_op_skip")
+        self.assertEqual(len(no_op_events), 1)
+        self.assertEqual(no_op_events[0]["reason"], "no_repair_candidates")
+        self.assertEqual(_summary_payload(stdout)["skip_reason_counts"], {"recently_edited_by_lane": 1})
+
+    def test_no_op_skip_does_not_call_codex_when_filters_remove_last_candidate(self):
+        wp = _FakeWP(paged_posts={1: [_make_post(404)], 2: []})
+        with patch(
+            "src.tools.run_draft_body_editor_lane.repair_fallback_controller.RepairFallbackController"
+        ) as controller_cls:
+            code, stdout, _, _, _, editor_mock = _run_main(
+                ["--now-iso", "2026-04-20T10:00:00+09:00", "--provider", "codex"],
+                wp=wp,
+                touched_ids={404},
+            )
+        self.assertEqual(code, 0)
+        self.assertFalse(editor_mock.called)
+        controller_cls.assert_not_called()
+        no_op_events = _event_payloads(stdout, "no_op_skip")
+        self.assertEqual(len(no_op_events), 1)
+        self.assertEqual(no_op_events[0]["provider"], "codex")
+        self.assertEqual(_summary_payload(stdout)["skip_reason_counts"], {"recently_edited_by_lane": 1})
 
     def test_recent_guarded_publish_refused_skips_llm_call(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -552,7 +660,12 @@ class TestLaneMain(unittest.TestCase):
 
         self.assertEqual(code, 0)
         self.assertFalse(editor_mock.called)
-        payload = json.loads(stdout.strip())
+        no_op_events = _event_payloads(stdout, "no_op_skip")
+        self.assertEqual(len(no_op_events), 1)
+        self.assertEqual(no_op_events[0]["reason"], "all_skipped_by_dedupe_or_cooldown")
+        self.assertEqual(no_op_events[0]["provider"], "gemini")
+        self.assertEqual(no_op_events[0]["candidates_count"], 1)
+        payload = _summary_payload(stdout)
         self.assertEqual(payload["per_post_outcomes"], [
             {"post_id": 402, "verdict": "skip", "skip_reason": "refused_cooldown"}
         ])

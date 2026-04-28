@@ -1073,6 +1073,22 @@ def _append_skip_outcome(
     })
 
 
+def _emit_no_op_skip_log(*, lane: str, provider: str, reason: str, candidates_count: int = 0) -> None:
+    """Emit one structured no-op skip event to stdout for Cloud Logging."""
+    import time
+
+    payload = {
+        "event": "no_op_skip",
+        "lane": lane,
+        "provider": provider,
+        "reason": reason,
+        "candidates_count": int(candidates_count),
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+    }
+    sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    sys.stdout.flush()
+
+
 def _recent_guarded_publish_refused(
     post_id: int,
     *,
@@ -1423,6 +1439,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             return EXIT_WP_GET_FAILED
 
     if not candidates:
+        _emit_no_op_skip_log(
+            lane="draft_body_editor_lane",
+            provider=args.provider,
+            reason="no_repair_candidates",
+            candidates_count=0,
+        )
         _emit_run_result(
             now,
             candidates=candidates,
@@ -1446,6 +1468,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     reject_count = 0
     reject_streak = 0
     put_fail_count = 0
+    llm_noop_candidate_count = 0
     stop_reason = "completed"
 
     for candidate_ref in selected_candidates:
@@ -1509,6 +1532,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 post_id=candidate["post_id"],
                 reason="refused_cooldown",
             )
+            llm_noop_candidate_count += 1
             _append_session_log(
                 now,
                 {
@@ -1642,6 +1666,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "verdict": "edited",
                 "edited": put_status,
             })
+            if exec_payload.get("llm_skip_reason") == "content_hash_dedupe":
+                llm_noop_candidate_count += 1
             _append_session_log(
                 now,
                 {
@@ -1845,6 +1871,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "verdict": "edited",
             "edited": put_status,
         })
+        if exec_payload.get("llm_skip_reason") == "content_hash_dedupe":
+            llm_noop_candidate_count += 1
         _append_session_log(
             now,
             {
@@ -1859,6 +1887,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "llm_skip_reason": exec_payload.get("llm_skip_reason"),
                 "put_status": put_status,
             },
+        )
+
+    if stop_reason == "completed" and per_post_outcomes and llm_noop_candidate_count == len(per_post_outcomes):
+        _emit_no_op_skip_log(
+            lane="draft_body_editor_lane",
+            provider=args.provider,
+            reason="all_skipped_by_dedupe_or_cooldown",
+            candidates_count=llm_noop_candidate_count,
         )
 
     next_run_hint = {

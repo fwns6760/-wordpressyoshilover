@@ -112,6 +112,15 @@ _FARM_LINEUP_MARKER_RE = re.compile(r"(?:スタメン|先発|[1-9]番)")
 _FIRST_TEAM_POSTGAME_SCORE_RE = re.compile(r"\d+\s*(?:-|対)\s*\d+")
 _FIRST_TEAM_POSTGAME_KEY_EVENT_RE = re.compile(r"(?:決勝打|本塁打|先制|逆転)")
 _FIRST_TEAM_LINEUP_MARKER_RE = re.compile(r"(?:1番|2番|先発|スタメン)")
+_PROGRAM_NOTICE_MARKER_RE = re.compile(r"(放送|配信|GIANTS\s*TV|オンエア|テレビ|ラジオ|番組|出演)")
+_ROSTER_NOTICE_MARKER_RE = re.compile(r"(出場選手登録|登録抹消|一軍登録|二軍降格|戦力外|引退|公示)")
+_PROGRAM_NOTICE_TIME_RE = re.compile(
+    r"(?:"
+    r"(?:[01]?\d|2[0-3])[:：]\d{2}|"
+    r"(?:午前|午後)\s*\d{1,2}時(?:\d{1,2}分)?|"
+    r"\d{1,2}時(?:\d{1,2}分)?"
+    r")"
+)
 _MANUAL_X_NOTICE_EVENT_KEYWORDS = (
     "開催",
     "日程",
@@ -209,6 +218,14 @@ _REVIEW_REASON_LABELS: dict[str | None, tuple[str, str]] = {
     _FIRST_TEAM_LINEUP_REVIEW_REASON: (
         "要確認",
         "一軍スタメンの記事で時点または内容確認が必要です(本文確認推奨)",
+    ),
+    "program_notice_review": (
+        "要確認",
+        "放送・配信時刻または番組情報の確認が必要です(本文確認推奨)",
+    ),
+    "roster_notice_review": (
+        "要確認",
+        "出場選手登録・公示系の記事です(本文確認推奨)",
     ),
     "cautious_subtype_review": (
         "要確認",
@@ -712,6 +729,22 @@ def _is_first_team_article(title: str, summary: str, subtype: str) -> bool:
     return True
 
 
+def _is_program_notice(title: str, summary: str, subtype: str) -> bool:
+    normalized = str(subtype or "").strip().lower()
+    if normalized not in {"program", "notice"}:
+        return False
+    blob = f"{title or ''}\n{summary or ''}"
+    return bool(_PROGRAM_NOTICE_MARKER_RE.search(blob))
+
+
+def _is_roster_notice(title: str, summary: str, subtype: str) -> bool:
+    normalized = str(subtype or "").strip().lower()
+    if normalized != "notice":
+        return False
+    blob = f"{title or ''}\n{summary or ''}"
+    return bool(_ROSTER_NOTICE_MARKER_RE.search(blob))
+
+
 def _manual_x_has_sensitive_word(title: str, summary: str) -> bool:
     combined = f"{title} {summary}"
     return any(word in combined for word in _MANUAL_X_SENSITIVE_WORDS)
@@ -1109,6 +1142,39 @@ def _first_team_subtype_review_reason(
     return None
 
 
+def _program_notice_review_reason(
+    request: PublishNoticeRequest,
+    context: ManualXContext,
+) -> str | None:
+    normalized_subtype = str(request.subtype or "").strip().lower()
+    raw_title = str(request.title or "").strip()
+    raw_summary = _WHITESPACE_RE.sub(" ", str(request.summary or "").strip())
+    if not _is_program_notice(raw_title, raw_summary, normalized_subtype):
+        return None
+
+    combined = " ".join(
+        item for item in (raw_title, context.cleaned_summary, raw_summary) if item and item != "(なし)"
+    )
+    has_date = bool(_MANUAL_X_DATE_RE.search(combined))
+    has_time = bool(_PROGRAM_NOTICE_TIME_RE.search(combined))
+    has_program_title = bool(_PROGRAM_NOTICE_MARKER_RE.search(combined))
+    if has_date and has_time and has_program_title:
+        return None
+    return "program_notice_review"
+
+
+def _roster_notice_review_reason(
+    request: PublishNoticeRequest,
+    context: ManualXContext,
+) -> str | None:
+    normalized_subtype = str(request.subtype or "").strip().lower()
+    raw_title = str(request.title or "").strip()
+    raw_summary = _WHITESPACE_RE.sub(" ", str(request.summary or "").strip())
+    if not _is_roster_notice(raw_title, raw_summary, normalized_subtype):
+        return None
+    return "roster_notice_review"
+
+
 def _manual_x_context(request: PublishNoticeRequest) -> ManualXContext:
     title = _collapse_title(request.title) or "巨人ニュース"
     url = str(request.canonical_url or "").strip()
@@ -1379,6 +1445,16 @@ def _per_post_mail_state(
     if first_team_review_reason and mail_class in {"publish", "x_candidate"}:
         mail_class = "review"
         reason = first_team_review_reason
+
+    program_review_reason = _program_notice_review_reason(request, context)
+    if program_review_reason and mail_class in {"publish", "x_candidate"}:
+        mail_class = "review"
+        reason = program_review_reason
+
+    roster_review_reason = _roster_notice_review_reason(request, context)
+    if roster_review_reason and mail_class in {"publish", "x_candidate"}:
+        mail_class = "review"
+        reason = roster_review_reason
 
     farm_review_reason = _farm_subtype_review_reason(
         request,

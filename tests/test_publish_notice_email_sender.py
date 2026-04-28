@@ -941,6 +941,75 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         self.assertEqual(classification["reason"], "first_team_lineup_review")
         self.assertEqual(classification["x_post_ready"], "false")
 
+    def test_program_notice_helper_hits_for_giants_tv_subject(self):
+        request = self._request(
+            subtype="program",
+            title="GIANTS TV『直前トーク』を4月29日20:00配信",
+            summary="阿部慎之助監督が出演予定。",
+        )
+
+        self.assertTrue(sender._is_program_notice(request.title, request.summary or "", request.subtype))
+
+    def test_program_notice_review_forces_x_post_off(self):
+        request = self._request(
+            subtype="program",
+            title="GIANTS TV出演情報",
+            summary="坂本勇人が出演予定。",
+        )
+        classification = sender._classify_mail(request)
+
+        self.assertEqual(classification["mail_class"], "review")
+        self.assertEqual(classification["reason"], "program_notice_review")
+        self.assertEqual(classification["x_post_ready"], "false")
+        self.assertEqual(
+            sender.build_subject(request.title, classification=classification),
+            "【要確認】GIANTS TV出演情報 | YOSHILOVER",
+        )
+
+    def test_roster_notice_helper_hits_for_registration(self):
+        request = self._request(
+            subtype="notice",
+            title="【巨人】浅野翔吾が出場選手登録",
+            summary="一軍に合流した。",
+        )
+
+        self.assertTrue(sender._is_roster_notice(request.title, request.summary or "", request.subtype))
+
+    def test_roster_notice_review_forces_x_post_off(self):
+        request = self._request(
+            subtype="notice",
+            title="【巨人】浅野翔吾が出場選手登録",
+            summary="一軍に合流した。",
+        )
+        classification = sender._classify_mail(request)
+
+        self.assertTrue(sender._is_roster_notice(request.title, request.summary or "", request.subtype))
+        self.assertEqual(classification["mail_class"], "review")
+        self.assertEqual(classification["x_post_ready"], "false")
+        self.assertEqual(
+            sender.build_subject(request.title, classification=classification),
+            "【要確認】【巨人】浅野翔吾が出場選手登録 | YOSHILOVER",
+        )
+
+    def test_clean_program_with_full_metadata_keeps_x_candidate(self):
+        request = self._request(
+            subtype="program",
+            title="GIANTS TV『直前トーク』を4月29日20:00配信",
+            summary="GIANTS TVで4月29日20:00から配信。阿部慎之助監督が出演し見どころを語る。",
+        )
+        classification = sender._classify_mail(request)
+
+        labels = [label for label, _text in sender.build_manual_x_post_candidates(request)]
+        self.assertTrue(sender._is_program_notice(request.title, request.summary or "", request.subtype))
+        self.assertEqual(classification["mail_class"], "x_candidate")
+        self.assertEqual(classification["reason"], "manual_x_candidates_clean")
+        self.assertEqual(classification["x_post_ready"], "true")
+        self.assertIn("x_post_2_program_memo", labels)
+        self.assertEqual(
+            sender.build_subject(request.title, classification=classification),
+            "【投稿候補】GIANTS TV『直前トーク』を4月29日20:00配信 | YOSHILOVER",
+        )
+
     def test_farm_postgame_path_unchanged_by_first_team_helper(self):
         request = self._request(
             subtype="postgame",

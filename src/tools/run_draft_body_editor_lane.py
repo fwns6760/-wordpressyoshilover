@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import logging
 import os
 import re
 import subprocess
@@ -55,6 +56,7 @@ ROOT = Path(__file__).resolve().parents[2]
 LOG_ROOT = ROOT / "logs" / "draft_body_editor"
 LLM_DEDUPE_LEDGER_PATH = llm_call_dedupe.DEFAULT_LEDGER_PATH
 GUARDED_PUBLISH_HISTORY_PATH = llm_call_dedupe.DEFAULT_GUARDED_PUBLISH_HISTORY_PATH
+LOGGER = logging.getLogger("draft_body_editor_lane")
 
 VALID_SUBTYPES = {"pregame", "postgame", "lineup", "manager", "farm"}
 FACT_CHECK_BLOCK_VALUES = {"fail", "flagged", "pending"}
@@ -1018,6 +1020,11 @@ def _collect_paginated_candidates(
             if "rest_post_invalid_page_number" in str(e):
                 stats["pages_fetched"] += 1
                 break
+            LOGGER.warning(
+                "draft_body_editor_lane candidate fetch failed: fetch_mode=draft_list_paginated page=%d error=%s",
+                page,
+                e,
+            )
             return None, "draft_list_paginated", stats, skip_counter
 
         stats["pages_fetched"] += 1
@@ -1085,8 +1092,19 @@ def _emit_no_op_skip_log(*, lane: str, provider: str, reason: str, candidates_co
         "candidates_count": int(candidates_count),
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
     }
-    sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    sys.stdout.flush()
+    try:
+        sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        sys.stdout.flush()
+    except Exception as e:
+        LOGGER.warning(
+            "no_op_skip emit failed: lane=%s provider=%s reason=%s candidates_count=%d error=%s",
+            lane,
+            provider,
+            reason,
+            int(candidates_count),
+            e,
+        )
+        raise
 
 
 def _recent_guarded_publish_refused(
@@ -1230,6 +1248,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         edit_window_start, edit_window_end, edit_window_jst = _resolve_edit_window(args)
     except ValueError as e:
         print(str(e), file=sys.stderr)
+        LOGGER.warning(
+            "draft_body_editor_lane early return: stop_reason=input_error detail=edit_window_resolution_failed error=%s",
+            e,
+        )
         payload = _build_summary_payload(
             candidates=0,
             put_ok=0,
@@ -1259,6 +1281,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.max_posts <= 0:
         print("--max-posts must be a positive integer", file=sys.stderr)
+        LOGGER.warning(
+            "draft_body_editor_lane early return: stop_reason=input_error detail=max_posts_non_positive max_posts=%s",
+            args.max_posts,
+        )
         payload = _build_summary_payload(
             candidates=0,
             put_ok=0,
@@ -1358,6 +1384,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             candidates, fetch_mode, pagination_stats, list_skip_counter = _collect_queue_candidates(queue_path)
         except (OSError, ValueError) as e:
             print(f"failed to load queue-path: {e}", file=sys.stderr)
+            LOGGER.warning(
+                "draft_body_editor_lane early return: stop_reason=input_error detail=queue_candidate_load_failed queue_path=%s error=%s",
+                queue_path,
+                e,
+            )
             payload = _build_summary_payload(
                 candidates=0,
                 put_ok=0,
@@ -1386,6 +1417,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             return EXIT_INPUT_ERROR
     candidates_before_filter = pagination_stats["posts_seen"]
     if candidates is None:
+        LOGGER.warning(
+            "draft_body_editor_lane early return: stop_reason=wp_pagination_failed fetch_mode=%s pages_fetched=%d",
+            fetch_mode,
+            pagination_stats["pages_fetched"],
+        )
         _emit_run_result(
             now,
             candidates=[],

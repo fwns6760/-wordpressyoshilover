@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import sys
 import time
@@ -20,6 +21,7 @@ _PRICING_USD_PER_M: dict[str, dict[str, float]] = {
     "gemini-2.0-flash": {"in": 0.10, "out": 0.40},
 }
 _FX_JPY_PER_USD = float(os.environ.get("LLM_COST_FX_JPY_PER_USD", "150"))
+_LOG = logging.getLogger(__name__)
 
 
 def _estimate_tokens_from_chars(chars: int) -> int:
@@ -128,8 +130,58 @@ def emit_llm_cost(
         "error_class": error_class,
         "timestamp": timestamp or time.strftime("%Y-%m-%dT%H:%M:%S%z"),
     }
-    sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    sys.stdout.flush()
+    try:
+        payload_json = json.dumps(payload, ensure_ascii=False)
+    except Exception as exc:
+        _LOG.warning(
+            "llm_cost emit json dump failed: lane=%s call_site=%s error=%s",
+            lane,
+            call_site,
+            exc,
+        )
+        raise
+
+    payload_bytes = payload_json.encode("utf-8")
+    payload_hash = hashlib.sha256(payload_bytes).hexdigest()[:16]
+    payload_size = len(payload_bytes)
+    _LOG.debug(
+        "llm_cost emit prepared: lane=%s call_site=%s payload_size=%d payload_hash=%s",
+        lane,
+        call_site,
+        payload_size,
+        payload_hash,
+    )
+    try:
+        sys.stdout.write(payload_json + "\n")
+    except Exception as exc:
+        _LOG.warning(
+            "llm_cost emit stdout.write failed: lane=%s call_site=%s payload_size=%d payload_hash=%s error=%s",
+            lane,
+            call_site,
+            payload_size,
+            payload_hash,
+            exc,
+        )
+        raise
+    try:
+        sys.stdout.flush()
+    except Exception as exc:
+        _LOG.warning(
+            "llm_cost emit stdout.flush failed: lane=%s call_site=%s payload_size=%d payload_hash=%s error=%s",
+            lane,
+            call_site,
+            payload_size,
+            payload_hash,
+            exc,
+        )
+        raise
+    _LOG.debug(
+        "llm_cost emit completed: lane=%s call_site=%s payload_size=%d payload_hash=%s",
+        lane,
+        call_site,
+        payload_size,
+        payload_hash,
+    )
 
 
 __all__ = [

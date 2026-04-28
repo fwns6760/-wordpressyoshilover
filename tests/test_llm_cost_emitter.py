@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import json
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from src import llm_cost_emitter
 
@@ -34,7 +34,30 @@ class LlmCostEmitterTests(unittest.TestCase):
         return json.loads(stdout.getvalue().strip())
 
     def test_emit_writes_jsonpayload_to_stdout(self):
-        payload = self._emit_payload()
+        stdout = io.StringIO()
+        stdout_proxy = Mock(wraps=stdout)
+        kwargs: dict[str, object] = {
+            "lane": "rss_fetcher_grounded",
+            "call_site": "rss_fetcher.generate_article_with_gemini",
+            "post_id": 1234,
+            "source_url": "https://example.com/a",
+            "content_hash": "hash-1",
+            "model": "gemini-2.5-flash",
+            "input_chars": 100,
+            "output_chars": 80,
+            "token_in": None,
+            "token_out": None,
+            "cache_hit": False,
+            "skip_reason": None,
+            "success": True,
+            "error_class": None,
+            "timestamp": "2026-04-28T10:00:00+0900",
+        }
+        with patch("sys.stdout", stdout_proxy):
+            llm_cost_emitter.emit_llm_cost(**kwargs)
+        stdout_proxy.write.assert_called_once()
+        stdout_proxy.flush.assert_called_once()
+        payload = json.loads(stdout.getvalue().strip())
         self.assertEqual(payload["event"], "llm_cost")
         self.assertEqual(payload["lane"], "rss_fetcher_grounded")
         self.assertEqual(payload["call_site"], "rss_fetcher.generate_article_with_gemini")

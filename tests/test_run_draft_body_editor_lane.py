@@ -441,8 +441,18 @@ class TestLaneMain(unittest.TestCase):
 
     def test_empty_candidates_returns_ok(self):
         wp = _FakeWP(paged_posts={1: []})
-        code, stdout, _, _, _, _ = _run_main(["--now-iso", "2026-04-20T10:00:00+09:00"], wp=wp)
+        with patch(
+            "src.tools.run_draft_body_editor_lane._emit_no_op_skip_log",
+            wraps=lane._emit_no_op_skip_log,
+        ) as emit_mock:
+            code, stdout, _, _, _, _ = _run_main(["--now-iso", "2026-04-20T10:00:00+09:00"], wp=wp)
         self.assertEqual(code, 0)
+        emit_mock.assert_called_once_with(
+            lane="draft_body_editor_lane",
+            provider="gemini",
+            reason="no_repair_candidates",
+            candidates_count=0,
+        )
         no_op_events = _event_payloads(stdout, "no_op_skip")
         self.assertEqual(len(no_op_events), 1)
         self.assertEqual(no_op_events[0]["reason"], "no_repair_candidates")
@@ -458,7 +468,10 @@ class TestLaneMain(unittest.TestCase):
         wp = _FakeWP(paged_posts={1: []})
         with patch(
             "src.tools.run_draft_body_editor_lane.repair_fallback_controller.RepairFallbackController"
-        ) as controller_cls:
+        ) as controller_cls, patch(
+            "src.tools.run_draft_body_editor_lane._emit_no_op_skip_log",
+            wraps=lane._emit_no_op_skip_log,
+        ) as emit_mock:
             code, stdout, _, _, _, editor_mock = _run_main(
                 ["--now-iso", "2026-04-20T10:00:00+09:00", "--provider", "codex"],
                 wp=wp,
@@ -466,6 +479,12 @@ class TestLaneMain(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertFalse(editor_mock.called)
         controller_cls.assert_not_called()
+        emit_mock.assert_called_once_with(
+            lane="draft_body_editor_lane",
+            provider="codex",
+            reason="no_repair_candidates",
+            candidates_count=0,
+        )
         no_op_events = _event_payloads(stdout, "no_op_skip")
         self.assertEqual(len(no_op_events), 1)
         self.assertEqual(no_op_events[0]["provider"], "codex")
@@ -653,13 +672,23 @@ class TestLaneMain(unittest.TestCase):
             )
             with patch.object(lane, "GUARDED_PUBLISH_HISTORY_PATH", history_path), \
                  patch.object(lane, "LLM_DEDUPE_LEDGER_PATH", dedupe_path):
-                code, stdout, _, _, _, editor_mock = _run_main(
-                    ["--now-iso", "2026-04-20T10:00:00+09:00"],
-                    wp=wp,
-                )
+                with patch(
+                    "src.tools.run_draft_body_editor_lane._emit_no_op_skip_log",
+                    wraps=lane._emit_no_op_skip_log,
+                ) as emit_mock:
+                    code, stdout, _, _, _, editor_mock = _run_main(
+                        ["--now-iso", "2026-04-20T10:00:00+09:00"],
+                        wp=wp,
+                    )
 
         self.assertEqual(code, 0)
         self.assertFalse(editor_mock.called)
+        emit_mock.assert_called_once_with(
+            lane="draft_body_editor_lane",
+            provider="gemini",
+            reason="all_skipped_by_dedupe_or_cooldown",
+            candidates_count=1,
+        )
         no_op_events = _event_payloads(stdout, "no_op_skip")
         self.assertEqual(len(no_op_events), 1)
         self.assertEqual(no_op_events[0]["reason"], "all_skipped_by_dedupe_or_cooldown")

@@ -4311,7 +4311,9 @@ def _request_gemini_strict_text(
             raw_text = "".join(p.get("text", "") for p in parts if "text" in p).strip()
             raw_text = _strip_prompt_role_echo(raw_text)
             token_in, token_out = _llm_cost.extract_usage_metadata(data)
-            _llm_cost.emit_llm_cost(
+            _emit_llm_cost_with_observability(
+                logger,
+                "rss_fetcher._request_gemini_strict_text.success",
                 lane="rss_fetcher_strict",
                 call_site="rss_fetcher._request_gemini_strict_text",
                 post_id=None,
@@ -4339,7 +4341,9 @@ def _request_gemini_strict_text(
                 attempt_limit,
             )
         except Exception as e:
-            _llm_cost.emit_llm_cost(
+            _emit_llm_cost_with_observability(
+                logger,
+                "rss_fetcher._request_gemini_strict_text.error",
                 lane="rss_fetcher_strict",
                 call_site="rss_fetcher._request_gemini_strict_text",
                 post_id=None,
@@ -4358,6 +4362,34 @@ def _request_gemini_strict_text(
             logger.warning("%s 失敗 試行%d/%d: %s", log_label, attempt + 1, attempt_limit, e)
     logger.error("%s が上限回数に達したため記事生成スキップ", log_label)
     return ""
+
+
+def _emit_llm_cost_with_observability(
+    logger: logging.Logger,
+    debug_site: str,
+    **emit_kwargs,
+) -> None:
+    lane = str(emit_kwargs.get("lane") or "")
+    call_site = str(emit_kwargs.get("call_site") or "")
+    logger.debug(
+        "llm_cost emit start: debug_site=%s lane=%s call_site=%s",
+        debug_site,
+        lane,
+        call_site,
+    )
+    try:
+        from src import llm_cost_emitter as _llm_cost
+
+        _llm_cost.emit_llm_cost(**emit_kwargs)
+    except Exception as e:
+        logger.warning("llm_cost emit failed at %s: %s", debug_site, e)
+        raise
+    logger.debug(
+        "llm_cost emit done: debug_site=%s lane=%s call_site=%s",
+        debug_site,
+        lane,
+        call_site,
+    )
 
 
 def _log_article_parts_applied(
@@ -7755,7 +7787,9 @@ def _fact_check_article(title: str, article_text: str, api_key: str) -> str:
             data = json.load(res)
         checked = data["candidates"][0]["content"]["parts"][0]["text"].strip()
         token_in, token_out = _llm_cost.extract_usage_metadata(data)
-        _llm_cost.emit_llm_cost(
+        _emit_llm_cost_with_observability(
+            logger,
+            "rss_fetcher._fact_check_article.success",
             lane="rss_fetcher_fact_check",
             call_site="rss_fetcher._fact_check_article",
             post_id=None,
@@ -7777,7 +7811,9 @@ def _fact_check_article(title: str, article_text: str, api_key: str) -> str:
         else:
             logger.warning("チェック結果が短すぎる → 元の記事を維持")
     except Exception as e:
-        _llm_cost.emit_llm_cost(
+        _emit_llm_cost_with_observability(
+            logger,
+            "rss_fetcher._fact_check_article.error",
             lane="rss_fetcher_fact_check",
             call_site="rss_fetcher._fact_check_article",
             post_id=None,
@@ -8246,7 +8282,9 @@ def generate_article_with_gemini(
             raw_text = "".join(p.get("text", "") for p in parts if "text" in p).strip()
             raw_text = _strip_prompt_role_echo(raw_text)
             token_in, token_out = _llm_cost.extract_usage_metadata(data)
-            _llm_cost.emit_llm_cost(
+            _emit_llm_cost_with_observability(
+                logger,
+                "rss_fetcher.generate_article_with_gemini.success",
                 lane="rss_fetcher_grounded",
                 call_site="rss_fetcher.generate_article_with_gemini",
                 post_id=None,
@@ -8267,7 +8305,9 @@ def generate_article_with_gemini(
                 return raw_text
             logger.warning("Gemini応答が短すぎる（%d文字）、試行 %d/%d", len(raw_text), attempt + 1, attempt_limit)
         except Exception as e:
-            _llm_cost.emit_llm_cost(
+            _emit_llm_cost_with_observability(
+                logger,
+                "rss_fetcher.generate_article_with_gemini.error",
                 lane="rss_fetcher_grounded",
                 call_site="rss_fetcher.generate_article_with_gemini",
                 post_id=None,

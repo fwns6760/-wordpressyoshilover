@@ -256,3 +256,33 @@ def test_log_payload_no_full_url_no_body_no_secret():
     assert "prompt" not in payload
     assert "api_key" not in payload
     assert "https://news.hochi.news/" not in messages[0]
+
+
+def test_rule_based_subtype_allowlist_filters_non_permitted_values(monkeypatch):
+    monkeypatch.setenv("RULE_BASED_SUBTYPES", "default,lineup,postgame,program,notice,farm")
+
+    assert rss_fetcher._rule_based_subtype_allowlist() == frozenset({"lineup", "program", "notice"})
+    assert rss_fetcher._should_use_rule_based("default") is False
+    assert rss_fetcher._should_use_rule_based("postgame") is False
+    assert rss_fetcher._should_use_rule_based("farm") is False
+
+
+def test_rule_based_skip_log_payload_no_full_url_no_body_no_secret(caplog):
+    with caplog.at_level(logging.INFO, logger="rss_fetcher"):
+        rss_fetcher._log_rule_based_subtype_skip_gemini(
+            logging.getLogger("rss_fetcher"),
+            subtype="lineup",
+            source_url="https://news.hochi.news/articles/example-lineup",
+            input_chars=321,
+            output_chars=654,
+        )
+
+    payload = json.loads(caplog.records[-1].message)
+    assert payload["event"] == "rule_based_subtype_skip_gemini"
+    assert payload["subtype"] == "lineup"
+    assert payload["saved_gemini_calls"] == 3
+    assert payload["source_url_hash"]
+    assert "source_url" not in payload
+    assert "body" not in payload
+    assert "prompt" not in payload
+    assert "api_key" not in payload

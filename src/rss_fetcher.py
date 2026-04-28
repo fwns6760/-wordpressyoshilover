@@ -624,6 +624,43 @@ VIDEO_PROMO_SUMMARY_MARKERS = (
     "見逃し配信",
 )
 QUOTE_SKIP_MARKERS = ("DAZN", "BASEBALL", "月々", "年間プラン", "パック")
+RULE_BASED_SUBTYPE_TEMPLATE_VERSION = "v0"
+_PERMITTED_RULE_BASED_SUBTYPES = frozenset({"lineup", "program", "notice"})
+RULE_BASED_PROGRAM_KEYWORDS = (
+    "番組",
+    "放送",
+    "配信",
+    "出演",
+    "中継",
+    "テレビ",
+    "ラジオ",
+    "特番",
+    "インタビュー",
+)
+RULE_BASED_PROGRAM_CHANNEL_MARKERS = (
+    "GIANTS TV",
+    "Giants TV",
+    "GIANTS_TV",
+    "DAZN",
+    "Hulu",
+    "BS日テレ",
+    "日テレジータス",
+    "日本テレビ",
+    "テレビ",
+    "ラジオ",
+)
+RULE_BASED_SPECULATION_MARKERS = (
+    "予想",
+    "だろう",
+    "期待される",
+    "期待したい",
+    "かもしれない",
+    "ではないか",
+    "見込み",
+)
+RULE_BASED_PROGRAM_PERSON_RE = _re.compile(
+    r"([一-龥々ぁ-んァ-ヴー]{2,12}(?:監督|コーチ|投手|捕手|内野手|外野手|選手))"
+)
 SOCIAL_TEXT_OUTLET_MARKERS = (
     "Sponichi Annex",
     "スポニチ",
@@ -861,6 +898,23 @@ def strict_fact_mode_enabled() -> bool:
 
 def article_parts_renderer_postgame_enabled() -> bool:
     return _env_flag("ENABLE_ARTICLE_PARTS_RENDERER_POSTGAME", False)
+
+
+def _rule_based_subtype_allowlist() -> frozenset[str]:
+    raw = os.environ.get("RULE_BASED_SUBTYPES", "").strip()
+    if not raw:
+        return frozenset()
+    parsed = {part.strip().lower() for part in raw.split(",") if part.strip()}
+    return frozenset(part for part in parsed if part in _PERMITTED_RULE_BASED_SUBTYPES)
+
+
+def _should_use_rule_based(subtype: str | None) -> bool:
+    if not subtype:
+        return False
+    resolved = str(subtype).strip().lower()
+    if resolved not in _PERMITTED_RULE_BASED_SUBTYPES:
+        return False
+    return resolved in _rule_based_subtype_allowlist()
 
 
 def _env_csv_set(name: str, default: set[str]) -> set[str]:
@@ -6392,6 +6446,364 @@ def _build_safe_article_fallback(
     return "\n".join(paragraphs)
 
 
+def _rule_based_source_day_is_current(source_day_label: str) -> bool:
+    label = (source_day_label or "").strip()
+    if not label:
+        return True
+    match = _re.search(r"(\d{1,2})月(\d{1,2})日", label)
+    if not match:
+        return True
+    now = datetime.now(JST)
+    return int(match.group(1)) == now.month and int(match.group(2)) == now.day
+
+
+def _clip_rule_based_fact(text: str, limit: int = 200) -> str:
+    clean = _collapse_ws(_strip_html(text or "")).strip()
+    if not clean:
+        return ""
+    if len(clean) <= limit:
+        return clean
+    return clean[:limit].rstrip(" 、。") + "…"
+
+
+def _rule_based_fact_ok(text: str) -> bool:
+    clean = _collapse_ws(_strip_html(text or "")).strip()
+    if not clean:
+        return False
+    return not any(marker in clean for marker in RULE_BASED_SPECULATION_MARKERS)
+
+
+def _rule_based_fact_lines(title: str, summary: str, max_sentences: int = 5, limit: int = 120) -> list[str]:
+    lines = []
+    for sentence in _extract_source_sentences(title, summary, max_sentences=max_sentences):
+        clipped = _clip_rule_based_fact(sentence, limit=limit)
+        if clipped and _rule_based_fact_ok(clipped):
+            lines.append(clipped.rstrip("。"))
+    return _dedupe_preserve_order(lines)
+
+
+def _extract_rule_based_date_label(text: str, fallback: str = "") -> str:
+    if fallback:
+        return fallback
+    for regex in (DATE_JP_TOKEN_RE, DATE_SLASH_TOKEN_RE):
+        match = regex.search(text or "")
+        if match:
+            return match.group(0)
+    return ""
+
+
+def _extract_rule_based_program_channel(text: str) -> str:
+    for marker in RULE_BASED_PROGRAM_CHANNEL_MARKERS:
+        if marker in text:
+            return marker
+    return ""
+
+
+def _extract_rule_based_program_name(title: str, summary: str, channel: str = "") -> str:
+    quoted = _extract_quote_phrases(f"{title}\n{summary}", max_phrases=1)
+    if quoted:
+        return f"{channel}「{quoted[0]}」" if channel else quoted[0]
+    clean_title = _clip_rule_based_fact(_strip_title_prefix(title), limit=80)
+    clean_title = _re.sub(r"[（(]?(?:\d{1,2}月\d{1,2}日|\d{1,2}/\d{1,2}).*$", "", clean_title).strip("　 -")
+    return clean_title
+
+
+def _extract_rule_based_program_schedule_label(text: str) -> str:
+    date_label = _extract_rule_based_date_label(text)
+    time_match = TIME_TOKEN_RE.search(text or "")
+    if date_label and time_match:
+        return f"{date_label} {time_match.group(0)}"
+    if date_label:
+        return date_label
+    if time_match and any(keyword in text for keyword in RULE_BASED_PROGRAM_KEYWORDS):
+        return time_match.group(0)
+    return ""
+
+
+def _extract_rule_based_program_hosts(title: str, summary: str) -> list[str]:
+    text = _strip_html(f"{title} {summary}")
+    hosts = [match.group(1) for match in RULE_BASED_PROGRAM_PERSON_RE.finditer(text)]
+    return _dedupe_preserve_order([host.strip() for host in hosts if host.strip()])[:5]
+
+
+def _looks_like_rule_based_program_story(title: str, summary: str) -> bool:
+    text = _strip_html(f"{title} {summary}")
+    text_lower = text.lower()
+    if _is_promotional_video_entry(title, summary):
+        return True
+    return (
+        any(keyword in text for keyword in RULE_BASED_PROGRAM_KEYWORDS)
+        or any(keyword in text_lower for keyword in ("program", "broadcast", "tv", "hulu", "dazn"))
+    )
+
+
+def _resolve_rule_based_target_subtype(
+    *,
+    title: str,
+    summary: str,
+    generation_category: str,
+    article_subtype: str,
+    special_story_kind: str = "",
+    source_type: str = "news",
+) -> str:
+    resolved_subtype = str(article_subtype or "").strip().lower()
+    if resolved_subtype == "lineup":
+        return "lineup"
+    if special_story_kind == "player_notice" and generation_category == "選手情報":
+        return "notice"
+    if source_type != "social_news" and _looks_like_rule_based_program_story(title, summary):
+        return "program"
+    return ""
+
+
+def _render_lineup_rule_based(
+    *,
+    title: str,
+    summary: str,
+    source_url: str,
+    source_day_label: str = "",
+    lineup_rows: list[dict] | None = None,
+) -> str | None:
+    if source_day_label and not _rule_based_source_day_is_current(source_day_label):
+        return None
+
+    source_text = _strip_html(f"{title} {summary}")
+    headings = _game_required_headings("lineup")
+    game_date = _extract_rule_based_date_label(source_text, fallback=source_day_label)
+    opponent = _extract_game_opponent_label(source_text)
+    stadium = _extract_game_venue_label(source_text)
+    start_time = _extract_game_time_token(source_text)
+    starter_lines = [line.rstrip("。") for line in _extract_game_pitcher_lines(title, summary) if _rule_based_fact_ok(line)]
+    overview_facts = _rule_based_fact_lines(title, summary, max_sentences=3, limit=100)
+
+    lineup_table: list[str] = []
+    focus_lines: list[str] = []
+    for row in lineup_rows or []:
+        order = str(row.get("order") or "").strip()
+        name = str(row.get("name") or "").strip()
+        position = str(row.get("position") or "").strip()
+        if not order or not name:
+            continue
+        line = f"{order}番 {name}"
+        if position:
+            line += f" {position}"
+        lineup_table.append(line.strip())
+        if order in {"1", "4", "9"}:
+            focus_lines.append(line.strip())
+
+    if not lineup_table:
+        for fact in overview_facts:
+            if LINEUP_ORDER_SLOT_RE.search(fact):
+                lineup_table.append(fact)
+
+    if not lineup_table and not starter_lines:
+        return None
+
+    overview_lines = [headings[0]]
+    details = [item for item in (game_date, f"{opponent}戦" if opponent else "", stadium, f"{start_time}開始" if start_time else "") if item]
+    if details:
+        overview_lines.append(" / ".join(details))
+    overview_lines.extend(f"{fact}。" for fact in overview_facts[:2] if not LINEUP_ORDER_SLOT_RE.search(fact))
+    if len(overview_lines) == 1:
+        overview_lines.append("巨人の試合前情報です。")
+
+    lineup_section = [headings[1]]
+    lineup_section.extend(lineup_table[:9])
+
+    starter_section = [headings[2]]
+    starter_section.extend(f"{line}。" for line in starter_lines[:3])
+    if len(starter_section) == 1:
+        starter_section.append("先発投手の確定情報は元記事で確認できる範囲に限ります。")
+
+    focus_section = [headings[3]]
+    for line in _dedupe_preserve_order(focus_lines)[:3]:
+        focus_section.append(f"{line}。")
+    if not any(line != headings[3] for line in focus_section):
+        for fact in overview_facts:
+            if fact not in lineup_table:
+                focus_section.append(f"{fact}。")
+            if len(focus_section) >= 3:
+                break
+    if source_url:
+        focus_section.append(f"出典: {source_url}")
+    return "\n".join(overview_lines + lineup_section + starter_section + focus_section)
+
+
+def _render_program_rule_based(
+    *,
+    title: str,
+    summary: str,
+    source_url: str,
+) -> str | None:
+    source_text = _strip_html(f"{title} {summary}")
+    channel = _extract_rule_based_program_channel(source_text)
+    schedule_label = _extract_rule_based_program_schedule_label(source_text)
+    program_name = _extract_rule_based_program_name(title, summary, channel=channel)
+    hosts = _extract_rule_based_program_hosts(title, summary)
+    highlights = [
+        fact for fact in _rule_based_fact_lines(title, summary, max_sentences=5, limit=120)
+        if fact != program_name and fact != schedule_label
+    ]
+    if not program_name or not schedule_label:
+        return None
+    if not (channel or hosts or highlights):
+        return None
+
+    sections = ["【番組概要】"]
+    sections.append(f"番組名は{program_name}です。")
+    if channel:
+        sections.append(f"媒体は{channel}です。")
+    sections.append("【放送・配信日時】")
+    sections.append(f"放送・配信日時は{schedule_label}です。")
+    if channel:
+        sections.append(f"配信先は{channel}です。")
+    sections.append("【出演・見どころ】")
+    if hosts:
+        sections.append("出演者: " + " / ".join(hosts[:5]))
+    for fact in highlights[:3]:
+        sections.append(f"{fact}。")
+    sections.append("【視聴メモ】")
+    if source_url:
+        sections.append(f"出典: {source_url}")
+    return "\n".join(sections)
+
+
+def _render_notice_rule_based(
+    *,
+    title: str,
+    summary: str,
+    source_url: str,
+    source_name: str = "",
+    source_day_label: str = "",
+) -> str | None:
+    source_text = _strip_html(f"{title} {summary}")
+    notice_subject, notice_type = _extract_notice_subject_and_type(title, summary)
+    player_position = _extract_notice_player_position(title, summary, notice_subject) or "選手"
+    notice_date = _extract_rule_based_date_label(source_text, fallback=source_day_label)
+    notice_fact = _find_source_sentence_with_markers(
+        title,
+        summary,
+        ("登録", "抹消", "合流", "復帰", "昇格", "戦力外", "再出発"),
+    )
+    notice_fact = _clip_rule_based_fact(notice_fact, limit=200)
+    if not _rule_based_fact_ok(notice_fact):
+        notice_fact = ""
+    record_fact = _clip_rule_based_fact(_extract_notice_record_fact(title, summary), limit=120)
+    if not _rule_based_fact_ok(record_fact):
+        record_fact = ""
+    background_fact = _clip_rule_based_fact(
+        _extract_notice_background_fact(title, summary, exclude={notice_fact} if notice_fact else set()),
+        limit=160,
+    )
+    if not _rule_based_fact_ok(background_fact) or background_fact == notice_fact:
+        background_fact = ""
+
+    if not notice_type or not notice_date:
+        return None
+    if not notice_subject:
+        notice_subject = "対象選手"
+    if not notice_fact:
+        return None
+
+    source_label = _display_source_name(source_name) if source_name else ""
+    sections = [NOTICE_REQUIRED_HEADINGS[0]]
+    opening = f"（{source_day_label}時点）" if source_day_label else ""
+    sections.append(f"{opening}{notice_subject}が{notice_type}となりました。".strip())
+    sections.append(f"公示日は{notice_date}です。")
+    sections.append(f"{notice_fact}。")
+    if source_label:
+        sections.append(f"報道 source は{source_label}です。")
+
+    sections.append(NOTICE_REQUIRED_HEADINGS[1])
+    sections.append(f"{notice_subject}は読売ジャイアンツの{player_position}です。")
+    if record_fact:
+        sections.append(f"{record_fact}。")
+
+    sections.append(NOTICE_REQUIRED_HEADINGS[2])
+    sections.append(f"{background_fact or notice_fact}。")
+
+    sections.append(NOTICE_REQUIRED_HEADINGS[3])
+    sections.append(_notice_next_focus_sentence(notice_type, player_position, notice_subject))
+    if source_url:
+        sections.append(f"出典: {source_url}")
+    return "\n".join(sections)
+
+
+def _build_rule_based_subtype_body(
+    *,
+    title: str,
+    summary: str,
+    generation_category: str,
+    article_subtype: str,
+    special_story_kind: str = "",
+    source_url: str = "",
+    source_name: str = "",
+    source_day_label: str = "",
+    source_type: str = "news",
+    lineup_rows: list[dict] | None = None,
+) -> tuple[str, str] | None:
+    target_subtype = _resolve_rule_based_target_subtype(
+        title=title,
+        summary=summary,
+        generation_category=generation_category,
+        article_subtype=article_subtype,
+        special_story_kind=special_story_kind,
+        source_type=source_type,
+    )
+    if not _should_use_rule_based(target_subtype):
+        return None
+
+    body = None
+    if target_subtype == "lineup":
+        body = _render_lineup_rule_based(
+            title=title,
+            summary=summary,
+            source_url=source_url,
+            source_day_label=source_day_label,
+            lineup_rows=lineup_rows,
+        )
+    elif target_subtype == "program":
+        body = _render_program_rule_based(
+            title=title,
+            summary=summary,
+            source_url=source_url,
+        )
+    elif target_subtype == "notice":
+        body = _render_notice_rule_based(
+            title=title,
+            summary=summary,
+            source_url=source_url,
+            source_name=source_name,
+            source_day_label=source_day_label,
+        )
+    if not body:
+        return None
+    return target_subtype, body
+
+
+def _log_rule_based_subtype_skip_gemini(
+    logger: logging.Logger,
+    *,
+    subtype: str,
+    source_url: str,
+    input_chars: int,
+    output_chars: int,
+    saved_gemini_calls: int = 3,
+    template_version: str = RULE_BASED_SUBTYPE_TEMPLATE_VERSION,
+) -> None:
+    payload = {
+        "event": "rule_based_subtype_skip_gemini",
+        "subtype": str(subtype or "").strip().lower(),
+        "source_url_hash": _hash_duplicate_guard_value(source_url),
+        "input_chars": int(input_chars or 0),
+        "output_chars": int(output_chars or 0),
+        "saved_gemini_calls": int(saved_gemini_calls or 0),
+        "rule_based_template_version": template_version,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
 def _article_reads_too_generic(text: str, category: str) -> bool:
     if category != "選手情報":
         return False
@@ -8098,6 +8510,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     fan_reaction_limit = get_fan_reaction_limit()
     logger = logging.getLogger("rss_fetcher")
     rendered_ai_body_html = ""
+    rule_based_generated = False
     if ai_route_reason and ai_route_reason != "category_enabled":
         logger.info(
             json.dumps(
@@ -8138,6 +8551,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             win_loss_hint = "※この試合は巨人が【敗戦】した試合です。負け試合として正直に書くこと。前向きに美化しない。"
 
     def _generate_gemini_body() -> tuple[str, str]:
+        nonlocal rule_based_generated
         parts_rendered = _maybe_render_postgame_article_parts(
             title=title,
             summary=summary_clean,
@@ -8168,6 +8582,29 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             return "", ""
         if isinstance(duplicate_guard_context, dict):
             duplicate_guard_context.update(duplicate_context)
+        rule_based_body = _build_rule_based_subtype_body(
+            title=title,
+            summary=summary_clean,
+            generation_category=effective_generation_category,
+            article_subtype=article_subtype,
+            special_story_kind=special_story_kind,
+            source_url=url,
+            source_name=source_name,
+            source_day_label=source_day_label,
+            source_type=source_type,
+            lineup_rows=lineup_stat_rows if article_subtype == "lineup" else None,
+        )
+        if rule_based_body is not None:
+            rule_based_generated = True
+            resolved_subtype, body_text = rule_based_body
+            _log_rule_based_subtype_skip_gemini(
+                logger,
+                subtype=resolved_subtype,
+                source_url=url,
+                input_chars=len(summary_clean or ""),
+                output_chars=len(body_text),
+            )
+            return body_text, ""
         return (
             generate_article_with_gemini(
                 title,
@@ -8266,8 +8703,9 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             rerolled_body = _apply_editor_voice(fallback_body, effective_generation_category, subject)
             return _normalize_article_text_structure(rerolled_body, body_category, has_game, article_subtype=body_subtype)
 
-        ai_body = _apply_editor_voice(ai_body, effective_generation_category, subject)
-        if _article_reads_too_generic(ai_body, effective_generation_category):
+        if not rule_based_generated:
+            ai_body = _apply_editor_voice(ai_body, effective_generation_category, subject)
+        if not rule_based_generated and _article_reads_too_generic(ai_body, effective_generation_category):
             logger.info("記事本文が汎用表現に寄りすぎたため、安全版へ差し替え")
             ai_body = _apply_editor_voice(
                 _build_safe_article_fallback(

@@ -130,6 +130,7 @@ publish 前 body に以下のいずれかが残っていたら **hard_stop:`farm
   - notice / column subtype isolation → detector skip
   - short filler-only tail → detector skip
   - 242-A medical_roster regression matrix(5 cases) → pass 維持
+- 242-D2 note: classifier は後続 `242-D2` で `farm` / `farm_result` の cheap result-marker candidate に narrow され、`farm_lineup` / `lineup*` は scoped lineup marker(title/summary/source summary/opening heading/lineup-like block)で除外、H3 over-limit / required-facts weak は hard_stop ではなく review hold に分離
 
 ## 242-D live verify pending
 

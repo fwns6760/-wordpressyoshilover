@@ -20,11 +20,14 @@ def _post(
     modified="2026-04-25T18:00:00",
     date="2026-04-25T17:00:00",
     meta=None,
+    excerpt="",
+    extra=None,
 ):
     payload = {
         "id": post_id,
         "title": {"raw": title},
         "content": {"raw": body_html},
+        "excerpt": {"raw": excerpt, "rendered": excerpt},
         "featured_media": featured_media,
         "modified": modified,
         "date": date,
@@ -33,6 +36,8 @@ def _post(
     }
     if meta is not None:
         payload["meta"] = meta
+    if extra:
+        payload.update(extra)
     return payload
 
 
@@ -157,8 +162,8 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         return evaluate_raw_posts(posts, window_hours=96, max_pool=100, now=now)
 
     def _find_entry(self, report, post_id):
-        for bucket in ("green", "yellow", "red"):
-            for entry in report[bucket]:
+        for bucket in ("green", "yellow", "review", "red"):
+            for entry in report.get(bucket, []):
                 if entry["post_id"] == post_id:
                     return entry
         raise AssertionError(f"post_id={post_id} not found")
@@ -536,7 +541,9 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
             63851,
             "巨人二軍 3-6 楽天 二軍戦の結果",
             (
-                "<p>森林どりスタジアムで行われた巨人対楽天の二軍戦は3-6で敗れ、支配下登録を目指す若手が9回に追い上げを見せた。</p>"
+                "<p>森林どりスタジアムで行われた巨人対楽天の二軍戦は3-6で敗れた。先発の京本眞は5回3失点だった。</p>"
+                "<p>9回に浅野翔吾の適時打で追い上げたが、支配下登録を目指す若手の奮闘も届かなかった。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-63851</p>"
             ),
             meta={"article_subtype": "farm"},
         )
@@ -614,6 +621,248 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
             with self.subTest(label=label):
                 flag = evaluator_module._medical_roster_flag(record, subtype=subtype)
                 self.assertEqual(flag, expected)
+
+    def test_farm_result_placeholder_body_is_hard_stop_for_63845(self):
+        post = _post(
+            63845,
+            "【二軍】巨人 3-6 楽天 試合結果",
+            (
+                "<p>【二軍】巨人 3-6 楽天 先発の 投手は5回3失点。9回に 選手の適時打などで追い上げるも敗れた。</p>"
+                "<p>【二軍】巨人 3-6 楽天 先発の 投手は5回3失点。試合の詳細はこちら。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-63845-hard-stop</p>"
+            ),
+            meta={"article_subtype": "farm_result"},
+            excerpt="巨人二軍は楽天に3-6で敗れた。",
+        )
+
+        report = self._evaluate([post])
+
+        entry = self._find_entry(report, 63845)
+        self.assertEqual(entry["category"], "hard_stop")
+        self.assertFalse(entry["publishable"])
+        self.assertIn("farm_result_placeholder_body", entry["hard_stop_flags"])
+
+    def test_good_farm_result_without_h3_is_publishable(self):
+        post = _post(
+            63860,
+            "巨人二軍が楽天に4-2で勝利",
+            (
+                "<p>2026年4月25日の二軍戦で、巨人は楽天に4-2で勝利した。先発の山崎伊織は5回1失点だった。</p>"
+                "<p>7回に浅野翔吾の適時打で勝ち越し、終盤は継投で逃げ切った。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-63860</p>"
+            ),
+            meta={"article_subtype": "farm_result"},
+            excerpt="二軍戦で巨人が4-2で勝利。山崎伊織が先発した。",
+        )
+
+        report = self._evaluate([post])
+
+        entry = self._find_entry(report, 63860)
+        self.assertTrue(entry["publishable"])
+        self.assertEqual(entry["review_flags"], [])
+        self.assertEqual(entry["hard_stop_flags"], [])
+
+    def test_farm_result_missing_optional_sections_does_not_block_when_required_facts_exist(self):
+        post = _post(
+            63861,
+            "巨人二軍 5-3 楽天 試合結果",
+            (
+                "<p>4月25日の二軍戦で巨人は楽天に5-3で勝利した。先発の京本眞は6回2失点で試合を作った。</p>"
+                "<p>3回に秋広優人の適時二塁打で先制し、終盤も追加点を奪った。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-63861</p>"
+            ),
+            meta={"article_subtype": "farm"},
+            excerpt="巨人二軍が楽天に5-3で勝利した。",
+        )
+
+        report = self._evaluate([post])
+
+        entry = self._find_entry(report, 63861)
+        self.assertTrue(entry["publishable"])
+        self.assertEqual(entry["review_flags"], [])
+        self.assertNotIn("farm_result_placeholder_body", entry["hard_stop_flags"])
+
+    def test_farm_lineup_is_not_blocked_by_farm_result_validator(self):
+        post = _post(
+            63862,
+            "巨人二軍スタメン 楽天戦の先発メンバー",
+            (
+                "<p>巨人二軍のスタメンが発表された。</p>"
+                "<p>1番 浅野翔吾</p>"
+                "<p>2番 中山礼都</p>"
+                "<p>3番 秋広優人</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-63862</p>"
+            ),
+            meta={"article_subtype": "farm_lineup"},
+            excerpt="二軍戦のスタメンが発表された。",
+        )
+
+        report = self._evaluate([post])
+
+        entry = self._find_entry(report, 63862)
+        self.assertTrue(entry["publishable"])
+        self.assertEqual(entry["review_flags"], [])
+        self.assertNotIn("farm_result_placeholder_body", entry["hard_stop_flags"])
+
+    def test_empty_heading_is_hard_stop_for_farm_result(self):
+        post = _post(
+            63863,
+            "巨人二軍 3-2 楽天 試合結果",
+            (
+                "<p>巨人二軍が楽天に3-2で勝利した。先発の又木鉄平は5回2失点だった。</p>"
+                "<h3>   </h3>"
+                "<p>8回に浅野翔吾の適時打で勝ち越した。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-63863</p>"
+            ),
+            meta={"article_subtype": "farm_result"},
+            excerpt="巨人二軍が3-2で勝利した。",
+        )
+
+        report = self._evaluate([post])
+
+        entry = self._find_entry(report, 63863)
+        self.assertFalse(entry["publishable"])
+        self.assertIn("farm_result_placeholder_body", entry["hard_stop_flags"])
+
+    def test_generic_detail_paragraph_repetition_is_hard_stop_for_farm_result(self):
+        post = _post(
+            63864,
+            "巨人二軍 3-6 楽天 試合結果",
+            (
+                "<p>巨人二軍は楽天に3-6で敗れた。先発の京本眞は5回3失点だった。</p>"
+                "<p>試合の詳細はこちら。</p>"
+                "<p>詳しくはこちら。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-63864</p>"
+            ),
+            meta={"article_subtype": "farm_result"},
+            excerpt="巨人二軍は楽天に3-6で敗れた。",
+        )
+
+        report = self._evaluate([post])
+
+        entry = self._find_entry(report, 63864)
+        self.assertFalse(entry["publishable"])
+        self.assertIn("farm_result_placeholder_body", entry["hard_stop_flags"])
+
+    def test_farm_result_too_many_h3_is_review_not_hard_stop_unless_empty_or_placeholder(self):
+        post = _post(
+            63865,
+            "巨人二軍 6-2 楽天 試合結果",
+            (
+                "<p>巨人二軍が楽天に6-2で勝利した。先発の山崎伊織は5回1失点だった。</p>"
+                "<h3>先発投手の結果</h3><p>山崎伊織は5回1失点で白星をつかんだ。</p>"
+                "<h3>得点に絡んだ選手</h3><p>浅野翔吾の適時打と秋広優人の犠飛で主導権を握った。</p>"
+                "<h3>目立った選手成績</h3><p>中山礼都が2安打、増田陸が1打点を記録した。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-63865</p>"
+            ),
+            meta={"article_subtype": "farm_result"},
+            excerpt="巨人二軍が楽天に6-2で勝利した。",
+        )
+
+        report = self._evaluate([post])
+
+        entry = self._find_entry(report, 63865)
+        self.assertEqual(entry["category"], "review")
+        self.assertFalse(entry["publishable"])
+        self.assertIn("farm_result_h3_over_limit_review", entry["review_flags"])
+        self.assertEqual(entry["hard_stop_flags"], [])
+
+    def test_farm_result_detection_requires_result_marker_and_no_lineup_marker(self):
+        cases = (
+            (
+                63866,
+                _post(
+                    63866,
+                    "巨人二軍 試合メモ",
+                    (
+                        "<p>二軍戦のメモ。先発の 投手は5回3失点。選手の適時打という文言も残っている。</p>"
+                        "<p>参照元: スポーツ報知 https://example.com/source-63866</p>"
+                    ),
+                    meta={"article_subtype": "farm_result"},
+                    excerpt="二軍戦のメモを整理した。",
+                ),
+            ),
+            (
+                63867,
+                _post(
+                    63867,
+                    "巨人二軍スタメン 楽天戦の先発メンバー",
+                    (
+                        "<p>【二軍】巨人 3-6 楽天 先発の 投手は5回3失点。選手の適時打もあった。</p>"
+                        "<p>参照元: スポーツ報知 https://example.com/source-63867</p>"
+                    ),
+                    meta={"article_subtype": "farm"},
+                    excerpt="1番 浅野翔吾、2番 中山礼都。",
+                ),
+            ),
+        )
+
+        report = self._evaluate([case[1] for case in cases])
+
+        for post_id, _ in cases:
+            with self.subTest(post_id=post_id):
+                entry = self._find_entry(report, post_id)
+                self.assertNotIn("farm_result_placeholder_body", entry["hard_stop_flags"])
+                self.assertEqual(entry["review_flags"], [])
+
+    def test_farm_result_required_facts_weak_is_review_not_hard_stop(self):
+        post = _post(
+            63868,
+            "巨人二軍 3-6 楽天 試合結果",
+            (
+                "<p>巨人二軍は楽天に3-6で敗れた。終盤まで粘ったが及ばなかった。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-63868</p>"
+            ),
+            meta={"article_subtype": "farm_result"},
+            excerpt="巨人二軍は楽天に3-6で敗れた。",
+        )
+
+        report = self._evaluate([post])
+
+        entry = self._find_entry(report, 63868)
+        self.assertEqual(entry["category"], "review")
+        self.assertFalse(entry["publishable"])
+        self.assertIn("farm_result_required_facts_weak_review", entry["review_flags"])
+        self.assertEqual(entry["hard_stop_flags"], [])
+
+    def test_farm_result_body_batting_order_words_do_not_trigger_lineup_exclusion(self):
+        post = _post(
+            63869,
+            "巨人二軍 5-3 楽天 試合結果",
+            (
+                "<p>巨人二軍が楽天に5-3で勝利した。先発の京本眞は5回1失点だった。</p>"
+                "<p>8番打者の浅野翔吾が適時打を放ち、9番の中山礼都も追加点につなげた。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-63869</p>"
+            ),
+            meta={"article_subtype": "farm_result"},
+            excerpt="巨人二軍が楽天に5-3で勝利した。",
+        )
+
+        report = self._evaluate([post])
+
+        entry = self._find_entry(report, 63869)
+        self.assertTrue(entry["publishable"])
+        self.assertEqual(entry["review_flags"], [])
+        self.assertNotIn("farm_result_placeholder_body", entry["hard_stop_flags"])
+
+    def test_farm_lineup_title_marker_excludes_from_farm_result_blocker(self):
+        post = _post(
+            63870,
+            "巨人二軍スタメン 楽天戦の先発メンバー",
+            (
+                "<p>先発の 投手は5回3失点。選手の適時打もあった、という壊れた文が残っている。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-63870</p>"
+            ),
+            meta={"article_subtype": "farm"},
+            excerpt="1番 浅野翔吾、2番 中山礼都。",
+        )
+
+        report = self._evaluate([post])
+
+        entry = self._find_entry(report, 63870)
+        self.assertTrue(entry["publishable"])
+        self.assertEqual(entry["review_flags"], [])
+        self.assertNotIn("farm_result_placeholder_body", entry["hard_stop_flags"])
 
     def test_promotion_publishable_yellow(self):
         post = _post(

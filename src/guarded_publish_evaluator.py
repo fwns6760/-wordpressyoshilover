@@ -38,6 +38,12 @@ HARD_STOP_FLAGS = frozenset(
         "dev_log_contamination_scattered",
     }
 )
+REVIEW_FLAGS = frozenset(
+    {
+        "farm_result_required_facts_weak_review",
+        "farm_result_h3_over_limit_review",
+    }
+)
 REPAIRABLE_FLAGS = frozenset(
     {
         "weird_heading_label",
@@ -94,6 +100,7 @@ RANKING_LIST_ONLY_RE = re.compile(r"(①.*②|⑤|通算安打.*：|順位.*rank
 TAG_RE = re.compile(r"<[^>]+>")
 H3_RE = re.compile(r"(?is)<h3\b[^>]*>(.*?)</h3>")
 NEXT_HEADING_RE = re.compile(r"(?is)<h[1-6]\b[^>]*>")
+H2_H3_RE = re.compile(r"(?is)<h([23])\b[^>]*>(.*?)</h\1>")
 PRE_BLOCK_RE = re.compile(r"(?is)<pre\b[^>]*>(.*?)</pre>")
 CODE_BLOCK_RE = re.compile(r"(?is)<code\b[^>]*>(.*?)</code>")
 HEADING_SENTENCE_END_RE = re.compile(
@@ -115,6 +122,12 @@ AI_TONE_LEAD_RE = re.compile(
 )
 EMPTY_HEADING_RE = re.compile(r"(?is)<h[1-6]\b[^>]*>\s*</h[1-6]>")
 PLACEHOLDER_FILLER_OUTRO_RE = re.compile(r"^(?:試合の詳細はこちら|詳細はこちら|詳しくはこちら)[。．!！?？]*$")
+FARM_RESULT_MARKER_RE = re.compile(r"(試合結果|結果|敗れ|勝利|黒星|白星|[0-9０-９]+\s*[-－ー]\s*[0-9０-９]+)")
+FARM_RESULT_LINEUP_MARKER_RE = re.compile(r"(スタメン|打順|先発メンバー|[1-9１-９]番)")
+LINEUP_BLOCK_ROW_RE = re.compile(r"^\s*[1-9１-９]番(?:打者)?[\s:：\-－].{0,60}$")
+THIN_BRACKET_HEADING_RE = re.compile(r"^【\s*.{0,3}\s*】$")
+PLACEHOLDER_HEADING_RE = re.compile(r"(試合の詳細はこちら|詳細はこちら|詳しくはこちら|placeholder)", re.IGNORECASE)
+FARM_RESULT_OPTIONAL_HEADING_RE = re.compile(r"(二軍個別選手成績|一軍への示唆|ファームのハイライト|注目ポイント)")
 URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
 ISO_YMD_RE = re.compile(r"(?<!\d)(20\d{2})[/-](\d{1,2})[/-](\d{1,2})(?!\d)")
 COMPACT_YMD_RE = re.compile(r"(?<!\d)(20\d{2})(\d{2})(\d{2})(?!\d)")
@@ -157,7 +170,7 @@ LINEUP_TITLE_TOKEN_MATCH_SUBTYPES = frozenset(
     {"lineup", "lineup_notice", "pregame", "probable_starter", "farm_lineup"}
 )
 MEDICAL_ROSTER_SOFT_SUBTYPE_EXACT = frozenset({"lineup", "lineup_notice"})
-PLACEHOLDER_BODY_TARGET_SUBTYPES = frozenset({"farm", "farm_result", "farm_lineup", "lineup", "lineup_notice"})
+PLACEHOLDER_BODY_TARGET_SUBTYPES = frozenset({"farm", "farm_result"})
 SOURCE_DATE_META_FIELDS = (
     "source_published_at",
     "published_at",
@@ -188,6 +201,22 @@ PLACEHOLDER_ACTOR_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         "player_action_missing_name",
         re.compile(r"(?<![一-龯々ぁ-んァ-ヶA-Za-z0-9])選手の\s*(?:適時打|安打|ホームラン|本塁打|二塁打|三塁打|犠飛|タイムリー)"),
     ),
+)
+FARM_RESULT_STARTER_FACT_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"先発の\s*[一-龯々]{2,8}(?:投手)?\s*は[0-9０-９]+回[0-9０-９]+失点"),
+    re.compile(r"[一-龯々]{2,8}(?:投手)?\s*(?:が|は)[0-9０-９]+回[0-9０-９]+失点"),
+    re.compile(r"[A-Za-z][A-Za-z0-9]{1,}(?:投手)?\s*(?:が|は)[0-9０-９]+回[0-9０-９]+失点"),
+)
+FARM_RESULT_SCORING_FACT_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"[一-龯々]{2,8}の\s*(?:適時打|適時二塁打|適時三塁打|安打|ホームラン|本塁打|二塁打|三塁打|犠飛|タイムリー|決勝打|先制打)"),
+    re.compile(r"[一-龯々]{2,8}\s*(?:が|は).{0,12}(?:適時打|適時二塁打|適時三塁打|安打|ホームラン|本塁打|二塁打|三塁打|犠飛|タイムリー|決勝打|先制打)"),
+    re.compile(r"[A-Za-z][A-Za-z0-9]{1,}の\s*(?:適時打|適時二塁打|適時三塁打|安打|ホームラン|本塁打|二塁打|三塁打|犠飛|タイムリー|決勝打|先制打)"),
+)
+FARM_RESULT_CONCRETE_NAME_RE = re.compile(
+    r"(?:[一-龯々]{2,8}(?:投手|捕手|内野手|外野手|選手)?|[A-Za-z][A-Za-z0-9]{1,})"
+)
+FARM_RESULT_CONCRETE_NUMBER_RE = re.compile(
+    r"(?:[0-9０-９]+\s*(?:回|失点|安打|打点|本|号|点|打数|奪三振)|[0-9０-９]+\s*[-－ー]\s*[0-9０-９]+|打率\s*[0-9０-９]+(?:[.．][0-9０-９]+)?)"
 )
 
 LABEL_EXPECTATIONS: dict[str, tuple[re.Pattern[str], ...]] = {
@@ -251,6 +280,28 @@ def _normalize_title_key(title: str) -> str:
 def _normalize_title_text(title: str) -> str:
     normalized = unicodedata.normalize("NFKC", html.unescape(title or ""))
     return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _normalize_plain_text(value: Any) -> str:
+    normalized = unicodedata.normalize("NFKC", html.unescape(str(value or "")))
+    normalized = normalized.replace("\xa0", " ").replace("\r\n", "\n").replace("\r", "\n")
+    lines = [re.sub(r"[ \t\f\v]+", " ", line).strip() for line in normalized.split("\n")]
+    return "\n".join(line for line in lines if line)
+
+
+def _coerce_text_field(value: Any) -> str:
+    if isinstance(value, dict):
+        for key in ("raw", "rendered"):
+            text = _coerce_text_field(value.get(key))
+            if text:
+                return text
+        return ""
+    text = str(value or "")
+    if not text.strip():
+        return ""
+    if "<" in text and ">" in text:
+        return _strip_html(text)
+    return _normalize_plain_text(text)
 
 
 def _strip_title_duplicate_suffix(title: str) -> str:
@@ -568,6 +619,207 @@ def _body_text_without_source(record: dict[str, Any]) -> str:
     if source_block:
         body_text = body_text.replace(source_block, "")
     return URL_RE.sub("", body_text)
+
+
+def _prose_lines_without_source(text: str) -> list[str]:
+    lines: list[str] = []
+    for raw_line in str(text or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("参照元"):
+            continue
+        if URL_RE.fullmatch(line):
+            continue
+        if any(pattern.search(line) for _, pattern in SITE_COMPONENT_PATTERNS):
+            continue
+        lines.append(line)
+    return lines
+
+
+def _section_prose_text(section_html: str) -> str:
+    return "\n".join(_prose_lines_without_source(_strip_html(section_html)))
+
+
+def _post_summary_text(raw_post: dict[str, Any]) -> str:
+    candidates = [
+        (raw_post or {}).get("excerpt"),
+        (raw_post or {}).get("summary"),
+        ((raw_post or {}).get("meta") or {}).get("summary"),
+    ]
+    for candidate in candidates:
+        text = _coerce_text_field(candidate)
+        if text:
+            return text
+    return ""
+
+
+def _post_source_summary_text(raw_post: dict[str, Any]) -> str:
+    meta = (raw_post or {}).get("meta") or {}
+    for candidate in (
+        (raw_post or {}).get("source_summary"),
+        meta.get("source_summary"),
+        meta.get("_yoshilover_source_summary"),
+        meta.get("rss_summary"),
+        (raw_post or {}).get("source_description"),
+        meta.get("source_description"),
+    ):
+        text = _coerce_text_field(candidate)
+        if text:
+            return text
+    return ""
+
+
+def _opening_heading_text(body_html: str) -> str:
+    match = H2_H3_RE.search(body_html or "")
+    if not match:
+        return ""
+    return _strip_html(match.group(2))
+
+
+def _lineup_like_body_block_detail(body_html: str, body_text: str) -> str | None:
+    lines = [re.sub(r"\s+", " ", line).strip() for line in body_text.splitlines() if line.strip()]
+    ordinal_lines = [line for line in lines if LINEUP_BLOCK_ROW_RE.match(line)]
+    if len(ordinal_lines) >= 3:
+        return f"ordinal_lines={len(ordinal_lines)}"
+    lineup_signal_lines = [line for line in lines if SAFE_LINEUP_SIGNAL_RE.search(line)]
+    if lineup_signal_lines and len(ordinal_lines) >= 2:
+        return f"signal_lines={len(lineup_signal_lines)};ordinal_lines={len(ordinal_lines)}"
+    if re.search(r"(?is)<(?:ul|ol|table)\b", body_html or "") and len(ordinal_lines) >= 2:
+        return f"structured_lineup_block=1;ordinal_lines={len(ordinal_lines)}"
+    return None
+
+
+def _scope_marker_hit(pattern: re.Pattern[str], scopes: list[tuple[str, str]]) -> tuple[str, str] | None:
+    for scope_name, value in scopes:
+        if not value:
+            continue
+        match = pattern.search(value)
+        if match:
+            return scope_name, re.sub(r"\s+", " ", match.group(0)).strip()
+    return None
+
+
+def _farm_result_candidate_context(
+    raw_post: dict[str, Any],
+    record: dict[str, Any],
+    *,
+    subtype: Any,
+) -> dict[str, Any]:
+    normalized_subtype = _normalized_subtype(subtype)
+    title = str(record.get("title") or "")
+    body_html = str(record.get("body_html") or "")
+    body_text = _body_text_without_source(record)
+    summary_text = _post_summary_text(raw_post)
+    source_summary_text = _post_source_summary_text(raw_post)
+    opening_heading = _opening_heading_text(body_html)
+    result_scope = _scope_marker_hit(
+        FARM_RESULT_MARKER_RE,
+        [
+            ("title", title),
+            ("summary", summary_text),
+            ("source_summary", source_summary_text),
+            ("body", body_text),
+        ],
+    )
+    lineup_scope = _scope_marker_hit(
+        FARM_RESULT_LINEUP_MARKER_RE,
+        [
+            ("title", title),
+            ("summary", summary_text),
+            ("source_summary", source_summary_text),
+            ("opening_heading", opening_heading),
+        ],
+    )
+    lineup_block_detail = _lineup_like_body_block_detail(body_html, body_text)
+    is_target_subtype = _placeholder_body_target_subtype(normalized_subtype)
+    candidate = bool(is_target_subtype and result_scope and lineup_scope is None and lineup_block_detail is None)
+    return {
+        "is_target_subtype": is_target_subtype,
+        "candidate": candidate,
+        "title": title,
+        "body_html": body_html,
+        "body_text": body_text,
+        "summary_text": summary_text,
+        "source_summary_text": source_summary_text,
+        "opening_heading": opening_heading,
+        "result_scope": result_scope,
+        "lineup_scope": lineup_scope,
+        "lineup_block_detail": lineup_block_detail,
+    }
+
+
+def _farm_result_h3_heading_details(body_html: str) -> tuple[list[str], list[str]]:
+    matches = list(H2_H3_RE.finditer(body_html or ""))
+    if not matches:
+        return [], []
+
+    hard_stop_details: list[str] = []
+    review_details: list[str] = []
+    h3_count = sum(1 for match in matches if match.group(1) == "3")
+    if h3_count > 2:
+        review_details.append(f"h3_count={h3_count}")
+
+    for index, match in enumerate(matches):
+        level = int(match.group(1))
+        heading_text = _strip_html(match.group(2))
+        normalized_heading = _normalize_heading_label(heading_text)
+        next_match = matches[index + 1] if index + 1 < len(matches) else None
+        section_html = (body_html or "")[match.end() : next_match.start() if next_match else len(body_html or "")]
+        section_text = _section_prose_text(section_html)
+
+        if not normalized_heading:
+            hard_stop_details.append(f"empty_h{level}")
+            continue
+        if THIN_BRACKET_HEADING_RE.fullmatch(heading_text.strip()):
+            hard_stop_details.append(f"thin_bracket_h{level}={heading_text.strip()}")
+            continue
+        if PLACEHOLDER_HEADING_RE.search(normalized_heading):
+            hard_stop_details.append(f"placeholder_h{level}={normalized_heading}")
+            continue
+        if not section_text:
+            hard_stop_details.append(f"bodyless_h{level}={normalized_heading}")
+            continue
+        if FARM_RESULT_OPTIONAL_HEADING_RE.search(normalized_heading):
+            has_concrete_name = bool(FARM_RESULT_CONCRETE_NAME_RE.search(section_text))
+            has_concrete_number = bool(FARM_RESULT_CONCRETE_NUMBER_RE.search(section_text))
+            if not (has_concrete_name or has_concrete_number):
+                review_details.append(f"optional_section_weak_h{level}={normalized_heading}")
+    return hard_stop_details, review_details
+
+
+def _matches_any(patterns: tuple[re.Pattern[str], ...], text: str) -> bool:
+    return any(pattern.search(text) for pattern in patterns)
+
+
+def _farm_result_review_reasons(record: dict[str, Any], classifier_context: dict[str, Any]) -> list[str]:
+    if not classifier_context.get("candidate"):
+        return []
+
+    review_details: list[str] = []
+    if not record.get("source_urls"):
+        review_details.append("source_url_missing=1")
+
+    combined = "\n".join(
+        text
+        for text in (
+            classifier_context.get("title"),
+            classifier_context.get("summary_text"),
+            classifier_context.get("source_summary_text"),
+            classifier_context.get("body_text"),
+        )
+        if text
+    )
+    has_starter_fact = _matches_any(FARM_RESULT_STARTER_FACT_PATTERNS, combined)
+    has_scoring_fact = _matches_any(FARM_RESULT_SCORING_FACT_PATTERNS, combined)
+    if not has_starter_fact:
+        review_details.append("starter_fact_weak=1")
+    if not has_scoring_fact:
+        review_details.append("scoring_fact_weak=1")
+
+    _, heading_review_details = _farm_result_h3_heading_details(str(classifier_context.get("body_html") or ""))
+    review_details.extend(heading_review_details)
+    return review_details
 
 
 def _resolve_content_datetime(raw_post: dict[str, Any], record: dict[str, Any], *, now: datetime) -> dict[str, Any]:
@@ -1144,8 +1396,20 @@ def _placeholder_filler_outro_detail(body_text: str) -> str | None:
     return f"filler_outro=1;tail={re.sub(r'\s+', ' ', last_line).strip()}"
 
 
-def _placeholder_body_reason(body_html: str, body_text: str, *, subtype: Any) -> dict[str, str] | None:
-    if not _placeholder_body_target_subtype(subtype):
+def _placeholder_repeated_filler_detail(body_text: str) -> str | None:
+    count = sum(1 for line in body_text.splitlines() if PLACEHOLDER_FILLER_OUTRO_RE.fullmatch(line.strip()))
+    if count >= 2:
+        return f"filler_detail_count={count}"
+    return None
+
+
+def _placeholder_body_reason(
+    body_html: str,
+    body_text: str,
+    *,
+    classifier_context: dict[str, Any],
+) -> dict[str, str] | None:
+    if not classifier_context.get("candidate"):
         return None
 
     detail_parts: list[str] = []
@@ -1157,12 +1421,19 @@ def _placeholder_body_reason(body_html: str, body_text: str, *, subtype: Any) ->
             hard_stop = True
         detail_parts.append(actor_signal[1])
 
-    empty_heading_count = len(EMPTY_HEADING_RE.findall(body_html or ""))
-    if empty_heading_count >= 2:
+    repeated_filler_detail = _placeholder_repeated_filler_detail(body_text)
+    if repeated_filler_detail is not None:
         hard_stop = True
-        detail_parts.append(f"empty_heading_count={empty_heading_count}")
-    elif empty_heading_count == 1:
-        detail_parts.append("empty_heading_count=1")
+        detail_parts.append(repeated_filler_detail)
+
+    heading_hard_stop_details, _ = _farm_result_h3_heading_details(body_html)
+    if heading_hard_stop_details:
+        hard_stop = True
+        detail_parts.extend(heading_hard_stop_details)
+
+    if re.search(r"【\s*】", body_text):
+        hard_stop = True
+        detail_parts.append("empty_bracket_heading=1")
 
     if not detail_parts:
         filler_detail = _placeholder_filler_outro_detail(body_text)
@@ -1289,10 +1560,15 @@ def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -
         )
     elif medical_roster_flag == "roster_movement_yellow":
         _append_reason(reasons, flag="roster_movement_yellow", category="repairable")
+    farm_result_classifier = _farm_result_candidate_context(
+        raw_post,
+        record,
+        subtype=subtype_resolution["resolved_subtype"],
+    )
     placeholder_body_reason = _placeholder_body_reason(
         body_html,
         _body_text_without_source(record),
-        subtype=subtype_resolution["resolved_subtype"],
+        classifier_context=farm_result_classifier,
     )
     if placeholder_body_reason is not None:
         _append_reason(
@@ -1301,6 +1577,24 @@ def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -
             category=placeholder_body_reason["category"],
             detail=placeholder_body_reason["detail"],
         )
+    farm_result_review_details = _farm_result_review_reasons(record, farm_result_classifier)
+    if farm_result_review_details:
+        h3_over_limit_details = [detail for detail in farm_result_review_details if detail.startswith("h3_count=")]
+        weak_fact_details = [detail for detail in farm_result_review_details if detail not in h3_over_limit_details]
+        if weak_fact_details:
+            _append_reason(
+                reasons,
+                flag="farm_result_required_facts_weak_review",
+                category="review",
+                detail="; ".join(weak_fact_details),
+            )
+        if h3_over_limit_details:
+            _append_reason(
+                reasons,
+                flag="farm_result_h3_over_limit_review",
+                category="review",
+                detail="; ".join(h3_over_limit_details),
+            )
     if RANKING_LIST_ONLY_RE.search(body_text):
         _append_reason(reasons, flag="ranking_list_only", category="hard_stop")
 
@@ -1383,12 +1677,13 @@ def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -
         _append_reason(reasons, flag=freshness_flag, category=freshness_category)
 
     hard_stop_flags = _reason_flags(reasons, "hard_stop")
+    review_flags = _reason_flags(reasons, "review")
     repairable_flags = _reason_flags(reasons, "repairable")
     yellow_reasons = _legacy_flags(reasons, "repairable")
     cleanup_types = list(dict.fromkeys(detail["type"] for detail in cleanup_details))
-    publishable = not bool(hard_stop_flags)
+    publishable = not bool(hard_stop_flags or review_flags)
     cleanup_required = publishable and any(flag not in NO_CLEANUP_REQUIRED_FLAGS for flag in repairable_flags)
-    entry_category = "hard_stop" if hard_stop_flags else "repairable" if repairable_flags else "clean"
+    entry_category = "hard_stop" if hard_stop_flags else "review" if review_flags else "repairable" if repairable_flags else "clean"
 
     entry = {
         "post_id": int(record["post_id"]),
@@ -1403,6 +1698,7 @@ def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -
         "cleanup_required": cleanup_required,
         "reasons": reasons,
         "hard_stop_flags": hard_stop_flags,
+        "review_flags": review_flags,
         "repairable_flags": repairable_flags,
         "soft_cleanup_flags": repairable_flags,
         "content_date": freshness["content_date"],
@@ -1421,6 +1717,15 @@ def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -
             entry["nucleus_reason_code"] = nucleus_result.reason_code
         return {
             "judgment": "red",
+            "entry": entry,
+            "cleanup_candidate": None,
+        }
+
+    if review_flags:
+        if yellow_reasons:
+            entry["yellow_reasons"] = yellow_reasons
+        return {
+            "judgment": "review",
             "entry": entry,
             "cleanup_candidate": None,
         }
@@ -1691,6 +1996,7 @@ def evaluate_raw_posts(
 
     green: list[dict[str, Any]] = []
     yellow: list[dict[str, Any]] = []
+    review: list[dict[str, Any]] = []
     red: list[dict[str, Any]] = []
     cleanup_candidates: list[dict[str, Any]] = []
 
@@ -1726,13 +2032,15 @@ def evaluate_raw_posts(
             green.append(evaluated["entry"])
         elif judgment == "yellow":
             yellow.append(evaluated["entry"])
+        elif judgment == "review":
+            review.append(evaluated["entry"])
         else:
             red.append(evaluated["entry"])
         if evaluated["cleanup_candidate"] is not None:
             cleanup_candidates.append(evaluated["cleanup_candidate"])
 
     cleanup_post_ids = {candidate["post_id"] for candidate in cleanup_candidates}
-    all_entries = [*green, *yellow, *red]
+    all_entries = [*green, *yellow, *review, *red]
     stale_top_list = sorted(
         (
             {
@@ -1759,6 +2067,7 @@ def evaluate_raw_posts(
         },
         "green": green,
         "yellow": yellow,
+        "review": review,
         "red": red,
         "cleanup_candidates": cleanup_candidates,
         "lineup_dedup": lineup_dedup,
@@ -1766,6 +2075,7 @@ def evaluate_raw_posts(
         "summary": {
             "green_count": len(green),
             "yellow_count": len(yellow),
+            "review_count": len(review),
             "red_count": len(red),
             "cleanup_count": len(cleanup_candidates),
             "hard_stop_count": len(red),
@@ -1868,6 +2178,7 @@ def render_human_report(report: dict[str, Any]) -> str:
         "status   count",
         f"green    {summary['green_count']}",
         f"yellow   {summary['yellow_count']}",
+        f"review   {summary.get('review_count', 0)}",
         f"red      {summary['red_count']}",
         f"hard_stop {summary['hard_stop_count']}",
         f"repairable {summary['repairable_count']}",
@@ -1881,14 +2192,14 @@ def render_human_report(report: dict[str, Any]) -> str:
         f"expired_hold {summary['expired_hold_count']}",
     ]
 
-    for label in ("green", "yellow", "red"):
+    for label in ("green", "yellow", "review", "red"):
         lines.extend(["", f"{label.title()} Preview"])
-        entries = report[label]
+        entries = report.get(label) or []
         if not entries:
             lines.append("- none")
             continue
         for entry in entries[:5]:
-            flags = entry.get("yellow_reasons") or entry.get("red_flags") or []
+            flags = entry.get("review_flags") or entry.get("yellow_reasons") or entry.get("red_flags") or []
             suffix = f" [{', '.join(flags)}]" if flags else ""
             lines.append(f"- {entry['post_id']} | {entry['title']}{suffix}")
     lines.extend(["", "Freshness Hold Top"])

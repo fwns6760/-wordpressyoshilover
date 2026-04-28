@@ -86,11 +86,23 @@ def _hard_stop_entry(post_id: int, title: str, *flags: str) -> dict:
     }
 
 
-def _report(*, green=None, yellow=None, red=None, cleanup_candidates=None) -> dict:
+def _review_entry(post_id: int, title: str, *flags: str) -> dict:
+    return {
+        "post_id": post_id,
+        "title": title,
+        "category": "review",
+        "publishable": False,
+        "cleanup_required": False,
+        "review_flags": list(flags),
+    }
+
+
+def _report(*, green=None, yellow=None, review=None, red=None, cleanup_candidates=None) -> dict:
     return {
         "scan_meta": {"window_hours": 96, "max_pool": 10, "scanned": 0, "ts": FIXED_NOW.isoformat()},
         "green": list(green or []),
         "yellow": list(yellow or []),
+        "review": list(review or []),
         "red": list(red or []),
         "cleanup_candidates": list(cleanup_candidates or []),
         "summary": {},
@@ -948,6 +960,32 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         self.assertEqual(result["executed"][0]["status"], "refused")
         self.assertEqual(row["error"], "hard_stop:death_or_grave_incident")
         self.assertEqual(row["hold_reason"], "hard_stop_death_or_grave_incident")
+
+    def test_review_entry_refused_without_publish(self):
+        report = _report(
+            review=[_review_entry(805, "巨人二軍 3-6 楽天 試合結果", "farm_result_required_facts_weak_review")]
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.jsonl"
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=history_path,
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=FakeWPClient({}),
+                now=FIXED_NOW,
+            )
+            row = json.loads(history_path.read_text(encoding="utf-8").strip())
+
+        self.assertEqual(result["executed"][0]["status"], "refused")
+        self.assertEqual(result["refused"][0]["hold_reason"], "review_farm_result_required_facts_weak_review")
+        self.assertEqual(row["judgment"], "review")
+        self.assertEqual(row["error"], "review:farm_result_required_facts_weak_review")
+        self.assertEqual(row["hold_reason"], "review_farm_result_required_facts_weak_review")
 
     def test_yellow_log_records_roster_movement_reason(self):
         post = _post(

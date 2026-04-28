@@ -1281,6 +1281,29 @@ def _iter_red_entries(report: dict[str, Any]) -> list[dict[str, Any]]:
     return entries
 
 
+def _review_hold_reason(review_flags: Sequence[str]) -> str:
+    token = _normalize_hold_reason_token((list(review_flags) or ["review_needed"])[0])
+    return f"review_{token or 'needed'}"
+
+
+def _iter_review_entries(report: dict[str, Any]) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    for entry in report.get("review", []) or []:
+        if not isinstance(entry, dict):
+            continue
+        review_flags = list(entry.get("review_flags") or [])
+        entries.append(
+            {
+                "post_id": int(entry["post_id"]),
+                "title": str(entry.get("title") or ""),
+                "reason": "review",
+                "review_flags": review_flags,
+                "hold_reason": _review_hold_reason(review_flags),
+            }
+        )
+    return entries
+
+
 def _public_plan(plan: dict[str, Any]) -> dict[str, Any]:
     payload = {
         "post_id": plan["post_id"],
@@ -1511,6 +1534,41 @@ def run_guarded_publish(
                     "status": "refused",
                     "backup_path": None,
                     "publish_link": "",
+                }
+            )
+
+    for review_entry in _iter_review_entries(report):
+        if review_entry["post_id"] in attempted_post_ids:
+            continue
+        refused.append(
+            {
+                "post_id": review_entry["post_id"],
+                "reason": review_entry["reason"],
+                "hold_reason": review_entry["hold_reason"],
+            }
+        )
+        if live:
+            detail = ",".join(review_entry["review_flags"]) or "review"
+            row = _history_row(
+                post_id=review_entry["post_id"],
+                judgment="review",
+                status="refused",
+                ts=now_iso,
+                backup_path=None,
+                error=f"review:{detail}",
+                publishable=False,
+                cleanup_required=False,
+                cleanup_success=False,
+                hold_reason=review_entry["hold_reason"],
+            )
+            live_history_rows.append(row)
+            executed.append(
+                {
+                    "post_id": review_entry["post_id"],
+                    "status": "refused",
+                    "backup_path": None,
+                    "publish_link": "",
+                    "hold_reason": review_entry["hold_reason"],
                 }
             )
 

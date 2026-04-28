@@ -1303,6 +1303,26 @@ doc/
 - **last_commit**: -
 - **parent**: 242
 
+### 242-D2 farm-result-classifier-review-alignment
+
+- **alias**: -
+- **priority**: P0.5
+- **status**: REVIEW_NEEDED
+- **owner**: Codex B
+- **lane**: B
+- **ready_for**: Claude review / authenticated executor dry-run-canary verify
+- **next_action**: review landed classifier diff: placeholder gate now applies only to cheap `farm_result` candidates(`farm` / `farm_result` + result marker + no scoped lineup marker), while weak facts and H3 over-limit route to review hold without new Gemini/LLM calls
+- **blocked_by**: authenticated executor verify not yet run
+- **user_action_required**: none
+- **write_scope**: `src/guarded_publish_evaluator.py`, `src/guarded_publish_runner.py`, `tests/test_guarded_publish_evaluator.py`, `tests/test_guarded_publish_runner.py`, `doc/active/242-D2-farm-result-classifier-review-alignment.md`, `doc/active/242-D-farm-result-placeholder-body-publish-blocker.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/active/242-D2-farm-result-classifier-review-alignment.md`
+- **acceptance**: farm_result article template v0 is enforced by cheap deterministic checks only; 63845-type placeholder body hard-stops; 63841-type farm_lineup is excluded by title/summary/header/lineup-like block; isolated body `1番`-`9番` mentions do not exclude farm_result; result markers and scoped lineup exclusion markers are both checked; H3 missing does not block; H3 over-limit and weak facts are review/draft not hard_stop; no Gemini/LLM/browser/API calls, no heavy fact extraction, no 242-A/242-B/243, env, Scheduler, Secret, WP live, X live, or RUN_DRAFT_ONLY changes
+- **repo_state**: local impl + targeted unittest pass
+- **commit_state**: local commit pending Claude push
+- **next_prompt_path**: `doc/active/242-D2-farm-result-classifier-review-alignment.md`
+- **last_commit**: -
+- **parent**: 242-D
+
 ### 130 pub004-hard-stop-vs-repairable-before-publish
 
 - **alias**: -

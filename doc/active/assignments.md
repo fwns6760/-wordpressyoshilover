@@ -1,6 +1,6 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-04-27 JST(assignments 圧縮 + 226 doc 起票)
+最終更新: 2026-04-28 JST(241 Reply-To self-recipient omit 実装)
 
 ## 最初に読む
 
@@ -8,10 +8,11 @@
 - `doc/README.md`(正本、詳細は全部こちら)
 - `doc/active/assignments.md`(本 file、サマリ)
 
-## 今の3本(これだけ見る)
+## 今の4本(これだけ見る)
 
 | ticket | priority | status | 1 行要約 |
 |---|---|---|---|
+| **241 mail-header reply-to self-recipient** | P0.5 | REVIEW_NEEDED | Reply-To が受信者自身なら header omit、240 v4 PC通知successを恒久化、auth executor smoke待ち |
 | **226 guarded publish unblock** | P0.5 | IN_FLIGHT(`bhnmw4tc7`) | 63809/63811 が `subtype_unresolved_no_resolution` で refused、safe case を Yellow に降格 |
 | **224 entity-role consistency** | P0.5 | IN_FLIGHT(`bif6lgn6p` 着地済 `84ed848`) | `〜投手となって` 等不自然構文 detector + safe rewrite + Yellow flag |
 | **225 / MKT-008 X candidate quality** | P0.5 | REOPENED(本体 `873fcf0`、225-A safety fix `bss84x1u1` 進行中) | x_post_ready=false で manual_x_post_candidates 本文非表示 + X intent link 抑止(post_id 63323 相当) |
@@ -38,6 +39,7 @@
 
 | ticket | status | 担当 | 次 action |
 |---|---|---|---|
+| **241 mail-header reply-to self-recipient** | REVIEW_NEEDED | Codex B → Claude/auth executor | `MAIL_BRIDGE_REPLY_TO=fwns6760@gmail.com` を戻した publish-notice smoke で Reply-To omit と通知を確認 |
 | **226 publish gate unblock** | IN_FLIGHT(`bhnmw4tc7`) | Codex B | subtype_unresolved + cleanup_failed_post_condition の safe case を Yellow 降格 |
 | **224 entity-role consistency** | 完了済(`84ed848`)、deploy 待ち | Codex B | guarded-publish rebuild に同梱 |
 | **217 wp publish all-mode hotfix** | REVIEW_NEEDED(`b03890c`)、deploy 待ち | Authenticated executor | guarded-publish + publish-notice rebuild、63795 再判定 |

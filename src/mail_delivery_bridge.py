@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from email.message import EmailMessage
-from email.utils import make_msgid
+from email.utils import getaddresses, make_msgid
 import importlib
 import os
 import smtplib
@@ -148,6 +148,20 @@ def _normalized_recipients(recipients: list[str]) -> list[str]:
     return [address.strip() for address in recipients if address and address.strip()]
 
 
+def _normalized_email_addresses(values: list[str]) -> set[str]:
+    return {
+        address.strip().casefold()
+        for _name, address in getaddresses(values)
+        if address and address.strip()
+    }
+
+
+def _reply_to_matches_recipient(reply_to: str, recipients: list[str]) -> bool:
+    reply_to_addresses = _normalized_email_addresses([reply_to])
+    recipient_addresses = _normalized_email_addresses(recipients)
+    return bool(reply_to_addresses & recipient_addresses)
+
+
 def _suppression_reason(request: MailRequest) -> str | None:
     if not request.to or not _normalized_recipients(request.to):
         return "NO_RECIPIENT"
@@ -216,7 +230,7 @@ def _build_message(request: MailRequest, *, sender: str, recipients: list[str]) 
     message["From"] = sender
     message["To"] = ", ".join(recipients)
     reply_to = _resolve_reply_to(request)
-    if reply_to:
+    if reply_to and not _reply_to_matches_recipient(reply_to, recipients):
         message["Reply-To"] = reply_to
     message["Message-ID"] = make_msgid(domain="yoshilover.com")
     message.set_content(request.text_body)

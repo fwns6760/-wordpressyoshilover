@@ -6,7 +6,7 @@
 - type: execution queue / Codex A-B dispatch board
 - status: READY
 - created: 2026-04-26
-- updated: 2026-04-27
+- updated: 2026-04-28
 - source_of_truth: current execution order, status, owner, lane, and blocked state
 
 ## role
@@ -1222,6 +1222,26 @@ doc/
 - **next_prompt_path**: `doc/marketing/active/MKT-001-publish-notice-marketing-mail-classification.md`
 - **last_commit**: -
 - **parent**: 189 / 190 / 191 / 207
+
+### 241 mail-header-reply-to-self-recipient-investigation
+
+- **alias**: 240 follow-up
+- **priority**: P0.5
+- **status**: REVIEW_NEEDED
+- **owner**: Codex B
+- **lane**: B
+- **ready_for**: Claude accept + authenticated executor publish-notice smoke
+- **next_action**: `MAIL_BRIDGE_REPLY_TO=fwns6760@gmail.com` を env に戻した smoke で、Reply-To header が self-recipient 時に omit され PC/mobile 通知がどう鳴るか確認する
+- **blocked_by**: authenticated executor smoke / user mobile notification確認
+- **user_action_required**: smoke 後に通知が鳴ったか確認(PC success は 240 v4 で確認済、mobile は open)
+- **write_scope**: `src/mail_delivery_bridge.py`, `tests/test_mail_delivery_bridge.py`, `doc/active/241-mail-header-reply-to-self-recipient-investigation.md`, `doc/README.md`, `doc/active/assignments.md`
+- **doc_path**: `doc/active/241-mail-header-reply-to-self-recipient-investigation.md`
+- **acceptance**: Reply-To resolved address が recipient と一致する場合は header omit、異なる Reply-To は維持、mail bridge 既存 flow 不変、live env/secret/Scheduler は触らない
+- **repo_state**: local impl + tests pass
+- **commit_state**: pending 241 commit
+- **next_prompt_path**: `doc/active/241-mail-header-reply-to-self-recipient-investigation.md`
+- **last_commit**: -
+- **parent**: 240 / 219 / 222
 
 ### 130 pub004-hard-stop-vs-repairable-before-publish
 

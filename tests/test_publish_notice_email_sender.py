@@ -867,6 +867,103 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         )
         self.assertIn("[X 投稿候補] 非表示: 本文確認後に必要なら手動で判断してください", body_lines)
 
+    def test_first_team_postgame_clean_uses_x_candidate(self):
+        request = self._request(
+            subtype="postgame",
+            title="巨人 vs 阪神 3-2 戸郷が好投",
+            publish_time_iso="2026-04-28T21:15:00+09:00",
+            summary="戸郷が7回1失点、岡本が決勝打。",
+        )
+        with patch.object(sender, "_coerce_now", return_value=datetime(2026, 4, 28, 22, 0, tzinfo=sender.JST)):
+            classification = sender._classify_mail(request)
+
+        labels = [label for label, _text in sender.build_manual_x_post_candidates(request)]
+        self.assertTrue(sender._is_first_team_article(request.title, request.summary or "", request.subtype))
+        self.assertEqual(classification["mail_class"], "x_candidate")
+        self.assertEqual(classification["reason"], "manual_x_candidates_clean")
+        self.assertEqual(
+            labels,
+            [
+                "x_post_1_article_intro",
+                "x_post_2_postgame_turning_point",
+                "x_post_3_inside_voice",
+            ],
+        )
+        self.assertIn("fan_reaction_hook", sender._manual_x_template_sequence("postgame", sensitive=False))
+
+    def test_first_team_postgame_dirty_forces_review(self):
+        request = self._request(
+            subtype="postgame",
+            title="巨人試合結果",
+            publish_time_iso="2026-04-28T21:15:00+09:00",
+            summary="試合結果のお知らせ。",
+        )
+        with patch.object(sender, "_coerce_now", return_value=datetime(2026, 4, 28, 22, 0, tzinfo=sender.JST)):
+            classification = sender._classify_mail(request)
+
+        self.assertTrue(sender._is_first_team_article(request.title, request.summary or "", request.subtype))
+        self.assertEqual(classification["mail_class"], "review")
+        self.assertEqual(classification["reason"], "first_team_postgame_review")
+        self.assertEqual(classification["x_post_ready"], "false")
+        self.assertEqual(
+            sender.build_subject(request.title, classification=classification),
+            "【要確認】巨人試合結果 | YOSHILOVER",
+        )
+
+    def test_first_team_lineup_clean_uses_x_candidate(self):
+        request = self._request(
+            subtype="lineup",
+            title="巨人スタメン発表 1番丸佳浩 先発は戸郷翔征",
+            publish_time_iso="2026-04-28T17:45:00+09:00",
+            summary="巨人スタメン発表。1番丸佳浩、2番吉川尚輝、先発は戸郷翔征。",
+        )
+        with patch.object(sender, "_coerce_now", return_value=datetime(2026, 4, 28, 12, 0, tzinfo=sender.JST)):
+            classification = sender._classify_mail(request)
+
+        labels = [label for label, _text in sender.build_manual_x_post_candidates(request)]
+        self.assertTrue(sender._is_first_team_article(request.title, request.summary or "", request.subtype))
+        self.assertEqual(classification["mail_class"], "x_candidate")
+        self.assertEqual(classification["reason"], "manual_x_candidates_clean")
+        self.assertIn("x_post_2_lineup_focus", labels)
+
+    def test_first_team_lineup_stale_forces_review_and_x_off(self):
+        request = self._request(
+            subtype="lineup",
+            title="巨人スタメン発表 1番丸佳浩 先発は戸郷翔征",
+            publish_time_iso="2026-04-27T17:45:00+09:00",
+            summary="巨人スタメン発表。1番丸佳浩、2番吉川尚輝、先発は戸郷翔征。",
+        )
+        with patch.object(sender, "_coerce_now", return_value=datetime(2026, 4, 28, 12, 0, tzinfo=sender.JST)):
+            classification = sender._classify_mail(request)
+
+        self.assertTrue(sender._is_first_team_article(request.title, request.summary or "", request.subtype))
+        self.assertEqual(classification["mail_class"], "review")
+        self.assertEqual(classification["reason"], "first_team_lineup_review")
+        self.assertEqual(classification["x_post_ready"], "false")
+
+    def test_farm_postgame_path_unchanged_by_first_team_helper(self):
+        request = self._request(
+            subtype="postgame",
+            title="巨人二軍 4-2 楽天",
+            publish_time_iso="2026-04-28T15:00:00+09:00",
+            summary="浅野翔吾が決勝打を放ち、先発は5回1失点だった。",
+        )
+        with patch.object(sender, "_coerce_now", return_value=datetime(2026, 4, 28, 18, 0, tzinfo=sender.JST)):
+            classification = sender._classify_mail(request)
+
+        labels = [label for label, _text in sender.build_manual_x_post_candidates(request)]
+        self.assertFalse(sender._is_first_team_article(request.title, request.summary or "", request.subtype))
+        self.assertEqual(classification["mail_class"], "x_candidate")
+        self.assertEqual(classification["reason"], "manual_x_candidates_clean")
+        self.assertEqual(
+            labels,
+            [
+                "x_post_1_article_intro",
+                "x_post_2_postgame_turning_point",
+                "x_post_3_inside_voice",
+            ],
+        )
+
     def test_manual_x_notice_omits_fan_reaction_hook(self):
         candidates = sender.build_manual_x_post_candidates(self._request(subtype="notice"))
 

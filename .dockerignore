@@ -7,3 +7,5 @@
 !src/**
 !vendor/
 !vendor/**
+!config/
+!config/**

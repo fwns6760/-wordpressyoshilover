@@ -798,6 +798,75 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         self.assertIn("x_post_3_inside_voice", lineup_labels)
         self.assertNotEqual(lineup_labels, default_labels)
 
+    def test_farm_result_clean_candidates_use_narrow_templates(self):
+        request = self._request(
+            subtype="farm_result",
+            title="巨人二軍 4-2 楽天 試合結果",
+            publish_time_iso="2026-04-28T11:00:00+09:00",
+            summary="巨人二軍が楽天に4-2で勝利した。浅野翔吾が2安打1打点、先発の山崎伊織は5回1失点だった。",
+        )
+        with patch.object(sender, "_coerce_now", return_value=datetime(2026, 4, 28, 12, 0, tzinfo=sender.JST)):
+            classification = sender._classify_mail(request)
+
+        labels = [label for label, _text in sender.build_manual_x_post_candidates(request)]
+        self.assertEqual(classification["mail_class"], "x_candidate")
+        self.assertEqual(labels, ["x_post_1_article_intro", "x_post_2_farm_watch", "x_post_3_inside_voice"])
+        self.assertFalse(any("fan_reaction_hook" in label for label in labels))
+
+    def test_farm_result_dirty_forces_review_subject_prefix(self):
+        request = self._request(
+            subtype="farm_result",
+            title="巨人二軍 楽天戦 試合結果",
+            publish_time_iso="2026-04-28T11:00:00+09:00",
+            summary="巨人二軍が楽天戦の結果を更新した。スポーツ報知が伝えた。",
+        )
+        with patch.object(sender, "_coerce_now", return_value=datetime(2026, 4, 28, 12, 0, tzinfo=sender.JST)):
+            classification = sender._classify_mail(request)
+
+        self.assertEqual(classification["mail_class"], "review")
+        self.assertEqual(classification["reason"], "farm_result_review")
+        self.assertEqual(classification["x_post_ready"], "false")
+        self.assertEqual(
+            sender.build_subject(request.title, classification=classification),
+            "【要確認】巨人二軍 楽天戦 試合結果 | YOSHILOVER",
+        )
+
+    def test_farm_lineup_clean_candidates_use_narrow_templates(self):
+        request = self._request(
+            subtype="farm_lineup",
+            title="【二軍】巨人 vs DeNA 18:00試合開始 1番浅野、4番ティマでスタメン",
+            publish_time_iso="2026-04-28T15:00:00+09:00",
+            summary="巨人二軍がDeNA戦のスタメンを発表した。1番浅野翔吾、4番ティマ、先発は西舘勇陽投手。",
+        )
+        with patch.object(sender, "_coerce_now", return_value=datetime(2026, 4, 28, 12, 0, tzinfo=sender.JST)):
+            classification = sender._classify_mail(request)
+
+        labels = [label for label, _text in sender.build_manual_x_post_candidates(request)]
+        self.assertEqual(classification["mail_class"], "x_candidate")
+        self.assertEqual(labels, ["x_post_1_article_intro", "x_post_2_farm_watch"])
+        self.assertFalse(any("inside_voice" in label for label in labels))
+        self.assertFalse(any("fan_reaction_hook" in label for label in labels))
+
+    def test_farm_lineup_stale_forces_review_and_x_post_off(self):
+        request = self._request(
+            subtype="farm_lineup",
+            title="【二軍】巨人 vs DeNA 18:00試合開始 1番浅野、4番ティマでスタメン",
+            publish_time_iso="2026-04-27T18:00:00+09:00",
+            summary="巨人二軍がDeNA戦のスタメンを発表した。1番浅野翔吾、4番ティマ、先発は西舘勇陽投手。",
+        )
+        with patch.object(sender, "_coerce_now", return_value=datetime(2026, 4, 28, 12, 0, tzinfo=sender.JST)):
+            classification = sender._classify_mail(request)
+
+        body_lines = sender.build_body_text(request, classification=classification).splitlines()
+        self.assertEqual(classification["mail_class"], "review")
+        self.assertEqual(classification["reason"], "farm_lineup_review")
+        self.assertEqual(classification["x_post_ready"], "false")
+        self.assertEqual(
+            sender.build_subject(request.title, classification=classification),
+            "【要確認】【二軍】巨人 vs DeNA 18:00試合開始 1番浅野、4番ティマでスタメン | YOSHILOVER",
+        )
+        self.assertIn("[X 投稿候補] 非表示: 本文確認後に必要なら手動で判断してください", body_lines)
+
     def test_manual_x_notice_omits_fan_reaction_hook(self):
         candidates = sender.build_manual_x_post_candidates(self._request(subtype="notice"))
 

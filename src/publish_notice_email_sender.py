@@ -103,6 +103,10 @@ _MANUAL_X_SUMMARY_TRUNCATION_RE = re.compile(r"(?:\s*(?:\[\.\.\.\]|\[\u2026\]|�
 _MANUAL_X_DATE_RE = re.compile(r"(?:(\d{1,2})月(\d{1,2})日|(\d{1,2})[/.・](\d{1,2})(?:日)?)")
 _MANUAL_X_EVENT_ACTOR_RE = re.compile(r"([一-龯々ぁ-んァ-ヴー]{2,12}(?:監督|コーチ|投手|捕手|内野手|外野手|選手))")
 _MANUAL_X_LONG_TERM_INJURY_RE = re.compile(r"全治\s*(\d+)\s*(?:ヶ月|か月|ヵ月|カ月)")
+_FARM_RESULT_FACT_RE = re.compile(
+    r"(?:\d+\s*[-ー－]\s*\d+|\d+回\d+失点|\d+安打\d+打点|\d+打数\d+安打|\d+奪三振|\d+号)"
+)
+_FARM_LINEUP_MARKER_RE = re.compile(r"(?:スタメン|先発|[1-9]番)")
 _MANUAL_X_NOTICE_EVENT_KEYWORDS = (
     "開催",
     "日程",
@@ -183,6 +187,14 @@ _REVIEW_REASON_LABELS: dict[str | None, tuple[str, str]] = {
         "要確認",
         "要約に元記事断片や重複文が混ざっています(本文確認推奨)",
     ),
+    "farm_result_review": (
+        "要確認",
+        "二軍結果の記事で数字または時点の確認が必要です(本文確認推奨)",
+    ),
+    "farm_lineup_review": (
+        "要確認",
+        "二軍スタメンの記事で時点または内容確認が必要です(本文確認推奨)",
+    ),
     "cautious_subtype_review": (
         "要確認",
         "公示・注意系の記事です(本文確認推奨)",
@@ -201,7 +213,9 @@ _REVIEW_REASON_LABELS: dict[str | None, tuple[str, str]] = {
     ),
 }
 _DIRTY_REVIEW_SUMMARY_LIMIT = 100
-_SAFE_X_CANDIDATE_ARTICLE_TYPES = frozenset({"default", "lineup", "postgame", "farm", "program"})
+_SAFE_X_CANDIDATE_ARTICLE_TYPES = frozenset(
+    {"default", "lineup", "postgame", "farm", "farm_result", "farm_lineup", "program"}
+)
 _CAUTIOUS_REVIEW_ARTICLE_TYPES = frozenset({"notice", "notice_event"})
 _MANUAL_X_DIRTY_MARKERS = (
     "📰",
@@ -489,6 +503,13 @@ def _format_publish_time_jst(value: str) -> str:
     return current.strftime("%Y-%m-%d %H:%M JST")
 
 
+def _is_past_publish_date(value: str, *, now: datetime | None = None) -> bool:
+    current = _parse_datetime_to_jst(value)
+    if current is None:
+        return False
+    return current.date() < _coerce_now(now).date()
+
+
 def _normalize_summary(summary: str | None) -> str:
     compact = _WHITESPACE_RE.sub(" ", str(summary or "").strip())
     if not compact:
@@ -647,6 +668,10 @@ def _manual_x_event_actor(title: str, summary: str) -> str:
 
 def _manual_x_article_type(subtype: str, *, title: str = "", summary: str = "", raw_summary: str = "") -> str:
     normalized = str(subtype or "").strip().lower()
+    if normalized == "farm_result":
+        return "farm_result"
+    if normalized == "farm_lineup":
+        return "farm_lineup"
     if "lineup" in normalized or "スタメン" in normalized:
         return "lineup"
     if "postgame" in normalized or "result" in normalized or "試合結果" in normalized:
@@ -704,6 +729,10 @@ def _manual_x_template_sequence(article_type: str, *, sensitive: bool) -> list[s
         templates = ["article_intro", "postgame_turning_point", "inside_voice", "fan_reaction_hook"]
     elif article_type == "farm":
         templates = ["article_intro", "farm_watch", "inside_voice", "why_it_matters"]
+    elif article_type == "farm_result":
+        templates = ["article_intro", "farm_watch", "inside_voice"]
+    elif article_type == "farm_lineup":
+        templates = ["article_intro", "farm_watch"]
     elif article_type == "notice_event":
         templates = ["article_intro", "event_detail", "event_inside_voice"]
     elif article_type == "notice":
@@ -715,7 +744,7 @@ def _manual_x_template_sequence(article_type: str, *, sensitive: bool) -> list[s
 
     if sensitive or article_type in {"notice", "notice_event"}:
         templates = [template for template in templates if template != "fan_reaction_hook"]
-    if article_type not in {"lineup", "postgame", "farm", "program"}:
+    if article_type not in {"lineup", "postgame", "farm", "farm_result", "program"}:
         templates = [template for template in templates if template != "inside_voice"]
     return [template for template in templates if template in _MANUAL_X_TEMPLATE_TYPES]
 
@@ -725,6 +754,8 @@ def _manual_x_article_intro_lead(article_type: str) -> str:
         "lineup": "巨人のスタメン情報を更新しました。",
         "postgame": "巨人の試合結果を更新しました。",
         "farm": "巨人の二軍情報を更新しました。",
+        "farm_result": "巨人の二軍試合結果を更新しました。",
+        "farm_lineup": "巨人の二軍スタメン情報を更新しました。",
         "notice": "巨人の公示・選手動向を整理しました。",
         "program": "巨人関連の番組情報を更新しました。",
     }.get(article_type, "巨人ニュースを更新しました。")
@@ -742,6 +773,7 @@ def _manual_x_inside_voice(article_type: str) -> str:
         "lineup": "この起用は試合前に見ておきたい。",
         "postgame": "これは試合後にもう一度見たいポイント。",
         "farm": "二軍の動きも追っておきたい。",
+        "farm_result": "二軍の動きも追っておきたい。",
         "program": "見逃し注意の巨人関連情報です。",
     }.get(article_type, "")
 
@@ -969,6 +1001,37 @@ def _manual_x_candidate_suppression_reason(
     applied_flags = {str(flag) for flag in (yellow_entry.get("applied_flags") or []) if str(flag)}
     if "roster_movement_yellow" in applied_flags:
         return "roster_movement_yellow"
+    return None
+
+
+def _farm_subtype_review_reason(
+    request: PublishNoticeRequest,
+    context: ManualXContext,
+    *,
+    yellow_log_path: str | Path = DEFAULT_GUARDED_PUBLISH_YELLOW_LOG_PATH,
+) -> str | None:
+    normalized_subtype = str(request.subtype or "").strip().lower()
+    if normalized_subtype not in {"farm_result", "farm_lineup"}:
+        return None
+
+    yellow_entry = _latest_yellow_log_entry_for_post(request.post_id, yellow_log_path=yellow_log_path) or {}
+    applied_flags = {
+        str(flag).strip()
+        for flag in (yellow_entry.get("applied_flags") or [])
+        if str(flag).strip()
+    }
+    if "subtype_unresolved" in applied_flags:
+        return f"{normalized_subtype}_review"
+    if _is_past_publish_date(request.publish_time_iso):
+        return f"{normalized_subtype}_review"
+
+    combined = " ".join(
+        item for item in (context.title, context.cleaned_summary) if item and item != "(なし)"
+    )
+    if normalized_subtype == "farm_result" and not _FARM_RESULT_FACT_RE.search(combined):
+        return "farm_result_review"
+    if normalized_subtype == "farm_lineup" and not _FARM_LINEUP_MARKER_RE.search(combined):
+        return "farm_lineup_review"
     return None
 
 
@@ -1231,6 +1294,15 @@ def _per_post_mail_state(
     else:
         mail_class = "publish"
         reason = "publish_notice_default"
+
+    farm_review_reason = _farm_subtype_review_reason(
+        request,
+        context,
+        yellow_log_path=yellow_log_path,
+    )
+    if farm_review_reason and mail_class in {"publish", "x_candidate"}:
+        mail_class = "review"
+        reason = farm_review_reason
 
     mail_config = _mail_class_config(mail_class)
     return {

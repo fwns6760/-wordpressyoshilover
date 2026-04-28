@@ -146,6 +146,126 @@ class MailDeliveryBridgeTests(unittest.TestCase):
     @patch.dict(
         "os.environ",
         {
+            "MAIL_BRIDGE_SMTP_USERNAME": "bridge-login@example.com",
+            "MAIL_BRIDGE_FROM": "bridge-from@example.com",
+            "NOTIFY_FROM": "notify@example.com",
+        },
+        clear=True,
+    )
+    @patch.object(mail_delivery_bridge.smtplib, "SMTP_SSL")
+    def test_send_real_path_prefers_notify_from_over_mail_bridge_from(self, mock_smtp_ssl):
+        smtp = MagicMock()
+        smtp.send_message.return_value = {}
+        smtp.noop.return_value = (250, b"accepted")
+        mock_smtp_ssl.return_value.__enter__.return_value = smtp
+        credentials = mail_delivery_bridge.BridgeCredentials(
+            app_password="smtp-pass",
+            smtp_host="smtp.example.com",
+            smtp_port=2465,
+        )
+
+        result = mail_delivery_bridge.send(
+            _request(),
+            dry_run=False,
+            credentials=credentials,
+        )
+
+        self.assertEqual(result.status, "sent")
+        message = smtp.send_message.call_args.args[0]
+        self.assertEqual(message["From"], "notify@example.com")
+
+    @patch.dict(
+        "os.environ",
+        {
+            "MAIL_BRIDGE_SMTP_USERNAME": "bridge-login@example.com",
+        },
+        clear=True,
+    )
+    @patch.object(mail_delivery_bridge.smtplib, "SMTP_SSL")
+    def test_send_real_path_falls_back_to_smtp_username_when_sender_envs_unset(self, mock_smtp_ssl):
+        smtp = MagicMock()
+        smtp.send_message.return_value = {}
+        smtp.noop.return_value = (250, b"accepted")
+        mock_smtp_ssl.return_value.__enter__.return_value = smtp
+        credentials = mail_delivery_bridge.BridgeCredentials(
+            app_password="smtp-pass",
+            smtp_host="smtp.example.com",
+            smtp_port=2465,
+        )
+
+        result = mail_delivery_bridge.send(
+            _request(),
+            dry_run=False,
+            credentials=credentials,
+        )
+
+        self.assertEqual(result.status, "sent")
+        message = smtp.send_message.call_args.args[0]
+        self.assertEqual(message["From"], "bridge-login@example.com")
+
+    @patch.dict(
+        "os.environ",
+        {
+            "MAIL_BRIDGE_SMTP_USERNAME": "bridge-login@example.com",
+            "MAIL_BRIDGE_REPLY_TO": "bridge-reply@example.com",
+            "NOTIFY_REPLY_TO": "notify-reply@example.com",
+        },
+        clear=True,
+    )
+    @patch.object(mail_delivery_bridge.smtplib, "SMTP_SSL")
+    def test_send_real_path_uses_reply_to_env_when_request_omitted(self, mock_smtp_ssl):
+        smtp = MagicMock()
+        smtp.send_message.return_value = {}
+        smtp.noop.return_value = (250, b"accepted")
+        mock_smtp_ssl.return_value.__enter__.return_value = smtp
+        credentials = mail_delivery_bridge.BridgeCredentials(
+            app_password="smtp-pass",
+            smtp_host="smtp.example.com",
+            smtp_port=2465,
+        )
+
+        result = mail_delivery_bridge.send(
+            _request(),
+            dry_run=False,
+            credentials=credentials,
+        )
+
+        self.assertEqual(result.status, "sent")
+        message = smtp.send_message.call_args.args[0]
+        self.assertEqual(message["Reply-To"], "notify-reply@example.com")
+
+    @patch.dict(
+        "os.environ",
+        {
+            "MAIL_BRIDGE_SMTP_USERNAME": "bridge-login@example.com",
+        },
+        clear=True,
+    )
+    @patch.object(mail_delivery_bridge.smtplib, "SMTP_SSL")
+    def test_send_real_path_omits_reply_to_when_env_and_request_are_unset(self, mock_smtp_ssl):
+        smtp = MagicMock()
+        smtp.send_message.return_value = {}
+        smtp.noop.return_value = (250, b"accepted")
+        mock_smtp_ssl.return_value.__enter__.return_value = smtp
+        credentials = mail_delivery_bridge.BridgeCredentials(
+            app_password="smtp-pass",
+            smtp_host="smtp.example.com",
+            smtp_port=2465,
+        )
+
+        result = mail_delivery_bridge.send(
+            _request(),
+            dry_run=False,
+            credentials=credentials,
+        )
+
+        self.assertEqual(result.status, "sent")
+        message = smtp.send_message.call_args.args[0]
+        self.assertNotIn("Reply-To", message)
+
+    @patch.dict(
+        "os.environ",
+        {
             "MAIL_BRIDGE_GMAIL_APP_PASSWORD": "primary-pass",
             "MAIL_BRIDGE_SMTP_HOST": "bridge.smtp.example.com",
             "MAIL_BRIDGE_SMTP_PORT": "1465",

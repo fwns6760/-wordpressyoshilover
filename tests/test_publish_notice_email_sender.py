@@ -1482,6 +1482,30 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         self.assertEqual(row["reason"], "SMTPServerDisconnected")
         self.assertEqual(row["subject"], "【投稿候補】巨人が接戦を制した | YOSHILOVER")
 
+    def test_append_send_result_does_not_serialize_secret_like_bridge_payload(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            queue_path = f"{tmpdir}/queue.jsonl"
+            result = sender.PublishNoticeEmailResult(
+                status="error",
+                reason="SMTPServerDisconnected",
+                subject="【公開済】巨人が接戦を制した | YOSHILOVER",
+                recipients=["notice@example.com"],
+                bridge_result={"smtp_password": "should-not-leak-secret"},
+            )
+
+            sender.append_send_result(
+                queue_path,
+                notice_kind="per_post",
+                post_id=63781,
+                result=result,
+                publish_time_iso="2026-04-27T09:05:37+09:00",
+                recorded_at=datetime.fromisoformat("2026-04-27T11:31:14+09:00"),
+            )
+            raw = Path(queue_path).read_text(encoding="utf-8")
+
+        self.assertNotIn("should-not-leak-secret", raw)
+        self.assertNotIn("smtp_password", raw)
+
     def test_alert_log_when_emit_gt_zero_sent_zero(self):
         summary = sender.summarize_execution_results(
             [

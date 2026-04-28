@@ -200,7 +200,14 @@ def _resolve_sender(request: MailRequest, smtp_username: str) -> str:
     explicit_sender = (request.sender or "").strip()
     if explicit_sender:
         return explicit_sender
-    return _first_str("MAIL_BRIDGE_FROM", "FACT_CHECK_EMAIL_FROM") or smtp_username
+    return _first_str("NOTIFY_FROM", "MAIL_BRIDGE_FROM", "FACT_CHECK_EMAIL_FROM") or smtp_username
+
+
+def _resolve_reply_to(request: MailRequest) -> str:
+    explicit_reply_to = (request.reply_to or "").strip()
+    if explicit_reply_to:
+        return explicit_reply_to
+    return _first_str("NOTIFY_REPLY_TO", "MAIL_BRIDGE_REPLY_TO")
 
 
 def _build_message(request: MailRequest, *, sender: str, recipients: list[str]) -> EmailMessage:
@@ -208,8 +215,9 @@ def _build_message(request: MailRequest, *, sender: str, recipients: list[str]) 
     message["Subject"] = request.subject.strip()
     message["From"] = sender
     message["To"] = ", ".join(recipients)
-    if request.reply_to and request.reply_to.strip():
-        message["Reply-To"] = request.reply_to.strip()
+    reply_to = _resolve_reply_to(request)
+    if reply_to:
+        message["Reply-To"] = reply_to
     message["Message-ID"] = make_msgid(domain="yoshilover.com")
     message.set_content(request.text_body)
     if request.html_body and request.html_body.strip():

@@ -6,6 +6,7 @@ changes outside the per-test temp directory.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import io
 import json
 import os
@@ -178,6 +179,26 @@ def _gemini_response(
     return _FakeGeminiResponse(json.dumps(payload).encode("utf-8"))
 
 
+@dataclass(frozen=True)
+class _FakeConsistencyReport:
+    severity: str
+    findings: tuple[object, ...] = ()
+    hard_stop_flags: tuple[str, ...] = ()
+    review_flags: tuple[str, ...] = ()
+    x_candidate_suppress_flags: tuple[str, ...] = ()
+
+
+def _make_consistency_report(severity: str, *flags: str) -> _FakeConsistencyReport:
+    flag_tuple = tuple(flags)
+    if severity in {"hard_stop", "mismatch"}:
+        return _FakeConsistencyReport(severity=severity, hard_stop_flags=flag_tuple)
+    if severity == "review":
+        return _FakeConsistencyReport(severity=severity, review_flags=flag_tuple)
+    if severity == "x_candidate_suppress":
+        return _FakeConsistencyReport(severity=severity, x_candidate_suppress_flags=flag_tuple)
+    return _FakeConsistencyReport(severity=severity)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -243,6 +264,48 @@ def _run_main(argv: Sequence[str], *, gemini_return: str | None = None,
                 mock_call.return_value = gemini_return or ""
             exit_code = dbe.main(list(argv))
     return exit_code, stdout.getvalue(), stderr.getvalue()
+
+
+def _run_main_with_post_check(
+    argv: Sequence[str],
+    *,
+    post_check_report: _FakeConsistencyReport,
+    gemini_return: str,
+) -> tuple[int, str, str, object, object, object]:
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    captured_check_calls: list[dict[str, object]] = []
+
+    def fake_check_consistency(
+        source_text: str,
+        generated_body: str,
+        x_candidates: Sequence[str],
+        metadata: dict[str, object] | None,
+        publish_time_iso: str,
+    ) -> _FakeConsistencyReport:
+        captured_check_calls.append(
+            {
+                "source_text": source_text,
+                "generated_body": generated_body,
+                "x_candidates": tuple(x_candidates),
+                "metadata": metadata,
+                "publish_time_iso": publish_time_iso,
+            }
+        )
+        return post_check_report
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ledger_path = Path(tmpdir) / "llm_call_dedupe.jsonl"
+        with patch.object(dbe.llm_call_dedupe, "DEFAULT_LEDGER_PATH", ledger_path), \
+             patch("src.tools.draft_body_editor.call_gemini") as mock_call, \
+             patch("src.baseball_numeric_fact_consistency.check_consistency", new=fake_check_consistency), \
+             patch("src.tools.draft_body_editor.repair_provider_ledger.JsonlLedgerWriter.write") as mock_write, \
+             patch("sys.stdout", stdout), patch("sys.stderr", stderr), \
+             patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}, clear=False):
+            mock_call.return_value = gemini_return
+            exit_code = dbe.main(list(argv))
+    ledger_entry = mock_write.call_args.args[0] if mock_write.call_args else None
+    return exit_code, stdout.getvalue(), stderr.getvalue(), mock_call, captured_check_calls, ledger_entry
 
 
 # ---------------------------------------------------------------------------
@@ -897,17 +960,119 @@ class TestRepairPromptAnchor(unittest.TestCase):
 
 
 class TestPostCheckAdapter(unittest.TestCase):
-    def test_post_check_adapter_returns_pass_until_244_module_lands(self):
-        report = dbe._post_check_repaired_body(
-            source_text="巨人1-11楽天",
-            new_body="巨人は敗れました。",
-            metadata={"post_id": 1234, "subtype": "postgame"},
-            publish_time_iso="2026-04-28T00:00:00+09:00",
-        )
+    def test_post_check_calls_baseball_numeric_fact_consistency_module(self):
+        captured_call: dict[str, object] = {}
+
+        def fake_check_consistency(
+            source_text: str,
+            generated_body: str,
+            x_candidates: Sequence[str],
+            metadata: dict[str, object] | None,
+            publish_time_iso: str,
+        ) -> _FakeConsistencyReport:
+            captured_call.update(
+                {
+                    "source_text": source_text,
+                    "generated_body": generated_body,
+                    "x_candidates": tuple(x_candidates),
+                    "metadata": metadata,
+                    "publish_time_iso": publish_time_iso,
+                }
+            )
+            return _make_consistency_report("pass")
+
+        with patch("src.baseball_numeric_fact_consistency.check_consistency", new=fake_check_consistency):
+            report = dbe._post_check_repaired_body(
+                source_text="巨人1-11楽天",
+                new_body="巨人は敗れました。",
+                metadata={"post_id": 1234, "subtype": "postgame"},
+                publish_time_iso="2026-04-28T00:00:00+09:00",
+            )
 
         self.assertEqual(report.severity, "pass")
         self.assertEqual(report.flags, ())
-        self.assertEqual(report.details, {})
+        self.assertEqual(
+            report.details,
+            {
+                "hard_stop_flags": (),
+                "review_flags": (),
+                "x_candidate_suppress_flags": (),
+            },
+        )
+        self.assertEqual(
+            captured_call,
+            {
+                "source_text": "巨人1-11楽天",
+                "generated_body": "巨人は敗れました。",
+                "x_candidates": (),
+                "metadata": {"post_id": 1234, "subtype": "postgame"},
+                "publish_time_iso": "2026-04-28T00:00:00+09:00",
+            },
+        )
+
+    def test_post_check_score_mismatch_blocks_wp_put(self):
+        with _tmp_workspace() as ws:
+            argv = _make_argv(ws, subtype="postgame")
+            out_path = argv[argv.index("--out") + 1]
+            code, _, stderr, _, _, ledger_entry = _run_main_with_post_check(
+                argv,
+                post_check_report=_make_consistency_report("hard_stop", "numeric_fact_mismatch"),
+                gemini_return=POSTGAME_NEW,
+            )
+            self.assertEqual(code, 13)
+            self.assertIn("Post-check failed", stderr)
+            self.assertFalse(os.path.exists(out_path))
+            self.assertIsNotNone(ledger_entry)
+            self.assertFalse(ledger_entry.strict_pass)
+            self.assertEqual(ledger_entry.error_code, "numeric_fact_mismatch")
+
+    def test_post_check_pass_allows_wp_put(self):
+        with _tmp_workspace() as ws:
+            argv = _make_argv(ws, subtype="postgame")
+            out_path = argv[argv.index("--out") + 1]
+            code, stdout, stderr, _, _, ledger_entry = _run_main_with_post_check(
+                argv,
+                post_check_report=_make_consistency_report("pass"),
+                gemini_return=POSTGAME_NEW,
+            )
+            self.assertEqual(code, 0, msg=stderr)
+            self.assertIsNotNone(ledger_entry)
+            self.assertTrue(ledger_entry.strict_pass)
+            self.assertTrue(os.path.exists(out_path))
+            with open(out_path, encoding="utf-8") as handle:
+                self.assertEqual(handle.read(), POSTGAME_NEW)
+            payload = json.loads(stdout.strip())
+            self.assertEqual(payload["guards"], "pass")
+
+    def test_repair_failure_records_strict_pass_false_with_244_flag(self):
+        with _tmp_workspace() as ws:
+            argv = _make_argv(ws, subtype="postgame")
+            code, _, _, _, _, ledger_entry = _run_main_with_post_check(
+                argv,
+                post_check_report=_make_consistency_report("hard_stop", "score_order_mismatch"),
+                gemini_return=POSTGAME_NEW,
+            )
+
+        self.assertEqual(code, 13)
+        self.assertIsNotNone(ledger_entry)
+        self.assertFalse(ledger_entry.strict_pass)
+        self.assertEqual(ledger_entry.error_code, "score_order_mismatch")
+        self.assertIn("score_order_mismatch", ledger_entry.provider_meta["quality_flags"])
+        self.assertIn("post_check_hard_stop", ledger_entry.provider_meta["quality_flags"])
+
+    def test_repair_does_not_retry_gemini_on_post_check_fail(self):
+        with _tmp_workspace() as ws:
+            argv = _make_argv(ws, subtype="postgame")
+            code, _, _, mock_call, _, ledger_entry = _run_main_with_post_check(
+                argv,
+                post_check_report=_make_consistency_report("review", "pitcher_team_stat_confusion"),
+                gemini_return=POSTGAME_NEW,
+            )
+
+        self.assertEqual(code, 13)
+        self.assertIsNotNone(ledger_entry)
+        self.assertFalse(ledger_entry.strict_pass)
+        mock_call.assert_called_once()
 
 
 if __name__ == "__main__":

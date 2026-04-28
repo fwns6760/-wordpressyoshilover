@@ -13,6 +13,7 @@ Exit codes:
     10 -- Guard A (source grounding) failed
     11 -- Guard B (subtype heading invariance) failed
     12 -- Guard C (scope invariance) failed
+    13 -- post-check numeric fact consistency failed
     20 -- Gemini API failure
     30 -- input validation failure
 """
@@ -21,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import inspect
 import json
 import os
 import random
@@ -332,11 +334,46 @@ def _post_check_repaired_body(
     metadata: Mapping[str, object] | None,
     publish_time_iso: str | None,
 ) -> _PostCheckReport:
-    # TODO(244-B-followup): wire src.baseball_numeric_fact_consistency.check_consistency
-    # once the shared 244 module lands in git. Until then keep this adapter as a
-    # pass-through stub so repair flow and Gemini call count remain unchanged.
-    _ = (source_text, new_body, metadata, publish_time_iso)
-    return _PostCheckReport(severity="pass", flags=(), details={})
+    from src.baseball_numeric_fact_consistency import check_consistency
+
+    metadata = dict(metadata or {})
+    subtype = str(metadata.get("subtype") or metadata.get("article_subtype") or "")
+    call_kwargs: dict[str, object] = {
+        "source_text": source_text,
+        "generated_body": new_body,
+        "x_candidates": (),
+        "metadata": metadata,
+        "publish_time_iso": str(publish_time_iso or ""),
+    }
+    if "subtype" in inspect.signature(check_consistency).parameters:
+        call_kwargs["subtype"] = subtype
+    raw_report = check_consistency(**call_kwargs)
+    if isinstance(raw_report, _PostCheckReport):
+        return raw_report
+
+    severity = str(getattr(raw_report, "severity", "pass") or "pass")
+    hard_stop_flags = tuple(str(flag) for flag in (getattr(raw_report, "hard_stop_flags", ()) or ()))
+    review_flags = tuple(str(flag) for flag in (getattr(raw_report, "review_flags", ()) or ()))
+    x_candidate_suppress_flags = tuple(
+        str(flag) for flag in (getattr(raw_report, "x_candidate_suppress_flags", ()) or ())
+    )
+    flags = tuple(str(flag) for flag in (getattr(raw_report, "flags", ()) or ()))
+    if not flags:
+        if severity in {"hard_stop", "mismatch"}:
+            flags = hard_stop_flags
+        elif severity == "review":
+            flags = review_flags
+        elif severity == "x_candidate_suppress":
+            flags = x_candidate_suppress_flags
+    return _PostCheckReport(
+        severity=severity,
+        flags=flags,
+        details={
+            "hard_stop_flags": hard_stop_flags,
+            "review_flags": review_flags,
+            "x_candidate_suppress_flags": x_candidate_suppress_flags,
+        },
+    )
 
 
 def build_prompt(
@@ -1096,7 +1133,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _emit_violations("Guard C", violations_c)
         return 12
 
-    _post_check_repaired_body(
+    post_check_report = _post_check_repaired_body(
         source_text=source_block,
         new_body=new_body,
         metadata={
@@ -1106,6 +1143,32 @@ def main(argv: Sequence[str] | None = None) -> int:
         },
         publish_time_iso=None,
     )
+    if post_check_report.severity != "pass":
+        post_check_flags = list(post_check_report.flags)
+        post_check_error = post_check_flags[0] if post_check_flags else f"post_check_{post_check_report.severity}"
+        _emit_repair_provider_ledger(
+            post_id=args.post_id,
+            subtype=args.subtype,
+            fail_axes=fail_axes,
+            dry_run=bool(args.dry_run),
+            current_body=current_body,
+            source_block=source_block,
+            out_path=args.out,
+            new_body=new_body,
+            status="failed",
+            started_at=started_at,
+            finished_at=repair_provider_ledger._now_jst(),
+            hard_stop_flags_resolved=False,
+            no_new_forbidden_claim=True,
+            quality_flags=quality_flags + post_check_flags + [f"post_check_{post_check_report.severity}"],
+            error_code=post_check_error,
+        )
+        print(
+            "Post-check failed: "
+            f"severity={post_check_report.severity} flags={','.join(post_check_flags) or '-'}",
+            file=sys.stderr,
+        )
+        return 13
 
     if args.dry_run:
         _emit_repair_provider_ledger(

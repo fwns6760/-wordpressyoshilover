@@ -863,5 +863,52 @@ class TestHeadingLookup(unittest.TestCase):
         )
 
 
+class TestRepairPromptAnchor(unittest.TestCase):
+    def test_repair_prompt_includes_source_anchor_facts_block(self):
+        source = (
+            "2026年4月28日 巨人1-11楽天\n"
+            "山崎伊織投手は5回3安打2失点でした。"
+        )
+        prompt = dbe.build_prompt(
+            "postgame",
+            ("density",),
+            POSTGAME_BODY,
+            source,
+            dbe._lookup_required_headings("postgame"),
+        )
+
+        self.assertIn("[FACTS]", prompt)
+        self.assertIn("score_literals: 1-11", prompt)
+        self.assertIn("player_name_candidates: 山崎伊織", prompt)
+        self.assertIn("pitcher_stat_snippets: 山崎伊織投手は5回3安打2失点でした", prompt)
+        self.assertIn("date_literals: 2026年4月28日, 4月28日", prompt)
+
+    def test_repair_prompt_instructs_no_fabrication(self):
+        prompt = dbe.build_prompt(
+            "postgame",
+            ("density", "core"),
+            POSTGAME_BODY,
+            POSTGAME_SOURCE,
+            dbe._lookup_required_headings("postgame"),
+        )
+
+        self.assertIn("source/meta にある数字・選手名・スコア・日付は絶対に改変しない。", prompt)
+        self.assertIn("source/meta にない数字・選手名・スコア・日付は新たに作らない。", prompt)
+
+
+class TestPostCheckAdapter(unittest.TestCase):
+    def test_post_check_adapter_returns_pass_until_244_module_lands(self):
+        report = dbe._post_check_repaired_body(
+            source_text="巨人1-11楽天",
+            new_body="巨人は敗れました。",
+            metadata={"post_id": 1234, "subtype": "postgame"},
+            publish_time_iso="2026-04-28T00:00:00+09:00",
+        )
+
+        self.assertEqual(report.severity, "pass")
+        self.assertEqual(report.flags, ())
+        self.assertEqual(report.details, {})
+
+
 if __name__ == "__main__":
     unittest.main()

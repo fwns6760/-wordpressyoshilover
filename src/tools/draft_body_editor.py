@@ -20,6 +20,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import json
 import os
 import random
@@ -33,7 +34,7 @@ from datetime import datetime
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 from uuid import uuid4
 
 from src import llm_call_dedupe
@@ -97,6 +98,36 @@ NUMERIC_PATTERNS = {
 }
 
 HEADING_PATTERN = re.compile(r"【[^】]+】")
+SOURCE_SCORE_PATTERN = re.compile(r"(?<!\d)\d{1,2}[-−－]\d{1,2}(?!\d)")
+SOURCE_DATE_YMD_PATTERN = re.compile(r"(?<!\d)\d{4}年\d{1,2}月\d{1,2}日")
+SOURCE_PLAYER_ROLE_PATTERN = re.compile(
+    r"(?P<name>[一-龯々]{2,6}(?:[ぁ-んァ-ヴー]{0,4})?)"
+    r"(?=(?:投手|捕手|内野手|外野手|選手|監督|コーチ))"
+)
+SOURCE_PITCHER_STAT_PATTERN = re.compile(
+    r"[^\n。]*"
+    r"(?:\d+回\s*\d+(?:安打|被安打)\s*\d+失点|\d+被?安打(?:\s*\d+失点)?)"
+    r"[^\n。]*"
+)
+SOURCE_PLAYER_STOPWORDS = frozenset(
+    {
+        *TEAM_NAMES,
+        "投手",
+        "捕手",
+        "内野手",
+        "外野手",
+        "選手",
+        "監督",
+        "コーチ",
+        "試合",
+        "打線",
+        "チーム",
+        "東京ドーム",
+        "スポーツ報知",
+        "日刊スポーツ",
+        "スポニチ",
+    }
+)
 
 GEMINI_URL_TEMPLATE = (
     "https://generativelanguage.googleapis.com/v1beta/"
@@ -149,6 +180,13 @@ _PROSE_SEPARATOR_TAGS = {
 
 class GeminiAPIError(RuntimeError):
     """Raised when the Gemini REST call cannot be completed."""
+
+
+@dataclass(frozen=True)
+class _PostCheckReport:
+    severity: str
+    flags: tuple[str, ...]
+    details: dict[str, Any]
 
 
 class _ProseTextExtractor(HTMLParser):
@@ -221,6 +259,86 @@ def _lookup_required_headings(subtype: str) -> tuple[str, ...]:
     raise ValueError(f"no required headings registered for subtype={subtype!r}")
 
 
+def _dedupe_preserve_order(values: Iterable[str]) -> list[str]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for raw in values:
+        value = str(raw or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        deduped.append(value)
+    return deduped
+
+
+def _format_fact_values(values: Iterable[str], *, limit: int = 6) -> str:
+    deduped = _dedupe_preserve_order(values)
+    if not deduped:
+        return "<none>"
+    display = deduped[:limit]
+    if len(deduped) > limit:
+        display.append(f"... (+{len(deduped) - limit} more)")
+    return ", ".join(display)
+
+
+def _extract_source_player_names(source_block: str) -> list[str]:
+    names = [
+        match.group("name")
+        for match in SOURCE_PLAYER_ROLE_PATTERN.finditer(source_block or "")
+    ]
+    return [
+        name for name in _dedupe_preserve_order(names)
+        if name not in SOURCE_PLAYER_STOPWORDS
+    ]
+
+
+def _extract_source_pitcher_stats(source_block: str) -> list[str]:
+    snippets = []
+    for match in SOURCE_PITCHER_STAT_PATTERN.finditer(source_block or ""):
+        snippet = re.sub(r"\s+", " ", match.group(0)).strip(" ・\n\t")
+        if snippet:
+            snippets.append(snippet)
+    return _dedupe_preserve_order(snippets)
+
+
+def _build_source_anchor_facts_block(source_block: str) -> str:
+    source_text = source_block or ""
+    score_literals = _dedupe_preserve_order(
+        match.group(0) for match in SOURCE_SCORE_PATTERN.finditer(source_text)
+    )
+    date_literals = _dedupe_preserve_order(
+        [match.group(0) for match in SOURCE_DATE_YMD_PATTERN.finditer(source_text)]
+        + [match.group(0) for match in NUMERIC_PATTERNS["date_md"].finditer(source_text)]
+        + [match.group(0) for match in NUMERIC_PATTERNS["date_slash"].finditer(source_text)]
+    )
+    player_names = _extract_source_player_names(source_text)
+    pitcher_stats = _extract_source_pitcher_stats(source_text)
+    return "\n".join(
+        (
+            "[FACTS]",
+            "- source/meta 固定ルール: 以下の値は改変しない。以下にない値は新規作成しない。",
+            f"- score_literals: {_format_fact_values(score_literals)}",
+            f"- player_name_candidates: {_format_fact_values(player_names)}",
+            f"- pitcher_stat_snippets: {_format_fact_values(pitcher_stats)}",
+            f"- date_literals: {_format_fact_values(date_literals)}",
+            "[/FACTS]",
+        )
+    )
+
+
+def _post_check_repaired_body(
+    source_text: str,
+    new_body: str,
+    metadata: Mapping[str, object] | None,
+    publish_time_iso: str | None,
+) -> _PostCheckReport:
+    # TODO(244-B-followup): wire src.baseball_numeric_fact_consistency.check_consistency
+    # once the shared 244 module lands in git. Until then keep this adapter as a
+    # pass-through stub so repair flow and Gemini call count remain unchanged.
+    _ = (source_text, new_body, metadata, publish_time_iso)
+    return _PostCheckReport(severity="pass", flags=(), details={})
+
+
 def build_prompt(
     subtype: str,
     fail_axes: Sequence[str],
@@ -230,8 +348,13 @@ def build_prompt(
 ) -> str:
     fail_ja = "、".join(FAIL_AXIS_JA[axis] for axis in fail_axes)
     heading_list = "\n".join(headings)
+    facts_block = _build_source_anchor_facts_block(source_block)
     return (
         "あなたは野球メディア「ヨシラバー」の編集アシスタントです。\n"
+        "source/meta にある数字・選手名・スコア・日付は絶対に改変しない。\n"
+        "source/meta にない数字・選手名・スコア・日付は新たに作らない。\n"
+        "以下の [FACTS] を固定値として扱い、本文修正はこの範囲から逸脱しないこと。\n"
+        f"{facts_block}\n"
         "タスクは下書き本文の改善のみです。新しい事実を書き足してはいけません。\n"
         "\n"
         "入力:\n"
@@ -972,6 +1095,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         _emit_violations("Guard C", violations_c)
         return 12
+
+    _post_check_repaired_body(
+        source_text=source_block,
+        new_body=new_body,
+        metadata={
+            "post_id": args.post_id,
+            "subtype": args.subtype,
+            "fail_axes": tuple(fail_axes),
+        },
+        publish_time_iso=None,
+    )
 
     if args.dry_run:
         _emit_repair_provider_ledger(

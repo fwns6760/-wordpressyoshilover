@@ -514,6 +514,53 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         self.assertIn("ai_tone_heading_or_lead", entry["repairable_flags"])
         self.assertNotIn("death_or_grave_incident", entry["hard_stop_flags"])
 
+    def test_other_team_player_contamination_63844_type_returns_yellow(self):
+        post = _post(
+            63851,
+            "巨人 vs 楽天 先発情報",
+            (
+                "<p>巨人:則本昂大が先発し、試合前のポイントを整理する。スポーツ報知によると、打線の対応が焦点になる。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-63851</p>"
+            ),
+            meta={"article_subtype": "pregame"},
+        )
+
+        report = self._evaluate([post])
+
+        entry = self._find_entry(report, 63851)
+        self.assertEqual(entry["category"], "repairable")
+        self.assertTrue(entry["publishable"])
+        self.assertTrue(entry["cleanup_required"])
+        self.assertIn("other_team_player_contamination", entry["repairable_flags"])
+        self.assertIn("other_team_player_contamination", entry["yellow_reasons"])
+        self.assertIn(
+            {
+                "flag": "other_team_player_contamination",
+                "category": "repairable",
+                "detail": "則本昂大(楽天)",
+            },
+            entry["reasons"],
+        )
+
+    def test_clean_post_stays_green_without_other_team_player_contamination(self):
+        post = _post(
+            63852,
+            "巨人が阪神に3-2で勝利",
+            (
+                "<p>巨人が阪神に3-2で勝利した。スポーツ報知によると、戸郷が7回2失点と好投した。</p>"
+                "<p>参照元: スポーツ報知 https://example.com/source-63852</p>"
+            ),
+        )
+
+        report = self._evaluate([post])
+
+        entry = self._find_entry(report, 63852)
+        self.assertEqual(report["summary"]["clean_count"], 1)
+        self.assertEqual(entry["category"], "clean")
+        self.assertTrue(entry["publishable"])
+        self.assertEqual(entry["repairable_flags"], [])
+        self.assertNotIn("other_team_player_contamination", entry.get("yellow_reasons", []))
+
     def test_placeholder_body_repeated_missing_actor_farm_result_hard_stop(self):
         post = _post(
             63845,

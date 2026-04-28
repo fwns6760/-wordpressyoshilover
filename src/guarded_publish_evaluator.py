@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from src.article_entity_team_mismatch import detect_other_team_player_in_giants_article
 from src.article_entity_role_consistency import safe_rewrite_role_phrasing
 from src.lineup_source_priority import compute_lineup_dedup, extract_game_id
 from src.pre_publish_fact_check import extractor
@@ -64,6 +65,7 @@ REPAIRABLE_FLAGS = frozenset(
         "roster_movement_yellow",
         "placeholder_body_repairable",
         "awkward_role_phrasing",
+        "other_team_player_contamination",
         "lineup_duplicate_excessive",
     }
 ) | RELAXED_FOR_BREAKING_BOARD_FLAGS
@@ -1144,6 +1146,11 @@ def _medical_roster_flag(record: dict[str, Any], *, subtype: Any = "") -> str | 
     return "roster_movement_yellow"
 
 
+def _other_team_player_contamination_flag(title: str, body_text: str) -> tuple[bool, list[dict[str, Any]]]:
+    detections = detect_other_team_player_in_giants_article(title, body_text)
+    return bool(detections), detections
+
+
 def _has_featured_media(raw_post: dict[str, Any]) -> bool:
     try:
         return int(raw_post.get("featured_media") or 0) > 0
@@ -1650,6 +1657,16 @@ def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -
         )
     elif medical_roster_flag == "roster_movement_yellow":
         _append_reason(reasons, flag="roster_movement_yellow", category="repairable")
+    other_team_player_contamination, contamination_details = _other_team_player_contamination_flag(title, body_text)
+    if other_team_player_contamination:
+        _append_reason(
+            reasons,
+            flag="other_team_player_contamination",
+            category="repairable",
+            detail="; ".join(
+                f"{detail['name']}({detail['owning_team']})" for detail in contamination_details
+            ),
+        )
     farm_result_classifier = _farm_result_candidate_context(
         raw_post,
         record,

@@ -3,6 +3,7 @@ import logging
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from src import rss_fetcher
 
@@ -256,6 +257,98 @@ def test_log_payload_no_full_url_no_body_no_secret():
     assert "prompt" not in payload
     assert "api_key" not in payload
     assert "https://news.hochi.news/" not in messages[0]
+
+
+def test_manager_zero_quote_routes_to_review():
+    duplicate_guard_context = {}
+    with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+        with patch.object(
+            rss_fetcher,
+            "generate_article_with_gemini",
+            side_effect=AssertionError("Gemini should not run for manager zero-quote review fallback"),
+        ):
+            blocks, ai_body = rss_fetcher.build_news_block(
+                title="【巨人】阿部監督が起用意図を説明",
+                summary="阿部監督がスタメン起用の意図について説明した。今後の方針にも触れた。",
+                url="https://example.com/manager-zero-quote",
+                source_name="報知 巨人",
+                category="首脳陣",
+                has_game=False,
+                article_ai_mode_override="gemini",
+                duplicate_guard_context=duplicate_guard_context,
+            )
+
+    assert blocks == ""
+    assert ai_body == ""
+    assert duplicate_guard_context["manager_quote_zero_review_reason"] == "quote_count_zero"
+
+
+def test_coach_zero_quote_routes_to_review():
+    fallback = rss_fetcher._maybe_route_zero_quote_manager_review(
+        article_subtype="coach",
+        quote_count=0,
+        title="川相コーチが練習内容を説明",
+        source_name="報知 巨人",
+        logger=logging.getLogger("rss_fetcher"),
+    )
+
+    assert isinstance(fallback, rss_fetcher._ManagerQuoteZeroReviewFallback)
+    assert fallback.reason == "quote_count_zero"
+
+
+def test_player_comment_zero_quote_routes_to_review():
+    fallback = rss_fetcher._maybe_route_zero_quote_manager_review(
+        article_subtype="player_comment",
+        quote_count=0,
+        title="岡本和真が調整内容を説明",
+        source_name="報知 巨人",
+        logger=logging.getLogger("rss_fetcher"),
+    )
+
+    assert isinstance(fallback, rss_fetcher._ManagerQuoteZeroReviewFallback)
+    assert fallback.reason == "quote_count_zero"
+
+
+def test_manager_with_quote_renders_normally():
+    duplicate_guard_context = {}
+    generic_ai_body = "\n".join(
+        [
+            "【ニュースの整理】",
+            "阿部監督が起用方針について語った。",
+            "【コメントのポイント】",
+            "次の起用にも注目したい。",
+        ]
+    )
+    with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+        with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=generic_ai_body) as generate_mock:
+            blocks, ai_body = rss_fetcher.build_news_block(
+                title="【巨人】阿部監督「結果残せば使う」起用方針を説明",
+                summary="阿部監督が「結果残せば使う」と話し、スタメン起用の意図を説明した。",
+                url="https://example.com/manager-with-quote",
+                source_name="報知 巨人",
+                category="首脳陣",
+                has_game=False,
+                article_ai_mode_override="gemini",
+                duplicate_guard_context=duplicate_guard_context,
+            )
+
+    assert generate_mock.called
+    assert blocks
+    assert ai_body
+    assert duplicate_guard_context.get("manager_quote_zero_review_reason") is None
+    assert "【発言の要旨】" in ai_body
+
+
+def test_postgame_zero_quote_unaffected():
+    fallback = rss_fetcher._maybe_route_zero_quote_manager_review(
+        article_subtype="postgame",
+        quote_count=0,
+        title="巨人が阪神に3-2で勝利",
+        source_name="報知 巨人",
+        logger=logging.getLogger("rss_fetcher"),
+    )
+
+    assert fallback is None
 
 
 def test_rule_based_subtype_allowlist_filters_non_permitted_values(monkeypatch):

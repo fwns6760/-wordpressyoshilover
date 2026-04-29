@@ -4556,6 +4556,15 @@ class _PostgameStrictReviewFallback:
         self.reason = str(reason)
 
 
+class _ManagerQuoteZeroReviewFallback:
+    """manager 系 quote_count=0 の review sentinel。上位 caller が detect して review 倒し。"""
+
+    __slots__ = ("reason",)
+
+    def __init__(self, reason: str):
+        self.reason = str(reason)
+
+
 def _maybe_render_postgame_article_parts(
     *,
     title: str,
@@ -5728,6 +5737,54 @@ def _manager_section_count(text: str) -> int:
 
 def _manager_quote_count(title: str, summary: str) -> int:
     return len(_extract_quote_phrases(f"{title}\n{summary}", max_phrases=4))
+
+
+MANAGER_QUOTE_REVIEW_SUBTYPES = frozenset(
+    {
+        "manager",
+        "coach",
+        "player_comment",
+        "player_quote",
+        "manager_quote",
+        "coach_quote",
+    }
+)
+
+
+def _should_review_zero_quote_manager(article_subtype, quote_count) -> bool:
+    """quote_count=0 で manager / coach / player_comment 系なら review 倒し対象。"""
+    normalized = str(article_subtype or "").strip().lower()
+    if normalized not in MANAGER_QUOTE_REVIEW_SUBTYPES:
+        return False
+    try:
+        return int(quote_count) == 0
+    except (ValueError, TypeError):
+        return False
+
+
+def _maybe_route_zero_quote_manager_review(
+    *,
+    article_subtype: str,
+    quote_count: int,
+    title: str,
+    source_name: str,
+    logger: logging.Logger,
+) -> _ManagerQuoteZeroReviewFallback | None:
+    if not _should_review_zero_quote_manager(article_subtype, quote_count):
+        return None
+    logger.warning(
+        json.dumps(
+            {
+                "event": "manager_quote_zero_review",
+                "subtype": article_subtype,
+                "title": title,
+                "source_name": source_name,
+                "reason": "quote_count_zero",
+            },
+            ensure_ascii=False,
+        )
+    )
+    return _ManagerQuoteZeroReviewFallback("quote_count_zero")
 
 
 def _manager_body_has_required_structure(text: str, has_game: bool) -> bool:
@@ -8734,6 +8791,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     logger = logging.getLogger("rss_fetcher")
     rendered_ai_body_html = ""
     postgame_strict_review_reason = ""
+    manager_quote_zero_review_reason = ""
     rule_based_generated = False
     if ai_route_reason and ai_route_reason != "category_enabled":
         logger.info(
@@ -8775,7 +8833,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             win_loss_hint = "※この試合は巨人が【敗戦】した試合です。負け試合として正直に書くこと。前向きに美化しない。"
 
     def _generate_gemini_body() -> tuple[str, str]:
-        nonlocal postgame_strict_review_reason, rule_based_generated
+        nonlocal postgame_strict_review_reason, manager_quote_zero_review_reason, rule_based_generated
         parts_rendered = _maybe_render_postgame_article_parts(
             title=title,
             summary=summary_clean,
@@ -8812,6 +8870,19 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             return "", ""
         if isinstance(duplicate_guard_context, dict):
             duplicate_guard_context.update(duplicate_context)
+            if str(duplicate_guard_context.get("guard_outcome") or "") != "review":
+                manager_review = _maybe_route_zero_quote_manager_review(
+                    article_subtype=article_subtype,
+                    quote_count=_manager_quote_count(title, summary_clean),
+                    title=title,
+                    source_name=source_name,
+                    logger=logger,
+                )
+                if isinstance(manager_review, _ManagerQuoteZeroReviewFallback):
+                    manager_quote_zero_review_reason = manager_review.reason
+                    logger.warning("manager_quote_zero_review: route_to_review reason=%s", manager_review.reason)
+                    duplicate_guard_context["manager_quote_zero_review_reason"] = manager_review.reason
+                    return "", ""
         rule_based_body = _build_rule_based_subtype_body(
             title=title,
             summary=summary_clean,
@@ -8897,6 +8968,9 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         return "", ""
 
     if postgame_strict_review_reason:
+        return "", ""
+
+    if manager_quote_zero_review_reason:
         return "", ""
 
     if not rendered_ai_body_html:
@@ -13093,6 +13167,25 @@ def _main(args, logger):
                     article_subtype=title_article_subtype,
                     fail_axes=["postgame_strict_review"],
                     stop_reason=f"postgame_strict:{strict_review_reason}",
+                )
+                continue
+            manager_quote_zero_review_reason = (
+                str(duplicate_guard_context.get("manager_quote_zero_review_reason") or "").strip()
+                if isinstance(duplicate_guard_context, dict)
+                else ""
+            )
+            if manager_quote_zero_review_reason:
+                skip_filter += 1
+                skip_reason_counts["post_gen_validate"] += 1
+                _append_skip_reason_sample(skip_reason_sample_titles, "post_gen_validate", draft_title)
+                _log_article_skipped_post_gen_validate(
+                    logger,
+                    title=draft_title,
+                    post_url=post_url,
+                    category=category,
+                    article_subtype=title_article_subtype,
+                    fail_axes=["manager_quote_zero_review"],
+                    stop_reason=f"manager_quote_zero_review:{manager_quote_zero_review_reason}",
                 )
                 continue
             fact_conflict_source_refs = {

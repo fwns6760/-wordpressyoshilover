@@ -4547,6 +4547,15 @@ def _render_postgame_strict_html(body_text: str) -> str:
     return "".join(blocks)
 
 
+class _PostgameStrictReviewFallback:
+    """strict ON 時の失敗 sentinel。上位 caller が detect して review 倒し。"""
+
+    __slots__ = ("reason",)
+
+    def __init__(self, reason: str):
+        self.reason = str(reason)
+
+
 def _maybe_render_postgame_article_parts(
     *,
     title: str,
@@ -4559,7 +4568,7 @@ def _maybe_render_postgame_article_parts(
     source_entry: dict | None,
     win_loss_hint: str,
     logger: logging.Logger,
-) -> tuple[str, str] | None:
+) -> tuple[str, str] | _PostgameStrictReviewFallback | None:
     article_subtype = _detect_article_subtype(title, summary, category, has_game)
     strict_mode = strict_fact_mode_enabled()
     if not (category == "試合速報" and article_subtype == "postgame"):
@@ -4601,58 +4610,58 @@ def _maybe_render_postgame_article_parts(
             source_url=source_url or None,
         )
         if not raw_text:
-            logger.warning("postgame_strict: empty_response")
+            logger.warning("postgame_strict: empty_response -> review")
             _log_article_parts_fallback(
                 logger,
                 title=title,
                 article_subtype=article_subtype,
-                reason="strict_empty_response",
+                reason="strict_review_fallback:strict_empty_response",
             )
-            return None
+            return _PostgameStrictReviewFallback("strict_empty_response")
 
         payload, parse_reason = _postgame_strict_parse(raw_text)
         if payload is None:
-            logger.warning("postgame_strict: parse_fail reason=%s", parse_reason)
+            logger.warning("postgame_strict: parse_fail reason=%s -> review", parse_reason)
             _log_article_parts_fallback(
                 logger,
                 title=title,
                 article_subtype=article_subtype,
-                reason=f"strict_parse_fail:{parse_reason}",
+                reason=f"strict_review_fallback:strict_parse_fail:{parse_reason}",
             )
-            return None
+            return _PostgameStrictReviewFallback(f"strict_parse_fail:{parse_reason}")
 
         is_valid, errors = _postgame_strict_validate(payload, source_block)
         if not is_valid:
-            logger.warning("postgame_strict: validation_fail errors=%s", errors)
+            logger.warning("postgame_strict: validation_fail errors=%s -> review", errors)
             _log_article_parts_fallback(
                 logger,
                 title=title,
                 article_subtype=article_subtype,
-                reason=f"strict_validation_fail:{','.join(errors)}",
+                reason=f"strict_review_fallback:strict_validation_fail:{','.join(errors)}",
             )
-            return None
+            return _PostgameStrictReviewFallback(f"strict_validation_fail:{','.join(errors)}")
 
         if not _postgame_strict_has_sufficient_for_render(payload):
-            logger.warning("postgame_strict: insufficient_for_render -> legacy")
+            logger.warning("postgame_strict: insufficient_for_render -> review")
             _log_article_parts_fallback(
                 logger,
                 title=title,
                 article_subtype=article_subtype,
-                reason="strict_insufficient_for_render",
+                reason="strict_review_fallback:strict_insufficient_for_render",
             )
-            return None
+            return _PostgameStrictReviewFallback("strict_insufficient_for_render")
 
         try:
             body_text = _postgame_strict_render(payload)
         except Exception as e:
-            logger.warning("postgame_strict: render_fail error=%s", type(e).__name__)
+            logger.warning("postgame_strict: render_fail error=%s -> review", type(e).__name__)
             _log_article_parts_fallback(
                 logger,
                 title=title,
                 article_subtype=article_subtype,
-                reason=f"strict_render_fail:{type(e).__name__}",
+                reason=f"strict_review_fallback:strict_render_fail:{type(e).__name__}",
             )
-            return None
+            return _PostgameStrictReviewFallback(f"strict_render_fail:{type(e).__name__}")
 
         payload_score = ""
         if payload.get("giants_score") is not None and payload.get("opponent_score") is not None:
@@ -4675,14 +4684,16 @@ def _maybe_render_postgame_article_parts(
         )
         if not strict_contract_validate.get("ok"):
             fail_axes = list(strict_contract_validate.get("fail_axes") or [])
-            logger.warning("postgame_strict: contract_fail fail_axes=%s", fail_axes)
+            logger.warning("postgame_strict: contract_fail fail_axes=%s -> review", fail_axes)
             _log_article_parts_fallback(
                 logger,
                 title=title,
                 article_subtype=article_subtype,
-                reason=f"strict_contract_fail:{','.join(fail_axes) or 'unknown'}",
+                reason=f"strict_review_fallback:strict_contract_fail:{','.join(fail_axes) or 'unknown'}",
             )
-            return None
+            return _PostgameStrictReviewFallback(
+                f"strict_contract_fail:{','.join(fail_axes) or 'unknown'}"
+            )
 
         rendered_html = _render_postgame_strict_html(body_text)
         _log_article_parts_applied(
@@ -8722,6 +8733,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     fan_reaction_limit = get_fan_reaction_limit()
     logger = logging.getLogger("rss_fetcher")
     rendered_ai_body_html = ""
+    postgame_strict_review_reason = ""
     rule_based_generated = False
     if ai_route_reason and ai_route_reason != "category_enabled":
         logger.info(
@@ -8763,7 +8775,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             win_loss_hint = "※この試合は巨人が【敗戦】した試合です。負け試合として正直に書くこと。前向きに美化しない。"
 
     def _generate_gemini_body() -> tuple[str, str]:
-        nonlocal rule_based_generated
+        nonlocal postgame_strict_review_reason, rule_based_generated
         parts_rendered = _maybe_render_postgame_article_parts(
             title=title,
             summary=summary_clean,
@@ -8776,6 +8788,12 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             win_loss_hint=win_loss_hint,
             logger=logger,
         )
+        if isinstance(parts_rendered, _PostgameStrictReviewFallback):
+            postgame_strict_review_reason = parts_rendered.reason
+            logger.warning("postgame_strict: route_to_review reason=%s", parts_rendered.reason)
+            if isinstance(duplicate_guard_context, dict):
+                duplicate_guard_context["postgame_strict_review_reason"] = parts_rendered.reason
+            return "", ""
         if parts_rendered is not None:
             return parts_rendered
         duplicate_context = duplicate_guard_context or _build_duplicate_news_context(
@@ -8876,6 +8894,9 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             impression_block = ""
 
     if duplicate_guard_context and duplicate_guard_context.get("guard_outcome") == "skip":
+        return "", ""
+
+    if postgame_strict_review_reason:
         return "", ""
 
     if not rendered_ai_body_html:
@@ -13054,6 +13075,25 @@ def _main(args, logger):
                 skip_filter += 1
                 skip_reason_counts["duplicate_news_pre_gemini_skip"] += 1
                 _append_skip_reason_sample(skip_reason_sample_titles, "duplicate_news_pre_gemini_skip", draft_title)
+                continue
+            strict_review_reason = (
+                str(duplicate_guard_context.get("postgame_strict_review_reason") or "").strip()
+                if isinstance(duplicate_guard_context, dict)
+                else ""
+            )
+            if strict_review_reason:
+                skip_filter += 1
+                skip_reason_counts["post_gen_validate"] += 1
+                _append_skip_reason_sample(skip_reason_sample_titles, "post_gen_validate", draft_title)
+                _log_article_skipped_post_gen_validate(
+                    logger,
+                    title=draft_title,
+                    post_url=post_url,
+                    category=category,
+                    article_subtype=title_article_subtype,
+                    fail_axes=["postgame_strict_review"],
+                    stop_reason=f"postgame_strict:{strict_review_reason}",
+                )
                 continue
             fact_conflict_source_refs = {
                 "title": draft_title,

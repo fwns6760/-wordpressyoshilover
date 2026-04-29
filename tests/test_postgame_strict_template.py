@@ -1,5 +1,6 @@
 import copy
 import json
+import logging
 import unittest
 from unittest.mock import patch
 
@@ -88,6 +89,53 @@ class PostgameStrictTemplateTests(unittest.TestCase):
                 "更新があれば見たいところです。",
             ]
         )
+
+    def strict_env(self, flag: str = "1") -> dict[str, str]:
+        return {
+            "LOW_COST_MODE": "1",
+            "AI_ENABLED_CATEGORIES": "試合速報",
+            "ARTICLE_AI_MODE": "gemini",
+            "STRICT_FACT_MODE": "1",
+            POSTGAME_STRICT_FEATURE_FLAG_ENV: flag,
+            "ENABLE_ARTICLE_PARTS_RENDERER_POSTGAME": "0",
+            "GEMINI_API_KEY": "dummy-key",
+        }
+
+    def call_maybe_render_postgame_parts(
+        self,
+        *,
+        raw_text: str,
+        flag: str = "1",
+        validate_result: tuple[bool, list[str]] = (True, []),
+        has_sufficient: bool = True,
+        render_result: str = "【試合結果】\n4月21日、巨人が阪神に3-2で勝利しました。",
+        contract_ok: bool = True,
+        fail_axes: list[str] | None = None,
+    ):
+        logger = logging.getLogger("test_postgame_strict")
+        with patch.dict("os.environ", self.strict_env(flag), clear=False):
+            with patch.object(rss_fetcher, "_build_source_fact_block", return_value=self.source_text):
+                with patch.object(rss_fetcher, "_request_gemini_strict_text", return_value=raw_text):
+                    with patch.object(rss_fetcher, "_postgame_strict_validate", return_value=validate_result):
+                        with patch.object(rss_fetcher, "_postgame_strict_has_sufficient_for_render", return_value=has_sufficient):
+                            with patch.object(rss_fetcher, "_postgame_strict_render", return_value=render_result):
+                                with patch.object(
+                                    rss_fetcher,
+                                    "_validate_body_candidate",
+                                    return_value={"ok": contract_ok, "fail_axes": fail_axes or []},
+                                ):
+                                    return rss_fetcher._maybe_render_postgame_article_parts(
+                                        title="【巨人】阪神に3-2で勝利　岡田悠希が決勝打",
+                                        summary="2026年4月21日、巨人が阪神に3-2で勝利した。岡田悠希が8回に決勝打を放った。",
+                                        category="試合速報",
+                                        has_game=True,
+                                        source_name="日刊スポーツ",
+                                        source_url="https://example.com/postgame",
+                                        source_type="news",
+                                        source_entry={},
+                                        win_loss_hint="※この試合は巨人が3-2で【勝利】した試合です。",
+                                        logger=logger,
+                                    )
 
     def test_strict_json_validation_passes_with_required_facts(self):
         ok, errors = validate_postgame_strict_payload(self.valid_payload(), self.source_text)
@@ -350,6 +398,108 @@ class PostgameStrictTemplateTests(unittest.TestCase):
         mock_legacy.assert_called_once()
         mock_request.assert_not_called()
         self.assertIn("【試合概要】", ai_body)
+
+    def test_strict_on_empty_response_returns_review_sentinel(self):
+        result = self.call_maybe_render_postgame_parts(raw_text="")
+
+        self.assertIsInstance(result, rss_fetcher._PostgameStrictReviewFallback)
+        self.assertEqual(result.reason, "strict_empty_response")
+
+    def test_strict_on_parse_fail_returns_review_sentinel(self):
+        result = self.call_maybe_render_postgame_parts(raw_text="not-json")
+
+        self.assertIsInstance(result, rss_fetcher._PostgameStrictReviewFallback)
+        self.assertEqual(result.reason, "strict_parse_fail:non_json_wrapper")
+
+    def test_strict_on_validation_fail_returns_review_sentinel(self):
+        result = self.call_maybe_render_postgame_parts(
+            raw_text=json.dumps(self.valid_payload(), ensure_ascii=False),
+            validate_result=(False, ["schema_violation:key_events"]),
+        )
+
+        self.assertIsInstance(result, rss_fetcher._PostgameStrictReviewFallback)
+        self.assertEqual(result.reason, "strict_validation_fail:schema_violation:key_events")
+
+    def test_strict_on_insufficient_returns_review_sentinel(self):
+        result = self.call_maybe_render_postgame_parts(
+            raw_text=json.dumps(self.valid_payload(), ensure_ascii=False),
+            has_sufficient=False,
+        )
+
+        self.assertIsInstance(result, rss_fetcher._PostgameStrictReviewFallback)
+        self.assertEqual(result.reason, "strict_insufficient_for_render")
+
+    def test_strict_on_body_validator_contract_fail_returns_review_sentinel(self):
+        result = self.call_maybe_render_postgame_parts(
+            raw_text=json.dumps(self.valid_payload(), ensure_ascii=False),
+            contract_ok=False,
+            fail_axes=["close_marker"],
+        )
+
+        self.assertIsInstance(result, rss_fetcher._PostgameStrictReviewFallback)
+        self.assertEqual(result.reason, "strict_contract_fail:close_marker")
+
+    def test_strict_off_falls_back_to_legacy_unchanged(self):
+        with patch.dict("os.environ", self.strict_env("0"), clear=False):
+            with patch.object(rss_fetcher, "_request_gemini_strict_text") as mock_request:
+                result = rss_fetcher._maybe_render_postgame_article_parts(
+                    title="【巨人】阪神に3-2で勝利　岡田悠希が決勝打",
+                    summary="2026年4月21日、巨人が阪神に3-2で勝利した。岡田悠希が8回に決勝打を放った。",
+                    category="試合速報",
+                    has_game=True,
+                    source_name="日刊スポーツ",
+                    source_url="https://example.com/postgame",
+                    source_type="news",
+                    source_entry={},
+                    win_loss_hint="※この試合は巨人が3-2で【勝利】した試合です。",
+                    logger=logging.getLogger("test_postgame_strict"),
+                )
+
+        self.assertIsNone(result)
+        mock_request.assert_not_called()
+
+    def test_strict_on_success_returns_template_body_unchanged(self):
+        expected_body = "\n".join(
+            [
+                "【試合結果】",
+                "4月21日、巨人が阪神に3-2で勝利しました。",
+                "【ハイライト】",
+                "・岡田悠希が8回に決勝打を放ちました。",
+            ]
+        )
+
+        result = self.call_maybe_render_postgame_parts(
+            raw_text=json.dumps(self.valid_payload(), ensure_ascii=False),
+            render_result=expected_body,
+        )
+
+        self.assertEqual(result, (expected_body, rss_fetcher._render_postgame_strict_html(expected_body)))
+
+    def test_caller_routes_strict_review_sentinel_to_skip_path(self):
+        duplicate_guard_context = {"guard_outcome": "allow"}
+        sentinel = rss_fetcher._PostgameStrictReviewFallback("strict_empty_response")
+
+        with patch.dict("os.environ", self.strict_env("1"), clear=False):
+            with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+                with patch.object(rss_fetcher, "_find_related_posts_for_article", return_value=[]):
+                    with patch.object(rss_fetcher, "_maybe_render_postgame_article_parts", return_value=sentinel):
+                        with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=self.legacy_ai_body()) as mock_legacy:
+                            result = rss_fetcher.build_news_block(
+                                title="【巨人】阪神に3-2で勝利　岡田悠希が決勝打",
+                                summary="2026年4月21日、巨人が阪神に3-2で勝利した。岡田悠希が8回に決勝打を放った。",
+                                url="https://example.com/postgame",
+                                source_name="日刊スポーツ",
+                                category="試合速報",
+                                has_game=True,
+                                duplicate_guard_context=duplicate_guard_context,
+                            )
+
+        self.assertEqual(result, ("", ""))
+        self.assertEqual(
+            duplicate_guard_context.get("postgame_strict_review_reason"),
+            "strict_empty_response",
+        )
+        mock_legacy.assert_not_called()
 
 
 if __name__ == "__main__":

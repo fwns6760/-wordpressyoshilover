@@ -56,6 +56,14 @@ from src.source_trust import (
 )
 from src.source_id import source_id as _source_id_key
 from src.tag_category_guard import validate_tags as _tc_validate_tags, validate_category as _tc_validate_category
+from src.postgame_strict_template import (
+    is_strict_enabled as _postgame_strict_enabled,
+    POSTGAME_STRICT_PROMPT as _postgame_strict_prompt,
+    parse_postgame_strict_json as _postgame_strict_parse,
+    validate_postgame_strict_payload as _postgame_strict_validate,
+    has_sufficient_for_render as _postgame_strict_has_sufficient_for_render,
+    render_postgame_strict_body as _postgame_strict_render,
+)
 
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
@@ -4491,6 +4499,54 @@ def _build_postgame_ai_body_from_parts(parts: ArticleParts) -> str:
     )
 
 
+def _render_postgame_strict_html(body_text: str) -> str:
+    lines = [line.strip() for line in (body_text or "").splitlines() if line.strip()]
+    if not lines:
+        return ""
+
+    blocks: list[str] = []
+    heading_index = 0
+    idx = 0
+    while idx < len(lines):
+        line = lines[idx]
+        if line.startswith("【") and "】" in line:
+            heading_index += 1
+            level = 2 if heading_index == 1 else 3
+            safe_heading = _html.escape(line)
+            blocks.append(
+                f'<!-- wp:heading {{"level":{level}}} -->\n'
+                f"<h{level}>{safe_heading}</h{level}>\n"
+                f"<!-- /wp:heading -->\n\n"
+            )
+            idx += 1
+            continue
+        if line.startswith("・"):
+            items: list[str] = []
+            while idx < len(lines) and lines[idx].startswith("・"):
+                item_text = lines[idx].lstrip("・").strip()
+                if item_text:
+                    items.append(item_text)
+                idx += 1
+            if items:
+                items_html = "".join(f"<li>{_html.escape(item)}</li>\n" for item in items)
+                blocks.append(
+                    "<!-- wp:list -->\n"
+                    '<ul class="wp-block-list">\n'
+                    f"{items_html}"
+                    "</ul>\n"
+                    "<!-- /wp:list -->\n\n"
+                )
+            continue
+        safe_line = _html.escape(line)
+        blocks.append(
+            "<!-- wp:paragraph -->\n"
+            f"<p>{safe_line}</p>\n"
+            "<!-- /wp:paragraph -->\n\n"
+        )
+        idx += 1
+    return "".join(blocks)
+
+
 def _maybe_render_postgame_article_parts(
     *,
     title: str,
@@ -4505,12 +4561,8 @@ def _maybe_render_postgame_article_parts(
     logger: logging.Logger,
 ) -> tuple[str, str] | None:
     article_subtype = _detect_article_subtype(title, summary, category, has_game)
-    if not (
-        strict_fact_mode_enabled()
-        and article_parts_renderer_postgame_enabled()
-        and category == "試合速報"
-        and article_subtype == "postgame"
-    ):
+    strict_mode = strict_fact_mode_enabled()
+    if not (category == "試合速報" and article_subtype == "postgame"):
         return None
 
     api_key = os.environ.get("GEMINI_API_KEY", "")
@@ -4524,6 +4576,126 @@ def _maybe_render_postgame_article_parts(
         entry=source_entry,
     )
     score = _extract_game_score_token(f"{title} {summary}")
+
+    if strict_mode and _postgame_strict_enabled():
+        source_block = "\n".join(
+            part
+            for part in (
+                f"title: {title}",
+                f"summary: {summary}",
+                f"source_name: {source_name}" if source_name else "",
+                f"source_url: {source_url}" if source_url else "",
+                "[source_fact_block]",
+                source_fact_block,
+            )
+            if part
+        )
+        prompt = _postgame_strict_prompt.replace("{source_text}", source_block)
+        raw_text = _request_gemini_strict_text(
+            api_key=api_key,
+            prompt=prompt,
+            logger=logger,
+            attempt_limit=get_gemini_attempt_limit(strict_mode=True),
+            min_chars=1,
+            log_label="Gemini postgame strict slot-fill",
+            source_url=source_url or None,
+        )
+        if not raw_text:
+            logger.warning("postgame_strict: empty_response")
+            _log_article_parts_fallback(
+                logger,
+                title=title,
+                article_subtype=article_subtype,
+                reason="strict_empty_response",
+            )
+            return None
+
+        payload, parse_reason = _postgame_strict_parse(raw_text)
+        if payload is None:
+            logger.warning("postgame_strict: parse_fail reason=%s", parse_reason)
+            _log_article_parts_fallback(
+                logger,
+                title=title,
+                article_subtype=article_subtype,
+                reason=f"strict_parse_fail:{parse_reason}",
+            )
+            return None
+
+        is_valid, errors = _postgame_strict_validate(payload, source_block)
+        if not is_valid:
+            logger.warning("postgame_strict: validation_fail errors=%s", errors)
+            _log_article_parts_fallback(
+                logger,
+                title=title,
+                article_subtype=article_subtype,
+                reason=f"strict_validation_fail:{','.join(errors)}",
+            )
+            return None
+
+        if not _postgame_strict_has_sufficient_for_render(payload):
+            logger.warning("postgame_strict: insufficient_for_render -> legacy")
+            _log_article_parts_fallback(
+                logger,
+                title=title,
+                article_subtype=article_subtype,
+                reason="strict_insufficient_for_render",
+            )
+            return None
+
+        try:
+            body_text = _postgame_strict_render(payload)
+        except Exception as e:
+            logger.warning("postgame_strict: render_fail error=%s", type(e).__name__)
+            _log_article_parts_fallback(
+                logger,
+                title=title,
+                article_subtype=article_subtype,
+                reason=f"strict_render_fail:{type(e).__name__}",
+            )
+            return None
+
+        payload_score = ""
+        if payload.get("giants_score") is not None and payload.get("opponent_score") is not None:
+            payload_score = f"{payload.get('giants_score')}-{payload.get('opponent_score')}"
+        strict_source_context = {
+            "title": title,
+            "source_title": title,
+            "source_summary": summary,
+            "summary": summary,
+            "source_name": source_name,
+            "source_url": source_url,
+            "scoreline": payload_score or score or "",
+            "team_result": win_loss_hint,
+            "opponent": str(payload.get("opponent") or _extract_game_opponent_label(f'{title} {summary}') or "").strip(),
+        }
+        strict_contract_validate = _validate_body_candidate(
+            body_text,
+            article_subtype,
+            source_context=strict_source_context,
+        )
+        if not strict_contract_validate.get("ok"):
+            fail_axes = list(strict_contract_validate.get("fail_axes") or [])
+            logger.warning("postgame_strict: contract_fail fail_axes=%s", fail_axes)
+            _log_article_parts_fallback(
+                logger,
+                title=title,
+                article_subtype=article_subtype,
+                reason=f"strict_contract_fail:{','.join(fail_axes) or 'unknown'}",
+            )
+            return None
+
+        rendered_html = _render_postgame_strict_html(body_text)
+        _log_article_parts_applied(
+            logger,
+            title=title,
+            article_subtype=article_subtype,
+            body_core_count=len(payload.get("key_events") or []),
+        )
+        return body_text, rendered_html
+
+    if not (strict_mode and article_parts_renderer_postgame_enabled()):
+        return None
+
     team_stats_block = _fetch_team_stats_block_for_strict_article(category, logger)
     prompt = _build_game_parts_prompt_postgame(
         title=title,

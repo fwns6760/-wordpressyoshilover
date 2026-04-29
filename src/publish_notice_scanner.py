@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -26,6 +27,17 @@ _WHITESPACE_RE = re.compile(r"\s+")
 _LINEUP_ORDER_RE = re.compile(r"(?<![0-9０-９])[1-9１-９]\s*番")
 _SCORE_RE = re.compile(r"(?<![0-9０-９])[0-9０-９]+\s*[-－ー]\s*[0-9０-９]+(?![0-9０-９])")
 _HISTORY_WINDOW = timedelta(hours=24)
+_REVIEW_NOTICE_MAX_PER_RUN_DEFAULT = 10
+_REVIEW_NOTICE_WINDOW_HOURS_DEFAULT = 24.0
+_GUARDED_PUBLISH_HISTORY_DEFAULT_PATH = Path("/tmp/pub004d/guarded_publish_history.jsonl")
+_GUARDED_PUBLISH_HISTORY_FALLBACK_PATH = Path("logs/guarded_publish_history.jsonl")
+_GUARDED_PUBLISH_REVIEW_SUBJECT_RE = re.compile(r"^【[^】]+】")
+_EXCLUDED_GUARDED_HOLD_REASONS = frozenset(
+    {
+        "duplicate_publish",
+        "review_duplicate_candidate_same_source_url",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -37,6 +49,14 @@ class ScanResult:
 
 
 FetchFn = Callable[[str, str], list[Mapping[str, Any]]]
+PostDetailFetchFn = Callable[[str, int | str], Mapping[str, Any] | None]
+
+
+@dataclass(frozen=True)
+class GuardedPublishHistoryScanResult:
+    emitted: list[PublishNoticeRequest]
+    skipped: list[tuple[int | str, str]]
+    history_after: dict[str, str]
 
 
 def _now_jst() -> datetime:
@@ -57,6 +77,18 @@ def _coerce_now(now: Callable[[], datetime] | datetime | None) -> datetime:
 
 def _path(value: str | Path) -> Path:
     return value if isinstance(value, Path) else Path(value)
+
+
+def _resolve_guarded_publish_history_path(value: str | Path | None = None) -> Path:
+    if value is not None and str(value).strip():
+        return _path(value)
+    for env_name in ("PUBLISH_NOTICE_GUARDED_PUBLISH_HISTORY_PATH", "GUARDED_PUBLISH_HISTORY_PATH"):
+        env_value = str(os.environ.get(env_name, "")).strip()
+        if env_value:
+            return _path(env_value)
+    if _GUARDED_PUBLISH_HISTORY_DEFAULT_PATH.exists():
+        return _GUARDED_PUBLISH_HISTORY_DEFAULT_PATH
+    return _GUARDED_PUBLISH_HISTORY_FALLBACK_PATH
 
 
 def _parse_datetime_to_jst(value: str | datetime | None) -> datetime | None:
@@ -286,6 +318,111 @@ def _append_queue_log(
         handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
+def _resolve_review_max_per_run(value: int | None) -> int:
+    if value is not None:
+        return max(0, int(value))
+    env_value = str(os.environ.get("PUBLISH_NOTICE_REVIEW_MAX_PER_RUN", "")).strip()
+    if not env_value:
+        return _REVIEW_NOTICE_MAX_PER_RUN_DEFAULT
+    try:
+        return max(0, int(env_value))
+    except ValueError:
+        return _REVIEW_NOTICE_MAX_PER_RUN_DEFAULT
+
+
+def _resolve_review_window_hours(value: float | int | None) -> float:
+    if value is not None:
+        return max(0.0, float(value))
+    env_value = str(os.environ.get("PUBLISH_NOTICE_REVIEW_WINDOW_HOURS", "")).strip()
+    if not env_value:
+        return _REVIEW_NOTICE_WINDOW_HOURS_DEFAULT
+    try:
+        return max(0.0, float(env_value))
+    except ValueError:
+        return _REVIEW_NOTICE_WINDOW_HOURS_DEFAULT
+
+
+def _guarded_publish_entry_datetime(entry: Mapping[str, Any]) -> datetime | None:
+    for key in ("ts", "recorded_at", "date"):
+        parsed = _parse_datetime_to_jst(entry.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _load_recent_guarded_publish_entries(
+    path: Path,
+    *,
+    now: datetime,
+    recent_window: timedelta,
+) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    cutoff = now - recent_window
+    entries: list[dict[str, Any]] = []
+    with path.open(encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            recorded_at = _guarded_publish_entry_datetime(payload)
+            if recorded_at is None or recorded_at < cutoff or recorded_at > now:
+                continue
+            entries.append(payload)
+    return entries
+
+
+def _normalize_guarded_reason(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def _is_guarded_publish_review_candidate(
+    *,
+    judgment: str,
+    hold_reason: str,
+    status: str,
+) -> bool:
+    if status in {"sent", "publish", "published"}:
+        return False
+    if judgment in {"red", "hard_stop"}:
+        return False
+    if hold_reason.startswith("hard_stop"):
+        return False
+    if hold_reason in _EXCLUDED_GUARDED_HOLD_REASONS:
+        return False
+    if judgment in {"yellow", "review"}:
+        return True
+    return bool(hold_reason)
+
+
+def _guarded_publish_subject_prefix(*, judgment: str, hold_reason: str) -> str:
+    if hold_reason == "backlog_only":
+        return "【要確認(古い候補)】"
+    if judgment == "review":
+        return "【要review】"
+    if judgment == "yellow" and (hold_reason == "cleanup_required" or "cleanup" in hold_reason):
+        return "【要review】"
+    if judgment == "yellow":
+        return "【要確認】"
+    if hold_reason:
+        return f"【hold:{hold_reason}】"
+    return "【要review】"
+
+
+def _build_guarded_publish_subject(title: str, *, judgment: str, hold_reason: str) -> str:
+    subject = build_subject(title)
+    prefix = _guarded_publish_subject_prefix(judgment=judgment, hold_reason=hold_reason)
+    if _GUARDED_PUBLISH_REVIEW_SUBJECT_RE.search(subject):
+        return _GUARDED_PUBLISH_REVIEW_SUBJECT_RE.sub(prefix, subject, count=1)
+    return f"{prefix}{title}"
+
+
 def _default_fetch(base_url: str, after_iso: str) -> list[Mapping[str, Any]]:
     endpoint = urljoin(base_url.rstrip("/") + "/", "posts")
     query = urlencode(
@@ -307,6 +444,35 @@ def _default_fetch(base_url: str, after_iso: str) -> list[Mapping[str, Any]]:
     if not isinstance(payload, list):
         raise ValueError("publish notice scan response must be a list")
     return [item for item in payload if isinstance(item, Mapping)]
+
+
+def _wp_basic_auth_header() -> str:
+    user = str(os.environ.get("WP_USER", "")).strip()
+    app_password = str(os.environ.get("WP_APP_PASSWORD", "")).strip()
+    if not user or not app_password:
+        raise ValueError("WP_USER and WP_APP_PASSWORD are required for guarded publish review scan")
+    token = base64.b64encode(f"{user}:{app_password}".encode("utf-8")).decode("ascii")
+    return f"Basic {token}"
+
+
+def _default_fetch_post_detail(base_url: str, post_id: int | str) -> Mapping[str, Any] | None:
+    endpoint = urljoin(base_url.rstrip("/") + "/", f"posts/{post_id}")
+    query = urlencode(
+        {
+            "context": "edit",
+            "_fields": "id,title,link,date,status,meta,article_subtype,subtype",
+        }
+    )
+    request = urllib.request.Request(
+        f"{endpoint}?{query}",
+        headers={
+            "Accept": "application/json",
+            "Authorization": _wp_basic_auth_header(),
+        },
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    return payload if isinstance(payload, Mapping) else None
 
 
 def _resolve_wp_api_base(wp_api_base: str | None) -> str:
@@ -334,6 +500,128 @@ def _request_from_post(post: Mapping[str, Any]) -> PublishNoticeRequest:
         subtype=_extract_subtype(post),
         publish_time_iso=_isoformat_jst(post.get("date")),
         summary=_extract_summary(post),
+    )
+
+
+def scan_guarded_publish_history(
+    *,
+    guarded_publish_history_path: str | Path | None = None,
+    cursor_path: str | Path = "logs/publish_notice_cursor.txt",
+    history_path: str | Path = "logs/publish_notice_history.json",
+    queue_path: str | Path = "logs/publish_notice_queue.jsonl",
+    wp_api_base: str | None = None,
+    fetch_post_detail: PostDetailFetchFn | None = None,
+    history: Mapping[str, str] | None = None,
+    max_per_run: int | None = None,
+    recent_window_hours: float | int | None = None,
+    now: Callable[[], datetime] | datetime | None = None,
+    recorded_at: Callable[[], datetime] | datetime | None = None,
+    write_history: bool = True,
+) -> GuardedPublishHistoryScanResult:
+    del cursor_path
+    current_now = _coerce_now(now)
+    history_file = _path(history_path)
+    current_history = _prune_history(
+        dict(history) if history is not None else _load_history(history_file),
+        now=current_now,
+    )
+    resolved_max_per_run = _resolve_review_max_per_run(max_per_run)
+    if resolved_max_per_run <= 0:
+        if write_history:
+            _write_history(history_file, current_history)
+        return GuardedPublishHistoryScanResult(emitted=[], skipped=[], history_after=current_history)
+
+    recent_window = timedelta(hours=_resolve_review_window_hours(recent_window_hours))
+    history_entries = _load_recent_guarded_publish_entries(
+        _resolve_guarded_publish_history_path(guarded_publish_history_path),
+        now=current_now,
+        recent_window=recent_window,
+    )
+    base_url = _resolve_wp_api_base(wp_api_base)
+    fetch_post_detail_fn = fetch_post_detail or _default_fetch_post_detail
+    review_recorded_at = _coerce_now(
+        recorded_at if recorded_at is not None else current_now + timedelta(seconds=1)
+    )
+    review_recorded_at_iso = review_recorded_at.isoformat()
+
+    emitted: list[PublishNoticeRequest] = []
+    skipped: list[tuple[int | str, str]] = []
+    next_history = dict(current_history)
+    seen_post_ids: set[str] = set()
+
+    for entry in reversed(history_entries):
+        if len(emitted) >= resolved_max_per_run:
+            break
+
+        post_id = entry.get("post_id", "")
+        post_key = str(post_id or "").strip()
+        if not post_key:
+            skipped.append(("", "REVIEW_MISSING_POST_ID"))
+            continue
+
+        judgment = _normalize_guarded_reason(entry.get("judgment"))
+        hold_reason = _normalize_guarded_reason(entry.get("hold_reason"))
+        status = _normalize_guarded_reason(entry.get("status"))
+        if not _is_guarded_publish_review_candidate(
+            judgment=judgment,
+            hold_reason=hold_reason,
+            status=status,
+        ):
+            skipped.append((post_id, "REVIEW_EXCLUDED"))
+            continue
+        if post_key in seen_post_ids or _is_recent_duplicate(next_history, post_id, now=current_now):
+            skipped.append((post_id, "REVIEW_RECENT_DUPLICATE"))
+            continue
+
+        try:
+            post = fetch_post_detail_fn(base_url, post_id)
+        except Exception:
+            skipped.append((post_id, "REVIEW_POST_DETAIL_ERROR"))
+            continue
+        if not isinstance(post, Mapping):
+            skipped.append((post_id, "REVIEW_POST_MISSING"))
+            continue
+        post_status = str(post.get("status") or "").strip().lower()
+        if post_status == "publish":
+            skipped.append((post_id, "REVIEW_ALREADY_PUBLISHED"))
+            continue
+
+        base_request = _request_from_post(post)
+        request = PublishNoticeRequest(
+            post_id=base_request.post_id,
+            title=base_request.title,
+            canonical_url=base_request.canonical_url,
+            subtype=base_request.subtype,
+            publish_time_iso=base_request.publish_time_iso
+            or _isoformat_jst(_guarded_publish_entry_datetime(entry), fallback=current_now),
+            summary=base_request.summary,
+            is_backlog=False,
+            notice_kind="review_hold",
+            subject_override=_build_guarded_publish_subject(
+                base_request.title,
+                judgment=judgment,
+                hold_reason=hold_reason,
+            ),
+        )
+        emitted.append(request)
+        seen_post_ids.add(post_key)
+        next_history[post_key] = review_recorded_at_iso
+        _append_queue_log(
+            queue_path,
+            status="queued",
+            reason=hold_reason or judgment or None,
+            subject=str(request.subject_override or ""),
+            recipients=[],
+            post_id=request.post_id,
+            recorded_at_iso=review_recorded_at_iso,
+        )
+
+    if write_history:
+        _write_history(history_file, next_history)
+    return GuardedPublishHistoryScanResult(
+        emitted=emitted,
+        skipped=skipped,
+        history_after=next_history,
     )
 
 
@@ -398,6 +686,20 @@ def scan(
             recorded_at_iso=recorded_at_iso,
         )
 
+    review_scan = scan_guarded_publish_history(
+        cursor_path=cursor_path,
+        history_path=history_path,
+        queue_path=queue_path,
+        wp_api_base=base_url,
+        history=next_history,
+        now=current_now,
+        recorded_at=current_now + timedelta(seconds=1),
+        write_history=False,
+    )
+    emitted.extend(review_scan.emitted)
+    skipped.extend(review_scan.skipped)
+    next_history = review_scan.history_after
+
     cursor_after = latest_post_dt.isoformat() if latest_post_dt is not None else current_now.isoformat()
     _write_history(history_file, next_history)
     _write_cursor(cursor_file, cursor_after)
@@ -410,7 +712,9 @@ def scan(
 
 
 __all__ = [
+    "GuardedPublishHistoryScanResult",
     "JST",
     "ScanResult",
     "scan",
+    "scan_guarded_publish_history",
 ]

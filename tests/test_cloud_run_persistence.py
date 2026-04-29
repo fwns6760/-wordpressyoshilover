@@ -184,9 +184,13 @@ class PublishNoticeEntrypointTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             cursor_path = Path(tmpdir) / "cursor.txt"
             history_path = Path(tmpdir) / "history.json"
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
 
             def fake_run(cmd, **kwargs):
                 if cmd[0] == "gcloud" and cmd[4] == "cp" and cmd[5].startswith("gs://"):
+                    if cmd[5].endswith("/guarded_publish_history.jsonl"):
+                        guarded_history_path.write_text("", encoding="utf-8")
+                        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=b"", stderr=b"")
                     error = subprocess.CalledProcessError(returncode=1, cmd=cmd, stderr=b"CommandException: No URLs matched")
                     raise error
                 if cmd[0] == sys.executable:
@@ -212,12 +216,17 @@ class PublishNoticeEntrypointTests(unittest.TestCase):
                         str(history_path),
                         "--queue-path",
                         str(Path(tmpdir) / "queue.jsonl"),
+                        "--guarded-history-path",
+                        str(guarded_history_path),
                     ]
                 )
 
         self.assertEqual(exit_code, 0)
+        runner_command = next(
+            call.args[0] for call in mocked_run.call_args_list if call.args[0][0] == sys.executable
+        )
         self.assertEqual(
-            mocked_run.call_args_list[3].args[0],
+            runner_command,
             [
                 sys.executable,
                 "-m",
@@ -240,11 +249,15 @@ class PublishNoticeEntrypointTests(unittest.TestCase):
             cursor_path = Path(tmpdir) / "cursor.txt"
             history_path = Path(tmpdir) / "history.json"
             queue_path = Path(tmpdir) / "queue.jsonl"
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
 
             def fake_run(cmd, **kwargs):
                 if cmd[0] == "gcloud" and cmd[4] == "cp" and cmd[5].startswith("gs://"):
                     if cmd[5].endswith("/queue.jsonl"):
                         queue_path.write_text('{"status":"queued"}\n', encoding="utf-8")
+                        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=b"", stderr=b"")
+                    if cmd[5].endswith("/guarded_publish_history.jsonl"):
+                        guarded_history_path.write_text("", encoding="utf-8")
                         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=b"", stderr=b"")
                     raise subprocess.CalledProcessError(
                         returncode=1,
@@ -275,6 +288,8 @@ class PublishNoticeEntrypointTests(unittest.TestCase):
                         str(history_path),
                         "--queue-path",
                         str(queue_path),
+                        "--guarded-history-path",
+                        str(guarded_history_path),
                     ]
                 )
 
@@ -289,6 +304,19 @@ class PublishNoticeEntrypointTests(unittest.TestCase):
                 "cp",
                 "gs://bucket-name/publish_notice/queue.jsonl",
                 str(queue_path),
+                "--quiet",
+            ],
+            commands,
+        )
+        self.assertIn(
+            [
+                "gcloud",
+                "--project",
+                "project-id",
+                "storage",
+                "cp",
+                "gs://bucket-name/guarded_publish/guarded_publish_history.jsonl",
+                str(guarded_history_path),
                 "--quiet",
             ],
             commands,
@@ -311,9 +339,13 @@ class PublishNoticeEntrypointTests(unittest.TestCase):
             cursor_path = Path(tmpdir) / "cursor.txt"
             history_path = Path(tmpdir) / "history.json"
             queue_path = Path(tmpdir) / "queue.jsonl"
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
 
             def fake_run(cmd, **kwargs):
                 if cmd[0] == "gcloud" and cmd[4] == "cp" and cmd[5].startswith("gs://"):
+                    if cmd[5].endswith("/guarded_publish_history.jsonl"):
+                        guarded_history_path.write_text("", encoding="utf-8")
+                        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=b"", stderr=b"")
                     raise subprocess.CalledProcessError(
                         returncode=1,
                         cmd=cmd,
@@ -336,6 +368,8 @@ class PublishNoticeEntrypointTests(unittest.TestCase):
                         str(history_path),
                         "--queue-path",
                         str(queue_path),
+                        "--guarded-history-path",
+                        str(guarded_history_path),
                     ]
                 )
 

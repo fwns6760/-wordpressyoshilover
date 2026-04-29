@@ -24,6 +24,8 @@ DEFAULT_RUNNER_MODULE = "src.tools.run_publish_notice_email_dry_run"
 DEFAULT_CURSOR_PATH = "/tmp/publish_notice_cursor.txt"
 DEFAULT_HISTORY_PATH = "/tmp/publish_notice_history.json"
 DEFAULT_QUEUE_PATH = "/tmp/publish_notice_queue.jsonl"
+DEFAULT_GUARDED_PUBLISH_PREFIX = "guarded_publish"
+DEFAULT_GUARDED_HISTORY_PATH = "/tmp/pub004d/guarded_publish_history.jsonl"
 DEFAULT_ARTIFACT_BUCKET_NAME = "yoshilover-history"
 DEFAULT_ARTIFACT_PREFIX = "repair_artifacts"
 JST = ZoneInfo("Asia/Tokyo")
@@ -252,6 +254,10 @@ def _parse_entrypoint_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--cursor-path", default=os.environ.get("PUBLISH_NOTICE_CURSOR_PATH", DEFAULT_CURSOR_PATH))
     parser.add_argument("--history-path", default=os.environ.get("PUBLISH_NOTICE_HISTORY_PATH", DEFAULT_HISTORY_PATH))
     parser.add_argument("--queue-path", default=os.environ.get("PUBLISH_NOTICE_QUEUE_PATH", DEFAULT_QUEUE_PATH))
+    parser.add_argument(
+        "--guarded-history-path",
+        default=os.environ.get("PUBLISH_NOTICE_GUARDED_PUBLISH_HISTORY_PATH", DEFAULT_GUARDED_HISTORY_PATH),
+    )
     parser.add_argument("runner_args", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     if args.runner_args and args.runner_args[0] == "--":
@@ -293,6 +299,11 @@ def run_publish_notice_entrypoint(argv: Sequence[str] | None = None) -> int:
         prefix=args.prefix,
         project_id=args.project_id,
     )
+    guarded_history_manager = GCSStateManager(
+        bucket_name=args.bucket_name,
+        prefix=DEFAULT_GUARDED_PUBLISH_PREFIX,
+        project_id=args.project_id,
+    )
     command = build_publish_notice_command(
         runner_module=args.runner_module,
         cursor_path=str(args.cursor_path),
@@ -304,6 +315,7 @@ def run_publish_notice_entrypoint(argv: Sequence[str] | None = None) -> int:
         manager.with_state("cursor.txt", args.cursor_path),
         manager.with_state("history.json", args.history_path),
         manager.with_state("queue.jsonl", args.queue_path),
+        guarded_history_manager.with_state("guarded_publish_history.jsonl", args.guarded_history_path),
     ):
         completed = subprocess.run(command, check=False)
     return int(completed.returncode)

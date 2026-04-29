@@ -26,6 +26,20 @@ class PublishNoticeScannerTests(unittest.TestCase):
         payload.update(overrides)
         return payload
 
+    def _guarded_entry(self, **overrides):
+        payload = {
+            "post_id": 901,
+            "ts": NOW.isoformat(),
+            "status": "refused",
+            "judgment": "yellow",
+            "publishable": True,
+            "cleanup_required": False,
+            "cleanup_success": False,
+            "hold_reason": "backlog_only",
+        }
+        payload.update(overrides)
+        return payload
+
     def test_scan_initial_run_sets_cursor_to_now_and_emits_nothing(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             cursor_path = Path(tmpdir) / "cursor.txt"
@@ -416,6 +430,187 @@ class PublishNoticeScannerTests(unittest.TestCase):
         )
 
         self.assertEqual(subtype, "lineup")
+
+    def test_scan_guarded_publish_history_queues_backlog_only_yellow(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            guarded_history_path.write_text(
+                json.dumps(self._guarded_entry(post_id=901), ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+
+            result = scanner.scan_guarded_publish_history(
+                guarded_publish_history_path=guarded_history_path,
+                history_path=history_path,
+                queue_path=queue_path,
+                fetch_post_detail=lambda base, post_id: self._post(
+                    id=post_id,
+                    status="draft",
+                    link=f"https://yoshilover.com/draft-{post_id}/",
+                ),
+                now=lambda: NOW,
+            )
+            rows = [json.loads(line) for line in queue_path.read_text(encoding="utf-8").splitlines()]
+
+        self.assertEqual([request.post_id for request in result.emitted], [901])
+        self.assertEqual(result.emitted[0].notice_kind, "review_hold")
+        self.assertFalse(result.emitted[0].is_backlog)
+        self.assertTrue(str(result.emitted[0].subject_override).startswith("【要確認(古い候補)】"))
+        self.assertEqual(rows[0]["post_id"], 901)
+        self.assertEqual(rows[0]["reason"], "backlog_only")
+        self.assertTrue(rows[0]["subject"].startswith("【要確認(古い候補)】"))
+
+    def test_scan_guarded_publish_history_queues_cleanup_review(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            guarded_history_path.write_text(
+                json.dumps(
+                    self._guarded_entry(
+                        post_id=902,
+                        judgment="review",
+                        hold_reason="cleanup_required",
+                    ),
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = scanner.scan_guarded_publish_history(
+                guarded_publish_history_path=guarded_history_path,
+                history_path=history_path,
+                queue_path=queue_path,
+                fetch_post_detail=lambda base, post_id: self._post(
+                    id=post_id,
+                    status="draft",
+                    title={"rendered": "レビュー待ち記事"},
+                ),
+                now=lambda: NOW,
+            )
+            rows = [json.loads(line) for line in queue_path.read_text(encoding="utf-8").splitlines()]
+
+        self.assertEqual([request.post_id for request in result.emitted], [902])
+        self.assertTrue(str(result.emitted[0].subject_override).startswith("【要review】"))
+        self.assertEqual(rows[0]["reason"], "cleanup_required")
+        self.assertTrue(rows[0]["subject"].startswith("【要review】"))
+
+    def test_scan_guarded_publish_history_excludes_red_hard_stop(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            guarded_history_path.write_text(
+                json.dumps(
+                    self._guarded_entry(
+                        post_id=903,
+                        judgment="red",
+                        hold_reason="hard_stop_injury_death",
+                    ),
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = scanner.scan_guarded_publish_history(
+                guarded_publish_history_path=guarded_history_path,
+                history_path=history_path,
+                queue_path=queue_path,
+                fetch_post_detail=lambda base, post_id: self.fail("fetch_post_detail should not be called"),
+                now=lambda: NOW,
+            )
+
+        self.assertEqual(result.emitted, [])
+        self.assertEqual(result.skipped, [(903, "REVIEW_EXCLUDED")])
+        self.assertFalse(queue_path.exists())
+
+    def test_scan_guarded_publish_history_excludes_same_source_duplicate_hold(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            guarded_history_path.write_text(
+                json.dumps(
+                    self._guarded_entry(
+                        post_id=904,
+                        judgment="review",
+                        hold_reason="review_duplicate_candidate_same_source_url",
+                    ),
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = scanner.scan_guarded_publish_history(
+                guarded_publish_history_path=guarded_history_path,
+                history_path=history_path,
+                queue_path=queue_path,
+                fetch_post_detail=lambda base, post_id: self.fail("fetch_post_detail should not be called"),
+                now=lambda: NOW,
+            )
+
+        self.assertEqual(result.emitted, [])
+        self.assertEqual(result.skipped, [(904, "REVIEW_EXCLUDED")])
+        self.assertFalse(queue_path.exists())
+
+    def test_scan_guarded_publish_history_skips_recent_notified_post(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            guarded_history_path.write_text(
+                json.dumps(self._guarded_entry(post_id=905), ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+            history_path.write_text(
+                json.dumps({"905": NOW.isoformat()}, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+
+            result = scanner.scan_guarded_publish_history(
+                guarded_publish_history_path=guarded_history_path,
+                history_path=history_path,
+                queue_path=queue_path,
+                fetch_post_detail=lambda base, post_id: self.fail("fetch_post_detail should not be called"),
+                now=lambda: NOW,
+            )
+
+        self.assertEqual(result.emitted, [])
+        self.assertEqual(result.skipped, [(905, "REVIEW_RECENT_DUPLICATE")])
+        self.assertFalse(queue_path.exists())
+
+    def test_scan_guarded_publish_history_respects_max_per_run(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            entries = [
+                self._guarded_entry(post_id=906, ts="2026-04-24T09:00:00+09:00"),
+                self._guarded_entry(post_id=907, ts="2026-04-24T10:00:00+09:00"),
+                self._guarded_entry(post_id=908, ts="2026-04-24T11:00:00+09:00"),
+            ]
+            guarded_history_path.write_text(
+                "\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries) + "\n",
+                encoding="utf-8",
+            )
+
+            result = scanner.scan_guarded_publish_history(
+                guarded_publish_history_path=guarded_history_path,
+                history_path=history_path,
+                queue_path=queue_path,
+                fetch_post_detail=lambda base, post_id: self._post(id=post_id, status="draft"),
+                max_per_run=2,
+                now=lambda: NOW,
+            )
+            rows = [json.loads(line) for line in queue_path.read_text(encoding="utf-8").splitlines()]
+
+        self.assertEqual([request.post_id for request in result.emitted], [908, 907])
+        self.assertEqual([row["post_id"] for row in rows], [908, 907])
 
 
 if __name__ == "__main__":

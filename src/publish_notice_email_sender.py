@@ -296,6 +296,8 @@ class PublishNoticeRequest:
     publish_time_iso: str
     summary: str | None = None
     is_backlog: bool | None = None
+    notice_kind: Literal["publish", "review_hold"] = "publish"
+    subject_override: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1618,6 +1620,16 @@ def _is_recent_per_post_duplicate(
     return False
 
 
+def _force_review_mail_state(mail_state: dict[str, Any]) -> dict[str, Any]:
+    forced = dict(mail_state)
+    review_config = _mail_class_config("review")
+    forced["mail_class"] = "review"
+    forced["action"] = review_config["action"]
+    forced["priority"] = review_config["priority"]
+    forced["reason"] = str(forced.get("reason") or "default_review").strip() or "default_review"
+    return forced
+
+
 def build_subject(
     title: str,
     publish_dt_jst: str | None = None,
@@ -2012,7 +2024,10 @@ def send(
     duplicate_window: timedelta = DEFAULT_DUPLICATE_WINDOW,
 ) -> PublishNoticeEmailResult:
     normalized_title = str(request.title or "").strip()
-    subject = build_subject(normalized_title, override=override_subject)
+    active_subject_override = (
+        override_subject if override_subject is not None else getattr(request, "subject_override", None)
+    )
+    subject = build_subject(normalized_title, override=active_subject_override)
     if not normalized_title:
         return _suppressed("EMPTY_TITLE", subject=subject)
 
@@ -2028,10 +2043,14 @@ def send(
         publish_time_iso=str(request.publish_time_iso or "").strip(),
         summary=request.summary,
         is_backlog=request.is_backlog,
+        notice_kind=str(getattr(request, "notice_kind", "publish") or "publish").strip() or "publish",
+        subject_override=active_subject_override,
     )
     mail_state = _classify_mail(normalized_request)
+    if normalized_request.notice_kind != "publish":
+        mail_state = _force_review_mail_state(mail_state)
     recipients = resolve_recipients(override_recipient)
-    subject = build_subject(normalized_title, override=override_subject, classification=mail_state)
+    subject = build_subject(normalized_title, override=active_subject_override, classification=mail_state)
     if _current_queued_batch_size(duplicate_history_path) > FORCED_SUMMARY_THRESHOLD:
         return _suppressed("BURST_SUMMARY_ONLY", subject=subject, recipients=recipients)
     is_backlog = _resolve_is_backlog(

@@ -7,7 +7,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from src.publish_notice_email_sender import PublishNoticeEmailResult
+from src.publish_notice_email_sender import PublishNoticeEmailResult, PublishNoticeRequest
+from src.publish_notice_scanner import ScanResult
 from src.tools import run_publish_notice_email_dry_run as runner
 
 
@@ -121,6 +122,75 @@ class RunPublishNoticeEmailDryRunLedgerTests(unittest.TestCase):
                     self.assertEqual(len(rows), 1)
                     self.assertEqual(rows[0]["lane"], "publish_notice")
                     self.assertTrue(rows[0]["artifact_uri"].startswith("gs://yoshilover-history/repair_artifacts/"))
+
+
+class RunPublishNoticeEmailDryRunScanTests(unittest.TestCase):
+    def test_scan_summary_ignores_review_hold_notices(self) -> None:
+        publish_request = PublishNoticeRequest(
+            post_id=63105,
+            title="公開済み記事",
+            canonical_url="https://yoshilover.com/63105",
+            subtype="postgame",
+            publish_time_iso="2026-04-26T23:20:00+09:00",
+        )
+        review_request = PublishNoticeRequest(
+            post_id=63106,
+            title="レビュー待ち記事",
+            canonical_url="https://yoshilover.com/63106",
+            subtype="default",
+            publish_time_iso="2026-04-26T23:25:00+09:00",
+            notice_kind="review_hold",
+            subject_override="【要review】レビュー待ち記事 | YOSHILOVER",
+        )
+        scan_result = ScanResult(
+            emitted=[publish_request, review_request],
+            skipped=[],
+            cursor_before="2026-04-26T23:00:00+09:00",
+            cursor_after="2026-04-26T23:30:00+09:00",
+        )
+        captured_entries = []
+        stdout = io.StringIO()
+
+        class _Sink:
+            enabled = False
+
+        def fake_build(entries, **kwargs):
+            captured_entries.extend(entries)
+            return []
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch(
+            "src.tools.run_publish_notice_email_dry_run.scan",
+            return_value=scan_result,
+        ), patch(
+            "src.tools.run_publish_notice_email_dry_run.send",
+            return_value=PublishNoticeEmailResult(
+                status="dry_run",
+                reason=None,
+                subject="subject",
+                recipients=[],
+            ),
+        ), patch(
+            "src.tools.run_publish_notice_email_dry_run.append_send_result",
+        ), patch(
+            "src.tools.run_publish_notice_email_dry_run._emit_notice_ledger",
+        ), patch(
+            "src.tools.run_publish_notice_email_dry_run.build_burst_summary_requests",
+            side_effect=fake_build,
+        ), patch(
+            "src.tools.run_publish_notice_email_dry_run.build_execution_summary_log",
+            return_value="",
+        ), patch(
+            "src.tools.run_publish_notice_email_dry_run.build_zero_sent_alert_log",
+            return_value=None,
+        ), patch(
+            "src.tools.run_publish_notice_email_dry_run.runner_ledger_integration.BestEffortLedgerSink",
+            return_value=_Sink(),
+        ), patch("sys.stdout", stdout):
+            exit_code = runner.main(["--scan", "--queue-path", str(Path(tmpdir) / "queue.jsonl")])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(len(captured_entries), 1)
+        self.assertEqual(captured_entries[0].post_id, 63105)
 
 
 if __name__ == "__main__":

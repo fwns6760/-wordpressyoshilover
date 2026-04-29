@@ -82,6 +82,9 @@ def _request_from_payload(payload: dict[str, Any]) -> PublishNoticeRequest:
         subtype=str(payload["subtype"]),
         publish_time_iso=str(payload["publish_time_iso"]),
         summary=None if payload.get("summary") is None else str(payload.get("summary")),
+        is_backlog=payload.get("is_backlog"),
+        notice_kind=str(payload.get("notice_kind") or "publish"),
+        subject_override=None if payload.get("subject_override") is None else str(payload.get("subject_override")),
     )
 
 
@@ -94,6 +97,10 @@ def _summary_entry_from_request(request: PublishNoticeRequest) -> BurstSummaryEn
         cleanup_required=False,
         cleanup_success=None,
     )
+
+
+def _is_publish_notice_request(request: PublishNoticeRequest) -> bool:
+    return str(getattr(request, "notice_kind", "publish") or "publish").strip() == "publish"
 
 
 def _summary_request_from_payload(payload: dict[str, Any]) -> BurstSummaryRequest:
@@ -264,8 +271,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                     },
                 )
                 _print_result("per_post", request.post_id, mail_result)
+            summary_entries = [
+                _summary_entry_from_request(request)
+                for request in result.emitted
+                if _is_publish_notice_request(request)
+            ]
             summary_requests = build_burst_summary_requests(
-                [_summary_entry_from_request(request) for request in result.emitted],
+                summary_entries,
                 summary_every=args.summary_every,
                 daily_cap=args.daily_cap,
             )

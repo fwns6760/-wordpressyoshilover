@@ -14,6 +14,7 @@
 |---|---|---|---|
 | **234-impl-7 probable_starter / pregame body hardening** | READY_FOR_AUTH_EXECUTOR | **必要。repo実装済み** | 試合前・予告先発系の source anchor / post-gen check 実装済み。次は image rebuild 判断 |
 | **245 front hide internal auto-post category label** | READY | **必要。いま動かす** | Front画面に内部カテゴリ「自動投稿」が出るのを止める。カテゴリ削除ではなく表示除外のみ |
+| **246-MKT today giants fan guide** | HOLD_DESIGN | **必要。まだ実装しない** | 「今日の巨人ファン観戦ガイド」親チケット。記事一覧ではなく観戦ガイドUXとして user 承認後に実装へ進める |
 | **229 Gemini cost governor + LLM call reduction** | REVIEW_NEEDED | **必要。継続監視** | fetcher 100% 後の Gemini call / skip / ledger を見て、229-C prompt compression をやるか決める |
 | **OPERATING_LOCK** | ACTIVE_LOCK | **必要。常時参照** | 事故防止ルール。変更は慎重に、src 実装とは混ぜない |
 | **assignments** | ACTIVE_BOARD | **必要。現在地** | 本ファイル。active を増やしすぎない |

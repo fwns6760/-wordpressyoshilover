@@ -38,6 +38,7 @@ Active folder is intentionally narrow after the template / numeric hallucination
 |---|---|---|
 | **ready for live handoff** | `234-impl-7-probable-starter-pregame-body-hardening.md` | repo implementation + targeted tests are done; next step is image rebuild / live observation decision. |
 | **run now** | `245-front-hide-auto-post-category-label.md` | new front-scope ticket. Hide internal `自動投稿` / `auto-post` category from public category UI without changing WP category assignment. |
+| **design hold** | `246-MKT-today-giants-fan-guide.md` | marketing / UX parent ticket. Do not implement until user approves the fan-guide UX; this is not a recent-articles list. |
 | **keep active** | `229-gemini-cost-governor-and-llm-call-reduction.md` | still needed as the cost-reduction parent; next action depends on fetcher 100% / ledger observation. |
 | **waiting** | `205-gcp-runtime-drift-audit.md`, `238-night-draft-only-and-morning-decision-report.md` | still useful, but not part of the immediate article-body hallucination fix. |
 | **closed / archived** | `234-impl-1..6`, `242 parent`, `242-B`, `243`, `244`, `244-B`, `244-followup`, `244-B-followup` | implemented and/or superseded by `cf8ecb9` live bundle; no longer active work. |

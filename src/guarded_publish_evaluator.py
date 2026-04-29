@@ -110,8 +110,15 @@ INJURY_ROSTER_SIGNAL_RE = re.compile(
     r"一軍合流|二軍降格|軽症|コンディション不良|アクシデント|診断|症状|ケガ|けが|怪我|"
     r"戦線離脱|復帰目処|復帰めど|故障者リスト|\bIL\b|入団|引退|全治)"
 )
+HARD_DEATH_OR_GRAVE_RE = re.compile(r"(死亡|死去|逝去|亡くな|危篤|重体|重症|重傷|意識不明)")
+SOFT_MEDICAL_TERM_RE = re.compile(r"(入院|手術)")
+POSITIVE_RECOVERY_CONTEXT_RE = re.compile(
+    r"(手術後|術後|手術成功|リハビリ|リハビリ完了|実戦復帰|復帰戦|復帰|"
+    r"1軍初スタメン|一軍初スタメン|初スタメン|1軍合流|一軍合流|1軍復帰|一軍復帰|"
+    r"再昇格|再登板|再合流|順調|順調な経過|アピール|出場)"
+)
 DEATH_OR_GRAVE_INCIDENT_RE = re.compile(
-    r"(死亡|死去|逝去|亡くな|危篤|重体|重症|重傷|意識不明|入院|手術)"
+    rf"(?:{HARD_DEATH_OR_GRAVE_RE.pattern}|{SOFT_MEDICAL_TERM_RE.pattern})"
 )
 FAMILY_DEATH_KEYWORD_RE = re.compile(r"(死亡|死去|逝去|亡くな|急逝|他界|訃報|天国)")
 SELF_DEATH_SUBJECT_PREFIX_RE = re.compile(
@@ -1188,9 +1195,13 @@ def _medical_roster_flag(record: dict[str, Any], *, subtype: Any = "") -> str | 
     body_text = str(record.get("body_text") or "")
     combined = "\n".join(part for part in (title, body_text) if part)
     family_context_death = _has_family_context_death_window(title, body_text)
-    if (DEATH_OR_GRAVE_INCIDENT_RE.search(combined) and not family_context_death) or _is_long_term_recovery_story(
-        combined
-    ):
+    if HARD_DEATH_OR_GRAVE_RE.search(combined) and not family_context_death:
+        return "death_or_grave_incident"
+    soft_term_present = bool(SOFT_MEDICAL_TERM_RE.search(combined))
+    has_recovery_context = bool(POSITIVE_RECOVERY_CONTEXT_RE.search(combined))
+    if soft_term_present and not has_recovery_context and not family_context_death:
+        return "death_or_grave_incident"
+    if _is_long_term_recovery_story(combined):
         return "death_or_grave_incident"
     if not INJURY_ROSTER_SIGNAL_RE.search(combined):
         return None

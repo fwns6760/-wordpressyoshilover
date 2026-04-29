@@ -371,6 +371,102 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
 
         self.assertEqual(flag, "death_or_grave_incident")
 
+    def test_surgery_recovery_lineup_context_returns_yellow_instead_of_hard_stop(self):
+        record = {
+            "title": "巨人スタメン 股関節手術後1軍初スタメン",
+            "body_text": "股関節手術後の選手が1軍初スタメンで実戦復帰する。スポーツ報知によると、首脳陣は出場機会で状態を見極める。",
+            "source_block": "参照元: スポーツ報知 https://example.com/source-surgery-lineup",
+            "source_urls": ["https://example.com/source-surgery-lineup"],
+        }
+
+        flag = evaluator_module._medical_roster_flag(record, subtype="lineup")
+
+        self.assertEqual(flag, "roster_movement_yellow")
+
+    def test_surgery_recovery_rehab_context_returns_yellow_instead_of_hard_stop(self):
+        record = {
+            "title": "巨人主力 肩手術後 リハビリ順調",
+            "body_text": "肩手術後の主力は実戦復帰へ向けたリハビリが順調だ。スポーツ報知によると、段階的に出場機会を増やしていく。",
+            "source_block": "参照元: スポーツ報知 https://example.com/source-surgery-rehab",
+            "source_urls": ["https://example.com/source-surgery-rehab"],
+        }
+
+        flag = evaluator_module._medical_roster_flag(record, subtype="injury")
+
+        self.assertEqual(flag, "roster_movement_yellow")
+
+    def test_surgery_recovery_return_game_context_returns_yellow_instead_of_hard_stop(self):
+        record = {
+            "title": "巨人右腕 術後の復帰戦へ",
+            "body_text": "右腕は術後の復帰戦に向けて最終調整を進める。スポーツ報知によると、ファームでの復帰登板が予定されている。",
+            "source_block": "参照元: スポーツ報知 https://example.com/source-return-game",
+            "source_urls": ["https://example.com/source-return-game"],
+        }
+
+        flag = evaluator_module._medical_roster_flag(record, subtype="farm")
+
+        self.assertEqual(flag, "roster_movement_yellow")
+
+    def test_death_keyword_fixture_remains_hard_stop(self):
+        record = {
+            "title": "巨人関係者が事故で死亡",
+            "body_text": "巨人関係者が事故で死亡したと伝えられた。スポーツ報知によると、球団が哀悼の意を示した。",
+            "source_block": "参照元: スポーツ報知 https://example.com/source-death-keyword",
+            "source_urls": ["https://example.com/source-death-keyword"],
+        }
+
+        flag = evaluator_module._medical_roster_flag(record, subtype="")
+
+        self.assertEqual(flag, "death_or_grave_incident")
+
+    def test_serious_injury_keyword_fixture_remains_hard_stop(self):
+        record = {
+            "title": "巨人選手が重傷で救急搬送",
+            "body_text": "巨人選手が重傷で救急搬送された。スポーツ報知によると、病院で精密検査を受けている。",
+            "source_block": "参照元: スポーツ報知 https://example.com/source-serious-injury",
+            "source_urls": ["https://example.com/source-serious-injury"],
+        }
+
+        flag = evaluator_module._medical_roster_flag(record, subtype="injury")
+
+        self.assertEqual(flag, "death_or_grave_incident")
+
+    def test_unconscious_critical_keyword_fixture_remains_hard_stop(self):
+        record = {
+            "title": "巨人OBが意識不明の重体",
+            "body_text": "巨人OBが意識不明の重体となった。スポーツ報知によると、関係者が病院に集まっている。",
+            "source_block": "参照元: スポーツ報知 https://example.com/source-critical",
+            "source_urls": ["https://example.com/source-critical"],
+        }
+
+        flag = evaluator_module._medical_roster_flag(record, subtype="")
+
+        self.assertEqual(flag, "death_or_grave_incident")
+
+    def test_soft_medical_term_with_long_recovery_remains_hard_stop(self):
+        record = {
+            "title": "巨人主力が入院手術 全治6か月",
+            "body_text": "巨人主力が入院して手術を受け、全治6か月の見込みとなった。スポーツ報知によると、復帰まで長期調整が必要だ。",
+            "source_block": "参照元: スポーツ報知 https://example.com/source-long-recovery",
+            "source_urls": ["https://example.com/source-long-recovery"],
+        }
+
+        flag = evaluator_module._medical_roster_flag(record, subtype="injury")
+
+        self.assertEqual(flag, "death_or_grave_incident")
+
+    def test_soft_medical_term_without_recovery_context_remains_hard_stop(self):
+        record = {
+            "title": "巨人主力は手術が必要",
+            "body_text": "巨人主力は検査の結果、手術が必要と判断された。スポーツ報知によると、今後の見通しは未定だ。",
+            "source_block": "参照元: スポーツ報知 https://example.com/source-surgery-needed",
+            "source_urls": ["https://example.com/source-surgery-needed"],
+        }
+
+        flag = evaluator_module._medical_roster_flag(record, subtype="injury")
+
+        self.assertEqual(flag, "death_or_grave_incident")
+
     def test_family_death_player_absent_fixture_stays_publishable(self):
         post = _post(
             63471,

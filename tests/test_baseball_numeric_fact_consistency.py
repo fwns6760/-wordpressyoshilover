@@ -1,6 +1,10 @@
 import unittest
 
-from src.baseball_numeric_fact_consistency import check_consistency as _check_consistency, extract_scores
+from src.baseball_numeric_fact_consistency import (
+    check_consistency as _check_consistency,
+    extract_scores,
+    normalize_innings,
+)
 
 
 def check_consistency(*args, **kwargs):
@@ -10,6 +14,42 @@ def check_consistency(*args, **kwargs):
 
 
 class BaseballNumericFactConsistencyTests(unittest.TestCase):
+    def test_normalize_innings_integer(self):
+        self.assertEqual(normalize_innings("6"), "6_0")
+
+    def test_normalize_innings_integer_typed(self):
+        self.assertEqual(normalize_innings(6), "6_0")
+
+    def test_normalize_innings_decimal_zero(self):
+        self.assertEqual(normalize_innings("6.0"), "6_0")
+
+    def test_normalize_innings_decimal_one_third(self):
+        self.assertEqual(normalize_innings("6.1"), "6_1/3")
+
+    def test_normalize_innings_decimal_two_third(self):
+        self.assertEqual(normalize_innings("6.2"), "6_2/3")
+
+    def test_normalize_innings_kanji_one_third(self):
+        self.assertEqual(normalize_innings("6回1/3"), "6_1/3")
+
+    def test_normalize_innings_kanji_two_third(self):
+        self.assertEqual(normalize_innings("6回2/3"), "6_2/3")
+
+    def test_normalize_innings_space_one_third(self):
+        self.assertEqual(normalize_innings("6 1/3"), "6_1/3")
+
+    def test_normalize_innings_invalid_returns_none(self):
+        self.assertIsNone(normalize_innings("abc"))
+
+    def test_normalize_innings_null_returns_none(self):
+        self.assertIsNone(normalize_innings(None))
+
+    def test_normalize_innings_empty_returns_none(self):
+        self.assertIsNone(normalize_innings(""))
+
+    def test_normalize_innings_decimal_unsupported_returns_none(self):
+        self.assertIsNone(normalize_innings("6.5"))
+
     def test_score_1_11_is_not_normalized_to_19_1(self):
         scores = extract_scores("巨人 1-11 楽天")
 
@@ -213,6 +253,30 @@ class BaseballNumericFactConsistencyTests(unittest.TestCase):
         self.assertEqual(report.hard_stop_flags, ())
         self.assertEqual(report.review_flags, ())
         self.assertEqual(report.x_candidate_suppress_flags, ())
+
+    def test_pitcher_innings_match_with_different_notations(self):
+        report = check_consistency(
+            source_text="戸郷翔征は6.1回3安打1失点。巨人は11安打で勝利した。",
+            generated_body="戸郷翔征が6回1/3 3安打1失点で試合を作った。打線は11安打だった。",
+            x_candidates=[],
+            metadata={},
+            publish_time_iso="2026-04-28T21:00:00+09:00",
+        )
+
+        self.assertEqual(report.severity, "pass")
+        self.assertNotIn("pitcher_team_stat_confusion", report.hard_stop_flags)
+
+    def test_pitcher_innings_mismatch_returns_fail(self):
+        report = check_consistency(
+            source_text="戸郷翔征は6.1回3安打1失点。巨人は11安打で勝利した。",
+            generated_body="戸郷翔征が7.0回3安打1失点で試合を作った。打線は11安打だった。",
+            x_candidates=[],
+            metadata={},
+            publish_time_iso="2026-04-28T21:00:00+09:00",
+        )
+
+        self.assertEqual(report.severity, "hard_stop")
+        self.assertIn("pitcher_team_stat_confusion", report.hard_stop_flags)
 
 
 if __name__ == "__main__":

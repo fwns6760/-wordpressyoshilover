@@ -50,9 +50,13 @@ TEAM_COLON_SCORE_RE = re.compile(
 )
 WIN_MARKER_RE = re.compile(r"(勝利|白星|連勝|逆転勝ち)")
 LOSS_MARKER_RE = re.compile(r"(敗れ|敗戦|黒星|連敗|完敗)")
+INNINGS_DECIMAL_PATTERN = re.compile(r"^\d+\.\d+$")
+INNINGS_INTEGER_PATTERN = re.compile(r"^\d+$")
+INNINGS_FRACTION_PATTERN = re.compile(r"^(\d+)\s+([12])/3$")
+PITCHER_INNINGS_TOKEN = r"(?:\d{1,2}回\s*[12]/3|\d{1,2}\s+[12]/3回?|\d{1,2}(?:\.\d+)?回?)"
 PITCHER_FULL_RE = re.compile(
     r"(?:先発)?(?P<name>[一-龯々]{2,5}(?:[ァ-ヴー]{0,4})?)(?:投手)?(?:が|は|も)\s*"
-    r"(?P<innings>\d{1,2})回\s*(?P<hits>\d{1,2})(?:安打|被安打)\s*(?P<runs>\d{1,2})失点"
+    rf"(?P<innings>{PITCHER_INNINGS_TOKEN})\s*(?P<hits>\d{{1,2}})(?:安打|被安打)\s*(?P<runs>\d{{1,2}})失点"
 )
 PITCHER_HITS_ONLY_RE = re.compile(
     r"(?:先発)?(?P<name>[一-龯々]{2,5}(?:[ァ-ヴー]{0,4})?)(?:投手)?(?:が|は|も)\s*"
@@ -339,25 +343,65 @@ def _valid_player_name(value: str) -> bool:
     return 2 <= len(name) <= 8
 
 
+def normalize_innings(value: Any) -> str | None:
+    """Normalize pitcher innings notation into a conservative canonical string."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    text = text.replace("回", " ").strip()
+    text = re.sub(r"\s+", " ", text)
+    if INNINGS_INTEGER_PATTERN.match(text):
+        return f"{int(text)}_0"
+    if INNINGS_DECIMAL_PATTERN.match(text):
+        whole, fraction = text.split(".", 1)
+        if fraction == "0":
+            return f"{int(whole)}_0"
+        if fraction == "1":
+            return f"{int(whole)}_1/3"
+        if fraction == "2":
+            return f"{int(whole)}_2/3"
+        return None
+    match = INNINGS_FRACTION_PATTERN.match(text)
+    if match:
+        return f"{int(match.group(1))}_{match.group(2)}/3"
+    return None
+
+
+def _legacy_innings_value(value: Any) -> int | None:
+    normalized = normalize_innings(value)
+    if normalized is None:
+        return None
+    whole, _, remainder = normalized.partition("_")
+    if remainder == "0":
+        return int(whole)
+    return None
+
+
 def extract_pitcher_team_stats(text: str) -> dict[str, list[dict[str, Any]]]:
     normalized = _normalize_text(text)
     pitchers: list[dict[str, Any]] = []
     teams: list[dict[str, Any]] = []
-    seen_pitchers: set[tuple[str, int | None, int, int | None]] = set()
+    seen_pitchers: set[tuple[str, str, int, int | None]] = set()
     seen_teams: set[tuple[str, int, int | None]] = set()
 
     for match in PITCHER_FULL_RE.finditer(normalized):
         name = _normalize_name(match.group("name"))
         if not _valid_player_name(name):
             continue
-        key = (name, int(match.group("innings")), int(match.group("hits")), int(match.group("runs")))
+        innings_raw = match.group("innings")
+        innings_normalized = normalize_innings(innings_raw)
+        key = (name, innings_normalized or innings_raw, int(match.group("hits")), int(match.group("runs")))
         if key in seen_pitchers:
             continue
         seen_pitchers.add(key)
         pitchers.append(
             {
                 "name": name,
-                "innings": int(match.group("innings")),
+                "innings": _legacy_innings_value(innings_raw),
+                "innings_raw": innings_raw,
+                "innings_normalized": innings_normalized,
                 "hits": int(match.group("hits")),
                 "runs": int(match.group("runs")),
                 "raw": match.group(0),
@@ -370,7 +414,7 @@ def extract_pitcher_team_stats(text: str) -> dict[str, list[dict[str, Any]]]:
             continue
         innings = None
         runs = int(match.group("runs")) if match.group("runs") else None
-        key = (name, innings, int(match.group("hits")), runs)
+        key = (name, "", int(match.group("hits")), runs)
         if key in seen_pitchers:
             continue
         seen_pitchers.add(key)
@@ -378,6 +422,8 @@ def extract_pitcher_team_stats(text: str) -> dict[str, list[dict[str, Any]]]:
             {
                 "name": name,
                 "innings": innings,
+                "innings_raw": None,
+                "innings_normalized": None,
                 "hits": int(match.group("hits")),
                 "runs": runs,
                 "raw": match.group(0),
@@ -672,6 +718,12 @@ def _check_article_pitcher_team_confusion(
 ) -> None:
     source_stats = extract_pitcher_team_stats(source_text)
     generated_stats = extract_pitcher_team_stats(generated_body)
+    source_pitchers_by_fact: dict[tuple[str, int, int | None], list[dict[str, Any]]] = {}
+    generated_pitchers_by_fact: dict[tuple[str, int, int | None], list[dict[str, Any]]] = {}
+    for item in source_stats["pitchers"]:
+        source_pitchers_by_fact.setdefault((item["name"], item["hits"], item.get("runs")), []).append(item)
+    for item in generated_stats["pitchers"]:
+        generated_pitchers_by_fact.setdefault((item["name"], item["hits"], item.get("runs")), []).append(item)
     source_pitcher_pairs = {
         (item["hits"], item["runs"])
         for item in source_stats["pitchers"]
@@ -723,6 +775,47 @@ def _check_article_pitcher_team_confusion(
                 detail="pitcher_hits_written_as_team_hits",
                 source_pitcher_hits=sorted(source_pitcher_hits),
                 generated_team=item["raw"],
+            )
+            return
+
+    for fact_key, generated_pitchers in generated_pitchers_by_fact.items():
+        source_pitchers = source_pitchers_by_fact.get(fact_key)
+        if not source_pitchers or len(source_pitchers) != 1 or len(generated_pitchers) != 1:
+            continue
+        source_pitcher = source_pitchers[0]
+        generated_pitcher = generated_pitchers[0]
+        source_normalized = source_pitcher.get("innings_normalized")
+        generated_normalized = generated_pitcher.get("innings_normalized")
+        if source_normalized is not None and generated_normalized is not None:
+            if source_normalized != generated_normalized:
+                _append_finding(
+                    findings,
+                    flag="pitcher_team_stat_confusion",
+                    severity="hard_stop",
+                    axis="pitcher_team_stats",
+                    scope="article",
+                    detail="pitcher_innings_mismatch",
+                    source_pitcher=source_pitcher["raw"],
+                    generated_pitcher=generated_pitcher["raw"],
+                    source_innings=source_normalized,
+                    generated_innings=generated_normalized,
+                )
+                return
+            continue
+        source_fallback = source_pitcher.get("innings_raw")
+        generated_fallback = generated_pitcher.get("innings_raw")
+        if source_fallback is not None and generated_fallback is not None and source_fallback != generated_fallback:
+            _append_finding(
+                findings,
+                flag="pitcher_team_stat_confusion",
+                severity="hard_stop",
+                axis="pitcher_team_stats",
+                scope="article",
+                detail="pitcher_innings_mismatch",
+                source_pitcher=source_pitcher["raw"],
+                generated_pitcher=generated_pitcher["raw"],
+                source_innings=source_fallback,
+                generated_innings=generated_fallback,
             )
             return
 

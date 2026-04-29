@@ -13,6 +13,7 @@
 | ticket | status | 判定 | 次 action |
 |---|---|---|---|
 | **234-impl-7 probable_starter / pregame body hardening** | READY_FOR_AUTH_EXECUTOR | **必要。repo実装済み** | 試合前・予告先発系の source anchor / post-gen check 実装済み。次は image rebuild 判断 |
+| **245 front hide internal auto-post category label** | READY | **必要。いま動かす** | Front画面に内部カテゴリ「自動投稿」が出るのを止める。カテゴリ削除ではなく表示除外のみ |
 | **229 Gemini cost governor + LLM call reduction** | REVIEW_NEEDED | **必要。継続監視** | fetcher 100% 後の Gemini call / skip / ledger を見て、229-C prompt compression をやるか決める |
 | **OPERATING_LOCK** | ACTIVE_LOCK | **必要。常時参照** | 事故防止ルール。変更は慎重に、src 実装とは混ぜない |
 | **assignments** | ACTIVE_BOARD | **必要。現在地** | 本ファイル。active を増やしすぎない |
@@ -83,6 +84,21 @@ acceptance:
 - `ModuleNotFoundError`, `Traceback`, HTTP 500, timeout, exit(1) は即 rollback 判断
 - WP publish / draft patch / env / Scheduler / Secret / RUN_DRAFT_ONLY は勝手に変更しない
 - 234-impl-7 の live 反映時は fetcher / draft-body-editor image rebuild を検討し、/run 直接 curl は使わない
+
+### Codex A / front-scope: 245 を実装
+
+目的:
+
+- 画面に内部カテゴリ `自動投稿` を出さない。
+- category id `673` / slug `auto-post` / name `自動投稿` は内部管理用として front 表示から除外する。
+
+制約:
+
+- WP category 自体は削除しない
+- 既存 post の category 付け替えなし
+- Python backend / GCP / WP publish / X / Gemini に触らない
+- `src/yoshilover-063-frontend.php` の narrow fix
+- `php -l` pass
 
 ## 役割
 

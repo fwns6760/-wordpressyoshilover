@@ -1,8 +1,8 @@
-# 248-MKT fan guide expansion and comment badge
+# 255-MKT fan guide expansion and comment badge
 
 ## meta
 
-- number: 248-MKT
+- number: 255-MKT
 - type: marketing / fan engagement backlog
 - status: HOLD
 - priority: P1

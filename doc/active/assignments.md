@@ -14,7 +14,6 @@
 |---|---|---|---|
 | **234-impl-7 probable_starter / pregame body hardening** | READY_FOR_AUTH_EXECUTOR | **必要。repo実装済み** | 試合前・予告先発系の source anchor / post-gen check 実装済み。次は image rebuild 判断 |
 | **245 front hide internal auto-post category label** | READY | **必要。いま動かす** | Front画面に内部カテゴリ「自動投稿」が出るのを止める。カテゴリ削除ではなく表示除外のみ |
-| **246-MKT today giants fan guide** | HOLD_DESIGN | **必要。まだ実装しない** | 「今日の巨人ファン観戦ガイド」親チケット。記事一覧ではなく観戦ガイドUXとして user 承認後に実装へ進める |
 | **229 Gemini cost governor + LLM call reduction** | REVIEW_NEEDED | **必要。継続監視** | fetcher 100% 後の Gemini call / skip / ledger を見て、229-C prompt compression をやるか決める |
 | **OPERATING_LOCK** | ACTIVE_LOCK | **必要。常時参照** | 事故防止ルール。変更は慎重に、src 実装とは混ぜない |
 | **assignments** | ACTIVE_BOARD | **必要。現在地** | 本ファイル。active を増やしすぎない |
@@ -44,6 +43,10 @@
 |---|---|---|
 | **205 GCP runtime drift audit** | 必要だが、今の本文ハルシネ対策の実装ではない。定期監査として待機 | Cloud Run image / Scheduler / logs に不整合が疑われた時 |
 | **238 night-draft-only + morning report** | 必要だが、まず 234/244 の本文品質を安定させる。夜間運用は次の運用改善 | 本文品質が落ち着き、夜間 publish/mail 抑制を入れる段階 |
+| **246-MKT today giants fan guide** | HOLD。247-QA amend と postgame strict 試合日観察が先。現場に投げない | 246-MKT 判断後に、必要なら実装 ticket として個別に戻す |
+| **255-MKT fan guide expansion + comment badge** | HOLD。248 系の既存 ticket と採番衝突しないよう 255 に採番 | 246-MKT 観戦ガイドが成立し、コメント/反応導線を検討してよい時 |
+| **249-INGEST live game ingestion expansion** | HOLD。Cloud Run / Scheduler 影響が大きい構想 | user が live ingestion の負荷とリスクを理解して明示 GO した時 |
+| **256-QA manager/player quote strict subset** | HOLD。250 系の既存 ticket と採番衝突しないよう 256 に採番 | 247-QA の試合日観察後、コメント系を短い事実記事として分ける価値がある時 |
 
 ## いま動かす指示
 

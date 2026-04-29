@@ -1,8 +1,8 @@
-# 250-QA manager/player quote strict subset
+# 256-QA manager/player quote strict subset
 
 ## meta
 
-- number: 250-QA
+- number: 256-QA
 - type: quality / strict template backlog
 - status: HOLD
 - priority: P0.5

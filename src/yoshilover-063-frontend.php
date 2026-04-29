@@ -3384,6 +3384,55 @@ function yoshilover_063_filter_front_category_terms( $terms ) {
     );
 }
 
+/**
+ * 表示判定の共通 wrapper. front 系 section / 回遊 / 観戦ガイドで使う統一判定.
+ * 既存 helper を内部で組み合わせるだけで、各 helper 自体は変更しない.
+ *
+ * @param WP_Post $post 判定対象記事
+ * @param array   $opts オプション
+ * @return bool true なら front 表示 OK、false なら除外
+ */
+function yoshilover_063_should_show_in_front( $post, $opts = array() ) {
+    if ( ! ( $post instanceof WP_Post ) ) {
+        return false;
+    }
+
+    $opts = wp_parse_args(
+        is_array( $opts ) ? $opts : array(),
+        array(
+            'require_gameish' => false,
+        )
+    );
+
+    $terms = get_the_category( (int) $post->ID );
+    if ( is_array( $terms ) && ! empty( $terms ) ) {
+        $visible_terms = yoshilover_063_filter_front_category_terms( $terms );
+        if ( count( $visible_terms ) !== count( $terms ) ) {
+            return false;
+        }
+    }
+
+    if ( yoshilover_063_post_has_hidden_auto_post_category( $post->ID ) ) {
+        return false;
+    }
+
+    if ( yoshilover_063_is_weak_title( $post->post_title ) ) {
+        return false;
+    }
+
+    $subtype     = yoshilover_063_resolve_front_density_subtype( $post, '' );
+    $ng_subtypes = array( '', 'default', 'default_review', 'article', 'notice' );
+    if ( in_array( $subtype, $ng_subtypes, true ) ) {
+        return false;
+    }
+
+    if ( ! empty( $opts['require_gameish'] ) && ! yoshilover_063_is_gameish_subtype( $subtype ) ) {
+        return false;
+    }
+
+    return true;
+}
+
 function yoshilover_063_resolve_game_key( $post ) {
     if ( ! ( $post instanceof WP_Post ) ) {
         return null;

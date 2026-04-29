@@ -1,10 +1,15 @@
 # MKT-006 manual x feedback ledger
 
+## dropped note(2026-04-29)
+
+- status: DROPPED
+- reason: Dropped. Manual X feedback ledger would add process overhead; keep learning in GPTs/user notes for now.
+
 ## meta
 
 - number: MKT-006
 - alias: -
-- status: PARKED
+- status: DROPPED
 - priority: P1.5
 - parent: MKT-001
 

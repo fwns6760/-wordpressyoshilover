@@ -1,10 +1,15 @@
 # MKT-004 x candidate quality scoring
 
+## dropped note(2026-04-29)
+
+- status: DROPPED
+- reason: Dropped. X candidate scoring/wording is handled by GPTs.
+
 ## meta
 
 - number: MKT-004
 - alias: -
-- status: PARKED
+- status: DROPPED
 - priority: P1
 - parent: MKT-001
 

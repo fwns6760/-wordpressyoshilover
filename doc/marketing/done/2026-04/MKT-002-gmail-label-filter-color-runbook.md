@@ -1,10 +1,15 @@
 # MKT-002 gmail label filter color runbook
 
+## dropped note(2026-04-29)
+
+- status: DROPPED
+- reason: Dropped. Gmail label/filter setup is not needed now; 241 already confirmed PC/mobile notification delivery.
+
 ## meta
 
 - number: MKT-002
 - alias: -
-- status: PARKED
+- status: DROPPED
 - priority: P1
 - parent: MKT-001
 

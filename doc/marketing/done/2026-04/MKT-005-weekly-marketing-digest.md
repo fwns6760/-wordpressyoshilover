@@ -1,10 +1,15 @@
 # MKT-005 weekly marketing digest
 
+## dropped note(2026-04-29)
+
+- status: DROPPED
+- reason: Dropped. Weekly digest is not a current P0; recreate later if needed.
+
 ## meta
 
 - number: MKT-005
 - alias: -
-- status: PARKED
+- status: DROPPED
 - priority: P1.5
 - parent: MKT-001
 

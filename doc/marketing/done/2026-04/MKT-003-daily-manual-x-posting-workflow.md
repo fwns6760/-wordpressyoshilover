@@ -1,10 +1,15 @@
 # MKT-003 daily manual x posting workflow
 
+## dropped note(2026-04-29)
+
+- status: DROPPED
+- reason: Dropped. Daily manual X workflow is handled by the user plus GPTs, not repo-side process docs.
+
 ## meta
 
 - number: MKT-003
 - alias: -
-- status: PARKED
+- status: DROPPED
 - priority: P1
 - parent: MKT-001
 

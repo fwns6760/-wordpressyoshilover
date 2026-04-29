@@ -1,11 +1,16 @@
 # MKT-008 X post candidate text quality hardening
 
+## dropped note(2026-04-29)
+
+- status: DROPPED
+- reason: Dropped. X post candidate wording is handled by the private GPTs assistant; repo stays focused on article/numeric safety guards.
+
 ## meta
 
 - number: MKT-008
 - alias: 225
 - type: dev / marketing quality
-- status: REOPENED(225 commit `873fcf0` 完了、ただし 225-A safety fix 必要 — x_post_ready=false で本文表示抑止)
+- status: DROPPED
 - priority: P0.5
 - lane: Codex B
 - created: 2026-04-27

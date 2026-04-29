@@ -130,6 +130,81 @@ WEAK_GENERATED_TITLE_STRONG_MARKERS = (
     "ドジャース",
 )
 
+LEADING_PARTICLE_RE = re.compile(r"^[がをにのへとでもや]")
+RELATED_INFO_ESCAPE_RE = re.compile(r"関連情報\s*$")
+GENERIC_PERSON_NOUNS = (
+    "選手",
+    "投手",
+    "コーチ",
+    "監督",
+    "捕手",
+    "内野手",
+    "外野手",
+    "チーム",
+    "球団",
+    "ベンチ",
+    "首脳陣",
+)
+KNOWN_PERSON_NAME_MARKERS = (
+    "阿部",
+    "川相",
+    "戸郷",
+    "山崎",
+    "井上",
+    "岡本",
+    "坂本",
+    "丸",
+    "中田",
+    "梶谷",
+    "浅野",
+    "吉川",
+    "大城",
+    "小林",
+    "菅野",
+    "高橋",
+    "田中",
+    "西舘",
+    "吉田",
+)
+NON_NAME_SPEAKER_LABELS = frozenset(
+    (
+        *GENERIC_PERSON_NOUNS,
+        "大敗",
+        "快勝",
+        "惨敗",
+        "打線",
+    )
+)
+NON_NAME_NAME_TOKENS = frozenset(
+    {
+        *NON_NAME_SPEAKER_LABELS,
+        "巨人",
+        "ジャイアンツ",
+        "今季",
+        "一軍",
+        "二軍",
+        "合流",
+        "登録",
+        "抹消",
+        "復帰",
+        "昇格",
+        "先発",
+        "試合",
+        "結果",
+        "速報",
+        "練習",
+        "公示",
+        "関連情報",
+    }
+)
+_GENERIC_PERSON_NOUN_PATTERN = "|".join(re.escape(noun) for noun in GENERIC_PERSON_NOUNS)
+GENERIC_SUBJECT_START_RE = re.compile(rf"^(?:{_GENERIC_PERSON_NOUN_PATTERN})(?:[、，,\s]|$)")
+GENERIC_SUBJECT_END_RE = re.compile(rf"(?:{_GENERIC_PERSON_NOUN_PATTERN})\s*$")
+NAME_PATTERN_RE = re.compile(
+    r"(?:[一-龯]{2,4}(?:[ァ-ヴー]+|・[一-龯ァ-ヴー]+)?|[A-Z][a-zA-Z]+)"
+    r"(?=(?:が|は|も|の|、|，|,|「|『|[0-9０-９]|$))"
+)
+
 
 def is_supported_subtype(article_subtype: str) -> bool:
     return article_subtype in CONTROLLED_SUBTYPES
@@ -214,6 +289,83 @@ def is_weak_generated_title(title: str) -> tuple[bool, str]:
             return True, f"blacklist_phrase:{phrase}"
     if not any(marker in normalized for marker in WEAK_GENERATED_TITLE_STRONG_MARKERS):
         return True, "no_strong_marker"
+    return False, ""
+
+
+def title_starts_with_particle(title: str) -> bool:
+    stripped = _normalize_title_text(title)
+    if not stripped:
+        return False
+    if LEADING_PARTICLE_RE.match(stripped):
+        return True
+    core = _strip_reserved_prefixes(stripped)
+    return bool(core and LEADING_PARTICLE_RE.match(core))
+
+
+def title_uses_related_info_escape(title: str) -> bool:
+    stripped = _normalize_title_text(title)
+    if not stripped:
+        return False
+    return bool(RELATED_INFO_ESCAPE_RE.search(stripped))
+
+
+def _looks_like_person_name_token(token: str) -> bool:
+    stripped = str(token or "").strip(" ・、，,")
+    if not stripped:
+        return False
+    if stripped in NON_NAME_NAME_TOKENS:
+        return False
+    if stripped.endswith(("情報", "起用", "登録", "抹消", "復帰", "昇格", "先発", "合流", "練習", "速報", "試合", "結果")):
+        return False
+    return True
+
+
+def title_has_person_name_candidate(title: str) -> bool:
+    normalized = _normalize_title_text(title)
+    if not normalized:
+        return False
+    core = _strip_reserved_prefixes(normalized) or normalized
+    if any(marker in core for marker in KNOWN_PERSON_NAME_MARKERS):
+        return True
+    for match in NAME_PATTERN_RE.finditer(core):
+        if _looks_like_person_name_token(match.group(0)):
+            return True
+    return False
+
+
+def title_has_only_generic_subject(title: str) -> bool:
+    """固有人名がなく、generic noun だけが主語になっている title を narrow に検出する。"""
+    normalized = _normalize_title_text(title)
+    if not normalized:
+        return False
+    core = _strip_reserved_prefixes(normalized) or normalized
+    if not any(noun in core for noun in GENERIC_PERSON_NOUNS):
+        return False
+    if title_has_person_name_candidate(core):
+        return False
+    return bool(GENERIC_SUBJECT_START_RE.match(core) or GENERIC_SUBJECT_END_RE.search(core))
+
+
+def is_non_name_speaker_label(value: str) -> bool:
+    normalized = _normalize_title_text(value)
+    if not normalized:
+        return False
+    if title_has_person_name_candidate(normalized):
+        return False
+    return normalized in NON_NAME_SPEAKER_LABELS
+
+
+def is_weak_subject_title(title: str) -> tuple[bool, str]:
+    """対象者名が弱い title を検出する。"""
+    stripped = _normalize_title_text(title)
+    if not stripped:
+        return False, ""
+    if title_starts_with_particle(stripped):
+        return True, "leading_particle_no_subject"
+    if title_uses_related_info_escape(stripped):
+        return True, "related_info_escape"
+    if title_has_only_generic_subject(stripped):
+        return True, "generic_noun_only_no_person_name"
     return False, ""
 
 
@@ -347,9 +499,12 @@ __all__ = [
     "TITLE_PREFIX_BY_SUBTYPE",
     "build_reroll_title",
     "infer_subtype_from_title",
+    "is_non_name_speaker_label",
     "is_weak_generated_title",
+    "is_weak_subject_title",
     "is_supported_subtype",
     "starts_with_sokuho_prefix",
     "starts_with_starmen_prefix",
+    "title_has_person_name_candidate",
     "validate_title_candidate",
 ]

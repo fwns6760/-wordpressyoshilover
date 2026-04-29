@@ -38,7 +38,10 @@ from fact_conflict_guard import (
     detect_title_body_entity_mismatch as _detect_title_body_entity_mismatch,
 )
 from title_validator import build_reroll_title as _build_title_reroll_title
+from title_validator import is_non_name_speaker_label
 from title_validator import is_weak_generated_title
+from title_validator import is_weak_subject_title
+from title_validator import title_has_person_name_candidate
 from title_validator import validate_title_candidate as _validate_title_candidate
 from title_validator import is_supported_subtype as _title_validator_supports_subtype
 from wp_client import WPClient
@@ -5825,6 +5828,41 @@ def _maybe_route_weak_generated_title_review(
             ensure_ascii=False,
         )
     )
+    return _WeakTitleReviewFallback(weak_reason)
+
+
+def _maybe_route_weak_subject_title_review(
+    *,
+    article_subtype: str,
+    rewritten_title: str,
+    original_title: str,
+    source_name: str,
+    logger: logging.Logger,
+    speaker_name: str = "",
+) -> _WeakTitleReviewFallback | None:
+    """生成 title が主語弱化 pattern の場合、review sentinel を返す。"""
+    rewritten = str(rewritten_title or "").strip()
+    original = str(original_title or "").strip()
+    speaker = str(speaker_name or "").strip()
+    if not rewritten or rewritten == original:
+        return None
+    is_weak, weak_reason = is_weak_subject_title(rewritten)
+    speaker_is_non_name = bool(speaker) and is_non_name_speaker_label(speaker)
+    if not is_weak and speaker_is_non_name and not title_has_person_name_candidate(rewritten):
+        is_weak = True
+        weak_reason = "generic_noun_only_no_person_name"
+    if not is_weak:
+        return None
+    payload = {
+        "event": "weak_subject_title_review",
+        "subtype": article_subtype,
+        "title": rewritten,
+        "source_name": source_name,
+        "reason": weak_reason,
+    }
+    if speaker_is_non_name:
+        payload["speaker_name"] = speaker
+    logger.warning(json.dumps(payload, ensure_ascii=False))
     return _WeakTitleReviewFallback(weak_reason)
 
 
@@ -13185,6 +13223,28 @@ def _main(args, logger):
                     article_subtype=title_article_subtype,
                     fail_axes=[f"weak_generated_title:{weak_title_fallback.reason}"],
                     stop_reason="weak_generated_title_review",
+                )
+                continue
+            weak_subject_fallback = _maybe_route_weak_subject_title_review(
+                article_subtype=title_article_subtype,
+                rewritten_title=draft_title,
+                original_title=raw_title,
+                source_name=source_name,
+                logger=logger,
+                speaker_name=manager_subject or notice_subject,
+            )
+            if isinstance(weak_subject_fallback, _WeakTitleReviewFallback):
+                skip_filter += 1
+                skip_reason_counts["post_gen_validate"] += 1
+                _append_skip_reason_sample(skip_reason_sample_titles, "post_gen_validate", draft_title)
+                _log_article_skipped_post_gen_validate(
+                    logger,
+                    title=draft_title,
+                    post_url=post_url,
+                    category=category,
+                    article_subtype=title_article_subtype,
+                    fail_axes=[f"weak_subject_title:{weak_subject_fallback.reason}"],
+                    stop_reason="weak_subject_title_review",
                 )
                 continue
             _log_title_template_selected(logger, post_url, raw_title, draft_title, title_template_key, category, title_article_subtype)

@@ -109,6 +109,27 @@ class TitleValidatorTests(unittest.TestCase):
         self.assertTrue(is_weak)
         self.assertEqual(reason, "title_empty")
 
+    def test_is_weak_subject_title_named_lineup_passes(self):
+        is_weak, reason = title_validator.is_weak_subject_title("吉川尚輝が2番二塁で今季初先発")
+
+        self.assertFalse(is_weak)
+        self.assertEqual(reason, "")
+        self.assertTrue(title_validator.title_has_person_name_candidate("吉川尚輝が2番二塁で今季初先発"))
+
+    def test_is_weak_subject_title_named_pregame_passes(self):
+        is_weak, reason = title_validator.is_weak_subject_title("戸郷翔征が1軍練習に合流")
+
+        self.assertFalse(is_weak)
+        self.assertEqual(reason, "")
+        self.assertFalse(title_validator.is_non_name_speaker_label("阿部監督"))
+
+    def test_is_weak_subject_title_multi_name_passes(self):
+        is_weak, reason = title_validator.is_weak_subject_title("岡本和真4番サード、吉田正尚6番DH")
+
+        self.assertFalse(is_weak)
+        self.assertEqual(reason, "")
+        self.assertTrue(title_validator.is_non_name_speaker_label("チーム"))
+
 
 if __name__ == "__main__":
     unittest.main()

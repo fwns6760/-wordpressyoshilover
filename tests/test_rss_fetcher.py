@@ -388,6 +388,71 @@ def test_source_title_unaffected_when_rewritten_equals_original():
     assert fallback is None
 
 
+def test_weak_subject_title_routes_to_review_for_reserved_prefix_particle():
+    fallback = rss_fetcher._maybe_route_weak_subject_title_review(
+        article_subtype="lineup",
+        rewritten_title="巨人スタメン が「2番・二塁」で今季初先発 遊撃は",
+        original_title="【巨人】吉川尚輝が「2番・二塁」で今季初先発",
+        source_name="報知 巨人",
+        logger=logging.getLogger("rss_fetcher"),
+    )
+
+    assert isinstance(fallback, rss_fetcher._WeakTitleReviewFallback)
+    assert fallback.reason == "leading_particle_no_subject"
+
+
+def test_weak_subject_title_routes_to_review_for_generic_noun_only():
+    fallback = rss_fetcher._maybe_route_weak_subject_title_review(
+        article_subtype="manager",
+        rewritten_title="今季初めて1軍に合流した 投手",
+        original_title="【巨人】戸郷翔征が1軍練習に合流",
+        source_name="報知 巨人",
+        logger=logging.getLogger("rss_fetcher"),
+    )
+
+    assert isinstance(fallback, rss_fetcher._WeakTitleReviewFallback)
+    assert fallback.reason == "generic_noun_only_no_person_name"
+
+
+def test_weak_subject_title_routes_to_review_for_related_info_generic_noun():
+    fallback = rss_fetcher._maybe_route_weak_subject_title_review(
+        article_subtype="player",
+        rewritten_title="選手、登録抹消 関連情報",
+        original_title="【巨人】浅野翔吾が登録抹消",
+        source_name="報知 巨人",
+        logger=logging.getLogger("rss_fetcher"),
+    )
+
+    assert isinstance(fallback, rss_fetcher._WeakTitleReviewFallback)
+    assert fallback.reason == "related_info_escape"
+
+
+def test_weak_subject_title_routes_to_review_for_direct_particle_start():
+    fallback = rss_fetcher._maybe_route_weak_subject_title_review(
+        article_subtype="manager",
+        rewritten_title="が今季初の1軍合流",
+        original_title="【巨人】戸郷翔征が今季初の1軍合流",
+        source_name="報知 巨人",
+        logger=logging.getLogger("rss_fetcher"),
+    )
+
+    assert isinstance(fallback, rss_fetcher._WeakTitleReviewFallback)
+    assert fallback.reason == "leading_particle_no_subject"
+
+
+def test_weak_subject_title_routes_to_review_for_related_info_with_name_present():
+    fallback = rss_fetcher._maybe_route_weak_subject_title_review(
+        article_subtype="manager",
+        rewritten_title="川相、昇格・復帰 関連情報",
+        original_title="【巨人】川相昌弘コーチが昇格・復帰の見通しを説明",
+        source_name="報知 巨人",
+        logger=logging.getLogger("rss_fetcher"),
+    )
+
+    assert isinstance(fallback, rss_fetcher._WeakTitleReviewFallback)
+    assert fallback.reason == "related_info_escape"
+
+
 def test_rule_based_subtype_allowlist_filters_non_permitted_values(monkeypatch):
     monkeypatch.setenv("RULE_BASED_SUBTYPES", "default,lineup,postgame,program,notice,farm")
 

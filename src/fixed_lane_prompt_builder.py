@@ -112,6 +112,8 @@ CONTRACTS: dict[str, FixedLanePromptContract] = {
         fallback_copy=(
             "両軍の数字が片側しか無ければ、無い側は『公式発表待ち』または『source 記載なし』で止める。",
             "投手名が source に無い場合は『先発は公式発表待ち』とし、推測で名前を書かない。",
+            "source/meta にない数字(過去の通算成績、防御率、勝敗数等)を本文に書かない。numeric weak の場合は『公式発表待ち』『source 記載なし』で止める。",
+            "source/meta にない選手名(対戦相手の打者名、控え選手名等)を本文に書かない。先発・予告投手以外の名前は推測で足さない。",
         ),
         validator_subtype="pregame",
     ),

@@ -469,6 +469,112 @@ class BodyValidatorTests(unittest.TestCase):
         self.assertNotIn("farm_result_player_unverified", result["fail_axes"])
         self.assertNotIn("farm_result_numeric_fabrication", result["fail_axes"])
 
+    def test_pregame_score_fabrication_blocks(self):
+        text = "\n".join(
+            [
+                "【変更情報の要旨】",
+                "4月21日の巨人戦は1-2想定で試合前情報を整理する。",
+                "【具体的な変更内容】",
+                "先発見込みと試合前の確認事項をまとめる。",
+                "【この変更が意味すること】",
+                "公式発表待ちの範囲だけを見ていく。",
+            ]
+        )
+
+        result = body_validator.validate_body_candidate(
+            text,
+            "pregame",
+            rendered_html=SOURCE_HTML,
+            source_context={
+                "title": "4月21日 巨人戦の試合前情報",
+                "summary": "4月21日の巨人戦に向けた試合前情報を整理する。",
+            },
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["action"], "fail")
+        self.assertIn("pregame_score_fabrication", result["fail_axes"])
+
+    def test_pregame_pitcher_name_unverified_blocks(self):
+        text = "\n".join(
+            [
+                "【変更情報の要旨】",
+                "4月21日の巨人戦は試合前情報を整理する。",
+                "【具体的な変更内容】",
+                "先発の山田は球数も含めて注目される。",
+                "【この変更が意味すること】",
+                "公式発表が出るまで追加情報を待ちたい。",
+            ]
+        )
+
+        result = body_validator.validate_body_candidate(
+            text,
+            "pregame",
+            rendered_html=SOURCE_HTML,
+            source_context={
+                "title": "4月21日 巨人戦の試合前情報",
+                "summary": "4月21日の巨人戦に向けた試合前情報を整理する。先発は公式発表待ち。",
+            },
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["action"], "fail")
+        self.assertIn("pregame_pitcher_name_unverified", result["fail_axes"])
+
+    def test_pregame_with_full_source_facts_passes(self):
+        text = "\n".join(
+            [
+                "【変更情報の要旨】",
+                "4月21日の巨人対阪神戦は戸郷翔征と村上頌樹の予告先発が発表された。",
+                "【具体的な変更内容】",
+                "先発の戸郷翔征と村上頌樹が公式発表どおり並んだ。",
+                "【この変更が意味すること】",
+                "試合前は両先発の立ち上がりに注目したい。",
+            ]
+        )
+
+        result = body_validator.validate_body_candidate(
+            text,
+            "pregame",
+            rendered_html=SOURCE_HTML,
+            source_context={
+                "title": "4月21日 巨人対阪神の予告先発",
+                "summary": "4月21日の巨人対阪神戦は戸郷翔征と村上頌樹の予告先発が発表された。試合前は両先発の立ち上がりに注目したい。",
+            },
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "accept")
+        self.assertNotIn("pregame_score_fabrication", result["fail_axes"])
+        self.assertNotIn("pregame_pitcher_name_unverified", result["fail_axes"])
+        self.assertNotIn("pregame_lineup_fabrication", result["fail_axes"])
+
+    def test_probable_starter_with_only_official_pitcher_passes(self):
+        text = "\n".join(
+            [
+                "【変更情報の要旨】",
+                "4月21日の巨人戦は戸郷翔征の予告先発が発表された。",
+                "【具体的な変更内容】",
+                "予告先発の戸郷翔征について公式発表の範囲だけを整理する。",
+                "【この変更が意味すること】",
+                "試合前は立ち上がりの内容に注目したい。",
+            ]
+        )
+
+        result = body_validator.validate_body_candidate(
+            text,
+            "probable_starter",
+            rendered_html=SOURCE_HTML,
+            source_context={
+                "title": "4月21日 巨人戦の予告先発",
+                "summary": "4月21日の巨人戦は戸郷翔征の予告先発が発表された。",
+            },
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "accept")
+        self.assertNotIn("pregame_pitcher_name_unverified", result["fail_axes"])
+
 
 class BodyValidatorSourceAttributionTests(unittest.TestCase):
     @staticmethod

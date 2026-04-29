@@ -36,7 +36,7 @@ Active folder is intentionally narrow after the template / numeric hallucination
 
 | bucket | tickets | decision |
 |---|---|---|
-| **run now** | `234-impl-7-probable-starter-pregame-body-hardening.md` | still needed. This is the remaining template hardening gap for pregame / probable starter articles. |
+| **ready for live handoff** | `234-impl-7-probable-starter-pregame-body-hardening.md` | repo implementation + targeted tests are done; next step is image rebuild / live observation decision. |
 | **keep active** | `229-gemini-cost-governor-and-llm-call-reduction.md` | still needed as the cost-reduction parent; next action depends on fetcher 100% / ledger observation. |
 | **waiting** | `205-gcp-runtime-drift-audit.md`, `238-night-draft-only-and-morning-decision-report.md` | still useful, but not part of the immediate article-body hallucination fix. |
 | **closed / archived** | `234-impl-1..6`, `242 parent`, `242-B`, `243`, `244`, `244-B`, `244-followup`, `244-B-followup` | implemented and/or superseded by `cf8ecb9` live bundle; no longer active work. |

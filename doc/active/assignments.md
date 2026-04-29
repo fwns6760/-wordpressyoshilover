@@ -12,7 +12,7 @@
 
 | ticket | status | 判定 | 次 action |
 |---|---|---|---|
-| **234-impl-7 probable_starter / pregame body hardening** | READY | **必要。いま動かす** | Codex B。試合前・予告先発系で、source/meta にないスコア・打順・投手名を本文へ足さない post-gen check を追加する |
+| **234-impl-7 probable_starter / pregame body hardening** | READY_FOR_AUTH_EXECUTOR | **必要。repo実装済み** | 試合前・予告先発系の source anchor / post-gen check 実装済み。次は image rebuild 判断 |
 | **229 Gemini cost governor + LLM call reduction** | REVIEW_NEEDED | **必要。継続監視** | fetcher 100% 後の Gemini call / skip / ledger を見て、229-C prompt compression をやるか決める |
 | **OPERATING_LOCK** | ACTIVE_LOCK | **必要。常時参照** | 事故防止ルール。変更は慎重に、src 実装とは混ぜない |
 | **assignments** | ACTIVE_BOARD | **必要。現在地** | 本ファイル。active を増やしすぎない |
@@ -45,7 +45,7 @@
 
 ## いま動かす指示
 
-### Codex B: 234-impl-7 を実装
+### 234-impl-7: repo 実装済み、live 反映待ち
 
 目的:
 
@@ -77,11 +77,12 @@ acceptance:
 - 既存 fixture fail 0
 - live deploy は別判断
 
-### Claude: live 監視のみ継続
+### Claude: live 監視 + rebuild 判断
 
 - fetcher / guarded-publish / publish-notice / draft-body-editor の failure pattern を監視
 - `ModuleNotFoundError`, `Traceback`, HTTP 500, timeout, exit(1) は即 rollback 判断
 - WP publish / draft patch / env / Scheduler / Secret / RUN_DRAFT_ONLY は勝手に変更しない
+- 234-impl-7 の live 反映時は fetcher / draft-body-editor image rebuild を検討し、/run 直接 curl は使わない
 
 ## 役割
 

@@ -1,16 +1,22 @@
 ---
 ticket: 234-impl-7
 title: 234 contract 反映(probable_starter / pregame の本文 hardening)
-status: READY
+status: READY_FOR_AUTH_EXECUTOR
 owner: Codex B
 priority: P1
 lane: B
-ready_for: codex_b_fire
+ready_for: image_rebuild_after_commit
 created: 2026-04-29
 related: 234-impl-5 (postgame body hardening、CLOSED)、234-impl-6 (farm body hardening、CLOSED)
 ---
 
 ## 背景
+
+2026-04-29 update:
+
+- implementation landed in repo worktree and targeted tests passed
+- live反映は fetcher / draft-body-editor image rebuild 側の判断に分離
+- env / Scheduler / Secret / WP / RUN_DRAFT_ONLY は変更しない
 
 234-impl-5/6 で postgame / farm_result / farm_lineup の本文 hardening 完了。
 234-impl-7 は **試合前系**(probable_starter / pregame)に同 pattern narrow 適用。

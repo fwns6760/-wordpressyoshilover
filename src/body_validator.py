@@ -76,6 +76,9 @@ HARD_FAIL_AXES = {
     "postgame_decisive_event_missing",
     "postgame_first_team_player_unverified",
     "postgame_first_team_score_fabrication",
+    "pregame_score_fabrication",
+    "pregame_pitcher_name_unverified",
+    "pregame_lineup_fabrication",
 }
 
 POSTGAME_RESULT_HEADING = "【試合結果】"
@@ -101,6 +104,11 @@ _FARM_POSITIVE_MARKER_RE = re.compile(r"(二軍|三軍|ファーム|farm|Farm|FA
 _LINEUP_MARKER_RE = re.compile(r"(1番|2番|3番|4番|5番|先発|スタメン)")
 _SCORE_TOKEN_RE = re.compile(r"\d+\s*(?:[－\-–]|対)\s*\d+")
 _NAME_TOKEN_RE = re.compile(r"[一-龥々ァ-ヴーA-Za-z]{2,10}")
+_LINEUP_FABRICATION_MARKER_RE = re.compile(r"(1番|2番|3番|4番|5番)")
+_PREGAME_PITCHER_NAME_RE = re.compile(
+    r"(?:予告先発|予定先発|先発)の([一-龥々ァ-ヴーA-Za-z]{2,10})|"
+    r"([一-龥々ァ-ヴーA-Za-z]{2,10})(?:が|は)(?:予告先発|予定先発|先発)"
+)
 _FIRST_TEAM_POSTGAME_NAME_KEYWORDS = ("決勝打", "先発", "好投", "本塁打")
 _GENERIC_NAME_EXCLUSIONS = frozenset(
     {
@@ -318,6 +326,57 @@ def _is_farm_lineup_article(title: str, body_text: str, subtype: str) -> bool:
     return bool(_FARM_POSITIVE_MARKER_RE.search(blob))
 
 
+def _is_pregame_or_probable_starter(title: str, body_text: str, subtype: str) -> bool:
+    del title, body_text
+    normalized = str(subtype or "").strip().lower()
+    return normalized in {"pregame", "probable_starter"}
+
+
+def _validate_pregame_anchor(
+    title: str,
+    body_text: str,
+    source_context: dict[str, object] | None,
+    subtype: str,
+) -> list[str]:
+    def _is_probable_pregame_name(token: str) -> bool:
+        candidate = str(token or "").strip()
+        if not _is_probable_name_token(candidate):
+            return False
+        if any(
+            marker in candidate
+            for marker in ("先発", "予告", "試合前", "変更", "情報", "内容", "意味", "見込", "公式", "発表", "整理", "要旨", "範囲")
+        ):
+            return False
+        return not candidate.endswith("戦")
+
+    fail_axes: list[str] = []
+    if not _is_pregame_or_probable_starter(title, body_text, subtype):
+        return fail_axes
+
+    source_blob = " ".join(_source_ref_texts(source_context or {}))
+
+    if not source_blob.strip():
+        return fail_axes
+
+    body_scores = {_normalize_score_token(match.group(0)) for match in _SCORE_TOKEN_RE.finditer(body_text)}
+    source_scores = {_normalize_score_token(match.group(0)) for match in _SCORE_TOKEN_RE.finditer(source_blob)}
+    if body_scores - source_scores:
+        fail_axes.append("pregame_score_fabrication")
+
+    for match in _PREGAME_PITCHER_NAME_RE.finditer(body_text):
+        name = next((group for group in match.groups() if group), "")
+        if not _is_probable_pregame_name(name):
+            continue
+        if name not in source_blob:
+            fail_axes.append("pregame_pitcher_name_unverified")
+            break
+
+    if _LINEUP_FABRICATION_MARKER_RE.search(body_text) and not _LINEUP_FABRICATION_MARKER_RE.search(source_blob):
+        fail_axes.append("pregame_lineup_fabrication")
+
+    return fail_axes
+
+
 def _validate_farm_result_anchor(
     title: str,
     body_text: str,
@@ -510,6 +569,8 @@ def validate_body_candidate(
     expected = list(expected_block_order(article_subtype))
     if not expected:
         fail_axes: list[str] = []
+        if article_subtype in ("pregame", "probable_starter"):
+            fail_axes.extend(_validate_pregame_anchor(title, body_text, source_context, article_subtype))
         if article_subtype == "farm_result":
             fail_axes.extend(_validate_farm_result_anchor(title, body_text, source_context))
         elif article_subtype == "farm_lineup":
@@ -595,6 +656,9 @@ def validate_body_candidate(
             attribution_fail_axis = str(attribution_validation.get("fail_axis") or "")
             if attribution_fail_axis:
                 fail_axes.append(attribution_fail_axis)
+
+    if article_subtype in ("pregame", "probable_starter"):
+        fail_axes.extend(_validate_pregame_anchor(title, body_text, source_context, article_subtype))
 
     if has_fact_conflict_context:
         apply_game_result_conflict_guard = article_subtype in GAME_RESULT_CONTEXT_SUBTYPES or (

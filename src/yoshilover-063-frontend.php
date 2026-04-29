@@ -526,7 +526,7 @@ function yoshilover_063_get_sidebar_category_links( $limit = 6 ) {
             continue;
         }
 
-        if ( in_array( $category->slug, array( 'uncategorized', 'old-articles' ), true ) ) {
+        if ( in_array( $category->slug, array( 'uncategorized', 'old-articles', 'auto-post' ), true ) ) {
             continue;
         }
 
@@ -2404,7 +2404,7 @@ function yoshilover_063_front_density_primary_player( $post ) {
 
     $term_groups = array(
         get_the_tags( $post->ID ),
-        get_the_category( $post->ID ),
+        yoshilover_063_filter_front_category_terms( get_the_category( $post->ID ) ),
     );
 
     foreach ( $term_groups as $terms ) {
@@ -2746,10 +2746,30 @@ function yoshilover_063_is_gameish_subtype( $subtype ) {
     );
 }
 
+function yoshilover_063_filter_front_category_terms( $terms ) {
+    if ( ! is_array( $terms ) ) {
+        return array();
+    }
+
+    return array_values(
+        array_filter(
+            $terms,
+            function( $term ) {
+                return $term instanceof WP_Term
+                    && ! in_array( (string) $term->slug, array( 'auto-post' ), true );
+            }
+        )
+    );
+}
+
 function yoshilover_063_get_post_term_names( $post_id, $taxonomy ) {
     $terms = wp_get_post_terms( (int) $post_id, (string) $taxonomy );
     if ( is_wp_error( $terms ) || ! is_array( $terms ) ) {
         return array();
+    }
+
+    if ( 'category' === (string) $taxonomy ) {
+        $terms = yoshilover_063_filter_front_category_terms( $terms );
     }
 
     $names = array();

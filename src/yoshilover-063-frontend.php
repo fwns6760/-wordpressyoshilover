@@ -1437,6 +1437,7 @@ add_filter( 'the_content', 'yoshilover_063_auto_inject_article_bundles', 21 );
 add_filter( 'the_content', 'yoshilover_063_auto_inject_manual_x_share_corner', 22 );
 add_filter( 'the_content', 'yoshilover_063_auto_inject_x_follow_cta', 22 );
 add_filter( 'the_content', 'yoshilover_063_auto_inject_article_bottom_ad_slot', 23 );
+add_filter( 'the_content', 'yoshilover_063_inject_same_game_articles', 50 );
 add_filter( 'the_content', 'yoshilover_063_auto_prepend_meta_line', 5 );
 
 function yoshilover_063_is_singular_post_content_context() {
@@ -1720,6 +1721,67 @@ function yoshilover_063_auto_inject_article_bundles( $content ) {
     }
 
     return $content . $bundles;
+}
+
+function yoshilover_063_render_same_game_articles_box( $post_id ) {
+    if ( ! is_singular( 'post' ) ) {
+        return '';
+    }
+
+    $items = yoshilover_063_get_same_game_articles( $post_id, 5 );
+    if ( empty( $items ) ) {
+        return '';
+    }
+
+    $style = '<style>
+        .yoshi-front-same-game-articles { margin: 24px 0; padding: 16px; background: #f7f7f9; border-radius: 8px; }
+        .yoshi-front-same-game-articles__heading { font-size: 16px; font-weight: 700; margin: 0 0 12px; }
+        .yoshi-front-same-game-articles__list { list-style: none; padding: 0; margin: 0; }
+        .yoshi-front-same-game-articles__item { padding: 8px 0; border-bottom: 1px solid #e5e5e5; }
+        .yoshi-front-same-game-articles__item:last-child { border-bottom: 0; }
+        .yoshi-front-same-game-articles__label { display: inline-block; padding: 2px 8px; background: #fff; border-radius: 4px; font-size: 12px; margin-right: 8px; }
+        .yoshi-front-same-game-articles__time { color: #666; font-size: 12px; margin-right: 8px; }
+        .yoshi-front-same-game-articles__title { font-size: 14px; }
+        @media (max-width: 480px) {
+            .yoshi-front-same-game-articles__item { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+        }
+    </style>';
+
+    $html  = $style . '<aside class="yoshi-front-same-game-articles" aria-label="この試合の関連記事">';
+    $html .= '<h3 class="yoshi-front-same-game-articles__heading">この試合の関連記事</h3>';
+    $html .= '<ul class="yoshi-front-same-game-articles__list">';
+
+    foreach ( $items as $item ) {
+        $html .= '<li class="yoshi-front-same-game-articles__item">';
+        if ( ! empty( $item['subtype_label'] ) ) {
+            $html .= '<span class="yoshi-front-same-game-articles__label">' . esc_html( $item['subtype_label'] ) . '</span>';
+        }
+        $html .= '<span class="yoshi-front-same-game-articles__time">' . esc_html( $item['time'] ) . '</span>';
+        $html .= '<a class="yoshi-front-same-game-articles__title" href="' . esc_url( $item['url'] ) . '">' . esc_html( $item['title'] ) . '</a>';
+        $html .= '</li>';
+    }
+
+    $html .= '</ul>';
+    $html .= '</aside>';
+
+    return $html;
+}
+
+function yoshilover_063_inject_same_game_articles( $content ) {
+    if ( ! is_singular( 'post' ) || ! in_the_loop() || ! is_main_query() ) {
+        return $content;
+    }
+
+    if ( false !== strpos( (string) $content, 'yoshi-front-same-game-articles' ) ) {
+        return $content;
+    }
+
+    $box = yoshilover_063_render_same_game_articles_box( get_the_ID() );
+    if ( $box === '' ) {
+        return $content;
+    }
+
+    return $content . $box;
 }
 
 /**
@@ -3320,6 +3382,195 @@ function yoshilover_063_filter_front_category_terms( $terms ) {
             }
         )
     );
+}
+
+function yoshilover_063_resolve_game_key( $post ) {
+    if ( ! ( $post instanceof WP_Post ) ) {
+        return null;
+    }
+
+    $game_id = yoshilover_063_first_non_empty_meta( $post->ID, array( 'game_id', '_game_id' ) );
+    if ( $game_id !== '' ) {
+        return array(
+            'key'    => (string) $game_id,
+            'source' => 'meta',
+        );
+    }
+
+    $blob     = trim( (string) $post->post_title . ' ' . (string) $post->post_excerpt );
+    $opponent = yoshilover_063_front_density_extract_opponent( $blob );
+    if ( $opponent === '' ) {
+        return null;
+    }
+
+    return array(
+        'key'    => get_the_date( 'Ymd', $post ) . ':' . $opponent,
+        'source' => 'pseudo',
+    );
+}
+
+function yoshilover_063_get_same_game_articles( $post_id, $limit = 5 ) {
+    $post_id      = (int) $post_id;
+    $limit        = max( 1, (int) $limit );
+    $current_post = get_post( $post_id );
+    if ( ! ( $current_post instanceof WP_Post ) || $current_post->post_type !== 'post' ) {
+        return array();
+    }
+
+    $current_text    = yoshilover_063_front_density_text( $current_post );
+    $current_subtype = yoshilover_063_resolve_front_density_subtype( $current_post, $current_text );
+    if ( ! yoshilover_063_is_gameish_subtype( $current_subtype ) ) {
+        return array();
+    }
+
+    $game_key = yoshilover_063_resolve_game_key( $current_post );
+    if ( ! is_array( $game_key ) || empty( $game_key['key'] ) ) {
+        return array();
+    }
+
+    $items            = array();
+    $current_blob     = trim( (string) $current_post->post_title . ' ' . (string) $current_post->post_excerpt );
+    $current_opponent = yoshilover_063_front_density_extract_opponent( $current_blob );
+    $current_date_key = get_the_date( 'Ymd', $current_post );
+
+    if ( $game_key['source'] === 'meta' ) {
+        $meta_query = new WP_Query(
+            array(
+                'post_type'              => 'post',
+                'post_status'            => 'publish',
+                'posts_per_page'         => $limit + 5,
+                'post__not_in'           => array( $post_id ),
+                'ignore_sticky_posts'    => true,
+                'no_found_rows'          => true,
+                'update_post_meta_cache' => true,
+                'update_post_term_cache' => true,
+                'meta_query'             => array(
+                    'relation' => 'OR',
+                    array(
+                        'key'     => 'game_id',
+                        'value'   => (string) $game_key['key'],
+                        'compare' => '=',
+                    ),
+                    array(
+                        'key'     => '_game_id',
+                        'value'   => (string) $game_key['key'],
+                        'compare' => '=',
+                    ),
+                ),
+                'orderby'                => 'date',
+                'order'                  => 'DESC',
+            )
+        );
+
+        foreach ( $meta_query->posts as $candidate ) {
+            if ( ! ( $candidate instanceof WP_Post ) ) {
+                continue;
+            }
+            $items[ $candidate->ID ] = $candidate;
+            if ( count( $items ) >= $limit ) {
+                break;
+            }
+        }
+    }
+
+    if (
+        count( $items ) < $limit &&
+        $current_opponent !== '' &&
+        preg_match( '/^(\d{4})(\d{2})(\d{2})$/', (string) $current_date_key, $date_parts )
+    ) {
+        $date_query = new WP_Query(
+            array(
+                'post_type'              => 'post',
+                'post_status'            => 'publish',
+                'posts_per_page'         => $limit + 5,
+                'post__not_in'           => array_values(
+                    array_unique(
+                        array_merge(
+                            array( $post_id ),
+                            array_map( 'intval', array_keys( $items ) )
+                        )
+                    )
+                ),
+                'ignore_sticky_posts'    => true,
+                'no_found_rows'          => true,
+                'update_post_meta_cache' => true,
+                'update_post_term_cache' => true,
+                'date_query'             => array(
+                    array(
+                        'year'  => (int) $date_parts[1],
+                        'month' => (int) $date_parts[2],
+                        'day'   => (int) $date_parts[3],
+                    ),
+                ),
+                's'                      => $current_opponent,
+                'orderby'                => 'date',
+                'order'                  => 'DESC',
+            )
+        );
+
+        foreach ( $date_query->posts as $candidate ) {
+            if ( ! ( $candidate instanceof WP_Post ) || isset( $items[ $candidate->ID ] ) ) {
+                continue;
+            }
+
+            $candidate_blob     = trim( (string) $candidate->post_title . ' ' . (string) $candidate->post_excerpt );
+            $candidate_opponent = yoshilover_063_front_density_extract_opponent( $candidate_blob );
+            if ( $candidate_opponent !== $current_opponent ) {
+                continue;
+            }
+
+            $candidate_date_key = get_the_date( 'Ymd', $candidate );
+            if ( $candidate_date_key !== $current_date_key ) {
+                continue;
+            }
+
+            $candidate_game_id = yoshilover_063_first_non_empty_meta( $candidate->ID, array( 'game_id', '_game_id' ) );
+            if (
+                $game_key['source'] === 'meta' &&
+                $candidate_game_id !== '' &&
+                $candidate_game_id !== (string) $game_key['key']
+            ) {
+                continue;
+            }
+
+            $items[ $candidate->ID ] = $candidate;
+            if ( count( $items ) >= $limit ) {
+                break;
+            }
+        }
+    }
+
+    $filtered = array();
+    foreach ( $items as $candidate ) {
+        $candidate_text = yoshilover_063_front_density_text( $candidate );
+        $subtype        = yoshilover_063_resolve_front_density_subtype( $candidate, $candidate_text );
+        if ( ! yoshilover_063_is_gameish_subtype( $subtype ) ) {
+            continue;
+        }
+
+        $terms = wp_get_post_terms( $candidate->ID, 'category' );
+        if ( is_wp_error( $terms ) ) {
+            $terms = array();
+        }
+        $filtered_terms = yoshilover_063_filter_front_category_terms( $terms );
+        if ( ! empty( $terms ) && empty( $filtered_terms ) ) {
+            continue;
+        }
+
+        $filtered[] = array(
+            'post'          => $candidate,
+            'subtype'       => $subtype,
+            'subtype_label' => yoshilover_063_subtype_reader_label( $subtype ),
+            'time'          => get_the_date( 'H:i', $candidate ),
+            'url'           => get_permalink( $candidate ),
+            'title'         => get_the_title( $candidate ),
+        );
+        if ( count( $filtered ) >= $limit ) {
+            break;
+        }
+    }
+
+    return $filtered;
 }
 
 function yoshilover_063_get_post_term_names( $post_id, $taxonomy ) {

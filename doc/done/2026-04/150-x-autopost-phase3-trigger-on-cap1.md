@@ -1,5 +1,10 @@
 # 150 x-autopost-phase3-trigger-on-cap1
 
+## dropped note(2026-04-29)
+
+- status: DROPPED
+- reason: Dropped. X API trigger/cap rollout is obsolete under the GPTs/manual posting policy.
+
 ## meta
 
 - number: 150

@@ -1,12 +1,17 @@
 # 128 sns-topic-auto-publish-through-pub004
 
+## dropped note(2026-04-29)
+
+- status: DROPPED
+- reason: Dropped for now. SNS/X-derived auto-publish expansion is not part of the current low-cost, low-hallucination plan.
+
 ## meta
 
 - number: 128
 - owner: Codex A / Claude orchestration
 - lane: A
 - priority: P1
-- status: PARKED
+- status: DROPPED
 - blocked_by: 127 close + PUB-004 readiness + **180 SNS lane separation 完了**(2026-04-26 追加、180 で SNS 判定 5 種 / reject 条件 / X 投稿境界 明文化が前提)
 - parent: 127 / PUB-004 / PUB-002-A / 180
 - created: 2026-04-26

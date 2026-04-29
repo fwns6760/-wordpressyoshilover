@@ -1,12 +1,17 @@
 # 147 x-autopost-phased-resume
 
+## dropped note(2026-04-29)
+
+- status: DROPPED
+- reason: Dropped. X API automatic posting is no longer part of the active plan; X wording and posting are handled by GPTs plus manual user posting.
+
 ## meta
 
 - number: 147
 - alias: PUB-005-resume / 120-122 統合
 - owner: Claude Code(orchestration)/ Codex A(env / smoke 実装)
 - type: ops / X live post 段階解禁
-- status: PARKED(X API live automation paused; manual X posting via GPTs/Gmail flow is current)
+- status: DROPPED(X API live automation paused; manual X posting via GPTs/Gmail flow is current)
 - priority: P0.5(MVP 公開後拡散導線、X 復活)
 - lane: A
 - created: 2026-04-26

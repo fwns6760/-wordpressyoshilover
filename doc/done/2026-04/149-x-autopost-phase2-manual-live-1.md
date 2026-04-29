@@ -1,5 +1,10 @@
 # 149 x-autopost-phase2-manual-live-1
 
+## dropped note(2026-04-29)
+
+- status: DROPPED
+- reason: Dropped. Live X posting phase is obsolete under the GPTs/manual posting policy.
+
 ## meta
 
 - number: 149

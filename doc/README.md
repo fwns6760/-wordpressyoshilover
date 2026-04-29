@@ -354,15 +354,15 @@ Current lane lock(2026-04-28 JST):
 
 - **alias**: PUB-005-B
 - **priority**: P1
-- **status**: PARKED(umbrella; child tickets 119-122 govern execution)
+- **status**: **DROPPED**(X API automatic posting is no longer active; GPTs + manual posting is the policy)
 - **owner**: Claude Code / Codex A or B per child ticket
 - **lane**: either
 - **ready_for**: none
-- **next_action**: execute child tickets in order: 119 -> 120 -> 121 -> 122
-- **blocked_by**: 119/120 prerequisites and one-time live unlock at 121
-- **user_action_required**: only for 121 X live unlock / credential boundary
+- **next_action**: none; keep X API live posting off
+- **blocked_by**: current policy: GPTs/manual X posting only
+- **user_action_required**: none
 - **write_scope**: umbrella only; child tickets define concrete write scopes
-- **doc_path**: `doc/waiting/PUB-005-x-post-gate.md`
+- **doc_path**: `doc/done/2026-04/PUB-005-x-post-gate.md`
 - **acceptance**: Green-only controlled autopost path is split into safe child tickets; no direct 114 fire
 - **repo_state**: parent doc-first exists
 - **commit_state**: committed doc
@@ -475,15 +475,15 @@ Current lane lock(2026-04-28 JST):
 
 - **alias**: PUB-005-A3
 - **priority**: P1
-- **status**: PARKED
+- **status**: **DROPPED**(X API automatic queue is obsolete under GPTs/manual posting)
 - **owner**: Codex A or either after 119 close
 - **lane**: A/either
 - **ready_for**: none
-- **next_action**: wait for 119 close, then queue eligible + 107 template candidates with candidate_hash dedup
-- **blocked_by**: 119 close
+- **next_action**: none
+- **blocked_by**: current policy: GPTs/manual X posting only
 - **user_action_required**: none
 - **write_scope**: `src/x_post_autopost_queue.py`, `src/tools/run_x_post_autopost_queue.py`, `tests/test_x_post_autopost_queue.py`
-- **doc_path**: `doc/waiting/120-x-post-autopost-queue-and-ledger.md`
+- **doc_path**: `doc/done/2026-04/120-x-post-autopost-queue-and-ledger.md`
 - **acceptance**: queue/ledger fields present, duplicate queue/post prevented, dry-run summary, X API zero
 - **repo_state**: doc exists
 - **commit_state**: current X ticket sync commit
@@ -495,15 +495,15 @@ Current lane lock(2026-04-28 JST):
 
 - **alias**: PUB-005-B1
 - **priority**: P1
-- **status**: BLOCKED_USER
+- **status**: **DROPPED**(X live helper is obsolete under GPTs/manual posting)
 - **owner**: Codex A after user unlock
 - **lane**: A
 - **ready_for**: none
-- **next_action**: wait for 120 close + one-time X live unlock / credential boundary
-- **blocked_by**: X live unlock / credential boundary / 120 close
-- **user_action_required**: explicit one-time X live unlock before implementation or live smoke
+- **next_action**: none; do not unlock X live posting
+- **blocked_by**: current policy: GPTs/manual X posting only
+- **user_action_required**: none
 - **write_scope**: `src/x_post_live_helper.py`, `src/tools/run_x_post_live_helper.py`, `tests/test_x_post_live_helper.py`
-- **doc_path**: `doc/waiting/121-x-post-live-helper-one-shot-smoke.md`
+- **doc_path**: `doc/done/2026-04/121-x-post-live-helper-one-shot-smoke.md`
 - **acceptance**: dry-run default, `--live` required, one candidate only, ledger updated on success, duplicate refused, secret values never printed
 - **repo_state**: doc exists
 - **commit_state**: current X ticket sync commit
@@ -515,15 +515,15 @@ Current lane lock(2026-04-28 JST):
 
 - **alias**: PUB-005-C
 - **priority**: P1.5
-- **status**: PARKED
+- **status**: **DROPPED**(controlled X autopost rollout is obsolete under GPTs/manual posting)
 - **owner**: Codex A after 121 smoke success
 - **lane**: A
 - **ready_for**: none
-- **next_action**: wait for 121 smoke success, then start daily cap 1 controlled rollout
-- **blocked_by**: 121 smoke success
+- **next_action**: none
+- **blocked_by**: current policy: GPTs/manual X posting only
 - **user_action_required**: none after 121 one-time unlock unless cron/live policy changes
 - **write_scope**: `src/x_post_controlled_rollout.py`, `src/tools/run_x_post_controlled_rollout.py`, `tests/test_x_post_controlled_rollout.py`
-- **doc_path**: `doc/waiting/122-x-post-controlled-autopost-rollout.md`
+- **doc_path**: `doc/done/2026-04/122-x-post-controlled-autopost-rollout.md`
 - **acceptance**: daily cap enforced, duplicate prevented, refusal/failure reasons recorded, Green-only gate cannot be bypassed
 - **repo_state**: doc exists
 - **commit_state**: current X ticket sync commit
@@ -636,15 +636,15 @@ Current lane lock(2026-04-28 JST):
 
 - **alias**: -
 - **priority**: P1
-- **status**: PARKED
+- **status**: **DROPPED**(SNS/X-derived auto-publish expansion is not current scope)
 - **owner**: Codex A / Claude orchestration after 127 close
 - **lane**: A
 - **ready_for**: none
-- **next_action**: wait for **180 SNS lane separation 完了** + 123 readiness re-run + 105 ramp stabilization, then publish source-rechecked drafts through PUB-004 gate
-- **blocked_by**: **180 SNS lane separation 完了** + 123 readiness re-run + 105 ramp stabilization
+- **next_action**: none; recreate only if SNS intake becomes a deliberate source strategy again
+- **blocked_by**: current policy: reduce LLM/X cost and avoid hallucination expansion
 - **user_action_required**: none per article once 127/128 automation is activated; no raw SNS direct publish
 - **write_scope**: `src/sns_topic_publish_bridge.py`, `src/tools/run_sns_topic_publish_bridge.py`, `tests/test_sns_topic_publish_bridge.py`
-- **doc_path**: `doc/waiting/128-sns-topic-auto-publish-through-pub004.md`
+- **doc_path**: `doc/done/2026-04/128-sns-topic-auto-publish-through-pub004.md`
 - **acceptance**: 127 source-rechecked drafts only, PUB-004 evaluator mandatory, Red refused, dry-run would_publish visible, live respects PUB-004 caps/history/backup
 - **repo_state**: doc exists
 - **commit_state**: pending SNS topic sync
@@ -656,15 +656,15 @@ Current lane lock(2026-04-28 JST):
 
 - **alias**: -
 - **priority**: **P0.5**
-- **status**: **READY**(doc-only 整理、即着手可)
+- **status**: **DROPPED**(old SNS-to-X-autopost boundary is obsolete)
 - **owner**: Claude Code(設計 / 起票)/ Codex B(必要時実装、本 ticket は doc-only)
 - **lane**: B
-- **ready_for**: doc-only 着手
-- **next_action**: SNS 入口 lane(126/127/128)と X 出口 lane(PUB-005 / 147-175)の境界を明文化、判定 5 種 / reject 条件 / SNS 由来記事の X 自動投稿境界を固定
-- **blocked_by**: none
+- **ready_for**: none
+- **next_action**: none
+- **blocked_by**: current policy: X output is GPTs/manual
 - **user_action_required**: none(doc-only、code 変更なし)
-- **write_scope**: `doc/waiting/180-sns-topic-intake-to-publish-lane-separation.md` + `doc/README.md`(本セクション)+ `doc/active/assignments.md` + `doc/waiting/128-...md`(blocked_by 追記)+ `doc/waiting/PUB-005-x-post-gate.md`(SNS 由来記事の X 自動投稿境界 追記)
-- **doc_path**: `doc/waiting/180-sns-topic-intake-to-publish-lane-separation.md`
+- **write_scope**: `doc/done/2026-04/180-sns-topic-intake-to-publish-lane-separation.md` + `doc/README.md`(本セクション)+ `doc/active/assignments.md` + `doc/waiting/128-...md`(blocked_by 追記)+ `doc/done/2026-04/PUB-005-x-post-gate.md`(SNS 由来記事の X 自動投稿境界 追記)
+- **doc_path**: `doc/done/2026-04/180-sns-topic-intake-to-publish-lane-separation.md`
 - **acceptance**: 180 doc 作成 / README 180 row / assignments 180 row / 128 blocked_by に 180 / PUB-005 に SNS 由来記事の X 自動投稿境界記述 / code/WP/X/mail/env 一切触らず
 - **repo_state**: doc 配置済
 - **commit_state**: doc-only commit 予定
@@ -1212,15 +1212,15 @@ Current lane lock(2026-04-28 JST):
 
 - **alias**: `MKT-008`
 - **priority**: P0.5
-- **status**: REOPENED(225 本体 `873fcf0` 着地、225-A safety fix 進行中 `bss84x1u1`)
+- **status**: **DROPPED**(X candidate wording is handled by GPTs)
 - **owner**: Codex B
 - **lane**: marketing / mail body
-- **ready_for**: 225-A 完了後 publish-notice rebuild(authenticated executor)
-- **next_action**: 225-A safety fix(x_post_ready=false で本文表示抑止)→ rebuild + Job update
-- **blocked_by**: none
-- **user_action_required**: 225-A 完了後の publish-notice rebuild 判断
+- **ready_for**: none
+- **next_action**: none
+- **blocked_by**: current policy: GPTs owns X wording
+- **user_action_required**: none
 - **write_scope**: `src/publish_notice_email_sender.py` + tests
-- **doc_path**: `doc/marketing/active/MKT-008-x-post-candidate-text-quality-hardening.md`
+- **doc_path**: `doc/marketing/done/2026-04/MKT-008-x-post-candidate-text-quality-hardening.md`
 - **acceptance**: 225 本体(整形 + sensitive 抑止)+ 225-A(x_post_ready=false 本文非表示)、内部生成 logic 不変
 - **repo_state**: 225 本体 push 済、225-A impl 進行中
 - **commit_state**: `873fcf0`(本体)、225-A は `bss84x1u1` 着地予定
@@ -1655,13 +1655,13 @@ git add -A禁止。
 - `doc/done/2026-04/PUB-002-B-missing-primary-source-publish-blocker-reduction.md`
 - `doc/done/2026-04/PUB-002-C-subtype-unresolved-publish-blocker-reduction.md`
 - `doc/done/2026-04/PUB-002-D-long-body-draft-compression-or-exclusion-policy.md`
-- `doc/waiting/PUB-005-x-post-gate.md`
+- `doc/done/2026-04/PUB-005-x-post-gate.md`
 - `doc/119-x-post-eligibility-evaluator.md`
-- `doc/120-x-post-autopost-queue-and-ledger.md`
-- `doc/121-x-post-live-helper-one-shot-smoke.md`
-- `doc/122-x-post-controlled-autopost-rollout.md`
+- `doc/done/2026-04/120-x-post-autopost-queue-and-ledger.md`
+- `doc/done/2026-04/121-x-post-live-helper-one-shot-smoke.md`
+- `doc/done/2026-04/122-x-post-controlled-autopost-rollout.md`
 - `doc/125-adsense-manual-ad-unit-embed.md`
 - `doc/126-sns-topic-fire-intake-dry-run.md`
 - `doc/127-sns-topic-source-recheck-and-draft-builder.md`
-- `doc/128-sns-topic-auto-publish-through-pub004.md`
+- `doc/done/2026-04/128-sns-topic-auto-publish-through-pub004.md`
 - `doc/HALLUC-LANE-002-llm-based-fact-check-augmentation.md`

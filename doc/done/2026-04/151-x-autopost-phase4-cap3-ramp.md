@@ -1,12 +1,17 @@
 # 151 x-autopost-phase4-cap3-ramp
 
+## dropped note(2026-04-29)
+
+- status: DROPPED
+- reason: Dropped. X API ramp-up is obsolete under the GPTs/manual posting policy.
+
 ## meta
 
 - number: 151
 - alias: 147-Phase4
 - owner: Claude Code / Codex A
 - type: ops / X auto-post daily cap 1 → 3 ramp
-- status: PARKED(150 + 7 日 stable 後 fire)
+- status: DROPPED(150 + 7 日 stable 後 fire)
 - priority: P1
 - lane: Claude / A
 - created: 2026-04-26

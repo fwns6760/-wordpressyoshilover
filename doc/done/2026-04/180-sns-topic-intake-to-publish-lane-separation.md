@@ -1,5 +1,10 @@
 # 180 SNS topic intake to publish lane separation(doc-only 整理)
 
+## dropped note(2026-04-29)
+
+- status: DROPPED
+- reason: Dropped for now. The old SNS-to-X-autopost boundary is obsolete because X output is GPTs/manual.
+
 ## meta
 
 - number: 180

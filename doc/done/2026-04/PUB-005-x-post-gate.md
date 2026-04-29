@@ -1,10 +1,15 @@
 # PUB-005 x-post-gate
 
+## dropped note(2026-04-29)
+
+- status: DROPPED
+- reason: Dropped as an active execution lane. X API live posting remains off; retain only as historical reference.
+
 ## meta
 
 - owner: Claude Code(設計 + 起票)/ Codex(実装、push しない、Claude が push)
 - type: ops / X / SNS POST gate / controlled autopost
-- status: READY(doc-first、実装は 119-122 の子 ticket で進める)
+- status: DROPPED(doc-first、実装は 119-122 の子 ticket で進める)
 - parent: PUB-002 / PUB-002-A
 - sibling: PUB-004 guarded-auto-publish-runner(WP publish lane、本 ticket とは別 lane)
 - created: 2026-04-25

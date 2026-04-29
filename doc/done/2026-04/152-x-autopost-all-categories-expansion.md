@@ -1,12 +1,17 @@
 # 152 x-autopost-all-categories-expansion
 
+## dropped note(2026-04-29)
+
+- status: DROPPED
+- reason: Dropped. Broad X API autopost expansion is obsolete under the GPTs/manual posting policy.
+
 ## meta
 
 - number: 152
 - alias: -
 - owner: Claude Code(future 設計)
 - type: ops / X auto-post category 拡張
-- status: PARKED(future、147 phase 5 安定後)
+- status: DROPPED(future、147 phase 5 安定後)
 - priority: P2
 - lane: future
 - created: 2026-04-26

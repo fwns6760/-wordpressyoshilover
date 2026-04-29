@@ -73,6 +73,42 @@ class TitleValidatorTests(unittest.TestCase):
         self.assertEqual(payload["candidate_title"], "速報 6回表 巨人3-2 途中経過")
         self.assertEqual(payload["rerolled_title"], "試合結果 巨人3-2")
 
+    def test_is_weak_generated_title_short_title(self):
+        is_weak, reason = title_validator.is_weak_generated_title("岡本2安打")
+
+        self.assertTrue(is_weak)
+        self.assertEqual(reason, "title_too_short")
+
+    def test_is_weak_generated_title_blacklist_phrase(self):
+        is_weak, reason = title_validator.is_weak_generated_title("前日コメント整理 ベンチ関連の発言ポイント")
+
+        self.assertTrue(is_weak)
+        self.assertEqual(reason, "blacklist_phrase:前日コメント整理")
+
+    def test_is_weak_generated_title_no_strong_marker(self):
+        is_weak, reason = title_validator.is_weak_generated_title("前向きな材料を整理して見どころを確認")
+
+        self.assertTrue(is_weak)
+        self.assertEqual(reason, "no_strong_marker")
+
+    def test_is_weak_generated_title_normal_title_passes(self):
+        is_weak, reason = title_validator.is_weak_generated_title("巨人 vs 阪神 戸郷が好投")
+
+        self.assertFalse(is_weak)
+        self.assertEqual(reason, "")
+
+    def test_is_weak_generated_title_player_name_passes(self):
+        is_weak, reason = title_validator.is_weak_generated_title("岡本和真が2安打で勝利に貢献")
+
+        self.assertFalse(is_weak)
+        self.assertEqual(reason, "")
+
+    def test_is_weak_generated_title_empty_returns_weak(self):
+        is_weak, reason = title_validator.is_weak_generated_title("")
+
+        self.assertTrue(is_weak)
+        self.assertEqual(reason, "title_empty")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -351,6 +351,43 @@ def test_postgame_zero_quote_unaffected():
     assert fallback is None
 
 
+def test_weak_generated_title_routes_to_review():
+    fallback = rss_fetcher._maybe_route_weak_generated_title_review(
+        article_subtype="manager",
+        rewritten_title="前日コメント整理 ベンチ関連の発言ポイント",
+        original_title="【巨人】阿部監督が起用意図を説明",
+        source_name="報知 巨人",
+        logger=logging.getLogger("rss_fetcher"),
+    )
+
+    assert isinstance(fallback, rss_fetcher._WeakTitleReviewFallback)
+    assert fallback.reason == "blacklist_phrase:前日コメント整理"
+
+
+def test_strong_generated_title_renders_normally():
+    fallback = rss_fetcher._maybe_route_weak_generated_title_review(
+        article_subtype="manager",
+        rewritten_title="巨人阪神戦 岡本和真が先制打",
+        original_title="【巨人】岡本和真が先制打",
+        source_name="報知 巨人",
+        logger=logging.getLogger("rss_fetcher"),
+    )
+
+    assert fallback is None
+
+
+def test_source_title_unaffected_when_rewritten_equals_original():
+    fallback = rss_fetcher._maybe_route_weak_generated_title_review(
+        article_subtype="manager",
+        rewritten_title="前日コメント整理 ベンチ関連の発言ポイント",
+        original_title="前日コメント整理 ベンチ関連の発言ポイント",
+        source_name="報知 巨人",
+        logger=logging.getLogger("rss_fetcher"),
+    )
+
+    assert fallback is None
+
+
 def test_rule_based_subtype_allowlist_filters_non_permitted_values(monkeypatch):
     monkeypatch.setenv("RULE_BASED_SUBTYPES", "default,lineup,postgame,program,notice,farm")
 

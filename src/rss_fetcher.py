@@ -38,6 +38,7 @@ from fact_conflict_guard import (
     detect_title_body_entity_mismatch as _detect_title_body_entity_mismatch,
 )
 from title_validator import build_reroll_title as _build_title_reroll_title
+from title_validator import is_weak_generated_title
 from title_validator import validate_title_candidate as _validate_title_candidate
 from title_validator import is_supported_subtype as _title_validator_supports_subtype
 from wp_client import WPClient
@@ -4565,6 +4566,15 @@ class _ManagerQuoteZeroReviewFallback:
         self.reason = str(reason)
 
 
+class _WeakTitleReviewFallback:
+    """生成 title が weak の場合の review sentinel。上位 caller が detect して review 倒し。"""
+
+    __slots__ = ("reason",)
+
+    def __init__(self, reason: str):
+        self.reason = str(reason)
+
+
 def _maybe_render_postgame_article_parts(
     *,
     title: str,
@@ -5785,6 +5795,37 @@ def _maybe_route_zero_quote_manager_review(
         )
     )
     return _ManagerQuoteZeroReviewFallback("quote_count_zero")
+
+
+def _maybe_route_weak_generated_title_review(
+    *,
+    article_subtype: str,
+    rewritten_title: str,
+    original_title: str,
+    source_name: str,
+    logger: logging.Logger,
+) -> _WeakTitleReviewFallback | None:
+    """LLM rewritten_title が weak かつ source title と異なる場合、review sentinel を返す。"""
+    rewritten = str(rewritten_title or "").strip()
+    original = str(original_title or "").strip()
+    if not rewritten or rewritten == original:
+        return None
+    is_weak, weak_reason = is_weak_generated_title(rewritten)
+    if not is_weak:
+        return None
+    logger.warning(
+        json.dumps(
+            {
+                "event": "weak_generated_title_review",
+                "subtype": article_subtype,
+                "title": rewritten,
+                "source_name": source_name,
+                "reason": weak_reason,
+            },
+            ensure_ascii=False,
+        )
+    )
+    return _WeakTitleReviewFallback(weak_reason)
 
 
 def _manager_body_has_required_structure(text: str, has_game: bool) -> bool:
@@ -13125,6 +13166,27 @@ def _main(args, logger):
                 logger=logger,
                 source_url=post_url,
             )
+            weak_title_fallback = _maybe_route_weak_generated_title_review(
+                article_subtype=title_article_subtype,
+                rewritten_title=draft_title,
+                original_title=raw_title,
+                source_name=source_name,
+                logger=logger,
+            )
+            if isinstance(weak_title_fallback, _WeakTitleReviewFallback):
+                skip_filter += 1
+                skip_reason_counts["post_gen_validate"] += 1
+                _append_skip_reason_sample(skip_reason_sample_titles, "post_gen_validate", draft_title)
+                _log_article_skipped_post_gen_validate(
+                    logger,
+                    title=draft_title,
+                    post_url=post_url,
+                    category=category,
+                    article_subtype=title_article_subtype,
+                    fail_axes=[f"weak_generated_title:{weak_title_fallback.reason}"],
+                    stop_reason="weak_generated_title_review",
+                )
+                continue
             _log_title_template_selected(logger, post_url, raw_title, draft_title, title_template_key, category, title_article_subtype)
             content, ai_body_for_x = build_news_block(
                 title,

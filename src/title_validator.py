@@ -61,6 +61,75 @@ _REROLL_DEFAULT_SUFFIX = {
     "fact_notice": "告知内容",
 }
 
+WEAK_GENERATED_TITLE_PHRASES = (
+    "前日コメント整理",
+    "ベンチ関連の発言ポイント",
+    "実戦で何を見せるか",
+    "何を見せるか",
+    "注目ポイント",
+    "今後に注目",
+    "詳しくはこちら",
+    "試合の詳細はこちら",
+    "結果のポイント",
+    "コメント整理",
+    "発言ポイント",
+)
+
+WEAK_GENERATED_TITLE_STRONG_MARKERS = (
+    "巨人",
+    "ジャイアンツ",
+    "選手",
+    "監督",
+    "コーチ",
+    "投手",
+    "捕手",
+    "内野手",
+    "外野手",
+    "スタメン",
+    "先発",
+    "試合",
+    "予告先発",
+    "プレー",
+    "登録",
+    "抹消",
+    "復帰",
+    "公示",
+    "離脱",
+    "番組",
+    "配信",
+    "放送",
+    "GIANTS TV",
+    "戸郷",
+    "山崎",
+    "井上",
+    "岡本",
+    "坂本",
+    "丸",
+    "中田",
+    "梶谷",
+    "浅野",
+    "吉川",
+    "大城",
+    "小林",
+    "菅野",
+    "高橋",
+    "田中",
+    "西舘",
+    "阪神",
+    "中日",
+    "ヤクルト",
+    "広島",
+    "DeNA",
+    "ロッテ",
+    "オリックス",
+    "ソフトバンク",
+    "日ハム",
+    "西武",
+    "楽天",
+    "マリナーズ",
+    "ドジャース",
+)
+
 
 def is_supported_subtype(article_subtype: str) -> bool:
     return article_subtype in CONTROLLED_SUBTYPES
@@ -131,6 +200,21 @@ def infer_subtype_from_title(title: str) -> str:
     if _has_postgame_signal(normalized):
         return "postgame"
     return ""
+
+
+def is_weak_generated_title(title: str) -> tuple[bool, str]:
+    """生成 title が weak かどうか判定する。"""
+    normalized = str(title or "").strip()
+    if not normalized:
+        return True, "title_empty"
+    if len(normalized) < 12:
+        return True, "title_too_short"
+    for phrase in WEAK_GENERATED_TITLE_PHRASES:
+        if phrase in normalized:
+            return True, f"blacklist_phrase:{phrase}"
+    if not any(marker in normalized for marker in WEAK_GENERATED_TITLE_STRONG_MARKERS):
+        return True, "no_strong_marker"
+    return False, ""
 
 
 def validate_title_candidate(title: str, article_subtype: str) -> dict[str, object]:
@@ -263,6 +347,7 @@ __all__ = [
     "TITLE_PREFIX_BY_SUBTYPE",
     "build_reroll_title",
     "infer_subtype_from_title",
+    "is_weak_generated_title",
     "is_supported_subtype",
     "starts_with_sokuho_prefix",
     "starts_with_starmen_prefix",

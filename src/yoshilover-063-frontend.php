@@ -36,6 +36,7 @@ add_shortcode( 'yoshilover_topic_hub', 'yoshilover_063_render_topic_hub' );
 add_shortcode( 'yoshilover_dense_nav', 'yoshilover_063_render_dense_nav' );
 add_shortcode( 'yoshilover_breaking_strip', 'yoshilover_063_render_breaking_strip' );
 add_shortcode( 'yoshilover_today_giants_box', 'yoshilover_063_render_today_giants_box' );
+add_shortcode( 'yoshilover_063_today_giants_fan_guide', 'yoshilover_063_render_today_giants_fan_guide' );
 add_shortcode( 'yoshilover_sidebar_rail', 'yoshilover_063_render_sidebar_rail' );
 add_action( 'dynamic_sidebar_before', 'yoshilover_063_auto_inject_sidebar_top_ad_slot', 4, 2 );
 add_action( 'dynamic_sidebar_before', 'yoshilover_063_auto_inject_sidebar_rail', 5, 2 );
@@ -487,6 +488,580 @@ function yoshilover_063_get_today_giants_box_items( $limit = 5 ) {
     }
 
     return $items;
+}
+
+function yoshilover_063_subtype_reader_label( $subtype ) {
+    $map = array(
+        'lineup'                 => 'スタメン確認',
+        'pregame'                => '試合前の見どころ',
+        'probable_starter'       => '予告先発',
+        'postgame'               => '試合後の整理',
+        'game_result'            => '試合結果',
+        'coach_comment'          => 'ベンチの見方',
+        'player_comment'         => '選手コメント',
+        'farm_result'            => '二軍結果',
+        'farm_lineup'            => '二軍スタメン',
+        'farm_player_result'     => '若手・二軍メモ',
+        'farm'                   => '二軍・若手',
+        'roster_notice'          => '登録・抹消',
+        'injury_recovery_notice' => '復帰・コンディション',
+        'program_notice'         => '番組・配信',
+    );
+
+    $key = (string) $subtype;
+    return isset( $map[ $key ] ) ? $map[ $key ] : '';
+}
+
+function yoshilover_063_is_weak_title( $title ) {
+    $title  = yoshilover_063_normalize_front_density_text( (string) $title );
+    $length = function_exists( 'mb_strlen' ) ? mb_strlen( $title, 'UTF-8' ) : strlen( $title );
+
+    if ( $length < 12 ) {
+        return true;
+    }
+
+    $weak_phrases = array(
+        '実戦で何を見せるか',
+        '何を見せるか',
+        '注目ポイント',
+        '今後に注目',
+        '詳しくはこちら',
+        '試合の詳細はこちら',
+        '結果のポイント',
+        '選手の適時打',
+        '先発の 投手',
+        '先発の投手',
+    );
+
+    foreach ( $weak_phrases as $phrase ) {
+        if ( false !== strpos( $title, $phrase ) ) {
+            return true;
+        }
+    }
+
+    if ( in_array( $title, array( '【】', '速報', 'まとめ' ), true ) ) {
+        return true;
+    }
+
+    $team_pattern    = implode(
+        '|',
+        array_map(
+            'preg_quote',
+            yoshilover_063_opponent_team_names()
+        )
+    );
+    $strong_markers  = '/(巨人|ジャイアンツ|選手|監督|コーチ|スタメン|先発|試合|登録|抹消|復帰|公示|番組|配信|二軍|ファーム|若手|育成|' . $team_pattern . ')/u';
+    $player_markers  = "/((?:[一-龠々]{2,4}|[ァ-ヴー]{2,12}|[A-Za-z][A-Za-z'\\- ]{1,20}))(?:投手|選手|監督|コーチ|捕手|内野手|外野手|が|は|の|、)/u";
+
+    if ( ! preg_match( $strong_markers, $title ) && ! preg_match( $player_markers, $title ) ) {
+        return true;
+    }
+
+    return false;
+}
+
+function yoshilover_063_today_giants_guide_raw_subtype( $post_id ) {
+    $value = yoshilover_063_first_non_empty_meta(
+        (int) $post_id,
+        array(
+            'article_subtype',
+            '_article_subtype',
+            'subtype',
+            'article_type',
+            '_article_type',
+        )
+    );
+
+    if ( $value === '' ) {
+        return '';
+    }
+
+    $value = strtolower( trim( (string) $value ) );
+    return str_replace( array( '-', ' ' ), '_', $value );
+}
+
+function yoshilover_063_resolve_today_giants_guide_subtype( $post, $text = '' ) {
+    $text     = $text !== '' ? $text : yoshilover_063_front_density_text( $post );
+    $resolved = yoshilover_063_resolve_front_density_subtype( $post, $text );
+    $raw      = yoshilover_063_today_giants_guide_raw_subtype( $post->ID );
+
+    if ( in_array(
+        $raw,
+        array(
+            'lineup',
+            'pregame',
+            'probable_starter',
+            'postgame',
+            'game_result',
+            'coach_comment',
+            'player_comment',
+            'farm_result',
+            'farm_lineup',
+            'farm_player_result',
+            'farm',
+            'roster_notice',
+            'injury_recovery_notice',
+            'program_notice',
+            'default',
+            'default_review',
+            'article',
+            'notice',
+        ),
+        true
+    ) ) {
+        return $raw;
+    }
+
+    $haystack = yoshilover_063_normalize_front_density_text( $post->post_title . ' ' . $text );
+
+    if ( 'notice' === $resolved ) {
+        if ( preg_match( '/(番組|配信|放送|中継|Hulu|DAZN|BS|CS|地上波)/u', $haystack ) ) {
+            return 'program_notice';
+        }
+        if ( preg_match( '/(復帰|離脱|故障|コンディション|別メニュー|リハビリ)/u', $haystack ) ) {
+            return 'injury_recovery_notice';
+        }
+        if ( preg_match( '/(公示|登録|抹消|昇格|降格|支配下)/u', $haystack ) ) {
+            return 'roster_notice';
+        }
+    }
+
+    if ( 'farm' === $resolved ) {
+        if ( preg_match( '/(スタメン|打順)/u', $haystack ) ) {
+            return 'farm_lineup';
+        }
+        if ( preg_match( '/(試合終了|勝利|敗戦|引き分け|結果|スコア)/u', $haystack ) ) {
+            return 'farm_result';
+        }
+        if ( preg_match( '/(若手|育成|支配下|昇格候補|ドラフト)/u', $haystack ) ) {
+            return 'farm_player_result';
+        }
+    }
+
+    if ( 'postgame' === $resolved ) {
+        if ( preg_match( '/(監督|阿部監督|コーチ)/u', $haystack ) ) {
+            return 'coach_comment';
+        }
+        if ( preg_match( '/(コメント|談話|語った|語る|振り返った|振り返る)/u', $haystack ) ) {
+            return 'player_comment';
+        }
+        if ( preg_match( '/(試合結果|結果|勝利|敗戦|引き分け|スコア)/u', $haystack ) ) {
+            return 'game_result';
+        }
+    }
+
+    return $resolved;
+}
+
+function yoshilover_063_today_giants_guide_section_for_subtype( $subtype ) {
+    $map = array(
+        'lineup'                 => 'pregame',
+        'pregame'                => 'pregame',
+        'probable_starter'       => 'pregame',
+        'postgame'               => 'postgame',
+        'game_result'            => 'postgame',
+        'coach_comment'          => 'postgame',
+        'player_comment'         => 'postgame',
+        'farm_result'            => 'farm',
+        'farm_lineup'            => 'farm',
+        'farm_player_result'     => 'farm',
+        'farm'                   => 'farm',
+        'roster_notice'          => 'today_check',
+        'injury_recovery_notice' => 'today_check',
+        'program_notice'         => 'today_check',
+    );
+
+    $key = (string) $subtype;
+    return isset( $map[ $key ] ) ? $map[ $key ] : '';
+}
+
+function yoshilover_063_post_has_hidden_auto_post_category( $post_id ) {
+    $terms = get_the_category( (int) $post_id );
+    if ( ! is_array( $terms ) || empty( $terms ) ) {
+        return false;
+    }
+
+    $visible_terms = yoshilover_063_filter_front_category_terms( $terms );
+    if ( count( $visible_terms ) !== count( $terms ) ) {
+        return true;
+    }
+
+    foreach ( $terms as $term ) {
+        if ( ! ( $term instanceof WP_Term ) ) {
+            continue;
+        }
+        if ( 673 === (int) $term->term_id || 'auto-post' === (string) $term->slug || '自動投稿' === trim( (string) $term->name ) ) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function yoshilover_063_build_today_giants_guide_item( $post ) {
+    if ( ! ( $post instanceof WP_Post ) || 'post' !== $post->post_type || 'publish' !== $post->post_status ) {
+        return array();
+    }
+
+    $pick = strtolower( trim( (string) get_post_meta( $post->ID, 'today_giants_pick', true ) ) );
+    if ( 'hide' === $pick ) {
+        return array();
+    }
+
+    if ( yoshilover_063_post_has_hidden_auto_post_category( $post->ID ) ) {
+        return array();
+    }
+
+    $text    = yoshilover_063_front_density_text( $post );
+    $subtype = yoshilover_063_resolve_today_giants_guide_subtype( $post, $text );
+    if ( in_array( $subtype, array( '', 'default', 'default_review', 'article', 'notice' ), true ) ) {
+        return array();
+    }
+
+    $label = yoshilover_063_subtype_reader_label( $subtype );
+    if ( $label === '' ) {
+        return array();
+    }
+
+    $title = trim( (string) $post->post_title );
+    if ( $title === '' || yoshilover_063_is_weak_title( $title ) ) {
+        return array();
+    }
+
+    $section = yoshilover_063_today_giants_guide_section_for_subtype( $subtype );
+    if ( $section === '' ) {
+        return array();
+    }
+
+    return array(
+        'post_id'    => (int) $post->ID,
+        'subtype'    => $subtype,
+        'label'      => $label,
+        'title'      => $title,
+        'url'        => get_permalink( $post ),
+        'time'       => yoshilover_063_format_compact_post_time( $post ),
+        'timestamp'  => (int) get_post_time( 'U', true, $post ),
+        'section'    => $section,
+        'pick'       => $pick,
+        'is_manual'  => 'main' === $pick,
+    );
+}
+
+function yoshilover_063_pick_today_giants_main_item( $candidates ) {
+    $latest_match = static function( $items, $subtypes = array(), $require_manual = false ) {
+        $matched = array();
+
+        foreach ( (array) $items as $item ) {
+            if ( ! is_array( $item ) ) {
+                continue;
+            }
+            if ( $require_manual && empty( $item['is_manual'] ) ) {
+                continue;
+            }
+            if ( ! empty( $subtypes ) && ! in_array( (string) $item['subtype'], $subtypes, true ) ) {
+                continue;
+            }
+            $matched[] = $item;
+        }
+
+        if ( empty( $matched ) ) {
+            return array();
+        }
+
+        usort(
+            $matched,
+            function( $left, $right ) {
+                return (int) $right['timestamp'] <=> (int) $left['timestamp'];
+            }
+        );
+
+        return $matched[0];
+    };
+
+    $manual = $latest_match( $candidates, array(), true );
+    if ( ! empty( $manual ) ) {
+        return $manual;
+    }
+
+    $hour = (int) current_time( 'G' );
+    if ( $hour >= 20 || $hour < 5 ) {
+        $priority_groups = array(
+            array( 'postgame', 'game_result', 'coach_comment', 'player_comment' ),
+            array( 'lineup' ),
+            array( 'probable_starter', 'pregame' ),
+            array( 'farm_result', 'farm_player_result', 'farm_lineup', 'farm', 'program_notice', 'roster_notice', 'injury_recovery_notice' ),
+        );
+    } elseif ( $hour >= 15 ) {
+        $priority_groups = array(
+            array( 'lineup' ),
+            array( 'probable_starter', 'pregame' ),
+            array( 'postgame', 'game_result', 'coach_comment', 'player_comment' ),
+            array( 'farm_result', 'farm_player_result', 'farm_lineup', 'farm', 'program_notice', 'roster_notice', 'injury_recovery_notice' ),
+        );
+    } else {
+        $priority_groups = array(
+            array( 'probable_starter', 'pregame' ),
+            array( 'lineup' ),
+            array( 'postgame', 'game_result', 'coach_comment', 'player_comment' ),
+            array( 'farm_result', 'farm_player_result', 'farm_lineup', 'farm', 'program_notice', 'roster_notice', 'injury_recovery_notice' ),
+        );
+    }
+
+    foreach ( $priority_groups as $group ) {
+        $matched = $latest_match( $candidates, $group );
+        if ( ! empty( $matched ) ) {
+            return $matched;
+        }
+    }
+
+    return $latest_match( $candidates );
+}
+
+function yoshilover_063_collect_today_giants_guide_sections( $limit_per_section = 3 ) {
+    $limit_per_section = max( 1, min( 3, (int) $limit_per_section ) );
+    $sections          = array(
+        'main_pick'   => array(),
+        'pregame'     => array(),
+        'postgame'    => array(),
+        'farm'        => array(),
+        'today_check' => array(),
+    );
+    $seen_posts        = array();
+    $candidates        = array();
+
+    foreach ( yoshilover_063_get_today_giants_box_items( 5 ) as $seed_item ) {
+        if ( ! is_array( $seed_item ) ) {
+            continue;
+        }
+
+        $seed_url = isset( $seed_item['url'] ) ? trim( (string) $seed_item['url'] ) : '';
+        $seed_id  = $seed_url !== '' ? (int) url_to_postid( $seed_url ) : 0;
+        if ( $seed_id <= 0 || isset( $seen_posts[ $seed_id ] ) ) {
+            continue;
+        }
+
+        $seed_post = get_post( $seed_id );
+        if ( ! ( $seed_post instanceof WP_Post ) ) {
+            continue;
+        }
+
+        $candidate = yoshilover_063_build_today_giants_guide_item( $seed_post );
+        if ( empty( $candidate ) ) {
+            continue;
+        }
+
+        $candidates[ $seed_id ] = $candidate;
+        $seen_posts[ $seed_id ] = true;
+    }
+
+    $query = new WP_Query(
+        array(
+            'post_type'              => 'post',
+            'post_status'            => 'publish',
+            'posts_per_page'         => 36,
+            'ignore_sticky_posts'    => true,
+            'no_found_rows'          => true,
+            'update_post_meta_cache' => true,
+            'update_post_term_cache' => true,
+        )
+    );
+
+    foreach ( $query->posts as $post ) {
+        if ( ! ( $post instanceof WP_Post ) || isset( $seen_posts[ $post->ID ] ) ) {
+            continue;
+        }
+
+        $candidate = yoshilover_063_build_today_giants_guide_item( $post );
+        if ( empty( $candidate ) ) {
+            continue;
+        }
+
+        $candidates[ $post->ID ] = $candidate;
+        $seen_posts[ $post->ID ] = true;
+    }
+
+    wp_reset_postdata();
+
+    if ( empty( $candidates ) ) {
+        return $sections;
+    }
+
+    $main_pick = yoshilover_063_pick_today_giants_main_item( array_values( $candidates ) );
+    if ( ! empty( $main_pick ) ) {
+        $sections['main_pick'][] = $main_pick;
+    }
+
+    $used_ids = array();
+    if ( ! empty( $main_pick['post_id'] ) ) {
+        $used_ids[ (int) $main_pick['post_id'] ] = true;
+    }
+
+    $grouped = array(
+        'pregame'     => array(),
+        'postgame'    => array(),
+        'farm'        => array(),
+        'today_check' => array(),
+    );
+
+    foreach ( $candidates as $candidate ) {
+        $section = isset( $candidate['section'] ) ? (string) $candidate['section'] : '';
+        if ( isset( $grouped[ $section ] ) ) {
+            $grouped[ $section ][] = $candidate;
+        }
+    }
+
+    foreach ( array_keys( $grouped ) as $section_key ) {
+        usort(
+            $grouped[ $section_key ],
+            function( $left, $right ) {
+                return (int) $right['timestamp'] <=> (int) $left['timestamp'];
+            }
+        );
+
+        foreach ( $grouped[ $section_key ] as $candidate ) {
+            $post_id = (int) $candidate['post_id'];
+            if ( isset( $used_ids[ $post_id ] ) ) {
+                continue;
+            }
+
+            $sections[ $section_key ][] = $candidate;
+            $used_ids[ $post_id ]       = true;
+
+            if ( count( $sections[ $section_key ] ) >= $limit_per_section ) {
+                break;
+            }
+        }
+    }
+
+    return $sections;
+}
+
+function yoshilover_063_render_today_giants_fan_guide( $atts = array() ) {
+    if ( is_admin() || is_feed() ) {
+        return '';
+    }
+    if ( is_singular( 'post' ) ) {
+        return '';
+    }
+    if ( ! is_front_page() && ! is_home() ) {
+        return '';
+    }
+
+    static $rendered = false;
+    if ( $rendered ) {
+        return '';
+    }
+
+    $atts = shortcode_atts(
+        array(
+            'heading'           => '今日の巨人',
+            'subheading'        => '今日見る記事を、試合前・試合後・若手でまとめました。',
+            'limit_per_section' => 3,
+        ),
+        $atts,
+        'yoshilover_063_today_giants_fan_guide'
+    );
+
+    $sections = yoshilover_063_collect_today_giants_guide_sections( (int) $atts['limit_per_section'] );
+    $has_rows = false;
+
+    foreach ( $sections as $items ) {
+        if ( ! empty( $items ) ) {
+            $has_rows = true;
+            break;
+        }
+    }
+
+    if ( ! $has_rows ) {
+        return '';
+    }
+
+    $rendered = true;
+
+    static $style_rendered = false;
+    $style = '';
+    if ( ! $style_rendered ) {
+        $style  = '<style id="yoshi-front-guide-inline-css">';
+        $style .= '.yoshi-today-giants{display:none!important;}';
+        $style .= '.yoshi-front-guide{margin:24px 0;padding:22px;border:1px solid #d7dce4;border-radius:20px;background:linear-gradient(180deg,#fffdf8 0%,#ffffff 72%);box-shadow:0 16px 34px rgba(17,24,39,.08);}';
+        $style .= '.yoshi-front-guide__eyebrow{display:inline-block;margin:0 0 8px;padding:5px 10px;border-radius:999px;background:#111827;color:#fff;font-size:12px;font-weight:700;letter-spacing:.08em;}';
+        $style .= '.yoshi-front-guide__heading{margin:0;font-size:28px;line-height:1.25;color:#111827;}';
+        $style .= '.yoshi-front-guide__subheading{margin:10px 0 0;color:#4b5563;font-size:14px;line-height:1.7;}';
+        $style .= '.yoshi-front-guide__main,.yoshi-front-guide__section{margin-top:18px;padding:16px;border:1px solid #e5e7eb;border-radius:16px;background:#fff;}';
+        $style .= '.yoshi-front-guide__section-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;align-items:start;}';
+        $style .= '.yoshi-front-guide__section-title{margin:0 0 12px;font-size:16px;line-height:1.35;color:#111827;}';
+        $style .= '.yoshi-front-guide__main-link,.yoshi-front-guide__item-link{display:block;color:inherit;text-decoration:none;}';
+        $style .= '.yoshi-front-guide__item-list{margin:0;padding:0;list-style:none;}';
+        $style .= '.yoshi-front-guide__item + .yoshi-front-guide__item{margin-top:12px;padding-top:12px;border-top:1px solid #eef2f7;}';
+        $style .= '.yoshi-front-guide__meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px;font-size:12px;color:#6b7280;}';
+        $style .= '.yoshi-front-guide__badge{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;background:#fff4e6;color:#b45309;font-weight:700;line-height:1.2;}';
+        $style .= '.yoshi-front-guide__time{font-variant-numeric:tabular-nums;color:#6b7280;}';
+        $style .= '.yoshi-front-guide__title{display:block;font-size:16px;line-height:1.6;color:#111827;font-weight:700;}';
+        $style .= '.yoshi-front-guide__main .yoshi-front-guide__title{font-size:20px;line-height:1.5;}';
+        $style .= '.yoshi-front-guide__section--today_check .yoshi-front-guide__title{font-size:15px;}';
+        $style .= '@media (max-width:782px){.yoshi-front-guide{margin:18px 0;padding:16px;border-radius:16px;}.yoshi-front-guide__heading{font-size:24px;}.yoshi-front-guide__section-grid{grid-template-columns:1fr;gap:12px;}.yoshi-front-guide__main,.yoshi-front-guide__section{margin-top:14px;padding:14px;}.yoshi-front-guide__main .yoshi-front-guide__title{font-size:18px;}}';
+        $style .= '</style>';
+        $style_rendered = true;
+    }
+
+    $render_item = static function( $item, $is_main = false ) {
+        $html  = $is_main ? '<a class="yoshi-front-guide__main-link" href="' . esc_url( $item['url'] ) . '">' : '<a class="yoshi-front-guide__item-link" href="' . esc_url( $item['url'] ) . '">';
+        $html .= '<span class="yoshi-front-guide__meta">';
+        $html .= '<span class="yoshi-front-guide__badge">' . esc_html( $item['label'] ) . '</span>';
+        if ( ! empty( $item['time'] ) ) {
+            $html .= '<time class="yoshi-front-guide__time">' . esc_html( $item['time'] ) . '</time>';
+        }
+        $html .= '</span>';
+        $html .= '<span class="yoshi-front-guide__title">' . esc_html( $item['title'] ) . '</span>';
+        $html .= '</a>';
+        return $html;
+    };
+
+    $section_labels = array(
+        'pregame'     => 'まず見る',
+        'postgame'    => '試合後に読む',
+        'farm'        => '若手・二軍を追う',
+        'today_check' => '今日のチェック',
+    );
+
+    $html  = $style;
+    $html .= '<section class="yoshi-front-guide" aria-label="今日の巨人ファン観戦ガイド" data-yoshi-phase="246">';
+    $html .= '<div class="yoshi-front-guide__head">';
+    $html .= '<span class="yoshi-front-guide__eyebrow">' . esc_html( $atts['heading'] ) . '</span>';
+    $html .= '<h2 class="yoshi-front-guide__heading">今日の巨人ファン観戦ガイド</h2>';
+    $html .= '<p class="yoshi-front-guide__subheading">' . esc_html( $atts['subheading'] ) . '</p>';
+    $html .= '</div>';
+
+    if ( ! empty( $sections['main_pick'][0] ) ) {
+        $html .= '<article class="yoshi-front-guide__main yoshi-front-guide__main--' . esc_attr( $sections['main_pick'][0]['subtype'] ) . '">';
+        $html .= '<h3 class="yoshi-front-guide__section-title">今見る1本</h3>';
+        $html .= $render_item( $sections['main_pick'][0], true );
+        $html .= '</article>';
+    }
+
+    $html .= '<div class="yoshi-front-guide__section-grid">';
+    foreach ( $section_labels as $section_key => $section_label ) {
+        if ( empty( $sections[ $section_key ] ) ) {
+            continue;
+        }
+
+        $html .= '<section class="yoshi-front-guide__section yoshi-front-guide__section--' . esc_attr( $section_key ) . '">';
+        $html .= '<h3 class="yoshi-front-guide__section-title">' . esc_html( $section_label ) . '</h3>';
+        $html .= '<ul class="yoshi-front-guide__item-list">';
+
+        foreach ( $sections[ $section_key ] as $item ) {
+            $html .= '<li class="yoshi-front-guide__item yoshi-front-guide__item--' . esc_attr( $item['subtype'] ) . '">';
+            $html .= $render_item( $item );
+            $html .= '</li>';
+        }
+
+        $html .= '</ul>';
+        $html .= '</section>';
+    }
+    $html .= '</div>';
+    $html .= '</section>';
+
+    return $html;
 }
 
 function yoshilover_063_get_sidebar_topic_links( $limit = 4 ) {

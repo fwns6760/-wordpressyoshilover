@@ -4,7 +4,7 @@
 
 - number: 246-MKT
 - type: marketing / front UX parent
-- status: HOLD_DESIGN
+- status: HOLD
 - priority: P0.5
 - owner: Meeting Codex / Claude planning
 - implementation_owner: Codex A or front-scope Codex after GO
@@ -44,6 +44,7 @@ YOSHILOVER を **巨人ファンが試合前後に寄る場所** にするため
 ## HOLD condition
 
 現時点では UX 仕様を固める段階であり、現場 Claude / Codex への実装依頼は HOLD。
+247-QA amend 完了と試合日観察が先。
 
 実装前に以下を確定する。
 

@@ -75,11 +75,21 @@ def is_strict_enabled() -> bool:
     return os.environ.get(POSTGAME_STRICT_FEATURE_FLAG_ENV, "0").strip() == "1"
 
 
+def _unwrap_markdown_json(text: str) -> str:
+    stripped = text.strip()
+    for pattern in (r"```json\s*\r?\n(?P<body>.*)\r?\n```", r"```\s*\r?\n(?P<body>.*)\r?\n```"):
+        match = re.fullmatch(pattern, stripped, flags=re.DOTALL)
+        if match:
+            return match.group("body").strip()
+    return stripped
+
+
 def parse_postgame_strict_json(raw: str) -> tuple[dict | None, str]:
     if not isinstance(raw, str):
         return None, "response_not_string"
 
     stripped = raw.strip()
+    stripped = _unwrap_markdown_json(stripped)
     if not stripped:
         return None, "empty_response"
     if not stripped.startswith("{"):

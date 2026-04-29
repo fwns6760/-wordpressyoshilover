@@ -157,6 +157,56 @@ class PostgameStrictTemplateTests(unittest.TestCase):
         self.assertIsNone(payload)
         self.assertIn("json_decode_error", reason)
 
+    def test_parse_postgame_strict_json_accepts_fenced_json_wrapper(self):
+        payload, reason = parse_postgame_strict_json("```json\n{\"key\":\"value\"}\n```")
+
+        self.assertEqual(payload, {"key": "value"})
+        self.assertEqual(reason, "")
+
+    def test_parse_postgame_strict_json_accepts_plain_fenced_wrapper(self):
+        payload, reason = parse_postgame_strict_json("```\n{\"key\":\"value\"}\n```")
+
+        self.assertEqual(payload, {"key": "value"})
+        self.assertEqual(reason, "")
+
+    def test_parse_postgame_strict_json_accepts_pure_json_without_wrapper(self):
+        payload, reason = parse_postgame_strict_json("{\"key\":\"value\"}")
+
+        self.assertEqual(payload, {"key": "value"})
+        self.assertEqual(reason, "")
+
+    def test_parse_postgame_strict_json_accepts_fenced_json_with_trailing_whitespace(self):
+        payload, reason = parse_postgame_strict_json("```json\n{\"key\":\"value\"}\n```  \n")
+
+        self.assertEqual(payload, {"key": "value"})
+        self.assertEqual(reason, "")
+
+    def test_parse_postgame_strict_json_rejects_plain_text_without_json(self):
+        payload, reason = parse_postgame_strict_json("just plain text without json")
+
+        self.assertIsNone(payload)
+        self.assertEqual(reason, "non_json_wrapper")
+
+    def test_parse_postgame_strict_json_keeps_explanatory_wrapper_text_on_review_path(self):
+        payload, reason = parse_postgame_strict_json(
+            "Here is the response:\n```json\n{\"key\":\"value\"}\n```\nHope this helps."
+        )
+
+        self.assertIsNone(payload)
+        self.assertEqual(reason, "non_json_wrapper")
+
+    def test_parse_postgame_strict_json_preserves_response_not_string_reason(self):
+        payload, reason = parse_postgame_strict_json(None)
+
+        self.assertIsNone(payload)
+        self.assertEqual(reason, "response_not_string")
+
+    def test_parse_postgame_strict_json_preserves_empty_response_reason(self):
+        payload, reason = parse_postgame_strict_json("   ")
+
+        self.assertIsNone(payload)
+        self.assertEqual(reason, "empty_response")
+
     def test_strict_template_renders_only_present_slots(self):
         payload = self.valid_payload()
         payload["starter_name"] = None

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import html
+import hashlib
 import json
 import os
 import re
+import unicodedata
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Sequence
@@ -11,6 +13,7 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from src import guarded_publish_evaluator as publish_evaluator
+from src.lineup_source_priority import extract_game_id
 from src.pre_publish_fact_check import extractor
 from src.title_body_nucleus_validator import validate_title_body_nucleus
 from src.wp_client import WPClient
@@ -63,6 +66,7 @@ LIGHT_STRUCTURE_BREAK_RE = re.compile(r"(?is)<p\b[^>]*>\s*(?:&nbsp;|\s|<br\s*/?>
 HEADING_SENTENCE_END_RE = re.compile(
     r"(した|している|していた|と語った|と話した|を確認した|を記録した|と発表した|となった|を達成した)$"
 )
+TRAILING_TITLE_PUNCT_RE = re.compile(r"[!！?？。．・…~〜ー\-]+$")
 PLAYER_HEURISTIC_RE = re.compile(
     r"([一-龯々]{2,4}(?:投手|捕手|内野手|外野手|選手|監督)?|[A-Za-z]{2,}[0-9]*|[一-龯々]{2,4}[A-Za-z0-9]+)"
 )
@@ -1286,6 +1290,279 @@ def _review_hold_reason(review_flags: Sequence[str]) -> str:
     return f"review_{token or 'needed'}"
 
 
+def _duplicate_title_value(post: dict[str, Any]) -> str:
+    title = (post or {}).get("title")
+    if isinstance(title, dict):
+        raw = title.get("raw")
+        if raw:
+            return html.unescape(str(raw)).strip()
+        rendered = title.get("rendered")
+        if rendered:
+            return html.unescape(str(rendered)).strip()
+    return html.unescape(str(title or "")).strip()
+
+
+def _normalize_duplicate_title(value: Any) -> str:
+    text = html.unescape(str(value or ""))
+    text = unicodedata.normalize("NFKC", text)
+    text = WHITESPACE_RE.sub(" ", text).strip()
+    text = TRAILING_TITLE_PUNCT_RE.sub("", text).strip()
+    return text.lower()
+
+
+def _duplicate_value_candidates(post: dict[str, Any], *keys: str) -> list[str]:
+    values: list[str] = []
+    for key in keys:
+        for container_key in ("", "meta", "metadata"):
+            container = post if not container_key else (post or {}).get(container_key)
+            if not isinstance(container, dict) or key not in container:
+                continue
+            value = container.get(key)
+            if isinstance(value, list):
+                for item in value:
+                    cleaned = html.unescape(str(item or "")).strip()
+                    if cleaned:
+                        values.append(cleaned)
+            elif isinstance(value, dict):
+                for nested_key in ("raw", "rendered", "name", "url"):
+                    cleaned = html.unescape(str(value.get(nested_key) or "")).strip()
+                    if cleaned:
+                        values.append(cleaned)
+            else:
+                cleaned = html.unescape(str(value or "")).strip()
+                if cleaned:
+                    values.append(cleaned)
+    return values
+
+
+def _dedupe_preserve_order(values: Sequence[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for value in values:
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        ordered.append(value)
+    return ordered
+
+
+def _extract_duplicate_source_urls(post: dict[str, Any]) -> list[str]:
+    urls: list[str] = []
+    _, meta_url = WPClient._get_source_url_meta(post)
+    if meta_url:
+        urls.append(meta_url)
+    urls.extend(_duplicate_value_candidates(post, "source_url", "_yoshilover_source_url", "yl_source_url"))
+    record = extractor.extract_post_record(post)
+    urls.extend(str(url).strip() for url in (record.get("source_urls") or []) if str(url).strip())
+    return _dedupe_preserve_order(urls)
+
+
+def _source_url_hash(url: str | None) -> str | None:
+    if not url:
+        return None
+    return hashlib.sha256(str(url).encode("utf-8")).hexdigest()[:16]
+
+
+def _extract_duplicate_source_hashes(post: dict[str, Any]) -> list[str]:
+    hashes = [_source_url_hash(url) for url in _extract_duplicate_source_urls(post)]
+    return [value for value in _dedupe_preserve_order([str(item or "") for item in hashes]) if value]
+
+
+def _duplicate_subtype(post: dict[str, Any]) -> str:
+    meta = dict((post or {}).get("meta") or {})
+    for candidate in (meta.get("article_subtype"), (post or {}).get("article_subtype")):
+        value = str(candidate or "").strip().lower()
+        if value:
+            return value
+    title = _duplicate_title_value(post)
+    return str(extractor.infer_subtype(title) or "").strip().lower()
+
+
+def _duplicate_speaker_token(post: dict[str, Any]) -> str:
+    for candidate in _duplicate_value_candidates(
+        post,
+        "speaker",
+        "speaker_name",
+        "subject_entity",
+        "target_entity",
+        "player",
+        "player_name",
+        "entity_primary",
+    ):
+        normalized = _normalize_duplicate_title(candidate)
+        if normalized:
+            return normalized
+    return ""
+
+
+def _same_game_subtype_speaker_key(post: dict[str, Any]) -> str:
+    game_id = str(extract_game_id(post) or "").strip().lower()
+    subtype = _duplicate_subtype(post)
+    speaker = _duplicate_speaker_token(post)
+    if not game_id or not subtype or not speaker:
+        return ""
+    return f"{game_id}|{subtype}|{speaker}"
+
+
+def _empty_duplicate_index() -> dict[str, dict[str, dict[str, Any]]]:
+    return {
+        "exact_titles": {},
+        "normalized_titles": {},
+        "source_hashes": {},
+        "game_subtype_speaker": {},
+    }
+
+
+def _index_duplicate_post(index: dict[str, dict[str, dict[str, Any]]], post: dict[str, Any]) -> None:
+    post_id = int((post or {}).get("id"))
+    title = _duplicate_title_value(post)
+    reference = {
+        "post_id": post_id,
+        "title": title,
+    }
+    if title:
+        index["exact_titles"].setdefault(title, reference)
+    normalized_title = _normalize_duplicate_title(title)
+    if normalized_title:
+        index["normalized_titles"].setdefault(normalized_title, reference)
+    for source_hash in _extract_duplicate_source_hashes(post):
+        index["source_hashes"].setdefault(source_hash, reference)
+    same_game_key = _same_game_subtype_speaker_key(post)
+    if same_game_key:
+        index["game_subtype_speaker"].setdefault(same_game_key, reference)
+
+
+def _duplicate_reference(
+    compared_against: str,
+    duplicate_reason: str,
+    reference: dict[str, Any] | None,
+) -> tuple[bool, dict[str, Any]]:
+    duplicate_of_post_id: int | None = None
+    if reference is not None:
+        try:
+            duplicate_of_post_id = int(reference.get("post_id"))
+        except (TypeError, ValueError):
+            duplicate_of_post_id = None
+    return True, {
+        "duplicate_of_post_id": duplicate_of_post_id,
+        "duplicate_reason": duplicate_reason,
+        "compared_against": compared_against,
+    }
+
+
+def _detect_duplicate_candidate(
+    post: dict[str, Any],
+    run_promoted_titles_set: dict[str, dict[str, dict[str, Any]]],
+    wp_existing_publish_titles: dict[str, dict[str, dict[str, Any]]],
+    wp_existing_draft_titles: dict[str, dict[str, dict[str, Any]]],
+    wp_existing_source_urls: dict[str, dict[str, Any]],
+) -> tuple[bool, dict[str, Any]]:
+    title = _duplicate_title_value(post)
+    normalized_title = _normalize_duplicate_title(title)
+
+    for source_hash in _extract_duplicate_source_hashes(post):
+        reference = wp_existing_source_urls.get(source_hash)
+        if reference is not None:
+            return _duplicate_reference("wp_publish", "same_source_url", reference)
+
+    if title:
+        if title in wp_existing_publish_titles["exact_titles"]:
+            return _duplicate_reference(
+                "wp_publish",
+                "exact_title_match_publish",
+                wp_existing_publish_titles["exact_titles"].get(title),
+            )
+        if title in wp_existing_draft_titles["exact_titles"]:
+            return _duplicate_reference(
+                "wp_draft",
+                "exact_title_match_draft",
+                wp_existing_draft_titles["exact_titles"].get(title),
+            )
+        if title in run_promoted_titles_set["exact_titles"]:
+            return _duplicate_reference(
+                "run_internal",
+                "run_internal_dup",
+                run_promoted_titles_set["exact_titles"].get(title),
+            )
+
+    if normalized_title:
+        if normalized_title in wp_existing_publish_titles["normalized_titles"]:
+            return _duplicate_reference(
+                "wp_publish",
+                "normalized_title_match_publish",
+                wp_existing_publish_titles["normalized_titles"].get(normalized_title),
+            )
+        if normalized_title in wp_existing_draft_titles["normalized_titles"]:
+            return _duplicate_reference(
+                "wp_draft",
+                "normalized_title_match_draft",
+                wp_existing_draft_titles["normalized_titles"].get(normalized_title),
+            )
+        if normalized_title in run_promoted_titles_set["normalized_titles"]:
+            return _duplicate_reference(
+                "run_internal",
+                "normalized_title_match_run_internal",
+                run_promoted_titles_set["normalized_titles"].get(normalized_title),
+            )
+
+    same_game_key = _same_game_subtype_speaker_key(post)
+    if same_game_key:
+        if same_game_key in wp_existing_publish_titles["game_subtype_speaker"]:
+            return _duplicate_reference(
+                "wp_publish",
+                "same_game_subtype_speaker",
+                wp_existing_publish_titles["game_subtype_speaker"].get(same_game_key),
+            )
+        if same_game_key in wp_existing_draft_titles["game_subtype_speaker"]:
+            return _duplicate_reference(
+                "wp_draft",
+                "same_game_subtype_speaker",
+                wp_existing_draft_titles["game_subtype_speaker"].get(same_game_key),
+            )
+        if same_game_key in run_promoted_titles_set["game_subtype_speaker"]:
+            return _duplicate_reference(
+                "run_internal",
+                "same_game_subtype_speaker",
+                run_promoted_titles_set["game_subtype_speaker"].get(same_game_key),
+            )
+
+    return False, {
+        "duplicate_of_post_id": None,
+        "duplicate_reason": "",
+        "compared_against": "",
+    }
+
+
+def _duplicate_guard_posts(
+    wp_client: Any,
+    *,
+    status: str,
+    exclude_post_ids: set[int] | None = None,
+) -> list[dict[str, Any]]:
+    rows = wp_client.list_posts(
+        status=status,
+        per_page=100,
+        page=1,
+        orderby="modified",
+        order="desc",
+        context="edit",
+        fields=["id", "title", "slug", "content", "meta", "status", "date", "modified"],
+    )
+    excluded = exclude_post_ids or set()
+    return [
+        row
+        for row in rows
+        if isinstance(row, dict) and int(row.get("id") or 0) not in excluded
+    ]
+
+
+def _build_duplicate_index(posts: Sequence[dict[str, Any]]) -> dict[str, dict[str, dict[str, Any]]]:
+    index = _empty_duplicate_index()
+    for post in posts:
+        _index_duplicate_post(index, post)
+    return index
+
+
 def _iter_review_entries(report: dict[str, Any]) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     for entry in report.get("review", []) or []:
@@ -1335,6 +1612,8 @@ def _history_row(
     hold_reason: str | None = None,
     is_backlog: bool | None = None,
     freshness_source: str | None = None,
+    duplicate_of_post_id: int | None = None,
+    duplicate_reason: str | None = None,
 ) -> dict[str, Any]:
     return {
         "post_id": post_id,
@@ -1349,6 +1628,8 @@ def _history_row(
         "hold_reason": hold_reason,
         "is_backlog": None if is_backlog is None else bool(is_backlog),
         "freshness_source": str(freshness_source or "").strip() or None,
+        "duplicate_of_post_id": duplicate_of_post_id,
+        "duplicate_reason": str(duplicate_reason or "").strip() or None,
     }
 
 
@@ -1656,6 +1937,10 @@ def run_guarded_publish(
     backlog_entries = [entry for entry in publishable_entries if _is_backlog_entry(entry, now=now_jst)]
     deferred_backlog_entries = backlog_entries if fresh_entries else []
     publishable_entries = fresh_entries if fresh_entries else backlog_entries
+    run_promoted_titles_set = _empty_duplicate_index()
+    wp_existing_publish_titles = _empty_duplicate_index()
+    wp_existing_draft_titles = _empty_duplicate_index()
+    wp_existing_source_urls: dict[str, dict[str, Any]] = {}
 
     for backlog_entry in deferred_backlog_entries:
         refused.append(
@@ -1690,6 +1975,16 @@ def run_guarded_publish(
                     "hold_reason": "backlog_deferred_for_fresh",
                 }
             )
+
+    if publishable_entries:
+        candidate_post_ids = {int(entry["post_id"]) for entry in publishable_entries}
+        wp_existing_publish_titles = _build_duplicate_index(
+            _duplicate_guard_posts(get_wp(), status="publish")
+        )
+        wp_existing_draft_titles = _build_duplicate_index(
+            _duplicate_guard_posts(get_wp(), status="draft", exclude_post_ids=candidate_post_ids)
+        )
+        wp_existing_source_urls = dict(wp_existing_publish_titles["source_hashes"])
 
     for entry in publishable_entries:
         post_id = entry["post_id"]
@@ -1851,8 +2146,60 @@ def run_guarded_publish(
                 )
             continue
 
+        is_duplicate, duplicate_info = _detect_duplicate_candidate(
+            post,
+            run_promoted_titles_set,
+            wp_existing_publish_titles,
+            wp_existing_draft_titles,
+            wp_existing_source_urls,
+        )
+        if is_duplicate:
+            duplicate_reason = str(duplicate_info.get("duplicate_reason") or "duplicate_candidate")
+            duplicate_of_post_id = duplicate_info.get("duplicate_of_post_id")
+            hold_reason = _review_hold_reason([f"duplicate_candidate:{duplicate_reason}"])
+            refused.append(
+                {
+                    "post_id": post_id,
+                    "reason": "review",
+                    "hold_reason": hold_reason,
+                    "duplicate_of_post_id": duplicate_of_post_id,
+                    "duplicate_reason": duplicate_reason,
+                }
+            )
+            if live:
+                row = _history_row(
+                    post_id=post_id,
+                    judgment=entry["judgment"],
+                    status="refused",
+                    ts=now_iso,
+                    backup_path=None,
+                    error=f"review:duplicate_candidate:{duplicate_reason}",
+                    publishable=True,
+                    cleanup_required=bool(entry["cleanup_required"]),
+                    cleanup_success=False,
+                    hold_reason=hold_reason,
+                    is_backlog=is_backlog,
+                    freshness_source=str(entry.get("freshness_source") or ""),
+                    duplicate_of_post_id=duplicate_of_post_id,
+                    duplicate_reason=duplicate_reason,
+                )
+                live_history_rows.append(row)
+                executed.append(
+                    {
+                        "post_id": post_id,
+                        "status": "refused",
+                        "backup_path": None,
+                        "publish_link": str((post or {}).get("link") or ""),
+                        "hold_reason": hold_reason,
+                        "duplicate_of_post_id": duplicate_of_post_id,
+                        "duplicate_reason": duplicate_reason,
+                    }
+                )
+            continue
+
         proposed_internal.append(plan)
         proposed_public.append(_public_plan(plan))
+        _index_duplicate_post(run_promoted_titles_set, post)
         planned_count += 1
 
     if live:

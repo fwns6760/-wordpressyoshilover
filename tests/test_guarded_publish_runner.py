@@ -115,6 +115,7 @@ class FakeWPClient:
         self.get_post_calls: list[int] = []
         self.update_post_fields_calls: list[tuple[int, dict]] = []
         self.update_post_status_calls: list[tuple[int, str]] = []
+        self.list_posts_calls: list[dict] = []
 
     def get_post(self, post_id: int) -> dict:
         self.get_post_calls.append(post_id)
@@ -133,6 +134,41 @@ class FakeWPClient:
     def update_post_status(self, post_id: int, status: str) -> None:
         self.update_post_status_calls.append((post_id, status))
         self.posts[post_id]["status"] = status
+
+    def list_posts(
+        self,
+        status: str = "draft",
+        per_page: int = 20,
+        page: int = 1,
+        orderby: str = "modified",
+        order: str = "desc",
+        search: str = "",
+        context: str | None = "edit",
+        fields: list[str] | None = None,
+    ) -> list[dict]:
+        self.list_posts_calls.append(
+            {
+                "status": status,
+                "per_page": per_page,
+                "page": page,
+                "orderby": orderby,
+                "order": order,
+                "search": search,
+                "context": context,
+                "fields": list(fields or []),
+            }
+        )
+        rows = []
+        for post in self.posts.values():
+            row_status = str((post or {}).get("status") or "").strip().lower()
+            if status != "any" and row_status != status:
+                continue
+            rows.append(json.loads(json.dumps(post, ensure_ascii=False)))
+        reverse = order.lower() != "asc"
+        rows.sort(key=lambda item: str(item.get(orderby) or ""), reverse=reverse)
+        start = max(0, (max(1, page) - 1) * per_page)
+        end = start + max(1, per_page)
+        return rows[start:end]
 
 
 class GuardedPublishRunnerTests(unittest.TestCase):
@@ -2011,6 +2047,293 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         self.assertEqual(history_row["hold_reason"], "cleanup_backup_failed")
         self.assertEqual(wp.update_post_fields_calls, [])
         self.assertEqual(wp.update_post_status_calls, [])
+
+    def test_duplicate_exact_title_against_existing_publish_holds_for_review(self):
+        candidate = _post(
+            4001,
+            "巨人が阪神に3-2で勝利",
+            f"<p>巨人が阪神に3-2で勝利した。先発が粘り、終盤の一打で競り勝った。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/source-a</p>",
+        )
+        existing = _post(
+            9001,
+            "巨人が阪神に3-2で勝利",
+            "<p>既に publish 済みの記事。</p><p>参照元: スポーツ報知 https://example.com/source-old</p>",
+            status="publish",
+        )
+        wp = FakeWPClient({4001: candidate, 9001: existing})
+        report = _report(green=[_green_entry(4001, candidate["title"]["raw"])])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.jsonl"
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=history_path,
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+            history_row = json.loads(history_path.read_text(encoding="utf-8").strip())
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["refused"][0]["reason"], "review")
+        self.assertEqual(result["refused"][0]["hold_reason"], "review_duplicate_candidate_exact_title_match_publish")
+        self.assertEqual(result["refused"][0]["duplicate_of_post_id"], 9001)
+        self.assertEqual(result["refused"][0]["duplicate_reason"], "exact_title_match_publish")
+        self.assertEqual(history_row["duplicate_of_post_id"], 9001)
+        self.assertEqual(history_row["duplicate_reason"], "exact_title_match_publish")
+        self.assertEqual(wp.update_post_status_calls, [])
+
+    def test_duplicate_exact_title_against_existing_draft_holds_for_review(self):
+        candidate = _post(
+            4002,
+            "巨人が広島に4-1で勝利",
+            f"<p>巨人が広島に4-1で勝利した。中盤の追加点で主導権を握った。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/source-b</p>",
+        )
+        existing = _post(
+            9002,
+            "巨人が広島に4-1で勝利",
+            "<p>別の draft が既にある。</p><p>参照元: スポーツ報知 https://example.com/source-c</p>",
+        )
+        wp = FakeWPClient({4002: candidate, 9002: existing})
+        report = _report(green=[_green_entry(4002, candidate["title"]["raw"])])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["refused"][0]["hold_reason"], "review_duplicate_candidate_exact_title_match_draft")
+        self.assertEqual(result["refused"][0]["duplicate_of_post_id"], 9002)
+        self.assertEqual(result["refused"][0]["duplicate_reason"], "exact_title_match_draft")
+        self.assertEqual(wp.update_post_status_calls, [])
+
+    def test_same_run_first_publish_wins_and_second_title_match_holds(self):
+        first = _post(
+            4003,
+            "巨人スタメン 若手をどう並べたか",
+            f"<p>巨人スタメンを整理した。起用意図と並び順の狙いが分かる内容だ。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/source-d</p>",
+        )
+        second = _post(
+            4004,
+            "巨人スタメン 若手をどう並べたか",
+            f"<p>同じタイトルの後続候補。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/source-e</p>",
+        )
+        wp = FakeWPClient({4003: first, 4004: second})
+        report = _report(
+            green=[
+                _green_entry(4003, first["title"]["raw"]),
+                _green_entry(4004, second["title"]["raw"]),
+            ]
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.jsonl"
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=history_path,
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+            rows = [json.loads(line) for line in history_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+        sent_ids = [item["post_id"] for item in result["executed"] if item["status"] == "sent"]
+        refused_rows = [item for item in result["refused"] if item["post_id"] == 4004]
+        self.assertEqual(sent_ids, [4003])
+        self.assertEqual(refused_rows[0]["hold_reason"], "review_duplicate_candidate_run_internal_dup")
+        self.assertEqual(refused_rows[0]["duplicate_of_post_id"], 4003)
+        self.assertEqual(refused_rows[0]["duplicate_reason"], "run_internal_dup")
+        self.assertEqual(wp.update_post_status_calls, [(4003, "publish")])
+        self.assertEqual([row["duplicate_reason"] for row in rows if row["post_id"] == 4004], ["run_internal_dup"])
+
+    def test_duplicate_same_source_url_holds_even_when_title_differs(self):
+        candidate = _post(
+            4005,
+            "巨人が勝ち越し打で接戦を制す",
+            f"<p>巨人が接戦を制した。終盤の一打が勝敗を分けた。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/shared-source</p>",
+        )
+        existing = _post(
+            9005,
+            "巨人が終盤に勝ち越し",
+            "<p>source は同じだが title は違う。</p><p>参照元: スポーツ報知 https://example.com/shared-source</p>",
+            status="publish",
+        )
+        wp = FakeWPClient({4005: candidate, 9005: existing})
+        report = _report(green=[_green_entry(4005, candidate["title"]["raw"])])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["refused"][0]["hold_reason"], "review_duplicate_candidate_same_source_url")
+        self.assertEqual(result["refused"][0]["duplicate_of_post_id"], 9005)
+        self.assertEqual(result["refused"][0]["duplicate_reason"], "same_source_url")
+
+    def test_duplicate_same_game_subtype_speaker_holds_for_review(self):
+        candidate = _post(
+            4006,
+            "阿部監督 6回の継投を説明",
+            f"<p>阿部監督が継投判断を説明した。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/comment-a</p>",
+        )
+        candidate["meta"] = {"article_subtype": "comment", "game_id": "20260429-g-t", "speaker_name": "阿部監督"}
+        existing = _post(
+            9006,
+            "阿部監督 7回の攻め方を説明",
+            "<p>同試合・同 speaker の別記事。</p><p>参照元: スポーツ報知 https://example.com/comment-b</p>",
+            status="publish",
+        )
+        existing["meta"] = {"article_subtype": "comment", "game_id": "20260429-g-t", "speaker_name": "阿部監督"}
+        wp = FakeWPClient({4006: candidate, 9006: existing})
+        report = _report(green=[_green_entry(4006, candidate["title"]["raw"])])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["refused"][0]["hold_reason"], "review_duplicate_candidate_same_game_subtype_speaker")
+        self.assertEqual(result["refused"][0]["duplicate_of_post_id"], 9006)
+        self.assertEqual(result["refused"][0]["duplicate_reason"], "same_game_subtype_speaker")
+
+    def test_same_game_with_different_subtype_is_not_held(self):
+        candidate = _post(
+            4007,
+            "巨人が阪神に5-2で勝利",
+            f"<p>巨人が阪神に5-2で勝利した。試合の核が冒頭で分かる。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/postgame-a</p>",
+        )
+        candidate["meta"] = {"article_subtype": "postgame", "game_id": "20260429-g-u", "speaker_name": "阿部監督"}
+        existing = _post(
+            9007,
+            "阿部監督 継投の意図を説明",
+            "<p>同 game だが comment 記事。</p><p>参照元: スポーツ報知 https://example.com/comment-c</p>",
+            status="publish",
+        )
+        existing["meta"] = {"article_subtype": "comment", "game_id": "20260429-g-u", "speaker_name": "阿部監督"}
+        wp = FakeWPClient({4007: candidate, 9007: existing})
+        report = _report(green=[_green_entry(4007, candidate["title"]["raw"])])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual(result["refused"], [])
+        self.assertEqual([item["status"] for item in result["executed"]], ["sent"])
+        self.assertEqual(wp.update_post_status_calls, [(4007, "publish")])
+
+    def test_same_speaker_with_different_game_day_is_not_held(self):
+        candidate = _post(
+            4008,
+            "阿部監督 試合後に打線を評価",
+            f"<p>阿部監督が試合後に打線を評価した。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/comment-d</p>",
+        )
+        candidate["meta"] = {"article_subtype": "comment", "game_id": "20260430-g-v", "speaker_name": "阿部監督"}
+        existing = _post(
+            9008,
+            "阿部監督 前日の継投を振り返る",
+            "<p>speaker は同じだが別日の試合。</p><p>参照元: スポーツ報知 https://example.com/comment-e</p>",
+            status="publish",
+        )
+        existing["meta"] = {"article_subtype": "comment", "game_id": "20260429-g-v", "speaker_name": "阿部監督"}
+        wp = FakeWPClient({4008: candidate, 9008: existing})
+        report = _report(green=[_green_entry(4008, candidate["title"]["raw"])])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual(result["refused"], [])
+        self.assertEqual([item["status"] for item in result["executed"]], ["sent"])
+        self.assertEqual(wp.update_post_status_calls, [(4008, "publish")])
+
+    def test_duplicate_reason_and_post_id_are_recorded_in_history(self):
+        candidate = _post(
+            4009,
+            "巨人が中日に4-0で勝利",
+            f"<p>巨人が中日に4-0で勝利した。主導権を握って完封した。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/source-f</p>",
+        )
+        existing = _post(
+            9009,
+            "巨人が中日に4-0で勝利",
+            "<p>既存 publish。</p><p>参照元: スポーツ報知 https://example.com/source-g</p>",
+            status="publish",
+        )
+        wp = FakeWPClient({4009: candidate, 9009: existing})
+        report = _report(green=[_green_entry(4009, candidate["title"]["raw"])])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.jsonl"
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=history_path,
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+            history_row = json.loads(history_path.read_text(encoding="utf-8").strip())
+
+        self.assertEqual(result["executed"][0]["duplicate_of_post_id"], 9009)
+        self.assertEqual(result["executed"][0]["duplicate_reason"], "exact_title_match_publish")
+        self.assertEqual(history_row["status"], "refused")
+        self.assertEqual(history_row["duplicate_of_post_id"], 9009)
+        self.assertEqual(history_row["duplicate_reason"], "exact_title_match_publish")
 
 
 if __name__ == "__main__":

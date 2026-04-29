@@ -4,7 +4,7 @@
 
 - number: 238
 - type: design + plan
-- status: REVIEW_NEEDED
+- status: WAITING
 - priority: P0.5
 - parent: -
 - related: 230-A / 230-A1 / 230-D / 229-A / 232 / 235 / 236-A / 227 / 113-A
@@ -13,6 +13,12 @@
 - mode: read-only audit + new doc 1 file only
 
 ## background
+
+2026-04-29 queue triage:
+
+- still useful for reducing night-time user burden
+- moved out of `active/` because 234 / 244 template and numeric hallucination hardening is the immediate quality lane
+- bring back after body quality stabilizes and the next step is night publish/mail suppression
 
 GCP budget が 1,500 円帯に到達したため、夜間 23:00-07:00 JST は「公開・通知・外部露出」を止め、朝に 1 枚の判断レポートで `GO / HOLD / STOP` を返せる運用へ寄せる。night-draft-only の狙いは、速報取り込みと draft 候補化は止めず、publish / mail / X / 非本線 WP mutation を夜間から切り離すことにある。
 

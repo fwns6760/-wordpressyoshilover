@@ -6,7 +6,7 @@
 - type: execution queue / Codex A-B dispatch board
 - status: READY
 - created: 2026-04-26
-- updated: 2026-04-28
+- updated: 2026-04-29
 - source_of_truth: current execution order, status, owner, lane, and blocked state
 
 ## role
@@ -29,6 +29,19 @@ Current publish-policy reference:
 
 - `doc/reference/154-publish-policy-2026-04-26-PM.md` = current publish-policy
 - `doc/done/2026-04/PUB-002-A-publish-candidate-gate-and-article-prose-contract.md` = superseded archive
+
+## current queue snapshot(2026-04-29 JST)
+
+Active folder is intentionally narrow after the template / numeric hallucination policy shift.
+
+| bucket | tickets | decision |
+|---|---|---|
+| **run now** | `234-impl-7-probable-starter-pregame-body-hardening.md` | still needed. This is the remaining template hardening gap for pregame / probable starter articles. |
+| **keep active** | `229-gemini-cost-governor-and-llm-call-reduction.md` | still needed as the cost-reduction parent; next action depends on fetcher 100% / ledger observation. |
+| **waiting** | `205-gcp-runtime-drift-audit.md`, `238-night-draft-only-and-morning-decision-report.md` | still useful, but not part of the immediate article-body hallucination fix. |
+| **closed / archived** | `234-impl-1..6`, `242 parent`, `242-B`, `243`, `244`, `244-B`, `244-followup`, `244-B-followup` | implemented and/or superseded by `cf8ecb9` live bundle; no longer active work. |
+
+Do not reopen closed 234/242/243/244 child tickets just to keep agents busy. If a new bad article appears, create a new narrow fixture-backed ticket from that concrete post_id.
 
 ## numbering policy
 

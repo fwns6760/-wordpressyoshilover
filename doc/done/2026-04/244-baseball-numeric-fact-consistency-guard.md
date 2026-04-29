@@ -1,28 +1,42 @@
 # 244 baseball numeric fact consistency guard
 
 - number: 244
-- type: audit + narrow implementation
-- status: READY
+- type: narrow implementation (publish blocker + X candidate suppress)
+- status: CLOSED
 - priority: P0.5
 - owner: Codex B
 - lane: B
 - created: 2026-04-28
+- updated: 2026-04-28 (scope: 監査 → 矛盾を publish 前 / X 候補表示前に止める実装修正)
 - parent: 234 / 242 / MKT-008
 - related: 242-B / 242-D2 / 234-impl-1 / 243
 
 ## purpose
 
-野球記事で、スコア、日付、勝敗、被安打、失点、選手名の hallucination を publish 前 / X 候補表示前に止める。
+**野球記事の数字を AI に考えさせない。数字は AI が書くものではなく、source/meta から抜いて使うもの。**
 
-LLM / Gemini / Web / 外部 API で補完しない。既存 record 内の title / source body / generated body / metadata / manual X candidate だけを使い、安い deterministic check で守る。
+source / metadata / generated body / X candidate 間の **数字・主語・日付の矛盾を検出し、publish 前または X 候補表示前に止める narrow 実装**。
+「監査して報告する」ではなく「矛盾を見つけたら publish させない / X 候補に出させない」修正。
+LLM / Gemini / Web / 外部 API で補完しない。既存 record 内の title / source body / generated body / metadata / manual X candidate だけを使い、安い deterministic check (regex / marker / local parser) で守る。
+
+## 記事タイプ別方針(2026-04-28 user 明示、follow-up 反映待ち)
+
+| subtype 群 | 数字ガード | 不一致時 |
+|---|---|---|
+| **試合系**(postgame / farm_result / lineup / farm_lineup / pregame / probable_starter) | **必須**(strict) | concrete mismatch = **hard_stop**、ambiguity = **review** |
+| **コメント/談話/コラム系**(manager_comment / player_comment / sns_topic / rumor_market) | **軽め**(lenient) | mismatch でも **review 止まり**、hard_stop に巻き込まない |
+| **default / 不明** | 中程度(saw safe-side fallback) | mismatch = **review**、AI に本文をそれっぽく埋めさせない |
+
+**現状(f2cc8a3)**: subtype 区別なし uniform 判定 → `244-followup` で subtype-aware severity 追加。
 
 ## scope
 
-- 数字・スコア・勝敗・日付・選手名の整合性監査
-- concrete mismatch は publish blocker
-- ambiguity / source facts 不足は review/draft
-- X 投稿候補だけが不一致なら `x_post_ready=false` または manual X candidate suppress
-- article body と X candidate の両方を見る
+- 数字・スコア・勝敗・日付・選手名の **矛盾検出と publish/X 抑止**
+- article body の concrete mismatch: **hard_stop / publishable=false**
+- ambiguity / source facts 不足: **review/draft**(hard_stop に巻き込まない)
+- X candidate だけの mismatch: **`x_post_ready=false` / candidate suppress**(article publish は維持)
+- good postgame / good farm_result は止めない(false positive 厳禁)
+- article body と X candidate の両方を独立に見る
 
 ## non-goals
 
@@ -37,9 +51,9 @@ LLM / Gemini / Web / 外部 API で補完しない。既存 record 内の title 
 - 242-B の entity contamination 全体実装との混線
 - Cloud Run / Scheduler / env / Secret / traffic / WP live mutation
 
-## audit targets
+## implementation pre-check
 
-Codex B はまず以下の生成・検証経路を確認する。
+Codex B は実装着手前に、以下の生成・検証経路を必ず inspect する(本 ticket の目的は監査ではなく、矛盾を見つけたら publish させない / X 候補に出させない narrow 修正)。
 
 - 元記事 title / source body / summary / source_url が record のどこに入るか
 - generated title / body / excerpt / metadata がどこで作られるか

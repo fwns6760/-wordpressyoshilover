@@ -1,12 +1,18 @@
 # 205 GCP runtime drift audit
 
 - priority: P0.5
-- status: READY
+- status: WAITING
 - owner: Codex A / Claude
 - lane: A
 - parent: 155 / 199 / 200 / 202
 
 ## Goal
+
+2026-04-29 queue triage:
+
+- still useful as a read-only runtime drift audit
+- moved out of `active/` because the immediate work is template / numeric hallucination hardening
+- bring back only when Cloud Run image, Scheduler, or log drift is suspected
 
 - detect cases where repo state moved but GCP runtime stayed behind
 - keep the ticket strictly read-only

@@ -2,7 +2,7 @@
 
 - number: 242
 - type: incident + investigation + fix
-- status: REVIEW_NEEDED
+- status: CLOSED
 - priority: P0.5
 - parent: -
 - related: 105 / PUB-004-D, 154, 217, 218, 226, 200, 234

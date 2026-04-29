@@ -783,29 +783,14 @@ function yoshilover_063_pick_today_giants_main_item( $candidates ) {
         return $manual;
     }
 
-    $hour = (int) current_time( 'G' );
-    if ( $hour >= 20 || $hour < 5 ) {
-        $priority_groups = array(
-            array( 'postgame', 'game_result', 'coach_comment', 'player_comment' ),
-            array( 'lineup' ),
-            array( 'probable_starter', 'pregame' ),
-            array( 'farm_result', 'farm_player_result', 'farm_lineup', 'farm', 'program_notice', 'roster_notice', 'injury_recovery_notice' ),
-        );
-    } elseif ( $hour >= 15 ) {
-        $priority_groups = array(
-            array( 'lineup' ),
-            array( 'probable_starter', 'pregame' ),
-            array( 'postgame', 'game_result', 'coach_comment', 'player_comment' ),
-            array( 'farm_result', 'farm_player_result', 'farm_lineup', 'farm', 'program_notice', 'roster_notice', 'injury_recovery_notice' ),
-        );
-    } else {
-        $priority_groups = array(
-            array( 'probable_starter', 'pregame' ),
-            array( 'lineup' ),
-            array( 'postgame', 'game_result', 'coach_comment', 'player_comment' ),
-            array( 'farm_result', 'farm_player_result', 'farm_lineup', 'farm', 'program_notice', 'roster_notice', 'injury_recovery_notice' ),
-        );
-    }
+    // today_giants_pick=main があれば既に return 済み。ここからは固定 priority で 1 本選ぶ。
+    $priority_groups = array(
+        array( 'lineup' ),
+        array( 'probable_starter', 'pregame' ),
+        array( 'postgame', 'game_result', 'coach_comment', 'player_comment' ),
+        array( 'farm_result', 'farm_player_result', 'farm_lineup', 'farm' ),
+        array( 'program_notice', 'roster_notice', 'injury_recovery_notice' ),
+    );
 
     foreach ( $priority_groups as $group ) {
         $matched = $latest_match( $candidates, $group );

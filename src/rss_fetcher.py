@@ -78,6 +78,12 @@ from src.gemini_cache import (
     GeminiCacheValue,
     compute_content_hash as _compute_gemini_content_hash,
 )
+from src.gemini_preflight_gate import (
+    PREFLIGHT_SKIP_LAYER,
+    PreflightSkipResult,
+    emit_gemini_call_skipped,
+    should_skip_gemini,
+)
 
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
@@ -4429,6 +4435,53 @@ def _build_gemini_cache_key(
     )
 
 
+def _build_gemini_preflight_candidate_meta(
+    *,
+    title: str,
+    summary: str,
+    category: str,
+    article_subtype: str,
+    source_name: str,
+    source_url: str,
+    source_type: str,
+    has_game: bool,
+    source_links: list[dict] | None = None,
+    source_entry: dict | None = None,
+    published_at: datetime | None = None,
+    duplicate_guard_context: dict | None = None,
+) -> dict[str, Any]:
+    resolved_source_url = str(source_url or "").strip()
+    if not resolved_source_url and isinstance(source_entry, dict):
+        resolved_source_url = str(source_entry.get("url") or source_entry.get("link") or "").strip()
+    source_handle = _extract_handle_from_tweet_url(resolved_source_url) if resolved_source_url else ""
+    source_blob = " ".join(part for part in (title, summary, source_name) if part)
+    existing_publish_same_source_url = False
+    if isinstance(duplicate_guard_context, dict):
+        existing_publish_same_source_url = bool(
+            duplicate_guard_context.get("existing_publish_same_source_url")
+            or duplicate_guard_context.get("source_url_already_published")
+        )
+    return {
+        "title": title,
+        "summary": summary,
+        "body_text": summary,
+        "source_body": summary,
+        "category": category,
+        "article_subtype": article_subtype,
+        "source_name": source_name,
+        "source_handle": source_handle,
+        "source_url": resolved_source_url,
+        "post_url": resolved_source_url,
+        "source_type": source_type,
+        "source_links": list(source_links or []),
+        "published_at": published_at,
+        "has_game": has_game,
+        "duplicate_guard_context": duplicate_guard_context if isinstance(duplicate_guard_context, dict) else None,
+        "existing_publish_same_source_url": existing_publish_same_source_url,
+        "is_giants_related": is_giants_related(source_blob, source_name=source_name, post_url=resolved_source_url),
+    }
+
+
 def _gemini_cache_lookup(
     cache_key: GeminiCacheKey,
     *,
@@ -4514,6 +4567,7 @@ def _gemini_text_with_cache(
     content_text: str,
     prompt_template_id: str,
     cache_manager: GeminiCacheManager | None,
+    candidate_meta: dict[str, Any] | None = None,
     now: datetime | None = None,
     log_label: str = "Gemini strict fact mode",
 ) -> tuple[str, dict[str, Any]]:
@@ -4530,6 +4584,20 @@ def _gemini_text_with_cache(
         "cache_size_bytes": 0,
         "gemini_call_made": True,
     }
+    if candidate_meta is not None:
+        preflight_candidate = dict(candidate_meta)
+        preflight_candidate.setdefault("source_url", source_url)
+        preflight_candidate.setdefault("post_url", source_url)
+        preflight_candidate.setdefault("source_url_hash", cache_key.source_url_hash)
+        preflight_candidate.setdefault("content_hash", cache_key.content_hash)
+        should_skip, skip_reason = should_skip_gemini(preflight_candidate, now=now)
+        if should_skip and skip_reason:
+            telemetry["cache_hit_reason"] = "preflight_skip"
+            telemetry["gemini_call_made"] = False
+            telemetry["skip_reason"] = skip_reason
+            telemetry["skip_layer"] = PREFLIGHT_SKIP_LAYER
+            emit_gemini_call_skipped(logger, candidate=preflight_candidate, skip_reason=skip_reason)
+            return "", telemetry
     if cache_manager is not None and cache_key.source_url_hash and cache_key.prompt_template_id:
         try:
             cached, hit_reason, cache_size_bytes = _gemini_cache_lookup(
@@ -4828,9 +4896,12 @@ def _maybe_render_postgame_article_parts(
     source_url: str,
     source_type: str,
     source_entry: dict | None,
+    source_links: list[dict] | None = None,
+    published_at: datetime | None = None,
+    duplicate_guard_context: dict | None = None,
     win_loss_hint: str,
     logger: logging.Logger,
-) -> tuple[str, str] | _PostgameStrictReviewFallback | None:
+) -> tuple[str, str] | _PostgameStrictReviewFallback | PreflightSkipResult | None:
     article_subtype = _detect_article_subtype(title, summary, category, has_game)
     strict_mode = strict_fact_mode_enabled()
     if not (category == "試合速報" and article_subtype == "postgame"):
@@ -4873,7 +4944,23 @@ def _maybe_render_postgame_article_parts(
             content_text=source_block,
             prompt_template_id=GEMINI_POSTGAME_STRICT_SLOTFILL_TEMPLATE_ID,
             cache_manager=_get_gemini_cache_manager(),
+            candidate_meta=_build_gemini_preflight_candidate_meta(
+                title=title,
+                summary=summary,
+                category=category,
+                article_subtype=article_subtype,
+                source_name=source_name,
+                source_url=source_url,
+                source_type=source_type,
+                has_game=has_game,
+                source_links=source_links,
+                source_entry=source_entry,
+                published_at=published_at,
+                duplicate_guard_context=duplicate_guard_context,
+            ),
         )
+        if str(_cache_meta.get("skip_layer") or "") == PREFLIGHT_SKIP_LAYER:
+            return PreflightSkipResult(str(_cache_meta.get("skip_reason") or "preflight_skip"))
         if not raw_text:
             logger.warning("postgame_strict: empty_response -> review")
             _log_article_parts_fallback(
@@ -5003,7 +5090,23 @@ def _maybe_render_postgame_article_parts(
         ),
         prompt_template_id=GEMINI_POSTGAME_PARTS_TEMPLATE_ID,
         cache_manager=_get_gemini_cache_manager(),
+        candidate_meta=_build_gemini_preflight_candidate_meta(
+            title=title,
+            summary=summary,
+            category=category,
+            article_subtype=article_subtype,
+            source_name=source_name,
+            source_url=source_url,
+            source_type=source_type,
+            has_game=has_game,
+            source_links=source_links,
+            source_entry=source_entry,
+            published_at=published_at,
+            duplicate_guard_context=duplicate_guard_context,
+        ),
     )
+    if str(_cache_meta.get("skip_layer") or "") == PREFLIGHT_SKIP_LAYER:
+        return PreflightSkipResult(str(_cache_meta.get("skip_reason") or "preflight_skip"))
     if not raw_text:
         _log_article_parts_fallback(
             logger,
@@ -8423,6 +8526,9 @@ def generate_article_with_gemini(
     source_type: str = "news",
     tweet_url: str = "",
     source_entry: dict | None = None,
+    source_links: list[dict] | None = None,
+    published_at: datetime | None = None,
+    duplicate_guard_context: dict | None = None,
 ) -> str:
     """Geminiで巨人ファン向け解説記事を生成。失敗時は空文字を返す。"""
     import urllib.request, urllib.error
@@ -8533,6 +8639,20 @@ def generate_article_with_gemini(
             ),
             prompt_template_id=_gemini_prompt_template_id(category, article_subtype),
             cache_manager=_get_gemini_cache_manager(),
+            candidate_meta=_build_gemini_preflight_candidate_meta(
+                title=title,
+                summary=summary_clean,
+                category=category,
+                article_subtype=article_subtype,
+                source_name=source_name,
+                source_url=source_url_for_cost or tweet_url,
+                source_type=source_type,
+                has_game=has_game,
+                source_links=source_links,
+                source_entry=source_entry,
+                published_at=published_at,
+                duplicate_guard_context=duplicate_guard_context,
+            ),
         )
         return cached_text
 
@@ -9120,7 +9240,7 @@ X検索で「{query_short} 巨人」に関するファンの声を{fan_reaction_
 # ──────────────────────────────────────────────────────────
 # ニュース記事ブロックHTML生成
 # ──────────────────────────────────────────────────────────
-def build_news_block(title: str, summary: str, url: str, source_name: str, category: str = "コラム", og_image_url: str = "", media_id: int = 0, extra_images: list = None, has_game: bool = True, article_ai_mode_override: str | None = None, source_links: list[dict] | None = None, source_day_label: str = "", source_type: str = "news", media_quotes: list[dict] | None = None, source_entry: dict | None = None, duplicate_guard_context: dict | None = None) -> tuple[str, str]:
+def build_news_block(title: str, summary: str, url: str, source_name: str, category: str = "コラム", og_image_url: str = "", media_id: int = 0, extra_images: list = None, has_game: bool = True, article_ai_mode_override: str | None = None, source_links: list[dict] | None = None, source_day_label: str = "", source_type: str = "news", media_quotes: list[dict] | None = None, source_entry: dict | None = None, published_at: datetime | None = None, duplicate_guard_context: dict | None = None) -> tuple[str, str]:
     import re
     summary_clean = re.sub(r"<[^>]+>", "", summary).strip()
     article_subtype = _detect_article_subtype(title, summary_clean, category, has_game)
@@ -9195,9 +9315,14 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             source_url=url,
             source_type=source_type,
             source_entry=source_entry,
+            source_links=source_links,
+            published_at=published_at,
+            duplicate_guard_context=duplicate_guard_context,
             win_loss_hint=win_loss_hint,
             logger=logger,
         )
+        if isinstance(parts_rendered, PreflightSkipResult):
+            return "", ""
         if isinstance(parts_rendered, _PostgameStrictReviewFallback):
             postgame_strict_review_reason = parts_rendered.reason
             logger.warning("postgame_strict: route_to_review reason=%s", parts_rendered.reason)
@@ -9270,6 +9395,9 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 source_type=source_type,
                 tweet_url=url,
                 source_entry=source_entry,
+                source_links=source_links,
+                published_at=published_at,
+                duplicate_guard_context=duplicate_guard_context,
             ),
             "",
         )
@@ -13673,6 +13801,7 @@ def _main(args, logger):
                 source_type=source_type,
                 media_quotes=media_quotes,
                 source_entry=item.get("entry"),
+                published_at=item.get("published_at"),
                 duplicate_guard_context=item.get("duplicate_guard_context"),
             )
             duplicate_guard_context = item.get("duplicate_guard_context")

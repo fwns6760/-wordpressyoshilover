@@ -40,6 +40,14 @@ class PublishNoticeScannerTests(unittest.TestCase):
         payload.update(overrides)
         return payload
 
+    def _capture_log_events(self):
+        events: list[dict[str, object]] = []
+
+        def fake_log_event(event: str, **payload):
+            events.append({"event": event, **payload})
+
+        return events, fake_log_event
+
     def test_scan_initial_run_sets_cursor_to_now_and_emits_nothing(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             cursor_path = Path(tmpdir) / "cursor.txt"
@@ -434,6 +442,7 @@ class PublishNoticeScannerTests(unittest.TestCase):
     def test_scan_guarded_publish_history_queues_backlog_only_yellow(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
             history_path = Path(tmpdir) / "history.json"
             queue_path = Path(tmpdir) / "queue.jsonl"
             guarded_history_path.write_text(
@@ -443,6 +452,7 @@ class PublishNoticeScannerTests(unittest.TestCase):
 
             result = scanner.scan_guarded_publish_history(
                 guarded_publish_history_path=guarded_history_path,
+                cursor_path=guarded_cursor_path,
                 history_path=history_path,
                 queue_path=queue_path,
                 fetch_post_detail=lambda base, post_id: self._post(
@@ -465,6 +475,7 @@ class PublishNoticeScannerTests(unittest.TestCase):
     def test_scan_guarded_publish_history_queues_cleanup_review(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
             history_path = Path(tmpdir) / "history.json"
             queue_path = Path(tmpdir) / "queue.jsonl"
             guarded_history_path.write_text(
@@ -482,6 +493,7 @@ class PublishNoticeScannerTests(unittest.TestCase):
 
             result = scanner.scan_guarded_publish_history(
                 guarded_publish_history_path=guarded_history_path,
+                cursor_path=guarded_cursor_path,
                 history_path=history_path,
                 queue_path=queue_path,
                 fetch_post_detail=lambda base, post_id: self._post(
@@ -501,6 +513,7 @@ class PublishNoticeScannerTests(unittest.TestCase):
     def test_scan_guarded_publish_history_excludes_red_hard_stop(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
             history_path = Path(tmpdir) / "history.json"
             queue_path = Path(tmpdir) / "queue.jsonl"
             guarded_history_path.write_text(
@@ -518,6 +531,7 @@ class PublishNoticeScannerTests(unittest.TestCase):
 
             result = scanner.scan_guarded_publish_history(
                 guarded_publish_history_path=guarded_history_path,
+                cursor_path=guarded_cursor_path,
                 history_path=history_path,
                 queue_path=queue_path,
                 fetch_post_detail=lambda base, post_id: self.fail("fetch_post_detail should not be called"),
@@ -531,6 +545,7 @@ class PublishNoticeScannerTests(unittest.TestCase):
     def test_scan_guarded_publish_history_excludes_same_source_duplicate_hold(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
             history_path = Path(tmpdir) / "history.json"
             queue_path = Path(tmpdir) / "queue.jsonl"
             guarded_history_path.write_text(
@@ -548,6 +563,7 @@ class PublishNoticeScannerTests(unittest.TestCase):
 
             result = scanner.scan_guarded_publish_history(
                 guarded_publish_history_path=guarded_history_path,
+                cursor_path=guarded_cursor_path,
                 history_path=history_path,
                 queue_path=queue_path,
                 fetch_post_detail=lambda base, post_id: self.fail("fetch_post_detail should not be called"),
@@ -561,6 +577,7 @@ class PublishNoticeScannerTests(unittest.TestCase):
     def test_scan_guarded_publish_history_skips_recent_notified_post(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
             history_path = Path(tmpdir) / "history.json"
             queue_path = Path(tmpdir) / "queue.jsonl"
             guarded_history_path.write_text(
@@ -574,6 +591,7 @@ class PublishNoticeScannerTests(unittest.TestCase):
 
             result = scanner.scan_guarded_publish_history(
                 guarded_publish_history_path=guarded_history_path,
+                cursor_path=guarded_cursor_path,
                 history_path=history_path,
                 queue_path=queue_path,
                 fetch_post_detail=lambda base, post_id: self.fail("fetch_post_detail should not be called"),
@@ -587,6 +605,7 @@ class PublishNoticeScannerTests(unittest.TestCase):
     def test_scan_guarded_publish_history_respects_max_per_run(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
             history_path = Path(tmpdir) / "history.json"
             queue_path = Path(tmpdir) / "queue.jsonl"
             entries = [
@@ -601,6 +620,7 @@ class PublishNoticeScannerTests(unittest.TestCase):
 
             result = scanner.scan_guarded_publish_history(
                 guarded_publish_history_path=guarded_history_path,
+                cursor_path=guarded_cursor_path,
                 history_path=history_path,
                 queue_path=queue_path,
                 fetch_post_detail=lambda base, post_id: self._post(id=post_id, status="draft"),
@@ -611,6 +631,317 @@ class PublishNoticeScannerTests(unittest.TestCase):
 
         self.assertEqual([request.post_id for request in result.emitted], [908, 907])
         self.assertEqual([row["post_id"] for row in rows], [908, 907])
+
+    def test_scan_guarded_publish_history_empty_cursor_scans_recent_window_and_updates_cursor(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            entries = [
+                self._guarded_entry(post_id=910, ts="2026-04-24T10:00:00+09:00"),
+                self._guarded_entry(post_id=911, ts="2026-04-24T11:00:00+09:00"),
+            ]
+            guarded_history_path.write_text(
+                "\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries) + "\n",
+                encoding="utf-8",
+            )
+            events, fake_log_event = self._capture_log_events()
+
+            with patch.object(scanner, "_log_event", side_effect=fake_log_event):
+                result = scanner.scan_guarded_publish_history(
+                    guarded_publish_history_path=guarded_history_path,
+                    cursor_path=guarded_cursor_path,
+                    history_path=history_path,
+                    queue_path=queue_path,
+                    fetch_post_detail=lambda base, post_id: self._post(id=post_id, status="draft"),
+                    now=lambda: NOW,
+                )
+                guarded_cursor_after = guarded_cursor_path.read_text(encoding="utf-8").strip()
+
+        self.assertEqual([request.post_id for request in result.emitted], [911, 910])
+        self.assertEqual(guarded_cursor_after, "2026-04-24T11:00:00+09:00")
+        self.assertEqual(events[0]["event"], "guarded_publish_history_scan_summary")
+        self.assertIsNone(events[0]["cursor_before_iso"])
+        self.assertEqual(events[0]["cursor_after_iso"], "2026-04-24T11:00:00+09:00")
+
+    def test_scan_guarded_publish_history_with_cursor_only_scans_new_records(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            guarded_cursor_path.write_text("2026-04-24T09:30:00+09:00\n", encoding="utf-8")
+            entries = [
+                self._guarded_entry(post_id=920, ts="2026-04-24T09:00:00+09:00"),
+                self._guarded_entry(post_id=921, ts="2026-04-24T10:00:00+09:00"),
+                self._guarded_entry(post_id=922, ts="2026-04-24T10:30:00+09:00"),
+                self._guarded_entry(post_id=923, ts="2026-04-24T11:00:00+09:00"),
+                self._guarded_entry(post_id=924, ts="2026-04-24T11:30:00+09:00"),
+                self._guarded_entry(post_id=925, ts="2026-04-24T11:45:00+09:00"),
+            ]
+            guarded_history_path.write_text(
+                "\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries) + "\n",
+                encoding="utf-8",
+            )
+            fetched: list[int | str] = []
+
+            result = scanner.scan_guarded_publish_history(
+                guarded_publish_history_path=guarded_history_path,
+                cursor_path=guarded_cursor_path,
+                history_path=history_path,
+                queue_path=queue_path,
+                fetch_post_detail=lambda base, post_id: fetched.append(post_id)
+                or self._post(id=post_id, status="draft"),
+                now=lambda: NOW,
+            )
+            guarded_cursor_after = guarded_cursor_path.read_text(encoding="utf-8").strip()
+
+        self.assertEqual(fetched, [925, 924, 923, 922, 921])
+        self.assertEqual([request.post_id for request in result.emitted], [925, 924, 923, 922, 921])
+        self.assertEqual(guarded_cursor_after, "2026-04-24T11:45:00+09:00")
+
+    def test_scan_guarded_publish_history_logs_cursor_at_head_when_no_new_records(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            guarded_cursor_path.write_text("2026-04-24T11:00:00+09:00\n", encoding="utf-8")
+            guarded_history_path.write_text(
+                json.dumps(self._guarded_entry(post_id=930, ts="2026-04-24T11:00:00+09:00"), ensure_ascii=False)
+                + "\n",
+                encoding="utf-8",
+            )
+            events, fake_log_event = self._capture_log_events()
+
+            with patch.object(scanner, "_log_event", side_effect=fake_log_event):
+                result = scanner.scan_guarded_publish_history(
+                    guarded_publish_history_path=guarded_history_path,
+                    cursor_path=guarded_cursor_path,
+                    history_path=history_path,
+                    queue_path=queue_path,
+                    fetch_post_detail=lambda base, post_id: self.fail("fetch_post_detail should not be called"),
+                    now=lambda: NOW,
+                )
+                guarded_cursor_after = guarded_cursor_path.read_text(encoding="utf-8").strip()
+
+        self.assertEqual(result.emitted, [])
+        self.assertEqual(guarded_cursor_after, "2026-04-24T11:00:00+09:00")
+        self.assertEqual(events[-1]["event"], "guarded_publish_history_scan_zero_emitted")
+        self.assertEqual(events[-1]["reason"], "cursor_at_head")
+
+    def test_scan_guarded_publish_history_clamps_old_cursor_to_recent_window(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            guarded_cursor_path.write_text("2026-04-22T12:00:00+09:00\n", encoding="utf-8")
+            entries = [
+                self._guarded_entry(post_id=940, ts="2026-04-23T11:00:00+09:00"),
+                self._guarded_entry(post_id=941, ts="2026-04-23T13:00:00+09:00"),
+                self._guarded_entry(post_id=942, ts="2026-04-24T11:00:00+09:00"),
+            ]
+            guarded_history_path.write_text(
+                "\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries) + "\n",
+                encoding="utf-8",
+            )
+            fetched: list[int | str] = []
+
+            result = scanner.scan_guarded_publish_history(
+                guarded_publish_history_path=guarded_history_path,
+                cursor_path=guarded_cursor_path,
+                history_path=history_path,
+                queue_path=queue_path,
+                fetch_post_detail=lambda base, post_id: fetched.append(post_id)
+                or self._post(id=post_id, status="draft"),
+                recent_window_hours=24,
+                now=lambda: NOW,
+            )
+            guarded_cursor_after = guarded_cursor_path.read_text(encoding="utf-8").strip()
+
+        self.assertEqual(fetched, [942, 941])
+        self.assertEqual([request.post_id for request in result.emitted], [942, 941])
+        self.assertEqual(guarded_cursor_after, "2026-04-24T11:00:00+09:00")
+
+    def test_scan_guarded_publish_history_logs_all_skipped_by_dedup(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            guarded_cursor_path.write_text("2026-04-24T09:00:00+09:00\n", encoding="utf-8")
+            guarded_history_path.write_text(
+                json.dumps(self._guarded_entry(post_id=950, ts="2026-04-24T10:00:00+09:00"), ensure_ascii=False)
+                + "\n",
+                encoding="utf-8",
+            )
+            history_path.write_text(json.dumps({"950": NOW.isoformat()}, ensure_ascii=False) + "\n", encoding="utf-8")
+            events, fake_log_event = self._capture_log_events()
+
+            with patch.object(scanner, "_log_event", side_effect=fake_log_event):
+                result = scanner.scan_guarded_publish_history(
+                    guarded_publish_history_path=guarded_history_path,
+                    cursor_path=guarded_cursor_path,
+                    history_path=history_path,
+                    queue_path=queue_path,
+                    fetch_post_detail=lambda base, post_id: self.fail("fetch_post_detail should not be called"),
+                    now=lambda: NOW,
+                )
+
+        self.assertEqual(result.emitted, [])
+        self.assertEqual(events[-1]["reason"], "all_skipped_by_dedup")
+
+    def test_scan_guarded_publish_history_logs_all_skipped_by_judgment(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            guarded_cursor_path.write_text("2026-04-24T09:00:00+09:00\n", encoding="utf-8")
+            guarded_history_path.write_text(
+                json.dumps(
+                    self._guarded_entry(
+                        post_id=960,
+                        ts="2026-04-24T10:00:00+09:00",
+                        judgment="red",
+                        hold_reason="hard_stop_injury_death",
+                    ),
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            events, fake_log_event = self._capture_log_events()
+
+            with patch.object(scanner, "_log_event", side_effect=fake_log_event):
+                result = scanner.scan_guarded_publish_history(
+                    guarded_publish_history_path=guarded_history_path,
+                    cursor_path=guarded_cursor_path,
+                    history_path=history_path,
+                    queue_path=queue_path,
+                    fetch_post_detail=lambda base, post_id: self.fail("fetch_post_detail should not be called"),
+                    now=lambda: NOW,
+                )
+
+        self.assertEqual(result.emitted, [])
+        self.assertEqual(events[-1]["reason"], "all_skipped_by_judgment")
+
+    def test_scan_guarded_publish_history_does_not_update_cursor_when_queue_append_fails(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            guarded_cursor_path.write_text("2026-04-24T09:00:00+09:00\n", encoding="utf-8")
+            history_path.write_text("{}\n", encoding="utf-8")
+            guarded_history_path.write_text(
+                json.dumps(self._guarded_entry(post_id=970, ts="2026-04-24T10:00:00+09:00"), ensure_ascii=False)
+                + "\n",
+                encoding="utf-8",
+            )
+
+            with patch.object(scanner, "_append_queue_log", side_effect=RuntimeError("queue append failed")):
+                with self.assertRaisesRegex(RuntimeError, "queue append failed"):
+                    scanner.scan_guarded_publish_history(
+                        guarded_publish_history_path=guarded_history_path,
+                        cursor_path=guarded_cursor_path,
+                        history_path=history_path,
+                        queue_path=queue_path,
+                        fetch_post_detail=lambda base, post_id: self._post(id=post_id, status="draft"),
+                        now=lambda: NOW,
+                    )
+            guarded_cursor_after = guarded_cursor_path.read_text(encoding="utf-8").strip()
+            history_after = json.loads(history_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(guarded_cursor_after, "2026-04-24T09:00:00+09:00")
+        self.assertEqual(history_after, {})
+
+    def test_scan_guarded_publish_history_treats_invalid_cursor_as_empty_and_recovers(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            guarded_cursor_path.write_text("not-an-iso-timestamp\n", encoding="utf-8")
+            entries = [
+                self._guarded_entry(post_id=980, ts="2026-04-24T10:00:00+09:00"),
+                self._guarded_entry(post_id=981, ts="2026-04-24T11:00:00+09:00"),
+            ]
+            guarded_history_path.write_text(
+                "\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries) + "\n",
+                encoding="utf-8",
+            )
+
+            result = scanner.scan_guarded_publish_history(
+                guarded_publish_history_path=guarded_history_path,
+                cursor_path=guarded_cursor_path,
+                history_path=history_path,
+                queue_path=queue_path,
+                fetch_post_detail=lambda base, post_id: self._post(id=post_id, status="draft"),
+                now=lambda: NOW,
+            )
+            guarded_cursor_after = guarded_cursor_path.read_text(encoding="utf-8").strip()
+
+        self.assertEqual([request.post_id for request in result.emitted], [981, 980])
+        self.assertEqual(guarded_cursor_after, "2026-04-24T11:00:00+09:00")
+
+    def test_scan_publish_path_keeps_guarded_cursor_handling_separate(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cursor_path = Path(tmpdir) / "cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            cursor_path.write_text("2026-04-24T08:00:00+09:00\n", encoding="utf-8")
+            history_path.write_text("{}\n", encoding="utf-8")
+            captured: dict[str, object] = {}
+
+            def fake_review_scan(**kwargs):
+                captured.update(kwargs)
+                return scanner.GuardedPublishHistoryScanResult(
+                    emitted=[],
+                    skipped=[],
+                    history_after=dict(kwargs["history"]),
+                    cursor_write_needed=False,
+                )
+
+            with patch.object(scanner, "scan_guarded_publish_history", side_effect=fake_review_scan):
+                result = scanner.scan(
+                    cursor_path=cursor_path,
+                    history_path=history_path,
+                    queue_path=queue_path,
+                    fetch=lambda base, after: [self._post(id=990, date="2026-04-24T10:30:00+09:00")],
+                    now=lambda: NOW,
+                )
+                cursor_after = cursor_path.read_text(encoding="utf-8").strip()
+
+        self.assertEqual([request.post_id for request in result.emitted], [990])
+        self.assertEqual(cursor_after, "2026-04-24T10:30:00+09:00")
+        self.assertNotIn("cursor_path", captured)
+        self.assertFalse(captured["write_history"])
+        self.assertFalse(captured["write_cursor"])
+
+    def test_guarded_publish_subject_prefixes_remain_unchanged(self):
+        self.assertEqual(
+            scanner._guarded_publish_subject_prefix(judgment="yellow", hold_reason="backlog_only"),
+            "【要確認(古い候補)】",
+        )
+        self.assertEqual(
+            scanner._guarded_publish_subject_prefix(judgment="review", hold_reason="cleanup_required"),
+            "【要review】",
+        )
+        self.assertEqual(
+            scanner._guarded_publish_subject_prefix(judgment="yellow", hold_reason="cleanup_required"),
+            "【要review】",
+        )
+        self.assertEqual(
+            scanner._guarded_publish_subject_prefix(judgment="yellow", hold_reason=""),
+            "【要確認】",
+        )
+        self.assertEqual(
+            scanner._guarded_publish_subject_prefix(judgment="", hold_reason="manual_hold"),
+            "【hold:manual_hold】",
+        )
 
 
 if __name__ == "__main__":

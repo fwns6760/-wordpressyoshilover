@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import base64
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import html
@@ -11,6 +11,8 @@ import json
 import os
 from pathlib import Path
 import re
+import sys
+import time
 from typing import Any
 from urllib.parse import urlencode, urljoin
 import urllib.request
@@ -31,6 +33,7 @@ _REVIEW_NOTICE_MAX_PER_RUN_DEFAULT = 10
 _REVIEW_NOTICE_WINDOW_HOURS_DEFAULT = 24.0
 _GUARDED_PUBLISH_HISTORY_DEFAULT_PATH = Path("/tmp/pub004d/guarded_publish_history.jsonl")
 _GUARDED_PUBLISH_HISTORY_FALLBACK_PATH = Path("logs/guarded_publish_history.jsonl")
+_GUARDED_PUBLISH_HISTORY_CURSOR_DEFAULT_PATH = Path("/tmp/pub004d/guarded_publish_history_cursor.txt")
 _GUARDED_PUBLISH_REVIEW_SUBJECT_RE = re.compile(r"^【[^】]+】")
 _EXCLUDED_GUARDED_HOLD_REASONS = frozenset(
     {
@@ -57,6 +60,10 @@ class GuardedPublishHistoryScanResult:
     emitted: list[PublishNoticeRequest]
     skipped: list[tuple[int | str, str]]
     history_after: dict[str, str]
+    cursor_before: str | None = None
+    cursor_after: str | None = None
+    cursor_path: Path | None = None
+    cursor_write_needed: bool = False
 
 
 def _now_jst() -> datetime:
@@ -89,6 +96,19 @@ def _resolve_guarded_publish_history_path(value: str | Path | None = None) -> Pa
     if _GUARDED_PUBLISH_HISTORY_DEFAULT_PATH.exists():
         return _GUARDED_PUBLISH_HISTORY_DEFAULT_PATH
     return _GUARDED_PUBLISH_HISTORY_FALLBACK_PATH
+
+
+def _resolve_guarded_publish_history_cursor_path(value: str | Path | None = None) -> Path:
+    if value is not None and str(value).strip():
+        return _path(value)
+    for env_name in (
+        "PUBLISH_NOTICE_GUARDED_HISTORY_CURSOR_PATH",
+        "GUARDED_PUBLISH_HISTORY_CURSOR_PATH",
+    ):
+        env_value = str(os.environ.get(env_name, "")).strip()
+        if env_value:
+            return _path(env_value)
+    return _GUARDED_PUBLISH_HISTORY_CURSOR_DEFAULT_PATH
 
 
 def _parse_datetime_to_jst(value: str | datetime | None) -> datetime | None:
@@ -130,6 +150,10 @@ def _write_cursor(path: Path, cursor_iso: str) -> None:
     os.replace(tmp_path, path)
 
 
+def _log_event(event: str, **payload: Any) -> None:
+    print(json.dumps({"event": event, **payload}, ensure_ascii=False), file=sys.stderr, flush=True)
+
+
 def _load_history(path: Path) -> dict[str, str]:
     if not path.exists():
         return {}
@@ -150,6 +174,26 @@ def _write_history(path: Path, history: Mapping[str, str]) -> None:
         encoding="utf-8",
     )
     os.replace(tmp_path, path)
+
+
+def _iter_jsonl_lines_reverse(path: Path, *, chunk_size: int = 65536) -> Iterator[str]:
+    if not path.exists():
+        return
+    with path.open("rb") as handle:
+        handle.seek(0, os.SEEK_END)
+        position = handle.tell()
+        buffer = b""
+        while position > 0:
+            read_size = min(chunk_size, position)
+            position -= read_size
+            handle.seek(position)
+            buffer = handle.read(read_size) + buffer
+            split_lines = buffer.split(b"\n")
+            buffer = split_lines[0]
+            for raw_line in reversed(split_lines[1:]):
+                yield raw_line.decode("utf-8", errors="replace")
+        if buffer:
+            yield buffer.decode("utf-8", errors="replace")
 
 
 def _prune_history(history: Mapping[str, str], *, now: datetime) -> dict[str, str]:
@@ -350,32 +394,66 @@ def _guarded_publish_entry_datetime(entry: Mapping[str, Any]) -> datetime | None
     return None
 
 
-def _load_recent_guarded_publish_entries(
+def _resolve_guarded_publish_scan_cursor(
+    *,
+    cursor_before: str | None,
+    now: datetime,
+    recent_window: timedelta,
+) -> tuple[str | None, datetime]:
+    cutoff = now - recent_window
+    parsed = _parse_datetime_to_jst(cursor_before)
+    if parsed is None:
+        return None, cutoff
+    if parsed < cutoff:
+        return parsed.isoformat(), cutoff
+    if parsed > now:
+        return parsed.isoformat(), now
+    return parsed.isoformat(), parsed
+
+
+def _load_incremental_guarded_publish_entries(
     path: Path,
     *,
     now: datetime,
     recent_window: timedelta,
-) -> list[dict[str, Any]]:
-    if not path.exists():
-        return []
-    cutoff = now - recent_window
+    cursor_before: str | None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    cursor_before_iso, effective_cursor = _resolve_guarded_publish_scan_cursor(
+        cursor_before=cursor_before,
+        now=now,
+        recent_window=recent_window,
+    )
+    file_size_bytes = path.stat().st_size if path.exists() else 0
     entries: list[dict[str, Any]] = []
-    with path.open(encoding="utf-8") as handle:
-        for raw_line in handle:
-            line = raw_line.strip()
-            if not line:
-                continue
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(payload, dict):
-                continue
-            recorded_at = _guarded_publish_entry_datetime(payload)
-            if recorded_at is None or recorded_at < cutoff or recorded_at > now:
-                continue
-            entries.append(payload)
-    return entries
+    skipped_by_cursor = 0
+    valid_row_seen = False
+
+    for raw_line in _iter_jsonl_lines_reverse(path):
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        recorded_at = _guarded_publish_entry_datetime(payload)
+        if recorded_at is None or recorded_at > now:
+            continue
+        valid_row_seen = True
+        if recorded_at <= effective_cursor:
+            skipped_by_cursor += 1
+            break
+        entries.append(payload)
+
+    return entries, {
+        "cursor_before_iso": cursor_before_iso,
+        "effective_cursor_iso": effective_cursor.isoformat(),
+        "file_empty": file_size_bytes <= 0 or not valid_row_seen,
+        "file_size_bytes": file_size_bytes,
+        "skipped_by_cursor": skipped_by_cursor,
+    }
 
 
 def _normalize_guarded_reason(value: Any) -> str:
@@ -506,7 +584,7 @@ def _request_from_post(post: Mapping[str, Any]) -> PublishNoticeRequest:
 def scan_guarded_publish_history(
     *,
     guarded_publish_history_path: str | Path | None = None,
-    cursor_path: str | Path = "logs/publish_notice_cursor.txt",
+    cursor_path: str | Path | None = None,
     history_path: str | Path = "logs/publish_notice_history.json",
     queue_path: str | Path = "logs/publish_notice_queue.jsonl",
     wp_api_base: str | None = None,
@@ -517,10 +595,11 @@ def scan_guarded_publish_history(
     now: Callable[[], datetime] | datetime | None = None,
     recorded_at: Callable[[], datetime] | datetime | None = None,
     write_history: bool = True,
+    write_cursor: bool = True,
 ) -> GuardedPublishHistoryScanResult:
-    del cursor_path
     current_now = _coerce_now(now)
     history_file = _path(history_path)
+    guarded_cursor_file = _resolve_guarded_publish_history_cursor_path(cursor_path)
     current_history = _prune_history(
         dict(history) if history is not None else _load_history(history_file),
         now=current_now,
@@ -529,14 +608,27 @@ def scan_guarded_publish_history(
     if resolved_max_per_run <= 0:
         if write_history:
             _write_history(history_file, current_history)
-        return GuardedPublishHistoryScanResult(emitted=[], skipped=[], history_after=current_history)
+        return GuardedPublishHistoryScanResult(
+            emitted=[],
+            skipped=[],
+            history_after=current_history,
+            cursor_before=_read_cursor(guarded_cursor_file),
+            cursor_after=_read_cursor(guarded_cursor_file),
+            cursor_path=guarded_cursor_file,
+            cursor_write_needed=False,
+        )
 
     recent_window = timedelta(hours=_resolve_review_window_hours(recent_window_hours))
-    history_entries = _load_recent_guarded_publish_entries(
-        _resolve_guarded_publish_history_path(guarded_publish_history_path),
+    guarded_history_file = _resolve_guarded_publish_history_path(guarded_publish_history_path)
+    cursor_before = _read_cursor(guarded_cursor_file)
+    scan_started_at = time.perf_counter()
+    history_entries, scan_meta = _load_incremental_guarded_publish_entries(
+        guarded_history_file,
         now=current_now,
         recent_window=recent_window,
+        cursor_before=cursor_before,
     )
+    parse_duration_ms = int((time.perf_counter() - scan_started_at) * 1000)
     base_url = _resolve_wp_api_base(wp_api_base)
     fetch_post_detail_fn = fetch_post_detail or _default_fetch_post_detail
     review_recorded_at = _coerce_now(
@@ -548,10 +640,16 @@ def scan_guarded_publish_history(
     skipped: list[tuple[int | str, str]] = []
     next_history = dict(current_history)
     seen_post_ids: set[str] = set()
+    skipped_by_dedup = 0
+    skipped_by_judgment_filter = 0
+    scanned_records = 0
+    hit_max_per_run = False
 
-    for entry in reversed(history_entries):
+    for entry in history_entries:
         if len(emitted) >= resolved_max_per_run:
+            hit_max_per_run = True
             break
+        scanned_records += 1
 
         post_id = entry.get("post_id", "")
         post_key = str(post_id or "").strip()
@@ -567,9 +665,11 @@ def scan_guarded_publish_history(
             hold_reason=hold_reason,
             status=status,
         ):
+            skipped_by_judgment_filter += 1
             skipped.append((post_id, "REVIEW_EXCLUDED"))
             continue
         if post_key in seen_post_ids or _is_recent_duplicate(next_history, post_id, now=current_now):
+            skipped_by_dedup += 1
             skipped.append((post_id, "REVIEW_RECENT_DUPLICATE"))
             continue
 
@@ -616,12 +716,55 @@ def scan_guarded_publish_history(
             recorded_at_iso=review_recorded_at_iso,
         )
 
+    cursor_after = scan_meta["cursor_before_iso"]
+    if not hit_max_per_run and history_entries:
+        newest_entry_dt = _guarded_publish_entry_datetime(history_entries[0])
+        if newest_entry_dt is not None:
+            cursor_after = newest_entry_dt.isoformat()
+
     if write_history:
         _write_history(history_file, next_history)
+    cursor_write_needed = bool(cursor_after) and cursor_after != cursor_before
+    if write_cursor and cursor_write_needed and cursor_after is not None:
+        _write_cursor(guarded_cursor_file, cursor_after)
+
+    emitted_count = len(emitted)
+    other_skips = max(0, len(skipped) - skipped_by_dedup - skipped_by_judgment_filter)
+    _log_event(
+        "guarded_publish_history_scan_summary",
+        cursor_before_iso=scan_meta["cursor_before_iso"],
+        cursor_after_iso=cursor_after,
+        scanned_records=scanned_records,
+        skipped_by_cursor=int(scan_meta["skipped_by_cursor"]),
+        skipped_by_dedup=skipped_by_dedup,
+        skipped_by_judgment_filter=skipped_by_judgment_filter,
+        emitted_count=emitted_count,
+        file_size_bytes=int(scan_meta["file_size_bytes"]),
+        parse_duration_ms=parse_duration_ms,
+    )
+    if emitted_count == 0:
+        zero_reason = "all_skipped_by_judgment"
+        if bool(scan_meta["file_empty"]):
+            zero_reason = "file_empty"
+        elif scanned_records == 0:
+            zero_reason = "cursor_at_head" if scan_meta["cursor_before_iso"] is not None else "all_skipped_by_cursor"
+        elif skipped_by_dedup >= max(skipped_by_judgment_filter, other_skips):
+            zero_reason = "all_skipped_by_dedup"
+        elif skipped_by_judgment_filter >= max(skipped_by_dedup, other_skips):
+            zero_reason = "all_skipped_by_judgment"
+        _log_event(
+            "guarded_publish_history_scan_zero_emitted",
+            reason=zero_reason,
+            cursor_iso=cursor_after or scan_meta["cursor_before_iso"],
+        )
     return GuardedPublishHistoryScanResult(
         emitted=emitted,
         skipped=skipped,
         history_after=next_history,
+        cursor_before=cursor_before,
+        cursor_after=cursor_after,
+        cursor_path=guarded_cursor_file,
+        cursor_write_needed=cursor_write_needed,
     )
 
 
@@ -687,7 +830,6 @@ def scan(
         )
 
     review_scan = scan_guarded_publish_history(
-        cursor_path=cursor_path,
         history_path=history_path,
         queue_path=queue_path,
         wp_api_base=base_url,
@@ -695,6 +837,7 @@ def scan(
         now=current_now,
         recorded_at=current_now + timedelta(seconds=1),
         write_history=False,
+        write_cursor=False,
     )
     emitted.extend(review_scan.emitted)
     skipped.extend(review_scan.skipped)
@@ -703,6 +846,8 @@ def scan(
     cursor_after = latest_post_dt.isoformat() if latest_post_dt is not None else current_now.isoformat()
     _write_history(history_file, next_history)
     _write_cursor(cursor_file, cursor_after)
+    if review_scan.cursor_write_needed and review_scan.cursor_path is not None and review_scan.cursor_after is not None:
+        _write_cursor(review_scan.cursor_path, review_scan.cursor_after)
     return ScanResult(
         emitted=emitted,
         skipped=skipped,

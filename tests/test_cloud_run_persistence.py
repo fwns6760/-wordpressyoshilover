@@ -104,6 +104,21 @@ class GCSStateManagerTests(unittest.TestCase):
         mocked_download.assert_called_once_with("cursor.txt", target)
         mocked_upload.assert_called_once_with(target, "cursor.txt")
 
+    def test_with_state_can_skip_upload_on_exit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager = cloud_run_persistence.GCSStateManager("bucket-name", "publish_notice", "project-id")
+            target = Path(tmpdir) / "guarded_publish_history.jsonl"
+
+            with patch.object(manager, "download", return_value=False) as mocked_download, patch.object(
+                manager, "upload"
+            ) as mocked_upload:
+                with manager.with_state("guarded_publish_history.jsonl", target, upload_on_exit=False) as downloaded:
+                    self.assertFalse(downloaded)
+                    target.write_text('{"status":"refused"}\n', encoding="utf-8")
+
+        mocked_download.assert_called_once_with("guarded_publish_history.jsonl", target)
+        mocked_upload.assert_not_called()
+
 
 class ArtifactUploaderTests(unittest.TestCase):
     def test_upload_success_returns_gcs_uri(self) -> None:
@@ -184,6 +199,7 @@ class PublishNoticeEntrypointTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             cursor_path = Path(tmpdir) / "cursor.txt"
             history_path = Path(tmpdir) / "history.json"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
             guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
 
             def fake_run(cmd, **kwargs):
@@ -196,6 +212,7 @@ class PublishNoticeEntrypointTests(unittest.TestCase):
                 if cmd[0] == sys.executable:
                     cursor_path.write_text("cursor\n", encoding="utf-8")
                     history_path.write_text("{}\n", encoding="utf-8")
+                    guarded_cursor_path.write_text("2026-04-24T11:00:00+09:00\n", encoding="utf-8")
                     return runner_result
                 if cmd[0] == "gcloud" and cmd[4] in {"cp", "mv"}:
                     return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=b"", stderr=b"")
@@ -218,6 +235,8 @@ class PublishNoticeEntrypointTests(unittest.TestCase):
                         str(Path(tmpdir) / "queue.jsonl"),
                         "--guarded-history-path",
                         str(guarded_history_path),
+                        "--guarded-history-cursor-path",
+                        str(guarded_cursor_path),
                     ]
                 )
 
@@ -241,6 +260,18 @@ class PublishNoticeEntrypointTests(unittest.TestCase):
                 str(Path(tmpdir) / "queue.jsonl"),
             ],
         )
+        commands = [call.args[0] for call in mocked_run.call_args_list]
+        guarded_cursor_upload_cp = [
+            command
+            for command in commands
+            if command[:6] == ["gcloud", "--project", "project-id", "storage", "cp", str(guarded_cursor_path)]
+        ]
+        self.assertTrue(guarded_cursor_upload_cp)
+        self.assertTrue(
+            guarded_cursor_upload_cp[0][6].startswith(
+                "gs://bucket-name/publish_notice/guarded_publish_history_cursor.txt.uploading-"
+            )
+        )
 
     def test_run_publish_notice_entrypoint_queue_path_download_upload(self) -> None:
         runner_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
@@ -249,6 +280,7 @@ class PublishNoticeEntrypointTests(unittest.TestCase):
             cursor_path = Path(tmpdir) / "cursor.txt"
             history_path = Path(tmpdir) / "history.json"
             queue_path = Path(tmpdir) / "queue.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
             guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
 
             def fake_run(cmd, **kwargs):
@@ -268,6 +300,7 @@ class PublishNoticeEntrypointTests(unittest.TestCase):
                     cursor_path.write_text("cursor\n", encoding="utf-8")
                     history_path.write_text("{}\n", encoding="utf-8")
                     queue_path.write_text('{"status":"queued"}\n{"status":"sent"}\n', encoding="utf-8")
+                    guarded_cursor_path.write_text("2026-04-24T11:30:00+09:00\n", encoding="utf-8")
                     return runner_result
                 if cmd[0] == "gcloud" and cmd[4] in {"cp", "mv"}:
                     return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=b"", stderr=b"")
@@ -290,6 +323,8 @@ class PublishNoticeEntrypointTests(unittest.TestCase):
                         str(queue_path),
                         "--guarded-history-path",
                         str(guarded_history_path),
+                        "--guarded-history-cursor-path",
+                        str(guarded_cursor_path),
                     ]
                 )
 
@@ -321,6 +356,19 @@ class PublishNoticeEntrypointTests(unittest.TestCase):
             ],
             commands,
         )
+        self.assertIn(
+            [
+                "gcloud",
+                "--project",
+                "project-id",
+                "storage",
+                "cp",
+                "gs://bucket-name/publish_notice/guarded_publish_history_cursor.txt",
+                str(guarded_cursor_path),
+                "--quiet",
+            ],
+            commands,
+        )
         queue_upload_cp = [
             command
             for command in commands
@@ -332,6 +380,12 @@ class PublishNoticeEntrypointTests(unittest.TestCase):
             ["gcloud", "--project", "project-id", "storage", "mv", queue_upload_cp[0][6], "gs://bucket-name/publish_notice/queue.jsonl", "--quiet"],
             commands,
         )
+        guarded_history_upload_cp = [
+            command
+            for command in commands
+            if command[:6] == ["gcloud", "--project", "project-id", "storage", "cp", str(guarded_history_path)]
+        ]
+        self.assertEqual(guarded_history_upload_cp, [])
 
     def test_entrypoint_returns_runner_exit_code(self) -> None:
         runner_result = subprocess.CompletedProcess(args=[], returncode=7, stdout="", stderr="")
@@ -339,6 +393,7 @@ class PublishNoticeEntrypointTests(unittest.TestCase):
             cursor_path = Path(tmpdir) / "cursor.txt"
             history_path = Path(tmpdir) / "history.json"
             queue_path = Path(tmpdir) / "queue.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
             guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
 
             def fake_run(cmd, **kwargs):
@@ -370,6 +425,8 @@ class PublishNoticeEntrypointTests(unittest.TestCase):
                         str(queue_path),
                         "--guarded-history-path",
                         str(guarded_history_path),
+                        "--guarded-history-cursor-path",
+                        str(guarded_cursor_path),
                     ]
                 )
 

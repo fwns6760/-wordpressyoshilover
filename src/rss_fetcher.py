@@ -46,6 +46,7 @@ from title_validator import is_weak_subject_title
 from title_validator import title_has_person_name_candidate
 from title_validator import validate_title_candidate as _validate_title_candidate
 from title_validator import is_supported_subtype as _title_validator_supports_subtype
+from weak_title_rescue import rescue_blacklist_phrase, rescue_related_info_escape
 from wp_client import WPClient
 from media_xpost_selector import evaluate_media_quote_selection
 from wp_draft_creator import build_oembed_block, load_posted_urls, save_posted_url
@@ -184,6 +185,7 @@ GEMINI_POSTGAME_STRICT_SLOTFILL_TEMPLATE_ID = "postgame_strict_slotfill_v1"
 GEMINI_POSTGAME_PARTS_TEMPLATE_ID = "postgame_article_parts_v1"
 GEMINI_STRICT_PROMPT_TEMPLATE_VERSION = "v1"
 POST_GEN_VALIDATE_NOTIFICATION_ENV_FLAG = "ENABLE_POST_GEN_VALIDATE_NOTIFICATION"
+WEAK_TITLE_RESCUE_ENV_FLAG = "ENABLE_WEAK_TITLE_RESCUE"
 POST_GEN_VALIDATE_HISTORY_DEFAULT_PATH = Path("/tmp/pub004d/post_gen_validate_history.jsonl")
 POST_GEN_VALIDATE_STATE_BUCKET = "baseballsite-yoshilover-state"
 POST_GEN_VALIDATE_STATE_KEY = "post_gen_validate/post_gen_validate_history.jsonl"
@@ -12329,6 +12331,113 @@ def _apply_title_player_name_backfill(
     return final_title, comparison_title
 
 
+def _log_weak_title_rescued(
+    logger: logging.Logger,
+    *,
+    source_url: str,
+    source_name: str,
+    category: str,
+    article_subtype: str,
+    original_title: str,
+    rescued_title: str,
+    source_title: str,
+    strategy: str,
+    original_skip_reason: str,
+) -> None:
+    payload = {
+        "event": "weak_title_rescued",
+        "source_url_hash": _hash_duplicate_guard_value(source_url),
+        "source_name": source_name,
+        "category": category,
+        "article_subtype": article_subtype,
+        "original_title": original_title,
+        "new_title": rescued_title,
+        "source_title": source_title,
+        "strategy": strategy,
+        "original_skip_reason": original_skip_reason,
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
+def _maybe_apply_weak_title_rescue(
+    *,
+    rewritten_title: str,
+    source_title: str,
+    source_body: str,
+    summary: str,
+    category: str,
+    article_subtype: str,
+    manager_subject: str = "",
+    notice_subject: str = "",
+    logger: logging.Logger | None = None,
+    source_name: str = "",
+    source_url: str = "",
+) -> tuple[str, str | None]:
+    if not _env_flag(WEAK_TITLE_RESCUE_ENV_FLAG, False):
+        return rewritten_title, None
+
+    weak_generated, weak_generated_reason = is_weak_generated_title(rewritten_title)
+    weak_subject, weak_subject_reason = is_weak_subject_title(rewritten_title)
+    if not weak_generated and not weak_subject:
+        return rewritten_title, None
+
+    metadata = _build_title_player_name_backfill_metadata(
+        source_title,
+        summary,
+        category,
+        article_subtype,
+        manager_subject=manager_subject,
+        notice_subject=notice_subject,
+    )
+    rescue_result = (
+        rescue_related_info_escape(
+            gen_title=rewritten_title,
+            source_title=source_title,
+            body=source_body,
+            summary=summary,
+            metadata=metadata,
+        )
+        or rescue_blacklist_phrase(
+            gen_title=rewritten_title,
+            source_title=source_title,
+            body=source_body,
+            summary=summary,
+            metadata=metadata,
+        )
+    )
+    if rescue_result is None:
+        return rewritten_title, None
+
+    rescued_title = _trim_display_title(rescue_result.title or rewritten_title)
+    if not rescued_title or rescued_title == rewritten_title:
+        return rewritten_title, None
+
+    rescued_weak_generated, _ = is_weak_generated_title(rescued_title)
+    rescued_weak_subject, _ = is_weak_subject_title(rescued_title)
+    if rescued_weak_generated or rescued_weak_subject:
+        return rewritten_title, None
+
+    original_skip_reason = ""
+    if weak_subject:
+        original_skip_reason = f"weak_subject_title:{weak_subject_reason}"
+    elif weak_generated:
+        original_skip_reason = f"weak_generated_title:{weak_generated_reason}"
+    if logger is not None:
+        _log_weak_title_rescued(
+            logger,
+            source_url=source_url,
+            source_name=source_name,
+            category=category,
+            article_subtype=article_subtype,
+            original_title=rewritten_title,
+            rescued_title=rescued_title,
+            source_title=source_title,
+            strategy=rescue_result.strategy,
+            original_skip_reason=original_skip_reason,
+        )
+    return rescued_title, original_skip_reason or None
+
+
 RAINOUT_SLIDE_TITLE_RE = _re.compile(r"(?:雨天中止|雨で中止).*(?:スライド登板|先発予定)|(?:スライド登板).*(?:雨天中止|先発予定)")
 FARM_LINEUP_TITLE_RE = _re.compile(r"(?:二軍|２軍|2軍|ファーム).*(?:スタメン|オーダー|打順|1⃣|2⃣|3⃣|4⃣|1番|2番|3番|4番)|(?:スタメン|オーダー|打順|1⃣|2⃣|3⃣|4⃣|1番|2番|3番|4番).*(?:二軍|２軍|2軍|ファーム)")
 FARM_RESULT_TITLE_RE = _re.compile(r"(?:二軍|２軍|2軍|ファーム).*(?:\d+\s*[-－]\s*\d+|勝利|白星|敗戦|本塁打|無失点|猛打賞|マルチ)")
@@ -13767,6 +13876,19 @@ def _main(args, logger):
                     source_name=source_name,
                     source_url=post_url,
                 )
+                draft_title, _weak_title_rescue_reason = _maybe_apply_weak_title_rescue(
+                    rewritten_title=draft_title,
+                    source_title=raw_title,
+                    source_body=summary,
+                    summary=summary,
+                    category=category,
+                    article_subtype=title_article_subtype,
+                    manager_subject="",
+                    notice_subject="",
+                    logger=logger,
+                    source_name=source_name,
+                    source_url=post_url,
+                )
                 _log_title_template_selected(logger, post_url, raw_title, draft_title, title_template_key, category, title_article_subtype)
                 print(f"  DRY: [{category}] {draft_title[:50]}")
                 print(f"       {post_url}")
@@ -13862,6 +13984,19 @@ def _main(args, logger):
                 source_url=post_url,
             )
             draft_title, comparison_title = _apply_title_player_name_backfill(
+                rewritten_title=draft_title,
+                source_title=raw_title,
+                source_body=summary,
+                summary=summary,
+                category=category,
+                article_subtype=title_article_subtype,
+                manager_subject=manager_subject,
+                notice_subject=notice_subject,
+                logger=logger,
+                source_name=source_name,
+                source_url=post_url,
+            )
+            draft_title, _weak_title_rescue_reason = _maybe_apply_weak_title_rescue(
                 rewritten_title=draft_title,
                 source_title=raw_title,
                 source_body=summary,

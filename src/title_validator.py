@@ -288,6 +288,13 @@ def is_weak_generated_title(title: str) -> tuple[bool, str]:
         if phrase in normalized:
             return True, f"blacklist_phrase:{phrase}"
     if not any(marker in normalized for marker in WEAK_GENERATED_TITLE_STRONG_MARKERS):
+        try:
+            from .weak_title_rescue import is_strong_with_name_and_event
+        except ImportError:  # pragma: no cover - rss_fetcher top-level import path
+            from weak_title_rescue import is_strong_with_name_and_event
+
+        if is_strong_with_name_and_event(normalized):
+            return False, ""
         return True, "no_strong_marker"
     return False, ""
 

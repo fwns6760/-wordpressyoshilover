@@ -1,0 +1,121 @@
+---
+session_date: 2026-04-30
+topic: P0 公開復旧観察 + CI 緑化 + 229-COST 観察 + 275-QA push
+participants: Claude Code (management), user (final judge)
+status: IN_PROGRESS
+---
+
+# 2026-04-30 P0 公開復旧観察 session log
+
+## 目的
+
+OS 再起動で /tmp 上の前 session handoff を喪失。
+本 session は (1) P0 公開復旧観察 (2) CI 緑化確認 (3) 229-COST 本番効果 read-only 観察 (4) 205-COST は HOLD 維持 を進める。
+今後 handoff は /tmp ではなく **本ファイル series**(`docs/handoff/session_logs/<date>_<topic>.md`)に永続化する。
+
+## 起点状態 (recover from repo / git / GCP)
+
+### git / commit
+- yoshilover repo HEAD = `856c01d` (275-QA test mock 追加)
+- session 開始時点 origin/master = `22bc09b` (205-COST publish-notice incremental scan)
+- session 内で 856c01d を push → origin = 856c01d に同期
+- 直前の publish 復旧 chain:
+  - dc02d61 267-QA publish-notice review/hold notification
+  - 7667658 263-QA guarded-publish duplicate guard
+  - d58941b 269-QA 263-same-source-url duplicate guard narrow relax
+  - d7c7b07 270-QA+271-QA backlog-only narrow relax
+  - a175f24 273-QA subtype resolution narrow + unresolved fallback
+  - 453ee24 229-COST fetcher Gemini dedupe + cooldown
+  - 22bc09b 205-COST publish-notice incremental scan
+  - 856c01d 275-QA SyntheticDraftWPClient.list_posts test mock
+
+### GCP image / 本番反映 (read-only describe)
+- **yoshilover-fetcher** service: `:453ee24` (rev `yoshilover-fetcher-00172-brl`、100% traffic) → **229-COST 本番反映済**
+- **publish-notice** job: `:dc02d61` (267-QA 時点) → **205-COST 未反映**(4 commit 遅れ)
+- **guarded-publish** job: `:a175f24` (273-QA 時点) → **269/270/271/273 全部入り、本番反映済**
+- **draft-body-editor** job: `:cf8ecb9` (244-B-followup 時点、本日 scope 外)
+
+### Scheduler (read-only)
+- giants-realtime-trigger */5 ENABLED 直近 03:26Z
+- guarded-publish-trigger */5 ENABLED 直近 03:25Z
+- publish-notice-trigger */5 ENABLED 直近 03:25Z
+- giants-postgame / lineup / pre / weekend 系 ENABLED
+- audit-notify-6x PAUSED(明示停止維持)
+- yoshilover-fetcher-job PAUSED(旧 monolith、設計通り)
+
+## P0 観察結果 (read-only logging read)
+
+### guarded-publish (image `:a175f24`)
+- 04-30 01:46Z (10:46 JST) に 2 件 `backlog_narrow_publish_eligible`:
+  - post_id=63922 subtype=comment
+  - post_id=64075 subtype=off_field
+- これが user 報告「10:46頃に 3件 publish」の元(ログ上 2 件捕捉、3 件目は別 lane の可能性、要追跡)
+- 269/270/271/273 narrow relax + 263-QA duplicate guard が live で動いている
+
+### publish-notice (image `:dc02d61`)
+- cursor-based scan log 形式は出ている(`cursor_before` / `cursor_after`)
+- ただし skip=27000+ で実質 full-scan 挙動 = **205-COST incremental は未反映**(image label 通り)
+- emit 実績(04-30):
+  - 02:55Z 11:55 JST: emitted=1 post_id=64081「巨人二軍スタメン 当日カード試合前情報」review/hold mail
+  - 03:20Z 12:20 JST: emitted=1 post_id=64087「橋上コーチ "新しいつば九郎じゃないの" ベンチ関連発言」review/hold mail
+  - 他 trigger は emitted=0(候補なし、正常)
+- mail 経路 = Team Shiny From、267-QA review/hold notification 機能稼働中
+
+## 229-COST 観察結果 (fetcher rev `:453ee24`)
+
+- 直近 04-30 00:00Z 以降の `gemini_cache_lookup` 44 件サンプル
+  - **cache_hit=true: 33 件 (75%)** すべて `content_hash_exact`、`gemini_call_made=false`
+  - cache_hit=false: 11 件 (25%) `cache_miss`、`gemini_call=true`
+- effective に Gemini API call 削減中
+- 削減効果は明日以降の Gemini cost log で集計する
+
+## 275-QA push 効果 (CI 緑化)
+
+- push 後 GH Actions run `25145944864` = **failure**
+- ただし内訳: `Ran 1820 tests in 41.522s / FAILED (failures=1)`
+- 改善: **5 errors → 1 fail**(SyntheticDraftWPClient AttributeError 5 件は完全解消)
+- 残る 1 件: `test_fact_conflict_guard.test_body_validator_escalates_hard_fail_tags_without_repair`
+  - actual `pregame_score_fabrication` ≠ expected `NO_GAME_BUT_RESULT`
+  - 275-QA ticket doc で「ambient 既存問題、276-QA で後回し」と明記済
+- CI 完全 green には 276-QA narrow fix が必要
+
+## user 判断 (本 session 内)
+
+- A: **275-QA push** → **go**(実施済、22bc09b..856c01d、03:33Z run)
+- B: **205-COST publish-notice rebuild + job update** → **HOLD**(明日以降、P0 観察を壊さないため)
+- C: **276-QA narrow fix 起票** → 推奨 **HOLD**、user 判断待ち
+
+## HOLD 継続(本日変更なし)
+
+- live_update ON
+- ENABLE_LIVE_UPDATE_ARTICLES=1
+- noindex 解放 / canonical / 301 / SEO 系
+- Gemini call 増加
+- X 自動投稿
+- duplicate guard 全解除
+- default/other 無制限公開
+- Scheduler 頻度変更
+- prosports 修正
+
+## 次 session への引き継ぎ事項
+
+1. **P0 観察継続**: publish/mail が継続して届くか、silent draft / silent backlog が出ないか
+2. **229-COST cost 効果集計**: 24h 単位で `cache_hit` / `gemini_call_made` 比率と推定 cost 削減
+3. **276-QA narrow fix**: user GO 後 Codex 便で起票(`tests/test_fact_conflict_guard.py:159` の expected_tag 修正 or src 側 stop_reason 文字列復元)
+4. **205-COST 本番反映**: P0 安定確認後、image rebuild + publish-notice job update を別便で(deploy 判断は user)
+5. **メール件名・記事タイトル・summary 改善**: チケット化のみ(CI と費用の後)
+6. **GH Actions 連続 red 履歴**: 04-29 以降 8 連続 failure → 856c01d で 1 fail へ。次回 commit で完全 green 確認可
+
+## session 進行ログ
+
+- 12:40 JST | fire | 276-QA | codex_exec_276_qa | wait commit
+  - target: tests/test_fact_conflict_guard.py:159 周辺の stop_reason 文字列差 narrow fix
+  - 本番 src 変更必要時は停止して open_questions
+- 12:46 JST | commit | 276-QA | 470dd9f | wait Claude push
+
+## 不変ルール再確認
+
+- Claude = 監査 / queue / prompt 起票 / read-only 観測 / push のみ
+- Codex = 実装 / テスト / commit 担当
+- user = 最終判断(deploy / publish / scheduler / env / secret / X live)
+- handoff の永続化は **本 file series**、/tmp 禁止

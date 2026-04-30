@@ -16,6 +16,7 @@ from collections import Counter
 from datetime import datetime, timezone, timedelta
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 # vendorディレクトリをパスに追加（サーバー環境用）
 ROOT = Path(__file__).parent.parent
@@ -67,6 +68,14 @@ from src.postgame_strict_template import (
     validate_postgame_strict_payload as _postgame_strict_validate,
     has_sufficient_for_render as _postgame_strict_has_sufficient_for_render,
     render_postgame_strict_body as _postgame_strict_render,
+)
+from src.gemini_cache import (
+    DEFAULT_MODEL_NAME as GEMINI_CACHE_MODEL_NAME,
+    GeminiCacheBackendError,
+    GeminiCacheKey,
+    GeminiCacheManager,
+    GeminiCacheValue,
+    compute_content_hash as _compute_gemini_content_hash,
 )
 
 
@@ -162,6 +171,11 @@ STRICT_PROMPT_MAX_QUOTES = 2
 THIN_SOURCE_FACT_BLOCK_MIN_CHARS_DEFAULT = 100
 THIN_SOURCE_FACT_BLOCK_MIN_CHARS_SOCIAL_NEWS = 40
 RSS_DUPLICATE_COOLDOWN_HOURS_DEFAULT = 6
+GEMINI_CACHE_COOLDOWN_HOURS_DEFAULT = 24
+GEMINI_CACHE_COOLDOWN_HOURS_ENV = "GEMINI_CACHE_COOLDOWN_HOURS"
+GEMINI_POSTGAME_STRICT_SLOTFILL_TEMPLATE_ID = "postgame_strict_slotfill_v1"
+GEMINI_POSTGAME_PARTS_TEMPLATE_ID = "postgame_article_parts_v1"
+GEMINI_STRICT_PROMPT_TEMPLATE_VERSION = "v1"
 PUBLISH_QUALITY_MIN_CHARS_BY_SUBTYPE = {
     "postgame": 280,
     "lineup": 280,
@@ -4376,6 +4390,231 @@ def _request_gemini_strict_text(
     return ""
 
 
+def _get_gemini_cache_cooldown_hours() -> int:
+    raw = str(os.environ.get(GEMINI_CACHE_COOLDOWN_HOURS_ENV, GEMINI_CACHE_COOLDOWN_HOURS_DEFAULT)).strip()
+    try:
+        parsed = int(raw)
+    except ValueError:
+        return GEMINI_CACHE_COOLDOWN_HOURS_DEFAULT
+    return max(parsed, 0)
+
+
+def _get_gemini_cache_manager() -> GeminiCacheManager | None:
+    if _get_gemini_cache_cooldown_hours() <= 0:
+        return None
+    return GeminiCacheManager.from_env()
+
+
+def _gemini_prompt_template_id(category: str, article_subtype: str) -> str:
+    safe_category = _re.sub(r"[^a-z0-9一-龯ぁ-んァ-ヴー]+", "_", str(category or "").strip().lower()) or "unknown"
+    safe_subtype = _re.sub(r"[^a-z0-9_]+", "_", str(article_subtype or "").strip().lower()) or "general"
+    return f"strict_article_{GEMINI_STRICT_PROMPT_TEMPLATE_VERSION}_{safe_category}_{safe_subtype}"
+
+
+def _build_gemini_cache_content_text(*parts: object) -> str:
+    return "\n".join(str(part).strip() for part in parts if str(part or "").strip())
+
+
+def _build_gemini_cache_key(
+    *,
+    source_url: str,
+    content_text: str,
+    prompt_template_id: str,
+) -> GeminiCacheKey:
+    return GeminiCacheKey(
+        source_url_hash=_hash_duplicate_guard_value(source_url),
+        content_hash=_compute_gemini_content_hash(content_text),
+        prompt_template_id=str(prompt_template_id or "").strip(),
+    )
+
+
+def _gemini_cache_lookup(
+    cache_key: GeminiCacheKey,
+    *,
+    cache_manager: GeminiCacheManager,
+    cooldown_hours: int,
+    now: datetime | None,
+) -> tuple[GeminiCacheValue | None, str, int]:
+    return cache_manager.lookup(
+        cache_key,
+        cooldown_hours=cooldown_hours,
+        now=now,
+    )
+
+
+def _gemini_cache_save(
+    cache_key: GeminiCacheKey,
+    *,
+    generated_text: str,
+    cache_manager: GeminiCacheManager,
+    now: datetime | None,
+) -> int:
+    return cache_manager.save(
+        cache_key,
+        generated_text,
+        now=now,
+        model=GEMINI_CACHE_MODEL_NAME,
+    )
+
+
+def _log_gemini_cache_lookup(
+    logger: logging.Logger,
+    *,
+    source_url: str,
+    cache_key: GeminiCacheKey,
+    cache_hit: bool,
+    cache_hit_reason: str,
+    gemini_call_made: bool,
+    cache_size_bytes: int,
+) -> None:
+    payload = {
+        "event": "gemini_cache_lookup",
+        "post_url": str(source_url or ""),
+        "source_url_hash": str(cache_key.source_url_hash or ""),
+        "content_hash": str(cache_key.content_hash or ""),
+        "prompt_template_id": str(cache_key.prompt_template_id or ""),
+        "cache_hit": bool(cache_hit),
+        "cache_hit_reason": str(cache_hit_reason or ""),
+        "gemini_call_made": bool(gemini_call_made),
+        "cache_size_bytes": int(cache_size_bytes or 0),
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
+def _log_gemini_cache_backend_error(
+    logger: logging.Logger,
+    *,
+    source_url: str,
+    cache_key: GeminiCacheKey,
+    stage: str,
+    error: Exception,
+) -> None:
+    payload = {
+        "event": "gemini_cache_backend_error",
+        "post_url": str(source_url or ""),
+        "source_url_hash": str(cache_key.source_url_hash or ""),
+        "content_hash": str(cache_key.content_hash or ""),
+        "prompt_template_id": str(cache_key.prompt_template_id or ""),
+        "stage": str(stage or ""),
+        "error_class": type(error).__name__,
+        "error": str(error),
+    }
+    logger.warning(json.dumps(payload, ensure_ascii=False))
+
+
+def _gemini_text_with_cache(
+    *,
+    api_key: str,
+    prompt: str,
+    logger: logging.Logger,
+    attempt_limit: int,
+    min_chars: int,
+    source_url: str,
+    content_text: str,
+    prompt_template_id: str,
+    cache_manager: GeminiCacheManager | None,
+    now: datetime | None = None,
+    log_label: str = "Gemini strict fact mode",
+) -> tuple[str, dict[str, Any]]:
+    cache_key = _build_gemini_cache_key(
+        source_url=source_url,
+        content_text=content_text,
+        prompt_template_id=prompt_template_id,
+    )
+    telemetry: dict[str, Any] = {
+        "cache_hit": False,
+        "cache_hit_reason": "cache_disabled",
+        "source_url_hash": cache_key.source_url_hash,
+        "content_hash": cache_key.content_hash,
+        "cache_size_bytes": 0,
+        "gemini_call_made": True,
+    }
+    if cache_manager is not None and cache_key.source_url_hash and cache_key.prompt_template_id:
+        try:
+            cached, hit_reason, cache_size_bytes = _gemini_cache_lookup(
+                cache_key,
+                cache_manager=cache_manager,
+                cooldown_hours=_get_gemini_cache_cooldown_hours(),
+                now=now,
+            )
+        except GeminiCacheBackendError as exc:
+            _log_gemini_cache_backend_error(
+                logger,
+                source_url=source_url,
+                cache_key=cache_key,
+                stage="lookup",
+                error=exc,
+            )
+            telemetry["cache_hit_reason"] = "cache_backend_error"
+        except Exception as exc:
+            _log_gemini_cache_backend_error(
+                logger,
+                source_url=source_url,
+                cache_key=cache_key,
+                stage="lookup_exception",
+                error=exc,
+            )
+            telemetry["cache_hit_reason"] = "cache_backend_error"
+        else:
+            telemetry["cache_size_bytes"] = cache_size_bytes
+            telemetry["cache_hit_reason"] = hit_reason
+            if cached is not None:
+                telemetry["cache_hit"] = True
+                telemetry["gemini_call_made"] = False
+                _log_gemini_cache_lookup(
+                    logger,
+                    source_url=source_url,
+                    cache_key=cache_key,
+                    cache_hit=True,
+                    cache_hit_reason=hit_reason,
+                    gemini_call_made=False,
+                    cache_size_bytes=cache_size_bytes,
+                )
+                return cached.generated_text, telemetry
+
+    text = _request_gemini_strict_text(
+        api_key=api_key,
+        prompt=prompt,
+        logger=logger,
+        attempt_limit=attempt_limit,
+        min_chars=min_chars,
+        log_label=log_label,
+        source_url=source_url or None,
+    )
+
+    if cache_manager is not None and cache_key.source_url_hash and cache_key.prompt_template_id and text:
+        try:
+            telemetry["cache_size_bytes"] = _gemini_cache_save(
+                cache_key,
+                generated_text=text,
+                cache_manager=cache_manager,
+                now=now,
+            )
+        except Exception as exc:
+            _log_gemini_cache_backend_error(
+                logger,
+                source_url=source_url,
+                cache_key=cache_key,
+                stage="save",
+                error=exc,
+            )
+
+    _log_gemini_cache_lookup(
+        logger,
+        source_url=source_url,
+        cache_key=cache_key,
+        cache_hit=False,
+        cache_hit_reason=str(telemetry.get("cache_hit_reason") or "miss"),
+        gemini_call_made=True,
+        cache_size_bytes=int(telemetry.get("cache_size_bytes") or 0),
+    )
+    if telemetry["cache_hit_reason"] == "cache_disabled":
+        telemetry["cache_hit_reason"] = "cache_disabled"
+    elif telemetry["cache_hit_reason"] != "cache_backend_error":
+        telemetry["cache_hit_reason"] = "miss"
+    return text, telemetry
+
+
 def _emit_llm_cost_with_observability(
     logger: logging.Logger,
     debug_site: str,
@@ -4622,14 +4861,17 @@ def _maybe_render_postgame_article_parts(
             if part
         )
         prompt = _postgame_strict_prompt.replace("{source_text}", source_block)
-        raw_text = _request_gemini_strict_text(
+        raw_text, _cache_meta = _gemini_text_with_cache(
             api_key=api_key,
             prompt=prompt,
             logger=logger,
             attempt_limit=get_gemini_attempt_limit(strict_mode=True),
             min_chars=1,
             log_label="Gemini postgame strict slot-fill",
-            source_url=source_url or None,
+            source_url=source_url or "",
+            content_text=source_block,
+            prompt_template_id=GEMINI_POSTGAME_STRICT_SLOTFILL_TEMPLATE_ID,
+            cache_manager=_get_gemini_cache_manager(),
         )
         if not raw_text:
             logger.warning("postgame_strict: empty_response -> review")
@@ -4740,13 +4982,26 @@ def _maybe_render_postgame_article_parts(
         source_name=source_name,
         source_url=source_url,
     )
-    raw_text = _request_gemini_strict_text(
+    raw_text, _cache_meta = _gemini_text_with_cache(
         api_key=api_key,
         prompt=prompt,
         logger=logger,
         attempt_limit=get_gemini_attempt_limit(strict_mode=True),
         min_chars=1,
         log_label="Gemini article parts mode",
+        source_url=source_url or "",
+        content_text=_build_gemini_cache_content_text(
+            title,
+            summary,
+            source_name,
+            source_url,
+            source_fact_block,
+            score,
+            win_loss_hint,
+            team_stats_block,
+        ),
+        prompt_template_id=GEMINI_POSTGAME_PARTS_TEMPLATE_ID,
+        cache_manager=_get_gemini_cache_manager(),
     )
     if not raw_text:
         _log_article_parts_fallback(
@@ -8253,15 +8508,32 @@ def generate_article_with_gemini(
             tweet_url=tweet_url,
             team_stats_block=team_stats_block,
         )
-        return _request_gemini_strict_text(
+        cached_text, _cache_meta = _gemini_text_with_cache(
             api_key=api_key,
             prompt=prompt,
             logger=logger,
             attempt_limit=attempt_limit,
             min_chars=min_chars,
             log_label="Gemini strict fact mode",
-            source_url=source_url_for_cost,
+            source_url=source_url_for_cost or "",
+            content_text=_build_gemini_cache_content_text(
+                title,
+                summary_clean,
+                category,
+                source_name,
+                source_day_label,
+                source_type,
+                tweet_url,
+                source_url_for_cost or "",
+                win_loss_hint,
+                source_fact_block,
+                team_stats_block,
+                " ".join(_reaction_body_text(reaction) for reaction in real_reactions[:3]),
+            ),
+            prompt_template_id=_gemini_prompt_template_id(category, article_subtype),
+            cache_manager=_get_gemini_cache_manager(),
         )
+        return cached_text
 
     game_category_prompt = ""
     if category == "試合速報" and _is_game_template_subtype(article_subtype):

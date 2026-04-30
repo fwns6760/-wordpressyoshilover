@@ -27,6 +27,7 @@ MAX_BURST_HARD_CAP = 30
 DAILY_CAP_HARD_CAP = 100
 DEFAULT_MAX_PUBLISH_PER_HOUR = 10
 BACKLOG_FRESHNESS_CUTOFF_HOURS = 6
+SAME_SOURCE_URL_DUPLICATE_HOLD_WINDOW_HOURS = 6
 POSTCHECK_BATCH_SIZE = 10
 DEFAULT_BACKUP_DIR = ROOT / "logs" / "cleanup_backup"
 DEFAULT_HISTORY_PATH = ROOT / "logs" / "guarded_publish_history.jsonl"
@@ -69,6 +70,9 @@ HEADING_SENTENCE_END_RE = re.compile(
 TRAILING_TITLE_PUNCT_RE = re.compile(r"[!！?？。．・…~〜ー\-]+$")
 PLAYER_HEURISTIC_RE = re.compile(
     r"([一-龯々]{2,4}(?:投手|捕手|内野手|外野手|選手|監督)?|[A-Za-z]{2,}[0-9]*|[一-龯々]{2,4}[A-Za-z0-9]+)"
+)
+QUOTE_LIKE_DUPLICATE_SUBTYPE_EXACT = frozenset(
+    {"comment", "manager", "player", "social", "player_comment", "manager_comment", "coach_comment"}
 )
 
 TEAM_ALIASES = ("読売ジャイアンツ", "ジャイアンツ", "巨人")
@@ -1404,6 +1408,90 @@ def _same_game_subtype_speaker_key(post: dict[str, Any]) -> str:
     return f"{game_id}|{subtype}|{speaker}"
 
 
+def _duplicate_reference_publish_time(post: dict[str, Any]) -> datetime | None:
+    for key in ("date", "date_gmt", "modified", "modified_gmt"):
+        parsed = _parse_iso_to_jst((post or {}).get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _duplicate_reference_payload(post: dict[str, Any]) -> dict[str, Any]:
+    post_id = int((post or {}).get("id"))
+    return {
+        "post_id": post_id,
+        "title": _duplicate_title_value(post),
+        "subtype": _duplicate_subtype(post),
+        "speaker_token": _duplicate_speaker_token(post),
+        "status": str((post or {}).get("status") or "").strip().lower(),
+        "published_at": _duplicate_reference_publish_time(post),
+    }
+
+
+def _is_quote_like_duplicate_subtype(subtype: str) -> bool:
+    token = str(subtype or "").strip().lower()
+    if not token:
+        return False
+    return token in QUOTE_LIKE_DUPLICATE_SUBTYPE_EXACT or "comment" in token or "quote" in token
+
+
+def _same_source_url_speaker_relaxed(
+    candidate_subtype: str,
+    candidate_speaker: str,
+    reference_subtype: str,
+    reference_speaker: str,
+) -> bool:
+    if not candidate_subtype or candidate_subtype != reference_subtype:
+        return False
+    if not _is_quote_like_duplicate_subtype(candidate_subtype):
+        return False
+    if not candidate_speaker or not reference_speaker:
+        return False
+    return candidate_speaker != reference_speaker
+
+
+def _same_source_url_age_relaxed(reference: dict[str, Any], *, now: datetime) -> bool:
+    published_at = reference.get("published_at")
+    if not isinstance(published_at, datetime):
+        return False
+    return now - published_at >= timedelta(hours=SAME_SOURCE_URL_DUPLICATE_HOLD_WINDOW_HOURS)
+
+
+def _same_source_url_duplicate_reference(
+    post: dict[str, Any],
+    references: Sequence[dict[str, Any]] | dict[str, Any] | None,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any] | None:
+    if isinstance(references, dict):
+        reference_rows = [references]
+    else:
+        reference_rows = [reference for reference in (references or []) if isinstance(reference, dict)]
+    if not reference_rows:
+        return None
+
+    candidate_subtype = _duplicate_subtype(post)
+    candidate_speaker = _duplicate_speaker_token(post)
+    current_jst = _now_jst(now)
+
+    for reference in reference_rows:
+        reference_subtype = str(reference.get("subtype") or "").strip().lower()
+        if candidate_subtype and reference_subtype and candidate_subtype != reference_subtype:
+            continue
+        if _same_source_url_age_relaxed(reference, now=current_jst):
+            continue
+        reference_speaker = str(reference.get("speaker_token") or "").strip().lower()
+        if _same_source_url_speaker_relaxed(
+            candidate_subtype,
+            candidate_speaker,
+            reference_subtype,
+            reference_speaker,
+        ):
+            continue
+        return reference
+    return None
+
+
 def _empty_duplicate_index() -> dict[str, dict[str, dict[str, Any]]]:
     return {
         "exact_titles": {},
@@ -1414,19 +1502,15 @@ def _empty_duplicate_index() -> dict[str, dict[str, dict[str, Any]]]:
 
 
 def _index_duplicate_post(index: dict[str, dict[str, dict[str, Any]]], post: dict[str, Any]) -> None:
-    post_id = int((post or {}).get("id"))
     title = _duplicate_title_value(post)
-    reference = {
-        "post_id": post_id,
-        "title": title,
-    }
+    reference = _duplicate_reference_payload(post)
     if title:
         index["exact_titles"].setdefault(title, reference)
     normalized_title = _normalize_duplicate_title(title)
     if normalized_title:
         index["normalized_titles"].setdefault(normalized_title, reference)
     for source_hash in _extract_duplicate_source_hashes(post):
-        index["source_hashes"].setdefault(source_hash, reference)
+        index["source_hashes"].setdefault(source_hash, []).append(reference)
     same_game_key = _same_game_subtype_speaker_key(post)
     if same_game_key:
         index["game_subtype_speaker"].setdefault(same_game_key, reference)
@@ -1456,12 +1540,14 @@ def _detect_duplicate_candidate(
     wp_existing_publish_titles: dict[str, dict[str, dict[str, Any]]],
     wp_existing_draft_titles: dict[str, dict[str, dict[str, Any]]],
     wp_existing_source_urls: dict[str, dict[str, Any]],
+    *,
+    now: datetime | None = None,
 ) -> tuple[bool, dict[str, Any]]:
     title = _duplicate_title_value(post)
     normalized_title = _normalize_duplicate_title(title)
 
     for source_hash in _extract_duplicate_source_hashes(post):
-        reference = wp_existing_source_urls.get(source_hash)
+        reference = _same_source_url_duplicate_reference(post, wp_existing_source_urls.get(source_hash), now=now)
         if reference is not None:
             return _duplicate_reference("wp_publish", "same_source_url", reference)
 
@@ -2152,6 +2238,7 @@ def run_guarded_publish(
             wp_existing_publish_titles,
             wp_existing_draft_titles,
             wp_existing_source_urls,
+            now=now,
         )
         if is_duplicate:
             duplicate_reason = str(duplicate_info.get("duplicate_reason") or "duplicate_candidate")

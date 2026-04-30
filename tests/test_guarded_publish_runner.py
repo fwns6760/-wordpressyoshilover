@@ -2196,6 +2196,193 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         self.assertEqual(result["refused"][0]["duplicate_of_post_id"], 9005)
         self.assertEqual(result["refused"][0]["duplicate_reason"], "same_source_url")
 
+    def test_duplicate_same_source_url_allows_different_subtype(self):
+        candidate = _post(
+            4009,
+            "巨人が延長戦を制してカード勝ち越し",
+            f"<p>巨人が延長戦を制した。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/shared-source-subtype</p>",
+        )
+        candidate["meta"] = {"article_subtype": "postgame"}
+        existing = _post(
+            9009,
+            "巨人スタメン発表 丸佳浩が1番",
+            "<p>同じ source だが lineup 記事。</p><p>参照元: スポーツ報知 https://example.com/shared-source-subtype</p>",
+            status="publish",
+        )
+        existing["meta"] = {"article_subtype": "lineup"}
+        existing["date"] = "2026-04-26T07:20:00+09:00"
+        wp = FakeWPClient({4009: candidate, 9009: existing})
+        report = _report(green=[_green_entry(4009, candidate["title"]["raw"])])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual(result["refused"], [])
+        self.assertEqual([item["status"] for item in result["executed"]], ["sent"])
+        self.assertEqual(wp.update_post_status_calls, [(4009, "publish")])
+
+    def test_duplicate_same_source_url_allows_same_subtype_after_six_hours(self):
+        candidate = _post(
+            4010,
+            "巨人が終盤の集中打で勝利",
+            f"<p>巨人が終盤に突き放した。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/shared-source-age</p>",
+        )
+        candidate["meta"] = {"article_subtype": "postgame"}
+        existing = _post(
+            9010,
+            "巨人が接戦を制した前夜の試合",
+            "<p>同じ source / same subtype だが前の試合。</p><p>参照元: スポーツ報知 https://example.com/shared-source-age</p>",
+            status="publish",
+        )
+        existing["meta"] = {"article_subtype": "postgame"}
+        existing["date"] = "2026-04-26T00:30:00+09:00"
+        wp = FakeWPClient({4010: candidate, 9010: existing})
+        report = _report(green=[_green_entry(4010, candidate["title"]["raw"])])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual(result["refused"], [])
+        self.assertEqual([item["status"] for item in result["executed"]], ["sent"])
+        self.assertEqual(wp.update_post_status_calls, [(4010, "publish")])
+
+    def test_duplicate_same_source_url_allows_same_subtype_with_different_speaker(self):
+        candidate = _post(
+            4011,
+            "岡本和真が試合後に打席を振り返る",
+            f"<p>岡本和真が打席内容を振り返った。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/shared-source-speaker</p>",
+        )
+        candidate["meta"] = {"article_subtype": "comment", "speaker_name": "岡本和真"}
+        existing = _post(
+            9011,
+            "阿部監督が継投の意図を説明",
+            "<p>同じ source / same subtype だが speaker が違う。</p><p>参照元: スポーツ報知 https://example.com/shared-source-speaker</p>",
+            status="publish",
+        )
+        existing["meta"] = {"article_subtype": "comment", "speaker_name": "阿部監督"}
+        existing["date"] = "2026-04-26T07:10:00+09:00"
+        wp = FakeWPClient({4011: candidate, 9011: existing})
+        report = _report(green=[_green_entry(4011, candidate["title"]["raw"])])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual(result["refused"], [])
+        self.assertEqual([item["status"] for item in result["executed"]], ["sent"])
+        self.assertEqual(wp.update_post_status_calls, [(4011, "publish")])
+
+    def test_duplicate_same_source_url_recent_same_subtype_and_speaker_still_holds(self):
+        candidate = _post(
+            4012,
+            "阿部監督が試合後に継投を説明",
+            f"<p>阿部監督が継投の意図を説明した。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/shared-source-recent</p>",
+        )
+        candidate["meta"] = {"article_subtype": "comment", "speaker_name": "阿部監督"}
+        existing = _post(
+            9012,
+            "阿部監督が終盤の勝負手を説明",
+            "<p>same source / same subtype / same speaker。</p><p>参照元: スポーツ報知 https://example.com/shared-source-recent</p>",
+            status="publish",
+        )
+        existing["meta"] = {"article_subtype": "comment", "speaker_name": "阿部監督"}
+        existing["date"] = "2026-04-26T07:00:00+09:00"
+        wp = FakeWPClient({4012: candidate, 9012: existing})
+        report = _report(green=[_green_entry(4012, candidate["title"]["raw"])])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["refused"][0]["hold_reason"], "review_duplicate_candidate_same_source_url")
+        self.assertEqual(result["refused"][0]["duplicate_of_post_id"], 9012)
+        self.assertEqual(result["refused"][0]["duplicate_reason"], "same_source_url")
+
+    def test_duplicate_same_source_url_checks_all_matching_publish_references(self):
+        candidate = _post(
+            4013,
+            "巨人スタメン発表 坂本勇人が3番",
+            f"<p>巨人の先発メンバーが発表された。</p><p>{LONG_EXTRA}</p><p>参照元: スポーツ報知 https://example.com/shared-source-multi</p>",
+        )
+        candidate["meta"] = {"article_subtype": "lineup"}
+        existing_complementary = _post(
+            9013,
+            "巨人が接戦を制した",
+            "<p>same source の postgame 記事。</p><p>参照元: スポーツ報知 https://example.com/shared-source-multi</p>",
+            status="publish",
+        )
+        existing_complementary["meta"] = {"article_subtype": "postgame"}
+        existing_complementary["date"] = "2026-04-26T07:30:00+09:00"
+        existing_complementary["modified"] = "2026-04-26T07:50:00"
+        existing_same_subtype = _post(
+            9014,
+            "巨人スタメン発表 吉川尚輝が1番",
+            "<p>same source の lineup 記事。</p><p>参照元: スポーツ報知 https://example.com/shared-source-multi</p>",
+            status="publish",
+        )
+        existing_same_subtype["meta"] = {"article_subtype": "lineup"}
+        existing_same_subtype["date"] = "2026-04-26T07:20:00+09:00"
+        existing_same_subtype["modified"] = "2026-04-26T07:40:00"
+        wp = FakeWPClient({4013: candidate, 9013: existing_complementary, 9014: existing_same_subtype})
+        report = _report(green=[_green_entry(4013, candidate["title"]["raw"])])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["refused"][0]["hold_reason"], "review_duplicate_candidate_same_source_url")
+        self.assertEqual(result["refused"][0]["duplicate_of_post_id"], 9014)
+        self.assertEqual(result["refused"][0]["duplicate_reason"], "same_source_url")
+
     def test_duplicate_same_game_subtype_speaker_holds_for_review(self):
         candidate = _post(
             4006,

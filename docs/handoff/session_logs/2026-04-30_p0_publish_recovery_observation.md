@@ -112,6 +112,78 @@ OS 再起動で /tmp 上の前 session handoff を喪失。
   - target: tests/test_fact_conflict_guard.py:159 周辺の stop_reason 文字列差 narrow fix
   - 本番 src 変更必要時は停止して open_questions
 - 12:46 JST | commit | 276-QA | 470dd9f | wait Claude push
+- 13:05 JST | push | 276-QA | 856c01d..abbf212 | GH Actions run 25146349669 success
+- 13:08 JST | draft | 277-280-QA quality series | doc/active/277-280-*.md (untracked) | 4 ticket draft
+- 13:12 JST | fire | 277-QA impl | bvpiytqib | wait commits A (doc-only) + B (impl)
+- 13:02 JST | commit | 277-280 ticket draft | 8313bc266fab351625ce5a26a20aa2e17cd785fd | doc-only
+- 13:15 JST | commit | 277-QA impl | 8e9f5d826dff81a7328d0044a343971067bd996e | wait Claude push
+
+## デグレ試験 — Live 観察 checklist (deploy 後 5-10 min)
+
+各 ticket deploy 後、image rebuild + job/service update 直後に以下を read-only 観察。
+1 つでも fail なら rollback 判断 → 前 image (`yoshilover-fetcher:453ee24` / `publish-notice:dc02d61`) に戻す。
+
+### 277-QA deploy 観察 (fetcher / draft-body-editor 系)
+
+公開・通知導線(P0 死守):
+- [ ] publish 候補があるのに publish 0 が継続しない (前 5 trigger と比較、前回 emit > 0 なら今回も > 0 期待)
+- [ ] publish 後 publish-notice mail が届く (post_id 一致確認)
+- [ ] review/hold mail も届く (267-QA notification 維持確認)
+- [ ] silent draft / silent backlog / silent hold が増えない (前 24h 比較)
+
+タイトル品質(本 ticket 主目的):
+- [ ] WP draft の title pattern サンプル 5 本: 「選手」「投手」「チーム」だけで終わるものが消えているか
+- [ ] 「巨人スタメン が〜」のような主語抜けが消えているか
+- [ ] 補完できなかった候補は review_reason=`title_player_name_unresolved` で notification に上がっているか
+- [ ] 人名捏造が起きていないか (source body に無い人名が title に出ていないか、5 サンプル目視)
+
+安全系(回帰禁止):
+- [ ] hard_stop 死亡/重傷/救急搬送/意識不明 不変 (24h log で hard_stop trigger 件数比較)
+- [ ] duplicate guard 不変 (263-QA dedup ratio 維持)
+
+コスト系(回帰禁止):
+- [ ] Gemini call 増加なし (229-COST cache_hit ratio 75% 維持)
+- [ ] log 爆発なし (24h log 行数比較、前日 ±20% 以内)
+
+不変系(env / SEO / X):
+- [ ] ENABLE_LIVE_UPDATE_ARTICLES=0 維持
+- [ ] Team Shiny From 維持 (mail header 確認)
+- [ ] noindex / canonical / 301 不変
+- [ ] X 自動投稿無し (X_POST_DAILY_LIMIT log 確認)
+
+rollback 条件 trip:
+- 候補有りで publish 0 が 30 min 継続
+- review_reason=title_player_name_unresolved が全候補に出る (helper bug)
+- mail 0 が 30 min 継続
+- WP draft に source body に無い人名が出る (捏造)
+- pytest 既存 test の failure
+- GH Actions red
+
+### 279-QA / 280-QA deploy 観察 (publish-notice 系)
+
+公開・通知導線:
+- [ ] mail subject prefix 5 種(公開済/要review/hold/古い候補/X見送り) が分類通り出るか
+- [ ] subject 固有 token 「| YOSHILOVER」維持 (GitHub noreply 混入分離)
+- [ ] Team Shiny From 維持
+- [ ] 同一 post_id の通知爆発なし (267-QA dedup 維持)
+- [ ] 古い候補通知が age > 24h で 「(古い候補)」prefix 付き
+
+summary 品質 (280):
+- [ ] summary: (なし) が 0 件
+- [ ] review reason 具体化 (mapping 5 種 出現確認)
+- [ ] 絵文字 1 個まで
+- [ ] source 名/subtype/age/URL/reason 5 要素揃う
+
+回帰禁止: 277 と同じ + 205-COST incremental との衝突なし(image bundle 時)
+
+### 278-QA deploy 観察 (RT title cleanup)
+
+- [ ] WP draft title に「RT 」prefix が無い
+- [ ] グッズ系 title が商品名先頭
+- [ ] 巨人無関係 RT が off_field 判定 or review fallback
+- [ ] 既存 X source title 系 candidate の publish 経路に regression なし
+
+回帰禁止: 277 と同じ
 
 ## 不変ルール再確認
 

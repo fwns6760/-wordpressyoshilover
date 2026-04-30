@@ -25,13 +25,18 @@ def _post(
     *,
     status: str = "draft",
     link: str | None = None,
+    subtype: str = "postgame",
+    meta: dict | None = None,
 ) -> dict:
+    post_meta = {"article_subtype": subtype}
+    if meta:
+        post_meta.update(meta)
     return {
         "id": post_id,
         "title": {"raw": title},
         "content": {"raw": body_html, "rendered": body_html},
         "excerpt": {"raw": "", "rendered": ""},
-        "meta": {"article_subtype": "postgame"},
+        "meta": post_meta,
         "modified": "2026-04-26T06:55:00",
         "status": status,
         "link": link or f"https://yoshilover.com/{post_id}",
@@ -181,6 +186,130 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         path = Path(tmpdir) / "verdict.json"
         path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
         return path
+
+    def _backlog_flag_for_subtype(self, subtype: str) -> str:
+        if subtype in {"lineup", "pregame", "probable_starter", "farm_lineup"}:
+            return "expired_lineup_or_pregame"
+        if subtype in {"postgame", "game_result"}:
+            return "expired_game_context"
+        return "stale_for_breaking_board"
+
+    def _make_candidate_post(
+        self,
+        post_id: int,
+        title: str,
+        *,
+        subtype: str,
+        source_url: str | None = None,
+        status: str = "draft",
+        meta: dict | None = None,
+    ) -> dict:
+        article_source_url = source_url or f"https://example.com/{subtype}-{post_id}"
+        body_html = (
+            f"<p>{title}について整理した。</p>"
+            f"<p>{LONG_EXTRA}</p>"
+            f"<p>参照元: スポーツ報知 {article_source_url}</p>"
+        )
+        return _post(
+            post_id,
+            title,
+            body_html,
+            status=status,
+            subtype=subtype,
+            meta=meta,
+        )
+
+    def _make_backlog_entry(
+        self,
+        post: dict,
+        *,
+        subtype: str,
+        age_hours: float,
+        backlog_only: bool = True,
+    ) -> dict:
+        flag = self._backlog_flag_for_subtype(subtype)
+        return _repairable_entry(
+            int(post["id"]),
+            str(post["title"]["raw"]),
+            flag,
+            yellow_reasons=[flag],
+            cleanup_required=False,
+            freshness_age_hours=age_hours,
+            freshness_source="x_post_date",
+            backlog_only=backlog_only,
+            subtype=subtype,
+            resolved_subtype=subtype,
+        )
+
+    def _run_report(self, report: dict, posts: dict[int, dict], *, live: bool = False) -> dict:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            return runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=live,
+                daily_cap_allow=live,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=FakeWPClient(posts),
+                now=FIXED_NOW,
+            )
+
+    def _run_backlog_case(
+        self,
+        *,
+        post_id: int,
+        title: str,
+        subtype: str,
+        age_hours: float,
+        extra_posts: dict[int, dict] | None = None,
+        backlog_only: bool = True,
+        meta: dict | None = None,
+        source_url: str | None = None,
+        capture_stderr: bool = False,
+    ) -> tuple[dict, dict, str]:
+        candidate = self._make_candidate_post(post_id, title, subtype=subtype, meta=meta, source_url=source_url)
+        posts = {post_id: candidate}
+        if extra_posts:
+            posts.update(extra_posts)
+        report = _report(
+            yellow=[
+                self._make_backlog_entry(
+                    candidate,
+                    subtype=subtype,
+                    age_hours=age_hours,
+                    backlog_only=backlog_only,
+                )
+            ]
+        )
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            if capture_stderr:
+                with patch("sys.stderr", stderr):
+                    result = runner.run_guarded_publish(
+                        input_from=self._write_input(tmpdir, report),
+                        live=False,
+                        daily_cap_allow=False,
+                        history_path=Path(tmpdir) / "history.jsonl",
+                        backup_dir=Path(tmpdir) / "cleanup_backup",
+                        yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                        cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                        wp_client=FakeWPClient(posts),
+                        now=FIXED_NOW,
+                    )
+            else:
+                result = runner.run_guarded_publish(
+                    input_from=self._write_input(tmpdir, report),
+                    live=False,
+                    daily_cap_allow=False,
+                    history_path=Path(tmpdir) / "history.jsonl",
+                    backup_dir=Path(tmpdir) / "cleanup_backup",
+                    yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                    cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                    wp_client=FakeWPClient(posts),
+                    now=FIXED_NOW,
+                )
+        return result, candidate, stderr.getvalue()
 
     def test_dry_run_keeps_wp_write_zero(self):
         post = _post(
@@ -1528,6 +1657,239 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         self.assertEqual(wp.update_post_status_calls, [])
         self.assertEqual(mail_result.status, "suppressed")
         self.assertEqual(mail_result.reason, "BACKLOG_SUMMARY_ONLY")
+
+    def test_backlog_only_postgame_narrow_allowlist_publishes(self):
+        result, _, stderr = self._run_backlog_case(
+            post_id=4301,
+            title="巨人が阪神に3-2で勝利",
+            subtype="postgame",
+            age_hours=5.0,
+            capture_stderr=True,
+        )
+
+        self.assertEqual([item["post_id"] for item in result["proposed"]], [4301])
+        self.assertEqual(result["refused"], [])
+        self.assertIn("backlog_narrow_publish_eligible", stderr)
+        self.assertIn('"subtype": "postgame"', stderr)
+
+    def test_backlog_only_game_result_narrow_allowlist_publishes(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4302,
+            title="巨人が中日に4-1で勝利",
+            subtype="game_result",
+            age_hours=10.0,
+        )
+
+        self.assertEqual([item["post_id"] for item in result["proposed"]], [4302])
+        self.assertEqual(result["refused"], [])
+
+    def test_backlog_only_roster_narrow_allowlist_publishes(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4303,
+            title="巨人が登録入れ替えを発表",
+            subtype="roster",
+            age_hours=15.0,
+        )
+
+        self.assertEqual([item["post_id"] for item in result["proposed"]], [4303])
+        self.assertEqual(result["refused"], [])
+
+    def test_backlog_only_injury_narrow_allowlist_publishes(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4304,
+            title="巨人の主力野手がコンディション不良で別メニュー",
+            subtype="injury",
+            age_hours=8.0,
+        )
+
+        self.assertEqual([item["post_id"] for item in result["proposed"]], [4304])
+        self.assertEqual(result["refused"], [])
+
+    def test_backlog_only_notice_narrow_allowlist_publishes(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4305,
+            title="巨人が東京ドームイベントの開催概要を告知",
+            subtype="notice",
+            age_hours=20.0,
+        )
+
+        self.assertEqual([item["post_id"] for item in result["proposed"]], [4305])
+        self.assertEqual(result["refused"], [])
+
+    def test_backlog_only_comment_narrow_allowlist_publishes(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4306,
+            title="阿部監督が試合後に継投を説明",
+            subtype="comment",
+            age_hours=5.0,
+        )
+
+        self.assertEqual([item["post_id"] for item in result["proposed"]], [4306])
+        self.assertEqual(result["refused"], [])
+
+    def test_backlog_only_speech_narrow_allowlist_publishes(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4307,
+            title="巨人OBがラジオで打線の狙いを語る",
+            subtype="speech",
+            age_hours=10.0,
+        )
+
+        self.assertEqual([item["post_id"] for item in result["proposed"]], [4307])
+        self.assertEqual(result["refused"], [])
+
+    def test_backlog_only_manager_narrow_allowlist_publishes(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4308,
+            title="阿部監督が若手起用の意図を明かす",
+            subtype="manager",
+            age_hours=15.0,
+        )
+
+        self.assertEqual([item["post_id"] for item in result["proposed"]], [4308])
+        self.assertEqual(result["refused"], [])
+
+    def test_backlog_only_off_field_narrow_allowlist_publishes(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4309,
+            title="巨人選手が社会貢献活動に参加",
+            subtype="off_field",
+            age_hours=20.0,
+        )
+
+        self.assertEqual([item["post_id"] for item in result["proposed"]], [4309])
+        self.assertEqual(result["refused"], [])
+
+    def test_backlog_only_farm_feature_narrow_allowlist_publishes(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4310,
+            title="巨人2軍の若手特集を整理",
+            subtype="farm_feature",
+            age_hours=8.0,
+        )
+
+        self.assertEqual([item["post_id"] for item in result["proposed"]], [4310])
+        self.assertEqual(result["refused"], [])
+
+    def test_backlog_only_lineup_stays_blocked(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4311,
+            title="巨人スタメン発表 丸佳浩が1番",
+            subtype="lineup",
+            age_hours=1.0,
+        )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["refused"][0]["reason"], "backlog_only")
+
+    def test_backlog_only_pregame_stays_blocked(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4312,
+            title="巨人の試合前情報を整理",
+            subtype="pregame",
+            age_hours=1.0,
+        )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["refused"][0]["reason"], "backlog_only")
+
+    def test_backlog_only_probable_starter_stays_blocked(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4313,
+            title="巨人の予告先発を整理",
+            subtype="probable_starter",
+            age_hours=1.0,
+        )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["refused"][0]["reason"], "backlog_only")
+
+    def test_backlog_only_farm_lineup_stays_blocked(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4314,
+            title="巨人2軍スタメン発表を整理",
+            subtype="farm_lineup",
+            age_hours=1.0,
+        )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["refused"][0]["reason"], "backlog_only")
+
+    def test_backlog_only_postgame_over_age_stays_blocked(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4315,
+            title="巨人が接戦を制した一戦を振り返る",
+            subtype="postgame",
+            age_hours=50.0,
+        )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["refused"][0]["reason"], "backlog_only")
+
+    def test_backlog_only_comment_over_age_stays_blocked(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4316,
+            title="阿部監督が翌日に試合運びを再度振り返る",
+            subtype="comment",
+            age_hours=60.0,
+        )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["refused"][0]["reason"], "backlog_only")
+
+    def test_backlog_only_unknown_subtype_stays_blocked(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4317,
+            title="巨人の話題を整理",
+            subtype="unknown_subtype",
+            age_hours=5.0,
+        )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["refused"][0]["reason"], "backlog_only")
+
+    def test_non_backlog_green_entry_still_publishes(self):
+        candidate = self._make_candidate_post(4318, "巨人が連勝を伸ばす", subtype="postgame")
+        report = _report(green=[_green_entry(4318, candidate["title"]["raw"], freshness_age_hours=1.0)])
+
+        result = self._run_report(report, {4318: candidate})
+
+        self.assertEqual([item["post_id"] for item in result["proposed"]], [4318])
+        self.assertEqual(result["refused"], [])
+
+    def test_red_entry_still_holds(self):
+        candidate = self._make_candidate_post(4319, "巨人の誤情報記事", subtype="postgame")
+        report = _report(red=[_hard_stop_entry(4319, candidate["title"]["raw"], "death_or_grave_incident")])
+
+        result = self._run_report(report, {4319: candidate})
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["refused"][0]["hold_reason"], "hard_stop_death_or_grave_incident")
+
+    def test_backlog_narrow_allowed_entry_still_honors_same_source_url_duplicate_guard(self):
+        existing = self._make_candidate_post(
+            9310,
+            "阿部監督が終盤の継投を説明",
+            subtype="comment",
+            source_url="https://example.com/comment-shared-source",
+            status="publish",
+            meta={"speaker_name": "阿部監督"},
+        )
+        existing["date"] = "2026-04-26T07:00:00+09:00"
+
+        result, _, _ = self._run_backlog_case(
+            post_id=4320,
+            title="阿部監督が試合後に継投を振り返る",
+            subtype="comment",
+            age_hours=5.0,
+            extra_posts={9310: existing},
+            meta={"speaker_name": "阿部監督"},
+            source_url="https://example.com/comment-shared-source",
+        )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["refused"][0]["hold_reason"], "review_duplicate_candidate_same_source_url")
+        self.assertEqual(result["refused"][0]["duplicate_reason"], "same_source_url")
 
     def test_repairable_post_cleanup_failed_post_condition_publishes_warning(self):
         short_prose = "巨人が阪神に1-0で勝利した。" + ("あ" * 34)

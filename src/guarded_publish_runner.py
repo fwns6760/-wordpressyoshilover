@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import unicodedata
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -27,6 +28,39 @@ MAX_BURST_HARD_CAP = 30
 DAILY_CAP_HARD_CAP = 100
 DEFAULT_MAX_PUBLISH_PER_HOUR = 10
 BACKLOG_FRESHNESS_CUTOFF_HOURS = 6
+BACKLOG_NARROW_GAME_CONTEXT_SUBTYPES = frozenset(
+    {
+        "postgame",
+        "game_result",
+        "roster",
+        "injury",
+        "registration",
+        "recovery",
+        "notice",
+        "player_notice",
+        "player_recovery",
+    }
+)
+BACKLOG_NARROW_QUOTE_COMMENT_SUBTYPES = frozenset(
+    {
+        "comment",
+        "speech",
+        "manager",
+        "program",
+        "off_field",
+        "farm_feature",
+    }
+)
+BACKLOG_NARROW_ALLOWLIST = BACKLOG_NARROW_GAME_CONTEXT_SUBTYPES | BACKLOG_NARROW_QUOTE_COMMENT_SUBTYPES
+BACKLOG_NARROW_AGE_BUFFER_HOURS = 12
+BACKLOG_NARROW_BLOCKED_SUBTYPES = frozenset(
+    {
+        "lineup",
+        "pregame",
+        "probable_starter",
+        "farm_lineup",
+    }
+)
 SAME_SOURCE_URL_DUPLICATE_HOLD_WINDOW_HOURS = 6
 POSTCHECK_BATCH_SIZE = 10
 DEFAULT_BACKUP_DIR = ROOT / "logs" / "cleanup_backup"
@@ -286,6 +320,10 @@ def _min_prose_after_cleanup() -> int:
 def _env_truthy(name: str) -> bool:
     value = str(os.environ.get(name) or "").strip().lower()
     return value in TRUTHY_ENV_VALUES
+
+
+def _log_event(event: str, **payload: Any) -> None:
+    print(json.dumps({"event": event, **payload}, ensure_ascii=False), file=sys.stderr, flush=True)
 
 
 def _post_record_with_content(post: dict[str, Any], body_html: str) -> dict[str, Any]:
@@ -1207,6 +1245,50 @@ def _entry_freshness_age_hours(entry: dict[str, Any], *, now: datetime) -> float
     return None
 
 
+def _entry_subtype(entry: dict[str, Any]) -> str:
+    return str(entry.get("resolved_subtype") or entry.get("subtype") or "").strip().lower()
+
+
+def _resolve_freshness_threshold(subtype: str) -> float | None:
+    normalized = str(subtype or "").strip().lower()
+    if not normalized:
+        return None
+    try:
+        threshold_hours = float(publish_evaluator._freshness_threshold_hours(normalized))
+    except (TypeError, ValueError):
+        return None
+    if threshold_hours < 0:
+        return None
+    return threshold_hours
+
+
+def _backlog_narrow_publish_context(entry: dict[str, Any], *, now: datetime) -> dict[str, Any] | None:
+    subtype = _entry_subtype(entry)
+    if not subtype:
+        return None
+    if subtype in BACKLOG_NARROW_BLOCKED_SUBTYPES:
+        return None
+    if subtype not in BACKLOG_NARROW_ALLOWLIST:
+        return None
+    threshold_hours = _resolve_freshness_threshold(subtype)
+    if threshold_hours is None:
+        return None
+    age_hours = _entry_freshness_age_hours(entry, now=now)
+    if age_hours is None:
+        return None
+    if age_hours >= threshold_hours + BACKLOG_NARROW_AGE_BUFFER_HOURS:
+        return None
+    return {
+        "subtype": subtype,
+        "age_hours": age_hours,
+        "threshold_hours": threshold_hours,
+    }
+
+
+def _backlog_narrow_publish_eligible(entry: dict[str, Any], *, now: datetime) -> bool:
+    return _backlog_narrow_publish_context(entry, now=now) is not None
+
+
 def _is_backlog_entry(entry: dict[str, Any], *, now: datetime) -> bool:
     if bool(entry.get("backlog_only")):
         return True
@@ -1983,44 +2065,67 @@ def run_guarded_publish(
                 }
             )
 
-    backlog_only_entries = [entry for entry in publishable_entries if bool(entry.get("backlog_only"))]
-    publishable_entries = [entry for entry in publishable_entries if not bool(entry.get("backlog_only"))]
-    for backlog_only_entry in backlog_only_entries:
+    filtered_publishable_entries: list[dict[str, Any]] = []
+    for entry in publishable_entries:
+        if not bool(entry.get("backlog_only")):
+            filtered_publishable_entries.append(entry)
+            continue
+        backlog_context = _backlog_narrow_publish_context(entry, now=now_jst)
+        if backlog_context is not None:
+            entry["_backlog_narrow_context"] = backlog_context
+            _log_event(
+                "backlog_narrow_publish_eligible",
+                post_id=entry["post_id"],
+                subtype=backlog_context["subtype"],
+                age_hours=backlog_context["age_hours"],
+                threshold_hours=backlog_context["threshold_hours"],
+            )
+            filtered_publishable_entries.append(entry)
+            continue
         refused.append(
             {
-                "post_id": backlog_only_entry["post_id"],
+                "post_id": entry["post_id"],
                 "reason": "backlog_only",
                 "hold_reason": "backlog_only",
             }
         )
         if live:
             row = _history_row(
-                post_id=backlog_only_entry["post_id"],
-                judgment=backlog_only_entry["judgment"],
+                post_id=entry["post_id"],
+                judgment=entry["judgment"],
                 status="skipped",
                 ts=now_iso,
                 backup_path=None,
                 error="backlog_only",
                 publishable=True,
-                cleanup_required=bool(backlog_only_entry["cleanup_required"]),
+                cleanup_required=bool(entry["cleanup_required"]),
                 cleanup_success=False,
                 hold_reason="backlog_only",
                 is_backlog=True,
-                freshness_source=str(backlog_only_entry.get("freshness_source") or ""),
+                freshness_source=str(entry.get("freshness_source") or ""),
             )
             live_history_rows.append(row)
             executed.append(
                 {
-                    "post_id": backlog_only_entry["post_id"],
+                    "post_id": entry["post_id"],
                     "status": "skipped",
                     "backup_path": None,
                     "publish_link": "",
                     "hold_reason": "backlog_only",
                 }
             )
+    publishable_entries = filtered_publishable_entries
 
-    fresh_entries = [entry for entry in publishable_entries if not _is_backlog_entry(entry, now=now_jst)]
-    backlog_entries = [entry for entry in publishable_entries if _is_backlog_entry(entry, now=now_jst)]
+    fresh_entries = [
+        entry
+        for entry in publishable_entries
+        if not _is_backlog_entry(entry, now=now_jst) or _backlog_narrow_publish_eligible(entry, now=now_jst)
+    ]
+    backlog_entries = [
+        entry
+        for entry in publishable_entries
+        if _is_backlog_entry(entry, now=now_jst) and not _backlog_narrow_publish_eligible(entry, now=now_jst)
+    ]
     deferred_backlog_entries = backlog_entries if fresh_entries else []
     publishable_entries = fresh_entries if fresh_entries else backlog_entries
     run_promoted_titles_set = _empty_duplicate_index()

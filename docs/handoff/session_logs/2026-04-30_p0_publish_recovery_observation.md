@@ -117,6 +117,35 @@ OS 再起動で /tmp 上の前 session handoff を喪失。
 - 13:12 JST | fire | 277-QA impl | bvpiytqib | wait commits A (doc-only) + B (impl)
 - 13:02 JST | commit | 277-280 ticket draft | 8313bc266fab351625ce5a26a20aa2e17cd785fd | doc-only
 - 13:15 JST | commit | 277-QA impl | 8e9f5d826dff81a7328d0044a343971067bd996e | wait Claude push
+- 13:50 JST | accept | 277-QA | full audit, REJECT 条件 8 項目 全部 NOT triggered | 中間 transient state での誤報告は plumbing fallback 由来
+- 13:55 JST | verify | 277-QA pre-push | targeted test 6/6 pass + env/SEO/X/Team Shiny tokens diff 内 doc only | full pytest 1826 tests / 7 fails = abbf212 baseline で pre-existing local env 差 (CI green)
+- 14:00 JST | push | 277-QA series 3 commits | abbf212..27166c5 | wait GH Actions
+- 14:05 JST | verify | GH Actions run 25147379845 | success | 1820 tests / OK
+- 14:10 JST | fire | 277-QA deploy (fetcher rebuild) | b4t5p3knc | yoshilover-fetcher:453ee24 → :27166c5
+- 14:47 JST | deploy success | 277-QA fetcher | rev 00172-brl → 00173-2f9, traffic 100%, build sha256:5437e1d5 | wait giants-realtime-trigger 14:50
+- 15:10 JST | draft | 281-QA farm_result backlog allowlist | doc/active/281-QA-*.md (untracked) | farm_result 24h age cap 設計
+- 15:15 JST | fire | 281-QA impl | bn5afe7nw | wait commit (src + test + doc)
+- 15:30 JST | commit | 281-QA impl | 6df049ca1ad76affbe2aa52487a3a8d469e3b947 | wait Claude push
+- 15:55 JST | accept | 281-QA | 3 file scope clean, targeted 11/11, baseline 1837/7 maintained | full audit, REJECT 0
+- 15:56 JST | push | 281-QA | 27166c5..6df049c | wait GH Actions
+- 15:56 JST | draft | 282-COST gemini preflight gate | doc/active/282-COST-*.md (untracked) | env flag default OFF
+- 15:57 JST | fire | 282-COST impl (parallel) | bjxqxwx7r | wait commit (flag OFF)
+- 16:05 JST | draft | 283-MKT unique article requirements | doc/active/283-MKT-*.md (untracked) | design only、12 deliverables 全包含、子 ticket 284-287 設計込み
+- 16:06 JST | commit | 282-COST impl | 325b47f3d3c81810d2dd5979198b718a7d8541c8 | wait Claude push
+- 15:51 JST | diagnose | P0 source 不足 (not regression) | last 90min publish 0 / mail 0 / fresh candidate 0 / cache_hit 100% / silent 0 / Scheduler 動作中 | 16:50 lineup-a window 待ち
+- 15:53 JST | accept | 282-COST | 3 file scope clean (src/gemini_preflight_gate.py 300+ / src/rss_fetcher.py +133 / tests +389), pytest 1845/7 baseline 維持, env flag default OFF | 281-QA deploy と同時 deploy しない
+- 15:55 JST | push | 282-COST impl | a2777f9..325b47f | wait GH Actions
+- 15:56 JST | fire | 281-QA deploy (guarded-publish rebuild) | bjuy1sqhq | guarded-publish:a175f24 → :6df049c
+- 16:30 JST | diagnose | source 不足 誤診撤回 | post_gen_validate silent skip 真因(本日 22 件/trigger 全部 silent) | NNN/スポニチweb/サンスポweb 未登録 + hochi RSS error も並走原因
+- 16:35 JST | draft | 289-OBSERVE post_gen_validate mail notification | doc/active/289-OBSERVE-*.md (untracked) | P0 equivalent silent skip 解消、env flag default OFF
+- 16:36 JST | fire | 289-OBSERVE impl | bbqz20ubm | wait commit (flag OFF、ledger + publish-notice scan 拡張)
+- 16:37 JST | commit | 289-OBSERVE impl | <see final report for commit hash> | wait Claude push (flag default OFF)
+- 16:50 JST | deploy success | 281-QA guarded-publish | image :a175f24 → :6df049c, exec guarded-publish-cd9n6 success, silent hold 0, sent=0/skipped=97/refused=97 | farm_result <24h positive case 観察待ち
+- 16:55 JST | fire | 282-COST flag OFF deploy | brjl03dmt | yoshilover-fetcher:27166c5 → :325b47f, ENABLE_GEMINI_PREFLIGHT 未設定維持(default OFF)
+
+## 後便 follow-up メモ
+
+- runbook 追記: tagged traffic が既存 rev pinned の service は `gcloud run services update --image` 後に `gcloud run services update-traffic --to-revisions=<new>=100` が必要(本日 deploy で発覚、open_questions_for_claude より)
 
 ## デグレ試験 — Live 観察 checklist (deploy 後 5-10 min)
 

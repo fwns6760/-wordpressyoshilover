@@ -183,6 +183,11 @@ GEMINI_CACHE_COOLDOWN_HOURS_ENV = "GEMINI_CACHE_COOLDOWN_HOURS"
 GEMINI_POSTGAME_STRICT_SLOTFILL_TEMPLATE_ID = "postgame_strict_slotfill_v1"
 GEMINI_POSTGAME_PARTS_TEMPLATE_ID = "postgame_article_parts_v1"
 GEMINI_STRICT_PROMPT_TEMPLATE_VERSION = "v1"
+POST_GEN_VALIDATE_NOTIFICATION_ENV_FLAG = "ENABLE_POST_GEN_VALIDATE_NOTIFICATION"
+POST_GEN_VALIDATE_HISTORY_DEFAULT_PATH = Path("/tmp/pub004d/post_gen_validate_history.jsonl")
+POST_GEN_VALIDATE_STATE_BUCKET = "baseballsite-yoshilover-state"
+POST_GEN_VALIDATE_STATE_KEY = "post_gen_validate/post_gen_validate_history.jsonl"
+POST_GEN_VALIDATE_SKIP_LAYER = "post_gen_validate"
 PUBLISH_QUALITY_MIN_CHARS_BY_SUBTYPE = {
     "postgame": 280,
     "lineup": 280,
@@ -7736,12 +7741,21 @@ def _log_article_skipped_post_gen_validate(
     logger: logging.Logger,
     *,
     title: str,
+    source_title: str = "",
     post_url: str,
     category: str,
     article_subtype: str,
     fail_axes: list[str],
     stop_reason: str = "",
 ):
+    normalized_fail_axes = [str(axis).strip() for axis in fail_axes if str(axis).strip()]
+    skip_reason = ""
+    if normalized_fail_axes and normalized_fail_axes[0].startswith(("weak_subject_title:", "weak_generated_title:")):
+        skip_reason = normalized_fail_axes[0]
+    elif stop_reason:
+        skip_reason = str(stop_reason).strip()
+    elif normalized_fail_axes:
+        skip_reason = normalized_fail_axes[0]
     payload = {
         "event": "article_skipped_post_gen_validate",
         "post_id": None,
@@ -7749,11 +7763,130 @@ def _log_article_skipped_post_gen_validate(
         "post_url": post_url,
         "category": category,
         "article_subtype": article_subtype,
-        "fail_axis": fail_axes,
+        "fail_axis": normalized_fail_axes,
+        "skip_layer": POST_GEN_VALIDATE_SKIP_LAYER,
+        "source_url_hash": _hash_duplicate_guard_value(post_url),
     }
     if stop_reason:
         payload["stop_reason"] = stop_reason
+    if source_title:
+        payload["source_title"] = source_title
+    if skip_reason:
+        payload["skip_reason"] = skip_reason
     logger.info(json.dumps(payload, ensure_ascii=False))
+    _record_post_gen_validate_skip_history(
+        logger,
+        source_url=post_url,
+        source_title=source_title,
+        generated_title=title,
+        category=category,
+        article_subtype=article_subtype,
+        fail_axes=normalized_fail_axes,
+        skip_reason=skip_reason,
+    )
+
+
+def _post_gen_validate_notification_enabled() -> bool:
+    return _env_flag(POST_GEN_VALIDATE_NOTIFICATION_ENV_FLAG, False)
+
+
+def _resolve_post_gen_validate_history_path() -> Path:
+    raw = str(os.environ.get("POST_GEN_VALIDATE_HISTORY_PATH", "")).strip()
+    if raw:
+        return Path(raw)
+    return POST_GEN_VALIDATE_HISTORY_DEFAULT_PATH
+
+
+def _append_post_gen_validate_gcs_record(record_line: str, logger: logging.Logger) -> None:
+    client = _gcs_client()
+    if client is None:
+        return
+    try:
+        from google.api_core.exceptions import PreconditionFailed
+    except Exception:
+        PreconditionFailed = None
+
+    bucket = client.bucket(POST_GEN_VALIDATE_STATE_BUCKET)
+    blob = bucket.blob(POST_GEN_VALIDATE_STATE_KEY)
+    for _ in range(4):
+        try:
+            if blob.exists():
+                blob.reload()
+                generation = int(blob.generation or 0)
+                existing_payload = blob.download_as_text(encoding="utf-8")
+            else:
+                generation = 0
+                existing_payload = ""
+            next_payload = existing_payload
+            if next_payload and not next_payload.endswith("\n"):
+                next_payload += "\n"
+            next_payload += f"{record_line}\n"
+            blob.upload_from_string(
+                next_payload,
+                content_type="application/x-ndjson",
+                if_generation_match=generation if generation else 0,
+            )
+            return
+        except Exception as exc:
+            if PreconditionFailed is not None and isinstance(exc, PreconditionFailed):
+                continue
+            logger.warning(
+                json.dumps(
+                    {
+                        "event": "post_gen_validate_history_gcs_append_failed",
+                        "skip_layer": POST_GEN_VALIDATE_SKIP_LAYER,
+                        "reason": type(exc).__name__,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            return
+
+
+def _record_post_gen_validate_skip_history(
+    logger: logging.Logger,
+    *,
+    source_url: str,
+    source_title: str,
+    generated_title: str,
+    category: str,
+    article_subtype: str,
+    fail_axes: list[str],
+    skip_reason: str,
+) -> None:
+    if not _post_gen_validate_notification_enabled():
+        return
+    record = {
+        "ts": datetime.now(JST).isoformat(),
+        "source_url": str(source_url or "").strip(),
+        "source_url_hash": _hash_duplicate_guard_value(source_url),
+        "source_title": str(source_title or "").strip(),
+        "generated_title": str(generated_title or "").strip(),
+        "category": str(category or "").strip(),
+        "article_subtype": str(article_subtype or "").strip(),
+        "skip_reason": str(skip_reason or "").strip() or "post_gen_validate",
+        "fail_axis": [str(axis).strip() for axis in fail_axes if str(axis).strip()],
+    }
+    history_path = _resolve_post_gen_validate_history_path()
+    try:
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+        record_line = json.dumps(record, ensure_ascii=False)
+        with history_path.open("a", encoding="utf-8") as handle:
+            handle.write(record_line)
+            handle.write("\n")
+    except OSError as exc:
+        logger.warning(
+            json.dumps(
+                {
+                    "event": "post_gen_validate_history_local_append_failed",
+                    "skip_layer": POST_GEN_VALIDATE_SKIP_LAYER,
+                    "reason": type(exc).__name__,
+                },
+                ensure_ascii=False,
+            )
+        )
+        return
+    _append_post_gen_validate_gcs_record(record_line, logger)
 
 
 def _find_first_timeline_owner(obj):
@@ -13755,6 +13888,7 @@ def _main(args, logger):
                 _log_article_skipped_post_gen_validate(
                     logger,
                     title=draft_title,
+                    source_title=raw_title,
                     post_url=post_url,
                     category=category,
                     article_subtype=title_article_subtype,
@@ -13777,6 +13911,7 @@ def _main(args, logger):
                 _log_article_skipped_post_gen_validate(
                     logger,
                     title=draft_title,
+                    source_title=raw_title,
                     post_url=post_url,
                     category=category,
                     article_subtype=title_article_subtype,
@@ -13822,6 +13957,7 @@ def _main(args, logger):
                 _log_article_skipped_post_gen_validate(
                     logger,
                     title=draft_title,
+                    source_title=raw_title,
                     post_url=post_url,
                     category=category,
                     article_subtype=title_article_subtype,
@@ -13841,6 +13977,7 @@ def _main(args, logger):
                 _log_article_skipped_post_gen_validate(
                     logger,
                     title=draft_title,
+                    source_title=raw_title,
                     post_url=post_url,
                     category=category,
                     article_subtype=title_article_subtype,
@@ -13910,6 +14047,7 @@ def _main(args, logger):
                 _log_article_skipped_post_gen_validate(
                     logger,
                     title=draft_title,
+                    source_title=raw_title,
                     post_url=post_url,
                     category=category,
                     article_subtype=title_article_subtype,

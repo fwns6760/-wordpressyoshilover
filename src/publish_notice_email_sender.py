@@ -296,8 +296,17 @@ class PublishNoticeRequest:
     publish_time_iso: str
     summary: str | None = None
     is_backlog: bool | None = None
-    notice_kind: Literal["publish", "review_hold"] = "publish"
+    notice_kind: Literal["publish", "review_hold", "post_gen_validate"] = "publish"
     subject_override: str | None = None
+    source_title: str | None = None
+    generated_title: str | None = None
+    skip_reason: str | None = None
+    skip_reason_label: str | None = None
+    source_url_hash: str | None = None
+    category: str | None = None
+    record_type: str | None = None
+    skip_layer: str | None = None
+    fail_axes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1312,6 +1321,8 @@ def _mail_metadata_block(metadata: dict[str, Any]) -> list[str]:
         "subtype",
         "x_post_ready",
         "reason",
+        "record_type",
+        "skip_layer",
     ):
         if key not in metadata:
             continue
@@ -1334,6 +1345,8 @@ def _per_post_metadata_block(metadata: dict[str, Any]) -> list[str]:
         "subtype",
         "x_post_ready",
         "reason",
+        "record_type",
+        "skip_layer",
     ):
         if key not in metadata:
             continue
@@ -1442,6 +1455,24 @@ def _per_post_mail_state(
     *,
     yellow_log_path: str | Path = DEFAULT_GUARDED_PUBLISH_YELLOW_LOG_PATH,
 ) -> dict[str, Any]:
+    if str(getattr(request, "notice_kind", "publish") or "publish").strip() == "post_gen_validate":
+        review_config = _mail_class_config("review")
+        return {
+            "mail_type": "per_post",
+            "mail_class": "review",
+            "action": review_config["action"],
+            "priority": review_config["priority"],
+            "post_id": request.post_id,
+            "subtype": str(request.subtype or "").strip() or "unknown",
+            "x_post_ready": "false",
+            "reason": str(getattr(request, "skip_reason", "") or "post_gen_validate").strip() or "post_gen_validate",
+            "record_type": str(getattr(request, "record_type", "") or "post_gen_validate").strip() or "post_gen_validate",
+            "skip_layer": str(getattr(request, "skip_layer", "") or "post_gen_validate").strip() or "post_gen_validate",
+            "manual_x_candidates": [],
+            "manual_x_display_candidates": [],
+            "suppression_reason": None,
+        }
+
     raw_summary = _WHITESPACE_RE.sub(" ", str(request.summary or "").strip())
     context = _manual_x_context(request)
     display_manual_x_candidates = (
@@ -1680,6 +1711,47 @@ def build_body_text(
     mail_state = classification or _classify_mail(request, yellow_log_path=yellow_log_path)
     mail_class = str(mail_state.get("mail_class") or "publish").strip() or "publish"
     reason = str(mail_state.get("reason") or "").strip() or None
+    if str(getattr(request, "notice_kind", "publish") or "publish").strip() == "post_gen_validate":
+        source_title = str(getattr(request, "source_title", "") or request.title or "").strip()
+        generated_title = str(getattr(request, "generated_title", "") or "").strip()
+        skip_reason = str(getattr(request, "skip_reason", "") or reason or "post_gen_validate").strip() or "post_gen_validate"
+        skip_reason_label = str(getattr(request, "skip_reason_label", "") or skip_reason).strip() or skip_reason
+        category = str(getattr(request, "category", "") or "").strip() or "unknown"
+        source_url_hash = str(getattr(request, "source_url_hash", "") or "").strip()
+        fail_axes = [str(axis).strip() for axis in getattr(request, "fail_axes", ()) if str(axis).strip()]
+        lines = [
+            "次アクション: skip 理由を確認し、title rescue または source 拡張の要否を判断",
+            "判定: 要review",
+            f"理由: {skip_reason_label}",
+            f"source_title: {source_title or '(none)'}",
+            f"generated_title: {generated_title or '(none)'}",
+            f"source_url: {str(request.canonical_url or '').strip()}",
+            f"category: {category}",
+            f"subtype: {str(request.subtype or '').strip() or 'unknown'}",
+            f"detected_at: {_format_publish_time_jst(request.publish_time_iso)}",
+            f"skip_reason: {skip_reason}",
+        ]
+        if source_url_hash:
+            lines.append(f"source_url_hash: {source_url_hash}")
+        if fail_axes:
+            lines.append(f"fail_axis: {', '.join(fail_axes)}")
+        lines.extend(
+            _per_post_metadata_block(
+                {
+                    "mail_type": mail_state.get("mail_type"),
+                    "mail_class": mail_class,
+                    "action": mail_state.get("action"),
+                    "priority": mail_state.get("priority"),
+                    "subtype": str(request.subtype or "").strip() or "unknown",
+                    "x_post_ready": "false",
+                    "reason": skip_reason,
+                    "record_type": mail_state.get("record_type") or "post_gen_validate",
+                    "skip_layer": mail_state.get("skip_layer") or "post_gen_validate",
+                }
+            )
+        )
+        return "\n".join(lines)
+
     suppression_reason = mail_state.get("suppression_reason")
     manual_x_candidates = list(
         mail_state.get("manual_x_display_candidates") or mail_state.get("manual_x_candidates") or []
@@ -2045,13 +2117,23 @@ def send(
         is_backlog=request.is_backlog,
         notice_kind=str(getattr(request, "notice_kind", "publish") or "publish").strip() or "publish",
         subject_override=active_subject_override,
+        source_title=getattr(request, "source_title", None),
+        generated_title=getattr(request, "generated_title", None),
+        skip_reason=getattr(request, "skip_reason", None),
+        skip_reason_label=getattr(request, "skip_reason_label", None),
+        source_url_hash=getattr(request, "source_url_hash", None),
+        category=getattr(request, "category", None),
+        record_type=getattr(request, "record_type", None),
+        skip_layer=getattr(request, "skip_layer", None),
+        fail_axes=tuple(getattr(request, "fail_axes", ()) or ()),
     )
     mail_state = _classify_mail(normalized_request)
     if normalized_request.notice_kind != "publish":
         mail_state = _force_review_mail_state(mail_state)
     recipients = resolve_recipients(override_recipient)
     subject = build_subject(normalized_title, override=active_subject_override, classification=mail_state)
-    if _current_queued_batch_size(duplicate_history_path) > FORCED_SUMMARY_THRESHOLD:
+    review_only_notice = normalized_request.notice_kind == "post_gen_validate"
+    if not review_only_notice and _current_queued_batch_size(duplicate_history_path) > FORCED_SUMMARY_THRESHOLD:
         return _suppressed("BURST_SUMMARY_ONLY", subject=subject, recipients=recipients)
     is_backlog = _resolve_is_backlog(
         normalized_request.post_id,
@@ -2060,7 +2142,7 @@ def send(
         allow_history_lookup=duplicate_history_path is not None
         or _path(guarded_publish_history_path) != DEFAULT_GUARDED_PUBLISH_HISTORY_PATH,
     )
-    if is_backlog:
+    if not review_only_notice and is_backlog:
         return _suppressed("BACKLOG_SUMMARY_ONLY", subject=subject, recipients=recipients)
     return _deliver_mail(
         subject=subject,

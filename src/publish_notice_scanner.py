@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import html
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -34,6 +35,15 @@ _REVIEW_NOTICE_WINDOW_HOURS_DEFAULT = 24.0
 _GUARDED_PUBLISH_HISTORY_DEFAULT_PATH = Path("/tmp/pub004d/guarded_publish_history.jsonl")
 _GUARDED_PUBLISH_HISTORY_FALLBACK_PATH = Path("logs/guarded_publish_history.jsonl")
 _GUARDED_PUBLISH_HISTORY_CURSOR_DEFAULT_PATH = Path("/tmp/pub004d/guarded_publish_history_cursor.txt")
+_POST_GEN_VALIDATE_HISTORY_DEFAULT_PATH = Path("/tmp/pub004d/post_gen_validate_history.jsonl")
+_POST_GEN_VALIDATE_HISTORY_FALLBACK_PATH = Path("logs/post_gen_validate_history.jsonl")
+_POST_GEN_VALIDATE_HISTORY_CURSOR_DEFAULT_PATH = Path("/tmp/pub004d/post_gen_validate_history_cursor.txt")
+_POST_GEN_VALIDATE_NOTIFICATION_ENV_FLAG = "ENABLE_POST_GEN_VALIDATE_NOTIFICATION"
+_POST_GEN_VALIDATE_SKIP_LAYER = "post_gen_validate"
+_POST_GEN_VALIDATE_RECORD_TYPE = "post_gen_validate"
+_POST_GEN_VALIDATE_REVIEW_PREFIX = "【要review｜post_gen_validate】"
+_POST_GEN_VALIDATE_GCS_BUCKET = "baseballsite-yoshilover-state"
+_POST_GEN_VALIDATE_GCS_OBJECT = "post_gen_validate/post_gen_validate_history.jsonl"
 _GUARDED_PUBLISH_REVIEW_SUBJECT_RE = re.compile(r"^【[^】]+】")
 _EXCLUDED_GUARDED_HOLD_REASONS = frozenset(
     {
@@ -111,6 +121,33 @@ def _resolve_guarded_publish_history_cursor_path(value: str | Path | None = None
     return _GUARDED_PUBLISH_HISTORY_CURSOR_DEFAULT_PATH
 
 
+def _resolve_post_gen_validate_history_path(value: str | Path | None = None) -> Path:
+    if value is not None and str(value).strip():
+        return _path(value)
+    env_value = str(os.environ.get("PUBLISH_NOTICE_POST_GEN_VALIDATE_HISTORY_PATH", "")).strip()
+    if env_value:
+        return _path(env_value)
+    return _POST_GEN_VALIDATE_HISTORY_DEFAULT_PATH
+
+
+def _resolve_post_gen_validate_history_cursor_path(value: str | Path | None = None) -> Path:
+    if value is not None and str(value).strip():
+        return _path(value)
+    env_value = str(os.environ.get("PUBLISH_NOTICE_POST_GEN_VALIDATE_HISTORY_CURSOR_PATH", "")).strip()
+    if env_value:
+        return _path(env_value)
+    return _POST_GEN_VALIDATE_HISTORY_CURSOR_DEFAULT_PATH
+
+
+def _post_gen_validate_notification_enabled() -> bool:
+    return str(os.environ.get(_POST_GEN_VALIDATE_NOTIFICATION_ENV_FLAG, "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def _parse_datetime_to_jst(value: str | datetime | None) -> datetime | None:
     if isinstance(value, datetime):
         current = value
@@ -148,6 +185,36 @@ def _write_cursor(path: Path, cursor_iso: str) -> None:
     tmp_path = Path(f"{path}.tmp")
     tmp_path.write_text(f"{cursor_iso}\n", encoding="utf-8")
     os.replace(tmp_path, path)
+
+
+def _gcs_client():
+    try:
+        from google.cloud import storage
+
+        return storage.Client()
+    except Exception:
+        return None
+
+
+def _sync_post_gen_validate_history_from_gcs(path: Path) -> None:
+    client = _gcs_client()
+    if client is None:
+        return
+    try:
+        bucket = client.bucket(_POST_GEN_VALIDATE_GCS_BUCKET)
+        blob = bucket.blob(_POST_GEN_VALIDATE_GCS_OBJECT)
+        if not blob.exists():
+            return
+        payload = blob.download_as_text(encoding="utf-8")
+    except Exception as exc:
+        _log_event(
+            "post_gen_validate_history_gcs_sync_failed",
+            skip_layer=_POST_GEN_VALIDATE_SKIP_LAYER,
+            reason=type(exc).__name__,
+        )
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(payload, encoding="utf-8")
 
 
 def _log_event(event: str, **payload: Any) -> None:
@@ -347,6 +414,7 @@ def _append_queue_log(
     recipients: list[str],
     post_id: int | str,
     recorded_at_iso: str,
+    extra_payload: Mapping[str, Any] | None = None,
 ) -> None:
     path = _path(queue_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -358,6 +426,11 @@ def _append_queue_log(
         "post_id": post_id,
         "recorded_at": recorded_at_iso,
     }
+    if extra_payload:
+        for key, value in extra_payload.items():
+            if key in entry:
+                continue
+            entry[str(key)] = value
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
@@ -499,6 +572,91 @@ def _build_guarded_publish_subject(title: str, *, judgment: str, hold_reason: st
     if _GUARDED_PUBLISH_REVIEW_SUBJECT_RE.search(subject):
         return _GUARDED_PUBLISH_REVIEW_SUBJECT_RE.sub(prefix, subject, count=1)
     return f"{prefix}{title}"
+
+
+def _hash_text(value: str) -> str:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return ""
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+
+
+def _post_gen_validate_entry_datetime(entry: Mapping[str, Any]) -> datetime | None:
+    for key in ("ts", "recorded_at", "date"):
+        parsed = _parse_datetime_to_jst(entry.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _normalize_fail_axes(value: Any) -> tuple[str, ...]:
+    if isinstance(value, (list, tuple)):
+        return tuple(str(item).strip() for item in value if str(item).strip())
+    text = str(value or "").strip()
+    return (text,) if text else ()
+
+
+def _resolve_post_gen_validate_skip_reason(entry: Mapping[str, Any]) -> str:
+    fail_axes = _normalize_fail_axes(entry.get("fail_axis") or entry.get("fail_axes"))
+    stop_reason = str(entry.get("skip_reason") or entry.get("stop_reason") or "").strip()
+    if fail_axes and fail_axes[0].startswith(("weak_subject_title:", "weak_generated_title:")):
+        return fail_axes[0]
+    if stop_reason:
+        return stop_reason
+    if fail_axes:
+        return fail_axes[0]
+    return "post_gen_validate"
+
+
+def _post_gen_validate_reason_label(skip_reason: str) -> str:
+    normalized = str(skip_reason or "").strip()
+    if normalized == "weak_subject_title:related_info_escape":
+        return "タイトルが『関連情報』『発言ポイント』だけで、人名や文脈を拾えなかったため"
+    if normalized == "weak_generated_title:no_strong_marker":
+        return "タイトルが弱い表現で、強いニュース要素を判定できなかったため"
+    if normalized == "weak_generated_title:blacklist_phrase":
+        return "タイトルに blacklist phrase を含み、そのまま publish 候補にできないため"
+    if normalized.startswith("postgame_strict:") and "required_facts_missing" in normalized:
+        return "postgame strict template に必要な fact が不足しているため"
+    if normalized == "close_marker":
+        return "close marker を検出できず、後追い記事の疑いがあるため"
+    return normalized
+
+
+def _post_gen_validate_title(entry: Mapping[str, Any]) -> str:
+    source_title = str(entry.get("source_title") or "").strip()
+    if source_title:
+        return source_title
+    generated_title = str(entry.get("generated_title") or entry.get("title") or "").strip()
+    if generated_title:
+        return generated_title
+    return "post_gen_validate skip"
+
+
+def _post_gen_validate_subject(entry: Mapping[str, Any]) -> str:
+    base_subject = build_subject(_post_gen_validate_title(entry))
+    if _GUARDED_PUBLISH_REVIEW_SUBJECT_RE.search(base_subject):
+        return _GUARDED_PUBLISH_REVIEW_SUBJECT_RE.sub(
+            _POST_GEN_VALIDATE_REVIEW_PREFIX,
+            base_subject,
+            count=1,
+        )
+    return f"{_POST_GEN_VALIDATE_REVIEW_PREFIX}{_post_gen_validate_title(entry)}"
+
+
+def _post_gen_validate_source_url_hash(entry: Mapping[str, Any]) -> str:
+    explicit = str(entry.get("source_url_hash") or "").strip()
+    if explicit:
+        return explicit
+    return _hash_text(str(entry.get("source_url") or "").strip())
+
+
+def _post_gen_validate_dedupe_key(entry: Mapping[str, Any]) -> str:
+    source_url_hash = _post_gen_validate_source_url_hash(entry)
+    skip_reason = _resolve_post_gen_validate_skip_reason(entry)
+    if not source_url_hash or not skip_reason:
+        return ""
+    return f"{_POST_GEN_VALIDATE_RECORD_TYPE}:{source_url_hash}:{skip_reason}"
 
 
 def _default_fetch(base_url: str, after_iso: str) -> list[Mapping[str, Any]]:
@@ -768,12 +926,210 @@ def scan_guarded_publish_history(
     )
 
 
+def scan_post_gen_validate_history(
+    *,
+    post_gen_validate_history_path: str | Path | None = None,
+    cursor_path: str | Path | None = None,
+    history_path: str | Path = "logs/publish_notice_history.json",
+    queue_path: str | Path = "logs/publish_notice_queue.jsonl",
+    history: Mapping[str, str] | None = None,
+    max_per_run: int | None = None,
+    recent_window_hours: float | int | None = None,
+    now: Callable[[], datetime] | datetime | None = None,
+    recorded_at: Callable[[], datetime] | datetime | None = None,
+    write_history: bool = True,
+    write_cursor: bool = True,
+) -> GuardedPublishHistoryScanResult:
+    current_now = _coerce_now(now)
+    history_file = _path(history_path)
+    post_gen_cursor_file = _resolve_post_gen_validate_history_cursor_path(cursor_path)
+    current_history = _prune_history(
+        dict(history) if history is not None else _load_history(history_file),
+        now=current_now,
+    )
+    resolved_max_per_run = _resolve_review_max_per_run(max_per_run)
+    if resolved_max_per_run <= 0:
+        if write_history:
+            _write_history(history_file, current_history)
+        return GuardedPublishHistoryScanResult(
+            emitted=[],
+            skipped=[],
+            history_after=current_history,
+            cursor_before=_read_cursor(post_gen_cursor_file),
+            cursor_after=_read_cursor(post_gen_cursor_file),
+            cursor_path=post_gen_cursor_file,
+            cursor_write_needed=False,
+        )
+
+    recent_window = timedelta(hours=_resolve_review_window_hours(recent_window_hours))
+    ledger_file = _resolve_post_gen_validate_history_path(post_gen_validate_history_path)
+    if (
+        post_gen_validate_history_path is None
+        and str(os.environ.get("PUBLISH_NOTICE_POST_GEN_VALIDATE_HISTORY_PATH", "")).strip() == ""
+    ):
+        _sync_post_gen_validate_history_from_gcs(ledger_file)
+    if not ledger_file.exists():
+        ledger_file = _POST_GEN_VALIDATE_HISTORY_FALLBACK_PATH
+    cursor_before = _read_cursor(post_gen_cursor_file)
+    scan_started_at = time.perf_counter()
+    history_entries, scan_meta = _load_incremental_guarded_publish_entries(
+        ledger_file,
+        now=current_now,
+        recent_window=recent_window,
+        cursor_before=cursor_before,
+    )
+    parse_duration_ms = int((time.perf_counter() - scan_started_at) * 1000)
+    review_recorded_at = _coerce_now(
+        recorded_at if recorded_at is not None else current_now + timedelta(seconds=1)
+    )
+    review_recorded_at_iso = review_recorded_at.isoformat()
+
+    emitted: list[PublishNoticeRequest] = []
+    skipped: list[tuple[int | str, str]] = []
+    next_history = dict(current_history)
+    seen_dedupe_keys: set[str] = set()
+    skipped_by_dedup = 0
+    skipped_by_payload = 0
+    scanned_records = 0
+    hit_max_per_run = False
+
+    for entry in history_entries:
+        if len(emitted) >= resolved_max_per_run:
+            hit_max_per_run = True
+            break
+        scanned_records += 1
+
+        dedupe_key = _post_gen_validate_dedupe_key(entry)
+        if not dedupe_key:
+            skipped_by_payload += 1
+            skipped.append(("", "POST_GEN_VALIDATE_MISSING_DEDUPE_KEY"))
+            continue
+        if dedupe_key in seen_dedupe_keys or _is_recent_duplicate(next_history, dedupe_key, now=current_now):
+            skipped_by_dedup += 1
+            skipped.append((dedupe_key, "POST_GEN_VALIDATE_RECENT_DUPLICATE"))
+            continue
+
+        source_url = str(entry.get("source_url") or "").strip()
+        if not source_url:
+            skipped_by_payload += 1
+            skipped.append((dedupe_key, "POST_GEN_VALIDATE_MISSING_SOURCE_URL"))
+            continue
+
+        skip_reason = _resolve_post_gen_validate_skip_reason(entry)
+        fail_axes = _normalize_fail_axes(entry.get("fail_axis") or entry.get("fail_axes"))
+        request = PublishNoticeRequest(
+            post_id=dedupe_key,
+            title=_post_gen_validate_title(entry),
+            canonical_url=source_url,
+            subtype=str(entry.get("article_subtype") or "").strip() or "unknown",
+            publish_time_iso=_isoformat_jst(_post_gen_validate_entry_datetime(entry), fallback=current_now),
+            summary=None,
+            is_backlog=False,
+            notice_kind="post_gen_validate",
+            subject_override=_post_gen_validate_subject(entry),
+            source_title=str(entry.get("source_title") or "").strip() or _post_gen_validate_title(entry),
+            generated_title=str(entry.get("generated_title") or entry.get("title") or "").strip(),
+            skip_reason=skip_reason,
+            skip_reason_label=_post_gen_validate_reason_label(skip_reason),
+            source_url_hash=_post_gen_validate_source_url_hash(entry),
+            category=str(entry.get("category") or "").strip() or "unknown",
+            record_type=_POST_GEN_VALIDATE_RECORD_TYPE,
+            skip_layer=_POST_GEN_VALIDATE_SKIP_LAYER,
+            fail_axes=fail_axes,
+        )
+        emitted.append(request)
+        seen_dedupe_keys.add(dedupe_key)
+        next_history[dedupe_key] = review_recorded_at_iso
+        _append_queue_log(
+            queue_path,
+            status="queued",
+            reason=skip_reason,
+            subject=str(request.subject_override or ""),
+            recipients=[],
+            post_id=request.post_id,
+            recorded_at_iso=review_recorded_at_iso,
+            extra_payload={
+                "record_type": _POST_GEN_VALIDATE_RECORD_TYPE,
+                "skip_layer": _POST_GEN_VALIDATE_SKIP_LAYER,
+                "source_url_hash": request.source_url_hash,
+            },
+        )
+
+    cursor_after = scan_meta["cursor_before_iso"]
+    if not hit_max_per_run and history_entries:
+        newest_entry_dt = _post_gen_validate_entry_datetime(history_entries[0])
+        if newest_entry_dt is not None:
+            cursor_after = newest_entry_dt.isoformat()
+
+    if write_history:
+        _write_history(history_file, next_history)
+    cursor_write_needed = bool(cursor_after) and cursor_after != cursor_before
+    if write_cursor and cursor_write_needed and cursor_after is not None:
+        _write_cursor(post_gen_cursor_file, cursor_after)
+
+    _log_event(
+        "post_gen_validate_history_scan_summary",
+        record_type=_POST_GEN_VALIDATE_RECORD_TYPE,
+        skip_layer=_POST_GEN_VALIDATE_SKIP_LAYER,
+        cursor_before_iso=scan_meta["cursor_before_iso"],
+        cursor_after_iso=cursor_after,
+        scanned_records=scanned_records,
+        skipped_by_cursor=int(scan_meta["skipped_by_cursor"]),
+        skipped_by_dedup=skipped_by_dedup,
+        skipped_by_payload=skipped_by_payload,
+        emitted_count=len(emitted),
+        file_size_bytes=int(scan_meta["file_size_bytes"]),
+        parse_duration_ms=parse_duration_ms,
+    )
+    if hit_max_per_run:
+        _log_event(
+            "post_gen_validate_history_scan_cap_exceeded",
+            record_type=_POST_GEN_VALIDATE_RECORD_TYPE,
+            skip_layer=_POST_GEN_VALIDATE_SKIP_LAYER,
+            cursor_before_iso=scan_meta["cursor_before_iso"],
+            cursor_after_iso=cursor_after,
+            emitted_count=len(emitted),
+            max_per_run=resolved_max_per_run,
+        )
+    if not emitted:
+        zero_reason = "all_skipped_by_payload"
+        other_skips = max(0, len(skipped) - skipped_by_dedup - skipped_by_payload)
+        if bool(scan_meta["file_empty"]):
+            zero_reason = "file_empty"
+        elif scanned_records == 0:
+            zero_reason = "cursor_at_head" if scan_meta["cursor_before_iso"] is not None else "all_skipped_by_cursor"
+        elif skipped_by_dedup >= max(skipped_by_payload, other_skips):
+            zero_reason = "all_skipped_by_dedup"
+        elif skipped_by_payload >= max(skipped_by_dedup, other_skips):
+            zero_reason = "all_skipped_by_payload"
+        _log_event(
+            "post_gen_validate_history_scan_zero_emitted",
+            record_type=_POST_GEN_VALIDATE_RECORD_TYPE,
+            skip_layer=_POST_GEN_VALIDATE_SKIP_LAYER,
+            reason=zero_reason,
+            cursor_iso=cursor_after or scan_meta["cursor_before_iso"],
+        )
+    return GuardedPublishHistoryScanResult(
+        emitted=emitted,
+        skipped=skipped,
+        history_after=next_history,
+        cursor_before=cursor_before,
+        cursor_after=cursor_after,
+        cursor_path=post_gen_cursor_file,
+        cursor_write_needed=cursor_write_needed,
+    )
+
+
 def scan(
     *,
     wp_api_base: str | None = None,
     cursor_path: str | Path = "logs/publish_notice_cursor.txt",
     history_path: str | Path = "logs/publish_notice_history.json",
     queue_path: str | Path = "logs/publish_notice_queue.jsonl",
+    guarded_publish_history_path: str | Path | None = None,
+    guarded_cursor_path: str | Path | None = None,
+    post_gen_validate_history_path: str | Path | None = None,
+    post_gen_validate_cursor_path: str | Path | None = None,
     fetch: FetchFn | None = None,
     now: Callable[[], datetime] | datetime | None = None,
 ) -> ScanResult:
@@ -829,25 +1185,61 @@ def scan(
             recorded_at_iso=recorded_at_iso,
         )
 
-    review_scan = scan_guarded_publish_history(
-        history_path=history_path,
-        queue_path=queue_path,
-        wp_api_base=base_url,
-        history=next_history,
-        now=current_now,
-        recorded_at=current_now + timedelta(seconds=1),
-        write_history=False,
-        write_cursor=False,
-    )
+    review_scan_kwargs: dict[str, Any] = {
+        "history_path": history_path,
+        "queue_path": queue_path,
+        "wp_api_base": base_url,
+        "history": next_history,
+        "now": current_now,
+        "recorded_at": current_now + timedelta(seconds=1),
+        "write_history": False,
+        "write_cursor": False,
+    }
+    if guarded_publish_history_path is not None:
+        review_scan_kwargs["guarded_publish_history_path"] = guarded_publish_history_path
+    if guarded_cursor_path is not None:
+        review_scan_kwargs["cursor_path"] = guarded_cursor_path
+    review_scan = scan_guarded_publish_history(**review_scan_kwargs)
     emitted.extend(review_scan.emitted)
     skipped.extend(review_scan.skipped)
     next_history = review_scan.history_after
+
+    if _post_gen_validate_notification_enabled():
+        remaining_review_cap = max(0, _resolve_review_max_per_run(None) - len(review_scan.emitted))
+        post_gen_validate_scan = scan_post_gen_validate_history(
+            post_gen_validate_history_path=post_gen_validate_history_path,
+            cursor_path=post_gen_validate_cursor_path,
+            history_path=history_path,
+            queue_path=queue_path,
+            history=next_history,
+            max_per_run=remaining_review_cap,
+            now=current_now,
+            recorded_at=current_now + timedelta(seconds=2),
+            write_history=False,
+            write_cursor=False,
+        )
+        emitted.extend(post_gen_validate_scan.emitted)
+        skipped.extend(post_gen_validate_scan.skipped)
+        next_history = post_gen_validate_scan.history_after
+    else:
+        post_gen_validate_scan = GuardedPublishHistoryScanResult(
+            emitted=[],
+            skipped=[],
+            history_after=next_history,
+            cursor_write_needed=False,
+        )
 
     cursor_after = latest_post_dt.isoformat() if latest_post_dt is not None else current_now.isoformat()
     _write_history(history_file, next_history)
     _write_cursor(cursor_file, cursor_after)
     if review_scan.cursor_write_needed and review_scan.cursor_path is not None and review_scan.cursor_after is not None:
         _write_cursor(review_scan.cursor_path, review_scan.cursor_after)
+    if (
+        post_gen_validate_scan.cursor_write_needed
+        and post_gen_validate_scan.cursor_path is not None
+        and post_gen_validate_scan.cursor_after is not None
+    ):
+        _write_cursor(post_gen_validate_scan.cursor_path, post_gen_validate_scan.cursor_after)
     return ScanResult(
         emitted=emitted,
         skipped=skipped,
@@ -862,4 +1254,5 @@ __all__ = [
     "ScanResult",
     "scan",
     "scan_guarded_publish_history",
+    "scan_post_gen_validate_history",
 ]

@@ -38,6 +38,7 @@ from fact_conflict_guard import (
     detect_no_game_but_result as _detect_no_game_but_result,
     detect_title_body_entity_mismatch as _detect_title_body_entity_mismatch,
 )
+from title_player_name_backfiller import backfill_title_player_name
 from title_validator import build_reroll_title as _build_title_reroll_title
 from title_validator import is_non_name_speaker_label
 from title_validator import is_weak_generated_title
@@ -11957,6 +11958,116 @@ def _trim_display_title(text: str, max_chars: int = 38) -> str:
     return clean[:max_chars].rstrip(" ・、。") + "…"
 
 
+def _build_title_player_name_backfill_metadata(
+    source_title: str,
+    summary: str,
+    category: str,
+    article_subtype: str,
+    *,
+    manager_subject: str = "",
+    notice_subject: str = "",
+) -> dict[str, str]:
+    metadata: dict[str, str] = {}
+    if manager_subject and manager_subject not in {"首脳陣", "巨人"}:
+        speaker = _re.sub(r"(監督|コーチ)$", "", manager_subject).strip()
+        if speaker:
+            metadata["speaker"] = speaker
+        if manager_subject.endswith("監督"):
+            metadata["role"] = "監督"
+        elif "コーチ" in manager_subject:
+            metadata["role"] = "コーチ"
+        return metadata
+
+    player_name = ""
+    if notice_subject and notice_subject not in {"巨人", "選手", "出場選手"}:
+        player_name = notice_subject
+    else:
+        player_name = _compact_subject_label(source_title, summary, category)
+    if player_name and player_name not in {"巨人", "選手", "首脳陣"}:
+        metadata["player_name"] = player_name
+
+    role_label = _extract_player_role_label(source_title, summary)
+    if role_label and not role_label.startswith("この"):
+        for suffix in PLAYER_ROLE_SUFFIXES:
+            if role_label.endswith(suffix):
+                metadata["role"] = "投手" if suffix == "投手" else "選手"
+                break
+    if "role" not in metadata and article_subtype in {"lineup", "postgame", "pregame", "player", "notice", "recovery", "farm"}:
+        metadata["role"] = "選手"
+    if metadata.get("player_name") and any(marker in f"{source_title} {summary}" for marker in ("コメント", "談話", "一問一答", "発言", "語った", "話した")):
+        metadata["speaker"] = metadata["player_name"]
+    return metadata
+
+
+def _log_title_player_name_unresolved(
+    logger: logging.Logger,
+    *,
+    source_url: str,
+    source_name: str,
+    category: str,
+    article_subtype: str,
+    source_title: str,
+    rewritten_title: str,
+) -> None:
+    payload = {
+        "event": "title_player_name_review",
+        "reason": "title_player_name_unresolved",
+        "source_url": source_url,
+        "source_name": source_name,
+        "category": category,
+        "article_subtype": article_subtype,
+        "source_title": source_title,
+        "candidate_title": rewritten_title,
+    }
+    logger.warning(json.dumps(payload, ensure_ascii=False))
+
+
+def _apply_title_player_name_backfill(
+    *,
+    rewritten_title: str,
+    source_title: str,
+    source_body: str,
+    summary: str,
+    category: str,
+    article_subtype: str,
+    manager_subject: str = "",
+    notice_subject: str = "",
+    logger: logging.Logger | None = None,
+    source_name: str = "",
+    source_url: str = "",
+) -> tuple[str, str]:
+    metadata = _build_title_player_name_backfill_metadata(
+        source_title,
+        summary,
+        category,
+        article_subtype,
+        manager_subject=manager_subject,
+        notice_subject=notice_subject,
+    )
+    result = backfill_title_player_name(
+        existing_title=rewritten_title,
+        source_title=source_title,
+        body=source_body,
+        summary=summary,
+        metadata=metadata,
+    )
+    final_title = _trim_display_title(result.title or rewritten_title)
+    comparison_title = source_title
+    if result.review_reason == "title_player_name_unresolved":
+        comparison_title = final_title
+        if logger is not None:
+            _log_title_player_name_unresolved(
+                logger,
+                source_url=source_url,
+                source_name=source_name,
+                category=category,
+                article_subtype=article_subtype,
+                source_title=source_title,
+                rewritten_title=final_title,
+            )
+    return final_title, comparison_title
+
+
 RAINOUT_SLIDE_TITLE_RE = _re.compile(r"(?:雨天中止|雨で中止).*(?:スライド登板|先発予定)|(?:スライド登板).*(?:雨天中止|先発予定)")
 FARM_LINEUP_TITLE_RE = _re.compile(r"(?:二軍|２軍|2軍|ファーム).*(?:スタメン|オーダー|打順|1⃣|2⃣|3⃣|4⃣|1番|2番|3番|4番)|(?:スタメン|オーダー|打順|1⃣|2⃣|3⃣|4⃣|1番|2番|3番|4番).*(?:二軍|２軍|2軍|ファーム)")
 FARM_RESULT_TITLE_RE = _re.compile(r"(?:二軍|２軍|2軍|ファーム).*(?:\d+\s*[-－]\s*\d+|勝利|白星|敗戦|本塁打|無失点|猛打賞|マルチ)")
@@ -13382,6 +13493,19 @@ def _main(args, logger):
                     logger=logger,
                     source_url=post_url,
                 )
+                draft_title, _comparison_title = _apply_title_player_name_backfill(
+                    rewritten_title=draft_title,
+                    source_title=raw_title,
+                    source_body=summary,
+                    summary=summary,
+                    category=category,
+                    article_subtype=title_article_subtype,
+                    manager_subject="",
+                    notice_subject="",
+                    logger=logger,
+                    source_name=source_name,
+                    source_url=post_url,
+                )
                 _log_title_template_selected(logger, post_url, raw_title, draft_title, title_template_key, category, title_article_subtype)
                 print(f"  DRY: [{category}] {draft_title[:50]}")
                 print(f"       {post_url}")
@@ -13476,10 +13600,23 @@ def _main(args, logger):
                 logger=logger,
                 source_url=post_url,
             )
+            draft_title, comparison_title = _apply_title_player_name_backfill(
+                rewritten_title=draft_title,
+                source_title=raw_title,
+                source_body=summary,
+                summary=summary,
+                category=category,
+                article_subtype=title_article_subtype,
+                manager_subject=manager_subject,
+                notice_subject=notice_subject,
+                logger=logger,
+                source_name=source_name,
+                source_url=post_url,
+            )
             weak_title_fallback = _maybe_route_weak_generated_title_review(
                 article_subtype=title_article_subtype,
                 rewritten_title=draft_title,
-                original_title=raw_title,
+                original_title=comparison_title,
                 source_name=source_name,
                 logger=logger,
             )
@@ -13500,7 +13637,7 @@ def _main(args, logger):
             weak_subject_fallback = _maybe_route_weak_subject_title_review(
                 article_subtype=title_article_subtype,
                 rewritten_title=draft_title,
-                original_title=raw_title,
+                original_title=comparison_title,
                 source_name=source_name,
                 logger=logger,
                 speaker_name=manager_subject or notice_subject,

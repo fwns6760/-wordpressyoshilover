@@ -14,7 +14,7 @@
 |---|---|---|---|
 | **234-impl-7 probable_starter / pregame body hardening** | READY_FOR_AUTH_EXECUTOR | **必要。repo実装済み** | 試合前・予告先発系の source anchor / post-gen check 実装済み。次は image rebuild 判断 |
 | **245 front hide internal auto-post category label** | READY | **必要。いま動かす** | Front画面に内部カテゴリ「自動投稿」が出るのを止める。カテゴリ削除ではなく表示除外のみ |
-| **277-QA title player name backfill** | READY_FOR_FIX | **必要。quality series 起点** | title 先頭の人名欠落を source / summary / metadata から補完する narrow fix。まずこれだけ実装 |
+| **277-QA title player name backfill** | REVIEW_NEEDED | **必要。impl 済み** | helper + fetcher integration + 1826 tests pass。次は Claude review と push 判断 |
 | **279-QA mail subject clarity** | READY_FOR_FIX | **必要。277 の次** | publish-notice 件名だけで公開済み / review / hold / 古い候補を判別できるようにする。今回は doc-only |
 | **278-QA RT title cleanup** | READY_FOR_FIX | **必要。279 の次** | RT prefix / 公式X断片 / グッズ告知系 title を整形する。今回は doc-only |
 | **280-QA summary excerpt cleanup** | READY_FOR_FIX | **必要。series 最後** | publish-notice 本文 summary / excerpt の判断材料を改善する。今回は doc-only |

@@ -4,10 +4,10 @@
 |---|---|
 | ticket_id | 277-QA-title-player-name-backfill |
 | priority | P1 (品質改善 series 1/4、最優先) |
-| status | READY_FOR_FIX |
+| status | REVIEW_NEEDED |
 | owner | Claude (audit/draft) → Codex (実装委譲) |
 | lane | QA |
-| ready_for | Codex narrow 実装便 fire |
+| ready_for | Claude review / push 判断 |
 | blocked_by | (なし、独立) |
 | doc_path | doc/active/277-QA-title-player-name-backfill.md |
 | created | 2026-04-30 |

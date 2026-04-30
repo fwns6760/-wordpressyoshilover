@@ -71,6 +71,20 @@ class SNSTopicPublishBridgeTests(unittest.TestCase):
             report = bridge.run_sns_topic_publish_bridge(**kwargs)
             return report, Path(tmpdir)
 
+    def test_synthetic_wp_client_list_posts_filters_status_source_url_and_limit(self):
+        client = bridge.SyntheticDraftWPClient(
+            {
+                100: {"status": "publish", "meta": {"source_url": "https://example.com/a"}},
+                101: {"status": "draft", "meta": {"source_url": "https://example.com/b"}},
+                102: {"status": "draft", "source_url": "https://example.com/c"},
+            }
+        )
+
+        self.assertEqual([row["id"] for row in client.list_posts(status="publish")], [100])
+        self.assertEqual([row["id"] for row in client.list_posts(status=["draft"])], [101, 102])
+        self.assertEqual([row["id"] for row in client.list_posts(source_url="https://example.com/a")], [100])
+        self.assertEqual([row["id"] for row in client.list_posts(status="any", per_page=2)], [100, 101])
+
     def test_only_source_recheck_passed_drafts_are_considered(self):
         fixture = _fixture(
             _proposal("mock_draft_a", source_recheck_passed=True),
@@ -246,7 +260,17 @@ class SNSTopicPublishBridgeTests(unittest.TestCase):
         self.assertEqual(report["mock_wp"]["update_post_status_call_count"], 0)
 
     def test_live_mode_respects_burst_cap_20(self):
-        fixture = _fixture(*[_proposal(f"mock_draft_{index}") for index in range(21)])
+        fixture = _fixture(
+            *[
+                _proposal(
+                    f"mock_draft_{index}",
+                    title_hint=f"巨人トピック {index}",
+                    lead_hint=f"巨人トピック {index} の確認済み情報を整理する。",
+                    source_urls=[f"https://hochi.news/topic-{index}"],
+                )
+                for index in range(21)
+            ]
+        )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             fixture_path = self._write_fixture(tmpdir, fixture)

@@ -8,7 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 import tempfile
-from typing import Any, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
@@ -63,6 +63,52 @@ class SyntheticDraftWPClient:
         normalized = int(post_id)
         self.get_post_calls.append(normalized)
         return deepcopy(self.posts[normalized])
+
+    def list_posts(
+        self,
+        *,
+        status: str | Iterable[str] | None = None,
+        source_url: str | None = None,
+        per_page: int | None = None,
+        **kwargs: Any,
+    ) -> list[dict[str, Any]]:
+        del kwargs
+
+        normalized_source_url = str(source_url or "").strip()
+        status_set: set[str] | None
+        if isinstance(status, str):
+            normalized_status = status.strip().lower()
+            status_set = None if not normalized_status or normalized_status == "any" else {normalized_status}
+        elif status is None:
+            status_set = None
+        else:
+            status_set = {
+                str(item).strip().lower()
+                for item in status
+                if str(item).strip() and str(item).strip().lower() != "any"
+            }
+            if not status_set:
+                status_set = None
+
+        limit = None if per_page is None else max(0, int(per_page))
+        rows: list[dict[str, Any]] = []
+        for post_id, payload in self.posts.items():
+            post_status = str(payload.get("status") or "").strip().lower()
+            if status_set is not None and post_status not in status_set:
+                continue
+
+            if normalized_source_url:
+                meta = payload.get("meta") or {}
+                post_source_url = meta.get("source_url") or payload.get("source_url") or ""
+                if str(post_source_url).strip() != normalized_source_url:
+                    continue
+
+            row = deepcopy(dict(payload))
+            row.setdefault("id", int(post_id))
+            rows.append(row)
+            if limit is not None and len(rows) >= limit:
+                break
+        return rows
 
     def update_post_fields(self, post_id: int, **fields: Any) -> None:
         normalized = int(post_id)

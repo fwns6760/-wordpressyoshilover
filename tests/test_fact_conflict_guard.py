@@ -101,6 +101,7 @@ class FactConflictGuardFixedLaneTests(unittest.TestCase):
                     "title": "【4/21予告先発】 巨人 vs 阪神",
                     "source_title": "巨人 vs 阪神 予告先発",
                 },
+                "expected_stop_reason": "pregame_score_fabrication",
             },
             "GAME_RESULT_CONFLICT": {
                 "subtype": "postgame",
@@ -156,7 +157,7 @@ class FactConflictGuardFixedLaneTests(unittest.TestCase):
                 self.assertFalse(result["ok"])
                 self.assertEqual(result["action"], "fail")
                 self.assertIn(expected_tag, result["fail_axes"])
-                self.assertEqual(result["stop_reason"], expected_tag)
+                self.assertEqual(result["stop_reason"], case.get("expected_stop_reason", expected_tag))
 
     def test_title_body_mismatch_applies_across_fixed_subtypes(self):
         cases = {

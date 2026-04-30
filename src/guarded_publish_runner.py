@@ -54,6 +54,8 @@ BACKLOG_NARROW_QUOTE_COMMENT_SUBTYPES = frozenset(
 BACKLOG_NARROW_ALLOWLIST = BACKLOG_NARROW_GAME_CONTEXT_SUBTYPES | BACKLOG_NARROW_QUOTE_COMMENT_SUBTYPES
 BACKLOG_NARROW_UNRESOLVED_SUBTYPES = frozenset({"default", "other"})
 BACKLOG_NARROW_UNRESOLVED_AGE_LIMIT_HOURS = 24
+BACKLOG_NARROW_FARM_RESULT_SUBTYPES = frozenset({"farm_result"})
+BACKLOG_NARROW_FARM_RESULT_AGE_LIMIT_HOURS = 24
 BACKLOG_NARROW_AGE_BUFFER_HOURS = 12
 BACKLOG_NARROW_BLOCKED_SUBTYPES = frozenset(
     {
@@ -1281,6 +1283,17 @@ def _backlog_narrow_publish_context(entry: dict[str, Any], *, now: datetime) -> 
             "age_hours": age_hours,
             "threshold_hours": float(BACKLOG_NARROW_UNRESOLVED_AGE_LIMIT_HOURS),
             "narrow_kind": "unresolved_fallback",
+        }
+    if subtype in BACKLOG_NARROW_FARM_RESULT_SUBTYPES:
+        threshold_hours = float(BACKLOG_NARROW_FARM_RESULT_AGE_LIMIT_HOURS)
+        if age_hours >= threshold_hours:
+            return None
+        return {
+            "subtype": subtype,
+            "age_hours": age_hours,
+            "threshold_hours": threshold_hours,
+            "narrow_kind": "farm_result_age_within_24h",
+            "reason": "farm_result_age_within_24h",
         }
     if subtype not in BACKLOG_NARROW_ALLOWLIST:
         return None

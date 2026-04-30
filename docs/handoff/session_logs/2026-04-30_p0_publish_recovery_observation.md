@@ -142,6 +142,16 @@ OS 再起動で /tmp 上の前 session handoff を喪失。
 - 16:37 JST | commit | 289-OBSERVE impl | <see final report for commit hash> | wait Claude push (flag default OFF)
 - 16:50 JST | deploy success | 281-QA guarded-publish | image :a175f24 → :6df049c, exec guarded-publish-cd9n6 success, silent hold 0, sent=0/skipped=97/refused=97 | farm_result <24h positive case 観察待ち
 - 16:55 JST | fire | 282-COST flag OFF deploy | brjl03dmt | yoshilover-fetcher:27166c5 → :325b47f, ENABLE_GEMINI_PREFLIGHT 未設定維持(default OFF)
+- 17:00 JST | deploy success | 289-OBSERVE flag ON | bm91l6f7o | fetcher :325b47f → :4be818d (rev 00175-c8c) + publish-notice :dc02d61 → :4be818d, ENABLE_POST_GEN_VALIDATE_NOTIFICATION=1 両方、cap=10 dedup OK
+- 17:10 JST | retroactive accept | 205-COST publish-notice incremental scan carried | commit 22bc09b → live image :4be818d | rollback せず、process violation 記録、release composition gate 追加(294-PROCESS) | live verify: cursor scan 動作、id=64104 review/hold mail sent=1、Team Shiny From 維持
+- 17:11 JST | doc | 205-COST retroactive accept ticket | doc/active/205-COST-*-retroactive-accept.md (untracked)
+- 17:12 JST | doc | 294-PROCESS release composition gate ticket | doc/active/294-PROCESS-*.md (untracked) | impl 別便、user GO 後
+- 17:20 JST | doc | 288-INGEST HOLD 解除条件 修正 | 時間軸撤回、5 条件管理 (289 通知 / 290 救済 / 295 誤判定 / 候補終端契約 / Gemini call 抑制)
+- 17:21 JST | doc | 295-QA subtype evaluator misclassify fix ticket | doc/active/295-QA-*.md (untracked) | live_update 誤判定救済、env 不変 contract 強調、impl HOLD until 289 安定 + 290 整理
+- 17:35 JST | quality audit | 21 候補分類 | A=1 / B=6 / C=6 / D=4 / E=4 | LLM 不要救済対象 7 件特定
+- 17:40 JST | draft | 290-QA weak title rescue backfill | doc/active/290-QA-*.md (untracked) | A/B 7 候補対象、env flag default OFF、人名+イベント AND narrow 例外
+- 17:42 JST | fire | 290-QA impl | bw2q618tt | wait commit (regex/metadata only、Gemini 0 増、env 不変)
+- 17:55 JST | commit | 290-QA impl | c14e269f5701715fd2b40d522b5e71c2faca04e8 | wait Claude push (flag default OFF)
 
 ## 後便 follow-up メモ
 

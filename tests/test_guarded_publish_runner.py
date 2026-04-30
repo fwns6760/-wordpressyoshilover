@@ -1671,6 +1671,7 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         self.assertEqual(result["refused"], [])
         self.assertIn("backlog_narrow_publish_eligible", stderr)
         self.assertIn('"subtype": "postgame"', stderr)
+        self.assertIn('"narrow_kind": "allowlist"', stderr)
 
     def test_backlog_only_game_result_narrow_allowlist_publishes(self):
         result, _, _ = self._run_backlog_case(
@@ -1770,6 +1771,72 @@ class GuardedPublishRunnerTests(unittest.TestCase):
 
         self.assertEqual([item["post_id"] for item in result["proposed"]], [4310])
         self.assertEqual(result["refused"], [])
+
+    def test_backlog_only_default_recent_unresolved_fallback_publishes(self):
+        result, _, stderr = self._run_backlog_case(
+            post_id=4320,
+            title="巨人の話題を整理",
+            subtype="default",
+            age_hours=5.0,
+            capture_stderr=True,
+        )
+
+        self.assertEqual([item["post_id"] for item in result["proposed"]], [4320])
+        self.assertEqual(result["refused"], [])
+        self.assertIn('"narrow_kind": "unresolved_fallback"', stderr)
+
+    def test_backlog_only_other_recent_unresolved_fallback_publishes(self):
+        result, _, stderr = self._run_backlog_case(
+            post_id=4321,
+            title="巨人の動きを整理",
+            subtype="other",
+            age_hours=10.0,
+            capture_stderr=True,
+        )
+
+        self.assertEqual([item["post_id"] for item in result["proposed"]], [4321])
+        self.assertEqual(result["refused"], [])
+        self.assertIn('"narrow_kind": "unresolved_fallback"', stderr)
+
+    def test_backlog_only_default_over_24h_stays_blocked(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4322,
+            title="巨人の話題を整理",
+            subtype="default",
+            age_hours=30.0,
+        )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["refused"][0]["reason"], "backlog_only")
+
+    def test_backlog_only_other_over_24h_stays_blocked(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4323,
+            title="巨人の話題を整理",
+            subtype="other",
+            age_hours=25.0,
+        )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["refused"][0]["reason"], "backlog_only")
+
+    def test_backlog_narrow_context_marks_postgame_as_allowlist(self):
+        candidate = self._make_candidate_post(4324, "巨人が阪神に3-2で勝利", subtype="postgame")
+        entry = self._make_backlog_entry(candidate, subtype="postgame", age_hours=5.0)
+
+        context = runner._backlog_narrow_publish_context(entry, now=FIXED_NOW)
+
+        self.assertIsNotNone(context)
+        self.assertEqual(context["subtype"], "postgame")
+        self.assertEqual(context["narrow_kind"], "allowlist")
+
+    def test_backlog_narrow_context_keeps_recent_lineup_blocked(self):
+        candidate = self._make_candidate_post(4325, "巨人スタメン発表 丸佳浩が1番", subtype="lineup")
+        entry = self._make_backlog_entry(candidate, subtype="lineup", age_hours=1.0)
+
+        context = runner._backlog_narrow_publish_context(entry, now=FIXED_NOW)
+
+        self.assertIsNone(context)
 
     def test_backlog_only_lineup_stays_blocked(self):
         result, _, _ = self._run_backlog_case(

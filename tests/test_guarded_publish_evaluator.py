@@ -181,6 +181,22 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
             for index in range(count)
         ]
 
+    def _resolve_subtype_with_other_meta(self, title: str, body_html: str = "<p>本文を整理した。</p>") -> dict:
+        post = _post(
+            9999,
+            title,
+            body_html,
+            meta={"article_subtype": "other"},
+        )
+        return evaluator_module.resolve_guarded_publish_subtype(
+            post,
+            {
+                "title": title,
+                "body_text": evaluator_module._strip_html(body_html),
+                "inferred_subtype": None,
+            },
+        )
+
     def test_clean_post_returns_publishable_true_and_cleanup_required_false(self):
         report = self._evaluate([self.clean_post])
 
@@ -1237,6 +1253,54 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         self.assertNotIn("subtype_unresolved", entry["repairable_flags"])
         self.assertEqual(entry["resolved_subtype"], "lineup")
         self.assertEqual(entry["subtype_resolution_source"], "title_fallback")
+
+    def test_subtype_unresolved_with_title_manager_comment_prefers_manager(self):
+        resolved = self._resolve_subtype_with_other_meta("阿部監督がコメント")
+
+        self.assertEqual(resolved["resolved_subtype"], "manager")
+        self.assertEqual(resolved["resolution_source"], "title_fallback")
+
+    def test_subtype_unresolved_with_title_coach_quote_prefers_manager(self):
+        resolved = self._resolve_subtype_with_other_meta("杉内コーチ「明日は様子を見て」")
+
+        self.assertEqual(resolved["resolved_subtype"], "manager")
+        self.assertEqual(resolved["resolution_source"], "title_fallback")
+
+    def test_subtype_unresolved_with_title_comment_signal_resolves_comment(self):
+        resolved = self._resolve_subtype_with_other_meta("岡本和真の発言整理")
+
+        self.assertEqual(resolved["resolved_subtype"], "comment")
+        self.assertEqual(resolved["resolution_source"], "title_fallback")
+
+    def test_subtype_unresolved_with_title_registration_signal_resolves_roster(self):
+        resolved = self._resolve_subtype_with_other_meta("則本昂大、登録抹消")
+
+        self.assertEqual(resolved["resolved_subtype"], "roster")
+        self.assertEqual(resolved["resolution_source"], "title_fallback")
+
+    def test_subtype_unresolved_with_title_return_signal_resolves_roster(self):
+        resolved = self._resolve_subtype_with_other_meta("川相昌弘、昇格・復帰")
+
+        self.assertEqual(resolved["resolved_subtype"], "roster")
+        self.assertEqual(resolved["resolution_source"], "title_fallback")
+
+    def test_subtype_unresolved_with_title_score_signal_resolves_game_result(self):
+        resolved = self._resolve_subtype_with_other_meta("巨人 4-2 広島")
+
+        self.assertEqual(resolved["resolved_subtype"], "game_result")
+        self.assertEqual(resolved["resolution_source"], "title_fallback")
+
+    def test_subtype_unresolved_with_title_lineup_signal_stays_lineup(self):
+        resolved = self._resolve_subtype_with_other_meta("巨人スタメン発表 阿部監督コメント")
+
+        self.assertEqual(resolved["resolved_subtype"], "lineup")
+        self.assertEqual(resolved["resolution_source"], "title_fallback")
+
+    def test_subtype_unresolved_with_no_signal_stays_default_fallback(self):
+        resolved = self._resolve_subtype_with_other_meta("謎のテキスト")
+
+        self.assertEqual(resolved["resolved_subtype"], "default")
+        self.assertEqual(resolved["resolution_source"], "default_fallback")
 
     def test_subtype_unresolved_with_unsupported_named_fact_still_refused(self):
         post = _post(

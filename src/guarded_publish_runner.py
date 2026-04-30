@@ -52,6 +52,8 @@ BACKLOG_NARROW_QUOTE_COMMENT_SUBTYPES = frozenset(
     }
 )
 BACKLOG_NARROW_ALLOWLIST = BACKLOG_NARROW_GAME_CONTEXT_SUBTYPES | BACKLOG_NARROW_QUOTE_COMMENT_SUBTYPES
+BACKLOG_NARROW_UNRESOLVED_SUBTYPES = frozenset({"default", "other"})
+BACKLOG_NARROW_UNRESOLVED_AGE_LIMIT_HOURS = 24
 BACKLOG_NARROW_AGE_BUFFER_HOURS = 12
 BACKLOG_NARROW_BLOCKED_SUBTYPES = frozenset(
     {
@@ -1268,13 +1270,22 @@ def _backlog_narrow_publish_context(entry: dict[str, Any], *, now: datetime) -> 
         return None
     if subtype in BACKLOG_NARROW_BLOCKED_SUBTYPES:
         return None
+    age_hours = _entry_freshness_age_hours(entry, now=now)
+    if age_hours is None:
+        return None
+    if subtype in BACKLOG_NARROW_UNRESOLVED_SUBTYPES:
+        if age_hours >= float(BACKLOG_NARROW_UNRESOLVED_AGE_LIMIT_HOURS):
+            return None
+        return {
+            "subtype": subtype,
+            "age_hours": age_hours,
+            "threshold_hours": float(BACKLOG_NARROW_UNRESOLVED_AGE_LIMIT_HOURS),
+            "narrow_kind": "unresolved_fallback",
+        }
     if subtype not in BACKLOG_NARROW_ALLOWLIST:
         return None
     threshold_hours = _resolve_freshness_threshold(subtype)
     if threshold_hours is None:
-        return None
-    age_hours = _entry_freshness_age_hours(entry, now=now)
-    if age_hours is None:
         return None
     if age_hours >= threshold_hours + BACKLOG_NARROW_AGE_BUFFER_HOURS:
         return None
@@ -1282,6 +1293,7 @@ def _backlog_narrow_publish_context(entry: dict[str, Any], *, now: datetime) -> 
         "subtype": subtype,
         "age_hours": age_hours,
         "threshold_hours": threshold_hours,
+        "narrow_kind": "allowlist",
     }
 
 
@@ -2079,6 +2091,7 @@ def run_guarded_publish(
                 subtype=backlog_context["subtype"],
                 age_hours=backlog_context["age_hours"],
                 threshold_hours=backlog_context["threshold_hours"],
+                narrow_kind=backlog_context["narrow_kind"],
             )
             filtered_publishable_entries.append(entry)
             continue

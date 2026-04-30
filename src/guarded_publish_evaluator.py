@@ -147,6 +147,11 @@ FARM_SIGNAL_RE = re.compile(r"(?:2軍|二軍|２軍|3軍|三軍|ファーム|育
 NOTICE_SIGNAL_RE = re.compile(r"(公示|登録|抹消|離脱|復帰|昇格|合流|帯同|FA|トレード|移籍|獲得|契約)")
 PROGRAM_SIGNAL_RE = re.compile(r"(番組|テレビ|中継|放送|出演|Hulu|DAZN|GIANTS TV)")
 PREGAME_SIGNAL_RE = re.compile(r"(予告先発|試合前|見どころ|プレビュー|開始予定|プレーボール)")
+COMMENT_SIGNAL_RE = re.compile(r"(コメント|発言|語る|話す|振り返|談話|インタビュー|発言整理)")
+MANAGER_SIGNAL_RE = re.compile(r"(監督|首脳陣|コーチ)")
+ROSTER_SIGNAL_RE = re.compile(r"(登録|抹消|昇格|降格|復帰|加入|移籍|退団)")
+INJURY_SIGNAL_RE = re.compile(r"(故障|離脱|手術|入院|診断|療養|療治)")
+GAME_RESULT_SIGNAL_RE = re.compile(r"(勝利|敗戦|快勝|完勝|完敗|逆転勝|惜敗|[0-9０-９]+\s*[-－]\s*[0-9０-９]+)")
 LOW_SEVERITY_NUMERIC_RE = re.compile(r"打率\s*(?:0|０)?[\.．]([4-9][0-9０-９]{2})")
 POSTCHECK_META_RE = re.compile(r"(tweet_id|x_post_id|posted_to_x|posted_to_twitter|auto_tweet|auto_post_to_x|sns_posted)")
 LIGHT_STRUCTURE_BREAK_RE = re.compile(r"(?is)<p\b[^>]*>\s*(?:&nbsp;|\s|<br\s*/?>)*</p>|(?:<br\s*/?>\s*){2,}")
@@ -533,9 +538,20 @@ def _fallback_subtype_from_text(title: str, body_text: str) -> tuple[str, str]:
     body_value = str(body_text or "")
     body_lower = body_value.lower()
 
-    def detect(value: str, lowered: str, source: str) -> tuple[str, str] | None:
+    def detect(value: str, lowered: str, source: str, *, allow_narrow_signals: bool) -> tuple[str, str] | None:
         if SAFE_LINEUP_SIGNAL_RE.search(value):
             return "lineup", source
+        if allow_narrow_signals:
+            if MANAGER_SIGNAL_RE.search(value):
+                return "manager", source
+            if COMMENT_SIGNAL_RE.search(value):
+                return "comment", source
+            if INJURY_SIGNAL_RE.search(value):
+                return "injury", source
+            if ROSTER_SIGNAL_RE.search(value):
+                return "roster", source
+            if GAME_RESULT_SIGNAL_RE.search(value):
+                return "game_result", source
         if NOTICE_SIGNAL_RE.search(value) or any(token in lowered for token in ("notice", "transaction", "roster")):
             return "notice", source
         if FARM_SIGNAL_RE.search(value) or "farm" in lowered:
@@ -548,10 +564,10 @@ def _fallback_subtype_from_text(title: str, body_text: str) -> tuple[str, str]:
             return "pregame", source
         return None
 
-    detected = detect(title_text, title_lower, "title_fallback")
+    detected = detect(title_text, title_lower, "title_fallback", allow_narrow_signals=True)
     if detected is not None:
         return detected
-    detected = detect(body_value, body_lower, "body_fallback")
+    detected = detect(body_value, body_lower, "body_fallback", allow_narrow_signals=False)
     if detected is not None:
         return detected
     return DEFAULT_FALLBACK_SUBTYPE, "default_fallback"

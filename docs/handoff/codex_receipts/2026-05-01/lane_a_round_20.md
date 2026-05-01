@@ -1,0 +1,23 @@
+# Lane A round 20 receipt
+
+- job_id: `bfafdyqns`
+- ticket: ops reflection 9-file doc commit(本日 user 明示 strengthening 永続化 + 298-v4 deploy 完了 OBSERVED_OK 反映)
+- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_a_round_20_ops_reflection_commit.md`
+- started_at: 2026-05-01 18:04 JST
+- status: **completed → idle**
+- completed_at: 2026-05-01 18:08 JST
+- commit_hash: `7b606ee`(9 files changed)
+- pushed: yes(`3d67d2a..7b606ee master -> master`、origin/master 反映済)
+- changed_files:
+  - docs/ops/POLICY.md(§16 追加)
+  - docs/ops/CURRENT_STATE.md(Today Reflection + 298-v4 OBSERVED_OK)
+  - docs/ops/OPS_BOARD.yaml(298-Phase3-v4 → observed_ok + today_reflection block)
+  - docs/ops/NEXT_SESSION_RUNBOOK.md(§3 board 更新 + §6 v4 guard + §8a progress loop + §12 3 dimension rollback + §13 pre-deploy gate)
+  - docs/ops/INCIDENT_LIBRARY.md(deploy 完了 timeline + Second-Wave MITIGATED + 5 Reflection)
+  - docs/ops/WORKER_POOL.md(Lane A round 19 + Lane B round 15 完了反映)
+  - docs/handoff/codex_prompts/2026-05-01/lane_a_round_19_policy_3_5_3_6_15_commit.md(永続化)
+  - docs/handoff/codex_prompts/2026-05-01/lane_a_round_20_ops_reflection_commit.md(self-include 永続化)
+  - docs/handoff/codex_receipts/2026-05-01/lane_a_round_19.md(永続化)
+- 5 step 一次受け: **pass**(diff 9 file scope 内 / 内容 reflection + v4 OBSERVED_OK 反映のみ / pytest +0 doc-only / scope 内 / rollback 不要)
+- POLICY classification: **CLAUDE_AUTO_GO**(doc-only、production 不変、可逆 commit、§3.1 整合)
+- next: Lane A → idle、HOLD reason 4 条件全 YES(両 lane idle、5/2 09:00 JST Phase 6 verify までは Codex 投入余地なし)

@@ -1,15 +1,16 @@
 # YOSHILOVER WORKER POOL
 
 Codex Lane state(POLICY §13 永続管理、`/tmp` 禁止、4 NO 規律)。
-Last updated: 2026-05-01 17:55 JST(両 lane 完了 close 状態、5/2 09:00 JST Phase 6 verify 待ち)
+Last updated: 2026-05-01 18:09 JST(両 lane idle、Lane A round 20 完了 close、5/2 09:00 JST Phase 6 verify 待ち)
 
 ## Active Lanes(両 idle、HOLD reason explicit)
 
 ### Lane A(idle、HOLD reason explicit)
 
 - status: **idle**
-- last_round: round 19 completed(`bvbjy9mog` retry、POLICY §3.5+§3.6+§15+§14.5 row commit `3d67d2a`、push 済 origin/master)
-- prev_round: round 18 completed(`bbzzdjawe`、293-COST impl 4 commit `6932b25`/`afdf140`/`7c2b0cc`/`10022c0`、pytest 2018/0、READY_FOR_DEPLOY 化完了)
+- last_round: round 20 completed(`bfafdyqns`、ops reflection 9-file doc commit `7b606ee`、push 済 origin/master)
+- prev_round: round 19 completed(`bvbjy9mog` retry、POLICY §3.5+§3.6+§15+§14.5 row commit `3d67d2a`、push 済 origin/master)
+- prev_prev_round: round 18 completed(`bbzzdjawe`、293-COST impl 4 commit `6932b25`/`afdf140`/`7c2b0cc`/`10022c0`、pytest 2018/0、READY_FOR_DEPLOY 化完了)
 - HOLD reason: 4 条件全 YES → 全 Pack READY 化完了 + 298-v4 deploy 完了 + 5/2 09:00 JST Phase 6 read-only verify(Claude 自律 EVIDENCE_ONLY scope)までは Lane A 投入余地なし + scope 拡大 = REJECT
 - next_dispatch: 5/2 朝 Phase 6 verify 結果 + 24h 安定後、293 image rebuild + flag ON Pack(USER_DECISION_REQUIRED)or その他 deferred
 
@@ -48,6 +49,7 @@ Last updated: 2026-05-01 17:55 JST(両 lane 完了 close 状態、5/2 09:00 JST 
 | 12 | Pack consistency review v2 | `b1fiot2e4` | (closed prior) | done |
 | 18 | 293-COST impl + test + commit + push | `bbzzdjawe` | `6932b25` / `afdf140` / `7c2b0cc` / `10022c0` | done |
 | 19 | POLICY §3.5+§3.6+§15+§14.5 row commit | `bvbjy9mog` (retry) | `3d67d2a` | done |
+| 20 | ops reflection 9-file doc commit(POLICY §16 + CURRENT_STATE + OPS_BOARD + NEXT_SESSION_RUNBOOK + INCIDENT_LIBRARY + WORKER_POOL + 3 handoff)| `bfafdyqns` | `7b606ee` | done |
 
 ### Lane B history
 

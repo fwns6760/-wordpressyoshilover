@@ -497,6 +497,125 @@ class PublishNoticeEntrypointTests(unittest.TestCase):
             commands,
         )
 
+    def test_entrypoint_restores_preflight_skip_history_and_uploads_cursor_only(self) -> None:
+        runner_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cursor_path = Path(tmpdir) / "cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            preflight_history_path = Path(tmpdir) / "preflight_skip_history.jsonl"
+            preflight_cursor_path = Path(tmpdir) / "preflight_skip_history_cursor.txt"
+
+            def fake_run(cmd, **kwargs):
+                if cmd[0] == "gcloud" and cmd[4] == "cp" and cmd[5].startswith("gs://"):
+                    if cmd[5].endswith("/guarded_publish_history.jsonl"):
+                        guarded_history_path.write_text("", encoding="utf-8")
+                        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=b"", stderr=b"")
+                    if cmd[5].endswith("/preflight_skip_history.jsonl"):
+                        preflight_history_path.write_text(
+                            json.dumps({"record_type": "preflight_skip"}, ensure_ascii=False) + "\n",
+                            encoding="utf-8",
+                        )
+                        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=b"", stderr=b"")
+                    raise subprocess.CalledProcessError(
+                        returncode=1,
+                        cmd=cmd,
+                        stderr=b"CommandException: No URLs matched",
+                    )
+                if cmd[0] == sys.executable:
+                    self.assertEqual(
+                        kwargs["env"]["PUBLISH_NOTICE_PREFLIGHT_SKIP_HISTORY_PATH"],
+                        str(preflight_history_path),
+                    )
+                    self.assertEqual(
+                        kwargs["env"]["PUBLISH_NOTICE_PREFLIGHT_SKIP_HISTORY_CURSOR_PATH"],
+                        str(preflight_cursor_path),
+                    )
+                    cursor_path.write_text("cursor\n", encoding="utf-8")
+                    history_path.write_text("{}\n", encoding="utf-8")
+                    queue_path.write_text('{"status":"queued"}\n', encoding="utf-8")
+                    guarded_cursor_path.write_text("2026-04-24T11:30:00+09:00\n", encoding="utf-8")
+                    preflight_cursor_path.write_text("2026-04-24T11:35:00+09:00\n", encoding="utf-8")
+                    return runner_result
+                if cmd[0] == "gcloud" and cmd[4] in {"cp", "mv"}:
+                    return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=b"", stderr=b"")
+                raise AssertionError(f"unexpected command: {cmd}")
+
+            with patch("subprocess.run", side_effect=fake_run) as mocked_run:
+                exit_code = cloud_run_persistence.run_publish_notice_entrypoint(
+                    [
+                        "--bucket-name",
+                        "bucket-name",
+                        "--prefix",
+                        "publish_notice",
+                        "--project-id",
+                        "project-id",
+                        "--cursor-path",
+                        str(cursor_path),
+                        "--history-path",
+                        str(history_path),
+                        "--queue-path",
+                        str(queue_path),
+                        "--guarded-history-path",
+                        str(guarded_history_path),
+                        "--guarded-history-cursor-path",
+                        str(guarded_cursor_path),
+                        "--preflight-skip-history-path",
+                        str(preflight_history_path),
+                        "--preflight-skip-history-cursor-path",
+                        str(preflight_cursor_path),
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        commands = [call.args[0] for call in mocked_run.call_args_list]
+        self.assertIn(
+            [
+                "gcloud",
+                "--project",
+                "project-id",
+                "storage",
+                "cp",
+                "gs://bucket-name/preflight_skip/preflight_skip_history.jsonl",
+                str(preflight_history_path),
+                "--quiet",
+            ],
+            commands,
+        )
+        self.assertIn(
+            [
+                "gcloud",
+                "--project",
+                "project-id",
+                "storage",
+                "cp",
+                "gs://bucket-name/publish_notice/preflight_skip_history_cursor.txt",
+                str(preflight_cursor_path),
+                "--quiet",
+            ],
+            commands,
+        )
+        preflight_cursor_upload_cp = [
+            command
+            for command in commands
+            if command[:6] == ["gcloud", "--project", "project-id", "storage", "cp", str(preflight_cursor_path)]
+        ]
+        self.assertTrue(preflight_cursor_upload_cp)
+        self.assertTrue(
+            preflight_cursor_upload_cp[0][6].startswith(
+                "gs://bucket-name/publish_notice/preflight_skip_history_cursor.txt.uploading-"
+            )
+        )
+        preflight_history_upload_cp = [
+            command
+            for command in commands
+            if command[:6] == ["gcloud", "--project", "project-id", "storage", "cp", str(preflight_history_path)]
+        ]
+        self.assertEqual(preflight_history_upload_cp, [])
+
     def test_entrypoint_returns_runner_exit_code(self) -> None:
         runner_result = subprocess.CompletedProcess(args=[], returncode=7, stdout="", stderr="")
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -29,6 +29,9 @@ DEFAULT_OLD_CANDIDATE_LEDGER_REMOTE_NAME = "publish_notice_old_candidate_once.js
 DEFAULT_GUARDED_PUBLISH_PREFIX = "guarded_publish"
 DEFAULT_GUARDED_HISTORY_PATH = "/tmp/pub004d/guarded_publish_history.jsonl"
 DEFAULT_GUARDED_HISTORY_CURSOR_PATH = "/tmp/pub004d/guarded_publish_history_cursor.txt"
+DEFAULT_PREFLIGHT_SKIP_PREFIX = "preflight_skip"
+DEFAULT_PREFLIGHT_SKIP_HISTORY_PATH = "/tmp/pub004d/preflight_skip_history.jsonl"
+DEFAULT_PREFLIGHT_SKIP_HISTORY_CURSOR_PATH = "/tmp/pub004d/preflight_skip_history_cursor.txt"
 DEFAULT_ARTIFACT_BUCKET_NAME = "yoshilover-history"
 DEFAULT_ARTIFACT_PREFIX = "repair_artifacts"
 JST = ZoneInfo("Asia/Tokyo")
@@ -281,6 +284,20 @@ def _parse_entrypoint_args(argv: Sequence[str] | None) -> argparse.Namespace:
             DEFAULT_GUARDED_HISTORY_CURSOR_PATH,
         ),
     )
+    parser.add_argument(
+        "--preflight-skip-history-path",
+        default=os.environ.get(
+            "PUBLISH_NOTICE_PREFLIGHT_SKIP_HISTORY_PATH",
+            DEFAULT_PREFLIGHT_SKIP_HISTORY_PATH,
+        ),
+    )
+    parser.add_argument(
+        "--preflight-skip-history-cursor-path",
+        default=os.environ.get(
+            "PUBLISH_NOTICE_PREFLIGHT_SKIP_HISTORY_CURSOR_PATH",
+            DEFAULT_PREFLIGHT_SKIP_HISTORY_CURSOR_PATH,
+        ),
+    )
     parser.add_argument("runner_args", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     if args.runner_args and args.runner_args[0] == "--":
@@ -327,6 +344,11 @@ def run_publish_notice_entrypoint(argv: Sequence[str] | None = None) -> int:
         prefix=DEFAULT_GUARDED_PUBLISH_PREFIX,
         project_id=args.project_id,
     )
+    preflight_skip_history_manager = GCSStateManager(
+        bucket_name=args.bucket_name,
+        prefix=DEFAULT_PREFLIGHT_SKIP_PREFIX,
+        project_id=args.project_id,
+    )
     command = build_publish_notice_command(
         runner_module=args.runner_module,
         cursor_path=str(args.cursor_path),
@@ -336,15 +358,28 @@ def run_publish_notice_entrypoint(argv: Sequence[str] | None = None) -> int:
     )
     runner_env = os.environ.copy()
     runner_env["PUBLISH_NOTICE_OLD_CANDIDATE_LEDGER_PATH"] = str(args.old_candidate_ledger_path)
+    runner_env["PUBLISH_NOTICE_PREFLIGHT_SKIP_HISTORY_PATH"] = str(args.preflight_skip_history_path)
+    runner_env["PUBLISH_NOTICE_PREFLIGHT_SKIP_HISTORY_CURSOR_PATH"] = str(
+        args.preflight_skip_history_cursor_path
+    )
     with (
         manager.with_state("cursor.txt", args.cursor_path),
         manager.with_state("history.json", args.history_path),
         manager.with_state("queue.jsonl", args.queue_path),
         manager.with_state(DEFAULT_OLD_CANDIDATE_LEDGER_REMOTE_NAME, args.old_candidate_ledger_path),
         manager.with_state("guarded_publish_history_cursor.txt", args.guarded_history_cursor_path),
+        manager.with_state(
+            "preflight_skip_history_cursor.txt",
+            args.preflight_skip_history_cursor_path,
+        ),
         guarded_history_manager.with_state(
             "guarded_publish_history.jsonl",
             args.guarded_history_path,
+            upload_on_exit=False,
+        ),
+        preflight_skip_history_manager.with_state(
+            "preflight_skip_history.jsonl",
+            args.preflight_skip_history_path,
             upload_on_exit=False,
         ),
     ):

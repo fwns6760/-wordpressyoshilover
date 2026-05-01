@@ -29,10 +29,16 @@
 
 | # | ticket | phase | status | next_review_at |
 |---|---|---|---|---|
-| 1 | **298-MAIL-STORM-HOTFIX**(P1, Phase 1 即時止血) | §14 自律 GO 範囲、real review 影響境界で安全側 Acceptance Pack 経由 | env=168 削除済(09:33)、Codex A 完了(`bc1e5c0`、env-only 2 案)、user GO 待ち | 2026-05-01 10:30 JST |
-| 2 | **298-MAIL-STORM-PERMANENT-FIX**(P1, Phase 2 恒久対策) | code fix(scanner persistent ledger)、user GO 必須(PROD_DEPLOY+FLAG_ENV) | Codex B 完了(`0b64078`、Option B 推奨、Acceptance Pack draft)、user GO 待ち | 2026-05-01 18:00 JST |
+| 1 | **298-MAIL-STORM-PERMANENT-FIX**(P1, Phase 2 恒久対策) | code fix(scanner persistent ledger Option B、Codex impl 中)、deploy はまだ HOLD | Codex impl 便 fire(`bhbu2amr6`)/ commit + push 後 user 判断は deploy のみ | 2026-05-01 11:00 JST(impl 完了想定) |
 
-本日 active 2(P1 mail storm Phase 1 / 2、Codex 並行成果物 完了、Claude 影響範囲圧縮 + user 判断 1 行で提示)。
+本日 active 1(298 Phase 1 = HOLD で done 移動、Phase 2 が impl 中)。
+
+### Phase 1 完了(HOLD で自然終息)
+
+- user 判断「storm 自然停止なら HOLD」該当
+- 09:50 JST sent=10 第一波最終 trigger / 09:55 以降 sent=0 / 累積 90 通で完結
+- env=0 hotfix を実施すると real review path も止まる影響があったが、自然終息で回避
+- 第二波(5/2 09:00 頃)は Phase 2 deploy で防止前提
 
 ---
 

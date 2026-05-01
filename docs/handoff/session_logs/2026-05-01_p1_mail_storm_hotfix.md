@@ -15,7 +15,10 @@
 09:49 | codex B 完了 | 298 | 0b64078 着地、Option B 推奨 + Acceptance Pack draft、impl + test 設計 | user 提示準備
 09:50 | docs/ops/ update v1 | 298 | POLICY §14 §15 追加 / CURRENT_STATE 298 ACTIVE 化 / OPS_BOARD 298 entry 追加 | commit 0b64078 (Codex B 巻き込み混入で 1 commit に統合)
 09:55 | user 方針修正受領 | 298 | 主目的=運用立て直し、§14 を user 明示 GO 不要 8 条件に変更、§3 自律 GO 10 categories 化 | POLICY 再更新
-10:00 | docs/ops/ update v2 | 298 | POLICY §3 10 categories(INCIDENT_ANALYSIS / P0_P1_NARROW_HOTFIX 追加)/ §14 user 明示 GO 不要化 8 条件 / 298 を Phase 1 + Phase 2 active 分割 | commit + push 予定
+10:00 | docs/ops/ update v2 | 298 | POLICY §3 10 categories(INCIDENT_ANALYSIS / P0_P1_NARROW_HOTFIX 追加)/ §14 user 明示 GO 不要化 8 条件 / 298 を Phase 1 + Phase 2 active 分割 | commit 5fe7fad push
+10:05 | user 判断受領 | 298 | Phase1=条件付きGO(storm 継続中なら)/ Phase2=GO(impl + test + commit + push、deploy はまだ HOLD)| storm 現状確認
+10:07 | storm 自然終息確認 | 298-Phase1 | 09:50 JST sent=10 第一波最後 / 09:55 JST 以降 sent=0 維持 / 累積 90 通で完結 | Phase1 HOLD 確定(実行せず)
+10:10 | Phase2 Codex impl 便 fire | 298-Phase2 | persistent sent ledger Option B impl + test + commit + push、deploy はしない | Codex 完了待ち
 ```
 
 ## hotfix 経過 evidence(数値)

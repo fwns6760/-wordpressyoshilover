@@ -44,6 +44,17 @@ _POST_GEN_VALIDATE_RECORD_TYPE = "post_gen_validate"
 _POST_GEN_VALIDATE_REVIEW_PREFIX = "【要review｜post_gen_validate】"
 _POST_GEN_VALIDATE_GCS_BUCKET = "baseballsite-yoshilover-state"
 _POST_GEN_VALIDATE_GCS_OBJECT = "post_gen_validate/post_gen_validate_history.jsonl"
+_PREFLIGHT_SKIP_HISTORY_DEFAULT_PATH = Path("/tmp/pub004d/preflight_skip_history.jsonl")
+_PREFLIGHT_SKIP_HISTORY_FALLBACK_PATH = Path("logs/preflight_skip_history.jsonl")
+_PREFLIGHT_SKIP_HISTORY_CURSOR_DEFAULT_PATH = Path("/tmp/pub004d/preflight_skip_history_cursor.txt")
+_PREFLIGHT_SKIP_NOTIFICATION_ENV_FLAG = "ENABLE_PREFLIGHT_SKIP_NOTIFICATION"
+_PREFLIGHT_SKIP_DEDUPE_KEY_FIELDS_ENV = "PREFLIGHT_SKIP_DEDUPE_KEY_FIELDS"
+_PREFLIGHT_SKIP_DEDUPE_KEY_FIELDS_DEFAULT = ("source_url_hash", "skip_reason")
+_PREFLIGHT_SKIP_SKIP_LAYER = "preflight"
+_PREFLIGHT_SKIP_RECORD_TYPE = "preflight_skip"
+_PREFLIGHT_SKIP_REVIEW_PREFIX = "【要review｜preflight_skip】"
+_PREFLIGHT_SKIP_GCS_BUCKET = "baseballsite-yoshilover-state"
+_PREFLIGHT_SKIP_GCS_OBJECT = "preflight_skip/preflight_skip_history.jsonl"
 _OLD_CANDIDATE_ONCE_ENV_FLAG = "ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE"
 _OLD_CANDIDATE_MIN_AGE_DAYS_ENV = "PUBLISH_NOTICE_OLD_CANDIDATE_MIN_AGE_DAYS"
 _OLD_CANDIDATE_MIN_AGE_DAYS_DEFAULT = 3
@@ -147,6 +158,26 @@ def _resolve_post_gen_validate_history_cursor_path(value: str | Path | None = No
     return _POST_GEN_VALIDATE_HISTORY_CURSOR_DEFAULT_PATH
 
 
+def _resolve_preflight_skip_history_path(value: str | Path | None = None) -> Path:
+    if value is not None and str(value).strip():
+        return _path(value)
+    env_value = str(os.environ.get("PUBLISH_NOTICE_PREFLIGHT_SKIP_HISTORY_PATH", "")).strip()
+    if env_value:
+        return _path(env_value)
+    if _PREFLIGHT_SKIP_HISTORY_DEFAULT_PATH.exists():
+        return _PREFLIGHT_SKIP_HISTORY_DEFAULT_PATH
+    return _PREFLIGHT_SKIP_HISTORY_FALLBACK_PATH
+
+
+def _resolve_preflight_skip_history_cursor_path(value: str | Path | None = None) -> Path:
+    if value is not None and str(value).strip():
+        return _path(value)
+    env_value = str(os.environ.get("PUBLISH_NOTICE_PREFLIGHT_SKIP_HISTORY_CURSOR_PATH", "")).strip()
+    if env_value:
+        return _path(env_value)
+    return _PREFLIGHT_SKIP_HISTORY_CURSOR_DEFAULT_PATH
+
+
 def _publish_notice_old_candidate_once_enabled() -> bool:
     return str(os.environ.get(_OLD_CANDIDATE_ONCE_ENV_FLAG, "")).strip().lower() in {
         "1",
@@ -177,6 +208,15 @@ def _resolve_old_candidate_ledger_path(value: str | Path | None = None) -> Path:
 
 def _post_gen_validate_notification_enabled() -> bool:
     return str(os.environ.get(_POST_GEN_VALIDATE_NOTIFICATION_ENV_FLAG, "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _preflight_skip_notification_enabled() -> bool:
+    return str(os.environ.get(_PREFLIGHT_SKIP_NOTIFICATION_ENV_FLAG, "")).strip().lower() in {
         "1",
         "true",
         "yes",
@@ -246,6 +286,28 @@ def _sync_post_gen_validate_history_from_gcs(path: Path) -> None:
         _log_event(
             "post_gen_validate_history_gcs_sync_failed",
             skip_layer=_POST_GEN_VALIDATE_SKIP_LAYER,
+            reason=type(exc).__name__,
+        )
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(payload, encoding="utf-8")
+
+
+def _sync_preflight_skip_history_from_gcs(path: Path) -> None:
+    client = _gcs_client()
+    if client is None:
+        return
+    try:
+        bucket = client.bucket(_PREFLIGHT_SKIP_GCS_BUCKET)
+        blob = bucket.blob(_PREFLIGHT_SKIP_GCS_OBJECT)
+        if not blob.exists():
+            return
+        payload = blob.download_as_text(encoding="utf-8")
+    except Exception as exc:
+        _log_event(
+            "preflight_skip_history_gcs_sync_failed",
+            record_type=_PREFLIGHT_SKIP_RECORD_TYPE,
+            skip_layer=_PREFLIGHT_SKIP_SKIP_LAYER,
             reason=type(exc).__name__,
         )
         return
@@ -693,6 +755,105 @@ def _post_gen_validate_dedupe_key(entry: Mapping[str, Any]) -> str:
     if not source_url_hash or not skip_reason:
         return ""
     return f"{_POST_GEN_VALIDATE_RECORD_TYPE}:{source_url_hash}:{skip_reason}"
+
+
+def _preflight_skip_entry_datetime(entry: Mapping[str, Any]) -> datetime | None:
+    for key in ("ts", "recorded_at", "date"):
+        parsed = _parse_datetime_to_jst(entry.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _resolve_preflight_skip_reason(entry: Mapping[str, Any]) -> str:
+    return str(entry.get("skip_reason") or "").strip()
+
+
+def _preflight_skip_reason_label(skip_reason: str) -> str:
+    normalized = str(skip_reason or "").strip()
+    if normalized == "existing_publish_same_source_url":
+        return "同じ source_url の publish 済み記事が既に存在するため"
+    if normalized == "placeholder_body":
+        return "source body が placeholder のままで、本文生成に進めないため"
+    if normalized == "not_giants_related":
+        return "巨人関連の記事と判定できず、対象外のため"
+    if normalized == "live_update_target_disabled":
+        return "live_update 記事は現行運用で無効化されているため"
+    if normalized == "farm_lineup_backlog_blocked":
+        return "二軍スタメン記事が backlog 条件に入り、現時点では対象外のため"
+    if normalized == "farm_result_age_exceeded":
+        return "二軍試合結果の記事が許容期限を超えたため"
+    if normalized == "unofficial_source_only":
+        return "非公式ソースのみで、公式・準公式の裏取りがないため"
+    if normalized == "expected_hard_stop_death_or_grave":
+        return "死亡・重篤系のセンシティブ話題で hard stop 対象のため"
+    return normalized
+
+
+def _preflight_skip_title(entry: Mapping[str, Any]) -> str:
+    source_title = str(entry.get("source_title") or entry.get("title") or "").strip()
+    if source_title:
+        return source_title
+    source_url = str(entry.get("source_url") or "").strip()
+    if source_url:
+        return source_url
+    return "preflight skip"
+
+
+def _preflight_skip_subject(entry: Mapping[str, Any]) -> str:
+    base_subject = build_subject(_preflight_skip_title(entry))
+    if _GUARDED_PUBLISH_REVIEW_SUBJECT_RE.search(base_subject):
+        return _GUARDED_PUBLISH_REVIEW_SUBJECT_RE.sub(
+            _PREFLIGHT_SKIP_REVIEW_PREFIX,
+            base_subject,
+            count=1,
+        )
+    return f"{_PREFLIGHT_SKIP_REVIEW_PREFIX}{_preflight_skip_title(entry)}"
+
+
+def _preflight_skip_source_url_hash(entry: Mapping[str, Any]) -> str:
+    explicit = str(entry.get("source_url_hash") or "").strip()
+    if explicit:
+        return explicit
+    return _hash_text(str(entry.get("source_url") or "").strip())
+
+
+def _resolve_preflight_skip_dedupe_key_fields() -> tuple[str, ...]:
+    allowed = {
+        "source_url_hash",
+        "skip_reason",
+        "article_subtype",
+        "category",
+        "content_hash",
+        "source_url",
+    }
+    raw = str(os.environ.get(_PREFLIGHT_SKIP_DEDUPE_KEY_FIELDS_ENV, "")).strip()
+    if not raw:
+        return _PREFLIGHT_SKIP_DEDUPE_KEY_FIELDS_DEFAULT
+    fields: list[str] = []
+    for part in raw.split(","):
+        normalized = part.strip().lower()
+        if not normalized or normalized not in allowed or normalized in fields:
+            continue
+        fields.append(normalized)
+    if not fields:
+        return _PREFLIGHT_SKIP_DEDUPE_KEY_FIELDS_DEFAULT
+    return tuple(fields)
+
+
+def _preflight_skip_dedupe_key(entry: Mapping[str, Any]) -> str:
+    parts: list[str] = [_PREFLIGHT_SKIP_RECORD_TYPE]
+    for field in _resolve_preflight_skip_dedupe_key_fields():
+        if field == "source_url_hash":
+            value = _preflight_skip_source_url_hash(entry)
+        elif field == "skip_reason":
+            value = _resolve_preflight_skip_reason(entry)
+        else:
+            value = str(entry.get(field) or "").strip()
+        if not value:
+            return ""
+        parts.append(value)
+    return ":".join(parts)
 
 
 def _default_fetch(base_url: str, after_iso: str) -> list[Mapping[str, Any]]:
@@ -1218,6 +1379,198 @@ def scan_post_gen_validate_history(
     )
 
 
+def scan_preflight_skip_history(
+    *,
+    preflight_skip_history_path: str | Path | None = None,
+    cursor_path: str | Path | None = None,
+    history_path: str | Path = "logs/publish_notice_history.json",
+    queue_path: str | Path = "logs/publish_notice_queue.jsonl",
+    history: Mapping[str, str] | None = None,
+    max_per_run: int | None = None,
+    recent_window_hours: float | int | None = None,
+    now: Callable[[], datetime] | datetime | None = None,
+    recorded_at: Callable[[], datetime] | datetime | None = None,
+    write_history: bool = True,
+    write_cursor: bool = True,
+) -> GuardedPublishHistoryScanResult:
+    current_now = _coerce_now(now)
+    history_file = _path(history_path)
+    preflight_cursor_file = _resolve_preflight_skip_history_cursor_path(cursor_path)
+    current_history = _prune_history(
+        dict(history) if history is not None else _load_history(history_file),
+        now=current_now,
+    )
+    resolved_max_per_run = _resolve_review_max_per_run(max_per_run)
+    if resolved_max_per_run <= 0:
+        if write_history:
+            _write_history(history_file, current_history)
+        return GuardedPublishHistoryScanResult(
+            emitted=[],
+            skipped=[],
+            history_after=current_history,
+            cursor_before=_read_cursor(preflight_cursor_file),
+            cursor_after=_read_cursor(preflight_cursor_file),
+            cursor_path=preflight_cursor_file,
+            cursor_write_needed=False,
+        )
+
+    recent_window = timedelta(hours=_resolve_review_window_hours(recent_window_hours))
+    ledger_file = _resolve_preflight_skip_history_path(preflight_skip_history_path)
+    if (
+        preflight_skip_history_path is None
+        and str(os.environ.get("PUBLISH_NOTICE_PREFLIGHT_SKIP_HISTORY_PATH", "")).strip() == ""
+    ):
+        _sync_preflight_skip_history_from_gcs(ledger_file)
+    if not ledger_file.exists():
+        ledger_file = _PREFLIGHT_SKIP_HISTORY_FALLBACK_PATH
+    cursor_before = _read_cursor(preflight_cursor_file)
+    scan_started_at = time.perf_counter()
+    history_entries, scan_meta = _load_incremental_guarded_publish_entries(
+        ledger_file,
+        now=current_now,
+        recent_window=recent_window,
+        cursor_before=cursor_before,
+    )
+    parse_duration_ms = int((time.perf_counter() - scan_started_at) * 1000)
+    review_recorded_at = _coerce_now(
+        recorded_at if recorded_at is not None else current_now + timedelta(seconds=1)
+    )
+    review_recorded_at_iso = review_recorded_at.isoformat()
+
+    emitted: list[PublishNoticeRequest] = []
+    skipped: list[tuple[int | str, str]] = []
+    next_history = dict(current_history)
+    seen_dedupe_keys: set[str] = set()
+    skipped_by_dedup = 0
+    skipped_by_payload = 0
+    scanned_records = 0
+    hit_max_per_run = False
+
+    for entry in history_entries:
+        if len(emitted) >= resolved_max_per_run:
+            hit_max_per_run = True
+            break
+        scanned_records += 1
+
+        dedupe_key = _preflight_skip_dedupe_key(entry)
+        if not dedupe_key:
+            skipped_by_payload += 1
+            skipped.append(("", "PREFLIGHT_SKIP_MISSING_DEDUPE_KEY"))
+            continue
+        if dedupe_key in seen_dedupe_keys or _is_recent_duplicate(next_history, dedupe_key, now=current_now):
+            skipped_by_dedup += 1
+            skipped.append((dedupe_key, "PREFLIGHT_SKIP_RECENT_DUPLICATE"))
+            continue
+
+        source_url = str(entry.get("source_url") or "").strip()
+        if not source_url:
+            skipped_by_payload += 1
+            skipped.append((dedupe_key, "PREFLIGHT_SKIP_MISSING_SOURCE_URL"))
+            continue
+
+        skip_reason = _resolve_preflight_skip_reason(entry)
+        request = PublishNoticeRequest(
+            post_id=dedupe_key,
+            title=_preflight_skip_title(entry),
+            canonical_url=source_url,
+            subtype=str(entry.get("article_subtype") or "").strip() or "unknown",
+            publish_time_iso=_isoformat_jst(_preflight_skip_entry_datetime(entry), fallback=current_now),
+            summary=None,
+            is_backlog=False,
+            notice_kind="post_gen_validate",
+            subject_override=_preflight_skip_subject(entry),
+            source_title=str(entry.get("source_title") or "").strip() or _preflight_skip_title(entry),
+            generated_title=str(entry.get("generated_title") or "").strip(),
+            skip_reason=skip_reason,
+            skip_reason_label=_preflight_skip_reason_label(skip_reason),
+            source_url_hash=_preflight_skip_source_url_hash(entry),
+            category=str(entry.get("category") or "").strip() or "unknown",
+            record_type=_PREFLIGHT_SKIP_RECORD_TYPE,
+            skip_layer=_PREFLIGHT_SKIP_SKIP_LAYER,
+        )
+        emitted.append(request)
+        seen_dedupe_keys.add(dedupe_key)
+        next_history[dedupe_key] = review_recorded_at_iso
+        _append_queue_log(
+            queue_path,
+            status="queued",
+            reason=skip_reason,
+            subject=str(request.subject_override or ""),
+            recipients=[],
+            post_id=request.post_id,
+            recorded_at_iso=review_recorded_at_iso,
+            extra_payload={
+                "record_type": _PREFLIGHT_SKIP_RECORD_TYPE,
+                "skip_layer": _PREFLIGHT_SKIP_SKIP_LAYER,
+                "source_url_hash": request.source_url_hash,
+            },
+        )
+
+    cursor_after = scan_meta["cursor_before_iso"]
+    if not hit_max_per_run and history_entries:
+        newest_entry_dt = _preflight_skip_entry_datetime(history_entries[0])
+        if newest_entry_dt is not None:
+            cursor_after = newest_entry_dt.isoformat()
+
+    if write_history:
+        _write_history(history_file, next_history)
+    cursor_write_needed = bool(cursor_after) and cursor_after != cursor_before
+    if write_cursor and cursor_write_needed and cursor_after is not None:
+        _write_cursor(preflight_cursor_file, cursor_after)
+
+    _log_event(
+        "preflight_skip_history_scan_summary",
+        record_type=_PREFLIGHT_SKIP_RECORD_TYPE,
+        skip_layer=_PREFLIGHT_SKIP_SKIP_LAYER,
+        cursor_before_iso=scan_meta["cursor_before_iso"],
+        cursor_after_iso=cursor_after,
+        scanned_records=scanned_records,
+        skipped_by_cursor=int(scan_meta["skipped_by_cursor"]),
+        skipped_by_dedup=skipped_by_dedup,
+        skipped_by_payload=skipped_by_payload,
+        emitted_count=len(emitted),
+        file_size_bytes=int(scan_meta["file_size_bytes"]),
+        parse_duration_ms=parse_duration_ms,
+    )
+    if hit_max_per_run:
+        _log_event(
+            "preflight_skip_history_scan_cap_exceeded",
+            record_type=_PREFLIGHT_SKIP_RECORD_TYPE,
+            skip_layer=_PREFLIGHT_SKIP_SKIP_LAYER,
+            cursor_before_iso=scan_meta["cursor_before_iso"],
+            cursor_after_iso=cursor_after,
+            emitted_count=len(emitted),
+            max_per_run=resolved_max_per_run,
+        )
+    if not emitted:
+        zero_reason = "all_skipped_by_payload"
+        other_skips = max(0, len(skipped) - skipped_by_dedup - skipped_by_payload)
+        if bool(scan_meta["file_empty"]):
+            zero_reason = "file_empty"
+        elif scanned_records == 0:
+            zero_reason = "cursor_at_head" if scan_meta["cursor_before_iso"] is not None else "all_skipped_by_cursor"
+        elif skipped_by_dedup >= max(skipped_by_payload, other_skips):
+            zero_reason = "all_skipped_by_dedup"
+        elif skipped_by_payload >= max(skipped_by_dedup, other_skips):
+            zero_reason = "all_skipped_by_payload"
+        _log_event(
+            "preflight_skip_history_scan_zero_emitted",
+            record_type=_PREFLIGHT_SKIP_RECORD_TYPE,
+            skip_layer=_PREFLIGHT_SKIP_SKIP_LAYER,
+            reason=zero_reason,
+            cursor_iso=cursor_after or scan_meta["cursor_before_iso"],
+        )
+    return GuardedPublishHistoryScanResult(
+        emitted=emitted,
+        skipped=skipped,
+        history_after=next_history,
+        cursor_before=cursor_before,
+        cursor_after=cursor_after,
+        cursor_path=preflight_cursor_file,
+        cursor_write_needed=cursor_write_needed,
+    )
+
+
 def scan(
     *,
     wp_api_base: str | None = None,
@@ -1228,6 +1581,8 @@ def scan(
     guarded_cursor_path: str | Path | None = None,
     post_gen_validate_history_path: str | Path | None = None,
     post_gen_validate_cursor_path: str | Path | None = None,
+    preflight_skip_history_path: str | Path | None = None,
+    preflight_skip_cursor_path: str | Path | None = None,
     fetch: FetchFn | None = None,
     now: Callable[[], datetime] | datetime | None = None,
 ) -> ScanResult:
@@ -1327,6 +1682,36 @@ def scan(
             cursor_write_needed=False,
         )
 
+    if _preflight_skip_notification_enabled():
+        remaining_review_cap = max(
+            0,
+            _resolve_review_max_per_run(None)
+            - len(review_scan.emitted)
+            - len(post_gen_validate_scan.emitted),
+        )
+        preflight_skip_scan = scan_preflight_skip_history(
+            preflight_skip_history_path=preflight_skip_history_path,
+            cursor_path=preflight_skip_cursor_path,
+            history_path=history_path,
+            queue_path=queue_path,
+            history=next_history,
+            max_per_run=remaining_review_cap,
+            now=current_now,
+            recorded_at=current_now + timedelta(seconds=3),
+            write_history=False,
+            write_cursor=False,
+        )
+        emitted.extend(preflight_skip_scan.emitted)
+        skipped.extend(preflight_skip_scan.skipped)
+        next_history = preflight_skip_scan.history_after
+    else:
+        preflight_skip_scan = GuardedPublishHistoryScanResult(
+            emitted=[],
+            skipped=[],
+            history_after=next_history,
+            cursor_write_needed=False,
+        )
+
     cursor_after = latest_post_dt.isoformat() if latest_post_dt is not None else current_now.isoformat()
     _write_history(history_file, next_history)
     _write_cursor(cursor_file, cursor_after)
@@ -1344,6 +1729,12 @@ def scan(
         and post_gen_validate_scan.cursor_after is not None
     ):
         _write_cursor(post_gen_validate_scan.cursor_path, post_gen_validate_scan.cursor_after)
+    if (
+        preflight_skip_scan.cursor_write_needed
+        and preflight_skip_scan.cursor_path is not None
+        and preflight_skip_scan.cursor_after is not None
+    ):
+        _write_cursor(preflight_skip_scan.cursor_path, preflight_skip_scan.cursor_after)
     return ScanResult(
         emitted=emitted,
         skipped=skipped,
@@ -1358,5 +1749,6 @@ __all__ = [
     "ScanResult",
     "scan",
     "scan_guarded_publish_history",
+    "scan_preflight_skip_history",
     "scan_post_gen_validate_history",
 ]

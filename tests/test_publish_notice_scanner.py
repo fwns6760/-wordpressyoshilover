@@ -439,6 +439,52 @@ class PublishNoticeScannerTests(unittest.TestCase):
 
         self.assertEqual(subtype, "lineup")
 
+    def test_resolve_preflight_skip_history_path_prefers_env_then_fallback(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env_path = Path(tmpdir) / "custom_preflight_skip_history.jsonl"
+            with patch.dict(
+                "os.environ",
+                {"PUBLISH_NOTICE_PREFLIGHT_SKIP_HISTORY_PATH": str(env_path)},
+                clear=True,
+            ):
+                self.assertEqual(scanner._resolve_preflight_skip_history_path(), env_path)
+
+        with patch.dict("os.environ", {}, clear=True), patch.object(
+            scanner,
+            "_PREFLIGHT_SKIP_HISTORY_DEFAULT_PATH",
+            Path("/tmp/nonexistent-preflight-skip-history.jsonl"),
+        ), patch.object(
+            scanner,
+            "_PREFLIGHT_SKIP_HISTORY_FALLBACK_PATH",
+            Path("logs/preflight_skip_history.jsonl"),
+        ):
+            self.assertEqual(
+                scanner._resolve_preflight_skip_history_path(),
+                Path("logs/preflight_skip_history.jsonl"),
+            )
+
+    def test_preflight_skip_dedupe_key_uses_configurable_fields(self):
+        entry = {
+            "source_url": "https://example.com/preflight",
+            "source_url_hash": "samehash",
+            "skip_reason": "placeholder_body",
+            "article_subtype": "postgame",
+        }
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(
+                scanner._preflight_skip_dedupe_key(entry),
+                "preflight_skip:samehash:placeholder_body",
+            )
+        with patch.dict(
+            "os.environ",
+            {"PREFLIGHT_SKIP_DEDUPE_KEY_FIELDS": "source_url_hash,article_subtype,skip_reason"},
+            clear=True,
+        ):
+            self.assertEqual(
+                scanner._preflight_skip_dedupe_key(entry),
+                "preflight_skip:samehash:postgame:placeholder_body",
+            )
+
     def test_scan_guarded_publish_history_queues_backlog_only_yellow(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"

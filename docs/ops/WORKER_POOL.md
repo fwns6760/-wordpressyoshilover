@@ -3,21 +3,27 @@
 Codex Lane state(POLICY §13 永続管理、`/tmp` 禁止、4 NO 規律)。
 Last updated: 2026-05-01 17:25 JST(両 lane 完了 close 状態)
 
-## Active Lanes(両 idle、本日 close)
+## Active Lanes(両 running、READY 化進行中)
 
-### Lane A
+### Lane A round 13
 
-- status: **idle**
-- last_round: round 12 completed(`0ae5505`、Pack consistency review v2、7/7 main Packs verified、residual UNKNOWN = 0)
-- HOLD reason: 4 条件全 YES → 消化順 1-8 全 round 投入完了(round 1-12)+ 横串 review v1/v2 完了 + supplement 全完了 + final review 完了 + INCIDENT_LIBRARY 補強完了 + numbering correction 完了 + 17:00 observe Claude 単独完了 / 残 candidate = 新規 ticket 起票 = POLICY §10 違反 / scope 拡大 = REJECT
-- next_dispatch: 明日朝 5/2 06:00 JST 以降、298-Phase3 v4 deploy or 別 ticket impl(user GO 後)
+- status: **running**
+- job_id: `bjpdfiecy`
+- ticket: 293-COST READY 化(消化順 順 1)
+- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_a_round_13_293_ready.md`
+- receipt_path: `docs/handoff/codex_receipts/2026-05-01/lane_a_round_13.md`
+- started_at: 2026-05-01 17:30 JST(approx)
+- expected_output: `docs/handoff/codex_responses/2026-05-01_293_COST_ready_pack.md`(impl 判断 Pack final consolidation、READY 配下移動候補)
 
-### Lane B
+### Lane B round 11
 
-- status: **idle**
-- last_round: round 10 completed(`6ddff7c`、293-COST design v2 numbering correction、3 mappings)
-- HOLD reason: 4 条件全 YES → 同上(消化順全部投入済、横串 review 完了、Lane A と repeated 重複しない candidate なし)
-- next_dispatch: 明日朝 5/2 06:00 JST 以降、user GO 後の subtask
+- status: **running**
+- job_id: `b0hyz5srs`
+- ticket: 300-COST source-side 解析 v2(消化順 順 4、READY 化前提整理)
+- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_b_round_11_300_source_v2.md`
+- receipt_path: `docs/handoff/codex_receipts/2026-05-01/lane_b_round_11.md`
+- started_at: 2026-05-01 17:30 JST(approx)
+- expected_output: `docs/handoff/codex_responses/2026-05-01_300_COST_source_analysis_v2.md`(deeper analysis、Pack 補強 evidence)
 
 ## Lane History(本日 round 1-12 全部、commit hash 着地済)
 

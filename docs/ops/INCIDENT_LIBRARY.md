@@ -222,7 +222,8 @@ Deploy complete is not DONE. Image reflection, revision update, flag OFF deploy,
 - image / revision matches intended target
 - env / flag matches intended target
 - service / job starts normally
-- rollback target is written
+- runtime rollback target is written
+- GitHub/source rollback path is written for failed tests/regression
 - errors do not increase
 - mail volume is within expectation
 - Gemini delta is within expectation
@@ -233,4 +234,4 @@ Deploy complete is not DONE. Image reflection, revision update, flag OFF deploy,
 
 ### Failure State
 
-Use HOLD or ROLLBACK_REQUIRED, not OBSERVED_OK, when post-deploy verify fails or evidence is missing.
+Use HOLD or ROLLBACK_REQUIRED, not OBSERVED_OK, when post-deploy verify fails or evidence is missing. If the failure is tied to a committed change, restore production with runtime rollback when needed and restore GitHub source of truth with a non-destructive revert path.

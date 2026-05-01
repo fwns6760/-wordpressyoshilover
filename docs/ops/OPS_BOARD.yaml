@@ -17,7 +17,7 @@ board_rules:
       - "live-inert deploy"
       - "behavior-preserving image replacement"
       - "tests green"
-      - "rollback target confirmed"
+      - "rollback target confirmed, including GitHub/source rollback path for failed tests"
       - "Gemini/mail/source/Scheduler/SEO/publish criteria/candidate risk unchanged"
     user_decision_required:
       - "flag ON"
@@ -31,7 +31,7 @@ board_rules:
       - "rollback-impossible or external-impact-heavy change"
     hold_if_unknown:
       - "tests"
-      - "rollback"
+      - "rollback, including GitHub/source rollback path"
       - "cost/Gemini delta/mail volume"
       - "candidate disappearance risk"
       - "stop condition/blast radius/source impact/behavior invariance"
@@ -44,7 +44,8 @@ board_rules:
       - "image/revision matches target"
       - "env/flag matches target"
       - "service/job starts"
-      - "rollback target written"
+      - "runtime rollback target written"
+      - "GitHub/source rollback path written for failed tests/regression"
       - "errors unchanged"
       - "mail volume within expectation"
       - "Gemini delta within expectation"

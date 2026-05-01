@@ -44,7 +44,7 @@ Claude may execute production reflection without user GO when all conditions are
 - live-inert deploy
 - behavior-preserving image replacement
 - tests are green
-- rollback target is confirmed
+- rollback target is confirmed, including GitHub/source rollback path when tests or regression fail
 - Gemini call increase: none
 - mail volume increase: none
 - source addition: none
@@ -113,7 +113,8 @@ Required post-deploy verify:
 - image / revision matches the intended target
 - env / flag state matches the intended target
 - service / job starts normally
-- rollback target is written
+- runtime rollback target is written
+- GitHub/source rollback path is written for test or regression failure
 - error increase: none
 - mail volume: within expectation
 - Gemini call delta: within expectation
@@ -158,6 +159,11 @@ If verify fails, do not mark `OBSERVED_OK`. Use `HOLD` or `ROLLBACK_REQUIRED` wh
 - old_candidate storm recurs
 - consecutive errors
 - rollback target is unknown
+- GitHub/source rollback path is unknown after tests or regression fail
+
+### GitHub / Source Rollback Rule
+
+If tests, smoke, post-deploy verify, or production-safe regression fails because of a committed change, the rollback plan must include the GitHub/source rollback path. Prefer a non-destructive `git revert` commit pushed to origin over rewriting shared history. Runtime rollback and GitHub rollback are separate: runtime rollback restores production quickly; GitHub rollback restores the repo source of truth so the bad change is not rebuilt later.
 
 ## 4. Claude Autonomous GO
 
@@ -314,6 +320,7 @@ mail件数:
 Gemini delta:
 silent skip:
 rollback target:
+GitHub/source rollback:
 判定: OBSERVED_OK / HOLD / ROLLBACK_REQUIRED
 userが返すべき1行:
 ```

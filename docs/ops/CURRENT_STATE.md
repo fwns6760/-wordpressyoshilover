@@ -23,6 +23,7 @@ This file is the first operational document to read at session start. If this fi
 - `HOLD`: tests, rollback, cost, Gemini delta, mail volume, candidate disappearance risk, stop condition, blast radius, source impact, behavior invariance, or post-deploy verify result is UNKNOWN.
 - Deploy complete is not DONE. `OBSERVED_OK` / `DONE` require post-deploy verify and production-safe regression evidence.
 - `CLAUDE_AUTO_GO` and `USER_DECISION_REQUIRED` both require post-deploy verify after reflection.
+- If tests or production-safe regression fail because of a committed change, rollback must include GitHub/source rollback by non-destructive revert, not only runtime image/revision rollback.
 - ACTIVE is limited to at most 2 tickets.
 - The user decides time boundaries such as "today is done" or "continue."
 - Claude should proceed by risk, regression, and cost gates, not by the clock.
@@ -94,6 +95,7 @@ mail件数:
 Gemini delta:
 silent skip:
 rollback target:
+GitHub/source rollback:
 判定: OBSERVED_OK / HOLD / ROLLBACK_REQUIRED
 userが返すべき1行:
 ```

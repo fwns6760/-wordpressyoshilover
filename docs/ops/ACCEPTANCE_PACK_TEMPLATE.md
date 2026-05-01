@@ -72,7 +72,8 @@ expires_at:
    - image / revision expectation
    - env / flag expectation
    - service / job startup check
-   - rollback target
+   - runtime rollback target
+   - GitHub/source rollback path for failed tests or regression
    - error trend check
    - mail volume check
    - Gemini delta check
@@ -86,9 +87,11 @@ expires_at:
    - forbidden checks: bulk mail, source addition, Gemini increase, publish criteria change, cleanup mutation, SEO/noindex/canonical/301, rollback-impossible operation, user-GO-less flag ON, mail UNKNOWN experiment
 
 11. Rollback
-   - exact command or exact action
+   - runtime rollback: exact command or exact action
+   - GitHub/source rollback: non-destructive `git revert` path or PR revert path when tests/regression fail
    - expected rollback time
    - rollback owner
+   - last known good commit / image / revision
 
 12. Stop Conditions
    - errors
@@ -100,6 +103,7 @@ expires_at:
    - publish/review/hold/skip route broken
    - old_candidate storm
    - rollback target unknown
+   - GitHub/source rollback path unknown after failed tests/regression
    - user-visible degradation
 
 13. User Reply
@@ -156,6 +160,7 @@ mail件数:
 Gemini delta:
 silent skip:
 rollback target:
+GitHub/source rollback:
 判定: OBSERVED_OK / HOLD / ROLLBACK_REQUIRED
 userが返すべき1行:
 ```

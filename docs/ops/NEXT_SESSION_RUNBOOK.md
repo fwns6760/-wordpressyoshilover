@@ -115,7 +115,7 @@ Proceed autonomously only when it is `CLAUDE_AUTO_GO`:
 
 - flag OFF deploy, live-inert deploy, or behavior-preserving image replacement
 - tests green
-- rollback target confirmed
+- rollback target confirmed, including GitHub/source rollback path when tests or regression fail
 - no Gemini/mail/source/Scheduler/SEO/publish criteria/candidate risk increase
 - stop condition written
 - post-deploy verify plan written
@@ -141,7 +141,8 @@ Deploy complete is not DONE. After any production reflection, run only productio
 - image / revision
 - env / flag
 - service / job startup
-- rollback target
+- runtime rollback target
+- GitHub/source rollback path for failed tests/regression
 - error trend
 - mail count
 - Gemini delta
@@ -154,7 +155,7 @@ Allowed production-safe checks: read-only, logs, health, mail count, env/revisio
 
 Forbidden production tests: bulk mail, source addition, Gemini increase, publish criteria change, cleanup mutation, SEO/noindex/canonical/301, rollback-impossible operation, user-GO-less flag ON, or experiments while mail impact is UNKNOWN.
 
-If verify fails, classify as `HOLD` or `ROLLBACK_REQUIRED`; do not mark `OBSERVED_OK`.
+If verify fails, classify as `HOLD` or `ROLLBACK_REQUIRED`; do not mark `OBSERVED_OK`. If the failure is tied to a committed change, include GitHub/source rollback by non-destructive `git revert` in addition to any runtime rollback.
 
 ## 11. Successful Session Close
 

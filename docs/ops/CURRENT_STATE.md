@@ -1,6 +1,6 @@
 # YOSHILOVER CURRENT_STATE
 
-Last updated: 2026-05-01 JST
+Last updated: 2026-05-01 17:55 JST(298-v4 deploy 完了 + Phase 1-5 OBSERVED_OK)
 Owner: Claude updates this file as the operations source of truth.
 
 This file is the first operational document to read at session start. If this file conflicts with session logs, old handoffs, old POLICY text, or old OPS_BOARD entries, this file and the current docs/ops set win.
@@ -30,26 +30,46 @@ This file is the first operational document to read at session start. If this fi
 - "Too cautious so everything stops" is REJECT.
 - "There is time, so do everything" is REJECT.
 
+## Today Reflection (2026-05-01) — POLICY §16.3 反映
+
+5 reflection points(本日の運用デグレ → 永続ルール化):
+
+1. **HOLD ≠ 作業停止**: HOLD は本番反映停止のみ。Pack/UNKNOWN潰し/test plan/rollback plan/READY化は Claude 自律 GO(POLICY §16.2 / §3.3)。
+2. **user に技術判断を戻さない**: 技術/デグレ/コスト/mail/rollback は全て Claude 判断、user は推奨 GO/HOLD/REJECT + 理由 + 最大リスク + rollback 可否を受領するのみ(POLICY §15.1 / §15.2)。
+3. **Codex worker pool 管理**: 完了後 Claude 一次受け / lane idle 検出は Claude 責務 / idle なら次の低リスク subtask 投入 / 4 NO 規律(POLICY §13 / §5 / §15.3)。
+4. **/tmp 禁止**: prompt / job ID / receipt / lane status / HOLD 理由 = repo 内記録(POLICY §13.1 / §13.4)。
+5. **3 dimension rollback**: env/flag / image・revision / source/git revert を独立扱い、必要組み合わせ。GitHub revert だけで本番 rollback 済み扱いは禁止(POLICY §3.6 / §16.4)。
+
 ## Current Incident State
 
-### 298-Phase3
+### 298-Phase3 v4(本日 deploy 完了)
 
-- Status: `HOLD_NEEDS_PACK`
-- Phase label: `ROLLED_BACK_AFTER_REGRESSION`
-- DONE is forbidden for this ticket until a new Acceptance Pack passes, post-deploy verify passes, and production-safe regression observation succeeds.
-- The image was deployed, but the feature flag was rolled back.
-- `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE` is OFF or absent.
-- Persistent ledger behavior is disabled.
-- The current mail storm is contained.
-- The tomorrow-morning second-wave risk remains OPEN.
-- Phase3 re-ON is forbidden until the following are known:
-  - old candidate pool cardinality estimate
-  - expected first-send mail count
-  - max mails/hour
-  - max mails/day
-  - stop condition
-  - rollback command and rollback owner
-- If any of the above is UNKNOWN, GO is forbidden.
+- Status: **OBSERVED_OK**(Phase 1-5 完了、Phase 6 = 5/2 09:00 JST 第二波防止 verify 残)
+- Phase label: `DEPLOY_COMPLETE_OBSERVED_OK`
+- 本日 19:30 JST user GO 受領「ならやる」、Lane B round 15 (`bbnqyhph3`) で Case F GCS pre-seed + flag ON apply
+- image: `publish-notice:1016670` 不変(env だけ apply、§12 整合)
+- env apply: `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE=1`
+- GCS ledger pre-seed: 104 → 106 件(64109 first emit 後自動追記)
+- post-deploy 7-point verify(§3.5):
+  - image / revision: 一致
+  - env / flag: 一致
+  - mail volume: post-deploy slice sent=9(3 trigger、30/h・100/d 余裕)
+  - Gemini delta: 増加なし(scanner / ledger touch のみ)
+  - silent skip: 0 維持
+  - MAIL_BRIDGE_FROM: `y.sebata@shiny-lab.org` 維持
+  - rollback target: runtime = env remove(30 sec)+ image SHA 維持 / source = revert candidates 既 push
+- regression:
+  - 5/1朝 storm 99 cohort (63003-63311) → `OLD_CANDIDATE_PERMANENT_DEDUP` skip 確認
+  - 13:35 storm 50 cohort (61938-62940) → 同 skip 確認
+  - post 64109(104 pool 外)→ first emit 1 度のみ + ledger 自動追記
+  - post_gen_validate / 古い候補 review path 全部観測、消失なし
+- DONE 候補化条件: 5/2 09:00 JST Phase 6 第二波防止 read-only verify pass + 24h 安定確認(POLICY §3.5 整合、deploy 完了 ≠ DONE)
+- §14 P0/P1 自律 rollback monitor 24h 継続: rolling 1h sent>30 / silent skip>0 / errors>0 / 289 減 / Team Shiny 変 検出で env remove 即実行(本日 13:55 実績整合)
+
+### Mail Storm 状態
+
+- contained(本日 13:35 storm → 13:55 §14 自律 env rollback、19:35 v4 GCS pre-seed deploy → storm 再発 0)
+- 第二波 risk(5/2 09:00 JST 想定): permanent_dedup ledger 106 件で防止見込み、Phase 6 verify で確定
 
 ### Mail Storm Rules
 
@@ -66,10 +86,10 @@ This file is the first operational document to read at session start. If this fi
 
 | ticket | current state | allowed now | user GO required for |
 |---|---|---|---|
-| 293-COST | ACTIVE, visible preflight readiness | implementation/test/local verify/flag OFF or live-inert deploy if CLAUDE_AUTO_GO; Pack if risky | flag ON, behavior-changing env, Gemini increase |
+| 293-COST | READY_FOR_DEPLOY (impl + 4 commit + push 完了、pytest 2018/0) | image rebuild + flag ON Pack(USER_DECISION_REQUIRED)or live-inert deploy if CLAUDE_AUTO_GO | image rebuild + flag ON, behavior-changing env, Gemini increase |
 | 300-COST | ACTIVE, read-only analysis | source-side cost analysis, Pack/test/rollback planning | source-side behavior change until classified |
 | 299-QA | OBSERVE | flaky/transient evidence and baseline recording | none unless it becomes deploy/flag work |
-| 298-Phase3 | HOLD_NEEDS_PACK | Pack reconstruction; flag OFF/live-inert reflection only if CLAUDE_AUTO_GO | flag ON, old-candidate re-ON, mail volume UNKNOWN |
+| 298-Phase3 v4 | OBSERVED_OK (deploy 完了、Phase 1-5 pass) | 5/2 09:00 JST Phase 6 第二波防止 verify(Claude 自律 EVIDENCE_ONLY) | DONE 化判定(Phase 6 + 24h 安定確認後) |
 | 282-COST | FUTURE_USER_GO | Pack after 293 | flag ON |
 | 290-QA | FUTURE_USER_GO | live-inert deploy may be CLAUDE_AUTO_GO after classification Pack | weak title rescue enablement |
 | 288-INGEST | FUTURE_USER_GO | source-add decision Pack | source addition |
@@ -113,9 +133,11 @@ Session logs, handoff logs, and codex responses are history only. They are not c
 
 ## Immediate Operating Posture
 
-- Keep 298-Phase3 OFF.
-- Continue 293-COST and 300-COST inside allowed boundaries; do not block `CLAUDE_AUTO_GO` production reflection solely because it touches production, but require post-deploy verify afterward.
-- Keep 299-QA as observe, not P0 by default.
-- Do not ask the user to choose READY-incomplete work or UNKNOWN technical risk. Claude resolves UNKNOWN first.
-- Do not create new tickets unless the issue cannot fit into an existing active/hold ticket.
-- Do not expose raw Codex output to the user; Claude compresses it into a Decision Batch.
+- 298-Phase3 v4 deploy 完了、5/2 09:00 JST Phase 6 第二波防止 read-only verify を Claude 自律 EVIDENCE_ONLY scope で実行(POLICY §3.5 / §4 整合)。
+- §14 P0/P1 自律 rollback monitor 24h 継続、storm 再発検出時 env remove 即実行(本日 13:55 実績整合)。
+- 293-COST READY_FOR_DEPLOY、image rebuild + flag ON Pack 提示は 298 安定後 deferred(POLICY §3.2)。
+- 300-COST 継続、read-only 分析 + 分類前置。
+- 299-QA OBSERVE 継続、P0 でない。
+- user に技術判断 / UNKNOWN / Codex idle / READY 化未済 を投げない(POLICY §15.3 / §16.2 整合)。
+- 新 ticket 起票は既存 ticket subtask 化を優先(POLICY §10)。
+- raw Codex output は user に出さない、Claude が Decision Batch 形式で圧縮(POLICY §11 / §15.2)。

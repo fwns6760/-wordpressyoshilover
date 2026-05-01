@@ -1,30 +1,32 @@
 # YOSHILOVER WORKER POOL
 
 Codex Lane state(POLICY §13 永続管理、`/tmp` 禁止、4 NO 規律)。
-Last updated: 2026-05-01 17:25 JST(両 lane 完了 close 状態)
+Last updated: 2026-05-01 17:55 JST(両 lane 完了 close 状態、5/2 09:00 JST Phase 6 verify 待ち)
 
-## Active Lanes(両 running、READY 化進行中)
+## Active Lanes(両 idle、HOLD reason explicit)
 
 ### Lane A(idle、HOLD reason explicit)
 
 - status: **idle**
-- last_round: round 18 completed(`bbzzdjawe`、293-COST impl 4 commit `6932b25`/`afdf140`/`7c2b0cc`/`10022c0`、pytest 2018/0、READY_FOR_DEPLOY 化完了)
-- HOLD reason: 4 条件全 YES → 全 Pack READY 化完了 + Lane B round 15 で 298-v4 deploy(scope disjoint だが ACTIVE limit 2 + Lane A 投入余地なし)+ scope 拡大 = REJECT
-- next_dispatch: 298-v4 deploy 完了 + 24h 安定後、293 image rebuild + flag ON Pack(USER_DECISION_REQUIRED)or その他 deferred
+- last_round: round 19 completed(`bvbjy9mog` retry、POLICY §3.5+§3.6+§15+§14.5 row commit `3d67d2a`、push 済 origin/master)
+- prev_round: round 18 completed(`bbzzdjawe`、293-COST impl 4 commit `6932b25`/`afdf140`/`7c2b0cc`/`10022c0`、pytest 2018/0、READY_FOR_DEPLOY 化完了)
+- HOLD reason: 4 条件全 YES → 全 Pack READY 化完了 + 298-v4 deploy 完了 + 5/2 09:00 JST Phase 6 read-only verify(Claude 自律 EVIDENCE_ONLY scope)までは Lane A 投入余地なし + scope 拡大 = REJECT
+- next_dispatch: 5/2 朝 Phase 6 verify 結果 + 24h 安定後、293 image rebuild + flag ON Pack(USER_DECISION_REQUIRED)or その他 deferred
 
-### Lane B round 15(deploy lane、USER_DECISION_REQUIRED + user GO 受領済)
+### Lane B(idle、HOLD reason explicit)
 
-- status: **running**
-- job_id: `bbnqyhph3`
-- ticket: 298-Phase3 v4 deploy(Case F GCS pre-seed + flag ON、user GO 受領済「ならやる」19:30 JST)
-- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_b_round_15_298_v4_deploy.md`
-- receipt_path: `docs/handoff/codex_receipts/2026-05-01/lane_b_round_15.md`
-- started_at: 2026-05-01 19:35 JST(approx)
-- expected_output: GCS pre-seed + env apply + observe 1-2 trigger
-- expected_completion: ~20:00-20:15 JST
-- POLICY §3 classification: **USER_DECISION_REQUIRED + user GO 受領済**(本日 19:30 JST「ならやる」)
-- §14 P0/P1 自律 rollback monitor: rolling 1h sent > 30 検出で env remove(本日 13:55 実績整合)
-- prev round 14 (`bum1usgj7`): completed `dab9b8e`、298-v4 robustness supplement landed(99 full / 20 literal / 50 flag-ON / 104 latest pool / 1 直近 6h)
+- status: **idle**
+- last_round: round 15 completed(`bbnqyhph3`、298-Phase3 v4 deploy 完了)
+- 298-v4 deploy 結果:
+  - GCS pre-seed 104 → 106 件(64109 first emit 後自動追記)
+  - env apply `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE=1` 確認
+  - post-deploy observe 3 trigger: sent=9(5+1+1+2)、errors=0、silent skip 0
+  - 5/1朝 storm 99 cohort + 13:35 storm 50 cohort 全部 `OLD_CANDIDATE_PERMANENT_DEDUP` skip 確認
+  - judgement: **OBSERVED_OK**(Phase 1-5 完了、Phase 6 = 5/2 09:00 JST 第二波防止 verify 残)
+- POLICY §3 classification: **USER_DECISION_REQUIRED + user GO 受領済 + deploy 完了 + post-deploy 7-point verify pass**
+- §14 P0/P1 自律 rollback monitor: 24h 監視継続(rolling 1h sent>30 検出で env remove、本日 13:55 実績整合)
+- HOLD reason: 5/2 09:00 JST Phase 6 read-only verify 完了 + 24h 安定確認までは新規 dev 便投入余地なし
+- next_dispatch: 5/2 朝 Phase 6 verify 結果次第、290-QA / 282-COST / 300-COST / 288-INGEST から user GO 受領した順で fire
 
 ## Lane History(本日 round 1-12 全部、commit hash 着地済)
 
@@ -43,7 +45,9 @@ Last updated: 2026-05-01 17:25 JST(両 lane 完了 close 状態)
 | 9 | 282-COST Pack supplement | `bimwnrpgq` | `925003d` | done |
 | 10 | 278-280-MERGED supplement | `bbj14iavs` | `a9ab8b6` | done |
 | 11 | user proposal summary | `bd93ylgqy` | `9c5225d` | done |
-| 12 | Pack consistency review v2 | `b1fiot2e4` | (running) | **running** |
+| 12 | Pack consistency review v2 | `b1fiot2e4` | (closed prior) | done |
+| 18 | 293-COST impl + test + commit + push | `bbzzdjawe` | `6932b25` / `afdf140` / `7c2b0cc` / `10022c0` | done |
+| 19 | POLICY §3.5+§3.6+§15+§14.5 row commit | `bvbjy9mog` (retry) | `3d67d2a` | done |
 
 ### Lane B history
 
@@ -58,7 +62,9 @@ Last updated: 2026-05-01 17:25 JST(両 lane 完了 close 状態)
 | 7 | 300-COST Pack supplement | `bxb9ltfcw` | `c959327` | done |
 | 8 | 288-INGEST Pack supplement | `bn532umyf` | `5f8b966` | done |
 | 9 | INCIDENT_LIBRARY append | `b0grmdtgy` | `4abe1d5` | done |
-| 10 | 293-COST numbering correction | `b6mrhbha7` | (push pending) | **completed** |
+| 10 | 293-COST numbering correction | `b6mrhbha7` | (closed prior) | done |
+| 14 | 298-Phase3 v4 robustness supplement | `bum1usgj7` | `dab9b8e` | done |
+| 15 | 298-Phase3 v4 deploy(Case F GCS pre-seed + flag ON) | `bbnqyhph3` | env apply only(image 不変) | **done — OBSERVED_OK** |
 
 ## 4 NO 規律(POLICY §13.5 整合)
 

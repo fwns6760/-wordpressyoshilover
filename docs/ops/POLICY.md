@@ -553,3 +553,72 @@ UNKNOWN 解消で再分類(CLAUDE_AUTO_GO / USER_DECISION_REQUIRED)。
 | USER_DECISION_REQUIRED(§3.2)| Acceptance Pack + 推奨 + 5-field format | 一言 `OK / HOLD / REJECT` |
 | HOLD(§3.3)| UNKNOWN 潰し進行(調査・Pack化・推奨 HOLD 化)| user 不在 / 進捗 1 行報告のみ |
 | §14 P0/P1 自律 hotfix(8 条件)| 即実行 + 事後報告 | 事後報告のみ、事前判断不要 |
+
+## 16. Pre-Deploy Gate & Ticket Progress Loop(永続、現場自律ループ)
+
+本日(2026-05-01)user 明示の追加。「方針が現場の自律実行ループに落ちていなかった」反省を解消。
+
+### 16.1 Pre-Deploy Gate(本番反映前 必須確認 11 項目)
+
+production 反映前(`CLAUDE_AUTO_GO` でも `USER_DECISION_REQUIRED` でも)、Claude は以下 11 項目を必ず確認:
+
+1. target commit / HEAD 一致(deploy する image が intended commit を含む)
+2. worktree clean(`git status --short` = 空、untracked が混入してない)
+3. tests green(pytest baseline +0 regression)
+4. regression なし(prev → new commit 一覧で HOLD ticket 該当 0、§release composition verify 整合)
+5. rollback target 確認済み(runtime image SHA + source `git revert` 候補 commit、§3.6 整合)
+6. env / flag 変更有無(変更ある場合は §3.2 USER_DECISION_REQUIRED か §3.1 CLAUDE_AUTO_GO 判定済)
+7. Gemini call 増加有無(増加ある場合は §3.2)
+8. mail volume impact(MAIL_BUDGET 30/h・100/d 内設計、storm 再発リスク評価)
+9. candidate disappearance risk(silent skip 0 維持、§8 整合)
+10. stop condition(§14 P0/P1 自律 rollback 8 条件のうち該当を明示)
+11. Acceptance Pack 完成(`USER_DECISION_REQUIRED` 時、§9 整合)
+
+UNKNOWN がある場合は user に投げず HOLD(§15.4 整合)。
+
+### 16.2 Ticket Progress Loop(closeできないからpause = 禁止)
+
+Claude は以下の順で自律的に進める。「close できないから pause」は禁止:
+
+1. **DONE できるなら evidence 付き DONE**(§3.5 post-deploy verify pass + production-safe regression OK)
+2. **DONE できないなら READY 化**(impl + test + push 完了、deploy 待ちの状態へ)
+3. **READY 化できないなら UNKNOWN 潰し**(§15.4 順序: read-only 調査 → ChatGPT 圧縮 → Codex 調査便)
+4. **UNKNOWN があるなら read-only 調査**(log / config / GCS / WP REST GET、production 不変)
+5. **Pack 未完成なら Acceptance Pack 作成**(§9 整合、13 fields + 必要時 298-Phase3 additional)
+6. **rollback 不明なら rollback plan 作成**(§3.6 2-tier、runtime + source)
+7. **test 不明なら test plan 作成**(unit / smoke / regression / mail / rollback)
+8. **Codex lane が idle なら既存ticket の低リスク subtask を投入**(§5 / §13 整合、新 ticket 起票より優先)
+
+`HOLD` は本番反映停止の意味で使う。前段作業(Pack / UNKNOWN 潰し / test plan / rollback plan / READY 化)は CLAUDE_AUTO_GO で進む(§4 整合)。
+
+### 16.3 5 Reflection Points(2026-05-01 永続記録)
+
+本日の運用デグレ → 永続ルール反映:
+
+1. **HOLD = 作業停止 と扱った誤り**: HOLD は本番反映停止であって前段作業停止ではない。Pack 作成 / UNKNOWN 潰し / test plan / rollback plan / READY 化は Claude 自律 GO(§16.2 整合)。
+2. **user に技術判断を戻しすぎた誤り**: user は技術判断しない。Claude が技術 / デグレ / コスト / mail / rollback を判断、user には推奨 GO/HOLD/REJECT + 理由 + 最大リスク + rollback 可否のみ提示(§15.1 / §15.2 整合)。
+3. **Codex worker pool 管理の弱さ**: Codex 完了後 Claude 一次受け / lane idle 検出は Claude 責務 / idle なら次の低リスク subtask 投入 / HOLD なら明確な理由 / 4 NO 規律(No job ID, no fire / No receipt, no fire / No HOLD reason, no idle / No /tmp、§13 整合)。
+4. **/tmp に prompt や receipt を置く誤り**: /tmp は再起動 / cleanup で消える。prompt / job ID / receipt / lane status / HOLD 理由は repo 内記録(§13.1 / §13.4 整合)。
+5. **GitHub revert と本番 rollback の混同**: 3 dimensions が独立(env/flag / image・revision / source/git revert)、必要に応じて組み合わせる。GitHub だけ戻して本番 rollback 済み扱いは禁止(§3.6 整合)。
+
+### 16.4 Rollback 3 dimensions(§3.6 補足、永続)
+
+| dimension | 戻し先 | 速度 | 用途 |
+|---|---|---|---|
+| env / flag rollback | 反映前 env 状態 | 30 sec(`gcloud run jobs/services update --remove-env-vars`)| flag ON 起因 / env 起因 異常時、Tier 1 |
+| image / revision rollback | 反映前 image SHA / revision | 2-3 min(Cloud Run service `--to-revisions=`/job `--image=`)| image 内 commit 起因異常時、Tier 1 |
+| source / git revert | repo の bad commit 反転 | commit + push 通常 flow | repo 反映を残さず、再 build で bad change が再混入を防ぐ、Tier 2 |
+
+production 事故時、3 dimensions のうち該当するものを必要分組み合わせる。3 dimensions 同時実行 / 1 dimension のみで完了 / 順序入替 全て可、ただし production 安定優先(Tier 1 first)→ source 整合(Tier 2)。
+
+### 16.5 古い表現の削除 / 修正
+
+以下の表現は POLICY 全体で扱わない(本日 user 明示の修正対象):
+
+- 「本番反映は一律 user GO 必須」→ 修正後: §3 で 3 分類、CLAUDE_AUTO_GO は user GO 不要
+- 「deploy 完了で DONE」→ 修正後: §3.5 post-deploy verify pass + regression OK で OBSERVED_OK / DONE
+- 「GitHub revert だけで本番 rollback 済み」→ 修正後: §3.6 / §16.4 で 3 dimensions 明示
+- 「HOLD = 作業停止」→ 修正後: §3.3 / §16.2 で HOLD は本番反映停止のみ
+- 「close できないなら pause」→ 修正後: §16.2 progress loop で禁止
+- 「user に技術判断を求める」→ 修正後: §15.1 / §15.2 で Claude が判断 + 推奨提示
+- 「Codex idle を user が発見する」→ 修正後: §5 / §13 / §15.3 で Claude 責務違反

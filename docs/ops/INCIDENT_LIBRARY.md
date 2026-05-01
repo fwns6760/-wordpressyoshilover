@@ -1,6 +1,6 @@
 # YOSHILOVER INCIDENT_LIBRARY
 
-Last updated: 2026-05-01 JST
+Last updated: 2026-05-01 17:55 JST(298-v4 deploy 完了 OBSERVED_OK 反映)
 
 This file records reusable incident rules. It is not a session diary.
 
@@ -205,11 +205,40 @@ Use Decision Batch. Include conclusion, evidence, risk, next action, and the one
 - tickets: `298-Phase3`, `299-QA`, `300-COST`, `289-OBSERVE`
 - commits: `d44594a` (`298` once-only suppression), `7d0c9a5` (`298` deploy result), `a3871f2` (`298` incident evidence), `cdd0c3f` (`298` second-wave pack), `cf86e88` (`298` unknown-close evidence)
 
-### 2026-05-02 09:00 JST Second-Wave Risk OPEN
+### 2026-05-01 19:30 JST → 20:00 JST 298-Phase3 v4 deploy 完了(Case F GCS pre-seed)
 
-- cardinality estimate remains `99+` unique old-candidate `post_id`; this is enough to break `MAIL_BUDGET 30/h` on first emit.
-- `298-Phase3 v4 Case A` Pack is the planned user-facing mitigation proposal for the next morning.
-- keep monitoring anchored to `MAIL_BUDGET 30/h・100/d`, `silent skip 0`, and `Team Shiny` invariants.
+- `19:30 JST`: user GO「ならやる」受領。POLICY §3.2 USER_DECISION_REQUIRED + Claude 推奨 GO に対する 1 行返答。
+- `19:35 JST`: Lane B round 15 (`bbnqyhph3`) fire、Case F GCS pre-seed `gs://baseballsite-yoshilover-state/publish_notice/publish_notice_old_candidate_once.json` に 104 post_id pre-seed(5/1朝 storm 99 + 13:35 storm 50 + recent 6h additions の disjoint union)+ `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE=1` env apply。
+- `19:35-19:40 JST`(UTC 08:35-08:40): 3 trigger 観測。post-deploy slice sent=9 (1+1+2 for trigger + 5 backlog-only)、errors=0、silent skip 0。
+- live-detected post_id 64109(104 pool 外)→ first emit 1 度のみ + ledger 自動追記 → 106 件。
+- 5/1朝 storm 99 cohort + 13:35 storm 50 cohort 全部 `OLD_CANDIDATE_PERMANENT_DEDUP` skip 確認。
+- post-deploy 7-point verify pass(POLICY §3.5)、judgement: **OBSERVED_OK**。
+- §14 P0/P1 自律 rollback monitor 24h 継続。
+
+### 2026-05-02 09:00 JST Second-Wave Risk(MITIGATED pending Phase 6 verify)
+
+- mitigation: Case F GCS pre-seed 106 件 ledger により permanent_dedup skip 想定。
+- Phase 6 read-only verify(Claude 自律 EVIDENCE_ONLY)で確定:
+  - rolling 1h sent: MAIL_BUDGET 30/h 内
+  - cumulative since 5/1 09:00 JST: MAIL_BUDGET 100/d 内
+  - silent skip: 0 継続
+  - permanent_dedup skip count: 106+ 安定
+  - real review / 289 / errors: 維持
+  - 5/1朝 storm 99 cohort sent: **0**(第二波防止)
+  - 13:35 storm 50 cohort sent: **0**
+- 異常検出時 §14 自律 rollback(env remove 30 sec、本日 13:55 実績整合)。
+
+### 2026-05-01 Reflection(永続記録、POLICY §16.3 整合)
+
+5 reflection points → permanent rules:
+
+1. **HOLD 作業停止 誤り**: HOLD は本番反映停止のみ。前段作業(Pack / UNKNOWN 潰し / test plan / rollback plan / READY 化)は CLAUDE_AUTO_GO 自律 → POLICY §16.2 / §3.3 永続化。
+2. **user 技術判断 戻し過ぎ**: 技術 / デグレ / コスト / mail / rollback は Claude 判断。user は推奨 GO/HOLD/REJECT + 理由 + 最大リスク + rollback 可否 受領のみ → POLICY §15.1 / §15.2 永続化。
+3. **Codex worker pool 管理弱**: 完了後 Claude 一次受け / lane idle 検出は Claude 責務 / idle なら次の低リスク subtask 投入 / 4 NO 規律 → POLICY §13 / §5 / §15.3 永続化。
+4. **/tmp persistence 誤り**: prompt / job ID / receipt / lane status / HOLD 理由 は repo 内記録 → POLICY §13.1 / §13.4 永続化。
+5. **GitHub revert と本番 rollback 混同**: 3 dimensions(env/flag, image/revision, source/git revert)を独立扱い、必要組み合わせ → POLICY §3.6 / §16.4 永続化。
+
+old expression(削除対象):「本番反映は一律 user GO 必須」/ 「deploy 完了で DONE」/ 「GitHub revert だけで本番 rollback 済み」/ 「HOLD = 作業停止」/ 「close できないなら pause」/ 「user に技術判断を求める」/ 「Codex idle を user が発見する」(POLICY §16.5 整合)。
 
 ## Incident: Deploy Marked Done Without Verify
 

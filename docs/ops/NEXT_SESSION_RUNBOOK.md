@@ -1,6 +1,6 @@
 # YOSHILOVER NEXT_SESSION_RUNBOOK
 
-Last updated: 2026-05-01 JST
+Last updated: 2026-05-01 17:55 JST(298-v4 deploy 完了 + Phase 6 verify queued for 5/2 09:00 JST)
 
 Use this when Claude/Codex resumes after restart.
 
@@ -30,13 +30,19 @@ Do not make unclassified production changes during startup. Apply `POLICY.md` se
 
 Current major state:
 
-- 298-Phase3: `HOLD_NEEDS_PACK`, `ROLLED_BACK_AFTER_REGRESSION`, flag OFF/absent, persistent ledger disabled, storm contained, second-wave risk OPEN.
-- 293-COST: active for visible skip readiness; implementation/test/local verify/flag OFF or live-inert deploy may proceed only if `CLAUDE_AUTO_GO` conditions pass, followed by post-deploy verify.
-- 300-COST: active for read-only source-side cost analysis; source-side behavior change must be classified before implementation/deploy.
-- 299-QA: observe flaky/transient, not P0 by default.
-- 282-COST: future user GO for flag ON after 293.
-- 290-QA: live-inert deploy may be `CLAUDE_AUTO_GO` after classification and post-deploy verify plan; weak title rescue enablement is user decision.
-- 288-INGEST: future user GO for source addition Pack.
+- **298-Phase3 v4**: `OBSERVED_OK`、deploy 完了 (Lane B round 15 `bbnqyhph3`、本日 19:30 JST user GO「ならやる」受領)。Case F GCS pre-seed 106 件 + `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE=1` apply。post-deploy 7-point verify pass、storm 再発 0。**5/2 09:00 JST Phase 6 第二波防止 read-only verify 待ち**(Claude 自律 EVIDENCE_ONLY scope)。24h 安定 + Phase 6 pass で DONE 候補化。§14 P0/P1 自律 rollback monitor 24h 継続。
+- **293-COST**: `READY_FOR_DEPLOY`、impl + test + push 完了(commits `6932b25`/`afdf140`/`7c2b0cc`/`10022c0`、pytest 2018/0、env knobs default OFF)。298-v4 24h 安定後、image rebuild + flag ON Pack 提示(USER_DECISION_REQUIRED)。
+- **300-COST**: active for read-only source-side cost analysis; source-side behavior change must be classified before implementation/deploy.
+- **299-QA**: observe flaky/transient, not P0 by default.
+- **282-COST**: future user GO for flag ON after 293.
+- **290-QA**: live-inert deploy may be `CLAUDE_AUTO_GO` after classification and post-deploy verify plan; weak title rescue enablement is user decision.
+- **288-INGEST**: future user GO for source addition Pack.
+
+Codex Lane state:
+
+- Lane A: idle、last round 19 (`bvbjy9mog`、POLICY §3.5/§3.6/§15 commit `3d67d2a` + push 完了)。HOLD reason 4 条件全 YES。
+- Lane B: idle、last round 15 (`bbnqyhph3`、298-v4 deploy 完了 OBSERVED_OK)。24h monitor 継続。
+- 詳細は `docs/ops/WORKER_POOL.md` 参照(POLICY §13.6 引継ぎ)。
 
 ## 4. Codex Lane Handling
 
@@ -70,19 +76,30 @@ userが返すべき1行:
 
 Do not paste raw Codex output.
 
-## 6. 298-Phase3 Guard
+## 6. 298-Phase3 v4 Post-Deploy Guard
 
-Before any Phase3 re-ON proposal, the Acceptance Pack must include:
+本日 19:30 JST user GO「ならやる」受領、Case F GCS pre-seed + flag ON deploy 完了 OBSERVED_OK。
 
-- old candidate pool cardinality estimate
-- expected mail count
-- max mails/hour
-- max mails/day
-- stop condition
-- rollback command
-- UNKNOWN fields = 0
+5/2 09:00 JST Phase 6 第二波防止 verify(Claude 自律 EVIDENCE_ONLY、read-only):
 
-If any item is missing, the answer is HOLD.
+- rolling 1h sent: MAIL_BUDGET 30/h 内
+- cumulative since 5/1 09:00 JST: MAIL_BUDGET 100/d 内
+- silent skip: 0 継続
+- permanent_dedup skip count: 106+ 安定(新規追加で +N)
+- real review / 289 / errors: 維持
+- 5/1朝 storm 99 cohort sent: **0**(第二波防止)
+- 13:35 storm 50 cohort sent: **0**
+- 直近 6h 追加 post: ledger 登録済 → sent=0 想定
+
+検出時 §14 自律 rollback(env remove 30 sec、本日 13:55 実績整合):
+
+- rolling 1h sent>30
+- silent skip>0
+- errors>0
+- 289 mail 減
+- Team Shiny From 変
+
+24h 安定 + Phase 6 pass で 298-Phase3 v4 → DONE 候補化(POLICY §3.5、deploy 完了 ≠ DONE)。
 
 ## 7. Mail Storm Safety
 
@@ -99,13 +116,29 @@ Keep normal review mail, 289 notification mail, and error mail active.
 
 Proceed only inside current ticket scope:
 
-1. 293-COST Pack/test/rollback planning.
-2. 300-COST read-only cost analysis.
-3. 299-QA baseline and recurrence observation.
-4. 298-Phase3 Acceptance Pack reconstruction.
-5. Board/doc cleanup if ambiguity blocks the above.
+1. 5/2 09:00 JST 298-v4 Phase 6 第二波防止 read-only verify(Claude 自律 EVIDENCE_ONLY、最優先)。
+2. 24h 安定確認後、298-Phase3 v4 DONE 化判定。
+3. 293-COST image rebuild + flag ON Pack 提示(USER_DECISION_REQUIRED)。298-v4 安定後 deferred。
+4. 300-COST read-only cost analysis.
+5. 299-QA baseline and recurrence observation.
+6. Board/doc cleanup if ambiguity blocks the above.
 
 Do not create new tickets unless an issue cannot fit into the above.
+
+## 8a. Ticket Progress Loop(POLICY §16.2 整合、closeできないからpause = 禁止)
+
+Codex lane が idle で次便 fire 判断する時、以下の順で:
+
+1. DONE できるなら evidence 付き DONE
+2. DONE できないなら READY 化
+3. READY 化できないなら UNKNOWN 潰し
+4. UNKNOWN があるなら read-only 調査
+5. Pack 未完成なら Acceptance Pack 作成
+6. rollback 不明なら rollback plan 作成
+7. test 不明なら test plan 作成
+8. Codex lane idle なら既存 ticket の低リスク subtask 投入
+
+新 ticket 起票より既存 ticket subtask 化を優先(POLICY §10)。
 
 ## 9. Stop / Classify Conditions
 
@@ -163,6 +196,25 @@ Before closing a session:
 
 - update `CURRENT_STATE.md`
 - update `OPS_BOARD.yaml`
+- update `WORKER_POOL.md`(Lane A/B state、POLICY §13.6 引継ぎ)
 - ensure ACTIVE count is at most 2
 - record unresolved user decisions as Decision Batch items only
-- do not mark 298-Phase3 DONE while it is rolled back after regression
+- 298-Phase3 v4 は Phase 6 verify pass + 24h 安定後にのみ DONE 化、deploy 完了だけでは DONE にしない(POLICY §3.5 整合)
+
+## 12. 3 dimension Rollback(POLICY §16.4 整合)
+
+production 事故時、3 dimensions のうち該当を必要分組み合わせる:
+
+- **env / flag rollback**: 30 sec、`gcloud run jobs/services update --remove-env-vars=<flag>`(flag ON 起因 / env 起因 異常)
+- **image / revision rollback**: 2-3 min、Cloud Run service `update-traffic --to-revisions=<prev>=100` / job `update --image=<prev_sha>`(image 内 commit 起因異常)
+- **source / git revert**: `git revert <bad_commit>` + push origin master(repo 反映を残さず、再 build で bad change が再混入を防ぐ)
+
+production 安定優先(env / image)→ source 整合(git revert)。GitHub 戻すだけで本番 rollback 済み扱いは禁止。
+
+## 13. Pre-Deploy Gate(POLICY §16.1 整合)
+
+production 反映前に 11 項目確認:
+
+target commit/HEAD一致 / worktree clean / tests green / regression なし / rollback target / env変更有無 / Gemini 増加有無 / mail volume / candidate disappearance / stop condition / Acceptance Pack(USER_DECISION_REQUIRED 時)
+
+UNKNOWN は user に投げず HOLD。

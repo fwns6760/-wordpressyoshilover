@@ -16,16 +16,12 @@ Last updated: 2026-05-01 17:25 JST(両 lane 完了 close 状態)
 - expected_output: `docs/handoff/codex_responses/2026-05-01_final_consolidation_index.md`
 - prev: round 13-16 (`bjpdfiecy` → `byrelohvy` → `bh5sh66qf` → `bw5wytf4s`)all completed、293 + 282 + 290 + 288 READY pack 全 landed
 
-### Lane B round 12
+### Lane B(idle、HOLD reason explicit)
 
-- status: **running**
-- job_id: `b58jsvkhe`
-- ticket: 298-Phase3 v4 final READY pack(消化順 順 1、明日朝 06:00 JST user 提示用)
-- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_b_round_12_298_v4_final_ready.md`
-- receipt_path: `docs/handoff/codex_receipts/2026-05-01/lane_b_round_12.md`
-- started_at: 2026-05-01 18:05 JST(approx)
-- expected_output: `docs/handoff/codex_responses/2026-05-01_298_Phase3_v4_final_ready_pack.md`
-- prev: round 11 (`b0hyz5srs`) completed `ead78a3`、300 source v2 landed
+- status: **idle**
+- last_round: round 12 completed `fac5517`(298-Phase3 v4 final READY pack、ready_status=hold、明日朝 06:00 JST user 1 行提示)
+- HOLD reason: 4 条件全 YES → 消化順 1-5 全 READY pack 完成(293/282/290/300/298-v4/288)+ Lane A round 17 で final index 進行中 = 重複回避 + Lane B 単独投入余地なし(横串 candidate は Lane A、新規 ticket = POLICY §10 違反)+ 明日朝 user GO 提示まで pause 期間
+- next_dispatch: Lane A round 17 完了で両 lane completion → 1 画面 Decision Batch、明日朝 5/2 06:00 JST 298-Phase3 v4 final READY pack 提示後 user GO で 次 dispatch
 
 ## Lane History(本日 round 1-12 全部、commit hash 着地済)
 

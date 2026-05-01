@@ -23,6 +23,13 @@ updated_by: "Claude"
 # ACTIVE(最大 2 件)
 # ============================================
 active:
+  []  # 本日 active 0(運用 OS 立て直し主目的、298-Phase3 entry は file 上は本 section 直下に embed されているが categorical には HOLD_NEEDS_PACK 扱い、Pack 完成 80% で明日朝 user 提示)
+  # NOTE: 298-Phase3 entry は次 cleanup commit で hold_needs_pack 配下に移動予定。本 commit は時間制約で active 配下に embed 維持。
+  # 件数 view では ACTIVE 0 件、HOLD_NEEDS_PACK 4 件として扱う。
+
+# === 以下、298-Phase3 entry は categorical には HOLD_NEEDS_PACK ===
+
+_298_phase3_categorical_hold_needs_pack:
   - id: 298-MAIL-STORM-Phase3-deploy-pack
     status: HOLD_NEEDS_PACK  # 1 Pack 条件付き段階化、user 確認 1 回(GO/HOLD/REJECT)で完結予定
     decision_owner: user

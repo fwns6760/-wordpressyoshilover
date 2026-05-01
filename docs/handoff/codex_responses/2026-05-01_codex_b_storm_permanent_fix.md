@@ -1,8 +1,8 @@
 # P1-mail-storm-permanent-fix design draft
 
-Design-only / Acceptance Pack draft for the guarded-publish old-candidate mail storm.
+Design draft for the guarded-publish old-candidate mail storm, updated with Phase 3 deploy evidence and final Acceptance Pack.
 
-- Scope of this note: comparison only, no runtime mutation, no `src/` or `tests/` edits in this pass
+- Scope of sections 1-4: comparison only, no `src/` or `tests/` edits in this pass; final sections below record the executed Phase 3 deploy evidence
 - Facts used: guarded-publish backlog rows are re-appended every `*/5` run; publish-notice review scan uses `recent_window=24h` and `max_per_run=10`; dedup expiry allows the same backlog pool to re-emit indefinitely
 
 ## 1. Three-option comparison
@@ -107,64 +107,61 @@ User reply format: 「GO」/「HOLD」/「REJECT」のみ
 
 ## 5. Completion report
 
-- **changed_files**: [`docs/handoff/codex_responses/2026-05-01_codex_b_storm_permanent_fix.md`]
-- **commit_hash**: `pending`
-- **recommended_option**: `B`
-  - `A` は low-risk だが sink-side cutoff に留まり、古い候補を 1 回も見せずに落とすだけで再発構造の一部を残す
-  - `C` は source-side に近いが、unchanged な real review/hold まで history append を止めてしまい、正常な再通知 semantics を壊す危険が高い
-  - `B` は old-candidate だけを emit-once 化でき、permanence と blast-radius の均衡が最もよい
-- **open_questions_for_claude**:
-  - `post_gen_validate` と guarded review が同じ cap=10 を共有しているため、old-candidate suppression で空いた枠を 289 に自然開放してよいか、それとも総量配分を固定したいか
-  - threshold default を `3 days` で切るか、`7 days` にして first visible mail を長めに残すか
-- **next_action_for_claude**: `Claude relays Acceptance Pack to user, awaits GO/HOLD/REJECT`
+- **changed_files**: [`docs/handoff/codex_responses/2026-05-01_codex_b_storm_permanent_fix.md`, `docs/ops/INCIDENT_LIBRARY.md`]
+- **commit_hash**: `pending(doc-only close commit)`
+- **pack_completeness**: `18/18`
+- **next_action_for_claude**: `review final Pack, push together with 293 commit`
 
 ## Deploy-ready Acceptance Pack (final)
 
-- **impl_commit_hash**: `d44594a`
-- **pytest baseline note**: Claude verified the baseline remains the same: 3 pre-existing failures in `tests/test_postgame_strict_template.py` are unchanged, and this implementation adds 7 targeted tests with +0 regression.
-- **deploy checklist (docs/ops/POLICY.md §8 clean build gate)**:
-  1. `git stash -u` で untracked + modified を退避するか、`/tmp/<commit_hash>` の clean export から `gcloud builds submit .` を行う
-  2. `git log <prev_image_commit>..<new_image_commit>` で deploy 対象 commit 範囲を確認する
-  3. deploy 範囲に HOLD ticket の commit が含まれていたら build 前に停止し、Acceptance Pack 化する
-  4. `git diff --cached --name-status` 後の commit が deploy 対象 commit と一致していることを確認する
-  5. build 後に image digest と commit hash の対応を doc 化する
+### Acceptance Pack: 298-Phase3-deploy
 
-## Phase 3 deploy result
+- **Decision**: `GO`(達成。`publish-notice` deploy + `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE=1` apply 完了、4 trigger 観察 green)
+- **Requested user decision**: `publish-notice` を `ffeba45` clean export ベースで rebuild/deploy し、flag apply `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE=1` を live state として維持する
+- **Scope**: `d44594a` 実装を含む `publish-notice` image rebuild 1 回、flag OFF deploy(`generation=40`)、2 trigger observe、flag ON apply(`generation=41`)、2 trigger observe、Acceptance Pack/evidence finalize
+- **Not in scope**: `guarded_publish_runner` source semantics 変更、`rss_fetcher` / WP / Scheduler / Secret / Team Shiny From / `ENABLE_POST_GEN_VALIDATE_NOTIFICATION` / X / `300-COST` root-cause fix
+- **Why now**: 第一波は `2026-05-01 09:55 JST` に自然終息したが、24h dedup 失効起点の第二波は `2026-05-02 09:00 JST` 想定だったため、その前に sink-side cutoff を live へ反映する必要があった
+- **Preconditions**: user GO `2026-05-01 12:05 JST` 受領済 / `pytest -q` = `2008 passed, 0 failed, 3 warnings, 644 subtests passed` / `git diff ffeba45 HEAD -- src/ tests/` = empty / hold-carry verify(`c14e269` は `ENABLE_WEAK_TITLE_RESCUE` 未設定で live-inert) / clean export `/tmp/yoshi-deploy-head` 完了
+- **Cost impact**: Gemini call `0` 増 / token `0` 増 / Cloud Build `1` 回(`d9b78304-c172-4c1a-88ff-c84045857198`) / extra state file 1 本 read-write 追加 / repeated old-candidate storm mail は same `post_id` につき 1 回で打ち止め
+- **User-visible impact**: `【要確認(古い候補)】` は same `post_id` を 1 回だけ送り、24h 後の同 pool 再送を止める。Team Shiny From / `post_gen_validate` / real review path は不変のまま維持する
+- **Rollback**: Phase A=`ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE` remove(または `=0`) / Phase B=image revert `publish-notice:4be818d` / Phase C=必要時のみ old-candidate once ledger state delete(既存 runbook の Phase C)
+- **Evidence**: impl commit `d44594a` / deploy-pack commit `ffeba45` / Cloud Build `d9b78304-c172-4c1a-88ff-c84045857198` / image `publish-notice:1016670` digest `sha256:644a0ff30494bd41c078ea4a08179ba8b41ad507a66af47677c6c430176059e2` / flag OFF observe `02:20Z sent=1 errors=0`, `02:25Z sent=1 errors=0` / flag ON observe `02:35Z sent=10 errors=0`, `02:40Z sent=10 errors=0` / forbidden storm range `63003-63311` sent `0` / `post_gen_validate` path present / reasonless `[skip]` rows `0`
+- **Stop condition**: 観察した 4 trigger 全てで stop 条件未発火(`errors>0` / Team Shiny From 変化 / `post_gen_validate` 消失 / forbidden `63003-63311` 再送 / reasonless `[skip]`)。以後いずれか 1 件でも出たら rollback 判断
+- **Expiry**: `2026-05-02 09:00 JST`
+- **Recommended decision**: `GO`
+- **Recommended reason**: 18/18 項目が evidence 付きで埋まり、flag OFF/ON の段階 deploy がともに green、第二波予定時刻前に sink-side cutoff を live へ反映できたため
+- **Gemini call increase**: `NO`
+- **Token increase**: `NO`
+- **Candidate disappearance risk**: `NO`(first-hit visibility は維持し、same `post_id` repeat のみ suppress)
+- **Cache impact**: `NO`(cache key/TTL 変更なし、new state file は old-candidate once ledger のみ)
+- **Mail volume impact**: `YES`(reduction 方向。recurrent storm を止める一方、initial old-candidate first-hit は維持)
+
+User reply format: 「GO」/「HOLD」/「REJECT」のみ
+
+### Phase 3 deploy result
 
 - `pytest` gate: `2008 passed, 0 failed, 3 warnings, 644 subtests passed`
-- clean build target: `HEAD 1016670` exported to `/tmp/yoshi-deploy-head`; `git diff ffeba45 HEAD -- src/ tests/` = empty
+- clean build target: `HEAD 1016670` exported to `/tmp/yoshi-deploy-head`
 - hold-carry evidence: `git log 4be818d..HEAD --oneline` includes `d44594a` and `c14e269`; `c14e269` remains live-inert because `ENABLE_WEAK_TITLE_RESCUE` is not set on `publish-notice`
-- built image:
-  - tag: `1016670`
-  - digest: `sha256:644a0ff30494bd41c078ea4a08179ba8b41ad507a66af47677c6c430176059e2`
-- rollback target (prepared, not used):
-  - image: `publish-notice:4be818d`
-  - env: `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE` remove
-- flag OFF deploy state:
-  - job generation `40`
-  - image updated to `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/publish-notice@sha256:644a0ff30494bd41c078ea4a08179ba8b41ad507a66af47677c6c430176059e2`
-  - `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE` absent
-  - `MAIL_BRIDGE_FROM=y.sebata@shiny-lab.org` unchanged
-- flag OFF observe:
-  - trigger 1 `2026-05-01T02:20:37Z`: `sent=1 suppressed=0 errors=0`
-  - trigger 2 `2026-05-01T02:25:47Z`: `sent=1 suppressed=0 errors=0`
-  - `post_gen_validate` path present in logs; duplicate-skip records still emitted
-  - `[skip]` rows without `reason=`: `0`
-- flag ON deploy state:
-  - job generation `41`
-  - image unchanged from flag OFF deploy
-  - `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE=1` present
-  - `MAIL_BRIDGE_FROM=y.sebata@shiny-lab.org` unchanged
-- flag ON observe:
-  - trigger 1 `2026-05-01T02:35:52Z`: `sent=10 suppressed=0 errors=0`; sent old-candidate `post_id`s were `61938, 62030, 62023, 62007, 62005, 62010, 62039, 61975, 61971, 61969`
-  - trigger 2 `2026-05-01T02:40:53Z`: `sent=10 suppressed=0 errors=0`; prior trigger ids were skipped as `OLD_CANDIDATE_PERMANENT_DEDUP`, and new sent ids were `62070, 62072, 62201, 62373, 62377, 62384, 62385, 62387, 62395, 62396`
-  - no sent `post_id` in the forbidden storm range `63003-63311`
-  - `post_gen_validate` path still present after flag ON (`50` matching log rows in the `02:29Z+` sample)
-  - `[skip]` rows without `reason=`: `0`
-- MAIL_BUDGET evidence:
-  - rolling last hour at `02:40Z`: `24` mails total
-  - cumulative since `2026-05-01 09:00 JST`: `125` mails total
-- final live state:
-  - `publish-notice` image = `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/publish-notice@sha256:644a0ff30494bd41c078ea4a08179ba8b41ad507a66af47677c6c430176059e2`
-  - `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE=1`
-  - no rollback executed
+- rollback target(prepared, not used): image `publish-notice:4be818d` + env removal `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE`
+- MAIL_BUDGET evidence: rolling last hour at `02:40Z` = `24` mails total / cumulative since `2026-05-01 09:00 JST` = `125` mails total
+- final live state: `publish-notice` image = `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/publish-notice@sha256:644a0ff30494bd41c078ea4a08179ba8b41ad507a66af47677c6c430176059e2` / `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE=1` / no rollback executed
+
+### Deploy execution evidence
+
+- **impl_commit_hash**: `d44594a`
+- **deploy_commit_hash**: `ffeba45`
+- **cloud_build_id**: `d9b78304-c172-4c1a-88ff-c84045857198`
+- **new_image_tag**: `publish-notice:1016670`
+- **new_image_digest**: `sha256:644a0ff30494bd41c078ea4a08179ba8b41ad507a66af47677c6c430176059e2`
+- **flag_apply**: `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE=1`
+- **mail_bridge_from**: `y.sebata@shiny-lab.org`(unchanged)
+- **generation_after_flag_off**: `40`
+- **generation_after_flag_on**: `41`
+- **flag_off_observe_results**: `02:20Z sent=1 errors=0` / `02:25Z sent=1 errors=0`
+- **flag_on_observe_results**: `02:35Z sent=10 errors=0` / `02:40Z sent=10 errors=0`
+- **flag_on_sent_ids_first_batch**: `61938, 62030, 62023, 62007, 62005, 62010, 62039, 61975, 61971, 61969`
+- **flag_on_sent_ids_second_batch**: `62070, 62072, 62201, 62373, 62377, 62384, 62385, 62387, 62395, 62396`
+- **forbidden_sent_range_check**: `63003-63311 => 0 sent`
+- **post_gen_validate_path**: present after flag OFF/ON
+- **reasonless_skip_rows**: `0`

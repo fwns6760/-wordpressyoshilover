@@ -55,6 +55,9 @@ guarded-publish の */5 trigger ごとの古い backlog post 再評価で 24h de
 8. **`PUBLISH_NOTICE_REVIEW_WINDOW_HOURS=168` 再投入禁止**(POLICY §22): 本日逆効果確定、永続 禁止 env として記録
 9. **`cap=10/run` 単独で safe 扱い禁止**(POLICY §22): pool 増加 + 24h dedup expire で 2880 通/d 可能性、4 重防御(cap × dedup × pool size 制限 × MAIL_BUDGET monitor)必須
 10. **真因 fix 後回しの code(sink-side cutoff)は flag ON 維持で運用**(298-Phase3 + 300-COST 関係): flag 外したら storm 再発、source-side fix(300-COST)を deferred 起票して安定後に再評価
+11. **Codex preflight stop は `target_commit != HEAD` だけで止めない**: deploy 中の Claude doc-only commit でも HEAD は進む。`git diff <deploy_commit> HEAD -- src/ tests/` が empty なら false stop なので continuation 可、payload 差分有無で判定する
+12. **Claude の doc-only commit も deploy lane に共有する**: 実装差分 0 でも commit 連鎖で Codex preflight が止まる。deploy 実行中は doc commit のたびに「HEAD moved / src+tests unchanged or changed」を executor に即共有する
+13. **deploy prompt は target=HEAD 動的化を標準にする**: 固定 commit hash の再利用は false mismatch を招く。clean export + hold-carry verify 後は continuation lane で target=HEAD を取り直す
 
 ### 関連 commit
 - `bc1e5c0`: Codex A storm verify report
@@ -68,6 +71,23 @@ guarded-publish の */5 trigger ごとの古い backlog post 再評価で 24h de
 ### 関連 ticket(本日起票)
 - 299-QA(postgame_strict 3 pre-existing failures、OBSERVE 起票)
 - 300-COST(source-side guarded-publish 再評価削減、deferred、Phase 3 安定後)
+
+### Phase 3 deploy 完了 経緯(13:00-13:24 JST)
+
+| 時刻 | event |
+|---|---|
+| 13:00 | Codex Phase 3 deploy v3 fire。pytest gate を「new failures = 0」に修正し、preflight stop 連鎖を continuation lane で再開 |
+| 13:03 | clean export `/tmp/yoshi-deploy-head` 作成、`git diff ffeba45 HEAD -- src/ tests/` = empty、`c14e269` は `ENABLE_WEAK_TITLE_RESCUE` 未設定で live-inert と確認 |
+| 13:06 | Cloud Build `d9b78304-c172-4c1a-88ff-c84045857198` 成功。new image `publish-notice:1016670` / digest `sha256:644a0ff30494bd41c078ea4a08179ba8b41ad507a66af47677c6c430176059e2` 生成 |
+| 13:08 | flag OFF deploy 完了(`generation=40`)。observe `02:20Z sent=1 errors=0` / `02:25Z sent=1 errors=0`、`post_gen_validate` path present、reasonless `[skip]` 0 |
+| 13:09 | flag ON apply。`ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE=1` 反映、job generation `41`、image は据え置き |
+| 13:24 | flag ON observe green。`02:35Z sent=10 errors=0` / `02:40Z sent=10 errors=0`、first batch は second batch で `OLD_CANDIDATE_PERMANENT_DEDUP` skip、forbidden `63003-63311` sent 0、rolling 1h `24` mails |
+
+### Phase 3 fix degree
+
+1. **sink-side cutoff**: 完了。`d44594a` + flag ON で old-candidate same `post_id` の再通知は permanent dedup され、第二波再送ループを mail sink 側で止められる
+2. **source semantics**: 不変。`guarded_publish` の `backlog_only` 再評価 append はそのままで、storm 抑止は source ではなく publish-notice 側の cutoff で実現している
+3. **root-cause eradication**: 未完。`300-COST` で source-side の old backlog 再評価削減を deferred 管理し、Phase 3 の 24h 安定確認後に根治へ戻す
 
 ---
 

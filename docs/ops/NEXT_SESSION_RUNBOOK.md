@@ -41,10 +41,17 @@ Current major state:
 ## 4. Codex Lane Handling
 
 - Claude owns lane monitoring.
-- If a lane is idle and there is an eligible low-risk subtask in the existing ticket order, Claude dispatches it.
+- Codex is a worker, not a manager.
+- If a lane is idle, Claude must apply the four-condition gate from `POLICY.md` section 5.
+- If a low-risk existing-ticket subtask remains, Claude dispatches it autonomously.
 - Eligible low-risk subtasks are read-only, doc-only, evidence, test plan, rollback plan, Acceptance Pack, or ticket cleanup.
 - Do not dispatch code/deploy/env/Scheduler/source/Gemini/mail-routing work without the required user GO.
 - Do not ask the user whether to dispatch a READY-incomplete low-risk subtask.
+- Do not keep a lane idle unless the HOLD reason is explicit.
+- Do not fire meaningless work just to make Codex look busy.
+- Do not create new tickets when the work can be absorbed as a subtask of an existing ticket.
+
+Approved example: Lane B was initially idle, but Claude found remaining low-risk work in 298-Phase3 v4 Pack consistency, ACCEPTANCE_PACK extra-field alignment, and UNKNOWN-residual detection. Dispatching that Lane B task was correct because it stayed inside existing-ticket Pack/evidence work and did not touch deploy, env, Scheduler, source, Gemini, code, or mail conditions.
 
 ## 5. Decision Batch Only
 

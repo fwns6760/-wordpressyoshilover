@@ -69,13 +69,32 @@ Claude must stop and create an Acceptance Pack if a task crosses into User GO te
 ## 5. Codex Lane Policy
 
 - ACTIVE tickets are limited to 2.
+- Codex is a worker, not a manager.
+- Claude owns Codex lane A/B state management.
 - Codex idle detection is Claude's responsibility.
+- User discovering an idle Codex lane is an operations failure.
 - When a lane finishes, Claude reviews output, verifies scope, updates the board, and then dispatches the next eligible low-risk subtask.
 - Do not dispatch work just to keep Codex busy.
 - Do not dispatch outside the current ticket order to avoid boredom or time pressure.
+- New ticket sprawl is forbidden; absorb work into existing-ticket subtasks when possible.
 - "慎重すぎて全停止" is REJECT.
 - "時間があるから全部やる" is REJECT.
 - Time boundaries are set by the user. Claude gates by risk, regression, and cost.
+
+### Lane Idle Four-Condition Gate
+
+Claude may keep a lane idle only when all four conditions are true:
+
+1. There is genuinely no low-risk subtask remaining inside the current consumption order.
+2. Existing Packs, read-only checks, test plans, rollback plans, and evidence tasks are already complete.
+3. Remaining work would only duplicate Lane A or the active observe task.
+4. Remaining work requires user GO, such as deploy, flag/env, Scheduler, SEO, source addition, Gemini call increase, major mail routing change, cleanup mutation, or rollback-impossible change.
+
+If any low-risk existing-ticket subtask remains, Claude fires it autonomously. If the lane stays idle, Claude records the HOLD reason in the board or current-state note.
+
+### Approved GO Example
+
+Lane B was initially idle, but the four-condition gate found remaining low-risk subtasks: 298-Phase3 v4 Pack consistency review, ACCEPTANCE_PACK additional-field alignment, and UNKNOWN-residual detection. Claude therefore fired Lane B under manager control. This is the correct pattern: existing-ticket, doc/evidence/Pack work may be dispatched autonomously; it is not busywork.
 
 ## 6. Status Vocabulary
 

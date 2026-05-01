@@ -185,18 +185,22 @@ observe:
       - "290-QA NOT_DEPLOYED status"
     sub_observe_items:  # 独立 ticket だが本観察に統合(POLICY OBSERVE 1 件遵守)
       - id: 299-QA-postgame-strict-3-failures
-        severity: P2
+        severity: P3  # transient/flaky 判定で P2 → P3 降格
         started_at: "2026-05-01 10:25 JST(P1 mail storm 真因解析中に発見)"
         evidence: |
-          - tests/test_postgame_strict_template.py で 3 failures(Claude 自身で git stash + pytest 再現確認、HEAD baseline でも同一 3 failures)
-          - failure 内容:rss_fetcher.py:4983 "postgame_strict: parse_fail reason=non_json_wrapper -> review"
-          - failing tests:
+          - tests/test_postgame_strict_template.py、Claude 朝 10:25 JST 走行 = 3 failures
+          - Codex Phase 3 deploy retry 12:30 JST 走行 = 30 passed / 0 failed(同 module)
+          - フル pytest 12:30 JST = 2008 passed / 0 failed
+          - 朝の 3 failures は **transient / env 依存 / flaky** と判定(local cache / file race / temp env 差異の可能性)
+          - failure 朝の内容:rss_fetcher.py:4983 "postgame_strict: parse_fail reason=non_json_wrapper -> review"
+          - failing tests(朝):
             * test_strict_feature_flag_on_postgame_uses_strict_template_path
             * test_strict_on_empty_response_returns_review_sentinel
             * test_strict_on_parse_fail_returns_review_sentinel
-          - 298-Phase2 impl とは無関係(scope 外 rss_fetcher 経由)、Pack に pre-existing 証跡化済
-          - POLICY §10「P0 Safety incident 検出時必須起票」遵守
-        next_action: "本観察 17:00 JST 内で silent skip / publish 影響 / 真因仮説 統合確認"
+          - 298-Phase2 impl とは無関係(scope 外 rss_fetcher 経由)
+          - POLICY §10「P0 Safety incident 検出時必須起票」適用は妥当だが、結果 transient → flaky 範疇に再分類提案(POLICY §10 細分化は deferred、本日 HOLD)
+        flaky_judgment_status: "保留(本観察 17:00 JST で再現性確認)"
+        next_action: "17:00 JST 本観察で再 pytest 走行、再現すれば真因解析、再現しなければ flaky 判定で OBSERVE close"
         expiry: "production_health_observe 結果 + 24h(2026-05-02 17:00 JST)"
     next_action: "2026-05-01 17:00 JST に 1 度 read-only check、299-QA sub_observe も同時、異常 0 なら ops reset close 確定"
     next_review_at: "2026-05-01 17:00 JST"

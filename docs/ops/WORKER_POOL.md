@@ -5,27 +5,26 @@ Last updated: 2026-05-01 17:25 JST(両 lane 完了 close 状態)
 
 ## Active Lanes(両 running、READY 化進行中)
 
-### Lane A round 18
+### Lane A(idle、HOLD reason explicit)
+
+- status: **idle**
+- last_round: round 18 completed(`bbzzdjawe`、293-COST impl 4 commit `6932b25`/`afdf140`/`7c2b0cc`/`10022c0`、pytest 2018/0、READY_FOR_DEPLOY 化完了)
+- HOLD reason: 4 条件全 YES → 全 Pack READY 化完了 + Lane B round 15 で 298-v4 deploy(scope disjoint だが ACTIVE limit 2 + Lane A 投入余地なし)+ scope 拡大 = REJECT
+- next_dispatch: 298-v4 deploy 完了 + 24h 安定後、293 image rebuild + flag ON Pack(USER_DECISION_REQUIRED)or その他 deferred
+
+### Lane B round 15(deploy lane、USER_DECISION_REQUIRED + user GO 受領済)
 
 - status: **running**
-- job_id: `bbzzdjawe`
-- ticket: 293-COST impl + test + commit + push(消化順 順 1、READY_FOR_DEPLOY 化、push されても deploy 反映なし設計)
-- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_a_round_18_293_impl.md`
-- receipt_path: `docs/handoff/codex_receipts/2026-05-01/lane_a_round_18.md`
-- started_at: 2026-05-01 19:00 JST(approx)
-- expected_output: 4 commits(impl + test、deploy なし)
-- prev: round 17 (`bg72l5lf4`) completed `92603a3`、final consolidation index landed
-
-### Lane B round 14
-
-- status: **running**
-- job_id: `bum1usgj7`
-- ticket: 298-Phase3 v4 Pack robustness 補強(消化順 順 1 subtask、明日朝 user 提示前 final robustness)
-- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_b_round_14_298_v4_robustness.md`
-- receipt_path: `docs/handoff/codex_receipts/2026-05-01/lane_b_round_14.md`
-- started_at: 2026-05-01 19:15 JST(approx)
-- expected_output: `docs/handoff/codex_responses/2026-05-01_298_Phase3_v4_robustness_supplement.md`(cardinality / Phase D / stop condition automation 設計 / Case 再比較 / 明日朝 1 行 final)
-- prev: round 13 (`b8xtmo44s`) completed `b003b2c`、300 READY pack landed
+- job_id: `bbnqyhph3`
+- ticket: 298-Phase3 v4 deploy(Case F GCS pre-seed + flag ON、user GO 受領済「ならやる」19:30 JST)
+- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_b_round_15_298_v4_deploy.md`
+- receipt_path: `docs/handoff/codex_receipts/2026-05-01/lane_b_round_15.md`
+- started_at: 2026-05-01 19:35 JST(approx)
+- expected_output: GCS pre-seed + env apply + observe 1-2 trigger
+- expected_completion: ~20:00-20:15 JST
+- POLICY §3 classification: **USER_DECISION_REQUIRED + user GO 受領済**(本日 19:30 JST「ならやる」)
+- §14 P0/P1 自律 rollback monitor: rolling 1h sent > 30 検出で env remove(本日 13:55 実績整合)
+- prev round 14 (`bum1usgj7`): completed `dab9b8e`、298-v4 robustness supplement landed(99 full / 20 literal / 50 flag-ON / 104 latest pool / 1 直近 6h)
 
 ## Lane History(本日 round 1-12 全部、commit hash 着地済)
 

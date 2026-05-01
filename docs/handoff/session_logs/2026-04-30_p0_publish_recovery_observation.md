@@ -224,6 +224,80 @@ summary 品質 (280):
 
 回帰禁止: 277 と同じ
 
+## 2026-05-01 朝 read-only verify evidence(混線を止める日)
+
+5 件 horizontal verify(実装 / deploy / 設定変更 0、read-only のみ):
+
+### 1. Gmail 実到達(sample 確認のみ、全量 reconcile ではない)
+
+- 確認方法: `mcp__claude_ai_Gmail__search_threads`
+- 検索条件: `from:y.sebata@shiny-lab.org newer_than:1d`
+- 直近受信 sample: 10+ 件確認(thread id `19de04d0291b4271` 等)
+- 最新 mail 時刻: 2026-04-30T21:30:35Z(JST 5/1 06:30)
+- subject prefix 種別: `【要review｜post_gen_validate】` / `【要確認】` / `【要確認・X見送り】`
+- 評価: **sample 実到達確認済、送信側 errors=0**(sent=172 全件 reconcile ではない、サンプル ベース)
+
+### 2. post_gen_validate_history silent skip 検出
+
+- 対象 file: `gs://baseballsite-yoshilover-state/post_gen_validate/post_gen_validate_history.jsonl`
+- 対象 record 数: 2808
+- silent 判定条件: `record exist but skip_reason missing or empty`
+- 結果: **silent 0 件**(全 2808 record に skip_reason 付与済)
+- 種別 top: postgame_strict 1009 / no_strong_marker 467 / close_marker 439 / related_info_escape 359 / blacklist_phrase 271
+
+### 3. 通知 LLM 呼出 0
+
+- 対象サービス: `cloud_run_job: publish-notice`
+- 対象 log 範囲: 過去 24h
+- 検索語: `gemini` OR `Gemini` OR `llm`(textPayload match)
+- 確認時間帯: 2026-04-30 23Z 〜 2026-05-01 23Z(UTC)
+- 結果: **0 hit** ✓
+- mail subject parse: 172 件全部 metadata 由来 prefix(LLM 由来文字列なし)
+
+### 4. flag / env 明示確認
+
+- 確認 method:
+  - `gcloud run services describe yoshilover-fetcher --region=asia-northeast1 --project=baseballsite --format='value(spec.template.spec.containers[0].env)'`
+  - `gcloud run jobs describe publish-notice --region=asia-northeast1 --project=baseballsite --format='value(spec.template.spec.template.spec.containers[0].env)'`
+- 結果(全 64 env 行 grep 含む):
+  - `ENABLE_LIVE_UPDATE_ARTICLES=0`(fetcher) ✓
+  - `ENABLE_POST_GEN_VALIDATE_NOTIFICATION=1`(fetcher + publish-notice 両方) ✓
+  - `MAIL_BRIDGE_FROM=y.sebata@shiny-lab.org`(publish-notice) ✓
+  - `ENABLE_WEAK_TITLE_RESCUE`: **未設定**(64 env 行に出現せず = default OFF) ✓
+  - `ENABLE_GEMINI_PREFLIGHT`: **未設定**(同上 = default OFF) ✓
+
+### 5. rollback target image AR 存在確認 + ?? src 正体
+
+#### Artifact Registry digest 確認(`gcloud artifacts docker images describe`)
+
+- `yoshilover-fetcher:27166c5` → sha256:5437e1d5... ✓
+- `yoshilover-fetcher:325b47f` → sha256:4fb99878... ✓
+- `publish-notice:dc02d61` → sha256:b3cf35f9... ✓
+- `guarded-publish:a175f24` → sha256:ffc0ea3b... ✓
+
+→ 3 service 全 rollback target が AR に **存在維持**
+
+#### `?? src/gemini_preflight_gate.py` / `?? tests/test_gemini_preflight_gate.py`
+
+- `git ls-tree HEAD -- src/gemini_preflight_gate.py`: blob `47f89bcc...` 確認 = **HEAD に tracked** ✓
+- on-disk size: 11467 bytes(src) / 18972 bytes(tests)
+- `diff <(git show HEAD:<file>) <disk file>`: **empty**(disk 内容 = HEAD blob 完全一致)✓
+- 結論: `??` 表示は git index 異常のみ、disk 内容は HEAD と整合 = **本番 image 整合性に影響なし**
+- **ただし** 次 deploy 前に disk が変更されると build context 汚染 risk = **未解決リスクとして残す**(294-PROCESS で標準化予定、本日触らない)
+
+## 5/1 朝 verify 結論(表現修正版)
+
+- **確認範囲では P0/Safety は検出されていない**(「壊れていない確定」ではない)
+- 289 通知導線は維持されている
+- 通知経路での明確な LLM 再実行は検出されていない
+- **cache_hit 99%(498/500、24h)は cost observe として継続**(真の削減効果か / source 量・時間帯・log window 偏りかは未確定)
+- **次 deploy 前の clean build 必須は未解決リスクとして残す**(294-PROCESS で標準化、本日 impl 禁止)
+
+通知 URL 問題(Twitter/X URL や元サイト URL が混入する件):
+- 現時点では P0 ではなく **通知表示設計の改善対象**
+- ただし公開済み記事 mail と未公開候補 mail が混ざって user 誤解 risk 大
+- **279-QA 系 HOLD として残す**(本日触らない、未公開候補 mail を止めず、公開済 / 未公開候補 / source_url / wp_url を見分けやすくする方向)
+
 ## 不変ルール再確認
 
 - Claude = 監査 / queue / prompt 起票 / read-only 観測 / push のみ

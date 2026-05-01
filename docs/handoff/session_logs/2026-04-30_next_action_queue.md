@@ -335,7 +335,106 @@ fire 内容:
 
 ---
 
-## 10. 締め
+## 9.5. 2026-05-01 朝 snapshot 追記(混線を止める日の盤面整理結果)
+
+本 section は 2026-04-30 PM queue を上書きせず、5/1 朝時点の状態 snapshot を **追記**(doc-only、impl/deploy 0)。
+
+### DONE(OBSERVED_OK evidence あり、通知品質 DONE ではない)
+
+- **276-QA test mock fix**:CI run 25146349669 success / 1820 tests
+- **281-QA farm_result allowlist deploy(execution success のみ)**:execution `guarded-publish-cd9n6` exit 0 / silent hold 0(97/97 records)— **farm_result <24h positive case 観察例 0、partial DONE**
+- **283-MKT 要件定義 doc**:commit a2777f9 push、user 確認済
+- **289-OBSERVE deploy + flag ON(通知導線 LIVE のみ)**:24h sent=172 errors=0 / silent skip 0(2808 records)/ Gmail sample 実到達確認(10+ thread)/ Team Shiny From 維持 — **通知品質 DONE ではない**(URL 表示・公開済 vs 未公開混在の見分けにくさ等は 279-QA 系で別便)
+- **297-OPS codex-shadow PAUSE**:scheduler state=PAUSED / 24h publish-mail trigger 維持
+
+### OBSERVE(LIVE deploy 済、効果未確認、DONE 扱い禁止)
+
+- **282-COST gemini preflight gate(deploy 済 / flag OFF)**:image `:325b47f`(後 `:4be818d` carry)/ `ENABLE_GEMINI_PREFLIGHT` 未設定維持 / preflight skip event 0 — **flag OFF で本番挙動変えていない、効果あり扱い禁止**、flag ON 後の効果は未測定
+- **205-COST publish-notice incremental scan(retroactive accept)**:cursor scan 動作確認、ただし cost 削減効果の数値計測なし
+- **cost observe: cache_hit 99%**(498/500、24h、昨日 75% から急上昇)— 真の削減 / source 量 / 時間帯偏り未確定、**成功扱い禁止、OBSERVE 継続**
+
+### NOT DONE(evidence 不足、現 status)
+
+- **277-QA title player-name backfill**:`DEPLOYED`(rescue 効果 OBSERVED_OK 待ち、290 救済 + deploy 後)
+- **290-QA weak title rescue**:`CODE_DONE` + `PUSHED`(deploy 未、本日禁止)
+- **281-QA farm_result <24h positive case 観察**:`partial DONE`(execution success 確認済、actual <24h candidate 観察例 0)
+
+### RISK(明示管理、本日 fix 禁止、observation のみ)
+
+- **未 deploy 差分**:repo HEAD `1b77e89` と本番 image `:4be818d` の間に 290-QA(c14e269)+ docs commit が存在、deploy しないと反映しない / リスク自体は publish-mail 経路に影響なし(flag OFF design)、ただし「repo 状態 vs 本番状態」のズレを認識
+- **次 deploy 前 clean build 必須**:`?? src/gemini_preflight_gate.py` / `?? tests/test_gemini_preflight_gate.py` は HEAD と disk 一致だが、`gcloud builds submit .` で worktree 全体送信、disk が変更されると build context 汚染 risk / 294-PROCESS で `git stash -u` または `/tmp` clean export 標準化予定、**次 deploy 便 fire 前必須参照**
+- **cache_hit 99% 真因不明**:24h sample で persisted、ただし真因解明前に「282-COST + 229-COST 効果あり」と断定禁止
+
+### active 2 件
+
+1. **289-OBSERVE 24h 観察**(LIVE_TRIGGERED + USER_VISIBLE)
+2. **290-QA**(CODE_DONE + PUSHED、deploy 判断保留)
+
+### observe 1 件
+
+- **cost observe**:cache_hit 99%(498/500、24h、昨日 75% から急上昇)— 真の削減効果 / source 量 / 時間帯偏り未確定
+
+### Ready for user GO 3 件
+
+| # | ticket | user GO 後の action |
+|---|---|---|
+| 1 | **290-QA deploy + `ENABLE_WEAK_TITLE_RESCUE=1`** | fetcher rebuild + flag ON、A/B 7 候補 rescue 効果反映 |
+| 2 | **293-COST 起票 + Codex fire** | impl 着手(282-COST flag ON の鍵) |
+| 3 | **264-QA Phase 1 audit**(read-only、user GO 不要) | 既存 publish 重複ペア集計、cleanup 判断材料作成 |
+
+### P0 / Safety 有無(限定表現)
+
+**現時点で観測済みの P0 / Safety なし**(read-only verify 5 件 + horizontal audit 範囲)。
+**安全宣言ではない**。未観測領域は依然不明、cache_hit 99% / 次 deploy 前 clean build / 通知品質 等は continued risk として残す。
+
+### 5/1 朝 verify evidence(p0 observation log に永続記録済)
+
+`docs/handoff/session_logs/2026-04-30_p0_publish_recovery_observation.md` の `## 2026-05-01 朝 read-only verify evidence` section 参照:
+- Gmail 実到達(sample、search_threads 10+ 件)
+- post_gen_validate_history silent 0(2808 records)
+- 通知 LLM 呼出 0(publish-notice 24h gemini token 0 hit)
+- flag/env 5 項目期待値通り(64 env 行 grep 検証済)
+- rollback target image AR 全 4 tag 存在(digest 確認済)
+- ?? src 正体:HEAD と完全一致(disk diff empty)、本番影響なし、ただし次 deploy 前 clean build 必須
+
+### 通知 URL 問題の扱い(279-QA 系 HOLD として残す)
+
+- 現時点 P0 ではない、通知表示設計の改善対象
+- 公開済み記事 mail と未公開候補 mail の見分けにくさは user 体感影響あり
+- 未公開候補 mail を **止めない** 方向、見分けやすくする方向(279-QA 系で別便)
+
+### 表現修正(永続)
+
+今後の報告で:
+- 「壊れていない確定」 ❌
+- 「確認範囲では P0 / Safety なし」 ✓
+
+### 自律 GO 範囲(永続、user 明示)
+
+ユーザー GO 必須:
+- deploy / env-flag 変更 / Scheduler 変更 / SEO-noindex-canonical-301 変更 / Gemini call 増加 / mail 通知条件変更 / source 追加 / live_update 変更 / X 自動投稿 / cleanup mutation / rollback 不能な変更 / 公開基準の緩和
+
+Claude 自律 GO 可能:
+- read-only 確認 / 分類 / doc-only handoff 更新 / 状態整理 / evidence 追記
+- 完了後は「自律 GO で実施しました」/「user GO が必要です」/「HOLD しました」のどれかで報告
+
+## 9.6. 2026-05-01 ops reset 反映(OWNER 三軸化)
+
+詳細は `docs/handoff/session_logs/2026-05-01_ops_reset.md` 参照(本 queue は単一 source ではなくなった、ops_reset.md の運用ルールが上位)。
+
+### OWNER 三軸の永続ルール
+- **DECISION_OWNER**:最終判断者(user / Claude / Codex / ChatGPT)
+- **EXECUTION_OWNER**:準備・調査・整理・記録・impl の進行担当(Claude / Codex / none)
+- **USER_GO_REQUIRED**:true / false
+
+### user を DECISION_OWNER にしてよい範囲(永続限定)
+- deploy / env-flag / Scheduler / SEO / Gemini call 増加 / source 追加 / live_update / mail 条件変更 / cleanup mutation / X 自動投稿 / rollback 不能 / 公開基準の緩和
+
+これ以外で user OWNER にしない(設計 / impl + push / doc / 整理 / 統合 / 凍結 file move 等は Claude / Codex OWNER)。
+
+### 本 queue の各 ticket OWNER は ops_reset.md の HOLD list に正本反映済
+
+本 queue の Ready for user GO / HOLD list は ops_reset.md(OWNER 三軸化)を **正本** とする。差分があれば ops_reset.md が優先。
 
 本 queue は **2026-04-30 PM 確定版**。次セッション開始時にここから再開、以下を厳守:
 - 「明日朝」「後で」「落ち着いたら」禁止

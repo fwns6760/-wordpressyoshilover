@@ -36,6 +36,14 @@ purpose: 長い session log の代わり、起動直後の認知負荷低減
 - duplicate guard 全解除なし
 - Scheduler 頻度変更なし(autonomous 進めない)
 
+## 2026-05-01 朝 read-only verify 1 行サマリ
+
+5 件 verify(Gmail 実到達 sample / post_gen_validate silent 0 / 通知 LLM 0 / flag-env 期待値通り / rollback target AR 存在)→ **現時点で観測済みの P0 / Safety なし**(安全宣言ではない)。cache_hit 99% は OBSERVE 継続(成功扱い禁止)。282-COST は flag OFF deploy のみ、効果あり・DONE 扱い禁止。Gmail 実到達は sample で復旧確認 OK、通知品質 DONE ではない。次 deploy 前 clean build 必須は未解決リスク残。詳細 evidence は p0 observation log の `## 2026-05-01 朝 read-only verify evidence` section 参照。
+
+## 2026-05-01 ops reset(OWNER 七軸化、ChatGPT Pro 監査採用、本日 close)1 行サマリ
+
+OWNER 七軸化(DECISION/EXECUTION/EVIDENCE/USER_GO_REQUIRED/USER_GO_REASON/NEXT_REVIEW_AT/EXPIRY)+ user GO 9 categories 限定 + 自律 GO 8 categories + Acceptance Pack 13 項目 + Outcome Ledger 永続化。READY=Pack 完成済 + user 即返答可能のみ、現状 0 件。HOLD_NEEDS_PACK 3 / FUTURE_USER_GO 6 / 自律準備 11 / DONE 4 / OBSERVE 1 統合(production_health) / FROZEN 16(本日 file move なし)/ DEEP_FROZEN 21。正本 = repo `2026-05-01_ops_reset.md`(memory は補助記憶)。本 ops reset 自体は **DONE_DOC_ONLY**(close 済)。
+
 ## 緊急時 quick reference
 
 - 289 通知爆発時:`gcloud run services update yoshilover-fetcher ... --remove-env-vars=ENABLE_POST_GEN_VALIDATE_NOTIFICATION` + `gcloud run jobs update publish-notice ... --remove-env-vars=ENABLE_POST_GEN_VALIDATE_NOTIFICATION`

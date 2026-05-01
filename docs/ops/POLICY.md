@@ -39,6 +39,12 @@ user を `DECISION_OWNER` にしてよい / `USER_GO_REQUIRED=true` にしてよ
 
 これ以外で user を `DECISION_OWNER` にしない / `USER_GO_REQUIRED=true` にしない。
 
+### user は EXECUTION_OWNER にできない(永続)
+
+- user は **作業者ではない**、user は高リスク判断の DECISION_OWNER のみ
+- すべての ticket で `EXECUTION_OWNER ∈ {Claude, Codex, none}` 必須、user は不可
+- Codex doc / mail / WP 等の作業は Claude or Codex が EXECUTION_OWNER として実行
+
 ---
 
 ## 3. Claude 自律 GO 10 categories(USER_GO_REQUIRED=false で進める)
@@ -141,9 +147,25 @@ silent skip 検出時:
 4. **新 call site 検出**: src/rss_fetcher.py 等の grep、追加は user GO 必須(`USER_GO_REASON=COST_INCREASE`)
 
 ### Cloud Run / GCS / Logging 増加
-1. Cloud Build 1 日 N 回上限(294-PROCESS で設計)
+1. **Cloud Build 1 日最大 1 回**(P0/P1 incident 時のみ追加可、commit message に「P0/P1 例外」明記)
 2. Cloud Run min-instance ≠ 0 → idle cost 検出 → user GO で見直し
 3. GCS write volume 急増 detection
+4. **Codex fire 1 日最大 2 件**(P0/P1 incident 時のみ追加可、本日 2026-05-01 は P1 mail storm で 4 件 fire = 例外発動済)
+5. **UNKNOWN cost impact は GO 禁止**(Acceptance Pack で定量化できない場合は最低 HOLD)
+
+### コスト削減と候補消失防止の順序(永続、固定)
+
+**順序を間違えると候補消失で記事品質が落ちる**。固定順序:
+
+1. skip / hold / review / publish の **可視性**
+2. **silent skip 0** 維持
+3. **candidate disappearance risk** の計測(数値化)
+4. preflight skip を **user-visible** にする(289 系)
+5. cache / Gemini call / token 影響 の観測
+6. 上記 1-5 が安定後に **282-COST flag ON**
+
+**293-COST(統一観測 ledger)は 282-COST(preflight gate flag ON)の前提**。
+282-COST を flag ON してから 293 で可視化するのは禁止(逆順)。
 
 ---
 
@@ -410,3 +432,185 @@ git ls-files docs/ops/ | wc -l             # 5 file tracked であること
 ```
 
 untracked / unpushed が残っている場合、明示理由を session log に 1 行追記してから停止。
+
+---
+
+## 17. Claude 一次受け徹底ルール(永続、user 接点を絞る)
+
+**Claude = 現場責任者 / Codex = 現場開発者 / user = 高リスク判断者**。3 役割の境界を厳守。
+
+### Claude が必ずやること(一次受け)
+
+1. **Codex 生回答 / 長文監査 / 細かい log を user に直接流さない**(全面禁止)
+2. Codex completion report を読む → リスク判定 → repo 正本に記録 → Acceptance Pack に圧縮 → user には GO/HOLD/REJECT のみ求める
+3. 軽い迷い / 境界判定で user に聞かない、迷ったら **Acceptance Pack を作る**(Pack 未完成なら HOLD_NEEDS_PACK)
+4. user 提示は次の format に固定:
+   - **結論**: GO / HOLD / REJECT
+   - **理由**: 1-3 行
+   - **user 必要返答**: GO / HOLD / REJECT のみ
+
+### user に出してはいけないもの
+
+- Codex 生 doc / Acceptance Pack 13-18 項目の全文(関連 file path のみで OK)
+- pytest 結果の long log
+- gcloud / gsutil / git の生 output
+- 「進めていいですか?」(全面禁止、§9 と整合)
+- 候補 2-3 並列で user に選ばせる(§9 と整合、推奨 1 つに圧縮)
+
+### Codex commit boundary(永続)
+
+- Codex commit / Claude push が原則(memory: feedback_codex_commit_claude_push.md)
+- Claude commit は **doc-only 運用立て直し scope** + user 明示 GO 範囲で例外可
+- 両者に共通: `git add -A` 禁止、明示 path のみ、`git diff --cached --name-status` verify 必須(§16)
+
+---
+
+## 18. Acceptance Pack 必須 18 項目(永続、UNKNOWN 検出時 HOLD)
+
+§9 の 13 項目に加え、以下 5 項目を **必須**(全部 YES / NO / UNKNOWN で記入):
+
+14. **Gemini call increase**: YES / NO / UNKNOWN
+15. **Token increase**: YES / NO / UNKNOWN
+16. **Candidate disappearance risk**: YES / NO / UNKNOWN
+17. **Cache impact**: YES / NO / UNKNOWN
+18. **Mail volume impact**: YES / NO / UNKNOWN
+
+### UNKNOWN 検出時の自動判定
+
+- いずれかが UNKNOWN → 推奨判断は **最低 HOLD**(GO 推奨禁止)
+- UNKNOWN を YES/NO に確定するために、追加観察 / read-only verify / Codex 設計便を起こす
+- 確定後に Pack を再提示
+
+### 全項目 NO + 全項目 evidence 揃う場合のみ GO 推奨可
+
+不安要素 1 つでも残るなら HOLD 推奨が default。
+
+---
+
+## 19. mail storm を P1 体感事故として永続記録(本日 2026-05-01 起源)
+
+mail storm のような **コスト事故ではない user 体感事故** を P1 として正式分類。
+
+### 体感事故の定義
+- Gemini call 0 でも user 体感を直接壊す事象
+- mail 過多 / 通知無音 / publish 急減 / X 直撃 / WP front 大規模変動
+
+### P1 体感事故 検出時の手順
+1. §14 8 条件 で narrow hotfix 自律実行 OR Acceptance Pack 経由
+2. `docs/ops/INCIDENT_LIBRARY.md` に 1 page post-mortem 記録(再発防止 anchor)
+3. OPS_BOARD active に entry(severity=P1)、24h 内 close
+4. 真因 fix が必要なら 別 ticket(P2 deferred)起票
+
+### INCIDENT_LIBRARY 参照義務
+- 次の P1 hotfix 判断時、Claude は INCIDENT_LIBRARY.md を必ず参照
+- 過去事例で同じ境界判定をしている場合、その判断を踏襲(または明示的な逸脱理由を記載)
+
+---
+
+## 20. 本日 GO scope 永続化(2026-05-01 user 明示)
+
+### 今日 GO する scope(運用 OS 立て直し only)
+- repo 正本 5 file 永続化
+- チケット 58 → ACTIVE 最大 2 / OBSERVE 最大 1 / READY 最大 3 / HOLD_NEEDS_PACK / FUTURE_USER_GO / FROZEN / DONE への圧縮
+- OWNER 7 軸分離 + user EXECUTION_OWNER 禁止
+- Claude 一次受け徹底(§17)
+- Acceptance Pack 18 項目化(§18)
+- mail storm を P1 体感事故として記録(§19)
+- INCIDENT_LIBRARY.md 新規
+
+### 今日 HOLD(個別施策、deploy / flag / source 変更全部)
+- 290-QA deploy / 282-COST flag ON / 288 source 追加 / Scheduler 変更 / SEO 変更 / live_update 変更 / Gemini call 増加 / mail 通知条件 大改修 / Growth 施策 / X 自動投稿 / cleanup mutation / codex-shadow 再開
+- 298-Phase3 deploy(本日は Pack 整備まで、deploy は明日以降の別 user GO)
+- Codex による **実装準備 / test 追加 / local 検証 / commit/push 候補作成** は Claude 一次受け範囲で OK、本番反映は Acceptance Pack 後
+
+### 今日 REJECT(永続)
+- user を default OWNER にする
+- Acceptance Pack なしの「進めていいですか?」
+- Codex 生回答を user 直送
+- READY を Pack 未完成で使う
+- DONE_PARTIAL / NOT_DONE の復活
+- FROZEN / DEEP_FROZEN を通常 board に大量表示
+- 「ついでに 1 個だけ」の小変更
+- 時間があるから全部やる scope 拡大(時間は **観察 / 証跡 / rollback / Pack 整備** に使う)
+
+---
+
+## 21. 関連 doc(階層、§13 補足、永続正本は 3 つ)
+
+**正本 3 つ**(repo 真正本):
+1. `docs/ops/CURRENT_STATE.md` — 現在地
+2. `docs/ops/OPS_BOARD.yaml` — ticket 状態機械可読
+3. `docs/ops/POLICY.md` — 本 doc(運用ルール)
+
+**補助正本 2 つ**:
+4. `docs/ops/ACCEPTANCE_PACK_TEMPLATE.md` — user GO 提示 template(18 項目)
+5. `docs/ops/NEXT_SESSION_RUNBOOK.md` — 次回開始手順
+6. `docs/ops/INCIDENT_LIBRARY.md` — P1 体感事故 post-mortem ライブラリ
+
+**履歴**(正本ではない):
+- `docs/handoff/session_logs/` — session 単位履歴
+- `docs/handoff/codex_responses/` — Codex 履歴
+- `docs/handoff/codex_requests/` — 旧依頼書(現在 inline prompt 主流)
+
+**記憶補助**(正本ではない):
+- `~/.claude/projects/.../memory/` — Claude 補助記憶、矛盾時 repo 優先
+
+mail / Gmail 通知は **Ops Board ではない**(user 通知 / 異常検知 / 要確認の入口)、状態は OPS_BOARD.yaml に戻す。
+
+---
+
+## 22. MAIL_BUDGET(永続、user 体感事故 防止)
+
+### 通知量上限(永続、SLO 化)
+
+| 指標 | 上限 | violation 検出時 |
+|---|---|---|
+| **Max mails/hour** | 30 通/h(全 publish-notice path 合算)| P1 体感事故扱い、§14 自律 hotfix 検討 |
+| **Max mails/day** | 100 通/d(同上)| P1 体感事故扱い、Acceptance Pack 必須 |
+| **Max old_candidate emit/day** | 0 通/d(298-Phase3 deploy + flag ON 後)| storm 再発検出、即 P1 |
+
+### 禁止 env(永続、再投入禁止、本日 2026-05-01 起源)
+
+- `PUBLISH_NOTICE_REVIEW_WINDOW_HOURS=168` 再投入禁止(本日 P1 storm trigger 確定)
+- `PUBLISH_NOTICE_REVIEW_WINDOW_HOURS` 24h 以外への変更全般、user 明示 GO + Acceptance Pack 必須(`USER_GO_REASON=MAIL_ROUTING_MAJOR`)
+- `PUBLISH_NOTICE_REVIEW_MAX_PER_RUN=0` も実質 mail 全停止に近く禁止(289 と shared cap で巻き添え)
+
+### 単独 safe net 扱い禁止
+
+- **`cap=10/run` だけで safe 扱い禁止**: cap 単独では pool 増加時に cap × N trigger で大量 emit、24h で最大 2880 通可能性
+- safe net = `cap` × `dedup window` × `pool size 制限(persistent ledger)` × `MAIL_BUDGET monitor` の 4 重防御
+- いずれか欠けたら Pack 必須項目に追加
+
+---
+
+## 23. user 通知絞り込みルール(永続、user 接点圧縮)
+
+### Claude が user に出してよい通知の限定列挙
+
+1. **P0 incident**(silent skip / publish 急減 / WP 直接書込 / secret 露出 等)
+2. **P1 incident**(MAIL_BUDGET 違反 / mail storm / 通知無音 / X 直撃 / publish stuck)
+3. **user GO required**(USER_GO_REQUIRED 9 categories の Acceptance Pack 提示時)
+4. **resolved 通知**(P0/P1 を close した時、1 行で完了報告)
+
+### user に出してはいけないもの(永続、§17 と整合)
+
+- Codex 生 doc / completion report 全文
+- Claude / Codex 長文監査 / 細かい作業完了の逐次報告
+- pytest 結果 / gcloud / git の生 output
+- 「進めていいですか?」「ちょっと相談です」(Pack 化 or 自律進行)
+- 個別 ticket 進捗の逐次共有(active board 1 view で済むものを別途 push しない)
+
+### 通知 escalation 判定(Claude 自律)
+
+- P2 以下 → user 通知しない、OPS_BOARD entry 更新のみ
+- P1 ↑ → 体感事故扱いで user 通知、§14 / §19 連動
+- 不明 → 内部判定 / Claude 一次受け、user に投げない
+
+---
+
+## 24. 関連 doc(階層、§13 / §21 統合)
+
+正本 / 補助正本 / 履歴 / 記憶補助 の 4 階層は §21 で確定。
+本セッション(2026-05-01)以降の追記:
+- §22 MAIL_BUDGET → INCIDENT_LIBRARY.md と連動
+- §23 user 通知絞り込み → §17 Claude 一次受けと整合

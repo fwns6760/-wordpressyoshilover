@@ -29,16 +29,14 @@
 
 | # | ticket | phase | status | next_review_at |
 |---|---|---|---|---|
-| 1 | **298-MAIL-STORM-PERMANENT-FIX**(P1, Phase 2 恒久対策) | code fix(scanner persistent ledger Option B、Codex impl 中)、deploy はまだ HOLD | Codex impl 便 fire(`bhbu2amr6`)/ commit + push 後 user 判断は deploy のみ | 2026-05-01 11:00 JST(impl 完了想定) |
+| 1 | **298-MAIL-STORM-Phase3-deploy-pack**(P1)| 1 Pack 条件付き段階化、本日 Pack 整備のみ、deploy は明日 | Phase 2 impl + push 完了(`d44594a` + `ffeba45`)、Phase 3 Pack 18+5 項目 OPS_BOARD entry に embed 済、明日朝 user 1 行提示 | 2026-05-02 06:00 JST |
 
-本日 active 1(298 Phase 1 = HOLD で done 移動、Phase 2 が impl 中)。
+本日 active 1(298-Phase3 Pack 整備、本日 deploy しない、Codex 追加 fire しない)。
 
-### Phase 1 完了(HOLD で自然終息)
+### Phase 1 完了(HOLD で自然終息)/ Phase 2 完了(impl + push)
 
-- user 判断「storm 自然停止なら HOLD」該当
-- 09:50 JST sent=10 第一波最終 trigger / 09:55 以降 sent=0 / 累積 90 通で完結
-- env=0 hotfix を実施すると real review path も止まる影響があったが、自然終息で回避
-- 第二波(5/2 09:00 頃)は Phase 2 deploy で防止前提
+- Phase 1 = user 判断「storm 自然停止なら HOLD」該当、09:55 JST 自然終息(累積 90 通)、env=0 hotfix 回避で real review path 維持
+- Phase 2 = `d44594a`(impl + 7 tests + 3 env knobs default OFF)+ `ffeba45`(deploy Pack final)、push 完了、pytest +0 regression(Claude 追認済)
 
 ---
 
@@ -46,7 +44,7 @@
 
 | # | name | observation 対象 | next_review_at |
 |---|---|---|---|
-| 1 | **production_health_observe**(統合) | 289 24h sent/errors/silent / 282-COST flag OFF live 挙動 / 205 cursor scan / cache_hit 99% / 277 rescue 効果(290 deploy 後) / 281 <24h positive case / 290 NOT_DEPLOYED 維持 | 2026-05-01 17:00 JST |
+| 1 | **production_health_observe**(統合)+ **299-QA**(postgame_strict 3 pre-existing failures 統合観察) | 289 24h sent/errors/silent / 282-COST flag OFF live / 205 cursor scan / cache_hit 99% / 277 rescue / 281 / 290 NOT_DEPLOYED / 299-QA postgame_strict 3 failures 真因 / MAIL_BUDGET 30h/100d / 298-Phase3 Pack 完成度 | 2026-05-01 17:00 JST |
 
 ---
 

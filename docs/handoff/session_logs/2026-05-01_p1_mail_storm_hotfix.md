@@ -20,6 +20,8 @@
 10:07 | storm 自然終息確認 | 298-Phase1 | 09:50 JST sent=10 第一波最後 / 09:55 JST 以降 sent=0 維持 / 累積 90 通で完結 | Phase1 HOLD 確定(実行せず)
 10:10 | Phase2 Codex impl 便 fire | 298-Phase2 | persistent sent ledger Option B impl + test + commit + push、deploy はしない | Codex 完了待ち
 10:21 | impl + push | 298-Phase2 | d44594a | docs update + deploy Pack final
+10:30 | user 方針再整理受領 | 298 | 運用 OS 立て直し only / Phase3 1 Pack 条件付き段階化 / mail 通知大改修 HOLD / 通知体系 全体再設計 HOLD / MAIL_BUDGET + user 通知絞り込み追加 | POLICY §17-§24 追加
+11:00 | docs/ops/ update v3 | 298+299+300 | POLICY §17 一次受け §18 18 項目 §19 体感事故 §20 本日 GO scope §21 正本階層 §22 MAIL_BUDGET §23 user 通知絞り込み / TEMPLATE 18 項目化 / INCIDENT_LIBRARY.md 新規 / 299-QA OBSERVE 起票 / 300-COST FUTURE 起票 / 298-Phase3 Pack 18+5 項目 OPS_BOARD embed | commit + push
 ```
 
 ## hotfix 経過 evidence(数値)

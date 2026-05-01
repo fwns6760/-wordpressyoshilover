@@ -71,12 +71,14 @@ from src.postgame_strict_template import (
     has_sufficient_for_render as _postgame_strict_has_sufficient_for_render,
     render_postgame_strict_body as _postgame_strict_render,
 )
+from src import llm_call_dedupe as _llm_call_dedupe
 from src.gemini_cache import (
     DEFAULT_MODEL_NAME as GEMINI_CACHE_MODEL_NAME,
     GeminiCacheBackendError,
     GeminiCacheKey,
     GeminiCacheManager,
     GeminiCacheValue,
+    classify_lookup_hit_kind as _classify_gemini_cache_hit_kind,
     compute_content_hash as _compute_gemini_content_hash,
 )
 from src.gemini_preflight_gate import (
@@ -4448,6 +4450,18 @@ def _build_gemini_cache_key(
     )
 
 
+def _resolve_cache_metric_post_id(candidate_meta: dict[str, Any] | None) -> int | None:
+    if not isinstance(candidate_meta, dict):
+        return None
+    for key in ("post_id", "wp_post_id", "id"):
+        value = candidate_meta.get(key)
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
 def _build_gemini_preflight_candidate_meta(
     *,
     title: str,
@@ -4531,6 +4545,7 @@ def _log_gemini_cache_lookup(
     cache_key: GeminiCacheKey,
     cache_hit: bool,
     cache_hit_reason: str,
+    cache_hit_kind: str = "unknown",
     gemini_call_made: bool,
     cache_size_bytes: int,
 ) -> None:
@@ -4542,6 +4557,7 @@ def _log_gemini_cache_lookup(
         "prompt_template_id": str(cache_key.prompt_template_id or ""),
         "cache_hit": bool(cache_hit),
         "cache_hit_reason": str(cache_hit_reason or ""),
+        "cache_hit_kind": str(cache_hit_kind or "unknown"),
         "gemini_call_made": bool(gemini_call_made),
         "cache_size_bytes": int(cache_size_bytes or 0),
     }
@@ -4592,6 +4608,7 @@ def _gemini_text_with_cache(
     telemetry: dict[str, Any] = {
         "cache_hit": False,
         "cache_hit_reason": "cache_disabled",
+        "cache_hit_kind": "unknown",
         "source_url_hash": cache_key.source_url_hash,
         "content_hash": cache_key.content_hash,
         "cache_size_bytes": 0,
@@ -4646,14 +4663,34 @@ def _gemini_text_with_cache(
             telemetry["cache_size_bytes"] = cache_size_bytes
             telemetry["cache_hit_reason"] = hit_reason
             if cached is not None:
+                hit_kind = _classify_gemini_cache_hit_kind(
+                    cache_key=cache_key,
+                    cached_value=cached,
+                    hit_reason=hit_reason,
+                    expected_model=GEMINI_CACHE_MODEL_NAME,
+                )
                 telemetry["cache_hit"] = True
+                telemetry["cache_hit_kind"] = hit_kind
                 telemetry["gemini_call_made"] = False
+                _llm_call_dedupe.record_cache_hit_metric(
+                    hit_kind=hit_kind,
+                    post_id=_resolve_cache_metric_post_id(candidate_meta),
+                    content_hash=cache_key.content_hash,
+                    prompt_template_id=cache_key.prompt_template_id,
+                    model=GEMINI_CACHE_MODEL_NAME,
+                    cached_model=cached.model,
+                    source_url_hash=cache_key.source_url_hash,
+                    cache_hit_reason=hit_reason,
+                    layer="gemini_cache",
+                    now=now,
+                )
                 _log_gemini_cache_lookup(
                     logger,
                     source_url=source_url,
                     cache_key=cache_key,
                     cache_hit=True,
                     cache_hit_reason=hit_reason,
+                    cache_hit_kind=hit_kind,
                     gemini_call_made=False,
                     cache_size_bytes=cache_size_bytes,
                 )
@@ -4692,6 +4729,7 @@ def _gemini_text_with_cache(
         cache_key=cache_key,
         cache_hit=False,
         cache_hit_reason=str(telemetry.get("cache_hit_reason") or "miss"),
+        cache_hit_kind=str(telemetry.get("cache_hit_kind") or "unknown"),
         gemini_call_made=True,
         cache_size_bytes=int(telemetry.get("cache_size_bytes") or 0),
     )

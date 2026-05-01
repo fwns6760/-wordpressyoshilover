@@ -269,12 +269,37 @@ class GeminiCacheManager:
         return len(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8"))
 
 
+def classify_lookup_hit_kind(
+    *,
+    cache_key: GeminiCacheKey,
+    cached_value: GeminiCacheValue | None,
+    hit_reason: str,
+    expected_model: str = DEFAULT_MODEL_NAME,
+) -> str:
+    if cached_value is None:
+        return "unknown"
+    normalized_reason = str(hit_reason or "").strip().lower()
+    if normalized_reason not in {"content_hash_exact", "cooldown_active"}:
+        return "unknown"
+    cached_prompt_template_id = str(cached_value.prompt_template_id or "").strip()
+    cached_model = str(cached_value.model or DEFAULT_MODEL_NAME).strip() or DEFAULT_MODEL_NAME
+    normalized_expected_model = str(expected_model or DEFAULT_MODEL_NAME).strip() or DEFAULT_MODEL_NAME
+    if (
+        normalized_reason == "content_hash_exact"
+        and cached_prompt_template_id == str(cache_key.prompt_template_id or "").strip()
+        and cached_model == normalized_expected_model
+    ):
+        return "exact_hit"
+    return "cooldown_hit"
+
+
 __all__ = [
     "DEFAULT_MODEL_NAME",
     "GeminiCacheBackendError",
     "GeminiCacheKey",
     "GeminiCacheManager",
     "GeminiCacheValue",
+    "classify_lookup_hit_kind",
     "compute_content_hash",
     "normalize_content_text",
 ]

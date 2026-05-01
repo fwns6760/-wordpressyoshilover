@@ -86,13 +86,15 @@ This file is the first operational document to read at session start. If this fi
 
 | ticket | current state | allowed now | user GO required for |
 |---|---|---|---|
-| 293-COST | READY_FOR_DEPLOY (impl + 4 commit + push 完了、pytest 2018/0) | image rebuild + flag ON Pack(USER_DECISION_REQUIRED)or live-inert deploy if CLAUDE_AUTO_GO | image rebuild + flag ON, behavior-changing env, Gemini increase |
-| 300-COST | ACTIVE, read-only analysis | source-side cost analysis, Pack/test/rollback planning | source-side behavior change until classified |
-| 299-QA | OBSERVE | flaky/transient evidence and baseline recording | none unless it becomes deploy/flag work |
-| 298-Phase3 v4 | OBSERVED_OK (deploy 完了、Phase 1-5 pass) | 5/2 09:00 JST Phase 6 第二波防止 verify(Claude 自律 EVIDENCE_ONLY) | DONE 化判定(Phase 6 + 24h 安定確認後) |
-| 282-COST | FUTURE_USER_GO | Pack after 293 | flag ON |
-| 290-QA | FUTURE_USER_GO | live-inert deploy may be CLAUDE_AUTO_GO after classification Pack | weak title rescue enablement |
-| 288-INGEST | FUTURE_USER_GO | source-add decision Pack | source addition |
+| 293-COST | デプロイ直前まで(impl + 4 commit + push 完了、pytest 2018/0) | impl + test + Pack + rollback plan + post-deploy verify plan | 本番 deploy(image rebuild + flag ON) |
+| 300-COST | デプロイ直前まで(read-only analysis) | source-side cost analysis, Pack/test/rollback planning, 実装準備 | 実装 + 本番 deploy |
+| 299-QA | OBSERVE | flaky/transient evidence and baseline recording | deploy 系作業に昇格時は別判定 |
+| 298-Phase3 v4 | OBSERVED_OK(deploy 完了、Phase 1-5 pass、§17 適用外) | Phase 6 verify (5/2 09:00 JST、Claude 自律 EVIDENCE_ONLY)+ 24h 安定 monitor | DONE 化判定(Phase 6 + 24h 安定後) |
+| 282-COST | flag ON 直前まで | Pack + UNKNOWN 潰し + rollback plan(293 完了後) | flag ON |
+| 290-QA | デプロイ直前まで | classification Pack + 実装 + Pack | 本番 deploy(weak title rescue enablement)|
+| 288-INGEST | source 追加直前まで | source-add decision Pack + UNKNOWN 潰し | source 追加 |
+
+POLICY §17 Pre-Deploy Stop Mode 適用(298-Phase3 v4 以外、本日 user 明示)。push は本番反映を伴わない運用のため Claude 自律 GO。
 
 ## Decision Batch Format
 

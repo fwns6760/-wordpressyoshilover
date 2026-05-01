@@ -112,6 +112,24 @@ Never use these as normal fixes:
 
 Keep normal review mail, 289 notification mail, and error mail active.
 
+## 7a. Pre-Deploy Stop Mode(POLICY §17、298-Phase3 v4 以外 全 ticket 適用)
+
+298-Phase3 v4 を除く全 ticket は **デプロイ直前まで** 進める。本番反映は user GO まで実行しない。
+
+進めてよい:impl / test / pytest / regression 確認 / commit / push(auto-deploy なし運用)/ Acceptance Pack / rollback plan / post-deploy verify plan / cost / mail / Gemini / candidate disappearance 確認 / UNKNOWN 潰し。
+
+進めてはいけない:Cloud Run deploy / env / flag / Scheduler / SEO / source 追加 / Gemini call 増加 / mail 通知条件 / 本番挙動変化操作。
+
+ticket 別:
+
+- 293-COST: デプロイ直前まで進める
+- 282-COST: flag ON 直前まで進める
+- 290-QA: デプロイ直前まで進める
+- 300-COST: 実装直前または実装準備まで進める
+- 288-INGEST: source 追加直前まで進める
+
+user 向け報告では「READY_FOR_DEPLOY」より「デプロイ直前まで」を使う(POLICY §17.5)。
+
 ## 8. Low-Risk Work Queue
 
 Proceed only inside current ticket scope:

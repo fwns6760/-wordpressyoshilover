@@ -30,6 +30,9 @@
 12:15 | docs/ops/ update v6 | 298-Phase3 | OPS_BOARD active entry を Pack finalize → deploy 進行中に書換 / CURRENT_STATE USER_VISIBLE_NOW 0 件 + HOLD_NEEDS_PACK 3 + FUTURE_USER_GO 7 の 3 分類化 + 58→29 差分 1 行説明 / OBSERVE 統合(299-QA を sub_observe_items 配下) | commit + push
 12:25 | Codex Phase 3 preflight stop | 298-Phase3 | bg bpn4zeuqg は preflight で停止(target ffeba45 != HEAD 65e46bd / 私の v6 doc-only commit が原因)/ live mutation 0、image build 0 / Claude src+tests diff 確認 = ffeba45 と HEAD 等価(0 行)| 再 fire 判断
 12:30 | Codex Phase 3 deploy 再 fire | 298-Phase3 | bg b3h13kthv / target = HEAD 動的、src+tests 等価宣言で preflight 通過設計 / 不変方針 全部維持、user GO 11:00「デプロイをやって」継続 | Codex 完了待ち、Claude 並行で品質部隊 1 画面回答済
+12:50 | Codex retry stop(pytest gate 不一致)| 298-Phase3 | bg b3h13kthv 完了、preflight pytest 0 failures(朝 3 failures は transient / env 依存)、gate 期待値 3 と不一致で deploy stop / live mutation 0 / publish-notice 旧 image:4be818d 維持 | gate 修正 + 再 fire
+12:55 | user 推奨判断受領 | 298-Phase3 | Phase 3 deploy 継続 GO、追加 user 確認不要、完了後 8 項目 1 画面報告 / 17:00 production_health_observe 実施 OK / 追加 Codex fire(新規 lane / 新規 ticket)/ mail 大改修 / Scheduler / SEO / source / Gemini 増は HOLD | v3 prompt で Phase 3 continuation fire
+13:00 | Codex Phase 3 deploy v3 fire | 298-Phase3 | bg /tmp/codex_phase3_deploy_v3.log / pytest gate を「failures = 0 increase」に修正(transient 3 failures は flaky 判定、299-QA は別途 flaky 整理)/ continuation lane | Codex 完了で 8 項目報告
 ```
 
 ## hotfix 経過 evidence(数値)

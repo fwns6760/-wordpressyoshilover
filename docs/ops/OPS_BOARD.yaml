@@ -131,6 +131,69 @@ ready: []
 hold_needs_pack: []
 
 observed_ok:
+  - id: 290-QA-Pack-A
+    title: "weak title rescue live-inert deploy"
+    status: OBSERVED_OK
+    phase: DEPLOY_COMPLETE_FUNCTIONAL_INERT
+    decision_owner: Claude  # CLAUDE_AUTO_GO 該当
+    execution_owner: Claude (gcloud) + user (initial deploy)
+    evidence_owner: Claude
+    user_go_required: false
+    user_go_reason: "n/a (CLAUDE_AUTO_GO live-inert)"
+    current_state:
+      image: "yoshilover-fetcher:c14e269"
+      revision: "yoshilover-fetcher-00176-vnk"
+      env_apply: "ENABLE_WEAK_TITLE_RESCUE 未設定維持 (default OFF, code unreachable)"
+      traffic: "100% (until 293 superseded with d541ebb)"
+      deployed_at: "2026-05-01 20:40 JST"
+    post_deploy_verify_pass:
+      - "image / revision 想定通り"
+      - "env / flag 想定通り (flag OFF default 維持)"
+      - "service 正常起動"
+      - "Scheduler 全 ENABLED"
+      - "errors 0"
+      - "mail volume 不変"
+      - "Gemini delta 0 (code unreachable)"
+      - "silent skip 0"
+      - "MAIL_BRIDGE_FROM 維持"
+      - "publish/review/hold/skip 導線維持"
+    next_action: "Pack B enablement 検討は 1 週間 OBSERVED_OK + Gemini delta UNKNOWN 解消後。本日内なし。"
+
+  - id: 293-COST
+    title: "preflight skip visible化 deploy + env apply"
+    status: OBSERVED_OK_SHORT  # functional full exercise 未到達、AI 上限到達中で preflight gate 未 trigger
+    phase: DEPLOY_COMPLETE_AWAITING_FULL_EXERCISE
+    decision_owner: user  # USER_DECISION_REQUIRED (flag ON)
+    execution_owner: Claude (gcloud direct)
+    evidence_owner: Claude
+    user_go_required: true
+    user_go_reason: "FLAG_ENV (ENABLE_PREFLIGHT_SKIP_NOTIFICATION=1) ※ user GO は POLICY §20 chain 内で受領済"
+    current_state:
+      image_fetcher: "yoshilover-fetcher:d541ebb"
+      revision_fetcher: "yoshilover-fetcher-00177-qtr"
+      image_publish_notice: "publish-notice:d541ebb"
+      env_apply:
+        - "ENABLE_PREFLIGHT_SKIP_NOTIFICATION=1 (両 services)"
+        - "PREFLIGHT_SKIP_LEDGER_PATH default (/tmp/pub004d/preflight_skip_history.jsonl)"
+        - "PREFLIGHT_SKIP_DEDUPE_KEY_FIELDS default (source_url_hash,skip_reason)"
+      traffic: "100% on 00177-qtr"
+      deployed_at: "2026-05-01 21:00 JST"
+    post_deploy_verify_short:
+      - "15 items pass (24 min observe)"
+    full_exercise_pending:
+      reason: "x_ai_generation_count: 10 / x_ai_generation_limit: 10 で AI 生成停止中、preflight gate 未 exercise"
+      preflight_skip_events_observed: 0
+      publish_notice_preflight_mail: 0
+      gemini_delta_measurement: "未測定 (Gemini call 停止中)"
+      expected_full_exercise_at: "5/2 朝 AI 上限 reset 後 + giants-weekday-pre 17:00 等の fetcher run"
+    rollback_target:
+      runtime_image: "yoshilover-fetcher 00176-vnk へ traffic 戻し / publish-notice :1016670 戻し (2-3 min)"
+      runtime_env: "両 services から ENABLE_PREFLIGHT_SKIP_NOTIFICATION 削除 (30 sec)"
+      source_revert: "git revert 10022c0 7c2b0cc afdf140 6932b25 + push origin master"
+    autonomous_rollback_monitor: enabled
+    next_action: "5/2 朝 fetcher full exercise 観測 → preflight skip event 発生確認 → publish-notice 通知発生確認 → FULL_EXERCISE_OK 化 → 282 GO 検討"
+    next_review_at: "2026-05-02 morning (AI 上限 reset + giants-* schedulers 稼働後)"
+
   - id: 298-Phase3-v4
     title: "old-candidate persistent ledger / Case F GCS pre-seed deploy 完了"
     status: OBSERVED_OK
@@ -190,12 +253,12 @@ future_user_go:
     user_go_required: true
     user_go_reason: "FLAG_ENV+COST_INCREASE"
     blocked_by:
-      - "293-COST image rebuild + flag ON deploy + 24h OBSERVED_OK"
+      - "293-COST FULL_EXERCISE_OK (preflight gate 実 exercise + publish-notice 通知発生 + Gemini delta 測定)"
     pack_v3: "docs/handoff/codex_responses/2026-05-01_282_COST_pack_v3_template_refresh.md (commit d2ee8e3)"
     pack_v3_recommendation: HOLD
     user_facing_phrase: "flag ON 直前まで(POLICY §17.3)"
-    next_action: "Hold until 293 deploy + 24h OBSERVED_OK; then user GO で flag ON."
-    expiry: "293 deploy 完了 + 24h 安定後"
+    next_action: "HOLD until 293 FULL_EXERCISE_OK; 5/2 朝 AI 上限 reset 後 fetcher run で preflight gate exercise + publish-notice 通知発生 evidence 揃ってから user GO 提示。"
+    expiry: "293 FULL_EXERCISE_OK + 24h 安定後"
 
   - id: 290-QA
     title: "weak title rescue (split into Pack A + Pack B)"

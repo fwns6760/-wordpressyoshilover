@@ -24,6 +24,8 @@ DEFAULT_RUNNER_MODULE = "src.tools.run_publish_notice_email_dry_run"
 DEFAULT_CURSOR_PATH = "/tmp/publish_notice_cursor.txt"
 DEFAULT_HISTORY_PATH = "/tmp/publish_notice_history.json"
 DEFAULT_QUEUE_PATH = "/tmp/publish_notice_queue.jsonl"
+DEFAULT_OLD_CANDIDATE_LEDGER_PATH = "/tmp/pub004d/publish_notice_old_candidate_once.json"
+DEFAULT_OLD_CANDIDATE_LEDGER_REMOTE_NAME = "publish_notice_old_candidate_once.json"
 DEFAULT_GUARDED_PUBLISH_PREFIX = "guarded_publish"
 DEFAULT_GUARDED_HISTORY_PATH = "/tmp/pub004d/guarded_publish_history.jsonl"
 DEFAULT_GUARDED_HISTORY_CURSOR_PATH = "/tmp/pub004d/guarded_publish_history_cursor.txt"
@@ -262,6 +264,13 @@ def _parse_entrypoint_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--history-path", default=os.environ.get("PUBLISH_NOTICE_HISTORY_PATH", DEFAULT_HISTORY_PATH))
     parser.add_argument("--queue-path", default=os.environ.get("PUBLISH_NOTICE_QUEUE_PATH", DEFAULT_QUEUE_PATH))
     parser.add_argument(
+        "--old-candidate-ledger-path",
+        default=os.environ.get(
+            "PUBLISH_NOTICE_OLD_CANDIDATE_LEDGER_PATH",
+            DEFAULT_OLD_CANDIDATE_LEDGER_PATH,
+        ),
+    )
+    parser.add_argument(
         "--guarded-history-path",
         default=os.environ.get("PUBLISH_NOTICE_GUARDED_PUBLISH_HISTORY_PATH", DEFAULT_GUARDED_HISTORY_PATH),
     )
@@ -325,10 +334,13 @@ def run_publish_notice_entrypoint(argv: Sequence[str] | None = None) -> int:
         queue_path=str(args.queue_path),
         runner_args=args.runner_args,
     )
+    runner_env = os.environ.copy()
+    runner_env["PUBLISH_NOTICE_OLD_CANDIDATE_LEDGER_PATH"] = str(args.old_candidate_ledger_path)
     with (
         manager.with_state("cursor.txt", args.cursor_path),
         manager.with_state("history.json", args.history_path),
         manager.with_state("queue.jsonl", args.queue_path),
+        manager.with_state(DEFAULT_OLD_CANDIDATE_LEDGER_REMOTE_NAME, args.old_candidate_ledger_path),
         manager.with_state("guarded_publish_history_cursor.txt", args.guarded_history_cursor_path),
         guarded_history_manager.with_state(
             "guarded_publish_history.jsonl",
@@ -336,7 +348,7 @@ def run_publish_notice_entrypoint(argv: Sequence[str] | None = None) -> int:
             upload_on_exit=False,
         ),
     ):
-        completed = subprocess.run(command, check=False)
+        completed = subprocess.run(command, check=False, env=runner_env)
     return int(completed.returncode)
 
 

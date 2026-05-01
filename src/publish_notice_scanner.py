@@ -44,6 +44,11 @@ _POST_GEN_VALIDATE_RECORD_TYPE = "post_gen_validate"
 _POST_GEN_VALIDATE_REVIEW_PREFIX = "【要review｜post_gen_validate】"
 _POST_GEN_VALIDATE_GCS_BUCKET = "baseballsite-yoshilover-state"
 _POST_GEN_VALIDATE_GCS_OBJECT = "post_gen_validate/post_gen_validate_history.jsonl"
+_OLD_CANDIDATE_ONCE_ENV_FLAG = "ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE"
+_OLD_CANDIDATE_MIN_AGE_DAYS_ENV = "PUBLISH_NOTICE_OLD_CANDIDATE_MIN_AGE_DAYS"
+_OLD_CANDIDATE_MIN_AGE_DAYS_DEFAULT = 3
+_OLD_CANDIDATE_LEDGER_PATH_ENV = "PUBLISH_NOTICE_OLD_CANDIDATE_LEDGER_PATH"
+_OLD_CANDIDATE_LEDGER_DEFAULT_PATH = Path("/tmp/pub004d/publish_notice_old_candidate_once.json")
 _GUARDED_PUBLISH_REVIEW_SUBJECT_RE = re.compile(r"^【[^】]+】")
 _EXCLUDED_GUARDED_HOLD_REASONS = frozenset(
     {
@@ -70,6 +75,9 @@ class GuardedPublishHistoryScanResult:
     emitted: list[PublishNoticeRequest]
     skipped: list[tuple[int | str, str]]
     history_after: dict[str, str]
+    old_candidate_ledger_after: dict[str, str] | None = None
+    old_candidate_ledger_path: Path | None = None
+    old_candidate_ledger_write_needed: bool = False
     cursor_before: str | None = None
     cursor_after: str | None = None
     cursor_path: Path | None = None
@@ -137,6 +145,34 @@ def _resolve_post_gen_validate_history_cursor_path(value: str | Path | None = No
     if env_value:
         return _path(env_value)
     return _POST_GEN_VALIDATE_HISTORY_CURSOR_DEFAULT_PATH
+
+
+def _publish_notice_old_candidate_once_enabled() -> bool:
+    return str(os.environ.get(_OLD_CANDIDATE_ONCE_ENV_FLAG, "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _resolve_old_candidate_min_age_days() -> int:
+    env_value = str(os.environ.get(_OLD_CANDIDATE_MIN_AGE_DAYS_ENV, "")).strip()
+    if not env_value:
+        return _OLD_CANDIDATE_MIN_AGE_DAYS_DEFAULT
+    try:
+        return max(0, int(env_value))
+    except ValueError:
+        return _OLD_CANDIDATE_MIN_AGE_DAYS_DEFAULT
+
+
+def _resolve_old_candidate_ledger_path(value: str | Path | None = None) -> Path:
+    if value is not None and str(value).strip():
+        return _path(value)
+    env_value = str(os.environ.get(_OLD_CANDIDATE_LEDGER_PATH_ENV, "")).strip()
+    if env_value:
+        return _path(env_value)
+    return _OLD_CANDIDATE_LEDGER_DEFAULT_PATH
 
 
 def _post_gen_validate_notification_enabled() -> bool:
@@ -739,6 +775,18 @@ def _request_from_post(post: Mapping[str, Any]) -> PublishNoticeRequest:
     )
 
 
+def _is_old_candidate_over_threshold(
+    post: Mapping[str, Any],
+    *,
+    now: datetime,
+    min_age_days: int,
+) -> bool:
+    post_dt = _parse_datetime_to_jst(post.get("date"))
+    if post_dt is None:
+        return False
+    return (now - post_dt).days >= min_age_days
+
+
 def scan_guarded_publish_history(
     *,
     guarded_publish_history_path: str | Path | None = None,
@@ -762,6 +810,16 @@ def scan_guarded_publish_history(
         dict(history) if history is not None else _load_history(history_file),
         now=current_now,
     )
+    old_candidate_once_enabled = _publish_notice_old_candidate_once_enabled()
+    old_candidate_min_age_days = _resolve_old_candidate_min_age_days()
+    old_candidate_ledger_file = (
+        _resolve_old_candidate_ledger_path() if old_candidate_once_enabled else None
+    )
+    current_old_candidate_ledger = (
+        _load_history(old_candidate_ledger_file)
+        if old_candidate_ledger_file is not None
+        else {}
+    )
     resolved_max_per_run = _resolve_review_max_per_run(max_per_run)
     if resolved_max_per_run <= 0:
         if write_history:
@@ -770,6 +828,11 @@ def scan_guarded_publish_history(
             emitted=[],
             skipped=[],
             history_after=current_history,
+            old_candidate_ledger_after=(
+                dict(current_old_candidate_ledger) if old_candidate_once_enabled else None
+            ),
+            old_candidate_ledger_path=old_candidate_ledger_file,
+            old_candidate_ledger_write_needed=False,
             cursor_before=_read_cursor(guarded_cursor_file),
             cursor_after=_read_cursor(guarded_cursor_file),
             cursor_path=guarded_cursor_file,
@@ -797,11 +860,13 @@ def scan_guarded_publish_history(
     emitted: list[PublishNoticeRequest] = []
     skipped: list[tuple[int | str, str]] = []
     next_history = dict(current_history)
+    next_old_candidate_ledger = dict(current_old_candidate_ledger)
     seen_post_ids: set[str] = set()
     skipped_by_dedup = 0
     skipped_by_judgment_filter = 0
     scanned_records = 0
     hit_max_per_run = False
+    old_candidate_ledger_write_needed = False
 
     for entry in history_entries:
         if len(emitted) >= resolved_max_per_run:
@@ -826,7 +891,12 @@ def scan_guarded_publish_history(
             skipped_by_judgment_filter += 1
             skipped.append((post_id, "REVIEW_EXCLUDED"))
             continue
-        if post_key in seen_post_ids or _is_recent_duplicate(next_history, post_id, now=current_now):
+        if post_key in seen_post_ids:
+            skipped_by_dedup += 1
+            skipped.append((post_id, "REVIEW_RECENT_DUPLICATE"))
+            continue
+        old_candidate_once_path = old_candidate_once_enabled and hold_reason == "backlog_only"
+        if not old_candidate_once_path and _is_recent_duplicate(next_history, post_id, now=current_now):
             skipped_by_dedup += 1
             skipped.append((post_id, "REVIEW_RECENT_DUPLICATE"))
             continue
@@ -843,6 +913,22 @@ def scan_guarded_publish_history(
         if post_status == "publish":
             skipped.append((post_id, "REVIEW_ALREADY_PUBLISHED"))
             continue
+        is_old_candidate_over_threshold = False
+        if old_candidate_once_path:
+            is_old_candidate_over_threshold = _is_old_candidate_over_threshold(
+                post,
+                now=current_now,
+                min_age_days=old_candidate_min_age_days,
+            )
+            if is_old_candidate_over_threshold:
+                if post_key in next_old_candidate_ledger:
+                    skipped_by_dedup += 1
+                    skipped.append((post_id, "OLD_CANDIDATE_PERMANENT_DEDUP"))
+                    continue
+            elif _is_recent_duplicate(next_history, post_id, now=current_now):
+                skipped_by_dedup += 1
+                skipped.append((post_id, "REVIEW_RECENT_DUPLICATE"))
+                continue
 
         base_request = _request_from_post(post)
         request = PublishNoticeRequest(
@@ -864,6 +950,9 @@ def scan_guarded_publish_history(
         emitted.append(request)
         seen_post_ids.add(post_key)
         next_history[post_key] = review_recorded_at_iso
+        if old_candidate_once_path and is_old_candidate_over_threshold:
+            next_old_candidate_ledger[post_key] = review_recorded_at_iso
+            old_candidate_ledger_write_needed = True
         _append_queue_log(
             queue_path,
             status="queued",
@@ -882,6 +971,12 @@ def scan_guarded_publish_history(
 
     if write_history:
         _write_history(history_file, next_history)
+        if (
+            old_candidate_once_enabled
+            and old_candidate_ledger_write_needed
+            and old_candidate_ledger_file is not None
+        ):
+            _write_history(old_candidate_ledger_file, next_old_candidate_ledger)
     cursor_write_needed = bool(cursor_after) and cursor_after != cursor_before
     if write_cursor and cursor_write_needed and cursor_after is not None:
         _write_cursor(guarded_cursor_file, cursor_after)
@@ -919,6 +1014,9 @@ def scan_guarded_publish_history(
         emitted=emitted,
         skipped=skipped,
         history_after=next_history,
+        old_candidate_ledger_after=next_old_candidate_ledger if old_candidate_once_enabled else None,
+        old_candidate_ledger_path=old_candidate_ledger_file,
+        old_candidate_ledger_write_needed=old_candidate_ledger_write_needed,
         cursor_before=cursor_before,
         cursor_after=cursor_after,
         cursor_path=guarded_cursor_file,
@@ -1232,6 +1330,12 @@ def scan(
     cursor_after = latest_post_dt.isoformat() if latest_post_dt is not None else current_now.isoformat()
     _write_history(history_file, next_history)
     _write_cursor(cursor_file, cursor_after)
+    if (
+        review_scan.old_candidate_ledger_write_needed
+        and review_scan.old_candidate_ledger_path is not None
+        and review_scan.old_candidate_ledger_after is not None
+    ):
+        _write_history(review_scan.old_candidate_ledger_path, review_scan.old_candidate_ledger_after)
     if review_scan.cursor_write_needed and review_scan.cursor_path is not None and review_scan.cursor_after is not None:
         _write_cursor(review_scan.cursor_path, review_scan.cursor_after)
     if (

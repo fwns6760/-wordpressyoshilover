@@ -387,6 +387,116 @@ class PublishNoticeEntrypointTests(unittest.TestCase):
         ]
         self.assertEqual(guarded_history_upload_cp, [])
 
+    def test_entrypoint_restores_and_uploads_old_candidate_once_ledger(self) -> None:
+        runner_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cursor_path = Path(tmpdir) / "cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            old_candidate_ledger_path = Path(tmpdir) / "publish_notice_old_candidate_once.json"
+
+            def fake_run(cmd, **kwargs):
+                if cmd[0] == "gcloud" and cmd[4] == "cp" and cmd[5].startswith("gs://"):
+                    if cmd[5].endswith("/guarded_publish_history.jsonl"):
+                        guarded_history_path.write_text("", encoding="utf-8")
+                        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=b"", stderr=b"")
+                    if cmd[5].endswith("/publish_notice_old_candidate_once.json"):
+                        old_candidate_ledger_path.write_text(
+                            json.dumps({"901": "2026-05-01T09:00:00+09:00"}, ensure_ascii=False) + "\n",
+                            encoding="utf-8",
+                        )
+                        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=b"", stderr=b"")
+                    raise subprocess.CalledProcessError(
+                        returncode=1,
+                        cmd=cmd,
+                        stderr=b"CommandException: No URLs matched",
+                    )
+                if cmd[0] == sys.executable:
+                    self.assertEqual(
+                        kwargs["env"]["PUBLISH_NOTICE_OLD_CANDIDATE_LEDGER_PATH"],
+                        str(old_candidate_ledger_path),
+                    )
+                    cursor_path.write_text("cursor\n", encoding="utf-8")
+                    history_path.write_text("{}\n", encoding="utf-8")
+                    queue_path.write_text('{"status":"queued"}\n', encoding="utf-8")
+                    guarded_cursor_path.write_text("2026-04-24T11:30:00+09:00\n", encoding="utf-8")
+                    old_candidate_ledger_path.write_text(
+                        json.dumps({"901": "2026-05-01T09:00:00+09:00", "902": "2026-05-01T09:05:00+09:00"}, ensure_ascii=False)
+                        + "\n",
+                        encoding="utf-8",
+                    )
+                    return runner_result
+                if cmd[0] == "gcloud" and cmd[4] in {"cp", "mv"}:
+                    return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=b"", stderr=b"")
+                raise AssertionError(f"unexpected command: {cmd}")
+
+            with patch("subprocess.run", side_effect=fake_run) as mocked_run:
+                exit_code = cloud_run_persistence.run_publish_notice_entrypoint(
+                    [
+                        "--bucket-name",
+                        "bucket-name",
+                        "--prefix",
+                        "publish_notice",
+                        "--project-id",
+                        "project-id",
+                        "--cursor-path",
+                        str(cursor_path),
+                        "--history-path",
+                        str(history_path),
+                        "--queue-path",
+                        str(queue_path),
+                        "--old-candidate-ledger-path",
+                        str(old_candidate_ledger_path),
+                        "--guarded-history-path",
+                        str(guarded_history_path),
+                        "--guarded-history-cursor-path",
+                        str(guarded_cursor_path),
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        commands = [call.args[0] for call in mocked_run.call_args_list]
+        self.assertIn(
+            [
+                "gcloud",
+                "--project",
+                "project-id",
+                "storage",
+                "cp",
+                "gs://bucket-name/publish_notice/publish_notice_old_candidate_once.json",
+                str(old_candidate_ledger_path),
+                "--quiet",
+            ],
+            commands,
+        )
+        old_candidate_upload_cp = [
+            command
+            for command in commands
+            if command[:6] == ["gcloud", "--project", "project-id", "storage", "cp", str(old_candidate_ledger_path)]
+        ]
+        self.assertTrue(old_candidate_upload_cp)
+        self.assertTrue(
+            old_candidate_upload_cp[0][6].startswith(
+                "gs://bucket-name/publish_notice/publish_notice_old_candidate_once.json.uploading-"
+            )
+        )
+        self.assertIn(
+            [
+                "gcloud",
+                "--project",
+                "project-id",
+                "storage",
+                "mv",
+                old_candidate_upload_cp[0][6],
+                "gs://bucket-name/publish_notice/publish_notice_old_candidate_once.json",
+                "--quiet",
+            ],
+            commands,
+        )
+
     def test_entrypoint_returns_runner_exit_code(self) -> None:
         runner_result = subprocess.CompletedProcess(args=[], returncode=7, stdout="", stderr="")
         with tempfile.TemporaryDirectory() as tmpdir:

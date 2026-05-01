@@ -472,6 +472,279 @@ class PublishNoticeScannerTests(unittest.TestCase):
         self.assertEqual(rows[0]["reason"], "backlog_only")
         self.assertTrue(rows[0]["subject"].startswith("【要確認(古い候補)】"))
 
+    def test_scan_guarded_publish_history_old_candidate_over_threshold_emits_once_and_records_permanent_ledger(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            old_candidate_ledger_path = Path(tmpdir) / "publish_notice_old_candidate_once.json"
+            guarded_history_path.write_text(
+                json.dumps(self._guarded_entry(post_id=901), ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE": "1",
+                    "PUBLISH_NOTICE_OLD_CANDIDATE_MIN_AGE_DAYS": "3",
+                    "PUBLISH_NOTICE_OLD_CANDIDATE_LEDGER_PATH": str(old_candidate_ledger_path),
+                },
+                clear=False,
+            ):
+                result = scanner.scan_guarded_publish_history(
+                    guarded_publish_history_path=guarded_history_path,
+                    cursor_path=guarded_cursor_path,
+                    history_path=history_path,
+                    queue_path=queue_path,
+                    fetch_post_detail=lambda base, post_id: self._post(
+                        id=post_id,
+                        status="draft",
+                        date="2026-04-20T10:00:00+09:00",
+                        link=f"https://yoshilover.com/draft-{post_id}/",
+                    ),
+                    now=lambda: NOW,
+                )
+
+            ledger = json.loads(old_candidate_ledger_path.read_text(encoding="utf-8"))
+
+        self.assertEqual([request.post_id for request in result.emitted], [901])
+        self.assertIn("901", ledger)
+        self.assertEqual(result.old_candidate_ledger_after, ledger)
+        self.assertTrue(result.old_candidate_ledger_write_needed)
+
+    def test_scan_guarded_publish_history_old_candidate_over_threshold_is_suppressed_after_permanent_ledger_hit(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            old_candidate_ledger_path = Path(tmpdir) / "publish_notice_old_candidate_once.json"
+            guarded_history_path.write_text(
+                json.dumps(self._guarded_entry(post_id=901), ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+            old_candidate_ledger_path.write_text(
+                json.dumps({"901": "2026-04-24T10:30:00+09:00"}, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE": "1",
+                    "PUBLISH_NOTICE_OLD_CANDIDATE_MIN_AGE_DAYS": "3",
+                    "PUBLISH_NOTICE_OLD_CANDIDATE_LEDGER_PATH": str(old_candidate_ledger_path),
+                },
+                clear=False,
+            ):
+                result = scanner.scan_guarded_publish_history(
+                    guarded_publish_history_path=guarded_history_path,
+                    cursor_path=guarded_cursor_path,
+                    history_path=history_path,
+                    queue_path=queue_path,
+                    fetch_post_detail=lambda base, post_id: self._post(
+                        id=post_id,
+                        status="draft",
+                        date="2026-04-20T10:00:00+09:00",
+                    ),
+                    now=lambda: NOW,
+                )
+
+            ledger = json.loads(old_candidate_ledger_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result.emitted, [])
+        self.assertEqual(result.skipped, [(901, "OLD_CANDIDATE_PERMANENT_DEDUP")])
+        self.assertEqual(ledger, {"901": "2026-04-24T10:30:00+09:00"})
+        self.assertFalse(queue_path.exists())
+
+    def test_scan_guarded_publish_history_backlog_only_under_threshold_still_uses_existing_24h_recent_dedup(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            old_candidate_ledger_path = Path(tmpdir) / "publish_notice_old_candidate_once.json"
+            guarded_history_path.write_text(
+                json.dumps(self._guarded_entry(post_id=905), ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+            history_path.write_text(
+                json.dumps({"905": NOW.isoformat()}, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE": "1",
+                    "PUBLISH_NOTICE_OLD_CANDIDATE_MIN_AGE_DAYS": "3",
+                    "PUBLISH_NOTICE_OLD_CANDIDATE_LEDGER_PATH": str(old_candidate_ledger_path),
+                },
+                clear=False,
+            ):
+                result = scanner.scan_guarded_publish_history(
+                    guarded_publish_history_path=guarded_history_path,
+                    cursor_path=guarded_cursor_path,
+                    history_path=history_path,
+                    queue_path=queue_path,
+                    fetch_post_detail=lambda base, post_id: self._post(
+                        id=post_id,
+                        status="draft",
+                        date="2026-04-23T10:00:00+09:00",
+                    ),
+                    now=lambda: NOW,
+                )
+
+        self.assertEqual(result.emitted, [])
+        self.assertEqual(result.skipped, [(905, "REVIEW_RECENT_DUPLICATE")])
+        self.assertFalse(old_candidate_ledger_path.exists())
+        self.assertFalse(queue_path.exists())
+
+    def test_scan_guarded_publish_history_cleanup_review_bypasses_old_candidate_once_ledger(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            old_candidate_ledger_path = Path(tmpdir) / "publish_notice_old_candidate_once.json"
+            guarded_history_path.write_text(
+                json.dumps(
+                    self._guarded_entry(
+                        post_id=902,
+                        judgment="review",
+                        hold_reason="cleanup_required",
+                    ),
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            old_candidate_ledger_path.write_text(
+                json.dumps({"902": "2026-04-24T09:00:00+09:00"}, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE": "1",
+                    "PUBLISH_NOTICE_OLD_CANDIDATE_MIN_AGE_DAYS": "3",
+                    "PUBLISH_NOTICE_OLD_CANDIDATE_LEDGER_PATH": str(old_candidate_ledger_path),
+                },
+                clear=False,
+            ):
+                result = scanner.scan_guarded_publish_history(
+                    guarded_publish_history_path=guarded_history_path,
+                    cursor_path=guarded_cursor_path,
+                    history_path=history_path,
+                    queue_path=queue_path,
+                    fetch_post_detail=lambda base, post_id: self._post(
+                        id=post_id,
+                        status="draft",
+                        title={"rendered": "レビュー待ち記事"},
+                    ),
+                    now=lambda: NOW,
+                )
+
+        self.assertEqual([request.post_id for request in result.emitted], [902])
+        self.assertTrue(str(result.emitted[0].subject_override).startswith("【要review】"))
+
+    def test_scan_guarded_publish_history_repeated_old_candidate_after_24h_dedup_expiry_with_flag_on_does_not_re_emit(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            old_candidate_ledger_path = Path(tmpdir) / "publish_notice_old_candidate_once.json"
+            first_entry = self._guarded_entry(post_id=906, ts="2026-04-24T11:00:00+09:00")
+            second_entry = self._guarded_entry(post_id=906, ts="2026-04-25T13:00:00+09:00")
+            guarded_history_path.write_text(
+                json.dumps(first_entry, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+
+            env = {
+                "ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE": "1",
+                "PUBLISH_NOTICE_OLD_CANDIDATE_MIN_AGE_DAYS": "3",
+                "PUBLISH_NOTICE_OLD_CANDIDATE_LEDGER_PATH": str(old_candidate_ledger_path),
+            }
+            fetch_post_detail = lambda base, post_id: self._post(
+                id=post_id,
+                status="draft",
+                date="2026-04-20T10:00:00+09:00",
+            )
+
+            with patch.dict("os.environ", env, clear=False):
+                first_result = scanner.scan_guarded_publish_history(
+                    guarded_publish_history_path=guarded_history_path,
+                    cursor_path=guarded_cursor_path,
+                    history_path=history_path,
+                    queue_path=queue_path,
+                    fetch_post_detail=fetch_post_detail,
+                    now=lambda: NOW,
+                )
+                with guarded_history_path.open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(second_entry, ensure_ascii=False) + "\n")
+                second_result = scanner.scan_guarded_publish_history(
+                    guarded_publish_history_path=guarded_history_path,
+                    cursor_path=guarded_cursor_path,
+                    history_path=history_path,
+                    queue_path=queue_path,
+                    fetch_post_detail=fetch_post_detail,
+                    now=lambda: datetime(2026, 4, 25, 14, 0, tzinfo=scanner.JST),
+                )
+
+        self.assertEqual([request.post_id for request in first_result.emitted], [906])
+        self.assertEqual(second_result.emitted, [])
+        self.assertEqual(second_result.skipped, [(906, "OLD_CANDIDATE_PERMANENT_DEDUP")])
+
+    def test_scan_guarded_publish_history_repeated_old_candidate_after_24h_dedup_expiry_with_flag_off_still_re_emits_baseline(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            first_entry = self._guarded_entry(post_id=907, ts="2026-04-24T11:00:00+09:00")
+            second_entry = self._guarded_entry(post_id=907, ts="2026-04-25T13:00:00+09:00")
+            guarded_history_path.write_text(
+                json.dumps(first_entry, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+            fetch_post_detail = lambda base, post_id: self._post(
+                id=post_id,
+                status="draft",
+                date="2026-04-20T10:00:00+09:00",
+            )
+
+            with patch.dict(
+                "os.environ",
+                {"ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE": "0"},
+                clear=False,
+            ):
+                first_result = scanner.scan_guarded_publish_history(
+                    guarded_publish_history_path=guarded_history_path,
+                    cursor_path=guarded_cursor_path,
+                    history_path=history_path,
+                    queue_path=queue_path,
+                    fetch_post_detail=fetch_post_detail,
+                    now=lambda: NOW,
+                )
+                with guarded_history_path.open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(second_entry, ensure_ascii=False) + "\n")
+                second_result = scanner.scan_guarded_publish_history(
+                    guarded_publish_history_path=guarded_history_path,
+                    cursor_path=guarded_cursor_path,
+                    history_path=history_path,
+                    queue_path=queue_path,
+                    fetch_post_detail=fetch_post_detail,
+                    now=lambda: datetime(2026, 4, 25, 14, 0, tzinfo=scanner.JST),
+                )
+
+        self.assertEqual([request.post_id for request in first_result.emitted], [907])
+        self.assertEqual([request.post_id for request in second_result.emitted], [907])
+
     def test_scan_guarded_publish_history_queues_cleanup_review(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"

@@ -46,6 +46,7 @@ TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
 PREFLIGHT_ENV_FLAG = "ENABLE_GEMINI_PREFLIGHT"
 LIVE_UPDATE_ENV_FLAG = "ENABLE_LIVE_UPDATE_ARTICLES"
 PREFLIGHT_SKIP_LAYER = "preflight"
+PREFLIGHT_SKIP_RECORD_TYPE = "preflight_skip"
 
 _BACKLOG_CUTOFF_HOURS = 6.0
 _FARM_RESULT_MAX_AGE_HOURS = 24.0
@@ -290,6 +291,7 @@ def should_skip_gemini(candidate: dict[str, Any], *, now: datetime | None = None
 def emit_gemini_call_skipped(logger, *, candidate: dict[str, Any], skip_reason: str) -> None:
     payload = {
         "event": "gemini_call_skipped",
+        "record_type": PREFLIGHT_SKIP_RECORD_TYPE,
         "post_url": str(candidate.get("post_url") or candidate.get("source_url") or ""),
         "source_url_hash": str(candidate.get("source_url_hash") or ""),
         "content_hash": str(candidate.get("content_hash") or ""),

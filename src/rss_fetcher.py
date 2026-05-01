@@ -81,6 +81,7 @@ from src.gemini_cache import (
 )
 from src.gemini_preflight_gate import (
     PREFLIGHT_SKIP_LAYER,
+    PREFLIGHT_SKIP_RECORD_TYPE,
     PreflightSkipResult,
     emit_gemini_call_skipped,
     should_skip_gemini,
@@ -185,11 +186,16 @@ GEMINI_POSTGAME_STRICT_SLOTFILL_TEMPLATE_ID = "postgame_strict_slotfill_v1"
 GEMINI_POSTGAME_PARTS_TEMPLATE_ID = "postgame_article_parts_v1"
 GEMINI_STRICT_PROMPT_TEMPLATE_VERSION = "v1"
 POST_GEN_VALIDATE_NOTIFICATION_ENV_FLAG = "ENABLE_POST_GEN_VALIDATE_NOTIFICATION"
+PREFLIGHT_SKIP_NOTIFICATION_ENV_FLAG = "ENABLE_PREFLIGHT_SKIP_NOTIFICATION"
+PREFLIGHT_SKIP_LEDGER_PATH_ENV = "PREFLIGHT_SKIP_LEDGER_PATH"
 WEAK_TITLE_RESCUE_ENV_FLAG = "ENABLE_WEAK_TITLE_RESCUE"
 POST_GEN_VALIDATE_HISTORY_DEFAULT_PATH = Path("/tmp/pub004d/post_gen_validate_history.jsonl")
 POST_GEN_VALIDATE_STATE_BUCKET = "baseballsite-yoshilover-state"
 POST_GEN_VALIDATE_STATE_KEY = "post_gen_validate/post_gen_validate_history.jsonl"
 POST_GEN_VALIDATE_SKIP_LAYER = "post_gen_validate"
+PREFLIGHT_SKIP_HISTORY_DEFAULT_PATH = Path("/tmp/pub004d/preflight_skip_history.jsonl")
+PREFLIGHT_SKIP_STATE_BUCKET = "baseballsite-yoshilover-state"
+PREFLIGHT_SKIP_STATE_KEY = "preflight_skip/preflight_skip_history.jsonl"
 PUBLISH_QUALITY_MIN_CHARS_BY_SUBTYPE = {
     "postgame": 280,
     "lineup": 280,
@@ -4604,6 +4610,11 @@ def _gemini_text_with_cache(
             telemetry["skip_reason"] = skip_reason
             telemetry["skip_layer"] = PREFLIGHT_SKIP_LAYER
             emit_gemini_call_skipped(logger, candidate=preflight_candidate, skip_reason=skip_reason)
+            _record_preflight_skip_history(
+                logger,
+                candidate=preflight_candidate,
+                skip_reason=skip_reason,
+            )
             return "", telemetry
     if cache_manager is not None and cache_key.source_url_hash and cache_key.prompt_template_id:
         try:
@@ -7788,6 +7799,120 @@ def _log_article_skipped_post_gen_validate(
     )
 
 
+def _preflight_skip_notification_enabled() -> bool:
+    return _env_flag(PREFLIGHT_SKIP_NOTIFICATION_ENV_FLAG, False)
+
+
+def _resolve_preflight_skip_history_path() -> Path:
+    raw = str(os.environ.get(PREFLIGHT_SKIP_LEDGER_PATH_ENV, "")).strip()
+    if raw:
+        return Path(raw)
+    return PREFLIGHT_SKIP_HISTORY_DEFAULT_PATH
+
+
+def _append_preflight_skip_gcs_record(record_line: str, logger: logging.Logger) -> None:
+    client = _gcs_client()
+    if client is None:
+        return
+    try:
+        from google.api_core.exceptions import PreconditionFailed
+    except Exception:
+        PreconditionFailed = None
+
+    bucket = client.bucket(PREFLIGHT_SKIP_STATE_BUCKET)
+    blob = bucket.blob(PREFLIGHT_SKIP_STATE_KEY)
+    for _ in range(4):
+        try:
+            if blob.exists():
+                blob.reload()
+                generation = int(blob.generation or 0)
+                existing_payload = blob.download_as_text(encoding="utf-8")
+            else:
+                generation = 0
+                existing_payload = ""
+            next_payload = existing_payload
+            if next_payload and not next_payload.endswith("\n"):
+                next_payload += "\n"
+            next_payload += f"{record_line}\n"
+            blob.upload_from_string(
+                next_payload,
+                content_type="application/x-ndjson",
+                if_generation_match=generation if generation else 0,
+            )
+            return
+        except Exception as exc:
+            if PreconditionFailed is not None and isinstance(exc, PreconditionFailed):
+                continue
+            logger.warning(
+                json.dumps(
+                    {
+                        "event": "preflight_skip_history_gcs_append_failed",
+                        "record_type": PREFLIGHT_SKIP_RECORD_TYPE,
+                        "skip_layer": PREFLIGHT_SKIP_LAYER,
+                        "reason": type(exc).__name__,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            return
+
+
+def _record_preflight_skip_history(
+    logger: logging.Logger,
+    *,
+    candidate: dict[str, Any],
+    skip_reason: str,
+) -> None:
+    if not _preflight_skip_notification_enabled():
+        return
+    source_url = str(candidate.get("source_url") or candidate.get("post_url") or "").strip()
+    source_title = str(candidate.get("source_title") or candidate.get("title") or "").strip()
+    source_url_hash = str(candidate.get("source_url_hash") or "").strip() or _hash_duplicate_guard_value(source_url)
+    record = {
+        "ts": datetime.now(JST).isoformat(),
+        "record_type": PREFLIGHT_SKIP_RECORD_TYPE,
+        "skip_layer": PREFLIGHT_SKIP_LAYER,
+        "source_url": source_url,
+        "source_url_hash": source_url_hash,
+        "content_hash": str(candidate.get("content_hash") or "").strip(),
+        "source_title": source_title,
+        "category": str(candidate.get("category") or "").strip(),
+        "article_subtype": str(candidate.get("article_subtype") or "").strip(),
+        "source_name": str(candidate.get("source_name") or "").strip(),
+        "source_type": str(candidate.get("source_type") or "").strip(),
+        "published_at": (
+            candidate.get("published_at").isoformat()
+            if isinstance(candidate.get("published_at"), datetime)
+            else str(candidate.get("published_at") or "").strip()
+        ),
+        "has_game": bool(candidate.get("has_game")),
+        "skip_reason": str(skip_reason or "").strip(),
+    }
+    if candidate.get("existing_publish_same_source_url") is not None:
+        record["existing_publish_same_source_url"] = bool(candidate.get("existing_publish_same_source_url"))
+    history_path = _resolve_preflight_skip_history_path()
+    try:
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+        record_line = json.dumps(record, ensure_ascii=False)
+        with history_path.open("a", encoding="utf-8") as handle:
+            handle.write(record_line)
+            handle.write("\n")
+    except OSError as exc:
+        logger.warning(
+            json.dumps(
+                {
+                    "event": "preflight_skip_history_local_append_failed",
+                    "record_type": PREFLIGHT_SKIP_RECORD_TYPE,
+                    "skip_layer": PREFLIGHT_SKIP_LAYER,
+                    "reason": type(exc).__name__,
+                },
+                ensure_ascii=False,
+            )
+        )
+        return
+    _append_preflight_skip_gcs_record(record_line, logger)
+
+
 def _post_gen_validate_notification_enabled() -> bool:
     return _env_flag(POST_GEN_VALIDATE_NOTIFICATION_ENV_FLAG, False)
 
@@ -7860,6 +7985,8 @@ def _record_post_gen_validate_skip_history(
         return
     record = {
         "ts": datetime.now(JST).isoformat(),
+        "record_type": "post_gen_validate",
+        "skip_layer": POST_GEN_VALIDATE_SKIP_LAYER,
         "source_url": str(source_url or "").strip(),
         "source_url_hash": _hash_duplicate_guard_value(source_url),
         "source_title": str(source_title or "").strip(),

@@ -14,6 +14,7 @@ from src import rss_fetcher
 from src.gemini_cache import GeminiCacheManager
 from src.gemini_preflight_gate import (
     PREFLIGHT_ENV_FLAG,
+    PREFLIGHT_SKIP_RECORD_TYPE,
     PREFLIGHT_SKIP_LAYER,
     emit_gemini_call_skipped,
     should_skip_gemini,
@@ -247,6 +248,7 @@ class GeminiPreflightGateTests(unittest.TestCase):
             events[0],
             {
                 "event": "gemini_call_skipped",
+                "record_type": PREFLIGHT_SKIP_RECORD_TYPE,
                 "post_url": "https://example.com/post",
                 "source_url_hash": "abc123",
                 "content_hash": "def456",

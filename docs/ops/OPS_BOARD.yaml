@@ -35,6 +35,24 @@ board_rules:
       - "cost/Gemini delta/mail volume"
       - "candidate disappearance risk"
       - "stop condition/blast radius/source impact/behavior invariance"
+      - "post-deploy verify result"
+  post_deploy_verify_required:
+    applies_to:
+      - "CLAUDE_AUTO_GO"
+      - "USER_DECISION_REQUIRED"
+    required_checks:
+      - "image/revision matches target"
+      - "env/flag matches target"
+      - "service/job starts"
+      - "rollback target written"
+      - "errors unchanged"
+      - "mail volume within expectation"
+      - "Gemini delta within expectation"
+      - "silent skip 0"
+      - "Team Shiny From preserved"
+      - "publish/review/hold/skip routes alive"
+      - "stop condition not hit"
+    failure_state: "HOLD_OR_ROLLBACK_REQUIRED"
 
 mail_storm_policy:
   all_mail_stop: forbidden
@@ -62,7 +80,7 @@ active:
       - "test plan"
       - "rollback plan"
       - "implementation/test/local verify"
-      - "flag OFF or live-inert deploy if POLICY 3.1 CLAUDE_AUTO_GO is satisfied"
+      - "flag OFF or live-inert deploy if POLICY 3.1 CLAUDE_AUTO_GO is satisfied, followed by post-deploy verify"
     forbidden_without_user_go:
       - "flag ON"
       - "behavior-changing env"
@@ -137,7 +155,7 @@ hold_needs_pack:
       - "stop condition"
       - "rollback command"
       - "all UNKNOWN fields resolved"
-    next_action: "Build a new Acceptance Pack. Flag OFF/live-inert reflection may proceed only if POLICY 3.1 is satisfied. Do not re-ON Phase3."
+    next_action: "Build a new Acceptance Pack. Flag OFF/live-inert reflection may proceed only if POLICY 3.1 is satisfied and post-deploy verify is planned. Do not re-ON Phase3."
     next_review_at: "before any Phase3 re-ON proposal"
     expiry: "before second-wave risk window"
 
@@ -163,7 +181,7 @@ future_user_go:
     evidence_owner: Claude
     user_go_required: true
     user_go_reason: "WEAK_TITLE_RESCUE_ENABLEMENT"
-    claude_auto_go_allowed: "live-inert deploy only if POLICY 3.1 is satisfied"
+    claude_auto_go_allowed: "live-inert deploy only if POLICY 3.1 is satisfied, with post-deploy verify required"
     next_action: "Classify live-inert deploy separately from weak title rescue enablement."
     expiry: "when deploy evidence is ready"
 

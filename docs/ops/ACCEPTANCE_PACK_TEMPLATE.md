@@ -2,7 +2,7 @@
 
 Last updated: 2026-05-01 JST
 
-Use this when a change is `USER_DECISION_REQUIRED`. Do not use a Pack to offload UNKNOWN technical judgment to the user; UNKNOWN means HOLD until Claude resolves it. `CLAUDE_AUTO_GO` changes need evidence and Decision Batch reporting, not user approval.
+Use this when a change is `USER_DECISION_REQUIRED`. Do not use a Pack to offload UNKNOWN technical judgment to the user; UNKNOWN means HOLD until Claude resolves it. `CLAUDE_AUTO_GO` changes need evidence, post-deploy verify, production-safe regression evidence, and Decision Batch reporting, not user approval.
 
 ## Decision Header
 
@@ -68,6 +68,23 @@ expires_at:
    - mail checks
    - rollback checks
 
+10a. Post-Deploy Verify Plan
+   - image / revision expectation
+   - env / flag expectation
+   - service / job startup check
+   - rollback target
+   - error trend check
+   - mail volume check
+   - Gemini delta check
+   - silent skip check
+   - Team Shiny From check
+   - publish / review / hold / skip route check
+   - stop condition check
+
+10b. Production-Safe Regression Scope
+   - allowed checks only: read-only, logs, health, mail count, env/revision, Scheduler/job observation, sample article/candidate state, flag OFF/no-send/dry-run-equivalent, existing notification route checks
+   - forbidden checks: bulk mail, source addition, Gemini increase, publish criteria change, cleanup mutation, SEO/noindex/canonical/301, rollback-impossible operation, user-GO-less flag ON, mail UNKNOWN experiment
+
 11. Rollback
    - exact command or exact action
    - expected rollback time
@@ -75,9 +92,14 @@ expires_at:
 
 12. Stop Conditions
    - errors
-   - mail burst
+   - sent=10 burst
+   - MAIL_BUDGET exceeded
    - silent skip
-   - Gemini increase
+   - unexpected Gemini increase
+   - Team Shiny From changed
+   - publish/review/hold/skip route broken
+   - old_candidate storm
+   - rollback target unknown
    - user-visible degradation
 
 13. User Reply
@@ -100,7 +122,7 @@ For any Phase3 re-ON Pack, include:
 - confirmation that persistent ledger behavior is currently disabled
 - confirmation that normal review, 289, and error mail remain active
 
-If any value is UNKNOWN, recommendation must be HOLD.
+If any value is UNKNOWN, recommendation must be HOLD. Deploy evidence alone is not enough for DONE; post-deploy verify and production-safe regression evidence are required.
 
 ## Forbidden Pack Patterns
 
@@ -125,5 +147,15 @@ Gemini/cost影響:
 silent skip:
 rollback:
 stop condition:
+deploy対象:
+image / revision:
+env / flag:
+post-deploy verify:
+regression:
+mail件数:
+Gemini delta:
+silent skip:
+rollback target:
+判定: OBSERVED_OK / HOLD / ROLLBACK_REQUIRED
 userが返すべき1行:
 ```

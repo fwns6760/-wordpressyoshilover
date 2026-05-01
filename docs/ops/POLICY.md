@@ -54,8 +54,9 @@ Claude may execute production reflection without user GO when all conditions are
 - cleanup mutation: none
 - candidate disappearance risk: none, or proven unchanged from existing behavior
 - stop condition is written
+- post-deploy verify plan is written
 
-Claude reports the result afterward in a Decision Batch.
+Claude reports the result afterward in a Decision Batch only after post-deploy verify and production-safe regression evidence are collected.
 
 ### 3.2 USER_DECISION_REQUIRED
 
@@ -81,6 +82,8 @@ Claude must not ask the user to make technical judgment. Claude completes the Ac
 - reason: 1-3 lines
 - maximum risk
 - rollback availability
+- post-deploy verify plan
+- production-safe regression plan
 - user reply: `OK` / `HOLD` / `REJECT`
 
 ### 3.3 HOLD
@@ -97,6 +100,64 @@ If any of the following is UNKNOWN, the state is HOLD. Do not ask the user to de
 - blast radius
 - source impact
 - whether existing behavior is unchanged
+- post-deploy verify result
+
+### 3.4 Post-Deploy Verify / Production-Safe Regression
+
+Deploy complete is not DONE. Image or revision reflection is not DONE. Flag OFF is not a verify exemption.
+
+After any production reflection, including both `CLAUDE_AUTO_GO` and `USER_DECISION_REQUIRED`, Claude must collect post-deploy verify and production-safe regression evidence before the ticket can become `OBSERVED_OK` or `DONE` candidate.
+
+Required post-deploy verify:
+
+- image / revision matches the intended target
+- env / flag state matches the intended target
+- service / job starts normally
+- rollback target is written
+- error increase: none
+- mail volume: within expectation
+- Gemini call delta: within expectation
+- silent skip: 0
+- Team Shiny From preserved
+- publish / review / hold / skip routes remain alive
+- stop condition is not hit
+
+Production-safe regression checks may include only:
+
+- read-only checks
+- log checks
+- health checks
+- mail count checks
+- env checks
+- revision checks
+- Scheduler / job execution observation
+- sample article / candidate state checks
+- flag OFF / no-send / dry-run-equivalent checks
+- existing notification route preservation checks
+
+Forbidden production tests:
+
+- unintended bulk mail send
+- source addition
+- Gemini call increase
+- publish criteria change
+- cleanup mutation
+- SEO/noindex/canonical/301 change
+- rollback-impossible operation
+- flag ON without user GO
+- experiment while mail volume impact is UNKNOWN
+
+If verify fails, do not mark `OBSERVED_OK`. Use `HOLD` or `ROLLBACK_REQUIRED` when any of these occur:
+
+- `sent=10` burst
+- MAIL_BUDGET exceeded
+- silent skip occurs
+- unexpected Gemini call increase
+- Team Shiny From changes
+- publish / review / hold / skip route breaks
+- old_candidate storm recurs
+- consecutive errors
+- rollback target is unknown
 
 ## 4. Claude Autonomous GO
 
@@ -155,6 +216,7 @@ Allowed current states:
 - `READY`
 - `HOLD_NEEDS_PACK`
 - `FUTURE_USER_GO`
+- `OBSERVED_OK`
 - `DONE`
 - `FROZEN`
 - `DEEP_FROZEN`
@@ -166,7 +228,7 @@ Do not use:
 - `NOT_DONE`
 - ambiguous "maybe done" labels
 
-`DONE` requires evidence. A code commit alone is not DONE. For production behavior, DONE requires deploy evidence and observation evidence when applicable.
+`DONE` requires evidence. A code commit alone is not DONE. Deploy complete is not DONE. For production behavior, `OBSERVED_OK` and `DONE` require deploy evidence, post-deploy verify, and production-safe regression evidence.
 
 ## 7. Mail Storm Rules
 
@@ -243,6 +305,16 @@ P1 mail storm状態: contained / active / unknown
 次に流すチケット:
 user判断が必要なもの: 0件 or Decision Batch
 デグレ確認: test / mail / Gemini / silent skip / rollback
+deploy対象:
+image / revision:
+env / flag:
+post-deploy verify:
+regression:
+mail件数:
+Gemini delta:
+silent skip:
+rollback target:
+判定: OBSERVED_OK / HOLD / ROLLBACK_REQUIRED
 userが返すべき1行:
 ```
 

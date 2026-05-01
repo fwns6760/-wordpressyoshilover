@@ -20,7 +20,9 @@ This file is the first operational document to read at session start. If this fi
 - Production changes are classified as `CLAUDE_AUTO_GO`, `USER_DECISION_REQUIRED`, or `HOLD`. Safe production reflection is not blocked just because it is production.
 - `CLAUDE_AUTO_GO`: flag OFF deploy, live-inert deploy, or behavior-preserving image replacement when tests are green, rollback is confirmed, and Gemini/mail/source/Scheduler/SEO/publish criteria/candidate disappearance risks do not increase.
 - `USER_DECISION_REQUIRED`: flag ON, behavior-changing env, Gemini increase, mail volume increase, source addition, Scheduler/SEO change, publish/review/hold/skip criteria change, cleanup mutation, rollback-impossible change, or external-impact-heavy change.
-- `HOLD`: tests, rollback, cost, Gemini delta, mail volume, candidate disappearance risk, stop condition, blast radius, source impact, or behavior invariance is UNKNOWN.
+- `HOLD`: tests, rollback, cost, Gemini delta, mail volume, candidate disappearance risk, stop condition, blast radius, source impact, behavior invariance, or post-deploy verify result is UNKNOWN.
+- Deploy complete is not DONE. `OBSERVED_OK` / `DONE` require post-deploy verify and production-safe regression evidence.
+- `CLAUDE_AUTO_GO` and `USER_DECISION_REQUIRED` both require post-deploy verify after reflection.
 - ACTIVE is limited to at most 2 tickets.
 - The user decides time boundaries such as "today is done" or "continue."
 - Claude should proceed by risk, regression, and cost gates, not by the clock.
@@ -33,7 +35,7 @@ This file is the first operational document to read at session start. If this fi
 
 - Status: `HOLD_NEEDS_PACK`
 - Phase label: `ROLLED_BACK_AFTER_REGRESSION`
-- DONE is forbidden for this ticket until a new Acceptance Pack passes and the follow-up observation succeeds.
+- DONE is forbidden for this ticket until a new Acceptance Pack passes, post-deploy verify passes, and production-safe regression observation succeeds.
 - The image was deployed, but the feature flag was rolled back.
 - `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE` is OFF or absent.
 - Persistent ledger behavior is disabled.
@@ -83,6 +85,16 @@ P1 mail storm状態: contained / active / unknown
 次に流すチケット:
 user判断が必要なもの: 0件 or Decision Batch
 デグレ確認: test / mail / Gemini / silent skip / rollback
+deploy対象:
+image / revision:
+env / flag:
+post-deploy verify:
+regression:
+mail件数:
+Gemini delta:
+silent skip:
+rollback target:
+判定: OBSERVED_OK / HOLD / ROLLBACK_REQUIRED
 userが返すべき1行:
 ```
 
@@ -100,7 +112,7 @@ Session logs, handoff logs, and codex responses are history only. They are not c
 ## Immediate Operating Posture
 
 - Keep 298-Phase3 OFF.
-- Continue 293-COST and 300-COST inside allowed boundaries; do not block `CLAUDE_AUTO_GO` production reflection solely because it touches production.
+- Continue 293-COST and 300-COST inside allowed boundaries; do not block `CLAUDE_AUTO_GO` production reflection solely because it touches production, but require post-deploy verify afterward.
 - Keep 299-QA as observe, not P0 by default.
 - Do not ask the user to choose READY-incomplete work or UNKNOWN technical risk. Claude resolves UNKNOWN first.
 - Do not create new tickets unless the issue cannot fit into an existing active/hold ticket.

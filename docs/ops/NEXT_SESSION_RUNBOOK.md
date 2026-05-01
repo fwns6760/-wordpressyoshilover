@@ -24,18 +24,18 @@ Run read-only checks only:
 - inspect `docs/ops/OPS_BOARD.yaml`
 - confirm whether any Codex lane is currently running
 
-Do not make unclassified production changes during startup. Apply `POLICY.md` section 3 before any production reflection: `CLAUDE_AUTO_GO` may proceed after evidence; `USER_DECISION_REQUIRED` needs a completed Pack; `HOLD` means Claude closes UNKNOWN first.
+Do not make unclassified production changes during startup. Apply `POLICY.md` section 3 before any production reflection: `CLAUDE_AUTO_GO` may proceed after evidence; `USER_DECISION_REQUIRED` needs a completed Pack; `HOLD` means Claude closes UNKNOWN first. Any production reflection then requires post-deploy verify before `OBSERVED_OK` or `DONE`.
 
 ## 3. Restore Current Board
 
 Current major state:
 
 - 298-Phase3: `HOLD_NEEDS_PACK`, `ROLLED_BACK_AFTER_REGRESSION`, flag OFF/absent, persistent ledger disabled, storm contained, second-wave risk OPEN.
-- 293-COST: active for visible skip readiness; implementation/test/local verify/flag OFF or live-inert deploy may proceed only if `CLAUDE_AUTO_GO` conditions pass.
+- 293-COST: active for visible skip readiness; implementation/test/local verify/flag OFF or live-inert deploy may proceed only if `CLAUDE_AUTO_GO` conditions pass, followed by post-deploy verify.
 - 300-COST: active for read-only source-side cost analysis; source-side behavior change must be classified before implementation/deploy.
 - 299-QA: observe flaky/transient, not P0 by default.
 - 282-COST: future user GO for flag ON after 293.
-- 290-QA: live-inert deploy may be `CLAUDE_AUTO_GO` after classification; weak title rescue enablement is user decision.
+- 290-QA: live-inert deploy may be `CLAUDE_AUTO_GO` after classification and post-deploy verify plan; weak title rescue enablement is user decision.
 - 288-INGEST: future user GO for source addition Pack.
 
 ## 4. Codex Lane Handling
@@ -118,6 +118,7 @@ Proceed autonomously only when it is `CLAUDE_AUTO_GO`:
 - rollback target confirmed
 - no Gemini/mail/source/Scheduler/SEO/publish criteria/candidate risk increase
 - stop condition written
+- post-deploy verify plan written
 
 Prepare an Acceptance Pack when it is `USER_DECISION_REQUIRED`:
 
@@ -133,7 +134,29 @@ Prepare an Acceptance Pack when it is `USER_DECISION_REQUIRED`:
 
 Hold internally when any safety field is UNKNOWN. Do not ask the user to resolve UNKNOWN technical risk.
 
-## 10. Successful Session Close
+## 10. Post-Deploy Verify
+
+Deploy complete is not DONE. After any production reflection, run only production-safe regression checks and record:
+
+- image / revision
+- env / flag
+- service / job startup
+- rollback target
+- error trend
+- mail count
+- Gemini delta
+- silent skip count
+- Team Shiny From
+- publish / review / hold / skip route health
+- stop condition result
+
+Allowed production-safe checks: read-only, logs, health, mail count, env/revision checks, Scheduler/job observation, sample article/candidate state, flag OFF/no-send/dry-run-equivalent checks, and existing notification route checks.
+
+Forbidden production tests: bulk mail, source addition, Gemini increase, publish criteria change, cleanup mutation, SEO/noindex/canonical/301, rollback-impossible operation, user-GO-less flag ON, or experiments while mail impact is UNKNOWN.
+
+If verify fails, classify as `HOLD` or `ROLLBACK_REQUIRED`; do not mark `OBSERVED_OK`.
+
+## 11. Successful Session Close
 
 Before closing a session:
 

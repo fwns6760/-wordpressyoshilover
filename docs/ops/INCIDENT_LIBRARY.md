@@ -210,3 +210,27 @@ Use Decision Batch. Include conclusion, evidence, risk, next action, and the one
 - cardinality estimate remains `99+` unique old-candidate `post_id`; this is enough to break `MAIL_BUDGET 30/h` on first emit.
 - `298-Phase3 v4 Case A` Pack is the planned user-facing mitigation proposal for the next morning.
 - keep monitoring anchored to `MAIL_BUDGET 30/h・100/d`, `silent skip 0`, and `Team Shiny` invariants.
+
+## Incident: Deploy Marked Done Without Verify
+
+### Standing Rule
+
+Deploy complete is not DONE. Image reflection, revision update, flag OFF deploy, or live-inert deploy is only a production reflection step.
+
+### Required Evidence
+
+- image / revision matches intended target
+- env / flag matches intended target
+- service / job starts normally
+- rollback target is written
+- errors do not increase
+- mail volume is within expectation
+- Gemini delta is within expectation
+- silent skip is 0
+- Team Shiny From is preserved
+- publish / review / hold / skip routes remain alive
+- stop condition is not hit
+
+### Failure State
+
+Use HOLD or ROLLBACK_REQUIRED, not OBSERVED_OK, when post-deploy verify fails or evidence is missing.

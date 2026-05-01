@@ -161,9 +161,39 @@ If verify fails, do not mark `OBSERVED_OK`. Use `HOLD` or `ROLLBACK_REQUIRED` wh
 - rollback target is unknown
 - GitHub/source rollback path is unknown after tests or regression fail
 
-### GitHub / Source Rollback Rule
+### 3.5 Post-Deploy Verify Checklist(本番反映後 必須項目)
 
-If tests, smoke, post-deploy verify, or production-safe regression fails because of a committed change, the rollback plan must include the GitHub/source rollback path. Prefer a non-destructive `git revert` commit pushed to origin over rewriting shared history. Runtime rollback and GitHub rollback are separate: runtime rollback restores production quickly; GitHub rollback restores the repo source of truth so the bad change is not rebuilt later.
+毎回の本番反映後、Claude は以下 7 項目を必ず確認 + 証跡記録(順不同、全て read-only):
+
+1. **image / revision**: 反映 image SHA / revision が intended target と一致
+2. **env / flag**: 反映 env / flag が intended target と一致(余計な diff なし)
+3. **mail volume**: rolling 1h / 24h で MAIL_BUDGET 30/h・100/d 内、storm pattern 不在
+4. **Gemini delta**: 反映前 1h vs 反映後 1h の Gemini call rate delta 範囲内(目安 ±5%)
+5. **silent skip**: 0 維持(POLICY §8、existing publish/review/hold mail 不在化が起きていない)
+6. **Team Shiny From**: `MAIL_BRIDGE_FROM=y.sebata@shiny-lab.org` 維持
+7. **rollback target**: runtime rollback(image SHA / revision)+ source rollback(`git revert` target commit)両方記録済
+
+7 項目のいずれか不一致 / 異常時は `HOLD` or `ROLLBACK_REQUIRED`、§3.6 に従って rollback 実行。
+
+### 3.6 Rollback Mechanism(2-tier、runtime + source 両方)
+
+本番反映後に異常検出した場合、rollback は GitHub revert 単独では不足。runtime + source の 2-tier で実行:
+
+**Tier 1: runtime rollback(production を即時 known-good 状態へ戻す)**
+
+- env 単独問題: `gcloud run jobs/services update <name> --remove-env-vars=<flag>` で flag OFF(30 sec、§14 自律 hotfix 該当時)
+- image / revision 問題: Cloud Run service は `gcloud run services update-traffic --to-revisions=<prev_rev>=100`、Cloud Run job は `gcloud run jobs update <name> --image=<prev_image_sha>` で前 revision / 前 image へ戻す(2-3 min)
+- 必ず前 revision / 前 image SHA を反映前に記録しておく(§3.5 #7)
+
+**Tier 2: source rollback(repo に bad change を残さない)**
+
+- runtime rollback で production が安定したら、`git revert <bad_commit>` で revert commit を作成、origin master に push
+- 強制 history rewrite(`git reset --hard` + `push -f`)は使わない
+- revert commit は通常通り Codex が作成、Claude は push、§31-D commit便直列維持
+
+**Tier 1 と Tier 2 は両方必須**。runtime rollback だけでは次回 image rebuild で bad change が再混入する。GitHub revert だけでは production の bad image / bad env が残る。
+
+判断順序: 異常検出 → Tier 1 即実行(production 安定化最優先)→ 安定確認後 Tier 2(repo source of truth 整合)。
 
 ## 4. Claude Autonomous GO
 
@@ -449,10 +479,77 @@ UNKNOWN 解消で USER_DECISION_REQUIRED に格上げ、または CLAUDE_AUTO_GO
 
 | ticket | 分類 | 根拠 |
 |---|---|---|
-| 298-Phase3 v4 | USER_DECISION_REQUIRED | flag ON + mail storm 再発リスクあり、明日朝 user 推奨提示 |
+| 298-Phase3 v4 | USER_DECISION_REQUIRED → 本日 user GO 受領済 deploy 完了 | flag ON + mail storm 再発リスクあり、本日 19:30 JST「ならやる」受領 |
 | 293-COST | impl/test/push = CLAUDE_AUTO_GO / image rebuild + flag ON = USER_DECISION_REQUIRED | 2 phase 化、本日 impl + push まで自律、deploy + flag ON は user 推奨 |
 | 282-COST | USER_DECISION_REQUIRED | flag ON で挙動変化(preflight gate)|
 | 290-QA | image rebuild = CLAUDE_AUTO_GO 候補(live-inert)/ flag ON = USER_DECISION_REQUIRED | 2 phase 化、image rebuild は HOLD 混入なし verify 後 自律 |
 | 300-COST | USER_DECISION_REQUIRED | source 動作変化(idempotent ts append)|
 | 288-INGEST | USER_DECISION_REQUIRED | source 追加 + Gemini call 増加 |
 | 299-QA | OBSERVE のみ、production change なし | N=3 close gate で OBSERVE 維持 |
+
+## 15. Field-Lead Discipline & User Interface Format(永続、user 依存度を下げる)
+
+本日(2026-05-01)user 明示の strengthening。POLICY §2 / §3 / §11 と整合する強化版。
+
+### 15.1 Claude responsibilities(全部 Claude が握る)
+
+- 技術判断
+- デグレ判断
+- コスト判断
+- mail impact 判断
+- rollback 判断(runtime + source 両方、§3.6 整合)
+- Codex worker pool 管理(idle 検出 + 次便 dispatch、§5 / §13 整合)
+- 次チケット投入
+- Acceptance Pack 作成(§9 整合)
+- 推奨 GO / HOLD / REJECT 提示(§3.2 整合)
+
+「user に判断を仰ぐ」ではなく「Claude が判断 + 推奨提示、user は判定だけ返す」。
+
+### 15.2 user-facing 5-field format(USER_DECISION_REQUIRED 時の確定フォーマット)
+
+```
+1. 推奨: GO / HOLD / REJECT
+2. 理由: 1〜3 行(技術 / デグレ / コスト / mail / rollback の要点)
+3. 最大リスク: 1 行(発生時の被害想定)
+4. rollback 可能か: yes / no(yes 時は Tier 1 + Tier 2 path 1 行で記述)
+5. user が返す一言: OK / HOLD / REJECT
+```
+
+`OK` 返答 = 即実行。Claude が deploy + post-deploy verify(§3.5)+ Decision Batch 報告まで完結。
+
+### 15.3 禁止行為(運用デグレ)
+
+- user に「どうしますか？」と聞く
+- user に複数候補(2-3 案)を並べて選ばせる
+- 技術判断を user に渡す(image / env / flag / Gemini / mail / rollback すべて Claude 判断)
+- Codex idle を user に発見させる(発見側になった時点で Claude の責務違反)
+- close できないからと作業を pause する(close gate と作業継続は別問題、§3.3 HOLD は本番反映のみ)
+- UNKNOWN を user 判断へ投げる
+- user を中継役(relay)として使う(Claude → user → ChatGPT → user → Claude の loop)
+
+### 15.4 UNKNOWN 処理(user に投げない)
+
+UNKNOWN 検出時、Claude が以下を順に実行:
+
+1. read-only 調査で潰す(log / config / GCS / WP REST GET)
+2. ChatGPT 会議室に圧縮判断補助を依頼(user 経由で OK、ただし user は中継役のみ)
+3. Codex 調査便で潰す(test / fixture / dry-run、§14 自律 hotfix 該当時は即 fire)
+4. それでも潰せない場合のみ、推奨 HOLD(質問ではなく判定として)で 5-field format 提示
+
+UNKNOWN 解消で再分類(CLAUDE_AUTO_GO / USER_DECISION_REQUIRED)。
+
+### 15.5 user の役割(明示)
+
+- 現場監督ではない
+- Claude の推奨判断に対して `OK / HOLD / REJECT` を返すだけ
+- 高 risk choice の最終責任(POLICY §2 整合)
+- 細かい技術 / 運用判断は委任済(本 §15)
+
+### 15.6 適用境界
+
+| 状態 | Claude の動き | user 接点 |
+|---|---|---|
+| CLAUDE_AUTO_GO(§3.1)| 自律 deploy + 自律 post-deploy verify + Decision Batch 報告 | 完了報告のみ、判断不要 |
+| USER_DECISION_REQUIRED(§3.2)| Acceptance Pack + 推奨 + 5-field format | 一言 `OK / HOLD / REJECT` |
+| HOLD(§3.3)| UNKNOWN 潰し進行(調査・Pack化・推奨 HOLD 化)| user 不在 / 進捗 1 行報告のみ |
+| §14 P0/P1 自律 hotfix(8 条件)| 即実行 + 事後報告 | 事後報告のみ、事前判断不要 |

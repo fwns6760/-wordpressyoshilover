@@ -146,3 +146,61 @@ Claude must compress Codex output before user-facing reporting.
 ### User-Facing Output
 
 Use Decision Batch. Include conclusion, evidence, risk, next action, and the one line the user should return if a decision is needed.
+
+## Incident: P1 Mail Storm 2026-05-01 Second-Wave Risk
+
+### Summary
+
+- `2026-05-01` の P1 mail storm は `PUBLISH_NOTICE_REVIEW_WINDOW_HOURS=168` 単独事故ではなく、old-candidate sink-side first emit が `99+` backlog pool に再露出したことで `MAIL_BUDGET` を破った。
+
+### Timeline
+
+- `09:00 JST`: first wave started after the `168h` review-window hotfix.
+- `09:55 JST`: first wave stopped naturally; the storm did not require Scheduler stop or global mail stop.
+- `13:00 JST`: `298-Phase3` deploy continuation started.
+- `13:24 JST`: flag-ON observe looked green, but only the first protected batches had been sampled.
+- `13:35 JST`: second storm was detected after re-ON; `cap=10` held per run but not per hour.
+- `13:55 JST`: rollback removed `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE` and restored pre-ON behavior.
+- `14:15 JST`: post-rollback observe showed `errors=0`, `silent skip=0`, old-candidate emit `0`, and normal paths alive.
+- `17:00 JST`: production health observe remains required before any new GO framing.
+
+### Root Causes
+
+- `guarded-publish */5` trigger reevaluated `backlog_only` rows every run, so old candidates kept becoming eligible for publish-notice scanning.
+- `24h dedup` expiry reopened old-candidate first emits the next day instead of permanently draining the historical pool.
+- `cap=10` limited only per-run sends and did not make the overall system budget-safe.
+- pool cardinality itself was too large; a `99+ unique post_id` first emit is already a P1 budget breach even if every single run looks capped.
+
+### Judgment Errors
+
+- treating the `env=168` hotfix as the main fix path was counterproductive; it changed the review window but did not remove the sink-side replay behavior.
+- turning `Phase3` flag ON without seeding or neutralizing the existing pool reopened the unregistered backlog.
+- Codex preflight stop chaining compressed safe observe time and delayed the cleaner `target=HEAD` deploy path.
+
+### Preserved Boundaries
+
+- `Team Shiny From` remained unchanged.
+- `289 post_gen_validate` notification remained alive.
+- Scheduler cadence remained unchanged.
+- X lane remained unchanged.
+- `live_update` remained unchanged.
+- Gemini call volume remained unchanged.
+
+### Prevention Anchors
+
+- treat scan-window expansion as a replay-risk change, not as a harmless mail-tuning change.
+- never call `cap` alone safe; per-run limits do not replace hour/day budget modeling.
+- require first-emit cardinality estimate before GO whenever historical pools can reopen.
+- prioritize source-side fixes when sink-side caps still leave a budget-breaking first wave.
+- use `target=HEAD` dynamic deploy preflight so doc-only commits do not create false deploy stops.
+
+### Related Commit / Ticket
+
+- tickets: `298-Phase3`, `299-QA`, `300-COST`, `289-OBSERVE`
+- commits: `d44594a` (`298` once-only suppression), `7d0c9a5` (`298` deploy result), `a3871f2` (`298` incident evidence), `cdd0c3f` (`298` second-wave pack), `cf86e88` (`298` unknown-close evidence)
+
+### 2026-05-02 09:00 JST Second-Wave Risk OPEN
+
+- cardinality estimate remains `99+` unique old-candidate `post_id`; this is enough to break `MAIL_BUDGET 30/h` on first emit.
+- `298-Phase3 v4 Case A` Pack is the planned user-facing mitigation proposal for the next morning.
+- keep monitoring anchored to `MAIL_BUDGET 30/h・100/d`, `silent skip 0`, and `Team Shiny` invariants.

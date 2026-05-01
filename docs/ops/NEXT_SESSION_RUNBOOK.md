@@ -176,7 +176,88 @@ mail / Gmail 通知は Ops Board ではない(POLICY §21、状態は OPS_BOARD.
 
 ---
 
-## 8. 「次セッション開始」の意味
+## 8. production_health_observe 手順(永続、17:00 JST 1 round read-only)
+
+session 跨ぎでも次 Claude が再現可能なよう、query template を本 doc に永続化。
+所要 ~5 min、user 接点なし、自律 GO 範囲(EVIDENCE_ONLY)。
+
+### 実行手順(1 round で全 7 query 実行、結果を OPS_BOARD evidence に embed)
+
+```bash
+cd /home/fwns6/code/wordpressyoshilover
+
+# 1. publish-notice 24h sent/errors 集計
+gcloud logging read 'resource.type="cloud_run_job" AND resource.labels.job_name="publish-notice" AND timestamp>="2026-04-30T08:00:00Z" AND textPayload:"summary"' \
+  --project=baseballsite --limit=300 --format='value(textPayload)' \
+  | grep -oE 'sent=[0-9]+|errors=[0-9]+' | sort | uniq -c
+
+# 2. publish-notice 直近 trigger 5 件
+gcloud logging read 'resource.type="cloud_run_job" AND resource.labels.job_name="publish-notice" AND textPayload:"summary"' \
+  --project=baseballsite --limit=10 --format='value(timestamp,textPayload)' | head -10
+
+# 3. 289 post_gen_validate emit 24h count
+gcloud logging read 'resource.type="cloud_run_job" AND resource.labels.job_name="publish-notice" AND timestamp>="2026-04-30T08:00:00Z" AND (textPayload:"post_gen_validate" OR textPayload:"要review｜post_gen_validate")' \
+  --project=baseballsite --limit=1000 --format='value(timestamp)' | wc -l
+
+# 4. Gemini call 24h delta(fetcher)
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="yoshilover-fetcher" AND timestamp>="2026-04-30T08:00:00Z" AND (textPayload:"google.genai" OR textPayload:"gemini")' \
+  --project=baseballsite --limit=1000 --format='value(timestamp)' | wc -l
+
+# 5. silent skip detection
+gcloud logging read 'resource.type="cloud_run_job" AND resource.labels.job_name="publish-notice" AND timestamp>="2026-04-30T08:00:00Z" AND textPayload:"silent"' \
+  --project=baseballsite --limit=100 --format='value(timestamp,textPayload)' | head -10
+
+# 6. env / image / scheduler 不変 verify
+gcloud run jobs describe publish-notice --region=asia-northeast1 --project=baseballsite \
+  --format='value(spec.template.spec.template.spec.containers[0].image,spec.template.spec.template.spec.containers[0].env)'
+gcloud run services describe yoshilover-fetcher --region=asia-northeast1 --project=baseballsite \
+  --format='value(spec.template.spec.containers[0].image,status.latestReadyRevisionName)'
+gcloud scheduler jobs describe publish-mail-trigger --location=asia-northeast1 --project=baseballsite \
+  --format='value(state,schedule)' 2>/dev/null || echo 'scheduler name unknown - search via list'
+
+# 7. cache_hit ratio
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="yoshilover-fetcher" AND timestamp>="2026-04-30T08:00:00Z" AND (textPayload:"cache_hit" OR textPayload:"cache_miss")' \
+  --project=baseballsite --limit=500 --format='value(textPayload)' \
+  | grep -oE 'cache_hit|cache_miss' | sort | uniq -c
+
+# 8. 299-QA flaky 再現性 check(local pytest 1 round)
+python3 -m pytest tests/test_postgame_strict_template.py -q 2>&1 | tail -10
+```
+
+### 期待値(POLICY OPS_BOARD permanent_evidence と照合)
+
+| 観測項目 | 期待値 |
+|---|---|
+| publish-notice errors | 0 |
+| publish-notice sent | MAIL_BUDGET 内(30/h, 100/d、本日 storm 90 通含む 24h 値は許容)|
+| 289 post_gen_validate emit | 100+ count(silent skip 0 維持の証跡)|
+| Gemini call delta | 24h baseline ±20% 以内 |
+| silent skip | 0 件 |
+| publish-notice image | Phase3 deploy 後の new image(Codex 報告 hash)|
+| publish-notice env | `MAIL_BRIDGE_FROM=y.sebata@shiny-lab.org` / `ENABLE_POST_GEN_VALIDATE_NOTIFICATION=1` / `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE=1`(Phase3 flag ON 後)|
+| fetcher image | `yoshilover-fetcher:4be818d` rev `00175-c8c` |
+| scheduler state | ENABLED(publish-mail-trigger)|
+| cache_hit ratio | 75% 以上(POLICY §7、99% 持続なら真因 audit 必要)|
+| 299-QA pytest | 失敗増加 0(0 or 3 failures とも acceptable、failures 増加なら真因解析)|
+
+### 異常検出時の対応(POLICY §6 / §14 / §19 連動)
+
+- **silent skip > 0 検出** → P0 即報告(自律対処しない)、Acceptance Pack 経由
+- **errors > 0 検出** → P1 体感事故扱い、§14 8 条件 hotfix 検討 / Acceptance Pack 経由
+- **MAIL_BUDGET 違反**(直近 1h sent > 30 等)→ P1、INCIDENT_LIBRARY 参照
+- **Gemini call 急増** → 真因 audit、user 報告 + Acceptance Pack
+- **env / image / scheduler 期待値乖離** → P0 即報告
+- **299-QA pytest failures 増加** → 真因解析、本物の P0 候補
+
+### 結果の embed 先
+
+- `docs/ops/OPS_BOARD.yaml` `observe.production_health_observe.evidence:` に集計値 update
+- `docs/ops/CURRENT_STATE.md` 「OBSERVE 結果(17:00 JST)」section 更新
+- 異常 0 確認なら **ops reset + 298 Phase3 close 確定**(DONE 化)
+
+---
+
+## 9. 「次セッション開始」の意味
 
 「次セッション」=:
 - WSL 再起動後 / 別端末で起動後 / Claude session が消えた後

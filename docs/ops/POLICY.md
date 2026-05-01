@@ -730,3 +730,39 @@ Claude session が rate limit / context 圧縮 / WSL 再起動 / 別端末で起
 ```
 
 監視不能で Claude session 復旧した次の Claude(または別 session)は、本 section を read で即 lane state 把握 + 次作業継続。
+
+---
+
+### 25.8 定期 lane state polling cadence(永続、user 発見禁止の徹底)
+
+Claude は **task notification 待機だけでなく、定期的に self-check** で lane state を確認:
+
+- **5-10 min ごと**:Lane A/B の log tail or git log で進捗確認(memory: feedback_codex_idle_check_policy.md 既存ルールと整合)
+- **両 lane completion 通知後**:即 5 step 一次受け → push → idle 検出 → 次 dispatch を **自律ループ**(間に user 確認を挟まない)
+- **user の「動いてる?」「進んでる?」発言時**:既に idle だったら **運用デグレ**(POLICY §25.8 違反)、self-check が漏れていた reflection + INCIDENT_LIBRARY anchor 追記候補
+
+### 25.9 既存消化順内 subtask の例(新規 ticket 乱立禁止、§10 遵守)
+
+消化順 1-8 親 ticket すべて Pack draft 完了後、Lane idle 検出時の **既存 subtask 自律投入候補**(新規 ticket 起票せず、既存 ticket 配下で進める):
+
+| 親 ticket | 既存 subtask 候補(自律 GO) |
+|---|---|
+| 298-Phase3 | v4 第二波対策 Pack(Case A/D/F 比較)、INCIDENT_LIBRARY anchor 拡張、24h 安定 evidence 集計 |
+| 293-COST | impl 順序 commit 分割案 詳細化、test fixture 補強、ledger schema validation script 設計 |
+| 299-QA | 再現条件 evidence 追加、close criteria refinement、cache/process-history 仮説検証 |
+| 282-COST | 293 完遂後の Pack 18 項目 final 化、cost 削減見積 refinement |
+| 290-QA | clean build gate evidence 補強、c14e269 commit content review |
+| 300-COST | impl 順序 commit 分割、Option C-narrow 詳細、persistence whole-file upload skip 設計 |
+| 288-INGEST | 5 条件 precondition evidence 集計、候補消失契約 design |
+| 278-280-MERGED | phase 分割 design、290 補完関係 詳細化 |
+| **横串** | 全 Pack 整合性 review、dependency graph、user GO 順序提案、UNKNOWN flag 検出 |
+| **観察 evidence** | production_health_observe pre-execution simulation、KPI 集計 query refinement |
+
+**横串 / 観察系 subtask は「全消化順全投入済」状態でも自律投入可**(scope 拡大ではなく、既存ticket の補強)。新規 ticket 起票は禁止。
+
+### 25.10 Decision Batch 報告 timing(永続、§25.6 補強)
+
+- **両 lane completion 同時 or 直後**:1 画面 8 項目 Decision Batch 報告
+- **片 lane completion + 残 1 lane running**:中間 silent monitor、両完了で報告(中間 user 接点なし)
+- **両 lane idle + 自律投入 candidate なし**:HOLD 理由 explicit 記録(CURRENT_STATE)+ user 1 行報告(「全消化順 Pack 完了 / 横串 subtask 全完了 / 残 17:00 production_health_observe」等)
+- **P0/P1 incident 検出**:Decision Batch を待たず即 1 行報告(緊急性優先)

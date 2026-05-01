@@ -33,6 +33,7 @@
 | 1 | 282-COST Pack draft (`bu63il63k`)| 290-QA Pack draft (`bf6m2c0nm`)| 両 completed + push 済(`1fd2755` + `65c09c1`)|
 | 2 | 300-COST Pack draft (`b93y1byc4`)| 288-INGEST Pack draft (`by59srg7l`)| 両 completed + push 済(`54c2355` + `26ede3a`)|
 | 3 | 278-280-MERGED Pack draft (`bbjtahzxz`)| **idle**(消化順 1-8 全投入済、自律 fire candidate なし)| Lane A completed + push 済(`0521a25`)、Lane B HOLD(消化順外投入 = scope 拡大 REJECT)|
+| **4** | **298-Phase3 v4 第二波対策 Pack** (`b2ktx5kd0`、running)| **全 Pack 整合性 review** (`bvnlwrvjz`、running)| user 「動いてる?」発言で idle 検出されデグレ判明、POLICY §25.9 既存 subtask 自律投入(横串系)、両 running |
 
 ### 自律 loop 完了状態(2026-05-01 14:00 JST)
 

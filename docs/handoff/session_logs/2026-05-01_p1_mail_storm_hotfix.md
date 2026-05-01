@@ -50,6 +50,8 @@
 15:35 | Claude lane idle 自律 dispatch | 282 + 290 | user「自律的に投げて」+「Codex worker pool 自律管理」指示受領、消化順 4 + 5 を 2 lane 並走 fire / Lane A bu63il63k(282-COST flag ON 判断 Pack draft、298 安定 + 293 完遂 後の前提整理)/ Lane B bf6m2c0nm(290-QA weak title rescue deploy 判断 Pack draft、c14e269 既 PUSHED + 18 項目 final + rollback)| Codex completion 通知で 5 step 一次受け
 15:50 | POLICY §25 Codex worker pool 自律管理 永続化 | - | lane state 5 値(running/completed/blocked/failed/idle)/ completed 後 5 step 一次受け / user GO 必須 7 項目 / 自律投入 OK 5 項目 + 消化順 1-8 / lane idle 検出時 dispatch flow / Decision Batch 報告 / rate limit 引継ぎ format / CURRENT_STATE に Codex Worker Pool State section 永続化 | commit + push
 16:00 | 自律 loop round 2/3 完遂 | 4-8 | round 2 = 300-COST Pack draft (`54c2355`) + 288-INGEST Pack draft (`26ede3a`)/ round 3 = 278-280-MERGED Pack draft (`0521a25`、Lane A) + Lane B idle(消化順全投入済)/ 全消化順 1-8 Pack draft 完成、user 接点 0 件で本日 close 寸前 | 残:17:00 production_health_observe Claude 単独実施
+16:10 | user idle 検知デグレ指摘 | - | user「Codex 動いてるね?」発言で両 lane idle 状態 user 発見 = POLICY §25.5 違反 / 即 round 4/3 自律 fire(298-Phase3 v4 第二波対策 Pack `b2ktx5kd0` + Pack 整合性 review `bvnlwrvjz`、横串 subtask、新規 ticket 乱立なし)| POLICY §25.8 / §25.9 / §25.10 永続化
+16:15 | POLICY §25.8/§25.9/§25.10 永続化 | - | §25.8 定期 lane state polling cadence(5-10 min self-check、user 発見禁止徹底)/ §25.9 既存消化順内 subtask 候補(横串系含む、新規 ticket 起票禁止)/ §25.10 Decision Batch 報告 timing 補強 | commit + push
 ```
 
 ## hotfix 経過 evidence(数値)

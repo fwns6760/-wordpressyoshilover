@@ -209,3 +209,54 @@ Unless a specific Acceptance Pack with user GO says otherwise:
 - Source additions remain HOLD.
 - Gemini call increases remain HOLD.
 - Phase3 remains OFF after rollback.
+
+## 13. Codex Worker Pool Persistence(/tmp 禁止、永続化 必須)
+
+`/tmp` は Ubuntu 再起動 / cleanup で消える前提。**永続性が必要な ops state を /tmp に置かない**。
+
+### 13.1 必須永続化 path(repo 内)
+
+| 種類 | path |
+|---|---|
+| Codex prompt | `docs/handoff/codex_prompts/YYYY-MM-DD/lane_X_round_N.md` |
+| Codex receipt(job ID / lane ID / start / expected output)| `docs/handoff/codex_receipts/YYYY-MM-DD/lane_X_round_N.md` |
+| Lane state(running / completed / blocked / failed / idle + HOLD reason)| `docs/ops/WORKER_POOL.md` |
+
+### 13.2 fire 完了の定義(4 step 全部達成)
+
+prompt staging file 作成だけ ≠ fire:
+
+1. prompt を repo 永続化(`docs/handoff/codex_prompts/`)
+2. `codex exec` 実行(Bash bg)
+3. job ID / lane ID 記録(`docs/handoff/codex_receipts/`)
+4. WORKER_POOL.md の lane status を `running` に update + commit
+
+### 13.3 lane idle 化 = HOLD reason 必須
+
+`docs/ops/WORKER_POOL.md` の lane entry に **HOLD reason 必須記載**(消化順内 candidate 評価結果 / 4 条件 evaluate / next dispatch timing)。HOLD reason なしの idle 禁止。
+
+### 13.4 /tmp 許容範囲
+
+- その場限りの一時 staging(< 5 min、即 fire 用、再現不要)
+- log tail / Bash output 一時保存
+- 永続性不要な calculation buffer
+
+### 13.5 4 NO 規律(永続)
+
+```
+No job ID, no fire.
+No receipt, no fire.
+No HOLD reason, no idle.
+No /tmp for persistent ops state.
+```
+
+### 13.6 session 切断時の引継ぎ
+
+Claude rate limit / context 圧縮 / WSL 再起動 / 別端末で起動 で監視不能になった場合:
+
+1. `docs/ops/WORKER_POOL.md` で lane state 読取
+2. `docs/handoff/codex_receipts/<latest>/` で running job ID 確認
+3. `docs/handoff/codex_prompts/<latest>/` で prompt 内容把握
+4. Bash background task list で running 確認(なければ failed 判定)
+5. completed lane → 一次受け → push → 次 dispatch
+6. idle lane → HOLD reason check → HOLD 妥当 or 次 dispatch 判定

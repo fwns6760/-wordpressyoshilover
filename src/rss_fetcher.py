@@ -4334,6 +4334,12 @@ def _request_gemini_strict_text(
     min_chars: int,
     log_label: str = "Gemini strict fact mode",
     source_url: str | None = None,
+    budget_post_id: int | None = None,
+    budget_content_hash: str | None = None,
+    budget_prompt_template_id: str | None = None,
+    budget_source_url_hash: str | None = None,
+    budget_record_enabled: bool = False,
+    now: datetime | None = None,
 ) -> str:
     import urllib.request
     from src import llm_cost_emitter as _llm_cost
@@ -4351,6 +4357,16 @@ def _request_gemini_strict_text(
     logger.info("%s で記事生成中（最大%d回試行）...", log_label, attempt_limit)
     for attempt in range(attempt_limit):
         try:
+            if budget_record_enabled and budget_post_id is not None:
+                _llm_call_dedupe.record_gemini_call_attempt(
+                    post_id=budget_post_id,
+                    content_hash=budget_content_hash,
+                    prompt_template_id=budget_prompt_template_id,
+                    source_url_hash=budget_source_url_hash,
+                    provider="gemini",
+                    model="gemini-2.5-flash",
+                    now=now,
+                )
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
             req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
             with urllib.request.urlopen(req, timeout=90) as res:
@@ -4611,6 +4627,34 @@ def _log_gemini_cache_miss_breaker(
     logger.warning(json.dumps(payload, ensure_ascii=False))
 
 
+def _log_per_post_24h_gemini_budget(
+    logger: logging.Logger,
+    *,
+    post_id: int | None,
+    source_url: str,
+    cache_key: GeminiCacheKey,
+    budget_state: dict[str, Any],
+) -> None:
+    payload = {
+        "event": "per_post_24h_gemini_budget",
+        "post_id": post_id,
+        "post_url": str(source_url or ""),
+        "source_url_hash": str(cache_key.source_url_hash or ""),
+        "content_hash": str(cache_key.content_hash or ""),
+        "prompt_template_id": str(cache_key.prompt_template_id or ""),
+        "enabled": bool(budget_state.get("enabled")),
+        "applicable": bool(budget_state.get("applicable")),
+        "tripped": bool(budget_state.get("tripped")),
+        "limit": int(budget_state.get("limit") or 0),
+        "call_count": int(budget_state.get("call_count") or 0),
+        "remaining_calls": int(budget_state.get("remaining_calls") or 0),
+        "count_source": str(budget_state.get("count_source") or ""),
+        "window_hours": int(budget_state.get("window_hours") or 0),
+        "skip_reason": budget_state.get("skip_reason"),
+    }
+    logger.warning(json.dumps(payload, ensure_ascii=False))
+
+
 def _gemini_text_with_cache(
     *,
     api_key: str,
@@ -4641,6 +4685,7 @@ def _gemini_text_with_cache(
         "gemini_call_made": True,
     }
     preflight_candidate: dict[str, Any] | None = None
+    budget_post_id = _resolve_cache_metric_post_id(candidate_meta)
     if candidate_meta is not None:
         preflight_candidate = dict(candidate_meta)
         preflight_candidate.setdefault("source_url", source_url)
@@ -4734,7 +4779,7 @@ def _gemini_text_with_cache(
             _llm_call_dedupe.record_gemini_cache_outcome(
                 cache_hit_reason="miss",
                 hit_kind="unknown",
-                post_id=_resolve_cache_metric_post_id(candidate_meta),
+                post_id=budget_post_id,
                 content_hash=cache_key.content_hash,
                 prompt_template_id=cache_key.prompt_template_id,
                 source_url_hash=cache_key.source_url_hash,
@@ -4790,14 +4835,82 @@ def _gemini_text_with_cache(
                 )
                 return "", telemetry
 
+    budget_state = _llm_call_dedupe.evaluate_per_post_24h_gemini_budget(
+        budget_post_id,
+        now=now,
+    )
+    telemetry["per_post_24h_gemini_budget"] = budget_state
+    if budget_state.get("tripped"):
+        skip_reason = _llm_call_dedupe.PER_POST_24H_GEMINI_BUDGET_SKIP_REASON
+        telemetry["gemini_call_made"] = False
+        telemetry["skip_reason"] = skip_reason
+        telemetry["skip_layer"] = PREFLIGHT_SKIP_LAYER
+        duplicate_guard_context = (
+            candidate_meta.get("duplicate_guard_context")
+            if isinstance(candidate_meta, dict)
+            else None
+        )
+        if isinstance(duplicate_guard_context, dict):
+            duplicate_guard_context.setdefault("postgame_strict_review_reason", skip_reason)
+        if preflight_candidate is None:
+            preflight_candidate = {
+                "post_id": budget_post_id,
+                "post_url": source_url,
+                "source_url": source_url,
+                "source_url_hash": cache_key.source_url_hash,
+                "content_hash": cache_key.content_hash,
+                "article_subtype": (
+                    str(candidate_meta.get("article_subtype") or "").strip()
+                    if isinstance(candidate_meta, dict)
+                    else ""
+                ),
+            }
+        _log_per_post_24h_gemini_budget(
+            logger,
+            post_id=budget_post_id,
+            source_url=source_url,
+            cache_key=cache_key,
+            budget_state=budget_state,
+        )
+        emit_gemini_call_skipped(logger, candidate=preflight_candidate, skip_reason=skip_reason)
+        _record_preflight_skip_history(
+            logger,
+            candidate=preflight_candidate,
+            skip_reason=skip_reason,
+        )
+        _log_gemini_cache_lookup(
+            logger,
+            source_url=source_url,
+            cache_key=cache_key,
+            cache_hit=False,
+            cache_hit_reason=str(telemetry.get("cache_hit_reason") or "miss"),
+            cache_hit_kind=str(telemetry.get("cache_hit_kind") or "unknown"),
+            gemini_call_made=False,
+            cache_size_bytes=int(telemetry.get("cache_size_bytes") or 0),
+        )
+        return "", telemetry
+
+    effective_attempt_limit = attempt_limit
+    if budget_state.get("enabled") and budget_state.get("applicable"):
+        effective_attempt_limit = min(
+            attempt_limit,
+            int(budget_state.get("remaining_calls") or 0),
+        )
+
     text = _request_gemini_strict_text(
         api_key=api_key,
         prompt=prompt,
         logger=logger,
-        attempt_limit=attempt_limit,
+        attempt_limit=effective_attempt_limit,
         min_chars=min_chars,
         log_label=log_label,
         source_url=source_url or None,
+        budget_post_id=budget_post_id,
+        budget_content_hash=cache_key.content_hash,
+        budget_prompt_template_id=cache_key.prompt_template_id,
+        budget_source_url_hash=cache_key.source_url_hash,
+        budget_record_enabled=bool(budget_state.get("enabled") and budget_state.get("applicable")),
+        now=now,
     )
 
     if cache_manager is not None and cache_key.source_url_hash and cache_key.prompt_template_id and text:

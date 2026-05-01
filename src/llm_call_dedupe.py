@@ -21,10 +21,16 @@ CACHE_HIT_SPLIT_METRIC_LEDGER_PATH_ENV = "CACHE_HIT_SPLIT_METRIC_LEDGER_PATH"
 ENABLE_GEMINI_CACHE_MISS_BREAKER_ENV = "ENABLE_GEMINI_CACHE_MISS_BREAKER"
 GEMINI_CACHE_MISS_BREAKER_THRESHOLD_ENV = "GEMINI_CACHE_MISS_BREAKER_THRESHOLD"
 GEMINI_CACHE_MISS_BREAKER_WINDOW_SECONDS_ENV = "GEMINI_CACHE_MISS_BREAKER_WINDOW_SECONDS"
+ENABLE_PER_POST_24H_GEMINI_BUDGET_ENV = "ENABLE_PER_POST_24H_GEMINI_BUDGET"
+PER_POST_24H_GEMINI_BUDGET_LIMIT_ENV = "PER_POST_24H_GEMINI_BUDGET_LIMIT"
 DEFAULT_GEMINI_CACHE_MISS_BREAKER_THRESHOLD = 0.5
 DEFAULT_GEMINI_CACHE_MISS_BREAKER_WINDOW_SECONDS = 3600
+DEFAULT_PER_POST_24H_GEMINI_BUDGET_LIMIT = 5
+PER_POST_24H_GEMINI_BUDGET_WINDOW_HOURS = 24
 GEMINI_CACHE_OUTCOME_EVENT = "gemini_cache_outcome"
+GEMINI_CALL_ATTEMPT_EVENT = "gemini_call_attempt"
 GEMINI_CACHE_MISS_BREAKER_SKIP_REASON = "cache_miss_circuit_breaker"
+PER_POST_24H_GEMINI_BUDGET_SKIP_REASON = "per_post_24h_gemini_budget_exhausted"
 TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 _CACHE_HIT_KINDS = frozenset({"exact_hit", "cooldown_hit", "dedupe_hit", "unknown"})
 _CONTENT_HASH_SKIP_REASONS = frozenset({"refused_cooldown"})
@@ -162,6 +168,19 @@ def resolve_gemini_cache_miss_breaker_window_seconds(*, env: Mapping[str, str] |
     )
 
 
+def per_post_24h_gemini_budget_enabled(*, env: Mapping[str, str] | None = None) -> bool:
+    return _env_enabled(ENABLE_PER_POST_24H_GEMINI_BUDGET_ENV, env=env)
+
+
+def resolve_per_post_24h_gemini_budget_limit(*, env: Mapping[str, str] | None = None) -> int:
+    return _env_int(
+        PER_POST_24H_GEMINI_BUDGET_LIMIT_ENV,
+        DEFAULT_PER_POST_24H_GEMINI_BUDGET_LIMIT,
+        minimum=0,
+        env=env,
+    )
+
+
 def _int_or_none(value: Any) -> int | None:
     try:
         return int(value)
@@ -256,6 +275,39 @@ def record_gemini_cache_outcome(
     return payload
 
 
+def record_gemini_call_attempt(
+    *,
+    post_id: int | str,
+    content_hash: str | None = None,
+    prompt_template_id: str | None = None,
+    source_url_hash: str | None = None,
+    provider: str = "gemini",
+    model: str | None = None,
+    ledger_path: str | Path | None = None,
+    now: datetime | None = None,
+    **extra: Any,
+) -> dict[str, Any]:
+    payload = {
+        "timestamp": _now_jst(now).isoformat(),
+        "event": GEMINI_CALL_ATTEMPT_EVENT,
+        "post_id": int(post_id),
+        "content_hash": str(content_hash or ""),
+        "prompt_template_id": str(prompt_template_id or ""),
+        "source_url_hash": str(source_url_hash or ""),
+        "provider": str(provider or "gemini"),
+        "model": str(model or ""),
+    }
+    for key, value in extra.items():
+        payload[key] = value
+
+    target = Path(ledger_path) if ledger_path is not None else DEFAULT_LEDGER_PATH
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=False, default=str))
+        handle.write("\n")
+    return payload
+
+
 def _breaker_row_outcome(payload: Mapping[str, Any]) -> str | None:
     event = str(payload.get("event") or "").strip()
     if event == GEMINI_CACHE_OUTCOME_EVENT:
@@ -328,6 +380,86 @@ def evaluate_gemini_cache_miss_breaker(
         "miss_rate": miss_rate,
         "hit_kind_counts": hit_kind_counts,
         "skip_reason": GEMINI_CACHE_MISS_BREAKER_SKIP_REASON if tripped else None,
+    }
+
+
+def _is_gemini_attempt_row(payload: Mapping[str, Any]) -> bool:
+    if str(payload.get("event") or "").strip() == GEMINI_CALL_ATTEMPT_EVENT:
+        return True
+
+    if str(payload.get("skip_reason") or "").strip():
+        return False
+
+    provider = str(payload.get("provider") or "").strip().lower()
+    model = str(payload.get("model") or "").strip().lower()
+    result = str(payload.get("result") or "").strip().lower()
+    if provider == "gemini" or model.startswith("gemini-"):
+        return result in {"generated", "failed"}
+    return False
+
+
+def _is_gemini_cache_miss_row(payload: Mapping[str, Any]) -> bool:
+    if str(payload.get("event") or "").strip() != GEMINI_CACHE_OUTCOME_EVENT:
+        return False
+    cache_outcome = str(payload.get("cache_outcome") or "").strip().lower()
+    if cache_outcome:
+        return cache_outcome == "miss"
+    return str(payload.get("cache_hit_reason") or "").strip().lower() == "miss"
+
+
+def evaluate_per_post_24h_gemini_budget(
+    post_id: int | str | None,
+    *,
+    ledger_path: str | Path | None = None,
+    now: datetime | None = None,
+    env: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    current = _now_jst(now)
+    window_start = current - timedelta(hours=PER_POST_24H_GEMINI_BUDGET_WINDOW_HOURS)
+    enabled = per_post_24h_gemini_budget_enabled(env=env)
+    limit = resolve_per_post_24h_gemini_budget_limit(env=env)
+    normalized_post_id = _int_or_none(post_id)
+
+    explicit_attempt_count = 0
+    cache_miss_fallback_count = 0
+    target = Path(ledger_path) if ledger_path is not None else DEFAULT_LEDGER_PATH
+    if normalized_post_id is not None:
+        for payload in _read_jsonl_rows(target):
+            row_post_id = _int_or_none(payload.get("post_id"))
+            if row_post_id != normalized_post_id:
+                continue
+            timestamp = _parse_ts(payload.get("timestamp"))
+            if timestamp is None or timestamp < window_start:
+                continue
+            if _is_gemini_attempt_row(payload):
+                explicit_attempt_count += 1
+                continue
+            if _is_gemini_cache_miss_row(payload):
+                cache_miss_fallback_count += 1
+
+    if explicit_attempt_count > 0:
+        call_count = explicit_attempt_count
+        count_source = "explicit_attempts"
+    else:
+        call_count = cache_miss_fallback_count
+        count_source = "cache_miss_fallback" if cache_miss_fallback_count > 0 else "none"
+
+    remaining_calls = max(limit - call_count, 0)
+    applicable = normalized_post_id is not None
+    tripped = enabled and applicable and remaining_calls <= 0
+    return {
+        "enabled": enabled,
+        "applicable": applicable,
+        "post_id": normalized_post_id,
+        "limit": limit,
+        "window_hours": PER_POST_24H_GEMINI_BUDGET_WINDOW_HOURS,
+        "window_start": window_start.isoformat(),
+        "window_end": current.isoformat(),
+        "count_source": count_source,
+        "call_count": call_count,
+        "remaining_calls": remaining_calls,
+        "tripped": tripped,
+        "skip_reason": PER_POST_24H_GEMINI_BUDGET_SKIP_REASON if tripped else None,
     }
 
 
@@ -456,24 +588,33 @@ __all__ = [
     "ENABLE_CACHE_HIT_SPLIT_METRIC_ENV",
     "CACHE_HIT_SPLIT_METRIC_LEDGER_PATH_ENV",
     "ENABLE_GEMINI_CACHE_MISS_BREAKER_ENV",
+    "ENABLE_PER_POST_24H_GEMINI_BUDGET_ENV",
     "GEMINI_CACHE_MISS_BREAKER_THRESHOLD_ENV",
     "GEMINI_CACHE_MISS_BREAKER_WINDOW_SECONDS_ENV",
+    "PER_POST_24H_GEMINI_BUDGET_LIMIT_ENV",
     "DEFAULT_GEMINI_CACHE_MISS_BREAKER_THRESHOLD",
     "DEFAULT_GEMINI_CACHE_MISS_BREAKER_WINDOW_SECONDS",
+    "DEFAULT_PER_POST_24H_GEMINI_BUDGET_LIMIT",
+    "PER_POST_24H_GEMINI_BUDGET_WINDOW_HOURS",
     "GEMINI_CACHE_MISS_BREAKER_SKIP_REASON",
+    "PER_POST_24H_GEMINI_BUDGET_SKIP_REASON",
     "cache_hit_split_metric_enabled",
     "compute_content_hash",
+    "evaluate_per_post_24h_gemini_budget",
     "evaluate_gemini_cache_miss_breaker",
     "find_recent_record",
     "find_recent_refused_history",
     "gemini_cache_miss_breaker_enabled",
     "is_recently_processed",
     "normalize_hit_kind",
+    "per_post_24h_gemini_budget_enabled",
     "record_call",
     "record_cache_hit_metric",
+    "record_gemini_call_attempt",
     "record_gemini_cache_outcome",
     "resolve_cache_hit_split_metric_ledger_path",
     "resolve_gemini_cache_miss_breaker_threshold",
     "resolve_gemini_cache_miss_breaker_window_seconds",
+    "resolve_per_post_24h_gemini_budget_limit",
     "resolve_hit_kind",
 ]

@@ -28,6 +28,8 @@
 12:05 | user GO Phase3 deploy | 298-Phase3 | 「デグレなしでデプロイをやって」受領、Claude 一次受け、Codex deploy 便 fire 開始 | 報告 → fire
 12:10 | Codex Phase 3 deploy fire | 298-Phase3 | bg bpn4zeuqg / image rebuild from ffeba45 → flag OFF deploy → 2-3 trigger 観察 → 条件 OK で flag ON → 1-2 trigger 観察、不変方針 全部維持 | Codex 完了待ち、Claude 並行で運用立て直し継続
 12:15 | docs/ops/ update v6 | 298-Phase3 | OPS_BOARD active entry を Pack finalize → deploy 進行中に書換 / CURRENT_STATE USER_VISIBLE_NOW 0 件 + HOLD_NEEDS_PACK 3 + FUTURE_USER_GO 7 の 3 分類化 + 58→29 差分 1 行説明 / OBSERVE 統合(299-QA を sub_observe_items 配下) | commit + push
+12:25 | Codex Phase 3 preflight stop | 298-Phase3 | bg bpn4zeuqg は preflight で停止(target ffeba45 != HEAD 65e46bd / 私の v6 doc-only commit が原因)/ live mutation 0、image build 0 / Claude src+tests diff 確認 = ffeba45 と HEAD 等価(0 行)| 再 fire 判断
+12:30 | Codex Phase 3 deploy 再 fire | 298-Phase3 | bg b3h13kthv / target = HEAD 動的、src+tests 等価宣言で preflight 通過設計 / 不変方針 全部維持、user GO 11:00「デプロイをやって」継続 | Codex 完了待ち、Claude 並行で品質部隊 1 画面回答済
 ```
 
 ## hotfix 経過 evidence(数値)

@@ -1,26 +1,41 @@
 # YOSHILOVER WORKER POOL
 
 Codex Lane state(POLICY §13 永続管理、`/tmp` 禁止、4 NO 規律)。
-Last updated: 2026-05-01 21:08 JST(293-COST OBSERVED_OK + 改修 impl Codex 再 fire 並走)
+Last updated: 2026-05-01 21:35 JST(改修 #1/#6 デプロイ直前まで完了 + Lane A round 30 / Lane B round 19 並走、282 HOLD 維持)
 
-## 現在進行 phase: 293-COST OBSERVED_OK + 改修 impl Codex 並走
+## 現在進行 phase: 改修 sequential + 282 HOLD + 293 FULL_EXERCISE 観測準備
 
-**完了済 deploy:**
+**完了済 deploy(本日 5/1):**
 
-- 290-QA Pack A: OBSERVED_OK(20:40 JST、user 自身 gcloud、image c14e269 / revision 00176-vnk)
-- 293-COST: **OBSERVED_OK**(20:51-21:00 JST、Claude gcloud、image d541ebb / revision 00177-qtr / publish-notice job も d541ebb)
-  - env apply: ENABLE_PREFLIGHT_SKIP_NOTIFICATION=1 両 services
-  - 15-item post-deploy verify pass
-  - 機能 functional verify は 5/2 朝 AI 上限 reset 後に full exercise
+| ticket | status | image / revision | env / flag | 完了時刻 |
+|---|---|---|---|---|
+| 298-Phase3 v4 | OBSERVED_OK Phase 1-5(Phase 6 = 5/2 09:00 JST 待ち) | publish-notice:1016670(env apply only) | ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE=1 | 19:35 JST |
+| 290-QA Pack A | OBSERVED_OK | yoshilover-fetcher:c14e269 / 00176-vnk | ENABLE_WEAK_TITLE_RESCUE 未設定維持(default OFF) | 20:40 JST |
+| 293-COST | **OBSERVED_OK_SHORT**(FULL_EXERCISE_OK 未到達) | yoshilover-fetcher:d541ebb / 00177-qtr + publish-notice:d541ebb | ENABLE_PREFLIGHT_SKIP_NOTIFICATION=1 両 services | 21:00 JST |
 
-**現在進行 Codex 並走(production 不触、impl 便):**
+**改修 impl デプロイ直前まで完了(本日 5/1):**
 
-- Lane A round 29 v2: **running**(改修 #1 cache_hit split metric impl、stash pop 復帰後 fresh fire 21:01 JST)
-- Lane B round 18 v2: **running**(改修 #6 cap=10 class reserve impl、同上)
+| 改修 | commit | pytest | env knob | 状態 |
+|---|---|---|---|---|
+| #1 cache_hit split metric | `e7e656c`(Claude fallback) | focused 27/0 + full 2020/3(out-of-scope 既存 fail 3) | ENABLE_CACHE_HIT_SPLIT_METRIC default OFF | デプロイ直前まで |
+| #6 cap=10 class reserve | `f31cf21`(Codex 直接) | 2029/0 + targeted 65 pass | ENABLE_PUBLISH_NOTICE_CLASS_RESERVE / *_REAL_REVIEW / *_POST_GEN_VALIDATE / *_ERROR default OFF | デプロイ直前まで |
+
+**現在進行 Codex 並走(production 不触、impl/設計 便):**
+
+- Lane A round 30: **running**(改修 #2 cache miss circuit breaker impl、`bg04licmm`、21:30 JST fire)
+- Lane B round 19: **running**(300-COST read-only test plan、同上)
 
 **§14 mail monitor 並走:**
 
-- 直近 sent=1(12:01 UTC)/ sent=0(12:05 UTC)、errors 0、suppressed 0、storm pattern 不在
+- 直近(12:00-12:25 UTC = 21:00-21:25 JST)sent 1/0/2/0/0、errors 0、suppressed 0、storm pattern 不在
+- §14 P0/P1 自律 rollback monitor 24h 継続(298-v4 + 290 Pack A + 293-COST 重ね)
+
+**HOLD 維持(user 明示):**
+
+- 282-COST ENABLE_GEMINI_PREFLIGHT=1 → 293 FULL_EXERCISE_OK 確定後
+- 290-QA Pack B ENABLE_WEAK_TITLE_RESCUE=1 → Pack A 1 週間 OBSERVED_OK 後
+- 288-INGEST Phase 3 source 追加 → 298 + 293/282 完了後
+- Gemini call 増加 / mail 量増加 / publish/review/hold/skip 基準変更 deploy 全禁止
 
 ### 現フェーズ実態(逃げない、Codex は動いていない):
 

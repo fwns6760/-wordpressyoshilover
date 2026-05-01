@@ -719,6 +719,18 @@ Codex A / Codex B どちらも idle 化する判断を出した場合、必ず *
 
 user が「Codex 動いてる?」「次 fire は?」を聞かなくても済む状態を維持する。Claude が判断を出した時点で worker 5 field format を併記してれば、user は判断 + dispatch を 1 回で読める。
 
+### 18.6 状態遷移 必須報告(Decision Batch、本日 5/1 user 明示)
+
+以下の状態遷移は **発生時 即 Decision Batch で報告必須**。user が「今なに動いてるの?」と掘らないと分からない状態は禁止:
+
+1. **deploy 中 → OBSERVED_OK_SHORT / OBSERVED_OK / HOLD / ROLLBACK_REQUIRED 遷移**
+2. **Codex lane の作業入れ替え**(round 完了 + 次 round fire)
+3. **user GO 必要 ticket を HOLD した理由**(precondition 未達 / blocker)
+4. **次に流す低リスク subtask**(自律で fire するもの含む)
+5. **WORKER_POOL / OPS_BOARD 更新結果**(commit hash + push 確認)
+
+自律作業 OK、ただし状態遷移無報告は禁止。Decision Batch を chat に出してから次に進む。
+
 ### 18.4 適用境界
 
 | 出力種別 | 18 適用 |

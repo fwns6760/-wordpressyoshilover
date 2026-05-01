@@ -1,0 +1,21 @@
+# Lane A round 29 v2 receipt
+
+- job_id: `bhbektxze`(wrapper bash、Lane A 内部 codex pid)
+- ticket: 改修-29-cache-hit-split-metric impl(POLICY §19.6 cost guard)
+- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_a_round_29_cache_hit_split_metric.md`
+- started_at: 2026-05-01 21:01 JST(stash pop 復帰後 fresh fire)
+- status: **completed → idle → next round 30 fired**
+- completed_at: 2026-05-01 21:25 JST
+- commit_hash: `e7e656c`(Claude fallback、Codex sandbox `.git` read-only blocker)
+- pushed: yes(`54669ae..e7e656c master -> master`)
+- changed_files:
+  - src/llm_call_dedupe.py(hit_kind classification + ledger 後方互換)
+  - src/gemini_cache.py(cooldown_hit 判定)
+  - src/rss_fetcher.py(metric emission integration)
+  - tests/test_cache_hit_split_metric.py(新規)
+  - docs/handoff/codex_responses/2026-05-01_change_29_cache_hit_split_pack_v1.md(Pack v1)
+- pytest: focused 27/0 + full 2020/3(out-of-scope 既存 fail 3、本改修起因なし)
+- env knob: `ENABLE_CACHE_HIT_SPLIT_METRIC` default OFF、live-inert
+- POLICY classification: CLAUDE_AUTO_GO 候補(impl + test + push まで)、image rebuild + flag ON は user GO 後別 phase
+- 5 step 一次受け: pass(diff 5 file scope 内 / metric 追加のみ 既存挙動不変 / pytest 既存 fail 不変 / scope 内 / rollback 可能)
+- next: 改修 #1 デプロイ直前まで到達確定、Lane A round 30 改修 #2 cache miss circuit breaker 開始

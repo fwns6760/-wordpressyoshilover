@@ -1,0 +1,21 @@
+# Lane B round 18 v2 receipt
+
+- job_id: `bhbektxze`(wrapper bash、Lane B 内部 codex pid)
+- ticket: 改修-30-cap10-class-reserve impl(POLICY §19.9 mail storm 恒久対策補強)
+- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_b_round_18_cap10_class_reserve.md`
+- started_at: 2026-05-01 21:01 JST
+- status: **completed → idle → next round 19 fired**
+- completed_at: 2026-05-01 21:24 JST
+- commit_hash: `f31cf21`(Codex 直接 commit 成功、sandbox blocker 回避)
+- pushed: yes(merge 経由で origin/master 反映、`1298a60..54669ae` push 時に併載)
+- changed_files: 4 files、1165 insertions(+) / 124 deletions(-)
+  - src/publish_notice_scanner.py(cap=10 class allocation logic 改修)
+  - tests/test_publish_notice_scanner_class_reserve.py(新規)
+  - docs/handoff/codex_responses/2026-05-01_change_30_cap10_class_reserve_pack_v1.md(Pack v1)
+  - prompt 永続化
+- pytest: 2029/0 → 2029/0(0 regression)+ targeted publish-notice regression 65 passed
+- env knobs: `ENABLE_PUBLISH_NOTICE_CLASS_RESERVE` / `_REAL_REVIEW` / `_POST_GEN_VALIDATE` / `_ERROR` 全 default OFF
+- cap=10 全体上限 不変、priority order 維持(default OFF)
+- POLICY classification: CLAUDE_AUTO_GO 候補(impl + test + push まで)、image rebuild + flag ON は user GO 後別 phase
+- 5 step 一次受け: pass(diff 4 file scope 内 / cap allocation 改修のみ cap 全体不変 / pytest +0 regression / scope 内 / rollback 可能)
+- next: 改修 #6 デプロイ直前まで到達確定、Lane B round 19 300-COST read-only test plan 開始

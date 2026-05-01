@@ -23,46 +23,6 @@ updated_by: "Claude"
 # ACTIVE(最大 2 件)
 # ============================================
 active:
-  - id: 298-MAIL-STORM-HOTFIX-Phase1
-    status: DONE  # HOLD 判断 + 自然終息で完了
-    decision_owner: user
-    execution_owner: Claude
-    evidence_owner: Claude
-    user_go_required: false  # 自然終息で執行不要
-    user_go_reason: n/a
-    severity: P1
-    phase: "Phase 1 即時止血(env-only) - HOLD 確定 / 自然終息"
-    incident_started_at: "2026-05-01 09:00 JST"
-    incident_ended_at: "2026-05-01 09:55 JST"
-    phase0_rollback_record:
-      - "09:00 JST: --update-env-vars=PUBLISH_NOTICE_REVIEW_WINDOW_HOURS=168(user 明示 GO で Claude 直接実行 = §14 当時 policy)"
-      - "09:33 JST: --remove-env-vars=PUBLISH_NOTICE_REVIEW_WINDOW_HOURS(user 明示 GO、env 単独原因ではない確認のため)"
-    invariants_held:
-      - "Team Shiny From=y.sebata@shiny-lab.org 維持"
-      - "ENABLE_POST_GEN_VALIDATE_NOTIFICATION=1 維持(289 通知)"
-      - "ENABLE_LIVE_UPDATE_ARTICLES=0 維持"
-      - "X 自動投稿 OFF 維持"
-      - "Scheduler 頻度不変"
-      - "Gemini call 増加 0(env 操作のみ)"
-      - "code 変更 0"
-    evidence: |
-      - 5/1 09:00 JST PUBLISH_NOTICE_REVIEW_WINDOW_HOURS=168 apply 直後 storm 開始
-      - 09:05-09:50 sent=10 × 9 trigger 連続(累積 90 通)
-      - 09:33 JST env 削除(default 24h 復帰)
-      - 09:35-09:50 trigger sent=10 継続(env=168 単独原因ではない)
-      - 09:55 JST 以降 sent=0(自然終息、cap=10 × pool exhaustion)
-      - 10:00 JST sent=0 維持確認
-      - user 判断「Phase1 HOLD(storm 自然停止)」で実行せず close
-    phase1_hold_reason: |
-      user 条件「stormが自然停止しているなら実行せずHOLD」該当。
-      第一波が cap=10 × 9 trigger で自然終息(09:55 JST)、現在 sent=0 維持。
-      env=0 hotfix を実施すると real review path も止まる影響があるが、自然終息で回避。
-      第二波(5/2 09:00 JST 頃)に対しては Phase 2(恒久 fix)で対応。
-    next_action: "(close、Phase 2 deploy 後の再発監視で 5/2 09:00 JST 観察)"
-    next_review_at: "2026-05-02 09:00 JST(第二波 recurrent 監視)"
-    expiry: "Phase 2 deploy + 24h 観察後"
-    codex_a_artifact: "docs/handoff/codex_responses/2026-05-01_codex_a_storm_verify.md (bc1e5c0)"
-
   - id: 298-MAIL-STORM-PERMANENT-FIX-Phase2
     status: ACTIVE
     decision_owner: user
@@ -265,6 +225,45 @@ done:
     next_action: "(close、再開判断は 296 redesign 完遂後)"
     next_review_at: n/a
     expiry: n/a
+  - id: 298-MAIL-STORM-HOTFIX-Phase1
+    status: DONE
+    decision_owner: user
+    execution_owner: Claude
+    evidence_owner: Claude
+    user_go_required: false
+    user_go_reason: n/a
+    severity: P1
+    phase: "Phase 1 即時止血(env-only) - HOLD 確定 / 自然終息"
+    incident_started_at: "2026-05-01 09:00 JST"
+    incident_ended_at: "2026-05-01 09:55 JST"
+    phase0_rollback_record:
+      - "09:00 JST: --update-env-vars=PUBLISH_NOTICE_REVIEW_WINDOW_HOURS=168(user 明示 GO で Claude 直接実行 = §14 当時 policy)"
+      - "09:33 JST: --remove-env-vars=PUBLISH_NOTICE_REVIEW_WINDOW_HOURS(user 明示 GO、env 単独原因ではない確認のため)"
+    invariants_held:
+      - "Team Shiny From=y.sebata@shiny-lab.org 維持"
+      - "ENABLE_POST_GEN_VALIDATE_NOTIFICATION=1 維持(289 通知)"
+      - "ENABLE_LIVE_UPDATE_ARTICLES=0 維持"
+      - "X 自動投稿 OFF 維持"
+      - "Scheduler 頻度不変"
+      - "Gemini call 増加 0(env 操作のみ)"
+      - "code 変更 0"
+    evidence: |
+      - 5/1 09:00 JST PUBLISH_NOTICE_REVIEW_WINDOW_HOURS=168 apply 直後 storm 開始
+      - 09:05-09:50 sent=10 × 9 trigger 連続(累積 90 通)
+      - 09:33 JST env 削除(default 24h 復帰)
+      - 09:35-09:50 trigger sent=10 継続(env=168 単独原因ではない)
+      - 09:55 JST 以降 sent=0(自然終息、cap=10 × pool exhaustion、log evidence: 09:56:06 / 01:00:47 UTC sent=0)
+      - user 判断「Phase1 HOLD(storm 自然停止)」で実行せず close
+    phase1_hold_reason: |
+      user 条件「stormが自然停止しているなら実行せずHOLD」該当。
+      第一波が cap=10 × 9 trigger で自然終息(09:55 JST)、現在 sent=0 維持。
+      env=0 hotfix を実施すると real review path も止まる影響があるが、自然終息で回避。
+      第二波(5/2 09:00 JST 頃)に対しては Phase 2(恒久 fix)で対応。
+    next_action: "(close、Phase 2 deploy 後の再発監視で 5/2 09:00 JST 観察)"
+    next_review_at: "2026-05-02 09:00 JST(第二波 recurrent 監視)"
+    expiry: "Phase 2 deploy + 24h 観察後"
+    codex_a_artifact: "docs/handoff/codex_responses/2026-05-01_codex_a_storm_verify.md (bc1e5c0)"
+
   - id: ops_reset_2026-05-01
     status: DONE_DOC_ONLY
     decision_owner: Claude

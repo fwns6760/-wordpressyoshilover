@@ -105,18 +105,33 @@ gcloud scheduler jobs describe codex-shadow-trigger --location=asia-northeast1 \
 - 公開基準の緩和(duplicate guard 解除 / hard_stop 解除)
 - 新規 ticket 起票(P0 incident 以外)
 
-### 即停止条件(自律 GO 中、検出時)
+### 通常時の即停止条件(自律 GO 中、P0/P1 incident でない場合)
 - src / tests / config / Dockerfile / cloudbuild yaml / requirements.txt 編集が必要
-- silent skip 検出(P0 即報告、自律対処しない)
+- silent skip 検出(P0 即報告、自律対処しない、`POLICY.md` §6)
 - ledger silent / mail silent / rss_fetcher 内 silent / WP 直接 silent
 - env / image / Scheduler の差分検出(期待値と乖離)
+
+### P0/P1 incident 時の例外(`POLICY.md` §14、user 明示 GO 不要)
+**8 条件 全部 AND を満たす場合**、Acceptance Pack なしで Claude 自律即時 hotfix 実行可:
+1. 継続中のユーザー体感破壊
+2. scope narrow(1 service or 1 job の env / scheduler 操作のみ、code 変更 0)
+3. Gemini call 増加なし
+4. Team Shiny From 変更なし
+5. 既存通知全停止ではない(289 / 通常 publish notice / その他通知 1 つ以上残る)
+6. rollback 1 コマンドまたは明確
+7. 実施後 verify 条件明確(sent=N / errors=0 等)
+8. SEO / source 追加 / Scheduler 変更 / publish 基準緩和 に触れない
+
+実行後の事後報告 5 項目(env action / 次 trigger 結果 / errors / rollback 要否 / 影響範囲)で完結。
 
 ---
 
 ## 5. Claude 自律 GO 範囲(USER_GO_REQUIRED=false で進める、永続)
 
-以下のみ自律で進める(`POLICY.md` section 3 の 8 categories):
+以下のみ自律で進める(`POLICY.md` §3 10 categories):
 - READ_ONLY / DOC_ONLY / EVIDENCE_ONLY / HANDOFF_UPDATE / TEST_DESIGN / ROLLBACK_CATALOG / BOARD_COMPRESSION / ACCEPTANCE_PACK_DRAFT
+- **INCIDENT_ANALYSIS**(P0/P1 root cause 解析 / ledger 解析、read-only)
+- **P0_P1_NARROW_HOTFIX**(§14 8 条件 全部 AND 満たす narrow hotfix 即時実行、Acceptance Pack 不要)
 
 ---
 
@@ -134,7 +149,7 @@ gcloud scheduler jobs describe codex-shadow-trigger --location=asia-northeast1 \
 
 ```
 docs/ops/                       (永続正本、5 file)
-├── POLICY.md                   (運用ルール、user GO 9 / 自律 GO 8 / Acceptance Pack 13 / silent skip P0 / clean build)
+├── POLICY.md                   (運用ルール 15 sections、user GO 9 / 自律 GO 10 / Acceptance Pack 13 / silent skip P0 / clean build / P0_P1 自律 hotfix 8 条件 / Outcome Ledger format)
 ├── CURRENT_STATE.md            (現在地、6 カテゴリ board、session 単位更新)
 ├── OPS_BOARD.yaml              (ticket 状態機械可読正本、各 ticket 7 軸 OWNER + state + evidence)
 ├── ACCEPTANCE_PACK_TEMPLATE.md (user GO 提示 template、13 項目)
@@ -145,8 +160,11 @@ docs/handoff/                   (履歴、過去事実、新規 ops 状態の正
 │   ├── 2026-04-30_p0_publish_recovery_observation.md  (P0 復旧履歴)
 │   ├── 2026-04-30_next_action_queue.md                (旧 queue、参考履歴)
 │   ├── 2026-04-30_session_summary.md                  (旧 1 行サマリ、参考履歴)
-│   └── 2026-05-01_ops_reset.md                        (本 ops reset の起源履歴)
+│   ├── 2026-05-01_ops_reset.md                        (本 ops reset の起源履歴)
+│   └── 2026-05-01_p1_mail_storm_hotfix.md             (P1 mail storm hotfix 1 行履歴 + §14 例外発動 evidence)
 └── codex_responses/, codex_requests/, run_logs/       (Codex 履歴)
+    ├── 2026-05-01_codex_a_storm_verify.md             (Codex A storm read-only verify + env-only hotfix 案)
+    └── 2026-05-01_codex_b_storm_permanent_fix.md      (Codex B 恒久対策 設計 + Acceptance Pack draft)
 
 ~/.claude/projects/.../memory/  (Claude 補助記憶、正本ではない、矛盾時は repo 優先)
 ```

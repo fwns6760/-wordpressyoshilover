@@ -90,7 +90,8 @@
 | 276-QA test mock fix | CI run 25146349669 success / 1820 tests OK |
 | 283-MKT 要件定義 doc | commit a2777f9 push / user 確認済 |
 | 297-OPS codex-shadow PAUSE | scheduler state=PAUSED / 24h publish-mail trigger 維持 / Cloud Run job 残存 |
-| ops_reset_2026-05-01 | session_logs commit `913844b` + `6b7d77b` push 済(履歴側)/ **docs/ops/ 5 file は本 commit(2026-05-01 09:55 JST 予定)で初永続化**(前回 session で untracked のまま誤判定、本 commit で正本化)|
+| ops_reset_2026-05-01 | session_logs commit `913844b` + `6b7d77b` push 済(履歴側)/ docs/ops/ 5 file は `0b64078` + `5fe7fad` + `66af52a` で永続化済(運用 active 正本)|
+| **298-Phase1**(P1 mail storm 即時止血) | user HOLD 判断 + storm 自然終息 / 09:55 JST 以降 sent=0 維持 / env=0 hotfix 実施せず real review 影響回避 / 90 通の第一波で完結 / 不変方針(Team Shiny / 289 / X / Scheduler / Gemini / code) 全部維持 |
 
 ---
 

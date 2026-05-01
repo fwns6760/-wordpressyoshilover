@@ -5,6 +5,10 @@
 - prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_a_round_16_288_ready.md`
 - started_at: 2026-05-01 18:05 JST(approx)
 - expected_output: `docs/handoff/codex_responses/2026-05-01_288_INGEST_ready_pack.md`
-- status: **running**
-- 5 step 一次受け: pending(completion 通知後)
-- prev round 15 (`bh5sh66qf`): completed `c89091a`、290 READY pack landed、ready_status=hold(298 24h + preflight 待ち)
+- status: **completed**
+- completed_at: 2026-05-01 18:25 JST
+- commit_hash: `7fd760f`(着地 + push 済)
+- ready_status: hold(5 条件達成待ち)
+- 5 step 一次受け: **pass**
+- next: Lane A → round 17(final consolidation index)即 fire
+- prev round 15 (`bh5sh66qf`): completed `c89091a`、290 READY pack hold

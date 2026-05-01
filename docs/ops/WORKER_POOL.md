@@ -5,16 +5,16 @@ Last updated: 2026-05-01 17:25 JST(両 lane 完了 close 状態)
 
 ## Active Lanes(両 running、READY 化進行中)
 
-### Lane A round 16
+### Lane A round 17
 
 - status: **running**
-- job_id: `bw5wytf4s`
-- ticket: 288-INGEST READY 化(消化順 順 5、source 追加判断 5 条件 precondition)
-- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_a_round_16_288_ready.md`
-- receipt_path: `docs/handoff/codex_receipts/2026-05-01/lane_a_round_16.md`
-- started_at: 2026-05-01 18:05 JST(approx)
-- expected_output: `docs/handoff/codex_responses/2026-05-01_288_INGEST_ready_pack.md`
-- prev: round 13-15 (`bjpdfiecy` → `byrelohvy` → `bh5sh66qf`)all completed、293 + 282 + 290 READY pack 全 landed
+- job_id: `bg72l5lf4`
+- ticket: 全 READY pack final consolidation index doc(消化順 全 ticket 横串、新規ticket なし、明日朝 user 提示用 navigation aid)
+- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_a_round_17_final_index.md`
+- receipt_path: `docs/handoff/codex_receipts/2026-05-01/lane_a_round_17.md`
+- started_at: 2026-05-01 18:25 JST(approx)
+- expected_output: `docs/handoff/codex_responses/2026-05-01_final_consolidation_index.md`
+- prev: round 13-16 (`bjpdfiecy` → `byrelohvy` → `bh5sh66qf` → `bw5wytf4s`)all completed、293 + 282 + 290 + 288 READY pack 全 landed
 
 ### Lane B round 12
 

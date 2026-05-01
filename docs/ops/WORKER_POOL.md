@@ -1,32 +1,23 @@
 # YOSHILOVER WORKER POOL
 
 Codex Lane state(POLICY §13 永続管理、`/tmp` 禁止、4 NO 規律)。
-Last updated: 2026-05-01 JST(`b6mrhbha7` Lane B round 10 completed)
+Last updated: 2026-05-01 17:25 JST(両 lane 完了 close 状態)
 
-## Active Lanes
+## Active Lanes(両 idle、本日 close)
 
-### Lane A round 12
+### Lane A
 
-- status: **running**
-- job_id: `b1fiot2e4`
-- ticket: Pack consistency review v2(消化順 横串 subtask)
-- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_a_round_12_pack_consistency_v2.md`
-- receipt_path: `docs/handoff/codex_receipts/2026-05-01/lane_a_round_12.md`
-- started_at: 2026-05-01 17:08 JST
-- expected_output: `docs/handoff/codex_responses/2026-05-01_pack_consistency_review_v2.md`
-- expected_completion: 17:25 JST
+- status: **idle**
+- last_round: round 12 completed(`0ae5505`、Pack consistency review v2、7/7 main Packs verified、residual UNKNOWN = 0)
+- HOLD reason: 4 条件全 YES → 消化順 1-8 全 round 投入完了(round 1-12)+ 横串 review v1/v2 完了 + supplement 全完了 + final review 完了 + INCIDENT_LIBRARY 補強完了 + numbering correction 完了 + 17:00 observe Claude 単独完了 / 残 candidate = 新規 ticket 起票 = POLICY §10 違反 / scope 拡大 = REJECT
+- next_dispatch: 明日朝 5/2 06:00 JST 以降、298-Phase3 v4 deploy or 別 ticket impl(user GO 後)
 
-### Lane B round 10
+### Lane B
 
-- status: **completed**(idle 候補、4 条件評価で次 dispatch or HOLD reason 記載必須)
-- job_id: `b6mrhbha7`
-- ticket: 293-COST design v2 numbering correction(消化順 2 subtask)
-- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_b_round_10_293_numbering.md`
-- receipt_path: `docs/handoff/codex_receipts/2026-05-01/lane_b_round_10.md`
-- started_at: 2026-05-01 17:00 JST
-- completed_at: 2026-05-01 17:13 JST
-- expected_output: `docs/handoff/codex_responses/2026-05-01_293_COST_pack_v2_numbering_correction.md`
-- next_action: 5 step 一次受け → push → 4 条件評価 → 次 dispatch or HOLD reason 記載
+- status: **idle**
+- last_round: round 10 completed(`6ddff7c`、293-COST design v2 numbering correction、3 mappings)
+- HOLD reason: 4 条件全 YES → 同上(消化順全部投入済、横串 review 完了、Lane A と repeated 重複しない candidate なし)
+- next_dispatch: 明日朝 5/2 06:00 JST 以降、user GO 後の subtask
 
 ## Lane History(本日 round 1-12 全部、commit hash 着地済)
 

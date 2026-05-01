@@ -24,16 +24,41 @@ updated_by: "Claude"
 # ============================================
 active:
   - id: 298-Phase3-deploy
-    status: ACTIVE
-    decision_owner: user  # deploy 自体の最終判断、本日 user GO 受領済(11:00 JST)
-    execution_owner: Codex  # bg bpn4zeuqg、Claude 追認
+    status: ROLLED_BACK_AFTER_REGRESSION  # DONE 禁止、HOLD_NEEDS_PACK 扱い
+    decision_owner: user
+    execution_owner: Claude  # rollback 自律実行 + post-observe Claude 担当
     evidence_owner: Claude
-    user_go_required: true  # 受領済
+    user_go_required: true  # 再 ON 前に Pack 再設計 + cardinality estimate user GO 必須
     user_go_reason: PROD_DEPLOY+FLAG_ENV+MAIL_ROUTING_MAJOR
-    severity: P1
-    phase: "1 Pack 段階化 deploy(image rebuild → flag OFF deploy → 観察 → 条件 OK で flag ON → 観察)"
-    progress: "Codex deploy 便 fire 中(bg bpn4zeuqg、~30-60 min 想定)、完了で Claude 追認 + 1 行 user resolved 通知"
-    pack_completion_target: "deploy 完了で 100%(本日中)"
+    severity: P1_contained
+    phase: "image deploy 完了 + flag rollback で機能無効化、deploy 前等価挙動、第二波 risk OPEN"
+    progress: |
+      13:00 Codex Phase 3 v3 fire / 13:24 flag ON observe green(rolling 1h 24)
+      13:35 flag ON 後 storm 再発検出(02:35-02:56 UTC sent=10 × 5 trigger / 累積 50+ / rolling ~142/h)
+      13:55 §14 自律 rollback(--remove-env-vars=ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE)
+      14:15 post-rollback observe(rolling 1h 5-6 通 / old_candidate emit 0 / 通常 path 全部維持)
+    state_summary:
+      image: "publish-notice:1016670 維持(new、impl d44594a 入り)"
+      flag: "OFF(ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE 不在)"
+      persistent_ledger_function: "無効(flag OFF で lookup 経路 dead)"
+      effective_behavior: "deploy 前等価(scanner code は new だが flag gate で旧 path)"
+      second_wave_risk: "OPEN(63003-63311 group は permanent_ledger 未登録、5/2 09:00 JST dedup expire で再 emit ~90 通 risk)"
+    re_on_preconditions:
+      - "eligible old_candidate pool cardinality estimate(read-only、ledger 直接走査)"
+      - "想定 mail 件数(first emit total)"
+      - "max mails/hour(MAIL_BUDGET 30/h 違反しない設計、cap 自動引下 / staggered emit / 等)"
+      - "max mails/day(MAIL_BUDGET 100/d 違反しない設計)"
+      - "first emit 時の budget 超過 0 evidence"
+      - "ledger seed / no-send backfill 可否(first emit を skip 化する選択肢)"
+      - "stop condition 明示(rolling sent > N / errors > 0 等)"
+      - "rollback 条件明示(env / image / ledger archive 3-tier)"
+      - "上記すべて evidence YES なら GO、UNKNOWN 1 つでも HOLD"
+    pack_completion_target: "Phase 3 v4 設計 + Pack 再起草(本日 doc draft、user GO は明日以降)"
+    not_today:
+      - "Phase 3 再 ON(env apply)"
+      - "image rollback(現時点不要)"
+      - "ledger file 削除"
+      - "Codex 追加 fire(本日上限超過済 + user 指示)"
     finalize_required_items:
       - "1. latest HEAD(ffeba45)fresh pytest(Claude read-only 実行、failures count 記録)"
       - "2. pre-existing 3 failures の 299-QA 起票記録(本日 commit 済 verify)"

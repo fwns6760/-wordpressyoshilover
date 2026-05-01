@@ -39,6 +39,9 @@
 13:08 | flag OFF deploy + observe green | 298-Phase3 | job generation `40` / image digest deploy / env unchanged / trigger `02:20Z sent=1 errors=0` + `02:25Z sent=1 errors=0` / `post_gen_validate` path present / silent skip 0 | flag ON apply
 13:09 | flag ON apply | 298-Phase3 | job generation `41` / `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE=1` / image unchanged | flag ON observe
 13:24 | flag ON observe green | 298-Phase3 | trigger `02:35Z sent=10 errors=0` + `02:40Z sent=10 errors=0` / first batch ids `61938-62039` / second batchは first batch を `OLD_CANDIDATE_PERMANENT_DEDUP` skip しつつ new ids `62070-62396` 送信 / forbidden `63003-63311` sent 0 / rolling 1h sent `24` / since 09:00 JST `125` | doc-only report commit + push
+13:35 | flag ON 後 storm 再発検出 | 298-Phase3 | 02:35-02:56 UTC = 11:35-11:56 JST flag ON 後 5 trigger 連続 sent=10、累積 50+ 通、post_id 範囲 62455-62940(MIN_AGE_DAYS=3 以上の old backlog pool first emit storm)/ rolling 1h ~142 通、MAIL_BUDGET 30/h 完全違反 / permanent_dedup 機能(post_id 重複 0)| §14 8 条件 全部 AND 確認、Claude 自律 rollback 判定
+13:55 | Phase3 flag rollback 自律実行 | 298-Phase3 | gcloud run jobs update publish-notice --remove-env-vars=ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE / env 不在 verify、Team Shiny / 289 / live_update / Scheduler / Gemini 全部不変、image は new(:1016670)維持で permanent_ledger 機能無効化 = deploy 前等価挙動 | post-rollback observe
+14:15 | post-rollback observe | 298-Phase3 | 直近 16 trigger(03:00-04:15 UTC = 12:00-13:15 JST)sent 累計 8 通 / rolling 1h 5-6 通 / 【要確認(古い候補)】 emit 0 件 / 通常 path 全部観測(【要review｜post_gen_validate】1 / 【要確認】3 / 【要確認・X見送り】1 / 【巨人】1)/ errors=0 / silent skip 0 / Team Shiny 維持 / state ROLLED_BACK_AFTER_REGRESSION / HOLD_NEEDS_PACK | 第二波 risk OPEN
 ```
 
 ## hotfix 経過 evidence(数値)

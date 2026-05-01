@@ -1,11 +1,26 @@
 # YOSHILOVER WORKER POOL
 
 Codex Lane state(POLICY §13 永続管理、`/tmp` 禁止、4 NO 規律)。
-Last updated: 2026-05-01 20:55 JST
+Last updated: 2026-05-01 21:08 JST(293-COST OBSERVED_OK + 改修 impl Codex 再 fire 並走)
 
-## 現在進行 phase: Claude deploy 実行中(293-COST、Codex 実装 lane は idle 待機)
+## 現在進行 phase: 293-COST OBSERVED_OK + 改修 impl Codex 並走
 
-Codex impl 便 (改修 #1 / #6) は 20:43 JST に kill + stash 待避。理由:290 Pack A deploy worktree clean 要件、続いて 293 deploy 実行のため Codex sandbox DNS fail で gcloud write 不能 → Claude 直接 deploy 切替(memory `feedback_no_claude_gcloud_execution.md` の sandbox-fail 例外条項適用)。
+**完了済 deploy:**
+
+- 290-QA Pack A: OBSERVED_OK(20:40 JST、user 自身 gcloud、image c14e269 / revision 00176-vnk)
+- 293-COST: **OBSERVED_OK**(20:51-21:00 JST、Claude gcloud、image d541ebb / revision 00177-qtr / publish-notice job も d541ebb)
+  - env apply: ENABLE_PREFLIGHT_SKIP_NOTIFICATION=1 両 services
+  - 15-item post-deploy verify pass
+  - 機能 functional verify は 5/2 朝 AI 上限 reset 後に full exercise
+
+**現在進行 Codex 並走(production 不触、impl 便):**
+
+- Lane A round 29 v2: **running**(改修 #1 cache_hit split metric impl、stash pop 復帰後 fresh fire 21:01 JST)
+- Lane B round 18 v2: **running**(改修 #6 cap=10 class reserve impl、同上)
+
+**§14 mail monitor 並走:**
+
+- 直近 sent=1(12:01 UTC)/ sent=0(12:05 UTC)、errors 0、suppressed 0、storm pattern 不在
 
 ### 現フェーズ実態(逃げない、Codex は動いていない):
 
@@ -122,9 +137,36 @@ deploy 後想定:
 - stash 0:同上(改修 #6 部分含む)
 - next_dispatch:Lane A stash 復帰後、改修 #2 / #3 等 sequential
 
-## (廃止)旧 Active Lanes section ※ 20:43 JST 時点で kill / stash 済、上の現フェーズ実態を参照
+## Active Lanes(両 running、改修 impl 並列駆動中、production 不触)
 
-旧 Lane A round 29 / Lane B round 18 は 20:43 JST に Claude が kill + stash(`改修-impl-WIP-restore-after-290-deploy`)。理由:290 Pack A deploy → 293 deploy への切替で worktree clean 要件 + Codex sandbox DNS fail で gcloud write 不能(memory `feedback_no_claude_gcloud_execution.md` の sandbox-fail 例外)。Claude deploy 完走後 stash 復帰 + 再 fire 予定。
+### Lane A round 29 v2(running、改修 #1 cache_hit split metric impl)
+
+- status: **running**
+- job_id: `bhbektxze`(wrapper bash)
+- ticket: 改修-29-cache-hit-split-metric(audit 由来)
+- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_a_round_29_cache_hit_split_metric.md`
+- receipt_path: `docs/handoff/codex_receipts/2026-05-01/lane_a_round_29.md`(完了後 Claude 作成)
+- started_at: 2026-05-01 21:01 JST(stash pop 復帰後 fresh fire)
+- worktree state: stash 復帰時点で `src/gemini_cache.py` / `src/llm_call_dedupe.py` / `src/rss_fetcher.py` modified、`src/publish_notice_scanner.py` modified(改修 #6 と一部干渉)
+- expected_output: src 改修 + tests + Pack v1 + commit + push
+- HOLD/STOP condition: pytest fail / scope 違反 / 既存 cache logic 挙動変化検出
+
+### Lane B round 18 v2(running、改修 #6 cap=10 class reserve impl)
+
+- status: **running**
+- job_id: `bhbektxze`(同 wrapper bash)
+- ticket: 改修-30-cap10-class-reserve(audit 由来)
+- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_b_round_18_cap10_class_reserve.md`
+- receipt_path: `docs/handoff/codex_receipts/2026-05-01/lane_b_round_18.md`(完了後 Claude 作成)
+- started_at: 2026-05-01 21:01 JST
+- worktree state: `src/publish_notice_scanner.py` modified(Lane A と一部 file 重複、scope disjoint だが merge 注意)
+- expected_output: scanner cap reserve 実装 + tests + Pack v1 + commit + push
+- HOLD/STOP condition: cap=10 全体上限変動 / pytest fail / 298-v4 / 293 観察 entanglement
+
+### 並走 monitor
+
+- 293-COST observation 継続(~30 min trend confirm まで Claude が mail / Gemini delta 監視)
+- §14 P0/P1 monitor 継続
 
 ## 並走 monitor(Claude 一次受け、§14 P0/P1)
 

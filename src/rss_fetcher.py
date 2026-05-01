@@ -4585,6 +4585,32 @@ def _log_gemini_cache_backend_error(
     logger.warning(json.dumps(payload, ensure_ascii=False))
 
 
+def _log_gemini_cache_miss_breaker(
+    logger: logging.Logger,
+    *,
+    source_url: str,
+    cache_key: GeminiCacheKey,
+    breaker_state: dict[str, Any],
+) -> None:
+    payload = {
+        "event": "gemini_cache_miss_breaker",
+        "post_url": str(source_url or ""),
+        "source_url_hash": str(cache_key.source_url_hash or ""),
+        "content_hash": str(cache_key.content_hash or ""),
+        "prompt_template_id": str(cache_key.prompt_template_id or ""),
+        "enabled": bool(breaker_state.get("enabled")),
+        "tripped": bool(breaker_state.get("tripped")),
+        "threshold": float(breaker_state.get("threshold") or 0.0),
+        "window_seconds": int(breaker_state.get("window_seconds") or 0),
+        "miss_count": int(breaker_state.get("miss_count") or 0),
+        "hit_count": int(breaker_state.get("hit_count") or 0),
+        "total_count": int(breaker_state.get("total_count") or 0),
+        "miss_rate": float(breaker_state.get("miss_rate") or 0.0),
+        "skip_reason": breaker_state.get("skip_reason"),
+    }
+    logger.warning(json.dumps(payload, ensure_ascii=False))
+
+
 def _gemini_text_with_cache(
     *,
     api_key: str,
@@ -4614,6 +4640,7 @@ def _gemini_text_with_cache(
         "cache_size_bytes": 0,
         "gemini_call_made": True,
     }
+    preflight_candidate: dict[str, Any] | None = None
     if candidate_meta is not None:
         preflight_candidate = dict(candidate_meta)
         preflight_candidate.setdefault("source_url", source_url)
@@ -4672,6 +4699,15 @@ def _gemini_text_with_cache(
                 telemetry["cache_hit"] = True
                 telemetry["cache_hit_kind"] = hit_kind
                 telemetry["gemini_call_made"] = False
+                _llm_call_dedupe.record_gemini_cache_outcome(
+                    cache_hit_reason=hit_reason,
+                    hit_kind=hit_kind,
+                    post_id=_resolve_cache_metric_post_id(candidate_meta),
+                    content_hash=cache_key.content_hash,
+                    prompt_template_id=cache_key.prompt_template_id,
+                    source_url_hash=cache_key.source_url_hash,
+                    now=now,
+                )
                 _llm_call_dedupe.record_cache_hit_metric(
                     hit_kind=hit_kind,
                     post_id=_resolve_cache_metric_post_id(candidate_meta),
@@ -4695,6 +4731,64 @@ def _gemini_text_with_cache(
                     cache_size_bytes=cache_size_bytes,
                 )
                 return cached.generated_text, telemetry
+            _llm_call_dedupe.record_gemini_cache_outcome(
+                cache_hit_reason="miss",
+                hit_kind="unknown",
+                post_id=_resolve_cache_metric_post_id(candidate_meta),
+                content_hash=cache_key.content_hash,
+                prompt_template_id=cache_key.prompt_template_id,
+                source_url_hash=cache_key.source_url_hash,
+                now=now,
+            )
+            breaker_state = _llm_call_dedupe.evaluate_gemini_cache_miss_breaker(now=now)
+            telemetry["cache_miss_breaker"] = breaker_state
+            if breaker_state.get("tripped"):
+                skip_reason = _llm_call_dedupe.GEMINI_CACHE_MISS_BREAKER_SKIP_REASON
+                telemetry["gemini_call_made"] = False
+                telemetry["skip_reason"] = skip_reason
+                telemetry["skip_layer"] = PREFLIGHT_SKIP_LAYER
+                duplicate_guard_context = (
+                    candidate_meta.get("duplicate_guard_context")
+                    if isinstance(candidate_meta, dict)
+                    else None
+                )
+                if isinstance(duplicate_guard_context, dict):
+                    duplicate_guard_context.setdefault("postgame_strict_review_reason", skip_reason)
+                if preflight_candidate is None:
+                    preflight_candidate = {
+                        "post_url": source_url,
+                        "source_url": source_url,
+                        "source_url_hash": cache_key.source_url_hash,
+                        "content_hash": cache_key.content_hash,
+                        "article_subtype": (
+                            str(candidate_meta.get("article_subtype") or "").strip()
+                            if isinstance(candidate_meta, dict)
+                            else ""
+                        ),
+                    }
+                _log_gemini_cache_miss_breaker(
+                    logger,
+                    source_url=source_url,
+                    cache_key=cache_key,
+                    breaker_state=breaker_state,
+                )
+                emit_gemini_call_skipped(logger, candidate=preflight_candidate, skip_reason=skip_reason)
+                _record_preflight_skip_history(
+                    logger,
+                    candidate=preflight_candidate,
+                    skip_reason=skip_reason,
+                )
+                _log_gemini_cache_lookup(
+                    logger,
+                    source_url=source_url,
+                    cache_key=cache_key,
+                    cache_hit=False,
+                    cache_hit_reason="miss",
+                    cache_hit_kind="unknown",
+                    gemini_call_made=False,
+                    cache_size_bytes=cache_size_bytes,
+                )
+                return "", telemetry
 
     text = _request_gemini_strict_text(
         api_key=api_key,

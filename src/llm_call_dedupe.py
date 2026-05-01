@@ -18,6 +18,13 @@ DEFAULT_GUARDED_PUBLISH_HISTORY_PATH = ROOT / "logs" / "guarded_publish_history.
 DEFAULT_CACHE_HIT_SPLIT_METRIC_LEDGER_PATH = ROOT / "logs" / "cache_hit_split_metric_ledger.jsonl"
 ENABLE_CACHE_HIT_SPLIT_METRIC_ENV = "ENABLE_CACHE_HIT_SPLIT_METRIC"
 CACHE_HIT_SPLIT_METRIC_LEDGER_PATH_ENV = "CACHE_HIT_SPLIT_METRIC_LEDGER_PATH"
+ENABLE_GEMINI_CACHE_MISS_BREAKER_ENV = "ENABLE_GEMINI_CACHE_MISS_BREAKER"
+GEMINI_CACHE_MISS_BREAKER_THRESHOLD_ENV = "GEMINI_CACHE_MISS_BREAKER_THRESHOLD"
+GEMINI_CACHE_MISS_BREAKER_WINDOW_SECONDS_ENV = "GEMINI_CACHE_MISS_BREAKER_WINDOW_SECONDS"
+DEFAULT_GEMINI_CACHE_MISS_BREAKER_THRESHOLD = 0.5
+DEFAULT_GEMINI_CACHE_MISS_BREAKER_WINDOW_SECONDS = 3600
+GEMINI_CACHE_OUTCOME_EVENT = "gemini_cache_outcome"
+GEMINI_CACHE_MISS_BREAKER_SKIP_REASON = "cache_miss_circuit_breaker"
 TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 _CACHE_HIT_KINDS = frozenset({"exact_hit", "cooldown_hit", "dedupe_hit", "unknown"})
 _CONTENT_HASH_SKIP_REASONS = frozenset({"refused_cooldown"})
@@ -68,6 +75,45 @@ def _env_enabled(name: str, *, env: Mapping[str, str] | None = None) -> bool:
     return str(source.get(name, "0")).strip().lower() in TRUE_VALUES
 
 
+def _env_float(
+    name: str,
+    default: float,
+    *,
+    minimum: float | None = None,
+    maximum: float | None = None,
+    env: Mapping[str, str] | None = None,
+) -> float:
+    source = os.environ if env is None else env
+    raw = str(source.get(name, "")).strip()
+    try:
+        value = float(raw) if raw else float(default)
+    except (TypeError, ValueError):
+        value = float(default)
+    if minimum is not None:
+        value = max(value, minimum)
+    if maximum is not None:
+        value = min(value, maximum)
+    return value
+
+
+def _env_int(
+    name: str,
+    default: int,
+    *,
+    minimum: int | None = None,
+    env: Mapping[str, str] | None = None,
+) -> int:
+    source = os.environ if env is None else env
+    raw = str(source.get(name, "")).strip()
+    try:
+        value = int(raw) if raw else int(default)
+    except (TypeError, ValueError):
+        value = int(default)
+    if minimum is not None:
+        value = max(value, minimum)
+    return value
+
+
 def cache_hit_split_metric_enabled(*, env: Mapping[str, str] | None = None) -> bool:
     return _env_enabled(ENABLE_CACHE_HIT_SPLIT_METRIC_ENV, env=env)
 
@@ -91,6 +137,29 @@ def resolve_hit_kind(payload: Mapping[str, Any] | None) -> str:
     if not isinstance(payload, Mapping):
         return "unknown"
     return normalize_hit_kind(payload.get("hit_kind"))
+
+
+def gemini_cache_miss_breaker_enabled(*, env: Mapping[str, str] | None = None) -> bool:
+    return _env_enabled(ENABLE_GEMINI_CACHE_MISS_BREAKER_ENV, env=env)
+
+
+def resolve_gemini_cache_miss_breaker_threshold(*, env: Mapping[str, str] | None = None) -> float:
+    return _env_float(
+        GEMINI_CACHE_MISS_BREAKER_THRESHOLD_ENV,
+        DEFAULT_GEMINI_CACHE_MISS_BREAKER_THRESHOLD,
+        minimum=0.0,
+        maximum=1.0,
+        env=env,
+    )
+
+
+def resolve_gemini_cache_miss_breaker_window_seconds(*, env: Mapping[str, str] | None = None) -> int:
+    return _env_int(
+        GEMINI_CACHE_MISS_BREAKER_WINDOW_SECONDS_ENV,
+        DEFAULT_GEMINI_CACHE_MISS_BREAKER_WINDOW_SECONDS,
+        minimum=1,
+        env=env,
+    )
 
 
 def _int_or_none(value: Any) -> int | None:
@@ -143,6 +212,123 @@ def record_cache_hit_metric(
         handle.write(json.dumps(payload, ensure_ascii=False, default=str))
         handle.write("\n")
     return payload
+
+
+def record_gemini_cache_outcome(
+    *,
+    cache_hit_reason: str,
+    hit_kind: str = "unknown",
+    post_id: int | str | None = None,
+    content_hash: str | None = None,
+    prompt_template_id: str | None = None,
+    source_url_hash: str | None = None,
+    ledger_path: str | Path | None = None,
+    now: datetime | None = None,
+    **extra: Any,
+) -> dict[str, Any]:
+    normalized_reason = str(cache_hit_reason or "").strip().lower()
+    if normalized_reason in {"content_hash_exact", "cooldown_active", "content_hash_dedupe"}:
+        cache_outcome = "hit"
+    elif normalized_reason == "miss":
+        cache_outcome = "miss"
+    else:
+        cache_outcome = "unknown"
+
+    payload = {
+        "timestamp": _now_jst(now).isoformat(),
+        "event": GEMINI_CACHE_OUTCOME_EVENT,
+        "cache_outcome": cache_outcome,
+        "cache_hit_reason": normalized_reason,
+        "hit_kind": normalize_hit_kind(hit_kind),
+        "post_id": _int_or_none(post_id),
+        "content_hash": str(content_hash or ""),
+        "prompt_template_id": str(prompt_template_id or ""),
+        "source_url_hash": str(source_url_hash or ""),
+    }
+    for key, value in extra.items():
+        payload[key] = value
+
+    target = Path(ledger_path) if ledger_path is not None else DEFAULT_LEDGER_PATH
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=False, default=str))
+        handle.write("\n")
+    return payload
+
+
+def _breaker_row_outcome(payload: Mapping[str, Any]) -> str | None:
+    event = str(payload.get("event") or "").strip()
+    if event == GEMINI_CACHE_OUTCOME_EVENT:
+        outcome = str(payload.get("cache_outcome") or "").strip().lower()
+        if outcome in {"hit", "miss"}:
+            return outcome
+        normalized_reason = str(payload.get("cache_hit_reason") or "").strip().lower()
+        if normalized_reason in {"content_hash_exact", "cooldown_active", "content_hash_dedupe"}:
+            return "hit"
+        if normalized_reason == "miss":
+            return "miss"
+        return None
+
+    skip_reason = str(payload.get("skip_reason") or "").strip().lower()
+    if skip_reason == "content_hash_dedupe":
+        return "hit"
+
+    provider = str(payload.get("provider") or "").strip().lower()
+    model = str(payload.get("model") or "").strip().lower()
+    result = str(payload.get("result") or "").strip().lower()
+    if provider == "gemini" or model.startswith("gemini-"):
+        if not skip_reason and result in {"generated", "failed"}:
+            return "miss"
+    return None
+
+
+def evaluate_gemini_cache_miss_breaker(
+    *,
+    ledger_path: str | Path | None = None,
+    now: datetime | None = None,
+    env: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    current = _now_jst(now)
+    window_seconds = resolve_gemini_cache_miss_breaker_window_seconds(env=env)
+    threshold = resolve_gemini_cache_miss_breaker_threshold(env=env)
+    window_start = current - timedelta(seconds=window_seconds)
+    enabled = gemini_cache_miss_breaker_enabled(env=env)
+
+    miss_count = 0
+    hit_count = 0
+    hit_kind_counts: dict[str, int] = {}
+    target = Path(ledger_path) if ledger_path is not None else DEFAULT_LEDGER_PATH
+    for payload in _read_jsonl_rows(target):
+        timestamp = _parse_ts(payload.get("timestamp"))
+        if timestamp is None or timestamp < window_start:
+            continue
+        outcome = _breaker_row_outcome(payload)
+        if outcome == "miss":
+            miss_count += 1
+            continue
+        if outcome != "hit":
+            continue
+        hit_count += 1
+        hit_kind = resolve_hit_kind(payload)
+        hit_kind_counts[hit_kind] = hit_kind_counts.get(hit_kind, 0) + 1
+
+    total_count = miss_count + hit_count
+    miss_rate = (miss_count / total_count) if total_count else 0.0
+    tripped = enabled and total_count > 0 and miss_rate > threshold
+    return {
+        "enabled": enabled,
+        "tripped": tripped,
+        "threshold": threshold,
+        "window_seconds": window_seconds,
+        "window_start": window_start.isoformat(),
+        "window_end": current.isoformat(),
+        "miss_count": miss_count,
+        "hit_count": hit_count,
+        "total_count": total_count,
+        "miss_rate": miss_rate,
+        "hit_kind_counts": hit_kind_counts,
+        "skip_reason": GEMINI_CACHE_MISS_BREAKER_SKIP_REASON if tripped else None,
+    }
 
 
 def compute_content_hash(post_id: int, body_text: str) -> str:
@@ -269,14 +455,25 @@ __all__ = [
     "DEFAULT_LEDGER_PATH",
     "ENABLE_CACHE_HIT_SPLIT_METRIC_ENV",
     "CACHE_HIT_SPLIT_METRIC_LEDGER_PATH_ENV",
+    "ENABLE_GEMINI_CACHE_MISS_BREAKER_ENV",
+    "GEMINI_CACHE_MISS_BREAKER_THRESHOLD_ENV",
+    "GEMINI_CACHE_MISS_BREAKER_WINDOW_SECONDS_ENV",
+    "DEFAULT_GEMINI_CACHE_MISS_BREAKER_THRESHOLD",
+    "DEFAULT_GEMINI_CACHE_MISS_BREAKER_WINDOW_SECONDS",
+    "GEMINI_CACHE_MISS_BREAKER_SKIP_REASON",
     "cache_hit_split_metric_enabled",
     "compute_content_hash",
+    "evaluate_gemini_cache_miss_breaker",
     "find_recent_record",
     "find_recent_refused_history",
+    "gemini_cache_miss_breaker_enabled",
     "is_recently_processed",
     "normalize_hit_kind",
     "record_call",
     "record_cache_hit_metric",
+    "record_gemini_cache_outcome",
     "resolve_cache_hit_split_metric_ledger_path",
+    "resolve_gemini_cache_miss_breaker_threshold",
+    "resolve_gemini_cache_miss_breaker_window_seconds",
     "resolve_hit_kind",
 ]

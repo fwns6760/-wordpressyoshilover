@@ -128,3 +128,43 @@ User reply format: 「GO」/「HOLD」/「REJECT」のみ
   3. deploy 範囲に HOLD ticket の commit が含まれていたら build 前に停止し、Acceptance Pack 化する
   4. `git diff --cached --name-status` 後の commit が deploy 対象 commit と一致していることを確認する
   5. build 後に image digest と commit hash の対応を doc 化する
+
+## Phase 3 deploy result
+
+- `pytest` gate: `2008 passed, 0 failed, 3 warnings, 644 subtests passed`
+- clean build target: `HEAD 1016670` exported to `/tmp/yoshi-deploy-head`; `git diff ffeba45 HEAD -- src/ tests/` = empty
+- hold-carry evidence: `git log 4be818d..HEAD --oneline` includes `d44594a` and `c14e269`; `c14e269` remains live-inert because `ENABLE_WEAK_TITLE_RESCUE` is not set on `publish-notice`
+- built image:
+  - tag: `1016670`
+  - digest: `sha256:644a0ff30494bd41c078ea4a08179ba8b41ad507a66af47677c6c430176059e2`
+- rollback target (prepared, not used):
+  - image: `publish-notice:4be818d`
+  - env: `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE` remove
+- flag OFF deploy state:
+  - job generation `40`
+  - image updated to `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/publish-notice@sha256:644a0ff30494bd41c078ea4a08179ba8b41ad507a66af47677c6c430176059e2`
+  - `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE` absent
+  - `MAIL_BRIDGE_FROM=y.sebata@shiny-lab.org` unchanged
+- flag OFF observe:
+  - trigger 1 `2026-05-01T02:20:37Z`: `sent=1 suppressed=0 errors=0`
+  - trigger 2 `2026-05-01T02:25:47Z`: `sent=1 suppressed=0 errors=0`
+  - `post_gen_validate` path present in logs; duplicate-skip records still emitted
+  - `[skip]` rows without `reason=`: `0`
+- flag ON deploy state:
+  - job generation `41`
+  - image unchanged from flag OFF deploy
+  - `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE=1` present
+  - `MAIL_BRIDGE_FROM=y.sebata@shiny-lab.org` unchanged
+- flag ON observe:
+  - trigger 1 `2026-05-01T02:35:52Z`: `sent=10 suppressed=0 errors=0`; sent old-candidate `post_id`s were `61938, 62030, 62023, 62007, 62005, 62010, 62039, 61975, 61971, 61969`
+  - trigger 2 `2026-05-01T02:40:53Z`: `sent=10 suppressed=0 errors=0`; prior trigger ids were skipped as `OLD_CANDIDATE_PERMANENT_DEDUP`, and new sent ids were `62070, 62072, 62201, 62373, 62377, 62384, 62385, 62387, 62395, 62396`
+  - no sent `post_id` in the forbidden storm range `63003-63311`
+  - `post_gen_validate` path still present after flag ON (`50` matching log rows in the `02:29Z+` sample)
+  - `[skip]` rows without `reason=`: `0`
+- MAIL_BUDGET evidence:
+  - rolling last hour at `02:40Z`: `24` mails total
+  - cumulative since `2026-05-01 09:00 JST`: `125` mails total
+- final live state:
+  - `publish-notice` image = `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/publish-notice@sha256:644a0ff30494bd41c078ea4a08179ba8b41ad507a66af47677c6c430176059e2`
+  - `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE=1`
+  - no rollback executed

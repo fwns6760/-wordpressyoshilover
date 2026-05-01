@@ -33,6 +33,12 @@
 12:50 | Codex retry stop(pytest gate 不一致)| 298-Phase3 | bg b3h13kthv 完了、preflight pytest 0 failures(朝 3 failures は transient / env 依存)、gate 期待値 3 と不一致で deploy stop / live mutation 0 / publish-notice 旧 image:4be818d 維持 | gate 修正 + 再 fire
 12:55 | user 推奨判断受領 | 298-Phase3 | Phase 3 deploy 継続 GO、追加 user 確認不要、完了後 8 項目 1 画面報告 / 17:00 production_health_observe 実施 OK / 追加 Codex fire(新規 lane / 新規 ticket)/ mail 大改修 / Scheduler / SEO / source / Gemini 増は HOLD | v3 prompt で Phase 3 continuation fire
 13:00 | Codex Phase 3 deploy v3 fire | 298-Phase3 | bg /tmp/codex_phase3_deploy_v3.log / pytest gate を「failures = 0 increase」に修正(transient 3 failures は flaky 判定、299-QA は別途 flaky 整理)/ continuation lane | Codex 完了で 8 項目報告
+13:01 | pytest gate pass | 298-Phase3 | `pytest -q` = `2008 passed / 0 failed` | clean export + build 進行
+13:03 | clean export + hold-carry verify | 298-Phase3 | `/tmp/yoshi-deploy-head` 作成 / `git diff ffeba45 HEAD -- src/ tests/` empty / `4be818d..HEAD` に `c14e269` 含むが `ENABLE_WEAK_TITLE_RESCUE` 未設定で live effect なし | Cloud Build
+13:06 | image rebuild success | 298-Phase3 | Cloud Build `d9b78304-c172-4c1a-88ff-c84045857198` 成功 / new image `publish-notice:1016670` digest `sha256:644a0ff30494bd41c078ea4a08179ba8b41ad507a66af47677c6c430176059e2` | flag OFF deploy
+13:08 | flag OFF deploy + observe green | 298-Phase3 | job generation `40` / image digest deploy / env unchanged / trigger `02:20Z sent=1 errors=0` + `02:25Z sent=1 errors=0` / `post_gen_validate` path present / silent skip 0 | flag ON apply
+13:09 | flag ON apply | 298-Phase3 | job generation `41` / `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE=1` / image unchanged | flag ON observe
+13:24 | flag ON observe green | 298-Phase3 | trigger `02:35Z sent=10 errors=0` + `02:40Z sent=10 errors=0` / first batch ids `61938-62039` / second batchは first batch を `OLD_CANDIDATE_PERMANENT_DEDUP` skip しつつ new ids `62070-62396` 送信 / forbidden `63003-63311` sent 0 / rolling 1h sent `24` / since 09:00 JST `125` | doc-only report commit + push
 ```
 
 ## hotfix 経過 evidence(数値)

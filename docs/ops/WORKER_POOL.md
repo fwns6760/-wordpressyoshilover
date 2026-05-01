@@ -5,16 +5,12 @@ Last updated: 2026-05-01 17:25 JST(両 lane 完了 close 状態)
 
 ## Active Lanes(両 running、READY 化進行中)
 
-### Lane A round 17
+### Lane A(idle、HOLD reason explicit)
 
-- status: **running**
-- job_id: `bg72l5lf4`
-- ticket: 全 READY pack final consolidation index doc(消化順 全 ticket 横串、新規ticket なし、明日朝 user 提示用 navigation aid)
-- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_a_round_17_final_index.md`
-- receipt_path: `docs/handoff/codex_receipts/2026-05-01/lane_a_round_17.md`
-- started_at: 2026-05-01 18:25 JST(approx)
-- expected_output: `docs/handoff/codex_responses/2026-05-01_final_consolidation_index.md`
-- prev: round 13-16 (`bjpdfiecy` → `byrelohvy` → `bh5sh66qf` → `bw5wytf4s`)all completed、293 + 282 + 290 + 288 READY pack 全 landed
+- status: **idle**
+- last_round: round 17 completed `92603a3`(final consolidation index、6/6 tickets cross-referenced + section 7 anchor references)
+- HOLD reason: 4 条件全 YES → 消化順 1-5 全 READY pack(293/282/290/300/298-v4/288)+ 横串 final index 完成 + 17:00 observe 完了 + 299 N=2 0/0 / N=3 transient 再現で本日 close 候補なし + 新規ticket 起票 = POLICY §10 違反 / scope 拡大 = REJECT
+- next_dispatch: 明日朝 5/2 06:00 JST 298-Phase3 v4 final READY pack 提示後 user GO で 次 dispatch
 
 ### Lane B(idle、HOLD reason explicit)
 

@@ -1,0 +1,26 @@
+# Lane B round 20 receipt
+
+- job_id: `bzr8rj7f5`(wrapper bash 同一)
+- ticket: 288-INGEST Phase 1 candidate visibility contract verify(read-only)
+- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_b_round_20_288_phase1_visibility_verify.md`
+- started_at: 2026-05-01 22:11 JST
+- status: **completed → idle**(Codex sandbox `.git` read-only blocker → Claude fallback)
+- completed_at: 2026-05-01 22:36 JST(file written、Claude commit batch で push)
+- commit_hash: Claude fallback batch で commit 予定
+- evidence file: `docs/handoff/codex_responses/2026-05-01_288_INGEST_phase1_visibility_evidence.md`
+- **phase_1_judgement: FAIL**
+- violation_path_count: 4(既知 POLICY §19.1 marker path、新規 violation 0)
+- 違反 path 一覧:
+  - `src/publish_notice_scanner.py`(malformed payload skip → mail 経路に乗らない)
+  - `src/tools/draft_body_editor.py`(no_op_skip / llm_skip log only)
+  - `src/tools/run_draft_body_editor_lane.py`(同上)
+  - `src/repair_fallback_controller.py`(silent fallback)
+- 既知 silent skip:`body_contract_validate` family(現状 log only、POLICY 推奨 = 289 経由)
+- guarded_publish_runner: visibility friendly(refused / proposed / sent / skipped 全 terminal mail 経路あり)
+- 上流 fetcher 側に gap、288 source 追加前に Phase 2 = visibility fix 必須
+- POLICY classification: CLAUDE_AUTO_GO(read-only)
+- 5 step 一次受け: pass(diff 1 file doc-only evidence / src 不変 / pytest 不要 / scope 内 / rollback 不要)
+- next:
+  - 288 Phase 2 = candidate visibility fix が source 追加 前 提条件として必須化
+  - Phase 2 narrow design 起票 → impl 便 fire(別 round、user GO 後)
+  - 288 OPS_BOARD blocked_by 追加:Phase 1 FAIL → Phase 2 visibility fix 完走

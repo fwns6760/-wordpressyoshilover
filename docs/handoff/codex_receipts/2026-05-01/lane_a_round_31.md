@@ -1,0 +1,22 @@
+# Lane A round 31 receipt
+
+- job_id: `bzr8rj7f5`(wrapper bash)
+- ticket: 改修-31-per-post-24h-gemini-budget impl(POLICY §19.7 #3)
+- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_a_round_31_per_post_24h_gemini_budget.md`
+- started_at: 2026-05-01 22:11 JST
+- status: **completed → idle**
+- completed_at: 2026-05-01 22:35 JST
+- commit_hash: `76f748b`(Codex 直接 commit、push 済 4d70a26 → 76f748b)
+- changed_files: 5 files、972 insertions / 2 deletions
+  - src/llm_call_dedupe.py(per-post 24h budget ledger 拡張)
+  - tests/test_per_post_24h_gemini_budget.py(新規)
+  - docs/handoff/codex_responses/2026-05-01_change_31_per_post_24h_gemini_budget_pack_v1.md(Pack v1)
+  - docs/handoff/codex_prompts/2026-05-01/lane_a_round_31_per_post_24h_gemini_budget.md(永続化)
+  - その他 1 file(改修 #1/#2 integration)
+- pytest: 17/0 → 24/0(test_llm_call_dedupe + test_cache_hit_split_metric + test_cache_miss_circuit_breaker + test_per_post_24h_gemini_budget)、compileall OK
+- env knobs(全 default OFF):
+  - ENABLE_PER_POST_24H_GEMINI_BUDGET=0
+  - PER_POST_24H_GEMINI_BUDGET_LIMIT=5
+- POLICY classification: CLAUDE_AUTO_GO 候補(impl + test + push まで、image rebuild + flag ON は user GO 後別 phase)
+- 5 step 一次受け: pass(diff 5 file scope 内 / budget impl のみ既存挙動 default OFF 維持 / pytest +7 0 fail / scope 内 / rollback 可能)
+- next: 改修 #3 デプロイ直前まで到達確定

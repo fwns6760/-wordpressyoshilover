@@ -304,25 +304,35 @@ future_user_go:
     expiry: "298-v4 24h 安定後"
 
   - id: 288-INGEST
-    title: "source coverage expansion (4-phase split)"
+    title: "source coverage expansion (4-phase split、Phase 1 FAIL → Phase 2 visibility fix 必須化)"
     status: FUTURE_USER_GO
     decision_owner: user  # Phase 3 (source add) のみ user GO 必須
     execution_owner: Codex + Claude
     evidence_owner: Claude
     user_go_required: true  # Phase 3 のみ
     user_go_reason: "SOURCE_ADD+COST_INCREASE+MAIL_VOLUME_IMPACT"
-    pack_v3: "docs/handoff/codex_responses/2026-05-01_288_INGEST_pack_v3_scope_phase_split.md (round 27 round 28 で再 fire 予定、本日 audit 優先で HOLD)"
-    pack_v3_recommendation: HOLD  # round 27 が user 指示で HOLD、調査便完了後 fire 予定
+    pack_v3: "docs/handoff/codex_responses/2026-05-01_288_INGEST_pack_v3_scope_phase_split.md (commit fedf159)"
+    pack_v3_recommendation: HOLD
+    phase_1_evidence: "docs/handoff/codex_responses/2026-05-01_288_INGEST_phase1_visibility_evidence.md (round 20、FAIL、violation 4 件、新規 0)"
     phase_split:
       phase_1_candidate_visibility_contract:
         classification: CLAUDE_AUTO_GO
-        scope: "read-only verify、source 追加なし"
+        status: FAIL  # 5/1 22:36 JST 確定
+        violation_count: 4  # 既知 POLICY §19.1 marker、新規 0
+        violation_paths:
+          - "src/publish_notice_scanner.py (malformed payload skip → mail 経路に乗らない)"
+          - "src/tools/draft_body_editor.py (no_op_skip / llm_skip log only)"
+          - "src/tools/run_draft_body_editor_lane.py (同上)"
+          - "src/repair_fallback_controller.py (silent fallback)"
+        body_contract_validate: "log only (POLICY 推奨 = 289 経由、未対応)"
       phase_2_fallback_trust_impl:
         classification: CLAUDE_AUTO_GO  # narrow code change、live-inert if flag OFF default
         scope: "fallback + trust score impl、Codex 便"
+        precondition_added: "Phase 1 violation 4 path の visibility fix を含めること(289 経路 or 終端 mail route 化)"
       phase_3_source_add:
         classification: USER_DECISION_REQUIRED
         scope: "config/rss_sources.json 編集、live mail + Gemini call 影響"
+        precondition: "Phase 1 PASS 化(Phase 2 visibility fix 完走後)"
       phase_4_post_add_observe:
         classification: CLAUDE_AUTO_GO
         scope: "24h observe + cost trend audit"

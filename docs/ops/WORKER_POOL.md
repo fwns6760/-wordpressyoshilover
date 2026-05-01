@@ -5,15 +5,16 @@ Last updated: 2026-05-01 17:25 JST(両 lane 完了 close 状態)
 
 ## Active Lanes(両 running、READY 化進行中)
 
-### Lane A round 13
+### Lane A round 14
 
 - status: **running**
-- job_id: `bjpdfiecy`
-- ticket: 293-COST READY 化(消化順 順 1)
-- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_a_round_13_293_ready.md`
-- receipt_path: `docs/handoff/codex_receipts/2026-05-01/lane_a_round_13.md`
-- started_at: 2026-05-01 17:30 JST(approx)
-- expected_output: `docs/handoff/codex_responses/2026-05-01_293_COST_ready_pack.md`(impl 判断 Pack final consolidation、READY 配下移動候補)
+- job_id: `byrelohvy`
+- ticket: 282-COST READY 化(消化順 順 2、293 完遂後 flag ON 判断 Pack)
+- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_a_round_14_282_ready.md`
+- receipt_path: `docs/handoff/codex_receipts/2026-05-01/lane_a_round_14.md`
+- started_at: 2026-05-01 17:42 JST(approx)
+- expected_output: `docs/handoff/codex_responses/2026-05-01_282_COST_ready_pack.md`
+- prev: round 13 (`bjpdfiecy`) completed `22f0a3e`、293-COST READY 化 hold(298 + budget reset 待ち)
 
 ### Lane B round 11
 

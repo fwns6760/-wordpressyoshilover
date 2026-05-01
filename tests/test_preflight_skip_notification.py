@@ -1,18 +1,39 @@
 import json
+import logging
 import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from src import publish_notice_email_sender as sender
 from src import publish_notice_scanner as scanner
+from src import rss_fetcher
 
 
 NOW = datetime(2026, 5, 1, 15, 0, tzinfo=scanner.JST)
 
 
 class PreflightSkipNotificationTests(unittest.TestCase):
+    def _candidate(self, **overrides):
+        payload = {
+            "title": "【巨人】阿部監督が継投の狙いを説明",
+            "summary": "巨人が阪神に勝利し、阿部監督が継投の狙いを説明した。",
+            "body_text": "巨人が阪神に勝利し、阿部監督が継投の狙いを説明した。",
+            "source_body": "巨人が阪神に勝利し、阿部監督が継投の狙いを説明した。",
+            "category": "首脳陣",
+            "article_subtype": "manager",
+            "source_name": "スポーツ報知",
+            "source_url": "https://news.hochi.news/articles/example.html",
+            "source_type": "news",
+            "source_links": [],
+            "published_at": NOW,
+            "has_game": True,
+            "duplicate_guard_context": {},
+        }
+        payload.update(overrides)
+        return payload
+
     def _entry(self, index: int = 0, **overrides):
         payload = {
             "ts": NOW.isoformat(),
@@ -70,6 +91,67 @@ class PreflightSkipNotificationTests(unittest.TestCase):
             events.append({"event": event, **payload})
 
         return events, fake_log_event
+
+    def test_fetcher_flag_on_writes_preflight_skip_ledger(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "preflight_skip_history.jsonl"
+            logger = logging.getLogger("test_preflight_fetcher_flag_on")
+            logger.info = MagicMock()
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "ENABLE_GEMINI_PREFLIGHT": "1",
+                    "ENABLE_PREFLIGHT_SKIP_NOTIFICATION": "1",
+                },
+                clear=True,
+            ), patch.object(
+                rss_fetcher, "PREFLIGHT_SKIP_HISTORY_DEFAULT_PATH", history_path
+            ), patch.object(
+                rss_fetcher, "_gcs_client", return_value=None
+            ), patch.object(
+                rss_fetcher,
+                "_gemini_cache_lookup",
+                side_effect=AssertionError("cache lookup should not run"),
+            ), patch.object(
+                rss_fetcher,
+                "_request_gemini_strict_text",
+                side_effect=AssertionError("Gemini request should not run"),
+            ):
+                text, telemetry = rss_fetcher._gemini_text_with_cache(
+                    api_key="api-key",
+                    prompt="PROMPT",
+                    logger=logger,
+                    attempt_limit=3,
+                    min_chars=1,
+                    source_url="https://example.com/preflight-skip",
+                    content_text="本文A",
+                    prompt_template_id="prompt-v1",
+                    cache_manager=object(),
+                    candidate_meta=self._candidate(existing_publish_same_source_url=True),
+                    now=NOW,
+                    log_label="test",
+                )
+
+            rows = [
+                json.loads(line)
+                for line in history_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+
+        self.assertEqual(text, "")
+        self.assertFalse(telemetry["gemini_call_made"])
+        self.assertEqual(telemetry["skip_reason"], "existing_publish_same_source_url")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["record_type"], "preflight_skip")
+        self.assertEqual(rows[0]["skip_layer"], "preflight")
+        self.assertEqual(rows[0]["skip_reason"], "existing_publish_same_source_url")
+        self.assertEqual(rows[0]["source_title"], "【巨人】阿部監督が継投の狙いを説明")
+        self.assertEqual(rows[0]["source_name"], "スポーツ報知")
+        self.assertEqual(rows[0]["source_type"], "news")
+        self.assertTrue(rows[0]["has_game"])
+        self.assertTrue(rows[0]["existing_publish_same_source_url"])
+        self.assertEqual(rows[0]["content_hash"], telemetry["content_hash"])
 
     def test_scan_emits_preflight_skip_mail_when_flag_on(self):
         with patch.dict(
@@ -331,8 +413,12 @@ class PreflightSkipNotificationTests(unittest.TestCase):
         self.assertTrue(any(event["event"] == "preflight_skip_history_scan_summary" for event in events))
         self.assertTrue(any(event["event"] == "preflight_skip_history_scan_zero_emitted" for event in events))
 
-    def test_scan_ignores_preflight_skip_history_when_flag_off(self):
-        with tempfile.TemporaryDirectory() as tmpdir, patch.dict("os.environ", {}, clear=True):
+    def test_preflight_skip_flag_off_keeps_ledger_absent_and_scanner_silent(self):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            "os.environ",
+            {"ENABLE_GEMINI_PREFLIGHT": "1"},
+            clear=True,
+        ):
             cursor_path = Path(tmpdir) / "cursor.txt"
             history_path = Path(tmpdir) / "history.json"
             queue_path = Path(tmpdir) / "queue.jsonl"
@@ -340,10 +426,36 @@ class PreflightSkipNotificationTests(unittest.TestCase):
             preflight_cursor_path = Path(tmpdir) / "preflight_skip_cursor.txt"
             cursor_path.write_text("2026-05-01T13:00:00+09:00\n", encoding="utf-8")
             history_path.write_text("{}\n", encoding="utf-8")
-            preflight_history_path.write_text(
-                json.dumps(self._entry(index=9), ensure_ascii=False) + "\n",
-                encoding="utf-8",
-            )
+            logger = logging.getLogger("test_preflight_fetcher_flag_off")
+            logger.info = MagicMock()
+
+            with patch.object(
+                rss_fetcher, "PREFLIGHT_SKIP_HISTORY_DEFAULT_PATH", preflight_history_path
+            ), patch.object(
+                rss_fetcher, "_gcs_client", return_value=None
+            ), patch.object(
+                rss_fetcher,
+                "_gemini_cache_lookup",
+                side_effect=AssertionError("cache lookup should not run"),
+            ), patch.object(
+                rss_fetcher,
+                "_request_gemini_strict_text",
+                side_effect=AssertionError("Gemini request should not run"),
+            ):
+                text, telemetry = rss_fetcher._gemini_text_with_cache(
+                    api_key="api-key",
+                    prompt="PROMPT",
+                    logger=logger,
+                    attempt_limit=3,
+                    min_chars=1,
+                    source_url="https://example.com/preflight-skip-off",
+                    content_text="本文A",
+                    prompt_template_id="prompt-v1",
+                    cache_manager=object(),
+                    candidate_meta=self._candidate(existing_publish_same_source_url=True),
+                    now=NOW,
+                    log_label="test",
+                )
 
             result = scanner.scan(
                 cursor_path=cursor_path,
@@ -355,6 +467,9 @@ class PreflightSkipNotificationTests(unittest.TestCase):
                 now=lambda: NOW,
             )
 
+        self.assertEqual(text, "")
+        self.assertFalse(telemetry["gemini_call_made"])
+        self.assertFalse(preflight_history_path.exists())
         self.assertEqual(result.emitted, [])
         self.assertFalse(preflight_cursor_path.exists())
         self.assertFalse(queue_path.exists())

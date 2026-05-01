@@ -132,6 +132,8 @@ class PostGenValidateNotificationTests(unittest.TestCase):
             ]
 
         self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["record_type"], "post_gen_validate")
+        self.assertEqual(rows[0]["skip_layer"], "post_gen_validate")
         self.assertEqual(rows[0]["source_title"], "元タイトル")
         self.assertEqual(rows[0]["generated_title"], "生成タイトル")
         self.assertEqual(rows[0]["skip_reason"], "weak_generated_title:no_strong_marker")

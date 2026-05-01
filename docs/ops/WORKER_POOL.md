@@ -5,26 +5,27 @@ Last updated: 2026-05-01 17:25 JST(両 lane 完了 close 状態)
 
 ## Active Lanes(両 running、READY 化進行中)
 
-### Lane A round 15
+### Lane A round 16
 
 - status: **running**
-- job_id: `bh5sh66qf`
-- ticket: 290-QA READY 化(消化順 順 3、weak title rescue deploy 判断 Pack)
-- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_a_round_15_290_ready.md`
-- receipt_path: `docs/handoff/codex_receipts/2026-05-01/lane_a_round_15.md`
-- started_at: 2026-05-01 17:55 JST(approx)
-- expected_output: `docs/handoff/codex_responses/2026-05-01_290_QA_ready_pack.md`
-- prev: round 13 → 14(`bjpdfiecy` → `byrelohvy`)both completed、293 + 282 READY pack landed(293 hold / 282 ready_pending_293)
+- job_id: `bw5wytf4s`
+- ticket: 288-INGEST READY 化(消化順 順 5、source 追加判断 5 条件 precondition)
+- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_a_round_16_288_ready.md`
+- receipt_path: `docs/handoff/codex_receipts/2026-05-01/lane_a_round_16.md`
+- started_at: 2026-05-01 18:05 JST(approx)
+- expected_output: `docs/handoff/codex_responses/2026-05-01_288_INGEST_ready_pack.md`
+- prev: round 13-15 (`bjpdfiecy` → `byrelohvy` → `bh5sh66qf`)all completed、293 + 282 + 290 READY pack 全 landed
 
-### Lane B round 11
+### Lane B round 12
 
 - status: **running**
-- job_id: `b0hyz5srs`
-- ticket: 300-COST source-side 解析 v2(消化順 順 4、READY 化前提整理)
-- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_b_round_11_300_source_v2.md`
-- receipt_path: `docs/handoff/codex_receipts/2026-05-01/lane_b_round_11.md`
-- started_at: 2026-05-01 17:30 JST(approx)
-- expected_output: `docs/handoff/codex_responses/2026-05-01_300_COST_source_analysis_v2.md`(deeper analysis、Pack 補強 evidence)
+- job_id: `b58jsvkhe`
+- ticket: 298-Phase3 v4 final READY pack(消化順 順 1、明日朝 06:00 JST user 提示用)
+- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_b_round_12_298_v4_final_ready.md`
+- receipt_path: `docs/handoff/codex_receipts/2026-05-01/lane_b_round_12.md`
+- started_at: 2026-05-01 18:05 JST(approx)
+- expected_output: `docs/handoff/codex_responses/2026-05-01_298_Phase3_v4_final_ready_pack.md`
+- prev: round 11 (`b0hyz5srs`) completed `ead78a3`、300 source v2 landed
 
 ## Lane History(本日 round 1-12 全部、commit hash 着地済)
 

@@ -24,18 +24,18 @@ Run read-only checks only:
 - inspect `docs/ops/OPS_BOARD.yaml`
 - confirm whether any Codex lane is currently running
 
-Do not deploy, change env, change Scheduler, change SEO, add sources, or increase Gemini calls during startup.
+Do not make unclassified production changes during startup. Apply `POLICY.md` section 3 before any production reflection: `CLAUDE_AUTO_GO` may proceed after evidence; `USER_DECISION_REQUIRED` needs a completed Pack; `HOLD` means Claude closes UNKNOWN first.
 
 ## 3. Restore Current Board
 
 Current major state:
 
 - 298-Phase3: `HOLD_NEEDS_PACK`, `ROLLED_BACK_AFTER_REGRESSION`, flag OFF/absent, persistent ledger disabled, storm contained, second-wave risk OPEN.
-- 293-COST: active only for design/Pack/test/rollback planning.
-- 300-COST: active only for read-only source-side cost analysis.
+- 293-COST: active for visible skip readiness; implementation/test/local verify/flag OFF or live-inert deploy may proceed only if `CLAUDE_AUTO_GO` conditions pass.
+- 300-COST: active for read-only source-side cost analysis; source-side behavior change must be classified before implementation/deploy.
 - 299-QA: observe flaky/transient, not P0 by default.
 - 282-COST: future user GO for flag ON after 293.
-- 290-QA: future user GO for deploy Pack.
+- 290-QA: live-inert deploy may be `CLAUDE_AUTO_GO` after classification; weak title rescue enablement is user decision.
 - 288-INGEST: future user GO for source addition Pack.
 
 ## 4. Codex Lane Handling
@@ -45,7 +45,7 @@ Current major state:
 - If a lane is idle, Claude must apply the four-condition gate from `POLICY.md` section 5.
 - If a low-risk existing-ticket subtask remains, Claude dispatches it autonomously.
 - Eligible low-risk subtasks are read-only, doc-only, evidence, test plan, rollback plan, Acceptance Pack, or ticket cleanup.
-- Do not dispatch code/deploy/env/Scheduler/source/Gemini/mail-routing work without the required user GO.
+- Do not dispatch code/deploy/env/Scheduler/source/Gemini/mail-routing work until it is classified under `POLICY.md` section 3. `CLAUDE_AUTO_GO` work may proceed; `USER_DECISION_REQUIRED` needs a Pack; `HOLD` stays internal until UNKNOWN is closed.
 - Do not ask the user whether to dispatch a READY-incomplete low-risk subtask.
 - Do not keep a lane idle unless the HOLD reason is explicit.
 - Do not fire meaningless work just to make Codex look busy.
@@ -107,20 +107,31 @@ Proceed only inside current ticket scope:
 
 Do not create new tickets unless an issue cannot fit into the above.
 
-## 9. Stop Conditions
+## 9. Stop / Classify Conditions
 
-Stop and prepare a Decision Batch if:
+Stop and classify the change under `POLICY.md` section 3 if any production effect is proposed.
 
-- deploy is needed
-- flag/env change is needed
-- Scheduler change is needed
-- SEO/source addition is needed
-- Gemini calls would increase
-- mail routing condition would change materially
-- cleanup mutation is proposed
-- rollback path is unclear
-- mail volume impact is UNKNOWN
-- candidate visibility is not guaranteed
+Proceed autonomously only when it is `CLAUDE_AUTO_GO`:
+
+- flag OFF deploy, live-inert deploy, or behavior-preserving image replacement
+- tests green
+- rollback target confirmed
+- no Gemini/mail/source/Scheduler/SEO/publish criteria/candidate risk increase
+- stop condition written
+
+Prepare an Acceptance Pack when it is `USER_DECISION_REQUIRED`:
+
+- flag ON
+- behavior-changing env
+- Gemini call increase
+- mail volume increase
+- source addition
+- Scheduler/SEO change
+- publish/review/hold/skip criteria change
+- cleanup mutation
+- rollback-impossible or external-impact-heavy change
+
+Hold internally when any safety field is UNKNOWN. Do not ask the user to resolve UNKNOWN technical risk.
 
 ## 10. Successful Session Close
 

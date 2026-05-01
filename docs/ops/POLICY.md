@@ -32,12 +32,37 @@ Rules:
 - User should not discover idle Codex lanes.
 - Claude owns Codex lane monitoring and next-subtask dispatch.
 
-## 3. User GO Required
+## 3. Production Change Classification
 
-User GO is required for:
+Production change is not automatically blocked just because it touches production. Only risky production change is escalated to the user.
 
-- production deploy
-- flag/env change
+### 3.1 CLAUDE_AUTO_GO
+
+Claude may execute production reflection without user GO when all conditions are true:
+
+- flag OFF deploy
+- live-inert deploy
+- behavior-preserving image replacement
+- tests are green
+- rollback target is confirmed
+- Gemini call increase: none
+- mail volume increase: none
+- source addition: none
+- Scheduler change: none
+- SEO/noindex/canonical/301 change: none
+- publish/review/hold/skip criteria change: none
+- cleanup mutation: none
+- candidate disappearance risk: none, or proven unchanged from existing behavior
+- stop condition is written
+
+Claude reports the result afterward in a Decision Batch.
+
+### 3.2 USER_DECISION_REQUIRED
+
+User decision is required for:
+
+- flag ON
+- env change that changes behavior
 - Scheduler enable/disable/pause/resume/frequency change
 - SEO/noindex/canonical/301/sitemap/robots change
 - source addition
@@ -46,8 +71,32 @@ User GO is required for:
 - cleanup mutation
 - rollback-impossible or hard-to-rollback change
 - publication policy relaxation
+- mail volume increase
+- candidate disappearance risk
+- external-impact-heavy change
 
-If the risk is unknown, treat it as HOLD.
+Claude must not ask the user to make technical judgment. Claude completes the Acceptance Pack first and gives a recommendation:
+
+- recommendation: GO / HOLD / REJECT
+- reason: 1-3 lines
+- maximum risk
+- rollback availability
+- user reply: `OK` / `HOLD` / `REJECT`
+
+### 3.3 HOLD
+
+If any of the following is UNKNOWN, the state is HOLD. Do not ask the user to decide; Claude must close the UNKNOWN first:
+
+- tests
+- rollback
+- cost impact
+- Gemini call delta
+- mail volume impact
+- candidate disappearance risk
+- stop condition
+- blast radius
+- source impact
+- whether existing behavior is unchanged
 
 ## 4. Claude Autonomous GO
 
@@ -63,8 +112,9 @@ Claude may proceed without user GO for:
 - board compression
 - incident analysis
 - low-risk existing-ticket subtasks that do not touch code, deploy, env, Scheduler, SEO, source config, Gemini call count, or mail-routing behavior
+- `CLAUDE_AUTO_GO` production changes defined in section 3.1
 
-Claude must stop and create an Acceptance Pack if a task crosses into User GO territory.
+Claude must stop and prepare an Acceptance Pack if a task enters `USER_DECISION_REQUIRED`. Claude must HOLD, not ask the user, if any safety-critical field remains UNKNOWN.
 
 ## 5. Codex Lane Policy
 
@@ -88,7 +138,7 @@ Claude may keep a lane idle only when all four conditions are true:
 1. There is genuinely no low-risk subtask remaining inside the current consumption order.
 2. Existing Packs, read-only checks, test plans, rollback plans, and evidence tasks are already complete.
 3. Remaining work would only duplicate Lane A or the active observe task.
-4. Remaining work requires user GO, such as deploy, flag/env, Scheduler, SEO, source addition, Gemini call increase, major mail routing change, cleanup mutation, or rollback-impossible change.
+4. Remaining work is either `USER_DECISION_REQUIRED` or `HOLD`, such as flag ON, behavior-changing env, Scheduler/SEO/source change, Gemini or mail increase, cleanup mutation, rollback-impossible change, or unresolved UNKNOWN risk.
 
 If any low-risk existing-ticket subtask remains, Claude fires it autonomously. If the lane stays idle, Claude records the HOLD reason in the board or current-state note.
 

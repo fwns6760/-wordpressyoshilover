@@ -19,6 +19,12 @@ This file records reusable incident rules. It is not a session diary.
 - Phase3 is not DONE.
 - Phase3 re-ON is forbidden without a new Acceptance Pack.
 
+### Production Reflection Rule
+
+- Flag OFF deploy, live-inert deploy, and behavior-preserving image replacement are not automatically user-GO work.
+- Claude may execute them as `CLAUDE_AUTO_GO` only when tests are green, rollback target is confirmed, Gemini/mail/source/Scheduler/SEO/publish criteria/candidate risks do not increase, and stop condition is written.
+- Phase3 flag ON, old-candidate re-ON, mail volume increase, or UNKNOWN mail impact remains `USER_DECISION_REQUIRED` or `HOLD`.
+
 ### Do
 
 - Preserve normal review mail.

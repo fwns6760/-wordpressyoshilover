@@ -2,7 +2,7 @@
 
 Last updated: 2026-05-01 JST
 
-Use this when user GO is required. Do not ask fragmented questions.
+Use this when a change is `USER_DECISION_REQUIRED`. Do not use a Pack to offload UNKNOWN technical judgment to the user; UNKNOWN means HOLD until Claude resolves it. `CLAUDE_AUTO_GO` changes need evidence and Decision Batch reporting, not user approval.
 
 ## Decision Header
 
@@ -12,6 +12,7 @@ recommendation: GO | HOLD | REJECT
 decision_owner: user
 execution_owner: Claude | Codex
 risk_class:
+classification: CLAUDE_AUTO_GO | USER_DECISION_REQUIRED | HOLD
 user_go_reason:
 expires_at:
 ```
@@ -81,7 +82,7 @@ expires_at:
 
 13. User Reply
    - one line only:
-     - `GO`
+     - `OK`
      - `HOLD`
      - `REJECT`
 
@@ -115,6 +116,7 @@ If any value is UNKNOWN, recommendation must be HOLD.
 
 ```text
 結論: GO / HOLD / REJECT
+分類: CLAUDE_AUTO_GO / USER_DECISION_REQUIRED / HOLD
 理由:
 変更範囲:
 変えないもの:

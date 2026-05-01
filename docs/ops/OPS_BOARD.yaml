@@ -11,6 +11,30 @@ board_rules:
   raw_codex_to_user: false
   session_logs_are_history_only: true
   decision_batch_required: true
+  production_change_policy:
+    claude_auto_go:
+      - "flag OFF deploy"
+      - "live-inert deploy"
+      - "behavior-preserving image replacement"
+      - "tests green"
+      - "rollback target confirmed"
+      - "Gemini/mail/source/Scheduler/SEO/publish criteria/candidate risk unchanged"
+    user_decision_required:
+      - "flag ON"
+      - "behavior-changing env"
+      - "Gemini call increase"
+      - "mail volume increase"
+      - "source addition"
+      - "Scheduler/SEO change"
+      - "publish/review/hold/skip criteria change"
+      - "cleanup mutation"
+      - "rollback-impossible or external-impact-heavy change"
+    hold_if_unknown:
+      - "tests"
+      - "rollback"
+      - "cost/Gemini delta/mail volume"
+      - "candidate disappearance risk"
+      - "stop condition/blast radius/source impact/behavior invariance"
 
 mail_storm_policy:
   all_mail_stop: forbidden
@@ -37,11 +61,13 @@ active:
       - "Acceptance Pack"
       - "test plan"
       - "rollback plan"
+      - "implementation/test/local verify"
+      - "flag OFF or live-inert deploy if POLICY 3.1 CLAUDE_AUTO_GO is satisfied"
     forbidden_without_user_go:
-      - "deploy"
-      - "flag/env change"
+      - "flag ON"
+      - "behavior-changing env"
       - "Gemini call increase"
-    next_action: "Complete visible-skip design and Pack for 282 readiness."
+    next_action: "Complete visible-skip readiness; classify any production reflection under POLICY section 3."
     next_review_at: "after Pack draft"
     expiry: "before 282 flag ON decision"
 
@@ -59,10 +85,10 @@ active:
       - "test plan"
       - "rollback plan"
     forbidden_without_user_go:
-      - "implementation"
-      - "deploy"
-      - "source behavior change"
-    next_action: "Finish read-only analysis and decide whether an Acceptance Pack is justified."
+      - "unclassified implementation"
+      - "unclassified deploy"
+      - "source behavior change before risk classification"
+    next_action: "Finish read-only analysis, then classify source-side behavior change before any implementation/deploy."
     next_review_at: "after analysis evidence"
     expiry: "before implementation"
 
@@ -95,7 +121,7 @@ hold_needs_pack:
     execution_owner: Claude
     evidence_owner: Claude
     user_go_required: true
-    user_go_reason: "PROD_DEPLOY+FLAG_ENV+MAIL_ROUTING_MAJOR"
+    user_go_reason: "FLAG_ON+OLD_CANDIDATE_RE_ON+MAIL_ROUTING_MAJOR"
     current_state:
       image_deployed: true
       flag_rolled_back: true
@@ -111,7 +137,7 @@ hold_needs_pack:
       - "stop condition"
       - "rollback command"
       - "all UNKNOWN fields resolved"
-    next_action: "Build a new Acceptance Pack. Do not re-ON Phase3."
+    next_action: "Build a new Acceptance Pack. Flag OFF/live-inert reflection may proceed only if POLICY 3.1 is satisfied. Do not re-ON Phase3."
     next_review_at: "before any Phase3 re-ON proposal"
     expiry: "before second-wave risk window"
 
@@ -136,8 +162,9 @@ future_user_go:
     execution_owner: Claude
     evidence_owner: Claude
     user_go_required: true
-    user_go_reason: PROD_DEPLOY
-    next_action: "Prepare deploy decision Pack."
+    user_go_reason: "WEAK_TITLE_RESCUE_ENABLEMENT"
+    claude_auto_go_allowed: "live-inert deploy only if POLICY 3.1 is satisfied"
+    next_action: "Classify live-inert deploy separately from weak title rescue enablement."
     expiry: "when deploy evidence is ready"
 
   - id: 288-INGEST

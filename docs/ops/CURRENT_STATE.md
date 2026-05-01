@@ -8,7 +8,7 @@ This file is the first operational document to read at session start. If this fi
 ## Today Decisions
 
 - The user is not the work owner for every ticket.
-- The user is only the decision owner for high-risk changes.
+- The user is only the final decision owner for high-risk changes.
 - Claude is the field lead.
 - Codex is the field developer / worker.
 - Raw Codex answers must not be sent directly to the user.
@@ -17,7 +17,10 @@ This file is the first operational document to read at session start. If this fi
 - When a Codex lane becomes idle, Claude must detect it and autonomously feed the next low-risk subtask from the existing ticket order.
 - The user discovering an idle Codex lane is an operations failure.
 - Read-only, doc-only, evidence collection, test plans, rollback plans, Acceptance Packs, and ticket cleanup are Claude autonomous GO.
-- Deploy, flag/env changes, Scheduler changes, SEO changes, source additions, Gemini call increases, major mail routing changes, cleanup mutation, and non-rollbackable changes require user GO.
+- Production changes are classified as `CLAUDE_AUTO_GO`, `USER_DECISION_REQUIRED`, or `HOLD`. Safe production reflection is not blocked just because it is production.
+- `CLAUDE_AUTO_GO`: flag OFF deploy, live-inert deploy, or behavior-preserving image replacement when tests are green, rollback is confirmed, and Gemini/mail/source/Scheduler/SEO/publish criteria/candidate disappearance risks do not increase.
+- `USER_DECISION_REQUIRED`: flag ON, behavior-changing env, Gemini increase, mail volume increase, source addition, Scheduler/SEO change, publish/review/hold/skip criteria change, cleanup mutation, rollback-impossible change, or external-impact-heavy change.
+- `HOLD`: tests, rollback, cost, Gemini delta, mail volume, candidate disappearance risk, stop condition, blast radius, source impact, or behavior invariance is UNKNOWN.
 - ACTIVE is limited to at most 2 tickets.
 - The user decides time boundaries such as "today is done" or "continue."
 - Claude should proceed by risk, regression, and cost gates, not by the clock.
@@ -60,12 +63,12 @@ This file is the first operational document to read at session start. If this fi
 
 | ticket | current state | allowed now | user GO required for |
 |---|---|---|---|
-| 293-COST | ACTIVE, doc/test/rollback planning | design, Pack, tests, rollback plan | deploy, flag/env, Gemini increase |
-| 300-COST | ACTIVE, read-only analysis | source-side guarded-publish cost analysis | implementation/deploy |
+| 293-COST | ACTIVE, visible preflight readiness | implementation/test/local verify/flag OFF or live-inert deploy if CLAUDE_AUTO_GO; Pack if risky | flag ON, behavior-changing env, Gemini increase |
+| 300-COST | ACTIVE, read-only analysis | source-side cost analysis, Pack/test/rollback planning | source-side behavior change until classified |
 | 299-QA | OBSERVE | flaky/transient evidence and baseline recording | none unless it becomes deploy/flag work |
-| 298-Phase3 | HOLD_NEEDS_PACK | Pack reconstruction only | any re-ON, deploy, flag/env |
+| 298-Phase3 | HOLD_NEEDS_PACK | Pack reconstruction; flag OFF/live-inert reflection only if CLAUDE_AUTO_GO | flag ON, old-candidate re-ON, mail volume UNKNOWN |
 | 282-COST | FUTURE_USER_GO | Pack after 293 | flag ON |
-| 290-QA | FUTURE_USER_GO | deploy decision Pack | deploy |
+| 290-QA | FUTURE_USER_GO | live-inert deploy may be CLAUDE_AUTO_GO after classification Pack | weak title rescue enablement |
 | 288-INGEST | FUTURE_USER_GO | source-add decision Pack | source addition |
 
 ## Decision Batch Format
@@ -97,8 +100,8 @@ Session logs, handoff logs, and codex responses are history only. They are not c
 ## Immediate Operating Posture
 
 - Keep 298-Phase3 OFF.
-- Continue 293-COST and 300-COST only inside allowed low-risk boundaries.
+- Continue 293-COST and 300-COST inside allowed boundaries; do not block `CLAUDE_AUTO_GO` production reflection solely because it touches production.
 - Keep 299-QA as observe, not P0 by default.
-- Do not ask the user to choose READY-incomplete work.
+- Do not ask the user to choose READY-incomplete work or UNKNOWN technical risk. Claude resolves UNKNOWN first.
 - Do not create new tickets unless the issue cannot fit into an existing active/hold ticket.
 - Do not expose raw Codex output to the user; Claude compresses it into a Decision Batch.

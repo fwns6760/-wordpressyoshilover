@@ -117,3 +117,14 @@ User reply format: 「GO」/「HOLD」/「REJECT」のみ
   - `post_gen_validate` と guarded review が同じ cap=10 を共有しているため、old-candidate suppression で空いた枠を 289 に自然開放してよいか、それとも総量配分を固定したいか
   - threshold default を `3 days` で切るか、`7 days` にして first visible mail を長めに残すか
 - **next_action_for_claude**: `Claude relays Acceptance Pack to user, awaits GO/HOLD/REJECT`
+
+## Deploy-ready Acceptance Pack (final)
+
+- **impl_commit_hash**: `d44594a`
+- **pytest baseline note**: Claude verified the baseline remains the same: 3 pre-existing failures in `tests/test_postgame_strict_template.py` are unchanged, and this implementation adds 7 targeted tests with +0 regression.
+- **deploy checklist (docs/ops/POLICY.md §8 clean build gate)**:
+  1. `git stash -u` で untracked + modified を退避するか、`/tmp/<commit_hash>` の clean export から `gcloud builds submit .` を行う
+  2. `git log <prev_image_commit>..<new_image_commit>` で deploy 対象 commit 範囲を確認する
+  3. deploy 範囲に HOLD ticket の commit が含まれていたら build 前に停止し、Acceptance Pack 化する
+  4. `git diff --cached --name-status` 後の commit が deploy 対象 commit と一致していることを確認する
+  5. build 後に image digest と commit hash の対応を doc 化する

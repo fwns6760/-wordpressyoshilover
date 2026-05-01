@@ -249,6 +249,25 @@ UNKNOWN は user に投げず HOLD。
 
 5 step 全 pass で build 開始 GO。1 つでも fail で HOLD。
 
+## 14a. Sequential Single-Ticket Chain(POLICY §20、本日 user 明示)
+
+各 ticket は **1 件ずつ順次** で 6 step 完走必須(同時並列 deploy 禁止):
+
+1. deploy 前確認(§16.1 11 項目 + §19 5 step gate)
+2. deploy 実行
+3. 本番稼働確認(§20.2 6 項目: image / env / Cloud Run 正常 / Scheduler / error / rollback target)
+4. 本番 safe デグレ試験(§20.3 9 項目: mail volume / sent burst / old_candidate storm / Gemini delta / silent skip / Team Shiny From / publish-review-hold-skip 導線 / 既存通知 / WP 主要導線)
+5. 判定: OBSERVED_OK / HOLD / ROLLBACK_REQUIRED
+6. 次 ticket へ進む(step 5 OBSERVED_OK 確定後のみ)
+
+live-inert / flag OFF deploy でも post-deploy verify 軽め必須(15 項目を read-only)。flag ON / env / source / mail / Gemini 増加は強い verify。
+
+異常 trigger 8 件 → 次へ進まず HOLD or ROLLBACK_REQUIRED → 3-dim rollback(code = git revert / image = Cloud Run rollback / flag = env rollback)→ post-rollback verify。
+
+10-item report 形式(各 ticket 完了時): ticket / deployed / image / env / 稼働確認 / デグレ試験 / mail+Gemini+silent skip / rollback target / 判定 / 次 ticket。
+
+chain 順序(POLICY §20.8): 298-v4 OBSERVED_OK → 290 Pack A live-inert → 293-COST → 282-COST → 290 Pack B → 300-COST → 288-INGEST Phase 1-4。
+
 ## 15. 5/2 09:00 JST Phase 6 verify(298-Phase3 v4)
 
 Claude 自律 EVIDENCE_ONLY、read-only:

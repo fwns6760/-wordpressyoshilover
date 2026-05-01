@@ -149,6 +149,21 @@ Session logs, handoff logs, and codex responses are history only. They are not c
 - raw Codex output は user に出さない、Claude が Decision Batch 形式で圧縮(POLICY §11 / §15.2)。
 - worker dispatch 5-field 必須(POLICY §18)、Codex idle 時「意図的 idle + 理由」明記。
 
+## Sequential Single-Ticket Production Reflection Chain(POLICY §20.8、本日 user 明示)
+
+298-v4 OBSERVED_OK 後、以下順次 deploy(同時複数本番反映禁止):
+
+1. **290-QA Pack A live-inert**(CLAUDE_AUTO_GO 候補、image rebuild flag OFF default)
+2. **293-COST**(image rebuild + flag ON `ENABLE_PREFLIGHT_SKIP_NOTIFICATION=1`)
+3. **282-COST**(env apply only `ENABLE_GEMINI_PREFLIGHT=1`、293 完了 + 24h 安定後)
+4. **290-QA Pack B**(env apply `ENABLE_WEAK_TITLE_RESCUE=1`、Pack A OBSERVED_OK + 1 週間後)
+5. **300-COST**(impl 便 fire → image rebuild、298 + 293 完了後)
+6. **288-INGEST Phase 1→2→3→4**(順次、Phase 3 source add は USER_DECISION_REQUIRED)
+
+各 ticket 間で 6 step(deploy 前確認 / deploy / 稼働確認 / デグレ試験 / 判定 / 次へ)完走 + step 5 OBSERVED_OK 確定 → 次 ticket。
+
+異常 trigger 8 件(mail burst / MAIL_BUDGET 超過 / silent skip / Gemini 想定外 / Team Shiny 変 / 導線破損 / rollback 不明 / error 連続)検出時、HOLD or ROLLBACK_REQUIRED で chain 中断、3-dim rollback 実行 + post-rollback verify。
+
 ## 2026-05-01 Audit 由来 Permanent Guards(POLICY §19 反映)
 
 Codex A round 28(9 軸)+ Codex B round 17(8 軸)audit から永続化済:

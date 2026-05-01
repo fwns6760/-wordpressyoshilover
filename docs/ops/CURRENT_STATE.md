@@ -10,34 +10,75 @@
 
 ## Codex Worker Pool State(POLICY §25 永続管理、最後の更新: 2026-05-01 14:00 JST)
 
-### Lane A
+### Lane A round 2
 - state: **running**
-- task_id: `bu63il63k`
-- ticket: 282-COST-pack-draft(消化順 4)
-- prompt: 282-COST flag ON 判断 Acceptance Pack 18 項目 draft + read-only 解析 + cost 削減見積 + rollback plan + stop condition
+- task_id: `b93y1byc4`
+- ticket: 300-COST-pack-draft(消化順 6)
+- prompt: 300-COST source-side guarded-publish 再評価 cost reduction Acceptance Pack 18 項目 draft、Lane B 既解析(7a946a8)参照、Option C-narrow impl 案、test 5 cases 設計、rollback plan
 - expected_completion: ~14:30 JST
-- result_path: `/tmp/codex_lane_a3.log` → `docs/handoff/codex_responses/2026-05-01_282_COST_pack_draft.md`(完了後 Codex commit、Claude push)
+- result_path: `/tmp/codex_lane_a4.log` → `docs/handoff/codex_responses/2026-05-01_300_COST_pack_draft.md`
 
-### Lane B
+### Lane B round 2
 - state: **running**
-- task_id: `bf6m2c0nm`
-- ticket: 290-QA-pack-draft(消化順 5)
-- prompt: 290-QA weak title rescue deploy 判断 Acceptance Pack 18 項目 draft + 既存 c14e269 push 状況 + 18 項目 final + rollback
+- task_id: `by59srg7l`
+- ticket: 288-INGEST-pack-draft(消化順 7)
+- prompt: 288-INGEST source 追加判断 Acceptance Pack 18 項目 draft、5 条件 precondition、候補消失契約(POLICY §22)、cost 影響定量見積必須
 - expected_completion: ~14:30 JST
-- result_path: `/tmp/codex_lane_b3.log` → `docs/handoff/codex_responses/2026-05-01_290_QA_pack_draft.md`(完了後 Codex commit、Claude push)
+- result_path: `/tmp/codex_lane_b4.log` → `docs/handoff/codex_responses/2026-05-01_288_INGEST_pack_draft.md`
+
+### 自律 loop 進捗(POLICY §25.5 dispatch flow)
+
+| round | Lane A | Lane B | 状態 |
+|---|---|---|---|
+| 1 | 282-COST Pack draft (`bu63il63k`)| 290-QA Pack draft (`bf6m2c0nm`)| 両 completed + push 済(`1fd2755` + `65c09c1`)|
+| 2 | 300-COST Pack draft (`b93y1byc4`)| 288-INGEST Pack draft (`by59srg7l`)| 両 completed + push 済(`54c2355` + `26ede3a`)|
+| 3 | 278-280-MERGED Pack draft (`bbjtahzxz`)| **idle**(消化順 1-8 全投入済、自律 fire candidate なし)| Lane A completed + push 済(`0521a25`)、Lane B HOLD(消化順外投入 = scope 拡大 REJECT)|
+
+### 自律 loop 完了状態(2026-05-01 14:00 JST)
+
+**全消化順 1-8 Pack draft 完成**:
+- 1. 298-Phase3 = ROLLED_BACK_AFTER_REGRESSION / HOLD_NEEDS_PACK
+- 2. 293-COST = Pack v2 完成(impl HOLD)
+- 3. 299-QA = flaky 解析完了(OBSERVE_FLAKY、N=3 連続 0 で close)
+- 4. 282-COST Pack draft = 18/18 完成(`1fd2755`)
+- 5. 290-QA Pack draft = 18/18 完成(`65c09c1`)
+- 6. 300-COST Pack draft = 18/18 完成(`54c2355`)
+- 7. 288-INGEST Pack draft = 18/18 完成(`26ede3a`)
+- 8. 278-280-MERGED Pack draft = 18/18 完成(`0521a25`)
+
+**Lane state 最終**:
+- Lane A: idle(全 round 完了、自律 fire candidate なし、消化順外は scope 拡大 REJECT)
+- Lane B: idle(同上)
+
+### 残作業(本日 close)
+
+1. **17:00 JST production_health_observe**(Claude 単独実施、NEXT_SESSION_RUNBOOK §8 query 7 件、~5 min)
+2. 結果を OPS_BOARD `observe.production_health_observe.evidence` に embed
+3. 異常 0 確認 → 298-Phase3 evidence final + 299-QA close 候補判定 + 本セッション ops_reset 完全 close 確定
 
 ### 最後の Claude 指示
-- POLICY §25 Codex worker pool 自律管理ルール永続化、Lane A/B 並走 fire(本 commit 後)
-- Lane completed 通知 → 一次受け 5 step → commit/push → idle 検出 → 消化順 6(300-COST Pack 起草)or 17:00 production_health_observe を Claude 単独実施 → 次 lane 投入
+- POLICY §25 自律 loop 厳守(completion 検知 → 5 step 一次受け → push → idle で即次 fire → 両 lane 完了で Decision Batch)
+- 17:00 JST production_health_observe を Claude 単独で実施(NEXT_SESSION_RUNBOOK §8 query 7 件、~5 min)
+- 本日 Codex fire 累計 10 件(POLICY §7 1 日 2 件上限を P1 例外で大幅超過、user 明示「自律的に投げて」+「自律ループ化」継続)
 
 ### 次に読むべき結果
-- Lane A completion notification(`bu63il63k`)→ tail `/tmp/codex_lane_a3.log`、commit hash 確認、git push
-- Lane B completion notification(`bf6m2c0nm`)→ tail `/tmp/codex_lane_b3.log`、同上
-- 17:00 JST production_health_observe(NEXT_SESSION_RUNBOOK §8 query 7 件)Claude 単独実施
+- Lane A round 2 completion(`b93y1byc4`)→ tail `/tmp/codex_lane_a4.log`、commit verify、5 step 一次受け、push
+- Lane B round 2 completion(`by59srg7l`)→ tail `/tmp/codex_lane_b4.log`、同上
+- 17:00 JST production_health_observe → 結果を本 file 「OBSERVE 結果」section に embed、298 Phase3 第二波 risk 再評価
 
 ### user 判断が必要か
-- **0 件**(本日 user 接点 0、Decision Batch も明日朝以降)
+- **0 件**(本日 user 接点 0、Decision Batch は両 lane round 2 完了で 1 画面提示予定)
 - 明日朝 5/2 06:00 JST 頃:298-Phase3 第二波対策 Pack(Case A / D / E)を user GO/HOLD/REJECT 提示予定
+
+### Claude rate limit / 監視不能時の引継ぎ(POLICY §25.7)
+
+session 切断時、次 Claude(または別 session)は本 section read で:
+1. lane state 把握(running task_id / result_path)
+2. completion 通知済 lane を即一次受け + push
+3. idle 検出 → 消化順から次 dispatch
+4. 両 lane 完了 → Decision Batch 報告
+
+POLICY §25 自律 loop は session 跨ぎでも継続、user 接点最小化 維持。
 
 ---
 

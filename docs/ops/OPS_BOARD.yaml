@@ -1,0 +1,383 @@
+# YOSHILOVER OPS BOARD(機械可読 ticket 状態正本)
+#
+# 本 file は repo 内 永続正本。Claude memory / session_logs と矛盾時は本 file 優先。
+# 1 ticket 1 record、7 軸 OWNER + status + evidence + next_action + expiry。
+#
+# Schema:
+#   id: <ticket id>
+#   status: ACTIVE | OBSERVE | READY | HOLD_NEEDS_PACK | FUTURE_USER_GO | DONE | FROZEN | DEEP_FROZEN
+#   decision_owner: user | Claude | Codex | ChatGPT
+#   execution_owner: Claude | Codex | none
+#   evidence_owner: Claude | Codex | user
+#   user_go_required: true | false
+#   user_go_reason: PROD_DEPLOY | FLAG_ENV | SCHEDULER_CHANGE | COST_INCREASE | SOURCE_ADD | SEO_CHANGE | PUBLICATION_POLICY | MAIL_ROUTING_MAJOR | IRREVERSIBLE | n/a
+#   evidence: <観測 / commit hash / live evidence>
+#   next_action: <次の action>
+#   next_review_at: <date or event>
+#   expiry: <date or condition>
+
+last_updated: "2026-05-01 09:50 JST"
+updated_by: "Claude"
+
+# ============================================
+# ACTIVE(最大 2 件)
+# ============================================
+active:
+  - id: 298-MAIL-STORM-HOTFIX
+    status: ACTIVE
+    decision_owner: user
+    execution_owner: Claude+Codex
+    evidence_owner: Claude
+    user_go_required: true  # code fix Acceptance Pack 提示後
+    user_go_reason: PROD_DEPLOY+MAIL_ROUTING_MAJOR
+    severity: P1
+    incident_started_at: "2026-05-01 09:00 JST"
+    evidence: |
+      - 5/1 09:00 JST PUBLISH_NOTICE_REVIEW_WINDOW_HOURS=168 apply 直後 storm 開始
+      - 09:05-09:30 sent=10 × 6 trigger 連続(60 通)
+      - 09:33 JST env 削除(default 24h 復帰、user 明示 GO で Claude 直接実行 = §14 例外発動)
+      - 09:35 trigger sent=10 継続(env=168 単独原因ではない確定)
+      - ledger gs://baseballsite-yoshilover-state/guarded_publish/guarded_publish_history.jsonl 28.81 MiB
+      - tail 200 records: 103 unique post_ids each 2 records (09:30:45 + 09:35:47), 全件 status=skipped/judgment=yellow/hold_reason=backlog_only
+      - 真因仮説:guarded-publish */5 trigger ごと skip 再評価 → fresh ts append → publish-notice 24h scan picks up → 24h dedup expire 循環
+    next_action: "Codex A/B 完了待ち → Acceptance Pack 提示 → user GO → code fix deploy"
+    next_review_at: "2026-05-01 10:30 JST(Codex 完了想定)"
+    expiry: "2026-05-01 18:00 JST(本日中に完遂)"
+    codex_a_task: "/tmp/codex_a_storm_verify.log (bg b2ymllzsv) — read-only verify + 最小 hotfix 案"
+    codex_b_task: "/tmp/codex_b_storm_permanent_fix.log (bg bdm147ppc) — 3 案比較 + Acceptance Pack 起草"
+    rollback_record:
+      - "09:33 JST: --remove-env-vars=PUBLISH_NOTICE_REVIEW_WINDOW_HOURS(verify済)"
+      - "rollback for env removal: --update-env-vars=PUBLISH_NOTICE_REVIEW_WINDOW_HOURS=168"
+    invariants_held:
+      - "Team Shiny From=y.sebata@shiny-lab.org 維持"
+      - "ENABLE_POST_GEN_VALIDATE_NOTIFICATION=1 維持(289 通知)"
+      - "ENABLE_LIVE_UPDATE_ARTICLES=0 維持"
+      - "X 自動投稿 OFF 維持"
+      - "Scheduler 頻度不変"
+      - "Gemini call 増加 0(env 操作のみ)"
+
+# ============================================
+# OBSERVE(最大 1 件、production health 統合)
+# ============================================
+observe:
+  - id: production_health_observe
+    status: OBSERVE
+    decision_owner: Claude
+    execution_owner: Claude
+    evidence_owner: Claude
+    user_go_required: false
+    user_go_reason: n/a
+    evidence: "289 24h sent=172 errors=0 silent=0 / Gmail sample 10+ thread / Team Shiny 維持 / cache_hit 99% (498/500) / env 期待値通り"
+    integrated_targets:
+      - "289-OBSERVE 24h sent/errors/silent"
+      - "282-COST flag OFF live 挙動不変"
+      - "205-COST cursor scan 動作"
+      - "cache_hit 99% 真因"
+      - "277-QA rescue 効果(290 deploy 後)"
+      - "281-QA <24h positive case"
+      - "290-QA NOT_DEPLOYED status"
+    next_action: "2026-05-01 17:00 JST に 1 度 read-only check、異常 0 なら ops reset close 確定"
+    next_review_at: "2026-05-01 17:00 JST"
+    expiry: "2026-05-01 17:00 JST"
+
+# ============================================
+# READY(最大 3 件、Acceptance Pack 完成済)
+# ============================================
+ready:
+  []  # 現状 0 件、HOLD_NEEDS_PACK が Pack 完成で昇格
+
+# ============================================
+# HOLD_NEEDS_PACK(user GO 必須、Pack 未完成、近期 READY 昇格候補)
+# ============================================
+hold_needs_pack:
+  - id: 290-QA-deploy
+    status: HOLD_NEEDS_PACK
+    decision_owner: user
+    execution_owner: Claude
+    evidence_owner: Claude
+    user_go_required: true
+    user_go_reason: PROD_DEPLOY+FLAG_ENV
+    evidence: "commit c14e269 PUSHED / GH Actions run 25157508302 success / pytest 1865 baseline 維持"
+    next_action: "production_health_observe 17:00 結果確認後、Acceptance Pack 13 項目作成"
+    next_review_at: "2026-05-01 17:00 JST 後"
+    expiry: "2026-05-02"
+  - id: 282-COST-flag-on
+    status: HOLD_NEEDS_PACK
+    decision_owner: user
+    execution_owner: Claude
+    evidence_owner: Claude
+    user_go_required: true
+    user_go_reason: FLAG_ENV+COST_INCREASE
+    evidence: "preflight gate live (flag OFF) / fetcher :4be818d 反映済 / preflight skip event 0"
+    next_action: "293 完遂 + 24h 安定後に Acceptance Pack 作成"
+    next_review_at: "293 完遂 + 24h"
+    expiry: "293 完遂 + 24h"
+  - id: 288-INGEST-source-add
+    status: HOLD_NEEDS_PACK
+    decision_owner: user
+    execution_owner: Claude
+    evidence_owner: Claude
+    user_go_required: true
+    user_go_reason: SOURCE_ADD+COST_INCREASE
+    evidence: "5 条件未達(289+290+295+候補終端契約+cost 抑制策)"
+    next_action: "5 条件全達成後に Acceptance Pack 作成"
+    next_review_at: "5 条件達成後"
+    expiry: "5 条件達成後"
+
+# ============================================
+# FUTURE_USER_GO(いつか必要、今は聞かない)
+# ============================================
+future_user_go:
+  - id: 293-COST-deploy
+    status: FUTURE_USER_GO
+    decision_owner: user
+    execution_owner: Claude
+    evidence_owner: Claude
+    user_go_required: true
+    user_go_reason: PROD_DEPLOY+FLAG_ENV+MAIL_ROUTING_MAJOR
+    evidence: "(impl 未)"
+    next_action: "293 impl 完遂 + 24h 安定後に Pack"
+    next_review_at: "293 impl 完遂 + 24h"
+    expiry: "293 impl 完遂 + 24h"
+  - id: 295-QA-deploy
+    status: FUTURE_USER_GO
+    decision_owner: user
+    execution_owner: Claude
+    evidence_owner: Claude
+    user_go_required: true
+    user_go_reason: PROD_DEPLOY
+    evidence: "(impl 未)"
+    next_action: "295 impl 完遂 + 24h 安定後に Pack"
+    next_review_at: "295 impl 完遂 + 24h"
+    expiry: "295 impl 完遂 + 24h"
+  - id: 296-codex-shadow-deploy
+    status: FUTURE_USER_GO
+    decision_owner: user
+    execution_owner: Claude
+    evidence_owner: Claude
+    user_go_required: true
+    user_go_reason: PROD_DEPLOY+SCHEDULER_CHANGE
+    evidence: "(設計未完)"
+    next_action: "296 設計完了 + redesign image build 後に Pack"
+    next_review_at: "設計完了後"
+    expiry: "設計完了後"
+  - id: 229-COST-C-deploy
+    status: FUTURE_USER_GO
+    decision_owner: user
+    execution_owner: Claude
+    evidence_owner: Claude
+    user_go_required: true
+    user_go_reason: PROD_DEPLOY+FLAG_ENV+COST_INCREASE
+    evidence: "(impl 未)"
+    next_action: "282 flag ON + 24h cost 効果確認 + impl 完遂後に Pack"
+    next_review_at: "282 flag ON 後 24h"
+    expiry: "282 flag ON 後 24h"
+  - id: 278-279-280-QA-deploy
+    status: FUTURE_USER_GO
+    decision_owner: user
+    execution_owner: Claude
+    evidence_owner: Claude
+    user_go_required: true
+    user_go_reason: PROD_DEPLOY+MAIL_ROUTING_MAJOR
+    evidence: "(impl 未、277/290 効果観察待ち)"
+    next_action: "290 deploy + 24h + 統合 impl 完遂後に Pack"
+    next_review_at: "290 deploy 後 24h"
+    expiry: "290 deploy 後 24h"
+  - id: 264-QA-cleanup-mutation
+    status: FUTURE_USER_GO
+    decision_owner: user
+    execution_owner: Claude
+    evidence_owner: Claude
+    user_go_required: true
+    user_go_reason: IRREVERSIBLE
+    evidence: "(Phase 1 audit 未)"
+    next_action: "Phase 1 audit 完了 + 個別 post_id GO"
+    next_review_at: "Phase 1 audit 完了後"
+    expiry: "Phase 1 audit 完了後"
+
+# ============================================
+# DONE(OBSERVED_OK evidence あり、close 済)
+# ============================================
+done:
+  - id: 276-QA-test-mock-fix
+    status: DONE
+    decision_owner: Claude
+    execution_owner: Codex
+    evidence_owner: Claude
+    user_go_required: false
+    user_go_reason: n/a
+    evidence: "CI run 25146349669 success / 1820 tests OK / 本番 src 不変"
+    next_action: "(close)"
+    next_review_at: n/a
+    expiry: n/a
+  - id: 283-MKT-requirements-doc
+    status: DONE
+    decision_owner: Claude
+    execution_owner: Claude
+    evidence_owner: Claude
+    user_go_required: false
+    user_go_reason: n/a
+    evidence: "commit a2777f9 push / user 確認済"
+    next_action: "(close、子 ticket 284-287 は FROZEN)"
+    next_review_at: n/a
+    expiry: n/a
+  - id: 297-OPS-codex-shadow-pause
+    status: DONE
+    decision_owner: Claude
+    execution_owner: Codex
+    evidence_owner: Claude
+    user_go_required: false
+    user_go_reason: n/a
+    evidence: "scheduler state=PAUSED / 24h publish-mail trigger 維持 / Cloud Run job 残存"
+    next_action: "(close、再開判断は 296 redesign 完遂後)"
+    next_review_at: n/a
+    expiry: n/a
+  - id: ops_reset_2026-05-01
+    status: DONE_DOC_ONLY
+    decision_owner: Claude
+    execution_owner: Claude
+    evidence_owner: Claude
+    user_go_required: false
+    user_go_reason: n/a
+    evidence: |
+      session_logs side:
+        - commit 913844b (2026-04-30 session_logs + ops_reset.md 起源)
+        - commit 6b7d77b (DONE_PARTIAL/NOT_DONE 廃止)
+      docs/ops/ side(運用 active 正本):
+        - 前回 session で untracked のまま誤判定(CURRENT_STATE 旧記述「永続化」は誤り)
+        - 本 commit(2026-05-01 09:55 JST 予定)で初永続化:
+          * POLICY.md(§14 P1 hotfix 範囲 / §15 Outcome Ledger format 含む)
+          * CURRENT_STATE.md
+          * OPS_BOARD.yaml
+          * ACCEPTANCE_PACK_TEMPLATE.md
+          * NEXT_SESSION_RUNBOOK.md
+    next_action: "(close、本 commit で永続化完了)"
+    next_review_at: n/a
+    expiry: n/a
+
+# ============================================
+# Claude 自律 GO 候補(設計 doc 整備、USER_GO_REQUIRED=false)
+# ============================================
+claude_autonomous_candidates:
+  - id: 264-QA-phase1-audit
+    decision_owner: Claude
+    execution_owner: Claude
+    user_go_required: false
+    category: READ_ONLY+EVIDENCE_ONLY
+    note: "既存 publish 重複ペア集計、cleanup 判断材料 doc 化、無条件着手可"
+  - id: 293-COST-design-finalize
+    decision_owner: Claude
+    execution_owner: Claude
+    user_go_required: false
+    category: DOC_ONLY+TEST_DESIGN
+    note: "起票 prompt 整備 / 仕様 finalize、impl 着手しない"
+  - id: 291-OBSERVE-unified-ledger-design
+    decision_owner: Claude
+    execution_owner: Claude
+    user_go_required: false
+    category: DOC_ONLY+BOARD_COMPRESSION
+    note: "292/293 統合 doc 設計"
+  - id: 294-PROCESS-clean-build-checklist
+    decision_owner: Claude
+    execution_owner: Claude
+    user_go_required: false
+    category: DOC_ONLY+ROLLBACK_CATALOG
+    note: "checklist 文書化、deploy 便 prompt template 整備"
+  - id: 295-QA-design
+    decision_owner: Claude
+    execution_owner: Claude
+    user_go_required: false
+    category: DOC_ONLY+TEST_DESIGN
+    note: "subtype 誤分類 fix 設計 doc 整備、impl 着手しない"
+  - id: 296-codex-shadow-redesign-design
+    decision_owner: Claude
+    execution_owner: Claude
+    user_go_required: false
+    category: DOC_ONLY+TEST_DESIGN
+    note: "src 取得方針 + 設計 finalize"
+  - id: 278-279-280-design-merge
+    decision_owner: Claude
+    execution_owner: Claude
+    user_go_required: false
+    category: DOC_ONLY+BOARD_COMPRESSION
+    note: "283-MKT 配下子化、親 ticket 統合"
+  - id: 229-COST-C-design
+    decision_owner: Claude
+    execution_owner: Claude
+    user_go_required: false
+    category: TEST_DESIGN
+    note: "prompt compression A/B test 設計、impl 着手しない"
+  - id: frozen-tickets-file-move
+    decision_owner: Claude
+    execution_owner: Claude
+    user_go_required: false
+    category: BOARD_COMPRESSION
+    note: "doc/active/ → doc/done/2026-05/ or doc/frozen/、本日実施しない、次セッション以降"
+  - id: expiry-hold-escalate
+    decision_owner: Claude
+    execution_owner: Claude
+    user_go_required: false
+    category: HANDOFF_UPDATE
+    note: "EXPIRY 到来 HOLD を自律 1 行通知"
+
+# ============================================
+# FROZEN(本フェーズ着手 0、active board 非表示、別 view、本日 file move 0)
+# ============================================
+frozen:
+  count: 16
+  list:
+    - 234-impl-7
+    - 245
+    - 246-viral-topic-detection
+    - 247-QA-postgame-strict-slot-fill-poc
+    - 250-QA-1
+    - 250-QA-3
+    - 251-SEO
+    - 252-QA
+    - 253-QA
+    - 254-QA
+    - 255-MKT
+    - 256-QA
+    - 248-MKT-2
+    - 248-MKT-3a
+    - 260-MKT
+    - 274-OPS
+  decision_owner: Claude
+  execution_owner: Claude
+  user_go_required: false
+  user_go_reason: n/a
+  evidence: "本フェーズ着手 0、active board 非表示維持"
+  next_action: "次セッション以降に Claude 自律で Codex commit便 起こして doc/done/2026-05/ or doc/frozen/ へ移動"
+  expiry: "任意のタイミング"
+
+# ============================================
+# DEEP_FROZEN(doc/waiting/、永続 NEVER、active board 非表示、別 view)
+# ============================================
+deep_frozen:
+  count: 21
+  location: doc/waiting/
+  decision_owner: user
+  user_go_required: true
+  user_go_reason: PUBLICATION_POLICY
+  evidence: "フェーズ変更時のみ user 判断で再評価"
+  expiry: "永続 NEVER(本フェーズ)"
+
+# ============================================
+# 不変方針(永続、本フェーズ NEVER 触らない)
+# ============================================
+permanent_invariants:
+  - "ENABLE_LIVE_UPDATE_ARTICLES=0"
+  - "Team Shiny From=y.sebata@shiny-lab.org"
+  - "SEO/noindex/canonical/301 不変"
+  - "X 自動投稿 OFF"
+  - "duplicate guard 全解除なし(narrow 緩和のみ可)"
+  - "Scheduler 頻度変更なし"
+  - "既存 fixed_lane prompt text 不変"
+  - "新 subtype 追加なし"
+  - "prosports 修正なし"
+
+permanent_evidence:
+  fetcher_image: "yoshilover-fetcher:4be818d (rev 00175-c8c, 100% traffic)"
+  publish_notice_image: "publish-notice:4be818d"
+  guarded_publish_image: "guarded-publish:6df049c"
+  codex_shadow_scheduler: "PAUSED"

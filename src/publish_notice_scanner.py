@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Callable, Iterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import html
 import hashlib
@@ -32,6 +32,13 @@ _SCORE_RE = re.compile(r"(?<![0-9０-９])[0-9０-９]+\s*[-－ー]\s*[0-9０-�
 _HISTORY_WINDOW = timedelta(hours=24)
 _REVIEW_NOTICE_MAX_PER_RUN_DEFAULT = 10
 _REVIEW_NOTICE_WINDOW_HOURS_DEFAULT = 24.0
+_PUBLISH_NOTICE_CLASS_RESERVE_ENV_FLAG = "ENABLE_PUBLISH_NOTICE_CLASS_RESERVE"
+_PUBLISH_NOTICE_CLASS_RESERVE_REAL_REVIEW_ENV = "PUBLISH_NOTICE_CLASS_RESERVE_REAL_REVIEW"
+_PUBLISH_NOTICE_CLASS_RESERVE_POST_GEN_VALIDATE_ENV = "PUBLISH_NOTICE_CLASS_RESERVE_POST_GEN_VALIDATE"
+_PUBLISH_NOTICE_CLASS_RESERVE_ERROR_ENV = "PUBLISH_NOTICE_CLASS_RESERVE_ERROR"
+_PUBLISH_NOTICE_CLASS_RESERVE_REAL_REVIEW_DEFAULT = 3
+_PUBLISH_NOTICE_CLASS_RESERVE_POST_GEN_VALIDATE_DEFAULT = 2
+_PUBLISH_NOTICE_CLASS_RESERVE_ERROR_DEFAULT = 1
 _GUARDED_PUBLISH_HISTORY_DEFAULT_PATH = Path("/tmp/pub004d/guarded_publish_history.jsonl")
 _GUARDED_PUBLISH_HISTORY_FALLBACK_PATH = Path("logs/guarded_publish_history.jsonl")
 _GUARDED_PUBLISH_HISTORY_CURSOR_DEFAULT_PATH = Path("/tmp/pub004d/guarded_publish_history_cursor.txt")
@@ -67,6 +74,27 @@ _EXCLUDED_GUARDED_HOLD_REASONS = frozenset(
         "review_duplicate_candidate_same_source_url",
     }
 )
+_NOTICE_CLASS_REAL_REVIEW = "real_review"
+_NOTICE_CLASS_GUARDED_REVIEW = "guarded_review"
+_NOTICE_CLASS_POST_GEN_VALIDATE = "post_gen_validate"
+_NOTICE_CLASS_PREFLIGHT_SKIP = "preflight_skip"
+_NOTICE_CLASS_OLD_CANDIDATE = "old_candidate"
+_NOTICE_CLASS_ERROR_NOTIFICATION = "error_notification"
+_NOTICE_CLASS_OTHER = "other"
+_CLASS_RESERVE_PRIORITY_ORDER = (
+    _NOTICE_CLASS_REAL_REVIEW,
+    _NOTICE_CLASS_ERROR_NOTIFICATION,
+    _NOTICE_CLASS_GUARDED_REVIEW,
+    _NOTICE_CLASS_POST_GEN_VALIDATE,
+    _NOTICE_CLASS_PREFLIGHT_SKIP,
+    _NOTICE_CLASS_OLD_CANDIDATE,
+)
+_GUARDED_REVIEW_PRIORITY_ORDER = (
+    _NOTICE_CLASS_REAL_REVIEW,
+    _NOTICE_CLASS_ERROR_NOTIFICATION,
+    _NOTICE_CLASS_GUARDED_REVIEW,
+    _NOTICE_CLASS_OLD_CANDIDATE,
+)
 
 
 @dataclass(frozen=True)
@@ -93,6 +121,8 @@ class GuardedPublishHistoryScanResult:
     cursor_after: str | None = None
     cursor_path: Path | None = None
     cursor_write_needed: bool = False
+    queue_reasons: dict[str, str | None] = field(default_factory=dict)
+    old_candidate_ledger_post_ids: tuple[str, ...] = ()
 
 
 def _now_jst() -> datetime:
@@ -184,6 +214,42 @@ def _publish_notice_old_candidate_once_enabled() -> bool:
         "true",
         "yes",
         "on",
+    }
+
+
+def _publish_notice_class_reserve_enabled() -> bool:
+    return str(os.environ.get(_PUBLISH_NOTICE_CLASS_RESERVE_ENV_FLAG, "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _resolve_non_negative_int_env(env_name: str, default: int) -> int:
+    env_value = str(os.environ.get(env_name, "")).strip()
+    if not env_value:
+        return default
+    try:
+        return max(0, int(env_value))
+    except ValueError:
+        return default
+
+
+def _resolve_class_reserve_map() -> dict[str, int]:
+    return {
+        _NOTICE_CLASS_REAL_REVIEW: _resolve_non_negative_int_env(
+            _PUBLISH_NOTICE_CLASS_RESERVE_REAL_REVIEW_ENV,
+            _PUBLISH_NOTICE_CLASS_RESERVE_REAL_REVIEW_DEFAULT,
+        ),
+        _NOTICE_CLASS_POST_GEN_VALIDATE: _resolve_non_negative_int_env(
+            _PUBLISH_NOTICE_CLASS_RESERVE_POST_GEN_VALIDATE_ENV,
+            _PUBLISH_NOTICE_CLASS_RESERVE_POST_GEN_VALIDATE_DEFAULT,
+        ),
+        _NOTICE_CLASS_ERROR_NOTIFICATION: _resolve_non_negative_int_env(
+            _PUBLISH_NOTICE_CLASS_RESERVE_ERROR_ENV,
+            _PUBLISH_NOTICE_CLASS_RESERVE_ERROR_DEFAULT,
+        ),
     }
 
 
@@ -936,6 +1002,108 @@ def _request_from_post(post: Mapping[str, Any]) -> PublishNoticeRequest:
     )
 
 
+def _notice_subject_text(request: PublishNoticeRequest) -> str:
+    return str(getattr(request, "subject_override", "") or "").strip()
+
+
+def _is_error_notification_subject(subject: str) -> bool:
+    text = str(subject or "").strip()
+    return text.startswith("[ALERT]") or text.startswith("【警告】") or text.startswith("【緊急】")
+
+
+def _classify_notice_request(request: PublishNoticeRequest) -> str:
+    record_type = str(getattr(request, "record_type", "") or "").strip()
+    skip_layer = str(getattr(request, "skip_layer", "") or "").strip()
+    notice_kind = str(getattr(request, "notice_kind", "publish") or "publish").strip()
+    subject = _notice_subject_text(request)
+    if record_type == _PREFLIGHT_SKIP_RECORD_TYPE or skip_layer == _PREFLIGHT_SKIP_SKIP_LAYER:
+        return _NOTICE_CLASS_PREFLIGHT_SKIP
+    if record_type == _POST_GEN_VALIDATE_RECORD_TYPE or notice_kind == "post_gen_validate":
+        return _NOTICE_CLASS_POST_GEN_VALIDATE
+    if notice_kind == "review_hold":
+        if subject.startswith("【要確認(古い候補)】"):
+            return _NOTICE_CLASS_OLD_CANDIDATE
+        if subject.startswith("【要確認】"):
+            return _NOTICE_CLASS_REAL_REVIEW
+        if _is_error_notification_subject(subject):
+            return _NOTICE_CLASS_ERROR_NOTIFICATION
+        return _NOTICE_CLASS_GUARDED_REVIEW
+    if notice_kind == "alert" or _is_error_notification_subject(subject):
+        return _NOTICE_CLASS_ERROR_NOTIFICATION
+    return _NOTICE_CLASS_OTHER
+
+
+def _select_candidates_by_class_reserve(
+    candidates: list[PublishNoticeRequest],
+    *,
+    max_total: int,
+    reserve_map: Mapping[str, int],
+    priority_order: tuple[str, ...],
+) -> list[PublishNoticeRequest]:
+    if max_total <= 0 or not candidates:
+        return []
+
+    buckets: dict[str, list[tuple[int, PublishNoticeRequest]]] = {}
+    class_order: list[str] = []
+    for index, candidate in enumerate(candidates):
+        class_name = _classify_notice_request(candidate)
+        if class_name not in buckets:
+            buckets[class_name] = []
+            class_order.append(class_name)
+        buckets[class_name].append((index, candidate))
+
+    selected_ids: set[str] = set()
+
+    def append_candidate(candidate: PublishNoticeRequest) -> bool:
+        candidate_id = str(candidate.post_id)
+        if candidate_id in selected_ids:
+            return False
+        selected_ids.add(candidate_id)
+        return len(selected_ids) >= max_total
+
+    for class_name, reserve_count in reserve_map.items():
+        if reserve_count <= 0:
+            continue
+        picked = 0
+        for _, candidate in buckets.get(class_name, []):
+            if append_candidate(candidate):
+                break
+            picked += 1
+            if picked >= reserve_count:
+                break
+        if len(selected_ids) >= max_total:
+            break
+
+    if len(selected_ids) < max_total:
+        for class_name in priority_order:
+            for _, candidate in buckets.get(class_name, []):
+                if append_candidate(candidate):
+                    break
+            if len(selected_ids) >= max_total:
+                break
+
+    if len(selected_ids) < max_total:
+        for class_name in class_order:
+            if class_name in priority_order:
+                continue
+            for _, candidate in buckets.get(class_name, []):
+                if append_candidate(candidate):
+                    break
+            if len(selected_ids) >= max_total:
+                break
+
+    ordered_class_names = [class_name for class_name in priority_order if class_name in buckets]
+    ordered_class_names.extend(class_name for class_name in class_order if class_name not in priority_order)
+    selected: list[PublishNoticeRequest] = []
+    for class_name in ordered_class_names:
+        for _, candidate in buckets[class_name]:
+            if str(candidate.post_id) in selected_ids:
+                selected.append(candidate)
+                if len(selected) >= max_total:
+                    return selected
+    return selected
+
+
 def _is_old_candidate_over_threshold(
     post: Mapping[str, Any],
     *,
@@ -963,6 +1131,7 @@ def scan_guarded_publish_history(
     recorded_at: Callable[[], datetime] | datetime | None = None,
     write_history: bool = True,
     write_cursor: bool = True,
+    capture_only: bool = False,
 ) -> GuardedPublishHistoryScanResult:
     current_now = _coerce_now(now)
     history_file = _path(history_path)
@@ -981,9 +1150,10 @@ def scan_guarded_publish_history(
         if old_candidate_ledger_file is not None
         else {}
     )
+    class_reserve_enabled = _publish_notice_class_reserve_enabled()
     resolved_max_per_run = _resolve_review_max_per_run(max_per_run)
     if resolved_max_per_run <= 0:
-        if write_history:
+        if write_history and not capture_only:
             _write_history(history_file, current_history)
         return GuardedPublishHistoryScanResult(
             emitted=[],
@@ -998,6 +1168,7 @@ def scan_guarded_publish_history(
             cursor_after=_read_cursor(guarded_cursor_file),
             cursor_path=guarded_cursor_file,
             cursor_write_needed=False,
+            old_candidate_ledger_post_ids=(),
         )
 
     recent_window = timedelta(hours=_resolve_review_window_hours(recent_window_hours))
@@ -1023,6 +1194,8 @@ def scan_guarded_publish_history(
     next_history = dict(current_history)
     next_old_candidate_ledger = dict(current_old_candidate_ledger)
     seen_post_ids: set[str] = set()
+    queue_reasons: dict[str, str | None] = {}
+    old_candidate_ledger_post_ids: list[str] = []
     skipped_by_dedup = 0
     skipped_by_judgment_filter = 0
     scanned_records = 0
@@ -1030,7 +1203,7 @@ def scan_guarded_publish_history(
     old_candidate_ledger_write_needed = False
 
     for entry in history_entries:
-        if len(emitted) >= resolved_max_per_run:
+        if not class_reserve_enabled and len(emitted) >= resolved_max_per_run:
             hit_max_per_run = True
             break
         scanned_records += 1
@@ -1110,19 +1283,65 @@ def scan_guarded_publish_history(
         )
         emitted.append(request)
         seen_post_ids.add(post_key)
-        next_history[post_key] = review_recorded_at_iso
+        queue_reasons[post_key] = hold_reason or judgment or None
         if old_candidate_once_path and is_old_candidate_over_threshold:
-            next_old_candidate_ledger[post_key] = review_recorded_at_iso
-            old_candidate_ledger_write_needed = True
-        _append_queue_log(
-            queue_path,
-            status="queued",
-            reason=hold_reason or judgment or None,
-            subject=str(request.subject_override or ""),
-            recipients=[],
-            post_id=request.post_id,
-            recorded_at_iso=review_recorded_at_iso,
+            old_candidate_ledger_post_ids.append(post_key)
+        if not class_reserve_enabled:
+            next_history[post_key] = review_recorded_at_iso
+            if old_candidate_once_path and is_old_candidate_over_threshold:
+                next_old_candidate_ledger[post_key] = review_recorded_at_iso
+                old_candidate_ledger_write_needed = True
+            if not capture_only:
+                _append_queue_log(
+                    queue_path,
+                    status="queued",
+                    reason=hold_reason or judgment or None,
+                    subject=str(request.subject_override or ""),
+                    recipients=[],
+                    post_id=request.post_id,
+                    recorded_at_iso=review_recorded_at_iso,
+                )
+
+    if class_reserve_enabled:
+        class_reserve_map = _resolve_class_reserve_map()
+        selected = _select_candidates_by_class_reserve(
+            emitted,
+            max_total=resolved_max_per_run,
+            reserve_map={
+                _NOTICE_CLASS_REAL_REVIEW: class_reserve_map.get(
+                    _NOTICE_CLASS_REAL_REVIEW,
+                    _PUBLISH_NOTICE_CLASS_RESERVE_REAL_REVIEW_DEFAULT,
+                ),
+                _NOTICE_CLASS_ERROR_NOTIFICATION: class_reserve_map.get(
+                    _NOTICE_CLASS_ERROR_NOTIFICATION,
+                    _PUBLISH_NOTICE_CLASS_RESERVE_ERROR_DEFAULT,
+                ),
+            },
+            priority_order=_GUARDED_REVIEW_PRIORITY_ORDER,
         )
+        selected_ids = {str(request.post_id) for request in selected}
+        hit_max_per_run = len(emitted) > len(selected)
+        emitted = selected
+        next_history = dict(current_history)
+        next_old_candidate_ledger = dict(current_old_candidate_ledger)
+        old_candidate_ledger_write_needed = False
+        for request in emitted:
+            post_key = str(request.post_id)
+            next_history[post_key] = review_recorded_at_iso
+            if post_key in old_candidate_ledger_post_ids:
+                next_old_candidate_ledger[post_key] = review_recorded_at_iso
+                old_candidate_ledger_write_needed = True
+            if not capture_only:
+                _append_queue_log(
+                    queue_path,
+                    status="queued",
+                    reason=queue_reasons.get(post_key),
+                    subject=str(request.subject_override or ""),
+                    recipients=[],
+                    post_id=request.post_id,
+                    recorded_at_iso=review_recorded_at_iso,
+                )
+        old_candidate_ledger_post_ids = [post_id for post_id in old_candidate_ledger_post_ids if post_id in selected_ids]
 
     cursor_after = scan_meta["cursor_before_iso"]
     if not hit_max_per_run and history_entries:
@@ -1130,7 +1349,7 @@ def scan_guarded_publish_history(
         if newest_entry_dt is not None:
             cursor_after = newest_entry_dt.isoformat()
 
-    if write_history:
+    if write_history and not capture_only:
         _write_history(history_file, next_history)
         if (
             old_candidate_once_enabled
@@ -1139,7 +1358,7 @@ def scan_guarded_publish_history(
         ):
             _write_history(old_candidate_ledger_file, next_old_candidate_ledger)
     cursor_write_needed = bool(cursor_after) and cursor_after != cursor_before
-    if write_cursor and cursor_write_needed and cursor_after is not None:
+    if write_cursor and not capture_only and cursor_write_needed and cursor_after is not None:
         _write_cursor(guarded_cursor_file, cursor_after)
 
     emitted_count = len(emitted)
@@ -1182,6 +1401,8 @@ def scan_guarded_publish_history(
         cursor_after=cursor_after,
         cursor_path=guarded_cursor_file,
         cursor_write_needed=cursor_write_needed,
+        queue_reasons=queue_reasons,
+        old_candidate_ledger_post_ids=tuple(old_candidate_ledger_post_ids),
     )
 
 
@@ -1198,6 +1419,7 @@ def scan_post_gen_validate_history(
     recorded_at: Callable[[], datetime] | datetime | None = None,
     write_history: bool = True,
     write_cursor: bool = True,
+    capture_only: bool = False,
 ) -> GuardedPublishHistoryScanResult:
     current_now = _coerce_now(now)
     history_file = _path(history_path)
@@ -1208,7 +1430,7 @@ def scan_post_gen_validate_history(
     )
     resolved_max_per_run = _resolve_review_max_per_run(max_per_run)
     if resolved_max_per_run <= 0:
-        if write_history:
+        if write_history and not capture_only:
             _write_history(history_file, current_history)
         return GuardedPublishHistoryScanResult(
             emitted=[],
@@ -1299,20 +1521,21 @@ def scan_post_gen_validate_history(
         emitted.append(request)
         seen_dedupe_keys.add(dedupe_key)
         next_history[dedupe_key] = review_recorded_at_iso
-        _append_queue_log(
-            queue_path,
-            status="queued",
-            reason=skip_reason,
-            subject=str(request.subject_override or ""),
-            recipients=[],
-            post_id=request.post_id,
-            recorded_at_iso=review_recorded_at_iso,
-            extra_payload={
-                "record_type": _POST_GEN_VALIDATE_RECORD_TYPE,
-                "skip_layer": _POST_GEN_VALIDATE_SKIP_LAYER,
-                "source_url_hash": request.source_url_hash,
-            },
-        )
+        if not capture_only:
+            _append_queue_log(
+                queue_path,
+                status="queued",
+                reason=skip_reason,
+                subject=str(request.subject_override or ""),
+                recipients=[],
+                post_id=request.post_id,
+                recorded_at_iso=review_recorded_at_iso,
+                extra_payload={
+                    "record_type": _POST_GEN_VALIDATE_RECORD_TYPE,
+                    "skip_layer": _POST_GEN_VALIDATE_SKIP_LAYER,
+                    "source_url_hash": request.source_url_hash,
+                },
+            )
 
     cursor_after = scan_meta["cursor_before_iso"]
     if not hit_max_per_run and history_entries:
@@ -1320,10 +1543,10 @@ def scan_post_gen_validate_history(
         if newest_entry_dt is not None:
             cursor_after = newest_entry_dt.isoformat()
 
-    if write_history:
+    if write_history and not capture_only:
         _write_history(history_file, next_history)
     cursor_write_needed = bool(cursor_after) and cursor_after != cursor_before
-    if write_cursor and cursor_write_needed and cursor_after is not None:
+    if write_cursor and not capture_only and cursor_write_needed and cursor_after is not None:
         _write_cursor(post_gen_cursor_file, cursor_after)
 
     _log_event(
@@ -1392,6 +1615,7 @@ def scan_preflight_skip_history(
     recorded_at: Callable[[], datetime] | datetime | None = None,
     write_history: bool = True,
     write_cursor: bool = True,
+    capture_only: bool = False,
 ) -> GuardedPublishHistoryScanResult:
     current_now = _coerce_now(now)
     history_file = _path(history_path)
@@ -1402,7 +1626,7 @@ def scan_preflight_skip_history(
     )
     resolved_max_per_run = _resolve_review_max_per_run(max_per_run)
     if resolved_max_per_run <= 0:
-        if write_history:
+        if write_history and not capture_only:
             _write_history(history_file, current_history)
         return GuardedPublishHistoryScanResult(
             emitted=[],
@@ -1491,20 +1715,21 @@ def scan_preflight_skip_history(
         emitted.append(request)
         seen_dedupe_keys.add(dedupe_key)
         next_history[dedupe_key] = review_recorded_at_iso
-        _append_queue_log(
-            queue_path,
-            status="queued",
-            reason=skip_reason,
-            subject=str(request.subject_override or ""),
-            recipients=[],
-            post_id=request.post_id,
-            recorded_at_iso=review_recorded_at_iso,
-            extra_payload={
-                "record_type": _PREFLIGHT_SKIP_RECORD_TYPE,
-                "skip_layer": _PREFLIGHT_SKIP_SKIP_LAYER,
-                "source_url_hash": request.source_url_hash,
-            },
-        )
+        if not capture_only:
+            _append_queue_log(
+                queue_path,
+                status="queued",
+                reason=skip_reason,
+                subject=str(request.subject_override or ""),
+                recipients=[],
+                post_id=request.post_id,
+                recorded_at_iso=review_recorded_at_iso,
+                extra_payload={
+                    "record_type": _PREFLIGHT_SKIP_RECORD_TYPE,
+                    "skip_layer": _PREFLIGHT_SKIP_SKIP_LAYER,
+                    "source_url_hash": request.source_url_hash,
+                },
+            )
 
     cursor_after = scan_meta["cursor_before_iso"]
     if not hit_max_per_run and history_entries:
@@ -1512,10 +1737,10 @@ def scan_preflight_skip_history(
         if newest_entry_dt is not None:
             cursor_after = newest_entry_dt.isoformat()
 
-    if write_history:
+    if write_history and not capture_only:
         _write_history(history_file, next_history)
     cursor_write_needed = bool(cursor_after) and cursor_after != cursor_before
-    if write_cursor and cursor_write_needed and cursor_after is not None:
+    if write_cursor and not capture_only and cursor_write_needed and cursor_after is not None:
         _write_cursor(preflight_cursor_file, cursor_after)
 
     _log_event(
@@ -1569,6 +1794,48 @@ def scan_preflight_skip_history(
         cursor_path=preflight_cursor_file,
         cursor_write_needed=cursor_write_needed,
     )
+
+
+def _selected_request_ids(requests: list[PublishNoticeRequest]) -> set[str]:
+    return {str(request.post_id) for request in requests}
+
+
+def _all_preview_requests_selected(
+    result: GuardedPublishHistoryScanResult,
+    selected_ids: set[str],
+) -> bool:
+    return all(str(request.post_id) in selected_ids for request in result.emitted)
+
+
+def _queue_reason_for_request(
+    request: PublishNoticeRequest,
+    review_scan: GuardedPublishHistoryScanResult,
+) -> str | None:
+    notice_class = _classify_notice_request(request)
+    if notice_class in {_NOTICE_CLASS_POST_GEN_VALIDATE, _NOTICE_CLASS_PREFLIGHT_SKIP}:
+        return str(getattr(request, "skip_reason", "") or "").strip() or None
+    return review_scan.queue_reasons.get(str(request.post_id))
+
+
+def _queue_extra_payload_for_request(request: PublishNoticeRequest) -> dict[str, Any] | None:
+    notice_class = _classify_notice_request(request)
+    if notice_class not in {_NOTICE_CLASS_POST_GEN_VALIDATE, _NOTICE_CLASS_PREFLIGHT_SKIP}:
+        return None
+    payload = {
+        "record_type": str(getattr(request, "record_type", "") or "").strip(),
+        "skip_layer": str(getattr(request, "skip_layer", "") or "").strip(),
+        "source_url_hash": str(getattr(request, "source_url_hash", "") or "").strip(),
+    }
+    return {key: value for key, value in payload.items() if value}
+
+
+def _recorded_at_iso_for_request(request: PublishNoticeRequest, *, now: datetime) -> str:
+    notice_class = _classify_notice_request(request)
+    if notice_class == _NOTICE_CLASS_POST_GEN_VALIDATE:
+        return (now + timedelta(seconds=2)).isoformat()
+    if notice_class == _NOTICE_CLASS_PREFLIGHT_SKIP:
+        return (now + timedelta(seconds=3)).isoformat()
+    return (now + timedelta(seconds=1)).isoformat()
 
 
 def scan(
@@ -1652,89 +1919,208 @@ def scan(
         review_scan_kwargs["guarded_publish_history_path"] = guarded_publish_history_path
     if guarded_cursor_path is not None:
         review_scan_kwargs["cursor_path"] = guarded_cursor_path
-    review_scan = scan_guarded_publish_history(**review_scan_kwargs)
-    emitted.extend(review_scan.emitted)
-    skipped.extend(review_scan.skipped)
-    next_history = review_scan.history_after
+    review_cap = _resolve_review_max_per_run(None)
+    class_reserve_enabled = _publish_notice_class_reserve_enabled()
+    review_history_before_selection = dict(next_history)
 
-    if _post_gen_validate_notification_enabled():
-        remaining_review_cap = max(0, _resolve_review_max_per_run(None) - len(review_scan.emitted))
-        post_gen_validate_scan = scan_post_gen_validate_history(
-            post_gen_validate_history_path=post_gen_validate_history_path,
-            cursor_path=post_gen_validate_cursor_path,
-            history_path=history_path,
-            queue_path=queue_path,
-            history=next_history,
-            max_per_run=remaining_review_cap,
-            now=current_now,
-            recorded_at=current_now + timedelta(seconds=2),
-            write_history=False,
-            write_cursor=False,
+    if class_reserve_enabled:
+        review_scan = scan_guarded_publish_history(
+            **review_scan_kwargs,
+            max_per_run=review_cap,
+            capture_only=True,
         )
-        emitted.extend(post_gen_validate_scan.emitted)
+        if _post_gen_validate_notification_enabled():
+            post_gen_validate_scan = scan_post_gen_validate_history(
+                post_gen_validate_history_path=post_gen_validate_history_path,
+                cursor_path=post_gen_validate_cursor_path,
+                history_path=history_path,
+                queue_path=queue_path,
+                history=review_history_before_selection,
+                max_per_run=review_cap,
+                now=current_now,
+                recorded_at=current_now + timedelta(seconds=2),
+                write_history=False,
+                write_cursor=False,
+                capture_only=True,
+            )
+        else:
+            post_gen_validate_scan = GuardedPublishHistoryScanResult(
+                emitted=[],
+                skipped=[],
+                history_after=review_history_before_selection,
+                cursor_write_needed=False,
+            )
+
+        if _preflight_skip_notification_enabled():
+            preflight_skip_scan = scan_preflight_skip_history(
+                preflight_skip_history_path=preflight_skip_history_path,
+                cursor_path=preflight_skip_cursor_path,
+                history_path=history_path,
+                queue_path=queue_path,
+                history=review_history_before_selection,
+                max_per_run=review_cap,
+                now=current_now,
+                recorded_at=current_now + timedelta(seconds=3),
+                write_history=False,
+                write_cursor=False,
+                capture_only=True,
+            )
+        else:
+            preflight_skip_scan = GuardedPublishHistoryScanResult(
+                emitted=[],
+                skipped=[],
+                history_after=review_history_before_selection,
+                cursor_write_needed=False,
+            )
+
+        selected_review_requests = _select_candidates_by_class_reserve(
+            review_scan.emitted + post_gen_validate_scan.emitted + preflight_skip_scan.emitted,
+            max_total=review_cap,
+            reserve_map=_resolve_class_reserve_map(),
+            priority_order=_CLASS_RESERVE_PRIORITY_ORDER,
+        )
+        selected_review_ids = _selected_request_ids(selected_review_requests)
+        emitted.extend(selected_review_requests)
+        skipped.extend(review_scan.skipped)
         skipped.extend(post_gen_validate_scan.skipped)
-        next_history = post_gen_validate_scan.history_after
-    else:
-        post_gen_validate_scan = GuardedPublishHistoryScanResult(
-            emitted=[],
-            skipped=[],
-            history_after=next_history,
-            cursor_write_needed=False,
-        )
-
-    if _preflight_skip_notification_enabled():
-        remaining_review_cap = max(
-            0,
-            _resolve_review_max_per_run(None)
-            - len(review_scan.emitted)
-            - len(post_gen_validate_scan.emitted),
-        )
-        preflight_skip_scan = scan_preflight_skip_history(
-            preflight_skip_history_path=preflight_skip_history_path,
-            cursor_path=preflight_skip_cursor_path,
-            history_path=history_path,
-            queue_path=queue_path,
-            history=next_history,
-            max_per_run=remaining_review_cap,
-            now=current_now,
-            recorded_at=current_now + timedelta(seconds=3),
-            write_history=False,
-            write_cursor=False,
-        )
-        emitted.extend(preflight_skip_scan.emitted)
         skipped.extend(preflight_skip_scan.skipped)
-        next_history = preflight_skip_scan.history_after
+        next_history = dict(review_history_before_selection)
+        for request in selected_review_requests:
+            recorded_at_iso = _recorded_at_iso_for_request(request, now=current_now)
+            next_history[str(request.post_id)] = recorded_at_iso
+            _append_queue_log(
+                queue_path,
+                status="queued",
+                reason=_queue_reason_for_request(request, review_scan),
+                subject=str(request.subject_override or ""),
+                recipients=[],
+                post_id=request.post_id,
+                recorded_at_iso=recorded_at_iso,
+                extra_payload=_queue_extra_payload_for_request(request),
+            )
     else:
-        preflight_skip_scan = GuardedPublishHistoryScanResult(
-            emitted=[],
-            skipped=[],
-            history_after=next_history,
-            cursor_write_needed=False,
-        )
+        review_scan = scan_guarded_publish_history(**review_scan_kwargs)
+        emitted.extend(review_scan.emitted)
+        skipped.extend(review_scan.skipped)
+        next_history = review_scan.history_after
+
+        if _post_gen_validate_notification_enabled():
+            remaining_review_cap = max(0, review_cap - len(review_scan.emitted))
+            post_gen_validate_scan = scan_post_gen_validate_history(
+                post_gen_validate_history_path=post_gen_validate_history_path,
+                cursor_path=post_gen_validate_cursor_path,
+                history_path=history_path,
+                queue_path=queue_path,
+                history=next_history,
+                max_per_run=remaining_review_cap,
+                now=current_now,
+                recorded_at=current_now + timedelta(seconds=2),
+                write_history=False,
+                write_cursor=False,
+            )
+            emitted.extend(post_gen_validate_scan.emitted)
+            skipped.extend(post_gen_validate_scan.skipped)
+            next_history = post_gen_validate_scan.history_after
+        else:
+            post_gen_validate_scan = GuardedPublishHistoryScanResult(
+                emitted=[],
+                skipped=[],
+                history_after=next_history,
+                cursor_write_needed=False,
+            )
+
+        if _preflight_skip_notification_enabled():
+            remaining_review_cap = max(
+                0,
+                review_cap - len(review_scan.emitted) - len(post_gen_validate_scan.emitted),
+            )
+            preflight_skip_scan = scan_preflight_skip_history(
+                preflight_skip_history_path=preflight_skip_history_path,
+                cursor_path=preflight_skip_cursor_path,
+                history_path=history_path,
+                queue_path=queue_path,
+                history=next_history,
+                max_per_run=remaining_review_cap,
+                now=current_now,
+                recorded_at=current_now + timedelta(seconds=3),
+                write_history=False,
+                write_cursor=False,
+            )
+            emitted.extend(preflight_skip_scan.emitted)
+            skipped.extend(preflight_skip_scan.skipped)
+            next_history = preflight_skip_scan.history_after
+        else:
+            preflight_skip_scan = GuardedPublishHistoryScanResult(
+                emitted=[],
+                skipped=[],
+                history_after=next_history,
+                cursor_write_needed=False,
+            )
 
     cursor_after = latest_post_dt.isoformat() if latest_post_dt is not None else current_now.isoformat()
     _write_history(history_file, next_history)
     _write_cursor(cursor_file, cursor_after)
-    if (
-        review_scan.old_candidate_ledger_write_needed
-        and review_scan.old_candidate_ledger_path is not None
-        and review_scan.old_candidate_ledger_after is not None
-    ):
-        _write_history(review_scan.old_candidate_ledger_path, review_scan.old_candidate_ledger_after)
-    if review_scan.cursor_write_needed and review_scan.cursor_path is not None and review_scan.cursor_after is not None:
-        _write_cursor(review_scan.cursor_path, review_scan.cursor_after)
-    if (
-        post_gen_validate_scan.cursor_write_needed
-        and post_gen_validate_scan.cursor_path is not None
-        and post_gen_validate_scan.cursor_after is not None
-    ):
-        _write_cursor(post_gen_validate_scan.cursor_path, post_gen_validate_scan.cursor_after)
-    if (
-        preflight_skip_scan.cursor_write_needed
-        and preflight_skip_scan.cursor_path is not None
-        and preflight_skip_scan.cursor_after is not None
-    ):
-        _write_cursor(preflight_skip_scan.cursor_path, preflight_skip_scan.cursor_after)
+    if class_reserve_enabled:
+        selected_review_ids = _selected_request_ids(
+            [request for request in emitted if _classify_notice_request(request) != _NOTICE_CLASS_OTHER]
+        )
+        old_candidate_ledger_after = (
+            dict(review_scan.old_candidate_ledger_after)
+            if review_scan.old_candidate_ledger_after is not None
+            else None
+        )
+        if old_candidate_ledger_after is not None:
+            for post_id in review_scan.old_candidate_ledger_post_ids:
+                if post_id not in selected_review_ids:
+                    old_candidate_ledger_after.pop(post_id, None)
+        if (
+            old_candidate_ledger_after is not None
+            and review_scan.old_candidate_ledger_path is not None
+            and any(post_id in selected_review_ids for post_id in review_scan.old_candidate_ledger_post_ids)
+        ):
+            _write_history(review_scan.old_candidate_ledger_path, old_candidate_ledger_after)
+        if (
+            review_scan.cursor_write_needed
+            and review_scan.cursor_path is not None
+            and review_scan.cursor_after is not None
+            and _all_preview_requests_selected(review_scan, selected_review_ids)
+        ):
+            _write_cursor(review_scan.cursor_path, review_scan.cursor_after)
+        if (
+            post_gen_validate_scan.cursor_write_needed
+            and post_gen_validate_scan.cursor_path is not None
+            and post_gen_validate_scan.cursor_after is not None
+            and _all_preview_requests_selected(post_gen_validate_scan, selected_review_ids)
+        ):
+            _write_cursor(post_gen_validate_scan.cursor_path, post_gen_validate_scan.cursor_after)
+        if (
+            preflight_skip_scan.cursor_write_needed
+            and preflight_skip_scan.cursor_path is not None
+            and preflight_skip_scan.cursor_after is not None
+            and _all_preview_requests_selected(preflight_skip_scan, selected_review_ids)
+        ):
+            _write_cursor(preflight_skip_scan.cursor_path, preflight_skip_scan.cursor_after)
+    else:
+        if (
+            review_scan.old_candidate_ledger_write_needed
+            and review_scan.old_candidate_ledger_path is not None
+            and review_scan.old_candidate_ledger_after is not None
+        ):
+            _write_history(review_scan.old_candidate_ledger_path, review_scan.old_candidate_ledger_after)
+        if review_scan.cursor_write_needed and review_scan.cursor_path is not None and review_scan.cursor_after is not None:
+            _write_cursor(review_scan.cursor_path, review_scan.cursor_after)
+        if (
+            post_gen_validate_scan.cursor_write_needed
+            and post_gen_validate_scan.cursor_path is not None
+            and post_gen_validate_scan.cursor_after is not None
+        ):
+            _write_cursor(post_gen_validate_scan.cursor_path, post_gen_validate_scan.cursor_after)
+        if (
+            preflight_skip_scan.cursor_write_needed
+            and preflight_skip_scan.cursor_path is not None
+            and preflight_skip_scan.cursor_after is not None
+        ):
+            _write_cursor(preflight_skip_scan.cursor_path, preflight_skip_scan.cursor_after)
     return ScanResult(
         emitted=emitted,
         skipped=skipped,

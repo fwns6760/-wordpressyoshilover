@@ -5,19 +5,27 @@ Last updated: 2026-05-01 17:25 JST(両 lane 完了 close 状態)
 
 ## Active Lanes(両 running、READY 化進行中)
 
-### Lane A(idle、HOLD reason explicit)
+### Lane A round 18
 
-- status: **idle**
-- last_round: round 17 completed `92603a3`(final consolidation index、6/6 tickets cross-referenced + section 7 anchor references)
-- HOLD reason: 4 条件全 YES → 消化順 1-5 全 READY pack(293/282/290/300/298-v4/288)+ 横串 final index 完成 + 17:00 observe 完了 + 299 N=2 0/0 / N=3 transient 再現で本日 close 候補なし + 新規ticket 起票 = POLICY §10 違反 / scope 拡大 = REJECT
-- next_dispatch: 明日朝 5/2 06:00 JST 298-Phase3 v4 final READY pack 提示後 user GO で 次 dispatch
+- status: **running**
+- job_id: `bbzzdjawe`
+- ticket: 293-COST impl + test + commit + push(消化順 順 1、READY_FOR_DEPLOY 化、push されても deploy 反映なし設計)
+- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_a_round_18_293_impl.md`
+- receipt_path: `docs/handoff/codex_receipts/2026-05-01/lane_a_round_18.md`
+- started_at: 2026-05-01 19:00 JST(approx)
+- expected_output: 4 commits(impl + test、deploy なし)
+- prev: round 17 (`bg72l5lf4`) completed `92603a3`、final consolidation index landed
 
-### Lane B(idle、HOLD reason explicit)
+### Lane B round 13
 
-- status: **idle**
-- last_round: round 12 completed `fac5517`(298-Phase3 v4 final READY pack、ready_status=hold、明日朝 06:00 JST user 1 行提示)
-- HOLD reason: 4 条件全 YES → 消化順 1-5 全 READY pack 完成(293/282/290/300/298-v4/288)+ Lane A round 17 で final index 進行中 = 重複回避 + Lane B 単独投入余地なし(横串 candidate は Lane A、新規 ticket = POLICY §10 違反)+ 明日朝 user GO 提示まで pause 期間
-- next_dispatch: Lane A round 17 完了で両 lane completion → 1 画面 Decision Batch、明日朝 5/2 06:00 JST 298-Phase3 v4 final READY pack 提示後 user GO で 次 dispatch
+- status: **running**
+- job_id: `b8xtmo44s`
+- ticket: 300-COST READY pack 化(消化順 順 6、READY_FOR_IMPL 化)
+- prompt_path: `docs/handoff/codex_prompts/2026-05-01/lane_b_round_13_300_ready.md`
+- receipt_path: `docs/handoff/codex_receipts/2026-05-01/lane_b_round_13.md`
+- started_at: 2026-05-01 19:00 JST(approx)
+- expected_output: `docs/handoff/codex_responses/2026-05-01_300_COST_ready_pack.md`
+- prev: round 12 (`b58jsvkhe`) completed `fac5517`、298 v4 final READY pack landed
 
 ## Lane History(本日 round 1-12 全部、commit hash 着地済)
 

@@ -3,8 +3,41 @@
 本 doc は **次回セッション開始時に最初に読む** 正本。
 6 カテゴリ board(ACTIVE / OBSERVE / READY / HOLD_NEEDS_PACK / FUTURE_USER_GO / DONE)で表示。
 
-最終更新: **2026-05-01 09:50 JST**(P1 mail storm hotfix env removal + Codex A/B 並行 fire 後)
+最終更新: **2026-05-01 14:00 JST**(298 ROLLED_BACK_AFTER_REGRESSION / Codex 2 lane Pack draft 並走 / POLICY §25 Codex worker pool 自律管理 永続化)
 更新責任: Claude(本 file は session 単位で更新、自律 GO 範囲)
+
+---
+
+## Codex Worker Pool State(POLICY §25 永続管理、最後の更新: 2026-05-01 14:00 JST)
+
+### Lane A
+- state: **running**
+- task_id: `bu63il63k`
+- ticket: 282-COST-pack-draft(消化順 4)
+- prompt: 282-COST flag ON 判断 Acceptance Pack 18 項目 draft + read-only 解析 + cost 削減見積 + rollback plan + stop condition
+- expected_completion: ~14:30 JST
+- result_path: `/tmp/codex_lane_a3.log` → `docs/handoff/codex_responses/2026-05-01_282_COST_pack_draft.md`(完了後 Codex commit、Claude push)
+
+### Lane B
+- state: **running**
+- task_id: `bf6m2c0nm`
+- ticket: 290-QA-pack-draft(消化順 5)
+- prompt: 290-QA weak title rescue deploy 判断 Acceptance Pack 18 項目 draft + 既存 c14e269 push 状況 + 18 項目 final + rollback
+- expected_completion: ~14:30 JST
+- result_path: `/tmp/codex_lane_b3.log` → `docs/handoff/codex_responses/2026-05-01_290_QA_pack_draft.md`(完了後 Codex commit、Claude push)
+
+### 最後の Claude 指示
+- POLICY §25 Codex worker pool 自律管理ルール永続化、Lane A/B 並走 fire(本 commit 後)
+- Lane completed 通知 → 一次受け 5 step → commit/push → idle 検出 → 消化順 6(300-COST Pack 起草)or 17:00 production_health_observe を Claude 単独実施 → 次 lane 投入
+
+### 次に読むべき結果
+- Lane A completion notification(`bu63il63k`)→ tail `/tmp/codex_lane_a3.log`、commit hash 確認、git push
+- Lane B completion notification(`bf6m2c0nm`)→ tail `/tmp/codex_lane_b3.log`、同上
+- 17:00 JST production_health_observe(NEXT_SESSION_RUNBOOK §8 query 7 件)Claude 単独実施
+
+### user 判断が必要か
+- **0 件**(本日 user 接点 0、Decision Batch も明日朝以降)
+- 明日朝 5/2 06:00 JST 頃:298-Phase3 第二波対策 Pack(Case A / D / E)を user GO/HOLD/REJECT 提示予定
 
 ---
 

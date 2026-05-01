@@ -106,26 +106,7 @@ active:
     next_review_at: "after 298-v4 Phase 6 verify (5/2 09:00 JST)"
     expiry: "before 282 flag ON decision"
 
-  - id: 300-COST
-    title: "source-side guarded-publish再評価 cost read-only解析"
-    status: ACTIVE
-    decision_owner: Claude
-    execution_owner: Claude
-    evidence_owner: Claude
-    user_go_required: false
-    user_go_reason: n/a
-    allowed_now:
-      - "read-only analysis"
-      - "cost estimate"
-      - "test plan"
-      - "rollback plan"
-    forbidden_without_user_go:
-      - "unclassified implementation"
-      - "unclassified deploy"
-      - "source behavior change before risk classification"
-    next_action: "Finish read-only analysis, then classify source-side behavior change before any implementation/deploy."
-    next_review_at: "after analysis evidence"
-    expiry: "before implementation"
+  # 300-COST moved to future_user_go (IMPL_PREP_READY、Pack v3 narrow spec landed e14c944)
 
 observe:
   - id: 299-QA
@@ -209,36 +190,100 @@ future_user_go:
     user_go_required: true
     user_go_reason: "FLAG_ENV+COST_INCREASE"
     blocked_by:
-      - "293-COST visible skip readiness"
-    next_action: "Prepare flag ON Pack only after 293 is complete."
-    expiry: "293 complete + evidence"
+      - "293-COST image rebuild + flag ON deploy + 24h OBSERVED_OK"
+    pack_v3: "docs/handoff/codex_responses/2026-05-01_282_COST_pack_v3_template_refresh.md (commit d2ee8e3)"
+    pack_v3_recommendation: HOLD
+    user_facing_phrase: "flag ON 直前まで(POLICY §17.3)"
+    next_action: "Hold until 293 deploy + 24h OBSERVED_OK; then user GO で flag ON."
+    expiry: "293 deploy 完了 + 24h 安定後"
 
   - id: 290-QA
-    title: "weak title rescue deploy decision"
+    title: "weak title rescue (split into Pack A + Pack B)"
     status: FUTURE_USER_GO
-    decision_owner: user
+    decision_owner: user  # Pack B (enablement) only
     execution_owner: Claude
     evidence_owner: Claude
-    user_go_required: true
-    user_go_reason: "WEAK_TITLE_RESCUE_ENABLEMENT"
-    claude_auto_go_allowed: "live-inert deploy only if POLICY 3.1 is satisfied, with post-deploy verify required"
-    next_action: "Classify live-inert deploy separately from weak title rescue enablement."
-    expiry: "when deploy evidence is ready"
+    user_go_required: true  # Pack B のみ user GO 必須、Pack A は CLAUDE_AUTO_GO 候補
+    user_go_reason: "WEAK_TITLE_RESCUE_ENABLEMENT (Pack B)"
+    pack_split:
+      pack_a_live_inert_deploy:
+        path: "docs/handoff/codex_responses/2026-05-01_290_QA_pack_A_live_inert_deploy.md (commit 9f638f5)"
+        classification: CLAUDE_AUTO_GO  # POLICY §3.1
+        recommendation: GO
+        precondition: "298-v4 24h OBSERVED_OK + image build + rollback target"
+        user_facing_phrase: "デプロイ直前まで(POLICY §17.3)、CLAUDE_AUTO_GO 該当時 user 通知のみ"
+      pack_b_enablement:
+        path: "docs/handoff/codex_responses/2026-05-01_290_QA_pack_B_enablement.md (commit 9f638f5)"
+        classification: USER_DECISION_REQUIRED  # POLICY §3.2
+        recommendation: HOLD
+        precondition: "Pack A live-inert deploy OBSERVED_OK + 1 週間安定 + Gemini delta UNKNOWN 解消"
+        user_facing_phrase: "flag ON 直前まで(POLICY §17.3)"
+    next_action: "Pack A: CLAUDE_AUTO_GO 進行可(298-v4 安定後)。Pack B: 1 週間後 user GO 提示。"
+    expiry: "Pack A OBSERVED_OK + 1 週間後 Pack B 検討"
+
+  - id: 293-COST
+    title: "preflight skip visible化(deploy-phase)"
+    status: READY_FOR_DEPLOY  # impl + push 完了
+    decision_owner: user  # image rebuild + flag ON は USER_DECISION_REQUIRED
+    execution_owner: Codex (build) + Claude (push, deploy verify)
+    evidence_owner: Claude
+    user_go_required: true  # image rebuild + flag ON のみ
+    user_go_reason: "IMAGE_REBUILD+FLAG_ENV"
+    pack_v3: "docs/handoff/codex_responses/2026-05-01_293_COST_deploy_pack_v3.md (commit df96eeb)"
+    pack_v3_recommendation: HOLD  # 298-v4 24h 安定 + Phase 6 verify 後 GO
+    impl_complete:
+      commits: ["6932b25", "afdf140", "7c2b0cc", "10022c0"]
+      pytest: "2018/0"
+      classification_during_impl: CLAUDE_AUTO_GO  # impl + test + push 段階
+      classification_for_deploy: USER_DECISION_REQUIRED  # image rebuild + flag ON
+    user_facing_phrase: "デプロイ直前まで(POLICY §17.3)"
+    next_action: "298-v4 Phase 6 verify pass + 24h 安定後、image rebuild + flag ON Pack で user GO 提示。"
+    expiry: "298-v4 24h 安定後"
 
   - id: 288-INGEST
-    title: "source coverage expansion"
+    title: "source coverage expansion (4-phase split)"
     status: FUTURE_USER_GO
-    decision_owner: user
-    execution_owner: Claude
+    decision_owner: user  # Phase 3 (source add) のみ user GO 必須
+    execution_owner: Codex + Claude
     evidence_owner: Claude
-    user_go_required: true
-    user_go_reason: "SOURCE_ADD+COST_INCREASE"
+    user_go_required: true  # Phase 3 のみ
+    user_go_reason: "SOURCE_ADD+COST_INCREASE+MAIL_VOLUME_IMPACT"
+    pack_v3: "docs/handoff/codex_responses/2026-05-01_288_INGEST_pack_v3_scope_phase_split.md (round 27 round 28 で再 fire 予定、本日 audit 優先で HOLD)"
+    pack_v3_recommendation: HOLD  # round 27 が user 指示で HOLD、調査便完了後 fire 予定
+    phase_split:
+      phase_1_candidate_visibility_contract:
+        classification: CLAUDE_AUTO_GO
+        scope: "read-only verify、source 追加なし"
+      phase_2_fallback_trust_impl:
+        classification: CLAUDE_AUTO_GO  # narrow code change、live-inert if flag OFF default
+        scope: "fallback + trust score impl、Codex 便"
+      phase_3_source_add:
+        classification: USER_DECISION_REQUIRED
+        scope: "config/rss_sources.json 編集、live mail + Gemini call 影響"
+      phase_4_post_add_observe:
+        classification: CLAUDE_AUTO_GO
+        scope: "24h observe + cost trend audit"
     blocked_by:
-      - "candidate visibility contract"
-      - "mail impact estimate"
-      - "Gemini cost estimate"
-    next_action: "Do not add sources until Pack is complete."
-    expiry: "after observability and cost evidence"
+      - "298-v4 Phase 6 verify pass + 24h 安定"
+      - "293/282 deploy 完了"
+      - "Phase 3 directly: source 追加前に mail/Gemini exact delta 確定"
+    user_facing_phrase: "source 追加直前まで(POLICY §17.3)"
+    next_action: "Phase 1-2 は precondition 満足後 CLAUDE_AUTO_GO で順次。Phase 3 は user GO 必須。"
+    expiry: "298-v4 + 293/282 完了後 phase 1 から順次"
+
+  - id: 300-COST
+    title: "guarded-publish source-side cost reduction (impl-prep narrow spec)"
+    status: IMPL_PREP_READY  # ready to fire impl 便 with user GO
+    decision_owner: user  # impl 便 fire 時 user GO
+    execution_owner: Codex (impl) + Claude (push, deploy verify)
+    evidence_owner: Claude
+    user_go_required: true  # impl 便 fire 時
+    user_go_reason: "SOURCE_DEDUPE_BEHAVIOR_CHANGE"
+    pack_v3: "docs/handoff/codex_responses/2026-05-01_300_COST_impl_prep_narrow_spec.md (commit e14c944)"
+    pack_v3_recommendation: HOLD  # 298-v4 + 293 完了後 GO 推奨
+    user_facing_phrase: "実装直前または実装準備まで(POLICY §17.3)"
+    next_action: "298-v4 + 293 完了後、impl 便 fire(USER_DECISION_REQUIRED)、その後 image rebuild + deploy."
+    expiry: "298-v4 + 293 完了後"
 
 done:
   - id: mail-storm-current

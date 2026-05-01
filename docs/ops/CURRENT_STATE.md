@@ -137,9 +137,29 @@ Session logs, handoff logs, and codex responses are history only. They are not c
 
 - 298-Phase3 v4 deploy 完了、5/2 09:00 JST Phase 6 第二波防止 read-only verify を Claude 自律 EVIDENCE_ONLY scope で実行(POLICY §3.5 / §4 整合)。
 - §14 P0/P1 自律 rollback monitor 24h 継続、storm 再発検出時 env remove 即実行(本日 13:55 実績整合)。
-- 293-COST READY_FOR_DEPLOY、image rebuild + flag ON Pack 提示は 298 安定後 deferred(POLICY §3.2)。
-- 300-COST 継続、read-only 分析 + 分類前置。
+- 5 ticket Pack v3 全部「直前まで」到達(POLICY §17.3 整合):
+  - 293-COST: deploy pack v3 (`df96eeb`)、image rebuild + flag ON 待ち
+  - 290-QA: Pack A live-inert (CLAUDE_AUTO_GO) + Pack B enablement (`9f638f5`)
+  - 282-COST: pack v3 template refresh (`d2ee8e3`)、293 完了後 flag ON
+  - 300-COST: impl-prep narrow spec (`e14c944`)、impl 便 user GO 待ち
+  - 288-INGEST: 4-phase split(本日 audit 優先で round 27 HOLD、後日再 fire)
 - 299-QA OBSERVE 継続、P0 でない。
 - user に技術判断 / UNKNOWN / Codex idle / READY 化未済 を投げない(POLICY §15.3 / §16.2 整合)。
 - 新 ticket 起票は既存 ticket subtask 化を優先(POLICY §10)。
 - raw Codex output は user に出さない、Claude が Decision Batch 形式で圧縮(POLICY §11 / §15.2)。
+- worker dispatch 5-field 必須(POLICY §18)、Codex idle 時「意図的 idle + 理由」明記。
+
+## 2026-05-01 Audit 由来 Permanent Guards(POLICY §19 反映)
+
+Codex A round 28(9 軸)+ Codex B round 17(8 軸)audit から永続化済:
+
+- §19.1 silent skip 違反候補 path deploy 前 grep
+- §19.2 release composition verify step 0
+- §19.3 dirty worktree pre-fire snapshot whitelist
+- §19.4 3-dimension rollback anchor GO 前必須
+- §19.5 mail path LLM-free invariant
+- §19.6 cache_hit 99% non-steady-state
+- §19.7 cost guard 4 件(impl 待ち)
+- §19.8 old_candidate ledger retention 設計
+- §19.9 cap=10 class reserve(289/real review/error 最低枠)
+- §19.10 残 UNKNOWN リスト(明日以降 deploy 便で確定)

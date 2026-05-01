@@ -236,3 +236,31 @@ production 反映前に 11 項目確認:
 target commit/HEAD一致 / worktree clean / tests green / regression なし / rollback target / env変更有無 / Gemini 増加有無 / mail volume / candidate disappearance / stop condition / Acceptance Pack(USER_DECISION_REQUIRED 時)
 
 UNKNOWN は user に投げず HOLD。
+
+## 14. 2026-05-01 Audit Guards(POLICY §19 整合、deploy 便 step 0)
+
+明日以降 deploy 便 fire 時、step 0 で以下を全部実行:
+
+1. **§19.2 release composition verify**: `git log --oneline <prev_image_commit>..<new_image_commit>` で HOLD ticket 混入 0 確認、混入時 build 前停止
+2. **§19.3 dirty worktree snapshot**: `git status --short` で whitelist (codex_requests 0424/0425、run_logs、build/data/logs/backups/.codex)以外の untracked / modified が 1 件でもあれば停止
+3. **§19.1 silent skip grep**: `grep -r "no_op_skip\|llm_skip\|content_hash_dedupe\|PREFLIGHT_SKIP_MISSING_\|REVIEW_POST_DETAIL_ERROR" src/` で出力 0 確認
+4. **§19.4 3-dim rollback anchor**: Pack 内 placeholder `<prev_SHA>` 残存 0、env / image / source 全 dim 埋まり確認
+5. **§19.5 mail path LLM-free**: `grep -r "gemini\|openai\|generateContent" src/publish_notice_* src/mail_*` = 0 行確認
+
+5 step 全 pass で build 開始 GO。1 つでも fail で HOLD。
+
+## 15. 5/2 09:00 JST Phase 6 verify(298-Phase3 v4)
+
+Claude 自律 EVIDENCE_ONLY、read-only:
+
+- rolling 1h sent: MAIL_BUDGET 30/h 内
+- cumulative since 5/1 09:00 JST: MAIL_BUDGET 100/d 内
+- silent skip: 0 継続
+- permanent_dedup skip count: 106+ 安定
+- real review / 289 / errors: 維持
+- 5/1朝 storm 99 cohort sent: **0**(第二波防止)
+- 13:35 storm 50 cohort sent: **0**
+
+検出時 §14 自律 rollback。
+
+24h 安定 + Phase 6 pass で 298-Phase3 v4 → DONE 化(POLICY §3.5、deploy 完了 ≠ DONE)。

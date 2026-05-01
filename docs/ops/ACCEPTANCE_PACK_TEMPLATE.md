@@ -128,6 +128,58 @@ For any Phase3 re-ON Pack, include:
 
 If any value is UNKNOWN, recommendation must be HOLD. Deploy evidence alone is not enough for DONE; post-deploy verify and production-safe regression evidence are required.
 
+## Audit-Derived Required Fields(POLICY §19 整合、2026-05-01 追加)
+
+USER_DECISION_REQUIRED Pack で以下を全部埋めるまで GO 禁止:
+
+### A. 3-dimension rollback anchor(§19.4)
+
+- exact env rollback command(env knob 該当時、placeholder 不可)
+- exact image rollback command(prev image SHA / revision、`<prev_SHA>` placeholder 残存 = HOLD)
+- exact source revert(`git revert <bad_commit>`、commit hash 確定)
+- expected rollback time(30 sec / 2-3 min / commit + push)
+- rollback owner
+- last known good commit + image SHA + revision
+
+### B. Pre-Deploy Gate 5 step 結果(§19.1-19.3, 19.5)
+
+- release composition verify pass(HOLD ticket 混入 0)
+- dirty worktree snapshot pass(whitelist 内のみ)
+- silent skip grep pass(`PREFLIGHT_SKIP_MISSING_*` / `no_op_skip` / `REVIEW_POST_DETAIL_ERROR` 件数 0)
+- 3-dim rollback anchor 全埋確認
+- mail path LLM-free invariant pass
+
+### C. flag OFF deploy 不変確認 verify 表(§19 axis 8)
+
+flag OFF / live-inert deploy で以下を 1 表で:
+
+| 項目 | expected | observed | pass |
+|---|---|---|---|
+| env absence | 該当 env なし | | |
+| revision/image change only | 該当 | | |
+| code path unreachable | flag OFF で到達なし | | |
+| pre/post log diff | baseline 一致 | | |
+| mail subject/from invariance | 不変 | | |
+| 289/normal review/error route | 不変 | | |
+| Gemini delta | 0 | | |
+| silent skip | 0 | | |
+| candidate disappearance | 0 | | |
+
+### D. flag ON 数値 guard hard threshold 表(§19 axis 9)
+
+flag ON deploy で以下を 1 表(数値必須):
+
+| 項目 | hard threshold | expected | observed | pass |
+|---|---|---|---|---|
+| rolling 1h sent | <= 30 | | | |
+| cumulative day sent | <= 100 | | | |
+| silent skip | == 0 | | | |
+| candidate disappearance | == 0 | | | |
+| first-emit pool size | (Pack 確定) | | | |
+| trigger/h | (Pack 確定) | | | |
+| Gemini delta | (per-ticket) | | | |
+| mail delta | (per-ticket) | | | |
+
 ## Forbidden Pack Patterns
 
 - "進めてよいですか?" without the required fields

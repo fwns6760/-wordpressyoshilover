@@ -746,3 +746,125 @@ worker dispatch:
 - user action: なし、CLAUDE_AUTO_GO scope
 - 報告形式: round 27 完了時 → 5 ticket 全部「直前まで」到達確定 + Decision Batch + push hash + 残作業 0
 ```
+
+## 19. Audit 由来 Permanent Guards(2026-05-01 audit 反映、永続)
+
+本日 Codex A round 28(デグレ + deploy gate 9 軸)+ Codex B round 17(コスト + storm 8 軸)audit 由来の追加 guard。明日以降の自律 deploy 体制で「user 張り付かない」前提。
+
+### 19.1 silent skip 違反候補 path(deploy 前 grep 必須)
+
+POLICY §8 silent skip 0 の deploy 前 grep 対象として、以下 marker を含む log-only path を 1 件でも検出したら HOLD:
+
+- `no_op_skip`(draft_body_editor lane)
+- `llm_skip`(同上)
+- `content_hash_dedupe`(stdout/ledger 止まり)
+- `PREFLIGHT_SKIP_MISSING_*`(payload 欠損)
+- `REVIEW_POST_DETAIL_ERROR` / `REVIEW_POST_MISSING`
+- `close_marker` / `strict_validation_fail` / `weak_title` の ledger 行不在
+
+deploy verify で「候補生成 → user-visible terminal state(publish/review/hold/skip mail)」 sample 確認を必須化。malformed/drop code 件数 = 0 を gate 条件。
+
+### 19.2 release composition verify(全 deploy 便 step 0 必須)
+
+deploy 便の build/image rebuild 前に以下 step 0 を必ず実行:
+
+```
+git log --oneline <prev_image_commit>..<new_image_commit>
+```
+
+HOLD / `future_user_go` / `hold_needs_pack` ticket の commit が 1 件でも含まれていたら **build 前停止**。本日 5/1 反省 #6(HOLD 中 ticket 混入)由来。
+
+### 19.3 dirty worktree pre-fire snapshot(全 fire 便必須)
+
+Codex 便 fire 前 / commit 便 stage 前に必ず:
+
+```
+git status --short
+```
+
+以下を whitelist として、それ以外の untracked / modified が 1 件でもあれば **stop**:
+
+- `docs/handoff/codex_requests/2026-04-24*` / `2026-04-25*`(歴史的)
+- `docs/handoff/run_logs/`(history)
+- `build/` / `data/` / `logs/` / `backups/` / `.codex/`(ambient)
+- 本 round の expected modified path のみ
+
+stage は明示 path のみ、`git add -A` 厳禁(POLICY §31-D 整合)。stage 後 `git diff --cached --name-status` で再確認。
+
+### 19.4 3-dimension rollback anchor(GO 前 Pack 必須項目)
+
+USER_DECISION_REQUIRED Pack の rollback section に、以下を **全部埋めるまで GO 禁止**:
+
+- exact env rollback command(env knob 該当時)
+- exact image rollback command(prev image SHA / revision 記録)
+- exact source revert(`git revert <bad_commit>`)
+- expected rollback time(30 sec / 2-3 min / commit + push)
+- rollback owner
+- last known good commit + image SHA + revision
+
+§3.6 / §16.4 整合。Pack 内 placeholder `<prev_SHA>` 残存は HOLD。
+
+### 19.5 mail path LLM-free invariant(永続不変)
+
+`src/publish_notice_*` / `src/mail_*` / `src/post_gen_validate*` の mail subject / body / reason 文 生成は LLM call なし。新規 PR で `gemini|openai|generateContent` が当該 path に追加されたら REJECT。invariant grep:
+
+```
+grep -r "gemini\|openai\|generateContent" src/publish_notice_* src/mail_*
+```
+
+= 0 行が永続維持。本日 Codex B audit 5 軸由来(2026-05-01 時点で 0 行確認)。
+
+### 19.6 cache_hit 99% は steady-state ではない
+
+`logs/llm_call_dedupe_ledger.jsonl` の 99% cache_hit ratio は構造依存(`(post_id, content_hash)` key only、prompt version / model / fail axis 不含)。以下 trigger で 99%→0-20% に落ち得る:
+
+- prompt_template_id 変更
+- GCS/local cache 喪失(restart / migration / cleanup)
+- content hash churn
+- new source URL 流入
+
+99% を「安定」と見なさない。**deploy 便で prompt_template_id 変更 / cache 構造変更 を含む場合、cost review を必須化**。
+
+### 19.7 cost guard(明日以降の優先実装、Phase: design ready / impl 待ち)
+
+Codex B audit 推奨の cost guard 4 件(implementation は user GO 後の dev 便):
+
+1. hit 種別分離:`exact_hit` / `cooldown_hit` / `dedupe_hit` 別メトリクス(合算 hit だけで安全判定しない)
+2. miss-rate circuit breaker:1h miss 率閾値超過で Gemini path → review/hold 倒し
+3. per-post 24h Gemini budget:同一 `post_id` で 24h Gemini call 上限超過時 review/hold 倒し
+4. cost-change review:prompt_template_id / dedupe key 変更を deploy gate に含める
+
+### 19.8 old_candidate ledger retention 設計
+
+`publish_notice_old_candidate_once.json` 永続単調増加(現 106 件、~1件/2-3h 増)。retention 設計:
+
+- TTL 30/60/90d のいずれか設定(候補)
+- または `post.modified` / publish 状態変化で entry 失効
+- 永続 ledger は「storm 再発防止用 hot state」に限定、長期履歴は集計別管理
+
+実装は user GO 後の dev 便、本 §19.8 は設計記録。
+
+### 19.9 cap=10 class reserve(mail storm 恒久対策補強)
+
+publish-notice scanner cap=10/run の中に class 別 minimum 枠:
+
+- real review:3 minimum
+- 289 post_gen_validate:2 minimum
+- error notification:1 minimum
+- 残 4 を guarded review / old_candidate / 293 preflight_skip で配分
+
+cap=10 を超える混雑時、real review / 289 / error が消えないこと保証。実装は user GO 後の dev 便、本 §19.9 は設計記録。
+
+### 19.10 残 UNKNOWN(本日時点)
+
+明日以降 deploy 便で確定必須:
+
+- `293-COST` previous image SHA / revision
+- `288-INGEST` pre-288 image + source revert commit
+- `300-COST` pre-300 image + source rollback commit
+- `290 Pack B` Gemini delta exact 数値(現状 ~0 想定だが実測必須)
+- malformed skip payload(`PREFLIGHT_SKIP_MISSING_*`)の本番発生有無
+- Cloud Logging 実 retention 設定(repo 外 GCP console 確認)
+- production 全体の `exact_hit` / `cooldown_hit` / `dedupe_hit` 内訳
+
+UNKNOWN 解消まで該当 ticket は HOLD 維持(POLICY §3.3 / §16.2)。

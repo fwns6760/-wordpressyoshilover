@@ -27,11 +27,12 @@
 
 ## ACTIVE(最大 2 件)
 
-| # | ticket | status | next_review_at |
-|---|---|---|---|
-| 1 | **298-MAIL-STORM-HOTFIX**(P1) | env=168 削除済、storm 継続(09:35 sent=10)、Codex A/B 並行調査中 | 2026-05-01 10:30 JST(Codex 完了 + Acceptance Pack 提示)|
+| # | ticket | phase | status | next_review_at |
+|---|---|---|---|---|
+| 1 | **298-MAIL-STORM-HOTFIX**(P1, Phase 1 即時止血) | §14 自律 GO 範囲、real review 影響境界で安全側 Acceptance Pack 経由 | env=168 削除済(09:33)、Codex A 完了(`bc1e5c0`、env-only 2 案)、user GO 待ち | 2026-05-01 10:30 JST |
+| 2 | **298-MAIL-STORM-PERMANENT-FIX**(P1, Phase 2 恒久対策) | code fix(scanner persistent ledger)、user GO 必須(PROD_DEPLOY+FLAG_ENV) | Codex B 完了(`0b64078`、Option B 推奨、Acceptance Pack draft)、user GO 待ち | 2026-05-01 18:00 JST |
 
-本日 active 1(P1 mail storm 進行中、Codex A/B 並行で止血 hotfix 案 + 恒久対策 Acceptance Pack 起草中)。
+本日 active 2(P1 mail storm Phase 1 / 2、Codex 並行成果物 完了、Claude 影響範囲圧縮 + user 判断 1 行で提示)。
 
 ---
 
@@ -121,15 +122,19 @@
 
 ## 次の 1 手
 
-**298-MAIL-STORM-HOTFIX**(P1 進行中):
-1. Codex A/B 完了待ち(~10-30 min)
-2. Codex B 出力の Acceptance Pack を user 提示(code fix scanner max_age_days)
-3. user GO 受領後 → Codex 実装便 + image rebuild + deploy
-4. deploy 後 sent=0 verify + 24h 観察
+**運用立て直し**(本日の主目的、Claude 自律):
+- POLICY §3 自律 GO 10 categories 化(`INCIDENT_ANALYSIS` / `P0_P1_NARROW_HOTFIX` 追加)
+- POLICY §14 user 明示 GO 不要化(8 条件 全部 AND で Claude 自律即時 hotfix 可能)
+- POLICY §15 Outcome Ledger format(完了 evidence 永続記録)
+- CURRENT_STATE / OPS_BOARD に 298 Phase 1 / 2 ACTIVE entry
+- session log に 09:00-09:50 1 行履歴
+- commit + push で repo 正本化
 
-並行実施(Claude 自律 GO):
-- POLICY.md §14(P0/P1 自律 hotfix 範囲)/ §15(Outcome Ledger format)永続化済(本 commit で push)
-- CURRENT_STATE.md / OPS_BOARD.yaml に 298 ticket ACTIVE 化(本 commit)
+**298 P1 mail storm**(Codex 並行処理結果を Claude が圧縮):
+- Phase 1 即時止血 Acceptance Pack 提示(env-only、real review 影響 trade-off)
+- Phase 2 恒久 fix Acceptance Pack 提示(Codex B Option B、code fix + deploy、HOLD 推奨)
+- 第一波は cap=10 × ~10 trigger ≒ 09:55 JST 頃に自然終息(Phase 1 不実施でも残 20 min)
+- 第二波は 24h 後(5/2 09:00 JST 頃)、Phase 2 deploy で防止前提
 
 **production_health_observe を 2026-05-01 17:00 JST に 1 度だけ実行**(read-only):
 - publish-notice 24h sent/errors/silent
@@ -139,15 +144,16 @@
 - env / Team Shiny From / Scheduler 不変
 - Gmail sample 実到達
 
-異常 0 + 298 hotfix 完遂なら **本セッション ops reset + 298 close を確定**、異常検出時は P0 即報告(自律対処しない)。
+異常 0 + 298 Phase 2 deploy 完遂なら **本セッション ops reset + 298 close を確定**、異常検出時は P0 即報告(自律対処しない)。
 
 ---
 
-## user に今見せる判断
+## user に今見せる判断(Acceptance Pack 2 件)
 
-**0 件 → 1 件 候補**(298-MAIL-STORM-HOTFIX code fix Acceptance Pack):
-- Codex B 完成後、scanner max_age_days filter 案を 13 項目で提示
-- 提示 timing:Codex B 完了 + Claude 影響範囲 review 後(~30 min 内予想)
+1. **298-Phase1**(即時止血 env-only):real review 影響あり、自律 GO 8 条件のうち「既存通知全停止ではない」境界で安全側 user GO 求める
+2. **298-Phase2**(恒久対策 code fix):Codex B Option B(persistent sent ledger)、PROD_DEPLOY+FLAG_ENV、Codex 実装便 + image rebuild + deploy
+
+判断は最終報告 10 項目の中で 1 行に圧縮提示。
 
 その後の Acceptance Pack 提示候補:**290-QA deploy**(production_health_observe 17:00 結果 + 298 安定後)。
 

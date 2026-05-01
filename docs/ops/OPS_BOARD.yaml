@@ -23,31 +23,19 @@ updated_by: "Claude"
 # ACTIVE(最大 2 件)
 # ============================================
 active:
-  - id: 298-MAIL-STORM-HOTFIX
+  - id: 298-MAIL-STORM-HOTFIX-Phase1
     status: ACTIVE
-    decision_owner: user
-    execution_owner: Claude+Codex
+    decision_owner: user  # real review 影響境界で安全側 user GO
+    execution_owner: Claude  # §14 自律実行可能だが本件は境界で Acceptance Pack 経由
     evidence_owner: Claude
-    user_go_required: true  # code fix Acceptance Pack 提示後
-    user_go_reason: PROD_DEPLOY+MAIL_ROUTING_MAJOR
+    user_go_required: true
+    user_go_reason: FLAG_ENV
     severity: P1
+    phase: "Phase 1 即時止血(env-only)"
     incident_started_at: "2026-05-01 09:00 JST"
-    evidence: |
-      - 5/1 09:00 JST PUBLISH_NOTICE_REVIEW_WINDOW_HOURS=168 apply 直後 storm 開始
-      - 09:05-09:30 sent=10 × 6 trigger 連続(60 通)
-      - 09:33 JST env 削除(default 24h 復帰、user 明示 GO で Claude 直接実行 = §14 例外発動)
-      - 09:35 trigger sent=10 継続(env=168 単独原因ではない確定)
-      - ledger gs://baseballsite-yoshilover-state/guarded_publish/guarded_publish_history.jsonl 28.81 MiB
-      - tail 200 records: 103 unique post_ids each 2 records (09:30:45 + 09:35:47), 全件 status=skipped/judgment=yellow/hold_reason=backlog_only
-      - 真因仮説:guarded-publish */5 trigger ごと skip 再評価 → fresh ts append → publish-notice 24h scan picks up → 24h dedup expire 循環
-    next_action: "Codex A/B 完了待ち → Acceptance Pack 提示 → user GO → code fix deploy"
-    next_review_at: "2026-05-01 10:30 JST(Codex 完了想定)"
-    expiry: "2026-05-01 18:00 JST(本日中に完遂)"
-    codex_a_task: "/tmp/codex_a_storm_verify.log (bg b2ymllzsv) — read-only verify + 最小 hotfix 案"
-    codex_b_task: "/tmp/codex_b_storm_permanent_fix.log (bg bdm147ppc) — 3 案比較 + Acceptance Pack 起草"
-    rollback_record:
-      - "09:33 JST: --remove-env-vars=PUBLISH_NOTICE_REVIEW_WINDOW_HOURS(verify済)"
-      - "rollback for env removal: --update-env-vars=PUBLISH_NOTICE_REVIEW_WINDOW_HOURS=168"
+    phase0_rollback_record:
+      - "09:00 JST: --update-env-vars=PUBLISH_NOTICE_REVIEW_WINDOW_HOURS=168(user 明示 GO で Claude 直接実行 = §14 当時 policy)"
+      - "09:33 JST: --remove-env-vars=PUBLISH_NOTICE_REVIEW_WINDOW_HOURS(user 明示 GO、env 単独原因ではない確認のため)"
     invariants_held:
       - "Team Shiny From=y.sebata@shiny-lab.org 維持"
       - "ENABLE_POST_GEN_VALIDATE_NOTIFICATION=1 維持(289 通知)"
@@ -55,6 +43,54 @@ active:
       - "X 自動投稿 OFF 維持"
       - "Scheduler 頻度不変"
       - "Gemini call 増加 0(env 操作のみ)"
+      - "code 変更 0"
+    evidence: |
+      - 5/1 09:00 JST PUBLISH_NOTICE_REVIEW_WINDOW_HOURS=168 apply 直後 storm 開始
+      - 09:05-09:30 sent=10 × 6 trigger 連続(60 通)
+      - 09:33 JST env 削除(default 24h 復帰)
+      - 09:35 trigger sent=10 継続(env=168 単独原因ではない確定)
+      - ledger gs://baseballsite-yoshilover-state/guarded_publish/guarded_publish_history.jsonl 28.81 MiB
+      - tail 200 records: 103 unique post_ids each 2 records (09:30:45 + 09:35:47), 全件 status=skipped/judgment=yellow/hold_reason=backlog_only
+      - 第一波 cap=10 × ~10 trigger で 09:55 JST 頃 自然終息見込み
+      - 第二波 24h 後(5/2 09:00 JST 頃)recurrent 想定
+    proposed_options:
+      - "Option A: PUBLISH_NOTICE_REVIEW_WINDOW_HOURS=0(scan window 0 化、guarded review path 全停止)"
+      - "Option B: PUBLISH_NOTICE_GUARDED_PUBLISH_HISTORY_PATH=/tmp/...disabled.jsonl(guarded path 完全 bypass)"
+      - "両方とも real review 影響あり(yellow/cleanup_required/hold も止まる)"
+    safe_side_concern: |
+      §14 8 条件のうち「既存通知全停止ではない」境界で微妙
+      (289 + 通常 publish notice は維持、ただし real review path が止まる)
+      → 安全側で Acceptance Pack 経由 user GO を求める方針
+    next_action: "user GO/HOLD/REJECT 待ち + Phase 2 並行検討"
+    next_review_at: "2026-05-01 10:30 JST"
+    expiry: "2026-05-01 18:00 JST"
+    codex_a_artifact: "docs/handoff/codex_responses/2026-05-01_codex_a_storm_verify.md (bc1e5c0)"
+
+  - id: 298-MAIL-STORM-PERMANENT-FIX-Phase2
+    status: ACTIVE
+    decision_owner: user
+    execution_owner: Codex
+    evidence_owner: Claude
+    user_go_required: true
+    user_go_reason: PROD_DEPLOY+FLAG_ENV
+    severity: P1
+    phase: "Phase 2 恒久対策(code fix + deploy)"
+    incident_started_at: "2026-05-01 09:00 JST"
+    evidence: |
+      - Codex B 設計 doc 完了(0b64078)
+      - 推奨 Option B: persistent sent ledger for old_candidate
+      - touched_files: src/publish_notice_scanner.py + src/cloud_run_persistence.py
+      - new env: ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE / PUBLISH_NOTICE_OLD_CANDIDATE_MIN_AGE_DAYS / PUBLISH_NOTICE_OLD_CANDIDATE_LEDGER_PATH
+      - test 設計: scanner unit + persistence integration + 289 維持 + Team Shiny 維持 assertions
+    proposed_options:
+      - "Option A: max_age_days filter(scanner only、low risk、sink-side cutoff)"
+      - "Option B: persistent sent ledger(scanner + persistence、recommended、emit-once-forever)"
+      - "Option C: idempotent guarded history(guarded runner、high blast radius、real review 影響 高)"
+    next_action: "user GO/HOLD/REJECT 待ち → Codex 実装便 + image rebuild + deploy"
+    next_review_at: "2026-05-01 10:30 JST(Acceptance Pack 提示後)"
+    expiry: "2026-05-02 00:00 JST(第二波 recurrent 前)"
+    codex_b_artifact: "docs/handoff/codex_responses/2026-05-01_codex_b_storm_permanent_fix.md (0b64078)"
+
 
 # ============================================
 # OBSERVE(最大 1 件、production health 統合)

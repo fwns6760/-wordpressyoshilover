@@ -1,614 +1,166 @@
-# YOSHILOVER OPS BOARD(機械可読 ticket 状態正本)
-#
-# 本 file は repo 内 永続正本。Claude memory / session_logs と矛盾時は本 file 優先。
-# 1 ticket 1 record、7 軸 OWNER + status + evidence + next_action + expiry。
-#
-# Schema:
-#   id: <ticket id>
-#   status: ACTIVE | OBSERVE | READY | HOLD_NEEDS_PACK | FUTURE_USER_GO | DONE | FROZEN | DEEP_FROZEN
-#   decision_owner: user | Claude | Codex | ChatGPT
-#   execution_owner: Claude | Codex | none
-#   evidence_owner: Claude | Codex | user
-#   user_go_required: true | false
-#   user_go_reason: PROD_DEPLOY | FLAG_ENV | SCHEDULER_CHANGE | COST_INCREASE | SOURCE_ADD | SEO_CHANGE | PUBLICATION_POLICY | MAIL_ROUTING_MAJOR | IRREVERSIBLE | n/a
-#   evidence: <観測 / commit hash / live evidence>
-#   next_action: <次の action>
-#   next_review_at: <date or event>
-#   expiry: <date or condition>
+# YOSHILOVER OPS_BOARD
+# Machine-readable current ticket state.
+# If this file conflicts with old handoffs/session logs, this file wins.
 
-last_updated: "2026-05-01 09:50 JST"
+last_updated: "2026-05-01 JST"
 updated_by: "Claude"
 
-# ============================================
-# ACTIVE(最大 2 件)
-# ============================================
+board_rules:
+  active_limit: 2
+  user_is_execution_owner: false
+  raw_codex_to_user: false
+  session_logs_are_history_only: true
+  decision_batch_required: true
+
+mail_storm_policy:
+  all_mail_stop: forbidden
+  scheduler_pause_as_normal_fallback: forbidden
+  reapply_review_window_168h: forbidden
+  wait_for_pool_exhaustion: forbidden
+  unknown_mail_volume_go: forbidden
+  mail_budget_violation: P1
+  normal_review_mail: keep
+  post_gen_validate_289_mail: keep
+  error_mail: keep
+
 active:
-  - id: 298-Phase3-deploy
-    status: ROLLED_BACK_AFTER_REGRESSION  # DONE 禁止、HOLD_NEEDS_PACK 扱い
-    decision_owner: user
-    execution_owner: Claude  # rollback 自律実行 + post-observe Claude 担当
+  - id: 293-COST
+    title: "preflight skip visible化 / 282前提整理"
+    status: ACTIVE
+    decision_owner: Claude
+    execution_owner: Claude
     evidence_owner: Claude
-    user_go_required: true  # 再 ON 前に Pack 再設計 + cardinality estimate user GO 必須
-    user_go_reason: PROD_DEPLOY+FLAG_ENV+MAIL_ROUTING_MAJOR
-    severity: P1_contained
-    phase: "image deploy 完了 + flag rollback で機能無効化、deploy 前等価挙動、第二波 risk OPEN"
-    progress: |
-      13:00 Codex Phase 3 v3 fire / 13:24 flag ON observe green(rolling 1h 24)
-      13:35 flag ON 後 storm 再発検出(02:35-02:56 UTC sent=10 × 5 trigger / 累積 50+ / rolling ~142/h)
-      13:55 §14 自律 rollback(--remove-env-vars=ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE)
-      14:15 post-rollback observe(rolling 1h 5-6 通 / old_candidate emit 0 / 通常 path 全部維持)
-    state_summary:
-      image: "publish-notice:1016670 維持(new、impl d44594a 入り)"
-      flag: "OFF(ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE 不在)"
-      persistent_ledger_function: "無効(flag OFF で lookup 経路 dead)"
-      effective_behavior: "deploy 前等価(scanner code は new だが flag gate で旧 path)"
-      second_wave_risk: "OPEN(63003-63311 group は permanent_ledger 未登録、5/2 09:00 JST dedup expire で再 emit ~90 通 risk)"
-    re_on_preconditions:
-      - "eligible old_candidate pool cardinality estimate(read-only、ledger 直接走査)"
-      - "想定 mail 件数(first emit total)"
-      - "max mails/hour(MAIL_BUDGET 30/h 違反しない設計、cap 自動引下 / staggered emit / 等)"
-      - "max mails/day(MAIL_BUDGET 100/d 違反しない設計)"
-      - "first emit 時の budget 超過 0 evidence"
-      - "ledger seed / no-send backfill 可否(first emit を skip 化する選択肢)"
-      - "stop condition 明示(rolling sent > N / errors > 0 等)"
-      - "rollback 条件明示(env / image / ledger archive 3-tier)"
-      - "上記すべて evidence YES なら GO、UNKNOWN 1 つでも HOLD"
-    pack_completion_target: "Phase 3 v4 設計 + Pack 再起草(本日 doc draft、user GO は明日以降)"
-    not_today:
-      - "Phase 3 再 ON(env apply)"
-      - "image rollback(現時点不要)"
-      - "ledger file 削除"
-      - "Codex 追加 fire(本日上限超過済 + user 指示)"
-    finalize_required_items:
-      - "1. latest HEAD(ffeba45)fresh pytest(Claude read-only 実行、failures count 記録)"
-      - "2. pre-existing 3 failures の 299-QA 起票記録(本日 commit 済 verify)"
-      - "3. clean build 手順(POLICY §8 list、git stash -u or /tmp/<commit_hash> clean export、deploy 対象 commit が ffeba45 のみ)"
-      - "4. HOLD ticket 該当 commit 混入なし確認(git log <prev_image_commit>..ffeba45)"
-      - "5. rollback target image SHA(:4be818d publish-notice 旧)+ env rollback コマンド"
-      - "6. flag OFF deploy 手順(image rebuild + job update、env 変更 0)"
-      - "7. 観察条件(2-3 trigger 観察、sent / errors / 289 / Team Shiny / Gemini call delta=0 / silent skip 0)"
-      - "8. flag ON 条件(step 7 全条件 OK で同一 Pack 内 自動進行、user 再確認なし)"
-      - "9. mail volume impact(YES = reduction、定量予測)"
-      - "10. max mails/hour(30 通、MAIL_BUDGET §22 上限)"
-      - "11. max mails/day(100 通、同上)"
-      - "12. GCS state retention 設計(publish_notice_old_candidate_once.json の N 日 expire policy、impl は 300-COST 連動 Phase 3.1 で deploy 後 1 週間以内)"
-      - "13. stop condition(real review 減 / Team Shiny 変 / 289 emit 減 / errors > 0 / 全停止 / silent skip 増 / MAIL_BUDGET 違反)"
-      - "14. expiry(2026-05-02 09:00 JST、第二波 recurrent 前)"
-    next_action: "本日中に 14 項目 全部 evidence 揃え + Pack 100% 化 → 明日朝 USER_VISIBLE_NOW として 1 行 user 提示"
-    next_review_at: "2026-05-01 13:00 JST(Pack finalize 中間 check)"
-    expiry: "2026-05-02 06:00 JST(明日朝 user 提示前)"
-    not_in_scope_for_today:
-      - "298-Phase3 deploy 自体(Pack 完成後の user 判断まで HOLD)"
-      - "flag ON / env apply(同上)"
-      - "image rebuild(同上)"
-      - "Codex 追加 fire(本日上限超え)"
-      - "個別 ticket 進行(290 / 282 / 288 / 293 / 295 等は HOLD)"
+    user_go_required: false
+    user_go_reason: n/a
+    allowed_now:
+      - "design"
+      - "Acceptance Pack"
+      - "test plan"
+      - "rollback plan"
+    forbidden_without_user_go:
+      - "deploy"
+      - "flag/env change"
+      - "Gemini call increase"
+    next_action: "Complete visible-skip design and Pack for 282 readiness."
+    next_review_at: "after Pack draft"
+    expiry: "before 282 flag ON decision"
 
-# === BELOW: this entry was moved to hold_needs_pack section (see line below). Kept here as anchor for the deploy-ready Acceptance Pack details. ===
-
-_298_phase3_pack_anchor_DEPRECATED:
-  - id: 298-MAIL-STORM-Phase3-deploy-pack
-    status: HOLD_NEEDS_PACK  # 1 Pack 条件付き段階化、user 確認 1 回(GO/HOLD/REJECT)で完結予定
-    decision_owner: user
-    execution_owner: Codex
+  - id: 300-COST
+    title: "source-side guarded-publish再評価 cost read-only解析"
+    status: ACTIVE
+    decision_owner: Claude
+    execution_owner: Claude
     evidence_owner: Claude
-    user_go_required: true
-    user_go_reason: PROD_DEPLOY+FLAG_ENV+MAIL_ROUTING_MAJOR
-    severity: P1
-    phase: "Phase 3 deploy(1 Pack 条件付き段階化:image rebuild → flag OFF deploy → 観察 OK なら flag ON 自動進行 → 観察)"
-    incident_started_at: "2026-05-01 09:00 JST"
-    impl_status: "完了(d44594a impl + ffeba45 deploy Pack final、push 済)"
-    pack_state: "Claude 一次受けで 18 項目 + Phase 3 必須 step 統合中、明日 user 提示予定"
-    not_today:
-      - "本日 deploy しない(本日は Pack 整備のみ)"
-      - "本日 Codex 追加 fire しない(POLICY §7: 1 日 2 件上限、本日既に 4 件 = P1 例外発動済 = 上限超過)"
-      - "通知体系全体の再設計しない(本日 HOLD)"
-      - "メール本文表示改善しない(本日 HOLD)"
-      - "mail 通知条件 大改修しない(本日 HOLD)"
-    pack_18_items:
-      decision: "(明日提示時 GO 推奨)"
-      requested_user_decision: "298-Phase3 一括 deploy + flag OFF 観察 OK なら同一 Pack 内条件で flag ON 自動進行 を GO/HOLD/REJECT"
-      scope: |
-        publish-notice Cloud Run job:
-          1. image rebuild(commit ffeba45、clean build POLICY §8 遵守)
-          2. job update with new image
-          3. flag OFF のまま 2-3 trigger 観察(条件 OK なら次へ)
-          4. 条件達成後 ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE=1 env apply(同一 Pack 内自動進行)
-          5. flag ON 後 1-2 trigger 観察
-          6. 5/2 09:00 JST 第二波防止確認
-      not_in_scope: |
-        - Team Shiny From / SMTP / 289 通知 / X 自動投稿 / SEO / source 追加 / Scheduler 頻度 / live_update / 290/293/282 / WP REST mutation
-        - mail 通知条件 大改修(本日 REJECT 範囲)
-        - 通知体系 全体再設計(本日 REJECT 範囲)
-      why_now: |
-        - 第二波 5/2 09:00 JST 頃 recurrent 想定(24h dedup expire で同 pool 再 emit)
-        - 本日 Pack 整備 + 明日 deploy で第二波防止
-      preconditions: |
-        - d44594a + ffeba45 push 済(verify済)
-        - Claude 追認 pytest +0 regression(本日 git stash + 再 pytest 確認済)
-        - 299-QA(postgame_strict 3 failures pre-existing)起票済(本日)
-        - 不変方針 全部維持(Team Shiny / 289 / X / Scheduler / live_update / Gemini)
-      cost_impact: |
-        - Cloud Build 1 回(POLICY §7 1 日 1 回上限内、明日 deploy で消費)
-        - Cloud Run image rebuild + job update
-        - Gemini call delta = 0(scanner / persistence のみ、Gemini 呼び出さない)
-        - GCS write 微増(新 state file publish_notice_old_candidate_once.json、retention 設計含む)
-      user_visible_impact: |
-        - flag OFF 期間:挙動 100% 不変
-        - flag ON 後:[要確認(古い候補)] mail が 1 post_id 1 回限り、再 emit 抑制
-        - 通常 publish notice / [要review] / [要review｜post_gen_validate] / 289 通知 維持
-      rollback: |
-        - flag rollback: gcloud run jobs update publish-notice --remove-env-vars=ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE(30 秒)
-        - image rollback: 旧 image tag :4be818d に戻す(2-3 分)
-        - 両方 1 コマンド可逆
-      evidence: |
-        - 事前: commit d44594a(impl)+ ffeba45(deploy Pack final)+ pytest +0 regression + 299-QA OBSERVE 起票
-        - 完了予定: deploy 後 sent=0 for old_candidate、289 emit 維持、Team Shiny From 維持、Gemini call delta=0、24h 観察
-      stop_condition: |
-        - 真の review (judgment=review or hold_reason in {cleanup_required, hard_stop_*}) emit が減る
-        - Team Shiny From が変わる
-        - 289 post_gen_validate emit が減る
-        - errors > 0
-        - publish-notice 全体停止
-        - silent skip 増加(ledger silent / mail silent / WP 直接 silent)
-        - MAIL_BUDGET 違反(30 通/h or 100 通/d 超過)
-      expiry: "2026-05-02 09:00 JST(第二波 recurrent 前)"
-      recommended_decision: GO  # 明日提示時
-      recommended_reason: "1 Pack 条件付き段階化で user 確認 1 回完結、flag OFF deploy で挙動不変確認後の flag ON、Cost 0 増、rollback 1 コマンド、不変方針 全部維持"
-      gemini_call_increase: NO  # scanner / persistence のみ、Gemini 呼び出さない
-      token_increase: NO  # prompt 変更なし、context 不変
-      candidate_disappearance_risk: NO  # backlog_only かつ MIN_AGE_DAYS=3 以上限定、real review / cleanup_required / hard_stop / yellow(non-backlog_only)は影響なし、3 日以内候補は既存 24h dedup 経路維持、test 7 本で assertion 済
-      cache_impact: NO  # Gemini cache 無関係、scanner 内 dedup ledger は別 layer
-      mail_volume_impact: YES  # reduction(emit 数大幅減)、定量で次の 5 step も明示
-    phase3_required_steps:
-      step_1_fresh_pytest: "最新 HEAD(ffeba45)で full pytest を Codex 1 回実行、failures 数記録(299-QA 3 failures + 増加なし確認)"
-      step_2_299_QA_record: "299-QA OBSERVE entry が起票済(本日 commit 済)"
-      step_3_clean_build: "POLICY §8 遵守:git stash -u or /tmp/<commit_hash> clean export、deploy 対象 commit が ffeba45 のみ確認"
-      step_4_no_HOLD_carry: "git log <prev_image_commit>..ffeba45 で HOLD ticket 該当 commit 0 確認(本 ticket 以外の HOLD 混入禁止)"
-      step_5_rollback_target: "publish-notice 旧 image tag :4be818d 確認、env rollback コマンド事前準備"
-      step_6_flag_OFF_deploy: "image rebuild + publish-notice job update、env は触らない(ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE 未設定で default OFF)"
-      step_7_2_3_trigger_observe: "flag OFF deploy 後 2-3 trigger 観察、挙動 100% 不変 verify(sent / errors / 289 / Team Shiny / Gemini call delta=0 / silent skip 0)"
-      step_8_conditional_flag_ON: "step_7 全条件 OK なら同一 Pack 内で flag ON env apply(`gcloud run jobs update publish-notice --update-env-vars=ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE=1`)、user 再確認なし"
-      step_9_flag_ON_observe: "flag ON 後 1-2 trigger 観察、old_candidate emit 抑制 verify、real review emit 維持 verify、MAIL_BUDGET 30/h / 100/d 内"
-      step_10_second_wave_verify: "5/2 09:00 JST 頃 第二波 recurrent 防止確認、24h MAIL_BUDGET 内"
-    phase3_extra_pack_items:
-      max_mails_per_hour: "30 通/h(MAIL_BUDGET §22 上限、超過で P1)"
-      max_mails_per_day: "100 通/d(同上)"
-      gemini_call_delta: "0(scanner / persistence のみ、Gemini 呼び出さない)"
-      silent_skip: "0 維持(全 skip 経路で skip_reason 必須、ledger silent 検出時即停止)"
-      team_shiny_from: "y.sebata@shiny-lab.org 不変(MAIL_BRIDGE_FROM 変更禁止)"
-    forbidden_in_phase3:
-      - "PUBLISH_NOTICE_REVIEW_WINDOW_HOURS=168 再投入(POLICY §22 永続禁止 env)"
-      - "cap=10/run 単独 safe 扱い(POLICY §22、4 重防御必須)"
-      - "Phase 3 一括 deploy + flag ON 同時(image+env 同時変更 = blast radius 拡大、本日 REJECT 範囲)"
-      - "mail volume impact UNKNOWN で GO(POLICY §18、UNKNOWN 検出 GO 禁止)"
-    next_action: "明日朝 Pack を user に 1 行で提示 → GO/HOLD/REJECT 待ち → Codex deploy 便 fire → 段階自動進行"
-    next_review_at: "2026-05-02 06:00 JST 頃(Pack user 提示)"
-    expiry: "2026-05-02 09:00 JST(第二波 recurrent 前)"
-    codex_b_artifact: "docs/handoff/codex_responses/2026-05-01_codex_b_storm_permanent_fix.md (0b64078 + ffeba45)"
+    user_go_required: false
+    user_go_reason: n/a
+    allowed_now:
+      - "read-only analysis"
+      - "cost estimate"
+      - "test plan"
+      - "rollback plan"
+    forbidden_without_user_go:
+      - "implementation"
+      - "deploy"
+      - "source behavior change"
+    next_action: "Finish read-only analysis and decide whether an Acceptance Pack is justified."
+    next_review_at: "after analysis evidence"
+    expiry: "before implementation"
 
-
-# ============================================
-# OBSERVE(最大 1 件、production health 統合)
-# ============================================
 observe:
-  - id: production_health_observe
+  - id: 299-QA
+    title: "flaky / transient整理"
     status: OBSERVE
     decision_owner: Claude
     execution_owner: Claude
     evidence_owner: Claude
     user_go_required: false
     user_go_reason: n/a
-    evidence: "289 24h sent=172 errors=0 silent=0 / Gmail sample 10+ thread / Team Shiny 維持 / cache_hit 99% (498/500) / env 期待値通り"
-    integrated_targets:  # 含む sub-observes(POLICY OBSERVE 最大 1 統合 + sub)
-      - "289-OBSERVE 24h sent/errors/silent"
-      - "282-COST flag OFF live 挙動不変"
-      - "205-COST cursor scan 動作"
-      - "cache_hit 99% 真因"
-      - "277-QA rescue 効果(290 deploy 後)"
-      - "281-QA <24h positive case"
-      - "290-QA NOT_DEPLOYED status"
-    sub_observe_items:  # 独立 ticket だが本観察に統合(POLICY OBSERVE 1 件遵守)
-      - id: 299-QA-postgame-strict-3-failures
-        severity: P3  # transient/flaky 判定で P2 → P3 降格
-        started_at: "2026-05-01 10:25 JST(P1 mail storm 真因解析中に発見)"
-        evidence: |
-          - tests/test_postgame_strict_template.py、Claude 朝 10:25 JST 走行 = 3 failures
-          - Codex Phase 3 deploy retry 12:30 JST 走行 = 30 passed / 0 failed(同 module)
-          - フル pytest 12:30 JST = 2008 passed / 0 failed
-          - 朝の 3 failures は **transient / env 依存 / flaky** と判定(local cache / file race / temp env 差異の可能性)
-          - failure 朝の内容:rss_fetcher.py:4983 "postgame_strict: parse_fail reason=non_json_wrapper -> review"
-          - failing tests(朝):
-            * test_strict_feature_flag_on_postgame_uses_strict_template_path
-            * test_strict_on_empty_response_returns_review_sentinel
-            * test_strict_on_parse_fail_returns_review_sentinel
-          - 298-Phase2 impl とは無関係(scope 外 rss_fetcher 経由)
-          - POLICY §10「P0 Safety incident 検出時必須起票」適用は妥当だが、結果 transient → flaky 範疇に再分類提案(POLICY §10 細分化は deferred、本日 HOLD)
-        flaky_judgment_status: "Codex Lane A bog1ws7xr で flaky 解析進行中(read-only / pytest 2 round / 真因仮説 / 再現条件 / 観察条件 / close 条件)"
-        next_action: "Codex Lane A 完了 → 真因仮説 + 観察条件 evidence 揃う → 17:00 production_health_observe で最終 close 判定"
-        expiry: "production_health_observe 結果 + 24h(2026-05-02 17:00 JST)"
-    next_action: "2026-05-01 17:00 JST に 1 度 read-only check、299-QA sub_observe も同時、異常 0 なら ops reset close 確定"
-    next_review_at: "2026-05-01 17:00 JST"
-    expiry: "2026-05-01 17:00 JST"
+    severity: "not P0 by default"
+    evidence_required:
+      - "test baseline"
+      - "repro condition"
+      - "transient/flaky classification"
+    next_action: "Record baseline and recurrence condition. Escalate only with repeatable failure."
+    next_review_at: "next test baseline run"
+    expiry: "after stable baseline evidence"
 
-# ============================================
-# READY(最大 3 件、Acceptance Pack 完成済)
-# ============================================
-ready:
-  []  # 現状 0 件、HOLD_NEEDS_PACK が Pack 完成で昇格
+ready: []
 
-# ============================================
-# HOLD_NEEDS_PACK(user GO 必須、Pack 未完成、近期 READY 昇格候補)
-# ============================================
 hold_needs_pack:
-  - id: 298-MAIL-STORM-Phase3-deploy-pack
+  - id: 298-Phase3
+    title: "old-candidate persistent ledger / mail storm follow-up"
     status: HOLD_NEEDS_PACK
+    phase: ROLLED_BACK_AFTER_REGRESSION
     decision_owner: user
-    execution_owner: Codex
+    execution_owner: Claude
     evidence_owner: Claude
     user_go_required: true
-    user_go_reason: PROD_DEPLOY+FLAG_ENV+MAIL_ROUTING_MAJOR
-    severity: P1
-    pack_completion: "80%(Claude 一次受けで 18 項目 + Phase 3 必須 10 step + MAIL_BUDGET 5 項目 整備済)"
-    pack_anchor: "OPS_BOARD.yaml `_298_phase3_pack_anchor_DEPRECATED:` 配下に詳細 yaml(明日 user 提示時の参照元)"
-    impl_status: "完了(d44594a impl + ffeba45 deploy Pack final、push 済、Claude 追認 pytest +0 regression)"
-    evidence: "d44594a / ffeba45 push / pytest baseline 3 failures pre-existing(299-QA 起票)/ 不変方針 全部維持確認"
-    next_action: "明日朝(2026-05-02 06:00 JST 頃)Pack を user に 1 行提示 → GO/HOLD/REJECT → Codex deploy 便 fire → 段階自動進行"
-    next_review_at: "2026-05-02 06:00 JST"
-    expiry: "2026-05-02 09:00 JST(第二波 recurrent 前)"
+    user_go_reason: "PROD_DEPLOY+FLAG_ENV+MAIL_ROUTING_MAJOR"
+    current_state:
+      image_deployed: true
+      flag_rolled_back: true
+      enable_publish_notice_old_candidate_once: "OFF_OR_ABSENT"
+      persistent_ledger_function: disabled
+      storm: contained
+      second_wave_risk: OPEN
+    re_on_forbidden_until:
+      - "old_candidate pool cardinality estimate"
+      - "expected first-send mail count"
+      - "max mails/hour"
+      - "max mails/day"
+      - "stop condition"
+      - "rollback command"
+      - "all UNKNOWN fields resolved"
+    next_action: "Build a new Acceptance Pack. Do not re-ON Phase3."
+    next_review_at: "before any Phase3 re-ON proposal"
+    expiry: "before second-wave risk window"
 
-  - id: 290-QA-deploy
-    status: HOLD_NEEDS_PACK
-    decision_owner: user
-    execution_owner: Claude
-    evidence_owner: Claude
-    user_go_required: true
-    user_go_reason: PROD_DEPLOY+FLAG_ENV
-    evidence: "commit c14e269 PUSHED / GH Actions run 25157508302 success / pytest 1865 baseline 維持"
-    next_action: "production_health_observe 17:00 結果確認後、Acceptance Pack 13 項目作成"
-    next_review_at: "2026-05-01 17:00 JST 後"
-    expiry: "2026-05-02"
-  - id: 282-COST-flag-on
-    status: HOLD_NEEDS_PACK
-    decision_owner: user
-    execution_owner: Claude
-    evidence_owner: Claude
-    user_go_required: true
-    user_go_reason: FLAG_ENV+COST_INCREASE
-    evidence: "preflight gate live (flag OFF) / fetcher :4be818d 反映済 / preflight skip event 0"
-    next_action: "293 完遂 + 24h 安定後に Acceptance Pack 作成"
-    next_review_at: "293 完遂 + 24h"
-    expiry: "293 完遂 + 24h"
-  - id: 288-INGEST-source-add
-    status: HOLD_NEEDS_PACK
-    decision_owner: user
-    execution_owner: Claude
-    evidence_owner: Claude
-    user_go_required: true
-    user_go_reason: SOURCE_ADD+COST_INCREASE
-    evidence: "5 条件未達(289+290+295+候補終端契約+cost 抑制策)"
-    next_action: "5 条件全達成後に Acceptance Pack 作成"
-    next_review_at: "5 条件達成後"
-    expiry: "5 条件達成後"
-
-# ============================================
-# FUTURE_USER_GO(いつか必要、今は聞かない)
-# ============================================
 future_user_go:
-  - id: 293-COST-deploy
+  - id: 282-COST
+    title: "Gemini preflight gate flag ON decision"
     status: FUTURE_USER_GO
     decision_owner: user
     execution_owner: Claude
     evidence_owner: Claude
     user_go_required: true
-    user_go_reason: PROD_DEPLOY+FLAG_ENV+MAIL_ROUTING_MAJOR
-    evidence: "(impl 未)"
-    next_action: "293 impl 完遂 + 24h 安定後に Pack"
-    next_review_at: "293 impl 完遂 + 24h"
-    expiry: "293 impl 完遂 + 24h"
-  - id: 295-QA-deploy
+    user_go_reason: "FLAG_ENV+COST_INCREASE"
+    blocked_by:
+      - "293-COST visible skip readiness"
+    next_action: "Prepare flag ON Pack only after 293 is complete."
+    expiry: "293 complete + evidence"
+
+  - id: 290-QA
+    title: "weak title rescue deploy decision"
     status: FUTURE_USER_GO
     decision_owner: user
     execution_owner: Claude
     evidence_owner: Claude
     user_go_required: true
     user_go_reason: PROD_DEPLOY
-    evidence: "(impl 未)"
-    next_action: "295 impl 完遂 + 24h 安定後に Pack"
-    next_review_at: "295 impl 完遂 + 24h"
-    expiry: "295 impl 完遂 + 24h"
-  - id: 296-codex-shadow-deploy
-    status: FUTURE_USER_GO
-    decision_owner: user
-    execution_owner: Claude
-    evidence_owner: Claude
-    user_go_required: true
-    user_go_reason: PROD_DEPLOY+SCHEDULER_CHANGE
-    evidence: "(設計未完)"
-    next_action: "296 設計完了 + redesign image build 後に Pack"
-    next_review_at: "設計完了後"
-    expiry: "設計完了後"
-  - id: 229-COST-C-deploy
-    status: FUTURE_USER_GO
-    decision_owner: user
-    execution_owner: Claude
-    evidence_owner: Claude
-    user_go_required: true
-    user_go_reason: PROD_DEPLOY+FLAG_ENV+COST_INCREASE
-    evidence: "(impl 未)"
-    next_action: "282 flag ON + 24h cost 効果確認 + impl 完遂後に Pack"
-    next_review_at: "282 flag ON 後 24h"
-    expiry: "282 flag ON 後 24h"
-  - id: 278-279-280-QA-deploy
-    status: FUTURE_USER_GO
-    decision_owner: user
-    execution_owner: Claude
-    evidence_owner: Claude
-    user_go_required: true
-    user_go_reason: PROD_DEPLOY+MAIL_ROUTING_MAJOR
-    evidence: "(impl 未、277/290 効果観察待ち)"
-    next_action: "290 deploy + 24h + 統合 impl 完遂後に Pack"
-    next_review_at: "290 deploy 後 24h"
-    expiry: "290 deploy 後 24h"
-  - id: 300-COST-source-side-reevaluation-reduction
-    status: FUTURE_USER_GO
-    decision_owner: user
-    execution_owner: Codex
-    evidence_owner: Claude
-    user_go_required: true
-    user_go_reason: PROD_DEPLOY+COST_INCREASE  # actually decrease, but classification 該当
-    severity: P2
-    started_at: "2026-05-01 10:30 JST(P1 mail storm root cause 解析後 deferred 起票)"
-    analysis_status: "Codex Lane B btdil79om で source-side 解析進行中(read-only / src/guarded_publish_runner.py */5 再評価 logic / cost 見積 / Option C-narrow impl 案 / rollback plan)"
-    evidence: |
-      - 真因:guarded-publish job が */5 trigger ごとに ~100 件の old backlog post を skip 評価 → fresh ts append
-      - Cloud Run job 実行 cost + GCS write cost が毎回発生
-      - 298 Phase 2/3 は sink-side(publish-notice scanner)で抑制、source 側は変更なし
-      - 298 Phase3 ROLLED_BACK_AFTER_REGRESSION 確定後、source-side fix の重要性増(明日 09:00 第二波 risk OPEN)
-      - Codex B Option C(idempotent guarded history append)で source-side fix 可能(検討時 blast radius 高で却下、Lane B で blast radius 局所化案を再評価中)
-    proposed_design: |
-      Option C 再評価 + narrow 化検討:
-        - guarded-publish runner で「status / judgment / hold_reason / age 全部前回 record と同じ」なら ts 再 append しない
-        - flag default OFF、env で enable
-        - blast radius 局所化:hold_reason=backlog_only かつ unchanged な場合のみ skip(real review unchanged 状態は引き続き再 append)
-    next_action: "298-Phase3 deploy + 24h 安定確認後に Acceptance Pack 起草"
-    next_review_at: "298-Phase3 deploy + 24h 後"
-    expiry: "298-Phase3 stable + design finalize 後(impl は本日着手しない)"
+    next_action: "Prepare deploy decision Pack."
+    expiry: "when deploy evidence is ready"
 
-  - id: 264-QA-cleanup-mutation
+  - id: 288-INGEST
+    title: "source coverage expansion"
     status: FUTURE_USER_GO
     decision_owner: user
     execution_owner: Claude
     evidence_owner: Claude
     user_go_required: true
-    user_go_reason: IRREVERSIBLE
-    evidence: "(Phase 1 audit 未)"
-    next_action: "Phase 1 audit 完了 + 個別 post_id GO"
-    next_review_at: "Phase 1 audit 完了後"
-    expiry: "Phase 1 audit 完了後"
+    user_go_reason: "SOURCE_ADD+COST_INCREASE"
+    blocked_by:
+      - "candidate visibility contract"
+      - "mail impact estimate"
+      - "Gemini cost estimate"
+    next_action: "Do not add sources until Pack is complete."
+    expiry: "after observability and cost evidence"
 
-# ============================================
-# DONE(OBSERVED_OK evidence あり、close 済)
-# ============================================
 done:
-  - id: 276-QA-test-mock-fix
+  - id: mail-storm-current
+    title: "current first-wave mail storm containment"
     status: DONE
-    decision_owner: Claude
-    execution_owner: Codex
-    evidence_owner: Claude
-    user_go_required: false
-    user_go_reason: n/a
-    evidence: "CI run 25146349669 success / 1820 tests OK / 本番 src 不変"
-    next_action: "(close)"
-    next_review_at: n/a
-    expiry: n/a
-  - id: 283-MKT-requirements-doc
-    status: DONE
-    decision_owner: Claude
-    execution_owner: Claude
-    evidence_owner: Claude
-    user_go_required: false
-    user_go_reason: n/a
-    evidence: "commit a2777f9 push / user 確認済"
-    next_action: "(close、子 ticket 284-287 は FROZEN)"
-    next_review_at: n/a
-    expiry: n/a
-  - id: 297-OPS-codex-shadow-pause
-    status: DONE
-    decision_owner: Claude
-    execution_owner: Codex
-    evidence_owner: Claude
-    user_go_required: false
-    user_go_reason: n/a
-    evidence: "scheduler state=PAUSED / 24h publish-mail trigger 維持 / Cloud Run job 残存"
-    next_action: "(close、再開判断は 296 redesign 完遂後)"
-    next_review_at: n/a
-    expiry: n/a
-  - id: 298-MAIL-STORM-HOTFIX-Phase1
-    status: DONE
-    decision_owner: user
-    execution_owner: Claude
-    evidence_owner: Claude
-    user_go_required: false
-    user_go_reason: n/a
-    severity: P1
-    phase: "Phase 1 即時止血(env-only) - HOLD 確定 / 自然終息"
-    incident_started_at: "2026-05-01 09:00 JST"
-    incident_ended_at: "2026-05-01 09:55 JST"
-    phase0_rollback_record:
-      - "09:00 JST: --update-env-vars=PUBLISH_NOTICE_REVIEW_WINDOW_HOURS=168(user 明示 GO で Claude 直接実行 = §14 当時 policy)"
-      - "09:33 JST: --remove-env-vars=PUBLISH_NOTICE_REVIEW_WINDOW_HOURS(user 明示 GO、env 単独原因ではない確認のため)"
-    invariants_held:
-      - "Team Shiny From=y.sebata@shiny-lab.org 維持"
-      - "ENABLE_POST_GEN_VALIDATE_NOTIFICATION=1 維持(289 通知)"
-      - "ENABLE_LIVE_UPDATE_ARTICLES=0 維持"
-      - "X 自動投稿 OFF 維持"
-      - "Scheduler 頻度不変"
-      - "Gemini call 増加 0(env 操作のみ)"
-      - "code 変更 0"
-    evidence: |
-      - 5/1 09:00 JST PUBLISH_NOTICE_REVIEW_WINDOW_HOURS=168 apply 直後 storm 開始
-      - 09:05-09:50 sent=10 × 9 trigger 連続(累積 90 通)
-      - 09:33 JST env 削除(default 24h 復帰)
-      - 09:35-09:50 trigger sent=10 継続(env=168 単独原因ではない)
-      - 09:55 JST 以降 sent=0(自然終息、cap=10 × pool exhaustion、log evidence: 09:56:06 / 01:00:47 UTC sent=0)
-      - user 判断「Phase1 HOLD(storm 自然停止)」で実行せず close
-    phase1_hold_reason: |
-      user 条件「stormが自然停止しているなら実行せずHOLD」該当。
-      第一波が cap=10 × 9 trigger で自然終息(09:55 JST)、現在 sent=0 維持。
-      env=0 hotfix を実施すると real review path も止まる影響があるが、自然終息で回避。
-      第二波(5/2 09:00 JST 頃)に対しては Phase 2(恒久 fix)で対応。
-    next_action: "(close、Phase 2 deploy 後の再発監視で 5/2 09:00 JST 観察)"
-    next_review_at: "2026-05-02 09:00 JST(第二波 recurrent 監視)"
-    expiry: "Phase 2 deploy + 24h 観察後"
-    codex_a_artifact: "docs/handoff/codex_responses/2026-05-01_codex_a_storm_verify.md (bc1e5c0)"
+    evidence: "storm contained; Phase3 flag rollback; normal review/289/error notification retained"
 
-  - id: ops_reset_2026-05-01
-    status: DONE_DOC_ONLY
-    decision_owner: Claude
-    execution_owner: Claude
-    evidence_owner: Claude
-    user_go_required: false
-    user_go_reason: n/a
-    evidence: |
-      session_logs side:
-        - commit 913844b (2026-04-30 session_logs + ops_reset.md 起源)
-        - commit 6b7d77b (DONE_PARTIAL/NOT_DONE 廃止)
-      docs/ops/ side(運用 active 正本):
-        - 前回 session で untracked のまま誤判定(CURRENT_STATE 旧記述「永続化」は誤り)
-        - 本 commit(2026-05-01 09:55 JST 予定)で初永続化:
-          * POLICY.md(§14 P1 hotfix 範囲 / §15 Outcome Ledger format 含む)
-          * CURRENT_STATE.md
-          * OPS_BOARD.yaml
-          * ACCEPTANCE_PACK_TEMPLATE.md
-          * NEXT_SESSION_RUNBOOK.md
-    next_action: "(close、本 commit で永続化完了)"
-    next_review_at: n/a
-    expiry: n/a
-
-# ============================================
-# Claude 自律 GO 候補(設計 doc 整備、USER_GO_REQUIRED=false)
-# ============================================
-claude_autonomous_candidates:
-  - id: 264-QA-phase1-audit
-    decision_owner: Claude
-    execution_owner: Claude
-    user_go_required: false
-    category: READ_ONLY+EVIDENCE_ONLY
-    note: "既存 publish 重複ペア集計、cleanup 判断材料 doc 化、無条件着手可"
-  - id: 293-COST-design-finalize
-    decision_owner: Claude
-    execution_owner: Claude
-    user_go_required: false
-    category: DOC_ONLY+TEST_DESIGN
-    note: "起票 prompt 整備 / 仕様 finalize、impl 着手しない"
-  - id: 291-OBSERVE-unified-ledger-design
-    decision_owner: Claude
-    execution_owner: Claude
-    user_go_required: false
-    category: DOC_ONLY+BOARD_COMPRESSION
-    note: "292/293 統合 doc 設計"
-  - id: 294-PROCESS-clean-build-checklist
-    decision_owner: Claude
-    execution_owner: Claude
-    user_go_required: false
-    category: DOC_ONLY+ROLLBACK_CATALOG
-    note: "checklist 文書化、deploy 便 prompt template 整備"
-  - id: 295-QA-design
-    decision_owner: Claude
-    execution_owner: Claude
-    user_go_required: false
-    category: DOC_ONLY+TEST_DESIGN
-    note: "subtype 誤分類 fix 設計 doc 整備、impl 着手しない"
-  - id: 296-codex-shadow-redesign-design
-    decision_owner: Claude
-    execution_owner: Claude
-    user_go_required: false
-    category: DOC_ONLY+TEST_DESIGN
-    note: "src 取得方針 + 設計 finalize"
-  - id: 278-279-280-design-merge
-    decision_owner: Claude
-    execution_owner: Claude
-    user_go_required: false
-    category: DOC_ONLY+BOARD_COMPRESSION
-    note: "283-MKT 配下子化、親 ticket 統合"
-  - id: 229-COST-C-design
-    decision_owner: Claude
-    execution_owner: Claude
-    user_go_required: false
-    category: TEST_DESIGN
-    note: "prompt compression A/B test 設計、impl 着手しない"
-  - id: frozen-tickets-file-move
-    decision_owner: Claude
-    execution_owner: Claude
-    user_go_required: false
-    category: BOARD_COMPRESSION
-    note: "doc/active/ → doc/done/2026-05/ or doc/frozen/、本日実施しない、次セッション以降"
-  - id: expiry-hold-escalate
-    decision_owner: Claude
-    execution_owner: Claude
-    user_go_required: false
-    category: HANDOFF_UPDATE
-    note: "EXPIRY 到来 HOLD を自律 1 行通知"
-
-# ============================================
-# FROZEN(本フェーズ着手 0、active board 非表示、別 view、本日 file move 0)
-# ============================================
-frozen:
-  count: 16
-  list:
-    - 234-impl-7
-    - 245
-    - 246-viral-topic-detection
-    - 247-QA-postgame-strict-slot-fill-poc
-    - 250-QA-1
-    - 250-QA-3
-    - 251-SEO
-    - 252-QA
-    - 253-QA
-    - 254-QA
-    - 255-MKT
-    - 256-QA
-    - 248-MKT-2
-    - 248-MKT-3a
-    - 260-MKT
-    - 274-OPS
-  decision_owner: Claude
-  execution_owner: Claude
-  user_go_required: false
-  user_go_reason: n/a
-  evidence: "本フェーズ着手 0、active board 非表示維持"
-  next_action: "次セッション以降に Claude 自律で Codex commit便 起こして doc/done/2026-05/ or doc/frozen/ へ移動"
-  expiry: "任意のタイミング"
-
-# ============================================
-# DEEP_FROZEN(doc/waiting/、永続 NEVER、active board 非表示、別 view)
-# ============================================
-deep_frozen:
-  count: 21
-  location: doc/waiting/
-  decision_owner: user
-  user_go_required: true
-  user_go_reason: PUBLICATION_POLICY
-  evidence: "フェーズ変更時のみ user 判断で再評価"
-  expiry: "永続 NEVER(本フェーズ)"
-
-# ============================================
-# 不変方針(永続、本フェーズ NEVER 触らない)
-# ============================================
-permanent_invariants:
-  - "ENABLE_LIVE_UPDATE_ARTICLES=0"
-  - "Team Shiny From=y.sebata@shiny-lab.org"
-  - "SEO/noindex/canonical/301 不変"
-  - "X 自動投稿 OFF"
-  - "duplicate guard 全解除なし(narrow 緩和のみ可)"
-  - "Scheduler 頻度変更なし"
-  - "既存 fixed_lane prompt text 不変"
-  - "新 subtype 追加なし"
-  - "prosports 修正なし"
-
-permanent_evidence:
-  fetcher_image: "yoshilover-fetcher:4be818d (rev 00175-c8c, 100% traffic)"
-  publish_notice_image: "publish-notice:4be818d"
-  guarded_publish_image: "guarded-publish:6df049c"
-  codex_shadow_scheduler: "PAUSED"
+deprecated:
+  - id: old-session-ops-board-state
+    reason: "Old running lane/task state and old DONE_PARTIAL/NOT_DONE wording are deprecated. Use this board only."

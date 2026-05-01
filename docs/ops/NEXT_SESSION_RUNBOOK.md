@@ -7,17 +7,19 @@ session_logs に依存せず、`docs/ops/` 5 file だけで再開できる。
 
 ## 1. 必読 sequence(最初の 1 分)
 
-以下を **順番通り** 読む(他 file は本 sequence 完了後の参照):
+以下を **順番通り** 読む(他 file は本 sequence 完了後の参照、POLICY §21 正本 3 + 補助 2 + INCIDENT_LIBRARY と整合):
 
 ```
 1. docs/ops/CURRENT_STATE.md       (現在地、6 カテゴリ board)
 2. docs/ops/OPS_BOARD.yaml         (ticket 状態の機械可読正本)
-3. docs/ops/POLICY.md              (運用ルール、user GO / 自律 GO 境界)
+3. docs/ops/POLICY.md              (運用ルール、§14 / §17 / §18 / §22 / §23 等)
 ```
 
 これだけで再開可能。以下は必要時のみ:
-- `docs/ops/ACCEPTANCE_PACK_TEMPLATE.md`(user GO 提示時)
+- `docs/ops/ACCEPTANCE_PACK_TEMPLATE.md`(user GO 提示時、18 項目)
+- `docs/ops/INCIDENT_LIBRARY.md`(P1 体感事故時、過去事例参照、§19 必須)
 - `docs/handoff/session_logs/*.md`(過去 incident 詳細が必要な時、履歴扱い)
+- `docs/handoff/codex_responses/*.md`(Codex 履歴が必要な時、履歴扱い)
 
 ---
 
@@ -145,15 +147,16 @@ gcloud scheduler jobs describe codex-shadow-trigger --location=asia-northeast1 \
 
 ---
 
-## 7. 関連 doc(階層)
+## 7. 関連 doc(階層、POLICY §21 / §24 と整合)
 
 ```
-docs/ops/                       (永続正本、5 file)
-├── POLICY.md                   (運用ルール 15 sections、user GO 9 / 自律 GO 10 / Acceptance Pack 13 / silent skip P0 / clean build / P0_P1 自律 hotfix 8 条件 / Outcome Ledger format)
-├── CURRENT_STATE.md            (現在地、6 カテゴリ board、session 単位更新)
-├── OPS_BOARD.yaml              (ticket 状態機械可読正本、各 ticket 7 軸 OWNER + state + evidence)
-├── ACCEPTANCE_PACK_TEMPLATE.md (user GO 提示 template、13 項目)
-└── NEXT_SESSION_RUNBOOK.md     (本 doc、次回開始固定手順)
+docs/ops/                       (永続正本、6 file = 正本 3 + 補助 2 + INCIDENT_LIBRARY 1)
+├── POLICY.md                   (運用ルール 24 sections、user GO 9 / 自律 GO 10 / Pack 18 項目 / silent skip P0 / clean build / P0_P1 自律 hotfix 8 条件 / Outcome Ledger / Claude 一次受け / MAIL_BUDGET / user 通知絞り込み)【正本】
+├── CURRENT_STATE.md            (現在地、6 カテゴリ board、session 単位更新)【正本】
+├── OPS_BOARD.yaml              (ticket 状態機械可読正本、各 ticket 7 軸 OWNER + state + evidence)【正本】
+├── ACCEPTANCE_PACK_TEMPLATE.md (user GO 提示 template、18 項目)【補助正本】
+├── NEXT_SESSION_RUNBOOK.md     (本 doc、次回開始固定手順)【補助正本】
+└── INCIDENT_LIBRARY.md         (P1 体感事故 post-mortem ライブラリ、§19 参照義務)【補助正本】
 
 docs/handoff/                   (履歴、過去事実、新規 ops 状態の正本ではない)
 ├── session_logs/
@@ -164,10 +167,12 @@ docs/handoff/                   (履歴、過去事実、新規 ops 状態の正
 │   └── 2026-05-01_p1_mail_storm_hotfix.md             (P1 mail storm hotfix 1 行履歴 + §14 例外発動 evidence)
 └── codex_responses/, codex_requests/, run_logs/       (Codex 履歴)
     ├── 2026-05-01_codex_a_storm_verify.md             (Codex A storm read-only verify + env-only hotfix 案)
-    └── 2026-05-01_codex_b_storm_permanent_fix.md      (Codex B 恒久対策 設計 + Acceptance Pack draft)
+    └── 2026-05-01_codex_b_storm_permanent_fix.md      (Codex B 恒久対策 設計 + deploy Pack final)
 
 ~/.claude/projects/.../memory/  (Claude 補助記憶、正本ではない、矛盾時は repo 優先)
 ```
+
+mail / Gmail 通知は Ops Board ではない(POLICY §21、状態は OPS_BOARD.yaml に戻す)。
 
 ---
 

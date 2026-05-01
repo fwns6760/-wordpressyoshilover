@@ -62,8 +62,9 @@
 
 | ticket | user_go_reason | pack 完成 precondition | expiry |
 |---|---|---|---|
+| **298-Phase3 deploy(1 Pack 段階化)** | PROD_DEPLOY+FLAG_ENV+MAIL_ROUTING_MAJOR | 本日 80% 完成、明日朝 user 提示で READY 化 | 2026-05-02 09:00 JST(第二波前)|
 | 290-QA deploy + flag ON | PROD_DEPLOY+FLAG_ENV | production_health 17:00 結果 | 2026-05-02 |
-| 282-COST flag ON | FLAG_ENV+COST_INCREASE | 293 完遂 + 24h | 293 完遂 + 24h |
+| 282-COST flag ON | FLAG_ENV+COST_INCREASE | **293 完遂 + 24h**(POLICY §7 順序、293 が前提)| 293 完遂 + 24h |
 | 288-INGEST source 追加 | SOURCE_ADD+COST_INCREASE | 5 条件達成 | 5 条件達成後 |
 
 ---
@@ -72,12 +73,13 @@
 
 | ticket | user_go_reason | 提示 timing |
 |---|---|---|
-| 293-COST deploy + flag ON | PROD_DEPLOY+FLAG_ENV+MAIL_ROUTING_MAJOR | 293 impl 完遂 + 24h |
+| 293-COST deploy + flag ON | PROD_DEPLOY+FLAG_ENV+MAIL_ROUTING_MAJOR | 293 impl 完遂 + 24h(282 flag ON の前提、POLICY §7 順序)|
 | 295-QA deploy | PROD_DEPLOY | 295 impl 完遂 + 24h |
 | 296 codex-shadow deploy | PROD_DEPLOY+SCHEDULER_CHANGE | 296 設計完了 + redesign image build 後 |
 | 229-COST C deploy + flag ON | PROD_DEPLOY+FLAG_ENV+COST_INCREASE | 282 flag ON + 24h cost 効果確認 + impl 完遂 |
 | 278/279/280 deploy | PROD_DEPLOY+MAIL_ROUTING_MAJOR | 290 deploy + 24h + 統合 impl 完遂 |
 | 264 cleanup mutation | IRREVERSIBLE | 264 Phase 1 audit 完了 + 個別 post_id GO |
+| **300-COST source-side 削減** | PROD_DEPLOY+COST_INCREASE | 298-Phase3 deploy + 24h 安定後(本日 deferred 起票)|
 
 ---
 

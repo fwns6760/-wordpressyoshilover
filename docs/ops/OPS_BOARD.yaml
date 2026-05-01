@@ -23,13 +23,11 @@ updated_by: "Claude"
 # ACTIVE(最大 2 件)
 # ============================================
 active:
-  []  # 本日 active 0(運用 OS 立て直し主目的、298-Phase3 entry は file 上は本 section 直下に embed されているが categorical には HOLD_NEEDS_PACK 扱い、Pack 完成 80% で明日朝 user 提示)
-  # NOTE: 298-Phase3 entry は次 cleanup commit で hold_needs_pack 配下に移動予定。本 commit は時間制約で active 配下に embed 維持。
-  # 件数 view では ACTIVE 0 件、HOLD_NEEDS_PACK 4 件として扱う。
+  []  # 本日 active 0(運用 OS 立て直し主目的)。298-Phase3 は hold_needs_pack 配下、299-QA は observe 配下、300-COST は future_user_go 配下。
 
-# === 以下、298-Phase3 entry は categorical には HOLD_NEEDS_PACK ===
+# === BELOW: this entry was moved to hold_needs_pack section (see line below). Kept here as anchor for the deploy-ready Acceptance Pack details. ===
 
-_298_phase3_categorical_hold_needs_pack:
+_298_phase3_pack_anchor_DEPRECATED:
   - id: 298-MAIL-STORM-Phase3-deploy-pack
     status: HOLD_NEEDS_PACK  # 1 Pack 条件付き段階化、user 確認 1 回(GO/HOLD/REJECT)で完結予定
     decision_owner: user
@@ -187,6 +185,22 @@ ready:
 # HOLD_NEEDS_PACK(user GO 必須、Pack 未完成、近期 READY 昇格候補)
 # ============================================
 hold_needs_pack:
+  - id: 298-MAIL-STORM-Phase3-deploy-pack
+    status: HOLD_NEEDS_PACK
+    decision_owner: user
+    execution_owner: Codex
+    evidence_owner: Claude
+    user_go_required: true
+    user_go_reason: PROD_DEPLOY+FLAG_ENV+MAIL_ROUTING_MAJOR
+    severity: P1
+    pack_completion: "80%(Claude 一次受けで 18 項目 + Phase 3 必須 10 step + MAIL_BUDGET 5 項目 整備済)"
+    pack_anchor: "OPS_BOARD.yaml `_298_phase3_pack_anchor_DEPRECATED:` 配下に詳細 yaml(明日 user 提示時の参照元)"
+    impl_status: "完了(d44594a impl + ffeba45 deploy Pack final、push 済、Claude 追認 pytest +0 regression)"
+    evidence: "d44594a / ffeba45 push / pytest baseline 3 failures pre-existing(299-QA 起票)/ 不変方針 全部維持確認"
+    next_action: "明日朝(2026-05-02 06:00 JST 頃)Pack を user に 1 行提示 → GO/HOLD/REJECT → Codex deploy 便 fire → 段階自動進行"
+    next_review_at: "2026-05-02 06:00 JST"
+    expiry: "2026-05-02 09:00 JST(第二波 recurrent 前)"
+
   - id: 290-QA-deploy
     status: HOLD_NEEDS_PACK
     decision_owner: user

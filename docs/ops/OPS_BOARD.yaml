@@ -23,7 +23,41 @@ updated_by: "Claude"
 # ACTIVE(最大 2 件)
 # ============================================
 active:
-  []  # 本日 active 0(運用 OS 立て直し主目的)。298-Phase3 は hold_needs_pack 配下、299-QA は observe 配下、300-COST は future_user_go 配下。
+  - id: 298-Phase3-deploy
+    status: ACTIVE
+    decision_owner: user  # deploy 自体の最終判断、本日 user GO 受領済(11:00 JST)
+    execution_owner: Codex  # bg bpn4zeuqg、Claude 追認
+    evidence_owner: Claude
+    user_go_required: true  # 受領済
+    user_go_reason: PROD_DEPLOY+FLAG_ENV+MAIL_ROUTING_MAJOR
+    severity: P1
+    phase: "1 Pack 段階化 deploy(image rebuild → flag OFF deploy → 観察 → 条件 OK で flag ON → 観察)"
+    progress: "Codex deploy 便 fire 中(bg bpn4zeuqg、~30-60 min 想定)、完了で Claude 追認 + 1 行 user resolved 通知"
+    pack_completion_target: "deploy 完了で 100%(本日中)"
+    finalize_required_items:
+      - "1. latest HEAD(ffeba45)fresh pytest(Claude read-only 実行、failures count 記録)"
+      - "2. pre-existing 3 failures の 299-QA 起票記録(本日 commit 済 verify)"
+      - "3. clean build 手順(POLICY §8 list、git stash -u or /tmp/<commit_hash> clean export、deploy 対象 commit が ffeba45 のみ)"
+      - "4. HOLD ticket 該当 commit 混入なし確認(git log <prev_image_commit>..ffeba45)"
+      - "5. rollback target image SHA(:4be818d publish-notice 旧)+ env rollback コマンド"
+      - "6. flag OFF deploy 手順(image rebuild + job update、env 変更 0)"
+      - "7. 観察条件(2-3 trigger 観察、sent / errors / 289 / Team Shiny / Gemini call delta=0 / silent skip 0)"
+      - "8. flag ON 条件(step 7 全条件 OK で同一 Pack 内 自動進行、user 再確認なし)"
+      - "9. mail volume impact(YES = reduction、定量予測)"
+      - "10. max mails/hour(30 通、MAIL_BUDGET §22 上限)"
+      - "11. max mails/day(100 通、同上)"
+      - "12. GCS state retention 設計(publish_notice_old_candidate_once.json の N 日 expire policy、impl は 300-COST 連動 Phase 3.1 で deploy 後 1 週間以内)"
+      - "13. stop condition(real review 減 / Team Shiny 変 / 289 emit 減 / errors > 0 / 全停止 / silent skip 増 / MAIL_BUDGET 違反)"
+      - "14. expiry(2026-05-02 09:00 JST、第二波 recurrent 前)"
+    next_action: "本日中に 14 項目 全部 evidence 揃え + Pack 100% 化 → 明日朝 USER_VISIBLE_NOW として 1 行 user 提示"
+    next_review_at: "2026-05-01 13:00 JST(Pack finalize 中間 check)"
+    expiry: "2026-05-02 06:00 JST(明日朝 user 提示前)"
+    not_in_scope_for_today:
+      - "298-Phase3 deploy 自体(Pack 完成後の user 判断まで HOLD)"
+      - "flag ON / env apply(同上)"
+      - "image rebuild(同上)"
+      - "Codex 追加 fire(本日上限超え)"
+      - "個別 ticket 進行(290 / 282 / 288 / 293 / 295 等は HOLD)"
 
 # === BELOW: this entry was moved to hold_needs_pack section (see line below). Kept here as anchor for the deploy-ready Acceptance Pack details. ===
 
@@ -133,28 +167,6 @@ _298_phase3_pack_anchor_DEPRECATED:
 # OBSERVE(最大 1 件、production health 統合)
 # ============================================
 observe:
-  - id: 299-QA-postgame-strict-3-failures
-    status: OBSERVE
-    decision_owner: Claude
-    execution_owner: Claude
-    evidence_owner: Claude
-    user_go_required: false
-    user_go_reason: n/a
-    severity: P2
-    started_at: "2026-05-01 10:25 JST(P1 mail storm 真因解析中に発見)"
-    evidence: |
-      - tests/test_postgame_strict_template.py で 3 failures(本日 Claude 自身で git stash + pytest 再現確認、HEAD baseline でも同一 3 failures)
-      - failure 内容:rss_fetcher.py:4983 "postgame_strict: parse_fail reason=non_json_wrapper -> review"
-      - failing tests:
-        * PostgameStrictTemplateTests::test_strict_feature_flag_on_postgame_uses_strict_template_path
-        * PostgameStrictTemplateTests::test_strict_on_empty_response_returns_review_sentinel
-        * PostgameStrictTemplateTests::test_strict_on_parse_fail_returns_review_sentinel
-      - 298-Phase2 impl とは無関係(scope 外 rss_fetcher 経由)、298 Pack 内で「pre-existing として証跡化」記録済
-      - POLICY §10「P0 Safety incident 検出時必須起票」遵守
-    next_action: "production_health_observe 17:00 JST に統合観察(silent skip / 実際の publish 影響 / 真因仮説)"
-    next_review_at: "2026-05-01 17:00 JST"
-    expiry: "production_health_observe 結果 + 24h(2026-05-02 17:00 JST)"
-
   - id: production_health_observe
     status: OBSERVE
     decision_owner: Claude
@@ -163,7 +175,7 @@ observe:
     user_go_required: false
     user_go_reason: n/a
     evidence: "289 24h sent=172 errors=0 silent=0 / Gmail sample 10+ thread / Team Shiny 維持 / cache_hit 99% (498/500) / env 期待値通り"
-    integrated_targets:
+    integrated_targets:  # 含む sub-observes(POLICY OBSERVE 最大 1 統合 + sub)
       - "289-OBSERVE 24h sent/errors/silent"
       - "282-COST flag OFF live 挙動不変"
       - "205-COST cursor scan 動作"
@@ -171,7 +183,22 @@ observe:
       - "277-QA rescue 効果(290 deploy 後)"
       - "281-QA <24h positive case"
       - "290-QA NOT_DEPLOYED status"
-    next_action: "2026-05-01 17:00 JST に 1 度 read-only check、異常 0 なら ops reset close 確定"
+    sub_observe_items:  # 独立 ticket だが本観察に統合(POLICY OBSERVE 1 件遵守)
+      - id: 299-QA-postgame-strict-3-failures
+        severity: P2
+        started_at: "2026-05-01 10:25 JST(P1 mail storm 真因解析中に発見)"
+        evidence: |
+          - tests/test_postgame_strict_template.py で 3 failures(Claude 自身で git stash + pytest 再現確認、HEAD baseline でも同一 3 failures)
+          - failure 内容:rss_fetcher.py:4983 "postgame_strict: parse_fail reason=non_json_wrapper -> review"
+          - failing tests:
+            * test_strict_feature_flag_on_postgame_uses_strict_template_path
+            * test_strict_on_empty_response_returns_review_sentinel
+            * test_strict_on_parse_fail_returns_review_sentinel
+          - 298-Phase2 impl とは無関係(scope 外 rss_fetcher 経由)、Pack に pre-existing 証跡化済
+          - POLICY §10「P0 Safety incident 検出時必須起票」遵守
+        next_action: "本観察 17:00 JST 内で silent skip / publish 影響 / 真因仮説 統合確認"
+        expiry: "production_health_observe 結果 + 24h(2026-05-02 17:00 JST)"
+    next_action: "2026-05-01 17:00 JST に 1 度 read-only check、299-QA sub_observe も同時、異常 0 なら ops reset close 確定"
     next_review_at: "2026-05-01 17:00 JST"
     expiry: "2026-05-01 17:00 JST"
 

@@ -24,6 +24,10 @@
 11:00 | docs/ops/ update v3 | 298+299+300 | POLICY §17 一次受け §18 18 項目 §19 体感事故 §20 本日 GO scope §21 正本階層 §22 MAIL_BUDGET §23 user 通知絞り込み / TEMPLATE 18 項目化 / INCIDENT_LIBRARY.md 新規 / 299-QA OBSERVE 起票 / 300-COST FUTURE 起票 / 298-Phase3 Pack 18+5 項目 OPS_BOARD embed | commit + push
 11:10 | 運用 OS MVP 完了報告 | - | user 11:30 期限内 / ACTIVE 0 / OBSERVE 2 / READY 0 / HOLD_NEEDS_PACK 4 / FUTURE_USER_GO 7 / FROZEN 16 / DONE 5 / mail storm 停止確認 / user 必要判断 = 明日朝 298-Phase3 1 Pack | -
 11:20 | structural cleanup | 298-Phase3 / RUNBOOK | OPS_BOARD 298-Phase3 を hold_needs_pack 配下に short entry で追加(詳細 pack は anchor 配下維持)/ NEXT_SESSION_RUNBOOK §1 必読 + §7 関連 doc を POLICY §21 §24 整合化 / CURRENT_STATE HOLD_NEEDS_PACK + FUTURE_USER_GO 表 整合化(298-Phase3 + 300-COST 反映)| commit + push
+12:00 | mail status verify | - | 09:55-10:55 JST 約 1h sent=0 連続 + 10:25 sent=1(通常 review 単発)/ MAIL_BUDGET 30/h 内、storm 終息確定、第二波 5/2 09:00 想定変わらず | user 「mail OK?」確認
+12:05 | user GO Phase3 deploy | 298-Phase3 | 「デグレなしでデプロイをやって」受領、Claude 一次受け、Codex deploy 便 fire 開始 | 報告 → fire
+12:10 | Codex Phase 3 deploy fire | 298-Phase3 | bg bpn4zeuqg / image rebuild from ffeba45 → flag OFF deploy → 2-3 trigger 観察 → 条件 OK で flag ON → 1-2 trigger 観察、不変方針 全部維持 | Codex 完了待ち、Claude 並行で運用立て直し継続
+12:15 | docs/ops/ update v6 | 298-Phase3 | OPS_BOARD active entry を Pack finalize → deploy 進行中に書換 / CURRENT_STATE USER_VISIBLE_NOW 0 件 + HOLD_NEEDS_PACK 3 + FUTURE_USER_GO 7 の 3 分類化 + 58→29 差分 1 行説明 / OBSERVE 統合(299-QA を sub_observe_items 配下) | commit + push
 ```
 
 ## hotfix 経過 evidence(数値)

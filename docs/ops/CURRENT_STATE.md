@@ -29,9 +29,10 @@
 
 | # | ticket | phase | status | next_review_at |
 |---|---|---|---|---|
-| 1 | **298-MAIL-STORM-Phase3-deploy-pack**(P1)| 1 Pack 条件付き段階化、本日 Pack 整備のみ、deploy は明日 | Phase 2 impl + push 完了(`d44594a` + `ffeba45`)、Phase 3 Pack 18+5 項目 OPS_BOARD entry に embed 済、明日朝 user 1 行提示 | 2026-05-02 06:00 JST |
+| 1 | **298-Phase3-deploy**(P1) | 1 Pack 段階化 deploy 進行中(image rebuild → flag OFF → 観察 → 条件 OK で flag ON → 観察)| Codex deploy 便 fire(bg `bpn4zeuqg`)、想定 30-60 min、完了で Claude 追認 + 1 行 user resolved 通知 | 2026-05-01 12:30 JST(deploy 完了想定)|
 
-本日 active 1(298-Phase3 Pack 整備、本日 deploy しない、Codex 追加 fire しない)。
+本日 active 1(298-Phase3 deploy 進行中、第二波 5/2 09:00 JST 防止 目的)。
+他は HOLD / FROZEN / DONE 維持。Claude 並行作業は doc-only / read-only / Pack 整理 / チケット整理 範囲。
 
 ### Phase 1 完了(HOLD で自然終息)/ Phase 2 完了(impl + push)
 
@@ -155,14 +156,19 @@
 
 ---
 
-## user に今見せる判断(Acceptance Pack 2 件)
+## user に今見せる判断(USER_VISIBLE_NOW = 0 件、本日 user 接点なし)
 
-1. **298-Phase1**(即時止血 env-only):real review 影響あり、自律 GO 8 条件のうち「既存通知全停止ではない」境界で安全側 user GO 求める
-2. **298-Phase2**(恒久対策 code fix):Codex B Option B(persistent sent ledger)、PROD_DEPLOY+FLAG_ENV、Codex 実装便 + image rebuild + deploy
+| view category | 件数 | 内容 |
+|---|---|---|
+| **USER_VISIBLE_NOW**(= READY 同義、user 即提示) | **0** | 本日 user に見せる判断なし。298-Phase3 deploy 進行中、完了で resolved 1 行通知のみ |
+| HOLD_NEEDS_PACK(user に見せない、Pack 未完成) | 3 | 290-QA deploy / 282-COST flag ON / 288-INGEST source 追加 |
+| FUTURE_USER_GO(user に見せない、Pack 提示 timing 未到来) | 7 | 293-COST / 295-QA / 296-codex-shadow / 229-COST-C / 278-279-280 / 264 / 300-COST |
 
-判断は最終報告 10 項目の中で 1 行に圧縮提示。
+→ **本日 user 接点 0 件**(POLICY §17 / §23 user 通知絞り込み遵守)。明日朝以降の Acceptance Pack 提示候補は 17:00 JST production_health_observe 結果次第。
 
-その後の Acceptance Pack 提示候補:**290-QA deploy**(production_health_observe 17:00 結果 + 298 安定後)。
+## 58 → 29 board entries 圧縮 差分(1 行説明)
+
+58 元 ticket → 29 board entries(active 1 + observe 1 + ready 0 + hold_needs_pack 3 + future_user_go 7 + frozen 16 + done 5 - sub-observe 統合 1 + 本日新規 4 起票:298-Phase3 / 299-QA / 300-COST / ops_reset = -29 件純減、内訳 = 重複統合 + 完了 close + DEEP_FROZEN 21 件別 view 化 + active board 6 categories へ整理)。
 
 ---
 

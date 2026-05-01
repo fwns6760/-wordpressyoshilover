@@ -224,8 +224,8 @@ observe:
             * test_strict_on_parse_fail_returns_review_sentinel
           - 298-Phase2 impl とは無関係(scope 外 rss_fetcher 経由)
           - POLICY §10「P0 Safety incident 検出時必須起票」適用は妥当だが、結果 transient → flaky 範疇に再分類提案(POLICY §10 細分化は deferred、本日 HOLD)
-        flaky_judgment_status: "保留(本観察 17:00 JST で再現性確認)"
-        next_action: "17:00 JST 本観察で再 pytest 走行、再現すれば真因解析、再現しなければ flaky 判定で OBSERVE close"
+        flaky_judgment_status: "Codex Lane A bog1ws7xr で flaky 解析進行中(read-only / pytest 2 round / 真因仮説 / 再現条件 / 観察条件 / close 条件)"
+        next_action: "Codex Lane A 完了 → 真因仮説 + 観察条件 evidence 揃う → 17:00 production_health_observe で最終 close 判定"
         expiry: "production_health_observe 結果 + 24h(2026-05-02 17:00 JST)"
     next_action: "2026-05-01 17:00 JST に 1 度 read-only check、299-QA sub_observe も同時、異常 0 なら ops reset close 確定"
     next_review_at: "2026-05-01 17:00 JST"
@@ -359,11 +359,13 @@ future_user_go:
     user_go_reason: PROD_DEPLOY+COST_INCREASE  # actually decrease, but classification 該当
     severity: P2
     started_at: "2026-05-01 10:30 JST(P1 mail storm root cause 解析後 deferred 起票)"
+    analysis_status: "Codex Lane B btdil79om で source-side 解析進行中(read-only / src/guarded_publish_runner.py */5 再評価 logic / cost 見積 / Option C-narrow impl 案 / rollback plan)"
     evidence: |
       - 真因:guarded-publish job が */5 trigger ごとに ~100 件の old backlog post を skip 評価 → fresh ts append
       - Cloud Run job 実行 cost + GCS write cost が毎回発生
       - 298 Phase 2/3 は sink-side(publish-notice scanner)で抑制、source 側は変更なし
-      - Codex B Option C(idempotent guarded history append)で source-side fix 可能(検討時 blast radius 高で却下)
+      - 298 Phase3 ROLLED_BACK_AFTER_REGRESSION 確定後、source-side fix の重要性増(明日 09:00 第二波 risk OPEN)
+      - Codex B Option C(idempotent guarded history append)で source-side fix 可能(検討時 blast radius 高で却下、Lane B で blast radius 局所化案を再評価中)
     proposed_design: |
       Option C 再評価 + narrow 化検討:
         - guarded-publish runner で「status / judgment / hold_reason / age 全部前回 record と同じ」なら ts 再 append しない

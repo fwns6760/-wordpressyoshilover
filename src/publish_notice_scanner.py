@@ -67,6 +67,9 @@ _OLD_CANDIDATE_MIN_AGE_DAYS_ENV = "PUBLISH_NOTICE_OLD_CANDIDATE_MIN_AGE_DAYS"
 _OLD_CANDIDATE_MIN_AGE_DAYS_DEFAULT = 3
 _OLD_CANDIDATE_LEDGER_PATH_ENV = "PUBLISH_NOTICE_OLD_CANDIDATE_LEDGER_PATH"
 _OLD_CANDIDATE_LEDGER_DEFAULT_PATH = Path("/tmp/pub004d/publish_notice_old_candidate_once.json")
+_OLD_CANDIDATE_LEDGER_TTL_ENV_FLAG = "ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_LEDGER_TTL"
+_OLD_CANDIDATE_LEDGER_TTL_DAYS_ENV = "PUBLISH_NOTICE_OLD_CANDIDATE_LEDGER_TTL_DAYS"
+_OLD_CANDIDATE_LEDGER_TTL_DAYS_DEFAULT = 7
 _GUARDED_PUBLISH_REVIEW_SUBJECT_RE = re.compile(r"^【[^】]+】")
 _EXCLUDED_GUARDED_HOLD_REASONS = frozenset(
     {
@@ -114,7 +117,7 @@ class GuardedPublishHistoryScanResult:
     emitted: list[PublishNoticeRequest]
     skipped: list[tuple[int | str, str]]
     history_after: dict[str, str]
-    old_candidate_ledger_after: dict[str, str] | None = None
+    old_candidate_ledger_after: dict[str, Any] | None = None
     old_candidate_ledger_path: Path | None = None
     old_candidate_ledger_write_needed: bool = False
     cursor_before: str | None = None
@@ -272,6 +275,25 @@ def _resolve_old_candidate_ledger_path(value: str | Path | None = None) -> Path:
     return _OLD_CANDIDATE_LEDGER_DEFAULT_PATH
 
 
+def _publish_notice_old_candidate_ledger_ttl_enabled() -> bool:
+    return str(os.environ.get(_OLD_CANDIDATE_LEDGER_TTL_ENV_FLAG, "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _resolve_old_candidate_ledger_ttl_days() -> int:
+    env_value = str(os.environ.get(_OLD_CANDIDATE_LEDGER_TTL_DAYS_ENV, "")).strip()
+    if not env_value:
+        return _OLD_CANDIDATE_LEDGER_TTL_DAYS_DEFAULT
+    try:
+        return max(1, int(env_value))
+    except ValueError:
+        return _OLD_CANDIDATE_LEDGER_TTL_DAYS_DEFAULT
+
+
 def _post_gen_validate_notification_enabled() -> bool:
     return str(os.environ.get(_POST_GEN_VALIDATE_NOTIFICATION_ENV_FLAG, "")).strip().lower() in {
         "1",
@@ -405,6 +427,51 @@ def _write_history(path: Path, history: Mapping[str, str]) -> None:
         encoding="utf-8",
     )
     os.replace(tmp_path, path)
+
+
+def _load_old_candidate_ledger(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("publish notice old candidate ledger must be a JSON object")
+    return {str(key): value for key, value in payload.items()}
+
+
+def _write_old_candidate_ledger(path: Path, ledger: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = Path(f"{path}.tmp")
+    tmp_path.write_text(
+        json.dumps(dict(sorted(ledger.items())), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(tmp_path, path)
+
+
+def _old_candidate_ledger_entry_ts(entry: Any) -> datetime | None:
+    if isinstance(entry, Mapping):
+        return _parse_datetime_to_jst(entry.get("ts"))
+    if isinstance(entry, (str, datetime)):
+        return _parse_datetime_to_jst(entry)
+    return None
+
+
+def _prune_old_candidate_ledger(
+    ledger: Mapping[str, Any],
+    *,
+    now: datetime,
+    ttl_days: int,
+) -> tuple[dict[str, Any], int, datetime]:
+    cutoff = now - timedelta(days=ttl_days)
+    pruned: dict[str, Any] = {}
+    removed_count = 0
+    for post_id, entry in ledger.items():
+        parsed = _old_candidate_ledger_entry_ts(entry)
+        if parsed is not None and parsed < cutoff:
+            removed_count += 1
+            continue
+        pruned[str(post_id)] = entry
+    return pruned, removed_count, cutoff
 
 
 def _iter_jsonl_lines_reverse(path: Path, *, chunk_size: int = 65536) -> Iterator[str]:
@@ -1141,29 +1208,49 @@ def scan_guarded_publish_history(
         now=current_now,
     )
     old_candidate_once_enabled = _publish_notice_old_candidate_once_enabled()
+    old_candidate_ledger_ttl_enabled = _publish_notice_old_candidate_ledger_ttl_enabled()
     old_candidate_min_age_days = _resolve_old_candidate_min_age_days()
     old_candidate_ledger_file = (
-        _resolve_old_candidate_ledger_path() if old_candidate_once_enabled else None
+        _resolve_old_candidate_ledger_path()
+        if old_candidate_once_enabled or old_candidate_ledger_ttl_enabled
+        else None
     )
     current_old_candidate_ledger = (
-        _load_history(old_candidate_ledger_file)
+        _load_old_candidate_ledger(old_candidate_ledger_file)
         if old_candidate_ledger_file is not None
         else {}
     )
+    old_candidate_ledger_prune_write_needed = False
+    if old_candidate_ledger_ttl_enabled and old_candidate_ledger_file is not None:
+        current_old_candidate_ledger, pruned_count, cutoff = _prune_old_candidate_ledger(
+            current_old_candidate_ledger,
+            now=current_now,
+            ttl_days=_resolve_old_candidate_ledger_ttl_days(),
+        )
+        old_candidate_ledger_prune_write_needed = pruned_count > 0
+        _log_event(
+            "permanent_dedup_ttl_prune",
+            count=pruned_count,
+            cutoff_ts=cutoff.isoformat(),
+        )
     class_reserve_enabled = _publish_notice_class_reserve_enabled()
     resolved_max_per_run = _resolve_review_max_per_run(max_per_run)
     if resolved_max_per_run <= 0:
         if write_history and not capture_only:
             _write_history(history_file, current_history)
+            if old_candidate_ledger_prune_write_needed and old_candidate_ledger_file is not None:
+                _write_old_candidate_ledger(old_candidate_ledger_file, current_old_candidate_ledger)
         return GuardedPublishHistoryScanResult(
             emitted=[],
             skipped=[],
             history_after=current_history,
             old_candidate_ledger_after=(
-                dict(current_old_candidate_ledger) if old_candidate_once_enabled else None
+                dict(current_old_candidate_ledger)
+                if old_candidate_ledger_file is not None
+                else None
             ),
             old_candidate_ledger_path=old_candidate_ledger_file,
-            old_candidate_ledger_write_needed=False,
+            old_candidate_ledger_write_needed=old_candidate_ledger_prune_write_needed,
             cursor_before=_read_cursor(guarded_cursor_file),
             cursor_after=_read_cursor(guarded_cursor_file),
             cursor_path=guarded_cursor_file,
@@ -1200,7 +1287,7 @@ def scan_guarded_publish_history(
     skipped_by_judgment_filter = 0
     scanned_records = 0
     hit_max_per_run = False
-    old_candidate_ledger_write_needed = False
+    old_candidate_ledger_write_needed = old_candidate_ledger_prune_write_needed
 
     for entry in history_entries:
         if not class_reserve_enabled and len(emitted) >= resolved_max_per_run:
@@ -1324,7 +1411,7 @@ def scan_guarded_publish_history(
         emitted = selected
         next_history = dict(current_history)
         next_old_candidate_ledger = dict(current_old_candidate_ledger)
-        old_candidate_ledger_write_needed = False
+        old_candidate_ledger_write_needed = old_candidate_ledger_prune_write_needed
         for request in emitted:
             post_key = str(request.post_id)
             next_history[post_key] = review_recorded_at_iso
@@ -1352,11 +1439,10 @@ def scan_guarded_publish_history(
     if write_history and not capture_only:
         _write_history(history_file, next_history)
         if (
-            old_candidate_once_enabled
+            old_candidate_ledger_file is not None
             and old_candidate_ledger_write_needed
-            and old_candidate_ledger_file is not None
         ):
-            _write_history(old_candidate_ledger_file, next_old_candidate_ledger)
+            _write_old_candidate_ledger(old_candidate_ledger_file, next_old_candidate_ledger)
     cursor_write_needed = bool(cursor_after) and cursor_after != cursor_before
     if write_cursor and not capture_only and cursor_write_needed and cursor_after is not None:
         _write_cursor(guarded_cursor_file, cursor_after)
@@ -1394,7 +1480,9 @@ def scan_guarded_publish_history(
         emitted=emitted,
         skipped=skipped,
         history_after=next_history,
-        old_candidate_ledger_after=next_old_candidate_ledger if old_candidate_once_enabled else None,
+        old_candidate_ledger_after=(
+            next_old_candidate_ledger if old_candidate_ledger_file is not None else None
+        ),
         old_candidate_ledger_path=old_candidate_ledger_file,
         old_candidate_ledger_write_needed=old_candidate_ledger_write_needed,
         cursor_before=cursor_before,
@@ -2076,9 +2164,12 @@ def scan(
         if (
             old_candidate_ledger_after is not None
             and review_scan.old_candidate_ledger_path is not None
-            and any(post_id in selected_review_ids for post_id in review_scan.old_candidate_ledger_post_ids)
+            and (
+                review_scan.old_candidate_ledger_write_needed
+                or any(post_id in selected_review_ids for post_id in review_scan.old_candidate_ledger_post_ids)
+            )
         ):
-            _write_history(review_scan.old_candidate_ledger_path, old_candidate_ledger_after)
+            _write_old_candidate_ledger(review_scan.old_candidate_ledger_path, old_candidate_ledger_after)
         if (
             review_scan.cursor_write_needed
             and review_scan.cursor_path is not None
@@ -2106,7 +2197,10 @@ def scan(
             and review_scan.old_candidate_ledger_path is not None
             and review_scan.old_candidate_ledger_after is not None
         ):
-            _write_history(review_scan.old_candidate_ledger_path, review_scan.old_candidate_ledger_after)
+            _write_old_candidate_ledger(
+                review_scan.old_candidate_ledger_path,
+                review_scan.old_candidate_ledger_after,
+            )
         if review_scan.cursor_write_needed and review_scan.cursor_path is not None and review_scan.cursor_after is not None:
             _write_cursor(review_scan.cursor_path, review_scan.cursor_after)
         if (

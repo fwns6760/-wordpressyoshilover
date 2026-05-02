@@ -480,3 +480,9 @@ gcloud run jobs update codex-shadow --region=asia-northeast1 --project=baseballs
 - **codex-shadow 完全停止 + 削除**:不採用、本来意図(post_id 単位 audit)は YOSHILOVER 品質改善に valuable
 - **Claude / 会議室 Codex に統合**:不採用、24h 自動稼働 + GCP 環境という固有特性を活かせない、session 離散な Claude には代替不可
 - **WP write 権限維持で write 機能拡張**:不採用、観察不能なまま write は debt 拡大、まず read-only で観察可能化 + 信頼確立後の判断
+
+## Folder cleanup note(2026-05-02)
+
+- Active folder????? waiting ????
+- ????????deploy?env????????
+- ?????? ticket ? status / blocked_by / user GO ??????

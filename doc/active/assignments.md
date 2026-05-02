@@ -1,6 +1,6 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-04-30 JST
+最終更新: 2026-05-02 JST
 
 ## 最初に読む
 
@@ -8,11 +8,16 @@
 - `doc/README.md`
 - `doc/active/assignments.md`
 
+## folder cleanup note(2026-05-02)
+
+- Active folderから、明確な HOLD / BACKLOG / DESIGN_ONLY / READY_FOR_USER_APPLY / READY_FOR_AUTH_EXECUTOR を waiting へ移動。
+- `205-COST` は done/2026-05 へ移動。
+- READY / REVIEW_NEEDED で現場が拾う可能性のある ticket は勝手に close していない。
+
 ## いま active に残すもの
 
 | ticket | status | 判定 | 次 action |
 |---|---|---|---|
-| **234-impl-7 probable_starter / pregame body hardening** | READY_FOR_AUTH_EXECUTOR | **必要。repo実装済み** | 試合前・予告先発系の source anchor / post-gen check 実装済み。次は image rebuild 判断 |
 | **245 front hide internal auto-post category label** | READY | **必要。いま動かす** | Front画面に内部カテゴリ「自動投稿」が出るのを止める。カテゴリ削除ではなく表示除外のみ |
 | **277-QA title player name backfill** | REVIEW_NEEDED | **必要。impl 済み** | helper + fetcher integration + 1826 tests pass。次は Claude review と push 判断 |
 | **279-QA mail subject clarity** | READY_FOR_FIX | **必要。277 の次** | publish-notice 件名だけで公開済み / review / hold / 古い候補を判別できるようにする。今回は doc-only |
@@ -53,47 +58,16 @@
 | **256-QA manager/player quote strict subset** | HOLD。250 系の既存 ticket と採番衝突しないよう 256 に採番 | 247-QA の試合日観察後、コメント系を短い事実記事として分ける価値がある時 |
 | **260-MKT fan-original article types and templates** | HOLD / design only。RC / T1 / 262-QA / 263-QA observation 完了 + user 明示 GO 後に 261-MKT-PILOT 起動判断 | 大手新聞の後追いではない巨人ファン向け独自記事型 6 型のテンプレ設計、実装しない |
 | **261-MKT-PILOT (予約)** | HOLD / 261-PILOT 起動条件 達成後 RESUMABLE | 260-MKT で設計した 6 型から手動/半自動で 3 型 pilot、3-5 本評価、実装ではない |
+| **234-impl-7 probable_starter / pregame body hardening** | READY_FOR_AUTH_EXECUTOR。repo実装済みだが残りは live handoff / observation 判断のため waiting へ移動 | live反映が必要な時だけ、Acceptance Pack と rollback target を確認して戻す |
+| **251/252/253/264/274/283/288/291/292/294/295/296** | HOLD / BACKLOG / DESIGN_ONLY / READY_FOR_USER_APPLY 系。active から waiting へ整理 | 各 ticket の解除条件または user GO が来た時 |
 
 ## いま動かす指示
 
-### 234-impl-7: repo 実装済み、live 反映待ち
+### 234-impl-7: waiting へ移動
 
-目的:
-
-- 試合前・予告先発系で、AI が未確定スコア、未確定打順、source/meta にない投手名を本文へ足すのを止める。
-- 数字・選手名は AI が考えない。source/meta にあるものだけ使う。
-
-制約:
-
-- Gemini call 追加なし
-- Web/API 追加なし
-- prompt 全体改修なし
-- template 全体一括実装なし
-- postgame / farm / notice / program / default の既存挙動を変えない
-- `git add -A` 禁止、明示 path のみ
-- デグレ厳禁
-
-write scope:
-
-- `src/fixed_lane_prompt_builder.py`
-- `src/body_validator.py`
-- `tests/test_body_validator.py`
-- `tests/test_fixed_lane_prompt_builder.py`
-- `doc/active/234-impl-7-probable-starter-pregame-body-hardening.md`
-
-acceptance:
-
-- good pregame / probable_starter fixture は通る
-- source にない score / lineup / pitcher name は fail axis になる
-- 既存 fixture fail 0
-- live deploy は別判断
-
-### Claude: live 監視 + rebuild 判断
-
-- fetcher / guarded-publish / publish-notice / draft-body-editor の failure pattern を監視
-- `ModuleNotFoundError`, `Traceback`, HTTP 500, timeout, exit(1) は即 rollback 判断
-- WP publish / draft patch / env / Scheduler / Secret / RUN_DRAFT_ONLY は勝手に変更しない
-- 234-impl-7 の live 反映時は fetcher / draft-body-editor image rebuild を検討し、/run 直接 curl は使わない
+- repo 実装済みだが、残りは live handoff / observation 判断。
+- active 実装 lane ではないため `doc/waiting/` に退避。
+- 再開時は Acceptance Pack / rollback target / post-deploy verify を確認してから扱う。
 
 ### Codex A / front-scope: 245 を実装
 

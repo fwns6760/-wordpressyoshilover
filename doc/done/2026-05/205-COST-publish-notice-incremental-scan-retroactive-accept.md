@@ -80,3 +80,9 @@ publish-notice の scan logic を **full-scan → cursor-based incremental scan*
 - 289-OBSERVE-post-gen-validate-mail-notification(本 carry の親)
 - 294-PROCESS-release-composition-gate(再発防止、本 ticket から派生)
 - doc/waiting/205-gcp-runtime-drift-audit.md(別 ticket、205 番衝突は CLAUDE.md numbering policy 違反だが既歴史)
+
+## Close summary(2026-05-02)
+
+- Live retroactive accept????? ticket?
+- ??????? 289/293/282 ??????? ticket ? active ?????
+- ???? doc-only???? / deploy / env / GCP ?????

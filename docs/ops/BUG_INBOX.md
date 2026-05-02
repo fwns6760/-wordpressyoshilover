@@ -4,6 +4,16 @@
 
 入力元: `C:/Users/fwns6/Downloads/yoshilover_degre_kaishu_memo_format.xlsm`
 
+管理Excel: `docs/ops/ヨシラバーチケット管理.xlsx`
+
+運用:
+
+- userはExcelの `01_BUG_INBOX` の「現象」に1行書くだけ。
+- `02_P1` / `03_Absorb` / `04_NewCandidate` / `05_HOLD` / `06_DONE` / `00_Summary` は仕分けビュー。
+- 次にACTIVEへ上げるのは最大2件だけ。
+- 現時点のACTIVE候補は `BUG-003 WP status mutation audit` と `BUG-004 silent skip / 候補消失の可視化確認`。
+- 他のP1候補は `P1_REVIEW` のまま保持し、ACTIVEに上げない。
+
 ## 目的
 
 userが感じた「変なバグ」「動いていないもの」「忘れたくない違和感」を、正式ticketと混ぜずに管理する。

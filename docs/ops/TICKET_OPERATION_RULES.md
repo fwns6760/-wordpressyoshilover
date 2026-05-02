@@ -104,6 +104,17 @@ deploy済みと効果確認済みを分ける。
 5. user判断が必要な変更はAcceptance Packを作る。
 6. 番号採番は最後。
 
+## Excel運用
+
+- BUG_INBOXの人間向け管理ファイルは `docs/ops/ヨシラバーチケット管理.xlsx`。
+- userは `01_BUG_INBOX` の「現象」に1行書くだけ。
+- `02_P1` / `03_Absorb` / `04_NewCandidate` / `05_HOLD` / `06_DONE` / `00_Summary` は仕分けビュー。
+- userに一覧を長く返さない。userが見るべきものは最大5件以内。
+- DONE / OBSERVE / HOLD の正常報告は不要。
+- 次にACTIVEへ上げる候補は最大2件。
+- 現時点のACTIVE候補は `BUG-003 WP status mutation audit` と `BUG-004 silent skip / 候補消失の可視化確認`。
+- 他のP1候補は `P1_REVIEW` のまま保持し、ACTIVEに上げない。
+
 ## user確認を減らすルール
 
 userに投げる前にClaudeが潰すもの:

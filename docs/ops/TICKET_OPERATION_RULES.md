@@ -6,6 +6,14 @@
 
 チケット番号・状態・フォルダ・観察・BUG_INBOX昇格を、次回Claude/Codexが迷わない形で扱う。
 
+## 関連正本
+
+- AIチーム体制: `docs/ops/AI_TEAM_OPERATION_MODEL.md`
+- user入力形式: `docs/ops/USER_INPUT_FORMAT.md`
+- ACTIVE / worker lane: `docs/ops/ACTIVE_LANE_POLICY.md`
+- BUG_INBOX: `docs/ops/BUG_INBOX.md`
+- BUG_INBOX管理Excel: `docs/ops/ヨシラバーチケット管理.xlsx`
+
 ## 番号ルール
 
 - チケット番号の破壊的な振り直しは禁止。
@@ -89,6 +97,8 @@ deploy済みと効果確認済みを分ける。
 
 - Claudeは現場責任者。
 - Codexはworkerでありmanagerではない。
+- 会議室Codexはチケット運用PMOとしてBUG_INBOX仕分けとACTIVE候補圧縮を担う。
+- 現場ClaudeはACTIVE最大2件を実行管理し、開発Codex A/Bをdispatchする。
 - ClaudeがCodex lane A/Bを管理する。
 - Codex lane idleをuserに発見させない。
 - idle時は、既存ticket内の低リスクsubtaskを探す。
@@ -122,6 +132,7 @@ deploy済みと効果確認済みを分ける。
 - 現場ClaudeはACTIVE最大2件だけ実行する。
 - 現場ClaudeはOBSERVE / HOLD / DONEの正常報告をしない。
 - 現場Claudeはstate到達、異常、rollback、USER_DECISION_REQUIREDだけ報告する。
+- doc更新だけで実行した扱いにしない。
 
 毎回のBUG_INBOX報告形式:
 

@@ -4478,6 +4478,84 @@ def _resolve_cache_metric_post_id(candidate_meta: dict[str, Any] | None) -> int 
     return None
 
 
+def _coerce_candidate_metric_post_id(value: Any) -> int | None:
+    try:
+        resolved = int(value)
+    except (TypeError, ValueError):
+        return None
+    return resolved if resolved > 0 else None
+
+
+def _derive_stable_candidate_metric_post_id(*parts: object) -> int | None:
+    normalized_parts = [str(part).strip() for part in parts if str(part or "").strip()]
+    if not normalized_parts:
+        return None
+    stable_hash = _hash_duplicate_guard_value("|".join(normalized_parts))
+    if not stable_hash:
+        return None
+    return int(stable_hash[:15], 16)
+
+
+def _resolve_gemini_candidate_post_identifiers(
+    *,
+    title: str,
+    category: str,
+    article_subtype: str,
+    source_name: str,
+    source_url: str,
+    post_context: dict | None = None,
+    source_entry: dict | None = None,
+) -> dict[str, int]:
+    contexts = [
+        context
+        for context in (post_context, source_entry)
+        if isinstance(context, dict)
+    ]
+    explicit_post_id: int | None = None
+    explicit_wp_post_id: int | None = None
+    explicit_id: int | None = None
+    for context in contexts:
+        if explicit_post_id is None:
+            explicit_post_id = _coerce_candidate_metric_post_id(context.get("post_id"))
+        if explicit_wp_post_id is None:
+            explicit_wp_post_id = _coerce_candidate_metric_post_id(context.get("wp_post_id"))
+        if explicit_id is None:
+            explicit_id = _coerce_candidate_metric_post_id(context.get("id"))
+
+    resolved: dict[str, int] = {}
+    if explicit_post_id is not None:
+        resolved["post_id"] = explicit_post_id
+    if explicit_wp_post_id is not None:
+        resolved["wp_post_id"] = explicit_wp_post_id
+    if explicit_id is not None:
+        resolved["id"] = explicit_id
+    if resolved:
+        if "post_id" not in resolved:
+            if explicit_wp_post_id is not None:
+                resolved["post_id"] = explicit_wp_post_id
+            elif explicit_id is not None:
+                resolved["post_id"] = explicit_id
+        return resolved
+
+    if not contexts:
+        return {}
+
+    history_url = ""
+    if isinstance(post_context, dict):
+        history_urls = post_context.get("history_urls")
+        if isinstance(history_urls, list):
+            history_url = next((str(url).strip() for url in history_urls if str(url).strip()), "")
+    stable_post_id = _derive_stable_candidate_metric_post_id(
+        history_url,
+        source_url,
+        category,
+        article_subtype,
+        title,
+        source_name,
+    )
+    return {"post_id": stable_post_id} if stable_post_id is not None else {}
+
+
 def _build_gemini_preflight_candidate_meta(
     *,
     title: str,
@@ -4490,6 +4568,7 @@ def _build_gemini_preflight_candidate_meta(
     has_game: bool,
     source_links: list[dict] | None = None,
     source_entry: dict | None = None,
+    post_context: dict | None = None,
     published_at: datetime | None = None,
     duplicate_guard_context: dict | None = None,
 ) -> dict[str, Any]:
@@ -4504,7 +4583,7 @@ def _build_gemini_preflight_candidate_meta(
             duplicate_guard_context.get("existing_publish_same_source_url")
             or duplicate_guard_context.get("source_url_already_published")
         )
-    return {
+    candidate_meta = {
         "title": title,
         "summary": summary,
         "body_text": summary,
@@ -4523,6 +4602,18 @@ def _build_gemini_preflight_candidate_meta(
         "existing_publish_same_source_url": existing_publish_same_source_url,
         "is_giants_related": is_giants_related(source_blob, source_name=source_name, post_url=resolved_source_url),
     }
+    candidate_meta.update(
+        _resolve_gemini_candidate_post_identifiers(
+            title=title,
+            category=category,
+            article_subtype=article_subtype,
+            source_name=source_name,
+            source_url=resolved_source_url,
+            post_context=post_context,
+            source_entry=source_entry,
+        )
+    )
+    return candidate_meta
 
 
 def _gemini_cache_lookup(
@@ -4686,6 +4777,10 @@ def _gemini_text_with_cache(
     }
     preflight_candidate: dict[str, Any] | None = None
     budget_post_id = _resolve_cache_metric_post_id(candidate_meta)
+    logger.info(
+        "per_post_budget_meta_resolution: post_id=%s",
+        budget_post_id if budget_post_id is not None else "None",
+    )
     if candidate_meta is not None:
         preflight_candidate = dict(candidate_meta)
         preflight_candidate.setdefault("source_url", source_url)
@@ -5159,6 +5254,7 @@ def _maybe_render_postgame_article_parts(
     source_url: str,
     source_type: str,
     source_entry: dict | None,
+    post_context: dict | None = None,
     source_links: list[dict] | None = None,
     published_at: datetime | None = None,
     duplicate_guard_context: dict | None = None,
@@ -5218,6 +5314,7 @@ def _maybe_render_postgame_article_parts(
                 has_game=has_game,
                 source_links=source_links,
                 source_entry=source_entry,
+                post_context=post_context,
                 published_at=published_at,
                 duplicate_guard_context=duplicate_guard_context,
             ),
@@ -5364,6 +5461,7 @@ def _maybe_render_postgame_article_parts(
             has_game=has_game,
             source_links=source_links,
             source_entry=source_entry,
+            post_context=post_context,
             published_at=published_at,
             duplicate_guard_context=duplicate_guard_context,
         ),
@@ -9033,6 +9131,7 @@ def generate_article_with_gemini(
     source_type: str = "news",
     tweet_url: str = "",
     source_entry: dict | None = None,
+    post_context: dict | None = None,
     source_links: list[dict] | None = None,
     published_at: datetime | None = None,
     duplicate_guard_context: dict | None = None,
@@ -9157,6 +9256,7 @@ def generate_article_with_gemini(
                 has_game=has_game,
                 source_links=source_links,
                 source_entry=source_entry,
+                post_context=post_context,
                 published_at=published_at,
                 duplicate_guard_context=duplicate_guard_context,
             ),
@@ -9747,7 +9847,7 @@ X検索で「{query_short} 巨人」に関するファンの声を{fan_reaction_
 # ──────────────────────────────────────────────────────────
 # ニュース記事ブロックHTML生成
 # ──────────────────────────────────────────────────────────
-def build_news_block(title: str, summary: str, url: str, source_name: str, category: str = "コラム", og_image_url: str = "", media_id: int = 0, extra_images: list = None, has_game: bool = True, article_ai_mode_override: str | None = None, source_links: list[dict] | None = None, source_day_label: str = "", source_type: str = "news", media_quotes: list[dict] | None = None, source_entry: dict | None = None, published_at: datetime | None = None, duplicate_guard_context: dict | None = None) -> tuple[str, str]:
+def build_news_block(title: str, summary: str, url: str, source_name: str, category: str = "コラム", og_image_url: str = "", media_id: int = 0, extra_images: list = None, has_game: bool = True, article_ai_mode_override: str | None = None, source_links: list[dict] | None = None, source_day_label: str = "", source_type: str = "news", media_quotes: list[dict] | None = None, source_entry: dict | None = None, post_context: dict | None = None, published_at: datetime | None = None, duplicate_guard_context: dict | None = None) -> tuple[str, str]:
     import re
     summary_clean = re.sub(r"<[^>]+>", "", summary).strip()
     article_subtype = _detect_article_subtype(title, summary_clean, category, has_game)
@@ -9822,6 +9922,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             source_url=url,
             source_type=source_type,
             source_entry=source_entry,
+            post_context=post_context,
             source_links=source_links,
             published_at=published_at,
             duplicate_guard_context=duplicate_guard_context,
@@ -9902,6 +10003,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 source_type=source_type,
                 tweet_url=url,
                 source_entry=source_entry,
+                post_context=post_context,
                 source_links=source_links,
                 published_at=published_at,
                 duplicate_guard_context=duplicate_guard_context,
@@ -14443,6 +14545,7 @@ def _main(args, logger):
                 source_type=source_type,
                 media_quotes=media_quotes,
                 source_entry=item.get("entry"),
+                post_context=item,
                 published_at=item.get("published_at"),
                 duplicate_guard_context=item.get("duplicate_guard_context"),
             )

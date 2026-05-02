@@ -4,18 +4,26 @@
 |---|---|
 | ticket_id | 292-OBSERVE-body-contract-fail-notification |
 | priority | P0 equivalent(silent skip 第 2 経路) |
-| status | DESIGN_DRAFTED(実装 hold、289 完遂後 user 判断) |
+| status | DESIGN_DRAFTED(parent=BUG-004+291、standalone fire 禁止) |
 | owner | Claude(audit/draft) → Codex(将来 impl) |
 | lane | OBSERVE |
-| ready_for | 289 完遂後 user 明示 GO で impl 起票 |
-| blocked_by | 289-OBSERVE 完遂(同 ledger/scan pattern を流用) |
-| doc_path | doc/active/292-OBSERVE-body-contract-fail-notification.md |
+| ready_for | 291 親契約の user GO 後に narrow impl 起票。単独 ACTIVE 化しない |
+| blocked_by | 291 親契約 hold、289/293 live visibility 確認、user GO |
+| doc_path | doc/waiting/292-OBSERVE-body-contract-fail-notification.md |
 | created | 2026-04-30 |
+| updated | 2026-05-03 |
 
 ## 目的
 
-`body_contract_validate` fail を **log だけで終わらせず**、289 と同じ通知 ledger 経路へ接続する。
-silent skip 第 2 経路を潰し、候補が user に見える化する。
+`body_contract_validate` fail を **log だけで終わらせず**、`BUG-004+291` 配下の durable ledger/log/state row 契約へ接続する。
+silent skip 第 2 経路を潰すが、**通常 mail を増やすことは目的にしない**。
+
+## 親 ticket との関係
+
+- 本 ticket は **独立 ACTIVE ではない**
+- `BUG-004+291` の解除条件に含まれる必須サブタスク
+- 方針の正本は `doc/waiting/291-OBSERVE-candidate-terminal-outcome-contract.md`
+- ここでは `body_contract_fail` 専用の durable ledger 要件だけを保持する
 
 ## 背景
 
@@ -40,46 +48,67 @@ silent skip 第 2 経路を潰し、候補が user に見える化する。
 
 ### 範囲内
 - body_contract_validate fail event の永続 ledger 出力
-- 289 と同じ pattern: 専用 ledger or 既存 `post_gen_validate_history.jsonl` 共有
-- publish-notice scan 拡張(record_type=body_contract_fail or 共通化)
-- subject prefix 「【要review｜body_contract】<source_title>」
-- skip_reason mapping: farm_result_player_unverified / farm_result_numeric_fabrication / farm_lineup_lineup_missing / その他 fail_axes
+- record_type=`body_contract_fail` / skip_layer=`body_contract` の durable row 契約
+- fail_axes / stop_reason / block-order 情報が後から引ける schema
+- local jsonl + GCS mirror or state row など、Cloud Logging 単独ではない永続経路
+- `publish=0` 原因分解で count できる集計前提
 
 ### 範囲外
 - body_contract 判定 logic 緩和(救済は別 ticket、本 ticket は通知のみ)
 - post_gen_validate 通知(289 既出)
 - preflight_skip 通知(293)
+- per-post 通常 mail 新設
+- publish-notice class reserve 追加
+
+## durable ledger の最小契約
+
+- required fields:
+  - `ts`
+  - `record_type=body_contract_fail`
+  - `skip_layer=body_contract`
+  - `source_url`
+  - `source_url_hash`
+  - `source_title`
+  - `generated_title`
+  - `category`
+  - `article_subtype`
+  - `fail_axes`
+  - `expected_first_block`
+  - `actual_first_block`
+  - `missing_required_blocks`
+  - `has_source_block`
+  - `stop_reason`
+- dedupe key: `source_url_hash + article_subtype + sorted(fail_axes)` の 24h 窓
+- terminal state: `skip_accounted`
 
 ## user-visible な受け入れ条件
 
-1. body_contract fail → ledger record(env flag ON 時)
-2. publish-notice scan で拾われ **mail emit**
-3. subject 「【要review｜body_contract】...」または 289 と同 prefix で識別可能
-4. 本文に skip_reason mapping、source_title / generated_title / source_url 表示
-5. dedup: source_url_hash + skip_reason 24h 1 度
-6. max_per_run cap、cap 超過時持ち越し
-7. env flag default OFF(289 と同 pattern、`ENABLE_BODY_CONTRACT_FAIL_NOTIFICATION` or 共通 flag)
-8. rollback: env flag remove で即時無効化
-9. silent body_contract_fail = 0(全 fail event が ledger or mail に到達 assert)
+1. body_contract fail → durable ledger record(env flag ON 時)
+2. ledger or state row だけで件数と fail reason を後追い確認できる
+3. `publish=0` 原因分解で body_contract 系件数を独立集計できる
+4. per-post 通常 mail は増やさない
+5. env flag default OFF、rollback path が明確
+6. silent body_contract_fail = 0(全 fail event が ledger/log/state row のどれかに到達 assert)
 
 ## 必須デグレ試験
 
 ### A. silent skip 解消
-- [ ] fixture: farm_result_player_unverified fail → ledger record + mail emit
+- [ ] fixture: farm_result_player_unverified fail → ledger record
 - [ ] fixture: farm_result_numeric_fabrication fail → 同上
 - [ ] fixture: farm_lineup_lineup_missing fail → 同上
 - [ ] fixture: 任意の body_contract fail event → silent 0 assert
 
 ### B. 既存通知導線維持
 - [ ] 289 post_gen_validate 通知不変
+- [ ] 293 preflight_skip 通知不変
 - [ ] publish/review/hold 通知従来通り(267-QA dedup 不変)
+- [ ] publish-notice class reserve を増やさない
 - [ ] guarded_publish_history scan 不変
-- [ ] cursor 前進不変
 
 ### C. 通知爆発防止
-- [ ] 同 source_url_hash + 同 skip_reason 24h 1 度
-- [ ] max_per_run cap 共通(289 と統合)
-- [ ] cap 超過 silent drop 0
+- [ ] 同 source_url_hash + 同 fail_axes 24h 1 度
+- [ ] per-post 通常 mail を新設しない
+- [ ] count 集計は既存 digest / summary へ吸収可能
 
 ### D. 安全系維持
 - [ ] body_contract 判定 logic 不変(本 ticket で skip 条件緩めない)
@@ -98,31 +127,32 @@ silent skip 第 2 経路を潰し、候補が user に見える化する。
 
 ## HOLD 解除条件
 
-1. 289-OBSERVE deploy + flag ON 完遂、ledger pattern 確立
-2. 289 が 24h 安定動作(通知爆発なし、Team Shiny From 維持、既存導線不変)
+1. 291 親契約の方針固定
+2. 289 / 293 の live visibility が確認済み
 3. user 明示 GO
 
 ## owner
 
-- Claude: 設計 + ticket 起票
-- Codex: ledger 接続 + scan 拡張 impl
+- Claude: 親 ticket 整理 + subtask 明文化
+- Codex: ledger 接続 impl
 - user: 受け入れ + GO/HOLD 判断
 
 ## 次に実装してよいタイミング
 
-- 289 完遂 + 24h 安定確認後
-- 291(契約)が確立する前でも、289 と同 pattern で先行実装可
-- ただし 289 の安定性が担保されないうちに 292 を被せると、silent skip 経路が複雑化するため **289 安定後** が安全
+- 291 親契約の HOLD 解除条件が揃った後
+- 289 / 293 の可視化を壊さない narrow impl としてのみ fire
+- 単独 ACTIVE 化や mail-first 実装はしない
 
 ## 不変方針(継承)
 
 - 本 ticket は **設計のみ**、本 task では impl しない
 - body_contract 判定 logic は緩めない(救済は別 ticket)
-- 289 既存通知導線壊さない
+- 289 / 293 既存通知導線壊さない
+- per-post 通常 mail を増やさない
 - env flag default OFF、rollback path 明確
 
-## Folder cleanup note(2026-05-02)
+## Folder cleanup note(2026-05-03)
 
-- Active folder????? waiting ????
-- ????????deploy?env????????
-- ?????? ticket ? status / blocked_by / user GO ??????
+- 本 ticket は `waiting/` 維持。
+- `292` は BUG-004+291 の必須サブタスクであり、独立 ACTIVE へ戻さない。
+- 今回の更新は durable ledger 方針への修正のみ。deploy / env / Scheduler / SEO / WP 状態変更は 0。

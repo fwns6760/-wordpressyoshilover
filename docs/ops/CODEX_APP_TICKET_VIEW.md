@@ -103,6 +103,14 @@ publish候補に戻してよい最小条件:
 このsubtaskは新規ticket化しない。
 `BUG-004+291` のACTIVE内で扱う。
 
+#### BUG-004+291 read-only診断 snapshot(2026-05-02)
+
+- ローカル `sports_fetcher.log` の直近 42 本の `rss_fetcher_flow_summary` は `prepared_total=2`、`created_total=0`、`stale_postgame=42/42`。
+- `prepared_total=2` はどちらも `lineup` で、`2026-04-30 17:54:42` と `2026-04-30 18:16:38` に prepared のまま止まっている。
+- 同期間の `postgame` 候補 `【巨人】阪神に3-2で勝利　岡田悠希が決勝打` は `strict_review_fallback:close_marker` / `strict_insufficient_for_render` / `strict_validation_fail:key_events` を反復し、duplicate 側でも `existing_publish_same_source_url` を 17 回踏んでいる。
+- `weak_title_rescued` は 12 件あるが `blacklist_phrase_message` 1 pattern のみ。`title_player_name_unresolved` は `投手コメント整理` 24 件で残存。
+- 現状の主因は「guard 全体が厳しすぎる」より、stale/duplicate と strict postgame fallback による upstream starvation。よって unlock は deterministic な non-postgame title rescue だけに狭く限定し、postgame strict / stale / duplicate は閉じたままにする。
+
 ## READY_NEXT
 
 | 優先 | ID | 内容 | 扱い |

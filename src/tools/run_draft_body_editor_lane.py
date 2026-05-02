@@ -1481,6 +1481,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             reason="no_repair_candidates",
             candidates_count=0,
         )
+        draft_body_editor.emit_ingest_visibility_fix_v1(
+            skip_reason="no_repair_candidates",
+            source_path="src/tools/run_draft_body_editor_lane.py",
+            provider=args.provider,
+        )
         _emit_run_result(
             now,
             candidates=candidates,
@@ -1581,6 +1586,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "hold_reason": recent_refused.get("hold_reason"),
                     "history_error": recent_refused.get("error"),
                 },
+            )
+            draft_body_editor.emit_ingest_visibility_fix_v1(
+                skip_reason="refused_cooldown",
+                source_path="src/tools/run_draft_body_editor_lane.py",
+                post_id=candidate["post_id"],
+                content_hash=content_hash,
+                provider=args.provider,
             )
             continue
 

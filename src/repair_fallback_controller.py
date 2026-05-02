@@ -246,6 +246,13 @@ class RepairFallbackController:
                     llm_skip_reason="content_hash_dedupe",
                     content_hash=content_hash,
                 )
+            draft_body_editor.emit_ingest_visibility_fix_v1(
+                skip_reason="content_hash_dedupe",
+                source_path="src/repair_fallback_controller.py",
+                post_id=post_id,
+                content_hash=content_hash,
+                provider=str(dedupe_record.get("provider") or self.primary_provider),
+            )
             return RepairResult(
                 provider=str(dedupe_record.get("provider") or self.primary_provider),
                 fallback_used=bool(dedupe_record.get("fallback_used", False)),

@@ -24,6 +24,7 @@ import argparse
 from dataclasses import dataclass
 import inspect
 import json
+import logging
 import os
 import random
 import re
@@ -42,6 +43,16 @@ from uuid import uuid4
 from src import llm_call_dedupe
 from src import llm_cost_emitter
 from src import repair_provider_ledger
+
+
+ROOT = Path(__file__).resolve().parents[2]
+LOGGER = logging.getLogger("draft_body_editor")
+PUBLISH_NOTICE_QUEUE_PATH = ROOT / "logs" / "publish_notice_queue.jsonl"
+INGEST_VISIBILITY_FIX_V1_ENV = "ENABLE_INGEST_VISIBILITY_FIX_V1"
+_TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
+_REPAIR_SKIP_RECORD_TYPE = "repair_skip"
+_REPAIR_SKIP_LAYER = "repair_lane"
+_REPAIR_SKIP_SUBJECT_PREFIX = "【要review｜repair_skip】"
 
 
 VALID_SUBTYPES = ("pregame", "postgame", "lineup", "manager", "farm")
@@ -750,6 +761,107 @@ def _emit_llm_event(event: str, **payload: object) -> None:
     )
 
 
+def _ingest_visibility_fix_v1_enabled() -> bool:
+    return str(os.getenv(INGEST_VISIBILITY_FIX_V1_ENV, "")).strip().lower() in _TRUTHY_ENV_VALUES
+
+
+def _repair_skip_candidate_id(
+    *,
+    post_id: int | str | None,
+    skip_reason: str,
+    content_hash: str | None = None,
+) -> str:
+    normalized_reason = str(skip_reason or "").strip() or "unknown_skip"
+    post_id_text = str(post_id).strip() if post_id is not None else ""
+    if post_id_text:
+        parts = [_REPAIR_SKIP_RECORD_TYPE, post_id_text, normalized_reason]
+        if str(content_hash or "").strip():
+            parts.append(str(content_hash).strip())
+        return ":".join(parts)
+    return f"{_REPAIR_SKIP_RECORD_TYPE}:global:{normalized_reason}"
+
+
+def _repair_skip_subject(skip_reason: str, post_id: int | str | None) -> str:
+    normalized_reason = str(skip_reason or "").strip() or "unknown_skip"
+    post_id_text = str(post_id).strip() if post_id is not None else ""
+    return (
+        f"{_REPAIR_SKIP_SUBJECT_PREFIX}"
+        f"{normalized_reason} post_id={post_id_text or 'global'} | YOSHILOVER"
+    )
+
+
+def emit_ingest_visibility_fix_v1(
+    *,
+    skip_reason: str,
+    source_path: str,
+    post_id: int | str | None = None,
+    content_hash: str | None = None,
+    provider: str | None = None,
+    queue_path: str | Path | None = None,
+    candidate_id: str | None = None,
+) -> dict[str, object] | None:
+    if not _ingest_visibility_fix_v1_enabled():
+        return None
+
+    normalized_reason = str(skip_reason or "").strip() or "unknown_skip"
+    resolved_candidate_id = str(candidate_id or "").strip() or _repair_skip_candidate_id(
+        post_id=post_id,
+        skip_reason=normalized_reason,
+        content_hash=content_hash,
+    )
+    recorded_at_iso = repair_provider_ledger._now_jst().isoformat()
+    queue_target = Path(queue_path) if queue_path is not None else PUBLISH_NOTICE_QUEUE_PATH
+    payload: dict[str, object] = {
+        "path": str(source_path),
+        "reason": normalized_reason,
+        "candidate_id": resolved_candidate_id,
+        "record_type": _REPAIR_SKIP_RECORD_TYPE,
+        "skip_layer": _REPAIR_SKIP_LAYER,
+    }
+    if post_id is not None:
+        payload["source_post_id"] = post_id
+    if str(content_hash or "").strip():
+        payload["content_hash"] = str(content_hash).strip()
+    if str(provider or "").strip():
+        payload["provider"] = str(provider).strip()
+
+    extra_payload = {
+        "notice_kind": "post_gen_validate",
+        "record_type": _REPAIR_SKIP_RECORD_TYPE,
+        "skip_layer": _REPAIR_SKIP_LAYER,
+        "candidate_id": resolved_candidate_id,
+        "source_path": str(source_path),
+        "source_post_id": post_id,
+        "content_hash": str(content_hash).strip() if str(content_hash or "").strip() else None,
+        "provider": str(provider).strip() if str(provider or "").strip() else None,
+    }
+    try:
+        from src import publish_notice_scanner
+
+        publish_notice_scanner._append_queue_log(
+            queue_target,
+            status="queued",
+            reason=normalized_reason,
+            subject=_repair_skip_subject(normalized_reason, post_id),
+            recipients=[],
+            post_id=resolved_candidate_id,
+            recorded_at_iso=recorded_at_iso,
+            extra_payload={key: value for key, value in extra_payload.items() if value is not None},
+        )
+    except Exception as exc:
+        LOGGER.warning(
+            "ingest_visibility_fix_v1 queue append failed: path=%s reason=%s candidate_id=%s error=%s",
+            source_path,
+            normalized_reason,
+            resolved_candidate_id,
+            exc,
+        )
+        return None
+
+    _emit_llm_event("ingest_visibility_fix_v1_emit", **payload)
+    return payload
+
+
 def _dedupe_record_extra(payload: dict[str, object]) -> dict[str, object]:
     return {
         "provider": payload.get("provider"),
@@ -926,6 +1038,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 no_new_forbidden_claim=False,
                 quality_flags=quality_flags + [error_code],
                 error_code=error_code,
+            )
+            emit_ingest_visibility_fix_v1(
+                skip_reason=llm_skip_reason,
+                source_path="src/tools/draft_body_editor.py",
+                post_id=args.post_id,
+                content_hash=content_hash,
+                provider=str(dedupe_record.get("provider") or "gemini"),
             )
             print(
                 f"Gemini API skipped: {llm_skip_reason} previous_error={error_code}",

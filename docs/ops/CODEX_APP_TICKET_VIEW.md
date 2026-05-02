@@ -62,6 +62,46 @@ userに「次どれにしますか？」とは聞かない。
 - mail対象に出るなら、通知前にpublish判定へ戻す。
 - ただし現状はpublish判定が曖昧なので、まずread-only auditで境界を固める。
 - body_contract_validate fail は通常メール不要。ledger/logに残ればよい。
+- publish=0 の原因を read-only で分解し、全体緩和ではなく高信頼候補だけを publish path に戻す。
+
+#### BUG-004+291 追加subtask: publish=0原因分解 + narrow publish-path unlock
+
+目的は、publish gate を雑に緩めることではない。
+公開ゼロの原因を分解し、品質条件を満たす候補だけを狭く公開pathへ戻す。
+
+まず分解する原因:
+
+- `277` title quality
+- `289` post_gen_validate
+- `290` weak title rescue 不発
+- 4-tier分類の strict 判定
+- duplicate / backlog / freshness
+- body_contract
+- subtype misclassify
+- numeric guard / placeholder / source facts 不足
+
+publish候補に戻してよい最小条件:
+
+- YOSHILOVER対象
+- source_urlあり
+- subtype / template_key high confidence
+- numeric guard pass
+- body_contract pass
+- placeholderなし
+- silent skipなし
+- titleが最低限「何の記事か分かる」
+- review / hold 理由なし
+
+やらないこと:
+
+- publish gate 全体緩和
+- 悪い記事を後で消す前提の大量公開
+- noindex解除
+- review thresholdを上げるだけのmail隠し
+- user判断なしのSEO変更
+
+このsubtaskは新規ticket化しない。
+`BUG-004+291` のACTIVE内で扱う。
 
 ## READY_NEXT
 
@@ -165,6 +205,49 @@ pytest / CI / flaky整理は必要。
 
 ```text
 BUG_INBOX初回棚卸しでは、ACTIVE候補は BUG-003 WP status mutation audit と BUG-004+291 silent skip / 候補消失 / YOSHILOVER対象外メール / 自動公開判定整理の2件だけです。他のP1候補は一括ACTIVE化しないでください。291は対象外sourceメールを完全に送らない方針、mail対象ならpublish判定へ戻す方針ですが、publish判定境界が曖昧なのでまずread-only auditで確認してください。292は通常メール不要、ledger/log確認に寄せてください。
+```
+
+## 現場Claudeへ渡す品質改善プロンプト
+
+詳細版は `prompts/ops/bug004_291_publish_zero_narrow_unlock_prompt.md` を正本にする。
+
+```text
+BUG-004+291 の中で publish=0原因分解 + narrow publish-path unlock を実施してください。
+新規ticket化しないでください。
+
+目的は publish gate の全体緩和ではありません。
+公開ゼロの原因を read-only で分解し、高信頼条件を満たす候補だけ publish path に戻す設計にしてください。
+
+分解対象:
+- 277 title quality
+- 289 post_gen_validate
+- 290 weak title rescue不発
+- 4-tier分類strict
+- duplicate / backlog / freshness
+- body_contract
+- subtype misclassify
+- numeric guard / placeholder / source facts不足
+
+publish候補に戻してよい条件:
+- YOSHILOVER対象
+- source_urlあり
+- subtype/template_key high confidence
+- numeric guard pass
+- body_contract pass
+- placeholderなし
+- silent skipなし
+- titleが最低限「何の記事か分かる」
+- review/hold理由なし
+
+やらないこと:
+- publish gate全体緩和
+- 悪い記事を後で消す前提の大量公開
+- noindex解除
+- review thresholdを上げるだけのmail隠し
+- user判断なしのSEO変更
+
+報告triggerは、原因分解完了、narrow unlock設計完了、P1異常、rollback必要、USER_DECISION_REQUIREDのみ。
+正常系の定期報告は不要です。
 ```
 
 ## 現場Claudeへ渡す完成文

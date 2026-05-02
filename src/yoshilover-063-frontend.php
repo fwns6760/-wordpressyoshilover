@@ -675,6 +675,20 @@ function yoshilover_063_today_giants_guide_section_for_subtype( $subtype ) {
     return isset( $map[ $key ] ) ? $map[ $key ] : '';
 }
 
+function yoshilover_063_is_internal_auto_post_category( $term ) {
+    if ( ! ( $term instanceof WP_Term ) ) {
+        return false;
+    }
+
+    $term_id = (int) $term->term_id;
+    $name    = trim( (string) $term->name );
+    $slug    = trim( (string) $term->slug );
+
+    return 673 === $term_id
+        || '自動投稿' === $name
+        || in_array( $slug, array( 'auto-post', 'auto_post' ), true );
+}
+
 function yoshilover_063_post_has_hidden_auto_post_category( $post_id ) {
     $terms = get_the_category( (int) $post_id );
     if ( ! is_array( $terms ) || empty( $terms ) ) {
@@ -687,10 +701,7 @@ function yoshilover_063_post_has_hidden_auto_post_category( $post_id ) {
     }
 
     foreach ( $terms as $term ) {
-        if ( ! ( $term instanceof WP_Term ) ) {
-            continue;
-        }
-        if ( 673 === (int) $term->term_id || 'auto-post' === (string) $term->slug || '自動投稿' === trim( (string) $term->name ) ) {
+        if ( yoshilover_063_is_internal_auto_post_category( $term ) ) {
             return true;
         }
     }
@@ -1086,7 +1097,10 @@ function yoshilover_063_get_sidebar_category_links( $limit = 6 ) {
             continue;
         }
 
-        if ( in_array( $category->slug, array( 'uncategorized', 'old-articles', 'auto-post' ), true ) ) {
+        if (
+            in_array( (string) $category->slug, array( 'uncategorized', 'old-articles' ), true )
+            || yoshilover_063_is_internal_auto_post_category( $category )
+        ) {
             continue;
         }
 
@@ -3026,7 +3040,7 @@ function yoshilover_063_front_density_primary_player( $post ) {
 
     $term_groups = array(
         get_the_tags( $post->ID ),
-        yoshilover_063_filter_front_category_terms( get_the_category( $post->ID ) ),
+        get_the_category( $post->ID ),
     );
 
     foreach ( $term_groups as $terms ) {
@@ -3036,6 +3050,9 @@ function yoshilover_063_front_density_primary_player( $post ) {
 
         foreach ( $terms as $term ) {
             if ( ! ( $term instanceof WP_Term ) ) {
+                continue;
+            }
+            if ( 'category' === (string) $term->taxonomy && yoshilover_063_is_internal_auto_post_category( $term ) ) {
                 continue;
             }
 
@@ -3378,7 +3395,7 @@ function yoshilover_063_filter_front_category_terms( $terms ) {
             $terms,
             function( $term ) {
                 return $term instanceof WP_Term
-                    && ! in_array( (string) $term->slug, array( 'auto-post' ), true );
+                    && ! yoshilover_063_is_internal_auto_post_category( $term );
             }
         )
     );
@@ -3629,7 +3646,15 @@ function yoshilover_063_get_post_term_names( $post_id, $taxonomy ) {
     }
 
     if ( 'category' === (string) $taxonomy ) {
-        $terms = yoshilover_063_filter_front_category_terms( $terms );
+        $terms = array_values(
+            array_filter(
+                $terms,
+                function( $term ) {
+                    return $term instanceof WP_Term
+                        && ! yoshilover_063_is_internal_auto_post_category( $term );
+                }
+            )
+        );
     }
 
     $names = array();

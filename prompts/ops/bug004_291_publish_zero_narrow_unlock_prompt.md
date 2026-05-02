@@ -6,6 +6,9 @@ BUG-004+291 の中で、`publish=0原因分解 + narrow publish-path unlock` を
 これは新規ticketではありません。
 BUG-004+291 のACTIVE内サブタスクとして扱ってください。
 
+`292 body_contract_fail durable ledger方針` は独立ACTIVEではありません。
+BUG-004+291 の解除条件・必須サブタスクとして同時に整理してください。
+
 ## 目的
 
 現状の問題は、publish gate を緩めるか維持するかの二択ではありません。
@@ -26,6 +29,7 @@ BUG-004+291 のACTIVE内サブタスクとして扱ってください。
 - numeric guard
 - placeholder
 - source facts 不足
+- 292 body_contract_fail durable ledger 方針
 
 ## publish候補に戻してよい最小条件
 
@@ -38,6 +42,18 @@ BUG-004+291 のACTIVE内サブタスクとして扱ってください。
 - silent skipなし
 - titleが最低限「何の記事か分かる」
 - review / hold 理由なし
+
+## 292の吸収条件
+
+body_contract_fail は通常メールで大量通知しないでください。
+ただし、黙って消してはいけません。
+
+必要な状態:
+
+- body_contract_fail の件数が後から確認できる
+- fail理由が ledger / log / state row のどこかに残る
+- publish=0原因分解の中で body_contract fail がどれだけ効いているか見える
+- 通常メール量を増やさない
 
 ## やってよいこと
 
@@ -61,6 +77,8 @@ BUG-004+291 のACTIVE内サブタスクとして扱ってください。
 - WP本文変更
 - publish状態変更
 - env / flag / Scheduler変更
+- body_contract_fail の通常メール大量通知
+- 292の独立ACTIVE化
 
 ## 報告trigger
 
@@ -68,6 +86,7 @@ BUG-004+291 のACTIVE内サブタスクとして扱ってください。
 
 - publish=0原因分解完了
 - narrow unlock設計完了
+- 292相当の durable ledger 方針完了
 - P1相当の異常
 - rollback必要
 - USER_DECISION_REQUIRED
@@ -79,9 +98,9 @@ BUG-004+291 のACTIVE内サブタスクとして扱ってください。
 
 - publish=0 の主因が ticket / guard / reason 単位で分解されている
 - 高信頼候補だけ publish path に戻す条件が明文化されている
+- 292相当の body_contract_fail durable ledger 方針が同じ設計内に入っている
 - 全体緩和をしていない
 - noindex / SEO に触っていない
 - silent skip を増やしていない
 - Gemini call / mail量を増やしていない
 - rollback target と stop condition が明確
-

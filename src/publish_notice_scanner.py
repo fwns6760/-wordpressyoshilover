@@ -33,6 +33,7 @@ _HISTORY_WINDOW = timedelta(hours=24)
 _REVIEW_NOTICE_MAX_PER_RUN_DEFAULT = 10
 _REVIEW_NOTICE_WINDOW_HOURS_DEFAULT = 24.0
 _PUBLISH_NOTICE_CLASS_RESERVE_ENV_FLAG = "ENABLE_PUBLISH_NOTICE_CLASS_RESERVE"
+_INGEST_VISIBILITY_FIX_V1_ENV_FLAG = "ENABLE_INGEST_VISIBILITY_FIX_V1"
 _PUBLISH_NOTICE_CLASS_RESERVE_REAL_REVIEW_ENV = "PUBLISH_NOTICE_CLASS_RESERVE_REAL_REVIEW"
 _PUBLISH_NOTICE_CLASS_RESERVE_POST_GEN_VALIDATE_ENV = "PUBLISH_NOTICE_CLASS_RESERVE_POST_GEN_VALIDATE"
 _PUBLISH_NOTICE_CLASS_RESERVE_ERROR_ENV = "PUBLISH_NOTICE_CLASS_RESERVE_ERROR"
@@ -49,6 +50,9 @@ _POST_GEN_VALIDATE_NOTIFICATION_ENV_FLAG = "ENABLE_POST_GEN_VALIDATE_NOTIFICATIO
 _POST_GEN_VALIDATE_SKIP_LAYER = "post_gen_validate"
 _POST_GEN_VALIDATE_RECORD_TYPE = "post_gen_validate"
 _POST_GEN_VALIDATE_REVIEW_PREFIX = "【要review｜post_gen_validate】"
+_SCANNER_INTERNAL_SKIP_LAYER = "scanner_malformed_payload"
+_SCANNER_INTERNAL_SKIP_RECORD_TYPE = "scanner_internal_skip"
+_SCANNER_INTERNAL_SKIP_REVIEW_PREFIX = "【要review｜internal_skip_visible】"
 _POST_GEN_VALIDATE_GCS_BUCKET = "baseballsite-yoshilover-state"
 _POST_GEN_VALIDATE_GCS_OBJECT = "post_gen_validate/post_gen_validate_history.jsonl"
 _PREFLIGHT_SKIP_HISTORY_DEFAULT_PATH = Path("/tmp/pub004d/preflight_skip_history.jsonl")
@@ -222,6 +226,15 @@ def _publish_notice_old_candidate_once_enabled() -> bool:
 
 def _publish_notice_class_reserve_enabled() -> bool:
     return str(os.environ.get(_PUBLISH_NOTICE_CLASS_RESERVE_ENV_FLAG, "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _ingest_visibility_fix_v1_enabled() -> bool:
+    return str(os.environ.get(_INGEST_VISIBILITY_FIX_V1_ENV_FLAG, "")).strip().lower() in {
         "1",
         "true",
         "yes",
@@ -664,6 +677,109 @@ def _append_queue_log(
             entry[str(key)] = value
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def _scanner_internal_skip_row_hash(entry: Mapping[str, Any] | None) -> str:
+    if not isinstance(entry, Mapping):
+        return "no_payload"
+    payload = json.dumps(
+        {str(key): value for key, value in entry.items()},
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+        separators=(",", ":"),
+    )
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def _scanner_internal_skip_candidate_id(
+    *,
+    reason: str,
+    source_post_id: int | str | None = None,
+    dedupe_key: str | None = None,
+    source_url_hash: str | None = None,
+    entry: Mapping[str, Any] | None = None,
+) -> str:
+    normalized_reason = str(reason or "").strip() or "unknown_skip"
+    post_id_text = str(source_post_id or "").strip()
+    dedupe_key_text = str(dedupe_key or "").strip()
+    source_url_hash_text = str(source_url_hash or "").strip()
+    if post_id_text:
+        anchor = f"post:{post_id_text}"
+    elif dedupe_key_text:
+        anchor = f"dedupe:{dedupe_key_text}"
+    elif source_url_hash_text:
+        anchor = f"source:{source_url_hash_text}"
+    else:
+        anchor = f"row:{_scanner_internal_skip_row_hash(entry)}"
+    return f"{_SCANNER_INTERNAL_SKIP_RECORD_TYPE}:{anchor}:{normalized_reason}"
+
+
+def _scanner_internal_skip_subject(
+    reason: str,
+    *,
+    source_post_id: int | str | None = None,
+) -> str:
+    normalized_reason = str(reason or "").strip() or "unknown_skip"
+    post_id_text = str(source_post_id or "").strip()
+    suffix = f" post_id={post_id_text}" if post_id_text else ""
+    return f"{_SCANNER_INTERNAL_SKIP_REVIEW_PREFIX}{normalized_reason}{suffix} | YOSHILOVER"
+
+
+def _emit_scanner_internal_skip_visibility_fix(
+    *,
+    queue_path: str | Path,
+    reason: str,
+    recorded_at_iso: str,
+    source_post_id: int | str | None = None,
+    dedupe_key: str | None = None,
+    source_url_hash: str | None = None,
+    entry: Mapping[str, Any] | None = None,
+) -> dict[str, object] | None:
+    if not _ingest_visibility_fix_v1_enabled():
+        return None
+
+    normalized_reason = str(reason or "").strip() or "unknown_skip"
+    resolved_source_url_hash = str(source_url_hash or "").strip()
+    candidate_id = _scanner_internal_skip_candidate_id(
+        reason=normalized_reason,
+        source_post_id=source_post_id,
+        dedupe_key=dedupe_key,
+        source_url_hash=resolved_source_url_hash,
+        entry=entry,
+    )
+    extra_payload = {
+        "notice_kind": "post_gen_validate",
+        "record_type": _SCANNER_INTERNAL_SKIP_RECORD_TYPE,
+        "skip_layer": _SCANNER_INTERNAL_SKIP_LAYER,
+        "candidate_id": candidate_id,
+        "source_path": "src/publish_notice_scanner.py",
+        "source_post_id": source_post_id,
+        "source_url_hash": resolved_source_url_hash or None,
+    }
+    _append_queue_log(
+        queue_path,
+        status="queued",
+        reason=normalized_reason,
+        subject=_scanner_internal_skip_subject(normalized_reason, source_post_id=source_post_id),
+        recipients=[],
+        post_id=candidate_id,
+        recorded_at_iso=recorded_at_iso,
+        extra_payload={key: value for key, value in extra_payload.items() if value is not None},
+    )
+    payload: dict[str, object] = {
+        "path": _SCANNER_INTERNAL_SKIP_LAYER,
+        "reason": normalized_reason,
+        "candidate_id": candidate_id,
+        "record_type": _SCANNER_INTERNAL_SKIP_RECORD_TYPE,
+        "skip_layer": _SCANNER_INTERNAL_SKIP_LAYER,
+    }
+    if source_post_id is not None and str(source_post_id).strip():
+        payload["source_post_id"] = source_post_id
+    if resolved_source_url_hash:
+        payload["source_url_hash"] = resolved_source_url_hash
+    _log_event("ingest_visibility_fix_v1_emit", **payload)
+    return payload
 
 
 def _resolve_review_max_per_run(value: int | None) -> int:
@@ -1326,9 +1442,23 @@ def scan_guarded_publish_history(
             post = fetch_post_detail_fn(base_url, post_id)
         except Exception:
             skipped.append((post_id, "REVIEW_POST_DETAIL_ERROR"))
+            _emit_scanner_internal_skip_visibility_fix(
+                queue_path=queue_path,
+                reason="REVIEW_POST_DETAIL_ERROR",
+                recorded_at_iso=review_recorded_at_iso,
+                source_post_id=post_id,
+                entry=entry,
+            )
             continue
         if not isinstance(post, Mapping):
             skipped.append((post_id, "REVIEW_POST_MISSING"))
+            _emit_scanner_internal_skip_visibility_fix(
+                queue_path=queue_path,
+                reason="REVIEW_POST_MISSING",
+                recorded_at_iso=review_recorded_at_iso,
+                source_post_id=post_id,
+                entry=entry,
+            )
             continue
         post_status = str(post.get("status") or "").strip().lower()
         if post_status == "publish":
@@ -1768,6 +1898,13 @@ def scan_preflight_skip_history(
         if not dedupe_key:
             skipped_by_payload += 1
             skipped.append(("", "PREFLIGHT_SKIP_MISSING_DEDUPE_KEY"))
+            _emit_scanner_internal_skip_visibility_fix(
+                queue_path=queue_path,
+                reason="PREFLIGHT_SKIP_MISSING_DEDUPE_KEY",
+                recorded_at_iso=review_recorded_at_iso,
+                source_url_hash=_preflight_skip_source_url_hash(entry),
+                entry=entry,
+            )
             continue
         if dedupe_key in seen_dedupe_keys or _is_recent_duplicate(next_history, dedupe_key, now=current_now):
             skipped_by_dedup += 1
@@ -1778,6 +1915,14 @@ def scan_preflight_skip_history(
         if not source_url:
             skipped_by_payload += 1
             skipped.append((dedupe_key, "PREFLIGHT_SKIP_MISSING_SOURCE_URL"))
+            _emit_scanner_internal_skip_visibility_fix(
+                queue_path=queue_path,
+                reason="PREFLIGHT_SKIP_MISSING_SOURCE_URL",
+                recorded_at_iso=review_recorded_at_iso,
+                dedupe_key=dedupe_key,
+                source_url_hash=_preflight_skip_source_url_hash(entry),
+                entry=entry,
+            )
             continue
 
         skip_reason = _resolve_preflight_skip_reason(entry)

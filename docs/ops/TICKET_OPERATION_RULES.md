@@ -11,6 +11,7 @@
 - AIチーム体制: `docs/ops/AI_TEAM_OPERATION_MODEL.md`
 - user入力形式: `docs/ops/USER_INPUT_FORMAT.md`
 - ACTIVE / worker lane: `docs/ops/ACTIVE_LANE_POLICY.md`
+- Codex App user向けビュー: `docs/ops/CODEX_APP_TICKET_VIEW.md`
 - BUG_INBOX: `docs/ops/BUG_INBOX.md`
 - BUG_INBOX管理Excel: `docs/ops/ヨシラバーチケット管理.xlsx`
 

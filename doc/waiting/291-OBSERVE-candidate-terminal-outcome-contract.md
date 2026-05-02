@@ -258,21 +258,190 @@ prepared candidate が **必ず以下 5 つの terminal outcome のいずれか*
   - `src/publish_notice*.py`
   - SEO / noindex / Scheduler / env / source inventory / Gemini budget
 
-### 実装する場合の rollback target
+## narrow unlock 実装便の最小 subtask breakdown(2026-05-03)
+
+実装便は以下 5 subtask に分割する。`subtask-3` と `subtask-5` は同じ `src/rss_fetcher.py` を触るが、関数ブロックは分離し、同時並行ではなく直列で当てる。
+
+### subtask-1 deterministic weak-title rescue rule 追加
+
+| field | value |
+|---|---|
+| subtask_id | 291-subtask-1 |
+| purpose | `related_info_escape` / `blacklist_phrase` 系の deterministic rescue を 3-5 case 追加し、high-confidence non-postgame title だけ concrete title へ戻す |
+| write_scope | `src/weak_title_rescue.py`, `tests/test_weak_title_rescue.py` |
+| function_scope | `rescue_related_info_escape()`, `rescue_blacklist_phrase()`, rescue専用 helper 群のみ |
+| inputs | `gen_title`, `source_title`, `body`, `summary`, `metadata`。対象は `manager` / `player` / `player_notice` / named-event 系のみ |
+| outputs | `RescueResult(title, strategy)` を返すか `None`。既存 `strategy` 体系を維持し、postgame / stale / duplicate / mixed-team は `None` 維持 |
+| do_not_touch | `src/rss_fetcher.py`, `src/title_validator.py`, `src/publish_notice_scanner.py`, `src/body_validator.py` |
+| acceptance | 追加 fixture で concrete title を返し、既存 negative case(duplicate / hard-stop / merchandise / MLB / mixed team)は rescue しない |
+| rollback_target | `src/weak_title_rescue.py` の新 rule と `tests/test_weak_title_rescue.py` の追記だけを revert |
+| launch_classification | `✅ CLAUDE_AUTO_GO eligible` |
+
+### subtask-2 title floor helper 追加
+
+| field | value |
+|---|---|
+| subtask_id | 291-subtask-2 |
+| purpose | 「最低限 何の記事か分かる title」かを subtype-aware に判定する helper を追加し、narrow unlock branch の最終足切りを deterministic にする |
+| write_scope | `src/title_validator.py`, `tests/test_title_validator.py` |
+| function_scope | 新 helper(working name: `title_has_minimum_article_context`) とその小 helper のみ。既存 `validate_title_candidate()` への直接 wire は subtask-3 で行う |
+| inputs | `title`, `article_subtype`, optional `source_title` / `source_summary` を使わない pure title layer |
+| outputs | `ok/reason` または `bool/reason`。`lineup` は opponent / order / starter 系、`manager` は speaker / quote / event 系、`farm_result` は score or player-performance 系を最低条件として定義 |
+| do_not_touch | `src/weak_title_rescue.py`, `src/rss_fetcher.py`, `src/publish_notice_scanner.py` |
+| acceptance | generic title(`投手コメント整理`, `関連情報`, `発言ポイント`) を negative、concrete title を positive にできる。既存 title subtype guard の fail axis を広げない |
+| rollback_target | 新 helper と `tests/test_title_validator.py` の追加ケースだけを revert |
+| launch_classification | `✅ CLAUDE_AUTO_GO eligible` |
+
+### subtask-3 rss_fetcher narrow unlock wiring(default OFF)
+
+| field | value |
+|---|---|
+| subtask_id | 291-subtask-3 |
+| purpose | subtask-1/2 の helper を `rss_fetcher` に narrow branch として wire し、flag ON 時だけ whitelist class を review skip から publish candidate path に戻す |
+| write_scope | `src/rss_fetcher.py`, `tests/test_rss_fetcher_narrow_unlock.py` |
+| function_scope | `_maybe_apply_weak_title_rescue()`, `_maybe_route_weak_generated_title_review()`, `_maybe_route_weak_subject_title_review()` と新 local helper(working name: `_allow_narrow_unlock_candidate`) |
+| inputs | rescued/generated title、`article_subtype`、`source_name`、`source_url`、duplicate/numeric/placeholder/body_contract 判定結果、new env flag(working name: `ENABLE_NARROW_UNLOCK_NON_POSTGAME`) |
+| outputs | flag OFF では完全 no-op。flag ON でも whitelist class だけ review sentinel を回避し、それ以外は既存 `post_gen_validate` skip のまま |
+| do_not_touch | `src/guarded_publish_runner.py`, `src/gemini_preflight_gate.py`, `src/body_validator.py`, `src/publish_notice_scanner.py`, SEO / noindex / Scheduler / source inventory |
+| acceptance | `strict_review_fallback:*` の `postgame`、`existing_publish_same_source_url`、`stale_postgame`、`title_player_name_unresolved`、`body_contract_fail`、numeric/placeholder fail を 1 件も通さない。flag OFF snapshot は挙動差分 0 |
+| rollback_target | env flag を `0` に戻す、または `src/rss_fetcher.py` narrow branch と `tests/test_rss_fetcher_narrow_unlock.py` を revert |
+| launch_classification | `⚠️ repo impl は CLAUDE_AUTO_GO eligible。live で観測するには env apply が必要なので user GO 1 行で解放` |
+
+### subtask-4 292 durable ledger writer module
+
+| field | value |
+|---|---|
+| subtask_id | 291-subtask-4 |
+| purpose | `body_contract_fail` 専用の durable jsonl writer を side-effect module として分離し、289/293 と同型の local + GCS append を最小実装する |
+| write_scope | `src/body_contract_fail_ledger.py`, `tests/test_body_contract_fail_ledger.py` |
+| function_scope | path resolve、record build、local append、best-effort GCS append、flag check のみ |
+| inputs | main loop から受ける source/title/subtype/fail_axes/block-order data、new env flag(working name: `ENABLE_BODY_CONTRACT_FAIL_LEDGER`)、optional path env(working name: `BODY_CONTRACT_FAIL_LEDGER_PATH`) |
+| outputs | `record_type=body_contract_fail` row を local jsonl に append。GCS client が使える時だけ mirror append。mail / queue / scanner は触らない |
+| do_not_touch | `src/publish_notice_scanner.py`, `src/tools/draft_body_editor.py`, `src/repair_fallback_controller.py`, `src/body_validator.py` |
+| acceptance | flag OFF では file write 0。flag ON では required schema row が 1 回だけ書かれ、GCS append 失敗は warning のみで本処理を止めない |
+| rollback_target | new module と `tests/test_body_contract_fail_ledger.py` を revert、env flag を未設定へ戻す |
+| launch_classification | `✅ CLAUDE_AUTO_GO eligible` |
+
+### subtask-5 rss_fetcher body_contract skip hook(default OFF)
+
+| field | value |
+|---|---|
+| subtask_id | 291-subtask-5 |
+| purpose | main candidate loop の `body_contract_validate` skip 点だけに subtask-4 writer を hook し、silent skip を `skip_accounted` row に変換する |
+| write_scope | `src/rss_fetcher.py`, `tests/test_rss_fetcher_body_contract_fail_ledger.py` |
+| function_scope | constants 付近の import / flag / path 宣言、`body_contract_validate` branch(現行 `14612-14645` 近傍)のみ |
+| inputs | `draft_title`, `raw_title`, `post_url`, `category`, `title_article_subtype`, `body_contract_validate` result |
+| outputs | `body_contract_validate["ok"] == False` のときだけ ledger writer を呼ぶ。`validation_action` に `fail|reroll` を保持し、`suppressed_mail_count=0` を固定記録 |
+| do_not_touch | `src/body_validator.py` の pure validator 本体、`src/publish_notice_scanner.py`、`src/publish_notice_email_sender.py`, `src/guarded_publish_runner.py` |
+| acceptance | `body_validator_fail` / `body_validator_reroll` が main loop skip のときだけ ledger row 化される。strict postgame review path と build-time reroll path は今回 scope 外のまま据え置く |
+| rollback_target | env flag を `0` に戻す、または `src/rss_fetcher.py` の hook と `tests/test_rss_fetcher_body_contract_fail_ledger.py` を revert |
+| launch_classification | `⚠️ repo impl は CLAUDE_AUTO_GO eligible。live で row を取りたい場合のみ env apply が必要` |
+
+### launch classification summary
+
+- `✅ CLAUDE_AUTO_GO eligible`: subtask-1 / subtask-2 / subtask-4
+- `⚠️ repo impl は CLAUDE_AUTO_GO eligible、live apply は user GO 1 行`: subtask-3 / subtask-5
+- `❌ USER_DECISION_REQUIRED`: なし
+
+## fixture / test plan(impl 便で actual file 作成)
+
+### read-only で確認した既存 fixture / test 面
+
+| area | existing coverage(read-only) | use in planning |
+|---|---|---|
+| postgame candidate | `tests/fixtures/game_body_template_golden.json`, `tests/fixtures/first_wave/postgame_result_fixed_primary.json`, `tests/test_postgame_strict_template.py` | postgame strict は exclusion 側で固定し、unlock 対象に入れない |
+| lineup candidate | `tests/fixtures/game_body_template_golden.json`, `tests/fixtures/first_wave/lineup_notice_fixed_primary.json`, `tests/test_rss_fetcher_rule_based_subtypes.py` | lineup positive の field 粒度に再利用できる |
+| manager/comment candidate | `tests/fixtures/manager_body_template_golden.json`, `tests/fixtures/first_wave/comment_notice_fixed_primary.json`, `tests/test_manager_body_template.py` | manager quote positive / generic negative の下敷きにする |
+| farm_result candidate | `tests/fixtures/farm_body_template_golden.json`, `tests/test_body_validator.py` | score/player hard fail と pass case が既に揃っている |
+
+新規 narrow unlock fixture は既存 golden / first_wave を汚さないため、`tests/fixtures/narrow_unlock/` を新設候補にする。
+
+### positive fixture path 案(3-5 件)
+
+- `tests/fixtures/narrow_unlock/lineup_primary_positive.json`
+- `tests/fixtures/narrow_unlock/manager_quote_message_positive.json`
+- `tests/fixtures/narrow_unlock/player_related_info_return_positive.json`
+- `tests/fixtures/narrow_unlock/player_named_event_positive.json`
+- `tests/fixtures/narrow_unlock/farm_result_concrete_title_positive.json`
+
+### exclusion fixture path 案
+
+- `tests/fixtures/narrow_unlock/exclude_postgame_strict_review.json`
+- `tests/fixtures/narrow_unlock/exclude_stale_postgame.json`
+- `tests/fixtures/narrow_unlock/exclude_duplicate_same_source_url.json`
+- `tests/fixtures/narrow_unlock/exclude_body_contract_fail.json`
+- `tests/fixtures/narrow_unlock/exclude_numeric_guard_fail.json`
+- `tests/fixtures/narrow_unlock/exclude_placeholder_body.json`
+- `tests/fixtures/narrow_unlock/exclude_subtype_misclassify.json`
+- `tests/fixtures/narrow_unlock/body_contract_fail_hard.json`
+- `tests/fixtures/narrow_unlock/body_contract_fail_reroll.json`
+
+### test 関数案(14 件)
+
+- `test_narrow_unlock_lineup_positive`
+- `test_narrow_unlock_manager_quote_positive`
+- `test_narrow_unlock_player_related_info_positive`
+- `test_narrow_unlock_player_named_event_positive`
+- `test_narrow_unlock_farm_result_positive`
+- `test_narrow_unlock_postgame_strict_negative`
+- `test_narrow_unlock_stale_postgame_negative`
+- `test_narrow_unlock_duplicate_same_source_url_negative`
+- `test_narrow_unlock_body_contract_fail_negative`
+- `test_narrow_unlock_numeric_guard_negative`
+- `test_narrow_unlock_placeholder_negative`
+- `test_narrow_unlock_subtype_misclassify_negative`
+- `test_narrow_unlock_body_contract_fail_positive`
+- `test_narrow_unlock_body_contract_reroll_positive`
+
+### test file 配置案
+
+- `tests/test_weak_title_rescue.py`
+- `tests/test_title_validator.py`
+- `tests/test_rss_fetcher_narrow_unlock.py`
+- `tests/test_body_contract_fail_ledger.py`
+- `tests/test_rss_fetcher_body_contract_fail_ledger.py`
+
+既存 regression detection の最小セット:
+
+- `tests/test_weak_title_rescue.py`
+- `tests/test_title_validator.py`
+- `tests/test_body_validator.py`
+- `tests/test_post_gen_validate_notification.py`
+- `tests/test_preflight_skip_notification.py`
+- `tests/test_publish_notice_scanner_class_reserve.py`
+- `tests/test_rss_fetcher_rule_based_subtypes.py`
+
+## rollback target 補強
+
+### code / flag rollback target
 
 - `src/weak_title_rescue.py`
 - `src/title_validator.py`
-- `src/rss_fetcher.py` の weak-title rescue integration
+- `src/rss_fetcher.py` の narrow unlock branch
+- `src/body_contract_fail_ledger.py`
+- `src/rss_fetcher.py` の body_contract ledger hook
+- `ENABLE_BODY_CONTRACT_FAIL_LEDGER` を未設定へ戻す経路
+- `BODY_CONTRACT_FAIL_LEDGER_PATH` を remove する経路
+- `ENABLE_NARROW_UNLOCK_NON_POSTGAME` を未設定へ戻す経路
 
 `guarded_publish_runner.py`、`gemini_preflight_gate.py`、SEO、Scheduler、mail cap、source 追加は rollback target に含めない。そこを触る unlock は本 ticket の範囲外。
 
-### stop condition
+### regression rollback trigger
 
-- unlock candidate が `review` / `hold` 理由を残したまま publish path に入る
+- 既存 fixture(`tests/fixtures/game_body_template_golden.json`, `tests/fixtures/manager_body_template_golden.json`, `tests/fixtures/farm_body_template_golden.json`, `tests/fixtures/first_wave/*`)に差分が必要になった時点で stop
+- `tests/test_body_validator.py` の既存 hard-fail / reroll 判定が 1 件でも崩れたら rollback
+- `tests/test_post_gen_validate_notification.py` / `tests/test_preflight_skip_notification.py` / `tests/test_publish_notice_scanner_class_reserve.py` の queue / class-reserve が崩れたら rollback
+- narrow unlock 実装が `ENABLE_WEAK_TITLE_RESCUE=0` の baseline 挙動を変えたら rollback
+
+## stop condition(impl 着手中止条件)
+
 - `strict_review_fallback:*` の `postgame` が 1 件でも unlock 対象に混ざる
-- stale / duplicate / placeholder / body_contract / numeric guard のどれかを bypass する必要が出る
-- mail 量、Gemini call、source 数、SEO 設定の増加を前提にしないと成立しない
-- non-YOSHILOVER source が unlock 候補へ流れ込む
+- YOSHILOVER 対象外、mixed team、非巨人 source が unlock whitelist に入る
+- publish-notice / review mail volume が 289/293/267-QA baseline より増える兆候が出る
+- Gemini call が baseline より増える、または `existing_publish_same_source_url` skip 前提が崩れる
+- silent skip が増える、または `prepared_total != terminal_outcome_count` / `body_contract_fail row 0` が再発する
+- stale / duplicate / body_contract / numeric / placeholder guard を bypass しないと通らない candidate しか残らない
+- SEO / noindex / source inventory / Scheduler / env mutation(単なる additive flag apply を超えるもの)が必要になった時点で scope 外として停止
 
 ## HOLD 解除条件
 

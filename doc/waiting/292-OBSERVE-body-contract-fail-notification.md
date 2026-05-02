@@ -125,6 +125,94 @@ silent skip 第 2 経路を潰すが、**通常 mail を増やすことは目的
 - [ ] Gemini call 0 増(metadata 層のみ)
 - [ ] 229-COST cache 不変
 
+## 2026-05-03 実装可否整理(read-only)
+
+### src/ 内で body_contract outcome を出している path 一覧
+
+| path | current outcome | terminal relevance | 292 ledger 対象 |
+|---|---|---|---|
+| `src/rss_fetcher.py` `5368-5407` 近傍(`strict_contract_validate`) | `strict_review_fallback:strict_contract_fail:*` として review fallback へ戻す | `review_notified` 側で可視。silent skip ではない | `対象外` |
+| `src/rss_fetcher.py` `10082-10175` 近傍(`_apply_body_contract_reroll`) | `body_validator_reroll` log 後に fallback body へ差し替え、candidate 処理は継続 | terminal skip ではない | `対象外` |
+| `src/rss_fetcher.py` `14612-14645` 近傍(main candidate loop) | `body_validator_fail` / `body_validator_reroll` を log して `continue` | **silent skip 化しうる唯一の main loop skip point** | `対象` |
+| `src/body_validator.py` | pure validator。`dict(ok/action/fail_axes/stop_reason)` を返すだけ | call-site 依存 | `writer を置かない` |
+
+結論:
+
+- 292 の durable ledger は **main candidate loop の skip 点だけ** に入れるのが最小で十分。
+- `body_validator.py` は pure function として維持し、writer を持たせない。
+- `strict_contract_validate` review path と build-time reroll path は silent skip ではないため、今回の ledger 対象から外す。
+
+### writer layer 比較
+
+| layer | fit | 理由 |
+|---|---|---|
+| `src/rss_fetcher.py` main loop | `best fit` | source_url / source_title / generated_title / subtype / fail_axes / terminal skip decision が同時に揃う唯一の場所 |
+| `src/body_validator.py` | `not fit` | pure validator を崩す。strict review path / build-time reroll path まで side effect が漏れる |
+| `src/publish_notice_scanner.py` | `not fit` | scanner は既存 ledger reader + mail queue 層。292 は mail を増やさず writer だけ欲しい |
+| `src/tools/draft_body_editor.py` | `not fit` | post-publication repair lane。pre-publish rss candidate skip の context を持たない |
+| `src/repair_fallback_controller.py` | `not fit` | provider fallback lane。body_contract skip の terminal decision を持たない |
+
+推奨実装:
+
+- writer module は `src/body_contract_fail_ledger.py` に切り出す
+- `src/rss_fetcher.py` main loop から only-on-skip で call する
+- scanner / queue / publish_notice class reserve は今回は触らない
+
+### durable storage 形式
+
+優先案:
+
+- local path: `/tmp/pub004d/body_contract_fail_history.jsonl`
+- local fallback: `logs/body_contract_fail_history.jsonl`
+- GCS mirror: `gs://baseballsite-yoshilover-state/body_contract/body_contract_fail_history.jsonl`
+- append pattern: 289/293 と同じ `local append -> best-effort GCS append`
+
+不採用案:
+
+- Cloud Logging 単独: durable 集計源として不可
+- GCS state row only: local unittest / local inspection に不便で 289/293 の既存 pattern と揃わない
+
+### ledger row format 案
+
+```json
+{
+  "ts": "2026-05-03T12:34:56+09:00",
+  "record_type": "body_contract_fail",
+  "skip_layer": "body_contract",
+  "terminal_state": "skip_accounted",
+  "validation_action": "fail",
+  "source_url": "https://example.com/article",
+  "source_url_hash": "abcd1234efgh5678",
+  "source_title": "元記事タイトル",
+  "generated_title": "生成タイトル",
+  "category": "試合速報",
+  "article_subtype": "postgame",
+  "fail_axes": ["postgame_score_missing"],
+  "expected_first_block": "【試合結果】",
+  "actual_first_block": "【ハイライト】",
+  "missing_required_blocks": ["【選手成績】"],
+  "has_source_block": true,
+  "stop_reason": "postgame_score_missing",
+  "body_excerpt_hash": "sha256:...",
+  "suppressed_mail_count": 0
+}
+```
+
+補足:
+
+- `validation_action` は `fail|reroll` を保持する。main loop ではどちらも skip なので ledger 上で分離して持つ
+- dedupe key は `source_url_hash + article_subtype + validation_action + sorted(fail_axes)` の 24h 窓を想定
+- `suppressed_mail_count` は常に `0`。292 は通常 mail を増やさない
+
+### feasibility classification
+
+- classification: `ready`
+- reason:
+  - main loop の silent skip 点が 1 箇所に絞れている
+  - 289/293 の default-OFF local+GCS append pattern を横展開できる
+  - `publish_notice_scanner.py` や mail class reserve を触らずに acceptance を満たせる
+  - live で row を取りたい場合だけ additive env apply が必要だが、repo 実装自体は live-inert
+
 ## HOLD 解除条件
 
 1. 291 親契約の方針固定

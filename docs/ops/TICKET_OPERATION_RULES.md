@@ -26,10 +26,15 @@
 ## ACTIVEルール
 
 - ACTIVEは最大2件を目安にする。
+- ACTIVE最大2件はuserが選ぶ2件ではなく、現場Claudeが同時実行する上限。
 - ACTIVEは「いま実装・accept・deploy判断に使うもの」だけ。
 - HOLD / BACKLOG / DESIGN_ONLY / READY_FOR_USER_APPLY / READY_FOR_AUTH_EXECUTOR は原則 waiting。
 - DONE / CLOSED / OBSERVED_OK evidenceありは done/YYYY-MM。
 - activeを増やして忙しく見せる運用は禁止。
+- userに「次どれにしますか？」と聞かない。
+- ACTIVEが完了 / OBSERVE / HOLD になったら、USER_DECISION_REQUIREDでない限りREADY_NEXTから自動昇格する。
+- READY_NEXTは最大3件まで。
+- READY_NEXTはuser向け選択肢ではなく、現場Claudeの次投入候補。
 
 ## OBSERVEルール
 

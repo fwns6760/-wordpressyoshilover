@@ -68,6 +68,56 @@ DONE / OBSERVE / HOLD の正常報告はここに載せない。
 | 2 | 245 | 画面上に「自動投稿」カテゴリがまだ見える。 | 次front候補 |
 | 3 | 277-280 | タイトル改善。最優先は「何の記事かわからない」タイトル。 | 品質系候補 |
 
+## NEW_CANDIDATE: GCP Codex WP本文修正プレビュー v0
+
+user希望により、早めにやりたい候補として保持する。
+まだ正式番号は振らない。
+
+目的:
+
+- WordPress本文をいきなり変更せず、GCP Codexで修正文候補だけ作る。
+- userが完全運用前に本文修正品質を早く確認できるようにする。
+- 本文品質が低くてpublishできない記事を、出せる品質へ寄せられるか検証する。
+- Gemini費用を増やさず、GCP Codex / deterministic rule / template / source-meta slot-fill中心で試す。
+
+制約:
+
+- preview-only。
+- WP本文変更なし。
+- publish状態変更なし。
+- Gemini call 原則0。
+- X投稿文は作らない。
+- source/metaにない数字・勝敗・選手名・投手成績は補完しない。
+- 最初から全subtypeに広げない。
+
+最初の対象候補:
+
+- `postgame`
+- `farm_result`
+
+やってよいこと:
+
+- placeholder削除。
+- 空見出し削除。
+- sourceにないoptional section削除。
+- 短文化。
+- 低品質本文を固定テンプレへ寄せる。
+- 元本文と修正文候補のdiff生成。
+- source/meta由来fact一覧の表示。
+
+やってはいけないこと:
+
+- sourceにない数字・選手名・勝敗・コメント補完。
+- 長文再作文。
+- Gemini追加呼び出し前提の修正。
+- WordPress本文の即時上書き。
+
+ACTIVE化の考え方:
+
+- 原則は `BUG-004+291` の後。
+- ただし本文品質確認を急ぐ場合は、`BUG-003` と入れ替えてACTIVE候補化も可能。
+- `247 / 234 / 295 / 290 / 254` と連動する。
+
 ## 残す方向の重要チケット
 
 | ID | 扱い | 理由 |

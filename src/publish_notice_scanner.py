@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+from collections import Counter
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -34,6 +35,19 @@ _REVIEW_NOTICE_MAX_PER_RUN_DEFAULT = 10
 _REVIEW_NOTICE_WINDOW_HOURS_DEFAULT = 24.0
 _PUBLISH_NOTICE_CLASS_RESERVE_ENV_FLAG = "ENABLE_PUBLISH_NOTICE_CLASS_RESERVE"
 _INGEST_VISIBILITY_FIX_V1_ENV_FLAG = "ENABLE_INGEST_VISIBILITY_FIX_V1"
+_PUBLISH_NOTICE_24H_BUDGET_GOVERNOR_ENV_FLAG = "ENABLE_PUBLISH_NOTICE_24H_BUDGET_GOVERNOR"
+_PUBLISH_NOTICE_24H_BUDGET_SOFT_THRESHOLD_ENV = "PUBLISH_NOTICE_24H_BUDGET_SOFT_THRESHOLD"
+_PUBLISH_NOTICE_24H_BUDGET_HARD_THRESHOLD_ENV = "PUBLISH_NOTICE_24H_BUDGET_HARD_THRESHOLD"
+_PUBLISH_NOTICE_24H_BUDGET_LIMIT_ENV = "PUBLISH_NOTICE_24H_BUDGET_LIMIT"
+_PUBLISH_NOTICE_24H_BUDGET_SOFT_THRESHOLD_DEFAULT = 80
+_PUBLISH_NOTICE_24H_BUDGET_HARD_THRESHOLD_DEFAULT = 95
+_PUBLISH_NOTICE_24H_BUDGET_LIMIT_DEFAULT = 100
+_PUBLISH_NOTICE_24H_BUDGET_LEDGER_DEFAULT_PATH = Path("/tmp/pub004d/publish_notice_24h_budget_history.jsonl")
+_PUBLISH_NOTICE_24H_BUDGET_LEDGER_FALLBACK_PATH = Path("logs/publish_notice_24h_budget_history.jsonl")
+_PUBLISH_NOTICE_24H_BUDGET_GCS_BUCKET = "baseballsite-yoshilover-state"
+_PUBLISH_NOTICE_24H_BUDGET_GCS_OBJECT = "publish_notice/publish_notice_24h_budget_history.jsonl"
+_PUBLISH_NOTICE_24H_BUDGET_RECORD_TYPE = "24h_budget_summary_only"
+_PUBLISH_NOTICE_24H_BUDGET_SKIP_LAYER = "24h_budget_governor"
 _PUBLISH_NOTICE_CLASS_RESERVE_REAL_REVIEW_ENV = "PUBLISH_NOTICE_CLASS_RESERVE_REAL_REVIEW"
 _PUBLISH_NOTICE_CLASS_RESERVE_POST_GEN_VALIDATE_ENV = "PUBLISH_NOTICE_CLASS_RESERVE_POST_GEN_VALIDATE"
 _PUBLISH_NOTICE_CLASS_RESERVE_ERROR_ENV = "PUBLISH_NOTICE_CLASS_RESERVE_ERROR"
@@ -88,6 +102,21 @@ _NOTICE_CLASS_PREFLIGHT_SKIP = "preflight_skip"
 _NOTICE_CLASS_OLD_CANDIDATE = "old_candidate"
 _NOTICE_CLASS_ERROR_NOTIFICATION = "error_notification"
 _NOTICE_CLASS_OTHER = "other"
+_PUBLISH_NOTICE_24H_BUDGET_PROTECTED_CLASSES = frozenset(
+    {
+        _NOTICE_CLASS_ERROR_NOTIFICATION,
+        _NOTICE_CLASS_REAL_REVIEW,
+        _NOTICE_CLASS_PREFLIGHT_SKIP,
+    }
+)
+_PUBLISH_NOTICE_24H_BUDGET_SOFT_DEMOTE_CLASSES = frozenset({_NOTICE_CLASS_OLD_CANDIDATE})
+_PUBLISH_NOTICE_24H_BUDGET_HARD_DEMOTE_CLASSES = frozenset(
+    {
+        _NOTICE_CLASS_OLD_CANDIDATE,
+        _NOTICE_CLASS_GUARDED_REVIEW,
+        _NOTICE_CLASS_POST_GEN_VALIDATE,
+    }
+)
 _CLASS_RESERVE_PRIORITY_ORDER = (
     _NOTICE_CLASS_REAL_REVIEW,
     _NOTICE_CLASS_ERROR_NOTIFICATION,
@@ -130,6 +159,22 @@ class GuardedPublishHistoryScanResult:
     cursor_write_needed: bool = False
     queue_reasons: dict[str, str | None] = field(default_factory=dict)
     old_candidate_ledger_post_ids: tuple[str, ...] = ()
+
+
+@dataclass
+class PublishNotice24hBudgetState:
+    enabled: bool
+    cumulative: int
+    projected_cumulative: int
+    limit: int
+    soft_threshold: int
+    hard_threshold: int
+    soft_breach: bool
+    hard_breach: bool
+    demoted_count: dict[str, int] = field(default_factory=dict)
+    summary_reserved: bool = False
+    source: str = "disabled"
+    ledger_path: Path | None = None
 
 
 def _now_jst() -> datetime:
@@ -233,6 +278,15 @@ def _publish_notice_class_reserve_enabled() -> bool:
     }
 
 
+def _publish_notice_24h_budget_governor_enabled() -> bool:
+    return str(os.environ.get(_PUBLISH_NOTICE_24H_BUDGET_GOVERNOR_ENV_FLAG, "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def _ingest_visibility_fix_v1_enabled() -> bool:
     return str(os.environ.get(_INGEST_VISIBILITY_FIX_V1_ENV_FLAG, "")).strip().lower() in {
         "1",
@@ -269,6 +323,28 @@ def _resolve_class_reserve_map() -> dict[str, int]:
     }
 
 
+def _resolve_publish_notice_24h_budget_soft_threshold() -> int:
+    return _resolve_non_negative_int_env(
+        _PUBLISH_NOTICE_24H_BUDGET_SOFT_THRESHOLD_ENV,
+        _PUBLISH_NOTICE_24H_BUDGET_SOFT_THRESHOLD_DEFAULT,
+    )
+
+
+def _resolve_publish_notice_24h_budget_hard_threshold() -> int:
+    hard_threshold = _resolve_non_negative_int_env(
+        _PUBLISH_NOTICE_24H_BUDGET_HARD_THRESHOLD_ENV,
+        _PUBLISH_NOTICE_24H_BUDGET_HARD_THRESHOLD_DEFAULT,
+    )
+    return max(hard_threshold, _resolve_publish_notice_24h_budget_soft_threshold())
+
+
+def _resolve_publish_notice_24h_budget_limit() -> int:
+    return _resolve_non_negative_int_env(
+        _PUBLISH_NOTICE_24H_BUDGET_LIMIT_ENV,
+        _PUBLISH_NOTICE_24H_BUDGET_LIMIT_DEFAULT,
+    )
+
+
 def _resolve_old_candidate_min_age_days() -> int:
     env_value = str(os.environ.get(_OLD_CANDIDATE_MIN_AGE_DAYS_ENV, "")).strip()
     if not env_value:
@@ -286,6 +362,14 @@ def _resolve_old_candidate_ledger_path(value: str | Path | None = None) -> Path:
     if env_value:
         return _path(env_value)
     return _OLD_CANDIDATE_LEDGER_DEFAULT_PATH
+
+
+def _resolve_publish_notice_24h_budget_ledger_path(value: str | Path | None = None) -> Path:
+    if value is not None and str(value).strip():
+        return _path(value)
+    if _PUBLISH_NOTICE_24H_BUDGET_LEDGER_DEFAULT_PATH.exists():
+        return _PUBLISH_NOTICE_24H_BUDGET_LEDGER_DEFAULT_PATH
+    return _PUBLISH_NOTICE_24H_BUDGET_LEDGER_FALLBACK_PATH
 
 
 def _publish_notice_old_candidate_ledger_ttl_enabled() -> bool:
@@ -416,6 +500,41 @@ def _sync_preflight_skip_history_from_gcs(path: Path) -> None:
     path.write_text(payload, encoding="utf-8")
 
 
+def _sync_publish_notice_24h_budget_history_from_gcs(path: Path) -> None:
+    client = _gcs_client()
+    if client is None:
+        return
+    try:
+        bucket = client.bucket(_PUBLISH_NOTICE_24H_BUDGET_GCS_BUCKET)
+        blob = bucket.blob(_PUBLISH_NOTICE_24H_BUDGET_GCS_OBJECT)
+        if not blob.exists():
+            return
+        payload = blob.download_as_text(encoding="utf-8")
+    except Exception as exc:
+        _log_event(
+            "publish_notice_24h_budget_history_gcs_sync_failed",
+            reason=type(exc).__name__,
+        )
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(payload, encoding="utf-8")
+
+
+def _upload_publish_notice_24h_budget_history_to_gcs(path: Path) -> None:
+    client = _gcs_client()
+    if client is None or not path.exists():
+        return
+    try:
+        bucket = client.bucket(_PUBLISH_NOTICE_24H_BUDGET_GCS_BUCKET)
+        blob = bucket.blob(_PUBLISH_NOTICE_24H_BUDGET_GCS_OBJECT)
+        blob.upload_from_filename(str(path))
+    except Exception as exc:
+        _log_event(
+            "publish_notice_24h_budget_history_gcs_upload_failed",
+            reason=type(exc).__name__,
+        )
+
+
 def _log_event(event: str, **payload: Any) -> None:
     print(json.dumps({"event": event, **payload}, ensure_ascii=False), file=sys.stderr, flush=True)
 
@@ -458,6 +577,33 @@ def _write_old_candidate_ledger(path: Path, ledger: Mapping[str, Any]) -> None:
         json.dumps(dict(sorted(ledger.items())), ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    os.replace(tmp_path, path)
+
+
+def _load_jsonl_payloads(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    with path.open(encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                rows.append(payload)
+    return rows
+
+
+def _write_jsonl_payloads(path: Path, rows: list[Mapping[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = Path(f"{path}.tmp")
+    with tmp_path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(dict(row), ensure_ascii=False) + "\n")
     os.replace(tmp_path, path)
 
 
@@ -1214,6 +1360,106 @@ def _classify_notice_request(request: PublishNoticeRequest) -> str:
     if notice_kind == "alert" or _is_error_notification_subject(subject):
         return _NOTICE_CLASS_ERROR_NOTIFICATION
     return _NOTICE_CLASS_OTHER
+
+
+def _queue_row_datetime(entry: Mapping[str, Any]) -> datetime | None:
+    for key in ("sent_at", "recorded_at", "publish_time_iso"):
+        parsed = _parse_datetime_to_jst(entry.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _budget_ledger_row_datetime(entry: Mapping[str, Any]) -> datetime | None:
+    return _parse_datetime_to_jst(entry.get("ts"))
+
+
+def evaluate_24h_budget_state(
+    *,
+    queue_path: str | Path = "logs/publish_notice_queue.jsonl",
+    budget_ledger_path: str | Path | None = None,
+    now: Callable[[], datetime] | datetime | None = None,
+) -> PublishNotice24hBudgetState:
+    current_now = _coerce_now(now)
+    soft_threshold = _resolve_publish_notice_24h_budget_soft_threshold()
+    hard_threshold = _resolve_publish_notice_24h_budget_hard_threshold()
+    limit = _resolve_publish_notice_24h_budget_limit()
+    ledger_path = _resolve_publish_notice_24h_budget_ledger_path(budget_ledger_path)
+
+    if not _publish_notice_24h_budget_governor_enabled():
+        return PublishNotice24hBudgetState(
+            enabled=False,
+            cumulative=0,
+            projected_cumulative=0,
+            limit=limit,
+            soft_threshold=soft_threshold,
+            hard_threshold=hard_threshold,
+            soft_breach=False,
+            hard_breach=False,
+            ledger_path=ledger_path,
+        )
+
+    if budget_ledger_path is None:
+        _sync_publish_notice_24h_budget_history_from_gcs(ledger_path)
+
+    cutoff = current_now - _HISTORY_WINDOW
+    queue_rows = _load_jsonl_payloads(_path(queue_path))
+    queue_sent_count = 0
+    for row in queue_rows:
+        if str(row.get("status") or "").strip() != "sent":
+            continue
+        sent_at = _queue_row_datetime(row)
+        if sent_at is None or sent_at < cutoff or sent_at > current_now:
+            continue
+        queue_sent_count += 1
+
+    ledger_rows = _load_jsonl_payloads(ledger_path)
+    recent_ledger_rows = [
+        row
+        for row in ledger_rows
+        if (row_dt := _budget_ledger_row_datetime(row)) is not None and cutoff <= row_dt <= current_now
+    ]
+    ledger_count = sum(max(0, int(row.get("mail_count") or 0)) for row in recent_ledger_rows)
+
+    cumulative = max(queue_sent_count, ledger_count)
+    if queue_sent_count >= ledger_count and queue_sent_count > 0:
+        source = "queue"
+    elif ledger_count > 0:
+        source = "ledger"
+    else:
+        source = "empty"
+
+    soft_breach = cumulative >= soft_threshold
+    hard_breach = cumulative >= hard_threshold
+    return PublishNotice24hBudgetState(
+        enabled=True,
+        cumulative=cumulative,
+        projected_cumulative=cumulative,
+        limit=limit,
+        soft_threshold=soft_threshold,
+        hard_threshold=hard_threshold,
+        soft_breach=soft_breach,
+        hard_breach=hard_breach,
+        source=source,
+        ledger_path=ledger_path,
+    )
+
+
+def demote_class_for_budget(
+    request: PublishNoticeRequest,
+    *,
+    cumulative_sent: int,
+    soft_threshold: int,
+    hard_threshold: int,
+) -> str | None:
+    notice_class = _classify_notice_request(request)
+    if notice_class in _PUBLISH_NOTICE_24H_BUDGET_PROTECTED_CLASSES:
+        return None
+    if cumulative_sent >= hard_threshold and notice_class in _PUBLISH_NOTICE_24H_BUDGET_HARD_DEMOTE_CLASSES:
+        return f"budget_hard_{notice_class}"
+    if cumulative_sent >= soft_threshold and notice_class in _PUBLISH_NOTICE_24H_BUDGET_SOFT_DEMOTE_CLASSES:
+        return f"budget_soft_{notice_class}"
+    return None
 
 
 def _select_candidates_by_class_reserve(
@@ -2062,6 +2308,140 @@ def _queue_extra_payload_for_request(request: PublishNoticeRequest) -> dict[str,
     return {key: value for key, value in payload.items() if value}
 
 
+def _is_24h_budget_summary_only_request(request: PublishNoticeRequest) -> bool:
+    return str(getattr(request, "record_type", "") or "").strip() == _PUBLISH_NOTICE_24H_BUDGET_RECORD_TYPE
+
+
+def _build_24h_budget_summary_only_request(
+    request: PublishNoticeRequest,
+    *,
+    demotion_reason: str,
+) -> PublishNoticeRequest:
+    subtype = str(request.subtype or "").strip() or "unknown"
+    return PublishNoticeRequest(
+        post_id=request.post_id,
+        title=request.title,
+        canonical_url=request.canonical_url,
+        subtype=f"{subtype}|{demotion_reason}",
+        publish_time_iso=request.publish_time_iso,
+        summary=request.summary,
+        is_backlog=True,
+        notice_kind="publish",
+        subject_override=None,
+        source_title=getattr(request, "source_title", None),
+        generated_title=getattr(request, "generated_title", None),
+        skip_reason=getattr(request, "skip_reason", None),
+        skip_reason_label=getattr(request, "skip_reason_label", None),
+        source_url_hash=getattr(request, "source_url_hash", None),
+        category=getattr(request, "category", None),
+        record_type=_PUBLISH_NOTICE_24H_BUDGET_RECORD_TYPE,
+        skip_layer=_PUBLISH_NOTICE_24H_BUDGET_SKIP_LAYER,
+        fail_axes=tuple(getattr(request, "fail_axes", ()) or ()),
+    )
+
+
+def _apply_24h_budget_governor(
+    requests: list[PublishNoticeRequest],
+    *,
+    budget_state: PublishNotice24hBudgetState,
+) -> tuple[list[PublishNoticeRequest], PublishNotice24hBudgetState]:
+    if not budget_state.enabled or not requests:
+        return list(requests), budget_state
+
+    transformed: list[PublishNoticeRequest] = []
+    demoted_counter: Counter[str] = Counter()
+    projected_cumulative = int(budget_state.cumulative)
+    summary_reserved = False
+
+    for request in requests:
+        demotion_reason = demote_class_for_budget(
+            request,
+            cumulative_sent=projected_cumulative,
+            soft_threshold=budget_state.soft_threshold,
+            hard_threshold=budget_state.hard_threshold,
+        )
+        notice_class = _classify_notice_request(request)
+        if demotion_reason is None:
+            transformed.append(request)
+            projected_cumulative += 1
+            continue
+
+        transformed.append(
+            _build_24h_budget_summary_only_request(request, demotion_reason=demotion_reason)
+        )
+        demoted_counter[notice_class] += 1
+        if not summary_reserved:
+            summary_reserved = True
+            projected_cumulative += 1
+        _log_event(
+            "publish_notice_24h_budget_demoted",
+            post_id=request.post_id,
+            notice_class=notice_class,
+            demotion_reason=demotion_reason,
+            projected_cumulative=projected_cumulative,
+            subject=_notice_subject_text(request),
+        )
+
+    budget_state.projected_cumulative = projected_cumulative
+    budget_state.soft_breach = projected_cumulative >= budget_state.soft_threshold
+    budget_state.hard_breach = projected_cumulative >= budget_state.hard_threshold
+    budget_state.demoted_count = dict(sorted(demoted_counter.items()))
+    budget_state.summary_reserved = summary_reserved
+    return transformed, budget_state
+
+
+def _write_24h_budget_ledger_entry(
+    path: Path,
+    *,
+    now: datetime,
+    mail_count: int,
+    projected_cumulative: int,
+    demoted_count: Mapping[str, int],
+) -> None:
+    if mail_count <= 0:
+        return
+    cutoff = now - _HISTORY_WINDOW
+    rows = [
+        row
+        for row in _load_jsonl_payloads(path)
+        if (row_dt := _budget_ledger_row_datetime(row)) is not None and cutoff <= row_dt <= now
+    ]
+    rows.append(
+        {
+            "ts": now.isoformat(),
+            "mail_count": int(mail_count),
+            "projected_cumulative": int(projected_cumulative),
+            "demoted_count": {str(key): int(value) for key, value in demoted_count.items()},
+            "source": "scanner_planned",
+        }
+    )
+    _write_jsonl_payloads(path, rows)
+    _upload_publish_notice_24h_budget_history_to_gcs(path)
+
+
+def _append_selected_review_queue_logs(
+    requests: list[PublishNoticeRequest],
+    *,
+    queue_path: str | Path,
+    review_scan: GuardedPublishHistoryScanResult,
+    now: datetime,
+) -> None:
+    for request in requests:
+        if _is_24h_budget_summary_only_request(request):
+            continue
+        recorded_at_iso = _recorded_at_iso_for_request(request, now=now)
+        _append_queue_log(
+            queue_path,
+            status="queued",
+            reason=_queue_reason_for_request(request, review_scan),
+            subject=str(request.subject_override or ""),
+            recipients=[],
+            post_id=request.post_id,
+            recorded_at_iso=recorded_at_iso,
+            extra_payload=_queue_extra_payload_for_request(request),
+        )
+
+
 def _recorded_at_iso_for_request(request: PublishNoticeRequest, *, now: datetime) -> str:
     notice_class = _classify_notice_request(request)
     if notice_class == _NOTICE_CLASS_POST_GEN_VALIDATE:
@@ -2155,6 +2535,8 @@ def scan(
     review_cap = _resolve_review_max_per_run(None)
     class_reserve_enabled = _publish_notice_class_reserve_enabled()
     review_history_before_selection = dict(next_history)
+    selected_review_requests: list[PublishNoticeRequest] = []
+    selected_review_ids: set[str] = set()
 
     if class_reserve_enabled:
         review_scan = scan_guarded_publish_history(
@@ -2213,7 +2595,6 @@ def scan(
             priority_order=_CLASS_RESERVE_PRIORITY_ORDER,
         )
         selected_review_ids = _selected_request_ids(selected_review_requests)
-        emitted.extend(selected_review_requests)
         skipped.extend(review_scan.skipped)
         skipped.extend(post_gen_validate_scan.skipped)
         skipped.extend(preflight_skip_scan.skipped)
@@ -2221,19 +2602,12 @@ def scan(
         for request in selected_review_requests:
             recorded_at_iso = _recorded_at_iso_for_request(request, now=current_now)
             next_history[str(request.post_id)] = recorded_at_iso
-            _append_queue_log(
-                queue_path,
-                status="queued",
-                reason=_queue_reason_for_request(request, review_scan),
-                subject=str(request.subject_override or ""),
-                recipients=[],
-                post_id=request.post_id,
-                recorded_at_iso=recorded_at_iso,
-                extra_payload=_queue_extra_payload_for_request(request),
-            )
     else:
-        review_scan = scan_guarded_publish_history(**review_scan_kwargs)
-        emitted.extend(review_scan.emitted)
+        review_scan = scan_guarded_publish_history(
+            **review_scan_kwargs,
+            max_per_run=review_cap,
+            capture_only=True,
+        )
         skipped.extend(review_scan.skipped)
         next_history = review_scan.history_after
 
@@ -2250,8 +2624,8 @@ def scan(
                 recorded_at=current_now + timedelta(seconds=2),
                 write_history=False,
                 write_cursor=False,
+                capture_only=True,
             )
-            emitted.extend(post_gen_validate_scan.emitted)
             skipped.extend(post_gen_validate_scan.skipped)
             next_history = post_gen_validate_scan.history_after
         else:
@@ -2278,8 +2652,8 @@ def scan(
                 recorded_at=current_now + timedelta(seconds=3),
                 write_history=False,
                 write_cursor=False,
+                capture_only=True,
             )
-            emitted.extend(preflight_skip_scan.emitted)
             skipped.extend(preflight_skip_scan.skipped)
             next_history = preflight_skip_scan.history_after
         else:
@@ -2289,14 +2663,41 @@ def scan(
                 history_after=next_history,
                 cursor_write_needed=False,
             )
+        selected_review_requests = (
+            review_scan.emitted + post_gen_validate_scan.emitted + preflight_skip_scan.emitted
+        )
+        selected_review_ids = _selected_request_ids(selected_review_requests)
 
+    budget_state = evaluate_24h_budget_state(queue_path=queue_path, now=current_now)
+    emitted, budget_state = _apply_24h_budget_governor(
+        emitted + selected_review_requests,
+        budget_state=budget_state,
+    )
+    if budget_state.enabled:
+        _log_event(
+            "publish_notice_24h_budget_state",
+            cumulative=budget_state.cumulative,
+            projected_cumulative=budget_state.projected_cumulative,
+            limit=budget_state.limit,
+            soft_breach=budget_state.soft_breach,
+            hard_breach=budget_state.hard_breach,
+            demoted_count=budget_state.demoted_count,
+            source=budget_state.source,
+        )
+
+    final_selected_review_requests = [
+        request for request in emitted if str(request.post_id) in selected_review_ids
+    ]
+    _append_selected_review_queue_logs(
+        final_selected_review_requests,
+        queue_path=queue_path,
+        review_scan=review_scan,
+        now=current_now,
+    )
     cursor_after = latest_post_dt.isoformat() if latest_post_dt is not None else current_now.isoformat()
     _write_history(history_file, next_history)
     _write_cursor(cursor_file, cursor_after)
     if class_reserve_enabled:
-        selected_review_ids = _selected_request_ids(
-            [request for request in emitted if _classify_notice_request(request) != _NOTICE_CLASS_OTHER]
-        )
         old_candidate_ledger_after = (
             dict(review_scan.old_candidate_ledger_after)
             if review_scan.old_candidate_ledger_after is not None
@@ -2360,6 +2761,22 @@ def scan(
             and preflight_skip_scan.cursor_after is not None
         ):
             _write_cursor(preflight_skip_scan.cursor_path, preflight_skip_scan.cursor_after)
+    if budget_state.enabled and budget_state.ledger_path is not None:
+        selected_review_proxy_ids = {
+            str(request.post_id)
+            for request in final_selected_review_requests
+            if _is_24h_budget_summary_only_request(request)
+        }
+        mail_count = len(emitted) - len(selected_review_proxy_ids)
+        if selected_review_proxy_ids:
+            mail_count += 1
+        _write_24h_budget_ledger_entry(
+            budget_state.ledger_path,
+            now=current_now,
+            mail_count=mail_count,
+            projected_cumulative=budget_state.projected_cumulative,
+            demoted_count=budget_state.demoted_count,
+        )
     return ScanResult(
         emitted=emitted,
         skipped=skipped,
@@ -2371,7 +2788,10 @@ def scan(
 __all__ = [
     "GuardedPublishHistoryScanResult",
     "JST",
+    "PublishNotice24hBudgetState",
     "ScanResult",
+    "demote_class_for_budget",
+    "evaluate_24h_budget_state",
     "scan",
     "scan_guarded_publish_history",
     "scan_preflight_skip_history",

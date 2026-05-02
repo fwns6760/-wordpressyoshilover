@@ -51,6 +51,31 @@ _POSTGAME_MARKERS = (
 _PREGAME_MARKERS = ("先発情報", "予告先発", "先発", "試合前")
 _FACT_NOTICE_MARKERS = ("訂正", "告知", "お知らせ", "お詫び", "公示", "誤報", "取り下げ")
 _FARM_MARKERS = ("二軍", "２軍", "2軍", "ファーム")
+_LINEUP_ORDER_SLOT_RE = re.compile(r"(?<![0-9０-９])[1-9１-９]番(?!手)")
+_LINEUP_OPPONENT_MARKERS = (
+    "阪神",
+    "中日",
+    "ヤクルト",
+    "広島",
+    "DeNA",
+    "ＤｅＮＡ",
+    "横浜",
+    "ソフトバンク",
+    "日本ハム",
+    "日ハム",
+    "ロッテ",
+    "楽天",
+    "オリックス",
+    "西武",
+    "戦",
+    "vs",
+    "VS",
+    "対",
+)
+_LINEUP_STARTER_MARKERS = ("先発", "予告先発")
+_MANAGER_EVENT_MARKERS = ("説明", "言及", "明か", "継投", "起用", "采配", "評価", "振り返", "狙い")
+_FARM_PERFORMANCE_MARKERS = ("安打", "打点", "本塁打", "ホームラン", "好投", "無失点", "奪三振", "打", "回")
+_QUOTE_CHARS_RE = re.compile(r"[「『].+[」』]")
 
 _REROLL_DEFAULT_SUFFIX = {
     "lineup": "発表のポイント",
@@ -376,6 +401,61 @@ def is_weak_subject_title(title: str) -> tuple[bool, str]:
     return False, ""
 
 
+def _title_has_lineup_context(title: str) -> tuple[bool, str]:
+    normalized = _normalize_title_text(title)
+    if not normalized:
+        return False, "title_empty"
+    if any(marker in normalized for marker in _LINEUP_OPPONENT_MARKERS):
+        return True, "lineup_has_opponent"
+    if _LINEUP_ORDER_SLOT_RE.search(normalized):
+        return True, "lineup_has_order"
+    if any(marker in normalized for marker in _LINEUP_STARTER_MARKERS):
+        return True, "lineup_has_starter"
+    return False, "lineup_missing_opponent_order_or_starter"
+
+
+def _title_has_manager_context(title: str) -> tuple[bool, str]:
+    normalized = _normalize_title_text(title)
+    if not normalized:
+        return False, "title_empty"
+    core = _strip_reserved_prefixes(normalized) or normalized
+    if GENERIC_SUBJECT_START_RE.match(core) or any(core.startswith(noun) for noun in GENERIC_PERSON_NOUNS):
+        return False, "manager_missing_speaker"
+    if not title_has_person_name_candidate(normalized):
+        return False, "manager_missing_speaker"
+    if _QUOTE_CHARS_RE.search(normalized):
+        return True, "manager_has_quote"
+    if any(marker in normalized for marker in _MANAGER_EVENT_MARKERS):
+        return True, "manager_has_event"
+    return False, "manager_missing_quote_or_event"
+
+
+def _title_has_farm_result_context(title: str) -> tuple[bool, str]:
+    normalized = _normalize_title_text(title)
+    if not normalized:
+        return False, "title_empty"
+    if _SCORE_RE.search(normalized):
+        return True, "farm_result_has_score"
+    if title_has_person_name_candidate(normalized) and any(marker in normalized for marker in _FARM_PERFORMANCE_MARKERS):
+        return True, "farm_result_has_player_performance"
+    return False, "farm_result_missing_score_or_player_performance"
+
+
+def title_has_minimum_article_context(title: str, article_subtype: str) -> tuple[bool, str]:
+    normalized = _normalize_title_text(title)
+    if not normalized:
+        return False, "title_empty"
+
+    subtype = str(article_subtype or "").strip().lower()
+    if subtype == "lineup":
+        return _title_has_lineup_context(normalized)
+    if subtype == "manager":
+        return _title_has_manager_context(normalized)
+    if subtype in {"farm_result", "farm"}:
+        return _title_has_farm_result_context(normalized)
+    return True, "not_applicable"
+
+
 def validate_title_candidate(title: str, article_subtype: str) -> dict[str, object]:
     expected_first_block = REQUIRED_FIRST_BLOCK_BY_SUBTYPE.get(article_subtype, "")
     inferred_subtype = infer_subtype_from_title(title)
@@ -512,6 +592,7 @@ __all__ = [
     "is_supported_subtype",
     "starts_with_sokuho_prefix",
     "starts_with_starmen_prefix",
+    "title_has_minimum_article_context",
     "title_has_person_name_candidate",
     "validate_title_candidate",
 ]

@@ -130,6 +130,33 @@ class TitleValidatorTests(unittest.TestCase):
         self.assertEqual(reason, "")
         self.assertTrue(title_validator.is_non_name_speaker_label("チーム"))
 
+    def test_title_has_minimum_article_context_rejects_generic_titles(self):
+        cases = [
+            ("投手コメント整理", "manager", "manager_missing_speaker"),
+            ("関連情報", "lineup", "lineup_missing_opponent_order_or_starter"),
+            ("発言ポイント", "farm_result", "farm_result_missing_score_or_player_performance"),
+        ]
+
+        for title, subtype, expected_reason in cases:
+            with self.subTest(title=title, subtype=subtype):
+                ok, reason = title_validator.title_has_minimum_article_context(title, subtype)
+                self.assertFalse(ok)
+                self.assertEqual(reason, expected_reason)
+
+    def test_title_has_minimum_article_context_accepts_concrete_titles(self):
+        cases = [
+            ("巨人スタメン 阪神戦 吉川尚輝が2番二塁、先発は戸郷翔征", "lineup"),
+            ("阿部監督「継投は想定通り」阪神戦後に説明", "manager"),
+            ("二軍 巨人3-2ロッテ 浅野翔吾が決勝打", "farm_result"),
+            ("二軍 浅野翔吾が3安打1本塁打", "farm_result"),
+        ]
+
+        for title, subtype in cases:
+            with self.subTest(title=title, subtype=subtype):
+                ok, reason = title_validator.title_has_minimum_article_context(title, subtype)
+                self.assertTrue(ok)
+                self.assertNotEqual(reason, "")
+
 
 if __name__ == "__main__":
     unittest.main()

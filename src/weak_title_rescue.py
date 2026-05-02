@@ -34,6 +34,8 @@ _NAMED_EVENT_RE = re.compile(
 _QUOTE_RE = re.compile(r"[「『]([^」』]{1,80})[」』]")
 _RELATED_INFO_ESCAPE_RE = re.compile(r"(?:昇格・復帰|登録抹消|合流)\s*関連情報\s*$")
 _BLACKLIST_RESCUE_RE = re.compile(r"(?:ベンチ関連の発言ポイント|ベンチ関連発言|関連発言)\s*$")
+_ALLOWED_RESCUE_SUBTYPES = frozenset({"manager", "player", "player_notice", "notice", "recovery"})
+_STALE_METADATA_KEYS = ("stale", "stale_postgame", "source_stale")
 
 _GENERIC_NAME_TOKENS = frozenset(
     {
@@ -163,6 +165,26 @@ def _metadata_role(metadata: Mapping[str, object]) -> str:
     return ""
 
 
+def _metadata_bool(metadata: Mapping[str, object], *keys: str) -> bool:
+    for key in keys:
+        value = metadata.get(key)
+        if isinstance(value, bool):
+            if value:
+                return True
+            continue
+        text = _clean_text(str(value or "")).lower()
+        if text in {"1", "true", "yes", "on"}:
+            return True
+    return False
+
+
+def _metadata_subtype(metadata: Mapping[str, object]) -> str:
+    subtype = _clean_text(str(metadata.get("article_subtype") or metadata.get("subtype") or "")).lower()
+    if subtype in {"notice", "recovery"}:
+        return "player_notice"
+    return subtype
+
+
 def _extract_first_name(text: str) -> str:
     cleaned = _strip_source_prefixes(text)
     for match in _NAME_TOKEN_RE.finditer(cleaned):
@@ -214,6 +236,70 @@ def _extract_quote(text: str) -> str:
     if not match:
         return ""
     return match.group(1).strip()
+
+
+def _source_like_texts(source_title: str, summary: str, body: str) -> list[str]:
+    texts: list[str] = []
+    for value in (source_title, summary, body):
+        cleaned = _strip_source_prefixes(value)
+        if cleaned and cleaned not in texts:
+            texts.append(cleaned)
+    return texts
+
+
+def _first_pattern_match(pattern: re.Pattern[str], texts: list[str]) -> re.Match[str] | None:
+    for text in texts:
+        match = pattern.search(text)
+        if match:
+            return match
+    return None
+
+
+def _best_event_phrases(texts: list[str], *, limit: int = 2) -> list[str]:
+    for text in texts:
+        phrases = _extract_event_phrases(text, limit=limit)
+        if phrases:
+            return phrases
+    return []
+
+
+def _best_quote(texts: list[str]) -> str:
+    for text in texts:
+        quote = _extract_quote(text)
+        if quote:
+            return quote
+    return ""
+
+
+def _supports_rescue_target(
+    *,
+    source_title: str,
+    summary: str,
+    body: str,
+    metadata: Mapping[str, object],
+) -> bool:
+    subtype = _metadata_subtype(metadata)
+    if subtype == "postgame":
+        return False
+    if subtype in _ALLOWED_RESCUE_SUBTYPES:
+        return True
+    role = _clean_text(str(metadata.get("role") or ""))
+    if role in {"投手", "選手", "監督", "コーチ"}:
+        return True
+    if _looks_like_name(_clean_text(str(metadata.get("speaker") or ""))):
+        return True
+    if _looks_like_name(_metadata_name(metadata)):
+        return True
+
+    combined = " ".join(_source_like_texts(source_title, summary, body))
+    return bool(
+        combined
+        and (
+            _MESSAGE_RE.search(combined)
+            or _NAMED_EVENT_RE.search(combined)
+            or (_extract_first_name(combined) and _extract_event_phrases(combined, limit=1))
+        )
+    )
 
 
 def _extract_event_phrases(text: str, *, limit: int = 2) -> list[str]:
@@ -272,6 +358,8 @@ def _contains_safety_blockers(
         return True
     if str(metadata.get("guard_outcome") or "").strip() == "skip":
         return True
+    if _metadata_bool(metadata, *_STALE_METADATA_KEYS):
+        return True
     if any(bool(metadata.get(key)) for key in ("already_published", "duplicate_guard_skip", "hard_stop", "major_league_context", "merchandise")):
         return True
     if str(metadata.get("team_scope") or "").strip().lower() == "mixed":
@@ -299,6 +387,13 @@ def rescue_related_info_escape(
     normalized_title = _clean_text(gen_title)
     if not _RELATED_INFO_ESCAPE_RE.search(normalized_title):
         return None
+    if not _supports_rescue_target(
+        source_title=source_title,
+        summary=summary,
+        body=body,
+        metadata=metadata,
+    ):
+        return None
     if _contains_safety_blockers(
         gen_title=gen_title,
         source_title=source_title,
@@ -308,27 +403,29 @@ def rescue_related_info_escape(
     ):
         return None
 
-    source_core = _strip_source_prefixes(source_title)
-    if not source_core:
+    source_texts = _source_like_texts(source_title, summary, body)
+    if not source_texts:
         return None
 
-    multi_match = _TWO_NAME_RELATED_RE.match(source_core)
-    if multi_match:
+    for source_core in source_texts:
+        multi_match = _TWO_NAME_RELATED_RE.match(source_core)
+        if not multi_match:
+            continue
         rest = _clean_text(multi_match.group("rest"))
         event_phrases = _extract_event_phrases(rest, limit=1)
         if not event_phrases:
-            return None
+            continue
         rescued = f"{multi_match.group('first')}・{multi_match.group('second')}が{event_phrases[0]}"
         return RescueResult(title=rescued, strategy="related_info_escape_multi_name")
 
     primary_name = _resolve_primary_name(
         gen_title=gen_title,
-        source_title=source_core,
+        source_title=source_texts[0],
         body=body,
         summary=summary,
         metadata=metadata,
     )
-    event_phrases = _extract_event_phrases(source_core)
+    event_phrases = _best_event_phrases(source_texts)
     if not primary_name or not event_phrases:
         return None
     display_name = _display_name(primary_name, metadata=metadata, add_role=True)
@@ -347,6 +444,13 @@ def rescue_blacklist_phrase(
     normalized_title = _clean_text(gen_title)
     if not _BLACKLIST_RESCUE_RE.search(normalized_title):
         return None
+    if not _supports_rescue_target(
+        source_title=source_title,
+        summary=summary,
+        body=body,
+        metadata=metadata,
+    ):
+        return None
     if _contains_safety_blockers(
         gen_title=gen_title,
         source_title=source_title,
@@ -356,32 +460,34 @@ def rescue_blacklist_phrase(
     ):
         return None
 
-    source_core = _strip_source_prefixes(source_title)
-    if not source_core:
+    source_texts = _source_like_texts(source_title, summary, body)
+    if not source_texts:
         return None
 
-    message_match = _MESSAGE_RE.search(source_core)
-    commentator_match = _COMMENTATOR_RE.search(source_core)
+    message_match = _first_pattern_match(_MESSAGE_RE, source_texts)
+    commentator_match = _first_pattern_match(_COMMENTATOR_RE, source_texts)
     if message_match:
         rescued = message_match.group("message").strip()
         if commentator_match:
             rescued = f"{rescued} {commentator_match.group('name').strip()}"
         return RescueResult(title=rescued, strategy="blacklist_phrase_message")
 
-    named_event_match = _NAMED_EVENT_RE.match(source_core)
-    if named_event_match:
+    for source_core in source_texts:
+        named_event_match = _NAMED_EVENT_RE.match(source_core)
+        if not named_event_match:
+            continue
         rescued = f"{named_event_match.group('name')}、{_clean_text(named_event_match.group('rest'))}"
         return RescueResult(title=rescued, strategy="blacklist_phrase_named_event")
 
     primary_name = _resolve_primary_name(
         gen_title=gen_title,
-        source_title=source_core,
+        source_title=source_texts[0],
         body=body,
         summary=summary,
         metadata=metadata,
     )
-    quote = _extract_quote(source_core)
-    event_phrases = _extract_event_phrases(source_core, limit=1)
+    quote = _best_quote(source_texts)
+    event_phrases = _best_event_phrases(source_texts, limit=1)
     if not primary_name or not event_phrases:
         return None
     if quote:

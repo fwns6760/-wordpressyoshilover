@@ -34,6 +34,19 @@ class WeakTitleRescueHelperTests(unittest.TestCase):
         self.assertEqual(result.title, "山崎伊織・西舘勇陽が復帰へ前進")
         self.assertEqual(result.strategy, "related_info_escape_multi_name")
 
+    def test_related_info_escape_rescues_player_notice_from_summary_event(self):
+        result = weak_title_rescue.rescue_related_info_escape(
+            gen_title="戸郷翔征、昇格・復帰 関連情報",
+            source_title="【巨人】戸郷翔征の最新情報",
+            body="戸郷翔征はブルペンで本格的な投球練習を再開し、1軍復帰へ前進した。",
+            summary="戸郷翔征はブルペンで本格的な投球練習を再開し、1軍復帰へ前進した。",
+            metadata={"article_subtype": "player_notice", "player_name": "戸郷翔征", "role": "投手"},
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.title, "戸郷翔征投手、ブルペンで本格的な投球練習を再開 1軍復帰へ前進")
+        self.assertEqual(result.strategy, "related_info_escape_single_name")
+
     def test_blacklist_phrase_rescues_abe_message_title(self):
         result = weak_title_rescue.rescue_blacklist_phrase(
             gen_title="阿部コメント整理 ベンチ関連の発言ポイント",
@@ -58,6 +71,19 @@ class WeakTitleRescueHelperTests(unittest.TestCase):
 
         self.assertIsNotNone(result)
         self.assertEqual(result.title, "平山功太「左手おとりに使って右手出す練習やっていた」神生還")
+        self.assertEqual(result.strategy, "blacklist_phrase_quote_event")
+
+    def test_blacklist_phrase_rescues_from_summary_when_source_title_is_generic(self):
+        result = weak_title_rescue.rescue_blacklist_phrase(
+            gen_title="平山功太 コメント整理 ベンチ関連発言",
+            source_title="【巨人】平山功太が試合を振り返る",
+            body="平山功太は「左手をおとりに使った」と振り返り、神生還につなげた。",
+            summary="平山功太は「左手をおとりに使った」と振り返り、神生還につなげた。",
+            metadata={"article_subtype": "player", "player_name": "平山功太", "role": "選手"},
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.title, "平山功太「左手をおとりに使った」神生還")
         self.assertEqual(result.strategy, "blacklist_phrase_quote_event")
 
     def test_blacklist_phrase_rescues_takemaru_birthday_title(self):
@@ -92,6 +118,25 @@ class WeakTitleRescueHelperTests(unittest.TestCase):
         self.assertIsNone(related)
         self.assertIsNone(mlb)
 
+    def test_related_info_escape_does_not_rescue_postgame_or_mixed_team_cases(self):
+        postgame = weak_title_rescue.rescue_related_info_escape(
+            gen_title="戸郷翔征、昇格・復帰 関連情報",
+            source_title="【巨人】戸郷翔征がブルペンで本格的な投球練習を再開 1軍復帰へ前進",
+            body="戸郷翔征がブルペンで本格的な投球練習を再開し、1軍復帰へ前進した。",
+            summary="戸郷翔征がブルペンで本格的な投球練習を再開し、1軍復帰へ前進した。",
+            metadata={"article_subtype": "postgame", "player_name": "戸郷翔征", "role": "投手"},
+        )
+        mixed_team = weak_title_rescue.rescue_related_info_escape(
+            gen_title="戸郷翔征、昇格・復帰 関連情報",
+            source_title="【巨人】戸郷翔征がブルペンで本格的な投球練習を再開 1軍復帰へ前進",
+            body="戸郷翔征がブルペンで本格的な投球練習を再開し、1軍復帰へ前進した。",
+            summary="戸郷翔征がブルペンで本格的な投球練習を再開し、1軍復帰へ前進した。",
+            metadata={"player_name": "戸郷翔征", "role": "投手", "team_scope": "mixed"},
+        )
+
+        self.assertIsNone(postgame)
+        self.assertIsNone(mixed_team)
+
     def test_blacklist_phrase_does_not_rescue_duplicate_or_hard_stop_cases(self):
         duplicate = weak_title_rescue.rescue_blacklist_phrase(
             gen_title="首脳陣コメント整理 ベンチ関連の発言ポイント",
@@ -110,6 +155,17 @@ class WeakTitleRescueHelperTests(unittest.TestCase):
 
         self.assertIsNone(duplicate)
         self.assertIsNone(hard_stop)
+
+    def test_blacklist_phrase_does_not_rescue_stale_case(self):
+        result = weak_title_rescue.rescue_blacklist_phrase(
+            gen_title="平山功太 コメント整理 ベンチ関連発言",
+            source_title="【巨人】平山功太が試合を振り返る",
+            body="平山功太は「左手をおとりに使った」と振り返り、神生還につなげた。",
+            summary="平山功太は「左手をおとりに使った」と振り返り、神生還につなげた。",
+            metadata={"article_subtype": "player", "player_name": "平山功太", "role": "選手", "stale": True},
+        )
+
+        self.assertIsNone(result)
 
     def test_blacklist_phrase_does_not_invent_missing_name(self):
         result = weak_title_rescue.rescue_blacklist_phrase(

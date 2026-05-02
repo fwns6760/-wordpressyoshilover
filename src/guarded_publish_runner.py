@@ -1128,6 +1128,38 @@ def _history_attempted_post_ids(rows: Sequence[dict[str, Any]], *, now: datetime
     return attempted
 
 
+def _latest_history_row_for_post_id(
+    rows: Sequence[dict[str, Any]],
+    *,
+    post_id: int,
+) -> dict[str, Any] | None:
+    target_post_id = int(post_id)
+    for row in reversed(rows):
+        try:
+            row_post_id = int(row.get("post_id"))
+        except (TypeError, ValueError):
+            continue
+        if row_post_id == target_post_id:
+            return row
+    return None
+
+
+def _history_state_matches(
+    row: dict[str, Any] | None,
+    *,
+    status: str,
+    judgment: str,
+    hold_reason: str,
+) -> bool:
+    if row is None:
+        return False
+    return (
+        str(row.get("status") or "") == status
+        and str(row.get("judgment") or "") == judgment
+        and str(row.get("hold_reason") or "") == hold_reason
+    )
+
+
 def _daily_sent_count(rows: Sequence[dict[str, Any]], day: date) -> int:
     count = 0
     for row in rows:
@@ -1936,6 +1968,7 @@ def run_guarded_publish(
     daily_sent_count = _daily_sent_count(history_rows, now_jst.date())
     hourly_sent_count = _hourly_sent_count(history_rows, now_jst)
     max_publish_per_hour = _max_publish_per_hour(int(max_burst))
+    idempotent_history_enabled = _env_truthy("ENABLE_GUARDED_PUBLISH_IDEMPOTENT_HISTORY")
 
     refused: list[dict[str, Any]] = []
     proposed_public: list[dict[str, Any]] = []
@@ -2116,21 +2149,37 @@ def run_guarded_publish(
             }
         )
         if live:
-            row = _history_row(
-                post_id=entry["post_id"],
-                judgment=entry["judgment"],
+            latest_history_row = _latest_history_row_for_post_id(history_rows, post_id=int(entry["post_id"]))
+            if idempotent_history_enabled and _history_state_matches(
+                latest_history_row,
                 status="skipped",
-                ts=now_iso,
-                backup_path=None,
-                error="backlog_only",
-                publishable=True,
-                cleanup_required=bool(entry["cleanup_required"]),
-                cleanup_success=False,
+                judgment=str(entry["judgment"]),
                 hold_reason="backlog_only",
-                is_backlog=True,
-                freshness_source=str(entry.get("freshness_source") or ""),
-            )
-            live_history_rows.append(row)
+            ):
+                _log_event(
+                    "guarded_publish_idempotent_history_skip",
+                    post_id=entry["post_id"],
+                    reason="unchanged_backlog_only",
+                    status="skipped",
+                    judgment=entry["judgment"],
+                    hold_reason="backlog_only",
+                )
+            else:
+                row = _history_row(
+                    post_id=entry["post_id"],
+                    judgment=entry["judgment"],
+                    status="skipped",
+                    ts=now_iso,
+                    backup_path=None,
+                    error="backlog_only",
+                    publishable=True,
+                    cleanup_required=bool(entry["cleanup_required"]),
+                    cleanup_success=False,
+                    hold_reason="backlog_only",
+                    is_backlog=True,
+                    freshness_source=str(entry.get("freshness_source") or ""),
+                )
+                live_history_rows.append(row)
             executed.append(
                 {
                     "post_id": entry["post_id"],

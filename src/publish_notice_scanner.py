@@ -61,9 +61,15 @@ _POST_GEN_VALIDATE_HISTORY_DEFAULT_PATH = Path("/tmp/pub004d/post_gen_validate_h
 _POST_GEN_VALIDATE_HISTORY_FALLBACK_PATH = Path("logs/post_gen_validate_history.jsonl")
 _POST_GEN_VALIDATE_HISTORY_CURSOR_DEFAULT_PATH = Path("/tmp/pub004d/post_gen_validate_history_cursor.txt")
 _POST_GEN_VALIDATE_NOTIFICATION_ENV_FLAG = "ENABLE_POST_GEN_VALIDATE_NOTIFICATION"
+_POST_GEN_VALIDATE_DIGEST_ENV_FLAG = "ENABLE_289_POST_GEN_VALIDATE_DIGEST"
+_POST_GEN_VALIDATE_DIGEST_KEEP_PER_HOUR_ENV = "POST_GEN_VALIDATE_DIGEST_KEEP_PER_HOUR"
+_POST_GEN_VALIDATE_DIGEST_KEEP_PER_HOUR_DEFAULT = 3
 _POST_GEN_VALIDATE_SKIP_LAYER = "post_gen_validate"
 _POST_GEN_VALIDATE_RECORD_TYPE = "post_gen_validate"
+_POST_GEN_VALIDATE_DIGEST_RECORD_TYPE = "post_gen_validate_digest"
 _POST_GEN_VALIDATE_REVIEW_PREFIX = "【要review｜post_gen_validate】"
+_POST_GEN_VALIDATE_DIGEST_REVIEW_PREFIX = "【要review｜post_gen_validate digest｜"
+_POST_GEN_VALIDATE_DIGEST_SKIP_REASON = "post_gen_validate_digest"
 _SCANNER_INTERNAL_SKIP_LAYER = "scanner_malformed_payload"
 _SCANNER_INTERNAL_SKIP_RECORD_TYPE = "scanner_internal_skip"
 _SCANNER_INTERNAL_SKIP_REVIEW_PREFIX = "【要review｜internal_skip_visible】"
@@ -175,6 +181,22 @@ class PublishNotice24hBudgetState:
     summary_reserved: bool = False
     source: str = "disabled"
     ledger_path: Path | None = None
+
+
+@dataclass
+class PublishNotice289DigestState:
+    enabled: bool
+    hour_count: int
+    keep_per_hour: int
+    kept_count: int = 0
+    digested_count: int = 0
+    deferred_count: int = 0
+    digest_emitted: bool = False
+    digest_already_sent: bool = False
+    window_start_iso: str = ""
+    window_end_iso: str = ""
+    deferred_post_ids: tuple[str, ...] = ()
+    queued_digest_requests: tuple[PublishNoticeRequest, ...] = ()
 
 
 def _now_jst() -> datetime:
@@ -345,6 +367,13 @@ def _resolve_publish_notice_24h_budget_limit() -> int:
     )
 
 
+def _resolve_post_gen_validate_digest_keep_per_hour() -> int:
+    return _resolve_non_negative_int_env(
+        _POST_GEN_VALIDATE_DIGEST_KEEP_PER_HOUR_ENV,
+        _POST_GEN_VALIDATE_DIGEST_KEEP_PER_HOUR_DEFAULT,
+    )
+
+
 def _resolve_old_candidate_min_age_days() -> int:
     env_value = str(os.environ.get(_OLD_CANDIDATE_MIN_AGE_DAYS_ENV, "")).strip()
     if not env_value:
@@ -393,6 +422,15 @@ def _resolve_old_candidate_ledger_ttl_days() -> int:
 
 def _post_gen_validate_notification_enabled() -> bool:
     return str(os.environ.get(_POST_GEN_VALIDATE_NOTIFICATION_ENV_FLAG, "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _publish_notice_289_digest_enabled() -> bool:
+    return str(os.environ.get(_POST_GEN_VALIDATE_DIGEST_ENV_FLAG, "")).strip().lower() in {
         "1",
         "true",
         "yes",
@@ -1144,6 +1182,11 @@ def _post_gen_validate_source_url_hash(entry: Mapping[str, Any]) -> str:
     return _hash_text(str(entry.get("source_url") or "").strip())
 
 
+def _build_post_gen_validate_digest_subject(*, count: int, representative_subject: str) -> str:
+    title = str(representative_subject or "").strip() or "post_gen_validate digest"
+    return f"{_POST_GEN_VALIDATE_DIGEST_REVIEW_PREFIX}{max(1, int(count))}件】{title} | YOSHILOVER"
+
+
 def _post_gen_validate_dedupe_key(entry: Mapping[str, Any]) -> str:
     source_url_hash = _post_gen_validate_source_url_hash(entry)
     skip_reason = _resolve_post_gen_validate_skip_reason(entry)
@@ -1370,8 +1413,66 @@ def _queue_row_datetime(entry: Mapping[str, Any]) -> datetime | None:
     return None
 
 
+def _queue_row_is_post_gen_validate_digest(entry: Mapping[str, Any]) -> bool:
+    subject = str(entry.get("subject") or "").strip()
+    return subject.startswith(_POST_GEN_VALIDATE_DIGEST_REVIEW_PREFIX)
+
+
+def _queue_row_is_post_gen_validate_per_post(entry: Mapping[str, Any]) -> bool:
+    if _queue_row_is_post_gen_validate_digest(entry):
+        return False
+    subject = str(entry.get("subject") or "").strip()
+    if subject.startswith(_POST_GEN_VALIDATE_REVIEW_PREFIX):
+        return True
+    post_id = str(entry.get("post_id") or "").strip()
+    return post_id.startswith(f"{_POST_GEN_VALIDATE_RECORD_TYPE}:")
+
+
 def _budget_ledger_row_datetime(entry: Mapping[str, Any]) -> datetime | None:
     return _parse_datetime_to_jst(entry.get("ts"))
+
+
+def evaluate_289_digest_state(
+    *,
+    queue_path: str | Path = "logs/publish_notice_queue.jsonl",
+    now: Callable[[], datetime] | datetime | None = None,
+) -> PublishNotice289DigestState:
+    current_now = _coerce_now(now)
+    keep_per_hour = _resolve_post_gen_validate_digest_keep_per_hour()
+    window_start = current_now - timedelta(hours=1)
+
+    if not _publish_notice_289_digest_enabled():
+        return PublishNotice289DigestState(
+            enabled=False,
+            hour_count=0,
+            keep_per_hour=keep_per_hour,
+            window_start_iso=window_start.isoformat(),
+            window_end_iso=current_now.isoformat(),
+        )
+
+    queue_rows = _load_jsonl_payloads(_path(queue_path))
+    hour_count = 0
+    digest_already_sent = False
+    for row in queue_rows:
+        if str(row.get("status") or "").strip() != "sent":
+            continue
+        sent_at = _queue_row_datetime(row)
+        if sent_at is None or sent_at < window_start or sent_at > current_now:
+            continue
+        if _queue_row_is_post_gen_validate_digest(row):
+            digest_already_sent = True
+            continue
+        if _queue_row_is_post_gen_validate_per_post(row):
+            hour_count += 1
+
+    return PublishNotice289DigestState(
+        enabled=True,
+        hour_count=hour_count,
+        keep_per_hour=keep_per_hour,
+        digest_already_sent=digest_already_sent,
+        window_start_iso=window_start.isoformat(),
+        window_end_iso=current_now.isoformat(),
+    )
 
 
 def evaluate_24h_budget_state(
@@ -2390,6 +2491,116 @@ def _apply_24h_budget_governor(
     return transformed, budget_state
 
 
+def _build_post_gen_validate_digest_request(
+    overflow_requests: list[PublishNoticeRequest],
+    *,
+    digest_state: PublishNotice289DigestState,
+) -> PublishNoticeRequest:
+    representative = overflow_requests[0]
+    representative_subject = str(representative.title or "").strip() or "post_gen_validate digest"
+    item_lines: list[str] = []
+    for request in overflow_requests:
+        item_lines.append(f"[{request.post_id}] {str(request.title or '').strip() or '(untitled)'}")
+        reason_label = str(
+            getattr(request, "skip_reason_label", "") or getattr(request, "skip_reason", "") or "post_gen_validate"
+        ).strip() or "post_gen_validate"
+        source_url_hash = str(getattr(request, "source_url_hash", "") or "").strip() or "-"
+        item_lines.append(f"理由: {reason_label} / source_url_hash: {source_url_hash}")
+        item_lines.append(f"url: {str(request.canonical_url or '').strip()}")
+
+    digest_key = "|".join(str(request.post_id) for request in overflow_requests)
+    digest_post_id = (
+        f"{_POST_GEN_VALIDATE_DIGEST_RECORD_TYPE}:"
+        f"{_hash_text(f'{digest_state.window_start_iso}|{digest_state.window_end_iso}|{digest_key}')}"
+    )
+    return PublishNoticeRequest(
+        post_id=digest_post_id,
+        title=representative_subject,
+        canonical_url=str(representative.canonical_url or "").strip(),
+        subtype=f"{str(representative.subtype or '').strip() or 'unknown'}|digest",
+        publish_time_iso=str(representative.publish_time_iso or "").strip() or digest_state.window_end_iso,
+        summary=None,
+        is_backlog=False,
+        notice_kind="post_gen_validate",
+        subject_override=_build_post_gen_validate_digest_subject(
+            count=len(overflow_requests),
+            representative_subject=representative_subject,
+        ),
+        source_title="\n".join(
+            [
+                f"representative_subject: {representative_subject}",
+                f"count: {len(overflow_requests)}",
+                f"hour_window: {digest_state.window_start_iso} .. {digest_state.window_end_iso}",
+            ]
+        ),
+        generated_title="\n".join(item_lines),
+        skip_reason=_POST_GEN_VALIDATE_DIGEST_SKIP_REASON,
+        skip_reason_label=f"直近60分の overflow {len(overflow_requests)}件を digest 化",
+        source_url_hash=None,
+        category=getattr(representative, "category", None),
+        record_type=_POST_GEN_VALIDATE_DIGEST_RECORD_TYPE,
+        skip_layer=_POST_GEN_VALIDATE_SKIP_LAYER,
+        fail_axes=tuple(str(request.post_id) for request in overflow_requests),
+    )
+
+
+def apply_289_digest(
+    requests: list[PublishNoticeRequest],
+    *,
+    digest_state: PublishNotice289DigestState,
+) -> tuple[list[PublishNoticeRequest], PublishNotice289DigestState]:
+    if not digest_state.enabled or not requests:
+        return list(requests), digest_state
+
+    transformed: list[PublishNoticeRequest] = []
+    overflow_requests: list[PublishNoticeRequest] = []
+    deferred_post_ids: list[str] = []
+    first_overflow_index: int | None = None
+    remaining_keep = max(0, int(digest_state.keep_per_hour) - int(digest_state.hour_count))
+
+    for request in requests:
+        if _classify_notice_request(request) != _NOTICE_CLASS_POST_GEN_VALIDATE:
+            transformed.append(request)
+            continue
+        if str(getattr(request, "record_type", "") or "").strip() == _POST_GEN_VALIDATE_DIGEST_RECORD_TYPE:
+            transformed.append(request)
+            continue
+        if remaining_keep > 0:
+            transformed.append(request)
+            remaining_keep -= 1
+            digest_state.kept_count += 1
+            continue
+        if first_overflow_index is None:
+            first_overflow_index = len(transformed)
+        overflow_requests.append(request)
+
+    if not overflow_requests:
+        return transformed, digest_state
+
+    if digest_state.digest_already_sent:
+        deferred_post_ids = [str(request.post_id) for request in overflow_requests]
+        digest_state.deferred_count = len(deferred_post_ids)
+        digest_state.deferred_post_ids = tuple(deferred_post_ids)
+        return transformed, digest_state
+
+    digest_request = _build_post_gen_validate_digest_request(
+        overflow_requests,
+        digest_state=digest_state,
+    )
+    insert_at = len(transformed) if first_overflow_index is None else first_overflow_index
+    transformed.insert(insert_at, digest_request)
+    digest_state.digested_count = len(overflow_requests)
+    digest_state.digest_emitted = True
+    digest_state.queued_digest_requests = (digest_request,)
+    _log_event(
+        "publish_notice_289_digest_emitted",
+        count=len(overflow_requests),
+        hour_window=f"{digest_state.window_start_iso}..{digest_state.window_end_iso}",
+        representative_subject=str(digest_request.title or "").strip(),
+    )
+    return transformed, digest_state
+
+
 def _write_24h_budget_ledger_entry(
     path: Path,
     *,
@@ -2536,7 +2747,6 @@ def scan(
     class_reserve_enabled = _publish_notice_class_reserve_enabled()
     review_history_before_selection = dict(next_history)
     selected_review_requests: list[PublishNoticeRequest] = []
-    selected_review_ids: set[str] = set()
 
     if class_reserve_enabled:
         review_scan = scan_guarded_publish_history(
@@ -2594,14 +2804,9 @@ def scan(
             reserve_map=_resolve_class_reserve_map(),
             priority_order=_CLASS_RESERVE_PRIORITY_ORDER,
         )
-        selected_review_ids = _selected_request_ids(selected_review_requests)
         skipped.extend(review_scan.skipped)
         skipped.extend(post_gen_validate_scan.skipped)
         skipped.extend(preflight_skip_scan.skipped)
-        next_history = dict(review_history_before_selection)
-        for request in selected_review_requests:
-            recorded_at_iso = _recorded_at_iso_for_request(request, now=current_now)
-            next_history[str(request.post_id)] = recorded_at_iso
     else:
         review_scan = scan_guarded_publish_history(
             **review_scan_kwargs,
@@ -2666,7 +2871,6 @@ def scan(
         selected_review_requests = (
             review_scan.emitted + post_gen_validate_scan.emitted + preflight_skip_scan.emitted
         )
-        selected_review_ids = _selected_request_ids(selected_review_requests)
 
     budget_state = evaluate_24h_budget_state(queue_path=queue_path, now=current_now)
     emitted, budget_state = _apply_24h_budget_governor(
@@ -2685,11 +2889,47 @@ def scan(
             source=budget_state.source,
         )
 
+    digest_state = evaluate_289_digest_state(queue_path=queue_path, now=current_now)
+    emitted, digest_state = apply_289_digest(emitted, digest_state=digest_state)
+    if digest_state.enabled:
+        _log_event(
+            "publish_notice_289_digest_state",
+            hour_count=digest_state.hour_count,
+            kept=digest_state.kept_count,
+            digested=digest_state.digested_count,
+            deferred=digest_state.deferred_count,
+            keep_per_hour=digest_state.keep_per_hour,
+            digest_emitted=digest_state.digest_emitted,
+            digest_already_sent=digest_state.digest_already_sent,
+            hour_window=f"{digest_state.window_start_iso}..{digest_state.window_end_iso}",
+        )
+
+    selected_review_ids = _selected_request_ids(selected_review_requests)
+    if digest_state.deferred_post_ids:
+        deferred_ids = set(digest_state.deferred_post_ids)
+        selected_review_ids.difference_update(deferred_ids)
+        if class_reserve_enabled:
+            next_history = dict(review_history_before_selection)
+            for request in selected_review_requests:
+                if str(request.post_id) not in selected_review_ids:
+                    continue
+                recorded_at_iso = _recorded_at_iso_for_request(request, now=current_now)
+                next_history[str(request.post_id)] = recorded_at_iso
+        else:
+            for post_id in deferred_ids:
+                next_history.pop(post_id, None)
+    elif class_reserve_enabled:
+        next_history = dict(review_history_before_selection)
+        for request in selected_review_requests:
+            recorded_at_iso = _recorded_at_iso_for_request(request, now=current_now)
+            next_history[str(request.post_id)] = recorded_at_iso
+
     final_selected_review_requests = [
         request for request in emitted if str(request.post_id) in selected_review_ids
     ]
+    queue_review_requests = final_selected_review_requests + list(digest_state.queued_digest_requests)
     _append_selected_review_queue_logs(
-        final_selected_review_requests,
+        queue_review_requests,
         queue_path=queue_path,
         review_scan=review_scan,
         now=current_now,
@@ -2753,6 +2993,7 @@ def scan(
             post_gen_validate_scan.cursor_write_needed
             and post_gen_validate_scan.cursor_path is not None
             and post_gen_validate_scan.cursor_after is not None
+            and _all_preview_requests_selected(post_gen_validate_scan, selected_review_ids)
         ):
             _write_cursor(post_gen_validate_scan.cursor_path, post_gen_validate_scan.cursor_after)
         if (
@@ -2788,9 +3029,12 @@ def scan(
 __all__ = [
     "GuardedPublishHistoryScanResult",
     "JST",
+    "PublishNotice289DigestState",
     "PublishNotice24hBudgetState",
     "ScanResult",
+    "apply_289_digest",
     "demote_class_for_budget",
+    "evaluate_289_digest_state",
     "evaluate_24h_budget_state",
     "scan",
     "scan_guarded_publish_history",

@@ -152,9 +152,12 @@ timeout "$TIMEOUT_SECONDS" "$CLAUDE_BIN" -p \
   --permission-mode "$CLAUDE_PERMISSION_MODE" \
   --max-budget-usd "$CLAUDE_MAX_BUDGET_USD" \
   --add-dir "$REPO_DIR" \
-  "$(cat "$runtime_prompt")" 2>&1 | tee -a "$log_path"
+  < "$runtime_prompt" 2>&1 | tee -a "$log_path"
 claude_status="${PIPESTATUS[0]}"
 set -e
 rm -f "$runtime_prompt"
 log "claude_invocation_exit=${claude_status}"
+if [[ "$claude_status" == "0" ]]; then
+  log "claude_invocation=executed"
+fi
 exit "$claude_status"

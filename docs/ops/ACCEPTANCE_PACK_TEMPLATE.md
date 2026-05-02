@@ -1,6 +1,6 @@
 # YOSHILOVER ACCEPTANCE_PACK_TEMPLATE
 
-Last updated: 2026-05-01 JST
+Last updated: 2026-05-02 JST
 
 Use this when a change is `USER_DECISION_REQUIRED`. Do not use a Pack to offload UNKNOWN technical judgment to the user; UNKNOWN means HOLD until Claude resolves it. `CLAUDE_AUTO_GO` changes need evidence, post-deploy verify, production-safe regression evidence, and Decision Batch reporting, not user approval.
 
@@ -52,6 +52,18 @@ expires_at:
 7. Gemini / Cost Impact
    - expected Gemini call delta
    - source/candidate count impact
+   - UNKNOWN means HOLD
+
+7a. Prompt-ID Cost Review
+   - one row/block per prompt-id touched by the change
+   - prompt-id
+   - Gemini delta estimate/day upper bound
+   - mail volume estimate/hour and /day
+   - API call estimate/day
+   - cost upper bound:
+     - tokens/day
+     - external API calls/day
+     - Cloud Run executions/day
    - UNKNOWN means HOLD
 
 8. Silent Skip Impact

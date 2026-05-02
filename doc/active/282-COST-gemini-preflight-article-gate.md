@@ -4,17 +4,39 @@
 |---|---|
 | ticket_id | 282-COST-gemini-preflight-article-gate |
 | priority | P1 (cost 削減) |
-| status | REVIEW_NEEDED |
-| owner | Claude (audit/draft) → Codex (別 lane、cost 削減専任) |
+| status | HOLD / USER_DECISION_REQUIRED |
+| owner | Claude (Pack/evidence) → user (flag ON final decision) |
 | lane | COST |
-| ready_for | Claude review / push 判断 |
-| blocked_by | (なし、impl/test 完了) |
+| ready_for | 293-COST FULL_EXERCISE_OK + 298 24h DONE 後の flag ON 判断 |
+| blocked_by | 293-COST FULL_EXERCISE_OK / 298 24h DONE / evidence 永続化 / rollback + stop condition 明記 / Gemini call 増加リスク確認 |
 | doc_path | doc/active/282-COST-gemini-preflight-article-gate.md |
 | created | 2026-04-30 |
 
 ## 1. 目的
 
 Gemini Flash 呼び出し**前**に「そもそも記事化する素材か」を判定する preflight gate を追加する。明らかに publish しない素材で Gemini を消費しない。
+
+## 0. 現在の状態(2026-05-02 棚卸し復元)
+
+この ticket は 293-COST や 300-COST へ吸収しない。
+`ENABLE_GEMINI_PREFLIGHT=1` の flag ON 判断が残るため、282-COST は別 ticket として保持する。
+
+現在は実装再開ではなく、状態管理上の HOLD / USER_DECISION_REQUIRED。
+ACTIVE にはしない。
+
+flag ON の前提条件:
+
+1. 293-COST FULL_EXERCISE_OK
+2. 298 24h DONE
+3. evidence 永続化
+4. rollback / stop condition 明記
+5. Gemini call 増加リスク確認
+
+禁止:
+
+- 条件未達で GO にしない。
+- DONE にしない。
+- 293/300 完了だけで吸収しない。
 
 229-COST(同 content_hash 再生成回避、content level)と layer が違う、**meta level dedupe**(subtype / duplicate / 巨人関係性 / placeholder 等)。
 

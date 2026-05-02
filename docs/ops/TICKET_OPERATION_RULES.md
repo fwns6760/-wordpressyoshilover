@@ -107,13 +107,29 @@ deploy済みと効果確認済みを分ける。
 ## Excel運用
 
 - BUG_INBOXの人間向け管理ファイルは `docs/ops/ヨシラバーチケット管理.xlsx`。
-- userは `01_BUG_INBOX` の「現象」に1行書くだけ。
+- userは現場報告・違和感・ログをチャットにそのまま貼るだけ。
+- userはExcelを編集しない。仕分けしない。優先度を細かく考えない。ticket番号を作らない。
+- Codexはuserが貼った現場報告から必要なBUG_INBOX行を抽出し、Excelの `01_BUG_INBOX` に追記する。
+- CodexはBUG_INBOXの新規行を仕分ける。
+- 既存ticketに吸収できるものは吸収する。
+- 新規ticket候補は番号を振らず、候補のまま保持する。
 - `02_P1` / `03_Absorb` / `04_NewCandidate` / `05_HOLD` / `06_DONE` / `00_Summary` は仕分けビュー。
 - userに一覧を長く返さない。userが見るべきものは最大5件以内。
 - DONE / OBSERVE / HOLD の正常報告は不要。
 - 次にACTIVEへ上げる候補は最大2件。
 - 現時点のACTIVE候補は `BUG-003 WP status mutation audit` と `BUG-004 silent skip / 候補消失の可視化確認`。
 - 他のP1候補は `P1_REVIEW` のまま保持し、ACTIVEに上げない。
+- 現場ClaudeはACTIVE最大2件だけ実行する。
+- 現場ClaudeはOBSERVE / HOLD / DONEの正常報告をしない。
+- 現場Claudeはstate到達、異常、rollback、USER_DECISION_REQUIREDだけ報告する。
+
+毎回のBUG_INBOX報告形式:
+
+1. BUG_INBOXへ追加したもの
+2. 既存ticketに吸収したもの
+3. ACTIVE候補 最大2件
+4. user判断が必要なもの
+5. 現場Claudeへ渡す1文
 
 ## user確認を減らすルール
 

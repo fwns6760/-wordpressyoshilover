@@ -197,7 +197,7 @@ publish候補に戻してよい最小条件:
 | 246-MKT / 195 / 197 / 281 | マーケ・導線・二軍増加。記事供給回復後。 |
 | 230 / 288 / 251 / 252 / 274 / 296 / 238 | HOLD / OBSOLETE寄り。今は触らない。 |
 | GCP Codex WP本文修正プレビュー v0 | 早くやりたい候補として保持。ただし今はBUG-004+291を優先。 |
-| BUG-008 | mail送信path LLM混入read-only確認。ACTIVE空き後。 |
+| BUG-008 | mail送信path LLM混入read-only確認。**DONE 2026-05-03 (CLEAN)** — audit `docs/ops/bug008_mail_llm_audit.md` commit fba14e3、mail path LLM call 0、P1 昇格不要 |
 
 ## NEW_CANDIDATE: GCP Codex WP本文修正プレビュー v0
 

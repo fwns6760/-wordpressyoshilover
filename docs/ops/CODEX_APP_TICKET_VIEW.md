@@ -236,7 +236,8 @@ publish不可を維持するもの:
 | 277 / 279 / 278 / 280 | title / mail / summary 系。BUG-004+291で必要な部分だけ参照し、独立ACTIVE化は後。 |
 | 234 / 247 / 250 / 256 / 254 / 295 | 本文テンプレ・subtype系。publish=0回収後に順番。 |
 | 246-MKT / 195 / 197 / 281 | マーケ・導線・二軍増加。記事供給回復後。 |
-| 230 / 288 / 251 / 252 / 274 / 296 / 238 | HOLD / OBSOLETE寄り。今は触らない。 |
+| 230 / 251 / 252 / 274 / 296 / 238 | HOLD / OBSOLETE寄り。今は触らない。 |
+| 288-INGEST | source/topic expansion。BUG-004+291後のREADY_NEXT候補。東スポ巨人、東スポWEB、YouTube/GIANTS TV、Yahooバズkeywordを吸収検討。ただしsource追加はUSER_DECISION_REQUIRED。 |
 | GCP Codex WP本文修正プレビュー v0 | 早くやりたい候補として保持。ただし今はBUG-004+291を優先。 |
 | BUG-008 | mail送信path LLM混入read-only確認。**DONE 2026-05-03 (CLEAN)** — audit `docs/ops/bug008_mail_llm_audit.md` commit fba14e3、mail path LLM call 0、P1 昇格不要 |
 
@@ -318,7 +319,7 @@ ACTIVE化の考え方:
 | 252 | OBSOLETE候補 | XはGPTs手動運用へ寄せたため不要寄り。 |
 | 274 | OBSOLETE候補 | Gmail filterでありGitHub Actions赤の根本対応ではない。不要。 |
 | 275 | ABSORB/DONE候補 | GitHub Actions赤は今出ていない。299に吸収し、緑確認でclose候補。 |
-| 288 | HOLD | source追加・取得元拡張は後で。210系を吸収。 |
+| 288 | KEEP / READY_NEXT候補 | source追加・取得元拡張。210系と246 viral topicを吸収検討。東スポ巨人、東スポWEB、YouTube/GIANTS TV、Yahooリアルタイム検索・ニュースランキングをPhase 0 read-only/dry-runで棚卸しする。source追加はuser GOまでHOLD。 |
 | 296 | OBSOLETE候補 | codex-shadow再設計は不要。 |
 
 ## 299 / 201 / 275 の扱い
@@ -406,7 +407,7 @@ USER_DECISION_REQUIRED:
 - 277/279/278/280 title/mail/summary系
 - 234/247/250/256/254/295 本文テンプレ・subtype系
 - 246-MKT/195/197/281 マーケ・導線・二軍増加
-- 230/288/251/252/274/296/238 HOLD/OBSOLETE寄り
+- 230/251/252/274/296/238 HOLD/OBSOLETE寄り
 
 禁止:
 - publish gate全体緩和

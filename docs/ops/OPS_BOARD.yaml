@@ -15,7 +15,7 @@ pre_deploy_stop_mode_2026_05_01:
     282-COST: "flag ON 直前まで(flag ON しない)"
     290-QA: "デプロイ直前まで(本番 deploy しない)"
     300-COST: "実装直前または実装準備まで(本番 deploy しない)"
-    288-INGEST: "source 追加直前まで(source 追加しない)"
+    288-INGEST: "Phase 0 read-only/dry-run 直前まで(source追加・本線接続はしない)"
   push_policy: "push しても本番反映されない運用 = Claude 自律 GO。auto-deploy 化したら停止"
 
 board_rules:
@@ -304,15 +304,20 @@ future_user_go:
     expiry: "298-v4 24h 安定後"
 
   - id: 288-INGEST
-    title: "source coverage expansion (4-phase split、Phase 1 FAIL → Phase 2 visibility fix 必須化)"
-    status: FUTURE_USER_GO
-    decision_owner: user  # Phase 3 (source add) のみ user GO 必須
+    title: "source/topic coverage expansion (東スポ・YouTube/GIANTS TV・Yahoo buzzを含むPhase 0棚卸し)"
+    status: READY_NEXT_CANDIDATE_PHASE0_SOURCE_ADD_HOLD
+    decision_owner: user  # source add / main wiring のみ user GO 必須
     execution_owner: Codex + Claude
     evidence_owner: Claude
-    user_go_required: true  # Phase 3 のみ
+    user_go_required: true  # source add / main wiring のみ
     user_go_reason: "SOURCE_ADD+COST_INCREASE+MAIL_VOLUME_IMPACT"
     pack_v3: "docs/handoff/codex_responses/2026-05-01_288_INGEST_pack_v3_scope_phase_split.md (commit fedf159)"
-    pack_v3_recommendation: HOLD
+    pack_v3_recommendation: "Phase 0 read-only/dry-runはREADY_NEXT候補。source追加はHOLD。"
+    phase_0_source_topic_audit:
+      classification: CLAUDE_AUTO_GO
+      status: READY_NEXT_CANDIDATE
+      scope: "東スポ巨人担当、東スポWEB巨人ラベル、巨人公式YouTube、GIANTS TV、Yahooリアルタイム検索、Yahooニュースランキングのread-only/dry-run棚卸し"
+      forbidden: "source追加、fetcher本線接続、Gemini/mail増加、Scheduler変更"
     phase_1_evidence: "docs/handoff/codex_responses/2026-05-01_288_INGEST_phase1_visibility_evidence.md (round 20、FAIL、violation 4 件、新規 0)"
     phase_split:
       phase_1_candidate_visibility_contract:
@@ -337,12 +342,12 @@ future_user_go:
         classification: CLAUDE_AUTO_GO
         scope: "24h observe + cost trend audit"
     blocked_by:
-      - "298-v4 Phase 6 verify pass + 24h 安定"
-      - "293/282 deploy 完了"
+      - "Phase 0 read-only: BUG-004+291 の主線を邪魔しないこと"
+      - "source add/main wiring: BUG-004+291 terminal contract + mail/Gemini exact delta + rollback plan"
       - "Phase 3 directly: source 追加前に mail/Gemini exact delta 確定"
-    user_facing_phrase: "source 追加直前まで(POLICY §17.3)"
-    next_action: "Phase 1-2 は precondition 満足後 CLAUDE_AUTO_GO で順次。Phase 3 は user GO 必須。"
-    expiry: "298-v4 + 293/282 完了後 phase 1 から順次"
+    user_facing_phrase: "Phase 0 read-only/dry-run は自律可、source追加はuser GO必須"
+    next_action: "BUG-004+291後のREADY_NEXTとしてPhase 0棚卸し。source追加・本線接続はしない。"
+    expiry: "Phase 0 evidence 更新後にsource追加Packを別判断"
 
   - id: 300-COST
     title: "guarded-publish source-side cost reduction (impl-prep narrow spec)"

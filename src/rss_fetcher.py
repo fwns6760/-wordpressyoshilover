@@ -90,6 +90,11 @@ from src.gemini_preflight_gate import (
     emit_gemini_call_skipped,
     should_skip_gemini,
 )
+from src.body_contract_fail_ledger import (
+    BODY_CONTRACT_FAIL_LEDGER_PATH_ENV as BODY_CONTRACT_FAIL_LEDGER_PATH_ENV_FLAG,
+    ENABLE_BODY_CONTRACT_FAIL_LEDGER_ENV as BODY_CONTRACT_FAIL_LEDGER_ENV_FLAG,
+    record_body_contract_fail,
+)
 
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
@@ -14853,6 +14858,22 @@ def _main(args, logger):
                         actual_first_block=str(body_contract_validate.get("actual_first_block") or ""),
                         missing_required_blocks=list(body_contract_validate.get("missing_required_blocks") or []),
                         actual_block_order=list(body_contract_validate.get("actual_block_order") or []),
+                    )
+                if _env_flag(BODY_CONTRACT_FAIL_LEDGER_ENV_FLAG, False):
+                    body_contract_fail_ledger_path = str(
+                        os.environ.get(BODY_CONTRACT_FAIL_LEDGER_PATH_ENV_FLAG, "")
+                    ).strip()
+                    record_body_contract_fail(
+                        source_url=post_url,
+                        source_title=raw_title,
+                        generated_title=draft_title,
+                        category=category,
+                        article_subtype=title_article_subtype,
+                        validation_result=body_contract_validate,
+                        validation_action=str(body_contract_validate.get("action") or "fail"),
+                        body_excerpt=ai_body_for_x,
+                        logger=logger,
+                        ledger_path=body_contract_fail_ledger_path or None,
                     )
                 continue
             post_gen_validate = _evaluate_post_gen_validate(

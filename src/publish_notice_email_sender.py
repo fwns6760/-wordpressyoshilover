@@ -28,7 +28,11 @@ DEFAULT_GUARDED_PUBLISH_HISTORY_PATH = ROOT / "logs" / "guarded_publish_history.
 FORCED_SUMMARY_THRESHOLD = 10
 _SUMMARY_ONLY_SUPPRESSION_REASONS = frozenset({"BACKLOG_SUMMARY_ONLY", "BURST_SUMMARY_ONLY"})
 _PUBLISH_ONLY_MAIL_FILTER_ENV_FLAG = "ENABLE_PUBLISH_ONLY_MAIL_FILTER"
+_PUBLISH_ONLY_FILTER_DIRECT_PUBLISH_BYPASS_ENV_FLAG = (
+    "ENABLE_PUBLISH_ONLY_FILTER_DIRECT_PUBLISH_BYPASS"
+)
 _PUBLISH_ONLY_MAIL_PREFIX = "【公開済】"
+_DIRECT_PUBLISH_NOTICE_ORIGIN = "direct_publish_scan"
 _PUBLISH_ONLY_MAIL_FILTER_SUPPRESSION_REASON = "PUBLISH_ONLY_FILTER"
 _WHITESPACE_RE = re.compile(r"\s+")
 _SUMMARY_TITLE_LIMIT = 80
@@ -300,6 +304,7 @@ class PublishNoticeRequest:
     summary: str | None = None
     is_backlog: bool | None = None
     notice_kind: Literal["publish", "review_hold", "post_gen_validate"] = "publish"
+    notice_origin: str | None = None
     subject_override: str | None = None
     source_title: str | None = None
     generated_title: str | None = None
@@ -1673,6 +1678,15 @@ def _publish_only_mail_filter_enabled() -> bool:
     }
 
 
+def _publish_only_filter_direct_publish_bypass_enabled() -> bool:
+    return str(os.environ.get(_PUBLISH_ONLY_FILTER_DIRECT_PUBLISH_BYPASS_ENV_FLAG, "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def _is_publish_only_subject(subject: str) -> bool:
     return str(subject or "").strip().startswith(_PUBLISH_ONLY_MAIL_PREFIX)
 
@@ -1681,13 +1695,25 @@ def _should_suppress_publish_only_mail(
     *,
     subject: str,
     classification: dict[str, Any],
+    request: PublishNoticeRequest | None = None,
 ) -> bool:
     if not _publish_only_mail_filter_enabled():
         return False
     mail_type = str((classification or {}).get("mail_type") or "").strip()
     if mail_type != "per_post":
         return False
-    return not _is_publish_only_subject(subject)
+    if _is_publish_only_subject(subject):
+        return False
+    if not _publish_only_filter_direct_publish_bypass_enabled():
+        return True
+    if request is None:
+        return True
+    notice_kind = str(getattr(request, "notice_kind", "publish") or "publish").strip() or "publish"
+    notice_origin = str(getattr(request, "notice_origin", "") or "").strip()
+    return not (
+        notice_kind == "publish"
+        and notice_origin == _DIRECT_PUBLISH_NOTICE_ORIGIN
+    )
 
 
 def build_subject(
@@ -2145,6 +2171,7 @@ def send(
         summary=request.summary,
         is_backlog=request.is_backlog,
         notice_kind=str(getattr(request, "notice_kind", "publish") or "publish").strip() or "publish",
+        notice_origin=getattr(request, "notice_origin", None),
         subject_override=active_subject_override,
         source_title=getattr(request, "source_title", None),
         generated_title=getattr(request, "generated_title", None),
@@ -2161,7 +2188,11 @@ def send(
         mail_state = _force_review_mail_state(mail_state)
     recipients = resolve_recipients(override_recipient)
     subject = build_subject(normalized_title, override=active_subject_override, classification=mail_state)
-    if _should_suppress_publish_only_mail(subject=subject, classification=mail_state):
+    if _should_suppress_publish_only_mail(
+        subject=subject,
+        classification=mail_state,
+        request=normalized_request,
+    ):
         return _suppressed(
             _PUBLISH_ONLY_MAIL_FILTER_SUPPRESSION_REASON,
             subject=subject,

@@ -1396,6 +1396,144 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         self.assertEqual(result.reason, "GATE_OFF")
         bridge_send.assert_not_called()
 
+    def test_send_publish_only_filter_direct_publish_review_subject_suppresses_with_bypass_flag_off(self):
+        bridge_send = MagicMock(return_value=self._bridge_result())
+        request = self._request(
+            title="巨人戦の観戦案内を更新",
+            subtype="notice",
+            summary="対象試合と受付条件を整理した。",
+            notice_origin="direct_publish_scan",
+        )
+
+        with patch.dict(
+            "os.environ",
+            {
+                "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                "ENABLE_PUBLISH_ONLY_MAIL_FILTER": "1",
+                "ENABLE_PUBLISH_ONLY_FILTER_DIRECT_PUBLISH_BYPASS": "0",
+            },
+            clear=True,
+        ):
+            result = sender.send(request, dry_run=False, send_enabled=True, bridge_send=bridge_send)
+
+        self.assertEqual(result.status, "suppressed")
+        self.assertEqual(result.reason, "PUBLISH_ONLY_FILTER")
+        self.assertEqual(result.subject, "【要確認】巨人戦の観戦案内を更新 | YOSHILOVER")
+        bridge_send.assert_not_called()
+
+    def test_send_publish_only_filter_direct_publish_review_subject_bypasses_with_flag_on(self):
+        bridge_send = MagicMock(return_value=self._bridge_result())
+        request = self._request(
+            title="巨人戦の観戦案内を更新",
+            subtype="notice",
+            summary="対象試合と受付条件を整理した。",
+            notice_origin="direct_publish_scan",
+        )
+
+        with patch.dict(
+            "os.environ",
+            {
+                "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                "ENABLE_PUBLISH_ONLY_MAIL_FILTER": "1",
+                "ENABLE_PUBLISH_ONLY_FILTER_DIRECT_PUBLISH_BYPASS": "1",
+            },
+            clear=True,
+        ):
+            result = sender.send(request, dry_run=False, send_enabled=True, bridge_send=bridge_send)
+
+        self.assertEqual(result.status, "sent")
+        self.assertEqual(result.subject, "【要確認】巨人戦の観戦案内を更新 | YOSHILOVER")
+        bridge_send.assert_called_once()
+
+    def test_send_publish_only_filter_direct_publish_publish_subject_is_sent_with_or_without_bypass(self):
+        request = self._request(summary=None, notice_origin="direct_publish_scan")
+
+        for bypass_flag in ("0", "1"):
+            with self.subTest(bypass_flag=bypass_flag):
+                bridge_send = MagicMock(return_value=self._bridge_result())
+
+                with patch.dict(
+                    "os.environ",
+                    {
+                        "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                        "ENABLE_PUBLISH_ONLY_MAIL_FILTER": "1",
+                        "ENABLE_PUBLISH_ONLY_FILTER_DIRECT_PUBLISH_BYPASS": bypass_flag,
+                    },
+                    clear=True,
+                ):
+                    result = sender.send(
+                        request,
+                        dry_run=False,
+                        send_enabled=True,
+                        bridge_send=bridge_send,
+                    )
+
+                self.assertEqual(result.status, "sent")
+                self.assertEqual(result.subject, "【公開済】巨人が接戦を制した | YOSHILOVER")
+                bridge_send.assert_called_once()
+
+    def test_send_publish_only_filter_non_direct_review_paths_remain_suppressed_with_bypass_flag_on(self):
+        cases = [
+            (
+                "guarded_review",
+                self._request(
+                    title="レビュー待ち記事",
+                    summary=None,
+                    notice_kind="review_hold",
+                    notice_origin="guarded_publish_history",
+                    subject_override="【要review】レビュー待ち記事 | YOSHILOVER",
+                ),
+                "【要review】レビュー待ち記事 | YOSHILOVER",
+            ),
+            (
+                "post_gen_validate",
+                self._request(
+                    title="post gen validate skip",
+                    summary=None,
+                    notice_kind="post_gen_validate",
+                    notice_origin="post_gen_validate_history",
+                    subject_override="【要review｜post_gen_validate】post gen validate skip | YOSHILOVER",
+                ),
+                "【要review｜post_gen_validate】post gen validate skip | YOSHILOVER",
+            ),
+            (
+                "old_candidate",
+                self._request(
+                    title="古い候補記事",
+                    summary=None,
+                    notice_kind="review_hold",
+                    notice_origin="direct_publish_scan",
+                    subject_override="【要確認(古い候補)】古い候補記事 | YOSHILOVER",
+                ),
+                "【要確認(古い候補)】古い候補記事 | YOSHILOVER",
+            ),
+        ]
+
+        for label, request, expected_subject in cases:
+            with self.subTest(case=label):
+                bridge_send = MagicMock(return_value=self._bridge_result())
+
+                with patch.dict(
+                    "os.environ",
+                    {
+                        "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                        "ENABLE_PUBLISH_ONLY_MAIL_FILTER": "1",
+                        "ENABLE_PUBLISH_ONLY_FILTER_DIRECT_PUBLISH_BYPASS": "1",
+                    },
+                    clear=True,
+                ):
+                    result = sender.send(
+                        request,
+                        dry_run=False,
+                        send_enabled=True,
+                        bridge_send=bridge_send,
+                    )
+
+                self.assertEqual(result.status, "suppressed")
+                self.assertEqual(result.reason, "PUBLISH_ONLY_FILTER")
+                self.assertEqual(result.subject, expected_subject)
+                bridge_send.assert_not_called()
+
     def test_backlog_post_skips_per_post_mail(self):
         bridge_send = MagicMock(return_value=self._bridge_result())
 

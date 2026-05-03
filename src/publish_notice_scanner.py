@@ -38,6 +38,7 @@ _INGEST_VISIBILITY_FIX_V1_ENV_FLAG = "ENABLE_INGEST_VISIBILITY_FIX_V1"
 _PUBLISH_NOTICE_24H_BUDGET_GOVERNOR_ENV_FLAG = "ENABLE_PUBLISH_NOTICE_24H_BUDGET_GOVERNOR"
 _PUBLISH_ONLY_MAIL_FILTER_ENV_FLAG = "ENABLE_PUBLISH_ONLY_MAIL_FILTER"
 _PUBLISH_ONLY_MAIL_PREFIX = "【公開済】"
+_DIRECT_PUBLISH_NOTICE_ORIGIN = "direct_publish_scan"
 _PUBLISH_NOTICE_24H_BUDGET_SOFT_THRESHOLD_ENV = "PUBLISH_NOTICE_24H_BUDGET_SOFT_THRESHOLD"
 _PUBLISH_NOTICE_24H_BUDGET_HARD_THRESHOLD_ENV = "PUBLISH_NOTICE_24H_BUDGET_HARD_THRESHOLD"
 _PUBLISH_NOTICE_24H_BUDGET_LIMIT_ENV = "PUBLISH_NOTICE_24H_BUDGET_LIMIT"
@@ -1374,7 +1375,11 @@ def _is_recent_duplicate(history: Mapping[str, str], post_id: int | str, *, now:
     return now - parsed <= _HISTORY_WINDOW
 
 
-def _request_from_post(post: Mapping[str, Any]) -> PublishNoticeRequest:
+def _request_from_post(
+    post: Mapping[str, Any],
+    *,
+    notice_origin: str | None = None,
+) -> PublishNoticeRequest:
     return PublishNoticeRequest(
         post_id=post.get("id", ""),
         title=_extract_title(post),
@@ -1382,6 +1387,7 @@ def _request_from_post(post: Mapping[str, Any]) -> PublishNoticeRequest:
         subtype=_extract_subtype(post),
         publish_time_iso=_isoformat_jst(post.get("date")),
         summary=_extract_summary(post),
+        notice_origin=notice_origin,
     )
 
 
@@ -2447,6 +2453,7 @@ def _build_24h_budget_summary_only_request(
         summary=request.summary,
         is_backlog=True,
         notice_kind="publish",
+        notice_origin=getattr(request, "notice_origin", None),
         subject_override=None,
         source_title=getattr(request, "source_title", None),
         generated_title=getattr(request, "generated_title", None),
@@ -2541,6 +2548,7 @@ def _build_post_gen_validate_digest_request(
         summary=None,
         is_backlog=False,
         notice_kind="post_gen_validate",
+        notice_origin=getattr(representative, "notice_origin", None),
         subject_override=_build_post_gen_validate_digest_subject(
             count=len(overflow_requests),
             representative_subject=representative_subject,
@@ -2734,7 +2742,7 @@ def scan(
             skipped.append((post_id, "RECENT_DUPLICATE"))
             continue
 
-        request = _request_from_post(post)
+        request = _request_from_post(post, notice_origin=_DIRECT_PUBLISH_NOTICE_ORIGIN)
         emitted.append(request)
         seen_post_ids.add(post_key)
         next_history[post_key] = request.publish_time_iso or recorded_at_iso

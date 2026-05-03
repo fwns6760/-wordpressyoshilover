@@ -109,7 +109,9 @@ class PublishNoticeScannerTests(unittest.TestCase):
         self.assertEqual(len(result.emitted), 2)
         self.assertEqual(result.emitted[0].post_id, 201)
         self.assertEqual(result.emitted[0].subtype, "postgame")
+        self.assertEqual(result.emitted[0].notice_origin, "direct_publish_scan")
         self.assertEqual(result.emitted[1].subtype, "fact_notice")
+        self.assertEqual(result.emitted[1].notice_origin, "direct_publish_scan")
         self.assertEqual(result.cursor_before, "2026-04-24T08:00:00+09:00")
         self.assertEqual(result.cursor_after, "2026-04-24T09:30:00+09:00")
 

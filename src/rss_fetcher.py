@@ -40,13 +40,15 @@ from fact_conflict_guard import (
 )
 from title_player_name_backfiller import backfill_title_player_name
 from title_validator import build_reroll_title as _build_title_reroll_title
+from title_validator import infer_subtype_from_title
 from title_validator import is_non_name_speaker_label
 from title_validator import is_weak_generated_title
 from title_validator import is_weak_subject_title
+from title_validator import title_has_minimum_article_context
 from title_validator import title_has_person_name_candidate
 from title_validator import validate_title_candidate as _validate_title_candidate
 from title_validator import is_supported_subtype as _title_validator_supports_subtype
-from weak_title_rescue import rescue_blacklist_phrase, rescue_related_info_escape
+from weak_title_rescue import is_strong_with_name_and_event, rescue_blacklist_phrase, rescue_related_info_escape
 from wp_client import WPClient
 from media_xpost_selector import evaluate_media_quote_selection
 from wp_draft_creator import build_oembed_block, load_posted_urls, save_posted_url
@@ -191,6 +193,35 @@ POST_GEN_VALIDATE_NOTIFICATION_ENV_FLAG = "ENABLE_POST_GEN_VALIDATE_NOTIFICATION
 PREFLIGHT_SKIP_NOTIFICATION_ENV_FLAG = "ENABLE_PREFLIGHT_SKIP_NOTIFICATION"
 PREFLIGHT_SKIP_LEDGER_PATH_ENV = "PREFLIGHT_SKIP_LEDGER_PATH"
 WEAK_TITLE_RESCUE_ENV_FLAG = "ENABLE_WEAK_TITLE_RESCUE"
+NARROW_UNLOCK_NON_POSTGAME_ENV_FLAG = "ENABLE_NARROW_UNLOCK_NON_POSTGAME"
+NARROW_UNLOCK_ALLOWED_SUBTYPES = frozenset({"manager", "player", "player_notice", "lineup", "farm_result"})
+NARROW_UNLOCK_PLAYER_EVENT_MARKERS = (
+    "登録",
+    "抹消",
+    "復帰",
+    "昇格",
+    "合流",
+    "再登録",
+    "再開",
+    "先発",
+    "登板",
+    "練習",
+    "打撃",
+    "投球",
+    "本塁打",
+    "ホームラン",
+    "特大弾",
+    "メッセージ",
+    "コメント",
+    "発言",
+)
+NARROW_UNLOCK_PLACEHOLDER_MARKERS = (
+    "対象選手",
+    "対象者",
+    "某選手",
+    "この選手",
+    "この投手",
+)
 POST_GEN_VALIDATE_HISTORY_DEFAULT_PATH = Path("/tmp/pub004d/post_gen_validate_history.jsonl")
 POST_GEN_VALIDATE_STATE_BUCKET = "baseballsite-yoshilover-state"
 POST_GEN_VALIDATE_STATE_KEY = "post_gen_validate/post_gen_validate_history.jsonl"
@@ -6520,6 +6551,99 @@ def _maybe_route_zero_quote_manager_review(
     return _ManagerQuoteZeroReviewFallback("quote_count_zero")
 
 
+def _allow_narrow_unlock_candidate(
+    *,
+    title: str,
+    article_subtype: str,
+    source_name: str = "",
+    source_url: str = "",
+    weak_reason: str = "",
+    weak_title_rescue_reason: str | None = None,
+    duplicate_guard_context: dict[str, object] | None = None,
+    body_contract_validate: dict[str, object] | None = None,
+    numeric_guard_ok: bool = True,
+    placeholder_residual: bool = False,
+    title_player_name_unresolved: bool = False,
+    stale_postgame: bool = False,
+) -> bool:
+    if not _env_flag(NARROW_UNLOCK_NON_POSTGAME_ENV_FLAG, False):
+        return False
+
+    candidate_title = str(title or "").strip()
+    resolved_source_name = str(source_name or "").strip()
+    resolved_source_url = str(source_url or "").strip()
+    if not candidate_title or not resolved_source_name or not resolved_source_url:
+        return False
+
+    normalized_subtype = str(article_subtype or "").strip().lower()
+    if normalized_subtype in {"notice", "recovery", "player_notice"}:
+        normalized_subtype = "player_notice"
+    elif normalized_subtype in {"farm", "farm_result"}:
+        normalized_subtype = "farm_result"
+
+    if normalized_subtype not in NARROW_UNLOCK_ALLOWED_SUBTYPES:
+        return False
+    if normalized_subtype == "postgame":
+        return False
+
+    if str(weak_reason or "").startswith("strict_review_fallback:"):
+        return False
+    if str(weak_title_rescue_reason or "").startswith("strict_review_fallback:"):
+        return False
+
+    duplicate_guard_context = duplicate_guard_context if isinstance(duplicate_guard_context, dict) else {}
+    existing_publish_same_source_url = bool(
+        duplicate_guard_context.get("existing_publish_same_source_url")
+        or duplicate_guard_context.get("source_url_already_published")
+    )
+    if existing_publish_same_source_url:
+        return False
+    if str(duplicate_guard_context.get("guard_outcome") or "").strip() == "skip":
+        return False
+    if str(duplicate_guard_context.get("postgame_strict_review_reason") or "").strip():
+        return False
+
+    if stale_postgame or bool(duplicate_guard_context.get("stale_postgame")):
+        return False
+    if title_player_name_unresolved:
+        return False
+    if body_contract_validate is not None and not bool(body_contract_validate.get("ok")):
+        return False
+    if not numeric_guard_ok or placeholder_residual:
+        return False
+    if any(marker in candidate_title for marker in NARROW_UNLOCK_PLACEHOLDER_MARKERS):
+        return False
+
+    inferred_subtype = infer_subtype_from_title(candidate_title)
+    if normalized_subtype == "lineup":
+        if inferred_subtype not in {"", "lineup"}:
+            return False
+        title_ok, _reason = title_has_minimum_article_context(candidate_title, "lineup")
+        return title_ok
+
+    if normalized_subtype == "farm_result":
+        if inferred_subtype not in {"", "farm"}:
+            return False
+        title_ok, _reason = title_has_minimum_article_context(candidate_title, "farm_result")
+        return title_ok
+
+    if normalized_subtype == "manager":
+        if inferred_subtype in {"lineup", "postgame", "pregame", "farm"}:
+            return False
+        title_ok, _reason = title_has_minimum_article_context(candidate_title, "manager")
+        return title_ok
+
+    if inferred_subtype in {"lineup", "postgame", "pregame", "farm"}:
+        return False
+    if not title_has_person_name_candidate(candidate_title):
+        return False
+    if is_strong_with_name_and_event(candidate_title):
+        return True
+    if any(marker in candidate_title for marker in ("「", "『")):
+        return True
+    return any(marker in candidate_title for marker in NARROW_UNLOCK_PLAYER_EVENT_MARKERS)
+
+
 def _maybe_route_weak_generated_title_review(
     *,
     article_subtype: str,
@@ -6527,6 +6651,14 @@ def _maybe_route_weak_generated_title_review(
     original_title: str,
     source_name: str,
     logger: logging.Logger,
+    source_url: str = "",
+    weak_title_rescue_reason: str | None = None,
+    duplicate_guard_context: dict[str, object] | None = None,
+    body_contract_validate: dict[str, object] | None = None,
+    numeric_guard_ok: bool = True,
+    placeholder_residual: bool = False,
+    title_player_name_unresolved: bool = False,
+    stale_postgame: bool = False,
 ) -> _WeakTitleReviewFallback | None:
     """LLM rewritten_title が weak かつ source title と異なる場合、review sentinel を返す。"""
     rewritten = str(rewritten_title or "").strip()
@@ -6535,6 +6667,35 @@ def _maybe_route_weak_generated_title_review(
         return None
     is_weak, weak_reason = is_weak_generated_title(rewritten)
     if not is_weak:
+        return None
+    if _allow_narrow_unlock_candidate(
+        title=rewritten,
+        article_subtype=article_subtype,
+        source_name=source_name,
+        source_url=source_url,
+        weak_reason=weak_reason,
+        weak_title_rescue_reason=weak_title_rescue_reason,
+        duplicate_guard_context=duplicate_guard_context,
+        body_contract_validate=body_contract_validate,
+        numeric_guard_ok=numeric_guard_ok,
+        placeholder_residual=placeholder_residual,
+        title_player_name_unresolved=title_player_name_unresolved,
+        stale_postgame=stale_postgame,
+    ):
+        logger.info(
+            json.dumps(
+                {
+                    "event": "weak_title_narrow_unlock",
+                    "title_kind": "generated",
+                    "subtype": article_subtype,
+                    "title": rewritten,
+                    "source_name": source_name,
+                    "source_url_hash": _hash_duplicate_guard_value(source_url),
+                    "reason": weak_reason,
+                },
+                ensure_ascii=False,
+            )
+        )
         return None
     logger.warning(
         json.dumps(
@@ -6559,6 +6720,14 @@ def _maybe_route_weak_subject_title_review(
     source_name: str,
     logger: logging.Logger,
     speaker_name: str = "",
+    source_url: str = "",
+    weak_title_rescue_reason: str | None = None,
+    duplicate_guard_context: dict[str, object] | None = None,
+    body_contract_validate: dict[str, object] | None = None,
+    numeric_guard_ok: bool = True,
+    placeholder_residual: bool = False,
+    title_player_name_unresolved: bool = False,
+    stale_postgame: bool = False,
 ) -> _WeakTitleReviewFallback | None:
     """生成 title が主語弱化 pattern の場合、review sentinel を返す。"""
     rewritten = str(rewritten_title or "").strip()
@@ -6572,6 +6741,35 @@ def _maybe_route_weak_subject_title_review(
         is_weak = True
         weak_reason = "generic_noun_only_no_person_name"
     if not is_weak:
+        return None
+    if _allow_narrow_unlock_candidate(
+        title=rewritten,
+        article_subtype=article_subtype,
+        source_name=source_name,
+        source_url=source_url,
+        weak_reason=weak_reason,
+        weak_title_rescue_reason=weak_title_rescue_reason,
+        duplicate_guard_context=duplicate_guard_context,
+        body_contract_validate=body_contract_validate,
+        numeric_guard_ok=numeric_guard_ok,
+        placeholder_residual=placeholder_residual,
+        title_player_name_unresolved=title_player_name_unresolved,
+        stale_postgame=stale_postgame,
+    ):
+        logger.info(
+            json.dumps(
+                {
+                    "event": "weak_title_narrow_unlock",
+                    "title_kind": "subject",
+                    "subtype": article_subtype,
+                    "title": rewritten,
+                    "source_name": source_name,
+                    "source_url_hash": _hash_duplicate_guard_value(source_url),
+                    "reason": weak_reason,
+                },
+                ensure_ascii=False,
+            )
+        )
         return None
     payload = {
         "event": "weak_subject_title_review",
@@ -14470,6 +14668,11 @@ def _main(args, logger):
                 source_name=source_name,
                 source_url=post_url,
             )
+            title_player_name_unresolved = bool(
+                comparison_title == draft_title
+                and title_article_subtype in {"manager", "player", "notice", "recovery"}
+                and not title_has_person_name_candidate(draft_title)
+            )
             draft_title, _weak_title_rescue_reason = _maybe_apply_weak_title_rescue(
                 rewritten_title=draft_title,
                 source_title=raw_title,
@@ -14489,6 +14692,10 @@ def _main(args, logger):
                 original_title=comparison_title,
                 source_name=source_name,
                 logger=logger,
+                source_url=post_url,
+                weak_title_rescue_reason=_weak_title_rescue_reason,
+                duplicate_guard_context=item.get("duplicate_guard_context"),
+                title_player_name_unresolved=title_player_name_unresolved,
             )
             if isinstance(weak_title_fallback, _WeakTitleReviewFallback):
                 skip_filter += 1
@@ -14512,6 +14719,10 @@ def _main(args, logger):
                 source_name=source_name,
                 logger=logger,
                 speaker_name=manager_subject or notice_subject,
+                source_url=post_url,
+                weak_title_rescue_reason=_weak_title_rescue_reason,
+                duplicate_guard_context=item.get("duplicate_guard_context"),
+                title_player_name_unresolved=title_player_name_unresolved,
             )
             if isinstance(weak_subject_fallback, _WeakTitleReviewFallback):
                 skip_filter += 1

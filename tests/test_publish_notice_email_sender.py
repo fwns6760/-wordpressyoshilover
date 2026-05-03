@@ -1534,6 +1534,182 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
                 self.assertEqual(result.subject, expected_subject)
                 bridge_send.assert_not_called()
 
+    def test_send_backlog_direct_publish_bypasses_with_backlog_flag_on(self):
+        bridge_send = MagicMock(return_value=self._bridge_result())
+        request = self._request(
+            summary=None,
+            notice_origin="direct_publish_scan",
+            is_backlog=True,
+        )
+
+        with patch.dict(
+            "os.environ",
+            {
+                "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                "ENABLE_PUBLISH_ONLY_MAIL_FILTER": "1",
+                "ENABLE_PUBLISH_ONLY_FILTER_BACKLOG_BYPASS": "1",
+            },
+            clear=True,
+        ):
+            result = sender.send(request, dry_run=False, send_enabled=True, bridge_send=bridge_send)
+
+        self.assertEqual(result.status, "sent")
+        self.assertEqual(result.subject, "【公開済】巨人が接戦を制した | YOSHILOVER")
+        bridge_send.assert_called_once()
+
+    def test_send_backlog_direct_review_bypasses_with_backlog_flag_on(self):
+        bridge_send = MagicMock(return_value=self._bridge_result())
+        request = self._request(
+            title="巨人戦の観戦案内を更新",
+            subtype="notice",
+            summary="対象試合と受付条件を整理した。",
+            notice_origin="direct_publish_scan",
+            is_backlog=True,
+        )
+
+        with patch.dict(
+            "os.environ",
+            {
+                "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                "ENABLE_PUBLISH_ONLY_MAIL_FILTER": "1",
+                "ENABLE_PUBLISH_ONLY_FILTER_DIRECT_PUBLISH_BYPASS": "1",
+                "ENABLE_PUBLISH_ONLY_FILTER_BACKLOG_BYPASS": "1",
+            },
+            clear=True,
+        ):
+            result = sender.send(request, dry_run=False, send_enabled=True, bridge_send=bridge_send)
+
+        self.assertEqual(result.status, "sent")
+        self.assertEqual(result.subject, "【要確認】巨人戦の観戦案内を更新 | YOSHILOVER")
+        bridge_send.assert_called_once()
+
+    def test_send_backlog_direct_publish_budget_summary_only_stays_suppressed_with_backlog_flag_on(self):
+        bridge_send = MagicMock(return_value=self._bridge_result())
+        request = self._request(
+            summary=None,
+            notice_origin="direct_publish_scan",
+            record_type="24h_budget_summary_only",
+            is_backlog=True,
+        )
+
+        with patch.dict(
+            "os.environ",
+            {
+                "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                "ENABLE_PUBLISH_ONLY_FILTER_BACKLOG_BYPASS": "1",
+            },
+            clear=True,
+        ):
+            result = sender.send(request, dry_run=False, send_enabled=True, bridge_send=bridge_send)
+
+        self.assertEqual(result.status, "suppressed")
+        self.assertEqual(result.reason, "BACKLOG_SUMMARY_ONLY")
+        bridge_send.assert_not_called()
+
+    def test_send_backlog_non_direct_publish_stays_suppressed_with_backlog_flag_on(self):
+        bridge_send = MagicMock(return_value=self._bridge_result())
+        request = self._request(
+            summary=None,
+            notice_origin="guarded_publish_history",
+            is_backlog=True,
+        )
+
+        with patch.dict(
+            "os.environ",
+            {
+                "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                "ENABLE_PUBLISH_ONLY_FILTER_BACKLOG_BYPASS": "1",
+            },
+            clear=True,
+        ):
+            result = sender.send(request, dry_run=False, send_enabled=True, bridge_send=bridge_send)
+
+        self.assertEqual(result.status, "suppressed")
+        self.assertEqual(result.reason, "BACKLOG_SUMMARY_ONLY")
+        bridge_send.assert_not_called()
+
+    def test_send_backlog_bypass_flag_off_keeps_existing_behavior(self):
+        cases = [
+            (
+                "direct_publish",
+                self._request(
+                    summary=None,
+                    notice_origin="direct_publish_scan",
+                    is_backlog=True,
+                ),
+                {
+                    "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                    "ENABLE_PUBLISH_ONLY_FILTER_BACKLOG_BYPASS": "0",
+                },
+                "BACKLOG_SUMMARY_ONLY",
+                "【公開済】巨人が接戦を制した | YOSHILOVER",
+            ),
+            (
+                "direct_review",
+                self._request(
+                    title="巨人戦の観戦案内を更新",
+                    subtype="notice",
+                    summary="対象試合と受付条件を整理した。",
+                    notice_origin="direct_publish_scan",
+                    is_backlog=True,
+                ),
+                {
+                    "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                    "ENABLE_PUBLISH_ONLY_MAIL_FILTER": "1",
+                    "ENABLE_PUBLISH_ONLY_FILTER_DIRECT_PUBLISH_BYPASS": "1",
+                    "ENABLE_PUBLISH_ONLY_FILTER_BACKLOG_BYPASS": "0",
+                },
+                "BACKLOG_SUMMARY_ONLY",
+                "【要確認】巨人戦の観戦案内を更新 | YOSHILOVER",
+            ),
+            (
+                "budget_summary_only",
+                self._request(
+                    summary=None,
+                    notice_origin="direct_publish_scan",
+                    record_type="24h_budget_summary_only",
+                    is_backlog=True,
+                ),
+                {
+                    "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                    "ENABLE_PUBLISH_ONLY_FILTER_BACKLOG_BYPASS": "0",
+                },
+                "BACKLOG_SUMMARY_ONLY",
+                "【公開済】巨人が接戦を制した | YOSHILOVER",
+            ),
+            (
+                "non_direct_publish",
+                self._request(
+                    summary=None,
+                    notice_origin="guarded_publish_history",
+                    is_backlog=True,
+                ),
+                {
+                    "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                    "ENABLE_PUBLISH_ONLY_FILTER_BACKLOG_BYPASS": "0",
+                },
+                "BACKLOG_SUMMARY_ONLY",
+                "【公開済】巨人が接戦を制した | YOSHILOVER",
+            ),
+        ]
+
+        for label, request, env_map, expected_reason, expected_subject in cases:
+            with self.subTest(case=label):
+                bridge_send = MagicMock(return_value=self._bridge_result())
+
+                with patch.dict("os.environ", env_map, clear=True):
+                    result = sender.send(
+                        request,
+                        dry_run=False,
+                        send_enabled=True,
+                        bridge_send=bridge_send,
+                    )
+
+                self.assertEqual(result.status, "suppressed")
+                self.assertEqual(result.reason, expected_reason)
+                self.assertEqual(result.subject, expected_subject)
+                bridge_send.assert_not_called()
+
     def test_backlog_post_skips_per_post_mail(self):
         bridge_send = MagicMock(return_value=self._bridge_result())
 

@@ -31,8 +31,10 @@ _PUBLISH_ONLY_MAIL_FILTER_ENV_FLAG = "ENABLE_PUBLISH_ONLY_MAIL_FILTER"
 _PUBLISH_ONLY_FILTER_DIRECT_PUBLISH_BYPASS_ENV_FLAG = (
     "ENABLE_PUBLISH_ONLY_FILTER_DIRECT_PUBLISH_BYPASS"
 )
+_PUBLISH_ONLY_FILTER_BACKLOG_BYPASS_ENV_FLAG = "ENABLE_PUBLISH_ONLY_FILTER_BACKLOG_BYPASS"
 _PUBLISH_ONLY_MAIL_PREFIX = "【公開済】"
 _DIRECT_PUBLISH_NOTICE_ORIGIN = "direct_publish_scan"
+_PUBLISH_NOTICE_24H_BUDGET_SUMMARY_ONLY_RECORD_TYPE = "24h_budget_summary_only"
 _PUBLISH_ONLY_MAIL_FILTER_SUPPRESSION_REASON = "PUBLISH_ONLY_FILTER"
 _WHITESPACE_RE = re.compile(r"\s+")
 _SUMMARY_TITLE_LIMIT = 80
@@ -1687,6 +1689,15 @@ def _publish_only_filter_direct_publish_bypass_enabled() -> bool:
     }
 
 
+def _publish_only_filter_backlog_bypass_enabled() -> bool:
+    return str(os.environ.get(_PUBLISH_ONLY_FILTER_BACKLOG_BYPASS_ENV_FLAG, "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def _is_publish_only_subject(subject: str) -> bool:
     return str(subject or "").strip().startswith(_PUBLISH_ONLY_MAIL_PREFIX)
 
@@ -1713,6 +1724,21 @@ def _should_suppress_publish_only_mail(
     return not (
         notice_kind == "publish"
         and notice_origin == _DIRECT_PUBLISH_NOTICE_ORIGIN
+    )
+
+
+def _should_bypass_backlog_summary_only(request: PublishNoticeRequest | None) -> bool:
+    if request is None:
+        return False
+    if not _publish_only_filter_backlog_bypass_enabled():
+        return False
+    notice_kind = str(getattr(request, "notice_kind", "publish") or "publish").strip() or "publish"
+    notice_origin = str(getattr(request, "notice_origin", "") or "").strip()
+    record_type = str(getattr(request, "record_type", "") or "").strip()
+    return (
+        notice_kind == "publish"
+        and notice_origin == _DIRECT_PUBLISH_NOTICE_ORIGIN
+        and record_type != _PUBLISH_NOTICE_24H_BUDGET_SUMMARY_ONLY_RECORD_TYPE
     )
 
 
@@ -2209,7 +2235,8 @@ def send(
         or _path(guarded_publish_history_path) != DEFAULT_GUARDED_PUBLISH_HISTORY_PATH,
     )
     if not review_only_notice and is_backlog:
-        return _suppressed("BACKLOG_SUMMARY_ONLY", subject=subject, recipients=recipients)
+        if not _should_bypass_backlog_summary_only(normalized_request):
+            return _suppressed("BACKLOG_SUMMARY_ONLY", subject=subject, recipients=recipients)
     return _deliver_mail(
         subject=subject,
         body_text=build_body_text(normalized_request, classification=mail_state),

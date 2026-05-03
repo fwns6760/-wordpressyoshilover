@@ -16,7 +16,7 @@ from collections import Counter
 from datetime import datetime, timezone, timedelta
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 # vendorディレクトリをパスに追加（サーバー環境用）
 ROOT = Path(__file__).parent.parent
@@ -48,7 +48,12 @@ from title_validator import title_has_minimum_article_context
 from title_validator import title_has_person_name_candidate
 from title_validator import validate_title_candidate as _validate_title_candidate
 from title_validator import is_supported_subtype as _title_validator_supports_subtype
-from weak_title_rescue import is_strong_with_name_and_event, rescue_blacklist_phrase, rescue_related_info_escape
+from weak_title_rescue import (
+    is_strong_with_name_and_event,
+    rescue_blacklist_phrase,
+    rescue_related_info_escape,
+    rescue_subtype_aware,
+)
 from wp_client import WPClient
 from media_xpost_selector import evaluate_media_quote_selection
 from wp_draft_creator import build_oembed_block, load_posted_urls, save_posted_url
@@ -199,6 +204,7 @@ PREFLIGHT_SKIP_NOTIFICATION_ENV_FLAG = "ENABLE_PREFLIGHT_SKIP_NOTIFICATION"
 PREFLIGHT_SKIP_LEDGER_PATH_ENV = "PREFLIGHT_SKIP_LEDGER_PATH"
 WEAK_TITLE_RESCUE_ENV_FLAG = "ENABLE_WEAK_TITLE_RESCUE"
 NARROW_UNLOCK_NON_POSTGAME_ENV_FLAG = "ENABLE_NARROW_UNLOCK_NON_POSTGAME"
+NARROW_UNLOCK_SUBTYPE_AWARE_ENV_FLAG = "ENABLE_NARROW_UNLOCK_SUBTYPE_AWARE"
 NARROW_UNLOCK_ALLOWED_SUBTYPES = frozenset({"manager", "player", "player_notice", "lineup", "farm_result"})
 NARROW_UNLOCK_PLAYER_EVENT_MARKERS = (
     "登録",
@@ -226,6 +232,53 @@ NARROW_UNLOCK_PLACEHOLDER_MARKERS = (
     "某選手",
     "この選手",
     "この投手",
+)
+NARROW_UNLOCK_SUBTYPE_AWARE_HARD_STOP_MARKERS = (
+    "死亡",
+    "重傷",
+    "救急",
+    "意識不明",
+    "グッズ",
+    "NIKE",
+    "コジコジ",
+)
+NARROW_UNLOCK_SUBTYPE_AWARE_PLACEHOLDER_MARKERS = (
+    *NARROW_UNLOCK_PLACEHOLDER_MARKERS,
+    "結果確認中",
+    "発言 関連情報",
+)
+NARROW_UNLOCK_SUBTYPE_AWARE_GIANTS_MARKERS = ("巨人", "ジャイアンツ", "読売ジャイアンツ")
+NARROW_UNLOCK_SUBTYPE_AWARE_POSTGAME_PREV_DAY_CUTOFF_HOUR = 9
+NARROW_UNLOCK_NOTICE_EVENT_MARKERS = (
+    "一軍昇格",
+    "昇格",
+    "一軍登録",
+    "再登録",
+    "登録抹消",
+    "抹消",
+    "一軍合流",
+    "合流",
+    "復帰",
+    "実戦復帰",
+    "二軍落ち",
+)
+NARROW_UNLOCK_FARM_PLAYER_EVENT_MARKERS = (
+    "二軍3安打1本塁打",
+    "3安打1本塁打",
+    "2安打1本塁打",
+    "3安打",
+    "2安打",
+    "猛打賞",
+    "マルチ安打",
+    "本塁打",
+    "ホームラン",
+    "好投",
+    "無失点",
+    "奪三振",
+    "実戦復帰",
+    "復帰",
+    "昇格候補",
+    "昇格",
 )
 POST_GEN_VALIDATE_HISTORY_DEFAULT_PATH = Path("/tmp/pub004d/post_gen_validate_history.jsonl")
 POST_GEN_VALIDATE_STATE_BUCKET = "baseballsite-yoshilover-state"
@@ -6556,7 +6609,186 @@ def _maybe_route_zero_quote_manager_review(
     return _ManagerQuoteZeroReviewFallback("quote_count_zero")
 
 
-def _allow_narrow_unlock_candidate(
+def _merge_weak_title_metadata(metadata: Mapping[str, object] | None = None) -> dict[str, object]:
+    merged: dict[str, object] = {}
+    if not isinstance(metadata, Mapping):
+        return merged
+    for key, value in metadata.items():
+        if value in (None, ""):
+            continue
+        merged[str(key)] = value
+    return merged
+
+
+def _coerce_datetime_jst(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        return value.astimezone(JST) if value.tzinfo else value.replace(tzinfo=JST)
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.astimezone(JST) if parsed.tzinfo else parsed.replace(tzinfo=JST)
+
+
+def _clean_narrow_unlock_text(*parts: object) -> str:
+    cleaned_parts = []
+    for part in parts:
+        cleaned = _strip_html(str(part or "")).strip()
+        if cleaned:
+            cleaned_parts.append(cleaned)
+    return " ".join(cleaned_parts)
+
+
+def _normalize_subtype_aware_narrow_unlock_subtype(article_subtype: str, metadata: Mapping[str, object] | None = None) -> str:
+    metadata = _merge_weak_title_metadata(metadata)
+    special_kind = str(metadata.get("special_story_kind") or "").strip().lower()
+    if special_kind == "player_notice":
+        return "roster_notice"
+    if special_kind == "player_recovery":
+        return "injury_recovery_notice"
+
+    normalized_subtype = str(article_subtype or "").strip().lower()
+    if normalized_subtype in {"notice", "player_notice", "roster_notice"}:
+        return "roster_notice"
+    if normalized_subtype in {"recovery", "player_recovery", "injury_recovery_notice"}:
+        return "injury_recovery_notice"
+    if normalized_subtype in {"farm", "farm_result"}:
+        return "farm_result"
+    if normalized_subtype in {"manager", "manager_comment", "manager_quote"}:
+        return "manager_comment"
+    if normalized_subtype in {"coach", "coach_comment", "coach_quote"}:
+        return "coach_comment"
+    if normalized_subtype in {"player", "player_comment", "player_quote"}:
+        return "player_comment"
+    if normalized_subtype in {"pregame", "probable_starter", "lineup"}:
+        return "pregame"
+    return normalized_subtype
+
+
+def _extract_narrow_unlock_player_name(metadata: Mapping[str, object]) -> str:
+    for key in ("player_name", "notice_subject", "subject_player"):
+        value = str(metadata.get(key) or "").strip()
+        if value and title_has_person_name_candidate(value):
+            return value
+    speaker = str(metadata.get("speaker") or "").strip()
+    if speaker and title_has_person_name_candidate(speaker):
+        return speaker
+    return ""
+
+
+def _extract_narrow_unlock_speaker_label(metadata: Mapping[str, object]) -> str:
+    speaker = str(metadata.get("speaker") or metadata.get("manager_name") or "").strip()
+    if not speaker:
+        return ""
+    role = str(metadata.get("role") or "").strip()
+    if role in {"監督", "コーチ"} and not speaker.endswith(role):
+        return f"{speaker}{role}"
+    return speaker
+
+
+def _extract_narrow_unlock_notice_event(metadata: Mapping[str, object], source_text: str) -> str:
+    notice_type = str(metadata.get("notice_type") or "").strip()
+    if notice_type:
+        return notice_type
+    for marker in NARROW_UNLOCK_NOTICE_EVENT_MARKERS:
+        if marker in source_text:
+            return marker
+    return ""
+
+
+def _extract_narrow_unlock_farm_player_event(source_text: str) -> str:
+    for marker in NARROW_UNLOCK_FARM_PLAYER_EVENT_MARKERS:
+        if marker in source_text:
+            return marker
+    return ""
+
+
+def _is_narrow_unlock_yoshilover_target(source_text: str, metadata: Mapping[str, object]) -> bool:
+    team_scope = str(metadata.get("team_scope") or "").strip().lower()
+    if team_scope == "mixed":
+        return False
+    if any(bool(metadata.get(key)) for key in ("major_league_context", "non_giants")):
+        return False
+    return any(marker in source_text for marker in NARROW_UNLOCK_SUBTYPE_AWARE_GIANTS_MARKERS)
+
+
+def _has_narrow_unlock_hard_stop(source_text: str, metadata: Mapping[str, object]) -> bool:
+    if any(marker in source_text for marker in NARROW_UNLOCK_SUBTYPE_AWARE_HARD_STOP_MARKERS):
+        return True
+    return any(bool(metadata.get(key)) for key in ("hard_stop", "merchandise"))
+
+
+def _has_narrow_unlock_placeholder(candidate_title: str, source_text: str) -> bool:
+    return any(marker in candidate_title or marker in source_text for marker in NARROW_UNLOCK_SUBTYPE_AWARE_PLACEHOLDER_MARKERS)
+
+
+def _extract_narrow_unlock_score(metadata: Mapping[str, object], source_text: str) -> str:
+    score = str(metadata.get("score") or metadata.get("scoreline") or "").strip()
+    return score or _extract_game_score_token(source_text)
+
+
+def _extract_narrow_unlock_opponent(metadata: Mapping[str, object], source_text: str) -> str:
+    opponent = str(metadata.get("opponent") or "").strip()
+    return opponent or _extract_game_opponent_label(source_text)
+
+
+def _has_narrow_unlock_farm_signal(metadata: Mapping[str, object], source_text: str) -> bool:
+    return bool(metadata.get("farm") or metadata.get("is_farm") or any(marker in source_text for marker in FARM_LINEUP_MARKERS))
+
+
+def _postgame_recent_enough(metadata: Mapping[str, object], current_time: datetime | None = None) -> bool:
+    published_at = _coerce_datetime_jst(metadata.get("published_at"))
+    if published_at is None:
+        return False
+    now = current_time.astimezone(JST) if isinstance(current_time, datetime) else datetime.now(JST)
+    if published_at.date() == now.date():
+        return True
+    previous_day = (now - timedelta(days=1)).date()
+    if published_at.date() == previous_day and published_at.hour >= NARROW_UNLOCK_SUBTYPE_AWARE_POSTGAME_PREV_DAY_CUTOFF_HOUR:
+        return True
+    return False
+
+
+def _parse_narrow_unlock_game_datetime(
+    metadata: Mapping[str, object],
+    *,
+    fallback_day: datetime | None = None,
+    source_text: str = "",
+) -> datetime | None:
+    time_token = str(metadata.get("game_time") or "").strip() or _extract_game_time_token(source_text)
+    if not time_token:
+        return None
+    game_day = _coerce_datetime_jst(metadata.get("game_date"))
+    if game_day is None:
+        game_day = fallback_day
+    if game_day is None:
+        return None
+    try:
+        hour, minute = [int(part) for part in time_token.split(":", 1)]
+    except ValueError:
+        return None
+    return game_day.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+
+def _pregame_before_start(
+    metadata: Mapping[str, object],
+    *,
+    source_text: str,
+    current_time: datetime | None = None,
+) -> bool:
+    published_at = _coerce_datetime_jst(metadata.get("published_at"))
+    if published_at is None:
+        return not _has_explicit_confirmed_result(source_text)
+    game_dt = _parse_narrow_unlock_game_datetime(metadata, fallback_day=published_at, source_text=source_text)
+    if game_dt is None:
+        return not _has_explicit_confirmed_result(source_text)
+    return published_at < game_dt
+
+
+def _legacy_narrow_unlock_reason(
     *,
     title: str,
     article_subtype: str,
@@ -6570,15 +6802,15 @@ def _allow_narrow_unlock_candidate(
     placeholder_residual: bool = False,
     title_player_name_unresolved: bool = False,
     stale_postgame: bool = False,
-) -> bool:
+) -> str | None:
     if not _env_flag(NARROW_UNLOCK_NON_POSTGAME_ENV_FLAG, False):
-        return False
+        return None
 
     candidate_title = str(title or "").strip()
     resolved_source_name = str(source_name or "").strip()
     resolved_source_url = str(source_url or "").strip()
     if not candidate_title or not resolved_source_name or not resolved_source_url:
-        return False
+        return None
 
     normalized_subtype = str(article_subtype or "").strip().lower()
     if normalized_subtype in {"notice", "recovery", "player_notice"}:
@@ -6587,14 +6819,14 @@ def _allow_narrow_unlock_candidate(
         normalized_subtype = "farm_result"
 
     if normalized_subtype not in NARROW_UNLOCK_ALLOWED_SUBTYPES:
-        return False
+        return None
     if normalized_subtype == "postgame":
-        return False
+        return None
 
     if str(weak_reason or "").startswith("strict_review_fallback:"):
-        return False
+        return None
     if str(weak_title_rescue_reason or "").startswith("strict_review_fallback:"):
-        return False
+        return None
 
     duplicate_guard_context = duplicate_guard_context if isinstance(duplicate_guard_context, dict) else {}
     existing_publish_same_source_url = bool(
@@ -6602,51 +6834,279 @@ def _allow_narrow_unlock_candidate(
         or duplicate_guard_context.get("source_url_already_published")
     )
     if existing_publish_same_source_url:
-        return False
+        return None
     if str(duplicate_guard_context.get("guard_outcome") or "").strip() == "skip":
-        return False
+        return None
     if str(duplicate_guard_context.get("postgame_strict_review_reason") or "").strip():
-        return False
+        return None
 
     if stale_postgame or bool(duplicate_guard_context.get("stale_postgame")):
-        return False
+        return None
     if title_player_name_unresolved:
-        return False
+        return None
     if body_contract_validate is not None and not bool(body_contract_validate.get("ok")):
-        return False
+        return None
     if not numeric_guard_ok or placeholder_residual:
-        return False
+        return None
     if any(marker in candidate_title for marker in NARROW_UNLOCK_PLACEHOLDER_MARKERS):
-        return False
+        return None
 
     inferred_subtype = infer_subtype_from_title(candidate_title)
     if normalized_subtype == "lineup":
         if inferred_subtype not in {"", "lineup"}:
-            return False
+            return None
         title_ok, _reason = title_has_minimum_article_context(candidate_title, "lineup")
-        return title_ok
+        return "legacy_non_postgame_lineup" if title_ok else None
 
     if normalized_subtype == "farm_result":
         if inferred_subtype not in {"", "farm"}:
-            return False
+            return None
         title_ok, _reason = title_has_minimum_article_context(candidate_title, "farm_result")
-        return title_ok
+        return "legacy_non_postgame_farm_result" if title_ok else None
 
     if normalized_subtype == "manager":
         if inferred_subtype in {"lineup", "postgame", "pregame", "farm"}:
-            return False
+            return None
         title_ok, _reason = title_has_minimum_article_context(candidate_title, "manager")
-        return title_ok
+        return "legacy_non_postgame_manager" if title_ok else None
 
     if inferred_subtype in {"lineup", "postgame", "pregame", "farm"}:
-        return False
+        return None
     if not title_has_person_name_candidate(candidate_title):
-        return False
+        return None
     if is_strong_with_name_and_event(candidate_title):
-        return True
+        return "legacy_non_postgame_name_event"
     if any(marker in candidate_title for marker in ("「", "『")):
-        return True
-    return any(marker in candidate_title for marker in NARROW_UNLOCK_PLAYER_EVENT_MARKERS)
+        return "legacy_non_postgame_quote"
+    if any(marker in candidate_title for marker in NARROW_UNLOCK_PLAYER_EVENT_MARKERS):
+        return "legacy_non_postgame_player_event"
+    return None
+
+
+def _subtype_aware_narrow_unlock_reason(
+    *,
+    title: str,
+    article_subtype: str,
+    source_name: str = "",
+    source_url: str = "",
+    source_title: str = "",
+    source_body: str = "",
+    summary: str = "",
+    metadata: Mapping[str, object] | None = None,
+    weak_reason: str = "",
+    weak_title_rescue_reason: str | None = None,
+    duplicate_guard_context: dict[str, object] | None = None,
+    body_contract_validate: dict[str, object] | None = None,
+    numeric_guard_ok: bool = True,
+    placeholder_residual: bool = False,
+    title_player_name_unresolved: bool = False,
+    stale_postgame: bool = False,
+    current_time: datetime | None = None,
+) -> str | None:
+    if not _env_flag(NARROW_UNLOCK_SUBTYPE_AWARE_ENV_FLAG, False):
+        return None
+
+    candidate_title = str(title or "").strip()
+    resolved_source_name = str(source_name or "").strip()
+    resolved_source_url = str(source_url or "").strip()
+    if not candidate_title or not resolved_source_name or not resolved_source_url:
+        return None
+
+    metadata = _merge_weak_title_metadata(metadata)
+    duplicate_guard_context = duplicate_guard_context if isinstance(duplicate_guard_context, dict) else {}
+    if str(weak_reason or "").startswith("strict_review_fallback:"):
+        return None
+    if str(weak_title_rescue_reason or "").startswith("strict_review_fallback:"):
+        return None
+    if bool(
+        duplicate_guard_context.get("existing_publish_same_source_url")
+        or duplicate_guard_context.get("source_url_already_published")
+    ):
+        return None
+    if str(duplicate_guard_context.get("guard_outcome") or "").strip() == "skip":
+        return None
+    if str(duplicate_guard_context.get("postgame_strict_review_reason") or "").strip():
+        return None
+    if stale_postgame or bool(duplicate_guard_context.get("stale_postgame")):
+        return None
+    if title_player_name_unresolved:
+        return None
+    if body_contract_validate is not None and not bool(body_contract_validate.get("ok")):
+        return None
+    if not numeric_guard_ok or placeholder_residual:
+        return None
+
+    source_text = _clean_narrow_unlock_text(candidate_title, source_title, source_body, summary)
+    if _has_live_update_fragment(source_text):
+        return None
+    if _has_narrow_unlock_placeholder(candidate_title, source_text):
+        return None
+    if _has_narrow_unlock_hard_stop(source_text, metadata):
+        return None
+    if not _is_narrow_unlock_yoshilover_target(source_text, metadata):
+        return None
+
+    normalized_subtype = _normalize_subtype_aware_narrow_unlock_subtype(article_subtype, metadata)
+    if not normalized_subtype:
+        return None
+
+    title_ok, _reason = title_has_minimum_article_context(candidate_title, normalized_subtype)
+    if not title_ok:
+        return None
+
+    if normalized_subtype == "postgame":
+        if not _postgame_recent_enough(metadata, current_time=current_time):
+            return None
+        if not _extract_narrow_unlock_opponent(metadata, source_text):
+            return None
+        if not _extract_narrow_unlock_score(metadata, source_text):
+            return None
+        return "subtype_aware_postgame"
+
+    if normalized_subtype in {"manager_comment", "coach_comment"}:
+        if not _extract_narrow_unlock_speaker_label(metadata):
+            return None
+        return f"subtype_aware_{normalized_subtype}"
+
+    if normalized_subtype == "player_comment":
+        if not _extract_narrow_unlock_player_name(metadata):
+            return None
+        return "subtype_aware_player_comment"
+
+    if normalized_subtype == "farm_result":
+        if not _has_narrow_unlock_farm_signal(metadata, source_text):
+            return None
+        if not _extract_narrow_unlock_opponent(metadata, source_text):
+            return None
+        if not _extract_narrow_unlock_score(metadata, source_text):
+            return None
+        return "subtype_aware_farm_result"
+
+    if normalized_subtype == "farm_lineup":
+        if not _has_narrow_unlock_farm_signal(metadata, source_text):
+            return None
+        return "subtype_aware_farm_lineup"
+
+    if normalized_subtype == "pregame":
+        if not _pregame_before_start(metadata, source_text=source_text, current_time=current_time):
+            return None
+        return "subtype_aware_pregame"
+
+    if normalized_subtype in {"roster_notice", "injury_recovery_notice"}:
+        if not _extract_narrow_unlock_player_name(metadata):
+            return None
+        if not _extract_narrow_unlock_notice_event(metadata, source_text):
+            return None
+        return f"subtype_aware_{normalized_subtype}"
+
+    if normalized_subtype == "farm_player_result":
+        if not _extract_narrow_unlock_player_name(metadata):
+            return None
+        if not _extract_narrow_unlock_farm_player_event(source_text):
+            return None
+        return "subtype_aware_farm_player_result"
+
+    return None
+
+
+def _narrow_unlock_reason(
+    *,
+    title: str,
+    article_subtype: str,
+    source_name: str = "",
+    source_url: str = "",
+    source_title: str = "",
+    source_body: str = "",
+    summary: str = "",
+    metadata: Mapping[str, object] | None = None,
+    weak_reason: str = "",
+    weak_title_rescue_reason: str | None = None,
+    duplicate_guard_context: dict[str, object] | None = None,
+    body_contract_validate: dict[str, object] | None = None,
+    numeric_guard_ok: bool = True,
+    placeholder_residual: bool = False,
+    title_player_name_unresolved: bool = False,
+    stale_postgame: bool = False,
+    current_time: datetime | None = None,
+) -> str | None:
+    legacy_reason = _legacy_narrow_unlock_reason(
+        title=title,
+        article_subtype=article_subtype,
+        source_name=source_name,
+        source_url=source_url,
+        weak_reason=weak_reason,
+        weak_title_rescue_reason=weak_title_rescue_reason,
+        duplicate_guard_context=duplicate_guard_context,
+        body_contract_validate=body_contract_validate,
+        numeric_guard_ok=numeric_guard_ok,
+        placeholder_residual=placeholder_residual,
+        title_player_name_unresolved=title_player_name_unresolved,
+        stale_postgame=stale_postgame,
+    )
+    if legacy_reason:
+        return legacy_reason
+    return _subtype_aware_narrow_unlock_reason(
+        title=title,
+        article_subtype=article_subtype,
+        source_name=source_name,
+        source_url=source_url,
+        source_title=source_title,
+        source_body=source_body,
+        summary=summary,
+        metadata=metadata,
+        weak_reason=weak_reason,
+        weak_title_rescue_reason=weak_title_rescue_reason,
+        duplicate_guard_context=duplicate_guard_context,
+        body_contract_validate=body_contract_validate,
+        numeric_guard_ok=numeric_guard_ok,
+        placeholder_residual=placeholder_residual,
+        title_player_name_unresolved=title_player_name_unresolved,
+        stale_postgame=stale_postgame,
+        current_time=current_time,
+    )
+
+
+def _allow_narrow_unlock_candidate(
+    *,
+    title: str,
+    article_subtype: str,
+    source_name: str = "",
+    source_url: str = "",
+    source_title: str = "",
+    source_body: str = "",
+    summary: str = "",
+    metadata: Mapping[str, object] | None = None,
+    weak_reason: str = "",
+    weak_title_rescue_reason: str | None = None,
+    duplicate_guard_context: dict[str, object] | None = None,
+    body_contract_validate: dict[str, object] | None = None,
+    numeric_guard_ok: bool = True,
+    placeholder_residual: bool = False,
+    title_player_name_unresolved: bool = False,
+    stale_postgame: bool = False,
+    current_time: datetime | None = None,
+) -> bool:
+    return bool(
+        _narrow_unlock_reason(
+            title=title,
+            article_subtype=article_subtype,
+            source_name=source_name,
+            source_url=source_url,
+            source_title=source_title,
+            source_body=source_body,
+            summary=summary,
+            metadata=metadata,
+            weak_reason=weak_reason,
+            weak_title_rescue_reason=weak_title_rescue_reason,
+            duplicate_guard_context=duplicate_guard_context,
+            body_contract_validate=body_contract_validate,
+            numeric_guard_ok=numeric_guard_ok,
+            placeholder_residual=placeholder_residual,
+            title_player_name_unresolved=title_player_name_unresolved,
+            stale_postgame=stale_postgame,
+            current_time=current_time,
+        )
+    )
 
 
 def _maybe_route_weak_generated_title_review(
@@ -6657,6 +7117,10 @@ def _maybe_route_weak_generated_title_review(
     source_name: str,
     logger: logging.Logger,
     source_url: str = "",
+    source_title: str = "",
+    source_body: str = "",
+    summary: str = "",
+    metadata: Mapping[str, object] | None = None,
     weak_title_rescue_reason: str | None = None,
     duplicate_guard_context: dict[str, object] | None = None,
     body_contract_validate: dict[str, object] | None = None,
@@ -6673,11 +7137,15 @@ def _maybe_route_weak_generated_title_review(
     is_weak, weak_reason = is_weak_generated_title(rewritten)
     if not is_weak:
         return None
-    if _allow_narrow_unlock_candidate(
+    unlock_reason = _narrow_unlock_reason(
         title=rewritten,
         article_subtype=article_subtype,
         source_name=source_name,
         source_url=source_url,
+        source_title=source_title,
+        source_body=source_body,
+        summary=summary,
+        metadata=metadata,
         weak_reason=weak_reason,
         weak_title_rescue_reason=weak_title_rescue_reason,
         duplicate_guard_context=duplicate_guard_context,
@@ -6686,7 +7154,8 @@ def _maybe_route_weak_generated_title_review(
         placeholder_residual=placeholder_residual,
         title_player_name_unresolved=title_player_name_unresolved,
         stale_postgame=stale_postgame,
-    ):
+    )
+    if unlock_reason:
         logger.info(
             json.dumps(
                 {
@@ -6696,7 +7165,9 @@ def _maybe_route_weak_generated_title_review(
                     "title": rewritten,
                     "source_name": source_name,
                     "source_url_hash": _hash_duplicate_guard_value(source_url),
-                    "reason": weak_reason,
+                    "reason": unlock_reason,
+                    "weak_reason": weak_reason,
+                    "weak_title_rescue_reason": weak_title_rescue_reason or "",
                 },
                 ensure_ascii=False,
             )
@@ -6726,6 +7197,10 @@ def _maybe_route_weak_subject_title_review(
     logger: logging.Logger,
     speaker_name: str = "",
     source_url: str = "",
+    source_title: str = "",
+    source_body: str = "",
+    summary: str = "",
+    metadata: Mapping[str, object] | None = None,
     weak_title_rescue_reason: str | None = None,
     duplicate_guard_context: dict[str, object] | None = None,
     body_contract_validate: dict[str, object] | None = None,
@@ -6747,11 +7222,15 @@ def _maybe_route_weak_subject_title_review(
         weak_reason = "generic_noun_only_no_person_name"
     if not is_weak:
         return None
-    if _allow_narrow_unlock_candidate(
+    unlock_reason = _narrow_unlock_reason(
         title=rewritten,
         article_subtype=article_subtype,
         source_name=source_name,
         source_url=source_url,
+        source_title=source_title,
+        source_body=source_body,
+        summary=summary,
+        metadata=metadata,
         weak_reason=weak_reason,
         weak_title_rescue_reason=weak_title_rescue_reason,
         duplicate_guard_context=duplicate_guard_context,
@@ -6760,7 +7239,8 @@ def _maybe_route_weak_subject_title_review(
         placeholder_residual=placeholder_residual,
         title_player_name_unresolved=title_player_name_unresolved,
         stale_postgame=stale_postgame,
-    ):
+    )
+    if unlock_reason:
         logger.info(
             json.dumps(
                 {
@@ -6770,7 +7250,9 @@ def _maybe_route_weak_subject_title_review(
                     "title": rewritten,
                     "source_name": source_name,
                     "source_url_hash": _hash_duplicate_guard_value(source_url),
-                    "reason": weak_reason,
+                    "reason": unlock_reason,
+                    "weak_reason": weak_reason,
+                    "weak_title_rescue_reason": weak_title_rescue_reason or "",
                 },
                 ensure_ascii=False,
             )
@@ -13049,6 +13531,7 @@ def _maybe_apply_weak_title_rescue(
     logger: logging.Logger | None = None,
     source_name: str = "",
     source_url: str = "",
+    metadata: Mapping[str, object] | None = None,
 ) -> tuple[str, str | None]:
     if not _env_flag(WEAK_TITLE_RESCUE_ENV_FLAG, False):
         return rewritten_title, None
@@ -13058,7 +13541,7 @@ def _maybe_apply_weak_title_rescue(
     if not weak_generated and not weak_subject:
         return rewritten_title, None
 
-    metadata = _build_title_player_name_backfill_metadata(
+    rescue_metadata = _build_title_player_name_backfill_metadata(
         source_title,
         summary,
         category,
@@ -13066,20 +13549,31 @@ def _maybe_apply_weak_title_rescue(
         manager_subject=manager_subject,
         notice_subject=notice_subject,
     )
+    rescue_metadata.update(_merge_weak_title_metadata(metadata))
     rescue_result = (
+        rescue_subtype_aware(
+            gen_title=rewritten_title,
+            source_title=source_title,
+            body=source_body,
+            summary=summary,
+            metadata=rescue_metadata,
+        )
+        if _env_flag(NARROW_UNLOCK_SUBTYPE_AWARE_ENV_FLAG, False)
+        else None
+    ) or (
         rescue_related_info_escape(
             gen_title=rewritten_title,
             source_title=source_title,
             body=source_body,
             summary=summary,
-            metadata=metadata,
+            metadata=rescue_metadata,
         )
         or rescue_blacklist_phrase(
             gen_title=rewritten_title,
             source_title=source_title,
             body=source_body,
             summary=summary,
-            metadata=metadata,
+            metadata=rescue_metadata,
         )
     )
     if rescue_result is None:
@@ -13091,7 +13585,14 @@ def _maybe_apply_weak_title_rescue(
 
     rescued_weak_generated, _ = is_weak_generated_title(rescued_title)
     rescued_weak_subject, _ = is_weak_subject_title(rescued_title)
-    if rescued_weak_generated or rescued_weak_subject:
+    subtype_floor_ok = False
+    if (
+        _env_flag(NARROW_UNLOCK_SUBTYPE_AWARE_ENV_FLAG, False)
+        and rescue_result.strategy.startswith("subtype_aware_")
+    ):
+        rescue_context_subtype = str(rescue_metadata.get("special_story_kind") or article_subtype)
+        subtype_floor_ok, _subtype_reason = title_has_minimum_article_context(rescued_title, rescue_context_subtype)
+    if (rescued_weak_generated or rescued_weak_subject) and not subtype_floor_ok:
         return rewritten_title, None
 
     original_skip_reason = ""
@@ -14673,6 +15174,40 @@ def _main(args, logger):
                 source_name=source_name,
                 source_url=post_url,
             )
+            weak_title_metadata = _build_title_player_name_backfill_metadata(
+                raw_title,
+                summary,
+                category,
+                title_article_subtype,
+                manager_subject=manager_subject,
+                notice_subject=notice_subject,
+            )
+            weak_title_metadata.update(
+                {
+                    "article_subtype": title_article_subtype,
+                    "category": category,
+                    "special_story_kind": special_story_kind,
+                    "notice_type": notice_type,
+                    "notice_subject": notice_subject,
+                    "manager_name": manager_subject,
+                    "published_at": item.get("published_at"),
+                    "game_date": source_day_label,
+                    "game_time": _extract_game_time_token(f"{raw_title} {summary}"),
+                    "score": item.get("scoreline") or item.get("score") or "",
+                    "opponent": item.get("opponent") or "",
+                    "team_scope": (
+                        item.get("team_scope")
+                        if isinstance(item, dict)
+                        else ""
+                    )
+                    or (
+                        item.get("duplicate_guard_context", {}).get("team_scope")
+                        if isinstance(item.get("duplicate_guard_context"), dict)
+                        else ""
+                    ),
+                    "farm": category == "ドラフト・育成" or title_article_subtype in {"farm", "farm_lineup", "farm_result"},
+                }
+            )
             title_player_name_unresolved = bool(
                 comparison_title == draft_title
                 and title_article_subtype in {"manager", "player", "notice", "recovery"}
@@ -14690,6 +15225,7 @@ def _main(args, logger):
                 logger=logger,
                 source_name=source_name,
                 source_url=post_url,
+                metadata=weak_title_metadata,
             )
             weak_title_fallback = _maybe_route_weak_generated_title_review(
                 article_subtype=title_article_subtype,
@@ -14698,6 +15234,10 @@ def _main(args, logger):
                 source_name=source_name,
                 logger=logger,
                 source_url=post_url,
+                source_title=raw_title,
+                source_body=summary,
+                summary=summary,
+                metadata=weak_title_metadata,
                 weak_title_rescue_reason=_weak_title_rescue_reason,
                 duplicate_guard_context=item.get("duplicate_guard_context"),
                 title_player_name_unresolved=title_player_name_unresolved,
@@ -14725,6 +15265,10 @@ def _main(args, logger):
                 logger=logger,
                 speaker_name=manager_subject or notice_subject,
                 source_url=post_url,
+                source_title=raw_title,
+                source_body=summary,
+                summary=summary,
+                metadata=weak_title_metadata,
                 weak_title_rescue_reason=_weak_title_rescue_reason,
                 duplicate_guard_context=item.get("duplicate_guard_context"),
                 title_player_name_unresolved=title_player_name_unresolved,

@@ -545,13 +545,61 @@ title / 数字 / 重複の扱い:
 
 ## 不変方針(継承)
 
-- 本 ticket は **設計 / 契約定義のみ**、本 task では impl しない
+- 親 ticket は `waiting/` 維持。ただし 2026-05-03 user GO 済みの `subtask-9 subtype-aware narrow unlock` は repo impl を返してよい
 - 既存 publish/review/hold/post_gen_validate 通知導線壊さない
 - `body_contract_fail` は通常 mail 必須にしない
 - Cloud Logging 単独で可視化扱いしない。少なくとも durable ledger か user-visible path のどちらかを要求する
 
+## BUG-004+291 subtask-9 repo implementation return(2026-05-03)
+
+- write scope:
+  - `src/rss_fetcher.py`
+  - `src/title_validator.py`
+  - `src/weak_title_rescue.py`
+  - `tests/test_narrow_unlock_subtype_aware.py`
+- new env flag: `ENABLE_NARROW_UNLOCK_SUBTYPE_AWARE`
+  - default OFF
+  - unset / `0` / falsey = live-inert
+- implemented deterministic unlock classes:
+  - `postgame`
+  - `manager_comment` / `coach_comment`
+  - `player_comment`
+  - `farm_result`
+  - `farm_lineup`
+  - `pregame` / `probable_starter` / `lineup`
+  - `roster_notice` / `injury_recovery_notice`
+  - `farm_player_result`
+- deterministic rescue strategies added:
+  - `subtype_aware_manager_comment`
+  - `subtype_aware_coach_comment`
+  - `subtype_aware_player_comment`
+  - `subtype_aware_farm_result`
+  - `subtype_aware_farm_lineup`
+  - `subtype_aware_roster_notice`
+  - `subtype_aware_injury_recovery_notice`
+  - `subtype_aware_farm_player_result`
+- preserved exclusions under flag ON:
+  - `strict_review_fallback:*`
+  - duplicate integrity(`existing_publish_same_source_url` 等)
+  - `stale_postgame`
+  - live-update fragment
+  - placeholder / source missing
+  - numeric guard fail
+  - body-contract fail
+  - non-Giants / mixed-team
+  - hard-stop markers
+- local verification:
+  - `tests/test_narrow_unlock_subtype_aware.py`: 21 pass
+  - `tests/test_rss_fetcher_narrow_unlock.py tests/test_weak_title_rescue.py tests/test_title_validator.py`: 48 pass
+  - full suite tail: fail count remained 8 after adding the new file
+- next Claude decision:
+  - push
+  - fetcher rebuild / Cloud Run update
+  - Acceptance Pack 判定後に `ENABLE_NARROW_UNLOCK_SUBTYPE_AWARE=1` apply 可否を決める
+  - 30-60min verify で publish/review outcome を観測する
+
 ## Folder cleanup note(2026-05-03)
 
 - 本 ticket は `waiting/` 維持。実装 fire はまだしない。
-- 今回の更新は read-only 原因分解、292 durable ledger 方針の吸収、unlock brief の固定のみ。deploy / env / Scheduler / SEO / WP 状態変更は 0。
-- 289 / 293 の live 可視化確認と user GO が揃うまで、narrow unlock も設計止まりにする。
+- 2026-05-03 commit では `subtask-9 subtype-aware narrow unlock` の repo impl と local test だけ返した。deploy / env / Scheduler / SEO / WP 状態変更は 0。
+- 289 / 293 の live 可視化確認と user GO が揃うまで、親 ticket 全体は `waiting/` から動かさない。

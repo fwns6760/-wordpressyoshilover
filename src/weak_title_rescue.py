@@ -108,6 +108,57 @@ _EVENT_PATTERNS = (
     re.compile(r"神生還"),
     re.compile(r"スイム"),
 )
+_SCORE_RE = re.compile(r"\d{1,2}\s*[－\-–]\s*\d{1,2}")
+_DATE_JP_RE = re.compile(r"(?:\d{4}年)?\d{1,2}月\d{1,2}日")
+_DATE_SLASH_RE = re.compile(r"(?:\d{4}/)?\d{1,2}/\d{1,2}")
+_FARM_MARKERS = ("二軍", "２軍", "2軍", "ファーム", "イースタン", "三軍")
+_LINEUP_MARKERS = ("スタメン", "オーダー", "打順")
+_COMMENT_ROLE_MARKERS = {"manager_comment": "監督", "coach_comment": "コーチ"}
+_OPPONENT_MARKERS = (
+    "阪神",
+    "中日",
+    "ヤクルト",
+    "広島",
+    "DeNA",
+    "ＤｅＮＡ",
+    "横浜",
+    "ソフトバンク",
+    "日本ハム",
+    "日ハム",
+    "ロッテ",
+    "楽天",
+    "オリックス",
+    "西武",
+)
+_NOTICE_EVENT_MARKERS = (
+    "一軍昇格",
+    "昇格",
+    "一軍登録",
+    "再登録",
+    "登録抹消",
+    "抹消",
+    "一軍合流",
+    "合流",
+    "復帰",
+    "実戦復帰",
+    "二軍落ち",
+)
+_FARM_PLAYER_EVENT_PATTERNS = (
+    re.compile(r"二軍\d安打(?:\d本塁打)?"),
+    re.compile(r"\d安打(?:\d本塁打)?"),
+    re.compile(r"\d打点"),
+    re.compile(r"猛打賞"),
+    re.compile(r"マルチ安打"),
+    re.compile(r"本塁打"),
+    re.compile(r"ホームラン"),
+    re.compile(r"好投"),
+    re.compile(r"無失点"),
+    re.compile(r"奪三振"),
+    re.compile(r"実戦復帰"),
+    re.compile(r"復帰"),
+    re.compile(r"昇格候補"),
+    re.compile(r"昇格"),
+)
 
 
 @dataclass(frozen=True)
@@ -182,6 +233,33 @@ def _metadata_subtype(metadata: Mapping[str, object]) -> str:
     subtype = _clean_text(str(metadata.get("article_subtype") or metadata.get("subtype") or "")).lower()
     if subtype in {"notice", "recovery"}:
         return "player_notice"
+    return subtype
+
+
+def _subtype_aware_rescue_subtype(metadata: Mapping[str, object]) -> str:
+    special_kind = _clean_text(str(metadata.get("special_story_kind") or "")).lower()
+    if special_kind == "player_notice":
+        return "roster_notice"
+    if special_kind == "player_recovery":
+        return "injury_recovery_notice"
+
+    subtype = _clean_text(str(metadata.get("article_subtype") or metadata.get("subtype") or "")).lower()
+    if subtype in {"manager", "manager_comment", "manager_quote"}:
+        return "manager_comment"
+    if subtype in {"coach", "coach_comment", "coach_quote"}:
+        return "coach_comment"
+    if subtype in {"player", "player_comment", "player_quote"}:
+        return "player_comment"
+    if subtype in {"notice", "player_notice", "roster_notice"}:
+        return "roster_notice"
+    if subtype in {"recovery", "player_recovery", "injury_recovery_notice"}:
+        return "injury_recovery_notice"
+    if subtype in {"farm", "farm_result"}:
+        return "farm_result"
+    if subtype == "farm_lineup":
+        return "farm_lineup"
+    if subtype == "farm_player_result":
+        return "farm_player_result"
     return subtype
 
 
@@ -269,6 +347,83 @@ def _best_quote(texts: list[str]) -> str:
         if quote:
             return quote
     return ""
+
+
+def _clip_quote(quote: str, limit: int = 28) -> str:
+    cleaned = _clean_text(quote)
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[:limit].rstrip(" ・、。") + "…"
+
+
+def _has_farm_signal(texts: list[str], metadata: Mapping[str, object]) -> bool:
+    if _metadata_bool(metadata, "farm", "is_farm"):
+        return True
+    return any(any(marker in text for marker in _FARM_MARKERS) for text in texts)
+
+
+def _extract_score(texts: list[str]) -> str:
+    for text in texts:
+        match = _SCORE_RE.search(text)
+        if match:
+            return match.group(0).replace(" ", "")
+    return ""
+
+
+def _extract_opponent(texts: list[str]) -> str:
+    for text in texts:
+        positions: list[tuple[int, str]] = []
+        for marker in _OPPONENT_MARKERS:
+            idx = text.find(marker)
+            if idx >= 0:
+                positions.append((idx, marker))
+        if positions:
+            positions.sort(key=lambda item: item[0])
+            return positions[0][1]
+    return ""
+
+
+def _extract_date_label(texts: list[str]) -> str:
+    for text in texts:
+        for regex in (_DATE_JP_RE, _DATE_SLASH_RE):
+            match = regex.search(text)
+            if match:
+                return match.group(0)
+    return ""
+
+
+def _extract_notice_event(texts: list[str], metadata: Mapping[str, object]) -> str:
+    notice_type = _clean_text(str(metadata.get("notice_type") or ""))
+    if notice_type:
+        return notice_type
+    for text in texts:
+        for marker in _NOTICE_EVENT_MARKERS:
+            if marker in text:
+                return marker
+    return ""
+
+
+def _extract_farm_player_event(texts: list[str], metadata: Mapping[str, object]) -> str:
+    notice_event = _extract_notice_event(texts, metadata)
+    if notice_event:
+        return notice_event
+    for text in texts:
+        for pattern in _FARM_PLAYER_EVENT_PATTERNS:
+            match = pattern.search(text)
+            if match:
+                return match.group(0).strip()
+    return ""
+
+
+def _extract_staff_label(metadata: Mapping[str, object]) -> str:
+    speaker = _strip_role_suffix(_clean_text(str(metadata.get("speaker") or metadata.get("manager_name") or "")))
+    if not _looks_like_name(speaker):
+        return ""
+    subtype = _subtype_aware_rescue_subtype(metadata)
+    role = _COMMENT_ROLE_MARKERS.get(subtype, _clean_text(str(metadata.get("role") or "")))
+    if role in {"監督", "コーチ"} and not speaker.endswith(role):
+        return f"{speaker}{role}"
+    return speaker
 
 
 def _supports_rescue_target(
@@ -497,9 +652,127 @@ def rescue_blacklist_phrase(
     return RescueResult(title=rescued, strategy="blacklist_phrase_quote_event")
 
 
+def rescue_subtype_aware(
+    *,
+    gen_title: str,
+    source_title: str,
+    body: str,
+    summary: str,
+    metadata: Mapping[str, object],
+) -> RescueResult | None:
+    subtype = _subtype_aware_rescue_subtype(metadata)
+    if subtype not in {
+        "manager_comment",
+        "coach_comment",
+        "player_comment",
+        "farm_result",
+        "farm_lineup",
+        "roster_notice",
+        "injury_recovery_notice",
+        "farm_player_result",
+    }:
+        return None
+    if _contains_safety_blockers(
+        gen_title=gen_title,
+        source_title=source_title,
+        body=body,
+        summary=summary,
+        metadata=metadata,
+    ):
+        return None
+
+    source_texts = _source_like_texts(source_title, summary, body)
+    if not source_texts:
+        return None
+
+    if subtype in {"manager_comment", "coach_comment"}:
+        speaker = _extract_staff_label(metadata)
+        quote = _best_quote(source_texts)
+        if speaker and quote:
+            return RescueResult(
+                title=f"{speaker}「{_clip_quote(quote)}」",
+                strategy=f"subtype_aware_{subtype}",
+            )
+        return None
+
+    if subtype == "player_comment":
+        player_name = _resolve_primary_name(
+            gen_title=gen_title,
+            source_title=source_texts[0],
+            body=body,
+            summary=summary,
+            metadata=metadata,
+        )
+        quote = _best_quote(source_texts)
+        if player_name and quote:
+            return RescueResult(
+                title=f"{player_name}「{_clip_quote(quote)}」",
+                strategy="subtype_aware_player_comment",
+            )
+        return None
+
+    if subtype == "farm_result":
+        if not _has_farm_signal(source_texts, metadata):
+            return None
+        opponent = _extract_opponent(source_texts)
+        score = _extract_score(source_texts)
+        if opponent and score:
+            return RescueResult(
+                title=f"二軍 {opponent} {score}",
+                strategy="subtype_aware_farm_result",
+            )
+        return None
+
+    if subtype == "farm_lineup":
+        if not _has_farm_signal(source_texts, metadata):
+            return None
+        combined = " ".join(source_texts)
+        if not any(marker in combined for marker in _LINEUP_MARKERS):
+            return None
+        date_label = _extract_date_label(source_texts)
+        if date_label:
+            return RescueResult(
+                title=f"二軍スタメン {date_label}",
+                strategy="subtype_aware_farm_lineup",
+            )
+        return None
+
+    if subtype in {"roster_notice", "injury_recovery_notice"}:
+        player_name = _resolve_primary_name(
+            gen_title=gen_title,
+            source_title=source_texts[0],
+            body=body,
+            summary=summary,
+            metadata=metadata,
+        )
+        notice_event = _extract_notice_event(source_texts, metadata)
+        if player_name and notice_event:
+            return RescueResult(
+                title=f"{player_name} {notice_event}",
+                strategy=f"subtype_aware_{subtype}",
+            )
+        return None
+
+    player_name = _resolve_primary_name(
+        gen_title=gen_title,
+        source_title=source_texts[0],
+        body=body,
+        summary=summary,
+        metadata=metadata,
+    )
+    farm_event = _extract_farm_player_event(source_texts, metadata)
+    if player_name and farm_event:
+        return RescueResult(
+            title=f"{player_name} {farm_event}",
+            strategy="subtype_aware_farm_player_result",
+        )
+    return None
+
+
 __all__ = [
     "RescueResult",
     "is_strong_with_name_and_event",
     "rescue_blacklist_phrase",
     "rescue_related_info_escape",
+    "rescue_subtype_aware",
 ]

@@ -33,6 +33,9 @@ _STARMEN_PREFIX_RE = re.compile(r"^[\s\u3000【\[\(（「『]*(?:巨人スタメ
 _SOKUHO_PREFIX_RE = re.compile(r"^[\s\u3000【\[\(（「『]*速報")
 _LIVE_UPDATE_INNING_RE = re.compile(r"(?<![0-9０-９])(?:[1-9]|1\d|[１-９])回(?:表|裏|終了|途中|で)?")
 _SCORE_RE = re.compile(r"\d{1,2}\s*[－\-–]\s*\d{1,2}")
+DATE_JP_TOKEN_RE = re.compile(r"(?:\d{4}年)?\d{1,2}月\d{1,2}日")
+DATE_SLASH_TOKEN_RE = re.compile(r"(?:\d{4}/)?\d{1,2}/\d{1,2}")
+TIME_TOKEN_RE = re.compile(r"\d{1,2}:\d{2}")
 
 _LIVE_UPDATE_MARKERS = ("途中経過", "勝ち越し", "逆転", "同点", "継投")
 _POSTGAME_MARKERS = (
@@ -74,7 +77,22 @@ _LINEUP_OPPONENT_MARKERS = (
 )
 _LINEUP_STARTER_MARKERS = ("先発", "予告先発")
 _MANAGER_EVENT_MARKERS = ("説明", "言及", "明か", "継投", "起用", "采配", "評価", "振り返", "狙い")
+_PLAYER_COMMENT_MARKERS = ("コメント", "談話", "一問一答", "発言", "振り返", "明か", "語", "手応え", "意欲")
 _FARM_PERFORMANCE_MARKERS = ("安打", "打点", "本塁打", "ホームラン", "好投", "無失点", "奪三振", "打", "回")
+_NOTICE_EVENT_MARKERS = (
+    "一軍昇格",
+    "昇格",
+    "一軍登録",
+    "再登録",
+    "登録抹消",
+    "抹消",
+    "一軍合流",
+    "合流",
+    "復帰",
+    "実戦復帰",
+    "二軍落ち",
+)
+_FARM_PLAYER_EVENT_MARKERS = _FARM_PERFORMANCE_MARKERS + ("実戦復帰", "復帰", "昇格", "昇格候補", "候補")
 _QUOTE_CHARS_RE = re.compile(r"[「『].+[」』]")
 
 _REROLL_DEFAULT_SUFFIX = {
@@ -446,14 +464,129 @@ def title_has_minimum_article_context(title: str, article_subtype: str) -> tuple
     if not normalized:
         return False, "title_empty"
 
-    subtype = str(article_subtype or "").strip().lower()
+    subtype = _normalize_minimum_context_subtype(article_subtype)
+    if not subtype:
+        subtype = str(article_subtype or "").strip().lower()
     if subtype == "lineup":
         return _title_has_lineup_context(normalized)
+    if subtype == "postgame":
+        return _title_has_postgame_context(normalized)
     if subtype == "manager":
         return _title_has_manager_context(normalized)
+    if subtype == "player_comment":
+        return _title_has_player_comment_context(normalized)
     if subtype in {"farm_result", "farm"}:
         return _title_has_farm_result_context(normalized)
+    if subtype == "farm_lineup":
+        return _title_has_farm_lineup_context(normalized)
+    if subtype == "pregame":
+        return _title_has_pregame_context(normalized)
+    if subtype == "roster_notice":
+        return _title_has_roster_notice_context(normalized)
+    if subtype == "farm_player_result":
+        return _title_has_farm_player_result_context(normalized)
     return True, "not_applicable"
+
+
+def _normalize_minimum_context_subtype(article_subtype: str) -> str:
+    subtype = str(article_subtype or "").strip().lower()
+    if not subtype:
+        return ""
+    if subtype in {"manager", "coach", "manager_comment", "coach_comment", "manager_quote", "coach_quote"}:
+        return "manager"
+    if subtype in {"player", "player_comment", "player_quote"}:
+        return "player_comment"
+    if subtype in {"notice", "player_notice", "roster_notice", "recovery", "player_recovery", "injury_recovery_notice"}:
+        return "roster_notice"
+    if subtype in {"farm", "farm_result"}:
+        return "farm_result"
+    if subtype == "farm_lineup":
+        return "farm_lineup"
+    if subtype in {"pregame", "probable_starter"}:
+        return "pregame"
+    if subtype == "farm_player_result":
+        return "farm_player_result"
+    return subtype
+
+
+def _title_has_postgame_context(title: str) -> tuple[bool, str]:
+    normalized = _normalize_title_text(title)
+    if not normalized:
+        return False, "title_empty"
+    if _SCORE_RE.search(normalized) and any(marker in normalized for marker in _POSTGAME_MARKERS):
+        return True, "postgame_has_score_and_result"
+    if normalized.startswith("試合結果") and _SCORE_RE.search(normalized):
+        return True, "postgame_has_score"
+    return False, "postgame_missing_score_or_result"
+
+
+def _title_has_player_comment_context(title: str) -> tuple[bool, str]:
+    normalized = _normalize_title_text(title)
+    if not normalized:
+        return False, "title_empty"
+    if not title_has_person_name_candidate(normalized):
+        return False, "player_comment_missing_player"
+    if _QUOTE_CHARS_RE.search(normalized):
+        return True, "player_comment_has_quote"
+    if any(marker in normalized for marker in _PLAYER_COMMENT_MARKERS):
+        return True, "player_comment_has_comment_marker"
+    return False, "player_comment_missing_quote_or_comment_marker"
+
+
+def _title_has_farm_lineup_context(title: str) -> tuple[bool, str]:
+    normalized = _normalize_title_text(title)
+    if not normalized:
+        return False, "title_empty"
+    if not any(marker in normalized for marker in _FARM_MARKERS):
+        return False, "farm_lineup_missing_farm_marker"
+    lineup_ok, _reason = _title_has_lineup_context(normalized)
+    if lineup_ok:
+        return True, "farm_lineup_has_order"
+    if DATE_JP_TOKEN_RE.search(normalized) or DATE_SLASH_TOKEN_RE.search(normalized):
+        return True, "farm_lineup_has_date"
+    return False, "farm_lineup_missing_date_or_order"
+
+
+def _title_has_pregame_context(title: str) -> tuple[bool, str]:
+    normalized = _normalize_title_text(title)
+    if not normalized:
+        return False, "title_empty"
+    lineup_ok, _reason = _title_has_lineup_context(normalized)
+    if lineup_ok:
+        return True, "pregame_has_lineup_context"
+    has_time = bool(TIME_TOKEN_RE.search(normalized))
+    has_opponent = any(marker in normalized for marker in _LINEUP_OPPONENT_MARKERS)
+    if any(marker in normalized for marker in _PREGAME_MARKERS) and (has_time or has_opponent):
+        return True, "pregame_has_time_or_opponent"
+    if has_time and has_opponent:
+        return True, "pregame_has_schedule"
+    return False, "pregame_missing_time_opponent_or_starter"
+
+
+def _title_has_roster_notice_context(title: str) -> tuple[bool, str]:
+    normalized = _normalize_title_text(title)
+    if not normalized:
+        return False, "title_empty"
+    if not title_has_person_name_candidate(normalized):
+        return False, "roster_notice_missing_player"
+    if any(marker in normalized for marker in _NOTICE_EVENT_MARKERS):
+        return True, "roster_notice_has_event"
+    return False, "roster_notice_missing_event"
+
+
+def _title_has_farm_player_result_context(title: str) -> tuple[bool, str]:
+    normalized = _normalize_title_text(title)
+    if not normalized:
+        return False, "title_empty"
+    if not title_has_person_name_candidate(normalized):
+        return False, "farm_player_result_missing_player"
+    if any(marker in normalized for marker in _FARM_MARKERS) and any(
+        marker in normalized for marker in _FARM_PLAYER_EVENT_MARKERS
+    ):
+        return True, "farm_player_result_has_event"
+    if any(marker in normalized for marker in _FARM_PLAYER_EVENT_MARKERS):
+        return True, "farm_player_result_has_player_event"
+    return False, "farm_player_result_missing_event"
 
 
 def validate_title_candidate(title: str, article_subtype: str) -> dict[str, object]:

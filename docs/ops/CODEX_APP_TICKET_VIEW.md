@@ -122,6 +122,51 @@ publish候補に戻してよい最小条件:
 - 292を独立ACTIVEへ戻す。
 - body_contractを雑に緩める。
 
+#### BUG-004+291 subtask-7: guarded-publish gate reason audit
+
+2026-05-03 の現場報告で、BUG-004+291 は次の層へ進んだ。
+
+判明したこと:
+
+- publish-only Gmail filter は有効。通常Gmailへの post_gen_validate / body_contract / skip / review 診断混入は止まった。
+- narrow unlock は有効。whitelist限定で farm / player の draft が2件作成された。
+- それでも publish=0 が継続している。
+- つまり主因は fetcher ではなく、guarded-publish 後段 gate 側へ移った。
+
+目的:
+
+- draft化された2件が、なぜ guarded-publish で publish 化されなかったかを read-only で特定する。
+- publish gate 全体緩和ではなく、高信頼候補だけを publish path へ戻す最小条件を決める。
+
+見るもの:
+
+- guarded_publish_history.jsonl
+- guarded_publish_yellow_log.jsonl
+- guarded-publish Cloud Run logs
+- 対象2件の post_id / status / subtype / title / source_url / fail flags
+- numeric guard
+- placeholder / body_contract
+- duplicate
+- freshness / backlog_only
+- publishable判定
+- review / hold / hard_stop理由
+
+禁止:
+
+- publish gate 全体緩和
+- postgame strict / stale / duplicate の雑な解放
+- env/flag変更
+- Gemini call増加
+- mail量増加
+- WP status変更
+- 新規チケット化
+
+報告条件:
+
+- 2件がpublishされなかった理由を特定した時
+- guarded-publish側に silent path があった時
+- high-confidence候補をpublishへ戻すための最小条件が分かった時
+
 #### BUG-004+291 read-only診断 snapshot(2026-05-02)
 
 - ローカル `sports_fetcher.log` の直近 42 本の `rss_fetcher_flow_summary` は `prepared_total=2`、`created_total=0`、`stale_postgame=42/42`。

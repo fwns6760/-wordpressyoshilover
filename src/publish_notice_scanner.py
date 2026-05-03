@@ -36,6 +36,8 @@ _REVIEW_NOTICE_WINDOW_HOURS_DEFAULT = 24.0
 _PUBLISH_NOTICE_CLASS_RESERVE_ENV_FLAG = "ENABLE_PUBLISH_NOTICE_CLASS_RESERVE"
 _INGEST_VISIBILITY_FIX_V1_ENV_FLAG = "ENABLE_INGEST_VISIBILITY_FIX_V1"
 _PUBLISH_NOTICE_24H_BUDGET_GOVERNOR_ENV_FLAG = "ENABLE_PUBLISH_NOTICE_24H_BUDGET_GOVERNOR"
+_PUBLISH_ONLY_MAIL_FILTER_ENV_FLAG = "ENABLE_PUBLISH_ONLY_MAIL_FILTER"
+_PUBLISH_ONLY_MAIL_PREFIX = "【公開済】"
 _PUBLISH_NOTICE_24H_BUDGET_SOFT_THRESHOLD_ENV = "PUBLISH_NOTICE_24H_BUDGET_SOFT_THRESHOLD"
 _PUBLISH_NOTICE_24H_BUDGET_HARD_THRESHOLD_ENV = "PUBLISH_NOTICE_24H_BUDGET_HARD_THRESHOLD"
 _PUBLISH_NOTICE_24H_BUDGET_LIMIT_ENV = "PUBLISH_NOTICE_24H_BUDGET_LIMIT"
@@ -302,6 +304,15 @@ def _publish_notice_class_reserve_enabled() -> bool:
 
 def _publish_notice_24h_budget_governor_enabled() -> bool:
     return str(os.environ.get(_PUBLISH_NOTICE_24H_BUDGET_GOVERNOR_ENV_FLAG, "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _publish_only_mail_filter_enabled() -> bool:
+    return str(os.environ.get(_PUBLISH_ONLY_MAIL_FILTER_ENV_FLAG, "")).strip().lower() in {
         "1",
         "true",
         "yes",
@@ -1376,6 +1387,14 @@ def _request_from_post(post: Mapping[str, Any]) -> PublishNoticeRequest:
 
 def _notice_subject_text(request: PublishNoticeRequest) -> str:
     return str(getattr(request, "subject_override", "") or "").strip()
+
+
+def _is_publish_only_mail_class(request: PublishNoticeRequest) -> bool:
+    """Coarse scanner-side preview; sender applies the final subject/class filter."""
+    subject = _notice_subject_text(request)
+    if not subject:
+        subject = build_subject(str(getattr(request, "title", "") or ""))
+    return str(subject).startswith(_PUBLISH_ONLY_MAIL_PREFIX)
 
 
 def _is_error_notification_subject(subject: str) -> bool:

@@ -105,6 +105,50 @@ prepared candidate が **必ず以下 5 つの terminal outcome のいずれか*
 - したがって rollback や gate 全体緩和ではなく、**postgame 以外の deterministic rescue だけを狭く戻す**方針が妥当。
 - `strict_review_fallback:*` の `postgame`、`existing_publish_same_source_url`、`stale_postgame`、`title_player_name_unresolved` は unlock 対象にしない。
 
+## BUG-004+291 subtask-6: publish-only Gmail filter 実装方針(2026-05-03)
+
+### user 指示の固定点
+
+- GPTs へ貼る通常 Gmail 入口は **公開済み YOSHILOVER 記事** だけに絞る。
+- `post_gen_validate` / `preflight_skip` / guarded review / old candidate / `【要確認・X見送り】` / digest などの診断系は通常 Gmail へ混ぜない。
+- ただし diagnostic 情報は消さず、ledger / log / digest で後追い可能に残す。
+
+### read-only audit で確定したこと
+
+- normal Gmail の実送信は `src.tools.run_publish_notice_email_dry_run --scan` → `publish_notice_scanner.scan()` → `publish_notice_email_sender.send()` の 1 本に集約されている。
+- scanner は published / guarded review / `post_gen_validate` / `preflight_skip` / 289 digest を 1 本の `result.emitted` に合流させる。
+- **raw `notice_kind == "publish"` だけでは不十分**。published post でも sender の最終分類で `【要確認】` や `【投稿候補】` に変わりうるため、user 指示どおりに切るなら **最終 subject prefix が `【公開済】` か**を見る必要がある。
+- local sandbox の queue/history は 2026-04-30 で止まっており、直近 24h sent は 0 件。audit 根拠は `doc/waiting/291_publish_only_mail_audit.md` に固定。
+
+### subtask-6 の narrow implementation
+
+- flag: `ENABLE_PUBLISH_ONLY_MAIL_FILTER`
+  - default OFF
+  - unset / `0` / falsey は既存挙動そのまま
+- hook:
+  - scanner 側に coarse helper を追加
+  - **最終 suppress は sender `send(...)` の subject/class 決定後**に実施
+- keep:
+  - final subject prefix が `【公開済】` の per-post mail
+- suppress:
+  - final subject prefix が `【公開済】` 以外の per-post mail
+  - result は `status=suppressed`, `reason=PUBLISH_ONLY_FILTER`
+- unchanged:
+  - `guarded_publish_history`
+  - `post_gen_validate_history`
+  - `preflight_skip_history`
+  - 289 digest transform
+  - runner ledger mirror
+  - publish burst summary / alert path
+
+### acceptance addendum for subtask-6
+
+- flag OFF: publish-notice sender/scanner の既存挙動差分 0
+- flag ON:
+  - `publish` mail only send
+  - `real_review` / `guarded_review` / `old_candidate` / `post_gen_validate` / `preflight_skip` / `post_gen_validate_digest` は normal Gmail suppress
+  - suppress しても ledger / log / digest source は維持
+
 ## 292 吸収方針(body_contract_fail durable ledger)
 
 `292 body_contract_fail durable ledger` は **独立 ACTIVE にしない**。`BUG-004+291` の解除条件に含まれる必須サブタスクとして、この ticket に吸収する。

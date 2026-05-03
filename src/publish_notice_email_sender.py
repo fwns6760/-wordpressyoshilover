@@ -27,6 +27,9 @@ DEFAULT_GUARDED_PUBLISH_YELLOW_LOG_PATH = ROOT / "logs" / "guarded_publish_yello
 DEFAULT_GUARDED_PUBLISH_HISTORY_PATH = ROOT / "logs" / "guarded_publish_history.jsonl"
 FORCED_SUMMARY_THRESHOLD = 10
 _SUMMARY_ONLY_SUPPRESSION_REASONS = frozenset({"BACKLOG_SUMMARY_ONLY", "BURST_SUMMARY_ONLY"})
+_PUBLISH_ONLY_MAIL_FILTER_ENV_FLAG = "ENABLE_PUBLISH_ONLY_MAIL_FILTER"
+_PUBLISH_ONLY_MAIL_PREFIX = "【公開済】"
+_PUBLISH_ONLY_MAIL_FILTER_SUPPRESSION_REASON = "PUBLISH_ONLY_FILTER"
 _WHITESPACE_RE = re.compile(r"\s+")
 _SUMMARY_TITLE_LIMIT = 80
 MAX_MANUAL_X_POST_LENGTH = 280
@@ -1661,6 +1664,32 @@ def _force_review_mail_state(mail_state: dict[str, Any]) -> dict[str, Any]:
     return forced
 
 
+def _publish_only_mail_filter_enabled() -> bool:
+    return str(os.environ.get(_PUBLISH_ONLY_MAIL_FILTER_ENV_FLAG, "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _is_publish_only_subject(subject: str) -> bool:
+    return str(subject or "").strip().startswith(_PUBLISH_ONLY_MAIL_PREFIX)
+
+
+def _should_suppress_publish_only_mail(
+    *,
+    subject: str,
+    classification: dict[str, Any],
+) -> bool:
+    if not _publish_only_mail_filter_enabled():
+        return False
+    mail_type = str((classification or {}).get("mail_type") or "").strip()
+    if mail_type != "per_post":
+        return False
+    return not _is_publish_only_subject(subject)
+
+
 def build_subject(
     title: str,
     publish_dt_jst: str | None = None,
@@ -2132,6 +2161,12 @@ def send(
         mail_state = _force_review_mail_state(mail_state)
     recipients = resolve_recipients(override_recipient)
     subject = build_subject(normalized_title, override=active_subject_override, classification=mail_state)
+    if _should_suppress_publish_only_mail(subject=subject, classification=mail_state):
+        return _suppressed(
+            _PUBLISH_ONLY_MAIL_FILTER_SUPPRESSION_REASON,
+            subject=subject,
+            recipients=recipients,
+        )
     review_only_notice = normalized_request.notice_kind == "post_gen_validate"
     if not review_only_notice and _current_queued_batch_size(duplicate_history_path) > FORCED_SUMMARY_THRESHOLD:
         return _suppressed("BURST_SUMMARY_ONLY", subject=subject, recipients=recipients)

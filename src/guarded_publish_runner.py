@@ -2784,10 +2784,13 @@ def run_guarded_publish(
                     freshness_source=str(plan.get("freshness_source") or ""),
                 )
                 cleanup_success = live_plan["cleanup_success"]
-                if live_plan["update_fields"]:
-                    get_wp().update_post_fields(live_plan["post_id"], status="publish", **live_plan["update_fields"])
-                else:
-                    get_wp().update_post_status(live_plan["post_id"], "publish")
+                get_wp().publish_post(
+                    live_plan["post_id"],
+                    caller="guarded_publish_runner.run_guarded_publish",
+                    source_lane="guarded_publish",
+                    status_before=str((plan["post"] or {}).get("status") or ""),
+                    update_fields=live_plan["update_fields"] or None,
+                )
                 _write_live_success_logs(
                     plan=live_plan,
                     ts=now_iso,

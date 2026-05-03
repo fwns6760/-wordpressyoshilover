@@ -121,6 +121,7 @@ class FakeWPClient:
         self.get_post_calls: list[int] = []
         self.update_post_fields_calls: list[tuple[int, dict]] = []
         self.update_post_status_calls: list[tuple[int, str]] = []
+        self.publish_post_calls: list[tuple[int, dict]] = []
         self.list_posts_calls: list[dict] = []
 
     def get_post(self, post_id: int) -> dict:
@@ -140,6 +141,31 @@ class FakeWPClient:
     def update_post_status(self, post_id: int, status: str) -> None:
         self.update_post_status_calls.append((post_id, status))
         self.posts[post_id]["status"] = status
+
+    def publish_post(
+        self,
+        post_id: int,
+        *,
+        caller: str,
+        source_lane: str,
+        status_before: str | None = None,
+        update_fields: dict | None = None,
+    ) -> None:
+        self.publish_post_calls.append(
+            (
+                post_id,
+                {
+                    "caller": caller,
+                    "source_lane": source_lane,
+                    "status_before": status_before,
+                    "update_fields": dict(update_fields or {}),
+                },
+            )
+        )
+        if update_fields:
+            self.update_post_fields(post_id, status="publish", **update_fields)
+        else:
+            self.update_post_status(post_id, "publish")
 
     def list_posts(
         self,
@@ -671,6 +697,9 @@ class GuardedPublishRunnerTests(unittest.TestCase):
 
         self.assertEqual([item["status"] for item in result["executed"]], ["sent"])
         self.assertEqual(result["refused"], [])
+        self.assertEqual(len(wp.publish_post_calls), 1)
+        self.assertEqual(wp.publish_post_calls[0][1]["caller"], "guarded_publish_runner.run_guarded_publish")
+        self.assertEqual(wp.publish_post_calls[0][1]["source_lane"], "guarded_publish")
 
     def test_daily_cap_counts_sent_only_not_skipped(self):
         post = _post(

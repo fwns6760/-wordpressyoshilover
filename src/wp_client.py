@@ -44,6 +44,7 @@ ALLOWED_IMAGE_CONTENT_TYPES = {
 }
 WP_REST_RETRY = 3
 WP_REST_MAX_SLEEP = 30
+WP_PUBLISH_STATUS_GUARD_ENV = "ENABLE_WP_PUBLISH_STATUS_GUARD"
 
 
 def _parse_retry_after_seconds(value: str | None) -> float | None:
@@ -82,6 +83,90 @@ class WPClient:
         self.auth    = (self.user, self.app_password)
         self.api     = f"{self.base_url}/wp-json/wp/v2"
         self.headers = {"Content-Type": "application/json"}
+
+    @staticmethod
+    def _publish_status_guard_enabled() -> bool:
+        return str(os.getenv(WP_PUBLISH_STATUS_GUARD_ENV, "")).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+
+    @staticmethod
+    def _normalize_status_value(value: str | None) -> str:
+        return str(value or "").strip().lower()
+
+    def _emit_publish_status_guard_event(
+        self,
+        *,
+        event: str,
+        post_id: int,
+        caller: str | None,
+        source_lane: str | None,
+        status_before: str | None,
+        status_after: str | None,
+        allow_status_upgrade: bool | None = None,
+        used_update_fields: bool | None = None,
+        reason: str | None = None,
+    ) -> None:
+        print(
+            json.dumps(
+                {
+                    "event": event,
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "post_id": int(post_id),
+                    "caller": str(caller or "unknown"),
+                    "source_lane": str(source_lane or "unknown"),
+                    "status_before": status_before or "",
+                    "status_after": status_after or "",
+                    "allow_status_upgrade": allow_status_upgrade,
+                    "used_update_fields": used_update_fields,
+                    "reason": reason or "",
+                },
+                ensure_ascii=False,
+            )
+        )
+
+    def publish_post(
+        self,
+        post_id: int,
+        *,
+        caller: str,
+        source_lane: str,
+        status_before: str | None = None,
+        update_fields: dict | None = None,
+    ) -> None:
+        guard_enabled = self._publish_status_guard_enabled()
+        resolved_status_before = self._normalize_status_value(status_before)
+        if guard_enabled and not resolved_status_before:
+            try:
+                resolved_status_before = self._normalize_status_value(self.get_post(post_id).get("status"))
+            except Exception as exc:
+                self._emit_publish_status_guard_event(
+                    event="wp_publish_status_guard_status_probe_failed",
+                    post_id=post_id,
+                    caller=caller,
+                    source_lane=source_lane,
+                    status_before="",
+                    status_after="",
+                    used_update_fields=bool(update_fields),
+                    reason=str(exc),
+                )
+        if update_fields:
+            self.update_post_fields(post_id, status="publish", **update_fields)
+        else:
+            self.update_post_status(post_id, "publish")
+        if guard_enabled:
+            self._emit_publish_status_guard_event(
+                event="wp_publish_status_guard_publish_write",
+                post_id=post_id,
+                caller=caller,
+                source_lane=source_lane,
+                status_before=resolved_status_before,
+                status_after="publish",
+                used_update_fields=bool(update_fields),
+            )
 
     def _request_with_retry(
         self,
@@ -356,12 +441,16 @@ class WPClient:
         status: str = "publish",
         featured_media: int | None = None,
         source_url: str | None = None,
+        allow_status_upgrade: bool | None = None,
+        caller: str | None = None,
+        source_lane: str | None = None,
     ) -> int:
         post_id = existing["id"]
         existing_status = (existing.get("status") or "").lower()
         update_fields = {}
         source_meta_key, existing_source_url = self._get_source_url_meta(existing)
         normalized_source_url = self._normalize_source_url(source_url)
+        guard_enabled = self._publish_status_guard_enabled()
 
         if featured_media and not existing.get("featured_media"):
             update_fields["featured_media"] = featured_media
@@ -378,7 +467,20 @@ class WPClient:
 
         requested_status = (status or "publish").lower()
         if requested_status == "publish" and existing_status != "publish":
-            update_fields["status"] = "publish"
+            if guard_enabled and not allow_status_upgrade:
+                self._emit_publish_status_guard_event(
+                    event="wp_publish_status_guard_reuse_upgrade_blocked",
+                    post_id=post_id,
+                    caller=caller,
+                    source_lane=source_lane,
+                    status_before=existing_status,
+                    status_after=existing_status,
+                    allow_status_upgrade=allow_status_upgrade,
+                    used_update_fields=False,
+                    reason="explicit_allow_status_upgrade_required",
+                )
+            else:
+                update_fields["status"] = "publish"
 
         if normalized_source_url and not existing_source_url:
             source_meta_payload = self._build_source_url_meta_payload(
@@ -391,6 +493,17 @@ class WPClient:
         if update_fields:
             self.update_post_fields(post_id, **update_fields)
             print(f"[WP] 既存記事を更新 post_id={post_id} fields={','.join(update_fields.keys())}")
+            if guard_enabled and update_fields.get("status") == "publish":
+                self._emit_publish_status_guard_event(
+                    event="wp_publish_status_guard_reuse_upgrade",
+                    post_id=post_id,
+                    caller=caller,
+                    source_lane=source_lane,
+                    status_before=existing_status,
+                    status_after="publish",
+                    allow_status_upgrade=allow_status_upgrade,
+                    used_update_fields=True,
+                )
 
         reuse_reason = existing.get("_yoshilover_reuse_reason", "title_fallback")
         print(f"[WP] 既存記事を再利用 post_id={post_id} title={title!r} reuse_reason={reuse_reason}")
@@ -402,7 +515,10 @@ class WPClient:
     def create_post(self, title: str, content: str, categories: list = None,
                     status: str = "publish", featured_media: int = None,
                     source_url: str | None = None,
-                    allow_title_only_reuse: bool | None = None) -> int:
+                    allow_title_only_reuse: bool | None = None,
+                    allow_status_upgrade: bool | None = None,
+                    caller: str | None = None,
+                    source_lane: str | None = None) -> int:
         requested_status = (status or "publish").lower()
         normalized_source_url = self._normalize_source_url(source_url)
         if allow_title_only_reuse is None:
@@ -427,6 +543,9 @@ class WPClient:
                 status=status,
                 featured_media=featured_media,
                 source_url=normalized_source_url,
+                allow_status_upgrade=allow_status_upgrade,
+                caller=caller,
+                source_lane=source_lane,
             )
 
         payload = {
@@ -451,6 +570,17 @@ class WPClient:
         )
         post_id = resp.json()["id"]
         print(f"[WP] 記事{status} post_id={post_id} title={title!r}")
+        if self._publish_status_guard_enabled() and requested_status == "publish":
+            self._emit_publish_status_guard_event(
+                event="wp_publish_status_guard_create_publish",
+                post_id=post_id,
+                caller=caller,
+                source_lane=source_lane,
+                status_before="new",
+                status_after="publish",
+                allow_status_upgrade=allow_status_upgrade,
+                used_update_fields=False,
+            )
         return post_id
 
     # ------------------------------------------------------------------

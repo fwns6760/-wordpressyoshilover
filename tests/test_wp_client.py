@@ -6,7 +6,7 @@ from unittest.mock import Mock, call, patch
 
 import requests
 
-from src.wp_client import WPClient
+from src.wp_client import WPClient, WP_PUBLISH_STATUS_GUARD_ENV
 
 
 def _mock_response(
@@ -446,6 +446,71 @@ class TestWPClientDedup(unittest.TestCase):
         self.assertEqual(post_id, 654)
         mock_post.assert_not_called()
         mock_update.assert_called_once_with(654, featured_media=99, status="publish")
+
+    @patch.dict(os.environ, {WP_PUBLISH_STATUS_GUARD_ENV: "1"}, clear=False)
+    @patch.object(WPClient, "update_post_fields")
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_create_post_blocks_reused_draft_promotion_without_explicit_opt_in(self, mock_get, mock_post, mock_update):
+        mock_get.return_value = Mock(
+            status_code=200,
+            json=lambda: [
+                {
+                    "id": 655,
+                    "title": {"raw": "巨人の新外国人右腕をどう見るか"},
+                    "status": "draft",
+                    "date": "2099-04-14T17:39:28",
+                    "featured_media": 0,
+                    "categories": [676],
+                }
+            ],
+        )
+
+        post_id = self.wp.create_post(
+            "巨人の新外国人右腕をどう見るか",
+            "<p>body</p>",
+            categories=[676],
+            status="publish",
+            featured_media=99,
+        )
+
+        self.assertEqual(post_id, 655)
+        mock_post.assert_not_called()
+        mock_update.assert_called_once_with(655, featured_media=99)
+
+    @patch.dict(os.environ, {WP_PUBLISH_STATUS_GUARD_ENV: "1"}, clear=False)
+    @patch.object(WPClient, "update_post_fields")
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_create_post_allows_reused_draft_promotion_with_explicit_opt_in_when_guard_enabled(self, mock_get, mock_post, mock_update):
+        mock_get.return_value = Mock(
+            status_code=200,
+            json=lambda: [
+                {
+                    "id": 656,
+                    "title": {"raw": "巨人の新外国人右腕をどう見るか"},
+                    "status": "draft",
+                    "date": "2099-04-14T17:39:28",
+                    "featured_media": 0,
+                    "categories": [676],
+                }
+            ],
+        )
+
+        post_id = self.wp.create_post(
+            "巨人の新外国人右腕をどう見るか",
+            "<p>body</p>",
+            categories=[676],
+            status="publish",
+            featured_media=99,
+            allow_status_upgrade=True,
+            caller="test.explicit_opt_in",
+            source_lane="tests",
+        )
+
+        self.assertEqual(post_id, 656)
+        mock_post.assert_not_called()
+        mock_update.assert_called_once_with(656, featured_media=99, status="publish")
 
     @patch("src.wp_client.requests.post")
     @patch("src.wp_client.requests.get")

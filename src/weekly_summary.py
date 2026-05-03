@@ -178,7 +178,15 @@ def main():
     if category_id:
         cats.append(category_id)
 
-    post_id = wp.create_post(title, content, categories=cats, status="publish")
+    post_id = wp.create_post(
+        title,
+        content,
+        categories=cats,
+        status="publish",
+        allow_status_upgrade=True,
+        caller="weekly_summary.main",
+        source_lane="weekly_summary",
+    )
     post = wp.get_post(post_id)
     url = post.get("link", "")
     print(f"\nWP公開完了: {url}")

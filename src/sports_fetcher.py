@@ -381,7 +381,15 @@ def main():
 
     wp = WPClient()
     category_id = wp.resolve_category_id(category)
-    post_id = wp.create_post(title, content, categories=[category_id] if category_id else None, status="publish")
+    post_id = wp.create_post(
+        title,
+        content,
+        categories=[category_id] if category_id else None,
+        status="publish",
+        allow_status_upgrade=True,
+        caller="sports_fetcher.main",
+        source_lane="sports_fetcher",
+    )
     logger.info(f"公開完了 post_id={post_id}")
     save_history(history_key, history)
 

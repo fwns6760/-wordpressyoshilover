@@ -11849,7 +11849,12 @@ def finalize_post_publication(
         logger.info(f"  [下書き止め] post_id={post_id}")
         return False
 
-    wp.update_post_status(post_id, "publish")
+    wp.publish_post(
+        post_id,
+        caller="rss_fetcher.finalize_post_publication",
+        source_lane="rss_fetcher",
+        status_before="draft",
+    )
     save_history(post_url, history, entry_title_norm)
     return True
 

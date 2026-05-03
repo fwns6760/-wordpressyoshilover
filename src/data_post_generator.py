@@ -571,7 +571,15 @@ def cmd_caught_stealing(args: argparse.Namespace) -> None:
     wp = WPClient()
     category_id = wp.resolve_category_id("コラム")
     status = "publish" if args.publish else "draft"
-    post_id = wp.create_post(title, content, categories=[category_id] if category_id else None, status=status)
+    post_id = wp.create_post(
+        title,
+        content,
+        categories=[category_id] if category_id else None,
+        status=status,
+        allow_status_upgrade=(status == "publish"),
+        caller="data_post_generator.cmd_caught_stealing",
+        source_lane="data_post_generator",
+    )
     logger.info("盗塁阻止率データ記事を%s post_id=%s", "公開" if args.publish else "下書き作成", post_id)
     print(post_id)
 
@@ -590,7 +598,15 @@ def cmd_on_base(args: argparse.Namespace) -> None:
     wp = WPClient()
     category_id = wp.resolve_category_id("コラム")
     status = "publish" if args.publish else "draft"
-    post_id = wp.create_post(title, content, categories=[category_id] if category_id else None, status=status)
+    post_id = wp.create_post(
+        title,
+        content,
+        categories=[category_id] if category_id else None,
+        status=status,
+        allow_status_upgrade=(status == "publish"),
+        caller="data_post_generator.cmd_on_base",
+        source_lane="data_post_generator",
+    )
     logger.info("出塁率データ記事を%s post_id=%s", "公開" if args.publish else "下書き作成", post_id)
     print(post_id)
 

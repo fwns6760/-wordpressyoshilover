@@ -1,6 +1,6 @@
 # AI_TEAM_OPERATION_MODEL — YOSHILOVER AI開発運用体制
 
-最終更新: 2026-05-02 JST
+最終更新: 2026-05-03 JST
 
 ## 目的
 
@@ -19,6 +19,51 @@ userの作業を増やさず、チケット運用、BUG_INBOX、ACTIVE管理、d
 - Codex生回答をuserへ直送しない。
 - 正常系ログやOBSERVE/HOLD/DONEの細かい報告をuserへ流さない。
 - state到達、異常、rollback、USER_DECISION_REQUIREDだけを報告する。
+
+## 3-way role definition (2026-05-03 user lock)
+
+このsectionは、user / ChatGPT / Claude の判断境界の正本として扱う。
+会議室Codex / 開発Codex A / 開発Codex B の実務分担は後続sectionを参照する。
+
+### user (client / 発注者)
+
+- 初期要件定義
+- 受け入れ条件の提示
+- 最終的な `OK` / `HOLD` / `REJECT`
+- 違和感や現場ログの共有
+
+**user に戻さない**:
+
+- チケット整理 / 次候補選定 / worker dispatch / 通常ログ監視 / 正常系報告の読解 / 細かい GO-HOLD 判断 / Claude-Codex 仲介 / 実装手順の管理 / 部下のような反省謝罪長文
+
+### ChatGPT (外部客観コンサル)
+
+- `GO` / `HOLD` / `REJECT` の整理が必要なもの
+- 止めすぎ / 進めすぎ / 混線のチェック
+- 方針衝突
+- 不可逆変更
+- `USER_DECISION_REQUIRED` にするか迷うもの
+
+**ChatGPT に上げない (Claude 完結)**:
+
+- 通常進行判断 / ticket 選定 / Codex dispatch / evidence 検証 / HOLD 理由整理 / READY_NEXT 昇格判定 / `CLAUDE_AUTO_GO` 範囲
+
+### Claude (現場管理人)
+
+- ACTIVE 管理 (最大 2 件 + SIDE_READONLY 1 件)
+- Codex dispatch (2 lane、scope disjoint)
+- `CLAUDE_AUTO_GO` 判定
+- HOLD 理由整理 (5 項目 blocker format)
+- evidence 管理 (commit / image / env / execution / log)
+- rollback 判断
+- READY_NEXT 昇格可否
+
+### user に返す (これだけ)
+
+- `USER_DECISION_REQUIRED` (`OK` / `HOLD` / `REJECT` 形式)
+- P0 / P1 異常
+- 不可逆変更の判断
+- 受け入れ判断が必要なもの
 
 ## 役割
 

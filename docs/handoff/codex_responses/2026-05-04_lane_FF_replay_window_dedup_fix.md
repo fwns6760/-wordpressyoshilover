@@ -189,6 +189,8 @@ Observed after apply:
   - start time: `2026-05-03T22:15:04.965666Z`
   - image digest: `sha256:d137d980de50e620d4ba3a375d8ba3b8043d48c3c5caacfddc168d483e00f77c`
   - env includes `ENABLE_REPLAY_WINDOW_DEDUP=1`
+  - completion: `success`
+  - elapsed: `2m05s` (`execution completed successfully in 1m45.17s`)
 - immediately prior completed execution was pre-fix:
   - execution: `publish-notice-fvg5g`
   - image digest: `sha256:f4db77393f3e0da43593d4b97ce3f230588d2c77d6a49e14218c951045c481c1`
@@ -209,7 +211,8 @@ Observed after apply:
 ### verify conclusion
 
 - no contradictory live evidence after deploy
-- a post-fix natural execution has started on the new digest, but no `64416` / `64366` / `DUPLICATE_WITHIN_REPLAY_WINDOW` line had been emitted during this observation window
+- a post-fix natural execution completed successfully on the new digest
+- no `64416` / `64366` / `DUPLICATE_WITHIN_REPLAY_WINDOW` line was emitted during this observation window
 - acceptance fallback used now:
   - repo fixture for `64416`-like overlap passes
   - runtime image/env are already updated
@@ -229,7 +232,7 @@ Observed after apply:
    - yes, explicit test covers it
 5. `64416`-class duplicate prevention confirmed:
    - fixture-confirmed in repo
-   - post-fix natural execution is observed on the new digest, but no fresh overlap event has occurred yet
+   - post-fix natural execution completed successfully on the new digest, but no fresh overlap event has occurred yet
 6. existing Lane G / EE bypass behavior preserved:
    - envs remain in place
    - existing sender tests for publish-only / backlog bypass still pass inside the full suite

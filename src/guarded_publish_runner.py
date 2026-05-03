@@ -74,6 +74,7 @@ DEFAULT_CLEANUP_LOG_PATH = ROOT / "logs" / "guarded_publish_cleanup_log.jsonl"
 DEFAULT_MIN_PROSE_AFTER_CLEANUP = 50
 REFUSED_DEDUP_WINDOW_HOURS = 24
 TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
+DUPLICATE_TARGET_INTEGRITY_STRICT_ENV = "ENABLE_DUPLICATE_TARGET_INTEGRITY_STRICT"
 POST_CLEANUP_STRICT_ENV_BY_FLAG = {
     "title_subject_missing": "STRICT_TITLE_SUBJECT",
     "source_anchor_missing": "STRICT_SOURCE_ANCHOR",
@@ -1506,6 +1507,21 @@ def _source_url_hash(url: str | None) -> str | None:
     return hashlib.sha256(str(url).encode("utf-8")).hexdigest()[:16]
 
 
+def _extract_duplicate_source_url_pairs(post: dict[str, Any]) -> list[dict[str, str]]:
+    pairs: list[dict[str, str]] = []
+    seen_pairs: set[tuple[str, str]] = set()
+    for url in _extract_duplicate_source_urls(post):
+        source_url_hash = _source_url_hash(url)
+        if not source_url_hash:
+            continue
+        pair = (source_url_hash, url)
+        if pair in seen_pairs:
+            continue
+        seen_pairs.add(pair)
+        pairs.append({"source_url": url, "source_url_hash": source_url_hash})
+    return pairs
+
+
 def _extract_duplicate_source_hashes(post: dict[str, Any]) -> list[str]:
     hashes = [_source_url_hash(url) for url in _extract_duplicate_source_urls(post)]
     return [value for value in _dedupe_preserve_order([str(item or "") for item in hashes]) if value]
@@ -1557,6 +1573,8 @@ def _duplicate_reference_publish_time(post: dict[str, Any]) -> datetime | None:
 
 def _duplicate_reference_payload(post: dict[str, Any]) -> dict[str, Any]:
     post_id = int((post or {}).get("id"))
+    source_url_pairs = _extract_duplicate_source_url_pairs(post)
+    primary_source_pair = source_url_pairs[0] if source_url_pairs else {}
     return {
         "post_id": post_id,
         "title": _duplicate_title_value(post),
@@ -1564,6 +1582,9 @@ def _duplicate_reference_payload(post: dict[str, Any]) -> dict[str, Any]:
         "speaker_token": _duplicate_speaker_token(post),
         "status": str((post or {}).get("status") or "").strip().lower(),
         "published_at": _duplicate_reference_publish_time(post),
+        "source_url": str(primary_source_pair.get("source_url") or "").strip(),
+        "source_url_hash": str(primary_source_pair.get("source_url_hash") or "").strip(),
+        "source_url_pairs": source_url_pairs,
     }
 
 
@@ -1631,6 +1652,101 @@ def _same_source_url_duplicate_reference(
     return None
 
 
+def _reference_source_url_pairs(reference: dict[str, Any] | None) -> list[dict[str, str]]:
+    normalized: list[dict[str, str]] = []
+    seen_pairs: set[tuple[str, str]] = set()
+
+    if isinstance(reference, dict):
+        raw_pairs = reference.get("source_url_pairs")
+        if isinstance(raw_pairs, list):
+            for item in raw_pairs:
+                if not isinstance(item, dict):
+                    continue
+                source_url = str(item.get("source_url") or "").strip()
+                source_url_hash = str(item.get("source_url_hash") or "").strip()
+                if not source_url and not source_url_hash:
+                    continue
+                pair = (source_url_hash, source_url)
+                if pair in seen_pairs:
+                    continue
+                seen_pairs.add(pair)
+                normalized.append({"source_url": source_url, "source_url_hash": source_url_hash})
+
+        source_url = str(reference.get("source_url") or "").strip()
+        source_url_hash = str(reference.get("source_url_hash") or "").strip()
+        if source_url or source_url_hash:
+            pair = (source_url_hash, source_url)
+            if pair not in seen_pairs:
+                normalized.append({"source_url": source_url, "source_url_hash": source_url_hash})
+
+    return normalized
+
+
+def _duplicate_target_integrity_payload(
+    candidate_source_url_hash: str,
+    reference: dict[str, Any],
+) -> dict[str, Any]:
+    source_url_pairs = _reference_source_url_pairs(reference)
+    matched_pair = next(
+        (pair for pair in source_url_pairs if str(pair.get("source_url_hash") or "").strip() == candidate_source_url_hash),
+        None,
+    )
+    target_pair = matched_pair or (source_url_pairs[0] if source_url_pairs else {})
+    target_post_id: int | None = None
+    target_post_id_raw = None
+    if isinstance(reference, dict):
+        target_post_id_raw = reference.get("post_id")
+        try:
+            parsed_post_id = int(target_post_id_raw)
+        except (TypeError, ValueError):
+            parsed_post_id = None
+        if parsed_post_id is not None and parsed_post_id > 0:
+            target_post_id = parsed_post_id
+
+    integrity_error: str | None = None
+    if not candidate_source_url_hash:
+        integrity_error = "candidate_source_url_hash_missing"
+    elif matched_pair is None:
+        integrity_error = "source_url_hash_mismatch"
+    elif target_post_id is None:
+        integrity_error = "target_post_id_invalid"
+
+    payload: dict[str, Any] = {
+        "candidate_source_url_hash": candidate_source_url_hash,
+        "duplicate_target_source_url_hash": str(target_pair.get("source_url_hash") or "").strip() or None,
+        "duplicate_target_source_url": str(target_pair.get("source_url") or "").strip() or None,
+        "duplicate_target_post_id": target_post_id,
+        "duplicate_integrity_ok": integrity_error is None,
+        "duplicate_integrity_error": integrity_error,
+    }
+    if target_post_id_raw is not None and target_post_id is None:
+        payload["duplicate_target_post_id_raw"] = str(target_post_id_raw)
+    return payload
+
+
+def _log_duplicate_target_integrity_check(
+    *,
+    candidate_post_id: int | None,
+    integrity_payload: dict[str, Any],
+) -> None:
+    payload = {"integrity_ok": bool(integrity_payload.get("duplicate_integrity_ok"))}
+    if candidate_post_id is not None:
+        payload["candidate_post_id"] = candidate_post_id
+    for field in (
+        "candidate_source_url_hash",
+        "duplicate_target_post_id",
+        "duplicate_target_post_id_raw",
+        "duplicate_target_source_url_hash",
+        "duplicate_target_source_url",
+        "duplicate_integrity_error",
+    ):
+        value = integrity_payload.get(field)
+        if value is None or value == "":
+            continue
+        payload[field] = value
+    _log_event("duplicate_target_integrity_check", **payload)
+
+
 def _empty_duplicate_index() -> dict[str, dict[str, dict[str, Any]]]:
     return {
         "exact_titles": {},
@@ -1659,6 +1775,8 @@ def _duplicate_reference(
     compared_against: str,
     duplicate_reason: str,
     reference: dict[str, Any] | None,
+    *,
+    extra: dict[str, Any] | None = None,
 ) -> tuple[bool, dict[str, Any]]:
     duplicate_of_post_id: int | None = None
     if reference is not None:
@@ -1666,11 +1784,17 @@ def _duplicate_reference(
             duplicate_of_post_id = int(reference.get("post_id"))
         except (TypeError, ValueError):
             duplicate_of_post_id = None
-    return True, {
+    payload: dict[str, Any] = {
         "duplicate_of_post_id": duplicate_of_post_id,
         "duplicate_reason": duplicate_reason,
         "compared_against": compared_against,
     }
+    if extra:
+        for key, value in extra.items():
+            if value is None or value == "":
+                continue
+            payload[key] = value
+    return True, payload
 
 
 def _detect_duplicate_candidate(
@@ -1684,11 +1808,37 @@ def _detect_duplicate_candidate(
 ) -> tuple[bool, dict[str, Any]]:
     title = _duplicate_title_value(post)
     normalized_title = _normalize_duplicate_title(title)
+    strict_duplicate_target_integrity = _env_truthy(DUPLICATE_TARGET_INTEGRITY_STRICT_ENV)
+    pending_integrity_failure: dict[str, Any] | None = None
 
     for source_hash in _extract_duplicate_source_hashes(post):
         reference = _same_source_url_duplicate_reference(post, wp_existing_source_urls.get(source_hash), now=now)
         if reference is not None:
-            return _duplicate_reference("wp_publish", "same_source_url", reference)
+            if not strict_duplicate_target_integrity:
+                return _duplicate_reference("wp_publish", "same_source_url", reference)
+            integrity_payload = _duplicate_target_integrity_payload(source_hash, reference)
+            candidate_post_id = int((post or {}).get("id") or 0) or None
+            _log_duplicate_target_integrity_check(
+                candidate_post_id=candidate_post_id,
+                integrity_payload=integrity_payload,
+            )
+            if bool(integrity_payload.get("duplicate_integrity_ok")):
+                return _duplicate_reference(
+                    "wp_publish",
+                    "same_source_url",
+                    reference,
+                    extra=integrity_payload,
+                )
+            if pending_integrity_failure is None:
+                pending_integrity_failure = integrity_payload
+
+    if pending_integrity_failure is not None:
+        return _duplicate_reference(
+            "wp_publish",
+            "duplicate_integrity_fail",
+            None,
+            extra=pending_integrity_failure,
+        )
 
     if title:
         if title in wp_existing_publish_titles["exact_titles"]:
@@ -1839,8 +1989,13 @@ def _history_row(
     freshness_source: str | None = None,
     duplicate_of_post_id: int | None = None,
     duplicate_reason: str | None = None,
+    candidate_source_url_hash: str | None = None,
+    duplicate_target_post_id: int | None = None,
+    duplicate_target_source_url_hash: str | None = None,
+    duplicate_target_source_url: str | None = None,
+    duplicate_integrity_error: str | None = None,
 ) -> dict[str, Any]:
-    return {
+    row = {
         "post_id": post_id,
         "ts": ts,
         "status": status,
@@ -1856,6 +2011,17 @@ def _history_row(
         "duplicate_of_post_id": duplicate_of_post_id,
         "duplicate_reason": str(duplicate_reason or "").strip() or None,
     }
+    if candidate_source_url_hash:
+        row["candidate_source_url_hash"] = candidate_source_url_hash
+    if duplicate_target_post_id is not None:
+        row["duplicate_target_post_id"] = duplicate_target_post_id
+    if duplicate_target_source_url_hash:
+        row["duplicate_target_source_url_hash"] = duplicate_target_source_url_hash
+    if duplicate_target_source_url:
+        row["duplicate_target_source_url"] = duplicate_target_source_url
+    if duplicate_integrity_error:
+        row["duplicate_integrity_error"] = duplicate_integrity_error
+    return row
 
 
 def _hold_reason_for_candidate_error(cleanup_required: bool, exc: CandidateRefusedError) -> str:
@@ -2423,6 +2589,13 @@ def run_guarded_publish(
         if is_duplicate:
             duplicate_reason = str(duplicate_info.get("duplicate_reason") or "duplicate_candidate")
             duplicate_of_post_id = duplicate_info.get("duplicate_of_post_id")
+            candidate_source_url_hash = str(duplicate_info.get("candidate_source_url_hash") or "").strip() or None
+            duplicate_target_post_id = duplicate_info.get("duplicate_target_post_id")
+            duplicate_target_source_url_hash = (
+                str(duplicate_info.get("duplicate_target_source_url_hash") or "").strip() or None
+            )
+            duplicate_target_source_url = str(duplicate_info.get("duplicate_target_source_url") or "").strip() or None
+            duplicate_integrity_error = str(duplicate_info.get("duplicate_integrity_error") or "").strip() or None
             hold_reason = _review_hold_reason([f"duplicate_candidate:{duplicate_reason}"])
             refused.append(
                 {
@@ -2449,6 +2622,11 @@ def run_guarded_publish(
                     freshness_source=str(entry.get("freshness_source") or ""),
                     duplicate_of_post_id=duplicate_of_post_id,
                     duplicate_reason=duplicate_reason,
+                    candidate_source_url_hash=candidate_source_url_hash,
+                    duplicate_target_post_id=duplicate_target_post_id,
+                    duplicate_target_source_url_hash=duplicate_target_source_url_hash,
+                    duplicate_target_source_url=duplicate_target_source_url,
+                    duplicate_integrity_error=duplicate_integrity_error,
                 )
                 live_history_rows.append(row)
                 executed.append(

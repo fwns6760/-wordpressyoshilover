@@ -1,6 +1,6 @@
 # TICKET_OPERATION_RULES — チケット運用ルール
 
-最終更新: 2026-05-02 JST
+最終更新: 2026-05-03 JST
 
 ## 目的
 
@@ -25,14 +25,17 @@
 
 ## ACTIVEルール
 
-- ACTIVEは最大2件を目安にする。
+- ACTIVEは最大2件。原則として現場Claudeは2件を埋めて運用する。
 - ACTIVE最大2件はuserが選ぶ2件ではなく、現場Claudeが同時実行する上限。
+- ACTIVE 1件運用は例外。2件目を昇格しない場合は、衝突 / USER_DECISION_REQUIRED / high-risk / 残subtaskなし のどれかをHOLD理由として明記する。
+- userに2件目候補を選ばせない。ClaudeがREADY_NEXTまたは既存ticket subtaskから自動補充する。
 - ACTIVEは「いま実装・accept・deploy判断に使うもの」だけ。
 - HOLD / BACKLOG / DESIGN_ONLY / READY_FOR_USER_APPLY / READY_FOR_AUTH_EXECUTOR は原則 waiting。
 - DONE / CLOSED / OBSERVED_OK evidenceありは done/YYYY-MM。
 - activeを増やして忙しく見せる運用は禁止。
 - userに「次どれにしますか？」と聞かない。
 - ACTIVEが完了 / OBSERVE / HOLD になったら、USER_DECISION_REQUIREDでない限りREADY_NEXTから自動昇格する。
+- ACTIVEが1件に減ったら、ClaudeはREADY_NEXT最大3件から次を自動投入し、常に2件運用へ戻す。
 - READY_NEXTは最大3件まで。
 - READY_NEXTはuser向け選択肢ではなく、現場Claudeの次投入候補。
 

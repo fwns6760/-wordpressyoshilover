@@ -123,6 +123,44 @@ deploy済みと効果確認済みを分ける。
 5. user判断が必要な変更はAcceptance Packを作る。
 6. 番号採番は最後。
 
+## publish=0回収 / narrow unlockルール
+
+publish=0を回収する時は、保守的に全停止しない。ただしpublish gate全体緩和もしない。
+候補を記事タイプごとに分け、高信頼条件を満たすものだけnarrowにpublish pathへ戻す。
+
+publish候補へ戻してよい記事タイプ:
+
+- 試合結果記事: 当日 + 巨人対象 + 相手 + スコアが title / source / meta / body から取れるもの。
+- 監督・コーチコメント: コメント全文でなく一部でもsourceが明確なもの。postgameへ雑分類しない。
+- 選手コメント: 選手名とコメント元が明確なもの。scoreがなくてもplayer_commentとして扱う。
+- 二軍結果: farm_resultとして、二軍 / 相手 / スコアが取れるもの。
+- 二軍スタメン: farm_lineupとして、スタメン表 / 打順 / 選手名が取れるもの。
+- pregame / 予告先発 / lineup: 試合前導線として必要なもの。ただし試合後の古いpregameは出さない。
+- 昇格・降格・復帰・二軍落ち・若手記事: notice / roster_notice / injury_recovery_notice / farm_player_result等へ寄せる。
+
+publish不可を維持するもの:
+
+- live update断片
+- placeholder本文
+- body_contract fail
+- numeric guard fail
+- YOSHILOVER対象外
+- source_urlなし
+- subtype不明
+- 重複記事
+- stale postgame
+- weak titleのまま何の記事かわからないもの
+
+title / 数字 / 重複の扱い:
+
+- sourceにない投手成績・勝敗・スコア・選手名を本文に書かない。
+- 弱いタイトルはpublishしない。ただし中身が明確なcomment / farm / roster系はdeterministic rescue候補にできる。
+- AIでタイトルを自由生成しない。source/meta由来の選手名・記事タイプ・相手・スコアだけを使う。
+- 同内容が複数媒体から来た場合、基本は1本だけ。duplicate guardは緩めない。
+
+このルールは、BUG-004+291のようなpublish path回収で使う。
+新規ticket化せず、既存ticketのsubtaskへ吸収する。
+
 ## Excel運用
 
 - BUG_INBOXの人間向け管理ファイルは `docs/ops/ヨシラバーチケット管理.xlsx`。

@@ -105,6 +105,41 @@ prepared candidate が **必ず以下 5 つの terminal outcome のいずれか*
 - したがって rollback や gate 全体緩和ではなく、**postgame 以外の deterministic rescue だけを狭く戻す**方針が妥当。
 - `strict_review_fallback:*` の `postgame`、`existing_publish_same_source_url`、`stale_postgame`、`title_player_name_unresolved` は unlock 対象にしない。
 
+### 2026-05-03 user-confirmed publish recovery rules
+
+BUG-004+291で救う対象は、単に「reviewを減らす」ことではなく、YOSHILOVERとして読者に出す価値があり、かつsource/meta由来で安全に書ける記事タイプに限定する。
+
+publish候補に戻してよいもの:
+
+- 試合結果記事: 当日 + 巨人対象 + 相手 + スコアが title / source / meta / body から取れるもの。先発投手成績がsourceにないだけでは落とさないが、sourceにない成績は本文に書かない。
+- 監督・コーチコメント: 阿部監督コメントだけでなくコーチコメントも含む。コメント全文でなく一部でもsourceが明確なら救う。postgameへ雑分類しない。
+- 選手コメント: 必須救済対象。選手名とコメント元が明確ならscoreなしでもplayer_commentとして救う。
+- 二軍結果: 必須救済対象。farm_resultは一軍postgameと分け、二軍 / 相手 / スコアが取れるなら救う。
+- 二軍スタメン: 必須救済対象。farm_lineupはfarm_resultと分け、スタメン表 / 打順 / 選手名が取れるなら救う。
+- pregame / 予告先発: 必須救済対象。probable_starter / pregame / lineupは救う。ただし試合後の古いpregameは出さない。
+- 昇格・降格・復帰・二軍落ち・若手記事: 必須救済対象。notice / roster_notice / injury_recovery_notice / farm_player_result等へ寄せ、defaultやpostgameへ雑に落とさない。
+
+publish不可を維持するもの:
+
+- live update断片
+- placeholder本文
+- body_contract fail
+- numeric guard fail
+- YOSHILOVER対象外
+- source_urlなし
+- subtype不明
+- review / hold理由あり
+- 重複記事
+- stale postgame
+- weak titleのまま何の記事かわからないもの
+
+title / 数字 / 重複の扱い:
+
+- 弱いタイトル対策は必須。何の記事かわからないタイトルはpublishしない。
+- 中身が明確なcomment / farm / roster系だけdeterministic rescue候補にできる。
+- AIでタイトルを自由生成しない。source/meta由来の選手名・記事タイプ・相手・スコアだけ使う。
+- 同内容が複数媒体から来た場合、基本は1本だけ。duplicate guardは緩めない。
+
 ## BUG-004+291 subtask-6: publish-only Gmail filter 実装方針(2026-05-03)
 
 ### user 指示の固定点

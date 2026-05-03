@@ -94,6 +94,47 @@ publish候補に戻してよい最小条件:
 - titleが最低限「何の記事か分かる」
 - review / hold 理由なし
 
+2026-05-03 user-confirmed rescue targets:
+
+- 試合結果記事: 当日 + 巨人対象 + 相手 + スコアが title / source / meta / body のどこかから取れる場合はpublish候補へ戻してよい。
+- 先発投手成績: sourceに投手成績がないだけでは落とさない。ただしsourceにない投球回 / 被安打 / 失点 / 勝敗は本文に書かない。
+- 監督・コーチコメント: 阿部監督だけでなくコーチコメントも救う。コメント全文でなく一部でもsourceが明確ならpublish候補。postgameへ雑分類しない。
+- 選手コメント: 必須救済対象。選手名とコメント元が明確ならpublish候補。scoreがなくてもplayer_commentとして扱い、勝敗・成績を補完しない。
+- 二軍結果: 必須救済対象。farm_resultは一軍postgameと分け、二軍 / 相手 / スコアが取れるならpublish候補。
+- 二軍スタメン: 必須救済対象。farm_lineupはfarm_resultと分け、スタメン表 / 打順 / 選手名が取れるならpublish候補。
+- pregame / 予告先発: 必須救済対象。probable_starter / pregame / lineupは救う。ただし試合後に古いpregameを出さない。
+- 昇格・降格・復帰・二軍落ち・若手記事: 必須救済対象。一軍昇格、登録抹消、一軍から二軍に落ちた選手、復帰組、若手注目はnotice / roster_notice / injury_recovery_notice / farm_player_result等へ寄せる。
+
+publish不可を維持するもの:
+
+- live update断片
+- 「九回表」「先頭の選手」「適時打」だけの実況断片
+- placeholder本文
+- 「先発の 投手」
+- 「選手の適時打」
+- 空見出し
+- body_contract fail
+- numeric guard fail
+- YOSHILOVER対象外
+- source_urlなし
+- subtype不明
+- 重複記事
+- stale postgame
+- weak titleのまま何の記事かわからないもの
+
+弱いタイトル方針:
+
+- 弱いタイトル対策は必須。
+- 「何の記事かわからない」タイトルはpublishしない。
+- ただしcoach_comment / player_comment / farm_result / farm_lineup / roster_noticeなど中身が明確ならdeterministic rescue候補にする。
+- AIでタイトルを自由生成しない。source/metaから取れる選手名・記事タイプ・相手・スコアだけを使う。
+
+重複方針:
+
+- 報知 / 日刊 / スポニチ / 公式 / X由来などで同内容が複数来た場合、基本は1本だけ。
+- duplicate guardは緩めない。
+- 同じsource_url / content_hash / 同一内容はpublishしない。
+
 やらないこと:
 
 - publish gate 全体緩和

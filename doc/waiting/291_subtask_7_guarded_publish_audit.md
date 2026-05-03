@@ -170,6 +170,23 @@ This means:
 
 ## phase 4: narrow unlock -> publish return minimal condition
 
+### user-confirmed publish recovery boundary
+
+BUG-004+291の回収対象は、publish gate全体緩和ではなく、以下の高信頼記事タイプに限定する。
+
+- 試合結果記事: 当日 + 巨人対象 + 相手 + スコアがsource/title/meta/bodyから取れるもの。sourceにない投手成績は本文に書かない。
+- 監督・コーチコメント: 一部引用でもsourceが明確なら救う。postgameへ雑分類しない。
+- 選手コメント: 選手名とコメント元が明確ならscoreなしでもplayer_commentとして救う。
+- 二軍結果: farm_resultとして、二軍 / 相手 / スコアが取れるなら救う。
+- 二軍スタメン: farm_lineupとして、スタメン表 / 打順 / 選手名が取れるなら救う。
+- pregame / 予告先発: probable_starter / pregame / lineupは救う。ただし試合後の古いpregameは出さない。
+- 昇格・降格・復帰・二軍落ち・若手記事: notice / roster_notice / injury_recovery_notice / farm_player_result等へ寄せる。
+
+維持する禁止境界:
+
+- live update断片、placeholder本文、body_contract fail、numeric guard fail、YOSHILOVER対象外、source_urlなし、subtype不明、review/hold理由あり、重複記事、stale postgame、何の記事かわからないweak titleはpublishしない。
+- duplicate guardは緩めない。今回のsubtask-8候補はduplicate bypassではなく、duplicate target integrityの修正に限定する。
+
 ### no fix needed for 64313
 
 - `hard_stop_farm_result_placeholder_body` is a correct gate class to keep closed

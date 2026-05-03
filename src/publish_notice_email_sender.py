@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+import tempfile
 from typing import Any, Literal
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
@@ -32,10 +33,14 @@ _PUBLISH_ONLY_FILTER_DIRECT_PUBLISH_BYPASS_ENV_FLAG = (
     "ENABLE_PUBLISH_ONLY_FILTER_DIRECT_PUBLISH_BYPASS"
 )
 _PUBLISH_ONLY_FILTER_BACKLOG_BYPASS_ENV_FLAG = "ENABLE_PUBLISH_ONLY_FILTER_BACKLOG_BYPASS"
+_REPLAY_WINDOW_DEDUP_ENV_FLAG = "ENABLE_REPLAY_WINDOW_DEDUP"
+_REPLAY_WINDOW_MINUTES_ENV = "PUBLISH_NOTICE_REPLAY_WINDOW_MINUTES"
+_REPLAY_WINDOW_MINUTES_DEFAULT = 10
 _PUBLISH_ONLY_MAIL_PREFIX = "【公開済】"
 _DIRECT_PUBLISH_NOTICE_ORIGIN = "direct_publish_scan"
 _PUBLISH_NOTICE_24H_BUDGET_SUMMARY_ONLY_RECORD_TYPE = "24h_budget_summary_only"
 _PUBLISH_ONLY_MAIL_FILTER_SUPPRESSION_REASON = "PUBLISH_ONLY_FILTER"
+_REPLAY_WINDOW_SUPPRESSION_REASON = "DUPLICATE_WITHIN_REPLAY_WINDOW"
 _WHITESPACE_RE = re.compile(r"\s+")
 _SUMMARY_TITLE_LIMIT = 80
 MAX_MANUAL_X_POST_LENGTH = 280
@@ -448,6 +453,97 @@ def _load_jsonl_entries(path: str | Path | None) -> list[dict[str, Any]]:
             if isinstance(payload, dict):
                 entries.append(payload)
     return entries
+
+
+def _load_history_entries(path: str | Path | None) -> dict[str, str]:
+    if path is None:
+        return {}
+    target = _path(path)
+    if not target.exists():
+        return {}
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return {str(key): str(value) for key, value in payload.items()}
+
+
+def _cloud_run_publish_notice_runtime() -> bool:
+    return any(
+        str(os.environ.get(key, "")).strip()
+        for key in ("K_SERVICE", "CLOUD_RUN_JOB", "CLOUD_RUN_EXECUTION")
+    )
+
+
+def _default_project_id() -> str:
+    for key in ("GOOGLE_CLOUD_PROJECT", "GCP_PROJECT", "PROJECT_ID"):
+        value = str(os.environ.get(key, "")).strip()
+        if value:
+            return value
+    return "baseballsite"
+
+
+def _load_remote_publish_notice_queue_entries(history_path: str | Path | None) -> list[dict[str, Any]]:
+    if history_path is None or not _cloud_run_publish_notice_runtime():
+        return []
+    try:
+        from src.cloud_run_persistence import DEFAULT_BUCKET_NAME, DEFAULT_PREFIX, GCSStateManager
+    except Exception:
+        return []
+
+    bucket_name = str(os.environ.get("GCS_STATE_BUCKET", DEFAULT_BUCKET_NAME)).strip() or DEFAULT_BUCKET_NAME
+    prefix = str(os.environ.get("GCS_STATE_PREFIX", DEFAULT_PREFIX)).strip() or DEFAULT_PREFIX
+    try:
+        manager = GCSStateManager(
+            bucket_name=bucket_name,
+            prefix=prefix,
+            project_id=_default_project_id(),
+        )
+        with tempfile.TemporaryDirectory(prefix="publish-notice-replay-window-") as tmpdir:
+            remote_path = Path(tmpdir) / "queue.jsonl"
+            if not manager.download("queue.jsonl", remote_path):
+                return []
+            return _load_jsonl_entries(remote_path)
+    except Exception:
+        return []
+
+
+def _load_remote_publish_notice_history_entries(history_path: str | Path | None) -> dict[str, str]:
+    if history_path is None or not _cloud_run_publish_notice_runtime():
+        return {}
+    try:
+        from src.cloud_run_persistence import DEFAULT_BUCKET_NAME, DEFAULT_PREFIX, GCSStateManager
+    except Exception:
+        return {}
+
+    bucket_name = str(os.environ.get("GCS_STATE_BUCKET", DEFAULT_BUCKET_NAME)).strip() or DEFAULT_BUCKET_NAME
+    prefix = str(os.environ.get("GCS_STATE_PREFIX", DEFAULT_PREFIX)).strip() or DEFAULT_PREFIX
+    try:
+        manager = GCSStateManager(
+            bucket_name=bucket_name,
+            prefix=prefix,
+            project_id=_default_project_id(),
+        )
+        with tempfile.TemporaryDirectory(prefix="publish-notice-replay-window-") as tmpdir:
+            remote_path = Path(tmpdir) / "history.json"
+            if not manager.download("history.json", remote_path):
+                return {}
+            return _load_history_entries(remote_path)
+    except Exception:
+        return {}
+
+
+def _derive_publish_notice_history_path(history_path: str | Path | None) -> Path | None:
+    if history_path is None:
+        return None
+    target = _path(history_path)
+    if target.name == "publish_notice_queue.jsonl":
+        return target.with_name("publish_notice_history.json")
+    if target.name.endswith("queue.jsonl"):
+        return target.with_name("history.json")
+    return target.with_name("history.json")
 
 
 def _latest_guarded_publish_history_entry(
@@ -1661,6 +1757,105 @@ def _is_recent_per_post_duplicate(
     return False
 
 
+def _replay_window_dedup_enabled() -> bool:
+    return str(os.environ.get(_REPLAY_WINDOW_DEDUP_ENV_FLAG, "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _resolve_replay_window_minutes() -> int:
+    raw_value = str(os.environ.get(_REPLAY_WINDOW_MINUTES_ENV, _REPLAY_WINDOW_MINUTES_DEFAULT)).strip()
+    try:
+        minutes = int(raw_value)
+    except ValueError:
+        return _REPLAY_WINDOW_MINUTES_DEFAULT
+    return max(1, minutes)
+
+
+def _is_within_recent_replay_window(
+    post_id: int | str,
+    *,
+    history_path: str | Path | None,
+    now: datetime | None = None,
+    window_minutes: int,
+) -> bool:
+    if history_path is None:
+        return False
+    current_now = _coerce_now(now)
+    replay_window = timedelta(minutes=max(1, int(window_minutes)))
+    target_post_id = str(post_id)
+    merged_entries = _load_queue_entries(history_path)
+    merged_entries.extend(_load_remote_publish_notice_queue_entries(history_path))
+    for entry in reversed(merged_entries):
+        notice_kind = str(entry.get("notice_kind") or "per_post").strip() or "per_post"
+        if notice_kind != "per_post":
+            continue
+        if str(entry.get("status") or "").strip() != "sent":
+            continue
+        if str(entry.get("post_id")) != target_post_id:
+            continue
+        recorded_at = _parse_datetime_to_jst(entry.get("sent_at") or entry.get("recorded_at"))
+        if recorded_at is None:
+            continue
+        delta = current_now - recorded_at
+        if timedelta(0) <= delta <= replay_window:
+            return True
+    return False
+
+
+def _has_recent_publish_notice_history_overlap(
+    post_id: int | str,
+    *,
+    duplicate_history_path: str | Path | None,
+    now: datetime | None = None,
+    window_minutes: int,
+) -> bool:
+    history_path = _derive_publish_notice_history_path(duplicate_history_path)
+    if history_path is None:
+        return False
+    history_entries = _load_history_entries(history_path)
+    history_entries.update(_load_remote_publish_notice_history_entries(history_path))
+    recorded_at = _parse_datetime_to_jst(history_entries.get(str(post_id)))
+    if recorded_at is None:
+        return False
+    delta = _coerce_now(now) - recorded_at
+    replay_window = timedelta(minutes=max(1, int(window_minutes)))
+    return timedelta(0) <= delta <= replay_window
+
+
+def _should_suppress_recent_replay_duplicate(
+    request: PublishNoticeRequest,
+    *,
+    duplicate_history_path: str | Path | None,
+    now: datetime | None = None,
+) -> bool:
+    if not _replay_window_dedup_enabled():
+        return False
+    notice_kind = str(getattr(request, "notice_kind", "publish") or "publish").strip() or "publish"
+    if notice_kind != "publish":
+        return False
+    window_minutes = _resolve_replay_window_minutes()
+    if _is_within_recent_replay_window(
+        request.post_id,
+        history_path=duplicate_history_path,
+        now=now,
+        window_minutes=window_minutes,
+    ):
+        return True
+    notice_origin = str(getattr(request, "notice_origin", "") or "").strip()
+    if notice_origin == _DIRECT_PUBLISH_NOTICE_ORIGIN:
+        return False
+    return _has_recent_publish_notice_history_overlap(
+        request.post_id,
+        duplicate_history_path=duplicate_history_path,
+        now=now,
+        window_minutes=window_minutes,
+    )
+
+
 def _force_review_mail_state(mail_state: dict[str, Any]) -> dict[str, Any]:
     forced = dict(mail_state)
     review_config = _mail_class_config("review")
@@ -2221,6 +2416,16 @@ def send(
     ):
         return _suppressed(
             _PUBLISH_ONLY_MAIL_FILTER_SUPPRESSION_REASON,
+            subject=subject,
+            recipients=recipients,
+        )
+    if _should_suppress_recent_replay_duplicate(
+        normalized_request,
+        duplicate_history_path=duplicate_history_path,
+        now=now,
+    ):
+        return _suppressed(
+            _REPLAY_WINDOW_SUPPRESSION_REASON,
             subject=subject,
             recipients=recipients,
         )

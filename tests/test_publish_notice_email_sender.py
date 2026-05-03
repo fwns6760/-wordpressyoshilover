@@ -4,7 +4,7 @@ import re
 import smtplib
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 from unittest.mock import MagicMock, patch
@@ -1875,6 +1875,265 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         self.assertEqual(result.status, "sent")
         self.assertEqual(bridge_send.call_args.args[0].subject, "【まとめ】直近3件 | YOSHILOVER")
         self.assertIn("summary_posts: 3", bridge_send.call_args.args[0].text_body)
+
+    def test_send_replay_window_recent_sent_suppresses_when_flag_on(self):
+        bridge_send = MagicMock(return_value=self._bridge_result())
+        now = datetime(2026, 5, 4, 6, 45, 29, tzinfo=sender.JST)
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            "os.environ",
+            {
+                "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                "ENABLE_REPLAY_WINDOW_DEDUP": "1",
+                "PUBLISH_NOTICE_REPLAY_WINDOW_MINUTES": "10",
+            },
+            clear=True,
+        ):
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            queue_path.write_text(
+                json.dumps(
+                    {
+                        "status": "sent",
+                        "reason": None,
+                        "subject": "【公開済】巨人が接戦を制した | YOSHILOVER",
+                        "recipients": ["notice@example.com"],
+                        "post_id": 123,
+                        "recorded_at": (now - timedelta(minutes=5)).isoformat(),
+                        "sent_at": (now - timedelta(minutes=5)).isoformat(),
+                        "notice_kind": "per_post",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result = sender.send(
+                self._request(notice_origin="manual_replay"),
+                dry_run=False,
+                send_enabled=True,
+                bridge_send=bridge_send,
+                duplicate_history_path=queue_path,
+                now=now,
+                duplicate_window=timedelta(minutes=1),
+            )
+
+        self.assertEqual(result.status, "suppressed")
+        self.assertEqual(result.reason, "DUPLICATE_WITHIN_REPLAY_WINDOW")
+        bridge_send.assert_not_called()
+
+    def test_send_replay_window_outside_window_allows_send_when_flag_on(self):
+        bridge_send = MagicMock(return_value=self._bridge_result())
+        now = datetime(2026, 5, 4, 6, 45, 29, tzinfo=sender.JST)
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            "os.environ",
+            {
+                "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                "ENABLE_REPLAY_WINDOW_DEDUP": "1",
+                "PUBLISH_NOTICE_REPLAY_WINDOW_MINUTES": "10",
+            },
+            clear=True,
+        ):
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            queue_path.write_text(
+                json.dumps(
+                    {
+                        "status": "sent",
+                        "reason": None,
+                        "subject": "【公開済】巨人が接戦を制した | YOSHILOVER",
+                        "recipients": ["notice@example.com"],
+                        "post_id": 123,
+                        "recorded_at": (now - timedelta(minutes=11)).isoformat(),
+                        "sent_at": (now - timedelta(minutes=11)).isoformat(),
+                        "notice_kind": "per_post",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result = sender.send(
+                self._request(notice_origin="manual_replay"),
+                dry_run=False,
+                send_enabled=True,
+                bridge_send=bridge_send,
+                duplicate_history_path=queue_path,
+                now=now,
+                duplicate_window=timedelta(minutes=1),
+            )
+
+        self.assertEqual(result.status, "sent")
+        bridge_send.assert_called_once()
+
+    def test_send_replay_window_different_post_id_does_not_affect_send_when_flag_on(self):
+        bridge_send = MagicMock(return_value=self._bridge_result())
+        now = datetime(2026, 5, 4, 6, 45, 29, tzinfo=sender.JST)
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            "os.environ",
+            {
+                "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                "ENABLE_REPLAY_WINDOW_DEDUP": "1",
+                "PUBLISH_NOTICE_REPLAY_WINDOW_MINUTES": "10",
+            },
+            clear=True,
+        ):
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            queue_path.write_text(
+                json.dumps(
+                    {
+                        "status": "sent",
+                        "reason": None,
+                        "subject": "【公開済】別記事 | YOSHILOVER",
+                        "recipients": ["notice@example.com"],
+                        "post_id": 64416,
+                        "recorded_at": (now - timedelta(minutes=3)).isoformat(),
+                        "sent_at": (now - timedelta(minutes=3)).isoformat(),
+                        "notice_kind": "per_post",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result = sender.send(
+                self._request(post_id=64366, notice_origin="manual_replay"),
+                dry_run=False,
+                send_enabled=True,
+                bridge_send=bridge_send,
+                duplicate_history_path=queue_path,
+                now=now,
+                duplicate_window=timedelta(minutes=1),
+            )
+
+        self.assertEqual(result.status, "sent")
+        bridge_send.assert_called_once()
+
+    def test_send_replay_window_64416_like_manual_scheduler_overlap_fixture(self):
+        bridge_send = MagicMock(return_value=self._bridge_result())
+        now = datetime(2026, 5, 4, 6, 45, 29, tzinfo=sender.JST)
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            "os.environ",
+            {
+                "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                "ENABLE_REPLAY_WINDOW_DEDUP": "1",
+                "PUBLISH_NOTICE_REPLAY_WINDOW_MINUTES": "10",
+            },
+            clear=True,
+        ):
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            queue_path.write_text("", encoding="utf-8")
+            history_path = Path(tmpdir) / "history.json"
+            history_path.write_text(
+                json.dumps(
+                    {
+                        "64416": (now - timedelta(minutes=4)).isoformat(),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result = sender.send(
+                self._request(
+                    post_id=64416,
+                    canonical_url="https://yoshilover.com/64416",
+                    notice_origin="manual_replay",
+                    subject_override="【公開済】巨人・育成選手が支配下登録 | YOSHILOVER",
+                ),
+                dry_run=False,
+                send_enabled=True,
+                bridge_send=bridge_send,
+                duplicate_history_path=queue_path,
+                now=now,
+                duplicate_window=timedelta(minutes=1),
+            )
+
+        self.assertEqual(result.status, "suppressed")
+        self.assertEqual(result.reason, "DUPLICATE_WITHIN_REPLAY_WINDOW")
+        bridge_send.assert_not_called()
+
+    def test_send_replay_window_flag_off_keeps_existing_duplicate_reason(self):
+        bridge_send = MagicMock(return_value=self._bridge_result())
+        now = datetime(2026, 5, 4, 6, 45, 29, tzinfo=sender.JST)
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            "os.environ",
+            {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com"},
+            clear=True,
+        ):
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            queue_path.write_text(
+                json.dumps(
+                    {
+                        "status": "sent",
+                        "reason": None,
+                        "subject": "【公開済】巨人が接戦を制した | YOSHILOVER",
+                        "recipients": ["notice@example.com"],
+                        "post_id": 123,
+                        "recorded_at": (now - timedelta(minutes=5)).isoformat(),
+                        "sent_at": (now - timedelta(minutes=5)).isoformat(),
+                        "notice_kind": "per_post",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result = sender.send(
+                self._request(notice_origin="manual_replay"),
+                dry_run=False,
+                send_enabled=True,
+                bridge_send=bridge_send,
+                duplicate_history_path=queue_path,
+                now=now,
+            )
+
+        self.assertEqual(result.status, "suppressed")
+        self.assertEqual(result.reason, "DUPLICATE_WITHIN_30MIN")
+        bridge_send.assert_not_called()
+
+    def test_send_replay_window_flag_off_ignores_recent_publish_history_overlap(self):
+        bridge_send = MagicMock(return_value=self._bridge_result())
+        now = datetime(2026, 5, 4, 6, 45, 29, tzinfo=sender.JST)
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            "os.environ",
+            {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com"},
+            clear=True,
+        ):
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            queue_path.write_text("", encoding="utf-8")
+            history_path = Path(tmpdir) / "history.json"
+            history_path.write_text(
+                json.dumps(
+                    {
+                        "64416": (now - timedelta(minutes=4)).isoformat(),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result = sender.send(
+                self._request(
+                    post_id=64416,
+                    canonical_url="https://yoshilover.com/64416",
+                    notice_origin="manual_replay",
+                ),
+                dry_run=False,
+                send_enabled=True,
+                bridge_send=bridge_send,
+                duplicate_history_path=queue_path,
+                now=now,
+                duplicate_window=timedelta(minutes=1),
+            )
+
+        self.assertEqual(result.status, "sent")
+        bridge_send.assert_called_once()
 
     def test_send_real_path_calls_bridge_once(self):
         bridge_result = mail_delivery_bridge.MailResult(

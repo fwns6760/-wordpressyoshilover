@@ -49,6 +49,7 @@ SUBTYPE_MAP = {
     "GIANTS FARM WATCH": "farm_result",
     "GIANTS MANAGER NOTE": "manager",
     "GIANTS LINEUP NOTE": "lineup",
+    "GIANTS PLAYER WATCH": "player_comment",
 }
 LINEUP_SECTION_HEADINGS = ("【スタメン一覧】", "【二軍スタメン一覧】")
 OVERVIEW_SECTION_HEADINGS = ("【試合概要】", "【二軍試合概要】")
@@ -114,6 +115,7 @@ def extract_preview_facts(history_entry: JSONDict, backup_doc: JSONDict) -> JSON
     subtype_hint = _infer_subtype(subtype_label, title_rendered, sections)
     source_cue = source_lines[-1] if source_lines else None
     source_cue_clean = _cleanup_source_sentence(source_cue) if source_cue else None
+    source_summary = _build_source_summary(source_lines)
     score = _extract_score(source_lines)
     opponent = _extract_opponent(source_lines, sections, score)
     result = _extract_result(source_lines, score)
@@ -125,6 +127,9 @@ def extract_preview_facts(history_entry: JSONDict, backup_doc: JSONDict) -> JSON
     starter_pitcher = _extract_starter_pitcher(sections, lineup_order)
     venue = _extract_venue(sections, title_rendered, source_lines)
     game_date = _extract_game_date(title_rendered, sections)
+    game_time = _extract_game_time(title_rendered, sections, source_lines)
+    notice_type = _extract_notice_type(source_lines, title_rendered)
+    player_event = _extract_player_event(source_lines, title_rendered)
     opponent_lineup_link = (
         _extract_opponent_lineup_link(source_urls) if subtype_hint == "lineup" else None
     )
@@ -142,6 +147,7 @@ def extract_preview_facts(history_entry: JSONDict, backup_doc: JSONDict) -> JSON
         "source_url": source_urls[0] if source_urls else None,
         "source_urls": source_urls,
         "source_headline": source_lines[0] if source_lines else None,
+        "source_summary": source_summary,
         "source_cue": source_cue_clean,
         "score": score,
         "opponent": opponent,
@@ -155,6 +161,9 @@ def extract_preview_facts(history_entry: JSONDict, backup_doc: JSONDict) -> JSON
         "key_quote": key_quote,
         "venue": venue,
         "game_date": game_date,
+        "game_time": game_time,
+        "notice_type": notice_type,
+        "player_event": player_event,
         "opponent_lineup_link": opponent_lineup_link,
         "lineup_order": lineup_order,
         "supporting_sentences": _extract_supporting_sentences(source_cue_clean),
@@ -212,17 +221,29 @@ def _extract_source_lines(lines: list[str]) -> list[str]:
 
 
 def _extract_source_urls(lines: list[str]) -> list[str]:
-    urls: list[str] = []
+    source_urls: list[str] = []
+    related_urls: list[str] = []
     in_related = False
+    in_source = False
     for line in lines:
         if line.startswith("📌 関連ポスト"):
             in_related = True
+            in_source = False
+            continue
+        if line.startswith("📰 参照元:"):
+            in_source = True
+            in_related = False
             continue
         if in_related and HEADING_RE.match(line):
             break
+        if in_source and HEADING_RE.match(line):
+            in_source = False
+        if in_source and URL_RE.match(line):
+            source_urls.append(line)
+            continue
         if in_related and URL_RE.match(line):
-            urls.append(line)
-    return urls
+            related_urls.append(line)
+    return source_urls + related_urls
 
 
 def _infer_subtype(
@@ -409,6 +430,16 @@ def _extract_opponent_lineup_link(source_urls: list[str]) -> str | None:
     return None
 
 
+def _build_source_summary(source_lines: list[str]) -> str:
+    if not source_lines:
+        return ""
+    preferred_lines = source_lines[1:4] if len(source_lines) >= 2 else source_lines[:1]
+    summary_lines = [_cleanup_source_sentence(line) for line in preferred_lines if line.strip()]
+    if not any(summary_lines):
+        summary_lines = [_cleanup_source_sentence(source_lines[0])]
+    return " ".join(summary_lines)
+
+
 def _extract_supporting_sentences(source_cue: str | None) -> list[str]:
     if not source_cue:
         return []
@@ -438,6 +469,40 @@ def _cleanup_source_sentence(text: str) -> str:
     cleaned = re.sub(r"(?<![一-龯ぁ-んァ-ヶー])選手(?=[^一-龯ぁ-んァ-ヶー]|$)", "", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return cleaned
+
+
+def _extract_game_time(
+    title_rendered: str,
+    sections: dict[str, list[str]],
+    source_lines: list[str],
+) -> str | None:
+    text = " ".join([title_rendered, *source_lines, *sections.get("【試合概要】", [])])
+    match = re.search(r"(\d{1,2}:\d{2})", text)
+    if match:
+        return match.group(1)
+    match = re.search(r"(\d{1,2})時(?:\s*(\d{1,2})分)?", text)
+    if match:
+        hour = int(match.group(1))
+        minute = int(match.group(2) or "0")
+        return f"{hour:02d}:{minute:02d}"
+    return None
+
+
+def _extract_notice_type(source_lines: list[str], title_rendered: str) -> str | None:
+    text = " ".join([title_rendered, *source_lines])
+    markers = ("緊急昇格", "一軍昇格", "昇格", "登録抹消", "抹消", "一軍合流", "合流", "復帰")
+    for marker in markers:
+        if marker in text:
+            return marker
+    return None
+
+
+def _extract_player_event(source_lines: list[str], title_rendered: str) -> str | None:
+    text = " ".join([title_rendered, *source_lines])
+    match = re.search(r"(\d安打\d本塁打|\d安打|\d打点|\d本塁打|無失点|好投|合流|昇格|復帰)", text)
+    if match:
+        return match.group(1)
+    return None
 
 
 def _build_coverable_facts(facts: JSONDict) -> list[dict[str, str]]:

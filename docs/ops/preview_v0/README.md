@@ -4,10 +4,11 @@
 
 ## scope
 
-- 対象 subtype: `postgame`, `farm_result`, `manager`, `lineup`
-- サンプル数: `15` (`manual 5 + generated 10`)
+- phase 4 validated subtype: `postgame`, `farm_result`, `manager`, `lineup`
+- phase 5 unlock-scope extension: `player_comment`, `farm_lineup`, `pregame`, `roster_notice`, `若手選手(player_notice -> farm_player_result)`
 - 入力 source: `logs/cleanup_backup/*.json` の read-only backup
 - 実施しないこと: WP write / publish 状態変更 / Gemini call / deploy / env 変更
+- coverage status: [phase5_coverage_matrix.md](/home/fwns6/code/wordpressyoshilover/docs/ops/preview_v0/phase5_coverage_matrix.md)
 
 ## body transcription note
 
@@ -49,6 +50,17 @@ optional:
 - `--subtype lineup`
 - `--subtype-map 63466=postgame 63464=farm_result 63509=manager`
 
+phase 5 category mode:
+
+```bash
+cd /home/fwns6/code/wordpressyoshilover
+python3 scripts/preview_v0_generate.py --category player_comment --count 1 --dry-run
+python3 scripts/preview_v0_generate.py --category farm_lineup --count 1 --dry-run
+python3 scripts/preview_v0_generate.py --category pregame --count 2 --dry-run
+python3 scripts/preview_v0_generate.py --category roster_notice --count 1 --dry-run
+python3 scripts/preview_v0_generate.py --category player_notice --count 1 --dry-run
+```
+
 ## sample index
 
 ### existing manual samples (5)
@@ -74,7 +86,9 @@ optional:
   - post_id: `63249`
   - low-quality pattern: `title restatement only`, `empty sections`, `generic filler`
 
-### generated samples (10)
+### generated samples (phase 4 baseline 10)
+
+- phase 5 generated additions は [phase5_coverage_matrix.md](/home/fwns6/code/wordpressyoshilover/docs/ops/preview_v0/phase5_coverage_matrix.md) を参照
 
 - `generated/sample_lineup_63393.md`
   - backup: `logs/cleanup_backup/63393_20260426T012330.json`

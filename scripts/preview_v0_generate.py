@@ -9,6 +9,7 @@ from lib.preview_facts import (
     load_jsonl_index,
     normalize_html,
 )
+from lib.preview_phase5 import build_phase5_pipeline, select_phase5_samples
 from lib.preview_render import evaluate_acceptance, render_sample
 from lib.preview_rules import apply_preview_pipeline
 
@@ -26,8 +27,17 @@ def parse_args() -> argparse.Namespace:
         "--post-ids",
         nargs="+",
         type=int,
-        required=True,
         help="Target post_ids to render into preview sample docs.",
+    )
+    parser.add_argument(
+        "--category",
+        help="Phase5 sample category selector: player_comment / farm_lineup / pregame / roster_notice / player_notice.",
+    )
+    parser.add_argument(
+        "--count",
+        type=int,
+        default=1,
+        help="Number of phase5 category samples to render.",
     )
     parser.add_argument(
         "--output-dir",
@@ -55,7 +65,17 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional subtype override applied to every post_id not present in --subtype-map.",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Resolve and evaluate samples without writing markdown files.",
+    )
+    args = parser.parse_args()
+    if not args.post_ids and not args.category:
+        parser.error("one of --post-ids or --category is required")
+    if args.post_ids and args.category:
+        parser.error("--post-ids and --category are mutually exclusive")
+    return args
 
 
 def main() -> int:
@@ -64,10 +84,15 @@ def main() -> int:
     yellow_index = load_jsonl_index(args.yellow_log_path)
     subtype_map = _parse_subtype_map(args.subtype_map)
     output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if not args.dry_run:
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-    for post_id in args.post_ids:
-        history_entry = history_index.get(post_id)
+    phase5_samples = select_phase5_samples(args.category, args.count) if args.category else []
+    post_ids = args.post_ids or [int(sample["post_id"]) for sample in phase5_samples]
+    phase5_by_post_id = {int(sample["post_id"]): sample for sample in phase5_samples}
+
+    for post_id in post_ids:
+        history_entry = history_index.get(int(post_id))
         if history_entry is None:
             raise SystemExit(f"post_id={post_id} not found in {args.history_path}")
 
@@ -78,25 +103,52 @@ def main() -> int:
         backup_doc = load_backup(backup_path)
         facts = extract_preview_facts(history_entry, backup_doc)
         original = normalize_html(backup_doc["content"]["rendered"])
-        subtype = subtype_map.get(post_id) or args.subtype or facts.get("subtype_hint") or "manager"
-        fixed, rule_results = apply_preview_pipeline(original, facts, subtype)
-        acceptance = evaluate_acceptance(original, fixed, facts, rule_results)
+        phase5_sample = phase5_by_post_id.get(int(post_id))
+        if phase5_sample:
+            subtype = str(phase5_sample["subtype"])
+            fixed, rule_results, interface = build_phase5_pipeline(original, facts, phase5_sample)
+            acceptance = evaluate_acceptance(
+                original,
+                fixed,
+                facts,
+                rule_results,
+                expected_subtype=subtype,
+                interface=interface,
+            )
+            sample_id = f"sample_{subtype}_{post_id}"
+        else:
+            subtype = subtype_map.get(post_id) or args.subtype or facts.get("subtype_hint") or "manager"
+            fixed, rule_results = apply_preview_pipeline(original, facts, subtype)
+            interface = None
+            acceptance = evaluate_acceptance(original, fixed, facts, rule_results)
+            sample_id = f"sample_{subtype}_{post_id}"
         quality_flags = _extract_quality_flags(yellow_index.get(post_id))
 
-        sample_id = f"sample_{subtype}_{post_id}"
         output_path = output_dir / f"{sample_id}.md"
-        output_path.write_text(
-            render_sample(
-                sample_id=sample_id,
-                subtype=subtype,
-                original=original,
-                fixed=fixed,
-                facts=facts,
-                rules=rule_results,
-                acceptance=acceptance,
-                quality_flags=quality_flags,
-            )
+        rendered = render_sample(
+            sample_id=sample_id,
+            subtype=subtype,
+            original=original,
+            fixed=fixed,
+            facts=facts,
+            rules=rule_results,
+            acceptance=acceptance,
+            quality_flags=quality_flags,
+            interface=interface,
         )
+        if args.dry_run:
+            phase5_summary = acceptance.get("phase5_pass_count")
+            if phase5_summary is None or not acceptance.get("phase5_axes"):
+                print(f"{sample_id} recommend={acceptance['recommend_for_apply']}")
+            else:
+                print(
+                    f"{sample_id} recommend={acceptance['recommend_for_apply']} "
+                    f"phase5={phase5_summary}/{len(acceptance['phase5_axes'])} "
+                    f"interface_match={bool(interface and interface.get('interface_match'))}"
+                )
+            continue
+
+        output_path.write_text(rendered)
         print(output_path)
 
     return 0

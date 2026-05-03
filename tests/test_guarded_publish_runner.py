@@ -16,6 +16,7 @@ LONG_EXTRA = (
     "ベンチワークの意図や終盤の継投まで追える内容で、攻守の流れも十分に整理できる一戦だった。"
     "守備位置の動きと追加点の意味も見え、ファン視点でも試合の核を追いやすかった。"
 )
+WIDGET_SCRIPT_URL = "https://platform.twitter.com/widgets.js"
 
 
 def _post(
@@ -219,6 +220,29 @@ class GuardedPublishRunnerTests(unittest.TestCase):
             meta=meta,
         )
 
+    def _make_duplicate_source_post(
+        self,
+        post_id: int,
+        title: str,
+        *,
+        subtype: str,
+        source_urls: list[str] | None = None,
+        status: str = "draft",
+        meta: dict | None = None,
+    ) -> dict:
+        normalized_source_urls = list(source_urls or [WIDGET_SCRIPT_URL])
+        source_lines = "".join(f"<p>参照元: スポーツ報知 {url}</p>" for url in normalized_source_urls)
+        post_meta = dict(meta or {})
+        post_meta["source_url"] = normalized_source_urls if len(normalized_source_urls) > 1 else normalized_source_urls[0]
+        return _post(
+            post_id,
+            title,
+            f"<p>{title}について整理した。</p><p>{LONG_EXTRA}</p>{source_lines}",
+            status=status,
+            subtype=subtype,
+            meta=post_meta,
+        )
+
     def _make_backlog_entry(
         self,
         post: dict,
@@ -254,6 +278,33 @@ class GuardedPublishRunnerTests(unittest.TestCase):
                 wp_client=FakeWPClient(posts),
                 now=FIXED_NOW,
             )
+
+    def _run_duplicate_case(
+        self,
+        candidate: dict,
+        *existing_posts: dict,
+        env: dict[str, str] | None = None,
+    ) -> tuple[dict, FakeWPClient]:
+        posts = {int(candidate["id"]): candidate}
+        for existing in existing_posts:
+            posts[int(existing["id"])] = existing
+        wp = FakeWPClient(posts)
+        report = _report(green=[_green_entry(int(candidate["id"]), str(candidate["title"]["raw"]))])
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict("os.environ", env or {}, clear=False):
+            result = runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        return result, wp
 
     def _run_backlog_case(
         self,
@@ -2624,6 +2675,222 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         self.assertEqual(result["refused"][0]["hold_reason"], "review_duplicate_candidate_same_source_url")
         self.assertEqual(result["refused"][0]["duplicate_of_post_id"], 9005)
         self.assertEqual(result["refused"][0]["duplicate_reason"], "same_source_url")
+
+    def test_widget_script_source_url_helper_matches_allowlist(self):
+        self.assertTrue(runner._is_widget_script_source_url(WIDGET_SCRIPT_URL))
+        self.assertTrue(runner._is_widget_script_source_url(f"{WIDGET_SCRIPT_URL}?lang=ja"))
+        self.assertFalse(runner._is_widget_script_source_url("https://platform.twitter.com/embed.js"))
+        self.assertFalse(runner._is_widget_script_source_url("https://example.com/widgets.js"))
+
+    def test_widget_script_only_source_anchor_helper_rejects_mixed_urls(self):
+        self.assertTrue(runner._is_widget_script_only_source_anchor([WIDGET_SCRIPT_URL]))
+        self.assertFalse(
+            runner._is_widget_script_only_source_anchor([WIDGET_SCRIPT_URL, "https://example.com/source"])
+        )
+        self.assertFalse(runner._is_widget_script_only_source_anchor([]))
+
+    def test_duplicate_widget_script_exempt_flag_off_preserves_same_source_duplicate(self):
+        candidate = self._make_duplicate_source_post(
+            4014,
+            "巨人2軍が終盤に勝ち越して逃げ切る",
+            subtype="farm_result",
+        )
+        existing = self._make_duplicate_source_post(
+            9015,
+            "巨人2軍が接戦を制して白星",
+            subtype="farm_result",
+            status="publish",
+        )
+        existing["date"] = "2026-04-26T07:00:00+09:00"
+
+        result, _ = self._run_duplicate_case(
+            candidate,
+            existing,
+            env={
+                runner.DUPLICATE_TARGET_INTEGRITY_STRICT_ENV: "1",
+                runner.DUPLICATE_WIDGET_SCRIPT_EXEMPT_ENV: "0",
+            },
+        )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["refused"][0]["hold_reason"], "review_duplicate_candidate_same_source_url")
+        self.assertEqual(result["refused"][0]["duplicate_reason"], "same_source_url")
+
+    def test_duplicate_widget_script_exempt_allows_widget_only_same_source_subtypes(self):
+        cases = [
+            (4015, 9016, "farm_result", "巨人2軍が逆転勝ち", "巨人2軍が投手戦を制す"),
+            (4016, 9017, "farm_lineup", "巨人2軍スタメン発表 秋広優人が4番", "巨人2軍スタメン発表 浅野翔吾が1番"),
+            (4017, 9018, "lineup", "巨人スタメン発表 丸佳浩が1番", "巨人スタメン発表 吉川尚輝が1番"),
+            (4018, 9019, "injury_recovery_notice", "浅野翔吾が実戦復帰へ", "大勢がブルペン投球を再開"),
+        ]
+
+        for candidate_id, existing_id, subtype, candidate_title, existing_title in cases:
+            with self.subTest(subtype=subtype):
+                candidate = self._make_duplicate_source_post(candidate_id, candidate_title, subtype=subtype)
+                existing = self._make_duplicate_source_post(
+                    existing_id,
+                    existing_title,
+                    subtype=subtype,
+                    status="publish",
+                )
+                existing["date"] = "2026-04-26T07:00:00+09:00"
+
+                result, wp = self._run_duplicate_case(
+                    candidate,
+                    existing,
+                    env={
+                        runner.DUPLICATE_TARGET_INTEGRITY_STRICT_ENV: "1",
+                        runner.DUPLICATE_WIDGET_SCRIPT_EXEMPT_ENV: "1",
+                    },
+                )
+
+                self.assertEqual(result["refused"], [])
+                self.assertEqual([item["status"] for item in result["executed"]], ["sent"])
+                self.assertEqual(wp.update_post_status_calls, [(candidate_id, "publish")])
+
+    def test_duplicate_widget_script_exempt_keeps_duplicate_when_candidate_has_non_widget_source(self):
+        candidate = self._make_duplicate_source_post(
+            4019,
+            "巨人スタメン発表 門脇誠が2番",
+            subtype="lineup",
+            source_urls=["https://hochi.news/articles/lineup-source", WIDGET_SCRIPT_URL],
+        )
+        existing = self._make_duplicate_source_post(
+            9020,
+            "巨人スタメン発表 坂本勇人が3番",
+            subtype="lineup",
+            source_urls=["https://hochi.news/articles/lineup-source", WIDGET_SCRIPT_URL],
+            status="publish",
+        )
+        existing["date"] = "2026-04-26T07:00:00+09:00"
+
+        result, _ = self._run_duplicate_case(
+            candidate,
+            existing,
+            env={
+                runner.DUPLICATE_TARGET_INTEGRITY_STRICT_ENV: "1",
+                runner.DUPLICATE_WIDGET_SCRIPT_EXEMPT_ENV: "1",
+            },
+        )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["refused"][0]["duplicate_reason"], "same_source_url")
+
+    def test_duplicate_widget_script_exempt_keeps_duplicate_when_target_has_non_widget_source(self):
+        candidate = self._make_duplicate_source_post(
+            4020,
+            "巨人2軍が接戦を制す",
+            subtype="farm_result",
+        )
+        existing = self._make_duplicate_source_post(
+            9021,
+            "巨人2軍が投手戦をものにする",
+            subtype="farm_result",
+            source_urls=[WIDGET_SCRIPT_URL, "https://hochi.news/articles/farm-result-source"],
+            status="publish",
+        )
+        existing["date"] = "2026-04-26T07:00:00+09:00"
+
+        result, _ = self._run_duplicate_case(
+            candidate,
+            existing,
+            env={
+                runner.DUPLICATE_TARGET_INTEGRITY_STRICT_ENV: "1",
+                runner.DUPLICATE_WIDGET_SCRIPT_EXEMPT_ENV: "1",
+            },
+        )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["refused"][0]["duplicate_reason"], "same_source_url")
+
+    def test_duplicate_widget_script_exempt_keeps_duplicate_when_exact_title_signal_exists(self):
+        candidate = self._make_duplicate_source_post(
+            4021,
+            "巨人2軍スタメン発表 浅野翔吾が1番",
+            subtype="farm_lineup",
+        )
+        existing = self._make_duplicate_source_post(
+            9022,
+            "巨人2軍スタメン発表 浅野翔吾が1番",
+            subtype="farm_lineup",
+            status="publish",
+        )
+        existing["date"] = "2026-04-26T07:00:00+09:00"
+
+        result, _ = self._run_duplicate_case(
+            candidate,
+            existing,
+            env={
+                runner.DUPLICATE_TARGET_INTEGRITY_STRICT_ENV: "1",
+                runner.DUPLICATE_WIDGET_SCRIPT_EXEMPT_ENV: "1",
+            },
+        )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertIn(
+            result["refused"][0]["duplicate_reason"],
+            {"same_source_url", "exact_title_match_publish"},
+        )
+
+    def test_duplicate_widget_script_exempt_keeps_duplicate_when_normalized_title_signal_exists(self):
+        candidate = self._make_duplicate_source_post(
+            4022,
+            "巨人スタメン発表 吉川尚輝が1番！",
+            subtype="lineup",
+        )
+        existing = self._make_duplicate_source_post(
+            9023,
+            "巨人スタメン発表 吉川尚輝が1番",
+            subtype="lineup",
+            status="publish",
+        )
+        existing["date"] = "2026-04-26T07:00:00+09:00"
+
+        result, _ = self._run_duplicate_case(
+            candidate,
+            existing,
+            env={
+                runner.DUPLICATE_TARGET_INTEGRITY_STRICT_ENV: "1",
+                runner.DUPLICATE_WIDGET_SCRIPT_EXEMPT_ENV: "1",
+            },
+        )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertIn(
+            result["refused"][0]["duplicate_reason"],
+            {"same_source_url", "normalized_title_match_publish"},
+        )
+
+    def test_duplicate_widget_script_exempt_keeps_duplicate_when_same_game_signal_exists(self):
+        candidate = self._make_duplicate_source_post(
+            4023,
+            "阿部監督が継投の意図を説明",
+            subtype="comment",
+            meta={"game_id": "20260503-g-t", "speaker_name": "阿部監督"},
+        )
+        existing = self._make_duplicate_source_post(
+            9024,
+            "阿部監督が終盤の勝負手を説明",
+            subtype="comment",
+            meta={"game_id": "20260503-g-t", "speaker_name": "阿部監督"},
+            status="publish",
+        )
+        existing["date"] = "2026-04-26T07:00:00+09:00"
+
+        result, _ = self._run_duplicate_case(
+            candidate,
+            existing,
+            env={
+                runner.DUPLICATE_TARGET_INTEGRITY_STRICT_ENV: "1",
+                runner.DUPLICATE_WIDGET_SCRIPT_EXEMPT_ENV: "1",
+            },
+        )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertIn(
+            result["refused"][0]["duplicate_reason"],
+            {"same_source_url", "same_game_subtype_speaker"},
+        )
 
     def test_duplicate_same_source_url_allows_different_subtype(self):
         candidate = _post(

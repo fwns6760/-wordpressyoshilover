@@ -75,6 +75,7 @@ DEFAULT_MIN_PROSE_AFTER_CLEANUP = 50
 REFUSED_DEDUP_WINDOW_HOURS = 24
 TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
 DUPLICATE_TARGET_INTEGRITY_STRICT_ENV = "ENABLE_DUPLICATE_TARGET_INTEGRITY_STRICT"
+DUPLICATE_WIDGET_SCRIPT_EXEMPT_ENV = "ENABLE_DUPLICATE_WIDGET_SCRIPT_EXEMPT"
 POST_CLEANUP_STRICT_ENV_BY_FLAG = {
     "title_subject_missing": "STRICT_TITLE_SUBJECT",
     "source_anchor_missing": "STRICT_SOURCE_ANCHOR",
@@ -113,6 +114,8 @@ PLAYER_HEURISTIC_RE = re.compile(
 QUOTE_LIKE_DUPLICATE_SUBTYPE_EXACT = frozenset(
     {"comment", "manager", "player", "social", "player_comment", "manager_comment", "coach_comment"}
 )
+# TODO: Expand this allowlist in a follow-up if other official embed script anchors become relevant.
+WIDGET_SCRIPT_SOURCE_URL_ALLOWLIST = frozenset({("platform.twitter.com", "/widgets.js")})
 
 TEAM_ALIASES = ("読売ジャイアンツ", "ジャイアンツ", "巨人")
 POSITION_SUFFIXES = ("投手", "捕手", "内野手", "外野手", "選手")
@@ -1682,6 +1685,93 @@ def _reference_source_url_pairs(reference: dict[str, Any] | None) -> list[dict[s
     return normalized
 
 
+def _normalize_source_anchor_url(url: str | None) -> tuple[str, str] | None:
+    candidate = str(url or "").strip()
+    if not candidate:
+        return None
+    parsed = urlparse(candidate)
+    hostname = str(parsed.netloc or "").strip().lower()
+    if hostname.startswith("www."):
+        hostname = hostname[4:]
+    normalized_path = re.sub(r"/+", "/", str(parsed.path or "").strip()).rstrip("/") or "/"
+    if not hostname:
+        return None
+    return hostname, normalized_path
+
+
+def _is_widget_script_source_url(url: str | None) -> bool:
+    normalized = _normalize_source_anchor_url(url)
+    if normalized is None:
+        return False
+    return normalized in WIDGET_SCRIPT_SOURCE_URL_ALLOWLIST
+
+
+def _source_urls_from_pairs(source_url_pairs: Sequence[dict[str, Any]] | None) -> list[str]:
+    urls: list[str] = []
+    for item in source_url_pairs or []:
+        if not isinstance(item, dict):
+            continue
+        source_url = str(item.get("source_url") or "").strip()
+        if source_url:
+            urls.append(source_url)
+    return _dedupe_preserve_order(urls)
+
+
+def _is_widget_script_only_source_anchor(source_urls: Sequence[str]) -> bool:
+    normalized_urls = [str(url).strip() for url in source_urls if str(url).strip()]
+    if not normalized_urls:
+        return False
+    return all(_is_widget_script_source_url(url) for url in normalized_urls)
+
+
+def _has_non_same_source_duplicate_signal(
+    *,
+    title: str,
+    normalized_title: str,
+    same_game_key: str,
+    run_promoted_titles_set: dict[str, dict[str, dict[str, Any]]],
+    wp_existing_publish_titles: dict[str, dict[str, dict[str, Any]]],
+    wp_existing_draft_titles: dict[str, dict[str, dict[str, Any]]],
+) -> bool:
+    if title and (
+        title in wp_existing_publish_titles["exact_titles"]
+        or title in wp_existing_draft_titles["exact_titles"]
+        or title in run_promoted_titles_set["exact_titles"]
+    ):
+        return True
+
+    if normalized_title and (
+        normalized_title in wp_existing_publish_titles["normalized_titles"]
+        or normalized_title in wp_existing_draft_titles["normalized_titles"]
+        or normalized_title in run_promoted_titles_set["normalized_titles"]
+    ):
+        return True
+
+    if same_game_key and (
+        same_game_key in wp_existing_publish_titles["game_subtype_speaker"]
+        or same_game_key in wp_existing_draft_titles["game_subtype_speaker"]
+        or same_game_key in run_promoted_titles_set["game_subtype_speaker"]
+    ):
+        return True
+
+    return False
+
+
+def _should_exempt_widget_script_same_source_duplicate(
+    candidate_source_url_pairs: Sequence[dict[str, Any]],
+    reference: dict[str, Any],
+    *,
+    has_other_duplicate_signal: bool,
+) -> bool:
+    if has_other_duplicate_signal:
+        return False
+    candidate_source_urls = _source_urls_from_pairs(candidate_source_url_pairs)
+    if not _is_widget_script_only_source_anchor(candidate_source_urls):
+        return False
+    reference_source_urls = _source_urls_from_pairs(_reference_source_url_pairs(reference))
+    return _is_widget_script_only_source_anchor(reference_source_urls)
+
+
 def _duplicate_target_integrity_payload(
     candidate_source_url_hash: str,
     reference: dict[str, Any],
@@ -1808,13 +1898,35 @@ def _detect_duplicate_candidate(
 ) -> tuple[bool, dict[str, Any]]:
     title = _duplicate_title_value(post)
     normalized_title = _normalize_duplicate_title(title)
+    same_game_key = _same_game_subtype_speaker_key(post)
     strict_duplicate_target_integrity = _env_truthy(DUPLICATE_TARGET_INTEGRITY_STRICT_ENV)
+    widget_script_same_source_exempt = _env_truthy(DUPLICATE_WIDGET_SCRIPT_EXEMPT_ENV)
+    candidate_source_url_pairs = _extract_duplicate_source_url_pairs(post)
+    candidate_source_hashes = [
+        str(pair.get("source_url_hash") or "").strip()
+        for pair in candidate_source_url_pairs
+        if str(pair.get("source_url_hash") or "").strip()
+    ]
+    has_non_same_source_duplicate_signal = _has_non_same_source_duplicate_signal(
+        title=title,
+        normalized_title=normalized_title,
+        same_game_key=same_game_key,
+        run_promoted_titles_set=run_promoted_titles_set,
+        wp_existing_publish_titles=wp_existing_publish_titles,
+        wp_existing_draft_titles=wp_existing_draft_titles,
+    )
     pending_integrity_failure: dict[str, Any] | None = None
 
-    for source_hash in _extract_duplicate_source_hashes(post):
+    for source_hash in candidate_source_hashes:
         reference = _same_source_url_duplicate_reference(post, wp_existing_source_urls.get(source_hash), now=now)
         if reference is not None:
             if not strict_duplicate_target_integrity:
+                if widget_script_same_source_exempt and _should_exempt_widget_script_same_source_duplicate(
+                    candidate_source_url_pairs,
+                    reference,
+                    has_other_duplicate_signal=has_non_same_source_duplicate_signal,
+                ):
+                    continue
                 return _duplicate_reference("wp_publish", "same_source_url", reference)
             integrity_payload = _duplicate_target_integrity_payload(source_hash, reference)
             candidate_post_id = int((post or {}).get("id") or 0) or None
@@ -1823,6 +1935,12 @@ def _detect_duplicate_candidate(
                 integrity_payload=integrity_payload,
             )
             if bool(integrity_payload.get("duplicate_integrity_ok")):
+                if widget_script_same_source_exempt and _should_exempt_widget_script_same_source_duplicate(
+                    candidate_source_url_pairs,
+                    reference,
+                    has_other_duplicate_signal=has_non_same_source_duplicate_signal,
+                ):
+                    continue
                 return _duplicate_reference(
                     "wp_publish",
                     "same_source_url",
@@ -1880,7 +1998,6 @@ def _detect_duplicate_candidate(
                 run_promoted_titles_set["normalized_titles"].get(normalized_title),
             )
 
-    same_game_key = _same_game_subtype_speaker_key(post)
     if same_game_key:
         if same_game_key in wp_existing_publish_titles["game_subtype_speaker"]:
             return _duplicate_reference(

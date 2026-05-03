@@ -2748,6 +2748,43 @@ class GuardedPublishRunnerTests(unittest.TestCase):
                 self.assertEqual([item["status"] for item in result["executed"]], ["sent"])
                 self.assertEqual(wp.update_post_status_calls, [(candidate_id, "publish")])
 
+    def test_duplicate_widget_script_exempt_allows_when_only_matching_source_is_widget_script(self):
+        candidate = self._make_duplicate_source_post(
+            4018,
+            "橋上コーチが配球意図を説明",
+            subtype="manager",
+            source_urls=[
+                "https://twitter.com/hochi_giants/status/2050875183099953299",
+                WIDGET_SCRIPT_URL,
+                "https://twitter.com/SportsHochi/status/2050875630254776823",
+            ],
+        )
+        existing = self._make_duplicate_source_post(
+            9019,
+            "立岡が打撃改造の背景を語る",
+            subtype="player",
+            source_urls=[
+                "https://twitter.com/hochi_giants/status/2050800884783726956",
+                WIDGET_SCRIPT_URL,
+                "https://twitter.com/SportsHochi/status/2050801420740214841",
+            ],
+            status="publish",
+        )
+        existing["date"] = "2026-04-26T07:00:00+09:00"
+
+        result, wp = self._run_duplicate_case(
+            candidate,
+            existing,
+            env={
+                runner.DUPLICATE_TARGET_INTEGRITY_STRICT_ENV: "1",
+                runner.DUPLICATE_WIDGET_SCRIPT_EXEMPT_ENV: "1",
+            },
+        )
+
+        self.assertEqual(result["refused"], [])
+        self.assertEqual([item["status"] for item in result["executed"]], ["sent"])
+        self.assertEqual(wp.update_post_status_calls, [(4018, "publish")])
+
     def test_duplicate_widget_script_exempt_keeps_duplicate_when_candidate_has_non_widget_source(self):
         candidate = self._make_duplicate_source_post(
             4019,
@@ -2776,17 +2813,18 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         self.assertEqual(result["proposed"], [])
         self.assertEqual(result["refused"][0]["duplicate_reason"], "same_source_url")
 
-    def test_duplicate_widget_script_exempt_keeps_duplicate_when_target_has_non_widget_source(self):
+    def test_duplicate_widget_script_exempt_keeps_duplicate_when_matching_source_is_non_widget(self):
         candidate = self._make_duplicate_source_post(
             4020,
             "巨人2軍が接戦を制す",
             subtype="farm_result",
+            source_urls=["https://hochi.news/articles/farm-result-source", WIDGET_SCRIPT_URL],
         )
         existing = self._make_duplicate_source_post(
             9021,
             "巨人2軍が投手戦をものにする",
             subtype="farm_result",
-            source_urls=[WIDGET_SCRIPT_URL, "https://hochi.news/articles/farm-result-source"],
+            source_urls=["https://hochi.news/articles/farm-result-source", WIDGET_SCRIPT_URL],
             status="publish",
         )
         existing["date"] = "2026-04-26T07:00:00+09:00"

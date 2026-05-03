@@ -1758,18 +1758,23 @@ def _has_non_same_source_duplicate_signal(
 
 
 def _should_exempt_widget_script_same_source_duplicate(
-    candidate_source_url_pairs: Sequence[dict[str, Any]],
+    candidate_source_url_hash: str,
     reference: dict[str, Any],
-    *,
-    has_other_duplicate_signal: bool,
 ) -> bool:
-    if has_other_duplicate_signal:
+    normalized_hash = str(candidate_source_url_hash or "").strip()
+    if not normalized_hash:
         return False
-    candidate_source_urls = _source_urls_from_pairs(candidate_source_url_pairs)
-    if not _is_widget_script_only_source_anchor(candidate_source_urls):
+    matched_pair = next(
+        (
+            pair
+            for pair in _reference_source_url_pairs(reference)
+            if str(pair.get("source_url_hash") or "").strip() == normalized_hash
+        ),
+        None,
+    )
+    if not matched_pair:
         return False
-    reference_source_urls = _source_urls_from_pairs(_reference_source_url_pairs(reference))
-    return _is_widget_script_only_source_anchor(reference_source_urls)
+    return _is_widget_script_source_url(str(matched_pair.get("source_url") or "").strip())
 
 
 def _duplicate_target_integrity_payload(
@@ -1907,14 +1912,6 @@ def _detect_duplicate_candidate(
         for pair in candidate_source_url_pairs
         if str(pair.get("source_url_hash") or "").strip()
     ]
-    has_non_same_source_duplicate_signal = _has_non_same_source_duplicate_signal(
-        title=title,
-        normalized_title=normalized_title,
-        same_game_key=same_game_key,
-        run_promoted_titles_set=run_promoted_titles_set,
-        wp_existing_publish_titles=wp_existing_publish_titles,
-        wp_existing_draft_titles=wp_existing_draft_titles,
-    )
     pending_integrity_failure: dict[str, Any] | None = None
 
     for source_hash in candidate_source_hashes:
@@ -1922,9 +1919,8 @@ def _detect_duplicate_candidate(
         if reference is not None:
             if not strict_duplicate_target_integrity:
                 if widget_script_same_source_exempt and _should_exempt_widget_script_same_source_duplicate(
-                    candidate_source_url_pairs,
+                    source_hash,
                     reference,
-                    has_other_duplicate_signal=has_non_same_source_duplicate_signal,
                 ):
                     continue
                 return _duplicate_reference("wp_publish", "same_source_url", reference)
@@ -1936,9 +1932,8 @@ def _detect_duplicate_candidate(
             )
             if bool(integrity_payload.get("duplicate_integrity_ok")):
                 if widget_script_same_source_exempt and _should_exempt_widget_script_same_source_duplicate(
-                    candidate_source_url_pairs,
+                    source_hash,
                     reference,
-                    has_other_duplicate_signal=has_non_same_source_duplicate_signal,
                 ):
                     continue
                 return _duplicate_reference(

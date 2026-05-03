@@ -78,6 +78,10 @@ from src.postgame_strict_template import (
     has_sufficient_for_render as _postgame_strict_has_sufficient_for_render,
     render_postgame_strict_body as _postgame_strict_render,
 )
+from src.postgame_strict_fact_recovery import (
+    postgame_strict_fact_recovery_enabled as _postgame_strict_fact_recovery_enabled,
+    recover_postgame_strict_payload as _recover_postgame_strict_payload,
+)
 from src import llm_call_dedupe as _llm_call_dedupe
 from src.gemini_cache import (
     DEFAULT_MODEL_NAME as GEMINI_CACHE_MODEL_NAME,
@@ -5368,6 +5372,14 @@ def _maybe_render_postgame_article_parts(
     score = _extract_game_score_token(f"{title} {summary}")
 
     if strict_mode and _postgame_strict_enabled():
+        recovery_source_meta: tuple[str, ...] = ()
+        if _postgame_strict_fact_recovery_enabled() and published_at:
+            local_published = published_at if published_at.tzinfo is None else published_at.astimezone(JST)
+            recovery_source_meta = (
+                f"published_at: {published_at.isoformat()}",
+                f"published_date: {local_published.year}年{local_published.month}月{local_published.day}日",
+                f"published_day_label: {local_published.month}月{local_published.day}日",
+            )
         source_block = "\n".join(
             part
             for part in (
@@ -5375,6 +5387,7 @@ def _maybe_render_postgame_article_parts(
                 f"summary: {summary}",
                 f"source_name: {source_name}" if source_name else "",
                 f"source_url: {source_url}" if source_url else "",
+                *recovery_source_meta,
                 "[source_fact_block]",
                 source_fact_block,
             )
@@ -5431,7 +5444,23 @@ def _maybe_render_postgame_article_parts(
             )
             return _PostgameStrictReviewFallback(f"strict_parse_fail:{parse_reason}")
 
+        if _postgame_strict_fact_recovery_enabled():
+            payload, source_block = _recover_postgame_strict_payload(
+                payload,
+                source_text=source_block,
+                source_url=source_url,
+                published_at=published_at,
+            )
         is_valid, errors = _postgame_strict_validate(payload, source_block)
+        if not is_valid and _postgame_strict_fact_recovery_enabled():
+            payload, source_block = _recover_postgame_strict_payload(
+                payload,
+                source_text=source_block,
+                source_url=source_url,
+                published_at=published_at,
+                validation_errors=errors,
+            )
+            is_valid, errors = _postgame_strict_validate(payload, source_block)
         if not is_valid:
             logger.warning("postgame_strict: validation_fail errors=%s -> review", errors)
             _log_article_parts_fallback(

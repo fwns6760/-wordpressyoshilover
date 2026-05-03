@@ -59,7 +59,7 @@
 | **260-MKT fan-original article types and templates** | HOLD / design only。RC / T1 / 262-QA / 263-QA observation 完了 + user 明示 GO 後に 261-MKT-PILOT 起動判断 | 大手新聞の後追いではない巨人ファン向け独自記事型 6 型のテンプレ設計、実装しない |
 | **261-MKT-PILOT (予約)** | HOLD / 261-PILOT 起動条件 達成後 RESUMABLE | 260-MKT で設計した 6 型から手動/半自動で 3 型 pilot、3-5 本評価、実装ではない |
 | **234-impl-7 probable_starter / pregame body hardening** | READY_FOR_AUTH_EXECUTOR。repo実装済みだが残りは live handoff / observation 判断のため waiting へ移動 | live反映が必要な時だけ、Acceptance Pack と rollback target を確認して戻す |
-| **291-OBSERVE candidate terminal outcome contract** | WAITING_PARENT / subtask-9 repo impl returned。`ENABLE_NARROW_UNLOCK_SUBTYPE_AWARE` 追加、deterministic subtype-aware narrow unlock と exclusion 維持を local verify 済み | Claude は push と fetcher rebuild / Cloud Run update / env apply 判定を行う。親 ticket 自体は waiting 維持、global gate 緩和はしない |
+| **291-OBSERVE candidate terminal outcome contract** | WAITING_PARENT / subtask-9 + subtask-10b repo impl returned。`ENABLE_NARROW_UNLOCK_SUBTYPE_AWARE` と `ENABLE_POSTGAME_STRICT_FACT_RECOVERY` を追加し、strict rescue 4 proposals / fixture 8 / exclusion 維持を local verify 済み | Claude は push と fetcher rebuild / Cloud Run update / Acceptance Pack 判定後の env apply (`ENABLE_NARROW_UNLOCK_SUBTYPE_AWARE` / `ENABLE_POSTGAME_STRICT_FACT_RECOVERY`) を決める。親 ticket 自体は waiting 維持、global gate 緩和はしない |
 | **251/252/253/264/274/283/288/294/295/296** | HOLD / BACKLOG / DESIGN_ONLY / READY_FOR_USER_APPLY 系。active から waiting へ整理 | 各 ticket の解除条件または user GO が来た時 |
 
 ## いま動かす指示

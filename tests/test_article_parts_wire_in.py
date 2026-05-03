@@ -53,7 +53,11 @@ class ArticlePartsWireInTests(unittest.TestCase):
                 with patch.object(rss_fetcher, "_fetch_team_stats_block_for_strict_article", return_value=""):
                     with patch.object(rss_fetcher, "_find_related_posts_for_article", return_value=[]):
                         with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=gemini_return) as mock_legacy:
-                            with patch.object(rss_fetcher, "_request_gemini_strict_text", return_value=parts_response or "") as mock_parts_request:
+                            with patch.object(
+                                rss_fetcher,
+                                "_gemini_text_with_cache",
+                                return_value=(parts_response or "", {}),
+                            ) as mock_parts_request:
                                 if capture_logs:
                                     with self.assertLogs("rss_fetcher", level="INFO") as logs:
                                         blocks, ai_body = rss_fetcher.build_news_block(
@@ -202,7 +206,7 @@ class ArticlePartsWireInTests(unittest.TestCase):
                 with patch.object(rss_fetcher, "fetch_today_giants_lineup_stats_from_yahoo", return_value=[]):
                     with patch.object(rss_fetcher, "_find_related_posts_for_article", return_value=[]):
                         with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=lineup_ai_body) as mock_legacy:
-                            with patch.object(rss_fetcher, "_request_gemini_strict_text") as mock_parts_request:
+                            with patch.object(rss_fetcher, "_gemini_text_with_cache") as mock_parts_request:
                                 with patch.object(rss_fetcher, "_build_game_parts_prompt_postgame") as mock_prompt:
                                     with patch.object(rss_fetcher, "render_postgame") as mock_render:
                                         blocks, ai_body = rss_fetcher.build_news_block(

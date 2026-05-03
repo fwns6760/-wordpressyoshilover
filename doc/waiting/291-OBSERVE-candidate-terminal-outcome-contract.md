@@ -4,8 +4,8 @@
 |---|---|
 | ticket_id | 291-OBSERVE-candidate-terminal-outcome-contract |
 | priority | P0 equivalent(silent skip 再発防止の契約) |
-| status | DESIGN_DRAFTED(read-only decomposition complete、impl hold) |
-| owner | Claude(audit/draft) → Codex(将来 impl) |
+| status | WAITING_PARENT(subtask-9 + subtask-10b repo impl returned、live apply / observation hold) |
+| owner | Claude(audit/accept/push) → Codex(repo impl returned) |
 | lane | OBSERVE |
 | ready_for | 289 / 293 の live visibility 確認 + user 明示 GO。292 は standalone fire せず本 ticket 配下で durable ledger 方針を維持 |
 | blocked_by | 289-OBSERVE live 可視化確認、293-COST live 可視化確認、user GO |
@@ -618,8 +618,45 @@ title / 数字 / 重複の扱い:
   - Acceptance Pack 判定後に `ENABLE_NARROW_UNLOCK_SUBTYPE_AWARE=1` apply 可否を決める
   - 30-60min verify で publish/review outcome を観測する
 
+## BUG-004+291 subtask-10b repo implementation return(2026-05-03)
+
+- write scope:
+  - `src/postgame_strict_fact_recovery.py`
+  - `src/rss_fetcher.py`
+  - `tests/test_postgame_strict_fact_recovery.py`
+  - `tests/test_postgame_strict_template.py`
+  - `tests/test_article_parts_wire_in.py`
+  - `tests/test_gemini_cache.py`
+- new env flag: `ENABLE_POSTGAME_STRICT_FACT_RECOVERY`
+  - default OFF
+  - unset / `0` / falsey = live-inert
+- implemented narrow proposals(orthogonal to subtask-9):
+  - `published_at` / `published_date` / `published_day_label` を strict source input と repair source text に注入
+  - `required_facts_missing:giants_score` のときだけ whitelist domain から lead/body slice を追加取得
+  - `extract_scores` / `extract_dates` の deterministic prefill で `game_date` / `opponent` / `giants_score` / `opponent_score` / `result` を補完
+  - decisive-event phrase を canonical token 付き event へ正規化し、strict highlight contract を通す
+- preserved exclusions under flag ON:
+  - `postgame_strict` gate 自体の required facts / contract fail 条件は不変
+  - repair 後も `required_facts_missing` が残る候補は review 維持
+  - MLB / mixed-team / non-Giants scope leak(`694560` など) は rescue 対象外
+  - duplicate / stale / hard-stop / numeric / placeholder / body-contract exclusion は不変
+  - new LLM call / mail volume / env apply / Scheduler / source expansion は 0
+- fixture verification(8):
+  - positive rescue: `202605020001031`, `202605020001323`, `202605010002047`, `202605010001921`
+  - negative keep-review: `694560`, `202605020000169`, `202605010002174`, `694482`
+- local verification:
+  - `tests/test_postgame_strict_fact_recovery.py`: 3 pass / 8 subtests pass
+  - `tests/test_rss_fetcher_*.py tests/test_postgame_strict_template.py tests/test_extract_*.py`: 79 pass
+  - `tests/test_article_parts_wire_in.py tests/test_gemini_cache.py`: 21 pass
+  - full `pytest tests/ -q` tail: `2155 passed, 3 warnings, 680 subtests passed`
+- next Claude decision:
+  - push
+  - fetcher rebuild / Cloud Run update
+  - Acceptance Pack 判定後に `ENABLE_POSTGAME_STRICT_FACT_RECOVERY=1` apply 可否を決める
+  - `ENABLE_NARROW_UNLOCK_SUBTYPE_AWARE` と独立に 30-60min verify を実施する
+
 ## Folder cleanup note(2026-05-03)
 
 - 本 ticket は `waiting/` 維持。実装 fire はまだしない。
-- 2026-05-03 commit では `subtask-9 subtype-aware narrow unlock` の repo impl と local test だけ返した。deploy / env / Scheduler / SEO / WP 状態変更は 0。
+- 2026-05-03 commit では `subtask-9 subtype-aware narrow unlock` と `subtask-10b postgame_strict fact recovery` の repo impl と local test だけ返した。deploy / env / Scheduler / SEO / WP 状態変更は 0。
 - 289 / 293 の live 可視化確認と user GO が揃うまで、親 ticket 全体は `waiting/` から動かさない。

@@ -357,6 +357,12 @@ def test_request_gemini_strict_signature_unchanged():
         "min_chars",
         "log_label",
         "source_url",
+        "budget_post_id",
+        "budget_content_hash",
+        "budget_prompt_template_id",
+        "budget_source_url_hash",
+        "budget_record_enabled",
+        "now",
     ]
     assert all(parameter.kind is inspect.Parameter.KEYWORD_ONLY for parameter in signature.parameters.values())
 

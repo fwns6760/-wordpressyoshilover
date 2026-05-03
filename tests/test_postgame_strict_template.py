@@ -115,7 +115,7 @@ class PostgameStrictTemplateTests(unittest.TestCase):
         logger = logging.getLogger("test_postgame_strict")
         with patch.dict("os.environ", self.strict_env(flag), clear=False):
             with patch.object(rss_fetcher, "_build_source_fact_block", return_value=self.source_text):
-                with patch.object(rss_fetcher, "_request_gemini_strict_text", return_value=raw_text):
+                with patch.object(rss_fetcher, "_gemini_text_with_cache", return_value=(raw_text, {})):
                     with patch.object(rss_fetcher, "_postgame_strict_validate", return_value=validate_result):
                         with patch.object(rss_fetcher, "_postgame_strict_has_sufficient_for_render", return_value=has_sufficient):
                             with patch.object(rss_fetcher, "_postgame_strict_render", return_value=render_result):
@@ -361,8 +361,8 @@ class PostgameStrictTemplateTests(unittest.TestCase):
                     with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=self.legacy_ai_body()) as mock_legacy:
                         with patch.object(
                             rss_fetcher,
-                            "_request_gemini_strict_text",
-                            return_value=json.dumps(self.valid_payload(), ensure_ascii=False),
+                            "_gemini_text_with_cache",
+                            return_value=(json.dumps(self.valid_payload(), ensure_ascii=False), {}),
                         ) as mock_request:
                             blocks, ai_body = rss_fetcher.build_news_block(
                                 title="【巨人】阪神に3-2で勝利　岡田悠希が決勝打",
@@ -394,7 +394,7 @@ class PostgameStrictTemplateTests(unittest.TestCase):
             with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
                 with patch.object(rss_fetcher, "_find_related_posts_for_article", return_value=[]):
                     with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=self.legacy_ai_body()) as mock_legacy:
-                        with patch.object(rss_fetcher, "_request_gemini_strict_text") as mock_request:
+                        with patch.object(rss_fetcher, "_gemini_text_with_cache") as mock_request:
                             _blocks, ai_body = rss_fetcher.build_news_block(
                                 title="【巨人】阪神に3-2で勝利　岡田悠希が決勝打",
                                 summary="2026年4月21日、巨人が阪神に3-2で勝利した。岡田悠希が8回に決勝打を放った。",
@@ -435,7 +435,7 @@ class PostgameStrictTemplateTests(unittest.TestCase):
                 with patch.object(rss_fetcher, "fetch_today_giants_lineup_stats_from_yahoo", return_value=[]):
                     with patch.object(rss_fetcher, "_find_related_posts_for_article", return_value=[]):
                         with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=lineup_ai_body) as mock_legacy:
-                            with patch.object(rss_fetcher, "_request_gemini_strict_text") as mock_request:
+                            with patch.object(rss_fetcher, "_gemini_text_with_cache") as mock_request:
                                 _blocks, ai_body = rss_fetcher.build_news_block(
                                     title="【巨人】今日のスタメン発表　1番丸、4番岡本",
                                     summary="巨人が阪神戦のスタメンを発表した。1番に丸佳浩、4番に岡本和真が入った。",
@@ -491,7 +491,7 @@ class PostgameStrictTemplateTests(unittest.TestCase):
 
     def test_strict_off_falls_back_to_legacy_unchanged(self):
         with patch.dict("os.environ", self.strict_env("0"), clear=False):
-            with patch.object(rss_fetcher, "_request_gemini_strict_text") as mock_request:
+            with patch.object(rss_fetcher, "_gemini_text_with_cache") as mock_request:
                 result = rss_fetcher._maybe_render_postgame_article_parts(
                     title="【巨人】阪神に3-2で勝利　岡田悠希が決勝打",
                     summary="2026年4月21日、巨人が阪神に3-2で勝利した。岡田悠希が8回に決勝打を放った。",

@@ -74,8 +74,13 @@ https://twitter.com/TokyoGiants/status/2047663023427600637
 - `opponent`: `DeNA`
 - `result`: `not present in source/meta`
 - `pitching_line`: `七回途中無失点`
+- `venue`: `not present in source/meta`
+- `game_date`: `not present in source/meta`
+- `starter_pitcher`: `not present in source/meta`
+- `opponent_lineup_link`: `not present in source/meta`
 - `modified`: `2026-04-24T22:30:41`
 - `fetched_at`: `2026-04-26T01:23:30.081474+00:00`
+- `lineup_order`: `not present in source/meta`
 
 ## 修正文候補
 
@@ -157,10 +162,14 @@ https://twitter.com/TokyoGiants/status/2047663023427600637
 
 ## acceptance check
 
+- `recommend_for_apply`: `yes`
+- `mandatory_pass_count`: `5/5`
+- `desirable_pass_count`: `3/3`
+
 ### mandatory
 - `no_source_meta_fabrication`: `PASS` (ok)
 - `no_placeholder_residual`: `PASS` (ok)
-- `rule_list_explicit`: `PASS` (rule results rendered explicitly)
+- `rule_list_explicit`: `PASS` (rendered=5, applied=4)
 - `unified_diff_format`: `PASS` (ok)
 - `wp_gemini_deploy_zero`: `PASS` (preview-only script; WP write 0 / Gemini call 0 / deploy 0)
 

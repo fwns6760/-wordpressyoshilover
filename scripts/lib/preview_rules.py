@@ -216,6 +216,28 @@ def template_align_farm_result(text: str, facts: dict[str, Any]) -> tuple[str, R
     )
 
 
+def template_align_lineup(text: str, facts: dict[str, Any]) -> tuple[str, RuleResult]:
+    blocks: list[str] = [
+        "【試合概要】",
+        *_lineup_overview_lines(facts),
+        "",
+        "【スタメン一覧】",
+        *_lineup_order_lines(facts),
+        "",
+        "【先発投手】",
+        *_lineup_starter_lines(facts),
+        "",
+        "【注目ポイント】",
+        *_lineup_focus_lines(facts),
+    ]
+    fixed = "\n".join(blocks).strip()
+    return fixed, RuleResult(
+        name="template_align_lineup",
+        applied=fixed.strip() != text.strip(),
+        details=f"orders={len(facts.get('lineup_order') or [])}",
+    )
+
+
 def template_align_manager(text: str, facts: dict[str, Any]) -> tuple[str, RuleResult]:
     lines = ["### 監督コメントメモ"]
     speaker = facts.get("speaker_name")
@@ -256,7 +278,9 @@ def apply_preview_pipeline(
     working, result = condense_long_speculation(working)
     rule_results.append(result)
 
-    if subtype == "postgame":
+    if subtype == "lineup":
+        working, result = template_align_lineup(working, facts)
+    elif subtype == "postgame":
         working, result = template_align_postgame(working, facts)
     elif subtype == "farm_result":
         working, result = template_align_farm_result(working, facts)
@@ -267,6 +291,15 @@ def apply_preview_pipeline(
 
 
 def _allowed_sections_for_subtype(subtype: str) -> set[str]:
+    if subtype == "lineup":
+        return {
+            "【試合概要】",
+            "【二軍試合概要】",
+            "【スタメン一覧】",
+            "【二軍スタメン一覧】",
+            "【先発投手】",
+            "【注目ポイント】",
+        }
     if subtype == "postgame":
         return {"【試合結果】", "【ハイライト】", "【選手成績】", "【試合展開】"}
     if subtype == "farm_result":
@@ -314,6 +347,60 @@ def _farm_result_bullets(facts: dict[str, Any]) -> list[str]:
     if not bullets:
         bullets.append("- 試合結果や選手成績は source/meta にある範囲だけを残す。")
     return _dedupe_bullets(bullets)
+
+
+def _lineup_overview_lines(facts: dict[str, Any]) -> list[str]:
+    game_date = facts.get("game_date")
+    opponent = facts.get("opponent")
+    venue = facts.get("venue")
+    if game_date and opponent and venue:
+        first_line = f"- {game_date}の{opponent}戦。球場は{venue}。"
+    elif opponent and venue:
+        first_line = f"- 巨人は{opponent}戦に臨む。球場は{venue}。"
+    elif opponent:
+        first_line = f"- 巨人は{opponent}戦に臨む。"
+    elif venue:
+        first_line = f"- 球場は{venue}。"
+    else:
+        first_line = "- source/meta にある試合前情報だけを整理する。"
+    return [first_line, "- 打順と守備位置は source/meta にある範囲だけを残す。"]
+
+
+def _lineup_order_lines(facts: dict[str, Any]) -> list[str]:
+    entries = facts.get("lineup_order") or []
+    if not entries:
+        return ["- 打順情報は source/meta にないため補完しない。"]
+    return [str(entry["rendered"]) for entry in entries]
+
+
+def _lineup_starter_lines(facts: dict[str, Any]) -> list[str]:
+    starter_pitcher = facts.get("starter_pitcher")
+    if starter_pitcher:
+        return [f"- 巨人: {starter_pitcher}"]
+    return ["- 先発投手名は source/meta にないため補完しない。"]
+
+
+def _lineup_focus_lines(facts: dict[str, Any]) -> list[str]:
+    entries = facts.get("lineup_order") or []
+    if not entries:
+        return ["- 打順の並び以外は source/meta にある範囲だけで確認する。"]
+
+    focus_lines: list[str] = []
+    top_entries = entries[:3]
+    if top_entries:
+        top_rendered = "、".join(
+            f"{entry['order']}番{entry['player']}" for entry in top_entries
+        )
+        focus_lines.append(f"- 上位は{top_rendered}。")
+
+    if len(entries) >= 3:
+        bottom_entries = entries[-3:]
+        bottom_rendered = "、".join(
+            f"{entry['order']}番{entry['player']}" for entry in bottom_entries
+        )
+        focus_lines.append(f"- 下位は{bottom_rendered}。")
+
+    return _dedupe_bullets(focus_lines or ["- 打順の要点だけを source/meta から残す。"])
 
 
 def _build_score_summary(facts: dict[str, Any], label: str) -> str | None:

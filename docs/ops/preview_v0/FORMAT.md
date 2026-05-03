@@ -15,14 +15,19 @@
 4. `## source/meta facts`
    - `guarded_publish_history` と backup 本文から抽出した facts
    - `source/meta` にない値は `not present in source/meta`
+   - `lineup` は `venue`, `game_date`, `starter_pitcher`, `opponent_lineup_link`, `lineup_order` を追加で出す
 5. `## 修正文候補`
    - subtype template に寄せた preview-only markdown
    - source-backed facts と静的文言だけで構成する
+   - `lineup` は `【試合概要】 / 【スタメン一覧】 / 【先発投手】 / 【注目ポイント】` を固定順で出す
 6. `## diff`
    - `original.normalized -> preview.det` の unified diff
 7. `## 適用 rule list`
    - deterministic rule ごとの `applied` / `not_applied`
 8. `## acceptance check`
+   - `recommend_for_apply`
+   - `mandatory_pass_count`
+   - `desirable_pass_count`
    - mandatory 5
    - desirable 3
 
@@ -54,4 +59,4 @@
 ## note on existing 5 samples
 
 - `sample_postgame_1..3.md` / `sample_farm_result_1..2.md` は manual preview の初期成果物。
-- scriptized generator の出力は core section contract を維持したまま、`## acceptance check` を明示追加する。
+- scriptized generator の出力は core section contract を維持したまま、`## acceptance check` に summary + gate 判定を明示追加する。

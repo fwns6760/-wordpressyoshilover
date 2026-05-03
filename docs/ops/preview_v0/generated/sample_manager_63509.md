@@ -60,8 +60,13 @@ https://twitter.com/hochi_giants/status/2047964663707508869
 - `opponent`: `not present in source/meta`
 - `result`: `not present in source/meta`
 - `pitching_line`: `not present in source/meta`
+- `venue`: `not present in source/meta`
+- `game_date`: `not present in source/meta`
+- `starter_pitcher`: `not present in source/meta`
+- `opponent_lineup_link`: `not present in source/meta`
 - `modified`: `2026-04-25T18:31:18`
 - `fetched_at`: `2026-04-26T01:23:30.081474+00:00`
+- `lineup_order`: `not present in source/meta`
 
 ## 修正文候補
 
@@ -127,10 +132,14 @@ https://twitter.com/hochi_giants/status/2047964663707508869
 
 ## acceptance check
 
+- `recommend_for_apply`: `yes`
+- `mandatory_pass_count`: `5/5`
+- `desirable_pass_count`: `3/3`
+
 ### mandatory
 - `no_source_meta_fabrication`: `PASS` (ok)
 - `no_placeholder_residual`: `PASS` (ok)
-- `rule_list_explicit`: `PASS` (rule results rendered explicitly)
+- `rule_list_explicit`: `PASS` (rendered=5, applied=3)
 - `unified_diff_format`: `PASS` (ok)
 - `wp_gemini_deploy_zero`: `PASS` (preview-only script; WP write 0 / Gemini call 0 / deploy 0)
 

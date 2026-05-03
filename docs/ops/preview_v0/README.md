@@ -4,8 +4,8 @@
 
 ## scope
 
-- 対象 subtype: `postgame`, `farm_result`, `manager` (`manager` は generated sample で拡張)
-- サンプル数: `8` (`manual 5 + generated 3`)
+- 対象 subtype: `postgame`, `farm_result`, `manager`, `lineup`
+- サンプル数: `15` (`manual 5 + generated 10`)
 - 入力 source: `logs/cleanup_backup/*.json` の read-only backup
 - 実施しないこと: WP write / publish 状態変更 / Gemini call / deploy / env 変更
 
@@ -23,7 +23,9 @@
 - CTA / fan-voice / related-posts のような preview 検証に不要な補助要素削除
 - 冗長な一般論 / 推測文の短文化
 - subtype ごとの固定テンプレへ寄せ
+- `lineup` は `【試合概要】 / 【スタメン一覧】 / 【先発投手】 / 【注目ポイント】` の order 構造を保持
 - source/meta にない数字 / 勝敗 / 選手名 / 投手成績は補完しない
+- mandatory 5 / desirable 3 を sample ごとに自動評価し、`recommend_for_apply` を出力する
 
 format contract:
 
@@ -44,6 +46,7 @@ optional:
 
 - `--history-path logs/guarded_publish_history.jsonl`
 - `--yellow-log-path logs/guarded_publish_yellow_log.jsonl`
+- `--subtype lineup`
 - `--subtype-map 63466=postgame 63464=farm_result 63509=manager`
 
 ## sample index
@@ -71,17 +74,45 @@ optional:
   - post_id: `63249`
   - low-quality pattern: `title restatement only`, `empty sections`, `generic filler`
 
-### generated samples (3)
+### generated samples (10)
 
+- `generated/sample_lineup_63393.md`
+  - backup: `logs/cleanup_backup/63393_20260426T012330.json`
+  - post_id: `63393`
+  - low-quality pattern: `heading sequence keep`, `title_body_mismatch_partial`, `order/starter preserve`
+- `generated/sample_lineup_63272.md`
+  - backup: `logs/cleanup_backup/63272_20260426T030552.json`
+  - post_id: `63272`
+  - low-quality pattern: `heading_sentence_as_h3`, `empty starter heading`, `lineup structure retention`
 - `generated/sample_postgame_63466.md`
   - backup: `logs/cleanup_backup/63466_20260426T012330.json`
   - post_id: `63466`
   - low-quality pattern: `subtype_unresolved`, `anonymous player slot`, `loss-side inning narrative overgrowth`
+- `generated/sample_postgame_63479.md`
+  - backup: `logs/cleanup_backup/63479_20260426T012330.json`
+  - post_id: `63479`
+  - low-quality pattern: `missing_primary_source`, `draw-side summary drift`, `anonymous slugger slot`
+- `generated/sample_postgame_63515.md`
+  - backup: `logs/cleanup_backup/63515_20260426T012330.json`
+  - post_id: `63515`
+  - low-quality pattern: `speculative_title`, `hero-copy contamination`, `anonymous player slot`
 - `generated/sample_farm_result_63464.md`
   - backup: `logs/cleanup_backup/63464_20260426T012330.json`
   - post_id: `63464`
   - low-quality pattern: `anonymous player slot`, `loss-side farm summary`, `missing_primary_source`
+- `generated/sample_farm_result_63510.md`
+  - backup: `logs/cleanup_backup/63510_20260426T012330.json`
+  - post_id: `63510`
+  - low-quality pattern: `missing_primary_source`, `heading_sentence_as_h3`, `score-only recap drift`
+- `generated/sample_farm_result_63230.md`
+  - backup: `logs/cleanup_backup/63230_20260426T030552.json`
+  - post_id: `63230`
+  - low-quality pattern: `RT contamination`, `stale_for_breaking_board`, `farm result over-template`
 - `generated/sample_manager_63509.md`
   - backup: `logs/cleanup_backup/63509_20260426T012330.json`
   - post_id: `63509`
   - low-quality pattern: `title_body_mismatch_partial`, `heading_sentence_as_h3`, `fan voice contamination`
+- `generated/sample_manager_63222.md`
+  - backup: `logs/cleanup_backup/63222_20260426T030552.json`
+  - post_id: `63222`
+  - low-quality pattern: `quote_misalign`, `speculative_title`, `heading_sentence_as_h3`

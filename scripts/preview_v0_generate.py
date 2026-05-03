@@ -9,7 +9,7 @@ from lib.preview_facts import (
     load_jsonl_index,
     normalize_html,
 )
-from lib.preview_render import render_acceptance_check, render_sample
+from lib.preview_render import evaluate_acceptance, render_sample
 from lib.preview_rules import apply_preview_pipeline
 
 
@@ -50,6 +50,11 @@ def parse_args() -> argparse.Namespace:
         default=[],
         help="Optional explicit subtype mapping in post_id=subtype form.",
     )
+    parser.add_argument(
+        "--subtype",
+        default=None,
+        help="Optional subtype override applied to every post_id not present in --subtype-map.",
+    )
     return parser.parse_args()
 
 
@@ -73,9 +78,9 @@ def main() -> int:
         backup_doc = load_backup(backup_path)
         facts = extract_preview_facts(history_entry, backup_doc)
         original = normalize_html(backup_doc["content"]["rendered"])
-        subtype = subtype_map.get(post_id) or facts.get("subtype_hint") or "manager"
+        subtype = subtype_map.get(post_id) or args.subtype or facts.get("subtype_hint") or "manager"
         fixed, rule_results = apply_preview_pipeline(original, facts, subtype)
-        acceptance = render_acceptance_check(original, fixed, facts)
+        acceptance = evaluate_acceptance(original, fixed, facts, rule_results)
         quality_flags = _extract_quality_flags(yellow_index.get(post_id))
 
         sample_id = f"sample_{subtype}_{post_id}"

@@ -233,19 +233,39 @@ title / 数字 / 重複の扱い:
 - `publish=0` 原因分解で `body_contract_fail` を他理由と分離できる
 - mail volume / Gemini call / source 数 / SEO 設定は増えない
 
-## user-visible / ledger-visible な受け入れ条件
+## BUG-004+291 canonical acceptance criteria(2026-05-03 lock)
 
-1. **完全性**: prepared candidate 全部が 5 terminal state のいずれかに分類される(unaccounted=0、 daily KPI 集計可能)
-2. **通知 / ledger**:
-   - `publish` / `review_notified` / `hold_notified` は mail or digest で届く
-   - `post_gen_validate` / `preflight_skip` は user-visible mail or digest で追える
-   - `body_contract_fail` は durable ledger/log/state row に残り、silent drop にならない
-   - `body_contract_fail` は per-post 通常 mail にしない
-3. **dedup**: 同 source_url_hash + 同 terminal state は 24h 1 度(通知爆発防止)
-4. **subject 識別**: 件名 prefix で terminal state 判別可能(`【公開済｜...】` / `【要review｜...】` / `【hold｜...】` / `【要review｜post_gen_validate】` 等)
-5. **rollback**: env flag で全契約を OFF できる(問題発生時即座に通知導線元に戻せる)
-6. **観察**: GCP Logging で `event=candidate_terminal_outcome` が emit、24h で集計可能
-7. **silent ゼロ**: 任意の rss_fetcher trigger で terminal state の無い prepared candidate=0 assert
+`BUG-004+291` の Acceptance Pack / acceptance report は `docs/ops/ACCEPTANCE_PACK_TEMPLATE.md` の 13 項目 format に従う。以下 7 項目が親 ticket の repo 正本 acceptance であり、個別 subtask の判断はこれを弱めてはならない。
+
+1. **5 terminal outcome visibility + queued visibility**
+   - terminal outcome は `publish` / `review_notified` / `hold_notified` / `skip_accounted` / `error_accounted` の 5 つで固定
+   - `queued_visible` は pre-terminal の可視 state としてのみ許可し、最終的には必ず上記 5 outcome のいずれかへ drain する
+   - prepared candidate の silent skip は 0、`unaccounted=0` を維持する
+2. **subtype high-confidence + source_url + Giants target + body_contract pass は `【公開通知】` path に進む**
+   - `article_subtype` が deterministic に高 confidence
+   - `source_url` があり、巨人対象判定を通り、`body_contract` を通る候補は review/hold/skip へ落とさず publish-notice path へ到達する
+   - 対象は `postgame` / `manager_comment` / `coach_comment` / `player_comment` / `farm_result` / `farm_lineup` / `pregame` / `probable_starter` / `lineup` / `roster_notice` / `injury_recovery_notice` / `farm_player_result` の narrow unlock 対象に限定する
+3. **既存 exclusion は緩和しない**
+   - `postgame strict` / `stale_postgame` / duplicate integrity / `hard_stop` / numeric guard / placeholder / `body_contract_fail` は exclusion 維持
+   - live-update fragment / source missing / non-Giants / mixed-team / subtype unknown も publish 対象へ戻さない
+4. **mail volume は不変または減少**
+   - 新しい per-post mail emission は増やさない
+   - 新しい通常 Gmail path は追加しない
+   - `body_contract_fail` は durable ledger へ残し、通常 mail class へは昇格させない
+5. **Gemini call は不変または減少**
+   - deterministic rescue / duplicate integrity / ledger wiring のみで成立させる
+   - 新しい LLM fallback や追加 prompt path は作らない
+6. **rollback target は 3 dimensions で記録する**
+   - `env`: exact apply / remove command
+   - `image`: current live before apply / target after apply / exact rollback command
+   - `GitHub`: release-composition commit set と exact `git revert` path
+   - いずれかが `UNKNOWN` / placeholder の時点で acceptance は `HOLD`
+7. **post-deploy verify は 30-60min read-only で固定する**
+   - `weak_title_subtype_aware` emit 有無
+   - `duplicate_target_integrity_check` event
+   - publish/review/hold/skip/`queued_visible` drain の可視化
+   - 誤 publish 0、silent skip 0、mail/Gemini 増加 0
+   - verify command は Pack に明示し、`NOT_RUN` / `PASS` / `FAIL` / `PARTIAL` を残す
 
 ## 必須デグレ試験(設計時の契約、impl 時に test 化)
 

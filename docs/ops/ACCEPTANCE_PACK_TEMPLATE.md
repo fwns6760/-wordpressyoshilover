@@ -1,132 +1,205 @@
 # YOSHILOVER ACCEPTANCE_PACK_TEMPLATE
 
-Last updated: 2026-05-02 JST
+Last updated: 2026-05-03 JST
 
-Use this when a change is `USER_DECISION_REQUIRED`. Do not use a Pack to offload UNKNOWN technical judgment to the user; UNKNOWN means HOLD until Claude resolves it. `CLAUDE_AUTO_GO` changes need evidence, post-deploy verify, production-safe regression evidence, and Decision Batch reporting, not user approval.
+This is the canonical Pack shape for:
 
-## Decision Header
+- `USER_DECISION_REQUIRED`
+- `CLAUDE_AUTO_GO` work that still needs normalized evidence
+- read-only / doc-only / acceptance-draft work that must keep the same field split
+
+Do not use a Pack to offload unresolved technical judgment to the user. If rollback, verify, cost, mail, Gemini, or blast-radius facts are unknown, the Pack stays `HOLD`.
+
+## Canonical 13-item format
+
+Every Pack must keep these 13 sections in this order:
+
+1. `DECISION`
+2. `EXECUTION`
+3. `EVIDENCE`
+4. `USER_GO_REQUIRED`
+5. `USER_GO_REASON`
+6. `NEXT_REVIEW_AT`
+7. `EXPIRY`
+8. `ROLLBACK_TARGETS`
+9. `POST_DEPLOY_VERIFY`
+10. `STOP_CONDITION`
+11. `REGRESSION`
+12. `MAIL_GEMINI_DELTA`
+13. `OPEN_QUESTIONS`
+
+## Field rules
+
+- `DECISION`
+  - write `recommendation`, `classification`, `decision_owner`, and a one-line `reason`
+  - `classification` is `CLAUDE_AUTO_GO`, `USER_DECISION_REQUIRED`, or `HOLD`
+- `EXECUTION`
+  - split `scope` and `non_scope`
+  - state whether live mutation exists; do not bury deploy/env/source/mail changes in prose
+- `EVIDENCE`
+  - keep 5 buckets even when empty: `commit`, `image`, `env`, `execution`, `log`
+  - write `none` when not applicable; do not omit the bucket
+- `USER_GO_REQUIRED`
+  - always write `is` and `category`
+  - doc-only / read-only / no-mutation drafts still write `is=false`, `category=none`
+- `USER_GO_REASON`
+  - if `USER_GO_REQUIRED.is=true`, choose exactly one category from the 9 canonical categories below
+  - if `false`, write `none`
+- `NEXT_REVIEW_AT`
+  - state-based only
+  - do not promise a wall-clock time unless a separate runbook already fixed that time
+- `EXPIRY`
+  - write the condition that invalidates the Pack
+  - if fresh evidence or a new live mutation occurs, old Packs expire
+- `ROLLBACK_TARGETS`
+  - always split into 3 dimensions: `env`, `image`, `github`
+  - use exact commands or explicit `none`
+  - placeholders and "later decide" are treated as `HOLD`
+- `POST_DEPLOY_VERIFY`
+  - keep the section even for doc-only / read-only work
+  - if no production reflection exists, set `required=false` and write the reason
+- `STOP_CONDITION`
+  - flat list of observable triggers only
+  - if the stop condition cannot be observed, the Pack is incomplete
+- `REGRESSION`
+  - separate required safe checks from forbidden expansion
+  - production-safe checks must stay read-only unless the ticket explicitly permits more
+- `MAIL_GEMINI_DELTA`
+  - state `unchanged`, `decrease`, or bounded `increase`
+  - `unknown` is not allowed; `unknown => HOLD`
+- `OPEN_QUESTIONS`
+  - flat list only
+  - empty list is valid
+
+## USER_GO_REASON canonical categories(9)
+
+Use exactly one of these when `USER_GO_REQUIRED.is=true`:
+
+1. `deploy`
+2. `flag_env`
+3. `scheduler`
+4. `seo`
+5. `source_add`
+6. `gemini_increase`
+7. `mail_increase`
+8. `wp_body`
+9. `publish_state`
+
+When `USER_GO_REQUIRED.is=false`, write `category: none`.
+
+## Canonical skeleton
 
 ```yaml
-ticket:
-recommendation: GO | HOLD | REJECT
-decision_owner: user
-execution_owner: Claude | Codex
-risk_class:
-classification: CLAUDE_AUTO_GO | USER_DECISION_REQUIRED | HOLD
-user_go_reason:
-expires_at:
+DECISION:
+  ticket:
+  recommendation: GO | HOLD | REJECT | OBSERVED_OK
+  classification: CLAUDE_AUTO_GO | USER_DECISION_REQUIRED | HOLD
+  decision_owner: Claude | user
+  reason:
+
+EXECUTION:
+  owner:
+  scope:
+  non_scope:
+  live_mutation: none | deploy | env | scheduler | seo | source | mail | wp | mixed
+
+EVIDENCE:
+  commit:
+    - hash:
+      summary:
+  image:
+    current:
+    target:
+  env:
+    add_or_change:
+    remove_or_revert:
+  execution:
+    command_or_job:
+    observed_result:
+  log:
+    commands:
+    observed_signals:
+
+USER_GO_REQUIRED:
+  is: true | false
+  category: none | deploy | flag_env | scheduler | seo | source_add | gemini_increase | mail_increase | wp_body | publish_state
+
+USER_GO_REASON:
+  summary:
+  max_risk:
+  rollback_ready: yes | no
+
+NEXT_REVIEW_AT:
+  trigger:
+
+EXPIRY:
+  invalidates_when:
+
+ROLLBACK_TARGETS:
+  env:
+    apply:
+    rollback:
+    owner:
+  image:
+    current_live_before_apply:
+    target_after_apply:
+    rollback:
+    owner:
+  github:
+    release_composition_commits:
+    revert:
+    owner:
+
+POST_DEPLOY_VERIFY:
+  required: true | false
+  commands:
+    - ...
+  success_signals:
+    - ...
+  observed_status: NOT_RUN | PASS | FAIL | PARTIAL
+
+STOP_CONDITION:
+  - ...
+
+REGRESSION:
+  required_checks:
+    - ...
+  forbidden_expansion:
+    - ...
+
+MAIL_GEMINI_DELTA:
+  mail_delta:
+  gemini_delta:
+  invariant:
+
+OPEN_QUESTIONS:
+  - ...
 ```
 
-## Required Fields
+## Required invariants
 
-1. Conclusion
-   - GO / HOLD / REJECT
-   - one-sentence reason
+- `CLAUDE_AUTO_GO` work still needs evidence, rollback anchors, and post-deploy verify if production reflection exists.
+- `USER_DECISION_REQUIRED` work must keep the 13-section shape and compress the user ask to `OK / HOLD / REJECT`.
+- `HOLD` means the blocker is internal; do not ask the user to resolve unknown technical fields.
+- `release composition verify` and 3-dimension rollback anchors must exist before production reflection.
+- Exclusion guards such as `hard_stop`, `duplicate`, `numeric`, `placeholder`, `source missing`, and `body_contract` cannot be relaxed silently inside a Pack.
+- Ticket-specific visible intermediate states such as `queued_visible` may appear in a ticket doc, but the Pack must still show how they drain to a final outcome.
 
-2. Scope
-   - exactly what will change
+## Pack outcome rules
 
-3. Non-Scope
-   - what will not change
-   - explicitly mention Cloud Run, Scheduler, SEO, source, Gemini, mail routing if relevant
+- `CLAUDE_AUTO_GO`
+  - `USER_GO_REQUIRED.is=false`
+  - all 13 sections still required
+- `USER_DECISION_REQUIRED`
+  - 13 sections required
+  - append a one-line user reply request
+- `HOLD`
+  - blocker must appear in both `DECISION.reason` and `OPEN_QUESTIONS`
+  - next review trigger must be explicit
 
-4. Current Evidence
-   - commits
-   - tests
-   - logs
-   - current prod state
+## Addendum: 298-Phase3 re-ON packs
 
-5. User-Visible Impact
-   - publish
-   - review mail
-   - hold mail
-   - skip mail
-   - X candidate
-
-6. Mail Volume Impact
-   - expected mails/hour
-   - expected mails/day
-   - MAIL_BUDGET compliance
-   - UNKNOWN means HOLD
-
-7. Gemini / Cost Impact
-   - expected Gemini call delta
-   - source/candidate count impact
-   - UNKNOWN means HOLD
-
-7a. Prompt-ID Cost Review
-   - one row/block per prompt-id touched by the change
-   - prompt-id
-   - Gemini delta estimate/day upper bound
-   - mail volume estimate/hour and /day
-   - API call estimate/day
-   - cost upper bound:
-     - tokens/day
-     - external API calls/day
-     - Cloud Run executions/day
-   - UNKNOWN means HOLD
-
-8. Silent Skip Impact
-   - how every candidate reaches publish/review/hold/skip visibility
-   - internal log only is not enough
-
-9. Preconditions
-   - all must be true before GO
-
-10. Tests
-   - unit tests
-   - smoke checks
-   - regression checks
-   - mail checks
-   - rollback checks
-
-10a. Post-Deploy Verify Plan
-   - image / revision expectation
-   - env / flag expectation
-   - service / job startup check
-   - runtime rollback target
-   - GitHub/source rollback path for failed tests or regression
-   - error trend check
-   - mail volume check
-   - Gemini delta check
-   - silent skip check
-   - Team Shiny From check
-   - publish / review / hold / skip route check
-   - stop condition check
-
-10b. Production-Safe Regression Scope
-   - allowed checks only: read-only, logs, health, mail count, env/revision, Scheduler/job observation, sample article/candidate state, flag OFF/no-send/dry-run-equivalent, existing notification route checks
-   - forbidden checks: bulk mail, source addition, Gemini increase, publish criteria change, cleanup mutation, SEO/noindex/canonical/301, rollback-impossible operation, user-GO-less flag ON, mail UNKNOWN experiment
-
-11. Rollback
-   - runtime rollback: exact command or exact action
-   - GitHub/source rollback: non-destructive `git revert` path or PR revert path when tests/regression fail
-   - expected rollback time
-   - rollback owner
-   - last known good commit / image / revision
-
-12. Stop Conditions
-   - errors
-   - sent=10 burst
-   - MAIL_BUDGET exceeded
-   - silent skip
-   - unexpected Gemini increase
-   - Team Shiny From changed
-   - publish/review/hold/skip route broken
-   - old_candidate storm
-   - rollback target unknown
-   - GitHub/source rollback path unknown after failed tests/regression
-   - user-visible degradation
-
-13. User Reply
-   - one line only:
-     - `OK`
-     - `HOLD`
-     - `REJECT`
-
-## 298-Phase3 Additional Required Fields
-
-For any Phase3 re-ON Pack, include:
+For `298-Phase3` re-ON work, also include:
 
 - old candidate pool cardinality estimate
 - expected first-send mail count
@@ -134,97 +207,38 @@ For any Phase3 re-ON Pack, include:
 - max mails/day
 - stop condition
 - rollback command
-- confirmation that `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE` is currently OFF/absent
-- confirmation that persistent ledger behavior is currently disabled
+- confirmation that `ENABLE_PUBLISH_NOTICE_OLD_CANDIDATE_ONCE` is currently OFF/absent before GO
+- confirmation that persistent ledger bootstrap behavior is understood
 - confirmation that normal review, 289, and error mail remain active
 
-If any value is UNKNOWN, recommendation must be HOLD. Deploy evidence alone is not enough for DONE; post-deploy verify and production-safe regression evidence are required.
+## Addendum: audit-derived mandatory checks for production reflection
 
-## Audit-Derived Required Fields(POLICY §19 整合、2026-05-01 追加)
+Before any production reflection, the Pack must show:
 
-USER_DECISION_REQUIRED Pack で以下を全部埋めるまで GO 禁止:
+1. release composition verify result
+2. dirty worktree snapshot result
+3. silent skip grep result
+4. 3-dimension rollback anchor completeness
+5. mail path LLM-free invariant result
 
-### A. 3-dimension rollback anchor(§19.4)
+## Forbidden Pack patterns
 
-- exact env rollback command(env knob 該当時、placeholder 不可)
-- exact image rollback command(prev image SHA / revision、`<prev_SHA>` placeholder 残存 = HOLD)
-- exact source revert(`git revert <bad_commit>`、commit hash 確定)
-- expected rollback time(30 sec / 2-3 min / commit + push)
-- rollback owner
-- last known good commit + image SHA + revision
-
-### B. Pre-Deploy Gate 5 step 結果(§19.1-19.3, 19.5)
-
-- release composition verify pass(HOLD ticket 混入 0)
-- dirty worktree snapshot pass(whitelist 内のみ)
-- silent skip grep pass(`PREFLIGHT_SKIP_MISSING_*` / `no_op_skip` / `REVIEW_POST_DETAIL_ERROR` 件数 0)
-- 3-dim rollback anchor 全埋確認
-- mail path LLM-free invariant pass
-
-### C. flag OFF deploy 不変確認 verify 表(§19 axis 8)
-
-flag OFF / live-inert deploy で以下を 1 表で:
-
-| 項目 | expected | observed | pass |
-|---|---|---|---|
-| env absence | 該当 env なし | | |
-| revision/image change only | 該当 | | |
-| code path unreachable | flag OFF で到達なし | | |
-| pre/post log diff | baseline 一致 | | |
-| mail subject/from invariance | 不変 | | |
-| 289/normal review/error route | 不変 | | |
-| Gemini delta | 0 | | |
-| silent skip | 0 | | |
-| candidate disappearance | 0 | | |
-
-### D. flag ON 数値 guard hard threshold 表(§19 axis 9)
-
-flag ON deploy で以下を 1 表(数値必須):
-
-| 項目 | hard threshold | expected | observed | pass |
-|---|---|---|---|---|
-| rolling 1h sent | <= 30 | | | |
-| cumulative day sent | <= 100 | | | |
-| silent skip | == 0 | | | |
-| candidate disappearance | == 0 | | | |
-| first-emit pool size | (Pack 確定) | | | |
-| trigger/h | (Pack 確定) | | | |
-| Gemini delta | (per-ticket) | | | |
-| mail delta | (per-ticket) | | | |
-
-## Forbidden Pack Patterns
-
-- "進めてよいですか?" without the required fields
-- multiple unrelated choices
-- raw Codex output
-- "probably safe" without evidence
+- "safe enough" without evidence
 - "mail volume unknown but GO"
 - "Gemini impact unknown but GO"
-- "rollback unclear but GO"
+- "rollback later"
+- "post-deploy verify later" without commands or owner
+- multiple unrelated decisions in one Pack
+- raw Codex output pasted without normalization
 
-## Minimal User-Facing Format
+## Optional user reply block
+
+If and only if `USER_GO_REQUIRED.is=true`, append:
 
 ```text
-結論: GO / HOLD / REJECT
-分類: CLAUDE_AUTO_GO / USER_DECISION_REQUIRED / HOLD
+結論:
 理由:
-変更範囲:
-変えないもの:
-mail影響:
-Gemini/cost影響:
-silent skip:
+最大リスク:
 rollback:
-stop condition:
-deploy対象:
-image / revision:
-env / flag:
-post-deploy verify:
-regression:
-mail件数:
-Gemini delta:
-silent skip:
-rollback target:
-GitHub/source rollback:
-判定: OBSERVED_OK / HOLD / ROLLBACK_REQUIRED
-userが返すべき1行:
+userが返すべき1行: OK / HOLD / REJECT
 ```

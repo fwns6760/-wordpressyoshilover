@@ -164,6 +164,7 @@ Source:
 Last known:
 
 - image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:e0a58bb`
+- image digest: `sha256:ad6303c14d79a0dba72695aae672169cf44a25b3694da5e59238316c5f620568`
 - revision: `yoshilover-fetcher-00186-9cl`
 - env recorded there:
   - `ENABLE_POSTGAME_STRICT_FACT_RECOVERY=1`
@@ -181,6 +182,7 @@ Source:
 Last known:
 
 - image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/guarded-publish:0f5e95a`
+- image digest: `sha256:8618171111fc4ca9b7ad78c72b0a6385874eef35c2f11c0f900f5e7379f6564b`
 - generation: `25`
 - env recorded there:
   - `ENABLE_DUPLICATE_TARGET_INTEGRITY_STRICT=1`

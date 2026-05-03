@@ -132,3 +132,42 @@
   - LINEヤフー共通利用規約: `https://www.lycorp.co.jp/ja/company/terms/`
   - YouTube copyright help: `https://support.google.com/youtube/answer/143459`
   - GIANTS site rights / transmission rules PDF: `https://www.giants.jp/files/Rules_governing_the_taking_and_delivery_or_transmission_of_photographs_video_footage_etc.pdf`
+
+## 9. Phase 0 extension (2026-05-03 PM, repo-only deeper read-only)
+
+### 9-1. repo-only facts locked in this extension
+
+- 外部 HTTP / Gemini / mail / deploy / WP REST は **0**。repo 内の config / src / tests / docs のみ再確認した。
+- `automation/` directory はこの workspace に存在せず、source 別 wiring を repo 側 TOML で制御している痕跡は今回確認できなかった。
+- scheduler 可視契約は引き続き `giants-realtime-trigger -> yoshilover-fetcher POST /run` が mainline。candidate source が本線化する条件は、実質 `config/rss_sources.json` 追加か、別 dry-run runner の新規接続である。
+- 現時点の 6 candidate は **すべて mainline active wiring = NO**。したがってこの extension 自体の `Gemini delta` / `mail delta` は **0**。
+
+### 9-2. repo evidence matrix (current state + activation planning band)
+
+| candidate | config / naming read | 実装の種(read-only) | mainline wiring | repo-safe dry-run | trust family 整備度 | activation planning volume/day | activation planning Gemini/day | activation planning visible mail/day | duplicate / silent-skip read |
+|---|---|---|---|---|---|---:|---:|---:|---|
+| 東スポ巨人担当 (X) | `config/rss_sources.json` 未登録。現行 social source の命名規則は「媒体名 + X」、type=`social_news` | `src/x_api_client.py` に `from:tospo_giants -is:retweet` 旧 collect query。現 mainline RSSHub source には未反映 | **NO**。scheduler は `/run` のみ、config に source entry なし | **partial only**。`x_api_client.py collect --dry-run` はあるが live X API 依存で fixture 不在 | **未整備**。`source_trust.py` handle registry に `tospo_giants` 不在、`source_attribution_validator.py` も東スポ marker 非対応 | `0-2` | `0` if trigger-only, `+1 to +4` if article source | `0` if trigger-only, `+0 to +2` if article source | **high / medium-high**。unknown handle のまま `social_news` 化すると `ambiguous_x` 寄りになり、dup も増えやすい |
+| 東スポWEB 巨人ラベル | 未登録。現行 config の web source は RSS URL + type=`news` | `draft_audit.py` host allowlist に `tokyo-sports.co.jp`。それ以外は fetch/helper 不在 | **NO** | **none**。fixture / runner / RSS helper 不在 | **未整備**。`source_trust.py` family 不在、`source_attribution_validator.py` marker 不在 | `+1 to +3` | `+1 to +6` | `+1 to +3` | **high / medium-high**。URL family 未登録のまま入れると attribution / dup / sensational title review burden が増える |
+| 巨人公式 YouTube | 未登録。現行 config に YouTube / video feed entry 0 | `social_video_notice_*` contract/builder/validator、`run_social_video_notice_dry_run.py`、`210e` audit | **NO** | **YES (fixture)**。builder/validator dry-run は fixture / stdin で完結 | **部分整備**。`youtube` family 自体は不在、`draft_audit.py` は `youtube.com` / `youtu.be` を除外 | `+0.5 to +2` | `0` if `social_video_notice` / `program` path、`+0.5 to +2` if generic fetcher | `+0.5 to +2` | **medium / medium**。canonical URL と trust family が無いので drift はあるが、volume は narrow |
+| GIANTS TV | 未登録。現行 config に `tv.giants.jp` / video source 0 | `rss_fetcher.py` の `GIANTS TV` streaming/program hint、`social_video_notice_*` tests、rule-based `program` tests | **NO** | **YES (fixture)**。`run_social_video_notice_dry_run.py` と `tests/test_rss_fetcher_rule_based_subtypes.py` で repo-safe dry-run seed あり | **web domain は既認識**。`tv.giants.jp` は `source_trust.py` の `giants.jp` domain match で `giants_official` 扱い。ただし video-specific family は不在 | `+1 to +4` narrow subset / full ingest はさらに上振れ | `0` if deterministic program/video lane、`+1 to +4` if generic fetcher | `+1 to +4` | **high / low-medium**。volume/dup は重いが、web domain trust 自体は 6候補中でかなり良い |
+| Yahoo realtime | config 未登録。`rss_fetcher.py` には `source_type == "yahoo_realtime"` branch あり | `src/viral_topic_detector.py`、`src/tools/run_viral_topic_dry_run.py`、`rss_fetcher.py` 内 Yahoo realtime helper / fan reaction path | **NO** | **YES (fixture)**。`tests/test_viral_topic_detector.py` で HTML fixture、runner は JSONL 出力のみ | **source family としては未整備**。`search.yahoo.co.jp` は `source_trust.py` / `draft_audit.py` 両方の一次 source allowlist 外 | `0-2` confirmed trigger/day | `0` current dry-run, `+0 to +2` only after bridge | `0` current dry-run, `+0 to +2` only after bridge | **medium-high / low** if trigger-only。history cross-reference があるため silent skip より review 増の方が主 risk |
+| Yahoo ranking | config 未登録 | `src/viral_topic_detector.py` ranking helper、`run_viral_topic_dry_run.py`、Yahoo family downstream consumers | **NO** | **YES (fixture)**。ranking rows も `tests/test_viral_topic_detector.py` で fixture 済 | **整備済み(aggregator 限定)**。`news.yahoo.co.jp -> yahoo_news_aggregator`、`draft_audit.py` allowlist あり | `0-1` | `0` current dry-run, `+0 to +1` only after bridge | `0` current dry-run, `+0 to +1` only after bridge | **high / low-medium**。配信元重複は強いが family 認識は既にある |
+
+### 9-3. evidence-backed interpretation updates
+
+- **dry-run capability が repo-safe なのは 4/6**。
+  - `巨人公式 YouTube`, `GIANTS TV`, `Yahoo realtime`, `Yahoo ranking` は fixture or stdin runner がある。
+  - `東スポ X` は networked dry-run しかなく、`東スポWEB` は runner 自体が無い。
+- **trust family readiness が最も高いのは GIANTS TV(web URL) と Yahoo ranking**。
+  - `GIANTS TV` は prior audit では「family 不在」寄りに見えていたが、repo code 上は `tv.giants.jp -> giants_official` に入る。
+  - 一方で **巨人公式 YouTube** は actual source URL が `youtube.com` なので、official candidate でも registry readiness は未整備のまま。
+- **mail/Gemini planning burden が低い順**は、current repo path だけ見ると:
+  1. Yahoo realtime / Yahoo ranking (trigger-only なら current delta 0)
+  2. 巨人公式 YouTube (deterministic `social_video_notice` / `program` 活用余地)
+  3. GIANTS TV narrow subset
+  4. 東スポ X / 東スポWEB
+- **Phase 1 ranking 自体は据え置き**でよい。
+  - `巨人公式 YouTube` を first official candidate、
+  - `Yahoo realtime / ranking` を trigger-only candidate、
+  - `東スポ X / 東スポWEB / GIANTS TV full ingest` を higher-planning-burden group
+ という整理は、repo-only facts でも崩れなかった。

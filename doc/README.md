@@ -6,7 +6,7 @@
 - type: execution queue / Codex A-B dispatch board
 - status: READY
 - created: 2026-04-26
-- updated: 2026-04-29
+- updated: 2026-05-03
 - source_of_truth: current execution order, status, owner, lane, and blocked state
 
 ## role
@@ -30,7 +30,7 @@ Current publish-policy reference:
 - `doc/reference/154-publish-policy-2026-04-26-PM.md` = current publish-policy
 - `doc/done/2026-04/PUB-002-A-publish-candidate-gate-and-article-prose-contract.md` = superseded archive
 
-## current queue snapshot(2026-04-29 JST)
+## current queue snapshot(2026-05-03 JST)
 
 Active folder is intentionally narrow after the template / numeric hallucination policy shift.
 
@@ -41,7 +41,7 @@ Active folder is intentionally narrow after the template / numeric hallucination
 | **run next (QA quality series)** | `277-QA-title-player-name-backfill.md`, `279-QA-mail-subject-clarity.md`, `278-QA-rt-title-cleanup.md`, `280-QA-summary-excerpt-cleanup.md` | sequential quality-improvement series. Commit doc-only first, then implement 277 only; 279/278/280 stay doc-only until later fires. |
 | **design hold** | `246-MKT-today-giants-fan-guide.md`, `255-MKT-fan-guide-expansion-and-comment-badge.md`, `249-INGEST-live-game-ingestion-expansion.md`, `256-QA-manager-player-quote-strict-subset.md`, `260-MKT-fan-original-article-types-and-templates.md` | no field dispatch yet. These are HOLD backlog items for the post-247 observation phase; do not mix them into current QA/template work. |
 | **keep active** | `229-gemini-cost-governor-and-llm-call-reduction.md` | still needed as the cost-reduction parent; next action depends on fetcher 100% / ledger observation. |
-| **waiting** | `205-gcp-runtime-drift-audit.md`, `238-night-draft-only-and-morning-decision-report.md` | still useful, but not part of the immediate article-body hallucination fix. |
+| **waiting** | `205-gcp-runtime-drift-audit.md`, `238-night-draft-only-and-morning-decision-report.md`, `288-INGEST-source-coverage-expansion.md` | still useful, but not part of the immediate article-body hallucination fix. `288` remains source-add HOLD; only Phase 0 repo-only audit / dry-run evidence may advance doc-only. |
 | **closed / archived** | `205-COST`, `234-impl-1..6`, `242 parent`, `242-B`, `243`, `244`, `244-B`, `244-followup`, `244-B-followup` | implemented / accepted / superseded; no longer active work. |
 
 Do not reopen closed 234/242/243/244 child tickets just to keep agents busy. If a new bad article appears, create a new narrow fixture-backed ticket from that concrete post_id.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import re
 import unicodedata
 from datetime import datetime, timedelta
@@ -18,6 +19,7 @@ from src.title_body_nucleus_validator import validate_title_body_nucleus
 
 
 JST = ZoneInfo("Asia/Tokyo")
+TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
 RELAXED_FOR_BREAKING_BOARD_FLAGS = frozenset({"subtype_unresolved", "heading_sentence_as_h3"})
 NO_CLEANUP_REQUIRED_FLAGS = frozenset(
     {
@@ -112,6 +114,16 @@ INJURY_ROSTER_SIGNAL_RE = re.compile(
 )
 HARD_DEATH_OR_GRAVE_RE = re.compile(r"(死亡|死去|逝去|亡くな|危篤|重体|重症|重傷|意識不明)")
 SOFT_MEDICAL_TERM_RE = re.compile(r"(入院|手術)")
+TRUE_DEATH_OR_OBITUARY_RE = re.compile(
+    r"(死亡|死去|逝去|亡くな|急逝|他界|訃報|追悼|哀悼|殉職|葬儀|告別式|通夜|死亡事故)"
+)
+DEATH_GRAVE_INJURY_RETURN_EXEMPT_SIGNAL_RE = re.compile(
+    r"(負傷|痛め(?:た|て|る)?|怪我|けが|ケガ|顔面打球|骨折|打撲|捻挫|肉離れ|炎症|"
+    r"離脱|戦線離脱|コンディション不良|違和感|異変|アクシデント|緊急降板|緊急離脱|"
+    r"途中交代|救急搬送|復帰|実戦復帰|復帰戦|1軍合流|一軍合流|1軍復帰|一軍復帰|"
+    r"登録|抹消|再登録|再昇格|昇格|降格|支配下登録|出場選手登録|合流|復活)"
+)
+DEATH_GRAVE_INJURY_RETURN_EXEMPT_ENV = "ENABLE_DEATH_GRAVE_INJURY_RETURN_EXEMPT"
 POSITIVE_RECOVERY_CONTEXT_RE = re.compile(
     r"(手術後|術後|手術成功|リハビリ|リハビリ完了|実戦復帰|復帰戦|復帰|"
     r"1軍初スタメン|一軍初スタメン|初スタメン|1軍合流|一軍合流|1軍復帰|一軍復帰|"
@@ -1206,23 +1218,55 @@ def _is_medical_roster_soft_subtype(subtype: Any) -> bool:
     return normalized.startswith("farm") or normalized in MEDICAL_ROSTER_SOFT_SUBTYPE_EXACT
 
 
+def _env_truthy(name: str) -> bool:
+    return str(os.environ.get(name) or "").strip().lower() in TRUTHY_ENV_VALUES
+
+
+def _death_grave_injury_return_exempt_enabled() -> bool:
+    return _env_truthy(DEATH_GRAVE_INJURY_RETURN_EXEMPT_ENV)
+
+
+def _has_true_death_or_obituary_context(text: str, *, family_context_death: bool) -> bool:
+    return bool(TRUE_DEATH_OR_OBITUARY_RE.search(text)) and not family_context_death
+
+
+def _has_death_grave_injury_return_exempt_context(text: str) -> bool:
+    if not _death_grave_injury_return_exempt_enabled():
+        return False
+    if DEATH_GRAVE_INJURY_RETURN_EXEMPT_SIGNAL_RE.search(text):
+        return True
+    return bool(MANAGER_SIGNAL_RE.search(text) and COMMENT_SIGNAL_RE.search(text) and SOFT_MEDICAL_TERM_RE.search(text))
+
+
 def _medical_roster_flag(record: dict[str, Any], *, subtype: Any = "") -> str | None:
     title = str(record.get("title") or "")
     body_text = str(record.get("body_text") or "")
     combined = "\n".join(part for part in (title, body_text) if part)
     family_context_death = _has_family_context_death_window(title, body_text)
+    exempt_context = _has_death_grave_injury_return_exempt_context(combined)
+    medical_signal_present = bool(INJURY_ROSTER_SIGNAL_RE.search(combined))
+    if exempt_context:
+        medical_signal_present = True
+    if _has_true_death_or_obituary_context(combined, family_context_death=family_context_death):
+        return "death_or_grave_incident"
     if HARD_DEATH_OR_GRAVE_RE.search(combined) and not family_context_death:
+        if exempt_context:
+            return "roster_movement_yellow"
         return "death_or_grave_incident"
     soft_term_present = bool(SOFT_MEDICAL_TERM_RE.search(combined))
     has_recovery_context = bool(POSITIVE_RECOVERY_CONTEXT_RE.search(combined))
     if soft_term_present and not has_recovery_context and not family_context_death:
+        if exempt_context:
+            return "roster_movement_yellow"
         return "death_or_grave_incident"
     if _is_long_term_recovery_story(combined):
+        if exempt_context:
+            return "roster_movement_yellow"
         return "death_or_grave_incident"
-    if not INJURY_ROSTER_SIGNAL_RE.search(combined):
+    if not medical_signal_present:
         return None
     if not _has_primary_source_link(record):
-        if _is_medical_roster_soft_subtype(subtype):
+        if exempt_context or _is_medical_roster_soft_subtype(subtype):
             return "roster_movement_yellow"
         return "death_or_grave_incident"
     return "roster_movement_yellow"

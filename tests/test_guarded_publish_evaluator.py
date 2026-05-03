@@ -483,6 +483,133 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
 
         self.assertEqual(flag, "death_or_grave_incident")
 
+    def test_death_grave_injury_return_exempt_flag_off_preserves_existing_hard_stop(self):
+        record = {
+            "title": "巨人主力が顔面打球で負傷 登録抹消へ",
+            "body_text": "巨人主力が顔面打球で負傷し、登録抹消となる見込みだ。球団は今後の状態を見守る。",
+            "source_block": "",
+            "source_urls": [],
+        }
+
+        flag = evaluator_module._medical_roster_flag(record, subtype="injury")
+
+        self.assertEqual(flag, "death_or_grave_incident")
+
+    def test_death_grave_injury_return_exempt_flag_on_allows_injury_return_roster_and_coach_contexts(self):
+        cases = (
+            (
+                "injury_roster",
+                {
+                    "title": "巨人主力が顔面打球で負傷 登録抹消へ",
+                    "body_text": "巨人主力が顔面打球で負傷し、登録抹消となる見込みだ。球団は今後の状態を見守る。",
+                    "source_block": "",
+                    "source_urls": [],
+                },
+                "injury",
+            ),
+            (
+                "return_roster",
+                {
+                    "title": "巨人若手が実戦復帰 1軍合流へ",
+                    "body_text": "巨人若手が実戦復帰し、1軍合流へ向けて最終調整に入る。",
+                    "source_block": "",
+                    "source_urls": [],
+                },
+                "recovery",
+            ),
+            (
+                "coach_comment",
+                {
+                    "title": "阿部監督が離脱中主力の復帰時期を整理",
+                    "body_text": "阿部監督が離脱中の主力についてコメントし、復帰時期の見通しを整理した。",
+                    "source_block": "",
+                    "source_urls": [],
+                },
+                "manager",
+            ),
+            (
+                "emergency_drop",
+                {
+                    "title": "巨人投手が異変を訴えて緊急降板",
+                    "body_text": "巨人投手が負傷の疑いで異変を訴えて緊急降板し、ベンチが状態を説明した。",
+                    "source_block": "",
+                    "source_urls": [],
+                },
+                "injury",
+            ),
+        )
+
+        with mock.patch.dict(
+            evaluator_module.os.environ,
+            {evaluator_module.DEATH_GRAVE_INJURY_RETURN_EXEMPT_ENV: "1"},
+            clear=False,
+        ):
+            for label, record, subtype in cases:
+                with self.subTest(label=label):
+                    flag = evaluator_module._medical_roster_flag(record, subtype=subtype)
+                    self.assertEqual(flag, "roster_movement_yellow")
+
+    def test_death_grave_injury_return_exempt_flag_on_keeps_true_death_obituary_hard_stop(self):
+        cases = (
+            (
+                "obituary",
+                {
+                    "title": "巨人OBの訃報 球団が追悼コメント",
+                    "body_text": "巨人OBが死去したと伝えられ、球団が追悼コメントを発表した。",
+                    "source_block": "参照元: スポーツ報知 https://example.com/source-obituary-flag-on",
+                    "source_urls": ["https://example.com/source-obituary-flag-on"],
+                },
+            ),
+            (
+                "line_of_duty_death",
+                {
+                    "title": "元球団職員が殉職 球団が追悼",
+                    "body_text": "元球団職員が殉職したと発表され、球団が追悼した。",
+                    "source_block": "参照元: スポーツ報知 https://example.com/source-duty-death",
+                    "source_urls": ["https://example.com/source-duty-death"],
+                },
+            ),
+            (
+                "funeral",
+                {
+                    "title": "巨人OBの葬儀に球団関係者が参列",
+                    "body_text": "巨人OBの葬儀に球団関係者が参列し、別れを惜しんだ。",
+                    "source_block": "参照元: スポーツ報知 https://example.com/source-funeral",
+                    "source_urls": ["https://example.com/source-funeral"],
+                },
+            ),
+        )
+
+        with mock.patch.dict(
+            evaluator_module.os.environ,
+            {evaluator_module.DEATH_GRAVE_INJURY_RETURN_EXEMPT_ENV: "1"},
+            clear=False,
+        ):
+            for label, record in cases:
+                with self.subTest(label=label):
+                    flag = evaluator_module._medical_roster_flag(record, subtype="comment")
+                    self.assertEqual(flag, "death_or_grave_incident")
+
+    def test_death_grave_injury_return_exempt_flag_on_report_demotes_hard_stop_to_yellow(self):
+        post = _post(
+            64351,
+            "巨人主力が顔面打球で負傷 登録抹消へ",
+            "<p>巨人主力が顔面打球で負傷し、登録抹消となる見込みだ。球団は今後の状態を見守る。</p>",
+            meta={"article_subtype": "injury"},
+        )
+
+        with mock.patch.dict(
+            evaluator_module.os.environ,
+            {evaluator_module.DEATH_GRAVE_INJURY_RETURN_EXEMPT_ENV: "1"},
+            clear=False,
+        ):
+            report = self._evaluate([post])
+
+        entry = report["yellow"][0]
+        self.assertTrue(entry["publishable"])
+        self.assertNotIn("death_or_grave_incident", entry["hard_stop_flags"])
+        self.assertIn("roster_movement_yellow", entry["repairable_flags"])
+
     def test_family_death_player_absent_fixture_stays_publishable(self):
         post = _post(
             63471,

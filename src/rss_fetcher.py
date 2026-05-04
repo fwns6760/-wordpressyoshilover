@@ -66,14 +66,20 @@ from src.article_quality_guards import (
     ENABLE_ACTIVE_TEAM_MISMATCH_GUARD_ENV_FLAG,
     ENABLE_DUPLICATE_SENTENCE_GUARD_ENV_FLAG,
     ENABLE_FORBIDDEN_PHRASE_FILTER_ENV_FLAG,
+    ENABLE_H3_COUNT_GUARD_ENV_FLAG,
     ENABLE_TITLE_GENERIC_COMPOUND_GUARD_ENV_FLAG,
     ENABLE_QUOTE_INTEGRITY_GUARD_ENV_FLAG,
     detect_source_entity_conflict,
     find_duplicate_sentence,
+    find_excessive_h3,
     find_forbidden_phrase,
     find_quote_integrity_issue,
     is_generic_compound_subject,
     sanitize_forbidden_visible_text,
+)
+from src.article_quality_repair import (
+    ENTITY_MISMATCH_REPAIR_ENV_FLAG,
+    repair_entity_mismatch,
 )
 from src.source_trust import (
     classify_url as _source_trust_classify_url,
@@ -9003,11 +9009,133 @@ def _split_text_sections(text: str) -> list[tuple[str, str]]:
     return sections
 
 
+def _render_preview_body_html(text: str) -> str:
+    lines = [line.strip() for line in str(text or "").splitlines() if line.strip()]
+    if not lines:
+        return ""
+    blocks: list[str] = []
+    heading_index = 0
+    for line in lines:
+        escaped = (
+            line.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+        if line.startswith("【") and "】" in line:
+            level = 2 if heading_index == 0 else 3
+            blocks.append(f"<h{level}>{escaped}</h{level}>")
+            heading_index += 1
+            continue
+        blocks.append(f"<p>{escaped}</p>")
+    return "\n".join(blocks)
+
+
+def _log_entity_mismatch_repair_applied(
+    logger: logging.Logger,
+    *,
+    source_url: str,
+    source_title: str,
+    original_title: str,
+    repaired_title: str,
+    repair_flags: tuple[str, ...],
+    removed_strings: tuple[str, ...],
+) -> None:
+    payload = {
+        "event": "entity_mismatch_repair_applied",
+        "source_url": source_url,
+        "source_title": source_title,
+        "original_title": original_title,
+        "repaired_title": repaired_title,
+        "repair_flags": list(repair_flags),
+        "removed_strings": list(removed_strings),
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
+def _maybe_apply_entity_mismatch_repair(
+    *,
+    title: str,
+    body_text: str,
+    body_html: str,
+    source_title: str,
+    source_summary: str,
+    article_subtype: str,
+    source_refs: dict[str, object] | None = None,
+    logger: logging.Logger | None = None,
+    source_url: str = "",
+) -> dict[str, object] | None:
+    if not _env_flag(ENTITY_MISMATCH_REPAIR_ENV_FLAG, False):
+        return None
+    repair = repair_entity_mismatch(
+        current_title=title,
+        body_text=body_text,
+        body_html=body_html,
+        source_title=source_title,
+        source_summary=source_summary,
+    )
+    if not repair.applied:
+        return {
+            "applied": False,
+            "repairable": repair.repairable,
+            "stop_reason": repair.stop_reason,
+            "title": title,
+            "body_text": body_text,
+            "body_html": body_html,
+            "validation": {
+                "ok": False,
+                "fail_axes": [f"entity_mismatch_repair:{repair.stop_reason or repair.reason}"],
+                "stop_reason": repair.stop_reason or repair.reason,
+            },
+            "repair_flags": repair.repair_flags,
+            "removed_strings": repair.removed_strings,
+        }
+    repaired_preview_html = _render_preview_body_html(repair.body_text)
+    validation = _evaluate_post_gen_validate(
+        repair.body_text,
+        article_subtype=article_subtype,
+        title=repair.title,
+        source_refs=source_refs,
+        rendered_html=repaired_preview_html,
+    )
+    repaired_entity_axis = f"entity_mismatch:{repair.reason}"
+    if repaired_entity_axis in validation["fail_axes"]:
+        filtered_fail_axes = [axis for axis in validation["fail_axes"] if axis != repaired_entity_axis]
+        validation = dict(validation)
+        validation["fail_axes"] = filtered_fail_axes
+        validation["ok"] = not filtered_fail_axes
+        if not filtered_fail_axes:
+            validation["stop_reason"] = ""
+        elif validation.get("stop_reason") == repaired_entity_axis:
+            validation["stop_reason"] = filtered_fail_axes[0]
+    if validation["ok"] and logger is not None:
+        _log_entity_mismatch_repair_applied(
+            logger,
+            source_url=source_url,
+            source_title=source_title,
+            original_title=title,
+            repaired_title=repair.title,
+            repair_flags=repair.repair_flags,
+            removed_strings=repair.removed_strings,
+        )
+    return {
+        "applied": validation["ok"],
+        "repairable": repair.repairable,
+        "stop_reason": repair.stop_reason,
+        "title": repair.title,
+        "body_text": repair.body_text,
+        "body_html": repair.body_html,
+        "validation": validation,
+        "repair_flags": repair.repair_flags,
+        "removed_strings": repair.removed_strings,
+    }
+
+
 def _evaluate_post_gen_validate(
     text: str,
     article_subtype: str = "",
     title: str = "",
     source_refs: dict[str, object] | None = None,
+    rendered_html: str = "",
 ) -> dict[str, object]:
     raw_text = text or ""
     clean_text = _collapse_ws(_strip_html(raw_text))
@@ -9115,6 +9243,11 @@ def _evaluate_post_gen_validate(
         duplicate_issue = find_duplicate_sentence(raw_text)
         if duplicate_issue:
             _append_fail_axis(f"duplicate_sentence:{duplicate_issue['reason']}")
+
+    if _env_flag(ENABLE_H3_COUNT_GUARD_ENV_FLAG, False):
+        excessive_h3 = find_excessive_h3(rendered_html or _render_preview_body_html(raw_text))
+        if excessive_h3:
+            _append_fail_axis(f"h3_count:{excessive_h3['reason']}")
 
     if _env_flag(ENABLE_ACTIVE_TEAM_MISMATCH_GUARD_ENV_FLAG, False):
         entity_conflict = detect_source_entity_conflict(
@@ -15930,12 +16063,36 @@ def _main(args, logger):
                             ledger_path=body_contract_fail_ledger_path or None,
                         )
                     continue
+            preview_body_html = _render_preview_body_html(ai_body_for_x)
             post_gen_validate = _evaluate_post_gen_validate(
                 ai_body_for_x,
                 article_subtype=title_article_subtype,
                 title=draft_title,
                 source_refs=fact_conflict_source_refs,
+                rendered_html=preview_body_html,
             )
+            if (
+                not post_gen_validate["ok"]
+                and any(str(axis).startswith("entity_mismatch:") for axis in post_gen_validate["fail_axes"])
+            ):
+                repair_preview = _maybe_apply_entity_mismatch_repair(
+                    title=draft_title,
+                    body_text=ai_body_for_x,
+                    body_html=content,
+                    source_title=raw_title,
+                    source_summary=summary,
+                    article_subtype=title_article_subtype,
+                    source_refs=fact_conflict_source_refs,
+                    logger=logger,
+                    source_url=post_url,
+                )
+                if repair_preview is not None:
+                    post_gen_validate = repair_preview["validation"]
+                    if repair_preview["applied"]:
+                        draft_title = str(repair_preview["title"] or draft_title)
+                        ai_body_for_x = str(repair_preview["body_text"] or ai_body_for_x)
+                        content = str(repair_preview["body_html"] or content)
+                        fact_conflict_source_refs["title"] = draft_title
             if not post_gen_validate["ok"]:
                 fan_important_exempt = _fetcher_fan_important_narrow_exempt_context(
                     skip_kind="post_gen_validate",

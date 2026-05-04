@@ -7,6 +7,7 @@ import re
 from src.article_quality_guards import (
     ENABLE_TITLE_GENERIC_COMPOUND_GUARD_ENV_FLAG,
     env_flag as _quality_env_flag,
+    find_generic_title_pattern,
     is_generic_compound_subject,
 )
 
@@ -336,6 +337,10 @@ def is_weak_generated_title(title: str) -> tuple[bool, str]:
     for phrase in WEAK_GENERATED_TITLE_PHRASES:
         if phrase in normalized:
             return True, f"blacklist_phrase:{phrase}"
+    if _quality_env_flag(ENABLE_TITLE_GENERIC_COMPOUND_GUARD_ENV_FLAG, False):
+        generic_hit = find_generic_title_pattern(normalized)
+        if generic_hit and generic_hit["label"] in {"manager_bench_comment", "postgame_comment_roundup"}:
+            return True, f"generic_title:{generic_hit['label']}"
     if not any(marker in normalized for marker in WEAK_GENERATED_TITLE_STRONG_MARKERS):
         try:
             from .weak_title_rescue import is_strong_with_name_and_event
@@ -422,6 +427,10 @@ def is_weak_subject_title(title: str) -> tuple[bool, str]:
         return True, "leading_particle_no_subject"
     if title_uses_related_info_escape(stripped):
         return True, "related_info_escape"
+    if _quality_env_flag(ENABLE_TITLE_GENERIC_COMPOUND_GUARD_ENV_FLAG, False):
+        generic_hit = find_generic_title_pattern(stripped)
+        if generic_hit and generic_hit["label"] != "player_status_related_info":
+            return True, f"generic_title:{generic_hit['label']}"
     if title_has_only_generic_subject(stripped):
         return True, "generic_noun_only_no_person_name"
     return False, ""

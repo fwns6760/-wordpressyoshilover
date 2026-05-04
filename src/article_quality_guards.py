@@ -12,9 +12,11 @@ ENABLE_QUOTE_INTEGRITY_GUARD_ENV_FLAG = "ENABLE_QUOTE_INTEGRITY_GUARD"
 ENABLE_DUPLICATE_SENTENCE_GUARD_ENV_FLAG = "ENABLE_DUPLICATE_SENTENCE_GUARD"
 ENABLE_ACTIVE_TEAM_MISMATCH_GUARD_ENV_FLAG = "ENABLE_ACTIVE_TEAM_MISMATCH_GUARD"
 ENABLE_SOURCE_GROUNDING_STRICT_ENV_FLAG = "ENABLE_SOURCE_GROUNDING_STRICT"
+ENABLE_H3_COUNT_GUARD_ENV_FLAG = "ENABLE_H3_COUNT_GUARD"
 
 _HTML_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
+_H3_RE = re.compile(r"<h3\b[^>]*>", re.IGNORECASE)
 _GENERIC_COMPOUND_SUBJECTS = frozenset(
     {
         "実施選手",
@@ -36,6 +38,8 @@ _GENERIC_COMPOUND_SUBJECTS = frozenset(
 _FORBIDDEN_HEADING_REPLACEMENTS = {
     "【発信内容の要約】": "【投稿で出ていた内容】",
     "【文脈と背景】": "【この話が出た流れ】",
+    "【AI prompt】": "【話題の整理】",
+    "【internal instruction】": "【話題の整理】",
 }
 _FORBIDDEN_LINE_REPLACEMENTS = (
     ("発信内容の要約", "投稿で出ていた内容"),
@@ -65,7 +69,14 @@ _FORBIDDEN_PATTERNS = (
     ("heading_social_summary", re.compile(r"発信内容の要約")),
     ("heading_context_background", re.compile(r"文脈と背景")),
     ("internal_source_instruction", re.compile(r"source\s*にある範囲だけで", re.IGNORECASE)),
+    ("internal_prompt_heading", re.compile(r"(?:AI\s*prompt|internal\s*instruction)", re.IGNORECASE)),
     ("internal_prompt_output", re.compile(r"(?:HTMLタグなし|本文のみ出力|見出しは「)")),
+)
+_GENERIC_TITLE_PATTERNS = (
+    ("player_status_related_info", re.compile(r"(?:昇格・復帰|昇格|復帰|登録抹消|一軍合流|一軍登録|再登録)\s*関連情報\s*$")),
+    ("manager_bench_comment", re.compile(r"ベンチ関連(?:の)?発言(?:ポイント)?\s*$")),
+    ("postgame_comment_roundup", re.compile(r"試合後発言整理\s*$")),
+    ("generic_subject_actor", re.compile(rf"^(?:{'|'.join(sorted((re.escape(subject) for subject in _GENERIC_COMPOUND_SUBJECTS), key=len, reverse=True))})(?:[、，,\s]|[がはもをにへ]|$)")),
 )
 _QUOTE_RE = re.compile(r"[「『][^」』]{1,120}[」』]")
 _TEAM_GROUPS = {
@@ -195,6 +206,17 @@ def find_forbidden_phrase(text: str) -> dict[str, str] | None:
     return None
 
 
+def find_generic_title_pattern(title: str) -> dict[str, str] | None:
+    normalized = _clean_text(title)
+    if not normalized:
+        return None
+    for label, pattern in _GENERIC_TITLE_PATTERNS:
+        match = pattern.search(normalized)
+        if match:
+            return {"label": label, "phrase": match.group(0)}
+    return None
+
+
 def find_quote_integrity_issue(text: str) -> dict[str, str] | None:
     normalized = _clean_text(text)
     if not normalized:
@@ -235,6 +257,13 @@ def find_duplicate_sentence(text: str, similarity_threshold: float = 0.9) -> dic
             if ratio >= similarity_threshold:
                 return {"reason": "near_duplicate_sentence", "left": left, "right": right, "ratio": f"{ratio:.3f}"}
     return None
+
+
+def find_excessive_h3(html_text: str, max_h3: int = 2) -> dict[str, str] | None:
+    count = len(_H3_RE.findall(str(html_text or "")))
+    if count <= max_h3:
+        return None
+    return {"reason": "too_many_h3", "count": str(count), "max_h3": str(max_h3)}
 
 
 def _canonical_team_names(text: str) -> set[str]:

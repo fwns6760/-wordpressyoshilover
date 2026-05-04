@@ -348,6 +348,61 @@ class PostGenValidateTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertTrue(any(axis.startswith("duplicate_sentence:") for axis in result["fail_axes"]))
 
+    def test_post_gen_validate_h3_count_guard_rejects_three_or_more_h3(self):
+        text = "\n".join(
+            [
+                "【試合結果】",
+                "巨人が阪神に3-2で競り勝った。",
+                "【ハイライト】",
+                "松浦慶斗が緊急リリーフで流れを切った。",
+                "【選手成績】",
+                "戸郷翔征が7回1失点で試合を作った。",
+                "【試合展開】",
+                "終盤の継投が次戦でもどう使われるか気になります。",
+            ]
+        )
+        with patch.dict(os.environ, {"ENABLE_H3_COUNT_GUARD": "1"}, clear=False):
+            result = rss_fetcher._evaluate_post_gen_validate(text, article_subtype="postgame")
+
+        self.assertFalse(result["ok"])
+        self.assertIn("h3_count:too_many_h3", result["fail_axes"])
+
+    def test_post_gen_validate_h3_count_guard_allows_two_or_fewer_h3(self):
+        text = "\n".join(
+            [
+                "【試合結果】",
+                "巨人が阪神に3-2で競り勝った。",
+                "【ハイライト】",
+                "松浦慶斗が緊急リリーフで流れを切った。",
+                "【試合展開】",
+                "終盤の継投が次戦でもどう使われるか気になります。",
+            ]
+        )
+        with patch.dict(os.environ, {"ENABLE_H3_COUNT_GUARD": "1"}, clear=False):
+            result = rss_fetcher._evaluate_post_gen_validate(text, article_subtype="postgame")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["fail_axes"], [])
+
+    def test_post_gen_validate_h3_count_guard_is_inactive_when_disabled(self):
+        text = "\n".join(
+            [
+                "【試合結果】",
+                "巨人が阪神に3-2で競り勝った。",
+                "【ハイライト】",
+                "松浦慶斗が緊急リリーフで流れを切った。",
+                "【選手成績】",
+                "戸郷翔征が7回1失点で試合を作った。",
+                "【試合展開】",
+                "終盤の継投が次戦でもどう使われるか気になります。",
+            ]
+        )
+        with patch.dict(os.environ, {"ENABLE_H3_COUNT_GUARD": "0"}, clear=False):
+            result = rss_fetcher._evaluate_post_gen_validate(text, article_subtype="postgame")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["fail_axes"], [])
+
     def test_post_gen_validate_active_team_mismatch_guard_rejects_non_giants_status_story(self):
         text = "\n".join(
             [

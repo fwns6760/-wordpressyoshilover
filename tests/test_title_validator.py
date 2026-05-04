@@ -146,6 +146,20 @@ class TitleValidatorTests(unittest.TestCase):
         self.assertTrue(is_weak)
         self.assertEqual(reason, "related_info_escape")
 
+    def test_generic_bench_comment_title_is_weak_when_flag_is_on(self):
+        with patch.dict(os.environ, {"ENABLE_TITLE_GENERIC_COMPOUND_GUARD": "1"}, clear=False):
+            is_weak, reason = title_validator.is_weak_generated_title("阿部監督「粘り勝った」 ベンチ関連発言")
+
+        self.assertTrue(is_weak)
+        self.assertEqual(reason, "generic_title:manager_bench_comment")
+
+    def test_postgame_comment_roundup_title_is_weak_when_flag_is_on(self):
+        with patch.dict(os.environ, {"ENABLE_TITLE_GENERIC_COMPOUND_GUARD": "1"}, clear=False):
+            is_weak, reason = title_validator.is_weak_generated_title("巨人戦 田中将大の試合後発言整理")
+
+        self.assertTrue(is_weak)
+        self.assertEqual(reason, "generic_title:postgame_comment_roundup")
+
     def test_title_has_minimum_article_context_rejects_generic_titles(self):
         cases = [
             ("投手コメント整理", "manager", "manager_missing_speaker"),

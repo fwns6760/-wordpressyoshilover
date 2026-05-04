@@ -32,6 +32,26 @@ class ArticleQualityGuardsTests(unittest.TestCase):
         self.assertIsNotNone(hit)
         self.assertEqual(hit["label"], "heading_context_background")
 
+    def test_find_forbidden_phrase_covers_requested_spec_phrases(self):
+        cases = (
+            "目を引きます",
+            "注目が集まります",
+            "ファン必見です",
+            "今後の動向から目が離せません",
+            "と言えるでしょう",
+            "ではないでしょうか",
+            "発信内容の要約",
+            "文脈と背景",
+            "source にある範囲だけで",
+            "AI prompt",
+            "internal instruction",
+        )
+
+        for phrase in cases:
+            with self.subTest(phrase=phrase):
+                hit = guards.find_forbidden_phrase(f"{phrase}\nこの話題を整理します。")
+                self.assertIsNotNone(hit)
+
     def test_find_quote_integrity_issue_detects_unbalanced_quote(self):
         issue = guards.find_quote_integrity_issue("阿部監督は「次も同じ形でいきたいと話した。")
 
@@ -47,6 +67,21 @@ class ArticleQualityGuardsTests(unittest.TestCase):
 
         self.assertIsNotNone(issue)
         self.assertEqual(issue["reason"], "near_duplicate_sentence")
+
+    def test_find_generic_title_pattern_covers_requested_title_families(self):
+        cases = {
+            "泉口友汰、昇格・復帰 関連情報": "player_status_related_info",
+            "阿部監督「粘り勝った」 ベンチ関連発言": "manager_bench_comment",
+            "巨人戦 田中将大の試合後発言整理": "postgame_comment_roundup",
+            "実施選手、昇格・復帰 関連情報": "player_status_related_info",
+            "実施選手が昇格へ": "generic_subject_actor",
+        }
+
+        for title, expected_label in cases.items():
+            with self.subTest(title=title):
+                hit = guards.find_generic_title_pattern(title)
+                self.assertIsNotNone(hit)
+                self.assertEqual(hit["label"], expected_label)
 
     def test_detect_source_entity_conflict_detects_non_giants_team_prefix(self):
         issue = guards.detect_source_entity_conflict(
@@ -74,6 +109,17 @@ class ArticleQualityGuardsTests(unittest.TestCase):
         )
 
         self.assertIsNone(issue)
+
+    def test_find_excessive_h3_detects_limit_overflow(self):
+        issue = guards.find_excessive_h3("<h2>【ニュースの整理】</h2><h3>A</h3><h3>B</h3><h3>C</h3>")
+
+        self.assertIsNotNone(issue)
+        self.assertEqual(issue["reason"], "too_many_h3")
+        self.assertEqual(issue["count"], "3")
+
+    def test_find_excessive_h3_allows_two_or_fewer(self):
+        self.assertIsNone(guards.find_excessive_h3("<h2>【ニュースの整理】</h2><h3>A</h3><h3>B</h3>"))
+        self.assertIsNone(guards.find_excessive_h3("<h2>【ニュースの整理】</h2>"))
 
 
 if __name__ == "__main__":

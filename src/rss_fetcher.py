@@ -8265,7 +8265,7 @@ def _build_social_safe_fallback(
 
     summary_lines = [social_headings[1]]
     if quote_phrases:
-        summary_lines.append(f"{display_source}の投稿では『{quote_phrases[0]}』という言い回しが目を引きます。")
+        summary_lines.append(f"{display_source}の投稿では『{quote_phrases[0]}』という表現も出ていました。")
     summary_lines.append(f"{facts[0]}。")
     if len(facts) > 2:
         summary_lines.append(f"{facts[2]}。")
@@ -12016,9 +12016,10 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
 
     if media_quotes:
         media_section_label = (media_quotes[0].get("section_label") or "📌 関連ポスト").strip()
+        media_heading_level = 4 if _body_template_v2_enabled() else 3
         blocks += (
-            '<!-- wp:heading {"level":3} -->\n'
-            f'<h3>{media_section_label}</h3>\n'
+            f'<!-- wp:heading {{"level":{media_heading_level}}} -->\n'
+            f'<h{media_heading_level}>{media_section_label}</h{media_heading_level}>\n'
             '<!-- /wp:heading -->\n\n'
         )
         widget_script_included = False

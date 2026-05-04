@@ -1,6 +1,9 @@
 *
 !.dockerignore
 !Dockerfile.draft_body_editor
+!Dockerfile.publish_notice
+!bin/
+!bin/**
 !requirements.txt
 !requirements-dev.txt
 !src/

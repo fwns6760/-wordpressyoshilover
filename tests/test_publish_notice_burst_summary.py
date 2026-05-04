@@ -41,6 +41,26 @@ class PublishNoticeBurstSummaryTests(unittest.TestCase):
             cleanup_success=True if index % 3 == 0 else None,
         )
 
+    def _summary_entries(
+        self,
+        start: int,
+        end: int,
+        *,
+        is_backlog: bool | None,
+    ) -> list[sender.BurstSummaryEntry]:
+        return [
+            sender.BurstSummaryEntry(
+                post_id=index,
+                title=f"公開記事 {index}",
+                category="試合速報" if index % 2 else "球団情報",
+                publishable=True,
+                cleanup_required=index % 3 == 0,
+                cleanup_success=True if index % 3 == 0 else None,
+                is_backlog=is_backlog,
+            )
+            for index in range(start, end + 1)
+        ]
+
     def _alert_request(self, alert_type: str, **overrides) -> sender.AlertMailRequest:
         payload = {
             "alert_type": alert_type,
@@ -120,6 +140,60 @@ class PublishNoticeBurstSummaryTests(unittest.TestCase):
         self.assertIn("hold_count: 2", first_body)
         self.assertIn("daily_cap_remaining: 90", first_body)
         self.assertIn("post_id=1 | title=公開記事 1 | category=試合速報", first_body)
+
+    def test_build_burst_summary_requests_returns_empty_when_disable_flag_set(self):
+        cases = {
+            "backlog_only": self._summary_entries(1, 3, is_backlog=True),
+            "burst_forced": self._summary_entries(11, 21, is_backlog=False),
+            "fresh": self._summary_entries(31, 50, is_backlog=False),
+        }
+
+        with patch.dict("os.environ", {"DISABLE_BURST_SUMMARY_MAIL": "1"}, clear=True):
+            for case_name, entries in cases.items():
+                with self.subTest(case=case_name):
+                    summary_requests = sender.build_burst_summary_requests(
+                        entries,
+                        summary_every=10,
+                        daily_cap=100,
+                    )
+                    self.assertEqual(summary_requests, [])
+
+    def test_build_burst_summary_requests_preserves_existing_modes_when_flag_unset(self):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict("os.environ", {}, clear=True):
+            history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            history_path.write_text("", encoding="utf-8")
+            backlog_requests = sender.build_burst_summary_requests(
+                self._summary_entries(1, 3, is_backlog=True),
+                summary_every=10,
+                daily_cap=100,
+            )
+            burst_requests = sender.build_burst_summary_requests(
+                self._summary_entries(11, 21, is_backlog=False),
+                summary_every=10,
+                daily_cap=100,
+            )
+            fresh_requests = sender.build_burst_summary_requests(
+                self._summary_entries(31, 50, is_backlog=None),
+                summary_every=10,
+                daily_cap=100,
+                guarded_publish_history_path=history_path,
+            )
+
+        self.assertEqual(len(backlog_requests), 1)
+        self.assertEqual(backlog_requests[0].summary_mode, "backlog_only")
+        self.assertEqual([entry.post_id for entry in backlog_requests[0].entries], [1, 2, 3])
+
+        self.assertEqual(len(burst_requests), 1)
+        self.assertEqual(burst_requests[0].summary_mode, "burst_forced")
+        self.assertEqual([entry.post_id for entry in burst_requests[0].entries], list(range(11, 22)))
+
+        self.assertEqual(len(fresh_requests), 2)
+        self.assertEqual([request.summary_mode for request in fresh_requests], ["default", "default"])
+        self.assertEqual([len(request.entries) for request in fresh_requests], [10, 10])
+        self.assertEqual(
+            [[entry.post_id for entry in request.entries] for request in fresh_requests],
+            [list(range(31, 41)), list(range(41, 51))],
+        )
 
     def test_layer3_alert_mail_for_publish_failure(self):
         bridge_send = MagicMock(return_value=self._bridge_result())

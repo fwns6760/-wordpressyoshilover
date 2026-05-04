@@ -23,20 +23,9 @@ COPY requirements-dev.txt ./requirements-dev.txt
 RUN python3 -m pip install --no-cache-dir --upgrade pip \
     && python3 -m pip install --no-cache-dir -r requirements.txt
 
+COPY bin/publish_notice_entrypoint.sh ./bin/publish_notice_entrypoint.sh
 COPY src/ ./src/
 COPY vendor/ ./vendor/
-
-RUN mkdir -p /app/bin \
-    && printf '%s\n' \
-       '#!/usr/bin/env bash' \
-       'set -euo pipefail' \
-       '' \
-       'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' \
-       'REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"' \
-       '' \
-       'cd "${REPO_ROOT}"' \
-       'exec python3 -m src.cloud_run_persistence entrypoint "$@"' \
-       > /app/bin/publish_notice_entrypoint.sh
 
 RUN useradd --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser \
     && mkdir -p /app/logs /app/data /tmp/publish_notice \

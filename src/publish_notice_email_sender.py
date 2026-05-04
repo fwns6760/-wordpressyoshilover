@@ -37,6 +37,7 @@ _REPLAY_WINDOW_DEDUP_ENV_FLAG = "ENABLE_REPLAY_WINDOW_DEDUP"
 _REPLAY_WINDOW_MINUTES_ENV = "PUBLISH_NOTICE_REPLAY_WINDOW_MINUTES"
 _REPLAY_WINDOW_MINUTES_DEFAULT = 10
 _PUBLISH_NOTICE_HISTORY_STRICT_STAMP_ENV_FLAG = "ENABLE_PUBLISH_NOTICE_HISTORY_STRICT_STAMP"
+_DISABLE_BURST_SUMMARY_MAIL_ENV_FLAG = "DISABLE_BURST_SUMMARY_MAIL"
 _PUBLISH_ONLY_MAIL_PREFIX = "【公開済】"
 _DIRECT_PUBLISH_NOTICE_ORIGIN = "direct_publish_scan"
 _PUBLISH_NOTICE_24H_BUDGET_SUMMARY_ONLY_RECORD_TYPE = "24h_budget_summary_only"
@@ -1973,6 +1974,15 @@ def _publish_only_filter_backlog_bypass_enabled() -> bool:
     }
 
 
+def _burst_summary_mail_disabled() -> bool:
+    return str(os.environ.get(_DISABLE_BURST_SUMMARY_MAIL_ENV_FLAG, "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def _is_publish_only_subject(subject: str) -> bool:
     return str(subject or "").strip().startswith(_PUBLISH_ONLY_MAIL_PREFIX)
 
@@ -2244,6 +2254,8 @@ def build_burst_summary_requests(
     daily_cap: int = DEFAULT_DAILY_CAP,
     guarded_publish_history_path: str | Path = DEFAULT_GUARDED_PUBLISH_HISTORY_PATH,
 ) -> list[BurstSummaryRequest]:
+    if _burst_summary_mail_disabled():
+        return []
     if int(summary_every) <= 0:
         raise ValueError("summary_every must be > 0")
     resolved_entries: list[BurstSummaryEntry] = []

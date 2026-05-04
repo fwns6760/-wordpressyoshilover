@@ -2,7 +2,7 @@ substitutions:
   _REGION: asia-northeast1
   _PROJECT_ID: baseballsite
   _IMAGE_NAME: publish-notice
-  _TAG: latest
+  _TAG: latest-job
 
 steps:
   - id: build publish-notice image

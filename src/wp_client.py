@@ -32,6 +32,7 @@ from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
+from src import wp_revert_audit_ledger
 
 # プロジェクトルートの .env を読み込む
 ROOT = Path(__file__).parent.parent
@@ -127,6 +128,58 @@ class WPClient:
                 ensure_ascii=False,
             )
         )
+
+    def _maybe_audit_or_block_published_revert(
+        self,
+        post_id: int,
+        requested_status: str | None,
+        *,
+        caller: str | None = None,
+        source_lane: str | None = None,
+        channel: str,
+    ) -> None:
+        normalized_target = self._normalize_status_value(requested_status)
+        if normalized_target not in wp_revert_audit_ledger.AUDITED_TARGET_STATUSES:
+            return
+        audit_enabled = wp_revert_audit_ledger.audit_enabled()
+        block_enabled = (
+            wp_revert_audit_ledger.block_enabled()
+            and normalized_target in wp_revert_audit_ledger.BLOCKED_TARGET_STATUSES
+        )
+        if not audit_enabled and not block_enabled:
+            return
+        try:
+            current_status = self._normalize_status_value(self.get_post(post_id).get("status"))
+        except Exception as exc:
+            if audit_enabled or block_enabled:
+                wp_revert_audit_ledger.append_event(
+                    post_id=post_id,
+                    status_before="",
+                    status_after=normalized_target,
+                    caller=caller,
+                    source_lane=source_lane,
+                    channel=channel,
+                    blocked=False,
+                    reason=f"status_probe_failed:{exc}",
+                )
+            return
+        if current_status != "publish":
+            return
+        blocked = bool(block_enabled)
+        wp_revert_audit_ledger.append_event(
+            post_id=post_id,
+            status_before=current_status,
+            status_after=normalized_target,
+            caller=caller,
+            source_lane=source_lane,
+            channel=channel,
+            blocked=blocked,
+            reason="published_post_status_revert_attempt",
+        )
+        if blocked:
+            raise RuntimeError(
+                f"[WP] published post status revert blocked post_id={post_id} target={normalized_target}"
+            )
 
     def publish_post(
         self,
@@ -778,11 +831,25 @@ class WPClient:
         print(f"[WP] 下書き作成 post_id={post_id} title={title!r}")
         return post_id
 
-    def update_post_fields(self, post_id: int, **fields) -> None:
+    def update_post_fields(
+        self,
+        post_id: int,
+        *,
+        caller: str | None = None,
+        source_lane: str | None = None,
+        **fields,
+    ) -> None:
         """記事の任意フィールドを更新（featured_media など）"""
         payload = {k: v for k, v in fields.items() if v is not None}
         if not payload:
             return
+        self._maybe_audit_or_block_published_revert(
+            post_id,
+            payload.get("status"),
+            caller=caller,
+            source_lane=source_lane,
+            channel="update_post_fields",
+        )
         resp = self._request_with_retry(
             requests.post,
             f"{self.api}/posts/{post_id}",
@@ -874,8 +941,22 @@ class WPClient:
             raise last_error
         return []
 
-    def update_post_status(self, post_id: int, status: str) -> None:
+    def update_post_status(
+        self,
+        post_id: int,
+        status: str,
+        *,
+        caller: str | None = None,
+        source_lane: str | None = None,
+    ) -> None:
         """記事のステータスを更新（draft → publish など）"""
+        self._maybe_audit_or_block_published_revert(
+            post_id,
+            status,
+            caller=caller,
+            source_lane=source_lane,
+            channel="update_post_status",
+        )
         resp = self._request_with_retry(
             requests.post,
             f"{self.api}/posts/{post_id}",

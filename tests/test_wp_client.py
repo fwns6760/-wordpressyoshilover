@@ -1,12 +1,16 @@
 import os
+import json
+import tempfile
 import unittest
 import urllib.error
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import Mock, call, patch
 
 import requests
 
 from src.wp_client import WPClient, WP_PUBLISH_STATUS_GUARD_ENV
+from src.wp_revert_audit_ledger import AUDIT_LEDGER_ENV, BLOCK_ENV, LEDGER_PATH_ENV
 
 
 def _mock_response(
@@ -675,6 +679,129 @@ class TestWPClientRetryHandling(unittest.TestCase):
         self.assertEqual(post, {"id": 55})
         self.assertEqual(mock_get.call_count, 2)
         mock_sleep.assert_called_once_with(1.5)
+
+
+class TestWPPublishedRevertGuard(unittest.TestCase):
+    def setUp(self):
+        os.environ["WP_URL"] = "https://example.com"
+        os.environ["WP_USER"] = "user"
+        os.environ["WP_APP_PASSWORD"] = "pass"
+        self.wp = WPClient()
+
+    @patch("src.wp_client.requests.post")
+    @patch.object(WPClient, "get_post")
+    def test_update_post_status_audits_publish_to_draft_attempt(self, mock_get_post, mock_post):
+        mock_get_post.return_value = {"id": 900, "status": "publish"}
+        mock_post.return_value = _mock_response(200, json_data={"id": 900})
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            os.environ,
+            {
+                AUDIT_LEDGER_ENV: "1",
+                LEDGER_PATH_ENV: os.path.join(tmpdir, "wp_revert_audit_ledger.jsonl"),
+            },
+            clear=False,
+        ):
+            self.wp.update_post_status(900, "draft", caller="tests.audit", source_lane="tests")
+            ledger_rows = [
+                json.loads(line)
+                for line in Path(os.path.join(tmpdir, "wp_revert_audit_ledger.jsonl")).read_text(
+                    encoding="utf-8"
+                ).splitlines()
+            ]
+
+        self.assertEqual(mock_post.call_args.kwargs["json"], {"status": "draft"})
+        self.assertEqual(len(ledger_rows), 1)
+        self.assertEqual(ledger_rows[0]["post_id"], 900)
+        self.assertEqual(ledger_rows[0]["status_before"], "publish")
+        self.assertEqual(ledger_rows[0]["status_after"], "draft")
+        self.assertFalse(ledger_rows[0]["blocked"])
+        self.assertEqual(ledger_rows[0]["channel"], "update_post_status")
+
+    @patch("src.wp_client.requests.post")
+    @patch.object(WPClient, "get_post")
+    def test_update_post_status_blocks_publish_to_draft_when_guard_enabled(self, mock_get_post, mock_post):
+        mock_get_post.return_value = {"id": 901, "status": "publish"}
+        mock_post.return_value = _mock_response(200, json_data={"id": 901})
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            os.environ,
+            {
+                AUDIT_LEDGER_ENV: "1",
+                BLOCK_ENV: "1",
+                LEDGER_PATH_ENV: os.path.join(tmpdir, "wp_revert_audit_ledger.jsonl"),
+            },
+            clear=False,
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                self.wp.update_post_status(901, "draft", caller="tests.block", source_lane="tests")
+            ledger_rows = [
+                json.loads(line)
+                for line in Path(os.path.join(tmpdir, "wp_revert_audit_ledger.jsonl")).read_text(
+                    encoding="utf-8"
+                ).splitlines()
+            ]
+
+        self.assertIn("published post status revert blocked", str(ctx.exception))
+        mock_post.assert_not_called()
+        self.assertEqual(len(ledger_rows), 1)
+        self.assertTrue(ledger_rows[0]["blocked"])
+        self.assertEqual(ledger_rows[0]["status_after"], "draft")
+
+    @patch("src.wp_client.requests.post")
+    @patch.object(WPClient, "get_post")
+    def test_update_post_fields_allows_publish_to_trash_with_audit_only(self, mock_get_post, mock_post):
+        mock_get_post.return_value = {"id": 902, "status": "publish"}
+        mock_post.return_value = _mock_response(200, json_data={"id": 902})
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            os.environ,
+            {
+                AUDIT_LEDGER_ENV: "1",
+                BLOCK_ENV: "1",
+                LEDGER_PATH_ENV: os.path.join(tmpdir, "wp_revert_audit_ledger.jsonl"),
+            },
+            clear=False,
+        ):
+            self.wp.update_post_fields(
+                902,
+                status="trash",
+                caller="tests.trash",
+                source_lane="tests",
+            )
+            ledger_rows = [
+                json.loads(line)
+                for line in Path(os.path.join(tmpdir, "wp_revert_audit_ledger.jsonl")).read_text(
+                    encoding="utf-8"
+                ).splitlines()
+            ]
+
+        mock_post.assert_called_once()
+        self.assertEqual(mock_post.call_args.kwargs["json"], {"status": "trash"})
+        self.assertEqual(len(ledger_rows), 1)
+        self.assertFalse(ledger_rows[0]["blocked"])
+        self.assertEqual(ledger_rows[0]["status_after"], "trash")
+        self.assertEqual(ledger_rows[0]["channel"], "update_post_fields")
+
+    @patch("src.wp_client.requests.post")
+    @patch.object(WPClient, "get_post")
+    def test_update_post_status_skips_probe_when_revert_guard_flags_are_off(self, mock_get_post, mock_post):
+        mock_post.return_value = _mock_response(200, json_data={"id": 903})
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            os.environ,
+            {
+                AUDIT_LEDGER_ENV: "",
+                BLOCK_ENV: "",
+                LEDGER_PATH_ENV: os.path.join(tmpdir, "wp_revert_audit_ledger.jsonl"),
+            },
+            clear=False,
+        ):
+            self.wp.update_post_status(903, "draft")
+
+        mock_get_post.assert_not_called()
+        mock_post.assert_called_once()
+        self.assertFalse(os.path.exists(os.path.join(tmpdir, "wp_revert_audit_ledger.jsonl")))
 
 
 if __name__ == "__main__":

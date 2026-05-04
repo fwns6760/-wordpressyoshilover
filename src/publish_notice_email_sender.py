@@ -2562,6 +2562,13 @@ def send_summary(
     bridge_send: BridgeSend = bridge_send_default,
     override_recipient: list[str] | None = None,
 ) -> PublishNoticeEmailResult:
+    if _burst_summary_mail_disabled():
+        return PublishNoticeEmailResult(
+            status="suppressed",
+            reason="DISABLE_BURST_SUMMARY_MAIL",
+            subject=build_summary_subject(request),
+            recipients=[],
+        )
     mail_state = _classify_mail(request)
     return _deliver_mail(
         subject=build_summary_subject(request),

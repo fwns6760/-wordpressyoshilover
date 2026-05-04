@@ -1,4 +1,6 @@
+import os
 import unittest
+from unittest.mock import patch
 
 from src import rss_fetcher
 
@@ -250,6 +252,189 @@ class PostGenValidateTests(unittest.TestCase):
                 self.assertFalse(result["ok"])
                 self.assertIn("starmen_heading_prefix", result["fail_axes"])
                 self.assertEqual(result["stop_reason"], "starmen_prefix_guard")
+
+    def test_post_gen_validate_forbidden_phrase_guard_is_flagged_when_enabled(self):
+        text = "\n".join(
+            [
+                "【話題の要旨】",
+                "巨人の話題を整理する。",
+                "【投稿で出ていた内容】",
+                "投稿の主語と事実を押さえる。",
+                "【この話が出た流れ】",
+                "この表現は目を引きます。",
+                "【ファンの関心ポイント】",
+                "次の起用にどうつながるか気になります。",
+            ]
+        )
+        with patch.dict(os.environ, {"ENABLE_FORBIDDEN_PHRASE_FILTER": "1"}, clear=False):
+            result = rss_fetcher._evaluate_post_gen_validate(text, article_subtype="postgame")
+
+        self.assertFalse(result["ok"])
+        self.assertTrue(any(axis.startswith("forbidden_phrase:") for axis in result["fail_axes"]))
+
+    def test_post_gen_validate_forbidden_phrase_guard_is_inactive_when_disabled(self):
+        text = "\n".join(
+            [
+                "【話題の要旨】",
+                "巨人の話題を整理する。",
+                "【投稿で出ていた内容】",
+                "投稿の主語と事実を押さえる。",
+                "【この話が出た流れ】",
+                "この表現は目を引きます。",
+                "【ファンの関心ポイント】",
+                "次の起用にどうつながるか気になります。",
+            ]
+        )
+        with patch.dict(os.environ, {"ENABLE_FORBIDDEN_PHRASE_FILTER": "0"}, clear=False):
+            result = rss_fetcher._evaluate_post_gen_validate(text, article_subtype="postgame")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["fail_axes"], [])
+
+    def test_post_gen_validate_placeholder_body_is_flagged_when_enabled(self):
+        text = "\n".join(
+            [
+                "【話題の要旨】",
+                "巨人の話題を整理する。",
+                "【投稿で出ていた内容】",
+                "",
+                "【この話が出た流れ】",
+                "元記事の内容を確認中です。",
+                "【ファンの関心ポイント】",
+                "次の起用にどうつながるか気になります。",
+            ]
+        )
+        with patch.dict(os.environ, {"ENABLE_FORBIDDEN_PHRASE_FILTER": "1"}, clear=False):
+            result = rss_fetcher._evaluate_post_gen_validate(text, article_subtype="postgame")
+
+        self.assertFalse(result["ok"])
+        self.assertTrue(any(axis.startswith("placeholder_body:") for axis in result["fail_axes"]))
+
+    def test_post_gen_validate_quote_integrity_guard_rejects_unbalanced_quote(self):
+        text = "\n".join(
+            [
+                "【発言の要旨】",
+                "阿部監督が起用意図を説明した。",
+                "【発言内容】",
+                "阿部監督は「次も同じ形でいきたいと話した。",
+                "【この話が出た流れ】",
+                "直前の継投判断が焦点だった。",
+                "【次の注目】",
+                "次の継投で何を優先するか気になります。",
+            ]
+        )
+        with patch.dict(os.environ, {"ENABLE_QUOTE_INTEGRITY_GUARD": "1"}, clear=False):
+            result = rss_fetcher._evaluate_post_gen_validate(text, article_subtype="manager")
+
+        self.assertFalse(result["ok"])
+        self.assertTrue(any(axis.startswith("quote_integrity:") for axis in result["fail_axes"]))
+
+    def test_post_gen_validate_duplicate_sentence_guard_rejects_near_duplicate(self):
+        text = "\n".join(
+            [
+                "【試合結果】",
+                "巨人が阪神に3-2で勝利した。",
+                "【ハイライト】",
+                "巨人が阪神に3-2で勝利した。",
+                "【選手成績】",
+                "戸郷翔征が7回1失点で試合を作った。",
+                "【試合展開】",
+                "終盤の継投がどう次戦につながるか気になります。",
+            ]
+        )
+        with patch.dict(os.environ, {"ENABLE_DUPLICATE_SENTENCE_GUARD": "1"}, clear=False):
+            result = rss_fetcher._evaluate_post_gen_validate(text, article_subtype="postgame")
+
+        self.assertFalse(result["ok"])
+        self.assertTrue(any(axis.startswith("duplicate_sentence:") for axis in result["fail_axes"]))
+
+    def test_post_gen_validate_active_team_mismatch_guard_rejects_non_giants_status_story(self):
+        text = "\n".join(
+            [
+                "【故障・復帰の要旨】",
+                "岡本和真の実戦復帰プランを整理する。",
+                "【故障の詳細】",
+                "状態の推移を確認する。",
+                "【リハビリ状況・復帰見通し】",
+                "復帰までの工程を追う。",
+                "【チームへの影響と今後の注目点】",
+                "どこで復帰するか気になります。",
+            ]
+        )
+        source_refs = {
+            "source_title": "ブルージェイズ・岡本和真が実戦復帰へ前進",
+            "source_summary": "ブルージェイズでの実戦復帰プランが進んでいる。",
+        }
+        with patch.dict(os.environ, {"ENABLE_ACTIVE_TEAM_MISMATCH_GUARD": "1"}, clear=False):
+            result = rss_fetcher._evaluate_post_gen_validate(
+                text,
+                article_subtype="player_recovery",
+                source_refs=source_refs,
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertIn("entity_mismatch:non_giants_team_prefix", result["fail_axes"])
+
+    def test_post_gen_validate_active_team_mismatch_guard_rejects_alumni_non_baseball_story(self):
+        text = "\n".join(
+            [
+                "【ニュースの整理】",
+                "上原浩治氏のコメントを整理する。",
+                "【ここに注目】",
+                "発言の要点を追う。",
+                "【次の注目】",
+                "この反応がどう広がるか気になります。",
+            ]
+        )
+        source_refs = {
+            "source_title": "元巨人の上原浩治氏が井上尚弥と中谷潤人にあっぱれ",
+            "source_summary": "ラウンド中に息をするのも忘れるくらいだったとボクシング世界戦を語った。",
+        }
+        with patch.dict(os.environ, {"ENABLE_ACTIVE_TEAM_MISMATCH_GUARD": "1"}, clear=False):
+            result = rss_fetcher._evaluate_post_gen_validate(
+                text,
+                article_subtype="general",
+                source_refs=source_refs,
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertIn("entity_mismatch:alumni_non_baseball_context", result["fail_axes"])
+
+    def test_post_gen_validate_quality_guards_allow_clean_example(self):
+        text = "\n".join(
+            [
+                "【試合結果】",
+                "巨人が阪神に3-2で競り勝った。",
+                "【ハイライト】",
+                "松浦慶斗が緊急リリーフで流れを切った。",
+                "【選手成績】",
+                "戸郷翔征が7回1失点、打線は11安打だった。",
+                "【試合展開】",
+                "終盤の継投が次戦でもどう使われるか気になります。",
+            ]
+        )
+        source_refs = {
+            "source_title": "巨人・松浦慶斗が緊急リリーフで流れを切る",
+            "source_summary": "戸郷翔征が7回1失点、打線は11安打で3-2勝利。",
+        }
+        with patch.dict(
+            os.environ,
+            {
+                "ENABLE_FORBIDDEN_PHRASE_FILTER": "1",
+                "ENABLE_QUOTE_INTEGRITY_GUARD": "1",
+                "ENABLE_DUPLICATE_SENTENCE_GUARD": "1",
+                "ENABLE_ACTIVE_TEAM_MISMATCH_GUARD": "1",
+            },
+            clear=False,
+        ):
+            result = rss_fetcher._evaluate_post_gen_validate(
+                text,
+                article_subtype="postgame",
+                source_refs=source_refs,
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["fail_axes"], [])
 
     def test_post_gen_validate_allows_starmen_prefix_for_lineup_and_farm_lineup(self):
         cases = [

@@ -20,6 +20,7 @@
 |---|---|---|---|
 | **245 front hide internal auto-post category label** | READY | **必要。いま動かす** | Front画面に内部カテゴリ「自動投稿」が出るのを止める。カテゴリ削除ではなく表示除外のみ |
 | **277-QA title player name backfill** | REVIEW_NEEDED | **必要。impl 済み** | helper + fetcher integration + 1826 tests pass。次は Claude review と push 判断 |
+| **OO-QA article body quality v1** | IN_FLIGHT | **必要。preview 実装中** | default-OFF 本文品質 guard を repo 実装。次は fixture preview doc 作成と Claude/user review |
 | **279-QA mail subject clarity** | READY_FOR_FIX | **必要。277 の次** | publish-notice 件名だけで公開済み / review / hold / 古い候補を判別できるようにする。今回は doc-only |
 | **278-QA RT title cleanup** | READY_FOR_FIX | **必要。279 の次** | RT prefix / 公式X断片 / グッズ告知系 title を整形する。今回は doc-only |
 | **280-QA summary excerpt cleanup** | READY_FOR_FIX | **必要。series 最後** | publish-notice 本文 summary / excerpt の判断材料を改善する。今回は doc-only |

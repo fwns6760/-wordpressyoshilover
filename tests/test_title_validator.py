@@ -1,4 +1,5 @@
 import json
+import os
 import unittest
 from unittest.mock import patch
 
@@ -129,6 +130,21 @@ class TitleValidatorTests(unittest.TestCase):
         self.assertFalse(is_weak)
         self.assertEqual(reason, "")
         self.assertTrue(title_validator.is_non_name_speaker_label("チーム"))
+
+    def test_generic_compound_title_is_preserved_when_flag_is_off(self):
+        with patch.dict(os.environ, {"ENABLE_TITLE_GENERIC_COMPOUND_GUARD": "0"}, clear=False):
+            self.assertTrue(title_validator.title_has_person_name_candidate("実施選手、昇格・復帰 関連情報"))
+
+    def test_generic_compound_title_is_rejected_when_flag_is_on(self):
+        with patch.dict(os.environ, {"ENABLE_TITLE_GENERIC_COMPOUND_GUARD": "1"}, clear=False):
+            self.assertFalse(title_validator.title_has_person_name_candidate("実施選手、昇格・復帰 関連情報"))
+
+    def test_generic_compound_title_routes_to_weak_subject_when_flag_is_on(self):
+        with patch.dict(os.environ, {"ENABLE_TITLE_GENERIC_COMPOUND_GUARD": "1"}, clear=False):
+            is_weak, reason = title_validator.is_weak_subject_title("実施選手、昇格・復帰 関連情報")
+
+        self.assertTrue(is_weak)
+        self.assertEqual(reason, "related_info_escape")
 
     def test_title_has_minimum_article_context_rejects_generic_titles(self):
         cases = [

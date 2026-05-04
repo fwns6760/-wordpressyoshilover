@@ -6,6 +6,12 @@ import re
 from typing import Any, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
+from src.article_quality_guards import (
+    ENABLE_SOURCE_GROUNDING_STRICT_ENV_FLAG,
+    env_flag as _quality_env_flag,
+    extract_grounded_team_names,
+)
+
 
 JST = ZoneInfo("Asia/Tokyo")
 FULLWIDTH_DIGITS = str.maketrans("０１２３４５６７８９", "0123456789")
@@ -529,6 +535,20 @@ def _source_metadata_text(metadata: Mapping[str, Any] | None) -> str:
     return "\n".join(parts)
 
 
+def _source_grounding_text(source_text: str, metadata: Mapping[str, Any] | None) -> str:
+    parts = [str(source_text or "").strip()]
+    if metadata:
+        for key in ("source_title", "article_title", "source_summary", "summary", "source_description", "player_names"):
+            value = metadata.get(key)
+            if isinstance(value, (list, tuple, set)):
+                parts.extend(str(item).strip() for item in value if str(item).strip())
+            else:
+                text = str(value or "").strip()
+                if text:
+                    parts.append(text)
+    return "\n".join(part for part in parts if part)
+
+
 def _normalized_subtype(subtype: str) -> str:
     return str(subtype or "").strip().lower()
 
@@ -882,6 +902,10 @@ def _trusted_player_names(source_text: str, generated_body: str, metadata: Mappi
     return names
 
 
+def _trusted_player_names_from_source(source_text: str, metadata: Mapping[str, Any] | None) -> set[str]:
+    return extract_player_names(_source_grounding_text(source_text, metadata))
+
+
 def _name_used_as_fact_subject(text: str, name: str) -> bool:
     normalized = _normalize_text(text)
     for match in re.finditer(re.escape(name), normalized):
@@ -909,6 +933,41 @@ def _candidate_date_baseline(source_text: str, generated_body: str, publish_time
     if generated_date is not None:
         return generated_date, "generated"
     return None, None
+
+
+def _check_article_source_grounding_strict(
+    findings: list[ConsistencyFinding],
+    *,
+    source_text: str,
+    generated_body: str,
+    metadata: Mapping[str, Any] | None,
+) -> None:
+    if not _quality_env_flag(ENABLE_SOURCE_GROUNDING_STRICT_ENV_FLAG, False):
+        return
+
+    trusted_player_names = _trusted_player_names_from_source(source_text, metadata)
+    generated_player_names = extract_player_names(generated_body)
+    unverified_player_names = sorted(
+        name for name in generated_player_names if name not in trusted_player_names and _name_used_as_fact_subject(generated_body, name)
+    )
+
+    trusted_team_names = extract_grounded_team_names(_source_grounding_text(source_text, metadata))
+    generated_team_names = extract_grounded_team_names(generated_body)
+    unverified_team_names = sorted(team for team in generated_team_names if team not in trusted_team_names and team != "巨人")
+
+    if not unverified_player_names and not unverified_team_names:
+        return
+
+    _append_finding(
+        findings,
+        flag="source_grounding_unverified_entity",
+        severity="hard_stop",
+        axis="source_grounding",
+        scope="article",
+        detail="unverified_player_or_team_name",
+        unverified_player_names=unverified_player_names,
+        unverified_team_names=unverified_team_names,
+    )
 
 
 def _check_x_candidate_consistency(
@@ -1046,6 +1105,12 @@ def check_consistency(
         source_text=normalized_source,
         generated_body=normalized_body,
         publish_time_iso=publish_time_iso,
+    )
+    _check_article_source_grounding_strict(
+        findings,
+        source_text=normalized_source,
+        generated_body=normalized_body,
+        metadata=metadata,
     )
     _check_x_candidate_consistency(
         findings,

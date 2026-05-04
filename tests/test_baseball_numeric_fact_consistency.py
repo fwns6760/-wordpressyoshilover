@@ -1,4 +1,6 @@
+import os
 import unittest
+from unittest.mock import patch
 
 from src.baseball_numeric_fact_consistency import (
     check_consistency as _check_consistency,
@@ -277,6 +279,73 @@ class BaseballNumericFactConsistencyTests(unittest.TestCase):
 
         self.assertEqual(report.severity, "hard_stop")
         self.assertIn("pitcher_team_stat_confusion", report.hard_stop_flags)
+
+    def test_source_grounding_strict_is_inactive_when_flag_is_off(self):
+        with patch.dict(os.environ, {"ENABLE_SOURCE_GROUNDING_STRICT": "0"}, clear=False):
+            report = check_consistency(
+                source_text="巨人が阪神に3-2で勝利した。",
+                generated_body="戸郷翔征が完投し、巨人が阪神に3-2で勝利した。",
+                x_candidates=[],
+                metadata={},
+                publish_time_iso="2026-04-28T21:00:00+09:00",
+            )
+
+        self.assertEqual(report.severity, "pass")
+        self.assertEqual(report.hard_stop_flags, ())
+
+    def test_source_grounding_strict_blocks_unverified_player_name(self):
+        with patch.dict(os.environ, {"ENABLE_SOURCE_GROUNDING_STRICT": "1"}, clear=False):
+            report = check_consistency(
+                source_text="巨人が阪神に3-2で勝利した。",
+                generated_body="戸郷翔征が完投し、巨人が阪神に3-2で勝利した。",
+                x_candidates=[],
+                metadata={},
+                publish_time_iso="2026-04-28T21:00:00+09:00",
+            )
+
+        self.assertEqual(report.severity, "hard_stop")
+        self.assertIn("source_grounding_unverified_entity", report.hard_stop_flags)
+
+    def test_source_grounding_strict_blocks_unverified_team_name(self):
+        with patch.dict(os.environ, {"ENABLE_SOURCE_GROUNDING_STRICT": "1"}, clear=False):
+            report = check_consistency(
+                source_text="巨人が阪神に3-2で勝利した。",
+                generated_body="ブルージェイズでも話題になった一戦として、巨人が阪神に3-2で勝利した。",
+                x_candidates=[],
+                metadata={},
+                publish_time_iso="2026-04-28T21:00:00+09:00",
+            )
+
+        self.assertEqual(report.severity, "hard_stop")
+        self.assertIn("source_grounding_unverified_entity", report.hard_stop_flags)
+
+    def test_source_grounding_strict_allows_trusted_player_and_team_names(self):
+        with patch.dict(os.environ, {"ENABLE_SOURCE_GROUNDING_STRICT": "1"}, clear=False):
+            report = check_consistency(
+                source_text="巨人が阪神に3-2で勝利した。戸郷翔征が7回1失点だった。",
+                generated_body="戸郷翔征が7回1失点で試合を作り、巨人が阪神に3-2で勝利した。",
+                x_candidates=[],
+                metadata={},
+                publish_time_iso="2026-04-28T21:00:00+09:00",
+            )
+
+        self.assertEqual(report.severity, "pass")
+        self.assertEqual(report.hard_stop_flags, ())
+
+    def test_source_grounding_strict_respects_lenient_subtype(self):
+        with patch.dict(os.environ, {"ENABLE_SOURCE_GROUNDING_STRICT": "1"}, clear=False):
+            report = _check_consistency(
+                source_text="巨人が阪神に3-2で勝利した。",
+                generated_body="戸郷翔征が完投し、巨人が阪神に3-2で勝利した。",
+                x_candidates=[],
+                metadata={},
+                publish_time_iso="2026-04-28T21:00:00+09:00",
+                subtype="manager_comment",
+            )
+
+        self.assertEqual(report.severity, "review")
+        self.assertEqual(report.hard_stop_flags, ())
+        self.assertIn("source_grounding_unverified_entity", report.review_flags)
 
 
 if __name__ == "__main__":

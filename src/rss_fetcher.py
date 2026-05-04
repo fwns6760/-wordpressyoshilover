@@ -62,6 +62,19 @@ from x_post_generator import (
     build_post_with_meta as build_x_post_text_with_meta,
     resolve_effective_x_post_ai_mode,
 )
+from src.article_quality_guards import (
+    ENABLE_ACTIVE_TEAM_MISMATCH_GUARD_ENV_FLAG,
+    ENABLE_DUPLICATE_SENTENCE_GUARD_ENV_FLAG,
+    ENABLE_FORBIDDEN_PHRASE_FILTER_ENV_FLAG,
+    ENABLE_TITLE_GENERIC_COMPOUND_GUARD_ENV_FLAG,
+    ENABLE_QUOTE_INTEGRITY_GUARD_ENV_FLAG,
+    detect_source_entity_conflict,
+    find_duplicate_sentence,
+    find_forbidden_phrase,
+    find_quote_integrity_issue,
+    is_generic_compound_subject,
+    sanitize_forbidden_visible_text,
+)
 from src.source_trust import (
     classify_url as _source_trust_classify_url,
     classify_handle as _source_trust_classify_handle,
@@ -1215,7 +1228,15 @@ def _is_recovery_like_status_story(title: str, summary: str) -> bool:
     return False
 
 
+def _quality_source_entity_conflict(title: str, summary: str) -> dict[str, str] | None:
+    if not _env_flag(ENABLE_ACTIVE_TEAM_MISMATCH_GUARD_ENV_FLAG, False):
+        return None
+    return detect_source_entity_conflict(title, summary)
+
+
 def _detect_player_special_template_kind(title: str, summary: str) -> str:
+    if _quality_source_entity_conflict(title, summary):
+        return ""
     if _is_recovery_like_status_story(title, summary):
         return "player_recovery"
     if _is_notice_like_status_story(title, summary):
@@ -5924,6 +5945,12 @@ def _voice_intro(category: str, subject: str) -> str:
     return "先に、この話題で押さえるべき論点を整理します。"
 
 
+def _apply_article_body_quality_sanitizer(text: str) -> str:
+    if not _env_flag(ENABLE_FORBIDDEN_PHRASE_FILTER_ENV_FLAG, False):
+        return text
+    return sanitize_forbidden_visible_text(text)
+
+
 def _apply_editor_voice(text: str, category: str, subject: str) -> str:
     lines = []
     common_replacements = [
@@ -9061,6 +9088,42 @@ def _evaluate_post_gen_validate(
         if _detect_title_body_entity_mismatch(title_text, fact_conflict_payload):
             _append_fail_axis("TITLE_BODY_ENTITY_MISMATCH")
 
+    if _env_flag(ENABLE_FORBIDDEN_PHRASE_FILTER_ENV_FLAG, False):
+        forbidden_hit = find_forbidden_phrase(raw_text)
+        if forbidden_hit:
+            _append_fail_axis(f"forbidden_phrase:{forbidden_hit['label']}")
+        placeholder_markers = (
+            "元記事の内容を確認中です",
+            "確認できる範囲を押さえておきたい",
+            "この話題で押さえるべき論点を整理します",
+        )
+        for heading, body_text in sections:
+            normalized_body = _collapse_ws(_strip_html(body_text))
+            if heading and not normalized_body:
+                _append_fail_axis("placeholder_body:empty_section")
+                break
+            if heading and any(marker in normalized_body for marker in placeholder_markers):
+                _append_fail_axis("placeholder_body:boilerplate")
+                break
+
+    if _env_flag(ENABLE_QUOTE_INTEGRITY_GUARD_ENV_FLAG, False):
+        quote_issue = find_quote_integrity_issue(raw_text)
+        if quote_issue:
+            _append_fail_axis(f"quote_integrity:{quote_issue['reason']}")
+
+    if _env_flag(ENABLE_DUPLICATE_SENTENCE_GUARD_ENV_FLAG, False):
+        duplicate_issue = find_duplicate_sentence(raw_text)
+        if duplicate_issue:
+            _append_fail_axis(f"duplicate_sentence:{duplicate_issue['reason']}")
+
+    if _env_flag(ENABLE_ACTIVE_TEAM_MISMATCH_GUARD_ENV_FLAG, False):
+        entity_conflict = detect_source_entity_conflict(
+            str(source_refs.get("source_title") or source_refs.get("title") or ""),
+            str(source_refs.get("source_summary") or source_refs.get("summary") or ""),
+        )
+        if entity_conflict:
+            _append_fail_axis(f"entity_mismatch:{entity_conflict['reason']}")
+
     stop_reason = ""
     if any(axis.startswith("starmen_") for axis in fail_axes):
         stop_reason = "starmen_prefix_guard"
@@ -11201,6 +11264,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                     generation_category,
                     subject,
                 )
+        ai_body = _apply_article_body_quality_sanitizer(ai_body)
     if summary_block and not _text_is_safe(title, summary_clean, summary_block, has_game):
         logger.warning("SUMMARYブロックを破棄: 事実制約に違反")
         summary_block = ""
@@ -14056,11 +14120,31 @@ def _rewrite_display_title_with_template(title: str, summary: str, category: str
     opponent = _extract_title_opponent(source_text)
     venue = _extract_title_venue(source_text)
     game_subject = _normalize_game_story_subject(subject) if category == "試合速報" else ""
+    source_entity_conflict = _quality_source_entity_conflict(title, summary)
+    generic_player_subject_blocked = False
+    if category == "選手情報" and _env_flag(ENABLE_TITLE_GENERIC_COMPOUND_GUARD_ENV_FLAG, False):
+        generic_player_subject_blocked = any(
+            is_generic_compound_subject(candidate) or is_non_name_speaker_label(candidate)
+            for candidate in (generic_player_status_subject, status_subject, subject)
+            if candidate
+        )
 
     def _result(text: str, template_key: str, max_chars: int = 38) -> tuple[str, str]:
         return _trim_display_title(text, max_chars=max_chars), template_key
 
     if category == "選手情報":
+        player_status_story = bool(
+            PLAYER_DEREGISTER_TITLE_RE.search(source_text)
+            or PLAYER_JOIN_TITLE_RE.search(source_text)
+            or PLAYER_REGISTER_TITLE_RE.search(source_text)
+            or PLAYER_RETURN_TITLE_RE.search(source_text)
+            or "昇格" in source_text
+            or "一軍" in source_text
+            or "復帰" in source_text
+        )
+        if player_status_story and (source_entity_conflict or generic_player_subject_blocked):
+            template_key = "player_status_entity_conflict_passthrough" if source_entity_conflict else "player_status_generic_subject_passthrough"
+            return _result(clean_title or title or "巨人ニュース", template_key, max_chars=42)
         if "フォーム" in source_text or "助言" in source_text or "修正" in source_text:
             return _result(f"{subject}、フォーム変更 関連情報", "player_mechanics_generic")
         if PLAYER_DEREGISTER_TITLE_RE.search(source_text):
@@ -14072,7 +14156,7 @@ def _rewrite_display_title_with_template(title: str, summary: str, category: str
                 return _result(f"{status_subject}、{notice_type} 関連情報", "player_status_register")
             return _result(f"{status_subject}、登録に関する関連情報", "player_status_register")
         if PLAYER_RETURN_TITLE_RE.search(source_text) or "昇格" in source_text or "一軍" in source_text or "復帰" in source_text:
-            if generic_player_status_subject:
+            if generic_player_status_subject and not generic_player_subject_blocked:
                 status_subject = generic_player_status_subject
             return _result(f"{status_subject}、昇格・復帰 関連情報", "player_status_return")
         if quote_text:

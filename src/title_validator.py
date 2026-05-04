@@ -4,6 +4,12 @@ from __future__ import annotations
 
 import re
 
+from src.article_quality_guards import (
+    ENABLE_TITLE_GENERIC_COMPOUND_GUARD_ENV_FLAG,
+    env_flag as _quality_env_flag,
+    is_generic_compound_subject,
+)
+
 
 TITLE_PREFIX_BY_SUBTYPE = {
     "lineup": "巨人スタメン",
@@ -364,6 +370,8 @@ def _looks_like_person_name_token(token: str) -> bool:
     if not stripped:
         return False
     if stripped in NON_NAME_NAME_TOKENS:
+        return False
+    if _quality_env_flag(ENABLE_TITLE_GENERIC_COMPOUND_GUARD_ENV_FLAG, False) and is_generic_compound_subject(stripped):
         return False
     if stripped.endswith(("情報", "起用", "登録", "抹消", "復帰", "昇格", "先発", "合流", "練習", "速報", "試合", "結果")):
         return False

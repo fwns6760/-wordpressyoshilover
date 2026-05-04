@@ -37,6 +37,7 @@ _PUBLISH_NOTICE_CLASS_RESERVE_ENV_FLAG = "ENABLE_PUBLISH_NOTICE_CLASS_RESERVE"
 _INGEST_VISIBILITY_FIX_V1_ENV_FLAG = "ENABLE_INGEST_VISIBILITY_FIX_V1"
 _PUBLISH_NOTICE_24H_BUDGET_GOVERNOR_ENV_FLAG = "ENABLE_PUBLISH_NOTICE_24H_BUDGET_GOVERNOR"
 _PUBLISH_ONLY_MAIL_FILTER_ENV_FLAG = "ENABLE_PUBLISH_ONLY_MAIL_FILTER"
+_PUBLISH_NOTICE_HISTORY_STRICT_STAMP_ENV_FLAG = "ENABLE_PUBLISH_NOTICE_HISTORY_STRICT_STAMP"
 _PUBLISH_ONLY_MAIL_PREFIX = "【公開済】"
 _DIRECT_PUBLISH_NOTICE_ORIGIN = "direct_publish_scan"
 _PUBLISH_NOTICE_24H_BUDGET_SOFT_THRESHOLD_ENV = "PUBLISH_NOTICE_24H_BUDGET_SOFT_THRESHOLD"
@@ -220,6 +221,19 @@ def _coerce_now(now: Callable[[], datetime] | datetime | None) -> datetime:
 
 def _path(value: str | Path) -> Path:
     return value if isinstance(value, Path) else Path(value)
+
+
+def _publish_notice_history_strict_stamp_enabled() -> bool:
+    return str(os.environ.get(_PUBLISH_NOTICE_HISTORY_STRICT_STAMP_ENV_FLAG, "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _should_record_scan_history() -> bool:
+    return not _publish_notice_history_strict_stamp_enabled()
 
 
 def _resolve_guarded_publish_history_path(value: str | Path | None = None) -> Path:
@@ -1763,6 +1777,7 @@ def scan_guarded_publish_history(
         recorded_at if recorded_at is not None else current_now + timedelta(seconds=1)
     )
     review_recorded_at_iso = review_recorded_at.isoformat()
+    should_record_history = _should_record_scan_history()
 
     emitted: list[PublishNoticeRequest] = []
     skipped: list[tuple[int | str, str]] = []
@@ -1876,7 +1891,8 @@ def scan_guarded_publish_history(
         if old_candidate_once_path and is_old_candidate_over_threshold:
             old_candidate_ledger_post_ids.append(post_key)
         if not class_reserve_enabled:
-            next_history[post_key] = review_recorded_at_iso
+            if should_record_history:
+                next_history[post_key] = review_recorded_at_iso
             if old_candidate_once_path and is_old_candidate_over_threshold:
                 next_old_candidate_ledger[post_key] = review_recorded_at_iso
                 old_candidate_ledger_write_needed = True
@@ -1916,7 +1932,8 @@ def scan_guarded_publish_history(
         old_candidate_ledger_write_needed = old_candidate_ledger_prune_write_needed
         for request in emitted:
             post_key = str(request.post_id)
-            next_history[post_key] = review_recorded_at_iso
+            if should_record_history:
+                next_history[post_key] = review_recorded_at_iso
             if post_key in old_candidate_ledger_post_ids:
                 next_old_candidate_ledger[post_key] = review_recorded_at_iso
                 old_candidate_ledger_write_needed = True
@@ -2054,6 +2071,7 @@ def scan_post_gen_validate_history(
         recorded_at if recorded_at is not None else current_now + timedelta(seconds=1)
     )
     review_recorded_at_iso = review_recorded_at.isoformat()
+    should_record_history = _should_record_scan_history()
 
     emitted: list[PublishNoticeRequest] = []
     skipped: list[tuple[int | str, str]] = []
@@ -2110,7 +2128,8 @@ def scan_post_gen_validate_history(
         )
         emitted.append(request)
         seen_dedupe_keys.add(dedupe_key)
-        next_history[dedupe_key] = review_recorded_at_iso
+        if should_record_history:
+            next_history[dedupe_key] = review_recorded_at_iso
         if not capture_only:
             _append_queue_log(
                 queue_path,
@@ -2250,6 +2269,7 @@ def scan_preflight_skip_history(
         recorded_at if recorded_at is not None else current_now + timedelta(seconds=1)
     )
     review_recorded_at_iso = review_recorded_at.isoformat()
+    should_record_history = _should_record_scan_history()
 
     emitted: list[PublishNoticeRequest] = []
     skipped: list[tuple[int | str, str]] = []
@@ -2319,7 +2339,8 @@ def scan_preflight_skip_history(
         )
         emitted.append(request)
         seen_dedupe_keys.add(dedupe_key)
-        next_history[dedupe_key] = review_recorded_at_iso
+        if should_record_history:
+            next_history[dedupe_key] = review_recorded_at_iso
         if not capture_only:
             _append_queue_log(
                 queue_path,
@@ -2726,6 +2747,7 @@ def scan(
     seen_post_ids: set[str] = set()
     latest_post_dt: datetime | None = None
     recorded_at_iso = current_now.isoformat()
+    should_record_history = _should_record_scan_history()
 
     for post in posts:
         post_status = str(post.get("status") or "").strip().lower()
@@ -2745,7 +2767,8 @@ def scan(
         request = _request_from_post(post, notice_origin=_DIRECT_PUBLISH_NOTICE_ORIGIN)
         emitted.append(request)
         seen_post_ids.add(post_key)
-        next_history[post_key] = request.publish_time_iso or recorded_at_iso
+        if should_record_history:
+            next_history[post_key] = request.publish_time_iso or recorded_at_iso
         _append_queue_log(
             queue_path,
             status="queued",
@@ -2935,17 +2958,17 @@ def scan(
     if digest_state.deferred_post_ids:
         deferred_ids = set(digest_state.deferred_post_ids)
         selected_review_ids.difference_update(deferred_ids)
-        if class_reserve_enabled:
+        if class_reserve_enabled and should_record_history:
             next_history = dict(review_history_before_selection)
             for request in selected_review_requests:
                 if str(request.post_id) not in selected_review_ids:
                     continue
                 recorded_at_iso = _recorded_at_iso_for_request(request, now=current_now)
                 next_history[str(request.post_id)] = recorded_at_iso
-        else:
+        elif should_record_history:
             for post_id in deferred_ids:
                 next_history.pop(post_id, None)
-    elif class_reserve_enabled:
+    elif class_reserve_enabled and should_record_history:
         next_history = dict(review_history_before_selection)
         for request in selected_review_requests:
             recorded_at_iso = _recorded_at_iso_for_request(request, now=current_now)

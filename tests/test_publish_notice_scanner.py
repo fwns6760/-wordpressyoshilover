@@ -115,6 +115,39 @@ class PublishNoticeScannerTests(unittest.TestCase):
         self.assertEqual(result.cursor_before, "2026-04-24T08:00:00+09:00")
         self.assertEqual(result.cursor_after, "2026-04-24T09:30:00+09:00")
 
+    def test_scan_strict_stamp_flag_defers_direct_publish_history_write(self):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            "os.environ",
+            {"ENABLE_PUBLISH_NOTICE_HISTORY_STRICT_STAMP": "1"},
+            clear=False,
+        ):
+            cursor_path = Path(tmpdir) / "cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            cursor_path.write_text("2026-04-24T08:00:00+09:00\n", encoding="utf-8")
+            history_path.write_text("{}\n", encoding="utf-8")
+
+            result = scanner.scan(
+                cursor_path=cursor_path,
+                history_path=history_path,
+                queue_path=queue_path,
+                fetch=lambda base, after: [self._post(id=203, date="2026-04-24T09:00:00+09:00")],
+                now=lambda: NOW,
+            )
+
+            history = json.loads(history_path.read_text(encoding="utf-8"))
+            rows = [
+                json.loads(line)
+                for line in queue_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+
+        self.assertEqual([item.post_id for item in result.emitted], [203])
+        self.assertEqual(history, {})
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["status"], "queued")
+        self.assertEqual(rows[0]["post_id"], 203)
+
     def test_scan_skips_recent_duplicate_from_history(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             cursor_path = Path(tmpdir) / "cursor.txt"

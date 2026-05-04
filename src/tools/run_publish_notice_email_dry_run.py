@@ -251,6 +251,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     post_id=request.post_id,
                     result=mail_result,
                     publish_time_iso=request.publish_time_iso,
+                    request=request,
+                    history_path=args.history_path,
                 )
                 per_post_results.append(mail_result)
                 _emit_notice_ledger(
@@ -338,6 +340,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                         post_id=request.post_id,
                         result=result,
                         publish_time_iso=request.publish_time_iso,
+                        request=request,
+                        history_path=args.history_path,
                     )
                     _emit_notice_ledger(
                         ledger_sink,
@@ -421,6 +425,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             post_id=request.post_id,
             result=result,
             publish_time_iso=request.publish_time_iso,
+            request=request,
+            history_path=args.history_path,
         )
         _emit_notice_ledger(
             ledger_sink,

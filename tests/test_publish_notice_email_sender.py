@@ -2407,6 +2407,211 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         self.assertNotIn("should-not-leak-secret", raw)
         self.assertNotIn("smtp_password", raw)
 
+    def test_append_send_result_strict_stamp_records_history_only_after_sent_publish_verify(self):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            "os.environ",
+            {"ENABLE_PUBLISH_NOTICE_HISTORY_STRICT_STAMP": "1"},
+            clear=False,
+        ), patch(
+            "src.publish_notice_email_sender._verify_wp_status_publish",
+            return_value=True,
+        ):
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            history_path = Path(tmpdir) / "history.json"
+            result = sender.PublishNoticeEmailResult(
+                status="sent",
+                reason=None,
+                subject="【公開済】巨人が接戦を制した | YOSHILOVER",
+                recipients=["notice@example.com"],
+            )
+            recorded_at = datetime.fromisoformat("2026-05-04T10:06:36.373219+09:00")
+
+            sender.append_send_result(
+                queue_path,
+                notice_kind="per_post",
+                post_id=123,
+                result=result,
+                publish_time_iso="2026-05-04T09:55:49+09:00",
+                recorded_at=recorded_at,
+                request=self._request(summary=None, notice_origin="manual_replay"),
+                history_path=history_path,
+            )
+
+            history = json.loads(history_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(history, {"123": "2026-05-04T10:06:36.373219+09:00"})
+
+    def test_append_send_result_strict_stamp_skips_history_for_replay_window_suppression(self):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            "os.environ",
+            {"ENABLE_PUBLISH_NOTICE_HISTORY_STRICT_STAMP": "1"},
+            clear=False,
+        ), patch(
+            "src.publish_notice_email_sender._verify_wp_status_publish",
+            return_value=True,
+        ):
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            history_path = Path(tmpdir) / "history.json"
+            result = sender.PublishNoticeEmailResult(
+                status="suppressed",
+                reason="DUPLICATE_WITHIN_REPLAY_WINDOW",
+                subject="【公開済】巨人が接戦を制した | YOSHILOVER",
+                recipients=["notice@example.com"],
+            )
+
+            sender.append_send_result(
+                queue_path,
+                notice_kind="per_post",
+                post_id=123,
+                result=result,
+                publish_time_iso="2026-05-04T09:55:49+09:00",
+                recorded_at=datetime.fromisoformat("2026-05-04T10:06:36.373219+09:00"),
+                request=self._request(summary=None, notice_origin="manual_replay"),
+                history_path=history_path,
+            )
+
+        self.assertFalse(history_path.exists())
+
+    def test_append_send_result_strict_stamp_skips_history_for_publish_only_filter_suppression(self):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            "os.environ",
+            {"ENABLE_PUBLISH_NOTICE_HISTORY_STRICT_STAMP": "1"},
+            clear=False,
+        ), patch(
+            "src.publish_notice_email_sender._verify_wp_status_publish",
+            return_value=True,
+        ):
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            history_path = Path(tmpdir) / "history.json"
+            result = sender.PublishNoticeEmailResult(
+                status="suppressed",
+                reason="PUBLISH_ONLY_FILTER",
+                subject="【要確認】巨人戦の観戦案内を更新 | YOSHILOVER",
+                recipients=["notice@example.com"],
+            )
+
+            sender.append_send_result(
+                queue_path,
+                notice_kind="per_post",
+                post_id=123,
+                result=result,
+                publish_time_iso="2026-05-04T09:55:49+09:00",
+                recorded_at=datetime.fromisoformat("2026-05-04T10:06:36.373219+09:00"),
+                request=self._request(
+                    title="巨人戦の観戦案内を更新",
+                    subtype="notice",
+                    summary="対象試合と受付条件を整理した。",
+                    notice_origin="guarded_publish_history",
+                ),
+                history_path=history_path,
+            )
+
+        self.assertFalse(history_path.exists())
+
+    def test_append_send_result_strict_stamp_skips_numeric_history_when_wp_status_not_publish(self):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            "os.environ",
+            {"ENABLE_PUBLISH_NOTICE_HISTORY_STRICT_STAMP": "1"},
+            clear=False,
+        ), patch(
+            "src.publish_notice_email_sender._verify_wp_status_publish",
+            return_value=False,
+        ):
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            history_path = Path(tmpdir) / "history.json"
+            result = sender.PublishNoticeEmailResult(
+                status="sent",
+                reason=None,
+                subject="【要確認】巨人戦の観戦案内を更新 | YOSHILOVER",
+                recipients=["notice@example.com"],
+            )
+
+            sender.append_send_result(
+                queue_path,
+                notice_kind="per_post",
+                post_id=123,
+                result=result,
+                publish_time_iso="2026-05-04T09:55:49+09:00",
+                recorded_at=datetime.fromisoformat("2026-05-04T10:06:36.373219+09:00"),
+                request=self._request(
+                    title="巨人戦の観戦案内を更新",
+                    subtype="notice",
+                    summary="対象試合と受付条件を整理した。",
+                    notice_origin="direct_publish_scan",
+                ),
+                history_path=history_path,
+            )
+
+        self.assertFalse(history_path.exists())
+
+    def test_append_send_result_strict_stamp_keeps_string_history_keys_without_wp_verify(self):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            "os.environ",
+            {"ENABLE_PUBLISH_NOTICE_HISTORY_STRICT_STAMP": "1"},
+            clear=False,
+        ), patch(
+            "src.publish_notice_email_sender._verify_wp_status_publish",
+            side_effect=AssertionError("verify should not run for non-numeric keys"),
+        ):
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            history_path = Path(tmpdir) / "history.json"
+            result = sender.PublishNoticeEmailResult(
+                status="sent",
+                reason=None,
+                subject="【要review｜post_gen_validate】title rescue | YOSHILOVER",
+                recipients=["notice@example.com"],
+            )
+            request = self._request(
+                post_id="post_gen_validate:abc123",
+                title="title rescue",
+                summary=None,
+                notice_kind="post_gen_validate",
+                notice_origin="post_gen_validate_history",
+                subject_override="【要review｜post_gen_validate】title rescue | YOSHILOVER",
+            )
+
+            sender.append_send_result(
+                queue_path,
+                notice_kind="per_post",
+                post_id=request.post_id,
+                result=result,
+                publish_time_iso=request.publish_time_iso,
+                recorded_at=datetime.fromisoformat("2026-05-04T10:45:35.435312+09:00"),
+                request=request,
+                history_path=history_path,
+            )
+
+            history = json.loads(history_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(history, {"post_gen_validate:abc123": "2026-05-04T10:45:35.435312+09:00"})
+
+    def test_append_send_result_flag_off_keeps_existing_no_history_side_effect(self):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict("os.environ", {}, clear=True), patch(
+            "src.publish_notice_email_sender._verify_wp_status_publish",
+            side_effect=AssertionError("verify should not run when flag is off"),
+        ):
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            history_path = Path(tmpdir) / "history.json"
+            result = sender.PublishNoticeEmailResult(
+                status="sent",
+                reason=None,
+                subject="【公開済】巨人が接戦を制した | YOSHILOVER",
+                recipients=["notice@example.com"],
+            )
+
+            sender.append_send_result(
+                queue_path,
+                notice_kind="per_post",
+                post_id=123,
+                result=result,
+                publish_time_iso="2026-05-04T09:55:49+09:00",
+                recorded_at=datetime.fromisoformat("2026-05-04T10:06:36.373219+09:00"),
+                request=self._request(summary=None, notice_origin="manual_replay"),
+                history_path=history_path,
+            )
+
+        self.assertFalse(history_path.exists())
+
     def test_alert_log_when_emit_gt_zero_sent_zero(self):
         summary = sender.summarize_execution_results(
             [

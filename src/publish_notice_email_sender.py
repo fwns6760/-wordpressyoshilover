@@ -36,6 +36,7 @@ _PUBLISH_ONLY_FILTER_BACKLOG_BYPASS_ENV_FLAG = "ENABLE_PUBLISH_ONLY_FILTER_BACKL
 _REPLAY_WINDOW_DEDUP_ENV_FLAG = "ENABLE_REPLAY_WINDOW_DEDUP"
 _REPLAY_WINDOW_MINUTES_ENV = "PUBLISH_NOTICE_REPLAY_WINDOW_MINUTES"
 _REPLAY_WINDOW_MINUTES_DEFAULT = 10
+_PUBLISH_NOTICE_HISTORY_STRICT_STAMP_ENV_FLAG = "ENABLE_PUBLISH_NOTICE_HISTORY_STRICT_STAMP"
 _PUBLISH_ONLY_MAIL_PREFIX = "【公開済】"
 _DIRECT_PUBLISH_NOTICE_ORIGIN = "direct_publish_scan"
 _PUBLISH_NOTICE_24H_BUDGET_SUMMARY_ONLY_RECORD_TYPE = "24h_budget_summary_only"
@@ -470,6 +471,41 @@ def _load_history_entries(path: str | Path | None) -> dict[str, str]:
     return {str(key): str(value) for key, value in payload.items()}
 
 
+def _write_history_entries(path: str | Path, history: dict[str, str]) -> None:
+    target = _path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = Path(f"{target}.tmp")
+    tmp_path.write_text(
+        json.dumps(dict(sorted(history.items())), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(tmp_path, target)
+
+
+def _prune_history_entries(
+    history: dict[str, str],
+    *,
+    now: datetime | None = None,
+) -> dict[str, str]:
+    cutoff = _coerce_now(now) - timedelta(hours=24)
+    pruned: dict[str, str] = {}
+    for key, value in history.items():
+        recorded_at = _parse_datetime_to_jst(value)
+        if recorded_at is not None and recorded_at < cutoff:
+            continue
+        pruned[str(key)] = str(value)
+    return pruned
+
+
+def _publish_notice_history_strict_stamp_enabled() -> bool:
+    return str(os.environ.get(_PUBLISH_NOTICE_HISTORY_STRICT_STAMP_ENV_FLAG, "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def _cloud_run_publish_notice_runtime() -> bool:
     return any(
         str(os.environ.get(key, "")).strip()
@@ -544,6 +580,50 @@ def _derive_publish_notice_history_path(history_path: str | Path | None) -> Path
     if target.name.endswith("queue.jsonl"):
         return target.with_name("history.json")
     return target.with_name("history.json")
+
+
+def _verify_wp_status_publish(post_id: int | str) -> bool:
+    post_key = str(post_id or "").strip()
+    if not post_key.isdigit():
+        return False
+    try:
+        from src.wp_client import WPClient
+
+        post = WPClient().get_post(int(post_key))
+    except Exception:
+        return False
+    return str((post or {}).get("status") or "").strip().lower() == "publish"
+
+
+def _record_history_after_send(
+    history_path: str | Path | None,
+    *,
+    request: PublishNoticeRequest | None,
+    result: PublishNoticeEmailResult,
+    recorded_at: datetime | None = None,
+) -> bool:
+    if not _publish_notice_history_strict_stamp_enabled():
+        return False
+    if request is None:
+        return False
+    if str(result.status).strip() != "sent":
+        return False
+
+    post_key = str(getattr(request, "post_id", "") or "").strip()
+    if not post_key:
+        return False
+    if post_key.isdigit() and not _verify_wp_status_publish(post_key):
+        return False
+
+    target_path = _derive_publish_notice_history_path(history_path)
+    if target_path is None:
+        return False
+
+    stamp_at = _coerce_now(recorded_at)
+    history = _prune_history_entries(_load_history_entries(target_path), now=stamp_at)
+    history[post_key] = stamp_at.isoformat()
+    _write_history_entries(target_path, history)
+    return True
 
 
 def _latest_guarded_publish_history_entry(
@@ -2554,6 +2634,8 @@ def append_send_result(
     result: PublishNoticeEmailResult,
     publish_time_iso: str | None = None,
     recorded_at: datetime | None = None,
+    request: PublishNoticeRequest | None = None,
+    history_path: str | Path | None = None,
 ) -> dict[str, Any]:
     payload = build_send_result_entry(
         notice_kind=notice_kind,
@@ -2566,6 +2648,12 @@ def append_send_result(
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    _record_history_after_send(
+        history_path if history_path is not None else queue_path,
+        request=request,
+        result=result,
+        recorded_at=recorded_at,
+    )
     return payload
 
 

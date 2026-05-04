@@ -114,6 +114,24 @@ class NoticeBodyTemplateTests(unittest.TestCase):
 
         self.assertEqual(images, [rss_fetcher.get_notice_fallback_image_url()])
 
+    def test_notice_body_template_v2_demotes_background_heading(self):
+        with patch.dict("os.environ", {"ENABLE_BODY_TEMPLATE_V2": "1"}, clear=False):
+            with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+                with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                    blocks, ai_body = rss_fetcher.build_news_block(
+                        title="【巨人】皆川岳飛が出場選手登録",
+                        summary="皆川岳飛外野手が4月16日に出場選手登録された。今季二軍で打率.261、2本塁打を記録している。",
+                        url="https://example.com/post",
+                        source_name="スポニチ 巨人",
+                        category="選手情報",
+                        has_game=False,
+                        source_day_label="4月16日",
+                    )
+
+        self.assertIn("【公示の背景】", ai_body)
+        self.assertIn('<h4>【公示の背景】</h4>', blocks)
+        self.assertLessEqual(blocks.count("<h3>"), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

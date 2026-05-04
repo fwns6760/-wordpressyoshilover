@@ -107,6 +107,28 @@ class SocialBodyTemplateTests(unittest.TestCase):
             with self.subTest(marker=marker):
                 self.assertNotIn(marker, body)
 
+    def test_social_body_template_v2_renames_headers_and_caps_h3(self):
+        with patch.dict("os.environ", {"ENABLE_BODY_TEMPLATE_V2": "1"}, clear=False):
+            with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+                with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                    blocks, ai_body = rss_fetcher.build_news_block(
+                        title="阿部監督が起用方針を説明",
+                        summary="スポーツ報知巨人班Xが阿部監督の起用方針を伝えた。",
+                        url="https://twitter.com/hochi_giants/status/1",
+                        source_name="スポーツ報知巨人班X",
+                        category="首脳陣",
+                        has_game=False,
+                        source_type="social_news",
+                    )
+
+        self.assertIn("【投稿で出ていた内容】", ai_body)
+        self.assertIn("【この話が出た流れ】", ai_body)
+        self.assertNotIn("【発信内容の要約】", ai_body)
+        self.assertNotIn("【文脈と背景】", ai_body)
+        self.assertIn("<h3>【投稿で出ていた内容】</h3>", blocks)
+        self.assertIn("<h4>【この話が出た流れ】</h4>", blocks)
+        self.assertLessEqual(blocks.count("<h3>"), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

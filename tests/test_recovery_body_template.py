@@ -108,6 +108,24 @@ class RecoveryBodyTemplateTests(unittest.TestCase):
         self.assertFalse(rss_fetcher._is_recovery_template_story(title, summary, "選手情報"))
         self.assertTrue(rss_fetcher._is_notice_template_story(title, summary, "選手情報"))
 
+    def test_recovery_body_template_v2_demotes_progress_heading(self):
+        with patch.dict("os.environ", {"ENABLE_BODY_TEMPLATE_V2": "1"}, clear=False):
+            with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+                with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                    blocks, ai_body = rss_fetcher.build_news_block(
+                        title="【巨人】山崎伊織が復帰へ前進",
+                        summary="山崎伊織投手が故障離脱からの復帰へ前進した。ブルペンで投球練習を再開した。",
+                        url="https://example.com/post",
+                        source_name="日刊スポーツ 巨人",
+                        category="選手情報",
+                        has_game=False,
+                        source_day_label="4月15日",
+                    )
+
+        self.assertIn("【リハビリ状況・復帰見通し】", ai_body)
+        self.assertIn('<h4>【リハビリ状況・復帰見通し】</h4>', blocks)
+        self.assertLessEqual(blocks.count("<h3>"), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from src import rss_fetcher
 
@@ -69,6 +70,24 @@ class LiveUpdateTemplateTests(unittest.TestCase):
         for heading in LIVE_UPDATE_HEADINGS:
             self.assertNotIn(heading, prompt)
         self.assertIn("タイトル先頭や見出しで「巨人スタメン」を使わない。", prompt)
+
+    def test_live_update_template_v2_keeps_h3_within_guard_limit(self):
+        with patch.dict("os.environ", {"ENABLE_BODY_TEMPLATE_V2": "1"}, clear=False):
+            blocks = rss_fetcher._render_preview_body_html(
+                "\n".join(
+                    [
+                        "【いま起きていること】",
+                        "7回表で巨人が3-2とリードしています。",
+                        "【流れが動いた場面】",
+                        "岡本和真の適時打で勝ち越しました。",
+                        "【次にどこを見るか】",
+                        "次の継投を見たいところです。",
+                    ]
+                )
+            )
+
+        self.assertEqual(blocks.count("<h3>"), 2)
+        self.assertNotIn("<h4>", blocks)
 
 
 if __name__ == "__main__":

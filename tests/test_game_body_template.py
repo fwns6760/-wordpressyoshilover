@@ -101,6 +101,40 @@ class GameBodyTemplateTests(unittest.TestCase):
         self.assertEqual(payload["name_count"], 2)
         self.assertEqual(payload["template_version"], rss_fetcher.GAME_BODY_TEMPLATE_VERSION)
 
+    def test_game_body_template_v2_demotes_auxiliary_heading(self):
+        cases = [
+            (
+                "lineup",
+                "【巨人】今日のスタメン発表　1番丸、4番岡田",
+                "巨人が阪神戦のスタメンを発表した。1番に丸佳浩、4番に岡田悠希が入った。予告先発は田中将大投手。",
+                "【先発投手】",
+            ),
+            (
+                "postgame",
+                "【巨人】阪神に3-2で勝利　岡田が決勝打",
+                "巨人が阪神に3-2で勝利した。終盤に岡田悠希の決勝打が飛び出した。",
+                "【選手成績】",
+            ),
+        ]
+        for subtype, title, summary, demoted_heading in cases:
+            with self.subTest(subtype=subtype):
+                with patch.dict("os.environ", {"ENABLE_BODY_TEMPLATE_V2": "1"}, clear=False):
+                    with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+                        with patch.object(rss_fetcher, "fetch_today_giants_lineup_stats_from_yahoo", return_value=[]):
+                            with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                                blocks, ai_body = rss_fetcher.build_news_block(
+                                    title=title,
+                                    summary=summary,
+                                    url="https://example.com/post",
+                                    source_name="スポーツ報知",
+                                    category="試合速報",
+                                    has_game=True,
+                                )
+
+                self.assertIn(demoted_heading, ai_body)
+                self.assertIn(f"<h4>{demoted_heading}</h4>", blocks)
+                self.assertLessEqual(blocks.count("<h3>"), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

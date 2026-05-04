@@ -126,6 +126,23 @@ class FarmBodyTemplateTests(unittest.TestCase):
         self.assertFalse(payload["is_drafted_player"])
         self.assertEqual(payload["template_version"], rss_fetcher.FARM_BODY_TEMPLATE_VERSION)
 
+    def test_farm_body_template_v2_demotes_stat_heading(self):
+        with patch.dict("os.environ", {"ENABLE_BODY_TEMPLATE_V2": "1"}, clear=False):
+            with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+                with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                    blocks, ai_body = rss_fetcher.build_news_block(
+                        title="【二軍】巨人 4-1 ロッテ　ティマが2安打3打点",
+                        summary="巨人二軍がロッテとの二軍戦に4-1で勝利した。ティマが2安打3打点を記録した。",
+                        url="https://example.com/post",
+                        source_name="巨人公式X",
+                        category="ドラフト・育成",
+                        has_game=True,
+                    )
+
+        self.assertIn("【二軍個別選手成績】", ai_body)
+        self.assertIn("<h4>【二軍個別選手成績】</h4>", blocks)
+        self.assertLessEqual(blocks.count("<h3>"), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

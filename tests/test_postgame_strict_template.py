@@ -233,6 +233,13 @@ class PostgameStrictTemplateTests(unittest.TestCase):
         self.assertNotIn("コメント:", rendered)
         self.assertNotIn("次戦情報:", rendered)
 
+    def test_postgame_strict_html_v2_demotes_stat_heading(self):
+        with patch.dict("os.environ", {"ENABLE_BODY_TEMPLATE_V2": "1"}, clear=False):
+            blocks = rss_fetcher._render_postgame_strict_html(self.legacy_ai_body())
+
+        self.assertIn("<h4>【選手成績】</h4>", blocks)
+        self.assertEqual(blocks.count("<h3>"), 2)
+
     def test_strict_template_does_not_invent_pitcher_when_null(self):
         payload = self.valid_payload()
         payload["starter_name"] = None

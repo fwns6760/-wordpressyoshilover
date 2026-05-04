@@ -373,14 +373,23 @@ PROMPT_ROLE_ECHO_PREFIXES = (
     "読売ジャイアンツ専門ブログの編集者です。",
 )
 GEMINI_FLASH_THINKING_BUDGET = 0
+ENABLE_BODY_TEMPLATE_V2_ENV_FLAG = "ENABLE_BODY_TEMPLATE_V2"
 MANAGER_BODY_TEMPLATE_VERSION = "manager_v1"
+MANAGER_BODY_TEMPLATE_VERSION_V2 = "manager_v2"
 MANAGER_REQUIRED_HEADINGS = (
     "【発言の要旨】",
     "【発言内容】",
     "【文脈と背景】",
     "【次の注目】",
 )
+MANAGER_REQUIRED_HEADINGS_V2 = (
+    "【発言の要旨】",
+    "【発言内容】",
+    "【この話が出た流れ】",
+    "【次の注目】",
+)
 GAME_BODY_TEMPLATE_VERSION = "game_v1"
+GAME_BODY_TEMPLATE_VERSION_V2 = "game_v2"
 GAME_REQUIRED_HEADINGS = {
     "lineup": (
         "【試合概要】",
@@ -411,7 +420,15 @@ GAME_REQUIRED_HEADINGS = {
         "【次にどこを見るか】",
     ),
 }
+GAME_REQUIRED_HEADINGS_V2 = {
+    "lineup": GAME_REQUIRED_HEADINGS["lineup"],
+    "live_anchor": GAME_REQUIRED_HEADINGS["live_anchor"],
+    "postgame": GAME_REQUIRED_HEADINGS["postgame"],
+    "pregame": GAME_REQUIRED_HEADINGS["pregame"],
+    "live_update": GAME_REQUIRED_HEADINGS["live_update"],
+}
 FARM_BODY_TEMPLATE_VERSION = "farm_v1"
+FARM_BODY_TEMPLATE_VERSION_V2 = "farm_v2"
 FARM_REQUIRED_HEADINGS = {
     "farm": (
         "【二軍結果・活躍の要旨】",
@@ -425,25 +442,40 @@ FARM_REQUIRED_HEADINGS = {
         "【注目選手】",
     ),
 }
+FARM_REQUIRED_HEADINGS_V2 = {
+    "farm": FARM_REQUIRED_HEADINGS["farm"],
+    "farm_lineup": FARM_REQUIRED_HEADINGS["farm_lineup"],
+}
 NOTICE_BODY_TEMPLATE_VERSION = "notice_v1"
+NOTICE_BODY_TEMPLATE_VERSION_V2 = "notice_v2"
 NOTICE_REQUIRED_HEADINGS = (
     "【公示の要旨】",
     "【対象選手の基本情報】",
     "【公示の背景】",
     "【今後の注目点】",
 )
+NOTICE_REQUIRED_HEADINGS_V2 = NOTICE_REQUIRED_HEADINGS
 RECOVERY_BODY_TEMPLATE_VERSION = "recovery_v1"
+RECOVERY_BODY_TEMPLATE_VERSION_V2 = "recovery_v2"
 RECOVERY_REQUIRED_HEADINGS = (
     "【故障・復帰の要旨】",
     "【故障の詳細】",
     "【リハビリ状況・復帰見通し】",
     "【チームへの影響と今後の注目点】",
 )
+RECOVERY_REQUIRED_HEADINGS_V2 = RECOVERY_REQUIRED_HEADINGS
 SOCIAL_BODY_TEMPLATE_VERSION = "social_v1"
+SOCIAL_BODY_TEMPLATE_VERSION_V2 = "social_v2"
 SOCIAL_REQUIRED_HEADINGS = (
     "【話題の要旨】",
     "【発信内容の要約】",
     "【文脈と背景】",
+    "【ファンの関心ポイント】",
+)
+SOCIAL_REQUIRED_HEADINGS_V2 = (
+    "【話題の要旨】",
+    "【投稿で出ていた内容】",
+    "【この話が出た流れ】",
     "【ファンの関心ポイント】",
 )
 MEDIA_XPOST_POSITION = "before_ai_body"
@@ -1062,6 +1094,58 @@ def _env_flag(name: str, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in TRUE_VALUES
+
+
+def _body_template_v2_enabled() -> bool:
+    return _env_flag(ENABLE_BODY_TEMPLATE_V2_ENV_FLAG, False)
+
+
+def _manager_required_headings() -> tuple[str, ...]:
+    return MANAGER_REQUIRED_HEADINGS_V2 if _body_template_v2_enabled() else MANAGER_REQUIRED_HEADINGS
+
+
+def _manager_body_template_version() -> str:
+    return MANAGER_BODY_TEMPLATE_VERSION_V2 if _body_template_v2_enabled() else MANAGER_BODY_TEMPLATE_VERSION
+
+
+def _current_game_required_headings_map() -> dict[str, tuple[str, ...]]:
+    return GAME_REQUIRED_HEADINGS_V2 if _body_template_v2_enabled() else GAME_REQUIRED_HEADINGS
+
+
+def _game_body_template_version() -> str:
+    return GAME_BODY_TEMPLATE_VERSION_V2 if _body_template_v2_enabled() else GAME_BODY_TEMPLATE_VERSION
+
+
+def _current_farm_required_headings_map() -> dict[str, tuple[str, ...]]:
+    return FARM_REQUIRED_HEADINGS_V2 if _body_template_v2_enabled() else FARM_REQUIRED_HEADINGS
+
+
+def _farm_body_template_version() -> str:
+    return FARM_BODY_TEMPLATE_VERSION_V2 if _body_template_v2_enabled() else FARM_BODY_TEMPLATE_VERSION
+
+
+def _notice_required_headings() -> tuple[str, ...]:
+    return NOTICE_REQUIRED_HEADINGS_V2 if _body_template_v2_enabled() else NOTICE_REQUIRED_HEADINGS
+
+
+def _notice_body_template_version() -> str:
+    return NOTICE_BODY_TEMPLATE_VERSION_V2 if _body_template_v2_enabled() else NOTICE_BODY_TEMPLATE_VERSION
+
+
+def _recovery_required_headings() -> tuple[str, ...]:
+    return RECOVERY_REQUIRED_HEADINGS_V2 if _body_template_v2_enabled() else RECOVERY_REQUIRED_HEADINGS
+
+
+def _recovery_body_template_version() -> str:
+    return RECOVERY_BODY_TEMPLATE_VERSION_V2 if _body_template_v2_enabled() else RECOVERY_BODY_TEMPLATE_VERSION
+
+
+def _social_required_headings() -> tuple[str, ...]:
+    return SOCIAL_REQUIRED_HEADINGS_V2 if _body_template_v2_enabled() else SOCIAL_REQUIRED_HEADINGS
+
+
+def _social_body_template_version() -> str:
+    return SOCIAL_BODY_TEMPLATE_VERSION_V2 if _body_template_v2_enabled() else SOCIAL_BODY_TEMPLATE_VERSION
 
 
 def _env_int(name: str, default: int) -> int:
@@ -3954,19 +4038,19 @@ def _build_manager_strict_prompt(
 
 
 def _is_game_template_subtype(article_subtype: str) -> bool:
-    return article_subtype in GAME_REQUIRED_HEADINGS
+    return article_subtype in _current_game_required_headings_map()
 
 
 def _game_required_headings(article_subtype: str) -> tuple[str, ...]:
-    return GAME_REQUIRED_HEADINGS.get(article_subtype, ())
+    return _current_game_required_headings_map().get(article_subtype, ())
 
 
 def _is_farm_template_subtype(article_subtype: str) -> bool:
-    return article_subtype in FARM_REQUIRED_HEADINGS
+    return article_subtype in _current_farm_required_headings_map()
 
 
 def _farm_required_headings(article_subtype: str) -> tuple[str, ...]:
-    return FARM_REQUIRED_HEADINGS.get(article_subtype, ())
+    return _current_farm_required_headings_map().get(article_subtype, ())
 
 
 def _extract_game_score_token(source_text: str) -> str:
@@ -4101,11 +4185,11 @@ def _farm_is_drafted_player_story(title: str, summary: str) -> bool:
 
 
 def _notice_required_headings() -> tuple[str, ...]:
-    return NOTICE_REQUIRED_HEADINGS
+    return NOTICE_REQUIRED_HEADINGS_V2 if _body_template_v2_enabled() else NOTICE_REQUIRED_HEADINGS
 
 
 def _recovery_required_headings() -> tuple[str, ...]:
-    return RECOVERY_REQUIRED_HEADINGS
+    return RECOVERY_REQUIRED_HEADINGS_V2 if _body_template_v2_enabled() else RECOVERY_REQUIRED_HEADINGS
 
 
 def _recovery_section_count(text: str) -> int:
@@ -4119,7 +4203,7 @@ def _recovery_body_has_required_structure(text: str) -> bool:
 
 
 def _social_required_headings() -> tuple[str, ...]:
-    return SOCIAL_REQUIRED_HEADINGS
+    return SOCIAL_REQUIRED_HEADINGS_V2 if _body_template_v2_enabled() else SOCIAL_REQUIRED_HEADINGS
 
 
 def _social_section_count(text: str) -> int:
@@ -5293,7 +5377,7 @@ def _validate_postgame_article_parts(payload: object) -> ArticleParts:
 
 
 def _build_postgame_ai_body_from_parts(parts: ArticleParts) -> str:
-    headings = GAME_REQUIRED_HEADINGS["postgame"]
+    headings = _game_required_headings("postgame")
     body_core = list(parts["body_core"])
     highlight_lines = body_core[:-1] or body_core
     stat_lines = body_core[-1:] if body_core else [parts["game_context"]]
@@ -5326,8 +5410,8 @@ def _render_postgame_strict_html(body_text: str) -> str:
     while idx < len(lines):
         line = lines[idx]
         if line.startswith("【") and "】" in line:
+            level = _rendered_heading_level(line, heading_index)
             heading_index += 1
-            level = 2 if heading_index == 1 else 3
             safe_heading = _html.escape(line)
             blocks.append(
                 f'<!-- wp:heading {{"level":{level}}} -->\n'
@@ -5921,7 +6005,7 @@ def _article_section_headings(category: str, has_game: bool = True) -> tuple[str
     elif category == "球団情報":
         second = "【球団トピック】"
     else:
-        second = "【ここに注目】"
+        second = "【今回のポイント】" if _body_template_v2_enabled() else "【ここに注目】"
     third = "【次の注目】"
     return first, second, third
 
@@ -6048,16 +6132,18 @@ def _normalize_article_heading(heading: str, category: str, has_game: bool, arti
         return clean
 
     if category == "首脳陣":
+        manager_headings = _manager_required_headings()
         manager_heading_aliases = {
-            "【発言の要旨】": "【発言の要旨】",
-            "【発言内容】": "【発言内容】",
-            "【発言内容の整理】": "【発言内容】",
-            "【引用の整理】": "【発言内容】",
-            "【文脈と背景】": "【文脈と背景】",
-            "【背景と文脈】": "【文脈と背景】",
-            "【文脈】": "【文脈と背景】",
-            "【次の注目】": "【次の注目】",
-            "【今後の注目】": "【次の注目】",
+            "【発言の要旨】": manager_headings[0],
+            "【発言内容】": manager_headings[1],
+            "【発言内容の整理】": manager_headings[1],
+            "【引用の整理】": manager_headings[1],
+            "【文脈と背景】": manager_headings[2],
+            "【背景と文脈】": manager_headings[2],
+            "【文脈】": manager_headings[2],
+            "【この話が出た流れ】": manager_headings[2],
+            "【次の注目】": manager_headings[3],
+            "【今後の注目】": manager_headings[3],
         }
         if clean in manager_heading_aliases:
             return manager_heading_aliases[clean]
@@ -6140,47 +6226,52 @@ def _normalize_article_heading(heading: str, category: str, has_game: bool, arti
             return farm_heading_aliases[clean]
 
     if category == "選手情報" and article_subtype == "player_notice":
+        notice_headings = _notice_required_headings()
         notice_heading_aliases = {
-            "【公示の要旨】": "【公示の要旨】",
-            "【ニュースの整理】": "【公示の要旨】",
-            "【対象選手の基本情報】": "【対象選手の基本情報】",
-            "【基本情報】": "【対象選手の基本情報】",
-            "【公示の背景】": "【公示の背景】",
-            "【背景】": "【公示の背景】",
-            "【今後の注目点】": "【今後の注目点】",
-            "【次の注目】": "【今後の注目点】",
+            "【公示の要旨】": notice_headings[0],
+            "【ニュースの整理】": notice_headings[0],
+            "【対象選手の基本情報】": notice_headings[1],
+            "【基本情報】": notice_headings[1],
+            "【公示の背景】": notice_headings[2],
+            "【背景】": notice_headings[2],
+            "【今後の注目点】": notice_headings[3],
+            "【次の注目】": notice_headings[3],
         }
         if clean in notice_heading_aliases:
             return notice_heading_aliases[clean]
 
     if category == "選手情報" and article_subtype == "player_recovery":
+        recovery_headings = _recovery_required_headings()
         recovery_heading_aliases = {
-            "【故障・復帰の要旨】": "【故障・復帰の要旨】",
-            "【ニュースの整理】": "【故障・復帰の要旨】",
-            "【故障の詳細】": "【故障の詳細】",
-            "【詳細】": "【故障の詳細】",
-            "【背景】": "【故障の詳細】",
-            "【リハビリ状況・復帰見通し】": "【リハビリ状況・復帰見通し】",
-            "【復帰見通し】": "【リハビリ状況・復帰見通し】",
-            "【リハビリ状況】": "【リハビリ状況・復帰見通し】",
-            "【チームへの影響と今後の注目点】": "【チームへの影響と今後の注目点】",
-            "【今後の注目点】": "【チームへの影響と今後の注目点】",
-            "【次の注目】": "【チームへの影響と今後の注目点】",
+            "【故障・復帰の要旨】": recovery_headings[0],
+            "【ニュースの整理】": recovery_headings[0],
+            "【故障の詳細】": recovery_headings[1],
+            "【詳細】": recovery_headings[1],
+            "【背景】": recovery_headings[1],
+            "【リハビリ状況・復帰見通し】": recovery_headings[2],
+            "【復帰見通し】": recovery_headings[2],
+            "【リハビリ状況】": recovery_headings[2],
+            "【チームへの影響と今後の注目点】": recovery_headings[3],
+            "【今後の注目点】": recovery_headings[3],
+            "【次の注目】": recovery_headings[3],
         }
         if clean in recovery_heading_aliases:
             return recovery_heading_aliases[clean]
 
     if article_subtype == "social_news":
+        social_headings = _social_required_headings()
         social_heading_aliases = {
-            "【話題の要旨】": "【話題の要旨】",
-            "【ニュースの整理】": "【話題の要旨】",
-            "【発信内容の要約】": "【発信内容の要約】",
-            "【発信内容】": "【発信内容の要約】",
-            "【引用の整理】": "【発信内容の要約】",
-            "【文脈と背景】": "【文脈と背景】",
-            "【背景】": "【文脈と背景】",
-            "【ファンの関心ポイント】": "【ファンの関心ポイント】",
-            "【次の注目】": "【ファンの関心ポイント】",
+            "【話題の要旨】": social_headings[0],
+            "【ニュースの整理】": social_headings[0],
+            "【発信内容の要約】": social_headings[1],
+            "【発信内容】": social_headings[1],
+            "【引用の整理】": social_headings[1],
+            "【投稿で出ていた内容】": social_headings[1],
+            "【文脈と背景】": social_headings[2],
+            "【背景】": social_headings[2],
+            "【この話が出た流れ】": social_headings[2],
+            "【ファンの関心ポイント】": social_headings[3],
+            "【次の注目】": social_headings[3],
         }
         if clean in social_heading_aliases:
             return social_heading_aliases[clean]
@@ -6200,6 +6291,7 @@ def _normalize_article_heading(heading: str, category: str, has_game: bool, arti
         "【補強のポイント】",
         "【球団トピック】",
         "【ここに注目】",
+        "【今回のポイント】",
         "【ポイント整理】",
     }
     third_aliases = {
@@ -6637,6 +6729,53 @@ def _extract_article_heading_lines(text: str) -> list[str]:
         for line in (text or "").split("\n")
         if line.strip().startswith("【") or line.strip().startswith("■") or line.strip().startswith("▶")
     ]
+
+
+def _demoted_body_template_headings() -> set[str]:
+    if not _body_template_v2_enabled():
+        return set()
+
+    demoted: set[str] = set()
+    for headings in (
+        _manager_required_headings(),
+        _notice_required_headings(),
+        _recovery_required_headings(),
+        _social_required_headings(),
+        _game_required_headings("lineup"),
+        _game_required_headings("live_anchor"),
+        _game_required_headings("postgame"),
+        _farm_required_headings("farm"),
+    ):
+        if len(headings) >= 3:
+            demoted.add(headings[2])
+    demoted.add("【今回のポイント】")
+    return demoted
+
+
+def _structured_template_first_headings() -> set[str]:
+    headings = {
+        _manager_required_headings()[0],
+        _notice_required_headings()[0],
+        _recovery_required_headings()[0],
+        _social_required_headings()[0],
+    }
+    for article_subtype in _current_game_required_headings_map():
+        subtype_headings = _game_required_headings(article_subtype)
+        if subtype_headings:
+            headings.add(subtype_headings[0])
+    for article_subtype in _current_farm_required_headings_map():
+        subtype_headings = _farm_required_headings(article_subtype)
+        if subtype_headings:
+            headings.add(subtype_headings[0])
+    return headings
+
+
+def _rendered_heading_level(heading_text: str, heading_index: int) -> int:
+    if heading_text in _demoted_body_template_headings():
+        return 4
+    if heading_text in _structured_template_first_headings():
+        return 2
+    return 3
 
 
 def _manager_section_count(text: str) -> int:
@@ -7607,7 +7746,7 @@ def _maybe_route_weak_subject_title_review(
 def _manager_body_has_required_structure(text: str, has_game: bool) -> bool:
     normalized = _normalize_article_text_structure(text or "", "首脳陣", has_game, article_subtype="manager")
     headings = set(_extract_article_heading_lines(normalized))
-    return all(heading in headings for heading in MANAGER_REQUIRED_HEADINGS)
+    return all(heading in headings for heading in _manager_required_headings())
 
 
 def _build_manager_safe_fallback(title: str, summary: str, real_reactions: list[str] | None = None) -> str:
@@ -7632,14 +7771,16 @@ def _build_manager_safe_fallback(title: str, summary: str, real_reactions: list[
         lead = f"{subject}が「{quote_phrases[0]}」と話した"
         detail = ""
 
-    intro_lines = [MANAGER_REQUIRED_HEADINGS[0]]
+    headings = _manager_required_headings()
+
+    intro_lines = [headings[0]]
     intro_lines.append(f"{lead}。")
     if detail:
         intro_lines.append(f"{detail}。")
     else:
         intro_lines.append(f"この発言は、{subject}が{focus_axis}をどう動かそうとしているのかを見る材料です。")
 
-    quote_lines = [MANAGER_REQUIRED_HEADINGS[1]]
+    quote_lines = [headings[1]]
     if quote_phrases:
         quote_lines.append(f"今回の発言の軸は「{quote_phrases[0]}」という言葉です。")
         if len(quote_phrases) >= 2:
@@ -7650,7 +7791,7 @@ def _build_manager_safe_fallback(title: str, summary: str, real_reactions: list[
         quote_lines.append(f"今回の記事では、{subject}が{focus_axis}について考えを示したことが発言の芯です。")
         quote_lines.append("言い回しの強さよりも、ベンチが何を動かそうとしているかに注目したいコメントです。")
 
-    background_lines = [MANAGER_REQUIRED_HEADINGS[2]]
+    background_lines = [headings[2]]
     if extra:
         background_lines.append(f"{extra}。")
     elif detail:
@@ -7667,7 +7808,7 @@ def _build_manager_safe_fallback(title: str, summary: str, real_reactions: list[
         if snippets:
             reaction_line = f"反応を見ると、この発言の強さよりも、{focus_axis}が実際にどう動くかを見たい空気が強いです。"
 
-    next_lines = [MANAGER_REQUIRED_HEADINGS[3]]
+    next_lines = [headings[3]]
     next_lines.append(_manager_next_watch_line(focus_axis, reaction_line=reaction_line))
     next_lines.append("みなさんの意見はコメントで教えてください！")
 
@@ -7855,20 +7996,22 @@ def _build_notice_safe_fallback(
     background_fact = _extract_notice_background_fact(title, summary, exclude={record_fact} if record_fact else set())
     opening = f"（{source_day_label}時点）" if source_day_label else ""
 
-    lead_lines = [NOTICE_REQUIRED_HEADINGS[0]]
+    notice_headings = _notice_required_headings()
+
+    lead_lines = [notice_headings[0]]
     lead_lines.append(f"{opening}{notice_subject}に{notice_label}の動きが出ました。".strip())
     lead_lines.append(f"{facts[0]}。")
     if len(facts) > 1:
         lead_lines.append(f"{facts[1]}。")
 
-    basic_lines = [NOTICE_REQUIRED_HEADINGS[1]]
+    basic_lines = [notice_headings[1]]
     basic_lines.append(f"{notice_subject}は読売ジャイアンツの{player_position}です。")
     if record_fact:
         basic_lines.append(record_fact)
     else:
         basic_lines.append(f"{notice_subject}の今季成績や現在の立ち位置は、元記事で確認できる範囲を押さえておきたいところです。")
 
-    background_lines = [NOTICE_REQUIRED_HEADINGS[2]]
+    background_lines = [notice_headings[2]]
     if background_fact:
         background_lines.append(background_fact)
     elif len(facts) > 2:
@@ -7878,7 +8021,7 @@ def _build_notice_safe_fallback(
     if len(facts) > 3 and facts[3] not in background_lines:
         background_lines.append(f"{facts[3]}。")
 
-    next_lines = [NOTICE_REQUIRED_HEADINGS[3]]
+    next_lines = [notice_headings[3]]
     if real_reactions:
         next_lines.append(f"反応を見ると、{notice_subject}が次にどんな役割を得るかを見たい空気があります。")
     next_lines.append(_notice_next_focus_sentence(notice_label, player_position, notice_subject))
@@ -7908,13 +8051,15 @@ def _build_recovery_safe_fallback(
     )
     opening = f"（{source_day_label}時点）" if source_day_label else ""
 
-    lead_lines = [RECOVERY_REQUIRED_HEADINGS[0]]
+    recovery_headings = _recovery_required_headings()
+
+    lead_lines = [recovery_headings[0]]
     lead_lines.append(f"{opening}{subject}の故障・復帰状況を整理します。".strip())
     lead_lines.append(f"{facts[0]}。")
     if len(facts) > 1:
         lead_lines.append(f"{facts[1]}。")
 
-    detail_lines = [RECOVERY_REQUIRED_HEADINGS[1]]
+    detail_lines = [recovery_headings[1]]
     if injury_part:
         detail_lines.append(f"{subject}は{player_position}で、現在確認できる部位は{injury_part}です。")
     else:
@@ -7922,7 +8067,7 @@ def _build_recovery_safe_fallback(
     if detail_fact:
         detail_lines.append(detail_fact)
 
-    progress_lines = [RECOVERY_REQUIRED_HEADINGS[2]]
+    progress_lines = [recovery_headings[2]]
     if progress_fact:
         progress_lines.append(progress_fact)
     elif return_timing:
@@ -7930,7 +8075,7 @@ def _build_recovery_safe_fallback(
     else:
         progress_lines.append(f"{subject}のリハビリ状況や復帰の段階は、元記事の事実をそのまま追いたいところです。")
 
-    impact_lines = [RECOVERY_REQUIRED_HEADINGS[3]]
+    impact_lines = [recovery_headings[3]]
     if impact_fact:
         impact_lines.append(impact_fact)
     elif len(facts) > 2:
@@ -8008,14 +8153,16 @@ def _build_farm_safe_fallback(title: str, summary: str, real_reactions: list[str
     score = _extract_game_score_token(source_text)
     drafted_story = _farm_is_drafted_player_story(title, summary)
 
-    lead_lines = [FARM_REQUIRED_HEADINGS["farm"][0]]
+    farm_headings = _farm_required_headings("farm")
+
+    lead_lines = [farm_headings[0]]
     if score:
         lead_lines.append(f"巨人二軍の試合は{score}という結果でした。")
     lead_lines.append(f"{facts[0]}。")
     if len(facts) > 1:
         lead_lines.append(f"{facts[1]}。")
 
-    highlight_lines = [FARM_REQUIRED_HEADINGS["farm"][1]]
+    highlight_lines = [farm_headings[1]]
     if len(facts) > 2:
         highlight_lines.append(f"{facts[2]}。")
     elif len(facts) > 1:
@@ -8024,7 +8171,7 @@ def _build_farm_safe_fallback(title: str, summary: str, real_reactions: list[str
         highlight_lines.append("二軍戦では得点の動きと投手の内容を先に押さえると全体像が見えやすくなります。")
     highlight_lines.append("ファームの結果は、一軍へ上げたい選手がどこで数字を残したかを見る材料になります。")
 
-    stat_lines = [FARM_REQUIRED_HEADINGS["farm"][2]]
+    stat_lines = [farm_headings[2]]
     stat_facts = []
     for fact in facts:
         if _re.search(r"\d", fact):
@@ -8033,7 +8180,7 @@ def _build_farm_safe_fallback(title: str, summary: str, real_reactions: list[str
     if len(stat_lines) == 1:
         stat_lines.append("元記事にある打率、本塁打、打点、投球回などの数字をそのまま追っておきたい内容です。")
 
-    watch_lines = [FARM_REQUIRED_HEADINGS["farm"][3]]
+    watch_lines = [farm_headings[3]]
     if drafted_story:
         watch_lines.append("ドラフトや育成の立場にある選手は、二軍の数字がそのまま一軍昇格の材料になります。")
     else:
@@ -8054,7 +8201,9 @@ def _build_farm_lineup_safe_fallback(title: str, summary: str, real_reactions: l
     start_time = _extract_game_time_token(source_text)
     drafted_story = _farm_is_drafted_player_story(title, summary)
 
-    lead_lines = [FARM_REQUIRED_HEADINGS["farm_lineup"][0]]
+    farm_lineup_headings = _farm_required_headings("farm_lineup")
+
+    lead_lines = [farm_lineup_headings[0]]
     overview = "巨人二軍の試合前情報です"
     if opponent:
         overview = f"巨人二軍は{opponent}戦に臨みます"
@@ -8067,7 +8216,7 @@ def _build_farm_lineup_safe_fallback(title: str, summary: str, real_reactions: l
     if len(facts) > 1:
         lead_lines.append(f"{facts[1]}。")
 
-    lineup_lines = [FARM_REQUIRED_HEADINGS["farm_lineup"][1]]
+    lineup_lines = [farm_lineup_headings[1]]
     lineup_facts = []
     for fact in facts:
         if any(marker in fact for marker in ("1番", "2番", "3番", "4番", "5番", "6番", "7番", "8番", "9番", "スタメン", "先発")):
@@ -8076,7 +8225,7 @@ def _build_farm_lineup_safe_fallback(title: str, summary: str, real_reactions: l
     if len(lineup_lines) == 1:
         lineup_lines.append("元記事で確認できる打順と選手名を、そのまま追っておきたい二軍スタメンです。")
 
-    watch_lines = [FARM_REQUIRED_HEADINGS["farm_lineup"][2]]
+    watch_lines = [farm_lineup_headings[2]]
     if drafted_story:
         watch_lines.append("ドラフトや育成の選手がどの打順と守備位置で起用されているかが最初の見どころです。")
     else:
@@ -8105,21 +8254,23 @@ def _build_social_safe_fallback(
     display_source = _display_source_name(source_name or "X")
     quote_phrases = _extract_quote_phrases(f"{title}\n{summary}", max_phrases=2)
     intro_prefix = f"（{source_day_label}時点）" if source_day_label else ""
-    lead_lines = [SOCIAL_REQUIRED_HEADINGS[0]]
+    social_headings = _social_required_headings()
+
+    lead_lines = [social_headings[0]]
     lead_lines.append(f"{intro_prefix}{source_label}として、{facts[0]}。".strip())
     if len(facts) > 1:
         lead_lines.append(f"{facts[1]}。")
     else:
         lead_lines.append(f"{display_source}が伝えた要点を、最初に整理したい話題です。")
 
-    summary_lines = [SOCIAL_REQUIRED_HEADINGS[1]]
+    summary_lines = [social_headings[1]]
     if quote_phrases:
         summary_lines.append(f"{display_source}の投稿では『{quote_phrases[0]}』という言い回しが目を引きます。")
     summary_lines.append(f"{facts[0]}。")
     if len(facts) > 2:
         summary_lines.append(f"{facts[2]}。")
 
-    background_lines = [SOCIAL_REQUIRED_HEADINGS[2]]
+    background_lines = [social_headings[2]]
     if len(facts) > 3:
         background_lines.append(f"{facts[3]}。")
     else:
@@ -8135,7 +8286,7 @@ def _build_social_safe_fallback(
         if snippets:
             reaction_line = f"反応を見ると「{' / '.join(snippets)}」という温度感があり、この話題の受け止め方が分かれています。"
 
-    watch_lines = [SOCIAL_REQUIRED_HEADINGS[3]]
+    watch_lines = [social_headings[3]]
     watch_lines.append(reaction_line or "巨人ファンにとっては、この発信が次の試合や起用、話題の広がりにどう動くかを見ておきたいところです。")
     watch_lines.append("発信内容そのものだけでなく、ここからどんな動きにつながるかを見たいところです。みなさんの意見はコメントで教えてください！")
     return "\n".join(lead_lines + summary_lines + background_lines + watch_lines)
@@ -8795,7 +8946,9 @@ def _render_notice_rule_based(
         return None
 
     source_label = _display_source_name(source_name) if source_name else ""
-    sections = [NOTICE_REQUIRED_HEADINGS[0]]
+    notice_headings = _notice_required_headings()
+
+    sections = [notice_headings[0]]
     opening = f"（{source_day_label}時点）" if source_day_label else ""
     sections.append(f"{opening}{notice_subject}が{notice_type}となりました。".strip())
     sections.append(f"公示日は{notice_date}です。")
@@ -8803,15 +8956,15 @@ def _render_notice_rule_based(
     if source_label:
         sections.append(f"報道 source は{source_label}です。")
 
-    sections.append(NOTICE_REQUIRED_HEADINGS[1])
+    sections.append(notice_headings[1])
     sections.append(f"{notice_subject}は読売ジャイアンツの{player_position}です。")
     if record_fact:
         sections.append(f"{record_fact}。")
 
-    sections.append(NOTICE_REQUIRED_HEADINGS[2])
+    sections.append(notice_headings[2])
     sections.append(f"{background_fact or notice_fact}。")
 
-    sections.append(NOTICE_REQUIRED_HEADINGS[3])
+    sections.append(notice_headings[3])
     sections.append(_notice_next_focus_sentence(notice_type, player_position, notice_subject))
     if source_url:
         sections.append(f"出典: {source_url}")
@@ -9022,7 +9175,7 @@ def _render_preview_body_html(text: str) -> str:
             .replace(">", "&gt;")
         )
         if line.startswith("【") and "】" in line:
-            level = 2 if heading_index == 0 else 3
+            level = _rendered_heading_level(line, heading_index)
             blocks.append(f"<h{level}>{escaped}</h{level}>")
             heading_index += 1
             continue
@@ -11535,9 +11688,10 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     def _lineup_stats_block(rows: list[dict]) -> str:
         if not rows:
             return ""
+        heading_level = 4 if _body_template_v2_enabled() else 3
         header = (
-            '<!-- wp:heading {"level":3} -->\n'
-            '<h3>📊 今日のスタメンデータ</h3>\n'
+            f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
+            f'<h{heading_level}>📊 今日のスタメンデータ</h{heading_level}>\n'
             '<!-- /wp:heading -->\n\n'
         )
         note = (
@@ -11620,9 +11774,10 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         else:
             points.append("下位打線から上位へどう戻すか。")
 
+        heading_level = 4 if _body_template_v2_enabled() else 3
         return (
-            '<!-- wp:heading {"level":3} -->\n'
-            '<h3>👀 スタメンの見どころ</h3>\n'
+            f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
+            f'<h{heading_level}>👀 スタメンの見どころ</h{heading_level}>\n'
             '<!-- /wp:heading -->\n\n'
             + '<!-- wp:list -->\n'
             + '<ul class="wp-block-list">\n'
@@ -11686,6 +11841,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         if not score and article_subtype != "postgame":
             return ""
 
+        heading_level = 4 if _body_template_v2_enabled() else 3
         result = _postgame_result_label()
         opponent = _postgame_opponent_label()
         key_play = _postgame_key_play()
@@ -11703,8 +11859,8 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             for label, value in items
         )
         return (
-            '<!-- wp:heading {"level":3} -->\n'
-            '<h3>📊 今日の試合結果</h3>\n'
+            f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
+            f'<h{heading_level}>📊 今日の試合結果</h{heading_level}>\n'
             '<!-- /wp:heading -->\n\n'
             '<!-- wp:html -->\n'
             '<div class="yoshilover-postgame-summary" style="border:1px solid #e6e6e6;border-radius:12px;padding:12px 16px;margin:0 0 12px;background:#fff;">'
@@ -11741,9 +11897,10 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 continue
             deduped.append(normalized)
 
+        heading_level = 4 if _body_template_v2_enabled() else 3
         return (
-            '<!-- wp:heading {"level":3} -->\n'
-            '<h3>👀 勝負の分岐点</h3>\n'
+            f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
+            f'<h{heading_level}>👀 勝負の分岐点</h{heading_level}>\n'
             '<!-- /wp:heading -->\n\n'
             + '<!-- wp:list -->\n'
             + '<ul class="wp-block-list">\n'
@@ -11757,6 +11914,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         if not score and article_subtype != "live_update":
             return ""
 
+        heading_level = 4 if _body_template_v2_enabled() else 3
         items = [
             ("現在", _livegame_state_label()),
             ("スコア", score or "-"),
@@ -11771,8 +11929,8 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             for label, value in items
         )
         return (
-            '<!-- wp:heading {"level":3} -->\n'
-            '<h3>📊 現在の試合状況</h3>\n'
+            f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
+            f'<h{heading_level}>📊 現在の試合状況</h{heading_level}>\n'
             '<!-- /wp:heading -->\n\n'
             '<!-- wp:html -->\n'
             '<div class="yoshilover-livegame-summary" style="border:1px solid #e6e6e6;border-radius:12px;padding:12px 16px;margin:0 0 12px;background:#fff;">'
@@ -11811,9 +11969,10 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 continue
             deduped.append(normalized)
 
+        heading_level = 4 if _body_template_v2_enabled() else 3
         return (
-            '<!-- wp:heading {"level":3} -->\n'
-            '<h3>👀 ここまでの見どころ</h3>\n'
+            f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
+            f'<h{heading_level}>👀 ここまでの見どころ</h{heading_level}>\n'
             '<!-- /wp:heading -->\n\n'
             + '<!-- wp:list -->\n'
             + '<ul class="wp-block-list">\n'
@@ -11903,17 +12062,17 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         first_line = ai_body.strip().split('\n')[0].strip()
         first_line_is_structured_heading = False
         if body_category == "首脳陣" and article_subtype == "manager":
-            first_line_is_structured_heading = first_line in MANAGER_REQUIRED_HEADINGS
+            first_line_is_structured_heading = first_line in _manager_required_headings()
         elif body_category == "試合速報" and _is_game_template_subtype(article_subtype):
             first_line_is_structured_heading = first_line in _game_required_headings(article_subtype)
         elif body_category == "ドラフト・育成" and _is_farm_template_subtype(article_subtype):
             first_line_is_structured_heading = first_line in _farm_required_headings(article_subtype)
         elif notice_story:
-            first_line_is_structured_heading = first_line in NOTICE_REQUIRED_HEADINGS
+            first_line_is_structured_heading = first_line in _notice_required_headings()
         elif recovery_story:
-            first_line_is_structured_heading = first_line in RECOVERY_REQUIRED_HEADINGS
+            first_line_is_structured_heading = first_line in _recovery_required_headings()
         elif body_subtype == "social_news":
-            first_line_is_structured_heading = first_line in SOCIAL_REQUIRED_HEADINGS
+            first_line_is_structured_heading = first_line in _social_required_headings()
         first_line_looks_like_heading = first_line.startswith("【") or first_line.startswith("■") or first_line.startswith("▶")
         clean_title = _re3.sub(r'[【】\s]', '', title)
         clean_first = _re3.sub(r'[【】\s]', '', first_line)
@@ -11960,19 +12119,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             if not current_heading and not current_paragraphs:
                 return
             if current_heading:
-                heading_level = 3
-                if body_category == "首脳陣" and article_subtype == "manager" and current_heading == "【発言の要旨】":
-                    heading_level = 2
-                if body_category == "試合速報" and _is_game_template_subtype(article_subtype) and current_heading == _game_required_headings(article_subtype)[0]:
-                    heading_level = 2
-                if body_category == "ドラフト・育成" and _is_farm_template_subtype(article_subtype) and current_heading == _farm_required_headings(article_subtype)[0]:
-                    heading_level = 2
-                if notice_story and current_heading == NOTICE_REQUIRED_HEADINGS[0]:
-                    heading_level = 2
-                if recovery_story and current_heading == RECOVERY_REQUIRED_HEADINGS[0]:
-                    heading_level = 2
-                if body_subtype == "social_news" and current_heading == SOCIAL_REQUIRED_HEADINGS[0]:
-                    heading_level = 2
+                heading_level = _rendered_heading_level(current_heading, max(0, len(seen_headings) - 1))
                 blocks += (
                     f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
                     f'<h{heading_level}>{current_heading}</h{heading_level}>\n'
@@ -14568,7 +14715,7 @@ def _log_manager_body_template_applied(
     title: str,
     quote_count: int,
     section_count: int,
-    template_version: str = MANAGER_BODY_TEMPLATE_VERSION,
+    template_version: str | None = None,
 ) -> None:
     payload = {
         "event": "manager_body_template_applied",
@@ -14576,7 +14723,7 @@ def _log_manager_body_template_applied(
         "title": title,
         "quote_count": quote_count,
         "section_count": section_count,
-        "template_version": template_version,
+        "template_version": template_version or _manager_body_template_version(),
     }
     logger.info(json.dumps(payload, ensure_ascii=False))
 
@@ -14589,7 +14736,7 @@ def _log_game_body_template_applied(
     section_count: int,
     numeric_count: int,
     name_count: int,
-    template_version: str = GAME_BODY_TEMPLATE_VERSION,
+    template_version: str | None = None,
 ) -> None:
     payload = {
         "event": "game_body_template_applied",
@@ -14599,7 +14746,7 @@ def _log_game_body_template_applied(
         "section_count": section_count,
         "numeric_count": numeric_count,
         "name_count": name_count,
-        "template_version": template_version,
+        "template_version": template_version or _game_body_template_version(),
     }
     logger.info(json.dumps(payload, ensure_ascii=False))
 
@@ -14612,7 +14759,7 @@ def _log_farm_body_template_applied(
     section_count: int,
     numeric_count: int,
     is_drafted_player: bool,
-    template_version: str = FARM_BODY_TEMPLATE_VERSION,
+    template_version: str | None = None,
 ) -> None:
     payload = {
         "event": "farm_body_template_applied",
@@ -14622,7 +14769,7 @@ def _log_farm_body_template_applied(
         "section_count": section_count,
         "numeric_count": numeric_count,
         "is_drafted_player": is_drafted_player,
-        "template_version": template_version,
+        "template_version": template_version or _farm_body_template_version(),
     }
     logger.info(json.dumps(payload, ensure_ascii=False))
 
@@ -14635,7 +14782,7 @@ def _log_notice_body_template_applied(
     section_count: int,
     has_player_name: bool,
     has_numeric_record: bool,
-    template_version: str = NOTICE_BODY_TEMPLATE_VERSION,
+    template_version: str | None = None,
 ) -> None:
     payload = {
         "event": "notice_body_template_applied",
@@ -14645,7 +14792,7 @@ def _log_notice_body_template_applied(
         "section_count": section_count,
         "has_player_name": has_player_name,
         "has_numeric_record": has_numeric_record,
-        "template_version": template_version,
+        "template_version": template_version or _notice_body_template_version(),
     }
     logger.info(json.dumps(payload, ensure_ascii=False))
 
@@ -14657,7 +14804,7 @@ def _log_recovery_body_template_applied(
     injury_part: str,
     return_timing: str,
     section_count: int,
-    template_version: str = RECOVERY_BODY_TEMPLATE_VERSION,
+    template_version: str | None = None,
 ) -> None:
     payload = {
         "event": "recovery_body_template_applied",
@@ -14666,7 +14813,7 @@ def _log_recovery_body_template_applied(
         "injury_part": injury_part,
         "return_timing": return_timing,
         "section_count": section_count,
-        "template_version": template_version,
+        "template_version": template_version or _recovery_body_template_version(),
     }
     logger.info(json.dumps(payload, ensure_ascii=False))
 
@@ -14679,7 +14826,7 @@ def _log_social_body_template_applied(
     source_type_indicator: str,
     section_count: int,
     quote_count: int,
-    template_version: str = SOCIAL_BODY_TEMPLATE_VERSION,
+    template_version: str | None = None,
 ) -> None:
     payload = {
         "event": "social_body_template_applied",
@@ -14689,7 +14836,7 @@ def _log_social_body_template_applied(
         "source_type_indicator": source_type_indicator,
         "section_count": section_count,
         "quote_count": quote_count,
-        "template_version": template_version,
+        "template_version": template_version or _social_body_template_version(),
     }
     logger.info(json.dumps(payload, ensure_ascii=False))
 

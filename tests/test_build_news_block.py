@@ -74,8 +74,8 @@ class BuildNewsBlockTests(unittest.TestCase):
         self.assertGreater(len(ai_body), 200)
 
     def test_structured_body_render_drops_summary_duplicate_from_opening_section(self):
-        title = "【巨人】戸郷翔征が一軍昇格へ"
-        summary = "戸郷翔征投手がファーム中日戦で7回無失点の好投を見せた。"
+        title = "【巨人】戸郷翔征がフォーム改造に手応え"
+        summary = "巨人の戸郷翔征投手がフォーム改造の現状について語った。次回登板へ向けて調整を続けている。"
         repeated_lead = "戸郷翔征投手がファーム中日戦で7回無失点の好投を見せた。"
 
         with patch.dict(
@@ -113,7 +113,37 @@ class BuildNewsBlockTests(unittest.TestCase):
                             )
 
         self.assertEqual(blocks.count(repeated_lead), 1)
-        self.assertIn("【今後の注目点】", ai_body)
+        self.assertIn("【次の注目】", ai_body)
+
+    def test_generic_body_template_v2_renames_focus_heading(self):
+        title = "【巨人】戸郷翔征がフォーム改造に手応え"
+        summary = "巨人の戸郷翔征投手がフォーム改造の現状について語った。次回登板へ向けて調整を続けている。"
+
+        with patch.dict(
+            "os.environ",
+            {
+                "LOW_COST_MODE": "1",
+                "AI_ENABLED_CATEGORIES": "選手情報",
+                "ARTICLE_AI_MODE": "gemini",
+                "ENABLE_BODY_TEMPLATE_V2": "1",
+            },
+            clear=False,
+        ):
+            with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+                with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                    blocks, ai_body = rss_fetcher.build_news_block(
+                        title=title,
+                        summary=summary,
+                        url="https://example.com/post",
+                        source_name="日刊スポーツ 巨人",
+                        category="選手情報",
+                        has_game=False,
+                    )
+
+        self.assertIn("【今回のポイント】", ai_body)
+        self.assertNotIn("【ここに注目】", ai_body)
+        self.assertIn("<h4>【今回のポイント】</h4>", blocks)
+        self.assertEqual(blocks.count("<h3>"), 2)
 
     def test_social_quote_player_fallback_stays_on_quote_and_makes_source_clear(self):
         title = "【巨人】田中将大「打線を線にしない」甲子園の“申し子”が移籍後初の阪神戦で好投誓う"

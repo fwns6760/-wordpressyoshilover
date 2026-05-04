@@ -87,6 +87,24 @@ class ManagerBodyTemplateTests(unittest.TestCase):
         self.assertEqual(payload["section_count"], 4)
         self.assertEqual(payload["template_version"], rss_fetcher.MANAGER_BODY_TEMPLATE_VERSION)
 
+    def test_manager_body_template_v2_renames_context_header_and_caps_h3(self):
+        with patch.dict("os.environ", {"ENABLE_BODY_TEMPLATE_V2": "1"}, clear=False):
+            with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+                with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                    blocks, ai_body = rss_fetcher.build_news_block(
+                        title="【巨人】阿部監督が起用方針を説明",
+                        summary="阿部監督がスタメン起用の意図について説明した。今後の起用方針にも触れた。",
+                        url="https://example.com/post",
+                        source_name="報知 巨人",
+                        category="首脳陣",
+                        has_game=False,
+                    )
+
+        self.assertIn("【この話が出た流れ】", ai_body)
+        self.assertNotIn("【文脈と背景】", ai_body)
+        self.assertIn('<h4>【この話が出た流れ】</h4>', blocks)
+        self.assertLessEqual(blocks.count("<h3>"), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

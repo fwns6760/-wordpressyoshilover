@@ -209,7 +209,33 @@ PREFLIGHT_SKIP_LEDGER_PATH_ENV = "PREFLIGHT_SKIP_LEDGER_PATH"
 WEAK_TITLE_RESCUE_ENV_FLAG = "ENABLE_WEAK_TITLE_RESCUE"
 NARROW_UNLOCK_NON_POSTGAME_ENV_FLAG = "ENABLE_NARROW_UNLOCK_NON_POSTGAME"
 NARROW_UNLOCK_SUBTYPE_AWARE_ENV_FLAG = "ENABLE_NARROW_UNLOCK_SUBTYPE_AWARE"
+FETCHER_FAN_IMPORTANT_NARROW_EXEMPT_ENV_FLAG = "ENABLE_FETCHER_FAN_IMPORTANT_NARROW_EXEMPT"
 NARROW_UNLOCK_ALLOWED_SUBTYPES = frozenset({"manager", "player", "player_notice", "lineup", "farm_result"})
+FETCHER_FAN_IMPORTANT_PRIORITY_HANDLES = frozenset({"hochi_giants", "sportshochi", "hochi_baseball"})
+FETCHER_FAN_IMPORTANT_PRIORITY_SOURCE_NAME_MARKERS = ("報知", "SportsHochi", "スポーツ報知")
+FETCHER_FAN_IMPORTANT_PLAYER_KEYWORDS = ("戸郷翔征", "戸郷", "泉口友汰", "泉口", "松浦慶斗", "松浦")
+FETCHER_FAN_IMPORTANT_FARM_KEYWORDS = ("二軍", "２軍", "2軍", "三軍", "３軍", "3軍", "ファーム", "育成")
+FETCHER_FAN_IMPORTANT_ALUMNI_KEYWORDS = ("OB", "元巨人", "引退後")
+FETCHER_FAN_IMPORTANT_INJURY_RETURN_KEYWORDS = (
+    "故障",
+    "負傷",
+    "違和感",
+    "離脱",
+    "復帰",
+    "復帰戦",
+    "故障明け",
+    "1軍合流",
+    "１軍合流",
+    "一軍合流",
+    "緊急降板",
+    "緊急リリーフ",
+)
+FETCHER_FAN_IMPORTANT_RECORD_KEYWORDS = ("記録室", "球団新", "新記録", "ワースト", "連続無失点")
+FETCHER_FAN_IMPORTANT_COMMENT_KEYWORDS = ("監督", "コーチ", "コメント", "談話", "一問一答", "語った", "明かした", "話した")
+FETCHER_FAN_IMPORTANT_LIVE_UPDATE_KEYWORDS = ("緊急降板", "緊急リリーフ", "雨天コールド", "降雨コールド", "アクシデント")
+FETCHER_FAN_IMPORTANT_HARD_STOP_KEYWORDS = ("死亡", "訃報", "死去", "重体", "救急搬送")
+FETCHER_FAN_IMPORTANT_PLACEHOLDER_KEYWORDS = ("結果確認中", "詳細は後ほど", "速報のみ")
+FETCHER_FAN_IMPORTANT_POST_GEN_ALLOW_AXES = frozenset({"close_marker"})
 NARROW_UNLOCK_PLAYER_EVENT_MARKERS = (
     "登録",
     "抹消",
@@ -6671,6 +6697,207 @@ def _clean_narrow_unlock_text(*parts: object) -> str:
     return " ".join(cleaned_parts)
 
 
+def _fetcher_fan_important_narrow_exempt_enabled() -> bool:
+    return _env_flag(FETCHER_FAN_IMPORTANT_NARROW_EXEMPT_ENV_FLAG, False)
+
+
+def _fan_important_priority_source_reasons(source_url: str = "", source_name: str = "", source_handle: str = "") -> list[str]:
+    reasons: list[str] = []
+    normalized_handle = str(source_handle or "").strip().lower().lstrip("@")
+    normalized_source_name = _collapse_ws(str(source_name or ""))
+    source_family = _source_trust_classify_url_family(str(source_url or "").strip())
+
+    if source_family == "hochi":
+        reasons.append("source_family:hochi")
+    if normalized_handle in FETCHER_FAN_IMPORTANT_PRIORITY_HANDLES:
+        reasons.append(f"source_handle:{normalized_handle}")
+    source_name_lower = normalized_source_name.lower()
+    for marker in FETCHER_FAN_IMPORTANT_PRIORITY_SOURCE_NAME_MARKERS:
+        if marker.lower() in source_name_lower:
+            reasons.append(f"source_name:{marker}")
+            break
+    return _dedupe_preserve_order(reasons)
+
+
+def _fan_important_keyword_hits(text: str) -> list[str]:
+    keyword_groups = (
+        FETCHER_FAN_IMPORTANT_PLAYER_KEYWORDS,
+        FETCHER_FAN_IMPORTANT_FARM_KEYWORDS,
+        FETCHER_FAN_IMPORTANT_ALUMNI_KEYWORDS,
+        FETCHER_FAN_IMPORTANT_INJURY_RETURN_KEYWORDS,
+        FETCHER_FAN_IMPORTANT_RECORD_KEYWORDS,
+    )
+    hits: list[str] = []
+    for keywords in keyword_groups:
+        for keyword in keywords:
+            if keyword in text:
+                hits.append(keyword)
+    return _dedupe_preserve_order(hits)
+
+
+def _build_fan_important_priority_content_context(
+    post_meta: Mapping[str, object] | None,
+    source_url: str,
+    title: str,
+) -> dict[str, object]:
+    meta = _merge_weak_title_metadata(post_meta)
+    source_title = str(meta.get("source_title") or title or "").strip()
+    summary = str(meta.get("summary") or meta.get("source_body") or "").strip()
+    category = str(meta.get("category") or "").strip()
+    article_subtype = str(meta.get("article_subtype") or "").strip()
+    source_name = str(meta.get("source_name") or "").strip()
+    source_handle = str(meta.get("source_handle") or _extract_handle_from_tweet_url(source_url) or "").strip()
+    source_text = _clean_narrow_unlock_text(title, source_title, summary)
+    keyword_hits = _fan_important_keyword_hits(source_text)
+    priority_source_reasons = _fan_important_priority_source_reasons(
+        source_url=source_url,
+        source_name=source_name,
+        source_handle=source_handle,
+    )
+    injury_or_return = any(marker in source_text for marker in FETCHER_FAN_IMPORTANT_INJURY_RETURN_KEYWORDS)
+    farm_or_ob = any(marker in source_text for marker in (*FETCHER_FAN_IMPORTANT_FARM_KEYWORDS, *FETCHER_FAN_IMPORTANT_ALUMNI_KEYWORDS))
+    record_signal = any(marker in source_text for marker in FETCHER_FAN_IMPORTANT_RECORD_KEYWORDS)
+    live_urgent = any(marker in source_text for marker in FETCHER_FAN_IMPORTANT_LIVE_UPDATE_KEYWORDS)
+    manager_or_coach_comment = bool(
+        category == "首脳陣"
+        or article_subtype in {"manager", "coach", "manager_comment", "coach_comment"}
+        or (
+            any(marker in source_text for marker in ("監督", "コーチ"))
+            and any(marker in source_text for marker in FETCHER_FAN_IMPORTANT_COMMENT_KEYWORDS)
+        )
+    )
+    hard_stop = any(marker in source_text for marker in FETCHER_FAN_IMPORTANT_HARD_STOP_KEYWORDS)
+    placeholder = any(marker in source_text for marker in FETCHER_FAN_IMPORTANT_PLACEHOLDER_KEYWORDS)
+    fan_signal = bool(
+        keyword_hits
+        or injury_or_return
+        or farm_or_ob
+        or record_signal
+        or live_urgent
+        or manager_or_coach_comment
+    )
+    return {
+        "priority_source": bool(priority_source_reasons),
+        "priority_source_reasons": priority_source_reasons,
+        "keyword_hits": keyword_hits,
+        "fan_signal": fan_signal,
+        "injury_or_return": injury_or_return,
+        "farm_or_ob": farm_or_ob,
+        "record_signal": record_signal,
+        "live_urgent": live_urgent,
+        "manager_or_coach_comment": manager_or_coach_comment,
+        "hard_stop": hard_stop,
+        "placeholder": placeholder,
+        "category": category,
+        "article_subtype": article_subtype,
+        "source_name": source_name,
+        "source_handle": source_handle,
+    }
+
+
+def _is_fan_important_priority_content(
+    post_meta: Mapping[str, object] | None,
+    source_url: str,
+    title: str,
+) -> bool:
+    context = _build_fan_important_priority_content_context(post_meta, source_url, title)
+    if context["hard_stop"] or context["placeholder"]:
+        return False
+    return bool(context["fan_signal"] and (context["priority_source"] or context["keyword_hits"]))
+
+
+def _fetcher_fan_important_narrow_exempt_context(
+    *,
+    skip_kind: str,
+    post_meta: Mapping[str, object] | None,
+    source_url: str,
+    title: str,
+    validation: Mapping[str, object] | None = None,
+) -> dict[str, object] | None:
+    if not _fetcher_fan_important_narrow_exempt_enabled():
+        return None
+    if not _is_fan_important_priority_content(post_meta, source_url, title):
+        return None
+
+    context = _build_fan_important_priority_content_context(post_meta, source_url, title)
+    if context["hard_stop"] or context["placeholder"]:
+        return None
+
+    if skip_kind == "social_too_weak":
+        if context["fan_signal"]:
+            context["reason"] = "priority_source_or_keyword_social"
+            return context
+        return None
+
+    if skip_kind == "comment_required":
+        if context["priority_source"] and context["fan_signal"]:
+            context["reason"] = "priority_source_commentless_news"
+            return context
+        return None
+
+    if skip_kind == "live_update_disabled":
+        if context["live_urgent"] and context["fan_signal"]:
+            context["reason"] = "urgent_live_update"
+            return context
+        return None
+
+    if skip_kind == "pregame_started":
+        if (context["injury_or_return"] or context["manager_or_coach_comment"]) and context["fan_signal"]:
+            context["reason"] = "injury_return_or_manager_comment_after_start"
+            return context
+        return None
+
+    if skip_kind == "body_contract_validate":
+        validation = validation if isinstance(validation, Mapping) else {}
+        if str(validation.get("action") or "").strip() == "reroll":
+            context["reason"] = "body_contract_reroll_only"
+            context["fail_axes"] = list(validation.get("fail_axes") or [])
+            return context
+        return None
+
+    if skip_kind == "post_gen_validate":
+        validation = validation if isinstance(validation, Mapping) else {}
+        fail_axes = [str(axis).strip() for axis in validation.get("fail_axes") or [] if str(axis).strip()]
+        if fail_axes and set(fail_axes).issubset(FETCHER_FAN_IMPORTANT_POST_GEN_ALLOW_AXES):
+            context["reason"] = "post_gen_close_marker_only"
+            context["fail_axes"] = fail_axes
+            return context
+        return None
+
+    if skip_kind in {"weak_generated_title", "weak_subject_title"}:
+        context["reason"] = skip_kind
+        return context
+
+    return None
+
+
+def _log_fetcher_fan_important_narrow_exempt(
+    logger: logging.Logger,
+    *,
+    skip_kind: str,
+    source_url: str,
+    title: str,
+    context: Mapping[str, object],
+) -> None:
+    payload = {
+        "event": "fetcher_fan_important_narrow_exempt",
+        "skip_kind": skip_kind,
+        "reason": str(context.get("reason") or "").strip(),
+        "title": title,
+        "source_url": source_url,
+        "source_url_hash": _hash_duplicate_guard_value(source_url),
+        "category": str(context.get("category") or "").strip(),
+        "article_subtype": str(context.get("article_subtype") or "").strip(),
+        "priority_source": bool(context.get("priority_source")),
+        "priority_source_reasons": list(context.get("priority_source_reasons") or []),
+        "keyword_hits": list(context.get("keyword_hits") or []),
+    }
+    fail_axes = [str(axis).strip() for axis in context.get("fail_axes") or [] if str(axis).strip()]
+    if fail_axes:
+        payload["fail_axes"] = fail_axes
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
 def _normalize_subtype_aware_narrow_unlock_subtype(article_subtype: str, metadata: Mapping[str, object] | None = None) -> str:
     metadata = _merge_weak_title_metadata(metadata)
     special_kind = str(metadata.get("special_story_kind") or "").strip().lower()
@@ -7202,6 +7429,28 @@ def _maybe_route_weak_generated_title_review(
             )
         )
         return None
+    fan_important_exempt = _fetcher_fan_important_narrow_exempt_context(
+        skip_kind="weak_generated_title",
+        post_meta={
+            **_merge_weak_title_metadata(metadata),
+            "source_name": source_name,
+            "source_title": source_title,
+            "source_body": source_body,
+            "summary": summary,
+            "source_handle": _extract_handle_from_tweet_url(source_url),
+        },
+        source_url=source_url,
+        title=rewritten,
+    )
+    if fan_important_exempt:
+        _log_fetcher_fan_important_narrow_exempt(
+            logger,
+            skip_kind="weak_generated_title",
+            source_url=source_url,
+            title=rewritten,
+            context=fan_important_exempt,
+        )
+        return None
     logger.warning(
         json.dumps(
             {
@@ -7285,6 +7534,28 @@ def _maybe_route_weak_subject_title_review(
                 },
                 ensure_ascii=False,
             )
+        )
+        return None
+    fan_important_exempt = _fetcher_fan_important_narrow_exempt_context(
+        skip_kind="weak_subject_title",
+        post_meta={
+            **_merge_weak_title_metadata(metadata),
+            "source_name": source_name,
+            "source_title": source_title,
+            "source_body": source_body,
+            "summary": summary,
+            "source_handle": _extract_handle_from_tweet_url(source_url),
+        },
+        source_url=source_url,
+        title=rewritten,
+    )
+    if fan_important_exempt:
+        _log_fetcher_fan_important_narrow_exempt(
+            logger,
+            skip_kind="weak_subject_title",
+            source_url=source_url,
+            title=rewritten,
+            context=fan_important_exempt,
         )
         return None
     payload = {
@@ -14864,20 +15135,64 @@ def _main(args, logger):
                     continue
                 article_subtype = _detect_article_subtype(title, summary, category, entry_has_game)
                 if article_subtype == "live_update" and not ENABLE_LIVE_UPDATE_ARTICLES:
-                    logger.debug(f"  [SKIP:途中経過停止中] {title_preview[:40]}")
-                    skip_filter += 1
-                    skip_reason_counts["live_update_disabled"] += 1
-                    _append_skip_reason_sample(skip_reason_sample_titles, "live_update_disabled", title)
-                    continue
+                    fan_important_exempt = _fetcher_fan_important_narrow_exempt_context(
+                        skip_kind="live_update_disabled",
+                        post_meta={
+                            "source_name": name,
+                            "source_handle": source_handle,
+                            "source_title": raw_title,
+                            "summary": summary,
+                            "category": category,
+                            "article_subtype": article_subtype,
+                        },
+                        source_url=post_url,
+                        title=title,
+                    )
+                    if fan_important_exempt:
+                        _log_fetcher_fan_important_narrow_exempt(
+                            logger,
+                            skip_kind="live_update_disabled",
+                            source_url=post_url,
+                            title=title,
+                            context=fan_important_exempt,
+                        )
+                    else:
+                        logger.debug(f"  [SKIP:途中経過停止中] {title_preview[:40]}")
+                        skip_filter += 1
+                        skip_reason_counts["live_update_disabled"] += 1
+                        _append_skip_reason_sample(skip_reason_sample_titles, "live_update_disabled", title)
+                        continue
                 has_comment = "「" in title_text
                 if source_type == "news":
                     allow_commentless_news = article_subtype in {"lineup", "farm_lineup", "postgame"}
                     if not has_comment and not allow_commentless_news:
-                        logger.debug(f"  [SKIP:コメントなし] {title_preview[:40]}")
-                        skip_filter += 1
-                        skip_reason_counts["comment_required"] += 1
-                        _append_skip_reason_sample(skip_reason_sample_titles, "comment_required", title)
-                        continue
+                        fan_important_exempt = _fetcher_fan_important_narrow_exempt_context(
+                            skip_kind="comment_required",
+                            post_meta={
+                                "source_name": name,
+                                "source_handle": source_handle,
+                                "source_title": raw_title,
+                                "summary": summary,
+                                "category": category,
+                                "article_subtype": article_subtype,
+                            },
+                            source_url=post_url,
+                            title=title,
+                        )
+                        if fan_important_exempt:
+                            _log_fetcher_fan_important_narrow_exempt(
+                                logger,
+                                skip_kind="comment_required",
+                                source_url=post_url,
+                                title=title,
+                                context=fan_important_exempt,
+                            )
+                        else:
+                            logger.debug(f"  [SKIP:コメントなし] {title_preview[:40]}")
+                            skip_filter += 1
+                            skip_reason_counts["comment_required"] += 1
+                            _append_skip_reason_sample(skip_reason_sample_titles, "comment_required", title)
+                            continue
                 else:
                     worthy, rescue_meta = _evaluate_authoritative_social_entry(
                         title,
@@ -14890,11 +15205,33 @@ def _main(args, logger):
                     if rescue_meta:
                         _log_sns_weak_rescue(logger, post_url, title, rescue_meta)
                     if not worthy:
-                        logger.debug(f"  [SKIP:SNS弱い] {title_preview[:40]}")
-                        skip_filter += 1
-                        skip_reason_counts["social_too_weak"] += 1
-                        _append_skip_reason_sample(skip_reason_sample_titles, "social_too_weak", title)
-                        continue
+                        fan_important_exempt = _fetcher_fan_important_narrow_exempt_context(
+                            skip_kind="social_too_weak",
+                            post_meta={
+                                "source_name": name,
+                                "source_handle": source_handle,
+                                "source_title": raw_title,
+                                "summary": summary,
+                                "category": category,
+                                "article_subtype": article_subtype,
+                            },
+                            source_url=post_url,
+                            title=title,
+                        )
+                        if fan_important_exempt:
+                            _log_fetcher_fan_important_narrow_exempt(
+                                logger,
+                                skip_kind="social_too_weak",
+                                source_url=post_url,
+                                title=title,
+                                context=fan_important_exempt,
+                            )
+                        else:
+                            logger.debug(f"  [SKIP:SNS弱い] {title_preview[:40]}")
+                            skip_filter += 1
+                            skip_reason_counts["social_too_weak"] += 1
+                            _append_skip_reason_sample(skip_reason_sample_titles, "social_too_weak", title)
+                            continue
 
             logger.info(f"  [HIT] {title_preview[:40]} → {category}")
             prepared_category_counts[category] += 1
@@ -14904,6 +15241,7 @@ def _main(args, logger):
                 "entry_index": entry_index,
                 "source_rank": source_rank,
                 "source_name": name,
+                "source_handle": source_handle,
                 "source_type": source_type,
                 "source_roles": prepared_source_roles,
                 "entry": entry,
@@ -14942,16 +15280,43 @@ def _main(args, logger):
                 item.get("entry_has_game", True),
                 yahoo_game_status,
             ):
-                _log_pregame_started_skip(
-                    item["title"],
-                    item.get("summary", ""),
-                    item.get("post_url", ""),
-                    yahoo_game_status,
+                fan_important_exempt = _fetcher_fan_important_narrow_exempt_context(
+                    skip_kind="pregame_started",
+                    post_meta={
+                        "source_name": item.get("source_name", ""),
+                        "source_handle": item.get("source_handle", ""),
+                        "source_title": item.get("raw_title", item["title"]),
+                        "summary": item.get("summary", ""),
+                        "category": item.get("category", ""),
+                        "article_subtype": _detect_article_subtype(
+                            item.get("raw_title", item["title"]),
+                            item.get("summary", ""),
+                            item.get("category", ""),
+                            item.get("entry_has_game", True),
+                        ),
+                    },
+                    source_url=item.get("post_url", ""),
+                    title=item["title"],
                 )
-                skip_filter += 1
-                skip_reason_counts["pregame_started"] += 1
-                _append_skip_reason_sample(skip_reason_sample_titles, "pregame_started", item["title"])
-                continue
+                if fan_important_exempt:
+                    _log_fetcher_fan_important_narrow_exempt(
+                        logger,
+                        skip_kind="pregame_started",
+                        source_url=item.get("post_url", ""),
+                        title=item["title"],
+                        context=fan_important_exempt,
+                    )
+                else:
+                    _log_pregame_started_skip(
+                        item["title"],
+                        item.get("summary", ""),
+                        item.get("post_url", ""),
+                        yahoo_game_status,
+                    )
+                    skip_filter += 1
+                    skip_reason_counts["pregame_started"] += 1
+                    _append_skip_reason_sample(skip_reason_sample_titles, "pregame_started", item["title"])
+                    continue
             filtered_prepared_entries.append(item)
         prepared_entries = filtered_prepared_entries
 
@@ -15014,6 +15379,7 @@ def _main(args, logger):
         summary = item["summary"]
         post_url = item["post_url"]
         source_name = item["source_name"]
+        source_handle = item.get("source_handle", "")
         entry_title_norm = item.get("entry_title_norm", "")
         entry_has_game = item["entry_has_game"]
         source_day_label = _format_source_day_label(item.get("published_at"))
@@ -15242,6 +15608,16 @@ def _main(args, logger):
                     "farm": category == "ドラフト・育成" or title_article_subtype in {"farm", "farm_lineup", "farm_result"},
                 }
             )
+            fan_important_post_meta = {
+                **weak_title_metadata,
+                "source_name": source_name,
+                "source_handle": source_handle,
+                "source_title": raw_title,
+                "source_body": summary,
+                "summary": summary,
+                "category": category,
+                "article_subtype": title_article_subtype,
+            }
             title_player_name_unresolved = bool(
                 comparison_title == draft_title
                 and title_article_subtype in {"manager", "player", "notice", "recovery"}
@@ -15410,50 +15786,66 @@ def _main(args, logger):
                 source_context=fact_conflict_source_refs,
             )
             if not body_contract_validate["ok"]:
-                skip_filter += 1
-                skip_reason_counts["body_contract_validate"] += 1
-                _append_skip_reason_sample(skip_reason_sample_titles, "body_contract_validate", draft_title)
-                if body_contract_validate["action"] == "fail":
-                    _log_body_validator_fail(
+                fan_important_exempt = _fetcher_fan_important_narrow_exempt_context(
+                    skip_kind="body_contract_validate",
+                    post_meta=fan_important_post_meta,
+                    source_url=post_url,
+                    title=draft_title,
+                    validation=body_contract_validate,
+                )
+                if fan_important_exempt:
+                    _log_fetcher_fan_important_narrow_exempt(
                         logger,
+                        skip_kind="body_contract_validate",
                         source_url=post_url,
-                        category=category,
-                        article_subtype=title_article_subtype,
-                        fail_axes=list(body_contract_validate["fail_axes"]),
-                        expected_first_block=str(body_contract_validate.get("expected_first_block") or ""),
-                        actual_first_block=str(body_contract_validate.get("actual_first_block") or ""),
-                        has_source_block=bool(body_contract_validate.get("has_source_block", False)),
-                        stop_reason=str(body_contract_validate.get("stop_reason") or ""),
+                        title=draft_title,
+                        context=fan_important_exempt,
                     )
                 else:
-                    _log_body_validator_reroll(
-                        logger,
-                        source_url=post_url,
-                        category=category,
-                        article_subtype=title_article_subtype,
-                        fail_axes=list(body_contract_validate["fail_axes"]),
-                        expected_first_block=str(body_contract_validate.get("expected_first_block") or ""),
-                        actual_first_block=str(body_contract_validate.get("actual_first_block") or ""),
-                        missing_required_blocks=list(body_contract_validate.get("missing_required_blocks") or []),
-                        actual_block_order=list(body_contract_validate.get("actual_block_order") or []),
-                    )
-                if _env_flag(BODY_CONTRACT_FAIL_LEDGER_ENV_FLAG, False):
-                    body_contract_fail_ledger_path = str(
-                        os.environ.get(BODY_CONTRACT_FAIL_LEDGER_PATH_ENV_FLAG, "")
-                    ).strip()
-                    record_body_contract_fail(
-                        source_url=post_url,
-                        source_title=raw_title,
-                        generated_title=draft_title,
-                        category=category,
-                        article_subtype=title_article_subtype,
-                        validation_result=body_contract_validate,
-                        validation_action=str(body_contract_validate.get("action") or "fail"),
-                        body_excerpt=ai_body_for_x,
-                        logger=logger,
-                        ledger_path=body_contract_fail_ledger_path or None,
-                    )
-                continue
+                    skip_filter += 1
+                    skip_reason_counts["body_contract_validate"] += 1
+                    _append_skip_reason_sample(skip_reason_sample_titles, "body_contract_validate", draft_title)
+                    if body_contract_validate["action"] == "fail":
+                        _log_body_validator_fail(
+                            logger,
+                            source_url=post_url,
+                            category=category,
+                            article_subtype=title_article_subtype,
+                            fail_axes=list(body_contract_validate["fail_axes"]),
+                            expected_first_block=str(body_contract_validate.get("expected_first_block") or ""),
+                            actual_first_block=str(body_contract_validate.get("actual_first_block") or ""),
+                            has_source_block=bool(body_contract_validate.get("has_source_block", False)),
+                            stop_reason=str(body_contract_validate.get("stop_reason") or ""),
+                        )
+                    else:
+                        _log_body_validator_reroll(
+                            logger,
+                            source_url=post_url,
+                            category=category,
+                            article_subtype=title_article_subtype,
+                            fail_axes=list(body_contract_validate["fail_axes"]),
+                            expected_first_block=str(body_contract_validate.get("expected_first_block") or ""),
+                            actual_first_block=str(body_contract_validate.get("actual_first_block") or ""),
+                            missing_required_blocks=list(body_contract_validate.get("missing_required_blocks") or []),
+                            actual_block_order=list(body_contract_validate.get("actual_block_order") or []),
+                        )
+                    if _env_flag(BODY_CONTRACT_FAIL_LEDGER_ENV_FLAG, False):
+                        body_contract_fail_ledger_path = str(
+                            os.environ.get(BODY_CONTRACT_FAIL_LEDGER_PATH_ENV_FLAG, "")
+                        ).strip()
+                        record_body_contract_fail(
+                            source_url=post_url,
+                            source_title=raw_title,
+                            generated_title=draft_title,
+                            category=category,
+                            article_subtype=title_article_subtype,
+                            validation_result=body_contract_validate,
+                            validation_action=str(body_contract_validate.get("action") or "fail"),
+                            body_excerpt=ai_body_for_x,
+                            logger=logger,
+                            ledger_path=body_contract_fail_ledger_path or None,
+                        )
+                    continue
             post_gen_validate = _evaluate_post_gen_validate(
                 ai_body_for_x,
                 article_subtype=title_article_subtype,
@@ -15461,20 +15853,36 @@ def _main(args, logger):
                 source_refs=fact_conflict_source_refs,
             )
             if not post_gen_validate["ok"]:
-                skip_filter += 1
-                skip_reason_counts["post_gen_validate"] += 1
-                _append_skip_reason_sample(skip_reason_sample_titles, "post_gen_validate", draft_title)
-                _log_article_skipped_post_gen_validate(
-                    logger,
+                fan_important_exempt = _fetcher_fan_important_narrow_exempt_context(
+                    skip_kind="post_gen_validate",
+                    post_meta=fan_important_post_meta,
+                    source_url=post_url,
                     title=draft_title,
-                    source_title=raw_title,
-                    post_url=post_url,
-                    category=category,
-                    article_subtype=title_article_subtype,
-                    fail_axes=list(post_gen_validate["fail_axes"]),
-                    stop_reason=str(post_gen_validate.get("stop_reason") or ""),
+                    validation=post_gen_validate,
                 )
-                continue
+                if fan_important_exempt:
+                    _log_fetcher_fan_important_narrow_exempt(
+                        logger,
+                        skip_kind="post_gen_validate",
+                        source_url=post_url,
+                        title=draft_title,
+                        context=fan_important_exempt,
+                    )
+                else:
+                    skip_filter += 1
+                    skip_reason_counts["post_gen_validate"] += 1
+                    _append_skip_reason_sample(skip_reason_sample_titles, "post_gen_validate", draft_title)
+                    _log_article_skipped_post_gen_validate(
+                        logger,
+                        title=draft_title,
+                        source_title=raw_title,
+                        post_url=post_url,
+                        category=category,
+                        article_subtype=title_article_subtype,
+                        fail_axes=list(post_gen_validate["fail_axes"]),
+                        stop_reason=str(post_gen_validate.get("stop_reason") or ""),
+                    )
+                    continue
         else:
             content = build_oembed_block(post_url)
             ai_body_for_x = ""

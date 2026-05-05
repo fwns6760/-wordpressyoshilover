@@ -2246,9 +2246,9 @@ function yoshilover_063_auto_inject_article_bottom_ad_slot( $content ) {
         $content,
         $slot,
         array(
-            'class="yoshi-sns-reactions',
-            'class="yoshi-article-bundles',
-            'class="yoshi-x-follow-cta',
+            '<section class="yoshi-sns-reactions',
+            '<section class="yoshi-article-bundles',
+            '<aside class="yoshi-x-follow-cta',
         )
     );
 }

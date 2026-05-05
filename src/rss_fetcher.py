@@ -1108,6 +1108,10 @@ def _body_template_v2_enabled() -> bool:
     return _env_flag(ENABLE_BODY_TEMPLATE_V2_ENV_FLAG, False)
 
 
+def _social_v1_heading_removal_enabled() -> bool:
+    return _env_flag("ENABLE_SOCIAL_V1_HEADING_REMOVAL", False)
+
+
 def _manager_required_headings() -> tuple[str, ...]:
     return MANAGER_REQUIRED_HEADINGS_V2 if _body_template_v2_enabled() else MANAGER_REQUIRED_HEADINGS
 
@@ -4228,6 +4232,102 @@ def _social_quote_count(title: str, summary: str, article_text: str = "") -> int
     quote_count = len(_extract_quote_phrases(f"{title}\n{summary}", max_phrases=4))
     body_quote_count = (article_text or "").count("『")
     return max(quote_count, body_quote_count)
+
+
+def _split_render_lines_into_sections(
+    render_lines: list[str],
+    *,
+    body_category: str,
+    has_game: bool,
+    body_subtype: str,
+) -> list[tuple[str, list[str]]]:
+    sections: list[tuple[str, list[str]]] = []
+    seen_headings: set[str] = set()
+    current_heading = ""
+    current_paragraphs: list[str] = []
+
+    def _flush() -> None:
+        nonlocal current_heading, current_paragraphs
+        if current_heading or current_paragraphs:
+            sections.append((current_heading, list(current_paragraphs)))
+        current_heading = ""
+        current_paragraphs = []
+
+    for line in render_lines:
+        if line.startswith("【") or line.startswith("■") or line.startswith("▶"):
+            heading_text = _normalize_article_heading(
+                line,
+                body_category,
+                has_game,
+                article_subtype=body_subtype,
+            )
+            if heading_text in seen_headings:
+                continue
+            _flush()
+            seen_headings.add(heading_text)
+            current_heading = heading_text
+        elif "コメント" in line and ("意見" in line or "教えてください" in line):
+            continue
+        else:
+            current_paragraphs.append(line)
+
+    _flush()
+    return sections
+
+
+def _flatten_render_sections(sections: list[tuple[str, list[str]]]) -> list[str]:
+    flattened: list[str] = []
+    for heading, paragraphs in sections:
+        if heading:
+            flattened.append(heading)
+        flattened.extend(paragraphs)
+    return flattened
+
+
+def _maybe_remove_social_v1_visible_heading_lines(
+    render_lines: list[str],
+    *,
+    body_category: str,
+    has_game: bool,
+    body_subtype: str,
+    logger: logging.Logger,
+) -> list[str]:
+    target_subtypes = {"social_news", "player_notice", "player_recovery"}
+    target_headings = ("【発信内容の要約】", "【文脈と背景】")
+    if not _social_v1_heading_removal_enabled():
+        return render_lines
+    if body_subtype not in target_subtypes:
+        return render_lines
+
+    sections = _split_render_lines_into_sections(
+        render_lines,
+        body_category=body_category,
+        has_game=has_game,
+        body_subtype=body_subtype,
+    )
+    flattened_before = _flatten_render_sections(sections)
+    filtered_sections = [
+        (heading, paragraphs)
+        for heading, paragraphs in sections
+        if heading not in target_headings
+    ]
+    flattened_after = _flatten_render_sections(filtered_sections)
+    if not flattened_after:
+        flattened_after = flattened_before
+    logger.info(
+        json.dumps(
+            {
+                "event": "social_v1_visible_heading_removed",
+                "subtype": body_subtype,
+                "removed_headings": ["発信内容の要約", "文脈と背景"],
+                "body_length_before": len("\n".join(flattened_before)),
+                "body_length_after": len("\n".join(flattened_after)),
+                "severity": "INFO",
+            },
+            ensure_ascii=False,
+        )
+    )
+    return flattened_after
 
 
 def _notice_section_count(text: str) -> int:
@@ -12110,6 +12210,13 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                     continue
                 deduped_render_lines.append(line)
             render_lines = deduped_render_lines
+        render_lines = _maybe_remove_social_v1_visible_heading_lines(
+            render_lines,
+            body_category=body_category,
+            has_game=has_game,
+            body_subtype=body_subtype,
+            logger=logger,
+        )
 
         para_count = 0
         seen_headings = set()

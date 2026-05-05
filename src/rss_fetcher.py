@@ -240,6 +240,7 @@ ENABLE_FARM_SHORT_POST_TEMPLATE_ENV_FLAG = "ENABLE_FARM_SHORT_POST_TEMPLATE"
 ENABLE_SOURCE_LINK_ONLY_TEMPLATE_ENV_FLAG = "ENABLE_SOURCE_LINK_ONLY_TEMPLATE"
 ENABLE_FARM_SUBTYPE_SPLIT_ENV_FLAG = "ENABLE_FARM_SUBTYPE_SPLIT"
 ENABLE_BODY_DUP_REDUCTION_ENV_FLAG = "ENABLE_BODY_DUP_REDUCTION"
+ENABLE_BODY_LEAD_PARAPHRASE_GUARD_ENV_FLAG = "ENABLE_BODY_LEAD_PARAPHRASE_GUARD"
 ENABLE_SOCIAL_TOO_WEAK_NARROW_RESCUE_ENV_FLAG = "ENABLE_SOCIAL_TOO_WEAK_NARROW_RESCUE"
 ENABLE_RSS_SHORT_SCORE_POST_REROUTE_ENV_FLAG = "ENABLE_RSS_SHORT_SCORE_POST_REROUTE"
 ENABLE_RSS_MANAGER_COMMENT_KEEP_ENV_FLAG = "ENABLE_RSS_MANAGER_COMMENT_KEEP"
@@ -1319,6 +1320,10 @@ def _farm_subtype_split_enabled() -> bool:
 
 def _body_dup_reduction_enabled() -> bool:
     return _env_flag(ENABLE_BODY_DUP_REDUCTION_ENV_FLAG, False)
+
+
+def _body_lead_paraphrase_guard_enabled() -> bool:
+    return _env_flag(ENABLE_BODY_LEAD_PARAPHRASE_GUARD_ENV_FLAG, False)
 
 
 def _social_too_weak_narrow_rescue_enabled() -> bool:
@@ -10341,6 +10346,178 @@ def _body_dup_reduction_ngram_overlap(left: str, right: str, size: int = 3) -> f
     return len(left_ngrams & right_ngrams) / max(len(left_ngrams), 1)
 
 
+def _body_lead_title_ngrams(text: str, size: int = 3) -> list[str]:
+    normalized = _normalize_title_for_dedupe(text).replace(" ", "")
+    if len(normalized) < size:
+        return []
+    return _dedupe_preserve_order(
+        [
+            normalized[index:index + size]
+            for index in range(len(normalized) - size + 1)
+            if normalized[index:index + size].strip()
+        ]
+    )
+
+
+def _body_lead_overlap_ngrams(title: str, sentence: str, size: int = 3) -> list[str]:
+    sentence_norm = _normalize_title_for_dedupe(sentence).replace(" ", "")
+    if not sentence_norm:
+        return []
+    return [ngram for ngram in _body_lead_title_ngrams(title, size=size) if ngram in sentence_norm]
+
+
+def _body_lead_has_source_quote(sentence: str, quote_phrases: list[str]) -> bool:
+    clean = _collapse_ws(sentence or "")
+    if not clean or not quote_phrases:
+        return False
+    return any(phrase in clean for phrase in quote_phrases)
+
+
+def _body_lead_paraphrase_generic_sentence(
+    *,
+    source_title: str,
+    summary: str,
+    category: str,
+    article_subtype: str,
+    source_name: str = "",
+) -> str:
+    source_label = _display_source_name(source_name) if source_name else "元記事"
+    subject = _compact_subject_label(source_title, summary, category) or _extract_subject_label(source_title, summary, category)
+    normalized_subtype = str(article_subtype or "").strip().lower()
+
+    if normalized_subtype == "manager":
+        speaker = subject if subject and subject not in {"巨人", "首脳陣"} else "首脳陣"
+        return f"{speaker}の発言が伝えられました。"
+    if normalized_subtype == "player_notice":
+        player = subject if subject and subject not in {"巨人", "対象選手"} else "対象選手"
+        return f"{player}に関する公示の要点が伝えられました。"
+    if normalized_subtype == "player_recovery":
+        player = subject if subject and subject not in {"巨人", "対象選手"} else "対象選手"
+        return f"{player}の状態変化が伝えられました。"
+    if normalized_subtype == "farm":
+        if subject and subject not in {"巨人", "対象選手"}:
+            return f"{subject}に関するファーム情報が伝えられました。"
+        return "ファームの動きが伝えられました。"
+    if normalized_subtype == "roster":
+        return f"{source_label}が補強・移籍の要点を伝えました。"
+    if category == "試合速報":
+        return "巨人戦のポイントが伝えられました。"
+    if subject and subject not in {"巨人", "対象選手", "首脳陣"}:
+        return f"{source_label}が{subject}に関する話題を伝えました。"
+    return f"{source_label}が話題の要点を伝えました。"
+
+
+def _body_lead_paraphrase_candidates(
+    *,
+    article_title: str,
+    source_title: str,
+    summary: str,
+    category: str,
+    article_subtype: str,
+    source_name: str,
+    first_sentence: str,
+) -> tuple[list[str], bool]:
+    fact_lines = _rule_based_fact_lines(source_title, summary, max_sentences=4, limit=72)
+    quote_phrases = _extract_quote_phrases(f"{source_title}\n{summary}", max_phrases=1)
+    fact_candidates: list[str] = []
+    for fact in fact_lines[1:] + fact_lines[:1]:
+        sentence = f"{fact.rstrip('。')}。".strip()
+        if not sentence or sentence == first_sentence:
+            continue
+        if _body_dup_reduction_ngram_overlap(article_title, sentence) >= 0.55:
+            continue
+        fact_candidates.append(sentence)
+
+    if quote_phrases and not fact_candidates and _body_lead_has_source_quote(first_sentence, quote_phrases):
+        return [], True
+
+    candidates = list(fact_candidates)
+    if quote_phrases:
+        quote_sentence = f"引用: 「{quote_phrases[0]}」。"
+        if quote_sentence != first_sentence and _body_dup_reduction_ngram_overlap(article_title, quote_sentence) < 0.55:
+            candidates.append(quote_sentence)
+
+    generic_sentence = _body_lead_paraphrase_generic_sentence(
+        source_title=source_title,
+        summary=summary,
+        category=category,
+        article_subtype=article_subtype,
+        source_name=source_name,
+    )
+    if generic_sentence != first_sentence and _body_dup_reduction_ngram_overlap(article_title, generic_sentence) < 0.55:
+        candidates.append(generic_sentence)
+
+    return _dedupe_preserve_order(candidates), False
+
+
+def _maybe_apply_body_lead_paraphrase_guard(
+    *,
+    body_text: str,
+    article_title: str,
+    source_title: str,
+    summary: str,
+    category: str,
+    article_subtype: str,
+    source_name: str,
+    source_url: str,
+    logger: logging.Logger,
+) -> str:
+    if not _body_lead_paraphrase_guard_enabled():
+        return body_text
+    sections = _split_text_sections(body_text)
+    if not sections:
+        return body_text
+    first_heading, first_body = sections[0]
+    sentences = _body_dup_reduction_sentence_units(first_body)
+    if not sentences:
+        return body_text
+    first_sentence = sentences[0]
+    if _body_dup_reduction_ngram_overlap(article_title, first_sentence) < 0.55:
+        return body_text
+    overlap_ngrams = _body_lead_overlap_ngrams(article_title, first_sentence)[:12]
+    if not overlap_ngrams:
+        return body_text
+
+    candidates, quote_only = _body_lead_paraphrase_candidates(
+        article_title=article_title,
+        source_title=source_title,
+        summary=summary,
+        category=category,
+        article_subtype=article_subtype,
+        source_name=source_name,
+        first_sentence=first_sentence,
+    )
+    if quote_only or not candidates:
+        return body_text
+
+    replacement = candidates[0]
+    if replacement == first_sentence:
+        return body_text
+
+    sentences[0] = replacement
+    sections[0] = (first_heading, " ".join(sentences).strip())
+    rebuilt_lines: list[str] = []
+    for heading, section_body in sections:
+        if heading:
+            rebuilt_lines.append(heading)
+        if section_body:
+            rebuilt_lines.extend(line.strip() for line in section_body.splitlines() if line.strip())
+    guarded_body = "\n".join(rebuilt_lines)
+    logger.info(
+        json.dumps(
+            {
+                "event": "body_lead_paraphrase_avoided",
+                "source_url": source_url,
+                "subtype": article_subtype,
+                "title_ngrams_excluded": overlap_ngrams,
+                "body_lead_length": len(replacement),
+            },
+            ensure_ascii=False,
+        )
+    )
+    return guarded_body
+
+
 def _sentence_duplicates_title_or_heading(sentence: str, title: str, headings: list[str]) -> bool:
     sentence_norm = _normalize_title_for_dedupe(sentence)
     if not sentence_norm:
@@ -12854,6 +13031,17 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                     generation_category,
                     subject,
                 )
+        ai_body = _maybe_apply_body_lead_paraphrase_guard(
+            body_text=ai_body,
+            article_title=rewritten_title or title,
+            source_title=title,
+            summary=summary_clean,
+            category=effective_generation_category,
+            article_subtype=body_subtype,
+            source_name=source_name,
+            source_url=url,
+            logger=logger,
+        )
         ai_body = _maybe_reduce_body_intro_dup(
             body_text=ai_body,
             article_title=rewritten_title or title,

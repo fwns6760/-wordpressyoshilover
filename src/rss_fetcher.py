@@ -11,7 +11,12 @@ import os
 import json
 import logging
 import argparse
+import atexit
+import signal
+import socket
 import subprocess
+import time
+import uuid
 from collections import Counter
 from datetime import datetime, timezone, timedelta
 from functools import lru_cache
@@ -218,6 +223,9 @@ THIN_SOURCE_FACT_BLOCK_MIN_CHARS_DEFAULT = 100
 THIN_SOURCE_FACT_BLOCK_MIN_CHARS_SOCIAL_NEWS = 40
 RSS_DUPLICATE_COOLDOWN_HOURS_DEFAULT = 6
 GEMINI_CACHE_COOLDOWN_HOURS_DEFAULT = 24
+RSS_FETCHER_LOCK_TIMEOUT_SECONDS = int(os.getenv("RUN_SUBPROCESS_TIMEOUT", "285"))
+RSS_FETCHER_LOCK_TTL_SECONDS = max(RSS_FETCHER_LOCK_TIMEOUT_SECONDS * 2, 900)
+RSS_FETCHER_LOCK_VERSION = 1
 GEMINI_CACHE_COOLDOWN_HOURS_ENV = "GEMINI_CACHE_COOLDOWN_HOURS"
 GEMINI_POSTGAME_STRICT_SLOTFILL_TEMPLATE_ID = "postgame_strict_slotfill_v1"
 GEMINI_POSTGAME_PARTS_TEMPLATE_ID = "postgame_article_parts_v1"
@@ -15203,6 +15211,199 @@ def _log_not_giants_related_skip(
     }
     logger.info(json.dumps(payload, ensure_ascii=False))
 
+
+def _lock_timestamp_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _lock_payload(run_id: str) -> dict[str, object]:
+    now = _lock_timestamp_now()
+    return {
+        "run_id": run_id,
+        "started_at": now,
+        "updated_at": now,
+        "pid": os.getpid(),
+        "hostname": socket.gethostname(),
+        "revision": os.getenv("K_REVISION", "unknown"),
+        "timeout_seconds": RSS_FETCHER_LOCK_TIMEOUT_SECONDS,
+        "lock_version": RSS_FETCHER_LOCK_VERSION,
+    }
+
+
+def _safe_lock_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_lock_timestamp(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _load_lock_data(lock_file: Path) -> dict[str, object] | None:
+    try:
+        payload = json.loads(lock_file.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError, UnicodeDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _lock_age_seconds(lock_file: Path, payload: Mapping[str, object] | None) -> int:
+    updated_at = _parse_lock_timestamp(payload.get("updated_at")) if payload else None
+    if updated_at is not None:
+        age = time.time() - updated_at.timestamp()
+    else:
+        try:
+            age = time.time() - lock_file.stat().st_mtime
+        except FileNotFoundError:
+            return 0
+    return max(0, int(age))
+
+
+def _lock_ttl_seconds(payload: Mapping[str, object] | None) -> int:
+    timeout_seconds = _safe_lock_int(payload.get("timeout_seconds")) if payload else None
+    if timeout_seconds and timeout_seconds > 0:
+        return max(timeout_seconds * 2, 900)
+    return RSS_FETCHER_LOCK_TTL_SECONDS
+
+
+def _is_lock_pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return True
+
+
+def _emit_lock_event(logger: logging.Logger, level: str, payload: dict[str, object]):
+    payload["severity"] = level
+    log_fn = getattr(logger, level.lower())
+    log_fn(json.dumps(payload, ensure_ascii=False))
+
+
+def _build_lock_cleanup(lock_file: Path, run_id: str, logger: logging.Logger):
+    state = {"released": False}
+
+    def cleanup():
+        if state["released"]:
+            return False
+        payload = _load_lock_data(lock_file)
+        if not payload or payload.get("run_id") != run_id:
+            return False
+        try:
+            lock_file.unlink(missing_ok=True)
+        except OSError:
+            return False
+        state["released"] = True
+        _emit_lock_event(
+            logger,
+            "INFO",
+            {
+                "event": "rss_fetcher_lock_released",
+                "current_run_id": run_id,
+                "lock_pid": payload.get("pid", "unknown"),
+            },
+        )
+        return True
+
+    return cleanup
+
+
+def _try_acquire_lock(lock_file: Path, run_id: str, logger: logging.Logger) -> bool:
+    while lock_file.exists():
+        payload = _load_lock_data(lock_file)
+        age_seconds = _lock_age_seconds(lock_file, payload)
+        ttl_seconds = _lock_ttl_seconds(payload)
+        pid = _safe_lock_int(payload.get("pid")) if payload else None
+
+        if pid is not None:
+            pid_alive = _is_lock_pid_alive(pid)
+            if pid_alive and age_seconds < ttl_seconds:
+                _emit_lock_event(
+                    logger,
+                    "WARNING",
+                    {
+                        "event": "rss_fetcher_lock_skip",
+                        "reason": "fresh_lock",
+                        "lock_age_seconds": age_seconds,
+                        "lock_run_id": payload.get("run_id", "unknown") if payload else "unknown",
+                        "current_run_id": run_id,
+                        "lock_pid": pid,
+                        "lock_pid_alive": True,
+                        "ttl_seconds": ttl_seconds,
+                    },
+                )
+                return False
+            stale_reason = "pid_dead" if not pid_alive else "ttl_expired"
+        else:
+            if age_seconds < ttl_seconds:
+                _emit_lock_event(
+                    logger,
+                    "WARNING",
+                    {
+                        "event": "rss_fetcher_lock_skip",
+                        "reason": "corrupt_recent",
+                        "lock_age_seconds": age_seconds,
+                        "lock_run_id": payload.get("run_id", "unknown") if payload else "unknown",
+                        "current_run_id": run_id,
+                        "lock_pid": "unknown",
+                        "lock_pid_alive": False,
+                        "ttl_seconds": ttl_seconds,
+                    },
+                )
+                return False
+            stale_reason = "corrupt_old"
+
+        _emit_lock_event(
+            logger,
+            "ERROR",
+            {
+                "event": "rss_fetcher_stale_lock_removed",
+                "reason": stale_reason,
+                "lock_age_seconds": age_seconds,
+                "stale_run_id": payload.get("run_id", "unknown") if payload else "unknown",
+                "current_run_id": run_id,
+                "lock_started_at": payload.get("started_at", "unknown") if payload else "unknown",
+                "lock_updated_at": payload.get("updated_at", "unknown") if payload else "unknown",
+                "lock_pid": pid if pid is not None else "unknown",
+                "ttl_seconds": ttl_seconds,
+            },
+        )
+        lock_file.unlink(missing_ok=True)
+
+    lock_file.parent.mkdir(parents=True, exist_ok=True)
+    payload = _lock_payload(run_id)
+    lock_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    _emit_lock_event(
+        logger,
+        "INFO",
+        {
+            "event": "rss_fetcher_lock_acquired",
+            "current_run_id": run_id,
+            "lock_pid": payload["pid"],
+            "lock_started_at": payload["started_at"],
+            "lock_updated_at": payload["updated_at"],
+            "ttl_seconds": _lock_ttl_seconds(payload),
+        },
+    )
+    return True
+
 # ──────────────────────────────────────────────────────────
 # X投稿URLを取得（twitter.com形式に統一）
 # ──────────────────────────────────────────────────────────
@@ -15225,14 +15426,23 @@ def main():
 
     # 多重起動防止ロック
     lock_file = ROOT / "logs" / "rss_fetcher.lock"
-    if lock_file.exists():
-        logger.warning("=== 既に実行中のため終了（ロックファイルあり） ===")
+    run_id = uuid.uuid4().hex
+    if not _try_acquire_lock(lock_file, run_id, logger):
         return
-    lock_file.touch()
+    cleanup = _build_lock_cleanup(lock_file, run_id, logger)
+    atexit.register(cleanup)
+    previous_sigterm = signal.getsignal(signal.SIGTERM)
+
+    def _handle_sigterm(signum, frame):
+        cleanup()
+        raise SystemExit(128 + signum)
+
+    signal.signal(signal.SIGTERM, _handle_sigterm)
     try:
         _main(args, logger)
     finally:
-        lock_file.unlink(missing_ok=True)
+        signal.signal(signal.SIGTERM, previous_sigterm)
+        cleanup()
 
 
 def _check_giants_game_today_yahoo() -> tuple:
@@ -15327,8 +15537,6 @@ def _main(args, logger):
     publish_observation_counts: Counter[str] = Counter()
     x_skip_reason_counts: Counter[str] = Counter()
     skip_reason_sample_titles: dict[str, list[str]] = {}
-    import time
-
     x_post_daily_limit = get_x_post_daily_limit()
     today_str = datetime.now().strftime("%Y-%m-%d")
     x_post_count = history.get(f"x_post_count_{today_str}", 0)

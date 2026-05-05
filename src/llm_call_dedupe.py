@@ -21,10 +21,14 @@ CACHE_HIT_SPLIT_METRIC_LEDGER_PATH_ENV = "CACHE_HIT_SPLIT_METRIC_LEDGER_PATH"
 ENABLE_GEMINI_CACHE_MISS_BREAKER_ENV = "ENABLE_GEMINI_CACHE_MISS_BREAKER"
 GEMINI_CACHE_MISS_BREAKER_THRESHOLD_ENV = "GEMINI_CACHE_MISS_BREAKER_THRESHOLD"
 GEMINI_CACHE_MISS_BREAKER_WINDOW_SECONDS_ENV = "GEMINI_CACHE_MISS_BREAKER_WINDOW_SECONDS"
+GEMINI_CACHE_MISS_BREAKER_WARMUP_SECONDS_ENV = "GEMINI_CACHE_MISS_BREAKER_WARMUP_SECONDS"
+GEMINI_CACHE_MISS_BREAKER_MIN_SAMPLE_ENV = "GEMINI_CACHE_MISS_BREAKER_MIN_SAMPLE"
 ENABLE_PER_POST_24H_GEMINI_BUDGET_ENV = "ENABLE_PER_POST_24H_GEMINI_BUDGET"
 PER_POST_24H_GEMINI_BUDGET_LIMIT_ENV = "PER_POST_24H_GEMINI_BUDGET_LIMIT"
 DEFAULT_GEMINI_CACHE_MISS_BREAKER_THRESHOLD = 0.5
 DEFAULT_GEMINI_CACHE_MISS_BREAKER_WINDOW_SECONDS = 3600
+DEFAULT_GEMINI_CACHE_MISS_BREAKER_WARMUP_SECONDS = 0
+DEFAULT_GEMINI_CACHE_MISS_BREAKER_MIN_SAMPLE = 0
 DEFAULT_PER_POST_24H_GEMINI_BUDGET_LIMIT = 5
 PER_POST_24H_GEMINI_BUDGET_WINDOW_HOURS = 24
 GEMINI_CACHE_OUTCOME_EVENT = "gemini_cache_outcome"
@@ -34,6 +38,13 @@ PER_POST_24H_GEMINI_BUDGET_SKIP_REASON = "per_post_24h_gemini_budget_exhausted"
 TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 _CACHE_HIT_KINDS = frozenset({"exact_hit", "cooldown_hit", "dedupe_hit", "unknown"})
 _CONTENT_HASH_SKIP_REASONS = frozenset({"refused_cooldown"})
+_BREAKER_REASON_DISABLED = "breaker_disabled"
+_BREAKER_REASON_NO_SAMPLES = "no_samples"
+_BREAKER_REASON_WARMUP = "warmup_active"
+_BREAKER_REASON_MIN_SAMPLE = "min_sample_not_met"
+_BREAKER_REASON_TRIPPED = "miss_rate_above_threshold"
+_BREAKER_REASON_WITHIN_THRESHOLD = "miss_rate_within_threshold"
+_PROCESS_STARTED_AT = datetime.now(JST)
 
 
 def _now_jst(now: datetime | None = None) -> datetime:
@@ -164,6 +175,24 @@ def resolve_gemini_cache_miss_breaker_window_seconds(*, env: Mapping[str, str] |
         GEMINI_CACHE_MISS_BREAKER_WINDOW_SECONDS_ENV,
         DEFAULT_GEMINI_CACHE_MISS_BREAKER_WINDOW_SECONDS,
         minimum=1,
+        env=env,
+    )
+
+
+def resolve_gemini_cache_miss_breaker_warmup_seconds(*, env: Mapping[str, str] | None = None) -> int:
+    return _env_int(
+        GEMINI_CACHE_MISS_BREAKER_WARMUP_SECONDS_ENV,
+        DEFAULT_GEMINI_CACHE_MISS_BREAKER_WARMUP_SECONDS,
+        minimum=0,
+        env=env,
+    )
+
+
+def resolve_gemini_cache_miss_breaker_min_sample(*, env: Mapping[str, str] | None = None) -> int:
+    return _env_int(
+        GEMINI_CACHE_MISS_BREAKER_MIN_SAMPLE_ENV,
+        DEFAULT_GEMINI_CACHE_MISS_BREAKER_MIN_SAMPLE,
+        minimum=0,
         env=env,
     )
 
@@ -339,12 +368,23 @@ def evaluate_gemini_cache_miss_breaker(
     ledger_path: str | Path | None = None,
     now: datetime | None = None,
     env: Mapping[str, str] | None = None,
+    process_started_at: datetime | None = None,
 ) -> dict[str, Any]:
+    """Trip when miss / (hit + miss) exceeds threshold inside the active window.
+
+    Default behavior remains unchanged unless warmup/min-sample env hooks are
+    explicitly enabled. Warmup suppresses trips for the first N seconds after
+    process start, and min-sample suppresses trips until sample_count >= N.
+    """
+
     current = _now_jst(now)
     window_seconds = resolve_gemini_cache_miss_breaker_window_seconds(env=env)
     threshold = resolve_gemini_cache_miss_breaker_threshold(env=env)
+    warmup_seconds = resolve_gemini_cache_miss_breaker_warmup_seconds(env=env)
+    min_sample = resolve_gemini_cache_miss_breaker_min_sample(env=env)
     window_start = current - timedelta(seconds=window_seconds)
     enabled = gemini_cache_miss_breaker_enabled(env=env)
+    started_at = _now_jst(process_started_at) if process_started_at is not None else _PROCESS_STARTED_AT
 
     miss_count = 0
     hit_count = 0
@@ -365,21 +405,66 @@ def evaluate_gemini_cache_miss_breaker(
         hit_kind_counts[hit_kind] = hit_kind_counts.get(hit_kind, 0) + 1
 
     total_count = miss_count + hit_count
+    sample_count = total_count
     miss_rate = (miss_count / total_count) if total_count else 0.0
-    tripped = enabled and total_count > 0 and miss_rate > threshold
+    hit_ratio = (hit_count / total_count) if total_count else 0.0
+    threshold_exceeded = total_count > 0 and miss_rate > threshold
+    uptime_seconds = max(int((current - started_at).total_seconds()), 0)
+    warmup_active = warmup_seconds > 0 and uptime_seconds < warmup_seconds
+    min_sample_active = min_sample > 0 and sample_count < min_sample
+    tripped = enabled and threshold_exceeded and not warmup_active and not min_sample_active
+
+    if not enabled:
+        reason = _BREAKER_REASON_DISABLED
+    elif sample_count == 0:
+        reason = _BREAKER_REASON_NO_SAMPLES
+    elif warmup_active:
+        reason = _BREAKER_REASON_WARMUP
+    elif min_sample_active:
+        reason = _BREAKER_REASON_MIN_SAMPLE
+    elif threshold_exceeded:
+        reason = _BREAKER_REASON_TRIPPED
+    else:
+        reason = _BREAKER_REASON_WITHIN_THRESHOLD
+
+    skip_reason_payload = None
+    if tripped:
+        skip_reason_payload = {
+            "reason": reason,
+            "threshold": threshold,
+            "window_seconds": window_seconds,
+            "sample_count": sample_count,
+            "min_sample": min_sample,
+            "miss_count": miss_count,
+            "hit_count": hit_count,
+            "miss_rate": miss_rate,
+            "hit_ratio": hit_ratio,
+            "warmup_seconds": warmup_seconds,
+        }
     return {
         "enabled": enabled,
         "tripped": tripped,
+        "reason": reason,
         "threshold": threshold,
         "window_seconds": window_seconds,
+        "warmup_seconds": warmup_seconds,
+        "warmup_active": warmup_active,
+        "process_started_at": started_at.isoformat(),
+        "uptime_seconds": uptime_seconds,
+        "min_sample": min_sample,
+        "min_sample_active": min_sample_active,
         "window_start": window_start.isoformat(),
         "window_end": current.isoformat(),
         "miss_count": miss_count,
         "hit_count": hit_count,
         "total_count": total_count,
+        "sample_count": sample_count,
         "miss_rate": miss_rate,
+        "hit_ratio": hit_ratio,
+        "threshold_exceeded": threshold_exceeded,
         "hit_kind_counts": hit_kind_counts,
         "skip_reason": GEMINI_CACHE_MISS_BREAKER_SKIP_REASON if tripped else None,
+        "skip_reason_payload": skip_reason_payload,
     }
 
 
@@ -591,9 +676,13 @@ __all__ = [
     "ENABLE_PER_POST_24H_GEMINI_BUDGET_ENV",
     "GEMINI_CACHE_MISS_BREAKER_THRESHOLD_ENV",
     "GEMINI_CACHE_MISS_BREAKER_WINDOW_SECONDS_ENV",
+    "GEMINI_CACHE_MISS_BREAKER_WARMUP_SECONDS_ENV",
+    "GEMINI_CACHE_MISS_BREAKER_MIN_SAMPLE_ENV",
     "PER_POST_24H_GEMINI_BUDGET_LIMIT_ENV",
     "DEFAULT_GEMINI_CACHE_MISS_BREAKER_THRESHOLD",
     "DEFAULT_GEMINI_CACHE_MISS_BREAKER_WINDOW_SECONDS",
+    "DEFAULT_GEMINI_CACHE_MISS_BREAKER_WARMUP_SECONDS",
+    "DEFAULT_GEMINI_CACHE_MISS_BREAKER_MIN_SAMPLE",
     "DEFAULT_PER_POST_24H_GEMINI_BUDGET_LIMIT",
     "PER_POST_24H_GEMINI_BUDGET_WINDOW_HOURS",
     "GEMINI_CACHE_MISS_BREAKER_SKIP_REASON",
@@ -613,7 +702,9 @@ __all__ = [
     "record_gemini_call_attempt",
     "record_gemini_cache_outcome",
     "resolve_cache_hit_split_metric_ledger_path",
+    "resolve_gemini_cache_miss_breaker_min_sample",
     "resolve_gemini_cache_miss_breaker_threshold",
+    "resolve_gemini_cache_miss_breaker_warmup_seconds",
     "resolve_gemini_cache_miss_breaker_window_seconds",
     "resolve_per_post_24h_gemini_budget_limit",
     "resolve_hit_kind",

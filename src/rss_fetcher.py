@@ -5909,13 +5909,21 @@ def _log_gemini_cache_miss_breaker(
         "prompt_template_id": str(cache_key.prompt_template_id or ""),
         "enabled": bool(breaker_state.get("enabled")),
         "tripped": bool(breaker_state.get("tripped")),
+        "reason": str(breaker_state.get("reason") or ""),
         "threshold": float(breaker_state.get("threshold") or 0.0),
         "window_seconds": int(breaker_state.get("window_seconds") or 0),
+        "warmup_seconds": int(breaker_state.get("warmup_seconds") or 0),
+        "warmup_active": bool(breaker_state.get("warmup_active")),
+        "min_sample": int(breaker_state.get("min_sample") or 0),
+        "min_sample_active": bool(breaker_state.get("min_sample_active")),
         "miss_count": int(breaker_state.get("miss_count") or 0),
         "hit_count": int(breaker_state.get("hit_count") or 0),
         "total_count": int(breaker_state.get("total_count") or 0),
+        "sample_count": int(breaker_state.get("sample_count") or 0),
         "miss_rate": float(breaker_state.get("miss_rate") or 0.0),
+        "hit_ratio": float(breaker_state.get("hit_ratio") or 0.0),
         "skip_reason": breaker_state.get("skip_reason"),
+        "skip_reason_payload": breaker_state.get("skip_reason_payload"),
     }
     logger.warning(json.dumps(payload, ensure_ascii=False))
 
@@ -6088,6 +6096,8 @@ def _gemini_text_with_cache(
                 skip_reason = _llm_call_dedupe.GEMINI_CACHE_MISS_BREAKER_SKIP_REASON
                 telemetry["gemini_call_made"] = False
                 telemetry["skip_reason"] = skip_reason
+                if breaker_state.get("skip_reason_payload"):
+                    telemetry["skip_reason_payload"] = breaker_state.get("skip_reason_payload")
                 telemetry["skip_layer"] = PREFLIGHT_SKIP_LAYER
                 duplicate_guard_context = (
                     candidate_meta.get("duplicate_guard_context")

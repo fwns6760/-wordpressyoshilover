@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import json
+import logging
 import os
 import re
 import unicodedata
@@ -20,6 +21,7 @@ from src.title_body_nucleus_validator import validate_title_body_nucleus
 
 JST = ZoneInfo("Asia/Tokyo")
 TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
+ENABLE_STRICT_BREAKING_NEWS_THRESHOLDS_ENV = "ENABLE_STRICT_BREAKING_NEWS_THRESHOLDS"
 RELAXED_FOR_BREAKING_BOARD_FLAGS = frozenset({"subtype_unresolved", "heading_sentence_as_h3"})
 NO_CLEANUP_REQUIRED_FLAGS = frozenset(
     {
@@ -236,6 +238,11 @@ FRESHNESS_THRESHOLDS_HOURS: dict[str, float] = {
     "program": 48.0,
     "off_field": 48.0,
     "farm_feature": 48.0,
+}
+STRICT_BREAKING_NEWS_THRESHOLDS_HOURS: dict[str, float] = {
+    "comment": 24.0,
+    "speech": 24.0,
+    "manager": 24.0,
 }
 LINEUP_FRESHNESS_SUBTYPES = frozenset({"lineup", "pregame", "probable_starter", "farm_lineup"})
 GAME_CONTEXT_FRESHNESS_SUBTYPES = frozenset({"postgame", "game_result"})
@@ -615,7 +622,10 @@ def resolve_guarded_publish_subtype(raw_post: dict[str, Any], record: dict[str, 
 
 
 def _freshness_threshold_hours(subtype: str) -> float:
-    return float(FRESHNESS_THRESHOLDS_HOURS.get((subtype or "").strip().lower(), 24.0))
+    normalized = (subtype or "").strip().lower()
+    if _strict_breaking_news_thresholds_enabled() and normalized in STRICT_BREAKING_NEWS_THRESHOLDS_HOURS:
+        return float(STRICT_BREAKING_NEWS_THRESHOLDS_HOURS[normalized])
+    return float(FRESHNESS_THRESHOLDS_HOURS.get(normalized, 24.0))
 
 
 def _source_url_candidates(raw_post: dict[str, Any], record: dict[str, Any]) -> list[str]:
@@ -647,6 +657,7 @@ def _content_datetime_payload(
     detected_by: str,
     age_basis: str,
     freshness_source: str,
+    freshness_basis: str,
 ) -> dict[str, Any]:
     return {
         "content_date": candidate_dt.date().isoformat() if candidate_dt is not None else "",
@@ -656,6 +667,8 @@ def _content_datetime_payload(
         "detected_by": detected_by,
         "age_basis": age_basis,
         "freshness_source": freshness_source,
+        "freshness_basis": freshness_basis,
+        "source_published_at": candidate_dt.isoformat() if candidate_dt is not None else "",
     }
 
 
@@ -677,6 +690,7 @@ def _resolve_content_datetime_value(
             detected_by=detected_by,
             age_basis="exact_source_datetime",
             freshness_source=freshness_source,
+            freshness_basis="source_time",
         )
 
     for candidate_dt, has_explicit_time in _extract_date_candidates(raw_value, now=now):
@@ -694,6 +708,7 @@ def _resolve_content_datetime_value(
             detected_by=detected_by,
             age_basis=age_basis,
             freshness_source=freshness_source,
+            freshness_basis="source_time",
         )
     return None
 
@@ -1025,6 +1040,7 @@ def _resolve_content_datetime(raw_post: dict[str, Any], record: dict[str, Any], 
             detected_by="created_at",
             age_basis="created_at",
             freshness_source="created_at",
+            freshness_basis="created_at_fallback",
         )
 
     return _content_datetime_payload(
@@ -1034,7 +1050,46 @@ def _resolve_content_datetime(raw_post: dict[str, Any], record: dict[str, Any], 
         detected_by="unknown",
         age_basis="unknown",
         freshness_source="unknown",
+        freshness_basis="unknown",
     )
+
+
+def _strict_breaking_news_thresholds_enabled() -> bool:
+    return _env_truthy(ENABLE_STRICT_BREAKING_NEWS_THRESHOLDS_ENV)
+
+
+def _threshold_reached(age_hours: float, threshold_hours: float) -> bool:
+    if _strict_breaking_news_thresholds_enabled():
+        return age_hours >= threshold_hours
+    return age_hours > threshold_hours
+
+
+def _emit_strict_freshness_event(
+    event: str,
+    *,
+    content_info: dict[str, Any],
+    source_age_hours: float | None,
+    article_subtype: str,
+    template_key: str,
+    decision: str,
+    reason: str,
+) -> None:
+    payload = {
+        "event": event,
+        "source_published_at": str(content_info.get("source_published_at") or ""),
+        "source_age_hours": None if source_age_hours is None else round(float(source_age_hours), 2),
+        "freshness_basis": str(content_info.get("freshness_basis") or ""),
+        "article_subtype": article_subtype,
+        "template_key": template_key,
+        "decision": decision,
+        "reason": reason,
+    }
+    logger = logging.getLogger("guarded_publish_evaluator")
+    line = json.dumps(payload, ensure_ascii=False)
+    if event == "source_time_missing_review":
+        logger.warning(line)
+    else:
+        logger.info(line)
 
 
 def _estimate_game_start_dt(reference_date: str, title: str, body_text: str) -> tuple[datetime, str]:
@@ -1090,13 +1145,13 @@ def freshness_check(raw_post: dict[str, Any], record: dict[str, Any], *, now: da
             reason_parts.append(
                 f"game_start_estimate={game_start_dt.strftime('%Y-%m-%dT%H:%M:%S%z')}({start_source})"
             )
-        elif age_hours > threshold_hours:
+        elif _threshold_reached(age_hours, threshold_hours):
             freshness_class = "expired"
             hard_stop_flag = "expired_lineup_or_pregame"
-    elif subtype in GAME_CONTEXT_FRESHNESS_SUBTYPES and age_hours > threshold_hours:
+    elif subtype in GAME_CONTEXT_FRESHNESS_SUBTYPES and _threshold_reached(age_hours, threshold_hours):
         freshness_class = "expired"
         hard_stop_flag = "expired_game_context"
-    elif age_hours > threshold_hours:
+    elif _threshold_reached(age_hours, threshold_hours):
         freshness_class = "stale"
         hard_stop_flag = "stale_for_breaking_board"
 
@@ -1104,6 +1159,30 @@ def freshness_check(raw_post: dict[str, Any], record: dict[str, Any], *, now: da
         reason_parts.append("status=fresh")
     else:
         reason_parts.append(f"hard_stop={hard_stop_flag}")
+
+    if _strict_breaking_news_thresholds_enabled():
+        template_key = str(((raw_post or {}).get("meta") or {}).get("template_key") or (raw_post or {}).get("template_key") or "")
+        if content_date_unknown:
+            _emit_strict_freshness_event(
+                "source_time_missing_review",
+                content_info=content_info,
+                source_age_hours=None,
+                article_subtype=subtype,
+                template_key=template_key,
+                decision="review",
+                reason="source_time_missing_review",
+            )
+        elif hard_stop_flag is not None:
+            event = "backlog_only_source_age" if subtype in LINEUP_FRESHNESS_SUBTYPES else "stale_source_age"
+            _emit_strict_freshness_event(
+                event,
+                content_info=content_info,
+                source_age_hours=age_hours,
+                article_subtype=subtype,
+                template_key=template_key,
+                decision="hold",
+                reason=event,
+            )
 
     return {
         "subtype": subtype,
@@ -1113,6 +1192,8 @@ def freshness_check(raw_post: dict[str, Any], record: dict[str, Any], *, now: da
         "freshness_reason": "; ".join(reason_parts),
         "hard_stop_flag": hard_stop_flag,
         "freshness_source": str(content_info["freshness_source"]),
+        "freshness_basis": str(content_info["freshness_basis"]),
+        "source_published_at": str(content_info["source_published_at"]),
         "content_date_unknown": content_date_unknown,
         "backlog_only": hard_stop_flag in BACKLOG_ONLY_FRESHNESS_FLAGS,
     }
@@ -1969,6 +2050,8 @@ def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -
         "post_id": int(record["post_id"]),
         "title": title,
         "modified": modified,
+        "date": str((raw_post or {}).get("date") or ""),
+        "created_at": str(record.get("created_at") or ""),
         "game_key": game_key,
         "subtype": str(subtype_resolution["resolved_subtype"] or freshness["subtype"]),
         "resolved_subtype": str(subtype_resolution["resolved_subtype"] or ""),
@@ -1986,6 +2069,12 @@ def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -
         "freshness_class": freshness["freshness_class"],
         "freshness_reason": freshness["freshness_reason"],
         "freshness_source": freshness["freshness_source"],
+        "freshness_basis": freshness["freshness_basis"],
+        "source_published_at": freshness["source_published_at"],
+        "source_datetime": freshness["source_published_at"],
+        "source_date": freshness["content_date"],
+        "article_date": freshness["content_date"],
+        "template_key": str(((raw_post or {}).get("meta") or {}).get("template_key") or (raw_post or {}).get("template_key") or ""),
         "backlog_only": bool(freshness["backlog_only"]),
     }
     if x_candidate_texts:

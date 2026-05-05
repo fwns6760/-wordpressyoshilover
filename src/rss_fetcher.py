@@ -19,6 +19,7 @@ import time
 import uuid
 from collections import Counter
 from datetime import datetime, timezone, timedelta
+from email.utils import parsedate_to_datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping
@@ -249,6 +250,7 @@ ENABLE_POSTGAME_NO_SCORE_SHORT_COMMENT_REROUTE_ENV_FLAG = "ENABLE_POSTGAME_NO_SC
 ENABLE_RSS_SOCIAL_PLAYER_SUBROUTE_ENV_FLAG = "ENABLE_RSS_SOCIAL_PLAYER_SUBROUTE"
 ENABLE_FARM_CATEGORY_NARROW_FIX_ENV_FLAG = "ENABLE_FARM_CATEGORY_NARROW_FIX"
 ENABLE_RSS_SUBTYPE_CONSISTENCY_GUARD_ENV_FLAG = "ENABLE_RSS_SUBTYPE_CONSISTENCY_GUARD"
+ENABLE_FETCHER_STALE_SOURCE_GUARD_ENV_FLAG = "ENABLE_FETCHER_STALE_SOURCE_GUARD"
 WEAK_TITLE_RESCUE_ENV_FLAG = "ENABLE_WEAK_TITLE_RESCUE"
 NARROW_UNLOCK_NON_POSTGAME_ENV_FLAG = "ENABLE_NARROW_UNLOCK_NON_POSTGAME"
 NARROW_UNLOCK_SUBTYPE_AWARE_ENV_FLAG = "ENABLE_NARROW_UNLOCK_SUBTYPE_AWARE"
@@ -696,6 +698,9 @@ NOTICE_BACKGROUND_MARKERS = (
     "昇格",
     "合流",
 )
+X_SNOWFLAKE_EPOCH_MS = 1288834974657
+URL_SLASH_YMD_RE = _re.compile(r"/(20\d{2})/(\d{1,2})/(\d{1,2})(?:/|$)")
+URL_COMPACT_YMD_RE = _re.compile(r"(?<!\d)(20\d{2})(\d{2})(\d{2})\d*(?!\d)")
 RECOVERY_STRONG_MARKERS = (
     "離脱",
     "故障",
@@ -14879,6 +14884,192 @@ def _entry_published_datetime(entry: dict) -> datetime | None:
         return None
 
 
+def _parse_feed_time_struct(raw_value: Any) -> datetime | None:
+    if not raw_value:
+        return None
+    try:
+        return datetime(*raw_value[:6], tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
+def _parse_feed_datetime_text(raw_value: Any) -> datetime | None:
+    text = str(raw_value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = parsedate_to_datetime(text)
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _entry_exact_published_datetime(entry: dict) -> datetime | None:
+    return _parse_feed_time_struct(entry.get("published_parsed")) or _parse_feed_datetime_text(
+        entry.get("published") or entry.get("pubDate")
+    )
+
+
+def _entry_exact_updated_datetime(entry: dict) -> datetime | None:
+    return _parse_feed_time_struct(entry.get("updated_parsed")) or _parse_feed_datetime_text(entry.get("updated"))
+
+
+def _decode_x_status_datetime(post_url: str) -> datetime | None:
+    match = _re.search(r"https?://(?:x|twitter)\.com/[^/]+/status/(\d+)", post_url or "", _re.IGNORECASE)
+    if not match:
+        return None
+    try:
+        status_id = int(match.group(1))
+    except (TypeError, ValueError):
+        return None
+    if status_id <= 0:
+        return None
+    timestamp_ms = (status_id >> 22) + X_SNOWFLAKE_EPOCH_MS
+    try:
+        return datetime.fromtimestamp(timestamp_ms / 1000.0, tz=timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def _url_date_reference_datetime(post_url: str, *, now: datetime) -> datetime | None:
+    for pattern in (URL_SLASH_YMD_RE, URL_COMPACT_YMD_RE):
+        match = pattern.search(post_url or "")
+        if not match:
+            continue
+        try:
+            year, month, day = (int(match.group(index)) for index in range(1, 4))
+            detected = datetime(year, month, day, tzinfo=JST)
+        except ValueError:
+            continue
+        if detected.date() == now.astimezone(JST).date():
+            return now.astimezone(JST)
+        return detected
+    return None
+
+
+def _stale_source_guard_threshold_hours(article_subtype: str) -> float:
+    from src import guarded_publish_evaluator as publish_evaluator
+
+    return float(publish_evaluator._freshness_threshold_hours(article_subtype))
+
+
+def _resolve_stale_source_guard_source(
+    entry: dict,
+    *,
+    post_url: str,
+    now: datetime,
+) -> dict[str, Any] | None:
+    x_post_dt = _decode_x_status_datetime(post_url)
+    if x_post_dt is not None:
+        return {
+            "source_published_at": x_post_dt.astimezone(JST),
+            "freshness_basis": "source_time",
+            "stale_reason": "stale_x_post",
+        }
+
+    published_dt = _entry_exact_published_datetime(entry)
+    if published_dt is not None:
+        return {
+            "source_published_at": published_dt.astimezone(JST),
+            "freshness_basis": "source_time",
+            "stale_reason": "stale_rss_entry",
+        }
+
+    updated_dt = _entry_exact_updated_datetime(entry)
+    if updated_dt is not None:
+        return {
+            "source_published_at": updated_dt.astimezone(JST),
+            "freshness_basis": "source_time",
+            "stale_reason": "stale_rss_entry",
+        }
+
+    url_dt = _url_date_reference_datetime(post_url, now=now)
+    if url_dt is not None:
+        return {
+            "source_published_at": url_dt.astimezone(JST),
+            "freshness_basis": "source_time",
+            "stale_reason": "stale_source_age",
+        }
+    return None
+
+
+def _evaluate_fetcher_stale_source_guard(
+    entry: dict,
+    *,
+    post_url: str,
+    article_subtype: str,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    if not _env_flag(ENABLE_FETCHER_STALE_SOURCE_GUARD_ENV_FLAG, False):
+        return {
+            "allow": True,
+            "reason": "",
+            "source_published_at": "",
+            "source_age_hours": None,
+            "freshness_basis": "",
+        }
+
+    reference_now = now.astimezone(JST) if now is not None else datetime.now(timezone.utc).astimezone(JST)
+    resolved = _resolve_stale_source_guard_source(entry, post_url=post_url, now=reference_now)
+    if resolved is None:
+        return {
+            "allow": False,
+            "reason": "source_time_missing_review",
+            "source_published_at": "",
+            "source_age_hours": None,
+            "freshness_basis": "unknown",
+        }
+
+    source_published_at = resolved["source_published_at"]
+    age_hours = max(0.0, (reference_now - source_published_at).total_seconds() / 3600.0)
+    threshold_hours = _stale_source_guard_threshold_hours(article_subtype)
+    if age_hours >= threshold_hours:
+        return {
+            "allow": False,
+            "reason": str(resolved["stale_reason"]),
+            "source_published_at": source_published_at.isoformat(),
+            "source_age_hours": round(age_hours, 2),
+            "freshness_basis": str(resolved["freshness_basis"]),
+        }
+
+    return {
+        "allow": True,
+        "reason": "",
+        "source_published_at": source_published_at.isoformat(),
+        "source_age_hours": round(age_hours, 2),
+        "freshness_basis": str(resolved["freshness_basis"]),
+    }
+
+
+def _log_stale_source_guard_skip(
+    logger: logging.Logger,
+    *,
+    reason: str,
+    title: str,
+    post_url: str,
+    article_subtype: str,
+    decision: dict[str, Any],
+) -> None:
+    logger.info(
+        json.dumps(
+            {
+                "event": reason,
+                "title": title,
+                "post_url": post_url,
+                "article_subtype": article_subtype,
+                "source_published_at": str(decision.get("source_published_at") or ""),
+                "source_age_hours": decision.get("source_age_hours"),
+                "freshness_basis": str(decision.get("freshness_basis") or ""),
+                "decision": "skip",
+                "reason": reason,
+            },
+            ensure_ascii=False,
+        )
+    )
+
+
 def _merge_source_summary(candidates: list[dict], max_sentences: int = 6) -> str:
     pieces = []
     for candidate in candidates:
@@ -17652,6 +17843,29 @@ def _main(args, logger):
             entry_has_game = bool(
                 routing_context.get("entry_has_game", infer_article_has_game(title, summary, category, has_game))
             )
+            article_subtype = str(
+                routing_context.get("title_subtype")
+                or _detect_article_subtype(title, summary, category, entry_has_game)
+            )
+            stale_source_guard = _evaluate_fetcher_stale_source_guard(
+                entry,
+                post_url=post_url,
+                article_subtype=article_subtype,
+            )
+            if not stale_source_guard["allow"]:
+                stale_reason = str(stale_source_guard["reason"] or "stale_source_age")
+                _log_stale_source_guard_skip(
+                    logger,
+                    reason=stale_reason,
+                    title=title,
+                    post_url=post_url,
+                    article_subtype=article_subtype,
+                    decision=stale_source_guard,
+                )
+                skip_filter += 1
+                skip_reason_counts[stale_reason] += 1
+                _append_skip_reason_sample(skip_reason_sample_titles, stale_reason, title)
+                continue
             if _should_skip_stale_postgame_entry(category, title, summary, published_at, max_age_hours=36):
                 logger.debug(f"  [SKIP:postgame古い] {title_preview[:40]}")
                 skip_filter += 1
@@ -17672,10 +17886,6 @@ def _main(args, logger):
                     skip_reason_counts["video_promo"] += 1
                     _append_skip_reason_sample(skip_reason_sample_titles, "video_promo", title)
                     continue
-                article_subtype = str(
-                    routing_context.get("title_subtype")
-                    or _detect_article_subtype(title, summary, category, entry_has_game)
-                )
                 if article_subtype == "live_update" and not ENABLE_LIVE_UPDATE_ARTICLES:
                     fan_important_exempt = _fetcher_fan_important_narrow_exempt_context(
                         skip_kind="live_update_disabled",

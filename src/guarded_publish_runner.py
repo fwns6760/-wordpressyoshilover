@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import hashlib
 import json
+import logging
 import os
 import re
 import sys
@@ -76,6 +77,8 @@ REFUSED_DEDUP_WINDOW_HOURS = 24
 TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
 DUPLICATE_TARGET_INTEGRITY_STRICT_ENV = "ENABLE_DUPLICATE_TARGET_INTEGRITY_STRICT"
 DUPLICATE_WIDGET_SCRIPT_EXEMPT_ENV = "ENABLE_DUPLICATE_WIDGET_SCRIPT_EXEMPT"
+SOURCE_TIME_PRIORITY_FRESHNESS_ENV = "ENABLE_SOURCE_TIME_PRIORITY_FRESHNESS"
+STRICT_BREAKING_NEWS_THRESHOLDS_ENV = "ENABLE_STRICT_BREAKING_NEWS_THRESHOLDS"
 POST_CLEANUP_STRICT_ENV_BY_FLAG = {
     "title_subject_missing": "STRICT_TITLE_SUBJECT",
     "source_anchor_missing": "STRICT_SOURCE_ANCHOR",
@@ -123,6 +126,13 @@ SITE_COMPONENT_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"💬\s*[^。\n]{0,120}"),
     re.compile(r"【関連記事】"),
     re.compile(r"💬\s*ファンの声"),
+)
+SOURCE_TIME_PRIORITY_FIELDS: tuple[str, ...] = (
+    "source_published_at",
+    "source_datetime",
+    "source_date",
+    "article_date",
+    "published_at",
 )
 
 
@@ -330,8 +340,20 @@ def _env_truthy(name: str) -> bool:
     return value in TRUTHY_ENV_VALUES
 
 
+def _source_time_priority_freshness_enabled() -> bool:
+    return _env_truthy(SOURCE_TIME_PRIORITY_FRESHNESS_ENV)
+
+
+def _strict_breaking_news_thresholds_enabled() -> bool:
+    return _env_truthy(STRICT_BREAKING_NEWS_THRESHOLDS_ENV)
+
+
 def _log_event(event: str, **payload: Any) -> None:
     print(json.dumps({"event": event, **payload}, ensure_ascii=False), file=sys.stderr, flush=True)
+
+
+def _warning_log_event(event: str, **payload: Any) -> None:
+    logging.getLogger("guarded_publish_runner").warning(json.dumps({"event": event, **payload}, ensure_ascii=False))
 
 
 def _post_record_with_content(post: dict[str, Any], body_html: str) -> dict[str, Any]:
@@ -1246,47 +1268,176 @@ def _iter_publishable_entries(report: dict[str, Any]) -> list[dict[str, Any]]:
             if not isinstance(entry, dict):
                 continue
             post_id = int(entry["post_id"])
-            entries.append(
-                {
-                    "post_id": post_id,
-                    "title": str(entry.get("title") or ""),
-                    "judgment": judgment,
-                    "yellow_reasons": list(entry.get("yellow_reasons") or []),
-                    "repairable_flags": list(entry.get("repairable_flags") or entry.get("soft_cleanup_flags") or []),
-                    "cleanup_required": bool(entry.get("cleanup_required")),
-                    "cleanup_candidate": cleanup_map.get(post_id),
-                    "resolved_subtype": str(entry.get("resolved_subtype") or entry.get("subtype") or ""),
-                    "content_date": str(entry.get("content_date") or ""),
-                    "freshness_age_hours": entry.get("freshness_age_hours"),
-                    "freshness_source": str(entry.get("freshness_source") or ""),
-                    "backlog_only": bool(entry.get("backlog_only")),
-                    "modified": str(entry.get("modified") or ""),
-                }
-            )
+            payload = {
+                "post_id": post_id,
+                "title": str(entry.get("title") or ""),
+                "judgment": judgment,
+                "yellow_reasons": list(entry.get("yellow_reasons") or []),
+                "repairable_flags": list(entry.get("repairable_flags") or entry.get("soft_cleanup_flags") or []),
+                "cleanup_required": bool(entry.get("cleanup_required")),
+                "cleanup_candidate": cleanup_map.get(post_id),
+                "resolved_subtype": str(entry.get("resolved_subtype") or entry.get("subtype") or ""),
+                "content_date": str(entry.get("content_date") or ""),
+                "freshness_age_hours": entry.get("freshness_age_hours"),
+                "freshness_source": str(entry.get("freshness_source") or ""),
+                "freshness_basis": str(entry.get("freshness_basis") or ""),
+                "backlog_only": bool(entry.get("backlog_only")),
+                "modified": str(entry.get("modified") or ""),
+                "template_key": str(entry.get("template_key") or entry.get("template") or ""),
+            }
+            for key in (
+                "source_published_at",
+                "source_datetime",
+                "source_date",
+                "article_date",
+                "published_at",
+                "created_at",
+                "date",
+            ):
+                if key in entry:
+                    payload[key] = entry.get(key)
+            entries.append(payload)
     return entries
 
 
 def _entry_freshness_age_hours(entry: dict[str, Any], *, now: datetime) -> float | None:
-    raw_age_hours = entry.get("freshness_age_hours")
-    try:
-        if raw_age_hours is not None:
-            age_hours = float(raw_age_hours)
-            if age_hours >= 0:
-                return age_hours
-    except (TypeError, ValueError):
-        pass
-
-    for key in ("created_at", "date", "modified"):
-        parsed = _parse_iso_to_jst(entry.get(key))
-        if parsed is None:
-            continue
-        delta = _now_jst(now) - parsed
-        return max(0.0, delta.total_seconds() / 3600.0)
-    return None
+    context = _entry_freshness_context(entry, now=now)
+    return context["age_hours"]
 
 
 def _entry_subtype(entry: dict[str, Any]) -> str:
     return str(entry.get("resolved_subtype") or entry.get("subtype") or "").strip().lower()
+
+
+def _entry_template_key(entry: dict[str, Any]) -> str:
+    return str(entry.get("template_key") or entry.get("template") or "").strip()
+
+
+def _backlog_narrow_age_buffer_hours() -> float:
+    if _strict_breaking_news_thresholds_enabled():
+        return 0.0
+    return float(BACKLOG_NARROW_AGE_BUFFER_HOURS)
+
+
+def _entry_freshness_context(entry: dict[str, Any], *, now: datetime) -> dict[str, Any]:
+    reference_now = _now_jst(now)
+    cache_key = (
+        reference_now.isoformat(),
+        _source_time_priority_freshness_enabled(),
+        _strict_breaking_news_thresholds_enabled(),
+    )
+    cached_key = entry.get("_freshness_context_cache_key")
+    cached_value = entry.get("_freshness_context_cache")
+    if cached_key == cache_key and isinstance(cached_value, dict):
+        return cached_value
+
+    def _age_from(parsed: datetime) -> float:
+        delta = reference_now - parsed
+        return max(0.0, delta.total_seconds() / 3600.0)
+
+    context: dict[str, Any] = {
+        "age_hours": None,
+        "freshness_basis": str(entry.get("freshness_basis") or ""),
+        "source_published_at": str(entry.get("source_published_at") or ""),
+        "source_field": "",
+    }
+
+    if _source_time_priority_freshness_enabled():
+        for key in SOURCE_TIME_PRIORITY_FIELDS:
+            parsed = _parse_iso_to_jst(entry.get(key))
+            if parsed is None:
+                continue
+            context.update(
+                {
+                    "age_hours": _age_from(parsed),
+                    "freshness_basis": "source_time",
+                    "source_published_at": parsed.isoformat(),
+                    "source_field": key,
+                }
+            )
+            _log_event(
+                "freshness_source_resolved",
+                post_id=entry.get("post_id"),
+                freshness_basis="source_time",
+                source_field=key,
+                source_published_at=parsed.isoformat(),
+            )
+            break
+
+        if context["age_hours"] is None:
+            raw_age_hours = entry.get("freshness_age_hours")
+            try:
+                if raw_age_hours is not None:
+                    age_hours = float(raw_age_hours)
+                    if age_hours >= 0:
+                        context.update(
+                            {
+                                "age_hours": age_hours,
+                                "freshness_basis": str(entry.get("freshness_basis") or "precomputed_fallback"),
+                                "source_published_at": str(entry.get("source_published_at") or ""),
+                                "source_field": "freshness_age_hours",
+                            }
+                        )
+            except (TypeError, ValueError):
+                pass
+
+        if context["age_hours"] is None:
+            for key in ("created_at", "date", "modified"):
+                parsed = _parse_iso_to_jst(entry.get(key))
+                if parsed is None:
+                    continue
+                freshness_basis = "created_at_fallback" if key == "created_at" else f"{key}_fallback"
+                context.update(
+                    {
+                        "age_hours": _age_from(parsed),
+                        "freshness_basis": freshness_basis,
+                        "source_published_at": parsed.isoformat(),
+                        "source_field": key,
+                    }
+                )
+                if key == "created_at":
+                    _warning_log_event(
+                        "freshness_source_resolved",
+                        post_id=entry.get("post_id"),
+                        freshness_basis="created_at_fallback",
+                        source_field=key,
+                        source_published_at=parsed.isoformat(),
+                    )
+                break
+    else:
+        raw_age_hours = entry.get("freshness_age_hours")
+        try:
+            if raw_age_hours is not None:
+                age_hours = float(raw_age_hours)
+                if age_hours >= 0:
+                    context.update(
+                        {
+                            "age_hours": age_hours,
+                            "freshness_basis": str(entry.get("freshness_basis") or "precomputed_fallback"),
+                            "source_field": "freshness_age_hours",
+                        }
+                    )
+        except (TypeError, ValueError):
+            pass
+
+        if context["age_hours"] is None:
+            for key in ("created_at", "date", "modified"):
+                parsed = _parse_iso_to_jst(entry.get(key))
+                if parsed is None:
+                    continue
+                context.update(
+                    {
+                        "age_hours": _age_from(parsed),
+                        "freshness_basis": key,
+                        "source_published_at": parsed.isoformat(),
+                        "source_field": key,
+                    }
+                )
+                break
+
+    entry["_freshness_context_cache_key"] = cache_key
+    entry["_freshness_context_cache"] = context
+    return context
 
 
 def _resolve_freshness_threshold(subtype: str) -> float | None:
@@ -1302,52 +1453,145 @@ def _resolve_freshness_threshold(subtype: str) -> float | None:
     return threshold_hours
 
 
-def _backlog_narrow_publish_context(entry: dict[str, Any], *, now: datetime) -> dict[str, Any] | None:
+def _emit_backlog_narrow_refusal_event(
+    entry: dict[str, Any],
+    *,
+    subtype: str,
+    age_hours: float | None,
+    freshness_basis: str,
+    source_published_at: str,
+    reason: str,
+) -> None:
+    _log_event(
+        reason,
+        post_id=entry.get("post_id"),
+        source_published_at=source_published_at,
+        source_age_hours=None if age_hours is None else round(float(age_hours), 2),
+        freshness_basis=freshness_basis,
+        article_subtype=subtype,
+        template_key=_entry_template_key(entry),
+        decision="skip",
+        reason=reason,
+    )
+
+
+def _backlog_narrow_publish_decision(entry: dict[str, Any], *, now: datetime) -> dict[str, Any]:
+    reference_now = _now_jst(now)
+    cache_key = (
+        reference_now.isoformat(),
+        _source_time_priority_freshness_enabled(),
+        _strict_breaking_news_thresholds_enabled(),
+    )
+    cached_key = entry.get("_backlog_narrow_decision_cache_key")
+    cached_value = entry.get("_backlog_narrow_decision_cache")
+    if cached_key == cache_key and isinstance(cached_value, dict):
+        return cached_value
+
     subtype = _entry_subtype(entry)
+    freshness = _entry_freshness_context(entry, now=reference_now)
+    age_hours = freshness["age_hours"]
+    freshness_basis = str(freshness.get("freshness_basis") or "")
+    source_published_at = str(freshness.get("source_published_at") or "")
+    decision: dict[str, Any] = {"eligible": False, "context": None, "reason": "backlog_only"}
+
+    def _finalize(result: dict[str, Any]) -> dict[str, Any]:
+        entry["_backlog_narrow_decision_cache_key"] = cache_key
+        entry["_backlog_narrow_decision_cache"] = result
+        if _strict_breaking_news_thresholds_enabled() and not result["eligible"] and result["reason"] in {
+            "stale_source_age",
+            "backlog_only_source_age",
+            "source_time_missing_review",
+        }:
+            _emit_backlog_narrow_refusal_event(
+                entry,
+                subtype=subtype,
+                age_hours=age_hours,
+                freshness_basis=freshness_basis,
+                source_published_at=source_published_at,
+                reason=str(result["reason"]),
+            )
+        return result
+
     if not subtype:
-        return None
-    if subtype in BACKLOG_NARROW_BLOCKED_SUBTYPES:
-        return None
-    age_hours = _entry_freshness_age_hours(entry, now=now)
+        if _strict_breaking_news_thresholds_enabled():
+            return _finalize({"eligible": False, "context": None, "reason": "source_time_missing_review"})
+        return _finalize(decision)
     if age_hours is None:
-        return None
+        if _strict_breaking_news_thresholds_enabled():
+            return _finalize({"eligible": False, "context": None, "reason": "source_time_missing_review"})
+        return _finalize(decision)
+
+    if subtype in BACKLOG_NARROW_BLOCKED_SUBTYPES:
+        if _strict_breaking_news_thresholds_enabled():
+            threshold_hours = _resolve_freshness_threshold(subtype)
+            reason = "backlog_only"
+            if threshold_hours is not None and age_hours >= threshold_hours:
+                reason = "backlog_only_source_age"
+            return _finalize({"eligible": False, "context": None, "reason": reason})
+        return _finalize(decision)
     if subtype in BACKLOG_NARROW_UNRESOLVED_SUBTYPES:
-        if age_hours >= float(BACKLOG_NARROW_UNRESOLVED_AGE_LIMIT_HOURS):
-            return None
-        return {
-            "subtype": subtype,
-            "age_hours": age_hours,
-            "threshold_hours": float(BACKLOG_NARROW_UNRESOLVED_AGE_LIMIT_HOURS),
-            "narrow_kind": "unresolved_fallback",
-        }
+        threshold_hours = float(BACKLOG_NARROW_UNRESOLVED_AGE_LIMIT_HOURS)
+        if age_hours >= threshold_hours:
+            reason = "stale_source_age" if _strict_breaking_news_thresholds_enabled() else "backlog_only"
+            return _finalize({"eligible": False, "context": None, "reason": reason})
+        return _finalize(
+            {
+                "eligible": True,
+                "context": {
+                    "subtype": subtype,
+                    "age_hours": age_hours,
+                    "threshold_hours": threshold_hours,
+                    "narrow_kind": "unresolved_fallback",
+                },
+                "reason": "",
+            }
+        )
     if subtype in BACKLOG_NARROW_FARM_RESULT_SUBTYPES:
         threshold_hours = float(BACKLOG_NARROW_FARM_RESULT_AGE_LIMIT_HOURS)
         if age_hours >= threshold_hours:
-            return None
-        return {
-            "subtype": subtype,
-            "age_hours": age_hours,
-            "threshold_hours": threshold_hours,
-            "narrow_kind": "farm_result_age_within_24h",
-            "reason": "farm_result_age_within_24h",
-        }
+            reason = "stale_source_age" if _strict_breaking_news_thresholds_enabled() else "backlog_only"
+            return _finalize({"eligible": False, "context": None, "reason": reason})
+        return _finalize(
+            {
+                "eligible": True,
+                "context": {
+                    "subtype": subtype,
+                    "age_hours": age_hours,
+                    "threshold_hours": threshold_hours,
+                    "narrow_kind": "farm_result_age_within_24h",
+                    "reason": "farm_result_age_within_24h",
+                },
+                "reason": "",
+            }
+        )
     if subtype not in BACKLOG_NARROW_ALLOWLIST:
-        return None
+        return _finalize(decision)
     threshold_hours = _resolve_freshness_threshold(subtype)
     if threshold_hours is None:
-        return None
-    if age_hours >= threshold_hours + BACKLOG_NARROW_AGE_BUFFER_HOURS:
-        return None
-    return {
-        "subtype": subtype,
-        "age_hours": age_hours,
-        "threshold_hours": threshold_hours,
-        "narrow_kind": "allowlist",
-    }
+        return _finalize(decision)
+    if age_hours >= threshold_hours + _backlog_narrow_age_buffer_hours():
+        reason = "stale_source_age" if _strict_breaking_news_thresholds_enabled() else "backlog_only"
+        return _finalize({"eligible": False, "context": None, "reason": reason})
+    return _finalize(
+        {
+            "eligible": True,
+            "context": {
+                "subtype": subtype,
+                "age_hours": age_hours,
+                "threshold_hours": threshold_hours,
+                "narrow_kind": "allowlist",
+            },
+            "reason": "",
+        }
+    )
+
+
+def _backlog_narrow_publish_context(entry: dict[str, Any], *, now: datetime) -> dict[str, Any] | None:
+    return _backlog_narrow_publish_decision(entry, now=now)["context"]
 
 
 def _backlog_narrow_publish_eligible(entry: dict[str, Any], *, now: datetime) -> bool:
-    return _backlog_narrow_publish_context(entry, now=now) is not None
+    return bool(_backlog_narrow_publish_decision(entry, now=now)["eligible"])
 
 
 def _is_backlog_entry(entry: dict[str, Any], *, now: datetime) -> bool:
@@ -2406,7 +2650,8 @@ def run_guarded_publish(
         if not bool(entry.get("backlog_only")):
             filtered_publishable_entries.append(entry)
             continue
-        backlog_context = _backlog_narrow_publish_context(entry, now=now_jst)
+        backlog_decision = _backlog_narrow_publish_decision(entry, now=now_jst)
+        backlog_context = backlog_decision["context"]
         if backlog_context is not None:
             entry["_backlog_narrow_context"] = backlog_context
             _log_event(
@@ -2419,11 +2664,12 @@ def run_guarded_publish(
             )
             filtered_publishable_entries.append(entry)
             continue
+        refused_reason = str(backlog_decision.get("reason") or "backlog_only")
         refused.append(
             {
                 "post_id": entry["post_id"],
-                "reason": "backlog_only",
-                "hold_reason": "backlog_only",
+                "reason": refused_reason,
+                "hold_reason": refused_reason,
             }
         )
         if live:
@@ -2432,15 +2678,15 @@ def run_guarded_publish(
                 latest_history_row,
                 status="skipped",
                 judgment=str(entry["judgment"]),
-                hold_reason="backlog_only",
+                hold_reason=refused_reason,
             ):
                 _log_event(
                     "guarded_publish_idempotent_history_skip",
                     post_id=entry["post_id"],
-                    reason="unchanged_backlog_only",
+                    reason=f"unchanged_{refused_reason}",
                     status="skipped",
                     judgment=entry["judgment"],
-                    hold_reason="backlog_only",
+                    hold_reason=refused_reason,
                 )
             else:
                 row = _history_row(
@@ -2449,11 +2695,11 @@ def run_guarded_publish(
                     status="skipped",
                     ts=now_iso,
                     backup_path=None,
-                    error="backlog_only",
+                    error=refused_reason,
                     publishable=True,
                     cleanup_required=bool(entry["cleanup_required"]),
                     cleanup_success=False,
-                    hold_reason="backlog_only",
+                    hold_reason=refused_reason,
                     is_backlog=True,
                     freshness_source=str(entry.get("freshness_source") or ""),
                 )
@@ -2464,7 +2710,7 @@ def run_guarded_publish(
                     "status": "skipped",
                     "backup_path": None,
                     "publish_link": "",
-                    "hold_reason": "backlog_only",
+                    "hold_reason": refused_reason,
                 }
             )
     publishable_entries = filtered_publishable_entries

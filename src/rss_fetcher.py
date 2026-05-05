@@ -103,6 +103,7 @@ from src.postgame_strict_template import (
     render_postgame_strict_body as _postgame_strict_render,
 )
 from src.postgame_strict_fact_recovery import (
+    _pick_giants_score_token,
     postgame_strict_fact_recovery_enabled as _postgame_strict_fact_recovery_enabled,
     recover_postgame_strict_payload as _recover_postgame_strict_payload,
 )
@@ -243,6 +244,7 @@ ENABLE_SOCIAL_TOO_WEAK_NARROW_RESCUE_ENV_FLAG = "ENABLE_SOCIAL_TOO_WEAK_NARROW_R
 ENABLE_RSS_SHORT_SCORE_POST_REROUTE_ENV_FLAG = "ENABLE_RSS_SHORT_SCORE_POST_REROUTE"
 ENABLE_RSS_MANAGER_COMMENT_KEEP_ENV_FLAG = "ENABLE_RSS_MANAGER_COMMENT_KEEP"
 ENABLE_MANAGER_QUOTE_SHORT_TITLE_REPAIR_ENV_FLAG = "ENABLE_MANAGER_QUOTE_SHORT_TITLE_REPAIR"
+ENABLE_POSTGAME_NO_SCORE_SHORT_COMMENT_REROUTE_ENV_FLAG = "ENABLE_POSTGAME_NO_SCORE_SHORT_COMMENT_REROUTE"
 ENABLE_RSS_SOCIAL_PLAYER_SUBROUTE_ENV_FLAG = "ENABLE_RSS_SOCIAL_PLAYER_SUBROUTE"
 ENABLE_FARM_CATEGORY_NARROW_FIX_ENV_FLAG = "ENABLE_FARM_CATEGORY_NARROW_FIX"
 ENABLE_RSS_SUBTYPE_CONSISTENCY_GUARD_ENV_FLAG = "ENABLE_RSS_SUBTYPE_CONSISTENCY_GUARD"
@@ -446,6 +448,20 @@ MANAGER_QUOTE_SHORT_TITLE_REPAIR_ACTION_MARKERS = (
     "起用",
     "スタメン",
     "打順",
+)
+POSTGAME_NO_SCORE_SHORT_COMMENT_SUBTYPE = "postgame_short_comment"
+POSTGAME_NO_SCORE_SHORT_COMMENT_KEYWORDS = (
+    "発言",
+    "振り返",
+    "コメント",
+    "談話",
+    "一問一答",
+    "述べ",
+    "語っ",
+    "話",
+    "明かし",
+    "説明",
+    "言及",
 )
 GENERIC_TITLE_REPAIR_ACTION_LABELS = (
     ("登録抹消", ("登録抹消", "抹消")),
@@ -1311,6 +1327,10 @@ def _social_too_weak_narrow_rescue_enabled() -> bool:
 
 def _rss_type_flag_enabled(flag_name: str) -> bool:
     return _env_flag(flag_name, False)
+
+
+def _postgame_no_score_short_comment_reroute_enabled() -> bool:
+    return _env_flag(ENABLE_POSTGAME_NO_SCORE_SHORT_COMMENT_REROUTE_ENV_FLAG, False)
 
 
 def _manager_required_headings() -> tuple[str, ...]:
@@ -6054,6 +6074,109 @@ class _WeakTitleReviewFallback:
         self.reason = str(reason)
 
 
+class _PostgameNoScoreShortCommentReroute:
+    """postgame strict の代わりに short comment template へ回す narrow reroute carrier。"""
+
+    __slots__ = ("body_text", "template_body_subtype", "validator_subtype", "rerouted_subtype")
+
+    def __init__(
+        self,
+        *,
+        body_text: str,
+        template_body_subtype: str = "social_news",
+        validator_subtype: str = "social_news",
+        rerouted_subtype: str = POSTGAME_NO_SCORE_SHORT_COMMENT_SUBTYPE,
+    ):
+        self.body_text = str(body_text)
+        self.template_body_subtype = str(template_body_subtype)
+        self.validator_subtype = str(validator_subtype)
+        self.rerouted_subtype = str(rerouted_subtype)
+
+
+def _maybe_reroute_postgame_no_score_short_comment(
+    *,
+    title: str,
+    summary: str,
+    category: str,
+    source_url: str,
+    source_name: str,
+    logger: logging.Logger,
+) -> _PostgameNoScoreShortCommentReroute | None:
+    if not _postgame_no_score_short_comment_reroute_enabled():
+        return None
+
+    source_text = _strip_html(f"{title} {summary}")
+    score_token = _pick_giants_score_token(source_text, prefer_team_names=True)
+    if (
+        score_token is not None
+        and score_token.giants_score is not None
+        and score_token.opponent_score is not None
+    ):
+        return None
+
+    metadata = _build_title_player_name_backfill_metadata(
+        title,
+        summary,
+        category,
+        "postgame",
+    )
+    player_name = _normalize_manager_quote_short_title_name(
+        _collapse_ws(str(metadata.get("player_name") or "")).strip()
+    )
+    has_quote_keyword = any(marker in source_text for marker in POSTGAME_NO_SCORE_SHORT_COMMENT_KEYWORDS)
+    base_payload = {
+        "source_url": source_url,
+        "original_subtype": "postgame",
+        "player_name": player_name,
+        "has_quote_keyword": has_quote_keyword,
+    }
+    if not player_name or not has_quote_keyword:
+        logger.warning(
+            json.dumps(
+                {
+                    "event": "postgame_no_score_review_kept",
+                    **base_payload,
+                },
+                ensure_ascii=False,
+            )
+        )
+        return None
+
+    body_text = _build_short_source_narrow_body(
+        title=title,
+        summary=summary,
+        category=category,
+        body_subtype="social_news",
+        source_url=source_url,
+        source_name=source_name,
+        source_day_label="",
+    )
+    if not body_text:
+        logger.warning(
+            json.dumps(
+                {
+                    "event": "postgame_no_score_review_kept",
+                    **base_payload,
+                    "reason": "short_template_unavailable",
+                },
+                ensure_ascii=False,
+            )
+        )
+        return None
+
+    logger.info(
+        json.dumps(
+            {
+                "event": "postgame_no_score_short_comment_rerouted",
+                **base_payload,
+                "rerouted_subtype": POSTGAME_NO_SCORE_SHORT_COMMENT_SUBTYPE,
+            },
+            ensure_ascii=False,
+        )
+    )
+    return _PostgameNoScoreShortCommentReroute(body_text=body_text)
+
+
 def _maybe_render_postgame_article_parts(
     *,
     title: str,
@@ -6070,7 +6193,7 @@ def _maybe_render_postgame_article_parts(
     duplicate_guard_context: dict | None = None,
     win_loss_hint: str,
     logger: logging.Logger,
-) -> tuple[str, str] | _PostgameStrictReviewFallback | PreflightSkipResult | None:
+) -> tuple[str, str] | _PostgameNoScoreShortCommentReroute | _PostgameStrictReviewFallback | PreflightSkipResult | None:
     article_subtype = _detect_article_subtype(title, summary, category, has_game)
     strict_mode = strict_fact_mode_enabled()
     if not (category == "試合速報" and article_subtype == "postgame"):
@@ -6089,6 +6212,16 @@ def _maybe_render_postgame_article_parts(
     score = _extract_game_score_token(f"{title} {summary}")
 
     if strict_mode and _postgame_strict_enabled():
+        short_comment_reroute = _maybe_reroute_postgame_no_score_short_comment(
+            title=title,
+            summary=summary,
+            category=category,
+            source_url=source_url,
+            source_name=source_name,
+            logger=logger,
+        )
+        if short_comment_reroute is not None:
+            return short_comment_reroute
         recovery_source_meta: tuple[str, ...] = ()
         if _postgame_strict_fact_recovery_enabled() and published_at:
             local_published = published_at if published_at.tzinfo is None else published_at.astimezone(JST)
@@ -12382,7 +12515,8 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             win_loss_hint = "※この試合は巨人が【敗戦】した試合です。負け試合として正直に書くこと。前向きに美化しない。"
 
     def _generate_gemini_body() -> tuple[str, str]:
-        nonlocal postgame_strict_review_reason, manager_quote_zero_review_reason, rule_based_generated
+        nonlocal body_category, body_subtype, effective_generation_category, postgame_strict_review_reason
+        nonlocal manager_quote_zero_review_reason, rule_based_generated, social_story, validator_subtype
         parts_rendered = _maybe_render_postgame_article_parts(
             title=title,
             summary=summary_clean,
@@ -12401,6 +12535,27 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         )
         if isinstance(parts_rendered, PreflightSkipResult):
             return "", ""
+        if isinstance(parts_rendered, _PostgameNoScoreShortCommentReroute):
+            body_subtype = parts_rendered.template_body_subtype
+            validator_subtype = parts_rendered.validator_subtype
+            social_story = body_subtype == "social_news"
+            effective_generation_category = routing_category
+            body_category = routing_category
+            resolved_routing["body_subtype"] = body_subtype
+            resolved_routing["validator_subtype"] = validator_subtype
+            resolved_routing["effective_generation_category"] = effective_generation_category
+            resolved_routing["postgame_rerouted_subtype"] = parts_rendered.rerouted_subtype
+            if isinstance(routing_context, dict):
+                routing_context.update(
+                    {
+                        "body_subtype": body_subtype,
+                        "validator_subtype": validator_subtype,
+                        "effective_generation_category": effective_generation_category,
+                        "postgame_rerouted_subtype": parts_rendered.rerouted_subtype,
+                    }
+                )
+            rule_based_generated = True
+            return parts_rendered.body_text, ""
         if isinstance(parts_rendered, _PostgameStrictReviewFallback):
             postgame_strict_review_reason = parts_rendered.reason
             logger.warning("postgame_strict: route_to_review reason=%s", parts_rendered.reason)
@@ -17990,6 +18145,11 @@ def _main(args, logger):
                 duplicate_guard_context=item.get("duplicate_guard_context"),
                 rewritten_title=draft_title,
                 routing_context=routing_context,
+            )
+            body_article_subtype = str(routing_context.get("body_subtype") or body_article_subtype)
+            validator_article_subtype = str(routing_context.get("validator_subtype") or validator_article_subtype)
+            effective_story_category = str(
+                routing_context.get("effective_generation_category") or effective_story_category
             )
             duplicate_guard_context = item.get("duplicate_guard_context")
             if isinstance(duplicate_guard_context, dict) and duplicate_guard_context.get("guard_outcome") == "skip":

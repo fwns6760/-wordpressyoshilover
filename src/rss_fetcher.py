@@ -235,6 +235,7 @@ PREFLIGHT_SKIP_NOTIFICATION_ENV_FLAG = "ENABLE_PREFLIGHT_SKIP_NOTIFICATION"
 PREFLIGHT_SKIP_LEDGER_PATH_ENV = "PREFLIGHT_SKIP_LEDGER_PATH"
 ENABLE_GENERIC_TITLE_REPAIR_ENV_FLAG = "ENABLE_GENERIC_TITLE_REPAIR"
 ENABLE_SHORT_SOURCE_NARROW_TEMPLATE_ENV_FLAG = "ENABLE_SHORT_SOURCE_NARROW_TEMPLATE"
+ENABLE_FARM_SHORT_POST_TEMPLATE_ENV_FLAG = "ENABLE_FARM_SHORT_POST_TEMPLATE"
 ENABLE_FARM_SUBTYPE_SPLIT_ENV_FLAG = "ENABLE_FARM_SUBTYPE_SPLIT"
 ENABLE_BODY_DUP_REDUCTION_ENV_FLAG = "ENABLE_BODY_DUP_REDUCTION"
 ENABLE_SOCIAL_TOO_WEAK_NARROW_RESCUE_ENV_FLAG = "ENABLE_SOCIAL_TOO_WEAK_NARROW_RESCUE"
@@ -1253,6 +1254,10 @@ def _generic_title_repair_enabled() -> bool:
 
 def _short_source_narrow_template_enabled() -> bool:
     return _env_flag(ENABLE_SHORT_SOURCE_NARROW_TEMPLATE_ENV_FLAG, False)
+
+
+def _farm_short_post_template_enabled() -> bool:
+    return _env_flag(ENABLE_FARM_SHORT_POST_TEMPLATE_ENV_FLAG, False)
 
 
 def _farm_subtype_split_enabled() -> bool:
@@ -9517,6 +9522,14 @@ def _is_short_source_narrow_template_candidate(source_text: str, body_subtype: s
     return len(_collapse_ws(_strip_html(source_text or ""))) < SHORT_SOURCE_NARROW_TEMPLATE_MAX_CHARS
 
 
+def _is_farm_short_post_template_candidate(source_text: str, body_subtype: str) -> bool:
+    if not _farm_short_post_template_enabled():
+        return False
+    if body_subtype != "farm":
+        return False
+    return len(_collapse_ws(_strip_html(source_text or ""))) < SHORT_SOURCE_NARROW_TEMPLATE_MAX_CHARS
+
+
 def _short_source_comment_prompt(body_subtype: str) -> str:
     mapping = {
         "player_notice": "今回の動きが次の起用にどうつながるか、コメントで教えてください。",
@@ -9526,6 +9539,51 @@ def _short_source_comment_prompt(body_subtype: str) -> str:
         "roster": "この補強・移籍情報をどう見るか、コメントで教えてください。",
     }
     return mapping.get(body_subtype, "続報で見たい点をコメントで教えてください。")
+
+
+def _build_farm_short_post_body(
+    *,
+    title: str,
+    summary: str,
+    source_url: str,
+    source_name: str = "",
+) -> str | None:
+    headings = _farm_required_headings("farm")
+    if not headings:
+        return None
+
+    source_label = _display_source_name(source_name) if source_name else "元投稿"
+    subject = _compact_subject_label(title, summary, "ドラフト・育成") or "対象選手"
+    raw_gist = _clean_social_entry_text(_strip_title_prefix(title) or summary or title)
+    gist = _clip_rule_based_fact(raw_gist, limit=68)
+    replacements = (
+        ("２軍", "ファーム"),
+        ("二軍", "ファーム"),
+        ("2軍", "ファーム"),
+        ("ホームスチール", "本塁突入"),
+    )
+    for old, new in replacements:
+        gist = gist.replace(old, new)
+    if subject and subject != "対象選手":
+        gist = gist.replace(subject, "このプレー")
+    gist = gist.strip("。 ・\t")
+    if not gist:
+        gist = "ファームで起きたプレー場面の共有"
+
+    sections = [
+        headings[0],
+        f"{source_label}のXが、ファームで起きたプレー場面を短く共有しました。",
+        f"要点: {gist}。",
+        headings[1],
+        f"{subject}が関わったプレーの判断と流れが、この投稿の見どころです。",
+        headings[2],
+        "投稿で確認できる事実は短文の共有範囲に限り、追加成績は広げません。",
+        headings[3],
+        f"{subject}が次の出場機会でどんな内容を続けるか気になります。",
+    ]
+    if source_url:
+        sections.append(f"出典: {source_url}")
+    return "\n".join(sections)
 
 
 def _build_short_source_narrow_body(
@@ -9676,6 +9734,28 @@ def _maybe_build_short_source_narrow_body(
 ) -> str | None:
     source_text = f"{title} {summary}"
     source_length = len(_collapse_ws(_strip_html(source_text)))
+    if _is_farm_short_post_template_candidate(source_text, body_subtype):
+        body_text = _build_farm_short_post_body(
+            title=title,
+            summary=summary,
+            source_url=source_url,
+            source_name=source_name,
+        )
+        if body_text and _farm_body_has_required_structure(body_text, "farm"):
+            logger.info(
+                json.dumps(
+                    {
+                        "event": "farm_short_post_template_used",
+                        "severity": "INFO",
+                        "source_url": source_url,
+                        "source_length": source_length,
+                        "subtype": body_subtype,
+                        "body_length": len(body_text),
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            return body_text
     if not _is_short_source_narrow_template_candidate(source_text, body_subtype):
         return None
     body_text = _build_short_source_narrow_body(

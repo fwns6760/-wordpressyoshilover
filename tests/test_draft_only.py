@@ -25,6 +25,7 @@ class DraftOnlyTests(unittest.TestCase):
             )
 
         self.assertFalse(published)
+        wp.publish_post.assert_not_called()
         wp.update_post_status.assert_not_called()
         save_history.assert_not_called()
 
@@ -45,7 +46,12 @@ class DraftOnlyTests(unittest.TestCase):
             )
 
         self.assertTrue(published)
-        wp.update_post_status.assert_called_once_with(456, "publish")
+        wp.publish_post.assert_called_once_with(
+            456,
+            caller="rss_fetcher.finalize_post_publication",
+            source_lane="rss_fetcher",
+            status_before="draft",
+        )
         save_history.assert_called_once_with("https://example.com/article", history, "title")
 
     def test_persist_processed_entry_history_saves_in_draft_only_mode(self):

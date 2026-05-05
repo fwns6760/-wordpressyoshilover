@@ -124,6 +124,22 @@ class SyntheticDraftWPClient:
         self.update_post_status_calls.append({"post_id": normalized, "status": status})
         self.posts[normalized]["status"] = status
 
+    def publish_post(
+        self,
+        post_id: int,
+        *,
+        caller: str = "",
+        source_lane: str = "",
+        status_before: str | None = None,
+        update_fields: dict | None = None,
+    ) -> None:
+        """Mirror src.wp_client.WPClient.publish_post: delegate to existing methods."""
+        del caller, source_lane, status_before
+        if update_fields:
+            self.update_post_fields(post_id, status="publish", **update_fields)
+        else:
+            self.update_post_status(post_id, "publish")
+
     def debug_snapshot(self) -> dict[str, Any]:
         return {
             "stored_post_ids": sorted(self.posts),

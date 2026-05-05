@@ -236,6 +236,7 @@ PREFLIGHT_SKIP_LEDGER_PATH_ENV = "PREFLIGHT_SKIP_LEDGER_PATH"
 ENABLE_GENERIC_TITLE_REPAIR_ENV_FLAG = "ENABLE_GENERIC_TITLE_REPAIR"
 ENABLE_SHORT_SOURCE_NARROW_TEMPLATE_ENV_FLAG = "ENABLE_SHORT_SOURCE_NARROW_TEMPLATE"
 ENABLE_FARM_SHORT_POST_TEMPLATE_ENV_FLAG = "ENABLE_FARM_SHORT_POST_TEMPLATE"
+ENABLE_SOURCE_LINK_ONLY_TEMPLATE_ENV_FLAG = "ENABLE_SOURCE_LINK_ONLY_TEMPLATE"
 ENABLE_FARM_SUBTYPE_SPLIT_ENV_FLAG = "ENABLE_FARM_SUBTYPE_SPLIT"
 ENABLE_BODY_DUP_REDUCTION_ENV_FLAG = "ENABLE_BODY_DUP_REDUCTION"
 ENABLE_SOCIAL_TOO_WEAK_NARROW_RESCUE_ENV_FLAG = "ENABLE_SOCIAL_TOO_WEAK_NARROW_RESCUE"
@@ -394,6 +395,7 @@ PROMPT_ROLE_ECHO_PREFIXES = (
 GEMINI_FLASH_THINKING_BUDGET = 0
 ENABLE_BODY_TEMPLATE_V2_ENV_FLAG = "ENABLE_BODY_TEMPLATE_V2"
 SHORT_SOURCE_NARROW_TEMPLATE_MAX_CHARS = 200
+SOURCE_LINK_ONLY_TEMPLATE_MAX_CHARS = 100
 RSS_SHORT_SCORE_REROUTE_MAX_CHARS = SHORT_SOURCE_NARROW_TEMPLATE_MAX_CHARS
 SHORT_SOURCE_NARROW_TEMPLATE_SUBTYPES = frozenset(
     {
@@ -402,6 +404,14 @@ SHORT_SOURCE_NARROW_TEMPLATE_SUBTYPES = frozenset(
         "social_news",
         "farm",
         "roster",
+    }
+)
+SOURCE_LINK_ONLY_TEMPLATE_SUBTYPES = frozenset(
+    {
+        "farm",
+        "manager",
+        "player_notice",
+        "player_recovery",
     }
 )
 GENERIC_TITLE_ONLY_MARKERS = (
@@ -1258,6 +1268,10 @@ def _short_source_narrow_template_enabled() -> bool:
 
 def _farm_short_post_template_enabled() -> bool:
     return _env_flag(ENABLE_FARM_SHORT_POST_TEMPLATE_ENV_FLAG, False)
+
+
+def _source_link_only_template_enabled() -> bool:
+    return _env_flag(ENABLE_SOURCE_LINK_ONLY_TEMPLATE_ENV_FLAG, False)
 
 
 def _farm_subtype_split_enabled() -> bool:
@@ -9530,6 +9544,14 @@ def _is_farm_short_post_template_candidate(source_text: str, body_subtype: str) 
     return len(_collapse_ws(_strip_html(source_text or ""))) < SHORT_SOURCE_NARROW_TEMPLATE_MAX_CHARS
 
 
+def _is_source_link_only_template_candidate(source_text: str, body_subtype: str) -> bool:
+    if not _source_link_only_template_enabled():
+        return False
+    if body_subtype not in SOURCE_LINK_ONLY_TEMPLATE_SUBTYPES:
+        return False
+    return len(_collapse_ws(_strip_html(source_text or ""))) < SOURCE_LINK_ONLY_TEMPLATE_MAX_CHARS
+
+
 def _short_source_comment_prompt(body_subtype: str) -> str:
     mapping = {
         "player_notice": "今回の動きが次の起用にどうつながるか、コメントで教えてください。",
@@ -9580,6 +9602,113 @@ def _build_farm_short_post_body(
         "投稿で確認できる事実は短文の共有範囲に限り、追加成績は広げません。",
         headings[3],
         f"{subject}が次の出場機会でどんな内容を続けるか気になります。",
+    ]
+    if source_url:
+        sections.append(f"出典: {source_url}")
+    return "\n".join(sections)
+
+
+def _first_body_content_line(body_text: str) -> str:
+    for line in str(body_text or "").splitlines():
+        stripped = line.strip()
+        if stripped and not (stripped.startswith("【") and "】" in stripped):
+            return stripped
+    return ""
+
+
+def _body_final_section_has_close_marker(body_text: str) -> bool:
+    sections = _split_text_sections(body_text)
+    final_section_text = sections[-1][1] if sections else _collapse_ws(_strip_html(body_text or ""))
+    return any(marker in final_section_text for marker in POST_GEN_CLOSE_MARKERS)
+
+
+def _should_prefer_source_link_only_template(
+    *,
+    title: str,
+    body_text: str,
+) -> bool:
+    if not body_text:
+        return True
+    if not _body_final_section_has_close_marker(body_text):
+        return True
+    if find_duplicate_sentence(body_text):
+        return True
+    first_line = _first_body_content_line(body_text)
+    if first_line and _body_dup_reduction_ngram_overlap(title, first_line) >= 0.55:
+        return True
+    return False
+
+
+def _source_link_only_template_contract_ok(body_text: str, body_subtype: str) -> tuple[bool, list[str]]:
+    if body_subtype == "manager":
+        return _manager_body_has_required_structure(body_text, False), ["manager_required_headings"]
+    return _short_source_narrow_template_contract_ok(body_text, body_subtype)
+
+
+def _build_source_link_only_body(
+    *,
+    title: str,
+    summary: str,
+    body_subtype: str,
+    source_url: str,
+    source_name: str = "",
+    source_day_label: str = "",
+) -> str | None:
+    if body_subtype == "manager":
+        headings = _manager_required_headings()
+        speaker_label = _extract_subject_label(title, summary, "首脳陣") or "ベンチ"
+        lead_line = f"{speaker_label}の発言が短く伝えられました。"
+        background_line = "元記事にある発言の範囲だけを短く確認します。"
+        close_line = "この言葉が次の起用にどう出るかを見たいところです。"
+    elif body_subtype == "player_notice":
+        headings = _notice_required_headings()
+        subject = _compact_subject_label(title, summary, "選手情報") or "対象選手"
+        lead_line = f"{subject}に関する公示情報が短く共有されました。"
+        background_line = "元記事にある公示内容だけを短く確認します。"
+        close_line = "次の公示や起用の変化を見たいところです。"
+    elif body_subtype == "player_recovery":
+        headings = _recovery_required_headings()
+        subject = _compact_subject_label(title, summary, "選手情報") or "対象選手"
+        lead_line = f"{subject}の状態変化が短く共有されました。"
+        background_line = "元記事にある状態変化だけを短く確認します。"
+        close_line = "次の実戦で状態がどう出るかを見たいところです。"
+    elif body_subtype == "farm":
+        headings = _farm_required_headings("farm")
+        subject = _compact_subject_label(title, summary, "ドラフト・育成")
+        lead_line = (
+            f"{subject}に関するファーム情報が短く共有されました。"
+            if subject and subject not in {"巨人", "対象選手"}
+            else "ファームの動きが短く共有されました。"
+        )
+        background_line = "元記事にある範囲だけを短く確認します。"
+        close_line = "この内容が次の起用にどうつながるかを見たいところです。"
+    else:
+        return None
+
+    if not headings:
+        return None
+
+    quote_phrases = _extract_quote_phrases(f"{title}\n{summary}", max_phrases=1)
+    fact_lines = _rule_based_fact_lines(title, summary, max_sentences=2, limit=72)
+    fact_line = fact_lines[0] if fact_lines else _clip_rule_based_fact(_strip_title_prefix(title) or summary or title, limit=72)
+    if quote_phrases:
+        source_line = f"引用: 「{quote_phrases[0]}」。"
+    elif fact_line:
+        source_line = f"要点: {fact_line.rstrip('。')}。"
+    else:
+        source_label = _display_source_name(source_name) if source_name else "元記事"
+        source_line = f"{source_label}が伝えた要点だけを短く確認します。"
+
+    opening_prefix = f"（{source_day_label}時点）" if source_day_label else ""
+    sections = [
+        headings[0],
+        f"{opening_prefix}{lead_line}".strip(),
+        headings[1],
+        source_line,
+        headings[2],
+        background_line,
+        headings[3],
+        close_line,
     ]
     if source_url:
         sections.append(f"出典: {source_url}")
@@ -9734,6 +9863,7 @@ def _maybe_build_short_source_narrow_body(
 ) -> str | None:
     source_text = f"{title} {summary}"
     source_length = len(_collapse_ws(_strip_html(source_text)))
+
     if _is_farm_short_post_template_candidate(source_text, body_subtype):
         body_text = _build_farm_short_post_body(
             title=title,
@@ -9756,20 +9886,66 @@ def _maybe_build_short_source_narrow_body(
                 )
             )
             return body_text
-    if not _is_short_source_narrow_template_candidate(source_text, body_subtype):
+
+    if _is_short_source_narrow_template_candidate(source_text, body_subtype):
+        body_text = _build_short_source_narrow_body(
+            title=title,
+            summary=summary,
+            category=category,
+            body_subtype=body_subtype,
+            source_url=source_url,
+            source_name=source_name,
+            source_day_label=source_day_label,
+        )
+        if body_text:
+            contract_ok, fail_axes = _short_source_narrow_template_contract_ok(body_text, body_subtype)
+            if contract_ok and not (
+                _is_source_link_only_template_candidate(source_text, body_subtype)
+                and _should_prefer_source_link_only_template(title=title, body_text=body_text)
+            ):
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "short_source_narrow_template_used",
+                            "severity": "INFO",
+                            "subtype": body_subtype,
+                            "source_length": source_length,
+                            "body_length": len(body_text),
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                return body_text
+            if not _is_source_link_only_template_candidate(source_text, body_subtype):
+                logger.warning(
+                    json.dumps(
+                        {
+                            "event": "short_template_blocked_by_contract",
+                            "severity": "WARNING",
+                            "subtype": body_subtype,
+                            "source_length": source_length,
+                            "body_length": len(body_text),
+                            "fail_axes": fail_axes,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                return None
+
+    if not _is_source_link_only_template_candidate(source_text, body_subtype):
         return None
-    body_text = _build_short_source_narrow_body(
+
+    source_link_only_body = _build_source_link_only_body(
         title=title,
         summary=summary,
-        category=category,
         body_subtype=body_subtype,
         source_url=source_url,
         source_name=source_name,
         source_day_label=source_day_label,
     )
-    if not body_text:
+    if not source_link_only_body:
         return None
-    contract_ok, fail_axes = _short_source_narrow_template_contract_ok(body_text, body_subtype)
+    contract_ok, fail_axes = _source_link_only_template_contract_ok(source_link_only_body, body_subtype)
     if not contract_ok:
         logger.warning(
             json.dumps(
@@ -9778,7 +9954,7 @@ def _maybe_build_short_source_narrow_body(
                     "severity": "WARNING",
                     "subtype": body_subtype,
                     "source_length": source_length,
-                    "body_length": len(body_text),
+                    "body_length": len(source_link_only_body),
                     "fail_axes": fail_axes,
                 },
                 ensure_ascii=False,
@@ -9788,16 +9964,17 @@ def _maybe_build_short_source_narrow_body(
     logger.info(
         json.dumps(
             {
-                "event": "short_source_narrow_template_used",
+                "event": "source_link_only_template_used",
                 "severity": "INFO",
-                "subtype": body_subtype,
+                "source_url": source_url,
                 "source_length": source_length,
-                "body_length": len(body_text),
+                "subtype": body_subtype,
+                "body_length": len(source_link_only_body),
             },
             ensure_ascii=False,
         )
     )
-    return body_text
+    return source_link_only_body
 
 
 def _build_rule_based_subtype_body(

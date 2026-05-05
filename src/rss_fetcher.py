@@ -238,6 +238,11 @@ ENABLE_SHORT_SOURCE_NARROW_TEMPLATE_ENV_FLAG = "ENABLE_SHORT_SOURCE_NARROW_TEMPL
 ENABLE_FARM_SUBTYPE_SPLIT_ENV_FLAG = "ENABLE_FARM_SUBTYPE_SPLIT"
 ENABLE_BODY_DUP_REDUCTION_ENV_FLAG = "ENABLE_BODY_DUP_REDUCTION"
 ENABLE_SOCIAL_TOO_WEAK_NARROW_RESCUE_ENV_FLAG = "ENABLE_SOCIAL_TOO_WEAK_NARROW_RESCUE"
+ENABLE_RSS_SHORT_SCORE_POST_REROUTE_ENV_FLAG = "ENABLE_RSS_SHORT_SCORE_POST_REROUTE"
+ENABLE_RSS_MANAGER_COMMENT_KEEP_ENV_FLAG = "ENABLE_RSS_MANAGER_COMMENT_KEEP"
+ENABLE_RSS_SOCIAL_PLAYER_SUBROUTE_ENV_FLAG = "ENABLE_RSS_SOCIAL_PLAYER_SUBROUTE"
+ENABLE_FARM_CATEGORY_NARROW_FIX_ENV_FLAG = "ENABLE_FARM_CATEGORY_NARROW_FIX"
+ENABLE_RSS_SUBTYPE_CONSISTENCY_GUARD_ENV_FLAG = "ENABLE_RSS_SUBTYPE_CONSISTENCY_GUARD"
 WEAK_TITLE_RESCUE_ENV_FLAG = "ENABLE_WEAK_TITLE_RESCUE"
 NARROW_UNLOCK_NON_POSTGAME_ENV_FLAG = "ENABLE_NARROW_UNLOCK_NON_POSTGAME"
 NARROW_UNLOCK_SUBTYPE_AWARE_ENV_FLAG = "ENABLE_NARROW_UNLOCK_SUBTYPE_AWARE"
@@ -388,6 +393,7 @@ PROMPT_ROLE_ECHO_PREFIXES = (
 GEMINI_FLASH_THINKING_BUDGET = 0
 ENABLE_BODY_TEMPLATE_V2_ENV_FLAG = "ENABLE_BODY_TEMPLATE_V2"
 SHORT_SOURCE_NARROW_TEMPLATE_MAX_CHARS = 200
+RSS_SHORT_SCORE_REROUTE_MAX_CHARS = SHORT_SOURCE_NARROW_TEMPLATE_MAX_CHARS
 SHORT_SOURCE_NARROW_TEMPLATE_SUBTYPES = frozenset(
     {
         "player_notice",
@@ -424,6 +430,20 @@ GENERIC_TITLE_REPAIR_ACTION_LABELS = (
     ("勝利", ("勝利", "白星")),
     ("敗戦", ("敗戦", "黒星")),
 )
+RSS_SHORT_SCORE_RESULT_MARKERS = NON_GAME_RESULT_WORDS + ("試合終了", "ゲームセット", "終了", "final")
+MANAGER_COMMENT_KEEP_SUBJECT_KEYWORDS = ("阿部監督", "監督", "コーチ")
+MANAGER_COMMENT_KEEP_CONTEXT_KEYWORDS = (
+    "コメント",
+    "談話",
+    "一問一答",
+    "直接質問",
+    "明言",
+    "語った",
+    "話した",
+    "明かした",
+    "起用",
+)
+FARM_CATEGORY_NARROW_FIX_KEYWORDS = ("三軍", "３軍", "3軍", "育成")
 FARM_SUBTYPE_SPLIT_KEYWORDS = (
     "二軍",
     "２軍",
@@ -1245,6 +1265,10 @@ def _body_dup_reduction_enabled() -> bool:
 
 def _social_too_weak_narrow_rescue_enabled() -> bool:
     return _env_flag(ENABLE_SOCIAL_TOO_WEAK_NARROW_RESCUE_ENV_FLAG, False)
+
+
+def _rss_type_flag_enabled(flag_name: str) -> bool:
+    return _env_flag(flag_name, False)
 
 
 def _manager_required_headings() -> tuple[str, ...]:
@@ -3667,6 +3691,77 @@ def _farm_split_first_team_priority_hits(text: str) -> list[str]:
     return [marker for marker in priority_markers if marker in (text or "")]
 
 
+def _farm_category_narrow_fix_keyword_hits(text: str) -> list[str]:
+    return [marker for marker in FARM_CATEGORY_NARROW_FIX_KEYWORDS if marker in (text or "")]
+
+
+def _manager_comment_keep_keyword_hits(text: str) -> list[str]:
+    source_text = text or ""
+    subject_hits = [keyword for keyword in MANAGER_COMMENT_KEEP_SUBJECT_KEYWORDS if keyword in source_text]
+    if not subject_hits:
+        return []
+    context_hits = [keyword for keyword in MANAGER_COMMENT_KEEP_CONTEXT_KEYWORDS if keyword in source_text]
+    if context_hits or ("「" in source_text and "」" in source_text):
+        return _dedupe_preserve_order(subject_hits + context_hits)
+    if any(keyword in source_text for keyword in ("スタメン", "打順", "オーダー", "起用")):
+        return _dedupe_preserve_order(subject_hits + ["起用"])
+    return []
+
+
+def _social_source_is_short_score_reroute_trusted(source_url: str, source_name: str = "") -> bool:
+    handle = _extract_handle_from_tweet_url(source_url)
+    normalized_name = _normalize_social_source_name(source_name)
+    trust = _source_trust_classify_handle(handle) if handle else _source_trust_classify_url(source_url)
+    if trust == "primary":
+        return True
+    if handle and _normalize_social_handle(handle) in GIANTS_EXCLUSIVE_SOCIAL_HANDLES:
+        return True
+    return normalized_name in GIANTS_EXCLUSIVE_SOCIAL_SOURCE_NAMES
+
+
+def _should_rss_short_score_post_reroute(
+    *,
+    title: str,
+    summary: str,
+    category: str,
+    article_subtype: str,
+    source_url: str,
+    source_name: str = "",
+) -> tuple[bool, int]:
+    if category not in {"試合速報", "ドラフト・育成"}:
+        return False, 0
+    if not (_is_game_template_subtype(article_subtype) or _is_farm_template_subtype(article_subtype)):
+        return False, 0
+    source_text = _strip_html(f"{title} {summary}")
+    source_length = len(_collapse_ws(source_text))
+    if source_length >= RSS_SHORT_SCORE_REROUTE_MAX_CHARS:
+        return False, source_length
+    if not SCORE_TOKEN_RE.search(source_text):
+        return False, source_length
+    if not (
+        _has_explicit_confirmed_result(source_text)
+        or any(marker in source_text for marker in RSS_SHORT_SCORE_RESULT_MARKERS)
+    ):
+        return False, source_length
+    return _social_source_is_short_score_reroute_trusted(source_url, source_name), source_length
+
+
+def _emit_rss_story_type_event(
+    logger: logging.Logger | None,
+    event: str,
+    source_url: str,
+    **payload: object,
+) -> None:
+    if logger is None:
+        return
+    logger.info(
+        json.dumps(
+            {"event": event, "severity": "INFO", "source_url": source_url, **payload},
+            ensure_ascii=False,
+        )
+    )
+
+
 def _maybe_apply_farm_subtype_split(text: str, category: str, resolved_subtype: str) -> str:
     if not _farm_subtype_split_enabled():
         return resolved_subtype
@@ -3735,6 +3830,150 @@ def _detect_article_subtype(title: str, summary: str, category: str, has_game: b
             # Correction or retraction markers are safer to park in the fact_notice shell.
             subtype = "fact_notice"
     return _maybe_apply_farm_subtype_split(text, category, subtype)
+
+
+def _resolve_rss_story_type_context(
+    *,
+    title: str,
+    summary: str,
+    category: str,
+    daily_has_game: bool,
+    entry_has_game_override: bool | None = None,
+    source_type: str = "news",
+    source_url: str = "",
+    source_name: str = "",
+    logger: logging.Logger | None = None,
+) -> dict[str, object]:
+    source_text = _strip_html(f"{title} {summary}")
+    resolved_category = category
+    entry_has_game = bool(entry_has_game_override) if entry_has_game_override is not None else infer_article_has_game(
+        title,
+        summary,
+        resolved_category,
+        daily_has_game,
+    )
+    pre_subtype = _detect_article_subtype(title, summary, resolved_category, entry_has_game)
+
+    manager_keyword_hits = _manager_comment_keep_keyword_hits(source_text)
+    manager_keep_applied = False
+    if _rss_type_flag_enabled(ENABLE_RSS_MANAGER_COMMENT_KEEP_ENV_FLAG) and pre_subtype == "postgame" and manager_keyword_hits:
+        resolved_category = "首脳陣"
+        manager_keep_applied = True
+        _emit_rss_story_type_event(
+            logger,
+            "rss_manager_comment_kept",
+            source_url,
+            manager_keyword_hits=manager_keyword_hits,
+            pre_subtype=pre_subtype,
+        )
+
+    if resolved_category != category:
+        entry_has_game = bool(entry_has_game_override) if entry_has_game_override is not None else infer_article_has_game(
+            title,
+            summary,
+            resolved_category,
+            daily_has_game,
+        )
+
+    raw_title_subtype = _detect_article_subtype(title, summary, resolved_category, entry_has_game)
+    _, generation_category, _ = _resolve_article_ai_strategy(
+        resolved_category,
+        title,
+        summary,
+        entry_has_game,
+        article_subtype=raw_title_subtype,
+    )
+    special_story_kind = (
+        _detect_player_special_template_kind(title, summary)
+        if generation_category == "選手情報"
+        else ""
+    )
+    social_player_subroute = ""
+    if source_type == "social_news" and _rss_type_flag_enabled(ENABLE_RSS_SOCIAL_PLAYER_SUBROUTE_ENV_FLAG) and special_story_kind in {"player_notice", "player_recovery"}:
+        social_player_subroute = f"social_{special_story_kind}"
+        _emit_rss_story_type_event(
+            logger,
+            "rss_social_player_subrouted",
+            source_url,
+            sub_subtype=social_player_subroute,
+            keyword_hits=[special_story_kind],
+        )
+
+    short_score_rerouted = False
+    short_score_source_length = 0
+    if source_type == "social_news" and _rss_type_flag_enabled(ENABLE_RSS_SHORT_SCORE_POST_REROUTE_ENV_FLAG):
+        short_score_rerouted, short_score_source_length = _should_rss_short_score_post_reroute(
+            title=title,
+            summary=summary,
+            category=resolved_category,
+            article_subtype=raw_title_subtype,
+            source_url=source_url,
+            source_name=source_name,
+        )
+        if short_score_rerouted:
+            _emit_rss_story_type_event(
+                logger,
+                "rss_short_score_rerouted",
+                source_url,
+                source_length=short_score_source_length,
+                pre_subtype=raw_title_subtype,
+                post_subtype="social_news",
+            )
+
+    social_story = (
+        source_type == "social_news"
+        and not manager_keep_applied
+        and not social_player_subroute
+        and not short_score_rerouted
+        and not _social_source_prefers_structured_template(generation_category, raw_title_subtype)
+    )
+    pre_body_subtype = (
+        "social_news"
+        if social_story or short_score_rerouted
+        else "player_recovery"
+        if special_story_kind == "player_recovery"
+        else "player_notice"
+        if special_story_kind == "player_notice"
+        else raw_title_subtype
+    )
+    title_subtype = raw_title_subtype
+    body_subtype = pre_body_subtype
+    validator_subtype = raw_title_subtype
+
+    if short_score_rerouted:
+        title_subtype = "social_news"
+        body_subtype = "social_news"
+        validator_subtype = "social_news"
+    elif social_player_subroute:
+        title_subtype = special_story_kind
+        body_subtype = special_story_kind
+        validator_subtype = special_story_kind
+    elif _rss_type_flag_enabled(ENABLE_RSS_SUBTYPE_CONSISTENCY_GUARD_ENV_FLAG) and special_story_kind in {"player_notice", "player_recovery"}:
+        title_subtype = special_story_kind
+        body_subtype = special_story_kind
+        validator_subtype = special_story_kind
+        if raw_title_subtype != special_story_kind:
+            _emit_rss_story_type_event(
+                logger,
+                "rss_fetcher_subtype_mismatch_repaired",
+                source_url,
+                body_subtype=pre_body_subtype,
+                title_subtype=raw_title_subtype,
+                repaired_to=special_story_kind,
+            )
+    effective_generation_category = resolved_category if body_subtype == "social_news" else generation_category
+
+    return {
+        "category": resolved_category,
+        "entry_has_game": entry_has_game,
+        "title_subtype": title_subtype,
+        "body_subtype": body_subtype,
+        "validator_subtype": validator_subtype,
+        "generation_category": generation_category,
+        "effective_generation_category": effective_generation_category,
+        "special_story_kind": special_story_kind,
+        "social_player_subroute": social_player_subroute,
+    }
 
 
 def _is_promotional_video_entry(title: str, summary: str) -> bool:
@@ -11777,24 +12016,45 @@ X検索で「{query_short} 巨人」に関するファンの声を{fan_reaction_
 # ──────────────────────────────────────────────────────────
 # ニュース記事ブロックHTML生成
 # ──────────────────────────────────────────────────────────
-def build_news_block(title: str, summary: str, url: str, source_name: str, category: str = "コラム", og_image_url: str = "", media_id: int = 0, extra_images: list = None, has_game: bool = True, article_ai_mode_override: str | None = None, source_links: list[dict] | None = None, source_day_label: str = "", source_type: str = "news", media_quotes: list[dict] | None = None, source_entry: dict | None = None, post_context: dict | None = None, published_at: datetime | None = None, duplicate_guard_context: dict | None = None, rewritten_title: str = "") -> tuple[str, str]:
+def build_news_block(title: str, summary: str, url: str, source_name: str, category: str = "コラム", og_image_url: str = "", media_id: int = 0, extra_images: list = None, has_game: bool = True, article_ai_mode_override: str | None = None, source_links: list[dict] | None = None, source_day_label: str = "", source_type: str = "news", media_quotes: list[dict] | None = None, source_entry: dict | None = None, post_context: dict | None = None, published_at: datetime | None = None, duplicate_guard_context: dict | None = None, rewritten_title: str = "", routing_context: Mapping[str, object] | None = None) -> tuple[str, str]:
     import re
     summary_clean = re.sub(r"<[^>]+>", "", summary).strip()
-    article_subtype = _detect_article_subtype(title, summary_clean, category, has_game)
+    resolved_routing = dict(routing_context or {})
+    if not resolved_routing:
+        resolved_routing = _resolve_rss_story_type_context(
+            title=title,
+            summary=summary_clean,
+            category=category,
+            daily_has_game=has_game,
+            entry_has_game_override=has_game,
+            source_type=source_type,
+            source_url=url,
+            source_name=source_name,
+        )
+    routing_category = str(resolved_routing.get("category") or category)
+    article_subtype = str(resolved_routing.get("body_subtype") or _detect_article_subtype(title, summary_clean, routing_category, has_game))
+    validator_subtype = str(resolved_routing.get("validator_subtype") or article_subtype)
     use_ai_for_article, generation_category, ai_route_reason = _resolve_article_ai_strategy(
-        category,
+        routing_category,
         title,
         summary_clean,
         has_game,
         article_subtype=article_subtype,
     )
-    social_story = source_type == "social_news" and not _social_source_prefers_structured_template(generation_category, article_subtype)
-    special_story_kind = _detect_player_special_template_kind(title, summary_clean) if generation_category == "選手情報" and not social_story else ""
-    recovery_story = special_story_kind == "player_recovery"
-    notice_story = special_story_kind == "player_notice"
-    body_category = generation_category if special_story_kind else category
-    body_subtype = "social_news" if social_story else "player_recovery" if recovery_story else "player_notice" if notice_story else article_subtype
-    effective_generation_category = category if social_story else generation_category
+    generation_category = str(resolved_routing.get("generation_category") or generation_category)
+    special_story_kind = str(
+        resolved_routing.get("special_story_kind")
+        or (_detect_player_special_template_kind(title, summary_clean) if generation_category == "選手情報" else "")
+    )
+    body_subtype = str(resolved_routing.get("body_subtype") or article_subtype)
+    social_story = body_subtype == "social_news"
+    recovery_story = body_subtype == "player_recovery"
+    notice_story = body_subtype == "player_notice"
+    body_category = str(resolved_routing.get("body_category") or (generation_category if special_story_kind else routing_category))
+    effective_generation_category = str(
+        resolved_routing.get("effective_generation_category")
+        or (routing_category if social_story else generation_category)
+    )
     article_ai_mode = get_article_ai_mode(has_game, article_ai_mode_override) if use_ai_for_article else "none"
     fan_reaction_limit = get_fan_reaction_limit()
     logger = logging.getLogger("rss_fetcher")
@@ -12023,16 +12283,16 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         subject = _extract_subject_label(title, summary_clean, effective_generation_category)
 
         def _apply_body_contract_reroll(normalized_body: str, fallback_body: str) -> str:
-            if not _body_validator_supports_subtype(article_subtype):
+            if not _body_validator_supports_subtype(validator_subtype):
                 return normalized_body
-            validation = _validate_body_candidate(normalized_body, article_subtype)
+            validation = _validate_body_candidate(normalized_body, validator_subtype)
             if validation["ok"] or validation["action"] != "reroll":
                 return normalized_body
             _log_body_validator_reroll(
                 logger,
                 source_url=url,
                 category=category,
-                article_subtype=article_subtype,
+                article_subtype=validator_subtype,
                 fail_axes=list(validation["fail_axes"]),
                 expected_first_block=str(validation.get("expected_first_block") or ""),
                 actual_first_block=str(validation.get("actual_first_block") or ""),
@@ -12079,8 +12339,8 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                     effective_generation_category,
                     subject,
                 )
-        elif generation_category == "首脳陣" and article_subtype == "manager":
-            normalized_manager_body = _normalize_article_text_structure(ai_body, generation_category, has_game, article_subtype=article_subtype)
+        elif generation_category == "首脳陣" and body_subtype == "manager":
+            normalized_manager_body = _normalize_article_text_structure(ai_body, generation_category, has_game, article_subtype=body_subtype)
             if _manager_body_has_required_structure(normalized_manager_body, has_game):
                 ai_body = normalized_manager_body
             else:
@@ -12089,32 +12349,32 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                     generation_category,
                     subject,
                 )
-        elif generation_category == "試合速報" and _is_game_template_subtype(article_subtype):
-            normalized_game_body = _normalize_article_text_structure(ai_body, generation_category, has_game, article_subtype=article_subtype)
+        elif generation_category == "試合速報" and _is_game_template_subtype(body_subtype):
+            normalized_game_body = _normalize_article_text_structure(ai_body, generation_category, has_game, article_subtype=body_subtype)
             game_fallback = _build_game_safe_fallback(
                 title,
                 summary_clean,
-                article_subtype,
+                body_subtype,
                 lineup_rows=lineup_stat_rows if article_subtype == "lineup" else None,
                 real_reactions=real_reactions,
             )
-            if _game_body_has_required_structure(normalized_game_body, article_subtype, has_game):
+            if _game_body_has_required_structure(normalized_game_body, body_subtype, has_game):
                 ai_body = _apply_body_contract_reroll(normalized_game_body, game_fallback)
             else:
                 ai_body = _apply_editor_voice(game_fallback, generation_category, subject)
-        elif generation_category == "ドラフト・育成" and _is_farm_template_subtype(article_subtype):
-            normalized_farm_body = _normalize_article_text_structure(ai_body, generation_category, has_game, article_subtype=article_subtype)
+        elif generation_category == "ドラフト・育成" and _is_farm_template_subtype(body_subtype):
+            normalized_farm_body = _normalize_article_text_structure(ai_body, generation_category, has_game, article_subtype=body_subtype)
             farm_fallback = (
                 _build_farm_lineup_safe_fallback(title, summary_clean, real_reactions=real_reactions)
-                if article_subtype == "farm_lineup"
+                if body_subtype == "farm_lineup"
                 else _build_farm_safe_fallback(title, summary_clean, real_reactions=real_reactions)
             )
-            if _farm_body_has_required_structure(normalized_farm_body, article_subtype):
+            if _farm_body_has_required_structure(normalized_farm_body, body_subtype):
                 ai_body = _apply_body_contract_reroll(normalized_farm_body, farm_fallback)
             else:
                 ai_body = _apply_editor_voice(farm_fallback, generation_category, subject)
-        elif article_subtype == "fact_notice":
-            normalized_fact_notice_body = _normalize_article_text_structure(ai_body, body_category, has_game, article_subtype=article_subtype)
+        elif body_subtype == "fact_notice":
+            normalized_fact_notice_body = _normalize_article_text_structure(ai_body, body_category, has_game, article_subtype=body_subtype)
             ai_body = _apply_body_contract_reroll(
                 normalized_fact_notice_body,
                 _build_safe_article_fallback(
@@ -12677,12 +12937,12 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         ai_body = _re3.sub(r'（\d+文字）', '', ai_body)
         first_line = ai_body.strip().split('\n')[0].strip()
         first_line_is_structured_heading = False
-        if body_category == "首脳陣" and article_subtype == "manager":
+        if body_category == "首脳陣" and body_subtype == "manager":
             first_line_is_structured_heading = first_line in _manager_required_headings()
-        elif body_category == "試合速報" and _is_game_template_subtype(article_subtype):
-            first_line_is_structured_heading = first_line in _game_required_headings(article_subtype)
-        elif body_category == "ドラフト・育成" and _is_farm_template_subtype(article_subtype):
-            first_line_is_structured_heading = first_line in _farm_required_headings(article_subtype)
+        elif body_category == "試合速報" and _is_game_template_subtype(body_subtype):
+            first_line_is_structured_heading = first_line in _game_required_headings(body_subtype)
+        elif body_category == "ドラフト・育成" and _is_farm_template_subtype(body_subtype):
+            first_line_is_structured_heading = first_line in _farm_required_headings(body_subtype)
         elif notice_story:
             first_line_is_structured_heading = first_line in _notice_required_headings()
         elif recovery_story:
@@ -12751,9 +13011,9 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             for paragraph in current_paragraphs:
                 blocks += _render_paragraph_with_media(paragraph)
             if (
-                current_heading == ("【試合概要】" if article_subtype == "lineup" else "【ニュースの整理】")
+                current_heading == ("【試合概要】" if body_subtype == "lineup" else "【ニュースの整理】")
                 and body_category == "試合速報"
-                and article_subtype == "lineup"
+                and body_subtype == "lineup"
                 and lineup_stat_rows
                 and not lineup_stats_rendered
             ):
@@ -12763,30 +13023,30 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             if (
                 current_heading == "【ニュースの整理】"
                 and body_category == "試合速報"
-                and article_subtype == "live_update"
+                and body_subtype == "live_update"
             ):
                 blocks += _livegame_result_block()
                 blocks += _livegame_watch_block()
             if (
                 current_heading == "【試合結果】"
                 and body_category == "試合速報"
-                and article_subtype == "postgame"
+                and body_subtype == "postgame"
             ):
                 blocks += _postgame_result_block()
                 blocks += _postgame_watch_block()
             game_slot_map = {}
-            if article_subtype == "lineup":
+            if body_subtype == "lineup":
                 game_slot_map = {"【試合概要】": "news", "【注目ポイント】": "next"}
-            elif article_subtype == "live_anchor":
+            elif body_subtype == "live_anchor":
                 game_slot_map = {"【時点】": "news", "【ファン視点】": "next"}
-            elif article_subtype == "postgame":
+            elif body_subtype == "postgame":
                 game_slot_map = {"【試合結果】": "news", "【試合展開】": "next"}
-            elif article_subtype == "pregame":
+            elif body_subtype == "pregame":
                 game_slot_map = {"【変更情報の要旨】": "news", "【この変更が意味すること】": "next"}
             farm_slot_map = {}
-            if article_subtype == "farm":
+            if body_subtype == "farm":
                 farm_slot_map = {"【二軍結果・活躍の要旨】": "news", "【一軍への示唆】": "next"}
-            elif article_subtype == "farm_lineup":
+            elif body_subtype == "farm_lineup":
                 farm_slot_map = {"【二軍試合概要】": "news", "【注目選手】": "next"}
             social_slot_map = {}
             if body_subtype == "social_news":
@@ -14563,7 +14823,14 @@ def is_giants_related(text: str, source_name: str = "", post_url: str = "") -> b
 # ──────────────────────────────────────────────────────────
 # カテゴリ自動分類
 # ──────────────────────────────────────────────────────────
-def classify_category(text: str, keywords: dict) -> str:
+def classify_category(
+    text: str,
+    keywords: dict,
+    *,
+    source_url: str = "",
+    logger: logging.Logger | None = None,
+) -> str:
+    source_text = text or ""
     if _is_giants_player_dismissal_story(text):
         return "選手情報"
     if _is_farm_lineup_text(text):
@@ -14572,6 +14839,18 @@ def classify_category(text: str, keywords: dict) -> str:
         return "ドラフト・育成"
     for category, kws in keywords.items():
         if any(kw in text for kw in kws):
+            if category == "試合速報" and _rss_type_flag_enabled(ENABLE_FARM_CATEGORY_NARROW_FIX_ENV_FLAG):
+                farm_keyword_hits = _farm_category_narrow_fix_keyword_hits(source_text)
+                if farm_keyword_hits and not _farm_split_first_team_priority_hits(source_text):
+                    _emit_rss_story_type_event(
+                        logger,
+                        "rss_farm_category_rerouted",
+                        source_url,
+                        pre_category=category,
+                        post_category="ドラフト・育成",
+                        farm_keyword_hits=farm_keyword_hits,
+                    )
+                    return "ドラフト・育成"
             return category
     return "コラム"
 
@@ -16539,10 +16818,15 @@ def _main(args, logger):
                 skip_reason_counts["not_giants_related"] += 1
                 continue
 
-            category = classify_category(title_text, keywords)
             raw_title, title_preview = _prepare_source_title_context(entry_title_clean, entry)
             title = raw_title
             summary  = entry_summary_clean
+            category = classify_category(
+                title_text,
+                keywords,
+                source_url=post_url,
+                logger=logger,
+            )
             # Observation only; later consumers decide whether to use normalized outputs.
             _, category_guard_warnings = _tc_validate_category(category)
             _, tag_guard_warnings = _tc_validate_tags(prepared_source_roles)
@@ -16554,7 +16838,20 @@ def _main(args, logger):
                     category,
                     json.dumps(tag_category_warnings, ensure_ascii=False),
                 )
-            entry_has_game = infer_article_has_game(title, summary, category, has_game)
+            routing_context = _resolve_rss_story_type_context(
+                title=title,
+                summary=summary,
+                category=category,
+                daily_has_game=has_game,
+                source_type=source_type,
+                source_url=post_url,
+                source_name=name,
+                logger=logger,
+            )
+            category = str(routing_context.get("category") or category)
+            entry_has_game = bool(
+                routing_context.get("entry_has_game", infer_article_has_game(title, summary, category, has_game))
+            )
             if _should_skip_stale_postgame_entry(category, title, summary, published_at, max_age_hours=36):
                 logger.debug(f"  [SKIP:postgame古い] {title_preview[:40]}")
                 skip_filter += 1
@@ -16575,7 +16872,10 @@ def _main(args, logger):
                     skip_reason_counts["video_promo"] += 1
                     _append_skip_reason_sample(skip_reason_sample_titles, "video_promo", title)
                     continue
-                article_subtype = _detect_article_subtype(title, summary, category, entry_has_game)
+                article_subtype = str(
+                    routing_context.get("title_subtype")
+                    or _detect_article_subtype(title, summary, category, entry_has_game)
+                )
                 if article_subtype == "live_update" and not ENABLE_LIVE_UPDATE_ARTICLES:
                     fan_important_exempt = _fetcher_fan_important_narrow_exempt_context(
                         skip_kind="live_update_disabled",
@@ -16700,6 +17000,7 @@ def _main(args, logger):
                 "published_day": _entry_day_key(entry),
                 "history_urls": [post_url],
                 "history_title_norms": [entry_title_norm] if entry_title_norm else [],
+                "routing_context": routing_context,
             })
             entry_index += 1
 
@@ -16826,7 +17127,37 @@ def _main(args, logger):
         entry_title_norm = item.get("entry_title_norm", "")
         entry_has_game = item["entry_has_game"]
         source_day_label = _format_source_day_label(item.get("published_at"))
-        title_article_subtype = _detect_article_subtype(raw_title, summary, category, entry_has_game)
+        routing_context = dict(item.get("routing_context") or {})
+        if not routing_context:
+            routing_context = _resolve_rss_story_type_context(
+                title=raw_title,
+                summary=summary,
+                category=category,
+                daily_has_game=has_game,
+                source_type=source_type,
+                source_url=post_url,
+                source_name=source_name,
+            )
+        category = str(routing_context.get("category") or category)
+        entry_has_game = bool(routing_context.get("entry_has_game", entry_has_game))
+        title_article_subtype = str(
+            routing_context.get("title_subtype")
+            or _detect_article_subtype(raw_title, summary, category, entry_has_game)
+        )
+        body_article_subtype = str(routing_context.get("body_subtype") or title_article_subtype)
+        validator_article_subtype = str(routing_context.get("validator_subtype") or title_article_subtype)
+        effective_story_category = str(
+            routing_context.get("effective_generation_category")
+            or _resolve_article_generation_category(category, raw_title, summary)
+        )
+        special_story_kind = str(
+            routing_context.get("special_story_kind")
+            or (
+                _detect_player_special_template_kind(raw_title, summary)
+                if effective_story_category == "選手情報"
+                else ""
+            )
+        )
 
         if item.get("merged_source_count", 0) > 1:
             logger.info(f"  [統合] {title[:40]} ← {item['merged_source_count']}ソース")
@@ -16915,12 +17246,6 @@ def _main(args, logger):
                 print(f"       {post_url}")
                 success += 1
                 continue
-            effective_story_category = _resolve_article_generation_category(category, raw_title, summary)
-            special_story_kind = (
-                _detect_player_special_template_kind(raw_title, summary)
-                if effective_story_category == "選手情報"
-                else ""
-            )
             media_story_kind = special_story_kind
             manager_subject = ""
             manager_aliases: list[str] = []
@@ -17063,7 +17388,7 @@ def _main(args, logger):
             }
             title_player_name_unresolved = bool(
                 comparison_title == draft_title
-                and title_article_subtype in {"manager", "player", "notice", "recovery"}
+                and title_article_subtype in {"manager", "player", "notice", "recovery", "player_notice", "player_recovery"}
                 and not title_has_person_name_candidate(draft_title)
             )
             draft_title, _weak_title_rescue_reason = _maybe_apply_weak_title_rescue(
@@ -17186,6 +17511,7 @@ def _main(args, logger):
                 published_at=item.get("published_at"),
                 duplicate_guard_context=item.get("duplicate_guard_context"),
                 rewritten_title=draft_title,
+                routing_context=routing_context,
             )
             duplicate_guard_context = item.get("duplicate_guard_context")
             if isinstance(duplicate_guard_context, dict) and duplicate_guard_context.get("guard_outcome") == "skip":
@@ -17249,7 +17575,7 @@ def _main(args, logger):
             }
             body_contract_validate = _validate_body_candidate(
                 ai_body_for_x,
-                title_article_subtype,
+                validator_article_subtype,
                 rendered_html=content,
                 source_context=fact_conflict_source_refs,
             )
@@ -17278,7 +17604,7 @@ def _main(args, logger):
                             logger,
                             source_url=post_url,
                             category=category,
-                            article_subtype=title_article_subtype,
+                            article_subtype=validator_article_subtype,
                             fail_axes=list(body_contract_validate["fail_axes"]),
                             expected_first_block=str(body_contract_validate.get("expected_first_block") or ""),
                             actual_first_block=str(body_contract_validate.get("actual_first_block") or ""),
@@ -17290,7 +17616,7 @@ def _main(args, logger):
                             logger,
                             source_url=post_url,
                             category=category,
-                            article_subtype=title_article_subtype,
+                            article_subtype=validator_article_subtype,
                             fail_axes=list(body_contract_validate["fail_axes"]),
                             expected_first_block=str(body_contract_validate.get("expected_first_block") or ""),
                             actual_first_block=str(body_contract_validate.get("actual_first_block") or ""),
@@ -17306,7 +17632,7 @@ def _main(args, logger):
                             source_title=raw_title,
                             generated_title=draft_title,
                             category=category,
-                            article_subtype=title_article_subtype,
+                            article_subtype=validator_article_subtype,
                             validation_result=body_contract_validate,
                             validation_action=str(body_contract_validate.get("action") or "fail"),
                             body_excerpt=ai_body_for_x,
@@ -17317,7 +17643,7 @@ def _main(args, logger):
             preview_body_html = _render_preview_body_html(ai_body_for_x)
             post_gen_validate = _evaluate_post_gen_validate(
                 ai_body_for_x,
-                article_subtype=title_article_subtype,
+                article_subtype=validator_article_subtype,
                 title=draft_title,
                 source_refs=fact_conflict_source_refs,
                 rendered_html=preview_body_html,
@@ -17332,7 +17658,7 @@ def _main(args, logger):
                     body_html=content,
                     source_title=raw_title,
                     source_summary=summary,
-                    article_subtype=title_article_subtype,
+                    article_subtype=validator_article_subtype,
                     source_refs=fact_conflict_source_refs,
                     logger=logger,
                     source_url=post_url,
@@ -17370,7 +17696,7 @@ def _main(args, logger):
                         source_title=raw_title,
                         post_url=post_url,
                         category=category,
-                        article_subtype=title_article_subtype,
+                        article_subtype=validator_article_subtype,
                         fail_axes=list(post_gen_validate["fail_axes"]),
                         stop_reason=str(post_gen_validate.get("stop_reason") or ""),
                     )
@@ -17452,7 +17778,7 @@ def _main(args, logger):
                         quote_index=quote_index,
                         quote_count_in_article=total_media_quotes,
                     )
-            if source_type == "social_news" and not _social_source_prefers_structured_template(category, title_article_subtype):
+            if source_type == "social_news" and body_article_subtype == "social_news":
                 _log_social_body_template_applied(
                     logger,
                     post_id,
@@ -17462,7 +17788,7 @@ def _main(args, logger):
                     _social_section_count(ai_body_for_x),
                     _social_quote_count(raw_title, summary, ai_body_for_x),
                 )
-            if category == "首脳陣" and title_article_subtype == "manager":
+            if effective_story_category == "首脳陣" and body_article_subtype == "manager":
                 _log_manager_body_template_applied(
                     logger,
                     post_id,
@@ -17470,27 +17796,27 @@ def _main(args, logger):
                     _manager_quote_count(raw_title, summary),
                     _manager_section_count(ai_body_for_x),
                 )
-            if category == "試合速報" and _is_game_template_subtype(title_article_subtype):
+            if effective_story_category == "試合速報" and _is_game_template_subtype(body_article_subtype):
                 _log_game_body_template_applied(
                     logger,
                     post_id,
                     draft_title,
-                    title_article_subtype,
-                    _game_section_count(ai_body_for_x, title_article_subtype),
+                    body_article_subtype,
+                    _game_section_count(ai_body_for_x, body_article_subtype),
                     _game_numeric_count(raw_title, summary, ai_body_for_x),
                     _game_name_count(raw_title, summary, ai_body_for_x),
                 )
-            if category == "ドラフト・育成" and _is_farm_template_subtype(title_article_subtype):
+            if effective_story_category == "ドラフト・育成" and _is_farm_template_subtype(body_article_subtype):
                 _log_farm_body_template_applied(
                     logger,
                     post_id,
                     draft_title,
-                    title_article_subtype,
-                    _farm_section_count(ai_body_for_x, title_article_subtype),
+                    body_article_subtype,
+                    _farm_section_count(ai_body_for_x, body_article_subtype),
                     _farm_numeric_count(raw_title, summary, ai_body_for_x),
                     _farm_is_drafted_player_story(raw_title, summary),
                 )
-            if _is_recovery_template_story(raw_title, summary, effective_story_category):
+            if body_article_subtype == "player_recovery":
                 recovery_subject = _extract_recovery_subject(raw_title, summary)
                 _log_recovery_body_template_applied(
                     logger,
@@ -17500,7 +17826,7 @@ def _main(args, logger):
                     _extract_recovery_return_timing(raw_title, summary, recovery_subject),
                     _recovery_section_count(ai_body_for_x),
                 )
-            if _is_notice_template_story(raw_title, summary, effective_story_category):
+            if body_article_subtype == "player_notice":
                 _notice_subject, notice_type = _extract_notice_subject_and_type(raw_title, summary)
                 _log_notice_body_template_applied(
                     logger,

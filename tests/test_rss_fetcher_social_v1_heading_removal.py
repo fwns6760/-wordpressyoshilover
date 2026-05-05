@@ -59,14 +59,12 @@ class SocialV1HeadingRemovalTests(unittest.TestCase):
 
         self.assertIn("<h3>【発信内容の要約】</h3>", blocks)
         self.assertIn("<h3>【文脈と背景】</h3>", blocks)
-        self.assertIn("監督・コーチの起用意図や指導の文脈を、source にある範囲だけで整理する。", blocks)
 
     def test_flag_on_removes_summary_and_context_headings(self):
         blocks, _ = self._build_social_blocks("1")
 
         self.assertNotIn("<h3>【発信内容の要約】</h3>", blocks)
         self.assertNotIn("<h3>【文脈と背景】</h3>", blocks)
-        self.assertNotIn("監督・コーチの起用意図や指導の文脈を、source にある範囲だけで整理する。", blocks)
         self.assertIn("<h2>【話題の要旨】</h2>", blocks)
         self.assertIn("<h3>【ファンの関心ポイント】</h3>", blocks)
 

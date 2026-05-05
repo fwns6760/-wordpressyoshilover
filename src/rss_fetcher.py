@@ -253,6 +253,7 @@ ENABLE_RSS_SOCIAL_PLAYER_SUBROUTE_ENV_FLAG = "ENABLE_RSS_SOCIAL_PLAYER_SUBROUTE"
 ENABLE_FARM_CATEGORY_NARROW_FIX_ENV_FLAG = "ENABLE_FARM_CATEGORY_NARROW_FIX"
 ENABLE_RSS_SUBTYPE_CONSISTENCY_GUARD_ENV_FLAG = "ENABLE_RSS_SUBTYPE_CONSISTENCY_GUARD"
 ENABLE_FETCHER_STALE_SOURCE_GUARD_ENV_FLAG = "ENABLE_FETCHER_STALE_SOURCE_GUARD"
+ENABLE_TITLE_HASHTAG_NAME_RECOVERY_ENV_FLAG = "ENABLE_TITLE_HASHTAG_NAME_RECOVERY"
 WEAK_TITLE_RESCUE_ENV_FLAG = "ENABLE_WEAK_TITLE_RESCUE"
 NARROW_UNLOCK_NON_POSTGAME_ENV_FLAG = "ENABLE_NARROW_UNLOCK_NON_POSTGAME"
 NARROW_UNLOCK_SUBTYPE_AWARE_ENV_FLAG = "ENABLE_NARROW_UNLOCK_SUBTYPE_AWARE"
@@ -441,6 +442,13 @@ GENERIC_TITLE_BLOCKLIST_V2 = (
     "話題の要旨",
     "ベンチ関連発言",
     "コメント整理",
+)
+TITLE_HASHTAG_NAME_RECOVERY_LEADING_PUNCT_RE = _re.compile(r"^[、，,]")
+TITLE_HASHTAG_NAME_RECOVERY_ROLE_RE = _re.compile(
+    r"(?<![一-龥々ァ-ヴーA-Za-zＡ-Ｚａ-ｚ0-9０-９])(?P<role>投手|選手)(?=(?:が|は|も|の|を|、|，|,|「|『|$))"
+)
+TITLE_HASHTAG_NAME_RECOVERY_HASHTAG_RE = _re.compile(
+    r"#(?P<tag>[A-Za-zＡ-Ｚａ-ｚ0-9０-９一-龥々ぁ-ゔァ-ヴー・･.\-]{2,24})"
 )
 MANAGER_QUOTE_SHORT_TITLE_REPAIR_TARGET_MARKERS = (
     "ベンチ関連の発言ポイント",
@@ -1357,6 +1365,10 @@ def _rss_template_routing_v2_enabled() -> bool:
 
 def _postgame_no_score_short_comment_reroute_enabled() -> bool:
     return _env_flag(ENABLE_POSTGAME_NO_SCORE_SHORT_COMMENT_REROUTE_ENV_FLAG, False)
+
+
+def _title_hashtag_name_recovery_enabled() -> bool:
+    return _env_flag(ENABLE_TITLE_HASHTAG_NAME_RECOVERY_ENV_FLAG, False)
 
 
 def _manager_required_headings() -> tuple[str, ...]:
@@ -15885,6 +15897,16 @@ def _matching_giants_roster_names(text: str) -> list[str]:
     return hits
 
 
+def _match_giants_roster_hashtag_alias(text: str) -> str:
+    normalized = _normalize_roster_signal_text(text)
+    if len(normalized) < 2:
+        return ""
+    for entry in _giants_roster_alias_index():
+        if normalized in entry["aliases"]:
+            return str(entry["name"] or "")
+    return ""
+
+
 def _is_other_team_transfer_story(text: str, roster_hits: list[str]) -> bool:
     if not roster_hits:
         return False
@@ -17263,6 +17285,58 @@ def _extract_v2_title_action(
     return ""
 
 
+def _extract_giants_hashtag_name_recovery_candidates(source_text: str) -> list[tuple[str, str]]:
+    clean_source_text = _collapse_ws(_strip_html(source_text or ""))
+    if not clean_source_text or "#" not in clean_source_text:
+        return []
+    candidates: list[tuple[str, str]] = []
+    for match in TITLE_HASHTAG_NAME_RECOVERY_HASHTAG_RE.finditer(clean_source_text):
+        roster_name = _match_giants_roster_hashtag_alias(match.group("tag"))
+        if not roster_name:
+            continue
+        candidates.append((roster_name, clean_source_text[match.end():].lstrip()))
+    return candidates
+
+
+def _recover_title_from_hashtag_name(
+    raw_title: str,
+    *,
+    source_title: str = "",
+    summary: str = "",
+) -> str:
+    if not _title_hashtag_name_recovery_enabled():
+        return raw_title
+
+    clean_title = _collapse_ws(_strip_html(raw_title or "")).strip()
+    if not clean_title:
+        return raw_title
+
+    leading_punct_match = TITLE_HASHTAG_NAME_RECOVERY_LEADING_PUNCT_RE.match(clean_title)
+    role_match = TITLE_HASHTAG_NAME_RECOVERY_ROLE_RE.search(clean_title)
+    if not leading_punct_match and not role_match:
+        return raw_title
+    if role_match and title_has_person_name_candidate(clean_title[:role_match.start()].rstrip(" ・、，,")):
+        return raw_title
+
+    candidates = _extract_giants_hashtag_name_recovery_candidates(f"{source_title} {summary}")
+    if not candidates:
+        return raw_title
+
+    if leading_punct_match:
+        for roster_name, tail in candidates:
+            if tail.startswith(clean_title):
+                return _trim_display_title(f"{roster_name}{clean_title}", max_chars=42)
+
+    if role_match:
+        role_remainder = clean_title[role_match.start():].lstrip()
+        prefix = clean_title[:role_match.start()].rstrip()
+        for roster_name, tail in candidates:
+            if tail.startswith(role_remainder):
+                return _trim_display_title(f"{prefix}{roster_name}{clean_title[role_match.start():]}", max_chars=42)
+
+    return raw_title
+
+
 def _finalize_title(
     raw_title: str,
     *,
@@ -17270,6 +17344,11 @@ def _finalize_title(
     summary: str = "",
     analysis: Mapping[str, object] | None = None,
 ) -> tuple[str, _WeakTitleReviewFallback | None]:
+    raw_title = _recover_title_from_hashtag_name(
+        raw_title,
+        source_title=source_title,
+        summary=summary,
+    )
     blocklisted_phrase = _generic_title_blocklist_v2_phrase(raw_title)
     if not blocklisted_phrase:
         return raw_title, None

@@ -233,6 +233,11 @@ GEMINI_STRICT_PROMPT_TEMPLATE_VERSION = "v1"
 POST_GEN_VALIDATE_NOTIFICATION_ENV_FLAG = "ENABLE_POST_GEN_VALIDATE_NOTIFICATION"
 PREFLIGHT_SKIP_NOTIFICATION_ENV_FLAG = "ENABLE_PREFLIGHT_SKIP_NOTIFICATION"
 PREFLIGHT_SKIP_LEDGER_PATH_ENV = "PREFLIGHT_SKIP_LEDGER_PATH"
+ENABLE_GENERIC_TITLE_REPAIR_ENV_FLAG = "ENABLE_GENERIC_TITLE_REPAIR"
+ENABLE_SHORT_SOURCE_NARROW_TEMPLATE_ENV_FLAG = "ENABLE_SHORT_SOURCE_NARROW_TEMPLATE"
+ENABLE_FARM_SUBTYPE_SPLIT_ENV_FLAG = "ENABLE_FARM_SUBTYPE_SPLIT"
+ENABLE_BODY_DUP_REDUCTION_ENV_FLAG = "ENABLE_BODY_DUP_REDUCTION"
+ENABLE_SOCIAL_TOO_WEAK_NARROW_RESCUE_ENV_FLAG = "ENABLE_SOCIAL_TOO_WEAK_NARROW_RESCUE"
 WEAK_TITLE_RESCUE_ENV_FLAG = "ENABLE_WEAK_TITLE_RESCUE"
 NARROW_UNLOCK_NON_POSTGAME_ENV_FLAG = "ENABLE_NARROW_UNLOCK_NON_POSTGAME"
 NARROW_UNLOCK_SUBTYPE_AWARE_ENV_FLAG = "ENABLE_NARROW_UNLOCK_SUBTYPE_AWARE"
@@ -382,6 +387,98 @@ PROMPT_ROLE_ECHO_PREFIXES = (
 )
 GEMINI_FLASH_THINKING_BUDGET = 0
 ENABLE_BODY_TEMPLATE_V2_ENV_FLAG = "ENABLE_BODY_TEMPLATE_V2"
+SHORT_SOURCE_NARROW_TEMPLATE_MAX_CHARS = 200
+SHORT_SOURCE_NARROW_TEMPLATE_SUBTYPES = frozenset(
+    {
+        "player_notice",
+        "player_recovery",
+        "social_news",
+        "farm",
+        "roster",
+    }
+)
+GENERIC_TITLE_ONLY_MARKERS = (
+    "関連情報",
+    "関連発言",
+    "発言整理",
+    "試合後発言",
+    "試合後発言整理",
+    "ベンチ関連発言",
+    "ベンチ関連の発言ポイント",
+    "コメント整理",
+)
+GENERIC_TITLE_REPAIR_ACTION_LABELS = (
+    ("登録抹消", ("登録抹消", "抹消")),
+    ("一軍合流", ("一軍合流", "合流")),
+    ("一軍登録", ("一軍登録", "再登録", "登録")),
+    ("復帰", ("実戦復帰", "復帰")),
+    ("昇格", ("昇格",)),
+    ("先発", ("先発",)),
+    ("登板", ("登板",)),
+    ("発言", ("発言", "コメント", "談話", "一問一答", "語った", "話した")),
+    ("起用方針", ("起用", "スタメン", "打順", "オーダー")),
+    ("安打", ("安打",)),
+    ("本塁打", ("本塁打", "ホームラン")),
+    ("失点", ("失点",)),
+    ("好投", ("好投",)),
+    ("勝利", ("勝利", "白星")),
+    ("敗戦", ("敗戦", "黒星")),
+)
+FARM_SUBTYPE_SPLIT_KEYWORDS = (
+    "二軍",
+    "２軍",
+    "2軍",
+    "三軍",
+    "３軍",
+    "3軍",
+    "ファーム",
+    "育成",
+    "JABA",
+)
+FARM_SUBTYPE_RESULT_MARKERS = (
+    "勝利",
+    "敗戦",
+    "白星",
+    "黒星",
+    "好投",
+    "本塁打",
+    "適時打",
+    "猛打賞",
+    "マルチ",
+    "スタメン",
+    "先発",
+)
+SOCIAL_TOO_WEAK_NARROW_RESCUE_SOURCE_KEYS = frozenset(
+    {
+        "hochi_giants",
+        "news.hochi.news",
+        "hochi.news",
+        "sanspo_giants",
+        "www.sanspo.com",
+        "sanspo.com",
+        "sponichi_giants",
+        "www.sponichi.co.jp",
+        "sponichi.co.jp",
+        "tokyogiants",
+    }
+)
+SOCIAL_TOO_WEAK_NARROW_RESCUE_KEYWORDS = (
+    "登録",
+    "抹消",
+    "故障",
+    "復帰",
+    "二軍",
+    "２軍",
+    "2軍",
+    "三軍",
+    "３軍",
+    "3軍",
+    "育成",
+    "ファーム",
+    "コメント",
+    "談話",
+    "一問一答",
+)
 MANAGER_BODY_TEMPLATE_VERSION = "manager_v1"
 MANAGER_BODY_TEMPLATE_VERSION_V2 = "manager_v2"
 MANAGER_REQUIRED_HEADINGS = (
@@ -825,6 +922,24 @@ SOCIAL_PLAYER_NOTICE_RESCUE_KEYWORDS = (
     "昇格",
 )
 SOCIAL_GAME_NOTICE_RESCUE_KEYWORDS = ("復帰", "合流")
+SOCIAL_FARM_NOTICE_RESCUE_KEYWORDS = (
+    "二軍",
+    "２軍",
+    "2軍",
+    "三軍",
+    "３軍",
+    "3軍",
+    "ファーム",
+    "育成",
+    "支配下",
+    "昇格",
+    "本塁打",
+    "好投",
+    "猛打賞",
+    "マルチ",
+    "適時打",
+    "先発",
+)
 SOCIAL_COLUMN_NOTICE_RESCUE_KEYWORDS = (
     "一軍登録",
     "登録抹消",
@@ -1110,6 +1225,26 @@ def _body_template_v2_enabled() -> bool:
 
 def _social_v1_heading_removal_enabled() -> bool:
     return _env_flag("ENABLE_SOCIAL_V1_HEADING_REMOVAL", False)
+
+
+def _generic_title_repair_enabled() -> bool:
+    return _env_flag(ENABLE_GENERIC_TITLE_REPAIR_ENV_FLAG, False)
+
+
+def _short_source_narrow_template_enabled() -> bool:
+    return _env_flag(ENABLE_SHORT_SOURCE_NARROW_TEMPLATE_ENV_FLAG, False)
+
+
+def _farm_subtype_split_enabled() -> bool:
+    return _env_flag(ENABLE_FARM_SUBTYPE_SPLIT_ENV_FLAG, False)
+
+
+def _body_dup_reduction_enabled() -> bool:
+    return _env_flag(ENABLE_BODY_DUP_REDUCTION_ENV_FLAG, False)
+
+
+def _social_too_weak_narrow_rescue_enabled() -> bool:
+    return _env_flag(ENABLE_SOCIAL_TOO_WEAK_NARROW_RESCUE_ENV_FLAG, False)
 
 
 def _manager_required_headings() -> tuple[str, ...]:
@@ -3507,22 +3642,78 @@ def fetch_today_giants_game_status_from_yahoo() -> dict:
     return fetch_giants_game_status_from_yahoo()
 
 
+def _farm_category_markers() -> tuple[str, ...]:
+    markers = [
+        "二軍戦",
+        "２軍戦",
+        "2軍戦",
+        "二軍",
+        "２軍",
+        "2軍",
+        "ファーム",
+        "育成",
+    ]
+    if _farm_subtype_split_enabled():
+        markers.extend(("三軍戦", "３軍戦", "3軍戦", "三軍", "３軍", "3軍"))
+    return tuple(markers)
+
+
+def _farm_split_keyword_hits(text: str) -> list[str]:
+    return [marker for marker in FARM_SUBTYPE_SPLIT_KEYWORDS if marker in (text or "")]
+
+
+def _farm_split_first_team_priority_hits(text: str) -> list[str]:
+    priority_markers = ("一軍",) + TITLE_VENUE_MARKERS
+    return [marker for marker in priority_markers if marker in (text or "")]
+
+
+def _maybe_apply_farm_subtype_split(text: str, category: str, resolved_subtype: str) -> str:
+    if not _farm_subtype_split_enabled():
+        return resolved_subtype
+    keyword_hits = _farm_split_keyword_hits(text)
+    if not keyword_hits:
+        return resolved_subtype
+    if _farm_split_first_team_priority_hits(text):
+        return resolved_subtype
+    if resolved_subtype == "farm_lineup":
+        return resolved_subtype
+    if category == "ドラフト・育成" or SCORE_TOKEN_RE.search(text) or any(marker in text for marker in FARM_SUBTYPE_RESULT_MARKERS):
+        post_subtype = "farm"
+    else:
+        post_subtype = resolved_subtype
+    if post_subtype != resolved_subtype:
+        logging.getLogger("rss_fetcher").info(
+            json.dumps(
+                {
+                    "event": "farm_subtype_split_applied",
+                    "severity": "INFO",
+                    "pre_subtype": resolved_subtype,
+                    "post_subtype": post_subtype,
+                    "keyword_hits": keyword_hits,
+                },
+                ensure_ascii=False,
+            )
+        )
+    return post_subtype
+
+
 def _detect_article_subtype(title: str, summary: str, category: str, has_game: bool) -> str:
     text = _strip_html(f"{title} {summary}")
     if _is_farm_lineup_text(text):
         return "farm_lineup"
     if category == "試合速報":
         if _has_explicit_confirmed_result(text):
-            return "postgame"
-        if _has_live_update_fragment(text):
-            return "live_update"
-        if SCORE_TOKEN_RE.search(text):
-            return "postgame"
-        if _has_lineup_core(text):
-            return "lineup"
-        if has_game:
-            return "pregame"
-        subtype = "game_note"
+            subtype = "postgame"
+        elif _has_live_update_fragment(text):
+            subtype = "live_update"
+        elif SCORE_TOKEN_RE.search(text):
+            subtype = "postgame"
+        elif _has_lineup_core(text):
+            subtype = "lineup"
+        elif has_game:
+            subtype = "pregame"
+        else:
+            subtype = "game_note"
     elif category == "ドラフト・育成":
         subtype = "farm"
     elif category == "首脳陣":
@@ -3539,11 +3730,11 @@ def _detect_article_subtype(title: str, summary: str, category: str, has_game: b
         opponent = _extract_game_opponent_label(text)
         if score and opponent:
             # Keep result-shaped leftovers on the postgame rail instead of a generic default.
-            return "postgame"
-        if any(marker in text for marker in FACT_NOTICE_PRIMARY_MARKERS):
+            subtype = "postgame"
+        elif any(marker in text for marker in FACT_NOTICE_PRIMARY_MARKERS):
             # Correction or retraction markers are safer to park in the fact_notice shell.
-            return "fact_notice"
-    return subtype
+            subtype = "fact_notice"
+    return _maybe_apply_farm_subtype_split(text, category, subtype)
 
 
 def _is_promotional_video_entry(title: str, summary: str) -> bool:
@@ -9079,6 +9270,217 @@ def _render_notice_rule_based(
     return "\n".join(sections)
 
 
+def _is_short_source_narrow_template_candidate(source_text: str, body_subtype: str) -> bool:
+    if not _short_source_narrow_template_enabled():
+        return False
+    if body_subtype not in SHORT_SOURCE_NARROW_TEMPLATE_SUBTYPES:
+        return False
+    return len(_collapse_ws(_strip_html(source_text or ""))) < SHORT_SOURCE_NARROW_TEMPLATE_MAX_CHARS
+
+
+def _short_source_comment_prompt(body_subtype: str) -> str:
+    mapping = {
+        "player_notice": "今回の動きが次の起用にどうつながるか、コメントで教えてください。",
+        "player_recovery": "復帰時期や次の実戦で見たい点を、コメントで教えてください。",
+        "social_news": "この発信の受け止め方や次に見たい動きを、コメントで教えてください。",
+        "farm": "この内容が一軍昇格や次の起用にどうつながるか、コメントで教えてください。",
+        "roster": "この補強・移籍情報をどう見るか、コメントで教えてください。",
+    }
+    return mapping.get(body_subtype, "続報で見たい点をコメントで教えてください。")
+
+
+def _build_short_source_narrow_body(
+    *,
+    title: str,
+    summary: str,
+    category: str,
+    body_subtype: str,
+    source_url: str,
+    source_name: str = "",
+    source_day_label: str = "",
+) -> str | None:
+    facts = _rule_based_fact_lines(title, summary, max_sentences=4, limit=110)
+    source_text = _strip_html(f"{title} {summary}")
+    quote_phrases = _extract_quote_phrases(f"{title}\n{summary}", max_phrases=1)
+    source_label = _display_source_name(source_name) if source_name else "元記事"
+    prefix = f"（{source_day_label}時点）" if source_day_label else ""
+
+    if body_subtype == "player_notice":
+        notice_subject, notice_type = _extract_notice_subject_and_type(title, summary)
+        if not facts:
+            return None
+        headings = _notice_required_headings()
+        sections = [
+            headings[0],
+            f"{prefix}{facts[0]}。".strip(),
+            headings[1],
+            f"{notice_subject or '対象選手'}に関する公示・登録情報です。",
+            headings[2],
+            f"{quote_phrases[0]}。"
+            if quote_phrases
+            else f"{facts[1]}。" if len(facts) > 1 else f"{source_label}が伝えた範囲で整理します。",
+            headings[3],
+            f"{notice_type or '今回の動き'}の続報と実際の起用を見ていきたいところです。",
+            _short_source_comment_prompt(body_subtype),
+        ]
+        if source_url:
+            sections.append(f"出典: {source_url}")
+        return "\n".join(sections)
+
+    if body_subtype == "player_recovery":
+        recovery_subject = _compact_subject_label(title, summary, category) or "対象選手"
+        if not facts:
+            return None
+        headings = _recovery_required_headings()
+        sections = [
+            headings[0],
+            f"{prefix}{facts[0]}。".strip(),
+            headings[1],
+            f"{facts[1]}。" if len(facts) > 1 else f"{recovery_subject}の状態変化として確認できる要点です。",
+            headings[2],
+            f"{quote_phrases[0]}。"
+            if quote_phrases
+            else f"{facts[2]}。" if len(facts) > 2 else f"{source_label}が伝えた範囲で復帰見通しを整理します。",
+            headings[3],
+            f"{recovery_subject}が次の実戦でどこまで状態を戻せるかが注目点です。",
+            _short_source_comment_prompt(body_subtype),
+        ]
+        if source_url:
+            sections.append(f"出典: {source_url}")
+        return "\n".join(sections)
+
+    if body_subtype == "social_news":
+        social_headings = _social_required_headings()
+        if not facts:
+            facts = [_strip_title_prefix(title) or "X投稿で伝えられた内容"]
+        sections = [
+            social_headings[0],
+            f"{prefix}{facts[0]}。".strip(),
+            social_headings[1],
+            f"{quote_phrases[0]}。"
+            if quote_phrases
+            else f"{facts[1]}。" if len(facts) > 1 else f"{source_label}の投稿要点を短く整理します。",
+            social_headings[2],
+            f"{facts[2]}。" if len(facts) > 2 else f"{source_label}が発信した範囲に限って整理します。",
+            social_headings[3],
+            _short_source_comment_prompt(body_subtype),
+        ]
+        if source_url:
+            sections.append(f"出典: {source_url}")
+        return "\n".join(sections)
+
+    if body_subtype == "farm":
+        headings = _farm_required_headings("farm")
+        if not headings:
+            return None
+        if not facts:
+            facts = [_strip_title_prefix(title) or "ファーム情報"]
+        sections = [
+            headings[0],
+            f"{prefix}{facts[0]}。".strip(),
+            headings[1],
+            f"{facts[1]}。" if len(facts) > 1 else "ファームで確認できたプレーを短く整理します。",
+            headings[2],
+            f"{facts[2]}。" if len(facts) > 2 else f"{source_label}が伝えた範囲で個別の動きを確認します。",
+            headings[3],
+            _short_source_comment_prompt(body_subtype),
+        ]
+        if source_url:
+            sections.append(f"出典: {source_url}")
+        return "\n".join(sections)
+
+    if body_subtype == "roster":
+        headings = _article_section_headings("補強・移籍", False)
+        facts = facts or [_strip_title_prefix(title) or "補強・移籍情報"]
+        sections = [
+            headings[0],
+            f"{prefix}{facts[0]}。".strip(),
+            headings[1],
+            f"{quote_phrases[0]}。"
+            if quote_phrases
+            else f"{facts[1]}。" if len(facts) > 1 else f"{source_label}が伝えた要点を整理します。",
+            headings[2],
+            _short_source_comment_prompt(body_subtype),
+        ]
+        if source_url:
+            sections.append(f"出典: {source_url}")
+        return "\n".join(sections)
+
+    return None
+
+
+def _short_source_narrow_template_contract_ok(body_text: str, body_subtype: str) -> tuple[bool, list[str]]:
+    if body_subtype == "player_notice":
+        return _notice_body_has_required_structure(body_text), ["notice_required_headings"]
+    if body_subtype == "player_recovery":
+        return _recovery_body_has_required_structure(body_text), ["recovery_required_headings"]
+    if body_subtype == "social_news":
+        return _social_body_has_required_structure(body_text), ["social_required_headings"]
+    if body_subtype == "farm":
+        return _farm_body_has_required_structure(body_text, "farm"), ["farm_required_headings"]
+    if body_subtype == "roster":
+        sections = _split_text_sections(body_text)
+        return len(sections) >= 3, ["roster_short_sections"]
+    return False, ["unsupported_body_subtype"]
+
+
+def _maybe_build_short_source_narrow_body(
+    *,
+    title: str,
+    summary: str,
+    category: str,
+    body_subtype: str,
+    source_url: str,
+    source_name: str,
+    source_day_label: str,
+    logger: logging.Logger,
+) -> str | None:
+    source_text = f"{title} {summary}"
+    source_length = len(_collapse_ws(_strip_html(source_text)))
+    if not _is_short_source_narrow_template_candidate(source_text, body_subtype):
+        return None
+    body_text = _build_short_source_narrow_body(
+        title=title,
+        summary=summary,
+        category=category,
+        body_subtype=body_subtype,
+        source_url=source_url,
+        source_name=source_name,
+        source_day_label=source_day_label,
+    )
+    if not body_text:
+        return None
+    contract_ok, fail_axes = _short_source_narrow_template_contract_ok(body_text, body_subtype)
+    if not contract_ok:
+        logger.warning(
+            json.dumps(
+                {
+                    "event": "short_template_blocked_by_contract",
+                    "severity": "WARNING",
+                    "subtype": body_subtype,
+                    "source_length": source_length,
+                    "body_length": len(body_text),
+                    "fail_axes": fail_axes,
+                },
+                ensure_ascii=False,
+            )
+        )
+        return None
+    logger.info(
+        json.dumps(
+            {
+                "event": "short_source_narrow_template_used",
+                "severity": "INFO",
+                "subtype": body_subtype,
+                "source_length": source_length,
+                "body_length": len(body_text),
+            },
+            ensure_ascii=False,
+        )
+    )
+    return body_text
+
+
 def _build_rule_based_subtype_body(
     *,
     title: str,
@@ -9268,6 +9670,92 @@ def _split_text_sections(text: str) -> list[tuple[str, str]]:
     if current_heading or current_lines:
         sections.append((current_heading, "\n".join(current_lines).strip()))
     return sections
+
+
+def _body_dup_reduction_sentence_units(text: str) -> list[str]:
+    parts = _re.split(r"(?<=[。！？!?])\s*", _collapse_ws(text or ""))
+    return [part.strip() for part in parts if part.strip()]
+
+
+def _body_dup_reduction_ngram_overlap(left: str, right: str, size: int = 3) -> float:
+    left_norm = _normalize_title_for_dedupe(left)
+    right_norm = _normalize_title_for_dedupe(right)
+    if len(left_norm) < size or len(right_norm) < size:
+        return 0.0
+    left_ngrams = {left_norm[index:index + size] for index in range(len(left_norm) - size + 1)}
+    right_ngrams = {right_norm[index:index + size] for index in range(len(right_norm) - size + 1)}
+    if not left_ngrams or not right_ngrams:
+        return 0.0
+    return len(left_ngrams & right_ngrams) / max(len(left_ngrams), 1)
+
+
+def _sentence_duplicates_title_or_heading(sentence: str, title: str, headings: list[str]) -> bool:
+    sentence_norm = _normalize_title_for_dedupe(sentence)
+    if not sentence_norm:
+        return False
+    title_norm = _normalize_title_for_dedupe(title)
+    if title_norm and (sentence_norm in title_norm or title_norm in sentence_norm):
+        return True
+    if title_norm and _body_dup_reduction_ngram_overlap(sentence, title) >= 0.55:
+        return True
+    for heading in headings:
+        heading_norm = _normalize_title_for_dedupe(_collapse_ws(heading).strip("【】"))
+        if not heading_norm:
+            continue
+        if heading_norm in sentence_norm:
+            return True
+        if _body_dup_reduction_ngram_overlap(sentence, heading_norm) >= 0.6:
+            return True
+    return False
+
+
+def _maybe_reduce_body_intro_dup(
+    *,
+    body_text: str,
+    article_title: str,
+    article_subtype: str,
+    logger: logging.Logger,
+) -> str:
+    if not _body_dup_reduction_enabled():
+        return body_text
+    sections = _split_text_sections(body_text)
+    if not sections:
+        return body_text
+    first_heading, first_body = sections[0]
+    sentences = _body_dup_reduction_sentence_units(first_body)
+    if len(sentences) < 2:
+        return body_text
+    heading_candidates = [heading for heading, _body in sections[:2] if heading]
+    removed_sentences: list[str] = []
+    while len(sentences) > 1 and _sentence_duplicates_title_or_heading(sentences[0], article_title, heading_candidates):
+        removed_sentences.append(sentences.pop(0))
+    if not removed_sentences:
+        return body_text
+    rebuilt_first_body = " ".join(sentences).strip()
+    if not rebuilt_first_body:
+        return body_text
+    sections[0] = (first_heading, rebuilt_first_body)
+    rebuilt_lines: list[str] = []
+    for heading, section_body in sections:
+        if heading:
+            rebuilt_lines.append(heading)
+        if section_body:
+            rebuilt_lines.extend(line.strip() for line in section_body.splitlines() if line.strip())
+    reduced_body = "\n".join(rebuilt_lines)
+    removed_chars = len(" ".join(removed_sentences))
+    if removed_chars > 0:
+        logger.info(
+            json.dumps(
+                {
+                    "event": "body_dup_reduction_applied",
+                    "severity": "INFO",
+                    "subtype": article_subtype,
+                    "removed_chars": removed_chars,
+                },
+                ensure_ascii=False,
+            )
+        )
+    return reduced_body
 
 
 def _render_preview_body_html(text: str) -> str:
@@ -11289,7 +11777,7 @@ X検索で「{query_short} 巨人」に関するファンの声を{fan_reaction_
 # ──────────────────────────────────────────────────────────
 # ニュース記事ブロックHTML生成
 # ──────────────────────────────────────────────────────────
-def build_news_block(title: str, summary: str, url: str, source_name: str, category: str = "コラム", og_image_url: str = "", media_id: int = 0, extra_images: list = None, has_game: bool = True, article_ai_mode_override: str | None = None, source_links: list[dict] | None = None, source_day_label: str = "", source_type: str = "news", media_quotes: list[dict] | None = None, source_entry: dict | None = None, post_context: dict | None = None, published_at: datetime | None = None, duplicate_guard_context: dict | None = None) -> tuple[str, str]:
+def build_news_block(title: str, summary: str, url: str, source_name: str, category: str = "コラム", og_image_url: str = "", media_id: int = 0, extra_images: list = None, has_game: bool = True, article_ai_mode_override: str | None = None, source_links: list[dict] | None = None, source_day_label: str = "", source_type: str = "news", media_quotes: list[dict] | None = None, source_entry: dict | None = None, post_context: dict | None = None, published_at: datetime | None = None, duplicate_guard_context: dict | None = None, rewritten_title: str = "") -> tuple[str, str]:
     import re
     summary_clean = re.sub(r"<[^>]+>", "", summary).strip()
     article_subtype = _detect_article_subtype(title, summary_clean, category, has_game)
@@ -11410,6 +11898,19 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                     logger.warning("manager_quote_zero_review: route_to_review reason=%s", manager_review.reason)
                     duplicate_guard_context["manager_quote_zero_review_reason"] = manager_review.reason
                     return "", ""
+        short_source_body = _maybe_build_short_source_narrow_body(
+            title=title,
+            summary=summary_clean,
+            category=effective_generation_category,
+            body_subtype=body_subtype,
+            source_url=url,
+            source_name=source_name,
+            source_day_label=source_day_label,
+            logger=logger,
+        )
+        if short_source_body is not None:
+            rule_based_generated = True
+            return short_source_body, ""
         rule_based_body = _build_rule_based_subtype_body(
             title=title,
             summary=summary_clean,
@@ -11658,6 +12159,12 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                     generation_category,
                     subject,
                 )
+        ai_body = _maybe_reduce_body_intro_dup(
+            body_text=ai_body,
+            article_title=rewritten_title or title,
+            article_subtype=body_subtype,
+            logger=logger,
+        )
         ai_body = _apply_article_body_quality_sanitizer(ai_body)
     if summary_block and not _text_is_safe(title, summary_clean, summary_block, has_game):
         logger.warning("SUMMARYブロックを破棄: 事実制約に違反")
@@ -13969,6 +14476,79 @@ def _trusted_social_signal_match(text: str, category: str, article_subtype: str)
     return ""
 
 
+def _social_too_weak_narrow_rescue_source_key(source_url: str, source_handle: str, source_name: str) -> str:
+    source_handle_key = str(source_handle or "").strip().lstrip("@").lower()
+    if source_handle_key:
+        return source_handle_key
+    source_family = _extract_source_family(source_url)
+    if source_family and source_family != "unknown":
+        return source_family
+    raw_url = _html.unescape(str(source_url or "")).strip()
+    if raw_url:
+        try:
+            from urllib.parse import urlparse
+
+            return urlparse(raw_url).netloc.lower()
+        except Exception:
+            return raw_url.lower()
+    normalized_name = _collapse_ws(str(source_name or "")).replace(" ", "").lower()
+    return normalized_name
+
+
+def _social_too_weak_narrow_rescue_keyword_hits(title: str, summary: str, category: str) -> list[str]:
+    text = _strip_html(f"{title} {summary}")
+    hits: list[str] = []
+    subject = _compact_subject_label(title, summary, category)
+    if subject and title_has_person_name_candidate(subject):
+        hits.append(subject)
+    if category == "首脳陣":
+        manager_label = _extract_subject_label(title, summary, category)
+        if manager_label and manager_label not in {"巨人", "首脳陣"}:
+            hits.append(manager_label)
+    for keyword in SOCIAL_TOO_WEAK_NARROW_RESCUE_KEYWORDS:
+        if keyword in text:
+            hits.append(keyword)
+    return _dedupe_preserve_order(hits)
+
+
+def _social_too_weak_narrow_rescue_meta(
+    title: str,
+    summary: str,
+    category: str,
+    article_subtype: str,
+    *,
+    source_url: str = "",
+    source_name: str = "",
+    source_handle: str = "",
+) -> dict | None:
+    if not _social_too_weak_narrow_rescue_enabled():
+        return None
+    source_domain = _social_too_weak_narrow_rescue_source_key(source_url, source_handle, source_name)
+    if source_domain not in SOCIAL_TOO_WEAK_NARROW_RESCUE_SOURCE_KEYS:
+        return None
+    keyword_hits = _social_too_weak_narrow_rescue_keyword_hits(title, summary, category)
+    if not keyword_hits:
+        return None
+    logging.getLogger("rss_fetcher").info(
+        json.dumps(
+            {
+                "event": "social_too_weak_narrow_rescued",
+                "severity": "INFO",
+                "source_domain": source_domain,
+                "keyword_hits": keyword_hits,
+                "subtype": article_subtype,
+            },
+            ensure_ascii=False,
+        )
+    )
+    return {
+        "rescue_reason": "social_too_weak_narrow_rescue",
+        "matched_word": keyword_hits[0],
+        "keyword_hits": keyword_hits,
+        "source_domain": source_domain,
+    }
+
+
 def is_giants_related(text: str, source_name: str = "", post_url: str = "") -> bool:
     source_text = text or ""
     if any(kw in source_text for kw in GIANTS_KEYWORDS):
@@ -13988,7 +14568,7 @@ def classify_category(text: str, keywords: dict) -> str:
         return "選手情報"
     if _is_farm_lineup_text(text):
         return "ドラフト・育成"
-    if any(marker in text for marker in ("二軍戦", "２軍戦", "2軍戦", "二軍", "２軍", "2軍", "ファーム", "育成")):
+    if any(marker in text for marker in _farm_category_markers()):
         return "ドラフト・育成"
     for category, kws in keywords.items():
         if any(kw in text for kw in kws):
@@ -14030,6 +14610,7 @@ def _evaluate_authoritative_social_entry(
     article_subtype: str,
     source_name: str = "",
     source_handle: str = "",
+    source_url: str = "",
 ) -> tuple[bool, dict | None]:
     text = _strip_html(f"{title} {summary}")
     trusted_source = _is_trusted_social_source(source_handle, source_name)
@@ -14055,8 +14636,6 @@ def _evaluate_authoritative_social_entry(
             "rescue_reason": "zenkaku_2gun",
             "matched_word": "２軍",
         }
-    if category == "ドラフト・育成" and any(keyword in text for keyword in ("二軍", "2軍", "ファーム", "昇格", "支配下", "本塁打", "好投", "猛打賞", "マルチ", "適時打", "先発")):
-        return True, None
     if category == "試合速報":
         matched_keyword = _first_matching_keyword(text, SOCIAL_GAME_NOTICE_RESCUE_KEYWORDS)
         if matched_keyword:
@@ -14075,6 +14654,17 @@ def _evaluate_authoritative_social_entry(
             }
     if category == "補強・移籍" and any(keyword in text for keyword in ("獲得", "移籍", "トレード", "加入", "退団")):
         return True, None
+    narrow_rescue_meta = _social_too_weak_narrow_rescue_meta(
+        title,
+        summary,
+        category,
+        article_subtype,
+        source_url=source_url,
+        source_name=source_name,
+        source_handle=source_handle,
+    )
+    if narrow_rescue_meta:
+        return True, narrow_rescue_meta
     if trusted_source:
         matched_signal = _trusted_social_signal_match(text, category, article_subtype)
         if matched_signal:
@@ -14463,6 +15053,178 @@ def _normalize_game_story_subject(subject: str) -> str:
     ):
         return ""
     return normalized
+
+
+ARTICLEIZATION_SOURCE_TITLE_PASSTHROUGH_MARKERS = (
+    "顔面直撃",
+    "緊急",
+    "救急搬送",
+    "搬送",
+    "負傷",
+    "故障",
+    "けが",
+    "ケガ",
+    "実戦復帰",
+    "復帰初球",
+    "初球安打",
+    "故障明け",
+    "リハビリ",
+)
+
+
+def _source_title_has_articleization_detail(clean_title: str, source_text: str, category: str, subtype: str) -> bool:
+    title_text = _collapse_ws(_strip_html(clean_title or ""))
+    if len(title_text) < 8:
+        return False
+    if any(marker in title_text for marker in ("関連情報", "関連発言", "発言整理", "ベンチ関連発言")):
+        return False
+    if category == "ドラフト・育成" and SCORE_TOKEN_RE.search(title_text) and any(marker in source_text for marker in ("巨人", "二軍", "三軍", "ファーム")):
+        return True
+    if title_has_person_name_candidate(title_text) and any(marker in source_text for marker in ARTICLEIZATION_SOURCE_TITLE_PASSTHROUGH_MARKERS):
+        return True
+    if category == "ドラフト・育成" and any(marker in source_text for marker in ("二軍", "２軍", "2軍", "三軍", "３軍", "3軍", "ファーム")):
+        return True
+    return False
+
+
+def _source_title_result_if_specific(
+    clean_title: str,
+    source_text: str,
+    category: str,
+    subtype: str,
+    template_key: str,
+    *,
+    max_chars: int = 42,
+) -> tuple[str, str] | None:
+    if not _source_title_has_articleization_detail(clean_title, source_text, category, subtype):
+        return None
+    return _trim_display_title(clean_title, max_chars=max_chars), template_key
+
+
+def _is_generic_title_only_pattern(title: str) -> bool:
+    clean_title = _collapse_ws(_strip_html(title or "")).strip(" ・、。")
+    if not clean_title:
+        return True
+    if title_has_person_name_candidate(clean_title):
+        return False
+    if any(marker in clean_title for marker in ("監督", "コーチ")):
+        return False
+    normalized = _normalize_title_for_dedupe(clean_title)
+    for marker in GENERIC_TITLE_ONLY_MARKERS:
+        if normalized == _normalize_title_for_dedupe(marker):
+            return True
+    if len(clean_title) > 18:
+        return False
+    stripped = clean_title
+    for marker in GENERIC_TITLE_ONLY_MARKERS:
+        stripped = stripped.replace(marker, "")
+    stripped = _re.sub(r"[ 　・、。のはがをにでと確認整理関連ポイント]+", "", stripped)
+    return not stripped
+
+
+def _generic_title_repair_subject(
+    source_title: str,
+    summary: str,
+    category: str,
+    metadata: Mapping[str, object] | None = None,
+) -> str:
+    metadata = metadata or {}
+    manager_name = _collapse_ws(str(metadata.get("manager_name") or "")).strip()
+    if manager_name and manager_name not in {"巨人", "首脳陣"}:
+        return manager_name
+    for key in ("player_name", "notice_subject", "speaker"):
+        candidate = _collapse_ws(str(metadata.get(key) or "")).strip()
+        if candidate and candidate not in {"巨人", "選手", "出場選手", "首脳陣"}:
+            return candidate
+    candidate = _compact_subject_label(source_title, summary, category)
+    if candidate and candidate not in {"巨人", "選手", "首脳陣"}:
+        return candidate
+    if category == "首脳陣":
+        manager_label = _extract_subject_label(source_title, summary, category)
+        if manager_label and manager_label not in {"巨人", "首脳陣"}:
+            return manager_label
+    return ""
+
+
+def _generic_title_repair_action(source_title: str, summary: str) -> str:
+    source_text = _strip_html(f"{source_title} {summary}")
+    for action_label, markers in GENERIC_TITLE_REPAIR_ACTION_LABELS:
+        if any(marker in source_text for marker in markers):
+            return action_label
+    return ""
+
+
+def _maybe_apply_generic_title_repair(
+    *,
+    rewritten_title: str,
+    source_title: str,
+    summary: str,
+    category: str,
+    article_subtype: str,
+    logger: logging.Logger,
+    metadata: Mapping[str, object] | None = None,
+) -> tuple[str, _WeakTitleReviewFallback | None]:
+    if not _generic_title_repair_enabled():
+        return rewritten_title, None
+    if not _is_generic_title_only_pattern(rewritten_title):
+        return rewritten_title, None
+
+    source_text = _strip_html(f"{source_title} {summary}")
+    source_title_result = _source_title_result_if_specific(
+        _clean_display_title_text(source_title),
+        source_text,
+        category,
+        article_subtype,
+        "generic_title_repair_source_title",
+        max_chars=42,
+    )
+    if source_title_result is not None:
+        repaired_title, _template_key = source_title_result
+        logger.info(
+            json.dumps(
+                {
+                    "event": "generic_title_repair_applied",
+                    "severity": "INFO",
+                    "subtype": article_subtype,
+                    "original_title": rewritten_title,
+                    "repaired_title": repaired_title,
+                },
+                ensure_ascii=False,
+            )
+        )
+        return repaired_title, None
+
+    subject = _generic_title_repair_subject(source_title, summary, category, metadata)
+    action = _generic_title_repair_action(source_title, summary)
+    if subject and action:
+        repaired_title = _trim_display_title(f"{subject}、{action} 関連情報", max_chars=42)
+        logger.info(
+            json.dumps(
+                {
+                    "event": "generic_title_repair_applied",
+                    "severity": "INFO",
+                    "subtype": article_subtype,
+                    "original_title": rewritten_title,
+                    "repaired_title": repaired_title,
+                },
+                ensure_ascii=False,
+            )
+        )
+        return repaired_title, None
+
+    logger.warning(
+        json.dumps(
+            {
+                "event": "generic_title_repair_applied",
+                "severity": "WARNING",
+                "subtype": article_subtype,
+                "original_title": rewritten_title,
+                "repaired_title": "review_routed",
+            },
+            ensure_ascii=False,
+        )
+    )
+    return rewritten_title, _WeakTitleReviewFallback("generic_title_repair_review")
 
 
 def _rewrite_display_title_with_template(title: str, summary: str, category: str, has_game: bool) -> tuple[str, str]:
@@ -15881,6 +16643,7 @@ def _main(args, logger):
                         article_subtype,
                         source_name=name,
                         source_handle=source_handle,
+                        source_url=post_url,
                     )
                     if rescue_meta:
                         _log_sns_weak_rescue(logger, post_url, title, rescue_meta)
@@ -16317,6 +17080,30 @@ def _main(args, logger):
                 source_url=post_url,
                 metadata=weak_title_metadata,
             )
+            draft_title, generic_title_review = _maybe_apply_generic_title_repair(
+                rewritten_title=draft_title,
+                source_title=raw_title,
+                summary=summary,
+                category=category,
+                article_subtype=title_article_subtype,
+                logger=logger,
+                metadata=weak_title_metadata,
+            )
+            if isinstance(generic_title_review, _WeakTitleReviewFallback):
+                skip_filter += 1
+                skip_reason_counts["post_gen_validate"] += 1
+                _append_skip_reason_sample(skip_reason_sample_titles, "post_gen_validate", draft_title)
+                _log_article_skipped_post_gen_validate(
+                    logger,
+                    title=draft_title,
+                    source_title=raw_title,
+                    post_url=post_url,
+                    category=category,
+                    article_subtype=title_article_subtype,
+                    fail_axes=[f"generic_title:{generic_title_review.reason}"],
+                    stop_reason="generic_title_repair_review",
+                )
+                continue
             weak_title_fallback = _maybe_route_weak_generated_title_review(
                 article_subtype=title_article_subtype,
                 rewritten_title=draft_title,
@@ -16398,6 +17185,7 @@ def _main(args, logger):
                 post_context=item,
                 published_at=item.get("published_at"),
                 duplicate_guard_context=item.get("duplicate_guard_context"),
+                rewritten_title=draft_title,
             )
             duplicate_guard_context = item.get("duplicate_guard_context")
             if isinstance(duplicate_guard_context, dict) and duplicate_guard_context.get("guard_outcome") == "skip":

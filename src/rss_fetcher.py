@@ -242,6 +242,7 @@ ENABLE_BODY_DUP_REDUCTION_ENV_FLAG = "ENABLE_BODY_DUP_REDUCTION"
 ENABLE_SOCIAL_TOO_WEAK_NARROW_RESCUE_ENV_FLAG = "ENABLE_SOCIAL_TOO_WEAK_NARROW_RESCUE"
 ENABLE_RSS_SHORT_SCORE_POST_REROUTE_ENV_FLAG = "ENABLE_RSS_SHORT_SCORE_POST_REROUTE"
 ENABLE_RSS_MANAGER_COMMENT_KEEP_ENV_FLAG = "ENABLE_RSS_MANAGER_COMMENT_KEEP"
+ENABLE_MANAGER_QUOTE_SHORT_TITLE_REPAIR_ENV_FLAG = "ENABLE_MANAGER_QUOTE_SHORT_TITLE_REPAIR"
 ENABLE_RSS_SOCIAL_PLAYER_SUBROUTE_ENV_FLAG = "ENABLE_RSS_SOCIAL_PLAYER_SUBROUTE"
 ENABLE_FARM_CATEGORY_NARROW_FIX_ENV_FLAG = "ENABLE_FARM_CATEGORY_NARROW_FIX"
 ENABLE_RSS_SUBTYPE_CONSISTENCY_GUARD_ENV_FLAG = "ENABLE_RSS_SUBTYPE_CONSISTENCY_GUARD"
@@ -423,6 +424,28 @@ GENERIC_TITLE_ONLY_MARKERS = (
     "ベンチ関連発言",
     "ベンチ関連の発言ポイント",
     "コメント整理",
+)
+MANAGER_QUOTE_SHORT_TITLE_REPAIR_TARGET_MARKERS = (
+    "ベンチ関連の発言ポイント",
+    "ベンチ関連発言",
+)
+MANAGER_QUOTE_SHORT_TITLE_REPAIR_ACTION_MARKERS = (
+    "発言",
+    "質問",
+    "分析",
+    "振り返",
+    "コメント",
+    "談話",
+    "一問一答",
+    "語った",
+    "話した",
+    "明かした",
+    "説明",
+    "言及",
+    "評価",
+    "起用",
+    "スタメン",
+    "打順",
 )
 GENERIC_TITLE_REPAIR_ACTION_LABELS = (
     ("登録抹消", ("登録抹消", "抹消")),
@@ -15271,6 +15294,129 @@ def _trim_display_title(text: str, max_chars: int = 38) -> str:
     return clean[:max_chars].rstrip(" ・、。") + "…"
 
 
+def _manager_quote_short_title_repair_enabled() -> bool:
+    return _env_flag(ENABLE_MANAGER_QUOTE_SHORT_TITLE_REPAIR_ENV_FLAG, False)
+
+
+def _is_manager_quote_short_title_repair_target(title: str) -> bool:
+    normalized = _collapse_ws(_strip_html(title or "")).strip()
+    return any(marker in normalized for marker in MANAGER_QUOTE_SHORT_TITLE_REPAIR_TARGET_MARKERS)
+
+
+def _extract_manager_quote_short_title_quote(source_title: str, source_body: str, summary: str) -> str:
+    texts = _dedupe_preserve_order(
+        [
+            _collapse_ws(_strip_html(value or "")).strip()
+            for value in (source_title, source_body, summary)
+            if _collapse_ws(_strip_html(value or "")).strip()
+        ]
+    )
+    for text in texts:
+        for phrase in _re.findall(r"[「『]([^」』]{4,50})[」』]", text):
+            clean = _collapse_ws(phrase).strip(" ・、。")
+            if not clean or any(marker in clean for marker in QUOTE_SKIP_MARKERS):
+                continue
+            return clean
+    return ""
+
+
+def _clip_manager_quote_short_title_quote(quote: str, max_chars: int = 40) -> str:
+    clean = _collapse_ws(quote or "").strip(" ・、。")
+    if len(clean) <= max_chars:
+        return clean
+    return clean[:max_chars].rstrip(" ・、。") + "…"
+
+
+def _normalize_manager_quote_short_title_name(candidate: str) -> str:
+    cleaned = _collapse_ws(_strip_html(candidate or "")).strip(" ・、。")
+    if not cleaned or cleaned in {"巨人", "選手", "出場選手", "首脳陣", "ベンチ"}:
+        return ""
+    bare = _re.sub(r"(監督|コーチ|投手|捕手|内野手|外野手|選手)$", "", cleaned).strip()
+    if bare and is_non_name_speaker_label(bare):
+        return ""
+    if title_has_person_name_candidate(cleaned) or (bare and title_has_person_name_candidate(bare)):
+        return cleaned
+    return ""
+
+
+def _manager_quote_short_title_name_candidates(
+    source_title: str,
+    source_body: str,
+    summary: str,
+    metadata: Mapping[str, object] | None = None,
+) -> list[str]:
+    metadata = metadata or {}
+    candidates: list[str] = []
+    for key in ("player_name", "notice_subject", "speaker", "manager_name"):
+        candidate = _collapse_ws(str(metadata.get(key) or "")).strip()
+        role = _collapse_ws(str(metadata.get("role") or "")).strip()
+        if key == "speaker" and role in {"監督", "コーチ"} and candidate and not candidate.endswith(role):
+            candidate = f"{candidate}{role}"
+        normalized = _normalize_manager_quote_short_title_name(candidate)
+        if normalized and normalized not in candidates:
+            candidates.append(normalized)
+
+    player_subject = _normalize_manager_quote_short_title_name(_compact_subject_label(source_title, source_body or summary, "選手情報"))
+    if player_subject and player_subject not in candidates:
+        candidates.append(player_subject)
+
+    manager_subject = _normalize_manager_quote_short_title_name(_extract_subject_label(source_title, source_body or summary, "首脳陣"))
+    if manager_subject and manager_subject not in candidates:
+        candidates.append(manager_subject)
+    return candidates
+
+
+def _manager_quote_short_title_name_matches_quote(name: str, quote: str, texts: list[str]) -> bool:
+    variants = _dedupe_preserve_order(
+        [
+            name,
+            _re.sub(r"(監督|コーチ|投手|捕手|内野手|外野手|選手)$", "", name).strip(),
+        ]
+    )
+    for text in texts:
+        normalized = _collapse_ws(_strip_html(text or ""))
+        for variant in variants:
+            if not variant:
+                continue
+            before_pattern = _re.compile(rf"{_re.escape(variant)}[^「『」』]{{0,12}}[「『]{_re.escape(quote)}[」』]")
+            after_pattern = _re.compile(rf"[「『]{_re.escape(quote)}[」』][^「『」』]{{0,16}}{_re.escape(variant)}")
+            if before_pattern.search(normalized) or after_pattern.search(normalized):
+                return True
+    return False
+
+
+def _extract_manager_quote_short_title_name(
+    source_title: str,
+    source_body: str,
+    summary: str,
+    *,
+    quote: str,
+    metadata: Mapping[str, object] | None = None,
+) -> str:
+    texts = _dedupe_preserve_order(
+        [
+            _collapse_ws(_strip_html(value or "")).strip()
+            for value in (source_title, source_body, summary)
+            if _collapse_ws(_strip_html(value or "")).strip()
+        ]
+    )
+    candidates = _manager_quote_short_title_name_candidates(source_title, source_body, summary, metadata)
+    if quote:
+        for candidate in candidates:
+            if _manager_quote_short_title_name_matches_quote(candidate, quote, texts):
+                return candidate
+
+    for candidate in candidates:
+        if candidate.endswith(("監督", "コーチ")):
+            return candidate
+    return candidates[0] if candidates else ""
+
+
+def _manager_quote_short_title_has_action(source_title: str, source_body: str, summary: str) -> bool:
+    source_text = _strip_html(" ".join(value for value in (source_title, source_body, summary) if value)).strip()
+    return any(marker in source_text for marker in MANAGER_QUOTE_SHORT_TITLE_REPAIR_ACTION_MARKERS)
+
+
 def _build_title_player_name_backfill_metadata(
     source_title: str,
     summary: str,
@@ -15688,6 +15834,60 @@ def _generic_title_repair_action(source_title: str, summary: str) -> str:
         if any(marker in source_text for marker in markers):
             return action_label
     return ""
+
+
+def _maybe_apply_manager_quote_short_title_repair(
+    *,
+    rewritten_title: str,
+    source_title: str,
+    source_body: str,
+    summary: str,
+    category: str,
+    article_subtype: str,
+    logger: logging.Logger,
+    source_url: str,
+    metadata: Mapping[str, object] | None = None,
+) -> str:
+    if not _manager_quote_short_title_repair_enabled():
+        return rewritten_title
+    if category != "首脳陣" or article_subtype not in {"manager", "manager_comment", "manager_quote"}:
+        return rewritten_title
+    if not _is_manager_quote_short_title_repair_target(rewritten_title):
+        return rewritten_title
+
+    quote = _extract_manager_quote_short_title_quote(source_title, source_body, summary)
+    name = _extract_manager_quote_short_title_name(
+        source_title,
+        source_body,
+        summary,
+        quote=quote,
+        metadata=metadata,
+    )
+    action_present = _manager_quote_short_title_has_action(source_title, source_body, summary)
+    repaired_title = "review_kept"
+    if name and action_present:
+        if quote:
+            repaired_title = _trim_display_title(
+                f"{name}「{_clip_manager_quote_short_title_quote(quote)}」",
+                max_chars=50,
+            )
+        else:
+            repaired_title = _trim_display_title(f"{name}のコメント", max_chars=42)
+
+    payload = {
+        "event": "manager_quote_short_title_repaired",
+        "source_url": source_url,
+        "original_fallback_title": rewritten_title,
+        "repaired_title": repaired_title,
+        "name_extracted": name,
+        "quote_extracted": quote,
+    }
+    if repaired_title == "review_kept":
+        logger.warning(json.dumps(payload, ensure_ascii=False))
+        return rewritten_title
+
+    logger.info(json.dumps(payload, ensure_ascii=False))
+    return repaired_title
 
 
 def _maybe_apply_generic_title_repair(
@@ -17498,6 +17698,16 @@ def _main(args, logger):
                     source_name=source_name,
                     source_url=post_url,
                 )
+                draft_title = _maybe_apply_manager_quote_short_title_repair(
+                    rewritten_title=draft_title,
+                    source_title=raw_title,
+                    source_body=summary,
+                    summary=summary,
+                    category=category,
+                    article_subtype=title_article_subtype,
+                    logger=logger,
+                    source_url=post_url,
+                )
                 _log_title_template_selected(logger, post_url, raw_title, draft_title, title_template_key, category, title_article_subtype)
                 print(f"  DRY: [{category}] {draft_title[:50]}")
                 print(f"       {post_url}")
@@ -17659,6 +17869,17 @@ def _main(args, logger):
                 notice_subject=notice_subject,
                 logger=logger,
                 source_name=source_name,
+                source_url=post_url,
+                metadata=weak_title_metadata,
+            )
+            draft_title = _maybe_apply_manager_quote_short_title_repair(
+                rewritten_title=draft_title,
+                source_title=raw_title,
+                source_body=summary,
+                summary=summary,
+                category=category,
+                article_subtype=title_article_subtype,
+                logger=logger,
                 source_url=post_url,
                 metadata=weak_title_metadata,
             )

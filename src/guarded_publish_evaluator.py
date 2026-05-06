@@ -1708,7 +1708,8 @@ def _placeholder_filler_outro_detail(body_text: str) -> str | None:
     prose_before = "".join(lines[:-1]).strip()
     if len(prose_before) < 40:
         return None
-    return f"filler_outro=1;tail={re.sub(r'\s+', ' ', last_line).strip()}"
+    tail = re.sub(r"\s+", " ", last_line).strip()
+    return f"filler_outro=1;tail={tail}"
 
 
 def _placeholder_repeated_filler_detail(body_text: str) -> str | None:

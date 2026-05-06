@@ -15662,10 +15662,28 @@ def _url_date_reference_datetime(post_url: str, *, now: datetime) -> datetime | 
     return None
 
 
-def _stale_source_guard_threshold_hours(article_subtype: str) -> float:
-    from src import guarded_publish_evaluator as publish_evaluator
+_STALE_SOURCE_GUARD_FALLBACK_THRESHOLD_HOURS = 24.0
 
-    return float(publish_evaluator._freshness_threshold_hours(article_subtype))
+
+def _stale_source_guard_threshold_hours(article_subtype: str) -> float:
+    """Return freshness threshold hours for the given article subtype.
+
+    Defensive: if the publish_evaluator import fails (e.g. Python version
+    syntax incompat) or `_freshness_threshold_hours` raises for an
+    unexpected subtype value (None / non-string / unknown), fall back to
+    the conservative 24h default rather than crashing the fetcher.
+    """
+
+    try:
+        from src import guarded_publish_evaluator as publish_evaluator
+    except Exception:
+        return _STALE_SOURCE_GUARD_FALLBACK_THRESHOLD_HOURS
+
+    try:
+        subtype_value = "" if article_subtype is None else str(article_subtype)
+        return float(publish_evaluator._freshness_threshold_hours(subtype_value))
+    except Exception:
+        return _STALE_SOURCE_GUARD_FALLBACK_THRESHOLD_HOURS
 
 
 def _resolve_stale_source_guard_source(

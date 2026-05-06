@@ -46,6 +46,7 @@ _FORBIDDEN_LINE_REPLACEMENTS = (
     ("文脈と背景", "この話が出た流れ"),
     ("source にある範囲だけで", "元記事で確認できる範囲で"),
     ("sourceにある範囲だけで", "元記事で確認できる範囲で"),
+    ("原文のニュアンスを残しながら", "元記事の言い方を保ちながら"),
     ("目を引きます", "という表現が出ていました"),
     ("注目が集まります", "目が向きます"),
     ("注目されます", "目が向きます"),
@@ -77,6 +78,7 @@ _FORBIDDEN_PATTERNS = (
     ("heading_social_summary", re.compile(r"発信内容の要約")),
     ("heading_context_background", re.compile(r"文脈と背景")),
     ("internal_source_instruction", re.compile(r"source\s*にある範囲だけで", re.IGNORECASE)),
+    ("phrase_genbun_nuance", re.compile(r"原文のニュアンスを残しながら")),
     ("internal_prompt_heading", re.compile(r"(?:AI\s*prompt|internal\s*instruction)", re.IGNORECASE)),
     ("internal_prompt_output", re.compile(r"(?:HTMLタグなし|本文のみ出力|見出しは「)")),
 )

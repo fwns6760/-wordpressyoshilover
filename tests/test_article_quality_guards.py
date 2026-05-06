@@ -11,6 +11,7 @@ class ArticleQualityGuardsTests(unittest.TestCase):
                 "この話題は目を引きます。",
                 "【文脈と背景】",
                 "source にある範囲だけで整理します。",
+                "原文のニュアンスを残しながら整理しました。",
                 "次の起用が期待されます。",
                 "この見方が妥当ではないでしょうか。",
             ]
@@ -22,10 +23,12 @@ class ArticleQualityGuardsTests(unittest.TestCase):
         self.assertIn("【この話が出た流れ】", sanitized)
         self.assertNotIn("目を引きます", sanitized)
         self.assertNotIn("source にある範囲だけで", sanitized)
+        self.assertNotIn("原文のニュアンスを残しながら", sanitized)
         self.assertNotIn("期待されます", sanitized)
         self.assertNotIn("ではないでしょうか", sanitized)
         self.assertIn("見込まれます", sanitized)
         self.assertIn("とも見られます", sanitized)
+        self.assertIn("元記事の言い方を保ちながら", sanitized)
 
     def test_find_forbidden_phrase_ignores_source_quote_text(self):
         hit = guards.find_forbidden_phrase("阿部監督は「目を引きます」とだけ話した。")
@@ -52,6 +55,7 @@ class ArticleQualityGuardsTests(unittest.TestCase):
             "発信内容の要約",
             "文脈と背景",
             "source にある範囲だけで",
+            "原文のニュアンスを残しながら",
             "AI prompt",
             "internal instruction",
         )

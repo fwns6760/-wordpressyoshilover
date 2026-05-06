@@ -579,6 +579,85 @@ SOCIAL_TOO_WEAK_NARROW_RESCUE_KEYWORDS = (
     "談話",
     "一問一答",
 )
+TRUSTED_SOCIAL_GIANTS_RESCUE_KEYWORDS = (
+    "スタメン",
+    "本日のスタメン",
+    "先発",
+    "予告先発",
+    "登板",
+    "継投",
+    "ブルペン",
+    "ベンチ入り",
+    "登録",
+    "抹消",
+    "一軍合流",
+    "一軍復帰",
+    "復帰",
+    "故障明け",
+    "負傷",
+    "離脱",
+    "リハビリ",
+    "実戦復帰",
+    "監督",
+    "コーチ",
+    "コメント",
+    "談話",
+    "囲み",
+    "試合後",
+    "ヒーロー",
+    "お立ち台",
+    "ホームラン",
+    "本塁打",
+    "適時打",
+    "タイムリー",
+    "勝ち越し",
+    "先制",
+    "同点",
+    "逆転",
+    "決勝",
+    "マルチ安打",
+    "猛打賞",
+    "無失点",
+    "好投",
+    "救援",
+    "セーブ",
+    "ホールド",
+    "二軍",
+    "三軍",
+    "ファーム",
+    "育成",
+    "支配下",
+    "昇格",
+    "降格",
+    "ドラフト",
+    "新人",
+    "ルーキー",
+    "キャンプ",
+    "練習",
+    "守備練習",
+    "打撃練習",
+    "シート打撃",
+    "実戦",
+    "紅白戦",
+    "試合前",
+    "放送予定",
+    "チケット",
+    "イベント",
+    "来場者",
+)
+TRUSTED_SOCIAL_GIANTS_RESCUE_NEGATIVE_KEYWORDS = (
+    "プレゼント",
+    "キャンペーン",
+    "サイン入り",
+    "ステッカー",
+    "グッズ",
+    "販売",
+    "紙面",
+    "レイアウト",
+    "誕生日",
+    "こども",
+    "RT ",
+)
 MANAGER_BODY_TEMPLATE_VERSION = "manager_v1"
 MANAGER_BODY_TEMPLATE_VERSION_V2 = "manager_v2"
 MANAGER_REQUIRED_HEADINGS = (
@@ -3358,24 +3437,6 @@ def _is_farm_lineup_text(text: str) -> bool:
 
 
 _PREGAME_NOTICE_KEYWORDS = ("予告先発", "試合開始⚾", "試合開始前", "本日の試合開始", "試合前情報")
-_TRUSTED_SOCIAL_HOST_PATTERNS = (
-    "hochi_giants",
-    "tokyogiants",
-    "sanspo_giants",
-    "sponichi_giants",
-    "nikkansports_giants",
-    "giants",
-)
-_TRUSTED_SOCIAL_NAME_PATTERNS = (
-    "報知",
-    "サンスポ",
-    "スポニチ",
-    "ニッカン",
-    "日刊スポーツ",
-    "巨人公式",
-    "読売ジャイアンツ公式",
-    "ジャイアンツ公式",
-)
 
 
 def _has_pregame_signal(text: str) -> bool:
@@ -3387,14 +3448,101 @@ def _has_pregame_signal(text: str) -> bool:
     return False
 
 
-def _is_trusted_social_source(source_url: str, source_name: str) -> bool:
-    url_low = (source_url or "").lower()
-    if any(pattern in url_low for pattern in _TRUSTED_SOCIAL_HOST_PATTERNS):
-        return True
-    name_norm = source_name or ""
-    if any(pattern in name_norm for pattern in _TRUSTED_SOCIAL_NAME_PATTERNS):
+def _is_trusted_social_url_or_name(source_url: str, source_name: str) -> bool:
+    """tweet URL から handle を抽出し、既存 _is_trusted_social_source に委譲。
+
+    handle が抽出できない RSS news source の場合は source_name のみで判定する。
+    """
+    handle = _extract_handle_from_tweet_url(source_url or "")
+    if _is_trusted_social_source(handle, source_name or ""):
         return True
     return False
+
+
+def _is_valid_x_post_source_url(source_url: str) -> bool:
+    """X (twitter) post URL として保存可能か判定。
+
+    trusted_social_short rescue は本文末尾に元 X URL を必ず参照元として残す前提。
+    URL 形式が tweet URL でない場合は rescue しない (RSS-250 要件)。
+    """
+    if not source_url:
+        return False
+    url = str(source_url).strip()
+    if not url:
+        return False
+    return bool(_re.search(r"https?://(?:x|twitter|mobile\.x|mobile\.twitter)\.com/[^/]+/status/\d+", url))
+
+
+def _extract_x_status_id(source_url: str) -> str:
+    """tweet URL から status_id (数字) を抽出。dedupe 用。"""
+    if not source_url:
+        return ""
+    match = _re.search(r"/status/(\d+)", str(source_url))
+    return match.group(1) if match else ""
+
+
+def _trusted_social_giants_keyword_hits(text: str) -> list[str]:
+    """source 内 (title + summary) の重要キーワード hit リスト。
+
+    negative-only ポスト (プレゼント / キャンペーン / RT 一般物) は positive
+    keyword が混在していても rescue させない (negative_first 判定)。
+    """
+    clean = _strip_html(text or "")
+    if not clean:
+        return []
+    if any(neg in clean for neg in TRUSTED_SOCIAL_GIANTS_RESCUE_NEGATIVE_KEYWORDS):
+        positive_for_negative_balance: list[str] = [
+            kw for kw in TRUSTED_SOCIAL_GIANTS_RESCUE_KEYWORDS if kw in clean
+        ]
+        # negative+positive が共存しても、本文体感を優先する: 1 個未満なら rescue 拒否
+        if len(positive_for_negative_balance) < 2:
+            return []
+    hits = [kw for kw in TRUSTED_SOCIAL_GIANTS_RESCUE_KEYWORDS if kw in clean]
+    return _dedupe_preserve_order(hits)
+
+
+def _evaluate_trusted_social_giants_rescue(
+    *,
+    title: str,
+    summary: str,
+    category: str,
+    article_subtype: str,
+    source_url: str,
+    source_name: str,
+    source_handle: str,
+) -> dict | None:
+    """RSS-250 narrow rescue: trusted source AND Giants-related AND important keyword.
+
+    3 条件 AND 必須:
+      1. trusted_social_source (既存 _is_trusted_social_source)
+      2. is_giants_related (text + source_name + post_url)
+      3. TRUSTED_SOCIAL_GIANTS_RESCUE_KEYWORDS hit
+    AND tweet URL が valid (本文末尾に source link を残す要件)。
+    """
+    handle = (source_handle or "").strip()
+    if not handle:
+        handle = _extract_handle_from_tweet_url(source_url or "")
+    if not _is_trusted_social_source(handle, source_name):
+        return None
+    if not _is_valid_x_post_source_url(source_url):
+        return None
+    text = _strip_html(f"{title} {summary}")
+    if not is_giants_related(text, source_name=source_name, post_url=source_url):
+        return None
+    keyword_hits = _trusted_social_giants_keyword_hits(text)
+    if not keyword_hits:
+        return None
+    return {
+        "rescue_reason": "trusted_source_giants_important_keyword",
+        "matched_word": keyword_hits[0],
+        "keyword_hits": keyword_hits,
+        "source_handle": handle,
+        "article_subtype": article_subtype,
+        "category": category,
+        "source_url": source_url,
+        "x_status_id": _extract_x_status_id(source_url),
+        "template_key": "trusted_social_short",
+    }
 
 
 def _parse_yahoo_team_batting_stats(html: str) -> dict[str, dict]:
@@ -4131,7 +4279,7 @@ def _select_template_v2(
     has_pregame_signal = bool(entry_text) and _has_pregame_signal(entry_text)
     is_trusted_social = (
         str(analysis.get("source_type") or "") == "x_post"
-        and _is_trusted_social_source(entry_source_url, entry_source_name)
+        and _is_trusted_social_url_or_name(entry_source_url, entry_source_name)
     )
 
     if analysis.get("has_farm_or_third_team"):
@@ -16608,6 +16756,17 @@ def _evaluate_authoritative_social_entry(
                 "rescue_reason": "trusted_social_source",
                 "matched_word": matched_signal,
             }
+    giants_rescue_meta = _evaluate_trusted_social_giants_rescue(
+        title=title,
+        summary=summary,
+        category=category,
+        article_subtype=article_subtype,
+        source_url=source_url,
+        source_name=source_name,
+        source_handle=source_handle,
+    )
+    if giants_rescue_meta:
+        return True, giants_rescue_meta
     return False, None
 
 

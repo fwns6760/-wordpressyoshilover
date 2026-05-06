@@ -4485,15 +4485,21 @@ def _resolve_rss_story_type_context_v2(
         body_subtype = "lineup"
         validator_subtype = "lineup"
     elif template_key == "pregame_short":
+        # RSS-252: 短文 pregame template は body_validator BODY_CONTRACTS["pregame"]
+        # の 3 heading 必須に従えない。validator_subtype を緩い social_news に切替て
+        # body_contract_validate false positive を避ける。title/body subtype は維持。
         resolved_category = "試合速報"
         title_subtype = "pregame"
         body_subtype = "pregame"
-        validator_subtype = "pregame"
+        validator_subtype = "social_news"
     elif template_key == "postgame_score_short":
+        # RSS-252: 短文 postgame_score template は body_validator BODY_CONTRACTS["postgame"]
+        # の 4 heading 必須に従えない。validator_subtype を緩い social_news に切替て
+        # body_contract_validate false positive を避ける。title/body subtype は維持。
         resolved_category = "試合速報"
         title_subtype = "postgame"
         body_subtype = "postgame"
-        validator_subtype = "postgame"
+        validator_subtype = "social_news"
     elif template_key == "trusted_social_short":
         title_subtype = "social_news"
         body_subtype = "social_news"

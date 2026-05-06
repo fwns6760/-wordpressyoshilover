@@ -397,6 +397,7 @@ NON_LINEUP_STARMEN_GUARD_SUBTYPES = {
     "fact_notice",
     "player_notice",
 }
+LINEUP_TABLE_HEAVY_SUBTYPES = frozenset({"lineup", "farm_lineup"})
 NON_LINEUP_STARMEN_PROMPT_GUARD = (
     f"・タイトル先頭や見出しで「{LIVE_UPDATE_LINEUP_TITLE_PREFIX}」を使わない。"
     "「打順」「スタメン」「先発メンバー」を section heading にしない"
@@ -3356,6 +3357,46 @@ def _is_farm_lineup_text(text: str) -> bool:
     return bool(_has_lineup_core(clean) and any(marker in clean for marker in FARM_LINEUP_MARKERS))
 
 
+_PREGAME_NOTICE_KEYWORDS = ("予告先発", "試合開始⚾", "試合開始前", "本日の試合開始", "試合前情報")
+_TRUSTED_SOCIAL_HOST_PATTERNS = (
+    "hochi_giants",
+    "tokyogiants",
+    "sanspo_giants",
+    "sponichi_giants",
+    "nikkansports_giants",
+    "giants",
+)
+_TRUSTED_SOCIAL_NAME_PATTERNS = (
+    "報知",
+    "サンスポ",
+    "スポニチ",
+    "ニッカン",
+    "日刊スポーツ",
+    "巨人公式",
+    "読売ジャイアンツ公式",
+    "ジャイアンツ公式",
+)
+
+
+def _has_pregame_signal(text: str) -> bool:
+    clean = _strip_html(text or "")
+    if any(keyword in clean for keyword in _PREGAME_NOTICE_KEYWORDS):
+        return True
+    if "予告先発" in clean:
+        return True
+    return False
+
+
+def _is_trusted_social_source(source_url: str, source_name: str) -> bool:
+    url_low = (source_url or "").lower()
+    if any(pattern in url_low for pattern in _TRUSTED_SOCIAL_HOST_PATTERNS):
+        return True
+    name_norm = source_name or ""
+    if any(pattern in name_norm for pattern in _TRUSTED_SOCIAL_NAME_PATTERNS):
+        return True
+    return False
+
+
 def _parse_yahoo_team_batting_stats(html: str) -> dict[str, dict]:
     stats = {}
     for cells in _extract_html_table_rows(html):
@@ -4077,7 +4118,25 @@ def _select_template_v2(
     source_text_length = int(analysis.get("source_text_length") or 0)
     actor_kind = str(analysis.get("actor_kind") or "")
 
+    entry_text = ""
+    entry_source_url = ""
+    entry_source_name = ""
+    if entry is not None:
+        entry_text = _strip_html(
+            f"{entry.get('title') or ''} {entry.get('summary') or ''}"
+        )
+        entry_source_url = str(entry.get("source_url") or entry.get("post_url") or entry.get("url") or "")
+        entry_source_name = str(entry.get("source_name") or "")
+    has_lineup_signal = bool(entry_text) and _has_lineup_core(entry_text)
+    has_pregame_signal = bool(entry_text) and _has_pregame_signal(entry_text)
+    is_trusted_social = (
+        str(analysis.get("source_type") or "") == "x_post"
+        and _is_trusted_social_source(entry_source_url, entry_source_name)
+    )
+
     if analysis.get("has_farm_or_third_team"):
+        if has_lineup_signal:
+            return "farm_lineup_short", "farm_lineup"
         if source_text_length < 200:
             return "farm_short", "farm"
         if analysis.get("has_score") and analysis.get("has_opponent"):
@@ -4105,10 +4164,19 @@ def _select_template_v2(
     if analysis.get("has_score") and analysis.get("has_opponent") and str(analysis.get("decisive_event_text") or "").strip():
         return "postgame_strict", "postgame"
 
+    if analysis.get("has_score") and analysis.get("has_opponent"):
+        return "postgame_score_short", "postgame"
+
     if analysis.get("has_score") and not analysis.get("has_opponent"):
         return "score_lite", "social_news"
     if analysis.get("has_quote") and str(analysis.get("actor_name") or "").strip():
         return "short_comment", "social_news"
+    if has_lineup_signal:
+        return "lineup_short", "lineup"
+    if has_pregame_signal:
+        return "pregame_short", "pregame"
+    if is_trusted_social and source_text_length < 300:
+        return "trusted_social_short", "social_news"
     if source_text_length < 100:
         return "source_link_only", "social_news"
     return "review", "review_with_reason"
@@ -4136,7 +4204,15 @@ def _resolve_rss_story_type_context_v2(
             "source_name": source_name,
         }
     )
-    template_key, routed_subtype = _select_template_v2(analysis, {"title": title, "summary": summary})
+    template_key, routed_subtype = _select_template_v2(
+        analysis,
+        {
+            "title": title,
+            "summary": summary,
+            "source_url": source_url,
+            "source_name": source_name,
+        },
+    )
 
     resolved_category = category
     title_subtype = _detect_article_subtype(title, summary, category, daily_has_game)
@@ -4149,6 +4225,30 @@ def _resolve_rss_story_type_context_v2(
 
     if template_key == "skip":
         v2_skip_reason = routed_subtype
+    elif template_key == "farm_lineup_short":
+        resolved_category = "ドラフト・育成"
+        title_subtype = "farm_lineup"
+        body_subtype = "farm_lineup"
+        validator_subtype = "farm_lineup"
+    elif template_key == "lineup_short":
+        resolved_category = "試合速報"
+        title_subtype = "lineup"
+        body_subtype = "lineup"
+        validator_subtype = "lineup"
+    elif template_key == "pregame_short":
+        resolved_category = "試合速報"
+        title_subtype = "pregame"
+        body_subtype = "pregame"
+        validator_subtype = "pregame"
+    elif template_key == "postgame_score_short":
+        resolved_category = "試合速報"
+        title_subtype = "postgame"
+        body_subtype = "postgame"
+        validator_subtype = "postgame"
+    elif template_key == "trusted_social_short":
+        title_subtype = "social_news"
+        body_subtype = "social_news"
+        validator_subtype = "social_news"
     elif template_key in {"farm_short", "farm_result", "farm_lineup_or_general"}:
         resolved_category = "ドラフト・育成"
         title_subtype = "farm_lineup" if _is_farm_lineup_text(source_text) else "farm"
@@ -11461,23 +11561,25 @@ def _evaluate_post_gen_validate(
         if _detect_title_body_entity_mismatch(title_text, fact_conflict_payload):
             _append_fail_axis("TITLE_BODY_ENTITY_MISMATCH")
 
+    lineup_table_heavy = article_subtype in LINEUP_TABLE_HEAVY_SUBTYPES
     if _env_flag(ENABLE_FORBIDDEN_PHRASE_FILTER_ENV_FLAG, False):
         forbidden_hit = find_forbidden_phrase(raw_text)
         if forbidden_hit:
             _append_fail_axis(f"forbidden_phrase:{forbidden_hit['label']}")
-        placeholder_markers = (
-            "元記事の内容を確認中です",
-            "確認できる範囲を押さえておきたい",
-            "この話題で押さえるべき論点を整理します",
-        )
-        for heading, body_text in sections:
-            normalized_body = _collapse_ws(_strip_html(body_text))
-            if heading and not normalized_body:
-                _append_fail_axis("placeholder_body:empty_section")
-                break
-            if heading and any(marker in normalized_body for marker in placeholder_markers):
-                _append_fail_axis("placeholder_body:boilerplate")
-                break
+        if not lineup_table_heavy:
+            placeholder_markers = (
+                "元記事の内容を確認中です",
+                "確認できる範囲を押さえておきたい",
+                "この話題で押さえるべき論点を整理します",
+            )
+            for heading, body_text in sections:
+                normalized_body = _collapse_ws(_strip_html(body_text))
+                if heading and not normalized_body:
+                    _append_fail_axis("placeholder_body:empty_section")
+                    break
+                if heading and any(marker in normalized_body for marker in placeholder_markers):
+                    _append_fail_axis("placeholder_body:boilerplate")
+                    break
 
     if _env_flag(ENABLE_QUOTE_INTEGRITY_GUARD_ENV_FLAG, False):
         quote_issue = find_quote_integrity_issue(raw_text)
@@ -11489,7 +11591,7 @@ def _evaluate_post_gen_validate(
         if duplicate_issue:
             _append_fail_axis(f"duplicate_sentence:{duplicate_issue['reason']}")
 
-    if _env_flag(ENABLE_H3_COUNT_GUARD_ENV_FLAG, False):
+    if _env_flag(ENABLE_H3_COUNT_GUARD_ENV_FLAG, False) and not lineup_table_heavy:
         excessive_h3 = find_excessive_h3(rendered_html or _render_preview_body_html(raw_text))
         if excessive_h3:
             _append_fail_axis(f"h3_count:{excessive_h3['reason']}")

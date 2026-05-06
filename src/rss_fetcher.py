@@ -1464,6 +1464,88 @@ def _social_too_weak_narrow_rescue_enabled() -> bool:
     return _env_flag(ENABLE_SOCIAL_TOO_WEAK_NARROW_RESCUE_ENV_FLAG, False)
 
 
+# COST-LOG-001: fetcher verbose log sampling. Default OFF.
+def _fetcher_log_sampling_v1_enabled() -> bool:
+    return _env_flag("ENABLE_FETCHER_LOG_SAMPLING_V1", False)
+
+
+def _fetcher_log_detail_debug_enabled() -> bool:
+    return _env_flag("FETCHER_LOG_DETAIL_DEBUG", False)
+
+
+_LOG_SAMPLING_SAMPLE_LIMIT = 3
+
+_log_sampling_state: dict[str, Any] = {
+    "post_gen_validate_failure_dedup_skip_count": 0,
+    "article_skipped_buckets": {},
+    "yahoo_fan_reactions_unavailable_count": 0,
+    "yahoo_fan_reactions_unavailable_samples": [],
+    "gemini_cache_lookup_hit": 0,
+    "gemini_cache_lookup_miss": 0,
+    "gemini_cache_lookup_call_made": 0,
+}
+
+
+def _reset_log_sampling_state() -> None:
+    _log_sampling_state["post_gen_validate_failure_dedup_skip_count"] = 0
+    _log_sampling_state["article_skipped_buckets"] = {}
+    _log_sampling_state["yahoo_fan_reactions_unavailable_count"] = 0
+    _log_sampling_state["yahoo_fan_reactions_unavailable_samples"] = []
+    _log_sampling_state["gemini_cache_lookup_hit"] = 0
+    _log_sampling_state["gemini_cache_lookup_miss"] = 0
+    _log_sampling_state["gemini_cache_lookup_call_made"] = 0
+
+
+def _record_article_skipped_sample(bucket_key: str, sample_title: str) -> None:
+    bucket = _log_sampling_state["article_skipped_buckets"].setdefault(
+        bucket_key, {"count": 0, "samples": []}
+    )
+    bucket["count"] += 1
+    clean = (sample_title or "").strip()[:80]
+    if (
+        clean
+        and clean not in bucket["samples"]
+        and len(bucket["samples"]) < _LOG_SAMPLING_SAMPLE_LIMIT
+    ):
+        bucket["samples"].append(clean)
+
+
+def _record_yahoo_fan_reactions_unavailable_sample(query_repr: str) -> None:
+    _log_sampling_state["yahoo_fan_reactions_unavailable_count"] += 1
+    samples = _log_sampling_state["yahoo_fan_reactions_unavailable_samples"]
+    clean = str(query_repr or "").strip()[:120]
+    if clean and clean not in samples and len(samples) < _LOG_SAMPLING_SAMPLE_LIMIT:
+        samples.append(clean)
+
+
+def _build_log_sampling_summary() -> dict[str, Any]:
+    buckets = _log_sampling_state["article_skipped_buckets"]
+    article_skipped: dict[str, dict[str, Any]] = {}
+    for key in sorted(buckets):
+        bucket = buckets[key]
+        article_skipped[key] = {
+            "count": int(bucket["count"]),
+            "samples": list(bucket["samples"]),
+        }
+    return {
+        "post_gen_validate_failure_dedup_skip_count": int(
+            _log_sampling_state["post_gen_validate_failure_dedup_skip_count"]
+        ),
+        "article_skipped_post_gen_validate": article_skipped,
+        "yahoo_fan_reactions_unavailable": {
+            "count": int(_log_sampling_state["yahoo_fan_reactions_unavailable_count"]),
+            "sample_queries": list(
+                _log_sampling_state["yahoo_fan_reactions_unavailable_samples"]
+            ),
+        },
+        "gemini_cache_lookup": {
+            "hit": int(_log_sampling_state["gemini_cache_lookup_hit"]),
+            "miss": int(_log_sampling_state["gemini_cache_lookup_miss"]),
+            "call_made": int(_log_sampling_state["gemini_cache_lookup_call_made"]),
+        },
+    }
+
+
 def _rss_type_flag_enabled(flag_name: str) -> bool:
     return _env_flag(flag_name, False)
 
@@ -6330,6 +6412,16 @@ def _log_gemini_cache_lookup(
         "gemini_call_made": bool(gemini_call_made),
         "cache_size_bytes": int(cache_size_bytes or 0),
     }
+    if _fetcher_log_sampling_v1_enabled():
+        if gemini_call_made:
+            _log_sampling_state["gemini_cache_lookup_call_made"] += 1
+            logger.info(json.dumps(payload, ensure_ascii=False))
+            return
+        if cache_hit:
+            _log_sampling_state["gemini_cache_lookup_hit"] += 1
+        else:
+            _log_sampling_state["gemini_cache_lookup_miss"] += 1
+        return
     logger.info(json.dumps(payload, ensure_ascii=False))
 
 
@@ -12024,7 +12116,17 @@ def _log_article_skipped_post_gen_validate(
         payload["source_title"] = source_title
     if skip_reason:
         payload["skip_reason"] = skip_reason
-    logger.info(json.dumps(payload, ensure_ascii=False))
+    if _fetcher_log_sampling_v1_enabled():
+        first_axis = (
+            normalized_fail_axes[0]
+            if normalized_fail_axes
+            else (skip_reason or stop_reason or "unknown")
+        )
+        first_axis_key = str(first_axis).split(":", 1)[0] or "unknown"
+        bucket_key = f"{article_subtype or 'unknown'}|{first_axis_key}"
+        _record_article_skipped_sample(bucket_key, title or source_title or post_url)
+    else:
+        logger.info(json.dumps(payload, ensure_ascii=False))
     _record_post_gen_validate_skip_history(
         logger,
         source_url=post_url,
@@ -12822,7 +12924,10 @@ def fetch_fan_reactions_from_yahoo(
             len(reserve_candidates),
         )
     else:
-        logger.info("Yahoo fan reactions unavailable: queries=%s", queries)
+        if _fetcher_log_sampling_v1_enabled():
+            _record_yahoo_fan_reactions_unavailable_sample(repr(queries))
+        else:
+            logger.info("Yahoo fan reactions unavailable: queries=%s", queries)
     return reactions
 
 
@@ -19143,6 +19248,9 @@ def check_giants_game_today() -> tuple:
 def _main(args, logger):
     logger.info(f"=== rss_fetcher 開始 {'[DRY RUN]' if args.dry_run else ''} ===")
 
+    if _fetcher_log_sampling_v1_enabled():
+        _reset_log_sampling_state()
+
     # 今日の巨人戦有無を確認（試合なしの日は試合記事プロンプトを使わない）
     has_game, opponent, venue = check_giants_game_today()
     if has_game:
@@ -19285,19 +19393,22 @@ def _main(args, logger):
                     if pgv_match_kind == "status"
                     else "post_gen_validate_failed_source_url_recent"
                 )
-                logger.info(
-                    json.dumps(
-                        {
-                            "event": "post_gen_validate_failure_dedup_skip",
-                            "matched_key_kind": pgv_match_kind,
-                            "post_url": post_url,
-                            "x_status_id": x_status_id_for_dedup,
-                            "title_preview": (entry_title_clean or "")[:60],
-                            "ttl_hours": POST_GEN_VALIDATE_FAILURE_TTL_HOURS,
-                        },
-                        ensure_ascii=False,
+                if _fetcher_log_sampling_v1_enabled():
+                    _log_sampling_state["post_gen_validate_failure_dedup_skip_count"] += 1
+                else:
+                    logger.info(
+                        json.dumps(
+                            {
+                                "event": "post_gen_validate_failure_dedup_skip",
+                                "matched_key_kind": pgv_match_kind,
+                                "post_url": post_url,
+                                "x_status_id": x_status_id_for_dedup,
+                                "title_preview": (entry_title_clean or "")[:60],
+                                "ttl_hours": POST_GEN_VALIDATE_FAILURE_TTL_HOURS,
+                            },
+                            ensure_ascii=False,
+                        )
                     )
-                )
                 skip_filter += 1
                 skip_reason_counts[skip_kind] += 1
                 _append_skip_reason_sample(
@@ -20676,29 +20787,27 @@ def _main(args, logger):
         f"=== 完了: 取得={total} / 投稿={success} / 重複スキップ={skip_dup} "
         f"/ フィルタスキップ={skip_filter} / エラー={error} ==="
     )
-    logger.info(
-        json.dumps(
-            {
-                "event": "rss_fetcher_run_summary",
-                "dry_run": bool(args.dry_run),
-                "draft_only": bool(args.draft_only),
-                "has_game": bool(has_game),
-                "opponent": opponent,
-                "venue": venue,
-                "entry_limit": args.limit,
-                "total_entries": total,
-                "drafts_created": success,
-                "skip_duplicate": skip_dup,
-                "skip_filter": skip_filter,
-                "error_count": error,
-                "x_post_count": x_post_count,
-                "x_post_daily_limit": x_post_daily_limit,
-                "x_ai_generation_count": history.get(f"x_ai_generation_count_{today_str}", x_ai_generation_count),
-                "x_ai_generation_limit": x_post_daily_limit,
-            },
-            ensure_ascii=False,
-        )
-    )
+    run_summary_payload: dict[str, Any] = {
+        "event": "rss_fetcher_run_summary",
+        "dry_run": bool(args.dry_run),
+        "draft_only": bool(args.draft_only),
+        "has_game": bool(has_game),
+        "opponent": opponent,
+        "venue": venue,
+        "entry_limit": args.limit,
+        "total_entries": total,
+        "drafts_created": success,
+        "skip_duplicate": skip_dup,
+        "skip_filter": skip_filter,
+        "error_count": error,
+        "x_post_count": x_post_count,
+        "x_post_daily_limit": x_post_daily_limit,
+        "x_ai_generation_count": history.get(f"x_ai_generation_count_{today_str}", x_ai_generation_count),
+        "x_ai_generation_limit": x_post_daily_limit,
+    }
+    if _fetcher_log_sampling_v1_enabled():
+        run_summary_payload["log_sampling_v1"] = _build_log_sampling_summary()
+    logger.info(json.dumps(run_summary_payload, ensure_ascii=False))
     logger.info(
         json.dumps(
             {

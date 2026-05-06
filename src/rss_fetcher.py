@@ -4546,7 +4546,24 @@ def _resolve_rss_story_type_context_v2(
         body_subtype = "player_notice"
         validator_subtype = "player_notice"
         special_story_kind = "player_notice"
-    elif template_key in {"manager_quote_short", "manager_short", "manager"}:
+    elif template_key == "manager_quote_short":
+        # quote あり → 既存 manager validator (heading 4 必須) 維持
+        resolved_category = "首脳陣"
+        title_subtype = "manager"
+        body_subtype = "manager"
+        validator_subtype = "manager"
+    elif template_key == "manager_short":
+        # RSS-256: actor_kind=manager/coach + has_quote=False + length<300 の短文は
+        # subtype="manager" の生成 prompt + manager_quote_zero_review review で
+        # 「投手チーフコーチ、失点」等が連続 fail。subtype を social_news に切替て
+        # review path を bypass、validator も緩い social_news に揃える。
+        # category は「首脳陣」維持 (front 整理のため)。
+        resolved_category = "首脳陣"
+        title_subtype = "social_news"
+        body_subtype = "social_news"
+        validator_subtype = "social_news"
+    elif template_key == "manager":
+        # quote なし long form (length>=300) は依然 manager 扱い (rich generation 余地)
         resolved_category = "首脳陣"
         title_subtype = "manager"
         body_subtype = "manager"

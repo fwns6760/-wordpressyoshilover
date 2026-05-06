@@ -547,6 +547,8 @@ class Case15RoutingExtensionTests(unittest.TestCase):
 
     def test_manager_quote_no_text_routes_to_manager(self):
         # 監督コメント quote なし → manager / manager_short
+        # RSS-256 で manager_short (quote なし short) は subtype="social_news" に
+        # 切替。manager (long form) は subtype="manager" 維持。
         ctx = self._resolve(
             title="阿部監督が試合後コメント",
             summary="阿部慎之助監督は試合後、選手の起用について語った。試合終盤の采配の意図を説明した。",
@@ -555,8 +557,8 @@ class Case15RoutingExtensionTests(unittest.TestCase):
             source_name="スポーツニッポン",
             category="首脳陣",
         )
-        # manager 系のどれか
-        self.assertIn(ctx["title_subtype"], ("manager",))
+        # manager 系 (manager_short→social_news / manager→manager) いずれか
+        self.assertIn(ctx["title_subtype"], ("manager", "social_news"))
         self.assertEqual(ctx["v2_review_reason"], "")
 
 

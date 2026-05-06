@@ -2445,6 +2445,78 @@ def _is_polluted_social_text(text: str) -> bool:
     return any(marker.lower() in lower_clean for marker in SOCIAL_TEXT_OUTLET_MARKERS)
 
 
+_GIANTS_LIKELY_HANDLE_SUFFIXES = ("_giants", "giants_jp", "giantsjp", "_yomiuri")
+_GIANTS_LIKELY_HANDLE_PREFIXES = ("hochi", "sanspo", "sponichi", "yomiuri", "tokyogiants")
+_GIANTS_LIKELY_NAME_KEYWORDS = (
+    "巨人",
+    "ジャイアンツ",
+    "GIANTS",
+    "Giants",
+    "報知",
+    "サンスポ",
+    "スポニチ",
+    "日刊スポーツ",
+    "ニッカン",
+)
+
+
+def _is_giants_likely_trusted_social_handle(handle: str) -> bool:
+    """RSS-251 narrow rescue: strict TRUSTED_SOCIAL_SOURCE_HANDLES に外れる
+    handle でも、Giants 関連の可能性が高い handle pattern を判定。"""
+    h = (handle or "").strip().lower().lstrip("@")
+    if not h:
+        return False
+    if any(h.endswith(suf) for suf in _GIANTS_LIKELY_HANDLE_SUFFIXES):
+        return True
+    if any(h.startswith(pref) for pref in _GIANTS_LIKELY_HANDLE_PREFIXES):
+        return True
+    return False
+
+
+def _is_giants_likely_trusted_social_name(source_name: str) -> bool:
+    """RSS-251 narrow rescue: source_name に Giants 関連 keyword を含むか判定。"""
+    name = source_name or ""
+    if not name:
+        return False
+    return any(kw in name for kw in _GIANTS_LIKELY_NAME_KEYWORDS)
+
+
+def _evaluate_sns_polluted_giants_rescue(
+    *,
+    title: str,
+    summary: str,
+    source_name: str,
+    post_url: str,
+) -> dict | None:
+    """RSS-251 narrow rescue: trusted-likely Giants source AND Giants-related
+    AND important keyword の AND 3 条件で sns_polluted false positive を救う。
+
+    既存 _is_trusted_social_source の strict equality match では拾えない
+    handle/name pattern (大文字小文字違い・接尾辞 / 接頭辞 / 巨人キーワード含む name) を
+    soft match で拾い、Giants-related 本文 + 重要キーワード hit を AND で要件化する。
+    """
+    handle = _extract_handle_from_tweet_url(post_url or "")
+    handle_likely = _is_giants_likely_trusted_social_handle(handle)
+    name_likely = _is_giants_likely_trusted_social_name(source_name)
+    if not (handle_likely or name_likely):
+        return None
+    text = _strip_html(f"{title or ''} {summary or ''}")
+    if not is_giants_related(text, source_name=source_name, post_url=post_url):
+        return None
+    keyword_hits = _trusted_social_giants_keyword_hits(text)
+    if not keyword_hits:
+        return None
+    return {
+        "rescue_reason": "sns_polluted_giants_narrow_rescue",
+        "matched_word": keyword_hits[0],
+        "keyword_hits": keyword_hits,
+        "source_handle": handle,
+        "source_name": source_name,
+        "post_url": post_url,
+        "x_status_id": _extract_x_status_id(post_url or ""),
+    }
+
+
 def _is_polluted_social_entry(
     title: str,
     summary: str,
@@ -2452,9 +2524,38 @@ def _is_polluted_social_entry(
     source_name: str = "",
     post_url: str = "",
 ) -> bool:
-    if _is_trusted_social_source(_extract_handle_from_tweet_url(post_url), source_name):
+    handle = _extract_handle_from_tweet_url(post_url)
+    if _is_trusted_social_source(handle, source_name):
         return False
-    return _is_polluted_social_text(title) or _is_polluted_social_text(summary)
+    if not (_is_polluted_social_text(title) or _is_polluted_social_text(summary)):
+        return False
+    rescue_meta = _evaluate_sns_polluted_giants_rescue(
+        title=title,
+        summary=summary,
+        source_name=source_name,
+        post_url=post_url,
+    )
+    if rescue_meta:
+        try:
+            logging.getLogger("rss_fetcher").info(
+                json.dumps(
+                    {
+                        "event": "sns_polluted_giants_narrow_rescued",
+                        "rescue_reason": rescue_meta["rescue_reason"],
+                        "matched_word": rescue_meta["matched_word"],
+                        "keyword_hits": rescue_meta["keyword_hits"],
+                        "source_handle": rescue_meta["source_handle"],
+                        "source_name": rescue_meta["source_name"],
+                        "post_url": rescue_meta["post_url"],
+                        "x_status_id": rescue_meta["x_status_id"],
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        except Exception:
+            pass
+        return False
+    return True
 
 
 def _first_matching_keyword(text: str, keywords: tuple[str, ...]) -> str:

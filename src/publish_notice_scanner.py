@@ -34,6 +34,8 @@ _HISTORY_WINDOW = timedelta(hours=24)
 _REVIEW_NOTICE_MAX_PER_RUN_DEFAULT = 10
 _REVIEW_NOTICE_WINDOW_HOURS_DEFAULT = 24.0
 _PUBLISH_NOTICE_CLASS_RESERVE_ENV_FLAG = "ENABLE_PUBLISH_NOTICE_CLASS_RESERVE"
+_PUBLISH_NOTICE_TWO_PHASE_ENV_FLAG = "ENABLE_PUBLISH_NOTICE_TWO_PHASE"
+_PUBLISH_NOTICE_REVIEW_TIMEOUT_BUDGET_SECONDS_ENV = "PUBLISH_NOTICE_REVIEW_TIMEOUT_BUDGET_SECONDS"
 _INGEST_VISIBILITY_FIX_V1_ENV_FLAG = "ENABLE_INGEST_VISIBILITY_FIX_V1"
 _PUBLISH_NOTICE_24H_BUDGET_GOVERNOR_ENV_FLAG = "ENABLE_PUBLISH_NOTICE_24H_BUDGET_GOVERNOR"
 _PUBLISH_ONLY_MAIL_FILTER_ENV_FLAG = "ENABLE_PUBLISH_ONLY_MAIL_FILTER"
@@ -219,6 +221,10 @@ def _coerce_now(now: Callable[[], datetime] | datetime | None) -> datetime:
     return current.astimezone(JST)
 
 
+def _env_truthy(name: str) -> bool:
+    return str(os.environ.get(name, "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _path(value: str | Path) -> Path:
     return value if isinstance(value, Path) else Path(value)
 
@@ -309,39 +315,33 @@ def _publish_notice_old_candidate_once_enabled() -> bool:
 
 
 def _publish_notice_class_reserve_enabled() -> bool:
-    return str(os.environ.get(_PUBLISH_NOTICE_CLASS_RESERVE_ENV_FLAG, "")).strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    return _env_truthy(_PUBLISH_NOTICE_CLASS_RESERVE_ENV_FLAG)
+
+
+def _publish_notice_two_phase_enabled() -> bool:
+    return _env_truthy(_PUBLISH_NOTICE_TWO_PHASE_ENV_FLAG)
+
+
+def _publish_notice_review_timeout_budget_seconds() -> float:
+    raw = str(os.environ.get(_PUBLISH_NOTICE_REVIEW_TIMEOUT_BUDGET_SECONDS_ENV, "")).strip()
+    if not raw:
+        return 0.0
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return 0.0
 
 
 def _publish_notice_24h_budget_governor_enabled() -> bool:
-    return str(os.environ.get(_PUBLISH_NOTICE_24H_BUDGET_GOVERNOR_ENV_FLAG, "")).strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    return _env_truthy(_PUBLISH_NOTICE_24H_BUDGET_GOVERNOR_ENV_FLAG)
 
 
 def _publish_only_mail_filter_enabled() -> bool:
-    return str(os.environ.get(_PUBLISH_ONLY_MAIL_FILTER_ENV_FLAG, "")).strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    return _env_truthy(_PUBLISH_ONLY_MAIL_FILTER_ENV_FLAG)
 
 
 def _ingest_visibility_fix_v1_enabled() -> bool:
-    return str(os.environ.get(_INGEST_VISIBILITY_FIX_V1_ENV_FLAG, "")).strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    return _env_truthy(_INGEST_VISIBILITY_FIX_V1_ENV_FLAG)
 
 
 def _resolve_non_negative_int_env(env_name: str, default: int) -> int:
@@ -2710,21 +2710,76 @@ def _recorded_at_iso_for_request(request: PublishNoticeRequest, *, now: datetime
     return (now + timedelta(seconds=1)).isoformat()
 
 
-def scan(
+@dataclass(frozen=True)
+class _DirectPublishPhaseState:
+    emitted: list[PublishNoticeRequest]
+    skipped: list[tuple[int | str, str]]
+    cursor_before: str | None
+    cursor_after: str
+    history_after: dict[str, str]
+    current_now: datetime
+    latest_post_dt: datetime | None
+    base_url: str | None
+
+
+@dataclass(frozen=True)
+class _ReviewPhaseState:
+    emitted: list[PublishNoticeRequest]
+    skipped: list[tuple[int | str, str]]
+    history_after: dict[str, str]
+    review_scan: GuardedPublishHistoryScanResult
+    post_gen_validate_scan: GuardedPublishHistoryScanResult
+    preflight_skip_scan: GuardedPublishHistoryScanResult
+
+
+def _noop_review_scan_result(
+    *,
+    history_after: Mapping[str, str],
+    cursor_path: Path | None = None,
+) -> GuardedPublishHistoryScanResult:
+    cursor_before = _read_cursor(cursor_path) if cursor_path is not None else None
+    return GuardedPublishHistoryScanResult(
+        emitted=[],
+        skipped=[],
+        history_after=dict(history_after),
+        cursor_before=cursor_before,
+        cursor_after=cursor_before,
+        cursor_path=cursor_path,
+        cursor_write_needed=False,
+    )
+
+
+def _review_budget_allows_phase(
+    started_at: float,
+    *,
+    budget_seconds: float,
+    phase_name: str,
+) -> bool:
+    if budget_seconds <= 0:
+        return True
+    elapsed_seconds = time.monotonic() - started_at
+    if elapsed_seconds <= budget_seconds:
+        return True
+    _log_event(
+        "publish_notice_review_budget_exceeded",
+        phase=phase_name,
+        elapsed_seconds=round(elapsed_seconds, 3),
+        budget_seconds=budget_seconds,
+    )
+    return False
+
+
+def _scan_direct_publish_phase(
     *,
     wp_api_base: str | None = None,
     cursor_path: str | Path = "logs/publish_notice_cursor.txt",
     history_path: str | Path = "logs/publish_notice_history.json",
     queue_path: str | Path = "logs/publish_notice_queue.jsonl",
-    guarded_publish_history_path: str | Path | None = None,
-    guarded_cursor_path: str | Path | None = None,
-    post_gen_validate_history_path: str | Path | None = None,
-    post_gen_validate_cursor_path: str | Path | None = None,
-    preflight_skip_history_path: str | Path | None = None,
-    preflight_skip_cursor_path: str | Path | None = None,
     fetch: FetchFn | None = None,
     now: Callable[[], datetime] | datetime | None = None,
-) -> ScanResult:
+    write_history: bool,
+    write_cursor: bool,
+) -> _DirectPublishPhaseState:
     current_now = _coerce_now(now)
     cursor_file = _path(cursor_path)
     history_file = _path(history_path)
@@ -2733,9 +2788,20 @@ def scan(
 
     if cursor_before is None:
         cursor_after = current_now.isoformat()
-        _write_history(history_file, history)
-        _write_cursor(cursor_file, cursor_after)
-        return ScanResult(emitted=[], skipped=[], cursor_before=None, cursor_after=cursor_after)
+        if write_history:
+            _write_history(history_file, history)
+        if write_cursor:
+            _write_cursor(cursor_file, cursor_after)
+        return _DirectPublishPhaseState(
+            emitted=[],
+            skipped=[],
+            cursor_before=None,
+            cursor_after=cursor_after,
+            history_after=history,
+            current_now=current_now,
+            latest_post_dt=None,
+            base_url=None,
+        )
 
     fetch_fn = fetch or _default_fetch
     base_url = _resolve_wp_api_base(wp_api_base)
@@ -2779,11 +2845,57 @@ def scan(
             recorded_at_iso=recorded_at_iso,
         )
 
+    cursor_after = latest_post_dt.isoformat() if latest_post_dt is not None else current_now.isoformat()
+    if write_history:
+        _write_history(history_file, next_history)
+    if write_cursor:
+        _write_cursor(cursor_file, cursor_after)
+    return _DirectPublishPhaseState(
+        emitted=emitted,
+        skipped=skipped,
+        cursor_before=cursor_before,
+        cursor_after=cursor_after,
+        history_after=next_history,
+        current_now=current_now,
+        latest_post_dt=latest_post_dt,
+        base_url=base_url,
+    )
+
+
+def _scan_review_phase(
+    *,
+    cursor_path: str | Path = "logs/publish_notice_cursor.txt",
+    history_path: str | Path = "logs/publish_notice_history.json",
+    queue_path: str | Path = "logs/publish_notice_queue.jsonl",
+    guarded_publish_history_path: str | Path | None = None,
+    guarded_cursor_path: str | Path | None = None,
+    post_gen_validate_history_path: str | Path | None = None,
+    post_gen_validate_cursor_path: str | Path | None = None,
+    preflight_skip_history_path: str | Path | None = None,
+    preflight_skip_cursor_path: str | Path | None = None,
+    wp_api_base: str | None = None,
+    history: Mapping[str, str] | None = None,
+    now: Callable[[], datetime] | datetime | None = None,
+    budget_seconds: float = 0.0,
+    existing_emitted: list[PublishNoticeRequest] | None = None,
+    write_history: bool,
+    write_review_cursors: bool,
+) -> _ReviewPhaseState:
+    current_now = _coerce_now(now)
+    history_file = _path(history_path)
+    current_history = _prune_history(
+        dict(history) if history is not None else _load_history(history_file),
+        now=current_now,
+    )
+    guarded_cursor_file = _resolve_guarded_publish_history_cursor_path(guarded_cursor_path)
+    post_gen_cursor_file = _resolve_post_gen_validate_history_cursor_path(post_gen_validate_cursor_path)
+    preflight_cursor_file = _resolve_preflight_skip_history_cursor_path(preflight_skip_cursor_path)
+
     review_scan_kwargs: dict[str, Any] = {
         "history_path": history_path,
         "queue_path": queue_path,
-        "wp_api_base": base_url,
-        "history": next_history,
+        "wp_api_base": _resolve_wp_api_base(wp_api_base),
+        "history": current_history,
         "now": current_now,
         "recorded_at": current_now + timedelta(seconds=1),
         "write_history": False,
@@ -2793,18 +2905,37 @@ def scan(
         review_scan_kwargs["guarded_publish_history_path"] = guarded_publish_history_path
     if guarded_cursor_path is not None:
         review_scan_kwargs["cursor_path"] = guarded_cursor_path
+
     review_cap = _resolve_review_max_per_run(None)
     class_reserve_enabled = _publish_notice_class_reserve_enabled()
-    review_history_before_selection = dict(next_history)
+    review_history_before_selection = dict(current_history)
     selected_review_requests: list[PublishNoticeRequest] = []
+    skipped: list[tuple[int | str, str]] = []
+    review_state_started_at = time.monotonic()
+    budget_seconds = max(0.0, float(budget_seconds))
 
-    if class_reserve_enabled:
+    if _review_budget_allows_phase(
+        review_state_started_at,
+        budget_seconds=budget_seconds,
+        phase_name="guarded_publish",
+    ):
         review_scan = scan_guarded_publish_history(
             **review_scan_kwargs,
             max_per_run=review_cap,
             capture_only=True,
         )
-        if _post_gen_validate_notification_enabled():
+    else:
+        review_scan = _noop_review_scan_result(
+            history_after=review_history_before_selection,
+            cursor_path=guarded_cursor_file,
+        )
+
+    if class_reserve_enabled:
+        if _post_gen_validate_notification_enabled() and _review_budget_allows_phase(
+            review_state_started_at,
+            budget_seconds=budget_seconds,
+            phase_name="post_gen_validate",
+        ):
             post_gen_validate_scan = scan_post_gen_validate_history(
                 post_gen_validate_history_path=post_gen_validate_history_path,
                 cursor_path=post_gen_validate_cursor_path,
@@ -2819,14 +2950,16 @@ def scan(
                 capture_only=True,
             )
         else:
-            post_gen_validate_scan = GuardedPublishHistoryScanResult(
-                emitted=[],
-                skipped=[],
+            post_gen_validate_scan = _noop_review_scan_result(
                 history_after=review_history_before_selection,
-                cursor_write_needed=False,
+                cursor_path=post_gen_cursor_file,
             )
 
-        if _preflight_skip_notification_enabled():
+        if _preflight_skip_notification_enabled() and _review_budget_allows_phase(
+            review_state_started_at,
+            budget_seconds=budget_seconds,
+            phase_name="preflight_skip",
+        ):
             preflight_skip_scan = scan_preflight_skip_history(
                 preflight_skip_history_path=preflight_skip_history_path,
                 cursor_path=preflight_skip_cursor_path,
@@ -2841,11 +2974,9 @@ def scan(
                 capture_only=True,
             )
         else:
-            preflight_skip_scan = GuardedPublishHistoryScanResult(
-                emitted=[],
-                skipped=[],
+            preflight_skip_scan = _noop_review_scan_result(
                 history_after=review_history_before_selection,
-                cursor_write_needed=False,
+                cursor_path=preflight_cursor_file,
             )
 
         selected_review_requests = _select_candidates_by_class_reserve(
@@ -2857,16 +2988,16 @@ def scan(
         skipped.extend(review_scan.skipped)
         skipped.extend(post_gen_validate_scan.skipped)
         skipped.extend(preflight_skip_scan.skipped)
+        next_history = dict(review_history_before_selection)
     else:
-        review_scan = scan_guarded_publish_history(
-            **review_scan_kwargs,
-            max_per_run=review_cap,
-            capture_only=True,
-        )
         skipped.extend(review_scan.skipped)
         next_history = review_scan.history_after
 
-        if _post_gen_validate_notification_enabled():
+        if _post_gen_validate_notification_enabled() and _review_budget_allows_phase(
+            review_state_started_at,
+            budget_seconds=budget_seconds,
+            phase_name="post_gen_validate",
+        ):
             remaining_review_cap = max(0, review_cap - len(review_scan.emitted))
             post_gen_validate_scan = scan_post_gen_validate_history(
                 post_gen_validate_history_path=post_gen_validate_history_path,
@@ -2884,14 +3015,16 @@ def scan(
             skipped.extend(post_gen_validate_scan.skipped)
             next_history = post_gen_validate_scan.history_after
         else:
-            post_gen_validate_scan = GuardedPublishHistoryScanResult(
-                emitted=[],
-                skipped=[],
+            post_gen_validate_scan = _noop_review_scan_result(
                 history_after=next_history,
-                cursor_write_needed=False,
+                cursor_path=post_gen_cursor_file,
             )
 
-        if _preflight_skip_notification_enabled():
+        if _preflight_skip_notification_enabled() and _review_budget_allows_phase(
+            review_state_started_at,
+            budget_seconds=budget_seconds,
+            phase_name="preflight_skip",
+        ):
             remaining_review_cap = max(
                 0,
                 review_cap - len(review_scan.emitted) - len(post_gen_validate_scan.emitted),
@@ -2912,20 +3045,15 @@ def scan(
             skipped.extend(preflight_skip_scan.skipped)
             next_history = preflight_skip_scan.history_after
         else:
-            preflight_skip_scan = GuardedPublishHistoryScanResult(
-                emitted=[],
-                skipped=[],
+            preflight_skip_scan = _noop_review_scan_result(
                 history_after=next_history,
-                cursor_write_needed=False,
+                cursor_path=preflight_cursor_file,
             )
-        selected_review_requests = (
-            review_scan.emitted + post_gen_validate_scan.emitted + preflight_skip_scan.emitted
-        )
+        selected_review_requests = review_scan.emitted + post_gen_validate_scan.emitted + preflight_skip_scan.emitted
 
-    budget_state = evaluate_24h_budget_state(queue_path=queue_path, now=current_now)
     emitted, budget_state = _apply_24h_budget_governor(
-        emitted + selected_review_requests,
-        budget_state=budget_state,
+        list(existing_emitted or []) + selected_review_requests,
+        budget_state=evaluate_24h_budget_state(queue_path=queue_path, now=current_now),
     )
     if budget_state.enabled:
         _log_event(
@@ -2955,6 +3083,7 @@ def scan(
         )
 
     selected_review_ids = _selected_request_ids(selected_review_requests)
+    should_record_history = _should_record_scan_history()
     if digest_state.deferred_post_ids:
         deferred_ids = set(digest_state.deferred_post_ids)
         selected_review_ids.difference_update(deferred_ids)
@@ -2984,9 +3113,9 @@ def scan(
         review_scan=review_scan,
         now=current_now,
     )
-    cursor_after = latest_post_dt.isoformat() if latest_post_dt is not None else current_now.isoformat()
-    _write_history(history_file, next_history)
-    _write_cursor(cursor_file, cursor_after)
+
+    if write_history:
+        _write_history(history_file, next_history)
     if class_reserve_enabled:
         old_candidate_ledger_after = (
             dict(review_scan.old_candidate_ledger_after)
@@ -3006,27 +3135,28 @@ def scan(
             )
         ):
             _write_old_candidate_ledger(review_scan.old_candidate_ledger_path, old_candidate_ledger_after)
-        if (
-            review_scan.cursor_write_needed
-            and review_scan.cursor_path is not None
-            and review_scan.cursor_after is not None
-            and _all_preview_requests_selected(review_scan, selected_review_ids)
-        ):
-            _write_cursor(review_scan.cursor_path, review_scan.cursor_after)
-        if (
-            post_gen_validate_scan.cursor_write_needed
-            and post_gen_validate_scan.cursor_path is not None
-            and post_gen_validate_scan.cursor_after is not None
-            and _all_preview_requests_selected(post_gen_validate_scan, selected_review_ids)
-        ):
-            _write_cursor(post_gen_validate_scan.cursor_path, post_gen_validate_scan.cursor_after)
-        if (
-            preflight_skip_scan.cursor_write_needed
-            and preflight_skip_scan.cursor_path is not None
-            and preflight_skip_scan.cursor_after is not None
-            and _all_preview_requests_selected(preflight_skip_scan, selected_review_ids)
-        ):
-            _write_cursor(preflight_skip_scan.cursor_path, preflight_skip_scan.cursor_after)
+        if write_review_cursors:
+            if (
+                review_scan.cursor_write_needed
+                and review_scan.cursor_path is not None
+                and review_scan.cursor_after is not None
+                and _all_preview_requests_selected(review_scan, selected_review_ids)
+            ):
+                _write_cursor(review_scan.cursor_path, review_scan.cursor_after)
+            if (
+                post_gen_validate_scan.cursor_write_needed
+                and post_gen_validate_scan.cursor_path is not None
+                and post_gen_validate_scan.cursor_after is not None
+                and _all_preview_requests_selected(post_gen_validate_scan, selected_review_ids)
+            ):
+                _write_cursor(post_gen_validate_scan.cursor_path, post_gen_validate_scan.cursor_after)
+            if (
+                preflight_skip_scan.cursor_write_needed
+                and preflight_skip_scan.cursor_path is not None
+                and preflight_skip_scan.cursor_after is not None
+                and _all_preview_requests_selected(preflight_skip_scan, selected_review_ids)
+            ):
+                _write_cursor(preflight_skip_scan.cursor_path, preflight_skip_scan.cursor_after)
     else:
         if (
             review_scan.old_candidate_ledger_write_needed
@@ -3037,21 +3167,26 @@ def scan(
                 review_scan.old_candidate_ledger_path,
                 review_scan.old_candidate_ledger_after,
             )
-        if review_scan.cursor_write_needed and review_scan.cursor_path is not None and review_scan.cursor_after is not None:
-            _write_cursor(review_scan.cursor_path, review_scan.cursor_after)
-        if (
-            post_gen_validate_scan.cursor_write_needed
-            and post_gen_validate_scan.cursor_path is not None
-            and post_gen_validate_scan.cursor_after is not None
-            and _all_preview_requests_selected(post_gen_validate_scan, selected_review_ids)
-        ):
-            _write_cursor(post_gen_validate_scan.cursor_path, post_gen_validate_scan.cursor_after)
-        if (
-            preflight_skip_scan.cursor_write_needed
-            and preflight_skip_scan.cursor_path is not None
-            and preflight_skip_scan.cursor_after is not None
-        ):
-            _write_cursor(preflight_skip_scan.cursor_path, preflight_skip_scan.cursor_after)
+        if write_review_cursors:
+            if (
+                review_scan.cursor_write_needed
+                and review_scan.cursor_path is not None
+                and review_scan.cursor_after is not None
+            ):
+                _write_cursor(review_scan.cursor_path, review_scan.cursor_after)
+            if (
+                post_gen_validate_scan.cursor_write_needed
+                and post_gen_validate_scan.cursor_path is not None
+                and post_gen_validate_scan.cursor_after is not None
+                and _all_preview_requests_selected(post_gen_validate_scan, selected_review_ids)
+            ):
+                _write_cursor(post_gen_validate_scan.cursor_path, post_gen_validate_scan.cursor_after)
+            if (
+                preflight_skip_scan.cursor_write_needed
+                and preflight_skip_scan.cursor_path is not None
+                and preflight_skip_scan.cursor_after is not None
+            ):
+                _write_cursor(preflight_skip_scan.cursor_path, preflight_skip_scan.cursor_after)
     if budget_state.enabled and budget_state.ledger_path is not None:
         selected_review_proxy_ids = {
             str(request.post_id)
@@ -3068,11 +3203,149 @@ def scan(
             projected_cumulative=budget_state.projected_cumulative,
             demoted_count=budget_state.demoted_count,
         )
-    return ScanResult(
+
+    return _ReviewPhaseState(
         emitted=emitted,
         skipped=skipped,
-        cursor_before=cursor_before,
-        cursor_after=cursor_after,
+        history_after=next_history,
+        review_scan=review_scan,
+        post_gen_validate_scan=post_gen_validate_scan,
+        preflight_skip_scan=preflight_skip_scan,
+    )
+
+
+def scan_direct_publish_only(
+    *,
+    wp_api_base: str | None = None,
+    cursor_path: str | Path = "logs/publish_notice_cursor.txt",
+    history_path: str | Path = "logs/publish_notice_history.json",
+    queue_path: str | Path = "logs/publish_notice_queue.jsonl",
+    fetch: FetchFn | None = None,
+    now: Callable[[], datetime] | datetime | None = None,
+) -> ScanResult:
+    direct_state = _scan_direct_publish_phase(
+        wp_api_base=wp_api_base,
+        cursor_path=cursor_path,
+        history_path=history_path,
+        queue_path=queue_path,
+        fetch=fetch,
+        now=now,
+        write_history=True,
+        write_cursor=True,
+    )
+    return ScanResult(
+        emitted=direct_state.emitted,
+        skipped=direct_state.skipped,
+        cursor_before=direct_state.cursor_before,
+        cursor_after=direct_state.cursor_after,
+    )
+
+
+def scan_review_only(
+    *,
+    wp_api_base: str | None = None,
+    cursor_path: str | Path = "logs/publish_notice_cursor.txt",
+    history_path: str | Path = "logs/publish_notice_history.json",
+    queue_path: str | Path = "logs/publish_notice_queue.jsonl",
+    guarded_publish_history_path: str | Path | None = None,
+    guarded_cursor_path: str | Path | None = None,
+    post_gen_validate_history_path: str | Path | None = None,
+    post_gen_validate_cursor_path: str | Path | None = None,
+    preflight_skip_history_path: str | Path | None = None,
+    preflight_skip_cursor_path: str | Path | None = None,
+    now: Callable[[], datetime] | datetime | None = None,
+    budget_seconds: float = 0.0,
+) -> ScanResult:
+    current_now = _coerce_now(now)
+    main_cursor_before = _read_cursor(_path(cursor_path))
+    review_state = _scan_review_phase(
+        cursor_path=cursor_path,
+        history_path=history_path,
+        queue_path=queue_path,
+        guarded_publish_history_path=guarded_publish_history_path,
+        guarded_cursor_path=guarded_cursor_path,
+        post_gen_validate_history_path=post_gen_validate_history_path,
+        post_gen_validate_cursor_path=post_gen_validate_cursor_path,
+        preflight_skip_history_path=preflight_skip_history_path,
+        preflight_skip_cursor_path=preflight_skip_cursor_path,
+        wp_api_base=wp_api_base,
+        history=None,
+        now=current_now,
+        budget_seconds=budget_seconds,
+        existing_emitted=None,
+        write_history=True,
+        write_review_cursors=True,
+    )
+    return ScanResult(
+        emitted=review_state.emitted,
+        skipped=review_state.skipped,
+        cursor_before=main_cursor_before,
+        cursor_after=main_cursor_before or current_now.isoformat(),
+    )
+
+
+def scan(
+    *,
+    wp_api_base: str | None = None,
+    cursor_path: str | Path = "logs/publish_notice_cursor.txt",
+    history_path: str | Path = "logs/publish_notice_history.json",
+    queue_path: str | Path = "logs/publish_notice_queue.jsonl",
+    guarded_publish_history_path: str | Path | None = None,
+    guarded_cursor_path: str | Path | None = None,
+    post_gen_validate_history_path: str | Path | None = None,
+    post_gen_validate_cursor_path: str | Path | None = None,
+    preflight_skip_history_path: str | Path | None = None,
+    preflight_skip_cursor_path: str | Path | None = None,
+    fetch: FetchFn | None = None,
+    now: Callable[[], datetime] | datetime | None = None,
+) -> ScanResult:
+    direct_state = _scan_direct_publish_phase(
+        wp_api_base=wp_api_base,
+        cursor_path=cursor_path,
+        history_path=history_path,
+        queue_path=queue_path,
+        fetch=fetch,
+        now=now,
+        write_history=False,
+        write_cursor=False,
+    )
+    history_file = _path(history_path)
+    cursor_file = _path(cursor_path)
+    if direct_state.cursor_before is None:
+        _write_history(history_file, direct_state.history_after)
+        _write_cursor(cursor_file, direct_state.cursor_after)
+        return ScanResult(
+            emitted=[],
+            skipped=[],
+            cursor_before=None,
+            cursor_after=direct_state.cursor_after,
+        )
+
+    review_state = _scan_review_phase(
+        cursor_path=cursor_path,
+        history_path=history_path,
+        queue_path=queue_path,
+        guarded_publish_history_path=guarded_publish_history_path,
+        guarded_cursor_path=guarded_cursor_path,
+        post_gen_validate_history_path=post_gen_validate_history_path,
+        post_gen_validate_cursor_path=post_gen_validate_cursor_path,
+        preflight_skip_history_path=preflight_skip_history_path,
+        preflight_skip_cursor_path=preflight_skip_cursor_path,
+        wp_api_base=direct_state.base_url,
+        history=direct_state.history_after,
+        now=direct_state.current_now,
+        budget_seconds=0.0,
+        existing_emitted=direct_state.emitted,
+        write_history=True,
+        write_review_cursors=True,
+    )
+    _write_history(history_file, review_state.history_after)
+    _write_cursor(cursor_file, direct_state.cursor_after)
+    return ScanResult(
+        emitted=review_state.emitted,
+        skipped=direct_state.skipped + review_state.skipped,
+        cursor_before=direct_state.cursor_before,
+        cursor_after=direct_state.cursor_after,
     )
 
 
@@ -3082,12 +3355,16 @@ __all__ = [
     "PublishNotice289DigestState",
     "PublishNotice24hBudgetState",
     "ScanResult",
+    "_publish_notice_review_timeout_budget_seconds",
+    "_publish_notice_two_phase_enabled",
     "apply_289_digest",
     "demote_class_for_budget",
     "evaluate_289_digest_state",
     "evaluate_24h_budget_state",
     "scan",
+    "scan_direct_publish_only",
     "scan_guarded_publish_history",
     "scan_preflight_skip_history",
     "scan_post_gen_validate_history",
+    "scan_review_only",
 ]

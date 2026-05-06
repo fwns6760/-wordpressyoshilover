@@ -39,7 +39,13 @@ from src.publish_notice_email_sender import (  # noqa: E402
     send_summary,
     summarize_execution_results,
 )
-from src.publish_notice_scanner import scan  # noqa: E402
+from src.publish_notice_scanner import (  # noqa: E402
+    _publish_notice_review_timeout_budget_seconds as _review_timeout_budget_seconds,
+    _publish_notice_two_phase_enabled as _two_phase_enabled,
+    scan,
+    scan_direct_publish_only,
+    scan_review_only,
+)
 from src import repair_provider_ledger  # noqa: E402
 from src import runner_ledger_integration  # noqa: E402
 
@@ -214,6 +220,90 @@ def _emit_notice_ledger(
     )
 
 
+def _send_per_post_requests(
+    requests: Sequence[PublishNoticeRequest],
+    *,
+    queue_path: str,
+    history_path: str,
+    dry_run: bool,
+    send_enabled: bool,
+    ledger_sink: runner_ledger_integration.BestEffortLedgerSink,
+) -> list[Any]:
+    results: list[Any] = []
+    for request in requests:
+        mail_result = send(
+            request,
+            dry_run=dry_run,
+            send_enabled=send_enabled,
+            duplicate_history_path=queue_path,
+        )
+        append_send_result(
+            queue_path,
+            notice_kind="per_post",
+            post_id=request.post_id,
+            result=mail_result,
+            publish_time_iso=request.publish_time_iso,
+            request=request,
+            history_path=history_path,
+        )
+        results.append(mail_result)
+        _emit_notice_ledger(
+            ledger_sink,
+            notice_kind="per_post",
+            post_id=request.post_id,
+            before_body=build_body_text(request),
+            result=mail_result,
+            input_payload={
+                "notice_kind": "per_post",
+                "request": {
+                    "post_id": request.post_id,
+                    "title": request.title,
+                    "canonical_url": request.canonical_url,
+                    "subtype": request.subtype,
+                    "publish_time_iso": request.publish_time_iso,
+                },
+            },
+        )
+        _print_result("per_post", request.post_id, mail_result)
+    return results
+
+
+def _send_summary_requests(
+    summary_requests: Sequence[BurstSummaryRequest],
+    *,
+    queue_path: str,
+    dry_run: bool,
+    send_enabled: bool,
+    ledger_sink: runner_ledger_integration.BestEffortLedgerSink,
+) -> None:
+    for summary_request in summary_requests:
+        summary_result = send_summary(
+            summary_request,
+            dry_run=dry_run,
+            send_enabled=send_enabled,
+        )
+        summary_post_id = f"summary:{summary_request.cumulative_published_count}"
+        append_send_result(
+            queue_path,
+            notice_kind="summary",
+            post_id=summary_post_id,
+            result=summary_result,
+        )
+        _emit_notice_ledger(
+            ledger_sink,
+            notice_kind="summary",
+            post_id=summary_post_id,
+            before_body=build_summary_body_text(summary_request),
+            result=summary_result,
+            input_payload={
+                "notice_kind": "summary",
+                "summary_post_id": summary_post_id,
+                "cumulative_published_count": summary_request.cumulative_published_count,
+            },
+        )
+        _print_result("summary", summary_post_id, summary_result)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     try:
         load_dotenv()
@@ -226,90 +316,121 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
         if args.scan:
-            result = scan(
-                cursor_path=args.cursor_path,
-                history_path=args.history_path,
-                queue_path=args.queue_path,
-            )
             per_post_results = []
-            print(
-                f"[scan] emitted={len(result.emitted)} skipped={len(result.skipped)} "
-                f"cursor_before={result.cursor_before} cursor_after={result.cursor_after}"
-            )
-            for post_id, reason in result.skipped:
-                print(f"[skip] post_id={post_id} reason={reason}")
-            for request in result.emitted:
-                mail_result = send(
-                    request,
-                    dry_run=dry_run,
-                    send_enabled=send_enabled,
-                    duplicate_history_path=args.queue_path,
-                )
-                append_send_result(
-                    args.queue_path,
-                    notice_kind="per_post",
-                    post_id=request.post_id,
-                    result=mail_result,
-                    publish_time_iso=request.publish_time_iso,
-                    request=request,
+            total_emitted = 0
+            if _two_phase_enabled():
+                direct_result = scan_direct_publish_only(
+                    cursor_path=args.cursor_path,
                     history_path=args.history_path,
+                    queue_path=args.queue_path,
                 )
-                per_post_results.append(mail_result)
-                _emit_notice_ledger(
-                    ledger_sink,
-                    notice_kind="per_post",
-                    post_id=request.post_id,
-                    before_body=build_body_text(request),
-                    result=mail_result,
-                    input_payload={
-                        "notice_kind": "per_post",
-                        "request": {
-                            "post_id": request.post_id,
-                            "title": request.title,
-                            "canonical_url": request.canonical_url,
-                            "subtype": request.subtype,
-                            "publish_time_iso": request.publish_time_iso,
-                        },
-                    },
+                print(
+                    f"[scan:direct] emitted={len(direct_result.emitted)} skipped={len(direct_result.skipped)} "
+                    f"cursor_before={direct_result.cursor_before} cursor_after={direct_result.cursor_after}"
                 )
-                _print_result("per_post", request.post_id, mail_result)
-            summary_entries = [
-                _summary_entry_from_request(request)
-                for request in result.emitted
-                if _is_publish_notice_request(request)
-            ]
-            summary_requests = build_burst_summary_requests(
-                summary_entries,
-                summary_every=args.summary_every,
-                daily_cap=args.daily_cap,
-            )
-            for summary_request in summary_requests:
-                summary_result = send_summary(
-                    summary_request,
+                for post_id, reason in direct_result.skipped:
+                    print(f"[skip] phase=direct post_id={post_id} reason={reason}")
+                direct_results = _send_per_post_requests(
+                    direct_result.emitted,
+                    queue_path=args.queue_path,
+                    history_path=args.history_path,
                     dry_run=dry_run,
                     send_enabled=send_enabled,
+                    ledger_sink=ledger_sink,
                 )
-                summary_post_id = f"summary:{summary_request.cumulative_published_count}"
-                append_send_result(
-                    args.queue_path,
-                    notice_kind="summary",
-                    post_id=summary_post_id,
-                    result=summary_result,
+                per_post_results.extend(direct_results)
+                total_emitted += len(direct_result.emitted)
+
+                summary_entries = [
+                    _summary_entry_from_request(request)
+                    for request in direct_result.emitted
+                    if _is_publish_notice_request(request)
+                ]
+                summary_requests = build_burst_summary_requests(
+                    summary_entries,
+                    summary_every=args.summary_every,
+                    daily_cap=args.daily_cap,
                 )
-                _emit_notice_ledger(
-                    ledger_sink,
-                    notice_kind="summary",
-                    post_id=summary_post_id,
-                    before_body=build_summary_body_text(summary_request),
-                    result=summary_result,
-                    input_payload={
-                        "notice_kind": "summary",
-                        "summary_post_id": summary_post_id,
-                        "cumulative_published_count": summary_request.cumulative_published_count,
-                    },
+                _send_summary_requests(
+                    summary_requests,
+                    queue_path=args.queue_path,
+                    dry_run=dry_run,
+                    send_enabled=send_enabled,
+                    ledger_sink=ledger_sink,
                 )
-                _print_result("summary", summary_post_id, summary_result)
-            execution_summary = summarize_execution_results(per_post_results, emitted=len(result.emitted))
+
+                if direct_result.cursor_before is not None:
+                    try:
+                        review_result = scan_review_only(
+                            cursor_path=args.cursor_path,
+                            history_path=args.history_path,
+                            queue_path=args.queue_path,
+                            budget_seconds=_review_timeout_budget_seconds(),
+                        )
+                    except Exception as exc:
+                        print(
+                            f"[scan:review] status=error error_type={type(exc).__name__} message={exc}",
+                            file=sys.stderr,
+                        )
+                        review_result = None
+                    if review_result is not None:
+                        print(
+                            f"[scan:review] emitted={len(review_result.emitted)} skipped={len(review_result.skipped)} "
+                            f"cursor_before={review_result.cursor_before} cursor_after={review_result.cursor_after}"
+                        )
+                        for post_id, reason in review_result.skipped:
+                            print(f"[skip] phase=review post_id={post_id} reason={reason}")
+                        review_results = _send_per_post_requests(
+                            review_result.emitted,
+                            queue_path=args.queue_path,
+                            history_path=args.history_path,
+                            dry_run=dry_run,
+                            send_enabled=send_enabled,
+                            ledger_sink=ledger_sink,
+                        )
+                        per_post_results.extend(review_results)
+                        total_emitted += len(review_result.emitted)
+            else:
+                result = scan(
+                    cursor_path=args.cursor_path,
+                    history_path=args.history_path,
+                    queue_path=args.queue_path,
+                )
+                print(
+                    f"[scan] emitted={len(result.emitted)} skipped={len(result.skipped)} "
+                    f"cursor_before={result.cursor_before} cursor_after={result.cursor_after}"
+                )
+                for post_id, reason in result.skipped:
+                    print(f"[skip] post_id={post_id} reason={reason}")
+                legacy_results = _send_per_post_requests(
+                    result.emitted,
+                    queue_path=args.queue_path,
+                    history_path=args.history_path,
+                    dry_run=dry_run,
+                    send_enabled=send_enabled,
+                    ledger_sink=ledger_sink,
+                )
+                per_post_results.extend(legacy_results)
+                summary_entries = [
+                    _summary_entry_from_request(request)
+                    for request in result.emitted
+                    if _is_publish_notice_request(request)
+                ]
+                summary_requests = build_burst_summary_requests(
+                    summary_entries,
+                    summary_every=args.summary_every,
+                    daily_cap=args.daily_cap,
+                )
+                _send_summary_requests(
+                    summary_requests,
+                    queue_path=args.queue_path,
+                    dry_run=dry_run,
+                    send_enabled=send_enabled,
+                    ledger_sink=ledger_sink,
+                )
+                total_emitted = len(result.emitted)
+
+            execution_summary = summarize_execution_results(per_post_results, emitted=total_emitted)
             print(build_execution_summary_log(execution_summary))
             alert_line = build_zero_sent_alert_log(execution_summary)
             if alert_line is not None:

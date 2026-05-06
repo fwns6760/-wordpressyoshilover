@@ -1319,6 +1319,12 @@ def _backlog_narrow_age_buffer_hours() -> float:
     return float(BACKLOG_NARROW_AGE_BUFFER_HOURS)
 
 
+def _strict_source_time_review_required(freshness: dict[str, Any]) -> bool:
+    if not (_source_time_priority_freshness_enabled() and _strict_breaking_news_thresholds_enabled()):
+        return False
+    return str(freshness.get("freshness_basis") or "") != "source_time"
+
+
 def _entry_freshness_context(entry: dict[str, Any], *, now: datetime) -> dict[str, Any]:
     reference_now = _now_jst(now)
     cache_key = (
@@ -1516,6 +1522,8 @@ def _backlog_narrow_publish_decision(entry: dict[str, Any], *, now: datetime) ->
         if _strict_breaking_news_thresholds_enabled():
             return _finalize({"eligible": False, "context": None, "reason": "source_time_missing_review"})
         return _finalize(decision)
+    if _strict_source_time_review_required(freshness):
+        return _finalize({"eligible": False, "context": None, "reason": "source_time_missing_review"})
     if age_hours is None:
         if _strict_breaking_news_thresholds_enabled():
             return _finalize({"eligible": False, "context": None, "reason": "source_time_missing_review"})

@@ -64,6 +64,7 @@ REVIEW_FLAGS = frozenset(
         "win_loss_score_conflict_review",
         "pitcher_team_stat_confusion_review",
         "date_fact_mismatch_review",
+        "source_time_missing_review",
     }
 )
 REPAIRABLE_FLAGS = frozenset(
@@ -1058,6 +1059,12 @@ def _strict_breaking_news_thresholds_enabled() -> bool:
     return _env_truthy(ENABLE_STRICT_BREAKING_NEWS_THRESHOLDS_ENV)
 
 
+def _strict_source_time_review_required(content_info: dict[str, Any]) -> bool:
+    if not _strict_breaking_news_thresholds_enabled():
+        return False
+    return str(content_info.get("freshness_basis") or "") != "source_time"
+
+
 def _threshold_reached(age_hours: float, threshold_hours: float) -> bool:
     if _strict_breaking_news_thresholds_enabled():
         return age_hours >= threshold_hours
@@ -1113,6 +1120,7 @@ def freshness_check(raw_post: dict[str, Any], record: dict[str, Any], *, now: da
     subtype = _resolved_subtype(raw_post, record)
     threshold_hours = _freshness_threshold_hours(subtype)
     content_info = _resolve_content_datetime(raw_post, record, now=now_jst)
+    source_time_review_required = _strict_source_time_review_required(content_info)
     age_reference_dt = content_info["age_reference_dt"]
     age_hours = 0.0
     if age_reference_dt is not None:
@@ -1133,6 +1141,8 @@ def freshness_check(raw_post: dict[str, Any], record: dict[str, Any], *, now: da
 
     if content_date_unknown:
         reason_parts.append("warning=content_date_unknown")
+    if source_time_review_required:
+        reason_parts.append("warning=source_time_missing_review")
     elif subtype in LINEUP_FRESHNESS_SUBTYPES:
         game_start_dt, start_source = _estimate_game_start_dt(
             str(content_info["content_date"]),
@@ -1162,7 +1172,7 @@ def freshness_check(raw_post: dict[str, Any], record: dict[str, Any], *, now: da
 
     if _strict_breaking_news_thresholds_enabled():
         template_key = str(((raw_post or {}).get("meta") or {}).get("template_key") or (raw_post or {}).get("template_key") or "")
-        if content_date_unknown:
+        if source_time_review_required:
             _emit_strict_freshness_event(
                 "source_time_missing_review",
                 content_info=content_info,
@@ -1195,6 +1205,7 @@ def freshness_check(raw_post: dict[str, Any], record: dict[str, Any], *, now: da
         "freshness_basis": str(content_info["freshness_basis"]),
         "source_published_at": str(content_info["source_published_at"]),
         "content_date_unknown": content_date_unknown,
+        "source_time_review_required": source_time_review_required,
         "backlog_only": hard_stop_flag in BACKLOG_ONLY_FRESHNESS_FLAGS,
     }
 
@@ -2032,6 +2043,8 @@ def _evaluate_record(raw_post: dict[str, Any], *, now: datetime | None = None) -
     enforce_freshness = str(raw_post.get("status") or "").strip().lower() != "publish"
     if freshness["content_date_unknown"]:
         _append_reason(reasons, flag="content_date_unknown", category="repairable")
+    if freshness.get("source_time_review_required"):
+        _append_reason(reasons, flag="source_time_missing_review", category="review")
     if enforce_freshness and freshness["hard_stop_flag"] is not None:
         freshness_flag = str(freshness["hard_stop_flag"])
         freshness_category = "repairable" if freshness_flag in REPAIRABLE_FLAGS else "hard_stop"

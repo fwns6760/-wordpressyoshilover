@@ -15823,6 +15823,104 @@ def _is_history_duplicate(post_url: str, entry_title_norm: str, history: dict) -
     return False
 
 
+# RSS-255: post_gen_validate fail を fail history に記録、次 cycle で early skip。
+# Gemini call / Cloud Run 時間 / fetcher 詰まりを削減 (重複判定の緩和ではない)。
+POST_GEN_VALIDATE_FAILURE_KEY_PREFIX = "pgv_fail:"
+POST_GEN_VALIDATE_FAILURE_TTL_HOURS = 24.0
+
+
+def _post_gen_validate_failure_keys(
+    *,
+    post_url: str,
+    x_status_id: str,
+    entry_title_norm: str,
+) -> list[str]:
+    """fail history に書き込む / 引く dedup key 群。
+
+    x_status_id (X 投稿) / post_url (一般) / entry_title_norm (60 char prefix) の
+    3 軸で同じ失敗素材を捕捉する。
+    """
+    keys: list[str] = []
+    if x_status_id:
+        keys.append(f"{POST_GEN_VALIDATE_FAILURE_KEY_PREFIX}status:{x_status_id}")
+    if post_url:
+        keys.append(f"{POST_GEN_VALIDATE_FAILURE_KEY_PREFIX}url:{post_url}")
+    if entry_title_norm and len(entry_title_norm) > 5:
+        keys.append(f"{POST_GEN_VALIDATE_FAILURE_KEY_PREFIX}title:{entry_title_norm[:60]}")
+    return keys
+
+
+def _record_post_gen_validate_failure(
+    history: dict,
+    *,
+    post_url: str,
+    x_status_id: str,
+    entry_title_norm: str,
+    fail_axes: list[str] | tuple[str, ...] = (),
+) -> None:
+    """post_gen_validate fail を history に記録。
+
+    永久ブロックではなく、TTL (POST_GEN_VALIDATE_FAILURE_TTL_HOURS=24h) 以内の
+    再評価を停止する目的。次 cycle 以降は _is_post_gen_validate_failure_recent で
+    early skip される。
+    """
+    now = datetime.now(timezone.utc)
+    payload: dict[str, object] = {
+        "timestamp": now.strftime("%Y-%m-%dT%H:%M:%S"),
+        "fail_axes": [str(axis) for axis in (fail_axes or [])],
+    }
+    if x_status_id:
+        payload["x_status_id"] = str(x_status_id)
+    if post_url:
+        payload["source_url"] = str(post_url)
+    keys = _post_gen_validate_failure_keys(
+        post_url=post_url,
+        x_status_id=x_status_id,
+        entry_title_norm=entry_title_norm,
+    )
+    if not keys:
+        return
+    for key in keys:
+        history[key] = payload
+
+
+def _is_post_gen_validate_failure_recent(
+    history: dict,
+    *,
+    post_url: str,
+    x_status_id: str,
+    entry_title_norm: str,
+    ttl_hours: float = POST_GEN_VALIDATE_FAILURE_TTL_HOURS,
+) -> tuple[bool, str]:
+    """fail history を引いて TTL 内なら early skip 対象と判定。
+
+    Returns:
+        (is_recent_failure, matched_key_kind):
+            matched_key_kind は 'status' / 'url' / 'title' / '' (no match)。
+    """
+    now = datetime.now(timezone.utc)
+    keys = _post_gen_validate_failure_keys(
+        post_url=post_url,
+        x_status_id=x_status_id,
+        entry_title_norm=entry_title_norm,
+    )
+    for key in keys:
+        meta = history.get(key)
+        if not isinstance(meta, dict):
+            continue
+        ts_raw = str(meta.get("timestamp") or "").strip()
+        if not ts_raw:
+            continue
+        try:
+            ts = datetime.strptime(ts_raw, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        if (now - ts).total_seconds() <= ttl_hours * 3600.0:
+            kind = key[len(POST_GEN_VALIDATE_FAILURE_KEY_PREFIX):].split(":", 1)[0]
+            return True, kind
+    return False, ""
+
+
 def _get_title_collision_meta(history: dict, rewritten_title_norm: str, source_url: str) -> dict | None:
     if not rewritten_title_norm or len(rewritten_title_norm) <= 5:
         return None
@@ -19009,6 +19107,8 @@ def _main(args, logger):
     entry_index = 0
     not_giants_related_info_count = 0
     not_giants_related_sample_titles: list[str] = []
+    # RSS-255: 同一 run 内で同じ x_status_id の 2 件目以降を skip。
+    same_fire_status_ids: set[str] = set()
 
     for source_rank, source in enumerate(sources):
         name        = source["name"]
@@ -19087,6 +19187,56 @@ def _main(args, logger):
                 skip_reason_counts["history_duplicate"] += 1
                 _append_skip_reason_sample(skip_reason_sample_titles, "history_duplicate", entry_title_clean or post_url)
                 continue
+
+            # RSS-255: post_gen_validate fail history dedup (TTL 24h、Gemini cost 削減)
+            x_status_id_for_dedup = _extract_x_status_id(post_url or "")
+            if x_status_id_for_dedup and x_status_id_for_dedup in same_fire_status_ids:
+                logger.debug(f"  [SKIP:同run内重複status_id] {entry_title_clean[:50]}")
+                skip_filter += 1
+                skip_reason_counts["post_gen_validate_failed_status_id_recent"] += 1
+                _append_skip_reason_sample(
+                    skip_reason_sample_titles,
+                    "post_gen_validate_failed_status_id_recent",
+                    entry_title_clean or post_url,
+                )
+                continue
+            pgv_recent, pgv_match_kind = _is_post_gen_validate_failure_recent(
+                history,
+                post_url=post_url,
+                x_status_id=x_status_id_for_dedup,
+                entry_title_norm=entry_title_norm,
+            )
+            if pgv_recent:
+                skip_kind = (
+                    "post_gen_validate_failed_status_id_recent"
+                    if pgv_match_kind == "status"
+                    else "post_gen_validate_failed_source_url_recent"
+                )
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "post_gen_validate_failure_dedup_skip",
+                            "matched_key_kind": pgv_match_kind,
+                            "post_url": post_url,
+                            "x_status_id": x_status_id_for_dedup,
+                            "title_preview": (entry_title_clean or "")[:60],
+                            "ttl_hours": POST_GEN_VALIDATE_FAILURE_TTL_HOURS,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                skip_filter += 1
+                skip_reason_counts[skip_kind] += 1
+                _append_skip_reason_sample(
+                    skip_reason_sample_titles,
+                    skip_kind,
+                    entry_title_clean or post_url,
+                )
+                if x_status_id_for_dedup:
+                    same_fire_status_ids.add(x_status_id_for_dedup)
+                continue
+            if x_status_id_for_dedup:
+                same_fire_status_ids.add(x_status_id_for_dedup)
 
             published_at = _entry_published_datetime(entry)
             if not published_at:
@@ -20117,6 +20267,17 @@ def _main(args, logger):
                         fail_axes=list(post_gen_validate["fail_axes"]),
                         stop_reason=str(post_gen_validate.get("stop_reason") or ""),
                     )
+                    # RSS-255: post_gen_validate fail を fail history に記録 (TTL 24h)。
+                    # 次 cycle 以降、同じ x_status_id / source_url を early skip して
+                    # Gemini call / Cloud Run 時間 / fetcher 詰まりを削減。
+                    _record_post_gen_validate_failure(
+                        history,
+                        post_url=post_url,
+                        x_status_id=_extract_x_status_id(post_url or ""),
+                        entry_title_norm=item.get("entry_title_norm", "") or "",
+                        fail_axes=list(post_gen_validate["fail_axes"]),
+                    )
+                    persist_history(history)
                     continue
         else:
             content = build_oembed_block(post_url)

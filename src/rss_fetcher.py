@@ -4431,6 +4431,32 @@ def _select_template_v2(
     if actor_kind == "player" and analysis.get("has_quote"):
         return "player_quote_short", "player"
 
+    # RSS-259: x_short_player 判定を postgame_strict / postgame_score_short /
+    # score_lite / short_comment より **前** に移動。X 由来短文 postgame
+    # (試合終了/敗戦/打線沈黙系) が postgame_strict の strict_contract_fail /
+    # strict_insufficient_for_render で fail し続ける問題を解決。
+    # ただし has_lineup_signal / has_pregame_signal がある case は既存
+    # lineup_short / pregame_short routing を保護するため guard で除外。
+    # AND 5 条件 (x_post / trusted / valid X URL / length<400 / giants_related /
+    # important keyword hit) は RSS-257 既存条件を再利用。
+    # news 由来 postgame_strict (source_type=news) は AND 1 条件 False で不発、
+    # 既存 postgame_strict path 維持される。
+    if (
+        is_trusted_social
+        and not has_lineup_signal
+        and not has_pregame_signal
+        and entry_source_url
+        and _is_valid_x_post_source_url(entry_source_url)
+        and source_text_length < 400
+        and is_giants_related(
+            entry_text,
+            source_name=entry_source_name,
+            post_url=entry_source_url,
+        )
+        and _trusted_social_giants_keyword_hits(entry_text)
+    ):
+        return "x_short_player", "x_short_player"
+
     if analysis.get("has_score") and analysis.get("has_opponent") and str(analysis.get("decisive_event_text") or "").strip():
         return "postgame_strict", "postgame"
 
@@ -4445,29 +4471,6 @@ def _select_template_v2(
         return "lineup_short", "lineup"
     if has_pregame_signal:
         return "pregame_short", "pregame"
-    # RSS-257: trusted Giants X 短文の選手・投手・監督・ヒーロー記事を
-    # 長文テンプレに乗せず x_short_player に振る。AND 5 条件:
-    #   1. source_type=x_post (analysis から)
-    #   2. trusted Giants source (handle/name strict match)
-    #   3. is_giants_related (source_text)
-    #   4. _trusted_social_giants_keyword_hits (重要 keyword hit ≥ 1)
-    #   5. source_text_length < 400 (短文限定)
-    # AND tweet URL が valid (元 X URL 保持要件)。
-    # 既存 lineup_short / pregame_short / postgame / manager / player_quote 系
-    # は **先に hit** するので RSS-257 は fallback 経路のみ。
-    if (
-        is_trusted_social
-        and entry_source_url
-        and _is_valid_x_post_source_url(entry_source_url)
-        and source_text_length < 400
-        and is_giants_related(
-            entry_text,
-            source_name=entry_source_name,
-            post_url=entry_source_url,
-        )
-        and _trusted_social_giants_keyword_hits(entry_text)
-    ):
-        return "x_short_player", "x_short_player"
     if is_trusted_social and source_text_length < 300:
         return "trusted_social_short", "social_news"
     if source_text_length < 100:

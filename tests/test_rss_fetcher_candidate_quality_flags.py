@@ -256,6 +256,50 @@ class BodyDupReductionFlagTests(unittest.TestCase):
 
         self.assertEqual(reduced, body)
 
+    def test_flag_off_keeps_h3_lead_duplication_in_later_section(self):
+        body = "\n".join(
+            [
+                "【ニュースの整理】",
+                "阿部監督が起用意図を説明した。",
+                "若手起用への言及があった。",
+                "【試合展開】",
+                "試合展開は終盤の継投が焦点だった。",
+                "七回の継投が流れを変えた。",
+            ]
+        )
+
+        reduced = rss_fetcher._maybe_reduce_body_intro_dup(
+            body_text=body,
+            article_title="阿部監督が起用意図を説明した",
+            article_subtype="social_news",
+            logger=rss_fetcher.logging.getLogger("rss_fetcher"),
+        )
+
+        self.assertEqual(reduced, body)
+
+    def test_flag_on_removes_h3_lead_duplication_in_later_section(self):
+        body = "\n".join(
+            [
+                "【ニュースの整理】",
+                "阿部監督が起用意図を説明した。",
+                "若手起用への言及があった。",
+                "【試合展開】",
+                "試合展開は終盤の継投が焦点だった。",
+                "七回の継投が流れを変えた。",
+            ]
+        )
+        with patch.dict(os.environ, {"ENABLE_BODY_DUP_REDUCTION": "1"}, clear=False):
+            reduced = rss_fetcher._maybe_reduce_body_intro_dup(
+                body_text=body,
+                article_title="阿部監督が起用意図を説明した",
+                article_subtype="social_news",
+                logger=rss_fetcher.logging.getLogger("rss_fetcher"),
+            )
+
+        self.assertNotIn("試合展開は終盤の継投が焦点だった。", reduced)
+        self.assertIn("七回の継投が流れを変えた。", reduced)
+        self.assertIn("【試合展開】", reduced)
+
     def test_flag_on_build_news_block_reduces_title_intro_overlap(self):
         duplicate_social_body = "\n".join(
             [

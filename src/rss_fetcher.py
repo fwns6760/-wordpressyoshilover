@@ -77,6 +77,7 @@ from src.article_quality_guards import (
     ENABLE_TITLE_GENERIC_COMPOUND_GUARD_ENV_FLAG,
     ENABLE_QUOTE_INTEGRITY_GUARD_ENV_FLAG,
     detect_source_entity_conflict,
+    extract_grounded_team_names,
     find_duplicate_sentence,
     find_excessive_h3,
     find_forbidden_phrase,
@@ -243,6 +244,9 @@ ENABLE_SOURCE_LINK_ONLY_TEMPLATE_ENV_FLAG = "ENABLE_SOURCE_LINK_ONLY_TEMPLATE"
 ENABLE_FARM_SUBTYPE_SPLIT_ENV_FLAG = "ENABLE_FARM_SUBTYPE_SPLIT"
 ENABLE_BODY_DUP_REDUCTION_ENV_FLAG = "ENABLE_BODY_DUP_REDUCTION"
 ENABLE_BODY_LEAD_PARAPHRASE_GUARD_ENV_FLAG = "ENABLE_BODY_LEAD_PARAPHRASE_GUARD"
+ENABLE_H3_COUNT_REPAIR_ENV_FLAG = "ENABLE_H3_COUNT_REPAIR"
+ENABLE_SOURCE_GROUNDING_DRIFT_REPAIR_ENV_FLAG = "ENABLE_SOURCE_GROUNDING_DRIFT_REPAIR"
+ENABLE_SHORT_SOURCE_BODY_SHRINK_REPAIR_ENV_FLAG = "ENABLE_SHORT_SOURCE_BODY_SHRINK_REPAIR"
 ENABLE_SOCIAL_TOO_WEAK_NARROW_RESCUE_ENV_FLAG = "ENABLE_SOCIAL_TOO_WEAK_NARROW_RESCUE"
 ENABLE_RSS_SHORT_SCORE_POST_REROUTE_ENV_FLAG = "ENABLE_RSS_SHORT_SCORE_POST_REROUTE"
 ENABLE_RSS_MANAGER_COMMENT_KEEP_ENV_FLAG = "ENABLE_RSS_MANAGER_COMMENT_KEEP"
@@ -406,6 +410,8 @@ ENABLE_BODY_TEMPLATE_V2_ENV_FLAG = "ENABLE_BODY_TEMPLATE_V2"
 SHORT_SOURCE_NARROW_TEMPLATE_MAX_CHARS = 200
 SOURCE_LINK_ONLY_TEMPLATE_MAX_CHARS = 100
 RSS_SHORT_SCORE_REROUTE_MAX_CHARS = SHORT_SOURCE_NARROW_TEMPLATE_MAX_CHARS
+SHORT_SOURCE_BODY_SHRINK_REPAIR_MIN_BODY_CHARS = 220
+SHORT_SOURCE_BODY_SHRINK_REPAIR_MIN_SAVED_CHARS = 40
 SHORT_SOURCE_NARROW_TEMPLATE_SUBTYPES = frozenset(
     {
         "player_notice",
@@ -1349,6 +1355,18 @@ def _body_dup_reduction_enabled() -> bool:
 
 def _body_lead_paraphrase_guard_enabled() -> bool:
     return _env_flag(ENABLE_BODY_LEAD_PARAPHRASE_GUARD_ENV_FLAG, False)
+
+
+def _h3_count_repair_enabled() -> bool:
+    return _env_flag(ENABLE_H3_COUNT_REPAIR_ENV_FLAG, False)
+
+
+def _source_grounding_drift_repair_enabled() -> bool:
+    return _env_flag(ENABLE_SOURCE_GROUNDING_DRIFT_REPAIR_ENV_FLAG, False)
+
+
+def _short_source_body_shrink_repair_enabled() -> bool:
+    return _env_flag(ENABLE_SHORT_SOURCE_BODY_SHRINK_REPAIR_ENV_FLAG, False)
 
 
 def _social_too_weak_narrow_rescue_enabled() -> bool:
@@ -6388,11 +6406,12 @@ def _render_postgame_strict_html(body_text: str) -> str:
 
     blocks: list[str] = []
     heading_index = 0
+    rendered_h3_count = 0
     idx = 0
     while idx < len(lines):
         line = lines[idx]
         if line.startswith("【") and "】" in line:
-            level = _rendered_heading_level(line, heading_index)
+            level, rendered_h3_count = _resolved_rendered_heading_level(line, heading_index, rendered_h3_count)
             heading_index += 1
             safe_heading = _html.escape(line)
             blocks.append(
@@ -7871,6 +7890,278 @@ def _rendered_heading_level(heading_text: str, heading_index: int) -> int:
     if heading_text in _structured_template_first_headings():
         return 2
     return 3
+
+
+def _resolved_rendered_heading_level(heading_text: str, heading_index: int, rendered_h3_count: int) -> tuple[int, int]:
+    level = _rendered_heading_level(heading_text, heading_index)
+    if _h3_count_repair_enabled() and level == 3 and rendered_h3_count >= 2:
+        return 4, rendered_h3_count
+    if level == 3:
+        return level, rendered_h3_count + 1
+    return level, rendered_h3_count
+
+
+_SOURCE_GROUNDING_SCORE_RE = _re.compile(r"(?<!\d)(\d{1,2})\s*[－\-–]\s*(\d{1,2})(?!\d)")
+_SOURCE_GROUNDING_ROLE_SUFFIX_RE = _re.compile(r"(監督|コーチ|投手|捕手|内野手|外野手|選手|氏)$")
+
+
+def _source_grounding_category_hint(article_subtype: str, source_refs: dict[str, object] | None = None) -> str:
+    if isinstance(source_refs, dict):
+        explicit = _collapse_ws(_strip_html(str(source_refs.get("category") or "")))
+        if explicit:
+            return explicit
+    subtype = str(article_subtype or "").strip().lower()
+    if subtype in {"manager", "coach", "manager_comment", "coach_comment", "manager_quote", "coach_quote"}:
+        return "首脳陣"
+    if subtype in {"player", "player_notice", "player_recovery", "player_comment", "player_quote", "roster"}:
+        return "選手情報"
+    if subtype in {"postgame", "lineup", "live_update", "live_anchor", "pregame"}:
+        return "試合速報"
+    if subtype in {"farm", "farm_result", "farm_lineup"}:
+        return "ドラフト・育成"
+    return ""
+
+
+def _normalize_source_grounding_score_tokens(text: str) -> set[str]:
+    clean = _collapse_ws(_strip_html(text or ""))
+    tokens = set()
+    for match in _SOURCE_GROUNDING_SCORE_RE.finditer(clean):
+        tokens.add(f"{match.group(1)}-{match.group(2)}")
+    return tokens
+
+
+def _normalize_source_grounding_actor_name(name: str) -> str:
+    normalized = _normalize_player_name_key(name or "")
+    if not normalized:
+        return ""
+    return _SOURCE_GROUNDING_ROLE_SUFFIX_RE.sub("", normalized)
+
+
+def _source_grounding_issue_for_sentence(
+    sentence: str,
+    *,
+    source_title: str,
+    source_summary: str,
+    category_hint: str = "",
+) -> str | None:
+    clean_sentence = _collapse_ws(_strip_html(sentence or ""))
+    if not clean_sentence:
+        return None
+    source_text = f"{source_title}\n{source_summary}"
+    sentence_scores = _normalize_source_grounding_score_tokens(clean_sentence)
+    if sentence_scores:
+        source_scores = _normalize_source_grounding_score_tokens(source_text)
+        if not sentence_scores.issubset(source_scores):
+            return "score"
+
+    sentence_quotes = set(_extract_quote_phrases(clean_sentence, max_phrases=4))
+    if sentence_quotes:
+        source_quotes = set(_extract_quote_phrases(source_text, max_phrases=4))
+        if not sentence_quotes.issubset(source_quotes):
+            return "quote"
+
+    source_teams = extract_grounded_team_names(source_text)
+    if source_teams:
+        sentence_teams = extract_grounded_team_names(clean_sentence)
+        if sentence_teams and not sentence_teams.issubset(source_teams):
+            return "team"
+
+    source_actor_name, _source_actor_kind = _detect_source_actor(source_title, source_summary, category_hint=category_hint)
+    sentence_actor_name, _sentence_actor_kind = _detect_source_actor(clean_sentence, "", category_hint=category_hint)
+    normalized_source_actor = _normalize_source_grounding_actor_name(source_actor_name)
+    normalized_sentence_actor = _normalize_source_grounding_actor_name(sentence_actor_name)
+    if normalized_source_actor and normalized_sentence_actor:
+        if (
+            normalized_source_actor != normalized_sentence_actor
+            and normalized_source_actor not in normalized_sentence_actor
+            and normalized_sentence_actor not in normalized_source_actor
+        ):
+            return "actor"
+    return None
+
+
+def _find_source_grounding_drift_issues(
+    body_text: str,
+    *,
+    source_title: str,
+    source_summary: str,
+    category_hint: str = "",
+) -> list[dict[str, object]]:
+    issues: list[dict[str, object]] = []
+    for section_index, (_heading, section_body) in enumerate(_split_text_sections(body_text)):
+        sentences = _body_dup_reduction_sentence_units(section_body)
+        for sentence_index, sentence in enumerate(sentences):
+            reason = _source_grounding_issue_for_sentence(
+                sentence,
+                source_title=source_title,
+                source_summary=source_summary,
+                category_hint=category_hint,
+            )
+            if reason:
+                issues.append(
+                    {
+                        "section_index": section_index,
+                        "sentence_index": sentence_index,
+                        "sentence": sentence,
+                        "reason": reason,
+                    }
+                )
+    return issues
+
+
+def _maybe_apply_source_grounding_drift_repair(
+    *,
+    body_text: str,
+    source_title: str,
+    source_summary: str,
+    article_subtype: str,
+    source_refs: dict[str, object] | None = None,
+    logger: logging.Logger | None = None,
+    source_url: str = "",
+) -> str:
+    if not _source_grounding_drift_repair_enabled():
+        return body_text
+    sections = _split_text_sections(body_text)
+    if not sections:
+        return body_text
+    category_hint = _source_grounding_category_hint(article_subtype, source_refs)
+    changed = False
+    removed_sentences: list[dict[str, str]] = []
+    updated_sections = list(sections)
+    for index, (heading, section_body) in enumerate(sections):
+        sentences = _body_dup_reduction_sentence_units(section_body)
+        if len(sentences) < 2:
+            continue
+        kept_sentences: list[str] = []
+        section_removed: list[dict[str, str]] = []
+        for sentence in sentences:
+            reason = _source_grounding_issue_for_sentence(
+                sentence,
+                source_title=source_title,
+                source_summary=source_summary,
+                category_hint=category_hint,
+            )
+            if reason:
+                section_removed.append({"sentence": sentence, "reason": reason})
+                continue
+            kept_sentences.append(sentence)
+        if section_removed and kept_sentences:
+            updated_sections[index] = (heading, " ".join(kept_sentences).strip())
+            removed_sentences.extend(section_removed)
+            changed = True
+    if not changed:
+        return body_text
+    rebuilt_lines: list[str] = []
+    for heading, section_body in updated_sections:
+        if heading:
+            rebuilt_lines.append(heading)
+        if section_body:
+            rebuilt_lines.extend(line.strip() for line in section_body.splitlines() if line.strip())
+    repaired_body = "\n".join(rebuilt_lines)
+    if logger is not None:
+        logger.info(
+            json.dumps(
+                {
+                    "event": "source_grounding_drift_repair_applied",
+                    "source_url": source_url,
+                    "subtype": article_subtype,
+                    "removed_count": len(removed_sentences),
+                    "reasons": sorted({item["reason"] for item in removed_sentences}),
+                },
+                ensure_ascii=False,
+            )
+        )
+    return repaired_body
+
+
+def _maybe_apply_short_source_body_shrink_repair(
+    *,
+    body_text: str,
+    title: str,
+    summary: str,
+    category: str,
+    body_subtype: str,
+    source_url: str,
+    source_name: str,
+    source_day_label: str,
+    logger: logging.Logger | None = None,
+) -> str:
+    if not _short_source_body_shrink_repair_enabled():
+        return body_text
+    clean_body_length = len(_collapse_ws(_strip_html(body_text or "")))
+    if clean_body_length < SHORT_SOURCE_BODY_SHRINK_REPAIR_MIN_BODY_CHARS:
+        return body_text
+    source_text = f"{title} {summary}"
+    source_length = len(_collapse_ws(_strip_html(source_text)))
+    if source_length >= SHORT_SOURCE_NARROW_TEMPLATE_MAX_CHARS:
+        return body_text
+
+    shrink_candidate = ""
+    candidate_kind = ""
+    if body_subtype == "farm" and source_length < SHORT_SOURCE_NARROW_TEMPLATE_MAX_CHARS:
+        farm_candidate = _build_farm_short_post_body(
+            title=title,
+            summary=summary,
+            source_url=source_url,
+            source_name=source_name,
+        )
+        if farm_candidate and _farm_body_has_required_structure(farm_candidate, "farm"):
+            shrink_candidate = farm_candidate
+            candidate_kind = "farm_short"
+
+    if not shrink_candidate and body_subtype in SHORT_SOURCE_NARROW_TEMPLATE_SUBTYPES:
+        narrow_candidate = _build_short_source_narrow_body(
+            title=title,
+            summary=summary,
+            category=category,
+            body_subtype=body_subtype,
+            source_url=source_url,
+            source_name=source_name,
+            source_day_label=source_day_label,
+        )
+        if narrow_candidate:
+            contract_ok, _fail_axes = _short_source_narrow_template_contract_ok(narrow_candidate, body_subtype)
+            if contract_ok:
+                shrink_candidate = narrow_candidate
+                candidate_kind = "short_source_narrow"
+
+    if not shrink_candidate and source_length < SOURCE_LINK_ONLY_TEMPLATE_MAX_CHARS and body_subtype in SOURCE_LINK_ONLY_TEMPLATE_SUBTYPES:
+        link_only_candidate = _build_source_link_only_body(
+            title=title,
+            summary=summary,
+            body_subtype=body_subtype,
+            source_url=source_url,
+            source_name=source_name,
+            source_day_label=source_day_label,
+        )
+        if link_only_candidate:
+            contract_ok, _fail_axes = _source_link_only_template_contract_ok(link_only_candidate, body_subtype)
+            if contract_ok:
+                shrink_candidate = link_only_candidate
+                candidate_kind = "source_link_only"
+
+    if not shrink_candidate:
+        return body_text
+
+    candidate_length = len(_collapse_ws(_strip_html(shrink_candidate)))
+    if candidate_length >= clean_body_length - SHORT_SOURCE_BODY_SHRINK_REPAIR_MIN_SAVED_CHARS:
+        return body_text
+    if logger is not None:
+        logger.info(
+            json.dumps(
+                {
+                    "event": "short_source_body_shrink_repair_applied",
+                    "source_url": source_url,
+                    "subtype": body_subtype,
+                    "source_length": source_length,
+                    "original_body_length": clean_body_length,
+                    "repaired_body_length": candidate_length,
+                    "candidate_kind": candidate_kind,
+                },
+                ensure_ascii=False,
+            )
+        )
+    return shrink_candidate
 
 
 def _manager_section_count(text: str) -> int:
@@ -10927,22 +11218,20 @@ def _maybe_reduce_body_intro_dup(
     sections = _split_text_sections(body_text)
     if not sections:
         return body_text
-    first_heading, first_body = sections[0]
-    sentences = _body_dup_reduction_sentence_units(first_body)
-    if len(sentences) < 2:
-        return body_text
-    heading_candidates = [heading for heading, _body in sections[:2] if heading]
     removed_sentences: list[str] = []
-    while len(sentences) > 1 and _sentence_duplicates_title_or_heading(sentences[0], article_title, heading_candidates):
-        removed_sentences.append(sentences.pop(0))
+    updated_sections = list(sections)
+    for index, (heading, section_body) in enumerate(sections):
+        sentences = _body_dup_reduction_sentence_units(section_body)
+        if len(sentences) < 2:
+            continue
+        heading_candidates = [heading] if heading else []
+        while len(sentences) > 1 and _sentence_duplicates_title_or_heading(sentences[0], article_title, heading_candidates):
+            removed_sentences.append(sentences.pop(0))
+        updated_sections[index] = (heading, " ".join(sentences).strip())
     if not removed_sentences:
         return body_text
-    rebuilt_first_body = " ".join(sentences).strip()
-    if not rebuilt_first_body:
-        return body_text
-    sections[0] = (first_heading, rebuilt_first_body)
     rebuilt_lines: list[str] = []
-    for heading, section_body in sections:
+    for heading, section_body in updated_sections:
         if heading:
             rebuilt_lines.append(heading)
         if section_body:
@@ -10970,6 +11259,7 @@ def _render_preview_body_html(text: str) -> str:
         return ""
     blocks: list[str] = []
     heading_index = 0
+    rendered_h3_count = 0
     for line in lines:
         escaped = (
             line.replace("&", "&amp;")
@@ -10977,7 +11267,7 @@ def _render_preview_body_html(text: str) -> str:
             .replace(">", "&gt;")
         )
         if line.startswith("【") and "】" in line:
-            level = _rendered_heading_level(line, heading_index)
+            level, rendered_h3_count = _resolved_rendered_heading_level(line, heading_index, rendered_h3_count)
             blocks.append(f"<h{level}>{escaped}</h{level}>")
             heading_index += 1
             continue
@@ -11211,6 +11501,20 @@ def _evaluate_post_gen_validate(
         )
         if entity_conflict:
             _append_fail_axis(f"entity_mismatch:{entity_conflict['reason']}")
+
+    if _source_grounding_drift_repair_enabled():
+        source_title = str(source_refs.get("source_title") or source_refs.get("title") or "")
+        source_summary = str(source_refs.get("source_summary") or source_refs.get("summary") or "")
+        if source_title or source_summary:
+            grounding_issues = _find_source_grounding_drift_issues(
+                raw_text,
+                source_title=source_title,
+                source_summary=source_summary,
+                category_hint=_source_grounding_category_hint(article_subtype, source_refs),
+            )
+            for reason in dict.fromkeys(str(issue.get("reason") or "") for issue in grounding_issues):
+                if reason:
+                    _append_fail_axis(f"source_grounding_drift:{reason}")
 
     stop_reason = ""
     if any(axis.startswith("starmen_") for axis in fail_axes):
@@ -13433,7 +13737,31 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             article_subtype=body_subtype,
             logger=logger,
         )
+        ai_body = _maybe_apply_short_source_body_shrink_repair(
+            body_text=ai_body,
+            title=title,
+            summary=summary_clean,
+            category=effective_generation_category,
+            body_subtype=body_subtype,
+            source_url=url,
+            source_name=source_name,
+            source_day_label=source_day_label,
+            logger=logger,
+        )
         ai_body = _apply_article_body_quality_sanitizer(ai_body)
+        ai_body = _maybe_apply_source_grounding_drift_repair(
+            body_text=ai_body,
+            source_title=title,
+            source_summary=summary_clean,
+            article_subtype=body_subtype,
+            source_refs={
+                "category": effective_generation_category,
+                "source_title": title,
+                "source_summary": summary_clean,
+            },
+            logger=logger,
+            source_url=url,
+        )
     if summary_block and not _text_is_safe(title, summary_clean, summary_block, has_game):
         logger.warning("SUMMARYブロックを破棄: 事実制約に違反")
         summary_block = ""
@@ -13995,6 +14323,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
 
         para_count = 0
         seen_headings = set()
+        rendered_h3_count = 0
         current_heading = ""
         current_paragraphs = []
         rendered_cta_slots = set()
@@ -14006,11 +14335,15 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             return rendered
 
         def _flush_section() -> None:
-            nonlocal blocks, current_heading, current_paragraphs, lineup_stats_rendered
+            nonlocal blocks, current_heading, current_paragraphs, lineup_stats_rendered, rendered_h3_count
             if not current_heading and not current_paragraphs:
                 return
             if current_heading:
-                heading_level = _rendered_heading_level(current_heading, max(0, len(seen_headings) - 1))
+                heading_level, rendered_h3_count = _resolved_rendered_heading_level(
+                    current_heading,
+                    max(0, len(seen_headings) - 1),
+                    rendered_h3_count,
+                )
                 blocks += (
                     f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
                     f'<h{heading_level}>{current_heading}</h{heading_level}>\n'

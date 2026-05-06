@@ -50,7 +50,7 @@ class RssFetcherArticleQualityV1Tests(unittest.TestCase):
         self.assertEqual(template_key, "player_status_entity_conflict_passthrough")
 
     def test_article_body_quality_sanitizer_is_flag_gated(self):
-        sample = "【文脈と背景】\nこの表現は目を引きます。"
+        sample = "【文脈と背景】\nこの表現は目を引きます。次の起用が期待されます。"
 
         with patch.dict(os.environ, {"ENABLE_FORBIDDEN_PHRASE_FILTER": "0"}, clear=False):
             off_text = rss_fetcher._apply_article_body_quality_sanitizer(sample)
@@ -60,6 +60,8 @@ class RssFetcherArticleQualityV1Tests(unittest.TestCase):
         self.assertEqual(off_text, sample)
         self.assertIn("【この話が出た流れ】", on_text)
         self.assertNotIn("目を引きます", on_text)
+        self.assertNotIn("期待されます", on_text)
+        self.assertIn("見込まれます", on_text)
 
     def test_generic_title_repair_uses_specific_source_title_when_flag_is_on(self):
         with patch.dict(os.environ, {"ENABLE_GENERIC_TITLE_REPAIR": "1"}, clear=False):

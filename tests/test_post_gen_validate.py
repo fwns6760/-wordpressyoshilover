@@ -403,6 +403,55 @@ class PostGenValidateTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["fail_axes"], [])
 
+    def test_post_gen_validate_h3_count_repair_demotes_third_h3_when_flag_is_on(self):
+        text = "\n".join(
+            [
+                "【試合結果】",
+                "巨人が阪神に3-2で競り勝った。",
+                "【ハイライト】",
+                "松浦慶斗が緊急リリーフで流れを切った。",
+                "【選手成績】",
+                "戸郷翔征が7回1失点で試合を作った。",
+                "【試合展開】",
+                "終盤の継投が次戦でもどう使われるか気になります。",
+            ]
+        )
+        with patch.dict(
+            os.environ,
+            {
+                "ENABLE_H3_COUNT_GUARD": "1",
+                "ENABLE_H3_COUNT_REPAIR": "1",
+            },
+            clear=False,
+        ):
+            preview_html = rss_fetcher._render_preview_body_html(text)
+            result = rss_fetcher._evaluate_post_gen_validate(
+                text,
+                article_subtype="postgame",
+                rendered_html=preview_html,
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertNotIn("h3_count:too_many_h3", result["fail_axes"])
+        self.assertIn("<h4>【試合展開】</h4>", preview_html)
+
+    def test_post_gen_validate_h3_count_repair_keeps_two_h3_boundary_unchanged(self):
+        text = "\n".join(
+            [
+                "【話題の要旨】",
+                "球団投稿の要点を整理する。",
+                "【発信内容の要約】",
+                "発信で触れられた内容を確認する。",
+                "【ファンの関心ポイント】",
+                "次にどこを見るかを整理する。",
+            ]
+        )
+        with patch.dict(os.environ, {"ENABLE_H3_COUNT_REPAIR": "1"}, clear=False):
+            preview_html = rss_fetcher._render_preview_body_html(text)
+
+        self.assertEqual(preview_html.count("<h3>"), 2)
+        self.assertNotIn("<h4>", preview_html)
+
     def test_post_gen_validate_active_team_mismatch_guard_rejects_non_giants_status_story(self):
         text = "\n".join(
             [

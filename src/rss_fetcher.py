@@ -1473,6 +1473,12 @@ def _fetcher_log_detail_debug_enabled() -> bool:
     return _env_flag("FETCHER_LOG_DETAIL_DEBUG", False)
 
 
+# COST-PGV-001: pre-stage post_gen_validate_failure ledger record at review-confirmed sites.
+# Default OFF. Reuses existing TTL=24h dedup ledger (POST_GEN_VALIDATE_FAILURE_TTL_HOURS).
+def _pre_post_gen_validate_skip_enabled() -> bool:
+    return _env_flag("ENABLE_PRE_POST_GEN_VALIDATE_SKIP", False)
+
+
 _LOG_SAMPLING_SAMPLE_LIMIT = 3
 
 _log_sampling_state: dict[str, Any] = {
@@ -1483,6 +1489,7 @@ _log_sampling_state: dict[str, Any] = {
     "gemini_cache_lookup_hit": 0,
     "gemini_cache_lookup_miss": 0,
     "gemini_cache_lookup_call_made": 0,
+    "pre_post_gen_validate_skip_buckets": {},
 }
 
 
@@ -1494,6 +1501,7 @@ def _reset_log_sampling_state() -> None:
     _log_sampling_state["gemini_cache_lookup_hit"] = 0
     _log_sampling_state["gemini_cache_lookup_miss"] = 0
     _log_sampling_state["gemini_cache_lookup_call_made"] = 0
+    _log_sampling_state["pre_post_gen_validate_skip_buckets"] = {}
 
 
 def _record_article_skipped_sample(bucket_key: str, sample_title: str) -> None:
@@ -1518,6 +1526,20 @@ def _record_yahoo_fan_reactions_unavailable_sample(query_repr: str) -> None:
         samples.append(clean)
 
 
+def _record_pre_post_gen_validate_skip_sample(reason: str, sample_title: str) -> None:
+    bucket = _log_sampling_state["pre_post_gen_validate_skip_buckets"].setdefault(
+        reason, {"count": 0, "samples": []}
+    )
+    bucket["count"] += 1
+    clean = (sample_title or "").strip()[:80]
+    if (
+        clean
+        and clean not in bucket["samples"]
+        and len(bucket["samples"]) < _LOG_SAMPLING_SAMPLE_LIMIT
+    ):
+        bucket["samples"].append(clean)
+
+
 def _build_log_sampling_summary() -> dict[str, Any]:
     buckets = _log_sampling_state["article_skipped_buckets"]
     article_skipped: dict[str, dict[str, Any]] = {}
@@ -1527,6 +1549,16 @@ def _build_log_sampling_summary() -> dict[str, Any]:
             "count": int(bucket["count"]),
             "samples": list(bucket["samples"]),
         }
+    pre_pgv_buckets = _log_sampling_state["pre_post_gen_validate_skip_buckets"]
+    pre_pgv: dict[str, dict[str, Any]] = {}
+    pre_pgv_total = 0
+    for key in sorted(pre_pgv_buckets):
+        bucket = pre_pgv_buckets[key]
+        pre_pgv[key] = {
+            "count": int(bucket["count"]),
+            "samples": list(bucket["samples"]),
+        }
+        pre_pgv_total += int(bucket["count"])
     return {
         "post_gen_validate_failure_dedup_skip_count": int(
             _log_sampling_state["post_gen_validate_failure_dedup_skip_count"]
@@ -1542,6 +1574,10 @@ def _build_log_sampling_summary() -> dict[str, Any]:
             "hit": int(_log_sampling_state["gemini_cache_lookup_hit"]),
             "miss": int(_log_sampling_state["gemini_cache_lookup_miss"]),
             "call_made": int(_log_sampling_state["gemini_cache_lookup_call_made"]),
+        },
+        "pre_post_gen_validate_skip": {
+            "count": pre_pgv_total,
+            "buckets": pre_pgv,
         },
     }
 
@@ -16099,6 +16135,34 @@ def _is_post_gen_validate_failure_recent(
     return False, ""
 
 
+def _emit_pre_post_gen_validate_skip(
+    history: dict,
+    *,
+    post_url: str,
+    item: Mapping[str, Any],
+    fail_axes: list[str],
+    sample_title: str,
+) -> None:
+    """COST-PGV-001: write fail_history at review-confirmed pre-Gemini skip sites.
+
+    Reuses POST_GEN_VALIDATE_FAILURE_TTL_HOURS=24h dedup ledger so next-cycle hits
+    on the same source_url / x_status_id / entry_title_norm are early-skipped via
+    the existing post_gen_validate_failure_dedup_skip path. publish gate semantics
+    are unchanged — this only avoids re-evaluating the same already-failed candidate.
+    """
+    _record_post_gen_validate_failure(
+        history,
+        post_url=post_url,
+        x_status_id=_extract_x_status_id(post_url or ""),
+        entry_title_norm=item.get("entry_title_norm", "") or "",
+        fail_axes=fail_axes,
+    )
+    persist_history(history)
+    primary = (fail_axes[0] if fail_axes else "unknown").strip() or "unknown"
+    bucket = primary.split(":", 1)[0] or "unknown"
+    _record_pre_post_gen_validate_skip_sample(bucket, sample_title)
+
+
 def _get_title_collision_meta(history: dict, rewritten_title_norm: str, source_url: str) -> dict | None:
     if not rewritten_title_norm or len(rewritten_title_norm) <= 5:
         return None
@@ -19248,7 +19312,7 @@ def check_giants_game_today() -> tuple:
 def _main(args, logger):
     logger.info(f"=== rss_fetcher 開始 {'[DRY RUN]' if args.dry_run else ''} ===")
 
-    if _fetcher_log_sampling_v1_enabled():
+    if _fetcher_log_sampling_v1_enabled() or _pre_post_gen_validate_skip_enabled():
         _reset_log_sampling_state()
 
     # 今日の巨人戦有無を確認（試合なしの日は試合記事プロンプトを使わない）
@@ -19852,6 +19916,14 @@ def _main(args, logger):
                 fail_axes=["routing_v2_review"],
                 stop_reason=f"rss_template_routing_v2:{v2_review_reason}",
             )
+            if _pre_post_gen_validate_skip_enabled():
+                _emit_pre_post_gen_validate_skip(
+                    history,
+                    post_url=post_url,
+                    item=item,
+                    fail_axes=["routing_v2_review"],
+                    sample_title=raw_title,
+                )
             continue
 
         if source_type in {"news", "social_news"}:
@@ -20150,6 +20222,14 @@ def _main(args, logger):
                         fail_axes=[f"weak_generated_title:{finalize_title_review.reason}"],
                         stop_reason="weak_generated_title_review",
                     )
+                    if _pre_post_gen_validate_skip_enabled():
+                        _emit_pre_post_gen_validate_skip(
+                            history,
+                            post_url=post_url,
+                            item=item,
+                            fail_axes=[f"weak_generated_title:{finalize_title_review.reason}"],
+                            sample_title=draft_title or raw_title,
+                        )
                     continue
             draft_title, generic_title_review = _maybe_apply_generic_title_repair(
                 rewritten_title=draft_title,
@@ -20174,6 +20254,14 @@ def _main(args, logger):
                     fail_axes=[f"generic_title:{generic_title_review.reason}"],
                     stop_reason="generic_title_repair_review",
                 )
+                if _pre_post_gen_validate_skip_enabled():
+                    _emit_pre_post_gen_validate_skip(
+                        history,
+                        post_url=post_url,
+                        item=item,
+                        fail_axes=[f"generic_title:{generic_title_review.reason}"],
+                        sample_title=draft_title or raw_title,
+                    )
                 continue
             weak_title_fallback = _maybe_route_weak_generated_title_review(
                 article_subtype=title_article_subtype,
@@ -20204,6 +20292,14 @@ def _main(args, logger):
                     fail_axes=[f"weak_generated_title:{weak_title_fallback.reason}"],
                     stop_reason="weak_generated_title_review",
                 )
+                if _pre_post_gen_validate_skip_enabled():
+                    _emit_pre_post_gen_validate_skip(
+                        history,
+                        post_url=post_url,
+                        item=item,
+                        fail_axes=[f"weak_generated_title:{weak_title_fallback.reason}"],
+                        sample_title=draft_title or raw_title,
+                    )
                 continue
             weak_subject_fallback = _maybe_route_weak_subject_title_review(
                 article_subtype=title_article_subtype,
@@ -20235,6 +20331,14 @@ def _main(args, logger):
                     fail_axes=[f"weak_subject_title:{weak_subject_fallback.reason}"],
                     stop_reason="weak_subject_title_review",
                 )
+                if _pre_post_gen_validate_skip_enabled():
+                    _emit_pre_post_gen_validate_skip(
+                        history,
+                        post_url=post_url,
+                        item=item,
+                        fail_axes=[f"weak_subject_title:{weak_subject_fallback.reason}"],
+                        sample_title=draft_title or raw_title,
+                    )
                 continue
             _log_title_template_selected(logger, post_url, raw_title, draft_title, title_template_key, category, title_article_subtype)
             content, ai_body_for_x = build_news_block(
@@ -20289,6 +20393,14 @@ def _main(args, logger):
                     fail_axes=["postgame_strict_review"],
                     stop_reason=f"postgame_strict:{strict_review_reason}",
                 )
+                if _pre_post_gen_validate_skip_enabled():
+                    _emit_pre_post_gen_validate_skip(
+                        history,
+                        post_url=post_url,
+                        item=item,
+                        fail_axes=["postgame_strict_review"],
+                        sample_title=draft_title or raw_title,
+                    )
                 continue
             manager_quote_zero_review_reason = (
                 str(duplicate_guard_context.get("manager_quote_zero_review_reason") or "").strip()
@@ -20309,6 +20421,14 @@ def _main(args, logger):
                     fail_axes=["manager_quote_zero_review"],
                     stop_reason=f"manager_quote_zero_review:{manager_quote_zero_review_reason}",
                 )
+                if _pre_post_gen_validate_skip_enabled():
+                    _emit_pre_post_gen_validate_skip(
+                        history,
+                        post_url=post_url,
+                        item=item,
+                        fail_axes=["manager_quote_zero_review"],
+                        sample_title=draft_title or raw_title,
+                    )
                 continue
             fact_conflict_source_refs = {
                 "title": draft_title,
@@ -20805,7 +20925,7 @@ def _main(args, logger):
         "x_ai_generation_count": history.get(f"x_ai_generation_count_{today_str}", x_ai_generation_count),
         "x_ai_generation_limit": x_post_daily_limit,
     }
-    if _fetcher_log_sampling_v1_enabled():
+    if _fetcher_log_sampling_v1_enabled() or _pre_post_gen_validate_skip_enabled():
         run_summary_payload["log_sampling_v1"] = _build_log_sampling_summary()
     logger.info(json.dumps(run_summary_payload, ensure_ascii=False))
     logger.info(

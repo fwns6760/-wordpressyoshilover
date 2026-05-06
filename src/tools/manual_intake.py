@@ -253,7 +253,7 @@ def _resolve_routing_lightweight(
         logger.warning("keywords_load_failed: %s", exc)
 
     try:
-        category = _classify(text, keywords, source_url, logger) or "選手情報"
+        category = _classify(text, keywords, source_url=source_url, logger=logger) or "選手情報"
     except Exception as exc:
         logger.warning("classify_category_failed: %s", exc)
         category = "選手情報"

@@ -18,8 +18,10 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 import time
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -354,6 +356,45 @@ class RunManualIntakeTests(_IntakeBaseTest):
         self.assertEqual(code, mi.EXIT_OK)
         self.assertEqual(out["title"], "巨人 試合速報 サンスポ独自 阿部監督コメント")
         wp.create_post.assert_called_once()
+
+
+class RoutingIntegrationTests(unittest.TestCase):
+    def test_resolve_routing_calls_classify_category_with_keyword_only_context(self):
+        fake = types.ModuleType("rss_fetcher")
+        observed = {}
+
+        def fake_classify(text, keywords, *, source_url="", logger=None):
+            observed["source_url"] = source_url
+            observed["logger"] = logger
+            return "試合速報"
+
+        def fake_detect(title, summary, category, has_game):
+            observed["category"] = category
+            return "postgame"
+
+        fake.classify_category = fake_classify
+        fake._detect_article_subtype = fake_detect
+
+        original = sys.modules.get("rss_fetcher")
+        sys.modules["rss_fetcher"] = fake
+        try:
+            category, subtype = mi._resolve_routing_lightweight(
+                title="巨人 試合終了 0-5 ヤクルト",
+                summary="ヤクルト戦敗戦",
+                source_url="https://x.com/hochi_giants/status/1",
+                source_kind="x",
+                logger=MagicMock(),
+            )
+        finally:
+            if original is None:
+                sys.modules.pop("rss_fetcher", None)
+            else:
+                sys.modules["rss_fetcher"] = original
+
+        self.assertEqual(category, "試合速報")
+        self.assertEqual(subtype, "postgame")
+        self.assertEqual(observed["source_url"], "https://x.com/hochi_giants/status/1")
+        self.assertEqual(observed["category"], "試合速報")
 
 
 class FetchFailureTests(_IntakeBaseTest):

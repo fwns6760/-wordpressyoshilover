@@ -403,6 +403,12 @@ NON_LINEUP_STARMEN_GUARD_SUBTYPES = {
     "player_notice",
 }
 LINEUP_TABLE_HEAVY_SUBTYPES = frozenset({"lineup", "farm_lineup"})
+# RSS-257: trusted Giants X 由来の選手・投手・監督・ヒーロー系の短文記事 subtype。
+# 長文テンプレに乗せず短文 template で生成し、close_marker / placeholder_body /
+# h3_count_guard の長文向け template gate で false fail させない。
+# duplicate_sentence / quote_integrity / source_grounding / entity_mismatch
+# 等の品質 gate は維持する (validator 全体緩和ではなく subtype 分離)。
+X_SHORT_TEMPLATE_SUBTYPES = frozenset({"x_short_player"})
 NON_LINEUP_STARMEN_PROMPT_GUARD = (
     f"・タイトル先頭や見出しで「{LIVE_UPDATE_LINEUP_TITLE_PREFIX}」を使わない。"
     "「打順」「スタメン」「先発メンバー」を section heading にしない"
@@ -4439,6 +4445,29 @@ def _select_template_v2(
         return "lineup_short", "lineup"
     if has_pregame_signal:
         return "pregame_short", "pregame"
+    # RSS-257: trusted Giants X 短文の選手・投手・監督・ヒーロー記事を
+    # 長文テンプレに乗せず x_short_player に振る。AND 5 条件:
+    #   1. source_type=x_post (analysis から)
+    #   2. trusted Giants source (handle/name strict match)
+    #   3. is_giants_related (source_text)
+    #   4. _trusted_social_giants_keyword_hits (重要 keyword hit ≥ 1)
+    #   5. source_text_length < 400 (短文限定)
+    # AND tweet URL が valid (元 X URL 保持要件)。
+    # 既存 lineup_short / pregame_short / postgame / manager / player_quote 系
+    # は **先に hit** するので RSS-257 は fallback 経路のみ。
+    if (
+        is_trusted_social
+        and entry_source_url
+        and _is_valid_x_post_source_url(entry_source_url)
+        and source_text_length < 400
+        and is_giants_related(
+            entry_text,
+            source_name=entry_source_name,
+            post_url=entry_source_url,
+        )
+        and _trusted_social_giants_keyword_hits(entry_text)
+    ):
+        return "x_short_player", "x_short_player"
     if is_trusted_social and source_text_length < 300:
         return "trusted_social_short", "social_news"
     if source_text_length < 100:
@@ -4528,6 +4557,19 @@ def _resolve_rss_story_type_context_v2(
     elif template_key == "trusted_social_short":
         title_subtype = "social_news"
         body_subtype = "social_news"
+        validator_subtype = "social_news"
+    elif template_key == "x_short_player":
+        # RSS-257: 長文テンプレに乗せず短文記事として作る subtype。
+        # category は news 推定値を Giants の主要 4 category 内に限定して維持、
+        # 範囲外なら "選手情報" にフォールバック (front 整理のため)。
+        # validator_subtype="social_news" で軽量 contract、generation prompt は
+        # 既存 social_news 系の短文 prompt が使われる。
+        if category in {"選手情報", "試合速報", "首脳陣", "ドラフト・育成"}:
+            resolved_category = category
+        else:
+            resolved_category = "選手情報"
+        title_subtype = "x_short_player"
+        body_subtype = "x_short_player"
         validator_subtype = "social_news"
     elif template_key in {"farm_short", "farm_result", "farm_lineup_or_general"}:
         resolved_category = "ドラフト・育成"
@@ -11794,7 +11836,12 @@ def _evaluate_post_gen_validate(
 
     sections = _split_text_sections(text)
     final_section_text = sections[-1][1] if sections else clean_text
-    if article_subtype != "lineup" and not any(marker in final_section_text for marker in POST_GEN_CLOSE_MARKERS):
+    # RSS-257: lineup と x_short_player (短文 X 選手記事 subtype) は close_marker
+    # 必須を免除。長文 template の締め句 contract に従えない短文構造のため。
+    close_marker_exempt_subtypes = {"lineup"} | X_SHORT_TEMPLATE_SUBTYPES
+    if article_subtype not in close_marker_exempt_subtypes and not any(
+        marker in final_section_text for marker in POST_GEN_CLOSE_MARKERS
+    ):
         _append_fail_axis("close_marker")
 
     normalized_headings: list[str] = []
@@ -11858,7 +11905,13 @@ def _evaluate_post_gen_validate(
         if _detect_title_body_entity_mismatch(title_text, fact_conflict_payload):
             _append_fail_axis("TITLE_BODY_ENTITY_MISMATCH")
 
-    lineup_table_heavy = article_subtype in LINEUP_TABLE_HEAVY_SUBTYPES
+    # RSS-257: lineup_table_heavy + x_short_template の両方を template-formatted
+    # validator の skip 対象とする (長文 template gate を 短文 X subtype で発動させない)。
+    short_template_skip = (
+        article_subtype in LINEUP_TABLE_HEAVY_SUBTYPES
+        or article_subtype in X_SHORT_TEMPLATE_SUBTYPES
+    )
+    lineup_table_heavy = short_template_skip  # 既存名 keep (h3_count_guard 側でも使用)
     if _env_flag(ENABLE_FORBIDDEN_PHRASE_FILTER_ENV_FLAG, False):
         forbidden_hit = find_forbidden_phrase(raw_text)
         if forbidden_hit:

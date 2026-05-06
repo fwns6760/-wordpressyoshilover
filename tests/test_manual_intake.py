@@ -305,6 +305,7 @@ class RunManualIntakeTests(_IntakeBaseTest):
         self.assertEqual(
             kwargs.get("source_url"), "https://hochi.news/articles/abc-123.html"
         )
+        self.assertEqual(kwargs.get("categories"), [664])
         self.assertEqual(out["source_url"], "https://hochi.news/articles/abc-123.html")
 
     # 11. OG/meta parse success path
@@ -395,6 +396,15 @@ class RoutingIntegrationTests(unittest.TestCase):
         self.assertEqual(subtype, "postgame")
         self.assertEqual(observed["source_url"], "https://x.com/hochi_giants/status/1")
         self.assertEqual(observed["category"], "試合速報")
+
+
+class CategoryResolutionTests(unittest.TestCase):
+    def test_resolve_wp_category_ids_uses_config_mapping(self):
+        self.assertEqual(mi._resolve_wp_category_ids("試合速報"), [663])
+        self.assertEqual(mi._resolve_wp_category_ids("選手情報"), [664])
+
+    def test_resolve_wp_category_ids_falls_back_to_column(self):
+        self.assertEqual(mi._resolve_wp_category_ids("存在しないカテゴリ"), [670])
 
 
 class FetchFailureTests(_IntakeBaseTest):

@@ -59,6 +59,7 @@ EXIT_UNEXPECTED = 2
 RATE_LIMIT_WINDOW_SEC = 60
 RATE_LIMIT_MAX = 5
 DEFAULT_LOCKFILE = ROOT / "logs" / "manual_intake_throttle.json"
+DEFAULT_CATEGORY_NAME = "コラム"
 
 _X_HOSTS = {
     "twitter.com",
@@ -217,6 +218,35 @@ def _normalize_title_for_dedupe(title: str) -> str:
     return re.sub(r"[\s　【】「」『』〔〕（）()・\-_]", "", (title or "")).lower()
 
 
+def _resolve_wp_category_ids(category: str, logger: logging.Logger | None = None) -> list[int] | None:
+    requested = (category or "").strip() or DEFAULT_CATEGORY_NAME
+    names = [requested]
+    if requested != DEFAULT_CATEGORY_NAME:
+        names.append(DEFAULT_CATEGORY_NAME)
+
+    mapping_path = ROOT / "config" / "categories.json"
+    mapping: dict[str, Any] = {}
+    try:
+        if mapping_path.exists():
+            mapping = json.loads(mapping_path.read_text(encoding="utf-8")) or {}
+    except Exception as exc:
+        if logger is not None:
+            logger.warning("category_mapping_load_failed: %s", exc)
+
+    for index, name in enumerate(names):
+        try:
+            category_id = int(mapping.get(name) or 0)
+        except Exception:
+            category_id = 0
+        if category_id > 0:
+            if index > 0 and logger is not None:
+                logger.warning("manual_intake_category_fallback requested=%s fallback=%s", requested, name)
+            return [category_id]
+    if logger is not None:
+        logger.warning("manual_intake_category_unresolved category=%s", requested)
+    return None
+
+
 def _is_history_duplicate_local(
     history: dict, *, source_url: str, entry_title_norm: str
 ) -> bool:
@@ -286,7 +316,7 @@ def _wp_create_draft(
     """Create a draft via WPClient. WPClient has its own dedupe via
     find_recent_post_by_title + source_url. Returns (post_id, draft_url).
     Caller name 'manual_intake' is recorded for audit."""
-    categories = [category] if category else None
+    categories = _resolve_wp_category_ids(category, logger)
     result = wp.create_post(
         title=title,
         content=content,

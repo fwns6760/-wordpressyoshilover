@@ -202,7 +202,12 @@ LIVE_UPDATE_KEYWORDS = ("途中経過", "試合中", "回表", "回裏", "勝ち
 LIVE_UPDATE_FRAGMENT_KEYWORDS = LIVE_UPDATE_KEYWORDS + ("継投", "満塁", "3者凡退", "サイクル", "サイクル安打", "王手")
 LINEUP_ORDER_SLOT_RE = _re.compile(r"(?<![0-9０-９])[1-9１-９]番(?!手)")
 LIVE_UPDATE_PITCHER_ORDER_RE = _re.compile(r"(?<![0-9０-９])[2-9２-９]番手")
-LIVE_UPDATE_INNING_RE = _re.compile(r"(?<![0-9０-９])(?:[1-9]|1\d|[１-９])回(?:表|裏|終了|途中|で)?")
+LIVE_UPDATE_INNING_RE = _re.compile(
+    r"(?<![0-9０-９])"
+    r"(?:[1-9]|1\d|[１-９]|"
+    r"一|二|三|四|五|六|七|八|九|十|十一|十二)"
+    r"回(?:表|裏|終了|途中|で)"
+)
 NPB_TEAM_MARKERS = (
     "巨人",
     "読売ジャイアンツ",
@@ -4334,6 +4339,7 @@ def _analyze_source(entry: Mapping[str, object]) -> dict[str, object]:
     has_quote = bool(_extract_quote_phrases(f"{title}\n{summary}", max_phrases=1))
     has_score = bool(_extract_game_score_token(source_text))
     has_opponent = bool(_extract_game_opponent_label(source_text))
+    has_live_update_fragment_signal = _has_live_update_fragment(f"{title} {summary}")
 
     return {
         "source_type": source_type,
@@ -4342,6 +4348,7 @@ def _analyze_source(entry: Mapping[str, object]) -> dict[str, object]:
         "has_score": has_score,
         "has_opponent": has_opponent,
         "has_quote": has_quote,
+        "has_live_update_fragment": has_live_update_fragment_signal,
         "actor_name": actor_name,
         "actor_kind": actor_kind,
         "has_roster_notice": _is_notice_like_status_story(title, summary) or any(marker in source_text for marker in ("公示", "登録抹消")),
@@ -4378,10 +4385,18 @@ def _select_template_v2(
         entry_source_name = str(entry.get("source_name") or "")
     has_lineup_signal = bool(entry_text) and _has_lineup_core(entry_text)
     has_pregame_signal = bool(entry_text) and _has_pregame_signal(entry_text)
+    has_live_update_signal = bool(analysis.get("has_live_update_fragment"))
     is_trusted_social = (
         str(analysis.get("source_type") or "") == "x_post"
         and _is_trusted_social_url_or_name(entry_source_url, entry_source_name)
     )
+
+    # RSS-253: inning post (「【五回表】」「【四回裏】」漢数字 / 半角・全角数字いずれも)
+    # は has_live_update_fragment で検出。farm / postgame_strict より先に live_update_short
+    # に振り、ENABLE_LIVE_UPDATE_ARTICLES=0 既定なら _evaluate_authoritative_social_entry で
+    # live_update_disabled reason 付き skip される (body_contract_validate に到達しない)。
+    if has_live_update_signal:
+        return "live_update_short", "live_update"
 
     if analysis.get("has_farm_or_third_team"):
         if has_lineup_signal:
@@ -4484,6 +4499,16 @@ def _resolve_rss_story_type_context_v2(
         title_subtype = "lineup"
         body_subtype = "lineup"
         validator_subtype = "lineup"
+    elif template_key == "live_update_short":
+        # RSS-253: live_update inning post を明示分岐。subtype=live_update を維持して
+        # _evaluate_authoritative_social_entry が ENABLE_LIVE_UPDATE_ARTICLES=0 で
+        # live_update_disabled reason 付き skip するルートに乗せる。
+        # ENABLE_LIVE_UPDATE_ARTICLES=1 で auto-publish する場合に備えて
+        # validator_subtype は緩い social_news に設定し、heavy 4 heading 強制を回避。
+        resolved_category = "試合速報"
+        title_subtype = "live_update"
+        body_subtype = "live_update"
+        validator_subtype = "social_news"
     elif template_key == "pregame_short":
         # RSS-252: 短文 pregame template は body_validator BODY_CONTRACTS["pregame"]
         # の 3 heading 必須に従えない。validator_subtype を緩い social_news に切替て

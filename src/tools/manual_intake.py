@@ -1119,15 +1119,32 @@ def _try_render_via_nomotoke(
     #   4. Append tag chips at end (R6).
     if template_key.startswith("nomotoke_card_"):
         # Step 1 + 2: ToC anchors + ToC + meta header + share buttons
+        # + TOP コメント CTA (operator request: 上部に
+        # 「コメントする」 を持ち上げ).
         rendered, toc_entries = _inject_toc_anchors(rendered)
         toc_html = _build_toc_block(toc_entries)
         meta_html = _build_meta_header_bar(
             rendered, normalized_source_published_at
         )
         share_top = _build_share_buttons_block()
+        # Big orange comment CTA right under the read-time bar so
+        # the comment form (#respond) is one tap away even before
+        # the reader scrolls into the body.
+        top_cta = (
+            '<p class="nomotoke-cta-row" '
+            'style="margin:8px 0 12px;text-align:center;">'
+            '<a href="#respond" '
+            'style="display:inline-block;padding:10px 22px;'
+            "background:#f57f17;color:#fff;text-decoration:none;"
+            "border-radius:8px;font-weight:700;font-size:15px;"
+            'box-shadow:0 2px 6px rgba(245,127,23,0.4);">'
+            "💬 この記事にコメントする"
+            "</a></p>"
+        )
         header_payload = ""
         if meta_html:
             header_payload += meta_html
+        header_payload += top_cta
         if share_top:
             header_payload += share_top
         if toc_html:

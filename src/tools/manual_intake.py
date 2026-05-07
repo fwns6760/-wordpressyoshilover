@@ -858,7 +858,67 @@ def _try_render_via_nomotoke(
             "</figure>\n"
         )
         rendered = figure + rendered
+    # NOMOTOKE-INTAKE-BODY-EXCERPT-001: insert a literal-substring
+    # 「📖 本文抜粋」 block (≤240 chars) lifted from the source HTML.
+    # No LLM, no fabrication — the extractor returns ``""`` whenever
+    # the body cannot be parsed cleanly, in which case the rendered
+    # body is unchanged. Only short_news_url + postgame currently get
+    # the block; comment / video / pregame templates already carry the
+    # primary 引用 (quote / play / matchup) and an extra paragraph
+    # would dilute focus.
+    if raw_html and template_key in (
+        "nomotoke_card_short_news_url_v1",
+        "nomotoke_card_postgame_v1",
+    ):
+        try:
+            from src.source_article_body_extractor import (
+                extract_article_body_excerpt,
+            )
+        except Exception:
+            extract_article_body_excerpt = None  # type: ignore
+        if extract_article_body_excerpt is not None:
+            try:
+                excerpt = extract_article_body_excerpt(
+                    raw_html, source_url, title=title, max_chars=240
+                )
+            except Exception:
+                excerpt = ""
+            if excerpt:
+                rendered = _insert_body_excerpt_block(
+                    rendered, excerpt, source_name
+                )
     return rendered or None
+
+
+def _insert_body_excerpt_block(
+    rendered_html: str, excerpt: str, source_name: str
+) -> str:
+    """Inject the 引用 excerpt block into the rendered body.
+
+    Position: just before the ``<h3>🔗 出典記事</h3>`` heading the
+    short_news_url renderer emits, so the reader sees:
+
+        [lead] → [fact card] → [本文抜粋] → [出典記事 link]
+
+    For postgame and any future template without that heading, the
+    block is appended at the end. ``source_name`` lands in the
+    attribution line (``— {source_name}`` 出典).
+    """
+    safe_excerpt = html.escape(excerpt).replace("\n", "<br>")
+    safe_source = html.escape(source_name or "出典")
+    block = (
+        '<aside class="nomotoke-source-excerpt">'
+        '<p class="nomotoke-source-excerpt__label">📖 本文抜粋</p>'
+        f'<blockquote class="nomotoke-source-excerpt__body">'
+        f"{safe_excerpt}"
+        "</blockquote>"
+        f'<p class="nomotoke-source-excerpt__attr">— {safe_source}</p>'
+        "</aside>\n"
+    )
+    anchor = "<h3>🔗 出典記事</h3>"
+    if anchor in rendered_html:
+        return rendered_html.replace(anchor, block + anchor, 1)
+    return rendered_html + block
 
 
 def _is_safe_https_image_url(url: str) -> bool:

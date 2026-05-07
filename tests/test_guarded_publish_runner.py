@@ -1406,6 +1406,57 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         cleaned_html = wp.update_post_fields_calls[0][1]["content"]
         self.assertIn('出典: <a href="https://example.com/source">https://example.com/source</a>', cleaned_html)
 
+    def test_weak_source_display_cleanup_skips_when_nomotoke_source_block_present(self):
+        # NOMOTOKE-PUBLISH-FORWARD-001: nomotoke renderer already emits
+        # a labeled <p class="nomotoke-source"> 出典 anchor at the top of
+        # the body. The cleanup must NOT append a second 出典 line whose
+        # anchor text is the raw URL — that violates the visible-raw-URL
+        # zero rule across video / pregame / short_news_url drafts.
+        body_html = (
+            '<p class="nomotoke-meta">2026年5月6日</p>'
+            '<p class="nomotoke-source">出典: '
+            '<a href="https://www.youtube.com/watch?v=ABCDEFGHIJK" '
+            'target="_blank" rel="noopener">DRAMATIC BASEBALL</a></p>'
+            '<p><iframe src="https://www.youtube.com/embed/ABCDEFGHIJK"></iframe></p>'
+            '<p>巨人・宮原駿介、今季初登板で1回無失点。</p>'
+            '<p>宮原駿介選手のプレーです。</p>'
+        )
+        post = _post(308, "巨人・宮原駿介、今季初登板【動画】", body_html)
+        report = _report(
+            yellow=[_repairable_entry(308, post["title"]["raw"], "weak_source_display", yellow_reasons=["missing_primary_source"])],
+            cleanup_candidates=[{"post_id": 308, "repairable_flags": ["weak_source_display"]}],
+        )
+        wp = FakeWPClient({308: post})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner.run_guarded_publish(
+                input_from=self._write_input(tmpdir, report),
+                live=True,
+                daily_cap_allow=True,
+                history_path=Path(tmpdir) / "history.jsonl",
+                backup_dir=Path(tmpdir) / "cleanup_backup",
+                yellow_log_path=Path(tmpdir) / "yellow.jsonl",
+                cleanup_log_path=Path(tmpdir) / "cleanup.jsonl",
+                wp_client=wp,
+                now=FIXED_NOW,
+            )
+
+        # Cleanup is treated as warning-only (already-present); body must
+        # NOT gain a second 出典 line with raw URL anchor text.
+        if wp.update_post_fields_calls:
+            cleaned_html = wp.update_post_fields_calls[0][1].get("content", body_html)
+        else:
+            cleaned_html = body_html
+        # Count occurrences of `出典: <a` — exactly 1 (the original
+        # nomotoke-source block); no second appended footer.
+        self.assertEqual(cleaned_html.count("出典: <a"), 1)
+        # The raw youtube URL must NOT appear as anchor text.
+        self.assertNotIn(
+            '<a href="https://www.youtube.com/watch?v=ABCDEFGHIJK">'
+            'https://www.youtube.com/watch?v=ABCDEFGHIJK</a>',
+            cleaned_html,
+        )
+
     def test_long_body_cleanup_trims_above_5000_chars(self):
         repeated = "".join(
             f"<p>巨人が流れを引き寄せた第{index}段落。攻守の切り替えと継投の意図を整理し、打線のつながりも追える内容だった。</p>"

@@ -574,6 +574,20 @@ def _append_weak_source_display(body_html: str, post: dict[str, Any]) -> tuple[s
     if not source_urls:
         raise CandidateRefusedError("cleanup_ambiguous", "weak_source_display_missing_source_url")
 
+    # Nomotoke renderer already emits a labeled `<p class="nomotoke-source">`
+    # block at the top of the body. Appending a second 出典 line with raw URL
+    # anchor text duplicates that block and violates the "visible raw URL 0"
+    # rule. Detect the marker and treat the cleanup as already-satisfied.
+    if 'class="nomotoke-source"' in (body_html or ""):
+        return body_html, [
+            _cleanup_action_payload(
+                "weak_source_display",
+                "(nomotoke-source block present)",
+                "(nomotoke-source block present)",
+                reason="warning_only:nomotoke_source_block_already_present",
+            )
+        ]
+
     source_url = source_urls[0]
     appended_line = f"出典: {source_url}"
     body_text = _strip_html(body_html)

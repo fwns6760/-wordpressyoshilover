@@ -94,6 +94,9 @@ _MANUAL_X_SENSITIVE_WORDS = (
 )
 _MANUAL_X_PREFIX_TRIM_CHARS = " /／|｜:：-・、"
 _MINIMAL_BODY_ENV = "PUBLISH_NOTICE_MINIMAL_BODY"
+_SUBJECT_DETAIL_ENV = "PUBLISH_NOTICE_SUBJECT_DETAIL"
+_SUBJECT_STALE_HOURS_ENV = "PUBLISH_NOTICE_SUBJECT_STALE_HOURS"
+_SUBJECT_STALE_HOURS_DEFAULT = 24.0
 
 
 def _minimal_body_enabled() -> bool:
@@ -105,6 +108,26 @@ def _minimal_body_enabled() -> bool:
     """
     raw = os.environ.get(_MINIMAL_BODY_ENV, "1").strip().lower()
     return raw not in ("0", "false", "no", "off", "")
+
+
+def _subject_detail_enabled() -> bool:
+    """When set, subject prefix carries subtype + stale-candidate marker.
+
+    Default ON. Set the env var to ``0`` to restore the legacy
+    binary 【公開済】 / 【要確認】 prefixes.
+    """
+    raw = os.environ.get(_SUBJECT_DETAIL_ENV, "1").strip().lower()
+    return raw not in ("0", "false", "no", "off", "")
+
+
+def _subject_stale_threshold_hours() -> float:
+    raw = os.environ.get(_SUBJECT_STALE_HOURS_ENV, "").strip()
+    if not raw:
+        return _SUBJECT_STALE_HOURS_DEFAULT
+    try:
+        return float(raw)
+    except ValueError:
+        return _SUBJECT_STALE_HOURS_DEFAULT
 _MANUAL_X_TRAILING_URL_RE = re.compile(r"^(?P<body>.*?)(?P<url>https?://\S+)$")
 _MANUAL_X_SUMMARY_SOURCE_PREFIX_RE = re.compile(
     r"^(?:"
@@ -1566,12 +1589,132 @@ def _format_review_reason_label(reason: str | None) -> tuple[str, str]:
     return _REVIEW_REASON_LABELS.get(normalized_reason, _REVIEW_REASON_LABELS[None])
 
 
-def _subject_prefix_for_classification(classification: dict[str, Any] | None) -> str:
+def _short_review_reason_label(reason: str | None) -> str | None:
+    """Map the long internal review reason to a compact subject token.
+
+    Returns ``None`` when no useful short label can be derived — caller
+    falls back to the subtype label."""
+    if not reason:
+        return None
+    r = reason.strip()
+    if not r:
+        return None
+    short_map = {
+        _FIRST_TEAM_POSTGAME_REVIEW_REASON: "postgame",
+        _FIRST_TEAM_LINEUP_REVIEW_REASON: "lineup",
+        "farm_result_review": "farm",
+        "farm_lineup_review": "farm-lineup",
+        "program_notice_review": "program",
+        "roster_notice_review": "roster",
+        "injury_recovery_notice_review": "injury",
+        "default_review": "default",
+        "summary_dirty_review": "summary",
+        "roster_movement_yellow_x_blocked": "roster-yellow",
+        "sensitive_content_x_blocked": "sensitive",
+    }
+    if r in short_map:
+        return short_map[r]
+    # Fall back: strip common suffix
+    for suffix in ("_review", "_x_blocked", "_blocked"):
+        if r.endswith(suffix):
+            return r[: -len(suffix)].replace("_", "-")
+    return r.replace("_", "-")
+
+
+def _request_age_hours(request: "PublishNoticeRequest" | None) -> float | None:
+    if request is None:
+        return None
+    iso = str(getattr(request, "publish_time_iso", "") or "").strip()
+    if not iso:
+        return None
+    try:
+        # Accept "+09:00" suffix; assume JST when bare.
+        dt = datetime.fromisoformat(iso)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=JST)
+    now = datetime.now(JST)
+    delta = now - dt.astimezone(JST)
+    return delta.total_seconds() / 3600.0
+
+
+def _normalize_subtype_token(subtype: str | None) -> str | None:
+    s = str(subtype or "").strip()
+    if not s:
+        return None
+    if s.lower() in ("default", "unknown", "none"):
+        return None
+    # Already-short subtype tokens are good as-is. Replace underscores
+    # with hyphens for visual consistency in the subject.
+    return s.replace("_", "-")
+
+
+def _compose_detailed_prefix(
+    *,
+    base_prefix: str,
+    mail_class: str,
+    reason: str | None,
+    subtype: str | None,
+    age_hours: float | None,
+) -> str:
+    """Wrap the legacy bracket prefix with subtype + stale marker.
+
+    The legacy prefix already ends with 】. We strip that, append the
+    detail suffix, and re-close. Examples:
+        【公開済】 + lineup → 【公開済｜lineup】
+        【要確認】 + (古い候補) + farm → 【要確認(古い候補)｜farm】
+        【要確認・X見送り】 + roster-yellow → 【要確認・X見送り｜roster-yellow】
+    """
+    if not base_prefix.endswith("】"):
+        return base_prefix
+    body = base_prefix[:-1]
+
+    is_stale = (
+        mail_class == "review"
+        and age_hours is not None
+        and age_hours > _subject_stale_threshold_hours()
+    )
+
+    label_segments: list[str] = []
+    if mail_class == "review":
+        short_reason = _short_review_reason_label(reason)
+        if short_reason and short_reason not in ("default",):
+            label_segments.append(short_reason)
+    sub_token = _normalize_subtype_token(subtype)
+    if sub_token and (not label_segments or sub_token != label_segments[0]):
+        label_segments.append(sub_token)
+
+    suffix = ""
+    if is_stale:
+        suffix += "(古い候補)"
+    if label_segments:
+        suffix += "｜" + "｜".join(label_segments)
+    return f"{body}{suffix}】"
+
+
+def _subject_prefix_for_classification(
+    classification: dict[str, Any] | None,
+    *,
+    request: "PublishNoticeRequest" | None = None,
+) -> str:
     mail_class = str((classification or {}).get("mail_class") or "publish").strip() or "publish"
     reason = str((classification or {}).get("reason") or "").strip() or None
     if mail_class == "review" and reason in _REVIEW_X_BLOCK_REASONS:
-        return "【要確認・X見送り】"
-    return _mail_class_config(mail_class)["prefix"]
+        base = "【要確認・X見送り】"
+    else:
+        base = _mail_class_config(mail_class)["prefix"]
+    if not _subject_detail_enabled() or request is None:
+        return base
+    subtype = getattr(request, "subtype", None)
+    age_hours = _request_age_hours(request)
+    return _compose_detailed_prefix(
+        base_prefix=base,
+        mail_class=mail_class,
+        reason=reason,
+        subtype=subtype,
+        age_hours=age_hours,
+    )
 
 
 def _format_next_action_line(mail_class: str, reason: str | None) -> str:
@@ -2044,11 +2187,12 @@ def build_subject(
     publish_dt_jst: str | None = None,
     override: str | None = None,
     classification: dict[str, Any] | None = None,
+    request: "PublishNoticeRequest" | None = None,
 ) -> str:
     del publish_dt_jst
     if override is not None:
         return str(override)
-    prefix = _subject_prefix_for_classification(classification)
+    prefix = _subject_prefix_for_classification(classification, request=request)
     return f"{prefix}{_subject_body(title)}{_SUBJECT_BRAND_SUFFIX}"
 
 
@@ -2517,7 +2661,12 @@ def send(
     if normalized_request.notice_kind != "publish":
         mail_state = _force_review_mail_state(mail_state)
     recipients = resolve_recipients(override_recipient)
-    subject = build_subject(normalized_title, override=active_subject_override, classification=mail_state)
+    subject = build_subject(
+        normalized_title,
+        override=active_subject_override,
+        classification=mail_state,
+        request=normalized_request,
+    )
     if _should_suppress_publish_only_mail(
         subject=subject,
         classification=mail_state,

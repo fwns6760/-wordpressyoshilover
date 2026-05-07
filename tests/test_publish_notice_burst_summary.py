@@ -1,5 +1,6 @@
 import inspect
 import json
+import os
 import tempfile
 import unittest
 from datetime import datetime, timedelta
@@ -11,6 +12,16 @@ from src import publish_notice_email_sender as sender
 
 
 class PublishNoticeBurstSummaryTests(unittest.TestCase):
+    def setUp(self):
+        self._prev_subject = os.environ.get(sender._SUBJECT_DETAIL_ENV)
+        os.environ[sender._SUBJECT_DETAIL_ENV] = "0"
+
+    def tearDown(self):
+        if self._prev_subject is None:
+            os.environ.pop(sender._SUBJECT_DETAIL_ENV, None)
+        else:
+            os.environ[sender._SUBJECT_DETAIL_ENV] = self._prev_subject
+
     def _bridge_result(self):
         return mail_delivery_bridge.MailResult(
             status="sent",
@@ -80,7 +91,14 @@ class PublishNoticeBurstSummaryTests(unittest.TestCase):
     def test_layer1_per_post_mail_sent_for_each_post(self):
         bridge_send = MagicMock(return_value=self._bridge_result())
 
-        with patch.dict("os.environ", {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com"}, clear=True):
+        with patch.dict(
+            "os.environ",
+            {
+                "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                sender._SUBJECT_DETAIL_ENV: "0",
+            },
+            clear=True,
+        ):
             requests = [
                 self._request(post_id=201, title="公開1"),
                 self._request(post_id=202, title="公開2"),

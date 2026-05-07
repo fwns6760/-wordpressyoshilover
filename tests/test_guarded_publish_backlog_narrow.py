@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,6 +21,16 @@ from tests.test_guarded_publish_runner import (
 
 
 class GuardedPublishBacklogNarrowTests(unittest.TestCase):
+    def setUp(self):
+        self._prev_subject = os.environ.get(notice_sender._SUBJECT_DETAIL_ENV)
+        os.environ[notice_sender._SUBJECT_DETAIL_ENV] = "0"
+
+    def tearDown(self):
+        if self._prev_subject is None:
+            os.environ.pop(notice_sender._SUBJECT_DETAIL_ENV, None)
+        else:
+            os.environ[notice_sender._SUBJECT_DETAIL_ENV] = self._prev_subject
+
     def _write_input(self, tmpdir: str, payload: dict) -> Path:
         path = Path(tmpdir) / "input.json"
         path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
@@ -352,7 +363,10 @@ class GuardedPublishBacklogNarrowTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
             "os.environ",
-            {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com"},
+            {
+                "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                notice_sender._SUBJECT_DETAIL_ENV: "0",
+            },
             clear=True,
         ):
             hold_history_path = Path(tmpdir) / "hold_history.jsonl"

@@ -16,16 +16,22 @@ from src import publish_notice_email_sender as sender
 
 class PublishNoticeEmailSenderTests(unittest.TestCase):
     def setUp(self):
-        # These tests assert the verbose body shape; opt out of the
-        # default-on minimal body.
+        # These tests assert the verbose body / legacy subject shape;
+        # opt out of the default-on minimal body and detailed subject.
         self._prev_minimal = os.environ.get(sender._MINIMAL_BODY_ENV)
+        self._prev_subject = os.environ.get(sender._SUBJECT_DETAIL_ENV)
         os.environ[sender._MINIMAL_BODY_ENV] = "0"
+        os.environ[sender._SUBJECT_DETAIL_ENV] = "0"
 
     def tearDown(self):
-        if self._prev_minimal is None:
-            os.environ.pop(sender._MINIMAL_BODY_ENV, None)
-        else:
-            os.environ[sender._MINIMAL_BODY_ENV] = self._prev_minimal
+        for key, prev in (
+            (sender._MINIMAL_BODY_ENV, self._prev_minimal),
+            (sender._SUBJECT_DETAIL_ENV, self._prev_subject),
+        ):
+            if prev is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = prev
 
     def _request(self, **overrides):
         payload = {
@@ -1358,7 +1364,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         request = self._request()
         bridge_send = MagicMock()
 
-        with patch.dict("os.environ", {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com"}, clear=True):
+        with patch.dict("os.environ", {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com", sender._MINIMAL_BODY_ENV: "0", sender._SUBJECT_DETAIL_ENV: "0"}, clear=True):
             result = sender.send(request, bridge_send=bridge_send)
 
         self.assertEqual(result.status, "dry_run")
@@ -1371,7 +1377,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
     def test_send_suppresses_empty_title(self):
         bridge_send = MagicMock()
 
-        with patch.dict("os.environ", {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com"}, clear=True):
+        with patch.dict("os.environ", {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com", sender._MINIMAL_BODY_ENV: "0", sender._SUBJECT_DETAIL_ENV: "0"}, clear=True):
             result = sender.send(self._request(title="  "), dry_run=False, send_enabled=True, bridge_send=bridge_send)
 
         self.assertEqual(result.status, "suppressed")
@@ -1381,7 +1387,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
     def test_send_suppresses_missing_url(self):
         bridge_send = MagicMock()
 
-        with patch.dict("os.environ", {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com"}, clear=True):
+        with patch.dict("os.environ", {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com", sender._MINIMAL_BODY_ENV: "0", sender._SUBJECT_DETAIL_ENV: "0"}, clear=True):
             result = sender.send(self._request(canonical_url=" "), dry_run=False, send_enabled=True, bridge_send=bridge_send)
 
         self.assertEqual(result.status, "suppressed")
@@ -1391,7 +1397,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
     def test_send_suppresses_when_no_recipient_is_available(self):
         bridge_send = MagicMock()
 
-        with patch.dict("os.environ", {}, clear=True):
+        with patch.dict("os.environ", {sender._MINIMAL_BODY_ENV: "0", sender._SUBJECT_DETAIL_ENV: "0"}, clear=True):
             result = sender.send(self._request(), dry_run=False, send_enabled=True, bridge_send=bridge_send)
 
         self.assertEqual(result.status, "suppressed")
@@ -1402,7 +1408,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
     def test_send_suppresses_gate_off_when_send_requested_without_enable_flag(self):
         bridge_send = MagicMock()
 
-        with patch.dict("os.environ", {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com"}, clear=True):
+        with patch.dict("os.environ", {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com", sender._MINIMAL_BODY_ENV: "0", sender._SUBJECT_DETAIL_ENV: "0"}, clear=True):
             result = sender.send(self._request(), dry_run=False, send_enabled=False, bridge_send=bridge_send)
 
         self.assertEqual(result.status, "suppressed")
@@ -1422,6 +1428,8 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
             "os.environ",
             {
                 "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                sender._MINIMAL_BODY_ENV: "0",
+                sender._SUBJECT_DETAIL_ENV: "0",
                 "ENABLE_PUBLISH_ONLY_MAIL_FILTER": "1",
                 "ENABLE_PUBLISH_ONLY_FILTER_DIRECT_PUBLISH_BYPASS": "0",
             },
@@ -1447,6 +1455,8 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
             "os.environ",
             {
                 "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                sender._MINIMAL_BODY_ENV: "0",
+                sender._SUBJECT_DETAIL_ENV: "0",
                 "ENABLE_PUBLISH_ONLY_MAIL_FILTER": "1",
                 "ENABLE_PUBLISH_ONLY_FILTER_DIRECT_PUBLISH_BYPASS": "1",
             },
@@ -1469,6 +1479,8 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
                     "os.environ",
                     {
                         "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                        sender._MINIMAL_BODY_ENV: "0",
+                        sender._SUBJECT_DETAIL_ENV: "0",
                         "ENABLE_PUBLISH_ONLY_MAIL_FILTER": "1",
                         "ENABLE_PUBLISH_ONLY_FILTER_DIRECT_PUBLISH_BYPASS": bypass_flag,
                     },
@@ -1530,6 +1542,8 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
                     "os.environ",
                     {
                         "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                        sender._MINIMAL_BODY_ENV: "0",
+                        sender._SUBJECT_DETAIL_ENV: "0",
                         "ENABLE_PUBLISH_ONLY_MAIL_FILTER": "1",
                         "ENABLE_PUBLISH_ONLY_FILTER_DIRECT_PUBLISH_BYPASS": "1",
                     },
@@ -1559,6 +1573,8 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
             "os.environ",
             {
                 "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                sender._MINIMAL_BODY_ENV: "0",
+                sender._SUBJECT_DETAIL_ENV: "0",
                 "ENABLE_PUBLISH_ONLY_MAIL_FILTER": "1",
                 "ENABLE_PUBLISH_ONLY_FILTER_BACKLOG_BYPASS": "1",
             },
@@ -1584,6 +1600,8 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
             "os.environ",
             {
                 "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                sender._MINIMAL_BODY_ENV: "0",
+                sender._SUBJECT_DETAIL_ENV: "0",
                 "ENABLE_PUBLISH_ONLY_MAIL_FILTER": "1",
                 "ENABLE_PUBLISH_ONLY_FILTER_DIRECT_PUBLISH_BYPASS": "1",
                 "ENABLE_PUBLISH_ONLY_FILTER_BACKLOG_BYPASS": "1",
@@ -1609,7 +1627,9 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
             "os.environ",
             {
                 "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
-                "ENABLE_PUBLISH_ONLY_FILTER_BACKLOG_BYPASS": "1",
+                sender._MINIMAL_BODY_ENV: "0",
+                    sender._SUBJECT_DETAIL_ENV: "0",
+                    "ENABLE_PUBLISH_ONLY_FILTER_BACKLOG_BYPASS": "1",
             },
             clear=True,
         ):
@@ -1631,7 +1651,9 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
             "os.environ",
             {
                 "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
-                "ENABLE_PUBLISH_ONLY_FILTER_BACKLOG_BYPASS": "1",
+                sender._MINIMAL_BODY_ENV: "0",
+                    sender._SUBJECT_DETAIL_ENV: "0",
+                    "ENABLE_PUBLISH_ONLY_FILTER_BACKLOG_BYPASS": "1",
             },
             clear=True,
         ):
@@ -1652,6 +1674,8 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
                 ),
                 {
                     "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                    sender._MINIMAL_BODY_ENV: "0",
+                    sender._SUBJECT_DETAIL_ENV: "0",
                     "ENABLE_PUBLISH_ONLY_FILTER_BACKLOG_BYPASS": "0",
                 },
                 "BACKLOG_SUMMARY_ONLY",
@@ -1668,6 +1692,8 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
                 ),
                 {
                     "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                    sender._MINIMAL_BODY_ENV: "0",
+                    sender._SUBJECT_DETAIL_ENV: "0",
                     "ENABLE_PUBLISH_ONLY_MAIL_FILTER": "1",
                     "ENABLE_PUBLISH_ONLY_FILTER_DIRECT_PUBLISH_BYPASS": "1",
                     "ENABLE_PUBLISH_ONLY_FILTER_BACKLOG_BYPASS": "0",
@@ -1685,6 +1711,8 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
                 ),
                 {
                     "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                    sender._MINIMAL_BODY_ENV: "0",
+                    sender._SUBJECT_DETAIL_ENV: "0",
                     "ENABLE_PUBLISH_ONLY_FILTER_BACKLOG_BYPASS": "0",
                 },
                 "BACKLOG_SUMMARY_ONLY",
@@ -1699,6 +1727,8 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
                 ),
                 {
                     "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                    sender._MINIMAL_BODY_ENV: "0",
+                    sender._SUBJECT_DETAIL_ENV: "0",
                     "ENABLE_PUBLISH_ONLY_FILTER_BACKLOG_BYPASS": "0",
                 },
                 "BACKLOG_SUMMARY_ONLY",
@@ -2162,6 +2192,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
             {
                 "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
                 sender._MINIMAL_BODY_ENV: "0",
+                sender._SUBJECT_DETAIL_ENV: "0",
             },
             clear=True,
         ):
@@ -2218,6 +2249,8 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
                 "MAIL_BRIDGE_SMTP_USERNAME": "y.sebata@shiny-lab.org",
                 "MAIL_BRIDGE_FROM": "y.sebata@shiny-lab.org",
                 "MAIL_BRIDGE_REPLY_TO": "fwns6760@gmail.com",
+                sender._MINIMAL_BODY_ENV: "0",
+                sender._SUBJECT_DETAIL_ENV: "0",
             },
             clear=True,
         ):
@@ -2236,7 +2269,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         )
         bridge_send = MagicMock(return_value=bridge_result)
 
-        with patch.dict("os.environ", {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com"}, clear=True):
+        with patch.dict("os.environ", {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com", sender._MINIMAL_BODY_ENV: "0", sender._SUBJECT_DETAIL_ENV: "0"}, clear=True):
             result = sender.send(self._request(), dry_run=False, send_enabled=True, bridge_send=bridge_send)
 
         self.assertIs(result.bridge_result, bridge_result)
@@ -2275,7 +2308,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         )
         bridge_send = MagicMock(return_value=bridge_result)
 
-        with patch.dict("os.environ", {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com"}, clear=True):
+        with patch.dict("os.environ", {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com", sender._MINIMAL_BODY_ENV: "0", sender._SUBJECT_DETAIL_ENV: "0"}, clear=True):
             result = sender.send(
                 self._request(),
                 dry_run=False,
@@ -2296,7 +2329,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         )
         bridge_send = MagicMock(return_value=bridge_result)
 
-        with patch.dict("os.environ", {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com"}, clear=True):
+        with patch.dict("os.environ", {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com", sender._MINIMAL_BODY_ENV: "0", sender._SUBJECT_DETAIL_ENV: "0"}, clear=True):
             result = sender.send(self._request(), dry_run=False, send_enabled=True, bridge_send=bridge_send)
 
         self.assertEqual(result.status, "suppressed")
@@ -2377,7 +2410,11 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
             "os.environ",
-            {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com"},
+            {
+                "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                sender._MINIMAL_BODY_ENV: "0",
+                sender._SUBJECT_DETAIL_ENV: "0",
+            },
             clear=True,
         ):
             queue_path = f"{tmpdir}/queue.jsonl"
@@ -2606,7 +2643,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         self.assertEqual(history, {"post_gen_validate:abc123": "2026-05-04T10:45:35.435312+09:00"})
 
     def test_append_send_result_flag_off_keeps_existing_no_history_side_effect(self):
-        with tempfile.TemporaryDirectory() as tmpdir, patch.dict("os.environ", {}, clear=True), patch(
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict("os.environ", {sender._MINIMAL_BODY_ENV: "0", sender._SUBJECT_DETAIL_ENV: "0"}, clear=True), patch(
             "src.publish_notice_email_sender._verify_wp_status_publish",
             side_effect=AssertionError("verify should not run when flag is off"),
         ):
@@ -2822,6 +2859,94 @@ class MinimalBodyTests(unittest.TestCase):
         os.environ[sender._MINIMAL_BODY_ENV] = "1"
         body = sender.build_body_text(self._request(canonical_url=""))
         self.assertEqual(body, "巨人が接戦を制した")
+
+
+class DetailedSubjectTests(unittest.TestCase):
+    """279-QA — subject prefix carries subtype + state info by default."""
+
+    def _request(self, **overrides):
+        # Use a publish_time that is recent (now) so age=0 unless overridden.
+        from datetime import datetime, timezone, timedelta
+        jst_now = datetime.now(timezone(timedelta(hours=9)))
+        payload = {
+            "post_id": 64900,
+            "title": "巨人・吉川尚輝が今季初本塁打",
+            "canonical_url": "https://yoshilover.com/post-64900/",
+            "subtype": "postgame",
+            "publish_time_iso": jst_now.isoformat(timespec="seconds"),
+            "summary": "",
+        }
+        payload.update(overrides)
+        return sender.PublishNoticeRequest(**payload)
+
+    def setUp(self):
+        self._prev = os.environ.get(sender._SUBJECT_DETAIL_ENV)
+
+    def tearDown(self):
+        if self._prev is None:
+            os.environ.pop(sender._SUBJECT_DETAIL_ENV, None)
+        else:
+            os.environ[sender._SUBJECT_DETAIL_ENV] = self._prev
+
+    def test_publish_subject_carries_subtype(self):
+        os.environ[sender._SUBJECT_DETAIL_ENV] = "1"
+        prefix = sender._subject_prefix_for_classification(
+            {"mail_class": "publish", "reason": None},
+            request=self._request(subtype="lineup"),
+        )
+        self.assertEqual(prefix, "【公開済｜lineup】")
+
+    def test_review_subject_carries_short_reason_and_subtype(self):
+        os.environ[sender._SUBJECT_DETAIL_ENV] = "1"
+        prefix = sender._subject_prefix_for_classification(
+            {"mail_class": "review", "reason": "farm_result_review"},
+            request=self._request(subtype="farm_result"),
+        )
+        # Short label "farm" comes first; subtype "farm-result" appended.
+        self.assertEqual(prefix, "【要確認｜farm｜farm-result】")
+
+    def test_review_x_blocked_keeps_legacy_marker_and_appends_subtype(self):
+        os.environ[sender._SUBJECT_DETAIL_ENV] = "1"
+        prefix = sender._subject_prefix_for_classification(
+            {"mail_class": "review", "reason": "roster_movement_yellow_x_blocked"},
+            request=self._request(subtype="roster"),
+        )
+        self.assertEqual(prefix, "【要確認・X見送り｜roster-yellow｜roster】")
+
+    def test_stale_review_marks_old_candidate(self):
+        os.environ[sender._SUBJECT_DETAIL_ENV] = "1"
+        from datetime import datetime, timezone, timedelta
+        old = (datetime.now(timezone(timedelta(hours=9))) - timedelta(hours=48)).isoformat(timespec="seconds")
+        prefix = sender._subject_prefix_for_classification(
+            {"mail_class": "review", "reason": "default_review"},
+            request=self._request(subtype="manager", publish_time_iso=old),
+        )
+        self.assertIn("(古い候補)", prefix)
+        self.assertIn("manager", prefix)
+
+    def test_unknown_subtype_falls_back_to_bare_prefix(self):
+        os.environ[sender._SUBJECT_DETAIL_ENV] = "1"
+        prefix = sender._subject_prefix_for_classification(
+            {"mail_class": "publish", "reason": None},
+            request=self._request(subtype="unknown"),
+        )
+        self.assertEqual(prefix, "【公開済】")
+
+    def test_env_disable_restores_legacy_prefix(self):
+        os.environ[sender._SUBJECT_DETAIL_ENV] = "0"
+        prefix = sender._subject_prefix_for_classification(
+            {"mail_class": "publish", "reason": None},
+            request=self._request(subtype="lineup"),
+        )
+        self.assertEqual(prefix, "【公開済】")
+
+    def test_no_request_falls_back_to_legacy(self):
+        # Backward-compat for callers that don't pass a request.
+        os.environ[sender._SUBJECT_DETAIL_ENV] = "1"
+        prefix = sender._subject_prefix_for_classification(
+            {"mail_class": "review", "reason": "farm_result_review"},
+        )
+        self.assertEqual(prefix, "【要確認】")
 
 
 if __name__ == "__main__":

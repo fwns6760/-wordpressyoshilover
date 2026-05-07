@@ -168,11 +168,13 @@ def main(argv: list[str] | None = None) -> int:
 
     _, record = hit
     rendered_name = record["__rendered_name__"]
+    from zoneinfo import ZoneInfo
+    today_jst = datetime.now(ZoneInfo("Asia/Tokyo"))
     payload = stats_card_payload(
         rendered_name=rendered_name,
         record=record,
         stat_kind=args.stat_kind,
-        date_label=datetime.now().strftime("%Y年%-m月%-d日"),
+        date_label=f"{today_jst.year}年{today_jst.month}月{today_jst.day}日",
         source_url=url,
     )
 

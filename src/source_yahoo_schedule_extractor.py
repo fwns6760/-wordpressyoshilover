@@ -30,7 +30,8 @@ _AWAY_RE = re.compile(
 )
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
-_FINAL_MARKER_RE = re.compile(r"試合終了|終了")
+_FINAL_MARKER_RE = re.compile(r"試合終了")
+_CANCELLED_MARKER_RE = re.compile(r"中止|ノーゲーム")
 _GAME_ID_FROM_URL_RE = re.compile(r"/npb/game/(\d+)/")
 
 
@@ -46,17 +47,16 @@ def _is_giants_team(text: str) -> bool:
     return any(tok in text for tok in GIANTS_TEAM_TOKENS)
 
 
-def find_giants_completed_games(html: str) -> List[Dict[str, str]]:
-    """Return Giants games on the schedule page that have finished.
+def find_giants_games(html: str) -> List[Dict[str, str]]:
+    """Return all Giants games on the schedule page.
 
-    Each entry: ``{game_id, url, home, away, is_completed}``.
-    Filters in two stages:
-      1. Game block must list Giants as home OR away (cross-team mentions
-         in news links don't qualify).
-      2. ``試合終了`` / ``終了`` marker present in the block (so the
-         postgame box-score is publishable).
+    Each entry: ``{game_id, url, home, away, is_completed, is_cancelled}``.
+    Filter applied:
+      - Game block lists Giants as home OR away (cross-team mentions in
+        news links don't qualify).
 
-    Returns ``[]`` when there's no Giants completed game on the page.
+    Use ``find_giants_completed_games`` / ``find_giants_pregame_games``
+    for state-narrowed slices.
     """
     if not isinstance(html, str) or not html:
         return []
@@ -71,7 +71,8 @@ def find_giants_completed_games(html: str) -> List[Dict[str, str]]:
         away = _clean_text(away_m.group("inner")) if away_m else ""
         if not (_is_giants_team(home) or _is_giants_team(away)):
             continue
-        is_completed = bool(_FINAL_MARKER_RE.search(block))
+        is_cancelled = bool(_CANCELLED_MARKER_RE.search(block))
+        is_completed = bool(_FINAL_MARKER_RE.search(block)) and not is_cancelled
         out.append(
             {
                 "game_id": gid,
@@ -79,13 +80,26 @@ def find_giants_completed_games(html: str) -> List[Dict[str, str]]:
                 "home": home,
                 "away": away,
                 "is_completed": is_completed,
+                "is_cancelled": is_cancelled,
             }
         )
     return out
 
 
+def find_giants_completed_games(html: str) -> List[Dict[str, str]]:
+    """Return Giants games that have actually finished (試合終了 marker
+    present and not cancelled / no-game)."""
+    return [g for g in find_giants_games(html) if g["is_completed"]]
+
+
 def find_giants_pregame_games(html: str) -> List[Dict[str, str]]:
-    """Return Giants games on the schedule page that have NOT yet
-    started (no 試合終了 marker). Used for broadcast / lineup work."""
-    completed = find_giants_completed_games(html)
-    return [g for g in completed if not g["is_completed"]]
+    """Return Giants games that have NOT yet started.
+
+    Excludes both completed (試合終了) and cancelled (中止 / ノーゲーム)
+    games — broadcast / lineup work only makes sense for upcoming live
+    games.
+    """
+    return [
+        g for g in find_giants_games(html)
+        if not g["is_completed"] and not g["is_cancelled"]
+    ]

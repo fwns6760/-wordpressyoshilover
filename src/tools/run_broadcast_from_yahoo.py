@@ -15,6 +15,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -88,15 +89,13 @@ def _auto_discover_giants_pregame_url(*, logger: logging.Logger) -> tuple[str, s
     """
     from datetime import datetime
 
+    from zoneinfo import ZoneInfo
     from src.source_html_fetcher import RequestsHttpClient
-    from src.source_yahoo_schedule_extractor import (
-        find_giants_completed_games,
-        find_giants_pregame_games,
-    )
+    from src.source_yahoo_schedule_extractor import find_giants_pregame_games
 
     http = RequestsHttpClient()
-    today = datetime.now()
-    date_param = today.strftime("%Y-%m-%d")
+    today = datetime.now(ZoneInfo("Asia/Tokyo"))
+    date_param = f"{today.year}-{today.month:02d}-{today.day:02d}"
     url = f"https://baseball.yahoo.co.jp/npb/schedule/?date={date_param}"
     try:
         resp = http.get(
@@ -113,9 +112,9 @@ def _auto_discover_giants_pregame_url(*, logger: logging.Logger) -> tuple[str, s
     pregame = find_giants_pregame_games(resp.text)
     if pregame:
         target = pregame[0]
-        # /top carries 放送予定; /index is for postgame box-score.
-        # The schedule URL points to /index — swap to /top.
-        top_url = target["url"].replace("/index", "/top")
+        # /top carries 放送予定; the schedule URL points to /index (or
+        # any page suffix). Replace the trailing path segment with /top.
+        top_url = re.sub(r"/[^/]+$", "/top", target["url"])
         return top_url, ""
     return "", "no_pregame_giants_game_today"
 
@@ -228,40 +227,8 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(output, ensure_ascii=False))
             return EXIT_WP_FAILED
 
-        # Title-prefix dedup (same rationale as run_postgame_from_yahoo):
-        # _yoshilover_source_url meta is not exposed via WP REST, so we
-        # fall back to a search-by-title-prefix query and accept the
-        # match when the prefix (date / teams / league) lines up.
-        try:
-            import requests as _r
-
-            search_resp = _r.get(
-                f"{os.environ['WP_URL']}/wp-json/wp/v2/posts",
-                params={
-                    "search": result["title"][:40],
-                    "per_page": 5,
-                    "status": "any",
-                    "context": "edit",
-                },
-                auth=(os.environ["WP_USER"], os.environ["WP_APP_PASSWORD"]),
-                timeout=10,
-            )
-            existing = None
-            if search_resp.status_code < 400:
-                for hit in search_resp.json():
-                    hit_title = (hit.get("title") or {}).get("rendered", "")
-                    if hit_title.startswith(result["title"][:30]):
-                        existing = hit
-                        break
-        except Exception:
-            existing = None
-        if existing and existing.get("id"):
-            output["skip_reason"] = "already_in_wp"
-            output["existing_post_id"] = existing.get("id")
-            output["existing_status"] = existing.get("status", "")
-            output["ok"] = True
-            print(json.dumps(output, ensure_ascii=False))
-            return EXIT_OK
+        # Dedup is delegated to WPClient.create_post →
+        # find_recent_post_by_title (24h source_url-aware match).
 
         try:
             categories_map = json.loads(

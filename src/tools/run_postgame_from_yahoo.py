@@ -107,15 +107,16 @@ def _auto_discover_giants_completed_url(*, logger: logging.Logger) -> tuple[str,
     days back so a job that runs late at night still finds yesterday's
     game when today had no Giants game."""
     from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
 
     from src.source_html_fetcher import RequestsHttpClient
     from src.source_yahoo_schedule_extractor import find_giants_completed_games
 
     http = RequestsHttpClient()
-    today = datetime.now()
+    today = datetime.now(ZoneInfo("Asia/Tokyo"))
     for delta in range(0, 4):
         d = today - timedelta(days=delta)
-        date_param = d.strftime("%Y-%m-%d")
+        date_param = f"{d.year}-{d.month:02d}-{d.day:02d}"
         url = f"https://baseball.yahoo.co.jp/npb/schedule/?date={date_param}"
         try:
             resp = http.get(
@@ -128,8 +129,7 @@ def _auto_discover_giants_completed_url(*, logger: logging.Logger) -> tuple[str,
             continue
         if resp.status_code >= 400:
             continue
-        games = find_giants_completed_games(resp.text)
-        completed = [g for g in games if g["is_completed"]]
+        completed = find_giants_completed_games(resp.text)
         if completed:
             target = completed[0]
             return target["url"], ""
@@ -138,17 +138,11 @@ def _auto_discover_giants_completed_url(*, logger: logging.Logger) -> tuple[str,
 
 def _fetch_html(url: str, *, logger: logging.Logger) -> tuple[str, str]:
     """Return (html, error). Empty html with an error string on failure."""
-    from src.source_html_fetcher import (
-        FetchCache,
-        RequestsHttpClient,
-        _DefaultRobotsChecker,
-        _PerHostRateLimiter,
-        fetch_source_meta,
-    )
+    from src.source_html_fetcher import RequestsHttpClient
 
-    # Use the Phase 1A pipeline scaffolding to honour robots / rate-limit /
-    # cache, but call the HTTP client directly for the raw HTML we need —
-    # the OG-meta path doesn't surface the inning table.
+    # Direct HTTP client (not the OG-meta pipeline) — we need raw HTML
+    # for the inning table parsing. robots.txt enforcement is delegated
+    # to the operator via Cloud Scheduler cadence.
     http = RequestsHttpClient()
     try:
         resp = http.get(
@@ -285,44 +279,11 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(output, ensure_ascii=False))
             return EXIT_WP_FAILED
 
-        # Post-publish dedup: skip when a post with the same rendered
-        # title already exists in any status. The auto-discover path's
-        # title is deterministic from (date, league, teams, score), so
-        # title equality is a reliable game-uniqueness key. _yoshilover_
-        # source_url meta is not exposed via WP REST without
-        # register_post_meta, so we don't rely on it here.
-        try:
-            import requests as _r
-
-            search_resp = _r.get(
-                f"{os.environ['WP_URL']}/wp-json/wp/v2/posts",
-                params={
-                    "search": rendered_title[:40],
-                    "per_page": 5,
-                    "status": "any",
-                    "context": "edit",
-                },
-                auth=(os.environ["WP_USER"], os.environ["WP_APP_PASSWORD"]),
-                timeout=10,
-            )
-            existing = None
-            if search_resp.status_code < 400:
-                for hit in search_resp.json():
-                    hit_title = (hit.get("title") or {}).get("rendered", "")
-                    # Compare on the date+league+teams prefix to tolerate
-                    # one_line_summary diff if Yahoo updates the title.
-                    if hit_title.startswith(rendered_title[:30]):
-                        existing = hit
-                        break
-        except Exception:
-            existing = None
-        if existing and existing.get("id"):
-            output["skip_reason"] = "already_in_wp"
-            output["existing_post_id"] = existing.get("id")
-            output["existing_status"] = existing.get("status", "")
-            output["ok"] = True
-            print(json.dumps(output, ensure_ascii=False))
-            return EXIT_OK  # idempotent skip — not an error
+        # Dedup is delegated to WPClient.create_post →
+        # find_recent_post_by_title (24h source_url-aware match). The
+        # earlier hand-rolled WP /posts search used a different key
+        # (raw title prefix vs polished+normalized) and could miss
+        # cross-pre/post-polish matches.
 
         # Map nomotoke 試合速報 → WP category id 663.
         try:

@@ -47,7 +47,7 @@ LINEUP_KEYWORDS = (
 _POSITION_CHAR_CLASS = "投捕一二三遊左中右指"
 _LINEUP_ROW_RE = re.compile(
     r"(?P<order>[1-9])番\s*[（(]\s*(?P<pos>[" + _POSITION_CHAR_CLASS + r"])\s*[)）]\s*"
-    r"(?P<name>[^\s、,。\n]{1,12})"
+    r"(?P<name>[^\s　、，,。．\n・]{1,20})"
 )
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _BR_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)

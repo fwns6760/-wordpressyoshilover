@@ -82,6 +82,12 @@ def _fetch_lineup_tweet(
         logger.error("feedparser_unavailable: %s", exc)
         return None, f"feedparser_unavailable:{exc.__class__.__name__}"
     fp = feedparser.parse(rss_url)
+    # bozo=1 → feed is malformed or unreachable. Surface as a distinct
+    # skip reason so RSSHub outage doesn't masquerade as "no tweet today".
+    if getattr(fp, "bozo", 0) and not getattr(fp, "entries", None):
+        bozo_exc = getattr(fp, "bozo_exception", None)
+        logger.warning("feedparser_bozo: %s", bozo_exc)
+        return None, f"rss_fetch_failed:{type(bozo_exc).__name__ if bozo_exc else 'bozo'}"
     for entry in fp.entries[:max_entries]:
         title = entry.get("title", "")
         summary = entry.get("summary", "")
@@ -104,7 +110,7 @@ def _fetch_lineup_tweet(
 
 def _build_payload(*, parsed_tweet: dict, today: datetime) -> dict:
     """Build the renderer-shaped data_preview for lineup_v1."""
-    date_label = today.strftime("%Y年%-m月%-d日")
+    date_label = f"{today.year}年{today.month}月{today.day}日"
     # Without a paired schedule fetch we can't know league_label / home /
     # away precisely. Use safe defaults that the renderer accepts.
     return {
@@ -151,7 +157,11 @@ def main(argv: list[str] | None = None) -> int:
     output["lineup_rows"] = len(fetched["lineup"])
     output["source_url"] = fetched.get("link", "")
 
-    payload = _build_payload(parsed_tweet=fetched, today=datetime.now())
+    from zoneinfo import ZoneInfo
+    payload = _build_payload(
+        parsed_tweet=fetched,
+        today=datetime.now(ZoneInfo("Asia/Tokyo")),
+    )
 
     os.environ.setdefault("ENABLE_NOMOTOKE_CARD_TEMPLATES", "1")
     from src.nomotoke_card_renderer import select_renderer
@@ -189,37 +199,8 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(output, ensure_ascii=False))
             return EXIT_WP_FAILED
 
-        # Title-prefix dedup (same rationale as postgame/broadcast).
-        try:
-            import requests as _r
-
-            search_resp = _r.get(
-                f"{os.environ['WP_URL']}/wp-json/wp/v2/posts",
-                params={
-                    "search": result["title"][:40],
-                    "per_page": 5,
-                    "status": "any",
-                    "context": "edit",
-                },
-                auth=(os.environ["WP_USER"], os.environ["WP_APP_PASSWORD"]),
-                timeout=10,
-            )
-            existing = None
-            if search_resp.status_code < 400:
-                for hit in search_resp.json():
-                    hit_title = (hit.get("title") or {}).get("rendered", "")
-                    if hit_title.startswith(result["title"][:30]):
-                        existing = hit
-                        break
-        except Exception:
-            existing = None
-        if existing and existing.get("id"):
-            output["skip_reason"] = "already_in_wp"
-            output["existing_post_id"] = existing.get("id")
-            output["existing_status"] = existing.get("status", "")
-            output["ok"] = True
-            print(json.dumps(output, ensure_ascii=False))
-            return EXIT_OK
+        # Dedup is delegated to WPClient.create_post →
+        # find_recent_post_by_title (24h source_url-aware match).
 
         try:
             categories_map = json.loads(

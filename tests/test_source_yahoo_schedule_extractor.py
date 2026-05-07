@@ -8,6 +8,7 @@ import unittest
 from src.source_yahoo_schedule_extractor import (
     GIANTS_TEAM_TOKENS,
     find_giants_completed_games,
+    find_giants_games,
     find_giants_pregame_games,
 )
 
@@ -52,11 +53,15 @@ class GiantsCompletedGameDetectionTests(unittest.TestCase):
         )
         self.assertEqual(find_giants_completed_games(html), [])
 
-    def test_pregame_giants_game_marked_not_completed(self):
+    def test_pregame_giants_game_excluded_from_completed(self):
+        # find_giants_completed_games is now strict — pregame games are
+        # not returned (use find_giants_games for the unfiltered list).
         html = _game_block(gid="999", home="巨人", away="中日", completed=False)
-        games = find_giants_completed_games(html)
-        self.assertEqual(len(games), 1)
-        self.assertFalse(games[0]["is_completed"])
+        self.assertEqual(find_giants_completed_games(html), [])
+        all_games = find_giants_games(html)
+        self.assertEqual(len(all_games), 1)
+        self.assertFalse(all_games[0]["is_completed"])
+        self.assertFalse(all_games[0]["is_cancelled"])
 
     def test_pregame_helper_returns_only_pregame(self):
         html = (
@@ -82,6 +87,35 @@ class GiantsCompletedGameDetectionTests(unittest.TestCase):
         self.assertEqual(find_giants_completed_games(""), [])
         self.assertEqual(find_giants_completed_games(None), [])  # type: ignore
         self.assertEqual(find_giants_completed_games("<html>no games</html>"), [])
+
+    def test_cancelled_game_not_completed(self):
+        # 中止 + 試合終了 stamp shouldn't count as completed.
+        block = (
+            '<a class="bb-score__content" href="/npb/game/77/index">'
+            '<p class="bb-score__homeLogo">巨人</p>'
+            '<p class="bb-score__awayLogo">阪神</p>'
+            '中止 試合終了'
+            '</a>'
+        )
+        completed = find_giants_completed_games(block)
+        self.assertEqual(completed, [])
+        all_games = find_giants_games(block)
+        self.assertEqual(len(all_games), 1)
+        self.assertTrue(all_games[0]["is_cancelled"])
+        self.assertFalse(all_games[0]["is_completed"])
+        self.assertEqual(find_giants_pregame_games(block), [])  # cancelled = not pregame
+
+    def test_substring_終了_alone_does_not_mark_completed(self):
+        # bare 終了 (e.g. 受付終了 in news widget) must not trigger the
+        # completed marker — required full 試合終了.
+        block = (
+            '<a class="bb-score__content" href="/npb/game/88/index">'
+            '<p class="bb-score__homeLogo">巨人</p>'
+            '<p class="bb-score__awayLogo">中日</p>'
+            'チケット販売は受付終了'
+            '</a>'
+        )
+        self.assertEqual(find_giants_completed_games(block), [])
 
     def test_giants_team_tokens_constant(self):
         self.assertIn("巨人", GIANTS_TEAM_TOKENS)

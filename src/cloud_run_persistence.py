@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import re
+import time
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -43,6 +44,53 @@ _MISSING_OBJECT_MARKERS = (
     "matched no objects or files",
     "404",
 )
+_TRANSIENT_GCLOUD_MARKERS = (
+    "gcloud crashed",
+    "AttributeError",
+    "Connection reset",
+    "Connection aborted",
+    "Connection timed out",
+    "EOF occurred",
+    "Read timed out",
+    "ServiceUnavailable",
+    "InternalServerError",
+    " 500",
+    " 502",
+    " 503",
+    " 504",
+)
+_PERMANENT_AUTH_MARKERS = (
+    " 401",
+    " 403",
+    "AccessDeniedException",
+    "Requester pays",
+    "Anonymous caller does not have",
+    "storage.objects.get access",
+    "Permission",
+    "denied",
+    "Denied",
+)
+DEFAULT_DOWNLOAD_RETRIES = 3
+DEFAULT_DOWNLOAD_BACKOFF_SECONDS: tuple[float, ...] = (1.0, 2.0, 4.0)
+
+
+def _is_transient_failure(detail: str) -> bool:
+    if not detail:
+        return False
+    return any(marker in detail for marker in _TRANSIENT_GCLOUD_MARKERS)
+
+
+def _classify_state_fetch_failure(detail: str) -> str:
+    text = detail or ""
+    if _is_transient_failure(text):
+        if "AttributeError" in text:
+            return "transient_gcloud_attribute_error"
+        return "transient_gcloud_other"
+    if any(marker in text for marker in _PERMANENT_AUTH_MARKERS):
+        return "permanent_auth"
+    if any(marker in text for marker in _MISSING_OBJECT_MARKERS):
+        return "permanent_missing"
+    return "permanent_other"
 
 
 class GCSAccessError(RuntimeError):
@@ -119,23 +167,49 @@ class GCSStateManager:
             return f"gs://{self.bucket_name}/{self.prefix}/{leaf}"
         return f"gs://{self.bucket_name}/{leaf}"
 
-    def download(self, remote_name: str, local_path: str | os.PathLike[str]) -> bool:
+    def download(
+        self,
+        remote_name: str,
+        local_path: str | os.PathLike[str],
+        *,
+        retries: int | None = None,
+        backoff: Sequence[float] | None = None,
+    ) -> bool:
         target = _path(local_path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            subprocess.run(
-                [*self._storage_base(), "cp", self._remote_uri(remote_name), str(target), "--quiet"],
-                capture_output=True,
-                check=True,
-            )
-        except FileNotFoundError as exc:
-            raise GCSAccessError("gcloud CLI not found") from exc
-        except subprocess.CalledProcessError as exc:
-            detail = _build_error_detail(exc.stderr, exc.stdout)
-            if any(marker in detail for marker in _MISSING_OBJECT_MARKERS):
-                return False
-            raise GCSAccessError(detail) from exc
-        return True
+        attempts = max(1, int(retries if retries is not None else DEFAULT_DOWNLOAD_RETRIES))
+        backoff_seq = tuple(backoff) if backoff is not None else DEFAULT_DOWNLOAD_BACKOFF_SECONDS
+        last_detail = ""
+        last_exc: subprocess.CalledProcessError | None = None
+        for attempt in range(attempts):
+            try:
+                subprocess.run(
+                    [*self._storage_base(), "cp", self._remote_uri(remote_name), str(target), "--quiet"],
+                    capture_output=True,
+                    check=True,
+                )
+            except FileNotFoundError as exc:
+                raise GCSAccessError("gcloud CLI not found") from exc
+            except subprocess.CalledProcessError as exc:
+                detail = _build_error_detail(exc.stderr, exc.stdout)
+                if any(marker in detail for marker in _MISSING_OBJECT_MARKERS):
+                    return False
+                last_detail = detail
+                last_exc = exc
+                if _is_transient_failure(detail) and attempt + 1 < attempts:
+                    wait = backoff_seq[min(attempt, len(backoff_seq) - 1)] if backoff_seq else 0.0
+                    print(
+                        f"gcloud download transient failure attempt={attempt + 1}/{attempts} "
+                        f"retry_in={wait}s remote={remote_name} detail={detail[:200]}",
+                        file=sys.stderr,
+                    )
+                    time.sleep(wait)
+                    continue
+                raise GCSAccessError(detail) from exc
+            return True
+        if last_exc is not None:
+            raise GCSAccessError(last_detail) from last_exc
+        raise GCSAccessError(last_detail or "download retries exhausted")
 
     def upload(self, local_path: str | os.PathLike[str], remote_name: str) -> None:
         source = _path(local_path)
@@ -167,13 +241,30 @@ class GCSStateManager:
         local_path: str | os.PathLike[str],
         *,
         upload_on_exit: bool = True,
+        mandatory: bool = True,
+        failure_sink: dict[str, int] | None = None,
     ) -> Iterator[bool]:
-        downloaded = self.download(remote_name, local_path)
+        fetch_failed = False
+        try:
+            downloaded = self.download(remote_name, local_path)
+        except GCSAccessError as exc:
+            if mandatory:
+                raise
+            fetch_failed = True
+            reason_key = _classify_state_fetch_failure(getattr(exc, "detail", "") or "")
+            if failure_sink is not None:
+                failure_sink[reason_key] = int(failure_sink.get(reason_key, 0)) + 1
+            print(
+                f"state_fetch_failed mandatory=False remote={remote_name} "
+                f"reason={reason_key} detail={(getattr(exc, 'detail', '') or '')[:200]}",
+                file=sys.stderr,
+            )
+            downloaded = False
         try:
             yield downloaded
         finally:
             source = _path(local_path)
-            if upload_on_exit and source.exists():
+            if upload_on_exit and not fetch_failed and source.exists():
                 self.upload(source, remote_name)
 
 
@@ -362,6 +453,7 @@ def run_publish_notice_entrypoint(argv: Sequence[str] | None = None) -> int:
     runner_env["PUBLISH_NOTICE_PREFLIGHT_SKIP_HISTORY_CURSOR_PATH"] = str(
         args.preflight_skip_history_cursor_path
     )
+    state_fetch_failures: dict[str, int] = {}
     with (
         manager.with_state("cursor.txt", args.cursor_path),
         manager.with_state("history.json", args.history_path),
@@ -376,13 +468,26 @@ def run_publish_notice_entrypoint(argv: Sequence[str] | None = None) -> int:
             "guarded_publish_history.jsonl",
             args.guarded_history_path,
             upload_on_exit=False,
+            mandatory=False,
+            failure_sink=state_fetch_failures,
         ),
         preflight_skip_history_manager.with_state(
             "preflight_skip_history.jsonl",
             args.preflight_skip_history_path,
             upload_on_exit=False,
+            mandatory=False,
+            failure_sink=state_fetch_failures,
         ),
     ):
+        if state_fetch_failures:
+            runner_env["PUBLISH_NOTICE_STATE_FETCH_REASONS"] = json.dumps(
+                state_fetch_failures, sort_keys=True
+            )
+            print(
+                f"[state_fetch] failed_count={sum(state_fetch_failures.values())} "
+                f"reasons={json.dumps(state_fetch_failures, sort_keys=True)}",
+                file=sys.stderr,
+            )
         completed = subprocess.run(command, check=False, env=runner_env)
     return int(completed.returncode)
 

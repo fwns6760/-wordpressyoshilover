@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -191,6 +192,87 @@ class RunPublishNoticeEmailDryRunScanTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(len(captured_entries), 1)
         self.assertEqual(captured_entries[0].post_id, 63105)
+
+
+class LoadStateFetchReasonsFromEnvTests(unittest.TestCase):
+    def test_returns_none_when_env_unset(self) -> None:
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("PUBLISH_NOTICE_STATE_FETCH_REASONS", None)
+            self.assertIsNone(runner._load_state_fetch_reasons_from_env())
+
+    def test_returns_none_for_blank_or_invalid_json(self) -> None:
+        for raw in ("", "  ", "{not json", "[]", "null", '"string"'):
+            with self.subTest(raw=raw), patch.dict(
+                os.environ, {"PUBLISH_NOTICE_STATE_FETCH_REASONS": raw}, clear=False
+            ):
+                self.assertIsNone(runner._load_state_fetch_reasons_from_env())
+
+    def test_parses_json_dict_and_drops_zero_or_invalid_counts(self) -> None:
+        payload = json.dumps(
+            {
+                "transient_gcloud_attribute_error": 2,
+                "permanent_auth": "1",
+                "noisy_zero": 0,
+                "broken": "not_a_number",
+            }
+        )
+        with patch.dict(
+            os.environ, {"PUBLISH_NOTICE_STATE_FETCH_REASONS": payload}, clear=False
+        ):
+            result = runner._load_state_fetch_reasons_from_env()
+
+        self.assertEqual(
+            result,
+            {
+                "transient_gcloud_attribute_error": 2,
+                "permanent_auth": 1,
+            },
+        )
+
+    def test_scan_summary_includes_state_fetch_reason_when_env_set(self) -> None:
+        scan_result = ScanResult(
+            emitted=[],
+            skipped=[],
+            cursor_before="2026-05-07T03:00:00+09:00",
+            cursor_after="2026-05-07T09:30:00+09:00",
+        )
+        stdout = io.StringIO()
+
+        class _Sink:
+            enabled = False
+
+        captured_summary_args: dict[str, object] = {}
+        original_summarize = runner.summarize_execution_results
+
+        def capturing_summarize(results, **kwargs):
+            captured_summary_args["state_fetch_reasons"] = kwargs.get("state_fetch_reasons")
+            return original_summarize(results, **kwargs)
+
+        env_payload = json.dumps({"transient_gcloud_attribute_error": 1})
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            os.environ, {"PUBLISH_NOTICE_STATE_FETCH_REASONS": env_payload}, clear=False
+        ), patch(
+            "src.tools.run_publish_notice_email_dry_run.scan",
+            return_value=scan_result,
+        ), patch(
+            "src.tools.run_publish_notice_email_dry_run.summarize_execution_results",
+            side_effect=capturing_summarize,
+        ), patch(
+            "src.tools.run_publish_notice_email_dry_run.runner_ledger_integration.BestEffortLedgerSink",
+            return_value=_Sink(),
+        ), patch("sys.stdout", stdout):
+            exit_code = runner.main(["--scan", "--queue-path", str(Path(tmpdir) / "queue.jsonl")])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            captured_summary_args["state_fetch_reasons"],
+            {"transient_gcloud_attribute_error": 1},
+        )
+        stdout_text = stdout.getvalue()
+        self.assertIn("[state_fetch] failed_count=1", stdout_text)
+        self.assertIn("transient_gcloud_attribute_error", stdout_text)
+        self.assertIn("state_fetch_failed:transient_gcloud_attribute_error", stdout_text)
 
 
 if __name__ == "__main__":

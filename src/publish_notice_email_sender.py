@@ -2680,6 +2680,7 @@ def summarize_execution_results(
     results: Sequence[PublishNoticeEmailResult],
     *,
     emitted: int,
+    state_fetch_reasons: dict[str, int] | None = None,
 ) -> PublishNoticeExecutionSummary:
     status_counter = Counter(str(result.status).strip() for result in results)
     reason_counter = Counter(
@@ -2693,6 +2694,18 @@ def summarize_execution_results(
         if str(result.status).strip() == "suppressed"
         and str(result.reason or "").strip() in _SUMMARY_ONLY_SUPPRESSION_REASONS
     )
+    reasons = dict(sorted(reason_counter.items()))
+    if state_fetch_reasons:
+        for key, count in state_fetch_reasons.items():
+            try:
+                value = int(count)
+            except (TypeError, ValueError):
+                continue
+            if value <= 0:
+                continue
+            merged_key = f"state_fetch_failed:{key}"
+            reasons[merged_key] = reasons.get(merged_key, 0) + value
+        reasons = dict(sorted(reasons.items()))
     return PublishNoticeExecutionSummary(
         emitted=int(emitted),
         sent=int(status_counter.get("sent", 0)),
@@ -2700,7 +2713,7 @@ def summarize_execution_results(
         errors=int(status_counter.get("error", 0)),
         dry_run=int(status_counter.get("dry_run", 0)),
         summary_only_suppressed=int(summary_only_suppressed),
-        reasons=dict(sorted(reason_counter.items())),
+        reasons=reasons,
     )
 
 

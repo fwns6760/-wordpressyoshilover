@@ -2674,6 +2674,51 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         self.assertFalse(summary.should_alert)
         self.assertIsNone(sender.build_zero_sent_alert_log(summary))
 
+    def test_summarize_merges_state_fetch_reasons_into_summary_reasons(self):
+        summary = sender.summarize_execution_results(
+            [],
+            emitted=0,
+            state_fetch_reasons={
+                "transient_gcloud_attribute_error": 1,
+                "permanent_auth": 2,
+                "noisy_zero_count": 0,
+            },
+        )
+
+        self.assertEqual(summary.sent, 0)
+        self.assertEqual(summary.suppressed, 0)
+        self.assertEqual(summary.errors, 0)
+        self.assertEqual(
+            summary.reasons,
+            {
+                "state_fetch_failed:permanent_auth": 2,
+                "state_fetch_failed:transient_gcloud_attribute_error": 1,
+            },
+        )
+        summary_line = sender.build_execution_summary_log(summary)
+        self.assertIn("state_fetch_failed:permanent_auth", summary_line)
+        self.assertIn("state_fetch_failed:transient_gcloud_attribute_error", summary_line)
+        # send-side reasons must still merge cleanly when both sources are present
+        merged = sender.summarize_execution_results(
+            [
+                sender.PublishNoticeEmailResult(
+                    status="suppressed",
+                    reason="NO_RECIPIENT",
+                    subject="subject-a",
+                    recipients=[],
+                ),
+            ],
+            emitted=1,
+            state_fetch_reasons={"transient_gcloud_other": 1},
+        )
+        self.assertEqual(
+            merged.reasons,
+            {
+                "NO_RECIPIENT": 1,
+                "state_fetch_failed:transient_gcloud_other": 1,
+            },
+        )
+
     def test_numeric_mismatch_suppresses_x_candidates_only(self):
         request = self._request(
             title="巨人 1-11 楽天",

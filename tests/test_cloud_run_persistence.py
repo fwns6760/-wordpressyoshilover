@@ -119,6 +119,129 @@ class GCSStateManagerTests(unittest.TestCase):
         mocked_download.assert_called_once_with("guarded_publish_history.jsonl", target)
         mocked_upload.assert_not_called()
 
+    def test_download_retries_transient_attribute_error_then_succeeds(self) -> None:
+        transient_error = subprocess.CalledProcessError(
+            returncode=1,
+            cmd=["gcloud"],
+            stderr=(
+                b"Copying gs://bucket-name/publish_notice/cursor.txt to file:///tmp/x\n"
+                b"ERROR: gcloud crashed (AttributeError): 'str' object has no attribute 'url'\n"
+            ),
+        )
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout=b"", stderr=b"")
+        with tempfile.TemporaryDirectory() as tmpdir, patch(
+            "subprocess.run", side_effect=[transient_error, completed]
+        ) as mocked_run, patch("src.cloud_run_persistence.time.sleep") as mocked_sleep:
+            manager = cloud_run_persistence.GCSStateManager("bucket-name", "publish_notice", "project-id")
+            target = Path(tmpdir) / "cursor.txt"
+            downloaded = manager.download("cursor.txt", target)
+
+        self.assertTrue(downloaded)
+        self.assertEqual(mocked_run.call_count, 2)
+        mocked_sleep.assert_called_once_with(1.0)
+
+    def test_download_raises_after_transient_retries_exhausted(self) -> None:
+        transient_error = subprocess.CalledProcessError(
+            returncode=1,
+            cmd=["gcloud"],
+            stderr=b"ERROR: gcloud crashed (AttributeError): 'str' object has no attribute 'url'\n",
+        )
+        with tempfile.TemporaryDirectory() as tmpdir, patch(
+            "subprocess.run", side_effect=[transient_error, transient_error, transient_error]
+        ) as mocked_run, patch("src.cloud_run_persistence.time.sleep") as mocked_sleep:
+            manager = cloud_run_persistence.GCSStateManager("bucket-name", "publish_notice", "project-id")
+            with self.assertRaises(cloud_run_persistence.GCSAccessError) as ctx:
+                manager.download("cursor.txt", Path(tmpdir) / "cursor.txt")
+
+        self.assertEqual(mocked_run.call_count, 3)
+        self.assertEqual(mocked_sleep.call_count, 2)
+        self.assertIn("AttributeError", str(ctx.exception))
+
+    def test_download_does_not_retry_on_permanent_auth_failure(self) -> None:
+        permanent_error = subprocess.CalledProcessError(
+            returncode=1,
+            cmd=["gcloud"],
+            stderr=b"AccessDeniedException: 403 Anonymous caller does not have storage.objects.get access",
+        )
+        with tempfile.TemporaryDirectory() as tmpdir, patch(
+            "subprocess.run", side_effect=permanent_error
+        ) as mocked_run, patch("src.cloud_run_persistence.time.sleep") as mocked_sleep:
+            manager = cloud_run_persistence.GCSStateManager("bucket-name", "publish_notice", "project-id")
+            with self.assertRaises(cloud_run_persistence.GCSAccessError):
+                manager.download("cursor.txt", Path(tmpdir) / "cursor.txt")
+
+        self.assertEqual(mocked_run.call_count, 1)
+        mocked_sleep.assert_not_called()
+
+    def test_with_state_mandatory_false_swallows_failure_and_records_reason(self) -> None:
+        transient_error = subprocess.CalledProcessError(
+            returncode=1,
+            cmd=["gcloud"],
+            stderr=b"ERROR: gcloud crashed (AttributeError): 'str' object has no attribute 'url'\n",
+        )
+        with tempfile.TemporaryDirectory() as tmpdir, patch(
+            "subprocess.run", side_effect=transient_error
+        ), patch("src.cloud_run_persistence.time.sleep"):
+            manager = cloud_run_persistence.GCSStateManager(
+                "bucket-name", "guarded_publish", "project-id"
+            )
+            target = Path(tmpdir) / "guarded_publish_history.jsonl"
+            sink: dict[str, int] = {}
+            with patch.object(manager, "upload") as mocked_upload:
+                with manager.with_state(
+                    "guarded_publish_history.jsonl",
+                    target,
+                    upload_on_exit=False,
+                    mandatory=False,
+                    failure_sink=sink,
+                ) as downloaded:
+                    self.assertFalse(downloaded)
+                    self.assertFalse(target.exists())
+            mocked_upload.assert_not_called()
+
+        self.assertEqual(sink, {"transient_gcloud_attribute_error": 1})
+
+    def test_with_state_mandatory_false_skips_upload_even_when_local_file_present(self) -> None:
+        transient_error = subprocess.CalledProcessError(
+            returncode=1,
+            cmd=["gcloud"],
+            stderr=b"ERROR: gcloud crashed (AttributeError): 'str' object has no attribute 'url'\n",
+        )
+        with tempfile.TemporaryDirectory() as tmpdir, patch(
+            "subprocess.run", side_effect=transient_error
+        ), patch("src.cloud_run_persistence.time.sleep"):
+            manager = cloud_run_persistence.GCSStateManager(
+                "bucket-name", "preflight_skip", "project-id"
+            )
+            target = Path(tmpdir) / "preflight_skip_history.jsonl"
+            with patch.object(manager, "upload") as mocked_upload:
+                with manager.with_state(
+                    "preflight_skip_history.jsonl",
+                    target,
+                    upload_on_exit=True,
+                    mandatory=False,
+                ) as downloaded:
+                    self.assertFalse(downloaded)
+                    target.write_text("residue\n", encoding="utf-8")
+            mocked_upload.assert_not_called()
+
+    def test_with_state_mandatory_true_propagates_gcs_access_error(self) -> None:
+        transient_error = subprocess.CalledProcessError(
+            returncode=1,
+            cmd=["gcloud"],
+            stderr=b"ERROR: gcloud crashed (AttributeError): 'str' object has no attribute 'url'\n",
+        )
+        with tempfile.TemporaryDirectory() as tmpdir, patch(
+            "subprocess.run", side_effect=transient_error
+        ), patch("src.cloud_run_persistence.time.sleep"):
+            manager = cloud_run_persistence.GCSStateManager(
+                "bucket-name", "publish_notice", "project-id"
+            )
+            target = Path(tmpdir) / "cursor.txt"
+            with self.assertRaises(cloud_run_persistence.GCSAccessError):
+                with manager.with_state("cursor.txt", target):
+                    self.fail("body should not run when mandatory download fails")
+
 
 class ArtifactUploaderTests(unittest.TestCase):
     def test_upload_success_returns_gcs_uri(self) -> None:
@@ -676,6 +799,92 @@ class PublishNoticeEntrypointTests(unittest.TestCase):
         script_text = SCRIPT.read_text(encoding="utf-8")
         self.assertIn("set -euo pipefail", script_text)
         self.assertIn("python3 -m src.cloud_run_persistence entrypoint", script_text)
+
+    def test_entrypoint_continues_when_history_state_fetch_fails_transient(self) -> None:
+        runner_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        captured_envs: list[dict[str, str]] = []
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cursor_path = Path(tmpdir) / "cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            guarded_cursor_path = Path(tmpdir) / "guarded_publish_history_cursor.txt"
+            guarded_history_path = Path(tmpdir) / "guarded_publish_history.jsonl"
+            preflight_skip_history_path = Path(tmpdir) / "preflight_skip_history.jsonl"
+
+            def fake_run(cmd, **kwargs):
+                if cmd[0] == "gcloud" and cmd[4] == "cp" and cmd[5].startswith("gs://"):
+                    if cmd[5].endswith("/guarded_publish_history.jsonl"):
+                        raise subprocess.CalledProcessError(
+                            returncode=1,
+                            cmd=cmd,
+                            stderr=(
+                                b"Copying gs://bucket-name/guarded_publish/guarded_publish_history.jsonl ...\n"
+                                b"ERROR: gcloud crashed (AttributeError): 'str' object has no attribute 'url'\n"
+                            ),
+                        )
+                    if cmd[5].endswith("/preflight_skip_history.jsonl"):
+                        raise subprocess.CalledProcessError(
+                            returncode=1,
+                            cmd=cmd,
+                            stderr=b"AccessDeniedException: 401 Anonymous caller does not have storage.objects.get access",
+                        )
+                    raise subprocess.CalledProcessError(
+                        returncode=1,
+                        cmd=cmd,
+                        stderr=b"CommandException: No URLs matched",
+                    )
+                if cmd[0] == sys.executable:
+                    captured_envs.append(dict(kwargs.get("env") or {}))
+                    cursor_path.write_text("cursor\n", encoding="utf-8")
+                    history_path.write_text("{}\n", encoding="utf-8")
+                    queue_path.write_text('{"status":"queued"}\n', encoding="utf-8")
+                    guarded_cursor_path.write_text("2026-05-07T03:00:00+09:00\n", encoding="utf-8")
+                    return runner_result
+                if cmd[0] == "gcloud" and cmd[4] in {"cp", "mv"}:
+                    return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=b"", stderr=b"")
+                raise AssertionError(f"unexpected command: {cmd}")
+
+            with patch("subprocess.run", side_effect=fake_run), patch(
+                "src.cloud_run_persistence.time.sleep"
+            ):
+                exit_code = cloud_run_persistence.run_publish_notice_entrypoint(
+                    [
+                        "--bucket-name",
+                        "bucket-name",
+                        "--prefix",
+                        "publish_notice",
+                        "--project-id",
+                        "project-id",
+                        "--cursor-path",
+                        str(cursor_path),
+                        "--history-path",
+                        str(history_path),
+                        "--queue-path",
+                        str(queue_path),
+                        "--guarded-history-path",
+                        str(guarded_history_path),
+                        "--guarded-history-cursor-path",
+                        str(guarded_cursor_path),
+                        "--preflight-skip-history-path",
+                        str(preflight_skip_history_path),
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(len(captured_envs), 1)
+        self.assertIn("PUBLISH_NOTICE_STATE_FETCH_REASONS", captured_envs[0])
+        reasons_payload = json.loads(captured_envs[0]["PUBLISH_NOTICE_STATE_FETCH_REASONS"])
+        self.assertEqual(
+            reasons_payload,
+            {
+                "transient_gcloud_attribute_error": 1,
+                "permanent_auth": 1,
+            },
+        )
+        # neither failed history file should be uploaded (mandatory=False keeps remote intact)
+        self.assertFalse(guarded_history_path.exists())
+        self.assertFalse(preflight_skip_history_path.exists())
 
 
 if __name__ == "__main__":

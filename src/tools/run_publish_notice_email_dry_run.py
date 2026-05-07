@@ -66,6 +66,28 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _load_state_fetch_reasons_from_env() -> dict[str, int] | None:
+    raw = os.environ.get("PUBLISH_NOTICE_STATE_FETCH_REASONS", "")
+    if not raw or not raw.strip():
+        return None
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    cleaned: dict[str, int] = {}
+    for key, value in parsed.items():
+        try:
+            count = int(value)
+        except (TypeError, ValueError):
+            continue
+        if count <= 0:
+            continue
+        cleaned[str(key)] = count
+    return cleaned or None
+
+
 def _read_payload_from_path(path: str) -> dict[str, Any]:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -430,7 +452,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 total_emitted = len(result.emitted)
 
-            execution_summary = summarize_execution_results(per_post_results, emitted=total_emitted)
+            state_fetch_reasons = _load_state_fetch_reasons_from_env()
+            if state_fetch_reasons:
+                print(
+                    f"[state_fetch] failed_count={sum(state_fetch_reasons.values())} "
+                    f"reasons={json.dumps(state_fetch_reasons, sort_keys=True)}"
+                )
+            execution_summary = summarize_execution_results(
+                per_post_results,
+                emitted=total_emitted,
+                state_fetch_reasons=state_fetch_reasons,
+            )
             print(build_execution_summary_log(execution_summary))
             alert_line = build_zero_sent_alert_log(execution_summary)
             if alert_line is not None:

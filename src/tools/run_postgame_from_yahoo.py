@@ -199,8 +199,10 @@ def main(argv: list[str] | None = None) -> int:
         discovered_url, err = _auto_discover_giants_completed_url(logger=logger)
         if err:
             output["skip_reason"] = err
+            output["ok"] = True  # idempotent "nothing-to-do" for cron
             print(json.dumps(output, ensure_ascii=False))
-            return EXIT_INVALID_URL
+            # exit 0 so Cloud Scheduler doesn't alarm on off-days.
+            return EXIT_OK
         url = discovered_url
         output["url"] = url
         output["auto_discovered"] = True

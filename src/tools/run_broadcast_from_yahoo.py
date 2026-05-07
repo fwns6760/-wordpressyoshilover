@@ -157,8 +157,11 @@ def main(argv: list[str] | None = None) -> int:
         discovered_url, err = _auto_discover_giants_pregame_url(logger=logger)
         if err:
             output["skip_reason"] = err
+            output["ok"] = True  # idempotent "nothing-to-do" for cron
             print(json.dumps(output, ensure_ascii=False))
-            return EXIT_INVALID_URL
+            # exit 0 so Cloud Scheduler doesn't alarm on the routine
+            # "no pre-game game today" condition (off-days, evenings).
+            return EXIT_OK
         url = discovered_url
         output["url"] = url
         output["auto_discovered"] = True

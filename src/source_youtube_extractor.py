@@ -381,12 +381,21 @@ def extract_video_card_facts(
                 f"{int(m.group(1))}年{int(m.group(2))}月{int(m.group(3))}日"
             )
 
+    # YouTube descriptions routinely embed promotional URLs (e.g.
+    # ``https://bit.ly/3s2Un79`` GIANTS TV). The "visible raw URL 0"
+    # quality minimum forbids these from showing up in the rendered
+    # card body, so we strip them here before the description is
+    # forwarded to the renderer. Surrounding text is kept; only the
+    # URL substring is removed.
+    raw_desc = entry.description or ""
+    raw_desc = re.sub(r"https?://\S+", "", raw_desc)
+    raw_desc = re.sub(r"[ \t　]+", " ", raw_desc).strip()
     return {
         "video_url": entry.video_url,
         "team_name": team_name,
         "player_name": player_name,
         "play_summary": play_summary,
-        "description": (entry.description or "")[:280],
+        "description": raw_desc[:280],
         "date_label": date_label,
         # Source-side metadata for downstream auditing.
         "source_url": entry.video_url,

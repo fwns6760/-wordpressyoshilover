@@ -226,6 +226,31 @@ class ExtractVideoFactsTests(unittest.TestCase):
         facts = extract_video_card_facts(self.r.entries[0])
         self.assertIn("hqdefault.jpg", facts["thumbnail_url"])
 
+    def test_description_strips_embedded_urls(self):
+        # YouTube descriptions routinely carry promo URLs
+        # (e.g. ``https://bit.ly/3s2Un79`` GIANTS TV). Live drafting
+        # surfaced these as visible raw URLs in the rendered card body
+        # — a regression of the LINK-LABEL-FIX 「visible raw URL 0」
+        # gate. The extractor strips http(s) URLs from the description
+        # text before forwarding to the renderer; surrounding prose
+        # is kept.
+        e = YouTubeFeedEntry(
+            video_id="vid",
+            video_url="https://www.youtube.com/watch?v=vid",
+            title="巨人 岡本和真 ホームラン",
+            description=(
+                "5月6日のヤクルト戦、岡本和真選手の本塁打 ◆「GIANTS TV」"
+                "https://bit.ly/3s2Un79 公式サイト https://www.giants.jp/"
+            ),
+        )
+        facts = extract_video_card_facts(e)
+        self.assertNotIn("https://", facts["description"])
+        self.assertNotIn("http://", facts["description"])
+        # Surrounding prose preserved.
+        self.assertIn("ヤクルト戦", facts["description"])
+        self.assertIn("岡本和真", facts["description"])
+        self.assertIn("GIANTS TV", facts["description"])
+
 
 # ---------------------------------------------------------------------------
 # End-to-end: facts → render_video_card → HTML body

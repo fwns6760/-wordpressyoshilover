@@ -635,6 +635,19 @@ class WPClient:
         }
         if categories:
             payload["categories"] = categories
+        if not featured_media:
+            try:
+                from src.player_eyecatch_resolver import resolve_eyecatch_from_title
+                resolved = resolve_eyecatch_from_title(
+                    title,
+                    wp_url=self.base_url,
+                    auth=self.auth,
+                )
+                if resolved:
+                    featured_media = resolved
+                    print(f"[WP] auto-eyecatch hit media_id={resolved} title={title[:40]!r}")
+            except Exception as exc:
+                print(f"[WP] auto-eyecatch resolve failed: {exc}")
         if featured_media:
             payload["featured_media"] = featured_media
         meta_payload: dict = {}

@@ -1068,6 +1068,47 @@ def _try_render_via_nomotoke(
     if extra_blocks:
         rendered = _insert_blocks_before_source_h3(rendered, extra_blocks)
 
+    # NOMOTOKE-INTAKE-READER-UX-001: reader-side UX layer.
+    # Order:
+    #   1. Inject anchor IDs into known asides (R1 ToC targets).
+    #   2. Build the meta header bar (R3) + ToC (R1).
+    #   3. Wrap roster names in the lead (R4).
+    #   4. Append tag chips at end (R6).
+    if template_key.startswith("nomotoke_card_"):
+        # Step 1 + 2: ToC anchors + ToC + meta header
+        rendered, toc_entries = _inject_toc_anchors(rendered)
+        toc_html = _build_toc_block(toc_entries)
+        meta_html = _build_meta_header_bar(
+            rendered, normalized_source_published_at
+        )
+        header_payload = ""
+        if meta_html:
+            header_payload += meta_html
+        if toc_html:
+            header_payload += toc_html
+        if header_payload:
+            rendered = header_payload + rendered
+
+        # Step 3: lead-only auto-link
+        rendered = _wrap_first_roster_names_in_lead(rendered)
+
+        # Step 4: tag chips at bottom (after the existing footer would
+        # be appended). The footer is added by ``_result_payload``
+        # AFTER the renderer returns, so we append chips here, just
+        # before the source-link H3 → wait, actually the footer comes
+        # from result_payload's "footer_html" path. The cleanest spot
+        # for chips is after the existing rendered body but before
+        # the source H3 (so they sit alongside the rest of the
+        # discovery blocks).
+        chip_block = _build_tag_chip_block(
+            title=title,
+            summary=summary,
+            content_html=rendered,
+            category=data.get("category", "") if isinstance(data, dict) else "",
+        )
+        if chip_block:
+            rendered = _insert_blocks_before_source_h3(rendered, [chip_block])
+
     return rendered or None
 
 
@@ -2022,6 +2063,260 @@ def _build_yesterdays_game_block(exclude_link: str = "") -> str:
         '<p class="nomotoke-yesterday-game__label">🆚 直近の試合速報</p>'
         f'<p>{prefix}<a href="{html.escape(link)}">{html.escape(title)}</a></p>'
         "</aside>"
+    )
+
+
+# NOMOTOKE-INTAKE-READER-UX-001 (R1 + R3 + R4 + R6): reader-side
+# enhancements baked into the rendered body. All pure HTML, no JS,
+# no external libraries, no auth — the WP theme renders them as part
+# of the post body. Each helper short-circuits to ``""`` when its
+# required input is empty so a partial post never crashes.
+
+# R3: read time / relative time
+# ------------------------------
+
+_READ_CHARS_PER_MINUTE = 600  # JP reading speed approx 10 chars/sec
+
+
+def _compute_read_minutes(content_html: str) -> int:
+    """Count plain-text chars in ``content_html`` and convert to a
+    rounded-up minutes count (min 1)."""
+    if not content_html:
+        return 1
+    plain = re.sub(r"<[^>]+>", "", content_html)
+    plain = html.unescape(plain)
+    plain = re.sub(r"[\s　]+", "", plain)
+    n = max(1, len(plain))
+    minutes = (n + _READ_CHARS_PER_MINUTE - 1) // _READ_CHARS_PER_MINUTE
+    return max(1, minutes)
+
+
+def _format_relative_time(iso: str) -> str:
+    """Render an ISO 8601 timestamp as ``N時間前`` / ``N日前`` / ``YYYY/M/D``.
+
+    Empty string when ``iso`` is unparseable."""
+    if not iso or not isinstance(iso, str):
+        return ""
+    candidate = iso.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(candidate)
+    except (TypeError, ValueError):
+        return ""
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=JST)
+    else:
+        parsed = parsed.astimezone(JST)
+    now = datetime.now(JST)
+    delta = now - parsed
+    secs = delta.total_seconds()
+    if secs < 0:
+        return parsed.strftime("%-m/%-d %H:%M")
+    if secs < 60:
+        return "今"
+    if secs < 3600:
+        return f"{int(secs // 60)}分前"
+    if secs < 86400:
+        return f"{int(secs // 3600)}時間前"
+    if secs < 7 * 86400:
+        return f"{int(secs // 86400)}日前"
+    return parsed.strftime("%Y/%-m/%-d")
+
+
+def _build_meta_header_bar(content_html: str, source_published_at_iso: str) -> str:
+    """Render the 「⏱ 読了 ~~ ・ 掲載 ~~」 metadata bar at top of body."""
+    minutes = _compute_read_minutes(content_html)
+    rel = _format_relative_time(source_published_at_iso)
+    pieces: list[str] = [f"⏱ 読了約{minutes}分"]
+    if rel:
+        pieces.append(f"📅 掲載 {rel}")
+    return (
+        '<aside class="nomotoke-reader-meta">'
+        f'<p>{" ・ ".join(html.escape(p) for p in pieces)}</p>'
+        "</aside>"
+    )
+
+
+# R1: table of contents
+# ----------------------
+
+# Map known block class names to display labels + anchor ids. The
+# anchor id is a stable slug — applied via ``_inject_toc_anchors`` and
+# referenced by the ToC links.
+_TOC_BLOCK_REGISTRY: tuple[tuple[str, str, str], ...] = (
+    ("nomotoke-source-excerpt", "本文抜粋", "toc-excerpt"),
+    ("nomotoke-lineup", "今日のスタメン", "toc-lineup"),
+    ("nomotoke-yesterday-game", "直近の試合速報", "toc-yesterday"),
+    ("nomotoke-recent-games", "直近の試合", "toc-recent-games"),
+    ("nomotoke-season-matchup", "今季対戦成績", "toc-matchup"),
+    ("nomotoke-related-posts", "関連記事", "toc-related"),
+    ("nomotoke-roster", "関連選手・首脳陣", "toc-roster"),
+    ("nomotoke-player-stats", "関連選手の今季成績", "toc-player-stats"),
+    ("nomotoke-author-cluster", "著者の他の記事", "toc-author"),
+    ("nomotoke-notice-timeline", "直近の公示", "toc-notice"),
+    ("nomotoke-standings", "セ・リーグ順位", "toc-standings"),
+    ("nomotoke-next-game", "次戦", "toc-next-game"),
+    ("nomotoke-source-meta", "掲載情報", "toc-source-meta"),
+)
+
+
+def _inject_toc_anchors(content_html: str) -> tuple[str, list[tuple[str, str]]]:
+    """For each block in ``_TOC_BLOCK_REGISTRY`` that appears in the
+    HTML, add ``id="..."`` to its opening tag. Returns
+    (modified_html, [(anchor_id, label)]) where the second element is
+    used by ``_render_toc_block``."""
+    modified = content_html
+    found: list[tuple[str, str]] = []
+    for class_name, label, anchor_id in _TOC_BLOCK_REGISTRY:
+        # Match the first ``<aside class="...{class_name}..." `` tag and
+        # inject id=. Conservative: only the FIRST occurrence per class.
+        pattern = re.compile(
+            rf'(<aside class="[^"]*{re.escape(class_name)}[^"]*")(>)'
+        )
+        m = pattern.search(modified)
+        if m:
+            replacement = f'{m.group(1)} id="{anchor_id}"{m.group(2)}'
+            modified = modified[: m.start()] + replacement + modified[m.end():]
+            found.append((anchor_id, label))
+    return modified, found
+
+
+def _build_toc_block(toc_entries: list[tuple[str, str]]) -> str:
+    """Render the 📖 目次 block, or empty when too few entries."""
+    if not toc_entries or len(toc_entries) < 3:
+        return ""
+    items = "".join(
+        f'<li><a href="#{html.escape(aid)}">{html.escape(label)}</a></li>'
+        for aid, label in toc_entries
+    )
+    return (
+        '<aside class="nomotoke-toc">'
+        '<p class="nomotoke-toc__label">📖 目次</p>'
+        f'<ul class="nomotoke-toc__list">{items}</ul>'
+        "</aside>"
+    )
+
+
+# R4: roster name auto-link in lead
+# ----------------------------------
+
+def _wrap_first_roster_names_in_lead(content_html: str) -> str:
+    """Wrap the first occurrence of each roster name found in
+    ``<p class="nomotoke-lead">...</p>`` into a search-link anchor.
+
+    Conservative: only the lead paragraph is rewritten so we never
+    nest <a> tags or break inline HTML inside fact tables."""
+    if not content_html:
+        return content_html
+    try:
+        from src.nomotoke_card_renderer import _load_giants_roster
+    except Exception:
+        return content_html
+    roster = _load_giants_roster()
+    if not roster:
+        return content_html
+    # Names sorted by length desc so 「岡本和真」 wins over 「岡本」.
+    names = sorted(
+        {(e.get("name") or "").strip() for e in roster if e.get("name")},
+        key=len,
+        reverse=True,
+    )
+    lead_re = re.compile(
+        r'(<p class="nomotoke-lead">)([^<]+)(</p>)', re.DOTALL
+    )
+    m = lead_re.search(content_html)
+    if not m:
+        return content_html
+    open_tag, lead_text, close_tag = m.group(1), m.group(2), m.group(3)
+    used: set[str] = set()
+    rewritten = lead_text
+    for name in names:
+        if not name or name in used:
+            continue
+        if name not in rewritten:
+            continue
+        used.add(name)
+        link = f'<a href="/?s={html.escape(name)}">{html.escape(name)}</a>'
+        # Replace ONLY the first occurrence — preserves surrounding text
+        # context and avoids over-linking.
+        rewritten = rewritten.replace(name, link, 1)
+        if len(used) >= 4:
+            break
+    new_lead = open_tag + rewritten + close_tag
+    return content_html[: m.start()] + new_lead + content_html[m.end():]
+
+
+# R6: tag chip block (player + opponent + venue search-links)
+# ------------------------------------------------------------
+
+_VENUE_KEYWORDS_FOR_CHIPS: tuple[str, ...] = (
+    "東京ドーム", "神宮球場", "マツダスタジアム", "バンテリンドーム",
+    "京セラドーム", "ベルーナドーム", "ZOZOマリン", "エスコンフィールド",
+    "PayPayドーム", "横浜スタジアム", "ジャイアンツタウン",
+)
+_TEAM_KEYWORDS_FOR_CHIPS: tuple[str, ...] = (
+    "阪神", "中日", "広島", "DeNA", "ヤクルト",
+    "楽天", "ロッテ", "オリックス", "ソフトバンク",
+    "日本ハム", "西武", "ハヤテ", "オイシックス",
+    "ドジャース", "カブス", "パドレス", "メッツ",
+)
+
+
+def _build_tag_chip_block(
+    title: str, summary: str, content_html: str, category: str
+) -> str:
+    """Render the chip-style tag block at the bottom of the post.
+
+    Each chip is a clickable ``<a href="/?s=...">`` link to the WP
+    search results page for that token. Uses a fixed soft-amber chip
+    style (inline) so the look survives every WP theme."""
+    text = " ".join(s for s in (title, summary) if s)
+    chips: list[str] = []
+    seen: set[str] = set()
+
+    def _add(label: str, search_term: str = "") -> None:
+        if label in seen:
+            return
+        seen.add(label)
+        term = search_term or label
+        chips.append(
+            '<a class="nomotoke-chip" '
+            f'href="/?s={html.escape(term)}" '
+            'style="display:inline-block;margin:4px 4px 0 0;'
+            "padding:4px 10px;background:#fff8e1;color:#5d4037;"
+            "border:1px solid #ffd54f;border-radius:14px;"
+            'text-decoration:none;font-size:13px;">'
+            f"#{html.escape(label)}</a>"
+        )
+
+    if category and category.strip():
+        _add(category.strip())
+    for team in _TEAM_KEYWORDS_FOR_CHIPS:
+        if team in text:
+            _add(team)
+    for venue in _VENUE_KEYWORDS_FOR_CHIPS:
+        if venue in text:
+            _add(venue)
+    try:
+        from src.nomotoke_card_renderer import _load_giants_roster
+    except Exception:
+        roster = []
+    else:
+        roster = _load_giants_roster()
+    for entry in roster:
+        full = (entry.get("name") or "").strip()
+        if full and full in text:
+            _add(full)
+            if len(chips) >= 8:
+                break
+
+    if not chips:
+        return ""
+    return (
+        '<aside class="nomotoke-tag-chips">'
+        '<p class="nomotoke-tag-chips__label">🏷 関連タグ</p>'
+        '<p class="nomotoke-tag-chips__row">'
+        + "".join(chips)
+        + "</p></aside>"
     )
 
 

@@ -248,6 +248,29 @@ class MinimalHtmlCommentTests(unittest.TestCase):
         for forbidden in ("required_facts", "extracted_facts", "tier", "confidence"):
             self.assertNotIn(forbidden, c)
 
+    def test_comment_iso_published_at_uses_basic_form(self):
+        # NOMOTOKE-RSS-CARD-001B-DATELABEL-FIX: extended-form ISO leaks
+        # \d{1,2}-\d{1,2} tokens into the body which conflict with real
+        # score tokens. Basic form (no separators) has no such risk.
+        c = cli._build_minimal_html_comment(
+            template_key="nomotoke_card_short_news_url_v1",
+            source_url_hash="abc",
+            route_id="r1",
+            source_published_at_iso="2026-05-06T09:30:00Z",
+        )
+        self.assertIn("20260506T093000Z", c)
+        self.assertNotIn("2026-05-06T09:30:00Z", c)
+
+    def test_to_iso_basic_strips_dashes_and_colons(self):
+        self.assertEqual(
+            cli._to_iso_basic("2026-05-06T09:30:00Z"), "20260506T093000Z"
+        )
+        self.assertEqual(cli._to_iso_basic(""), "")
+        # Already-basic form passes through unchanged.
+        self.assertEqual(
+            cli._to_iso_basic("20260506T093000Z"), "20260506T093000Z"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Per-entry pipeline: dry-run mode does NOT call WPClient.create_post
@@ -757,7 +780,10 @@ class SourcePublishedAtTests(unittest.TestCase):
         )
         body = wp.create_post.call_args.kwargs.get("content", "")
         self.assertIn("source_published_at_iso", body)
-        self.assertIn("2026-05-06T10:00:00Z", body)
+        # ISO 8601 basic form (no separators) — extended form leaks
+        # phantom \d{1,2}-\d{1,2} score tokens into the body.
+        self.assertIn("20260506T100000Z", body)
+        self.assertNotIn("2026-05-06T10:00:00Z", body)
 
 
 # ---------------------------------------------------------------------------

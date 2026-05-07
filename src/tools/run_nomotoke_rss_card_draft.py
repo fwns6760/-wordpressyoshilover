@@ -286,6 +286,23 @@ def _write_audit_log(path: Path, record: Dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _to_iso_basic(iso_extended: str) -> str:
+    """Convert ISO 8601 extended form (``2026-05-06T09:30:00Z``) to basic
+    form (``20260506T093000Z``). The basic form is still valid ISO 8601
+    but avoids the ``-`` characters that the score-consistency tokenizer
+    interprets as separators between two integers, which would create a
+    phantom score pair and conflict with real scores in the article body.
+
+    Empty / unrecognized inputs pass through unchanged.
+    """
+    s = (iso_extended or "").strip()
+    if not s:
+        return ""
+    if "-" not in s and ":" not in s:
+        return s
+    return s.replace("-", "").replace(":", "")
+
+
 def _build_minimal_html_comment(
     *,
     template_key: str,
@@ -297,6 +314,10 @@ def _build_minimal_html_comment(
 
     Contains template_key + source_url_hash + route_id + source_published_at_iso
     ONLY. NEVER required_facts / extracted_facts / tier / confidence.
+
+    The ``source_published_at_iso`` value is serialized in ISO 8601 basic
+    form (``20260506T093000Z``) so the comment cannot inject a phantom
+    ``\\d{1,2}-\\d{1,2}`` token into the body's score-consistency check.
     """
     payload: Dict[str, Any] = {
         "template_key": template_key,
@@ -304,7 +325,7 @@ def _build_minimal_html_comment(
         "route_id": route_id,
     }
     if source_published_at_iso:
-        payload["source_published_at_iso"] = source_published_at_iso
+        payload["source_published_at_iso"] = _to_iso_basic(source_published_at_iso)
     return f"<!-- nomotoke_card_meta:{json.dumps(payload, ensure_ascii=False)} -->"
 
 

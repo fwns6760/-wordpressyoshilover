@@ -659,6 +659,56 @@ class XPostOnlyGuardTests(unittest.TestCase):
         self.assertFalse(is_x_post_url("https://hochi.news/articles/abc"))
         self.assertFalse(is_x_post_url(""))
 
+    def test_date_label_uses_japanese_format_no_score_pattern(self):
+        # NOMOTOKE-RSS-CARD-001B-DATELABEL-FIX: date_label must not contain
+        # \d{1,2}-\d{1,2} so it never registers as a phantom score in the
+        # body's score-consistency check.
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title="巨人 試合詳細はこちら https://www.giants.jp/G/game/result/2026/0506.html",
+                summary="",
+                link="https://x.com/TokyoGiants/status/9100",
+                published="Wed, 06 May 2026 09:30:00 +0000",
+            ),
+            source_name="巨人公式X",
+            source_url="https://x.com/TokyoGiants/status/9100",
+        )
+        self.assertTrue(r.matched)
+        date_label = r.would_render_call["data_preview"]["date_label"]
+        self.assertEqual(date_label, "2026年5月6日")
+        # The exact dash-pattern that triggered phantom (5,6) tokens on
+        # 64798 / 64800 / 64801 must not appear in the date label.
+        import re
+        self.assertIsNone(re.search(r"\d{1,2}-\d{1,2}", date_label))
+
+    def test_short_news_url_rendered_body_has_no_phantom_score_tokens(self):
+        # End-to-end check: render a real-shaped short_news_url card and
+        # confirm the body's score tokens come ONLY from the legitimate
+        # body summary, never from date metadata. This is the regression
+        # gate for review_score_order_mismatch_review false-positives that
+        # blocked 64798 / 64800 / 64801.
+        os.environ["ENABLE_NOMOTOKE_CARD_TEMPLATES"] = "1"
+        from src.baseball_numeric_fact_consistency import extract_scores
+        from src.nomotoke_card_renderer import select_renderer
+
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title="巨人 試合詳細はこちら https://www.giants.jp/G/game/result/2026/0506.html",
+                summary="巨人は0-5でヤクルトに敗戦、試合詳細は球団公式ページで公開。",
+                link="https://x.com/TokyoGiants/status/9101",
+                published="Wed, 06 May 2026 09:30:00 +0000",
+            ),
+            source_name="巨人公式X",
+            source_url="https://x.com/TokyoGiants/status/9101",
+        )
+        self.assertTrue(r.matched)
+        renderer = select_renderer(r.template_key)
+        rendered = renderer(r.would_render_call["data_preview"])
+        body = rendered.get("content_html", "")
+        tokens = [t.pair for t in extract_scores(body)]
+        # Exactly the one legitimate score from the summary.
+        self.assertEqual(tokens, [(0, 5)])
+
     def test_non_x_source_short_news_url_unaffected(self):
         # Regular HTTP RSS source (non-X) still falls through to short_news_url
         # without going through the X guard.

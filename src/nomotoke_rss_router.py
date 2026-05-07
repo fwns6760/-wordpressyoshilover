@@ -469,11 +469,19 @@ def is_stale(
 
 
 def _date_label_from_iso(iso: str) -> str:
+    """Return a Japanese-format JST date label.
+
+    Format ``YYYY年M月D日`` (no leading zeros on month/day) avoids the
+    ``\\d{1,2}-\\d{1,2}`` pattern matched by the score consistency
+    tokenizer — ``2026-05-06`` would otherwise resolve to a phantom
+    score of ``(5, 6)`` and conflict with a real score in the summary,
+    triggering ``review_score_order_mismatch_review`` on guarded-publish.
+    """
     d = _parse_iso_or_rfc822(iso)
     if d is None:
         return ""
     jst = d.astimezone(timezone(timedelta(hours=9)))
-    return jst.strftime("%Y-%m-%d")
+    return f"{jst.year}年{jst.month}月{jst.day}日"
 
 
 # ---------------------------------------------------------------------------

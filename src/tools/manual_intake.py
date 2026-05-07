@@ -689,6 +689,15 @@ def _try_render_via_nomotoke(
             return None
         if not (registered or removed):
             return None
+        # NOMOTOKE-INTAKE-NPB-OFFICIAL-001 (N2): always link to NPB公式
+        # 公示ページ. The path varies by date but the year-based
+        # landing page is stable; readers click to the year directory
+        # and find the specific date page. The renderer emits this as
+        # 「NPB公式公示: <a>NPB公式 公示ページ</a>」.
+        npb_year = ""
+        m_year = re.match(r"^(\d{4})年", date_label or "")
+        if m_year:
+            npb_year = m_year.group(1)
         data = {
             "team_name": "巨人",
             "action": action,
@@ -697,6 +706,10 @@ def _try_render_via_nomotoke(
             "removed": removed,
             "source_url": source_url,
             "source_name": source_name or "出典",
+            "official_url": (
+                f"https://npb.jp/announcement/{npb_year}/" if npb_year else "https://npb.jp/announcement/"
+            ),
+            "official_url_label": "NPB公式 公示ページ",
         }
 
     if template_key == "nomotoke_card_video_v1":
@@ -978,6 +991,17 @@ def _try_render_via_nomotoke(
             block = _build_matchup_record_block(opponent)
             if block:
                 extra_blocks.append(block)
+
+    # NOMOTOKE-INTAKE-JSONLD-META-001: the 「📅 掲載日 by 著者」 meta
+    # line for short_news_url + postgame. Empty when JSON-LD lacks
+    # both author and datePublished.
+    if raw_html and template_key in (
+        "nomotoke_card_short_news_url_v1",
+        "nomotoke_card_postgame_v1",
+    ):
+        block = _build_jsonld_meta_block(raw_html, source_name)
+        if block:
+            extra_blocks.append(block)
 
     if extra_blocks:
         rendered = _insert_blocks_before_source_h3(rendered, extra_blocks)
@@ -1290,6 +1314,114 @@ def _fetch_yahoo_lineup_html(preview_url: str) -> str:
     except Exception:
         return ""
     return content.decode("utf-8", errors="replace")
+
+
+# NOMOTOKE-INTAKE-JSONLD-META-001: extract author + datePublished
+# from JSON-LD blocks for the 「掲載日 by 著者」 meta line. No LLM,
+# no fabrication — every value is a literal field from the source
+# page's structured data.
+
+_JSONLD_BLOCK_RE_INTAKE = re.compile(
+    r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(?P<body>.*?)</script>',
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _normalise_jsonld_author(value: Any) -> str:
+    """JSON-LD ``author`` may be a string, dict ({@type:Person, name}),
+    or a list. Returns the first non-empty name or ``""``."""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        for key in ("name", "givenName"):
+            v = value.get(key)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        return ""
+    if isinstance(value, list):
+        for item in value:
+            n = _normalise_jsonld_author(item)
+            if n:
+                return n
+    return ""
+
+
+def _extract_jsonld_author_and_date(raw_html: str) -> tuple[str, str]:
+    """Return (author_name, date_published_iso) from the first
+    ``Article``-typed JSON-LD object that carries either field."""
+    if not raw_html or not isinstance(raw_html, str):
+        return "", ""
+    for m in _JSONLD_BLOCK_RE_INTAKE.finditer(raw_html):
+        body = m.group("body").strip()
+        if not body:
+            continue
+        try:
+            parsed = json.loads(body)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        nodes: list[dict] = []
+        if isinstance(parsed, dict):
+            nodes.append(parsed)
+            graph = parsed.get("@graph")
+            if isinstance(graph, list):
+                nodes.extend(g for g in graph if isinstance(g, dict))
+        elif isinstance(parsed, list):
+            nodes.extend(p for p in parsed if isinstance(p, dict))
+        for node in nodes:
+            t = node.get("@type")
+            type_ok = False
+            if isinstance(t, str):
+                type_ok = "rticle" in t  # NewsArticle / Article / etc.
+            elif isinstance(t, list):
+                type_ok = any("rticle" in s for s in t if isinstance(s, str))
+            if not type_ok:
+                continue
+            author = _normalise_jsonld_author(node.get("author"))
+            date_iso = node.get("datePublished") or node.get("dateCreated") or ""
+            if isinstance(date_iso, str):
+                date_iso = date_iso.strip()
+            else:
+                date_iso = ""
+            if author or date_iso:
+                return author, date_iso
+    return "", ""
+
+
+def _format_jsonld_date_jp(iso: str) -> str:
+    """Render an ISO 8601 string as ``M/D HH:MM``. Empty on parse failure."""
+    if not iso or not isinstance(iso, str):
+        return ""
+    m = re.match(
+        r"^\d{4}-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?", iso
+    )
+    if not m:
+        return ""
+    out = f"{int(m.group(1))}/{int(m.group(2))}"
+    if m.group(3) and m.group(4):
+        out += f" {m.group(3)}:{m.group(4)}"
+    return out
+
+
+def _build_jsonld_meta_block(raw_html: str, source_name: str) -> str:
+    """Return the 「📅 掲載日 by 著者」 line, or empty when neither field
+    is available."""
+    author, date_iso = _extract_jsonld_author_and_date(raw_html)
+    date_jp = _format_jsonld_date_jp(date_iso)
+    if not (author or date_jp):
+        return ""
+    pieces = []
+    if date_jp:
+        pieces.append(f"📅 {html.escape(date_jp)} 掲載")
+    if author:
+        attribution = author
+        if source_name and source_name not in author:
+            attribution = f"{source_name} {author}"
+        pieces.append(f"by {html.escape(attribution)}")
+    return (
+        '<aside class="nomotoke-source-meta">'
+        f'<p>{" ".join(pieces)}</p>'
+        "</aside>"
+    )
 
 
 def _build_lineup_block(home_lineup: list[dict], away_lineup: list[dict]) -> str:

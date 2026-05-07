@@ -1,6 +1,6 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-05-05 JST
+最終更新: 2026-05-07 JST
 
 ## 最初に読む
 
@@ -21,9 +21,7 @@
 | **245 front hide internal auto-post category label** | READY | **必要。いま動かす** | Front画面に内部カテゴリ「自動投稿」が出るのを止める。カテゴリ削除ではなく表示除外のみ |
 | **277-QA title player name backfill** | REVIEW_NEEDED | **必要。impl 済み** | helper + fetcher integration + 1826 tests pass。次は Claude review と push 判断 |
 | **OO-QA article body quality v1** | IN_FLIGHT | **必要。preview 実装中** | default-OFF 本文品質 guard を repo 実装。次は fixture preview doc 作成と Claude/user review |
-| **279-QA mail subject clarity** | READY_FOR_FIX | **必要。277 の次** | publish-notice 件名だけで公開済み / review / hold / 古い候補を判別できるようにする。今回は doc-only |
-| **278-QA RT title cleanup** | READY_FOR_FIX | **必要。279 の次** | RT prefix / 公式X断片 / グッズ告知系 title を整形する。今回は doc-only |
-| **280-QA summary excerpt cleanup** | READY_FOR_FIX | **必要。series 最後** | publish-notice 本文 summary / excerpt の判断材料を改善する。今回は doc-only |
+| **279-QA mail subject clarity** | READY_FOR_FIX | **必要。277 の次** | publish-notice 件名だけで公開済み / review / hold / 古い候補を判別できるようにする。本文簡素化(74b0cec)後は件名強化の意味が増した |
 | **229 Gemini cost governor + LLM call reduction** | REVIEW_NEEDED | **必要。継続監視** | fetcher 100% 後の Gemini call / skip / ledger を見て、229-C prompt compression をやるか決める |
 | **OPERATING_LOCK** | ACTIVE_LOCK | **必要。常時参照** | 事故防止ルール。変更は慎重に、src 実装とは混ぜない |
 | **assignments** | ACTIVE_BOARD | **必要。現在地** | 本ファイル。active を増やしすぎない |
@@ -46,6 +44,11 @@
 | **244-B repair anchor** | `e04eee1` で実装済み、後続 wire 完了 |
 | **244-followup subtype-aware severity** | `9074c8a` で実装済み |
 | **244-B-followup stub to module wire** | `cf8ecb9` で実装済み、draft-body-editor image へ反映済み |
+| **278-QA RT title cleanup** | `5a253a2` (TITLE-SEO-POLISH-001) で RT prefix 除去 + 末尾 filler trim 実装。yoshilover-fetcher / manual-intake-service / 3 auto jobs に live 反映済み |
+| **280-QA summary excerpt cleanup** | `74b0cec` (MAIL-MINIMAL-BODY-001) で本文を title+URL のみに簡素化したため summary を磨く意味なし。publish-notice job に live 反映済み |
+| **246-viral-topic-detection** | 8 日 parked。SNS バズ検出 → 既存 RSS 裏取り → routing 構想は良いが、現フェーズ(noindex 検証 + 本文品質 + cost)と競合。再着手したくなれば doc/done/2026-05/ から復元 |
+| **247-QA-postgame-strict-slot-fill-poc** | 8 日 parked。LLM JSON 抽出 + slot-fill POC は野心的だが LLM 本文生成に踏み込む変更で、現 policy(LLM 本文補完禁止)と衝突。再着手時は scope 再設計必要 |
+| **254-QA-starter-innings-normalization** | 8 日 parked。投手回数表記揺れ統一 helper 構想。fact_consistency false negative の対策だが、現状観察で具体被害が顕在化していない。被害が見えたら再起 |
 
 ## waiting へ送ったもの
 

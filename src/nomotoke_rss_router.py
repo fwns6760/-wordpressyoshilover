@@ -528,6 +528,70 @@ def detect_pregame_pitcher(title: str, summary: str) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Title sanitizer (NOMOTOKE-RSS-CARD-001B-TITLE-FIX)
+#
+# Applied ONLY to short_news_url_card titles via the router. Existing 10
+# SHAPE-001 renderers are NOT affected. Source-only fact rule preserved:
+# only RSS noise is deleted (URLs, "詳細はこちら" footers, hashtag #,
+# HTML tags, runaway whitespace). Never adds tokens. Never invents words.
+# ---------------------------------------------------------------------------
+
+
+_TITLE_SANITIZE_URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
+_TITLE_SANITIZE_HTML_RE = re.compile(r"<[^>]+>")
+_TITLE_SANITIZE_HASHTAG_RE = re.compile(r"#([^\s#]+)")
+_TITLE_SANITIZE_TRAILING_PHRASES: Tuple[str, ...] = (
+    "試合詳細はこちら",
+    "試合詳細",
+    "詳細はこちら",
+    "詳しくはこちら",
+    "続きはこちら",
+    "記事はこちら",
+    "全文はこちら",
+    "以下から",
+    "詳細はリプライから",
+    "リンクはこちら",
+)
+TITLE_MAX_CHARS_SHORT_NEWS = 50
+
+
+def sanitize_short_news_title(title: str) -> str:
+    """Return a publish-quality short_news_url title.
+
+    Steps (deterministic, source-only):
+      1. strip URL fragments (http(s)://...)
+      2. strip embedded HTML tags (<br>, <a>, ...)
+      3. convert hashtag `#word` to plain `word`
+      4. remove trailing footer phrases like 「試合詳細はこちら」
+      5. collapse whitespace (incl. full-width space U+3000)
+      6. trim trailing punctuation/separators
+      7. cap at TITLE_MAX_CHARS_SHORT_NEWS chars (truncate at 「。」 boundary
+         when possible, else hard-cap with ellipsis)
+
+    Returns "" when input is empty/None or sanitization removes everything.
+    """
+    if not title:
+        return ""
+    s = str(title)
+    s = _TITLE_SANITIZE_URL_RE.sub(" ", s)
+    s = _TITLE_SANITIZE_HTML_RE.sub(" ", s)
+    s = _TITLE_SANITIZE_HASHTAG_RE.sub(r"\1", s)
+    for phrase in _TITLE_SANITIZE_TRAILING_PHRASES:
+        s = s.replace(phrase, " ")
+    s = re.sub(r"[\s　]+", " ", s).strip()
+    s = re.sub(r"[\s。、,.:：]+$", "", s).strip()
+    if not s:
+        return ""
+    if len(s) <= TITLE_MAX_CHARS_SHORT_NEWS:
+        return s
+    cut = s[:TITLE_MAX_CHARS_SHORT_NEWS]
+    idx = cut.rfind("。")
+    if 0 < idx <= TITLE_MAX_CHARS_SHORT_NEWS:
+        return cut[: idx + 1]
+    return cut.rstrip() + "…"
+
+
+# ---------------------------------------------------------------------------
 # Quote-length guard
 # ---------------------------------------------------------------------------
 
@@ -903,6 +967,20 @@ def route_rss_entry_to_nomotoke_card(
             f"manager_not_in_allowlist:{mq['manager_name']}"
         )
 
+    sanitized_title = sanitize_short_news_title(title)
+    if not sanitized_title:
+        return _skip(
+            "insufficient_required_facts:short_news_url:title",
+            template_key=TEMPLATE_KEY_SHORT_NEWS_URL,
+            tier=tier,
+            canonical_url=canonical,
+            source_name=source_name,
+            missing_facts=["title"],
+        )
+    if title and title != sanitized_title:
+        extracted["title_raw"] = title[:200]
+        extracted["title_sanitized"] = sanitized_title
+
     return RouteResult(
         matched=True,
         template_key=TEMPLATE_KEY_SHORT_NEWS_URL,
@@ -914,7 +992,7 @@ def route_rss_entry_to_nomotoke_card(
         would_render_call={
             "renderer_func_name": "render_short_news_url_card",
             "data_preview": {
-                "title": title,
+                "title": sanitized_title,
                 "summary": summary[:200],
                 "source_url": chosen_url,
                 "source_name": source_name,
@@ -983,6 +1061,7 @@ __all__ = [
     "QUOTE_SHORT_MAX_CHARS",
     "PREGAME_STALE_HOURS",
     "GIANTS_KEYWORDS",
+    "TITLE_MAX_CHARS_SHORT_NEWS",
     "RouteResult",
     "is_enabled",
     "source_tier",
@@ -992,6 +1071,7 @@ __all__ = [
     "extract_manager_quote",
     "extract_player_quote",
     "detect_pregame_pitcher",
+    "sanitize_short_news_title",
     "route_rss_entry_to_nomotoke_card",
     "derive_next_recommended",
     "derive_not_suitable_for_rss",

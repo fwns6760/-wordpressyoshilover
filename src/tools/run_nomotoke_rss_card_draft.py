@@ -414,7 +414,8 @@ def _process_one_entry(
     base_summary: Dict[str, Any] = {
         "route_id": route_id,
         "source_name": source_name,
-        "title": (entry.get("title") or "")[:120],
+        "title": (entry.get("title") or "")[:120],  # raw RSS input (operator audit)
+        "rendered_title": "",  # what WP would actually receive (after sanitize)
         "source_url": (entry.get("link") or ""),
         "source_url_hash": "",
         "matched": False,
@@ -516,6 +517,7 @@ def _process_one_entry(
     canonical_url = result.canonical_url or entry.get("link", "")
     source_url_hash = result.dedupe_key.split(":", 1)[-1] if result.dedupe_key else ""
     base_summary["source_url_hash"] = source_url_hash
+    base_summary["rendered_title"] = rendered_title
 
     # Append the minimal HTML comment (template_key + source_url_hash + route_id
     # + source_published_at_iso). NEVER include required_facts / extracted_facts.

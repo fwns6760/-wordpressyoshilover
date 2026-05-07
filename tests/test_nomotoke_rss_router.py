@@ -680,5 +680,153 @@ class DedupeKeyTests(unittest.TestCase):
         self.assertEqual(r_clean.dedupe_key, r_utm.dedupe_key)
 
 
+# ---------------------------------------------------------------------------
+# short_news_url title sanitizer (NOMOTOKE-RSS-CARD-001B-TITLE-FIX)
+# ---------------------------------------------------------------------------
+class ShortNewsTitleSanitizerTests(unittest.TestCase):
+    """Locked behavior for sanitize_short_news_title — applies ONLY to
+    short_news_url card titles via the router."""
+
+    def test_strips_url_fragment(self):
+        from src.nomotoke_rss_router import sanitize_short_news_title
+
+        out = sanitize_short_news_title(
+            "巨人ニュース http://example.com/foo"
+        )
+        self.assertNotIn("http", out)
+        self.assertNotIn("example.com", out)
+        self.assertIn("巨人ニュース", out)
+
+    def test_strips_https_url_fragment(self):
+        from src.nomotoke_rss_router import sanitize_short_news_title
+
+        out = sanitize_short_news_title(
+            "巨人ニュース https://t.co/abc"
+        )
+        self.assertNotIn("https", out)
+        self.assertNotIn("t.co", out)
+
+    def test_strips_trailing_phrases(self):
+        from src.nomotoke_rss_router import sanitize_short_news_title
+
+        for phrase in (
+            "試合詳細はこちら",
+            "詳細はこちら",
+            "続きはこちら",
+            "全文はこちら",
+        ):
+            out = sanitize_short_news_title(f"巨人ニュース {phrase}")
+            self.assertNotIn(phrase, out, f"phrase not stripped: {phrase}")
+
+    def test_converts_hashtag_to_plain_word(self):
+        from src.nomotoke_rss_router import sanitize_short_news_title
+
+        out = sanitize_short_news_title("巨人 #三塚琉生 選手")
+        self.assertIn("三塚琉生", out)
+        self.assertNotIn("#三塚琉生", out)
+
+    def test_strips_html_tags(self):
+        from src.nomotoke_rss_router import sanitize_short_news_title
+
+        out = sanitize_short_news_title("巨人速報<br>続報")
+        self.assertNotIn("<br>", out)
+        self.assertIn("巨人速報", out)
+        self.assertIn("続報", out)
+
+    def test_caps_at_50_chars(self):
+        from src.nomotoke_rss_router import (
+            TITLE_MAX_CHARS_SHORT_NEWS,
+            sanitize_short_news_title,
+        )
+
+        long_input = "巨人" * 40  # 80 chars, no period
+        out = sanitize_short_news_title(long_input)
+        self.assertLessEqual(len(out), TITLE_MAX_CHARS_SHORT_NEWS + 1)
+        self.assertTrue(out.endswith("…"))
+
+    def test_truncate_at_period_boundary_when_within_cap(self):
+        from src.nomotoke_rss_router import sanitize_short_news_title
+
+        # First sentence ends at <= 50 chars; truncation should land there.
+        s = "巨人 0-5 ヤクルト 先発の竹丸が5失点。得点を奪うことができず惜敗"
+        out = sanitize_short_news_title(s)
+        self.assertTrue(out.endswith("。") or len(out) == len(s))
+
+    def test_score_line_preserved(self):
+        from src.nomotoke_rss_router import sanitize_short_news_title
+
+        out = sanitize_short_news_title(
+            "【二軍】巨人 1-6 ハヤテ ちゅ～るスタジアム清水🏟️ #三塚琉生 選手が本塁打を放つも大量失点で敗戦。 試合詳細はこちら http://x.co/a"
+        )
+        self.assertIn("巨人 1-6 ハヤテ", out)
+        self.assertIn("三塚琉生", out)
+        self.assertNotIn("試合詳細はこちら", out)
+        self.assertNotIn("http", out)
+
+    def test_empty_input_returns_empty(self):
+        from src.nomotoke_rss_router import sanitize_short_news_title
+
+        self.assertEqual(sanitize_short_news_title(""), "")
+        self.assertEqual(sanitize_short_news_title(None), "")  # type: ignore[arg-type]
+
+    def test_short_input_unchanged(self):
+        from src.nomotoke_rss_router import sanitize_short_news_title
+
+        s = "巨人 試合速報 0-5"
+        self.assertEqual(sanitize_short_news_title(s), s)
+
+    def test_full_width_space_collapsed(self):
+        from src.nomotoke_rss_router import sanitize_short_news_title
+
+        out = sanitize_short_news_title("巨人　1-6　ハヤテ")  # full-width spaces
+        self.assertEqual(out, "巨人 1-6 ハヤテ")
+
+    def test_router_emits_sanitized_title_in_data_preview(self):
+        """The router must pass the sanitized title to the renderer's
+        data_preview, NOT the raw RSS title."""
+        from src.nomotoke_rss_router import (
+            TEMPLATE_KEY_SHORT_NEWS_URL,
+            route_rss_entry_to_nomotoke_card,
+        )
+
+        raw = (
+            "【二軍】巨人 1-6 ハヤテ #三塚琉生 選手が本塁打を放つも大量失点で敗戦。 "
+            "試合詳細はこちら http://example.com/x"
+        )
+        r = route_rss_entry_to_nomotoke_card(
+            {"title": raw, "summary": "", "link": "https://twitter.com/TokyoGiants/status/9700"},
+            source_name="TokyoGiants",
+        )
+        self.assertTrue(r.matched)
+        self.assertEqual(r.template_key, TEMPLATE_KEY_SHORT_NEWS_URL)
+        sanitized = (r.would_render_call or {}).get("data_preview", {}).get("title", "")
+        self.assertNotIn("http", sanitized)
+        self.assertNotIn("試合詳細はこちら", sanitized)
+        self.assertNotIn("#三塚琉生", sanitized)
+        self.assertIn("三塚琉生", sanitized)
+        # extracted_facts captures the raw + sanitized mapping for audit
+        self.assertEqual(r.extracted_facts.get("title_sanitized"), sanitized)
+        self.assertIn("title_raw", r.extracted_facts)
+
+    def test_router_does_not_apply_sanitizer_to_other_templates(self):
+        """manager_comment / player_comment / pregame_pitcher data_previews
+        must NOT have title_sanitized fields. Sanitizer is short_news_url-only."""
+        from src.nomotoke_rss_router import (
+            TEMPLATE_KEY_MANAGER_COMMENT,
+            route_rss_entry_to_nomotoke_card,
+        )
+
+        r = route_rss_entry_to_nomotoke_card(
+            {
+                "title": "巨人・阿部監督「反省」",
+                "summary": "",
+                "link": "https://twitter.com/Sanspo_Giants/status/9701",
+            },
+            source_name="サンスポ巨人X",
+        )
+        self.assertEqual(r.template_key, TEMPLATE_KEY_MANAGER_COMMENT)
+        self.assertNotIn("title_sanitized", r.extracted_facts)
+
+
 if __name__ == "__main__":
     unittest.main()

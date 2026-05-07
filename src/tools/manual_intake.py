@@ -941,6 +941,31 @@ def _try_render_via_nomotoke(
         if block:
             extra_blocks.append(block)
 
+    # NOMOTOKE-INTAKE-LINEUP-001: fetch the Yahoo Sportsnavi preview
+    # page and parse out the starting lineup tables. Applied only to
+    # postgame_v1 (where the source URL is already a Yahoo /index).
+    # Single 6-second GET; returns empty on any failure so the
+    # rendered body stays unchanged.
+    if template_key == "nomotoke_card_postgame_v1":
+        preview_url = _derive_yahoo_preview_url(source_url)
+        if preview_url:
+            preview_html = _fetch_yahoo_lineup_html(preview_url)
+            if preview_html:
+                try:
+                    from src.source_yahoo_lineup_extractor import (
+                        parse_yahoo_lineup_html,
+                    )
+                except Exception:
+                    parse_yahoo_lineup_html = None  # type: ignore
+                if parse_yahoo_lineup_html is not None:
+                    try:
+                        home_lu, away_lu = parse_yahoo_lineup_html(preview_html)
+                    except Exception:
+                        home_lu, away_lu = [], []
+                    block = _build_lineup_block(home_lu, away_lu)
+                    if block:
+                        extra_blocks.append(block)
+
     if template_key == "nomotoke_card_postgame_v1" and isinstance(data, dict):
         away = (data.get("away") or "").strip()
         home = (data.get("home") or "").strip()
@@ -1231,6 +1256,79 @@ def _current_season_start_iso() -> str:
 
 
 _GAME_RESULT_CATEGORY_ID = 663  # 試合速報 — see config/categories.json
+
+
+def _derive_yahoo_preview_url(source_url: str) -> str:
+    """Convert ``.../game/<id>/index`` to ``.../game/<id>/preview``.
+
+    Returns ``""`` when the URL is not a Yahoo NPB game URL or the
+    expected ``/index`` segment is absent."""
+    if not source_url or not _YAHOO_BOXSCORE_URL_RE.match(source_url):
+        return ""
+    return re.sub(r"/index(\?.*)?$", "/preview", source_url, count=1)
+
+
+def _fetch_yahoo_lineup_html(preview_url: str) -> str:
+    """Single 6-second GET against the Yahoo preview page. Returns the
+    raw HTML body (capped at 800 KB) or ``""`` on any failure."""
+    if not preview_url:
+        return ""
+    try:
+        import urllib.request
+    except Exception:
+        return ""
+    try:
+        req = urllib.request.Request(
+            preview_url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; yoshilover-manual-intake/1)",
+                "Accept": "text/html,application/xhtml+xml",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            content = resp.read(800_000)
+    except Exception:
+        return ""
+    return content.decode("utf-8", errors="replace")
+
+
+def _build_lineup_block(home_lineup: list[dict], away_lineup: list[dict]) -> str:
+    """Render the 「📊 今日のスタメン」 block. Empty when both lists are
+    empty."""
+    if not home_lineup and not away_lineup:
+        return ""
+
+    def _render_table(rows: list[dict]) -> str:
+        if not rows:
+            return ""
+        lis = "".join(
+            f'<li>{html.escape(r.get("order", ""))}番 '
+            f'({html.escape(r.get("position", ""))}) '
+            f'{html.escape(r.get("name", ""))}</li>'
+            for r in rows
+            if r.get("name")
+        )
+        return f"<ol>{lis}</ol>" if lis else ""
+
+    parts: list[str] = []
+    parts.append(
+        '<aside class="nomotoke-lineup">'
+        '<p class="nomotoke-lineup__label">📊 今日のスタメン</p>'
+    )
+    home_html = _render_table(home_lineup)
+    if home_html:
+        parts.append('<div class="nomotoke-lineup__home">')
+        parts.append('<p class="nomotoke-lineup__team-label">ホーム</p>')
+        parts.append(home_html)
+        parts.append("</div>")
+    away_html = _render_table(away_lineup)
+    if away_html:
+        parts.append('<div class="nomotoke-lineup__away">')
+        parts.append('<p class="nomotoke-lineup__team-label">ビジター</p>')
+        parts.append(away_html)
+        parts.append("</div>")
+    parts.append("</aside>")
+    return "".join(parts)
 
 
 def _is_safe_https_image_url(url: str) -> bool:

@@ -69,6 +69,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "url",
+        nargs="?",
+        default="",
         help="Yahoo Sportsnavi game URL (https://baseball.yahoo.co.jp/npb/game/<id>/index)",
     )
     p.add_argument(
@@ -76,6 +78,15 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         choices=("dry-run", "draft"),
         default="dry-run",
         help="default 'dry-run' (no WP write); 'draft' creates a WP draft",
+    )
+    p.add_argument(
+        "--auto-discover",
+        action="store_true",
+        help=(
+            "Skip explicit URL: probe the Yahoo schedule for the most "
+            "recent completed Giants game and use that. Intended for "
+            "Cloud Scheduler / cron use."
+        ),
     )
     p.add_argument(
         "--from-file",
@@ -88,6 +99,41 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="JSON summary output path; default = stdout",
     )
     return p
+
+
+def _auto_discover_giants_completed_url(*, logger: logging.Logger) -> tuple[str, str]:
+    """Probe Yahoo schedule pages for the most-recent completed Giants
+    game URL. Returns (url, error). Looks at today first, then up to 3
+    days back so a job that runs late at night still finds yesterday's
+    game when today had no Giants game."""
+    from datetime import datetime, timedelta
+
+    from src.source_html_fetcher import RequestsHttpClient
+    from src.source_yahoo_schedule_extractor import find_giants_completed_games
+
+    http = RequestsHttpClient()
+    today = datetime.now()
+    for delta in range(0, 4):
+        d = today - timedelta(days=delta)
+        date_param = d.strftime("%Y-%m-%d")
+        url = f"https://baseball.yahoo.co.jp/npb/schedule/?date={date_param}"
+        try:
+            resp = http.get(
+                url,
+                headers={"User-Agent": "YoshiloverBot/1.0"},
+                timeout=15.0,
+            )
+        except Exception as exc:
+            logger.warning("schedule_fetch_failed (%s): %s", date_param, exc)
+            continue
+        if resp.status_code >= 400:
+            continue
+        games = find_giants_completed_games(resp.text)
+        completed = [g for g in games if g["is_completed"]]
+        if completed:
+            target = completed[0]
+            return target["url"], ""
+    return "", "no_completed_giants_game_found"
 
 
 def _fetch_html(url: str, *, logger: logging.Logger) -> tuple[str, str]:
@@ -146,6 +192,19 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     url = (args.url or "").strip()
+
+    # --auto-discover: probe Yahoo schedule for today's / recent
+    # completed Giants game. Used by Cloud Scheduler for daily auto runs.
+    if args.auto_discover and not url:
+        discovered_url, err = _auto_discover_giants_completed_url(logger=logger)
+        if err:
+            output["skip_reason"] = err
+            print(json.dumps(output, ensure_ascii=False))
+            return EXIT_INVALID_URL
+        url = discovered_url
+        output["url"] = url
+        output["auto_discovered"] = True
+
     if not (url.startswith("http://") or url.startswith("https://")):
         output["skip_reason"] = "invalid_url"
         print(json.dumps(output, ensure_ascii=False))

@@ -1567,10 +1567,82 @@ class VideoNarrativeTitleFallbackTests(unittest.TestCase):
         )
 
         # Sanity: the allowlist contains observed players.
-        for name in ("竹丸和幸", "吉川尚輝", "宮原駿介", "田中将大", "高梨雄平"):
+        for name in ("竹丸和幸", "吉川尚輝", "宮原駿介", "田中将大", "高梨雄平",
+                     "泉口友汰"):
             self.assertIn(name, GIANTS_PLAYER_ALLOWLIST)
         self.assertEqual(GIANTS_PLAYER_NICKNAMES.get("マー君"), "田中将大")
         self.assertEqual(GIANTS_PLAYER_NICKNAMES.get("尚輝"), "吉川尚輝")
+
+
+class VideoCrossTeamFilterTests(unittest.TestCase):
+    """NOMOTOKE-VIDEO-CROSS-TEAM-FILTER-002: quoted-name extractor must
+    apply the Giants allowlist gate so DRAMATIC BASEBALL highlight clips
+    that quote opposing-team players (山野太一 / 鈴木叶 / 内山壮真) don't
+    produce drafts about non-Giants players on a Giants-focused site.
+    """
+
+    def _f(self, title):
+        from src.nomotoke_rss_router import extract_video_facts
+
+        return extract_video_facts(title)
+
+    def test_giants_player_quoted_still_passes(self):
+        f = self._f('【巨人】"宮原駿介"今季初登板で1回無失点！【巨人×ヤクルト】')
+        self.assertEqual(f.get("player_name"), "宮原駿介")
+        self.assertEqual(f.get("play_summary"), "今季初登板で1回無失点")
+
+    def test_giants_player_泉口友汰_in_allowlist(self):
+        # Regression guard: a Giants infielder seen in live RSS must
+        # remain in the allowlist; otherwise the cross-team filter would
+        # silently drop legitimate Giants supply.
+        f = self._f('"泉口友汰"2安打＆ジャンプ一番の好プレー！【巨人】')
+        self.assertEqual(f.get("player_name"), "泉口友汰")
+        self.assertIn("2安打", f.get("play_summary", ""))
+
+    def test_yakult_starter_山野太一_filtered(self):
+        f = self._f(
+            '【巨人】"山野太一"6回無失点でキャリアハイに並ぶ5勝目！【巨人×ヤクルト】'
+        )
+        self.assertEqual(f, {})
+
+    def test_yakult_prospect_鈴木叶_filtered(self):
+        f = self._f('"鈴木叶"2点タイムリースリーベース！【巨人】')
+        self.assertEqual(f, {})
+
+    def test_yakult_catcher_内山壮真_filtered(self):
+        f = self._f('"内山壮真"軽快な好守備を連発！【巨人】')
+        self.assertEqual(f, {})
+
+    def test_is_giants_video_player_helper(self):
+        from src.nomotoke_rss_router import is_giants_video_player
+
+        self.assertTrue(is_giants_video_player("宮原駿介"))
+        self.assertTrue(is_giants_video_player("マー君"))  # nickname
+        self.assertTrue(is_giants_video_player("尚輝"))    # nickname
+        self.assertFalse(is_giants_video_player("山野太一"))
+        self.assertFalse(is_giants_video_player(""))
+        self.assertFalse(is_giants_video_player(None))
+
+    def test_quoted_yakult_does_not_fall_back_to_short_news_url(self):
+        # The router must skip the entry entirely (no short_news_url
+        # fallback for YouTube), even when the quoted name is filtered.
+        from src.nomotoke_rss_router import route_rss_entry_to_nomotoke_card
+
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title='【巨人】"山野太一"6回無失点でキャリアハイに並ぶ5勝目！【巨人×ヤクルト】',
+                summary="",
+                link="https://www.youtube.com/watch?v=L-SJvrnWgeI",
+                published="Wed, 06 May 2026 09:29:55 +0000",
+            ),
+            source_name="DRAMATIC BASEBALL",
+            source_url="https://www.youtube.com/watch?v=L-SJvrnWgeI",
+        )
+        self.assertFalse(r.matched)
+        self.assertEqual(
+            r.skip_reason,
+            "insufficient_required_facts:video:player_name",
+        )
 
     def test_youtube_watch_url_routes_to_video_v1(self):
         r = route_rss_entry_to_nomotoke_card(

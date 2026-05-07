@@ -902,10 +902,10 @@ GIANTS_PLAYER_ALLOWLIST: Tuple[str, ...] = (
     "大城卓三", "山瀬慎之助", "岸田行倫",
     # Infielders
     "吉川尚輝", "石塚裕惺", "増田陸", "岡本和真", "門脇誠",
-    "若林楽人", "萩原哲", "ダルベック",
+    "若林楽人", "萩原哲", "ダルベック", "泉口友汰",
     # Outfielders
     "松本剛", "佐々木俊輔", "平山功太", "浅野翔吾",
-    "キャベッジ",
+    "キャベッジ", "重信慎之介", "丸佳浩",
     # Farm / called-up
     "三塚琉生",
 )
@@ -1028,6 +1028,29 @@ def _extract_video_facts_narrative(raw: str) -> Dict[str, str]:
     return {"player_name": canonical_name, "play_summary": summary[:60]}
 
 
+def is_giants_video_player(name: str) -> bool:
+    """Return True iff ``name`` matches the Giants 2026 roster allowlist
+    (or is a known nickname that maps to one).
+
+    Used by the quoted-name extractor as a Giants-only gate so YouTube
+    channels that mix opposing-team highlights (e.g. DRAMATIC BASEBALL
+    posts 山野太一 / 鈴木叶 / 内山壮真 alongside Giants players within the
+    same 「【巨人】」 prefix) don't produce drafts about Yakult / Chunichi
+    players. Strict allowlist matching is intentional: false-negatives
+    (a Giants rookie not yet listed) become manual_intake candidates,
+    which is preferable to publishing the wrong team's player on a
+    Giants-focused site.
+    """
+    raw = (name or "").strip()
+    if not raw:
+        return False
+    if raw in GIANTS_PLAYER_ALLOWLIST:
+        return True
+    if raw in GIANTS_PLAYER_NICKNAMES:
+        return True
+    return False
+
+
 def extract_video_facts(title: str) -> Dict[str, str]:
     """Extract player_name + play_summary from a YouTube video title.
 
@@ -1035,19 +1058,33 @@ def extract_video_facts(title: str) -> Dict[str, str]:
     back to the Giants-allowlist narrative path (巨人公式 channel pattern).
     Returns ``{}`` when neither yields a player + summary — caller then
     skips with insufficient_required_facts:video:player_name.
+
+    Cross-team filter (NOMOTOKE-VIDEO-CROSS-TEAM-FILTER-002): a quoted
+    name that does NOT pass ``is_giants_video_player`` is treated as a
+    non-match and the narrative fallback runs. This filters Yakult /
+    Chunichi / opposing-team player names that share the same
+    「【巨人】」 channel prefix on highlight feeds.
     """
     raw = (title or "").strip()
     if not raw:
         return {}
     facts = _extract_video_facts_quoted(raw)
-    if facts.get("player_name") and facts.get("play_summary"):
+    quoted_name = facts.get("player_name", "")
+    quoted_passes_giants_gate = bool(quoted_name) and is_giants_video_player(quoted_name)
+    if quoted_passes_giants_gate and facts.get("play_summary"):
         return facts
     narrative = _extract_video_facts_narrative(raw)
     if narrative:
         return narrative
-    # Quoted hit but empty summary — preserve quoted player_name (caller
-    # handles the missing-summary skip).
-    return facts
+    if quoted_passes_giants_gate:
+        # Giants player matched but summary empty — let caller skip with
+        # the dedicated missing-summary reason.
+        return facts
+    # Quoted name not in allowlist OR empty: skip entirely (no fallback
+    # to short_news_url for YouTube). The caller's
+    # insufficient_required_facts:video:player_name skip already handles
+    # the visible audit trail.
+    return {}
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,18 @@
+[
+  {
+    "name": "巨人公式YouTube",
+    "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCXxg0igSYUp0tqdd6luPEnQ",
+    "type": "video",
+    "role": ["video_source"],
+    "channel_handle": "@yomiuri_giants",
+    "notes": "読売ジャイアンツ official channel. NOMOTOKE-VIDEO-SOURCE-001 dry-run pool. NEVER loaded by src/rss_fetcher.py — only by run_nomotoke_rss_card_draft.py with --sources-file=config/youtube_video_sources.json."
+  },
+  {
+    "name": "DRAMATIC BASEBALL",
+    "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCpj_nD9850tykDqIrjtIXdg",
+    "type": "video",
+    "role": ["video_source"],
+    "channel_handle": "@ntv_baseball",
+    "notes": "日テレ系 DRAMATIC BASEBALL 2026 official broadcast highlights. Same dry-run-only constraint as 巨人公式YouTube."
+  }
+]

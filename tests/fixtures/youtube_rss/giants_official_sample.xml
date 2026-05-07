@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
+  <link rel="self" href="http://www.youtube.com/feeds/videos.xml?channel_id=UCFAKEGIANTS00000000001"/>
+  <id>yt:channel:FAKEGIANTS00000000001</id>
+  <yt:channelId>UCFAKEGIANTS00000000001</yt:channelId>
+  <title>巨人公式チャンネル</title>
+  <link rel="alternate" href="https://www.youtube.com/channel/UCFAKEGIANTS00000000001"/>
+  <author>
+    <name>巨人公式チャンネル</name>
+    <uri>https://www.youtube.com/channel/UCFAKEGIANTS00000000001</uri>
+  </author>
+  <published>2026-05-07T00:00:00+00:00</published>
+  <entry>
+    <id>yt:video:abc12345DEF</id>
+    <yt:videoId>abc12345DEF</yt:videoId>
+    <yt:channelId>UCFAKEGIANTS00000000001</yt:channelId>
+    <title>巨人 岡本和真 5月5日対ヤクルト戦の本塁打 ハイライト</title>
+    <link rel="alternate" href="https://www.youtube.com/watch?v=abc12345DEF"/>
+    <author>
+      <name>巨人公式チャンネル</name>
+      <uri>https://www.youtube.com/channel/UCFAKEGIANTS00000000001</uri>
+    </author>
+    <published>2026-05-06T19:00:00+09:00</published>
+    <updated>2026-05-06T19:05:00+09:00</updated>
+    <media:group>
+      <media:title>巨人 岡本和真 5月5日対ヤクルト戦の本塁打 ハイライト</media:title>
+      <media:content url="https://www.youtube.com/v/abc12345DEF?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
+      <media:thumbnail url="https://i.ytimg.com/vi/abc12345DEF/hqdefault.jpg" width="480" height="360"/>
+      <media:description>5月5日のヤクルト戦、岡本和真選手の本塁打ハイライト動画です。</media:description>
+    </media:group>
+  </entry>
+  <entry>
+    <id>yt:video:xyz98765ABC</id>
+    <yt:videoId>xyz98765ABC</yt:videoId>
+    <yt:channelId>UCFAKEGIANTS00000000001</yt:channelId>
+    <title>巨人 戸郷翔征 完投勝利の好投ハイライト 試合後インタビュー</title>
+    <link rel="alternate" href="https://www.youtube.com/watch?v=xyz98765ABC"/>
+    <author>
+      <name>巨人公式チャンネル</name>
+      <uri>https://www.youtube.com/channel/UCFAKEGIANTS00000000001</uri>
+    </author>
+    <published>2026-05-07T08:00:00+09:00</published>
+    <updated>2026-05-07T08:10:00+09:00</updated>
+    <media:group>
+      <media:title>巨人 戸郷翔征 完投勝利の好投ハイライト 試合後インタビュー</media:title>
+      <media:thumbnail url="https://i.ytimg.com/vi/xyz98765ABC/hqdefault.jpg" width="480" height="360"/>
+      <media:description>戸郷翔征投手が完投勝利、9回1失点の好投。試合後のインタビューも収録。</media:description>
+    </media:group>
+  </entry>
+  <entry>
+    <id>yt:video:noPlayerName1</id>
+    <yt:videoId>noPlayerName1</yt:videoId>
+    <yt:channelId>UCFAKEGIANTS00000000001</yt:channelId>
+    <title>球団からのお知らせ 5月の試合運営について</title>
+    <link rel="alternate" href="https://www.youtube.com/watch?v=noPlayerName1"/>
+    <author><name>巨人公式チャンネル</name></author>
+    <published>2026-05-06T10:00:00+09:00</published>
+    <media:group>
+      <media:thumbnail url="https://i.ytimg.com/vi/noPlayerName1/hqdefault.jpg"/>
+      <media:description>球団運営からのお知らせ動画です。</media:description>
+    </media:group>
+  </entry>
+</feed>

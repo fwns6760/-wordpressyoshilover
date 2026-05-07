@@ -59,6 +59,7 @@ TEMPLATE_KEY_SHORT_NEWS_URL = "nomotoke_card_short_news_url_v1"
 TEMPLATE_KEY_MANAGER_COMMENT = "nomotoke_card_manager_comment_v1"
 TEMPLATE_KEY_PLAYER_COMMENT = "nomotoke_card_player_comment_v1"
 TEMPLATE_KEY_PREGAME_PITCHER = "nomotoke_card_pregame_pitcher_v1"
+TEMPLATE_KEY_VIDEO = "nomotoke_card_video_v1"
 
 
 RSS_ONLY_ALLOWED_TEMPLATES: Tuple[str, ...] = (
@@ -66,6 +67,13 @@ RSS_ONLY_ALLOWED_TEMPLATES: Tuple[str, ...] = (
     TEMPLATE_KEY_MANAGER_COMMENT,
     TEMPLATE_KEY_PLAYER_COMMENT,
     TEMPLATE_KEY_PREGAME_PITCHER,
+    # NOMOTOKE-VIDEO-SOURCE-001: video_v1 graduates from BLOCKED to
+    # ALLOWED for the YouTube channel RSS pool. The router only routes
+    # to video_v1 when the entry's link is a YouTube watch URL — feeds
+    # carrying YouTube entries must be supplied via the operator-curated
+    # config/youtube_video_sources.json (NOT config/rss_sources.json),
+    # so the production rss_fetcher.py never picks these up.
+    TEMPLATE_KEY_VIDEO,
 )
 
 
@@ -76,7 +84,6 @@ RSS_ONLY_BLOCKED_TEMPLATES: Tuple[str, ...] = (
     "nomotoke_card_player_stats_v1",
     "nomotoke_card_broadcast_v1",
     "nomotoke_card_official_notice_v1",
-    "nomotoke_card_video_v1",
 )
 
 
@@ -162,11 +169,17 @@ QUALITY_CEILING_BY_TEMPLATE: Dict[str, Dict[str, Any]] = {
         "allow_manual_intake": True,
         "allow_structured_data": True,
     },
-    "nomotoke_card_video_v1": {
-        "rss_only_quality": "impossible",
-        "reason": "現状 config/rss_sources.json に YouTube channel RSS 未登録。supply ゼロ。YouTube RSS 追加で 'high' に昇格可。",
-        "required_external_data": ["YouTube channel RSS の rss_sources.json への追加"],
-        "allow_rss_only": False,
+    TEMPLATE_KEY_VIDEO: {
+        # NOMOTOKE-VIDEO-SOURCE-001: status raised from "impossible" to
+        # "medium" once config/youtube_video_sources.json is supplied via
+        # --sources-file. play_summary / player_name extraction is
+        # title-based; quality is medium because some channel videos
+        # (event recaps, behind-the-scenes) lack a clear player + summary
+        # and skip with insufficient_required_facts:video:player_name.
+        "rss_only_quality": "medium",
+        "reason": "YouTube channel RSS は title / link / published / thumbnail を返す。Giants-relevant + player_name + play_summary が抽出できれば video_v1 へ。shorts は skip。",
+        "required_external_data": [],
+        "allow_rss_only": True,
         "allow_manual_intake": True,
         "allow_structured_data": False,
     },
@@ -302,6 +315,10 @@ SKIP_REASON_TAXONOMY: Tuple[str, ...] = (
     "video_source_detected",
     "promo_or_merchandise_content",
     "live_inning_blurb_not_article",
+    # NOMOTOKE-VIDEO-SOURCE-001: YouTube channel RSS supply.
+    "youtube_shorts_skipped",
+    "insufficient_required_facts:video:player_name",
+    "insufficient_required_facts:video:play_summary",
 )
 
 
@@ -740,6 +757,104 @@ def detect_pregame_pitcher(title: str, summary: str) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# NOMOTOKE-VIDEO-SOURCE-001: YouTube channel RSS routing helpers.
+#
+# Production rss_fetcher.py NEVER reads config/youtube_video_sources.json,
+# so YouTube entries only enter this router via
+# `python -m src.tools.run_nomotoke_rss_card_draft --sources-file=config/
+#  youtube_video_sources.json`. The route is dry-run / draft only — there
+# is no Scheduler hook for YouTube supply.
+# ---------------------------------------------------------------------------
+
+
+_YOUTUBE_WATCH_RE = re.compile(
+    r"^https?://(?:www\.|m\.)?(?:youtube\.com/watch\?v=|youtu\.be/)([A-Za-z0-9_-]{11})"
+)
+_YOUTUBE_SHORTS_RE = re.compile(
+    r"^https?://(?:www\.|m\.)?youtube\.com/shorts/([A-Za-z0-9_-]{11})"
+)
+# Quoted player-name extraction. DRAMATIC BASEBALL titles wrap the player
+# name in full-width double quotes ("..."), and 巨人公式 occasionally uses
+# single 「」. Allow both, plus a small set of inner chars (kanji /
+# katakana / Latin / dot / space).
+_VIDEO_QUOTED_NAME_RE = re.compile(
+    r"[「“「\"]"
+    r"(?P<name>[一-龯ァ-ヴー\.A-Za-zＡ-Ｚａ-ｚ][一-龯ァ-ヴー\.\sA-Za-zＡ-Ｚａ-ｚ]{1,14})"
+    r"[」”」\"]"
+)
+
+
+def is_youtube_watch_url(url: str) -> bool:
+    return bool(_YOUTUBE_WATCH_RE.match((url or "").strip()))
+
+
+def is_youtube_shorts_url(url: str) -> bool:
+    return bool(_YOUTUBE_SHORTS_RE.match((url or "").strip()))
+
+
+def youtube_video_id(url: str) -> str:
+    """Return the 11-char YouTube video id, or '' if the URL is not a
+    youtube watch / youtu.be URL."""
+    raw = (url or "").strip()
+    m = _YOUTUBE_WATCH_RE.match(raw)
+    if m:
+        return m.group(1)
+    return ""
+
+
+def youtube_embed_iframe(video_id: str) -> str:
+    """Return a sanitizable YouTube embed iframe HTML snippet.
+
+    The renderer's ``_filter_safe_iframe`` re-validates host + attrs, so
+    this string is built conservatively (no JS, no arbitrary attrs).
+    """
+    if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id or ""):
+        return ""
+    return (
+        f'<iframe width="560" height="315" '
+        f'src="https://www.youtube.com/embed/{video_id}" '
+        f'title="YouTube video player" frameborder="0" '
+        f'allow="accelerometer; autoplay; clipboard-write; encrypted-media; '
+        f'gyroscope; picture-in-picture" allowfullscreen></iframe>'
+    )
+
+
+def extract_video_facts(title: str) -> Dict[str, str]:
+    """Extract player_name + play_summary from a YouTube video title.
+
+    Returns ``{}`` when the title carries no clearly-quoted player name —
+    the caller then skips with insufficient_required_facts:video:player_name.
+    """
+    raw = (title or "").strip()
+    if not raw:
+        return {}
+    m = _VIDEO_QUOTED_NAME_RE.search(raw)
+    if not m:
+        return {}
+    name = m.group("name").strip()
+    if not name:
+        return {}
+    after = raw[m.end():].strip()
+    # Cut play_summary at the FIRST occurrence of any boundary char so
+    # trailing 【巨人×ヤクルト】 channel-decoration tags do not bleed
+    # into the summary, AND the trailing ! / ! / 。 sentence terminator
+    # is dropped. Iterate by index so the earliest boundary wins
+    # regardless of which char it is.
+    boundary_chars = "【!！。\n"
+    cut_idx = -1
+    for i, ch in enumerate(after):
+        if ch in boundary_chars:
+            cut_idx = i
+            break
+    if cut_idx > 0:
+        after = after[:cut_idx]
+    summary = after.strip("、 ・")[:60]
+    if not summary:
+        return {"player_name": name, "play_summary": ""}
+    return {"player_name": name, "play_summary": summary}
+
+
+# ---------------------------------------------------------------------------
 # X-post detection + body-internal URL extraction
 # (NOMOTOKE-RSS-CARD-001B-XPOST-FIX)
 #
@@ -934,6 +1049,7 @@ def _dedupe_key(template_key: str, canonical: str) -> str:
         TEMPLATE_KEY_MANAGER_COMMENT: "manager_comment",
         TEMPLATE_KEY_PLAYER_COMMENT: "player_comment",
         TEMPLATE_KEY_PREGAME_PITCHER: "pregame",
+        TEMPLATE_KEY_VIDEO: "video",
     }.get(template_key, template_key)
     return f"{short}:{h}"
 
@@ -990,6 +1106,12 @@ REQUIRED_FACTS_BY_TEMPLATE: Dict[str, List[str]] = {
         "keyword:予告先発",
         "pitcher_pair",
         "stale<=36h",
+    ],
+    TEMPLATE_KEY_VIDEO: [
+        "youtube_watch_url",
+        "video_id(11chars)",
+        "player_name(quoted in title)",
+        "play_summary",
     ],
 }
 
@@ -1075,6 +1197,78 @@ def route_rss_entry_to_nomotoke_card(
         return _skip(
             "live_inning_blurb_not_article",
             tier=tier,
+            canonical_url=canonical,
+            source_name=source_name,
+        )
+
+    # ------------------------------------------------------------------
+    # 0. video_card (NOMOTOKE-VIDEO-SOURCE-001)
+    #
+    # YouTube watch URLs only — shorts are skipped as a separate class so
+    # supply can still be observed. Source must already be Giants-relevant
+    # (passed the earlier guard) so a quoted player_name is the article
+    # threshold; no quoted name → skip without falling through to
+    # short_news_url (a youtube.com link in short_news_url has no
+    # journalistic value on its own).
+    # ------------------------------------------------------------------
+    if is_youtube_shorts_url(canonical):
+        return _skip(
+            "youtube_shorts_skipped",
+            tier=tier,
+            canonical_url=canonical,
+            source_name=source_name,
+        )
+    if is_youtube_watch_url(canonical):
+        video_id = youtube_video_id(canonical)
+        facts = extract_video_facts(title)
+        player = facts.get("player_name", "")
+        summary_short = facts.get("play_summary", "")
+        if not player:
+            return _skip(
+                "insufficient_required_facts:video:player_name",
+                template_key=TEMPLATE_KEY_VIDEO,
+                tier=tier,
+                canonical_url=canonical,
+                source_name=source_name,
+                missing_facts=["player_name"],
+            )
+        if not summary_short:
+            return _skip(
+                "insufficient_required_facts:video:play_summary",
+                template_key=TEMPLATE_KEY_VIDEO,
+                tier=tier,
+                canonical_url=canonical,
+                source_name=source_name,
+                missing_facts=["play_summary"],
+            )
+        return RouteResult(
+            matched=True,
+            template_key=TEMPLATE_KEY_VIDEO,
+            tier=tier,
+            extracted_facts={
+                "video_id": video_id,
+                "player_name": player,
+                "play_summary": summary_short,
+            },
+            missing_facts=[],
+            skip_reason="",
+            dedupe_key=_dedupe_key(TEMPLATE_KEY_VIDEO, canonical),
+            would_render_call={
+                "renderer_func_name": "render_video_card",
+                "data_preview": {
+                    "team_name": "巨人",
+                    "player_name": player,
+                    "play_summary": summary_short,
+                    "video_url": chosen_url,
+                    "embed_html": youtube_embed_iframe(video_id),
+                    "source_url": chosen_url,
+                    "source_name": source_name,
+                    "source_label": source_name,
+                    "date_label": _date_label_from_iso(published),
+                    "description": (summary or "")[:120],
+                },
+            },
+            confidence=_confidence_for(TEMPLATE_KEY_VIDEO, tier),
             canonical_url=canonical,
             source_name=source_name,
         )

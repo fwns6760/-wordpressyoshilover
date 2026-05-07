@@ -124,15 +124,17 @@ class LockedBoundaryTests(unittest.TestCase):
         self.assertNotIn(r.template_key, RSS_ONLY_BLOCKED_TEMPLATES)
 
     def test_blocked_templates_count_matches_table(self):
-        # 7 blocked templates per the LOCKED table.
-        self.assertEqual(len(RSS_ONLY_BLOCKED_TEMPLATES), 7)
+        # NOMOTOKE-VIDEO-SOURCE-001 graduated video_v1 from BLOCKED to
+        # ALLOWED — 6 templates remain blocked.
+        self.assertEqual(len(RSS_ONLY_BLOCKED_TEMPLATES), 6)
         for tk in RSS_ONLY_BLOCKED_TEMPLATES:
             self.assertIn(tk, QUALITY_CEILING_BY_TEMPLATE)
             ceiling = QUALITY_CEILING_BY_TEMPLATE[tk]
             self.assertFalse(ceiling["allow_rss_only"])
 
     def test_allowed_templates_count_matches_table(self):
-        self.assertEqual(len(RSS_ONLY_ALLOWED_TEMPLATES), 4)
+        # +1 (video_v1) → 5 allowed templates.
+        self.assertEqual(len(RSS_ONLY_ALLOWED_TEMPLATES), 5)
         for tk in RSS_ONLY_ALLOWED_TEMPLATES:
             self.assertIn(tk, QUALITY_CEILING_BY_TEMPLATE)
             self.assertTrue(QUALITY_CEILING_BY_TEMPLATE[tk]["allow_rss_only"])
@@ -1397,6 +1399,163 @@ class TemplateRoutingAuditPhase1Tests(unittest.TestCase):
         from src.nomotoke_rss_router import SKIP_REASON_TAXONOMY
 
         self.assertIn("live_inning_blurb_not_article", SKIP_REASON_TAXONOMY)
+
+
+class VideoSourceRoutingTests(unittest.TestCase):
+    """NOMOTOKE-VIDEO-SOURCE-001: YouTube channel RSS supply for video_v1.
+
+    The router only routes to video_v1 when the entry's link is a
+    YouTube watch URL — feeds carrying YouTube entries must be supplied
+    via config/youtube_video_sources.json (NOT config/rss_sources.json),
+    so the production rss_fetcher.py never picks these up.
+    """
+
+    def test_video_template_is_now_in_allowlist(self):
+        from src.nomotoke_rss_router import (
+            RSS_ONLY_ALLOWED_TEMPLATES,
+            RSS_ONLY_BLOCKED_TEMPLATES,
+            TEMPLATE_KEY_VIDEO,
+        )
+
+        self.assertIn(TEMPLATE_KEY_VIDEO, RSS_ONLY_ALLOWED_TEMPLATES)
+        self.assertNotIn(TEMPLATE_KEY_VIDEO, RSS_ONLY_BLOCKED_TEMPLATES)
+
+    def test_youtube_url_helpers(self):
+        from src.nomotoke_rss_router import (
+            is_youtube_shorts_url,
+            is_youtube_watch_url,
+            youtube_video_id,
+        )
+
+        for url, watch, shorts, vid in (
+            ("https://www.youtube.com/watch?v=60k7uTJesxY", True, False, "60k7uTJesxY"),
+            ("https://youtu.be/60k7uTJesxY", True, False, "60k7uTJesxY"),
+            ("https://m.youtube.com/watch?v=ABC1234DEF5", True, False, "ABC1234DEF5"),
+            ("https://www.youtube.com/shorts/abc1234DEF5", False, True, ""),
+            ("https://example.com/foo", False, False, ""),
+            ("", False, False, ""),
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(is_youtube_watch_url(url), watch)
+                self.assertEqual(is_youtube_shorts_url(url), shorts)
+                self.assertEqual(youtube_video_id(url), vid)
+
+    def test_extract_video_facts_full_width_quotes(self):
+        from src.nomotoke_rss_router import extract_video_facts
+
+        # DRAMATIC BASEBALL pattern.
+        facts = extract_video_facts(
+            '【巨人】"宮原駿介"今季初登板で1回無失点！【巨人×ヤクルト】'
+        )
+        self.assertEqual(facts.get("player_name"), "宮原駿介")
+        self.assertEqual(facts.get("play_summary"), "今季初登板で1回無失点")
+        # Channel decoration tag must NOT bleed into summary.
+        self.assertNotIn("【", facts.get("play_summary", ""))
+        self.assertNotIn("ヤクルト", facts.get("play_summary", ""))
+
+    def test_extract_video_facts_double_curly_quotes(self):
+        from src.nomotoke_rss_router import extract_video_facts
+
+        facts = extract_video_facts(
+            '"泉口友汰"2安打＆ジャンプ一番の好プレー！【巨人】'
+        )
+        self.assertEqual(facts.get("player_name"), "泉口友汰")
+        self.assertIn("2安打", facts.get("play_summary", ""))
+
+    def test_extract_video_facts_kakkokagi(self):
+        from src.nomotoke_rss_router import extract_video_facts
+
+        facts = extract_video_facts(
+            "巨人公式「田中将大」マー君が203勝達成！"
+        )
+        self.assertEqual(facts.get("player_name"), "田中将大")
+
+    def test_extract_video_facts_no_quoted_name_returns_empty(self):
+        from src.nomotoke_rss_router import extract_video_facts
+
+        for title in (
+            "こどもたちの挑戦！",
+            "高梨雄平と豪華な補助 ～コーチが積極的にボールを拾う～",
+            "",
+            None,
+        ):
+            with self.subTest(title=title):
+                self.assertEqual(extract_video_facts(title), {})
+
+    def test_youtube_watch_url_routes_to_video_v1(self):
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title='【巨人】"宮原駿介"今季初登板で1回無失点！【巨人×ヤクルト】',
+                summary="DRAMATIC BASEBALL highlight clip",
+                link="https://www.youtube.com/watch?v=60k7uTJesxY",
+                published="Wed, 06 May 2026 09:59:00 +0000",
+            ),
+            source_name="DRAMATIC BASEBALL",
+            source_url="https://www.youtube.com/watch?v=60k7uTJesxY",
+        )
+        from src.nomotoke_rss_router import TEMPLATE_KEY_VIDEO
+
+        self.assertTrue(r.matched)
+        self.assertEqual(r.template_key, TEMPLATE_KEY_VIDEO)
+        self.assertEqual(r.extracted_facts.get("player_name"), "宮原駿介")
+        self.assertEqual(r.extracted_facts.get("video_id"), "60k7uTJesxY")
+        # data_preview shape used by render_video_card
+        dp = r.would_render_call["data_preview"]
+        self.assertEqual(dp["team_name"], "巨人")
+        self.assertEqual(dp["player_name"], "宮原駿介")
+        self.assertIn("60k7uTJesxY", dp["embed_html"])
+        self.assertIn("youtube.com/embed", dp["embed_html"])
+
+    def test_youtube_shorts_url_skipped_with_dedicated_reason(self):
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title='【巨人】"吉川尚輝"スーパープレー集！',
+                summary="",
+                link="https://www.youtube.com/shorts/abcdefghijk",
+                published="Wed, 07 May 2026 03:00:00 +0000",
+            ),
+            source_name="DRAMATIC BASEBALL",
+            source_url="https://www.youtube.com/shorts/abcdefghijk",
+        )
+        self.assertFalse(r.matched)
+        self.assertEqual(r.skip_reason, "youtube_shorts_skipped")
+
+    def test_youtube_watch_url_without_quoted_name_skipped(self):
+        # 巨人公式 channel sometimes posts event recaps without a quoted
+        # player name — must skip with the dedicated facts reason, NOT
+        # fall through to short_news_url.
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title="こどもたちの挑戦！ 巨人の野球教室",
+                summary="",
+                link="https://www.youtube.com/watch?v=OD6UjUJQXJ0",
+                published="Mon, 05 May 2026 10:11:15 +0000",
+            ),
+            source_name="巨人公式YouTube",
+            source_url="https://www.youtube.com/watch?v=OD6UjUJQXJ0",
+        )
+        self.assertFalse(r.matched)
+        self.assertEqual(
+            r.skip_reason, "insufficient_required_facts:video:player_name"
+        )
+
+    def test_video_taxonomy_and_required_facts_listed(self):
+        from src.nomotoke_rss_router import (
+            REQUIRED_FACTS_BY_TEMPLATE,
+            SKIP_REASON_TAXONOMY,
+            TEMPLATE_KEY_VIDEO,
+        )
+
+        self.assertIn("youtube_shorts_skipped", SKIP_REASON_TAXONOMY)
+        self.assertIn(
+            "insufficient_required_facts:video:player_name",
+            SKIP_REASON_TAXONOMY,
+        )
+        self.assertIn(
+            "insufficient_required_facts:video:play_summary",
+            SKIP_REASON_TAXONOMY,
+        )
+        self.assertIn(TEMPLATE_KEY_VIDEO, REQUIRED_FACTS_BY_TEMPLATE)
 
 
 if __name__ == "__main__":

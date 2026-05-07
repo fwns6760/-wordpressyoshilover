@@ -239,11 +239,36 @@ def _meta_block(date_label: str) -> str:
 
 
 def _source_block(source_url: str, source_label: Optional[str] = None) -> str:
-    """Render the source block. Empty string when no safe source_url."""
+    """Render the source block. Empty string when no safe source_url.
+
+    NOMOTOKE-LINK-LABEL-FIX (extension to all templates):
+    When ``source_label`` is empty, derive a human-readable label from the
+    URL host via the curated ``_PRIMARY_HOST_LABELS`` table. The block
+    NEVER displays a raw URL as anchor text — falling back to the host
+    string itself ("hochi.news") is the absolute last resort, but even
+    that is preferable to the fully-qualified URL.
+
+    The forward reference to ``_site_label_for_url`` resolves at call time
+    (Python looks up names at the moment of execution, not definition);
+    the helper is defined further down in this module and is always
+    available by the time any renderer runs.
+    """
     safe = _safe_url(source_url)
     if not safe:
         return ""
-    label = (source_label or "").strip() or str(source_url).strip()
+    label = (source_label or "").strip()
+    if not label:
+        # Try the host-derived label; fall back to the host itself; never
+        # embed the raw URL string in visible anchor text.
+        label = _site_label_for_url(source_url) or ""
+        if not label:
+            try:
+                from urllib.parse import urlparse as _u
+
+                host = _u(source_url).netloc
+                label = host or "出典"
+            except Exception:
+                label = "出典"
     return (
         '<p class="nomotoke-source">出典: '
         f'<a href="{safe}" target="_blank" rel="noopener">{_esc(label)}</a>'
@@ -829,8 +854,17 @@ def render_pregame_pitcher_card(data: Dict[str, Any]) -> Dict[str, Any]:
 
     official_url = _safe_url(data.get("official_url"))
     if official_url:
+        # NOMOTOKE-LINK-LABEL-FIX: anchor text is a human-readable label,
+        # never the raw URL. Default to "公式 予告先発ページ" so the link
+        # carries its purpose; site-specific labels (e.g. "NPB公式") map
+        # via ``_site_label_for_url`` when the host is in the curated table.
+        site_lbl = _site_label_for_url(data.get("official_url") or "")
+        official_anchor = (
+            f"{site_lbl} 予告先発ページ" if site_lbl else "公式 予告先発ページ"
+        )
         parts.append(
-            f'<p>NPB公式予告先発: <a href="{official_url}">{official_url}</a></p>'
+            f'<p>NPB公式予告先発: <a href="{official_url}" target="_blank" '
+            f'rel="noopener">{_esc(official_anchor)}</a></p>'
         )
 
     for m in matchups:
@@ -1391,6 +1425,16 @@ _PRIMARY_HOST_LABELS: Dict[str, str] = {
     "www.nikkansports.com": "日刊スポーツ",
     "sponichi.co.jp": "スポニチ",
     "www.sponichi.co.jp": "スポニチ",
+    # X / Twitter sources land here when a renderer's source_url is the
+    # X tweet itself (e.g. pregame_pitcher / quote-comment). Visible body
+    # gets ``X`` instead of ``x.com`` / raw URL. Source-name still wins
+    # in the renderers via the explicit source_label fallback.
+    "x.com": "X",
+    "twitter.com": "X",
+    "www.x.com": "X",
+    "www.twitter.com": "X",
+    "mobile.x.com": "X",
+    "mobile.twitter.com": "X",
 }
 
 # Short-label cap for inline anchor text. Long titles get ellipsis-truncated

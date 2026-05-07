@@ -1065,6 +1065,41 @@ def _try_render_via_nomotoke(
         if block:
             extra_blocks.append(block)
 
+    # NOMOTOKE-INTAKE-OTHERGAMES-001 (N3): list of OTHER NPB games on
+    # the same date, applied to game-related templates.
+    if template_key in (
+        "nomotoke_card_short_news_url_v1",
+        "nomotoke_card_postgame_v1",
+        "nomotoke_card_pregame_pitcher_v1",
+    ):
+        block = _build_other_games_block()
+        if block:
+            extra_blocks.append(block)
+
+    # NOMOTOKE-INTAKE-SERIES-TRACKER-001 (N4): series-context tracker
+    # for postgame posts. The opponent has already been derived from
+    # the boxscore data above, so reuse it here.
+    if template_key == "nomotoke_card_postgame_v1" and isinstance(data, dict):
+        away = (data.get("away") or "").strip()
+        home = (data.get("home") or "").strip()
+        opp = ""
+        for cand in (away, home):
+            if cand and not any(g in cand for g in ("巨人", "ジャイアンツ", "読売")):
+                opp = cand
+                break
+        if opp:
+            block = _build_series_tracker_block(opp)
+            if block:
+                extra_blocks.append(block)
+
+    # NOMOTOKE-INTAKE-TRUST-001 (N1): AI 不使用 badge — applied to
+    # every nomotoke template so the badge consistently anchors the
+    # post to its source.
+    if template_key.startswith("nomotoke_card_"):
+        block = _build_trust_badge_block(source_name, source_url)
+        if block:
+            extra_blocks.append(block)
+
     if extra_blocks:
         rendered = _insert_blocks_before_source_h3(rendered, extra_blocks)
 
@@ -1108,6 +1143,21 @@ def _try_render_via_nomotoke(
         )
         if chip_block:
             rendered = _insert_blocks_before_source_h3(rendered, [chip_block])
+
+        # NOMOTOKE-INTAKE-JSONLD-EMIT-001 (N2): NewsArticle schema for
+        # search engine rich snippets. Appended at the very end of
+        # the body so it's the last script-like content WP serves.
+        schema_block = _build_jsonld_article_schema(
+            title=title,
+            summary=summary,
+            source_url=source_url,
+            source_name=source_name,
+            source_published_at_iso=source_published_at_iso,
+            og_image=og_image,
+            raw_html=raw_html,
+        )
+        if schema_block:
+            rendered = rendered + schema_block
 
     return rendered or None
 
@@ -2317,6 +2367,264 @@ def _build_tag_chip_block(
         '<p class="nomotoke-tag-chips__row">'
         + "".join(chips)
         + "</p></aside>"
+    )
+
+
+# NOMOTOKE-INTAKE-TRUST-001 (N1): 「🤖 AI 不使用」 trust badge.
+
+def _build_trust_badge_block(source_name: str, source_url: str) -> str:
+    """Render the 「🤖 AI 不使用」 attribution badge, anchored to the
+    source. Empty when no source name (defensive — drafts without
+    source_name are shaped wrong upstream)."""
+    if not source_name:
+        return ""
+    safe_source = html.escape(source_name)
+    safe_url = html.escape(source_url) if source_url else ""
+    if safe_url:
+        attribution = (
+            f'<a href="{safe_url}" target="_blank" rel="noopener">{safe_source}</a>'
+        )
+    else:
+        attribution = safe_source
+    return (
+        '<aside class="nomotoke-trust-badge" '
+        'style="margin:16px 0;padding:10px 14px;'
+        "border-left:3px solid #2e7d32;background:#e8f5e9;"
+        'border-radius:4px;font-size:13px;line-height:1.5;color:#1b5e20;">'
+        "🤖 この記事は <strong>AI を使わず</strong>、出典記事の事実だけを構造化して生成しています。"
+        f"<br>📰 出典: {attribution}"
+        "</aside>"
+    )
+
+
+# NOMOTOKE-INTAKE-JSONLD-EMIT-001 (N2): emit JSON-LD NewsArticle
+# schema in the body so search engines render rich snippets.
+
+def _build_jsonld_article_schema(
+    *,
+    title: str,
+    summary: str,
+    source_url: str,
+    source_name: str,
+    source_published_at_iso: str,
+    og_image: str,
+    raw_html: str,
+) -> str:
+    """Render a ``<script type="application/ld+json">`` block embedding
+    the NewsArticle schema. Empty when title is missing.
+
+    The fields are sourced from operator input (title / summary /
+    source_url) + extractor output (og_image / raw_html JSON-LD
+    author). NEVER calls an LLM."""
+    if not title:
+        return ""
+    schema: dict[str, Any] = {
+        "@context": "https://schema.org",
+        "@type": "NewsArticle",
+        "headline": title[:110],
+    }
+    if summary:
+        schema["description"] = summary[:200]
+    if source_published_at_iso:
+        schema["datePublished"] = source_published_at_iso
+    # Author: prefer JSON-LD-extracted author from source page; fall
+    # back to source_name.
+    author_name = ""
+    if raw_html:
+        ja, _ = _extract_jsonld_author_and_date(raw_html)
+        if ja:
+            author_name = ja
+    if not author_name and source_name:
+        author_name = source_name
+    if author_name:
+        schema["author"] = {"@type": "Organization", "name": author_name}
+    if og_image and _is_safe_https_image_url(og_image):
+        schema["image"] = [og_image]
+    if source_url:
+        schema["mainEntityOfPage"] = {"@type": "WebPage", "@id": source_url}
+    schema["publisher"] = {
+        "@type": "Organization",
+        "name": "YOSHILOVER",
+        "url": "https://yoshilover.com",
+    }
+    payload = json.dumps(schema, ensure_ascii=False)
+    # Defensive: never let a literal ``</script>`` close the host
+    # script tag from inside the JSON.
+    payload = payload.replace("</", "<\\/")
+    return (
+        '<script type="application/ld+json">'
+        f"{payload}"
+        "</script>"
+    )
+
+
+# NOMOTOKE-INTAKE-OTHERGAMES-001 (N3): list of OTHER NPB games on the
+# same date, sourced from the Yahoo schedule we already fetched (or
+# fetched once per 6h via the next-game cache).
+
+_NPB_TEAM_TOKENS_FOR_GAMES = (
+    "巨人", "阪神", "中日", "広島", "DeNA", "ヤクルト",
+    "楽天", "ロッテ", "オリックス", "ソフトバンク",
+    "日本ハム", "西武",
+)
+
+
+def _fetch_today_schedule_html() -> str:
+    """Return the Yahoo schedule HTML for today (JST). 6h cache key
+    parallel to ``_NEXT_GAME_CACHE`` so repeated calls within a window
+    hit memory."""
+    now = time.time()
+    cached = _OTHER_GAMES_CACHE.get("html") or ""
+    if cached and (now - _OTHER_GAMES_CACHE.get("fetched_at", 0) < _CACHE_TTL_SEC):
+        return cached
+    today = datetime.now(JST).date()
+    url = f"https://baseball.yahoo.co.jp/npb/schedule/?date={today.isoformat()}"
+    html_text = _fetch_url_text(url)
+    if html_text:
+        _OTHER_GAMES_CACHE["html"] = html_text
+        _OTHER_GAMES_CACHE["fetched_at"] = now
+    return html_text
+
+
+_OTHER_GAMES_CACHE: dict[str, Any] = {"html": "", "fetched_at": 0.0}
+
+
+def _parse_all_games_on_today(html_text: str) -> list[dict[str, str]]:
+    """Return [{home, away, score_line, is_completed}] for every NPB
+    game block on the schedule page. Parser uses the same regex shape
+    as ``find_giants_completed_games`` but does NOT filter by team."""
+    if not html_text:
+        return []
+    try:
+        from src.source_yahoo_schedule_extractor import (
+            _AWAY_RE,
+            _FINAL_MARKER_RE,
+            _HOME_RE,
+            _SCHEDULE_GAME_BLOCK_RE,
+            _clean_text,
+        )
+    except Exception:
+        return []
+    out: list[dict[str, str]] = []
+    for m in _SCHEDULE_GAME_BLOCK_RE.finditer(html_text):
+        block = m.group("inner")
+        home_m = _HOME_RE.search(block)
+        away_m = _AWAY_RE.search(block)
+        home = _clean_text(home_m.group("inner")) if home_m else ""
+        away = _clean_text(away_m.group("inner")) if away_m else ""
+        if not (home and away):
+            continue
+        # Drop blocks that don't carry a real NPB team token (eliminates
+        # MLB / 二軍 cross-page bleed).
+        if not any(t in home or t in away for t in _NPB_TEAM_TOKENS_FOR_GAMES):
+            continue
+        # Score: look for an ``X - Y`` token inside the block.
+        score = ""
+        sm = re.search(r"(\d{1,2})\s*-\s*(\d{1,2})", block)
+        if sm:
+            score = f"{sm.group(1)}-{sm.group(2)}"
+        is_completed = bool(_FINAL_MARKER_RE.search(block))
+        out.append(
+            {
+                "home": home,
+                "away": away,
+                "score": score,
+                "is_completed": str(is_completed),
+            }
+        )
+    return out
+
+
+def _build_other_games_block() -> str:
+    """Render the 「⚾ 当日の他試合」 block. Empty when no other game
+    can be parsed cleanly."""
+    html_text = _fetch_today_schedule_html()
+    if not html_text:
+        return ""
+    games = _parse_all_games_on_today(html_text)
+    if not games:
+        return ""
+    lines: list[str] = []
+    for g in games:
+        home = g.get("home", "")
+        away = g.get("away", "")
+        if any(t in home for t in ("巨人", "ジャイアンツ", "読売")):
+            continue
+        if any(t in away for t in ("巨人", "ジャイアンツ", "読売")):
+            continue
+        score = g.get("score") or ""
+        if score:
+            lines.append(
+                f"<li>{html.escape(away)} {html.escape(score)} {html.escape(home)}</li>"
+            )
+        else:
+            lines.append(
+                f"<li>{html.escape(away)} vs {html.escape(home)}</li>"
+            )
+        if len(lines) >= 5:
+            break
+    if not lines:
+        return ""
+    return (
+        '<aside class="nomotoke-other-games">'
+        '<p class="nomotoke-other-games__label">⚾ 当日の他試合 (参考)</p>'
+        f'<ul class="nomotoke-other-games__list">{"".join(lines)}</ul>'
+        "</aside>"
+    )
+
+
+# NOMOTOKE-INTAKE-SERIES-TRACKER-001 (N4): series-context tracker for
+# postgame posts. Groups WP postgame posts about the same opponent
+# within a 4-day window into 「第N戦」 format.
+
+def _build_series_tracker_block(opponent: str) -> str:
+    """Render the 「🆚 vs {opponent} シリーズ」 block. Empty when fewer
+    than 2 hits."""
+    if not opponent.strip():
+        return ""
+    cat_id = _GAME_RESULT_CATEGORY_ID
+    if not cat_id:
+        return ""
+    posts = _wp_query_public_posts(
+        search=opponent, categories=[cat_id], limit=10
+    )
+    if not posts:
+        return ""
+    today = datetime.now(JST).date()
+    now_iso = today.isoformat()
+    series_posts: list[dict] = []
+    for p in posts:
+        title = _strip_wp_title_tags(p.get("title"))
+        if opponent not in title:
+            continue
+        date_str = (p.get("date") or "")[:10]
+        if not date_str:
+            continue
+        try:
+            d = datetime.fromisoformat(date_str).date()
+        except (TypeError, ValueError):
+            continue
+        # Series window: posts within 4 days of today.
+        if (today - d).days > 4 or (today - d).days < -1:
+            continue
+        series_posts.append({"date": date_str, "title": title, "link": p.get("link") or ""})
+    if len(series_posts) < 2:
+        return ""
+    series_posts.sort(key=lambda x: x["date"])
+    items: list[str] = []
+    for idx, sp in enumerate(series_posts, start=1):
+        date_jp = _format_jp_date(sp["date"]) or sp["date"]
+        link = sp["link"]
+        title = sp["title"]
+        items.append(
+            f'<li>第{idx}戦 {html.escape(date_jp)} '
+            f'<a href="{html.escape(link)}">{html.escape(title)}</a></li>'
+        )
+    return (
+        '<aside class="nomotoke-series-tracker">'
+        f'<p class="nomotoke-series-tracker__label">🆚 vs {html.escape(opponent)} シリーズ</p>'
+        f'<ul class="nomotoke-series-tracker__list">{"".join(items)}</ul>'
+        "</aside>"
     )
 
 

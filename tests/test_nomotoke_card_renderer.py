@@ -1279,16 +1279,20 @@ class ShortNewsUrlBodyFixTests(unittest.TestCase):
         return base
 
     def test_body_includes_fact_card_with_extracted_score(self):
+        # NOMOTOKE-BODY-FIX-2: 事実カード rows are now 対戦 / スコア / 種別 /
+        # 主な出来事 — 見出し / 出典 / 公開日 are intentionally dropped because
+        # they were redundant with the page title, top 出典 line, and meta
+        # block. Score row is still required.
         out = self._render(self._data())
         self.assertTrue(out["validation_ok"])
         body = out["content_html"]
         self.assertIn("事実カード", body)
         self.assertIn("<th>スコア</th>", body)
         self.assertIn("<td>0-5</td>", body)
-        self.assertIn("<th>出典</th>", body)
-        self.assertIn("<td>巨人公式X</td>", body)
-        self.assertIn("<th>公開日</th>", body)
-        self.assertIn("<td>2026年5月6日</td>", body)
+        # Removed-row guards.
+        self.assertNotIn("<th>見出し</th>", body)
+        self.assertNotIn("<th>出典</th>", body)
+        self.assertNotIn("<th>公開日</th>", body)
 
     def test_body_includes_x_tweet_blockquote_embed_when_x_in_related(self):
         out = self._render(self._data())
@@ -1382,18 +1386,203 @@ class ShortNewsUrlBodyFixTests(unittest.TestCase):
         self.assertTrue(lead_para.endswith("。") or lead_para.endswith("…"))
 
     def test_closing_is_short_and_not_seo_padding(self):
+        # NOMOTOKE-BODY-FIX-2 C3: the renderer-level closing line is gone
+        # so the comment CTA exists exactly once, via _COMMON_FOOTER_HTML.
         out = self._render(self._data())
         body = out["content_html"]
         self.assertNotIn(
             "<p>詳細は出典をご覧ください。</p>", body
         )
-        self.assertIn("ご意見・ご感想はコメント欄", body)
+        # The 💬 paragraph that previously appeared just above the common
+        # footer must NOT be back — it would re-introduce the dual CTA.
+        self.assertNotIn(
+            "<p>💬 ご意見・ご感想はコメント欄からお寄せください。</p>", body
+        )
+        # Common footer remains exactly once.
+        self.assertEqual(
+            body.count("コメント欄からお願いします"), 1
+        )
 
     def test_section_headers_present(self):
         out = self._render(self._data())
         body = out["content_html"]
         self.assertIn("<h3>🔗 出典記事</h3>", body)
         self.assertIn("<h3>📋 事実カード</h3>", body)
+
+
+# ---------------------------------------------------------------------------
+# NOMOTOKE-BODY-FIX-2: opponent / venue / game-index / inning-marker
+# extractors and 対戦 row composition. Role-based 出典記事 label.
+# ---------------------------------------------------------------------------
+
+
+class BodyFix2FactExtractorTests(unittest.TestCase):
+    def setUp(self) -> None:
+        os.environ["ENABLE_NOMOTOKE_CARD_TEMPLATES"] = "1"
+        from src.nomotoke_card_renderer import (
+            _extract_short_news_facts,
+            _build_match_row_value,
+            _build_primary_source_role_label,
+            render_short_news_url_card,
+        )
+
+        self._extract = _extract_short_news_facts
+        self._build_match = _build_match_row_value
+        self._role_label = _build_primary_source_role_label
+        self._render = render_short_news_url_card
+
+    def _data(self, **overrides):
+        base = {
+            "title": "巨人、ヤクルト戦に敗れ連敗",
+            "summary": (
+                "巨人は0-5でヤクルトに敗戦、9回まで得点を奪えず連敗となった。"
+                "東京ドーム、9回戦。"
+            ),
+            "source_url": "https://www.giants.jp/G/game/result/2026/0506.html",
+            "source_name": "巨人公式X",
+            "date_label": "2026年5月6日",
+            "related_links": [
+                {
+                    "url": "https://x.com/TokyoGiants/status/1",
+                    "label": "関連投稿: 巨人公式X",
+                }
+            ],
+        }
+        base.update(overrides)
+        return base
+
+    def test_extract_opponent_picks_first_non_giants_team(self):
+        f = self._extract("巨人、阪神戦に敗れ連敗", "")
+        self.assertEqual(f.get("opponent"), "阪神")
+
+    def test_extract_opponent_skips_giants_aliases(self):
+        f = self._extract("巨人 ジャイアンツ ヤクルト戦", "")
+        self.assertEqual(f.get("opponent"), "ヤクルト")
+
+    def test_extract_opponent_returns_none_when_only_giants(self):
+        f = self._extract("巨人、本日のスタメン発表", "")
+        self.assertIsNone(f.get("opponent"))
+
+    def test_extract_venue_long_alias_wins_over_short(self):
+        # 「東京ドーム」 must match before 「東京D」 (long alias first).
+        f = self._extract("東京ドームで試合", "")
+        self.assertEqual(f.get("venue"), "東京ドーム")
+
+    def test_extract_venue_recognizes_short_alias(self):
+        f = self._extract("東京Dで試合", "")
+        self.assertEqual(f.get("venue"), "東京ドーム")
+
+    def test_extract_venue_jinguu_recognized(self):
+        f = self._extract("神宮で試合", "")
+        self.assertEqual(f.get("venue"), "神宮球場")
+
+    def test_extract_game_index_recognized(self):
+        f = self._extract("巨人 9回戦", "")
+        self.assertEqual(f.get("game_index"), "9")
+
+    def test_extract_inning_marker_recognized(self):
+        f = self._extract("巨人 9回完封負け", "")
+        self.assertEqual(f.get("inning_marker"), "9回完封")
+
+    def test_match_row_includes_opponent_venue_game_index_inning(self):
+        row = self._build_match(
+            {
+                "opponent": "ヤクルト",
+                "venue": "東京ドーム",
+                "game_index": "9",
+                "inning_marker": "9回完封",
+            }
+        )
+        self.assertEqual(row, "ヤクルト戦 / 東京ドーム / 9回戦 / 9回完封")
+
+    def test_match_row_empty_when_no_opponent(self):
+        row = self._build_match(
+            {"venue": "東京ドーム", "game_index": "9"}
+        )
+        self.assertEqual(row, "")
+
+    def test_match_row_skips_missing_components(self):
+        row = self._build_match({"opponent": "ヤクルト"})
+        self.assertEqual(row, "ヤクルト戦")
+
+    def test_role_label_uses_site_plus_role(self):
+        label = self._role_label(
+            source_url="https://www.giants.jp/G/game/result.html",
+            source_label_override="",
+        )
+        self.assertEqual(label, "巨人公式サイト 元記事")
+
+    def test_role_label_override_wins(self):
+        label = self._role_label(
+            source_url="https://www.giants.jp/G/game/result.html",
+            source_label_override="球団公式 試合結果ページ",
+        )
+        self.assertEqual(label, "球団公式 試合結果ページ")
+
+    def test_role_label_unknown_host_falls_back_to_host(self):
+        label = self._role_label(
+            source_url="https://www.example-news.jp/path",
+            source_label_override="",
+        )
+        self.assertEqual(label, "www.example-news.jp 元記事")
+
+    def test_fact_card_renders_match_row_first(self):
+        out = self._render(self._data())
+        self.assertTrue(out["validation_ok"])
+        body = out["content_html"]
+        self.assertIn("<th>対戦</th>", body)
+        # 対戦 row appears BEFORE スコア row
+        match_pos = body.index("<th>対戦</th>")
+        score_pos = body.index("<th>スコア</th>")
+        self.assertLess(match_pos, score_pos)
+
+    def test_fact_card_match_row_carries_opponent_venue_game_index(self):
+        out = self._render(self._data())
+        body = out["content_html"]
+        # opponent appears, venue appears, game_index 9回戦 appears.
+        self.assertIn("ヤクルト戦", body)
+        self.assertIn("東京ドーム", body)
+        self.assertIn("9回戦", body)
+
+    def test_fact_card_dropped_rows_are_absent(self):
+        out = self._render(self._data())
+        body = out["content_html"]
+        for label in ("見出し", "出典", "公開日"):
+            self.assertNotIn(f"<th>{label}</th>", body)
+
+    def test_h3_source_article_uses_role_label_not_title_echo(self):
+        out = self._render(self._data())
+        body = out["content_html"]
+        # Role label inside the H3 出典記事 段, not the title.
+        self.assertIn("巨人公式サイト 元記事", body)
+        # The H3 paragraph wording is updated.
+        self.assertIn("記事全文は", body)
+        self.assertIn("をご覧ください", body)
+        # Old wording must NOT remain.
+        self.assertNotIn("で確認できます。", body)
+
+    def test_comment_cta_exists_exactly_once(self):
+        out = self._render(self._data())
+        body = out["content_html"]
+        # Single CTA via _COMMON_FOOTER_HTML; the renderer-level 💬
+        # paragraph is gone. Both the duplicate paragraph AND the common
+        # footer cannot co-exist.
+        self.assertEqual(body.count("コメント欄からお願いします"), 1)
+        self.assertNotIn(
+            "ご意見・ご感想はコメント欄からお寄せください", body
+        )
+
+    def test_attribution_split_resolved_x_handle_only_in_related(self):
+        # 巨人公式X (source_name) appears only in the 関連投稿 heading +
+        # blockquote anchor — no longer inside the fact card 出典 row.
+        out = self._render(self._data())
+        body = out["content_html"]
+        # Count occurrences of the X handle.
+        n = body.count("巨人公式X")
+        # 関連投稿(巨人公式X) heading + 巨人公式X「関連投稿」 anchor = 2 occurrences.
+        self.assertEqual(n, 2)
+        # 巨人公式サイト (host label) appears at top 出典 + H3 出典記事 anchor.
+        self.assertGreaterEqual(body.count("巨人公式サイト"), 2)
 
 
 # ---------------------------------------------------------------------------

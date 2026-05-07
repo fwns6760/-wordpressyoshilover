@@ -1362,6 +1362,49 @@ _SHORT_NEWS_OUTCOME_KEYWORDS: tuple = (
     "本塁打", "完投", "ノーヒットノーラン", "引き分け",
 )
 
+# NOMOTOKE-BODY-FIX-2 C1: opponent / venue / game-index / inning-marker
+# extractors. All source-only string-in-text scans — no fabrication.
+_SHORT_NEWS_OPPONENT_TEAMS: tuple = (
+    "ヤクルト", "阪神", "中日", "広島", "DeNA", "ＤｅＮＡ", "ベイスターズ",
+    "楽天", "ロッテ", "オリックス", "ソフトバンク",
+    "日本ハム", "日ハム", "西武", "ハヤテ", "オイシックス",
+    "ドジャース", "カブス", "パドレス", "メッツ",
+)
+_SHORT_NEWS_GIANTS_ALIASES: tuple = ("巨人", "ジャイアンツ", "読売")
+
+# Curated stadium short / long names. Order matters: longer aliases first so
+# the literal scan does not return a substring match (e.g. ``東京ドーム`` must
+# match before ``東京D``).
+_SHORT_NEWS_VENUES: tuple = (
+    ("東京ドーム", "東京ドーム"),
+    ("東京D", "東京ドーム"),
+    ("神宮球場", "神宮球場"),
+    ("神宮", "神宮球場"),
+    ("マツダスタジアム", "マツダスタジアム"),
+    ("マツダ", "マツダスタジアム"),
+    ("バンテリンドーム", "バンテリンドーム"),
+    ("バンテリン", "バンテリンドーム"),
+    ("京セラドーム", "京セラドーム"),
+    ("京セラD", "京セラドーム"),
+    ("ベルーナドーム", "ベルーナドーム"),
+    ("ベルーナ", "ベルーナドーム"),
+    ("ZOZOマリン", "ZOZOマリンスタジアム"),
+    ("ZOZO", "ZOZOマリンスタジアム"),
+    ("エスコンフィールド", "エスコンフィールド"),
+    ("エスコン", "エスコンフィールド"),
+    ("みずほPayPay", "みずほPayPayドーム"),
+    ("PayPayドーム", "みずほPayPayドーム"),
+    ("ほっと神戸", "ほっと神戸"),
+    ("ちゅ～るスタジアム清水", "ちゅ～るスタジアム清水"),
+    ("横浜スタジアム", "横浜スタジアム"),
+    ("横浜", "横浜スタジアム"),
+)
+
+_SHORT_NEWS_GAME_INDEX_RE = re.compile(r"(?<!\d)(\d{1,2})回戦")
+_SHORT_NEWS_INNING_MARKER_RE = re.compile(
+    r"(\d{1,2})回(完封|完投|サヨナラ|途中|まで|表|裏)"
+)
+
 
 def _is_x_or_twitter_host(url: str) -> bool:
     """Return True iff the URL host is an X / Twitter host (any subdomain)."""
@@ -1409,7 +1452,7 @@ def _build_primary_source_anchor_label(
 ) -> str:
     """Build the human-readable anchor text for a primary article URL.
 
-    Composition:
+    Composition (top 出典 line):
       ``{site_label}「{article_title (truncated)}」`` when both exist,
       ``{site_label}`` when only site_label is known,
       ``source_label_override`` when caller explicitly supplies one.
@@ -1427,6 +1470,29 @@ def _build_primary_source_anchor_label(
     if site:
         return site
     return "出典記事"
+
+
+def _build_primary_source_role_label(
+    *, source_url: str, source_label_override: str
+) -> str:
+    """Build a role-based anchor label for the H3 出典記事 link.
+
+    The H3 出典記事 段 sits BELOW the top 出典 line and the 事実カード, both
+    of which already echo the article title. Repeating the title once more
+    here turned the段 into a value-zero echo (NOMOTOKE-BODY-FIX-2 C4). The
+    role label drops the title and uses ``{site_label} 元記事`` so the link
+    text describes its function rather than echoing the article headline.
+
+    ``source_label_override`` still wins (caller-supplied wording such as
+    ``球団公式 試合結果ページ`` is preserved verbatim) so future OG-meta
+    plumbing can drop in a richer label.
+    """
+    if source_label_override:
+        return source_label_override.strip()
+    site = _site_label_for_url(source_url)
+    if site:
+        return f"{site} 元記事"
+    return "元記事"
 
 
 def _build_related_x_anchor_label(
@@ -1485,9 +1551,20 @@ def _x_embed_block(
 def _extract_short_news_facts(title: str, summary: str) -> Dict[str, str]:
     """Source-only structured fact extraction for short_news_url cards.
 
-    Returns a subset of: ``score`` (e.g. ``"0-5"``), ``game_kind`` (一軍/
-    二軍), ``outcome_keywords`` (joined string of detected outcome words).
-    NEVER fabricates — only literal source matches are returned.
+    Returns a subset of:
+      - ``score`` (e.g. ``"0-5"``)
+      - ``game_kind`` (一軍/二軍)
+      - ``outcome_keywords`` (joined string of detected outcome words)
+      - ``opponent`` (first non-Giants team name found)
+      - ``venue`` (stadium name from curated table)
+      - ``game_index`` (e.g. ``"9"`` from ``9回戦``)
+      - ``inning_marker`` (e.g. ``"9回完封"``)
+
+    NEVER fabricates — only literal source matches are returned. The
+    extractor must not pull anything that is not a substring of
+    ``title + summary``; this keeps the source-boundary intact even when
+    later phases add an OG-meta extractor (NOMOTOKE-BODY-EXTRACT-001),
+    which will write into the SAME shape via different provenance.
     """
     text = f"{title or ''}\n{summary or ''}"
     facts: Dict[str, str] = {}
@@ -1508,6 +1585,24 @@ def _extract_short_news_facts(title: str, summary: str) -> Dict[str, str]:
             if kw not in seen:
                 seen.append(kw)
         facts["outcome_keywords"] = "／".join(seen[:4])
+
+    for team in _SHORT_NEWS_OPPONENT_TEAMS:
+        if team in text:
+            facts["opponent"] = team
+            break
+
+    for needle, canonical in _SHORT_NEWS_VENUES:
+        if needle in text:
+            facts["venue"] = canonical
+            break
+
+    gi = _SHORT_NEWS_GAME_INDEX_RE.search(text)
+    if gi:
+        facts["game_index"] = gi.group(1)
+
+    im = _SHORT_NEWS_INNING_MARKER_RE.search(text)
+    if im:
+        facts["inning_marker"] = f"{im.group(1)}回{im.group(2)}"
 
     return facts
 
@@ -1539,6 +1634,31 @@ def _split_related_x_and_other(related_links: Any) -> tuple:
     return x_url, other
 
 
+def _build_match_row_value(facts: Dict[str, str]) -> str:
+    """Compose the 対戦 row from opponent / venue / game_index / inning_marker.
+
+    Returns "" when ``opponent`` is missing (a 対戦 row without an opponent
+    is meaningless). Other fragments are appended only when present, in a
+    fixed order so the row reads as one continuous fact line:
+
+        ``ヤクルト戦 / 東京ドーム / 9回戦 / 9回完封``
+    """
+    opp = (facts.get("opponent") or "").strip()
+    if not opp:
+        return ""
+    parts: List[str] = [f"{opp}戦"]
+    venue = (facts.get("venue") or "").strip()
+    if venue:
+        parts.append(venue)
+    gi = (facts.get("game_index") or "").strip()
+    if gi:
+        parts.append(f"{gi}回戦")
+    im = (facts.get("inning_marker") or "").strip()
+    if im:
+        parts.append(im)
+    return " / ".join(parts)
+
+
 def _short_news_fact_card_block(
     *,
     title: str,
@@ -1548,23 +1668,35 @@ def _short_news_fact_card_block(
 ) -> str:
     """Render the 事実カード (fact card) table from source-only fields.
 
-    Skipped rows for empty values; the table itself is omitted when fewer
-    than two non-trivial rows are available, since a 1-row table reads as
-    a stub.
+    NOMOTOKE-BODY-FIX-2 row policy:
+      - 対戦 (opponent + venue + game_index + inning_marker)
+      - スコア
+      - 種別 (一軍 / 二軍 only when present)
+      - 主な出来事 (outcome_keywords)
+
+    Removed in BODY-FIX-2:
+      - 見出し row (= page H1 title, redundant)
+      - 出典 row (= source_name overlap with the top 出典 line, attribution
+        split source — X handle stays in 関連投稿 only)
+      - 公開日 row (= meta block date, redundant)
+
+    The ``title`` / ``source_name`` / ``date_label`` parameters are still
+    accepted for backward compatibility with callers but are intentionally
+    NOT rendered here; they are visible elsewhere in the card.
+
+    The whole table is omitted when fewer than 2 non-trivial rows are
+    available so a 1-row table never appears.
     """
     rows: List[tuple] = []
+    match_row = _build_match_row_value(facts)
+    if match_row:
+        rows.append(("対戦", match_row))
     if facts.get("score"):
         rows.append(("スコア", facts["score"]))
     if facts.get("game_kind"):
         rows.append(("種別", facts["game_kind"]))
     if facts.get("outcome_keywords"):
         rows.append(("主な出来事", facts["outcome_keywords"]))
-    if title:
-        rows.append(("見出し", title))
-    if source_name:
-        rows.append(("出典", source_name))
-    if date_label:
-        rows.append(("公開日", date_label))
 
     if len(rows) < 2:
         return ""
@@ -1670,13 +1802,21 @@ def render_short_news_url_card(data: Dict[str, Any]) -> Dict[str, Any]:
 
     x_embed_url, other_related = _split_related_x_and_other(related_links)
 
-    # NOMOTOKE-LINK-LABEL-FIX: build human-readable anchor text up front
-    # and reuse it for the top 出典 line, the 出典記事 H3 link, and the X
-    # blockquote. The body never echoes the raw URL — only the href does.
+    # NOMOTOKE-LINK-LABEL-FIX: build human-readable anchor text up front.
+    # The body never echoes the raw URL — only the href does.
+    #
+    # Two label variants (NOMOTOKE-BODY-FIX-2 C4):
+    #   - primary_anchor_label  : ``{site}「{title}」`` for the top 出典 line
+    #   - primary_role_label    : ``{site} 元記事`` for the H3 出典記事 link
+    # The role label drops the title echo so the H3 段 has its own value.
     primary_anchor_label = _build_primary_source_anchor_label(
         source_url=source_url_raw,
         source_label_override=source_label_override,
         article_title=title_raw,
+    )
+    primary_role_label = _build_primary_source_role_label(
+        source_url=source_url_raw,
+        source_label_override=source_label_override,
     )
 
     body_parts: List[str] = []
@@ -1685,6 +1825,10 @@ def render_short_news_url_card(data: Dict[str, Any]) -> Dict[str, Any]:
         f'<p class="nomotoke-lead">{_esc(summary_clean or title_raw)}</p>'
     )
 
+    # Fact card no longer echoes title / source_name / date_label rows
+    # (BODY-FIX-2 C2): the helper still receives those for backward-compat
+    # but ignores them. attribution lives only at the top 出典 line +
+    # the related 投稿 anchor below.
     fact_card = _short_news_fact_card_block(
         title=title_raw,
         source_name=source_name,
@@ -1703,15 +1847,18 @@ def render_short_news_url_card(data: Dict[str, Any]) -> Dict[str, Any]:
 
     body_parts.append("<h3>🔗 出典記事</h3>")
     body_parts.append(
-        f'<p>正式な内容は <a href="{safe_source_url}" target="_blank" '
-        f'rel="noopener">{_esc(primary_anchor_label)}</a> で確認できます。</p>'
+        f'<p>記事全文は <a href="{safe_source_url}" target="_blank" '
+        f'rel="noopener">{_esc(primary_role_label)}</a> をご覧ください。</p>'
     )
 
     body_main = "".join(body_parts)
 
-    closing_html = (
-        "<p>💬 ご意見・ご感想はコメント欄からお寄せください。</p>"
-    )
+    # NOMOTOKE-BODY-FIX-2 C3: the renderer-level closing line is dropped.
+    # ``_COMMON_FOOTER_HTML`` already provides a comment CTA so an extra
+    # 💬 paragraph above it duplicated the call to action 1:1. Keeping
+    # closing_html empty leaves a single, consistent footer across every
+    # nomotoke template.
+    closing_html = ""
 
     canonical_url_value = _hash_canonical(source_url_raw)
     dedupe_key = (

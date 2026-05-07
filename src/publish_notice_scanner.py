@@ -1321,15 +1321,27 @@ def _preflight_skip_dedupe_key(entry: Mapping[str, Any]) -> str:
 
 
 def _default_fetch(base_url: str, after_iso: str) -> list[Mapping[str, Any]]:
+    """Fetch publish posts whose ``modified`` timestamp is after the
+    cursor.
+
+    Earlier the filter was ``after=<post.date>``. ``date`` is set on
+    initial publish and never moves, so a draft → publish status flip
+    via ``update_post_fields(status='publish')`` left the post invisible
+    to this scanner — operators publishing from the manual_intake_service
+    GUI got no email. ``modified_after`` covers both initial publishes
+    and status-flip publishes; the per-post-id history map (see
+    ``_is_recent_duplicate``) prevents re-notification when an already-
+    published post is edited.
+    """
     endpoint = urljoin(base_url.rstrip("/") + "/", "posts")
     query = urlencode(
         {
             "status": "publish",
-            "after": after_iso,
+            "modified_after": after_iso,
             "per_page": 20,
-            "orderby": "date",
+            "orderby": "modified",
             "order": "asc",
-            "_fields": "id,title,excerpt,content,link,date,status,meta,article_subtype,subtype",
+            "_fields": "id,title,excerpt,content,link,date,modified,status,meta,article_subtype,subtype",
         }
     )
     request = urllib.request.Request(
@@ -2822,7 +2834,14 @@ def _scan_direct_publish_phase(
 
         post_id = post.get("id", "")
         post_key = str(post_id)
-        post_dt = _parse_datetime_to_jst(post.get("date"))
+        # NOMOTOKE-PUBLISH-NOTICE-MANUAL-FLIP-FIX: cursor advances with
+        # ``modified`` (matches the new modified_after fetch filter).
+        # Falls back to ``date`` for safety when the WP response omits
+        # ``modified`` (older posts captured before this fix).
+        post_dt = (
+            _parse_datetime_to_jst(post.get("modified"))
+            or _parse_datetime_to_jst(post.get("date"))
+        )
         if post_dt is not None and (latest_post_dt is None or post_dt > latest_post_dt):
             latest_post_dt = post_dt
 

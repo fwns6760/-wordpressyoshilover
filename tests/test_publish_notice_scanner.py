@@ -75,6 +75,56 @@ class PublishNoticeScannerTests(unittest.TestCase):
             self.assertEqual(fetch_calls, [])
             self.assertFalse(queue_path.exists())
 
+    def test_scan_emits_for_manual_status_flip_post_via_modified_cursor(self):
+        # NOMOTOKE-PUBLISH-NOTICE-MANUAL-FLIP-FIX regression guard:
+        # a post whose `date` is BEFORE the cursor (created earlier as
+        # draft) but `modified` is AFTER the cursor (operator flipped
+        # status to publish via update_post_fields) must still emit a
+        # publish notice. Earlier the scanner used `after=<date>` so
+        # such posts were silently skipped.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cursor_path = Path(tmpdir) / "cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            cursor_path.write_text(
+                "2026-04-24T09:00:00+09:00\n", encoding="utf-8"
+            )
+            history_path.write_text("{}\n", encoding="utf-8")
+
+            captured_after: dict = {}
+
+            def fetch(base_url: str, after_iso: str):
+                captured_after["after"] = after_iso
+                # Post with date BEFORE cursor + modified AFTER cursor —
+                # this is the "draft created at 08:00, flipped to publish
+                # at 11:00" pattern that the old fetch missed.
+                return [
+                    self._post(
+                        id=901,
+                        title={"rendered": "手動 publish された記事"},
+                        link="https://yoshilover.com/post-901/",
+                        date="2026-04-24T08:00:00+09:00",
+                        modified="2026-04-24T11:00:00+09:00",
+                    )
+                ]
+
+            result = scanner.scan(
+                wp_api_base="https://custom.example/wp-json/wp/v2",
+                cursor_path=cursor_path,
+                history_path=history_path,
+                queue_path=queue_path,
+                fetch=fetch,
+                now=lambda: NOW,
+            )
+
+        # The cursor passed to fetch is what _scan_direct_publish_phase
+        # received from the cursor file (used as modified_after).
+        self.assertEqual(captured_after.get("after"), "2026-04-24T09:00:00+09:00")
+        self.assertEqual(len(result.emitted), 1)
+        self.assertEqual(result.emitted[0].post_id, 901)
+        # Cursor advances to the post's modified time, not the date.
+        self.assertEqual(result.cursor_after, "2026-04-24T11:00:00+09:00")
+
     def test_scan_with_existing_cursor_emits_two_requests(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             cursor_path = Path(tmpdir) / "cursor.txt"

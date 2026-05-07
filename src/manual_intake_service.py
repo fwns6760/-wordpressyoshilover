@@ -172,6 +172,9 @@ _HTML_FORM = """<!DOCTYPE html>
   #result.ok { background: #e8f5e9; color: #1b5e20; }
   #result.err { background: #ffebee; color: #b71c1c; }
   small.note { display: block; font-size: 12px; opacity: 0.85; margin-top: 4px; color: inherit; }
+  .setup-banner { padding: 12px 14px; margin-bottom: 14px; border-radius: 8px; background: #fff8e1; color: #5d4037; border: 1px solid #ffd54f; font-size: 13px; line-height: 1.55; }
+  .setup-banner code { background: rgba(0,0,0,0.08); padding: 1px 4px; border-radius: 3px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
   /* Dark-mode overrides MUST come last so their selectors win on phones
      that auto-flip to dark. The earlier ordering placed the base
      ``background:#fff`` rule after the dark-mode override, which made the
@@ -185,55 +188,53 @@ _HTML_FORM = """<!DOCTYPE html>
     .mode-row label { border-color: #555; background: #1c1c1c; color: #f0f0f0; }
     #result.ok { background: #1b3d1f; color: #c8e6c9; }
     #result.err { background: #3d1b1b; color: #ffcdd2; }
+    .setup-banner { background: #2a2418; color: #ffd699; border-color: #6b5832; }
+    .setup-banner code { background: rgba(255,255,255,0.08); }
   }
 </style>
 </head>
 <body>
 <main>
   <h1>YOSHILOVER 手動投入</h1>
+  <div id=\"setup-banner\" class=\"setup-banner\" hidden>
+    <strong>初回セットアップが必要です。</strong><br>
+    アクセストークン付きの URL（<code>?token=…</code> 付き）を一度開くと、この端末では以降そのまま使えます。<br>
+    トークンは GCP Console の Secret Manager「<code>yoshilover-manual-intake-token</code>」から取得できます。
+  </div>
   <form id=\"intake\">
     <div class=\"field\">
-      <label for=\"url\">URL（必須・記事 or X status）</label>
+      <label for=\"url\">記事URL</label>
       <input class=\"big\" id=\"url\" name=\"url\" type=\"url\" required placeholder=\"https://...\" autocomplete=\"off\" inputmode=\"url\">
     </div>
     <div class=\"field\">
       <label for=\"article_type\">記事タイプ</label>
       <select id=\"article_type\" name=\"article_type\">__ARTICLE_TYPE_OPTIONS__</select>
-      <small class=\"note\">URL を入れて記事タイプを選ぶだけで OK。タイトル / サマリーは出典 OG から自動取得します。</small>
-    </div>
-    <div class=\"field\">
-      <label>モード</label>
-      <div class=\"mode-row\">
-        <label><input type=\"radio\" name=\"mode\" value=\"dry-run\" checked>dry-run（確認のみ）</label>
-        <label><input type=\"radio\" name=\"mode\" value=\"draft\">draft（WP下書き作成）</label>
-      </div>
-    </div>
-    <div class=\"field\">
-      <label for=\"token\">アクセストークン（必須）</label>
-      <input id=\"token\" name=\"token\" type=\"password\" autocomplete=\"current-password\" required>
-      <small class=\"note\">一度入れればこの端末のセッション中は記憶されます。</small>
+      <small class=\"note\">URL を入れて記事タイプを選んで「記事化」を押すだけ。タイトル / サマリーは出典 OG から自動取得します。</small>
     </div>
     <details class=\"field\">
       <summary style=\"cursor:pointer; font-weight:600; padding:6px 0;\">詳細設定（任意・通常は不要）</summary>
       <div class=\"field\">
-        <label for=\"title\">タイトル上書き（任意・OG title を強制差替え）</label>
+        <label for=\"title\">タイトル上書き（OG title を強制差替え）</label>
         <input id=\"title\" name=\"title\" type=\"text\" autocomplete=\"off\">
       </div>
       <div class=\"field\">
-        <label for=\"summary\">サマリー上書き（任意・OG description を強制差替え）</label>
+        <label for=\"summary\">サマリー上書き（OG description を強制差替え）</label>
         <textarea id=\"summary\" name=\"summary\" rows=\"2\"></textarea>
       </div>
       <div class=\"field\">
-        <label for=\"source_published_at\">出典公開日時上書き（任意・ISO8601 / JST扱い）</label>
+        <label for=\"source_published_at\">出典公開日時上書き（ISO8601 / JST扱い）</label>
         <input id=\"source_published_at\" name=\"source_published_at\" type=\"text\" placeholder=\"2026-05-07T18:30:00+09:00\" autocomplete=\"off\">
       </div>
       <div class=\"field\">
-        <label for=\"memo\">メモ（任意・本文には流れません）</label>
+        <label for=\"memo\">メモ（本文には流れません）</label>
         <textarea id=\"memo\" name=\"memo\" rows=\"2\"></textarea>
+      </div>
+      <div class=\"field\">
+        <label><input type=\"checkbox\" id=\"dry-run-toggle\"> 確認のみ（dry-run）— チェック時は WP に書き込まずレスポンスだけ返す</label>
       </div>
     </details>
     <div class=\"actions\">
-      <button class=\"primary\" type=\"submit\">送信</button>
+      <button class=\"primary\" type=\"submit\" id=\"submit-btn\">記事化</button>
       <button class=\"secondary\" type=\"reset\">クリア</button>
     </div>
   </form>
@@ -241,8 +242,39 @@ _HTML_FORM = """<!DOCTYPE html>
 </main>
 <script>
 (function() {
+  // ----------------------------------------------------------------------
+  // Token bootstrap
+  // ----------------------------------------------------------------------
+  // Visit ``?token=XXXX`` once on each device (PC / phone) — the token is
+  // stored in localStorage and stripped from the URL bar so it does not
+  // leak into the browser history. Subsequent loads of the bare URL pull
+  // the token from storage. The form never displays it.
+  const STORAGE_KEY = 'manual_intake_token_v1';
+  const setupBanner = document.getElementById('setup-banner');
+  const submitBtn = document.getElementById('submit-btn');
+  try {
+    const u = new URL(window.location.href);
+    const tokenFromQuery = u.searchParams.get('token');
+    if (tokenFromQuery) {
+      localStorage.setItem(STORAGE_KEY, tokenFromQuery);
+      u.searchParams.delete('token');
+      window.history.replaceState(null, '', u.toString());
+    }
+  } catch (_) { /* SSR / privacy-mode tolerant */ }
+  let storedToken = '';
+  try { storedToken = localStorage.getItem(STORAGE_KEY) || ''; } catch (_) { storedToken = ''; }
+  if (!storedToken) {
+    if (setupBanner) setupBanner.hidden = false;
+    if (submitBtn) submitBtn.disabled = true;
+  }
+
+  // ----------------------------------------------------------------------
+  // Submit
+  // ----------------------------------------------------------------------
   const form = document.getElementById('intake');
   const result = document.getElementById('result');
+  const dryRunToggle = document.getElementById('dry-run-toggle');
+
   function render(ok, payload) {
     result.hidden = false;
     result.className = ok ? 'ok' : 'err';
@@ -251,25 +283,35 @@ _HTML_FORM = """<!DOCTYPE html>
       return;
     }
     const lines = [
-      '結果: ok',
-      'mode: ' + (payload.mode || ''),
-      'title: ' + (payload.title || ''),
-      'category: ' + (payload.category || '') + (payload.category_ids ? ' ' + JSON.stringify(payload.category_ids) : ''),
-      'subtype: ' + (payload.subtype || ''),
-      'article_type: ' + (payload.article_type || '') + ' (' + (payload.article_type_source || '') + ')',
-      'source_url: ' + (payload.source_url || ''),
+      '結果: ' + (payload.mode === 'draft' ? '下書き作成 OK' : '確認 OK'),
+      'タイトル: ' + (payload.title || ''),
+      'カテゴリ: ' + (payload.category || ''),
+      '記事タイプ: ' + (payload.article_type || ''),
     ];
     if (payload.post_id) lines.push('post_id: ' + payload.post_id);
-    if (payload.draft_url) lines.push('edit: ' + payload.draft_url);
-    if (payload.normalized_source_published_at) lines.push('source_published_at: ' + payload.normalized_source_published_at);
+    if (payload.draft_url) lines.push('編集: ' + payload.draft_url);
+    if (payload.normalized_source_published_at) lines.push('出典公開日時: ' + payload.normalized_source_published_at);
     result.textContent = lines.join('\\n');
   }
+
   form.addEventListener('submit', async function(ev) {
     ev.preventDefault();
     result.hidden = true;
     const data = new FormData(form);
     const body = new URLSearchParams();
-    data.forEach((v, k) => body.append(k, v));
+    data.forEach((v, k) => { if (v) body.append(k, v); });
+    // Default mode: draft. Dry-run only when the explicit detail toggle
+    // is checked.
+    body.set('mode', dryRunToggle && dryRunToggle.checked ? 'dry-run' : 'draft');
+    // Token: pull from localStorage every submit so the value is never
+    // typed by the operator after the initial setup link.
+    let tok = '';
+    try { tok = localStorage.getItem(STORAGE_KEY) || ''; } catch (_) { tok = ''; }
+    if (!tok) {
+      render(false, { reason: 'token_not_configured' });
+      return;
+    }
+    body.set('token', tok);
     try {
       const resp = await fetch('/manual-intake', {
         method: 'POST',

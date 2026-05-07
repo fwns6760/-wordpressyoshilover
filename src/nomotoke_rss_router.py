@@ -547,9 +547,21 @@ _PLAYER_QUOTE_REJECTED_QUOTE_PATTERNS: tuple = (
 def _player_name_passes_quality(name: str) -> bool:
     """Reject names that are clearly not personal names.
 
-    Japanese personal names start with kanji or katakana, never with a
-    particle like 「が」/「を」/「に」. Hashtag-only tokens (``#吉川``)
-    and bracket-only labels (``【巨人】``) are also rejected.
+    Japanese personal names in pro baseball are kanji surnames or
+    katakana foreign names (or kanji + katakana combos) — they do NOT
+    contain hiragana. Live X RSS feeds emit titles like
+    「ファーム戦の試合後に「…」」, 「中日戦先発ウィットリーは「…」」, or
+    「脱中の山崎伊織の現状説明、…」 where the regex captures a long
+    phrase containing hiragana particles. Treating those as names yields
+    nonsensical 「{phrase}選手がコメントです。」 closing lines.
+
+    Rules (strict superset of Phase 2C initial release):
+      1. Reject empty.
+      2. Reject hashtag-only tokens (``#吉川``).
+      3. Reject names starting with a Japanese particle.
+      4. Reject names containing ANY hiragana char (U+3040 to U+309F).
+
+    Real names that this rejects? Pro baseball: zero observed.
     """
     s = (name or "").strip()
     if not s:
@@ -558,6 +570,11 @@ def _player_name_passes_quality(name: str) -> bool:
         return False
     if s.startswith(_PLAYER_NAME_LEADING_PARTICLES):
         return False
+    for ch in s:
+        # Hiragana block — present in particles / particles-in-phrases
+        # but absent from kanji / katakana personal names.
+        if "぀" <= ch <= "ゟ":
+            return False
     return True
 
 

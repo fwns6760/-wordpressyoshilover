@@ -1155,6 +1155,42 @@ class Phase2CPlayerQuoteCleanupTests(unittest.TestCase):
         self.assertEqual(f.get("player_name"), "大勢")
         self.assertEqual(f.get("quote_short"), "真っ直ぐで押し切れた")
 
+    def test_player_name_with_hiragana_rejected(self):
+        # Phase 2C+ stricter rule: pro baseball player names are kanji
+        # surnames or katakana foreign names, never with hiragana
+        # particles. 「中日戦先発ウィットリーは」 is a phrase, not a name.
+        f = extract_player_quote(
+            "【巨人】中日戦先発ウィットリーは「料理人」　竜打線を調理して行きたい街は合羽橋",
+            "",
+        )
+        self.assertEqual(f, {})
+
+    def test_player_name_phrase_with_no_in_middle_rejected(self):
+        # 「脱中の山崎伊織の現状説明」 is a phrase containing 「の」 (hiragana)
+        f = extract_player_quote(
+            "巨人・脱中の山崎伊織の現状説明「全く投げられない状態じゃない」",
+            "",
+        )
+        self.assertEqual(f, {})
+
+    def test_player_name_event_phrase_rejected(self):
+        # 「ファーム戦の試合後に」 — 「の」/「に」 hiragana particles in phrase
+        f = extract_player_quote(
+            "ファーム戦の試合後に「選手と一緒に野球体験会」⚾",
+            "",
+        )
+        self.assertEqual(f, {})
+
+    def test_pure_katakana_player_name_still_passes(self):
+        # Foreign player names (e.g. ウィットリー alone, in a clean
+        # 「巨人・ウィットリー「料理人」」 pattern) must still match.
+        f = extract_player_quote(
+            "巨人・ウィットリー「料理人」",
+            "",
+        )
+        self.assertEqual(f.get("player_name"), "ウィットリー")
+        self.assertEqual(f.get("quote_short"), "料理人")
+
     def test_rt_prefix_title_is_skipped_at_router_level(self):
         # Twitter retweet entries (title starts with ``RT @``) are not
         # original source content. Router skips with not_giants_related.

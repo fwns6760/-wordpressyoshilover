@@ -62,7 +62,50 @@ def _require_token() -> str:
 
 def _request_token(handler: BaseHTTPRequestHandler, body_token: str) -> str:
     header = handler.headers.get(TOKEN_HEADER, "") or ""
-    return (header.strip() or (body_token or "").strip())
+    if header.strip():
+        return header.strip()
+    if (body_token or "").strip():
+        return body_token.strip()
+    # Cookie fallback (NOMOTOKE-INTAKE-COOKIE-001): the operator opens
+    # ``GET /?token=<value>`` once per device. The server validates the
+    # token there and sets ``manual_intake_session`` cookie. Subsequent
+    # requests carry the cookie automatically and never need a token in
+    # JS / form / URL again. The cookie value is the token verbatim;
+    # constant-time comparison happens at the call site.
+    cookie_header = handler.headers.get("Cookie", "") or ""
+    for chunk in cookie_header.split(";"):
+        chunk = chunk.strip()
+        if chunk.startswith(SESSION_COOKIE_NAME + "="):
+            return chunk[len(SESSION_COOKIE_NAME) + 1 :].strip()
+    return ""
+
+
+SESSION_COOKIE_NAME = "manual_intake_session"
+SESSION_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 90  # 90 days
+
+
+def _set_session_cookie(handler: BaseHTTPRequestHandler, token_value: str) -> None:
+    """Emit ``Set-Cookie`` header so the browser carries auth on every
+    subsequent request without the operator re-typing or seeing the token.
+    """
+    cookie = (
+        f"{SESSION_COOKIE_NAME}={token_value}; "
+        f"Max-Age={SESSION_COOKIE_MAX_AGE_SECONDS}; "
+        "Path=/; Secure; HttpOnly; SameSite=Lax"
+    )
+    handler.send_header("Set-Cookie", cookie)
+
+
+def _redirect_response(
+    handler: BaseHTTPRequestHandler, location: str, *, set_cookie_value: str = ""
+) -> None:
+    handler.send_response(303)
+    handler.send_header("Location", location)
+    if set_cookie_value:
+        _set_session_cookie(handler, set_cookie_value)
+    handler.send_header("Cache-Control", "no-store")
+    handler.send_header("Content-Length", "0")
+    handler.end_headers()
 
 
 def _json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict[str, Any]) -> None:
@@ -196,11 +239,6 @@ _HTML_FORM = """<!DOCTYPE html>
 <body>
 <main>
   <h1>YOSHILOVER 手動投入</h1>
-  <div id=\"setup-banner\" class=\"setup-banner\" hidden>
-    <strong>初回セットアップが必要です。</strong><br>
-    アクセストークン付きの URL（<code>?token=…</code> 付き）を一度開くと、この端末では以降そのまま使えます。<br>
-    トークンは GCP Console の Secret Manager「<code>yoshilover-manual-intake-token</code>」から取得できます。
-  </div>
   <form id=\"intake\">
     <div class=\"field\">
       <label for=\"url\">記事URL</label>
@@ -242,35 +280,12 @@ _HTML_FORM = """<!DOCTYPE html>
 </main>
 <script>
 (function() {
-  // ----------------------------------------------------------------------
-  // Token bootstrap
-  // ----------------------------------------------------------------------
-  // Visit ``?token=XXXX`` once on each device (PC / phone) — the token is
-  // stored in localStorage and stripped from the URL bar so it does not
-  // leak into the browser history. Subsequent loads of the bare URL pull
-  // the token from storage. The form never displays it.
-  const STORAGE_KEY = 'manual_intake_token_v1';
-  const setupBanner = document.getElementById('setup-banner');
-  const submitBtn = document.getElementById('submit-btn');
-  try {
-    const u = new URL(window.location.href);
-    const tokenFromQuery = u.searchParams.get('token');
-    if (tokenFromQuery) {
-      localStorage.setItem(STORAGE_KEY, tokenFromQuery);
-      u.searchParams.delete('token');
-      window.history.replaceState(null, '', u.toString());
-    }
-  } catch (_) { /* SSR / privacy-mode tolerant */ }
-  let storedToken = '';
-  try { storedToken = localStorage.getItem(STORAGE_KEY) || ''; } catch (_) { storedToken = ''; }
-  if (!storedToken) {
-    if (setupBanner) setupBanner.hidden = false;
-    if (submitBtn) submitBtn.disabled = true;
-  }
-
-  // ----------------------------------------------------------------------
-  // Submit
-  // ----------------------------------------------------------------------
+  // Auth is via the ``manual_intake_session`` cookie set by the server
+  // when the operator opens ``GET /?token=<value>`` once per device.
+  // The cookie is HttpOnly + Secure + SameSite=Lax so it is attached
+  // automatically on every fetch from the same origin. The form never
+  // sees the token; ``credentials: 'same-origin'`` ensures the cookie
+  // is forwarded on the POST.
   const form = document.getElementById('intake');
   const result = document.getElementById('result');
   const dryRunToggle = document.getElementById('dry-run-toggle');
@@ -279,7 +294,16 @@ _HTML_FORM = """<!DOCTYPE html>
     result.hidden = false;
     result.className = ok ? 'ok' : 'err';
     if (!ok) {
-      result.textContent = '失敗: ' + (payload.reason || payload.skip_reason || payload.error || JSON.stringify(payload));
+      const reason = payload.reason || payload.skip_reason || payload.error || JSON.stringify(payload);
+      if (reason === 'forbidden') {
+        result.textContent = (
+          '失敗: アクセス権限がありません。\\n' +
+          'ブックマークしている初期化 URL（末尾に ?token=… が付くもの）を' +
+          '一度開いてから、もう一度この画面にアクセスしてください。'
+        );
+      } else {
+        result.textContent = '失敗: ' + reason;
+      }
       return;
     }
     const lines = [
@@ -300,23 +324,13 @@ _HTML_FORM = """<!DOCTYPE html>
     const data = new FormData(form);
     const body = new URLSearchParams();
     data.forEach((v, k) => { if (v) body.append(k, v); });
-    // Default mode: draft. Dry-run only when the explicit detail toggle
-    // is checked.
     body.set('mode', dryRunToggle && dryRunToggle.checked ? 'dry-run' : 'draft');
-    // Token: pull from localStorage every submit so the value is never
-    // typed by the operator after the initial setup link.
-    let tok = '';
-    try { tok = localStorage.getItem(STORAGE_KEY) || ''; } catch (_) { tok = ''; }
-    if (!tok) {
-      render(false, { reason: 'token_not_configured' });
-      return;
-    }
-    body.set('token', tok);
     try {
       const resp = await fetch('/manual-intake', {
         method: 'POST',
         body: body,
         headers: { 'Accept': 'application/json' },
+        credentials: 'same-origin',
       });
       const json = await resp.json().catch(() => ({}));
       render(resp.ok && json.ok, json);
@@ -452,6 +466,25 @@ def build_handler(
                 )
                 return
             if path in ("/", "/index.html"):
+                # NOMOTOKE-INTAKE-COOKIE-001: ``GET /?token=<value>``
+                # validates the token and sets ``manual_intake_session``
+                # cookie, then 303-redirects to bare ``/`` so the URL
+                # bar never carries the token (history stays clean) and
+                # the operator can bookmark ``/`` without query string.
+                expected = _require_token()
+                params = parse_qs(parsed.query, keep_blank_values=False)
+                supplied_query_token = ""
+                token_list = params.get("token") or []
+                if token_list:
+                    supplied_query_token = (token_list[0] or "").strip()
+                if expected and supplied_query_token:
+                    if supplied_query_token == expected:
+                        _redirect_response(
+                            self, "/", set_cookie_value=expected
+                        )
+                        return
+                    # Wrong token in query → fall through to form render
+                    # (operator sees the form, will get 403 on submit).
                 _text_response(
                     self, 200, _render_form(), content_type="text/html; charset=utf-8"
                 )

@@ -142,8 +142,14 @@ class HealthAndFormTests(unittest.TestCase):
             self.assertIn(label, text)
         # form posts to /manual-intake
         self.assertIn("/manual-intake", text)
-        # mode default is dry-run
-        self.assertIn('value="dry-run" checked', text)
+        # The new UX (NOMOTOKE-INTAKE-COOKIE-001) drops the visible mode
+        # radio. Default mode is sent by the form's JS as 'draft' on
+        # submit, with an opt-in 'dry-run' checkbox tucked inside the
+        # 詳細設定 disclosure.
+        self.assertIn('id="dry-run-toggle"', text)
+        # The detail disclosure is collapsed by default — operators see
+        # only URL + 記事タイプ + 「記事化」 button on first load.
+        self.assertIn("詳細設定", text)
 
     def test_manifest_returns_json(self):
         status, headers, body = _invoke_handler(

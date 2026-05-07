@@ -124,17 +124,17 @@ class LockedBoundaryTests(unittest.TestCase):
         self.assertNotIn(r.template_key, RSS_ONLY_BLOCKED_TEMPLATES)
 
     def test_blocked_templates_count_matches_table(self):
-        # NOMOTOKE-VIDEO-SOURCE-001 graduated video_v1 from BLOCKED to
-        # ALLOWED — 6 templates remain blocked.
-        self.assertEqual(len(RSS_ONLY_BLOCKED_TEMPLATES), 6)
+        # NOMOTOKE-OFFICIAL-NOTICE-FROM-HOCHI-001 graduated
+        # official_notice_v1 from BLOCKED to ALLOWED — 5 blocked remain.
+        self.assertEqual(len(RSS_ONLY_BLOCKED_TEMPLATES), 5)
         for tk in RSS_ONLY_BLOCKED_TEMPLATES:
             self.assertIn(tk, QUALITY_CEILING_BY_TEMPLATE)
             ceiling = QUALITY_CEILING_BY_TEMPLATE[tk]
             self.assertFalse(ceiling["allow_rss_only"])
 
     def test_allowed_templates_count_matches_table(self):
-        # +1 (video_v1) → 5 allowed templates.
-        self.assertEqual(len(RSS_ONLY_ALLOWED_TEMPLATES), 5)
+        # +1 (video_v1) +1 (official_notice_v1) → 6 allowed templates.
+        self.assertEqual(len(RSS_ONLY_ALLOWED_TEMPLATES), 6)
         for tk in RSS_ONLY_ALLOWED_TEMPLATES:
             self.assertIn(tk, QUALITY_CEILING_BY_TEMPLATE)
             self.assertTrue(QUALITY_CEILING_BY_TEMPLATE[tk]["allow_rss_only"])
@@ -1572,6 +1572,87 @@ class VideoNarrativeTitleFallbackTests(unittest.TestCase):
             self.assertIn(name, GIANTS_PLAYER_ALLOWLIST)
         self.assertEqual(GIANTS_PLAYER_NICKNAMES.get("マー君"), "田中将大")
         self.assertEqual(GIANTS_PLAYER_NICKNAMES.get("尚輝"), "吉川尚輝")
+
+
+class OfficialNoticeFromHochiTests(unittest.TestCase):
+    """NOMOTOKE-OFFICIAL-NOTICE-FROM-HOCHI-001: hochi-style 「【セパ公示】」
+    titles → nomotoke_card_official_notice_v1 instead of short_news_url."""
+
+    def test_detect_抹消_with_ドラ1_prefix(self):
+        from src.nomotoke_rss_router import detect_official_notice_action
+
+        f = detect_official_notice_action(
+            "【セパ公示】（７日）巨人はドラ１竹丸和幸を抹消 中日は高橋宏斗、楽天は前田健太を抹消"
+        )
+        self.assertEqual(f, {"action": "抹消", "player": "竹丸和幸", "day": "７"})
+
+    def test_detect_登録_simple(self):
+        from src.nomotoke_rss_router import detect_official_notice_action
+
+        f = detect_official_notice_action("【セパ公示】（８日）巨人は石塚裕惺を登録")
+        self.assertEqual(f["action"], "登録")
+        self.assertEqual(f["player"], "石塚裕惺")
+
+    def test_detect_giants_action_ignores_other_team_listed_first(self):
+        from src.nomotoke_rss_router import detect_official_notice_action
+
+        f = detect_official_notice_action(
+            "【公示】（５日）阪神は大山悠輔を登録 巨人は門脇誠を抹消"
+        )
+        # Giants action wins regardless of position in the title.
+        self.assertEqual(f["player"], "門脇誠")
+        self.assertEqual(f["action"], "抹消")
+
+    def test_detect_no_match_when_no_giants_action(self):
+        from src.nomotoke_rss_router import detect_official_notice_action
+
+        for title in (
+            "巨人 戸郷翔征が好投",
+            "【セパ公示】（５日）中日は高橋宏斗を抹消",
+            "巨人練習試合の予告先発",
+        ):
+            with self.subTest(title=title):
+                self.assertEqual(detect_official_notice_action(title), {})
+
+    def test_router_routes_hochi_official_notice_to_official_notice_v1(self):
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title="【セパ公示】（７日）巨人はドラ１竹丸和幸を抹消 中日は高橋宏斗、楽天は前田健太を抹消",
+                summary="",
+                link="https://hochi.news/articles/x.html",
+                published="Wed, 07 May 2026 10:00:00 +0000",
+            ),
+            source_name="スポーツ報知 巨人",
+            source_url="https://hochi.news/articles/x.html",
+        )
+        from src.nomotoke_rss_router import TEMPLATE_KEY_OFFICIAL_NOTICE
+
+        self.assertTrue(r.matched)
+        self.assertEqual(r.template_key, TEMPLATE_KEY_OFFICIAL_NOTICE)
+        dp = r.would_render_call["data_preview"]
+        self.assertEqual(dp["team_name"], "巨人")
+        self.assertEqual(dp["action"], "抹消")
+        self.assertEqual(dp["removed"], ["竹丸和幸"])
+        self.assertEqual(dp["registered"], [])
+
+    def test_router_does_not_route_when_giants_absent(self):
+        # Title without 巨人 must NOT produce official_notice (renders
+        # the wrong team's card otherwise).
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title="【セパ公示】（５日）中日は高橋宏斗を抹消",
+                summary="",
+                link="https://hochi.news/articles/y.html",
+                published="Mon, 05 May 2026 10:00:00 +0000",
+            ),
+            source_name="スポーツ報知 巨人",
+            source_url="https://hochi.news/articles/y.html",
+        )
+        from src.nomotoke_rss_router import TEMPLATE_KEY_OFFICIAL_NOTICE
+
+        # Either a different template (Giants-relevance check fails) or
+        # short_news_url — never official_notice for a non-Giants action.
+        self.assertNotEqual(r.template_key, TEMPLATE_KEY_OFFICIAL_NOTICE)
 
 
 class VideoCrossTeamFilterTests(unittest.TestCase):

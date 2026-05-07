@@ -60,6 +60,7 @@ TEMPLATE_KEY_MANAGER_COMMENT = "nomotoke_card_manager_comment_v1"
 TEMPLATE_KEY_PLAYER_COMMENT = "nomotoke_card_player_comment_v1"
 TEMPLATE_KEY_PREGAME_PITCHER = "nomotoke_card_pregame_pitcher_v1"
 TEMPLATE_KEY_VIDEO = "nomotoke_card_video_v1"
+TEMPLATE_KEY_OFFICIAL_NOTICE = "nomotoke_card_official_notice_v1"
 
 
 RSS_ONLY_ALLOWED_TEMPLATES: Tuple[str, ...] = (
@@ -74,6 +75,11 @@ RSS_ONLY_ALLOWED_TEMPLATES: Tuple[str, ...] = (
     # config/youtube_video_sources.json (NOT config/rss_sources.json),
     # so the production rss_fetcher.py never picks these up.
     TEMPLATE_KEY_VIDEO,
+    # NOMOTOKE-OFFICIAL-NOTICE-FROM-HOCHI-001: official_notice_v1 routes
+    # from hochi (and similar) RSS titles like 「【セパ公示】（X日）巨人は
+    # <player>を<抹消|登録>」 — pure title-regex extraction, zero new
+    # fetch.
+    TEMPLATE_KEY_OFFICIAL_NOTICE,
 )
 
 
@@ -83,7 +89,6 @@ RSS_ONLY_BLOCKED_TEMPLATES: Tuple[str, ...] = (
     "nomotoke_card_live_at_bats_v1",
     "nomotoke_card_player_stats_v1",
     "nomotoke_card_broadcast_v1",
-    "nomotoke_card_official_notice_v1",
 )
 
 
@@ -161,11 +166,17 @@ QUALITY_CEILING_BY_TEMPLATE: Dict[str, Dict[str, Any]] = {
         "allow_manual_intake": True,
         "allow_structured_data": True,
     },
-    "nomotoke_card_official_notice_v1": {
-        "rss_only_quality": "low",
-        "reason": "NPB公式 X bridge から「登録: X / 抹消: Y」regex 抽出は不安定。登録人数・残り枠は無理。",
-        "required_external_data": ["NPB公式公示 HTML"],
-        "allow_rss_only": False,
+    TEMPLATE_KEY_OFFICIAL_NOTICE: {
+        # NOMOTOKE-OFFICIAL-NOTICE-FROM-HOCHI-001: hochi consistently
+        # publishes 「【セパ公示】（X日）巨人は<player>を<action>」 — title
+        # regex captures team / player / action with high precision.
+        # Roster counts and remaining slots are still impossible from
+        # title alone (would need NPB公式 HTML), so the renderer's
+        # current_count / remaining_slots fields stay empty.
+        "rss_only_quality": "medium",
+        "reason": "hochi 「【セパ公示】（X日）巨人は<player>を<抹消|登録>」 regex 抽出。登録人数・残り枠は title からは取れず空欄。",
+        "required_external_data": [],
+        "allow_rss_only": True,
         "allow_manual_intake": True,
         "allow_structured_data": True,
     },
@@ -744,6 +755,48 @@ def _looks_like_live_inning_blurb(title: str) -> bool:
     if _LIVE_GAME_BOUNDARY_TITLE_RE.match(text):
         return True
     return False
+
+
+# NOMOTOKE-OFFICIAL-NOTICE-FROM-HOCHI-001: title-regex extractor for
+# hochi-style 「【セパ公示】（X日）巨人は<player>を<抹消|登録>」 articles.
+# - 「ドラN」 / 「育成」 prefixes on the player name are stripped.
+# - Multi-team listings (中日 / 楽天 …) are ignored — Giants only.
+# - The (X日) marker is honoured for the date_label fallback when the
+#   feed's published timestamp is missing.
+_OFFICIAL_NOTICE_TITLE_RE = re.compile(
+    r"【\s*(?:セパ|セ・|パ・)?公示\s*】"
+    r"\s*[（(]?\s*(?P<day>\d{1,2})日?\s*[)）]?"
+)
+_OFFICIAL_NOTICE_GIANTS_ACTION_RE = re.compile(
+    r"巨人[はが]\s*"
+    r"(?:ドラ\s*[0-9０-９]+\s*)?"
+    r"(?:育成\s*[0-9０-９]+\s*)?"
+    r"(?P<player>[^\s、,。を登録抹消、,]{2,12})"
+    r"を\s*(?P<action>抹消|登録|入れ替え)"
+)
+
+
+def detect_official_notice_action(
+    title: str, summary: str = ""
+) -> Dict[str, Any]:
+    """Return ``{action, player, day}`` if the title matches a hochi
+    「【セパ公示】」 with a Giants action, else ``{}``.
+
+    Conservative: only emits when BOTH the 公示 keyword block and the
+    巨人は<player>を<action> phrase are present in the same title.
+    """
+    text = title or ""
+    if not _OFFICIAL_NOTICE_TITLE_RE.search(text):
+        return {}
+    m_action = _OFFICIAL_NOTICE_GIANTS_ACTION_RE.search(text)
+    if not m_action:
+        return {}
+    day_match = _OFFICIAL_NOTICE_TITLE_RE.search(text)
+    return {
+        "action": m_action.group("action"),
+        "player": m_action.group("player").strip(),
+        "day": day_match.group("day") if day_match else "",
+    }
 
 
 # NOMOTOKE-PREGAME-PITCHER-SPACE-SEPARATED-002: secondary regex for the
@@ -1328,6 +1381,7 @@ def _dedupe_key(template_key: str, canonical: str) -> str:
         TEMPLATE_KEY_PLAYER_COMMENT: "player_comment",
         TEMPLATE_KEY_PREGAME_PITCHER: "pregame",
         TEMPLATE_KEY_VIDEO: "video",
+        TEMPLATE_KEY_OFFICIAL_NOTICE: "official_notice",
     }.get(template_key, template_key)
     return f"{short}:{h}"
 
@@ -1390,6 +1444,13 @@ REQUIRED_FACTS_BY_TEMPLATE: Dict[str, List[str]] = {
         "video_id(11chars)",
         "player_name(quoted in title)",
         "play_summary",
+    ],
+    TEMPLATE_KEY_OFFICIAL_NOTICE: [
+        "source_url",
+        "source_name",
+        "title_with_公示_keyword",
+        "giants_player_name",
+        "action(登録|抹消|入れ替え)",
     ],
 }
 
@@ -1547,6 +1608,52 @@ def route_rss_entry_to_nomotoke_card(
                 },
             },
             confidence=_confidence_for(TEMPLATE_KEY_VIDEO, tier),
+            canonical_url=canonical,
+            source_name=source_name,
+        )
+
+    # ------------------------------------------------------------------
+    # 0b. official_notice_v1 (NOMOTOKE-OFFICIAL-NOTICE-FROM-HOCHI-001)
+    #
+    # hochi-style 「【セパ公示】（X日）巨人は<player>を<抹消|登録>」.
+    # Pure title regex; no body fetch. Falls through to short_news_url
+    # when the title doesn't include 巨人 (e.g. listings about other
+    # teams only) so we never produce a non-Giants official_notice card.
+    # ------------------------------------------------------------------
+    notice_facts = detect_official_notice_action(title, summary)
+    if notice_facts:
+        action_jp = notice_facts["action"]
+        player = notice_facts["player"]
+        registered = [player] if action_jp == "登録" else []
+        removed = [player] if action_jp == "抹消" else []
+        return RouteResult(
+            matched=True,
+            template_key=TEMPLATE_KEY_OFFICIAL_NOTICE,
+            tier=tier,
+            extracted_facts={
+                "team": "巨人",
+                "action": action_jp,
+                "player": player,
+            },
+            missing_facts=[],
+            skip_reason="",
+            dedupe_key=_dedupe_key(TEMPLATE_KEY_OFFICIAL_NOTICE, canonical),
+            would_render_call={
+                "renderer_func_name": "render_official_notice_card",
+                "data_preview": {
+                    "team_name": "巨人",
+                    "action": action_jp,
+                    "date_label": _date_label_from_iso(published),
+                    "registered": registered,
+                    "removed": removed,
+                    "official_url": chosen_url,
+                    "official_url_label": source_name or "出典",
+                    "source_url": chosen_url,
+                    "source_name": source_name,
+                    "source_label": source_name,
+                },
+            },
+            confidence=_confidence_for(TEMPLATE_KEY_OFFICIAL_NOTICE, tier),
             canonical_url=canonical,
             source_name=source_name,
         )

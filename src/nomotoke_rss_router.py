@@ -819,6 +819,37 @@ def youtube_embed_iframe(video_id: str) -> str:
     )
 
 
+_VIDEO_DESC_HTML_TAG_RE = re.compile(r"<[^>]*>")
+_VIDEO_DESC_URL_RE = re.compile(r"https?://\S+")
+_VIDEO_DESC_HASHTAG_RE = re.compile(r"#\S+")
+_VIDEO_DESC_WS_RE = re.compile(r"\s+")
+
+
+def sanitize_video_description(raw: str) -> str:
+    """Strip URLs / HTML tags / hashtags / channel boilerplate from a
+    YouTube description before it is forwarded to render_video_card.
+
+    YouTube channel descriptions almost always carry channel-promo URLs
+    (``https://bit.ly/...``), hashtag walls (``#巨人 #giants``), and
+    sponsored boilerplate. Surfacing them in the visible body violates
+    the "visible raw URL 0" rule. This helper:
+      1. drops HTML tags,
+      2. drops http(s) URLs,
+      3. drops ``#hashtag`` tokens,
+      4. collapses whitespace + newlines,
+      5. caps at 120 chars (renderer further caps at sentence boundary).
+
+    Returns "" if nothing meaningful remains.
+    """
+    if not isinstance(raw, str) or not raw:
+        return ""
+    text = _VIDEO_DESC_HTML_TAG_RE.sub(" ", raw)
+    text = _VIDEO_DESC_URL_RE.sub("", text)
+    text = _VIDEO_DESC_HASHTAG_RE.sub("", text)
+    text = _VIDEO_DESC_WS_RE.sub(" ", text).strip()
+    return text[:120]
+
+
 def extract_video_facts(title: str) -> Dict[str, str]:
     """Extract player_name + play_summary from a YouTube video title.
 
@@ -1265,7 +1296,7 @@ def route_rss_entry_to_nomotoke_card(
                     "source_name": source_name,
                     "source_label": source_name,
                     "date_label": _date_label_from_iso(published),
-                    "description": (summary or "")[:120],
+                    "description": sanitize_video_description(summary),
                 },
             },
             confidence=_confidence_for(TEMPLATE_KEY_VIDEO, tier),

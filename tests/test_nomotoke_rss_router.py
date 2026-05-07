@@ -1539,6 +1539,32 @@ class VideoSourceRoutingTests(unittest.TestCase):
             r.skip_reason, "insufficient_required_facts:video:player_name"
         )
 
+    def test_sanitize_video_description_strips_url_hashtag_html(self):
+        from src.nomotoke_rss_router import sanitize_video_description
+
+        raw = (
+            '2026年5月6日(水・祝)<br />「巨人×ヤクルト」@東京ドーム<br />'
+            '#宮原駿介<br />#巨人 #ジャイアンツ #giants<br />'
+            '◆「GIANTS TV」https://bit.ly/3s2Un79<br />'
+            '&#8212;&#8212;&#8212;&#8211;'
+        )
+        out = sanitize_video_description(raw)
+        # No URL leak, no hashtag spam, no HTML tags.
+        self.assertNotIn("http://", out)
+        self.assertNotIn("https://", out)
+        self.assertNotIn("bit.ly", out)
+        self.assertNotIn("<", out)
+        self.assertNotIn("#", out)
+        # Some descriptive context survives.
+        self.assertIn("巨人", out)
+        self.assertIn("ヤクルト", out)
+
+    def test_sanitize_video_description_handles_empty_and_none(self):
+        from src.nomotoke_rss_router import sanitize_video_description
+
+        self.assertEqual(sanitize_video_description(""), "")
+        self.assertEqual(sanitize_video_description(None), "")
+
     def test_video_taxonomy_and_required_facts_listed(self):
         from src.nomotoke_rss_router import (
             REQUIRED_FACTS_BY_TEMPLATE,

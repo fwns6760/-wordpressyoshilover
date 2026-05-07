@@ -893,11 +893,10 @@ def render_official_notice_card(data: Dict[str, Any]) -> Dict[str, Any]:
             + "</ul>"
         )
 
-    if data.get("enable_roster_aside"):
-        all_names = list(registered) + list(removed)
-        aside = _render_roster_aside(all_names)
-        if aside:
-            parts.append(aside)
+    all_names = list(registered) + list(removed)
+    aside = _render_roster_aside(all_names)
+    if aside:
+        parts.append(aside)
 
     current_count = data.get("current_count")
     remaining_slots = data.get("remaining_slots")
@@ -996,7 +995,7 @@ def render_pregame_pitcher_card(data: Dict[str, Any]) -> Dict[str, Any]:
     first = matchups[0] if isinstance(matchups[0], dict) else {}
     primary_pitcher = (first.get("pitcher_a") or "").strip()
 
-    if data.get("enable_roster_aside") and primary_pitcher:
+    if primary_pitcher:
         aside = _render_roster_aside(primary_pitcher)
         if aside:
             parts.append(aside)
@@ -1234,10 +1233,9 @@ def render_video_card(data: Dict[str, Any]) -> Dict[str, Any]:
                 description = description[:120]
         parts.append(f"<p>{_esc(description)}</p>")
 
-    if data.get("enable_roster_aside"):
-        aside = _render_roster_aside(player_name)
-        if aside:
-            parts.append(aside)
+    aside = _render_roster_aside(player_name)
+    if aside:
+        parts.append(aside)
 
     if player_name:
         closing_html = f"<p>{_esc(player_name)}選手のプレーです。</p>"
@@ -1474,10 +1472,9 @@ def _render_quote_comment_card(
         "</blockquote>"
     )
 
-    if data.get("enable_roster_aside"):
-        aside = _render_roster_aside(speaker_name)
-        if aside:
-            parts.append(aside)
+    aside = _render_roster_aside(speaker_name)
+    if aside:
+        parts.append(aside)
 
     closing_html = (
         f"<p>{_esc(speaker_name)}{closing_role}がコメントです。</p>"

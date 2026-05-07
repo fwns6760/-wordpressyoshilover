@@ -841,19 +841,12 @@ def _try_render_via_nomotoke(
     else:
         return None
 
-    # NOMOTOKE-INTAKE-ROSTER-ASIDE-001: every nomotoke template that
-    # carries a name field gets the 関連選手・首脳陣 aside enabled. The
-    # renderer only emits the aside when at least one name maps to a
-    # roster entry, so flagging templates without a name is harmless.
-    if template_key in (
-        "nomotoke_card_manager_comment_v1",
-        "nomotoke_card_player_comment_v1",
-        "nomotoke_card_video_v1",
-        "nomotoke_card_pregame_pitcher_v1",
-        "nomotoke_card_official_notice_v1",
-    ):
-        data["enable_roster_aside"] = True
-
+    # NOMOTOKE-INTAKE-ROSTER-ASIDE-001 Phase 2: roster aside is now
+    # default-on at the renderer level (flag-gating removed). The
+    # renderer still emits the aside only when at least one name
+    # maps to a roster entry, so the behaviour is identical to the
+    # Phase 1 manual-intake path while RSS pipeline posts now also
+    # benefit automatically.
     try:
         renderer = select_renderer(template_key)
     except Exception:
@@ -991,6 +984,25 @@ def _try_render_via_nomotoke(
             block = _build_matchup_record_block(opponent)
             if block:
                 extra_blocks.append(block)
+
+    # NOMOTOKE-INTAKE-NEXT-GAME-001 (G4) + STANDINGS-001 (C4):
+    # game-related templates pull the next Giants game (Yahoo) and
+    # the current Central League standings (NPB.jp). Cached for 6h
+    # per Cloud Run instance — first request after cold start
+    # triggers ≤2 extra GETs, subsequent requests within 6h are free.
+    if template_key in (
+        "nomotoke_card_short_news_url_v1",
+        "nomotoke_card_postgame_v1",
+        "nomotoke_card_pregame_pitcher_v1",
+        "nomotoke_card_manager_comment_v1",
+        "nomotoke_card_player_comment_v1",
+    ):
+        block = _build_standings_block()
+        if block:
+            extra_blocks.append(block)
+        block = _build_next_game_block()
+        if block:
+            extra_blocks.append(block)
 
     # NOMOTOKE-INTAKE-JSONLD-META-001: the 「📅 掲載日 by 著者」 meta
     # line for short_news_url + postgame. Empty when JSON-LD lacks
@@ -1420,6 +1432,186 @@ def _build_jsonld_meta_block(raw_html: str, source_name: str) -> str:
     return (
         '<aside class="nomotoke-source-meta">'
         f'<p>{" ".join(pieces)}</p>'
+        "</aside>"
+    )
+
+
+# NOMOTOKE-INTAKE-NEXT-GAME-001 (G4) + STANDINGS-001 (C4):
+# inline lazy fetch + module-level TTL cache. Each Cloud Run instance
+# refetches at most once per ``_CACHE_TTL_SEC`` per data source.
+# Storage: in-memory dict — lost on instance restart and rebuilt on
+# the next manual-intake submission. No new GCS bucket, no Firestore,
+# no Scheduler. ¥0.
+
+_CACHE_TTL_SEC = 6 * 3600  # 6 hours
+
+_NEXT_GAME_CACHE: dict[str, Any] = {"data": None, "fetched_at": 0.0}
+_STANDINGS_CACHE: dict[str, Any] = {"data": [], "fetched_at": 0.0}
+
+
+def _fetch_url_text(url: str, *, timeout: int = 6) -> str:
+    """Best-effort HTTP GET. Empty string on any failure."""
+    if not url:
+        return ""
+    try:
+        import urllib.request
+    except Exception:
+        return ""
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; yoshilover-manual-intake/1)",
+                "Accept": "text/html,application/xhtml+xml",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            content = resp.read(800_000)
+    except Exception:
+        return ""
+    return content.decode("utf-8", errors="replace")
+
+
+def _get_giants_next_game() -> dict[str, str]:
+    """Return the next pending Giants game from the Yahoo schedule.
+
+    Walks today + next 6 days (looking for the first non-completed
+    Giants game). Cached for 6 hours per Cloud Run instance.
+    """
+    now = time.time()
+    if _NEXT_GAME_CACHE.get("data") and (
+        now - _NEXT_GAME_CACHE.get("fetched_at", 0) < _CACHE_TTL_SEC
+    ):
+        return _NEXT_GAME_CACHE["data"] or {}
+    try:
+        from src.source_yahoo_schedule_extractor import (
+            find_giants_pregame_games,
+        )
+    except Exception:
+        return {}
+    today = datetime.now(JST).date()
+    found: dict[str, str] = {}
+    for offset in range(7):
+        d = today + timedelta(days=offset)
+        url = f"https://baseball.yahoo.co.jp/npb/schedule/?date={d.isoformat()}"
+        html_text = _fetch_url_text(url)
+        if not html_text:
+            continue
+        try:
+            pregame = find_giants_pregame_games(html_text)
+        except Exception:
+            pregame = []
+        if pregame:
+            game = dict(pregame[0])
+            game["date"] = d.isoformat()
+            found = game
+            break
+    _NEXT_GAME_CACHE["data"] = found
+    _NEXT_GAME_CACHE["fetched_at"] = now
+    return found
+
+
+def _build_next_game_block() -> str:
+    """Render the 「🗓 次戦」 ``<aside>``. Empty on cache miss / no
+    upcoming Giants game found."""
+    g = _get_giants_next_game()
+    if not g:
+        return ""
+    home = (g.get("home") or "").strip()
+    away = (g.get("away") or "").strip()
+    date_iso = (g.get("date") or "").strip()
+    if not (home or away):
+        return ""
+    date_jp = ""
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})$", date_iso)
+    if m:
+        date_jp = f"{int(m.group(2))}/{int(m.group(3))}"
+    parts = []
+    if date_jp:
+        parts.append(html.escape(date_jp))
+    parts.append(f"{html.escape(away)} vs {html.escape(home)}")
+    line = " ".join(parts)
+    yahoo_url = (g.get("url") or "").strip()
+    anchor = ""
+    if yahoo_url:
+        anchor = (
+            f' (<a href="{html.escape(yahoo_url)}" target="_blank" rel="noopener">Yahoo!</a>)'
+        )
+    return (
+        '<aside class="nomotoke-next-game">'
+        '<p class="nomotoke-next-game__label">🗓 次戦</p>'
+        f"<p>{line}{anchor}</p>"
+        "</aside>"
+    )
+
+
+def _get_standings_for_giants() -> dict[str, str]:
+    """Fetch + cache NPB Central League standings; return the Giants row.
+
+    Cache: 6h per Cloud Run instance. Empty dict on parse failure /
+    Giants row absent (defensive — keeps the block from rendering
+    a half-broken summary).
+    """
+    now = time.time()
+    cached_data = _STANDINGS_CACHE.get("data") or []
+    if cached_data and (now - _STANDINGS_CACHE.get("fetched_at", 0) < _CACHE_TTL_SEC):
+        rows = cached_data
+    else:
+        try:
+            from src.source_npb_standings_extractor import (
+                find_giants_standings_row,
+                parse_npb_standings_html,
+            )
+        except Exception:
+            return {}
+        year = datetime.now(JST).year
+        url = f"https://npb.jp/bis/{year}/stats/std_c.html"
+        html_text = _fetch_url_text(url)
+        if not html_text:
+            return {}
+        try:
+            rows = parse_npb_standings_html(html_text)
+        except Exception:
+            rows = []
+        _STANDINGS_CACHE["data"] = rows
+        _STANDINGS_CACHE["fetched_at"] = now
+    try:
+        from src.source_npb_standings_extractor import find_giants_standings_row
+    except Exception:
+        return {}
+    giants = find_giants_standings_row(rows)
+    return giants or {}
+
+
+def _build_standings_block() -> str:
+    """Render the 「📊 セ・リーグ順位」 ``<aside>``. Empty when the
+    Giants row is missing or the parse failed."""
+    g = _get_standings_for_giants()
+    if not g:
+        return ""
+    rank = g.get("rank") or ""
+    wins = g.get("wins") or ""
+    losses = g.get("losses") or ""
+    draws = g.get("draws") or ""
+    win_pct = g.get("win_pct") or ""
+    gb = g.get("gb") or ""
+    if not (rank and wins and losses):
+        return ""
+    record = f"{wins}勝{losses}敗"
+    if draws and draws != "0":
+        record += f"{draws}分"
+    pieces = [f"{rank}位", record]
+    if win_pct:
+        pieces.append(f"勝率{win_pct}")
+    if gb and gb != "-":
+        pieces.append(f"ゲーム差{gb}")
+    line = " / ".join(pieces)
+    today = datetime.now(JST).date()
+    today_jp = f"{today.month}/{today.day}"
+    return (
+        '<aside class="nomotoke-standings">'
+        '<p class="nomotoke-standings__label">📊 セ・リーグ順位</p>'
+        f"<p>{html.escape(today_jp)}時点: 巨人 {html.escape(line)}</p>"
         "</aside>"
     )
 

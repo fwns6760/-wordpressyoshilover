@@ -456,6 +456,8 @@ class CLIArgParserTests(unittest.TestCase):
                 "S",
                 "--source-published-at",
                 "2026-05-07T18:30:00+09:00",
+                "--article-type",
+                "監督談話",
             ]
         )
         self.assertEqual(ns.memo, "宮原昇格")
@@ -463,11 +465,55 @@ class CLIArgParserTests(unittest.TestCase):
         self.assertEqual(ns.title, "T")
         self.assertEqual(ns.summary, "S")
         self.assertEqual(ns.source_published_at, "2026-05-07T18:30:00+09:00")
+        self.assertEqual(ns.article_type, "監督談話")
+
+    def test_parser_default_article_type_is_auto(self):
+        p = mi._build_arg_parser()
+        ns = p.parse_args(["https://x.com/foo/status/1"])
+        self.assertEqual(ns.article_type, mi.ARTICLE_TYPE_AUTO)
+
+    def test_parser_rejects_invalid_article_type(self):
+        p = mi._build_arg_parser()
+        with self.assertRaises(SystemExit):
+            p.parse_args(
+                ["https://x.com/foo/status/1", "--article-type", "存在しない"]
+            )
 
     def test_parser_rejects_invalid_mode(self):
         p = mi._build_arg_parser()
         with self.assertRaises(SystemExit):
             p.parse_args(["https://x.com/foo/status/1", "--mode", "publish"])
+
+
+class ArticleTypeNormalizationTests(unittest.TestCase):
+    def test_empty_defaults_to_auto(self):
+        self.assertEqual(
+            mi._normalize_article_type(""), (mi.ARTICLE_TYPE_AUTO, "")
+        )
+        self.assertEqual(
+            mi._normalize_article_type("  "), (mi.ARTICLE_TYPE_AUTO, "")
+        )
+
+    def test_known_values_pass_through(self):
+        for value in mi.ARTICLE_TYPE_OVERRIDES.keys():
+            with self.subTest(value=value):
+                norm, err = mi._normalize_article_type(value)
+                self.assertEqual(norm, value)
+                self.assertEqual(err, "")
+
+    def test_unknown_returns_error(self):
+        for bad in ("Auto", "AUTO", "試合", "ニュース速報", "x"):
+            with self.subTest(bad=bad):
+                norm, err = mi._normalize_article_type(bad)
+                self.assertEqual(norm, "")
+                self.assertEqual(err, "invalid_article_type")
+
+    def test_choices_tuple_includes_auto_and_overrides(self):
+        self.assertIn(mi.ARTICLE_TYPE_AUTO, mi.ARTICLE_TYPE_CHOICES)
+        for value in mi.ARTICLE_TYPE_OVERRIDES.keys():
+            self.assertIn(value, mi.ARTICLE_TYPE_CHOICES)
+        # 12 total: auto + 11 overrides.
+        self.assertEqual(len(mi.ARTICLE_TYPE_CHOICES), 12)
 
 
 class SourcePublishedAtNormalizationTests(unittest.TestCase):
@@ -665,6 +711,124 @@ class SourcePublishedAtIntakeTests(_IntakeBaseTest):
         self.assertEqual(
             captured.get("source_published_at_iso"), "2026-05-07T18:30:00+09:00"
         )
+
+    def test_auto_article_type_uses_existing_detector(self):
+        # _resolve_routing_lightweight is patched in _IntakeBaseTest to return
+        # ("選手情報", "manual_intake"); auto must keep that result.
+        captured: dict = {}
+
+        def fake_create(**kwargs):
+            captured.update(kwargs)
+            return 410
+
+        wp = MagicMock()
+        wp.create_post = fake_create
+        code, out = mi.run_manual_intake(
+            url="https://hochi.news/articles/auto.html",
+            title_override="巨人 試合速報 0-5 ヤクルト",
+            summary_override="ヤクルト戦敗戦",
+            mode="draft",
+            article_type=mi.ARTICLE_TYPE_AUTO,
+            wp_client_factory=lambda: wp,
+            rate_limit_lockfile=self.lockfile,
+        )
+        self.assertEqual(code, mi.EXIT_OK)
+        self.assertEqual(out["article_type"], mi.ARTICLE_TYPE_AUTO)
+        self.assertEqual(out["article_type_source"], "auto_detected")
+        self.assertEqual(out["category"], "選手情報")
+        self.assertEqual(out["subtype"], "manual_intake")
+        self.assertEqual(out["template_key"], "manual_intake")
+        self.assertEqual(out["category_ids"], [664])
+        self.assertEqual(captured.get("categories"), [664])
+
+    def test_article_type_override_pins_category_subtype_template(self):
+        captured: dict = {}
+
+        def fake_create(**kwargs):
+            captured.update(kwargs)
+            return 411
+
+        wp = MagicMock()
+        wp.create_post = fake_create
+        code, out = mi.run_manual_intake(
+            url="https://hochi.news/articles/postgame.html",
+            title_override="巨人 試合終了 5-2 ヤクルト",
+            summary_override="勝利",
+            mode="draft",
+            article_type="試合結果",
+            wp_client_factory=lambda: wp,
+            rate_limit_lockfile=self.lockfile,
+        )
+        self.assertEqual(code, mi.EXIT_OK)
+        self.assertEqual(out["article_type"], "試合結果")
+        self.assertEqual(out["article_type_source"], "user_override")
+        self.assertEqual(out["category"], "試合速報")
+        self.assertEqual(out["subtype"], "game_result")
+        self.assertEqual(out["template_key"], "manual_intake")
+        # 試合速報 -> category_id 663 per config/categories.json
+        self.assertEqual(out["category_ids"], [663])
+        # WP receives the resolved category_id list, NOT the name.
+        self.assertEqual(captured.get("categories"), [663])
+        self.assertNotIn("試合速報", str(captured.get("categories")))
+
+    def test_article_type_override_dry_run_resolves_category_ids(self):
+        code, out = mi.run_manual_intake(
+            url="https://hochi.news/articles/manager.html",
+            title_override="阿部監督が打線について語る",
+            summary_override="2軍からの昇格",
+            mode="dry-run",
+            article_type="監督談話",
+            rate_limit_lockfile=self.lockfile,
+        )
+        self.assertEqual(code, mi.EXIT_OK)
+        self.assertEqual(out["category"], "首脳陣")
+        self.assertEqual(out["subtype"], "manager")
+        # 首脳陣 -> 665
+        self.assertEqual(out["category_ids"], [665])
+
+    def test_unknown_article_type_returns_exit_16_no_wp(self):
+        wp_factory = MagicMock()
+        code, out = mi.run_manual_intake(
+            url="https://hochi.news/articles/x.html",
+            title_override="巨人 試合終了 0-5 ヤクルト",
+            summary_override="ヤクルト戦敗戦",
+            mode="draft",
+            article_type="not_a_real_type",
+            wp_client_factory=wp_factory,
+            rate_limit_lockfile=self.lockfile,
+        )
+        self.assertEqual(code, mi.EXIT_INVALID_ARTICLE_TYPE)
+        self.assertEqual(out["reason"], "validation_failed")
+        self.assertEqual(out["skip_reason"], "invalid_article_type")
+        wp_factory.assert_not_called()
+
+    def test_article_type_override_does_not_alter_x_url_normalization(self):
+        captured: dict = {}
+
+        def fake_create(**kwargs):
+            captured.update(kwargs)
+            return 412
+
+        wp = MagicMock()
+        wp.create_post = fake_create
+        code, out = mi.run_manual_intake(
+            url="https://x.com/TokyoGiants/status/9999",
+            title_override="巨人 試合終了 0-5 ヤクルト",
+            mode="draft",
+            article_type="試合結果",
+            wp_client_factory=lambda: wp,
+            rate_limit_lockfile=self.lockfile,
+        )
+        self.assertEqual(code, mi.EXIT_OK)
+        self.assertEqual(out["source_kind"], "x")
+        self.assertEqual(
+            captured.get("source_url"),
+            "https://twitter.com/TokyoGiants/status/9999",
+        )
+        self.assertEqual(out["category"], "試合速報")
+        # Body still embed-only — no source-fact inflation from article_type.
+        content = captured.get("content", "")
+        self.assertIn("twitter-tweet", content)
 
     def test_omitted_source_published_at_passes_none_to_create_post(self):
         captured: dict = {}

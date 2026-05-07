@@ -17,6 +17,7 @@ Body grounding integrity is preserved.
 Usage:
     python -m src.tools.manual_intake <url> [--memo "..."] [--mode draft|dry-run]
         [--title "..."] [--summary "..."] [--source-published-at "..."]
+        [--article-type auto|試合結果|...]
 
 Default --mode is "draft".
 
@@ -27,6 +28,14 @@ normalized value is written to WP post meta under
 so guarded-publish's freshness / source-time resolver can pick it up
 directly from meta — without depending on body_date fallback. memo is
 independent and still never reaches body / source_text / Gemini prompt.
+
+--article-type pins category / subtype / template_key when the operator
+overrides the auto detector. Allowed values: auto (default — keeps the
+existing detector) plus the YOSHILOVER article-type taxonomy
+(試合結果 / 試合速報 / 予告先発 / 公示 / 監督談話 / 選手コメント /
+動画 / 成績 / 番組情報 / コラム / ニュース). The category name is never
+sent to WP — it is resolved to a numeric category_id via
+config/categories.json before WP write.
 """
 
 from __future__ import annotations
@@ -62,10 +71,37 @@ EXIT_MISSING_TITLE_OR_SUMMARY = 12
 EXIT_DUPLICATE = 13
 EXIT_VALIDATION_FAILED = 14
 EXIT_INVALID_SOURCE_PUBLISHED_AT = 15
+EXIT_INVALID_ARTICLE_TYPE = 16
 EXIT_WP_DRAFT_FAILED = 20
 EXIT_DOWNSTREAM_HANDOFF_FAILED = 21
 EXIT_RATE_LIMITED = 30
 EXIT_UNEXPECTED = 2
+
+
+# article_type override → (category_name, subtype, template_key).
+# category_name MUST resolve to a numeric category_id via config/categories.json
+# downstream — we never pass the raw name to WP. subtype values are kept
+# conservative (they only steer template_key + freshness pipeline; they do
+# not loosen any guarded-publish gate). "auto" sentinel triggers the
+# existing _resolve_routing_lightweight detector.
+ARTICLE_TYPE_AUTO = "auto"
+ARTICLE_TYPE_OVERRIDES: dict[str, tuple[str, str, str]] = {
+    "試合結果": ("試合速報", "game_result", "manual_intake"),
+    "試合速報": ("試合速報", "postgame", "manual_intake"),
+    "予告先発": ("試合速報", "probable_starter", "manual_intake"),
+    "公示": ("球団情報", "notice", "manual_intake"),
+    "監督談話": ("首脳陣", "manager", "manual_intake"),
+    "選手コメント": ("選手情報", "comment", "manual_intake"),
+    "動画": ("コラム", "program", "manual_intake"),
+    "成績": ("選手情報", "stats", "manual_intake"),
+    "番組情報": ("コラム", "program", "manual_intake"),
+    "コラム": ("コラム", "other", "manual_intake"),
+    "ニュース": ("コラム", "other", "manual_intake"),
+}
+ARTICLE_TYPE_CHOICES: tuple[str, ...] = (
+    ARTICLE_TYPE_AUTO,
+    *ARTICLE_TYPE_OVERRIDES.keys(),
+)
 
 
 RATE_LIMIT_WINDOW_SEC = 60
@@ -93,6 +129,20 @@ _META_PATTERNS: tuple[tuple[str, str], ...] = (
     (r'<meta\s+name=["\']description["\']\s+content=["\']([^"\']+)["\']', "summary"),
     (r'<meta\s+name=["\']twitter:description["\']\s+content=["\']([^"\']+)["\']', "summary"),
 )
+
+
+def _normalize_article_type(value: str) -> tuple[str, str]:
+    """Validate the article_type override.
+
+    Returns (canonical_value, error_reason). Empty/None defaults to
+    ARTICLE_TYPE_AUTO. Unknown values yield ("", "invalid_article_type").
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return ARTICLE_TYPE_AUTO, ""
+    if raw in ARTICLE_TYPE_CHOICES:
+        return raw, ""
+    return "", "invalid_article_type"
 
 
 def _normalize_source_published_at(value: str) -> tuple[str, str]:
@@ -386,6 +436,7 @@ def run_manual_intake(
     title_override: str = "",
     summary_override: str = "",
     source_published_at: str = "",
+    article_type: str = ARTICLE_TYPE_AUTO,
     wp_client_factory: Callable[[], Any] | None = None,
     rate_limit_lockfile: Path | None = None,
     fetch_meta: Callable[..., dict[str, str]] = _fetch_news_meta,
@@ -415,11 +466,23 @@ def run_manual_intake(
         "post_id": None,
         "draft_url": None,
         "normalized_source_published_at": "",
+        "article_type": ARTICLE_TYPE_AUTO,
+        "article_type_source": "auto_detected",
     }
 
     if not _is_valid_url(url):
         output["reason"] = "invalid_url"
         return EXIT_INVALID_URL, output
+
+    canonical_article_type, at_error = _normalize_article_type(article_type)
+    if at_error:
+        output["reason"] = "validation_failed"
+        output["skip_reason"] = at_error
+        return EXIT_INVALID_ARTICLE_TYPE, output
+    output["article_type"] = canonical_article_type
+    output["article_type_source"] = (
+        "auto_detected" if canonical_article_type == ARTICLE_TYPE_AUTO else "user_override"
+    )
 
     normalized_source_published_at, sp_error = _normalize_source_published_at(
         source_published_at
@@ -488,8 +551,22 @@ def run_manual_intake(
         source_kind=source_kind,
         logger=logger,
     )
+    template_key = "manual_intake"
+    if canonical_article_type != ARTICLE_TYPE_AUTO:
+        override_category, override_subtype, override_template = ARTICLE_TYPE_OVERRIDES[
+            canonical_article_type
+        ]
+        category = override_category
+        subtype = override_subtype
+        template_key = override_template
     output["category"] = category
     output["subtype"] = subtype
+    output["template_key"] = template_key
+    # Resolve category name -> WP category_id list eagerly so the service /
+    # CLI audit JSON shows the IDs that will actually be sent to WP. The
+    # category name itself is never sent to WP — only the resolved IDs.
+    resolved_category_ids = _resolve_wp_category_ids(category, logger)
+    output["category_ids"] = list(resolved_category_ids) if resolved_category_ids else []
 
     entry_title_norm = _normalize_title_for_dedupe(title)
     history = _safe_load_history(logger)
@@ -583,6 +660,17 @@ def _build_arg_parser() -> argparse.ArgumentParser:
             "Used as freshness/source-time metadata only — never as a fact source."
         ),
     )
+    p.add_argument(
+        "--article-type",
+        default=ARTICLE_TYPE_AUTO,
+        choices=ARTICLE_TYPE_CHOICES,
+        help=(
+            "optional article-type classification override. Default 'auto' "
+            "uses the existing detector; explicit values pin category / "
+            "subtype / template_key. Article type is metadata only — it is "
+            "NEVER used as a source fact."
+        ),
+    )
     return p
 
 
@@ -609,6 +697,7 @@ def main(argv: list[str] | None = None) -> int:
             title_override=args.title,
             summary_override=args.summary,
             source_published_at=args.source_published_at,
+            article_type=args.article_type,
             wp_client_factory=_default_wp_client_factory,
             logger=logger,
         )

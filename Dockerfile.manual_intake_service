@@ -1,0 +1,35 @@
+# Cloud Run service image for the manual_intake mobile GUI / API.
+# Pure stdlib HTTP server (http.server.BaseHTTPRequestHandler) — no FastAPI /
+# Flask / uvicorn. The service only creates WP drafts via the existing
+# manual_intake pipeline; it never publishes, calls Gemini, or hits X API.
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    PORT=8080
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt ./requirements.txt
+RUN python3 -m pip install --no-cache-dir --upgrade pip \
+    && python3 -m pip install --no-cache-dir -r requirements.txt
+
+COPY src/ ./src/
+COPY config/ ./config/
+COPY vendor/ ./vendor/
+
+RUN useradd --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser \
+    && mkdir -p /app/logs \
+    && chown -R appuser:appuser /app /home/appuser
+
+USER appuser
+
+EXPOSE 8080
+
+# Single-threaded stdlib HTTPServer; Cloud Run concurrency stays low (≤4).
+CMD ["python3", "-m", "src.manual_intake_service"]

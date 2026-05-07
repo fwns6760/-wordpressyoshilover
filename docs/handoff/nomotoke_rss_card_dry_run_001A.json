@@ -1,0 +1,848 @@
+{
+  "schema_version": "nomotoke_rss_card_dry_run.v1",
+  "generated_at": "2026-05-07T00:46:21Z",
+  "rss_only_allowed_templates": [
+    "nomotoke_card_short_news_url_v1",
+    "nomotoke_card_manager_comment_v1",
+    "nomotoke_card_player_comment_v1",
+    "nomotoke_card_pregame_pitcher_v1"
+  ],
+  "rss_only_blocked_templates": [
+    "nomotoke_card_lineup_v1",
+    "nomotoke_card_postgame_v1",
+    "nomotoke_card_live_at_bats_v1",
+    "nomotoke_card_player_stats_v1",
+    "nomotoke_card_broadcast_v1",
+    "nomotoke_card_official_notice_v1",
+    "nomotoke_card_video_v1"
+  ],
+  "manual_intake_candidate_templates": [
+    "nomotoke_card_short_news_url_v1",
+    "nomotoke_card_manager_comment_v1",
+    "nomotoke_card_player_comment_v1",
+    "nomotoke_card_pregame_pitcher_v1",
+    "nomotoke_card_lineup_v1",
+    "nomotoke_card_postgame_v1",
+    "nomotoke_card_live_at_bats_v1",
+    "nomotoke_card_player_stats_v1",
+    "nomotoke_card_broadcast_v1",
+    "nomotoke_card_official_notice_v1",
+    "nomotoke_card_video_v1"
+  ],
+  "structured_data_required_templates": [
+    "nomotoke_card_lineup_v1",
+    "nomotoke_card_postgame_v1",
+    "nomotoke_card_live_at_bats_v1",
+    "nomotoke_card_player_stats_v1",
+    "nomotoke_card_broadcast_v1",
+    "nomotoke_card_official_notice_v1"
+  ],
+  "quality_ceiling_by_template": {
+    "nomotoke_card_short_news_url_v1": {
+      "rss_only_quality": "high",
+      "reason": "URL + title + source_name のみで成立。RSS で全部揃う。",
+      "required_external_data": [],
+      "allow_rss_only": true,
+      "allow_manual_intake": true,
+      "allow_structured_data": true
+    },
+    "nomotoke_card_manager_comment_v1": {
+      "rss_only_quality": "medium",
+      "reason": "「{監督名}「{quote}」」regex で拾える。topic 推定は難。allowlist + quote_short 必須。",
+      "required_external_data": [],
+      "allow_rss_only": true,
+      "allow_manual_intake": true,
+      "allow_structured_data": false
+    },
+    "nomotoke_card_player_comment_v1": {
+      "rss_only_quality": "medium",
+      "reason": "「{選手名}「{quote}」」regex 抽出。player_name は曖昧性あり。quote_short 必須。",
+      "required_external_data": [],
+      "allow_rss_only": true,
+      "allow_manual_intake": true,
+      "allow_structured_data": false
+    },
+    "nomotoke_card_pregame_pitcher_v1": {
+      "rss_only_quality": "medium",
+      "reason": "「予告先発」keyword + 投手ペア regex。stale 36h 越えは skip。",
+      "required_external_data": [],
+      "allow_rss_only": true,
+      "allow_manual_intake": true,
+      "allow_structured_data": true
+    },
+    "nomotoke_card_lineup_v1": {
+      "rss_only_quality": "impossible",
+      "reason": "5 列スタメン表(打順/守備/選手名/打率/防御率)が RSS title/summary に存在せず。",
+      "required_external_data": [
+        "NPB公式 lineup",
+        "球団公式 lineup",
+        "一球速報"
+      ],
+      "allow_rss_only": false,
+      "allow_manual_intake": true,
+      "allow_structured_data": true
+    },
+    "nomotoke_card_postgame_v1": {
+      "rss_only_quality": "low",
+      "reason": "スコアは headline regex で抽出可。ただし inning_score / at_bats_rows / pitching_rows が RSS にない。full card は無理。",
+      "required_external_data": [
+        "NPB公式 score",
+        "Yahoo score"
+      ],
+      "allow_rss_only": false,
+      "allow_manual_intake": true,
+      "allow_structured_data": true
+    },
+    "nomotoke_card_live_at_bats_v1": {
+      "rss_only_quality": "impossible",
+      "reason": "試合中の at_bats_rows / pitching_rows が RSS に存在せず。",
+      "required_external_data": [
+        "一球速報",
+        "公式 score 構造データ"
+      ],
+      "allow_rss_only": false,
+      "allow_manual_intake": true,
+      "allow_structured_data": true
+    },
+    "nomotoke_card_player_stats_v1": {
+      "rss_only_quality": "impossible",
+      "reason": "成績表(打率/試合/打席/本塁打/打点/OPS or 投手 stats)が RSS にない。",
+      "required_external_data": [
+        "NPB公式 stats",
+        "DELTA"
+      ],
+      "allow_rss_only": false,
+      "allow_manual_intake": true,
+      "allow_structured_data": true
+    },
+    "nomotoke_card_broadcast_v1": {
+      "rss_only_quality": "low",
+      "reason": "5 列放送表(媒体/CH/時間/解説/実況)が RSS にない。",
+      "required_external_data": [
+        "球団公式放送予定",
+        "番組表 HTML"
+      ],
+      "allow_rss_only": false,
+      "allow_manual_intake": true,
+      "allow_structured_data": true
+    },
+    "nomotoke_card_official_notice_v1": {
+      "rss_only_quality": "low",
+      "reason": "NPB公式 X bridge から「登録: X / 抹消: Y」regex 抽出は不安定。登録人数・残り枠は無理。",
+      "required_external_data": [
+        "NPB公式公示 HTML"
+      ],
+      "allow_rss_only": false,
+      "allow_manual_intake": true,
+      "allow_structured_data": true
+    },
+    "nomotoke_card_video_v1": {
+      "rss_only_quality": "impossible",
+      "reason": "現状 config/rss_sources.json に YouTube channel RSS 未登録。supply ゼロ。YouTube RSS 追加で 'high' に昇格可。",
+      "required_external_data": [
+        "YouTube channel RSS の rss_sources.json への追加"
+      ],
+      "allow_rss_only": false,
+      "allow_manual_intake": true,
+      "allow_structured_data": false
+    }
+  },
+  "required_facts_by_template": {
+    "nomotoke_card_short_news_url_v1": [
+      "source_url",
+      "source_name",
+      "title"
+    ],
+    "nomotoke_card_manager_comment_v1": [
+      "source_url",
+      "source_name",
+      "title",
+      "manager_name(allowlist)",
+      "quote_short(<=100chars)"
+    ],
+    "nomotoke_card_player_comment_v1": [
+      "source_url",
+      "source_name",
+      "title",
+      "player_name",
+      "quote_short(<=100chars)"
+    ],
+    "nomotoke_card_pregame_pitcher_v1": [
+      "source_url",
+      "source_name",
+      "title",
+      "keyword:予告先発",
+      "pitcher_pair",
+      "stale<=36h"
+    ]
+  },
+  "skip_reason_taxonomy": [
+    "unsafe_url",
+    "missing_source_url",
+    "missing_source_name",
+    "missing_title",
+    "not_giants_related",
+    "stale_for_template",
+    "manager_not_in_allowlist",
+    "quote_too_long",
+    "quote_multiline_not_allowed",
+    "insufficient_required_facts:pregame_pitcher:pitcher_pair",
+    "insufficient_required_facts:manager_comment:quote_short",
+    "insufficient_required_facts:player_comment:player_name",
+    "insufficient_required_facts:player_comment:quote_short",
+    "insufficient_required_facts:short_news_url:title",
+    "insufficient_required_facts:short_news_url:source_url",
+    "insufficient_required_facts:short_news_url:source_name"
+  ],
+  "live_rss": {
+    "total_entries": 187,
+    "source_count": 13,
+    "hit_total": 76,
+    "skip_total": 111,
+    "template_counts": {
+      "nomotoke_card_player_comment_v1": 17,
+      "nomotoke_card_short_news_url_v1": 57,
+      "nomotoke_card_manager_comment_v1": 2
+    },
+    "skip_reason_counts": {
+      "not_giants_related": 111
+    },
+    "per_source_counts": {
+      "巨人公式X": 20,
+      "読売ジャイアンツX": 1,
+      "スポーツ報知巨人班X": 20,
+      "日刊スポーツX": 38,
+      "スポニチ野球記者X": 40,
+      "サンスポ巨人X": 20,
+      "スポーツ報知X": 37,
+      "報知野球X": 39,
+      "NPB公式X": 37,
+      "日刊スポーツ 巨人": 10,
+      "ベースボールキング": 36
+    },
+    "per_source_template_counts": {
+      "巨人公式X": {
+        "nomotoke_card_player_comment_v1": 1,
+        "nomotoke_card_short_news_url_v1": 19
+      },
+      "読売ジャイアンツX": {
+        "nomotoke_card_short_news_url_v1": 1
+      },
+      "スポーツ報知巨人班X": {
+        "nomotoke_card_short_news_url_v1": 11,
+        "nomotoke_card_player_comment_v1": 7,
+        "nomotoke_card_manager_comment_v1": 2
+      },
+      "サンスポ巨人X": {
+        "nomotoke_card_short_news_url_v1": 16,
+        "nomotoke_card_player_comment_v1": 4
+      },
+      "スポーツ報知X": {
+        "nomotoke_card_short_news_url_v1": 1
+      },
+      "報知野球X": {
+        "nomotoke_card_short_news_url_v1": 1
+      },
+      "NPB公式X": {
+        "nomotoke_card_short_news_url_v1": 3
+      },
+      "日刊スポーツ 巨人": {
+        "nomotoke_card_player_comment_v1": 5,
+        "nomotoke_card_short_news_url_v1": 5
+      }
+    },
+    "per_source_skip_reason_counts": {
+      "日刊スポーツX": {
+        "not_giants_related": 19
+      },
+      "スポニチ野球記者X": {
+        "not_giants_related": 20
+      },
+      "スポーツ報知X": {
+        "not_giants_related": 18
+      },
+      "報知野球X": {
+        "not_giants_related": 19
+      },
+      "NPB公式X": {
+        "not_giants_related": 17
+      },
+      "ベースボールキング": {
+        "not_giants_related": 18
+      }
+    },
+    "samples_by_template": {
+      "nomotoke_card_player_comment_v1": [
+        {
+          "source_name": "巨人公式X",
+          "title": "「春のKIDS FES」～子供たちがイベントを満喫 5月5日のこどもの日に行われたヤクルト戦（東京ドーム）は、「春のKIDS FES」として開催されました。 詳",
+          "url": "https://twitter.com/TokyoGiants/status/2051933373367750939",
+          "confidence": "high",
+          "tier": 1
+        },
+        {
+          "source_name": "スポーツ報知巨人班X",
+          "title": "「お店でも視野が広かった」巨人・三塚琉生、甲斐先輩の気遣いに感謝の３号ソロ「いい感じで振れている」 #巨人 #giants https://hochi.news",
+          "url": "https://twitter.com/hochi_giants/status/2052127122911572456",
+          "confidence": "high",
+          "tier": 1
+        },
+        {
+          "source_name": "スポーツ報知巨人班X",
+          "title": "巨人・阿部監督、ゴールデンウィーク負け越しも「収穫もありました」打線に見えた２つの光とは #巨人 #giants https://hochi.news/arti",
+          "url": "https://twitter.com/hochi_giants/status/2052122158340403574",
+          "confidence": "high",
+          "tier": 1
+        },
+        {
+          "source_name": "スポーツ報知巨人班X",
+          "title": "１０号到達の岡本和真の傍らに“デカボトル”あり「彼に合う栄養と味を…」栄養士・讃井友香さんの特製ドリンク - スポーツ報知 https://hochi.news",
+          "url": "https://twitter.com/hochi_giants/status/2052041100467261472",
+          "confidence": "high",
+          "tier": 1
+        },
+        {
+          "source_name": "スポーツ報知巨人班X",
+          "title": "【巨人】ドラ２田和廉「球、動いてくれ！と思いながら」プロ入り最速１５０キロ 開幕１３戦連続０封 #巨人 #giants https://hochi.news/a",
+          "url": "https://twitter.com/hochi_giants/status/2051978674430206307",
+          "confidence": "high",
+          "tier": 1
+        }
+      ],
+      "nomotoke_card_short_news_url_v1": [
+        {
+          "source_name": "巨人公式X",
+          "title": "【二軍】巨人 1-6 ハヤテ ちゅ～るスタジアム清水🏟️ #三塚琉生 選手が本塁打を放つも大量失点で敗戦。 試合詳細はこちら http://giants.jp/",
+          "url": "https://twitter.com/TokyoGiants/status/2051932442643296604",
+          "confidence": "low",
+          "tier": 1
+        },
+        {
+          "source_name": "巨人公式X",
+          "title": "【一軍】巨人 0-5 ヤクルト 先発の #竹丸和幸 投手は6回2/3を投げ5失点。 得点を奪うことができず敗戦。 試合の詳細はこちら https://www.g",
+          "url": "https://twitter.com/TokyoGiants/status/2051932184391671938",
+          "confidence": "low",
+          "tier": 1
+        },
+        {
+          "source_name": "巨人公式X",
+          "title": "【試合終了】巨人 0-5 ヤクルト 9回は走者を出すことが出来ず試合終了",
+          "url": "https://twitter.com/TokyoGiants/status/2051930205841936785",
+          "confidence": "low",
+          "tier": 1
+        },
+        {
+          "source_name": "巨人公式X",
+          "title": "【九回表】巨人 0-5 ヤクルト 4番手で #石川達也 投手が登板、三者凡退に抑える！",
+          "url": "https://twitter.com/TokyoGiants/status/2051928200918536499",
+          "confidence": "low",
+          "tier": 1
+        },
+        {
+          "source_name": "巨人公式X",
+          "title": "【八回裏】巨人 0-5 ヤクルト #キャベッジ 選手がライトへヒットを放つ！",
+          "url": "https://twitter.com/TokyoGiants/status/2051926844031873258",
+          "confidence": "low",
+          "tier": 1
+        }
+      ],
+      "nomotoke_card_manager_comment_v1": [
+        {
+          "source_name": "スポーツ報知巨人班X",
+          "title": "巨人・阿部監督「そこは僕も責任を感じています」 竹丸の起用巡る決断に言及 #巨人 #giants https://hochi.news/articles/202",
+          "url": "https://twitter.com/hochi_giants/status/2052117120834499041",
+          "confidence": "high",
+          "tier": 1
+        },
+        {
+          "source_name": "スポーツ報知巨人班X",
+          "title": "【巨人】ドラ１竹丸和幸を登録抹消へ 阿部監督「抹消するのが決まっていたので引っ張った」 #巨人 #giants https://hochi.news/artic",
+          "url": "https://twitter.com/hochi_giants/status/2051934514453028872",
+          "confidence": "high",
+          "tier": 1
+        }
+      ]
+    },
+    "samples_by_skip_reason": {
+      "not_giants_related": [
+        {
+          "source_name": "日刊スポーツX",
+          "title": "RT 佐々木一郎: 御嶽海関に、母マルガリータさんへの思いを聞きました。 もうすぐ母の日です。 https://www.nikkansports.com/pre",
+          "url": "https://twitter.com/nikkansports/status/2052185482495398071"
+        },
+        {
+          "source_name": "日刊スポーツX",
+          "title": "#ネイマール まさかの「一線を越えてしまった」ロビーニョ息子にドリブルで抜かれて #平手打ち を謝罪 https://www.nikkansports.com/",
+          "url": "https://twitter.com/nikkansports/status/2052177413925400959"
+        },
+        {
+          "source_name": "日刊スポーツX",
+          "title": "RT 金子真仁（日刊スポーツ・埼玉西武担当）: 限りある文字数に《亀井さんのもたらすもの》を書き込みました。昨夜はゆっくりお休みになられたことを願いつつ。#..",
+          "url": "https://twitter.com/nikkansports/status/2052173333006082190"
+        },
+        {
+          "source_name": "日刊スポーツX",
+          "title": "村上宗隆、４打数４三振と快音響かず 連敗ホワイトソックスは３カード連続勝ち越しならず #村上宗隆 #ホワイトソックス #WhiteSox https://www",
+          "url": "https://twitter.com/nikkansports/status/2052167196043092413"
+        },
+        {
+          "source_name": "日刊スポーツX",
+          "title": "【バレー】石川祐希、イタリア11季目で悲願の初優勝達成 セリエＡでのこれまでの歩み #石川祐希 #バレーボール #volleyball https://www.",
+          "url": "https://twitter.com/nikkansports/status/2052161316828418318"
+        }
+      ]
+    },
+    "template_confidence_counts": {
+      "nomotoke_card_player_comment_v1": {
+        "high": 17
+      },
+      "nomotoke_card_short_news_url_v1": {
+        "low": 57
+      },
+      "nomotoke_card_manager_comment_v1": {
+        "high": 2
+      }
+    },
+    "source_errors": {
+      "スポーツ報知 巨人": "HTTPError: HTTP Error 404: Not Found"
+    }
+  },
+  "logging_72h": {
+    "total_entries": 1979,
+    "source_count": 0,
+    "hit_total": 1275,
+    "skip_total": 704,
+    "template_counts": {
+      "nomotoke_card_short_news_url_v1": 990,
+      "nomotoke_card_player_comment_v1": 226,
+      "nomotoke_card_manager_comment_v1": 59
+    },
+    "skip_reason_counts": {
+      "not_giants_related": 695,
+      "insufficient_required_facts:short_news_url:source_name": 9
+    },
+    "per_source_counts": {
+      "hochi_giants": 613,
+      "TokyoGiants": 283,
+      "日刊スポーツ 巨人": 241,
+      "sanspo_giants": 1225,
+      "SponichiYakyu": 137,
+      "ベースボールキング": 166,
+      "(unknown)": 18
+    },
+    "per_source_template_counts": {
+      "hochi_giants": {
+        "nomotoke_card_short_news_url_v1": 471,
+        "nomotoke_card_player_comment_v1": 142
+      },
+      "TokyoGiants": {
+        "nomotoke_card_short_news_url_v1": 283
+      },
+      "日刊スポーツ 巨人": {
+        "nomotoke_card_short_news_url_v1": 98,
+        "nomotoke_card_manager_comment_v1": 59,
+        "nomotoke_card_player_comment_v1": 84
+      },
+      "sanspo_giants": {
+        "nomotoke_card_short_news_url_v1": 81
+      },
+      "SponichiYakyu": {
+        "nomotoke_card_short_news_url_v1": 57
+      }
+    },
+    "per_source_skip_reason_counts": {
+      "sanspo_giants": {
+        "not_giants_related": 572
+      },
+      "ベースボールキング": {
+        "not_giants_related": 83
+      },
+      "SponichiYakyu": {
+        "not_giants_related": 40
+      },
+      "(unknown)": {
+        "insufficient_required_facts:short_news_url:source_name": 9
+      }
+    },
+    "samples_by_template": {
+      "nomotoke_card_short_news_url_v1": [
+        {
+          "source_name": "hochi_giants",
+          "title": "【巨人】２軍はハヤテに敗戦で３連勝ならず 三塚琉生が９回２死から意地の一発",
+          "url": "https://twitter.com/hochi_giants/status/2051940828969398400",
+          "confidence": "low",
+          "tier": 1
+        },
+        {
+          "source_name": "TokyoGiants",
+          "title": "【二軍】巨人 1-6 ハヤテ ちゅ～るスタジアム清水🏟️ 選手が本塁打を放つも大量失点で敗戦。 試合詳細はこちら",
+          "url": "https://twitter.com/TokyoGiants/status/2051932442643296604",
+          "confidence": "low",
+          "tier": 1
+        },
+        {
+          "source_name": "hochi_giants",
+          "title": "【巨人】２軍はハヤテに敗戦で３連勝ならず 三塚琉生が９回２死から意地の一発",
+          "url": "https://twitter.com/hochi_giants/status/2051940828969398400",
+          "confidence": "low",
+          "tier": 1
+        },
+        {
+          "source_name": "TokyoGiants",
+          "title": "【二軍】巨人 1-6 ハヤテ ちゅ～るスタジアム清水🏟️ 選手が本塁打を放つも大量失点で敗戦。 試合詳細はこちら",
+          "url": "https://twitter.com/TokyoGiants/status/2051932442643296604",
+          "confidence": "low",
+          "tier": 1
+        },
+        {
+          "source_name": "hochi_giants",
+          "title": "【巨人】２軍はハヤテに敗戦で３連勝ならず 三塚琉生が９回２死から意地の一発",
+          "url": "https://twitter.com/hochi_giants/status/2051940828969398400",
+          "confidence": "low",
+          "tier": 1
+        }
+      ],
+      "nomotoke_card_player_comment_v1": [
+        {
+          "source_name": "hochi_giants",
+          "title": "杉内俊哉コーチ「今年は年間、中６日では回さない」",
+          "url": "https://twitter.com/hochi_giants/status/2051953483436212461",
+          "confidence": "high",
+          "tier": 1
+        },
+        {
+          "source_name": "日刊スポーツ 巨人",
+          "title": "阿部監督コーチ「もちろん次も」",
+          "url": "https://www.nikkansports.com/baseball/news/202605050001383.html",
+          "confidence": "high",
+          "tier": 1
+        },
+        {
+          "source_name": "日刊スポーツ 巨人",
+          "title": "竹丸和幸「すしレース」",
+          "url": "https://www.nikkansports.com/baseball/news/202605060000582.html",
+          "confidence": "high",
+          "tier": 1
+        },
+        {
+          "source_name": "日刊スポーツ 巨人",
+          "title": "阿部監督コーチ「もちろん次も」",
+          "url": "https://www.nikkansports.com/baseball/news/202605050001383.html",
+          "confidence": "high",
+          "tier": 1
+        },
+        {
+          "source_name": "日刊スポーツ 巨人",
+          "title": "竹丸和幸「すしレース」",
+          "url": "https://www.nikkansports.com/baseball/news/202605060000582.html",
+          "confidence": "high",
+          "tier": 1
+        }
+      ],
+      "nomotoke_card_manager_comment_v1": [
+        {
+          "source_name": "日刊スポーツ 巨人",
+          "title": "阿部監督「なんとか乗り切ってほしい」",
+          "url": "https://www.nikkansports.com/baseball/news/202605060000910.html",
+          "confidence": "high",
+          "tier": 1
+        },
+        {
+          "source_name": "日刊スポーツ 巨人",
+          "title": "阿部監督「技術うんぬんじゃなくて…最高の結果」",
+          "url": "https://www.nikkansports.com/baseball/news/202605050001015.html",
+          "confidence": "high",
+          "tier": 1
+        },
+        {
+          "source_name": "日刊スポーツ 巨人",
+          "title": "阿部監督「技術うんぬんじゃなくて…最高の結果」",
+          "url": "https://www.nikkansports.com/baseball/news/202605050001015.html",
+          "confidence": "high",
+          "tier": 1
+        },
+        {
+          "source_name": "日刊スポーツ 巨人",
+          "title": "阿部監督「技術うんぬんじゃなくて…最高の結果」",
+          "url": "https://www.nikkansports.com/baseball/news/202605050001015.html",
+          "confidence": "high",
+          "tier": 1
+        },
+        {
+          "source_name": "日刊スポーツ 巨人",
+          "title": "阿部監督「技術うんぬんじゃなくて…最高の結果」",
+          "url": "https://www.nikkansports.com/baseball/news/202605050001015.html",
+          "confidence": "high",
+          "tier": 1
+        }
+      ]
+    },
+    "samples_by_skip_reason": {
+      "not_giants_related": [
+        {
+          "source_name": "sanspo_giants",
+          "title": "選手「こどもの日」 関連発言",
+          "url": "https://twitter.com/sanspo_giants/status/2051864679442686323"
+        },
+        {
+          "source_name": "sanspo_giants",
+          "title": "監督「一度抹消する」",
+          "url": "https://twitter.com/sanspo_giants/status/2051934711480811897"
+        },
+        {
+          "source_name": "sanspo_giants",
+          "title": "選手「こどもの日」 関連発言",
+          "url": "https://twitter.com/sanspo_giants/status/2051864679442686323"
+        },
+        {
+          "source_name": "sanspo_giants",
+          "title": "監督「一度抹消する」",
+          "url": "https://twitter.com/sanspo_giants/status/2051934711480811897"
+        },
+        {
+          "source_name": "sanspo_giants",
+          "title": "選手「こどもの日」 関連発言",
+          "url": "https://twitter.com/sanspo_giants/status/2051864679442686323"
+        }
+      ],
+      "insufficient_required_facts:short_news_url:source_name": [
+        {
+          "source_name": "(unknown)",
+          "title": "【巨人スタメン】ヤクルト戦（東京ドーム） 1番キャベッジ、2番松本 剛、3番泉口 友汰、4番ダルベック",
+          "url": "https://baseball.yahoo.co.jp/npb/game/2021038822/top"
+        },
+        {
+          "source_name": "(unknown)",
+          "title": "【巨人スタメン】ヤクルト戦（東京ドーム） 1番キャベッジ、2番松本 剛、3番泉口 友汰、4番ダルベック",
+          "url": "https://baseball.yahoo.co.jp/npb/game/2021038822/top"
+        },
+        {
+          "source_name": "(unknown)",
+          "title": "【巨人スタメン】ヤクルト戦（東京ドーム） 1番キャベッジ、2番松本 剛、3番泉口 友汰、4番ダルベック",
+          "url": "https://baseball.yahoo.co.jp/npb/game/2021038822/top"
+        },
+        {
+          "source_name": "(unknown)",
+          "title": "【巨人スタメン】ヤクルト戦（東京ドーム） 1番キャベッジ、2番松本 剛、3番泉口 友汰、4番ダルベック",
+          "url": "https://baseball.yahoo.co.jp/npb/game/2021038822/top"
+        },
+        {
+          "source_name": "(unknown)",
+          "title": "【巨人スタメン】ヤクルト戦（東京ドーム） 1番キャベッジ、2番松本 剛、3番泉口 友汰、4番ダルベック",
+          "url": "https://baseball.yahoo.co.jp/npb/game/2021038822/top"
+        }
+      ]
+    },
+    "template_confidence_counts": {
+      "nomotoke_card_short_news_url_v1": {
+        "low": 990
+      },
+      "nomotoke_card_player_comment_v1": {
+        "high": 226
+      },
+      "nomotoke_card_manager_comment_v1": {
+        "high": 59
+      }
+    },
+    "source_errors": {},
+    "logging_sample_insufficient": false,
+    "logging_fields_acquired": [
+      "article_subtype",
+      "category",
+      "draft_only",
+      "drafts_created",
+      "dry_run",
+      "entry_limit",
+      "error_count",
+      "event",
+      "fail_axis",
+      "generation_category",
+      "has_game",
+      "log_sampling_v1",
+      "opponent",
+      "original_category",
+      "post_id",
+      "post_url",
+      "reason",
+      "skip_duplicate",
+      "skip_filter",
+      "skip_layer",
+      "skip_reason",
+      "source_title",
+      "source_url",
+      "source_url_hash",
+      "stop_reason",
+      "title",
+      "total_entries",
+      "venue",
+      "x_ai_generation_count",
+      "x_ai_generation_limit",
+      "x_post_count",
+      "x_post_daily_limit"
+    ],
+    "logging_fields_missing": [],
+    "logging_fallback_strategy": "",
+    "entries_acquired": 1979
+  },
+  "json_fixtures": null,
+  "next_recommended_templates": [
+    "nomotoke_card_manager_comment_v1",
+    "nomotoke_card_player_comment_v1"
+  ],
+  "not_suitable_for_rss_templates": [
+    "nomotoke_card_lineup_v1",
+    "nomotoke_card_postgame_v1",
+    "nomotoke_card_live_at_bats_v1",
+    "nomotoke_card_player_stats_v1",
+    "nomotoke_card_broadcast_v1",
+    "nomotoke_card_official_notice_v1",
+    "nomotoke_card_video_v1"
+  ],
+  "why_not_suitable": {
+    "nomotoke_card_lineup_v1": "impossible: 5 列スタメン表(打順/守備/選手名/打率/防御率)が RSS title/summary に存在せず。",
+    "nomotoke_card_postgame_v1": "low: スコアは headline regex で抽出可。ただし inning_score / at_bats_rows / pitching_rows が RSS にない。full card は無理。",
+    "nomotoke_card_live_at_bats_v1": "impossible: 試合中の at_bats_rows / pitching_rows が RSS に存在せず。",
+    "nomotoke_card_player_stats_v1": "impossible: 成績表(打率/試合/打席/本塁打/打点/OPS or 投手 stats)が RSS にない。",
+    "nomotoke_card_broadcast_v1": "low: 5 列放送表(媒体/CH/時間/解説/実況)が RSS にない。",
+    "nomotoke_card_official_notice_v1": "low: NPB公式 X bridge から「登録: X / 抹消: Y」regex 抽出は不安定。登録人数・残り枠は無理。",
+    "nomotoke_card_video_v1": "impossible: 現状 config/rss_sources.json に YouTube channel RSS 未登録。supply ゼロ。YouTube RSS 追加で 'high' に昇格可。"
+  },
+  "if_low_hit_explanation": "",
+  "recommended_next_integration": {
+    "type": "separate_cli",
+    "exact_entrypoint": {
+      "file": "src/tools/run_nomotoke_rss_card_draft.py",
+      "cmd": "python -m src.tools.run_nomotoke_rss_card_draft",
+      "default_mode": "dry-run",
+      "flags": {
+        "--source": "live | logging | json",
+        "--template": "allowlist (subset of RSS_ONLY_ALLOWED_TEMPLATES)",
+        "--limit": "int",
+        "--mode": "dry-run | draft  (draft 明示指定必須)"
+      }
+    },
+    "exact_flow": [
+      "1. load entries from --source",
+      "2. result = src.nomotoke_rss_router.route_rss_entry_to_nomotoke_card(entry)",
+      "3. if not result.matched: skip with explicit skip_reason",
+      "4. category_id = resolve_category_id_from_template(result.template_key)  # config/categories.json fallback コラム",
+      "5. if category_id is None: skip with reason='category_id_unresolved'",
+      "6. html_payload = src.nomotoke_card_renderer.select_renderer(result.template_key)(result.would_render_call.data_preview)",
+      "7. if is_duplicate_nomotoke_card(source_url, template_key, normalized_title): skip with 'duplicate'",
+      "8. if --mode draft: WPClient.create_post(status='draft', categories=[category_id], source_url=canonical_url, caller='nomotoke_card_draft_cli', source_lane='nomotoke_card')",
+      "9. emit JSON summary entry per processed item"
+    ],
+    "functions_to_add": [
+      "route_entry_to_nomotoke_card(entry) -> RouteResult  (already exists in src/nomotoke_rss_router.py)",
+      "extract_required_facts(entry, template_key) -> {facts, missing}  (thin helper over RouteResult)",
+      "render_nomotoke_card(template_key, facts) -> html  (uses select_renderer)",
+      "build_wp_draft_payload(route_result, html, category_id) -> payload",
+      "is_duplicate_nomotoke_card(source_url, template_key, title) -> bool",
+      "resolve_category_id_from_template(template_key) -> int | None  (config/categories.json + fallback コラム category_id)"
+    ],
+    "wp_payload_shape": {
+      "title": "str",
+      "content": "str (HTML)",
+      "categories": "list[int]  -- MUST be category_id list, NEVER category names",
+      "categories_rule": "WP に category name は渡さない。config/categories.json を引いて id_list に変換、解決不能なら draft 作らず skip with reason='category_id_unresolved'",
+      "categories_fallback": "コラム category_id (resolved from config/categories.json)",
+      "status": "draft",
+      "source_url": "<canonical_url>",
+      "caller": "nomotoke_card_draft_cli",
+      "source_lane": "nomotoke_card",
+      "extras_via_audit_log_only": [
+        "template_key",
+        "source_name",
+        "required_facts (FULL — jsonl のみ、HTML comment には絶対入れない)",
+        "extracted_facts (FULL — jsonl のみ)",
+        "tier",
+        "confidence"
+      ],
+      "rule": "WPClient は改造しない。標準 create_post 引数のみ使う"
+    },
+    "meta_policy": {
+      "primary": "logs/nomotoke_card_draft_log.jsonl",
+      "primary_contents": [
+        "route_id",
+        "template_key",
+        "source_url",
+        "source_url_hash",
+        "required_facts (full)",
+        "extracted_facts (full)",
+        "tier",
+        "confidence",
+        "wp_post_id",
+        "created_at"
+      ],
+      "secondary": "WP body の HTML comment",
+      "secondary_contents_minimal": [
+        "template_key",
+        "source_url_hash",
+        "route_id"
+      ],
+      "secondary_forbidden": [
+        "required_facts full",
+        "extracted_facts full",
+        "tier",
+        "confidence"
+      ],
+      "rule": "required_facts 全文は jsonl のみ。HTML comment には minimal information だけ。tests で検証"
+    },
+    "dedupe_keys": {
+      "layer_1_required": "source_url 完全一致 (WPClient.find_recent_post_by_title 内蔵 dedupe を使う)",
+      "layer_2_optional": "x_status_id 完全一致 (X URL の場合)",
+      "layer_3_optional": "template_key + normalized_title 一致",
+      "layer_4_required": "same-run dedupe set (CLI process scope, source_url normalized)",
+      "decision": "layer_1 と layer_4 は MUST、layer_2/3 は CLI 内追加 check (best-effort)"
+    },
+    "downstream_behavior": {
+      "guarded_publish": "既存 draft polling で自動 pick up (touch なし)",
+      "publish_notice": "既存 review/hold/skip 通知に自動乗る (touch なし)",
+      "rule": "001B では publish-notice / guarded-publish を直接呼ばない"
+    },
+    "manual_intake_difference": {
+      "manual_intake": "user 指定 URL 1 件、operator on-demand",
+      "nomotoke_card_draft_cli": "RSS / logging / json から複数 entry batch 化",
+      "decision": "統合しない (責務が違う)"
+    },
+    "files_to_touch_in_001B": {
+      "new": [
+        "src/tools/run_nomotoke_rss_card_draft.py",
+        "tests/test_nomotoke_rss_card_draft_cli.py"
+      ],
+      "extend_narrow": [
+        "src/nomotoke_rss_router.py (extract_required_facts helper if needed)"
+      ]
+    },
+    "files_not_to_touch_in_001B": [
+      "src/rss_fetcher.py (HARD lock until 001C)",
+      "src/wp_client.py (HARD lock)",
+      "src/nomotoke_card_renderer.py (already complete)",
+      "src/tools/manual_intake.py (separate ticket if needed)",
+      "config/rss_sources.json",
+      "env / Schedulers / Cloud Run / Dockerfile / cloudbuild_*.yaml",
+      "publish-notice / guarded-publish / draft-body-editor jobs"
+    ],
+    "rollback_001B": [
+      "delete the 2 new files",
+      "or git revert <001B_commit>",
+      "default --mode dry-run なので env / Scheduler 不変",
+      "--mode draft 明示時のみ WP write、誤実行 risk 限定的"
+    ],
+    "acceptance_001B": [
+      "--mode dry-run で WP write 0 確認 (test で WPClient.create_post mock 0 call assert)",
+      "--mode draft で WP draft 作成、source_url meta 残る",
+      "category name が WPClient.create_post に渡らないことを test で検証",
+      "category_id 解決不能で skip='category_id_unresolved' 動作 test",
+      "required_facts 全文が HTML comment に入らないことを test で検証",
+      "dedupe layer 1+4 機能確認",
+      "publish-notice/guarded-publish 既存 polling で pick up 確認 (24h観測)",
+      "tests >= 20 cases (dry-run / draft mock / dedupe / required_facts skip / category_id_unresolved / Gemini 0 / WP write 0)"
+    ],
+    "promote_to_rss_fetcher_auto_001C": {
+      "candidate_position": "rss_fetcher.py の candidate 準備後 / Gemini 前 / WP 前",
+      "hold_until": "001B で 24h 実績取得後",
+      "out_of_scope": "001A / 001B では rss_fetcher.py 編集禁止"
+    }
+  }
+}

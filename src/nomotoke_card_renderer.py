@@ -52,6 +52,7 @@ TEMPLATE_KEY_VIDEO = "nomotoke_card_video_v1"
 TEMPLATE_KEY_PLAYER_STATS = "nomotoke_card_player_stats_v1"
 TEMPLATE_KEY_MANAGER_COMMENT = "nomotoke_card_manager_comment_v1"
 TEMPLATE_KEY_PLAYER_COMMENT = "nomotoke_card_player_comment_v1"
+TEMPLATE_KEY_SHORT_NEWS_URL = "nomotoke_card_short_news_url_v1"
 
 
 # Categories per the unified table.
@@ -62,6 +63,7 @@ _CATEGORY_VIDEO = "動画"
 _CATEGORY_PLAYER_STATS = "個人成績"
 _CATEGORY_MANAGER_COMMENT = "監督談話"
 _CATEGORY_PLAYER_COMMENT = "選手コメント"
+_CATEGORY_NEWS = "ニュース"
 
 
 _TEMPLATE_CATEGORY: Dict[str, str] = {
@@ -75,6 +77,7 @@ _TEMPLATE_CATEGORY: Dict[str, str] = {
     TEMPLATE_KEY_PLAYER_STATS: _CATEGORY_PLAYER_STATS,
     TEMPLATE_KEY_MANAGER_COMMENT: _CATEGORY_MANAGER_COMMENT,
     TEMPLATE_KEY_PLAYER_COMMENT: _CATEGORY_PLAYER_COMMENT,
+    TEMPLATE_KEY_SHORT_NEWS_URL: _CATEGORY_NEWS,
 }
 
 
@@ -1306,6 +1309,73 @@ def render_player_comment_card(data: Dict[str, Any]) -> Dict[str, Any]:
     return _render_quote_comment_card("player", data)
 
 
+def render_short_news_url_card(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Render a 短文ニュースURL card (NOMOTOKE-RSS-CARD-001A narrow add).
+
+    Required fields: source_url, source_name, title.
+    Source-only: never invents facts beyond input. Summary is HTML-escaped and
+    truncated at 120 chars (or first ``。``) to avoid full-text transcription.
+    """
+    template_key = TEMPLATE_KEY_SHORT_NEWS_URL
+    _check_forbidden_phrasings(data)
+
+    title_raw = (data.get("title") or "").strip()
+    summary_raw = (data.get("summary") or "").strip()
+    source_url_raw = (data.get("source_url") or "").strip()
+    source_name = (data.get("source_name") or "").strip()
+    date_label = (data.get("date_label") or "").strip()
+    related_links = data.get("related_links")
+    source_label = data.get("source_label")
+
+    if not title_raw:
+        return _skip(template_key, "missing_short_news_fields:title", source_url_raw)
+    if not _safe_url(source_url_raw):
+        return _skip(template_key, "missing_short_news_fields:source_url", source_url_raw)
+    if not source_name:
+        return _skip(template_key, "missing_short_news_fields:source_name", source_url_raw)
+
+    # Truncate summary defensively: 120 chars or up to first 「。」.
+    summary_clean = summary_raw
+    if summary_clean:
+        idx = summary_clean.find("。")
+        if 0 < idx <= 120:
+            summary_clean = summary_clean[: idx + 1]
+        elif len(summary_clean) > 120:
+            summary_clean = summary_clean[:120].rstrip() + "…"
+
+    body_parts: List[str] = [f"<p>{_esc(title_raw)}</p>"]
+    if summary_clean:
+        body_parts.append(f"<p>{_esc(summary_clean)}</p>")
+    body_main = "".join(body_parts)
+
+    closing_html = "<p>詳細は出典をご覧ください。</p>"
+
+    canonical_url_value = _hash_canonical(source_url_raw)
+    dedupe_key = f"short_news_url:{canonical_url_value}" if canonical_url_value else ""
+
+    tags = ["ニュース", source_name]
+
+    return _result_payload(
+        template_key,
+        title_raw,
+        body_main,
+        date_label=date_label,
+        source_url=source_url_raw,
+        source_label=source_label,
+        related_links=related_links,
+        closing_html=closing_html,
+        tags=tags,
+        dedupe_key=dedupe_key,
+    )
+
+
+def _hash_canonical(url: str) -> str:
+    """Stable 12-char sha1 prefix of a URL string. Empty for empty input."""
+    if not url:
+        return ""
+    return hashlib.sha1(url.encode("utf-8")).hexdigest()[:12]
+
+
 # ---------------------------------------------------------------------------
 # Renderer factory
 # ---------------------------------------------------------------------------
@@ -1322,6 +1392,7 @@ _RENDERER_REGISTRY: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     TEMPLATE_KEY_PLAYER_STATS: render_player_stats_card,
     TEMPLATE_KEY_MANAGER_COMMENT: render_manager_comment_card,
     TEMPLATE_KEY_PLAYER_COMMENT: render_player_comment_card,
+    TEMPLATE_KEY_SHORT_NEWS_URL: render_short_news_url_card,
 }
 
 

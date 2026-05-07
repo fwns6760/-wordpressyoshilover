@@ -714,7 +714,12 @@ class SourcePublishedAtIntakeTests(_IntakeBaseTest):
 
     def test_auto_article_type_uses_existing_detector(self):
         # _resolve_routing_lightweight is patched in _IntakeBaseTest to return
-        # ("選手情報", "manual_intake"); auto must keep that result.
+        # ("選手情報", "manual_intake"); auto routing keeps that
+        # category / subtype but NOMOTOKE-INTAKE-AUTO-ROUTE-001 now
+        # upgrades the template_key to a nomotoke template (here:
+        # ``nomotoke_card_short_news_url_v1`` because the title carries
+        # 「試合速報」 + score + 「巨人」) so the body still receives
+        # the full enrichment treatment instead of bare fallback.
         captured: dict = {}
 
         def fake_create(**kwargs):
@@ -737,7 +742,10 @@ class SourcePublishedAtIntakeTests(_IntakeBaseTest):
         self.assertEqual(out["article_type_source"], "auto_detected")
         self.assertEqual(out["category"], "選手情報")
         self.assertEqual(out["subtype"], "manual_intake")
-        self.assertEqual(out["template_key"], "manual_intake")
+        self.assertEqual(
+            out["template_key"], "nomotoke_card_short_news_url_v1"
+        )
+        self.assertEqual(out["article_type_guess"], "試合速報")
         self.assertEqual(out["category_ids"], [664])
         self.assertEqual(captured.get("categories"), [664])
 

@@ -148,6 +148,72 @@ _YAHOO_BOXSCORE_URL_RE = re.compile(
 )
 
 
+# NOMOTOKE-INTAKE-AUTO-ROUTE-001: auto-guess article_type from URL +
+# title + summary signals. Used when the operator leaves the
+# article_type dropdown on ``auto`` so the post still routes to a
+# nomotoke template (with full enrichment) instead of the bare
+# fallback path.
+
+def _auto_guess_article_type(
+    *, url: str, title: str, summary: str = ""
+) -> str:
+    """Return the most specific article_type the input signals warrant,
+    falling back to 「コラム」 (which routes to short_news_url) when
+    no specific signal matches."""
+    text = " ".join(s for s in (title, summary) if s)
+    url_l = (url or "").lower()
+
+    # YouTube watch URL → 動画
+    if "youtube.com/watch" in url_l or "youtu.be/" in url_l \
+            or "youtube.com/shorts/" in url_l or "youtube.com/live/" in url_l:
+        return "動画"
+
+    # Yahoo Sportsnavi NPB game URL → 試合結果
+    if "baseball.yahoo.co.jp/npb/game/" in url_l:
+        return "試合結果"
+
+    # Title / summary keyword signals
+    if not text:
+        return "コラム"
+
+    # 公示 (NPB 登録 / 抹消)
+    if any(k in text for k in (
+        "公示", "出場選手登録", "登録抹消", "支配下登録", "現役ドラフト",
+    )):
+        return "公示"
+
+    # 予告先発
+    if "予告先発" in text:
+        return "予告先発"
+
+    # 監督談話 (allowlist surnames + quote pattern)
+    for manager_surname in (
+        "阿部", "桑田", "二岡", "元木", "吉村", "杉内", "高橋", "原",
+    ):
+        if manager_surname in text and "「" in text:
+            return "監督談話"
+
+    # 選手コメント — quote in title from a roster name
+    if "「" in text and "」" in text:
+        try:
+            from src.nomotoke_card_renderer import _load_giants_roster
+            for entry in _load_giants_roster():
+                full = (entry.get("name") or "").strip()
+                if (entry.get("role") == "player") and full and full in text:
+                    return "選手コメント"
+        except Exception:
+            pass
+
+    # 試合結果 / 速報 (score pattern + giants alias)
+    if any(t in text for t in ("巨人", "ジャイアンツ", "読売")):
+        if re.search(r"\d{1,2}\s*[-‐−–—ー]\s*\d{1,2}", text):
+            if "試合終了" in text or "終了" in text:
+                return "試合結果"
+            return "試合速報"
+
+    return "コラム"
+
+
 def _normalize_article_type(value: str) -> tuple[str, str]:
     """Validate the article_type override.
 
@@ -3518,6 +3584,34 @@ def run_manual_intake(
         category = override_category
         subtype = override_subtype
         template_key = override_template
+    elif not is_x:
+        # NOMOTOKE-INTAKE-AUTO-ROUTE-001: when the operator leaves
+        # article_type on auto, infer the most specific nomotoke
+        # template from URL + title signals so the resulting body
+        # gets the full enrichment treatment instead of falling
+        # through to the bare ``<p>summary</p>+出典`` fallback.
+        guessed_type = _auto_guess_article_type(
+            url=canonical_source_url, title=title, summary=summary
+        )
+        if guessed_type and guessed_type in ARTICLE_TYPE_OVERRIDES:
+            override_category, override_subtype, override_template = ARTICLE_TYPE_OVERRIDES[
+                guessed_type
+            ]
+            # Keep the routing-detector's category when it landed a
+            # more specific value than the override default; otherwise
+            # adopt the override category to match the template.
+            if not category or category == DEFAULT_CATEGORY_NAME:
+                category = override_category
+            if not subtype:
+                subtype = override_subtype
+            template_key = override_template
+            # Preserve the operator's ``auto`` selection AND the
+            # existing detector source flag in the audit output. The
+            # internal template_key / category get the inferred
+            # value; ``article_type_guess`` exposes the inference
+            # for downstream debugging without overwriting the
+            # backwards-compat fields.
+            output["article_type_guess"] = guessed_type
     output["category"] = category
     output["subtype"] = subtype
     output["template_key"] = template_key

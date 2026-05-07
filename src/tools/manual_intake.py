@@ -138,6 +138,13 @@ _META_PATTERNS: tuple[tuple[str, str], ...] = (
     (r'<meta\s+content=["\']([^"\']+)["\']\s+property=["\']og:description["\']', "summary"),
     (r'<meta\s+name=["\']description["\']\s+content=["\']([^"\']+)["\']', "summary"),
     (r'<meta\s+name=["\']twitter:description["\']\s+content=["\']([^"\']+)["\']', "summary"),
+    (r'<meta\s+property=["\']og:image["\']\s+content=["\']([^"\']+)["\']', "image"),
+    (r'<meta\s+content=["\']([^"\']+)["\']\s+property=["\']og:image["\']', "image"),
+    (r'<meta\s+name=["\']twitter:image["\']\s+content=["\']([^"\']+)["\']', "image"),
+)
+
+_YAHOO_BOXSCORE_URL_RE = re.compile(
+    r"^https?://baseball\.yahoo\.co\.jp/npb/game/\d+", re.IGNORECASE
 )
 
 
@@ -240,10 +247,13 @@ def _check_rate_limit(lockfile: Path = DEFAULT_LOCKFILE) -> tuple[bool, int]:
 def _parse_og_meta(html_text: str) -> dict[str, str]:
     title = ""
     summary = ""
+    image = ""
     for pattern, key in _META_PATTERNS:
         if key == "title" and title:
             continue
         if key == "summary" and summary:
+            continue
+        if key == "image" and image:
             continue
         match = re.search(pattern, html_text, re.IGNORECASE)
         if match:
@@ -252,14 +262,26 @@ def _parse_og_meta(html_text: str) -> dict[str, str]:
                 title = value
             elif key == "summary":
                 summary = value
+            elif key == "image":
+                image = value
     if not title:
         match = re.search(r"<title>([^<]+)</title>", html_text, re.IGNORECASE)
         if match:
             title = html.unescape(match.group(1).strip())
-    return {"title": title, "summary": summary}
+    return {"title": title, "summary": summary, "image": image}
 
 
 def _fetch_news_meta(url: str, *, timeout: float = 10.0) -> dict[str, str]:
+    """Fetch source URL and return OG meta + raw HTML.
+
+    Returns ``{"title": ..., "summary": ..., "image": ..., "_html": ...}``
+    on success, ``{"_error": "..."}`` on failure. The ``_html`` field
+    carries the raw decoded body (capped at 800 KB) so callers that need
+    full-page parsing (e.g. Yahoo Sportsnavi boxscore for
+    ``nomotoke_card_postgame_v1``) can reuse the same fetch instead of
+    issuing a second GET. Existing callers that read by key only
+    (``title`` / ``summary``) remain unaffected.
+    """
     try:
         import urllib.request
     except Exception as exc:
@@ -277,7 +299,9 @@ def _fetch_news_meta(url: str, *, timeout: float = 10.0) -> dict[str, str]:
     except Exception as exc:
         return {"_error": f"fetch_failed:{exc.__class__.__name__}"}
     text = content.decode("utf-8", errors="replace")
-    return _parse_og_meta(text)
+    meta = _parse_og_meta(text)
+    meta["_html"] = text
+    return meta
 
 
 def _build_body_for_x(canonical_url: str) -> str:
@@ -290,8 +314,25 @@ def _build_body_for_x(canonical_url: str) -> str:
     )
 
 
-def _build_body_for_news(source_url: str, title: str, summary: str) -> str:
+def _build_body_for_news(
+    source_url: str,
+    title: str,
+    summary: str,
+    *,
+    og_image: str = "",
+) -> str:
     parts: list[str] = []
+    # NOMOTOKE-INTAKE-HERO-001: prepend OG image as hero figure so the
+    # legacy fallback body also presents like a card. Same safety gate
+    # as the nomotoke path.
+    if og_image and _is_safe_https_image_url(og_image):
+        safe_img = html.escape(og_image)
+        safe_alt = html.escape(title or "")
+        parts.append(
+            '<figure class="nomotoke-hero">'
+            f'<img src="{safe_img}" alt="{safe_alt}" loading="lazy">'
+            "</figure>"
+        )
     if summary:
         parts.append(f"<p>{html.escape(summary)}</p>")
     label = title or source_url
@@ -326,6 +367,8 @@ def _try_render_via_nomotoke(
     source_name: str,
     source_published_at_iso: str,
     is_x: bool,
+    og_image: str = "",
+    raw_html: str = "",
 ) -> str | None:
     """Render the manual-intake submission with the matching nomotoke
     renderer when the operator's article_type pick maps to a nomotoke
@@ -339,6 +382,19 @@ def _try_render_via_nomotoke(
     quote / pitcher pair, etc.) decide whether the richer template is
     appropriate; if not, we degrade gracefully so the operator's
     article_type pick is never a hard block.
+
+    NOMOTOKE-INTAKE-POSTGAME-001: when the operator pasted a Yahoo
+    Sportsnavi NPB game URL, the short_news_url template_key gets
+    auto-upgraded to ``nomotoke_card_postgame_v1`` and the boxscore
+    facts (score / inning_score / matchup_header / date_label) are
+    parsed via ``parse_yahoo_game_html`` from the already-fetched raw
+    HTML — no additional network call.
+
+    NOMOTOKE-INTAKE-HERO-001: ``og_image`` (when set) is prepended as a
+    ``<figure>`` so news-source posts present like a card with a hero
+    image, mirroring the visual richness of the X embed body. The
+    figure is added AFTER the renderer returns so the renderer's
+    source-fact contract is unchanged.
     """
     if not template_key.startswith("nomotoke_card_"):
         return None
@@ -347,6 +403,17 @@ def _try_render_via_nomotoke(
     # X embed body is the right shape for those.
     if is_x:
         return None
+
+    # NOMOTOKE-INTAKE-POSTGAME-001: Yahoo Sportsnavi NPB game URL is the
+    # only RSS-pool-external source whose HTML we can parse into a
+    # complete postgame card. Auto-upgrade so 試合結果 / 試合速報 picks
+    # resolve to the richer template when the URL allows it.
+    if (
+        template_key == "nomotoke_card_short_news_url_v1"
+        and source_url
+        and _YAHOO_BOXSCORE_URL_RE.match(source_url)
+    ):
+        template_key = "nomotoke_card_postgame_v1"
 
     try:
         os.environ.setdefault("ENABLE_NOMOTOKE_CARD_TEMPLATES", "1")
@@ -365,6 +432,27 @@ def _try_render_via_nomotoke(
             "source_name": source_name or "出典",
             "date_label": date_label,
         }
+
+    elif template_key == "nomotoke_card_postgame_v1":
+        # Yahoo Sportsnavi boxscore is the only supported source. The
+        # extractor returns None when any required field is missing so
+        # the caller falls back gracefully.
+        if not raw_html:
+            return None
+        try:
+            from src.source_yahoo_boxscore_extractor import (
+                parse_yahoo_game_html,
+            )
+        except Exception:
+            return None
+        facts_obj = parse_yahoo_game_html(raw_html)
+        if facts_obj is None:
+            return None
+        data = facts_obj.giants_facts()
+        if not data:
+            return None
+        data["source_url"] = source_url
+        data["source_name"] = source_name or "Yahoo!スポーツ"
 
     elif template_key == "nomotoke_card_video_v1":
         # Only YouTube watch URLs satisfy the renderer's video_url field.
@@ -475,7 +563,41 @@ def _try_render_via_nomotoke(
     if not result.get("validation_ok"):
         return None
     rendered = result.get("content_html") or ""
+    if not rendered:
+        return None
+    # NOMOTOKE-INTAKE-HERO-001: prepend the source page's og:image as a
+    # hero figure for templates that benefit from card-style framing.
+    # Skipped for video / quote-comment / pregame_pitcher: those carry
+    # their own visual centre (YouTube embed / quote block / matchup
+    # card) and a stacked OG image would be redundant.
+    if og_image and _is_safe_https_image_url(og_image) and template_key in (
+        "nomotoke_card_short_news_url_v1",
+        "nomotoke_card_postgame_v1",
+    ):
+        safe_img = html.escape(og_image)
+        safe_alt = html.escape(title or source_name or "")
+        figure = (
+            '<figure class="nomotoke-hero">'
+            f'<img src="{safe_img}" alt="{safe_alt}" loading="lazy">'
+            "</figure>\n"
+        )
+        rendered = figure + rendered
     return rendered or None
+
+
+def _is_safe_https_image_url(url: str) -> bool:
+    """Allow only https URLs ending in a common image extension. Used to
+    gate the optional hero-figure prepend so a malformed og:image never
+    becomes an XSS vector or a mixed-content warning on the public post.
+    """
+    if not url or not isinstance(url, str):
+        return False
+    if not url.startswith("https://"):
+        return False
+    if '"' in url or "'" in url or "<" in url or ">" in url:
+        return False
+    lowered = url.lower().split("?", 1)[0]
+    return lowered.endswith((".jpg", ".jpeg", ".png", ".webp", ".gif"))
 
 
 def _title_quality_failure_reason(title: str) -> str:
@@ -702,6 +824,8 @@ def run_manual_intake(
     title = (title_override or "").strip()
     summary = (summary_override or "").strip()
 
+    og_image = ""
+    raw_html = ""
     if is_x:
         if not title and not summary:
             output["reason"] = "missing_title_or_summary"
@@ -709,15 +833,21 @@ def run_manual_intake(
         if not title and summary:
             title = summary[:60]
     else:
-        if not (title and summary):
-            meta = fetch_meta(url)
-            if "_error" in meta and not (title or summary):
-                output["reason"] = f"fetch_failed:{meta.get('_error')}"
-                return EXIT_FETCH_FAILED, output
-            if not title:
-                title = (meta.get("title", "") or "").strip()
-            if not summary:
-                summary = (meta.get("summary", "") or "").strip()
+        # NOMOTOKE-INTAKE-HERO-001 / POSTGAME-001: always fetch meta so
+        # og_image (hero figure) and _html (postgame boxscore parser
+        # input) are available even when the operator pre-supplied
+        # title / summary. Failure is non-fatal here — the legacy
+        # fallback below covers the title/summary missing case.
+        meta = fetch_meta(url)
+        if "_error" in meta and not (title or summary):
+            output["reason"] = f"fetch_failed:{meta.get('_error')}"
+            return EXIT_FETCH_FAILED, output
+        if not title:
+            title = (meta.get("title", "") or "").strip()
+        if not summary:
+            summary = (meta.get("summary", "") or "").strip()
+        og_image = (meta.get("image", "") or "").strip()
+        raw_html = meta.get("_html", "") or ""
         if not title or not summary:
             output["reason"] = "missing_title_or_summary"
             return EXIT_MISSING_TITLE_OR_SUMMARY, output
@@ -792,12 +922,16 @@ def run_manual_intake(
             source_name=output.get("source_name", ""),
             source_published_at_iso=normalized_source_published_at,
             is_x=is_x,
+            og_image=og_image,
+            raw_html=raw_html,
         )
     if body is None:
         if is_x:
             body = _build_body_for_x(canonical_source_url)
         else:
-            body = _build_body_for_news(canonical_source_url, title, summary)
+            body = _build_body_for_news(
+                canonical_source_url, title, summary, og_image=og_image
+            )
 
     if memo:
         if memo in body:

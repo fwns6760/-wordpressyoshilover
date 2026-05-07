@@ -963,5 +963,46 @@ class TestWPClientSourcePublishedAtMeta(unittest.TestCase):
         mock_update.assert_not_called()
 
 
+class SourceUrlBodyMarkerTests(unittest.TestCase):
+    """Body-marker dedup fallback for sites without registered meta."""
+
+    def test_marker_format(self):
+        url = "https://x.com/hochi_giants/status/2052271896071200809"
+        marker = WPClient._build_source_url_body_marker(url)
+        self.assertTrue(marker.startswith("<!--yl-src:"))
+        self.assertTrue(marker.endswith("-->"))
+        # 16-hex hash → marker length is 11(prefix) + 16 + 3 = 30
+        self.assertEqual(len(marker), 30)
+
+    def test_marker_matches_same_url(self):
+        url = "https://example.com/article-1"
+        marker = WPClient._build_source_url_body_marker(url)
+        post = {"content": {"raw": f"<p>本文</p>{marker}"}}
+        self.assertTrue(
+            WPClient._post_body_carries_source_url_hash(post, url)
+        )
+
+    def test_marker_misses_different_url(self):
+        marker = WPClient._build_source_url_body_marker("https://a.com/x")
+        post = {"content": {"raw": f"<p>本文</p>{marker}"}}
+        self.assertFalse(
+            WPClient._post_body_carries_source_url_hash(post, "https://b.com/x")
+        )
+
+    def test_marker_empty_url_returns_empty(self):
+        self.assertEqual(WPClient._build_source_url_body_marker(""), "")
+        self.assertEqual(WPClient._build_source_url_body_marker(None), "")
+
+    def test_post_with_no_content_returns_false(self):
+        self.assertFalse(
+            WPClient._post_body_carries_source_url_hash({}, "https://x.com/a")
+        )
+        self.assertFalse(
+            WPClient._post_body_carries_source_url_hash(
+                {"content": ""}, "https://x.com/a"
+            )
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

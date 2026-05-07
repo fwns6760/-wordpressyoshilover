@@ -321,6 +321,41 @@ class WPClient:
         target_key = preferred_key if preferred_key in cls._source_url_meta_keys() else cls.SOURCE_URL_META_KEY
         return {target_key: normalized_source_url}
 
+    # Body-side fallback used when WP isn't configured to expose
+    # `_yoshilover_source_url` post-meta via REST. We embed an HTML
+    # comment carrying a stable 16-char SHA-256 prefix of the source
+    # URL — invisible to readers, cheap to grep on dedup probes.
+    SOURCE_URL_BODY_MARKER_PREFIX = "<!--yl-src:"
+
+    @classmethod
+    def _source_url_hash(cls, source_url: str | None) -> str:
+        normalized = cls._normalize_source_url(source_url)
+        if not normalized:
+            return ""
+        import hashlib
+        return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+
+    @classmethod
+    def _build_source_url_body_marker(cls, source_url: str | None) -> str:
+        h = cls._source_url_hash(source_url)
+        return f"{cls.SOURCE_URL_BODY_MARKER_PREFIX}{h}-->" if h else ""
+
+    @classmethod
+    def _post_body_carries_source_url_hash(
+        cls, post: dict, source_url: str | None
+    ) -> bool:
+        h = cls._source_url_hash(source_url)
+        if not h:
+            return False
+        marker = f"{cls.SOURCE_URL_BODY_MARKER_PREFIX}{h}-->"
+        content = (post or {}).get("content") or {}
+        body = ""
+        if isinstance(content, dict):
+            body = content.get("raw") or content.get("rendered") or ""
+        elif isinstance(content, str):
+            body = content
+        return marker in (body or "")
+
     @classmethod
     def _build_source_published_at_meta_payload(
         cls,
@@ -347,6 +382,7 @@ class WPClient:
                 "status",
                 "featured_media",
                 "categories",
+                "content",
                 "meta",
                 *self._source_url_meta_keys(),
             ]
@@ -487,6 +523,16 @@ class WPClient:
                                     _, existing_source_url = self._get_source_url_meta(candidate)
                             if existing_source_url == normalized_source_url:
                                 return self._mark_reuse_reason(candidate, "source_url_match")
+                            # Body-marker fallback for sites that don't
+                            # expose `_yoshilover_source_url` meta via
+                            # REST. The marker is appended to body in
+                            # create_post when source_url is provided.
+                            if self._post_body_carries_source_url_hash(
+                                candidate, normalized_source_url
+                            ):
+                                return self._mark_reuse_reason(
+                                    candidate, "source_url_body_marker_match"
+                                )
                         if allow_title_only_reuse:
                             return self._mark_reuse_reason(candidate, "title_fallback")
                 return None
@@ -638,6 +684,14 @@ class WPClient:
                 title = polished_title
         except Exception as exc:
             print(f"[WP] title_seo_polisher skipped: {exc}")
+
+        # Body-marker dedup hash — invisible HTML comment that survives
+        # WP roundtripping. Used by find_recent_post_by_title when meta
+        # registration isn't in place.
+        if normalized_source_url:
+            marker = self._build_source_url_body_marker(normalized_source_url)
+            if marker and marker not in (content or ""):
+                content = (content or "") + marker
 
         payload = {
             "title":   title,

@@ -1127,6 +1127,9 @@ def route_rss_entry_to_nomotoke_card(
     }
     if related_source_url:
         data_preview["related_source_url"] = related_source_url
+        data_preview["related_links"] = [
+            {"url": related_source_url, "label": f"関連投稿: {source_name}"}
+        ]
 
     return RouteResult(
         matched=True,

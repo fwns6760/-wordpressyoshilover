@@ -547,6 +547,12 @@ class XPostOnlyGuardTests(unittest.TestCase):
             r.extracted_facts["x_embed_url"],
             "https://x.com/TokyoGiants/status/9001",
         )
+        # related_links is wired so the renderer surfaces the X URL in HTML.
+        rl = r.would_render_call["data_preview"].get("related_links")
+        self.assertIsInstance(rl, list)
+        self.assertEqual(len(rl), 1)
+        self.assertEqual(rl[0]["url"], "https://x.com/TokyoGiants/status/9001")
+        self.assertIn("巨人公式X", rl[0]["label"])
 
     def test_x_post_with_hochi_news_url_promotes_primary_source(self):
         r = route_rss_entry_to_nomotoke_card(

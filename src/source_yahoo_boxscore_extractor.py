@@ -253,6 +253,115 @@ def parse_yahoo_game_html(html: str) -> Optional[YahooBoxscoreFacts]:
     )
 
 
+# ---------------------------------------------------------------------------
+# Broadcast (放送予定) parser — same Yahoo `/top` page carries a static
+# 放送予定 table when the game has not started yet.
+# ---------------------------------------------------------------------------
+
+
+_BROADCAST_TABLE_RE = re.compile(
+    r'(?s)<table[^>]*class="[^"]*bb-tableLeft--broadcast[^"]*"[^>]*>(?P<inner>.+?)</table>',
+)
+_BROADCAST_ROW_RE = re.compile(
+    r"(?s)<tr[^>]*>"
+    r"\s*<th[^>]*>(?P<media>[^<]+)</th>"
+    r"\s*<td[^>]*>(?P<body>.+?)</td>"
+    r"\s*</tr>"
+)
+_BROADCAST_CREDIT_BLOCK_RE = re.compile(
+    r'(?s)<div[^>]*class="bb-tableLeft__broadcast"[^>]*>.*?</div>'
+)
+_BROADCAST_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_BROADCAST_WS_RE = re.compile(r"\s+")
+
+
+def parse_yahoo_broadcast_html(html: str) -> Optional[Dict[str, Any]]:
+    """Parse the 放送予定 table on a Yahoo Sportsnavi `/top` page.
+
+    Returns ``{rows: [{media, channel, ...}, ...], home, away, date_label,
+    league_label}`` or ``None`` when the broadcast block isn't present
+    (game already started — the section is replaced by live score).
+
+    Reuses :func:`parse_yahoo_game_html` for the title / round metadata
+    so the broadcast card has full game context.
+    """
+    if not isinstance(html, str) or not html:
+        return None
+    table_match = _BROADCAST_TABLE_RE.search(html)
+    if not table_match:
+        return None
+    rows: List[Dict[str, str]] = []
+    for row_match in _BROADCAST_ROW_RE.finditer(table_match.group("inner")):
+        media_label = _BROADCAST_WS_RE.sub("", row_match.group("media")).strip()
+        body_html = row_match.group("body")
+        # Drop the credit footer block before stripping tags.
+        body_clean = _BROADCAST_CREDIT_BLOCK_RE.sub("", body_html)
+        body_text = _BROADCAST_HTML_TAG_RE.sub("", body_clean)
+        body_text = html_lib.unescape(body_text)
+        body_text = _BROADCAST_WS_RE.sub(" ", body_text).strip()
+        if not media_label or not body_text:
+            continue
+        rows.append(
+            {
+                "media": media_label,
+                "channel": body_text,
+                "time": "",
+                "commentator": "",
+                "play_by_play": "",
+            }
+        )
+    if not rows:
+        return None
+
+    # Reuse the title / round parser so the card carries date / teams /
+    # league context. parse_yahoo_game_html returns None when the inning
+    # table is absent (pre-game state). Fall back to parsing the title
+    # block directly when that happens.
+    facts = parse_yahoo_game_html(html)
+    if facts is not None:
+        date_label = facts.date_label
+        league_label = facts.league_label
+        home = facts.home
+        away = facts.away
+    else:
+        title_m = _TITLE_RE.search(html)
+        round_m = _GAME_ROUND_RE.search(html)
+        if not title_m:
+            return None
+        date_label = title_m.group("date").strip()
+        home = html_lib.unescape(title_m.group("home").strip())
+        away = html_lib.unescape(title_m.group("away").strip())
+        league_label = (
+            re.sub(r"\s+", " ", round_m.group(1)).strip() if round_m else ""
+        )
+    return {
+        "rows": rows,
+        "home": home,
+        "away": away,
+        "date_label": date_label,
+        "league_label": league_label,
+    }
+
+
+def broadcast_card_payload(
+    *,
+    parsed: Dict[str, Any],
+    source_url: str,
+    source_label: str = "Yahoo!スポーツ NPB",
+    source_name: str = "Yahoo!スポーツ",
+) -> Dict[str, object]:
+    return {
+        "date_label": parsed["date_label"],
+        "league_label": parsed["league_label"],
+        "home": parsed["home"],
+        "away": parsed["away"],
+        "broadcasts": parsed["rows"],
+        "source_url": source_url,
+        "source_label": source_label,
+        "source_name": source_name,
+    }
+
+
 def _build_one_line_summary(
     *,
     home_full: str,

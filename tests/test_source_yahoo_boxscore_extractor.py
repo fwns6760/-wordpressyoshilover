@@ -13,6 +13,7 @@ game-detail HTML (no network). Confirms:
 
 from __future__ import annotations
 
+import os
 import unittest
 from pathlib import Path
 
@@ -150,3 +151,62 @@ class YahooBoxscoreFactsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# NOMOTOKE-BROADCAST-FROM-YAHOO-001
+class YahooBroadcastParserTests(unittest.TestCase):
+    BCAST_FIXTURE = Path(__file__).parent / "fixtures" / "yahoo_game" / "2026_05_08_giants_dragons_pregame.html"
+
+    def test_parse_returns_broadcast_rows(self):
+        from src.source_yahoo_boxscore_extractor import parse_yahoo_broadcast_html
+
+        parsed = parse_yahoo_broadcast_html(self.BCAST_FIXTURE.read_text(encoding="utf-8"))
+        self.assertIsNotNone(parsed)
+        self.assertGreaterEqual(len(parsed["rows"]), 2)
+
+    def test_parse_extracts_テレビ放送_row(self):
+        from src.source_yahoo_boxscore_extractor import parse_yahoo_broadcast_html
+
+        parsed = parse_yahoo_broadcast_html(self.BCAST_FIXTURE.read_text(encoding="utf-8"))
+        media_kinds = {r["media"] for r in parsed["rows"]}
+        self.assertIn("テレビ放送", media_kinds)
+        # No HTML tags / credit blocks bleed into channel text.
+        for row in parsed["rows"]:
+            self.assertNotIn("<", row["channel"])
+            self.assertNotIn("番組表", row["channel"])
+
+    def test_parse_extracts_date_and_teams(self):
+        from src.source_yahoo_boxscore_extractor import parse_yahoo_broadcast_html
+
+        parsed = parse_yahoo_broadcast_html(self.BCAST_FIXTURE.read_text(encoding="utf-8"))
+        self.assertIn("2026年", parsed["date_label"])
+        self.assertTrue("巨人" in parsed["home"] or "巨人" in parsed["away"]
+                        or "読売" in parsed["home"] or "読売" in parsed["away"])
+
+    def test_parse_returns_none_when_broadcast_table_absent(self):
+        from src.source_yahoo_boxscore_extractor import parse_yahoo_broadcast_html
+
+        # Postgame fixture (5/4) has no 放送予定 block — game is over.
+        post_fixture = Path(__file__).parent / "fixtures" / "yahoo_game" / "2026_05_04_giants_swallows.html"
+        parsed = parse_yahoo_broadcast_html(post_fixture.read_text(encoding="utf-8"))
+        self.assertIsNone(parsed)
+
+    def test_broadcast_card_payload_renders(self):
+        from src.source_yahoo_boxscore_extractor import (
+            broadcast_card_payload,
+            parse_yahoo_broadcast_html,
+        )
+
+        os.environ["ENABLE_NOMOTOKE_CARD_TEMPLATES"] = "1"
+        from src.nomotoke_card_renderer import render_broadcast_info_card
+
+        parsed = parse_yahoo_broadcast_html(self.BCAST_FIXTURE.read_text(encoding="utf-8"))
+        payload = broadcast_card_payload(
+            parsed=parsed,
+            source_url="https://baseball.yahoo.co.jp/npb/game/X/top",
+        )
+        result = render_broadcast_info_card(payload)
+        self.assertTrue(result["validation_ok"])
+        body = result["content_html"]
+        self.assertIn("中継予定", body)
+        self.assertIn("テレビ放送", body)

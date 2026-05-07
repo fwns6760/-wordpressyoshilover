@@ -106,12 +106,39 @@ _VIDEO_EMBED_HOST_WHITELIST = frozenset(
 _QUOTE_SHORT_MAX_CHARS = 100
 
 
-# Common footer (constant) — appended to every card.
+# NOMOTOKE-CTA-RESTORE-001: clickable 「💬 コメントする」 CTA. Three
+# placements per post — top-of-body / mid-body / footer — replicate
+# the original のもとけ 掲示板 layout. The CTA href is ``#respond``
+# (WP standard comment-form anchor); clicking jumps to the comment
+# input on the published post. ``loading`` and external attributes
+# are intentionally absent because the link is same-page.
+_INLINE_CTA_HTML = (
+    '<p class="nomotoke-cta-row">'
+    '<a class="nomotoke-cta-button" href="#respond" '
+    'style="display:inline-block;padding:12px 28px;background:#f57f17;'
+    "color:#fff;text-decoration:none;border-radius:8px;"
+    'font-weight:700;font-size:16px;">💬 コメントする</a>'
+    "</p>"
+)
+
+# Common footer (constant) — appended to every card. The footer CTA
+# is the 3rd placement; the inline ones live inside each renderer
+# after the body content and again before the source-link section.
+# The original hint text is kept below the button so existing test
+# assertions (``assertIn`` on the verbatim string) remain green.
 _COMMON_FOOTER_HTML = (
     '<hr class="nomotoke-card-divider">'
-    '<p class="nomotoke-card-footer">'
+    '<div class="nomotoke-card-footer">'
+    '<p class="nomotoke-cta-row">'
+    '<a class="nomotoke-cta-button" href="#respond" '
+    'style="display:inline-block;padding:12px 28px;background:#f57f17;'
+    "color:#fff;text-decoration:none;border-radius:8px;"
+    'font-weight:700;font-size:16px;">💬 コメントする</a>'
+    "</p>"
+    '<p class="nomotoke-comment-hint">'
     "この記事へのコメント・反応はコメント欄からお願いします。"
     "</p>"
+    "</div>"
 )
 
 
@@ -780,6 +807,8 @@ def render_postgame_card(data: Dict[str, Any]) -> Dict[str, Any]:
     parts.append("<h3>試合スコア</h3>")
     parts.append(_render_inning_table(inning_score))
 
+    parts.append(_INLINE_CTA_HTML)
+
     atbat_results = data.get("atbat_results") or []
     if isinstance(atbat_results, list) and atbat_results:
         parts.append("<h3>打席結果</h3>")
@@ -798,6 +827,8 @@ def render_postgame_card(data: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(opponent_lineup, list) and opponent_lineup:
         parts.append("<h3>相手スタメン</h3>")
         parts.append(_render_lineup_table(opponent_lineup))
+
+    parts.append(_INLINE_CTA_HTML)
 
     closing_map = {
         "勝利": "<p>勝ちました。</p>",
@@ -893,10 +924,14 @@ def render_official_notice_card(data: Dict[str, Any]) -> Dict[str, Any]:
             + "</ul>"
         )
 
+    parts.append(_INLINE_CTA_HTML)
+
     all_names = list(registered) + list(removed)
     aside = _render_roster_aside(all_names)
     if aside:
         parts.append(aside)
+
+    parts.append(_INLINE_CTA_HTML)
 
     current_count = data.get("current_count")
     remaining_slots = data.get("remaining_slots")
@@ -995,10 +1030,14 @@ def render_pregame_pitcher_card(data: Dict[str, Any]) -> Dict[str, Any]:
     first = matchups[0] if isinstance(matchups[0], dict) else {}
     primary_pitcher = (first.get("pitcher_a") or "").strip()
 
+    parts.append(_INLINE_CTA_HTML)
+
     if primary_pitcher:
         aside = _render_roster_aside(primary_pitcher)
         if aside:
             parts.append(aside)
+
+    parts.append(_INLINE_CTA_HTML)
     closing_html = ""
     if primary_pitcher:
         closing_html = f"<p>{_esc(primary_pitcher)}が先発です。</p>"
@@ -1233,9 +1272,13 @@ def render_video_card(data: Dict[str, Any]) -> Dict[str, Any]:
                 description = description[:120]
         parts.append(f"<p>{_esc(description)}</p>")
 
+    parts.append(_INLINE_CTA_HTML)
+
     aside = _render_roster_aside(player_name)
     if aside:
         parts.append(aside)
+
+    parts.append(_INLINE_CTA_HTML)
 
     if player_name:
         closing_html = f"<p>{_esc(player_name)}選手のプレーです。</p>"
@@ -1471,10 +1514,13 @@ def _render_quote_comment_card(
         f"「{_esc(quote_stripped)}」"
         "</blockquote>"
     )
+    parts.append(_INLINE_CTA_HTML)
 
     aside = _render_roster_aside(speaker_name)
     if aside:
         parts.append(aside)
+
+    parts.append(_INLINE_CTA_HTML)
 
     closing_html = (
         f"<p>{_esc(speaker_name)}{closing_role}がコメントです。</p>"
@@ -2228,12 +2274,16 @@ def render_short_news_url_card(data: Dict[str, Any]) -> Dict[str, Any]:
     if fact_card:
         body_parts.append(fact_card)
 
+    body_parts.append(_INLINE_CTA_HTML)
+
     if x_embed_url:
         embed = _x_embed_block(
             x_embed_url, source_name, article_title=title_raw
         )
         if embed:
             body_parts.append(embed)
+
+    body_parts.append(_INLINE_CTA_HTML)
 
     body_parts.append("<h3>🔗 出典記事</h3>")
     body_parts.append(

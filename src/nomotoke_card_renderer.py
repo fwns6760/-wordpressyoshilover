@@ -166,6 +166,47 @@ def _safe_url(value: Any) -> str:
     return html.escape(raw, quote=True)
 
 
+_LEAD_HTML_TAG_RE = re.compile(r"<[^>]*>")
+# router truncation (e.g. summary[:200]) can slice through an HTML tag,
+# leaving an orphan ``<img height="2048" src="https://...`` at the end of
+# the input. The closed-tag regex above does not match these because there
+# is no terminating ``>``. Strip them by anchoring to end-of-string.
+_LEAD_TRAILING_PARTIAL_TAG_RE = re.compile(r"<[^>]*$")
+_LEAD_URL_RE = re.compile(r"https?://\S+")
+_LEAD_WS_RE = re.compile(r"[ \t　]+")
+_LEAD_LINE_BREAK_RE = re.compile(r"\s*\n\s*")
+
+
+def _sanitize_lead_text(raw: Any) -> str:
+    """Strip HTML markup and visible URLs from RSS-summary text before it
+    is used as the visible lead.
+
+    X / news RSS feeds often embed ``<br />`` / ``<img>`` / raw URLs in
+    ``summary``. Passing those straight to ``_esc`` rendered the lead as
+    escaped HTML (``&lt;img height=...&gt;``) and leaked the source URL
+    into the visible body — both regressions of the
+    ``visible raw URL 0`` rule.
+
+    Steps (source-only — no tokens are ever added):
+      1. HTML-unescape entities once (so a pre-escaped ``&lt;br&gt;``
+         becomes ``<br>`` and is then dropped at step 2).
+      2. Replace any ``<...>`` tag with a single space.
+      3. Drop a trailing orphan tag — required because upstream callers
+         truncate the summary to a fixed char cap and may slice mid-tag.
+      4. Drop ``http(s)://...`` URLs.
+      5. Collapse runs of horizontal whitespace and bare newlines so the
+         truncate helper sees a single contiguous line.
+    """
+    if not isinstance(raw, str) or not raw:
+        return ""
+    decoded = html.unescape(raw)
+    no_tags = _LEAD_HTML_TAG_RE.sub(" ", decoded)
+    no_partial = _LEAD_TRAILING_PARTIAL_TAG_RE.sub("", no_tags)
+    no_urls = _LEAD_URL_RE.sub("", no_partial)
+    no_breaks = _LEAD_LINE_BREAK_RE.sub(" ", no_urls)
+    return _LEAD_WS_RE.sub(" ", no_breaks).strip()
+
+
 def _check_forbidden_phrasings(data: Dict[str, Any]) -> None:
     """Raise ValueError if any string field contains forbidden phrasings."""
 
@@ -1933,8 +1974,13 @@ def render_short_news_url_card(data: Dict[str, Any]) -> Dict[str, Any]:
     if og_lead:
         lead_text = og_lead
     else:
+        # NOMOTOKE-BODY-EXTRACT-001 Phase 2C body sanitizer: X / news RSS
+        # summaries embed <br> / <img> / raw URLs that previously rendered
+        # as escaped HTML in the visible lead. _sanitize_lead_text strips
+        # them BEFORE truncation so the cap accounts for the cleaned text.
+        sanitized_summary = _sanitize_lead_text(summary_raw)
         lead_text = (
-            _truncate_summary_preserving_period(summary_raw, 200)
+            _truncate_summary_preserving_period(sanitized_summary, 200)
             or title_raw
         )
 

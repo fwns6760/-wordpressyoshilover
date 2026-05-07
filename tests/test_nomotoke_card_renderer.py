@@ -2010,5 +2010,131 @@ class RendererPhase2AOgWiringTests(unittest.TestCase):
         self.assertEqual(r.skip_reason, "x_post_not_article_source")
 
 
+class Phase2CLeadSanitizerTests(unittest.TestCase):
+    """NOMOTOKE-BODY-EXTRACT-001 Phase 2C: live X-RSS summaries embed
+    ``<br>`` / ``<img>`` and visible URLs. The sanitizer must drop them
+    BEFORE the lead truncation so the visible body never contains escaped
+    HTML or raw http(s) URLs.
+    """
+
+    def setUp(self) -> None:
+        os.environ["ENABLE_NOMOTOKE_CARD_TEMPLATES"] = "1"
+        from src.nomotoke_card_renderer import (
+            _sanitize_lead_text,
+            render_short_news_url_card,
+        )
+
+        self._sanitize = _sanitize_lead_text
+        self._render = render_short_news_url_card
+
+    # ----- _sanitize_lead_text contract -----
+
+    def test_sanitize_strips_html_tags(self):
+        self.assertEqual(
+            self._sanitize("巨人 0-5 ヤクルト<br /><br />敗戦"),
+            "巨人 0-5 ヤクルト 敗戦",
+        )
+
+    def test_sanitize_strips_img_tag_with_attributes(self):
+        raw = (
+            "敗戦"
+            '<img height="2048" src="https://pbs.twimg.com/media/X.jpg?format=jpg" width="1365" />'
+        )
+        out = self._sanitize(raw)
+        self.assertNotIn("<img", out)
+        self.assertNotIn("pbs.twimg.com", out)
+        self.assertEqual(out, "敗戦")
+
+    def test_sanitize_drops_raw_http_urls(self):
+        self.assertEqual(
+            self._sanitize("詳細はこちら https://www.giants.jp/news/29638/"),
+            "詳細はこちら",
+        )
+
+    def test_sanitize_decodes_pre_escaped_entities_then_strips(self):
+        raw = "巨人&lt;br /&gt;0-5&lt;br /&gt;敗戦"
+        self.assertEqual(self._sanitize(raw), "巨人 0-5 敗戦")
+
+    def test_sanitize_collapses_whitespace(self):
+        self.assertEqual(self._sanitize("巨人   　\n\n  ヤクルト"), "巨人 ヤクルト")
+
+    def test_sanitize_handles_empty_and_none(self):
+        self.assertEqual(self._sanitize(""), "")
+        self.assertEqual(self._sanitize(None), "")
+        self.assertEqual(self._sanitize(123), "")
+
+    def test_sanitize_drops_trailing_partial_tag_from_router_truncation(self):
+        # Router truncates `summary[:200]` and may slice mid-tag — the
+        # remaining `<img height="2048" src="https://...` has no closing
+        # `>`, so the closed-tag regex misses it. The sanitizer must drop
+        # the orphan so it never reaches the visible body.
+        raw = "敗戦 試合の詳細はこちら <img height=\"2048\" src=\"https://pbs.twimg.com/me"
+        out = self._sanitize(raw)
+        self.assertNotIn("<img", out)
+        self.assertNotIn("pbs.twimg.com", out)
+        self.assertNotIn("https://", out)
+        self.assertEqual(out, "敗戦 試合の詳細はこちら")
+
+    def test_sanitize_drops_trailing_partial_anchor_tag(self):
+        raw = "詳細 <a href=\"https://example.com/very-long-url-truncated"
+        out = self._sanitize(raw)
+        self.assertNotIn("<a", out)
+        self.assertNotIn("https://", out)
+        self.assertEqual(out, "詳細")
+
+    # ----- render-level integration -----
+
+    def _data(self, **overrides):
+        base = {
+            "title": "【一軍】巨人 0-5 ヤクルト 竹丸6回2/3 5失点",
+            "summary": (
+                "【一軍】巨人 0-5 ヤクルト<br /><br />"
+                "先発の #竹丸和幸 投手は6回2/3を投げ5失点。<br />"
+                "得点を奪うことができず敗戦。<br /><br />"
+                "試合の詳細はこちら<br />"
+                "https://www.giants.jp/game/20260506_8003_1/<br />"
+                '<img height="2048" src="https://pbs.twimg.com/media/HHnp.jpg?format=jpg" width="1365" />'
+            ),
+            "source_url": "https://www.giants.jp/game/20260506_8003_1/",
+            "source_name": "巨人公式X",
+            "date_label": "2026年5月6日",
+            "related_links": [
+                {
+                    "url": "https://x.com/TokyoGiants/status/1",
+                    "label": "関連投稿: 巨人公式X",
+                }
+            ],
+        }
+        base.update(overrides)
+        return base
+
+    def test_visible_lead_has_no_escaped_html_or_raw_url(self):
+        out = self._render(self._data())
+        self.assertTrue(out["validation_ok"])
+        body = out["content_html"]
+        # Pull just the lead block.
+        lead_match = re.search(
+            r'<p class="nomotoke-lead">([^<]*)</p>', body
+        )
+        self.assertIsNotNone(lead_match, "lead block missing")
+        lead_text = lead_match.group(1) if lead_match else ""
+        self.assertNotIn("&lt;br", lead_text)
+        self.assertNotIn("&lt;img", lead_text)
+        self.assertNotIn("pbs.twimg.com", lead_text)
+        self.assertNotIn("https://", lead_text)
+        self.assertNotIn("http://", lead_text)
+
+    def test_visible_raw_url_zero_across_full_body_after_sanitize(self):
+        out = self._render(self._data())
+        body = out["content_html"]
+        # Strip href attrs and tags — only the visible text remains.
+        visible = re.sub(r'href="[^"]*"', "", body)
+        visible = re.sub(r"src=\"[^\"]*\"", "", visible)
+        visible = re.sub(r"<[^>]+>", " ", visible)
+        self.assertNotIn("https://", visible)
+        self.assertNotIn("http://", visible)
+        self.assertNotIn("pbs.twimg.com", visible)
+
+
 if __name__ == "__main__":
     unittest.main()

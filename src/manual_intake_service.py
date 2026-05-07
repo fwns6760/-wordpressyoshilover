@@ -150,18 +150,19 @@ _HTML_FORM = """<!DOCTYPE html>
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Hiragino Sans\", sans-serif; background: #fafafa; color: #222; }
-  @media (prefers-color-scheme: dark) { body { background: #111; color: #eee; } input, select, textarea { background: #1c1c1c; color: #eee; border-color: #444; } }
   main { max-width: 560px; margin: 0 auto; padding: 16px 14px 60px; }
   h1 { font-size: 18px; margin: 4px 0 14px; }
   .field { margin-bottom: 12px; }
-  label { display: block; font-size: 13px; margin-bottom: 4px; opacity: 0.8; }
+  label { display: block; font-size: 13px; margin-bottom: 4px; opacity: 0.85; color: inherit; }
+  /* Light-mode form inputs — explicit white background, dark text. */
   input[type=\"url\"], input[type=\"text\"], input[type=\"datetime-local\"], input[type=\"password\"], select, textarea {
-    width: 100%; font-size: 16px; padding: 12px; border: 1px solid #ccc; border-radius: 8px; background: #fff;
+    width: 100%; font-size: 16px; padding: 12px; border: 1px solid #ccc; border-radius: 8px;
+    background: #fff; color: #222;
   }
   input[type=\"url\"].big { font-size: 18px; padding: 14px; }
   textarea { resize: vertical; min-height: 56px; }
   .mode-row { display: flex; gap: 10px; }
-  .mode-row label { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 8px; text-align: center; font-size: 15px; }
+  .mode-row label { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 8px; text-align: center; font-size: 15px; opacity: 1; }
   .mode-row input[type=\"radio\"] { margin-right: 6px; }
   .actions { display: flex; gap: 10px; margin-top: 18px; }
   button { flex: 1; font-size: 16px; padding: 14px; border-radius: 8px; border: none; cursor: pointer; }
@@ -170,11 +171,21 @@ _HTML_FORM = """<!DOCTYPE html>
   #result { margin-top: 18px; padding: 12px; border-radius: 8px; font-size: 14px; white-space: pre-wrap; word-break: break-all; }
   #result.ok { background: #e8f5e9; color: #1b5e20; }
   #result.err { background: #ffebee; color: #b71c1c; }
+  small.note { display: block; font-size: 12px; opacity: 0.85; margin-top: 4px; color: inherit; }
+  /* Dark-mode overrides MUST come last so their selectors win on phones
+     that auto-flip to dark. The earlier ordering placed the base
+     ``background:#fff`` rule after the dark-mode override, which made the
+     input text invisible against the white box. */
   @media (prefers-color-scheme: dark) {
+    body { background: #111; color: #eee; }
+    input[type=\"url\"], input[type=\"text\"], input[type=\"datetime-local\"], input[type=\"password\"], select, textarea {
+      background: #1c1c1c; color: #f0f0f0; border-color: #555;
+    }
+    input::placeholder, textarea::placeholder { color: #888; }
+    .mode-row label { border-color: #555; background: #1c1c1c; color: #f0f0f0; }
     #result.ok { background: #1b3d1f; color: #c8e6c9; }
     #result.err { background: #3d1b1b; color: #ffcdd2; }
   }
-  small.note { display: block; font-size: 12px; opacity: 0.7; margin-top: 4px; }
 </style>
 </head>
 <body>

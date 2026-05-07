@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Plain page with no OG / no JSON-LD article shape</title>
+<meta name="description" content="Generic non-OG description, must NOT be picked up by Phase 0 extractor.">
+<meta name="keywords" content="一般, タグ">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {"@type": "ListItem", "position": 1, "name": "Home"},
+    {"@type": "ListItem", "position": 2, "name": "News"}
+  ]
+}
+</script>
+</head>
+<body>
+<article>
+<p>Plain article body without any OG meta or JSON-LD article structured data.</p>
+<p>Phase 0 must skip with meta_unavailable.</p>
+</article>
+</body>
+</html>

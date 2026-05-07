@@ -77,8 +77,13 @@ _ALIAS_MAP = {
 # is the user-curated 原辰徳 photo in the WP media library — picked by
 # the operator as the safest "巨人 generic" eyecatch in lieu of a real
 # team logo. Override at deploy time via the env var when needed.
+#
+# (id=29270 was the original pick but it turned out to be a 原辰徳-titled
+# slot whose actual image content was 別人 (operator reported "イチロー")
+# — switched to id=23981 which is a 原辰徳監督 article-side image with
+# matching content.)
 _TEAM_FALLBACK_MEDIA_ID_ENV = "PLAYER_EYECATCH_TEAM_FALLBACK_ID"
-_TEAM_FALLBACK_MEDIA_ID_DEFAULT = 29270
+_TEAM_FALLBACK_MEDIA_ID_DEFAULT = 23981
 
 _CACHE_PATH_ENV = "PLAYER_EYECATCH_MAP_PATH"
 _DEFAULT_CACHE_PATH = Path(__file__).resolve().parent.parent / "config" / "player_eyecatch_map.json"

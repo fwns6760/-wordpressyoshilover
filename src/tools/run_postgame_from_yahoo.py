@@ -283,6 +283,45 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(output, ensure_ascii=False))
             return EXIT_WP_FAILED
 
+        # Post-publish dedup: skip when a post with the same rendered
+        # title already exists in any status. The auto-discover path's
+        # title is deterministic from (date, league, teams, score), so
+        # title equality is a reliable game-uniqueness key. _yoshilover_
+        # source_url meta is not exposed via WP REST without
+        # register_post_meta, so we don't rely on it here.
+        try:
+            import requests as _r
+
+            search_resp = _r.get(
+                f"{os.environ['WP_URL']}/wp-json/wp/v2/posts",
+                params={
+                    "search": rendered_title[:40],
+                    "per_page": 5,
+                    "status": "any",
+                    "context": "edit",
+                },
+                auth=(os.environ["WP_USER"], os.environ["WP_APP_PASSWORD"]),
+                timeout=10,
+            )
+            existing = None
+            if search_resp.status_code < 400:
+                for hit in search_resp.json():
+                    hit_title = (hit.get("title") or {}).get("rendered", "")
+                    # Compare on the date+league+teams prefix to tolerate
+                    # one_line_summary diff if Yahoo updates the title.
+                    if hit_title.startswith(rendered_title[:30]):
+                        existing = hit
+                        break
+        except Exception:
+            existing = None
+        if existing and existing.get("id"):
+            output["skip_reason"] = "already_in_wp"
+            output["existing_post_id"] = existing.get("id")
+            output["existing_status"] = existing.get("status", "")
+            output["ok"] = True
+            print(json.dumps(output, ensure_ascii=False))
+            return EXIT_OK  # idempotent skip — not an error
+
         # Map nomotoke 試合速報 → WP category id 663.
         try:
             categories_map = json.loads(

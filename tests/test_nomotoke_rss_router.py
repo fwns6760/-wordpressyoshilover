@@ -1623,6 +1623,31 @@ class VideoCrossTeamFilterTests(unittest.TestCase):
         self.assertFalse(is_giants_video_player(""))
         self.assertFalse(is_giants_video_player(None))
 
+    def test_pitcher_pair_space_separated_opp_first(self):
+        # NOMOTOKE-PREGAME-PITCHER-SPACE-SEPARATED-002:
+        # 「あす5/8の予告先発 中日 柳裕也 巨人 F.ウィットリー 18時 バンテリンドーム」
+        # has no 対 / vs / dash separator — primary regex misses; the
+        # team-pitcher-team-pitcher fallback must catch it.
+        from src.nomotoke_rss_router import detect_pregame_pitcher
+
+        r = detect_pregame_pitcher(
+            "あす5/8の予告先発 中日 柳裕也 巨人 F.ウィットリー 18時 バンテリンドーム",
+            "",
+        )
+        self.assertTrue(r.get("keyword_present"))
+        pair = r.get("pitcher_pair")
+        self.assertEqual(pair, ("柳裕也", "F.ウィットリー"))
+
+    def test_pitcher_pair_space_separated_giants_first_flipped(self):
+        from src.nomotoke_rss_router import detect_pregame_pitcher
+
+        r = detect_pregame_pitcher(
+            "予告先発 巨人 戸郷翔征 阪神 才木浩人", ""
+        )
+        self.assertTrue(r.get("keyword_present"))
+        # Convention preserved: pair[0]=opponent pitcher, pair[1]=Giants.
+        self.assertEqual(r.get("pitcher_pair"), ("才木浩人", "戸郷翔征"))
+
     def test_quoted_yakult_does_not_fall_back_to_short_news_url(self):
         # The router must skip the entry entirely (no short_news_url
         # fallback for YouTube), even when the quoted name is filtered.

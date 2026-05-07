@@ -746,14 +746,59 @@ def _looks_like_live_inning_blurb(title: str) -> bool:
     return False
 
 
+# NOMOTOKE-PREGAME-PITCHER-SPACE-SEPARATED-002: secondary regex for the
+# space-separated team+pitcher+team+pitcher shape used by sponichi /
+# hochi X drafts (e.g. ``あす5/8の予告先発 中日 柳裕也 巨人 F.ウィットリー
+# 18時 バンテリンドーム``). The primary _PITCHER_PAIR_RE requires an
+# explicit ``対 / vs / × / dash`` separator and dropped these.
+_OPPOSING_TEAM_TOKENS = (
+    "中日", "阪神", "広島", "ヤクルト", "横浜", "ＤｅＮＡ", "DeNA",
+    "西武", "日本ハム", "楽天", "ロッテ", "ソフトバンク", "オリックス",
+)
+_OPPOSING_TEAM_ALT = "|".join(re.escape(t) for t in _OPPOSING_TEAM_TOKENS)
+# Two shapes:
+#   a) `<opp> <oppPitcher> 巨人 <giantsPitcher>` (opposing first)
+#   b) `巨人 <giantsPitcher> <opp> <oppPitcher>` (Giants first)
+_PITCHER_PAIR_TEAM_SPACE_OPP_FIRST_RE = re.compile(
+    rf"(?:{_OPPOSING_TEAM_ALT})\s+([^\s]{{2,12}})\s+巨人\s+([^\s]{{2,12}})"
+)
+_PITCHER_PAIR_TEAM_SPACE_GIANTS_FIRST_RE = re.compile(
+    rf"巨人\s+([^\s]{{2,12}})\s+(?:{_OPPOSING_TEAM_ALT})\s+([^\s]{{2,12}})"
+)
+
+
 def detect_pregame_pitcher(title: str, summary: str) -> Dict[str, Any]:
     """Return {keyword_present, pitcher_pair} or {} if keyword absent."""
     text = f"{title or ''}\n{summary or ''}"
     if not _PREGAME_KEYWORD_RE.search(text):
         return {}
+    # Primary: explicit separator (対 / vs / × / dash variants).
     m = _PITCHER_PAIR_RE.search(text)
-    pair = (m.group(1).strip(), m.group(2).strip()) if m else None
-    return {"keyword_present": True, "pitcher_pair": pair}
+    if m:
+        return {
+            "keyword_present": True,
+            "pitcher_pair": (m.group(1).strip(), m.group(2).strip()),
+        }
+    # Fallback: team-pitcher-team-pitcher with whitespace separator.
+    m = _PITCHER_PAIR_TEAM_SPACE_OPP_FIRST_RE.search(text)
+    if m:
+        # Order: opp_pitcher first, giants_pitcher second (matches the
+        # primary regex's left=team_a / right=team_b convention; the
+        # router uses pair[0] for team_a 対戦相手 and pair[1] for 巨人).
+        return {
+            "keyword_present": True,
+            "pitcher_pair": (m.group(1).strip(), m.group(2).strip()),
+        }
+    m = _PITCHER_PAIR_TEAM_SPACE_GIANTS_FIRST_RE.search(text)
+    if m:
+        # Giants first in the title — flip so pair[0] stays consistent
+        # (opposing pitcher first; Giants pitcher second for downstream
+        # router convention).
+        return {
+            "keyword_present": True,
+            "pitcher_pair": (m.group(2).strip(), m.group(1).strip()),
+        }
+    return {"keyword_present": True, "pitcher_pair": None}
 
 
 # ---------------------------------------------------------------------------

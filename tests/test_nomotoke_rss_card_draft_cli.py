@@ -900,5 +900,307 @@ class TemplateVsCategoryDimensionTests(unittest.TestCase):
             self.assertNotIn(forbidden, body)
 
 
+# ---------------------------------------------------------------------------
+# NOMOTOKE-BODY-EXTRACT-001 Phase 1A: opt-in source extractor wiring
+# ---------------------------------------------------------------------------
+
+
+class _FakeExtraction:
+    """Just enough of ExtractionResult for the CLI to surface fields."""
+
+    def __init__(
+        self,
+        *,
+        skipped: bool = False,
+        title: str = "",
+        description: str = "",
+        image: str = "",
+        published_at: str = "",
+        canonical_url: str = "",
+        facts=None,
+        extraction_source: str = "og_meta",
+    ) -> None:
+        self._skipped = skipped
+        self.primary_og_title = title
+        self.primary_og_description = description
+        self.primary_og_image = image
+        self.primary_published_at = published_at
+        self.primary_canonical_url = canonical_url
+        self.facts = facts or {}
+        self.extraction_source = extraction_source
+
+    def is_skipped(self) -> bool:
+        return self._skipped
+
+
+class _FakeFetchResult:
+    def __init__(
+        self,
+        *,
+        status_code: int = 200,
+        skip_reason: str = "",
+        cache_hit: bool = False,
+        extraction=None,
+        extraction_source: str = "og_meta",
+    ) -> None:
+        self.status_code = status_code
+        self.skip_reason = skip_reason
+        self.cache_hit = cache_hit
+        self.extraction = extraction
+        self.extraction_source = extraction_source
+
+
+class _FakeFetcherPipeline:
+    """Pipeline that the CLI passes to ``fetch_source_meta`` via **kwargs.
+
+    The CLI calls ``fetch_source_meta(url, **pipeline)``; we route via a
+    monkey-patch in tests so the live ``RequestsHttpClient`` is never
+    constructed and no socket is opened.
+    """
+
+    def __init__(self, *, fixed_result) -> None:
+        # Pipeline shape mirrors build_default_pipeline() but we only need
+        # to satisfy the kwargs signature here.
+        self.http_client = object()
+        self.robots_checker = object()
+        self.rate_limiter = object()
+        self.cache = object()
+        self.clock = object()
+        self.fixed_result = fixed_result
+        self.calls: list = []
+
+
+class SourceExtractorOptInTests(unittest.TestCase):
+    """Phase 1A acceptance: ``--enable-source-extractor`` is OPT-IN, default
+    OFF, dry-run only, never wires the fetcher in --mode draft, and never
+    overwrites rss_title / rss_summary even when enabled.
+    """
+
+    def setUp(self) -> None:
+        os.environ.pop("ENABLE_NOMOTOKE_SOURCE_EXTRACTOR", None)
+
+    def tearDown(self) -> None:
+        os.environ.pop("ENABLE_NOMOTOKE_SOURCE_EXTRACTOR", None)
+
+    def test_default_off_does_not_invoke_fetcher_in_dry_run(self):
+        # No flag, no env → fetcher is never imported / called.
+        with patch(
+            "src.tools.run_nomotoke_rss_card_draft._attach_source_extractor_facts"
+        ) as attach_mock:
+            cli._process_one_entry(
+                source_name="スポーツ報知 巨人",
+                entry={
+                    "title": "巨人 1-3 阪神に逆転負け",
+                    "summary": "敗戦",
+                    "link": "https://hochi.news/articles/test.html",
+                    "published": _now_iso(),
+                },
+                template_allowlist=set(RSS_ONLY_ALLOWED_TEMPLATES),
+                categories_map=_categories_map(),
+                same_run_dedupe=set(),
+                mode="dry-run",
+                audit_log_path=Path("/tmp/_audit_default_off.jsonl"),
+                wp_client_factory=None,
+                logger=__import__("logging").getLogger("test"),
+                # source_extractor_pipeline left as default None
+            )
+            attach_mock.assert_not_called()
+
+    def test_arg_parser_adds_enable_source_extractor_flag(self):
+        p = cli._build_arg_parser()
+        ns = p.parse_args([])
+        self.assertFalse(ns.enable_source_extractor)
+        ns2 = p.parse_args(["--enable-source-extractor"])
+        self.assertTrue(ns2.enable_source_extractor)
+
+    def test_env_var_enables_extractor_helper(self):
+        self.assertFalse(cli._is_source_extractor_enabled(False))
+        os.environ["ENABLE_NOMOTOKE_SOURCE_EXTRACTOR"] = "1"
+        self.assertTrue(cli._is_source_extractor_enabled(False))
+        os.environ["ENABLE_NOMOTOKE_SOURCE_EXTRACTOR"] = "0"
+        self.assertFalse(cli._is_source_extractor_enabled(False))
+        # CLI flag wins over env=0
+        os.environ["ENABLE_NOMOTOKE_SOURCE_EXTRACTOR"] = "0"
+        self.assertTrue(cli._is_source_extractor_enabled(True))
+
+    def test_pipeline_called_in_dry_run_when_supplied(self):
+        # When the pipeline is supplied externally (test injection), the
+        # CLI calls fetch_source_meta and attaches OG facts to the summary.
+        fake_extraction = _FakeExtraction(
+            title="OG title from hochi",
+            description="OG description text",
+            image="https://hochi.news/img.jpg",
+            published_at="2026-05-07T05:00:00+09:00",
+            canonical_url="https://hochi.news/articles/test.html",
+            facts={
+                "title": {
+                    "value": "OG title from hochi",
+                    "source": "og:title",
+                },
+            },
+            extraction_source="og_meta",
+        )
+        fake_fr = _FakeFetchResult(extraction=fake_extraction)
+
+        # Patch fetch_source_meta inside the CLI module so we don't import
+        # requests / open sockets.
+        with patch(
+            "src.source_html_fetcher.fetch_source_meta",
+            return_value=fake_fr,
+        ) as fetch_mock:
+            summary = cli._process_one_entry(
+                source_name="スポーツ報知 巨人",
+                entry={
+                    "title": "巨人 1-3 阪神 https://hochi.news/articles/test.html",
+                    "summary": "巨人は1-3で阪神に敗戦、9回東京ドーム",
+                    "link": "https://x.com/hochi_giants/status/9",
+                    "published": _now_iso(),
+                },
+                template_allowlist=set(RSS_ONLY_ALLOWED_TEMPLATES),
+                categories_map=_categories_map(),
+                same_run_dedupe=set(),
+                mode="dry-run",
+                audit_log_path=Path("/tmp/_audit_pipeline_on.jsonl"),
+                wp_client_factory=None,
+                logger=__import__("logging").getLogger("test"),
+                source_extractor_pipeline={
+                    "http_client": object(),
+                    "robots_checker": object(),
+                    "rate_limiter": object(),
+                    "cache": object(),
+                    "clock": object(),
+                },
+            )
+            self.assertEqual(fetch_mock.call_count, 1)
+        # Extraction fields surface in summary.
+        self.assertEqual(summary["primary_og_title"], "OG title from hochi")
+        self.assertEqual(summary["extraction_source"], "og_meta")
+        self.assertEqual(summary["extraction_skip_reason"], "")
+
+    def test_extractor_does_not_overwrite_rss_title_or_summary(self):
+        # Even when the extractor is enabled and returns OG fields, the
+        # CLI summary's ``title`` (= rss title) and original ``source_url``
+        # are unchanged. ``rss_summary`` is never produced as a key by
+        # the CLI; the entry summary stays in entry["summary"] only.
+        rss_title = "巨人 1-3 阪神 https://hochi.news/articles/test.html"
+        rss_link = "https://x.com/hochi_giants/status/9"
+
+        fake_extraction = _FakeExtraction(
+            title="OG title (NOT rss title)",
+            description="OG description (NOT rss summary)",
+            published_at="2026-05-07T05:00:00+09:00",
+            canonical_url="https://hochi.news/articles/test.html",
+            facts={"title": {"value": "OG title", "source": "og:title"}},
+        )
+        fake_fr = _FakeFetchResult(extraction=fake_extraction)
+
+        with patch(
+            "src.source_html_fetcher.fetch_source_meta",
+            return_value=fake_fr,
+        ):
+            summary = cli._process_one_entry(
+                source_name="スポーツ報知 巨人",
+                entry={
+                    "title": rss_title,
+                    "summary": "巨人は1-3で敗戦",
+                    "link": rss_link,
+                    "published": _now_iso(),
+                },
+                template_allowlist=set(RSS_ONLY_ALLOWED_TEMPLATES),
+                categories_map=_categories_map(),
+                same_run_dedupe=set(),
+                mode="dry-run",
+                audit_log_path=Path("/tmp/_audit_no_overwrite.jsonl"),
+                wp_client_factory=None,
+                logger=__import__("logging").getLogger("test"),
+                source_extractor_pipeline={
+                    "http_client": object(),
+                    "robots_checker": object(),
+                    "rate_limiter": object(),
+                    "cache": object(),
+                    "clock": object(),
+                },
+            )
+
+        # ``title`` field on the summary is the truncated RSS title, never
+        # overwritten by OG title.
+        self.assertTrue(summary["title"].startswith("巨人 1-3 阪神"))
+        self.assertNotIn("OG title (NOT rss title)", summary["title"])
+        # ``source_url`` is the original RSS link (X URL); the canonical
+        # / hochi article URL goes into ``primary_canonical_url`` instead.
+        self.assertEqual(summary["source_url"], rss_link)
+        self.assertEqual(
+            summary["primary_canonical_url"],
+            "https://hochi.news/articles/test.html",
+        )
+        # ``rss_summary`` is NOT produced as a CLI summary key.
+        self.assertNotIn("rss_summary", summary)
+        self.assertNotIn("rss_title", summary)
+
+    def test_x_only_canonical_url_does_not_invoke_fetcher(self):
+        # When the router promoted nothing (canonical stays X), the CLI
+        # must skip fetching — fetching X.com is not the extractor's job.
+        with patch(
+            "src.source_html_fetcher.fetch_source_meta"
+        ) as fetch_mock:
+            cli._process_one_entry(
+                source_name="巨人公式X",
+                entry={
+                    "title": "巨人 試合終了",  # body_too_thin / X-only — router will skip
+                    "summary": "",
+                    "link": "https://x.com/TokyoGiants/status/1",
+                    "published": _now_iso(),
+                },
+                template_allowlist=set(RSS_ONLY_ALLOWED_TEMPLATES),
+                categories_map=_categories_map(),
+                same_run_dedupe=set(),
+                mode="dry-run",
+                audit_log_path=Path("/tmp/_audit_x_only.jsonl"),
+                wp_client_factory=None,
+                logger=__import__("logging").getLogger("test"),
+                source_extractor_pipeline={
+                    "http_client": object(),
+                    "robots_checker": object(),
+                    "rate_limiter": object(),
+                    "cache": object(),
+                    "clock": object(),
+                },
+            )
+            fetch_mock.assert_not_called()
+
+    def test_draft_mode_ignores_extractor_pipeline_argument(self):
+        # Even with a pipeline supplied, --mode draft must NOT call the
+        # fetcher; Phase 1A locks the wiring to dry-run only.
+        wp = MagicMock()
+        wp.create_post = MagicMock(return_value=99)
+        with patch(
+            "src.source_html_fetcher.fetch_source_meta"
+        ) as fetch_mock:
+            cli._process_one_entry(
+                source_name="スポーツ報知 巨人",
+                entry={
+                    "title": "巨人 1-3 阪神 https://hochi.news/articles/test.html",
+                    "summary": "巨人は1-3で阪神に敗戦、9回",
+                    "link": "https://x.com/hochi_giants/status/draft9",
+                    "published": _now_iso(),
+                },
+                template_allowlist=set(RSS_ONLY_ALLOWED_TEMPLATES),
+                categories_map=_categories_map(),
+                same_run_dedupe=set(),
+                mode="draft",
+                audit_log_path=Path("/tmp/_audit_draft_ignored.jsonl"),
+                wp_client_factory=lambda: wp,
+                logger=__import__("logging").getLogger("test"),
+                source_extractor_pipeline={
+                    "http_client": object(),
+                    "robots_checker": object(),
+                    "rate_limiter": object(),
+                    "cache": object(),
+                    "clock": object(),
+                },
+            )
+            fetch_mock.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

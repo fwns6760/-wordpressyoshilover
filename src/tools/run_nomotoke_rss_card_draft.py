@@ -135,6 +135,11 @@ DEFAULT_FALLBACK_CATEGORY_NAME = "コラム"
 CALLER_NAME = "nomotoke_card_draft_cli"
 SOURCE_LANE_NAME = "nomotoke_card"
 
+# NOMOTOKE-BODY-EXTRACT-001 Phase 1A: opt-in source extractor flag.
+# Default OFF. Only consulted in --mode dry-run; --mode draft never wires
+# the fetcher (per locked spec — draft mode joins after Phase 2 user GO).
+ENABLE_SOURCE_EXTRACTOR_ENV = "ENABLE_NOMOTOKE_SOURCE_EXTRACTOR"
+
 # Map nomotoke renderer category names (may not be WP categories) to
 # closest-matching WP categories defined in config/categories.json.
 # Final fallback is DEFAULT_FALLBACK_CATEGORY_NAME ("コラム").
@@ -417,6 +422,109 @@ def build_wp_draft_payload(
 # ---------------------------------------------------------------------------
 
 
+def _is_source_extractor_enabled(args_flag: bool) -> bool:
+    """OR-merge the ``--enable-source-extractor`` flag with the env var.
+
+    ``ENABLE_NOMOTOKE_SOURCE_EXTRACTOR=1`` (or true / yes / on) enables the
+    extractor without a CLI flag — useful for ops scenarios where the flag
+    cannot be threaded but the env can. Default is OFF either way.
+    """
+    if args_flag:
+        return True
+    raw = os.environ.get(ENABLE_SOURCE_EXTRACTOR_ENV, "")
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _attach_source_extractor_facts(
+    *,
+    base_summary: Dict[str, Any],
+    primary_source_url: str,
+    pipeline: Optional[Dict[str, Any]],
+    logger: logging.Logger,
+) -> None:
+    """When the Phase 1A pipeline is wired AND the primary source URL is
+    a non-X external article URL, fetch the page (via the injected HTTP
+    client) and attach OG / JSON-LD facts to ``base_summary``.
+
+    Adds keys (always, when pipeline is non-None and url qualifies):
+      - extraction_source ("og_meta" / "json_ld" / "og_meta+json_ld" / "")
+      - extraction_skip_reason ("" / robots_blocked / fetch_forbidden /
+        meta_unavailable)
+      - primary_og_title / primary_og_description / primary_og_image /
+        primary_published_at / primary_canonical_url (empty strings when
+        unavailable)
+      - extracted_facts (dict, fact-name -> {value, source}) — empty when
+        the extractor skipped
+      - cache_hit (bool)
+      - status_code (int) — 0 when no HTTP was made (robots / cache hit)
+
+    rss_title / rss_summary / source_url / related_x_url / data_preview
+    keys are NEVER written here — those belong to upstream layers and the
+    extractor must not blur the source-boundary by re-routing them.
+    """
+    if pipeline is None:
+        return
+    if not primary_source_url or not isinstance(primary_source_url, str):
+        return
+    # Lazy import so test runs that do not exercise the extractor never
+    # have to load fetcher / requests.
+    try:
+        from src.source_html_fetcher import fetch_source_meta as _fetch
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning("source_html_fetcher import failed: %s", exc)
+        return
+
+    try:
+        result = _fetch(primary_source_url, **pipeline)
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning(
+            "fetch_source_meta unexpected error for %s: %s",
+            primary_source_url,
+            exc,
+        )
+        return
+
+    base_summary["extraction_source"] = result.extraction_source or ""
+    base_summary["extraction_skip_reason"] = result.skip_reason or ""
+    base_summary["cache_hit"] = bool(result.cache_hit)
+    base_summary["status_code"] = int(result.status_code or 0)
+
+    extraction = result.extraction
+    if extraction is not None and not extraction.is_skipped():
+        base_summary["primary_og_title"] = extraction.primary_og_title
+        base_summary["primary_og_description"] = extraction.primary_og_description
+        base_summary["primary_og_image"] = extraction.primary_og_image
+        base_summary["primary_published_at"] = extraction.primary_published_at
+        base_summary["primary_canonical_url"] = extraction.primary_canonical_url
+        base_summary["extracted_facts"] = dict(extraction.facts)
+    else:
+        base_summary["primary_og_title"] = ""
+        base_summary["primary_og_description"] = ""
+        base_summary["primary_og_image"] = ""
+        base_summary["primary_published_at"] = ""
+        base_summary["primary_canonical_url"] = ""
+        base_summary["extracted_facts"] = {}
+
+
+def _is_x_or_twitter_url(url: str) -> bool:
+    if not url:
+        return False
+    try:
+        from urllib.parse import urlparse as _u
+
+        host = _u(url).netloc.lower()
+    except Exception:
+        return False
+    return host in {
+        "twitter.com",
+        "www.twitter.com",
+        "mobile.twitter.com",
+        "x.com",
+        "www.x.com",
+        "mobile.x.com",
+    }
+
+
 def _process_one_entry(
     *,
     source_name: str,
@@ -428,6 +536,7 @@ def _process_one_entry(
     audit_log_path: Path,
     wp_client_factory: Optional[Callable[[], Any]],
     logger: logging.Logger,
+    source_extractor_pipeline: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Returns a per-entry summary dict (always emitted to stdout JSON)."""
     route_id = uuid.uuid4().hex[:16]
@@ -478,6 +587,25 @@ def _process_one_entry(
 
     base_summary["matched"] = True
     base_summary["template_key"] = result.template_key
+
+    # NOMOTOKE-BODY-EXTRACT-001 Phase 1A opt-in:
+    # When the source extractor pipeline is wired AND we're in dry-run
+    # mode, fetch the primary source URL and attach OG / JSON-LD facts to
+    # the per-entry summary. The fetch is skipped for X-only URLs (the
+    # router has already either skipped them as x_post_not_article_source
+    # or promoted an external URL to ``canonical_url``).
+    if (
+        mode == "dry-run"
+        and source_extractor_pipeline is not None
+        and result.canonical_url
+        and not _is_x_or_twitter_url(result.canonical_url)
+    ):
+        _attach_source_extractor_facts(
+            base_summary=base_summary,
+            primary_source_url=result.canonical_url,
+            pipeline=source_extractor_pipeline,
+            logger=logger,
+        )
 
     # LOCKED: blocked templates must NEVER be emitted
     if result.template_key in RSS_ONLY_BLOCKED_TEMPLATES:
@@ -669,6 +797,20 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--categories-file",
         default=str(DEFAULT_CATEGORIES_FILE),
     )
+    p.add_argument(
+        "--enable-source-extractor",
+        action="store_true",
+        default=False,
+        help=(
+            "(Phase 1A opt-in) fetch primary article URL and attach OG / "
+            "JSON-LD facts to the dry-run summary. Default OFF. ONLY honored "
+            "in --mode dry-run; --mode draft ignores the flag. Also enabled "
+            "by env "
+            + ENABLE_SOURCE_EXTRACTOR_ENV
+            + "=1. Never modifies rss_title / rss_summary / WP body — facts "
+            "are surfaced under primary_og_* keys for observability."
+        ),
+    )
     return p
 
 
@@ -682,6 +824,7 @@ def main(
     argv: Optional[List[str]] = None,
     *,
     wp_client_factory: Optional[Callable[[], Any]] = None,
+    source_extractor_pipeline: Optional[Dict[str, Any]] = None,
 ) -> int:
     args = _build_arg_parser().parse_args(argv)
 
@@ -712,6 +855,39 @@ def main(
 
     if args.mode == "draft" and wp_client_factory is None:
         wp_client_factory = _default_wp_client_factory
+
+    # Phase 1A: build the source-extractor pipeline only when the flag is
+    # set AND the mode is dry-run. ``--mode draft`` ignores the flag — the
+    # locked spec requires user GO before draft mode wires the fetcher.
+    extractor_enabled = _is_source_extractor_enabled(args.enable_source_extractor)
+    if (
+        extractor_enabled
+        and args.mode == "dry-run"
+        and source_extractor_pipeline is None
+    ):
+        try:
+            from src.source_html_fetcher import build_default_pipeline
+
+            source_extractor_pipeline = build_default_pipeline()
+            logger.info(
+                "source extractor pipeline armed (dry-run, default DI)"
+            )
+        except Exception as exc:
+            logger.warning(
+                "failed to construct source extractor pipeline: %s; "
+                "continuing without it",
+                exc,
+            )
+            source_extractor_pipeline = None
+    elif extractor_enabled and args.mode == "draft":
+        logger.warning(
+            "%s requested in --mode draft; ignored — Phase 2 user GO is "
+            "required before draft mode wires the fetcher.",
+            ENABLE_SOURCE_EXTRACTOR_ENV,
+        )
+        source_extractor_pipeline = None
+    elif args.mode != "dry-run":
+        source_extractor_pipeline = None
 
     same_run_dedupe: set = set()
     summaries: List[Dict[str, Any]] = []
@@ -746,6 +922,7 @@ def main(
             audit_log_path=audit_log_path,
             wp_client_factory=wp_client_factory if args.mode == "draft" else None,
             logger=logger,
+            source_extractor_pipeline=source_extractor_pipeline,
         )
         summaries.append(summary)
 

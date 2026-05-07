@@ -1015,10 +1015,14 @@ def _try_render_via_nomotoke(
         if block:
             extra_blocks.append(block)
 
-    # NOMOTOKE-INTAKE-PLAYER-STATS-001 (A): player season stats
-    # (NPB.jp lookup, 30-min cache). Block is empty unless a roster
-    # name in the article text resolves to a stats record.
+    # NOMOTOKE-INTAKE-PLAYER-STATS-001 (A) + DEDUP-D1: unified
+    # 「🏷 関連選手」 block. Builds jersey + position + name + season
+    # stats on a single row per player, replacing the standalone
+    # roster aside. When this block fires, the renderer-emitted
+    # ``<aside class="nomotoke-roster">...`` is stripped from the
+    # rendered body to avoid duplication.
     scan_text = " ".join(s for s in (title, summary) if s)
+    player_stats_block = ""
     if scan_text and template_key in (
         "nomotoke_card_short_news_url_v1",
         "nomotoke_card_postgame_v1",
@@ -1028,23 +1032,24 @@ def _try_render_via_nomotoke(
         "nomotoke_card_pregame_pitcher_v1",
         "nomotoke_card_official_notice_v1",
     ):
-        block = _build_player_stats_block(scan_text)
-        if block:
-            extra_blocks.append(block)
+        player_stats_block = _build_player_stats_block(scan_text)
+        if player_stats_block:
+            extra_blocks.append(player_stats_block)
+            # Strip the renderer's standalone roster aside — the
+            # unified block already carries the same names with extra
+            # stats columns.
+            rendered = re.sub(
+                r'<aside class="nomotoke-roster">.*?</aside>',
+                "",
+                rendered,
+                count=1,
+                flags=re.DOTALL,
+            )
 
-    # NOMOTOKE-INTAKE-YESTERDAY-GAME-001 (B): direct cross-link to
-    # the most recent 試合速報 post. Skips when the current post
-    # itself IS the most recent 試合速報.
-    if template_key in (
-        "nomotoke_card_short_news_url_v1",
-        "nomotoke_card_postgame_v1",
-        "nomotoke_card_manager_comment_v1",
-        "nomotoke_card_player_comment_v1",
-        "nomotoke_card_pregame_pitcher_v1",
-    ):
-        block = _build_yesterdays_game_block()
-        if block:
-            extra_blocks.append(block)
+    # NOMOTOKE-INTAKE-DEDUP-D2: 「直近の試合速報」 (B) was visually
+    # redundant with 「直近の試合」 (G2). G2 already lists the most
+    # recent 5 試合速報 posts; the standalone 1-line snippet has been
+    # removed.
 
     # NOMOTOKE-INTAKE-AUTHOR-OTHER-001 (D): "this reporter's other
     # articles" cluster. Only when JSON-LD provided an author.
@@ -1055,42 +1060,28 @@ def _try_render_via_nomotoke(
             if block:
                 extra_blocks.append(block)
 
-    # NOMOTOKE-INTAKE-NOTICE-TIMELINE-001 (E): recent 公示 posts
-    # listed inside official_notice posts (and roster-relevant pages).
-    if template_key in (
-        "nomotoke_card_official_notice_v1",
-        "nomotoke_card_short_news_url_v1",
-    ):
+    # NOMOTOKE-INTAKE-NOTICE-TIMELINE-001 (E) — D4 restriction:
+    # 直近の公示 list rendered ONLY inside official_notice posts.
+    # Previously it surfaced in short_news_url too, which felt random
+    # on game / 監督談話 / video coverage.
+    if template_key == "nomotoke_card_official_notice_v1":
         block = _build_recent_notice_timeline_block()
         if block:
             extra_blocks.append(block)
 
-    # NOMOTOKE-INTAKE-OTHERGAMES-001 (N3): list of OTHER NPB games on
-    # the same date, applied to game-related templates.
-    if template_key in (
-        "nomotoke_card_short_news_url_v1",
-        "nomotoke_card_postgame_v1",
-        "nomotoke_card_pregame_pitcher_v1",
-    ):
+    # NOMOTOKE-INTAKE-OTHERGAMES-001 (N3) — D6 restriction:
+    # 当日の他試合 list ONLY on postgame posts, where the reader is
+    # already in game-mode and league context is most relevant.
+    if template_key == "nomotoke_card_postgame_v1":
         block = _build_other_games_block()
         if block:
             extra_blocks.append(block)
 
-    # NOMOTOKE-INTAKE-SERIES-TRACKER-001 (N4): series-context tracker
-    # for postgame posts. The opponent has already been derived from
-    # the boxscore data above, so reuse it here.
-    if template_key == "nomotoke_card_postgame_v1" and isinstance(data, dict):
-        away = (data.get("away") or "").strip()
-        home = (data.get("home") or "").strip()
-        opp = ""
-        for cand in (away, home):
-            if cand and not any(g in cand for g in ("巨人", "ジャイアンツ", "読売")):
-                opp = cand
-                break
-        if opp:
-            block = _build_series_tracker_block(opp)
-            if block:
-                extra_blocks.append(block)
+    # NOMOTOKE-INTAKE-DEDUP-D3: 「シリーズ tracker」 (N4) was
+    # redundant with 「今季対戦成績」 (G3) which already lists the
+    # 5 most recent vs the same opponent — the シリーズ window
+    # (±4 days) is a strict subset of those 5 entries. Removed; G3
+    # carries the same information.
 
     # NOMOTOKE-INTAKE-TRUST-001 (N1): AI 不使用 badge — applied to
     # every nomotoke template so the badge consistently anchors the
@@ -1950,8 +1941,15 @@ def _format_pitching_summary(rec: dict[str, str]) -> str:
 
 
 def _build_player_stats_block(scan_text: str) -> str:
-    """Render the 「📊 選手成績」 block for any roster names found in
-    ``scan_text``. Empty when no name matches a player with stats.
+    """Render the unified 「🏷 関連選手」 block (D1).
+
+    Combines the previous standalone roster aside (jersey + position +
+    name) with the inline season-stats line so each player surfaces
+    on a single row:
+
+      巨人 #20 投手 戸郷翔征 — 📊 5登板 1勝1敗 防御率2.50
+
+    Empty when no roster name matches AND no stats record applies.
     """
     if not scan_text:
         return ""
@@ -1959,8 +1957,10 @@ def _build_player_stats_block(scan_text: str) -> str:
     if not candidate_names:
         return ""
     stats = _get_player_stats_lookup()
-    if not stats:
-        return ""
+    try:
+        from src.nomotoke_card_renderer import _lookup_roster_by_name
+    except Exception:
+        _lookup_roster_by_name = None  # type: ignore
     lines: list[str] = []
     seen: set[str] = set()
     for name in candidate_names:
@@ -1968,28 +1968,54 @@ def _build_player_stats_block(scan_text: str) -> str:
         if norm in seen:
             continue
         seen.add(norm)
-        # Direct lookup, then surname-prefix fallback.
-        rec_info = stats.get(norm)
-        if not rec_info:
+        # Resolve rendered name from stats first (gives the official
+        # spacing / NPB rendering); fall back to the roster name; fall
+        # back to the input.
+        rec_info = stats.get(norm) if stats else None
+        if not rec_info and stats:
             for k, v in stats.items():
                 if k.startswith(norm) and len(norm) >= 2:
                     rec_info = v
-                    name = v["record"].get("__rendered_name__", name)
                     break
-        if not rec_info:
-            continue
-        record = rec_info.get("record") or {}
-        kind = rec_info.get("kind")
+        record = (rec_info or {}).get("record") or {}
+        kind = (rec_info or {}).get("kind") or ""
         rendered = (record.get("__rendered_name__") or name).strip()
-        if kind == "batting":
-            summary = _format_batting_summary(record)
-        else:
-            summary = _format_pitching_summary(record)
-        if not summary:
+
+        # Roster-side metadata (jersey / position).
+        roster_entry = None
+        if _lookup_roster_by_name is not None:
+            roster_entry = _lookup_roster_by_name(name) or _lookup_roster_by_name(rendered)
+        prefix_parts: list[str] = ["巨人"]
+        if roster_entry:
+            jn = (roster_entry.get("jersey_number") or "").strip()
+            pos = (roster_entry.get("position") or "").strip()
+            if jn:
+                prefix_parts.append(f"#{jn}")
+            if pos:
+                prefix_parts.append(pos)
+        prefix = " ".join(html.escape(p) for p in prefix_parts)
+
+        # Stats summary tail (optional — empty when no record).
+        stats_tail = ""
+        if record:
+            if kind == "batting":
+                summary = _format_batting_summary(record)
+            else:
+                summary = _format_pitching_summary(record)
+            if summary:
+                stats_tail = f' — <span class="nomotoke-player-stats__values">📊 {html.escape(summary)}</span>'
+
+        # When neither roster metadata nor stats apply, drop the row
+        # so the block doesn't render an awkward bare name list.
+        if not roster_entry and not stats_tail:
             continue
+
         lines.append(
-            f'<li>{html.escape(rendered)} '
-            f'<span class="nomotoke-player-stats__values">{html.escape(summary)}</span></li>'
+            f'<p class="nomotoke-roster__line">'
+            f'<span class="nomotoke-roster__role">{prefix}</span> '
+            f'<span class="nomotoke-roster__name">{html.escape(rendered)}</span>'
+            f"{stats_tail}"
+            "</p>"
         )
         if len(lines) >= 4:
             break
@@ -1997,10 +2023,9 @@ def _build_player_stats_block(scan_text: str) -> str:
         return ""
     return (
         '<aside class="nomotoke-player-stats">'
-        '<p class="nomotoke-player-stats__label">📊 関連選手の今季成績</p>'
-        '<ul class="nomotoke-player-stats__list">'
+        '<p class="nomotoke-player-stats__label">🏷 関連選手</p>'
         + "".join(lines)
-        + "</ul></aside>"
+        + "</aside>"
     )
 
 

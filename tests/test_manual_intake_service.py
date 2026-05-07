@@ -231,9 +231,17 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(payload["mode"], "dry-run")
         self.assertEqual(payload["article_type"], mi.ARTICLE_TYPE_AUTO)
 
-    def test_token_unconfigured_env_returns_503(self):
+    def test_token_unconfigured_env_runs_in_open_mode(self):
+        # NOMOTOKE-INTAKE-OPEN-001: when MANUAL_INTAKE_TOKEN is unset on
+        # the service, the auth gate is skipped and the request flows
+        # into the manual_intake handler unchanged. The previous 503
+        # `service_token_unconfigured` behaviour is intentionally
+        # dropped — the production deploy now runs without a token
+        # because the operator wanted "誰でもアクセスでいい". WP write
+        # remains draft-only, output is noindex, and guarded-publish
+        # plus manual review are the canonical safety gates.
         os.environ.pop(svc.TOKEN_ENV, None)
-        body = b"url=https://x.com/foo/status/1&token=anything"
+        body = b"url=https://x.com/foo/status/1"
         status, _h, raw = _invoke_handler(
             method="POST",
             path="/manual-intake",
@@ -243,8 +251,13 @@ class AuthTests(unittest.TestCase):
                 "Content-Length": str(len(body)),
             },
         )
-        self.assertEqual(status, 503)
-        self.assertEqual(_json_body(raw)["reason"], "service_token_unconfigured")
+        # Either 200 (validation_ok) or 4xx (validation failure inside
+        # mi.handle) is acceptable here; the assertion is just that we
+        # never hit 503 service_token_unconfigured anymore.
+        self.assertNotEqual(status, 503)
+        payload = _json_body(raw)
+        self.assertNotEqual(payload.get("reason"), "service_token_unconfigured")
+        self.assertNotEqual(payload.get("reason"), "forbidden")
 
 
 class IntakeBehaviourTests(unittest.TestCase):

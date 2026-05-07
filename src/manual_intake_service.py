@@ -497,14 +497,17 @@ def build_handler(
                 _json_response(self, 404, {"ok": False, "reason": "not_found"})
                 return
 
+            # NOMOTOKE-INTAKE-OPEN-001: when ``MANUAL_INTAKE_TOKEN`` is
+            # configured the service requires it (legacy CLI / curl
+            # callers and any deploy that wants the gate); when the env
+            # is empty the service runs in OPEN mode — anyone with the
+            # URL can submit. The operator opted into this for the
+            # production deploy because (a) WP writes are limited to
+            # ``draft`` (no publish, no mail), (b) all output is
+            # noindex, (c) downstream guarded-publish + manual review is
+            # the canonical safety gate, and (d) Cloud Run min=0/max=2
+            # caps cost even under abuse.
             expected_token = _require_token()
-            if not expected_token:
-                _json_response(
-                    self,
-                    503,
-                    {"ok": False, "reason": "service_token_unconfigured"},
-                )
-                return
 
             body, body_err = _read_body(self)
             if body_err == "body_too_large":
@@ -519,10 +522,11 @@ def build_handler(
                 )
                 return
 
-            supplied = _request_token(self, payload.get("token") or "")
-            if supplied != expected_token:
-                _json_response(self, 403, {"ok": False, "reason": "forbidden"})
-                return
+            if expected_token:
+                supplied = _request_token(self, payload.get("token") or "")
+                if supplied != expected_token:
+                    _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                    return
 
             # Drop the token from the payload before handing off so we never
             # log it via downstream audit.

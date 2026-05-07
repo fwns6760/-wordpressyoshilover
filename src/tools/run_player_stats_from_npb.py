@@ -88,7 +88,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--mode",
-        choices=("dry-run", "draft"),
+        choices=("dry-run", "draft", "publish"),
         default="dry-run",
         help="default 'dry-run' (no WP write); 'draft' creates a WP draft",
     )
@@ -201,7 +201,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.mode == "dry-run":
         output["body_preview"] = (result.get("content_html") or "")[:500]
 
-    if args.mode == "draft":
+    if args.mode in ("draft", "publish"):
         from dotenv import load_dotenv
 
         load_dotenv()
@@ -225,7 +225,7 @@ def main(argv: list[str] | None = None) -> int:
                 title=result["title"],
                 content=result["content_html"],
                 categories=[category_id] if category_id else None,
-                status="draft",
+                status=("publish" if args.mode == "publish" else "draft"),
                 source_url=url,
                 caller="player_stats_from_npb",
                 source_lane="player_stats_from_npb",

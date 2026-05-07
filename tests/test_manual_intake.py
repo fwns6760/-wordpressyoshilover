@@ -1,6 +1,6 @@
-"""Tests for src/tools/manual_intake.py — MANUAL-INTAKE-001 pass-1.
+"""Tests for src/tools/manual_intake.py — MANUAL-INTAKE-001 pass-1 + 002.
 
-12 required fixtures from the ticket:
+12 required fixtures from the 001 ticket:
 1. invalid URL -> exit 10
 2. X URL status_id 抽出
 3. X URL でtitle/summaryなし -> exit 12
@@ -13,6 +13,16 @@
 10. source_url meta が残る
 11. OG/meta parse success
 12. OG/meta parse fail + override title/summary success
+
+MANUAL-INTAKE-002 additions:
+- --source-published-at parse / normalize (JST / Z / naive)
+- invalid date -> exit 15
+- normalized timestamp reaches WP draft body
+- normalized_source_published_at present in output dict
+- memo never co-mingles with source_published_at into body
+- X URL handles --source-published-at as timestamp metadata only
+- News URL prefers CLI --source-published-at over absent OG date
+- category / X normalization unchanged
 """
 
 from __future__ import annotations
@@ -429,6 +439,7 @@ class CLIArgParserTests(unittest.TestCase):
         self.assertEqual(ns.url, "https://x.com/foo/status/1")
         self.assertEqual(ns.mode, "draft")
         self.assertEqual(ns.memo, "")
+        self.assertEqual(ns.source_published_at, "")
 
     def test_parser_full_flags(self):
         p = mi._build_arg_parser()
@@ -443,17 +454,224 @@ class CLIArgParserTests(unittest.TestCase):
                 "T",
                 "--summary",
                 "S",
+                "--source-published-at",
+                "2026-05-07T18:30:00+09:00",
             ]
         )
         self.assertEqual(ns.memo, "宮原昇格")
         self.assertEqual(ns.mode, "dry-run")
         self.assertEqual(ns.title, "T")
         self.assertEqual(ns.summary, "S")
+        self.assertEqual(ns.source_published_at, "2026-05-07T18:30:00+09:00")
 
     def test_parser_rejects_invalid_mode(self):
         p = mi._build_arg_parser()
         with self.assertRaises(SystemExit):
             p.parse_args(["https://x.com/foo/status/1", "--mode", "publish"])
+
+
+class SourcePublishedAtNormalizationTests(unittest.TestCase):
+    def test_empty_returns_empty_no_error(self):
+        self.assertEqual(mi._normalize_source_published_at(""), ("", ""))
+        self.assertEqual(mi._normalize_source_published_at("   "), ("", ""))
+
+    def test_jst_offset_preserved(self):
+        norm, err = mi._normalize_source_published_at("2026-05-07T18:30:00+09:00")
+        self.assertEqual(err, "")
+        self.assertEqual(norm, "2026-05-07T18:30:00+09:00")
+
+    def test_z_suffix_converted_to_jst(self):
+        norm, err = mi._normalize_source_published_at("2026-05-07T09:30:00Z")
+        self.assertEqual(err, "")
+        # 09:30 UTC -> 18:30 JST
+        self.assertEqual(norm, "2026-05-07T18:30:00+09:00")
+
+    def test_utc_offset_converted_to_jst(self):
+        norm, err = mi._normalize_source_published_at("2026-05-07T00:00:00+00:00")
+        self.assertEqual(err, "")
+        self.assertEqual(norm, "2026-05-07T09:00:00+09:00")
+
+    def test_naive_treated_as_jst(self):
+        norm, err = mi._normalize_source_published_at("2026-05-07T18:30:00")
+        self.assertEqual(err, "")
+        self.assertEqual(norm, "2026-05-07T18:30:00+09:00")
+
+    def test_date_only_treated_as_jst_midnight(self):
+        norm, err = mi._normalize_source_published_at("2026-05-07")
+        self.assertEqual(err, "")
+        self.assertEqual(norm, "2026-05-07T00:00:00+09:00")
+
+    def test_invalid_returns_error(self):
+        # Python 3.11+ datetime.fromisoformat accepts compact ISO forms like
+        # "20260507", so the invalid fixtures here cover non-ISO strings.
+        for bad in ("not-a-date", "2026/05/07", "yesterday", "tomorrow", "2026-13-40"):
+            with self.subTest(bad=bad):
+                norm, err = mi._normalize_source_published_at(bad)
+                self.assertEqual(norm, "", f"unexpected normalized for {bad!r}: {norm!r}")
+                self.assertEqual(err, "invalid_source_published_at")
+
+
+class SourcePublishedAtIntakeTests(_IntakeBaseTest):
+    def test_invalid_source_published_at_exit_15_no_wp(self):
+        wp_factory = MagicMock()
+        code, out = mi.run_manual_intake(
+            url="https://x.com/foo/status/1",
+            title_override="巨人 試合終了 0-5 ヤクルト",
+            mode="draft",
+            source_published_at="not-a-date",
+            wp_client_factory=wp_factory,
+            rate_limit_lockfile=self.lockfile,
+        )
+        self.assertEqual(code, mi.EXIT_INVALID_SOURCE_PUBLISHED_AT)
+        self.assertEqual(out["reason"], "validation_failed")
+        self.assertEqual(out["skip_reason"], "invalid_source_published_at")
+        self.assertEqual(out["normalized_source_published_at"], "")
+        wp_factory.assert_not_called()
+
+    def test_normalized_source_published_at_in_output_dry_run(self):
+        code, out = mi.run_manual_intake(
+            url="https://x.com/foo/status/1",
+            title_override="巨人 試合終了 0-5 ヤクルト",
+            mode="dry-run",
+            source_published_at="2026-05-07T09:30:00Z",
+            rate_limit_lockfile=self.lockfile,
+        )
+        self.assertEqual(code, mi.EXIT_OK)
+        self.assertEqual(
+            out["normalized_source_published_at"], "2026-05-07T18:30:00+09:00"
+        )
+
+    def test_x_draft_body_carries_normalized_timestamp(self):
+        captured: dict = {}
+
+        def fake_create(**kwargs):
+            captured.update(kwargs)
+            return 401
+
+        wp = MagicMock()
+        wp.create_post = fake_create
+        code, out = mi.run_manual_intake(
+            url="https://x.com/TokyoGiants/status/12345",
+            title_override="巨人 試合終了 0-5 ヤクルト",
+            mode="draft",
+            source_published_at="2026-05-07T18:30:00+09:00",
+            wp_client_factory=lambda: wp,
+            rate_limit_lockfile=self.lockfile,
+        )
+        self.assertEqual(code, mi.EXIT_OK)
+        content = captured.get("content", "")
+        self.assertIn("2026-05-07T18:30:00+09:00", content)
+        self.assertIn("投稿日時", content)
+        # X URL must remain timestamp-only metadata: no X API hint, only
+        # the embed blockquote + timestamp paragraph.
+        self.assertIn("twitter-tweet", content)
+        self.assertEqual(
+            out["normalized_source_published_at"], "2026-05-07T18:30:00+09:00"
+        )
+        self.assertEqual(out["source_kind"], "x")
+
+    def test_news_draft_body_carries_normalized_timestamp(self):
+        captured: dict = {}
+
+        def fake_create(**kwargs):
+            captured.update(kwargs)
+            return 402
+
+        wp = MagicMock()
+        wp.create_post = fake_create
+        code, out = mi.run_manual_intake(
+            url="https://hochi.news/articles/abc-123.html",
+            title_override="巨人 試合速報 0-5 ヤクルト",
+            summary_override="ヤクルト戦敗戦",
+            mode="draft",
+            source_published_at="2026-05-07T18:30:00+09:00",
+            wp_client_factory=lambda: wp,
+            rate_limit_lockfile=self.lockfile,
+        )
+        self.assertEqual(code, mi.EXIT_OK)
+        content = captured.get("content", "")
+        self.assertIn("2026-05-07T18:30:00+09:00", content)
+        self.assertIn("出典公開日時", content)
+        # summary must NOT be overwritten by the timestamp.
+        self.assertIn("ヤクルト戦敗戦", content)
+        # category routing unchanged.
+        self.assertEqual(captured.get("categories"), [664])
+        self.assertEqual(
+            out["normalized_source_published_at"], "2026-05-07T18:30:00+09:00"
+        )
+
+    def test_memo_does_not_leak_when_source_published_at_set(self):
+        captured: dict = {}
+
+        def fake_create(**kwargs):
+            captured.update(kwargs)
+            return 403
+
+        wp = MagicMock()
+        wp.create_post = fake_create
+        secret_memo = "MEMO_SECRET_TOKEN_002"
+        code, _out = mi.run_manual_intake(
+            url="https://x.com/TokyoGiants/status/55555",
+            title_override="巨人 試合終了 0-5 ヤクルト",
+            summary_override="ヤクルト戦敗戦",
+            memo=secret_memo,
+            mode="draft",
+            source_published_at="2026-05-07T18:30:00+09:00",
+            wp_client_factory=lambda: wp,
+            rate_limit_lockfile=self.lockfile,
+        )
+        self.assertEqual(code, mi.EXIT_OK)
+        content = captured.get("content", "")
+        title = captured.get("title", "")
+        self.assertNotIn(secret_memo, content)
+        self.assertNotIn(secret_memo, title)
+        self.assertIn("2026-05-07T18:30:00+09:00", content)
+
+    def test_naive_source_published_at_stored_as_jst(self):
+        captured: dict = {}
+
+        def fake_create(**kwargs):
+            captured.update(kwargs)
+            return 404
+
+        wp = MagicMock()
+        wp.create_post = fake_create
+        code, out = mi.run_manual_intake(
+            url="https://hochi.news/articles/naive.html",
+            title_override="巨人 試合速報 0-5 ヤクルト",
+            summary_override="ヤクルト戦敗戦",
+            mode="draft",
+            source_published_at="2026-05-07T18:30:00",
+            wp_client_factory=lambda: wp,
+            rate_limit_lockfile=self.lockfile,
+        )
+        self.assertEqual(code, mi.EXIT_OK)
+        self.assertEqual(
+            out["normalized_source_published_at"], "2026-05-07T18:30:00+09:00"
+        )
+        self.assertIn("2026-05-07T18:30:00+09:00", captured.get("content", ""))
+
+    def test_omitted_source_published_at_does_not_alter_body(self):
+        captured: dict = {}
+
+        def fake_create(**kwargs):
+            captured.update(kwargs)
+            return 405
+
+        wp = MagicMock()
+        wp.create_post = fake_create
+        code, out = mi.run_manual_intake(
+            url="https://x.com/TokyoGiants/status/77777",
+            title_override="巨人 試合終了 0-5 ヤクルト",
+            mode="draft",
+            wp_client_factory=lambda: wp,
+            rate_limit_lockfile=self.lockfile,
+        )
+        self.assertEqual(code, mi.EXIT_OK)
+        content = captured.get("content", "")
+        self.assertNotIn("投稿日時", content)
+        self.assertNotIn("出典公開日時", content)
+        self.assertEqual(out["normalized_source_published_at"], "")
 
 
 if __name__ == "__main__":

@@ -16,9 +16,15 @@ Body grounding integrity is preserved.
 
 Usage:
     python -m src.tools.manual_intake <url> [--memo "..."] [--mode draft|dry-run]
-        [--title "..."] [--summary "..."]
+        [--title "..."] [--summary "..."] [--source-published-at "..."]
 
 Default --mode is "draft".
+
+--source-published-at accepts an ISO 8601 timestamp. Naive strings are
+treated as JST; "Z" / explicit UTC offsets are normalized to JST. The
+normalized value is embedded in the WP draft body so guarded-publish's
+freshness / source-time pipeline can pick it up. memo is independent and
+still never reaches body / source_text / Gemini prompt.
 """
 
 from __future__ import annotations
@@ -31,9 +37,12 @@ import os
 import re
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
+
+JST = timezone(timedelta(hours=9), name="JST")
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 _VENDOR = str(ROOT / "vendor")
@@ -50,6 +59,7 @@ EXIT_FETCH_FAILED = 11
 EXIT_MISSING_TITLE_OR_SUMMARY = 12
 EXIT_DUPLICATE = 13
 EXIT_VALIDATION_FAILED = 14
+EXIT_INVALID_SOURCE_PUBLISHED_AT = 15
 EXIT_WP_DRAFT_FAILED = 20
 EXIT_DOWNSTREAM_HANDOFF_FAILED = 21
 EXIT_RATE_LIMITED = 30
@@ -81,6 +91,30 @@ _META_PATTERNS: tuple[tuple[str, str], ...] = (
     (r'<meta\s+name=["\']description["\']\s+content=["\']([^"\']+)["\']', "summary"),
     (r'<meta\s+name=["\']twitter:description["\']\s+content=["\']([^"\']+)["\']', "summary"),
 )
+
+
+def _normalize_source_published_at(value: str) -> tuple[str, str]:
+    """Parse an ISO 8601 timestamp and normalize to a JST ISO string.
+
+    Matches `_parse_iso_to_jst` semantics used elsewhere:
+    - empty/whitespace -> ("", "")
+    - naive string -> JST attached
+    - "Z" / UTC offset -> converted to JST
+    - unparseable -> ("", "invalid_source_published_at")
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return "", ""
+    candidate = raw.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(candidate)
+    except (TypeError, ValueError):
+        return "", "invalid_source_published_at"
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=JST)
+    else:
+        parsed = parsed.astimezone(JST)
+    return parsed.isoformat(), ""
 
 
 def _is_valid_url(url: object) -> bool:
@@ -184,17 +218,40 @@ def _fetch_news_meta(url: str, *, timeout: float = 10.0) -> dict[str, str]:
     return _parse_og_meta(text)
 
 
-def _build_body_for_x(canonical_url: str) -> str:
+def _source_published_at_block(source_published_at_iso: str, *, label: str) -> str:
+    """Visible body block carrying the source publish timestamp.
+
+    The string is plain text so guarded-publish's body_date fallback can
+    parse the date when WP meta does not carry it. memo NEVER reaches
+    this block — only the normalized timestamp does.
+    """
+    if not source_published_at_iso:
+        return ""
+    return f'<p>{label}: {html.escape(source_published_at_iso)}</p>'
+
+
+def _build_body_for_x(canonical_url: str, source_published_at_iso: str = "") -> str:
     safe = html.escape(canonical_url)
-    return (
+    parts = [
         f'<blockquote class="twitter-tweet" data-lang="ja">'
-        f'<a href="{safe}"></a></blockquote>\n'
+        f'<a href="{safe}"></a></blockquote>',
         '<script async src="https://platform.twitter.com/widgets.js" '
-        'charset="utf-8"></script>\n'
+        'charset="utf-8"></script>',
+    ]
+    timestamp_block = _source_published_at_block(
+        source_published_at_iso, label="投稿日時"
     )
+    if timestamp_block:
+        parts.append(timestamp_block)
+    return "\n".join(parts) + "\n"
 
 
-def _build_body_for_news(source_url: str, title: str, summary: str) -> str:
+def _build_body_for_news(
+    source_url: str,
+    title: str,
+    summary: str,
+    source_published_at_iso: str = "",
+) -> str:
     parts: list[str] = []
     if summary:
         parts.append(f"<p>{html.escape(summary)}</p>")
@@ -203,6 +260,11 @@ def _build_body_for_news(source_url: str, title: str, summary: str) -> str:
         f'<p>出典: <a href="{html.escape(source_url)}" target="_blank" '
         f'rel="noopener">{html.escape(label)}</a></p>'
     )
+    timestamp_block = _source_published_at_block(
+        source_published_at_iso, label="出典公開日時"
+    )
+    if timestamp_block:
+        parts.append(timestamp_block)
     return "\n".join(parts)
 
 
@@ -347,6 +409,7 @@ def run_manual_intake(
     mode: str = "draft",
     title_override: str = "",
     summary_override: str = "",
+    source_published_at: str = "",
     wp_client_factory: Callable[[], Any] | None = None,
     rate_limit_lockfile: Path | None = None,
     fetch_meta: Callable[..., dict[str, str]] = _fetch_news_meta,
@@ -375,11 +438,21 @@ def run_manual_intake(
         "skip_reason": "",
         "post_id": None,
         "draft_url": None,
+        "normalized_source_published_at": "",
     }
 
     if not _is_valid_url(url):
         output["reason"] = "invalid_url"
         return EXIT_INVALID_URL, output
+
+    normalized_source_published_at, sp_error = _normalize_source_published_at(
+        source_published_at
+    )
+    if sp_error:
+        output["reason"] = "validation_failed"
+        output["skip_reason"] = sp_error
+        return EXIT_INVALID_SOURCE_PUBLISHED_AT, output
+    output["normalized_source_published_at"] = normalized_source_published_at
 
     lockfile = rate_limit_lockfile or DEFAULT_LOCKFILE
     allowed, retry_after = _check_rate_limit(lockfile)
@@ -465,9 +538,17 @@ def run_manual_intake(
         return EXIT_WP_DRAFT_FAILED, output
 
     if is_x:
-        body = _build_body_for_x(canonical_source_url)
+        body = _build_body_for_x(
+            canonical_source_url,
+            source_published_at_iso=normalized_source_published_at,
+        )
     else:
-        body = _build_body_for_news(canonical_source_url, title, summary)
+        body = _build_body_for_news(
+            canonical_source_url,
+            title,
+            summary,
+            source_published_at_iso=normalized_source_published_at,
+        )
 
     if memo:
         if memo in body:
@@ -524,6 +605,15 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--title", default="", help="override fetched title")
     p.add_argument("--summary", default="", help="override fetched summary")
+    p.add_argument(
+        "--source-published-at",
+        default="",
+        help=(
+            "optional ISO 8601 source publish timestamp "
+            "(naive treated as JST, Z/UTC offsets normalized to JST). "
+            "Used as freshness/source-time metadata only — never as a fact source."
+        ),
+    )
     return p
 
 
@@ -549,6 +639,7 @@ def main(argv: list[str] | None = None) -> int:
             mode=args.mode,
             title_override=args.title,
             summary_override=args.summary,
+            source_published_at=args.source_published_at,
             wp_client_factory=_default_wp_client_factory,
             logger=logger,
         )

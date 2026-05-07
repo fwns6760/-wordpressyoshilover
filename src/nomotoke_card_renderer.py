@@ -1548,7 +1548,12 @@ def _x_embed_block(
     )
 
 
-def _extract_short_news_facts(title: str, summary: str) -> Dict[str, str]:
+def _extract_short_news_facts(
+    title: str,
+    summary: str,
+    *,
+    og_description: str = "",
+) -> Dict[str, str]:
     """Source-only structured fact extraction for short_news_url cards.
 
     Returns a subset of:
@@ -1562,11 +1567,20 @@ def _extract_short_news_facts(title: str, summary: str) -> Dict[str, str]:
 
     NEVER fabricates — only literal source matches are returned. The
     extractor must not pull anything that is not a substring of
-    ``title + summary``; this keeps the source-boundary intact even when
-    later phases add an OG-meta extractor (NOMOTOKE-BODY-EXTRACT-001),
-    which will write into the SAME shape via different provenance.
+    ``title + summary + og_description``.
+
+    NOMOTOKE-BODY-EXTRACT-001 Phase 2A: ``og_description`` (the verbatim
+    ``og:description`` lifted by Phase 0/1A from the primary article
+    page) is now scanned as additional source text. This catches facts
+    that the X-feed RSS title / summary lacks — e.g. sanspo's ``og:description``
+    encodes ``9回戦`` / ``東京D`` / opponent / 投手名 in a single line that
+    the X RSS rarely carries. og_description is INPUT only; the lead-text
+    generation step ``_extract_lead_sentences`` is the layer responsible
+    for shortening and never transcribes it whole.
     """
-    text = f"{title or ''}\n{summary or ''}"
+    text = "\n".join(
+        s for s in (title or "", summary or "", og_description or "") if s
+    )
     facts: Dict[str, str] = {}
 
     m = _SHORT_NEWS_SCORE_RE.search(text)
@@ -1616,6 +1630,80 @@ def _truncate_summary_preserving_period(text: str, cap: int) -> str:
     if last_period > cap // 2:
         return cut[: last_period + 1]
     return cut.rstrip() + "…"
+
+
+def _extract_lead_sentences(
+    raw_og_description: str,
+    *,
+    max_sentences: int = 2,
+    char_cap: int = 120,
+) -> str:
+    """Pick a 1〜``max_sentences``-sentence lead from a raw og:description.
+
+    NOMOTOKE-BODY-EXTRACT-001 locked spec:
+      - og:description verbatim transcription is forbidden.
+      - The renderer must not generate a lead by passing the entire
+        og:description through unchanged.
+      - Source-only: this function never adds tokens; it only selects
+        a prefix subset of the input.
+
+    Algorithm:
+      1. Split on ``。`` (full-width period). Keep the trailing period on
+         each sentence so the lead reads naturally.
+      2. Concatenate up to ``max_sentences`` sentences, BUT stop early
+         once the running length would exceed ``char_cap`` chars.
+      3. If no sentence boundary exists within budget (rare; X-style
+         single-line text with no ``。``), fall back to the first
+         ``char_cap`` chars with ellipsis suffix.
+      4. Returns "" for empty / non-string input.
+
+    Defensively returns the input verbatim when the input is already
+    short enough (≤ char_cap AND ≤ max_sentences) — cap is the upper
+    bound, not a forced trim.
+    """
+    if not isinstance(raw_og_description, str) or not raw_og_description:
+        return ""
+    text = raw_og_description.strip()
+    if not text:
+        return ""
+
+    # Sentence split on 「。」. Keep the period attached.
+    parts: List[str] = []
+    buf = ""
+    for ch in text:
+        buf += ch
+        if ch == "。":
+            parts.append(buf)
+            buf = ""
+    if buf.strip():
+        parts.append(buf)
+
+    if not parts:
+        return text[:char_cap].rstrip() + (
+            "…" if len(text) > char_cap else ""
+        )
+
+    out = ""
+    used = 0
+    for sent in parts:
+        if used >= max_sentences:
+            break
+        candidate = out + sent
+        if len(candidate) > char_cap:
+            # Still room for at least one full sentence? If not yet
+            # added anything, hard-truncate the first sentence.
+            if not out:
+                truncated = sent[:char_cap].rstrip() + "…"
+                return truncated
+            break
+        out = candidate
+        used += 1
+
+    if not out:
+        return text[:char_cap].rstrip() + (
+            "…" if len(text) > char_cap else ""
+        )
+    return out
 
 
 def _split_related_x_and_other(related_links: Any) -> tuple:
@@ -1775,6 +1863,15 @@ def render_short_news_url_card(data: Dict[str, Any]) -> Dict[str, Any]:
     related_links = data.get("related_links")
     source_label_override = (data.get("source_label") or "").strip()
 
+    # NOMOTOKE-BODY-EXTRACT-001 Phase 2A: optional OG / JSON-LD facts
+    # forwarded from the CLI when --enable-source-extractor is on. The
+    # renderer reads them WITHOUT mutating rss_title (= ``title``) or
+    # rss_summary (= ``summary``); they live in their own keyspace.
+    primary_og_description = (
+        data.get("primary_og_description") or ""
+    ).strip()
+    primary_og_title = (data.get("primary_og_title") or "").strip()
+
     if not title_raw:
         return _skip(template_key, "missing_short_news_fields:title", source_url_raw)
     safe_source_url = _safe_url(source_url_raw)
@@ -1787,7 +1884,12 @@ def render_short_news_url_card(data: Dict[str, Any]) -> Dict[str, Any]:
             template_key, "missing_short_news_fields:source_name", source_url_raw
         )
 
-    facts = _extract_short_news_facts(title_raw, summary_raw)
+    # Facts are extracted from title + summary AS BEFORE; og_description
+    # is appended only as additional source-text input. The function
+    # signature stays backward-compatible (og_description default "").
+    facts = _extract_short_news_facts(
+        title_raw, summary_raw, og_description=primary_og_description
+    )
 
     if _short_news_body_too_thin(
         title=title_raw, summary=summary_raw, facts=facts
@@ -1798,7 +1900,22 @@ def render_short_news_url_card(data: Dict[str, Any]) -> Dict[str, Any]:
             source_url_raw,
         )
 
-    summary_clean = _truncate_summary_preserving_period(summary_raw, 200)
+    # Lead-text source priority (Phase 2A):
+    #   1. og:description shortened to 1〜2 sentences (≤120 chars). This
+    #      is the verbatim-transcription guard — _extract_lead_sentences
+    #      never returns the full og:description.
+    #   2. RSS summary (truncated at 200 chars / sentence boundary)
+    #   3. RSS title (last-resort fallback)
+    og_lead = _extract_lead_sentences(primary_og_description)
+    if og_lead:
+        lead_text = og_lead
+    else:
+        lead_text = (
+            _truncate_summary_preserving_period(summary_raw, 200)
+            or title_raw
+        )
+
+    summary_clean = lead_text  # name retained for the body_parts append below
 
     x_embed_url, other_related = _split_related_x_and_other(related_links)
 

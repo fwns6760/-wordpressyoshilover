@@ -1723,5 +1723,263 @@ class LinkLabelFixTests(unittest.TestCase):
         self.assertNotIn("巨人公式サイト「巨人、ヤクルト戦に敗れ連敗」", body)
 
 
+# ---------------------------------------------------------------------------
+# NOMOTOKE-BODY-EXTRACT-001 Phase 2A: lead extractor + og_description fact scan
+# ---------------------------------------------------------------------------
+
+
+class LeadSentenceExtractorTests(unittest.TestCase):
+    """``_extract_lead_sentences`` is the verbatim-transcription guard
+    for og:description. It must NEVER return the entire input when the
+    input is longer than the cap, and it must collapse to the first
+    1〜``max_sentences`` 「。」-terminated sentences within budget.
+    """
+
+    def setUp(self) -> None:
+        from src.nomotoke_card_renderer import _extract_lead_sentences
+
+        self._lead = _extract_lead_sentences
+
+    def test_returns_first_sentence_when_default_max_two(self):
+        text = (
+            "巨人は0-5でヤクルトに敗戦、9回まで得点を奪えず連敗となった。"
+            "試合詳細は球団公式ページで公開されている。"
+            "次戦は阪神戦である。"
+        )
+        out = self._lead(text)
+        self.assertTrue(out.startswith("巨人は0-5"))
+        # Two sentences fit under 120 chars, so we get both — but never
+        # the third one.
+        self.assertNotIn("次戦は阪神戦", out)
+
+    def test_truncates_long_first_sentence_with_ellipsis(self):
+        text = "巨人の" + "解説文章" * 60 + "。"
+        out = self._lead(text, char_cap=80)
+        self.assertLessEqual(len(out), 81)  # 80 + ellipsis
+        self.assertTrue(out.endswith("…"))
+
+    def test_no_period_input_falls_back_to_char_cap(self):
+        text = "巨人速報" + ("を伝えている" * 30)
+        out = self._lead(text, char_cap=80)
+        self.assertLessEqual(len(out), 81)
+        self.assertTrue(out.endswith("…"))
+
+    def test_short_input_returns_verbatim(self):
+        text = "巨人、阪神戦に敗れ連敗。"
+        out = self._lead(text)
+        self.assertEqual(out, text)
+
+    def test_empty_input_returns_empty(self):
+        self.assertEqual(self._lead(""), "")
+        self.assertEqual(self._lead(None), "")
+
+    def test_never_returns_full_long_og_description_verbatim(self):
+        # Real sanspo-shape og:description is ~250 chars. The lead must
+        # NOT pass it through unchanged.
+        long_desc = (
+            "（セ・リーグ、巨人0-5ヤクルト、9回戦、ヤクルト6勝3敗、6日、東京D）"
+            "巨人のドラフト1位・竹丸和幸投手（24）＝鷺宮製作所＝が6度目の先発。"
+            "自己最多111球、同最長6回2/3を投じたが、自己ワーストとなる5失点で2敗目を喫した。"
+            "巨人は今季4度目の零封負け。GW9連戦は3カード全て1勝2敗で負け越した。"
+        )
+        out = self._lead(long_desc)
+        self.assertNotEqual(out, long_desc)
+        self.assertLessEqual(len(out), 121)
+
+
+class FactsOgDescriptionScanTests(unittest.TestCase):
+    """``_extract_short_news_facts`` now scans og_description for opponent
+    / venue / game_index / inning_marker. RSS title + summary inputs and
+    their existing facts must be unchanged when og_description is empty.
+    """
+
+    def setUp(self) -> None:
+        from src.nomotoke_card_renderer import _extract_short_news_facts
+
+        self._extract = _extract_short_news_facts
+
+    def test_default_og_description_empty_keeps_existing_behaviour(self):
+        f1 = self._extract("巨人 0-5 阪神", "完封負け")
+        f2 = self._extract("巨人 0-5 阪神", "完封負け", og_description="")
+        self.assertEqual(f1, f2)
+
+    def test_opponent_picked_from_og_description_when_absent_in_title(self):
+        # X-feed title may be very sparse: 「巨人ニュース更新」.  og:description
+        # is the layer that actually carries the opponent name.
+        f = self._extract(
+            "巨人ニュース",
+            "詳細",
+            og_description="（セ・リーグ、巨人0-5ヤクルト、9回戦、東京D）",
+        )
+        self.assertEqual(f.get("opponent"), "ヤクルト")
+
+    def test_venue_picked_from_og_description(self):
+        f = self._extract(
+            "巨人ニュース",
+            "",
+            og_description="（巨人 阪神戦、東京D）",
+        )
+        self.assertEqual(f.get("venue"), "東京ドーム")
+
+    def test_game_index_picked_from_og_description(self):
+        f = self._extract(
+            "巨人ニュース",
+            "",
+            og_description="（セ・リーグ、巨人0-3阪神、9回戦、東京D）",
+        )
+        self.assertEqual(f.get("game_index"), "9")
+
+    def test_inning_marker_picked_from_og_description(self):
+        f = self._extract(
+            "巨人ニュース",
+            "",
+            og_description="9回完封勝ちで連勝",
+        )
+        self.assertEqual(f.get("inning_marker"), "9回完封")
+
+    def test_score_already_in_title_not_overridden_by_og(self):
+        # The first score wins (regex returns the first match across
+        # title + summary + og_description), so a title-side score sticks.
+        f = self._extract(
+            "巨人 1-2 阪神",
+            "",
+            og_description="（巨人0-5阪神、9回戦）",
+        )
+        self.assertEqual(f.get("score"), "1-2")
+
+
+class RendererPhase2AOgWiringTests(unittest.TestCase):
+    """The renderer reads ``primary_og_description`` from data when present
+    and uses it for both lead-text and fact-card enrichment without
+    overwriting RSS title / summary in the output payload.
+    """
+
+    def setUp(self) -> None:
+        os.environ["ENABLE_NOMOTOKE_CARD_TEMPLATES"] = "1"
+        from src.nomotoke_card_renderer import render_short_news_url_card
+
+        self._render = render_short_news_url_card
+
+    def _data(self, **overrides):
+        base = {
+            "title": "巨人 試合速報",  # sparse RSS title
+            "summary": "巨人 試合速報",  # sparse RSS summary
+            "source_url": "https://www.sanspo.com/article/abc/",
+            "source_name": "サンスポ巨人X",
+            "date_label": "2026年5月7日",
+            "related_links": [
+                {
+                    "url": "https://x.com/Sanspo_Giants/status/1",
+                    "label": "関連投稿: サンスポ巨人X",
+                }
+            ],
+            # Phase 2A optional fields — populated by the CLI's
+            # _attach_source_extractor_facts then mirrored into data_preview.
+            "primary_og_title": (
+                "巨人D1位・竹丸和幸、自己ワースト5失点で2敗目"
+            ),
+            "primary_og_description": (
+                "（セ・リーグ、巨人0-5ヤクルト、9回戦、ヤクルト6勝3敗、6日、東京D）"
+                "巨人のドラフト1位・竹丸和幸投手（24）＝鷺宮製作所＝が6度目の先発。"
+                "自己最多111球、同最長6回2/3を投じたが、自己ワーストとなる5失点で2敗目を喫した。"
+                "巨人は今季4度目の零封負け。"
+            ),
+            "primary_published_at": "2026-05-06T17:50:49+09:00",
+            "primary_canonical_url": "https://www.sanspo.com/article/abc/",
+        }
+        base.update(overrides)
+        return base
+
+    def test_lead_uses_og_description_first_sentence_not_full_text(self):
+        out = self._render(self._data())
+        body = out["content_html"]
+        # The first og sentence is in the lead.
+        self.assertIn(
+            "（セ・リーグ、巨人0-5ヤクルト、9回戦、ヤクルト6勝3敗、6日、東京D）",
+            body,
+        )
+        # The 4th sentence (零封負け) is past the cap and must NOT appear.
+        self.assertNotIn("巨人は今季4度目の零封負け。", body)
+
+    def test_fact_card_uses_og_description_for_opponent_venue_game_index(self):
+        out = self._render(self._data())
+        body = out["content_html"]
+        # Opponent / venue / game_index / inning_marker came ONLY from
+        # og:description — the RSS title / summary contained none of them.
+        self.assertIn("<th>対戦</th>", body)
+        self.assertIn("ヤクルト戦", body)
+        self.assertIn("東京ドーム", body)
+        self.assertIn("9回戦", body)
+
+    def test_rss_title_summary_not_modified_in_output(self):
+        # The renderer does NOT echo og:title in place of the RSS title.
+        # ``out["title"]`` is the sanitized RSS title.
+        out = self._render(self._data())
+        self.assertEqual(out["title"], "巨人 試合速報")
+        self.assertNotIn(
+            "<p class=\"nomotoke-source\">出典: <a "
+            "href=\"https://www.sanspo.com/article/abc/\" "
+            "target=\"_blank\" rel=\"noopener\">竹丸和幸",
+            out["content_html"],
+        )
+
+    def test_og_description_absent_falls_back_to_rss_summary(self):
+        # When og:description is missing, the lead still works (RSS-only
+        # behaviour preserved).
+        out = self._render(
+            self._data(
+                primary_og_description="",
+                summary="巨人は0-5でヤクルトに敗戦、9回まで得点を奪えず連敗となった。",
+            )
+        )
+        body = out["content_html"]
+        self.assertIn(
+            "巨人は0-5でヤクルトに敗戦、9回まで得点を奪えず連敗となった",
+            body,
+        )
+
+    def test_articleBody_sentinel_never_appears_in_body(self):
+        # If a caller accidentally feeds the JSON-LD articleBody into
+        # primary_og_description (which would be a regression), the lead
+        # extractor must still cap it. Here we simulate by passing a
+        # sentinel — even if it slipped in, only the first sentence
+        # (under cap) would show; the rest is dropped.
+        long_body = (
+            "BODY_PARAGRAPH_SENTINEL_SHOULD_NOT_APPEAR_FULLY 巨人ニュース。"
+            + ("追加文。" * 100)
+        )
+        out = self._render(self._data(primary_og_description=long_body))
+        body = out["content_html"]
+        # The 100x repetition is past 120 chars, must NOT all be present.
+        self.assertLess(body.count("追加文"), 100)
+
+    def test_visible_raw_url_still_zero_after_phase2a(self):
+        out = self._render(self._data())
+        body = out["content_html"]
+        v = re.sub(r'href="[^"]*"', "", body)
+        v = re.sub(r"<[^>]+>", " ", v)
+        self.assertNotIn("https://", v)
+        self.assertNotIn("http://", v)
+
+    def test_x_only_short_news_path_unchanged(self):
+        # X-only X URL with no external article URL still falls through
+        # the router's x_post_not_article_source guard. Phase 2A wiring
+        # does not affect that — the renderer is never reached.
+        from src.nomotoke_rss_router import route_rss_entry_to_nomotoke_card
+
+        r = route_rss_entry_to_nomotoke_card(
+            {
+                "title": "【試合終了】巨人 0-5 ヤクルト",
+                "summary": "",
+                "link": "https://x.com/TokyoGiants/status/1",
+                "published": "Wed, 06 May 2026 10:00:00 +0000",
+            },
+            source_name="巨人公式X",
+            source_url="https://x.com/TokyoGiants/status/1",
+        )
+        self.assertFalse(r.matched)
+        self.assertEqual(r.skip_reason, "x_post_not_article_source")
+
+
 if __name__ == "__main__":
     unittest.main()

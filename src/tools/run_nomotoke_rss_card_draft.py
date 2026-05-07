@@ -654,6 +654,25 @@ def _process_one_entry(
         return base_summary
 
     data_preview = (result.would_render_call or {}).get("data_preview", {}) or {}
+
+    # Phase 2A: forward extractor-derived primary_og_* fields into data_preview
+    # so the renderer can use them for lead-text generation + fact-card
+    # enrichment WITHOUT mutating rss_title (= entry["title"]) or rss_summary
+    # (= entry["summary"]). The extractor fields live in their own keyspace
+    # and the renderer reads them as optional inputs (default ""). draft mode
+    # in Phase 2A still does NOT wire the fetcher (pipeline is None when
+    # mode == "draft") so this is dry-run-only by construction.
+    for og_key in (
+        "primary_og_title",
+        "primary_og_description",
+        "primary_og_image",
+        "primary_published_at",
+        "primary_canonical_url",
+    ):
+        v = base_summary.get(og_key)
+        if v:
+            data_preview[og_key] = v
+
     render_result = renderer(data_preview)
     if not render_result.get("validation_ok"):
         base_summary["skip_reason"] = (
@@ -667,6 +686,12 @@ def _process_one_entry(
     source_url_hash = result.dedupe_key.split(":", 1)[-1] if result.dedupe_key else ""
     base_summary["source_url_hash"] = source_url_hash
     base_summary["rendered_title"] = rendered_title
+
+    # Phase 2A: in dry-run, surface a short body preview for operator review
+    # so the rendered output can be sanity-checked without grepping the
+    # audit log. Truncated to keep the summary JSON small.
+    if mode == "dry-run":
+        base_summary["rendered_body_preview"] = (rendered_html or "")[:600]
 
     # Append the minimal HTML comment (template_key + source_url_hash + route_id
     # + source_published_at_iso). NEVER include required_facts / extracted_facts.

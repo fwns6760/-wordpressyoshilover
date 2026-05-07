@@ -1468,6 +1468,15 @@ _SHORT_NEWS_OUTCOME_KEYWORDS: tuple = (
     # them tightens outcome-keyword detection for body_too_thin gating and
     # never loosens any publish criterion.
     "負け", "白星", "黒星", "先制", "競り勝ち",
+    # NOMOTOKE-BODY-FIX-3 (catch-all 緩和 free version): broaden the
+    # outcome dictionary so news-type article bodies pass the
+    # body_too_thin gate when the source RSS title carries colloquial
+    # phrasing the curated keywords previously missed.
+    "勝ち越し", "サヨナラ勝ち", "サヨナラ負け", "完投勝利", "セーブ",
+    "ホールド", "猛打賞", "辛勝", "圧勝", "惨敗", "復活", "離脱",
+    "今季初", "デビュー戦", "1軍復帰", "一軍復帰", "緊急登板",
+    "適時打", "決勝打", "決勝弾", "勝ち越し打", "決勝点", "押し出し",
+    "リーグ最多", "規定到達", "通算", "球団最多",
 )
 
 # NOMOTOKE-BODY-FIX-2 C1: opponent / venue / game-index / inning-marker
@@ -1477,6 +1486,18 @@ _SHORT_NEWS_OPPONENT_TEAMS: tuple = (
     "楽天", "ロッテ", "オリックス", "ソフトバンク",
     "日本ハム", "日ハム", "西武", "ハヤテ", "オイシックス",
     "ドジャース", "カブス", "パドレス", "メッツ",
+    # NOMOTOKE-BODY-FIX-3 (catch-all 緩和 free version): add common
+    # newsroom shortened nicknames + extra MLB clubs the X-feed
+    # reporter accounts use frequently. Order does not matter here
+    # (first-match returns) but more specific aliases come first so a
+    # 1-char overlap (e.g. ``虎`` inside another word) is unlikely.
+    "ドラゴンズ", "ファイターズ", "マリーンズ", "イーグルス",
+    "バファローズ", "ライオンズ", "ホークス", "スワローズ",
+    "ヤンキース", "エンゼルス", "レッドソックス", "ブルージェイズ",
+    "アスレチックス", "マリナーズ", "レンジャーズ", "オリオールズ",
+    "フィリーズ", "ナショナルズ", "ブレーブス", "マーリンズ",
+    "レッズ", "ブルワーズ", "パイレーツ",
+    "カーディナルス", "ロッキーズ", "ダイヤモンドバックス",
 )
 _SHORT_NEWS_GIANTS_ALIASES: tuple = ("巨人", "ジャイアンツ", "読売")
 
@@ -1506,6 +1527,26 @@ _SHORT_NEWS_VENUES: tuple = (
     ("ちゅ～るスタジアム清水", "ちゅ～るスタジアム清水"),
     ("横浜スタジアム", "横浜スタジアム"),
     ("横浜", "横浜スタジアム"),
+    # NOMOTOKE-BODY-FIX-3 (catch-all 緩和 free version): add 二軍 /
+    # キャンプ / minor-league venues so spring-training and farm
+    # results pass body_too_thin gating.
+    ("ジャイアンツタウン", "ジャイアンツタウン"),
+    ("ジャイアンツ球場", "ジャイアンツ球場"),
+    ("鎌ケ谷スタジアム", "鎌ケ谷スタジアム"),
+    ("鎌ヶ谷スタジアム", "鎌ケ谷スタジアム"),
+    ("ロッテ浦和", "ロッテ浦和球場"),
+    ("ナゴヤ球場", "ナゴヤ球場"),
+    ("由宇球場", "由宇練習場"),
+    ("倉敷マスカット", "倉敷マスカットスタジアム"),
+    ("ジオ鈴鹿", "ジオ鈴鹿"),
+    ("Geo鈴鹿", "ジオ鈴鹿"),
+    ("ベルーナドーム", "ベルーナドーム"),
+    ("メットライフドーム", "ベルーナドーム"),
+    ("沖縄セルラー那覇", "沖縄セルラースタジアム那覇"),
+    ("セルラー那覇", "沖縄セルラースタジアム那覇"),
+    ("嘉手納", "嘉手納野球場"),
+    ("宮崎", "宮崎"),
+    ("名護", "名護"),
 )
 
 _SHORT_NEWS_GAME_INDEX_RE = re.compile(r"(?<!\d)(\d{1,2})回戦")

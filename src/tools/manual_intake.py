@@ -99,7 +99,7 @@ ARTICLE_TYPE_OVERRIDES: dict[str, tuple[str, str, str]] = {
     "試合結果": ("試合速報", "game_result", "nomotoke_card_short_news_url_v1"),
     "試合速報": ("試合速報", "postgame", "nomotoke_card_short_news_url_v1"),
     "予告先発": ("試合速報", "probable_starter", "nomotoke_card_pregame_pitcher_v1"),
-    "公示": ("球団情報", "notice", "nomotoke_card_short_news_url_v1"),
+    "公示": ("球団情報", "notice", "nomotoke_card_official_notice_v1"),
     "監督談話": ("首脳陣", "manager", "nomotoke_card_manager_comment_v1"),
     "選手コメント": ("選手情報", "comment", "nomotoke_card_player_comment_v1"),
     "動画": ("コラム", "program", "nomotoke_card_video_v1"),
@@ -343,6 +343,128 @@ def _build_body_for_news(
     return "\n".join(parts)
 
 
+# NOMOTOKE-INTAKE-NOTICE-001: official_notice extractor (no LLM, no
+# Gemini). Conservative — falls back to short_news_url unless the title
+# explicitly carries a 公示 keyword AND at least one player name maps
+# cleanly to ``を(登録|抹消|昇格|降格)``. False positives would put a
+# wrong name on a public draft, so the gate is intentionally tight.
+
+_NOTICE_KEYWORD_RE = re.compile(
+    r"(公示|出場選手登録|出場選手抹消|登録抹消|支配下登録|"
+    r"育成契約|自由契約|現役ドラフト)"
+)
+# Player-name prefix is the chunk leading up to ``を{action}``. Stop the
+# capture at common Japanese delimiters so we never absorb sentence
+# fragments. 4-12 chars covers 3-char given names and 漢字 + カタカナ
+# stage names without reaching into the next sentence.
+_NOTICE_REGISTER_RE = re.compile(
+    r"(?P<prefix>[^\s、。「」『』【】（）()／/]{2,12})"
+    r"を(?:1軍|一軍|二軍|支配下|出場選手)?(?:選手)?登録"
+)
+_NOTICE_REMOVE_RE = re.compile(
+    r"(?P<prefix>[^\s、。「」『』【】（）()／/]{2,12})"
+    r"を(?:1軍|一軍|二軍|支配下|出場選手)?(?:選手)?(?:登録)?抹消"
+)
+# Skip captures that look like phrases instead of names. A real player
+# name ends in a kanji / katakana run; common particles or function
+# words at the tail are filtered.
+_NOTICE_NAME_TAIL_REJECT_RE = re.compile(r"(?:した|する|ため|として|ことを|ことが|あり)$")
+# Reject leading particles + known non-name fragments.
+_NOTICE_NAME_HEAD_REJECT_RE = re.compile(r"^(?:と|や|から|まで|など|さらに)")
+
+
+def _split_notice_names(prefix: str) -> list[str]:
+    """Split a captured prefix into one or more player names.
+
+    The capture is only the chunk preceding ``を{action}``; the typical
+    headline form 「巨人公示】◯◯と△△を1軍登録、□□は抹消」 places the
+    name list immediately before the verb. Splitting on common list
+    delimiters (``、`` / ``と`` / ``や`` / ``,``) gives us back the
+    individual names. We then drop anything that fails the
+    name-shape sanity checks.
+    """
+    if not prefix:
+        return []
+    rough = re.split(r"[、,]|\s*と\s*|\s*や\s*", prefix)
+    names: list[str] = []
+    for chunk in rough:
+        n = chunk.strip()
+        if not n:
+            continue
+        if len(n) < 2 or len(n) > 8:
+            continue
+        if _NOTICE_NAME_TAIL_REJECT_RE.search(n):
+            continue
+        if _NOTICE_NAME_HEAD_REJECT_RE.search(n):
+            continue
+        # Names are kanji / katakana / hiragana. Pure alphanumerics are
+        # unlikely to be a real name and are dropped.
+        if re.fullmatch(r"[A-Za-z0-9]+", n):
+            continue
+        names.append(n)
+    # De-dupe preserving order.
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for n in names:
+        if n in seen:
+            continue
+        seen.add(n)
+        uniq.append(n)
+    return uniq[:6]
+
+
+def _extract_official_notice_facts(
+    title: str, summary: str, og_description: str
+) -> dict[str, Any]:
+    """Return ``{action, registered, removed}`` when the input clearly
+    matches a 公示 announcement, else ``{}``.
+
+    Conservative: requires a 公示 keyword in title + summary +
+    og_description (combined) AND at least one extractable name.
+    """
+    text = "\n".join(s for s in (title, summary, og_description) if s)
+    if not text:
+        return {}
+    if not _NOTICE_KEYWORD_RE.search(text):
+        return {}
+
+    registered: list[str] = []
+    removed: list[str] = []
+    for m in _NOTICE_REGISTER_RE.finditer(text):
+        registered.extend(_split_notice_names(m.group("prefix")))
+    for m in _NOTICE_REMOVE_RE.finditer(text):
+        # The "remove" pattern also matches strings that end ``登録`` (no
+        # 抹消). We disambiguate by re-checking that the matched verb
+        # really included 抹消.
+        snippet = text[m.start(): m.end()]
+        if "抹消" not in snippet:
+            continue
+        removed.extend(_split_notice_names(m.group("prefix")))
+
+    # A name appearing in BOTH register + remove is almost certainly a
+    # parse mistake (the two regexes overlap). Drop overlaps from the
+    # less-confident side (registered) since 抹消 is the more specific
+    # keyword.
+    overlap = set(registered) & set(removed)
+    registered = [n for n in registered if n not in overlap]
+
+    if not (registered or removed):
+        return {}
+
+    if registered and removed:
+        action = "swap"
+    elif registered:
+        action = "register"
+    else:
+        action = "remove"
+
+    return {
+        "action": action,
+        "registered": registered,
+        "removed": removed,
+    }
+
+
 def _date_label_from_iso(iso: str) -> str:
     """Render an ISO 8601 timestamp into a Japanese ``YYYY年M月D日`` label.
 
@@ -453,6 +575,36 @@ def _try_render_via_nomotoke(
             return None
         data["source_url"] = source_url
         data["source_name"] = source_name or "Yahoo!スポーツ"
+
+    elif template_key == "nomotoke_card_official_notice_v1":
+        # NOMOTOKE-INTAKE-NOTICE-001: opportunistic extraction from
+        # title + summary + raw_html. Falls back to short_news_url
+        # gracefully when the extractor cannot find a clean
+        # ``を(登録|抹消)`` pattern.
+        og_text = ""
+        if raw_html:
+            m = re.search(
+                r'<meta\s+[^>]*?(?:property|name)=["\'](?:og:description|twitter:description|description)["\']'
+                r'\s+content=["\']([^"\']+)["\']',
+                raw_html,
+                re.IGNORECASE,
+            )
+            if m:
+                og_text = html.unescape(m.group(1))
+        notice = _extract_official_notice_facts(title, summary, og_text)
+        if not notice:
+            return None
+        if not date_label:
+            return None
+        data = {
+            "team_name": "巨人",
+            "action": notice["action"],
+            "date_label": date_label,
+            "registered": notice["registered"],
+            "removed": notice["removed"],
+            "source_url": source_url,
+            "source_name": source_name or "出典",
+        }
 
     elif template_key == "nomotoke_card_video_v1":
         # Only YouTube watch URLs satisfy the renderer's video_url field.

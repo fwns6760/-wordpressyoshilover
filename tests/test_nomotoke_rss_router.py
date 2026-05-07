@@ -1471,16 +1471,106 @@ class VideoSourceRoutingTests(unittest.TestCase):
         self.assertEqual(facts.get("player_name"), "田中将大")
 
     def test_extract_video_facts_no_quoted_name_returns_empty(self):
+        # NOMOTOKE-VIDEO-NARRATIVE-TITLE-002 graduated 「<surname> と
+        # <summary>」 patterns from the empty-result path to the narrative
+        # fallback. This regression guard now only covers titles that
+        # neither carry a quoted name NOR an allowlisted Giants player.
         from src.nomotoke_rss_router import extract_video_facts
 
         for title in (
             "こどもたちの挑戦！",
-            "高梨雄平と豪華な補助 ～コーチが積極的にボールを拾う～",
+            "外野手陣勝利の儀式 誕生秘話＆命名問題",
+            "春のプロデュースグルメ総選挙2026　結果発表！",
             "",
             None,
         ):
             with self.subTest(title=title):
                 self.assertEqual(extract_video_facts(title), {})
+
+
+class VideoNarrativeTitleFallbackTests(unittest.TestCase):
+    """NOMOTOKE-VIDEO-NARRATIVE-TITLE-002: allowlist-driven fallback for
+    巨人公式 YouTube narrative titles that don't quote the player name.
+    """
+
+    def _f(self, title):
+        from src.nomotoke_rss_router import extract_video_facts
+
+        return extract_video_facts(title)
+
+    def test_surname_と_pattern(self):
+        f = self._f("高梨雄平と豪華な補助 ～コーチが積極的にボールを拾う～")
+        self.assertEqual(f.get("player_name"), "高梨雄平")
+        self.assertIn("豪華な補助", f.get("play_summary", ""))
+
+    def test_surname_の_pattern(self):
+        f = self._f("小濱佑斗の最高のヒット！泥臭い初安打！")
+        self.assertEqual(f.get("player_name"), "小濱佑斗")
+        self.assertEqual(f.get("play_summary"), "最高のヒット")
+
+    def test_surname_が_pattern(self):
+        f = self._f("あの日以来！田中瑛斗が雪辱のマウンド！")
+        self.assertEqual(f.get("player_name"), "田中瑛斗")
+        self.assertEqual(f.get("play_summary"), "雪辱のマウンド")
+
+    def test_role_suffix_投手_stripped(self):
+        f = self._f("群馬で躍動！竹丸和幸投手がプロ初2桁奪三振&初ヒット！")
+        self.assertEqual(f.get("player_name"), "竹丸和幸")
+        # Inner & boundary cuts before the second fact.
+        self.assertEqual(f.get("play_summary"), "プロ初2桁奪三振")
+
+    def test_role_suffix_選手_stripped(self):
+        f = self._f("「マジでデカい！」育成から這い上がった男・平山功太選手が執念の初タイムリー！")
+        self.assertEqual(f.get("player_name"), "平山功太")
+        self.assertEqual(f.get("play_summary"), "執念の初タイムリー")
+
+    def test_in_clause_summary_too_short_uses_next_clause(self):
+        # 「おかえり尚輝！前例なき復帰！」 — within the name's clause
+        # the tail is empty; fallback must take the next clause.
+        f = self._f("おかえり尚輝！前例なき復帰！")
+        self.assertEqual(f.get("player_name"), "吉川尚輝")  # nickname → canonical
+        self.assertEqual(f.get("play_summary"), "前例なき復帰")
+
+    def test_nickname_maps_to_canonical_name(self):
+        f = self._f("マー君が歴代2位タイの日米通算203勝！おかえり高梨！")
+        self.assertEqual(f.get("player_name"), "田中将大")
+        self.assertEqual(f.get("play_summary"), "歴代2位タイの日米通算203勝")
+
+    def test_multi_player_amperand_falls_back_correctly(self):
+        # 「松本剛&佐々木俊輔」 must NOT use the second player's name as
+        # play_summary — the multi-player guard kicks in.
+        f = self._f("3番中堅・帝京魂！松本剛&佐々木俊輔！")
+        self.assertEqual(f.get("player_name"), "松本剛")
+        self.assertNotEqual(f.get("play_summary"), "佐々木俊輔")
+        self.assertNotIn("&", f.get("play_summary", ""))
+
+    def test_no_giants_player_returns_empty(self):
+        for title in (
+            "こどもたちの挑戦！",
+            "外野手陣勝利の儀式 誕生秘話＆命名問題",
+            "春のプロデュースグルメ総選挙2026　結果発表！",
+        ):
+            with self.subTest(title=title):
+                self.assertEqual(self._f(title), {})
+
+    def test_quoted_name_still_takes_precedence(self):
+        # Quoted-name pattern must continue to win when both paths could
+        # match (DRAMATIC BASEBALL convention is unchanged).
+        f = self._f('【巨人】"宮原駿介"今季初登板で1回無失点！【巨人×ヤクルト】')
+        self.assertEqual(f.get("player_name"), "宮原駿介")
+        self.assertEqual(f.get("play_summary"), "今季初登板で1回無失点")
+
+    def test_allowlist_and_nickname_constants_exist(self):
+        from src.nomotoke_rss_router import (
+            GIANTS_PLAYER_ALLOWLIST,
+            GIANTS_PLAYER_NICKNAMES,
+        )
+
+        # Sanity: the allowlist contains observed players.
+        for name in ("竹丸和幸", "吉川尚輝", "宮原駿介", "田中将大", "高梨雄平"):
+            self.assertIn(name, GIANTS_PLAYER_ALLOWLIST)
+        self.assertEqual(GIANTS_PLAYER_NICKNAMES.get("マー君"), "田中将大")
+        self.assertEqual(GIANTS_PLAYER_NICKNAMES.get("尚輝"), "吉川尚輝")
 
     def test_youtube_watch_url_routes_to_video_v1(self):
         r = route_rss_entry_to_nomotoke_card(

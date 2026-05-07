@@ -850,13 +850,11 @@ def sanitize_video_description(raw: str) -> str:
     return text[:120]
 
 
-def extract_video_facts(title: str) -> Dict[str, str]:
-    """Extract player_name + play_summary from a YouTube video title.
-
-    Returns ``{}`` when the title carries no clearly-quoted player name —
-    the caller then skips with insufficient_required_facts:video:player_name.
+def _extract_video_facts_quoted(raw: str) -> Dict[str, str]:
+    """DRAMATIC BASEBALL convention: title wraps the player name in
+    full-width / curly / 「」 quotes. ``"宮原駿介"今季初登板`` →
+    player_name=宮原駿介, play_summary=今季初登板.
     """
-    raw = (title or "").strip()
     if not raw:
         return {}
     m = _VIDEO_QUOTED_NAME_RE.search(raw)
@@ -869,8 +867,8 @@ def extract_video_facts(title: str) -> Dict[str, str]:
     # Cut play_summary at the FIRST occurrence of any boundary char so
     # trailing 【巨人×ヤクルト】 channel-decoration tags do not bleed
     # into the summary, AND the trailing ! / ! / 。 sentence terminator
-    # is dropped. Iterate by index so the earliest boundary wins
-    # regardless of which char it is.
+    # is dropped. Iterate by index so the earliest boundary wins.
+    # ! = ASCII (U+0021), ! = full-width (U+FF01); both must be honored.
     boundary_chars = "【!！。\n"
     cut_idx = -1
     for i, ch in enumerate(after):
@@ -883,6 +881,173 @@ def extract_video_facts(title: str) -> Dict[str, str]:
     if not summary:
         return {"player_name": name, "play_summary": ""}
     return {"player_name": name, "play_summary": summary}
+
+
+# NOMOTOKE-VIDEO-NARRATIVE-TITLE-002: Giants 2026 player allowlist for the
+# narrative-title fallback. The 巨人公式 YouTube channel rarely uses quoted
+# names — titles like 「マー君が203勝！」「おかえり尚輝！前例なき復帰！」「平山功太
+# 選手が執念の初タイムリー！」 carried player info but were skipped. This
+# allowlist lets the fallback recover those cases without false-positives
+# from generic surnames in unrelated titles.
+#
+# Roster updates: append new players as they appear in live RSS samples;
+# drop retired/transferred players. Matches are full-name strings to avoid
+# 田中将大 vs 田中瑛斗 collisions; nicknames map to a canonical full name.
+GIANTS_PLAYER_ALLOWLIST: Tuple[str, ...] = (
+    # Pitchers
+    "高梨雄平", "田中将大", "田中瑛斗", "竹丸和幸", "小濱佑斗",
+    "宮原駿介", "田和廉", "井上温大", "森田駿哉", "石川達也",
+    "戸郷翔征", "堀田賢慎", "ウィットリー", "山崎伊織",
+    # Catchers
+    "大城卓三", "山瀬慎之助", "岸田行倫",
+    # Infielders
+    "吉川尚輝", "石塚裕惺", "増田陸", "岡本和真", "門脇誠",
+    "若林楽人", "萩原哲", "ダルベック",
+    # Outfielders
+    "松本剛", "佐々木俊輔", "平山功太", "浅野翔吾",
+    "キャベッジ",
+    # Farm / called-up
+    "三塚琉生",
+)
+GIANTS_PLAYER_NICKNAMES: Dict[str, str] = {
+    "マー君": "田中将大",
+    "尚輝": "吉川尚輝",
+}
+# Allowlist order: full names first, then nicknames. Match leftmost
+# occurrence in the title.
+_NARRATIVE_NAME_CANDIDATES: Tuple[str, ...] = (
+    *GIANTS_PLAYER_ALLOWLIST,
+    *GIANTS_PLAYER_NICKNAMES.keys(),
+)
+# Boundary chars used to split a title into clauses for fallback summary.
+# Full-width ! is U+FF01, half-width is U+0021. Wave dashes: U+301C (〜) and
+# U+FF5E (～). Always combine into one regex with explicit escapes.
+_NARRATIVE_CLAUSE_BOUNDARY_RE = re.compile("[！!?。〜～]+")
+# Connector chars after the player name (が / の / と / は / 、 / 選手 / 投手 / 捕手).
+_NARRATIVE_CONNECTOR_RE = re.compile(r"^(?:選手|投手|捕手)?[がのとは、]?\s*")
+# Inner-summary boundary cut (& / ＆ / spaces / 中黒 / dashes / 全角space).
+_NARRATIVE_SUMMARY_TAIL_BOUNDARIES = "&＆　 "
+# Trailing terminator chars to strip from the extracted summary.
+_NARRATIVE_TRAILING_STRIP = "！!?。〜～　 　、・"
+
+
+def _extract_video_facts_narrative(raw: str) -> Dict[str, str]:
+    """Allowlist-driven fallback for non-quoted narrative titles.
+
+    巨人公式 YouTube convention: 「<event prefix>!<player>(が|の|...)<summary>!」
+    or 「<player>(と|が|...)<summary>」. We:
+      1. Find the leftmost occurrence of any allowlist name.
+      2. Take the clause containing that name; strip role suffix /
+         connector to expose the play summary.
+      3. If the within-clause summary is shorter than 4 chars, fall back
+         to the next non-empty clause (this catches titles like
+         「おかえり尚輝！前例なき復帰！」).
+      4. Cut at common inner boundaries (& / ＆ / 　 / ・).
+      5. Cap at 60 chars.
+    Nicknames map to a canonical full name so the rendered title uses
+    the formal spelling.
+    """
+    if not raw:
+        return {}
+    # Find leftmost name occurrence across allowlist + nicknames.
+    best_name = ""
+    best_idx = -1
+    for cand in _NARRATIVE_NAME_CANDIDATES:
+        idx = raw.find(cand)
+        if idx == -1:
+            continue
+        if best_idx == -1 or idx < best_idx:
+            best_idx = idx
+            best_name = cand
+    if not best_name:
+        return {}
+
+    canonical_name = GIANTS_PLAYER_NICKNAMES.get(best_name, best_name)
+
+    # Split the title into clauses by sentence-terminator boundaries.
+    clauses = [c.strip() for c in _NARRATIVE_CLAUSE_BOUNDARY_RE.split(raw) if c.strip()]
+    name_clause_idx = -1
+    for i, clause in enumerate(clauses):
+        if best_name in clause:
+            name_clause_idx = i
+            break
+
+    def _clean_clause(text: str) -> str:
+        cand = text.strip(_NARRATIVE_TRAILING_STRIP + "&＆")
+        # Drop trailing channel-decoration tag.
+        if "【" in cand:
+            cand = cand[: cand.find("【")].strip()
+        return cand.strip(_NARRATIVE_TRAILING_STRIP + "&＆")
+
+    summary = ""
+    if name_clause_idx >= 0:
+        clause = clauses[name_clause_idx]
+        pos = clause.find(best_name)
+        tail = clause[pos + len(best_name):]
+        # Strip leading connector (選手が / 投手が / の / と / 、…).
+        m = _NARRATIVE_CONNECTOR_RE.match(tail)
+        if m:
+            tail = tail[m.end():]
+        # Cut at inner boundaries (& / ＆ / 全角空白 / 半角空白) — but only
+        # when there is real text BEFORE the boundary. If the tail starts
+        # with a boundary (e.g. ``&佐々木俊輔`` after 松本剛), don't cut at
+        # position 0; fall through to the prev/next-clause path instead.
+        for ch in _NARRATIVE_SUMMARY_TAIL_BOUNDARIES:
+            i = tail.find(ch)
+            if i > 0:
+                tail = tail[:i]
+                break
+        tail = _clean_clause(tail)
+        # Multi-player title guard: 「松本剛&佐々木俊輔」 strips to
+        # 「佐々木俊輔」 — an allowlist name with no real summary. Reject.
+        if tail in _NARRATIVE_NAME_CANDIDATES:
+            tail = ""
+        if len(tail) >= 4:
+            summary = tail
+        else:
+            # Fallback to next clause, then prev clause. Skip clauses that
+            # are themselves just an allowlist name (multi-player chains).
+            for j in range(name_clause_idx + 1, len(clauses)):
+                cand = _clean_clause(clauses[j])
+                if cand in _NARRATIVE_NAME_CANDIDATES:
+                    continue
+                if len(cand) >= 4:
+                    summary = cand
+                    break
+            if not summary and name_clause_idx > 0:
+                for j in range(name_clause_idx - 1, -1, -1):
+                    cand = _clean_clause(clauses[j])
+                    if cand in _NARRATIVE_NAME_CANDIDATES:
+                        continue
+                    if len(cand) >= 4:
+                        summary = cand
+                        break
+
+    if not summary:
+        return {}
+    return {"player_name": canonical_name, "play_summary": summary[:60]}
+
+
+def extract_video_facts(title: str) -> Dict[str, str]:
+    """Extract player_name + play_summary from a YouTube video title.
+
+    Tries quoted-name extraction first (DRAMATIC BASEBALL pattern); falls
+    back to the Giants-allowlist narrative path (巨人公式 channel pattern).
+    Returns ``{}`` when neither yields a player + summary — caller then
+    skips with insufficient_required_facts:video:player_name.
+    """
+    raw = (title or "").strip()
+    if not raw:
+        return {}
+    facts = _extract_video_facts_quoted(raw)
+    if facts.get("player_name") and facts.get("play_summary"):
+        return facts
+    narrative = _extract_video_facts_narrative(raw)
+    if narrative:
+        return narrative
+    # Quoted hit but empty summary — preserve quoted player_name (caller
+    # handles the missing-summary skip).
+    return facts
 
 
 # ---------------------------------------------------------------------------

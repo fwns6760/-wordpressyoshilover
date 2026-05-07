@@ -103,13 +103,17 @@ def _fetch_html(url: str, *, logger: logging.Logger) -> tuple[str, str]:
     # the OG-meta path doesn't surface the inning table.
     http = RequestsHttpClient()
     try:
-        resp = http.get(url, timeout=15.0, user_agent="YoshiloverBot/1.0")
+        resp = http.get(
+            url,
+            headers={"User-Agent": "YoshiloverBot/1.0"},
+            timeout=15.0,
+        )
     except Exception as exc:
         logger.error("http_fetch_failed: %s", exc)
         return "", f"http_fetch_failed:{exc.__class__.__name__}"
     if resp.status_code >= 400:
         return "", f"http_status_{resp.status_code}"
-    return resp.body, ""
+    return resp.text, ""
 
 
 def _build_payload(facts_dict: dict, *, source_url: str) -> dict:

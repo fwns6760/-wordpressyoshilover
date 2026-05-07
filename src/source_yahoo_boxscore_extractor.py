@@ -217,14 +217,16 @@ def parse_yahoo_game_html(html: str) -> Optional[YahooBoxscoreFacts]:
     home_short, home_innings, home_total = parsed_rows[1]
 
     # Inning_score in renderer-friendly shape.
+    # ``name`` key matches the postgame renderer's _render_inning_table
+    # contract (it pulls the leftmost column from t.get('name')).
     inning_score = [
         {
-            "team_name": away_short,
+            "name": away_short,
             "innings": away_innings,
             "total": away_total,
         },
         {
-            "team_name": home_short,
+            "name": home_short,
             "innings": home_innings,
             "total": home_total,
         },

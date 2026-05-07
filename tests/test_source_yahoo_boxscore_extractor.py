@@ -57,6 +57,14 @@ class YahooBoxscoreParserTests(unittest.TestCase):
                 self.assertNotIn("巨人", v)
                 self.assertNotIn("ヤクルト", v)
 
+    def test_inning_row_name_key_matches_renderer_contract(self):
+        # The renderer (_render_inning_table) reads ``t.get('name')`` for
+        # the leftmost team-label column. The parser must use the same key.
+        facts = parse_yahoo_game_html(self.html)
+        for row in facts.inning_score:
+            self.assertIn("name", row)
+            self.assertNotIn("team_name", row)
+
     def test_totals_match_actual_game(self):
         facts = parse_yahoo_game_html(self.html)
         # 5/4 game: ヤクルト won 5-1.

@@ -16220,9 +16220,29 @@ def _create_draft_with_same_fire_guard(
                     draft_title,
                 )
             seen_sources.add(normalized_source_url)
+    # NOMOTOKE-RSS-PIPELINE-ENRICHMENT-001 (Phase 3): apply
+    # post-body enrichment when the body was rendered by the
+    # nomotoke renderer (5 ALLOWED templates). The conditional gate
+    # inside ``apply_rss_pipeline_enrichment`` returns the body
+    # unchanged when no nomotoke marker is present, so legacy
+    # AI-generated bodies stay byte-identical.
+    enriched_content = content
+    try:
+        from src.tools.manual_intake import apply_rss_pipeline_enrichment
+
+        enriched_content = apply_rss_pipeline_enrichment(
+            content,
+            title=draft_title,
+            source_url=normalized_source_url,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "rss_pipeline_enrichment_skipped reason=%s", exc
+        )
+        enriched_content = content
     return wp.create_post(
         draft_title,
-        content,
+        enriched_content,
         categories=categories,
         status="draft",
         featured_media=featured_media or None,

@@ -2959,6 +2959,177 @@ def _decorate_body_with_emoji(content_html: str) -> str:
     return "".join(parts)
 
 
+# NOMOTOKE-RSS-PIPELINE-ENRICHMENT-001 (Phase 3): public entry
+# point reused by rss_fetcher.py (RSS auto-pipeline) so every
+# nomotoke-rendered RSS post receives the same Phase 1〜N readers'
+# blocks the manual-intake form path produces.
+#
+# Design:
+# - Conditional gate: returns ``content_html`` unchanged when no
+#   ``class="nomotoke-card-`` marker is present (Gemini-generated
+#   bodies / legacy rule-based bodies stay untouched).
+# - Skips enrichments that need ``og_image`` / ``raw_html`` /
+#   ``source_published_at_iso`` when those values are not provided
+#   (the rss_fetcher chokepoint doesn't have them).
+# - All helper functions referenced here are the existing module-
+#   level helpers; this function is a thin orchestration wrapper.
+
+def apply_rss_pipeline_enrichment(
+    content_html: str,
+    *,
+    title: str,
+    source_url: str,
+    category: str = "",
+    template_key: str = "",
+    summary: str = "",
+    source_name: str = "",
+    source_published_at_iso: str = "",
+    og_image: str = "",
+    raw_html: str = "",
+) -> str:
+    """Public Phase 3 entry point. Apply post-body enrichment to a
+    nomotoke-renderer body. Returns the input unchanged when the
+    body is not a nomotoke-renderer output (defensive gate)."""
+    if not content_html or 'class="nomotoke-card-' not in content_html:
+        return content_html
+    if not source_name:
+        source_name = _infer_source_name(source_url)
+
+    extra_blocks: list[str] = []
+
+    related_query = ""
+    ngrams = re.findall(r"[一-龥ぁ-んァ-ヶー]{2,8}", title or "")
+    related_query = max(ngrams, key=len) if ngrams else ""
+    if related_query:
+        block = _build_related_articles_block(related_query)
+        if block:
+            extra_blocks.append(block)
+
+    if template_key in (
+        "nomotoke_card_short_news_url_v1",
+        "nomotoke_card_postgame_v1",
+        "nomotoke_card_pregame_pitcher_v1",
+    ):
+        block = _build_recent_games_block()
+        if block:
+            extra_blocks.append(block)
+
+    scan_text = " ".join(s for s in (title, summary) if s)
+    if scan_text:
+        block = _build_player_stats_block(scan_text)
+        if block:
+            extra_blocks.append(block)
+            content_html = re.sub(
+                r'<aside class="nomotoke-roster">.*?</aside>',
+                "",
+                content_html,
+                count=1,
+                flags=re.DOTALL,
+            )
+
+    if template_key == "nomotoke_card_official_notice_v1":
+        block = _build_recent_notice_timeline_block()
+        if block:
+            extra_blocks.append(block)
+
+    if template_key == "nomotoke_card_postgame_v1":
+        block = _build_other_games_block()
+        if block:
+            extra_blocks.append(block)
+
+    if template_key in (
+        "nomotoke_card_short_news_url_v1",
+        "nomotoke_card_postgame_v1",
+        "nomotoke_card_manager_comment_v1",
+        "nomotoke_card_player_comment_v1",
+        "nomotoke_card_pregame_pitcher_v1",
+        "nomotoke_card_video_v1",
+        "nomotoke_card_official_notice_v1",
+    ):
+        block = _build_x_embeds_block(title, summary)
+        if block:
+            extra_blocks.append(block)
+
+    if template_key in (
+        "nomotoke_card_short_news_url_v1",
+        "nomotoke_card_postgame_v1",
+        "nomotoke_card_pregame_pitcher_v1",
+        "nomotoke_card_manager_comment_v1",
+        "nomotoke_card_player_comment_v1",
+    ):
+        block = _build_standings_block()
+        if block:
+            extra_blocks.append(block)
+        block = _build_next_game_block()
+        if block:
+            extra_blocks.append(block)
+
+    block = _build_trust_badge_block(source_name, source_url)
+    if block:
+        extra_blocks.append(block)
+
+    if extra_blocks:
+        content_html = _insert_blocks_before_source_h3(content_html, extra_blocks)
+
+    # Reader UX layer
+    content_html, toc_entries = _inject_toc_anchors(content_html)
+    toc_html = _build_toc_block(toc_entries)
+    meta_html = _build_meta_header_bar(content_html, source_published_at_iso)
+    share_top = _build_share_buttons_block()
+    top_cta = (
+        '<p class="nomotoke-cta-row" '
+        'style="margin:8px 0 12px;text-align:center;">'
+        '<a href="#respond" '
+        'style="display:inline-block;padding:10px 22px;'
+        "background:#f57f17;color:#fff;text-decoration:none;"
+        "border-radius:8px;font-weight:700;font-size:15px;"
+        'box-shadow:0 2px 6px rgba(245,127,23,0.4);">'
+        "💬 この記事にコメントする"
+        "</a></p>"
+    )
+    header_payload = ""
+    if meta_html:
+        header_payload += meta_html
+    header_payload += top_cta
+    if share_top:
+        header_payload += share_top
+    if toc_html:
+        header_payload += toc_html
+    if header_payload:
+        content_html = header_payload + content_html
+
+    content_html = _wrap_first_roster_names_in_lead(content_html)
+
+    chip_block = _build_tag_chip_block(
+        title=title,
+        summary=summary,
+        content_html=content_html,
+        category=category,
+    )
+    if chip_block:
+        content_html = _insert_blocks_before_source_h3(content_html, [chip_block])
+
+    content_html = _insert_blocks_before_source_h3(
+        content_html, [_build_share_buttons_block()]
+    )
+
+    content_html = _decorate_body_with_emoji(content_html)
+
+    schema_block = _build_jsonld_article_schema(
+        title=title,
+        summary=summary,
+        source_url=source_url,
+        source_name=source_name,
+        source_published_at_iso=source_published_at_iso,
+        og_image=og_image,
+        raw_html=raw_html,
+    )
+    if schema_block:
+        content_html = content_html + schema_block
+
+    return content_html
+
+
 def _build_lineup_block(home_lineup: list[dict], away_lineup: list[dict]) -> str:
     """Render the 「📊 今日のスタメン」 block. Empty when both lists are
     empty."""

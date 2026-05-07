@@ -598,6 +598,14 @@ class WPClient:
                     caller: str | None = None,
                     source_lane: str | None = None,
                     source_published_at_iso: str | None = None) -> int:
+        try:
+            from src.title_seo_polisher import polish_title
+            polished_title = polish_title(title)
+            if polished_title and polished_title != title:
+                print(f"[WP] title polished: {title!r} → {polished_title!r}")
+                title = polished_title
+        except Exception as exc:
+            print(f"[WP] title_seo_polisher skipped: {exc}")
         requested_status = (status or "publish").lower()
         normalized_source_url = self._normalize_source_url(source_url)
         if allow_title_only_reuse is None:

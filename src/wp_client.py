@@ -646,10 +646,18 @@ class WPClient:
         if not featured_media:
             try:
                 from src.player_eyecatch_resolver import resolve_eyecatch_from_title
+                # Manual-intake calls = user-driven publish; skip the
+                # team-generic fallback so the user can pick / upload
+                # the eyecatch themselves instead of getting an auto
+                # 原辰徳 placeholder. Per-person resolution still fires.
+                is_manual_call = bool(
+                    caller and ("manual" in str(caller).lower())
+                )
                 resolved = resolve_eyecatch_from_title(
                     title,
                     wp_url=self.base_url,
                     auth=self.auth,
+                    use_team_fallback=not is_manual_call,
                 )
                 if resolved:
                     featured_media = resolved

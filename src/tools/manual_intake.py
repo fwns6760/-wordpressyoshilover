@@ -1015,6 +1015,56 @@ def _try_render_via_nomotoke(
         if block:
             extra_blocks.append(block)
 
+    # NOMOTOKE-INTAKE-PLAYER-STATS-001 (A): player season stats
+    # (NPB.jp lookup, 30-min cache). Block is empty unless a roster
+    # name in the article text resolves to a stats record.
+    scan_text = " ".join(s for s in (title, summary) if s)
+    if scan_text and template_key in (
+        "nomotoke_card_short_news_url_v1",
+        "nomotoke_card_postgame_v1",
+        "nomotoke_card_manager_comment_v1",
+        "nomotoke_card_player_comment_v1",
+        "nomotoke_card_video_v1",
+        "nomotoke_card_pregame_pitcher_v1",
+        "nomotoke_card_official_notice_v1",
+    ):
+        block = _build_player_stats_block(scan_text)
+        if block:
+            extra_blocks.append(block)
+
+    # NOMOTOKE-INTAKE-YESTERDAY-GAME-001 (B): direct cross-link to
+    # the most recent 試合速報 post. Skips when the current post
+    # itself IS the most recent 試合速報.
+    if template_key in (
+        "nomotoke_card_short_news_url_v1",
+        "nomotoke_card_postgame_v1",
+        "nomotoke_card_manager_comment_v1",
+        "nomotoke_card_player_comment_v1",
+        "nomotoke_card_pregame_pitcher_v1",
+    ):
+        block = _build_yesterdays_game_block()
+        if block:
+            extra_blocks.append(block)
+
+    # NOMOTOKE-INTAKE-AUTHOR-OTHER-001 (D): "this reporter's other
+    # articles" cluster. Only when JSON-LD provided an author.
+    if raw_html:
+        author, _ = _extract_jsonld_author_and_date(raw_html)
+        if author:
+            block = _build_author_other_articles_block(author)
+            if block:
+                extra_blocks.append(block)
+
+    # NOMOTOKE-INTAKE-NOTICE-TIMELINE-001 (E): recent 公示 posts
+    # listed inside official_notice posts (and roster-relevant pages).
+    if template_key in (
+        "nomotoke_card_official_notice_v1",
+        "nomotoke_card_short_news_url_v1",
+    ):
+        block = _build_recent_notice_timeline_block()
+        if block:
+            extra_blocks.append(block)
+
     if extra_blocks:
         rendered = _insert_blocks_before_source_h3(rendered, extra_blocks)
 
@@ -1096,7 +1146,10 @@ def _wp_query_public_posts(
         ("per_page", str(max(1, min(limit, 50)))),
         ("orderby", "date"),
         ("order", "desc"),
-        ("_fields", "id,title,link,date,categories"),
+        # NOMOTOKE-INTAKE-COMMENT-COUNT-001 (F): comment_count in the
+        # response so cross-link blocks can render 「💬 N」 next to
+        # each title. WP returns 0 when comments are closed or absent.
+        ("_fields", "id,title,link,date,categories,comment_count"),
     ]
     if search.strip():
         params.append(("search", search.strip()))
@@ -1147,6 +1200,20 @@ def _strip_wp_title_tags(rendered: Any) -> str:
     return html.unescape(s).strip()
 
 
+def _comment_count_badge(post: dict[str, Any]) -> str:
+    """Return ``💬 N`` markup when the post has at least 1 comment.
+    Empty string for 0 / missing — keeps the line clean for fresh
+    posts that haven't accumulated comments yet."""
+    raw = post.get("comment_count")
+    try:
+        n = int(raw) if raw not in (None, "") else 0
+    except (TypeError, ValueError):
+        return ""
+    if n <= 0:
+        return ""
+    return f' <span class="nomotoke-comment-count">💬 {n}</span>'
+
+
 def _build_related_articles_block(query: str, exclude_link: str = "") -> str:
     """Return the 「🔗 関連記事」 HTML block, or empty when no hit."""
     if not query.strip():
@@ -1164,8 +1231,9 @@ def _build_related_articles_block(query: str, exclude_link: str = "") -> str:
         if not title or not link:
             continue
         prefix = f"{html.escape(date_jp)} " if date_jp else ""
+        badge = _comment_count_badge(p)
         items.append(
-            f'<li>{prefix}<a href="{html.escape(link)}">{html.escape(title)}</a></li>'
+            f'<li>{prefix}<a href="{html.escape(link)}">{html.escape(title)}</a>{badge}</li>'
         )
         if len(items) >= 3:
             break
@@ -1198,8 +1266,9 @@ def _build_recent_games_block(exclude_link: str = "") -> str:
         if not title:
             continue
         prefix = f"{html.escape(date_jp)} " if date_jp else ""
+        badge = _comment_count_badge(p)
         items.append(
-            f'<li>{prefix}<a href="{html.escape(link)}">{html.escape(title)}</a></li>'
+            f'<li>{prefix}<a href="{html.escape(link)}">{html.escape(title)}</a>{badge}</li>'
         )
         if len(items) >= 5:
             break
@@ -1271,11 +1340,36 @@ def _build_matchup_record_block(opponent: str) -> str:
     record = f"{wins}勝{losses}敗"
     if draws:
         record += f"{draws}分"
+    # NOMOTOKE-INTAKE-MATCHUP-LIST-001 (C-extended): also surface the
+    # 5 most recent posts so the reader sees the actual scores, not
+    # just the aggregate count.
+    list_items: list[str] = []
+    for p in posts[:5]:
+        title = _strip_wp_title_tags(p.get("title"))
+        link = (p.get("link") or "").strip()
+        date_jp = _format_jp_date(p.get("date") or "")
+        if not (title and link) or opponent not in title:
+            continue
+        prefix = f"{html.escape(date_jp)} " if date_jp else ""
+        badge = _comment_count_badge(p)
+        list_items.append(
+            f'<li>{prefix}<a href="{html.escape(link)}">{html.escape(title)}</a>{badge}</li>'
+        )
+        if len(list_items) >= 5:
+            break
+    matchup_list_html = ""
+    if list_items:
+        matchup_list_html = (
+            '<ul class="nomotoke-season-matchup__list">'
+            + "".join(list_items)
+            + "</ul>"
+        )
     return (
         '<aside class="nomotoke-season-matchup">'
         '<p class="nomotoke-season-matchup__label">🆚 今季対戦成績</p>'
         f'<p>巨人 vs {html.escape(opponent)}: {html.escape(record)} '
         f'(集計 {counted} 試合)</p>'
+        f"{matchup_list_html}"
         "</aside>"
     )
 
@@ -1612,6 +1706,321 @@ def _build_standings_block() -> str:
         '<aside class="nomotoke-standings">'
         '<p class="nomotoke-standings__label">📊 セ・リーグ順位</p>'
         f"<p>{html.escape(today_jp)}時点: 巨人 {html.escape(line)}</p>"
+        "</aside>"
+    )
+
+
+# NOMOTOKE-INTAKE-PLAYER-STATS-001 (A): NPB.jp team stats fetch +
+# 30-min in-memory cache. Provides {normalized_name: {col: value}}
+# for batting + pitching combined.
+
+_PLAYER_STATS_TTL_SEC = 30 * 60  # 30 minutes (per session memo)
+_PLAYER_STATS_CACHE: dict[str, Any] = {
+    "batting": {},
+    "pitching": {},
+    "fetched_at": 0.0,
+}
+
+
+def _refresh_player_stats_cache() -> None:
+    """Fetch batting + pitching tables; merge into the in-memory cache.
+
+    Best-effort: failures leave the cache untouched, falling back to
+    the previous fetch (or empty dicts on cold start). Each fetch is
+    a single ~30 KB GET against npb.jp, gated behind the 30-minute
+    TTL so the per-instance cost stays at most 4 fetches/hour.
+    """
+    try:
+        from src.source_npb_team_stats_extractor import (
+            parse_npb_team_stats_html,
+        )
+    except Exception:
+        return
+    year = datetime.now(JST).year
+    batting_url = f"https://npb.jp/bis/{year}/stats/idb1_g.html"
+    pitching_url = f"https://npb.jp/bis/{year}/stats/idp1_g.html"
+    batting_html = _fetch_url_text(batting_url, timeout=8)
+    pitching_html = _fetch_url_text(pitching_url, timeout=8)
+    if batting_html:
+        parsed = parse_npb_team_stats_html(batting_html)
+        if parsed:
+            _PLAYER_STATS_CACHE["batting"] = parsed
+    if pitching_html:
+        parsed = parse_npb_team_stats_html(pitching_html)
+        if parsed:
+            _PLAYER_STATS_CACHE["pitching"] = parsed
+    _PLAYER_STATS_CACHE["fetched_at"] = time.time()
+
+
+def _get_player_stats_lookup() -> dict[str, dict[str, Any]]:
+    """Return ``{normalized_name: {kind: 'batting'|'pitching', record: {...}}}``.
+
+    Lazy refetch every 30 minutes per Cloud Run instance.
+    """
+    now = time.time()
+    if now - _PLAYER_STATS_CACHE.get("fetched_at", 0) > _PLAYER_STATS_TTL_SEC:
+        _refresh_player_stats_cache()
+    out: dict[str, dict[str, Any]] = {}
+    for kind in ("batting", "pitching"):
+        bucket = _PLAYER_STATS_CACHE.get(kind) or {}
+        for name, rec in bucket.items():
+            if name not in out:
+                out[name] = {"kind": kind, "record": rec}
+    return out
+
+
+def _normalize_player_name_for_match(name: str) -> str:
+    """Match the normalisation used by source_npb_team_stats_extractor:
+    strip whitespace + fullwidth space."""
+    if not name:
+        return ""
+    return re.sub(r"[\s　]+", "", name).strip()
+
+
+def _scan_giants_player_names_in_text(text: str) -> list[str]:
+    """Return roster.json player + coach names that appear (full or
+    surname-prefix) in the input text. Conservative: 2-4 char
+    surnames only match when isolated; full names match anywhere."""
+    if not text:
+        return []
+    try:
+        from src.nomotoke_card_renderer import _load_giants_roster
+    except Exception:
+        return []
+    roster = _load_giants_roster()
+    found: list[str] = []
+    seen: set[str] = set()
+    for entry in roster:
+        full_name = (entry.get("name") or "").strip()
+        if not full_name:
+            continue
+        match_keys: list[str] = [full_name]
+        for alias in entry.get("aliases", []) or []:
+            if alias and alias not in match_keys:
+                match_keys.append(alias)
+        # Add surname (first 2-3 chars of full_name) as a softer match
+        # — but only when the full_name itself is not already a hit.
+        if len(full_name) >= 3:
+            match_keys.append(full_name[:2])
+            match_keys.append(full_name[:3])
+        hit = any(k and k in text for k in match_keys)
+        if hit and full_name not in seen:
+            seen.add(full_name)
+            found.append(full_name)
+    return found[:4]  # cap to keep the block readable
+
+
+def _format_batting_summary(rec: dict[str, str]) -> str:
+    """Pull a compact 「打率 .278 / 8本 / 24打点」 line from a batting row.
+
+    Tolerates column-name drift across NPB pages by trying multiple
+    candidate keys for each metric."""
+    def _pick(*keys: str) -> str:
+        for k in keys:
+            v = rec.get(k)
+            if v and isinstance(v, str) and v.strip():
+                return v.strip()
+        return ""
+
+    avg = _pick("打率", "AVG", "Avg")
+    hr = _pick("本塁打", "HR", "本")
+    rbi = _pick("打点", "RBI")
+    parts: list[str] = []
+    if avg:
+        parts.append(f"打率{avg}")
+    if hr:
+        parts.append(f"{hr}本")
+    if rbi:
+        parts.append(f"{rbi}打点")
+    return " / ".join(parts)
+
+
+def _format_pitching_summary(rec: dict[str, str]) -> str:
+    """Pull a compact 「N登板 W勝L敗 防御率2.50」 line from a pitching row."""
+    def _pick(*keys: str) -> str:
+        for k in keys:
+            v = rec.get(k)
+            if v and isinstance(v, str) and v.strip():
+                return v.strip()
+        return ""
+
+    games = _pick("登板", "試合", "G")
+    wins = _pick("勝", "W")
+    losses = _pick("敗", "L")
+    era = _pick("防御率", "ERA")
+    parts: list[str] = []
+    if games:
+        parts.append(f"{games}登板")
+    if wins or losses:
+        parts.append(f"{wins or 0}勝{losses or 0}敗")
+    if era:
+        parts.append(f"防御率{era}")
+    return " ".join(parts)
+
+
+def _build_player_stats_block(scan_text: str) -> str:
+    """Render the 「📊 選手成績」 block for any roster names found in
+    ``scan_text``. Empty when no name matches a player with stats.
+    """
+    if not scan_text:
+        return ""
+    candidate_names = _scan_giants_player_names_in_text(scan_text)
+    if not candidate_names:
+        return ""
+    stats = _get_player_stats_lookup()
+    if not stats:
+        return ""
+    lines: list[str] = []
+    seen: set[str] = set()
+    for name in candidate_names:
+        norm = _normalize_player_name_for_match(name)
+        if norm in seen:
+            continue
+        seen.add(norm)
+        # Direct lookup, then surname-prefix fallback.
+        rec_info = stats.get(norm)
+        if not rec_info:
+            for k, v in stats.items():
+                if k.startswith(norm) and len(norm) >= 2:
+                    rec_info = v
+                    name = v["record"].get("__rendered_name__", name)
+                    break
+        if not rec_info:
+            continue
+        record = rec_info.get("record") or {}
+        kind = rec_info.get("kind")
+        rendered = (record.get("__rendered_name__") or name).strip()
+        if kind == "batting":
+            summary = _format_batting_summary(record)
+        else:
+            summary = _format_pitching_summary(record)
+        if not summary:
+            continue
+        lines.append(
+            f'<li>{html.escape(rendered)} '
+            f'<span class="nomotoke-player-stats__values">{html.escape(summary)}</span></li>'
+        )
+        if len(lines) >= 4:
+            break
+    if not lines:
+        return ""
+    return (
+        '<aside class="nomotoke-player-stats">'
+        '<p class="nomotoke-player-stats__label">📊 関連選手の今季成績</p>'
+        '<ul class="nomotoke-player-stats__list">'
+        + "".join(lines)
+        + "</ul></aside>"
+    )
+
+
+# NOMOTOKE-INTAKE-AUTHOR-OTHER-001 (D): "this reporter's other recent
+# articles" cluster, sourced from WP REST search by author name.
+
+def _build_author_other_articles_block(author_name: str, exclude_link: str = "") -> str:
+    """Render the 「✍ {author} の他の記事」 block. Empty when no usable
+    hit. ``author_name`` is the full byline string (often
+    ``"スポーツ報知 山田太郎"``)."""
+    if not author_name or not isinstance(author_name, str):
+        return ""
+    # Use the longest 漢字-カタカナ run as the search query so the WP
+    # REST search lands on author bylines stored in titles or excerpts.
+    ngrams = re.findall(r"[一-龥ぁ-んァ-ヶー]{2,12}", author_name)
+    if not ngrams:
+        return ""
+    query = max(ngrams, key=len)
+    posts = _wp_query_public_posts(search=query, limit=4)
+    if not posts:
+        return ""
+    items: list[str] = []
+    for p in posts:
+        link = (p.get("link") or "").strip()
+        if not link or link == exclude_link:
+            continue
+        title = _strip_wp_title_tags(p.get("title"))
+        date_jp = _format_jp_date(p.get("date") or "")
+        if not title:
+            continue
+        prefix = f"{html.escape(date_jp)} " if date_jp else ""
+        items.append(
+            f'<li>{prefix}<a href="{html.escape(link)}">{html.escape(title)}</a></li>'
+        )
+        if len(items) >= 3:
+            break
+    if not items:
+        return ""
+    return (
+        '<aside class="nomotoke-author-cluster">'
+        f'<p class="nomotoke-author-cluster__label">✍ {html.escape(query)} の他の記事</p>'
+        '<ul class="nomotoke-author-cluster__list">'
+        + "".join(items)
+        + "</ul></aside>"
+    )
+
+
+# NOMOTOKE-INTAKE-NOTICE-TIMELINE-001 (E): recent 公示 articles list.
+
+def _build_recent_notice_timeline_block() -> str:
+    """Render the 「📋 直近の公示」 block. Empty when no recent notices."""
+    notice_cat = 669  # 球団情報 — see config/categories.json
+    posts = _wp_query_public_posts(
+        search="公示", categories=[notice_cat], limit=8
+    )
+    if not posts:
+        return ""
+    items: list[str] = []
+    for p in posts:
+        title = _strip_wp_title_tags(p.get("title"))
+        link = (p.get("link") or "").strip()
+        if not (title and link):
+            continue
+        if "公示" not in title and "登録" not in title and "抹消" not in title:
+            continue
+        date_jp = _format_jp_date(p.get("date") or "")
+        prefix = f"{html.escape(date_jp)} " if date_jp else ""
+        items.append(
+            f'<li>{prefix}<a href="{html.escape(link)}">{html.escape(title)}</a></li>'
+        )
+        if len(items) >= 4:
+            break
+    if not items:
+        return ""
+    return (
+        '<aside class="nomotoke-notice-timeline">'
+        '<p class="nomotoke-notice-timeline__label">📋 直近の公示</p>'
+        '<ul class="nomotoke-notice-timeline__list">'
+        + "".join(items)
+        + "</ul></aside>"
+    )
+
+
+# NOMOTOKE-INTAKE-YESTERDAY-GAME-001 (B): yesterday's Giants game
+# 1-line snippet, sourced from the most recent 試合速報 post.
+
+def _build_yesterdays_game_block(exclude_link: str = "") -> str:
+    """Render the 「🆚 昨日の試合」 block. Empty when no recent
+    postgame post available."""
+    cat_id = _GAME_RESULT_CATEGORY_ID
+    if not cat_id:
+        return ""
+    posts = _wp_query_public_posts(categories=[cat_id], limit=2)
+    if not posts:
+        return ""
+    p = posts[0]
+    link = (p.get("link") or "").strip()
+    if link == exclude_link and len(posts) > 1:
+        p = posts[1]
+        link = (p.get("link") or "").strip()
+    if not link:
+        return ""
+    title = _strip_wp_title_tags(p.get("title"))
+    if not title:
+        return ""
+    date_jp = _format_jp_date(p.get("date") or "")
+    prefix = f"{html.escape(date_jp)} " if date_jp else ""
+    return (
+        '<aside class="nomotoke-yesterday-game">'
+        '<p class="nomotoke-yesterday-game__label">🆚 直近の試合速報</p>'
+        f'<p>{prefix}<a href="{html.escape(link)}">{html.escape(title)}</a></p>'
         "</aside>"
     )
 

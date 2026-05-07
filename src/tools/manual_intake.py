@@ -85,18 +85,28 @@ EXIT_UNEXPECTED = 2
 # not loosen any guarded-publish gate). "auto" sentinel triggers the
 # existing _resolve_routing_lightweight detector.
 ARTICLE_TYPE_AUTO = "auto"
+# article_type override → (category_name, subtype, template_key).
+#
+# template_key values are the nomotoke renderer keys when the operator
+# picks a specific type (NOMOTOKE-INTAKE-TEMPLATE-001). The actual body
+# rendering happens later in ``_try_render_via_nomotoke`` — that helper
+# falls back to the basic ``<p>summary</p>+出典`` shape when the chosen
+# template's required-facts gate cannot be satisfied (e.g. monographer
+# 「監督談話」 picked but the title carries no 「{監督名}「{quote}」」 pattern).
+# So the operator's pick is always honoured for category / subtype but
+# the body is degraded gracefully when facts are missing.
 ARTICLE_TYPE_OVERRIDES: dict[str, tuple[str, str, str]] = {
-    "試合結果": ("試合速報", "game_result", "manual_intake"),
-    "試合速報": ("試合速報", "postgame", "manual_intake"),
-    "予告先発": ("試合速報", "probable_starter", "manual_intake"),
-    "公示": ("球団情報", "notice", "manual_intake"),
-    "監督談話": ("首脳陣", "manager", "manual_intake"),
-    "選手コメント": ("選手情報", "comment", "manual_intake"),
-    "動画": ("コラム", "program", "manual_intake"),
-    "成績": ("選手情報", "stats", "manual_intake"),
-    "番組情報": ("コラム", "program", "manual_intake"),
-    "コラム": ("コラム", "other", "manual_intake"),
-    "ニュース": ("コラム", "other", "manual_intake"),
+    "試合結果": ("試合速報", "game_result", "nomotoke_card_short_news_url_v1"),
+    "試合速報": ("試合速報", "postgame", "nomotoke_card_short_news_url_v1"),
+    "予告先発": ("試合速報", "probable_starter", "nomotoke_card_pregame_pitcher_v1"),
+    "公示": ("球団情報", "notice", "nomotoke_card_short_news_url_v1"),
+    "監督談話": ("首脳陣", "manager", "nomotoke_card_manager_comment_v1"),
+    "選手コメント": ("選手情報", "comment", "nomotoke_card_player_comment_v1"),
+    "動画": ("コラム", "program", "nomotoke_card_video_v1"),
+    "成績": ("選手情報", "stats", "nomotoke_card_short_news_url_v1"),
+    "番組情報": ("コラム", "program", "nomotoke_card_short_news_url_v1"),
+    "コラム": ("コラム", "other", "nomotoke_card_short_news_url_v1"),
+    "ニュース": ("コラム", "other", "nomotoke_card_short_news_url_v1"),
 }
 ARTICLE_TYPE_CHOICES: tuple[str, ...] = (
     ARTICLE_TYPE_AUTO,
@@ -290,6 +300,182 @@ def _build_body_for_news(source_url: str, title: str, summary: str) -> str:
         f'rel="noopener">{html.escape(label)}</a></p>'
     )
     return "\n".join(parts)
+
+
+def _date_label_from_iso(iso: str) -> str:
+    """Render an ISO 8601 timestamp into a Japanese ``YYYY年M月D日`` label.
+
+    The renderers all use this format (NOMOTOKE-DATELABEL-FIX) so date
+    metadata never leaks ``YYYY-MM-DD`` style ``\\d{1,2}-\\d{1,2}``
+    patterns into the body and confuse the score-consistency tokenizer.
+    """
+    if not iso:
+        return ""
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", iso)
+    if not m:
+        return ""
+    return f"{int(m.group(1))}年{int(m.group(2))}月{int(m.group(3))}日"
+
+
+def _try_render_via_nomotoke(
+    template_key: str,
+    *,
+    title: str,
+    summary: str,
+    source_url: str,
+    source_name: str,
+    source_published_at_iso: str,
+    is_x: bool,
+) -> str | None:
+    """Render the manual-intake submission with the matching nomotoke
+    renderer when the operator's article_type pick maps to a nomotoke
+    template_key. Returns the rendered HTML on success, ``None`` when
+    the template's required-fact gate could not be satisfied (caller
+    falls back to the basic ``<p>summary</p>+出典`` shape).
+
+    Source-only: every field passed into the renderer comes from OG
+    fetch / RSS title-summary regex / the operator's own URL — no
+    fabrication. The renderer's own gates (body_too_thin, missing
+    quote / pitcher pair, etc.) decide whether the richer template is
+    appropriate; if not, we degrade gracefully so the operator's
+    article_type pick is never a hard block.
+    """
+    if not template_key.startswith("nomotoke_card_"):
+        return None
+    # X-only entries cannot use the nomotoke short_news_url path because
+    # the router would skip with x_post_not_article_source. The plain
+    # X embed body is the right shape for those.
+    if is_x:
+        return None
+
+    try:
+        os.environ.setdefault("ENABLE_NOMOTOKE_CARD_TEMPLATES", "1")
+        from src.nomotoke_card_renderer import select_renderer
+    except Exception:
+        return None
+
+    date_label = _date_label_from_iso(source_published_at_iso)
+    data: dict[str, Any] = {}
+
+    if template_key == "nomotoke_card_short_news_url_v1":
+        data = {
+            "title": title,
+            "summary": summary,
+            "source_url": source_url,
+            "source_name": source_name or "出典",
+            "date_label": date_label,
+        }
+
+    elif template_key == "nomotoke_card_video_v1":
+        # Only YouTube watch URLs satisfy the renderer's video_url field.
+        if not source_url or "youtube.com/watch?v=" not in source_url:
+            return None
+        try:
+            from src.source_youtube_extractor import (
+                YouTubeFeedEntry,
+                extract_video_card_facts,
+            )
+        except Exception:
+            return None
+        e = YouTubeFeedEntry(
+            video_id="",
+            video_url=source_url,
+            title=title,
+            published_at=source_published_at_iso,
+            channel_name=source_name,
+            description=summary,
+        )
+        data = extract_video_card_facts(e, team_name="巨人")
+        # Renderer requires player_name + play_summary; otherwise fall back.
+        if not data.get("player_name") or not data.get("play_summary"):
+            return None
+
+    elif template_key == "nomotoke_card_manager_comment_v1":
+        try:
+            from src.nomotoke_rss_router import (
+                MANAGER_NAME_ALLOWLIST,
+                extract_manager_quote,
+            )
+        except Exception:
+            return None
+        mq = extract_manager_quote(title, summary)
+        manager_name = mq.get("manager_name") or ""
+        quote_short = mq.get("quote_short") or ""
+        if not manager_name or manager_name not in MANAGER_NAME_ALLOWLIST:
+            return None
+        if not quote_short:
+            return None
+        data = {
+            "team_name": "巨人",
+            "manager_name": manager_name,
+            "topic": (mq.get("topic") or quote_short[:30]),
+            "quote_short": quote_short,
+            "source_url": source_url,
+            "source_name": source_name or "出典",
+            "published_at": source_published_at_iso,
+            "date_label": date_label,
+        }
+
+    elif template_key == "nomotoke_card_player_comment_v1":
+        try:
+            from src.nomotoke_rss_router import extract_player_quote
+        except Exception:
+            return None
+        pq = extract_player_quote(title, summary)
+        player_name = pq.get("player_name") or ""
+        quote_short = pq.get("quote_short") or ""
+        if not player_name or not quote_short:
+            return None
+        data = {
+            "team_name": "巨人",
+            "player_name": player_name,
+            "topic": quote_short[:30],
+            "quote_short": quote_short,
+            "source_url": source_url,
+            "source_name": source_name or "出典",
+            "published_at": source_published_at_iso,
+            "date_label": date_label,
+        }
+
+    elif template_key == "nomotoke_card_pregame_pitcher_v1":
+        try:
+            from src.nomotoke_rss_router import detect_pregame_pitcher
+        except Exception:
+            return None
+        pre = detect_pregame_pitcher(title, summary)
+        pair = pre.get("pitcher_pair") if pre.get("keyword_present") else None
+        if not pair:
+            return None
+        data = {
+            "date_label": date_label,
+            "official_url": source_url,
+            "matchups": [
+                {
+                    "team_a": "巨人",
+                    "pitcher_a": pair[0],
+                    "team_b": "対戦相手",
+                    "pitcher_b": pair[1],
+                }
+            ],
+            "source_url": source_url,
+            "source_name": source_name or "出典",
+        }
+
+    else:
+        return None
+
+    try:
+        renderer = select_renderer(template_key)
+    except Exception:
+        return None
+    try:
+        result = renderer(data)
+    except Exception:
+        return None
+    if not result.get("validation_ok"):
+        return None
+    rendered = result.get("content_html") or ""
+    return rendered or None
 
 
 def _title_quality_failure_reason(title: str) -> str:
@@ -590,10 +776,28 @@ def run_manual_intake(
         output["reason"] = "wp_client_factory_not_provided"
         return EXIT_WP_DRAFT_FAILED, output
 
-    if is_x:
-        body = _build_body_for_x(canonical_source_url)
-    else:
-        body = _build_body_for_news(canonical_source_url, title, summary)
+    body: str | None = None
+    # NOMOTOKE-INTAKE-TEMPLATE-001: when the operator picked a specific
+    # article_type that maps to a nomotoke template, try that renderer
+    # first. Falls back to the basic ``<p>summary</p>+出典`` shape if the
+    # renderer's required-fact gate cannot be satisfied (so the
+    # operator's pick never produces a hard error — they still get a
+    # draft, just without the rich card).
+    if not is_x and template_key.startswith("nomotoke_card_"):
+        body = _try_render_via_nomotoke(
+            template_key,
+            title=title,
+            summary=summary,
+            source_url=canonical_source_url,
+            source_name=output.get("source_name", ""),
+            source_published_at_iso=normalized_source_published_at,
+            is_x=is_x,
+        )
+    if body is None:
+        if is_x:
+            body = _build_body_for_x(canonical_source_url)
+        else:
+            body = _build_body_for_news(canonical_source_url, title, summary)
 
     if memo:
         if memo in body:

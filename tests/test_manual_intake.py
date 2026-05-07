@@ -764,7 +764,9 @@ class SourcePublishedAtIntakeTests(_IntakeBaseTest):
         self.assertEqual(out["article_type_source"], "user_override")
         self.assertEqual(out["category"], "試合速報")
         self.assertEqual(out["subtype"], "game_result")
-        self.assertEqual(out["template_key"], "manual_intake")
+        # NOMOTOKE-INTAKE-TEMPLATE-001: article_type now maps to nomotoke
+        # template_key, not the legacy "manual_intake" sentinel.
+        self.assertEqual(out["template_key"], "nomotoke_card_short_news_url_v1")
         # 試合速報 -> category_id 663 per config/categories.json
         self.assertEqual(out["category_ids"], [663])
         # WP receives the resolved category_id list, NOT the name.

@@ -73,6 +73,13 @@ _ALIAS_MAP = {
     "大勢": "翁田大勢",
 }
 
+# Team-generic fallback used when no per-person match is found. The image
+# is the user-curated 原辰徳 photo in the WP media library — picked by
+# the operator as the safest "巨人 generic" eyecatch in lieu of a real
+# team logo. Override at deploy time via the env var when needed.
+_TEAM_FALLBACK_MEDIA_ID_ENV = "PLAYER_EYECATCH_TEAM_FALLBACK_ID"
+_TEAM_FALLBACK_MEDIA_ID_DEFAULT = 29270
+
 _CACHE_PATH_ENV = "PLAYER_EYECATCH_MAP_PATH"
 _DEFAULT_CACHE_PATH = Path(__file__).resolve().parent.parent / "config" / "player_eyecatch_map.json"
 _CACHE_LOCK = threading.Lock()
@@ -184,38 +191,55 @@ def _media_search(name: str, wp_url: str, auth: Tuple[str, str], timeout: int = 
     return None
 
 
+def _team_fallback_media_id() -> Optional[int]:
+    raw = os.environ.get(_TEAM_FALLBACK_MEDIA_ID_ENV, "").strip()
+    if raw == "0":
+        # Operator-disabled fallback.
+        return None
+    if raw:
+        try:
+            return int(raw)
+        except ValueError:
+            logger.warning("invalid_team_fallback_id_env: %s", raw)
+    return _TEAM_FALLBACK_MEDIA_ID_DEFAULT
+
+
 def resolve_eyecatch_from_title(
     title: str,
     *,
     wp_url: str | None = None,
     auth: Tuple[str, str] | None = None,
     allow_remote_lookup: bool = True,
+    use_team_fallback: bool = True,
 ) -> Optional[int]:
     """Resolve a featured_media ID for the given *title*.
 
-    Returns the WP media ID, or ``None`` when no person is detected /
-    no image is available. The result is cached per-name in
-    ``config/player_eyecatch_map.json`` so repeated calls are cheap.
+    Resolution order:
+      1. per-person cache hit
+      2. per-person remote /media lookup (cached on first miss)
+      3. team-generic fallback (when ``use_team_fallback`` is True)
+
+    Returns ``None`` only when steps 1-2 miss *and* the team fallback is
+    disabled / unset.
     """
     name = detect_person(title)
-    if not name:
-        return None
+    if name:
+        with _CACHE_LOCK:
+            cache = _load_cache()
+            cached = cache.get(name, "__missing__")
+            if cached == "__missing__":
+                cached = None
+                cache_miss = True
+            else:
+                cache_miss = False
+            if cache_miss and allow_remote_lookup and wp_url and auth:
+                cached = _media_search(name, wp_url, auth)
+                cache[name] = cached
+                _save_cache(cache)
 
-    with _CACHE_LOCK:
-        cache = _load_cache()
-        cached = cache.get(name, "__missing__")
-        if cached == "__missing__":
-            cached = None
-            cache_miss = True
-        else:
-            cache_miss = False
-        if cache_miss:
-            if not allow_remote_lookup or not wp_url or not auth:
-                return None
-            cached = _media_search(name, wp_url, auth)
-            cache[name] = cached
-            _save_cache(cache)
+        if isinstance(cached, dict) and cached.get("id"):
+            return int(cached["id"])
 
-    if isinstance(cached, dict) and cached.get("id"):
-        return int(cached["id"])
+    if use_team_fallback:
+        return _team_fallback_media_id()
     return None

@@ -699,7 +699,7 @@ def _try_render_via_nomotoke(
             "source_name": source_name or "出典",
         }
 
-    elif template_key == "nomotoke_card_video_v1":
+    if template_key == "nomotoke_card_video_v1":
         # Only YouTube watch URLs satisfy the renderer's video_url field.
         if not source_url or "youtube.com/watch?v=" not in source_url:
             return None
@@ -827,6 +827,19 @@ def _try_render_via_nomotoke(
 
     else:
         return None
+
+    # NOMOTOKE-INTAKE-ROSTER-ASIDE-001: every nomotoke template that
+    # carries a name field gets the 関連選手・首脳陣 aside enabled. The
+    # renderer only emits the aside when at least one name maps to a
+    # roster entry, so flagging templates without a name is harmless.
+    if template_key in (
+        "nomotoke_card_manager_comment_v1",
+        "nomotoke_card_player_comment_v1",
+        "nomotoke_card_video_v1",
+        "nomotoke_card_pregame_pitcher_v1",
+        "nomotoke_card_official_notice_v1",
+    ):
+        data["enable_roster_aside"] = True
 
     try:
         renderer = select_renderer(template_key)

@@ -35,7 +35,9 @@ from __future__ import annotations
 import hashlib
 import html
 import os
+import json
 import re
+from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urlparse
 
@@ -142,6 +144,105 @@ def require_enabled() -> None:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+# NOMOTOKE-INTAKE-ROSTER-ASIDE-001: load + lookup helpers for the
+# 関連選手・首脳陣 aside block. The roster file (`config/giants_roster.json`)
+# is operator-curated source-fact data — no network call, no LLM, no
+# fabrication possible. The aside is rendered only when at least one
+# matching entry is found.
+
+_ROSTER_PATH = Path(__file__).resolve().parent.parent / "config" / "giants_roster.json"
+_ROSTER_CACHE: Optional[List[Dict[str, Any]]] = None
+
+
+def _load_giants_roster() -> List[Dict[str, Any]]:
+    """Return the roster list (cached). Empty list on any read error so
+    the renderer never breaks on missing or malformed config."""
+    global _ROSTER_CACHE
+    if _ROSTER_CACHE is None:
+        try:
+            with _ROSTER_PATH.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            _ROSTER_CACHE = data if isinstance(data, list) else []
+        except Exception:
+            _ROSTER_CACHE = []
+    return _ROSTER_CACHE or []
+
+
+def _lookup_roster_by_name(name: str) -> Optional[Dict[str, Any]]:
+    """Find a roster entry by exact name / alias / surname-prefix.
+
+    Surname-prefix is allowed only when the input is a 2-4 char
+    string (typical 漢字 surname length) — that prevents a 1-char
+    accidental match against the longest entry."""
+    if not name or not isinstance(name, str):
+        return None
+    norm = name.strip()
+    if not norm:
+        return None
+    roster = _load_giants_roster()
+    for entry in roster:
+        if entry.get("name") == norm:
+            return entry
+        for alias in entry.get("aliases", []) or []:
+            if alias == norm:
+                return entry
+    if 2 <= len(norm) <= 4:
+        for entry in roster:
+            full_name = entry.get("name", "") or ""
+            if full_name.startswith(norm):
+                return entry
+    return None
+
+
+def _render_roster_aside(names: Any) -> str:
+    """Render the 関連選手・首脳陣 aside for one or more names. Returns
+    ``""`` when no name in the input matches a roster entry (so the
+    aside never appears as an empty box).
+
+    Each rendered line: 「巨人 #<jersey> <position> <full_name>」.
+    Duplicates de-duplicated by full_name."""
+    if not names:
+        return ""
+    if isinstance(names, str):
+        names = [names]
+    elif not isinstance(names, (list, tuple)):
+        return ""
+    lines: List[str] = []
+    seen: set = set()
+    for raw in names:
+        if not isinstance(raw, str):
+            continue
+        entry = _lookup_roster_by_name(raw)
+        if not entry:
+            continue
+        full_name = (entry.get("name") or raw).strip()
+        if full_name in seen:
+            continue
+        seen.add(full_name)
+        prefix_parts = ["巨人"]
+        jn = (entry.get("jersey_number") or "").strip()
+        if jn:
+            prefix_parts.append(f"#{jn}")
+        pos = (entry.get("position") or "").strip()
+        if pos:
+            prefix_parts.append(pos)
+        prefix = " ".join(_esc(p) for p in prefix_parts)
+        lines.append(
+            '<p class="nomotoke-roster__line">'
+            f'<span class="nomotoke-roster__role">{prefix}</span> '
+            f'<span class="nomotoke-roster__name">{_esc(full_name)}</span>'
+            "</p>"
+        )
+    if not lines:
+        return ""
+    return (
+        '<aside class="nomotoke-roster">'
+        '<p class="nomotoke-roster__label">🏷 関連選手・首脳陣</p>'
+        + "".join(lines)
+        + "</aside>"
+    )
 
 
 def _esc(value: Any) -> str:
@@ -792,6 +893,12 @@ def render_official_notice_card(data: Dict[str, Any]) -> Dict[str, Any]:
             + "</ul>"
         )
 
+    if data.get("enable_roster_aside"):
+        all_names = list(registered) + list(removed)
+        aside = _render_roster_aside(all_names)
+        if aside:
+            parts.append(aside)
+
     current_count = data.get("current_count")
     remaining_slots = data.get("remaining_slots")
     if current_count is not None and remaining_slots is not None:
@@ -888,6 +995,11 @@ def render_pregame_pitcher_card(data: Dict[str, Any]) -> Dict[str, Any]:
     primary_pitcher = ""
     first = matchups[0] if isinstance(matchups[0], dict) else {}
     primary_pitcher = (first.get("pitcher_a") or "").strip()
+
+    if data.get("enable_roster_aside") and primary_pitcher:
+        aside = _render_roster_aside(primary_pitcher)
+        if aside:
+            parts.append(aside)
     closing_html = ""
     if primary_pitcher:
         closing_html = f"<p>{_esc(primary_pitcher)}が先発です。</p>"
@@ -1121,6 +1233,11 @@ def render_video_card(data: Dict[str, Any]) -> Dict[str, Any]:
             else:
                 description = description[:120]
         parts.append(f"<p>{_esc(description)}</p>")
+
+    if data.get("enable_roster_aside"):
+        aside = _render_roster_aside(player_name)
+        if aside:
+            parts.append(aside)
 
     if player_name:
         closing_html = f"<p>{_esc(player_name)}選手のプレーです。</p>"
@@ -1356,6 +1473,11 @@ def _render_quote_comment_card(
         f"「{_esc(quote_stripped)}」"
         "</blockquote>"
     )
+
+    if data.get("enable_roster_aside"):
+        aside = _render_roster_aside(speaker_name)
+        if aside:
+            parts.append(aside)
 
     closing_html = (
         f"<p>{_esc(speaker_name)}{closing_role}がコメントです。</p>"

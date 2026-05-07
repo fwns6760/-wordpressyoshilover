@@ -1168,13 +1168,25 @@ class SourceExtractorOptInTests(unittest.TestCase):
             )
             fetch_mock.assert_not_called()
 
-    def test_draft_mode_ignores_extractor_pipeline_argument(self):
-        # Even with a pipeline supplied, --mode draft must NOT call the
-        # fetcher; Phase 1A locks the wiring to dry-run only.
+    def test_draft_mode_now_uses_extractor_pipeline_after_phase_2b(self):
+        # Phase 2B lifted the draft-mode block after Phase 2A renderer
+        # wiring was verified in a 10-URL live dry-run sample. Draft
+        # mode now ALSO calls fetch_source_meta when the pipeline is
+        # injected. Default OFF / opt-in semantics are preserved at
+        # main()'s flag layer; this test pins the lower-level behaviour.
+        fake_extraction = _FakeExtraction(
+            title="OG title",
+            description="OG description",
+            published_at="2026-05-07T05:00:00+09:00",
+            canonical_url="https://hochi.news/articles/test.html",
+            facts={"title": {"value": "OG title", "source": "og:title"}},
+        )
+        fake_fr = _FakeFetchResult(extraction=fake_extraction)
         wp = MagicMock()
         wp.create_post = MagicMock(return_value=99)
         with patch(
-            "src.source_html_fetcher.fetch_source_meta"
+            "src.source_html_fetcher.fetch_source_meta",
+            return_value=fake_fr,
         ) as fetch_mock:
             cli._process_one_entry(
                 source_name="スポーツ報知 巨人",
@@ -1188,7 +1200,7 @@ class SourceExtractorOptInTests(unittest.TestCase):
                 categories_map=_categories_map(),
                 same_run_dedupe=set(),
                 mode="draft",
-                audit_log_path=Path("/tmp/_audit_draft_ignored.jsonl"),
+                audit_log_path=Path("/tmp/_audit_draft_phase2b.jsonl"),
                 wp_client_factory=lambda: wp,
                 logger=__import__("logging").getLogger("test"),
                 source_extractor_pipeline={
@@ -1199,7 +1211,7 @@ class SourceExtractorOptInTests(unittest.TestCase):
                     "clock": object(),
                 },
             )
-            fetch_mock.assert_not_called()
+            self.assertEqual(fetch_mock.call_count, 1)
 
 
 if __name__ == "__main__":

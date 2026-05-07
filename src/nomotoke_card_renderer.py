@@ -1347,10 +1347,17 @@ _LINK_LABEL_TITLE_CAP = 30
 
 
 # Source-only fact extractor: matches \d{1,2}-\d{1,2} / 対 / vs scores.
-# Mirrors src.baseball_numeric_fact_consistency.SCORE_RE so a card row built
-# from this regex never disagrees with the article-consistency check.
+# Mirrors src.baseball_numeric_fact_consistency.SCORE_RE for ASCII variants
+# but ALSO accepts Japanese full-width / dash variants commonly seen in
+# news og:description strings (sanspo emits ``0－5`` (U+FF0D) verbatim,
+# hochi sometimes uses ``ー`` (U+30FC)). Normalising the captured score
+# back to ASCII (`f"{left}-{right}"`) below means the fact card always
+# renders an ASCII pair, which keeps it compatible with the consistency
+# tokenizer that only accepts ASCII '-'.
 _SHORT_NEWS_SCORE_RE = re.compile(
-    r"(?<!\d)(?P<left>\d{1,2})\s*(?:-|対|vs|VS)\s*(?P<right>\d{1,2})(?!\d)"
+    r"(?<!\d)(?P<left>\d{1,2})\s*"
+    r"(?:[-－‐−–—ー]|対|vs|VS)"
+    r"\s*(?P<right>\d{1,2})(?!\d)"
 )
 _SHORT_NEWS_GAME_KIND_PATTERNS: tuple = (
     ("二軍", "二軍"),
@@ -1360,6 +1367,11 @@ _SHORT_NEWS_GAME_KIND_PATTERNS: tuple = (
 _SHORT_NEWS_OUTCOME_KEYWORDS: tuple = (
     "勝利", "敗戦", "完封", "連勝", "連敗", "逆転", "サヨナラ",
     "本塁打", "完投", "ノーヒットノーラン", "引き分け",
+    # Phase 2B: hochi/sanspo og:description frequently uses 「負け」/「白星」/
+    # 「黒星」/「先制」 wording without the canonical 勝利/敗戦 stems. Adding
+    # them tightens outcome-keyword detection for body_too_thin gating and
+    # never loosens any publish criterion.
+    "負け", "白星", "黒星", "先制", "競り勝ち",
 )
 
 # NOMOTOKE-BODY-FIX-2 C1: opponent / venue / game-index / inning-marker

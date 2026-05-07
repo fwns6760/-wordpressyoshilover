@@ -1847,6 +1847,35 @@ class FactsOgDescriptionScanTests(unittest.TestCase):
         )
         self.assertEqual(f.get("score"), "1-2")
 
+    def test_score_recognizes_fullwidth_hyphen_minus(self):
+        # Phase 2B: sanspo og:description uses U+FF0D (fullwidth dash).
+        # The captured score still normalises to ASCII for the fact card.
+        f = self._extract(
+            "巨人ニュース",
+            "",
+            og_description="巨人0－5ヤクルト、9回戦、東京D",
+        )
+        self.assertEqual(f.get("score"), "0-5")
+
+    def test_score_recognizes_choo_on_pu(self):
+        # U+30FC (katakana-hiragana prolonged sound mark) appears in some
+        # hochi articles when 3ー2 is typeset.
+        f = self._extract(
+            "巨人ニュース",
+            "",
+            og_description="巨人がわずか２安打で3ー2とヤクルトに競り勝ち",
+        )
+        self.assertEqual(f.get("score"), "3-2")
+
+    def test_outcome_keyword_negake_detected(self):
+        f = self._extract(
+            "巨人ニュース",
+            "",
+            og_description="巨人は今季4度目の零封負け。",
+        )
+        outcomes = f.get("outcome_keywords", "")
+        self.assertIn("負け", outcomes)
+
 
 class RendererPhase2AOgWiringTests(unittest.TestCase):
     """The renderer reads ``primary_og_description`` from data when present

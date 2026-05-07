@@ -588,14 +588,15 @@ def _process_one_entry(
     base_summary["matched"] = True
     base_summary["template_key"] = result.template_key
 
-    # NOMOTOKE-BODY-EXTRACT-001 Phase 1A opt-in:
-    # When the source extractor pipeline is wired AND we're in dry-run
-    # mode, fetch the primary source URL and attach OG / JSON-LD facts to
-    # the per-entry summary. The fetch is skipped for X-only URLs (the
-    # router has already either skipped them as x_post_not_article_source
-    # or promoted an external URL to ``canonical_url``).
+    # NOMOTOKE-BODY-EXTRACT-001 Phase 1A / 2B opt-in:
+    # When the source extractor pipeline is wired AND mode is dry-run OR
+    # draft, fetch the primary source URL and attach OG / JSON-LD facts
+    # to the per-entry summary. The fetch is skipped for X-only URLs
+    # (the router has already either skipped them as
+    # x_post_not_article_source or promoted an external URL to
+    # ``canonical_url``).
     if (
-        mode == "dry-run"
+        mode in ("dry-run", "draft")
         and source_extractor_pipeline is not None
         and result.canonical_url
         and not _is_x_or_twitter_url(result.canonical_url)
@@ -881,13 +882,16 @@ def main(
     if args.mode == "draft" and wp_client_factory is None:
         wp_client_factory = _default_wp_client_factory
 
-    # Phase 1A: build the source-extractor pipeline only when the flag is
-    # set AND the mode is dry-run. ``--mode draft`` ignores the flag — the
-    # locked spec requires user GO before draft mode wires the fetcher.
+    # Phase 1A / Phase 2B: build the source-extractor pipeline when the
+    # flag is set AND the mode is dry-run OR draft. Default OFF — the
+    # flag must be explicitly passed (or env ENABLE_NOMOTOKE_SOURCE_EXTRACTOR=1)
+    # for live HTTP to happen. Phase 2B lifted the previous draft-mode
+    # block after Phase 2A renderer wiring proved source-only / verbatim-
+    # transcription-safe in a 10-URL live dry-run sample.
     extractor_enabled = _is_source_extractor_enabled(args.enable_source_extractor)
     if (
         extractor_enabled
-        and args.mode == "dry-run"
+        and args.mode in ("dry-run", "draft")
         and source_extractor_pipeline is None
     ):
         try:
@@ -895,7 +899,8 @@ def main(
 
             source_extractor_pipeline = build_default_pipeline()
             logger.info(
-                "source extractor pipeline armed (dry-run, default DI)"
+                "source extractor pipeline armed (mode=%s, default DI)",
+                args.mode,
             )
         except Exception as exc:
             logger.warning(
@@ -904,15 +909,6 @@ def main(
                 exc,
             )
             source_extractor_pipeline = None
-    elif extractor_enabled and args.mode == "draft":
-        logger.warning(
-            "%s requested in --mode draft; ignored — Phase 2 user GO is "
-            "required before draft mode wires the fetcher.",
-            ENABLE_SOURCE_EXTRACTOR_ENV,
-        )
-        source_extractor_pipeline = None
-    elif args.mode != "dry-run":
-        source_extractor_pipeline = None
 
     same_run_dedupe: set = set()
     summaries: List[Dict[str, Any]] = []

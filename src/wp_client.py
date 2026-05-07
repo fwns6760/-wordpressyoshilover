@@ -72,6 +72,7 @@ def _compute_retry_sleep(attempt: int, max_delay: int) -> float:
 class WPClient:
     SOURCE_URL_META_KEY = "_yoshilover_source_url"
     SOURCE_URL_META_ALIASES = ("yl_source_url",)
+    SOURCE_PUBLISHED_AT_META_KEY = "_yoshilover_source_published_at"
 
     def __init__(self):
         self.base_url    = os.getenv("WP_URL", "").rstrip("/")
@@ -320,6 +321,16 @@ class WPClient:
         target_key = preferred_key if preferred_key in cls._source_url_meta_keys() else cls.SOURCE_URL_META_KEY
         return {target_key: normalized_source_url}
 
+    @classmethod
+    def _build_source_published_at_meta_payload(
+        cls,
+        source_published_at_iso: str | None,
+    ) -> dict:
+        value = (source_published_at_iso or "").strip()
+        if not value:
+            return {}
+        return {cls.SOURCE_PUBLISHED_AT_META_KEY: value}
+
     @staticmethod
     def _mark_reuse_reason(post: dict, reuse_reason: str) -> dict:
         marked = dict(post or {})
@@ -497,6 +508,7 @@ class WPClient:
         allow_status_upgrade: bool | None = None,
         caller: str | None = None,
         source_lane: str | None = None,
+        source_published_at_iso: str | None = None,
     ) -> int:
         post_id = existing["id"]
         existing_status = (existing.get("status") or "").lower()
@@ -535,13 +547,26 @@ class WPClient:
             else:
                 update_fields["status"] = "publish"
 
+        meta_updates: dict = {}
         if normalized_source_url and not existing_source_url:
-            source_meta_payload = self._build_source_url_meta_payload(
-                normalized_source_url,
-                preferred_key=source_meta_key,
+            meta_updates.update(
+                self._build_source_url_meta_payload(
+                    normalized_source_url,
+                    preferred_key=source_meta_key,
+                )
             )
-            if source_meta_payload:
-                update_fields["meta"] = source_meta_payload
+        existing_meta = (existing or {}).get("meta") or {}
+        existing_published_meta = ""
+        if isinstance(existing_meta, dict):
+            existing_published_meta = str(
+                existing_meta.get(self.SOURCE_PUBLISHED_AT_META_KEY) or ""
+            ).strip()
+        if (source_published_at_iso or "").strip() and not existing_published_meta:
+            meta_updates.update(
+                self._build_source_published_at_meta_payload(source_published_at_iso)
+            )
+        if meta_updates:
+            update_fields["meta"] = meta_updates
 
         if update_fields:
             self.update_post_fields(post_id, **update_fields)
@@ -571,7 +596,8 @@ class WPClient:
                     allow_title_only_reuse: bool | None = None,
                     allow_status_upgrade: bool | None = None,
                     caller: str | None = None,
-                    source_lane: str | None = None) -> int:
+                    source_lane: str | None = None,
+                    source_published_at_iso: str | None = None) -> int:
         requested_status = (status or "publish").lower()
         normalized_source_url = self._normalize_source_url(source_url)
         if allow_title_only_reuse is None:
@@ -599,6 +625,7 @@ class WPClient:
                 allow_status_upgrade=allow_status_upgrade,
                 caller=caller,
                 source_lane=source_lane,
+                source_published_at_iso=source_published_at_iso,
             )
 
         payload = {
@@ -610,9 +637,13 @@ class WPClient:
             payload["categories"] = categories
         if featured_media:
             payload["featured_media"] = featured_media
-        source_meta_payload = self._build_source_url_meta_payload(normalized_source_url)
-        if source_meta_payload:
-            payload["meta"] = source_meta_payload
+        meta_payload: dict = {}
+        meta_payload.update(self._build_source_url_meta_payload(normalized_source_url))
+        meta_payload.update(
+            self._build_source_published_at_meta_payload(source_published_at_iso)
+        )
+        if meta_payload:
+            payload["meta"] = meta_payload
 
         resp = self._request_with_retry(
             requests.post,

@@ -254,6 +254,7 @@ LINEUP_TITLE_TOKEN_MATCH_SUBTYPES = frozenset(
 MEDICAL_ROSTER_SOFT_SUBTYPE_EXACT = frozenset({"lineup", "lineup_notice"})
 PLACEHOLDER_BODY_TARGET_SUBTYPES = frozenset({"farm", "farm_result"})
 SOURCE_DATE_META_FIELDS = (
+    "_yoshilover_source_published_at",
     "source_published_at",
     "published_at",
     "source_datetime",

@@ -804,5 +804,164 @@ class TestWPPublishedRevertGuard(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(tmpdir, "wp_revert_audit_ledger.jsonl")))
 
 
+class TestWPClientSourcePublishedAtMeta(unittest.TestCase):
+    """MANUAL-INTAKE-002B: source_published_at_iso → WP meta payload."""
+
+    def setUp(self):
+        os.environ["WP_URL"] = "https://example.com"
+        os.environ["WP_USER"] = "user"
+        os.environ["WP_APP_PASSWORD"] = "pass"
+        self.wp = WPClient()
+
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_create_post_writes_source_published_at_meta(self, mock_get, mock_post):
+        mock_get.return_value = Mock(status_code=200, json=lambda: [])
+        mock_post.return_value = Mock(status_code=201, json=lambda: {"id": 901})
+
+        post_id = self.wp.create_post(
+            "巨人 試合終了 0-5 ヤクルト",
+            "<p>body</p>",
+            status="draft",
+            source_url="https://hochi.news/articles/x.html",
+            source_published_at_iso="2026-05-07T18:30:00+09:00",
+        )
+
+        self.assertEqual(post_id, 901)
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(
+            payload["meta"],
+            {
+                WPClient.SOURCE_URL_META_KEY: "https://hochi.news/articles/x.html",
+                WPClient.SOURCE_PUBLISHED_AT_META_KEY: "2026-05-07T18:30:00+09:00",
+            },
+        )
+
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_create_post_omits_meta_when_source_published_at_blank(
+        self, mock_get, mock_post
+    ):
+        mock_get.return_value = Mock(status_code=200, json=lambda: [])
+        mock_post.return_value = Mock(status_code=201, json=lambda: {"id": 902})
+
+        post_id = self.wp.create_post(
+            "巨人 試合終了 0-5 ヤクルト",
+            "<p>body</p>",
+            status="draft",
+            source_url="https://hochi.news/articles/y.html",
+        )
+
+        self.assertEqual(post_id, 902)
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertNotIn(
+            WPClient.SOURCE_PUBLISHED_AT_META_KEY, payload.get("meta", {})
+        )
+
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_create_post_writes_source_published_at_only_when_no_url(
+        self, mock_get, mock_post
+    ):
+        mock_get.return_value = Mock(status_code=200, json=lambda: [])
+        mock_post.return_value = Mock(status_code=201, json=lambda: {"id": 903})
+
+        # Title-only path — passing source_url=None must still let the
+        # source_published_at meta land on the post.
+        post_id = self.wp.create_post(
+            "巨人 試合終了 0-5 ヤクルト",
+            "<p>body</p>",
+            status="draft",
+            source_published_at_iso="2026-05-07T18:30:00+09:00",
+        )
+
+        self.assertEqual(post_id, 903)
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(
+            payload["meta"],
+            {WPClient.SOURCE_PUBLISHED_AT_META_KEY: "2026-05-07T18:30:00+09:00"},
+        )
+
+    @patch.object(WPClient, "update_post_fields")
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_reuse_existing_post_backfills_source_published_at_meta(
+        self, mock_get, mock_post, mock_update
+    ):
+        # Existing draft has source_url meta but no source_published_at meta.
+        mock_get.return_value = Mock(
+            status_code=200,
+            json=lambda: [
+                {
+                    "id": 904,
+                    "title": {"raw": "巨人 試合終了 0-5 ヤクルト"},
+                    "status": "draft",
+                    "date": "2099-04-14T17:39:28",
+                    "featured_media": 0,
+                    "categories": [664],
+                    "meta": {
+                        WPClient.SOURCE_URL_META_KEY: "https://hochi.news/x.html"
+                    },
+                }
+            ],
+        )
+
+        post_id = self.wp.create_post(
+            "巨人 試合終了 0-5 ヤクルト",
+            "<p>body</p>",
+            status="draft",
+            source_url="https://hochi.news/x.html",
+            source_published_at_iso="2026-05-07T18:30:00+09:00",
+        )
+
+        self.assertEqual(post_id, 904)
+        mock_post.assert_not_called()
+        mock_update.assert_called_once()
+        update_kwargs = mock_update.call_args.kwargs
+        self.assertEqual(
+            update_kwargs.get("meta"),
+            {
+                WPClient.SOURCE_PUBLISHED_AT_META_KEY: "2026-05-07T18:30:00+09:00"
+            },
+        )
+
+    @patch.object(WPClient, "update_post_fields")
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_reuse_existing_post_does_not_overwrite_existing_source_published_at(
+        self, mock_get, mock_post, mock_update
+    ):
+        existing_iso = "2026-04-30T12:00:00+09:00"
+        mock_get.return_value = Mock(
+            status_code=200,
+            json=lambda: [
+                {
+                    "id": 905,
+                    "title": {"raw": "巨人 試合終了 0-5 ヤクルト"},
+                    "status": "draft",
+                    "date": "2099-04-14T17:39:28",
+                    "featured_media": 0,
+                    "categories": [664],
+                    "meta": {
+                        WPClient.SOURCE_URL_META_KEY: "https://hochi.news/x.html",
+                        WPClient.SOURCE_PUBLISHED_AT_META_KEY: existing_iso,
+                    },
+                }
+            ],
+        )
+
+        post_id = self.wp.create_post(
+            "巨人 試合終了 0-5 ヤクルト",
+            "<p>body</p>",
+            status="draft",
+            source_url="https://hochi.news/x.html",
+            source_published_at_iso="2026-05-07T18:30:00+09:00",
+        )
+
+        self.assertEqual(post_id, 905)
+        mock_post.assert_not_called()
+        mock_update.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

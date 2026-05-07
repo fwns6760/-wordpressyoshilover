@@ -2,10 +2,14 @@ import io
 import os
 import unittest
 from contextlib import redirect_stderr
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
+from src import guarded_publish_evaluator as evaluator
 from src import guarded_publish_runner as runner
 from tests.test_guarded_publish_runner import FIXED_NOW
+
+JST = timezone(timedelta(hours=9), name="JST")
 
 
 SOURCE_FLAG = runner.SOURCE_TIME_PRIORITY_FRESHNESS_ENV
@@ -97,6 +101,108 @@ class GuardedPublishFreshnessSourceTimeTests(unittest.TestCase):
 
         self.assertFalse(decision["eligible"])
         self.assertEqual(decision["reason"], "source_time_missing_review")
+
+
+class EvaluatorYoshiloverMetaFieldTests(unittest.TestCase):
+    """MANUAL-INTAKE-002B: evaluator picks up
+    `_yoshilover_source_published_at` directly from raw_post.meta so manual
+    intake drafts don't need a body_date fallback to resolve freshness.
+    """
+
+    def _now(self) -> datetime:
+        return datetime(2026, 5, 7, 17, 30, tzinfo=JST)
+
+    def test_meta_field_resolves_to_source_time(self):
+        raw_post = {
+            "id": 64500,
+            "date": "2026-05-07T17:00:00+09:00",
+            "meta": {
+                "_yoshilover_source_published_at": "2026-05-06T18:30:00+09:00",
+            },
+        }
+        record = {
+            "title": "巨人 試合終了 0-5 ヤクルト",
+            "body_text": "本文に日付なし",
+            "created_at": "2026-05-07T17:00:00+09:00",
+        }
+
+        info = evaluator._resolve_content_datetime(
+            raw_post, record, now=self._now()
+        )
+
+        self.assertEqual(info["freshness_basis"], "source_time")
+        self.assertEqual(
+            info["source_published_at"], "2026-05-06T18:30:00+09:00"
+        )
+        self.assertIn(
+            "_yoshilover_source_published_at",
+            info["detected_by"],
+        )
+
+    def test_meta_field_present_at_top_level_also_resolves(self):
+        raw_post = {
+            "id": 64501,
+            "date": "2026-05-07T17:00:00+09:00",
+            "_yoshilover_source_published_at": "2026-05-06T09:00:00+09:00",
+            "meta": {},
+        }
+        record = {
+            "title": "巨人 試合速報",
+            "body_text": "本文に日付なし",
+            "created_at": "2026-05-07T17:00:00+09:00",
+        }
+
+        info = evaluator._resolve_content_datetime(
+            raw_post, record, now=self._now()
+        )
+
+        self.assertEqual(info["freshness_basis"], "source_time")
+        self.assertEqual(
+            info["source_published_at"], "2026-05-06T09:00:00+09:00"
+        )
+
+    def test_meta_field_has_priority_over_body_date(self):
+        raw_post = {
+            "id": 64502,
+            "date": "2026-05-07T17:00:00+09:00",
+            "meta": {
+                "_yoshilover_source_published_at": "2026-05-06T18:30:00+09:00",
+            },
+        }
+        record = {
+            "title": "巨人 試合終了",
+            # Body has a different (older) date that body_date fallback would
+            # otherwise pick up — meta key must win.
+            "body_text": "2026年5月1日の試合を振り返る。",
+            "created_at": "2026-05-07T17:00:00+09:00",
+        }
+
+        info = evaluator._resolve_content_datetime(
+            raw_post, record, now=self._now()
+        )
+
+        self.assertEqual(info["freshness_basis"], "source_time")
+        self.assertEqual(
+            info["source_published_at"], "2026-05-06T18:30:00+09:00"
+        )
+
+    def test_meta_field_absent_falls_through_to_body_date_or_created_at(self):
+        raw_post = {
+            "id": 64503,
+            "date": "2026-05-07T17:00:00+09:00",
+            "meta": {},
+        }
+        record = {
+            "title": "巨人 試合終了",
+            "body_text": "",
+            "created_at": "2026-05-07T17:00:00+09:00",
+        }
+
+        info = evaluator._resolve_content_datetime(
+            raw_post, record, now=self._now()
+        )
+
+        self.assertNotEqual(info["freshness_basis"], "source_time")
 
 
 if __name__ == "__main__":

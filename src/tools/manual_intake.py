@@ -22,9 +22,11 @@ Default --mode is "draft".
 
 --source-published-at accepts an ISO 8601 timestamp. Naive strings are
 treated as JST; "Z" / explicit UTC offsets are normalized to JST. The
-normalized value is embedded in the WP draft body so guarded-publish's
-freshness / source-time pipeline can pick it up. memo is independent and
-still never reaches body / source_text / Gemini prompt.
+normalized value is written to WP post meta under
+``_yoshilover_source_published_at`` (see WPClient.SOURCE_PUBLISHED_AT_META_KEY)
+so guarded-publish's freshness / source-time resolver can pick it up
+directly from meta — without depending on body_date fallback. memo is
+independent and still never reaches body / source_text / Gemini prompt.
 """
 
 from __future__ import annotations
@@ -218,40 +220,17 @@ def _fetch_news_meta(url: str, *, timeout: float = 10.0) -> dict[str, str]:
     return _parse_og_meta(text)
 
 
-def _source_published_at_block(source_published_at_iso: str, *, label: str) -> str:
-    """Visible body block carrying the source publish timestamp.
-
-    The string is plain text so guarded-publish's body_date fallback can
-    parse the date when WP meta does not carry it. memo NEVER reaches
-    this block — only the normalized timestamp does.
-    """
-    if not source_published_at_iso:
-        return ""
-    return f'<p>{label}: {html.escape(source_published_at_iso)}</p>'
-
-
-def _build_body_for_x(canonical_url: str, source_published_at_iso: str = "") -> str:
+def _build_body_for_x(canonical_url: str) -> str:
     safe = html.escape(canonical_url)
-    parts = [
+    return (
         f'<blockquote class="twitter-tweet" data-lang="ja">'
-        f'<a href="{safe}"></a></blockquote>',
+        f'<a href="{safe}"></a></blockquote>\n'
         '<script async src="https://platform.twitter.com/widgets.js" '
-        'charset="utf-8"></script>',
-    ]
-    timestamp_block = _source_published_at_block(
-        source_published_at_iso, label="投稿日時"
+        'charset="utf-8"></script>\n'
     )
-    if timestamp_block:
-        parts.append(timestamp_block)
-    return "\n".join(parts) + "\n"
 
 
-def _build_body_for_news(
-    source_url: str,
-    title: str,
-    summary: str,
-    source_published_at_iso: str = "",
-) -> str:
+def _build_body_for_news(source_url: str, title: str, summary: str) -> str:
     parts: list[str] = []
     if summary:
         parts.append(f"<p>{html.escape(summary)}</p>")
@@ -260,11 +239,6 @@ def _build_body_for_news(
         f'<p>出典: <a href="{html.escape(source_url)}" target="_blank" '
         f'rel="noopener">{html.escape(label)}</a></p>'
     )
-    timestamp_block = _source_published_at_block(
-        source_published_at_iso, label="出典公開日時"
-    )
-    if timestamp_block:
-        parts.append(timestamp_block)
     return "\n".join(parts)
 
 
@@ -373,6 +347,7 @@ def _wp_create_draft(
     content: str,
     category: str,
     source_url: str,
+    source_published_at_iso: str,
     logger: logging.Logger,
 ) -> tuple[int | None, str | None]:
     """Create a draft via WPClient. WPClient has its own dedupe via
@@ -387,6 +362,7 @@ def _wp_create_draft(
         source_url=source_url,
         caller="manual_intake",
         source_lane="manual_intake",
+        source_published_at_iso=source_published_at_iso or None,
     )
     post_id: int | None
     draft_url: str | None = None
@@ -538,17 +514,9 @@ def run_manual_intake(
         return EXIT_WP_DRAFT_FAILED, output
 
     if is_x:
-        body = _build_body_for_x(
-            canonical_source_url,
-            source_published_at_iso=normalized_source_published_at,
-        )
+        body = _build_body_for_x(canonical_source_url)
     else:
-        body = _build_body_for_news(
-            canonical_source_url,
-            title,
-            summary,
-            source_published_at_iso=normalized_source_published_at,
-        )
+        body = _build_body_for_news(canonical_source_url, title, summary)
 
     if memo:
         if memo in body:
@@ -564,6 +532,7 @@ def run_manual_intake(
             content=body,
             category=category,
             source_url=canonical_source_url,
+            source_published_at_iso=normalized_source_published_at,
             logger=logger,
         )
     except AssertionError:

@@ -541,7 +541,7 @@ class SourcePublishedAtIntakeTests(_IntakeBaseTest):
             out["normalized_source_published_at"], "2026-05-07T18:30:00+09:00"
         )
 
-    def test_x_draft_body_carries_normalized_timestamp(self):
+    def test_x_draft_passes_source_published_at_to_create_post_meta(self):
         captured: dict = {}
 
         def fake_create(**kwargs):
@@ -559,18 +559,22 @@ class SourcePublishedAtIntakeTests(_IntakeBaseTest):
             rate_limit_lockfile=self.lockfile,
         )
         self.assertEqual(code, mi.EXIT_OK)
+        # Primary path: WP meta carries the timestamp.
+        self.assertEqual(
+            captured.get("source_published_at_iso"), "2026-05-07T18:30:00+09:00"
+        )
         content = captured.get("content", "")
-        self.assertIn("2026-05-07T18:30:00+09:00", content)
-        self.assertIn("投稿日時", content)
-        # X URL must remain timestamp-only metadata: no X API hint, only
-        # the embed blockquote + timestamp paragraph.
+        # Visible body no longer carries date display — meta-only path.
+        self.assertNotIn("投稿日時", content)
+        self.assertNotIn("2026-05-07T18:30:00+09:00", content)
+        # X URL still rendered as embed only — no X API.
         self.assertIn("twitter-tweet", content)
         self.assertEqual(
             out["normalized_source_published_at"], "2026-05-07T18:30:00+09:00"
         )
         self.assertEqual(out["source_kind"], "x")
 
-    def test_news_draft_body_carries_normalized_timestamp(self):
+    def test_news_draft_passes_source_published_at_to_create_post_meta(self):
         captured: dict = {}
 
         def fake_create(**kwargs):
@@ -589,11 +593,14 @@ class SourcePublishedAtIntakeTests(_IntakeBaseTest):
             rate_limit_lockfile=self.lockfile,
         )
         self.assertEqual(code, mi.EXIT_OK)
+        self.assertEqual(
+            captured.get("source_published_at_iso"), "2026-05-07T18:30:00+09:00"
+        )
         content = captured.get("content", "")
-        self.assertIn("2026-05-07T18:30:00+09:00", content)
-        self.assertIn("出典公開日時", content)
-        # summary must NOT be overwritten by the timestamp.
+        # summary must remain visible; date display is meta-only.
         self.assertIn("ヤクルト戦敗戦", content)
+        self.assertNotIn("出典公開日時", content)
+        self.assertNotIn("2026-05-07T18:30:00+09:00", content)
         # category routing unchanged.
         self.assertEqual(captured.get("categories"), [664])
         self.assertEqual(
@@ -623,11 +630,17 @@ class SourcePublishedAtIntakeTests(_IntakeBaseTest):
         self.assertEqual(code, mi.EXIT_OK)
         content = captured.get("content", "")
         title = captured.get("title", "")
+        # memo never leaks into body / title / meta value.
         self.assertNotIn(secret_memo, content)
         self.assertNotIn(secret_memo, title)
-        self.assertIn("2026-05-07T18:30:00+09:00", content)
+        self.assertNotEqual(
+            captured.get("source_published_at_iso"), secret_memo
+        )
+        self.assertEqual(
+            captured.get("source_published_at_iso"), "2026-05-07T18:30:00+09:00"
+        )
 
-    def test_naive_source_published_at_stored_as_jst(self):
+    def test_naive_source_published_at_stored_as_jst_meta(self):
         captured: dict = {}
 
         def fake_create(**kwargs):
@@ -649,9 +662,11 @@ class SourcePublishedAtIntakeTests(_IntakeBaseTest):
         self.assertEqual(
             out["normalized_source_published_at"], "2026-05-07T18:30:00+09:00"
         )
-        self.assertIn("2026-05-07T18:30:00+09:00", captured.get("content", ""))
+        self.assertEqual(
+            captured.get("source_published_at_iso"), "2026-05-07T18:30:00+09:00"
+        )
 
-    def test_omitted_source_published_at_does_not_alter_body(self):
+    def test_omitted_source_published_at_passes_none_to_create_post(self):
         captured: dict = {}
 
         def fake_create(**kwargs):
@@ -672,6 +687,8 @@ class SourcePublishedAtIntakeTests(_IntakeBaseTest):
         self.assertNotIn("投稿日時", content)
         self.assertNotIn("出典公開日時", content)
         self.assertEqual(out["normalized_source_published_at"], "")
+        # When unset, WPClient receives None (no meta written).
+        self.assertIsNone(captured.get("source_published_at_iso"))
 
 
 if __name__ == "__main__":

@@ -18,11 +18,7 @@
 
 | ticket | status | 判定 | 次 action |
 |---|---|---|---|
-| **245 front hide internal auto-post category label** | READY | **必要。いま動かす** | Front画面に内部カテゴリ「自動投稿」が出るのを止める。カテゴリ削除ではなく表示除外のみ |
-| **277-QA title player name backfill** | REVIEW_NEEDED | **必要。impl 済み** | helper + fetcher integration + 1826 tests pass。次は Claude review と push 判断 |
-| **OO-QA article body quality v1** | IN_FLIGHT | **必要。preview 実装中** | default-OFF 本文品質 guard を repo 実装。次は fixture preview doc 作成と Claude/user review |
-| **279-QA mail subject clarity** | READY_FOR_FIX | **必要。277 の次** | publish-notice 件名だけで公開済み / review / hold / 古い候補を判別できるようにする。本文簡素化(74b0cec)後は件名強化の意味が増した |
-| **229 Gemini cost governor + LLM call reduction** | REVIEW_NEEDED | **必要。継続監視** | fetcher 100% 後の Gemini call / skip / ledger を見て、229-C prompt compression をやるか決める |
+| **279-QA mail subject clarity** | READY_FOR_FIX | **本物の未着手。今やる** | publish-notice 件名を 公開済｜subtype / 要review｜reason / hold｜reason / 要確認(古い候補)｜subtype に拡張。本文 title+URL 化(74b0cec)後で件名差別化の価値が最大 |
 | **OPERATING_LOCK** | ACTIVE_LOCK | **必要。常時参照** | 事故防止ルール。変更は慎重に、src 実装とは混ぜない |
 | **assignments** | ACTIVE_BOARD | **必要。現在地** | 本ファイル。active を増やしすぎない |
 
@@ -49,6 +45,19 @@
 | **246-viral-topic-detection** | 8 日 parked。SNS バズ検出 → 既存 RSS 裏取り → routing 構想は良いが、現フェーズ(noindex 検証 + 本文品質 + cost)と競合。再着手したくなれば doc/done/2026-05/ から復元 |
 | **247-QA-postgame-strict-slot-fill-poc** | 8 日 parked。LLM JSON 抽出 + slot-fill POC は野心的だが LLM 本文生成に踏み込む変更で、現 policy(LLM 本文補完禁止)と衝突。再着手時は scope 再設計必要 |
 | **254-QA-starter-innings-normalization** | 8 日 parked。投手回数表記揺れ統一 helper 構想。fact_consistency false negative の対策だが、現状観察で具体被害が顕在化していない。被害が見えたら再起 |
+| **245 front hide auto-post category label** | 2026-05-07 audit で実装済 verify 完了。`yoshilover_063_is_internal_auto_post_category` helper + 11 callsite で sidebar/article-card/related に適用済 |
+| **277-QA title player name backfill** | `src/title_player_name_backfiller.py` + rss_fetcher 統合済、prod live。tests pass |
+| **229 Gemini cost governor + LLM call reduction** | `ENABLE_PER_POST_24H_GEMINI_BUDGET=1` + preflight gate ON 等、主要 sub 全部 prod 反映済 |
+| **250-QA-1 manager_quote_zero_review** | rss_fetcher の `MANAGER_QUOTE_REVIEW_SUBTYPES` + event emit 実装済 |
+| **250-QA-3 fetcher weak generated title** | `is_weak_generated_title` (title_validator.py) + 「前日コメント整理」「ベンチ関連の発言ポイント」phrase 入り |
+| **275-QA github-actions tests failed audit** | CI 直近 3 run 全 SUCCESS、回復済 |
+| **281-QA farm_result backlog allowlist** | guarded_publish_runner の `BACKLOG_NARROW_FARM_RESULT_SUBTYPES` + 24h cap 実装済 |
+| **282-COST gemini preflight article gate** | `ENABLE_GEMINI_PREFLIGHT=1` prod env で ON 済(memory 282 CONDITIONAL_USER_GO 達成) |
+| **289-OBSERVE post_gen_validate mail notification** | `ENABLE_POST_GEN_VALIDATE_NOTIFICATION=1` ON、silent skip 解消済 |
+| **290-QA weak title rescue backfill** | `weak_title_rescue.py` + `ENABLE_TITLE_GENERIC_COMPOUND_GUARD` 等 5 関連 ENABLE_* flag prod ON |
+| **293-COST preflight skip visible notification** | `ENABLE_PREFLIGHT_SKIP_NOTIFICATION=1` ON |
+| **297-OPS pause codex-shadow-trigger** | scheduler state = PAUSED、実行済 |
+| **248-MKT-2/3a same-game articles linking + display matrix** | parked、現在の運用ループ閉鎖 priority より外。再開時は doc/done/2026-05/ から復元 |
 
 ## waiting へ送ったもの
 

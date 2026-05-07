@@ -627,11 +627,251 @@ class GeminiZeroCallTests(unittest.TestCase):
 # CLI returns the right exit code on misuse
 # ---------------------------------------------------------------------------
 class CLIExitCodeTests(unittest.TestCase):
-    def test_logging_source_is_rejected(self):
-        # --source logging is reserved for the dry-run observability CLI.
-        # Pass --mode dry-run to avoid attempting to construct a WPClient.
-        rc = cli.main(["--source", "logging", "--mode", "dry-run"])
-        self.assertEqual(rc, 2)
+    def test_logging_source_rejected_by_argparse(self):
+        # 001B: --source choices = {live, json}. argparse exits 2 on bad choice.
+        with self.assertRaises(SystemExit) as ctx:
+            cli.main(["--source", "logging", "--mode", "dry-run"])
+        self.assertEqual(ctx.exception.code, 2)
+
+    def test_argparser_choices_excludes_logging(self):
+        # The argparse choices must NOT include "logging" in 001B.
+        p = cli._build_arg_parser()
+        for action in p._actions:
+            if getattr(action, "dest", None) == "source":
+                self.assertEqual(set(action.choices), {"live", "json"})
+                break
+        else:
+            self.fail("--source action not found in parser")
+
+
+# ---------------------------------------------------------------------------
+# source_published_at handling (001B limitation surface)
+# ---------------------------------------------------------------------------
+class SourcePublishedAtTests(unittest.TestCase):
+    def setUp(self) -> None:
+        os.environ["ENABLE_NOMOTOKE_CARD_TEMPLATES"] = "1"
+        self._tmp = tempfile.TemporaryDirectory()
+        self.audit_path = Path(self._tmp.name) / "audit.jsonl"
+        self.cmap = _categories_map()
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _proc(self, entry, mode="dry-run", wp_factory=None):
+        return cli._process_one_entry(
+            source_name="TokyoGiants",
+            entry=entry,
+            template_allowlist=set(RSS_ONLY_ALLOWED_TEMPLATES),
+            categories_map=self.cmap,
+            same_run_dedupe=set(),
+            mode=mode,
+            audit_log_path=self.audit_path,
+            wp_client_factory=wp_factory,
+            logger=__import__("logging").getLogger("test"),
+        )
+
+    def test_resolve_iso_from_published_string(self):
+        iso = cli._resolve_source_published_at_iso(
+            {"published": "Tue, 06 May 2026 10:00:00 +0000"}
+        )
+        self.assertTrue(iso.startswith("2026-05-06T10:00:00"))
+
+    def test_resolve_iso_from_published_parsed_struct(self):
+        iso = cli._resolve_source_published_at_iso(
+            {"published_parsed": (2026, 5, 7, 9, 30, 0, 0, 0, 0)}
+        )
+        self.assertEqual(iso, "2026-05-07T09:30:00Z")
+
+    def test_resolve_iso_returns_empty_when_absent(self):
+        self.assertEqual(cli._resolve_source_published_at_iso({}), "")
+        self.assertEqual(cli._resolve_source_published_at_iso({"published": ""}), "")
+
+    def test_dry_run_records_present_flag_when_published(self):
+        s = self._proc(
+            {
+                "title": "巨人 試合速報 0-5",
+                "summary": "敗戦",
+                "link": "https://twitter.com/TokyoGiants/status/3001",
+                "published": _now_iso(),
+            },
+        )
+        self.assertTrue(s["source_published_at_present"])
+        self.assertNotEqual(s["source_published_at_iso"], "")
+
+    def test_dry_run_records_absent_flag_when_no_published(self):
+        s = self._proc(
+            {
+                "title": "巨人 試合速報 0-5",
+                "summary": "敗戦",
+                "link": "https://twitter.com/TokyoGiants/status/3002",
+                "published": "",
+            },
+        )
+        self.assertFalse(s["source_published_at_present"])
+        self.assertEqual(s["source_published_at_iso"], "")
+        # dry-run does NOT skip on missing published.
+        self.assertNotEqual(s["skip_reason"], "source_published_at_missing")
+
+    def test_draft_mode_skips_when_published_missing(self):
+        wp = MagicMock()
+        wp.create_post = MagicMock(return_value=99)
+        s = self._proc(
+            {
+                "title": "巨人 試合速報 0-5",
+                "summary": "敗戦",
+                "link": "https://twitter.com/TokyoGiants/status/3003",
+                "published": "",
+            },
+            mode="draft",
+            wp_factory=lambda: wp,
+        )
+        self.assertEqual(s["skip_reason"], "source_published_at_missing")
+        self.assertIsNone(s["wp_post_id"])
+        wp.create_post.assert_not_called()
+
+    def test_audit_log_records_source_published_at(self):
+        self._proc(
+            {
+                "title": "巨人 試合速報 0-5",
+                "summary": "敗戦",
+                "link": "https://twitter.com/TokyoGiants/status/3004",
+                "published": _now_iso(),
+            },
+        )
+        rec = json.loads(self.audit_path.read_text(encoding="utf-8").splitlines()[-1])
+        self.assertIn("source_published_at_iso", rec)
+        self.assertTrue(rec["source_published_at_present"])
+
+    def test_html_comment_includes_source_published_at_iso(self):
+        wp = MagicMock()
+        wp.create_post = MagicMock(return_value=42)
+        self._proc(
+            {
+                "title": "巨人 試合速報 0-5",
+                "summary": "敗戦",
+                "link": "https://twitter.com/TokyoGiants/status/3005",
+                "published": "Tue, 06 May 2026 10:00:00 +0000",
+            },
+            mode="draft",
+            wp_factory=lambda: wp,
+        )
+        body = wp.create_post.call_args.kwargs.get("content", "")
+        self.assertIn("source_published_at_iso", body)
+        self.assertIn("2026-05-06T10:00:00Z", body)
+
+
+# ---------------------------------------------------------------------------
+# Dimension separation: template_key vs category_id
+# ---------------------------------------------------------------------------
+class TemplateVsCategoryDimensionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        os.environ["ENABLE_NOMOTOKE_CARD_TEMPLATES"] = "1"
+        self._tmp = tempfile.TemporaryDirectory()
+        self.audit_path = Path(self._tmp.name) / "audit.jsonl"
+        self.cmap = _categories_map()
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_summary_includes_template_key_alongside_category_id(self):
+        wp = MagicMock()
+        wp.create_post = MagicMock(return_value=501)
+        s = cli._process_one_entry(
+            source_name="サンスポ巨人X",
+            entry={
+                "title": "巨人・阿部監督「反省して修正する」",
+                "summary": "",
+                "link": "https://twitter.com/Sanspo_Giants/status/4001",
+                "published": _now_iso(),
+            },
+            template_allowlist=set(RSS_ONLY_ALLOWED_TEMPLATES),
+            categories_map=self.cmap,
+            same_run_dedupe=set(),
+            mode="draft",
+            audit_log_path=self.audit_path,
+            wp_client_factory=lambda: wp,
+            logger=__import__("logging").getLogger("test"),
+        )
+        # Both dimensions present in summary.
+        self.assertEqual(s["template_key"], "nomotoke_card_manager_comment_v1")
+        self.assertIsInstance(s["category_id"], int)
+        self.assertNotEqual(s["category_name"], "")
+        # source_url_hash is present so an operator can join with audit log.
+        self.assertNotEqual(s["source_url_hash"], "")
+
+    def test_audit_log_keeps_both_dimensions_distinct(self):
+        cli._process_one_entry(
+            source_name="サンスポ巨人X",
+            entry={
+                "title": "巨人・阿部監督「反省して修正する」",
+                "summary": "",
+                "link": "https://twitter.com/Sanspo_Giants/status/4002",
+                "published": _now_iso(),
+            },
+            template_allowlist=set(RSS_ONLY_ALLOWED_TEMPLATES),
+            categories_map=self.cmap,
+            same_run_dedupe=set(),
+            mode="dry-run",
+            audit_log_path=self.audit_path,
+            wp_client_factory=None,
+            logger=__import__("logging").getLogger("test"),
+        )
+        rec = json.loads(self.audit_path.read_text(encoding="utf-8").splitlines()[-1])
+        # template_key is recorded independently from category_id / category_name.
+        for key in ("template_key", "route_id", "source_url_hash", "category_id", "category_name"):
+            self.assertIn(key, rec)
+        # category_id is int; template_key is str. They're not derived from each other.
+        self.assertIsInstance(rec["category_id"], int)
+        self.assertIsInstance(rec["template_key"], str)
+        self.assertNotEqual(rec["template_key"], str(rec["category_id"]))
+
+    def test_dedupe_uses_template_key_not_category_id(self):
+        # Two entries with the same canonical_url but mapped to DIFFERENT
+        # template_keys must NOT collide in the same-run dedupe layer.
+        seen: set = set()
+        url = "https://twitter.com/TokyoGiants/status/4100"
+        first_key = ("foo", "nomotoke_card_short_news_url_v1")
+        second_key = ("foo", "nomotoke_card_manager_comment_v1")
+        # Direct check using the helper
+        self.assertFalse(
+            cli.is_duplicate_nomotoke_card(
+                seen=seen, source_url=url,
+                template_key="nomotoke_card_short_news_url_v1", title="t",
+            )
+        )
+        self.assertFalse(
+            cli.is_duplicate_nomotoke_card(
+                seen=seen, source_url=url,
+                template_key="nomotoke_card_manager_comment_v1", title="t",
+            )
+        )
+
+    def test_html_comment_has_template_key_not_required_facts(self):
+        wp = MagicMock()
+        wp.create_post = MagicMock(return_value=502)
+        cli._process_one_entry(
+            source_name="サンスポ巨人X",
+            entry={
+                "title": "巨人・阿部監督「反省して修正する」",
+                "summary": "",
+                "link": "https://twitter.com/Sanspo_Giants/status/4003",
+                "published": _now_iso(),
+            },
+            template_allowlist=set(RSS_ONLY_ALLOWED_TEMPLATES),
+            categories_map=self.cmap,
+            same_run_dedupe=set(),
+            mode="draft",
+            audit_log_path=self.audit_path,
+            wp_client_factory=lambda: wp,
+            logger=__import__("logging").getLogger("test"),
+        )
+        body = wp.create_post.call_args.kwargs.get("content", "")
+        # Required: template_key must appear in body comment for traceability.
+        self.assertIn("template_key", body)
+        self.assertIn("nomotoke_card_manager_comment_v1", body)
+        # Forbidden: required_facts / extracted_facts / tier / confidence.
+        for forbidden in ("required_facts", "extracted_facts", "tier", "confidence"):
+            self.assertNotIn(forbidden, body)
 
 
 if __name__ == "__main__":

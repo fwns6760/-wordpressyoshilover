@@ -5,7 +5,7 @@ Usage
 -----
 
     python -m src.tools.run_nomotoke_rss_card_draft \
-        [--source live|logging|json] \
+        [--source live|json] \
         [--template <template_key>[,<template_key>...]] \
         [--limit N] \
         [--mode dry-run|draft] \
@@ -13,12 +13,15 @@ Usage
         [--audit-log logs/nomotoke_card_draft_log.jsonl] \
         [--max-per-source 30] \
         [--max-total 400] \
-        [--hours 72] \
         [--json-fixtures PATH] \
         [--sources-file PATH]
 
 Default --mode is "dry-run". --mode draft is required to actually create WP
 drafts. Dry-run never invokes ``WPClient`` or any network mutation.
+
+``--source logging`` is **NOT supported** in 001B; it is reserved for the
+dry-run observability CLI ``run_nomotoke_rss_card_dry_run`` (NOMOTOKE-RSS-
+CARD-001A). Argparse rejects it (exit 2).
 
 Hard rules
 ==========
@@ -27,9 +30,57 @@ Hard rules
 - NEVER pass a category NAME to WPClient.create_post — only category_id list.
 - NEVER include full ``required_facts`` / ``extracted_facts`` in the WP body
   HTML comment. Those go to ``logs/nomotoke_card_draft_log.jsonl`` only.
+  The HTML comment is restricted to: template_key, source_url_hash,
+  route_id, source_published_at_iso (ISO 8601 only).
 - NEVER touch rss_fetcher.py / wp_client.py / manual_intake.py beyond import.
 - NEVER auto-publish (status is hard-coded to "draft").
 - NEVER emit RSS_ONLY_BLOCKED_TEMPLATES (the router cannot produce them).
+
+source_published_at handling (001B limitation)
+==============================================
+
+WPClient.create_post only accepts the ``_yoshilover_source_url`` meta key.
+It does NOT accept a ``source_published_at`` meta key. Therefore:
+
+- The CLI extracts ``source_published_at_iso`` from the RSS entry's
+  ``published`` / ``published_parsed`` / ``updated`` / ``updated_parsed``.
+- It is recorded in the JSONL audit log (always) and in the WP body HTML
+  comment (minimal, ISO only).
+- ``--mode draft``: if no source_published_at can be derived, the entry is
+  skipped with reason ``source_published_at_missing``. Silent stop is
+  forbidden — the skip is always reported in the JSON summary.
+- Drafts created by this CLI MAY still be flagged by ``guarded-publish``
+  with ``source_time_missing_review`` because the body HTML comment is
+  not what guarded-publish reads. A follow-up ticket
+  (NOMOTOKE-RSS-CARD-001B-V2) is required to extend WPClient.create_post
+  to persist ``_yoshilover_source_published_at`` meta. Until that lands,
+  001B drafts are **review-preferred**.
+
+Dimension separation
+====================
+
+``template_key`` and ``category_id`` are independent dimensions:
+
+- ``template_key`` — renderer / dedupe / audit dimension. Drives
+  select_renderer dispatch and the layer-4 same-run dedupe key.
+- ``category_id`` — WP taxonomy dimension only. Only used to populate the
+  ``categories=[int]`` field on WPClient.create_post.
+
+The CLI never derives one from the other beyond the explicit
+``resolve_category_id_from_template(template_key)`` lookup. Multiple
+template_keys can map to the same category_id; that is fine. dedupe is
+strictly ``(canonical_url, template_key)``.
+
+Future WPClient extension (NOMOTOKE-RSS-CARD-001B-V2 candidate):
+
+    Add the following meta keys to WPClient.create_post (additive,
+    backwards-compatible). Until then, this CLI keeps them in the body
+    HTML comment + jsonl audit log only.
+
+        _yoshilover_template_key
+        _yoshilover_route_id
+        _yoshilover_source_lane
+        _yoshilover_source_published_at
 """
 
 from __future__ import annotations
@@ -57,6 +108,7 @@ from src.nomotoke_rss_router import (  # noqa: E402
     RSS_ONLY_ALLOWED_TEMPLATES,
     RSS_ONLY_BLOCKED_TEMPLATES,
     RouteResult,
+    _parse_iso_or_rfc822,
     normalize_canonical_url,
     route_rss_entry_to_nomotoke_card,
 )
@@ -211,18 +263,9 @@ def _iter_input_entries(
                     "published": (obj.get("published") or "").strip(),
                 },
             )
-    elif source == "logging":
-        # The logging sample is wrapped through the dry-run helper to avoid
-        # re-implementing gcloud invocation. We only consume routed results
-        # there, so for draft we re-route synthetic entries from the same query.
-        # Rather than duplicate that path here, the draft CLI does not support
-        # --source logging in pass 1 — flag a clear NotImplementedError to keep
-        # the surface honest.
-        raise NotImplementedError(
-            "--source logging is reserved for the dry-run observability CLI; "
-            "draft CLI accepts --source live or --source json."
-        )
     else:
+        # 'logging' is intentionally rejected by argparse; reaching here means
+        # a programmer passed an unknown source.
         raise ValueError(f"unknown --source: {source!r}")
 
 
@@ -248,18 +291,49 @@ def _build_minimal_html_comment(
     template_key: str,
     source_url_hash: str,
     route_id: str,
+    source_published_at_iso: str = "",
 ) -> str:
     """Return the only HTML comment allowed in the WP body.
 
-    Contains template_key + source_url_hash + route_id ONLY.
-    NEVER required_facts / extracted_facts / tier / confidence.
+    Contains template_key + source_url_hash + route_id + source_published_at_iso
+    ONLY. NEVER required_facts / extracted_facts / tier / confidence.
     """
-    payload = {
+    payload: Dict[str, Any] = {
         "template_key": template_key,
         "source_url_hash": source_url_hash,
         "route_id": route_id,
     }
+    if source_published_at_iso:
+        payload["source_published_at_iso"] = source_published_at_iso
     return f"<!-- nomotoke_card_meta:{json.dumps(payload, ensure_ascii=False)} -->"
+
+
+def _resolve_source_published_at_iso(entry: Dict[str, Any]) -> str:
+    """Extract a canonical ISO 8601 timestamp (UTC) from an RSS entry.
+
+    Tries (in order): ``published``, ``published_parsed``, ``updated``,
+    ``updated_parsed``. Returns "" when no usable timestamp is present.
+    """
+    # String forms
+    for key in ("published", "updated", "source_published_at"):
+        raw = (entry.get(key) or "").strip() if isinstance(entry.get(key), str) else ""
+        if not raw:
+            continue
+        d = _parse_iso_or_rfc822(raw)
+        if d is not None:
+            return d.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # struct_time forms (feedparser style: published_parsed / updated_parsed)
+    for key in ("published_parsed", "updated_parsed"):
+        st = entry.get(key)
+        if st is None:
+            continue
+        try:
+            # struct_time tuple (UTC by feedparser convention)
+            dt = datetime(*st[:6], tzinfo=timezone.utc)
+            return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        except Exception:
+            continue
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -336,17 +410,24 @@ def _process_one_entry(
 ) -> Dict[str, Any]:
     """Returns a per-entry summary dict (always emitted to stdout JSON)."""
     route_id = uuid.uuid4().hex[:16]
+    source_published_at_iso = _resolve_source_published_at_iso(entry)
     base_summary: Dict[str, Any] = {
         "route_id": route_id,
         "source_name": source_name,
         "title": (entry.get("title") or "")[:120],
         "source_url": (entry.get("link") or ""),
+        "source_url_hash": "",
         "matched": False,
+        # template_key (renderer/dedupe/audit dimension) is independent of
+        # category_id (WP taxonomy dimension); never derived from each other.
         "template_key": "",
         "skip_reason": "",
         "wp_post_id": None,
         "category_id": None,
+        "category_name": "",
         "mode": mode,
+        "source_published_at_iso": source_published_at_iso,
+        "source_published_at_present": bool(source_published_at_iso),
     }
 
     try:
@@ -390,6 +471,7 @@ def _process_one_entry(
         base_summary["skip_reason"] = "category_id_unresolved"
         return base_summary
     base_summary["category_id"] = category_id
+    base_summary["category_name"] = resolved_cat_name
 
     # Same-run dedupe (layer 4)
     if is_duplicate_nomotoke_card(
@@ -399,6 +481,13 @@ def _process_one_entry(
         title=base_summary["title"],
     ):
         base_summary["skip_reason"] = "duplicate_same_run"
+        return base_summary
+
+    # source_published_at gate: --mode draft requires a derivable ISO timestamp.
+    # --mode dry-run records absence in the summary but does not skip; the
+    # absence flag is what the operator uses to assess RSS supply quality.
+    if mode == "draft" and not source_published_at_iso:
+        base_summary["skip_reason"] = "source_published_at_missing"
         return base_summary
 
     # Render via select_renderer
@@ -426,12 +515,15 @@ def _process_one_entry(
     rendered_html = render_result.get("content_html") or ""
     canonical_url = result.canonical_url or entry.get("link", "")
     source_url_hash = result.dedupe_key.split(":", 1)[-1] if result.dedupe_key else ""
+    base_summary["source_url_hash"] = source_url_hash
 
-    # Append the minimal HTML comment (template_key + source_url_hash + route_id)
+    # Append the minimal HTML comment (template_key + source_url_hash + route_id
+    # + source_published_at_iso). NEVER include required_facts / extracted_facts.
     minimal_comment = _build_minimal_html_comment(
         template_key=result.template_key,
         source_url_hash=source_url_hash,
         route_id=route_id,
+        source_published_at_iso=source_published_at_iso,
     )
     rendered_html_with_comment = rendered_html + "\n" + minimal_comment
 
@@ -451,6 +543,8 @@ def _process_one_entry(
         "source_name": source_name,
         "source_url": canonical_url,
         "source_url_hash": source_url_hash,
+        "source_published_at_iso": source_published_at_iso,
+        "source_published_at_present": bool(source_published_at_iso),
         "tier": result.tier,
         "confidence": result.confidence,
         "extracted_facts": result.extracted_facts,
@@ -510,8 +604,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--source",
         default="live",
-        choices=("live", "json", "logging"),
-        help="entry source (default: live; logging is reserved for dry-run CLI)",
+        choices=("live", "json"),
+        help=(
+            "entry source (default: live). 'logging' is NOT supported here; "
+            "it is reserved for run_nomotoke_rss_card_dry_run (001A)."
+        ),
     )
     p.add_argument(
         "--template",
@@ -598,11 +695,9 @@ def main(
     audit_log_path = Path(args.audit_log)
     processed = 0
 
-    if args.source == "logging":
-        logger.error(
-            "--source logging is reserved for the dry-run observability CLI; "
-            "draft CLI accepts --source live or --source json."
-        )
+    # argparse rejects --source logging before reaching here; defensive guard:
+    if args.source not in ("live", "json"):
+        logger.error("unsupported --source: %s", args.source)
         return 2
 
     entries_iter = _iter_input_entries(
@@ -610,7 +705,7 @@ def main(
         sources_file=Path(args.sources_file),
         max_per_source=args.max_per_source,
         max_total=args.max_total,
-        hours=args.hours,
+        hours=getattr(args, "hours", 0),
         json_fixtures_dir=Path(args.json_fixtures),
     )
 

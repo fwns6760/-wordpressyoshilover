@@ -525,20 +525,92 @@ _PLAYER_QUOTE_RE = re.compile(
     r"(?:[^\s「」『』]+?[・･])?(?P<name>[^\s「」『』監・･]{2,12})[「『](?P<quote>[^「」『』\n]{1,150})[」』]"
 )
 
+# Phase 2C cleanup — observed garbage extractions from live X RSS feeds:
+#   - 「が運営するお菓子屋」 picked as a "name" because the regex grabs
+#     whatever non-space chars sit before 「. Real names start with kanji
+#     or katakana, never with a Japanese particle.
+#   - 「#吉川尚輝」 — hashtag tokens look like names but are tags.
+#   - 「【巨人】吉川尚輝」 — bracket prefixes leak into the rendered title
+#     producing 「巨人・【巨人】吉川尚輝」 double-prefix.
+# Three rules below reject / clean these without changing the regex's
+# main capture so the router still classifies clean cases as before.
+_PLAYER_NAME_LEADING_PARTICLES: tuple = (
+    "が", "を", "に", "は", "と", "で", "も", "から",
+    "まで", "より", "へ", "や",
+)
+_PLAYER_NAME_BRACKET_PREFIX_RE = re.compile(r"^[【\[][^【\[\]】]{1,10}[】\]]")
+_PLAYER_QUOTE_REJECTED_QUOTE_PATTERNS: tuple = (
+    "FES", "BACK", "PROJECT", "NEW",  # event / merchandise wording
+)
+
+
+def _player_name_passes_quality(name: str) -> bool:
+    """Reject names that are clearly not personal names.
+
+    Japanese personal names start with kanji or katakana, never with a
+    particle like 「が」/「を」/「に」. Hashtag-only tokens (``#吉川``)
+    and bracket-only labels (``【巨人】``) are also rejected.
+    """
+    s = (name or "").strip()
+    if not s:
+        return False
+    if s.startswith("#"):
+        return False
+    if s.startswith(_PLAYER_NAME_LEADING_PARTICLES):
+        return False
+    return True
+
+
+def _player_quote_passes_quality(quote: str) -> bool:
+    """Reject quotes that are obvious product / event names rather than
+    actual statements. The closing line in the rendered card reads
+    ``{name}選手がコメントです。`` so passing a product name through
+    creates a nonsensical article — better to skip and let the router
+    fall through to the short_news_url card instead.
+    """
+    s = (quote or "").strip()
+    if not s:
+        return False
+    if s.startswith("#"):
+        return False
+    upper = s.upper()
+    for pat in _PLAYER_QUOTE_REJECTED_QUOTE_PATTERNS:
+        if pat in upper:
+            return False
+    return True
+
+
+def _strip_player_name_bracket_prefix(name: str) -> str:
+    """Drop a leading ``【…】`` / ``[…]`` decoration so titles don't
+    render as ``巨人・【巨人】吉川尚輝、…``. Returns the inner name.
+    """
+    s = (name or "").strip()
+    m = _PLAYER_NAME_BRACKET_PREFIX_RE.match(s)
+    if m:
+        return s[m.end():].strip()
+    return s
+
 
 def extract_player_quote(title: str, summary: str) -> Dict[str, str]:
     """Return {player_name, quote_short} or {} if not matched.
 
     Excludes manager-quote patterns so manager_comment_card has priority.
+    Phase 2C: rejects garbage names (hiragana-leading particles / hashtag
+    prefixes) and event-name quotes so live X RSS noise does not produce
+    nonsensical player_comment cards.
     """
     text = f"{title or ''}\n{summary or ''}"
     if _MANAGER_QUOTE_RE.search(text):
         return {}
     m = _PLAYER_QUOTE_RE.search(text)
     if m:
-        name = m.group("name").strip()
+        name = _strip_player_name_bracket_prefix(m.group("name"))
         quote = m.group("quote").strip()
         if not name or not quote:
+            return {}
+        if not _player_name_passes_quality(name):
+            return {}
+        if not _player_quote_passes_quality(quote):
             return {}
         return {"player_name": name, "quote_short": quote}
     return {}
@@ -849,6 +921,20 @@ def route_rss_entry_to_nomotoke_card(
         return _skip("unsafe_url", tier=tier, source_name=source_name)
 
     if not is_giants_relevant(title, summary, source_name):
+        return _skip(
+            "not_giants_related",
+            tier=tier,
+            canonical_url=canonical,
+            source_name=source_name,
+        )
+
+    # Phase 2C: X retweet (``RT @account: ...``) entries are not original
+    # source posts. Skip them so live X RSS feeds don't produce cards
+    # built around third-party promotional content. The skip reuses the
+    # ``not_giants_related`` taxonomy so existing dashboards keep working;
+    # the audit log retains the title for operator review.
+    title_stripped = (title or "").lstrip()
+    if title_stripped.startswith("RT @") or title_stripped.startswith("RT "):
         return _skip(
             "not_giants_related",
             tier=tier,

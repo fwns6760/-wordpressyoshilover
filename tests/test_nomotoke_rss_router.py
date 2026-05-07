@@ -683,10 +683,12 @@ class XPostOnlyGuardTests(unittest.TestCase):
 
     def test_short_news_url_rendered_body_has_no_phantom_score_tokens(self):
         # End-to-end check: render a real-shaped short_news_url card and
-        # confirm the body's score tokens come ONLY from the legitimate
-        # body summary, never from date metadata. This is the regression
-        # gate for review_score_order_mismatch_review false-positives that
-        # blocked 64798 / 64800 / 64801.
+        # confirm the body's score tokens collapse to a single legitimate
+        # value — never a phantom (5, 6) from date metadata. The fact card
+        # echoes the score so duplicates of the SAME pair are expected;
+        # what we forbid is two DISTINCT pairs which would trigger
+        # review_score_order_mismatch_review (the gate that held
+        # 64798 / 64800 / 64801 before the DATELABEL-FIX).
         os.environ["ENABLE_NOMOTOKE_CARD_TEMPLATES"] = "1"
         from src.baseball_numeric_fact_consistency import extract_scores
         from src.nomotoke_card_renderer import select_renderer
@@ -706,8 +708,10 @@ class XPostOnlyGuardTests(unittest.TestCase):
         rendered = renderer(r.would_render_call["data_preview"])
         body = rendered.get("content_html", "")
         tokens = [t.pair for t in extract_scores(body)]
-        # Exactly the one legitimate score from the summary.
-        self.assertEqual(tokens, [(0, 5)])
+        # All tokens collapse to the single legitimate (0, 5) — phantom
+        # (5, 6) from date metadata must NOT appear.
+        self.assertGreater(len(tokens), 0)
+        self.assertEqual({tuple(p) for p in tokens}, {(0, 5)})
 
     def test_non_x_source_short_news_url_unaffected(self):
         # Regular HTTP RSS source (non-X) still falls through to short_news_url
@@ -1096,6 +1100,87 @@ class ShortNewsTitleSanitizerTests(unittest.TestCase):
         )
         self.assertEqual(r.template_key, TEMPLATE_KEY_MANAGER_COMMENT)
         self.assertNotIn("title_sanitized", r.extracted_facts)
+
+
+# ---------------------------------------------------------------------------
+# Phase 2C cleanup: player_quote noise rejection + RT skip
+# ---------------------------------------------------------------------------
+class Phase2CPlayerQuoteCleanupTests(unittest.TestCase):
+    """Live X RSS feeds emit titles where the regex naively captures
+    garbage as ``player_name`` / ``quote`` (event names, hashtags,
+    bracketed prefixes). Phase 2C filters these so the player_comment
+    template never produces nonsensical 「{garbage}選手がコメントです。」
+    cards.
+    """
+
+    def test_player_name_starting_with_japanese_particle_rejected(self):
+        # 「が運営するお菓子屋「#COCCOPURIO（#コッコプリオ）」」 — the regex
+        # captures 「が運営するお菓子屋」 as name. Particle prefix → reject.
+        f = extract_player_quote(
+            "5/12にぎふしん長良川球場で開催する広島戦と共に、#吉川養鶏 が運営するお菓子屋「#COCCOPURIO（#コッコプリオ）」をちゃっかり宣伝する #吉川尚輝",
+            "",
+        )
+        self.assertEqual(f, {})
+
+    def test_player_quote_with_event_marker_rejected(self):
+        # 「NAOKI IS BACK」 is a merchandise name, not a real quote.
+        f = extract_player_quote(
+            "吉川選手「NAOKI IS BACK」記念グッズ発売",
+            "",
+        )
+        self.assertEqual(f, {})
+
+    def test_player_quote_with_hashtag_only_quote_rejected(self):
+        f = extract_player_quote(
+            "選手「#ハッシュタグ」",
+            "",
+        )
+        self.assertEqual(f, {})
+
+    def test_bracket_prefix_stripped_from_player_name(self):
+        # 「【巨人】吉川尚輝「コメント」」 → name should be 「吉川尚輝」
+        f = extract_player_quote(
+            "【巨人】吉川尚輝「気持ちよく振り抜けた」",
+            "",
+        )
+        self.assertEqual(f.get("player_name"), "吉川尚輝")
+        self.assertEqual(f.get("quote_short"), "気持ちよく振り抜けた")
+
+    def test_clean_player_quote_still_passes(self):
+        # The non-garbage case from the existing test corpus must still match.
+        f = extract_player_quote(
+            "巨人・大勢「真っ直ぐで押し切れた」",
+            "",
+        )
+        self.assertEqual(f.get("player_name"), "大勢")
+        self.assertEqual(f.get("quote_short"), "真っ直ぐで押し切れた")
+
+    def test_rt_prefix_title_is_skipped_at_router_level(self):
+        # Twitter retweet entries (title starts with ``RT @``) are not
+        # original source content. Router skips with not_giants_related.
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title="RT 有吉ぃぃeeeee！: 【🎮エアライダー回 ・配信中！🌟】 巨人ニュース",
+                summary="",
+                link="https://twitter.com/yomiuri_giants/status/9001",
+            ),
+            source_name="読売ジャイアンツX",
+        )
+        self.assertFalse(r.matched)
+        self.assertEqual(r.skip_reason, "not_giants_related")
+
+    def test_rt_space_prefix_also_skipped(self):
+        # Some sources prefix with ``RT `` (space) instead of ``RT @``.
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title="RT 巨人公式: 試合結果 巨人 0-5 ヤクルト",
+                summary="",
+                link="https://twitter.com/yomiuri_giants/status/9002",
+            ),
+            source_name="読売ジャイアンツX",
+        )
+        self.assertFalse(r.matched)
+        self.assertEqual(r.skip_reason, "not_giants_related")
 
 
 if __name__ == "__main__":

@@ -1157,7 +1157,12 @@ def _render_quote_comment_card(
     _check_forbidden_phrasings(data)
 
     source_url_raw = (data.get("source_url") or "").strip()
-    source_label = data.get("source_label")
+    # NOMOTOKE-LINK-LABEL-FIX (extension to quote-comment renderer):
+    # The top 出典 block falls back to the raw URL when ``source_label``
+    # is empty. Quote-comment router output omits ``source_label``, so
+    # the block was leaking the X URL into visible body text. Below we
+    # compute a human-readable label from source_name when none is given.
+    source_label = (data.get("source_label") or "").strip()
 
     team_name = (data.get("team_name") or "").strip()
     speaker_name = (data.get(speaker_field) or "").strip()
@@ -1166,6 +1171,12 @@ def _render_quote_comment_card(
     published_at = (data.get("published_at") or "").strip()
     quote_short = data.get("quote_short")
     quote_short_for_title = (data.get("quote_short_for_title") or "").strip()
+
+    # Default the source_label to source_name when caller did not supply
+    # one — quote_comment top 出典 line then renders 「巨人公式X」 (label)
+    # rather than the raw X status URL.
+    if not source_label and source_name:
+        source_label = source_name
 
     # Required-field checks (taxonomy per spec).
     if not speaker_name:

@@ -300,7 +300,39 @@ SKIP_REASON_TAXONOMY: Tuple[str, ...] = (
     "insufficient_required_facts:short_news_url:source_name",
     "x_post_not_article_source",
     "video_source_detected",
+    "promo_or_merchandise_content",
 )
+
+
+# Phase 2C+: promo / merchandise / sweepstakes content keywords. Presence
+# of ANY of these in title or summary triggers ``promo_or_merchandise_content``
+# skip. The list is curated to (a) reject sponsorship posts ("宣伝する"),
+# (b) merchandise sales ("記念グッズ" / "受注販売" / "予約販売" /
+# "限定発売" / "サイン入り"), (c) sweepstakes ("プレゼント") — and to NOT
+# match legitimate game / roster / injury news (which use 抹消 / 召集 /
+# 故障 / 違和感 / 復帰 / 発表 instead).
+_PROMO_CONTENT_KEYWORDS: Tuple[str, ...] = (
+    "記念グッズ",
+    "予約販売",
+    "受注販売",
+    "限定発売",
+    "サイン入り",
+    "宣伝する",
+    "ステッカーをプレゼント",
+    "プレゼント！",
+    "ちゃっかり宣伝",
+)
+
+
+def _looks_like_promo_content(title: str, summary: str) -> bool:
+    """Return True iff the title or summary contains a promo-content marker.
+
+    Substring check on a closed list of phrases that, in observed live X
+    RSS samples, only appear in merchandise / sweepstakes / sponsorship
+    posts. Legitimate game / roster news does not use these phrases.
+    """
+    text = f"{title or ''}\n{summary or ''}"
+    return any(kw in text for kw in _PROMO_CONTENT_KEYWORDS)
 
 
 # X-post host detection (after normalize_canonical_url; x.com -> twitter.com).
@@ -954,6 +986,22 @@ def route_rss_entry_to_nomotoke_card(
     if title_stripped.startswith("RT @") or title_stripped.startswith("RT "):
         return _skip(
             "not_giants_related",
+            tier=tier,
+            canonical_url=canonical,
+            source_name=source_name,
+        )
+
+    # Phase 2C+: merchandise / sweepstakes / sponsorship-promo X posts
+    # are not articles. Live drafting surfaced posts like
+    #   「…が運営するお菓子屋『COCCOPURIO』をちゃっかり宣伝する…」
+    #   「『NAOKI IS BACK』記念グッズ発売✨ …受注販売します」
+    # which slipped past the Giants-relevance check (they ARE Giants-
+    # related — the player is named) but rendered as URL-card stubs with
+    # no journalistic substance. Rejecting them at the router level
+    # avoids producing thin promo cards no one would publish.
+    if _looks_like_promo_content(title, summary):
+        return _skip(
+            "promo_or_merchandise_content",
             tier=tier,
             canonical_url=canonical,
             source_name=source_name,

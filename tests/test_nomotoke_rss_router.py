@@ -1218,6 +1218,62 @@ class Phase2CPlayerQuoteCleanupTests(unittest.TestCase):
         self.assertFalse(r.matched)
         self.assertEqual(r.skip_reason, "not_giants_related")
 
+    def test_promo_merchandise_content_skipped(self):
+        # The 64837 fixture: NAOKI IS BACK 記念グッズ受注販売.
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title=(
+                    "吉川選手「NAOKI IS BACK」記念グッズ発売✨ "
+                    "4/29の広島戦で、今季初スタメンで初安打・初盗塁をマークした"
+                    " #吉川尚輝 選手の「NAOKI IS BACK」記念グッズを、本日5/7から受注販売します👍"
+                ),
+                summary="",
+                link="https://twitter.com/TokyoGiants/status/9501",
+            ),
+            source_name="巨人公式X",
+        )
+        self.assertFalse(r.matched)
+        self.assertEqual(r.skip_reason, "promo_or_merchandise_content")
+
+    def test_promo_sponsorship_content_skipped(self):
+        # The 64836 fixture: ちゃっかり宣伝するお菓子屋.
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title=(
+                    "5/12にぎふしん長良川球場で開催する広島戦と共に、"
+                    "#吉川養鶏 が運営するお菓子屋「#COCCOPURIO（#コッコプリオ）」"
+                    "をちゃっかり宣伝する #吉川尚輝"
+                ),
+                summary="",
+                link="https://twitter.com/TokyoGiants/status/9502",
+            ),
+            source_name="巨人公式X",
+        )
+        self.assertFalse(r.matched)
+        self.assertEqual(r.skip_reason, "promo_or_merchandise_content")
+
+    def test_legitimate_roster_news_with_抹消_not_promo_skipped(self):
+        # 公示 (roster registration removal) uses 抹消, not in the promo list.
+        # It must NOT trigger promo skip.
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title="【セパ公示】（７日）巨人はドラ１竹丸和幸を抹消",
+                summary="",
+                link="https://hochi.news/articles/example.html",
+            ),
+            source_name="スポーツ報知 巨人",
+        )
+        # Either matches short_news_url or skips with body_too_thin —
+        # NEVER skips with promo_or_merchandise_content.
+        self.assertNotEqual(
+            r.skip_reason, "promo_or_merchandise_content"
+        )
+
+    def test_promo_taxonomy_listed(self):
+        from src.nomotoke_rss_router import SKIP_REASON_TAXONOMY
+
+        self.assertIn("promo_or_merchandise_content", SKIP_REASON_TAXONOMY)
+
 
 if __name__ == "__main__":
     unittest.main()

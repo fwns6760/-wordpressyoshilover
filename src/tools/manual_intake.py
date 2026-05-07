@@ -900,7 +900,76 @@ def _try_render_via_nomotoke(
                 rendered = _insert_body_excerpt_block(
                     rendered, excerpt, source_name
                 )
+
+    # NOMOTOKE-INTAKE-WP-CROSSLINK-001: 関連記事 / 直近の試合 / 対戦成績
+    # blocks pulled from internal WP REST. Each helper returns ``""``
+    # when no usable hit, so downstream behaviour stays graceful when
+    # the WP host is unreachable or empty.
+    extra_blocks: list[str] = []
+
+    related_query = ""
+    for cand in (mf.get("manager_name"), mf.get("player_name")):
+        if cand:
+            related_query = cand
+            break
+    if not related_query and template_key == "nomotoke_card_postgame_v1":
+        related_query = data.get("home", "") if isinstance(data, dict) else ""
+    if not related_query and title:
+        # Pick the longest 漢字 / カタカナ run from the title (>=2 chars)
+        # — usually a player name or team name. Plain heuristic, no LLM.
+        ngrams = re.findall(r"[一-龥ぁ-んァ-ヶー]{2,8}", title)
+        related_query = max(ngrams, key=len) if ngrams else ""
+    if related_query and template_key in (
+        "nomotoke_card_short_news_url_v1",
+        "nomotoke_card_postgame_v1",
+        "nomotoke_card_manager_comment_v1",
+        "nomotoke_card_player_comment_v1",
+        "nomotoke_card_video_v1",
+        "nomotoke_card_pregame_pitcher_v1",
+        "nomotoke_card_official_notice_v1",
+    ):
+        block = _build_related_articles_block(related_query)
+        if block:
+            extra_blocks.append(block)
+
+    if template_key in (
+        "nomotoke_card_short_news_url_v1",
+        "nomotoke_card_postgame_v1",
+        "nomotoke_card_pregame_pitcher_v1",
+    ):
+        block = _build_recent_games_block()
+        if block:
+            extra_blocks.append(block)
+
+    if template_key == "nomotoke_card_postgame_v1" and isinstance(data, dict):
+        away = (data.get("away") or "").strip()
+        home = (data.get("home") or "").strip()
+        opponent = ""
+        for cand in (away, home):
+            if cand and not any(g in cand for g in ("巨人", "ジャイアンツ", "読売")):
+                opponent = cand
+                break
+        if opponent:
+            block = _build_matchup_record_block(opponent)
+            if block:
+                extra_blocks.append(block)
+
+    if extra_blocks:
+        rendered = _insert_blocks_before_source_h3(rendered, extra_blocks)
+
     return rendered or None
+
+
+def _insert_blocks_before_source_h3(rendered_html: str, blocks: list[str]) -> str:
+    """Insert a list of HTML blocks just before the 出典記事 H3 anchor,
+    or append them at the end when the anchor is not present."""
+    if not blocks:
+        return rendered_html
+    payload = "\n".join(blocks) + "\n"
+    anchor = "<h3>🔗 出典記事</h3>"
+    if anchor in rendered_html:
+        return rendered_html.replace(anchor, payload + anchor, 1)
+    return rendered_html + payload
 
 
 def _insert_body_excerpt_block(
@@ -932,6 +1001,236 @@ def _insert_body_excerpt_block(
     if anchor in rendered_html:
         return rendered_html.replace(anchor, block + anchor, 1)
     return rendered_html + block
+
+
+# NOMOTOKE-INTAKE-WP-CROSSLINK-001: read-only WP REST client for the
+# 「関連記事」 / 「直近の試合」 / 「対戦成績」 enrichment blocks. Uses
+# unauthenticated GET against the public posts endpoint — published
+# posts are visible without auth, draft posts intentionally excluded.
+
+_WP_REST_TIMEOUT_SEC = 6
+_GAME_SCORE_RE = re.compile(r"(?<!\d)(\d{1,2})\s*[-‐−–—ー]\s*(\d{1,2})(?!\d)")
+
+
+def _wp_query_public_posts(
+    *,
+    search: str = "",
+    categories: list[int] | None = None,
+    limit: int = 5,
+    after: str = "",
+) -> list[dict[str, Any]]:
+    """Return a list of published posts matching the query. Empty list
+    on any failure — the caller treats this as 「該当なし」 and skips
+    the related block, never raising."""
+    base = (os.environ.get("WP_URL") or "").strip().rstrip("/")
+    if not base:
+        return []
+    try:
+        import urllib.request
+        import urllib.parse
+    except Exception:
+        return []
+    params: list[tuple[str, str]] = [
+        ("status", "publish"),
+        ("per_page", str(max(1, min(limit, 50)))),
+        ("orderby", "date"),
+        ("order", "desc"),
+        ("_fields", "id,title,link,date,categories"),
+    ]
+    if search.strip():
+        params.append(("search", search.strip()))
+    if categories:
+        params.append(("categories", ",".join(str(c) for c in categories if c)))
+    if after.strip():
+        params.append(("after", after.strip()))
+    qs = urllib.parse.urlencode(params)
+    url = f"{base}/wp-json/wp/v2/posts?{qs}"
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "yoshilover-manual-intake/1",
+                "Accept": "application/json",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=_WP_REST_TIMEOUT_SEC) as resp:
+            content = resp.read(400_000)
+    except Exception:
+        return []
+    try:
+        data = json.loads(content.decode("utf-8", errors="replace"))
+    except Exception:
+        return []
+    if not isinstance(data, list):
+        return []
+    return data
+
+
+def _format_jp_date(iso_date: str) -> str:
+    """Render an ISO 8601 / WP date string as ``M/D``. Empty on failure."""
+    if not iso_date or not isinstance(iso_date, str):
+        return ""
+    m = re.match(r"^\d{4}-(\d{2})-(\d{2})", iso_date)
+    if not m:
+        return ""
+    return f"{int(m.group(1))}/{int(m.group(2))}"
+
+
+def _strip_wp_title_tags(rendered: Any) -> str:
+    """Extract plain text from a WP `title.rendered` field."""
+    if isinstance(rendered, dict):
+        rendered = rendered.get("rendered", "")
+    if not isinstance(rendered, str):
+        return ""
+    s = re.sub(r"<[^>]+>", "", rendered)
+    return html.unescape(s).strip()
+
+
+def _build_related_articles_block(query: str, exclude_link: str = "") -> str:
+    """Return the 「🔗 関連記事」 HTML block, or empty when no hit."""
+    if not query.strip():
+        return ""
+    posts = _wp_query_public_posts(search=query, limit=4)
+    if not posts:
+        return ""
+    items: list[str] = []
+    for p in posts:
+        link = (p.get("link") or "").strip()
+        if not link or link == exclude_link:
+            continue
+        title = _strip_wp_title_tags(p.get("title"))
+        date_jp = _format_jp_date(p.get("date") or "")
+        if not title or not link:
+            continue
+        prefix = f"{html.escape(date_jp)} " if date_jp else ""
+        items.append(
+            f'<li>{prefix}<a href="{html.escape(link)}">{html.escape(title)}</a></li>'
+        )
+        if len(items) >= 3:
+            break
+    if not items:
+        return ""
+    return (
+        '<aside class="nomotoke-related-posts">'
+        '<p class="nomotoke-related-posts__label">🔗 関連記事</p>'
+        '<ul class="nomotoke-related-posts__list">'
+        + "".join(items)
+        + "</ul></aside>"
+    )
+
+
+def _build_recent_games_block(exclude_link: str = "") -> str:
+    """Return the 「📅 直近の試合」 block listing the last 5 試合速報 posts."""
+    cat_id = _GAME_RESULT_CATEGORY_ID
+    if not cat_id:
+        return ""
+    posts = _wp_query_public_posts(categories=[cat_id], limit=8)
+    if not posts:
+        return ""
+    items: list[str] = []
+    for p in posts:
+        link = (p.get("link") or "").strip()
+        if not link or link == exclude_link:
+            continue
+        title = _strip_wp_title_tags(p.get("title"))
+        date_jp = _format_jp_date(p.get("date") or "")
+        if not title:
+            continue
+        prefix = f"{html.escape(date_jp)} " if date_jp else ""
+        items.append(
+            f'<li>{prefix}<a href="{html.escape(link)}">{html.escape(title)}</a></li>'
+        )
+        if len(items) >= 5:
+            break
+    if not items:
+        return ""
+    return (
+        '<aside class="nomotoke-recent-games">'
+        '<p class="nomotoke-recent-games__label">📅 直近の試合</p>'
+        '<ul class="nomotoke-recent-games__list">'
+        + "".join(items)
+        + "</ul></aside>"
+    )
+
+
+def _build_matchup_record_block(opponent: str) -> str:
+    """Return the 「🆚 今季対戦成績」 block parsing scores from titles.
+
+    W/L is determined from the Giants' POV: when the article title
+    starts with a Giants alias and a score follows, the larger
+    number is the Giants score. Conservative — when the title shape
+    does not allow unambiguous W/L extraction, the post is skipped
+    rather than miscounted."""
+    if not opponent.strip():
+        return ""
+    cat_id = _GAME_RESULT_CATEGORY_ID
+    if not cat_id:
+        return ""
+    season_start = _current_season_start_iso()
+    posts = _wp_query_public_posts(
+        search=opponent, categories=[cat_id], limit=50, after=season_start
+    )
+    if not posts:
+        return ""
+    wins = losses = draws = 0
+    counted = 0
+    for p in posts:
+        title = _strip_wp_title_tags(p.get("title"))
+        if not title or opponent not in title:
+            continue
+        m = _GAME_SCORE_RE.search(title)
+        if not m:
+            continue
+        a, b = int(m.group(1)), int(m.group(2))
+        # Order convention: 「巨人 X-Y 阪神」 — first number is Giants.
+        # When the opponent name appears BEFORE 巨人, the order is
+        # reversed; check by index.
+        giants_idx = -1
+        for alias in ("巨人", "ジャイアンツ", "読売"):
+            i = title.find(alias)
+            if i >= 0:
+                giants_idx = i
+                break
+        opp_idx = title.find(opponent)
+        if giants_idx < 0 or opp_idx < 0:
+            continue
+        if giants_idx < opp_idx:
+            giants_score, opp_score = a, b
+        else:
+            giants_score, opp_score = b, a
+        if giants_score > opp_score:
+            wins += 1
+        elif giants_score < opp_score:
+            losses += 1
+        else:
+            draws += 1
+        counted += 1
+    if counted == 0:
+        return ""
+    record = f"{wins}勝{losses}敗"
+    if draws:
+        record += f"{draws}分"
+    return (
+        '<aside class="nomotoke-season-matchup">'
+        '<p class="nomotoke-season-matchup__label">🆚 今季対戦成績</p>'
+        f'<p>巨人 vs {html.escape(opponent)}: {html.escape(record)} '
+        f'(集計 {counted} 試合)</p>'
+        "</aside>"
+    )
+
+
+def _current_season_start_iso() -> str:
+    """Return the YYYY-04-01T00:00:00 ISO string for the current season.
+
+    Defaults to the current calendar year. JST-based: a March entry
+    still belongs to the previous season (open week / camp), so March
+    submissions look back into last season's record."""
+    now = datetime.now(JST)
+    year = now.year if now.month >= 4 else now.year - 1
+    return f"{year}-04-01T00:00:00"
+
+
+_GAME_RESULT_CATEGORY_ID = 663  # 試合速報 — see config/categories.json
 
 
 def _is_safe_https_image_url(url: str) -> bool:

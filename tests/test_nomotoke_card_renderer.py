@@ -1992,8 +1992,10 @@ class RendererPhase2AOgWiringTests(unittest.TestCase):
 
     def test_x_only_short_news_path_unchanged(self):
         # X-only X URL with no external article URL still falls through
-        # the router's x_post_not_article_source guard. Phase 2A wiring
-        # does not affect that — the renderer is never reached.
+        # the router's no-draft path. Phase 2A wiring does not affect
+        # that — the renderer is never reached. NOMOTOKE-TEMPLATE-
+        # ROUTING-AUDIT-001 added a live-inning-blurb skip that triggers
+        # earlier; either skip class proves the renderer was bypassed.
         from src.nomotoke_rss_router import route_rss_entry_to_nomotoke_card
 
         r = route_rss_entry_to_nomotoke_card(
@@ -2007,7 +2009,10 @@ class RendererPhase2AOgWiringTests(unittest.TestCase):
             source_url="https://x.com/TokyoGiants/status/1",
         )
         self.assertFalse(r.matched)
-        self.assertEqual(r.skip_reason, "x_post_not_article_source")
+        self.assertIn(
+            r.skip_reason,
+            {"live_inning_blurb_not_article", "x_post_not_article_source"},
+        )
 
 
 class Phase2CLeadSanitizerTests(unittest.TestCase):

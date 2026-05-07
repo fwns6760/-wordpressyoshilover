@@ -509,6 +509,12 @@ class XPostOnlyGuardTests(unittest.TestCase):
 
     def test_tokyogiants_score_only_x_post_skipped(self):
         # 64798 reproduction: TokyoGiants 試合終了 X with score in title only.
+        # NOMOTOKE-TEMPLATE-ROUTING-AUDIT-001 update: this title now hits
+        # the earlier ``live_inning_blurb_not_article`` guard at the title
+        # 【試合終了】 prefix, before reaching the x_post_not_article_source
+        # branch. Either skip class is a valid "no draft" outcome — accept
+        # both so the regression intent (no draft for score-only X) is
+        # preserved without locking the path to a single skip reason.
         r = route_rss_entry_to_nomotoke_card(
             _entry(
                 title="【試合終了】巨人 0-5 ヤクルト 9回は走者を出すことが出来ず試合終了",
@@ -519,7 +525,10 @@ class XPostOnlyGuardTests(unittest.TestCase):
             source_url="https://x.com/TokyoGiants/status/2051930205841936785",
         )
         self.assertFalse(r.matched)
-        self.assertEqual(r.skip_reason, "x_post_not_article_source")
+        self.assertIn(
+            r.skip_reason,
+            {"live_inning_blurb_not_article", "x_post_not_article_source"},
+        )
         self.assertEqual(r.template_key, "")
 
     def test_x_post_with_giants_jp_url_promotes_primary_source(self):
@@ -1273,6 +1282,121 @@ class Phase2CPlayerQuoteCleanupTests(unittest.TestCase):
         from src.nomotoke_rss_router import SKIP_REASON_TAXONOMY
 
         self.assertIn("promo_or_merchandise_content", SKIP_REASON_TAXONOMY)
+
+
+class TemplateRoutingAuditPhase1Tests(unittest.TestCase):
+    """NOMOTOKE-TEMPLATE-ROUTING-AUDIT-001: live in-game blurb skip,
+    expanded promo/event keywords, and pitcher-pair regex with em-dash."""
+
+    def test_live_inning_table_blurb_skipped(self):
+        for title in (
+            "【八回表】巨人 0-2 ヤクルト #竹丸和幸 投手は三者凡退に抑える！",
+            "【九回裏】巨人 0-5 ヤクルト #キャベッジ 選手がライトへヒットを放つ！",
+            "【一回表】巨人 0-0 ヤクルト #若林楽人 選手の内野安打",
+            "【6回表】巨人 0-3 ヤクルト",
+            "【十回表】延長戦",
+        ):
+            with self.subTest(title=title):
+                r = route_rss_entry_to_nomotoke_card(
+                    _entry(
+                        title=title,
+                        summary="",
+                        link="https://x.com/TokyoGiants/status/1",
+                    ),
+                    source_name="巨人公式X",
+                    source_url="https://x.com/TokyoGiants/status/1",
+                )
+                self.assertFalse(r.matched, f"{title!r} should not match")
+                self.assertEqual(r.skip_reason, "live_inning_blurb_not_article")
+
+    def test_game_boundary_blurb_skipped(self):
+        for title in (
+            "【試合終了】巨人 0-5 ヤクルト 9回は走者を出すことが出来ず試合終了",
+            "【プレーボール】巨人 vs ヤクルト",
+            "【試合開始】対ヤクルト戦",
+            "【試合中止】雨天により",
+        ):
+            with self.subTest(title=title):
+                r = route_rss_entry_to_nomotoke_card(
+                    _entry(
+                        title=title,
+                        summary="",
+                        link="https://x.com/TokyoGiants/status/2",
+                    ),
+                    source_name="巨人公式X",
+                    source_url="https://x.com/TokyoGiants/status/2",
+                )
+                self.assertEqual(r.skip_reason, "live_inning_blurb_not_article")
+
+    def test_inning_marker_inside_body_does_not_trigger_live_skip(self):
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title="【巨人】開幕後も続く競争 捕手は大城卓三が好調",
+                summary="九回裏に逆転、八回裏で…",
+                link="https://hochi.news/articles/12345.html",
+            ),
+            source_name="スポーツ報知 巨人",
+        )
+        self.assertNotEqual(r.skip_reason, "live_inning_blurb_not_article")
+
+    def test_kids_event_promo_skipped(self):
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title="「春のKIDS FES」～子供たちがイベントを満喫",
+                summary="5月5日のこどもの日に行われたヤクルト戦は「春のKIDS FES」として開催されました。",
+                link="https://x.com/TokyoGiants/status/3",
+            ),
+            source_name="巨人公式X",
+            source_url="https://x.com/TokyoGiants/status/3",
+        )
+        self.assertEqual(r.skip_reason, "promo_or_merchandise_content")
+
+    def test_baseball_experience_event_promo_skipped(self):
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title="ファーム戦の試合後に「選手と一緒に野球体験会」",
+                summary="観戦した小学生のうち希望者を対象に...",
+                link="https://x.com/TokyoGiants/status/4",
+            ),
+            source_name="巨人公式X",
+            source_url="https://x.com/TokyoGiants/status/4",
+        )
+        self.assertEqual(r.skip_reason, "promo_or_merchandise_content")
+
+    def test_pitcher_pair_em_dash_extracted(self):
+        from src.nomotoke_rss_router import detect_pregame_pitcher
+
+        result = detect_pregame_pitcher(
+            "【８日の予告先発】中日・柳裕也―巨人・ウィットリー、阪神・村上頌樹―ＤｅＮＡ・平良拳太郎ほか",
+            "",
+        )
+        self.assertTrue(result.get("keyword_present"))
+        pair = result.get("pitcher_pair")
+        self.assertIsNotNone(pair, "pitcher_pair must extract for em-dash format")
+
+    def test_pitcher_pair_en_dash_also_extracted(self):
+        from src.nomotoke_rss_router import detect_pregame_pitcher
+
+        result = detect_pregame_pitcher(
+            "予告先発 中日・柳裕也–巨人・ウィットリー", ""
+        )
+        self.assertTrue(result.get("keyword_present"))
+        self.assertIsNotNone(result.get("pitcher_pair"))
+
+    def test_existing_pitcher_pair_dash_variants_still_work(self):
+        from src.nomotoke_rss_router import detect_pregame_pitcher
+
+        for sep in ("対", "vs", "VS", "×", "－"):
+            with self.subTest(sep=sep):
+                title = f"予告先発 中日・柳裕也{sep}巨人・ウィットリー"
+                r = detect_pregame_pitcher(title, "")
+                self.assertTrue(r.get("keyword_present"))
+                self.assertIsNotNone(r.get("pitcher_pair"))
+
+    def test_live_inning_taxonomy_listed(self):
+        from src.nomotoke_rss_router import SKIP_REASON_TAXONOMY
+
+        self.assertIn("live_inning_blurb_not_article", SKIP_REASON_TAXONOMY)
 
 
 if __name__ == "__main__":

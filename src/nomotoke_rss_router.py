@@ -301,6 +301,7 @@ SKIP_REASON_TAXONOMY: Tuple[str, ...] = (
     "x_post_not_article_source",
     "video_source_detected",
     "promo_or_merchandise_content",
+    "live_inning_blurb_not_article",
 )
 
 
@@ -312,6 +313,7 @@ SKIP_REASON_TAXONOMY: Tuple[str, ...] = (
 # match legitimate game / roster / injury news (which use 抹消 / 召集 /
 # 故障 / 違和感 / 復帰 / 発表 instead).
 _PROMO_CONTENT_KEYWORDS: Tuple[str, ...] = (
+    # Phase 2C+ wave 1: merchandise / sweepstakes / sponsorship
     "記念グッズ",
     "予約販売",
     "受注販売",
@@ -321,6 +323,18 @@ _PROMO_CONTENT_KEYWORDS: Tuple[str, ...] = (
     "ステッカーをプレゼント",
     "プレゼント！",
     "ちゃっかり宣伝",
+    # NOMOTOKE-TEMPLATE-ROUTING-AUDIT-001 wave 2: kid / fan event posts.
+    # Live 30-entry dry-run surfaced 「春のKIDS FES」「野球体験会」「観戦した
+    # 小学生」 as event-announcement X posts that are not articles. They were
+    # falling to short_news_url via the fallback path. Reject at router.
+    "野球体験会",
+    "観戦した小学生",
+    "KIDS FES",
+    "イベントを満喫",
+    "観戦イベント",
+    "見学会",
+    "サイン会",
+    "ファンミーティング",
 )
 
 
@@ -666,7 +680,53 @@ def extract_player_quote(title: str, summary: str) -> Dict[str, str]:
 
 
 _PREGAME_KEYWORD_RE = re.compile(r"予告先発")
-_PITCHER_PAIR_RE = re.compile(r"([^\s対×vsVS]{2,8})\s*(?:対|vs|VS|×|－)\s*([^\s対×vsVS]{2,8})")
+# NOMOTOKE-TEMPLATE-ROUTING-AUDIT-001: dash inventory expanded so the
+# pitcher-pair regex matches the em-dash ``―`` (U+2015) used by hochi
+# headlines (e.g. ``中日・柳裕也―巨人・ウィットリー``) and the en-dash
+# ``–`` (U+2013). Without these the pre-existing ``－`` (U+FF0D) only
+# matched the hyphenated-by-fullwidth-minus shape and 予告先発 entries
+# were dropping pitcher_pair extraction.
+_PITCHER_PAIR_RE = re.compile(
+    r"([^\s対×vsVS]{2,8})\s*(?:対|vs|VS|×|－|―|–|-)\s*([^\s対×vsVS]{2,8})"
+)
+
+
+# NOMOTOKE-TEMPLATE-ROUTING-AUDIT-001: live in-game tweet titles like
+# 「【八回表】巨人 0-2 ヤクルト …」 / 「【試合終了】…」 are X play-by-play
+# blurbs, not articles. They previously fell through to short_news_url via
+# the fallback path, dominating template distribution at 76% in the live
+# 30-entry audit. The MVP scope (Phase 1) does NOT publish live updates
+# (ENABLE_RSS_SOCIAL_LIVE_UPDATE=0 in the main rss_fetcher), so the
+# nomotoke router must mirror that gate.
+_LIVE_INNING_TITLE_RE = re.compile(
+    r"^\s*【\s*(?:[一二三四五六七八九十]+|[0-9０-９]+)\s*回\s*(?:表|裏|終了|裏終了|表終了)?\s*】"
+)
+_LIVE_GAME_BOUNDARY_TITLE_RE = re.compile(
+    r"^\s*【\s*(?:試合終了|試合開始|試合再開|プレーボール|ゲームセット|試合中止)\s*】"
+)
+
+
+def _looks_like_live_inning_blurb(title: str) -> bool:
+    """Return True iff the title is an X live in-game / boundary tweet.
+
+    Matched shapes (Giants公式X live posts):
+      - ``【八回表】巨人 0-2 ヤクルト ...``
+      - ``【九回裏】 ...``
+      - ``【試合終了】巨人 0-5 ヤクルト ...``
+      - ``【プレーボール】 ...``
+
+    These are play-by-play tweets, not articles. Phase 1 MVP does not
+    publish live updates; routing them to short_news_url forces them
+    into the article pool and starves other templates.
+    """
+    text = (title or "").strip()
+    if not text:
+        return False
+    if _LIVE_INNING_TITLE_RE.match(text):
+        return True
+    if _LIVE_GAME_BOUNDARY_TITLE_RE.match(text):
+        return True
+    return False
 
 
 def detect_pregame_pitcher(title: str, summary: str) -> Dict[str, Any]:
@@ -1002,6 +1062,18 @@ def route_rss_entry_to_nomotoke_card(
     if _looks_like_promo_content(title, summary):
         return _skip(
             "promo_or_merchandise_content",
+            tier=tier,
+            canonical_url=canonical,
+            source_name=source_name,
+        )
+
+    # NOMOTOKE-TEMPLATE-ROUTING-AUDIT-001: skip X live in-game blurbs.
+    # MVP does not publish live updates; allowing 【N回表】… into the
+    # article pool starved other templates (76% of the live 30-entry
+    # dry-run was short_news_url because of these).
+    if _looks_like_live_inning_blurb(title):
+        return _skip(
+            "live_inning_blurb_not_article",
             tier=tier,
             canonical_url=canonical,
             source_name=source_name,

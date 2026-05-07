@@ -1135,6 +1135,12 @@ def _try_render_via_nomotoke(
         if chip_block:
             rendered = _insert_blocks_before_source_h3(rendered, [chip_block])
 
+        # NOMOTOKE-INTAKE-EMOJI-DECORATE-001: factual-keyword emoji
+        # sprinkle. Runs BEFORE the JSON-LD schema is appended so the
+        # script payload (which contains JSON, not display text) is
+        # never decorated.
+        rendered = _decorate_body_with_emoji(rendered)
+
         # NOMOTOKE-INTAKE-JSONLD-EMIT-001 (N2): NewsArticle schema for
         # search engine rich snippets. Appended at the very end of
         # the body so it's the last script-like content WP serves.
@@ -2651,6 +2657,130 @@ def _build_series_tracker_block(opponent: str) -> str:
         f'<ul class="nomotoke-series-tracker__list">{"".join(items)}</ul>'
         "</aside>"
     )
+
+
+# NOMOTOKE-INTAKE-EMOJI-DECORATE-001: sprinkle emoji decorations on
+# factual keywords throughout the rendered body. Each keyword is
+# decorated only on its FIRST occurrence to avoid over-noise. HTML
+# tags / attribute values are preserved (replacement only targets
+# text fragments between > and <). All emoji are Unicode chars —
+# zero outbound calls, zero LLM, zero cost.
+
+# Order matters: longer phrases come before shorter ones so 「サヨナラ
+# 勝ち」 matches before 「勝ち」. Each dict entry: keyword → emoji + space.
+_BODY_EMOJI_DECORATIONS: tuple[tuple[str, str], ...] = (
+    # Multi-word outcomes (longest first)
+    ("ノーヒットノーラン", "🌟"),
+    ("サヨナラ勝ち", "⚡"),
+    ("サヨナラ負け", "⚡"),
+    ("サヨナラ", "⚡"),
+    ("完封勝利", "🛡"),
+    ("完投勝利", "💪"),
+    ("デビュー戦", "🆕"),
+    ("緊急登板", "🚨"),
+    ("1軍復帰", "⭐"),
+    ("一軍復帰", "⭐"),
+    ("競り勝ち", "🤜"),
+    ("勝ち越し", "📈"),
+    ("リーグ最多", "🥇"),
+    ("規定到達", "🎯"),
+    ("球団最多", "🏆"),
+    ("猛打賞", "🔥"),
+    ("決勝打", "🏁"),
+    ("決勝弾", "💥"),
+    ("適時打", "🎯"),
+    ("先制", "🚀"),
+    ("逆転", "🔄"),
+    ("連勝", "🔥"),
+    ("連敗", "💧"),
+    ("引き分け", "🤝"),
+    ("本塁打", "💥"),
+    ("ホームラン", "💥"),
+    ("白星", "⭐"),
+    ("黒星", "💀"),
+    ("完封", "🛡"),
+    ("完投", "💪"),
+    ("セーブ", "🔒"),
+    ("ホールド", "🔒"),
+    ("勝利", "🏆"),
+    ("敗戦", "😢"),
+    ("辛勝", "🩹"),
+    ("圧勝", "💪"),
+    ("惨敗", "😱"),
+    ("復活", "⭐"),
+    ("離脱", "🚑"),
+    ("負け", "💧"),
+    ("今季初", "🌅"),
+    # Stadium aliases
+    ("ジャイアンツタウン", "🏟"),
+    ("鎌ケ谷スタジアム", "🏟"),
+    ("メットライフドーム", "🏟"),
+    ("みずほPayPayドーム", "🏟"),
+    ("PayPayドーム", "🏟"),
+    ("バンテリンドーム", "🏟"),
+    ("ベルーナドーム", "🏟"),
+    ("マツダスタジアム", "🏟"),
+    ("エスコンフィールド", "🏟"),
+    ("ZOZOマリンスタジアム", "🏟"),
+    ("ZOZOマリン", "🏟"),
+    ("京セラドーム", "🏟"),
+    ("横浜スタジアム", "🏟"),
+    ("神宮球場", "🏟"),
+    ("東京ドーム", "🏟"),
+    # Notice actions
+    ("出場選手登録", "✅"),
+    ("出場選手抹消", "❌"),
+    ("登録抹消", "❌"),
+    ("支配下登録", "✅"),
+    ("育成契約", "🌱"),
+    ("自由契約", "🆓"),
+    ("現役ドラフト", "🎲"),
+    # Game kind
+    ("ファーム", "🟢"),
+    ("一軍", "🔵"),
+    ("二軍", "🟢"),
+    # Pregame
+    ("予告先発", "📢"),
+    # Versus glyph
+    (" vs ", " ⚔️ "),
+)
+
+
+def _decorate_body_with_emoji(content_html: str) -> str:
+    """Apply ``_BODY_EMOJI_DECORATIONS`` to text fragments between
+    HTML tags. Returns the modified body. Each keyword is decorated
+    AT MOST ONCE per body so the post stays scannable."""
+    if not content_html:
+        return content_html
+    used: set[str] = set()
+    parts = re.split(r"(<[^>]+>)", content_html)
+    for i, part in enumerate(parts):
+        if part.startswith("<") or not part:
+            continue
+        text = part
+        for keyword, emoji in _BODY_EMOJI_DECORATIONS:
+            if keyword in used:
+                continue
+            idx = text.find(keyword)
+            if idx < 0:
+                continue
+            # Avoid double-decorating when the writer already prefixed
+            # the same keyword with this emoji (e.g. ``🏆 勝利``
+            # already in place). Look at the 3 chars preceding the
+            # keyword for the same emoji.
+            if idx >= 1 and text[max(0, idx - 3) : idx].endswith(emoji):
+                used.add(keyword)
+                continue
+            # Inject emoji + a single space between emoji and keyword.
+            replacement = f"{emoji} {keyword}"
+            # Special case for the " vs " pattern — already wraps
+            # spaces inside the keyword.
+            if keyword == " vs ":
+                replacement = " ⚔️ "
+            text = text[:idx] + replacement + text[idx + len(keyword) :]
+            used.add(keyword)
+        parts[i] = text
+    return "".join(parts)
 
 
 def _build_lineup_block(home_lineup: list[dict], away_lineup: list[dict]) -> str:

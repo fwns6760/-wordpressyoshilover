@@ -188,35 +188,39 @@ _HTML_FORM = """<!DOCTYPE html>
     <div class=\"field\">
       <label for=\"article_type\">記事タイプ</label>
       <select id=\"article_type\" name=\"article_type\">__ARTICLE_TYPE_OPTIONS__</select>
-      <small class=\"note\">URL/OG情報から自動推定。1タップで上書き可。</small>
-    </div>
-    <div class=\"field\">
-      <label for=\"title\">タイトル（任意・OG title上書き）</label>
-      <input id=\"title\" name=\"title\" type=\"text\" autocomplete=\"off\">
-    </div>
-    <div class=\"field\">
-      <label for=\"summary\">サマリー（任意・OG description上書き）</label>
-      <textarea id=\"summary\" name=\"summary\" rows=\"2\"></textarea>
-    </div>
-    <div class=\"field\">
-      <label for=\"source_published_at\">出典公開日時（任意・ISO8601 / JST扱い）</label>
-      <input id=\"source_published_at\" name=\"source_published_at\" type=\"text\" placeholder=\"2026-05-07T18:30:00+09:00\" autocomplete=\"off\">
-    </div>
-    <div class=\"field\">
-      <label for=\"memo\">メモ（任意・本文には流れません）</label>
-      <textarea id=\"memo\" name=\"memo\" rows=\"2\"></textarea>
+      <small class=\"note\">URL を入れて記事タイプを選ぶだけで OK。タイトル / サマリーは出典 OG から自動取得します。</small>
     </div>
     <div class=\"field\">
       <label>モード</label>
       <div class=\"mode-row\">
-        <label><input type=\"radio\" name=\"mode\" value=\"dry-run\" checked>dry-run</label>
-        <label><input type=\"radio\" name=\"mode\" value=\"draft\">draft</label>
+        <label><input type=\"radio\" name=\"mode\" value=\"dry-run\" checked>dry-run（確認のみ）</label>
+        <label><input type=\"radio\" name=\"mode\" value=\"draft\">draft（WP下書き作成）</label>
       </div>
     </div>
     <div class=\"field\">
       <label for=\"token\">アクセストークン（必須）</label>
       <input id=\"token\" name=\"token\" type=\"password\" autocomplete=\"current-password\" required>
+      <small class=\"note\">一度入れればこの端末のセッション中は記憶されます。</small>
     </div>
+    <details class=\"field\">
+      <summary style=\"cursor:pointer; font-weight:600; padding:6px 0;\">詳細設定（任意・通常は不要）</summary>
+      <div class=\"field\">
+        <label for=\"title\">タイトル上書き（任意・OG title を強制差替え）</label>
+        <input id=\"title\" name=\"title\" type=\"text\" autocomplete=\"off\">
+      </div>
+      <div class=\"field\">
+        <label for=\"summary\">サマリー上書き（任意・OG description を強制差替え）</label>
+        <textarea id=\"summary\" name=\"summary\" rows=\"2\"></textarea>
+      </div>
+      <div class=\"field\">
+        <label for=\"source_published_at\">出典公開日時上書き（任意・ISO8601 / JST扱い）</label>
+        <input id=\"source_published_at\" name=\"source_published_at\" type=\"text\" placeholder=\"2026-05-07T18:30:00+09:00\" autocomplete=\"off\">
+      </div>
+      <div class=\"field\">
+        <label for=\"memo\">メモ（任意・本文には流れません）</label>
+        <textarea id=\"memo\" name=\"memo\" rows=\"2\"></textarea>
+      </div>
+    </details>
     <div class=\"actions\">
       <button class=\"primary\" type=\"submit\">送信</button>
       <button class=\"secondary\" type=\"reset\">クリア</button>

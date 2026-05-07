@@ -1319,6 +1319,33 @@ _X_OR_TWITTER_HOSTS: tuple = (
 )
 
 
+# NOMOTOKE-LINK-LABEL-FIX:
+# Map article-source URL hosts to human-readable site labels. The renderer
+# uses these to build anchor text like 「スポーツ報知「{記事タイトル}」」 so
+# the body never displays a raw URL string. New hosts default to the host
+# itself which is still better than the full URL.
+_PRIMARY_HOST_LABELS: Dict[str, str] = {
+    "hochi.news": "スポーツ報知",
+    "www.hochi.news": "スポーツ報知",
+    "sanspo.com": "サンスポ",
+    "www.sanspo.com": "サンスポ",
+    "giants.jp": "巨人公式サイト",
+    "www.giants.jp": "巨人公式サイト",
+    "npb.jp": "NPB公式サイト",
+    "www.npb.jp": "NPB公式サイト",
+    "yomiuri.co.jp": "読売新聞",
+    "www.yomiuri.co.jp": "読売新聞",
+    "nikkansports.com": "日刊スポーツ",
+    "www.nikkansports.com": "日刊スポーツ",
+    "sponichi.co.jp": "スポニチ",
+    "www.sponichi.co.jp": "スポニチ",
+}
+
+# Short-label cap for inline anchor text. Long titles get ellipsis-truncated
+# so the visible label stays readable on a single line.
+_LINK_LABEL_TITLE_CAP = 30
+
+
 # Source-only fact extractor: matches \d{1,2}-\d{1,2} / 対 / vs scores.
 # Mirrors src.baseball_numeric_fact_consistency.SCORE_RE so a card row built
 # from this regex never disagrees with the article-consistency check.
@@ -1347,23 +1374,108 @@ def _is_x_or_twitter_host(url: str) -> bool:
     return host in _X_OR_TWITTER_HOSTS
 
 
-def _x_embed_block(x_url: str, source_name: str) -> str:
+def _trim_link_label_title(title: str, cap: int = _LINK_LABEL_TITLE_CAP) -> str:
+    """Truncate a title for use inside link anchor text.
+
+    Returns "" for empty input. Trailing ellipsis when over the cap.
+    """
+    s = (title or "").strip()
+    if not s:
+        return ""
+    if len(s) <= cap:
+        return s
+    return s[: cap].rstrip() + "…"
+
+
+def _site_label_for_url(url: str) -> str:
+    """Return the human-readable site label for a URL host.
+
+    Falls back to the URL host itself when the host is not in the curated
+    table; an empty string for empty / invalid input.
+    """
+    if not isinstance(url, str) or not url:
+        return ""
+    try:
+        host = urlparse(url).netloc.lower()
+    except Exception:
+        return ""
+    if not host:
+        return ""
+    return _PRIMARY_HOST_LABELS.get(host, host)
+
+
+def _build_primary_source_anchor_label(
+    *, source_url: str, source_label_override: str, article_title: str
+) -> str:
+    """Build the human-readable anchor text for a primary article URL.
+
+    Composition:
+      ``{site_label}「{article_title (truncated)}」`` when both exist,
+      ``{site_label}`` when only site_label is known,
+      ``source_label_override`` when caller explicitly supplies one.
+
+    The renderer never falls back to the raw URL — only the href attribute
+    carries the URL. Audit log + HTML comment continue to record the URL
+    hash separately.
+    """
+    if source_label_override:
+        return source_label_override.strip()
+    site = _site_label_for_url(source_url)
+    title_short = _trim_link_label_title(article_title)
+    if site and title_short:
+        return f"{site}「{title_short}」"
+    if site:
+        return site
+    return "出典記事"
+
+
+def _build_related_x_anchor_label(
+    *, source_name: str, article_title: str = ""
+) -> str:
+    """Build the human-readable anchor text for a related X / Twitter URL.
+
+    Composition: ``{source_name}「関連投稿」`` — e.g. ``巨人公式X「関連投稿」``.
+
+    The anchor text intentionally does NOT echo the article title since
+    that text is already shown verbatim under the 出典 link and again as a
+    fact-card row; repeating it inside the X blockquote turns the link into
+    a duplicate label. ``article_title`` is accepted for future use when
+    the actual X-post body text is available, but the renderer never has
+    access to that today (no Twitter API call) so the kicker stays generic
+    and source-only.
+    """
+    base = (source_name or "").strip() or "X"
+    return f"{base}「関連投稿」"
+
+
+def _x_embed_block(
+    x_url: str, source_name: str, article_title: str = ""
+) -> str:
     """Render a single X / Twitter post as a real tweet blockquote embed.
 
     A plain ``<a>`` link is no substitute for the actual tweet card on a
     のもとけ-style article. Loads ``platform.twitter.com/widgets.js`` so the
     blockquote upgrades to the rendered tweet card on page load.
+
+    NOMOTOKE-LINK-LABEL-FIX: anchor text is the human-readable label
+    ``{source_name}「{article_title}」`` (truncated) — never the raw URL.
+    The URL only appears inside the ``href`` attribute. Twitter's widget
+    script promotes the blockquote to the rendered tweet card; the anchor
+    text shows only when the script fails to load (graceful fallback).
     """
     safe = _safe_url(x_url)
     if not safe:
         return ""
     heading_suffix = f"({_esc(source_name)})" if source_name else ""
+    anchor_label = _build_related_x_anchor_label(
+        source_name=source_name, article_title=article_title
+    )
     return (
         f"<h3>📣 関連投稿{heading_suffix}</h3>"
         '<div class="yoshilover-x-embed" '
         'style="margin:24px auto;max-width:550px;">'
         '<blockquote class="twitter-tweet" data-dnt="true" data-lang="ja">'
-        f'<a href="{safe}">{safe}</a>'
+        f'<a href="{safe}">{_esc(anchor_label)}</a>'
         "</blockquote></div>"
         '<script async src="https://platform.twitter.com/widgets.js" '
         'charset="utf-8"></script>'
@@ -1529,7 +1641,7 @@ def render_short_news_url_card(data: Dict[str, Any]) -> Dict[str, Any]:
     source_name = (data.get("source_name") or "").strip()
     date_label = (data.get("date_label") or "").strip()
     related_links = data.get("related_links")
-    source_label = (data.get("source_label") or "").strip() or source_name
+    source_label_override = (data.get("source_label") or "").strip()
 
     if not title_raw:
         return _skip(template_key, "missing_short_news_fields:title", source_url_raw)
@@ -1558,6 +1670,15 @@ def render_short_news_url_card(data: Dict[str, Any]) -> Dict[str, Any]:
 
     x_embed_url, other_related = _split_related_x_and_other(related_links)
 
+    # NOMOTOKE-LINK-LABEL-FIX: build human-readable anchor text up front
+    # and reuse it for the top 出典 line, the 出典記事 H3 link, and the X
+    # blockquote. The body never echoes the raw URL — only the href does.
+    primary_anchor_label = _build_primary_source_anchor_label(
+        source_url=source_url_raw,
+        source_label_override=source_label_override,
+        article_title=title_raw,
+    )
+
     body_parts: List[str] = []
 
     body_parts.append(
@@ -1574,14 +1695,16 @@ def render_short_news_url_card(data: Dict[str, Any]) -> Dict[str, Any]:
         body_parts.append(fact_card)
 
     if x_embed_url:
-        embed = _x_embed_block(x_embed_url, source_name)
+        embed = _x_embed_block(
+            x_embed_url, source_name, article_title=title_raw
+        )
         if embed:
             body_parts.append(embed)
 
     body_parts.append("<h3>🔗 出典記事</h3>")
     body_parts.append(
         f'<p>正式な内容は <a href="{safe_source_url}" target="_blank" '
-        f'rel="noopener">{_esc(source_label)}</a> で確認できます。</p>'
+        f'rel="noopener">{_esc(primary_anchor_label)}</a> で確認できます。</p>'
     )
 
     body_main = "".join(body_parts)
@@ -1605,7 +1728,7 @@ def render_short_news_url_card(data: Dict[str, Any]) -> Dict[str, Any]:
         body_main,
         date_label=date_label,
         source_url=source_url_raw,
-        source_label=source_label,
+        source_label=primary_anchor_label,
         related_links=other_related or None,
         closing_html=closing_html,
         tags=tags,

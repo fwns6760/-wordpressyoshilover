@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import unittest
 from unittest import mock
 
@@ -1393,6 +1394,144 @@ class ShortNewsUrlBodyFixTests(unittest.TestCase):
         body = out["content_html"]
         self.assertIn("<h3>🔗 出典記事</h3>", body)
         self.assertIn("<h3>📋 事実カード</h3>", body)
+
+
+# ---------------------------------------------------------------------------
+# NOMOTOKE-LINK-LABEL-FIX: anchor texts must be human-readable, not raw URLs
+# ---------------------------------------------------------------------------
+
+
+class LinkLabelFixTests(unittest.TestCase):
+    """Render anchor text as ``{site}「{title}」`` / ``{source_name}「関連投稿」``.
+
+    The body never echoes a raw URL outside the ``href`` attribute. Audit
+    log + HTML comment keep the URL hash for downstream observers.
+    """
+
+    def setUp(self) -> None:
+        os.environ["ENABLE_NOMOTOKE_CARD_TEMPLATES"] = "1"
+        from src.nomotoke_card_renderer import render_short_news_url_card
+
+        self._render = render_short_news_url_card
+
+    def _data(self, **overrides):
+        base = {
+            "title": "巨人、ヤクルト戦に敗れ連敗",
+            "summary": "巨人は0-5でヤクルトに敗戦、9回まで得点を奪えず連敗となった。",
+            "source_url": "https://www.giants.jp/G/game/result/2026/0506.html",
+            "source_name": "巨人公式X",
+            "date_label": "2026年5月6日",
+            "related_links": [
+                {
+                    "url": "https://x.com/TokyoGiants/status/9999999",
+                    "label": "関連投稿: 巨人公式X",
+                }
+            ],
+        }
+        base.update(overrides)
+        return base
+
+    @staticmethod
+    def _visible_text(body: str) -> str:
+        """Strip href values and tags so we only see what readers see."""
+        v = re.sub(r'href="[^"]*"', "", body)
+        v = re.sub(r"<[^>]+>", " ", v)
+        v = re.sub(r"\s+", " ", v).strip()
+        return v
+
+    def test_giants_jp_renders_human_anchor_label_no_raw_url_visible(self):
+        out = self._render(self._data())
+        body = out["content_html"]
+        self.assertIn("巨人公式サイト「巨人、ヤクルト戦に敗れ連敗」", body)
+        # href attribute still carries the URL.
+        self.assertIn(
+            'href="https://www.giants.jp/G/game/result/2026/0506.html"',
+            body,
+        )
+        # Visible text (with hrefs and tags removed) has no raw URL.
+        visible = self._visible_text(body)
+        self.assertNotIn("https://www.giants.jp/G/game/result/2026/0506.html", visible)
+        self.assertNotIn("https://", visible)
+        self.assertNotIn("http://", visible)
+
+    def test_hochi_news_renders_sports_hochi_label(self):
+        out = self._render(
+            self._data(
+                title="若林楽人、初のマルチ安打",
+                source_url="https://hochi.news/articles/20260506-OHT1T51399.html",
+                source_name="スポーツ報知 巨人",
+            )
+        )
+        body = out["content_html"]
+        self.assertIn(
+            'スポーツ報知「若林楽人、初のマルチ安打」', body
+        )
+
+    def test_sanspo_renders_sansupo_label(self):
+        out = self._render(
+            self._data(
+                title="竹丸和幸、自己ワースト5失点で2敗目",
+                source_url=(
+                    "https://www.sanspo.com/article/"
+                    "20260506-CU4CQDMNXBG7LKSIVW7Q2V7CXI/"
+                ),
+                source_name="サンスポ巨人X",
+            )
+        )
+        body = out["content_html"]
+        self.assertIn("サンスポ「竹丸和幸、自己ワースト5失点で2敗目」", body)
+
+    def test_x_blockquote_anchor_text_is_source_name_plus_kicker(self):
+        out = self._render(self._data())
+        body = out["content_html"]
+        # Anchor text inside the X blockquote.
+        self.assertIn("巨人公式X「関連投稿」", body)
+        # href still carries the X URL.
+        self.assertIn(
+            'href="https://x.com/TokyoGiants/status/9999999"', body
+        )
+        # The X URL must NOT appear in visible text.
+        visible = self._visible_text(body)
+        self.assertNotIn("https://x.com/TokyoGiants/status/9999999", visible)
+
+    def test_no_raw_url_anywhere_in_visible_body(self):
+        out = self._render(self._data())
+        visible = self._visible_text(out["content_html"])
+        self.assertNotIn("https://", visible)
+        self.assertNotIn("http://", visible)
+
+    def test_unknown_host_falls_back_to_host_name_not_full_url(self):
+        out = self._render(
+            self._data(
+                source_url="https://www.example-news.jp/path/article.html",
+                title="不明ドメイン記事",
+            )
+        )
+        body = out["content_html"]
+        # Falls back to the host name (curated table miss).
+        self.assertIn(
+            'www.example-news.jp「不明ドメイン記事」', body
+        )
+        visible = self._visible_text(body)
+        self.assertNotIn("https://www.example-news.jp", visible)
+
+    def test_long_title_truncated_in_anchor_label(self):
+        long_title = "巨人試合速報" + "あ" * 60
+        out = self._render(self._data(title=long_title))
+        body = out["content_html"]
+        # Truncated labels end with the ellipsis.
+        m = re.search(r"巨人公式サイト「([^」]+)」", body)
+        self.assertIsNotNone(m)
+        self.assertLessEqual(len(m.group(1)), 32)
+        self.assertTrue(m.group(1).endswith("…"))
+
+    def test_source_label_override_wins_over_host_derivation(self):
+        out = self._render(self._data(source_label="球団公式 試合結果ページ"))
+        body = out["content_html"]
+        # Override is used verbatim — no host-based prefix.
+        self.assertIn("球団公式 試合結果ページ", body)
+        # Default host-derived label is NOT used.
+        self.assertNotIn("巨人公式サイト「巨人、ヤクルト戦に敗れ連敗」", body)
 
 
 if __name__ == "__main__":

@@ -79,15 +79,18 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _auto_discover_giants_pregame_url(*, logger: logging.Logger) -> tuple[str, str]:
-    """Probe Yahoo schedule for today's pre-game Giants game URL.
+def _auto_discover_giants_pregame_url(
+    *, logger: logging.Logger, lookahead_days: int = 3
+) -> tuple[str, str]:
+    """Probe Yahoo schedule for the *next* Giants pre-game URL.
 
-    Returns ``(url, error)``. The URL points to the ``/top`` page (which
-    carries the 放送予定 table while the game has not started). Falls
-    back to today's completed games' /top page (some channels still
-    list there briefly) if no pre-game game is found.
+    Returns ``(url, error)``. Looks at today first, then up to
+    ``lookahead_days`` days forward — so a job that runs at 11:30 JST
+    on an off-day can still find tomorrow's pre-game and create the
+    broadcast draft a day in advance. The URL points to the ``/top``
+    page (which carries the 放送予定 table).
     """
-    from datetime import datetime
+    from datetime import datetime, timedelta
 
     from zoneinfo import ZoneInfo
     from src.source_html_fetcher import RequestsHttpClient
@@ -95,28 +98,30 @@ def _auto_discover_giants_pregame_url(*, logger: logging.Logger) -> tuple[str, s
 
     http = RequestsHttpClient()
     today = datetime.now(ZoneInfo("Asia/Tokyo"))
-    date_param = f"{today.year}-{today.month:02d}-{today.day:02d}"
-    url = f"https://baseball.yahoo.co.jp/npb/schedule/?date={date_param}"
-    try:
-        resp = http.get(
-            url,
-            headers={"User-Agent": "YoshiloverBot/1.0"},
-            timeout=15.0,
-        )
-    except Exception as exc:
-        logger.warning("schedule_fetch_failed: %s", exc)
-        return "", "schedule_fetch_failed"
-    if resp.status_code >= 400:
-        return "", f"schedule_status_{resp.status_code}"
-
-    pregame = find_giants_pregame_games(resp.text)
-    if pregame:
-        target = pregame[0]
-        # /top carries 放送予定; the schedule URL points to /index (or
-        # any page suffix). Replace the trailing path segment with /top.
-        top_url = re.sub(r"/[^/]+$", "/top", target["url"])
-        return top_url, ""
-    return "", "no_pregame_giants_game_today"
+    for delta in range(0, lookahead_days + 1):
+        d = today + timedelta(days=delta)
+        date_param = f"{d.year}-{d.month:02d}-{d.day:02d}"
+        url = f"https://baseball.yahoo.co.jp/npb/schedule/?date={date_param}"
+        try:
+            resp = http.get(
+                url,
+                headers={"User-Agent": "YoshiloverBot/1.0"},
+                timeout=15.0,
+            )
+        except Exception as exc:
+            logger.warning("schedule_fetch_failed (%s): %s", date_param, exc)
+            continue
+        if resp.status_code >= 400:
+            logger.warning("schedule_status_%s for %s", resp.status_code, date_param)
+            continue
+        pregame = find_giants_pregame_games(resp.text)
+        if pregame:
+            target = pregame[0]
+            # /top carries 放送予定; the schedule URL points to /index (or
+            # any page suffix). Replace the trailing path segment with /top.
+            top_url = re.sub(r"/[^/]+$", "/top", target["url"])
+            return top_url, ""
+    return "", "no_pregame_giants_game_within_lookahead"
 
 
 def _fetch_html(url: str, *, logger: logging.Logger) -> tuple[str, str]:

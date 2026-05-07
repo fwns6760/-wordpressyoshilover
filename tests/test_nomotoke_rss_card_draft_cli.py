@@ -283,7 +283,7 @@ class DryRunNoWPCallTests(unittest.TestCase):
             entry={
                 "title": "巨人 試合速報 0-5 ヤクルト",
                 "summary": "ヤクルト戦敗戦、9回完封負け",
-                "link": "https://twitter.com/TokyoGiants/status/9001",
+                "link": "https://hochi.news/articles/test-9001.html",
                 "published": _now_iso(),
             },
             wp_factory=lambda: wp_mock,
@@ -300,7 +300,7 @@ class DryRunNoWPCallTests(unittest.TestCase):
             entry={
                 "title": "巨人 試合速報 0-5 ヤクルト",
                 "summary": "敗戦",
-                "link": "https://twitter.com/TokyoGiants/status/9100",
+                "link": "https://hochi.news/articles/test-9100.html",
                 "published": _now_iso(),
             },
         )
@@ -319,7 +319,7 @@ class DryRunNoWPCallTests(unittest.TestCase):
             entry={
                 "title": "巨人 試合速報 0-5",
                 "summary": "敗戦",
-                "link": "https://twitter.com/TokyoGiants/status/9200",
+                "link": "https://hochi.news/articles/test-9200.html",
                 "published": _now_iso(),
             },
         )
@@ -367,7 +367,7 @@ class DraftModeCallsWPTests(unittest.TestCase):
         s = self._proc({
             "title": "巨人 試合速報 0-5 ヤクルト",
             "summary": "敗戦",
-            "link": "https://twitter.com/TokyoGiants/status/8001",
+            "link": "https://hochi.news/articles/test-8001.html",
             "published": _now_iso(),
         })
         self.assertTrue(s["matched"])
@@ -382,7 +382,7 @@ class DraftModeCallsWPTests(unittest.TestCase):
         self._proc({
             "title": "巨人 試合速報 0-5 ヤクルト",
             "summary": "敗戦",
-            "link": "https://twitter.com/TokyoGiants/status/8002",
+            "link": "https://hochi.news/articles/test-8002.html",
             "published": _now_iso(),
         })
         kwargs = self.wp.create_post.call_args.kwargs
@@ -411,7 +411,7 @@ class DraftModeCallsWPTests(unittest.TestCase):
         self._proc({
             "title": "巨人 試合速報 0-5 ヤクルト",
             "summary": "敗戦",
-            "link": "https://twitter.com/TokyoGiants/status/8003",
+            "link": "https://hochi.news/articles/test-8003.html",
             "published": _now_iso(),
         })
         body = self.wp.create_post.call_args.kwargs.get("content", "")
@@ -424,7 +424,7 @@ class DraftModeCallsWPTests(unittest.TestCase):
         s = self._proc({
             "title": "巨人 試合速報 0-5 ヤクルト",
             "summary": "敗戦",
-            "link": "https://twitter.com/TokyoGiants/status/8004",
+            "link": "https://hochi.news/articles/test-8004.html",
             "published": _now_iso(),
         })
         rec = json.loads(self.audit_path.read_text(encoding="utf-8").splitlines()[-1])
@@ -462,7 +462,7 @@ class SkipBehaviorTests(unittest.TestCase):
             entry={
                 "title": "巨人 試合速報 0-5",
                 "summary": "敗戦",
-                "link": "https://twitter.com/TokyoGiants/status/7001",
+                "link": "https://hochi.news/articles/test-7001.html",
                 "published": _now_iso(),
             },
             categories_map={},
@@ -475,7 +475,7 @@ class SkipBehaviorTests(unittest.TestCase):
         entry = {
             "title": "巨人 試合速報 0-5",
             "summary": "敗戦",
-            "link": "https://twitter.com/TokyoGiants/status/7100",
+            "link": "https://hochi.news/articles/test-7100.html",
             "published": _now_iso(),
         }
         s1 = self._proc(entry=entry, dedupe=dedupe)
@@ -490,7 +490,7 @@ class SkipBehaviorTests(unittest.TestCase):
             entry={
                 "title": "巨人 試合速報 0-5",
                 "summary": "敗戦",
-                "link": "https://twitter.com/TokyoGiants/status/7200",
+                "link": "https://hochi.news/articles/test-7200.html",
                 "published": _now_iso(),
             },
             allowlist={"nomotoke_card_pregame_pitcher_v1"},
@@ -719,7 +719,7 @@ class SourcePublishedAtTests(unittest.TestCase):
             {
                 "title": "巨人 試合速報 0-5",
                 "summary": "敗戦",
-                "link": "https://twitter.com/TokyoGiants/status/3003",
+                "link": "https://hochi.news/articles/test-3003.html",
                 "published": "",
             },
             mode="draft",
@@ -734,7 +734,7 @@ class SourcePublishedAtTests(unittest.TestCase):
             {
                 "title": "巨人 試合速報 0-5",
                 "summary": "敗戦",
-                "link": "https://twitter.com/TokyoGiants/status/3004",
+                "link": "https://hochi.news/articles/test-3004.html",
                 "published": _now_iso(),
             },
         )
@@ -749,7 +749,7 @@ class SourcePublishedAtTests(unittest.TestCase):
             {
                 "title": "巨人 試合速報 0-5",
                 "summary": "敗戦",
-                "link": "https://twitter.com/TokyoGiants/status/3005",
+                "link": "https://hochi.news/articles/test-3005.html",
                 "published": "Tue, 06 May 2026 10:00:00 +0000",
             },
             mode="draft",

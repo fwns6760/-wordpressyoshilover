@@ -207,7 +207,11 @@ class RequiredFactsGateTests(unittest.TestCase):
             "insufficient_required_facts:manager_comment:quote_short",
         )
 
-    def test_manager_not_in_allowlist_falls_back_to_short_news(self):
+    def test_manager_not_in_allowlist_x_only_post_skipped(self):
+        # NOMOTOKE-RSS-CARD-001B-XPOST-FIX: an X-only post whose manager
+        # quote is not in the allowlist no longer falls back to
+        # short_news_url. Without an external article URL or video URL
+        # it is dropped with x_post_not_article_source.
         r = route_rss_entry_to_nomotoke_card(
             _entry(
                 title="巨人 関連: 中日・立浪監督「打線再編」",
@@ -217,10 +221,34 @@ class RequiredFactsGateTests(unittest.TestCase):
             source_name="SponichiYakyu",
             source_url="https://twitter.com/SponichiYakyu/status/9",
         )
+        self.assertFalse(r.matched)
+        self.assertEqual(r.skip_reason, "x_post_not_article_source")
+
+    def test_manager_not_in_allowlist_with_external_url_promotes_primary(self):
+        # When the X body carries an external article URL the entry is
+        # rerouted to short_news_url with the external URL as primary
+        # source and the X URL demoted to related_source_url / x_embed_url.
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title="巨人 関連: 中日・立浪監督「打線再編」",
+                summary="https://hochi.news/articles/abc",
+                link="https://twitter.com/SponichiYakyu/status/9",
+            ),
+            source_name="SponichiYakyu",
+            source_url="https://twitter.com/SponichiYakyu/status/9",
+        )
         self.assertTrue(r.matched)
-        # Not in allowlist -> not manager_comment. Falls back to short_news_url.
         self.assertEqual(r.template_key, TEMPLATE_KEY_SHORT_NEWS_URL)
-        self.assertIn("manager_not_in_allowlist", r.extracted_facts.get("fallback_from", ""))
+        self.assertIn("hochi.news", r.canonical_url)
+        self.assertIn(
+            "twitter.com",
+            r.would_render_call["data_preview"].get("related_source_url", ""),
+        )
+        self.assertEqual(
+            r.would_render_call["data_preview"]["source_url"],
+            "https://hochi.news/articles/abc",
+        )
+        self.assertIn("x_embed_url", r.extracted_facts)
 
     def test_player_comment_matched(self):
         r = route_rss_entry_to_nomotoke_card(
@@ -457,6 +485,192 @@ class SkipReasonTaxonomyTests(unittest.TestCase):
         self.assertIn(
             "insufficient_required_facts:pregame_pitcher:pitcher_pair",
             SKIP_REASON_TAXONOMY,
+        )
+
+    def test_taxonomy_includes_x_post_not_article_source(self):
+        self.assertIn("x_post_not_article_source", SKIP_REASON_TAXONOMY)
+
+    def test_taxonomy_includes_video_source_detected(self):
+        self.assertIn("video_source_detected", SKIP_REASON_TAXONOMY)
+
+
+# ---------------------------------------------------------------------------
+# X-only post guard (NOMOTOKE-RSS-CARD-001B-XPOST-FIX)
+# ---------------------------------------------------------------------------
+class XPostOnlyGuardTests(unittest.TestCase):
+    """An X URL alone is never a publishable short_news_url article.
+
+    The guard reroutes / promotes / skips per the body content of the
+    X post: external article URL → primary swap, official video URL →
+    skip with video_source_detected, otherwise → skip with
+    x_post_not_article_source. Manager / player quote branches still take
+    precedence (handled in earlier branches of the router).
+    """
+
+    def test_tokyogiants_score_only_x_post_skipped(self):
+        # 64798 reproduction: TokyoGiants 試合終了 X with score in title only.
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title="【試合終了】巨人 0-5 ヤクルト 9回は走者を出すことが出来ず試合終了",
+                summary="",
+                link="https://x.com/TokyoGiants/status/2051930205841936785",
+            ),
+            source_name="巨人公式X",
+            source_url="https://x.com/TokyoGiants/status/2051930205841936785",
+        )
+        self.assertFalse(r.matched)
+        self.assertEqual(r.skip_reason, "x_post_not_article_source")
+        self.assertEqual(r.template_key, "")
+
+    def test_x_post_with_giants_jp_url_promotes_primary_source(self):
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title="巨人 試合詳細はこちら https://www.giants.jp/G/game/result/2026/0506.html",
+                summary="",
+                link="https://x.com/TokyoGiants/status/9001",
+            ),
+            source_name="巨人公式X",
+            source_url="https://x.com/TokyoGiants/status/9001",
+        )
+        self.assertTrue(r.matched)
+        self.assertEqual(r.template_key, TEMPLATE_KEY_SHORT_NEWS_URL)
+        self.assertIn("giants.jp", r.canonical_url)
+        self.assertEqual(
+            r.would_render_call["data_preview"]["source_url"],
+            "https://www.giants.jp/G/game/result/2026/0506.html",
+        )
+        self.assertEqual(
+            r.would_render_call["data_preview"]["related_source_url"],
+            "https://x.com/TokyoGiants/status/9001",
+        )
+        self.assertEqual(
+            r.extracted_facts["x_embed_url"],
+            "https://x.com/TokyoGiants/status/9001",
+        )
+
+    def test_x_post_with_hochi_news_url_promotes_primary_source(self):
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title="巨人 岡本 速報 https://hochi.news/articles/20260506-OHT1T51123.html",
+                summary="",
+                link="https://x.com/hochi_giants/status/9002",
+            ),
+            source_name="スポーツ報知巨人班X",
+            source_url="https://x.com/hochi_giants/status/9002",
+        )
+        self.assertTrue(r.matched)
+        self.assertEqual(r.template_key, TEMPLATE_KEY_SHORT_NEWS_URL)
+        self.assertIn("hochi.news", r.canonical_url)
+
+    def test_abe_quote_x_post_routes_to_manager_comment_not_short_news(self):
+        # Manager quote branch fires BEFORE the X-only guard so this still
+        # routes to manager_comment despite being an X-only post.
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title="巨人・阿部監督「集中して臨むだけ」",
+                summary="",
+                link="https://x.com/Sanspo_Giants/status/9003",
+            ),
+            source_name="サンスポ巨人X",
+            source_url="https://x.com/Sanspo_Giants/status/9003",
+        )
+        self.assertTrue(r.matched)
+        self.assertEqual(r.template_key, TEMPLATE_KEY_MANAGER_COMMENT)
+        self.assertEqual(r.extracted_facts["manager_name"], "阿部")
+
+    def test_player_quote_x_post_routes_to_player_comment_not_short_news(self):
+        # Player quote branch also takes precedence over the X-only guard.
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title="巨人・大勢「真っ直ぐで押し切れた」",
+                summary="",
+                link="https://x.com/hochi_giants/status/9004",
+            ),
+            source_name="スポーツ報知巨人班X",
+            source_url="https://x.com/hochi_giants/status/9004",
+        )
+        self.assertTrue(r.matched)
+        self.assertEqual(r.template_key, TEMPLATE_KEY_PLAYER_COMMENT)
+        self.assertEqual(r.extracted_facts["player_name"], "大勢")
+
+    def test_x_post_with_youtube_url_skipped_as_video_source(self):
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title="巨人 ハイライト動画 https://www.youtube.com/watch?v=abc12345678",
+                summary="",
+                link="https://x.com/TokyoGiants/status/9005",
+            ),
+            source_name="巨人公式X",
+            source_url="https://x.com/TokyoGiants/status/9005",
+        )
+        self.assertFalse(r.matched)
+        self.assertEqual(r.skip_reason, "video_source_detected")
+
+    def test_x_post_with_giants_tv_url_skipped_as_video_source(self):
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title="巨人 試合動画 https://giants-tv.jp/p/movie/123",
+                summary="",
+                link="https://x.com/TokyoGiants/status/9006",
+            ),
+            source_name="巨人公式X",
+            source_url="https://x.com/TokyoGiants/status/9006",
+        )
+        self.assertFalse(r.matched)
+        self.assertEqual(r.skip_reason, "video_source_detected")
+
+    def test_external_article_url_extractor_filters_x_urls(self):
+        from src.nomotoke_rss_router import (
+            extract_external_article_url,
+            is_x_post_url,
+        )
+
+        # Body with both an X URL (related) and a giants.jp URL (article).
+        title = "巨人 速報 https://x.com/foo/status/1"
+        summary = "詳細 https://www.giants.jp/G/news/2026/05/06/abc.html"
+        out = extract_external_article_url(
+            title, summary, exclude_canonical="https://twitter.com/foo/status/1"
+        )
+        self.assertIn("giants.jp", out)
+        self.assertFalse(is_x_post_url(out))
+
+    def test_external_article_url_extractor_returns_empty_when_only_x_urls(self):
+        from src.nomotoke_rss_router import extract_external_article_url
+
+        title = "巨人 試合終了 https://twitter.com/TokyoGiants/status/1"
+        summary = "https://x.com/foo/status/2"
+        out = extract_external_article_url(
+            title, summary, exclude_canonical="https://twitter.com/TokyoGiants/status/1"
+        )
+        self.assertEqual(out, "")
+
+    def test_is_x_post_url_recognizes_canonicalized_hosts(self):
+        from src.nomotoke_rss_router import is_x_post_url
+
+        self.assertTrue(
+            is_x_post_url("https://twitter.com/TokyoGiants/status/1")
+        )
+        self.assertFalse(is_x_post_url("https://hochi.news/articles/abc"))
+        self.assertFalse(is_x_post_url(""))
+
+    def test_non_x_source_short_news_url_unaffected(self):
+        # Regular HTTP RSS source (non-X) still falls through to short_news_url
+        # without going through the X guard.
+        r = route_rss_entry_to_nomotoke_card(
+            _entry(
+                title="巨人 ニュース",
+                summary="",
+                link="https://hochi.news/articles/20260506-OHT1T51999.html",
+            ),
+            source_name="スポーツ報知 巨人",
+            source_url="https://hochi.news/articles/20260506-OHT1T51999.html",
+        )
+        self.assertTrue(r.matched)
+        self.assertEqual(r.template_key, TEMPLATE_KEY_SHORT_NEWS_URL)
+        self.assertNotIn("x_embed_url", r.extracted_facts)
+        self.assertNotIn(
+            "related_source_url",
+            r.would_render_call["data_preview"],
         )
 
 

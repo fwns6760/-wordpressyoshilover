@@ -298,7 +298,30 @@ SKIP_REASON_TAXONOMY: Tuple[str, ...] = (
     "insufficient_required_facts:short_news_url:title",
     "insufficient_required_facts:short_news_url:source_url",
     "insufficient_required_facts:short_news_url:source_name",
+    "x_post_not_article_source",
+    "video_source_detected",
 )
+
+
+# X-post host detection (after normalize_canonical_url; x.com -> twitter.com).
+_X_HOSTS: frozenset[str] = frozenset({"twitter.com"})
+
+# Video source detection — official video destinations only. Embed-platforms in
+# X bodies are routed to the (currently blocked) video_card track via a
+# distinct skip_reason so analytics can surface supply if YouTube channel RSS
+# is wired later.
+_VIDEO_URL_RE = re.compile(
+    r"https?://(?:www\.|m\.)?"
+    r"(?:youtube\.com/(?:watch|shorts)|youtu\.be/|"
+    r"giants\.jp/(?:tv|video|movie)|"
+    r"npb\.jp/(?:bis|video)|"
+    r"giants-tv\.jp)[^\s　「」『』<>]*",
+    re.IGNORECASE,
+)
+
+# Generic URL extractor for body-internal links. Used to find an external
+# article URL inside an X-post body so the X URL can be demoted to embed.
+_GENERIC_URL_RE = re.compile(r"https?://[^\s　「」『』<>]+")
 
 
 # ---------------------------------------------------------------------------
@@ -525,6 +548,82 @@ def detect_pregame_pitcher(title: str, summary: str) -> Dict[str, Any]:
     m = _PITCHER_PAIR_RE.search(text)
     pair = (m.group(1).strip(), m.group(2).strip()) if m else None
     return {"keyword_present": True, "pitcher_pair": pair}
+
+
+# ---------------------------------------------------------------------------
+# X-post detection + body-internal URL extraction
+# (NOMOTOKE-RSS-CARD-001B-XPOST-FIX)
+#
+# An X-post URL alone must NOT become a short_news_url article. The router
+# only emits short_news_url for an X source when the body contains an
+# external (non-X) article URL — that URL is promoted to primary_source and
+# the original X URL is demoted to related_source_url / x_embed_url. When
+# only a video URL is present we surface video_source_detected so supply can
+# be observed without firing the (still-blocked) video_card template. When
+# neither external article nor video URL is present, the entry is skipped
+# with x_post_not_article_source — score-only / commentary-free X posts are
+# intentionally dropped here.
+# ---------------------------------------------------------------------------
+
+
+def is_x_post_url(canonical_url: str) -> bool:
+    """Return True iff the canonicalized URL host is an X / Twitter host.
+
+    Input MUST be canonical (output of normalize_canonical_url) so that
+    x.com / www.x.com / mobile.x.com all collapse to twitter.com first.
+    """
+    if not canonical_url:
+        return False
+    try:
+        host = urlparse(canonical_url).netloc.lower()
+    except Exception:
+        return False
+    return host in _X_HOSTS
+
+
+def extract_external_article_url(
+    title: str, summary: str, *, exclude_canonical: str = ""
+) -> str:
+    """Return the first non-X external article URL found in title/summary.
+
+    Returns "" when no eligible URL is present. The returned URL is already
+    canonicalized (tracking params stripped, fragment dropped, host
+    lowercased). Filtered out:
+        - X / Twitter URLs (tracked separately as related_source_url)
+        - ``exclude_canonical`` (the X-post itself)
+        - Official video URLs matched by ``_VIDEO_URL_RE`` (YouTube /
+          giants.jp/tv / npb.jp/video / giants-tv.jp). Video URLs route to
+          ``video_source_detected`` skip, not to short_news_url, so they
+          must not be promoted to primary_source here.
+    """
+    text = f"{title or ''}\n{summary or ''}"
+    for m in _GENERIC_URL_RE.finditer(text):
+        raw = m.group(0)
+        if _VIDEO_URL_RE.match(raw):
+            continue
+        canonical = normalize_canonical_url(raw)
+        if not canonical:
+            continue
+        if is_x_post_url(canonical):
+            continue
+        if exclude_canonical and canonical == exclude_canonical:
+            continue
+        return canonical
+    return ""
+
+
+def extract_video_source_url(title: str, summary: str) -> str:
+    """Return the first official video URL (YouTube/giants.jp/npb.jp) or "".
+
+    Used purely for skip_reason routing — the router never emits
+    nomotoke_card_video_v1 in 001B (still in RSS_ONLY_BLOCKED_TEMPLATES).
+    """
+    text = f"{title or ''}\n{summary or ''}"
+    m = _VIDEO_URL_RE.search(text)
+    if not m:
+        return ""
+    raw = m.group(0)
+    return normalize_canonical_url(raw) or raw
 
 
 # ---------------------------------------------------------------------------
@@ -930,6 +1029,13 @@ def route_rss_entry_to_nomotoke_card(
 
     # ------------------------------------------------------------------
     # 4. short_news_url_card (fallback, low confidence)
+    #
+    # X-only posts are intentionally NOT eligible here. An X source must
+    # either (a) carry an external article URL inside its body — that URL
+    # becomes the primary source while the X URL is demoted to related —
+    # or (b) be skipped with x_post_not_article_source / video_source_detected.
+    # Score-only / commentary-free X posts (e.g. TokyoGiants 試合終了 box) hit
+    # the x_post_not_article_source branch and never become drafts.
     # ------------------------------------------------------------------
     if manager_allowlist_skip:
         # Still emit short_news_url; keep audit info.
@@ -961,11 +1067,42 @@ def route_rss_entry_to_nomotoke_card(
             missing_facts=["source_name"],
         )
 
-    extracted = {}
+    primary_url = chosen_url
+    primary_canonical = canonical
+    related_source_url = ""
+    x_source = is_x_post_url(canonical)
+    if x_source:
+        external_url = extract_external_article_url(
+            title, summary, exclude_canonical=canonical
+        )
+        if external_url:
+            primary_url = external_url
+            primary_canonical = external_url
+            related_source_url = chosen_url
+        else:
+            video_url = extract_video_source_url(title, summary)
+            if video_url:
+                return _skip(
+                    "video_source_detected",
+                    tier=tier,
+                    canonical_url=canonical,
+                    source_name=source_name,
+                )
+            return _skip(
+                "x_post_not_article_source",
+                tier=tier,
+                canonical_url=canonical,
+                source_name=source_name,
+            )
+
+    extracted: Dict[str, Any] = {}
     if manager_allowlist_skip and mq.get("manager_name"):
         extracted["fallback_from"] = (
             f"manager_not_in_allowlist:{mq['manager_name']}"
         )
+    if related_source_url:
+        extracted["x_embed_url"] = related_source_url
+        extracted["primary_source_promoted_from"] = "x_post_body_url"
 
     sanitized_title = sanitize_short_news_title(title)
     if not sanitized_title:
@@ -981,6 +1118,16 @@ def route_rss_entry_to_nomotoke_card(
         extracted["title_raw"] = title[:200]
         extracted["title_sanitized"] = sanitized_title
 
+    data_preview: Dict[str, Any] = {
+        "title": sanitized_title,
+        "summary": summary[:200],
+        "source_url": primary_url,
+        "source_name": source_name,
+        "date_label": _date_label_from_iso(published),
+    }
+    if related_source_url:
+        data_preview["related_source_url"] = related_source_url
+
     return RouteResult(
         matched=True,
         template_key=TEMPLATE_KEY_SHORT_NEWS_URL,
@@ -988,19 +1135,13 @@ def route_rss_entry_to_nomotoke_card(
         extracted_facts=extracted,
         missing_facts=[],
         skip_reason="",
-        dedupe_key=_dedupe_key(TEMPLATE_KEY_SHORT_NEWS_URL, canonical),
+        dedupe_key=_dedupe_key(TEMPLATE_KEY_SHORT_NEWS_URL, primary_canonical),
         would_render_call={
             "renderer_func_name": "render_short_news_url_card",
-            "data_preview": {
-                "title": sanitized_title,
-                "summary": summary[:200],
-                "source_url": chosen_url,
-                "source_name": source_name,
-                "date_label": _date_label_from_iso(published),
-            },
+            "data_preview": data_preview,
         },
         confidence=_confidence_for(TEMPLATE_KEY_SHORT_NEWS_URL, tier),
-        canonical_url=canonical,
+        canonical_url=primary_canonical,
         source_name=source_name,
     )
 
@@ -1071,6 +1212,9 @@ __all__ = [
     "extract_manager_quote",
     "extract_player_quote",
     "detect_pregame_pitcher",
+    "is_x_post_url",
+    "extract_external_article_url",
+    "extract_video_source_url",
     "sanitize_short_news_title",
     "route_rss_entry_to_nomotoke_card",
     "derive_next_recommended",

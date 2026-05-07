@@ -355,6 +355,18 @@ class RequestsHttpClient:
         resp = self._requests.get(
             url, headers=headers, timeout=timeout, allow_redirects=True
         )
+        # Encoding fallback: when the server omits charset in Content-Type
+        # (npb.jp does this), `requests` defaults to ISO-8859-1 — which
+        # mojibakes the UTF-8 / Shift_JIS body. Force chardet's guess
+        # before reading `.text`. Safe for sites that declare charset
+        # because `resp.encoding` reflects the declared value.
+        try:
+            declared = (resp.encoding or "").lower()
+            if declared in ("iso-8859-1", "latin-1", ""):
+                guess = (resp.apparent_encoding or "utf-8").lower()
+                resp.encoding = guess
+        except Exception:
+            pass
         try:
             text = resp.text
         except Exception:

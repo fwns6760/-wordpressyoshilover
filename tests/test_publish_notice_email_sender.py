@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 import smtplib
 import tempfile
@@ -14,6 +15,18 @@ from src import publish_notice_email_sender as sender
 
 
 class PublishNoticeEmailSenderTests(unittest.TestCase):
+    def setUp(self):
+        # These tests assert the verbose body shape; opt out of the
+        # default-on minimal body.
+        self._prev_minimal = os.environ.get(sender._MINIMAL_BODY_ENV)
+        os.environ[sender._MINIMAL_BODY_ENV] = "0"
+
+    def tearDown(self):
+        if self._prev_minimal is None:
+            os.environ.pop(sender._MINIMAL_BODY_ENV, None)
+        else:
+            os.environ[sender._MINIMAL_BODY_ENV] = self._prev_minimal
+
     def _request(self, **overrides):
         payload = {
             "post_id": 123,
@@ -2144,7 +2157,14 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         )
         bridge_send = MagicMock(return_value=bridge_result)
 
-        with patch.dict("os.environ", {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com"}, clear=True):
+        with patch.dict(
+            "os.environ",
+            {
+                "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                sender._MINIMAL_BODY_ENV: "0",
+            },
+            clear=True,
+        ):
             result = sender.send(self._request(), dry_run=False, send_enabled=True, bridge_send=bridge_send)
 
         self.assertEqual(result.status, "sent")
@@ -2751,6 +2771,57 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         self.assertEqual(classification["suppression_reason"], "x_post_unverified_player_name")
         self.assertEqual(candidates, [])
         self.assertNotIn("manual_x_post_candidates:", body_lines)
+
+
+class MinimalBodyTests(unittest.TestCase):
+    """User-requested minimal body — title + URL only."""
+
+    def _request(self, **overrides):
+        payload = {
+            "post_id": 123,
+            "title": "巨人が接戦を制した",
+            "canonical_url": "https://yoshilover.com/post-123/",
+            "subtype": "postgame",
+            "publish_time_iso": "2026-04-24T21:15:00+09:00",
+            "summary": "終盤の継投と一打が勝敗を分けた。",
+        }
+        payload.update(overrides)
+        return sender.PublishNoticeRequest(**payload)
+
+    def setUp(self):
+        self._prev = os.environ.get(sender._MINIMAL_BODY_ENV)
+
+    def tearDown(self):
+        if self._prev is None:
+            os.environ.pop(sender._MINIMAL_BODY_ENV, None)
+        else:
+            os.environ[sender._MINIMAL_BODY_ENV] = self._prev
+
+    def test_default_is_minimal_body_with_title_and_url_only(self):
+        os.environ.pop(sender._MINIMAL_BODY_ENV, None)
+        body = sender.build_body_text(self._request())
+        self.assertEqual(
+            body,
+            "巨人が接戦を制した\nhttps://yoshilover.com/post-123/",
+        )
+
+    def test_explicit_enable_yields_minimal_body(self):
+        os.environ[sender._MINIMAL_BODY_ENV] = "1"
+        body = sender.build_body_text(self._request())
+        self.assertEqual(body.splitlines(), ["巨人が接戦を制した", "https://yoshilover.com/post-123/"])
+
+    def test_env_zero_restores_verbose_body(self):
+        os.environ[sender._MINIMAL_BODY_ENV] = "0"
+        body = sender.build_body_text(self._request())
+        # The verbose body still carries the "title:" / "url:" / "subtype:" markers.
+        self.assertIn("title: 巨人が接戦を制した", body)
+        self.assertIn("url: https://yoshilover.com/post-123/", body)
+        self.assertIn("subtype: postgame", body)
+
+    def test_minimal_body_skips_blank_url(self):
+        os.environ[sender._MINIMAL_BODY_ENV] = "1"
+        body = sender.build_body_text(self._request(canonical_url=""))
+        self.assertEqual(body, "巨人が接戦を制した")
 
 
 if __name__ == "__main__":

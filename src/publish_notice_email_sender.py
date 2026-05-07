@@ -93,6 +93,18 @@ _MANUAL_X_SENSITIVE_WORDS = (
     "診断",
 )
 _MANUAL_X_PREFIX_TRIM_CHARS = " /／|｜:：-・、"
+_MINIMAL_BODY_ENV = "PUBLISH_NOTICE_MINIMAL_BODY"
+
+
+def _minimal_body_enabled() -> bool:
+    """When set, per-post publish-notice mails ship as title + URL only.
+
+    Operator-controlled toggle (default ON). Set the env var to ``0`` /
+    ``false`` to restore the verbose body that includes 次アクション /
+    判定 / 理由 / subtype / publish_time / summary / metadata block.
+    """
+    raw = os.environ.get(_MINIMAL_BODY_ENV, "1").strip().lower()
+    return raw not in ("0", "false", "no", "off", "")
 _MANUAL_X_TRAILING_URL_RE = re.compile(r"^(?P<body>.*?)(?P<url>https?://\S+)$")
 _MANUAL_X_SUMMARY_SOURCE_PREFIX_RE = re.compile(
     r"^(?:"
@@ -2117,6 +2129,11 @@ def build_body_text(
             )
         )
         return "\n".join(lines)
+
+    if _minimal_body_enabled():
+        title_only = str(request.title or "").strip()
+        url_only = str(request.canonical_url or "").strip()
+        return "\n".join(line for line in (title_only, url_only) if line)
 
     suppression_reason = mail_state.get("suppression_reason")
     manual_x_candidates = list(

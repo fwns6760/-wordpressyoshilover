@@ -1083,6 +1083,23 @@ def _try_render_via_nomotoke(
     # (±4 days) is a strict subset of those 5 entries. Removed; G3
     # carries the same information.
 
+    # NOMOTOKE-INTAKE-X-EMBED-001 (R-X1): related X posts pulled from
+    # the operator's existing rsshub feeds — closes the largest
+    # remaining gap with dnomotoke.com which embeds 2-5 X posts per
+    # article. Costs ¥0 (rsshub feed reads are internal).
+    if template_key in (
+        "nomotoke_card_short_news_url_v1",
+        "nomotoke_card_postgame_v1",
+        "nomotoke_card_manager_comment_v1",
+        "nomotoke_card_player_comment_v1",
+        "nomotoke_card_pregame_pitcher_v1",
+        "nomotoke_card_video_v1",
+        "nomotoke_card_official_notice_v1",
+    ):
+        block = _build_x_embeds_block(title, summary)
+        if block:
+            extra_blocks.append(block)
+
     # NOMOTOKE-INTAKE-TRUST-001 (N1): AI 不使用 badge — applied to
     # every nomotoke template so the badge consistently anchors the
     # post to its source.
@@ -1101,15 +1118,18 @@ def _try_render_via_nomotoke(
     #   3. Wrap roster names in the lead (R4).
     #   4. Append tag chips at end (R6).
     if template_key.startswith("nomotoke_card_"):
-        # Step 1 + 2: ToC anchors + ToC + meta header
+        # Step 1 + 2: ToC anchors + ToC + meta header + share buttons
         rendered, toc_entries = _inject_toc_anchors(rendered)
         toc_html = _build_toc_block(toc_entries)
         meta_html = _build_meta_header_bar(
             rendered, normalized_source_published_at
         )
+        share_top = _build_share_buttons_block()
         header_payload = ""
         if meta_html:
             header_payload += meta_html
+        if share_top:
+            header_payload += share_top
         if toc_html:
             header_payload += toc_html
         if header_payload:
@@ -1134,6 +1154,14 @@ def _try_render_via_nomotoke(
         )
         if chip_block:
             rendered = _insert_blocks_before_source_h3(rendered, [chip_block])
+
+        # NOMOTOKE-INTAKE-SHARE-BUTTONS-001 (R-X2 bottom): second
+        # share-buttons block above the source-link section. The
+        # share JS only attaches once even when two blocks render
+        # because ``querySelectorAll`` covers both.
+        rendered = _insert_blocks_before_source_h3(
+            rendered, [_build_share_buttons_block()]
+        )
 
         # NOMOTOKE-INTAKE-EMOJI-DECORATE-001: factual-keyword emoji
         # sprinkle. Runs BEFORE the JSON-LD schema is appended so the
@@ -2659,91 +2687,222 @@ def _build_series_tracker_block(opponent: str) -> str:
     )
 
 
-# NOMOTOKE-INTAKE-EMOJI-DECORATE-001: sprinkle emoji decorations on
-# factual keywords throughout the rendered body. Each keyword is
-# decorated only on its FIRST occurrence to avoid over-noise. HTML
-# tags / attribute values are preserved (replacement only targets
-# text fragments between > and <). All emoji are Unicode chars —
-# zero outbound calls, zero LLM, zero cost.
-
-# Order matters: longer phrases come before shorter ones so 「サヨナラ
-# 勝ち」 matches before 「勝ち」. Each dict entry: keyword → emoji + space.
+# NOMOTOKE-INTAKE-EMOJI-DECORATE-001 (R-X3 trim): curated to ~18
+# high-impact keywords. The original 40+ list felt too "SNS-like";
+# the本家 dnomotoke.com observed in production uses ZERO emoji
+# decoration, so we keep just the most essential outcome / venue /
+# notice markers and drop the rest.
+#
+# Order matters: longer phrases come before shorter ones so
+# 「サヨナラ勝ち」 matches before 「勝ち」.
 _BODY_EMOJI_DECORATIONS: tuple[tuple[str, str], ...] = (
-    # Multi-word outcomes (longest first)
     ("ノーヒットノーラン", "🌟"),
     ("サヨナラ勝ち", "⚡"),
     ("サヨナラ負け", "⚡"),
     ("サヨナラ", "⚡"),
-    ("完封勝利", "🛡"),
-    ("完投勝利", "💪"),
-    ("デビュー戦", "🆕"),
-    ("緊急登板", "🚨"),
-    ("1軍復帰", "⭐"),
-    ("一軍復帰", "⭐"),
-    ("競り勝ち", "🤜"),
-    ("勝ち越し", "📈"),
-    ("リーグ最多", "🥇"),
-    ("規定到達", "🎯"),
-    ("球団最多", "🏆"),
-    ("猛打賞", "🔥"),
-    ("決勝打", "🏁"),
-    ("決勝弾", "💥"),
-    ("適時打", "🎯"),
-    ("先制", "🚀"),
     ("逆転", "🔄"),
     ("連勝", "🔥"),
     ("連敗", "💧"),
     ("引き分け", "🤝"),
     ("本塁打", "💥"),
     ("ホームラン", "💥"),
-    ("白星", "⭐"),
-    ("黒星", "💀"),
     ("完封", "🛡"),
     ("完投", "💪"),
-    ("セーブ", "🔒"),
-    ("ホールド", "🔒"),
     ("勝利", "🏆"),
     ("敗戦", "😢"),
-    ("辛勝", "🩹"),
-    ("圧勝", "💪"),
-    ("惨敗", "😱"),
-    ("復活", "⭐"),
-    ("離脱", "🚑"),
-    ("負け", "💧"),
-    ("今季初", "🌅"),
-    # Stadium aliases
-    ("ジャイアンツタウン", "🏟"),
-    ("鎌ケ谷スタジアム", "🏟"),
-    ("メットライフドーム", "🏟"),
-    ("みずほPayPayドーム", "🏟"),
-    ("PayPayドーム", "🏟"),
+    # Stadium catch-all
     ("バンテリンドーム", "🏟"),
-    ("ベルーナドーム", "🏟"),
     ("マツダスタジアム", "🏟"),
-    ("エスコンフィールド", "🏟"),
-    ("ZOZOマリンスタジアム", "🏟"),
-    ("ZOZOマリン", "🏟"),
     ("京セラドーム", "🏟"),
     ("横浜スタジアム", "🏟"),
     ("神宮球場", "🏟"),
     ("東京ドーム", "🏟"),
-    # Notice actions
+    # Notice
     ("出場選手登録", "✅"),
-    ("出場選手抹消", "❌"),
     ("登録抹消", "❌"),
-    ("支配下登録", "✅"),
-    ("育成契約", "🌱"),
-    ("自由契約", "🆓"),
-    ("現役ドラフト", "🎲"),
-    # Game kind
-    ("ファーム", "🟢"),
-    ("一軍", "🔵"),
-    ("二軍", "🟢"),
-    # Pregame
+    # Pregame + versus
     ("予告先発", "📢"),
-    # Versus glyph
     (" vs ", " ⚔️ "),
 )
+
+
+# NOMOTOKE-INTAKE-X-EMBED-001 (R-X1): pull recent X posts from the
+# operator's existing rsshub-mirrored feeds and embed 2-3 relevant
+# tweets inline. ZERO X API spend — we read the same RSS feeds the
+# legacy fetcher already polls.
+
+_X_EMBED_TTL_SEC = 30 * 60  # 30 minutes
+_X_EMBED_FEED_URLS: tuple[str, ...] = (
+    "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/hochi_giants",
+    "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/yomiuri_giants",
+    "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/SponichiYakyu",
+    "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/nikkansports",
+    "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/Sanspo_Giants",
+)
+_X_EMBED_CACHE: dict[str, Any] = {"items": [], "fetched_at": 0.0}
+
+
+def _refresh_x_embed_cache() -> None:
+    """Fetch every feed once and merge their recent items into the
+    cache. ``_X_EMBED_CACHE['items']`` ends up as a list of
+    ``{url, text, pubdate}`` dicts ordered by pubdate descending."""
+    items: list[dict[str, str]] = []
+    for feed_url in _X_EMBED_FEED_URLS:
+        xml = _fetch_url_text(feed_url, timeout=8)
+        if not xml:
+            continue
+        for m in re.finditer(r"<item>(.*?)</item>", xml, re.DOTALL):
+            block = m.group(1)
+            link_m = re.search(r"<link>(.*?)</link>", block, re.DOTALL)
+            if not link_m:
+                continue
+            link = link_m.group(1).strip()
+            if "status" not in link:
+                continue
+            desc_m = re.search(
+                r"<description>(.*?)</description>", block, re.DOTALL
+            )
+            desc = desc_m.group(1) if desc_m else ""
+            desc = re.sub(
+                r"<!\[CDATA\[(.*?)\]\]>", r"\1", desc, flags=re.DOTALL
+            )
+            desc = re.sub(r"<[^>]+>", " ", desc)
+            desc = html.unescape(desc).strip()
+            pub_m = re.search(r"<pubDate>(.*?)</pubDate>", block, re.DOTALL)
+            pub = pub_m.group(1).strip() if pub_m else ""
+            items.append({"url": link, "text": desc[:400], "pubdate": pub})
+    _X_EMBED_CACHE["items"] = items
+    _X_EMBED_CACHE["fetched_at"] = time.time()
+
+
+def _get_x_embed_pool() -> list[dict[str, str]]:
+    """Return the cached X-tweet pool, refreshing every 30 minutes."""
+    now = time.time()
+    if now - _X_EMBED_CACHE.get("fetched_at", 0) > _X_EMBED_TTL_SEC:
+        _refresh_x_embed_cache()
+    return _X_EMBED_CACHE.get("items") or []
+
+
+def _extract_article_keywords(title: str, summary: str) -> list[str]:
+    """Build the keyword list used to filter X tweets for relevance."""
+    kws: list[str] = []
+    text = " ".join(s for s in (title, summary) if s)
+    if not text:
+        return kws
+    # Player names from roster
+    try:
+        from src.nomotoke_card_renderer import _load_giants_roster
+    except Exception:
+        roster = []
+    else:
+        roster = _load_giants_roster()
+    for entry in roster:
+        full = (entry.get("name") or "").strip()
+        if full and full in text and full not in kws:
+            kws.append(full)
+    # Opponent teams
+    for team in _TEAM_KEYWORDS_FOR_CHIPS:
+        if team in text and team not in kws:
+            kws.append(team)
+    # Venue
+    for venue in _VENUE_KEYWORDS_FOR_CHIPS:
+        if venue in text and venue not in kws:
+            kws.append(venue)
+    return kws[:8]
+
+
+def _build_x_embeds_block(title: str, summary: str) -> str:
+    """Render the 「📲 関連 X 投稿」 block with 2-3 relevant tweets.
+
+    Empty when no matching tweet is found in the cached pool.
+    """
+    keywords = _extract_article_keywords(title, summary)
+    if not keywords:
+        # Fallback: top 2 latest tweets if no keyword match — still
+        # better than empty for engagement.
+        keywords = ["巨人", "ジャイアンツ"]
+    pool = _get_x_embed_pool()
+    if not pool:
+        return ""
+    matches: list[dict[str, str]] = []
+    seen_urls: set[str] = set()
+    for item in pool:
+        text = item.get("text") or ""
+        if not any(kw in text for kw in keywords):
+            continue
+        url = item.get("url") or ""
+        if not url or url in seen_urls:
+            continue
+        seen_urls.add(url)
+        matches.append(item)
+        if len(matches) >= 3:
+            break
+    if not matches:
+        return ""
+    parts = [
+        '<aside class="nomotoke-x-embeds">',
+        '<p class="nomotoke-x-embeds__label">📲 関連 X 投稿</p>',
+    ]
+    for item in matches:
+        safe_url = html.escape(item["url"])
+        parts.append(
+            f'<blockquote class="twitter-tweet" data-lang="ja" data-dnt="true">'
+            f'<a href="{safe_url}"></a>'
+            "</blockquote>"
+        )
+    parts.append(
+        '<script async src="https://platform.twitter.com/widgets.js" '
+        'charset="utf-8"></script>'
+    )
+    parts.append("</aside>")
+    return "".join(parts)
+
+
+# NOMOTOKE-INTAKE-SHARE-BUTTONS-001 (R-X2): X / LINE / copy share
+# buttons. Inline JS reads ``window.location.href`` at click time
+# so the buttons don't need the WP permalink at render time.
+
+_SHARE_BUTTONS_HTML = (
+    '<aside class="nomotoke-share-buttons" '
+    'style="margin:14px 0;padding:10px 0;'
+    "border-top:1px solid #eee;border-bottom:1px solid #eee;"
+    'text-align:center;">'
+    '<p style="margin:0 0 8px;font-size:13px;font-weight:600;">▼ この記事を共有する</p>'
+    '<a class="nomotoke-share-x" href="#" '
+    'style="display:inline-block;margin:0 6px;padding:6px 14px;'
+    "background:#000;color:#fff;text-decoration:none;border-radius:6px;"
+    'font-size:13px;font-weight:600;">𝕏 で共有</a>'
+    '<a class="nomotoke-share-line" href="#" '
+    'style="display:inline-block;margin:0 6px;padding:6px 14px;'
+    "background:#06c755;color:#fff;text-decoration:none;border-radius:6px;"
+    'font-size:13px;font-weight:600;">LINE で共有</a>'
+    '<a class="nomotoke-share-copy" href="#" '
+    'style="display:inline-block;margin:0 6px;padding:6px 14px;'
+    "background:#455a64;color:#fff;text-decoration:none;border-radius:6px;"
+    'font-size:13px;font-weight:600;">URL コピー</a>'
+    "</aside>"
+    "<script>"
+    "(function(){"
+    "var u=encodeURIComponent(window.location.href);"
+    "var t=encodeURIComponent(document.title);"
+    "document.querySelectorAll('.nomotoke-share-x').forEach(function(a){"
+    "a.href='https://twitter.com/intent/tweet?text='+t+'&url='+u;"
+    "a.target='_blank';a.rel='noopener';});"
+    "document.querySelectorAll('.nomotoke-share-line').forEach(function(a){"
+    "a.href='https://social-plugins.line.me/lineit/share?url='+u;"
+    "a.target='_blank';a.rel='noopener';});"
+    "document.querySelectorAll('.nomotoke-share-copy').forEach(function(a){"
+    "a.addEventListener('click',function(e){e.preventDefault();"
+    "navigator.clipboard.writeText(window.location.href)"
+    ".then(function(){alert('URL をコピーしました');});});});"
+    "})();"
+    "</script>"
+)
+
+
+def _build_share_buttons_block() -> str:
+    """Return the share-buttons aside (X / LINE / copy)."""
+    return _SHARE_BUTTONS_HTML
 
 
 def _decorate_body_with_emoji(content_html: str) -> str:

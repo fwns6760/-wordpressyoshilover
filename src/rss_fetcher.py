@@ -127,6 +127,18 @@ from src.gemini_preflight_gate import (
     emit_gemini_call_skipped,
     should_skip_gemini,
 )
+
+# Audit fix E: hoist the Phase-3 enrichment helper to top-level so the
+# import side-effect (sys.path mutation in src/tools/manual_intake.py)
+# happens once at module load instead of inside ``_create_post`` every
+# fire. Defensive import — if the helper module ever fails to load,
+# enrichment is skipped silently.
+try:
+    from src.tools.manual_intake import (
+        apply_rss_pipeline_enrichment as _apply_rss_pipeline_enrichment,
+    )
+except Exception:  # noqa: BLE001
+    _apply_rss_pipeline_enrichment = None  # type: ignore[assignment]
 from src.body_contract_fail_ledger import (
     BODY_CONTRACT_FAIL_LEDGER_PATH_ENV as BODY_CONTRACT_FAIL_LEDGER_PATH_ENV_FLAG,
     ENABLE_BODY_CONTRACT_FAIL_LEDGER_ENV as BODY_CONTRACT_FAIL_LEDGER_ENV_FLAG,
@@ -16226,20 +16238,23 @@ def _create_draft_with_same_fire_guard(
     # inside ``apply_rss_pipeline_enrichment`` returns the body
     # unchanged when no nomotoke marker is present, so legacy
     # AI-generated bodies stay byte-identical.
+    # Audit fix E: top-level import (above) eliminates the per-call
+    # import overhead. The defensive try/except still runs the
+    # enrichment in isolation so any helper crash falls back to the
+    # original body without breaking the WP draft create.
     enriched_content = content
-    try:
-        from src.tools.manual_intake import apply_rss_pipeline_enrichment
-
-        enriched_content = apply_rss_pipeline_enrichment(
-            content,
-            title=draft_title,
-            source_url=normalized_source_url,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "rss_pipeline_enrichment_skipped reason=%s", exc
-        )
-        enriched_content = content
+    if _apply_rss_pipeline_enrichment is not None:
+        try:
+            enriched_content = _apply_rss_pipeline_enrichment(
+                content,
+                title=draft_title,
+                source_url=normalized_source_url,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "rss_pipeline_enrichment_skipped reason=%s", exc
+            )
+            enriched_content = content
     return wp.create_post(
         draft_title,
         enriched_content,

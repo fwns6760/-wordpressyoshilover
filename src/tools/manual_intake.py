@@ -1126,7 +1126,7 @@ def _try_render_via_nomotoke(
         meta_html = _build_meta_header_bar(
             rendered, normalized_source_published_at
         )
-        share_top = _build_share_buttons_block()
+        share_top = _build_share_buttons_block(source_url_fallback=source_url)
         # Big orange comment CTA right under the read-time bar so
         # the comment form (#respond) is one tap away even before
         # the reader scrolls into the body.
@@ -1173,11 +1173,11 @@ def _try_render_via_nomotoke(
             rendered = _insert_blocks_before_source_h3(rendered, [chip_block])
 
         # NOMOTOKE-INTAKE-SHARE-BUTTONS-001 (R-X2 bottom): second
-        # share-buttons block above the source-link section. The
-        # share JS only attaches once even when two blocks render
-        # because ``querySelectorAll`` covers both.
+        # share-buttons block above the source-link section. Audit
+        # fix A: emit the visual block only — the top block already
+        # carries the script and its handlers cover both blocks.
         rendered = _insert_blocks_before_source_h3(
-            rendered, [_build_share_buttons_block()]
+            rendered, [_build_share_buttons_block(with_script=False)]
         )
 
         # NOMOTOKE-INTAKE-EMOJI-DECORATE-001: factual-keyword emoji
@@ -2879,7 +2879,10 @@ def _build_x_embeds_block(title: str, summary: str) -> str:
 # buttons. Inline JS reads ``window.location.href`` at click time
 # so the buttons don't need the WP permalink at render time.
 
-_SHARE_BUTTONS_HTML = (
+# Static share buttons HTML (block 1) — visual layer. The buttons
+# render exactly the same regardless of script execution (just sit
+# in the DOM as styled anchors).
+_SHARE_BUTTONS_VISUAL_HTML = (
     '<aside class="nomotoke-share-buttons" '
     'style="margin:14px 0;padding:10px 0;'
     "border-top:1px solid #eee;border-bottom:1px solid #eee;"
@@ -2898,8 +2901,18 @@ _SHARE_BUTTONS_HTML = (
     "background:#455a64;color:#fff;text-decoration:none;border-radius:6px;"
     'font-size:13px;font-weight:600;">URL コピー</a>'
     "</aside>"
+)
+
+# JS module — wired ONCE per page using a window-level idempotency
+# flag so a second copy of the share-buttons block doesn't double-
+# bind the click handlers (audit fix A: prevented the URL コピー
+# alert firing twice when both top- and bottom-share blocks
+# rendered in the same body).
+_SHARE_BUTTONS_SCRIPT_HTML = (
     "<script>"
     "(function(){"
+    "if(window.__nomotokeShareInit)return;"
+    "window.__nomotokeShareInit=true;"
     "var u=encodeURIComponent(window.location.href);"
     "var t=encodeURIComponent(document.title);"
     "document.querySelectorAll('.nomotoke-share-x').forEach(function(a){"
@@ -2917,9 +2930,42 @@ _SHARE_BUTTONS_HTML = (
 )
 
 
-def _build_share_buttons_block() -> str:
-    """Return the share-buttons aside (X / LINE / copy)."""
-    return _SHARE_BUTTONS_HTML
+def _build_share_buttons_block(
+    *, with_script: bool = True, source_url_fallback: str = ""
+) -> str:
+    """Return the share-buttons aside (X / LINE / copy).
+
+    Audit fix A: the inline script attaches its handlers exactly
+    once even when this helper is called multiple times — both via
+    the ``window.__nomotokeShareInit`` JS guard AND, defensively, by
+    letting callers pass ``with_script=False`` for every block after
+    the first.
+
+    Audit fix B: when ``source_url_fallback`` is provided AND the
+    inline script gets stripped by WP's wp_kses on save (which
+    happens for authors without ``unfiltered_html``), the buttons
+    still resolve via a ``<noscript>``-style anchor pointing to the
+    *source article* URL. Sharing the YOSHILOVER post URL is lost in
+    that fallback path, but readers can still tap-share the source.
+    """
+    parts: list[str] = [_SHARE_BUTTONS_VISUAL_HTML]
+    if with_script:
+        parts.append(_SHARE_BUTTONS_SCRIPT_HTML)
+    if source_url_fallback:
+        safe_src = html.escape(source_url_fallback)
+        parts.append(
+            "<noscript>"
+            '<p style="text-align:center;font-size:12px;'
+            'color:#888;margin:6px 0 0;">'
+            "JS が無効の場合は出典記事 URL を共有: "
+            f'<a href="https://twitter.com/intent/tweet?url={safe_src}" '
+            'target="_blank" rel="noopener">𝕏</a> · '
+            f'<a href="https://social-plugins.line.me/lineit/share?url={safe_src}" '
+            'target="_blank" rel="noopener">LINE</a>'
+            "</p>"
+            "</noscript>"
+        )
+    return "".join(parts)
 
 
 def _decorate_body_with_emoji(content_html: str) -> str:
@@ -3075,7 +3121,7 @@ def apply_rss_pipeline_enrichment(
     content_html, toc_entries = _inject_toc_anchors(content_html)
     toc_html = _build_toc_block(toc_entries)
     meta_html = _build_meta_header_bar(content_html, source_published_at_iso)
-    share_top = _build_share_buttons_block()
+    share_top = _build_share_buttons_block(source_url_fallback=source_url)
     top_cta = (
         '<p class="nomotoke-cta-row" '
         'style="margin:8px 0 12px;text-align:center;">'
@@ -3110,7 +3156,7 @@ def apply_rss_pipeline_enrichment(
         content_html = _insert_blocks_before_source_h3(content_html, [chip_block])
 
     content_html = _insert_blocks_before_source_h3(
-        content_html, [_build_share_buttons_block()]
+        content_html, [_build_share_buttons_block(with_script=False)]
     )
 
     content_html = _decorate_body_with_emoji(content_html)
@@ -3425,7 +3471,19 @@ def run_manual_intake(
         # fallback below covers the title/summary missing case.
         meta = fetch_meta(url)
         if "_error" in meta and not (title or summary):
-            output["reason"] = f"fetch_failed:{meta.get('_error')}"
+            # Audit fix D: the legacy reason string was the noisy
+            # ``fetch_failed:fetch_failed:HTTPError``. Strip the
+            # internal prefix so the operator sees a single,
+            # actionable phrase.
+            raw_err = (meta.get("_error") or "fetch_failed:unknown").strip()
+            base_err = raw_err.split(":", 1)[-1] if raw_err.startswith("fetch_failed:") else raw_err
+            friendly = {
+                "HTTPError": "サイトが応答しません (404/403/500 等の可能性)。URL を確認して再試行してください。",
+                "URLError": "サイトに接続できません (DNS / ネットワーク障害の可能性)。",
+                "TimeoutError": "サイト応答がタイムアウトしました。少し待って再試行してください。",
+                "UnicodeDecodeError": "サイト本文の文字コード解析に失敗しました。",
+            }.get(base_err, f"取得失敗 ({base_err})")
+            output["reason"] = f"fetch_failed:{friendly}"
             return EXIT_FETCH_FAILED, output
         if not title:
             title = (meta.get("title", "") or "").strip()

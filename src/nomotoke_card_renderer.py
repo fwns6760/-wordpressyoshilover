@@ -1309,12 +1309,216 @@ def render_player_comment_card(data: Dict[str, Any]) -> Dict[str, Any]:
     return _render_quote_comment_card("player", data)
 
 
+_X_OR_TWITTER_HOSTS: tuple = (
+    "x.com",
+    "twitter.com",
+    "www.x.com",
+    "www.twitter.com",
+    "mobile.x.com",
+    "mobile.twitter.com",
+)
+
+
+# Source-only fact extractor: matches \d{1,2}-\d{1,2} / 対 / vs scores.
+# Mirrors src.baseball_numeric_fact_consistency.SCORE_RE so a card row built
+# from this regex never disagrees with the article-consistency check.
+_SHORT_NEWS_SCORE_RE = re.compile(
+    r"(?<!\d)(?P<left>\d{1,2})\s*(?:-|対|vs|VS)\s*(?P<right>\d{1,2})(?!\d)"
+)
+_SHORT_NEWS_GAME_KIND_PATTERNS: tuple = (
+    ("二軍", "二軍"),
+    ("ファーム", "二軍"),
+    ("一軍", "一軍"),
+)
+_SHORT_NEWS_OUTCOME_KEYWORDS: tuple = (
+    "勝利", "敗戦", "完封", "連勝", "連敗", "逆転", "サヨナラ",
+    "本塁打", "完投", "ノーヒットノーラン", "引き分け",
+)
+
+
+def _is_x_or_twitter_host(url: str) -> bool:
+    """Return True iff the URL host is an X / Twitter host (any subdomain)."""
+    if not isinstance(url, str) or not url:
+        return False
+    try:
+        host = urlparse(url).netloc.lower()
+    except Exception:
+        return False
+    return host in _X_OR_TWITTER_HOSTS
+
+
+def _x_embed_block(x_url: str, source_name: str) -> str:
+    """Render a single X / Twitter post as a real tweet blockquote embed.
+
+    A plain ``<a>`` link is no substitute for the actual tweet card on a
+    のもとけ-style article. Loads ``platform.twitter.com/widgets.js`` so the
+    blockquote upgrades to the rendered tweet card on page load.
+    """
+    safe = _safe_url(x_url)
+    if not safe:
+        return ""
+    heading_suffix = f"({_esc(source_name)})" if source_name else ""
+    return (
+        f"<h3>📣 関連投稿{heading_suffix}</h3>"
+        '<div class="yoshilover-x-embed" '
+        'style="margin:24px auto;max-width:550px;">'
+        '<blockquote class="twitter-tweet" data-dnt="true" data-lang="ja">'
+        f'<a href="{safe}">{safe}</a>'
+        "</blockquote></div>"
+        '<script async src="https://platform.twitter.com/widgets.js" '
+        'charset="utf-8"></script>'
+    )
+
+
+def _extract_short_news_facts(title: str, summary: str) -> Dict[str, str]:
+    """Source-only structured fact extraction for short_news_url cards.
+
+    Returns a subset of: ``score`` (e.g. ``"0-5"``), ``game_kind`` (一軍/
+    二軍), ``outcome_keywords`` (joined string of detected outcome words).
+    NEVER fabricates — only literal source matches are returned.
+    """
+    text = f"{title or ''}\n{summary or ''}"
+    facts: Dict[str, str] = {}
+
+    m = _SHORT_NEWS_SCORE_RE.search(text)
+    if m:
+        facts["score"] = f"{m.group('left')}-{m.group('right')}"
+
+    for pattern, label in _SHORT_NEWS_GAME_KIND_PATTERNS:
+        if pattern in text:
+            facts["game_kind"] = label
+            break
+
+    outcomes = [kw for kw in _SHORT_NEWS_OUTCOME_KEYWORDS if kw in text]
+    if outcomes:
+        seen: List[str] = []
+        for kw in outcomes:
+            if kw not in seen:
+                seen.append(kw)
+        facts["outcome_keywords"] = "／".join(seen[:4])
+
+    return facts
+
+
+def _truncate_summary_preserving_period(text: str, cap: int) -> str:
+    """Cap at ``cap`` chars; prefer last 「。」 boundary above half-cap."""
+    if not text or len(text) <= cap:
+        return text
+    cut = text[:cap]
+    last_period = cut.rfind("。")
+    if last_period > cap // 2:
+        return cut[: last_period + 1]
+    return cut.rstrip() + "…"
+
+
+def _split_related_x_and_other(related_links: Any) -> tuple:
+    """Pull the first X URL out for blockquote embed; rest stays as-is."""
+    x_url = ""
+    other: List[Any] = []
+    if isinstance(related_links, list):
+        for link in related_links:
+            if isinstance(link, dict):
+                u = link.get("url", "")
+                if _is_x_or_twitter_host(u):
+                    if not x_url:
+                        x_url = u
+                    continue
+            other.append(link)
+    return x_url, other
+
+
+def _short_news_fact_card_block(
+    *,
+    title: str,
+    source_name: str,
+    date_label: str,
+    facts: Dict[str, str],
+) -> str:
+    """Render the 事実カード (fact card) table from source-only fields.
+
+    Skipped rows for empty values; the table itself is omitted when fewer
+    than two non-trivial rows are available, since a 1-row table reads as
+    a stub.
+    """
+    rows: List[tuple] = []
+    if facts.get("score"):
+        rows.append(("スコア", facts["score"]))
+    if facts.get("game_kind"):
+        rows.append(("種別", facts["game_kind"]))
+    if facts.get("outcome_keywords"):
+        rows.append(("主な出来事", facts["outcome_keywords"]))
+    if title:
+        rows.append(("見出し", title))
+    if source_name:
+        rows.append(("出典", source_name))
+    if date_label:
+        rows.append(("公開日", date_label))
+
+    if len(rows) < 2:
+        return ""
+
+    parts: List[str] = ["<h3>📋 事実カード</h3>"]
+    parts.append('<table class="nomotoke-fact-card"><tbody>')
+    for label, value in rows:
+        parts.append(
+            f"<tr><th>{_esc(label)}</th><td>{_esc(value)}</td></tr>"
+        )
+    parts.append("</tbody></table>")
+    return "".join(parts)
+
+
+def _short_news_body_too_thin(
+    *,
+    title: str,
+    summary: str,
+    facts: Dict[str, str],
+) -> bool:
+    """Decide whether the assembled body would be only "1 sentence + link".
+
+    Returns True when none of the following holds:
+      - summary is concrete (≥ 12 chars, distinct from title)
+      - at least one structured fact (score / game_kind / outcome_keywords)
+        is extractable from source
+
+    Such an article would render as little more than a URL card; the
+    NOMOTOKE-BODY-FIX policy requires it to be skipped via the renderer's
+    ``validation_failed:body_too_thin`` reason rather than published as a
+    stub.
+    """
+    title = (title or "").strip()
+    summary = (summary or "").strip()
+
+    has_concrete_summary = (
+        len(summary) >= 12 and summary != title and not summary.startswith(title)
+    )
+    has_score = bool(facts.get("score"))
+    has_game_kind = bool(facts.get("game_kind"))
+    has_outcomes = bool(facts.get("outcome_keywords"))
+
+    return not (has_concrete_summary or has_score or has_game_kind or has_outcomes)
+
+
 def render_short_news_url_card(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Render a 短文ニュースURL card (NOMOTOKE-RSS-CARD-001A narrow add).
+    """Render a 短文ニュース URL カード in のもとけ structure.
 
     Required fields: source_url, source_name, title.
-    Source-only: never invents facts beyond input. Summary is HTML-escaped and
-    truncated at 120 chars (or first ``。``) to avoid full-text transcription.
+    Source-only: never invents facts beyond input. The summary is
+    HTML-escaped and capped at 200 characters preserving sentence
+    boundaries so a 1-line X post is never truncated mid-thought.
+
+    Body structure (NOMOTOKE-BODY-FIX):
+      1. 冒頭リード — 1〜2 文の summary (or title fallback)
+      2. 事実カード — score / game_kind / outcome_keywords / 見出し / 出典 / 公開日 を
+         table 化。skipped when fewer than 2 rows are extractable.
+      3. 関連投稿 — X URL を tweet blockquote 埋め込み (X 単体は router 段で除外済)
+      4. 出典記事 — primary source への named link
+      5. 締め文 — 短いコメント誘導 1 文のみ
+
+    Validation: if the body would be effectively "1 sentence + link"
+    (no concrete summary AND no extractable facts), the renderer skips
+    with ``validation_failed:body_too_thin`` so guarded-publish does not
+    even see the post. publish basis / review gates / score consistency
+    tokenizer are unchanged.
     """
     template_key = TEMPLATE_KEY_SHORT_NEWS_URL
     _check_forbidden_phrasings(data)
@@ -1325,35 +1529,75 @@ def render_short_news_url_card(data: Dict[str, Any]) -> Dict[str, Any]:
     source_name = (data.get("source_name") or "").strip()
     date_label = (data.get("date_label") or "").strip()
     related_links = data.get("related_links")
-    source_label = data.get("source_label")
+    source_label = (data.get("source_label") or "").strip() or source_name
 
     if not title_raw:
         return _skip(template_key, "missing_short_news_fields:title", source_url_raw)
-    if not _safe_url(source_url_raw):
-        return _skip(template_key, "missing_short_news_fields:source_url", source_url_raw)
+    safe_source_url = _safe_url(source_url_raw)
+    if not safe_source_url:
+        return _skip(
+            template_key, "missing_short_news_fields:source_url", source_url_raw
+        )
     if not source_name:
-        return _skip(template_key, "missing_short_news_fields:source_name", source_url_raw)
+        return _skip(
+            template_key, "missing_short_news_fields:source_name", source_url_raw
+        )
 
-    # Truncate summary defensively: 120 chars or up to first 「。」.
-    summary_clean = summary_raw
-    if summary_clean:
-        idx = summary_clean.find("。")
-        if 0 < idx <= 120:
-            summary_clean = summary_clean[: idx + 1]
-        elif len(summary_clean) > 120:
-            summary_clean = summary_clean[:120].rstrip() + "…"
+    facts = _extract_short_news_facts(title_raw, summary_raw)
 
-    body_parts: List[str] = [f"<p>{_esc(title_raw)}</p>"]
-    if summary_clean:
-        body_parts.append(f"<p>{_esc(summary_clean)}</p>")
+    if _short_news_body_too_thin(
+        title=title_raw, summary=summary_raw, facts=facts
+    ):
+        return _skip(
+            template_key,
+            "validation_failed:body_too_thin",
+            source_url_raw,
+        )
+
+    summary_clean = _truncate_summary_preserving_period(summary_raw, 200)
+
+    x_embed_url, other_related = _split_related_x_and_other(related_links)
+
+    body_parts: List[str] = []
+
+    body_parts.append(
+        f'<p class="nomotoke-lead">{_esc(summary_clean or title_raw)}</p>'
+    )
+
+    fact_card = _short_news_fact_card_block(
+        title=title_raw,
+        source_name=source_name,
+        date_label=date_label,
+        facts=facts,
+    )
+    if fact_card:
+        body_parts.append(fact_card)
+
+    if x_embed_url:
+        embed = _x_embed_block(x_embed_url, source_name)
+        if embed:
+            body_parts.append(embed)
+
+    body_parts.append("<h3>🔗 出典記事</h3>")
+    body_parts.append(
+        f'<p>正式な内容は <a href="{safe_source_url}" target="_blank" '
+        f'rel="noopener">{_esc(source_label)}</a> で確認できます。</p>'
+    )
+
     body_main = "".join(body_parts)
 
-    closing_html = "<p>詳細は出典をご覧ください。</p>"
+    closing_html = (
+        "<p>💬 ご意見・ご感想はコメント欄からお寄せください。</p>"
+    )
 
     canonical_url_value = _hash_canonical(source_url_raw)
-    dedupe_key = f"short_news_url:{canonical_url_value}" if canonical_url_value else ""
+    dedupe_key = (
+        f"short_news_url:{canonical_url_value}" if canonical_url_value else ""
+    )
 
     tags = ["ニュース", source_name]
+    if facts.get("game_kind"):
+        tags.append(facts["game_kind"])
 
     return _result_payload(
         template_key,
@@ -1362,7 +1606,7 @@ def render_short_news_url_card(data: Dict[str, Any]) -> Dict[str, Any]:
         date_label=date_label,
         source_url=source_url_raw,
         source_label=source_label,
-        related_links=related_links,
+        related_links=other_related or None,
         closing_html=closing_html,
         tags=tags,
         dedupe_key=dedupe_key,

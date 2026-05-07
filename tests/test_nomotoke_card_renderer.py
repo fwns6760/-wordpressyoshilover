@@ -1240,5 +1240,160 @@ class ClosingLineWordingTests(unittest.TestCase):
         self.assertIn("引き分けでした。", out["content_html"])
 
 
+# ---------------------------------------------------------------------------
+# NOMOTOKE-BODY-FIX: short_news_url card body structure
+# ---------------------------------------------------------------------------
+
+
+class ShortNewsUrlBodyFixTests(unittest.TestCase):
+    """Cover the のもとけ-style body assembled by render_short_news_url_card.
+
+    The card must be a 事実カード with structured rows, an X tweet embed
+    when an X URL is in related_links, and a short closing — never just
+    "1 sentence + link". A body that would be too thin must skip with
+    ``validation_failed:body_too_thin``.
+    """
+
+    def setUp(self) -> None:
+        os.environ["ENABLE_NOMOTOKE_CARD_TEMPLATES"] = "1"
+        from src.nomotoke_card_renderer import render_short_news_url_card
+
+        self._render = render_short_news_url_card
+
+    def _data(self, **overrides):
+        base = {
+            "title": "巨人、ヤクルト戦に敗れ連敗",
+            "summary": "巨人は0-5でヤクルトに敗戦、9回まで得点を奪えず連敗となった。",
+            "source_url": "https://www.giants.jp/G/game/result/2026/0506.html",
+            "source_name": "巨人公式X",
+            "date_label": "2026年5月6日",
+            "related_links": [
+                {
+                    "url": "https://x.com/TokyoGiants/status/2051932184391672900",
+                    "label": "関連投稿: 巨人公式X",
+                }
+            ],
+        }
+        base.update(overrides)
+        return base
+
+    def test_body_includes_fact_card_with_extracted_score(self):
+        out = self._render(self._data())
+        self.assertTrue(out["validation_ok"])
+        body = out["content_html"]
+        self.assertIn("事実カード", body)
+        self.assertIn("<th>スコア</th>", body)
+        self.assertIn("<td>0-5</td>", body)
+        self.assertIn("<th>出典</th>", body)
+        self.assertIn("<td>巨人公式X</td>", body)
+        self.assertIn("<th>公開日</th>", body)
+        self.assertIn("<td>2026年5月6日</td>", body)
+
+    def test_body_includes_x_tweet_blockquote_embed_when_x_in_related(self):
+        out = self._render(self._data())
+        body = out["content_html"]
+        self.assertIn('class="twitter-tweet"', body)
+        self.assertIn("yoshilover-x-embed", body)
+        self.assertIn("platform.twitter.com/widgets.js", body)
+        self.assertIn(
+            "https://x.com/TokyoGiants/status/2051932184391672900", body
+        )
+
+    def test_body_uses_named_source_label_not_raw_url(self):
+        out = self._render(self._data(source_label="巨人公式 試合結果"))
+        body = out["content_html"]
+        self.assertIn("巨人公式 試合結果", body)
+        self.assertIn("出典記事", body)
+
+    def test_body_lead_uses_summary_when_present(self):
+        out = self._render(self._data())
+        body = out["content_html"]
+        self.assertIn("nomotoke-lead", body)
+        self.assertIn(
+            "巨人は0-5でヤクルトに敗戦、9回まで得点を奪えず連敗となった",
+            body,
+        )
+
+    def test_body_too_thin_skipped_when_only_url_card_content(self):
+        out = self._render(
+            self._data(
+                title="詳細はこちら",
+                summary="",
+                related_links=None,
+            )
+        )
+        self.assertFalse(out["validation_ok"])
+        self.assertEqual(out["skip_reason"], "validation_failed:body_too_thin")
+
+    def test_body_too_thin_when_summary_just_repeats_title(self):
+        out = self._render(
+            self._data(
+                title="巨人ニュース更新",
+                summary="巨人ニュース更新",
+                related_links=None,
+            )
+        )
+        self.assertFalse(out["validation_ok"])
+        self.assertEqual(out["skip_reason"], "validation_failed:body_too_thin")
+
+    def test_body_passes_when_score_is_extractable(self):
+        out = self._render(
+            self._data(
+                title="巨人 0-5 ヤクルト",
+                summary="完封負け",
+                related_links=None,
+            )
+        )
+        self.assertTrue(out["validation_ok"])
+        self.assertIn("<td>0-5</td>", out["content_html"])
+
+    def test_game_kind_two_gun_detected_and_tagged(self):
+        out = self._render(
+            self._data(
+                title="【二軍】巨人 1-6 ハヤテ 三塚琉生 本塁打",
+                summary="二軍戦で大量失点、三塚は本塁打を放った。",
+            )
+        )
+        self.assertTrue(out["validation_ok"])
+        body = out["content_html"]
+        self.assertIn("<td>二軍</td>", body)
+        self.assertIn("二軍", out["tags"])
+
+    def test_outcome_keywords_extracted_from_text(self):
+        out = self._render(
+            self._data(
+                title="巨人、6-3でサヨナラ勝利 連勝飾る",
+                summary="9回逆転サヨナラ勝利、3連勝で勢いを取り戻した。",
+            )
+        )
+        body = out["content_html"]
+        self.assertIn("<th>主な出来事</th>", body)
+        self.assertTrue(
+            "勝利" in body or "サヨナラ" in body or "連勝" in body or "逆転" in body
+        )
+
+    def test_summary_truncation_preserves_sentence_boundary(self):
+        long_summary = "巨人は0-5でヤクルトに敗戦。" + ("内容を続ける文章。" * 30)
+        out = self._render(self._data(summary=long_summary))
+        body = out["content_html"]
+        lead_para = body.split('class="nomotoke-lead">', 1)[1].split("</p>", 1)[0]
+        self.assertLessEqual(len(lead_para), 220)
+        self.assertTrue(lead_para.endswith("。") or lead_para.endswith("…"))
+
+    def test_closing_is_short_and_not_seo_padding(self):
+        out = self._render(self._data())
+        body = out["content_html"]
+        self.assertNotIn(
+            "<p>詳細は出典をご覧ください。</p>", body
+        )
+        self.assertIn("ご意見・ご感想はコメント欄", body)
+
+    def test_section_headers_present(self):
+        out = self._render(self._data())
+        body = out["content_html"]
+        self.assertIn("<h3>🔗 出典記事</h3>", body)
+        self.assertIn("<h3>📋 事実カード</h3>", body)
+
+
 if __name__ == "__main__":
     unittest.main()

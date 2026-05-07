@@ -56,16 +56,19 @@ Response status codes:
 
 ## Environment variables
 
-| Name | Required | Source | Notes |
-|------|----------|--------|-------|
-| `MANUAL_INTAKE_TOKEN` | yes | Secret Manager | Long random string. Distributed only to the operator's phone. |
-| `WP_URL` | yes | env or Secret Manager | Existing yoshilover WP credential |
-| `WP_USER` | yes | env or Secret Manager | Existing |
-| `WP_APP_PASSWORD` | yes | Secret Manager | Existing |
-| `PORT` | no (default 8080) | Cloud Run injects automatically | |
+Values reflect the production yoshilover Cloud Run setup
+(project: `baseballsite`, region: `asia-northeast1`).
 
-The service does NOT require any other env: no Gemini key, no GCS bucket,
-no scheduler config.
+| Name | Required | Source | Production value / secret name |
+|------|----------|--------|-------------------------------|
+| `MANUAL_INTAKE_TOKEN` | yes | Secret Manager | `yoshilover-manual-intake-token` (NEW — to be created at deploy time) |
+| `WP_URL` | yes | env (literal) | `https://yoshilover.com` |
+| `WP_USER` | yes | env (literal) | `user` |
+| `WP_APP_PASSWORD` | yes | Secret Manager | `yoshilover-wp-app-password` (existing — reused) |
+| `PORT` | no (default 8080) | Cloud Run injects automatically | — |
+
+The service does NOT require any other env: no Gemini key, no X API key,
+no GCS bucket, no scheduler config.
 
 ## Local smoke
 
@@ -103,78 +106,135 @@ docker run --rm -p 8080:8080 \
 
 ## Deploy to Cloud Run (USER GO required)
 
-The values below are placeholders — replace with the real project / region.
-**Claude / Codex must NOT run these commands. They are user-go gated.**
+All values below match the production yoshilover Cloud Run setup. Run from
+the repo root on a workstation that already has gcloud authenticated to
+the `baseballsite` project. **Claude / Codex must NOT run these commands.
+They are user-go gated.**
 
-1. Create the secret (one-time, replace the literal token):
+```bash
+# Constants (already aligned with prod yoshilover-fetcher).
+export PROJECT=baseballsite
+export REGION=asia-northeast1
+export REPO=asia-northeast1-docker.pkg.dev/${PROJECT}/yoshilover
+export IMAGE_TAG=$(git rev-parse --short HEAD)
+export IMAGE=${REPO}/manual-intake-service:${IMAGE_TAG}
+export SERVICE=manual-intake-service
+export RUNTIME_SA=seo-web-runtime@${PROJECT}.iam.gserviceaccount.com
+export OPERATOR_EMAIL=fwns6760@gmail.com   # confirm with user before running
+```
 
-   ```bash
-   echo -n 'a-long-random-token' | gcloud secrets create manual-intake-token \
-     --replication-policy=automatic --data-file=-
-   ```
+### 1. Create the new token secret (one-time)
 
-2. Build the image (Cloud Build):
+```bash
+# Generate a fresh long random token. NEVER paste the token into chat,
+# logs, or commits — only into the gcloud stdin below.
+TOKEN_VALUE=$(python3 -c "import secrets; print(secrets.token_urlsafe(48))")
 
-   ```bash
-   gcloud builds submit \
-     --config=- \
-     --substitutions=_IMAGE=gcr.io/$PROJECT_ID/manual-intake-service:$(git rev-parse --short HEAD) \
-     . <<'YAML'
-   steps:
-     - name: gcr.io/cloud-builders/docker
-       args: ['build', '-f', 'Dockerfile.manual_intake_service', '-t', '$_IMAGE', '.']
-     - name: gcr.io/cloud-builders/docker
-       args: ['push', '$_IMAGE']
-   images:
-     - '$_IMAGE'
-   YAML
-   ```
+printf '%s' "${TOKEN_VALUE}" | gcloud secrets create yoshilover-manual-intake-token \
+  --project=${PROJECT} \
+  --replication-policy=automatic \
+  --data-file=-
 
-3. Deploy the service (require auth, low concurrency, min instances 0):
+# Allow the runtime SA to read the new secret.
+gcloud secrets add-iam-policy-binding yoshilover-manual-intake-token \
+  --project=${PROJECT} \
+  --member="serviceAccount:${RUNTIME_SA}" \
+  --role=roles/secretmanager.secretAccessor
 
-   ```bash
-   gcloud run deploy manual-intake-service \
-     --image=gcr.io/$PROJECT_ID/manual-intake-service:$(git rev-parse --short HEAD) \
-     --region=$REGION \
-     --platform=managed \
-     --no-allow-unauthenticated \
-     --min-instances=0 \
-     --max-instances=2 \
-     --concurrency=4 \
-     --timeout=60s \
-     --memory=256Mi \
-     --cpu=1 \
-     --set-env-vars=WP_URL=$WP_URL,WP_USER=$WP_USER \
-     --set-secrets=WP_APP_PASSWORD=wp-app-password:latest,MANUAL_INTAKE_TOKEN=manual-intake-token:latest
-   ```
+# Print TOKEN_VALUE to a private channel only (e.g. the operator's password
+# manager). Do NOT echo it to a shared terminal session.
+unset TOKEN_VALUE
+```
 
-4. Grant the operator's Google account `run.invoker` on the service. The
-   service URL must NOT be publicly invokable: token alone is not the
-   primary boundary — Cloud Run IAM is.
+### 2. Build the image with Cloud Build
 
-   ```bash
-   gcloud run services add-iam-policy-binding manual-intake-service \
-     --region=$REGION \
-     --member=user:$OPERATOR_EMAIL --role=roles/run.invoker
-   ```
+The repo ships `cloudbuild_manual_intake_service.yaml` (mirrors the
+publish-notice / draft-body-editor pattern). Run from the repo root:
 
-5. Smoke check after deploy:
+```bash
+gcloud builds submit \
+  --project=${PROJECT} \
+  --config=cloudbuild_manual_intake_service.yaml \
+  --substitutions=_TAG=${IMAGE_TAG}
+```
 
-   ```bash
-   TOKEN=$(gcloud auth print-identity-token)
-   SERVICE_URL=$(gcloud run services describe manual-intake-service --region=$REGION --format='value(status.url)')
-   curl -H "Authorization: Bearer $TOKEN" "$SERVICE_URL/health"
-   # → {"ok": true}
-   ```
+Result: `${REPO}/manual-intake-service:${IMAGE_TAG}` (and `:latest` from
+the YAML default if `_TAG` is omitted).
 
-   Then open `$SERVICE_URL/` from the operator's phone (after Google
-   sign-in) and submit a `dry-run` first.
+### 3. Deploy the service
+
+```bash
+gcloud run deploy ${SERVICE} \
+  --project=${PROJECT} \
+  --region=${REGION} \
+  --image=${IMAGE} \
+  --platform=managed \
+  --no-allow-unauthenticated \
+  --service-account=${RUNTIME_SA} \
+  --min-instances=0 \
+  --max-instances=2 \
+  --concurrency=4 \
+  --timeout=60s \
+  --memory=256Mi \
+  --cpu=1 \
+  --set-env-vars=WP_URL=https://yoshilover.com,WP_USER=user \
+  --set-secrets=WP_APP_PASSWORD=yoshilover-wp-app-password:latest,MANUAL_INTAKE_TOKEN=yoshilover-manual-intake-token:latest
+```
+
+### 4. Grant the operator's Google account `run.invoker`
+
+The service must NOT be publicly invokable. Cloud Run IAM is the primary
+boundary; the token is a secondary safeguard so the form on a phone can
+authenticate cheaply once the user is signed in to Google.
+
+```bash
+gcloud run services add-iam-policy-binding ${SERVICE} \
+  --project=${PROJECT} \
+  --region=${REGION} \
+  --member=user:${OPERATOR_EMAIL} \
+  --role=roles/run.invoker
+```
+
+### 5. Smoke check after deploy
+
+```bash
+SERVICE_URL=$(gcloud run services describe ${SERVICE} \
+  --project=${PROJECT} --region=${REGION} \
+  --format='value(status.url)')
+
+# (a) Health is unauthenticated path → 200 with valid IAM auth header.
+curl -sS -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+  "${SERVICE_URL}/health"
+# → {"ok": true}
+
+# (b) Form HTML loads.
+curl -sS -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+  "${SERVICE_URL}/" | head -20
+
+# (c) End-to-end dry-run with the new token (token value re-fetched here
+# from Secret Manager so the operator never has to memorize it):
+TOKEN=$(gcloud secrets versions access latest \
+  --project=${PROJECT} --secret=yoshilover-manual-intake-token)
+curl -sS -X POST "${SERVICE_URL}/manual-intake" \
+  -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+  -H "X-Manual-Intake-Token: ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://hochi.news/articles/x.html","mode":"dry-run","title":"巨人 試合速報 0-5 ヤクルト","summary":"ヤクルト戦敗戦","article_type":"試合結果"}'
+# → {"ok": true, "mode": "dry-run", "category_ids": [663], "article_type": "試合結果", ...}
+unset TOKEN
+```
+
+Once the three smokes return clean, open `${SERVICE_URL}/` from the
+operator's phone (after Google sign-in to the same account that holds
+`run.invoker`) and submit a real `dry-run` first, then a `draft`.
 
 ## Rollback
 
 ```bash
-gcloud run services update-traffic manual-intake-service \
-  --region=$REGION --to-revisions=<PREVIOUS_REVISION>=100
+PREV=$(gcloud run revisions list --project=${PROJECT} --service=${SERVICE} \
+  --region=${REGION} --format='value(metadata.name)' --limit=2 | sed -n '2p')
+gcloud run services update-traffic ${SERVICE} \
+  --project=${PROJECT} --region=${REGION} --to-revisions=${PREV}=100
 ```
 
 The service has no Scheduler / cron, no DB, and no GCS coupling — rollback

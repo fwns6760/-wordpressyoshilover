@@ -255,7 +255,27 @@ def source_tier(source_name: str) -> int:
 # Manager allowlist (Giants 2026 only)
 # ---------------------------------------------------------------------------
 
-MANAGER_NAME_ALLOWLIST: Tuple[str, ...] = ("阿部",)
+# NOMOTOKE-MANAGER-ALLOWLIST-001: extended to current 2026 Giants
+# coaching staff so 1-gun / 2-gun coach quote articles surface as
+# manager_comment cards instead of falling through to short_news_url.
+# The list is surname-only because the extractor matches by leading
+# surname token in 「{name}「{quote}」」 patterns; first names are
+# never compared.
+MANAGER_NAME_ALLOWLIST: Tuple[str, ...] = (
+    "阿部",  # 1軍監督 (兼任)
+    "桑田",  # 1軍投手チーフコーチ
+    "元木",  # 1軍ヘッドコーチ
+    "二岡",  # 2軍監督
+    "吉村",  # 1軍打撃コーチ
+    "杉内",  # 1軍投手コーチ
+    "阿波野",  # 2軍投手コーチ
+    "駒田",  # 2軍打撃コーチ
+    "石井",  # 2軍内野守備コーチ
+    "後藤",  # 1軍内野守備コーチ
+    "村田",  # 2軍野手総合コーチ (兼任時期あり)
+    "高橋",  # 過去 1軍監督 (高橋由伸) — レトロ記事用
+    "原",   # 過去 1軍監督 — レトロ記事用
+)
 
 
 # ---------------------------------------------------------------------------

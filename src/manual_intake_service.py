@@ -215,6 +215,13 @@ _HTML_FORM = """<!DOCTYPE html>
   #result.ok { background: #e8f5e9; color: #1b5e20; }
   #result.err { background: #ffebee; color: #b71c1c; }
   small.note { display: block; font-size: 12px; opacity: 0.85; margin-top: 4px; color: inherit; }
+  .facts-block { padding: 10px 12px; margin: 0 0 12px; border-left: 3px solid #f57f17; background: #fff8e1; border-radius: 4px; }
+  .facts-block .field { margin-bottom: 8px; }
+  .facts-block .field:last-child { margin-bottom: 0; }
+  .facts-block label { font-weight: 500; }
+  @media (prefers-color-scheme: dark) {
+    .facts-block { background: #2a2418; border-left-color: #ffb74d; }
+  }
   .setup-banner { padding: 12px 14px; margin-bottom: 14px; border-radius: 8px; background: #fff8e1; color: #5d4037; border: 1px solid #ffd54f; font-size: 13px; line-height: 1.55; }
   .setup-banner code { background: rgba(0,0,0,0.08); padding: 1px 4px; border-radius: 3px; font-family: ui-monospace, Menlo, Consolas, monospace; }
   button:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -247,7 +254,64 @@ _HTML_FORM = """<!DOCTYPE html>
     <div class=\"field\">
       <label for=\"article_type\">記事タイプ</label>
       <select id=\"article_type\" name=\"article_type\">__ARTICLE_TYPE_OPTIONS__</select>
-      <small class=\"note\">URL を入れて記事タイプを選んで「記事化」を押すだけ。タイトル / サマリーは出典 OG から自動取得します。</small>
+      <small class=\"note\" id=\"type-hint\">URL を入れて記事タイプを選んで「記事化」を押すだけ。タイトル / サマリーは出典 OG から自動取得します。</small>
+    </div>
+    <!-- Per-article-type optional facts. Each block is wrapped in a
+         data-types attribute that lists the article_type values for
+         which it is shown. JS toggles visibility on change. -->
+    <div class=\"facts-block\" data-types=\"監督談話\" hidden>
+      <div class=\"field\">
+        <label for=\"manager_name\">監督名（任意・自動抽出失敗時の救済）</label>
+        <input id=\"manager_name\" name=\"manager_name\" type=\"text\" autocomplete=\"off\" placeholder=\"例: 阿部 / 桑田 / 二岡\">
+      </div>
+      <div class=\"field\">
+        <label for=\"manager_quote\">発言（任意）</label>
+        <textarea id=\"manager_quote\" name=\"quote\" rows=\"2\" placeholder=\"「○○○○」と発言した部分のみ。100字まで\"></textarea>
+      </div>
+    </div>
+    <div class=\"facts-block\" data-types=\"選手コメント\" hidden>
+      <div class=\"field\">
+        <label for=\"player_name\">選手名（任意）</label>
+        <input id=\"player_name\" name=\"player_name\" type=\"text\" autocomplete=\"off\" placeholder=\"例: 戸郷 / リチャード / 岡本\">
+      </div>
+      <div class=\"field\">
+        <label for=\"player_quote\">発言（任意）</label>
+        <textarea id=\"player_quote\" name=\"quote\" rows=\"2\" placeholder=\"「○○○○」と発言した部分のみ。100字まで\"></textarea>
+      </div>
+    </div>
+    <div class=\"facts-block\" data-types=\"予告先発\" hidden>
+      <div class=\"field\">
+        <label for=\"pitcher_a\">巨人先発（任意）</label>
+        <input id=\"pitcher_a\" name=\"pitcher_a\" type=\"text\" autocomplete=\"off\" placeholder=\"例: 戸郷\">
+      </div>
+      <div class=\"field\">
+        <label for=\"team_b\">対戦チーム（任意）</label>
+        <input id=\"team_b\" name=\"team_b\" type=\"text\" autocomplete=\"off\" placeholder=\"例: 阪神\">
+      </div>
+      <div class=\"field\">
+        <label for=\"pitcher_b\">相手先発（任意）</label>
+        <input id=\"pitcher_b\" name=\"pitcher_b\" type=\"text\" autocomplete=\"off\" placeholder=\"例: 才木\">
+      </div>
+    </div>
+    <div class=\"facts-block\" data-types=\"動画\" hidden>
+      <div class=\"field\">
+        <label for=\"video_player_name\">選手名（任意）</label>
+        <input id=\"video_player_name\" name=\"player_name\" type=\"text\" autocomplete=\"off\" placeholder=\"例: 岡本\">
+      </div>
+      <div class=\"field\">
+        <label for=\"play_summary\">プレー説明（任意）</label>
+        <textarea id=\"play_summary\" name=\"play_summary\" rows=\"2\" placeholder=\"例: 5回裏 ソロ本塁打\"></textarea>
+      </div>
+    </div>
+    <div class=\"facts-block\" data-types=\"公示\" hidden>
+      <div class=\"field\">
+        <label for=\"registered\">登録選手（任意・カンマ区切り）</label>
+        <textarea id=\"registered\" name=\"registered\" rows=\"2\" placeholder=\"例: 戸郷,リチャード\"></textarea>
+      </div>
+      <div class=\"field\">
+        <label for=\"removed\">抹消選手（任意・カンマ区切り）</label>
+        <textarea id=\"removed\" name=\"removed\" rows=\"2\" placeholder=\"例: 岡本\"></textarea>
+      </div>
     </div>
     <details class=\"field\">
       <summary style=\"cursor:pointer; font-weight:600; padding:6px 0;\">詳細設定（任意・通常は不要）</summary>
@@ -289,6 +353,48 @@ _HTML_FORM = """<!DOCTYPE html>
   const form = document.getElementById('intake');
   const result = document.getElementById('result');
   const dryRunToggle = document.getElementById('dry-run-toggle');
+  const articleType = document.getElementById('article_type');
+  const submitBtn = document.getElementById('submit-btn');
+  const typeHint = document.getElementById('type-hint');
+  const factsBlocks = document.querySelectorAll('.facts-block');
+
+  // Per-article-type submit label + hint text. Free-form objects keep
+  // it easy to extend later without touching the form HTML.
+  const SUBMIT_LABEL = {
+    '監督談話': '監督談話を記事化',
+    '選手コメント': '選手コメントを記事化',
+    '予告先発': '予告先発を記事化',
+    '公示': '公示を記事化',
+    '動画': '動画を記事化',
+    '試合結果': '試合結果を記事化',
+    '試合速報': '試合速報を記事化',
+    '成績': '成績を記事化',
+    '番組情報': '番組情報を記事化',
+    'コラム': 'コラムを記事化',
+    'ニュース': 'ニュースを記事化',
+  };
+  const TYPE_HINT = {
+    '試合結果': 'Yahoo!スポーツの試合詳細URL（baseball.yahoo.co.jp/npb/game/...）を貼ると、回ごとのスコア表が出ます。',
+    '監督談話': '阿部 / 桑田 / 元木 / 二岡 等の発言記事URL。発言部分が抽出できないときは下のフィールドに直接入力できます。',
+    '選手コメント': '選手の発言記事URL。タイトルから選手名が取れない場合は下のフィールドに入力。',
+    '予告先発': '予告先発記事URL。先発投手が抽出できないときは下のフィールドに入力。',
+    '公示': '公示記事URL。登録/抹消の名前が抽出できないときは下のフィールドに入力。',
+    '動画': 'YouTube URL（youtu.be / shorts / live も自動正規化）。説明が空のときは下のフィールドで補える。',
+  };
+  const DEFAULT_HINT = 'URL を入れて記事タイプを選んで「記事化」を押すだけ。タイトル / サマリーは出典 OG から自動取得します。';
+
+  function syncTypeUI() {
+    const t = articleType ? articleType.value : '';
+    if (submitBtn) submitBtn.textContent = SUBMIT_LABEL[t] || '記事化';
+    if (typeHint) typeHint.textContent = TYPE_HINT[t] || DEFAULT_HINT;
+    factsBlocks.forEach(function(block) {
+      const types = (block.getAttribute('data-types') || '').split(',').map(s => s.trim());
+      const visible = types.indexOf(t) >= 0;
+      block.hidden = !visible;
+    });
+  }
+  if (articleType) articleType.addEventListener('change', syncTypeUI);
+  syncTypeUI();
 
   function render(ok, payload) {
     result.hidden = false;
@@ -395,6 +501,18 @@ def _handle_manual_intake(
     title_override = (payload.get("title") or "").strip()
     summary_override = (payload.get("summary") or "").strip()
 
+    manual_facts = {
+        "manager_name": (payload.get("manager_name") or "").strip(),
+        "player_name": (payload.get("player_name") or "").strip(),
+        "quote": (payload.get("quote") or "").strip(),
+        "pitcher_a": (payload.get("pitcher_a") or "").strip(),
+        "pitcher_b": (payload.get("pitcher_b") or "").strip(),
+        "team_b": (payload.get("team_b") or "").strip(),
+        "play_summary": (payload.get("play_summary") or "").strip(),
+        "registered": (payload.get("registered") or "").strip(),
+        "removed": (payload.get("removed") or "").strip(),
+    }
+
     exit_code, output = mi.run_manual_intake(
         url=url,
         memo=memo,
@@ -405,6 +523,7 @@ def _handle_manual_intake(
         article_type=article_type or mi.ARTICLE_TYPE_AUTO,
         wp_client_factory=wp_client_factory,
         logger=logger,
+        manual_facts=manual_facts,
     )
 
     if exit_code == mi.EXIT_OK:

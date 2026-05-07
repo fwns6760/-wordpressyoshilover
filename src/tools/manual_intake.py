@@ -413,6 +413,32 @@ def _split_notice_names(prefix: str) -> list[str]:
     return uniq[:6]
 
 
+def _parse_manual_name_list(raw: str) -> list[str]:
+    """Split an operator-supplied name list into a clean list[str].
+
+    Accepts comma / 、 / newline / whitespace separators. Each name is
+    trimmed; entries shorter than 2 chars or longer than 8 chars are
+    dropped because they almost certainly are not a player name and
+    would skew the rendered card.
+    """
+    if not raw or not isinstance(raw, str):
+        return []
+    rough = re.split(r"[、,\n\r]+|\s{2,}", raw)
+    out: list[str] = []
+    seen: set[str] = set()
+    for chunk in rough:
+        n = chunk.strip()
+        if not n:
+            continue
+        if len(n) < 2 or len(n) > 8:
+            continue
+        if n in seen:
+            continue
+        seen.add(n)
+        out.append(n)
+    return out[:8]
+
+
 def _extract_official_notice_facts(
     title: str, summary: str, og_description: str
 ) -> dict[str, Any]:
@@ -480,6 +506,46 @@ def _date_label_from_iso(iso: str) -> str:
     return f"{int(m.group(1))}年{int(m.group(2))}月{int(m.group(3))}日"
 
 
+_YOUTUBE_HOST_RE = re.compile(
+    r"^https?://(?:www\.|m\.|mobile\.)?(?:youtube\.com|youtu\.be)/", re.IGNORECASE
+)
+_YOUTUBE_WATCH_RE = re.compile(
+    r"^https?://(?:www\.)?youtube\.com/watch\?v=[A-Za-z0-9_-]{6,}", re.IGNORECASE
+)
+
+
+def _normalize_youtube_url(url: str) -> str:
+    """Convert any YouTube URL form to the canonical
+    ``https://www.youtube.com/watch?v=<id>`` shape so the video_v1
+    renderer's URL gate accepts it.
+
+    Supports: ``youtu.be/<id>``, ``youtube.com/shorts/<id>``,
+    ``youtube.com/live/<id>``, ``m.youtube.com/...``,
+    ``mobile.youtube.com/...``. Returns the original URL unchanged
+    when it does not look like YouTube (the caller's gate then drops
+    it). Query parameters other than ``v`` are stripped — they are
+    irrelevant to the video card and would only widen the surface
+    area for cache-key drift.
+    """
+    if not isinstance(url, str) or not url:
+        return url
+    if not _YOUTUBE_HOST_RE.match(url):
+        return url
+    # Already canonical.
+    if _YOUTUBE_WATCH_RE.match(url):
+        m = re.match(r"^(https?://(?:www\.)?youtube\.com/watch\?v=)([A-Za-z0-9_-]+)", url, re.IGNORECASE)
+        if m:
+            return m.group(1) + m.group(2)
+        return url
+    m = re.search(r"youtu\.be/([A-Za-z0-9_-]{6,})", url)
+    if m:
+        return f"https://www.youtube.com/watch?v={m.group(1)}"
+    m = re.search(r"youtube\.com/(?:shorts|live|embed|v)/([A-Za-z0-9_-]{6,})", url, re.IGNORECASE)
+    if m:
+        return f"https://www.youtube.com/watch?v={m.group(1)}"
+    return url
+
+
 def _try_render_via_nomotoke(
     template_key: str,
     *,
@@ -491,6 +557,7 @@ def _try_render_via_nomotoke(
     is_x: bool,
     og_image: str = "",
     raw_html: str = "",
+    manual_facts: dict[str, str] | None = None,
 ) -> str | None:
     """Render the manual-intake submission with the matching nomotoke
     renderer when the operator's article_type pick maps to a nomotoke
@@ -518,6 +585,7 @@ def _try_render_via_nomotoke(
     figure is added AFTER the renderer returns so the renderer's
     source-fact contract is unchanged.
     """
+    mf = manual_facts or {}
     if not template_key.startswith("nomotoke_card_"):
         return None
     # X-only entries cannot use the nomotoke short_news_url path because
@@ -525,6 +593,11 @@ def _try_render_via_nomotoke(
     # X embed body is the right shape for those.
     if is_x:
         return None
+
+    # NOMOTOKE-INTAKE-YOUTUBE-NORMALIZE-001: accept all YouTube URL
+    # forms (youtu.be / shorts / live) by normalising to the canonical
+    # watch URL the video_v1 renderer requires.
+    source_url = _normalize_youtube_url(source_url)
 
     # NOMOTOKE-INTAKE-POSTGAME-001: Yahoo Sportsnavi NPB game URL is the
     # only RSS-pool-external source whose HTML we can parse into a
@@ -592,16 +665,36 @@ def _try_render_via_nomotoke(
             if m:
                 og_text = html.unescape(m.group(1))
         notice = _extract_official_notice_facts(title, summary, og_text)
-        if not notice:
+        # Operator overrides: comma / 、 / newline-separated lists win
+        # over regex extraction so a 公示 article whose headline does
+        # not encode names cleanly still produces a real card.
+        manual_registered = _parse_manual_name_list(mf.get("registered", ""))
+        manual_removed = _parse_manual_name_list(mf.get("removed", ""))
+        if manual_registered or manual_removed:
+            registered = manual_registered
+            removed = manual_removed
+            if registered and removed:
+                action = "swap"
+            elif registered:
+                action = "register"
+            else:
+                action = "remove"
+        elif notice:
+            registered = notice["registered"]
+            removed = notice["removed"]
+            action = notice["action"]
+        else:
             return None
         if not date_label:
             return None
+        if not (registered or removed):
+            return None
         data = {
             "team_name": "巨人",
-            "action": notice["action"],
+            "action": action,
             "date_label": date_label,
-            "registered": notice["registered"],
-            "removed": notice["removed"],
+            "registered": registered,
+            "removed": removed,
             "source_url": source_url,
             "source_name": source_name or "出典",
         }
@@ -626,6 +719,14 @@ def _try_render_via_nomotoke(
             description=summary,
         )
         data = extract_video_card_facts(e, team_name="巨人")
+        # NOMOTOKE-INTAKE-MANUAL-FACTS-001: operator-supplied overrides
+        # win over auto-extraction so a video card still renders when
+        # the YouTube description does not include the player name or
+        # a clean play summary.
+        if mf.get("player_name"):
+            data["player_name"] = mf["player_name"]
+        if mf.get("play_summary"):
+            data["play_summary"] = mf["play_summary"]
         # Renderer requires player_name + play_summary; otherwise fall back.
         if not data.get("player_name") or not data.get("play_summary"):
             return None
@@ -641,14 +742,28 @@ def _try_render_via_nomotoke(
         mq = extract_manager_quote(title, summary)
         manager_name = mq.get("manager_name") or ""
         quote_short = mq.get("quote_short") or ""
-        if not manager_name or manager_name not in MANAGER_NAME_ALLOWLIST:
+        topic = mq.get("topic") or ""
+        # NOMOTOKE-INTAKE-MANUAL-FACTS-001: operator overrides win.
+        # The expanded MANAGER_NAME_ALLOWLIST already covers the
+        # current 2026 staff, but a manual ``manager_name`` lets the
+        # operator land a quote from a name that is not on the
+        # allowlist (e.g. retired coach guest commentary).
+        if mf.get("manager_name"):
+            manager_name = mf["manager_name"]
+        if mf.get("quote"):
+            quote_short = mf["quote"][:100]
+        if not manager_name:
+            return None
+        # Manual override path bypasses the allowlist gate — the
+        # operator has explicitly attributed the quote.
+        if not mf.get("manager_name") and manager_name not in MANAGER_NAME_ALLOWLIST:
             return None
         if not quote_short:
             return None
         data = {
             "team_name": "巨人",
             "manager_name": manager_name,
-            "topic": (mq.get("topic") or quote_short[:30]),
+            "topic": topic or quote_short[:30],
             "quote_short": quote_short,
             "source_url": source_url,
             "source_name": source_name or "出典",
@@ -664,6 +779,11 @@ def _try_render_via_nomotoke(
         pq = extract_player_quote(title, summary)
         player_name = pq.get("player_name") or ""
         quote_short = pq.get("quote_short") or ""
+        # Operator overrides win.
+        if mf.get("player_name"):
+            player_name = mf["player_name"]
+        if mf.get("quote"):
+            quote_short = mf["quote"][:100]
         if not player_name or not quote_short:
             return None
         data = {
@@ -684,7 +804,11 @@ def _try_render_via_nomotoke(
             return None
         pre = detect_pregame_pitcher(title, summary)
         pair = pre.get("pitcher_pair") if pre.get("keyword_present") else None
-        if not pair:
+        # Operator overrides win.
+        pitcher_a = mf.get("pitcher_a") or (pair[0] if pair else "")
+        pitcher_b = mf.get("pitcher_b") or (pair[1] if pair else "")
+        team_b = mf.get("team_b") or "対戦相手"
+        if not pitcher_a or not pitcher_b:
             return None
         data = {
             "date_label": date_label,
@@ -692,9 +816,9 @@ def _try_render_via_nomotoke(
             "matchups": [
                 {
                     "team_a": "巨人",
-                    "pitcher_a": pair[0],
-                    "team_b": "対戦相手",
-                    "pitcher_b": pair[1],
+                    "pitcher_a": pitcher_a,
+                    "team_b": team_b,
+                    "pitcher_b": pitcher_b,
                 }
             ],
             "source_url": source_url,
@@ -901,6 +1025,7 @@ def run_manual_intake(
     rate_limit_lockfile: Path | None = None,
     fetch_meta: Callable[..., dict[str, str]] = _fetch_news_meta,
     logger: logging.Logger | None = None,
+    manual_facts: dict[str, str] | None = None,
 ) -> tuple[int, dict[str, Any]]:
     """Run the manual intake pipeline.
 
@@ -1076,6 +1201,7 @@ def run_manual_intake(
             is_x=is_x,
             og_image=og_image,
             raw_html=raw_html,
+            manual_facts=manual_facts or {},
         )
     if body is None:
         if is_x:
@@ -1161,6 +1287,21 @@ def _build_arg_parser() -> argparse.ArgumentParser:
             "NEVER used as a source fact."
         ),
     )
+    # NOMOTOKE-INTAKE-MANUAL-FACTS-001: per-template optional facts for
+    # cases where regex extraction cannot recover the field cleanly.
+    # Operator-supplied values bypass the regex / allowlist gates of
+    # the matching renderer (manager / player / pregame / video /
+    # official_notice). Each value is treated as a literal string and
+    # is HTML-escaped at render time — no template-level fabrication.
+    p.add_argument("--manager-name", default="", help="manager_comment override")
+    p.add_argument("--player-name", default="", help="player_comment / video override")
+    p.add_argument("--quote", default="", help="quote_short override (manager / player)")
+    p.add_argument("--pitcher-a", default="", help="pregame_pitcher Giants 先発")
+    p.add_argument("--pitcher-b", default="", help="pregame_pitcher 相手 先発")
+    p.add_argument("--team-b", default="", help="pregame_pitcher 対戦相手 team")
+    p.add_argument("--play-summary", default="", help="video play_summary override")
+    p.add_argument("--registered", default="", help="official_notice 登録選手 (comma-separated)")
+    p.add_argument("--removed", default="", help="official_notice 抹消選手 (comma-separated)")
     return p
 
 
@@ -1190,6 +1331,17 @@ def main(argv: list[str] | None = None) -> int:
             article_type=args.article_type,
             wp_client_factory=_default_wp_client_factory,
             logger=logger,
+            manual_facts={
+                "manager_name": args.manager_name,
+                "player_name": args.player_name,
+                "quote": args.quote,
+                "pitcher_a": args.pitcher_a,
+                "pitcher_b": args.pitcher_b,
+                "team_b": args.team_b,
+                "play_summary": args.play_summary,
+                "registered": args.registered,
+                "removed": args.removed,
+            },
         )
     except SystemExit:
         raise

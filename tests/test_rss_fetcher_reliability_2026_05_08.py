@@ -421,5 +421,98 @@ class CrossSourceTitleReuseFlagTests(unittest.TestCase):
         self.assertTrue(captured["allow_title_only_reuse"])
 
 
+class MainLoopUndefinedNameRegressionTests(unittest.TestCase):
+    """RELIABILITY-2026-05-08-FIX: 17:00-17:30 fire 3 連続 0 drafts incident で
+    `routing_template_key` 未定義 NameError が露呈。同類の static 未定義参照を
+    ast で検出する regression。call-site の undefined variable bug を防ぐ。
+    """
+
+    def test_main_loop_no_undefined_template_routing_names(self):
+        import ast
+        from pathlib import Path
+        src_path = Path(__file__).parent.parent / "src" / "rss_fetcher.py"
+        tree = ast.parse(src_path.read_text())
+
+        # _main 関数の scope 内 undefined name を ast で抽出
+        main_node = next(
+            (n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_main"),
+            None,
+        )
+        self.assertIsNotNone(main_node, "_main function should exist")
+
+        defined: set[str] = set()
+        used: set[str] = set()
+        for arg in main_node.args.args:
+            defined.add(arg.arg)
+        for sub in ast.walk(main_node):
+            if isinstance(sub, ast.Name):
+                if isinstance(sub.ctx, ast.Store):
+                    defined.add(sub.id)
+                elif isinstance(sub.ctx, ast.Load):
+                    used.add(sub.id)
+
+        # module-level globals
+        global_names: set[str] = set()
+        for sub in ast.walk(tree):
+            if isinstance(sub, ast.Import):
+                for alias in sub.names:
+                    global_names.add(alias.asname or alias.name.split(".")[0])
+            elif isinstance(sub, ast.ImportFrom):
+                for alias in sub.names:
+                    global_names.add(alias.asname or alias.name)
+            elif isinstance(sub, (ast.FunctionDef, ast.ClassDef)) and sub is not main_node:
+                global_names.add(sub.name)
+            elif isinstance(sub, ast.Assign):
+                for tgt in sub.targets:
+                    if isinstance(tgt, ast.Name):
+                        global_names.add(tgt.id)
+
+        builtins = {
+            "range", "len", "int", "str", "dict", "list", "set", "tuple",
+            "print", "open", "True", "False", "None", "isinstance",
+            "enumerate", "any", "all", "sum", "max", "min", "sorted",
+            "reversed", "frozenset", "type", "hasattr", "getattr", "setattr",
+            "Exception", "RuntimeError", "ValueError", "KeyError", "IndexError",
+            "TypeError", "OSError", "AttributeError", "ZeroDivisionError",
+            "BaseException", "StopIteration", "object", "bool", "float",
+            "bytes", "bytearray", "iter", "next", "callable", "id", "repr",
+            "vars", "dir", "globals", "locals", "super", "property",
+            "staticmethod", "classmethod", "abs", "round", "divmod", "pow",
+            "hex", "oct", "bin", "chr", "ord", "format", "input", "filter",
+            "map", "zip", "slice", "complex", "Ellipsis", "NotImplemented",
+            "GeneratorExit", "KeyboardInterrupt", "SystemExit", "FileNotFoundError",
+            "FileExistsError", "PermissionError", "BrokenPipeError",
+            "BlockingIOError", "ConnectionError", "ConnectionResetError",
+            "ConnectionRefusedError", "ConnectionAbortedError", "ChildProcessError",
+            "InterruptedError", "ProcessLookupError", "TimeoutError",
+            "ImportError", "ModuleNotFoundError", "LookupError", "ArithmeticError",
+            "BufferError", "EOFError", "MemoryError", "NameError", "OverflowError",
+            "RecursionError", "ReferenceError", "RuntimeError", "SyntaxError",
+            "IndentationError", "TabError", "SystemError", "UnboundLocalError",
+            "UnicodeError", "UnicodeDecodeError", "UnicodeEncodeError",
+            "UnicodeTranslateError", "Warning", "UserWarning", "DeprecationWarning",
+            "PendingDeprecationWarning", "SyntaxWarning", "RuntimeWarning",
+            "FutureWarning", "ImportWarning", "UnicodeWarning", "BytesWarning",
+            "ResourceWarning", "NotImplementedError", "FloatingPointError",
+            "AssertionError", "Generator", "Coroutine", "AsyncGenerator",
+            "BlockingIOError", "BrokenPipeError", "exec", "eval", "compile",
+            "delattr", "ascii", "hash", "memoryview", "iter", "breakpoint",
+            "anext", "aiter", "__name__", "__file__", "__doc__", "__builtins__",
+            "self", "cls",
+        }
+        all_known = defined | global_names | builtins
+        undefined = used - all_known
+
+        # template / routing 関連の未定義変数は禁止 (本 incident の核心)
+        template_routing_undefined = sorted(
+            n for n in undefined if "template" in n.lower() or "routing" in n.lower()
+        )
+        self.assertEqual(
+            template_routing_undefined, [],
+            f"_main 内に template/routing 関連の undefined name が残ってる: "
+            f"{template_routing_undefined}。 1ea4c684 同型 NameError 防止。"
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

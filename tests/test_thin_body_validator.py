@@ -1,0 +1,157 @@
+"""Tests for src/thin_body_validator.py."""
+
+from __future__ import annotations
+
+import unittest
+
+from src.thin_body_validator import is_thin_body
+
+
+class TestThinBodyEmptyAndSmall(unittest.TestCase):
+    def test_empty_string(self) -> None:
+        result = is_thin_body("")
+        self.assertTrue(result.is_thin)
+        self.assertEqual(result.reason, "empty_body")
+        self.assertEqual(result.text_chars, 0)
+        self.assertEqual(result.html_chars, 0)
+
+    def test_none(self) -> None:
+        result = is_thin_body(None)  # type: ignore[arg-type]
+        self.assertTrue(result.is_thin)
+        self.assertEqual(result.reason, "empty_body")
+
+    def test_too_small_html(self) -> None:
+        # < 50 chars HTML
+        result = is_thin_body("<p>short</p>")
+        self.assertTrue(result.is_thin)
+        self.assertEqual(result.reason, "body_too_small")
+
+    def test_too_small_text(self) -> None:
+        # 50+ chars HTML だが text 内容は < 30 chars
+        body = "<p></p>" * 20  # 140 chars HTML、0 chars text
+        result = is_thin_body(body)
+        self.assertTrue(result.is_thin)
+        self.assertEqual(result.reason, "body_too_small")
+
+
+class TestOembedOnlyDetection(unittest.TestCase):
+    """2026-05-08 13:04 incident のような oembed-only body を検出する。"""
+
+    def test_actual_incident_post_65082_body(self) -> None:
+        # post 65082 の実 body をそのまま使う。
+        body = (
+            "\n"
+            '<div class="yoshilover-x-embed" '
+            'style="margin:24px auto !important;max-width:550px;">\n'
+            '  <blockquote class="twitter-tweet" data-dnt="true" data-lang="ja">\n'
+            '    <a href="https://hochi.news/articles/20260507-OHT1T51323.html">'
+            "https://hochi.news/articles/20260507-OHT1T51323.html</a>\n"
+            "  </blockquote>\n"
+            "</div>\n"
+            "\n"
+            "\n"
+            '<script async src="https://platform.twitter.com/widgets.js" '
+            'charset="utf-8"></script>\n'
+            "<!--yl-src:c05f646c333a61ec-->"
+        )
+        result = is_thin_body(body)
+        self.assertTrue(result.is_thin)
+        self.assertEqual(result.reason, "oembed_only_no_body")
+
+    def test_oembed_only_no_h3_no_text_p(self) -> None:
+        # link text に URL を載せて text 30+ chars にする (実際の post pattern)。
+        body = (
+            '<div class="yoshilover-x-embed">'
+            '<blockquote class="twitter-tweet">'
+            '<a href="https://hochi.news/articles/abcdef-12345.html">'
+            "https://hochi.news/articles/abcdef-12345.html</a>"
+            "</blockquote></div>"
+        )
+        result = is_thin_body(body)
+        self.assertTrue(result.is_thin)
+        self.assertEqual(result.reason, "oembed_only_no_body")
+
+
+class TestNonThinBodies(unittest.TestCase):
+    """正常な body は通す。false positive を出さない。"""
+
+    def test_oembed_with_h3_and_p_passes(self) -> None:
+        # X embed + actual body (postgame full の典型) は通すべき。
+        body = (
+            "<h3>📋 事実カード</h3>"
+            "<p>巨人 3-2 阪神に勝利。9回サヨナラ本塁打。先発投手は"
+            "山崎伊織で 7 回 2 失点。リリーフ陣も無失点で逃げ切った。</p>"
+            "<h3>💬 ファンの声(Xより)</h3>"
+            '<div class="yoshilover-x-embed">'
+            '<blockquote class="twitter-tweet"><a href="https://twitter.com/g/123">tweet</a></blockquote>'
+            "</div>"
+        )
+        result = is_thin_body(body)
+        self.assertFalse(result.is_thin, msg=f"unexpected reason: {result.reason}")
+
+    def test_short_article_with_p_text_passes(self) -> None:
+        # 300-500 chars の短い記事でも、text を含む <p> があれば通す。
+        body = (
+            "<p>巨人の岡本和真選手が今季 10 号本塁打を放った。"
+            "5 月としては自己最速のペース。チームは現在首位を維持しており、"
+            "今後の打撃陣の活躍に期待がかかる。</p>"
+            '<p><a href="https://hochi.news/x.html">続きを読む</a></p>'
+        )
+        result = is_thin_body(body)
+        self.assertFalse(result.is_thin, msg=f"unexpected reason: {result.reason}")
+
+    def test_full_postgame_body_passes(self) -> None:
+        body = (
+            "<h3>📋 事実カード</h3>"
+            "<p>" + ("試合の詳細記述。" * 50) + "</p>"
+            "<h3>🔗 出典記事</h3>"
+            '<p><a href="https://yahoo.co.jp">Yahoo Sportsnavi</a></p>'
+        )
+        result = is_thin_body(body)
+        self.assertFalse(result.is_thin)
+
+    def test_broadcast_template_passes(self) -> None:
+        # 中継予定 record のような短いが構造ある body。
+        body = (
+            "<h3>🎬 中継予定</h3>"
+            "<p>2026 年 5 月 9 日 18:00 開始 中日 vs 巨人</p>"
+            "<p>NHK BS / DAZN にて中継予定です。</p>"
+            "<h3>🔗 出典記事</h3>"
+            '<p><a href="https://...">出典</a></p>'
+        )
+        result = is_thin_body(body)
+        self.assertFalse(result.is_thin)
+
+
+class TestEdgeCases(unittest.TestCase):
+    def test_html_with_script_only_after_oembed(self) -> None:
+        # script tag は count しないが html_chars には入る。
+        body = (
+            '<div class="yoshilover-x-embed">'
+            '<blockquote class="twitter-tweet">'
+            '<a href="https://x.com/g/1">tweet</a>'
+            "</blockquote></div>"
+            "<script>" + ("a" * 600) + "</script>"
+        )
+        # text は短いが html 600+ なので oembed_only 判定は外れる。
+        # ただし text < 30 chars なら body_too_small 判定が通るはず。
+        result = is_thin_body(body)
+        self.assertTrue(result.is_thin)
+        # body_too_small or oembed_only_no_body either is acceptable.
+        self.assertIn(
+            result.reason,
+            {"body_too_small", "oembed_only_no_body"},
+        )
+
+    def test_only_h3_no_oembed_passes(self) -> None:
+        # H3 だけで oembed 無くても、structure があるので通す。
+        body = (
+            "<h3>📋 事実カード</h3>"
+            "<p>" + ("巨人の試合結果情報。" * 5) + "</p>"
+        )
+        result = is_thin_body(body)
+        self.assertFalse(result.is_thin)
+
+
+if __name__ == "__main__":
+    unittest.main()

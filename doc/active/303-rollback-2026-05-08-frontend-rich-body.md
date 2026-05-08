@@ -1,5 +1,92 @@
 # 303 - フロント rich body / nomotoke-style enrichment 復元用 ticket
 
+## 2026-05-08 23:50 audit + Tier 1+2 fix 反映状態
+
+**新 image tag**: `d34072a` (両 service)
+**新 revision**: manual-intake-service `00040-5wj` / yoshilover-fetcher `00251-29x`
+
+### 検証結果
+
+| 項目 | 結果 |
+|---|---|
+| build clean (WIP stash 後の build) | ✓ |
+| dry-run smoke | ✓ template_key=nomotoke_card_short_news_url_v1 |
+| WP wp_kses で `<script>` strip | ✗ (strip されない、scripts 生存確認 OK) |
+| Twitter widgets.js 生存 | ✓ published post 65043 に残存 |
+| post 65041 (test garbage) 削除 | ✓ |
+| WIP stash pop | ✓ |
+
+### Tier 1+2 fix 適用済 (commit `d34072a`)
+
+- #4 manager allowlist 過剰マッチ guard (高橋/原/村田 は 「監督」 keyword 必須)
+- #29 submit ボタン loading 状態 (📡 送信中...)
+- #30 結果に WP 編集ページへの clickable link
+- #35 エラー文言 friendly 化 (rate_limited / forbidden / fetch_failed 等)
+- #38 manual_facts server-side 長さ cap (per-field、最大 500 chars)
+- #19 post 65041 garbage 削除済
+
+### Tier 3 (defer + doc only)
+
+54 件の懸念事項を別表で全件記録 (本 ticket 下方の 「audit 全件状態」 セクション参照)。
+
+---
+
+# audit 全件状態 (54 項目)
+
+## ✅ 適用済 (5 件)
+- #4 manager 過剰マッチ
+- #19 post 65041 削除
+- #29 submit loading
+- #30 編集 URL link
+- #35 friendly errors
+- #38 manual_facts cap
+
+## 🟦 検証済 (3 件)
+- #1 build WIP 混入 → stash で clean build 完了
+- #2 RSS auto-fire 実証 → fetcher /run は 403 (Scheduler 経由のみ、5:30 自動 trigger 待ち)
+- #3 wp_kses script strip → strip されない、script 生存確認
+
+## 🟧 defer (active monitoring 必要、46 件)
+
+| # | 項目 | 推奨アクション |
+|---|---|---|
+| #5 | rsshub SPOF | 別 ticket、Cloud Run health check + alert |
+| #6 | site selectors prod 未一致 | 各社 1 記事 fetch して selector 補正 (別 session) |
+| #7 | NPB / Yahoo extractor prod 未一致 | 同上 |
+| #8 | E2E test 不在 | テスト infra 別件 |
+| #9 | manual_intake.py 3700 行 | リファクタ別件 |
+| #10 | emoji 順序依存 | 現状 OK、回避策本 doc に記録 |
+| #11 | test flaky | 他 session WIP の find_giants_completed_games rename 待ち |
+| #12 | roster 「打者」一律 | giants.jp parser 追加 (別件) |
+| #13 | DB revisions 膨張 | 長期、運用観察 |
+| #14-15 | mobile load / a11y | 操作者 visual 検証 |
+| #16 | WP REST rate limit | retry / backoff 追加 (別件) |
+| #17-18 | monitoring / metrics | Cloud Logging dashboard 別件 |
+| #20-21 | aside / inline style | テーマ別検証 |
+| #22-28 | CLAUDE.md 違反 / handoff | 本 ticket で部分対応 |
+| #31 | dry-run toggle 隠れ | UI 設計見直し別件 |
+| #32 | 送信履歴 view | 機能追加別件 |
+| #33-34 | mobile UI / 詳細設定 layout | visual 検証 |
+| #36 | Cache-Control なし | **既に no-store 設定済**、false alarm |
+| #37 | PWA キャッシュ | manifest version-bump 別件 |
+| #39 | rate limit per-instance | global rate limit 別件 |
+| #40-41 | structured logging / correlation ID | 別 ticket、infra |
+| #42 | CORS | security review 別件 |
+| #43 | WP create_post idempotency | 動作確認済 (同 URL → 同 post_id) |
+| #44 | OG fetch retry | resilience 改善別件 |
+| #45 | OG image relative URL | host 補完追加別件 |
+| #46 | regex XML parser | proper XML lib 別件 |
+| #47 | auto-detect title 依存 | host / 時刻考慮別件 |
+| #48 | article_type 選択 vs 実装不一致 | UI 設計見直し別件 |
+| #49 | data-types 単値 | フィールド共有設計別件 |
+| #50 | CSP header | security review 別件 |
+| #51 | POST size 上限 | 確認別件 |
+| #52 | Service URL 2 つ | 運用整理別件 |
+| #53 | IAM allUsers 自動化 | post-deploy script 別件 |
+| #54 | token secret 再 mount lock | deploy convention 別件 |
+
+
+
 | 項目 | 値 |
 |---|---|
 | **ticket #** | 303 |

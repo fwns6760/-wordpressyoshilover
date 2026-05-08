@@ -19530,6 +19530,13 @@ def _main(args, logger):
     publish_skip_reason_counts: Counter[str] = Counter()
     publish_observation_counts: Counter[str] = Counter()
     x_skip_reason_counts: Counter[str] = Counter()
+    # RELIABILITY-2026-05-08-T1: 1 fire の summary log 1 行で全観察項目を判定可能に
+    # するための telemetry counters。5/9 朝検証で個別 grep を不要にする。
+    review_drafts_created_count: int = 0
+    review_drafts_axes_breakdown: Counter[str] = Counter()
+    bypass_full_invocation_count: int = 0
+    tag_scraper_per_source: Counter[str] = Counter()
+    scraper_fetch_failures: int = 0
     skip_reason_sample_titles: dict[str, list[str]] = {}
     x_post_daily_limit = get_x_post_daily_limit()
     today_str = datetime.now().strftime("%Y-%m-%d")
@@ -19596,6 +19603,11 @@ def _main(args, logger):
                         article_limit=article_limit_value,
                         logger=logger,
                     )
+                    # RELIABILITY-2026-05-08-T1: scraper 別取得件数を telemetry 化。
+                    # 0 件 = 取得失敗 / age filter 全 skip の signal、要観察。
+                    tag_scraper_per_source[scraper_kind] += len(entries)
+                    if not entries:
+                        scraper_fetch_failures += 1
             else:
                 feed    = feedparser.parse(url)
                 entries = feed.entries
@@ -20842,6 +20854,7 @@ def _main(args, logger):
                     # npb_official の RSS は close_marker / placeholder_body /
                     # duplicate_sentence / weak_subject_title / source_grounding_drift
                     # 全部 bypass で publish path に進む。X 系 / 非 trusted は通常 skip。
+                    bypass_full_invocation_count += 1
                     logger.info(json.dumps({
                         "event": "post_gen_validate_trusted_source_bypass",
                         "fail_axes": list(post_gen_validate["fail_axes"]),
@@ -20887,6 +20900,14 @@ def _main(args, logger):
                             force_status="draft",
                         )
                         review_draft_created = True
+                        review_drafts_created_count += 1
+                        # axis prefix で集計 ("placeholder_body:empty_section" は
+                        # "placeholder_body" 扱い)。E2 で critical 軸は来ないが、防御的に
+                        # 全軸 record。
+                        for _axis in post_gen_validate["fail_axes"]:
+                            _axis_prefix = str(_axis or "").split(":", 1)[0].strip()
+                            if _axis_prefix:
+                                review_drafts_axes_breakdown[_axis_prefix] += 1
                         logger.info(json.dumps({
                             "event": "post_gen_validate_review_draft_created",
                             "post_id": review_post_id_logged,
@@ -21291,6 +21312,13 @@ def _main(args, logger):
         "x_post_daily_limit": x_post_daily_limit,
         "x_ai_generation_count": history.get(f"x_ai_generation_count_{today_str}", x_ai_generation_count),
         "x_ai_generation_limit": x_post_daily_limit,
+        # RELIABILITY-2026-05-08-T1: 1 fire 1 line で全観察項目を判定可能にする
+        # telemetry block。5/9 朝検証で個別 grep を不要化。
+        "review_drafts_created_count": review_drafts_created_count,
+        "review_drafts_axes_breakdown": _counter_to_plain_dict(review_drafts_axes_breakdown),
+        "bypass_full_invocation_count": bypass_full_invocation_count,
+        "tag_scraper_per_source": _counter_to_plain_dict(tag_scraper_per_source),
+        "scraper_fetch_failures": scraper_fetch_failures,
     }
     if _fetcher_log_sampling_v1_enabled() or _pre_post_gen_validate_skip_enabled():
         run_summary_payload["log_sampling_v1"] = _build_log_sampling_summary()

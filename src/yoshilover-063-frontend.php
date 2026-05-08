@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.12.0
+ * Version: 0.13.0
  * Author: yoshilover
  */
 
@@ -4814,3 +4814,120 @@ function yoshilover_063_render_streak_badge( $atts ) {
     return $html;
 }
 add_shortcode( 'yoshi_streak_badge', 'yoshilover_063_render_streak_badge' );
+
+/* ============================================================
+ * W5: 1 年前の今日 widget (SIDEBAR-WIDGETS Phase 2)
+ *
+ * shortcode で sidebar の Custom HTML widget に貼って使用:
+ *   [yoshi_this_day_in_history]
+ *
+ * WP_Query で 1 年前同日 ±2 日の publish を取得、最大 3 件 list。
+ * 1 年分以上の post 履歴 がない時 (新サイト) は何も表示しない。
+ * ============================================================ */
+
+/**
+ * 1 年前の同日 ±day_window 日に publish された post を最大 N 件取得。
+ *
+ * @param int $count 取得件数 (1-5)
+ * @param int $day_window 同日前後の day range (default 2)
+ * @return array<int, array{id:int, title:string, url:string, date:string}>
+ */
+function yoshilover_063_get_this_day_in_history( $count = 3, $day_window = 2 ) {
+    $count = max( 1, min( 5, intval( $count ) ) );
+    $day_window = max( 0, min( 7, intval( $day_window ) ) );
+
+    $cache_key = sprintf( 'yoshi_thisday_%d_%d', $count, $day_window );
+    $cached = get_transient( $cache_key );
+    if ( is_array( $cached ) ) {
+        return $cached;
+    }
+
+    $now = current_time( 'timestamp' );
+    $year_ago = strtotime( '-1 year', $now );
+    $start = strtotime( sprintf( '-%d days', $day_window ), $year_ago );
+    $end   = strtotime( sprintf( '+%d days', $day_window ), $year_ago );
+
+    $args = array(
+        'posts_per_page' => $count,
+        'post_status'    => 'publish',
+        'orderby'        => 'date',
+        'order'          => 'DESC',
+        'date_query'     => array(
+            array(
+                'after'     => date( 'Y-m-d', $start ),
+                'before'    => date( 'Y-m-d', $end ),
+                'inclusive' => true,
+            ),
+        ),
+        'no_found_rows'          => true,
+        'update_post_meta_cache' => false,
+        'update_post_term_cache' => false,
+    );
+    $q = new WP_Query( $args );
+    $results = array();
+    foreach ( $q->posts as $p ) {
+        $results[] = array(
+            'id'    => (int) $p->ID,
+            'title' => get_the_title( $p ),
+            'url'   => get_permalink( $p ),
+            'date'  => get_the_date( 'Y/n/j', $p ),
+        );
+    }
+    wp_reset_postdata();
+
+    // 6h cache (毎日 0 時に新しい "今日" が始まるが、6h cache で十分)
+    set_transient( $cache_key, $results, 6 * 60 * 60 );
+    return $results;
+}
+
+/**
+ * 1 年前の今日 widget HTML 生成。
+ *
+ * shortcode: [yoshi_this_day_in_history count="3"]
+ */
+function yoshilover_063_render_this_day_in_history( $atts ) {
+    $atts  = shortcode_atts(
+        array( 'count' => 3, 'day_window' => 2 ),
+        $atts,
+        'yoshi_this_day_in_history'
+    );
+    $count = max( 1, min( 5, intval( $atts['count'] ) ) );
+    $window = max( 0, min( 7, intval( $atts['day_window'] ) ) );
+    $items = yoshilover_063_get_this_day_in_history( $count, $window );
+    if ( empty( $items ) ) {
+        return '';
+    }
+
+    $year_ago_jp = date_i18n( 'Y年n月j日', strtotime( '-1 year', current_time( 'timestamp' ) ) );
+
+    $style = '<style id="yoshi-thisday-inline-css">'
+        . '.yoshi-thisday { margin: 16px 0; padding: 14px 12px; background: #fff; border: 1px solid #e8e8ec; border-radius: 6px; }'
+        . '.yoshi-thisday__heading { font-size: 13px; font-weight: 700; color: #333; margin: 0 0 4px; padding-bottom: 6px; border-bottom: 2px solid var(--blue, #003da5); }'
+        . '.yoshi-thisday__sub { font-size: 11px; color: #999; margin: 0 0 8px; }'
+        . '.yoshi-thisday__list { list-style: none; margin: 0; padding: 0; font-size: 12px; line-height: 1.5; }'
+        . '.yoshi-thisday__item { margin: 0; padding: 5px 0; border-bottom: 1px dotted #eee; }'
+        . '.yoshi-thisday__item:last-child { border-bottom: 0; }'
+        . '.yoshi-thisday__date { color: #999; margin-right: 6px; font-size: 11px; }'
+        . '.yoshi-thisday__title { color: #333; text-decoration: none; }'
+        . '.yoshi-thisday__title:hover { color: var(--orange, #f5811f); }'
+        . '</style>';
+
+    $html  = $style;
+    $html .= '<aside class="yoshi-thisday" aria-label="1年前の今日">';
+    $html .= '<p class="yoshi-thisday__heading">📜 1年前の今日</p>';
+    $html .= '<p class="yoshi-thisday__sub">' . esc_html( $year_ago_jp ) . ' 前後の記事</p>';
+    $html .= '<ul class="yoshi-thisday__list">';
+    foreach ( $items as $it ) {
+        $html .= '<li class="yoshi-thisday__item">';
+        $html .= '<span class="yoshi-thisday__date">' . esc_html( $it['date'] ) . '</span>';
+        $html .= '<a class="yoshi-thisday__title" href="' . esc_url( $it['url'] ) . '">'
+              . esc_html( wp_trim_words( $it['title'], 14, '…' ) )
+              . '</a>';
+        $html .= '</li>';
+    }
+    $html .= '</ul>';
+    $html .= '</aside>';
+
+    return $html;
+}
+add_shortcode( 'yoshi_this_day_in_history', 'yoshilover_063_render_this_day_in_history' );

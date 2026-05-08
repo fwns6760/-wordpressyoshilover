@@ -28,6 +28,7 @@ MANUAL-INTAKE-002 additions:
 from __future__ import annotations
 
 import json
+import re
 import sys
 import tempfile
 import time
@@ -646,7 +647,17 @@ class SourcePublishedAtIntakeTests(_IntakeBaseTest):
         # summary must remain visible; date display is meta-only.
         self.assertIn("ヤクルト戦敗戦", content)
         self.assertNotIn("出典公開日時", content)
-        self.assertNotIn("2026-05-07T18:30:00+09:00", content)
+        # NOMOTOKE-INTAKE-JSONLD-EMIT-001: the published_at ISO string
+        # IS expected to appear inside the JSON-LD schema (search-engine
+        # metadata, invisible to readers). Strip the ``<script>`` block
+        # before asserting the date is not in the user-visible body.
+        visible_body = re.sub(
+            r'<script[^>]*type="application/ld\+json"[^>]*>.*?</script>',
+            "",
+            content,
+            flags=re.DOTALL,
+        )
+        self.assertNotIn("2026-05-07T18:30:00+09:00", visible_body)
         # category routing unchanged.
         self.assertEqual(captured.get("categories"), [664])
         self.assertEqual(

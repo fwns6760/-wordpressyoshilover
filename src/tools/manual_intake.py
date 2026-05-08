@@ -387,10 +387,70 @@ def _build_body_for_news(
     *,
     og_image: str = "",
 ) -> str:
+    """Fallback body shell for non-X submissions whose nomotoke
+    renderer rejected (e.g. body_too_thin) so the operator's draft
+    gracefully degrades to a basic shape — but still wrapped in a
+    nomotoke-style skeleton so the manual_intake post-processor's
+    ``class="nomotoke-card-`` gate fires and the reader-UX
+    enrichments (ToC / share buttons / 関連記事 / 順位 / 次戦 /
+    AI badge / emoji / CTA / JSON-LD / etc.) still apply.
+
+    NOMOTOKE-INTAKE-FALLBACK-SHELL-001: previously this function
+    emitted a bare ``<p>summary</p>+出典`` body without the
+    ``nomotoke-card-`` marker, which suppressed every enrichment
+    block. The shell now contains the lead + source link + a
+    ``<hr class="nomotoke-card-divider">`` + the standard
+    ``<div class="nomotoke-card-footer">`` so the marker is present
+    and the post still receives the full reader-UX layer.
+    """
     parts: list[str] = []
     # NOMOTOKE-INTAKE-HERO-001: prepend OG image as hero figure so the
     # legacy fallback body also presents like a card. Same safety gate
     # as the nomotoke path.
+    if og_image and _is_safe_https_image_url(og_image):
+        safe_img = html.escape(og_image)
+        safe_alt = html.escape(title or "")
+        parts.append(
+            '<figure class="nomotoke-hero">'
+            f'<img src="{safe_img}" alt="{safe_alt}" loading="lazy">'
+            "</figure>"
+        )
+    if summary:
+        parts.append(
+            f'<p class="nomotoke-lead">{html.escape(summary)}</p>'
+        )
+    label = title or source_url
+    parts.append("<h3>🔗 出典記事</h3>")
+    parts.append(
+        f'<p>記事全文は <a href="{html.escape(source_url)}" target="_blank" '
+        f'rel="noopener">{html.escape(label)}</a> をご覧ください。</p>'
+    )
+    parts.append('<hr class="nomotoke-card-divider">')
+    parts.append(
+        '<div class="nomotoke-card-footer">'
+        '<p class="nomotoke-cta-row">'
+        '<a class="nomotoke-cta-button" href="#respond" '
+        'style="display:inline-block;padding:12px 28px;background:#f57f17;'
+        "color:#fff;text-decoration:none;border-radius:8px;"
+        'font-weight:700;font-size:16px;">💬 コメントする</a>'
+        "</p>"
+        '<p class="nomotoke-comment-hint">'
+        "この記事へのコメント・反応はコメント欄からお願いします。"
+        "</p>"
+        "</div>"
+    )
+    return "\n".join(parts)
+
+
+def _build_body_for_news_legacy_unused(
+    source_url: str,
+    title: str,
+    summary: str,
+    *,
+    og_image: str = "",
+) -> str:
+    """Kept for reference — pre-shell legacy. NOT called."""
+    parts: list[str] = []
     if og_image and _is_safe_https_image_url(og_image):
         safe_img = html.escape(og_image)
         safe_alt = html.escape(title or "")
@@ -3667,9 +3727,33 @@ def run_manual_intake(
         if is_x:
             body = _build_body_for_x(canonical_source_url)
         else:
+            # NOMOTOKE-INTAKE-FALLBACK-SHELL-001: the shell body now
+            # carries the ``class="nomotoke-card-`` marker so the
+            # reader-UX enrichment kicks in even when the inner
+            # nomotoke renderer rejected the article (e.g.
+            # body_too_thin). Run the same enrichment helper used
+            # by the RSS pipeline so the post still receives the
+            # full ToC / 関連 / 順位 / 次戦 / X embed / シェアボタン
+            # / AI badge / emoji / JSON-LD / etc.
             body = _build_body_for_news(
                 canonical_source_url, title, summary, og_image=og_image
             )
+            try:
+                body = apply_rss_pipeline_enrichment(
+                    body,
+                    title=title,
+                    source_url=canonical_source_url,
+                    category=output.get("category", ""),
+                    template_key=template_key,
+                    summary=summary,
+                    source_name=output.get("source_name", ""),
+                    source_published_at_iso=normalized_source_published_at,
+                    og_image=og_image,
+                    raw_html=raw_html,
+                )
+            except Exception as exc:
+                if logger is not None:
+                    logger.warning("fallback_enrichment_skipped: %s", exc)
 
     if memo:
         if memo in body:

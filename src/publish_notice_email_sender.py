@@ -2251,19 +2251,25 @@ def _morning_heartbeat_enabled() -> bool:
 
 
 def _is_first_morning_publish_notice_fire(now: datetime | None = None) -> bool:
-    """Return True only at the 06:00 JST publish-notice cron tick.
+    """Return True for the morning heartbeat retry window.
 
-    The publish-notice schedule fires at minute 0 and 30. We pick the
-    06:00 tick (minute < 30) as the daily heartbeat moment.
+    The publish-notice schedule fires at minute 0 and 30. We allow the
+    heartbeat to fire at any of the 06:00 / 06:30 / 07:00 JST ticks —
+    the per-day dedup (only counting *successful* sends) ensures one
+    mail per day in normal flow, but gives 3 retry attempts when the
+    earliest fire fails (SMTP outage / cold start timeout).
     """
     n = (now or datetime.now(JST)).astimezone(JST)
-    return n.hour == 6 and n.minute < 30
+    return (n.hour == 6) or (n.hour == 7 and n.minute < 30)
 
 
 def _heartbeat_already_sent_today(
     queue_path: str | Path, *, now: datetime | None = None
 ) -> bool:
-    """Avoid double-sending if the runner re-fires within the same hour."""
+    """Avoid double-sending only when a *successful* heartbeat is on
+    record for today. Failed sends (status=error / dry_run) are treated
+    as not-yet-sent so the next 30-min tick retries.
+    """
     p = Path(queue_path)
     if not p.exists():
         return False
@@ -2280,7 +2286,11 @@ def _heartbeat_already_sent_today(
         if d.get("notice_kind") != "morning_heartbeat":
             continue
         recorded = str(d.get("recorded_at", ""))
-        if recorded.startswith(today_jst):
+        if not recorded.startswith(today_jst):
+            continue
+        # Only a real "sent" counts as "already done"; "error" / "dry_run"
+        # / "suppressed" are treated as failed → allow next tick to retry.
+        if str(d.get("status", "")).lower() == "sent":
             return True
     return False
 
@@ -2290,17 +2300,64 @@ def build_morning_heartbeat_subject(now: datetime | None = None) -> str:
     return f"【朝サマリー】{n.month}月{n.day}日 yoshilover 稼働中{_SUBJECT_BRAND_SUFFIX}"
 
 
+def _count_today_sent_in_queue(queue_path: str | Path, *, now: datetime) -> int:
+    """Count today's per_post mail sent to date — used in heartbeat
+    diagnostics so the user can see at-a-glance whether the morning
+    mail loop produced anything."""
+    p = Path(queue_path)
+    if not p.exists():
+        return 0
+    today = now.astimezone(JST).date().isoformat()
+    count = 0
+    try:
+        text = p.read_text(encoding="utf-8")
+    except OSError:
+        return 0
+    for line in text.strip().splitlines()[-500:]:
+        try:
+            d = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if d.get("notice_kind") != "per_post":
+            continue
+        if str(d.get("status", "")).lower() != "sent":
+            continue
+        if str(d.get("recorded_at", "")).startswith(today):
+            count += 1
+    return count
+
+
 def build_morning_heartbeat_body(
-    *, now: datetime | None = None, processed_this_fire: int = 0
+    *,
+    now: datetime | None = None,
+    processed_this_fire: int = 0,
+    queue_path: str | Path | None = None,
 ) -> str:
     n = (now or datetime.now(JST)).astimezone(JST)
+    today_sent = _count_today_sent_in_queue(queue_path, now=n) if queue_path else 0
+    status_line = (
+        f"本日 mail 送信累計: {today_sent}通\n"
+        f"今回 publish-notice 処理: {processed_this_fire}件\n"
+    )
+    health_line = (
+        "✅ pipeline は健在(本mail届いてます)\n"
+        if True
+        else ""
+    )
+    diagnose_hint = ""
+    if today_sent == 0 and processed_this_fire == 0:
+        diagnose_hint = (
+            "\n⚠ まだ朝の publish が 0件。fetcher gate で全 skip されてる可能性。\n"
+            "→ 06:30 / 07:00 の次 fire で改善するか、なければ skip path 調査必要。\n"
+        )
     return (
         f"yoshilover 朝サマリー ({n.strftime('%H:%M JST')})\n"
         f"\n"
-        f"今回 publish-notice 処理: {processed_this_fire}件\n"
+        f"{status_line}"
+        f"{health_line}"
+        f"{diagnose_hint}"
         f"\n"
-        f"このメールが届いていれば publish-notice 自体は健在です。\n"
-        f"本日朝の publish 内訳は WP 管理画面の投稿一覧でご確認ください。"
+        f"詳細は WP 管理画面の投稿一覧でご確認ください。"
     )
 
 
@@ -2327,7 +2384,11 @@ def maybe_send_morning_heartbeat(
 
     n = (now or datetime.now(JST)).astimezone(JST)
     subject = build_morning_heartbeat_subject(now=n)
-    body = build_morning_heartbeat_body(now=n, processed_this_fire=processed_this_fire)
+    body = build_morning_heartbeat_body(
+        now=n,
+        processed_this_fire=processed_this_fire,
+        queue_path=queue_path,
+    )
     recipients = resolve_recipients(None)
     if not recipients:
         return False

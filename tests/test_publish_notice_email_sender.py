@@ -3061,6 +3061,44 @@ class MorningHeartbeatTests(unittest.TestCase):
         self.assertIn("06:05 JST", body)
         self.assertIn("処理: 3件", body)
 
+    def test_retry_fires_at_06_30_when_06_00_failed(self):
+        """If 06:00 fire returned an error, 06:30 fire must retry."""
+        from datetime import datetime, timezone, timedelta
+        jst = timezone(timedelta(hours=9))
+        first = datetime(2026, 5, 9, 6, 5, tzinfo=jst)
+        second = datetime(2026, 5, 9, 6, 35, tzinfo=jst)
+        bridge_fail = MagicMock(side_effect=Exception("smtp down"))
+        bridge_ok = MagicMock(return_value=mail_delivery_bridge.MailResult(
+            status="sent", refused_recipients={}, smtp_response=[250, "ok"], reason=None
+        ))
+        with patch.dict("os.environ", {
+            "PUBLISH_NOTICE_EMAIL_TO": "user@example.com",
+            sender._MORNING_HEARTBEAT_ENV: "1",
+        }, clear=True):
+            r1 = sender.maybe_send_morning_heartbeat(
+                queue_path=self.queue_path, dry_run=False, send_enabled=True,
+                bridge_send=bridge_fail, now=first,
+            )
+            r2 = sender.maybe_send_morning_heartbeat(
+                queue_path=self.queue_path, dry_run=False, send_enabled=True,
+                bridge_send=bridge_ok, now=second,
+            )
+        self.assertTrue(r1)  # attempted (recorded as error)
+        self.assertTrue(r2)  # retried successfully
+        self.assertEqual(bridge_ok.call_count, 1)
+
+    def test_retry_window_includes_07_00_but_not_07_30(self):
+        from datetime import datetime, timezone, timedelta
+        jst = timezone(timedelta(hours=9))
+        # 07:00 still in window
+        self.assertTrue(sender._is_first_morning_publish_notice_fire(
+            now=datetime(2026, 5, 9, 7, 0, tzinfo=jst)
+        ))
+        # 07:30 outside window
+        self.assertFalse(sender._is_first_morning_publish_notice_fire(
+            now=datetime(2026, 5, 9, 7, 30, tzinfo=jst)
+        ))
+
 
 if __name__ == "__main__":
     unittest.main()

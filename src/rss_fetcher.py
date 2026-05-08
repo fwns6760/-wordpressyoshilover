@@ -19524,6 +19524,35 @@ def _main(args, logger):
             if source_type == "yahoo_realtime":
                 keyword = url.replace("yahoo_realtime://", "")
                 entries = fetch_yahoo_realtime_entries(keyword)
+            elif source_type == "tag_scrape":
+                # RELIABILITY-2026-05-08-A+B: hochi 等 RSS が 404 / 未配備の trusted media
+                # 用 tag/index page scraper。env flag default OFF。config の `scraper` キーで
+                # 実装名を指定 (hochi_giants_tag 等)。
+                if not _env_flag("ENABLE_TAG_PAGE_SCRAPER", False):
+                    logger.info(f"  tag_scrape disabled for {name} (ENABLE_TAG_PAGE_SCRAPER=0)")
+                    entries = []
+                else:
+                    from src import tag_page_scraper as _tag_page_scraper
+                    scraper_kind = str(source.get("scraper") or "").strip()
+                    if not scraper_kind:
+                        logger.error(f"tag_scrape source missing 'scraper' key: {name}")
+                        error += 1
+                        continue
+                    try:
+                        max_age_days_value = int(source.get("max_age_days") or 7)
+                    except (TypeError, ValueError):
+                        max_age_days_value = 7
+                    try:
+                        article_limit_value = int(source.get("article_limit") or 30)
+                    except (TypeError, ValueError):
+                        article_limit_value = 30
+                    entries = _tag_page_scraper.fetch_tag_page_entries(
+                        scraper=scraper_kind,
+                        url=url,
+                        max_age_days=max_age_days_value,
+                        article_limit=article_limit_value,
+                        logger=logger,
+                    )
             else:
                 feed    = feedparser.parse(url)
                 entries = feed.entries

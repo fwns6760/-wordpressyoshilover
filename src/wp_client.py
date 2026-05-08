@@ -859,6 +859,42 @@ class WPClient:
         content_type = WPClient._parse_content_type(header_res.stdout.decode("iso-8859-1", errors="ignore"))
         return body_res.stdout, content_type
 
+    def media_already_uploaded_for_url(self, image_url: str) -> bool:
+        """Return True if *image_url* would produce a filename hash that
+        already exists in the WP media library (i.e. another article has
+        already uploaded the same source image).
+
+        Used by the featured-media upload chain to detect generic
+        banners that are shared across many source articles. When the
+        same og:image is referenced by multiple posts every article
+        otherwise ends up with the same thumbnail (WP appends ``-N`` to
+        the filename but the rendered image is identical). Detecting
+        the duplicate here lets the caller fall through to the
+        diversified player pool instead.
+
+        The slug check matches the filename derivation used by
+        ``upload_image_from_url`` (12-char md5 prefix of the URL), so
+        this is consistent across the fetcher.
+        """
+        try:
+            normalized_url = html.unescape((image_url or "").strip())
+            if not normalized_url:
+                return False
+            import hashlib
+            slug_base = hashlib.md5(normalized_url.encode()).hexdigest()[:12]
+            resp = requests.get(
+                f"{self.api}/media",
+                params={"slug": slug_base, "_fields": "id"},
+                auth=self.auth,
+                timeout=8,
+            )
+            if resp.status_code != 200:
+                return False
+            return bool(resp.json() or [])
+        except Exception as exc:
+            print(f"[WP] media dedup lookup failed (continuing without dedup): {exc}")
+            return False
+
     def upload_image_from_url(self, image_url: str, filename: str = None, source_url: str = "") -> int:
         """
         外部画像URLをダウンロードしてWPメディアライブラリにアップロード。

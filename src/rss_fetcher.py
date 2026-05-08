@@ -12759,6 +12759,24 @@ def _upload_featured_media_with_fallback(
 
     primary_url = candidates[0]
     for candidate_url in candidates:
+        # Skip og:images that already produced a media slug in WP — generic
+        # banners shared across multiple source articles otherwise upload
+        # repeatedly with `-N`-suffixed filenames and every article ends
+        # up with an identical thumbnail. Falling through here lets the
+        # per-person resolver / diversified-pool fallback assign distinct
+        # player images instead.
+        if wp.media_already_uploaded_for_url(candidate_url):
+            logger.info(
+                json.dumps(
+                    {
+                        "event": "featured_media_skip_duplicate_source",
+                        "post_url": post_url,
+                        "candidate_url": candidate_url,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            continue
         featured_media = wp.upload_image_from_url(candidate_url, source_url=post_url)
         if featured_media:
             if candidate_url != primary_url:

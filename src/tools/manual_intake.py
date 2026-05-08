@@ -3197,11 +3197,17 @@ def apply_rss_pipeline_enrichment(
         if block:
             extra_blocks.append(block)
 
-    if template_key in (
+    # General block lenient-mode: 全 nomotoke-marked content + caller が
+    # template_key 未指定 (rss_fetcher が空文字で呼ぶ) も該当扱いにする
+    # (RELIABILITY-2026-05-08-I)
+    _general_eligible = (not template_key) or template_key in (
         "nomotoke_card_short_news_url_v1",
         "nomotoke_card_postgame_v1",
         "nomotoke_card_pregame_pitcher_v1",
-    ):
+        "nomotoke_card_manager_comment_v1",
+        "nomotoke_card_player_comment_v1",
+    )
+    if _general_eligible:
         block = _build_recent_games_block()
         if block:
             extra_blocks.append(block)
@@ -3229,7 +3235,8 @@ def apply_rss_pipeline_enrichment(
         if block:
             extra_blocks.append(block)
 
-    if template_key in (
+    # X embeds: 全 nomotoke-marked content + caller 未指定で適用 (lenient)
+    if (not template_key) or template_key in (
         "nomotoke_card_short_news_url_v1",
         "nomotoke_card_postgame_v1",
         "nomotoke_card_manager_comment_v1",
@@ -3242,13 +3249,9 @@ def apply_rss_pipeline_enrichment(
         if block:
             extra_blocks.append(block)
 
-    if template_key in (
-        "nomotoke_card_short_news_url_v1",
-        "nomotoke_card_postgame_v1",
-        "nomotoke_card_pregame_pitcher_v1",
-        "nomotoke_card_manager_comment_v1",
-        "nomotoke_card_player_comment_v1",
-    ):
+    # Standings + Next game: 全 nomotoke-marked content + caller 未指定で適用
+    # (lenient) — どの subtype でも順位 / 次戦は relevant
+    if _general_eligible:
         block = _build_standings_block()
         if block:
             extra_blocks.append(block)

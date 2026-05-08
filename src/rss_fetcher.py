@@ -16360,6 +16360,10 @@ def _create_draft_with_same_fire_guard(
     featured_media: int | None = None,
     *,
     force_status: str | None = None,
+    enrichment_summary: str = "",
+    enrichment_category: str = "",
+    enrichment_template_key: str = "",
+    enrichment_source_name: str = "",
 ) -> int:
     normalized_source_url = _html.unescape((source_url or "").strip())
     rewritten_title_norm = _normalize_history_title(draft_title)
@@ -16391,6 +16395,10 @@ def _create_draft_with_same_fire_guard(
                 content,
                 title=draft_title,
                 source_url=normalized_source_url,
+                summary=enrichment_summary,
+                category=enrichment_category,
+                template_key=enrichment_template_key,
+                source_name=enrichment_source_name,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning(
@@ -20903,6 +20911,10 @@ def _main(args, logger):
                             post_url,
                             featured_media=None,
                             force_status="draft",
+                            enrichment_summary=summary,
+                            enrichment_category=category,
+                            enrichment_template_key=str(routing_template_key or ""),
+                            enrichment_source_name=source_name,
                         )
                         review_draft_created = True
                         review_drafts_created_count += 1
@@ -21034,6 +21046,10 @@ def _main(args, logger):
                 cats,
                 post_url,
                 featured_media=featured_media,
+                enrichment_summary=summary,
+                enrichment_category=category,
+                enrichment_template_key=str(routing_template_key or ""),
+                enrichment_source_name=source_name,
             )
             effective_featured_media = _resolve_effective_featured_media(wp, post_id, featured_media, logger)
             draft_post_data = wp.get_post(post_id)

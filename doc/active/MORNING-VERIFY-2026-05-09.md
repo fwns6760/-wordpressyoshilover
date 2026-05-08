@@ -22,11 +22,13 @@
 | JST | event | 期待 |
 |---|---|---|
 | **04:30** | giants-morning-catchup → fetcher /run(初実機) | drafts_created > 0、scraper 動作 |
-| **06:00** | publish-notice fire(heartbeat #1) | heartbeat mail 1 通必着 |
-| **06:00** | publish-notice fire(per-post)| 04:30 catchup の publish 分 mail |
-| **06:30** | publish-notice fire(heartbeat #2 retry) | heartbeat 取りこぼし保険 |
-| **07:00** | publish-notice fire(heartbeat #3 retry)| 同上 |
+| **06:05** | publish-notice fire(heartbeat #1 + per_post) | heartbeat mail 1 通必着 |
+| **06:05** | publish-notice fire(per-post + heartbeat #1) | 04:30 catchup の publish 分 mail + heartbeat 必着 |
+| **06:35** | publish-notice fire(heartbeat #2 retry + 累積 per-post) | heartbeat 取りこぼし保険 |
+| **07:05** | publish-notice fire(heartbeat #3 retry + 累積) | 同上 |
 | **07:00 以降** | user /clear で新 session | Claude が観察 commands 実行、結果報告 |
+
+**注**: publish-notice scheduler は `5,35 0-3,6-23 * * *`(2026-05-08 16:08 JST に `0,30` から変更)。fetcher の :00 fire の publish を直後 :05 fire でスキャン → mail lag 26 分 → 1-5 分に短縮。heartbeat code 条件 `hour == 6` 維持で 3 段 retry 全て fire 範囲内。
 
 ---
 
@@ -67,7 +69,7 @@ gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.serv
 ### 3.3 06:00 heartbeat 確認
 
 ```bash
-# 06:00 / 06:30 / 07:00 の publish-notice fire
+# 06:05 / 06:35 / 07:05 の publish-notice fire
 gcloud logging read 'resource.type="cloud_run_job" AND resource.labels.job_name="publish-notice" AND textPayload:"heartbeat" AND timestamp>="2026-05-08T21:00:00Z"' --limit=10 --format="value(timestamp,textPayload)"
 ```
 **期待値**: heartbeat 3 段 retry のいずれか 1 つ以上で `heartbeat_mail_sent` event 出現。

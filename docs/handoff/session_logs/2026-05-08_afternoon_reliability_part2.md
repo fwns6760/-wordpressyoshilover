@@ -144,3 +144,26 @@ env revert: `ENABLE_POST_GEN_VALIDATE_TRUSTED_BYPASS_FULL=0`、新 revision 0025
 - sponichi.co.jp: static giants tag page 廃止、search も generic 結果(キーワード filter 効かず)、tonight 断念。後日 site 構造再調査
 - sanspo.com: 同様、tag page 404、search 任意 keyword 同 generic 結果。tonight 断念
 - YouTube: 4 channel(巨人公式 / 上原 / 元木 / 髙橋尚成)で初期動作。sponichi/sanspo OB / 川﨑(動画なし for now) は将来追加候補
+
+## 16:08 JST 追加: publish-notice scheduler 5 分 offset 変更
+
+### 動機
+user 指摘「自動公開と mail が同時 飛んでない」 = scheduler `0,30` が fetcher の :00 fire と timing 衝突して mail lag 26-28 分発生。
+
+### 変更
+- `publish-notice-trigger` scheduler: `0,30 0-3,6-23 * * *` → **`5,35 0-3,6-23 * * *`**
+- gcloud scheduler jobs update http で apply 済(16:08 JST)
+- next fire: 16:35 JST
+
+### 効果
+- per_post mail lag 26-28 分 → **1-5 分**(fetcher :00 fire の publish を直後の :05 fire でスキャン)
+- 16:00 fetcher fire 3 件 publish (65160/65164/65176) は 16:35 fire で mail 化(従来 16:30 から 5 分遅延だが、後続の 17:00 fire の publish は :05 fire で即時 mail に変わる)
+
+### 5/9 朝への影響
+- heartbeat 3 段 retry 時刻: 06:00/06:30/07:00 → **06:05/06:35/07:05**(5 分 shift)
+- heartbeat code 条件 `hour == 6 OR (hour == 7 AND minute < 30)` 全部該当、3 段 fire 維持
+- 04:30 catchup の publish が 05:05 / 05:35 fire で即 mail 化(従来 05:00/05:30 と同等)
+- 06:05 fire で前夜蓄積分の per_post mail 大量 + heartbeat #1 飛来見込み
+
+### risk
+- 5/9 朝の本番初実機での 5 分 shift untested(ただし heartbeat 範囲 hour=6 内なので code 影響なし)

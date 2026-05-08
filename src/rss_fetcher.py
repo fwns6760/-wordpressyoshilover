@@ -20913,7 +20913,7 @@ def _main(args, logger):
                             force_status="draft",
                             enrichment_summary=summary,
                             enrichment_category=category,
-                            enrichment_template_key=str(routing_template_key or ""),
+                            enrichment_template_key=str(title_template_key or ""),
                             enrichment_source_name=source_name,
                         )
                         review_draft_created = True
@@ -21048,7 +21048,7 @@ def _main(args, logger):
                 featured_media=featured_media,
                 enrichment_summary=summary,
                 enrichment_category=category,
-                enrichment_template_key=str(routing_template_key or ""),
+                enrichment_template_key=str(title_template_key or ""),
                 enrichment_source_name=source_name,
             )
             effective_featured_media = _resolve_effective_featured_media(wp, post_id, featured_media, logger)

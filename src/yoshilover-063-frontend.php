@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.11.0
+ * Version: 0.12.0
  * Author: yoshilover
  */
 
@@ -4599,3 +4599,218 @@ function yoshilover_063_auto_inject_comment_cta( $content ) {
     return $content . $cta;
 }
 add_filter( 'the_content', 'yoshilover_063_auto_inject_comment_cta', 51 );
+
+/* ============================================================
+ * Sidebar widgets (W1: 直近 N 試合 / W3: streak badge)
+ *
+ * SIDEBAR-WIDGETS-2026-05-08 ticket Phase 1。
+ * shortcode で sidebar の Custom HTML widget に貼って使用:
+ *   [yoshi_recent_games count="5"]  ← 直近 5 試合 W-L 帯
+ *   [yoshi_streak_badge]            ← 連勝/連敗 streak (2 連以上で表示)
+ * ============================================================ */
+
+/**
+ * 試合速報 category(id=663)の直近 N 件を取得し、W/L を判定。
+ *
+ * @param int $count 取得件数 (1-20)
+ * @return array<int, array{id:int, title:string, url:string, result:string, date:string}>
+ *         result: 'W' / 'L' / '-'
+ */
+function yoshilover_063_get_recent_games_results( $count = 5 ) {
+    $count = max( 1, min( 20, intval( $count ) ) );
+    $cache_key = 'yoshilover_063_recent_games_' . $count;
+    $cached = get_transient( $cache_key );
+    if ( is_array( $cached ) ) {
+        return $cached;
+    }
+
+    $args = array(
+        'cat'                    => 663,
+        'posts_per_page'         => $count,
+        'post_status'            => 'publish',
+        'orderby'                => 'date',
+        'order'                  => 'DESC',
+        'no_found_rows'          => true,
+        'update_post_meta_cache' => false,
+        'update_post_term_cache' => false,
+    );
+    $q = new WP_Query( $args );
+    $results = array();
+    foreach ( $q->posts as $p ) {
+        $title  = get_the_title( $p );
+        $result = yoshilover_063_detect_game_result( $title );
+        $results[] = array(
+            'id'     => (int) $p->ID,
+            'title'  => $title,
+            'url'    => get_permalink( $p ),
+            'result' => $result,
+            'date'   => get_the_date( 'n/j', $p ),
+        );
+    }
+    wp_reset_postdata();
+
+    set_transient( $cache_key, $results, 60 * 60 );
+    return $results;
+}
+
+/**
+ * タイトル文字列から試合結果を W / L / - で判定する。
+ *
+ * 巨人視点での結果を返す。score 表記 + 勝敗 keyword 両方を見る。
+ */
+function yoshilover_063_detect_game_result( $title ) {
+    $title = (string) $title;
+    if ( $title === '' ) {
+        return '-';
+    }
+    if ( preg_match( '/勝利|競り勝|サヨナラ勝|逆転勝|完封勝|連勝/u', $title ) ) {
+        return 'W';
+    }
+    if ( preg_match( '/勝ち$|勝つ/u', $title ) ) {
+        return 'W';
+    }
+    if ( preg_match( '/完封負け|敗戦|敗北|連敗|敗れ|黒星|サヨナラ負/u', $title ) ) {
+        return 'L';
+    }
+    if ( preg_match( '/巨人\s*(\d+)\s*[-－—‒‑]\s*(\d+)/u', $title, $m ) ) {
+        $a = intval( $m[1] );
+        $b = intval( $m[2] );
+        if ( $a > $b ) { return 'W'; }
+        if ( $a < $b ) { return 'L'; }
+        return '-';
+    }
+    if ( preg_match( '/(\d+)\s*[-－—‒‑]\s*(\d+)\s*巨人/u', $title, $m ) ) {
+        $a = intval( $m[1] );
+        $b = intval( $m[2] );
+        if ( $a < $b ) { return 'W'; }
+        if ( $a > $b ) { return 'L'; }
+        return '-';
+    }
+    return '-';
+}
+
+/**
+ * 直近 N 試合 widget の HTML を生成。
+ *
+ * shortcode: [yoshi_recent_games count="5"]
+ */
+function yoshilover_063_render_recent_games_widget( $atts ) {
+    $atts  = shortcode_atts( array( 'count' => 5 ), $atts, 'yoshi_recent_games' );
+    $count = max( 1, min( 10, intval( $atts['count'] ) ) );
+    $games = yoshilover_063_get_recent_games_results( $count );
+    if ( empty( $games ) ) {
+        return '';
+    }
+
+    $style = '<style id="yoshi-recent-games-inline-css">'
+        . '.yoshi-recent-games { margin: 16px 0; padding: 14px 12px; background: #fff; border: 1px solid #e8e8ec; border-radius: 6px; }'
+        . '.yoshi-recent-games__heading { font-size: 13px; font-weight: 700; color: #333; margin: 0 0 10px; padding-bottom: 6px; border-bottom: 2px solid var(--orange, #f5811f); }'
+        . '.yoshi-recent-games__bar { display: flex; gap: 4px; margin-bottom: 10px; }'
+        . '.yoshi-recent-games__cell { flex: 1; padding: 6px 0; text-align: center; font-size: 14px; font-weight: 700; color: #fff; border-radius: 3px; }'
+        . '.yoshi-recent-games__cell--w { background: var(--green, #2e8b57); }'
+        . '.yoshi-recent-games__cell--l { background: var(--red, #e53935); }'
+        . '.yoshi-recent-games__cell--n { background: #999; }'
+        . '.yoshi-recent-games__list { list-style: none; margin: 0; padding: 0; font-size: 12px; line-height: 1.5; }'
+        . '.yoshi-recent-games__item { margin: 0; padding: 4px 0; border-bottom: 1px dotted #eee; }'
+        . '.yoshi-recent-games__item:last-child { border-bottom: 0; }'
+        . '.yoshi-recent-games__date { color: #999; margin-right: 6px; }'
+        . '.yoshi-recent-games__result { display: inline-block; width: 1.5em; text-align: center; font-weight: 700; margin-right: 6px; }'
+        . '.yoshi-recent-games__result--w { color: var(--green, #2e8b57); }'
+        . '.yoshi-recent-games__result--l { color: var(--red, #e53935); }'
+        . '.yoshi-recent-games__result--n { color: #999; }'
+        . '.yoshi-recent-games__title { color: #333; text-decoration: none; }'
+        . '.yoshi-recent-games__title:hover { color: var(--orange, #f5811f); }'
+        . '</style>';
+
+    $html  = $style;
+    $html .= '<aside class="yoshi-recent-games" aria-label="直近の試合結果">';
+    $html .= '<p class="yoshi-recent-games__heading">📊 直近' . esc_html( (string) $count ) . '試合</p>';
+
+    $html .= '<div class="yoshi-recent-games__bar">';
+    foreach ( array_reverse( $games ) as $g ) {
+        $cls   = $g['result'] === 'W' ? 'w' : ( $g['result'] === 'L' ? 'l' : 'n' );
+        $label = $g['result'] === 'W' ? '○' : ( $g['result'] === 'L' ? '●' : '-' );
+        $html .= '<span class="yoshi-recent-games__cell yoshi-recent-games__cell--' . esc_attr( $cls ) . '">' . esc_html( $label ) . '</span>';
+    }
+    $html .= '</div>';
+
+    $html .= '<ul class="yoshi-recent-games__list">';
+    foreach ( $games as $g ) {
+        $cls   = $g['result'] === 'W' ? 'w' : ( $g['result'] === 'L' ? 'l' : 'n' );
+        $label = $g['result'] === 'W' ? '勝' : ( $g['result'] === 'L' ? '負' : '-' );
+        $html .= '<li class="yoshi-recent-games__item">';
+        $html .= '<span class="yoshi-recent-games__date">' . esc_html( $g['date'] ) . '</span>';
+        $html .= '<span class="yoshi-recent-games__result yoshi-recent-games__result--' . esc_attr( $cls ) . '">' . esc_html( $label ) . '</span>';
+        $html .= '<a class="yoshi-recent-games__title" href="' . esc_url( $g['url'] ) . '">' . esc_html( wp_trim_words( $g['title'], 12, '…' ) ) . '</a>';
+        $html .= '</li>';
+    }
+    $html .= '</ul>';
+    $html .= '</aside>';
+
+    return $html;
+}
+add_shortcode( 'yoshi_recent_games', 'yoshilover_063_render_recent_games_widget' );
+
+/**
+ * 直近 10 試合から連勝 / 連敗 streak を計算。
+ *
+ * @return array{type:string, count:int}
+ *         type: 'win' / 'loss' / 'none'
+ */
+function yoshilover_063_calculate_streak() {
+    $games = yoshilover_063_get_recent_games_results( 10 );
+    if ( empty( $games ) ) {
+        return array( 'type' => 'none', 'count' => 0 );
+    }
+    $first = $games[0]['result'];
+    if ( $first === '-' ) {
+        return array( 'type' => 'none', 'count' => 0 );
+    }
+    $count = 0;
+    foreach ( $games as $g ) {
+        if ( $g['result'] === $first ) {
+            $count++;
+        } else {
+            break;
+        }
+    }
+    return array(
+        'type'  => $first === 'W' ? 'win' : 'loss',
+        'count' => $count,
+    );
+}
+
+/**
+ * Streak badge HTML を生成。
+ *
+ * shortcode: [yoshi_streak_badge]
+ *
+ * 1 試合だけの結果(streak 不成立)では表示しない、2 連以上から表示。
+ */
+function yoshilover_063_render_streak_badge( $atts ) {
+    $streak = yoshilover_063_calculate_streak();
+    if ( $streak['count'] < 2 || $streak['type'] === 'none' ) {
+        return '';
+    }
+
+    $is_win = $streak['type'] === 'win';
+    $emoji  = $is_win ? '🔥' : '😢';
+    $cls    = $is_win ? 'win' : 'loss';
+    $label  = $is_win ? ( $streak['count'] . ' 連勝中' ) : ( $streak['count'] . ' 連敗中' );
+
+    $style = '<style id="yoshi-streak-badge-inline-css">'
+        . '.yoshi-streak-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; margin: 8px 0; border-radius: 999px; font-size: 13px; font-weight: 700; }'
+        . '.yoshi-streak-badge--win { background: var(--green, #2e8b57); color: #fff; }'
+        . '.yoshi-streak-badge--loss { background: #999; color: #fff; }'
+        . '.yoshi-streak-badge__emoji { font-size: 14px; line-height: 1; }'
+        . '</style>';
+
+    $html  = $style;
+    $html .= '<span class="yoshi-streak-badge yoshi-streak-badge--' . esc_attr( $cls ) . '" aria-label="' . esc_attr( $label ) . '">';
+    $html .= '<span class="yoshi-streak-badge__emoji">' . esc_html( $emoji ) . '</span>';
+    $html .= '<span>' . esc_html( $label ) . '</span>';
+    $html .= '</span>';
+
+    return $html;
+}
+add_shortcode( 'yoshi_streak_badge', 'yoshilover_063_render_streak_badge' );

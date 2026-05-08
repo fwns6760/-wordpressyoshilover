@@ -514,5 +514,119 @@ class MainLoopUndefinedNameRegressionTests(unittest.TestCase):
         )
 
 
+class SameFireDuplicateGuardTests(unittest.TestCase):
+    """RELIABILITY-2026-05-08-DUP-FIX: 18:31 fire で 65268+65269 同 source_url
+    2 重 draft 化発生。_create_draft_with_same_fire_guard が name 通り guard
+    していなかった (set に add のみで check 不在) のが直接原因。entry で既存
+    check して 0 を返す挙動を保証する regression。
+    """
+
+    def _make_fake_wp(self):
+        captured = {"calls": 0}
+
+        class FakeWP:
+            def create_post(self, title, content, **kwargs):
+                captured["calls"] += 1
+                return 88880 + captured["calls"]
+
+        return FakeWP(), captured
+
+    def test_same_source_url_second_call_returns_zero(self):
+        wp, captured = self._make_fake_wp()
+        import logging
+        logger = logging.getLogger("test_same_fire_dup")
+        same_fire_source_urls: set[str] = set()
+        same_fire_title_sources: dict = {}
+
+        with patch.dict(os.environ, {"RUN_DRAFT_ONLY": "1"}, clear=False):
+            first = rss_fetcher._create_draft_with_same_fire_guard(
+                wp, logger, same_fire_source_urls, same_fire_title_sources,
+                "title-A", "<p>body</p>", [1],
+                "https://example.com/article/1",
+            )
+            second = rss_fetcher._create_draft_with_same_fire_guard(
+                wp, logger, same_fire_source_urls, same_fire_title_sources,
+                "title-A-rewritten", "<p>body</p>", [1],
+                "https://example.com/article/1",
+            )
+
+        # 1 回目は通常 post_id 返却、2 回目は dedup で 0
+        self.assertGreater(first, 0)
+        self.assertEqual(second, 0)
+        # WP create_post は 1 回しか呼ばれない (重複 skip 効いてる)
+        self.assertEqual(captured["calls"], 1)
+
+    def test_distinct_source_urls_both_succeed(self):
+        wp, captured = self._make_fake_wp()
+        import logging
+        logger = logging.getLogger("test_same_fire_dup")
+        same_fire_source_urls: set[str] = set()
+        same_fire_title_sources: dict = {}
+
+        with patch.dict(os.environ, {"RUN_DRAFT_ONLY": "1"}, clear=False):
+            first = rss_fetcher._create_draft_with_same_fire_guard(
+                wp, logger, same_fire_source_urls, same_fire_title_sources,
+                "title-A", "<p>body</p>", [1],
+                "https://example.com/article/1",
+            )
+            second = rss_fetcher._create_draft_with_same_fire_guard(
+                wp, logger, same_fire_source_urls, same_fire_title_sources,
+                "title-B", "<p>body</p>", [1],
+                "https://example.com/article/2",
+            )
+
+        # 異 source_url なら両方成功 (既存 distinct test と整合)
+        self.assertGreater(first, 0)
+        self.assertGreater(second, 0)
+        self.assertEqual(captured["calls"], 2)
+
+    def test_empty_source_url_does_not_trigger_dedup(self):
+        # source_url 空文字なら set に add されず dedup 対象外 (既存挙動維持)
+        wp, captured = self._make_fake_wp()
+        import logging
+        logger = logging.getLogger("test_same_fire_dup")
+        same_fire_source_urls: set[str] = set()
+        same_fire_title_sources: dict = {}
+
+        with patch.dict(os.environ, {"RUN_DRAFT_ONLY": "1"}, clear=False):
+            first = rss_fetcher._create_draft_with_same_fire_guard(
+                wp, logger, same_fire_source_urls, same_fire_title_sources,
+                "title-X", "<p>body</p>", [1],
+                "",
+            )
+            second = rss_fetcher._create_draft_with_same_fire_guard(
+                wp, logger, same_fire_source_urls, same_fire_title_sources,
+                "title-Y", "<p>body</p>", [1],
+                "",
+            )
+        self.assertGreater(first, 0)
+        self.assertGreater(second, 0)
+        self.assertEqual(captured["calls"], 2)
+
+    def test_html_unescape_normalization_for_dedup_key(self):
+        # source_url の HTML escape (&amp;) と plain (&) を同一視 (normalize 後 dedup)
+        wp, captured = self._make_fake_wp()
+        import logging
+        logger = logging.getLogger("test_same_fire_dup")
+        same_fire_source_urls: set[str] = set()
+        same_fire_title_sources: dict = {}
+
+        with patch.dict(os.environ, {"RUN_DRAFT_ONLY": "1"}, clear=False):
+            first = rss_fetcher._create_draft_with_same_fire_guard(
+                wp, logger, same_fire_source_urls, same_fire_title_sources,
+                "title-Q", "<p>body</p>", [1],
+                "https://example.com/a?x=1&amp;y=2",
+            )
+            second = rss_fetcher._create_draft_with_same_fire_guard(
+                wp, logger, same_fire_source_urls, same_fire_title_sources,
+                "title-Q", "<p>body</p>", [1],
+                "https://example.com/a?x=1&y=2",
+            )
+        # normalize 後同 URL → 2 回目 dedup
+        self.assertGreater(first, 0)
+        self.assertEqual(second, 0)
+        self.assertEqual(captured["calls"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()

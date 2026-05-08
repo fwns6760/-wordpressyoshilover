@@ -124,17 +124,22 @@ class DuplicatePreventionGoldenTests(unittest.TestCase):
         )
 
     def test_same_source_retry_reuses_existing_draft(self):
+        # RELIABILITY-2026-05-08-DUP-FIX: 旧 golden は [900, 900] (= 2 回 WP API
+        # 叩いて WP-side dedup で同 post_id 返却、buggy 挙動を encode してた)。
+        # fetcher-side で 2 回目を skip する新 dedup guard 導入後の正規挙動は
+        # [900, 0] = 1 回しか WP に届かない、効率も idempotency も改善。
         rewritten_title = "巨人戦 試合の流れを分けたポイント"
         source_url = "https://example.com/postgame/20260420/hochi"
 
         wp, logger, post_ids = self._run_same_fire_guard(rewritten_title, [source_url, source_url])
 
-        self.assertEqual(post_ids, [900, 900])
-        self.assertEqual(
-            [call["allow_title_only_reuse"] for call in wp.calls],
-            [False, False],
-        )
-        logger.info.assert_not_called()
+        self.assertEqual(post_ids, [900, 0])
+        # WP create_post は 1 回のみ
+        self.assertEqual(len(wp.calls), 1)
+        self.assertEqual(wp.calls[0]["allow_title_only_reuse"], False)
+        # dedup skip log が 1 回出る
+        self.assertEqual(logger.info.call_count, 1)
+        logger.info.assert_called()
 
 
 if __name__ == "__main__":

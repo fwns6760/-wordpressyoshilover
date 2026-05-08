@@ -16367,6 +16367,17 @@ def _create_draft_with_same_fire_guard(
 ) -> int:
     normalized_source_url = _html.unescape((source_url or "").strip())
     rewritten_title_norm = _normalize_history_title(draft_title)
+    # RELIABILITY-2026-05-08-DUP-FIX: same-fire dedup の guard 強化。既存 set は
+    # add のみで check 不在だったため同 fire 内で同 source_url が 2 回 draft 化される
+    # 事故 (例: 65268+65269 同 18:31 fire) があった。entry で既存 check して 0 を
+    # 返し、call site で post_id<=0 を skip_dup として扱う。
+    if normalized_source_url and normalized_source_url in same_fire_source_urls:
+        logger.info(json.dumps({
+            "event": "same_fire_source_url_duplicate_skip",
+            "source_url": normalized_source_url,
+            "draft_title": draft_title[:80],
+        }, ensure_ascii=False))
+        return 0
     if normalized_source_url:
         same_fire_source_urls.add(normalized_source_url)
         if rewritten_title_norm and len(rewritten_title_norm) > 5:
@@ -20916,23 +20927,31 @@ def _main(args, logger):
                             enrichment_template_key=str(title_template_key or ""),
                             enrichment_source_name=source_name,
                         )
-                        review_draft_created = True
-                        review_drafts_created_count += 1
-                        # axis prefix で集計 ("placeholder_body:empty_section" は
-                        # "placeholder_body" 扱い)。E2 で critical 軸は来ないが、防御的に
-                        # 全軸 record。
-                        for _axis in post_gen_validate["fail_axes"]:
-                            _axis_prefix = str(_axis or "").split(":", 1)[0].strip()
-                            if _axis_prefix:
-                                review_drafts_axes_breakdown[_axis_prefix] += 1
-                        logger.info(json.dumps({
-                            "event": "post_gen_validate_review_draft_created",
-                            "post_id": review_post_id_logged,
-                            "fail_axes": list(post_gen_validate["fail_axes"]),
-                            "stop_reason": str(post_gen_validate.get("stop_reason") or ""),
-                            "post_url": post_url,
-                            "title": review_title,
-                        }, ensure_ascii=False))
+                        if review_post_id_logged and review_post_id_logged > 0:
+                            review_draft_created = True
+                            review_drafts_created_count += 1
+                            # axis prefix で集計 ("placeholder_body:empty_section" は
+                            # "placeholder_body" 扱い)。E2 で critical 軸は来ないが、防御的に
+                            # 全軸 record。
+                            for _axis in post_gen_validate["fail_axes"]:
+                                _axis_prefix = str(_axis or "").split(":", 1)[0].strip()
+                                if _axis_prefix:
+                                    review_drafts_axes_breakdown[_axis_prefix] += 1
+                            logger.info(json.dumps({
+                                "event": "post_gen_validate_review_draft_created",
+                                "post_id": review_post_id_logged,
+                                "fail_axes": list(post_gen_validate["fail_axes"]),
+                                "stop_reason": str(post_gen_validate.get("stop_reason") or ""),
+                                "post_url": post_url,
+                                "title": review_title,
+                            }, ensure_ascii=False))
+                        else:
+                            # RELIABILITY-2026-05-08-DUP-FIX: same-fire dedup で 0 が返った時、
+                            # review_draft_created は False のまま下の skip_filter path に流す。
+                            logger.info(
+                                "review_draft_same_fire_duplicate_skip post_url=%s",
+                                post_url,
+                            )
                     except Exception as exc:  # noqa: BLE001
                         logger.warning(
                             "post_gen_validate_review_draft_creation_failed reason=%s post_url=%s",
@@ -21051,6 +21070,11 @@ def _main(args, logger):
                 enrichment_template_key=str(title_template_key or ""),
                 enrichment_source_name=source_name,
             )
+            if post_id <= 0:
+                # RELIABILITY-2026-05-08-DUP-FIX: same-fire dedup で 0 が返った時、
+                # 後続 wp.get_post / featured_media 解決を skip し skip_dup として計上。
+                skip_dup += 1
+                continue
             effective_featured_media = _resolve_effective_featured_media(wp, post_id, featured_media, logger)
             draft_post_data = wp.get_post(post_id)
             draft_article_url = draft_post_data.get("link", "") or post_url

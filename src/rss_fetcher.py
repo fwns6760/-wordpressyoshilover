@@ -19523,6 +19523,14 @@ def _main(args, logger):
                 x_status_id=x_status_id_for_dedup,
                 entry_title_norm=entry_title_norm,
             )
+            if pgv_recent and _post_gen_validate_trusted_bypass(post_url):
+                logger.info(json.dumps({
+                    "event": "post_gen_validate_trusted_source_bypass",
+                    "fail_axes": [f"pgv_failure_dedup:{pgv_match_kind}"],
+                    "stop_reason": "post_gen_validate_failure_dedup",
+                    "post_url": post_url,
+                }, ensure_ascii=False))
+                pgv_recent = False
             if pgv_recent:
                 skip_kind = (
                     "post_gen_validate_failed_status_id_recent"
@@ -19733,6 +19741,13 @@ def _main(args, logger):
                                 title=title,
                                 context=fan_important_exempt,
                             )
+                        elif _post_gen_validate_trusted_bypass(post_url):
+                            logger.info(json.dumps({
+                                "event": "post_gen_validate_trusted_source_bypass",
+                                "fail_axes": ["comment_required"],
+                                "stop_reason": "comment_required",
+                                "post_url": post_url,
+                            }, ensure_ascii=False))
                         else:
                             logger.debug(f"  [SKIP:コメントなし] {title_preview[:40]}")
                             skip_filter += 1
@@ -19773,6 +19788,13 @@ def _main(args, logger):
                                 title=title,
                                 context=fan_important_exempt,
                             )
+                        elif _post_gen_validate_trusted_bypass(post_url):
+                            logger.info(json.dumps({
+                                "event": "post_gen_validate_trusted_source_bypass",
+                                "fail_axes": ["social_too_weak"],
+                                "stop_reason": "social_too_weak",
+                                "post_url": post_url,
+                            }, ensure_ascii=False))
                         else:
                             logger.debug(f"  [SKIP:SNS弱い] {title_preview[:40]}")
                             skip_filter += 1
@@ -20570,6 +20592,14 @@ def _main(args, logger):
                         title=draft_title,
                         context=fan_important_exempt,
                     )
+                elif _post_gen_validate_trusted_bypass(post_url):
+                    logger.info(json.dumps({
+                        "event": "post_gen_validate_trusted_source_bypass",
+                        "fail_axes": ["body_contract_validate"],
+                        "stop_reason": "body_contract_validate",
+                        "post_url": post_url,
+                    }, ensure_ascii=False))
+                    body_contract_validate = {"ok": True, "action": "pass"}
                 else:
                     skip_filter += 1
                     skip_reason_counts["body_contract_validate"] += 1

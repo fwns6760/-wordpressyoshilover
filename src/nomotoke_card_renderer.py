@@ -1202,7 +1202,7 @@ def render_broadcast_info_card(data: Dict[str, Any]) -> Dict[str, Any]:
         f"<p>■ {_esc(date_label)} {_esc(league_label)}"
         f"「{_esc(home)}vs.{_esc(away)}」</p>"
     )
-    parts.append("<h3>中継予定</h3>")
+    parts.append("<h3>🎬 中継予定</h3>")
     parts.append(_render_broadcast_table(valid_rows))
 
     note = (data.get("note") or "").strip()
@@ -1851,7 +1851,7 @@ def _x_embed_block(
         source_name=source_name, article_title=article_title
     )
     return (
-        f"<h3>📣 関連投稿{heading_suffix}</h3>"
+        f"<h3>💬 ファンの声{heading_suffix}</h3>"
         '<div class="yoshilover-x-embed" '
         'style="margin:24px auto;max-width:550px;">'
         '<blockquote class="twitter-tweet" data-dnt="true" data-lang="ja">'

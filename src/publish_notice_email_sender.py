@@ -27,6 +27,24 @@ DEFAULT_DUPLICATE_WINDOW = timedelta(minutes=30)
 DEFAULT_GUARDED_PUBLISH_YELLOW_LOG_PATH = ROOT / "logs" / "guarded_publish_yellow_log.jsonl"
 DEFAULT_GUARDED_PUBLISH_HISTORY_PATH = ROOT / "logs" / "guarded_publish_history.jsonl"
 FORCED_SUMMARY_THRESHOLD = 10
+_FORCED_SUMMARY_THRESHOLD_ENV = "PUBLISH_NOTICE_BURST_THRESHOLD"
+
+
+def _resolve_forced_summary_threshold() -> int | None:
+    """Return the per-fire batch threshold beyond which per-post mails
+    are coalesced into a BURST_SUMMARY_ONLY suppression. Special values:
+        ``-1`` (or ``inf`` / ``off``) → disable burst suppression entirely.
+    """
+    raw = os.environ.get(_FORCED_SUMMARY_THRESHOLD_ENV, "").strip().lower()
+    if raw in ("inf", "off", "disabled", "-1"):
+        return None
+    if raw:
+        try:
+            value = int(raw)
+        except ValueError:
+            return FORCED_SUMMARY_THRESHOLD
+        return None if value < 0 else value
+    return FORCED_SUMMARY_THRESHOLD
 _SUMMARY_ONLY_SUPPRESSION_REASONS = frozenset({"BACKLOG_SUMMARY_ONLY", "BURST_SUMMARY_ONLY"})
 _PUBLISH_ONLY_MAIL_FILTER_ENV_FLAG = "ENABLE_PUBLISH_ONLY_MAIL_FILTER"
 _PUBLISH_ONLY_FILTER_DIRECT_PUBLISH_BYPASS_ENV_FLAG = (
@@ -2828,7 +2846,12 @@ def send(
             recipients=recipients,
         )
     review_only_notice = normalized_request.notice_kind == "post_gen_validate"
-    if not review_only_notice and _current_queued_batch_size(duplicate_history_path) > FORCED_SUMMARY_THRESHOLD:
+    forced_summary_threshold = _resolve_forced_summary_threshold()
+    if (
+        not review_only_notice
+        and forced_summary_threshold is not None
+        and _current_queued_batch_size(duplicate_history_path) > forced_summary_threshold
+    ):
         return _suppressed("BURST_SUMMARY_ONLY", subject=subject, recipients=recipients)
     is_backlog = _resolve_is_backlog(
         normalized_request.post_id,

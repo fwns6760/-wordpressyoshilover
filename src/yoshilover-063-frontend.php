@@ -4517,3 +4517,85 @@ function yoshilover_063_rest_clear_cache() {
 
     return $results;
 }
+
+/**
+ * コメント欄誘導 CTA block 設定取得。
+ *
+ * option `yoshilover_063_comment_cta` で以下キーを受け付ける:
+ *   - enabled (bool):    default true
+ *   - lead    (string):  上部誘導文 (default 「この話題、みなさんはどう見ますか？」)
+ *   - btn     (string):  ボタン文言 (default 「みんなの意見は？」)
+ */
+function yoshilover_063_get_comment_cta_settings() {
+    $defaults = array(
+        'enabled' => true,
+        'lead'    => 'この話題、みなさんはどう見ますか？',
+        'btn'     => 'みんなの意見は？',
+    );
+    $raw = get_option( 'yoshilover_063_comment_cta', array() );
+    if ( ! is_array( $raw ) ) {
+        $raw = array();
+    }
+    return array_merge( $defaults, $raw );
+}
+
+function yoshilover_063_render_comment_cta() {
+    $settings = yoshilover_063_get_comment_cta_settings();
+    $lead     = (string) $settings['lead'];
+    $btn      = (string) $settings['btn'];
+    if ( $lead === '' || $btn === '' ) {
+        return '';
+    }
+
+    $style = '<style id="yoshi-comment-cta-inline-css">'
+        . '.yoshi-comment-cta { margin: 28px 0 8px; padding: 14px 16px; background: #fff; border: 1px solid #e8e8ec; border-left: 3px solid var(--orange, #f08300); border-radius: 6px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 14px; }'
+        . '.yoshi-comment-cta__lead { font-size: 14px; line-height: 1.5; color: #333; margin: 0; flex: 1 1 auto; min-width: 0; }'
+        . '.yoshi-comment-cta__btn { display: inline-block; padding: 8px 18px; background: var(--orange, #f08300); color: #fff; font-size: 13px; font-weight: 700; text-decoration: none; border-radius: 4px; line-height: 1.3; white-space: nowrap; flex: 0 0 auto; }'
+        . '.yoshi-comment-cta__btn:hover, .yoshi-comment-cta__btn:focus { opacity: 0.9; color: #fff; text-decoration: none; }'
+        . '@media (max-width: 480px) {'
+        . '  .yoshi-comment-cta { padding: 12px 14px; gap: 10px; }'
+        . '  .yoshi-comment-cta__lead { font-size: 13px; flex-basis: 100%; }'
+        . '  .yoshi-comment-cta__btn { width: 100%; text-align: center; padding: 10px 14px; }'
+        . '}'
+        . '</style>';
+
+    $html  = $style;
+    $html .= '<aside class="yoshi-comment-cta" aria-label="コメント欄への誘導">';
+    $html .= '<p class="yoshi-comment-cta__lead">' . esc_html( $lead ) . '</p>';
+    $html .= '<a class="yoshi-comment-cta__btn" href="#comments">' . esc_html( $btn ) . '</a>';
+    $html .= '</aside>';
+
+    return $html;
+}
+
+function yoshilover_063_auto_inject_comment_cta( $content ) {
+    if ( is_admin() ) {
+        return $content;
+    }
+    if ( ! in_the_loop() || ! is_main_query() ) {
+        return $content;
+    }
+    if ( ! is_singular( 'post' ) ) {
+        return $content;
+    }
+    if ( ! comments_open( get_the_ID() ) ) {
+        return $content;
+    }
+
+    $settings = yoshilover_063_get_comment_cta_settings();
+    if ( empty( $settings['enabled'] ) ) {
+        return $content;
+    }
+
+    if ( strpos( (string) $content, 'yoshi-comment-cta' ) !== false ) {
+        return $content;
+    }
+
+    $cta = yoshilover_063_render_comment_cta();
+    if ( $cta === '' ) {
+        return $content;
+    }
+
+    return $content . $cta;
+}
+add_filter( 'the_content', 'yoshilover_063_auto_inject_comment_cta', 51 );

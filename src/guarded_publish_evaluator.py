@@ -2368,6 +2368,27 @@ def _published_today_keys(raw_posts: list[dict[str, Any]], *, now: datetime) -> 
     return title_keys, game_keys
 
 
+_GUARDED_PUBLISH_DO_NOT_PUBLISH_TITLE_PREFIXES = (
+    # RELIABILITY-2026-05-08-Y2: rss_fetcher の E review draft (post_gen_validate
+    # fail で skip ではなく draft 化したもの) は publish してはいけない user 判断 queue。
+    # guarded-publish が title prefix を見ずに auto-publish して 65046 incident
+    # (13:01:05 publish) が起きた事故を防ぐ早期フィルタ。
+    "【要review｜post_gen_validate】",
+    # publish-notice scanner が他の review-only draft 用に持ってる prefix も
+    # 念のため網羅 (digest / internal_skip / preflight_skip 等)。
+    "【要review｜post_gen_validate digest｜",
+    "【要review｜internal_skip_visible】",
+    "【要review｜preflight_skip】",
+)
+
+
+def _is_review_only_draft(title: str) -> bool:
+    """title prefix で「auto-publish してはいけない」 review-only draft を判定。"""
+    if not title:
+        return False
+    return any(title.startswith(prefix) for prefix in _GUARDED_PUBLISH_DO_NOT_PUBLISH_TITLE_PREFIXES)
+
+
 def evaluate_raw_posts(
     raw_posts: list[dict[str, Any]],
     *,
@@ -2392,6 +2413,13 @@ def evaluate_raw_posts(
     filtered: list[dict[str, Any]] = []
     for raw_post in raw_posts[: max(0, int(max_pool))]:
         record = extractor.extract_post_record(raw_post)
+        title_value = str(record.get("title") or "")
+        # RELIABILITY-2026-05-08-Y2: review-only draft は guarded-publish の対象から
+        # 完全除外。title prefix で識別 (rss_fetcher 側で「【要review｜post_gen_validate】」
+        # prefix 付き draft を作成してる)。これがないと user 判断 queue に入れたつもりの
+        # 記事が auto-publish されて致命的事実誤認 publish の risk。
+        if _is_review_only_draft(title_value):
+            continue
         modified_at = _parse_wp_datetime(str(record.get("modified_at") or ""), fallback_now=now_jst)
         if modified_at < cutoff:
             continue

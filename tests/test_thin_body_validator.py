@@ -20,18 +20,18 @@ class TestThinBodyEmptyAndSmall(unittest.TestCase):
         self.assertTrue(result.is_thin)
         self.assertEqual(result.reason, "empty_body")
 
-    def test_too_small_html(self) -> None:
-        # < 50 chars HTML
-        result = is_thin_body("<p>short</p>")
-        self.assertTrue(result.is_thin)
-        self.assertEqual(result.reason, "body_too_small")
+    def test_minimal_test_body_passes(self) -> None:
+        # ``<p>body</p>`` 等の test infrastructure body は通す。
+        # 本 validator は oembed-only incident 専用 narrow gate。
+        result = is_thin_body("<p>body</p>")
+        self.assertFalse(result.is_thin, msg=f"unexpected: {result.reason}")
 
-    def test_too_small_text(self) -> None:
-        # 50+ chars HTML だが text 内容は < 30 chars
-        body = "<p></p>" * 20  # 140 chars HTML、0 chars text
+    def test_short_p_text_passes(self) -> None:
+        # 短い <p> だけの body も oembed_only ではないので通す。
+        # (品質 gate は post_gen_validate / body_contract の責務)
+        body = "<p>" + ("x" * 10) + "</p>"
         result = is_thin_body(body)
-        self.assertTrue(result.is_thin)
-        self.assertEqual(result.reason, "body_too_small")
+        self.assertFalse(result.is_thin, msg=f"unexpected: {result.reason}")
 
 
 class TestOembedOnlyDetection(unittest.TestCase):
@@ -124,8 +124,10 @@ class TestNonThinBodies(unittest.TestCase):
 
 
 class TestEdgeCases(unittest.TestCase):
-    def test_html_with_script_only_after_oembed(self) -> None:
-        # script tag は count しないが html_chars には入る。
+    def test_oembed_with_long_html_outside_oembed_passes(self) -> None:
+        # script tag が長くて html 600+ chars だと oembed_only の HTML < 600
+        # 条件が外れる。本 validator は body_too_small を見ないので false に
+        # 落ちる (script 多用の正常 body は通す方針)。
         body = (
             '<div class="yoshilover-x-embed">'
             '<blockquote class="twitter-tweet">'
@@ -133,15 +135,8 @@ class TestEdgeCases(unittest.TestCase):
             "</blockquote></div>"
             "<script>" + ("a" * 600) + "</script>"
         )
-        # text は短いが html 600+ なので oembed_only 判定は外れる。
-        # ただし text < 30 chars なら body_too_small 判定が通るはず。
         result = is_thin_body(body)
-        self.assertTrue(result.is_thin)
-        # body_too_small or oembed_only_no_body either is acceptable.
-        self.assertIn(
-            result.reason,
-            {"body_too_small", "oembed_only_no_body"},
-        )
+        self.assertFalse(result.is_thin, msg=f"unexpected: {result.reason}")
 
     def test_only_h3_no_oembed_passes(self) -> None:
         # H3 だけで oembed 無くても、structure があるので通す。

@@ -10,9 +10,11 @@ wp_draft_creator.py — XポストURLからWP下書きを自動生成するCLI�
 import sys
 import os
 import json
+import logging
 import argparse
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 # vendorディレクトリをパスに追加（サーバー環境用）
 ROOT = Path(__file__).parent.parent
@@ -24,6 +26,54 @@ sys.path.insert(0, str(Path(__file__).parent))
 from wp_client import WPClient
 
 POSTED_URLS_FILE = ROOT / "data" / "posted_urls.json"
+
+
+# ------------------------------------------------------------------
+# URL guard — build_oembed_block 入力検証用
+#
+# RELIABILITY-2026-05-08-G: 13:04 JST incident で hochi.news 等の非 X URL を
+# build_oembed_block に渡したところ、Twitter widgets.js が render できず
+# 本文ゼロ表示 (10 posts thin-body publish) になった。検出に使う helper を
+# export し、callers (rss_fetcher / x_api_client / 本 module) が事前に check
+# できるようにする。本 module 自身は build_oembed_block 内で warning log のみ
+# 出し、enforce は upstream + WP create_post chokepoint の STOP gate
+# (thin_body_validator) に任せる (二重防御)。
+# ------------------------------------------------------------------
+
+_X_URL_HOSTS = frozenset(
+    [
+        "x.com",
+        "twitter.com",
+        "mobile.twitter.com",
+        "mobile.x.com",
+        "www.twitter.com",
+        "www.x.com",
+    ]
+)
+
+_logger = logging.getLogger("wp_draft_creator")
+
+
+def is_x_url(url: str) -> bool:
+    """Return True if URL is an X / Twitter URL.
+
+    Used by callers to decide whether ``build_oembed_block`` is safe to call
+    (X URL → tweet が render される) or whether to fall back to a different
+    body generator (非 X URL → tweet として render されない、本文崩壊リスク)。
+
+    URL path / query は問わない、host のみで判定。
+    """
+    if not url:
+        return False
+    try:
+        parsed = urlparse(str(url))
+        host = (parsed.netloc or "").lower()
+        # strip optional port
+        if ":" in host:
+            host = host.split(":", 1)[0]
+        return host in _X_URL_HOSTS
+    except Exception:
+        return False
 
 
 # ------------------------------------------------------------------
@@ -40,6 +90,17 @@ def build_x_widget_script_block() -> str:
 def build_oembed_block(url: str, compact: bool = False, include_script: bool = True) -> str:
     # twitter.com 形式に統一し、公式 blockquote 埋め込みを使う。
     # wp:embed の 16:9 ラッパーを避け、余白と初期表示の遅さを抑える。
+    #
+    # RELIABILITY-2026-05-08-G: 非 X URL を受け取った時 warning log を出す。
+    # tweet 化されず本文崩壊につながるため。enforce は upstream caller + WP
+    # create_post の STOP gate (thin_body_validator) で行う (二重防御)。
+    if url and not is_x_url(url):
+        _logger.warning(
+            "build_oembed_block_non_x_url url=%s — Twitter widgets.js は非 X URL を "
+            "tweet 化できないため本文崩壊につながる可能性。caller 側で is_x_url() で "
+            "事前 check するか、非 X URL は別 body 生成 path に流すこと。",
+            url,
+        )
     embed_url = url.replace("https://x.com/", "https://twitter.com/")
     wrapper_class = "yoshilover-x-embed yoshilover-x-embed-compact" if compact else "yoshilover-x-embed"
     wrapper_style = "margin:0 auto 0 !important;max-width:550px;" if compact else "margin:24px auto !important;max-width:550px;"

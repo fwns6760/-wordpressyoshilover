@@ -26,22 +26,27 @@ Detection criteria
 
 是 thin (publish refuse):
   1. ``empty_body``: body_html が None / 空文字
-  2. ``body_too_small``: total HTML < 50 chars OR text content < 30 chars
-  3. ``oembed_only_no_body``: ``yoshilover-x-embed`` div あり / ``<h3>`` なし /
+  2. ``oembed_only_no_body``: ``yoshilover-x-embed`` div あり / ``<h3>`` なし /
      30+ chars text を含む ``<p>`` なし / total HTML < 600 chars
+     → 13:04 JST incident pattern と完全一致
 
 非 thin (publish OK):
+  - 短い記事 (12 chars HTML / 4 chars text の test infrastructure 含む)
   - 短い記事 (300-500 chars) でも ``<p>`` の text content があれば通す
   - X embed + 本文 (``<h3>`` or ``<p>`` text あり) あれば通す
-  - Conservative: false-positive を避け、明確な「本文崩壊」のみ捕える
 
 False-positive policy
 =====================
 
-Conservative on purpose. 検出基準を緩く設定して false-positive を避ける。
-本 validator が refuse する case は **明らかに本文がない** ものに限定する。
-微妙な品質問題 (短い / H3 不足 / 装飾不足) は他の品質 gate / review draft
-path で扱う。
+**本 validator は「oembed-only incident pattern」専用 narrow STOP gate**。
+微妙な品質問題 (短い body / H3 不足 / 装飾不足) は **本 validator の責務外**:
+- post_gen_validate (rss_fetcher 内): 本文品質 gate
+- body_contract_validate: 構造 gate
+- review_draft path (RELIABILITY-2026-05-08-E): 軽微 fail を draft 化
+
+本 validator は memory rule の 6 STOP gate のうち「本文崩壊 (content collapse)」を
+**oembed_only_no_body** と定義して 1 axis 専用 enforce。他 axis (placeholder /
+事実破綻 / entity mismatch / 巨人と完全無関係 / 重複) は別 module で。
 
 NOTE: Cloud Run / WP / Gemini / 外部 API への呼び出しは一切しない。pure-Python
 内の HTML 構造判定のみ。¥0、stateless、idempotent。
@@ -108,18 +113,20 @@ def _strip_html_to_text(html: str) -> str:
 
 
 def is_thin_body(body_html: str) -> ThinBodyResult:
-    """本文崩壊 (thin / empty body) を検出する。
+    """本文崩壊 (oembed-only incident pattern) を検出する。
 
     Returns ``ThinBodyResult(is_thin=True, reason=...)`` if body should be
     REJECTED from publish path.
 
-    Detection:
+    Detection (narrow):
       1. ``empty_body``: body_html が None / 空文字
-      2. ``body_too_small``: total HTML < 50 chars OR text content < 30 chars
-      3. ``oembed_only_no_body``: ``yoshilover-x-embed`` div あり、
+      2. ``oembed_only_no_body``: ``yoshilover-x-embed`` div あり、
          ``<h3>`` なし、30+ chars text を含む ``<p>`` なし、HTML < 600 chars
 
-    Conservative on purpose: 明確な「本文崩壊」のみ捕える。
+    NOT detected here (other gates' responsibility):
+      - 短い body (~50 chars HTML): post_gen_validate / body_contract で
+      - placeholder body / 事実破綻 / entity mismatch: 既存 stop gate で
+      - test infrastructure の minimal body (``<p>body</p>`` 等): 通す
     """
     if not body_html:
         return ThinBodyResult(
@@ -133,20 +140,14 @@ def is_thin_body(body_html: str) -> ThinBodyResult:
     text = _strip_html_to_text(body_html)
     text_chars = len(text)
 
-    if html_chars < 50 or text_chars < 30:
-        return ThinBodyResult(
-            is_thin=True,
-            reason="body_too_small",
-            text_chars=text_chars,
-            html_chars=html_chars,
-        )
-
     has_oembed = bool(_OEMBED_DIV_RE.search(body_html))
     has_h3 = bool(_HAS_H3_RE.search(body_html))
     has_text_p = bool(_HAS_TEXT_P_RE.search(body_html))
 
     # 2026-05-08 13:04 JST の 10 件 incident pattern を捕える。
     # X embed wrapper が body 全体で、本文側に H3 も text を含む <p> も無い時。
+    # HTML < 600 chars に絞ることで、長文 + X embed の正常 postgame full は
+    # 通す (oembed が末尾に付く pattern)。
     if has_oembed and not has_h3 and not has_text_p and html_chars < 600:
         return ThinBodyResult(
             is_thin=True,

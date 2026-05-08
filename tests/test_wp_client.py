@@ -1004,5 +1004,88 @@ class SourceUrlBodyMarkerTests(unittest.TestCase):
         )
 
 
+class TestThinBodyStopGate(unittest.TestCase):
+    """RELIABILITY-2026-05-08-G: 本文崩壊 STOP gate at create_post chokepoint.
+
+    Memory rule (feedback_publish_forward_must_check_gate_reason.md) の限定 6
+    STOP gate のうち「本文崩壊」を pre-publish で enforce する。13:04 JST
+    incident (10 件 oembed-only thin body publish) の再発防止。
+    """
+
+    def setUp(self):
+        os.environ["WP_URL"] = "https://example.com"
+        os.environ["WP_USER"] = "user"
+        os.environ["WP_APP_PASSWORD"] = "pass"
+        self.wp = WPClient()
+
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_oembed_only_body_raises_thin_body_stop(self, mock_get, mock_post):
+        # 既存 post なし (find_recent_post_by_title returns []).
+        mock_get.return_value = Mock(status_code=200, json=lambda: [])
+        # 13:04 incident と同じ body shape (oembed-only, 420 chars 程度).
+        thin_body = (
+            '<div class="yoshilover-x-embed" '
+            'style="margin:24px auto !important;max-width:550px;">'
+            '<blockquote class="twitter-tweet" data-dnt="true" data-lang="ja">'
+            '<a href="https://hochi.news/articles/abc.html">'
+            "https://hochi.news/articles/abc.html</a>"
+            "</blockquote></div>"
+            '<script async src="https://platform.twitter.com/widgets.js" '
+            'charset="utf-8"></script>'
+        )
+        with self.assertRaises(RuntimeError) as ctx:
+            self.wp.create_post(
+                title="incident reproduction title",
+                content=thin_body,
+                categories=[663],
+                status="publish",
+            )
+        self.assertIn("thin_body_stop", str(ctx.exception))
+        self.assertIn("oembed_only_no_body", str(ctx.exception))
+        # No HTTP POST should have happened (STOP gate fires before send).
+        mock_post.assert_not_called()
+
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_empty_body_raises_thin_body_stop(self, mock_get, mock_post):
+        mock_get.return_value = Mock(status_code=200, json=lambda: [])
+        with self.assertRaises(RuntimeError) as ctx:
+            self.wp.create_post(
+                title="empty body test",
+                content="",
+                categories=[663],
+                status="publish",
+            )
+        self.assertIn("thin_body_stop", str(ctx.exception))
+        mock_post.assert_not_called()
+
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_normal_body_does_not_raise(self, mock_get, mock_post):
+        # 既存 post なし、create POST は 201 で成功.
+        mock_get.return_value = Mock(status_code=200, json=lambda: [])
+        mock_post.return_value = _mock_response(
+            201,
+            json_data={"id": 12345, "status": "publish"},
+        )
+        # H3 + p 本文 のある正常な body.
+        normal_body = (
+            "<h3>📋 事実カード</h3>"
+            "<p>巨人 3-2 阪神に勝利。9 回サヨナラ本塁打、先発投手は山崎伊織で 7 回 2 失点。</p>"
+            "<h3>🔗 出典記事</h3>"
+            '<p><a href="https://hochi.news/articles/abc.html">出典</a></p>'
+        )
+        post_id = self.wp.create_post(
+            title="正常 body test",
+            content=normal_body,
+            categories=[663],
+            status="publish",
+        )
+        self.assertEqual(post_id, 12345)
+        # HTTP POST が呼ばれているはず.
+        mock_post.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()

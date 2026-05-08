@@ -693,6 +693,38 @@ class WPClient:
             if marker and marker not in (content or ""):
                 content = (content or "") + marker
 
+        # RELIABILITY-2026-05-08-G: 本文崩壊 STOP gate enforce.
+        # memory rule (feedback_publish_forward_must_check_gate_reason.md) の
+        # 限定 6 STOP gate のうち「本文崩壊」を pre-publish で enforce する。
+        # oembed-only / empty / body_too_small は publish refuse、RuntimeError
+        # を raise して caller に skip させる。
+        # 2026-05-08 13:04 JST の 10 件 incident (65074-65092、hochi.news 由来の
+        # 非 X URL を build_oembed_block に渡して body 420 chars 同一になった)
+        # の再発防止。caller (rss_fetcher / manual_intake / guarded_publish 等)
+        # は既存の except 処理で skip + log + 必要なら fail history 記録する。
+        try:
+            from src.thin_body_validator import is_thin_body
+            thin_result = is_thin_body(content or "")
+        except Exception as exc:
+            # validator 自体が壊れた場合は fail-open (publish 続行 + warning)。
+            # validator は pure Python / 外部 dep ゼロなので通常 raise されない。
+            print(f"[WP] thin_body_validator failed (fail-open): {exc}")
+            thin_result = None
+        if thin_result is not None and thin_result.is_thin:
+            print(json.dumps({
+                "event": "wp_create_post_thin_body_stop",
+                "reason": thin_result.reason,
+                "html_chars": thin_result.html_chars,
+                "text_chars": thin_result.text_chars,
+                "title": (title or "")[:80],
+                "source_url": normalized_source_url,
+                "caller": caller,
+            }, ensure_ascii=False))
+            raise RuntimeError(
+                f"thin_body_stop: {thin_result.reason} "
+                f"(html={thin_result.html_chars} text={thin_result.text_chars})"
+            )
+
         payload = {
             "title":   title,
             "content": content,

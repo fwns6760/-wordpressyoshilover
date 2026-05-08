@@ -72,3 +72,75 @@ env revert: `ENABLE_POST_GEN_VALIDATE_TRUSTED_BYPASS_FULL=0`、新 revision 0025
 - D の scope 限定実装 (code レベル): close_marker / weak_subject_title / duplicate_sentence / source_grounding_drift など軽微軸のみ bypass、致命的軸は維持。今は env 0 で実装は残存
 - sponichi / sanspo の代替 source 探索 (今日断念)
 - YouTube RSSHub /youtube routes 503 → instance diagnose
+
+## 13:30 - 15:30 JST 追加対応(P2 incident + 残懸念対応)
+
+### 13:01 incident: 65046 が「【要review】」prefix で publish 化された
+- 真因: guarded-publish が title prefix 見ずに review-only draft を auto-publish
+- fix commit `2487abf`: guarded_publish_evaluator に title prefix filter (`_GUARDED_PUBLISH_DO_NOT_PUBLISH_TITLE_PREFIXES`) 追加
+- guarded-publish image rebuild + 再 deploy、scheduler PAUSE → fix 後 RESUME
+- 13:00 fire の review draft 5 件 (65069-65073) は draft 維持実機確認済
+
+### 14:00 fire incident: 10 件 publish が thin_body 判定で全件 revert
+- 真因: hochi/sanspo 由来 oembed-only 本文薄記事を fetcher が auto-publish していた
+- user 並行 commit (35b80b5 / 1fb7b12 / d6d1408) で thin_body_validator 緊急 enforce → 14:16 で 10 件 revert
+- 私の 14:30 deploy で d6d1408 image apply → 15:00 fire 以降は本文薄記事を publish 化前に review draft 化(構造的予防)
+
+### 14:30 mail 0 通 incident: PUBLISH_NOTICE_REVIEW_MAX_PER_RUN=0 設定見落とし
+- 朝 emergency fix で `=0` のまま、review queue path 全 skip 状態
+- 私が見落として deploy 進めてた = 設定 audit 不足
+- fix: env 1 行 `PUBLISH_NOTICE_REVIEW_MAX_PER_RUN=10`、即 apply
+
+### 14:50 subtype gate anomaly: tag_scrape source が ENABLE_PUBLISH_FOR_FARM=0 を bypass
+- 真因: `get_publish_skip_reasons` の subtype gate が source_type in {"news","social_news"} のみ対象、tag_scrape が gate 通過
+- user 判断: A (farm 公開する方向) → ENABLE_PUBLISH_FOR_FARM=1 + S1 code fix は revert
+- 連動して PLAYER=1 / MANAGER=1 / NOTICE=1 / PREGAME=1 も env apply (9 subtype ON、general のみ OFF)
+
+### 15:10 重複防止 narrow fix
+- 263-QA は guarded-publish 側で実装済 (image 2487abf に in)、しかし RUN_DRAFT_ONLY=0 で fetcher 直 publish path に効かない
+- A (RUN_DRAFT_ONLY=1 切替): publish latency 0→30min 大幅変化、デグレ大
+- B (allow_title_only_reuse=True 化、env-gated narrow): cross-source 同 title の reuse 化 = first publish wins
+- user 選択: B (デグレ最小)
+- commit `6b0554f`、ENABLE_FETCHER_CROSS_SOURCE_TITLE_REUSE=1 apply
+
+## 5/8 PM 末 prod state(15:15 JST)
+
+| 階層 | 状態 |
+|---|---|
+| fetcher revision | 00269-px2 / image 6b0554f |
+| guarded-publish | image 2487abf(263-QA + Y2 review-only filter) |
+| publish-notice | image b816f06-job、env apply: `BURST_THRESHOLD=50` / `REVIEW_MAX_PER_RUN=10` / `ENABLE_MORNING_HEARTBEAT_MAIL=1` |
+| external-ping(新) | image 497934d、Cloud Run Job 新規、scheduler `0 6 * * *` JST |
+
+## 5/8 PM 末 fetcher env state
+
+- RUN_DRAFT_ONLY=0(自動 publish)
+- ENABLE_POST_GEN_VALIDATE_TRUSTED_BYPASS=1(限定 4 path、朝 fix)
+- ENABLE_POST_GEN_VALIDATE_TRUSTED_BYPASS_FULL=0(D 無効化、限定 6 STOP gate 維持)
+- ENABLE_POST_GEN_VALIDATE_REVIEW_DRAFT=1(E)
+- ENABLE_STALE_RSS_TRUSTED_BYPASS=1 / STALE_RSS_WINDOW_TRUSTED_HOURS=48(F)
+- ENABLE_TAG_PAGE_SCRAPER=1(A)
+- ENABLE_FETCHER_CROSS_SOURCE_TITLE_REUSE=1(DUP narrow)
+- subtype publish gate: postgame=1 / lineup=1 / recovery=1 / social=1 / farm=1 / player=1 / manager=1 / notice=1 / pregame=1 / general=0
+
+## 5/8 PM 全 commit
+
+- c83764d feat(rss_fetcher): E+D+F (review draft / trusted bypass full / stale 48h)
+- 91d4a68 feat(tag_page_scraper): hochi tag page scraper (A)
+- d7ebc1d feat: daily tag scraper + X 4 account 追加 (B + X 拡張)
+- cb8b91b D self-review + env=0 revert
+- 6992f4a feat: E2 review draft 致命軸 filter
+- 7a85167 feat(tag_page_scraper): YouTube channel scraper + OB 4 channel (Y)
+- 2487abf fix(guarded_publish): review-only title prefix filter (Y2、65046 incident fix)
+- aae3c91 feat(rss_fetcher): T1 telemetry counters
+- fea431e doc: MORNING-VERIFY-2026-05-09.md packet
+- 497934d feat(external_ping): Cloud Run 独立 daily ping job (PING)
+- b816f06 (用 publish-notice、別 commit) heartbeat 3 段 retry
+- d6d1408 (user 並行) thin_body_validator 強化
+- 6b0554f feat(rss_fetcher): cross-source title reuse env-gated (DUP narrow)
+
+## sponichi / sanspo / YouTube channel 拡張 残
+
+- sponichi.co.jp: static giants tag page 廃止、search も generic 結果(キーワード filter 効かず)、tonight 断念。後日 site 構造再調査
+- sanspo.com: 同様、tag page 404、search 任意 keyword 同 generic 結果。tonight 断念
+- YouTube: 4 channel(巨人公式 / 上原 / 元木 / 髙橋尚成)で初期動作。sponichi/sanspo OB / 川﨑(動画なし for now) は将来追加候補

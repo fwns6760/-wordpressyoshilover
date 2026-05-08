@@ -4,14 +4,16 @@
 
 ---
 
-## 0. 本日(5/8 PM)deploy したもの一覧(rollback target 識別用)
+## 0. 本日(5/8 PM 末)deploy したもの一覧(rollback target 識別用)
 
 | 階層 | 内容 | revision/image | rollback 単位 |
 |---|---|---|---|
-| **fetcher service** | E2 + hochi/daily scraper + YouTube scraper + X 4 account | yoshilover-fetcher-00255-gs6 / image:7a85167 | revision rollback to 00251 系 |
-| **guarded-publish job** | review-only title prefix filter | guarded-publish:2487abf | image rollback |
-| **publish-notice job** | BURST_THRESHOLD=50 / heartbeat 3 段 / 朝 fix 系 | (前回 deploy のまま) | env single-revert |
-| **fetcher env** | TRUSTED_BYPASS_FULL=0 / REVIEW_DRAFT=1 / STALE_RSS_TRUSTED_BYPASS=1 / WINDOW_TRUSTED_HOURS=48 / TAG_PAGE_SCRAPER=1 | (各単独 env で revert 可) | env single-revert |
+| **fetcher service** | E2 + scraper(hochi/daily/YouTube) + X 4 account + T1 telemetry + DUP narrow + thin_body_validator | yoshilover-fetcher-00269-px2 / image:6b0554f | revision rollback to 00251 系 |
+| **guarded-publish job** | 263-QA duplicate guard + Y2 review-only title prefix filter | guarded-publish:2487abf | image rollback |
+| **publish-notice job** | BURST_THRESHOLD=50 / REVIEW_MAX_PER_RUN=10 / heartbeat 3 段 / 朝 fix 系 | image:b816f06-job(env のみ追加) | env single-revert |
+| **external-ping job(新)** | Cloud Run 独立 daily ping job | external-ping:497934d / scheduler `0 6 * * *` JST | job + scheduler 削除 |
+| **fetcher env** | TRUSTED_BYPASS_FULL=0 / REVIEW_DRAFT=1 / STALE_RSS_TRUSTED_BYPASS=1 / WINDOW_TRUSTED_HOURS=48 / TAG_PAGE_SCRAPER=1 / CROSS_SOURCE_TITLE_REUSE=1 / 9 subtype publish gate ON | (各単独 env で revert 可) | env single-revert |
+| **publish-notice env** | REVIEW_MAX_PER_RUN=10(0→10、朝 fix で見落とし修正) | (env のみ) | env single-revert(=0 に戻す) |
 
 ---
 

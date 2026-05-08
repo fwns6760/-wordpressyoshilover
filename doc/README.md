@@ -38,6 +38,7 @@ Active folder is intentionally narrow. 2026-05-08 朝に「0 publish 0 mail」�
 |---|---|---|
 | **observation pending(最優先)** | `RESTORE-2026-05-08-MORNING-RELIABILITY.md` | 2026-05-08 朝の障害復旧を全 deploy 済、5/9 朝 06:00-07:00 で heartbeat + per-post mail 着弾を検証。詳細は同 ticket §4 checklist。 |
 | **observation pending(副次)** | `303-rollback-2026-05-08-frontend-rich-body.md` | manual-intake-service / yoshilover-fetcher を `d34072a` に揃えた audit 反映 ticket。Tier 1+2 の 5 件適用済、Tier 3(49 件)は doc-only。 |
+| **user 方針判断待ち** | `MANUAL-INTAKE-QUALITY-PARITY-2026-05-08.md` | 5/8 PM session 調査:apply_rss_pipeline_enrichment の nomotoke marker gate 発見、RSS auto は marker 付与なしで装飾 skip。「手動を直す」なら本文長 / 装飾 / 自動化 のどの軸かが user 判断必要。 |
 | **user setup (任意)** | `EXTERNAL-MONITOR-APPS-SCRIPT.md` | yoshilover infra 完全死シナリオ用の独立 GAS ping。user 作業 10 分、明日朝 safety net。 |
 | **design hold** | `246-MKT-today-giants-fan-guide.md`, `255-MKT-fan-guide-expansion-and-comment-badge.md`, `249-INGEST-live-game-ingestion-expansion.md`, `256-QA-manager-player-quote-strict-subset.md`, `260-MKT-fan-original-article-types-and-templates.md` | no field dispatch yet. These are HOLD backlog items for the post-247 observation phase; do not mix them into current QA/template work. |
 | **keep active** | `229-gemini-cost-governor-and-llm-call-reduction.md` | still needed as the cost-reduction parent; next action depends on fetcher 100% / ledger observation. |

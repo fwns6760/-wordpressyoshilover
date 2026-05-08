@@ -46,7 +46,7 @@
 - #2 RSS auto-fire 実証 → fetcher /run は 403 (Scheduler 経由のみ、5:30 自動 trigger 待ち)
 - #3 wp_kses script strip → strip されない、script 生存確認
 
-## 🟧 defer (active monitoring 必要、46 件)
+## 🟧 defer (active monitoring 必要、49 件 = 54 - 適用済 5)
 
 | # | 項目 | 推奨アクション |
 |---|---|---|
@@ -161,13 +161,15 @@
 
 ---
 
-## 本番デプロイ状態 (2026-05-08 時点)
+## 本番デプロイ状態 (2026-05-08 11:30 JST 時点、最新)
 
-| service | revision | image |
+| service / job | revision / image | based on |
 |---|---|---|
-| **manual-intake-service** | `manual-intake-service-00039-gtb` | `manual-intake-service:44f4ed9` |
-| **yoshilover-fetcher** | `yoshilover-fetcher-00250-472` | `yoshilover-fetcher:44f4ed9` |
-| **publish-notice / guarded-publish** | (touched してない、既存運用) | — |
+| **manual-intake-service** (service) | `manual-intake-service-00040-5wj` / `manual-intake-service:d34072a` | T1+T2 audit fix 反映 |
+| **yoshilover-fetcher** (service) | `yoshilover-fetcher-00251-29x` / `yoshilover-fetcher:d34072a` | T1+T2 audit fix 反映 |
+| **publish-notice** (job) | `publish-notice:b816f06-job` | heartbeat retry 反映 |
+| **broadcast-auto / lineup-auto / postgame-auto** (jobs) | `manual-intake-service:b432801` | `0bf8900` / `d34072a` **未反映**(別 ticket で redeploy 候補)|
+| **guarded-publish** (job) | `guarded-publish:eb38006-job`(5/8 06:40 JST build) | 5/8 朝障害復旧 10 commit **未反映**(別 ticket で redeploy 候補) |
 
 両 service とも `--to-latest` (常に最新 revision に traffic 100%)。
 

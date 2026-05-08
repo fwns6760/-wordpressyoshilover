@@ -20972,10 +20972,28 @@ def _main(args, logger):
                     persist_history(history)
                     continue
         else:
-            content = build_oembed_block(post_url)
+            # RELIABILITY-2026-05-08-G: 13:04 JST incident 防止。
+            # 非 X URL を build_oembed_block に渡すと <blockquote
+            # class="twitter-tweet"> wrapper を生成、Twitter widgets.js は
+            # 非 X URL を tweet 化できず thin body publish になる。
+            # is_x_url で判定し、非 X URL は _build_body_for_news の
+            # nomotoke-shell passthrough body (lead + 出典 + footer) を生成、
+            # nomotoke-card- marker 入りで enrichment が走る形にする。
+            from wp_draft_creator import is_x_url as _is_x_url
+            if _is_x_url(post_url):
+                content = build_oembed_block(post_url)
+                _passthrough_label = "oembed_passthrough"
+            else:
+                from src.tools.manual_intake import _build_body_for_news
+                content = _build_body_for_news(
+                    source_url=post_url,
+                    title=title,
+                    summary=summary or "",
+                )
+                _passthrough_label = "non_x_url_passthrough"
             ai_body_for_x = ""
             draft_title = title
-            _log_title_template_selected(logger, post_url, raw_title, draft_title, "oembed_passthrough", category, title_article_subtype)
+            _log_title_template_selected(logger, post_url, raw_title, draft_title, _passthrough_label, category, title_article_subtype)
             if args.dry_run:
                 print(f"  DRY: [{category}] {draft_title[:50]}")
                 print(f"       {post_url}")

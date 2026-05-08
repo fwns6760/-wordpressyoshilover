@@ -16296,7 +16296,7 @@ def _create_draft_with_same_fire_guard(
         draft_title,
         enriched_content,
         categories=categories,
-        status="draft",
+        status="draft" if _env_flag("RUN_DRAFT_ONLY", True) else "publish",
         featured_media=featured_media or None,
         source_url=normalized_source_url or None,
         allow_title_only_reuse=False,

@@ -693,6 +693,16 @@ class WPClient:
             if marker and marker not in (content or ""):
                 content = (content or "") + marker
 
+        # H3-STRUCTURE-UNIFY-2026-05-08 Phase 2: H3 を 12 unified set に
+        # 正規化 (旧 30+ 種 → 12 set)。pre-publish chokepoint で全 caller
+        # path の body をカバー、idempotent (再 apply で結果不変)、unknown
+        # H3 は そのまま 維持。
+        try:
+            from src.h3_normalizer import normalize_h3_in_html
+            content = normalize_h3_in_html(content or "")
+        except Exception as exc:
+            print(f"[WP] h3_normalizer skipped (fail-open): {exc}")
+
         # RELIABILITY-2026-05-08-G: 本文崩壊 STOP gate enforce.
         # memory rule (feedback_publish_forward_must_check_gate_reason.md) の
         # 限定 6 STOP gate のうち「本文崩壊」を pre-publish で enforce する。

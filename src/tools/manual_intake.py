@@ -2608,8 +2608,10 @@ def _build_trust_badge_block(source_name: str, source_url: str) -> str:
         )
     else:
         attribution = safe_source
+    # 2026-05-08 PM: class 名 統一 (nomotoke-ai-badge を追加、
+    # nomotoke-trust-badge は backward compat 維持)。
     return (
-        '<aside class="nomotoke-trust-badge" '
+        '<aside class="nomotoke-ai-badge nomotoke-trust-badge" '
         'style="margin:16px 0;padding:10px 14px;'
         "border-left:3px solid #2e7d32;background:#e8f5e9;"
         'border-radius:4px;font-size:13px;line-height:1.5;color:#1b5e20;">'

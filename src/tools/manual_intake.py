@@ -186,12 +186,23 @@ def _auto_guess_article_type(
     if "予告先発" in text:
         return "予告先発"
 
-    # 監督談話 (allowlist surnames + quote pattern)
+    # 監督談話 (allowlist surnames + quote pattern).
+    # AUDIT FIX (#4 over-match guard): generic surnames (高橋 / 原 /
+    # 村田) commonly belong to non-manager people too (e.g. 高橋光成 =
+    # 西武投手, 原田 = 任意人物). Require the explicit 「監督」 token
+    # AS WELL AS the surname for those — Giants-specific surnames
+    # (阿部 etc.) keep the loose match because their false-positive
+    # rate is negligible.
+    _STRICT_MANAGER_REQUIRES_KEYWORD = {"高橋", "原", "村田"}
     for manager_surname in (
-        "阿部", "桑田", "二岡", "元木", "吉村", "杉内", "高橋", "原",
+        "阿部", "桑田", "二岡", "元木", "吉村", "杉内", "高橋", "原", "村田",
     ):
-        if manager_surname in text and "「" in text:
-            return "監督談話"
+        if manager_surname not in text or "「" not in text:
+            continue
+        if manager_surname in _STRICT_MANAGER_REQUIRES_KEYWORD:
+            if "監督" not in text:
+                continue
+        return "監督談話"
 
     # 選手コメント — quote in title from a roster name
     if "「" in text and "」" in text:
@@ -3492,6 +3503,34 @@ def _wp_create_draft(
     return post_id, draft_url
 
 
+_MANUAL_FACTS_FIELD_CAPS: dict[str, int] = {
+    "manager_name": 30,
+    "player_name": 30,
+    "quote": 100,
+    "pitcher_a": 30,
+    "pitcher_b": 30,
+    "team_b": 30,
+    "play_summary": 200,
+    "registered": 500,
+    "removed": 500,
+}
+
+
+def _cap_manual_facts(raw: dict[str, str] | None) -> dict[str, str]:
+    """AUDIT FIX (#38): truncate operator-supplied manual_facts at
+    per-field caps so a 10MB paste cannot reach the renderer or the
+    WP write payload. Returns a new dict; original is not mutated."""
+    if not raw:
+        return {}
+    out: dict[str, str] = {}
+    for k, v in raw.items():
+        if not isinstance(v, str):
+            continue
+        cap = _MANUAL_FACTS_FIELD_CAPS.get(k, 200)
+        out[k] = v[:cap]
+    return out
+
+
 def run_manual_intake(
     *,
     url: str,
@@ -3548,6 +3587,11 @@ def run_manual_intake(
     output["article_type_source"] = (
         "auto_detected" if canonical_article_type == ARTICLE_TYPE_AUTO else "user_override"
     )
+
+    # AUDIT FIX #38: cap operator-supplied manual_facts so a paste-
+    # bombed input cannot reach the renderer. Cap is per-field; see
+    # ``_MANUAL_FACTS_FIELD_CAPS``.
+    manual_facts = _cap_manual_facts(manual_facts)
 
     normalized_source_published_at, sp_error = _normalize_source_published_at(
         source_published_at
@@ -3781,6 +3825,15 @@ def run_manual_intake(
 
     output["post_id"] = post_id
     output["draft_url"] = draft_url
+    # AUDIT FIX #30: build a WP edit URL from WP_URL env so the form
+    # can render a clickable 「編集する」 button instead of just a raw
+    # post_id text. ``draft_url`` from WPClient is sometimes ``None``
+    # for fresh drafts; ``edit_url`` is deterministic.
+    wp_base = (os.environ.get("WP_URL") or "").rstrip("/")
+    if wp_base and post_id:
+        output["edit_url"] = (
+            f"{wp_base}/wp-admin/post.php?post={post_id}&action=edit"
+        )
     output["ok"] = True
     output["downstream_handoff"] = "guarded_publish_polling"
     if memo:

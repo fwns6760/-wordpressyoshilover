@@ -400,33 +400,72 @@ _HTML_FORM = """<!DOCTYPE html>
     result.hidden = false;
     result.className = ok ? 'ok' : 'err';
     if (!ok) {
-      const reason = payload.reason || payload.skip_reason || payload.error || JSON.stringify(payload);
-      if (reason === 'forbidden') {
-        result.textContent = (
-          '失敗: アクセス権限がありません。\\n' +
-          'ブックマークしている初期化 URL（末尾に ?token=… が付くもの）を' +
-          '一度開いてから、もう一度この画面にアクセスしてください。'
-        );
-      } else {
-        result.textContent = '失敗: ' + reason;
+      const rawReason = payload.reason || payload.skip_reason || payload.error || JSON.stringify(payload);
+      // AUDIT FIX #35: friendly error messages (raw code → 日本語)
+      const friendly = {
+        'forbidden': '失敗: アクセス権限がありません。',
+        'rate_limited': '失敗: リクエスト過多。1 分待って再試行してください。',
+        'missing_url': '失敗: URL が空です。',
+        'invalid_url': '失敗: URL が無効です。',
+        'missing_title_or_summary': '失敗: タイトル/サマリーが取得できませんでした。出典サイトが応答していない可能性があります。',
+        'invalid_article_type': '失敗: 記事タイプの値が不正です。',
+        'invalid_source_published_at': '失敗: 出典公開日時の形式が不正です (ISO 8601 推奨)。',
+        'history_duplicate': '失敗: 既に同じ URL で投入済みです。',
+        'wp_client_factory_not_provided': '失敗: WP 接続設定エラー (env 確認)。',
+        'body_too_large': '失敗: 入力が大きすぎます。',
+        'invalid_mode': '失敗: mode が不正です。',
+      };
+      // ``fetch_failed:...`` パターンは prefix 一致で出す
+      let msg = friendly[rawReason];
+      if (!msg && rawReason.indexOf('fetch_failed:') === 0) {
+        msg = '失敗: ' + rawReason.slice('fetch_failed:'.length);
       }
+      if (!msg) msg = '失敗: ' + rawReason;
+      result.textContent = msg;
       return;
     }
     const lines = [
-      '結果: ' + (payload.mode === 'draft' ? '下書き作成 OK' : '確認 OK'),
+      '結果: ' + (payload.mode === 'draft' ? '✅ 下書き作成 OK' : '✅ 確認 OK'),
       'タイトル: ' + (payload.title || ''),
       'カテゴリ: ' + (payload.category || ''),
       '記事タイプ: ' + (payload.article_type || ''),
     ];
     if (payload.post_id) lines.push('post_id: ' + payload.post_id);
-    if (payload.draft_url) lines.push('編集: ' + payload.draft_url);
     if (payload.normalized_source_published_at) lines.push('出典公開日時: ' + payload.normalized_source_published_at);
+    // AUDIT FIX #30: clickable WP edit link in result
     result.textContent = lines.join('\\n');
+    if (payload.edit_url) {
+      const editLink = document.createElement('a');
+      editLink.href = payload.edit_url;
+      editLink.target = '_blank';
+      editLink.rel = 'noopener';
+      editLink.textContent = '✏️ WP 編集ページを開く';
+      editLink.style.cssText = 'display:inline-block;margin-top:10px;padding:8px 16px;background:#f57f17;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;';
+      result.appendChild(document.createElement('br'));
+      result.appendChild(editLink);
+    } else if (payload.draft_url) {
+      const link = document.createElement('a');
+      link.href = payload.draft_url;
+      link.target = '_blank';
+      link.textContent = '🔗 下書きを開く';
+      link.style.cssText = 'display:inline-block;margin-top:10px;';
+      result.appendChild(document.createElement('br'));
+      result.appendChild(link);
+    }
   }
 
   form.addEventListener('submit', async function(ev) {
     ev.preventDefault();
     result.hidden = true;
+    // AUDIT FIX #29: loading state on submit so the operator sees
+    // immediate feedback instead of a hung-looking page.
+    const submitBtn = document.getElementById('submit-btn');
+    let originalLabel = '';
+    if (submitBtn) {
+      originalLabel = submitBtn.textContent;
+      submitBtn.disabled = true;
+      submitBtn.textContent = '📡 送信中...';
+    }
     const data = new FormData(form);
     const body = new URLSearchParams();
     data.forEach((v, k) => { if (v) body.append(k, v); });
@@ -442,6 +481,11 @@ _HTML_FORM = """<!DOCTYPE html>
       render(resp.ok && json.ok, json);
     } catch (e) {
       render(false, { error: String(e) });
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalLabel || '記事化';
+      }
     }
   });
 })();

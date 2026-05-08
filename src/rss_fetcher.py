@@ -16401,6 +16401,11 @@ def _create_draft_with_same_fire_guard(
         resolved_status = force_status
     else:
         resolved_status = "draft" if _env_flag("RUN_DRAFT_ONLY", True) else "publish"
+    # RELIABILITY-2026-05-08-DUP: 異 source 同 title の cross-source 重複を防ぐ。
+    # 24h 以内に同 normalized title の WP 記事が既存なら新 post 作成せず reuse。
+    # 既存 wp_client.find_recent_post_by_title が動く path、code 変更 narrow。
+    # env で gate して default OFF、ENABLE_FETCHER_CROSS_SOURCE_TITLE_REUSE=1 で有効化。
+    allow_title_reuse = _env_flag("ENABLE_FETCHER_CROSS_SOURCE_TITLE_REUSE", False)
     return wp.create_post(
         draft_title,
         enriched_content,
@@ -16408,7 +16413,7 @@ def _create_draft_with_same_fire_guard(
         status=resolved_status,
         featured_media=featured_media or None,
         source_url=normalized_source_url or None,
-        allow_title_only_reuse=False,
+        allow_title_only_reuse=allow_title_reuse,
     )
 
 

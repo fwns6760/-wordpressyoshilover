@@ -375,5 +375,51 @@ class CreateDraftForceStatusTests(unittest.TestCase):
         self.assertEqual(captured["status"], "publish")
 
 
+class CrossSourceTitleReuseFlagTests(unittest.TestCase):
+    """RELIABILITY-2026-05-08-DUP: 異 source 同 title 重複防止 flag の test."""
+
+    def _capture_create_post(self, env_overrides):
+        captured = {}
+
+        class FakeWP:
+            def create_post(self, title, content, **kwargs):
+                captured["allow_title_only_reuse"] = kwargs.get("allow_title_only_reuse")
+                captured["status"] = kwargs.get("status")
+                return 22222
+
+        import logging
+        logger = logging.getLogger("test")
+        with patch.dict(os.environ, env_overrides, clear=False):
+            rss_fetcher._create_draft_with_same_fire_guard(
+                FakeWP(),
+                logger,
+                set(),
+                {},
+                "title",
+                "<p>body</p>",
+                [1, 2],
+                "https://example.com/x",
+                featured_media=None,
+            )
+        return captured
+
+    def test_default_off_keeps_allow_title_reuse_false(self):
+        # ENABLE_FETCHER_CROSS_SOURCE_TITLE_REUSE 未設定 → False (既存挙動維持、デグレ無)
+        captured = self._capture_create_post({"RUN_DRAFT_ONLY": "0"})
+        self.assertFalse(captured["allow_title_only_reuse"])
+
+    def test_flag_off_explicit(self):
+        captured = self._capture_create_post(
+            {"RUN_DRAFT_ONLY": "0", "ENABLE_FETCHER_CROSS_SOURCE_TITLE_REUSE": "0"}
+        )
+        self.assertFalse(captured["allow_title_only_reuse"])
+
+    def test_flag_on_passes_true_to_create_post(self):
+        captured = self._capture_create_post(
+            {"RUN_DRAFT_ONLY": "0", "ENABLE_FETCHER_CROSS_SOURCE_TITLE_REUSE": "1"}
+        )
+        self.assertTrue(captured["allow_title_only_reuse"])
+
+
 if __name__ == "__main__":
     unittest.main()

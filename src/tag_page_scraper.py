@@ -485,14 +485,203 @@ def fetch_sanspo_giants_entries(
     return entries
 
 
-# RELIABILITY-2026-05-08-B: sanspo は search が任意 keyword で同 generic 結果を
-# 返す挙動 (tag/category page も廃止) のため、現時点で usable な scraper entry point
-# が無い。fetch_sanspo_giants_entries 関数自体は残しているが registry には入れない。
-# tag URL が判明したら scraper="sanspo_giants_search" で復活可。
-# sponichi も同様に static giants tag page が廃止されており、tonight 範囲から外す。
+# RELIABILITY-2026-05-08-Y: YouTube channel page (videos tab) scraper。
+# YouTube 公式 RSS feed (`/feeds/videos.xml?channel_id=...`) は 2024 以降廃止
+# (404)、RSSHub /youtube routes も 503。channel page (`/channel/UCxxx/videos`)
+# は 200 OK で ytInitialData JSON に video list 含む = ここから extract する
+# しかない。媒体形式 = video なので role=media_quote_only 想定 (article 化せず
+# 他記事に embed する素材プール)。
+_YOUTUBE_INITIAL_DATA_RE = re.compile(
+    r"var ytInitialData = ({.+?});</script>", flags=re.DOTALL
+)
+_YOUTUBE_RELATIVE_TIME_PATTERNS = (
+    (re.compile(r"(\d+)\s*分前"), "minutes"),
+    (re.compile(r"(\d+)\s*時間前"), "hours"),
+    (re.compile(r"(\d+)\s*日前"), "days"),
+    (re.compile(r"(\d+)\s*週間前"), "weeks"),
+    (re.compile(r"(\d+)\s*か月前"), "months"),
+    (re.compile(r"(\d+)\s*年前"), "years"),
+)
+
+
+def _parse_youtube_relative_time(text: str, *, now: datetime) -> datetime | None:
+    """「3 日前」「10 時間前」等の YouTube 相対時刻表記を datetime に変換。"""
+    if not text:
+        return None
+    for pattern, unit in _YOUTUBE_RELATIVE_TIME_PATTERNS:
+        match = pattern.search(text)
+        if not match:
+            continue
+        try:
+            value = int(match.group(1))
+        except (TypeError, ValueError):
+            continue
+        if unit == "minutes":
+            return now - timedelta(minutes=value)
+        if unit == "hours":
+            return now - timedelta(hours=value)
+        if unit == "days":
+            return now - timedelta(days=value)
+        if unit == "weeks":
+            return now - timedelta(weeks=value)
+        if unit == "months":
+            return now - timedelta(days=value * 30)
+        if unit == "years":
+            return now - timedelta(days=value * 365)
+    return None
+
+
+def fetch_youtube_channel_entries(
+    *,
+    tag_url: str,
+    max_age_days: int = 14,
+    article_limit: int = 15,
+    logger: logging.Logger | None = None,
+    now: datetime | None = None,
+    fetcher: Callable[..., requests.Response] | None = None,
+) -> list[dict[str, Any]]:
+    """YouTube channel videos page から最近 N 日分の video entries を返す。
+
+    tag_url は `https://www.youtube.com/channel/UCxxxx/videos` 形式。
+    video entry の形式は feedparser entries 互換 (link / title / summary /
+    published_parsed / id) で、link は `https://www.youtube.com/watch?v=VIDEO_ID`。
+    プレミア公開予約 (upcoming) entry は include しない (relative time が
+    parse 失敗 = include 不能なので自然 filter)。
+    """
+    logger = logger or logging.getLogger("tag_page_scraper")
+    reference_now = (now or datetime.now(timezone.utc)).astimezone(JST)
+    response = _http_get(tag_url, fetcher=fetcher)
+    if response is None or response.status_code != 200:
+        logger.warning(
+            "tag_page_fetch_failed source=youtube tag_url=%s status=%s",
+            tag_url,
+            getattr(response, "status_code", "ERR"),
+        )
+        return []
+
+    text = response.text
+    match = _YOUTUBE_INITIAL_DATA_RE.search(text)
+    if not match:
+        logger.warning("youtube_initial_data_not_found tag_url=%s", tag_url)
+        return []
+
+    try:
+        import json as _json
+
+        data = _json.loads(match.group(1))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("youtube_initial_data_parse_failed url=%s reason=%s", tag_url, exc)
+        return []
+
+    try:
+        tabs = data["contents"]["twoColumnBrowseResultsRenderer"]["tabs"]
+    except (KeyError, TypeError):
+        logger.warning("youtube_tabs_not_found url=%s", tag_url)
+        return []
+
+    selected_tab = None
+    for tab in tabs:
+        tab_renderer = tab.get("tabRenderer") if isinstance(tab, dict) else None
+        if tab_renderer and tab_renderer.get("selected"):
+            selected_tab = tab_renderer
+            break
+    if selected_tab is None:
+        logger.info("youtube_no_selected_tab url=%s", tag_url)
+        return []
+
+    grid_items = (
+        selected_tab.get("content", {})
+        .get("richGridRenderer", {})
+        .get("contents", [])
+    )
+    if not grid_items:
+        logger.info("youtube_grid_empty url=%s", tag_url)
+        return []
+
+    entries: list[dict[str, Any]] = []
+    parsed_count = 0
+    age_filtered = 0
+    for grid_item in grid_items:
+        if not isinstance(grid_item, dict):
+            continue
+        lockup = (
+            grid_item.get("richItemRenderer", {})
+            .get("content", {})
+            .get("lockupViewModel", {})
+        )
+        if not lockup:
+            continue
+        video_id = str(lockup.get("contentId") or "").strip()
+        if not video_id or len(video_id) != 11:
+            continue
+        metadata_view = (
+            lockup.get("metadata", {}).get("lockupMetadataViewModel", {})
+        )
+        title = str(metadata_view.get("title", {}).get("content") or "").strip()
+        if not title:
+            continue
+        # metadataRows から「N 日前」を探す
+        relative_time_text = ""
+        for row in (
+            metadata_view.get("metadata", {})
+            .get("contentMetadataViewModel", {})
+            .get("metadataRows", [])
+        ):
+            for part in row.get("metadataParts", []):
+                text_content = (
+                    part.get("text", {}).get("content")
+                    if isinstance(part.get("text"), dict)
+                    else None
+                )
+                if text_content and any(
+                    suffix in text_content
+                    for suffix in ("分前", "時間前", "日前", "週間前", "か月前", "年前")
+                ):
+                    relative_time_text = text_content
+                    break
+            if relative_time_text:
+                break
+        published_dt = _parse_youtube_relative_time(
+            relative_time_text, now=reference_now
+        )
+        if published_dt is None:
+            # プレミア公開予約 / 古すぎ / 不明 → skip
+            age_filtered += 1
+            continue
+        age_days = (reference_now.date() - published_dt.date()).days
+        if age_days < 0 or age_days > max_age_days:
+            age_filtered += 1
+            continue
+        parsed_count += 1
+        watch_url = f"https://www.youtube.com/watch?v={video_id}"
+        published_struct = published_dt.astimezone(timezone.utc).timetuple()
+        entry: dict[str, Any] = {
+            "link": watch_url,
+            "id": watch_url,
+            "title": title,
+            "summary": "",
+            "description": "",
+            "published_parsed": published_struct,
+            "published": _struct_time_to_rfc822(published_struct),
+        }
+        entries.append(entry)
+        if len(entries) >= article_limit:
+            break
+
+    logger.info(
+        "tag_page_entries_built source=youtube count=%d (parsed=%d age_filtered=%d total_grid=%d)",
+        len(entries),
+        parsed_count,
+        age_filtered,
+        len(grid_items),
+    )
+    return entries
+
+
 _SCRAPER_REGISTRY: dict[str, Callable[..., list[dict[str, Any]]]] = {
     "hochi_giants_tag": fetch_hochi_giants_entries,
     "daily_giants_tag": fetch_daily_giants_entries,
+    "youtube_channel": fetch_youtube_channel_entries,
 }
 
 

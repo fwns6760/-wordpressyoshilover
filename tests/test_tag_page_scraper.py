@@ -408,5 +408,146 @@ class FetchDailyGiantsEntriesTests(unittest.TestCase):
         )
 
 
+class FetchYoutubeChannelEntriesTests(unittest.TestCase):
+    """RELIABILITY-2026-05-08-Y: YouTube channel page scraper test."""
+
+    def setUp(self):
+        self.now = datetime(2026, 5, 8, 12, 0, 0, tzinfo=JST)
+
+    def _build_channel_html(self, items: list[dict]) -> str:
+        import json as _json
+
+        data = {
+            "contents": {
+                "twoColumnBrowseResultsRenderer": {
+                    "tabs": [
+                        {
+                            "tabRenderer": {
+                                "selected": True,
+                                "title": "動画",
+                                "content": {
+                                    "richGridRenderer": {
+                                        "contents": [
+                                            {
+                                                "richItemRenderer": {
+                                                    "content": {
+                                                        "lockupViewModel": {
+                                                            "contentId": item["id"],
+                                                            "metadata": {
+                                                                "lockupMetadataViewModel": {
+                                                                    "title": {"content": item["title"]},
+                                                                    "metadata": {
+                                                                        "contentMetadataViewModel": {
+                                                                            "metadataRows": [
+                                                                                {
+                                                                                    "metadataParts": [
+                                                                                        {"text": {"content": item["age_text"]}}
+                                                                                    ]
+                                                                                }
+                                                                            ]
+                                                                        }
+                                                                    },
+                                                                }
+                                                            },
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            for item in items
+                                        ]
+                                    }
+                                },
+                            }
+                        }
+                    ]
+                }
+            }
+        }
+        return f"<html><body><script>var ytInitialData = {_json.dumps(data)};</script></body></html>"
+
+    def test_extracts_video_entries_with_relative_time(self):
+        html = self._build_channel_html(
+            [
+                {"id": "AAAAAAAAAAA", "title": "巨人 5/8 ニュース", "age_text": "1 日前"},
+                {"id": "BBBBBBBBBBB", "title": "古い動画", "age_text": "30 日前"},
+                {"id": "CCCCCCCCCCC", "title": "新しめ", "age_text": "3 時間前"},
+            ]
+        )
+
+        def fake_fetcher(url, **kwargs):
+            return _make_response(200, html)
+
+        entries = scraper.fetch_youtube_channel_entries(
+            tag_url="https://www.youtube.com/channel/UCxxxxxx/videos",
+            max_age_days=14,
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        # 1日前 と 3時間前 が pass、30日前は filter 外
+        ids = [e["link"].split("=")[1] for e in entries]
+        self.assertIn("AAAAAAAAAAA", ids)
+        self.assertIn("CCCCCCCCCCC", ids)
+        self.assertNotIn("BBBBBBBBBBB", ids)
+
+    def test_skips_premiere_upcoming_entries(self):
+        # premiere upcoming = relative time に「日前」等が含まれない → skip
+        html = self._build_channel_html(
+            [
+                {
+                    "id": "AAAAAAAAAAA",
+                    "title": "予約配信",
+                    "age_text": "2026/05/10 6:00 にプレミア公開",
+                },
+            ]
+        )
+
+        def fake_fetcher(url, **kwargs):
+            return _make_response(200, html)
+
+        entries = scraper.fetch_youtube_channel_entries(
+            tag_url="https://www.youtube.com/channel/UCxxxxxx/videos",
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(entries, [])
+
+    def test_returns_empty_when_initial_data_missing(self):
+        def fake_fetcher(url, **kwargs):
+            return _make_response(200, "<html><body>no ytInitialData here</body></html>")
+
+        entries = scraper.fetch_youtube_channel_entries(
+            tag_url="https://www.youtube.com/channel/UCxxxxxx/videos",
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(entries, [])
+
+    def test_404_returns_empty(self):
+        def fake_fetcher(url, **kwargs):
+            return _make_response(404, "")
+
+        entries = scraper.fetch_youtube_channel_entries(
+            tag_url="https://www.youtube.com/channel/UCxxxxxx/videos",
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(entries, [])
+
+    def test_relative_time_parsing(self):
+        from datetime import datetime as _dt
+
+        now = _dt(2026, 5, 8, 12, 0, 0, tzinfo=JST)
+        result = scraper._parse_youtube_relative_time("3 日前", now=now)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.day, 5)
+
+        result = scraper._parse_youtube_relative_time("10 時間前", now=now)
+        self.assertIsNotNone(result)
+
+        # 不明 / プレミア公開 → None
+        self.assertIsNone(scraper._parse_youtube_relative_time("プレミア公開", now=now))
+        self.assertIsNone(scraper._parse_youtube_relative_time("", now=now))
+
+
 if __name__ == "__main__":
     unittest.main()

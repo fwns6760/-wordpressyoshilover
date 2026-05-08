@@ -16,5 +16,9 @@
   {"name": "ベースボールキング",   "url": "https://baseballking.jp/feed",                                          "type": "news"},
   {"name": "Full-Count 巨人",     "url": "https://full-count.jp/tag/yomiuri-giants/feed/",                       "type": "news"},
   {"name": "スポーツ報知 巨人 tag", "url": "https://hochi.news/tag/%E5%B7%A8%E4%BA%BA",                             "type": "tag_scrape", "scraper": "hochi_giants_tag", "max_age_days": 7, "article_limit": 30},
-  {"name": "デイリー 巨人 index",   "url": "https://www.daily.co.jp/baseball/giants/index.shtml",                  "type": "tag_scrape", "scraper": "daily_giants_tag", "max_age_days": 7, "article_limit": 30}
+  {"name": "デイリー 巨人 index",   "url": "https://www.daily.co.jp/baseball/giants/index.shtml",                  "type": "tag_scrape", "scraper": "daily_giants_tag", "max_age_days": 7, "article_limit": 30},
+  {"name": "読売ジャイアンツYouTube公式", "url": "https://www.youtube.com/channel/UCXxg0igSYUp0tqdd6luPEnQ/videos",      "type": "tag_scrape", "scraper": "youtube_channel", "max_age_days": 14, "article_limit": 10, "role": ["media_quote_only"]},
+  {"name": "上原浩治 雑談魂YT",      "url": "https://www.youtube.com/channel/UCGynN2H7DcNjpN7Qng4dZmg/videos",      "type": "tag_scrape", "scraper": "youtube_channel", "max_age_days": 14, "article_limit": 10, "role": ["media_quote_only"]},
+  {"name": "元木大介YT",          "url": "https://www.youtube.com/channel/UC7alpSrw0vhpihgYxbVFDkA/videos",      "type": "tag_scrape", "scraper": "youtube_channel", "max_age_days": 14, "article_limit": 10, "role": ["media_quote_only"]},
+  {"name": "髙橋尚成HISA YT",     "url": "https://www.youtube.com/channel/UCAMXfvpILgkofiQFbYWeeZA/videos",      "type": "tag_scrape", "scraper": "youtube_channel", "max_age_days": 14, "article_limit": 10, "role": ["media_quote_only"]}
 ]

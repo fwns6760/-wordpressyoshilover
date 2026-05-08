@@ -613,12 +613,26 @@ class WPClient:
 
         meta_updates: dict = {}
         if normalized_source_url and not existing_source_url:
-            meta_updates.update(
-                self._build_source_url_meta_payload(
-                    normalized_source_url,
-                    preferred_key=source_meta_key,
+            # DUP-FIX-2026-05-08-REUSE-DATE-STABLE: body marker が既に同
+            # source_url を埋め込んでいる場合、WP REST が meta key を露出
+            # していなくても DB 上は正しく紐づいている。冗長な meta PUT
+            # を毎 fire 走らせると WP の date / modified が更新され、user
+            # 視点で「同じ draft が毎回新しくなったように見える」事象を
+            # 起こすため、body marker 一致時は meta_updates を skip する。
+            reuse_reason = str(existing.get("_yoshilover_reuse_reason") or "")
+            body_already_certifies = (
+                reuse_reason == "source_url_body_marker_match"
+                or self._post_body_carries_source_url_hash(
+                    existing, normalized_source_url
                 )
             )
+            if not body_already_certifies:
+                meta_updates.update(
+                    self._build_source_url_meta_payload(
+                        normalized_source_url,
+                        preferred_key=source_meta_key,
+                    )
+                )
         existing_meta = (existing or {}).get("meta") or {}
         existing_published_meta = ""
         if isinstance(existing_meta, dict):

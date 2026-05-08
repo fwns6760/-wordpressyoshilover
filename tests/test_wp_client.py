@@ -379,6 +379,129 @@ class TestWPClientDedup(unittest.TestCase):
         self.assertEqual(post["id"], 222)
         self.assertEqual(post["_yoshilover_reuse_reason"], "title_fallback")
 
+    @patch.object(WPClient, "update_post_fields")
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_reuse_skips_meta_update_when_body_marker_certifies_source_url(self, mock_get, mock_post, mock_update):
+        """DUP-FIX-2026-05-08-REUSE-DATE-STABLE regression.
+
+        production C01 (post 65365 など) で起きていた事象: WP REST が
+        ``_yoshilover_source_url`` post-meta を露出しないため
+        ``existing_source_url`` が空に見え、毎 fire ``meta`` PUT が走り、
+        WP の date / modified が動いて user 視点で「同じ draft が毎回
+        更新されたように見える」事象を起こしていた。body marker が
+        既に source_url を埋めている時は meta の冗長 PUT を skip し、
+        update_post_fields が呼ばれないこと (= WP 側で date/modified が
+        動かないこと) を verify する。
+        """
+        source_url = "https://www.nikkansports.com/baseball/news/202605070000508.html"
+        marker = WPClient._build_source_url_body_marker(source_url)
+
+        # 第一段階の search では meta を見せない (REST が露出しない、
+        # 本番と同条件)。body は marker 入り、reuse は body_marker_match
+        # 経路に乗る。
+        search_response = Mock(
+            status_code=200,
+            json=lambda: [
+                {
+                    "id": 65365,
+                    "title": {"raw": "【要review｜post_gen_validate】村田善則バッテリーチーフコーチ「ものすごく大…"},
+                    "status": "draft",
+                    "date": "2099-05-08T20:01:00",
+                    "featured_media": 0,
+                    "categories": [663],
+                    "meta": {},
+                }
+            ],
+        )
+        # detail fetch (meta probe fallback) は body+marker を返す
+        detail_response = Mock(
+            status_code=200,
+            json=lambda: {
+                "id": 65365,
+                "title": {"raw": "【要review｜post_gen_validate】村田善則バッテリーチーフコーチ「ものすごく大…"},
+                "status": "draft",
+                "date": "2099-05-08T20:01:00",
+                "featured_media": 0,
+                "categories": [663],
+                "meta": {},
+                "content": {"raw": f"<p>本文</p>{marker}"},
+            },
+        )
+        mock_get.side_effect = [search_response, detail_response]
+
+        post_id = self.wp.create_post(
+            "【要review｜post_gen_validate】村田善則バッテリーチーフコーチ「ものすごく大きなことが起こっているわけではない」",
+            f"<p>新 fire body</p>{marker}",
+            status="draft",
+            source_url=source_url,
+        )
+
+        self.assertEqual(post_id, 65365)
+        mock_post.assert_not_called()
+        # 重要: body marker が既に source_url を certify しているため
+        # meta 再書込は不要 → update_post_fields が呼ばれない。
+        mock_update.assert_not_called()
+
+    @patch.object(WPClient, "update_post_fields")
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_reuse_still_writes_meta_when_no_body_marker(self, mock_get, mock_post, mock_update):
+        """DUP-FIX-2026-05-08-REUSE-DATE-STABLE backward-compat verify.
+
+        body marker が body 内に存在しない (旧 post / 別経路で作られた
+        draft) 場合、WP REST 上 meta が見えなければ従来通り meta PUT を
+        走らせ、source_url を post-meta に紐づける挙動を維持する。
+        """
+        source_url = "https://example.com/source/legacy"
+
+        search_response = Mock(
+            status_code=200,
+            json=lambda: [
+                {
+                    "id": 999,
+                    "title": {"raw": "巨人戦 試合の流れを分けたポイント"},
+                    "status": "draft",
+                    "date": "2099-05-08T19:00:00",
+                    "featured_media": 0,
+                    "categories": [673],
+                    "meta": {},
+                }
+            ],
+        )
+        detail_response = Mock(
+            status_code=200,
+            json=lambda: {
+                "id": 999,
+                "title": {"raw": "巨人戦 試合の流れを分けたポイント"},
+                "status": "draft",
+                "date": "2099-05-08T19:00:00",
+                "featured_media": 0,
+                "categories": [673],
+                "meta": {},
+                "content": {"raw": "<p>marker なしの古い body</p>"},
+            },
+        )
+        mock_get.side_effect = [search_response, detail_response]
+
+        post_id = self.wp.create_post(
+            "巨人戦 試合の流れを分けたポイント",
+            "<p>新 body</p>",
+            status="draft",
+            source_url=source_url,
+            allow_title_only_reuse=True,
+        )
+
+        self.assertEqual(post_id, 999)
+        mock_post.assert_not_called()
+        # 旧 post に marker なし → 従来通り meta を埋め直す
+        mock_update.assert_called_once()
+        kwargs = mock_update.call_args.kwargs
+        self.assertIn("meta", kwargs)
+        self.assertEqual(
+            kwargs["meta"].get(WPClient.SOURCE_URL_META_KEY), source_url
+        )
+
     @patch("src.wp_client.requests.post")
     @patch("src.wp_client.requests.get")
     def test_create_post_does_not_reuse_old_same_title(self, mock_get, mock_post):

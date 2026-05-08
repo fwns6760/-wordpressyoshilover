@@ -249,6 +249,76 @@ class IsPostUrlTrustedFamilyTests(unittest.TestCase):
             )
 
 
+class IsReviewEligibleFailAxesTests(unittest.TestCase):
+    """E2 (2026-05-08 afternoon): review draft 対象軸の絞り込みテスト。"""
+
+    def test_only_lightweight_axes_eligible(self):
+        # 軽微軸のみ → review draft 化 OK (True)
+        for axes in (
+            ["close_marker"],
+            ["weak_subject_title:no_strong_marker"],
+            ["weak_generated_title:foo"],
+            ["duplicate_sentence:adjacent"],
+            ["source_grounding_drift:actor"],
+            ["intro_echo"],
+            ["quote_integrity:unbalanced"],
+            ["h3_count:excessive"],
+            ["close_marker", "weak_subject_title:foo"],  # 複数軽微軸
+        ):
+            self.assertTrue(
+                rss_fetcher._is_review_eligible_fail_axes(axes),
+                f"{axes} should be review eligible",
+            )
+
+    def test_critical_axes_blocked(self):
+        # 致命的軸を 1 つでも含むと review draft 化しない (False)
+        for axes in (
+            ["placeholder_body:empty_section"],
+            ["placeholder_body:boilerplate"],
+            ["entity_mismatch:active_team_mismatch"],
+            ["TITLE_BODY_ENTITY_MISMATCH"],
+            ["NO_GAME_BUT_RESULT"],
+            ["GAME_RESULT_CONFLICT"],
+            ["forbidden_phrase:foo"],
+            ["starmen_title_prefix"],
+            ["starmen_heading_prefix"],
+            ["live_update_lineup_heading"],
+            ["live_update_lineup_structure"],
+        ):
+            self.assertFalse(
+                rss_fetcher._is_review_eligible_fail_axes(axes),
+                f"{axes} should NOT be review eligible (critical axis)",
+            )
+
+    def test_mixed_critical_and_lightweight_blocked(self):
+        # 軽微 + 致命的 mix → 致命的優先 → False (skip)
+        self.assertFalse(
+            rss_fetcher._is_review_eligible_fail_axes(
+                ["close_marker", "placeholder_body:empty_section"]
+            )
+        )
+        self.assertFalse(
+            rss_fetcher._is_review_eligible_fail_axes(
+                ["weak_subject_title:foo", "entity_mismatch:active_team"]
+            )
+        )
+
+    def test_empty_axes_eligible(self):
+        # 空 list は eligible (実際は post_gen_validate 通過状態なので呼ばれないが、
+        # 防御的に True 返す)
+        self.assertTrue(rss_fetcher._is_review_eligible_fail_axes([]))
+        self.assertTrue(rss_fetcher._is_review_eligible_fail_axes(None))
+
+    def test_axes_with_blank_strings_ignored(self):
+        # blank string や None 含み → ignore して残りで判定
+        self.assertTrue(
+            rss_fetcher._is_review_eligible_fail_axes(["", "close_marker", "  "])
+        )
+        self.assertFalse(
+            rss_fetcher._is_review_eligible_fail_axes(["", "placeholder_body"])
+        )
+
+
 class CreateDraftForceStatusTests(unittest.TestCase):
     """E が依存する _create_draft_with_same_fire_guard の force_status 引数 test."""
 

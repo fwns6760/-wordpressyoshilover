@@ -1561,6 +1561,49 @@ def _post_gen_validate_review_draft_enabled() -> bool:
 _POST_GEN_VALIDATE_REVIEW_DRAFT_TITLE_PREFIX = "【要review｜post_gen_validate】"
 
 
+# RELIABILITY-2026-05-08-E2: review draft 化の対象軸を絞り込む。致命的軸は
+# user 判断 queue に入れる価値がない (publish してはいけないし、本文崩壊で
+# 救えない) ため通常 skip 維持、軽微軸のみ review draft 化する。これで毎日の
+# review draft 蓄積量を抑制 (推定 1日 50-100 → 20-40 件)。
+#
+# axis の prefix 部分で critical 判定 ("placeholder_body:empty_section" は
+# "placeholder_body" 扱い)。critical = STOP gate 限定 6 (本物重複 / placeholder
+# / 事実破綻 / entity mismatch / 巨人と完全無関係 / 本文崩壊) 該当軸 + 構造的
+# guard (starmen / live_update / forbidden_phrase)。
+_POST_GEN_VALIDATE_REVIEW_DRAFT_CRITICAL_AXES = frozenset(
+    {
+        "placeholder_body",
+        "entity_mismatch",
+        "TITLE_BODY_ENTITY_MISMATCH",
+        "NO_GAME_BUT_RESULT",
+        "GAME_RESULT_CONFLICT",
+        "forbidden_phrase",
+        "starmen_title_prefix",
+        "starmen_heading_prefix",
+        "live_update_lineup_heading",
+        "live_update_lineup_structure",
+    }
+)
+
+
+def _is_review_eligible_fail_axes(fail_axes: list[str]) -> bool:
+    """fail_axes に critical 軸が 1 つでも含まれていれば False (review draft 化しない)。
+
+    True を返す = 全 fail axes が「軽微軸」(close_marker / weak_subject_title /
+    weak_generated_title / duplicate_sentence / source_grounding_drift / intro_echo
+    / quote_integrity / h3_count 等) で、user 判断 queue に入れて手動 flip 可。
+    False を返す = 致命的軸を含む = 通常 skip path に流す (review にも入れない)。
+    """
+    for axis in fail_axes or []:
+        normalized = str(axis or "").strip()
+        if not normalized:
+            continue
+        prefix = normalized.split(":", 1)[0]
+        if prefix in _POST_GEN_VALIDATE_REVIEW_DRAFT_CRITICAL_AXES:
+            return False
+    return True
+
+
 # RELIABILITY-2026-05-08-F: trusted RSS source に限り stale window を 48h (default)
 # に拡張。X 系 / 非 trusted は既存の閾値 (subtype 別 24h ベース) を維持。trusted source
 # = D と同じ family list。Gemini call が増える (古い記事が新規に処理対象に入る) ので
@@ -20813,12 +20856,19 @@ def _main(args, logger):
                         "final_section_text": post_gen_validate.get("final_section_text", ""),
                         "stop_reason": "",
                     }
-                elif _post_gen_validate_review_draft_enabled():
+                elif (
+                    _post_gen_validate_review_draft_enabled()
+                    and _is_review_eligible_fail_axes(list(post_gen_validate["fail_axes"]))
+                ):
                     # RELIABILITY-2026-05-08-E: post_gen_validate fail を skip ではなく
                     # 「【要review｜post_gen_validate】」prefix 付き draft で残す。force
                     # draft (RUN_DRAFT_ONLY=0 でも publish しない) で安全側、user が WP
                     # 管理画面で本文 check + 手動 flip 判断できる。fail history 記録は
                     # 既存通り (TTL 24h dedup) 維持。
+                    # E2 (2026-05-08 afternoon): 致命的軸 (placeholder_body /
+                    # entity_mismatch / fact_conflict 系) を含む fail は review draft
+                    # 化せず通常 skip path に流す。memory rule の限定 6 STOP gate を
+                    # 維持 + review draft 蓄積を抑制。
                     review_title = _POST_GEN_VALIDATE_REVIEW_DRAFT_TITLE_PREFIX + draft_title
                     review_draft_created = False
                     review_post_id_logged: int | None = None

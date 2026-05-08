@@ -200,3 +200,36 @@ user との議論で「daytime 1 時間毎 + game-time 15 分毎」案 (案 A) �
 5/9 朝 06:05 で本番初実機 verification、user は Gmail 受信箱確認 / Claude は failure mode で対応 standby。
 
 handoff: MORNING-VERIFY-2026-05-09.md packet + session log で完備。
+
+## 17:40 JST 重大 incident: routing_template_key NameError
+
+### 観察
+17:00 / 17:15 / 17:30 fetcher fire 3 連続で drafts_created=0、review_drafts_created_count=0。前 fire 実績(15:00=3 publish、16:00=3 publish)から急変。
+
+### 真因究明 (proper、場当たり禁止)
+1. T1 telemetry log 確認 → `bypass_full_invocation_count=0` / `tag_scraper_per_source` 正常 = scraper 動作 OK
+2. log 詳細検索 → `WARNING post_gen_validate_review_draft_creation_failed reason=name 'routing_template_key' is not defined`
+3. git blame → 1ea4c684 (user commit、16:13 JST、Task 3-5 enrichment) が 2 箇所で `routing_template_key` 参照を追加
+4. _main loop scope 内では `title_template_key`(line 20245 / 20378 で代入)が正規変数、`routing_template_key` は未定義
+5. ast walk で _main 内 undefined name 確認 → template/routing 関連 1 件(routing_template_key のみ)
+
+### Proper Fix (場当たりではなく全体 audit)
+- routing_template_key → title_template_key (line 20916 + 21051 の 2 箇所)
+- 1ea4c684 commit 全 diff 確認(rss_fetcher.py + manual_intake.py、後者 OK)
+- title_template_key は scope 内、enrichment_template_key の意図と整合
+
+### Regression Test 追加
+- tests/test_rss_fetcher_reliability_2026_05_08.py::MainLoopUndefinedNameRegressionTests
+- ast で _main 内 template/routing 関連 undefined name を static check
+- 同類の caller-side undefined variable bug を 1ea4c684 同型として検出
+
+### Deploy
+- 17:45 fire (旧 image) drafts=0 / review=0 = bug 状態確認
+- commit `92d6aba` push、image 92d6aba build SUCCESS
+- revision yoshilover-fetcher-00276-w5r deploy、 traffic 100%(17:51 JST)
+- 18:00 fire (game-time `*/15`) で fix 効果実機検証
+
+### 教訓
+- 場当たり 1 line fix では regression risk、全体 audit + ast static check + regression test add すべし
+- user 並行 commit との衝突は ast 検査で早期 detect 可能
+- AI 同士の並行作業で名前空間衝突は memory 警告 (本日 16:55 JST 議論)、本 incident で実証

@@ -21005,7 +21005,13 @@ def _main(args, logger):
             cats = _resolve_draft_category_ids(wp, category, logger)
 
             featured_media = 0
-            if source_type in {"news", "social_news"}:
+            # RELIABILITY-2026-05-08-H: tag scraper / 非 X URL passthrough 経路でも
+            # og:image を WP media に upload して featured_media に設定。
+            # 17 人 未 upload 選手 / broadcast / 観戦 guide 等で source 側の og:image
+            # が relevant な画像 (選手の写真 / 試合シーン) を提供する場合にこれを
+            # eyecatch にする。_article_images は line 20347 で全 source_type で
+            # populate 済、image_urls 空なら関数が 0 を返すので safe。
+            if _article_images:
                 featured_media = _upload_featured_media_with_fallback(
                     wp,
                     _article_images,

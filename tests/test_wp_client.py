@@ -285,6 +285,100 @@ class TestWPClientDedup(unittest.TestCase):
         first_params = mock_get.call_args_list[0].kwargs["params"]
         self.assertEqual(first_params["after"], "2026-04-15T12:00:00+00:00")
 
+    @patch("src.wp_client.requests.get")
+    def test_find_recent_post_by_title_matches_polished_stored_against_unpolished_input(self, mock_get):
+        """DUP-FIX-2026-05-08-FIND-RECENT-POLISH-AWARE regression.
+
+        Real production scenario (2026-05-08 yoshilover-fetcher / WP post 65339
+        など C01 cluster): rss_fetcher generates a long un-polished title each
+        fire (>50 chars). create_post applies title_seo_polisher.polish_title
+        which truncates to 50 chars + ``…`` before persisting. The next fire
+        passes the same long un-polished title to find_recent_post_by_title.
+        Without polish-aware compare, _normalize_title(input_full) !=
+        _normalize_title(stored_truncated) → no match → new draft created
+        every fire (same source URL, identical body marker, ignored).
+        """
+        long_input_title = (
+            "【要review｜post_gen_validate】村田善則バッテリーチーフコーチ"
+            "「ものすごく大きなことが起こっているわけではない」"
+        )
+        polished_stored_title = (
+            "【要review｜post_gen_validate】村田善則バッテリーチーフコーチ「ものすごく大…"
+        )
+        # Sanity: polish_title actually truncates this long input to the
+        # exact stored form. Guards against a future polish_title change
+        # silently invalidating this regression.
+        from src.title_seo_polisher import polish_title
+
+        self.assertEqual(polish_title(long_input_title), polished_stored_title)
+
+        mock_get.return_value = Mock(
+            status_code=200,
+            json=lambda: [
+                {
+                    "id": 65339,
+                    "title": {"raw": polished_stored_title},
+                    "status": "draft",
+                    "date": "2099-05-08T10:32:15",
+                    "meta": {},
+                }
+            ],
+        )
+
+        post = self.wp.find_recent_post_by_title(
+            long_input_title,
+            reusable_statuses={"draft"},
+            source_url=None,
+            allow_title_only_reuse=True,
+        )
+
+        self.assertIsNotNone(post)
+        self.assertEqual(post["id"], 65339)
+        self.assertEqual(post["_yoshilover_reuse_reason"], "title_fallback")
+
+    @patch("src.wp_client.requests.get")
+    def test_find_recent_post_by_title_still_matches_unpolished_stored_against_unpolished_input(self, mock_get):
+        """84e48cd intent preservation.
+
+        The polish-aware compare is additive: the original raw normalize
+        variant must remain in the candidate set so historical posts
+        created BEFORE the polish hook (= un-polished, possibly long)
+        still match when the same un-polished input is replayed.
+        """
+        long_unpolished_title = (
+            "巨人戦 試合の流れを分けたポイント 阿部監督が語る今日の中盤での采配と"
+            "次戦の見どころとして大事なところを整理"
+        )
+        # Sanity: confirm this title would be truncated by polish — that's
+        # the only way we know the raw-variant path is exercised separately.
+        from src.title_seo_polisher import polish_title
+
+        self.assertNotEqual(polish_title(long_unpolished_title), long_unpolished_title)
+
+        mock_get.return_value = Mock(
+            status_code=200,
+            json=lambda: [
+                {
+                    "id": 222,
+                    "title": {"raw": long_unpolished_title},
+                    "status": "draft",
+                    "date": "2099-04-14T17:39:28",
+                    "meta": {},
+                }
+            ],
+        )
+
+        post = self.wp.find_recent_post_by_title(
+            long_unpolished_title,
+            reusable_statuses={"draft"},
+            source_url=None,
+            allow_title_only_reuse=True,
+        )
+
+        self.assertIsNotNone(post)
+        self.assertEqual(post["id"], 222)
+        self.assertEqual(post["_yoshilover_reuse_reason"], "title_fallback")
+
     @patch("src.wp_client.requests.post")
     @patch("src.wp_client.requests.get")
     def test_create_post_does_not_reuse_old_same_title(self, mock_get, mock_post):

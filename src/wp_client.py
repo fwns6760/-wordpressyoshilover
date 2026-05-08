@@ -460,6 +460,24 @@ class WPClient:
         単発スクリプトの再送や確認失敗時の二重作成を防ぐために使う。
         """
         normalized = self._normalize_title(title)
+        # DUP-FIX-2026-05-08-FIND-RECENT-POLISH-AWARE: stored title が
+        # title_seo_polisher.polish_title (default 50 文字 cap + …) で
+        # 短縮済みの場合、un-polished な input title と _normalize_title で
+        # 不一致になり cross-fire dedup が機能しない。input を両形式 (raw /
+        # polish 後) で正規化し、どちらか一致を許容する。84e48cd (polish-
+        # after-dedup) の意図 = 過去 un-polished stored を救済 = は raw 側
+        # variant が維持するので両立する。
+        normalized_variants: set[str] = set()
+        if normalized:
+            normalized_variants.add(normalized)
+            try:
+                from src.title_seo_polisher import polish_title
+                polished_input_title = polish_title(title)
+            except Exception:
+                polished_input_title = title
+            polished_normalized = self._normalize_title(polished_input_title)
+            if polished_normalized:
+                normalized_variants.add(polished_normalized)
         normalized_source_url = self._normalize_source_url(source_url)
         if not normalized or len(normalized) < 6:
             return None
@@ -512,7 +530,7 @@ class WPClient:
                         continue
                     if not self._is_recent_post(post, within_hours):
                         continue
-                    if self._normalize_title(rendered) == normalized:
+                    if self._normalize_title(rendered) in normalized_variants:
                         candidate = post
                         if normalized_source_url:
                             _, existing_source_url = self._get_source_url_meta(candidate)

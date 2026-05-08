@@ -10,21 +10,33 @@ Cost / safety
   are cached in ``config/player_eyecatch_map.json``).
 - Cache miss without a matching image is also cached (as ``None``) to
   avoid retrying the same hopeless lookup on every article.
-- Returns ``None`` whenever detection or media lookup fails — the caller
-  must treat that as "leave featured_media unset" (= site default).
+- Returns ``None`` whenever detection or media lookup fails *and* both
+  the diversified player pool and the team-generic fallback are empty.
 
-Resolution order
-================
+Resolution order (detect_person)
+================================
 
 1. alias map (e.g. 阿部監督 → 阿部慎之助)
 2. full-name match against allowlist + extras (longest first)
 3. unique last-name fallback (only when the surname maps to exactly one
    person in the pool — avoids "吉川" → ambiguous)
 4. nickname map (マー君 → 田中将大)
+
+Resolution order (resolve_eyecatch_from_title)
+==============================================
+
+1. per-person cache hit / remote /media lookup
+2. diversified player pool — pick a known-good cached player image
+   deterministically by title hash so different articles get different
+   thumbnails (avoids the "全部 原辰徳" complaint while keeping fm>0).
+   Disable via ``PLAYER_EYECATCH_POOL_FALLBACK_DISABLED=1``.
+3. team-generic fallback (env ``PLAYER_EYECATCH_TEAM_FALLBACK_ID``;
+   default None — leaves featured_media unset).
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -89,6 +101,11 @@ _ALIAS_MAP = {
 #     env で id 指定すれば従来挙動復帰
 _TEAM_FALLBACK_MEDIA_ID_ENV = "PLAYER_EYECATCH_TEAM_FALLBACK_ID"
 _TEAM_FALLBACK_MEDIA_ID_DEFAULT: Optional[int] = None
+
+# Diversified player pool fallback — when per-person resolution misses,
+# pick another known-good player image from the cache (keyed by title
+# hash for stable per-article assignment). Set to "1" to disable.
+_POOL_FALLBACK_DISABLED_ENV = "PLAYER_EYECATCH_POOL_FALLBACK_DISABLED"
 
 _CACHE_PATH_ENV = "PLAYER_EYECATCH_MAP_PATH"
 _DEFAULT_CACHE_PATH = Path(__file__).resolve().parent.parent / "config" / "player_eyecatch_map.json"
@@ -214,6 +231,57 @@ def _team_fallback_media_id() -> Optional[int]:
     return _TEAM_FALLBACK_MEDIA_ID_DEFAULT
 
 
+def _pool_fallback_enabled() -> bool:
+    raw = os.environ.get(_POOL_FALLBACK_DISABLED_ENV, "").strip().lower()
+    return raw not in {"1", "true", "yes"}
+
+
+def _diversified_player_fallback(title: str) -> Optional[int]:
+    """Pick a known-good player image deterministically by title hash.
+
+    The pool is the set of cached entries that resolved to a real
+    media_id. Empty pool returns ``None`` so the caller can fall through
+    to the team-generic fallback.
+
+    Same title → same image (idempotent re-publishes).
+    Different titles → spread across the pool (avoids "全部 原辰徳").
+    """
+    if not _pool_fallback_enabled():
+        return None
+    title_n = _normalize_title(title)
+    if not title_n:
+        return None
+    cache = _load_cache()
+    pool: list[tuple[str, int]] = []
+    for name, entry in cache.items():
+        if isinstance(entry, dict):
+            mid = entry.get("id")
+            if isinstance(mid, int) and mid > 0:
+                pool.append((str(name), mid))
+    if not pool:
+        return None
+    # Sort by name so order is stable across runs (dict iteration order
+    # is insertion-order in CPython 3.7+, but cache file rewrites can
+    # reorder entries — sort defensively).
+    pool.sort(key=lambda x: x[0])
+    digest = hashlib.md5(title_n.encode("utf-8")).digest()
+    idx = int.from_bytes(digest[:4], "big") % len(pool)
+    chosen_name, chosen_id = pool[idx]
+    logger.info(
+        json.dumps(
+            {
+                "event": "eyecatch_diversified_pool_used",
+                "title": title_n[:80],
+                "chosen_name": chosen_name,
+                "chosen_media_id": chosen_id,
+                "pool_size": len(pool),
+            },
+            ensure_ascii=False,
+        )
+    )
+    return chosen_id
+
+
 def resolve_eyecatch_from_title(
     title: str,
     *,
@@ -227,9 +295,11 @@ def resolve_eyecatch_from_title(
     Resolution order:
       1. per-person cache hit
       2. per-person remote /media lookup (cached on first miss)
-      3. team-generic fallback (when ``use_team_fallback`` is True)
+      3. diversified player pool — pick from cached hits by title hash
+         (only when ``use_team_fallback`` is True)
+      4. team-generic fallback (when ``use_team_fallback`` is True)
 
-    Returns ``None`` only when steps 1-2 miss *and* the team fallback is
+    Returns ``None`` only when steps 1-3 miss *and* the team fallback is
     disabled / unset.
     """
     name = detect_person(title)
@@ -251,5 +321,8 @@ def resolve_eyecatch_from_title(
             return int(cached["id"])
 
     if use_team_fallback:
+        diversified = _diversified_player_fallback(title)
+        if diversified:
+            return diversified
         return _team_fallback_media_id()
     return None

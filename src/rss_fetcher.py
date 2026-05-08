@@ -1528,6 +1528,66 @@ def _post_gen_validate_trusted_bypass(post_url: str | None) -> bool:
     return family in _POST_GEN_VALIDATE_TRUSTED_FAMILIES
 
 
+# RELIABILITY-2026-05-08-D: trusted source の post_gen_validate 全 fail axes bypass。
+# 既存の _post_gen_validate_trusted_bypass は限定 4 path のみ bypass する個別 site
+# 用途。こちらは「trusted family なら fail axes が close_marker / placeholder_body /
+# duplicate_sentence / weak_subject_title / source_grounding_drift いずれであっても
+# 全部 bypass」を意味する全面 bypass。trusted source = nikkansports / hochi /
+# sponichi / sanspo / daily / giants_official / npb_official のみ。X RT 系には
+# 適用されない (家族判定が trusted family list 外だから)。
+def _post_gen_validate_trusted_bypass_full_enabled() -> bool:
+    return _env_flag("ENABLE_POST_GEN_VALIDATE_TRUSTED_BYPASS_FULL", False)
+
+
+def _post_gen_validate_trusted_bypass_full(post_url: str | None) -> bool:
+    if not _post_gen_validate_trusted_bypass_full_enabled():
+        return False
+    url = str(post_url or "").strip()
+    if not url:
+        return False
+    family = _source_trust_classify_url_family(url)
+    return family in _POST_GEN_VALIDATE_TRUSTED_FAMILIES
+
+
+# RELIABILITY-2026-05-08-E: post_gen_validate fail 時に skip ではなく「【要review｜
+# post_gen_validate】」prefix 付き draft を作成する mode。draft で残ることで user が
+# WP 管理画面で本文 check + 手動 publish 判断できる。skip すると WP に痕跡が残らない
+# が、review draft 化すれば失われた記事も拾える。force draft (RUN_DRAFT_ONLY=0 でも
+# publish 化しない) で安全側に倒す。
+def _post_gen_validate_review_draft_enabled() -> bool:
+    return _env_flag("ENABLE_POST_GEN_VALIDATE_REVIEW_DRAFT", False)
+
+
+_POST_GEN_VALIDATE_REVIEW_DRAFT_TITLE_PREFIX = "【要review｜post_gen_validate】"
+
+
+# RELIABILITY-2026-05-08-F: trusted RSS source に限り stale window を 48h (default)
+# に拡張。X 系 / 非 trusted は既存の閾値 (subtype 別 24h ベース) を維持。trusted source
+# = D と同じ family list。Gemini call が増える (古い記事が新規に処理対象に入る) ので
+# user 承認 cost gate を通過済み。
+def _stale_source_trusted_bypass_enabled() -> bool:
+    return _env_flag("ENABLE_STALE_RSS_TRUSTED_BYPASS", False)
+
+
+def _stale_source_trusted_threshold_hours() -> float:
+    raw = str(os.environ.get("STALE_RSS_WINDOW_TRUSTED_HOURS", "")).strip()
+    if not raw:
+        return 48.0
+    try:
+        value = float(raw)
+    except ValueError:
+        return 48.0
+    return value if value > 0 else 48.0
+
+
+def _is_post_url_trusted_family(post_url: str | None) -> bool:
+    url = str(post_url or "").strip()
+    if not url:
+        return False
+    family = _source_trust_classify_url_family(url)
+    return family in _POST_GEN_VALIDATE_TRUSTED_FAMILIES
+
+
 _LOG_SAMPLING_SAMPLE_LIMIT = 3
 
 _log_sampling_state: dict[str, Any] = {
@@ -16255,6 +16315,8 @@ def _create_draft_with_same_fire_guard(
     categories: list,
     source_url: str,
     featured_media: int | None = None,
+    *,
+    force_status: str | None = None,
 ) -> int:
     normalized_source_url = _html.unescape((source_url or "").strip())
     rewritten_title_norm = _normalize_history_title(draft_title)
@@ -16292,11 +16354,15 @@ def _create_draft_with_same_fire_guard(
                 "rss_pipeline_enrichment_skipped reason=%s", exc
             )
             enriched_content = content
+    if force_status:
+        resolved_status = force_status
+    else:
+        resolved_status = "draft" if _env_flag("RUN_DRAFT_ONLY", True) else "publish"
     return wp.create_post(
         draft_title,
         enriched_content,
         categories=categories,
-        status="draft" if _env_flag("RUN_DRAFT_ONLY", True) else "publish",
+        status=resolved_status,
         featured_media=featured_media or None,
         source_url=normalized_source_url or None,
         allow_title_only_reuse=False,
@@ -16550,6 +16616,13 @@ def _evaluate_fetcher_stale_source_guard(
     source_published_at = resolved["source_published_at"]
     age_hours = max(0.0, (reference_now - source_published_at).total_seconds() / 3600.0)
     threshold_hours = _stale_source_guard_threshold_hours(article_subtype)
+    # RELIABILITY-2026-05-08-F: trusted RSS source は stale window を 48h (default)
+    # に拡張。default 24h より長い場合のみ上書き (短くしない)。
+    trusted_threshold = 0.0
+    if _stale_source_trusted_bypass_enabled() and _is_post_url_trusted_family(post_url):
+        trusted_threshold = _stale_source_trusted_threshold_hours()
+        if trusted_threshold > threshold_hours:
+            threshold_hours = trusted_threshold
     if age_hours >= threshold_hours:
         return {
             "allow": False,
@@ -20691,6 +20764,87 @@ def _main(args, logger):
                         title=draft_title,
                         context=fan_important_exempt,
                     )
+                elif _post_gen_validate_trusted_bypass_full(post_url):
+                    # RELIABILITY-2026-05-08-D: trusted family の全 fail axes bypass。
+                    # nikkansports / hochi / sponichi / sanspo / daily / giants_official /
+                    # npb_official の RSS は close_marker / placeholder_body /
+                    # duplicate_sentence / weak_subject_title / source_grounding_drift
+                    # 全部 bypass で publish path に進む。X 系 / 非 trusted は通常 skip。
+                    logger.info(json.dumps({
+                        "event": "post_gen_validate_trusted_source_bypass",
+                        "fail_axes": list(post_gen_validate["fail_axes"]),
+                        "stop_reason": str(post_gen_validate.get("stop_reason") or ""),
+                        "post_url": post_url,
+                        "scope": "full_axes",
+                    }, ensure_ascii=False))
+                    post_gen_validate = {
+                        "ok": True,
+                        "fail_axes": [],
+                        "final_section_heading": post_gen_validate.get("final_section_heading", ""),
+                        "final_section_text": post_gen_validate.get("final_section_text", ""),
+                        "stop_reason": "",
+                    }
+                elif _post_gen_validate_review_draft_enabled():
+                    # RELIABILITY-2026-05-08-E: post_gen_validate fail を skip ではなく
+                    # 「【要review｜post_gen_validate】」prefix 付き draft で残す。force
+                    # draft (RUN_DRAFT_ONLY=0 でも publish しない) で安全側、user が WP
+                    # 管理画面で本文 check + 手動 flip 判断できる。fail history 記録は
+                    # 既存通り (TTL 24h dedup) 維持。
+                    review_title = _POST_GEN_VALIDATE_REVIEW_DRAFT_TITLE_PREFIX + draft_title
+                    review_draft_created = False
+                    review_post_id_logged: int | None = None
+                    try:
+                        review_cats = _resolve_draft_category_ids(wp, category, logger)
+                        review_post_id_logged = _create_draft_with_same_fire_guard(
+                            wp,
+                            logger,
+                            same_fire_source_urls,
+                            same_fire_title_sources,
+                            review_title,
+                            content,
+                            review_cats,
+                            post_url,
+                            featured_media=None,
+                            force_status="draft",
+                        )
+                        review_draft_created = True
+                        logger.info(json.dumps({
+                            "event": "post_gen_validate_review_draft_created",
+                            "post_id": review_post_id_logged,
+                            "fail_axes": list(post_gen_validate["fail_axes"]),
+                            "stop_reason": str(post_gen_validate.get("stop_reason") or ""),
+                            "post_url": post_url,
+                            "title": review_title,
+                        }, ensure_ascii=False))
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            "post_gen_validate_review_draft_creation_failed reason=%s post_url=%s",
+                            exc,
+                            post_url,
+                        )
+                    if not review_draft_created:
+                        skip_filter += 1
+                        skip_reason_counts["post_gen_validate"] += 1
+                        _append_skip_reason_sample(skip_reason_sample_titles, "post_gen_validate", draft_title)
+                        _log_article_skipped_post_gen_validate(
+                            logger,
+                            title=draft_title,
+                            source_title=raw_title,
+                            post_url=post_url,
+                            category=category,
+                            article_subtype=validator_article_subtype,
+                            fail_axes=list(post_gen_validate["fail_axes"]),
+                            stop_reason=str(post_gen_validate.get("stop_reason") or ""),
+                        )
+                    _record_post_gen_validate_failure(
+                        history,
+                        post_url=post_url,
+                        x_status_id=_extract_x_status_id(post_url or ""),
+                        entry_title_norm=item.get("entry_title_norm", "") or "",
+                        fail_axes=list(post_gen_validate["fail_axes"]),
+                    )
+                    persist_history(history)
+                    continue
                 else:
                     skip_filter += 1
                     skip_reason_counts["post_gen_validate"] += 1

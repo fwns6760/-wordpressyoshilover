@@ -291,8 +291,121 @@ class FetchTagPageEntriesDispatchTests(unittest.TestCase):
         )
         self.assertTrue(called["flag"], "registered scraper should be invoked")
 
-    def test_list_scraper_kinds_includes_hochi(self):
-        self.assertIn("hochi_giants_tag", scraper.list_scraper_kinds())
+    def test_list_scraper_kinds_includes_hochi_and_daily(self):
+        kinds = list(scraper.list_scraper_kinds())
+        self.assertIn("hochi_giants_tag", kinds)
+        self.assertIn("daily_giants_tag", kinds)
+
+
+class FetchDailyGiantsEntriesTests(unittest.TestCase):
+    def setUp(self):
+        self.now = datetime(2026, 5, 8, 12, 0, 0, tzinfo=JST)
+
+    def _build_index_html(self, articles: list[tuple[str, str, str, str]]) -> str:
+        """articles: list of (year, month, day, code)."""
+        anchors = "".join(
+            f'<a href="https://www.daily.co.jp/baseball/{y}/{m}/{d}/{c}.shtml">title-{y}{m}{d}-{c}</a>'
+            for y, m, d, c in articles
+        )
+        return f"<html><body>{anchors}</body></html>"
+
+    def _build_article_html(
+        self,
+        *,
+        title: str,
+        desc: str,
+        published_iso: str = "",
+        time_datetime: str = "",
+    ) -> str:
+        meta = f'<meta property="og:title" content="{title}">' \
+            f'<meta property="og:description" content="{desc}">'
+        if published_iso:
+            meta += f'<meta property="article:published_time" content="{published_iso}">'
+        body_extra = ""
+        if time_datetime:
+            body_extra = f'<time datetime="{time_datetime}">label</time>'
+        return f"<html><head>{meta}</head><body>{body_extra}</body></html>"
+
+    def test_strips_daily_brand_suffix(self):
+        index_html = self._build_index_html([("2026", "05", "08", "0020326769")])
+        article_html = self._build_article_html(
+            title="復活見えた？巨人・田中将が今季３勝/デイリースポーツ online",
+            desc="lead",
+            published_iso="2026-05-08T06:00:00+09:00",
+        )
+
+        def fake_fetcher(url, **kwargs):
+            if url.endswith("/index.shtml"):
+                return _make_response(200, index_html)
+            return _make_response(200, article_html)
+
+        entries = scraper.fetch_daily_giants_entries(
+            tag_url="https://www.daily.co.jp/baseball/giants/index.shtml",
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(
+            entries[0]["title"], "復活見えた？巨人・田中将が今季３勝"
+        )
+
+    def test_falls_back_to_url_date_at_noon_jst_when_meta_and_time_tag_missing(self):
+        index_html = self._build_index_html([("2026", "05", "08", "0020326769")])
+        # article:published_time なし、<time datetime> も日付のみ (時刻情報なし) なので
+        # URL の date 部分を使った 12:00 JST = 03:00 UTC の fallback が当たる。
+        article_html = self._build_article_html(
+            title="記事/デイリースポーツ online",
+            desc="lead",
+            time_datetime="2026-05-08",
+        )
+
+        def fake_fetcher(url, **kwargs):
+            if url.endswith("/index.shtml"):
+                return _make_response(200, index_html)
+            return _make_response(200, article_html)
+
+        entries = scraper.fetch_daily_giants_entries(
+            tag_url="https://www.daily.co.jp/baseball/giants/index.shtml",
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 1)
+        st = entries[0]["published_parsed"]
+        # 12:00 JST = 03:00 UTC、UTC struct_time なので mday=8 hour=3
+        self.assertEqual(st.tm_year, 2026)
+        self.assertEqual(st.tm_mon, 5)
+        self.assertEqual(st.tm_mday, 8)
+        self.assertEqual(st.tm_hour, 3)
+
+    def test_old_articles_filtered_out(self):
+        # 5/1 (8d 前) と 5/8 (today) の article、5/1 は max_age_days=7 で外れる
+        index_html = self._build_index_html(
+            [
+                ("2026", "05", "01", "0020100001"),
+                ("2026", "05", "08", "0020100002"),
+            ]
+        )
+        article_html = self._build_article_html(
+            title="記事/デイリースポーツ online",
+            desc="lead",
+            published_iso="2026-05-08T06:00:00+09:00",
+        )
+
+        def fake_fetcher(url, **kwargs):
+            if url.endswith("/index.shtml"):
+                return _make_response(200, index_html)
+            return _make_response(200, article_html)
+
+        entries = scraper.fetch_daily_giants_entries(
+            tag_url="https://www.daily.co.jp/baseball/giants/index.shtml",
+            max_age_days=7,
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 1)
+        self.assertIn(
+            "2026/05/08", entries[0]["link"], "5/8 article should be kept, 5/1 dropped"
+        )
 
 
 if __name__ == "__main__":

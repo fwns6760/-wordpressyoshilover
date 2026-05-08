@@ -6,7 +6,7 @@
 - type: execution queue / Codex A-B dispatch board
 - status: READY
 - created: 2026-04-26
-- updated: 2026-05-03
+- updated: 2026-05-08
 - source_of_truth: current execution order, status, owner, lane, and blocked state
 
 ## role
@@ -30,19 +30,21 @@ Current publish-policy reference:
 - `doc/reference/154-publish-policy-2026-04-26-PM.md` = current publish-policy
 - `doc/done/2026-04/PUB-002-A-publish-candidate-gate-and-article-prose-contract.md` = superseded archive
 
-## current queue snapshot(2026-05-03 JST)
+## current queue snapshot(2026-05-08 JST)
 
-Active folder is intentionally narrow after the template / numeric hallucination policy shift.
+Active folder is intentionally narrow. 2026-05-08 朝に「0 publish 0 mail」障害発生、緊急対応で 10 commit + 5 env + 2 schedule deploy 済み、5/9 朝 06:00-07:00 が初実機検証 window。
 
 | bucket | tickets | decision |
 |---|---|---|
-| **waiting / live handoff** | `234-impl-7-probable-starter-pregame-body-hardening.md` | repo implementation + targeted tests are done; moved to `doc/waiting/` because remaining step is live handoff / observation decision, not active implementation. |
-| **run now** | `245-front-hide-auto-post-category-label.md` | new front-scope ticket. Hide internal `自動投稿` / `auto-post` category from public category UI without changing WP category assignment. |
-| **run next (QA quality series)** | `277-QA-title-player-name-backfill.md`, `279-QA-mail-subject-clarity.md` | 278 (RT title cleanup) and 280 (summary excerpt cleanup) closed 2026-05-07: 278 absorbed by `TITLE-SEO-POLISH-001` (5a253a2), 280 made moot by `MAIL-MINIMAL-BODY-001` (74b0cec) shrinking per-post body to title+URL. |
+| **observation pending(最優先)** | `RESTORE-2026-05-08-MORNING-RELIABILITY.md` | 2026-05-08 朝の障害復旧を全 deploy 済、5/9 朝 06:00-07:00 で heartbeat + per-post mail 着弾を検証。詳細は同 ticket §4 checklist。 |
+| **observation pending(副次)** | `303-rollback-2026-05-08-frontend-rich-body.md` | manual-intake-service / yoshilover-fetcher を `d34072a` に揃えた audit 反映 ticket。Tier 1+2 の 5 件適用済、Tier 3(49 件)は doc-only。 |
+| **user setup (任意)** | `EXTERNAL-MONITOR-APPS-SCRIPT.md` | yoshilover infra 完全死シナリオ用の独立 GAS ping。user 作業 10 分、明日朝 safety net。 |
 | **design hold** | `246-MKT-today-giants-fan-guide.md`, `255-MKT-fan-guide-expansion-and-comment-badge.md`, `249-INGEST-live-game-ingestion-expansion.md`, `256-QA-manager-player-quote-strict-subset.md`, `260-MKT-fan-original-article-types-and-templates.md` | no field dispatch yet. These are HOLD backlog items for the post-247 observation phase; do not mix them into current QA/template work. |
 | **keep active** | `229-gemini-cost-governor-and-llm-call-reduction.md` | still needed as the cost-reduction parent; next action depends on fetcher 100% / ledger observation. |
 | **waiting** | `205-gcp-runtime-drift-audit.md`, `238-night-draft-only-and-morning-decision-report.md`, `288-INGEST-source-coverage-expansion.md` | still useful, but not part of the immediate article-body hallucination fix. `288` remains source-add HOLD; only Phase 0 repo-only audit / dry-run evidence may advance doc-only. |
-| **closed / archived** | `205-COST`, `234-impl-1..6`, `242 parent`, `242-B`, `243`, `244`, `244-B`, `244-followup`, `244-B-followup`, `278-QA`, `280-QA`, `246-viral-topic-detection`, `247-QA-postgame-strict-slot-fill-poc`, `254-QA-starter-innings-normalization` | implemented / accepted / superseded; no longer active work. |
+| **closed / archived** | `205-COST`, `234-impl-1..6`, `242 parent`, `242-B`, `243`, `244`, `244-B`, `244-followup`, `244-B-followup`, `245-front-hide-auto-post-category-label`, `277-QA-title-player-name-backfill`, `278-QA`, `279-QA-mail-subject-clarity`(2026-05-08 close, `6349995`), `280-QA`, `246-viral-topic-detection`, `247-QA-postgame-strict-slot-fill-poc`, `254-QA-starter-innings-normalization` | implemented / accepted / superseded; no longer active work. |
+
+2026-05-08 朝の 10 commit list は `RESTORE-2026-05-08-MORNING-RELIABILITY.md` §2 を参照。
 
 Do not reopen closed 234/242/243/244 child tickets just to keep agents busy. If a new bad article appears, create a new narrow fixture-backed ticket from that concrete post_id.
 

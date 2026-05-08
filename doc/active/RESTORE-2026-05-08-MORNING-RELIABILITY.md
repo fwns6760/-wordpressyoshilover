@@ -17,26 +17,31 @@
 
 ## 2. 直したこと(commit / image / env / scheduler)
 
-### code commits (master, push 済)
+### code commits (master, push 済) — 5/8 朝障害復旧範囲 10 件
 
-| commit | 内容 |
-|---|---|
-| `2076920` | publish-notice scanner を `after` → `modified_after` に切替(手動 flip 取りこぼし fix) |
-| `bd35498` | wp_client に source_url body marker dedup fallback 追加 |
-| `b432801` | 4 frontier CLI(postgame/broadcast/lineup/player_stats)に `--mode=publish` 追加 |
-| `b2b3678` | post_gen_validate **trusted source bypass** 4 site + 06:00 JST heartbeat mail |
-| `86a21a6` | `PUBLISH_NOTICE_BURST_THRESHOLD` env override(`-1` で BURST 抑制 OFF) |
-| `55ae3c7` | trusted bypass を 4 追加 path(body_contract / social_too_weak / comment_required / pgv_recent)に拡張 |
-| `44f4ed9` | rss_fetcher の `status="draft"` ハードコードを `RUN_DRAFT_ONLY` flag 連動に修正 |
+| 順 | commit | 時刻 (JST) | 内容 |
+|---|---|---|---|
+| 1 | `2076920` | (5/7 22:15)| publish-notice scanner を `after` → `modified_after` に切替(手動 flip 取りこぼし fix) |
+| 2 | `bd35498` | 5/8 00:05 | wp_client に source_url body marker dedup fallback 追加 |
+| 3 | `b432801` | 5/8 00:?? | 4 frontier CLI(postgame/broadcast/lineup/player_stats)に `--mode=publish` 追加 |
+| 4 | `b2b3678` | 5/8 09:26 | post_gen_validate **trusted source bypass** 4 site + 06:00 JST heartbeat mail |
+| 5 | `86a21a6` | 5/8 09:40 | `PUBLISH_NOTICE_BURST_THRESHOLD` env override(`-1` で BURST 抑制 OFF) |
+| 6 | `55ae3c7` | 5/8 10:12 | trusted bypass を 4 追加 path(body_contract / social_too_weak / comment_required / pgv_recent)に拡張 |
+| 7 | `0bf8900` | 5/8 10:15 | manual_intake / fallback shell に nomotoke 装飾を維持(body_too_thin fallback 時も装飾) |
+| 8 | `44f4ed9` | 5/8 10:21 | rss_fetcher の `status="draft"` ハードコードを `RUN_DRAFT_ONLY` flag 連動に修正 |
+| 9 | `b816f06` | 5/8 10:47 | heartbeat retry(06:00/06:30/07:00 の 3 回再試行)+ 診断 body |
+| 10 | `d34072a` | 5/8 11:01 | T1+T2 audit fixes(manager allowlist 過マッチ guard / submit loading / 編集 link / friendly error / facts cap) |
 
-### image deploy(本日朝 deploy 済)
+### image deploy(本日朝 deploy 済、5/8 11:05 lock)
 
-| service / job | image tag |
-|---|---|
-| yoshilover-fetcher (service) | `yoshilover-fetcher:latest-fix`(=44f4ed9 build) |
-| publish-notice (job) | `publish-notice:86a21a6-job` |
-| manual-intake-service (service) | `manual-intake-service:b432801` |
-| broadcast-auto / lineup-auto / postgame-auto (jobs) | `manual-intake-service:b432801` |
+| service / job | image tag | based on |
+|---|---|---|
+| yoshilover-fetcher (service) | `yoshilover-fetcher:d34072a` | commit 10(全 fix 反映) |
+| publish-notice (job) | `publish-notice:b816f06-job` | commit 9(heartbeat retry 含む)|
+| manual-intake-service (service) | `manual-intake-service:d34072a` | commit 10(全 fix 反映)|
+| broadcast-auto / lineup-auto / postgame-auto (jobs) | `manual-intake-service:b432801` | commit 3(0bf8900 / d34072a 未反映、明日朝 06:00 検証範囲外) |
+
+⚠ 3 auto jobs(broadcast / lineup / postgame)は `b432801` 留まりで、後続 commit `0bf8900`(fallback shell 装飾)・`d34072a`(T1+T2 audit fix)が未反映。ただし fire 時刻はそれぞれ 11:30 / 17-18 / 22:30 JST で、明日朝 06:00 検証 window には影響しない。次回これらを redeploy するなら `manual-intake-service:d34072a` で揃える(ただし build target / Dockerfile 確認必須、過去 incident あり)。
 
 ### prod env(本日設定済)
 
@@ -45,7 +50,7 @@
 - `ENABLE_POST_GEN_VALIDATE_TRUSTED_BYPASS=1`
 
 **publish-notice job**:
-- `ENABLE_MORNING_HEARTBEAT_MAIL=1`(06:00 JST に 1通必ず送る)
+- `ENABLE_MORNING_HEARTBEAT_MAIL=1`(06:00 / 06:30 / 07:00 JST の 3 回再試行、`b816f06` で実装)
 - `DISABLE_BURST_SUMMARY_MAIL=0`(BURST 時は集約 1通配信)
 - `PUBLISH_NOTICE_BURST_THRESHOLD=-1`(BURST 抑制 OFF、全部個別 mail)
 
@@ -62,7 +67,16 @@
 
 ## 3. rollback 手順
 
-### 緊急 rollback(全 fix を一気に元に戻す)
+### 緊急 rollback(全 fix を一気に元に戻す — **nuclear option**)
+
+⚠ これは 5/8 朝障害復旧の **10 commit + 5 env + 2 schedule を全部巻き戻す** nuclear option。具体的には次を失う:
+- `RUN_DRAFT_ONLY=0` への切替(commit `44f4ed9`)→ rollback すると**全記事が再び draft 留まりに戻り、publish=0 障害が再発**
+- trusted source bypass(commit `b2b3678` / `55ae3c7`)→ post_gen_validate / body_contract / social_too_weak / pgv_recent の 8 skip path が再び全 RSS を弾く
+- heartbeat retry(commit `b816f06`)→ 朝の死活確認が消える
+- BURST_THRESHOLD env(commit `86a21a6`)→ 大量 publish 時に 16+ mail が消滅する旧挙動に戻る
+- T1+T2 audit fixes(commit `d34072a`)→ manager 過マッチや UX fix を失う
+
+「heartbeat 来ない / per-post 0通」の症状で **真因が今日の fix 起因と確信できる時のみ** 使う。fetcher rollback target `b72a2a8` は 5/6 19:47 build(registry 在庫確認済)、publish-notice `c61a894-job` は 5/7 11:22 build。
 
 ```bash
 PROJECT=baseballsite REGION=asia-northeast1
@@ -81,6 +95,8 @@ gcloud scheduler jobs update http publish-notice-trigger --project=$PROJECT --lo
 gcloud scheduler jobs update http giants-morning-catchup --project=$PROJECT --location=$REGION --schedule="30 5 * * *"
 ```
 
+**先に部分 rollback で原因切り分けるべき**(下表)。全戻しはそれでも復旧しない時の最終手段。
+
 ### 部分 rollback(個別)
 
 | 戻したい挙動 | 操作 |
@@ -92,7 +108,7 @@ gcloud scheduler jobs update http giants-morning-catchup --project=$PROJECT --lo
 
 ## 4. 翌朝(2026-05-09)の検証 checklist
 
-- [ ] 06:00 JST に **heartbeat 1通**「【朝サマリー】5月9日 yoshilover 稼働中」届く
+- [ ] 06:00 / 06:30 / 07:00 JST のいずれかで **heartbeat 1通**「【朝サマリー】5月9日 yoshilover 稼働中」届く(3-fire retry のため通常 1 通だけ届く、SMTP error 時のみ次の tick が補填)
 - [ ] 04:30-06:00 fetcher fire(`giants-morning-catchup` + `giants-weekday-daytime`)で publish が出る
 - [ ] 06:00 publish-notice fire で per-post mail が複数届く
 - [ ] (試合日なら)11:30 broadcast-auto で 5/9 試合中継 1本 publish

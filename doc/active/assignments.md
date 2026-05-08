@@ -1,12 +1,13 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-05-07 JST
+最終更新: 2026-05-08 JST
 
 ## 最初に読む
 
 - `doc/active/OPERATING_LOCK.md`
 - `doc/README.md`
 - `doc/active/assignments.md`
+- **2026-05-08 朝の緊急対応**: `doc/active/RESTORE-2026-05-08-MORNING-RELIABILITY.md` + `docs/handoff/HANDOFF-2026-05-08-NEXT-SESSION.md`
 
 ## folder cleanup note(2026-05-02)
 
@@ -14,11 +15,13 @@
 - `205-COST` は done/2026-05 へ移動。
 - READY / REVIEW_NEEDED で現場が拾う可能性のある ticket は勝手に close していない。
 
-## いま active に残すもの
+## いま active に残すもの(2026-05-08 lock)
 
 | ticket | status | 判定 | 次 action |
 |---|---|---|---|
-| **279-QA mail subject clarity** | READY_FOR_FIX | **本物の未着手。今やる** | publish-notice 件名を 公開済｜subtype / 要review｜reason / hold｜reason / 要確認(古い候補)｜subtype に拡張。本文 title+URL 化(74b0cec)後で件名差別化の価値が最大 |
+| **RESTORE-2026-05-08-MORNING-RELIABILITY** | LIVE_DEPLOYED, OBSERVATION_PENDING | **5/9 朝 06:00-07:00 が初実機検証** | heartbeat 1通 + per-post 5-10通 で成立。0通なら未網羅 skip path 再調査 → bypass 拡張、それでも復旧しなければ §3 部分 rollback / 最後手 nuclear |
+| **303-rollback-2026-05-08-frontend-rich-body** | LIVE_VERIFIED (Tier 1+2 audit pass) | manual-intake-service / yoshilover-fetcher 両方 `d34072a` 反映済み | manual-intake の rich body 装飾を 5/8 朝 audit Tier 1+2 で 5 件 fix 反映済み。Tier 3 (49 件 doc-only) は別便、現場は live 観察のみ |
+| **EXTERNAL-MONITOR-APPS-SCRIPT** | READY_FOR_USER_SETUP | user 作業 10 分(GAS で完全独立 ping) | 明日朝 yoshilover infra 全死シナリオ用の独立 safety net、user 任意 |
 | **OPERATING_LOCK** | ACTIVE_LOCK | **必要。常時参照** | 事故防止ルール。変更は慎重に、src 実装とは混ぜない |
 | **assignments** | ACTIVE_BOARD | **必要。現在地** | 本ファイル。active を増やしすぎない |
 
@@ -41,6 +44,7 @@
 | **244-followup subtype-aware severity** | `9074c8a` で実装済み |
 | **244-B-followup stub to module wire** | `cf8ecb9` で実装済み、draft-body-editor image へ反映済み |
 | **278-QA RT title cleanup** | `5a253a2` (TITLE-SEO-POLISH-001) で RT prefix 除去 + 末尾 filler trim 実装。yoshilover-fetcher / manual-intake-service / 3 auto jobs に live 反映済み |
+| **279-QA mail subject clarity** | `6349995` (MAIL-SUBJECT-DETAIL-001) で件名 prefix を 公開済｜subtype / 要review｜reason / hold｜reason / 要確認(古い候補)｜subtype に拡張。publish-notice job 後段 rebuild(`b816f06-job`)に live 反映済み(2026-05-08 close) |
 | **280-QA summary excerpt cleanup** | `74b0cec` (MAIL-MINIMAL-BODY-001) で本文を title+URL のみに簡素化したため summary を磨く意味なし。publish-notice job に live 反映済み |
 | **246-viral-topic-detection** | 8 日 parked。SNS バズ検出 → 既存 RSS 裏取り → routing 構想は良いが、現フェーズ(noindex 検証 + 本文品質 + cost)と競合。再着手したくなれば doc/done/2026-05/ から復元 |
 | **247-QA-postgame-strict-slot-fill-poc** | 8 日 parked。LLM JSON 抽出 + slot-fill POC は野心的だが LLM 本文生成に踏み込む変更で、現 policy(LLM 本文補完禁止)と衝突。再着手時は scope 再設計必要 |
@@ -75,28 +79,26 @@
 | **291-OBSERVE candidate terminal outcome contract** | WAITING_PARENT / subtask-9 + subtask-10b live apply 完了。fetcher image `e0a58bb` / revision `00186-9cl` へ更新し、`ENABLE_NARROW_UNLOCK_SUBTYPE_AWARE=1` と `ENABLE_POSTGAME_STRICT_FACT_RECOVERY=1` を反映、既存 narrow flags 維持確認済み | 30-60min verify。Scheduler 次回 fire 以降で `weak_title_subtype_aware` / `postgame_strict_fact_recovery` event と scope-eligible postgame candidate の publish/review outcome を観測する。親 ticket 自体は waiting 維持、global gate 緩和はしない |
 | **251/252/253/264/274/283/288/294/295/296** | HOLD / BACKLOG / DESIGN_ONLY / READY_FOR_USER_APPLY 系。active から waiting へ整理 | 各 ticket の解除条件または user GO が来た時 |
 
-## いま動かす指示
+## いま動かす指示(2026-05-08 lock)
 
-### 234-impl-7: waiting へ移動
+### 最優先: 5/9 朝 06:00-07:00 検証 window 観察
 
-- repo 実装済みだが、残りは live handoff / observation 判断。
-- active 実装 lane ではないため `doc/waiting/` に退避。
-- 再開時は Acceptance Pack / rollback target / post-deploy verify を確認してから扱う。
+- heartbeat mail 1通 +(試合あり / 朝 publish あり時)per-post 5-10通 が来れば **完全成功** → RESTORE ticket を `doc/done/2026-05/` 移動 + 本ファイル active 表から外す
+- heartbeat 来ない / per-post 0通 → RESTORE §4 失敗時 checklist に従う(未網羅 skip path 再調査 / 部分 rollback / 最終手段 nuclear)
 
-### Codex A / front-scope: 245 を実装
+### user 任意作業
 
-目的:
+- B 案 GAS 独立 ping 設定(10分): `doc/active/EXTERNAL-MONITOR-APPS-SCRIPT.md`
+- 重複記事削除判断: 山野5勝 4本(64878/64879/64882/64883) / 5/6試合結果 2本(64983/64985) / 三塚二軍 2本(64861/64945)
+- 若手 17人 eyecatch upload(WP media に upload で fallback 解消)
 
-- 画面に内部カテゴリ `自動投稿` を出さない。
-- category id `673` / slug `auto-post` / name `自動投稿` は内部管理用として front 表示から除外する。
+### 現場 (Claude / Codex) の不可触
 
-制約:
-
-- WP category 自体は削除しない
-- 既存 post の category 付け替えなし
-- Python backend / GCP / WP publish / X / Gemini に触らない
-- `src/yoshilover-063-frontend.php` の narrow fix
-- `php -l` pass
+- すでに deploy 済の 4 image を勝手に rollback しない
+- 5/8 設定済 5 env flag を user 確認なしに変更しない
+- `PUBLISH_NOTICE_BURST_THRESHOLD=-1` は user 同意済、変更しない
+- 04-06時 publish-notice silence は user 同意済、戻さない
+- giants-morning-catchup 04:30 schedule は user 同意済、戻さない
 
 ## 役割
 

@@ -11,18 +11,20 @@ user 朝起きてメールゼロを発見、原因調査と緊急 fix 要請。
 2. 5/8 朝 fetcher cron は走ったが post_gen_validate / body_contract / social_too_weak 等 8 path で全 skip → drafts_created=0
 3. RUN_DRAFT_ONLY=0 に env 切替えた後も rss_fetcher.py:16299 hardcoded `status="draft"` で publish 化されず
 
-## 緊急 fix(本日 commit)
+## 緊急 fix(本日 commit、10 件)
 
-| commit | 内容 |
-|---|---|
-| 2076920 | publish-notice scanner `after` → `modified_after`(手動 flip 取りこぼし fix) |
-| bd35498 | wp_client body marker dedup fallback |
-| b432801 | 4 frontier CLI に --mode=publish 追加 |
-| b2b3678 | post_gen_validate trusted bypass 4 site + 06:00 heartbeat |
-| 86a21a6 | PUBLISH_NOTICE_BURST_THRESHOLD env override(-1 で OFF) |
-| 55ae3c7 | trusted bypass 4 path 追加(body_contract / social_too_weak / comment_required / pgv_recent) |
-| 44f4ed9 | rss_fetcher.py:16299 hardcoded draft → RUN_DRAFT_ONLY flag 連動 |
-| b816f06 | heartbeat 3連発(06:00/06:30/07:00 retry)+ 診断 body |
+| 順 | commit | 時刻 (JST) | 内容 |
+|---|---|---|---|
+| 1 | 2076920 | (5/7 22:15)| publish-notice scanner `after` → `modified_after`(手動 flip 取りこぼし fix) |
+| 2 | bd35498 | 5/8 00:05 | wp_client body marker dedup fallback |
+| 3 | b432801 | 5/8 00:?? | 4 frontier CLI に --mode=publish 追加 |
+| 4 | b2b3678 | 5/8 09:26 | post_gen_validate trusted bypass 4 site + 06:00 heartbeat |
+| 5 | 86a21a6 | 5/8 09:40 | PUBLISH_NOTICE_BURST_THRESHOLD env override(-1 で OFF) |
+| 6 | 55ae3c7 | 5/8 10:12 | trusted bypass 4 path 追加(body_contract / social_too_weak / comment_required / pgv_recent) |
+| 7 | 0bf8900 | 5/8 10:15 | manual_intake / fallback shell に nomotoke 装飾を維持(body_too_thin fallback 時も装飾) |
+| 8 | 44f4ed9 | 5/8 10:21 | rss_fetcher.py:16299 hardcoded draft → RUN_DRAFT_ONLY flag 連動 |
+| 9 | b816f06 | 5/8 10:47 | heartbeat 3連発(06:00/06:30/07:00 retry)+ 診断 body |
+| 10 | d34072a | 5/8 11:01 | T1+T2 audit fixes(manager allowlist 過マッチ guard / submit loading / 編集 link / friendly error / facts cap) |
 
 ## 今日 prod 反映 env
 

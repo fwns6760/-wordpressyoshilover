@@ -3,7 +3,7 @@
 ## 1. 現状を 30秒で
 
 - 5/8 朝、yoshilover の自動公開 / mail が **0件 0通の障害**発生
-- 緊急 fix 全 deploy 済(7 commit + 5 env + 2 schedule)
+- 緊急 fix 全 deploy 済(**10 commit** + 5 env + 2 schedule)
 - 5/8 11:00 時点で fetcher は復活し始め(10:11/10:17/10:19 で publish 確認)
 - **5/9 朝 06:00 が真の検証**(明日朝に「飛ぶ / 飛ばない」確定)
 - user も Claude(私)もコンテキスト疲労、本セッションはここで終了
@@ -60,13 +60,13 @@ gcloud run jobs execute publish-notice --project=baseballsite --region=asia-nort
 
 これらは次 session でも引き継ぐべき:
 
-1. 朝の per-post mail 配信は理論上 50-70%(heartbeat だけ 99%)
+1. 朝の per-post mail 配信は理論上 50-70%(heartbeat だけは `b816f06` で 06:00 / 06:30 / 07:00 の 3-fire retry を入れたので 99.99% 評価。SMTP 障害 / cold start で 1 通目失敗しても次の tick が補填する設計)
 2. body_contract bypass の patched dict は下流 crash の risk あり
 3. 87通一気送信は Gmail spam 学習 risk(user は filter 設定済 = 緩和済)
 4. trusted source bypass で score 誤記事も流れる可能性
-5. 16 commit は急ぎで品質低い、regression 残る可能性
+5. 5/8 朝障害復旧範囲 = 10 commit(`2076920` / `bd35498` / `b432801` / `b2b3678` / `86a21a6` / `55ae3c7` / `0bf8900` / `44f4ed9` / `b816f06` / `d34072a`)、急ぎで品質低い、regression 残る可能性
 6. 月額 ¥0 と言ったが Gemini call 増 +¥0-30/月 実質
-7. PUBLISH_NOTICE_BURST_THRESHOLD=-1 永続 = 大量公開時 phone 爆発
+7. `PUBLISH_NOTICE_BURST_THRESHOLD=-1` 永続 = 大量公開時 phone 爆発
 
 ## 6. user の状態
 
@@ -90,7 +90,9 @@ gcloud run jobs execute publish-notice --project=baseballsite --region=asia-nort
 - 04-06時 publish-notice silence は user 同意済、戻さない
 - giants-morning-catchup 04:30 schedule は user 同意済、戻さない
 
-## 9. 緊急時 1コマンド rollback
+## 9. 緊急時 1コマンド rollback ⚠ **nuclear option**
+
+⚠ これは 5/8 朝障害復旧の 10 commit + 5 env + 2 schedule を**全部巻き戻す**。`RUN_DRAFT_ONLY=0` 切替を失うので**実行すると publish=0 障害が再発する**。「heartbeat も per-post も 0通」かつ真因が今日の fix 起因と確信できる時のみ使う。先に RESTORE ticket §3 の部分 rollback で原因切り分けが既定。
 
 全部元に戻す:
 ```bash
@@ -107,4 +109,4 @@ gcloud scheduler jobs update http publish-notice-trigger --project=$PROJECT --lo
 gcloud scheduler jobs update http giants-morning-catchup --project=$PROJECT --location=$REGION --schedule="30 5 * * *"
 ```
 
-これで 5/7 22:00 時点の状態に戻せる。
+これで 5/7 22:00 時点の状態に戻せる(ただし 5/7 22:00 時点はそもそも本日の障害真因を含んだ状態)。

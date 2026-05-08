@@ -4,12 +4,12 @@
 |---|---|
 | ticket_id | 279-QA-mail-subject-clarity |
 | priority | P1 (品質改善 series 2/4) |
-| status | READY_FOR_FIX |
-| owner | Claude (audit/draft) → Codex (実装委譲) |
+| status | CLOSED |
+| owner | Claude (audit/draft) → Claude/Codex (実装) |
 | lane | QA |
-| ready_for | Codex narrow 実装便 fire(277 完了後) |
-| blocked_by | (なし、独立。277 と scope disjoint=publish-notice src のみなので並走可) |
-| doc_path | doc/active/279-QA-mail-subject-clarity.md |
+| closed_at | 2026-05-08 |
+| closed_by | commit `6349995 NOMOTOKE-MAIL-SUBJECT-DETAIL-001` — 件名 prefix を 公開済｜subtype / 要review｜reason / hold｜reason / 要確認(古い候補)｜subtype に拡張、publish-notice job 後段 rebuild(`publish-notice:b816f06-job`)に live 反映済み |
+| doc_path | doc/done/2026-05/279-QA-mail-subject-clarity.md |
 | created | 2026-04-30 |
 | series | 277(title player name) → **279**(mail subject) → 278(RT cleanup) → 280(summary excerpt) |
 

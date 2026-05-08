@@ -2213,6 +2213,146 @@ def build_emergency_subject(request: EmergencyMailRequest) -> str:
     return f"{prefix}X/SNS 確認{_SUBJECT_BRAND_SUFFIX}"
 
 
+# ----- Morning heartbeat (B-plan: ¥0 reliability layer) -------------------
+#
+# Operator wants a "the system is alive" mail every morning at 06:00 JST,
+# regardless of whether any new posts were published since the last fire.
+# Without this, a quiet night where the fetcher gate filters everything
+# (as observed 2026-05-08 morning) results in zero mails and no signal
+# that the pipeline is even running.
+#
+# Default OFF. Activate via ENABLE_MORNING_HEARTBEAT_MAIL=1.
+# Time window: only at the JST 06:00 publish-notice fire (hour=6, minute<30).
+
+_MORNING_HEARTBEAT_ENV = "ENABLE_MORNING_HEARTBEAT_MAIL"
+
+
+def _morning_heartbeat_enabled() -> bool:
+    raw = os.environ.get(_MORNING_HEARTBEAT_ENV, "0").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
+def _is_first_morning_publish_notice_fire(now: datetime | None = None) -> bool:
+    """Return True only at the 06:00 JST publish-notice cron tick.
+
+    The publish-notice schedule fires at minute 0 and 30. We pick the
+    06:00 tick (minute < 30) as the daily heartbeat moment.
+    """
+    n = (now or datetime.now(JST)).astimezone(JST)
+    return n.hour == 6 and n.minute < 30
+
+
+def _heartbeat_already_sent_today(
+    queue_path: str | Path, *, now: datetime | None = None
+) -> bool:
+    """Avoid double-sending if the runner re-fires within the same hour."""
+    p = Path(queue_path)
+    if not p.exists():
+        return False
+    today_jst = (now or datetime.now(JST)).astimezone(JST).date().isoformat()
+    try:
+        text = p.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    for line in reversed(text.strip().splitlines()[-200:]):
+        try:
+            d = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if d.get("notice_kind") != "morning_heartbeat":
+            continue
+        recorded = str(d.get("recorded_at", ""))
+        if recorded.startswith(today_jst):
+            return True
+    return False
+
+
+def build_morning_heartbeat_subject(now: datetime | None = None) -> str:
+    n = (now or datetime.now(JST)).astimezone(JST)
+    return f"【朝サマリー】{n.month}月{n.day}日 yoshilover 稼働中{_SUBJECT_BRAND_SUFFIX}"
+
+
+def build_morning_heartbeat_body(
+    *, now: datetime | None = None, processed_this_fire: int = 0
+) -> str:
+    n = (now or datetime.now(JST)).astimezone(JST)
+    return (
+        f"yoshilover 朝サマリー ({n.strftime('%H:%M JST')})\n"
+        f"\n"
+        f"今回 publish-notice 処理: {processed_this_fire}件\n"
+        f"\n"
+        f"このメールが届いていれば publish-notice 自体は健在です。\n"
+        f"本日朝の publish 内訳は WP 管理画面の投稿一覧でご確認ください。"
+    )
+
+
+def maybe_send_morning_heartbeat(
+    *,
+    queue_path: str | Path,
+    dry_run: bool,
+    send_enabled: bool,
+    processed_this_fire: int = 0,
+    bridge_send: Callable[..., Any] | None = None,
+    now: datetime | None = None,
+) -> bool:
+    """Send the morning heartbeat mail when in the 06:00 JST window and
+    not already sent today. Returns True iff a mail was emitted.
+    """
+    if not _morning_heartbeat_enabled():
+        return False
+    if not _is_first_morning_publish_notice_fire(now=now):
+        return False
+    if _heartbeat_already_sent_today(queue_path, now=now):
+        return False
+
+    from src import mail_delivery_bridge as _mdb
+
+    n = (now or datetime.now(JST)).astimezone(JST)
+    subject = build_morning_heartbeat_subject(now=n)
+    body = build_morning_heartbeat_body(now=n, processed_this_fire=processed_this_fire)
+    recipients = resolve_recipients(None)
+    if not recipients:
+        return False
+
+    request = _mdb.MailRequest(
+        to=recipients,
+        subject=subject,
+        text_body=body,
+    )
+    sender_fn = bridge_send or _mdb.send
+    if not send_enabled or dry_run:
+        result = _mdb.MailResult(
+            status="dry_run", refused_recipients={}, smtp_response=None, reason=None
+        )
+    else:
+        try:
+            result = sender_fn(request, dry_run=False)
+        except Exception as exc:  # network / SMTP failure
+            result = _mdb.MailResult(
+                status="error",
+                refused_recipients={},
+                smtp_response=None,
+                reason=f"{type(exc).__name__}: {exc}",
+            )
+
+    heartbeat_post_id = f"heartbeat:{n.date().isoformat()}"
+    proxy = PublishNoticeEmailResult(
+        status=result.status,
+        reason=result.reason,
+        recipients=recipients,
+        subject=subject,
+        bridge_result=result,
+    )
+    append_send_result(
+        queue_path,
+        notice_kind="morning_heartbeat",
+        post_id=heartbeat_post_id,
+        result=proxy,
+        recorded_at=n,
+    )
+    return True
+
+
 def resolve_recipients(override: list[str] | None) -> list[str]:
     if override is not None:
         return _normalized_recipients(override)

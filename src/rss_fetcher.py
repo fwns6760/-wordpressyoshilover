@@ -1491,6 +1491,43 @@ def _pre_post_gen_validate_skip_enabled() -> bool:
     return _env_flag("ENABLE_PRE_POST_GEN_VALIDATE_SKIP", False)
 
 
+# Trusted-source bypass for post_gen_validate cosmetic gates (weak title /
+# routing review / generic title repair). Factual validators (numeric
+# consistency, fact_consistency, hard_stop) keep firing — only the
+# title-shape / subtype-routing skips are short-circuited.
+#
+# Default OFF. Enable via ENABLE_POST_GEN_VALIDATE_TRUSTED_BYPASS=1 to let
+# sponichi / hochi / nikkansports / sanspo / daily / giants_official /
+# npb_official source articles flow through the gate even when the
+# generated title is weak — these sources are themselves the fact carrier
+# so we'd rather publish a plain-but-true headline than silent-skip.
+_POST_GEN_VALIDATE_TRUSTED_FAMILIES = frozenset(
+    {
+        "giants_official",
+        "npb_official",
+        "hochi",
+        "nikkansports",
+        "sponichi",
+        "sanspo",
+        "daily",
+    }
+)
+
+
+def _post_gen_validate_trusted_bypass_enabled() -> bool:
+    return _env_flag("ENABLE_POST_GEN_VALIDATE_TRUSTED_BYPASS", False)
+
+
+def _post_gen_validate_trusted_bypass(post_url: str | None) -> bool:
+    if not _post_gen_validate_trusted_bypass_enabled():
+        return False
+    url = str(post_url or "").strip()
+    if not url:
+        return False
+    family = _source_trust_classify_url_family(url)
+    return family in _POST_GEN_VALIDATE_TRUSTED_FAMILIES
+
+
 _LOG_SAMPLING_SAMPLE_LIMIT = 3
 
 _log_sampling_state: dict[str, Any] = {
@@ -19937,6 +19974,14 @@ def _main(args, logger):
             continue
 
         v2_review_reason = str(routing_context.get("v2_review_reason") or "").strip()
+        if v2_review_reason and _post_gen_validate_trusted_bypass(post_url):
+            logger.info(json.dumps({
+                "event": "post_gen_validate_trusted_source_bypass",
+                "fail_axes": ["routing_v2_review"],
+                "stop_reason": f"rss_template_routing_v2:{v2_review_reason}",
+                "post_url": post_url,
+            }, ensure_ascii=False))
+            v2_review_reason = ""
         if v2_review_reason:
             skip_filter += 1
             skip_reason_counts["post_gen_validate"] += 1
@@ -20243,6 +20288,14 @@ def _main(args, logger):
                     summary=summary,
                     analysis=routing_context.get("source_analysis_v2") if isinstance(routing_context.get("source_analysis_v2"), Mapping) else None,
                 )
+                if isinstance(finalize_title_review, _WeakTitleReviewFallback) and _post_gen_validate_trusted_bypass(post_url):
+                    logger.info(json.dumps({
+                        "event": "post_gen_validate_trusted_source_bypass",
+                        "fail_axes": [f"weak_generated_title:{finalize_title_review.reason}"],
+                        "stop_reason": "weak_generated_title_review",
+                        "post_url": post_url,
+                    }, ensure_ascii=False))
+                    finalize_title_review = None
                 if isinstance(finalize_title_review, _WeakTitleReviewFallback):
                     skip_filter += 1
                     skip_reason_counts["post_gen_validate"] += 1
@@ -20275,6 +20328,14 @@ def _main(args, logger):
                 logger=logger,
                 metadata=weak_title_metadata,
             )
+            if isinstance(generic_title_review, _WeakTitleReviewFallback) and _post_gen_validate_trusted_bypass(post_url):
+                logger.info(json.dumps({
+                    "event": "post_gen_validate_trusted_source_bypass",
+                    "fail_axes": [f"generic_title:{generic_title_review.reason}"],
+                    "stop_reason": "generic_title_repair_review",
+                    "post_url": post_url,
+                }, ensure_ascii=False))
+                generic_title_review = None
             if isinstance(generic_title_review, _WeakTitleReviewFallback):
                 skip_filter += 1
                 skip_reason_counts["post_gen_validate"] += 1
@@ -20313,6 +20374,14 @@ def _main(args, logger):
                 duplicate_guard_context=item.get("duplicate_guard_context"),
                 title_player_name_unresolved=title_player_name_unresolved,
             )
+            if isinstance(weak_title_fallback, _WeakTitleReviewFallback) and _post_gen_validate_trusted_bypass(post_url):
+                logger.info(json.dumps({
+                    "event": "post_gen_validate_trusted_source_bypass",
+                    "fail_axes": [f"weak_generated_title:{weak_title_fallback.reason}"],
+                    "stop_reason": "weak_generated_title_review",
+                    "post_url": post_url,
+                }, ensure_ascii=False))
+                weak_title_fallback = None
             if isinstance(weak_title_fallback, _WeakTitleReviewFallback):
                 skip_filter += 1
                 skip_reason_counts["post_gen_validate"] += 1

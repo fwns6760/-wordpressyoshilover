@@ -2949,5 +2949,118 @@ class DetailedSubjectTests(unittest.TestCase):
         self.assertEqual(prefix, "【要確認】")
 
 
+class MorningHeartbeatTests(unittest.TestCase):
+    """B-plan reliability layer — guaranteed 06:00 JST mail."""
+
+    def setUp(self):
+        self._prev = os.environ.get(sender._MORNING_HEARTBEAT_ENV)
+        os.environ[sender._MORNING_HEARTBEAT_ENV] = "1"
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.queue_path = Path(self.tmpdir.name) / "queue.jsonl"
+
+    def tearDown(self):
+        if self._prev is None:
+            os.environ.pop(sender._MORNING_HEARTBEAT_ENV, None)
+        else:
+            os.environ[sender._MORNING_HEARTBEAT_ENV] = self._prev
+        self.tmpdir.cleanup()
+
+    def _morning_now(self):
+        from datetime import datetime, timezone, timedelta
+        return datetime(2026, 5, 9, 6, 5, tzinfo=timezone(timedelta(hours=9)))
+
+    def _afternoon_now(self):
+        from datetime import datetime, timezone, timedelta
+        return datetime(2026, 5, 9, 15, 0, tzinfo=timezone(timedelta(hours=9)))
+
+    def test_fires_at_06_00_jst(self):
+        bridge = MagicMock(return_value=mail_delivery_bridge.MailResult(
+            status="sent", refused_recipients={}, smtp_response=[250, "ok"], reason=None
+        ))
+        with patch.dict("os.environ", {
+            "PUBLISH_NOTICE_EMAIL_TO": "user@example.com",
+            sender._MORNING_HEARTBEAT_ENV: "1",
+        }, clear=True):
+            sent = sender.maybe_send_morning_heartbeat(
+                queue_path=self.queue_path,
+                dry_run=False,
+                send_enabled=True,
+                processed_this_fire=0,
+                bridge_send=bridge,
+                now=self._morning_now(),
+            )
+        self.assertTrue(sent)
+        bridge.assert_called_once()
+
+    def test_no_fire_outside_window(self):
+        bridge = MagicMock()
+        with patch.dict("os.environ", {
+            "PUBLISH_NOTICE_EMAIL_TO": "user@example.com",
+            sender._MORNING_HEARTBEAT_ENV: "1",
+        }, clear=True):
+            sent = sender.maybe_send_morning_heartbeat(
+                queue_path=self.queue_path,
+                dry_run=False,
+                send_enabled=True,
+                bridge_send=bridge,
+                now=self._afternoon_now(),
+            )
+        self.assertFalse(sent)
+        bridge.assert_not_called()
+
+    def test_no_fire_when_disabled(self):
+        bridge = MagicMock()
+        with patch.dict("os.environ", {
+            "PUBLISH_NOTICE_EMAIL_TO": "user@example.com",
+            sender._MORNING_HEARTBEAT_ENV: "0",
+        }, clear=True):
+            sent = sender.maybe_send_morning_heartbeat(
+                queue_path=self.queue_path,
+                dry_run=False,
+                send_enabled=True,
+                bridge_send=bridge,
+                now=self._morning_now(),
+            )
+        self.assertFalse(sent)
+        bridge.assert_not_called()
+
+    def test_double_fire_within_same_morning_skipped(self):
+        bridge = MagicMock(return_value=mail_delivery_bridge.MailResult(
+            status="sent", refused_recipients={}, smtp_response=[250, "ok"], reason=None
+        ))
+        with patch.dict("os.environ", {
+            "PUBLISH_NOTICE_EMAIL_TO": "user@example.com",
+            sender._MORNING_HEARTBEAT_ENV: "1",
+        }, clear=True):
+            first = sender.maybe_send_morning_heartbeat(
+                queue_path=self.queue_path,
+                dry_run=False, send_enabled=True,
+                bridge_send=bridge, now=self._morning_now(),
+            )
+            second = sender.maybe_send_morning_heartbeat(
+                queue_path=self.queue_path,
+                dry_run=False, send_enabled=True,
+                bridge_send=bridge, now=self._morning_now(),
+            )
+        self.assertTrue(first)
+        self.assertFalse(second)
+        self.assertEqual(bridge.call_count, 1)
+
+    def test_subject_format(self):
+        from datetime import datetime, timezone, timedelta
+        n = datetime(2026, 5, 9, 6, 5, tzinfo=timezone(timedelta(hours=9)))
+        subject = sender.build_morning_heartbeat_subject(now=n)
+        self.assertIn("【朝サマリー】", subject)
+        self.assertIn("5月9日", subject)
+        self.assertTrue(subject.endswith(" | YOSHILOVER"))
+
+    def test_body_includes_processed_count(self):
+        from datetime import datetime, timezone, timedelta
+        n = datetime(2026, 5, 9, 6, 5, tzinfo=timezone(timedelta(hours=9)))
+        body = sender.build_morning_heartbeat_body(now=n, processed_this_fire=3)
+        self.assertIn("06:05 JST", body)
+        self.assertIn("処理: 3件", body)
+
+
 if __name__ == "__main__":
     unittest.main()

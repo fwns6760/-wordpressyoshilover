@@ -34,6 +34,7 @@ from src.publish_notice_email_sender import (  # noqa: E402
     build_zero_sent_alert_log,
     emit_emergency_hook,
     append_send_result,
+    maybe_send_morning_heartbeat,
     send,
     send_alert,
     send_summary,
@@ -467,6 +468,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             alert_line = build_zero_sent_alert_log(execution_summary)
             if alert_line is not None:
                 logging.warning(alert_line)
+            try:
+                heartbeat_sent = maybe_send_morning_heartbeat(
+                    queue_path=args.queue_path,
+                    dry_run=dry_run,
+                    send_enabled=send_enabled,
+                    processed_this_fire=total_emitted,
+                )
+                if heartbeat_sent:
+                    print("[heartbeat] morning summary mail emitted")
+            except Exception as exc:  # heartbeat failure must not crash the cron
+                print(
+                    f"[heartbeat] status=error error_type={type(exc).__name__} message={exc}",
+                    file=sys.stderr,
+                )
             return 0
 
         if args.stdin:

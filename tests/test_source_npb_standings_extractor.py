@@ -14,6 +14,7 @@ from src.source_npb_standings_extractor import (
 
 
 def _build_table(rows, with_class=True):
+    """Legacy layout: cells[0]=rank, cells[1]=team."""
     head = (
         "<thead><tr>"
         "<th>順位</th><th>チーム</th><th>試合</th><th>勝</th><th>負</th>"
@@ -30,6 +31,32 @@ def _build_table(rows, with_class=True):
     body += "</tbody>"
     cls = ' class="tablefix2"' if with_class else ""
     return f"<table{cls}>{head}{body}</table>"
+
+
+def _build_table_new_layout(rows, with_class=True):
+    """New layout (2026 NPB.jp std_c.html): cells[0]=team, 順位 column 削除、
+    rank は行順から推定。
+
+    rows = [(team, games, wins, losses, draws, win_pct, gb), ...]
+    """
+    head = (
+        "<thead><tr>"
+        "<th>チーム</th><th>試合</th><th>勝利</th><th>敗北</th>"
+        "<th>引分</th><th>勝率</th><th>差</th>"
+        "</tr></thead>"
+    )
+    body = "<tbody>"
+    for r in rows:
+        body += (
+            f"<tr><td>{r[0]}</td><td>{r[1]}</td><td>{r[2]}</td>"
+            f"<td>{r[3]}</td><td>{r[4]}</td><td>{r[5]}</td>"
+            f"<td>{r[6]}</td></tr>"
+        )
+    body += "</tbody>"
+    cls = ' class="tablefix2"' if with_class else ""
+    # 順位 keyword を _table_is_standings heuristic 用に追加 (live HTML には
+    # 「順位」が page 内に必ず存在する想定)
+    return f"<p>順位</p><table{cls}>{head}{body}</table>"
 
 
 class StandardParseTests(unittest.TestCase):
@@ -115,6 +142,60 @@ class HallucinationGuardTests(unittest.TestCase):
             self.assertIn(r["team"], html)
             self.assertIn(r["wins"], html)
             self.assertIn(r["losses"], html)
+
+
+class NewLayoutParseTests(unittest.TestCase):
+    """2026-05-08 NPB.jp std_c.html structure 変化対応 (順位 column 削除)。"""
+
+    def test_new_layout_central_league_full(self):
+        # 5/8 live data に近い形
+        rows = [
+            ("阪神タイガース", "33", "20", "12", "1", ".625", "--"),
+            ("東京ヤクルトスワローズ", "34", "21", "13", "0", ".618", "0.0"),
+            ("読売ジャイアンツ", "33", "17", "16", "0", ".515", "3.5"),
+            ("横浜DeNAベイスターズ", "32", "15", "16", "1", ".484", "4.5"),
+            ("広島東洋カープ", "30", "11", "17", "2", ".393", "7.0"),
+            ("中日ドラゴンズ", "33", "12", "21", "0", ".364", "8.5"),
+        ]
+        html = _build_table_new_layout(rows)
+        out = parse_npb_standings_html(html)
+        self.assertEqual(len(out), 6)
+        self.assertEqual(out[0]["team"], "阪神タイガース")
+        self.assertEqual(out[0]["rank"], "1")
+        self.assertEqual(out[2]["team"], "読売ジャイアンツ")
+        self.assertEqual(out[2]["rank"], "3")
+        self.assertEqual(out[2]["wins"], "17")
+        self.assertEqual(out[2]["losses"], "16")
+        self.assertEqual(out[2]["win_pct"], ".515")
+        self.assertEqual(out[2]["gb"], "3.5")
+
+    def test_new_layout_giants_lookup(self):
+        rows = [
+            ("阪神", "33", "20", "12", "1", ".625", "--"),
+            ("読売ジャイアンツ", "33", "17", "16", "0", ".515", "3.5"),
+        ]
+        html = _build_table_new_layout(rows)
+        out = parse_npb_standings_html(html)
+        giants = find_giants_standings_row(out)
+        self.assertIsNotNone(giants)
+        self.assertEqual(giants["rank"], "2")
+        self.assertEqual(giants["team"], "読売ジャイアンツ")
+
+    def test_new_layout_skips_header_row(self):
+        # Header と data 両方含む生 HTML
+        html = (
+            "<p>順位</p>"
+            '<table class="tablefix2">'
+            "<tr><th>チーム</th><th>試合</th><th>勝利</th><th>敗北</th>"
+            "<th>引分</th><th>勝率</th><th>差</th></tr>"
+            "<tr><td>阪神</td><td>33</td><td>20</td><td>12</td>"
+            "<td>1</td><td>.625</td><td>--</td></tr>"
+            "</table>"
+        )
+        out = parse_npb_standings_html(html)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["team"], "阪神")
+        self.assertEqual(out[0]["rank"], "1")
 
 
 if __name__ == "__main__":

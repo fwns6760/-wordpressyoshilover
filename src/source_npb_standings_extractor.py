@@ -72,53 +72,95 @@ def _strip_to_text(fragment: str) -> str:
     return re.sub(r"[\s　]+", " ", s).strip()
 
 
+_TEAM_TOKENS = (
+    "巨人", "ジャイアンツ", "読売",
+    "阪神", "タイガース",
+    "DeNA", "横浜", "ベイスターズ",
+    "中日", "ドラゴンズ",
+    "広島", "東洋", "カープ",
+    "ヤクルト", "スワローズ",
+    "ロッテ", "マリーンズ",
+    "ソフトバンク", "ホークス",
+    "西武", "ライオンズ",
+    "オリックス", "バファローズ",
+    "日本ハム", "ファイターズ",
+    "楽天", "イーグルス",
+)
+
+
 def _table_is_standings(table_html: str) -> bool:
-    """Heuristic: a standings table mentions 「順位」 + 「勝率」 +
-    a recognisable team token."""
+    """Heuristic: a standings table mentions 「勝率」 / 「勝」 + 「順位」 OR
+    a recognisable team token.
+
+    2026 NPB.jp は 順位 column を削除して team を行先頭に置く layout に
+    変わったため、順位 keyword 必須にせず team token でも代替可能とする。
+    """
     if not table_html:
-        return False
-    if "順位" not in table_html and "順" not in table_html:
         return False
     if "勝率" not in table_html and "勝" not in table_html:
         return False
-    return True
+    has_rank_col = "順位" in table_html or "順" in table_html
+    has_team = any(t in table_html for t in _TEAM_TOKENS)
+    return has_rank_col or has_team
 
 
 def _parse_standings_rows(table_html: str) -> List[Dict[str, str]]:
     """Walk one table's ``<tr>`` rows and return cleaned standings
-    entries. Conservative: a row is accepted only when ``cells[0]``
-    is a 1-2 digit (rank) and there are at least 4 non-empty cells."""
+    entries.
+
+    Supports two NPB.jp layouts:
+      - Legacy: cells[0]=rank(1-6) / cells[1]=team / cells[2..]=stats
+      - New (2026-): cells[0]=team / cells[1..]=stats、rank は行順から算出
+        (header 行 cells[1]="試合" は数字でないので skip される)
+
+    Conservative: 4+ non-empty cells が必要、team name >= 2 chars 必要。
+    """
     out: List[Dict[str, str]] = []
+    rank_counter = 0
     for row_m in _ROW_RE.finditer(table_html):
         row = row_m.group("body")
         cells = [_strip_to_text(c.group("body")) for c in _CELL_RE.finditer(row)]
         cells = [c for c in cells if c]
         if len(cells) < 4:
             continue
+
         rank_cell = _normalise_digit(cells[0])
-        if not _RANK_RE.match(rank_cell):
-            continue
-        rank_n = int(rank_cell)
+        if _RANK_RE.match(rank_cell) and 1 <= int(rank_cell) <= 6:
+            # Legacy layout: cells[0]=rank, cells[1]=team, cells[2..]=stats
+            rank_n = int(rank_cell)
+            team = cells[1] if len(cells) > 1 else ""
+            offset = 2
+        else:
+            # New layout: cells[0]=team, cells[1..]=stats, rank=行順
+            team = cells[0]
+            if len(team) < 2:
+                continue
+            # Header 行を skip: cells[1] が数字 (試合数) でなければ header
+            games_check = _normalise_digit(cells[1] if len(cells) > 1 else "")
+            if not games_check or not games_check.isdigit():
+                continue
+            rank_counter += 1
+            rank_n = rank_counter
+            offset = 1
+
         if not (1 <= rank_n <= 6):
             continue
-        # Layout (NPB.jp std_*.html): rank / team / 試合 / 勝 / 負 / 分 /
-        # 勝率 / ゲーム差 / ... May vary; pad missing slots with "".
+        if not team or len(team) < 2:
+            continue
+
         def _at(i: int) -> str:
             return cells[i] if i < len(cells) else ""
 
-        team = _at(1)
-        if not team or len(team) < 2:
-            continue
         out.append(
             {
                 "rank": str(rank_n),
                 "team": team,
-                "games": _at(2),
-                "wins": _at(3),
-                "losses": _at(4),
-                "draws": _at(5),
-                "win_pct": _at(6),
-                "gb": _at(7),
+                "games": _at(offset + 0),
+                "wins": _at(offset + 1),
+                "losses": _at(offset + 2),
+                "draws": _at(offset + 3),
+                "win_pct": _at(offset + 4),
+                "gb": _at(offset + 5),
             }
         )
         if len(out) >= 6:

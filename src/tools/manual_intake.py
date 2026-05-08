@@ -2444,7 +2444,16 @@ def _inject_toc_anchors(content_html: str) -> tuple[str, list[tuple[str, str]]]:
 
 
 def _build_toc_block(toc_entries: list[tuple[str, str]]) -> str:
-    """Render the 📖 目次 block, or empty when too few entries."""
+    """Render the 📖 目次 block — DISABLED 2026-05-08.
+
+    SWELL theme は標準で記事 ToC を提供しているため、yoshilover 側の
+    ToC block は SWELL ToC と重複表示になる。空文字を返して無効化。
+
+    code 自体は将来 SWELL 不在 case や custom ToC 用に残す。
+    再有効化: 本関数の最初の return を削除。
+    """
+    return ""
+    # 以下は SWELL 不在 case 用、現在到達不可
     if not toc_entries or len(toc_entries) < 3:
         return ""
     items = "".join(

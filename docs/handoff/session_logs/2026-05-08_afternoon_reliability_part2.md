@@ -167,3 +167,36 @@ user 指摘「自動公開と mail が同時 飛んでない」 = scheduler `0,3
 
 ### risk
 - 5/9 朝の本番初実機での 5 分 shift untested(ただし heartbeat 範囲 hour=6 内なので code 影響なし)
+
+## 16:39 JST 観察記録: 16:35 fire mail 飛来
+
+publish-notice 16:35 fire で 16:00 fetcher fire の 3 件 publish 化(65160 / 65164 / 65176)が mail 化、user Gmail 受信確認済。
+
+`5,35` scheduler 効果実機検証完了:fetcher `:00` fire publish → publish-notice `:05` 系 fire で 1-5 分後 mail = 設計通り稼働。
+
+## 16:55 JST 議論: scheduler interval 維持判断
+
+user との議論で「daytime 1 時間毎 + game-time 15 分毎」案 (案 A) 検討したが、cost 差ほぼ無し ($0.10/月) + daytime mail lag 悪化 (avg 15 → 30 分) で却下。
+
+**scheduler `5,35` 現状維持が cost / latency / 運用 simplicity の bestbalance** = 何もしない判断。
+
+## 5/8 夜の予想 (game-time 17-21 中日戦)
+
+- fetcher `*/15` × 16 fires = 36-92 件 publish 予想
+- publish-notice `:05/:35` 8 fires で個別 mail 50-115 通
+- BURST_THRESHOLD=50 超なら集約 mode に自動切替
+- 22:00 postgame catchup でさらに 5-20 通
+
+5/8 夜 → 5/9 朝 06:05 まで:
+- 17-22 期間 mail 60-130 通 (中日戦)
+- 22:00-04:30 fire なし (silent)
+- 04:30 morning-catchup → publish が 05:05 fire で mail 化
+- **06:05 fire** で heartbeat #1 + 04:30 catchup の per_post mail まとめて飛来 (5/9 朝検証 critical 時刻)
+
+## 5/8 PM 末 結論
+
+**朝の障害復旧 + 構造的予防策 deploy 完了**。改善前 baseline (5/8 朝 0 publish/0 mail) → 改善後 (1.78x source 増、E2 review queue、thin_body filter、9 subtype publish gate、cross-source 重複防止、独立 ping job、5,35 scheduler offset)。
+
+5/9 朝 06:05 で本番初実機 verification、user は Gmail 受信箱確認 / Claude は failure mode で対応 standby。
+
+handoff: MORNING-VERIFY-2026-05-09.md packet + session log で完備。

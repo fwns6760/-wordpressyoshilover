@@ -73,17 +73,22 @@ _ALIAS_MAP = {
     "大勢": "翁田大勢",
 }
 
-# Team-generic fallback used when no per-person match is found. The image
-# is the user-curated 原辰徳 photo in the WP media library — picked by
-# the operator as the safest "巨人 generic" eyecatch in lieu of a real
-# team logo. Override at deploy time via the env var when needed.
+# Team-generic fallback used when no per-person match is found.
 #
-# (id=29270 was the original pick but it turned out to be a 原辰徳-titled
-# slot whose actual image content was 別人 (operator reported "イチロー")
-# — switched to id=23981 which is a 原辰徳監督 article-side image with
-# matching content.)
+# 2026-05-08 PM: default を None に変更 (RELIABILITY-2026-05-08-H)。
+# 経緯: id=29270 → id=23981 と切替えてきたが、いずれも特定 player の article-
+# side photo であり、player 名抽出できない記事 (broadcast / 観戦 guide / 公示 /
+# review draft 等) で「全部 原辰徳」表示されて user 体感悪化。team fallback
+# を default 無効化、env で override 可能。中立的 team logo 画像を WP media に
+# upload した上で env を設定する運用が望ましい。
+#
+# (履歴)
+#   id=29270 (旧旧、2026-05-04 頃): 原辰徳-titled slot だが画像実体は別人
+#   id=23981 (旧、2026-05-04 頃): 原辰徳監督の article-side image
+#   default None (本変更): 全 player 名なし記事で thumbnail 0 になる、
+#     env で id 指定すれば従来挙動復帰
 _TEAM_FALLBACK_MEDIA_ID_ENV = "PLAYER_EYECATCH_TEAM_FALLBACK_ID"
-_TEAM_FALLBACK_MEDIA_ID_DEFAULT = 23981
+_TEAM_FALLBACK_MEDIA_ID_DEFAULT: Optional[int] = None
 
 _CACHE_PATH_ENV = "PLAYER_EYECATCH_MAP_PATH"
 _DEFAULT_CACHE_PATH = Path(__file__).resolve().parent.parent / "config" / "player_eyecatch_map.json"

@@ -47,3 +47,28 @@
 - sponichi: static giants tag page 廃止、search も generic
 - YouTube: RSSHub /youtube が 503、要 instance 側 diagnose
 - 明日朝検証完了後に再検討
+
+## 12:35 JST 自己 review + 修正
+
+user の「忖度なしで正直 review」要請を受けて検証、**D bypass FULL は memory rule 違反 = 致命的事実誤認 publish risk** を発見:
+
+- `feedback_publish_forward_must_check_gate_reason.md` の限定 6 STOP gate (本物重複 / placeholder / 事実破綻 / entity mismatch / 巨人と完全無関係 / 本文崩壊) を D bypass FULL は無視して全 axes bypass
+- 致命的軸: entity_mismatch (active_team_mismatch) / placeholder_body / NO_GAME_BUT_RESULT / GAME_RESULT_CONFLICT / TITLE_BODY_ENTITY_MISMATCH 等
+- memory rule: 「品質 gate 優先(デグレ停止 > 公開数)」と矛盾
+
+### 修正実行 (12:35 JST)
+env revert: `ENABLE_POST_GEN_VALIDATE_TRUSTED_BYPASS_FULL=0`、新 revision 00253-c5x → traffic 100%。
+
+修正後の state:
+- D FULL: **無効** (限定 6 STOP gate 復活、致命的記事は publish せず)
+- 限定 4 path bypass (朝 fix の安全 scope): 維持
+- E review draft: 維持 (skip 軸の記事は 【要review】 prefix 付き draft 化、user 判断 queue へ)
+- F stale 48h: 維持
+- hochi/daily tag scraper: 維持
+- X 4 account: 維持
+
+### 残された debt
+- PUBLISH_NOTICE_BURST_THRESHOLD=-1 (朝 fix で完全 OFF、雑) → 閾値 50 等に戻すべき (5/9 朝検証後)
+- D の scope 限定実装 (code レベル): close_marker / weak_subject_title / duplicate_sentence / source_grounding_drift など軽微軸のみ bypass、致命的軸は維持。今は env 0 で実装は残存
+- sponichi / sanspo の代替 source 探索 (今日断念)
+- YouTube RSSHub /youtube routes 503 → instance diagnose

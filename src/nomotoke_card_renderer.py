@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import hashlib
 import html
+import logging
 import os
 import json
 import re
@@ -43,6 +44,7 @@ from urllib.parse import urlparse
 
 
 ENABLE_FLAG = "ENABLE_NOMOTOKE_CARD_TEMPLATES"
+_LOGGER = logging.getLogger(__name__)
 
 TEMPLATE_KEY_LINEUP = "nomotoke_card_lineup_v1"
 TEMPLATE_KEY_LIVE_AT_BATS = "nomotoke_card_live_at_bats_v1"
@@ -106,6 +108,22 @@ _VIDEO_EMBED_HOST_WHITELIST = frozenset(
 _QUOTE_SHORT_MAX_CHARS = 100
 
 
+# FRONT-306: renderer-level emoji is intentionally conservative and
+# structural. We decorate stable section labels only, so article facts,
+# quotes, player names, and numeric tables stay untouched.
+_BODY_HEADING_EMOJI_DECORATIONS: tuple[tuple[str, str], ...] = (
+    ("試合スコア", "📊"),
+    ("打席結果", "📝"),
+    ("投球結果", "⚾"),
+    ("相手スタメン", "🧾"),
+    ("登録選手", "✅"),
+    ("抹消選手", "❌"),
+    ("中継情報", "📺"),
+    ("中継予定", "📺"),
+    ("関連リンク", "🔗"),
+)
+
+
 # NOMOTOKE-CTA-RESTORE-001: clickable 「💬 コメントする」 CTA. Three
 # placements per post — top-of-body / mid-body / footer — replicate
 # the original のもとけ 掲示板 layout. The CTA href is ``#respond``
@@ -120,6 +138,36 @@ _INLINE_CTA_HTML = (
     'font-weight:700;font-size:16px;">💬 コメントする</a>'
     "</p>"
 )
+
+
+def _decorate_body_with_emoji(content_html: str) -> str:
+    """Add deterministic emoji to stable section headings only.
+
+    This is a cosmetic layer. It must never alter prose, quotes, player
+    names, or numeric tables.
+    """
+    if not content_html:
+        return content_html
+    decorated = content_html
+    for heading, emoji in _BODY_HEADING_EMOJI_DECORATIONS:
+        decorated = decorated.replace(
+            f"<h3>{heading}</h3>",
+            f"<h3>{emoji} {heading}</h3>",
+        )
+    return decorated
+
+
+def _decorate_body_with_emoji_safe(content_html: str) -> str:
+    """Best-effort emoji decoration.
+
+    If the cosmetic step fails, return the original body unchanged so
+    article generation never stops on presentation polish.
+    """
+    try:
+        return _decorate_body_with_emoji(content_html)
+    except Exception:
+        _LOGGER.exception("renderer_emoji_decoration_failed")
+        return content_html
 
 # Common footer (constant) — appended to every card. The footer CTA
 # is the 3rd placement; the inline ones live inside each renderer
@@ -458,6 +506,7 @@ def _result_payload(
         parts.append(closing_html)
     parts.append(_COMMON_FOOTER_HTML)
     content_html = "".join(parts)
+    content_html = _decorate_body_with_emoji_safe(content_html)
 
     cleaned: List[str] = []
     seen = set()

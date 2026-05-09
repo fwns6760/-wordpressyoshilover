@@ -876,5 +876,52 @@ class SourcePublishedAtIntakeTests(_IntakeBaseTest):
         self.assertIsNone(captured.get("source_published_at_iso"))
 
 
+class EmojiDecorationSafetyTests(unittest.TestCase):
+    def test_apply_rss_pipeline_enrichment_returns_body_when_emoji_step_fails(self):
+        base_html = (
+            '<div class="nomotoke-card-short-news">'
+            '<p class="nomotoke-lead">東京ドームで勝利</p>'
+            "<h3>🔗 出典記事</h3>"
+            '<p>記事全文は <a href="https://example.com/source">出典</a> '
+            "をご覧ください。</p>"
+            "</div>"
+        )
+        with (
+            patch.object(mi, "_build_recent_games_block", return_value=""),
+            patch.object(mi, "_build_x_embeds_block", return_value=""),
+            patch.object(mi, "_build_standings_block", return_value=""),
+            patch.object(mi, "_build_next_game_block", return_value=""),
+            patch.object(mi, "_build_trust_badge_block", return_value=""),
+            patch.object(
+                mi, "_inject_toc_anchors", side_effect=lambda html: (html, [])
+            ),
+            patch.object(mi, "_build_toc_block", return_value=""),
+            patch.object(mi, "_build_meta_header_bar", return_value=""),
+            patch.object(mi, "_build_share_buttons_block", return_value=""),
+            patch.object(
+                mi,
+                "_wrap_first_roster_names_in_lead",
+                side_effect=lambda html: html,
+            ),
+            patch.object(mi, "_build_tag_chip_block", return_value=""),
+            patch.object(mi, "_build_jsonld_article_schema", return_value=""),
+            patch.object(
+                mi,
+                "_decorate_body_with_emoji",
+                side_effect=RuntimeError("emoji explode"),
+            ),
+        ):
+            out = mi.apply_rss_pipeline_enrichment(
+                base_html,
+                title="",
+                source_url="https://example.com/source",
+                summary="",
+                source_name="スポーツ報知",
+            )
+        self.assertIn('class="nomotoke-card-short-news"', out)
+        self.assertIn("東京ドームで勝利", out)
+        self.assertIn("🔗 出典記事", out)
+
+
 if __name__ == "__main__":
     unittest.main()

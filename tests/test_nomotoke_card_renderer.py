@@ -329,6 +329,12 @@ class HappyPathTests(unittest.TestCase):
             out["dedupe_key"], "postgame:2026年5月6日:巨人:阪神"
         )
 
+    def test_postgame_card_adds_structural_emoji_headings(self):
+        out = render_postgame_card(_full_postgame_data())
+        self.assertIn("<h3>📊 試合スコア</h3>", out["content_html"])
+        self.assertIn("<h3>📝 打席結果</h3>", out["content_html"])
+        self.assertIn("<h3>⚾ 投球結果</h3>", out["content_html"])
+
     def test_official_notice_card_happy_path(self):
         out = render_official_notice_card(_full_official_notice_data())
         self.assertTrue(out["validation_ok"])
@@ -338,6 +344,10 @@ class HappyPathTests(unittest.TestCase):
         self.assertIn("巨人が登録", out["title"])
         self.assertIn("が登録です。", out["content_html"])
         self.assertEqual(out["dedupe_key"], "announce:2026年5月6日:巨人")
+
+    def test_official_notice_card_adds_structural_emoji_headings(self):
+        out = render_official_notice_card(_full_official_notice_data())
+        self.assertIn("<h3>✅ 登録選手</h3>", out["content_html"])
 
     def test_pregame_pitcher_card_happy_path(self):
         out = render_pregame_pitcher_card(_full_pregame_pitcher_data())

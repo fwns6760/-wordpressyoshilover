@@ -1321,7 +1321,7 @@ def _try_render_via_nomotoke(
         # sprinkle. Runs BEFORE the JSON-LD schema is appended so the
         # script payload (which contains JSON, not display text) is
         # never decorated.
-        rendered = _decorate_body_with_emoji(rendered)
+        rendered = _decorate_body_with_emoji_safe(rendered)
 
         # NOMOTOKE-INTAKE-JSONLD-EMIT-001 (N2): NewsArticle schema for
         # search engine rich snippets. Appended at the very end of
@@ -3153,6 +3153,21 @@ def _decorate_body_with_emoji(content_html: str) -> str:
     return "".join(parts)
 
 
+def _decorate_body_with_emoji_safe(content_html: str) -> str:
+    """Best-effort emoji decoration for manual-intake paths.
+
+    Cosmetic failures must never stop article generation. If the
+    decorator crashes, return the original body unchanged.
+    """
+    try:
+        return _decorate_body_with_emoji(content_html)
+    except Exception:
+        logging.getLogger("manual_intake").exception(
+            "manual_intake_emoji_decoration_failed"
+        )
+        return content_html
+
+
 # NOMOTOKE-RSS-PIPELINE-ENRICHMENT-001 (Phase 3): public entry
 # point reused by rss_fetcher.py (RSS auto-pipeline) so every
 # nomotoke-rendered RSS post receives the same Phase 1〜N readers'
@@ -3310,7 +3325,7 @@ def apply_rss_pipeline_enrichment(
         content_html, [_build_share_buttons_block(with_script=False)]
     )
 
-    content_html = _decorate_body_with_emoji(content_html)
+    content_html = _decorate_body_with_emoji_safe(content_html)
 
     schema_block = _build_jsonld_article_schema(
         title=title,

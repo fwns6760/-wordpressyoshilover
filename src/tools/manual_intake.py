@@ -2080,21 +2080,23 @@ def _scan_giants_player_names_in_text(text: str) -> list[str]:
     return found[:4]  # cap to keep the block readable
 
 
+def _pick_player_stat_value(rec: dict[str, str], *keys: str) -> str:
+    for k in keys:
+        v = rec.get(k)
+        if v and isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
 def _format_batting_summary(rec: dict[str, str]) -> str:
     """Pull a compact 「打率 .278 / 8本 / 24打点」 line from a batting row.
 
     Tolerates column-name drift across NPB pages by trying multiple
     candidate keys for each metric."""
-    def _pick(*keys: str) -> str:
-        for k in keys:
-            v = rec.get(k)
-            if v and isinstance(v, str) and v.strip():
-                return v.strip()
-        return ""
-
-    avg = _pick("打率", "AVG", "Avg")
-    hr = _pick("本塁打", "HR", "本")
-    rbi = _pick("打点", "RBI")
+    avg = _pick_player_stat_value(rec, "打率", "AVG", "Avg")
+    hr = _pick_player_stat_value(rec, "本塁打", "HR", "本")
+    rbi = _pick_player_stat_value(rec, "打点", "RBI")
+    sb = _pick_player_stat_value(rec, "盗塁", "SB")
     parts: list[str] = []
     if avg:
         parts.append(f"打率{avg}")
@@ -2102,22 +2104,18 @@ def _format_batting_summary(rec: dict[str, str]) -> str:
         parts.append(f"{hr}本")
     if rbi:
         parts.append(f"{rbi}打点")
+    if sb:
+        parts.append(f"{sb}盗塁")
     return " / ".join(parts)
 
 
 def _format_pitching_summary(rec: dict[str, str]) -> str:
     """Pull a compact 「N登板 W勝L敗 防御率2.50」 line from a pitching row."""
-    def _pick(*keys: str) -> str:
-        for k in keys:
-            v = rec.get(k)
-            if v and isinstance(v, str) and v.strip():
-                return v.strip()
-        return ""
-
-    games = _pick("登板", "試合", "G")
-    wins = _pick("勝", "W")
-    losses = _pick("敗", "L")
-    era = _pick("防御率", "ERA")
+    games = _pick_player_stat_value(rec, "登板", "試合", "G")
+    wins = _pick_player_stat_value(rec, "勝", "W")
+    losses = _pick_player_stat_value(rec, "敗", "L")
+    era = _pick_player_stat_value(rec, "防御率", "ERA")
+    strikeouts = _pick_player_stat_value(rec, "奪三振", "SO", "K")
     parts: list[str] = []
     if games:
         parts.append(f"{games}登板")
@@ -2125,7 +2123,44 @@ def _format_pitching_summary(rec: dict[str, str]) -> str:
         parts.append(f"{wins or 0}勝{losses or 0}敗")
     if era:
         parts.append(f"防御率{era}")
+    if strikeouts:
+        parts.append(f"{strikeouts}奪三振")
     return " ".join(parts)
+
+
+def _build_player_stats_table_html(kind: str, rec: dict[str, str]) -> str:
+    if kind == "batting":
+        metrics = [
+            ("打率", _pick_player_stat_value(rec, "打率", "AVG", "Avg")),
+            ("本塁打", _pick_player_stat_value(rec, "本塁打", "HR", "本")),
+            ("打点", _pick_player_stat_value(rec, "打点", "RBI")),
+            ("盗塁", _pick_player_stat_value(rec, "盗塁", "SB")),
+        ]
+    else:
+        metrics = [
+            ("勝", _pick_player_stat_value(rec, "勝", "W")),
+            ("敗", _pick_player_stat_value(rec, "敗", "L")),
+            ("防御率", _pick_player_stat_value(rec, "防御率", "ERA")),
+            ("奪三振", _pick_player_stat_value(rec, "奪三振", "SO", "K")),
+        ]
+
+    if not any(value for _, value in metrics):
+        return ""
+
+    header_cells = "".join(f"<th>{html.escape(label)}</th>" for label, _ in metrics)
+    value_cells = "".join(
+        f"<td>{html.escape(value or '-')}</td>" for _, value in metrics
+    )
+    return (
+        '<div class="nomotoke-player-stats__table-wrap" '
+        'style="overflow-x:auto;margin:6px 0 14px 0;">'
+        '<table class="nomotoke-player-stats__table" '
+        'style="width:100%;border-collapse:collapse;font-size:0.9em;">'
+        f"<tr>{header_cells}</tr>"
+        f"<tr>{value_cells}</tr>"
+        "</table>"
+        "</div>"
+    )
 
 
 def _build_player_stats_block(scan_text: str) -> str:
@@ -2185,25 +2220,34 @@ def _build_player_stats_block(scan_text: str) -> str:
 
         # Stats summary tail (optional — empty when no record).
         stats_tail = ""
+        stats_table = ""
         if record:
-            if kind == "batting":
-                summary = _format_batting_summary(record)
-            else:
-                summary = _format_pitching_summary(record)
-            if summary:
-                stats_tail = f' — <span class="nomotoke-player-stats__values">📊 {html.escape(summary)}</span>'
+            stats_table = _build_player_stats_table_html(kind, record)
+            if not stats_table:
+                if kind == "batting":
+                    summary = _format_batting_summary(record)
+                else:
+                    summary = _format_pitching_summary(record)
+                if summary:
+                    stats_tail = (
+                        ' — <span class="nomotoke-player-stats__values">📊 '
+                        f"{html.escape(summary)}</span>"
+                    )
 
         # When neither roster metadata nor stats apply, drop the row
         # so the block doesn't render an awkward bare name list.
-        if not roster_entry and not stats_tail:
+        if not roster_entry and not stats_tail and not stats_table:
             continue
 
         lines.append(
+            '<div class="nomotoke-player-stats__item">'
             f'<p class="nomotoke-roster__line">'
             f'<span class="nomotoke-roster__role">{prefix}</span> '
             f'<span class="nomotoke-roster__name">{html.escape(rendered)}</span>'
             f"{stats_tail}"
             "</p>"
+            f"{stats_table}"
+            "</div>"
         )
         if len(lines) >= 4:
             break

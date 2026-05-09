@@ -876,6 +876,137 @@ class SourcePublishedAtIntakeTests(_IntakeBaseTest):
         self.assertIsNone(captured.get("source_published_at_iso"))
 
 
+class PlayerStatsTableBlockTests(unittest.TestCase):
+    def test_build_player_stats_block_renders_batter_table_with_sb(self):
+        stats_lookup = {
+            "浅野翔吾": {
+                "kind": "batting",
+                "record": {
+                    "__rendered_name__": "浅野 翔吾",
+                    "打率": ".280",
+                    "本塁打": "2",
+                    "打点": "14",
+                    "盗塁": "5",
+                },
+            }
+        }
+        roster_entry = {"jersey_number": "51", "position": "外野手"}
+
+        with (
+            patch.object(
+                mi, "_scan_giants_player_names_in_text", return_value=["浅野翔吾"]
+            ),
+            patch.object(mi, "_get_player_stats_lookup", return_value=stats_lookup),
+            patch(
+                "src.nomotoke_card_renderer._lookup_roster_by_name",
+                return_value=roster_entry,
+            ),
+        ):
+            block = mi._build_player_stats_block("浅野翔吾が打撃好調")
+
+        self.assertIn('class="nomotoke-player-stats"', block)
+        self.assertIn("浅野 翔吾", block)
+        self.assertIn("<table", block)
+        self.assertIn("<th>打率</th>", block)
+        self.assertIn("<th>本塁打</th>", block)
+        self.assertIn("<th>打点</th>", block)
+        self.assertIn("<th>盗塁</th>", block)
+        self.assertIn("<td>.280</td>", block)
+        self.assertIn("<td>2</td>", block)
+        self.assertIn("<td>14</td>", block)
+        self.assertIn("<td>5</td>", block)
+
+    def test_build_player_stats_block_renders_pitcher_table_with_strikeouts(self):
+        stats_lookup = {
+            "戸郷翔征": {
+                "kind": "pitching",
+                "record": {
+                    "__rendered_name__": "戸郷 翔征",
+                    "勝": "3",
+                    "敗": "1",
+                    "防御率": "2.50",
+                    "奪三振": "41",
+                },
+            }
+        }
+        roster_entry = {"jersey_number": "20", "position": "投手"}
+
+        with (
+            patch.object(
+                mi, "_scan_giants_player_names_in_text", return_value=["戸郷翔征"]
+            ),
+            patch.object(mi, "_get_player_stats_lookup", return_value=stats_lookup),
+            patch(
+                "src.nomotoke_card_renderer._lookup_roster_by_name",
+                return_value=roster_entry,
+            ),
+        ):
+            block = mi._build_player_stats_block("戸郷翔征が先発")
+
+        self.assertIn("戸郷 翔征", block)
+        self.assertIn("<table", block)
+        self.assertIn("<th>勝</th>", block)
+        self.assertIn("<th>敗</th>", block)
+        self.assertIn("<th>防御率</th>", block)
+        self.assertIn("<th>奪三振</th>", block)
+        self.assertIn("<td>3</td>", block)
+        self.assertIn("<td>1</td>", block)
+        self.assertIn("<td>2.50</td>", block)
+        self.assertIn("<td>41</td>", block)
+
+    def test_build_player_stats_block_pitcher_table_does_not_show_batter_headers(self):
+        stats_lookup = {
+            "戸郷翔征": {
+                "kind": "pitching",
+                "record": {
+                    "__rendered_name__": "戸郷 翔征",
+                    "勝": "3",
+                    "敗": "1",
+                    "防御率": "2.50",
+                    "奪三振": "41",
+                },
+            }
+        }
+        roster_entry = {"jersey_number": "20", "position": "投手"}
+
+        with (
+            patch.object(
+                mi, "_scan_giants_player_names_in_text", return_value=["戸郷翔征"]
+            ),
+            patch.object(mi, "_get_player_stats_lookup", return_value=stats_lookup),
+            patch(
+                "src.nomotoke_card_renderer._lookup_roster_by_name",
+                return_value=roster_entry,
+            ),
+        ):
+            block = mi._build_player_stats_block("戸郷翔征が先発")
+
+        self.assertNotIn("<th>打率</th>", block)
+        self.assertNotIn("<th>本塁打</th>", block)
+        self.assertNotIn("<th>打点</th>", block)
+        self.assertNotIn("<th>盗塁</th>", block)
+
+    def test_build_player_stats_block_without_stats_row_keeps_roster_only(self):
+        roster_entry = {"jersey_number": "51", "position": "外野手"}
+
+        with (
+            patch.object(
+                mi, "_scan_giants_player_names_in_text", return_value=["浅野翔吾"]
+            ),
+            patch.object(mi, "_get_player_stats_lookup", return_value={}),
+            patch(
+                "src.nomotoke_card_renderer._lookup_roster_by_name",
+                return_value=roster_entry,
+            ),
+        ):
+            block = mi._build_player_stats_block("浅野翔吾が調整")
+
+        self.assertIn("浅野翔吾", block)
+        self.assertNotIn("<table", block)
+        self.assertNotIn("奪三振", block)
+        self.assertNotIn("盗塁", block)
+
+
 class EmojiDecorationSafetyTests(unittest.TestCase):
     def test_apply_rss_pipeline_enrichment_returns_body_when_emoji_step_fails(self):
         base_html = (

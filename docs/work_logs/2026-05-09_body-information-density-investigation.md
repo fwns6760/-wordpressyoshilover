@@ -1497,3 +1497,52 @@
 - 今回は `_build_player_quote_safe_lines(...)` だけを狭く直し、quote 自体、次の実戦へ向けた意識、実際のプレーとの一致確認、の 3 点に整理した。
 - `quote_phrases` や `subject` の抽出経路は変えていないため、どの言葉を拾うかの contract は維持している。
 - `player_mechanics_story` や `player_status_story` の別分岐には触れていないので、影響は `player_quote_story` に限定される。
+
+#### 2026-05-09 JST / post-deploy NG repair 3本
+
+- 対象:
+  - `player_notice`
+  - `player_recovery`
+  - `social_news` の lineup-like digest
+- 背景:
+  - deploy 後の live post `65664 / 65667 / 65669` で route 誤判定が見えた
+  - `代打、昇格` のような断片 title が `player_notice` に流れ、`代打 選手` や `2-4。` のような壊れた本文が出た
+  - `審判員` 話題が `player_recovery` に流れ、非選手トピックなのに `選手は読売ジャイアンツの選手です。` が出た
+  - lineup shorthand の social title が generic `social_news` digest に流れ、不自然な本文になった
+- 変更:
+  - `player_notice` に主語品質 gate を追加
+    - `代打 / 代走 / 先発 / スタメン / 昇格 / 復帰 / 合流 / 審判員` などの stopword 主語では `player_notice` に流さない
+    - 外国人選手名も通せるよう、`title_has_person_name_candidate(...)` に加えて `FOREIGN_STATUS_SUBJECT_RE` を許可
+  - `player_recovery` に非選手除外 gate を追加
+    - `審判員 / 主審 / 球審 / 塁審 / アンパイア` が本文にある場合は recovery route に流さない
+  - lineup shorthand 用の social 専用 signal を追加
+    - `1-9` の打順数字が 5 個以上あり、対戦相手 / 球場 / 開始時刻などの試合文脈がある social title は `lineup_short` へ寄せる
+    - 共通 `_has_lineup_core(...)` は従来どおりに戻し、`farm_lineup` など他 route の既存 contract を守る
+- 実装メモ:
+  - `src/rss_fetcher.py`
+    - `NON_PLAYER_STATUS_ROLE_MARKERS`
+    - `STATUS_SUBJECT_STOPWORDS`
+    - `FOREIGN_STATUS_SUBJECT_RE`
+    - `_is_notice_like_status_story(...)`
+    - `_is_recovery_like_status_story(...)`
+    - `_has_social_lineup_shorthand_signal(...)`
+    - `_select_template_v2(...)`
+  - `tests/test_build_news_block.py`
+- 追加回帰:
+  - `test_weak_notice_fragment_does_not_route_to_player_notice`
+  - `test_umpire_injury_topic_does_not_route_to_player_recovery`
+  - `test_lineup_like_social_title_routes_out_of_generic_social_digest`
+- 結果:
+  - 追加回帰 3 本は修正前 red、修正後 green
+  - 一時 regress した `notice_body_template` fixture と `farm_lineup` golden も再調整後 green
+  - 関連 `122 tests OK`
+  - `py_compile` / `compileall` / `ast.parse` OK
+  - full suite は sandbox で既知 bind 3 error のみ、その後権限昇格で `3309 tests OK`
+
+### 31. Regression Memo 追記
+
+- `player_notice` 判定は、`昇格 / 合流 / 復帰` marker の有無に寄りすぎると、`代打、昇格` のような断片 title でも route してしまう。
+- `player_recovery` 判定は、`回復 / 負傷 / 復帰` marker だけを見ると、`審判員` や非選手関係者の話題を選手記事に誤分類しうる。
+- lineup shorthand は social title でよく使われるが、これを共通 lineup signal に入れると `farm_lineup` など既存 fixture を広く巻き込む。
+- 今回はこの 3 点を route-level gate として分離し、共通判定は極力動かさず、`social x_post` だけに shorthand 判定を閉じ込めた。
+- その結果、live で見えた NG 3 件に対応しつつ、既存 `notice` / `farm_lineup` / `golden` の contract は維持できた。

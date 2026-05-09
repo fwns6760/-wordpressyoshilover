@@ -250,6 +250,62 @@ class BuildNewsBlockTests(unittest.TestCase):
         self.assertIn("元記事では、浅野翔吾が次の実戦へ向けた意識として「自分の形を出したい」に触れています。", ai_body)
         self.assertIn("元記事にある言葉と実際のプレーが一致するかが次の確認点です。みなさんの意見はコメントで教えてください！", ai_body)
 
+    def test_weak_notice_fragment_does_not_route_to_player_notice(self):
+        title = "代打、昇格"
+        summary = "サンスポ巨人Xが「代打、昇格」と伝えた。"
+
+        self.assertEqual(rss_fetcher._detect_player_special_template_kind(title, summary), "")
+
+        ctx = rss_fetcher._resolve_rss_story_type_context_v2(
+            title=title,
+            summary=summary,
+            category="選手情報",
+            daily_has_game=False,
+            source_type="social_news",
+            source_url="https://twitter.com/sanspo_giants/status/2053014249279242716",
+            source_name="サンスポ巨人X",
+        )
+
+        self.assertNotEqual(ctx["body_subtype"], "player_notice")
+        self.assertNotEqual(ctx["template_selector_v2_key"], "notice_short")
+
+    def test_umpire_injury_topic_does_not_route_to_player_recovery(self):
+        title = "回復祈り審判員が「29」付け出場 頭部負傷の川上拓斗審判員の番号 ..."
+        summary = "頭部負傷の川上拓斗審判員の回復を祈り、担当審判員が「29」を付けて出場した。"
+
+        self.assertEqual(rss_fetcher._detect_player_special_template_kind(title, summary), "")
+
+        ctx = rss_fetcher._resolve_rss_story_type_context_v2(
+            title=title,
+            summary=summary,
+            category="選手情報",
+            daily_has_game=False,
+            source_type="social_news",
+            source_url="https://twitter.com/sanspo_giants/status/2053011907968467275",
+            source_name="サンスポ巨人X",
+        )
+
+        self.assertNotEqual(ctx["body_subtype"], "player_recovery")
+        self.assertNotEqual(ctx["template_selector_v2_key"], "player_recovery_short")
+
+    def test_lineup_like_social_title_routes_out_of_generic_social_digest(self):
+        title = "中日戦(バンテリンD、14:00) 7 8 6 5 3 2 4 9 1 吉川 岡本 坂本"
+        summary = "中日戦(バンテリンD、14:00) 7 8 6 5 3 2 4 9 1 吉川 岡本 坂本"
+
+        ctx = rss_fetcher._resolve_rss_story_type_context_v2(
+            title=title,
+            summary=summary,
+            category="コラム",
+            daily_has_game=False,
+            source_type="social_news",
+            source_url="https://twitter.com/sanspo_giants/status/2052967418855833820",
+            source_name="サンスポ巨人X",
+        )
+
+        self.assertEqual(ctx["template_selector_v2_key"], "lineup_short")
+        self.assertEqual(ctx["category"], "試合速報")
+        self.assertEqual(ctx["body_subtype"], "lineup")
+
     def test_lineup_article_fallback_uses_lineup_specific_structure(self):
         title = "【巨人】今日のスタメン発表　1番丸、4番岡田"
         summary = (

@@ -1041,6 +1041,37 @@ PLAYER_RECOVERY_ROUTE_MARKERS = (
     "療養",
     "コンディション不良",
 )
+NON_PLAYER_STATUS_ROLE_MARKERS = (
+    "審判員",
+    "審判",
+    "主審",
+    "球審",
+    "塁審",
+    "アンパイア",
+)
+STATUS_SUBJECT_STOPWORDS = frozenset(
+    {
+        "代打",
+        "代走",
+        "先発",
+        "スタメン",
+        "オーダー",
+        "打線",
+        "ベンチ",
+        "公示",
+        "登録",
+        "抹消",
+        "昇格",
+        "復帰",
+        "合流",
+        "出場",
+        "起用",
+        "審判",
+        "審判員",
+        "対象選手",
+    }
+)
+FOREIGN_STATUS_SUBJECT_RE = _re.compile(r"^[A-Za-zＡ-Ｚａ-ｚァ-ヴー・･.\-]{2,24}$")
 PLAYER_QUOTE_CONTEXT_MARKERS = (
     "甲子園",
     "東京ドーム",
@@ -1860,7 +1891,16 @@ def should_use_ai_for_category(category: str) -> bool:
 
 def _is_notice_like_status_story(title: str, summary: str) -> bool:
     source_text = _strip_html(f"{title} {summary}")
-    return any(marker in source_text for marker in PLAYER_NOTICE_ROUTE_MARKERS)
+    if not any(marker in source_text for marker in PLAYER_NOTICE_ROUTE_MARKERS):
+        return False
+    if any(marker in source_text for marker in NON_PLAYER_STATUS_ROLE_MARKERS):
+        return False
+    notice_subject, _notice_type = _extract_notice_subject_and_type(title, summary)
+    if not notice_subject or notice_subject in {"巨人", "選手", "出場選手"}:
+        return False
+    if notice_subject in STATUS_SUBJECT_STOPWORDS:
+        return False
+    return title_has_person_name_candidate(notice_subject) or bool(FOREIGN_STATUS_SUBJECT_RE.fullmatch(notice_subject))
 
 
 def _is_giants_player_dismissal_story(text: str) -> bool:
@@ -1956,7 +1996,18 @@ def _is_recovery_like_status_story(title: str, summary: str) -> bool:
     source_text = _strip_html(f"{title} {summary}")
     if not any(marker in source_text for marker in PLAYER_RECOVERY_ROUTE_MARKERS):
         return False
+    if any(marker in source_text for marker in NON_PLAYER_STATUS_ROLE_MARKERS):
+        return False
     recovery_subject = _extract_recovery_subject(title, summary)
+    if not recovery_subject or recovery_subject in {"巨人", "選手", "出場選手"}:
+        return False
+    if recovery_subject in STATUS_SUBJECT_STOPWORDS:
+        return False
+    if not (
+        title_has_person_name_candidate(recovery_subject)
+        or FOREIGN_STATUS_SUBJECT_RE.fullmatch(recovery_subject)
+    ):
+        return False
     windows = _extract_player_subject_context_windows(title, summary, recovery_subject)
     has_strong_signal = any(any(marker in window for marker in RECOVERY_STRONG_MARKERS) for window in windows)
     has_return_signal = any(any(marker in window for marker in RECOVERY_RETURN_MARKERS) for window in windows)
@@ -3958,6 +4009,21 @@ def _has_lineup_core(text: str) -> bool:
     return len(LINEUP_ORDER_SLOT_RE.findall(clean)) >= 2
 
 
+def _has_social_lineup_shorthand_signal(text: str) -> bool:
+    clean = _strip_html(text or "")
+    lineup_position_tokens = _re.findall(r"(?<![0-9０-９])[1-9１-９](?![0-9０-９])", clean)
+    return (
+        len(lineup_position_tokens) >= 5
+        and len(set(lineup_position_tokens)) >= 5
+        and title_has_person_name_candidate(clean)
+        and (
+            _extract_game_opponent_label(clean)
+            or any(marker in clean for marker in TITLE_VENUE_MARKERS)
+            or _extract_game_time_token(clean)
+        )
+    )
+
+
 def _has_live_update_fragment(text: str) -> bool:
     clean = _strip_html(text or "")
     if any(keyword in clean for keyword in LIVE_UPDATE_FRAGMENT_KEYWORDS):
@@ -4770,6 +4836,7 @@ def _analyze_source(entry: Mapping[str, object]) -> dict[str, object]:
     has_score = bool(_extract_game_score_token(source_text))
     has_opponent = bool(_extract_game_opponent_label(source_text))
     has_live_update_fragment_signal = _has_live_update_fragment(f"{title} {summary}")
+    non_player_status_context = any(marker in source_text for marker in NON_PLAYER_STATUS_ROLE_MARKERS)
 
     return {
         "source_type": source_type,
@@ -4781,9 +4848,12 @@ def _analyze_source(entry: Mapping[str, object]) -> dict[str, object]:
         "has_live_update_fragment": has_live_update_fragment_signal,
         "actor_name": actor_name,
         "actor_kind": actor_kind,
-        "has_roster_notice": _is_notice_like_status_story(title, summary) or any(marker in source_text for marker in ("公示", "登録抹消")),
-        "has_recovery_or_injury": _is_recovery_like_status_story(title, summary) or any(
-            marker in source_text for marker in FETCHER_FAN_IMPORTANT_INJURY_RETURN_KEYWORDS
+        "has_roster_notice": _is_notice_like_status_story(title, summary) or (
+            not non_player_status_context and any(marker in source_text for marker in ("公示", "登録抹消"))
+        ),
+        "has_recovery_or_injury": _is_recovery_like_status_story(title, summary) or (
+            not non_player_status_context
+            and any(marker in source_text for marker in FETCHER_FAN_IMPORTANT_INJURY_RETURN_KEYWORDS)
         ),
         "has_farm_or_third_team": any(
             marker in source_text
@@ -4813,7 +4883,13 @@ def _select_template_v2(
         )
         entry_source_url = str(entry.get("source_url") or entry.get("post_url") or entry.get("url") or "")
         entry_source_name = str(entry.get("source_name") or "")
-    has_lineup_signal = bool(entry_text) and _has_lineup_core(entry_text)
+    has_lineup_signal = bool(entry_text) and (
+        _has_lineup_core(entry_text)
+        or (
+            str(analysis.get("source_type") or "") == "x_post"
+            and _has_social_lineup_shorthand_signal(entry_text)
+        )
+    )
     has_pregame_signal = bool(entry_text) and _has_pregame_signal(entry_text)
     has_live_update_signal = bool(analysis.get("has_live_update_fragment"))
     is_trusted_social = (

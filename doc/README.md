@@ -41,6 +41,7 @@ Active folder is intentionally narrow. 2026-05-08 朝に「0 publish 0 mail」�
 | **user 方針判断待ち** | `MANUAL-INTAKE-QUALITY-PARITY-2026-05-08.md` | 5/8 PM session 調査:apply_rss_pipeline_enrichment の nomotoke marker gate 発見、RSS auto は marker 付与なしで装飾 skip。「手動を直す」なら本文長 / 装飾 / 自動化 のどの軸かが user 判断必要。 |
 | **frontend audit ready** | `FRONTEND-ENRICHMENT-LIVE-AUDIT-2026-05-08.md` | 5/7 enrichment 装飾が live で 0% / 100% gap、¥0 / デグレ 0 の audit + narrow fix ticket。Phase A 受動 audit から開始。 |
 | **frontend impl ready(¥0 / デグレ 0)** | `H3-STRUCTURE-UNIFY-2026-05-08.md` / `DIGEST-DAILY-MORNING-2026-05-08.md` / `SIDEBAR-WIDGETS-2026-05-08.md` | 5/8 PM 設計、無料で着手可能の 3 ticket。H3 12 set 統一 / 朝まとめ 1 日 1 本 / sidebar 5 widget。各 narrow phase 分割済 |
+| **quality review ready** | `305-QA-featured-media-source-priority.md` | source eyecatch を最優先し、同一 source image の WP media reuse を優先。source と無関係な既存 media / diversified pool を外し、source 不在時だけ阿部監督 fallback に落とす narrow fix。repo-only impl + tests 完了、deploy 判断待ち。 |
 | **frontend design pending** | `CATEGORY-RESTRUCTURE-2026-05-08.md` | コラム catch-all 解消、「試合中継」新 category 抽出、巨人 tag 化。user 判断境界(WP admin 操作必要) |
 | **user setup (任意)** | `EXTERNAL-MONITOR-APPS-SCRIPT.md` | yoshilover infra 完全死シナリオ用の独立 GAS ping。user 作業 10 分、明日朝 safety net。 |
 | **design hold** | `246-MKT-today-giants-fan-guide.md`, `255-MKT-fan-guide-expansion-and-comment-badge.md`, `249-INGEST-live-game-ingestion-expansion.md`, `256-QA-manager-player-quote-strict-subset.md`, `260-MKT-fan-original-article-types-and-templates.md` | no field dispatch yet. These are HOLD backlog items for the post-247 observation phase; do not mix them into current QA/template work. |
@@ -1653,6 +1654,27 @@ git add -A禁止。
 - 121 is BLOCKED_USER.
 - 114 is umbrella/PARKED and not a direct fire target.
 - A slot next and B slot next are explicit.
+
+## active addendum(2026-05-09)
+
+### 305 featured-media-source-priority
+
+- **alias**: 305-QA
+- **priority**: P0.5
+- **status**: REVIEW_NEEDED
+- **owner**: Codex B
+- **lane**: B
+- **ready_for**: diff review + deploy judgement
+- **next_action**: pre-deploy checklist を確認し、問題なければ commit / deploy 判断
+- **blocked_by**: none
+- **user_action_required**: none
+- **write_scope**: `src/rss_fetcher.py`, `src/wp_client.py`, `src/player_eyecatch_resolver.py`, `tests/test_featured_media_fallback.py`, `tests/test_featured_media_helpers.py`, `tests/test_player_eyecatch_resolver.py`, optional narrow regression test, `doc/active/305-QA-featured-media-source-priority.md`
+- **doc_path**: `doc/active/305-QA-featured-media-source-priority.md`
+- **acceptance**: source eyecatch がある時はそれを最優先、既存 WP media があれば reuse、source 不在時だけ阿部監督 fallback、publish/mail/scheduler/env/Cloud Run 設定は非変更
+- **repo_state**: dirty
+- **commit_state**: uncommitted local diff
+- **next_prompt_path**: -
+- **last_commit**: -
 
 ## marketing board
 

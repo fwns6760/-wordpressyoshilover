@@ -13306,6 +13306,19 @@ def _get_image_candidate_exclusion_reason(image_url: str) -> str:
     return ""
 
 
+def _get_generic_featured_image_reason(image_url: str) -> str:
+    low = _html.unescape((image_url or "").strip()).lower()
+    if "hochi_news_sns" in low:
+        return "publisher_sns_generic"
+    if "sponichi_sns" in low:
+        return "publisher_sns_generic"
+    if "feature-box_" in low:
+        return "publisher_feature_box_generic"
+    if "/common/ogp/baseball/npb" in low:
+        return "league_generic_ogp"
+    return ""
+
+
 def _filter_image_candidates(
     image_urls: list[str],
     source_url: str = "",
@@ -13345,6 +13358,13 @@ def _ensure_notice_featured_images(
         return image_urls
     if not _is_notice_template_story(title, summary, category):
         return image_urls
+    try:
+        from src.player_eyecatch_resolver import get_team_fallback_media_id
+
+        if get_team_fallback_media_id():
+            return image_urls
+    except Exception:
+        pass
     fallback_url = get_notice_fallback_image_url()
     return [fallback_url] if fallback_url else image_urls
 
@@ -13362,24 +13382,46 @@ def _upload_featured_media_with_fallback(
 
     primary_url = candidates[0]
     for candidate_url in candidates:
-        # Skip og:images that already produced a media slug in WP — generic
-        # banners shared across multiple source articles otherwise upload
-        # repeatedly with `-N`-suffixed filenames and every article ends
-        # up with an identical thumbnail. Falling through here lets the
-        # per-person resolver / diversified-pool fallback assign distinct
-        # player images instead.
-        if wp.media_already_uploaded_for_url(candidate_url):
+        generic_reason = _get_generic_featured_image_reason(candidate_url)
+        if generic_reason:
             logger.info(
                 json.dumps(
                     {
-                        "event": "featured_media_skip_duplicate_source",
+                        "event": "featured_media_skip_generic_source",
                         "post_url": post_url,
                         "candidate_url": candidate_url,
+                        "reason": generic_reason,
                     },
                     ensure_ascii=False,
                 )
             )
             continue
+        existing_media_id = int(wp.find_uploaded_media_id_for_url(candidate_url) or 0)
+        if existing_media_id:
+            if candidate_url != primary_url:
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "featured_media_fallback_used",
+                            "post_url": post_url,
+                            "primary_url": primary_url,
+                            "fallback_url": candidate_url,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+            logger.info(
+                json.dumps(
+                    {
+                        "event": "featured_media_reused_existing_source",
+                        "post_url": post_url,
+                        "candidate_url": candidate_url,
+                        "featured_media": existing_media_id,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            return existing_media_id
         featured_media = wp.upload_image_from_url(candidate_url, source_url=post_url)
         if featured_media:
             if candidate_url != primary_url:
@@ -13449,6 +13491,13 @@ def _ensure_story_featured_images(
             pass
     fallback_url = ""
     fallback_type = ""
+    try:
+        from src.player_eyecatch_resolver import get_team_fallback_media_id
+
+        if get_team_fallback_media_id():
+            return image_urls
+    except Exception:
+        pass
     if _is_notice_template_story(title, summary, category):
         fallback_url = get_notice_fallback_image_url()
         fallback_type = "notice"

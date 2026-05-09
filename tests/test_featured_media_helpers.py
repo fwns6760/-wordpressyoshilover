@@ -7,33 +7,17 @@ from src import rss_fetcher
 
 
 class FeaturedMediaHelperTests(unittest.TestCase):
-    def test_story_fallback_applies_to_pregame_when_images_are_missing(self):
-        logger = logging.getLogger("rss_fetcher")
-
-        with self.assertLogs("rss_fetcher", level="INFO") as cm:
-            images = rss_fetcher._ensure_story_featured_images(
-                [],
-                "巨人阪神戦 試合前にどこを見たいか",
-                "",
-                "試合速報",
-                "pregame",
-                source_url="https://example.com/pregame",
-                logger=logger,
-            )
-
-        self.assertEqual(images, [rss_fetcher.get_story_fallback_image_url("試合速報", "pregame")])
-        payload = json.loads(cm.records[0].getMessage())
-        self.assertEqual(
-            payload,
-            {
-                "event": "featured_image_fallback_applied",
-                "source_url": "https://example.com/pregame",
-                "category": "試合速報",
-                "article_subtype": "pregame",
-                "fallback_type": "試合速報:pregame",
-                "fallback_url": rss_fetcher.get_story_fallback_image_url("試合速報", "pregame"),
-            },
+    def test_story_fallback_prefers_team_media_fallback_over_generic_url(self):
+        images = rss_fetcher._ensure_story_featured_images(
+            [],
+            "巨人阪神戦 試合前にどこを見たいか",
+            "",
+            "試合速報",
+            "pregame",
+            source_url="https://example.com/pregame",
         )
+
+        self.assertEqual(images, [])
 
     def test_story_fallback_skips_unlisted_story_types(self):
         images = rss_fetcher._ensure_story_featured_images(

@@ -140,6 +140,19 @@ class CacheRoundtripTests(unittest.TestCase):
         )
         self.assertIsNone(media_id)
 
+    def test_allow_existing_person_media_false_uses_team_fallback_even_on_cache_hit(self):
+        self.cache_path.write_text(
+            json.dumps({"吉川尚輝": {"id": 50815, "title": "x"}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        media_id = per.resolve_eyecatch_from_title(
+            "巨人・吉川尚輝、3安打",
+            allow_remote_lookup=False,
+            allow_existing_person_media=False,
+            allow_diversified_pool=False,
+        )
+        self.assertEqual(media_id, per._TEAM_FALLBACK_MEDIA_ID_DEFAULT)
+
 
 class DiversifiedPoolFallbackTests(unittest.TestCase):
     """Tests for the title-hash-keyed player pool fallback (RELIABILITY-

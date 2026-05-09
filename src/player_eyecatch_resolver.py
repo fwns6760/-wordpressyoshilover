@@ -31,7 +31,7 @@ Resolution order (resolve_eyecatch_from_title)
    thumbnails (avoids the "全部 原辰徳" complaint while keeping fm>0).
    Disable via ``PLAYER_EYECATCH_POOL_FALLBACK_DISABLED=1``.
 3. team-generic fallback (env ``PLAYER_EYECATCH_TEAM_FALLBACK_ID``;
-   default None — leaves featured_media unset).
+   default 阿部慎之助 media_id).
 """
 
 from __future__ import annotations
@@ -87,20 +87,11 @@ _ALIAS_MAP = {
 
 # Team-generic fallback used when no per-person match is found.
 #
-# 2026-05-08 PM: default を None に変更 (RELIABILITY-2026-05-08-H)。
-# 経緯: id=29270 → id=23981 と切替えてきたが、いずれも特定 player の article-
-# side photo であり、player 名抽出できない記事 (broadcast / 観戦 guide / 公示 /
-# review draft 等) で「全部 原辰徳」表示されて user 体感悪化。team fallback
-# を default 無効化、env で override 可能。中立的 team logo 画像を WP media に
-# upload した上で env を設定する運用が望ましい。
-#
-# (履歴)
-#   id=29270 (旧旧、2026-05-04 頃): 原辰徳-titled slot だが画像実体は別人
-#   id=23981 (旧、2026-05-04 頃): 原辰徳監督の article-side image
-#   default None (本変更): 全 player 名なし記事で thumbnail 0 になる、
-#     env で id 指定すれば従来挙動復帰
+# 2026-05-09 QA: fallback priority is now "source eyecatch first,
+# otherwise 阿部慎之助 fallback". Operators can still override with env
+# or disable via "0".
 _TEAM_FALLBACK_MEDIA_ID_ENV = "PLAYER_EYECATCH_TEAM_FALLBACK_ID"
-_TEAM_FALLBACK_MEDIA_ID_DEFAULT: Optional[int] = None
+_TEAM_FALLBACK_MEDIA_ID_DEFAULT: Optional[int] = 36062
 
 # Diversified player pool fallback — when per-person resolution misses,
 # pick another known-good player image from the cache (keyed by title
@@ -231,6 +222,10 @@ def _team_fallback_media_id() -> Optional[int]:
     return _TEAM_FALLBACK_MEDIA_ID_DEFAULT
 
 
+def get_team_fallback_media_id() -> Optional[int]:
+    return _team_fallback_media_id()
+
+
 def _pool_fallback_enabled() -> bool:
     raw = os.environ.get(_POOL_FALLBACK_DISABLED_ENV, "").strip().lower()
     return raw not in {"1", "true", "yes"}
@@ -289,6 +284,8 @@ def resolve_eyecatch_from_title(
     auth: Tuple[str, str] | None = None,
     allow_remote_lookup: bool = True,
     use_team_fallback: bool = True,
+    allow_existing_person_media: bool = True,
+    allow_diversified_pool: bool = True,
 ) -> Optional[int]:
     """Resolve a featured_media ID for the given *title*.
 
@@ -296,13 +293,14 @@ def resolve_eyecatch_from_title(
       1. per-person cache hit
       2. per-person remote /media lookup (cached on first miss)
       3. diversified player pool — pick from cached hits by title hash
-         (only when ``use_team_fallback`` is True)
+         (only when ``use_team_fallback`` and
+         ``allow_diversified_pool`` are True)
       4. team-generic fallback (when ``use_team_fallback`` is True)
 
     Returns ``None`` only when steps 1-3 miss *and* the team fallback is
     disabled / unset.
     """
-    name = detect_person(title)
+    name = detect_person(title) if allow_existing_person_media else None
     if name:
         with _CACHE_LOCK:
             cache = _load_cache()
@@ -320,9 +318,10 @@ def resolve_eyecatch_from_title(
         if isinstance(cached, dict) and cached.get("id"):
             return int(cached["id"])
 
-    if use_team_fallback:
+    if use_team_fallback and allow_diversified_pool:
         diversified = _diversified_player_fallback(title)
         if diversified:
             return diversified
+    if use_team_fallback:
         return _team_fallback_media_id()
     return None

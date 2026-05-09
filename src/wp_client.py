@@ -779,8 +779,9 @@ class WPClient:
                 from src.player_eyecatch_resolver import resolve_eyecatch_from_title
                 # Manual-intake calls = user-driven publish; skip the
                 # team-generic fallback so the user can pick / upload
-                # the eyecatch themselves instead of getting an auto
-                # 原辰徳 placeholder. Per-person resolution still fires.
+                # the eyecatch themselves. Automatic fallback also skips
+                # old per-person / diversified media and prefers the
+                # configured team fallback only.
                 is_manual_call = bool(
                     caller and ("manual" in str(caller).lower())
                 )
@@ -789,6 +790,8 @@ class WPClient:
                     wp_url=self.base_url,
                     auth=self.auth,
                     use_team_fallback=not is_manual_call,
+                    allow_existing_person_media=False,
+                    allow_diversified_pool=False,
                 )
                 if resolved:
                     featured_media = resolved
@@ -859,10 +862,9 @@ class WPClient:
         content_type = WPClient._parse_content_type(header_res.stdout.decode("iso-8859-1", errors="ignore"))
         return body_res.stdout, content_type
 
-    def media_already_uploaded_for_url(self, image_url: str) -> bool:
-        """Return True if *image_url* would produce a filename hash that
-        already exists in the WP media library (i.e. another article has
-        already uploaded the same source image).
+    def find_uploaded_media_id_for_url(self, image_url: str) -> int:
+        """Return the existing WP media id for *image_url* when the same
+        source image URL was already uploaded, otherwise ``0``.
 
         Used by the featured-media upload chain to detect generic
         banners that are shared across many source articles. When the
@@ -889,11 +891,17 @@ class WPClient:
                 timeout=8,
             )
             if resp.status_code != 200:
-                return False
-            return bool(resp.json() or [])
+                return 0
+            rows = resp.json() or []
+            if not rows:
+                return 0
+            return int(rows[0].get("id") or 0)
         except Exception as exc:
             print(f"[WP] media dedup lookup failed (continuing without dedup): {exc}")
-            return False
+            return 0
+
+    def media_already_uploaded_for_url(self, image_url: str) -> bool:
+        return bool(self.find_uploaded_media_id_for_url(image_url))
 
     def upload_image_from_url(self, image_url: str, filename: str = None, source_url: str = "") -> int:
         """

@@ -112,7 +112,7 @@ class NoticeBodyTemplateTests(unittest.TestCase):
 
         images = rss_fetcher._ensure_notice_featured_images([], title, summary, "選手情報")
 
-        self.assertEqual(images, [rss_fetcher.get_notice_fallback_image_url()])
+        self.assertEqual(images, [])
 
     def test_notice_body_template_v2_demotes_background_heading(self):
         with patch.dict("os.environ", {"ENABLE_BODY_TEMPLATE_V2": "1"}, clear=False):

@@ -389,6 +389,52 @@ class BuildNewsBlockTests(unittest.TestCase):
         self.assertIn("巨人二軍はDeNA戦に臨みます。", ai_body)
         self.assertIn("若手内野手が4番ショートに入った。", ai_body)
 
+    def test_lineup_article_continues_when_fan_reaction_fetch_fails(self):
+        title = "【巨人】阪神戦スタメン発表（東京ドーム、18:00） 1番丸 4番岡本"
+        summary = "巨人が阪神戦のスタメンを発表した。東京ドームで18:00開始。1番丸、4番岡本。"
+
+        with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", side_effect=RuntimeError("x fetch failed")):
+            with patch.object(rss_fetcher, "fetch_today_giants_lineup_stats_from_yahoo", return_value=[]):
+                with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                    _, ai_body = rss_fetcher.build_news_block(
+                        title=title,
+                        summary=summary,
+                        url="https://example.com/post",
+                        source_name="報知 巨人",
+                        category="試合速報",
+                        has_game=True,
+                    )
+
+        self.assertIn("【試合概要】", ai_body)
+        self.assertIn("【スタメン一覧】", ai_body)
+        self.assertIn("【先発投手】", ai_body)
+
+    def test_lineup_article_caps_fan_reaction_embeds_at_two(self):
+        with patch.object(
+            rss_fetcher,
+            "fetch_fan_reactions_from_yahoo",
+            return_value=[
+                {"handle": "@gfan01", "text": "阪神戦のスタメン、1番丸は面白い。", "url": "https://x.com/gfan01/status/1"},
+                {"handle": "@gfan02", "text": "東京ドームでこの並びなら岡本の前に走者を置きたい。", "url": "https://x.com/gfan02/status/2"},
+                {"handle": "@gfan03", "text": "この打順で序盤から攻めてほしい。", "url": "https://x.com/gfan03/status/3"},
+            ],
+        ):
+            with patch.object(rss_fetcher, "fetch_today_giants_lineup_stats_from_yahoo", return_value=[]):
+                with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                    blocks, _ = rss_fetcher.build_news_block(
+                        title="【巨人】阪神戦スタメン発表（東京ドーム、18:00） 1番丸 4番岡本",
+                        summary="巨人が阪神戦のスタメンを発表した。東京ドームで18:00開始。1番丸、4番岡本。",
+                        url="https://example.com/post",
+                        source_name="報知 巨人",
+                        category="試合速報",
+                        has_game=True,
+                    )
+
+        self.assertEqual(blocks.count("yoshilover-x-embed-compact"), 2)
+        self.assertIn("https://twitter.com/gfan01/status/1", blocks)
+        self.assertIn("https://twitter.com/gfan02/status/2", blocks)
+        self.assertNotIn("https://twitter.com/gfan03/status/3", blocks)
+
     def test_manager_article_fallback_focuses_on_bench_intent(self):
         title = "【巨人】「レギュラーは決まってません。結果残せば使います」阿部監督、若手積極起用で競争期待"
         summary = "阿部監督が「レギュラーは決まってません。結果残せば使います」と話した。若手積極起用で競争を促す考えを示した。"

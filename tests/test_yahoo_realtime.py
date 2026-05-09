@@ -474,6 +474,159 @@ class YahooFanReactionQueryTests(unittest.TestCase):
             {"@gfan_usage", "@gfan_youth", "@gfan_regular"},
         )
 
+    def test_build_fan_reaction_queries_adds_lineup_context_queries(self):
+        queries = rss_fetcher._build_fan_reaction_queries(
+            "【巨人】阪神戦スタメン発表（東京ドーム、18:00） 1番丸 4番岡本",
+            "巨人が阪神戦のスタメンを発表した。東京ドームで18:00開始。1番丸、4番岡本。",
+            "試合速報",
+        )
+
+        self.assertIn("巨人 阪神 スタメン", queries)
+        self.assertIn("巨人 東京ドーム スタメン", queries)
+
+    def test_fetch_fan_reactions_lineup_uses_context_queries_and_caps_at_two(self):
+        fresh_ts = int(__import__("time").time()) - 900
+
+        def fake_entries(keyword: str):
+            mapping = {
+                "巨人 阪神 スタメン": [
+                    {
+                        "summary": "阪神戦のスタメン、1番丸で行くのはかなり面白い。",
+                        "link": "https://x.com/gfan_lineup/status/1",
+                        "created_at": fresh_ts,
+                    },
+                ],
+                "巨人 東京ドーム スタメン": [
+                    {
+                        "summary": "東京ドームでこの打順なら岡本の前に走者を置きたい。",
+                        "link": "https://x.com/gfan_tokyodome/status/2",
+                        "created_at": fresh_ts,
+                    },
+                ],
+                "巨人 スタメン": [
+                    {
+                        "summary": "DeNA戦のスタメンもそろそろ見たい。",
+                        "link": "https://x.com/gfan_othercard/status/3",
+                        "created_at": fresh_ts,
+                    },
+                ],
+            }
+            return mapping.get(keyword, [])
+
+        with patch.object(rss_fetcher, "fetch_yahoo_realtime_entries", side_effect=fake_entries):
+            with patch.object(rss_fetcher, "get_fan_reaction_limit", return_value=5):
+                reactions = rss_fetcher.fetch_fan_reactions_from_yahoo(
+                    "【巨人】阪神戦スタメン発表（東京ドーム、18:00） 1番丸 4番岡本",
+                    "巨人が阪神戦のスタメンを発表した。東京ドームで18:00開始。1番丸、4番岡本。",
+                    "試合速報",
+                )
+
+        self.assertEqual(
+            [reaction["handle"] for reaction in reactions],
+            ["@gfan_lineup", "@gfan_tokyodome"],
+        )
+
+    def test_build_fan_reaction_queries_adds_pregame_context_queries(self):
+        queries = rss_fetcher._build_fan_reaction_queries(
+            "【巨人】阪神戦の予告先発は戸郷翔征 東京ドームで18:00試合開始",
+            "巨人は阪神戦に向けて、戸郷翔征の先発を予告した。東京ドームで18:00開始予定。",
+            "試合速報",
+        )
+
+        self.assertIn("巨人 阪神 予告先発", queries)
+
+    def test_fetch_fan_reactions_pregame_requires_context_match(self):
+        fresh_ts = int(__import__("time").time()) - 900
+
+        def fake_entries(keyword: str):
+            mapping = {
+                "巨人 阪神 予告先発": [
+                    {
+                        "summary": "阪神戦の予告先発が戸郷なら、立ち上がりをまず見たい。",
+                        "link": "https://x.com/gfan_rotation/status/1",
+                        "created_at": fresh_ts,
+                    },
+                ],
+                "巨人 東京ドーム 予告先発": [
+                    {
+                        "summary": "東京ドームで戸郷先発なら、序盤から飛ばしてほしい。",
+                        "link": "https://x.com/gfan_pitch/status/2",
+                        "created_at": fresh_ts,
+                    },
+                ],
+                "巨人 予告先発": [
+                    {
+                        "summary": "明日のヤクルト戦の予告先発も気になる。",
+                        "link": "https://x.com/gfan_othergame/status/3",
+                        "created_at": fresh_ts,
+                    },
+                ],
+            }
+            return mapping.get(keyword, [])
+
+        with patch.object(rss_fetcher, "fetch_yahoo_realtime_entries", side_effect=fake_entries):
+            with patch.object(rss_fetcher, "get_fan_reaction_limit", return_value=5):
+                reactions = rss_fetcher.fetch_fan_reactions_from_yahoo(
+                    "【巨人】阪神戦の予告先発は戸郷翔征 東京ドームで18:00試合開始",
+                    "巨人は阪神戦に向けて、戸郷翔征の先発を予告した。東京ドームで18:00開始予定。",
+                    "試合速報",
+                )
+
+        self.assertEqual(
+            [reaction["handle"] for reaction in reactions],
+            ["@gfan_rotation", "@gfan_pitch"],
+        )
+
+    def test_build_fan_reaction_queries_adds_notice_context_queries(self):
+        queries = rss_fetcher._build_fan_reaction_queries(
+            "【巨人】田中将大が一軍登録",
+            "巨人の田中将大投手が一軍登録された。",
+            "選手情報",
+        )
+
+        self.assertIn("田中将大 一軍登録", queries)
+        self.assertIn("巨人 一軍登録", queries)
+
+    def test_fetch_fan_reactions_notice_uses_notice_type_to_fill_two(self):
+        fresh_ts = int(__import__("time").time()) - 900
+
+        def fake_entries(keyword: str):
+            mapping = {
+                "田中将大 一軍登録": [
+                    {
+                        "summary": "田中将大の一軍登録、早めの合流で流れを変えてほしい。",
+                        "link": "https://x.com/gfan_notice/status/1",
+                        "created_at": fresh_ts,
+                    },
+                ],
+                "巨人 一軍登録": [
+                    {
+                        "summary": "田中将大の一軍登録でローテの組み直しまで見えてきそうだ。",
+                        "link": "https://x.com/gfan_notice2/status/2",
+                        "created_at": fresh_ts,
+                    },
+                    {
+                        "summary": "一軍登録の知らせで、別の若手投手も楽しみになった。",
+                        "link": "https://x.com/gfan_noise/status/3",
+                        "created_at": fresh_ts,
+                    },
+                ],
+            }
+            return mapping.get(keyword, [])
+
+        with patch.object(rss_fetcher, "fetch_yahoo_realtime_entries", side_effect=fake_entries):
+            with patch.object(rss_fetcher, "get_fan_reaction_limit", return_value=5):
+                reactions = rss_fetcher.fetch_fan_reactions_from_yahoo(
+                    "【巨人】田中将大が一軍登録",
+                    "巨人の田中将大投手が一軍登録された。",
+                    "選手情報",
+                )
+
+        self.assertEqual(
+            [reaction["handle"] for reaction in reactions],
+            ["@gfan_notice", "@gfan_notice2"],
+        )
+
     def test_fetch_fan_reactions_returns_empty_when_only_noisy_reserve_exists(self):
         fresh_ts = int(__import__("time").time()) - 900
 

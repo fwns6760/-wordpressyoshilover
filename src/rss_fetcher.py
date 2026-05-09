@@ -2092,6 +2092,8 @@ def get_fan_reaction_limit() -> int:
 
 def _article_fan_reaction_limit(title: str, summary: str, category: str) -> int:
     limit = get_fan_reaction_limit()
+    if _detect_short_notice_fan_reaction_mode(title, summary, category):
+        return min(limit, 2)
     if category in {"選手情報", "首脳陣"}:
         return min(limit, 3)
     return limit
@@ -8742,6 +8744,12 @@ def _source_requires_precise_fan_reactions(source_name: str, category: str) -> b
     return category == "選手情報" and ("X" in clean or "公式" in clean)
 
 
+def _reaction_requires_precise_match(title: str, summary: str, category: str, source_name: str) -> bool:
+    if _detect_short_notice_fan_reaction_mode(title, summary, category):
+        return True
+    return _source_requires_precise_fan_reactions(source_name, category)
+
+
 def _reaction_matches_precise_source_context(
     text: str,
     title: str,
@@ -8750,6 +8758,9 @@ def _reaction_matches_precise_source_context(
     focus_terms: list[str],
 ) -> bool:
     clean = _strip_html(text or "")
+    short_notice_mode = _detect_short_notice_fan_reaction_mode(title, summary, category)
+    if short_notice_mode:
+        return _reaction_matches_short_notice_context(clean, title, summary, category, short_notice_mode)
     player_mode = _detect_player_article_mode(title, summary, category) if category == "選手情報" else ""
     context_flags = _reaction_context_hit_flags(clean, title, summary, category, focus_terms=focus_terms)
     if category == "選手情報" and player_mode == "player_quote":
@@ -8788,11 +8799,68 @@ def _reaction_is_low_value_share(
     return opinion_score <= 1 and commentary_score == 0
 
 
+def _detect_short_notice_fan_reaction_mode(title: str, summary: str, category: str) -> str:
+    if category == "試合速報":
+        subtype = _detect_article_subtype(title, summary, category, True)
+        if subtype in {"lineup", "pregame"}:
+            return subtype
+    if category == "選手情報" and _detect_player_special_template_kind(title, summary) == "player_notice":
+        return "player_notice"
+    return ""
+
+
+def _short_notice_fan_reaction_identity_terms(title: str, summary: str, category: str, mode: str = "") -> list[str]:
+    resolved_mode = mode or _detect_short_notice_fan_reaction_mode(title, summary, category)
+    source_text = _strip_html(f"{title} {summary}")
+    opponent = _extract_game_opponent_label(source_text)
+    venue = _extract_game_venue_label(source_text)
+    time_token = _extract_game_time_token(source_text)
+    terms: list[str] = []
+    if resolved_mode == "lineup":
+        terms.extend(["スタメン", "打順", opponent, venue, time_token])
+    elif resolved_mode == "pregame":
+        subject = _extract_subject_label(title, summary, category)
+        compact_subject = _compact_subject_label(title, summary, category)
+        terms.extend(["予告先発", opponent, venue, time_token])
+        if subject and subject not in {"巨人", "先発", "予告先発"}:
+            terms.append(subject)
+        if compact_subject and compact_subject not in {"巨人", "先発", "予告先発"} and compact_subject != subject:
+            terms.append(compact_subject)
+    elif resolved_mode == "player_notice":
+        notice_subject, notice_type = _extract_notice_subject_and_type(title, summary)
+        terms.extend([notice_subject, notice_type])
+    return _dedupe_preserve_order([term for term in terms if term])
+
+
+def _reaction_matches_short_notice_context(text: str, title: str, summary: str, category: str, mode: str = "") -> bool:
+    resolved_mode = mode or _detect_short_notice_fan_reaction_mode(title, summary, category)
+    if not resolved_mode:
+        return False
+    clean = _strip_html(text or "")
+    identity_terms = _short_notice_fan_reaction_identity_terms(title, summary, category, resolved_mode)
+    if resolved_mode == "lineup":
+        has_lineup_marker = any(marker in clean for marker in ("スタメン", "打順", "オーダー"))
+        has_identity = any(term in clean for term in identity_terms if term not in {"スタメン", "打順"})
+        return has_lineup_marker and has_identity
+    if resolved_mode == "pregame":
+        has_pregame_marker = "予告先発" in clean or "先発" in clean
+        has_identity = any(term in clean for term in identity_terms if term not in {"予告先発"})
+        return has_pregame_marker and has_identity
+    if resolved_mode == "player_notice":
+        _notice_subject, notice_type = _extract_notice_subject_and_type(title, summary)
+        return _reaction_has_subject_context(clean, title, summary, category) and bool(notice_type and notice_type in clean)
+    return False
+
+
 def _build_fan_reaction_focus_terms(title: str, summary: str, category: str) -> list[str]:
     subject = _compact_subject_label(title, summary, category)
     text = f"{_strip_title_prefix(title)} {_strip_html(summary)}"
     candidates = []
     player_mode = _detect_player_article_mode(title, summary, category) if category == "選手情報" else ""
+    short_notice_mode = _detect_short_notice_fan_reaction_mode(title, summary, category)
+    if short_notice_mode:
+        candidates.extend(_short_notice_fan_reaction_identity_terms(title, summary, category, short_notice_mode))
+        return _dedupe_preserve_order([term for term in candidates if term not in GENERIC_REACTION_TERMS])[:8]
     if category == "選手情報" and player_mode == "player_quote":
         candidates.extend(_extract_player_quote_context_terms(title, summary))
         return _dedupe_preserve_order(candidates)[:8]
@@ -8818,12 +8886,54 @@ def _build_fan_reaction_queries(title: str, summary: str, category: str) -> list
     team_query_subject = _player_team_query_subject(title, summary, subject) if category == "選手情報" else subject
     focus_terms = _build_fan_reaction_focus_terms(title, summary, category)
     player_mode = _detect_player_article_mode(title, summary, category) if category == "選手情報" else ""
+    short_notice_mode = _detect_short_notice_fan_reaction_mode(title, summary, category)
     topic = _strip_title_prefix(title)
     topic = _re.sub(r"[「」『』【】\[\]]", "", topic)
     topic = topic[:24].strip("。 ")
     generic_subjects = {"選手", "首脳陣", "巨人"}
     allow_subject_only_queries = category not in SUBJECT_ONLY_FAN_REACTION_QUERY_BLOCK_CATEGORIES
     queries = []
+    source_text = _strip_html(f"{title} {summary}")
+
+    if short_notice_mode == "lineup":
+        opponent = _extract_game_opponent_label(source_text)
+        venue = _extract_game_venue_label(source_text)
+        time_token = _extract_game_time_token(source_text)
+        if opponent:
+            queries.append(f"巨人 {opponent} スタメン")
+            queries.append(f"巨人 {opponent} 打順")
+        if venue:
+            queries.append(f"巨人 {venue} スタメン")
+        if time_token:
+            queries.append(f"巨人 スタメン {time_token}")
+        queries.append("巨人 スタメン")
+        return _dedupe_preserve_order(queries)[:8]
+
+    if short_notice_mode == "pregame":
+        opponent = _extract_game_opponent_label(source_text)
+        venue = _extract_game_venue_label(source_text)
+        time_token = _extract_game_time_token(source_text)
+        if opponent:
+            queries.append(f"巨人 {opponent} 予告先発")
+        if venue:
+            queries.append(f"巨人 {venue} 予告先発")
+        if subject and subject not in generic_subjects:
+            queries.append(f"{subject} 予告先発")
+            queries.append(f"巨人 {subject} 先発")
+        if time_token:
+            queries.append(f"巨人 予告先発 {time_token}")
+        queries.append("巨人 予告先発")
+        return _dedupe_preserve_order(queries)[:8]
+
+    if short_notice_mode == "player_notice":
+        notice_subject, notice_type = _extract_notice_subject_and_type(title, summary)
+        if notice_subject and notice_type:
+            queries.append(f"{notice_subject} {notice_type}")
+        if notice_subject and notice_subject not in generic_subjects:
+            queries.append(f"{notice_subject} 巨人")
+        if notice_type:
+            queries.append(f"巨人 {notice_type}")
+        return _dedupe_preserve_order(queries)[:8]
 
     if category == "選手情報" and player_mode == "player_quote":
         quote_terms = _extract_quote_phrases(f"{title}\n{summary}", max_phrases=2)
@@ -8861,7 +8971,6 @@ def _build_fan_reaction_queries(title: str, summary: str, category: str) -> list
             queries.append(f"ジャイアンツ {subject}")
         return _dedupe_preserve_order(queries)[:10]
 
-    source_text = _strip_html(f"{title} {summary}")
     manager_context_terms = []
     if category == "首脳陣":
         manager_context_terms = [
@@ -13720,7 +13829,7 @@ def fetch_fan_reactions_from_yahoo(
     focus_terms = _build_fan_reaction_focus_terms(title, summary, category)
     excluded_handles = get_fan_reaction_excluded_handles()
     max_age_hours = get_fan_reaction_max_age_hours()
-    strict_source_match = _source_requires_precise_fan_reactions(source_name, category)
+    strict_source_match = _reaction_requires_precise_match(title, summary, category, source_name)
     now_ts = int(datetime.now(timezone.utc).timestamp())
     primary_candidates = []
     reserve_candidates = []
@@ -13830,6 +13939,20 @@ def fetch_fan_reactions_from_yahoo(
         else:
             logger.info("Yahoo fan reactions unavailable: queries=%s", queries)
     return reactions
+
+
+def _fetch_fan_reactions_from_yahoo_safe(
+    title: str,
+    summary: str = "",
+    category: str = "",
+    source_name: str = "",
+) -> list:
+    logger = logging.getLogger("rss_fetcher")
+    try:
+        return fetch_fan_reactions_from_yahoo(title, summary, category, source_name=source_name)
+    except Exception:
+        logger.exception("fan_reaction_fetch_failed")
+        return []
 
 
 # ──────────────────────────────────────────────────────────
@@ -14977,14 +15100,14 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         )
 
     if article_ai_mode == "none":
-        real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, effective_generation_category, source_name=source_name)
+        real_reactions_yahoo = _fetch_fan_reactions_from_yahoo_safe(title, summary_clean, effective_generation_category, source_name=source_name)
         ai_body = ""
         real_reactions = real_reactions_yahoo
         summary_block = ""
         stats_block = ""
         impression_block = ""
     elif article_ai_mode == "gemini":
-        real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, effective_generation_category, source_name=source_name)
+        real_reactions_yahoo = _fetch_fan_reactions_from_yahoo_safe(title, summary_clean, effective_generation_category, source_name=source_name)
         ai_body, rendered_ai_body_html = _generate_gemini_body()
         real_reactions = real_reactions_yahoo
         summary_block = ""
@@ -14993,7 +15116,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     elif article_ai_mode == "grok":
         ai_body, real_reactions, summary_block, stats_block, impression_block = generate_article_with_grok(title, summary_clean, effective_generation_category, win_loss_hint)
         if not ai_body:
-            real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, effective_generation_category, source_name=source_name)
+            real_reactions_yahoo = _fetch_fan_reactions_from_yahoo_safe(title, summary_clean, effective_generation_category, source_name=source_name)
             ai_body, rendered_ai_body_html = _generate_gemini_body()
             real_reactions = real_reactions_yahoo
             summary_block = ""
@@ -15004,14 +15127,14 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         if has_game:
             ai_body, real_reactions, summary_block, stats_block, impression_block = generate_article_with_grok(title, summary_clean, effective_generation_category, win_loss_hint)
             if not ai_body:
-                real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, effective_generation_category, source_name=source_name)
+                real_reactions_yahoo = _fetch_fan_reactions_from_yahoo_safe(title, summary_clean, effective_generation_category, source_name=source_name)
                 ai_body, rendered_ai_body_html = _generate_gemini_body()
                 real_reactions = real_reactions_yahoo
                 summary_block = ""
                 stats_block = ""
                 impression_block = ""
         else:
-            real_reactions_yahoo = fetch_fan_reactions_from_yahoo(title, summary_clean, effective_generation_category, source_name=source_name)
+            real_reactions_yahoo = _fetch_fan_reactions_from_yahoo_safe(title, summary_clean, effective_generation_category, source_name=source_name)
             ai_body, rendered_ai_body_html = _generate_gemini_body()
             real_reactions = real_reactions_yahoo
             summary_block = ""

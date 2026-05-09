@@ -1084,30 +1084,14 @@ def _try_render_via_nomotoke(
         if block:
             extra_blocks.append(block)
 
-    # NOMOTOKE-INTAKE-LINEUP-001: fetch the Yahoo Sportsnavi preview
-    # page and parse out the starting lineup tables. Applied only to
-    # postgame_v1 (where the source URL is already a Yahoo /index).
-    # Single 6-second GET; returns empty on any failure so the
-    # rendered body stays unchanged.
     if template_key == "nomotoke_card_postgame_v1":
         preview_url = _derive_yahoo_preview_url(source_url)
-        if preview_url:
-            preview_html = _fetch_yahoo_lineup_html(preview_url)
-            if preview_html:
-                try:
-                    from src.source_yahoo_lineup_extractor import (
-                        parse_yahoo_lineup_html,
-                    )
-                except Exception:
-                    parse_yahoo_lineup_html = None  # type: ignore
-                if parse_yahoo_lineup_html is not None:
-                    try:
-                        home_lu, away_lu = parse_yahoo_lineup_html(preview_html)
-                    except Exception:
-                        home_lu, away_lu = [], []
-                    block = _build_lineup_block(home_lu, away_lu)
-                    if block:
-                        extra_blocks.append(block)
+        extra_blocks.extend(
+            _build_postgame_support_blocks(
+                raw_html,
+                preview_url=preview_url,
+            )
+        )
 
     if template_key == "nomotoke_card_postgame_v1" and isinstance(data, dict):
         away = (data.get("away") or "").strip()
@@ -1233,7 +1217,11 @@ def _try_render_via_nomotoke(
         "nomotoke_card_video_v1",
         "nomotoke_card_official_notice_v1",
     ):
-        block = _build_x_embeds_block(title, summary)
+        block = _build_x_embeds_block_safe(
+            title,
+            summary,
+            template_key=template_key,
+        )
         if block:
             extra_blocks.append(block)
 
@@ -3020,32 +3008,44 @@ def _extract_article_keywords(title: str, summary: str) -> list[str]:
     return kws[:8]
 
 
-def _build_x_embeds_block(title: str, summary: str) -> str:
-    """Render the 「📲 関連 X 投稿」 block with 2-3 relevant tweets.
+def _build_x_embeds_block(
+    title: str,
+    summary: str,
+    *,
+    template_key: str = "",
+) -> str:
+    """Render the 「📲 関連 X 投稿」 block.
+
+    Default: up to 3 relevant tweets.
+    Postgame: up to 5 relevant tweets.
 
     Empty when no matching tweet is found in the cached pool.
     """
     keywords = _extract_article_keywords(title, summary)
     if not keywords:
-        # Fallback: top 2 latest tweets if no keyword match — still
-        # better than empty for engagement.
+        if template_key == "nomotoke_card_postgame_v1":
+            return ""
         keywords = ["巨人", "ジャイアンツ"]
     pool = _get_x_embed_pool()
     if not pool:
         return ""
-    matches: list[dict[str, str]] = []
+    match_limit = 5 if template_key == "nomotoke_card_postgame_v1" else 3
+    scored_matches: list[tuple[int, int, dict[str, str]]] = []
     seen_urls: set[str] = set()
-    for item in pool:
+    for index, item in enumerate(pool):
         text = item.get("text") or ""
-        if not any(kw in text for kw in keywords):
+        hit_count = sum(1 for kw in keywords if kw in text)
+        if hit_count <= 0:
             continue
         url = item.get("url") or ""
         if not url or url in seen_urls:
             continue
         seen_urls.add(url)
-        matches.append(item)
-        if len(matches) >= 3:
-            break
+        scored_matches.append((hit_count, index, item))
+    if not scored_matches:
+        return ""
+    scored_matches.sort(key=lambda item: (-item[0], item[1]))
+    matches = [item for _, _, item in scored_matches[:match_limit]]
     if not matches:
         return ""
     parts = [
@@ -3065,6 +3065,175 @@ def _build_x_embeds_block(title: str, summary: str) -> str:
     )
     parts.append("</aside>")
     return "".join(parts)
+
+
+def _build_x_embeds_block_safe(
+    title: str,
+    summary: str,
+    *,
+    template_key: str = "",
+) -> str:
+    """Best-effort wrapper for X embed block generation.
+
+    X relevance failures must never stop article generation.
+    """
+    try:
+        return _build_x_embeds_block(
+            title,
+            summary,
+            template_key=template_key,
+        )
+    except Exception:
+        logging.getLogger("manual_intake").exception(
+            "manual_intake_x_embed_block_failed"
+        )
+        return ""
+
+
+def _strip_html_fragment(fragment: str) -> str:
+    if not fragment:
+        return ""
+    text = re.sub(r"<[^>]+>", " ", fragment)
+    text = html.unescape(text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _extract_yahoo_result_pitchers_from_yahoo_html(
+    raw_html: str,
+) -> list[dict[str, str]]:
+    """Extract 勝利投手 / 敗戦投手 / セーブ rows from Yahoo game HTML."""
+    if not raw_html or "async-resultPitcher" not in raw_html:
+        return []
+    section_match = re.search(
+        r'<div id="async-resultPitcher">(?P<body>.+?)</section>\s*</div>',
+        raw_html,
+        re.DOTALL,
+    )
+    if not section_match:
+        return []
+    rows: list[dict[str, str]] = []
+    section_body = section_match.group("body")
+    for row_match in re.finditer(r"<tr>(?P<body>.+?)</tr>", section_body, re.DOTALL):
+        row_html = row_match.group("body")
+        label_match = re.search(
+            r'<th[^>]*class="bb-gameTable__head"[^>]*>([^<]+)</th>',
+            row_html,
+            re.DOTALL,
+        )
+        td_match = re.search(r"<td[^>]*>(?P<body>.*?)</td>", row_html, re.DOTALL)
+        if not (label_match and td_match):
+            continue
+        label = _strip_html_fragment(label_match.group(1))
+        if label not in {"勝利投手", "敗戦投手", "セーブ"}:
+            continue
+        td_html = td_match.group("body")
+        team_match = re.search(
+            r'<span[^>]*class="bb-gameTable__team"[^>]*>([^<]+)</span>',
+            td_html,
+            re.DOTALL,
+        )
+        player_match = re.search(
+            r'<a[^>]*class="bb-gameTable__player"[^>]*>([^<]+)</a>',
+            td_html,
+            re.DOTALL,
+        )
+        flat_text = _strip_html_fragment(td_html)
+        record_match = re.search(r"\(([^()]+)\)", flat_text)
+        rows.append(
+            {
+                "label": label or "-",
+                "team": _strip_html_fragment(team_match.group(1)) if team_match else "-",
+                "player": _strip_html_fragment(player_match.group(1)) if player_match else "-",
+                "record": record_match.group(1).strip() if record_match else "-",
+            }
+        )
+    return rows
+
+
+def _extract_yahoo_lineup_team_labels_from_html(raw_html: str) -> tuple[str, str]:
+    if not raw_html:
+        return "ホーム", "ビジター"
+    labels = [
+        _strip_html_fragment(match.group(1))
+        for match in re.finditer(
+            r'<div class="bb-splitsHead[^"]*">\s*<h1>([^<]+)</h1>',
+            raw_html,
+            re.DOTALL,
+        )
+    ]
+    if len(labels) >= 2:
+        return labels[0] or "ホーム", labels[1] or "ビジター"
+    return "ホーム", "ビジター"
+
+
+def _build_postgame_result_pitchers_block(rows: list[dict[str, str]]) -> str:
+    if not rows:
+        return ""
+    table_rows = [
+        "<tr><th>項目</th><th>チーム</th><th>投手</th><th>成績</th></tr>"
+    ]
+    for row in rows:
+        table_rows.append(
+            "<tr>"
+            f"<td>{html.escape(row.get('label') or '-')}</td>"
+            f"<td>{html.escape(row.get('team') or '-')}</td>"
+            f"<td>{html.escape(row.get('player') or '-')}</td>"
+            f"<td>{html.escape(row.get('record') or '-')}</td>"
+            "</tr>"
+        )
+    return (
+        '<aside class="nomotoke-postgame-result-pitchers">'
+        '<p class="nomotoke-postgame-result-pitchers__label">📌 責任投手</p>'
+        '<div style="overflow-x:auto;">'
+        '<table style="width:100%;border-collapse:collapse;font-size:0.92em;">'
+        + "".join(table_rows)
+        + "</table></div></aside>"
+    )
+
+
+def _build_postgame_support_blocks(
+    raw_html: str,
+    *,
+    preview_url: str = "",
+) -> list[str]:
+    blocks: list[str] = []
+    if not raw_html:
+        return blocks
+
+    result_pitchers = _extract_yahoo_result_pitchers_from_yahoo_html(raw_html)
+    if result_pitchers:
+        block = _build_postgame_result_pitchers_block(result_pitchers)
+        if block:
+            blocks.append(block)
+
+    home_label, away_label = _extract_yahoo_lineup_team_labels_from_html(raw_html)
+    home_lu: list[dict] = []
+    away_lu: list[dict] = []
+    try:
+        from src.source_yahoo_lineup_extractor import parse_yahoo_lineup_html
+    except Exception:
+        parse_yahoo_lineup_html = None  # type: ignore
+    if parse_yahoo_lineup_html is not None:
+        try:
+            home_lu, away_lu = parse_yahoo_lineup_html(raw_html)
+        except Exception:
+            home_lu, away_lu = [], []
+    if not (home_lu or away_lu) and preview_url and parse_yahoo_lineup_html is not None:
+        preview_html = _fetch_yahoo_lineup_html(preview_url)
+        if preview_html:
+            try:
+                home_lu, away_lu = parse_yahoo_lineup_html(preview_html)
+            except Exception:
+                home_lu, away_lu = [], []
+    lineup_block = _build_lineup_block(
+        home_lu,
+        away_lu,
+        home_label=home_label,
+        away_label=away_label,
+    )
+    if lineup_block:
+        blocks.append(lineup_block)
+    return blocks
 
 
 # NOMOTOKE-INTAKE-SHARE-BUTTONS-001 (R-X2): X / LINE / copy share
@@ -3295,6 +3464,7 @@ def apply_rss_pipeline_enrichment(
         block = _build_other_games_block()
         if block:
             extra_blocks.append(block)
+        extra_blocks.extend(_build_postgame_support_blocks(raw_html))
 
     # X embeds: 全 nomotoke-marked content + caller 未指定で適用 (lenient)
     if (not template_key) or template_key in (
@@ -3306,7 +3476,11 @@ def apply_rss_pipeline_enrichment(
         "nomotoke_card_video_v1",
         "nomotoke_card_official_notice_v1",
     ):
-        block = _build_x_embeds_block(title, summary)
+        block = _build_x_embeds_block_safe(
+            title,
+            summary,
+            template_key=template_key,
+        )
         if block:
             extra_blocks.append(block)
 
@@ -3386,23 +3560,38 @@ def apply_rss_pipeline_enrichment(
     return content_html
 
 
-def _build_lineup_block(home_lineup: list[dict], away_lineup: list[dict]) -> str:
-    """Render the 「📊 今日のスタメン」 block. Empty when both lists are
-    empty."""
+def _build_lineup_block(
+    home_lineup: list[dict],
+    away_lineup: list[dict],
+    *,
+    home_label: str = "ホーム",
+    away_label: str = "ビジター",
+) -> str:
+    """Render the 「📊 今日のスタメン」 block as per-team tables."""
     if not home_lineup and not away_lineup:
         return ""
 
     def _render_table(rows: list[dict]) -> str:
         if not rows:
             return ""
-        lis = "".join(
-            f'<li>{html.escape(r.get("order", ""))}番 '
-            f'({html.escape(r.get("position", ""))}) '
-            f'{html.escape(r.get("name", ""))}</li>'
+        table_rows = ["<tr><th>打順</th><th>位置</th><th>選手名</th></tr>"]
+        table_rows.extend(
+            "<tr>"
+            f"<td>{html.escape(r.get('order', ''))}</td>"
+            f"<td>{html.escape(r.get('position', ''))}</td>"
+            f"<td>{html.escape(r.get('name', ''))}</td>"
+            "</tr>"
             for r in rows
             if r.get("name")
         )
-        return f"<ol>{lis}</ol>" if lis else ""
+        if len(table_rows) <= 1:
+            return ""
+        return (
+            '<div style="overflow-x:auto;">'
+            '<table style="width:100%;border-collapse:collapse;font-size:0.92em;">'
+            + "".join(table_rows)
+            + "</table></div>"
+        )
 
     parts: list[str] = []
     parts.append(
@@ -3412,13 +3601,17 @@ def _build_lineup_block(home_lineup: list[dict], away_lineup: list[dict]) -> str
     home_html = _render_table(home_lineup)
     if home_html:
         parts.append('<div class="nomotoke-lineup__home">')
-        parts.append('<p class="nomotoke-lineup__team-label">ホーム</p>')
+        parts.append(
+            f'<p class="nomotoke-lineup__team-label">{html.escape(home_label or "ホーム")}</p>'
+        )
         parts.append(home_html)
         parts.append("</div>")
     away_html = _render_table(away_lineup)
     if away_html:
         parts.append('<div class="nomotoke-lineup__away">')
-        parts.append('<p class="nomotoke-lineup__team-label">ビジター</p>')
+        parts.append(
+            f'<p class="nomotoke-lineup__team-label">{html.escape(away_label or "ビジター")}</p>'
+        )
         parts.append(away_html)
         parts.append("</div>")
     parts.append("</aside>")

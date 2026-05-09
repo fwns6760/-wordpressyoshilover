@@ -39,6 +39,10 @@ from unittest.mock import MagicMock, patch
 
 from src.tools import manual_intake as mi
 
+YAHOO_POSTGAME_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "yahoo_game" / "2026_05_04_giants_swallows.html"
+)
+
 
 class URLClassificationTests(unittest.TestCase):
     def test_valid_http(self):
@@ -1052,6 +1056,148 @@ class EmojiDecorationSafetyTests(unittest.TestCase):
         self.assertIn('class="nomotoke-card-short-news"', out)
         self.assertIn("東京ドームで勝利", out)
         self.assertIn("🔗 出典記事", out)
+
+
+class PostgameExpansionTests(unittest.TestCase):
+    def test_build_lineup_block_renders_tables_with_team_labels(self):
+        block = mi._build_lineup_block(
+            [{"order": "1", "position": "中", "name": "丸佳浩"}],
+            [{"order": "1", "position": "中", "name": "西川遥輝"}],
+            home_label="巨人",
+            away_label="ヤクルト",
+        )
+
+        self.assertIn('class="nomotoke-lineup"', block)
+        self.assertIn("<table", block)
+        self.assertIn("巨人", block)
+        self.assertIn("ヤクルト", block)
+        self.assertIn("<th>打順</th>", block)
+        self.assertIn("<th>位置</th>", block)
+        self.assertIn("<th>選手名</th>", block)
+
+    def test_extract_yahoo_result_pitchers_from_html(self):
+        html_text = YAHOO_POSTGAME_FIXTURE.read_text(encoding="utf-8")
+
+        rows = mi._extract_yahoo_result_pitchers_from_yahoo_html(html_text)
+
+        self.assertEqual(rows[0]["label"], "勝利投手")
+        self.assertEqual(rows[0]["team"], "ヤクルト")
+        self.assertEqual(rows[0]["player"], "奥川")
+        self.assertEqual(rows[0]["record"], "1勝2敗0S")
+        self.assertEqual(rows[1]["label"], "敗戦投手")
+        self.assertEqual(rows[1]["team"], "巨人")
+        self.assertEqual(rows[1]["player"], "戸郷")
+        self.assertEqual(rows[1]["record"], "0勝1敗0S")
+        self.assertEqual(rows[2]["label"], "セーブ")
+        self.assertEqual(rows[2]["player"], "-")
+
+    def test_build_x_embeds_block_postgame_allows_up_to_five_matches(self):
+        pool = [
+            {
+                "url": f"https://x.com/example/status/{index}",
+                "text": f"巨人 阪神 試合結果 {index}",
+                "pubdate": f"Sat, 10 May 2026 12:0{index}:00 +0900",
+            }
+            for index in range(6)
+        ]
+
+        with patch.object(mi, "_get_x_embed_pool", return_value=pool):
+            block = mi._build_x_embeds_block(
+                "巨人が阪神に勝利",
+                "阪神戦の試合結果",
+                template_key="nomotoke_card_postgame_v1",
+            )
+
+        self.assertEqual(block.count("twitter-tweet"), 5)
+
+    def test_apply_rss_pipeline_enrichment_postgame_adds_result_pitchers_and_lineup_tables(self):
+        raw_html = YAHOO_POSTGAME_FIXTURE.read_text(encoding="utf-8")
+        base_html = (
+            '<div class="nomotoke-card-postgame">'
+            '<p class="nomotoke-lead">ヤクルト戦敗戦</p>'
+            "<h3>🔗 出典記事</h3>"
+            '<p>記事全文は <a href="https://example.com/source">出典</a> '
+            "をご覧ください。</p>"
+            "</div>"
+        )
+
+        with (
+            patch.object(mi, "_build_related_articles_block", return_value=""),
+            patch.object(mi, "_build_recent_games_block", return_value=""),
+            patch.object(mi, "_build_matchup_record_block", return_value=""),
+            patch.object(mi, "_build_standings_block", return_value=""),
+            patch.object(mi, "_build_next_game_block", return_value=""),
+            patch.object(mi, "_build_trust_badge_block", return_value=""),
+            patch.object(mi, "_build_other_games_block", return_value=""),
+            patch.object(mi, "_build_x_embeds_block", return_value=""),
+            patch.object(mi, "_build_share_buttons_block", return_value=""),
+            patch.object(mi, "_build_meta_header_bar", return_value=""),
+            patch.object(mi, "_build_toc_block", return_value=""),
+            patch.object(mi, "_inject_toc_anchors", side_effect=lambda html: (html, [])),
+            patch.object(mi, "_wrap_first_roster_names_in_lead", side_effect=lambda html: html),
+            patch.object(mi, "_build_tag_chip_block", return_value=""),
+            patch.object(mi, "_build_jsonld_article_schema", return_value=""),
+            patch.object(mi, "_decorate_body_with_emoji_safe", side_effect=lambda html: html),
+        ):
+            rendered = mi.apply_rss_pipeline_enrichment(
+                base_html,
+                title="【試合結果】巨人 1-5 ヤクルト",
+                source_url="https://baseball.yahoo.co.jp/npb/game/2021029183/index",
+                template_key="nomotoke_card_postgame_v1",
+                summary="ヤクルト戦敗戦",
+                source_name="Yahoo!スポーツ",
+                raw_html=raw_html,
+            )
+
+        self.assertIsInstance(rendered, str)
+        self.assertIn("責任投手", rendered)
+        self.assertIn("今日のスタメン", rendered)
+        self.assertIn("奥川", rendered)
+        self.assertIn("戸郷 翔征", rendered)
+        self.assertIn("<table", rendered)
+
+    def test_apply_rss_pipeline_enrichment_postgame_returns_body_when_x_embed_step_fails(self):
+        raw_html = YAHOO_POSTGAME_FIXTURE.read_text(encoding="utf-8")
+        base_html = (
+            '<div class="nomotoke-card-postgame">'
+            '<p class="nomotoke-lead">ヤクルト戦敗戦</p>'
+            "<h3>🔗 出典記事</h3>"
+            '<p>記事全文は <a href="https://example.com/source">出典</a> '
+            "をご覧ください。</p>"
+            "</div>"
+        )
+
+        with (
+            patch.object(mi, "_build_related_articles_block", return_value=""),
+            patch.object(mi, "_build_recent_games_block", return_value=""),
+            patch.object(mi, "_build_matchup_record_block", return_value=""),
+            patch.object(mi, "_build_standings_block", return_value=""),
+            patch.object(mi, "_build_next_game_block", return_value=""),
+            patch.object(mi, "_build_trust_badge_block", return_value=""),
+            patch.object(mi, "_build_other_games_block", return_value=""),
+            patch.object(mi, "_build_x_embeds_block", side_effect=RuntimeError("x embed explode")),
+            patch.object(mi, "_build_share_buttons_block", return_value=""),
+            patch.object(mi, "_build_meta_header_bar", return_value=""),
+            patch.object(mi, "_build_toc_block", return_value=""),
+            patch.object(mi, "_inject_toc_anchors", side_effect=lambda html: (html, [])),
+            patch.object(mi, "_wrap_first_roster_names_in_lead", side_effect=lambda html: html),
+            patch.object(mi, "_build_tag_chip_block", return_value=""),
+            patch.object(mi, "_build_jsonld_article_schema", return_value=""),
+            patch.object(mi, "_decorate_body_with_emoji_safe", side_effect=lambda html: html),
+        ):
+            rendered = mi.apply_rss_pipeline_enrichment(
+                base_html,
+                title="【試合結果】巨人 1-5 ヤクルト",
+                source_url="https://baseball.yahoo.co.jp/npb/game/2021029183/index",
+                template_key="nomotoke_card_postgame_v1",
+                summary="ヤクルト戦敗戦",
+                source_name="Yahoo!スポーツ",
+                raw_html=raw_html,
+            )
+
+        self.assertIsInstance(rendered, str)
+        self.assertIn("🔗 出典記事", rendered)
+        self.assertIn("責任投手", rendered)
 
 
 if __name__ == "__main__":

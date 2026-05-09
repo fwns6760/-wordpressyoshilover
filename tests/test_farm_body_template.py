@@ -143,6 +143,28 @@ class FarmBodyTemplateTests(unittest.TestCase):
         self.assertIn("<h4>【二軍個別選手成績】</h4>", blocks)
         self.assertLessEqual(blocks.count("<h3>"), 2)
 
+    def test_farm_safe_fallback_keeps_team_result_out_of_stat_section(self):
+        ai_body = rss_fetcher._build_farm_safe_fallback(
+            "【二軍】巨人 4-1 ロッテ　ティマが2安打3打点",
+            "巨人二軍がロッテ二軍に4-1で勝利した。ティマが2安打3打点と打線を引っ張った。山城京平は3回1失点だった。",
+        )
+
+        self.assertIn("【二軍個別選手成績】", ai_body)
+        self.assertEqual(ai_body.count("巨人二軍がロッテ二軍に4-1で勝利した。"), 1)
+        self.assertIn("ティマが2安打3打点と打線を引っ張った。", ai_body)
+        self.assertIn("山城京平は3回1失点だった。", ai_body)
+
+    def test_farm_lineup_safe_fallback_does_not_repeat_lineup_announcement(self):
+        ai_body = rss_fetcher._build_farm_lineup_safe_fallback(
+            "【二軍】巨人 vs DeNA 13:00試合開始　1番浅野、4番ティマでスタメン",
+            "巨人二軍がDeNA戦のスタメンを発表した。1番浅野翔吾、4番ティマ、先発は西舘勇陽投手。",
+        )
+
+        self.assertIn("【二軍試合概要】", ai_body)
+        self.assertIn("【二軍スタメン一覧】", ai_body)
+        self.assertEqual(ai_body.count("巨人二軍がDeNA戦のスタメンを発表した。"), 1)
+        self.assertIn("1番浅野翔吾、4番ティマ、先発は西舘勇陽投手。", ai_body)
+
 
 if __name__ == "__main__":
     unittest.main()

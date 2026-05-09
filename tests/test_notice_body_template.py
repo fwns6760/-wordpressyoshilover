@@ -132,6 +132,69 @@ class NoticeBodyTemplateTests(unittest.TestCase):
         self.assertIn('<h4>【公示の背景】</h4>', blocks)
         self.assertLessEqual(blocks.count("<h3>"), 2)
 
+    def test_notice_build_news_block_prefers_fact_template_before_gemini(self):
+        called = {"gemini": False}
+
+        def _fake_generate(*args, **kwargs):
+            called["gemini"] = True
+            return "\n".join(
+                [
+                    "【公示の要旨】",
+                    "浅野翔吾が一軍登録された。",
+                    "【対象選手の基本情報】",
+                    "浅野翔吾は外野手です。",
+                    "【公示の背景】",
+                    "今後に注目です。",
+                    "【今後の注目点】",
+                    "期待したいです。",
+                ]
+            )
+
+        with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+            with patch.object(rss_fetcher, "_find_related_posts_for_article", return_value=[]):
+                with patch.object(rss_fetcher, "_build_related_posts_section", return_value=""):
+                    with patch.object(rss_fetcher, "generate_article_with_gemini", side_effect=_fake_generate):
+                        _blocks, ai_body = rss_fetcher.build_news_block(
+                            title="【巨人】浅野翔吾が一軍登録",
+                            summary="4月28日、浅野翔吾が一軍登録。今季打率.280、2本塁打。東京ドームに合流した。",
+                            url="https://example.com/post",
+                            source_name="スポーツ報知",
+                            category="選手情報",
+                            has_game=False,
+                            source_day_label="4月28日",
+                            source_type="news",
+                        )
+
+        self.assertFalse(called["gemini"])
+        self.assertIn("【公示の要旨】", ai_body)
+        self.assertIn("【対象選手の基本情報】", ai_body)
+        self.assertIn("【公示の背景】", ai_body)
+        self.assertIn("【今後の注目点】", ai_body)
+        self.assertIn("浅野翔吾が一軍登録", ai_body)
+        self.assertIn("4月28日", ai_body)
+        self.assertIn("打率.280", ai_body)
+        self.assertIn("2本塁打", ai_body)
+
+    def test_notice_build_news_block_uses_numeric_record_in_basic_info(self):
+        with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+            with patch.object(rss_fetcher, "_find_related_posts_for_article", return_value=[]):
+                with patch.object(rss_fetcher, "_build_related_posts_section", return_value=""):
+                    with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                        _blocks, ai_body = rss_fetcher.build_news_block(
+                            title="【巨人】浅野翔吾が一軍登録",
+                            summary="4月28日、浅野翔吾が一軍登録。今季打率.280、2本塁打。東京ドームに合流した。",
+                            url="https://example.com/post",
+                            source_name="スポーツ報知",
+                            category="選手情報",
+                            has_game=False,
+                            source_day_label="4月28日",
+                            source_type="news",
+                        )
+
+        self.assertIn("今季打率.280、2本塁打。", ai_body)
+        self.assertIn("東京ドームに合流した。", ai_body)
+        self.assertEqual(ai_body.count("4月28日、浅野翔吾が一軍登録。"), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

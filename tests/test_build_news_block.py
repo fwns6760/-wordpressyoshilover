@@ -168,6 +168,88 @@ class BuildNewsBlockTests(unittest.TestCase):
         self.assertNotIn("投げ方を組み替えている", ai_body)
         self.assertIn("報知新聞 / スポーツ報知巨人班X", blocks)
 
+    def test_player_quote_hitter_fallback_avoids_pitcher_specific_language(self):
+        title = "【巨人】岡本和真「自分のスイングを崩さない」復調へ意識を明かす"
+        summary = "岡本和真が「自分のスイングを崩さない」と話した。打撃の状態や試合前の意識について説明した。"
+
+        with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+            with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                _, ai_body = rss_fetcher.build_news_block(
+                    title=title,
+                    summary=summary,
+                    url="https://example.com/player-comment",
+                    source_name="報知 巨人",
+                    category="選手情報",
+                    has_game=False,
+                )
+
+        self.assertIn("岡本和真のコメントと試合前の論点を整理します。", ai_body)
+        self.assertIn("「自分のスイングを崩さない」", ai_body)
+        self.assertNotIn("相手打線", ai_body)
+        self.assertNotIn("マウンド", ai_body)
+        self.assertNotIn("配球", ai_body)
+        self.assertNotIn("阪神戦の入り方", ai_body)
+
+    def test_player_story_renders_subject_named_daily_stat_table(self):
+        title = "【巨人】浅野翔吾が打撃好調　今季打率.280、2本塁打、14打点、5盗塁"
+        summary = "浅野翔吾が打撃好調を維持している。今季打率.280、2本塁打、14打点、5盗塁を記録している。"
+
+        with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+            with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                blocks, ai_body = rss_fetcher.build_news_block(
+                    title=title,
+                    summary=summary,
+                    url="https://example.com/player-stats",
+                    source_name="報知 巨人",
+                    category="選手情報",
+                    has_game=False,
+                )
+
+        self.assertIn("浅野翔吾の現状を整理します。", ai_body)
+        self.assertIn("📊 浅野翔吾の当日成績", blocks)
+        self.assertIn("<td>打率</td>", blocks)
+        self.assertIn("<td>.280</td>", blocks)
+        self.assertIn("<td>本塁打</td>", blocks)
+        self.assertIn("<td>2</td>", blocks)
+        self.assertIn("<td>打点</td>", blocks)
+        self.assertIn("<td>14</td>", blocks)
+        self.assertIn("<td>盗塁</td>", blocks)
+        self.assertIn("<td>5</td>", blocks)
+
+    def test_player_story_adds_front_context_and_confirmed_fact_lines(self):
+        title = "【巨人】浅野翔吾が3番右翼でスタメン　5月9日のヤクルト戦、今季打率.280、2本塁打、14打点、5盗塁"
+        summary = (
+            "浅野翔吾は一軍での定着を目指している。"
+            "5月9日のヤクルト戦（東京ドーム）では3番右翼でスタメン出場。"
+            "打撃については「自分の形を出したい」と話した。"
+            "今季初の3番起用となる。"
+        )
+
+        with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+            with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                blocks, ai_body = rss_fetcher.build_news_block(
+                    title=title,
+                    summary=summary,
+                    url="https://example.com/player-context",
+                    source_name="報知 巨人",
+                    category="選手情報",
+                    has_game=False,
+                )
+
+        self.assertIn("5月9日のヤクルト戦、東京ドームでの話題です。", ai_body)
+        self.assertIn("✅ 確認できる事実", blocks)
+        self.assertIn("浅野翔吾は一軍での定着を目指している。", blocks)
+        self.assertIn("5月9日のヤクルト戦（東京ドーム）では3番右翼でスタメン出場。", blocks)
+        self.assertIn("コメントの主題は打撃内容です。", blocks)
+        self.assertIn("今季初の3番起用となる。", blocks)
+        self.assertNotIn("見たい記事です。", ai_body)
+        self.assertNotIn("次に見たいのは、", ai_body)
+        self.assertNotIn("見たいところです。", ai_body)
+        self.assertNotIn("見どころです。", ai_body)
+        self.assertNotIn("追っていきたいです。", ai_body)
+        self.assertIn("元記事では、浅野翔吾が次の実戦へ向けた意識として「自分の形を出したい」に触れています。", ai_body)
+        self.assertIn("元記事にある言葉と実際のプレーが一致するかが次の確認点です。みなさんの意見はコメントで教えてください！", ai_body)
+
     def test_lineup_article_fallback_uses_lineup_specific_structure(self):
         title = "【巨人】今日のスタメン発表　1番丸、4番岡田"
         summary = (
@@ -1151,6 +1233,142 @@ class BuildNewsBlockTests(unittest.TestCase):
         self.assertEqual(blocks.count('href="#respond"'), 0)
         self.assertNotIn("みなさんの意見はコメントで教えてください！", ai_body)
 
+    def test_stats_safe_fallback_avoids_status_story_language(self):
+        body = rss_fetcher._build_safe_article_fallback(
+            "巨人・岡本和真 今季打撃成績 .280 12HR 35打点",
+            "岡本和真は今季打率.280、12本塁打、35打点を記録している。",
+            "選手情報",
+            False,
+            article_subtype_override="stats",
+        )
+
+        self.assertIn("岡本和真の成績を整理します。", body)
+        self.assertIn("打率.280", body)
+        self.assertNotIn("二軍戦や調整登板", body)
+        self.assertNotIn("次の登板や一軍合流", body)
+
+    def test_build_news_block_stats_fallback_respects_stats_subtype(self):
+        with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+            with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                _blocks, ai_body = rss_fetcher.build_news_block(
+                    title="巨人・岡本和真 今季打撃成績 .280 12HR 35打点",
+                    summary="岡本和真は今季打率.280、12本塁打、35打点を記録している。",
+                    url="https://example.com/stats",
+                    source_name="スポーツ報知",
+                    category="選手情報",
+                    has_game=False,
+                    routing_context={
+                        "category": "選手情報",
+                        "generation_category": "選手情報",
+                        "effective_generation_category": "選手情報",
+                        "body_category": "選手情報",
+                        "title_subtype": "stats",
+                        "body_subtype": "stats",
+                        "validator_subtype": "stats",
+                    },
+                )
+
+        self.assertIn("岡本和真の成績を整理します。", ai_body)
+        self.assertNotIn("二軍戦や調整登板", ai_body)
+        self.assertNotIn("次の登板や一軍合流", ai_body)
+
+    def test_generic_news_safe_fallback_avoids_game_or_usage_watch_line(self):
+        body = rss_fetcher._build_safe_article_fallback(
+            "【巨人】ファンクラブ向けイベント開催を発表",
+            "球団は5月12日にファンクラブ向けイベントを開催すると発表した。応募方法や開始時刻も案内した。",
+            "コラム",
+            False,
+            article_subtype_override="other",
+        )
+
+        self.assertIn("ファンクラブ向けイベント", body)
+        self.assertNotIn("次の試合や起用", body)
+        self.assertNotIn("起用にどうつながる", body)
+
+    def test_build_news_block_generic_news_fallback_uses_neutral_watch_line(self):
+        with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+            with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                _blocks, ai_body = rss_fetcher.build_news_block(
+                    title="【巨人】ファンクラブ向けイベント開催を発表",
+                    summary="球団は5月12日にファンクラブ向けイベントを開催すると発表した。応募方法や開始時刻も案内した。",
+                    url="https://example.com/event-news",
+                    source_name="スポーツ報知",
+                    category="コラム",
+                    has_game=False,
+                    routing_context={
+                        "category": "コラム",
+                        "generation_category": "コラム",
+                        "effective_generation_category": "コラム",
+                        "body_category": "コラム",
+                        "title_subtype": "other",
+                        "body_subtype": "other",
+                        "validator_subtype": "other",
+                    },
+                )
+
+        self.assertIn("ファンクラブ向けイベント", ai_body)
+        self.assertNotIn("次の試合や起用", ai_body)
+        self.assertNotIn("起用にどうつながる", ai_body)
+
+    def test_generic_column_safe_fallback_uses_neutral_column_watch_line(self):
+        body = rss_fetcher._build_safe_article_fallback(
+            "【巨人】交流戦前の戦い方を5項目で整理",
+            "開幕からの得点圏打率、先発防御率、救援起用、若手起用、守備位置の傾向を整理した。",
+            "コラム",
+            False,
+            article_subtype_override="other",
+        )
+
+        self.assertIn("交流戦前の戦い方", body)
+        self.assertIn("元記事で整理された論点や数字", body)
+        self.assertNotIn("次の試合や起用", body)
+        self.assertNotIn("起用にどうつながる", body)
+
+    def test_program_rule_based_keeps_japanese_hour_schedule(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "RULE_BASED_SUBTYPES": "program",
+            },
+            clear=False,
+        ):
+            result = rss_fetcher._build_rule_based_subtype_body(
+                title="【巨人】日テレジータスで試合前特番を放送",
+                summary="5月12日18時から日テレジータスで巨人戦中継直前特番を放送する。出演は高橋由伸氏と辻岡義堂アナ。",
+                generation_category="球団情報",
+                article_subtype="general",
+                source_url="https://example.com/program-news",
+                source_type="news",
+            )
+
+        self.assertIsNotNone(result)
+        _subtype, body = result
+        self.assertIn("【放送・配信日時】", body)
+        self.assertIn("放送・配信日時は5月12日 18時です。", body)
+
+    def test_video_rule_based_uses_youtube_channel_and_clean_hosts(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "RULE_BASED_SUBTYPES": "program",
+            },
+            clear=False,
+        ):
+            result = rss_fetcher._build_rule_based_subtype_body(
+                title="【動画】阿部監督インタビューを公開",
+                summary="球団公式YouTubeで阿部監督のインタビュー動画を公開した。配信は5月12日18時からで、今季の戦い方や若手起用について語っている。",
+                generation_category="球団情報",
+                article_subtype="general",
+                source_url="https://example.com/video",
+                source_type="news",
+            )
+
+        self.assertIsNotNone(result)
+        _subtype, body = result
+        self.assertIn("媒体はYouTubeです。", body)
+        self.assertIn("出演者: 阿部監督", body)
+        self.assertNotIn("出演者: 阿部監督 / で阿部監督", body)
+
     def test_existing_safe_fallback_outputs_remain_unchanged(self):
         self.assertEqual(
             rss_fetcher._build_game_safe_fallback(
@@ -1186,7 +1404,7 @@ class BuildNewsBlockTests(unittest.TestCase):
 【選手成績】
 田中将大投手は7回2失点だった。
 【試合展開】
-田中将大投手は7回2失点だった。
+3-2で決まるまで、どこで流れが動いたかを見ておきたい試合でした。
 次戦にどの流れを持ち込めるかまで見ていきたいです。みなさんの意見はコメントで教えてください！
 """.strip(),
         )
@@ -1204,8 +1422,8 @@ class BuildNewsBlockTests(unittest.TestCase):
 先発の京本眞投手は5回1失点だった。
 ファームの結果は、一軍へ上げたい選手がどこで数字を残したかを見る材料になります。
 【二軍個別選手成績】
-巨人2軍が日本ハムに4-2で勝利した。
 浅野翔吾が2安打1打点を記録した。
+先発の京本眞投手は5回1失点だった。
 【一軍への示唆】
 二軍での内容が次の一軍候補争いにどうつながるかを見たいところです。
 次にどんな数字を積み上げるかまで追っていきたいです。みなさんの意見はコメントで教えてください！

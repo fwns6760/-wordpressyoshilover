@@ -190,6 +190,7 @@ SCORE_VS_TOKEN_RE = _re.compile(r"\d{1,2}\s*対\s*\d{1,2}")
 DATE_JP_TOKEN_RE = _re.compile(r"(?:\d{4}年)?\d{1,2}月\d{1,2}日")
 DATE_SLASH_TOKEN_RE = _re.compile(r"(?:\d{4}/)?\d{1,2}/\d{1,2}")
 TIME_TOKEN_RE = _re.compile(r"\d{1,2}:\d{2}")
+PROGRAM_TIME_TOKEN_RE = _re.compile(r"\d{1,2}(?::\d{2}|時(?:\d{1,2}分)?)")
 RECORD_TOKEN_RE = _re.compile(r"\d+勝\d+敗(?:\d+分)?")
 LABELED_DECIMAL_TOKEN_RE = _re.compile(r"(?:打率|防御率|出塁率|長打率|OPS|WHIP|WAR|wRC\+?|K/9)\s*[.:：・]?\s*\d+\.\d+")
 LEADING_DECIMAL_TOKEN_RE = _re.compile(r"(?<!\d)\.\d{2,3}")
@@ -1187,6 +1188,7 @@ RULE_BASED_PROGRAM_CHANNEL_MARKERS = (
     "GIANTS TV",
     "Giants TV",
     "GIANTS_TV",
+    "YouTube",
     "DAZN",
     "Hulu",
     "BS日テレ",
@@ -3370,6 +3372,158 @@ def _extract_player_role_label(title: str, summary: str) -> str:
     return f"{name}{role}"
 
 
+def _build_player_quote_safe_lines(title: str, summary: str, subject: str, quote_text: str) -> tuple[str, str, str]:
+    player_position = _extract_player_position(title, summary)
+    player_subject = subject or _compact_subject_label(title, summary, "選手情報") or "この選手"
+    if player_position == "投手":
+        play_label = "投球内容"
+        outcome_label = "投球"
+    elif player_position == "捕手":
+        play_label = "守備や打席"
+        outcome_label = "プレー"
+    else:
+        play_label = "打席やプレー"
+        outcome_label = "プレー"
+
+    focus_line = (
+        f"今回のニュースで確認できるのは「{quote_text}」という言葉です。"
+        f"{player_subject}のコメントは、次の{play_label}へ向けた意識を整理したものです。"
+    )
+    watch_line = (
+        f"元記事では、{player_subject}が次の実戦へ向けた意識として「{quote_text}」に触れています。"
+        f"コメントの主題は実際の{play_label}にあります。"
+    )
+    closing = (
+        f"{player_subject}のコメントでは、次の実戦へ向けた意識として「{quote_text}」が示されました。"
+        f"元記事にある言葉と実際の{outcome_label}が一致するかが次の確認点です。"
+        "みなさんの意見はコメントで教えてください！"
+    )
+    return focus_line, watch_line, closing
+
+
+def _extract_player_daily_stat_rows(title: str, summary: str) -> list[tuple[str, str]]:
+    source_text = _strip_html(f"{title} {summary}")
+    if not source_text:
+        return []
+
+    normalized = source_text.translate(str.maketrans("０１２３４５６７８９．，", "0123456789.,"))
+    rows: list[tuple[str, str]] = []
+
+    avg_match = _re.search(r"打率\s*([\.]?\d{3})", normalized)
+    if avg_match:
+        avg = avg_match.group(1)
+        if avg and not avg.startswith("."):
+            avg = f".{avg}"
+        rows.append(("打率", avg))
+
+    hr_match = _re.search(r"(\d+)本塁打", normalized)
+    if hr_match:
+        rows.append(("本塁打", hr_match.group(1)))
+
+    rbi_match = _re.search(r"(\d+)打点", normalized)
+    if rbi_match:
+        rows.append(("打点", rbi_match.group(1)))
+
+    sb_match = _re.search(r"(\d+)盗塁", normalized)
+    if sb_match:
+        rows.append(("盗塁", sb_match.group(1)))
+
+    return rows
+
+
+def _build_player_front_context_line(title: str, summary: str, source_day_label: str = "") -> str:
+    source_text = _strip_html(f"{title} {summary}")
+    if not source_text:
+        return ""
+
+    date_label = _extract_rule_based_date_label(source_text, fallback=source_day_label)
+    opponent = _extract_title_opponent(source_text)
+    venue = _extract_title_venue(source_text)
+
+    if date_label and opponent and venue:
+        return f"{date_label}の{opponent}戦、{venue}での話題です。"
+    if date_label and opponent:
+        return f"{date_label}の{opponent}戦が今回の文脈です。"
+    if opponent and venue:
+        return f"{opponent}戦、{venue}での話題です。"
+    if date_label and venue:
+        return f"{date_label}、{venue}での話題です。"
+    return ""
+
+
+def _extract_player_comment_target_label(title: str, summary: str) -> str:
+    source_text = _strip_html(f"{title} {summary}")
+    if not source_text:
+        return ""
+    topic_groups = (
+        ("打撃内容", ("打撃", "スイング", "打席", "打球", "バット", "打率", "本塁打", "打点", "盗塁")),
+        ("守備内容", ("守備", "送球", "捕球", "遊撃", "二塁", "三塁", "一塁", "右翼", "左翼", "中堅")),
+        ("投球内容", ("投球", "登板", "先発", "配球", "立ち上がり", "マウンド")),
+        ("一軍での起用", ("スタメン", "一軍", "昇格", "登録", "合流")),
+        ("復帰の状態", ("復帰", "実戦復帰", "別メニュー", "二軍戦", "2軍戦")),
+    )
+    for label, markers in topic_groups:
+        if any(marker in source_text for marker in markers):
+            return label
+    return ""
+
+
+def _extract_player_confirmed_fact_lines(title: str, summary: str, source_day_label: str = "") -> list[str]:
+    source_text = _strip_html(f"{title} {summary}")
+    if not source_text:
+        return []
+
+    fact_lines: list[str] = []
+    normalized_seen: set[str] = set()
+
+    def _push_fact_line(value: str) -> None:
+        clean = _clip_rule_based_fact(value, limit=120)
+        if not clean or not _rule_based_fact_ok(clean):
+            return
+        sentence = _ensure_fact_sentence(clean)
+        normalized = _collapse_ws(sentence).strip("。 ")
+        if not normalized or normalized in normalized_seen:
+            return
+        normalized_seen.add(normalized)
+        fact_lines.append(sentence)
+
+    status_fact = _find_source_sentence_with_markers(title, summary, PLAYER_STATUS_MARKERS)
+    if status_fact:
+        _push_fact_line(status_fact)
+
+    for sentence in _extract_source_sentences(title, summary, max_sentences=6):
+        clean = _clip_rule_based_fact(sentence, limit=120)
+        if not clean or not _rule_based_fact_ok(clean):
+            continue
+        if _re.search(r"\d番", clean) or any(
+            marker in clean
+            for marker in ("スタメン", "先発マスク", "右翼", "左翼", "中堅", "遊撃", "二塁", "三塁", "一塁", "捕手")
+        ):
+            _push_fact_line(clean)
+            break
+
+    if _extract_quote_phrases(f"{title}\n{summary}", max_phrases=1):
+        comment_target = _extract_player_comment_target_label(title, summary)
+        if comment_target:
+            _push_fact_line(f"コメントの主題は{comment_target}です")
+
+    milestone_fact = _find_source_sentence_with_markers(
+        title,
+        summary,
+        ("今季初", "プロ初", "復帰後初", "初本塁打", "初安打", "初打点", "初先発", "連続"),
+        exclude={fact.rstrip("。") for fact in fact_lines},
+    )
+    if milestone_fact:
+        _push_fact_line(milestone_fact)
+
+    if len(fact_lines) < 2:
+        context_line = _build_player_front_context_line(title, summary, source_day_label=source_day_label)
+        if context_line:
+            _push_fact_line(context_line)
+
+    return fact_lines[:4]
+
+
 def _player_team_query_subject(title: str, summary: str, subject: str) -> str:
     role_label = _extract_player_role_label(title, summary)
     if (
@@ -5331,12 +5485,16 @@ def _build_recovery_strict_prompt(title: str, summary: str, source_day_label: st
 
 def _extract_notice_record_fact(title: str, summary: str, exclude: set[str] | None = None) -> str:
     exclude = exclude or set()
+    notice_movement_markers = ("登録", "抹消", "合流", "復帰", "昇格", "再登録", "戦力外", "再出発")
     for sentence in _extract_prompt_fact_sentences(title, summary, max_sentences=5):
         fact = _ensure_fact_sentence(sentence)
         if not fact or fact in exclude:
             continue
-        if any(marker in fact for marker in NOTICE_RECORD_MARKERS) or _re.search(r"(?:\.\d{3}|\d+)", fact):
+        if any(marker in fact for marker in NOTICE_RECORD_MARKERS):
             return fact
+        if _re.search(r"(?:\.\d{3}|防御率\d+\.\d+|\d+打数|\d+安打|\d+打点|\d+本塁打|\d+奪三振|\d+回|\d+勝\d+敗)", fact):
+            if not any(marker in fact for marker in notice_movement_markers):
+                return fact
     return ""
 
 
@@ -9883,7 +10041,7 @@ def _build_manager_safe_fallback(title: str, summary: str, real_reactions: list[
 
     intro_lines = [headings[0]]
     intro_lines.append(f"{lead}。")
-    if detail:
+    if detail and not quote_phrases:
         intro_lines.append(f"{detail}。")
     else:
         intro_lines.append(f"この発言は、{subject}が{focus_axis}をどう動かそうとしているのかを見る材料です。")
@@ -9891,7 +10049,9 @@ def _build_manager_safe_fallback(title: str, summary: str, real_reactions: list[
     quote_lines = [headings[1]]
     if quote_phrases:
         quote_lines.append(f"今回の発言の軸は「{quote_phrases[0]}」という言葉です。")
-        if len(quote_phrases) >= 2:
+        if detail:
+            quote_lines.append(f"{detail}。")
+        elif len(quote_phrases) >= 2:
             quote_lines.append(f"あわせて「{quote_phrases[1]}」という表現も出ており、判断の置きどころがより見えやすくなっています。")
         else:
             quote_lines.append(f"{subject}の言葉をそのまま追うことで、どこを重く見ているのかが読み取りやすくなります。")
@@ -9902,7 +10062,7 @@ def _build_manager_safe_fallback(title: str, summary: str, real_reactions: list[
     background_lines = [headings[2]]
     if extra:
         background_lines.append(f"{extra}。")
-    elif detail:
+    elif detail and not quote_phrases:
         background_lines.append(f"{detail}。")
     background_lines.append(_manager_context_line(focus_axis))
 
@@ -9941,6 +10101,48 @@ def _extract_game_pitcher_lines(title: str, summary: str) -> list[str]:
         if any(token in clean for token in ("防御率", "勝", "敗", "WHIP", "奪三振", "先発")):
             lines.append(f"{clean}。")
     return _dedupe_preserve_order(lines)[:3]
+
+
+def _extract_pregame_starter_detail_line(title: str, summary: str) -> str:
+    for line in _extract_game_pitcher_lines(title, summary):
+        clean = line.strip().rstrip("。")
+        if clean.startswith("予告先発は"):
+            return f"{clean}。"
+
+    source_text = f"{title} {summary}"
+    candidate = _normalize_game_story_subject(_extract_game_subject_fallback(source_text))
+    if not candidate:
+        patterns = (
+            r"([一-龥々ァ-ヴー]{2,6})(?:投手|捕手|選手)?(?:は|が)\d+日(?:に)?スライド登板",
+            r"([一-龥々ァ-ヴー]{2,6})(?:投手|捕手|選手)?(?:は|が)スライド登板",
+            r"([一-龥々ァ-ヴー]{2,6})(?:投手|捕手|選手)?(?:は|が)先発予定",
+        )
+        for pattern in patterns:
+            match = _re.search(pattern, source_text)
+            if not match:
+                continue
+            candidate = _normalize_game_story_subject(match.group(1))
+            if candidate:
+                break
+
+    if candidate and any(marker in source_text for marker in ("予告先発", "先発予定", "スライド登板")):
+        return f"予告先発は{candidate}です。"
+    return ""
+
+
+def _dedupe_lineup_starter_lines(lines: list[str]) -> list[str]:
+    deduped: list[str] = []
+    saw_probable_starter = False
+    for line in lines:
+        clean = line.strip().rstrip("。")
+        if not clean:
+            continue
+        if clean.startswith("予告先発は"):
+            if saw_probable_starter:
+                continue
+            saw_probable_starter = True
+        deduped.append(clean)
+    return deduped
 
 
 def _build_lineup_safe_fallback(
@@ -9992,7 +10194,9 @@ def _build_lineup_safe_fallback(
             lineup_lines.append("元記事で確認できた打順と選手名を、そのまま追っておきたい並びです。")
 
     starter_lines = [headings[2]]
-    starter_lines.extend(_extract_game_pitcher_lines(title, summary))
+    starter_lines.extend(
+        f"{line}。" for line in _dedupe_lineup_starter_lines(_extract_game_pitcher_lines(title, summary))
+    )
     if len(starter_lines) == 1:
         starter_lines.append("先発投手の情報は、元記事で確認できる範囲をそのまま押さえておきたいです。")
 
@@ -10036,10 +10240,16 @@ def _build_postgame_safe_fallback(title: str, summary: str, real_reactions: list
         stat_lines.append("元記事にある数字と選手名を、そのまま並べて押さえておきたい試合です。")
 
     flow_lines = [headings[3]]
-    if len(facts) > 2:
-        flow_lines.append(f"{facts[2]}。")
-    elif len(facts) > 1:
-        flow_lines.append(f"{facts[1]}。")
+    used_flow_facts = {fact.rstrip("。") for fact in stat_lines[1:] if fact}
+    highlight_fact = highlight_source.rstrip("。")
+    flow_fact = ""
+    for fact in facts[2:]:
+        clean = fact.rstrip("。")
+        if clean and clean not in used_flow_facts and clean != highlight_fact:
+            flow_fact = clean
+            break
+    if flow_fact:
+        flow_lines.append(f"{flow_fact}。")
     elif score:
         flow_lines.append(f"{score}で決まるまで、どこで流れが動いたかを見ておきたい試合でした。")
     else:
@@ -10076,7 +10286,11 @@ def _build_pregame_safe_fallback(title: str, summary: str, real_reactions: list[
     for fact in facts[1:3]:
         detail_lines.append(f"{fact}。")
     if len(detail_lines) == 1:
-        detail_lines.append("元記事にある日程や先発情報を、そのまま押さえておきたい変更です。")
+        starter_line = _extract_pregame_starter_detail_line(title, summary)
+        if starter_line:
+            detail_lines.append(starter_line)
+        else:
+            detail_lines.append("元記事にある日程や先発情報を、そのまま押さえておきたい変更です。")
 
     impact_lines = [headings[2]]
     if real_reactions:
@@ -10085,6 +10299,52 @@ def _build_pregame_safe_fallback(title: str, summary: str, real_reactions: list[
         impact_lines.append("結果予想より先に、この変更で次の試合前をどう迎えるかがポイントです。")
     impact_lines.append("変更の意味は実際の入り方にどう出るかで見えてきます。みなさんの意見はコメントで教えてください！")
     return "\n".join(lead_lines + detail_lines + impact_lines)
+
+
+def _build_live_update_safe_fallback(title: str, summary: str, real_reactions: list[str] | None = None) -> str:
+    facts = [fact.rstrip("。") for fact in _extract_summary_sentences(summary, max_sentences=5)]
+    if not facts:
+        facts = [_strip_title_prefix(title) or "元記事の内容を確認中です"]
+    source_text = f"{title} {summary}"
+    headings = _game_required_headings("live_update")
+    opponent = _extract_game_opponent_label(source_text)
+    score = _extract_game_score_token(source_text)
+    state_match = _re.search(r"([0-9０-９一二三四五六七八九十]+回(?:表|裏)?(?:終了)?(?:時点)?)", source_text)
+    state_label = state_match.group(1) if state_match else ""
+
+    current_lines = [headings[0]]
+    current_lines.append(f"{facts[0]}。")
+    details = []
+    if opponent:
+        details.append(f"{opponent}戦")
+    if state_label:
+        details.append(state_label)
+    if score:
+        details.append(score)
+    if details:
+        current_lines.append(" / ".join(details) + "の途中経過として整理します。")
+
+    flow_lines = [headings[1]]
+    flow_fact = ""
+    for fact in facts[1:]:
+        clean = fact.rstrip("。")
+        if clean and clean != facts[0]:
+            flow_fact = clean
+            break
+    if flow_fact:
+        flow_lines.append(f"{flow_fact}。")
+    elif score:
+        flow_lines.append(f"{score}のまま、次にどこで流れが動くかを見ておきたい場面です。")
+    else:
+        flow_lines.append("この時点までで、どこで流れが動いたかを元記事の事実から整理したいところです。")
+
+    watch_lines = [headings[2]]
+    if real_reactions:
+        watch_lines.append("反応を見ると、次の1点や継投でどこが動くかを見たい空気があります。")
+    else:
+        watch_lines.append("次に見たいのは、このあと同点・勝ち越し・継投のどこが動くかという点です。")
+    watch_lines.append("途中経過の記事では、次の1点とベンチの動きが流れを変えます。みなさんの意見はコメントで教えてください！")
+    return "\n".join(current_lines + flow_lines + watch_lines)
 
 
 def _build_notice_safe_fallback(
@@ -10100,8 +10360,17 @@ def _build_notice_safe_fallback(
     player_position = _extract_notice_player_position(title, summary, subject)
     notice_subject = subject or player_position
     notice_label = notice_type or _extract_notice_type_label(f"{title} {summary}") or "公示"
+    notice_fact = _find_source_sentence_with_markers(
+        title,
+        summary,
+        ("登録", "抹消", "合流", "復帰", "昇格", "戦力外", "再出発"),
+    )
     record_fact = _extract_notice_record_fact(title, summary)
-    background_fact = _extract_notice_background_fact(title, summary, exclude={record_fact} if record_fact else set())
+    background_fact = _extract_notice_background_fact(
+        title,
+        summary,
+        exclude={fact for fact in (notice_fact, record_fact) if fact},
+    )
     opening = f"（{source_day_label}時点）" if source_day_label else ""
 
     notice_headings = _notice_required_headings()
@@ -10250,6 +10519,8 @@ def _build_game_safe_fallback(
         return _build_lineup_safe_fallback(title, summary, lineup_rows=lineup_rows, real_reactions=real_reactions)
     if article_subtype == "postgame":
         return _build_postgame_safe_fallback(title, summary, real_reactions=real_reactions)
+    if article_subtype == "live_update":
+        return _build_live_update_safe_fallback(title, summary, real_reactions=real_reactions)
     return _build_pregame_safe_fallback(title, summary, real_reactions=real_reactions)
 
 
@@ -10281,7 +10552,16 @@ def _build_farm_safe_fallback(title: str, summary: str, real_reactions: list[str
 
     stat_lines = [farm_headings[2]]
     stat_facts = []
+    lead_fact = facts[0].rstrip("。") if facts else ""
     for fact in facts:
+        clean = fact.rstrip("。")
+        if (
+            clean == lead_fact
+            and score
+            and score in clean
+            and any(marker in clean for marker in ("勝利", "敗戦", "敗れ", "引き分け", "コールド"))
+        ):
+            continue
         if _re.search(r"\d", fact):
             stat_facts.append(f"{fact}。")
     stat_lines.extend(_dedupe_preserve_order(stat_facts)[:2])
@@ -10327,6 +10607,8 @@ def _build_farm_lineup_safe_fallback(title: str, summary: str, real_reactions: l
     lineup_lines = [farm_lineup_headings[1]]
     lineup_facts = []
     for fact in facts:
+        if "スタメンを発表" in fact:
+            continue
         if any(marker in fact for marker in ("1番", "2番", "3番", "4番", "5番", "6番", "7番", "8番", "9番", "スタメン", "先発")):
             lineup_facts.append(f"{fact}。")
     lineup_lines.extend(_dedupe_preserve_order(lineup_facts)[:3])
@@ -10400,6 +10682,86 @@ def _build_social_safe_fallback(
     return "\n".join(lead_lines + summary_lines + background_lines + watch_lines)
 
 
+def _detect_stats_story_axis(title: str, summary: str) -> str:
+    source_text = _strip_html(f"{title} {summary}")
+    batting_markers = ("打率", "本塁打", "打点", "安打", "OPS", "出塁率", "長打率", "盗塁")
+    pitching_markers = ("勝", "敗", "防御率", "投球回", "回", "失点", "奪三振", "セーブ", "ホールド", "WHIP")
+    batting_hits = sum(1 for marker in batting_markers if marker in source_text)
+    pitching_hits = sum(1 for marker in pitching_markers if marker in source_text)
+    if batting_hits > pitching_hits:
+        return "batting"
+    if pitching_hits > batting_hits:
+        return "pitching"
+    return "general"
+
+
+def _build_stats_safe_fallback(
+    title: str,
+    summary: str,
+    real_reactions: list[str] | None = None,
+) -> str:
+    facts = [fact.rstrip("。") for fact in _extract_summary_sentences(summary, max_sentences=5)]
+    if not facts:
+        facts = [_strip_title_prefix(title) or "元記事の内容を確認中です"]
+
+    headings = _article_section_headings("選手情報", False)
+    subject = _extract_subject_label(title, summary, "選手情報") or "対象選手"
+    axis = _detect_stats_story_axis(title, summary)
+
+    lead_lines = [headings[0]]
+    lead_lines.append(f"{subject}の成績を整理します。")
+    lead_lines.append(f"{facts[0]}。")
+    if len(facts) > 1:
+        lead_lines.append(f"{facts[1]}。")
+
+    focus_lines = [headings[1]]
+    if axis == "batting":
+        focus_lines.append("打率・本塁打・打点のどこが今回の軸かを、元記事の数字だけで確認したい記事です。")
+        watch_line = f"次に見たいのは、{subject}がここからどこまで数字を積み上げるかという点です。"
+        closing = f"{subject}は今後の試合で、この数字をどこまで伸ばせるかが見どころです。今回の成績が次の打席でも続くかを追っていきたいです。みなさんの意見はコメントで教えてください！"
+    elif axis == "pitching":
+        focus_lines.append("勝敗・防御率・投球回のどこが今回の軸かを、元記事の数字だけで確認したい記事です。")
+        watch_line = f"次に見たいのは、{subject}が次回登板でもこの数字を維持できるかという点です。"
+        closing = f"{subject}は次回登板で、この数字をどこまで維持できるかが見どころです。今回の成績が続くかを追っていきたいです。みなさんの意見はコメントで教えてください！"
+    else:
+        focus_lines.append("元記事にある数字をそのまま追うのが、この成績記事のポイントです。")
+        watch_line = f"次に見たいのは、{subject}が今後の試合でどんな数字を積み上げるかという点です。"
+        closing = f"{subject}の成績は、ここからどこまで数字を積み上げるかが見どころです。次の更新でどんな変化が出るかを追っていきたいです。みなさんの意見はコメントで教えてください！"
+    if len(facts) > 2:
+        focus_lines.append(f"{facts[2]}。")
+
+    next_lines = [headings[2]]
+    if real_reactions:
+        next_lines.append(f"反応を見ると、{subject}が次もこの数字を積み上げられるかを見たい空気があります。")
+    else:
+        next_lines.append(watch_line)
+    next_lines.append(closing)
+    return "\n".join(lead_lines + focus_lines + next_lines)
+
+
+def _looks_like_off_field_news_story(category: str, article_subtype: str, title: str, summary: str) -> bool:
+    if category not in {"球団情報", "コラム"}:
+        return False
+    if article_subtype not in {"", "other"}:
+        return False
+    text = _strip_html(f"{title} {summary}")
+    markers = (
+        "発表",
+        "開催",
+        "イベント",
+        "グッズ",
+        "チケット",
+        "ファンクラブ",
+        "販売",
+        "発売",
+        "案内",
+        "お知らせ",
+        "配布",
+        "公開",
+    )
+    return any(marker in text for marker in markers)
+
+
 def _build_safe_article_fallback(
     title: str,
     summary: str,
@@ -10410,8 +10772,9 @@ def _build_safe_article_fallback(
     tweet_url: str = "",
     source_day_label: str = "",
     real_reactions: list[str] | None = None,
+    article_subtype_override: str = "",
 ) -> str:
-    article_subtype = _detect_article_subtype(title, summary, category, has_game)
+    article_subtype = str(article_subtype_override or _detect_article_subtype(title, summary, category, has_game))
     if source_type == "social_news" and not _social_source_prefers_structured_template(category, article_subtype):
         return _build_social_safe_fallback(
             title,
@@ -10428,6 +10791,8 @@ def _build_safe_article_fallback(
         return _build_farm_safe_fallback(title, summary, real_reactions=real_reactions)
     if category == "ドラフト・育成" and article_subtype == "farm_lineup":
         return _build_farm_lineup_safe_fallback(title, summary, real_reactions=real_reactions)
+    if category == "選手情報" and article_subtype == "stats":
+        return _build_stats_safe_fallback(title, summary, real_reactions=real_reactions)
 
     facts = _extract_summary_sentences(summary, max_sentences=4)
     if not facts:
@@ -10484,6 +10849,22 @@ def _build_safe_article_fallback(
     player_quote_story = player_mode == "player_quote"
     player_status_story = player_mode == "player_status"
     player_status_terms = _extract_player_status_terms(title, summary) if category == "選手情報" else []
+    player_quote_focus_line = ""
+    player_quote_watch_line = ""
+    player_quote_closing = ""
+    player_front_context_line = ""
+    if category == "選手情報" and player_quote_story and quote_phrases:
+        (
+            player_quote_focus_line,
+            player_quote_watch_line,
+            player_quote_closing,
+        ) = _build_player_quote_safe_lines(title, summary, subject, quote_phrases[0])
+    if category == "選手情報" and article_subtype == "player":
+        player_front_context_line = _build_player_front_context_line(
+            title,
+            summary,
+            source_day_label=source_day_label,
+        )
     subject_display = _extract_player_role_label(title, summary) if category == "選手情報" and player_mechanics_story else subject
     intro = "まずは今回のニュースで押さえておきたいポイントから整理します。"
     if category == "選手情報":
@@ -10536,7 +10917,7 @@ def _build_safe_article_fallback(
     if category == "選手情報" and player_mechanics_story:
         closing = f"{subject}は次の実戦で、今回いじっている部分をそのまま出せるかが一番の見どころです。結果より先に、球の見え方がどう変わるかを追っていきたいです。今回の記事は、その入口としてかなり分かりやすい材料になっています。みなさんの意見はコメントで教えてください！"
     elif category == "選手情報" and player_quote_story and quote_phrases:
-        closing = f"{subject}は次の実戦で、今回口にした「{quote_phrases[0]}」という意識をどこまで内容に落とし込めるかが見どころです。言葉だけで終わるのか、阪神戦の入り方や配球にまで出るのかを追っていきたいです。みなさんの意見はコメントで教えてください！"
+        closing = player_quote_closing
     elif category == "選手情報" and player_status_story:
         if any(term in player_status_terms for term in ("昇格", "一軍", "登録", "復帰", "合流")):
             closing = f"{subject}は次に、一軍でどこまで役割をもらえるかが見どころです。名前が戻るだけで終わるのか、実際の起用や序列にまで踏み込むのかを追っていきたいです。みなさんの意見はコメントで教えてください！"
@@ -10696,8 +11077,8 @@ def _build_safe_article_fallback(
             if player_mechanics_story and quote_phrases:
                 focus_line = f"今回の言葉で目を引くのは「{quote_phrases[0]}」という部分です。フォームそのものより、外からの助言を受け入れて投げ方を組み替えているところに今の本気度が出ています。数字だけを追う記事ではなく、何を崩してでも前へ進もうとしているのかが見える話です。完成形を守る段階ではなく、自分を崩してでも戻しにいっているところが今回の芯です。"
             elif player_quote_story and quote_phrases:
-                focus_line = f"今回のニュースで目を引くのは「{quote_phrases[0]}」という言葉です。コメントの強さだけでなく、{subject}が相手打線へどう入ろうとしているのか、その考え方が短い一言の中に出ています。試合前の記事として読むと、調子の良し悪しより先に、何を意識してマウンドに上がるのかが見えてくる材料です。"
-                watch_line = reaction_line if reaction_line else f"次に見たいのは、{subject}が口にした「{quote_phrases[0]}」という意識が実戦の内容にどうつながるかという点です。立ち上がりや配球の組み立てにその考えが出るなら、今回のコメントの重さも見えてきます。"
+                focus_line = player_quote_focus_line
+                watch_line = reaction_line if reaction_line else player_quote_watch_line
             elif player_status_story:
                 if any(term in player_status_terms for term in ("昇格", "一軍", "登録", "復帰", "合流")):
                     focus_line = f"今回のニュースで大事なのは、{subject}がいま一軍の戦力表のどこに戻ってくるのかという点です。名前が載ったこと自体より、どの役割で呼ばれるのか、既存の序列をどう動かすのかまで見て読む記事です。復帰や昇格はゴールではなく、ここからどこまで食い込めるかが本当の焦点になります。"
@@ -10735,13 +11116,22 @@ def _build_safe_article_fallback(
         elif category == "補強・移籍":
             focus_line = "補強の話は名前のインパクトだけでは足りません。どこの穴を埋める話なのか、既存戦力とどうかみ合うかまで見ておきたいです。"
             watch_line = reaction_line if reaction_line else "次に見たいのは、この動きで一軍の競争や編成全体がどう変わるかという点です。"
+        elif _looks_like_off_field_news_story(category, article_subtype, title, summary):
+            focus_line = "まず確認したいのは、今回の発表や案内で何が決まり、どこまで具体的に示されたかという点です。事実を順に追うと、次に出る追加案内まで見えやすくなります。"
+            watch_line = reaction_line if reaction_line else "次に見たいのは、この発表に続いてどんな追加案内や具体化が出るかという点です。"
+            closing = "今回のニュースは、発表された事実とこれから出る追加情報を分けて追うのが大事です。条件や日程がどう固まるかも含めて見ていきたいです。みなさんの意見はコメントで教えてください！"
+        elif category == "コラム" and article_subtype in {"", "other"}:
+            focus_line = "まず確認したいのは、元記事で整理された論点や数字のどこが今回の軸かという点です。事実を順に追うと、何を見ている記事かがぶれにくくなります。"
+            watch_line = reaction_line if reaction_line else "次に見たいのは、元記事で整理された論点や数字がここからどう具体化するかという点です。"
 
         if category == "選手情報":
             paragraphs = [
                 headings[0],
                 intro,
-                f"{lead}。",
             ]
+            if player_front_context_line:
+                paragraphs.append(player_front_context_line)
+            paragraphs.append(f"{lead}。")
             if detail:
                 paragraphs.append(f"{detail}。")
             if extra:
@@ -10858,7 +11248,7 @@ def _extract_rule_based_program_name(title: str, summary: str, channel: str = ""
 
 def _extract_rule_based_program_schedule_label(text: str) -> str:
     date_label = _extract_rule_based_date_label(text)
-    time_match = TIME_TOKEN_RE.search(text or "")
+    time_match = PROGRAM_TIME_TOKEN_RE.search(text or "")
     if date_label and time_match:
         return f"{date_label} {time_match.group(0)}"
     if date_label:
@@ -10870,7 +11260,12 @@ def _extract_rule_based_program_schedule_label(text: str) -> str:
 
 def _extract_rule_based_program_hosts(title: str, summary: str) -> list[str]:
     text = _strip_html(f"{title} {summary}")
-    hosts = [match.group(1) for match in RULE_BASED_PROGRAM_PERSON_RE.finditer(text)]
+    hosts = []
+    for match in RULE_BASED_PROGRAM_PERSON_RE.finditer(text):
+        host = match.group(1).strip()
+        host = _re.sub(r"^[でがにはをともへ]+(?=[一-龥々ァ-ヴー])", "", host)
+        if host:
+            hosts.append(host)
     return _dedupe_preserve_order([host.strip() for host in hosts if host.strip()])[:5]
 
 
@@ -10921,7 +11316,9 @@ def _render_lineup_rule_based(
     opponent = _extract_game_opponent_label(source_text)
     stadium = _extract_game_venue_label(source_text)
     start_time = _extract_game_time_token(source_text)
-    starter_lines = [line.rstrip("。") for line in _extract_game_pitcher_lines(title, summary) if _rule_based_fact_ok(line)]
+    starter_lines = _dedupe_lineup_starter_lines(
+        [line.rstrip("。") for line in _extract_game_pitcher_lines(title, summary) if _rule_based_fact_ok(line)]
+    )
     overview_facts = _rule_based_fact_lines(title, summary, max_sentences=3, limit=100)
 
     lineup_table: list[str] = []
@@ -11040,7 +11437,11 @@ def _render_notice_rule_based(
     if not _rule_based_fact_ok(record_fact):
         record_fact = ""
     background_fact = _clip_rule_based_fact(
-        _extract_notice_background_fact(title, summary, exclude={notice_fact} if notice_fact else set()),
+        _extract_notice_background_fact(
+            title,
+            summary,
+            exclude={fact for fact in (notice_fact, record_fact) if fact},
+        ),
         limit=160,
     )
     if not _rule_based_fact_ok(background_fact) or background_fact == notice_fact:
@@ -12836,6 +13237,14 @@ def _ensure_story_featured_images(
     if image_urls:
         return image_urls
     logger = logger or logging.getLogger("rss_fetcher")
+    if (category, article_subtype) in {("選手情報", "player"), ("首脳陣", "manager")}:
+        try:
+            from src.player_eyecatch_resolver import detect_person
+
+            if detect_person(title):
+                return image_urls
+        except Exception:
+            pass
     fallback_url = ""
     fallback_type = ""
     if _is_notice_template_story(title, summary, category):
@@ -14346,6 +14755,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 tweet_url=url,
                 source_day_label=source_day_label,
                 real_reactions=real_reactions,
+                article_subtype_override=body_subtype,
             )
         subject = _extract_subject_label(title, summary_clean, effective_generation_category)
 
@@ -14384,6 +14794,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                     tweet_url=url,
                     source_day_label=source_day_label,
                     real_reactions=real_reactions,
+                    article_subtype_override=body_subtype,
                 ),
                 effective_generation_category,
                 subject,
@@ -14454,6 +14865,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                     tweet_url=url,
                     source_day_label=source_day_label,
                     real_reactions=real_reactions,
+                    article_subtype_override=body_subtype,
                 ),
             )
         elif recovery_story:
@@ -14537,6 +14949,25 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     if impression_block and not _text_is_safe(title, summary_clean, impression_block, has_game):
         logger.warning("IMPRESSIONブロックを破棄: 事実制約に違反")
         impression_block = ""
+
+    player_daily_stat_subject = ""
+    player_daily_stat_rows: list[tuple[str, str]] = []
+    player_front_context_line = ""
+    player_confirmed_fact_lines: list[str] = []
+    if body_category == "選手情報" and body_subtype == "player":
+        player_daily_stat_subject = _extract_subject_label(title, summary_clean, body_category)
+        if player_daily_stat_subject:
+            player_daily_stat_rows = _extract_player_daily_stat_rows(title, summary_clean)
+            player_front_context_line = _build_player_front_context_line(
+                title,
+                summary_clean,
+                source_day_label=source_day_label,
+            )
+            player_confirmed_fact_lines = _extract_player_confirmed_fact_lines(
+                title,
+                summary_clean,
+                source_day_label=source_day_label,
+            )
 
     import re as _re3
 
@@ -14708,6 +15139,62 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             '<!-- /wp:html -->\n\n'
         )
         return header + note + table_html
+
+    def _player_daily_stat_block(subject_name: str, rows: list[tuple[str, str]]) -> str:
+        if not subject_name or not rows:
+            return ""
+        heading_level = 4 if _body_template_v2_enabled() else 3
+        safe_subject = subject_name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        header = (
+            f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
+            f'<h{heading_level}>📊 {safe_subject}の当日成績</h{heading_level}>\n'
+            '<!-- /wp:heading -->\n\n'
+        )
+        note = (
+            '<!-- wp:paragraph -->\n'
+            '<p style="font-size:0.82em;color:#666;">※元記事で確認できる当日時点の数字のみを整理</p>\n'
+            '<!-- /wp:paragraph -->\n\n'
+        )
+        table_rows = ["<tr><th>項目</th><th>数値</th></tr>"]
+        for label, value in rows:
+            safe_label = str(label).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            safe_value = str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            table_rows.append(
+                "<tr>"
+                f"<td>{safe_label}</td>"
+                f"<td>{safe_value}</td>"
+                "</tr>"
+            )
+        table_html = (
+            '<!-- wp:html -->\n'
+            '<div class="yoshilover-player-daily-stats" style="overflow-x:auto;margin:0 0 12px;">'
+            '<table style="width:100%;border-collapse:collapse;font-size:0.92em;">'
+            f"{''.join(table_rows)}"
+            "</table>"
+            "</div>\n"
+            '<!-- /wp:html -->\n\n'
+        )
+        return header + note + table_html
+
+    def _player_confirmed_fact_block(lines: list[str]) -> str:
+        if not lines:
+            return ""
+        heading_level = 4 if _body_template_v2_enabled() else 3
+        safe_lines = [
+            line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            for line in lines
+            if line
+        ]
+        return (
+            f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
+            f'<h{heading_level}>✅ 確認できる事実</h{heading_level}>\n'
+            '<!-- /wp:heading -->\n\n'
+            + '<!-- wp:list -->\n'
+            + '<ul class="wp-block-list">\n'
+            + "".join(f"<li>{line}</li>\n" for line in safe_lines[:4])
+            + '</ul>\n'
+            + '<!-- /wp:list -->\n\n'
+        )
 
     def _lineup_watch_block(rows: list[dict]) -> str:
         if not rows:
@@ -15218,6 +15705,20 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         if stat_items:
             li_html = "\n".join(f"<li>{s.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')}</li>" for s in stat_items)
             blocks += f'<!-- wp:list -->\n<ul class="wp-block-list">\n{li_html}\n</ul>\n<!-- /wp:list -->\n\n'
+        blocks += _sep()
+        followup_section_rendered = True
+
+    if player_daily_stat_rows:
+        if not followup_section_rendered:
+            blocks += _sep()
+        blocks += _player_daily_stat_block(player_daily_stat_subject, player_daily_stat_rows)
+        blocks += _sep()
+        followup_section_rendered = True
+
+    if player_confirmed_fact_lines:
+        if not followup_section_rendered:
+            blocks += _sep()
+        blocks += _player_confirmed_fact_block(player_confirmed_fact_lines)
         blocks += _sep()
         followup_section_rendered = True
 

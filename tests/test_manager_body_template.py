@@ -105,6 +105,23 @@ class ManagerBodyTemplateTests(unittest.TestCase):
         self.assertIn('<h4>【この話が出た流れ】</h4>', blocks)
         self.assertLessEqual(blocks.count("<h3>"), 2)
 
+    def test_manager_quote_case_does_not_repeat_same_detail_fact_twice(self):
+        with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+            with patch.object(rss_fetcher, "_find_related_posts_for_article", return_value=[]):
+                with patch.object(rss_fetcher, "_build_related_posts_section", return_value=""):
+                    with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                        _blocks, ai_body = rss_fetcher.build_news_block(
+                            title="【巨人】阿部監督「状態がいいので使った」",
+                            summary="阿部監督は「状態がいいので使った」と説明した。スタメン起用の理由にも触れた。",
+                            url="https://example.com/post",
+                            source_name="報知 巨人",
+                            category="首脳陣",
+                            has_game=False,
+                        )
+
+        self.assertEqual(ai_body.count("スタメン起用の理由にも触れた。"), 1)
+        self.assertIn("今回の発言の軸は「状態がいいので使った」という言葉です。", ai_body)
+
 
 if __name__ == "__main__":
     unittest.main()

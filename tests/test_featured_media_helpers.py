@@ -47,6 +47,18 @@ class FeaturedMediaHelperTests(unittest.TestCase):
 
         self.assertEqual(images, [])
 
+    def test_story_fallback_skips_generic_image_for_detectable_player_story(self):
+        images = rss_fetcher._ensure_story_featured_images(
+            [],
+            "【巨人】浅野翔吾が一軍昇格",
+            "浅野翔吾外野手が一軍昇格した。",
+            "選手情報",
+            "player",
+            source_url="https://example.com/player",
+        )
+
+        self.assertEqual(images, [])
+
     @patch("src.rss_fetcher.fetch_article_images")
     def test_refetch_article_images_if_empty_uses_page_scrape(self, mock_fetch_article_images):
         mock_fetch_article_images.return_value = ["https://example.com/hero.jpg"]

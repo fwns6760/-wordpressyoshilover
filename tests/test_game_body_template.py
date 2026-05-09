@@ -135,6 +135,58 @@ class GameBodyTemplateTests(unittest.TestCase):
                 self.assertIn(f"<h4>{demoted_heading}</h4>", blocks)
                 self.assertLessEqual(blocks.count("<h3>"), 2)
 
+    def test_postgame_safe_fallback_avoids_repeating_stat_fact_in_flow(self):
+        ai_body = rss_fetcher._build_game_safe_fallback(
+            "【巨人】阪神に3-2で勝利　岡田が決勝打",
+            "巨人が阪神に3-2で勝利した。終盤に岡田悠希の決勝打が飛び出した。田中将大投手は7回2失点だった。",
+            "postgame",
+        )
+
+        self.assertIn("【試合結果】", ai_body)
+        self.assertIn("【ハイライト】", ai_body)
+        self.assertIn("【選手成績】", ai_body)
+        self.assertIn("【試合展開】", ai_body)
+        self.assertEqual(ai_body.count("田中将大投手は7回2失点だった。"), 1)
+        self.assertIn("3-2で決まるまで、どこで流れが動いたかを見ておきたい試合でした。", ai_body)
+
+    def test_pregame_safe_fallback_surfaces_starter_when_summary_is_thin(self):
+        ai_body = rss_fetcher._build_game_safe_fallback(
+            "【巨人】雨天中止で先発予定だった田中将大は16日にスライド登板",
+            "先発予定だった15日の阪神戦（甲子園）が雨天中止となり、16日の同戦にスライドすることになった。",
+            "pregame",
+        )
+
+        self.assertIn("【変更情報の要旨】", ai_body)
+        self.assertIn("【具体的な変更内容】", ai_body)
+        self.assertIn("予告先発は田中将大です。", ai_body)
+        self.assertNotIn("元記事にある日程や先発情報を、そのまま押さえておきたい変更です。", ai_body)
+
+    def test_lineup_safe_fallback_dedupes_starter_line(self):
+        ai_body = rss_fetcher._build_game_safe_fallback(
+            "【巨人】今日のスタメン発表　1番丸、4番岡田",
+            "巨人が阪神戦のスタメンを発表した。1番に丸佳浩、4番に岡田悠希が入った。予告先発は田中将大投手。",
+            "lineup",
+        )
+
+        self.assertIn("【先発投手】", ai_body)
+        self.assertIn("予告先発は田中将大です。", ai_body)
+        self.assertEqual(ai_body.count("予告先発は"), 1)
+        self.assertNotIn("予告先発は田中将大投手。", ai_body)
+
+    def test_live_update_safe_fallback_uses_live_update_headings(self):
+        ai_body = rss_fetcher._build_game_safe_fallback(
+            "【巨人】7回終了で2-2の同点",
+            "巨人と阪神は7回終了で2-2の同点。浅野翔吾が適時打を放った。",
+            "live_update",
+        )
+
+        self.assertIn("【いま起きていること】", ai_body)
+        self.assertIn("【流れが動いた場面】", ai_body)
+        self.assertIn("【次にどこを見るか】", ai_body)
+        self.assertNotIn("【変更情報の要旨】", ai_body)
+        self.assertNotIn("【具体的な変更内容】", ai_body)
+        self.assertNotIn("【この変更が意味すること】", ai_body)
+
 
 if __name__ == "__main__":
     unittest.main()

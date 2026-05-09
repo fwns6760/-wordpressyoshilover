@@ -266,6 +266,58 @@ class YahooFanReactionQueryTests(unittest.TestCase):
 
         self.assertEqual([reaction["handle"] for reaction in reactions], ["@gfan_quote"])
 
+    def test_build_fan_reaction_queries_adds_team_context_queries_for_player_quote(self):
+        queries = rss_fetcher._build_fan_reaction_queries(
+            "【巨人】田中将大「打線を線にしない」甲子園の“申し子”が移籍後初の阪神戦で好投誓う",
+            "田中将大が「打線を線にしない」と話し、移籍後初の阪神戦へ向けて好投を誓った。",
+            "選手情報",
+        )
+
+        self.assertIn("巨人 甲子園", queries)
+
+    def test_fetch_fan_reactions_player_quote_uses_team_context_query_to_fill_three(self):
+        fresh_ts = int(__import__("time").time()) - 900
+
+        def fake_entries(keyword: str):
+            mapping = {
+                "田中将大 打線を線にしない": [
+                    {
+                        "summary": "田中将大が言う『打線を線にしない』って意識、阪神戦でどう出るか見たい。",
+                        "link": "https://x.com/gfan_quote/status/1",
+                        "created_at": fresh_ts,
+                    },
+                ],
+                "田中将大 阪神戦": [
+                    {
+                        "summary": "田中将大が阪神戦でどこまで長い回を投げられるかが気になる。",
+                        "link": "https://x.com/gfan_series/status/2",
+                        "created_at": fresh_ts,
+                    },
+                ],
+                "巨人 甲子園": [
+                    {
+                        "summary": "甲子園での田中将大、巨人としてどんな立ち上がりを見せるか楽しみ。",
+                        "link": "https://x.com/gfan_koshien/status/3",
+                        "created_at": fresh_ts,
+                    },
+                ],
+            }
+            return mapping.get(keyword, [])
+
+        with patch.object(rss_fetcher, "fetch_yahoo_realtime_entries", side_effect=fake_entries):
+            with patch.object(rss_fetcher, "get_fan_reaction_limit", return_value=3):
+                reactions = rss_fetcher.fetch_fan_reactions_from_yahoo(
+                    "【巨人】田中将大「打線を線にしない」甲子園の“申し子”が移籍後初の阪神戦で好投誓う",
+                    "田中将大が「打線を線にしない」と話し、移籍後初の阪神戦へ向けて好投を誓った。",
+                    "選手情報",
+                    source_name="スポーツ報知巨人班X",
+                )
+
+        self.assertEqual(
+            [reaction["handle"] for reaction in reactions],
+            ["@gfan_quote", "@gfan_series", "@gfan_koshien"],
+        )
+
     def test_fetch_fan_reactions_rejects_same_player_name_post_without_topic_match(self):
         fresh_ts = int(__import__("time").time()) - 900
 
@@ -369,6 +421,58 @@ class YahooFanReactionQueryTests(unittest.TestCase):
             )
 
         self.assertEqual([reaction["handle"] for reaction in reactions], ["@quote_watch"])
+
+    def test_build_fan_reaction_queries_adds_manager_context_queries(self):
+        queries = rss_fetcher._build_fan_reaction_queries(
+            "【巨人】阿部監督がレギュラー競争の狙いを説明",
+            "阿部監督がレギュラー固定ではなく、若手競争と起用意図について説明した。",
+            "首脳陣",
+        )
+
+        self.assertIn("阿部監督 レギュラー", queries)
+
+    def test_fetch_fan_reactions_manager_uses_context_query_to_fill_three(self):
+        fresh_ts = int(__import__("time").time()) - 900
+
+        def fake_entries(keyword: str):
+            mapping = {
+                "阿部監督 固定": [
+                    {
+                        "summary": "阿部監督の起用意図なら、次のスタメンがどう動くかをかなり見たくなる。",
+                        "link": "https://x.com/gfan_usage/status/1",
+                        "created_at": fresh_ts,
+                    },
+                ],
+                "阿部監督 若手": [
+                    {
+                        "summary": "若手競争を続けるなら、門脇と浦田をもっとフラットに見てほしい。",
+                        "link": "https://x.com/gfan_youth/status/2",
+                        "created_at": fresh_ts,
+                    },
+                ],
+                "阿部監督 レギュラー": [
+                    {
+                        "summary": "レギュラー固定を急がないなら、阿部監督の起用意図はかなり納得できる。",
+                        "link": "https://x.com/gfan_regular/status/3",
+                        "created_at": fresh_ts,
+                    },
+                ],
+            }
+            return mapping.get(keyword, [])
+
+        with patch.object(rss_fetcher, "fetch_yahoo_realtime_entries", side_effect=fake_entries):
+            with patch.object(rss_fetcher, "get_fan_reaction_limit", return_value=3):
+                reactions = rss_fetcher.fetch_fan_reactions_from_yahoo(
+                    "【巨人】阿部監督がレギュラー競争の狙いを説明",
+                    "阿部監督がレギュラー固定ではなく、若手競争と起用意図について説明した。",
+                    "首脳陣",
+                )
+
+        self.assertEqual(len(reactions), 3)
+        self.assertEqual(
+            {reaction["handle"] for reaction in reactions},
+            {"@gfan_usage", "@gfan_youth", "@gfan_regular"},
+        )
 
     def test_fetch_fan_reactions_returns_empty_when_only_noisy_reserve_exists(self):
         fresh_ts = int(__import__("time").time()) - 900

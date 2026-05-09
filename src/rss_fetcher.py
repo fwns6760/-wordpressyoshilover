@@ -2090,6 +2090,13 @@ def get_fan_reaction_limit() -> int:
     return max(0, min(_env_int("FAN_REACTION_LIMIT", default_limit), 15))
 
 
+def _article_fan_reaction_limit(title: str, summary: str, category: str) -> int:
+    limit = get_fan_reaction_limit()
+    if category in {"選手情報", "首脳陣"}:
+        return min(limit, 3)
+    return limit
+
+
 def get_gemini_attempt_limit(strict_mode: bool) -> int:
     if strict_mode:
         default_limit = 3
@@ -8824,45 +8831,72 @@ def _build_fan_reaction_queries(title: str, summary: str, category: str) -> list
         if subject and subject not in generic_subjects:
             for phrase in quote_terms[:2]:
                 queries.append(f"{subject} {phrase}")
-            for term in context_terms[:2]:
+            for term in context_terms[:3]:
                 queries.append(f"{subject} {term}")
             queries.append(f"{team_query_subject} 巨人")
+            for term in context_terms[:2]:
+                queries.append(f"巨人 {term}")
         if compact_subject and compact_subject not in generic_subjects and compact_subject != subject:
             for phrase in quote_terms[:1]:
                 queries.append(f"{compact_subject} {phrase}")
-            for term in context_terms[:1]:
+            for term in context_terms[:2]:
                 queries.append(f"{compact_subject} {term}")
         if quote_terms:
             queries.append(f"巨人 {quote_terms[0]}")
-        return _dedupe_preserve_order(queries)[:6]
+        return _dedupe_preserve_order(queries)[:10]
 
     if category == "選手情報" and player_mode == "player_status":
         status_terms = _extract_player_status_terms(title, summary)
         if subject and subject not in generic_subjects:
-            for term in status_terms[:3]:
+            for term in status_terms[:4]:
                 queries.append(f"{subject} {term}")
             queries.append(f"{team_query_subject} 巨人")
-        if compact_subject and compact_subject not in generic_subjects and compact_subject != subject:
             for term in status_terms[:2]:
+                queries.append(f"巨人 {term}")
+        if compact_subject and compact_subject not in generic_subjects and compact_subject != subject:
+            for term in status_terms[:3]:
                 queries.append(f"{compact_subject} {term}")
             queries.append(f"{compact_subject} 巨人")
         if subject:
             queries.append(f"ジャイアンツ {subject}")
-        return _dedupe_preserve_order(queries)[:6]
+        return _dedupe_preserve_order(queries)[:10]
+
+    source_text = _strip_html(f"{title} {summary}")
+    manager_context_terms = []
+    if category == "首脳陣":
+        manager_context_terms = [
+            term
+            for term in CATEGORY_REACTION_TERMS.get(category, ())
+            if term in source_text and term not in GENERIC_REACTION_TERMS
+        ]
 
     if subject and subject not in generic_subjects:
         for term in focus_terms[:2]:
+            if term in {subject, compact_subject, team_query_subject}:
+                continue
             queries.append(f"{subject} {term}")
+        if category == "首脳陣":
+            for term in manager_context_terms[:3]:
+                queries.append(f"{subject} {term}")
         queries.append(f"{team_query_subject} 巨人")
         if allow_subject_only_queries:
             queries.append(subject)
 
     if compact_subject and compact_subject not in generic_subjects and compact_subject != subject:
         for term in focus_terms[:2]:
+            if term in {subject, compact_subject, team_query_subject}:
+                continue
             queries.append(f"{compact_subject} {term}")
+        if category == "首脳陣":
+            for term in manager_context_terms[:2]:
+                queries.append(f"{compact_subject} {term}")
         queries.append(f"{compact_subject} 巨人")
         if allow_subject_only_queries:
             queries.append(compact_subject)
+
+    if category == "首脳陣":
+        for term in manager_context_terms[:2]:
+            queries.append(f"巨人 {term}")
 
     for phrase in _extract_quote_phrases(title) + _extract_quote_phrases(summary):
         if subject and subject not in generic_subjects:
@@ -8877,7 +8911,8 @@ def _build_fan_reaction_queries(title: str, summary: str, category: str) -> list
     if subject and category == "選手情報":
         queries.append(f"ジャイアンツ {team_query_subject}")
 
-    return _dedupe_preserve_order(queries)[:6]
+    query_limit = 10 if category == "首脳陣" else 6
+    return _dedupe_preserve_order(queries)[:query_limit]
 
 
 def _extract_article_heading_lines(text: str) -> list[str]:
@@ -13681,7 +13716,7 @@ def fetch_fan_reactions_from_yahoo(
     if not queries:
         return []
 
-    fan_reaction_limit = get_fan_reaction_limit()
+    fan_reaction_limit = _article_fan_reaction_limit(title, summary, category)
     focus_terms = _build_fan_reaction_focus_terms(title, summary, category)
     excluded_handles = get_fan_reaction_excluded_handles()
     max_age_hours = get_fan_reaction_max_age_hours()
@@ -14531,7 +14566,7 @@ def generate_article_with_grok(title: str, summary: str, category: str, win_loss
         return "", []
 
     today_str = date.today().strftime("%Y年%m月%d日")
-    fan_reaction_limit = get_fan_reaction_limit()
+    fan_reaction_limit = _article_fan_reaction_limit(title, summary, category)
     strict_mode = strict_fact_mode_enabled()
     summary_plain = re.sub(r"<[^>]+>", "", summary).strip()
     summary_max_chars = STRICT_PROMPT_SUMMARY_MAX_CHARS if strict_mode else DEFAULT_PROMPT_SUMMARY_MAX_CHARS
@@ -14753,7 +14788,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         or (routing_category if social_story else generation_category)
     )
     article_ai_mode = get_article_ai_mode(has_game, article_ai_mode_override) if use_ai_for_article else "none"
-    fan_reaction_limit = get_fan_reaction_limit()
+    fan_reaction_limit = _article_fan_reaction_limit(title, summary_clean, effective_generation_category)
     logger = logging.getLogger("rss_fetcher")
     rendered_ai_body_html = ""
     postgame_strict_review_reason = ""

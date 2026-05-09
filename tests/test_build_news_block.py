@@ -510,6 +510,32 @@ class BuildNewsBlockTests(unittest.TestCase):
         self.assertEqual(blocks.count("https://platform.twitter.com/widgets.js"), 1)
         self.assertNotIn("wp-embed-aspect-16-9", blocks)
 
+    def test_manager_article_caps_fan_reaction_embeds_at_three(self):
+        with patch.object(
+            rss_fetcher,
+            "fetch_fan_reactions_from_yahoo",
+            return_value=[
+                {"handle": "@gfan01", "text": "起用意図は分かる。", "url": "https://x.com/gfan01/status/1"},
+                {"handle": "@gfan02", "text": "若手競争を続けてほしい。", "url": "https://x.com/gfan02/status/2"},
+                {"handle": "@gfan03", "text": "レギュラー固定を急がないでほしい。", "url": "https://x.com/gfan03/status/3"},
+                {"handle": "@gfan04", "text": "次のスタメンが気になる。", "url": "https://x.com/gfan04/status/4"},
+            ],
+        ):
+            with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                blocks, _ = rss_fetcher.build_news_block(
+                    title="【巨人】阿部監督がレギュラー競争の狙いを説明",
+                    summary="阿部監督がレギュラー固定ではなく、若手競争と起用意図について説明した。",
+                    url="https://example.com/post",
+                    source_name="報知 巨人",
+                    category="首脳陣",
+                    has_game=False,
+                )
+
+        self.assertEqual(blocks.count("yoshilover-x-embed-compact"), 3)
+        self.assertIn("https://twitter.com/gfan01/status/1", blocks)
+        self.assertIn("https://twitter.com/gfan03/status/3", blocks)
+        self.assertNotIn("https://twitter.com/gfan04/status/4", blocks)
+
     def test_news_section_renders_before_fan_reactions(self):
         with patch.object(
             rss_fetcher,

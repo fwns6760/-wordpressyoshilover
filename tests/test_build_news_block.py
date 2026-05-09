@@ -250,6 +250,39 @@ class BuildNewsBlockTests(unittest.TestCase):
         self.assertIn("元記事では、浅野翔吾が次の実戦へ向けた意識として「自分の形を出したい」に触れています。", ai_body)
         self.assertIn("元記事にある言葉と実際のプレーが一致するかが次の確認点です。みなさんの意見はコメントで教えてください！", ai_body)
 
+    def test_pitcher_player_story_avoids_other_player_lines_and_hitter_stats_table(self):
+        title = "【巨人】田中投手が次回登板へ向け調整"
+        summary = (
+            "田中将大投手は次回登板へ向けて調整している。"
+            "田中瑛斗は中継ぎ待機。"
+            "ティマが4番に入った。"
+            "打率.000、0本、0打点。"
+        )
+
+        with patch.object(rss_fetcher, "_find_related_posts_for_article", return_value=[]):
+            with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+                with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
+                    blocks, ai_body = rss_fetcher.build_news_block(
+                        title=title,
+                        summary=summary,
+                        url="https://example.com/tanaka-preview",
+                        source_name="報知 巨人",
+                        category="選手情報",
+                        has_game=False,
+                    )
+
+        self.assertIn("田中将大の現状を整理します。", ai_body)
+        self.assertNotIn("田中瑛斗", ai_body)
+        self.assertNotIn("ティマ", ai_body)
+        self.assertNotIn("田中瑛斗", blocks)
+        self.assertNotIn("ティマ", blocks)
+        self.assertNotIn("📊 田中将大の当日成績", blocks)
+        self.assertNotIn("<td>打率</td>", blocks)
+        self.assertNotIn("<td>本塁打</td>", blocks)
+        self.assertNotIn("<td>打点</td>", blocks)
+        self.assertNotIn("見どころ", ai_body)
+        self.assertNotIn("追っていきたい", ai_body)
+
     def test_weak_notice_fragment_does_not_route_to_player_notice(self):
         title = "代打、昇格"
         summary = "サンスポ巨人Xが「代打、昇格」と伝えた。"

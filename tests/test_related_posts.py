@@ -162,6 +162,36 @@ class RelatedPostsTests(TestCase):
 
         self.assertEqual([post["id"] for post in related], [102, 201])
 
+    def test_related_posts_use_full_name_when_title_only_has_ambiguous_surname(self):
+        player_posts = [
+            _post(101, "田中瑛斗が救援で無失点", days_ago=2, link="https://yoshilover.com/p101"),
+            _post(102, "田中将大が阪神戦へスライド登板", days_ago=1, link="https://yoshilover.com/p102"),
+        ]
+
+        queries = []
+
+        def search_posts(**kwargs):
+            queries.append(kwargs["search"])
+            if kwargs["search"] in {"田中", "田中将大"}:
+                return player_posts
+            return []
+
+        related = rss_fetcher._find_related_posts_for_article(
+            title="【巨人】田中投手が阪神戦へスライド登板",
+            summary="田中将大が阪神戦でスライド登板する見込み。",
+            category="選手情報",
+            article_subtype="player",
+            current_url="https://example.com/source",
+            has_game=False,
+            wp_factory=DummyWP,
+            search_posts=search_posts,
+            now=datetime(2026, 4, 18, 12, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertIn("田中将大", queries)
+        self.assertNotEqual(queries[0], "田中")
+        self.assertEqual([post["id"] for post in related], [102])
+
     def test_related_posts_section_is_omitted_when_empty(self):
         self.assertEqual(rss_fetcher._build_related_posts_section([]), "")
 

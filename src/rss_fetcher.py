@@ -3098,9 +3098,38 @@ def _extract_subject_label(title: str, summary: str, category: str) -> str:
     return "巨人"
 
 
+def _expand_ambiguous_player_subject(subject: str, summary: str) -> str:
+    candidate = _re.sub(r"(投手|捕手|内野手|外野手|選手)$", "", str(subject or "")).strip()
+    if not candidate:
+        return candidate
+    if len(candidate) > 2 and candidate not in AMBIGUOUS_PLAYER_SURNAMES:
+        return candidate
+
+    summary_text = _strip_html(summary)
+    if not summary_text:
+        return candidate
+
+    pattern = _re.compile(
+        rf"({_re.escape(candidate)}[A-Za-zＡ-Ｚａ-ｚ一-龥々ァ-ヴー・･\.\-．]{{1,6}})"
+        r"(?:投手|捕手|内野手|外野手|選手)?(?:が|は|も|を|に|で|、|「|『|$)"
+    )
+    for match in pattern.finditer(summary_text):
+        expanded = _re.sub(r"(投手|捕手|内野手|外野手|選手)$", "", match.group(1)).strip("・･")
+        if not expanded or expanded == candidate:
+            continue
+        if expanded in SUBJECT_LABEL_STOPWORDS:
+            continue
+        if any(stop in expanded for stop in SUBJECT_CANDIDATE_STOPWORDS):
+            continue
+        return expanded
+    return candidate
+
+
 def _compact_subject_label(title: str, summary: str, category: str) -> str:
     subject = _extract_subject_label(title, summary, category)
     subject = _re.sub(r"(投手|捕手|内野手|外野手|監督|コーチ)$", "", subject).strip()
+    if category == "選手情報":
+        subject = _expand_ambiguous_player_subject(subject, summary)
     if subject in {"", "巨人", "選手", "首脳陣"}:
         return ""
     return subject if len(subject) <= 6 else ""
@@ -3116,8 +3145,17 @@ def _player_family_name_alias(title: str, summary: str, category: str) -> str:
     return family_name
 
 
-def _build_safe_summary_snippet(title: str, summary: str) -> str:
+def _build_safe_summary_snippet(title: str, summary: str, category: str = "") -> str:
     facts = _extract_summary_sentences(summary, max_sentences=2)
+    if category == "選手情報":
+        player_subject = _compact_subject_label(title, summary, category)
+        player_position = _extract_player_position(title, summary)
+        filtered_facts = [
+            fact for fact in facts
+            if _player_story_sentence_allowed(fact, player_subject, player_position)
+        ]
+        if filtered_facts:
+            facts = filtered_facts
     if facts:
         return "。".join(facts).rstrip("。") + "。"
     title_text = _strip_title_prefix(title)
@@ -3457,7 +3495,19 @@ def _extract_player_daily_stat_rows(title: str, summary: str) -> list[tuple[str,
     if not source_text:
         return []
 
-    normalized = source_text.translate(str.maketrans("０１２３４５６７８９．，", "0123456789.,"))
+    subject = _compact_subject_label(title, summary, "選手情報")
+    player_position = _extract_player_position(title, summary)
+    if player_position == "投手":
+        return []
+
+    filtered_sentences = [
+        _strip_html(sentence)
+        for sentence in _extract_prompt_fact_sentences(title, summary, max_sentences=6)
+        if _player_story_sentence_allowed(sentence, subject, player_position)
+    ]
+    normalized = " ".join(filtered_sentences).translate(str.maketrans("０１２３４５６７８９．，", "0123456789.,"))
+    if not normalized:
+        return []
     rows: list[tuple[str, str]] = []
 
     avg_match = _re.search(r"打率\s*([\.]?\d{3})", normalized)
@@ -3519,6 +3569,38 @@ def _extract_player_comment_target_label(title: str, summary: str) -> str:
     return ""
 
 
+def _player_story_line_matches_subject(line: str, subject: str) -> bool:
+    clean = _collapse_ws(_strip_html(line or "")).strip("。 ")
+    if not clean or not subject:
+        return True
+    if subject in clean:
+        return True
+
+    line_subject = _compact_subject_label(clean, clean, "選手情報")
+    if not line_subject:
+        return True
+    if (
+        line_subject in TITLE_VENUE_MARKERS
+        or line_subject in NPB_TEAM_MARKERS
+        or line_subject.endswith(("戦", "球場", "ドーム"))
+    ):
+        return True
+    if line_subject == subject:
+        return True
+    if subject.startswith(line_subject) and line_subject not in AMBIGUOUS_PLAYER_SURNAMES:
+        return True
+    return False
+
+
+def _player_story_sentence_allowed(sentence: str, subject: str, player_position: str) -> bool:
+    clean = _collapse_ws(_strip_html(sentence or "")).strip("。 ")
+    if not clean:
+        return False
+    if player_position == "投手" and any(marker in clean for marker in ("打率", "本塁打", "打点", "盗塁")):
+        return False
+    return _player_story_line_matches_subject(clean, subject)
+
+
 def _extract_player_confirmed_fact_lines(title: str, summary: str, source_day_label: str = "") -> list[str]:
     source_text = _strip_html(f"{title} {summary}")
     if not source_text:
@@ -3526,17 +3608,22 @@ def _extract_player_confirmed_fact_lines(title: str, summary: str, source_day_la
 
     fact_lines: list[str] = []
     normalized_seen: set[str] = set()
+    subject = _compact_subject_label(title, summary, "選手情報")
+    player_position = _extract_player_position(title, summary)
 
-    def _push_fact_line(value: str) -> None:
+    def _push_fact_line(value: str) -> bool:
         clean = _clip_rule_based_fact(value, limit=120)
         if not clean or not _rule_based_fact_ok(clean):
-            return
+            return False
+        if not _player_story_sentence_allowed(clean, subject, player_position):
+            return False
         sentence = _ensure_fact_sentence(clean)
         normalized = _collapse_ws(sentence).strip("。 ")
         if not normalized or normalized in normalized_seen:
-            return
+            return False
         normalized_seen.add(normalized)
         fact_lines.append(sentence)
+        return True
 
     status_fact = _find_source_sentence_with_markers(title, summary, PLAYER_STATUS_MARKERS)
     if status_fact:
@@ -3550,8 +3637,8 @@ def _extract_player_confirmed_fact_lines(title: str, summary: str, source_day_la
             marker in clean
             for marker in ("スタメン", "先発マスク", "右翼", "左翼", "中堅", "遊撃", "二塁", "三塁", "一塁", "捕手")
         ):
-            _push_fact_line(clean)
-            break
+            if _push_fact_line(clean):
+                break
 
     if _extract_quote_phrases(f"{title}\n{summary}", max_phrases=1):
         comment_target = _extract_player_comment_target_label(title, summary)
@@ -10874,6 +10961,15 @@ def _build_safe_article_fallback(
     if not facts:
         title_text = _strip_title_prefix(title)
         facts = [title_text or "元記事の内容を確認中です"]
+    if category == "選手情報":
+        player_subject = _compact_subject_label(title, summary, "選手情報")
+        player_position = _extract_player_position(title, summary)
+        filtered_facts = [
+            fact for fact in facts
+            if _player_story_sentence_allowed(fact, player_subject, player_position)
+        ]
+        if filtered_facts:
+            facts = filtered_facts
 
     if article_subtype == "fact_notice":
         correction_headings = ("【訂正の対象】", "【訂正内容】", "【訂正元】", "【お詫び / ファン視点】")
@@ -10917,6 +11013,8 @@ def _build_safe_article_fallback(
     extra = facts[2].rstrip("。") if len(facts) > 2 else ""
     extra2 = facts[3].rstrip("。") if len(facts) > 3 else ""
     subject = _extract_subject_label(title, summary, category)
+    if category == "選手情報":
+        subject = _compact_subject_label(title, summary, category) or subject
     topic = _strip_title_prefix(title)
     pregame_article = _is_pregame_article(title, summary, category, has_game)
     quote_phrases = _extract_quote_phrases(f"{title}\n{summary}", max_phrases=2)
@@ -10996,11 +11094,11 @@ def _build_safe_article_fallback(
         closing = player_quote_closing
     elif category == "選手情報" and player_status_story:
         if any(term in player_status_terms for term in ("昇格", "一軍", "登録", "復帰", "合流")):
-            closing = f"{subject}は次に、一軍でどこまで役割をもらえるかが見どころです。名前が戻るだけで終わるのか、実際の起用や序列にまで踏み込むのかを追っていきたいです。みなさんの意見はコメントで教えてください！"
+            closing = f"元記事で確認できるのは、{subject}が一軍での起用に近づいている段階までです。実際の役割や序列は追加情報が出た段階で確認できます。みなさんの意見はコメントで教えてください！"
         else:
-            closing = f"{subject}は次の実戦で、今回の動きがどこまで内容に出るかが見どころです。二軍戦や調整登板の先で、一軍につながる材料をどこまで見せられるかを追っていきたいです。みなさんの意見はコメントで教えてください！"
+            closing = f"元記事で確認できるのは、{subject}の現在の調整状況までです。次の登板内容や一軍につながる動きは、追加情報が出た段階で確認できます。みなさんの意見はコメントで教えてください！"
     elif category == "選手情報":
-        closing = f"{subject}は次の実戦で、今回のコメントや準備がどこまで内容に出るかが見どころです。結果だけでなく、入り方や組み立ての変化まで追っていきたいです。みなさんの意見はコメントで教えてください！"
+        closing = f"今回整理できるのは、{subject}に関する現時点の情報までです。追加の実戦結果や起用は、次の情報で確認できます。みなさんの意見はコメントで教えてください！"
     elif category == "首脳陣":
         closing = "このコメントが次のスタメンや継投、ベンチの空気にどう出るかまで見ていきたいです。誰を残し、誰を動かすのかまで見えてくると、この発言の重さも変わってきます。みなさんの意見はコメントで教えてください！"
     elif category == "試合速報":
@@ -11157,14 +11255,14 @@ def _build_safe_article_fallback(
                 watch_line = reaction_line if reaction_line else player_quote_watch_line
             elif player_status_story:
                 if any(term in player_status_terms for term in ("昇格", "一軍", "登録", "復帰", "合流")):
-                    focus_line = f"今回のニュースで大事なのは、{subject}がいま一軍の戦力表のどこに戻ってくるのかという点です。名前が載ったこと自体より、どの役割で呼ばれるのか、既存の序列をどう動かすのかまで見て読む記事です。復帰や昇格はゴールではなく、ここからどこまで食い込めるかが本当の焦点になります。"
-                    watch_line = reaction_line if reaction_line else f"次に見たいのは、{subject}が今回の動きの先でどんな役割をもらうかという点です。ベンチ入りだけで終わるのか、スタメンや勝ちパターンまで踏み込むのかを見ていきたいです。"
+                    focus_line = f"元記事で確認できるのは、{subject}が一軍登録や合流に関わる段階にあることです。役割や序列の確定までは、元記事の範囲では示されていません。"
+                    watch_line = reaction_line if reaction_line else f"今回整理できるのは、{subject}の現在地までです。次の起用や役割は追加情報を待つ段階です。"
                 else:
-                    focus_line = f"今回のニュースで大事なのは、{subject}がいまどの段階にいるのかという点です。二軍戦や調整登板の見出しだけで終わらず、一軍へ上がる前のどこを確認している段階なのかを整理して読むべき記事です。状態そのものより、チームが何をチェックしているのかまで見えると意味が変わってきます。"
-                    watch_line = reaction_line if reaction_line else f"次に見たいのは、{subject}の今回の動きが次の登板や一軍合流にどうつながるかという点です。数字だけでなく、起用のされ方まで追っていきたいです。"
+                    focus_line = f"元記事で確認できるのは、{subject}が現在の調整段階にあることです。次の登板内容や一軍合流の確定情報までは、元記事の範囲では示されていません。"
+                    watch_line = reaction_line if reaction_line else f"今回整理できるのは、{subject}の現在地までです。次の登板や起用は追加情報待ちです。"
             else:
-                focus_line = f"数字以上に気になるのは、{subject}が今回どんな入り方や準備を意識しているのかという点です。単に状態を追う記事ではなく、次の実戦で何を見ればいいかのヒントが入っているタイプの話です。短いコメントでも、相手や場面に対する考え方が見えると読み味はかなり変わってきます。"
-                watch_line = reaction_line if reaction_line else f"次に見たいのは、{subject}の今回のコメントや準備が次の実戦でもそのまま出るかという点です。立ち上がりや攻め方に変化が見えれば、今回の記事の意味もはっきりしてきます。"
+                focus_line = f"元記事では、{subject}に関する現時点の情報が示されています。実戦結果や次の変化までは、元記事の範囲ではまだ確認できません。"
+                watch_line = reaction_line if reaction_line else f"今回整理できるのは、{subject}に関する現時点の情報までです。追加の結果や起用は次の情報で確認できます。"
             if player_mechanics_story:
                 watch_line = reaction_line if reaction_line else f"次に見たいのは、{subject}の今回の調整が次の実戦でもそのまま出るかという点です。球筋や制球の見え方が変わるなら、今回の取り組みが本物かどうかも見えてきます。"
         elif category == "試合速報":
@@ -12317,6 +12415,25 @@ def _body_lead_paraphrase_candidates(
     return _dedupe_preserve_order(candidates), False
 
 
+def _player_manager_subjective_lead(sentence: str, category: str) -> bool:
+    if category not in {"選手情報", "首脳陣"}:
+        return False
+    clean = _collapse_ws(_strip_html(sentence or ""))
+    if not clean:
+        return False
+    subjective_markers = (
+        "笑みはない",
+        "闘志",
+        "宿っていた",
+        "見どころ",
+        "追っていきたい",
+        "見たいところ",
+        "本気度",
+        "腹をくくって",
+    )
+    return any(marker in clean for marker in subjective_markers)
+
+
 def _maybe_apply_body_lead_paraphrase_guard(
     *,
     body_text: str,
@@ -12339,10 +12456,11 @@ def _maybe_apply_body_lead_paraphrase_guard(
     if not sentences:
         return body_text
     first_sentence = sentences[0]
-    if _body_dup_reduction_ngram_overlap(article_title, first_sentence) < 0.55:
+    subjective_lead = _player_manager_subjective_lead(first_sentence, category)
+    if _body_dup_reduction_ngram_overlap(article_title, first_sentence) < 0.55 and not subjective_lead:
         return body_text
     overlap_ngrams = _body_lead_overlap_ngrams(article_title, first_sentence)[:12]
-    if not overlap_ngrams:
+    if not overlap_ngrams and not subjective_lead:
         return body_text
 
     candidates, quote_only = _body_lead_paraphrase_candidates(
@@ -12361,7 +12479,15 @@ def _maybe_apply_body_lead_paraphrase_guard(
     if replacement == first_sentence:
         return body_text
 
-    sentences[0] = replacement
+    if subjective_lead:
+        filtered_sentences = [replacement]
+        for sentence in sentences[1:]:
+            if _player_manager_subjective_lead(sentence, category):
+                continue
+            filtered_sentences.append(sentence)
+        sentences = filtered_sentences
+    else:
+        sentences[0] = replacement
     sections[0] = (first_heading, " ".join(sentences).strip())
     rebuilt_lines: list[str] = []
     for heading, section_body in sections:
@@ -15526,7 +15652,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     # ──────────────────────────────────────────────────────────
     # ① 記事の要約（タイトル付き）
     # ──────────────────────────────────────────────────────────
-    summary_text_to_show = summary_block if summary_block else _build_safe_summary_snippet(title, summary_clean)
+    summary_text_to_show = summary_block if summary_block else _build_safe_summary_snippet(title, summary_clean, body_category)
     safe_title = title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     display_source_links = [
         {

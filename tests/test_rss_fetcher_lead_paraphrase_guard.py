@@ -139,6 +139,35 @@ class BodyLeadParaphraseGuardTests(unittest.TestCase):
 
         self.assertEqual(guarded, body)
 
+    def test_flag_on_rewrites_player_subjective_lead_even_without_title_overlap(self):
+        article_title = "田中将大が次回登板へ向けて調整意図を説明"
+        summary = "田中将大が次回登板へ向けた調整意図を説明した。投球内容の修正ポイントに触れた。"
+        body = "\n".join(
+            [
+                "【ニュースの整理】",
+                "笑みはない。だが、確かな闘志は宿っていた。",
+                "田中将大が次回登板へ向けた調整意図を説明した。",
+                "【次の注目】",
+                "次回登板での投球内容を確認したい。",
+            ]
+        )
+
+        guarded = self._apply_guard(
+            body_text=body,
+            article_title=article_title,
+            source_title=article_title,
+            summary=summary,
+            category="選手情報",
+            article_subtype="player",
+            flag_overrides={"ENABLE_BODY_LEAD_PARAPHRASE_GUARD": "1"},
+        )
+
+        lead_line = rss_fetcher._first_body_content_line(guarded)
+        self.assertNotEqual(lead_line, "笑みはない。だが、確かな闘志は宿っていた。")
+        self.assertNotIn("闘志", lead_line)
+        self.assertNotIn("笑み", lead_line)
+        self.assertIn("田中将大", lead_line)
+
     def test_flag_on_does_not_break_body_dup_reduction_post_process(self):
         article_title = "大城卓三、先制3号3ラン こどもの日の東京ドームで歓声"
         summary = "大城卓三が先制3号3ランを放った。五回二死一、二塁で右翼席へ運んだ。試合の流れを引き寄せた。"

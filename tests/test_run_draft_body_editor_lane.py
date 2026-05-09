@@ -770,7 +770,7 @@ class TestLaneMain(unittest.TestCase):
             {"post_id": 601, "verdict": "skip", "skip_reason": "api_fail"}
         ])
 
-    def test_guard_reject_three_streak_stops(self):
+    def test_guard_reject_three_streak_returns_success_with_review_hint(self):
         posts = {
             1: [
                 _make_post(701, modified="2026-04-20T07:00:00+09:00"),
@@ -790,9 +790,10 @@ class TestLaneMain(unittest.TestCase):
                 (12, None, "guard c", None),
             ],
         )
-        self.assertEqual(code, lane.EXIT_REJECT_STREAK)
+        self.assertEqual(code, 0)
         payload = json.loads(stdout.strip())
         self.assertEqual(payload["stop_reason"], "reject_streak")
+        self.assertEqual(payload["next_run_hint"], "Claude review required")
         self.assertEqual(payload["per_post_outcomes"], [
             {"post_id": 701, "verdict": "guard_fail", "guard_fail": "guard_a"},
             {"post_id": 702, "verdict": "guard_fail", "guard_fail": "guard_b"},

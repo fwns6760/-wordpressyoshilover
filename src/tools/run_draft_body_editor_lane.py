@@ -1185,7 +1185,9 @@ def _exit_code_for_stop_reason(stop_reason: str) -> int:
         "wp_pagination_failed": EXIT_WP_GET_FAILED,
         "wp_get_failed": EXIT_WP_GET_FAILED,
         "input_error": EXIT_INPUT_ERROR,
-        "reject_streak": EXIT_REJECT_STREAK,
+        # Review-only guard exhaustion should surface in the summary payload
+        # without failing the Cloud Run Job or triggering an automatic retry.
+        "reject_streak": 0,
         "api_fail": EXIT_API_FAIL,
         "put_fail": EXIT_PUT_FAIL,
     }.get(stop_reason, 0)

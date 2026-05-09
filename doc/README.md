@@ -6,7 +6,7 @@
 - type: execution queue / Codex A-B dispatch board
 - status: READY
 - created: 2026-04-26
-- updated: 2026-05-08
+- updated: 2026-05-09
 - source_of_truth: current execution order, status, owner, lane, and blocked state
 
 ## role
@@ -46,7 +46,7 @@ Active folder is intentionally narrow. 2026-05-08 朝に「0 publish 0 mail」�
 | **design hold** | `246-MKT-today-giants-fan-guide.md`, `255-MKT-fan-guide-expansion-and-comment-badge.md`, `249-INGEST-live-game-ingestion-expansion.md`, `256-QA-manager-player-quote-strict-subset.md`, `260-MKT-fan-original-article-types-and-templates.md` | no field dispatch yet. These are HOLD backlog items for the post-247 observation phase; do not mix them into current QA/template work. |
 | **keep active** | `229-gemini-cost-governor-and-llm-call-reduction.md` | still needed as the cost-reduction parent; next action depends on fetcher 100% / ledger observation. |
 | **waiting** | `205-gcp-runtime-drift-audit.md`, `238-night-draft-only-and-morning-decision-report.md`, `288-INGEST-source-coverage-expansion.md` | still useful, but not part of the immediate article-body hallucination fix. `288` remains source-add HOLD; only Phase 0 repo-only audit / dry-run evidence may advance doc-only. |
-| **closed / archived** | `205-COST`, `234-impl-1..6`, `242 parent`, `242-B`, `243`, `244`, `244-B`, `244-followup`, `244-B-followup`, `245-front-hide-auto-post-category-label`, `277-QA-title-player-name-backfill`, `278-QA`, `279-QA-mail-subject-clarity`(2026-05-08 close, `6349995`), `280-QA`, `246-viral-topic-detection`, `247-QA-postgame-strict-slot-fill-poc`, `254-QA-starter-innings-normalization` | implemented / accepted / superseded; no longer active work. |
+| **closed / archived** | `205-COST`, `234-impl-1..6`, `242 parent`, `242-B`, `243`, `244`, `244-B`, `244-followup`, `244-B-followup`, `245-front-hide-auto-post-category-label`, `277-QA-title-player-name-backfill`, `278-QA`, `279-QA-mail-subject-clarity`(2026-05-08 close, `6349995`), `280-QA`, `304-QA-player-manager-common-quality-guard`(2026-05-09 close, `6fb818a`, deploy `00285-5bg`), `246-viral-topic-detection`, `247-QA-postgame-strict-slot-fill-poc`, `254-QA-starter-innings-normalization` | implemented / accepted / superseded; no longer active work. |
 
 2026-05-08 朝の 10 commit list は `RESTORE-2026-05-08-MORNING-RELIABILITY.md` §2 を参照。
 

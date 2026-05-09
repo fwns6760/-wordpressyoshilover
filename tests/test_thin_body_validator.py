@@ -4,7 +4,39 @@ from __future__ import annotations
 
 import unittest
 
+from src.nomotoke_card_renderer import render_postgame_card
 from src.thin_body_validator import is_thin_body
+
+
+def _minimal_postgame_card_html(*, result: str = "loss", opposing_pitcher: str = "") -> str:
+    payload = {
+        "date_label": "2026年5月6日",
+        "league_label": "セ・リーグ",
+        "home": "巨人",
+        "away": "阪神",
+        "team_name": "巨人",
+        "score": "5-3",
+        "result": result,
+        "one_line_summary": "",
+        "source_url": "https://example.com/postgame-source",
+        "inning_score": [
+            {
+                "name": "巨人",
+                "innings": [0, 1, 0, 0, 0, 2, 0, 2, "x"],
+                "total": 5,
+            },
+            {
+                "name": "阪神",
+                "innings": [1, 0, 0, 1, 0, 0, 1, 0, 0],
+                "total": 3,
+            },
+        ],
+        "atbat_results": [],
+        "pitching_results": [],
+        "opponent_lineup": [],
+        "opposing_pitcher": opposing_pitcher,
+    }
+    return render_postgame_card(payload)["content_html"]
 
 
 class TestThinBodyEmptyAndSmall(unittest.TestCase):
@@ -146,6 +178,64 @@ class TestEdgeCases(unittest.TestCase):
         )
         result = is_thin_body(body)
         self.assertFalse(result.is_thin)
+
+
+class TestScoreboardOnlyPostgameDetection(unittest.TestCase):
+    def test_rendered_scoreboard_only_postgame_card_is_thin(self) -> None:
+        body = _minimal_postgame_card_html(result="loss")
+        result = is_thin_body(body)
+        self.assertTrue(result.is_thin)
+        self.assertEqual(result.reason, "postgame_scorecard_only")
+
+    def test_rendered_scoreboard_only_postgame_with_only_opposing_pitcher_is_thin(self) -> None:
+        body = _minimal_postgame_card_html(result="loss", opposing_pitcher="青柳晃洋")
+        result = is_thin_body(body)
+        self.assertTrue(result.is_thin)
+        self.assertEqual(result.reason, "postgame_scorecard_only")
+
+    def test_rendered_postgame_with_detail_sections_passes(self) -> None:
+        payload = {
+            "date_label": "2026年5月6日",
+            "league_label": "セ・リーグ",
+            "home": "巨人",
+            "away": "阪神",
+            "team_name": "巨人",
+            "score": "5-3",
+            "result": "win",
+            "one_line_summary": "終盤の集中打で勝利",
+            "source_url": "https://example.com/postgame-source",
+            "inning_score": [
+                {
+                    "name": "巨人",
+                    "innings": [0, 1, 0, 0, 0, 2, 0, 2, "x"],
+                    "total": 5,
+                },
+                {
+                    "name": "阪神",
+                    "innings": [1, 0, 0, 1, 0, 0, 1, 0, 0],
+                    "total": 3,
+                },
+            ],
+            "atbat_results": [
+                {"player_name": "丸佳浩", "order": 1, "result": "中安, 三振, 四球, 二塁打"},
+            ],
+            "pitching_results": [
+                {"pitcher_name": "戸郷翔征", "innings": "7", "runs": "2", "summary": "勝利投手"},
+            ],
+            "opponent_lineup": [
+                {
+                    "order": 1,
+                    "position": "中",
+                    "player_name": "近本光司",
+                    "batting_average": ".310",
+                    "starter_era": "",
+                }
+            ],
+            "opposing_pitcher": "青柳晃洋",
+        }
+        body = render_postgame_card(payload)["content_html"]
+        result = is_thin_body(body)
+        self.assertFalse(result.is_thin, msg=f"unexpected: {result.reason}")
 
 
 if __name__ == "__main__":

@@ -29,6 +29,9 @@ Detection criteria
   2. ``oembed_only_no_body``: ``yoshilover-x-embed`` div あり / ``<h3>`` なし /
      30+ chars text を含む ``<p>`` なし / total HTML < 600 chars
      → 13:04 JST incident pattern と完全一致
+  3. ``postgame_scorecard_only``: のもとけ系 postgame card で ``試合スコア``
+     table 以外の detail section が無く、generic closing だけで終わる
+     scorecard-only body。``65801`` 系の thin-body publish を止める。
 
 非 thin (publish OK):
   - 短い記事 (12 chars HTML / 4 chars text の test infrastructure 含む)
@@ -68,7 +71,8 @@ class ThinBodyResult:
     Attributes:
         is_thin: True なら publish refuse、False なら通す。
         reason: 検出理由 ('empty_body' / 'body_too_small' /
-            'oembed_only_no_body' / 'ok')。is_thin=False の時は 'ok'。
+            'oembed_only_no_body' / 'postgame_scorecard_only' / 'ok')。
+            is_thin=False の時は 'ok'。
         text_chars: HTML タグを除去した text の文字数。
         html_chars: 入力 HTML の総文字数。
     """
@@ -90,6 +94,26 @@ _HAS_TEXT_P_RE = re.compile(
     r"<p[^>]*>[^<]{30,}",
     re.IGNORECASE,
 )
+_NOMOTOKE_CARD_FOOTER_RE = re.compile(
+    r'class\s*=\s*["\']nomotoke-card-footer["\']',
+    re.IGNORECASE,
+)
+_NOMOTOKE_CTA_ROW_RE = re.compile(
+    r'class\s*=\s*["\']nomotoke-cta-row["\']',
+    re.IGNORECASE,
+)
+_POSTGAME_SCORE_HEADING_RE = re.compile(
+    r"<h3[^>]*>.*?試合スコア.*?</h3>",
+    re.IGNORECASE | re.DOTALL,
+)
+_POSTGAME_DETAIL_HEADING_RE = re.compile(
+    r"<h3[^>]*>.*?(?:打席結果|投球結果|相手スタメン).*?</h3>",
+    re.IGNORECASE | re.DOTALL,
+)
+_POSTGAME_GENERIC_CLOSING_RE = re.compile(
+    r"<p>\s*(?:勝ちました。|悔しい敗戦です。|引き分けでした。)\s*</p>",
+    re.IGNORECASE,
+)
 _SCRIPT_RE = re.compile(
     r"<script[^>]*>.*?</script>",
     re.DOTALL | re.IGNORECASE,
@@ -97,6 +121,7 @@ _SCRIPT_RE = re.compile(
 _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
+_POSTGAME_SCORECARD_ONLY_MAX_TEXT_CHARS = 220
 
 
 def _strip_html_to_text(html: str) -> str:
@@ -112,6 +137,26 @@ def _strip_html_to_text(html: str) -> str:
     return _WS_RE.sub(" ", html).strip()
 
 
+def _is_postgame_scorecard_only(body_html: str, *, text_chars: int) -> bool:
+    """Detect thin nomotoke postgame cards that are effectively scorecard-only.
+
+    Narrow scope only:
+    - nomotoke card footer present
+    - score heading present
+    - no detail sections (at-bat / pitching / opponent lineup)
+    - closes with generic win/loss/draw sentence
+    - overall visible text still short
+    """
+    return (
+        bool(_NOMOTOKE_CARD_FOOTER_RE.search(body_html))
+        and bool(_NOMOTOKE_CTA_ROW_RE.search(body_html))
+        and bool(_POSTGAME_SCORE_HEADING_RE.search(body_html))
+        and not bool(_POSTGAME_DETAIL_HEADING_RE.search(body_html))
+        and bool(_POSTGAME_GENERIC_CLOSING_RE.search(body_html))
+        and text_chars < _POSTGAME_SCORECARD_ONLY_MAX_TEXT_CHARS
+    )
+
+
 def is_thin_body(body_html: str) -> ThinBodyResult:
     """本文崩壊 (oembed-only incident pattern) を検出する。
 
@@ -122,6 +167,8 @@ def is_thin_body(body_html: str) -> ThinBodyResult:
       1. ``empty_body``: body_html が None / 空文字
       2. ``oembed_only_no_body``: ``yoshilover-x-embed`` div あり、
          ``<h3>`` なし、30+ chars text を含む ``<p>`` なし、HTML < 600 chars
+      3. ``postgame_scorecard_only``: nomotoke postgame card で
+         score table + generic closing しか無い thin body
 
     NOT detected here (other gates' responsibility):
       - 短い body (~50 chars HTML): post_gen_validate / body_contract で
@@ -152,6 +199,14 @@ def is_thin_body(body_html: str) -> ThinBodyResult:
         return ThinBodyResult(
             is_thin=True,
             reason="oembed_only_no_body",
+            text_chars=text_chars,
+            html_chars=html_chars,
+        )
+
+    if _is_postgame_scorecard_only(body_html, text_chars=text_chars):
+        return ThinBodyResult(
+            is_thin=True,
+            reason="postgame_scorecard_only",
             text_chars=text_chars,
             html_chars=html_chars,
         )

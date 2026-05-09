@@ -9,6 +9,7 @@ from unittest.mock import Mock, call, patch
 
 import requests
 
+from src.nomotoke_card_renderer import render_postgame_card
 from src.wp_client import WPClient, WP_PUBLISH_STATUS_GUARD_ENV
 from src.wp_revert_audit_ledger import AUDIT_LEDGER_ENV, BLOCK_ENV, LEDGER_PATH_ENV
 
@@ -1302,6 +1303,54 @@ class TestThinBodyStopGate(unittest.TestCase):
         self.assertEqual(post_id, 12345)
         # HTTP POST が呼ばれているはず.
         mock_post.assert_called_once()
+
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_scoreboard_only_postgame_card_raises_thin_body_stop(self, mock_get, mock_post):
+        mock_get.return_value = Mock(status_code=200, json=lambda: [])
+        mock_post.return_value = _mock_response(
+            201,
+            json_data={"id": 54321, "status": "publish"},
+        )
+        thin_body = render_postgame_card(
+            {
+                "date_label": "2026年5月6日",
+                "league_label": "セ・リーグ",
+                "home": "巨人",
+                "away": "阪神",
+                "team_name": "巨人",
+                "score": "5-3",
+                "result": "loss",
+                "one_line_summary": "",
+                "source_url": "https://example.com/postgame-source",
+                "inning_score": [
+                    {
+                        "name": "巨人",
+                        "innings": [0, 1, 0, 0, 0, 2, 0, 2, "x"],
+                        "total": 5,
+                    },
+                    {
+                        "name": "阪神",
+                        "innings": [1, 0, 0, 1, 0, 0, 1, 0, 0],
+                        "total": 3,
+                    },
+                ],
+                "atbat_results": [],
+                "pitching_results": [],
+                "opponent_lineup": [],
+                "opposing_pitcher": "",
+            }
+        )["content_html"]
+        with self.assertRaises(RuntimeError) as ctx:
+            self.wp.create_post(
+                title="scoreboard only postgame",
+                content=thin_body,
+                categories=[663],
+                status="publish",
+            )
+        self.assertIn("thin_body_stop", str(ctx.exception))
+        self.assertIn("postgame_scorecard_only", str(ctx.exception))
+        mock_post.assert_not_called()
 
 
 if __name__ == "__main__":

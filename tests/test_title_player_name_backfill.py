@@ -75,6 +75,74 @@ class TitlePlayerNameBackfillTests(unittest.TestCase):
                 self.assertEqual(result.title, case["expected_title"])
                 self.assertEqual(result.review_reason, case["expected_reason"])
 
+    def test_player_role_generic_title_backfills_from_source_body(self):
+        cases = [
+            {
+                "title": "外野手が打撃練習で快音",
+                "source_title": "外野手が打撃練習で快音",
+                "body": "浅野翔吾外野手が打撃練習で快音を響かせた。",
+                "expected": "浅野翔吾選手が打撃練習で快音",
+            },
+            {
+                "title": "捕手、母の日仕様の用具を準備",
+                "source_title": "捕手、母の日仕様の用具を準備",
+                "body": "山瀬慎之助捕手、母の日仕様の用具を準備した。",
+                "expected": "山瀬慎之助選手、母の日仕様の用具を準備",
+            },
+        ]
+
+        for case in cases:
+            with self.subTest(title=case["title"]):
+                result = backfill_title_player_name(
+                    existing_title=case["title"],
+                    source_title=case["source_title"],
+                    body=case["body"],
+                    metadata={"role": "選手"},
+                )
+
+                self.assertEqual(result.title, case["expected"])
+                self.assertEqual(result.review_reason, "")
+
+    def test_manager_and_coach_generic_title_backfills_matching_role_only(self):
+        cases = [
+            {
+                "title": "監督が若手起用を説明",
+                "source_title": "監督が若手起用を説明",
+                "body": "阿部監督が若手起用を説明した。",
+                "metadata": {"speaker": "阿部", "role": "監督"},
+                "expected_title": "阿部監督が若手起用を説明",
+                "expected_reason": "",
+            },
+            {
+                "title": "コーチ、守備練習を確認",
+                "source_title": "コーチ、守備練習を確認",
+                "body": "川相コーチ、守備練習を確認した。",
+                "metadata": {"speaker": "川相", "role": "コーチ"},
+                "expected_title": "川相コーチ、守備練習を確認",
+                "expected_reason": "",
+            },
+            {
+                "title": "コーチは増田陸選手の捕球練習を確認",
+                "source_title": "コーチは増田陸選手の捕球練習を確認",
+                "body": "増田陸選手の捕球練習を確認した。",
+                "metadata": {},
+                "expected_title": "コーチは増田陸選手の捕球練習を確認",
+                "expected_reason": "title_player_name_unresolved",
+            },
+        ]
+
+        for case in cases:
+            with self.subTest(title=case["title"]):
+                result = backfill_title_player_name(
+                    existing_title=case["title"],
+                    source_title=case["source_title"],
+                    body=case["body"],
+                    metadata=case["metadata"],
+                )
+
+                self.assertEqual(result.title, case["expected_title"])
+                self.assertEqual(result.review_reason, case["expected_reason"])
+
     def test_multiple_candidates_choose_first_without_joining_names(self):
         result = backfill_title_player_name(
             existing_title='巨人スタメン が「2番・二塁」で今季初先発',

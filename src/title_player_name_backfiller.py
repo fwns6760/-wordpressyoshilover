@@ -13,7 +13,10 @@ _HTML_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
 _LINEUP_PREFIX_RE = re.compile(r"^\s*巨人スタメン\s*")
 _LEADING_PARTICLE_RE = re.compile(r"^[がをにのへともや]")
-_GENERIC_HEAD_RE = re.compile(r"^(選手|投手|コーチ|監督|チーム)(?P<rest>(?:[、，,]\s*.*|\s+.*|$))")
+_GENERIC_HEAD_RE = re.compile(
+    r"^(?P<label>選手|投手|捕手|内野手|外野手|コーチ|監督|チーム|首脳陣)"
+    r"(?P<rest>(?:[、，,]\s*.*|\s+.*|[がはもをにへと].*|$))"
+)
 _QUOTE_RE = re.compile(r"[「『]([^」』]{1,40})[」』]")
 _NAME_WITH_ROLE_RE = re.compile(
     r"(?P<name>[A-Za-zＡ-Ｚａ-ｚ一-龯々ァ-ヴー・･\.\-]{2,24}?)(?P<role>投手|捕手|内野手|外野手|選手|監督|コーチ)"
@@ -21,7 +24,7 @@ _NAME_WITH_ROLE_RE = re.compile(
 _NAME_RE = re.compile(
     r"(?P<name>[A-Za-zＡ-Ｚａ-ｚ一-龯々ァ-ヴー・･\.\-]{2,24})(?=(?:が|は|も|の|と|、|，|,|「|『|[0-9０-９]|$))"
 )
-_GENERIC_LABELS = frozenset({"選手", "投手", "コーチ", "監督", "チーム"})
+_GENERIC_LABELS = frozenset({"選手", "投手", "捕手", "内野手", "外野手", "コーチ", "監督", "チーム", "首脳陣"})
 _STOPWORDS = frozenset(
     {
         "巨人",
@@ -138,7 +141,7 @@ def _title_already_has_named_subject(title: str) -> bool:
         return False
     if cleaned.startswith(tuple(_GENERIC_LABELS)) and any(marker in cleaned for marker in _COMMENT_TITLE_MARKERS):
         return False
-    if _GENERIC_HEAD_RE.match(cleaned) and any(marker in cleaned for marker in _COMMENT_TITLE_MARKERS):
+    if _GENERIC_HEAD_RE.match(cleaned):
         return False
     if _LINEUP_PREFIX_RE.match(cleaned):
         stripped = _LINEUP_PREFIX_RE.sub("", cleaned, count=1).lstrip()
@@ -165,7 +168,7 @@ def _append_candidate(
     candidates.append((name, embedded_role or _normalize_role(role_hint)))
 
 
-def _collect_candidates_from_text(text: str) -> list[tuple[str, str]]:
+def _collect_candidates_from_text(text: str, *, allow_loose_names: bool = True) -> list[tuple[str, str]]:
     cleaned = _clean_text(text)
     if not cleaned:
         return []
@@ -173,6 +176,8 @@ def _collect_candidates_from_text(text: str) -> list[tuple[str, str]]:
     candidates: list[tuple[str, str]] = []
     for match in _NAME_WITH_ROLE_RE.finditer(cleaned):
         _append_candidate(candidates, seen, match.group("name"), role_hint=match.group("role"))
+    if not allow_loose_names:
+        return candidates
     for match in _NAME_RE.finditer(cleaned):
         _append_candidate(candidates, seen, match.group("name"))
     return candidates
@@ -240,8 +245,13 @@ def _choose_candidate(
     metadata_role = _normalize_role(str(metadata.get("role") or ""))
     for key in ("speaker", "player_name", "subject_player"):
         _append_candidate(candidates, seen, str(metadata.get(key) or ""), role_hint=metadata_role)
-    for text in (source_title, body, summary):
-        for name, role in _collect_candidates_from_text(text):
+    text_sources = (
+        (source_title, _title_already_has_named_subject(source_title)),
+        (body, True),
+        (summary, True),
+    )
+    for text, allow_loose_names in text_sources:
+        for name, role in _collect_candidates_from_text(text, allow_loose_names=allow_loose_names):
             _append_candidate(candidates, seen, name, role_hint=role)
     if not candidates:
         return "", ""
@@ -268,6 +278,23 @@ def _display_name(name: str, role: str) -> str:
     return f"{base_name}{resolved_role}"
 
 
+def _generic_label_matches_role(label: str, role: str) -> bool:
+    normalized_role = _normalize_role(role)
+    if label == "選手":
+        return normalized_role in {"選手", "投手"}
+    if label in {"捕手", "内野手", "外野手"}:
+        return normalized_role == "選手"
+    if label == "投手":
+        return normalized_role == "投手"
+    if label == "監督":
+        return normalized_role == "監督"
+    if label == "コーチ":
+        return normalized_role == "コーチ"
+    if label == "首脳陣":
+        return normalized_role in {"監督", "コーチ"}
+    return False
+
+
 def _extract_first_quote(*texts: str) -> str:
     for text in texts:
         cleaned = _clean_text(text)
@@ -279,7 +306,7 @@ def _extract_first_quote(*texts: str) -> str:
     return ""
 
 
-def _replace_generic_subject(existing_title: str, display_name: str) -> str:
+def _replace_generic_subject(existing_title: str, display_name: str, *, role: str = "") -> str:
     cleaned = _clean_text(existing_title)
     if not cleaned:
         return display_name
@@ -291,6 +318,8 @@ def _replace_generic_subject(existing_title: str, display_name: str) -> str:
             lineup_stripped = candidate
 
     if lineup_stripped in _GENERIC_LABELS:
+        if not _generic_label_matches_role(lineup_stripped, role):
+            return ""
         return display_name
 
     if _LEADING_PARTICLE_RE.match(lineup_stripped):
@@ -298,6 +327,8 @@ def _replace_generic_subject(existing_title: str, display_name: str) -> str:
 
     match = _GENERIC_HEAD_RE.match(lineup_stripped)
     if match:
+        if not _generic_label_matches_role(match.group("label"), role):
+            return ""
         rest = match.group("rest") or ""
         return f"{display_name}{rest}"
 
@@ -351,7 +382,7 @@ def backfill_title_player_name(
             role=role,
         )
 
-    replaced = _replace_generic_subject(current_title, display_name)
+    replaced = _replace_generic_subject(current_title, display_name, role=role)
     if replaced:
         return TitlePlayerNameBackfillResult(
             title=replaced,
@@ -360,7 +391,7 @@ def backfill_title_player_name(
             role=role,
         )
 
-    if source_title_clean and title_has_person_name_candidate(source_title_clean):
+    if source_title_clean and _title_already_has_named_subject(source_title_clean):
         return TitlePlayerNameBackfillResult(
             title=source_title_clean,
             changed=source_title_clean != current_title,

@@ -207,6 +207,9 @@ AdSense 管理画面側の新規広告ユニット作成や自動広告設定変
 - 2026-05-11: 新規 AdSense code / ad unit ID は追加せず、既存 SWELL AdSense widget だけを対象にする scroll UI controller を `src/yoshilover-063-frontend.php` に追加。
 - 2026-05-11: sandbox の DNS 制限で最初の live DOM curl が失敗。権限付き read-only curl で live DOM を確認。
 - 2026-05-11: sandbox の socket 制限で最初の full pytest は `LiveServerSmokeTest` 3件のみ PermissionError。権限付きで同一 full pytest を再実行し green。
+- 2026-05-11: user clarification により、のもとけ投稿ページの scroll 連動 AdSense 表示を再観察。desktop は sidebar 内広告 block が scroll 追従して記事末尾で停止、mobile は sidewinder ではなく本文下/コメント付近の既存広告枠がスクロールで出る構造と確認。
+- 2026-05-11: 追加再現テストを先に追加し、現行実装では `setupSidewinder` / mobile inline class 不足で targeted pytest が赤になることを確認。
+- 2026-05-11: desktop sidebar の既存 AdSense widget に sidewinder controller を追加。mobile では既存 AdSense widget を inline scroll 表示に寄せ、fixed overlay は追加しない実装へ更新。
 
 ## 13. 作業後追記欄
 
@@ -222,7 +225,8 @@ AdSense 管理画面側の新規広告ユニット作成や自動広告設定変
   - single post のみで既存 SWELL AdSense widget を検出する inline CSS / JS を追加。
   - `.widget_swell_ad_widget` かつ `adsbygoogle` / `pagead2` を含む既存広告枠だけに `yoshi-adsense-slot` class を付与。
   - `IntersectionObserver` で in-view / active class を切り替え、scroll に合わせて自然に表示する。
-  - desktop sidebar 内の既存 AdSense widget は sticky 化対象にする。
+  - desktop sidebar 内の既存 AdSense widget は sidewinder 化し、scroll 中は fixed、記事末尾では absolute に切り替えて止める。
+  - mobile の既存 AdSense widget は inline 表示のまま、スクロールで浮き上がる見え方にする。
   - 新規 AdSense code / `data-ad-client` / `data-ad-slot` は追加しない。
   - close overlay は入れない。AdSense 上に操作UIを重ねない。
 - 実行したテスト:
@@ -238,10 +242,10 @@ AdSense 管理画面側の新規広告ユニット作成や自動広告設定変
   - `py_compile`: pass
   - `compileall`: pass
   - `ast`: pass
-  - targeted pytest: `3 passed, 3 warnings`
+  - targeted pytest: `5 passed, 3 warnings`
   - `git diff --check`: pass
-  - full pytest sandbox: `3574 passed / 3 failed`。失敗は sandbox socket 制限による `LiveServerSmokeTest` 3件の `PermissionError`
-  - full pytest 権限付き再実行: `3577 passed, 3 warnings`
+  - full pytest sandbox: `3576 passed / 3 failed`。失敗は sandbox socket 制限による `LiveServerSmokeTest` 3件の `PermissionError`
+  - full pytest 権限付き再実行: `3579 passed, 3 warnings`
 - 残った懸念:
   - 未deployのため、実ブラウザ screenshot / CLS / mobile scroll の実機確認は未実施。
   - AdSense no-fill 時の見え方は live deploy 後に確認が必要。
@@ -254,6 +258,8 @@ AdSense 管理画面側の新規広告ユニット作成や自動広告設定変
   - 新規 `data-ad-client` / `data-ad-slot` / `<ins class="adsbygoogle">` を追加しないこと
   - single post のみで動くこと
   - `IntersectionObserver` を使うこと
+  - desktop sidewinder が main content 範囲で fixed / absolute を切り替えること
+  - mobile は inline 表示のまま fixed overlay にしないこと
   - close / dismiss overlay を入れないこと
 - 次回触ってはいけない範囲:
   - publish 条件

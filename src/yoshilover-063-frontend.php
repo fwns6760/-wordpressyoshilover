@@ -2919,7 +2919,7 @@ function yoshilover_063_enqueue_adsense_scroll_ui_assets() {
         return;
     }
 
-    wp_register_style( 'yoshilover-063-adsense-scroll-ui', false, array(), '0.1.0' );
+    wp_register_style( 'yoshilover-063-adsense-scroll-ui', false, array(), '0.2.0' );
     wp_enqueue_style( 'yoshilover-063-adsense-scroll-ui' );
 
     $styles = <<<'CSS'
@@ -2930,7 +2930,7 @@ function yoshilover_063_enqueue_adsense_scroll_ui_assets() {
   margin-left: auto;
   opacity: 0.86;
   transform: translateY(8px);
-  transition: opacity 180ms ease, transform 180ms ease;
+  transition: opacity 180ms ease, transform 180ms ease, box-shadow 180ms ease;
   will-change: opacity, transform;
 }
 .widget_swell_ad_widget.yoshi-adsense-slot.is-yoshi-adsense-inview {
@@ -2963,6 +2963,20 @@ function yoshilover_063_enqueue_adsense_scroll_ui_assets() {
   top: 92px;
   z-index: 2;
 }
+.widget_swell_ad_widget.yoshi-adsense-slot--sidebar.yoshi-adsense-sidewinder-shell {
+  box-sizing: border-box;
+}
+.widget_swell_ad_widget.yoshi-adsense-slot--sidebar.is-yoshi-adsense-sidewinder-fixed,
+.widget_swell_ad_widget.yoshi-adsense-slot--sidebar.is-yoshi-adsense-sidewinder-absolute {
+  z-index: 6;
+  transform: translateY(0) translateZ(0);
+  box-shadow: 0 14px 28px rgba(26, 26, 26, 0.12);
+}
+.yoshi-adsense-sidewinder-placeholder {
+  display: block;
+  width: 100%;
+  pointer-events: none;
+}
 .widget_swell_ad_widget.yoshi-adsense-slot--before-related,
 .widget_swell_ad_widget.yoshi-adsense-slot--after-related {
   margin-top: 22px;
@@ -2977,6 +2991,19 @@ function yoshilover_063_enqueue_adsense_scroll_ui_assets() {
 @media (max-width: 768px) {
   .widget_swell_ad_widget.yoshi-adsense-slot {
     transform: translateY(6px);
+  }
+  .widget_swell_ad_widget.yoshi-adsense-slot--mobile-inline {
+    margin-top: 18px;
+    margin-bottom: 18px;
+    padding: 8px 0;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 10px 22px rgba(26, 26, 26, 0.08);
+    transform: translateY(14px) scale(0.985);
+  }
+  .widget_swell_ad_widget.yoshi-adsense-slot--mobile-inline.is-yoshi-adsense-inview {
+    box-shadow: 0 16px 30px rgba(26, 26, 26, 0.10);
+    transform: translateY(0) scale(1);
   }
   .w-singleBottom .widget_swell_ad_widget.yoshi-adsense-slot,
   .w-cta .widget_swell_ad_widget.yoshi-adsense-slot,
@@ -2997,7 +3024,7 @@ CSS;
 
     wp_add_inline_style( 'yoshilover-063-adsense-scroll-ui', $styles );
 
-    wp_register_script( 'yoshilover-063-adsense-scroll-ui', false, array(), '0.1.0', true );
+    wp_register_script( 'yoshilover-063-adsense-scroll-ui', false, array(), '0.2.0', true );
     wp_enqueue_script( 'yoshilover-063-adsense-scroll-ui' );
 
     $script = <<<'JS'
@@ -3008,13 +3035,22 @@ CSS;
   ));
 
   doc.dataset.yoshiAdsenseSlotCount = String(adWidgets.length);
+  doc.dataset.yoshiAdsenseMobileSlotCount = '0';
+  doc.dataset.yoshiAdsenseSidewinder = '0';
   if (!adWidgets.length) {
     return;
   }
 
+  const mobileInlineWidgets = [];
+
   const classify = (widget) => {
-    if (widget.closest('#sidebar, .l-sidebar')) {
+    const isSidebar = Boolean(widget.closest('#sidebar, .l-sidebar'));
+    if (isSidebar) {
       widget.classList.add('yoshi-adsense-slot--sidebar');
+    }
+    if (!isSidebar) {
+      widget.classList.add('yoshi-adsense-slot--mobile-inline');
+      mobileInlineWidgets.push(widget);
     }
     if (widget.closest('.w-singleBottom')) {
       widget.classList.add('yoshi-adsense-slot--single-bottom');
@@ -3042,6 +3078,160 @@ CSS;
       widget.insertBefore(label, widget.firstChild);
     }
   });
+
+  doc.dataset.yoshiAdsenseMobileSlotCount = String(mobileInlineWidgets.length);
+
+  const setupSidewinder = () => {
+    if (!window.matchMedia || !window.requestAnimationFrame) {
+      return;
+    }
+
+    const desktopQuery = window.matchMedia('(min-width: 1100px)');
+    const sidewinder = adWidgets.find((widget) => widget.classList.contains('yoshi-adsense-slot--sidebar'));
+    const mainContent = document.querySelector('#main_content, .l-mainContent, main, #main');
+
+    if (!desktopQuery || !sidewinder || !mainContent || !sidewinder.parentNode) {
+      return;
+    }
+
+    doc.dataset.yoshiAdsenseSidewinder = 'ready';
+    sidewinder.classList.add('yoshi-adsense-sidewinder-shell');
+
+    const placeholder = document.createElement('div');
+    placeholder.className = 'yoshi-adsense-sidewinder-placeholder';
+    placeholder.hidden = true;
+    sidewinder.parentNode.insertBefore(placeholder, sidewinder);
+
+    let metrics = null;
+    let ticking = false;
+
+    const scrollY = () => window.pageYOffset || doc.scrollTop || document.body.scrollTop || 0;
+    const scrollX = () => window.pageXOffset || doc.scrollLeft || document.body.scrollLeft || 0;
+
+    const clearModeClasses = () => {
+      sidewinder.classList.remove(
+        'is-yoshi-adsense-sidewinder-fixed',
+        'is-yoshi-adsense-sidewinder-absolute'
+      );
+    };
+
+    const resetSidewinder = () => {
+      clearModeClasses();
+      sidewinder.style.position = '';
+      sidewinder.style.top = '';
+      sidewinder.style.left = '';
+      sidewinder.style.width = '';
+      placeholder.hidden = true;
+      placeholder.style.height = '';
+    };
+
+    const measureSidewinder = () => {
+      resetSidewinder();
+      if (!desktopQuery.matches) {
+        metrics = null;
+        return;
+      }
+
+      const widgetRect = sidewinder.getBoundingClientRect();
+      const mainRect = mainContent.getBoundingClientRect();
+      const offsetParent = sidewinder.offsetParent || document.body;
+      const parentRect = offsetParent.getBoundingClientRect
+        ? offsetParent.getBoundingClientRect()
+        : { top: 0, left: 0 };
+      const pageY = scrollY();
+      const pageX = scrollX();
+      const height = sidewinder.offsetHeight;
+      const mainTop = mainRect.top + pageY;
+      const mainBottom = mainRect.bottom + pageY;
+
+      metrics = {
+        startTop: widgetRect.top + pageY,
+        left: widgetRect.left + pageX,
+        width: widgetRect.width,
+        height,
+        mainTop,
+        mainBottom,
+        offsetParentTop: parentRect.top + pageY,
+        offsetParentLeft: parentRect.left + pageX
+      };
+
+      if (!height || (mainBottom - mainTop) <= height + 120) {
+        metrics = null;
+        resetSidewinder();
+      }
+    };
+
+    const pinFixed = (top) => {
+      placeholder.hidden = false;
+      placeholder.style.height = `${metrics.height}px`;
+      sidewinder.style.position = 'fixed';
+      sidewinder.style.top = `${top}px`;
+      sidewinder.style.left = `${metrics.left}px`;
+      sidewinder.style.width = `${metrics.width}px`;
+      sidewinder.classList.add('is-yoshi-adsense-sidewinder-fixed');
+      sidewinder.classList.remove('is-yoshi-adsense-sidewinder-absolute');
+    };
+
+    const pinAbsolute = () => {
+      placeholder.hidden = false;
+      placeholder.style.height = `${metrics.height}px`;
+      sidewinder.style.position = 'absolute';
+      sidewinder.style.top = `${Math.max(0, metrics.mainBottom - metrics.height - metrics.offsetParentTop)}px`;
+      sidewinder.style.left = `${Math.max(0, metrics.left - metrics.offsetParentLeft)}px`;
+      sidewinder.style.width = `${metrics.width}px`;
+      sidewinder.classList.add('is-yoshi-adsense-sidewinder-absolute');
+      sidewinder.classList.remove('is-yoshi-adsense-sidewinder-fixed');
+    };
+
+    const updateSidewinder = () => {
+      ticking = false;
+      if (!desktopQuery.matches || !metrics) {
+        resetSidewinder();
+        return;
+      }
+
+      const fixedTop = 92;
+      const pageY = scrollY();
+      const fixedStart = metrics.startTop - fixedTop;
+      const fixedStop = metrics.mainBottom - metrics.height - fixedTop;
+
+      if (pageY < fixedStart) {
+        resetSidewinder();
+        return;
+      }
+
+      if (pageY >= fixedStop) {
+        pinAbsolute();
+        return;
+      }
+
+      pinFixed(fixedTop);
+    };
+
+    const scheduleSidewinder = () => {
+      if (ticking) {
+        return;
+      }
+      ticking = true;
+      window.requestAnimationFrame(updateSidewinder);
+    };
+
+    const remapSidewinder = () => {
+      measureSidewinder();
+      scheduleSidewinder();
+    };
+
+    measureSidewinder();
+    scheduleSidewinder();
+    window.addEventListener('scroll', scheduleSidewinder, { passive: true });
+    window.addEventListener('resize', remapSidewinder, { passive: true });
+    window.addEventListener('load', remapSidewinder);
+    if (desktopQuery.addEventListener) {
+      desktopQuery.addEventListener('change', remapSidewinder);
+    }
+  };
+
+  setupSidewinder();
 
   if (!('IntersectionObserver' in window)) {
     adWidgets.forEach((widget) => {

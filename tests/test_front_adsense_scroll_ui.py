@@ -53,3 +53,27 @@ def test_adsense_scroll_ui_uses_intersection_observer_without_close_overlay():
 
     assert "yoshi-adsense-slot__close" not in src
     assert "dismiss" not in src.lower()
+
+
+def test_adsense_scroll_ui_has_desktop_sidewinder_that_stops_at_article_end():
+    src = _adsense_scroll_ui_section()
+
+    assert "setupSidewinder" in src
+    assert "matchMedia('(min-width: 1100px)')" in src
+    assert "#main_content, .l-mainContent, main, #main" in src
+    assert "is-yoshi-adsense-sidewinder-fixed" in src
+    assert "is-yoshi-adsense-sidewinder-absolute" in src
+    assert "getBoundingClientRect" in src
+    assert "requestAnimationFrame" in src
+
+
+def test_adsense_scroll_ui_keeps_mobile_ads_inline_without_fixed_overlay():
+    src = _adsense_scroll_ui_section()
+    mobile_start = src.index("@media (max-width: 768px)")
+    mobile_end = src.index("@media (prefers-reduced-motion: reduce)", mobile_start)
+    mobile_css = src[mobile_start:mobile_end]
+
+    assert "yoshi-adsense-slot--mobile-inline" in src
+    assert "doc.dataset.yoshiAdsenseMobileSlotCount" in src
+    assert "box-shadow" in mobile_css
+    assert "position: fixed" not in mobile_css

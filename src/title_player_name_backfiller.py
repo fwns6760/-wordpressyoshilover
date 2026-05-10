@@ -75,6 +75,10 @@ _ROLE_NORMALIZATION = {
 }
 _COMMENT_TITLE_MARKERS = ("コメント整理", "発言ポイント", "談話整理", "コメント")
 _STOPWORD_FRAGMENTS = (
+    "若手",
+    "主力",
+    "育成",
+    "新人",
     "スポーツ",
     "報知",
     "日刊",
@@ -86,6 +90,18 @@ _STOPWORD_FRAGMENTS = (
     "公式",
     "ニュース",
     "オンライン",
+    "新聞",
+    "通信",
+    "編集部",
+    "取材班",
+    "番記者",
+    "メディア",
+    "ベースボール",
+    "チャンネル",
+    "テレビ",
+    "ラジオ",
+    "Xが",
+    "Ｘが",
     "ジャイアンツ球場",
     "今季",
     "初先発",
@@ -115,6 +131,13 @@ class TitlePlayerNameBackfillResult:
     review_reason: str = ""
     player_name: str = ""
     role: str = ""
+
+
+@dataclass(frozen=True)
+class _CandidateSelection:
+    name: str = ""
+    role: str = ""
+    ambiguous: bool = False
 
 
 def _clean_text(value: str) -> str:
@@ -189,6 +212,56 @@ def _append_candidate(
     candidates.append((name, embedded_role or _normalize_role(role_hint)))
 
 
+def _candidate_key(name: str) -> str:
+    return re.sub(r"\s+", "", _clean_text(name))
+
+
+def _candidate_mention_count(name: str, *texts: str) -> int:
+    key = _candidate_key(name)
+    if not key:
+        return 0
+    count = 0
+    for text in texts:
+        compact = re.sub(r"\s+", "", _clean_text(text))
+        count += compact.count(key)
+    return count
+
+
+def _choose_unique_frequency_leader(
+    candidates: list[tuple[str, str]],
+    *,
+    source_title: str,
+    body: str,
+    summary: str,
+) -> tuple[str, str] | None:
+    ranked = sorted(
+        (
+            (_candidate_mention_count(name, source_title, body, summary), index, name, role)
+            for index, (name, role) in enumerate(candidates)
+        ),
+        key=lambda item: (-item[0], item[1]),
+    )
+    if not ranked:
+        return None
+    if len(ranked) == 1:
+        _, _, name, role = ranked[0]
+        return name, role
+    top_count, _, name, role = ranked[0]
+    second_count = ranked[1][0]
+    if top_count > second_count:
+        return name, role
+    return None
+
+
+def _common_candidate_role(candidates: list[tuple[str, str]], metadata_role: str = "") -> str:
+    if metadata_role:
+        return metadata_role
+    roles = {role for _, role in candidates if role}
+    if len(roles) == 1:
+        return roles.pop()
+    return ""
+
+
 def _collect_candidates_from_text(text: str, *, allow_loose_names: bool = True) -> list[tuple[str, str]]:
     cleaned = _clean_text(text)
     if not cleaned:
@@ -260,12 +333,13 @@ def _choose_candidate(
     body: str,
     summary: str,
     metadata: Mapping[str, object],
-) -> tuple[str, str]:
+) -> _CandidateSelection:
     candidates: list[tuple[str, str]] = []
     seen: set[str] = set()
     metadata_role = _normalize_role(str(metadata.get("role") or ""))
     for key in ("speaker", "player_name", "subject_player"):
         _append_candidate(candidates, seen, str(metadata.get(key) or ""), role_hint=metadata_role)
+    metadata_candidate_count = len(candidates)
     text_sources = (
         (source_title, _title_already_has_named_subject(source_title)),
         (body, True),
@@ -275,8 +349,16 @@ def _choose_candidate(
         for name, role in _collect_candidates_from_text(text, allow_loose_names=allow_loose_names):
             _append_candidate(candidates, seen, name, role_hint=role)
     if not candidates:
-        return "", ""
-    name, role = candidates[0]
+        return _CandidateSelection()
+    if metadata_candidate_count:
+        name, role = candidates[0]
+    else:
+        role_candidates = [(name, role) for name, role in candidates if role]
+        choice_pool = role_candidates or candidates
+        selected = _choose_unique_frequency_leader(choice_pool, source_title=source_title, body=body, summary=summary)
+        if selected is None:
+            return _CandidateSelection(role=_common_candidate_role(choice_pool, metadata_role), ambiguous=True)
+        name, role = selected
     if not role:
         role = _infer_role(
             name,
@@ -286,7 +368,7 @@ def _choose_candidate(
             summary=summary,
             metadata=metadata,
         )
-    return name, role
+    return _CandidateSelection(name=name, role=role)
 
 
 def _display_name(name: str, role: str) -> str:
@@ -358,6 +440,35 @@ def _replace_generic_subject(existing_title: str, display_name: str, *, role: st
     return ""
 
 
+def _neutral_subject_for_role(role: str) -> str:
+    if _normalize_role(role) in {"監督", "コーチ"}:
+        return "首脳陣"
+    return "巨人"
+
+
+def _replace_generic_subject_neutral(existing_title: str, role: str = "") -> str:
+    neutral_subject = _neutral_subject_for_role(role)
+    cleaned = _clean_text(existing_title)
+    if not cleaned:
+        return neutral_subject
+
+    lineup_stripped = cleaned
+    if _LINEUP_PREFIX_RE.match(cleaned):
+        candidate = _LINEUP_PREFIX_RE.sub("", cleaned, count=1).lstrip()
+        if candidate and (_LEADING_PARTICLE_RE.match(candidate) or _GENERIC_HEAD_RE.match(candidate)):
+            lineup_stripped = candidate
+
+    if lineup_stripped in _GENERIC_LABELS:
+        return neutral_subject
+    if _LEADING_PARTICLE_RE.match(lineup_stripped):
+        return f"{neutral_subject}{lineup_stripped}"
+    match = _GENERIC_HEAD_RE.match(lineup_stripped)
+    if match:
+        rest = match.group("rest") or ""
+        return f"{neutral_subject}{rest}"
+    return ""
+
+
 def backfill_title_player_name(
     *,
     existing_title: str,
@@ -377,13 +488,23 @@ def backfill_title_player_name(
             changed=current_title != _clean_text(existing_title),
         )
 
-    player_name, role = _choose_candidate(
+    selection = _choose_candidate(
         existing_title=current_title,
         source_title=source_title_clean,
         body=body,
         summary=summary,
         metadata=metadata,
     )
+    player_name = selection.name
+    role = selection.role
+    if selection.ambiguous:
+        neutral_title = _replace_generic_subject_neutral(current_title, role=role)
+        if neutral_title:
+            return TitlePlayerNameBackfillResult(
+                title=neutral_title,
+                changed=neutral_title != current_title,
+                role=role,
+            )
     if not player_name:
         return TitlePlayerNameBackfillResult(
             title=fallback_title,

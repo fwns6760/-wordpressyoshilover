@@ -114,6 +114,7 @@ Xポスト本文に選手名・監督名・コーチ名が書かれているの�
 | --- | --- | --- |
 | 2026-05-10 JST | user が「Xのポストに書いてある選手名やコーチ名は入れてほしい。本文にはない」と指摘 | 316 子 ticket として起票 |
 | 2026-05-10 JST | Codex が title backfill / weak title rescue の恒久対策を実装。`#浦田俊輔 選手` のような X 本文内実名を title に反映し、title では `選手` suffix を出さない方針に統一 | focused tests pass。publish / mail / scheduler / env / Cloud Run / gate 緩和なし |
+| 2026-05-10 JST | user が deploy 前レビューで残リスクを確認し「更に安全にしたい」と指示 | 複数人物同数時は先頭人物を採らず neutral `巨人` title に退避。明示 role 付き候補を loose 候補より優先。媒体名風 stopword を追加。full unittest / pytest baseline pass |
 
 ## 10. Regression Memo欄
 
@@ -138,6 +139,10 @@ Xポスト本文に選手名・監督名・コーチ名が書かれているの�
 - `若手` / `紹介` / `スポーツ報知巨人班X` などを人名候補として誤採用しないよう、名前候補 stopword を追加。
 - title 表示では `選手` suffix を付けず、`浦田俊輔、昇格・復帰 関連情報` のように実名だけを出す方針へ変更。
 - weak title rescue でも `泉口友汰選手、...` ではなく `泉口友汰、...` に揃えた。
+- 複数人物が同数で出る場合は先頭人物を採らず、generic title を `巨人、...` に退避する。
+- 複数人物でも 1 人だけ出現頻度が明確に高い場合だけ、その人物を title に採用する。
+- `山瀬慎之助捕手` のような明示 role 付き候補は、`日仕様` のような loose 候補より優先する。
+- `ベースボールキングX` など未知媒体名風の source title を人名扱いしない stopword fragment を追加。
 - skip/review 条件、narrow unlock、publish/mail/scheduler/env/Cloud Run は変更なし。
 
 ### 3. 実行したテスト
@@ -151,6 +156,14 @@ Xポスト本文に選手名・監督名・コーチ名が書かれているの�
 - `python3 -m compileall -q src/title_player_name_backfiller.py src/weak_title_rescue.py tests/test_title_player_name_backfill.py tests/test_weak_title_rescue.py`
 - `python3 -c "import ast, pathlib; ..."` for touched Python files
 - `python3 -m pytest -q`
+- follow-up: `python3 -m compileall -q src/title_player_name_backfiller.py tests/test_title_player_name_backfill.py`
+- follow-up: `python3 -c "import ast, pathlib; ..."` for follow-up touched Python files
+- follow-up: `python3 -m unittest tests.test_title_player_name_backfill -v`
+- follow-up: `python3 -m unittest tests.test_title_player_name_backfill tests.test_weak_title_rescue -v`
+- follow-up: `python3 -m unittest tests.test_narrow_unlock_subtype_aware tests.test_title_validator tests.test_rss_fetcher_article_quality_v1 -v`
+- follow-up: `python3 -m unittest tests.test_social_body_template -v`
+- follow-up: `python3 -m unittest discover -s tests`
+- follow-up: `python3 -m pytest -q`
 
 ### 4. テスト結果
 
@@ -164,21 +177,36 @@ Xポスト本文に選手名・監督名・コーチ名が書かれているの�
 - 同一 pytest コマンドを escalation で再実行し `3551 passed, 3 warnings, 908 subtests passed` を確認。
 - requests dependency warning と related posts の example.com fallback log は既存テスト内の警告/ログ。
 - fire / live execution は未実施。log + 数値 diff は `N/A: no fire/live execution`。
+- follow-up compile check PASS。
+- follow-up AST parse check PASS (`AST OK 2`)。
+- follow-up focused title tests PASS (`Ran 12 tests ... OK`)。初回は `日仕様` loose 候補を拾う fail が出たため、明示 role 付き候補優先に修正して green。
+- follow-up title + weak rescue tests PASS (`Ran 30 tests ... OK`)。
+- follow-up related tests PASS (`Ran 51 tests ... OK`)。
+- follow-up social body tests PASS (`Ran 6 tests ... OK`)。
+- follow-up full unittest は sandbox の localhost socket 制限で初回のみ `Ran 3382 tests ... FAILED (errors=3)`。失敗 3 件は `tests/test_manual_intake_service.py::LiveServerSmokeTest` の `PermissionError: [Errno 1] Operation not permitted`。
+- follow-up full unittest を escalation で再実行し `Ran 3382 tests ... OK` を確認。
+- follow-up pytest baseline を escalation で実行し `3553 passed, 3 warnings, 908 subtests passed` を確認。
+- follow-up fire / live execution は未実施。log + 数値 diff は `N/A: no fire/live execution`。
 
 ### 5. 残った懸念
 
 - 本修正は title の人物名 backfill / suffix 表示に限定。本文中の generic `選手` 全削除は未実施。
 - X本文に実名がない場合、source にない名前は足さない。既存 gate / review 判定も緩めない。
+- 複数人物が同数の場合は誤名を避けるため `巨人、...` に退避する。実名 title にはならないが、generic `選手` は残さない。
 
 ### 6. 新しく見つかったデグレ
 
 - 初回赤確認で `スポーツ報知巨人班X` / `紹介` を人名扱いする候補抽出ミスを確認し、stopword 追加で修正済み。
+- follow-up focused test で `日仕様` を人名扱いする loose 候補優先ミスを確認し、role 付き候補優先で修正済み。
 
 ### 7. 追加した回帰テスト
 
 - `test_x_post_hashtag_player_name_replaces_generic_player_word_without_suffix`
 - `test_fetcher_adapter_uses_x_post_name_and_does_not_leave_player_word`
+- `test_unknown_media_like_source_title_does_not_become_player_name`
+- `test_multiple_candidates_tie_uses_neutral_subject_without_player_word`
 - 既存 backfill / weak title rescue expectation を `〜選手` suffix なしに更新。
+- 既存 multiple candidates expectation を「先頭採用」から「出現頻度が明確な候補だけ採用」に更新。
 
 ### 8. 次回触ってはいけない範囲
 

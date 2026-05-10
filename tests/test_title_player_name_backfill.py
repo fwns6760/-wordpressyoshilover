@@ -133,6 +133,20 @@ class TitlePlayerNameBackfillTests(unittest.TestCase):
         self.assertNotIn("選手", final_title)
         self.assertEqual(comparison_title, "スポーツ報知巨人班Xが若手選手の調整を紹介")
 
+    def test_unknown_media_like_source_title_does_not_become_player_name(self):
+        result = backfill_title_player_name(
+            existing_title="選手、昇格・復帰 関連情報",
+            source_title="ベースボールキングXが若手選手の調整を紹介",
+            body="ジャイアンツ球場 #浦田俊輔 選手が一軍合流へ向けて調整を続けている。",
+            summary="ジャイアンツ球場 #浦田俊輔 選手が一軍合流へ向けて調整を続けている。",
+            metadata={"role": "選手"},
+        )
+
+        self.assertEqual(result.title, "浦田俊輔、昇格・復帰 関連情報")
+        self.assertNotIn("ベースボールキング", result.title)
+        self.assertNotIn("選手", result.title)
+        self.assertEqual(result.review_reason, "")
+
     def test_manager_and_coach_generic_title_backfills_matching_role_only(self):
         cases = [
             {
@@ -173,7 +187,7 @@ class TitlePlayerNameBackfillTests(unittest.TestCase):
                 self.assertEqual(result.title, case["expected_title"])
                 self.assertEqual(result.review_reason, case["expected_reason"])
 
-    def test_multiple_candidates_choose_first_without_joining_names(self):
+    def test_multiple_candidates_choose_unique_frequency_leader(self):
         result = backfill_title_player_name(
             existing_title='巨人スタメン が「2番・二塁」で今季初先発',
             source_title='巨人スタメン が「2番・二塁」で今季初先発',
@@ -183,6 +197,21 @@ class TitlePlayerNameBackfillTests(unittest.TestCase):
 
         self.assertEqual(result.title, '吉川尚輝が「2番・二塁」で今季初先発')
         self.assertNotIn("門脇誠", result.title)
+
+    def test_multiple_candidates_tie_uses_neutral_subject_without_player_word(self):
+        result = backfill_title_player_name(
+            existing_title="選手、昇格・復帰 関連情報",
+            source_title="複数選手の調整を紹介",
+            body="#浦田俊輔 選手と #増田陸 選手が一軍合流へ向けて調整を続けている。",
+            summary="#浦田俊輔 選手と #増田陸 選手が一軍合流へ向けて調整を続けている。",
+            metadata={"role": "選手"},
+        )
+
+        self.assertEqual(result.title, "巨人、昇格・復帰 関連情報")
+        self.assertNotIn("浦田俊輔", result.title)
+        self.assertNotIn("増田陸", result.title)
+        self.assertNotIn("選手", result.title)
+        self.assertEqual(result.review_reason, "")
 
     def test_fetcher_adapter_uses_comparison_title_for_unresolved_case(self):
         final_title, comparison_title = rss_fetcher._apply_title_player_name_backfill(

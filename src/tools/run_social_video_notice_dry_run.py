@@ -59,6 +59,7 @@ def _payload_from_instagram_args(args: argparse.Namespace) -> dict[str, Any]:
         "source_platform": "instagram",
         "source_url": args.instagram_url,
         "source_account_name": source.display_name or source.handle,
+        "source_account_handle": source.handle,
         "source_account_type": source.role,
         "media_kind": args.media_kind,
         "caption_or_title": args.caption,

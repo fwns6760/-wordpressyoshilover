@@ -277,6 +277,34 @@ class SocialVideoNoticeValidatorTests(unittest.TestCase):
         self.assertEqual(report["article"]["source_account_type"], "media")
         self.assertIn("wp-block-embed-instagram", report["article"]["body_html"])
 
+    def test_cli_keeps_registry_display_name_and_handle_distinct(self):
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "src.tools.run_social_video_notice_dry_run",
+                "--instagram-url",
+                "https://www.instagram.com/p/ABC123/",
+                "--account-handle",
+                "sportshochi_giants",
+                "--caption",
+                "練習動画を公開した",
+                "--media-kind",
+                "video",
+                "--published-at",
+                "2026-04-24T09:00:00+09:00",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        report = json.loads(completed.stdout)
+        body_html = report["article"]["body_html"]
+        self.assertIn("スポーツ報知 巨人取材班(@sportshochi_giants)さん | Instagram", body_html)
+        self.assertIn("Instagram @sportshochi_giants", body_html)
+
     def test_cli_rejects_unknown_instagram_account_instead_of_silent_confirming(self):
         completed = subprocess.run(
             [

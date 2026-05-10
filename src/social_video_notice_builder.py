@@ -77,13 +77,13 @@ def _contains_opinion_leak(text: str | None) -> bool:
 
 
 def _build_source_line(payload: SocialVideoNoticePayload) -> str:
-    source_label = f"{_platform_label(payload.source_platform)} {_display_account_name(payload.source_account_name)}".strip()
+    account_name = _normalize_text(payload.source_account_name)
+    account_handle = _display_account_name(payload.source_account_handle or payload.source_account_name)
+    source_label = f"{_platform_label(payload.source_platform)} {account_handle}".strip()
     escaped_url = html.escape(_normalize_text(payload.source_url), quote=True)
     escaped_label = html.escape(source_label, quote=False)
     platform = _normalize_text(payload.source_platform).lower()
     if platform == _INSTAGRAM_PLATFORM:
-        account_name = _normalize_text(payload.source_account_name).lstrip("@")
-        account_handle = _display_account_name(payload.source_account_name)
         date_prefix = f"{_display_date(payload.published_at)} " if _display_date(payload.published_at) else ""
         escaped_account_name = html.escape(account_name, quote=False)
         escaped_account_handle = html.escape(account_handle, quote=False)
@@ -180,6 +180,7 @@ def build_social_video_notice_article(
         source_platform=_normalize_text(payload.source_platform).lower(),
         source_url=_normalize_text(payload.source_url),
         source_account_name=_normalize_text(payload.source_account_name),
+        source_account_handle=_normalize_text(payload.source_account_handle),
         source_account_type=_normalize_text(payload.source_account_type),
         media_kind=_normalize_text(payload.media_kind).lower(),
         published_at=payload.published_at,

@@ -35,6 +35,7 @@ class SocialVideoNoticePayload:
     caption_or_title: str
     published_at: str | None = None
     supplement_note: str | None = None
+    source_account_handle: str | None = None
 
 
 @dataclass(frozen=True)
@@ -51,6 +52,7 @@ class SocialVideoNoticeArticle:
     source_account_type: str
     media_kind: str
     published_at: str | None
+    source_account_handle: str | None = None
 
 
 __all__ = [

@@ -253,3 +253,55 @@ GO後に実装する場合の予定:
 - SEO / schema / アイキャッチ: 触っていない
 - X自動投稿: 触っていない
 - WordPress本番記事: 触っていない
+
+### 10. deploy前出力確認で見つけた追加修正
+
+- deploy前のdry-run出力確認で、registry由来のInstagram source headerが `表示名(@表示名)` になり、handleが本文に出ない不整合を検出。
+- 追加回帰テスト:
+  - `test_cli_keeps_registry_display_name_and_handle_distinct`
+  - 期待値: `スポーツ報知 巨人取材班(@sportshochi_giants)さん | Instagram`
+- 赤確認:
+  - `python3 -m unittest tests.test_social_video_notice_validator.SocialVideoNoticeValidatorTests.test_cli_keeps_registry_display_name_and_handle_distinct`
+  - 期待通りfail。
+- 修正:
+  - `src/social_video_notice_contract.py`
+    - `source_account_handle` を任意フィールドとして追加。
+  - `src/tools/run_social_video_notice_dry_run.py`
+    - registryの `display_name` と `handle` を別々にpayloadへ渡す。
+  - `src/social_video_notice_builder.py`
+    - headerと出典リンクではhandleを `@handle` として表示。
+    - title / nucleus subjectはdisplay nameを維持。
+
+### 11. 追加修正後のテスト結果
+
+- 追加回帰テスト単体:
+  - `python3 -m unittest tests.test_social_video_notice_validator.SocialVideoNoticeValidatorTests.test_cli_keeps_registry_display_name_and_handle_distinct`
+  - `OK`
+- 今回追加テスト:
+  - `python3 -m unittest tests.test_instagram_source_registry tests.test_social_video_notice_builder tests.test_social_video_notice_validator`
+  - `44 tests OK`
+- 関連テスト:
+  - `python3 -m unittest tests.test_social_video_notice_contract tests.test_instagram_source_registry tests.test_social_video_notice_builder tests.test_social_video_notice_validator tests.test_title_body_nucleus_validator`
+  - `55 tests OK`
+- 既存テスト全件:
+  - `python3 -m unittest discover -s tests`
+  - `3370 tests OK`
+
+### 12. 本番deploy記録
+
+- commit:
+  - `92efa1b 313: add instagram social video intake registry`
+- image build:
+  - Cloud Build `207266a4-d756-45ab-8b21-ab6117289c49`
+  - image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/manual-intake-service:92efa1b`
+  - result `SUCCESS`
+- deploy:
+  - service `manual-intake-service`
+  - revision `manual-intake-service-00050-kl6`
+  - traffic `100%`
+  - health `/health` HTTP 200
+- 本番deployで触ったもの:
+  - Cloud Run service `manual-intake-service` のimage / revisionのみ。
+- 本番deployで触っていないもの:
+  - publish / mail / scheduler / env / secrets / GitHub Actions / SEO / schema / アイキャッチ / X自動投稿 / WordPress本番記事。
+  - Cloud Run env・secret・scheduler設定は変更していない。

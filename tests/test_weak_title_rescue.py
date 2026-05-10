@@ -18,7 +18,7 @@ class WeakTitleRescueHelperTests(unittest.TestCase):
         )
 
         self.assertIsNotNone(result)
-        self.assertEqual(result.title, "泉口友汰選手、屋外フリー打撃再開 1軍復帰へ前進")
+        self.assertEqual(result.title, "泉口友汰、屋外フリー打撃再開 1軍復帰へ前進")
         self.assertEqual(result.strategy, "related_info_escape_single_name")
 
     def test_related_info_escape_rescues_two_name_recovery_title(self):
@@ -239,7 +239,7 @@ class WeakTitleRescueFetcherTests(unittest.TestCase):
                 source_url="https://example.com/izumiguchi",
             )
 
-        self.assertEqual(title, "泉口友汰選手、屋外フリー打撃再開 1軍復帰へ前進")
+        self.assertEqual(title, "泉口友汰、屋外フリー打撃再開 1軍復帰へ前進")
         self.assertEqual(reason, "weak_subject_title:related_info_escape")
         self.assertTrue(logger.info.called)
         self.assertIn("weak_title_rescued", logger.info.call_args.args[0])

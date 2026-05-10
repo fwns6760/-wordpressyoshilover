@@ -37,6 +37,15 @@ Every Claude / Codex session must read this file before acting.
 - Codex auth failure on a live GCP mutation step is not treated as implementation failure when repo work and runbook are complete.
 - Secret display and env mutation remain hard stops even for handoff-ready tickets.
 
+## per-commit safety gate
+
+Every commit must leave evidence for this sequence:
+
+- Before touching files: run targeted `rg` / grep for the relevant identifiers, existing tests, and ticket scope.
+- After writing: run compile check, AST parse check, and the ticket's baseline tests. When Python is touched, include `python3 -m compileall` and an AST parse over the touched Python files. When pytest owns or covers the touched area, include the pytest baseline; otherwise record the repo baseline command used.
+- After any fire / live execution: inspect logs and record the numeric diff against the prior baseline. If no fire / live execution happened, record `N/A` with the reason.
+- Do not commit if any required check is missing, red, or not explained in the ticket / response evidence.
+
 ## status rule
 
 - Status changes require ticket doc move + README `doc_path` update + assignments update in the same commit, or an immediate doc-only follow-up commit.

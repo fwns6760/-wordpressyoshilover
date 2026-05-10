@@ -61,7 +61,7 @@ _GENERIC_NAME_TOKENS = frozenset(
     }
 )
 _ROLE_SUFFIXES = ("投手", "捕手", "内野手", "外野手", "選手", "監督", "コーチ", "氏")
-_ROLE_DISPLAY_SUFFIXES = {"投手", "選手"}
+_ROLE_DISPLAY_SUFFIXES = {"投手"}
 _SAFETY_BLOCK_MARKERS = ("死亡", "重傷", "救急", "意識不明", "ブルージェイズ", "ロッキーズ", "グッズ", "NIKE", "コジコジ")
 _STRONG_EVENT_MARKERS = (
     "神走塁",

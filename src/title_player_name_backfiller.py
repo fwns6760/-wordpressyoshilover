@@ -19,7 +19,7 @@ _GENERIC_HEAD_RE = re.compile(
 )
 _QUOTE_RE = re.compile(r"[「『]([^」』]{1,40})[」』]")
 _NAME_WITH_ROLE_RE = re.compile(
-    r"(?P<name>[A-Za-zＡ-Ｚａ-ｚ一-龯々ァ-ヴー・･\.\-]{2,24}?)(?P<role>投手|捕手|内野手|外野手|選手|監督|コーチ)"
+    r"#?(?P<name>[A-Za-zＡ-Ｚａ-ｚ一-龯々ァ-ヴー・･\.\-]{2,24}?)[\s\u3000]*(?P<role>投手|捕手|内野手|外野手|選手|監督|コーチ)"
 )
 _NAME_RE = re.compile(
     r"(?P<name>[A-Za-zＡ-Ｚａ-ｚ一-龯々ァ-ヴー・･\.\-]{2,24})(?=(?:が|は|も|の|と|、|，|,|「|『|[0-9０-９]|$))"
@@ -42,6 +42,15 @@ _STOPWORDS = frozenset(
         "今季",
         "一軍",
         "二軍",
+        "若手",
+        "主力",
+        "育成",
+        "新人",
+        "紹介",
+        "調整",
+        "確認",
+        "整理",
+        "注目",
         "試合",
         "先発",
         "登板",
@@ -66,6 +75,18 @@ _ROLE_NORMALIZATION = {
 }
 _COMMENT_TITLE_MARKERS = ("コメント整理", "発言ポイント", "談話整理", "コメント")
 _STOPWORD_FRAGMENTS = (
+    "スポーツ",
+    "報知",
+    "日刊",
+    "スポニチ",
+    "サンスポ",
+    "デイリー",
+    "東スポ",
+    "巨人班",
+    "公式",
+    "ニュース",
+    "オンライン",
+    "ジャイアンツ球場",
     "今季",
     "初先発",
     "試合後",
@@ -273,6 +294,8 @@ def _display_name(name: str, role: str) -> str:
     resolved_role = _normalize_role(role) or embedded_role or "氏"
     if resolved_role == "氏":
         return f"{base_name}氏"
+    if resolved_role == "選手":
+        return base_name
     if base_name.endswith(resolved_role):
         return base_name
     return f"{base_name}{resolved_role}"

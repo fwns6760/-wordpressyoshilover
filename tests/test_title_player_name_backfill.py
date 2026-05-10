@@ -14,7 +14,7 @@ class TitlePlayerNameBackfillTests(unittest.TestCase):
             metadata={"role": "選手"},
         )
 
-        self.assertEqual(result.title, '吉川尚輝選手が「2番・二塁」で今季初先発')
+        self.assertEqual(result.title, '吉川尚輝が「2番・二塁」で今季初先発')
         self.assertTrue(result.changed)
         self.assertEqual(result.review_reason, "")
 
@@ -45,7 +45,7 @@ class TitlePlayerNameBackfillTests(unittest.TestCase):
                 "title": "選手",
                 "body": "吉川尚輝選手がスタメン入りした。",
                 "metadata": {},
-                "expected_title": "吉川尚輝選手",
+                "expected_title": "吉川尚輝",
                 "expected_reason": "",
             },
             {
@@ -81,13 +81,13 @@ class TitlePlayerNameBackfillTests(unittest.TestCase):
                 "title": "外野手が打撃練習で快音",
                 "source_title": "外野手が打撃練習で快音",
                 "body": "浅野翔吾外野手が打撃練習で快音を響かせた。",
-                "expected": "浅野翔吾選手が打撃練習で快音",
+                "expected": "浅野翔吾が打撃練習で快音",
             },
             {
                 "title": "捕手、母の日仕様の用具を準備",
                 "source_title": "捕手、母の日仕様の用具を準備",
                 "body": "山瀬慎之助捕手、母の日仕様の用具を準備した。",
-                "expected": "山瀬慎之助選手、母の日仕様の用具を準備",
+                "expected": "山瀬慎之助、母の日仕様の用具を準備",
             },
         ]
 
@@ -102,6 +102,36 @@ class TitlePlayerNameBackfillTests(unittest.TestCase):
 
                 self.assertEqual(result.title, case["expected"])
                 self.assertEqual(result.review_reason, "")
+
+    def test_x_post_hashtag_player_name_replaces_generic_player_word_without_suffix(self):
+        result = backfill_title_player_name(
+            existing_title="選手、昇格・復帰 関連情報",
+            source_title="スポーツ報知巨人班Xが若手選手の調整を紹介",
+            body="ジャイアンツ球場 #浦田俊輔 選手が一軍合流へ向けて調整を続けている。",
+            summary="ジャイアンツ球場 #浦田俊輔 選手が一軍合流へ向けて調整を続けている。",
+            metadata={"role": "選手"},
+        )
+
+        self.assertEqual(result.title, "浦田俊輔、昇格・復帰 関連情報")
+        self.assertNotIn("選手", result.title)
+        self.assertEqual(result.review_reason, "")
+
+    def test_fetcher_adapter_uses_x_post_name_and_does_not_leave_player_word(self):
+        final_title, comparison_title = rss_fetcher._apply_title_player_name_backfill(
+            rewritten_title="選手、昇格・復帰 関連情報",
+            source_title="スポーツ報知巨人班Xが若手選手の調整を紹介",
+            source_body="ジャイアンツ球場 #浦田俊輔 選手が一軍合流へ向けて調整を続けている。",
+            summary="ジャイアンツ球場 #浦田俊輔 選手が一軍合流へ向けて調整を続けている。",
+            category="選手情報",
+            article_subtype="player",
+            logger=logging.getLogger("rss_fetcher"),
+            source_name="スポーツ報知巨人班X",
+            source_url="https://twitter.com/hochi_giants/status/1",
+        )
+
+        self.assertEqual(final_title, "浦田俊輔、昇格・復帰 関連情報")
+        self.assertNotIn("選手", final_title)
+        self.assertEqual(comparison_title, "スポーツ報知巨人班Xが若手選手の調整を紹介")
 
     def test_manager_and_coach_generic_title_backfills_matching_role_only(self):
         cases = [
@@ -151,7 +181,7 @@ class TitlePlayerNameBackfillTests(unittest.TestCase):
             metadata={"role": "選手"},
         )
 
-        self.assertEqual(result.title, '吉川尚輝選手が「2番・二塁」で今季初先発')
+        self.assertEqual(result.title, '吉川尚輝が「2番・二塁」で今季初先発')
         self.assertNotIn("門脇誠", result.title)
 
     def test_fetcher_adapter_uses_comparison_title_for_unresolved_case(self):

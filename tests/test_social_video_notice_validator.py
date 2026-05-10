@@ -30,7 +30,7 @@ class SocialVideoNoticeValidatorTests(unittest.TestCase):
     def _youtube_payload(self, **overrides) -> SocialVideoNoticePayload:
         payload = SocialVideoNoticePayload(
             source_platform="youtube",
-            source_url="https://www.youtube.com/watch?v=abc123",
+            source_url="https://www.youtube.com/watch?v=abc12345DEF",
             source_account_name="GIANTS TV",
             source_account_type="official",
             media_kind="short",
@@ -56,6 +56,20 @@ class SocialVideoNoticeValidatorTests(unittest.TestCase):
             '<figure class="wp-block-embed is-type-rich is-provider-instagram wp-block-embed-instagram">\n'
             '<div class="wp-block-embed__wrapper">\n'
             "https://www.instagram.com/p/ABC123/\n"
+            "</div>\n"
+            "</figure>\n"
+            "<!-- /wp:embed -->\n"
+            f"{summary_html}"
+        )
+
+    def _youtube_body_with_embed(self, summary_html: str) -> str:
+        return (
+            '<p class="yoshilover-social-source">■ 2026-04-24 GIANTS TV(@GIANTS TV)さん | YouTube<br>'
+            '出典: <a href="https://www.youtube.com/watch?v=abc12345DEF">YouTube @GIANTS TV</a></p>\n'
+            '<!-- wp:embed {"url":"https://www.youtube.com/watch?v=abc12345DEF","type":"video","providerNameSlug":"youtube","responsive":true} -->\n'
+            '<figure class="wp-block-embed is-type-video is-provider-youtube wp-block-embed-youtube">\n'
+            '<div class="wp-block-embed__wrapper">\n'
+            "https://www.youtube.com/watch?v=abc12345DEF\n"
             "</div>\n"
             "</figure>\n"
             "<!-- /wp:embed -->\n"
@@ -141,6 +155,19 @@ class SocialVideoNoticeValidatorTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(result.reason_code, "EMBED_MISSING")
 
+    def test_youtube_article_without_embed_block_fails_with_embed_missing(self):
+        article = self._youtube_article(
+            body_html=(
+                '<p>出典: <a href="https://www.youtube.com/watch?v=abc12345DEF">YouTube @GIANTS TV</a></p>\n'
+                "<p>試合前映像を公開した。</p>"
+            )
+        )
+
+        result = validate_social_video_notice_article(article)
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.reason_code, "EMBED_MISSING")
+
     def test_instagram_profile_url_fails_with_unsupported_instagram_url(self):
         article = self._instagram_article(
             source_url="https://www.instagram.com/yomiuri.giants/",
@@ -161,6 +188,28 @@ class SocialVideoNoticeValidatorTests(unittest.TestCase):
 
         self.assertFalse(result.ok)
         self.assertEqual(result.reason_code, "UNSUPPORTED_INSTAGRAM_URL")
+
+    def test_youtube_channel_url_fails_with_unsupported_youtube_url(self):
+        article = self._youtube_article(
+            source_url="https://www.youtube.com/channel/UCXxg0igSYUp0tqdd6luPEnQ",
+            body_html=(
+                '<p class="yoshilover-social-source">■ 2026-04-24 GIANTS TV(@GIANTS TV)さん | YouTube<br>'
+                '出典: <a href="https://www.youtube.com/channel/UCXxg0igSYUp0tqdd6luPEnQ">YouTube @GIANTS TV</a></p>\n'
+                '<!-- wp:embed {"url":"https://www.youtube.com/channel/UCXxg0igSYUp0tqdd6luPEnQ","type":"video","providerNameSlug":"youtube"} -->\n'
+                '<figure class="wp-block-embed is-type-video is-provider-youtube wp-block-embed-youtube">\n'
+                '<div class="wp-block-embed__wrapper">\n'
+                "https://www.youtube.com/channel/UCXxg0igSYUp0tqdd6luPEnQ\n"
+                "</div>\n"
+                "</figure>\n"
+                "<!-- /wp:embed -->\n"
+                "<p>試合前映像を公開した。</p>"
+            ),
+        )
+
+        result = validate_social_video_notice_article(article)
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.reason_code, "UNSUPPORTED_YOUTUBE_URL")
 
     def test_instagram_article_with_reuploaded_image_fails_validation(self):
         article = self._instagram_article(
@@ -277,6 +326,36 @@ class SocialVideoNoticeValidatorTests(unittest.TestCase):
         self.assertEqual(report["article"]["source_account_type"], "media")
         self.assertIn("wp-block-embed-instagram", report["article"]["body_html"])
 
+    def test_cli_can_build_youtube_ob_notice_from_registry_channel(self):
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "src.tools.run_social_video_notice_dry_run",
+                "--youtube-url",
+                "https://youtu.be/abc12345DEF",
+                "--youtube-channel-id",
+                "UCKa1VlSq1WwdSQWv4JFdgxg",
+                "--video-title",
+                "巨人OBが試合のポイントを語った",
+                "--media-kind",
+                "video",
+                "--published-at",
+                "2026-05-10T09:00:00+09:00",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        report = json.loads(completed.stdout)
+        self.assertTrue(report["validation"]["ok"])
+        self.assertEqual(report["article"]["source_account_name"], "デーブ大久保チャンネル")
+        self.assertEqual(report["article"]["source_account_type"], "ob")
+        self.assertIn("https://www.youtube.com/watch?v=abc12345DEF", report["article"]["source_url"])
+        self.assertIn("wp-block-embed-youtube", report["article"]["body_html"])
+
     def test_cli_keeps_registry_display_name_and_handle_distinct(self):
         completed = subprocess.run(
             [
@@ -325,6 +404,27 @@ class SocialVideoNoticeValidatorTests(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 1)
         self.assertIn("unknown Instagram source", completed.stderr)
+
+    def test_cli_rejects_unknown_youtube_channel_instead_of_silent_confirming(self):
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "src.tools.run_social_video_notice_dry_run",
+                "--youtube-url",
+                "https://www.youtube.com/watch?v=abc12345DEF",
+                "--youtube-channel-id",
+                "UCunknownUnknownUnknown00",
+                "--video-title",
+                "巨人OBが試合のポイントを語った",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertIn("unknown YouTube source", completed.stderr)
 
     def test_cli_round_trip_from_stdin_returns_exit_one_on_validation_fail(self):
         payload = asdict(self._instagram_payload(source_platform="tiktok"))

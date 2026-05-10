@@ -24,7 +24,7 @@ class SocialVideoNoticeBuilderTests(unittest.TestCase):
     def _youtube_payload(self, **overrides) -> SocialVideoNoticePayload:
         payload = SocialVideoNoticePayload(
             source_platform="youtube",
-            source_url="https://www.youtube.com/watch?v=abc123",
+            source_url="https://www.youtube.com/watch?v=abc12345DEF",
             source_account_name="GIANTS TV",
             source_account_type="official",
             media_kind="short",
@@ -48,6 +48,7 @@ class SocialVideoNoticeBuilderTests(unittest.TestCase):
 
         self.assertEqual(article.title, "GIANTS TV 試合前映像を公開した")
         self.assertIn("YouTube @GIANTS TV", article.body_html)
+        self.assertIn("wp-block-embed-youtube", article.body_html)
         self.assertEqual(article.badge, {"platform": "youtube", "media_kind": "short"})
         self.assertEqual(article.nucleus_subject, "GIANTS TV")
         self.assertEqual(article.nucleus_event, "試合前映像を公開した")
@@ -89,6 +90,27 @@ class SocialVideoNoticeBuilderTests(unittest.TestCase):
         self.assertIn("<div class=\"wp-block-embed__wrapper\">\nhttps://www.instagram.com/p/ABC123/", article.body_html)
         self.assertLess(article.body_html.index("出典:"), article.body_html.index("<!-- wp:embed"))
         self.assertLess(article.body_html.index("<!-- /wp:embed -->"), article.body_html.index("<p>練習動画を公開した。</p>"))
+
+    def test_youtube_body_uses_nomotoke_style_source_header(self):
+        article = build_social_video_notice_article(self._youtube_payload())
+
+        first_line = article.body_html.splitlines()[0]
+        self.assertIn('class="yoshilover-social-source"', first_line)
+        self.assertIn("■ 2026-04-24", first_line)
+        self.assertIn("GIANTS TV(@GIANTS TV)さん | YouTube", first_line)
+
+    def test_youtube_body_contains_wordpress_embed_block_between_source_and_summary(self):
+        article = build_social_video_notice_article(self._youtube_payload())
+
+        self.assertIn('<!-- wp:embed {"url":"https://www.youtube.com/watch?v=abc12345DEF"', article.body_html)
+        self.assertIn('"providerNameSlug":"youtube"', article.body_html)
+        self.assertIn("wp-block-embed-youtube", article.body_html)
+        self.assertIn(
+            '<div class="wp-block-embed__wrapper">\nhttps://www.youtube.com/watch?v=abc12345DEF',
+            article.body_html,
+        )
+        self.assertLess(article.body_html.index("出典:"), article.body_html.index("<!-- wp:embed"))
+        self.assertLess(article.body_html.index("<!-- /wp:embed -->"), article.body_html.index("<p>試合前映像を公開した。</p>"))
 
     def test_instagram_caption_uses_first_literal_sentence_without_reprinting_full_caption(self):
         article = build_social_video_notice_article(

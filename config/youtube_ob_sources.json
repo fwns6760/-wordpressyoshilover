@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "updated": "2026-05-10",
+  "policy": "Broad Giants official/OB YouTube shelf for human review. Unknown channels are not silently confirmed. Video articles must use source embeds, not copied media.",
+  "sources": [
+    {
+      "channel_id": "UCXxg0igSYUp0tqdd6luPEnQ",
+      "display_name": "読売ジャイアンツ公式",
+      "role": "official",
+      "status": "confirmed",
+      "channel_handle": "@yomiuri_giants",
+      "reference": "existing-rss-sources",
+      "notes": "球団公式YouTube。review-onlyの安全な公式棚"
+    },
+    {
+      "channel_id": "UCpj_nD9850tykDqIrjtIXdg",
+      "display_name": "DRAMATIC BASEBALL",
+      "role": "broadcast",
+      "status": "confirmed",
+      "channel_handle": "@ntv_baseball",
+      "reference": "existing-youtube-video-sources",
+      "notes": "日テレ系中継・ハイライト。OB棚ではないがYouTube動画ソースとして明示"
+    },
+    {
+      "channel_id": "UCGynN2H7DcNjpN7Qng4dZmg",
+      "display_name": "上原浩治の雑談魂",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "existing-rss-sources",
+      "notes": "巨人OBの発言ソース。記事化は動画タイトルと埋め込み中心で人間確認"
+    },
+    {
+      "channel_id": "UC7alpSrw0vhpihgYxbVFDkA",
+      "display_name": "元木大介チャンネル",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "existing-rss-sources",
+      "notes": "巨人OBの発言ソース。人間確認前提"
+    },
+    {
+      "channel_id": "UCAMXfvpILgkofiQFbYWeeZA",
+      "display_name": "髙橋尚成のHISAちゃん",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "existing-rss-sources",
+      "notes": "巨人OBの発言ソース。人間確認前提"
+    },
+    {
+      "channel_id": "UCKa1VlSq1WwdSQWv4JFdgxg",
+      "display_name": "デーブ大久保チャンネル",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "manual-web-confirmed-channel-id",
+      "notes": "巨人OBの発言ソース。人間確認前提"
+    },
+    {
+      "channel_id": "UCB-FcvdGhY5a69C7Csv4unA",
+      "display_name": "アスリートアカデミア 岡崎郁 official",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "manual-web-confirmed-channel-id",
+      "notes": "巨人OBの発言ソース。人間確認前提"
+    },
+    {
+      "channel_id": "UCU77bY7q28jGPYlDn089gfg",
+      "display_name": "ミスターパーフェクト槙原",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "manual-web-confirmed-channel-id",
+      "notes": "巨人OBの発言ソース。人間確認前提"
+    },
+    {
+      "channel_id": "UCrmppJ31jdU7GDVupoSbl0Q",
+      "display_name": "江川卓のたかされ",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "manual-web-confirmed-channel-id",
+      "notes": "巨人OBの発言ソース。人間確認前提"
+    },
+    {
+      "channel_id": "UC9aER0bs2IpqTQNKljzzBFQ",
+      "display_name": "清ちゃんスポーツ",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "manual-web-confirmed-channel-id",
+      "notes": "巨人OBの発言ソース。人間確認前提"
+    },
+    {
+      "channel_id": "UC0000000000000000000000",
+      "display_name": "sample non Giants YouTube channel",
+      "role": "excluded",
+      "status": "excluded",
+      "channel_handle": "",
+      "reference": "test-sentinel",
+      "notes": "review candidateにしないためのsentinel"
+    }
+  ]
+}

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from urllib.parse import urlparse
 
 from src.social_video_notice_contract import OPINION_LEAK_PATTERNS, SUPPORTED_PLATFORMS, SocialVideoNoticeArticle
+from src.youtube_ob_source_registry import is_supported_youtube_video_url
 from src.title_body_nucleus_validator import validate_title_body_nucleus
 
 
@@ -56,6 +57,10 @@ def _is_instagram_article(article: SocialVideoNoticeArticle) -> bool:
     return article.source_platform == "instagram"
 
 
+def _is_youtube_article(article: SocialVideoNoticeArticle) -> bool:
+    return article.source_platform == "youtube"
+
+
 def _is_supported_instagram_url(url: str) -> bool:
     parsed = urlparse(url)
     hostname = (parsed.hostname or "").lower()
@@ -72,6 +77,17 @@ def _instagram_embed_missing(article: SocialVideoNoticeArticle) -> bool:
     required_markers = (
         "<!-- wp:embed",
         "wp-block-embed-instagram",
+        '<div class="wp-block-embed__wrapper">',
+        "<!-- /wp:embed -->",
+    )
+    return any(marker not in body_html for marker in required_markers)
+
+
+def _youtube_embed_missing(article: SocialVideoNoticeArticle) -> bool:
+    body_html = article.body_html or ""
+    required_markers = (
+        "<!-- wp:embed",
+        "wp-block-embed-youtube",
         '<div class="wp-block-embed__wrapper">',
         "<!-- /wp:embed -->",
     )
@@ -137,6 +153,26 @@ def validate_social_video_notice_article(
                 ok=False,
                 reason_code="IMAGE_REUPLOAD_FORBIDDEN",
                 detail="instagram body must use source embed/link, not copied images",
+            )
+
+    if _is_youtube_article(article):
+        if not is_supported_youtube_video_url(article.source_url):
+            return SocialVideoNoticeValidationResult(
+                ok=False,
+                reason_code="UNSUPPORTED_YOUTUBE_URL",
+                detail=article.source_url,
+            )
+        if _youtube_embed_missing(article):
+            return SocialVideoNoticeValidationResult(
+                ok=False,
+                reason_code="EMBED_MISSING",
+                detail="youtube WordPress embed block is required",
+            )
+        if _contains_reuploaded_image(article):
+            return SocialVideoNoticeValidationResult(
+                ok=False,
+                reason_code="IMAGE_REUPLOAD_FORBIDDEN",
+                detail="youtube body must use source embed/link, not copied images",
             )
 
     plain_text = _plain_text(article.body_html)

@@ -21,6 +21,7 @@ _TRAILING_SENTENCE_RE = re.compile(r"[。！？.!?]+$")
 _PLATFORM_LABELS = {"instagram": "Instagram", "youtube": "YouTube"}
 _OPINION_LEAK_RE = re.compile("|".join(re.escape(pattern) for pattern in OPINION_LEAK_PATTERNS))
 _INSTAGRAM_PLATFORM = "instagram"
+_YOUTUBE_PLATFORM = "youtube"
 
 
 def _normalize_text(value: str | None) -> str:
@@ -83,13 +84,14 @@ def _build_source_line(payload: SocialVideoNoticePayload) -> str:
     escaped_url = html.escape(_normalize_text(payload.source_url), quote=True)
     escaped_label = html.escape(source_label, quote=False)
     platform = _normalize_text(payload.source_platform).lower()
-    if platform == _INSTAGRAM_PLATFORM:
+    if platform in {_INSTAGRAM_PLATFORM, _YOUTUBE_PLATFORM}:
         date_prefix = f"{_display_date(payload.published_at)} " if _display_date(payload.published_at) else ""
         escaped_account_name = html.escape(account_name, quote=False)
         escaped_account_handle = html.escape(account_handle, quote=False)
+        platform_label = html.escape(_platform_label(platform), quote=False)
         return (
             '<p class="yoshilover-social-source">'
-            f"■ {date_prefix}{escaped_account_name}({escaped_account_handle})さん | Instagram<br>"
+            f"■ {date_prefix}{escaped_account_name}({escaped_account_handle})さん | {platform_label}<br>"
             f'出典: <a href="{escaped_url}">{escaped_label}</a></p>'
         )
     return f'<p>出典: <a href="{escaped_url}">{escaped_label}</a></p>'
@@ -123,6 +125,40 @@ def _build_instagram_embed_block(payload: SocialVideoNoticePayload) -> str | Non
             "<!-- /wp:embed -->",
         ]
     )
+
+
+def _build_youtube_embed_block(payload: SocialVideoNoticePayload) -> str | None:
+    if _normalize_text(payload.source_platform).lower() != _YOUTUBE_PLATFORM:
+        return None
+    source_url = _normalize_text(payload.source_url)
+    if not source_url:
+        return None
+    escaped_url = html.escape(source_url, quote=False)
+    attrs = json.dumps(
+        {
+            "url": source_url,
+            "type": "video",
+            "providerNameSlug": "youtube",
+            "responsive": True,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return "\n".join(
+        [
+            f"<!-- wp:embed {attrs} -->",
+            '<figure class="wp-block-embed is-type-video is-provider-youtube wp-block-embed-youtube">',
+            '<div class="wp-block-embed__wrapper">',
+            escaped_url,
+            "</div>",
+            "</figure>",
+            "<!-- /wp:embed -->",
+        ]
+    )
+
+
+def _build_embed_block(payload: SocialVideoNoticePayload) -> str | None:
+    return _build_instagram_embed_block(payload) or _build_youtube_embed_block(payload)
 
 
 def _build_summary_line(payload: SocialVideoNoticePayload) -> str:
@@ -159,7 +195,7 @@ def build_social_video_notice_article(
 
     nucleus_event = _first_clause(payload.caption_or_title)
     paragraphs = [_build_source_line(payload)]
-    embed_block = _build_instagram_embed_block(payload)
+    embed_block = _build_embed_block(payload)
     if embed_block:
         paragraphs.append(embed_block)
     paragraphs.append(_build_summary_line(payload))

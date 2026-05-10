@@ -150,20 +150,21 @@ class NoticeBodyTemplateTests(unittest.TestCase):
                 ]
             )
 
-        with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
-            with patch.object(rss_fetcher, "_find_related_posts_for_article", return_value=[]):
-                with patch.object(rss_fetcher, "_build_related_posts_section", return_value=""):
-                    with patch.object(rss_fetcher, "generate_article_with_gemini", side_effect=_fake_generate):
-                        _blocks, ai_body = rss_fetcher.build_news_block(
-                            title="【巨人】浅野翔吾が一軍登録",
-                            summary="4月28日、浅野翔吾が一軍登録。今季打率.280、2本塁打。東京ドームに合流した。",
-                            url="https://example.com/post",
-                            source_name="スポーツ報知",
-                            category="選手情報",
-                            has_game=False,
-                            source_day_label="4月28日",
-                            source_type="news",
-                        )
+        with patch.dict("os.environ", {"RULE_BASED_SUBTYPES": "notice"}, clear=False):
+            with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+                with patch.object(rss_fetcher, "_find_related_posts_for_article", return_value=[]):
+                    with patch.object(rss_fetcher, "_build_related_posts_section", return_value=""):
+                        with patch.object(rss_fetcher, "generate_article_with_gemini", side_effect=_fake_generate):
+                            _blocks, ai_body = rss_fetcher.build_news_block(
+                                title="【巨人】浅野翔吾が一軍登録",
+                                summary="4月28日、浅野翔吾が一軍登録。今季打率.280、2本塁打。東京ドームに合流した。",
+                                url="https://example.com/post",
+                                source_name="スポーツ報知",
+                                category="選手情報",
+                                has_game=False,
+                                source_day_label="4月28日",
+                                source_type="news",
+                            )
 
         self.assertFalse(called["gemini"])
         self.assertIn("【公示の要旨】", ai_body)

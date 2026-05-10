@@ -1479,6 +1479,71 @@ class SourceBodyExcerptExpansionTests(_IntakeBaseTest):
         self.assertIn("🔗 出典記事", content)
         self.assertNotIn("📖 本文抜粋", content)
 
+    def test_source_body_excerpt_skips_unrelated_article_body(self):
+        content = self._run_article_type_with_source_excerpt(
+            "ニュース",
+            title="田中瑛斗、支配下登録後初の一軍マウンドへ",
+            summary="巨人の田中瑛斗投手が支配下登録後初めて一軍で登板する見込み。",
+            body=(
+                "【巨人】ヒヤリ…大城卓三のヘルメットにバット直撃。"
+                "打席後にトレーナーが状態を確認し、ベンチも一時騒然となった。"
+            ),
+        )
+
+        self.assertNotIn("📖 本文抜粋", content)
+        self.assertNotIn("大城卓三", content)
+
+    def test_rss_pipeline_source_body_excerpt_skips_unrelated_article_body(self):
+        base_html = (
+            '<div class="nomotoke-card-short-news">'
+            '<p class="nomotoke-lead">田中瑛斗、支配下登録後初の一軍マウンドへ</p>'
+            "<h3>🔗 出典記事</h3>"
+            '<p>記事全文は <a href="https://example.com/source">出典</a> をご覧ください。</p>'
+            "</div>"
+        )
+        raw_html = self._source_html(
+            "【巨人】ヒヤリ…大城卓三のヘルメットにバット直撃。"
+            "打席後にトレーナーが状態を確認し、ベンチも一時騒然となった。"
+        )
+
+        with ExitStack() as stack:
+            for name in (
+                "_build_related_articles_block",
+                "_build_recent_games_block",
+                "_build_standings_block",
+                "_build_next_game_block",
+                "_build_trust_badge_block",
+                "_build_x_embeds_block_safe",
+                "_build_player_stats_block",
+                "_build_share_buttons_block",
+                "_build_meta_header_bar",
+                "_build_toc_block",
+                "_build_tag_chip_block",
+                "_build_jsonld_article_schema",
+            ):
+                stack.enter_context(patch.object(mi, name, return_value=""))
+            stack.enter_context(
+                patch.object(mi, "_inject_toc_anchors", side_effect=lambda html: (html, []))
+            )
+            stack.enter_context(
+                patch.object(mi, "_wrap_first_roster_names_in_lead", side_effect=lambda html: html)
+            )
+            stack.enter_context(
+                patch.object(mi, "_decorate_body_with_emoji_safe", side_effect=lambda html: html)
+            )
+            content = mi.apply_rss_pipeline_enrichment(
+                base_html,
+                title="田中瑛斗、支配下登録後初の一軍マウンドへ",
+                source_url="https://hochi.news/articles/source-body.html",
+                summary="巨人の田中瑛斗投手が支配下登録後初めて一軍で登板する見込み。",
+                source_name="スポーツ報知",
+                raw_html=raw_html,
+            )
+
+        self.assertIn("🔗 出典記事", content)
+        self.assertNotIn("📖 本文抜粋", content)
+        self.assertNotIn("大城卓三", content)
+
 
 if __name__ == "__main__":
     unittest.main()

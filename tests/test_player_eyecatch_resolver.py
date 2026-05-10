@@ -112,6 +112,27 @@ class CacheRoundtripTests(unittest.TestCase):
         )
         self.assertEqual(media_id, per._TEAM_FALLBACK_MEDIA_ID_DEFAULT)
 
+    def test_default_team_fallback_uses_tokyo_dome_photo_not_legacy_ichiro_media(self):
+        self.assertEqual(per._TEAM_FALLBACK_MEDIA_ID_DEFAULT, 65953)
+        self.assertNotEqual(per._TEAM_FALLBACK_MEDIA_ID_DEFAULT, 36062)
+        media_id = per.resolve_eyecatch_from_title(
+            "2026年5月7日の予告先発が発表される",
+            allow_remote_lookup=False,
+            allow_diversified_pool=False,
+        )
+        self.assertEqual(media_id, 65953)
+
+    def test_legacy_ichiro_mixed_media_cache_hit_is_not_returned(self):
+        self.cache_path.write_text(
+            json.dumps({"阿部慎之助": {"id": 36062, "title": "イチロー混在"}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        media_id = per.resolve_eyecatch_from_title(
+            "巨人・阿部監督、試合後にコメント",
+            allow_remote_lookup=False,
+        )
+        self.assertEqual(media_id, 65953)
+
     def test_team_fallback_disabled_returns_none(self):
         # Caller explicitly opts out of the generic fallback.
         media_id = per.resolve_eyecatch_from_title(
@@ -188,7 +209,7 @@ class DiversifiedPoolFallbackTests(unittest.TestCase):
             "バンテリンドーム 本日の審判団",
             allow_remote_lookup=False,
         )
-        self.assertIn(media_id, {50815, 44424, 33574, 31157, 36062})
+        self.assertIn(media_id, {50815, 44424, 33574, 31157})
 
     def test_diversified_pool_is_deterministic_per_title(self):
         title = "あす5/9の予告先発 中日 大野雄大 巨人田中将大"
@@ -202,7 +223,7 @@ class DiversifiedPoolFallbackTests(unittest.TestCase):
             no_person_title, allow_remote_lookup=False,
         )
         self.assertEqual(first, second)
-        self.assertIn(first, {50815, 44424, 33574, 31157, 36062})
+        self.assertIn(first, {50815, 44424, 33574, 31157})
 
     def test_different_titles_can_get_different_images(self):
         # 50 distinct titles → distribution should hit at least 2 different
@@ -263,7 +284,7 @@ class DiversifiedPoolFallbackTests(unittest.TestCase):
             "巨人・三塚琉生、ファームで好投",
             allow_remote_lookup=False,
         )
-        self.assertIn(media_id, {50815, 44424, 33574, 31157, 36062})
+        self.assertIn(media_id, {50815, 44424, 33574, 31157})
 
     def test_empty_cache_diversified_pool_returns_none(self):
         # Override cache with no positive hits.

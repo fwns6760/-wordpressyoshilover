@@ -31,7 +31,7 @@ Resolution order (resolve_eyecatch_from_title)
    thumbnails (avoids the "全部 原辰徳" complaint while keeping fm>0).
    Disable via ``PLAYER_EYECATCH_POOL_FALLBACK_DISABLED=1``.
 3. team-generic fallback (env ``PLAYER_EYECATCH_TEAM_FALLBACK_ID``;
-   default 阿部慎之助 media_id).
+   default Tokyo Dome photo media_id).
 """
 
 from __future__ import annotations
@@ -87,11 +87,16 @@ _ALIAS_MAP = {
 
 # Team-generic fallback used when no per-person match is found.
 #
-# 2026-05-09 QA: fallback priority is now "source eyecatch first,
-# otherwise 阿部慎之助 fallback". Operators can still override with env
-# or disable via "0".
+# 2026-05-10 QA: fallback priority is "source eyecatch first,
+# otherwise Tokyo Dome photo fallback". Operators can still override with
+# env or disable via "0".
 _TEAM_FALLBACK_MEDIA_ID_ENV = "PLAYER_EYECATCH_TEAM_FALLBACK_ID"
-_TEAM_FALLBACK_MEDIA_ID_DEFAULT: Optional[int] = 36062
+_TEAM_FALLBACK_MEDIA_ID_DEFAULT: Optional[int] = 65953
+
+# Legacy 阿部慎之助 fallback media includes イチロー in the media title/image
+# context and does not fit a Giants news-board fallback. Keep it blocked
+# even if it remains in the historical cache file.
+_UNSAFE_EYECATCH_MEDIA_IDS = {36062}
 
 # Diversified player pool fallback — when per-person resolution misses,
 # pick another known-good player image from the cache (keyed by title
@@ -226,6 +231,13 @@ def get_team_fallback_media_id() -> Optional[int]:
     return _team_fallback_media_id()
 
 
+def _is_unsafe_eyecatch_media_id(media_id: object) -> bool:
+    try:
+        return int(media_id) in _UNSAFE_EYECATCH_MEDIA_IDS
+    except (TypeError, ValueError):
+        return False
+
+
 def _pool_fallback_enabled() -> bool:
     raw = os.environ.get(_POOL_FALLBACK_DISABLED_ENV, "").strip().lower()
     return raw not in {"1", "true", "yes"}
@@ -251,7 +263,7 @@ def _diversified_player_fallback(title: str) -> Optional[int]:
     for name, entry in cache.items():
         if isinstance(entry, dict):
             mid = entry.get("id")
-            if isinstance(mid, int) and mid > 0:
+            if isinstance(mid, int) and mid > 0 and not _is_unsafe_eyecatch_media_id(mid):
                 pool.append((str(name), mid))
     if not pool:
         return None
@@ -301,6 +313,7 @@ def resolve_eyecatch_from_title(
     disabled / unset.
     """
     name = detect_person(title) if allow_existing_person_media else None
+    unsafe_cached_hit = False
     if name:
         with _CACHE_LOCK:
             cache = _load_cache()
@@ -316,8 +329,13 @@ def resolve_eyecatch_from_title(
                 _save_cache(cache)
 
         if isinstance(cached, dict) and cached.get("id"):
-            return int(cached["id"])
+            cached_id = int(cached["id"])
+            if not _is_unsafe_eyecatch_media_id(cached_id):
+                return cached_id
+            unsafe_cached_hit = True
 
+    if unsafe_cached_hit:
+        return _team_fallback_media_id() if use_team_fallback else None
     if use_team_fallback and allow_diversified_pool:
         diversified = _diversified_player_fallback(title)
         if diversified:

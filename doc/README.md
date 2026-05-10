@@ -47,6 +47,7 @@ Active folder is intentionally narrow. 2026-05-08 朝に「0 publish 0 mail」�
 | **design hold** | `246-MKT-today-giants-fan-guide.md`, `255-MKT-fan-guide-expansion-and-comment-badge.md`, `249-INGEST-live-game-ingestion-expansion.md`, `256-QA-manager-player-quote-strict-subset.md`, `260-MKT-fan-original-article-types-and-templates.md` | no field dispatch yet. These are HOLD backlog items for the post-247 observation phase; do not mix them into current QA/template work. |
 | **keep active** | `229-gemini-cost-governor-and-llm-call-reduction.md` | still needed as the cost-reduction parent; next action depends on fetcher 100% / ledger observation. |
 | **social video full-connect tickets** | `318-A-INGEST-youtube-source-registry-to-intake.md`, `318-B-INGEST-social-video-notice-pipeline-connection.md`, `318-C-QA-social-video-safe-title-fallback.md`, `318-D-INGEST-instagram-registered-url-intake.md`, `318-E-QA-social-video-full-connect-regression-pack.md` | 2026-05-10 user GOでdoc-only分割起票。318-C safe title fallback は repo実装 + full pytest PASS、`doc/active/` で REVIEW_NEEDED。318-A/B/D/E は `doc/waiting/` のまま。publish/mail/scheduler/env/deploy/X/SEOは不可触。 |
+| **quality next-publish dedup review** | `319-QA-fetcher-topic-dedup-and-slot-fill.md` | 自動起動時に同一話題の重複記事で10枠を消費しないための narrow QA ticket。head/bat contact 事故の再現テスト赤→緑、related/full pytest green。diff review + commit 判断待ち。publish/mail/scheduler/env/Cloud Run/SEO/source追加は不可触。 |
 | **waiting** | `205-gcp-runtime-drift-audit.md`, `238-night-draft-only-and-morning-decision-report.md`, `288-INGEST-source-coverage-expansion.md` | still useful, but not part of the immediate article-body hallucination fix. `288` remains source-add HOLD; only Phase 0 repo-only audit / dry-run evidence may advance doc-only. |
 | **closed / archived** | `205-COST`, `234-impl-1..6`, `242 parent`, `242-B`, `243`, `244`, `244-B`, `244-followup`, `244-B-followup`, `245-front-hide-auto-post-category-label`, `277-QA-title-player-name-backfill`, `278-QA`, `279-QA-mail-subject-clarity`(2026-05-08 close, `6349995`), `280-QA`, `304-QA-player-manager-common-quality-guard`(2026-05-09 close, `6fb818a`, deploy `00285-5bg`), `246-viral-topic-detection`, `247-QA-postgame-strict-slot-fill-poc`, `254-QA-starter-innings-normalization` | implemented / accepted / superseded; no longer active work. |
 
@@ -1672,6 +1673,25 @@ git add -A禁止。
 - **write_scope**: `src/rss_fetcher.py`, `src/wp_client.py`, `src/player_eyecatch_resolver.py`, `tests/test_featured_media_fallback.py`, `tests/test_featured_media_helpers.py`, `tests/test_player_eyecatch_resolver.py`, optional narrow regression test, `doc/active/305-QA-featured-media-source-priority.md`
 - **doc_path**: `doc/active/305-QA-featured-media-source-priority.md`
 - **acceptance**: source eyecatch がある時はそれを最優先、既存 WP media があれば reuse、source 不在時だけ阿部監督 fallback、publish/mail/scheduler/env/Cloud Run 設定は非変更
+- **repo_state**: dirty
+- **commit_state**: uncommitted local diff
+- **next_prompt_path**: -
+- **last_commit**: -
+
+### 319 fetcher topic dedup and slot fill
+
+- **alias**: 319-QA
+- **priority**: P0.5
+- **status**: REVIEW_NEEDED
+- **owner**: Codex B
+- **lane**: B
+- **ready_for**: diff review + commit judgement
+- **next_action**: 変更差分とテスト結果を確認し、問題なければ commit 判断
+- **blocked_by**: none
+- **user_action_required**: implementation GO / deploy GO are separate
+- **write_scope**: `src/rss_fetcher.py`, `tests/test_duplicate_prevention_golden.py`, optional `tests/test_rss_fetcher_topic_dedup_slots.py`, `doc/active/319-QA-fetcher-topic-dedup-and-slot-fill.md`
+- **doc_path**: `doc/active/319-QA-fetcher-topic-dedup-and-slot-fill.md`
+- **acceptance**: 同一run内の明確な同一話題は1本だけ通り、重複skipは10枠を消費せず、別話題候補で補充される。publish/mail/scheduler/env/Cloud Run/SEO/source追加は非変更
 - **repo_state**: dirty
 - **commit_state**: uncommitted local diff
 - **next_prompt_path**: -

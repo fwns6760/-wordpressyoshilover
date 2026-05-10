@@ -156,6 +156,83 @@ def test_candidate_duplicate_review_emitted_for_ambiguous():
         assert any('"event": "candidate_duplicate_review"' in message for message in messages)
 
 
+def test_same_run_player_incident_different_titles_groups_as_topic_duplicate():
+    candidates = [
+        {
+            "entry_index": 1,
+            "source_rank": 1,
+            "source_name": "日刊スポーツ",
+            "source_type": "news",
+            "entry": {},
+            "post_url": "https://www.nikkansports.com/baseball/news/202605100000001.html",
+            "raw_title": "【巨人】大城卓三のヘルメットにバット直撃 中日木下のフォロースイング",
+            "title": "【巨人】大城卓三のヘルメットにバット直撃 中日木下のフォロースイング",
+            "category": "選手情報",
+            "summary": "巨人大城卓三捕手の頭部に中日木下拓哉捕手のフォロースルーが直撃した。",
+            "entry_has_game": True,
+            "published_at": datetime(2026, 5, 10, 12, 0, tzinfo=timezone.utc),
+        },
+        {
+            "entry_index": 2,
+            "source_rank": 2,
+            "source_name": "スポーツ報知",
+            "source_type": "news",
+            "entry": {},
+            "post_url": "https://hochi.news/articles/20260510-OHT1T51002.html",
+            "raw_title": "大城卓三のヘルメットにバット激突…試合後は氷のうを持って歩いてバスへ",
+            "title": "大城卓三のヘルメットにバット激突…試合後は氷のうを持って歩いてバスへ",
+            "category": "選手情報",
+            "summary": "巨人大城卓三捕手の頭部にバットが直撃するアクシデントが発生した。",
+            "entry_has_game": True,
+            "published_at": datetime(2026, 5, 10, 12, 5, tzinfo=timezone.utc),
+        },
+        {
+            "entry_index": 3,
+            "source_rank": 3,
+            "source_name": "サンスポ",
+            "source_type": "news",
+            "entry": {},
+            "post_url": "https://www.sanspo.com/article/20260510-GIANTS-003.html",
+            "raw_title": "巨人・岡本和真が2試合連続本塁打 打線をけん引",
+            "title": "巨人・岡本和真が2試合連続本塁打 打線をけん引",
+            "category": "選手情報",
+            "summary": "巨人の岡本和真内野手が2試合連続の本塁打を放った。",
+            "entry_has_game": True,
+            "published_at": datetime(2026, 5, 10, 12, 10, tzinfo=timezone.utc),
+        },
+    ]
+
+    annotated = rss_fetcher._annotate_duplicate_guard_contexts(candidates)
+    contexts = [item["duplicate_guard_context"] for item in annotated]
+
+    assert contexts[0]["topic_key"] == "player_incident:head_bat_contact"
+    assert contexts[1]["topic_key"] == "player_incident:head_bat_contact"
+    assert contexts[0]["group_signature"] == contexts[1]["group_signature"]
+    assert contexts[2]["group_signature"] != contexts[0]["group_signature"]
+    assert {context["same_run_primary"] for context in contexts[:2]} == {True, False}
+
+    secondary = next(context for context in contexts if not context["same_run_primary"])
+    unrelated = contexts[2]
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ledger = rss_fetcher._DuplicateNewsLedger(
+            ledger_path=Path(tmpdir) / "duplicate.jsonl",
+            cooldown_hours=6,
+        )
+        with patch.object(rss_fetcher._DuplicateNewsLedger, "shared", return_value=ledger):
+            with CaptureLogs("rss_fetcher") as messages:
+                assert rss_fetcher._evaluate_pre_gemini_duplicate_guard(
+                    logging.getLogger("rss_fetcher"),
+                    secondary,
+                ) == "skip"
+                assert secondary["guard_outcome"] == "skip"
+                assert rss_fetcher._evaluate_pre_gemini_duplicate_guard(
+                    logging.getLogger("rss_fetcher"),
+                    unrelated,
+                ) == "allow"
+
+    assert any('"event": "duplicate_news_pre_gemini_skip"' in message for message in messages)
+
+
 def test_record_duplicate_guard_success_preserves_primary_flag():
     with tempfile.TemporaryDirectory() as tmpdir:
         ledger_path = Path(tmpdir) / "duplicate.jsonl"

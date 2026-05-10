@@ -16550,14 +16550,47 @@ def _duplicate_key_basis(
     game_id: str,
     player: str,
     subtype: str,
+    topic_key: str = "",
 ) -> str:
     if canonical_url:
         return "canonical"
     if game_id and subtype:
         return "game_subtype"
+    if player and subtype and topic_key:
+        return "player_subtype_topic"
     if player and subtype:
         return "player_subtype_title"
     return "title_family"
+
+
+def _extract_duplicate_topic_key(
+    *,
+    title: str,
+    summary: str,
+    category: str,
+    article_subtype: str,
+    player: str,
+) -> str:
+    if not player:
+        return ""
+    normalized_subtype = str(article_subtype or "").strip().lower()
+    if normalized_subtype not in {"player", "player_recovery", "player_notice"}:
+        return ""
+    source_text = f"{title or ''} {summary or ''}"
+    if not source_text.strip():
+        return ""
+
+    head_markers = ("ヘルメット", "頭部", "顔面", "頭", "マスク")
+    bat_markers = ("バット", "フォロースイング", "フォロースルー")
+    contact_markers = ("直撃", "激突", "当た", "アクシデント", "救急搬送", "流血", "氷のう")
+    if (
+        any(marker in source_text for marker in head_markers)
+        and any(marker in source_text for marker in bat_markers)
+        and any(marker in source_text for marker in contact_markers)
+    ):
+        return "player_incident:head_bat_contact"
+
+    return ""
 
 
 def compute_duplicate_key(
@@ -16583,6 +16616,8 @@ def compute_duplicate_key(
         return hashlib.sha256(f"canonical:{canonical_value}".encode("utf-8")).hexdigest()[:16]
     if resolved_game_id and resolved_subtype:
         base = f"game:{resolved_game_id}:subtype:{resolved_subtype}"
+    elif resolved_player and resolved_subtype and resolved_topic_key:
+        base = f"player:{resolved_player}:subtype:{resolved_subtype}:topic:{resolved_topic_key}"
     elif resolved_player and resolved_subtype:
         base = f"player:{resolved_player}:subtype:{resolved_subtype}:title:{title_norm[:80]}"
     else:
@@ -16610,6 +16645,8 @@ def _compute_duplicate_group_signature(
         return f"canonical:{canonical_url}"
     if game_id and subtype:
         return f"game:{game_id}:{subtype}"
+    if player and subtype and topic_key:
+        return f"player:{player}:{subtype}:topic:{topic_key}"
     if player and subtype:
         return f"player:{player}:{subtype}:{title_norm[:80]}"
     if topic_key:
@@ -16920,7 +16957,13 @@ def _build_duplicate_news_context(
     source_family = _extract_source_family(source_url)
     player = _extract_duplicate_player(title, summary, category)
     resolved_game_id = _extract_duplicate_game_id(source_url, explicit_game_id=game_id)
-    topic_key = ""
+    topic_key = _extract_duplicate_topic_key(
+        title=title,
+        summary=summary,
+        category=category,
+        article_subtype=article_subtype,
+        player=player,
+    )
     duplicate_key = compute_duplicate_key(
         source_url=source_url,
         canonical_url=canonical_url,
@@ -16949,6 +16992,7 @@ def _build_duplicate_news_context(
             game_id=resolved_game_id,
             player=player,
             subtype=article_subtype,
+            topic_key=topic_key,
         ),
         "source_url_hash": _hash_duplicate_guard_value(source_url),
         "source_family": source_family,

@@ -289,17 +289,27 @@ GO後に実装する場合の予定:
 
 ### 12. 本番deploy記録
 
-- commit:
+- commits:
   - `92efa1b 313: add instagram social video intake registry`
-- image build:
+  - `084e682 313: keep instagram handle distinct in intake`
+- first image build:
   - Cloud Build `207266a4-d756-45ab-8b21-ab6117289c49`
   - image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/manual-intake-service:92efa1b`
   - result `SUCCESS`
+- image build:
+  - Cloud Build `a2e5df69-872f-4a08-a768-d300975e393a`
+  - image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/manual-intake-service:084e682`
+  - result `SUCCESS`
 - deploy:
   - service `manual-intake-service`
-  - revision `manual-intake-service-00050-kl6`
+  - revision `manual-intake-service-00051-gj6`
   - traffic `100%`
   - health `/health` HTTP 200
+- post-deploy safe checks:
+  - Cloud Run service describe: image `manual-intake-service:084e682`
+  - `/health`: HTTP 200 `{"ok": true}`
+  - `manual-intake-service` Cloud Run ERROR logs: no rows in latest 20 minutes.
+  - `publish-notice` / `guarded-publish` Cloud Run Job ERROR logs: no rows in latest 20 minutes.
 - 本番deployで触ったもの:
   - Cloud Run service `manual-intake-service` のimage / revisionのみ。
 - 本番deployで触っていないもの:

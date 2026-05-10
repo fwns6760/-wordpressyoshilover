@@ -54,6 +54,59 @@ class SiteSelectorPathTests(unittest.TestCase):
         self.assertNotIn("<p>", out)
         self.assertNotIn("</p>", out)
 
+    def test_hochi_preview_detail_body_class(self):
+        html = (
+            '<div class="article__wrap">'
+            '<div class="preview__detail">'
+            '<p class="preview__text">◆ファーム・リーグ　ロッテ―巨人（１０日・江戸川）</p>'
+            '<p class="preview__text">巨人のエルビス・ルシアーノ投手が３者連続空振り三振を披露した。</p>'
+            '<p class="preview__text">３―３の７回に３番手で登板し、先頭から３人を空振り三振に打ち取った。</p>'
+            "</div>"
+            "</div>"
+        )
+        out = extract_article_body_excerpt(html, "https://hochi.news/articles/x.html")
+        self.assertIn("エルビス・ルシアーノ投手", out)
+        self.assertIn("３者連続空振り三振", out)
+        self.assertNotIn("article__wrap", out)
+
+    def test_baseballking_entry_content_drops_ad_script(self):
+        html = (
+            '<div class="entry-content">'
+            '<script>googletag.cmd.push(function() { googletag.display("ad"); });</script>'
+            "<p>ロッテの石垣元気が9日、巨人との二軍戦でZOZOマリンスタジアムデビューを果たした。</p>"
+            "<p>石垣は7回に登板し、0回2/3を投げ、奪三振1、被安打1、1失点だった。</p>"
+            "</div>"
+        )
+        out = extract_article_body_excerpt(html, "https://baseballking.jp/ns/695077/")
+        self.assertIn("ZOZOマリンスタジアムデビュー", out)
+        self.assertIn("0回2/3", out)
+        self.assertNotIn("googletag", out)
+
+    def test_full_count_body_selector_drops_header_and_ads(self):
+        html = (
+            '<article class="s-entry-post">'
+            '<div class="s-entry-header">'
+            '<h1 class="s-entry-header__title">戸郷翔征は「どうしたんだ」</h1>'
+            '<li class="s-entry-header__meta-date">2026.05.04</li>'
+            "</div>"
+            '<div class="s-entry-body"><div class="c-wp-post">'
+            '<aside class="s-entry-ads"><script>googletag.cmd.push(function(){})</script></aside>'
+            "<h2>不振が続くエース右腕</h2>"
+            "<p>巨人の戸郷翔征投手が4日、東京ドームで行われたヤクルト戦に今季初先発を果たした。</p>"
+            "<p>5回を投げ1本塁打を含む6安打5失点、2四死球の内容だった。</p>"
+            "</div><!-- s-entry-body --></div>"
+            "</article>"
+        )
+        out = extract_article_body_excerpt(
+            html,
+            "https://full-count.jp/2026/05/04/post1955326/",
+            title="戸郷翔征は「どうしたんだ」",
+        )
+        self.assertIn("戸郷翔征投手", out)
+        self.assertIn("6安打5失点", out)
+        self.assertNotIn("2026.05.04", out)
+        self.assertNotIn("googletag", out)
+
 
 class FallbackChainTests(unittest.TestCase):
     def test_article_tag_used_when_site_selector_misses(self):
@@ -94,7 +147,7 @@ class TruncationTests(unittest.TestCase):
         out = extract_article_body_excerpt(
             html, "https://example.com/", max_chars=120
         )
-        self.assertLessEqual(len(out), 121)  # +1 for trailing 。
+        self.assertLessEqual(len(out), 120)
         self.assertTrue(out.endswith("。") or out.endswith("…"))
 
     def test_expanded_cap_still_respects_sentence_boundary(self):

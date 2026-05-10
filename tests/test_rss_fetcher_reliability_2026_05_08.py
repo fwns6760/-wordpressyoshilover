@@ -322,6 +322,41 @@ class IsReviewEligibleFailAxesTests(unittest.TestCase):
 class CreateDraftForceStatusTests(unittest.TestCase):
     """E が依存する _create_draft_with_same_fire_guard の force_status 引数 test."""
 
+    def test_enrichment_raw_html_reaches_rss_pipeline(self):
+        captured = {}
+
+        class FakeWP:
+            def create_post(self, title, content, **kwargs):
+                captured["content"] = content
+                return 99998
+
+        def fake_enrich(content, **kwargs):
+            if kwargs.get("raw_html") == "<html><article>巨人本文</article></html>":
+                return content + "<p>📖 本文抜粋</p>"
+            return content
+
+        import logging
+        logger = logging.getLogger("test")
+        with (
+            patch.object(rss_fetcher, "_apply_rss_pipeline_enrichment", side_effect=fake_enrich),
+            patch.dict(os.environ, {"RUN_DRAFT_ONLY": "1"}, clear=False),
+        ):
+            post_id = rss_fetcher._create_draft_with_same_fire_guard(
+                FakeWP(),
+                logger,
+                set(),
+                {},
+                "title",
+                '<div class="nomotoke-card-test"><h3>🔗 出典記事</h3></div>',
+                [1],
+                "https://example.com/x",
+                featured_media=None,
+                enrichment_raw_html="<html><article>巨人本文</article></html>",
+            )
+
+        self.assertEqual(post_id, 99998)
+        self.assertIn("📖 本文抜粋", captured["content"])
+
     def test_force_status_overrides_run_draft_only_env(self):
         captured = {}
 

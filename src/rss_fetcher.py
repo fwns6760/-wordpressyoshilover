@@ -13590,14 +13590,24 @@ def _refetch_article_images_if_empty(
     logger: logging.Logger | None = None,
     max_images: int = 3,
 ) -> list[str]:
-    if image_urls or not page_url:
+    if not page_url:
         return image_urls
     logger = logger or logging.getLogger("rss_fetcher")
+    if image_urls:
+        if any(not _get_generic_featured_image_reason(url) for url in image_urls):
+            return image_urls
+    existing = [
+        _html.unescape((url or "").strip())
+        for url in (image_urls or [])
+        if (url or "").strip()
+    ]
+    existing_set = set(existing)
     retry_images = _filter_image_candidates(
         fetch_article_images(page_url, max_images=max_images),
         page_url,
         logger,
     )
+    retry_images = [url for url in retry_images if url not in existing_set]
     if retry_images:
         logger.info(
             json.dumps(
@@ -13610,7 +13620,7 @@ def _refetch_article_images_if_empty(
                 ensure_ascii=False,
             )
         )
-    return retry_images or image_urls
+    return (existing + retry_images) if retry_images else image_urls
 
 
 def _ensure_story_featured_images(
@@ -13667,12 +13677,10 @@ def _ensure_story_featured_images(
     return [fallback_url]
 
 
-def fetch_article_images(url: str, max_images: int = 3) -> list:
-    """記事ページから写真URLを最大 max_images 枚スクレイピングして返す。
-    og:image を先頭に、本文中の <img> から大きそうなものを追加する。"""
+def _extract_article_images_from_html(html: str, url: str, max_images: int = 3) -> list:
+    """Extract article-image candidates from already fetched HTML."""
     try:
         import urllib.parse
-        html = _fetch_url_html(url, max_bytes=200000, timeout=12)
         if not html:
             return []
 
@@ -13692,9 +13700,11 @@ def fetch_article_images(url: str, max_images: int = 3) -> list:
                 return
             # アイコン・バナー・広告っぽいものを除外
             low = img_url.lower()
-            if any(ng in low for ng in ["logo", "icon", "banner", "ad", "button",
+            if any(ng in low for ng in ["logo", "icon", "banner", "button",
                                          "sprite", "blank", "noimage", "no_image",
                                          "spacer", "pixel", "tracking", "1x1"]):
+                return
+            if _re.search(r"(^|/)(?:ad|ads|advertisement)(?:[._/-]|$)", low):
                 return
             # 小さい画像を除外（URLにサイズ情報がある場合）
             size_m = _re.search(r'[_\-x](\d+)[_\-x](\d+)', low)
@@ -13748,6 +13758,13 @@ def fetch_article_images(url: str, max_images: int = 3) -> list:
         return images[:max_images]
     except Exception:
         return []
+
+
+def fetch_article_images(url: str, max_images: int = 3) -> list:
+    """記事ページから写真URLを最大 max_images 枚スクレイピングして返す。
+    og:image を先頭に、本文中の <img> から大きそうなものを追加する。"""
+    html = _fetch_url_html(url, max_bytes=200000, timeout=12)
+    return _extract_article_images_from_html(html, url, max_images=max_images)
 
 
 def _extract_entry_image_urls(entry: dict, page_url: str = "", max_images: int = 3) -> list[str]:
@@ -17292,6 +17309,7 @@ def _create_draft_with_same_fire_guard(
     enrichment_category: str = "",
     enrichment_template_key: str = "",
     enrichment_source_name: str = "",
+    enrichment_raw_html: str = "",
 ) -> int:
     normalized_source_url = _html.unescape((source_url or "").strip())
     rewritten_title_norm = _normalize_history_title(draft_title)
@@ -17338,6 +17356,7 @@ def _create_draft_with_same_fire_guard(
                 category=enrichment_category,
                 template_key=enrichment_template_key,
                 source_name=enrichment_source_name,
+                raw_html=enrichment_raw_html,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning(
@@ -21296,12 +21315,26 @@ def _main(args, logger):
                 media_quote_pool=media_quote_pool,
             )
             media_quotes = media_quote_evaluation["quotes"]
+            entry_obj = item.get("entry") if isinstance(item.get("entry"), dict) else {}
+            _article_raw_html = ""
+            if source_type in {"news", "tag_scrape"}:
+                _article_raw_html = str(entry_obj.get("_html") or "")
+                if not _article_raw_html:
+                    _article_raw_html = _fetch_url_html(post_url, max_bytes=240000, timeout=12)
             if source_type == "news":
-                _article_images = fetch_article_images(post_url, max_images=3)
+                _article_images = _extract_article_images_from_html(
+                    _article_raw_html,
+                    post_url,
+                    max_images=3,
+                )
             else:
-                _article_images = _extract_entry_image_urls(item.get("entry", {}), post_url, max_images=3)
+                _article_images = _extract_entry_image_urls(entry_obj, post_url, max_images=3)
                 if not _article_images:
-                    _article_images = fetch_article_images(post_url, max_images=3)
+                    _article_images = _extract_article_images_from_html(
+                        _article_raw_html,
+                        post_url,
+                        max_images=3,
+                    )
             _article_images = _filter_image_candidates(_article_images, post_url, logger)
             _article_images = _refetch_article_images_if_empty(_article_images, post_url, logger, max_images=3)
             _article_images = _ensure_story_featured_images(
@@ -21973,7 +22006,7 @@ def _main(args, logger):
             # og:image を WP media に upload して featured_media に設定。
             # 17 人 未 upload 選手 / broadcast / 観戦 guide 等で source 側の og:image
             # が relevant な画像 (選手の写真 / 試合シーン) を提供する場合にこれを
-            # eyecatch にする。_article_images は line 20347 で全 source_type で
+            # eyecatch にする。_article_images は上の source_type 分岐で
             # populate 済、image_urls 空なら関数が 0 を返すので safe。
             if _article_images:
                 featured_media = _upload_featured_media_with_fallback(
@@ -21997,6 +22030,7 @@ def _main(args, logger):
                 enrichment_category=category,
                 enrichment_template_key=str(title_template_key or ""),
                 enrichment_source_name=source_name,
+                enrichment_raw_html=_article_raw_html,
             )
             if post_id <= 0:
                 # RELIABILITY-2026-05-08-DUP-FIX: same-fire dedup で 0 が返った時、

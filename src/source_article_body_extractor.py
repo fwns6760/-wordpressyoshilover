@@ -67,6 +67,10 @@ _SITE_SELECTORS: tuple = (
                 re.DOTALL,
             ),
             re.compile(
+                r'<div[^>]+class="[^"]*\bpreview__detail\b[^"]*"[^>]*>(?P<body>.+?)</div>',
+                re.DOTALL,
+            ),
+            re.compile(
                 r'<div[^>]+id="article-body"[^>]*>(?P<body>.+?)</div>',
                 re.DOTALL,
             ),
@@ -121,6 +125,10 @@ _SITE_SELECTORS: tuple = (
         "full-count.jp",
         (
             re.compile(
+                r'<div[^>]+class="[^"]*\bc-wp-post\b[^"]*"[^>]*>(?P<body>.+?)</div>\s*<!--\s*s-entry-body\s*-->',
+                re.DOTALL,
+            ),
+            re.compile(
                 r'<div[^>]+class="[^"]*\bentry-content\b[^"]*"[^>]*>(?P<body>.+?)</div>',
                 re.DOTALL,
             ),
@@ -158,11 +166,26 @@ _JSONLD_BLOCK_RE = re.compile(
 
 
 _TAG_RE = re.compile(r"<[^>]+>")
+_SCRIPT_STYLE_RE = re.compile(
+    r"<(?:script|style|noscript)\b[^>]*>.*?</(?:script|style|noscript)>",
+    re.DOTALL | re.IGNORECASE,
+)
+_ASIDE_RE = re.compile(r"<aside\b[^>]*>.*?</aside>", re.DOTALL | re.IGNORECASE)
+_FIGURE_RE = re.compile(r"<figure\b[^>]*>.*?</figure>", re.DOTALL | re.IGNORECASE)
 _BR_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
 _BLOCK_OPEN_RE = re.compile(
     r"<(?:p|div|li|h[1-6])\b[^>]*>", re.IGNORECASE
 )
 _WHITESPACE_RUN_RE = re.compile(r"[　\s]+")
+_DATE_LINE_RE = re.compile(r"^\d{4}[./年]\d{1,2}(?:[./月]\d{1,2}日?)?$")
+_BOILERPLATE_LINES = {
+    "ホーム",
+    "野球",
+    "ニュース",
+    "RSS",
+    "プロ野球",
+    "読売ジャイアンツ（巨人）",
+}
 
 
 def _strip_html_to_plain(fragment: str) -> str:
@@ -176,7 +199,10 @@ def _strip_html_to_plain(fragment: str) -> str:
     """
     if not fragment:
         return ""
-    s = _BR_RE.sub("\n", fragment)
+    s = _SCRIPT_STYLE_RE.sub("", fragment)
+    s = _ASIDE_RE.sub("", s)
+    s = _FIGURE_RE.sub("", s)
+    s = _BR_RE.sub("\n", s)
     s = _BLOCK_OPEN_RE.sub("\n", s)
     s = _TAG_RE.sub("", s)
     s = html_lib.unescape(s)
@@ -184,6 +210,13 @@ def _strip_html_to_plain(fragment: str) -> str:
     lines = []
     for raw_line in s.split("\n"):
         cleaned = _WHITESPACE_RUN_RE.sub(" ", raw_line).strip()
+        if not cleaned:
+            continue
+        low = cleaned.lower()
+        if any(marker in low for marker in ("googletag", "document.write", "function()")):
+            continue
+        if cleaned in {"広告", "PR"}:
+            continue
         if cleaned:
             lines.append(cleaned)
     return "\n".join(lines)
@@ -224,6 +257,30 @@ def _drop_title_echo(text: str, title: str) -> str:
     if head and (head == title_clean or title_clean in head and len(head) <= len(title_clean) + 6):
         return lines[1] if len(lines) > 1 else ""
     return text
+
+
+def _drop_leading_boilerplate(text: str, title: str = "") -> str:
+    """Remove leading navigation/date/title lines before body text."""
+    if not text:
+        return ""
+    title_clean = (title or "").strip()
+    lines = text.splitlines()
+    while lines:
+        head = lines[0].strip()
+        if not head:
+            lines.pop(0)
+            continue
+        if head in _BOILERPLATE_LINES or _DATE_LINE_RE.match(head):
+            lines.pop(0)
+            continue
+        if title_clean and (
+            head == title_clean
+            or (title_clean in head and len(head) <= len(title_clean) + 20)
+        ):
+            lines.pop(0)
+            continue
+        break
+    return "\n".join(lines)
 
 
 def _extract_via_jsonld(html: str) -> str:
@@ -364,6 +421,7 @@ def extract_article_body_excerpt(
         text = _strip_html_to_plain(raw) if needs_strip else raw
         if not text:
             continue
+        text = _drop_leading_boilerplate(text, title)
         text = _drop_title_echo(text, title)
         if len(text) < 20:
             continue

@@ -92,6 +92,64 @@ class FeaturedMediaHelperTests(unittest.TestCase):
             },
         )
 
+    @patch("src.rss_fetcher.fetch_article_images")
+    def test_refetch_article_images_when_existing_candidates_are_generic(self, mock_fetch_article_images):
+        mock_fetch_article_images.return_value = [
+            "https://hochi.news/images/2026/05/10/20260510-OHT1I51332-L.jpg"
+        ]
+        logger = logging.getLogger("rss_fetcher")
+
+        images = rss_fetcher._refetch_article_images_if_empty(
+            ["https://hochi.news/assets/v2/img/hochi_news_sns.png"],
+            "https://hochi.news/articles/20260510-OHT1T51210.html",
+            logger=logger,
+            max_images=3,
+        )
+
+        self.assertEqual(
+            images,
+            [
+                "https://hochi.news/assets/v2/img/hochi_news_sns.png",
+                "https://hochi.news/images/2026/05/10/20260510-OHT1I51332-L.jpg",
+            ],
+        )
+
+    @patch("src.rss_fetcher._fetch_url_html")
+    def test_fetch_article_images_keeps_wp_uploads_paths(self, mock_fetch_url_html):
+        mock_fetch_url_html.return_value = (
+            '<meta property="og:image" '
+            'content="https://full-count.jp/wp-content/uploads/2026/05/04193836/20260504_togo_ay.jpg">'
+        )
+
+        images = rss_fetcher.fetch_article_images(
+            "https://full-count.jp/2026/05/04/post1955326/",
+            max_images=3,
+        )
+
+        self.assertEqual(
+            images,
+            [
+                "https://full-count.jp/wp-content/uploads/2026/05/04193836/20260504_togo_ay.jpg"
+            ],
+        )
+
+    @patch("src.rss_fetcher._fetch_url_html")
+    def test_fetch_article_images_keeps_baseballking_uploads_paths(self, mock_fetch_url_html):
+        mock_fetch_url_html.return_value = (
+            '<meta property="og:image" '
+            'content="https://baseballking.jp/wp-content/uploads/2026/05/DSC_0091.jpg">'
+        )
+
+        images = rss_fetcher.fetch_article_images(
+            "https://baseballking.jp/ns/695077/",
+            max_images=3,
+        )
+
+        self.assertEqual(
+            images,
+            ["https://baseballking.jp/wp-content/uploads/2026/05/DSC_0091.jpg"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

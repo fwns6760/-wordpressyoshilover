@@ -41,6 +41,7 @@ Active folder is intentionally narrow. 2026-05-08 朝に「0 publish 0 mail」�
 | **user 方針判断待ち** | `MANUAL-INTAKE-QUALITY-PARITY-2026-05-08.md` | 5/8 PM session 調査:apply_rss_pipeline_enrichment の nomotoke marker gate 発見、RSS auto は marker 付与なしで装飾 skip。「手動を直す」なら本文長 / 装飾 / 自動化 のどの軸かが user 判断必要。 |
 | **frontend audit ready** | `FRONTEND-ENRICHMENT-LIVE-AUDIT-2026-05-08.md` | 5/7 enrichment 装飾が live で 0% / 100% gap、¥0 / デグレ 0 の audit + narrow fix ticket。Phase A 受動 audit から開始。 |
 | **frontend impl ready(¥0 / デグレ 0)** | `H3-STRUCTURE-UNIFY-2026-05-08.md` / `DIGEST-DAILY-MORNING-2026-05-08.md` / `SIDEBAR-WIDGETS-2026-05-08.md` | 5/8 PM 設計、無料で着手可能の 3 ticket。H3 12 set 統一 / 朝まとめ 1 日 1 本 / sidebar 5 widget。各 narrow phase 分割済 |
+| **frontend AdSense UI ready** | `320-FRONT-scroll-ads-uiux-adsense-slot-control.md` | のもとけ型の scroll / sticky AdSense slot UIUX。既存または user 確認済み広告枠のみ、dummy-only ではなく AdSense slot 前提。publish/mail/scheduler/env/Cloud Run/GitHub Actions/SEO は不可触。記憶から再構成 / silent skip / 自己評価OKは禁止。 |
 | **quality review ready** | `305-QA-featured-media-source-priority.md` | source eyecatch を最優先し、同一 source image の WP media reuse を優先。source と無関係な既存 media / diversified pool を外し、source 不在時だけ阿部監督 fallback に落とす narrow fix。repo-only impl + tests 完了、deploy 判断待ち。 |
 | **frontend design pending** | `CATEGORY-RESTRUCTURE-2026-05-08.md` | コラム catch-all 解消、「試合中継」新 category 抽出、巨人 tag 化。user 判断境界(WP admin 操作必要) |
 | **user setup (任意)** | `EXTERNAL-MONITOR-APPS-SCRIPT.md` | yoshilover infra 完全死シナリオ用の独立 GAS ping。user 作業 10 分、明日朝 safety net。 |
@@ -1694,6 +1695,25 @@ git add -A禁止。
 - **acceptance**: 同一run内の明確な同一話題は1本だけ通り、重複skipは10枠を消費せず、別話題候補で補充される。publish/mail/scheduler/env/Cloud Run/SEO/source追加は非変更
 - **repo_state**: dirty
 - **commit_state**: uncommitted local diff
+- **next_prompt_path**: -
+- **last_commit**: -
+
+### 320 scroll ads UIUX AdSense slot control
+
+- **alias**: 320-FRONT
+- **priority**: P1
+- **status**: READY_FOR_IMPL_AFTER_USER_GO
+- **owner**: Codex
+- **lane**: FRONTEND / WP plugin
+- **ready_for**: user GO after AdSense slot / existing placement confirmation
+- **next_action**: Phase 0 read-only auditで既存 AdSense code / `adsbygoogle` / `googletag` / shortcode / widget を確認し、slot が特定できなければ STOP
+- **blocked_by**: user-confirmed AdSense slot / placement may be required if repo does not contain it
+- **user_action_required**: implementation GO; AdSense 管理画面設定や新規広告ユニット作成が必要な場合は別 GO
+- **write_scope**: `src/yoshilover-063-frontend.php`, related frontend CSS/JS source if present, minimal frontend/plugin tests, `doc/waiting/320-FRONT-scroll-ads-uiux-adsense-slot-control.md`
+- **doc_path**: `doc/waiting/320-FRONT-scroll-ads-uiux-adsense-slot-control.md`
+- **acceptance**: AdSense slot UI が scroll / sticky で出入りし、mobile/desktopで本文を隠さず、footer/comment付近で退避し、close可能。publish/mail/scheduler/env/Cloud Run/GitHub Actions/SEOは非変更。記憶から再構成 / silent skip / 自己評価OKは禁止し、実DOM / screenshot / log / diffで確認する
+- **repo_state**: dirty
+- **commit_state**: ticket doc only, uncommitted
 - **next_prompt_path**: -
 - **last_commit**: -
 

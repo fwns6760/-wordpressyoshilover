@@ -96,6 +96,7 @@
 | **291-OBSERVE candidate terminal outcome contract** | WAITING_PARENT / subtask-9 + subtask-10b live apply 完了。fetcher image `e0a58bb` / revision `00186-9cl` へ更新し、`ENABLE_NARROW_UNLOCK_SUBTYPE_AWARE=1` と `ENABLE_POSTGAME_STRICT_FACT_RECOVERY=1` を反映、既存 narrow flags 維持確認済み | 30-60min verify。Scheduler 次回 fire 以降で `weak_title_subtype_aware` / `postgame_strict_fact_recovery` event と scope-eligible postgame candidate の publish/review outcome を観測する。親 ticket 自体は waiting 維持、global gate 緩和はしない |
 | **318-A..E social video full connect** | 318-C REVIEW_NEEDED / 318-A,B,D,E READY_DOC_ONLY。YouTube / Instagram / OB動画の完全接続を5本に分割。初期はreview/draft優先、publish/mail/scheduler/env/deploy/X/SEO不可触 | 318-C safe title fallback は repo実装 + full pytest PASS。次に進めるなら 318-A YouTube registry intake を小さく実装GO。 |
 | **319-QA fetcher topic dedup and slot fill** | REVIEW_NEEDED。次の記事公開から重複話題で10枠を消費しないための narrow fix ticket | 再現テスト赤→緑、`src/rss_fetcher.py` 候補選別のみ修正済み。diff review + commit 判断待ち。deployは別GO |
+| **320-FRONT scroll ads UIUX AdSense slot control** | READY_FOR_IMPL_AFTER_USER_GO。のもとけ型の scroll / sticky AdSense slot UIUX。dummy-only ではなく、既存または user 確認済み AdSense slot 前提 | まず Phase 0 read-only audit で repo / live DOM / WP 実設定を確認。記憶から再構成 / silent skip / 自己評価OKは禁止。publish/mail/scheduler/env/Cloud Run/GitHub Actions/SEO は不可触 |
 | **251/252/253/264/274/283/288/294/295/296** | HOLD / BACKLOG / DESIGN_ONLY / READY_FOR_USER_APPLY 系。active から waiting へ整理 | 各 ticket の解除条件または user GO が来た時 |
 
 ## いま動かす指示(2026-05-08 lock)

@@ -2490,6 +2490,7 @@ add_filter( 'wp_robots', 'yoshilover_063_phase1_noindex_robots' );
 add_action( 'send_headers', 'yoshilover_063_phase1_noindex_headers' );
 add_action( 'wp_enqueue_scripts', 'yoshilover_063_enqueue_front_density_assets' );
 add_action( 'wp_enqueue_scripts', 'yoshilover_063_enqueue_manual_x_share_corner_assets' );
+add_action( 'wp_enqueue_scripts', 'yoshilover_063_enqueue_adsense_scroll_ui_assets' );
 
 function yoshilover_063_phase1_should_noindex() {
     if ( is_admin() ) {
@@ -2903,6 +2904,172 @@ CSS;
 })();
 JS;
     wp_add_inline_script( 'yoshilover-063-manual-x-share-corner', $script, 'after' );
+}
+
+function yoshilover_063_should_render_adsense_scroll_ui() {
+    if ( is_admin() || is_feed() || is_search() || is_404() ) {
+        return false;
+    }
+
+    return is_singular( 'post' );
+}
+
+function yoshilover_063_enqueue_adsense_scroll_ui_assets() {
+    if ( ! yoshilover_063_should_render_adsense_scroll_ui() ) {
+        return;
+    }
+
+    wp_register_style( 'yoshilover-063-adsense-scroll-ui', false, array(), '0.1.0' );
+    wp_enqueue_style( 'yoshilover-063-adsense-scroll-ui' );
+
+    $styles = <<<'CSS'
+.widget_swell_ad_widget.yoshi-adsense-slot {
+  position: relative;
+  width: 100%;
+  margin-right: auto;
+  margin-left: auto;
+  opacity: 0.86;
+  transform: translateY(8px);
+  transition: opacity 180ms ease, transform 180ms ease;
+  will-change: opacity, transform;
+}
+.widget_swell_ad_widget.yoshi-adsense-slot.is-yoshi-adsense-inview {
+  opacity: 1;
+  transform: translateY(0);
+}
+.widget_swell_ad_widget.yoshi-adsense-slot.is-yoshi-adsense-active {
+  opacity: 1;
+}
+.yoshi-adsense-slot__label {
+  display: flex;
+  justify-content: center;
+  margin: 0 0 6px;
+  color: rgba(26, 26, 26, 0.48);
+  font-size: 10px;
+  line-height: 1.2;
+  letter-spacing: 0;
+  pointer-events: none;
+}
+.w-singleBottom .widget_swell_ad_widget.yoshi-adsense-slot,
+.w-cta .widget_swell_ad_widget.yoshi-adsense-slot,
+.w-beforeRelated .widget_swell_ad_widget.yoshi-adsense-slot,
+.w-afterRelated .widget_swell_ad_widget.yoshi-adsense-slot {
+  max-width: min(100%, 728px);
+  min-height: 96px;
+}
+#sidebar .widget_swell_ad_widget.yoshi-adsense-slot,
+.l-sidebar .widget_swell_ad_widget.yoshi-adsense-slot {
+  position: sticky;
+  top: 92px;
+  z-index: 2;
+}
+.widget_swell_ad_widget.yoshi-adsense-slot--before-related,
+.widget_swell_ad_widget.yoshi-adsense-slot--after-related {
+  margin-top: 22px;
+  margin-bottom: 22px;
+}
+@media (max-width: 960px) {
+  #sidebar .widget_swell_ad_widget.yoshi-adsense-slot,
+  .l-sidebar .widget_swell_ad_widget.yoshi-adsense-slot {
+    position: static;
+  }
+}
+@media (max-width: 768px) {
+  .widget_swell_ad_widget.yoshi-adsense-slot {
+    transform: translateY(6px);
+  }
+  .w-singleBottom .widget_swell_ad_widget.yoshi-adsense-slot,
+  .w-cta .widget_swell_ad_widget.yoshi-adsense-slot,
+  .w-beforeRelated .widget_swell_ad_widget.yoshi-adsense-slot,
+  .w-afterRelated .widget_swell_ad_widget.yoshi-adsense-slot {
+    max-width: min(100%, 336px);
+    min-height: 92px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .widget_swell_ad_widget.yoshi-adsense-slot {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+CSS;
+
+    wp_add_inline_style( 'yoshilover-063-adsense-scroll-ui', $styles );
+
+    wp_register_script( 'yoshilover-063-adsense-scroll-ui', false, array(), '0.1.0', true );
+    wp_enqueue_script( 'yoshilover-063-adsense-scroll-ui' );
+
+    $script = <<<'JS'
+(() => {
+  const doc = document.documentElement;
+  const adWidgets = Array.from(document.querySelectorAll('.widget_swell_ad_widget')).filter((widget) => (
+    widget.querySelector('ins.adsbygoogle, .adsbygoogle, script[src*="pagead2.googlesyndication.com"]')
+  ));
+
+  doc.dataset.yoshiAdsenseSlotCount = String(adWidgets.length);
+  if (!adWidgets.length) {
+    return;
+  }
+
+  const classify = (widget) => {
+    if (widget.closest('#sidebar, .l-sidebar')) {
+      widget.classList.add('yoshi-adsense-slot--sidebar');
+    }
+    if (widget.closest('.w-singleBottom')) {
+      widget.classList.add('yoshi-adsense-slot--single-bottom');
+    }
+    if (widget.closest('.w-cta')) {
+      widget.classList.add('yoshi-adsense-slot--cta');
+    }
+    if (widget.closest('.w-beforeRelated')) {
+      widget.classList.add('yoshi-adsense-slot--before-related');
+    }
+    if (widget.closest('.w-afterRelated')) {
+      widget.classList.add('yoshi-adsense-slot--after-related');
+    }
+  };
+
+  adWidgets.forEach((widget, index) => {
+    widget.classList.add('yoshi-adsense-slot', 'is-yoshi-adsense-waiting');
+    widget.dataset.yoshiAdsenseIndex = String(index + 1);
+    classify(widget);
+
+    if (!widget.querySelector(':scope > .yoshi-adsense-slot__label')) {
+      const label = document.createElement('div');
+      label.className = 'yoshi-adsense-slot__label';
+      label.textContent = '広告';
+      widget.insertBefore(label, widget.firstChild);
+    }
+  });
+
+  if (!('IntersectionObserver' in window)) {
+    adWidgets.forEach((widget) => {
+      widget.classList.add('is-yoshi-adsense-inview', 'is-yoshi-adsense-active');
+      widget.classList.remove('is-yoshi-adsense-waiting');
+    });
+    return;
+  }
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      const widget = entry.target;
+      const inView = entry.isIntersecting && entry.intersectionRatio > 0.05;
+      widget.classList.toggle('is-yoshi-adsense-inview', inView);
+      widget.classList.toggle('is-yoshi-adsense-active', entry.isIntersecting && entry.intersectionRatio >= 0.45);
+      widget.classList.remove('is-yoshi-adsense-waiting');
+    });
+  }, {
+    root: null,
+    rootMargin: '0px 0px -12% 0px',
+    threshold: [0, 0.05, 0.45, 0.75]
+  });
+
+  adWidgets.forEach((widget) => observer.observe(widget));
+})();
+JS;
+
+    wp_add_inline_script( 'yoshilover-063-adsense-scroll-ui', $script, 'after' );
 }
 
 function yoshilover_063_build_front_density_cards() {

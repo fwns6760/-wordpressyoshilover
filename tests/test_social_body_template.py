@@ -107,6 +107,25 @@ class SocialBodyTemplateTests(unittest.TestCase):
             with self.subTest(marker=marker):
                 self.assertNotIn(marker, body)
 
+    def test_social_safe_fallback_does_not_print_internal_background_instruction(self):
+        with patch.dict("os.environ", {"ENABLE_BODY_TEMPLATE_V2": "1"}, clear=False):
+            body = rss_fetcher._build_social_safe_fallback(
+                title="報知巨人班Xが若手選手の調整を紹介",
+                summary="報知巨人班Xが若手選手の調整を紹介した。",
+                category="選手情報",
+                source_name="スポーツ報知巨人班X",
+                tweet_url="https://twitter.com/hochi_giants/status/1",
+                source_day_label="5月10日",
+                real_reactions=[],
+            )
+
+        self.assertIn("【この話が出た流れ】", body)
+        self.assertNotIn(
+            "選手の調整状況、昇格・復帰、コメントの背景のうち、source にある選手文脈だけを整理する",
+            body,
+        )
+        self.assertNotIn("source にある", body)
+
     def test_social_body_template_v2_renames_headers_and_caps_h3(self):
         with patch.dict("os.environ", {"ENABLE_BODY_TEMPLATE_V2": "1"}, clear=False):
             with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):

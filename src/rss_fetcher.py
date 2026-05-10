@@ -10971,7 +10971,11 @@ def _build_social_safe_fallback(
     if len(facts) > 3:
         background_lines.append(f"{facts[3]}。")
     else:
-        background_lines.append(_social_background_focus_line(category) + "。")
+        background_fact = (facts[-1] if facts else "").rstrip("。")
+        if background_fact:
+            background_lines.append(f"この発信で確認できる事実は、{background_fact}という点です。")
+        else:
+            background_lines.append(f"{display_source}の発信内容として確認できる範囲を整理しています。")
 
     reaction_line = ""
     if real_reactions:

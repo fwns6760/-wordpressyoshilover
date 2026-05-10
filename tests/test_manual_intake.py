@@ -1352,6 +1352,23 @@ class SourceBodyExcerptExpansionTests(_IntakeBaseTest):
                 self.assertIn("📖 本文抜粋", content)
                 self.assertIn("首脳陣も状態の良さを確認した", content)
 
+    def test_source_body_excerpt_uses_600_char_limit(self):
+        long_body = (
+            "巨人の練習で若手が存在感を見せた。"
+            + "一軍首脳陣は打撃練習でのタイミング、守備練習での初動、走塁練習での判断を順に確認した。"
+            * 12
+            + "ブルペンでの確認内容も共有された。"
+            "記事後半には別メニュー調整の詳細も記されている。"
+        )
+
+        content = self._run_article_type_with_source_excerpt(
+            "ニュース",
+            body=long_body,
+        )
+
+        self.assertIn("📖 本文抜粋", content)
+        self.assertIn("ブルペンでの確認内容も共有された", content)
+
     def test_source_body_excerpt_is_added_when_renderer_falls_back(self):
         captured: dict = {}
 

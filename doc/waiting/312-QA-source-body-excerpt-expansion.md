@@ -154,7 +154,7 @@ GO 後の実装完了時に、同じファイルへ次を追記する。
 
 #### diff概要
 
-- `manual_intake` の source本文 excerpt 上限を `SOURCE_BODY_EXCERPT_MAX_CHARS = 360` として明示。
+- `manual_intake` の source本文 excerpt 上限を `SOURCE_BODY_EXCERPT_MAX_CHARS = 600` として明示。
 - `short_news_url / postgame` 限定だった `📖 本文抜粋` 挿入を `_maybe_insert_source_body_excerpt()` に集約し、nomotoke renderer 成功時の全 template に適用。
 - renderer が required-facts gate で落ちて fallback shell になった場合も、`apply_rss_pipeline_enrichment()` 内で同じ source本文 excerpt を挿入。
 - excerpt 抽出失敗 / source本文なし / extractor import失敗 / parse例外では、元本文をそのまま返す graceful fallback を維持。
@@ -185,7 +185,7 @@ GO 後の実装完了時に、同じファイルへ次を追記する。
 #### 残った懸念
 
 - excerpt は literal 抽出のため、source HTML / JSON-LD / article body wrapper が薄いサイトでは出ない。出ない場合も記事生成は止めない。
-- 360 chars へ広げたため情報量は増えるが、全文転載に近づかないよう、今後も上限を無制限化しない。
+- 600 chars へ広げたため情報量は増えるが、全文転載に近づかないよう、今後も上限を無制限化しない。
 - source本文の先頭が title と完全一致する場合は既存 extractor の title echo 除去を維持する。
 
 #### 次回触ってはいけない範囲

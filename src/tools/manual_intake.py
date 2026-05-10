@@ -119,6 +119,23 @@ RATE_LIMIT_MAX = 5
 DEFAULT_LOCKFILE = ROOT / "logs" / "manual_intake_throttle.json"
 DEFAULT_CATEGORY_NAME = "コラム"
 SOURCE_BODY_EXCERPT_MAX_CHARS = 600
+_SOURCE_EXCERPT_CONTEXT_COMPACT_RE = re.compile(
+    r"[^0-9A-Za-z一-龥々〆ヵヶぁ-んァ-ヴー]+"
+)
+_SOURCE_EXCERPT_GENERIC_TERMS = {
+    "巨人",
+    "読売",
+    "ジャイアンツ",
+    "選手",
+    "投手",
+    "監督",
+    "コーチ",
+    "試合",
+    "記事",
+    "ニュース",
+    "一軍",
+    "二軍",
+}
 
 _X_HOSTS = {
     "twitter.com",
@@ -1021,6 +1038,7 @@ def _try_render_via_nomotoke(
         source_url=source_url,
         title=title,
         source_name=source_name,
+        summary=summary,
     )
 
     # NOMOTOKE-INTAKE-WP-CROSSLINK-001: 関連記事 / 直近の試合 / 対戦成績
@@ -1351,6 +1369,62 @@ def _insert_body_excerpt_block(
     return rendered_html + block
 
 
+def _compact_source_excerpt_context(text: str) -> str:
+    if not text:
+        return ""
+    return _SOURCE_EXCERPT_CONTEXT_COMPACT_RE.sub("", html.unescape(text))
+
+
+def _source_excerpt_context_terms(title: str, summary: str) -> list[str]:
+    scan_text = " ".join(part for part in (title, summary) if part)
+    if not scan_text:
+        return []
+    terms: list[str] = []
+    seen: set[str] = set()
+
+    def add(term: str) -> None:
+        compact = _compact_source_excerpt_context(term)
+        if len(compact) < 2:
+            return
+        if compact in _SOURCE_EXCERPT_GENERIC_TERMS:
+            return
+        if compact in seen:
+            return
+        seen.add(compact)
+        terms.append(compact)
+
+    for name in _scan_giants_player_names_in_text(scan_text):
+        add(name)
+
+    compact_context = _compact_source_excerpt_context(scan_text)
+    if len(compact_context) >= 4:
+        for size in range(4, 9):
+            if len(compact_context) < size:
+                break
+            for start in range(0, len(compact_context) - size + 1):
+                add(compact_context[start : start + size])
+                if len(terms) >= 80:
+                    return terms
+    return terms
+
+
+def _source_excerpt_matches_context(
+    excerpt: str,
+    *,
+    title: str,
+    summary: str,
+) -> bool:
+    if not excerpt:
+        return False
+    terms = _source_excerpt_context_terms(title, summary)
+    if not terms:
+        return True
+    excerpt_compact = _compact_source_excerpt_context(excerpt)
+    if not excerpt_compact:
+        return False
+    return any(term in excerpt_compact for term in terms)
+
+
 def _maybe_insert_source_body_excerpt(
     rendered_html: str,
     *,
@@ -1358,6 +1432,7 @@ def _maybe_insert_source_body_excerpt(
     source_url: str,
     title: str,
     source_name: str,
+    summary: str = "",
 ) -> str:
     """Insert a source-literal excerpt when the fetched article body is usable.
 
@@ -1385,6 +1460,12 @@ def _maybe_insert_source_body_excerpt(
     except Exception:
         excerpt = ""
     if not excerpt:
+        return rendered_html
+    if not _source_excerpt_matches_context(
+        excerpt,
+        title=title,
+        summary=summary,
+    ):
         return rendered_html
     return _insert_body_excerpt_block(rendered_html, excerpt, source_name)
 
@@ -3440,6 +3521,7 @@ def apply_rss_pipeline_enrichment(
         source_url=source_url,
         title=title,
         source_name=source_name,
+        summary=summary,
     )
 
     extra_blocks: list[str] = []

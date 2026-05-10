@@ -17415,7 +17415,10 @@ def _create_draft_with_same_fire_guard(
     if force_status:
         resolved_status = force_status
     else:
-        resolved_status = "draft" if _env_flag("RUN_DRAFT_ONLY", True) else "publish"
+        # Publish gates are evaluated after the WP post is created.  Keep
+        # creation draft-first so disabled subtypes and quality skips cannot
+        # leak as public posts before finalize_post_publication() runs.
+        resolved_status = "draft"
     # RELIABILITY-2026-05-08-DUP: 異 source 同 title の cross-source 重複を防ぐ。
     # 24h 以内に同 normalized title の WP 記事が既存なら新 post 作成せず reuse。
     # 既存 wp_client.find_recent_post_by_title が動く path、code 変更 narrow。

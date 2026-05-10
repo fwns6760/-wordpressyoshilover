@@ -384,7 +384,31 @@ class CreateDraftForceStatusTests(unittest.TestCase):
         # RUN_DRAFT_ONLY=0 でも force_status="draft" が勝つ
         self.assertEqual(captured["status"], "draft")
 
-    def test_no_force_status_keeps_existing_run_draft_only_logic(self):
+    def test_default_creation_stays_draft_before_publish_gate(self):
+        captured = {}
+
+        class FakeWP:
+            def create_post(self, title, content, **kwargs):
+                captured["status"] = kwargs.get("status")
+                return 11112
+
+        import logging
+        logger = logging.getLogger("test")
+        with patch.dict(os.environ, {"RUN_DRAFT_ONLY": "0"}, clear=False):
+            rss_fetcher._create_draft_with_same_fire_guard(
+                FakeWP(),
+                logger,
+                set(),
+                {},
+                "title",
+                "<p>body</p>",
+                [1, 2],
+                "https://example.com/x",
+                featured_media=None,
+            )
+        self.assertEqual(captured["status"], "draft")
+
+    def test_no_force_status_uses_draft_first_even_when_live_publish_enabled(self):
         captured = {}
 
         class FakeWP:
@@ -406,8 +430,8 @@ class CreateDraftForceStatusTests(unittest.TestCase):
                 "https://example.com/x",
                 featured_media=None,
             )
-        # RUN_DRAFT_ONLY=0 で publish 化 (既存挙動)
-        self.assertEqual(captured["status"], "publish")
+        # RUN_DRAFT_ONLY=0 でも publish gate 前の WP 作成は draft-first。
+        self.assertEqual(captured["status"], "draft")
 
 
 class CrossSourceTitleReuseFlagTests(unittest.TestCase):

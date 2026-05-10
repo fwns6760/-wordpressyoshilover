@@ -182,6 +182,7 @@ WEAK_GENERATED_TITLE_STRONG_MARKERS = (
 
 LEADING_PARTICLE_RE = re.compile(r"^[がをにのへとでもや]")
 RELATED_INFO_ESCAPE_RE = re.compile(r"関連情報\s*$")
+ORPHAN_SUBJECT_PARTICLE_RE = re.compile(r"(?:^|[\s\u3000、，,。.!！?？:：;；])が(?=[A-Za-zＡ-Ｚａ-ｚ0-9０-９一-龯ァ-ヴーＶV])")
 GENERIC_PERSON_NOUNS = (
     "選手",
     "投手",
@@ -244,6 +245,9 @@ NON_NAME_NAME_TOKENS = frozenset(
         "速報",
         "練習",
         "公示",
+        "新星",
+        "投打",
+        "恩返し",
         "関連情報",
     }
 )
@@ -370,6 +374,15 @@ def title_uses_related_info_escape(title: str) -> bool:
     return bool(RELATED_INFO_ESCAPE_RE.search(stripped))
 
 
+def title_has_orphan_subject_particle(title: str) -> bool:
+    """Detect title fragments that start an event with 「が」 after whitespace/punctuation."""
+    stripped = _normalize_title_text(title)
+    if not stripped:
+        return False
+    core = _strip_reserved_prefixes(stripped) or stripped
+    return bool(ORPHAN_SUBJECT_PARTICLE_RE.search(core))
+
+
 def _looks_like_person_name_token(token: str) -> bool:
     stripped = str(token or "").strip(" ・、，,")
     if not stripped:
@@ -425,6 +438,8 @@ def is_weak_subject_title(title: str) -> tuple[bool, str]:
         return False, ""
     if title_starts_with_particle(stripped):
         return True, "leading_particle_no_subject"
+    if title_has_orphan_subject_particle(stripped):
+        return True, "orphan_particle_no_subject"
     if title_uses_related_info_escape(stripped):
         return True, "related_info_escape"
     if _quality_env_flag(ENABLE_TITLE_GENERIC_COMPOUND_GUARD_ENV_FLAG, False):

@@ -131,6 +131,15 @@ class TitleValidatorTests(unittest.TestCase):
         self.assertEqual(reason, "")
         self.assertTrue(title_validator.is_non_name_speaker_label("チーム"))
 
+    def test_is_weak_subject_title_orphan_particle_inside_title(self):
+        title = "巨人は「母の日」に投打の新星が恩返し がV2点三塁打！ が15戦連続無失点！"
+
+        is_weak, reason = title_validator.is_weak_subject_title(title)
+
+        self.assertTrue(is_weak)
+        self.assertEqual(reason, "orphan_particle_no_subject")
+        self.assertFalse(title_validator.title_has_person_name_candidate(title))
+
     def test_generic_compound_title_is_preserved_when_flag_is_off(self):
         with patch.dict(os.environ, {"ENABLE_TITLE_GENERIC_COMPOUND_GUARD": "0"}, clear=False):
             self.assertTrue(title_validator.title_has_person_name_candidate("実施選手、昇格・復帰 関連情報"))

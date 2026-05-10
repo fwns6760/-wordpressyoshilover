@@ -13,6 +13,8 @@ from src.social_video_notice_contract import (
     SocialVideoNoticeArticle,
     SocialVideoNoticePayload,
 )
+from src.title_validator import is_weak_subject_title
+from src.title_validator import title_has_orphan_subject_particle
 
 
 _CLAUSE_SPLIT_RE = re.compile(r"[。！？\r\n]+")
@@ -181,10 +183,39 @@ def _trim_title(text: str, *, limit: int = 48) -> str:
     return normalized[:limit].rstrip()
 
 
+def _platform_publish_suffix(platform: str) -> str:
+    normalized = _normalize_text(platform).lower()
+    if normalized == _YOUTUBE_PLATFORM:
+        return "がYouTubeで公開"
+    if normalized == _INSTAGRAM_PLATFORM:
+        return "がInstagramで投稿"
+    return "が投稿"
+
+
+def _needs_safe_title_fallback(text: str) -> bool:
+    weak_subject, _reason = is_weak_subject_title(text)
+    return bool(weak_subject or title_has_orphan_subject_particle(text))
+
+
+def _safe_fallback_title(payload: SocialVideoNoticePayload) -> str:
+    account_name = _normalize_text(payload.source_account_name)
+    source = account_name or _platform_label(payload.source_platform)
+    suffix = _platform_publish_suffix(payload.source_platform)
+    account_type = _normalize_text(payload.source_account_type).lower()
+    caption = _normalize_text(payload.caption_or_title)
+    if account_type in {"ob", "alumni"} and any(marker in caption for marker in ("発言", "語", "コメント")):
+        return _trim_title(f"巨人OBの発言が話題 {source}{suffix}")
+    if any(marker in caption for marker in ("練習動画", "守備練習", "打撃練習", "練習")):
+        return _trim_title(f"巨人練習動画の話題 {source}{suffix}")
+    return _trim_title(f"巨人関連の話題 {source}{suffix}")
+
+
 def _build_title(payload: SocialVideoNoticePayload, nucleus_event: str) -> str:
     parts = [_normalize_text(payload.source_account_name), _normalize_text(nucleus_event)]
     combined = " ".join(part for part in parts if part)
     fallback = combined or _normalize_text(payload.caption_or_title)
+    if _needs_safe_title_fallback(fallback) or _needs_safe_title_fallback(nucleus_event):
+        return _safe_fallback_title(payload)
     return _trim_title(fallback)
 
 

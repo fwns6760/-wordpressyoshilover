@@ -156,6 +156,19 @@ class SocialVideoNoticeBuilderTests(unittest.TestCase):
         self.assertLessEqual(len(article.title), 48)
         self.assertTrue(article.title.startswith("巨人公式 "))
 
+    def test_builder_uses_safe_title_for_nameless_orphan_particle_caption(self):
+        article = build_social_video_notice_article(
+            self._youtube_payload(
+                source_account_name="OBチャンネル",
+                source_account_type="ob",
+                caption_or_title="発言 がV2点三塁打！ が15戦連続無失点！",
+            )
+        )
+
+        self.assertEqual(article.title, "巨人OBの発言が話題 OBチャンネルがYouTubeで公開")
+        self.assertNotIn(" がV", article.title)
+        self.assertNotIn(" が15戦", article.title)
+
 
 if __name__ == "__main__":
     unittest.main()

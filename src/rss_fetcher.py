@@ -52,6 +52,7 @@ from title_validator import is_non_name_speaker_label
 from title_validator import is_weak_generated_title
 from title_validator import is_weak_subject_title
 from title_validator import title_has_minimum_article_context
+from title_validator import title_has_orphan_subject_particle
 from title_validator import title_has_person_name_candidate
 from title_validator import validate_title_candidate as _validate_title_candidate
 from title_validator import is_supported_subtype as _title_validator_supports_subtype
@@ -18652,6 +18653,99 @@ def _log_title_player_name_unresolved(
     logger.warning(json.dumps(payload, ensure_ascii=False))
 
 
+def _is_social_or_video_title_source(source_url: str, source_name: str) -> bool:
+    source_url_l = str(source_url or "").lower()
+    source_name_clean = str(source_name or "").strip()
+    source_name_l = source_name_clean.lower()
+    return bool(
+        any(
+            marker in source_url_l
+            for marker in ("x.com/", "twitter.com/", "youtube.com/", "youtu.be/", "instagram.com/")
+        )
+        or any(marker in source_name_l for marker in ("youtube", "instagram"))
+        or source_name_clean.endswith(("X", "Ｘ"))
+        or any(marker in source_name_clean for marker in ("公式X", "公式Ｘ", "巨人班X", "巨人班Ｘ"))
+    )
+
+
+def _social_title_publish_suffix(source_url: str, source_name: str) -> str:
+    source_url_l = str(source_url or "").lower()
+    source_name_l = str(source_name or "").lower()
+    if "youtube.com/" in source_url_l or "youtu.be/" in source_url_l or "youtube" in source_name_l:
+        return "がYouTubeで公開"
+    if "instagram.com/" in source_url_l or "instagram" in source_name_l:
+        return "がInstagramで投稿"
+    return "が投稿"
+
+
+def _nameless_social_title_topic(source_title: str, summary: str, source_url: str, source_name: str) -> str:
+    source_text = _strip_html(f"{source_title} {summary}")
+    source_url_l = str(source_url or "").lower()
+    source_name_l = str(source_name or "").lower()
+    quote_match = _re.search(r"[「『]([^」』]{1,12})[」』]", source_text)
+    quote_label = f"「{quote_match.group(1)}」" if quote_match else ""
+
+    if ("youtube.com/" in source_url_l or "youtu.be/" in source_url_l or "youtube" in source_name_l) and any(
+        marker in source_text for marker in ("OB", "ＯＢ", "元巨人", "発言", "語")
+    ):
+        return "巨人OBの発言が話題" if any(marker in source_text for marker in ("発言", "語", "コメント")) else "巨人OBの話題"
+    if quote_label and "投打" in source_text:
+        return f"巨人{quote_label}に投打で話題"
+    if "投打" in source_text:
+        return "巨人投打の話題"
+    if any(marker in source_text for marker in ("二軍", "２軍", "2軍", "ファーム")):
+        return "巨人二軍の話題"
+    if any(marker in source_text for marker in ("練習動画", "守備練習", "打撃練習", "練習")):
+        return "巨人練習動画の話題"
+    if any(marker in source_text for marker in ("試合前", "先発", "スタメン")):
+        return "巨人試合前の話題"
+    if any(marker in source_text for marker in ("ヒーロー", "お立ち台")):
+        return "巨人ヒーロー投稿の話題"
+    if quote_label:
+        return f"巨人{quote_label}の話題"
+    return "巨人関連の話題"
+
+
+def _build_nameless_social_safe_title(
+    *,
+    source_title: str,
+    summary: str,
+    source_name: str,
+    source_url: str,
+) -> str:
+    topic = _nameless_social_title_topic(source_title, summary, source_url, source_name)
+    source_label = _collapse_ws(source_name or "X")
+    suffix = _social_title_publish_suffix(source_url, source_name)
+    return _trim_display_title(f"{topic} {source_label}{suffix}", max_chars=48)
+
+
+def _title_needs_nameless_social_safety(title: str) -> bool:
+    weak_subject, _reason = is_weak_subject_title(title)
+    return bool(weak_subject or title_has_orphan_subject_particle(title))
+
+
+def _log_nameless_social_safe_title_applied(
+    logger: logging.Logger,
+    *,
+    source_url: str,
+    source_name: str,
+    category: str,
+    article_subtype: str,
+    original_title: str,
+    safe_title: str,
+) -> None:
+    payload = {
+        "event": "nameless_social_safe_title_applied",
+        "source_url_hash": _hash_duplicate_guard_value(source_url),
+        "source_name": source_name,
+        "category": category,
+        "article_subtype": article_subtype,
+        "original_title": original_title,
+        "safe_title": safe_title,
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
 def _apply_title_player_name_backfill(
     *,
     rewritten_title: str,
@@ -18684,7 +18778,6 @@ def _apply_title_player_name_backfill(
     final_title = _trim_display_title(result.title or rewritten_title)
     comparison_title = source_title
     if result.review_reason == "title_player_name_unresolved":
-        comparison_title = final_title
         if logger is not None:
             _log_title_player_name_unresolved(
                 logger,
@@ -18695,6 +18788,31 @@ def _apply_title_player_name_backfill(
                 source_title=source_title,
                 rewritten_title=final_title,
             )
+        if (
+            _is_social_or_video_title_source(source_url, source_name)
+            and _title_needs_nameless_social_safety(final_title)
+        ):
+            safe_title = _build_nameless_social_safe_title(
+                source_title=source_title,
+                summary=summary,
+                source_name=source_name,
+                source_url=source_url,
+            )
+            if safe_title:
+                if logger is not None:
+                    _log_nameless_social_safe_title_applied(
+                        logger,
+                        source_url=source_url,
+                        source_name=source_name,
+                        category=category,
+                        article_subtype=article_subtype,
+                        original_title=final_title,
+                        safe_title=safe_title,
+                    )
+                final_title = safe_title
+                comparison_title = source_title
+        else:
+            comparison_title = final_title
     return final_title, comparison_title
 
 

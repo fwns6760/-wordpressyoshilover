@@ -238,6 +238,25 @@ class TitlePlayerNameBackfillTests(unittest.TestCase):
         self.assertEqual(comparison_title, "投手コメント整理")
         self.assertIsNone(fallback)
 
+    def test_fetcher_adapter_uses_safe_title_for_nameless_social_orphan_particle(self):
+        source_title = "巨人は「母の日」に投打の新星が恩返し がV2点三塁打！ が15戦連続無失点！"
+        final_title, comparison_title = rss_fetcher._apply_title_player_name_backfill(
+            rewritten_title=source_title,
+            source_title=source_title,
+            source_body="巨人は母の日に投打の新星が恩返し。V2点三塁打と15戦連続無失点が伝えられた。",
+            summary="巨人は母の日に投打の新星が恩返し。V2点三塁打と15戦連続無失点が伝えられた。",
+            category="試合速報",
+            article_subtype="x_short_player",
+            logger=logging.getLogger("rss_fetcher"),
+            source_name="サンスポ巨人X",
+            source_url="https://x.com/sanspo_giants/status/2057100000000012345",
+        )
+
+        self.assertEqual(final_title, "巨人「母の日」に投打で話題 サンスポ巨人Xが投稿")
+        self.assertEqual(comparison_title, source_title)
+        self.assertNotIn(" がV", final_title)
+        self.assertNotIn(" が15戦", final_title)
+
 
 if __name__ == "__main__":
     unittest.main()

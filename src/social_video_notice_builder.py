@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import html
+import json
 import re
+from datetime import datetime
 
 from src.social_video_notice_contract import (
     OPINION_LEAK_PATTERNS,
@@ -18,6 +20,7 @@ _WHITESPACE_RE = re.compile(r"\s+")
 _TRAILING_SENTENCE_RE = re.compile(r"[。！？.!?]+$")
 _PLATFORM_LABELS = {"instagram": "Instagram", "youtube": "YouTube"}
 _OPINION_LEAK_RE = re.compile("|".join(re.escape(pattern) for pattern in OPINION_LEAK_PATTERNS))
+_INSTAGRAM_PLATFORM = "instagram"
 
 
 def _normalize_text(value: str | None) -> str:
@@ -58,6 +61,17 @@ def _platform_label(platform: str) -> str:
     return _PLATFORM_LABELS.get(normalized, normalized or "Source")
 
 
+def _display_date(value: str | None) -> str:
+    normalized = _normalize_text(value)
+    if not normalized:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+    except ValueError:
+        return normalized.split("T", 1)[0]
+    return parsed.date().isoformat()
+
+
 def _contains_opinion_leak(text: str | None) -> bool:
     return bool(_OPINION_LEAK_RE.search(_normalize_text(text)))
 
@@ -66,7 +80,49 @@ def _build_source_line(payload: SocialVideoNoticePayload) -> str:
     source_label = f"{_platform_label(payload.source_platform)} {_display_account_name(payload.source_account_name)}".strip()
     escaped_url = html.escape(_normalize_text(payload.source_url), quote=True)
     escaped_label = html.escape(source_label, quote=False)
+    platform = _normalize_text(payload.source_platform).lower()
+    if platform == _INSTAGRAM_PLATFORM:
+        account_name = _normalize_text(payload.source_account_name).lstrip("@")
+        account_handle = _display_account_name(payload.source_account_name)
+        date_prefix = f"{_display_date(payload.published_at)} " if _display_date(payload.published_at) else ""
+        escaped_account_name = html.escape(account_name, quote=False)
+        escaped_account_handle = html.escape(account_handle, quote=False)
+        return (
+            '<p class="yoshilover-social-source">'
+            f"■ {date_prefix}{escaped_account_name}({escaped_account_handle})さん | Instagram<br>"
+            f'出典: <a href="{escaped_url}">{escaped_label}</a></p>'
+        )
     return f'<p>出典: <a href="{escaped_url}">{escaped_label}</a></p>'
+
+
+def _build_instagram_embed_block(payload: SocialVideoNoticePayload) -> str | None:
+    if _normalize_text(payload.source_platform).lower() != _INSTAGRAM_PLATFORM:
+        return None
+    source_url = _normalize_text(payload.source_url)
+    if not source_url:
+        return None
+    escaped_url = html.escape(source_url, quote=False)
+    attrs = json.dumps(
+        {
+            "url": source_url,
+            "type": "rich",
+            "providerNameSlug": "instagram",
+            "responsive": True,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return "\n".join(
+        [
+            f"<!-- wp:embed {attrs} -->",
+            '<figure class="wp-block-embed is-type-rich is-provider-instagram wp-block-embed-instagram">',
+            '<div class="wp-block-embed__wrapper">',
+            escaped_url,
+            "</div>",
+            "</figure>",
+            "<!-- /wp:embed -->",
+        ]
+    )
 
 
 def _build_summary_line(payload: SocialVideoNoticePayload) -> str:
@@ -102,7 +158,11 @@ def build_social_video_notice_article(
     """Build a social_video_notice article from a single source payload."""
 
     nucleus_event = _first_clause(payload.caption_or_title)
-    paragraphs = [_build_source_line(payload), _build_summary_line(payload)]
+    paragraphs = [_build_source_line(payload)]
+    embed_block = _build_instagram_embed_block(payload)
+    if embed_block:
+        paragraphs.append(embed_block)
+    paragraphs.append(_build_summary_line(payload))
     supplement_line = _build_supplement_line(payload)
     if supplement_line:
         paragraphs.append(supplement_line)

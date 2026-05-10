@@ -48,6 +48,20 @@ class SocialVideoNoticeValidatorTests(unittest.TestCase):
         article = build_social_video_notice_article(self._youtube_payload())
         return replace(article, **overrides)
 
+    def _instagram_body_with_embed(self, summary_html: str) -> str:
+        return (
+            '<p class="yoshilover-social-source">■ 2026-04-24 巨人公式(@巨人公式)さん | Instagram<br>'
+            '出典: <a href="https://www.instagram.com/p/ABC123/">Instagram @巨人公式</a></p>\n'
+            '<!-- wp:embed {"url": "https://www.instagram.com/p/ABC123/", "type": "rich", "providerNameSlug": "instagram", "responsive": true} -->\n'
+            '<figure class="wp-block-embed is-type-rich is-provider-instagram wp-block-embed-instagram">\n'
+            '<div class="wp-block-embed__wrapper">\n'
+            "https://www.instagram.com/p/ABC123/\n"
+            "</div>\n"
+            "</figure>\n"
+            "<!-- /wp:embed -->\n"
+            f"{summary_html}"
+        )
+
     def test_valid_instagram_article_passes_validation(self):
         result = validate_social_video_notice_article(self._instagram_article())
 
@@ -114,10 +128,63 @@ class SocialVideoNoticeValidatorTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(result.reason_code, "SOURCE_BODY_MISMATCH")
 
-    def test_opinion_leak_darou_fails_validation(self):
+    def test_instagram_article_without_embed_block_fails_with_embed_missing(self):
         article = self._instagram_article(
-            body_html='<p>出典: <a href="https://www.instagram.com/p/ABC123/">Instagram @巨人公式</a></p>\n<p>練習動画を公開しただろう。</p>'
+            body_html=(
+                '<p>出典: <a href="https://www.instagram.com/p/ABC123/">Instagram @巨人公式</a></p>\n'
+                "<p>練習動画を公開した。</p>"
+            )
         )
+
+        result = validate_social_video_notice_article(article)
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.reason_code, "EMBED_MISSING")
+
+    def test_instagram_profile_url_fails_with_unsupported_instagram_url(self):
+        article = self._instagram_article(
+            source_url="https://www.instagram.com/yomiuri.giants/",
+            body_html=(
+                '<p>出典: <a href="https://www.instagram.com/yomiuri.giants/">Instagram @巨人公式</a></p>\n'
+                '<!-- wp:embed {"url":"https://www.instagram.com/yomiuri.giants/","type":"rich","providerNameSlug":"instagram"} -->\n'
+                '<figure class="wp-block-embed is-type-rich is-provider-instagram wp-block-embed-instagram">\n'
+                '<div class="wp-block-embed__wrapper">\n'
+                "https://www.instagram.com/yomiuri.giants/\n"
+                "</div>\n"
+                "</figure>\n"
+                "<!-- /wp:embed -->\n"
+                "<p>練習動画を公開した。</p>"
+            ),
+        )
+
+        result = validate_social_video_notice_article(article)
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.reason_code, "UNSUPPORTED_INSTAGRAM_URL")
+
+    def test_instagram_article_with_reuploaded_image_fails_validation(self):
+        article = self._instagram_article(
+            body_html=(
+                '<p>出典: <a href="https://www.instagram.com/p/ABC123/">Instagram @巨人公式</a></p>\n'
+                '<!-- wp:embed {"url":"https://www.instagram.com/p/ABC123/","type":"rich","providerNameSlug":"instagram"} -->\n'
+                '<figure class="wp-block-embed is-type-rich is-provider-instagram wp-block-embed-instagram">\n'
+                '<div class="wp-block-embed__wrapper">\n'
+                "https://www.instagram.com/p/ABC123/\n"
+                "</div>\n"
+                "</figure>\n"
+                "<!-- /wp:embed -->\n"
+                '<figure><img src="https://yoshilover.com/wp-content/uploads/instagram-copy.jpg" /></figure>\n'
+                "<p>練習動画を公開した。</p>"
+            )
+        )
+
+        result = validate_social_video_notice_article(article)
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.reason_code, "IMAGE_REUPLOAD_FORBIDDEN")
+
+    def test_opinion_leak_darou_fails_validation(self):
+        article = self._instagram_article(body_html=self._instagram_body_with_embed("<p>練習動画を公開しただろう。</p>"))
 
         result = validate_social_video_notice_article(article)
 
@@ -125,9 +192,7 @@ class SocialVideoNoticeValidatorTests(unittest.TestCase):
         self.assertEqual(result.reason_code, "OPINION_LEAK")
 
     def test_opinion_leak_rashii_fails_validation(self):
-        article = self._instagram_article(
-            body_html='<p>出典: <a href="https://www.instagram.com/p/ABC123/">Instagram @巨人公式</a></p>\n<p>練習動画を公開したらしい。</p>'
-        )
+        article = self._instagram_article(body_html=self._instagram_body_with_embed("<p>練習動画を公開したらしい。</p>"))
 
         result = validate_social_video_notice_article(article)
 
@@ -135,9 +200,7 @@ class SocialVideoNoticeValidatorTests(unittest.TestCase):
         self.assertEqual(result.reason_code, "OPINION_LEAK")
 
     def test_opinion_leak_uwasa_fails_validation(self):
-        article = self._instagram_article(
-            body_html='<p>出典: <a href="https://www.instagram.com/p/ABC123/">Instagram @巨人公式</a></p>\n<p>練習動画に関する噂が広がっている。</p>'
-        )
+        article = self._instagram_article(body_html=self._instagram_body_with_embed("<p>練習動画に関する噂が広がっている。</p>"))
 
         result = validate_social_video_notice_article(article)
 
@@ -147,7 +210,7 @@ class SocialVideoNoticeValidatorTests(unittest.TestCase):
     def test_subject_absent_from_body_maps_to_title_body_mismatch(self):
         article = self._instagram_article(
             title="坂本勇人が打撃練習を公開した",
-            body_html='<p>出典: <a href="https://www.instagram.com/p/ABC123/">Instagram @巨人公式</a></p>\n<p>岡本和真が打撃練習を公開した。</p>',
+            body_html=self._instagram_body_with_embed("<p>岡本和真が打撃練習を公開した。</p>"),
             nucleus_subject="巨人公式",
         )
 
@@ -160,10 +223,7 @@ class SocialVideoNoticeValidatorTests(unittest.TestCase):
     def test_multiple_nuclei_from_body_maps_to_multiple_nuclei(self):
         article = self._instagram_article(
             title="巨人公式 練習場面を公開した",
-            body_html=(
-                '<p>出典: <a href="https://www.instagram.com/p/ABC123/">Instagram @巨人公式</a></p>\n'
-                "<p>坂本勇人は打撃練習をした。岡本和真は守備練習をした。</p>"
-            ),
+            body_html=self._instagram_body_with_embed("<p>坂本勇人は打撃練習をした。岡本和真は守備練習をした。</p>"),
         )
 
         result = validate_social_video_notice_article(article)
@@ -187,6 +247,56 @@ class SocialVideoNoticeValidatorTests(unittest.TestCase):
         report = json.loads(completed.stdout)
         self.assertTrue(report["validation"]["ok"])
         self.assertEqual(report["article"]["subtype"], "social_video_notice")
+
+    def test_cli_can_build_instagram_notice_from_registry_account(self):
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "src.tools.run_social_video_notice_dry_run",
+                "--instagram-url",
+                "https://www.instagram.com/p/ABC123/",
+                "--account-handle",
+                "sportshochi_giants",
+                "--caption",
+                "練習動画を公開した",
+                "--media-kind",
+                "video",
+                "--published-at",
+                "2026-04-24T09:00:00+09:00",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        report = json.loads(completed.stdout)
+        self.assertTrue(report["validation"]["ok"])
+        self.assertEqual(report["article"]["source_account_name"], "スポーツ報知 巨人取材班")
+        self.assertEqual(report["article"]["source_account_type"], "media")
+        self.assertIn("wp-block-embed-instagram", report["article"]["body_html"])
+
+    def test_cli_rejects_unknown_instagram_account_instead_of_silent_confirming(self):
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "src.tools.run_social_video_notice_dry_run",
+                "--instagram-url",
+                "https://www.instagram.com/p/ABC123/",
+                "--account-handle",
+                "unknown_giants_like_account",
+                "--caption",
+                "練習動画を公開した",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertIn("unknown Instagram source", completed.stderr)
 
     def test_cli_round_trip_from_stdin_returns_exit_one_on_validation_fail(self):
         payload = asdict(self._instagram_payload(source_platform="tiktok"))

@@ -67,20 +67,54 @@ class SocialVideoNoticeBuilderTests(unittest.TestCase):
 
         self.assertIn("巨人公式", article.body_html.splitlines()[0])
 
-    def test_body_second_line_contains_caption_summary(self):
+    def test_body_contains_caption_summary_after_instagram_embed(self):
         article = build_social_video_notice_article(self._instagram_payload())
 
-        self.assertEqual(article.body_html.splitlines()[1], "<p>練習動画を公開した。</p>")
+        self.assertIn("<p>練習動画を公開した。</p>", article.body_html)
+        self.assertLess(article.body_html.index("<!-- /wp:embed -->"), article.body_html.index("<p>練習動画を公開した。</p>"))
+
+    def test_instagram_body_uses_nomotoke_style_source_header(self):
+        article = build_social_video_notice_article(self._instagram_payload())
+
+        first_line = article.body_html.splitlines()[0]
+        self.assertIn('class="yoshilover-social-source"', first_line)
+        self.assertIn("■ 2026-04-24", first_line)
+        self.assertIn("巨人公式(@巨人公式)さん | Instagram", first_line)
+
+    def test_instagram_body_contains_wordpress_embed_block_between_source_and_summary(self):
+        article = build_social_video_notice_article(self._instagram_payload())
+
+        self.assertIn('<!-- wp:embed {"url":"https://www.instagram.com/p/ABC123/"', article.body_html)
+        self.assertIn("wp-block-embed-instagram", article.body_html)
+        self.assertIn("<div class=\"wp-block-embed__wrapper\">\nhttps://www.instagram.com/p/ABC123/", article.body_html)
+        self.assertLess(article.body_html.index("出典:"), article.body_html.index("<!-- wp:embed"))
+        self.assertLess(article.body_html.index("<!-- /wp:embed -->"), article.body_html.index("<p>練習動画を公開した。</p>"))
+
+    def test_instagram_caption_uses_first_literal_sentence_without_reprinting_full_caption(self):
+        article = build_social_video_notice_article(
+            self._instagram_payload(
+                caption_or_title=(
+                    "坂本勇人が守備練習を公開した。"
+                    "二つ目の文は長い近況説明として本文へ丸ごと転載しない。"
+                    "三つ目の文も本文へ入れない。"
+                )
+            )
+        )
+
+        self.assertIn("<p>坂本勇人が守備練習を公開した。</p>", article.body_html)
+        self.assertNotIn("二つ目の文", article.body_html)
+        self.assertNotIn("三つ目の文", article.body_html)
 
     def test_builder_includes_supplement_note_as_third_line_when_present(self):
         article = build_social_video_notice_article(self._instagram_payload())
 
-        self.assertEqual(article.body_html.splitlines()[2], "<p>東京ドームでの調整場面が確認できる。</p>")
+        self.assertIn("<p>東京ドームでの調整場面が確認できる。</p>", article.body_html)
+        self.assertLess(article.body_html.index("<p>練習動画を公開した。</p>"), article.body_html.index("<p>東京ドームでの調整場面が確認できる。</p>"))
 
     def test_builder_omits_third_line_when_supplement_note_is_absent(self):
         article = build_social_video_notice_article(self._instagram_payload(supplement_note=None))
 
-        self.assertEqual(len(article.body_html.splitlines()), 2)
+        self.assertNotIn("東京ドームでの調整場面", article.body_html)
 
     def test_builder_sets_subtype_to_social_video_notice(self):
         article = build_social_video_notice_article(self._youtube_payload())

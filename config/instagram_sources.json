@@ -1,0 +1,538 @@
+{
+  "version": 1,
+  "updated": "2026-05-10",
+  "policy": "Broad Giants Instagram shelf for human review. Unknown sources are not silently confirmed.",
+  "sources": [
+    {
+      "handle": "yomiuri.giants",
+      "display_name": "読売ジャイアンツ公式",
+      "role": "official",
+      "status": "confirmed",
+      "roster_status": "team_official",
+      "reference": "official-team-sns",
+      "notes": "球団公式"
+    },
+    {
+      "handle": "sportshochi_giants",
+      "display_name": "スポーツ報知 巨人取材班",
+      "role": "media",
+      "status": "confirmed",
+      "roster_status": "media",
+      "reference": "hochi-official-sns",
+      "notes": "報知の巨人担当"
+    },
+    {
+      "handle": "sportshochi",
+      "display_name": "スポーツ報知",
+      "role": "media",
+      "status": "confirmed",
+      "roster_status": "media",
+      "reference": "hochi-official-sns",
+      "notes": "報知総合"
+    },
+    {
+      "handle": "hochi_photo",
+      "display_name": "報知写真部",
+      "role": "media",
+      "status": "confirmed",
+      "roster_status": "media",
+      "reference": "hochi-official-sns",
+      "notes": "写真系投稿"
+    },
+    {
+      "handle": "hayato.sakamoto6",
+      "display_name": "坂本勇人",
+      "role": "player",
+      "status": "confirmed",
+      "roster_status": "current_roster",
+      "reference": "instagrammernews-player-page",
+      "notes": "現役選手"
+    },
+    {
+      "handle": "shogo.asano.1124",
+      "display_name": "浅野翔吾",
+      "role": "player",
+      "status": "confirmed",
+      "roster_status": "current_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "現役選手"
+    },
+    {
+      "handle": "yamasaki_iori",
+      "display_name": "山崎伊織",
+      "role": "player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-freak-and-baseball-sns",
+      "notes": "複数リストで確認。受け入れ時に目視確認"
+    },
+    {
+      "handle": "hotta_kenshin",
+      "display_name": "堀田賢慎",
+      "role": "player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-freak-and-baseball-sns",
+      "notes": "受け入れ時に目視確認"
+    },
+    {
+      "handle": "yuheitakanashi",
+      "display_name": "高梨雄平",
+      "role": "player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-freak-and-baseball-sns",
+      "notes": "受け入れ時に目視確認"
+    },
+    {
+      "handle": "nakayama_raito40",
+      "display_name": "中山礼都",
+      "role": "player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-freak-and-baseball-sns",
+      "notes": "受け入れ時に目視確認"
+    },
+    {
+      "handle": "g_haruto91",
+      "display_name": "井上温大",
+      "role": "player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-freak-and-baseball-sns",
+      "notes": "受け入れ時に目視確認"
+    },
+    {
+      "handle": "dai.1.24",
+      "display_name": "湯浅大",
+      "role": "player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-freak-and-baseball-sns",
+      "notes": "受け入れ時に目視確認"
+    },
+    {
+      "handle": "mako012435",
+      "display_name": "門脇誠",
+      "role": "player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "受け入れ時に目視確認"
+    },
+    {
+      "handle": "masahiro_tanaka.official",
+      "display_name": "田中将大",
+      "role": "player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "受け入れ時に目視確認"
+    },
+    {
+      "handle": "hagi.masaya_1228",
+      "display_name": "萩尾匡也",
+      "role": "player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "受け入れ時に目視確認"
+    },
+    {
+      "handle": "taisei.ota629",
+      "display_name": "大勢",
+      "role": "candidate_player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "taisei.ota15 との表記差あり。受け入れ時に目視確認"
+    },
+    {
+      "handle": "taisei.ota15",
+      "display_name": "大勢",
+      "role": "candidate_player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "instagrammernews-player-page",
+      "notes": "taisei.ota629 との表記差あり。受け入れ時に目視確認"
+    },
+    {
+      "handle": "_____yuji",
+      "display_name": "赤星優志",
+      "role": "player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "受け入れ時に目視確認"
+    },
+    {
+      "handle": "kori.takuya",
+      "display_name": "郡拓也",
+      "role": "player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "受け入れ時に目視確認"
+    },
+    {
+      "handle": "okadady",
+      "display_name": "岡田悠希",
+      "role": "player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "受け入れ時に目視確認"
+    },
+    {
+      "handle": "baldo0125",
+      "display_name": "バルドナード",
+      "role": "player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "受け入れ時に目視確認"
+    },
+    {
+      "handle": "richard52.0618",
+      "display_name": "リチャード",
+      "role": "player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "受け入れ時に目視確認"
+    },
+    {
+      "handle": "gakuto.35",
+      "display_name": "若林楽人",
+      "role": "player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "受け入れ時に目視確認"
+    },
+    {
+      "handle": "masudariku61",
+      "display_name": "増田陸",
+      "role": "player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "受け入れ時に目視確認"
+    },
+    {
+      "handle": "kai.yokogawa_62",
+      "display_name": "横川凱",
+      "role": "candidate_player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "kai.yokogawa との表記差あり。受け入れ時に目視確認"
+    },
+    {
+      "handle": "kai.yokogawa",
+      "display_name": "横川凱",
+      "role": "candidate_player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "instagrammernews-player-page",
+      "notes": "kai.yokogawa_62 との表記差あり。受け入れ時に目視確認"
+    },
+    {
+      "handle": "zumi_53",
+      "display_name": "泉圭輔",
+      "role": "player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "受け入れ時に目視確認"
+    },
+    {
+      "handle": "iskw_tty",
+      "display_name": "石川達也",
+      "role": "player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "受け入れ時に目視確認"
+    },
+    {
+      "handle": "heinai_ryuta",
+      "display_name": "平内龍太",
+      "role": "player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-freak-and-baseball-sns",
+      "notes": "受け入れ時に目視確認"
+    },
+    {
+      "handle": "yamase.67",
+      "display_name": "山瀬慎之助",
+      "role": "player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "受け入れ時に目視確認"
+    },
+    {
+      "handle": "sho_0404_seihi114",
+      "display_name": "戸郷翔征",
+      "role": "candidate_player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-freak-and-baseball-sns",
+      "notes": "shosei_togo との表記差あり。受け入れ時に目視確認"
+    },
+    {
+      "handle": "shosei_togo",
+      "display_name": "戸郷翔征",
+      "role": "candidate_player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "instagrammernews-player-page",
+      "notes": "sho_0404_seihi114 との表記差あり。受け入れ時に目視確認"
+    },
+    {
+      "handle": "nokyskw29",
+      "display_name": "吉川尚輝",
+      "role": "candidate_player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "nokyskw2 との表記差あり。受け入れ時に目視確認"
+    },
+    {
+      "handle": "nokyskw2",
+      "display_name": "吉川尚輝",
+      "role": "candidate_player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-freak",
+      "notes": "nokyskw29 との表記差あり。受け入れ時に目視確認"
+    },
+    {
+      "handle": "kita_yg027",
+      "display_name": "喜多隆介",
+      "role": "candidate_player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "kita_yg027_94 との表記差あり。受け入れ時に目視確認"
+    },
+    {
+      "handle": "kita_yg027_94",
+      "display_name": "喜多隆介",
+      "role": "candidate_player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-freak",
+      "notes": "kita_yg027 との表記差あり。受け入れ時に目視確認"
+    },
+    {
+      "handle": "makoto5528",
+      "display_name": "京本眞",
+      "role": "development_player",
+      "status": "candidate",
+      "roster_status": "development_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "若手・育成棚"
+    },
+    {
+      "handle": "ayumu_nakata",
+      "display_name": "中田歩夢",
+      "role": "development_player",
+      "status": "candidate",
+      "roster_status": "development_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "若手・育成棚"
+    },
+    {
+      "handle": "gen05_06",
+      "display_name": "村山源",
+      "role": "development_player",
+      "status": "candidate",
+      "roster_status": "development_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "若手・育成棚"
+    },
+    {
+      "handle": "motoya_kinoshita",
+      "display_name": "木下幹也",
+      "role": "development_player",
+      "status": "candidate",
+      "roster_status": "development_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "若手・育成棚"
+    },
+    {
+      "handle": "usef_usef_",
+      "display_name": "吉村優聖歩",
+      "role": "development_player",
+      "status": "candidate",
+      "roster_status": "development_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "若手・育成棚"
+    },
+    {
+      "handle": "lucianoelvis",
+      "display_name": "ルシアーノ",
+      "role": "player",
+      "status": "candidate",
+      "roster_status": "current_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "受け入れ時に目視確認"
+    },
+    {
+      "handle": "shiroki.yamato_68",
+      "display_name": "代木大和",
+      "role": "development_player",
+      "status": "candidate",
+      "roster_status": "development_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "若手・育成棚"
+    },
+    {
+      "handle": "sugi_toshi18",
+      "display_name": "杉内俊哉",
+      "role": "coach",
+      "status": "candidate",
+      "roster_status": "coach",
+      "reference": "baseball-sns-2025",
+      "notes": "首脳陣棚"
+    },
+    {
+      "handle": "hashigami73",
+      "display_name": "橋上秀樹",
+      "role": "coach",
+      "status": "candidate",
+      "roster_status": "coach",
+      "reference": "baseball-sns-2025",
+      "notes": "首脳陣棚"
+    },
+    {
+      "handle": "suzukitakahiro12",
+      "display_name": "鈴木尚広",
+      "role": "coach",
+      "status": "candidate",
+      "roster_status": "coach_or_ob",
+      "reference": "baseball-sns-2025",
+      "notes": "12takahiro との表記差あり。受け入れ時に目視確認"
+    },
+    {
+      "handle": "shigeyuki_furuki",
+      "display_name": "古城茂幸",
+      "role": "coach",
+      "status": "candidate",
+      "roster_status": "coach",
+      "reference": "baseball-sns-2025",
+      "notes": "首脳陣棚"
+    },
+    {
+      "handle": "makihara17",
+      "display_name": "槙原寛己",
+      "role": "ob",
+      "status": "candidate",
+      "roster_status": "ob",
+      "reference": "instagrammernews-ob-page",
+      "notes": "OB棚"
+    },
+    {
+      "handle": "davecompany22",
+      "display_name": "デーブ大久保",
+      "role": "ob",
+      "status": "candidate",
+      "roster_status": "ob",
+      "reference": "instagrammernews-ob-page",
+      "notes": "OB棚"
+    },
+    {
+      "handle": "kame__79",
+      "display_name": "亀井善行",
+      "role": "ob",
+      "status": "candidate",
+      "roster_status": "ob_or_staff",
+      "reference": "instagrammernews-ob-page",
+      "notes": "OB棚"
+    },
+    {
+      "handle": "12takahiro",
+      "display_name": "鈴木尚広",
+      "role": "ob",
+      "status": "candidate",
+      "roster_status": "coach_or_ob",
+      "reference": "instagrammernews-ob-page",
+      "notes": "suzukitakahiro12 との表記差あり。受け入れ時に目視確認"
+    },
+    {
+      "handle": "zwheels40",
+      "display_name": "ウィーラー",
+      "role": "ob",
+      "status": "candidate",
+      "roster_status": "ob",
+      "reference": "baseball-sns-2025",
+      "notes": "OB棚"
+    },
+    {
+      "handle": "kazuma.okamoto25",
+      "display_name": "岡本和真",
+      "role": "former_player",
+      "status": "hold",
+      "roster_status": "not_on_2026_giants_roster",
+      "reference": "instagrammernews-player-page",
+      "notes": "巨人文脈なら人間確認。自動review candidateにはしない"
+    },
+    {
+      "handle": "akihiro_yuto55",
+      "display_name": "秋広優人",
+      "role": "former_player",
+      "status": "hold",
+      "roster_status": "not_on_2026_giants_roster",
+      "reference": "instagrammernews-player-page",
+      "notes": "巨人文脈なら人間確認。自動review candidateにはしない"
+    },
+    {
+      "handle": "akiaki_yuto68",
+      "display_name": "秋広優人",
+      "role": "former_player",
+      "status": "hold",
+      "roster_status": "not_on_2026_giants_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "akihiro_yuto55 との表記差あり。自動review candidateにはしない"
+    },
+    {
+      "handle": "louis_okoye",
+      "display_name": "オコエ瑠偉",
+      "role": "former_player",
+      "status": "hold",
+      "roster_status": "not_on_2026_giants_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "巨人文脈なら人間確認。自動review candidateにはしない"
+    },
+    {
+      "handle": "shigenobu_shinnosuke",
+      "display_name": "重信慎之介",
+      "role": "former_player",
+      "status": "hold",
+      "roster_status": "not_on_2026_giants_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "巨人文脈なら人間確認。自動review candidateにはしない"
+    },
+    {
+      "handle": "g.ohe64",
+      "display_name": "大江竜聖",
+      "role": "former_player",
+      "status": "hold",
+      "roster_status": "not_on_2026_giants_roster",
+      "reference": "baseball-sns-2025",
+      "notes": "巨人文脈なら人間確認。自動review candidateにはしない"
+    },
+    {
+      "handle": "sample_non_giants_fan",
+      "display_name": "非巨人一般アカウント",
+      "role": "excluded",
+      "status": "excluded",
+      "roster_status": "not_giants_source",
+      "reference": "test-fixture",
+      "notes": "silent confirm 防止用の除外fixture"
+    }
+  ]
+}

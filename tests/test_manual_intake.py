@@ -27,6 +27,7 @@ MANUAL-INTAKE-002 additions:
 
 from __future__ import annotations
 
+from contextlib import ExitStack
 import json
 import re
 import sys
@@ -1198,6 +1199,268 @@ class PostgameExpansionTests(unittest.TestCase):
         self.assertIsInstance(rendered, str)
         self.assertIn("🔗 出典記事", rendered)
         self.assertIn("責任投手", rendered)
+
+
+class SourceBodyExcerptExpansionTests(_IntakeBaseTest):
+    def _source_html(self, body: str) -> str:
+        return (
+            '<html><head><script type="application/ld+json">'
+            + json.dumps(
+                {
+                    "@type": "NewsArticle",
+                    "articleBody": body,
+                    "headline": "巨人ニュース",
+                },
+                ensure_ascii=False,
+            )
+            + "</script></head><body></body></html>"
+        )
+
+    def _fake_fetch(self, *, title: str, summary: str, body: str):
+        raw_html = self._source_html(body)
+
+        def fetch(_url: str) -> dict[str, str]:
+            return {
+                "title": title,
+                "summary": summary,
+                "_html": raw_html,
+            }
+
+        return fetch
+
+    def _fake_fetch_without_article_body(self, *, title: str, summary: str):
+        def fetch(_url: str) -> dict[str, str]:
+            return {
+                "title": title,
+                "summary": summary,
+                "_html": "<html><body><p>短い案内だけ</p></body></html>",
+            }
+
+        return fetch
+
+    def _run_article_type_with_source_excerpt(
+        self,
+        article_type: str,
+        *,
+        url: str = "https://hochi.news/articles/source-body.html",
+        title: str = "巨人の練習で若手が存在感",
+        summary: str = "巨人の練習で若手が存在感を見せた。",
+        body: str = (
+            "巨人の練習で若手が存在感を見せた。"
+            "打撃練習では逆方向への強い打球が目立ち、首脳陣も状態の良さを確認した。"
+            "守備練習でも軽快な動きを見せ、今後の一軍争いへ向けてアピールを続けている。"
+        ),
+        manual_facts: dict[str, str] | None = None,
+    ) -> str:
+        captured: dict = {}
+
+        def fake_create(**kwargs):
+            captured.update(kwargs)
+            return 900
+
+        def fake_renderer(data):
+            return {
+                "validation_ok": True,
+                "content_html": (
+                    '<div class="nomotoke-card-test">'
+                    f'<p class="nomotoke-lead">{data.get("title") or summary}</p>'
+                    "<h3>🔗 出典記事</h3>"
+                    '<p>記事全文は <a href="https://example.com/source">出典</a> '
+                    "をご覧ください。</p>"
+                    "</div>"
+                ),
+            }
+
+        wp = MagicMock()
+        wp.create_post = fake_create
+        with ExitStack() as stack:
+            stack.enter_context(patch("src.nomotoke_card_renderer.select_renderer", return_value=fake_renderer))
+            for name in (
+                "_build_related_articles_block",
+                "_build_recent_games_block",
+                "_build_matchup_record_block",
+                "_build_standings_block",
+                "_build_next_game_block",
+                "_build_trust_badge_block",
+                "_build_author_other_articles_block",
+                "_build_recent_notice_timeline_block",
+                "_build_other_games_block",
+                "_build_x_embeds_block_safe",
+                "_build_player_stats_block",
+                "_build_share_buttons_block",
+                "_build_meta_header_bar",
+                "_build_toc_block",
+                "_build_tag_chip_block",
+                "_build_jsonld_article_schema",
+            ):
+                stack.enter_context(patch.object(mi, name, return_value=""))
+            stack.enter_context(
+                patch.object(mi, "_inject_toc_anchors", side_effect=lambda html: (html, []))
+            )
+            stack.enter_context(
+                patch.object(mi, "_wrap_first_roster_names_in_lead", side_effect=lambda html: html)
+            )
+            stack.enter_context(
+                patch.object(mi, "_decorate_body_with_emoji_safe", side_effect=lambda html: html)
+            )
+            stack.enter_context(patch.object(mi, "_check_rate_limit", return_value=(True, 0)))
+            code, out = mi.run_manual_intake(
+                url=url,
+                mode="draft",
+                article_type=article_type,
+                wp_client_factory=lambda: wp,
+                rate_limit_lockfile=self.lockfile,
+                fetch_meta=self._fake_fetch(title=title, summary=summary, body=body),
+                source_published_at="2026-05-10T12:00:00+09:00",
+                manual_facts=manual_facts or {},
+            )
+
+        self.assertEqual(code, mi.EXIT_OK, out)
+        return captured.get("content", "")
+
+    def test_source_body_excerpt_renders_for_all_manual_article_types(self):
+        cases = [
+            ("試合結果", {}),
+            ("試合速報", {}),
+            ("予告先発", {"pitcher_a": "戸郷翔征", "pitcher_b": "才木浩人"}),
+            ("公示", {"registered": "浅野翔吾"}),
+            ("監督談話", {"manager_name": "阿部", "quote": "状態は上がっている"}),
+            ("選手コメント", {"player_name": "浅野翔吾", "quote": "準備してきた"}),
+            (
+                "動画",
+                {"player_name": "浅野翔吾", "play_summary": "打撃練習で快音"},
+                "https://www.youtube.com/watch?v=abcdef12345",
+            ),
+            ("成績", {}),
+            ("番組情報", {}),
+            ("コラム", {}),
+            ("ニュース", {}),
+        ]
+
+        for case in cases:
+            if len(case) == 3:
+                article_type, manual_facts, url = case
+            else:
+                article_type, manual_facts = case
+                url = "https://hochi.news/articles/source-body.html"
+            with self.subTest(article_type=article_type):
+                content = self._run_article_type_with_source_excerpt(
+                    article_type,
+                    url=url,
+                    manual_facts=manual_facts,
+                )
+                self.assertIn("📖 本文抜粋", content)
+                self.assertIn("首脳陣も状態の良さを確認した", content)
+
+    def test_source_body_excerpt_is_added_when_renderer_falls_back(self):
+        captured: dict = {}
+
+        def fake_create(**kwargs):
+            captured.update(kwargs)
+            return 901
+
+        wp = MagicMock()
+        wp.create_post = fake_create
+        with ExitStack() as stack:
+            for name in (
+                "_build_related_articles_block",
+                "_build_recent_games_block",
+                "_build_standings_block",
+                "_build_next_game_block",
+                "_build_trust_badge_block",
+                "_build_x_embeds_block_safe",
+                "_build_player_stats_block",
+                "_build_share_buttons_block",
+                "_build_meta_header_bar",
+                "_build_toc_block",
+                "_build_tag_chip_block",
+                "_build_jsonld_article_schema",
+            ):
+                stack.enter_context(patch.object(mi, name, return_value=""))
+            stack.enter_context(
+                patch.object(mi, "_inject_toc_anchors", side_effect=lambda html: (html, []))
+            )
+            stack.enter_context(
+                patch.object(mi, "_wrap_first_roster_names_in_lead", side_effect=lambda html: html)
+            )
+            stack.enter_context(
+                patch.object(mi, "_decorate_body_with_emoji_safe", side_effect=lambda html: html)
+            )
+            stack.enter_context(patch.object(mi, "_check_rate_limit", return_value=(True, 0)))
+            code, out = mi.run_manual_intake(
+                url="https://hochi.news/articles/fallback.html",
+                mode="draft",
+                article_type="監督談話",
+                wp_client_factory=lambda: wp,
+                rate_limit_lockfile=self.lockfile,
+                fetch_meta=self._fake_fetch(
+                    title="阿部監督が若手について語る",
+                    summary="阿部監督が若手について語った。",
+                    body=(
+                        "阿部監督が若手について語った。"
+                        "練習後には打撃内容を評価し、今後の起用にも含みを持たせた。"
+                    ),
+                ),
+            )
+
+        self.assertEqual(code, mi.EXIT_OK, out)
+        content = captured.get("content", "")
+        self.assertIn("阿部監督が若手について語った", content)
+        self.assertIn("📖 本文抜粋", content)
+        self.assertIn("打撃内容を評価", content)
+
+    def test_source_body_missing_keeps_original_fallback_body(self):
+        captured: dict = {}
+
+        def fake_create(**kwargs):
+            captured.update(kwargs)
+            return 902
+
+        wp = MagicMock()
+        wp.create_post = fake_create
+        with ExitStack() as stack:
+            for name in (
+                "_build_related_articles_block",
+                "_build_recent_games_block",
+                "_build_standings_block",
+                "_build_next_game_block",
+                "_build_trust_badge_block",
+                "_build_x_embeds_block_safe",
+                "_build_player_stats_block",
+                "_build_share_buttons_block",
+                "_build_meta_header_bar",
+                "_build_toc_block",
+                "_build_tag_chip_block",
+                "_build_jsonld_article_schema",
+            ):
+                stack.enter_context(patch.object(mi, name, return_value=""))
+            stack.enter_context(
+                patch.object(mi, "_inject_toc_anchors", side_effect=lambda html: (html, []))
+            )
+            stack.enter_context(
+                patch.object(mi, "_wrap_first_roster_names_in_lead", side_effect=lambda html: html)
+            )
+            stack.enter_context(
+                patch.object(mi, "_decorate_body_with_emoji_safe", side_effect=lambda html: html)
+            )
+            stack.enter_context(patch.object(mi, "_check_rate_limit", return_value=(True, 0)))
+            code, out = mi.run_manual_intake(
+                url="https://hochi.news/articles/no-body.html",
+                mode="draft",
+                article_type="監督談話",
+                wp_client_factory=lambda: wp,
+                rate_limit_lockfile=self.lockfile,
+                fetch_meta=self._fake_fetch_without_article_body(
+                    title="阿部監督が若手について語る",
+                    summary="阿部監督が若手について語った。",
+                ),
+            )
+
+        self.assertEqual(code, mi.EXIT_OK, out)
+        content = captured.get("content", "")
+        self.assertIn("阿部監督が若手について語った", content)
+        self.assertIn("🔗 出典記事", content)
+        self.assertNotIn("📖 本文抜粋", content)
 
 
 if __name__ == "__main__":

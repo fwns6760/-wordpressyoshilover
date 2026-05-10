@@ -118,6 +118,7 @@ RATE_LIMIT_WINDOW_SEC = 60
 RATE_LIMIT_MAX = 5
 DEFAULT_LOCKFILE = ROOT / "logs" / "manual_intake_throttle.json"
 DEFAULT_CATEGORY_NAME = "コラム"
+SOURCE_BODY_EXCERPT_MAX_CHARS = 360
 
 _X_HOSTS = {
     "twitter.com",
@@ -1014,35 +1015,13 @@ def _try_render_via_nomotoke(
             "</figure>\n"
         )
         rendered = figure + rendered
-    # NOMOTOKE-INTAKE-BODY-EXCERPT-001: insert a literal-substring
-    # 「📖 本文抜粋」 block (≤240 chars) lifted from the source HTML.
-    # No LLM, no fabrication — the extractor returns ``""`` whenever
-    # the body cannot be parsed cleanly, in which case the rendered
-    # body is unchanged. Only short_news_url + postgame currently get
-    # the block; comment / video / pregame templates already carry the
-    # primary 引用 (quote / play / matchup) and an extra paragraph
-    # would dilute focus.
-    if raw_html and template_key in (
-        "nomotoke_card_short_news_url_v1",
-        "nomotoke_card_postgame_v1",
-    ):
-        try:
-            from src.source_article_body_extractor import (
-                extract_article_body_excerpt,
-            )
-        except Exception:
-            extract_article_body_excerpt = None  # type: ignore
-        if extract_article_body_excerpt is not None:
-            try:
-                excerpt = extract_article_body_excerpt(
-                    raw_html, source_url, title=title, max_chars=240
-                )
-            except Exception:
-                excerpt = ""
-            if excerpt:
-                rendered = _insert_body_excerpt_block(
-                    rendered, excerpt, source_name
-                )
+    rendered = _maybe_insert_source_body_excerpt(
+        rendered,
+        raw_html=raw_html,
+        source_url=source_url,
+        title=title,
+        source_name=source_name,
+    )
 
     # NOMOTOKE-INTAKE-WP-CROSSLINK-001: 関連記事 / 直近の試合 / 対戦成績
     # blocks pulled from internal WP REST. Each helper returns ``""``
@@ -1249,7 +1228,7 @@ def _try_render_via_nomotoke(
         rendered, toc_entries = _inject_toc_anchors(rendered)
         toc_html = _build_toc_block(toc_entries)
         meta_html = _build_meta_header_bar(
-            rendered, normalized_source_published_at
+            rendered, source_published_at_iso
         )
         share_top = _build_share_buttons_block(source_url_fallback=source_url)
         # Big orange comment CTA right under the read-time bar so
@@ -1370,6 +1349,44 @@ def _insert_body_excerpt_block(
     if anchor in rendered_html:
         return rendered_html.replace(anchor, block + anchor, 1)
     return rendered_html + block
+
+
+def _maybe_insert_source_body_excerpt(
+    rendered_html: str,
+    *,
+    raw_html: str,
+    source_url: str,
+    title: str,
+    source_name: str,
+) -> str:
+    """Insert a source-literal excerpt when the fetched article body is usable.
+
+    This is presentation-only: failures return the original body, and the
+    extractor is pure parsing over already-fetched HTML. It never calls an LLM
+    and never invents prose.
+    """
+    if not rendered_html or not raw_html:
+        return rendered_html
+    if "nomotoke-source-excerpt" in rendered_html:
+        return rendered_html
+    try:
+        from src.source_article_body_extractor import (
+            extract_article_body_excerpt,
+        )
+    except Exception:
+        return rendered_html
+    try:
+        excerpt = extract_article_body_excerpt(
+            raw_html,
+            source_url,
+            title=title,
+            max_chars=SOURCE_BODY_EXCERPT_MAX_CHARS,
+        )
+    except Exception:
+        excerpt = ""
+    if not excerpt:
+        return rendered_html
+    return _insert_body_excerpt_block(rendered_html, excerpt, source_name)
 
 
 # NOMOTOKE-INTAKE-WP-CROSSLINK-001: read-only WP REST client for the
@@ -3416,6 +3433,14 @@ def apply_rss_pipeline_enrichment(
         return content_html
     if not source_name:
         source_name = _infer_source_name(source_url)
+
+    content_html = _maybe_insert_source_body_excerpt(
+        content_html,
+        raw_html=raw_html,
+        source_url=source_url,
+        title=title,
+        source_name=source_name,
+    )
 
     extra_blocks: list[str] = []
 

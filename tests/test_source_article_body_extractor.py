@@ -97,6 +97,21 @@ class TruncationTests(unittest.TestCase):
         self.assertLessEqual(len(out), 121)  # +1 for trailing 。
         self.assertTrue(out.endswith("。") or out.endswith("…"))
 
+    def test_expanded_cap_still_respects_sentence_boundary(self):
+        body = (
+            "巨人の若手が練習で存在感を見せた。"
+            "打撃練習では逆方向への強い打球が目立った。"
+            "首脳陣は状態の良さを確認した。"
+            "守備練習でも軽快な動きを見せた。"
+            "今後の一軍争いへ向けてアピールを続けている。"
+        )
+        html = f'<article><p>{body}</p></article>'
+        out = extract_article_body_excerpt(
+            html, "https://example.com/", max_chars=80
+        )
+        self.assertLessEqual(len(out), 80)
+        self.assertTrue(out.endswith("。") or out.endswith("…"))
+
     def test_short_body_returned_as_is(self):
         html = '<article><p>5月7日 巨人 5-3 阪神。戸郷5回1失点。岡本2本塁打。</p></article>'
         out = extract_article_body_excerpt(html, "https://example.com/", max_chars=240)
@@ -119,6 +134,24 @@ class TitleEchoTests(unittest.TestCase):
         )
         self.assertNotIn("阪神 戸郷5回1失点\n戸郷翔征", out)
         self.assertIn("戸郷翔征", out)
+
+    def test_title_adjacent_body_still_returns_source_detail(self):
+        html = (
+            "<article>"
+            "<p>巨人の若手が練習で存在感</p>"
+            "<p>打撃練習では逆方向への強い打球が目立ち、首脳陣も状態の良さを確認した。</p>"
+            "<p>守備練習でも軽快な動きを見せ、今後の一軍争いへ向けてアピールを続けている。</p>"
+            "</article>"
+        )
+        out = extract_article_body_excerpt(
+            html,
+            "https://example.com/",
+            title="巨人の若手が練習で存在感",
+            max_chars=160,
+        )
+        self.assertNotIn("巨人の若手が練習で存在感\n", out)
+        self.assertIn("逆方向への強い打球", out)
+        self.assertIn("一軍争い", out)
 
 
 class HallucinationGuardTests(unittest.TestCase):

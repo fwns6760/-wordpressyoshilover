@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": "2026-05-10",
+  "updated": "2026-05-12",
   "policy": "Broad Giants official/OB YouTube shelf for human review. Unknown channels are not silently confirmed. Video articles must use source embeds, not copied media.",
   "sources": [
     {
@@ -20,6 +20,15 @@
       "channel_handle": "@ntv_baseball",
       "reference": "existing-youtube-video-sources",
       "notes": "日テレ系中継・ハイライト。OB棚ではないがYouTube動画ソースとして明示"
+    },
+    {
+      "channel_id": "UCyeDNNizMGbVsn_8Ttc3FIw",
+      "display_name": "DAZNベースボール",
+      "role": "media",
+      "status": "confirmed",
+      "channel_handle": "@DAZNJapanBaseball",
+      "reference": "manual-web-confirmed-channel-id",
+      "notes": "DAZN野球公式YouTube。X公式は @DAZNJPNBaseball であり、YouTube handle と混同しない。巨人好プレー/ハイライトのreview-only素材"
     },
     {
       "channel_id": "UCGynN2H7DcNjpN7Qng4dZmg",

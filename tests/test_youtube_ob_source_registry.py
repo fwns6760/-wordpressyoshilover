@@ -21,10 +21,11 @@ class YouTubeOBSourceRegistryTests(unittest.TestCase):
         statuses = {source.status for source in sources}
 
         self.assertGreaterEqual(len(sources), 8)
-        self.assertTrue({"official", "ob"}.issubset(roles))
+        self.assertTrue({"official", "ob", "media"}.issubset(roles))
         self.assertTrue({"confirmed", "candidate", "excluded"}.issubset(statuses))
         self.assertIn("デーブ大久保チャンネル", names)
         self.assertIn("アスリートアカデミア 岡崎郁 official", names)
+        self.assertIn("DAZNベースボール", names)
 
     def test_role_and_status_constants_keep_reviewable_shelves_explicit(self):
         self.assertIn("ob", SOURCE_ROLES)
@@ -54,6 +55,7 @@ class YouTubeOBSourceRegistryTests(unittest.TestCase):
     def test_lookup_finds_official_existing_and_new_ob_channels(self):
         expected = {
             "UCXxg0igSYUp0tqdd6luPEnQ": ("official", "confirmed"),
+            "UCyeDNNizMGbVsn_8Ttc3FIw": ("media", "confirmed"),
             "UCKa1VlSq1WwdSQWv4JFdgxg": ("ob", "candidate"),
             "UCB-FcvdGhY5a69C7Csv4unA": ("ob", "candidate"),
             "UCU77bY7q28jGPYlDn089gfg": ("ob", "candidate"),

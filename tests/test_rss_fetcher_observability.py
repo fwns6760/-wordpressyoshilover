@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from argparse import Namespace
 from contextlib import ExitStack
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -141,6 +141,92 @@ class RssFetcherObservabilityTests(unittest.TestCase):
             'tag_category_warnings=["too many tags: 21 > 20"]',
             "\n".join(cm.output),
         )
+
+    def test_game_live_window_blocks_default_article_sources(self):
+        live_now = datetime(2026, 5, 12, 18, 0, tzinfo=timezone(timedelta(hours=9)))
+        default_roles = rss_fetcher._source_roles_from_config(None)
+
+        self.assertTrue(rss_fetcher._is_game_live_source_policy_window(live_now))
+        self.assertFalse(
+            rss_fetcher._source_allowed_by_game_live_policy(default_roles, now=live_now)
+        )
+
+    def test_game_live_window_allows_hochi_and_dazn_roles(self):
+        live_now = datetime(2026, 5, 12, 18, 0, tzinfo=timezone(timedelta(hours=9)))
+
+        self.assertTrue(
+            rss_fetcher._source_allowed_by_game_live_policy(
+                {"article_source", "game_live_primary"},
+                now=live_now,
+            )
+        )
+        self.assertTrue(
+            rss_fetcher._source_allowed_by_game_live_policy(
+                {"media_quote_only", "game_live_video_signal", "review_only"},
+                now=live_now,
+            )
+        )
+
+    def test_game_live_window_ends_at_2130_jst(self):
+        after_window = datetime(2026, 5, 12, 21, 30, tzinfo=timezone(timedelta(hours=9)))
+
+        self.assertFalse(rss_fetcher._is_game_live_source_policy_window(after_window))
+        self.assertTrue(
+            rss_fetcher._source_allowed_by_game_live_policy(
+                {"article_source"},
+                now=after_window,
+            )
+        )
+
+    def test_main_skips_non_live_sources_during_game_live_policy(self):
+        args = Namespace(dry_run=True, draft_only=False, limit=10, article_ai_mode=None)
+
+        with tempfile.TemporaryDirectory() as tmpdir, ExitStack() as stack:
+            tmpdir_path = Path(tmpdir)
+            sources_file = tmpdir_path / "rss_sources.json"
+            keywords_file = tmpdir_path / "keywords.json"
+            sources_file.write_text(
+                json.dumps(
+                    [
+                        {
+                            "name": "日刊スポーツX",
+                            "url": "https://feed.example.com/nikkan.xml",
+                            "type": "news",
+                            "role": ["article_source"],
+                        },
+                        {
+                            "name": "スポーツ報知巨人班X",
+                            "url": "https://feed.example.com/hochi.xml",
+                            "type": "news",
+                            "role": ["article_source", "game_live_primary"],
+                        },
+                    ],
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            keywords_file.write_text(
+                json.dumps({"選手情報": ["巨人"]}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            parse_mock = Mock(return_value=SimpleNamespace(entries=[]))
+
+            stack.enter_context(patch.object(rss_fetcher, "RSS_SOURCES_FILE", sources_file))
+            stack.enter_context(patch.object(rss_fetcher, "KEYWORDS_FILE", keywords_file))
+            stack.enter_context(patch.object(rss_fetcher, "check_giants_game_today", return_value=(True, "中日", "東京ドーム")))
+            stack.enter_context(patch.object(rss_fetcher, "load_history", return_value={}))
+            stack.enter_context(patch.object(rss_fetcher.feedparser, "parse", parse_mock))
+            stack.enter_context(patch.object(rss_fetcher, "_is_game_live_source_policy_window", return_value=True))
+
+            with self.assertLogs("rss_fetcher", level="INFO") as cm:
+                rss_fetcher._main(args, logging.getLogger("rss_fetcher"))
+
+        parse_mock.assert_called_once_with("https://feed.example.com/hochi.xml")
+        logs = "\n".join(cm.output)
+        self.assertIn('"event": "game_live_source_policy_skip"', logs)
+        self.assertIn('"source_name": "日刊スポーツX"', logs)
+        self.assertIn('"game_live_source_policy_active": true', logs)
+        self.assertIn('"game_live_source_policy_skipped_sources": 1', logs)
 
 
 if __name__ == "__main__":

@@ -151,6 +151,13 @@ TRUE_VALUES = {"1", "true", "yes", "on"}
 HTTP_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 DEFAULT_LOW_COST_AI_CATEGORIES = {"試合速報", "選手情報", "首脳陣"}
 DEFAULT_AUTO_TWEET_CATEGORIES = {"試合速報", "選手情報", "首脳陣", "ドラフト・育成"}
+JST = timezone(timedelta(hours=9))
+GAME_LIVE_SOURCE_POLICY_WINDOW_LABEL = "17:00-21:30 JST"
+GAME_LIVE_SOURCE_POLICY_START_MINUTE = 17 * 60
+GAME_LIVE_SOURCE_POLICY_END_MINUTE = 21 * 60 + 30
+GAME_LIVE_SOURCE_POLICY_ROLES = frozenset(
+    {"game_live_primary", "game_live_video_signal"}
+)
 AUTO_POST_CATEGORY_ID = 673
 DRAFT_CATEGORY_FALLBACK_NAME = "コラム"
 PUBLISH_SUBTYPE_ENV_MAP = {
@@ -183,7 +190,38 @@ X_POST_SUBTYPE_ENV_MAP = {
     "game_note": "ENABLE_X_POST_FOR_GENERAL",
     "roster": "ENABLE_X_POST_FOR_GENERAL",
 }
-JST = timezone(timedelta(hours=9))
+
+
+def _source_roles_from_config(raw_source_role: Any) -> set[str]:
+    if isinstance(raw_source_role, list):
+        roles = {str(role).strip() for role in raw_source_role if str(role).strip()}
+    elif isinstance(raw_source_role, str) and raw_source_role.strip():
+        roles = {raw_source_role.strip()}
+    else:
+        roles = set()
+    return roles or {"article_source"}
+
+
+def _is_game_live_source_policy_window(now: datetime | None = None) -> bool:
+    jst_now = (now or datetime.now(timezone.utc)).astimezone(JST)
+    minute = jst_now.hour * 60 + jst_now.minute
+    return (
+        GAME_LIVE_SOURCE_POLICY_START_MINUTE
+        <= minute
+        < GAME_LIVE_SOURCE_POLICY_END_MINUTE
+    )
+
+
+def _source_allowed_by_game_live_policy(
+    source_roles: set[str],
+    *,
+    now: datetime | None = None,
+) -> bool:
+    if not _is_game_live_source_policy_window(now):
+        return True
+    return bool(source_roles & GAME_LIVE_SOURCE_POLICY_ROLES)
+
+
 ENABLE_LIVE_UPDATE_ARTICLES = os.getenv("ENABLE_LIVE_UPDATE_ARTICLES", "0").strip().lower() in TRUE_VALUES
 SCORE_TOKEN_RE = _re.compile(r"\d{1,2}\s*[－\-–]\s*\d{1,2}")
 NUMERIC_TOKEN_RE = _re.compile(r"\d+(?:\.\d+)?(?:[%％]|本|打点|勝|敗|回|失点|奪三振|号|位|年|月|日|人|円|試合|打席|安打|点|本塁打|打率|防御率|OPS|WHIP|WAR|wRC\+?|K/9)?")
@@ -20754,6 +20792,11 @@ def _main(args, logger):
     entry_index = 0
     not_giants_related_info_count = 0
     not_giants_related_sample_titles: list[str] = []
+    fetch_started_at = datetime.now(timezone.utc)
+    game_live_source_policy_active = bool(
+        has_game and _is_game_live_source_policy_window(fetch_started_at)
+    )
+    game_live_source_policy_skipped_sources = 0
     # RSS-255: 同一 run 内で同じ x_status_id の 2 件目以降を skip。
     same_fire_status_ids: set[str] = set()
 
@@ -20761,20 +20804,30 @@ def _main(args, logger):
         name        = source["name"]
         url         = source["url"]
         source_type = source.get("type", "news")
-        raw_source_role = source.get("role")
-        if isinstance(raw_source_role, list):
-            source_roles = {
-                str(role).strip()
-                for role in raw_source_role
-                if str(role).strip()
-            }
-        elif isinstance(raw_source_role, str) and raw_source_role.strip():
-            source_roles = {raw_source_role.strip()}
-        else:
-            source_roles = {"article_source"}
+        source_roles = _source_roles_from_config(source.get("role"))
         prepared_source_roles = sorted(source_roles)
         should_add_to_media_quote_pool = bool(source_roles & {"media_quote_pool", "media_quote_only"})
         should_articleize = "media_quote_only" not in source_roles
+        if game_live_source_policy_active and not _source_allowed_by_game_live_policy(
+            source_roles,
+            now=fetch_started_at,
+        ):
+            game_live_source_policy_skipped_sources += 1
+            logger.info(
+                json.dumps(
+                    {
+                        "event": "game_live_source_policy_skip",
+                        "source_name": name,
+                        "source_url": url,
+                        "source_roles": prepared_source_roles,
+                        "reason": "not_game_live_source",
+                        "allowed_roles": sorted(GAME_LIVE_SOURCE_POLICY_ROLES),
+                        "window": GAME_LIVE_SOURCE_POLICY_WINDOW_LABEL,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            continue
         logger.info(f"取得中: {name} ({url})")
 
         try:
@@ -22586,6 +22639,9 @@ def _main(args, logger):
         "bypass_full_invocation_count": bypass_full_invocation_count,
         "tag_scraper_per_source": _counter_to_plain_dict(tag_scraper_per_source),
         "scraper_fetch_failures": scraper_fetch_failures,
+        "game_live_source_policy_active": game_live_source_policy_active,
+        "game_live_source_policy_window": GAME_LIVE_SOURCE_POLICY_WINDOW_LABEL,
+        "game_live_source_policy_skipped_sources": game_live_source_policy_skipped_sources,
     }
     if _fetcher_log_sampling_v1_enabled() or _pre_post_gen_validate_skip_enabled():
         run_summary_payload["log_sampling_v1"] = _build_log_sampling_summary()

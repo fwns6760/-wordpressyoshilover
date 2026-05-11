@@ -13866,6 +13866,19 @@ def _extract_entry_image_urls(entry: dict, page_url: str = "", max_images: int =
         if len(images) >= max_images:
             break
 
+    for media_field in ("media_content", "media_thumbnail"):
+        media_items = entry.get(media_field) or []
+        if isinstance(media_items, dict):
+            media_items = [media_items]
+        if not isinstance(media_items, list):
+            continue
+        for item in media_items:
+            if not isinstance(item, dict):
+                continue
+            _add(str(item.get("url") or ""))
+            if len(images) >= max_images:
+                return images[:max_images]
+
     linked_text = _html.unescape(_strip_html(f"{title_text} {fragment}"))
     linked_urls = []
     for url_m in _re.finditer(r'https?://[^\s<>"\')]+', linked_text):

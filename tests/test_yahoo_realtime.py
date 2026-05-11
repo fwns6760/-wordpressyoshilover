@@ -655,6 +655,45 @@ class YahooFanReactionQueryTests(unittest.TestCase):
 
 
 class ArticleImageFetchTests(unittest.TestCase):
+    def test_extract_entry_image_urls_uses_x_media_content_metadata(self):
+        entry = {
+            "title": "【巨人】坂本勇人が母の日に笑顔の写真を投稿",
+            "summary": "坂本勇人選手が母の日に写真付き投稿を公開した。",
+            "link": "https://x.com/hochi_giants/status/2044045110053151220",
+            "media_content": [
+                {
+                    "url": "https://pbs.twimg.com/media/HF77Ob7agAA_PyF?format=jpg&name=orig",
+                    "medium": "image",
+                }
+            ],
+        }
+
+        images = rss_fetcher._extract_entry_image_urls(entry, entry["link"], max_images=3)
+
+        self.assertEqual(
+            images,
+            ["https://pbs.twimg.com/media/HF77Ob7agAA_PyF?format=jpg&name=orig"],
+        )
+
+    def test_extract_entry_image_urls_uses_x_media_thumbnail_metadata(self):
+        entry = {
+            "title": "【巨人】戸郷翔征がジャイアンツ球場で調整",
+            "summary": "戸郷翔征投手が写真付き投稿で調整の様子を伝えた。",
+            "link": "https://x.com/hochi_giants/status/2044045110053151221",
+            "media_thumbnail": [
+                {
+                    "url": "https://pbs.twimg.com/media/HF77Ob8agAA_PyF?format=jpg&name=small",
+                }
+            ],
+        }
+
+        images = rss_fetcher._extract_entry_image_urls(entry, entry["link"], max_images=3)
+
+        self.assertEqual(
+            images,
+            ["https://pbs.twimg.com/media/HF77Ob8agAA_PyF?format=jpg&name=small"],
+        )
+
     @patch("src.rss_fetcher.fetch_article_images")
     def test_extract_entry_image_urls_uses_linked_article_when_summary_has_no_img_tag(self, mock_fetch_images):
         def fake_fetch(url: str, max_images: int = 1):

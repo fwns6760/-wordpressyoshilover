@@ -5513,7 +5513,7 @@ def _detect_general_article_subtype(title: str, summary: str, text: str) -> str:
 
     if (
         any(team in text for team in ("巨人", "ジャイアンツ"))
-        and title_has_person_name_candidate(text)
+        and _matching_giants_roster_names(text)
         and any(marker in text for marker in GENERAL_PLAYER_FACT_MARKERS)
     ):
         return "player"

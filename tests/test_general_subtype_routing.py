@@ -43,6 +43,22 @@ class GeneralSubtypeRoutingTests(unittest.TestCase):
             "player",
         )
 
+    def test_media_name_with_record_words_stays_general(self):
+        self.assert_general_source_routes_to(
+            "【巨人】スポーツ報知が通算記録を特集",
+            "スポーツ報知が巨人の通算記録を特集した。",
+            "球団情報",
+            "general",
+        )
+
+    def test_channel_name_with_record_words_stays_general(self):
+        self.assert_general_source_routes_to(
+            "【巨人】GIANTS TVが通算記録を紹介",
+            "GIANTS TVで巨人の通算記録を紹介した。",
+            "球団情報",
+            "general",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

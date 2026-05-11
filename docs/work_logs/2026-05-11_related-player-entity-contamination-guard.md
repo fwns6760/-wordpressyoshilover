@@ -193,3 +193,31 @@ GO 後、実装内容に応じて以下を実行する。
 - アイキャッチ fallback policy
 - 本文抜粋 guard
 - unrelated dirty files
+
+### 9. deploy後確認
+
+- deploy分類:
+  - 本線を触った便。`manual_intake.py` は `manual-intake-service` と `postgame-auto` / `lineup-auto` / `broadcast-auto` job の生成経路に影響する。
+  - env / scheduler / Secret は変更なし。image のみ更新。
+- build:
+  - `gcloud builds submit --project=baseballsite --config=cloudbuild_manual_intake_service.yaml --substitutions=_TAG=23fa8d5 --gcs-source-staging-dir=gs://baseballsite_cloudbuild/source`
+  - build ID: `e528828a-4e53-4385-b946-129078446bdc`
+  - image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/manual-intake-service:23fa8d5`
+  - digest: `sha256:631c13ebe12fcc89ca9cceff0b5d1b7ea77b7d866c664029fdf817bac1bc80f1`
+- Cloud Run revision:
+  - `manual-intake-service-00054-6m6`
+  - traffic 100%
+  - `/health`: `{"ok": true}`
+- Job image更新:
+  - `postgame-auto`: `manual-intake-service:23fa8d5`
+  - `lineup-auto`: `manual-intake-service:23fa8d5`
+  - `broadcast-auto`: `manual-intake-service:23fa8d5`
+- Job dry-run実行:
+  - `postgame-auto-8ckdq`: success, `--mode dry-run`
+  - `lineup-auto-7drkl`: success, `--mode dry-run`
+  - `broadcast-auto-dbdhq`: success, `--mode dry-run`
+- 実出力確認:
+  - `manual-intake-service` の `/manual-intake` を `mode=dry-run` で実行し、`validation_ok: true` を確認。
+  - dry-run のため WP write / publish はなし。
+- ERROR確認:
+  - deploy後 1 時間、`manual-intake-service` / `postgame-auto` / `lineup-auto` / `broadcast-auto` の `severity>=ERROR` は出力なし。

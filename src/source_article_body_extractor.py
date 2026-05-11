@@ -86,6 +86,19 @@ _SITE_SELECTORS: tuple = (
         ),
     ),
     (
+        "daily.co.jp",
+        (
+            re.compile(
+                r'<div[^>]+id=["\']NWrelart:Body["\'][^>]*>(?P<body>.+?)</div>',
+                re.DOTALL | re.IGNORECASE,
+            ),
+            re.compile(
+                r'<div[^>]+class=["\'][^"\']*\bmainTxt\b[^"\']*["\'][^>]*>(?P<body>.+?)</div>',
+                re.DOTALL | re.IGNORECASE,
+            ),
+        ),
+    ),
+    (
         "nikkansports.com",
         (
             re.compile(
@@ -177,14 +190,25 @@ _BLOCK_OPEN_RE = re.compile(
     r"<(?:p|div|li|h[1-6])\b[^>]*>", re.IGNORECASE
 )
 _WHITESPACE_RUN_RE = re.compile(r"[　\s]+")
-_DATE_LINE_RE = re.compile(r"^\d{4}[./年]\d{1,2}(?:[./月]\d{1,2}日?)?$")
+_DATE_LINE_RE = re.compile(
+    r"^\[?\d{4}[./年]\d{1,2}(?:[./月]\d{1,2}日?)?"
+    r"(?:\s*\d{1,2}(?::\d{2}(?::\d{2})?|時\d{1,2}分(?:\d{1,2}秒)?))?\]?$"
+)
 _BOILERPLATE_LINES = {
+    "PR",
+    "広告",
     "ホーム",
     "野球",
     "ニュース",
     "RSS",
     "プロ野球",
     "読売ジャイアンツ（巨人）",
+    "拡大",
+    "続きを見る",
+    "通知ON",
+    "通知OFF",
+    "野球スコア速報",
+    "編集者のオススメ記事",
 }
 
 
@@ -215,11 +239,15 @@ def _strip_html_to_plain(fragment: str) -> str:
         low = cleaned.lower()
         if any(marker in low for marker in ("googletag", "document.write", "function()")):
             continue
-        if cleaned in {"広告", "PR"}:
+        if cleaned in _BOILERPLATE_LINES:
             continue
         if cleaned:
             lines.append(cleaned)
     return "\n".join(lines)
+
+
+def _normalize_title_echo_text(text: str) -> str:
+    return _WHITESPACE_RUN_RE.sub(" ", html_lib.unescape(text or "")).strip()
 
 
 def _truncate_at_sentence(text: str, max_chars: int) -> str:
@@ -247,13 +275,13 @@ def _drop_title_echo(text: str, title: str) -> str:
     are kept intact since they may be part of a quote or context."""
     if not text or not title:
         return text
-    title_clean = title.strip()
+    title_clean = _normalize_title_echo_text(title)
     if not title_clean:
         return text
     lines = text.split("\n", 1)
     if not lines:
         return text
-    head = lines[0].strip()
+    head = _normalize_title_echo_text(lines[0])
     if head and (head == title_clean or title_clean in head and len(head) <= len(title_clean) + 6):
         return lines[1] if len(lines) > 1 else ""
     return text
@@ -263,10 +291,11 @@ def _drop_leading_boilerplate(text: str, title: str = "") -> str:
     """Remove leading navigation/date/title lines before body text."""
     if not text:
         return ""
-    title_clean = (title or "").strip()
+    title_clean = _normalize_title_echo_text(title)
     lines = text.splitlines()
     while lines:
         head = lines[0].strip()
+        head_for_title = _normalize_title_echo_text(head)
         if not head:
             lines.pop(0)
             continue
@@ -274,8 +303,8 @@ def _drop_leading_boilerplate(text: str, title: str = "") -> str:
             lines.pop(0)
             continue
         if title_clean and (
-            head == title_clean
-            or (title_clean in head and len(head) <= len(title_clean) + 20)
+            head_for_title == title_clean
+            or (title_clean in head_for_title and len(head_for_title) <= len(title_clean) + 20)
         ):
             lines.pop(0)
             continue

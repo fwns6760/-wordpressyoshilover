@@ -39,6 +39,43 @@ class JsonLdPathTests(unittest.TestCase):
 
 
 class SiteSelectorPathTests(unittest.TestCase):
+    def test_daily_main_text_selector_drops_article_chrome(self):
+        html = """
+        <article class="detailContent">
+          <div class="newsHeader">
+            <ol class="breadcrumb"><li>ホーム</li><li>野球</li></ol>
+            <time datetime="2026-05-11" class="date">2026.05.11</time>
+          </div>
+          <h1 class="ttl-main">天国の母へ届け　巨人・坂本　追加点につながる一打「打てて良かった」</h1>
+          <div class="newsContent">
+            <div class="figureLists single"><span class="figureSize">拡大</span></div>
+            <div id="NWrelart:Body" class="mainTxt" wovn-enable>
+              <p>　「中日４－９巨人」（１０日、バンテリンドーム）</p>
+              <p>　巨人・坂本が八回２死一塁で代打起用され、藤嶋のナックルボールに泳ぎながらも左前打を放った。追加点につながる一打に「打てて良かった」と振り返った。</p>
+              <p>　母の日に合わせてピンク色のバットなどでグラウンドに立った。２００７年に小腸がんで母・輝美さんを亡くしたが、大切な日に快音を響かせた。</p>
+            </div>
+            <a href="javascript:DAILY.openNewsDetail();" class="btnShow" hidden>続きを見る</a>
+          </div>
+          <div class="score">野球スコア速報</div>
+          <section class="recommend">編集者のオススメ記事</section>
+        </article>
+        """
+        out = extract_article_body_excerpt(
+            html,
+            "https://www.daily.co.jp/baseball/2026/05/11/0020341038.shtml",
+            title="天国の母へ届け　巨人・坂本　追加点につながる一打「打てて良かった」",
+            max_chars=600,
+        )
+        self.assertIn("巨人・坂本が八回２死一塁", out)
+        self.assertIn("母の日に合わせてピンク色", out)
+        self.assertNotIn("天国の母へ届け", out)
+        self.assertNotIn("2026.05.11", out)
+        self.assertNotIn("拡大", out)
+        self.assertNotIn("続きを見る", out)
+        self.assertNotIn("野球スコア速報", out)
+        self.assertNotIn("編集者のオススメ記事", out)
+        self.assertLessEqual(len(out), 600)
+
     def test_hochi_article_body_class(self):
         html = (
             '<div class="article__body">'
@@ -106,6 +143,30 @@ class SiteSelectorPathTests(unittest.TestCase):
         self.assertIn("6安打5失点", out)
         self.assertNotIn("2026.05.04", out)
         self.assertNotIn("googletag", out)
+
+    def test_leading_date_and_notification_lines_are_dropped(self):
+        html = (
+            "<article>"
+            "<h1>【巨人】ヒヤリ…大城卓三のヘルメットにバット直撃</h1>"
+            "<p>[2026年5月10日17時26分]</p>"
+            "<p>通知ON</p>"
+            "<p>通知OFF</p>"
+            "<p>巨人大城卓三捕手の頭部にバットが直撃した。</p>"
+            "<p>数分後に立ち上がり、プレーを続行した。</p>"
+            "</article>"
+        )
+        out = extract_article_body_excerpt(
+            html,
+            "https://www.nikkansports.com/baseball/news/202605100001243.html",
+            title="【巨人】ヒヤリ…大城卓三のヘルメットにバット直撃",
+            max_chars=600,
+        )
+        self.assertIn("大城卓三捕手", out)
+        self.assertIn("プレーを続行", out)
+        self.assertNotIn("ヒヤリ", out)
+        self.assertNotIn("2026年5月10日", out)
+        self.assertNotIn("通知ON", out)
+        self.assertNotIn("通知OFF", out)
 
 
 class FallbackChainTests(unittest.TestCase):

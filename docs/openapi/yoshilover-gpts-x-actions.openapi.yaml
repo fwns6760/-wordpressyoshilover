@@ -1,0 +1,219 @@
+openapi: 3.0.3
+info:
+  title: Yoshilover GPTs X Actions API
+  version: 0.1.0
+  description: >
+    API for GPTs-assisted manual X posting. The API returns published article
+    candidates, creates a tweet intent URL, and records posted or skipped state.
+servers:
+  - url: https://yoshilover.com/wp-json/yoshilover/v1
+security:
+  - bearerAuth: []
+paths:
+  /x-candidates:
+    get:
+      operationId: getXPostCandidates
+      summary: Get manual X post candidates
+      description: Returns published WordPress posts that are not marked posted or skipped.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 10
+      responses:
+        "200":
+          description: Candidate list.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - candidates
+                properties:
+                  candidates:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/XPostCandidate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /x-candidates/{id}/intent-link:
+    post:
+      operationId: createXIntentLink
+      summary: Create a tweet intent URL
+      description: Converts GPT-authored post text into a manual X posting URL. This does not update candidate state.
+      parameters:
+        - $ref: "#/components/parameters/CandidateId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - text
+              properties:
+                text:
+                  type: string
+                  description: GPT-authored X post text.
+      responses:
+        "200":
+          description: Intent URL.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - id
+                  - text
+                  - intent_url
+                properties:
+                  id:
+                    type: integer
+                  text:
+                    type: string
+                  intent_url:
+                    type: string
+                    format: uri
+        "400":
+          description: Missing or invalid text.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Candidate was not found.
+        "409":
+          description: Candidate is already posted or skipped.
+  /x-candidates/{id}/posted:
+    post:
+      operationId: markCandidatePosted
+      summary: Mark a candidate as posted
+      description: Records posted state in post meta only. It does not publish, edit, or post to X.
+      parameters:
+        - $ref: "#/components/parameters/CandidateId"
+      responses:
+        "200":
+          description: Posted state was recorded.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - id
+                  - status
+                  - posted_at
+                properties:
+                  id:
+                    type: integer
+                  status:
+                    type: string
+                    enum:
+                      - posted
+                  posted_at:
+                    type: string
+                    format: date-time
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Candidate was not found.
+        "409":
+          description: Candidate is already posted or skipped.
+  /x-candidates/{id}/skip:
+    post:
+      operationId: skipCandidate
+      summary: Skip a candidate
+      description: Records skip state in post meta only. Skipped candidates are not returned again.
+      parameters:
+        - $ref: "#/components/parameters/CandidateId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  description: Optional reason for skipping the candidate.
+      responses:
+        "200":
+          description: Skip state was recorded.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - id
+                  - status
+                  - skipped_at
+                properties:
+                  id:
+                    type: integer
+                  status:
+                    type: string
+                    enum:
+                      - skip
+                  skipped_at:
+                    type: string
+                    format: date-time
+                  reason:
+                    type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Candidate was not found.
+        "409":
+          description: Candidate is already posted or skipped.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API key
+      description: Send the API key as "Authorization: Bearer <key>".
+  parameters:
+    CandidateId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  responses:
+    Unauthorized:
+      description: Missing or invalid Authorization Bearer API key.
+  schemas:
+    XPostCandidate:
+      type: object
+      required:
+        - id
+        - title
+        - url
+        - published_at
+        - category
+        - facts_summary
+        - source_url
+        - status
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        url:
+          type: string
+          format: uri
+        published_at:
+          type: string
+          format: date-time
+        category:
+          type: string
+        facts_summary:
+          type: string
+        source_url:
+          type: string
+        status:
+          type: string
+          enum:
+            - candidate

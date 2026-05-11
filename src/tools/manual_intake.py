@@ -112,6 +112,7 @@ ARTICLE_TYPE_CHOICES: tuple[str, ...] = (
     ARTICLE_TYPE_AUTO,
     *ARTICLE_TYPE_OVERRIDES.keys(),
 )
+ARTICLE_STYLE_MANUAL_TYPES = {"コラム", "ニュース"}
 
 
 RATE_LIMIT_WINDOW_SEC = 60
@@ -119,6 +120,41 @@ RATE_LIMIT_MAX = 5
 DEFAULT_LOCKFILE = ROOT / "logs" / "manual_intake_throttle.json"
 DEFAULT_CATEGORY_NAME = "コラム"
 SOURCE_BODY_EXCERPT_MAX_CHARS = 600
+
+
+def _is_article_style_manual_output(
+    *,
+    article_type: str = ARTICLE_TYPE_AUTO,
+    category: str = "",
+    subtype: str = "",
+) -> bool:
+    """Return True for manual entries that should read like an article
+    first, not like a live/game dashboard.
+
+    The trigger is intentionally narrow: explicit コラム / ニュース or the
+    resolved コラム + other route. It does not change game, notice, quote,
+    video, or pitcher-specific templates.
+    """
+    normalized_type = (article_type or "").strip()
+    normalized_category = (category or "").strip()
+    normalized_subtype = (subtype or "").strip()
+    if normalized_type in ARTICLE_STYLE_MANUAL_TYPES:
+        return True
+    return normalized_category == "コラム" and normalized_subtype == "other"
+
+
+def _build_top_comment_cta() -> str:
+    return (
+        '<p class="nomotoke-cta-row" '
+        'style="margin:8px 0 12px;text-align:center;">'
+        '<a href="#respond" '
+        'style="display:inline-block;padding:10px 22px;'
+        "background:#f57f17;color:#fff;text-decoration:none;"
+        "border-radius:8px;font-weight:700;font-size:15px;"
+        'box-shadow:0 2px 6px rgba(245,127,23,0.4);">'
+        "💬 この記事にコメントする"
+        "</a></p>"
+    )
 
 _X_HOSTS = {
     "twitter.com",
@@ -696,6 +732,9 @@ def _try_render_via_nomotoke(
     og_image: str = "",
     raw_html: str = "",
     manual_facts: dict[str, str] | None = None,
+    article_type: str = ARTICLE_TYPE_AUTO,
+    category: str = "",
+    subtype: str = "",
 ) -> str | None:
     """Render the manual-intake submission with the matching nomotoke
     renderer when the operator's article_type pick maps to a nomotoke
@@ -726,6 +765,11 @@ def _try_render_via_nomotoke(
     mf = manual_facts or {}
     if not template_key.startswith("nomotoke_card_"):
         return None
+    article_style_layout = _is_article_style_manual_output(
+        article_type=article_type,
+        category=category,
+        subtype=subtype,
+    )
     # X-only entries cannot use the nomotoke short_news_url path because
     # the router would skip with x_post_not_article_source. The plain
     # X embed body is the right shape for those.
@@ -1041,7 +1085,7 @@ def _try_render_via_nomotoke(
         # — usually a player name or team name. Plain heuristic, no LLM.
         ngrams = re.findall(r"[一-龥ぁ-んァ-ヶー]{2,8}", title)
         related_query = max(ngrams, key=len) if ngrams else ""
-    if related_query and template_key in (
+    if (not article_style_layout) and related_query and template_key in (
         "nomotoke_card_short_news_url_v1",
         "nomotoke_card_postgame_v1",
         "nomotoke_card_manager_comment_v1",
@@ -1054,7 +1098,7 @@ def _try_render_via_nomotoke(
         if block:
             extra_blocks.append(block)
 
-    if template_key in (
+    if (not article_style_layout) and template_key in (
         "nomotoke_card_short_news_url_v1",
         "nomotoke_card_postgame_v1",
         "nomotoke_card_pregame_pitcher_v1",
@@ -1090,7 +1134,7 @@ def _try_render_via_nomotoke(
     # the current Central League standings (NPB.jp). Cached for 6h
     # per Cloud Run instance — first request after cold start
     # triggers ≤2 extra GETs, subsequent requests within 6h are free.
-    if template_key in (
+    if (not article_style_layout) and template_key in (
         "nomotoke_card_short_news_url_v1",
         "nomotoke_card_postgame_v1",
         "nomotoke_card_pregame_pitcher_v1",
@@ -1123,7 +1167,7 @@ def _try_render_via_nomotoke(
     # rendered body to avoid duplication.
     scan_text = " ".join(s for s in (title, summary) if s)
     player_stats_block = ""
-    if scan_text and template_key in (
+    if (not article_style_layout) and scan_text and template_key in (
         "nomotoke_card_short_news_url_v1",
         "nomotoke_card_postgame_v1",
         "nomotoke_card_manager_comment_v1",
@@ -1153,7 +1197,7 @@ def _try_render_via_nomotoke(
 
     # NOMOTOKE-INTAKE-AUTHOR-OTHER-001 (D): "this reporter's other
     # articles" cluster. Only when JSON-LD provided an author.
-    if raw_html:
+    if (not article_style_layout) and raw_html:
         author, _ = _extract_jsonld_author_and_date(raw_html)
         if author:
             block = _build_author_other_articles_block(author)
@@ -1187,7 +1231,7 @@ def _try_render_via_nomotoke(
     # the operator's existing rsshub feeds — closes the largest
     # remaining gap with dnomotoke.com which embeds 2-5 X posts per
     # article. Costs ¥0 (rsshub feed reads are internal).
-    if template_key in (
+    if (not article_style_layout) and template_key in (
         "nomotoke_card_short_news_url_v1",
         "nomotoke_card_postgame_v1",
         "nomotoke_card_manager_comment_v1",
@@ -1222,33 +1266,22 @@ def _try_render_via_nomotoke(
     #   3. Wrap roster names in the lead (R4).
     #   4. Append tag chips at end (R6).
     if template_key.startswith("nomotoke_card_"):
-        # Step 1 + 2: ToC anchors + ToC + meta header + share buttons
-        # + TOP コメント CTA (operator request: 上部に
-        # 「コメントする」 を持ち上げ).
+        # Step 1 + 2: ToC anchors + ToC + meta header + share buttons.
+        # Article-style manual entries (コラム / ニュース) keep the
+        # body-first shape: hero / lead must appear before reader UI.
         rendered, toc_entries = _inject_toc_anchors(rendered)
         toc_html = _build_toc_block(toc_entries)
         meta_html = _build_meta_header_bar(
             rendered, source_published_at_iso
         )
-        share_top = _build_share_buttons_block(source_url_fallback=source_url)
-        # Big orange comment CTA right under the read-time bar so
-        # the comment form (#respond) is one tap away even before
-        # the reader scrolls into the body.
-        top_cta = (
-            '<p class="nomotoke-cta-row" '
-            'style="margin:8px 0 12px;text-align:center;">'
-            '<a href="#respond" '
-            'style="display:inline-block;padding:10px 22px;'
-            "background:#f57f17;color:#fff;text-decoration:none;"
-            "border-radius:8px;font-weight:700;font-size:15px;"
-            'box-shadow:0 2px 6px rgba(245,127,23,0.4);">'
-            "💬 この記事にコメントする"
-            "</a></p>"
-        )
         header_payload = ""
-        if meta_html:
+        if meta_html and not article_style_layout:
             header_payload += meta_html
-        header_payload += top_cta
+        if not article_style_layout:
+            header_payload += _build_top_comment_cta()
+        share_top = (
+            "" if article_style_layout else _build_share_buttons_block(source_url_fallback=source_url)
+        )
         if share_top:
             header_payload += share_top
         if toc_html:
@@ -3425,6 +3458,8 @@ def apply_rss_pipeline_enrichment(
     source_published_at_iso: str = "",
     og_image: str = "",
     raw_html: str = "",
+    article_type: str = ARTICLE_TYPE_AUTO,
+    subtype: str = "",
 ) -> str:
     """Public Phase 3 entry point. Apply post-body enrichment to a
     nomotoke-renderer body. Returns the input unchanged when the
@@ -3433,6 +3468,11 @@ def apply_rss_pipeline_enrichment(
         return content_html
     if not source_name:
         source_name = _infer_source_name(source_url)
+    article_style_layout = _is_article_style_manual_output(
+        article_type=article_type,
+        category=category,
+        subtype=subtype,
+    )
 
     content_html = _maybe_insert_source_body_excerpt(
         content_html,
@@ -3447,7 +3487,7 @@ def apply_rss_pipeline_enrichment(
     related_query = ""
     ngrams = re.findall(r"[一-龥ぁ-んァ-ヶー]{2,8}", title or "")
     related_query = max(ngrams, key=len) if ngrams else ""
-    if related_query:
+    if (not article_style_layout) and related_query:
         block = _build_related_articles_block(related_query)
         if block:
             extra_blocks.append(block)
@@ -3462,13 +3502,13 @@ def apply_rss_pipeline_enrichment(
         "nomotoke_card_manager_comment_v1",
         "nomotoke_card_player_comment_v1",
     )
-    if _general_eligible:
+    if (not article_style_layout) and _general_eligible:
         block = _build_recent_games_block()
         if block:
             extra_blocks.append(block)
 
     scan_text = " ".join(s for s in (title, summary) if s)
-    if scan_text:
+    if (not article_style_layout) and scan_text:
         block = _build_player_stats_block(scan_text)
         if block:
             extra_blocks.append(block)
@@ -3492,7 +3532,7 @@ def apply_rss_pipeline_enrichment(
         extra_blocks.extend(_build_postgame_support_blocks(raw_html))
 
     # X embeds: 全 nomotoke-marked content + caller 未指定で適用 (lenient)
-    if (not template_key) or template_key in (
+    if (not article_style_layout) and ((not template_key) or template_key in (
         "nomotoke_card_short_news_url_v1",
         "nomotoke_card_postgame_v1",
         "nomotoke_card_manager_comment_v1",
@@ -3500,7 +3540,7 @@ def apply_rss_pipeline_enrichment(
         "nomotoke_card_pregame_pitcher_v1",
         "nomotoke_card_video_v1",
         "nomotoke_card_official_notice_v1",
-    ):
+    )):
         block = _build_x_embeds_block_safe(
             title,
             summary,
@@ -3511,7 +3551,7 @@ def apply_rss_pipeline_enrichment(
 
     # Standings + Next game: 全 nomotoke-marked content + caller 未指定で適用
     # (lenient) — どの subtype でも順位 / 次戦は relevant
-    if _general_eligible:
+    if (not article_style_layout) and _general_eligible:
         block = _build_standings_block()
         if block:
             extra_blocks.append(block)
@@ -3530,22 +3570,14 @@ def apply_rss_pipeline_enrichment(
     content_html, toc_entries = _inject_toc_anchors(content_html)
     toc_html = _build_toc_block(toc_entries)
     meta_html = _build_meta_header_bar(content_html, source_published_at_iso)
-    share_top = _build_share_buttons_block(source_url_fallback=source_url)
-    top_cta = (
-        '<p class="nomotoke-cta-row" '
-        'style="margin:8px 0 12px;text-align:center;">'
-        '<a href="#respond" '
-        'style="display:inline-block;padding:10px 22px;'
-        "background:#f57f17;color:#fff;text-decoration:none;"
-        "border-radius:8px;font-weight:700;font-size:15px;"
-        'box-shadow:0 2px 6px rgba(245,127,23,0.4);">'
-        "💬 この記事にコメントする"
-        "</a></p>"
+    share_top = (
+        "" if article_style_layout else _build_share_buttons_block(source_url_fallback=source_url)
     )
     header_payload = ""
-    if meta_html:
+    if meta_html and not article_style_layout:
         header_payload += meta_html
-    header_payload += top_cta
+    if not article_style_layout:
+        header_payload += _build_top_comment_cta()
     if share_top:
         header_payload += share_top
     if toc_html:
@@ -3765,6 +3797,7 @@ def _wp_create_draft(
     source_url: str,
     source_published_at_iso: str,
     logger: logging.Logger,
+    featured_media: int | None = None,
 ) -> tuple[int | None, str | None]:
     """Create a draft via WPClient. WPClient has its own dedupe via
     find_recent_post_by_title + source_url. Returns (post_id, draft_url).
@@ -3779,6 +3812,7 @@ def _wp_create_draft(
         caller="manual_intake",
         source_lane="manual_intake",
         source_published_at_iso=source_published_at_iso or None,
+        featured_media=featured_media,
     )
     post_id: int | None
     draft_url: str | None = None
@@ -3792,6 +3826,39 @@ def _wp_create_draft(
     if not post_id:
         raise RuntimeError("wp_create_post_returned_no_id")
     return post_id, draft_url
+
+
+def _resolve_manual_intake_featured_media(
+    wp,
+    *,
+    og_image: str,
+    source_url: str,
+    logger: logging.Logger | None = None,
+) -> int | None:
+    """Resolve the source og:image into a WP media id for manual intake.
+
+    This reuses WPClient's existing media safety and dedupe methods. If
+    the image cannot be resolved safely, the draft is still created
+    without featured_media.
+    """
+    if not og_image or not _is_safe_https_image_url(og_image):
+        return None
+    try:
+        finder = getattr(wp, "find_uploaded_media_id_for_url", None)
+        if callable(finder):
+            existing = finder(og_image)
+            if isinstance(existing, int) and existing > 0:
+                return existing
+
+        uploader = getattr(wp, "upload_image_from_url", None)
+        if callable(uploader):
+            uploaded = uploader(og_image, source_url=source_url)
+            if isinstance(uploaded, int) and uploaded > 0:
+                return uploaded
+    except Exception as exc:
+        if logger is not None:
+            logger.warning("manual_intake_featured_media_skipped: %s", exc)
+    return None
 
 
 _MANUAL_FACTS_FIELD_CAPS: dict[str, int] = {
@@ -4057,6 +4124,9 @@ def run_manual_intake(
             og_image=og_image,
             raw_html=raw_html,
             manual_facts=manual_facts or {},
+            article_type=canonical_article_type,
+            category=category,
+            subtype=subtype,
         )
     if body is None:
         if is_x:
@@ -4085,6 +4155,8 @@ def run_manual_intake(
                     source_published_at_iso=normalized_source_published_at,
                     og_image=og_image,
                     raw_html=raw_html,
+                    article_type=canonical_article_type,
+                    subtype=subtype,
                 )
             except Exception as exc:
                 if logger is not None:
@@ -4098,6 +4170,12 @@ def run_manual_intake(
 
     try:
         wp = wp_client_factory()
+        featured_media = _resolve_manual_intake_featured_media(
+            wp,
+            og_image=og_image,
+            source_url=canonical_source_url,
+            logger=logger,
+        )
         post_id, draft_url = _wp_create_draft(
             wp,
             title=title,
@@ -4106,6 +4184,7 @@ def run_manual_intake(
             source_url=canonical_source_url,
             source_published_at_iso=normalized_source_published_at,
             logger=logger,
+            featured_media=featured_media,
         )
     except AssertionError:
         raise

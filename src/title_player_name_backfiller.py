@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import re
 from typing import Mapping
 
+from src.article_quality_guards import is_generic_compound_subject
 from src.title_validator import title_has_person_name_candidate
 
 
@@ -15,6 +16,10 @@ _LINEUP_PREFIX_RE = re.compile(r"^\s*巨人スタメン\s*")
 _LEADING_PARTICLE_RE = re.compile(r"^[がをにのへともや]")
 _GENERIC_HEAD_RE = re.compile(
     r"^(?P<label>選手|投手|捕手|内野手|外野手|コーチ|監督|チーム|首脳陣)"
+    r"(?P<rest>(?:[、，,]\s*.*|\s+.*|[がはもをにへと].*|$))"
+)
+_GENERIC_COMPOUND_HEAD_RE = re.compile(
+    r"^(?P<label>[A-Za-zＡ-Ｚａ-ｚ一-龯々ァ-ヴー・･\.\-]{2,24}?(?:選手|投手))"
     r"(?P<rest>(?:[、，,]\s*.*|\s+.*|[がはもをにへと].*|$))"
 )
 _QUOTE_RE = re.compile(r"[「『]([^」』]{1,40})[」』]")
@@ -188,6 +193,9 @@ def _title_already_has_named_subject(title: str) -> bool:
     if not cleaned:
         return False
     if cleaned in _GENERIC_LABELS:
+        return False
+    compound_match = _GENERIC_COMPOUND_HEAD_RE.match(cleaned)
+    if compound_match and is_generic_compound_subject(compound_match.group("label")):
         return False
     if cleaned.startswith(tuple(_GENERIC_LABELS)) and any(marker in cleaned for marker in _COMMENT_TITLE_MARKERS):
         return False
@@ -406,6 +414,15 @@ def _generic_label_matches_role(label: str, role: str) -> bool:
     return False
 
 
+def _generic_compound_matches_role(label: str, role: str) -> bool:
+    normalized_role = _normalize_role(role)
+    if label.endswith("投手"):
+        return normalized_role == "投手"
+    if label.endswith("選手"):
+        return normalized_role in {"選手", "投手"}
+    return False
+
+
 def _extract_first_quote(*texts: str) -> str:
     for text in texts:
         cleaned = _clean_text(text)
@@ -435,6 +452,13 @@ def _replace_generic_subject(existing_title: str, display_name: str, *, role: st
 
     if _LEADING_PARTICLE_RE.match(lineup_stripped):
         return f"{display_name}{lineup_stripped}"
+
+    compound_match = _GENERIC_COMPOUND_HEAD_RE.match(lineup_stripped)
+    if compound_match and is_generic_compound_subject(compound_match.group("label")):
+        if not _generic_compound_matches_role(compound_match.group("label"), role):
+            return ""
+        rest = compound_match.group("rest") or ""
+        return f"{display_name}{rest}"
 
     match = _GENERIC_HEAD_RE.match(lineup_stripped)
     if match:
@@ -468,6 +492,10 @@ def _replace_generic_subject_neutral(existing_title: str, role: str = "") -> str
         return neutral_subject
     if _LEADING_PARTICLE_RE.match(lineup_stripped):
         return f"{neutral_subject}{lineup_stripped}"
+    compound_match = _GENERIC_COMPOUND_HEAD_RE.match(lineup_stripped)
+    if compound_match and is_generic_compound_subject(compound_match.group("label")):
+        rest = compound_match.group("rest") or ""
+        return f"{neutral_subject}{rest}"
     match = _GENERIC_HEAD_RE.match(lineup_stripped)
     if match:
         rest = match.group("rest") or ""

@@ -116,6 +116,19 @@ class TitlePlayerNameBackfillTests(unittest.TestCase):
         self.assertNotIn("選手", result.title)
         self.assertEqual(result.review_reason, "")
 
+    def test_x_post_body_name_replaces_generic_compound_player_title(self):
+        result = backfill_title_player_name(
+            existing_title="実施選手、昇格・復帰 関連情報",
+            source_title="サンスポ巨人Xが選手の復帰調整を紹介",
+            body="#平山功太 選手が右アキレス腱炎からの復帰を目指してブルペン投球を実施。",
+            summary="#平山功太 選手が右アキレス腱炎からの復帰を目指してブルペン投球を実施。",
+            metadata={"role": "選手"},
+        )
+
+        self.assertEqual(result.title, "平山功太、昇格・復帰 関連情報")
+        self.assertNotIn("実施選手", result.title)
+        self.assertEqual(result.review_reason, "")
+
     def test_fetcher_adapter_uses_x_post_name_and_does_not_leave_player_word(self):
         final_title, comparison_title = rss_fetcher._apply_title_player_name_backfill(
             rewritten_title="選手、昇格・復帰 関連情報",
@@ -132,6 +145,23 @@ class TitlePlayerNameBackfillTests(unittest.TestCase):
         self.assertEqual(final_title, "浦田俊輔、昇格・復帰 関連情報")
         self.assertNotIn("選手", final_title)
         self.assertEqual(comparison_title, "スポーツ報知巨人班Xが若手選手の調整を紹介")
+
+    def test_fetcher_adapter_uses_x_post_name_for_generic_compound_player_title(self):
+        final_title, comparison_title = rss_fetcher._apply_title_player_name_backfill(
+            rewritten_title="実施選手、昇格・復帰 関連情報",
+            source_title="サンスポ巨人Xが選手の復帰調整を紹介",
+            source_body="#平山功太 選手が右アキレス腱炎からの復帰を目指してブルペン投球を実施。",
+            summary="#平山功太 選手が右アキレス腱炎からの復帰を目指してブルペン投球を実施。",
+            category="選手情報",
+            article_subtype="player",
+            logger=logging.getLogger("rss_fetcher"),
+            source_name="サンスポ巨人X",
+            source_url="https://x.com/sanspo_giants/status/1",
+        )
+
+        self.assertEqual(final_title, "平山功太、昇格・復帰 関連情報")
+        self.assertNotIn("実施選手", final_title)
+        self.assertEqual(comparison_title, "サンスポ巨人Xが選手の復帰調整を紹介")
 
     def test_unknown_media_like_source_title_does_not_become_player_name(self):
         result = backfill_title_player_name(

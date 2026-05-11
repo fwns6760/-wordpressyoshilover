@@ -12426,6 +12426,40 @@ def _apply_article_guardrails(title: str, summary: str, category: str, article_t
     return clean_text
 
 
+def _log_safe_article_fallback_used(
+    logger: logging.Logger,
+    *,
+    reason: str,
+    source_url: str,
+    title: str,
+    category: str,
+    generation_category: str,
+    article_subtype: str,
+    article_ai_mode: str,
+    source_name: str = "",
+    source_type: str = "",
+) -> None:
+    level = logging.INFO if reason == "ai_disabled_for_category" else logging.WARNING
+    logger.log(
+        level,
+        json.dumps(
+            {
+                "event": "safe_article_fallback_used",
+                "reason": reason,
+                "source_url": source_url,
+                "title": title,
+                "category": category,
+                "generation_category": generation_category,
+                "article_subtype": article_subtype,
+                "article_ai_mode": article_ai_mode,
+                "source_name": source_name,
+                "source_type": source_type,
+            },
+            ensure_ascii=False,
+        ),
+    )
+
+
 def _split_text_sections(text: str) -> list[tuple[str, str]]:
     clean_lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
     if not clean_lines:
@@ -15229,7 +15263,25 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     if not rendered_ai_body_html:
         ai_body = _apply_article_guardrails(title, summary_clean, effective_generation_category, ai_body, has_game, logger)
         if not ai_body:
-            logger.warning("記事本文が空のため、安全フォールバック本文を使用")
+            fallback_reason = (
+                "ai_disabled_for_category"
+                if article_ai_mode == "none" and not use_ai_for_article
+                else "article_ai_mode_none"
+                if article_ai_mode == "none"
+                else "generator_empty"
+            )
+            _log_safe_article_fallback_used(
+                logger,
+                reason=fallback_reason,
+                source_url=url,
+                title=title,
+                category=category,
+                generation_category=effective_generation_category,
+                article_subtype=body_subtype,
+                article_ai_mode=article_ai_mode,
+                source_name=source_name,
+                source_type=source_type,
+            )
             ai_body = _build_safe_article_fallback(
                 title,
                 summary_clean,

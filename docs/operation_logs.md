@@ -44,6 +44,7 @@ Cloud Run 運用で見るログの一覧です。目的は「異常の早期発�
 | `fact_check_email_demo_ready` | デモモードでの fact check 完了 | `since`, `checked_posts`, `red`, `yellow`, `green`, `to_email`, `subject` | `src/fact_check_notifier.py` | メールは未送信だが fact check 自体は完了したことを確認 | 本物送信へ切り替え後も出続ける |
 | `rss_fetcher_run_summary` | 1 run 終了時 | `dry_run`, `draft_only`, `has_game`, `opponent`, `venue`, `entry_limit`, `total_entries`, `drafts_created`, `skip_duplicate`, `skip_filter`, `error_count`, `x_post_count`, `x_post_daily_limit`, `x_ai_generation_count`, `x_ai_generation_limit` | `src/rss_fetcher.py:6043` | run 単位のKPI監視 | `error_count > 0`、`drafts_created=0` が連続、`x_ai_generation_count` が上限張り付き |
 | `rss_fetcher_flow_summary` | 1 run 終了時 | `skip_reasons`, `prepared_category_counts`, `prepared_subtype_counts`, `created_category_counts`, `created_subtype_counts`, `publish_skip_reason_counts`, `publish_observation_counts`, `x_skip_reason_counts`, `x_ai_generation_count`, `x_ai_generation_limit` | `src/rss_fetcher.py:6064` | どこで落ちているか、どのカテゴリが作られたかを見る | `social_too_weak` や `comment_required` が急増、`featured_media_missing` が急増、`publish_observation_counts.featured_media_observation_missing` が急増、`x_ai_generation_count` が上限張り付き。`x_skip_reason_counts.live_update_x_post_disabled` と `x_skip_reason_counts.x_post_disabled_for_subtype` は X 投稿 gate の想定値 |
+| `safe_article_fallback_used` | AI本文が使えず安全フォールバック本文を使った時 | `reason`, `source_url`, `title`, `category`, `generation_category`, `article_subtype`, `article_ai_mode`, `source_name`, `source_type` | `src/rss_fetcher.py` | AI無効カテゴリと生成失敗を分けて見る | `reason=generator_empty` が新 revision で急増したら要調査。`reason=ai_disabled_for_category` は低コスト運用の想定範囲 |
 
 ## 重要なプレーンログ
 
@@ -52,7 +53,7 @@ Cloud Run 運用で見るログの一覧です。目的は「異常の早期発�
 | ログ文言 | 発火条件 | 実装 | 観察目的 | 異常の目安 |
 |---|---|---|---|---|
 | `記事ガードレール発動:` | unverified number や禁止パターンで guardrail が fallback を返す | `src/rss_fetcher.py:2755` | 試合速報/成績記事の誤検知監視 | 同一カテゴリで連発 |
-| `記事本文が空のため、安全フォールバック本文を使用` | Gemini本文が空 | `src/rss_fetcher.py:3942` | AI本文生成失敗の検知 | 新 revision で再増加したら要調査 |
+| `記事本文が空のため、安全フォールバック本文を使用` | 旧revisionの安全フォールバック発火 | `src/rss_fetcher.py` | 旧revisionのAI本文生成失敗の検知 | 新 revision では `safe_article_fallback_used` を見る |
 | `記事本文が汎用表現に寄りすぎたため、安全版へ差し替え` | generic phrase validator に引っかかった | `src/rss_fetcher.py:3947` | 汎用文の混入検知 | 特定 prompt で集中 |
 | `SUMMARY/STATS/IMPRESSIONブロックを破棄` | 英語プレースホルダ系ブロックが残った | `src/rss_fetcher.py:3954` | LLM 出力崩れ検知 | 1日で複数回出たら prompt/validator を確認 |
 | `[HIT] ... → {category}` | 記事候補として採用 | `src/rss_fetcher.py:5788`, `5837`, `5846`, `5855` | 取り込み母数の確認 | run summary と乖離したら要確認 |
@@ -637,7 +638,8 @@ textPayload:"farm_body_template_applied"
 ```text
 resource.type="cloud_run_revision"
 resource.labels.service_name="yoshilover-fetcher"
-(textPayload:"記事本文が空のため、安全フォールバック本文を使用"
+(textPayload:"safe_article_fallback_used"
+ OR textPayload:"記事本文が空のため、安全フォールバック本文を使用"
  OR textPayload:"記事ガードレール発動")
 ```
 
@@ -1013,7 +1015,7 @@ resource.labels.service_name="yoshilover-fetcher"
 4. `image_candidate_excluded` と `[WP] 画像アップロード失敗`
 5. `sns_weak_rescued`
 6. `article_ai_route_override`
-7. `記事本文が空のため、安全フォールバック本文を使用`
+7. `safe_article_fallback_used`
 8. `farm_body_template_applied`
 9. `social_body_template_applied`
 10. `media_xpost_embedded`

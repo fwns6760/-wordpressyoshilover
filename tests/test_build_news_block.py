@@ -6,6 +6,39 @@ from src.media_xpost_selector import select_media_quotes
 
 
 class BuildNewsBlockTests(unittest.TestCase):
+    def test_ai_disabled_safe_fallback_logs_structured_info_not_empty_body_warning(self):
+        title = "【巨人】球団イベントの案内を発表"
+        summary = "巨人が東京ドームで開催する球団イベントの概要を発表した。来場者向けの案内も告知されている。"
+
+        with patch.dict(
+            "os.environ",
+            {
+                "LOW_COST_MODE": "1",
+                "AI_ENABLED_CATEGORIES": "選手情報",
+                "OFFDAY_ARTICLE_AI_MODE": "gemini",
+            },
+            clear=False,
+        ):
+            with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
+                with patch.object(rss_fetcher, "_find_related_posts_for_article", return_value=[]):
+                    with self.assertLogs("rss_fetcher", level="INFO") as captured:
+                        blocks, ai_body = rss_fetcher.build_news_block(
+                            title=title,
+                            summary=summary,
+                            url="https://example.com/giants-event",
+                            source_name="読売巨人軍公式",
+                            category="コラム",
+                            has_game=False,
+                        )
+
+        logs = "\n".join(captured.output)
+        self.assertIn('"event": "safe_article_fallback_used"', logs)
+        self.assertIn('"reason": "ai_disabled_for_category"', logs)
+        self.assertIn('"source_url": "https://example.com/giants-event"', logs)
+        self.assertNotIn("記事本文が空のため、安全フォールバック本文を使用", logs)
+        self.assertIn("【ニュースの整理】", ai_body)
+        self.assertIn("<h3>【ニュースの整理】</h3>", blocks)
+
     def test_empty_ai_body_uses_safe_fallback_instead_of_repeating_summary(self):
         title = "【巨人】大胆フォーム変更の戸郷翔征「人の助言を取り入れることも重要」久保コーチとの取り組み"
         summary = (
@@ -20,15 +53,20 @@ class BuildNewsBlockTests(unittest.TestCase):
         ):
             with patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]):
                 with patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""):
-                    blocks, ai_body = rss_fetcher.build_news_block(
-                        title=title,
-                        summary=summary,
-                        url="https://example.com/post",
-                        source_name="日刊スポーツ 巨人",
-                        category="選手情報",
-                        has_game=False,
-                    )
+                    with self.assertLogs("rss_fetcher", level="WARNING") as captured:
+                        blocks, ai_body = rss_fetcher.build_news_block(
+                            title=title,
+                            summary=summary,
+                            url="https://example.com/post",
+                            source_name="日刊スポーツ 巨人",
+                            category="選手情報",
+                            has_game=False,
+                        )
 
+        logs = "\n".join(captured.output)
+        self.assertIn('"event": "safe_article_fallback_used"', logs)
+        self.assertIn('"reason": "generator_empty"', logs)
+        self.assertNotIn("記事本文が空のため、安全フォールバック本文を使用", logs)
         self.assertIn("【ニュースの整理】", ai_body)
         self.assertIn("<h3>【ニュースの整理】</h3>", blocks)
         self.assertIn("戸郷翔征投手が何を変えているのか整理します。", ai_body)

@@ -229,3 +229,69 @@ GO 後の実装で想定されるデグレ。
 - canonical / 301 リダイレクト挙動
 - WP 本文の直接変更
 - unrelated dirty files
+
+## 続き作業追記欄
+
+### 1. 実際に変更したファイル
+
+- `src/rss_fetcher.py`
+- `tests/test_build_news_block.py`
+- `docs/operation_logs.md`
+- `docs/work_logs/2026-05-11_nomotoke-parity-quality-ticket.md`
+
+### 2. diff概要
+
+- deploy後ログで複数回出た `記事本文が空のため、安全フォールバック本文を使用` を調査。
+- AI無効カテゴリで予定通り安全フォールバックを使う場合と、Gemini/Grok等の生成失敗で安全フォールバックに落ちる場合を分けるため、`safe_article_fallback_used` の構造化ログを追加。
+- `reason=ai_disabled_for_category` は INFO、`reason=generator_empty` / `reason=article_ai_mode_none` は WARNING に分離。
+- 旧プレーンログ文言は新規発火させず、運用ログ手順は `safe_article_fallback_used` を見る形に更新。
+
+### 3. 実行したテスト
+
+- `python3 -m py_compile src/rss_fetcher.py tests/test_build_news_block.py`
+- AST parse for `src/rss_fetcher.py` / `tests/test_build_news_block.py`
+- `python3 -m unittest tests.test_build_news_block.BuildNewsBlockTests.test_ai_disabled_safe_fallback_logs_structured_info_not_empty_body_warning`
+- `python3 -m unittest tests.test_build_news_block.BuildNewsBlockTests.test_ai_disabled_safe_fallback_logs_structured_info_not_empty_body_warning tests.test_build_news_block.BuildNewsBlockTests.test_empty_ai_body_uses_safe_fallback_instead_of_repeating_summary`
+- `python3 -m unittest tests.test_build_news_block`
+- `python3 -m unittest tests.test_rss_fetcher_reliability_2026_05_08`
+- `python3 -m unittest tests.test_rss_fetcher_observability`
+- `git diff --check`
+- `python3 -m unittest discover -s tests`
+
+### 4. テスト結果
+
+- 追加テストは実装前に赤: `safe_article_fallback_used` が出ず、旧 WARNING 文言だけが出ることを確認。
+- `python3 -m py_compile src/rss_fetcher.py tests/test_build_news_block.py`: OK
+- AST parse: OK
+- 追加 targeted 1 test: OK
+- 追加 targeted 2 tests: OK
+- `tests.test_build_news_block`: 60 tests OK
+- `tests.test_rss_fetcher_reliability_2026_05_08`: 34 tests OK
+- `tests.test_rss_fetcher_observability`: 3 tests OK
+- `git diff --check`: OK
+- `python3 -m unittest discover -s tests`: sandbox の local HTTPServer socket 作成制限で 3 errors、権限付き再実行で 3388 tests OK。
+
+### 5. 残った懸念
+
+- 本変更は本文生成内容を増やすものではなく、本文フォールバックの観測性改善。
+- deploy 後に新 event `safe_article_fallback_used` の `reason` 内訳を Cloud Logging で確認する必要がある。
+
+### 6. 新しく見つかったデグレ
+
+- 旧ログ文言だけでは、AIを意図的に使わないカテゴリと、AI生成失敗を区別できなかった。
+
+### 7. 追加した回帰テスト
+
+- `tests.test_build_news_block.BuildNewsBlockTests.test_ai_disabled_safe_fallback_logs_structured_info_not_empty_body_warning`
+- `tests.test_build_news_block.BuildNewsBlockTests.test_empty_ai_body_uses_safe_fallback_instead_of_repeating_summary` に `reason=generator_empty` の構造化 WARNING 確認を追加。
+
+### 8. 次回触ってはいけない範囲
+
+- 320-FRONT / AdSense / scroll UI / 広告表示制御
+- Cloud Run env / Scheduler / GitHub Actions / Secret
+- source 追加
+- X API / X 自動投稿
+- publish 条件 / mail 通知量
+- canonical / 301 リダイレクト挙動
+- WP 本文の直接変更
+- unrelated dirty files

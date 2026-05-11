@@ -234,7 +234,7 @@ GO 後、実装内容に応じて以下を実行する。
 - 今回は `manual-intake-service` 経路だけの narrow fix。RSS fetcher / draft-body-editor 側の本文情報不足は今回の scope 外。
 - `short_news_url` の renderer は、context-matched `og:description` がある場合だけ通す。既存 fallback を全面置換していないため、情報不足が source OG に無い記事は従来どおり。
 - 別記事 HTML 混入を避けるため context guard を通している。title / summary が極端に汎用的で context term が作れない場合、OG は使わず fallback する。
-- deploy は未実施。deploy する場合は `manual-intake-service` 本線を触る便として扱う。
+- deploy 済み。`manual-intake-service` 本線を触る便として、image-only で service と既存 3 job を commit `7048fa9` に揃えた。
 
 ### 6. 新しく見つかったデグレ
 
@@ -259,3 +259,54 @@ GO 後、実装内容に応じて以下を実行する。
 - noindex / canonical / 301
 - AdSense / frontend UI
 - unrelated dirty files
+
+## deploy 後追記欄
+
+### deploy 前分類
+
+- 本線影響: あり
+- 対象: `manual-intake-service` / `postgame-auto` / `lineup-auto` / `broadcast-auto`
+- 変更種別: image-only
+- 触っていない範囲: env / Secret / Scheduler / publish job image / mail job image / WP 公開記事 / GitHub Actions
+
+### deploy 内容
+
+- code commit: `7048fa9` (`fix: enrich manual intake body from matched og description`)
+- build id: `ec043487-7f57-482c-9a46-d7a79bee6d27`
+- image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/manual-intake-service:7048fa9`
+- image digest: `sha256:bc06860de429a24c632f9cf2a722b873c819ba10cf292ebf312330d3287e37f1`
+- previous service revision: `manual-intake-service-00054-6m6`
+- new service revision: `manual-intake-service-00055-cmx`
+- traffic: `manual-intake-service-00055-cmx` 100%
+
+### deploy 後確認
+
+- Cloud Run revision:
+  - `manual-intake-service-00055-cmx`
+- Service health:
+  - `GET /health` -> `{"ok": true}`
+- Job image readback:
+  - `postgame-auto` -> `manual-intake-service:7048fa9`
+  - `lineup-auto` -> `manual-intake-service:7048fa9`
+  - `broadcast-auto` -> `manual-intake-service:7048fa9`
+- Job dry-run:
+  - `postgame-auto-6ngrb` -> Completed / succeededCount 1
+  - `lineup-auto-bwqj9` -> Completed / succeededCount 1
+  - `broadcast-auto-6k566` -> Completed / succeededCount 1
+- 実出力 dry-run:
+  - `POST /manual-intake` dry-run -> `ok=true`, `validation_ok=true`, `template_key=nomotoke_card_short_news_url_v1`, `post_id=null`
+  - WP 書き込みなし、公開記事変更なし
+- publish / mail:
+  - `guarded-publish-trigger` ENABLED
+  - `publish-notice-trigger` ENABLED
+  - `guarded-publish` image は変更なし (`guarded-publish:2487abf`)
+  - `publish-notice` image は変更なし (`publish-notice:b816f06-job`)
+- ERROR logs:
+  - 対象: `manual-intake-service`, `yoshilover-fetcher`, `postgame-auto`, `lineup-auto`, `broadcast-auto`, `guarded-publish`, `publish-notice`
+  - freshness: 1h
+  - result: no output / 該当 ERROR なし
+
+### deploy 後の残懸念
+
+- live dry-run endpoint は body HTML を返さないため、本文 HTML の事実密度は unit regression で確認した。WP draft は作成していない。
+- 今回の本番反映は manual-intake-service 経路のみ。RSS fetcher / draft-body-editor の本文情報不足は別 scope。

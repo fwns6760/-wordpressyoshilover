@@ -98,6 +98,42 @@ class TestWPClientDedup(unittest.TestCase):
         self.assertEqual(payload["status"], "draft")
         self.assertEqual(payload["featured_media"], 654)
 
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_create_post_sets_excerpt_from_source_quote_not_ui_chrome(self, mock_get, mock_post):
+        mock_get.return_value = Mock(status_code=200, json=lambda: [])
+        mock_post.return_value = Mock(status_code=201, json=lambda: {"id": 790})
+
+        content = (
+            '<aside class="nomotoke-reader-meta"><p>⏱ 読了約1分</p></aside>'
+            '<p class="nomotoke-cta-row">💬 この記事にコメントする</p>'
+            '<aside class="nomotoke-share-buttons">▼ この記事を共有する</aside>'
+            '<p class="nomotoke-lead">巨人はここまで３６試合で１８勝１８敗。</p>'
+            '<aside class="nomotoke-source-excerpt">'
+            '<p class="nomotoke-source-excerpt__label">📖 本文抜粋</p>'
+            '<blockquote class="nomotoke-source-excerpt__body">'
+            '巨人はここまで３６試合で１８勝１８敗、勝率５割でセ・リーグ３位。'
+            '交流戦まで残り１０試合。岐阜、福井での主催試合に臨む。'
+            '</blockquote>'
+            '<p class="nomotoke-source-excerpt__attr">— スポーツ報知</p>'
+            '</aside>'
+        )
+
+        post_id = self.wp.create_post(
+            "【巨人】交流戦まで残り１０試合",
+            content,
+            status="publish",
+            source_url="https://hochi.news/articles/20260511-OHT1T51228.html",
+        )
+
+        self.assertEqual(post_id, 790)
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertIn("excerpt", payload)
+        self.assertIn("巨人はここまで３６試合", payload["excerpt"])
+        self.assertIn("交流戦まで残り１０試合", payload["excerpt"])
+        self.assertNotIn("この記事にコメント", payload["excerpt"])
+        self.assertNotIn("この記事を共有", payload["excerpt"])
+
     @patch.object(WPClient, "update_post_fields")
     @patch("src.wp_client.requests.post")
     @patch("src.wp_client.requests.get")

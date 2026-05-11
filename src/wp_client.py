@@ -46,6 +46,15 @@ ALLOWED_IMAGE_CONTENT_TYPES = {
 WP_REST_RETRY = 3
 WP_REST_MAX_SLEEP = 30
 WP_PUBLISH_STATUS_GUARD_ENV = "ENABLE_WP_PUBLISH_STATUS_GUARD"
+WP_EXCERPT_MAX_CHARS = 180
+
+SOURCE_EXCERPT_BODY_RE = re.compile(
+    r"<blockquote\b[^>]*class=[\"'][^\"']*\bnomotoke-source-excerpt__body\b[^\"']*[\"'][^>]*>(.*?)</blockquote>",
+    re.IGNORECASE | re.DOTALL,
+)
+SCRIPT_STYLE_RE = re.compile(r"<(?:script|style)\b[^>]*>.*?</(?:script|style)>", re.IGNORECASE | re.DOTALL)
+HTML_TAG_RE = re.compile(r"<[^>]+>")
+HTML_WS_RE = re.compile(r"\s+")
 
 
 def _parse_retry_after_seconds(value: str | None) -> float | None:
@@ -67,6 +76,38 @@ def _parse_retry_after_seconds(value: str | None) -> float | None:
 
 def _compute_retry_sleep(attempt: int, max_delay: int) -> float:
     return min((2 ** attempt) + random.uniform(0, 1), max_delay)
+
+
+def _html_fragment_to_text(fragment: str) -> str:
+    clean = SCRIPT_STYLE_RE.sub("", fragment or "")
+    clean = HTML_TAG_RE.sub(" ", clean)
+    clean = html.unescape(clean)
+    return HTML_WS_RE.sub(" ", clean).strip()
+
+
+def _truncate_wp_excerpt(text: str, max_chars: int = WP_EXCERPT_MAX_CHARS) -> str:
+    clean = HTML_WS_RE.sub(" ", text or "").strip()
+    if len(clean) <= max_chars:
+        return clean
+    window = clean[: max_chars + 1]
+    boundary = max(
+        window.rfind("。"),
+        window.rfind("！"),
+        window.rfind("？"),
+        window.rfind("."),
+    )
+    if boundary >= max_chars // 2:
+        return window[: boundary + 1].strip()
+    return clean[:max_chars].rstrip() + "…"
+
+
+def _build_wp_excerpt_from_content(content: str) -> str:
+    if not content:
+        return ""
+    match = SOURCE_EXCERPT_BODY_RE.search(content)
+    if not match:
+        return ""
+    return _truncate_wp_excerpt(_html_fragment_to_text(match.group(1)))
 
 
 class WPClient:
@@ -772,6 +813,9 @@ class WPClient:
             "content": content,
             "status":  status,
         }
+        explicit_excerpt = _build_wp_excerpt_from_content(content)
+        if explicit_excerpt:
+            payload["excerpt"] = explicit_excerpt
         if categories:
             payload["categories"] = categories
         if not featured_media:

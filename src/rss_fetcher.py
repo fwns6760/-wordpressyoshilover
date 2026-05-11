@@ -13452,6 +13452,56 @@ def _fetch_url_html(url: str, max_bytes: int = 200000, timeout: int = 12) -> str
             return ""
 
 
+_SOURCE_EXCERPT_SKIP_HTML_HOST_SUFFIXES = (
+    "x.com",
+    "twitter.com",
+    "t.co",
+    "instagram.com",
+    "facebook.com",
+    "youtube.com",
+    "youtu.be",
+    "threads.net",
+)
+
+
+def _should_fetch_article_raw_html_for_enrichment(source_type: str, source_url: str) -> bool:
+    if source_type in {"news", "tag_scrape"}:
+        return True
+    if source_type != "social_news":
+        return False
+
+    normalized_url = _html.unescape((source_url or "").strip())
+    if not normalized_url.startswith(("http://", "https://")):
+        return False
+    try:
+        from urllib.parse import urlparse
+
+        host = (urlparse(normalized_url).hostname or "").lower()
+    except Exception:
+        return False
+    if not host:
+        return False
+    return not any(
+        host == suffix or host.endswith(f".{suffix}")
+        for suffix in _SOURCE_EXCERPT_SKIP_HTML_HOST_SUFFIXES
+    )
+
+
+def _resolve_article_raw_html_for_enrichment(
+    source_type: str,
+    source_url: str,
+    entry_obj: Mapping[str, Any] | None,
+) -> str:
+    if not _should_fetch_article_raw_html_for_enrichment(source_type, source_url):
+        return ""
+    raw_html = ""
+    if isinstance(entry_obj, Mapping):
+        raw_html = str(entry_obj.get("_html") or "")
+    if raw_html:
+        return raw_html
+    return _fetch_url_html(source_url, max_bytes=240000, timeout=12)
+
+
 def _get_image_candidate_exclusion_reason(image_url: str) -> str:
     low = _html.unescape((image_url or "").strip()).lower()
     if _re.search(r"\babs(?:-\d+)?\.twimg\.com/emoji/", low):
@@ -21325,11 +21375,11 @@ def _main(args, logger):
             )
             media_quotes = media_quote_evaluation["quotes"]
             entry_obj = item.get("entry") if isinstance(item.get("entry"), dict) else {}
-            _article_raw_html = ""
-            if source_type in {"news", "tag_scrape"}:
-                _article_raw_html = str(entry_obj.get("_html") or "")
-                if not _article_raw_html:
-                    _article_raw_html = _fetch_url_html(post_url, max_bytes=240000, timeout=12)
+            _article_raw_html = _resolve_article_raw_html_for_enrichment(
+                source_type,
+                post_url,
+                entry_obj,
+            )
             if source_type == "news":
                 _article_images = _extract_article_images_from_html(
                     _article_raw_html,

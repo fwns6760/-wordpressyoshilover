@@ -322,6 +322,37 @@ class IsReviewEligibleFailAxesTests(unittest.TestCase):
 class CreateDraftForceStatusTests(unittest.TestCase):
     """E が依存する _create_draft_with_same_fire_guard の force_status 引数 test."""
 
+    def test_social_news_article_url_fetches_raw_html_for_source_excerpt(self):
+        self.assertTrue(
+            rss_fetcher._should_fetch_article_raw_html_for_enrichment(
+                "social_news",
+                "https://hochi.news/articles/20260511-OHT1T51228.html",
+            )
+        )
+
+    def test_social_news_x_url_does_not_fetch_raw_html_for_source_excerpt(self):
+        self.assertFalse(
+            rss_fetcher._should_fetch_article_raw_html_for_enrichment(
+                "social_news",
+                "https://x.com/hochi_giants/status/1234567890",
+            )
+        )
+
+    def test_social_news_article_url_resolves_raw_html_for_source_excerpt(self):
+        with patch.object(rss_fetcher, "_fetch_url_html", return_value="<html>報知本文</html>") as mock_fetch:
+            raw_html = rss_fetcher._resolve_article_raw_html_for_enrichment(
+                "social_news",
+                "https://hochi.news/articles/20260511-OHT1T51228.html",
+                {},
+            )
+
+        self.assertEqual(raw_html, "<html>報知本文</html>")
+        mock_fetch.assert_called_once_with(
+            "https://hochi.news/articles/20260511-OHT1T51228.html",
+            max_bytes=240000,
+            timeout=12,
+        )
+
     def test_enrichment_raw_html_reaches_rss_pipeline(self):
         captured = {}
 

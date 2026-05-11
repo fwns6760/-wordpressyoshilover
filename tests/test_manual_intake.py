@@ -881,6 +881,175 @@ class SourcePublishedAtIntakeTests(_IntakeBaseTest):
         self.assertIsNone(captured.get("source_published_at_iso"))
 
 
+class ManualIntakeColumnOutputRegressionTests(_IntakeBaseTest):
+    def _fake_fetch_meta(
+        self,
+        *,
+        title: str = "巨人・坂本勇人、節目を迎える現在地",
+        summary: str = "巨人・坂本勇人の現在地を出典記事の内容に沿って整理する。",
+        image: str = "https://example.com/sakamoto-hero.jpg",
+    ):
+        raw_html = (
+            "<html><head>"
+            f'<meta property="og:title" content="{title}">'
+            f'<meta property="og:description" content="{summary}">'
+            f'<meta property="og:image" content="{image}">'
+            "</head><body></body></html>"
+        )
+
+        def fake_fetch(_url: str) -> dict[str, str]:
+            return {
+                "title": title,
+                "summary": summary,
+                "image": image,
+                "_html": raw_html,
+            }
+
+        return fake_fetch
+
+    def test_column_manual_intake_does_not_put_reader_ui_before_article_body(self):
+        captured: dict = {}
+
+        def fake_create(**kwargs):
+            captured.update(kwargs)
+            return 66257
+
+        def fake_renderer(data):
+            return {
+                "validation_ok": True,
+                "content_html": (
+                    '<div class="nomotoke-card-short-news">'
+                    f'<p class="nomotoke-lead">{data["summary"]}</p>'
+                    "<h3>🔗 出典記事</h3>"
+                    f'<p>記事全文は <a href="{data["source_url"]}">'
+                    f'{data["title"]}</a> をご覧ください。</p>'
+                    "</div>"
+                ),
+            }
+
+        wp = MagicMock()
+        wp.create_post = fake_create
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch("src.nomotoke_card_renderer.select_renderer", return_value=fake_renderer)
+            )
+            stack.enter_context(
+                patch.object(
+                    mi,
+                    "_build_recent_games_block",
+                    return_value='<aside class="nomotoke-recent-games">recent</aside>',
+                )
+            )
+            stack.enter_context(
+                patch.object(
+                    mi,
+                    "_build_standings_block",
+                    return_value='<aside class="nomotoke-standings">standings</aside>',
+                )
+            )
+            stack.enter_context(
+                patch.object(
+                    mi,
+                    "_build_next_game_block",
+                    return_value='<aside class="nomotoke-next-game">next</aside>',
+                )
+            )
+            stack.enter_context(
+                patch.object(
+                    mi,
+                    "_build_x_embeds_block_safe",
+                    return_value='<aside class="nomotoke-x-embeds">x</aside>',
+                )
+            )
+            stack.enter_context(patch.object(mi, "_build_related_articles_block", return_value=""))
+            stack.enter_context(patch.object(mi, "_build_player_stats_block", return_value=""))
+            stack.enter_context(patch.object(mi, "_build_author_other_articles_block", return_value=""))
+            stack.enter_context(patch.object(mi, "_build_trust_badge_block", return_value=""))
+            stack.enter_context(patch.object(mi, "_build_tag_chip_block", return_value=""))
+            stack.enter_context(patch.object(mi, "_build_jsonld_article_schema", return_value=""))
+            stack.enter_context(
+                patch.object(mi, "_inject_toc_anchors", side_effect=lambda html: (html, []))
+            )
+            stack.enter_context(patch.object(mi, "_build_toc_block", return_value=""))
+            stack.enter_context(
+                patch.object(mi, "_wrap_first_roster_names_in_lead", side_effect=lambda html: html)
+            )
+            stack.enter_context(
+                patch.object(mi, "_decorate_body_with_emoji_safe", side_effect=lambda html: html)
+            )
+            code, out = mi.run_manual_intake(
+                url="https://www.jprime.jp/articles/-/41583?display=b",
+                mode="draft",
+                article_type="コラム",
+                wp_client_factory=lambda: wp,
+                rate_limit_lockfile=self.lockfile,
+                fetch_meta=self._fake_fetch_meta(),
+            )
+
+        self.assertEqual(code, mi.EXIT_OK, out)
+        content = captured.get("content", "")
+        self.assertEqual(out["category"], "コラム")
+        self.assertEqual(captured.get("categories"), [670])
+        self.assertIn('class="nomotoke-hero"', content)
+        self.assertIn('class="nomotoke-lead"', content)
+        self.assertLess(content.index('class="nomotoke-hero"'), content.index('class="nomotoke-lead"'))
+        self.assertNotIn("この記事にコメントする", content[: content.index('class="nomotoke-hero"')])
+        self.assertNotIn("nomotoke-share-buttons", content[: content.index('class="nomotoke-hero"')])
+        self.assertEqual(content.count("nomotoke-share-buttons"), 1)
+        self.assertNotIn("nomotoke-recent-games", content)
+        self.assertNotIn("nomotoke-standings", content)
+        self.assertNotIn("nomotoke-next-game", content)
+        self.assertNotIn("nomotoke-x-embeds", content)
+
+    def test_column_manual_intake_uses_og_image_as_featured_media(self):
+        captured: dict = {}
+        calls: list[tuple[str, str]] = []
+
+        class FakeWP:
+            def find_uploaded_media_id_for_url(self, image_url: str) -> int:
+                return 0
+
+            def upload_image_from_url(
+                self,
+                image_url: str,
+                filename: str | None = None,
+                source_url: str = "",
+            ) -> int:
+                calls.append((image_url, source_url))
+                return 321
+
+            def create_post(self, **kwargs):
+                captured.update(kwargs)
+                return 66257
+
+        with (
+            patch.object(mi, "_try_render_via_nomotoke", return_value="<p>本文</p>"),
+            patch.object(mi, "_check_rate_limit", return_value=(True, 0)),
+        ):
+            code, out = mi.run_manual_intake(
+                url="https://www.jprime.jp/articles/-/41583?display=b",
+                mode="draft",
+                article_type="コラム",
+                wp_client_factory=FakeWP,
+                rate_limit_lockfile=self.lockfile,
+                fetch_meta=self._fake_fetch_meta(
+                    image="https://example.com/source-eyecatch.jpg"
+                ),
+            )
+
+        self.assertEqual(code, mi.EXIT_OK, out)
+        self.assertEqual(
+            calls,
+            [
+                (
+                    "https://example.com/source-eyecatch.jpg",
+                    "https://www.jprime.jp/articles/-/41583?display=b",
+                )
+            ],
+        )
+        self.assertEqual(captured.get("featured_media"), 321)
+
+
 class PlayerStatsTableBlockTests(unittest.TestCase):
     def test_build_player_stats_block_renders_batter_table_with_sb(self):
         stats_lookup = {

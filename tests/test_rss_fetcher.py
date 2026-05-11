@@ -388,6 +388,17 @@ def test_source_title_unaffected_when_rewritten_equals_original():
     assert fallback is None
 
 
+def test_clean_social_entry_text_preserves_hashtag_name_before_role():
+    raw_text = (
+        "📺YouTube公開📺 球団記録更新中！ルーキー #田和廉 投手を支える先輩たち👍"
+        "https://t.co/05vM7iR4O7 #高梨雄平 @yuhei_takanashi #船迫大雅 #大勢"
+    )
+
+    cleaned = rss_fetcher._clean_social_entry_text(raw_text)
+
+    assert cleaned == "📺YouTube公開📺 球団記録更新中！ルーキー 田和廉 投手を支える先輩たち👍"
+
+
 def test_weak_subject_title_routes_to_review_for_reserved_prefix_particle():
     fallback = rss_fetcher._maybe_route_weak_subject_title_review(
         article_subtype="lineup",

@@ -2736,6 +2736,11 @@ def _strip_title_prefix(title: str) -> str:
 def _clean_social_entry_text(text: str) -> str:
     clean = _html.unescape(_strip_html(text or ""))
     clean = _re.sub(r'https?://\S+', '', clean)
+    clean = _re.sub(
+        r'#([\w一-龯ぁ-ゔァ-ヴー々〆〤]+)(?=\s*(?:投手|捕手|内野手|外野手|選手|監督|コーチ))',
+        lambda match: match.group(1) if _re.search(r"[一-龯ぁ-ゔァ-ヴー々〆〤]", match.group(1)) else "",
+        clean,
+    )
     clean = _re.sub(r'#[\w一-龯ぁ-ゔァ-ヴー々〆〤]+', '', clean)
     clean = _re.sub(r'(?<!\S)@[\w.\-一-龯ぁ-ゔァ-ヴー々〆〤]+[:：]?', '', clean)
     clean = _re.sub(

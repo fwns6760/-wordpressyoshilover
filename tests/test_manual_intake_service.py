@@ -151,6 +151,41 @@ class HealthAndFormTests(unittest.TestCase):
         # only URL + 記事タイプ + 「記事化」 button on first load.
         self.assertIn("詳細設定", text)
 
+    def test_form_html_uses_manual_intake_ui_specs(self):
+        status, _headers, body = _invoke_handler(method="GET", path="/")
+        self.assertEqual(status, 200)
+        text = body.decode("utf-8")
+
+        for article_type in mi.ARTICLE_TYPE_OVERRIDES:
+            spec = mi.ARTICLE_TYPE_UI_SPECS.get(article_type)
+            self.assertIsNotNone(spec, article_type)
+            submit_label = str(spec.get("submit_label") or "")
+            self.assertIn(submit_label, text)
+            hint = str(spec.get("hint") or "")
+            if hint:
+                self.assertIn(hint, text)
+            for field in spec.get("fields") or []:
+                name = str(field.get("name") or "")
+                field_id = str(field.get("id") or name)
+                label = str(field.get("label") or "")
+                self.assertIn(f'name="{name}"', text)
+                self.assertIn(f'id="{field_id}"', text)
+                self.assertIn(label, text)
+
+        self.assertIn(mi.ARTICLE_TYPE_DEFAULT_HINT, text)
+
+    def test_article_type_ui_specs_match_core_choices_and_fact_caps(self):
+        self.assertEqual(
+            set(mi.ARTICLE_TYPE_UI_SPECS),
+            set(mi.ARTICLE_TYPE_OVERRIDES),
+        )
+        fact_names = set(mi.MANUAL_FACT_FIELD_NAMES)
+        for article_type, spec in mi.ARTICLE_TYPE_UI_SPECS.items():
+            self.assertIn(article_type, mi.ARTICLE_TYPE_CHOICES)
+            self.assertTrue(str(spec.get("submit_label") or "").strip())
+            for field in spec.get("fields") or []:
+                self.assertIn(str(field.get("name") or ""), fact_names)
+
     def test_manifest_returns_json(self):
         status, headers, body = _invoke_handler(
             method="GET", path="/manifest.webmanifest"

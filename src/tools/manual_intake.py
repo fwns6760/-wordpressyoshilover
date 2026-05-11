@@ -113,6 +113,130 @@ ARTICLE_TYPE_CHOICES: tuple[str, ...] = (
     *ARTICLE_TYPE_OVERRIDES.keys(),
 )
 ARTICLE_STYLE_MANUAL_TYPES = {"コラム", "ニュース"}
+ARTICLE_TYPE_DEFAULT_HINT = (
+    "URL を入れて記事タイプを選んで「記事化」を押すだけ。"
+    "タイトル / サマリーは出典 OG から自動取得します。"
+)
+ARTICLE_TYPE_UI_SPECS: dict[str, dict[str, object]] = {
+    "試合結果": {
+        "submit_label": "試合結果を記事化",
+        "hint": (
+            "Yahoo!スポーツの試合詳細URL"
+            "（baseball.yahoo.co.jp/npb/game/...）を貼ると、"
+            "回ごとのスコア表が出ます。"
+        ),
+    },
+    "試合速報": {"submit_label": "試合速報を記事化"},
+    "予告先発": {
+        "submit_label": "予告先発を記事化",
+        "hint": "予告先発記事URL。先発投手が抽出できないときは下のフィールドに入力。",
+        "fields": [
+            {
+                "name": "pitcher_a",
+                "label": "巨人先発（任意）",
+                "type": "text",
+                "placeholder": "例: 戸郷",
+            },
+            {
+                "name": "team_b",
+                "label": "対戦チーム（任意）",
+                "type": "text",
+                "placeholder": "例: 阪神",
+            },
+            {
+                "name": "pitcher_b",
+                "label": "相手先発（任意）",
+                "type": "text",
+                "placeholder": "例: 才木",
+            },
+        ],
+    },
+    "公示": {
+        "submit_label": "公示を記事化",
+        "hint": "公示記事URL。登録/抹消の名前が抽出できないときは下のフィールドに入力。",
+        "fields": [
+            {
+                "name": "registered",
+                "label": "登録選手（任意・カンマ区切り）",
+                "type": "textarea",
+                "placeholder": "例: 戸郷,リチャード",
+            },
+            {
+                "name": "removed",
+                "label": "抹消選手（任意・カンマ区切り）",
+                "type": "textarea",
+                "placeholder": "例: 岡本",
+            },
+        ],
+    },
+    "監督談話": {
+        "submit_label": "監督談話を記事化",
+        "hint": (
+            "阿部 / 桑田 / 元木 / 二岡 等の発言記事URL。"
+            "発言部分が抽出できないときは下のフィールドに直接入力できます。"
+        ),
+        "fields": [
+            {
+                "name": "manager_name",
+                "label": "監督名（任意・自動抽出失敗時の救済）",
+                "type": "text",
+                "placeholder": "例: 阿部 / 桑田 / 二岡",
+            },
+            {
+                "name": "quote",
+                "id": "manager_quote",
+                "label": "発言（任意）",
+                "type": "textarea",
+                "placeholder": "「○○○○」と発言した部分のみ。100字まで",
+            },
+        ],
+    },
+    "選手コメント": {
+        "submit_label": "選手コメントを記事化",
+        "hint": "選手の発言記事URL。タイトルから選手名が取れない場合は下のフィールドに入力。",
+        "fields": [
+            {
+                "name": "player_name",
+                "label": "選手名（任意）",
+                "type": "text",
+                "placeholder": "例: 戸郷 / リチャード / 岡本",
+            },
+            {
+                "name": "quote",
+                "id": "player_quote",
+                "label": "発言（任意）",
+                "type": "textarea",
+                "placeholder": "「○○○○」と発言した部分のみ。100字まで",
+            },
+        ],
+    },
+    "動画": {
+        "submit_label": "動画を記事化",
+        "hint": (
+            "YouTube URL（youtu.be / shorts / live も自動正規化）。"
+            "説明が空のときは下のフィールドで補える。"
+        ),
+        "fields": [
+            {
+                "name": "player_name",
+                "id": "video_player_name",
+                "label": "選手名（任意）",
+                "type": "text",
+                "placeholder": "例: 岡本",
+            },
+            {
+                "name": "play_summary",
+                "label": "プレー説明（任意）",
+                "type": "textarea",
+                "placeholder": "例: 5回裏 ソロ本塁打",
+            },
+        ],
+    },
+    "成績": {"submit_label": "成績を記事化"},
+    "番組情報": {"submit_label": "番組情報を記事化"},
+    "コラム": {"submit_label": "コラムを記事化"},
+    "ニュース": {"submit_label": "ニュースを記事化"},
+}
 
 
 RATE_LIMIT_WINDOW_SEC = 60
@@ -3872,6 +3996,7 @@ _MANUAL_FACTS_FIELD_CAPS: dict[str, int] = {
     "registered": 500,
     "removed": 500,
 }
+MANUAL_FACT_FIELD_NAMES: tuple[str, ...] = tuple(_MANUAL_FACTS_FIELD_CAPS.keys())
 
 
 def _cap_manual_facts(raw: dict[str, str] | None) -> dict[str, str]:

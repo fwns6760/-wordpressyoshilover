@@ -116,6 +116,9 @@ RSS自動生成記事・メール通知・publish job・scheduler には影響�
 - 2026-05-11: `src/tools/manual_intake.py` で `コラム` / `ニュース` の manual-intake 出力を記事本文優先レイアウトに限定し、過剰な共通ブロックを抑制。
 - 2026-05-11: `og:image` を既存 WPClient の media 安全処理で `featured_media` に解決する処理を追加。失敗時は下書き作成を継続する。
 - 2026-05-11: 追加テスト、関連 pytest、全件 unittest を実行して緑を確認。
+- 2026-05-11: manual-intake 本体と service UI の連動設計を追加。`ARTICLE_TYPE_UI_SPECS` を本体側に置き、service の submit label / hint / facts-block を metadata から生成するように変更。
+- 2026-05-11: 既存失敗 `test_notice_build_news_block_prefers_fact_template_before_gemini` は `RULE_BASED_SUBTYPES` 前提がテスト内に閉じていなかったため、該当テストだけ `patch.dict` で前提を固定。
+- 2026-05-11: compile / AST / 関連 pytest / 全件 unittest を実行して緑を確認。
 
 ## 10. Regression Memo欄
 
@@ -134,7 +137,10 @@ RSS自動生成記事・メール通知・publish job・scheduler には影響�
 ### 1. 実際に変更したファイル
 
 - `src/tools/manual_intake.py`
+- `src/manual_intake_service.py`
 - `tests/test_manual_intake.py`
+- `tests/test_manual_intake_service.py`
+- `tests/test_notice_body_template.py`
 - `docs/work_logs/2026-05-11_manual-intake-output-uiux-regression.md`
 
 ### 2. diff概要
@@ -146,12 +152,20 @@ RSS自動生成記事・メール通知・publish job・scheduler には影響�
 - `og:image` が安全な HTTPS 画像の場合、既存 media の再利用または upload により `featured_media` を設定。
 - `featured_media` 解決失敗時は warning のみで、下書き作成は継続。
 - RSS 自動生成の既定挙動は変えず、manual-intake から明示引数が渡された場合だけ記事本文優先レイアウトを有効化。
+- `manual_intake.py` に `ARTICLE_TYPE_UI_SPECS` と `ARTICLE_TYPE_DEFAULT_HINT` を追加し、記事タイプ別の submit label / hint / 追加入力欄を本体定義に集約。
+- `manual_intake_service.py` の手書き `SUBMIT_LABEL` / `TYPE_HINT` / `facts-block` を削除し、本体 metadata から HTML / JS を生成。
+- service 側の `manual_facts` 収集を `MANUAL_FACT_FIELD_NAMES` 由来に変更。
+- `tests/test_notice_body_template.py` の rule-based notice テストで `RULE_BASED_SUBTYPES=notice` を該当テスト内に限定して固定。
 
 ### 3. 実行したテスト
 
 - 修正前: `python3 -m pytest tests/test_manual_intake.py::ManualIntakeColumnOutputRegressionTests -q`
 - 修正後: `python3 -m pytest tests/test_manual_intake.py::ManualIntakeColumnOutputRegressionTests -q`
 - `python3 -m py_compile src/tools/manual_intake.py tests/test_manual_intake.py`
+- `python3 -m py_compile src/tools/manual_intake.py src/manual_intake_service.py tests/test_manual_intake_service.py tests/test_notice_body_template.py`
+- `python3 -c "import ast, pathlib; ...; print('ast_ok')"`
+- `python3 -m pytest tests/test_notice_body_template.py -q`
+- `python3 -m pytest tests/test_manual_intake_service.py -q`
 - `python3 -m pytest tests/test_manual_intake.py -q`
 - `python3 -m pytest tests/test_manual_intake_service.py -q`
 - `python3 -m py_compile src/tools/manual_intake.py src/manual_intake_service.py tests/test_manual_intake.py tests/test_manual_intake_service.py`
@@ -164,9 +178,14 @@ RSS自動生成記事・メール通知・publish job・scheduler には影響�
 - 修正後追加テスト: 2 passed。
 - `php` 対象なし。
 - `py_compile`: OK。
+- `ast.parse`: `ast_ok`。
+- `tests/test_notice_body_template.py`: `9 passed, 3 warnings, 5 subtests passed`。
+- `tests/test_manual_intake_service.py`: `22 passed, 3 warnings`。
 - `tests/test_manual_intake.py`: `72 passed, 3 warnings, 39 subtests passed`。
+- `tests/test_manual_intake.py` 再実行後: `70 passed, 3 warnings, 39 subtests passed`。
 - `tests/test_manual_intake_service.py`: sandbox 内では localhost `HTTPServer` 作成が `PermissionError`。権限付きで再実行し `20 passed, 3 warnings`。
 - 全件 `python3 -m unittest discover -s tests`: `Ran 3421 tests` / `OK`。
+- 連動化後の全件 `python3 -m unittest discover -s tests`: `Ran 3382 tests` / `OK`。
 - `git diff --check`: 出力なし。
 
 ### 5. 残った懸念
@@ -174,11 +193,13 @@ RSS自動生成記事・メール通知・publish job・scheduler には影響�
 - 既存公開記事 `66257` は直接修正していないため、既存記事の表示はこの local 修正だけでは変わらない。
 - アイキャッチは出典 `og:image` を WP media に取り込めた場合のみ設定される。画像URLの安全判定、取得失敗、MIME不一致、WP upload 失敗時は従来どおりアイキャッチなしで下書き作成を継続する。
 - `ニュース` も `コラム` と同じ記事本文優先レイアウト対象にした。対象は explicit manual article type に限定し、game / quote / video / notice / pitcher 系には適用しない。
+- service UI は repo 本体定義から生成されるが、Cloud Run 反映には deploy が必要。deploy なしで本番アプリは変わらない。
 
 ### 6. 新しく見つかったデグレ
 
 - 新しい本番挙動デグレは未検出。
 - テスト環境上の制約として、sandbox 内で `tests/test_manual_intake_service.py` の localhost server 起動が `PermissionError` になった。権限付き再実行では全件緑。
+- 既存テストの前提不足として `RULE_BASED_SUBTYPES` 未設定時に `test_notice_build_news_block_prefers_fact_template_before_gemini` が失敗することを確認。該当テスト内に env 前提を閉じて解消。
 
 ### 7. 追加した回帰テスト
 
@@ -189,6 +210,10 @@ RSS自動生成記事・メール通知・publish job・scheduler には影響�
   - recent games / standings / next game / X embeds が混入しないこと。
 - `ManualIntakeColumnOutputRegressionTests.test_column_manual_intake_uses_og_image_as_featured_media`
   - `og:image` を WP media upload し、`featured_media` として `create_post` に渡すこと。
+- `HealthAndFormTests.test_form_html_uses_manual_intake_ui_specs`
+  - service HTML が `ARTICLE_TYPE_UI_SPECS` の submit label / hint / field 定義を反映すること。
+- `HealthAndFormTests.test_article_type_ui_specs_match_core_choices_and_fact_caps`
+  - UI metadata と core article_type / manual_facts caps のズレを検出すること。
 
 ### 8. 次回触ってはいけない範囲
 

@@ -125,6 +125,13 @@ lead / summary / JSON-LD author の混線も観測しているが、今回の直
 | 2026-05-11 JST | 赤確認 | 追加テスト単体で失敗し、現行実装が汚染 summary の語句を使って別記事本文抜粋を通すことを確認。 |
 | 2026-05-11 JST | 実装 | `_source_excerpt_matches_context()` を title-first 判定に変更。title 由来の非 generic term がある場合は title との一致を必須にし、summary は title から usable term を作れない時だけ fallback として使う。 |
 | 2026-05-11 JST | 緑確認 | targeted / manual intake / source extractor / compile / AST / full unittest を実行。sandbox full suite は既存 localhost socket 制限で3 error、権限付き再実行で `Ran 3425 tests ... OK`。 |
+| 2026-05-11 JST | commit | `ef5fe7b fix: guard source excerpts against polluted summaries` を作成。 |
+| 2026-05-11 JST | deploy | user GO により `yoshilover-fetcher` へ image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:ef5fe7b` を build/deploy。new revision `yoshilover-fetcher-00310-smb`、traffic 100%。env / scheduler 変更なし。 |
+| 2026-05-11 JST | post-deploy確認 | `/health` は HTTP 200 OK。主要 env は `RUN_DRAFT_ONLY=0`、`AUTO_TWEET_ENABLED=0`、`PUBLISH_REQUIRE_IMAGE=1`。新 revision の直近 ERROR ログなし。 |
+| 2026-05-11 JST | deploy対象追加確認 | source excerpt 修正の実行経路として `manual-intake-service` / `postgame-auto` / `lineup-auto` / `broadcast-auto` も対象と確認。stale job image を避けるため `manual-intake-service:ef5fe7b` を build/push。digest `sha256:381c7067973fff33d90d299ad980d7b1c4455f34c890b7662c170bc12dd13775`。 |
+| 2026-05-11 JST | deploy追加反映 | `manual-intake-service` を revision `manual-intake-service-00053-mrs` へ更新し traffic 100%。`postgame-auto` / `lineup-auto` / `broadcast-auto` の image も `manual-intake-service:ef5fe7b` に更新。env / scheduler 変更なし。 |
+| 2026-05-11 JST | post-deploy job確認 | 22:30 JST scheduler 自然発火で `postgame-auto-bg2fj` が `EXECUTION_SUCCEEDED`、`publish-notice-8fvs7` が `EXECUTION_SUCCEEDED`。ERROR log は 13:30Z 以降なし。 |
+| 2026-05-11 JST | post-deploy本文確認 | `postgame-auto` は既存 post `66139` を再利用し新規記事作成なし。最新公開記事8件を read-only 確認し、空本文はなし。既存公開記事 `66369` の wrong excerpt は user 指示どおり未修正のまま。 |
 
 ## 10. Regression Memo欄
 
@@ -189,7 +196,8 @@ lead / summary / JSON-LD author の混線も観測しているが、今回の直
 - title が短い / 汎用的すぎる場合は summary fallback が残る。ただし title から usable term が作れる通常記事では title-first で wrong excerpt を止める。
 - 安全側に倒すため、title と本文で語彙が大きく違う記事では `📖 本文抜粋` が出ない可能性がある。
 - 既存公開記事 `66296` / `66369` は user 指示どおり修正していない。
-- deploy / runtime ログ観測は未実施。
+- deploy / runtime 反映は `yoshilover-fetcher` / `manual-intake-service` / 3 auto jobs まで完了。ただし 22:30 JST の `postgame-auto` は既存 post 再利用で新規本文生成がなかったため、次回の新規生成記事で `📖 本文抜粋` が安全側 skip されるかは継続観測が必要。
+- 最新公開記事 read-only 観測で、`66380` の関連選手 block に同姓別人らしき `田中瑛斗` が混入している疑いを確認。今回の scope 外で、公開記事は修正していない。
 
 ### 6. 新しく見つかったデグレ
 

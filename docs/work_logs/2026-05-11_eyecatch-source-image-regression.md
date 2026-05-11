@@ -115,6 +115,11 @@
 | 2026-05-11 JST | 赤確認 | `python3 -m unittest tests.test_yahoo_realtime.ArticleImageFetchTests` で追加2件が失敗し、現行実装が X media metadata を silent skip していることを確認。 |
 | 2026-05-11 JST | 実装 | `_extract_entry_image_urls()` で `media_content` / `media_thumbnail` の `url` を既存 `_add()` 経由で画像候補に加えるよう修正。 |
 | 2026-05-11 JST | green確認 | targeted / 構文 / full suite を実行。sandbox full suite は localhost bind 制限で3 error、権限付き再実行で `Ran 3424 tests ... OK`。 |
+| 2026-05-11 JST | commit | `10d2df8 fix: extract social media thumbnails for eyecatch` を作成。 |
+| 2026-05-11 JST | deploy | user GO により、後続 commit `ef5fe7b` と合わせて `yoshilover-fetcher` image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:ef5fe7b` として build/deploy。new revision `yoshilover-fetcher-00310-smb`、traffic 100%。env / scheduler 変更なし。 |
+| 2026-05-11 JST | post-deploy確認 | `/health` は HTTP 200 OK。主要 env は `RUN_DRAFT_ONLY=0`、`AUTO_TWEET_ENABLED=0`、`PUBLISH_REQUIRE_IMAGE=1`。新 revision の直近 ERROR ログなし。 |
+| 2026-05-11 JST | post-deploy追加確認 | `manual-intake-service` / 3 auto jobs も後続の source excerpt 修正反映のため `manual-intake-service:ef5fe7b` に更新。`postgame-auto-bg2fj` / `publish-notice-8fvs7` は `EXECUTION_SUCCEEDED`。13:30Z 以降の対象 ERROR log なし。 |
+| 2026-05-11 JST | live記事確認 | 22:30 JST の `postgame-auto` は既存 post `66139` 再利用で新規記事作成なし。最新公開記事8件は read-only 確認で空本文なし。次回 X / social feed の画像付き新規記事で fallback 回避を継続観測する。 |
 
 ## 10. Regression Memo欄
 
@@ -170,7 +175,7 @@
 
 - live source で実際に `media_content` / `media_thumbnail` が届くかは、次の自動生成 window または deploy 後ログ観測で確認が必要。
 - 今回は `media_content` / `media_thumbnail` に限定し、enclosure / links の画像MIME抽出は未実装。
-- deploy / runtime 確認は未実施。
+- deploy / runtime 反映は完了。ただし 22:30 JST の `postgame-auto` は既存 post 再利用で新規記事作成なし。次回の自動生成 window で、X / social feed の画像付き投稿が東京ドーム fallback に落ちないことは継続観測が必要。
 
 ### 6. 新しく見つかったデグレ
 

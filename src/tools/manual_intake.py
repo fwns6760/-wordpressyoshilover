@@ -402,6 +402,46 @@ def _parse_og_meta(html_text: str) -> dict[str, str]:
     return {"title": title, "summary": summary, "image": image}
 
 
+def _extract_context_matched_primary_og_meta(
+    raw_html: str,
+    *,
+    title: str,
+    summary: str,
+) -> dict[str, str]:
+    """Return source-page OG facts only when they match article context.
+
+    Manual intake can receive a sparse RSS / operator summary while the
+    fetched source page still carries a useful ``og:description``. Passing
+    that to the renderer improves factual density without changing the
+    existing summary or length rules. The context gate is intentionally the
+    same one used by source body excerpts so a wrong neighboring article
+    page does not pollute the visible body.
+    """
+    if not raw_html:
+        return {}
+    title_terms = _source_excerpt_context_terms(title, "")
+    summary_terms = _source_excerpt_context_terms("", summary)
+    if not (title_terms or summary_terms):
+        return {}
+
+    meta = _parse_og_meta(raw_html)
+    og_description = (meta.get("summary") or "").strip()
+    if not og_description:
+        return {}
+    if not _source_excerpt_matches_context(
+        og_description,
+        title=title,
+        summary=summary,
+    ):
+        return {}
+
+    out = {"primary_og_description": og_description}
+    og_title = (meta.get("title") or "").strip()
+    if og_title:
+        out["primary_og_title"] = og_title
+    return out
+
+
 def _fetch_news_meta(url: str, *, timeout: float = 10.0) -> dict[str, str]:
     """Fetch source URL and return OG meta + raw HTML.
 
@@ -819,6 +859,13 @@ def _try_render_via_nomotoke(
     data: dict[str, Any] = {}
 
     if template_key == "nomotoke_card_short_news_url_v1":
+        primary_og_meta = _extract_context_matched_primary_og_meta(
+            raw_html,
+            title=title,
+            summary=summary,
+        )
+        if not primary_og_meta:
+            return None
         data = {
             "title": title,
             "summary": summary,
@@ -826,6 +873,7 @@ def _try_render_via_nomotoke(
             "source_name": source_name or "出典",
             "date_label": date_label,
         }
+        data.update(primary_og_meta)
 
     elif template_key == "nomotoke_card_postgame_v1":
         # Yahoo Sportsnavi boxscore is the only supported source. The
@@ -911,7 +959,7 @@ def _try_render_via_nomotoke(
             "official_url_label": "NPB公式 公示ページ",
         }
 
-    if template_key == "nomotoke_card_video_v1":
+    elif template_key == "nomotoke_card_video_v1":
         # Only YouTube watch URLs satisfy the renderer's video_url field.
         if not source_url or "youtube.com/watch?v=" not in source_url:
             return None

@@ -1227,6 +1227,130 @@ class PlayerStatsTableBlockTests(unittest.TestCase):
         self.assertNotIn("田中 瑛斗", block)
 
 
+class ManualIntakeSourceOgDescriptionDensityTests(_IntakeBaseTest):
+    def _patch_reader_enrichment(self, stack: ExitStack) -> None:
+        for name in (
+            "_build_related_articles_block",
+            "_build_recent_games_block",
+            "_build_matchup_record_block",
+            "_build_standings_block",
+            "_build_next_game_block",
+            "_build_trust_badge_block",
+            "_build_author_other_articles_block",
+            "_build_recent_notice_timeline_block",
+            "_build_other_games_block",
+            "_build_x_embeds_block_safe",
+            "_build_player_stats_block",
+            "_build_share_buttons_block",
+            "_build_meta_header_bar",
+            "_build_toc_block",
+            "_build_tag_chip_block",
+            "_build_jsonld_article_schema",
+        ):
+            stack.enter_context(patch.object(mi, name, return_value=""))
+        stack.enter_context(
+            patch.object(mi, "_inject_toc_anchors", side_effect=lambda html: (html, []))
+        )
+        stack.enter_context(
+            patch.object(mi, "_wrap_first_roster_names_in_lead", side_effect=lambda html: html)
+        )
+        stack.enter_context(
+            patch.object(mi, "_decorate_body_with_emoji_safe", side_effect=lambda html: html)
+        )
+        stack.enter_context(patch.object(mi, "_check_rate_limit", return_value=(True, 0)))
+
+    def _fetch_meta(self, *, title: str, summary: str, og_description: str):
+        raw_html = (
+            "<html><head>"
+            f'<meta property="og:title" content="{title}">'
+            f'<meta property="og:description" content="{og_description}">'
+            "</head><body></body></html>"
+        )
+
+        def fetch(_url: str) -> dict[str, str]:
+            return {
+                "title": title,
+                "summary": summary,
+                "_html": raw_html,
+            }
+
+        return fetch
+
+    def test_matching_og_description_supplies_missing_news_facts(self):
+        captured: dict = {}
+
+        def fake_create(**kwargs):
+            captured.update(kwargs)
+            return 910
+
+        wp = MagicMock()
+        wp.create_post = fake_create
+        title = "【巨人】ヤクルト戦 試合速報"
+        summary = "試合速報"
+        og_description = (
+            "巨人は5-2でヤクルトに勝利。"
+            "東京ドームでの一戦で中盤に勝ち越した。"
+        )
+
+        with ExitStack() as stack:
+            self._patch_reader_enrichment(stack)
+            code, out = mi.run_manual_intake(
+                url="https://hochi.news/articles/source-og-density.html",
+                mode="draft",
+                article_type="ニュース",
+                wp_client_factory=lambda: wp,
+                rate_limit_lockfile=self.lockfile,
+                fetch_meta=self._fetch_meta(
+                    title=title,
+                    summary=summary,
+                    og_description=og_description,
+                ),
+            )
+
+        self.assertEqual(code, mi.EXIT_OK, out)
+        content = captured.get("content", "")
+        self.assertEqual(out["template_key"], "nomotoke_card_short_news_url_v1")
+        self.assertIn("巨人は5-2でヤクルトに勝利。", content)
+        self.assertIn("東京ドーム", content)
+        self.assertIn("<td>5-2</td>", content)
+
+    def test_unrelated_og_description_is_not_used_for_news_facts(self):
+        captured: dict = {}
+
+        def fake_create(**kwargs):
+            captured.update(kwargs)
+            return 911
+
+        wp = MagicMock()
+        wp.create_post = fake_create
+        title = "【巨人】ヤクルト戦 試合速報"
+        summary = "試合速報"
+        unrelated = (
+            "【巨人】ヒヤリ…大城卓三のヘルメットにバット直撃。"
+            "中日戦の9回にプレーを続行した。"
+        )
+
+        with ExitStack() as stack:
+            self._patch_reader_enrichment(stack)
+            code, out = mi.run_manual_intake(
+                url="https://hochi.news/articles/source-og-unrelated.html",
+                mode="draft",
+                article_type="ニュース",
+                wp_client_factory=lambda: wp,
+                rate_limit_lockfile=self.lockfile,
+                fetch_meta=self._fetch_meta(
+                    title=title,
+                    summary=summary,
+                    og_description=unrelated,
+                ),
+            )
+
+        self.assertEqual(code, mi.EXIT_OK, out)
+        content = captured.get("content", "")
+        self.assertNotIn("大城卓三", content)
+        self.assertNotIn("中日戦", content)
+
+
 class EmojiDecorationSafetyTests(unittest.TestCase):
     def test_apply_rss_pipeline_enrichment_returns_body_when_emoji_step_fails(self):
         base_html = (

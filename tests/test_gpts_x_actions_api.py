@@ -41,14 +41,51 @@ class GPTsXActionsApiTests(unittest.TestCase):
 
     def test_permission_callback_requires_authorization_bearer_api_key(self):
         src = _plugin_source()
+        expected_api_key = _function_source(src, "yoshilover_gpts_x_actions_expected_api_key")
+        permission = _function_source(src, "yoshilover_gpts_x_actions_permission")
 
         self.assertIn("defined( 'YOSHILOVER_GPTS_X_ACTIONS_API_KEY' )", src)
         self.assertIn("constant( 'YOSHILOVER_GPTS_X_ACTIONS_API_KEY' )", src)
-        self.assertIn("getenv( 'YOSHILOVER_GPTS_X_ACTIONS_API_KEY' )", src)
+        self.assertIn("get_option( YOSHILOVER_GPTS_X_ACTIONS_API_KEY_OPTION, '' )", src)
         self.assertIn("$request->get_header( 'authorization' )", src)
         self.assertRegex(src, r"Bearer\\s\+")
         self.assertIn("hash_equals( $expected, $provided )", src)
         self.assertNotIn("__return_true", src)
+        self.assertNotIn("getenv(", src)
+
+        self.assertLess(
+            expected_api_key.index("defined( 'YOSHILOVER_GPTS_X_ACTIONS_API_KEY' )"),
+            expected_api_key.index("get_option( YOSHILOVER_GPTS_X_ACTIONS_API_KEY_OPTION, '' )"),
+        )
+        self.assertIn("'gpts_x_api_key_unconfigured'", permission)
+        self.assertIn("'gpts_x_api_key_invalid'", permission)
+        self.assertIn("'' === $provided || ! hash_equals( $expected, $provided )", permission)
+        self.assertIn("return true;", permission)
+
+    def test_admin_settings_page_saves_option_api_key_for_manage_options_users(self):
+        src = _plugin_source()
+        register_settings = _function_source(src, "yoshilover_gpts_x_actions_register_settings")
+        register_page = _function_source(src, "yoshilover_gpts_x_actions_register_settings_page")
+        render_page = _function_source(src, "yoshilover_gpts_x_actions_render_settings_page")
+        sanitize = _function_source(src, "yoshilover_gpts_x_actions_sanitize_api_key")
+
+        self.assertIn("YOSHILOVER_GPTS_X_ACTIONS_API_KEY_OPTION", src)
+        self.assertIn("'yoshilover_gpts_x_actions_api_key'", src)
+        self.assertIn("add_action( 'admin_init', 'yoshilover_gpts_x_actions_register_settings' );", src)
+        self.assertIn("add_action( 'admin_menu', 'yoshilover_gpts_x_actions_register_settings_page' );", src)
+
+        self.assertIn("register_setting(", register_settings)
+        self.assertIn("'sanitize_callback' => 'yoshilover_gpts_x_actions_sanitize_api_key'", register_settings)
+        self.assertIn("sanitize_text_field( (string) $value )", sanitize)
+
+        self.assertIn("add_options_page(", register_page)
+        self.assertIn("'manage_options'", register_page)
+        self.assertIn("'yoshilover-gpts-x-actions'", register_page)
+
+        self.assertIn("current_user_can( 'manage_options' )", render_page)
+        self.assertIn("settings_fields( 'yoshilover_gpts_x_actions' )", render_page)
+        self.assertIn('type="password"', render_page)
+        self.assertIn("name=\"<?php echo esc_attr( $option_name ); ?>\"", render_page)
 
     def test_candidate_query_is_publish_only_and_excludes_closed_meta_statuses(self):
         src = _plugin_source()
@@ -117,7 +154,8 @@ class GPTsXActionsApiTests(unittest.TestCase):
 
         self.assertNotIn("wp_update_post", src)
         self.assertNotIn("wp_insert_post", src)
-        self.assertNotIn("update_option", src)
+        for function_body in (posted, skip):
+            self.assertNotIn("update_option", function_body)
 
     def test_openapi_schema_matches_gpts_actions_auth_and_operation_ids(self):
         spec = _openapi_source()

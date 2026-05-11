@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover GPTs X Actions
  * Description: REST API for GPTs-assisted manual X posting. It never calls the X API or updates article content.
- * Version:     0.1.0
+ * Version:     0.2.0
  * Author:      yoshilover
  * License:     GPL-2.0+
  */
@@ -23,8 +23,78 @@ if ( ! defined( 'YOSHILOVER_GPTS_X_SKIPPED_AT_META' ) ) {
 if ( ! defined( 'YOSHILOVER_GPTS_X_SKIP_REASON_META' ) ) {
     define( 'YOSHILOVER_GPTS_X_SKIP_REASON_META', '_yoshilover_gpts_x_skip_reason' );
 }
+if ( ! defined( 'YOSHILOVER_GPTS_X_ACTIONS_API_KEY_OPTION' ) ) {
+    define( 'YOSHILOVER_GPTS_X_ACTIONS_API_KEY_OPTION', 'yoshilover_gpts_x_actions_api_key' );
+}
 
+add_action( 'admin_init', 'yoshilover_gpts_x_actions_register_settings' );
+add_action( 'admin_menu', 'yoshilover_gpts_x_actions_register_settings_page' );
 add_action( 'rest_api_init', 'yoshilover_gpts_x_actions_register_routes' );
+
+function yoshilover_gpts_x_actions_register_settings() {
+    register_setting(
+        'yoshilover_gpts_x_actions',
+        YOSHILOVER_GPTS_X_ACTIONS_API_KEY_OPTION,
+        array(
+            'type'              => 'string',
+            'sanitize_callback' => 'yoshilover_gpts_x_actions_sanitize_api_key',
+            'default'           => '',
+        )
+    );
+}
+
+function yoshilover_gpts_x_actions_register_settings_page() {
+    add_options_page(
+        'Yoshilover GPTs X Actions',
+        'GPTs X Actions',
+        'manage_options',
+        'yoshilover-gpts-x-actions',
+        'yoshilover_gpts_x_actions_render_settings_page'
+    );
+}
+
+function yoshilover_gpts_x_actions_sanitize_api_key( $value ) {
+    return sanitize_text_field( (string) $value );
+}
+
+function yoshilover_gpts_x_actions_render_settings_page() {
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_die( esc_html__( 'You do not have permission to manage this setting.', 'yoshilover-gpts-x-actions' ) );
+    }
+
+    $option_name = YOSHILOVER_GPTS_X_ACTIONS_API_KEY_OPTION;
+    $api_key     = get_option( $option_name, '' );
+    if ( ! is_string( $api_key ) ) {
+        $api_key = '';
+    }
+    ?>
+    <div class="wrap">
+        <h1><?php echo esc_html__( 'Yoshilover GPTs X Actions', 'yoshilover-gpts-x-actions' ); ?></h1>
+        <form method="post" action="options.php">
+            <?php settings_fields( 'yoshilover_gpts_x_actions' ); ?>
+            <table class="form-table" role="presentation">
+                <tr>
+                    <th scope="row">
+                        <label for="yoshilover_gpts_x_actions_api_key"><?php echo esc_html__( 'Bearer API key', 'yoshilover-gpts-x-actions' ); ?></label>
+                    </th>
+                    <td>
+                        <input
+                            type="password"
+                            id="yoshilover_gpts_x_actions_api_key"
+                            name="<?php echo esc_attr( $option_name ); ?>"
+                            value="<?php echo esc_attr( $api_key ); ?>"
+                            class="regular-text"
+                            autocomplete="off"
+                        />
+                        <p class="description"><?php echo esc_html__( 'Used only for GPTs Actions Authorization: Bearer authentication. This plugin does not call the X API.', 'yoshilover-gpts-x-actions' ); ?></p>
+                    </td>
+                </tr>
+            </table>
+            <?php submit_button(); ?>
+        </form>
+    </div>
+    <?php
+}
 
 function yoshilover_gpts_x_actions_register_routes() {
     register_rest_route(
@@ -115,11 +185,13 @@ function yoshilover_gpts_x_actions_expected_api_key() {
         $key = (string) constant( 'YOSHILOVER_GPTS_X_ACTIONS_API_KEY' );
     }
 
-    if ( '' === trim( $key ) ) {
-        $env_key = getenv( 'YOSHILOVER_GPTS_X_ACTIONS_API_KEY' );
-        if ( is_string( $env_key ) ) {
-            $key = $env_key;
-        }
+    if ( '' !== trim( $key ) ) {
+        return trim( $key );
+    }
+
+    $option_key = get_option( YOSHILOVER_GPTS_X_ACTIONS_API_KEY_OPTION, '' );
+    if ( is_string( $option_key ) ) {
+        $key = $option_key;
     }
 
     return trim( $key );

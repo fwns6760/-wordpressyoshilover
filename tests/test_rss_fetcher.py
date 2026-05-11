@@ -399,6 +399,36 @@ def test_clean_social_entry_text_preserves_hashtag_name_before_role():
     assert cleaned == "📺YouTube公開📺 球団記録更新中！ルーキー 田和廉 投手を支える先輩たち👍"
 
 
+def test_clean_social_entry_text_preserves_hashtag_name_before_particle():
+    raw_text = (
+        "#阿部慎之助 監督、#森田駿哉 に愛のムチ"
+        "「そこは妥協せずにやっていかないと勝てる投手にはならない」"
+        " https://t.co/sEHqs8jGl6 @SANSPOCOM #巨人 #ジャイアンツ #giants #サンスポ"
+    )
+
+    cleaned = rss_fetcher._clean_social_entry_text(raw_text)
+
+    assert cleaned == (
+        "阿部慎之助 監督、森田駿哉 に愛のムチ"
+        "「そこは妥協せずにやっていかないと勝てる投手にはならない」"
+    )
+
+
+def test_clean_social_entry_text_preserves_hashtag_name_before_japanese_comma():
+    raw_text = (
+        "元楽天、巨人の #オコエ瑠偉、メキシコ・キンタナローに電撃入団"
+        "「タイガースへようこそ！」 https://t.co/YETSxhuxWa"
+        " @SANSPOCOM#巨人 #ジャイアンツ #giants #サンスポ"
+    )
+
+    cleaned = rss_fetcher._clean_social_entry_text(raw_text)
+
+    assert cleaned == (
+        "元楽天、巨人の オコエ瑠偉、メキシコ・キンタナローに電撃入団"
+        "「タイガースへようこそ！」"
+    )
+
+
 def test_weak_subject_title_routes_to_review_for_reserved_prefix_particle():
     fallback = rss_fetcher._maybe_route_weak_subject_title_review(
         article_subtype="lineup",

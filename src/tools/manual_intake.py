@@ -1449,13 +1449,23 @@ def _source_excerpt_matches_context(
 ) -> bool:
     if not excerpt:
         return False
-    terms = _source_excerpt_context_terms(title, summary)
-    if not terms:
-        return True
     excerpt_compact = _compact_source_excerpt_context(excerpt)
     if not excerpt_compact:
         return False
-    return any(term in excerpt_compact for term in terms)
+
+    # Source excerpt integrity must be anchored to the source title first.
+    # ``summary`` can already be polluted by a neighboring article in RSS /
+    # scrape pipelines, so using it as an equal context source can turn a
+    # wrong excerpt into a false positive. Only fall back to summary when the
+    # title itself yields no usable non-generic terms.
+    title_terms = _source_excerpt_context_terms(title, "")
+    if title_terms:
+        return any(term in excerpt_compact for term in title_terms)
+
+    summary_terms = _source_excerpt_context_terms("", summary)
+    if not summary_terms:
+        return True
+    return any(term in excerpt_compact for term in summary_terms)
 
 
 def _maybe_insert_source_body_excerpt(

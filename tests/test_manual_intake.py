@@ -1768,6 +1768,65 @@ class SourceBodyExcerptExpansionTests(_IntakeBaseTest):
         self.assertNotIn("📖 本文抜粋", content)
         self.assertNotIn("大城卓三", content)
 
+    def test_rss_pipeline_source_body_excerpt_ignores_polluted_summary_for_66369(self):
+        base_html = (
+            '<div class="nomotoke-card-short-news">'
+            '<p class="nomotoke-lead">巨人は中日戦で今季最多の９得点を挙げた。</p>'
+            "<h3>🔗 出典記事</h3>"
+            '<p>記事全文は <a href="https://hochi.news/articles/20260511-OHT1T51208.html">'
+            "【YouTube】忖度なしに意見述べます…「昔、原監督や由伸監督は～」"
+            "などと１９年の記者経験が…"
+            "</a> をご覧ください。</p>"
+            "</div>"
+        )
+        raw_html = self._source_html(
+            "【巨人】ヒヤリ…大城卓三のヘルメットにバット直撃。"
+            "＜中日4－9巨人＞◇10日◇バンテリンドーム。"
+            "中日対巨人 9回裏中日1死一、三塁、木下拓哉の空振りしたバットが"
+            "大城卓三の頭に当たりコーチらが駆けつけるもプレーを続行した。"
+        )
+
+        with ExitStack() as stack:
+            for name in (
+                "_build_related_articles_block",
+                "_build_recent_games_block",
+                "_build_standings_block",
+                "_build_next_game_block",
+                "_build_trust_badge_block",
+                "_build_x_embeds_block_safe",
+                "_build_player_stats_block",
+                "_build_share_buttons_block",
+                "_build_meta_header_bar",
+                "_build_toc_block",
+                "_build_tag_chip_block",
+                "_build_jsonld_article_schema",
+            ):
+                stack.enter_context(patch.object(mi, name, return_value=""))
+            stack.enter_context(
+                patch.object(mi, "_inject_toc_anchors", side_effect=lambda html: (html, []))
+            )
+            stack.enter_context(
+                patch.object(mi, "_wrap_first_roster_names_in_lead", side_effect=lambda html: html)
+            )
+            stack.enter_context(
+                patch.object(mi, "_decorate_body_with_emoji_safe", side_effect=lambda html: html)
+            )
+            content = mi.apply_rss_pipeline_enrichment(
+                base_html,
+                title=(
+                    "【YouTube】忖度なしに意見述べます…「昔、原監督や由伸監督は～」"
+                    "などと１９年の記者経験が…"
+                ),
+                source_url="https://hochi.news/articles/20260511-OHT1T51208.html",
+                summary="＜中日4－9巨人＞◇10日◇バンテリンドーム。巨人は今季最多９得点。",
+                source_name="スポーツ報知",
+                raw_html=raw_html,
+            )
+
+        self.assertIn("🔗 出典記事", content)
+        self.assertNotIn("📖 本文抜粋", content)
+        self.assertNotIn("大城卓三", content)
+
 
 if __name__ == "__main__":
     unittest.main()

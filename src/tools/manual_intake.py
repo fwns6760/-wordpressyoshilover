@@ -2176,10 +2176,14 @@ def _normalize_player_name_for_match(name: str) -> str:
     return re.sub(r"[\s　]+", "", name).strip()
 
 
+def _strip_roster_marker(name: str) -> str:
+    return (name or "").lstrip("*").strip()
+
+
 def _scan_giants_player_names_in_text(text: str) -> list[str]:
-    """Return roster.json player + coach names that appear (full or
-    surname-prefix) in the input text. Conservative: 2-4 char
-    surnames only match when isolated; full names match anywhere."""
+    """Return roster.json player + coach names that appear by full name
+    or configured alias. Surname-only matches are intentionally rejected
+    because they mix same-surname players (田中将大 / 田中瑛斗)."""
     if not text:
         return []
     try:
@@ -2187,26 +2191,48 @@ def _scan_giants_player_names_in_text(text: str) -> list[str]:
     except Exception:
         return []
     roster = _load_giants_roster()
+    normalized_text = _normalize_player_name_for_match(text)
     found: list[str] = []
     seen: set[str] = set()
     for entry in roster:
-        full_name = (entry.get("name") or "").strip()
+        full_name = _strip_roster_marker(entry.get("name") or "")
         if not full_name:
             continue
-        match_keys: list[str] = [full_name]
+        canonical = _normalize_player_name_for_match(full_name)
+        if not canonical or canonical in seen:
+            continue
+        match_keys: set[str] = {canonical}
         for alias in entry.get("aliases", []) or []:
-            if alias and alias not in match_keys:
-                match_keys.append(alias)
-        # Add surname (first 2-3 chars of full_name) as a softer match
-        # — but only when the full_name itself is not already a hit.
-        if len(full_name) >= 3:
-            match_keys.append(full_name[:2])
-            match_keys.append(full_name[:3])
-        hit = any(k and k in text for k in match_keys)
-        if hit and full_name not in seen:
-            seen.add(full_name)
+            alias_key = _normalize_player_name_for_match(_strip_roster_marker(alias))
+            if alias_key:
+                match_keys.add(alias_key)
+        hit = any(k and k in normalized_text for k in match_keys)
+        if hit:
+            seen.add(canonical)
             found.append(full_name)
     return found[:4]  # cap to keep the block readable
+
+
+def _lookup_player_stats_info(
+    stats: dict[str, dict[str, Any]], norm: str
+) -> dict[str, Any] | None:
+    if not stats or not norm:
+        return None
+    if norm in stats:
+        return stats[norm]
+    starred_norm = f"*{norm}"
+    if starred_norm in stats:
+        return stats[starred_norm]
+    if len(norm) < 3:
+        return None
+    matches: list[dict[str, Any]] = []
+    for key, value in stats.items():
+        key_norm = _normalize_player_name_for_match(_strip_roster_marker(key))
+        if key_norm.startswith(norm):
+            matches.append(value)
+    if len(matches) == 1:
+        return matches[0]
+    return None
 
 
 def _pick_player_stat_value(rec: dict[str, str], *keys: str) -> str:
@@ -2323,12 +2349,7 @@ def _build_player_stats_block(scan_text: str) -> str:
         # Resolve rendered name from stats first (gives the official
         # spacing / NPB rendering); fall back to the roster name; fall
         # back to the input.
-        rec_info = stats.get(norm) if stats else None
-        if not rec_info and stats:
-            for k, v in stats.items():
-                if k.startswith(norm) and len(norm) >= 2:
-                    rec_info = v
-                    break
+        rec_info = _lookup_player_stats_info(stats, norm) if stats else None
         record = (rec_info or {}).get("record") or {}
         kind = (rec_info or {}).get("kind") or ""
         rendered = (record.get("__rendered_name__") or name).strip()

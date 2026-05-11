@@ -1180,6 +1180,52 @@ class PlayerStatsTableBlockTests(unittest.TestCase):
         self.assertNotIn("奪三振", block)
         self.assertNotIn("盗塁", block)
 
+    def test_scan_giants_player_names_does_not_use_surname_only_for_tanaka(self):
+        names = mi._scan_giants_player_names_in_text("【巨人】田中投手が次回登板へ向けて調整")
+
+        self.assertEqual(names, [])
+
+    def test_scan_giants_player_names_keeps_full_tanaka_entity_only(self):
+        names = mi._scan_giants_player_names_in_text(
+            "【巨人】田中将大「打線を線にしない」阪神戦へ向けて調整"
+        )
+
+        normalized = {mi._normalize_player_name_for_match(name) for name in names}
+        self.assertIn("田中将大", normalized)
+        self.assertNotIn("田中瑛斗", normalized)
+
+    def test_build_player_stats_block_does_not_mix_tanaka_same_surname(self):
+        stats_lookup = {
+            "田中将大": {
+                "kind": "pitching",
+                "record": {
+                    "__rendered_name__": "田中 将大",
+                    "勝": "2",
+                    "敗": "1",
+                    "防御率": "3.21",
+                    "奪三振": "18",
+                },
+            },
+            "田中瑛斗": {
+                "kind": "pitching",
+                "record": {
+                    "__rendered_name__": "田中 瑛斗",
+                    "勝": "0",
+                    "敗": "0",
+                    "防御率": "4.50",
+                    "奪三振": "5",
+                },
+            },
+        }
+
+        with patch.object(mi, "_get_player_stats_lookup", return_value=stats_lookup):
+            block = mi._build_player_stats_block(
+                "【巨人】田中将大「打線を線にしない」阪神戦へ向けて調整"
+            )
+
+        self.assertIn("田中 将大", block)
+        self.assertNotIn("田中 瑛斗", block)
+
 
 class EmojiDecorationSafetyTests(unittest.TestCase):
     def test_apply_rss_pipeline_enrichment_returns_body_when_emoji_step_fails(self):

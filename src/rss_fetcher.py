@@ -560,6 +560,7 @@ FARM_SUBTYPE_SPLIT_KEYWORDS = (
     "育成",
     "JABA",
 )
+GENERAL_FARM_DIRECT_MARKERS = ("二軍", "２軍", "2軍", "ファーム", "イースタン")
 FARM_SUBTYPE_RESULT_MARKERS = (
     "勝利",
     "敗戦",
@@ -572,6 +573,25 @@ FARM_SUBTYPE_RESULT_MARKERS = (
     "マルチ",
     "スタメン",
     "先発",
+)
+GENERAL_PLAYER_FACT_MARKERS = (
+    "通算",
+    "史上",
+    "記録",
+    "達成",
+    "プロ初",
+    "初本塁打",
+    "初安打",
+    "初打点",
+    "本塁打",
+    "ホームラン",
+    "安打",
+    "単打",
+    "打点",
+    "猛打賞",
+    "マルチ",
+    "好投",
+    "無失点",
 )
 SOCIAL_TOO_WEAK_NARROW_RESCUE_SOURCE_KEYS = frozenset(
     {
@@ -5299,6 +5319,9 @@ def _detect_article_subtype(title: str, summary: str, category: str, has_game: b
     else:
         subtype = "general"
 
+    if subtype == "general":
+        subtype = _detect_general_article_subtype(title, summary, text)
+
     if subtype in {"game_note", "general"}:
         score = _extract_game_score_token(text)
         opponent = _extract_game_opponent_label(text)
@@ -5465,6 +5488,37 @@ def _resolve_rss_story_type_context(
         "special_story_kind": special_story_kind,
         "social_player_subroute": social_player_subroute,
     }
+
+
+def _detect_general_article_subtype(title: str, summary: str, text: str) -> str:
+    if any(marker in text for marker in FACT_NOTICE_PRIMARY_MARKERS):
+        return "general"
+
+    special_kind = _detect_player_special_template_kind(title, summary)
+    if special_kind == "player_recovery":
+        return "recovery"
+    if special_kind == "player_notice":
+        return "notice"
+
+    if (
+        any(marker in text for marker in GENERAL_FARM_DIRECT_MARKERS)
+        and "一軍" not in text
+        and (
+            SCORE_TOKEN_RE.search(text)
+            or any(marker in text for marker in FARM_SUBTYPE_RESULT_MARKERS)
+            or any(marker in text for marker in ("二軍戦", "２軍戦", "2軍戦", "ファーム戦"))
+        )
+    ):
+        return "farm"
+
+    if (
+        any(team in text for team in ("巨人", "ジャイアンツ"))
+        and title_has_person_name_candidate(text)
+        and any(marker in text for marker in GENERAL_PLAYER_FACT_MARKERS)
+    ):
+        return "player"
+
+    return "general"
 
 
 def _is_promotional_video_entry(title: str, summary: str) -> bool:

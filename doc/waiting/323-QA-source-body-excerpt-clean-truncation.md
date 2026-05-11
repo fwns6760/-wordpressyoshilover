@@ -152,3 +152,7 @@ REST API、WP meta、option、DB table、Cloud Run env、Scheduler は変更し�
 | 2026-05-11 JST | 実装 | `daily.co.jp` の `NWrelart:Body` / `mainTxt` selector を追加。date / boilerplate / title echo 除去を狭く強化。LLM / network / publish / mail / scheduler / env / X / SEO は未変更。 |
 | 2026-05-11 JST | 緑確認 | targeted 2 tests OK、`tests.test_source_article_body_extractor` 17 tests OK、`tests.test_manual_intake` 70 tests OK、RSS enrichment targeted 1 test OK、`python3 -m unittest discover -s tests` 3419 tests OK。 |
 | 2026-05-11 JST | 実HTML確認 | `/tmp/66280_daily.html` の Daily 坂本記事で本文主要2段落のみを抽出し、`拡大` / `続きを見る` / `野球スコア速報` / `編集者のオススメ記事` は混入しないことを確認。 |
+| 2026-05-11 JST | 再発確認 | post `66331` で、出典リンクは報知 `20260511-OHT1T51228` だが `📖 本文抜粋` が日刊系の大城卓三バット直撃記事になっていることを WP REST で確認。 |
+| 2026-05-11 JST | 原因切り分け | live `yoshilover-fetcher` image は `951d2f5`。同 commit は `d5e40a2` の extractor 清掃を含むが、`24cd9cb` の source excerpt context guard は未反映。 |
+| 2026-05-11 JST | 追加回帰テスト | `tests.test_manual_intake.SourceBodyExcerptExpansionTests.test_rss_pipeline_source_body_excerpt_skips_66331_cross_article_body` を追加し、`66331` 型の title/source_url と別記事 raw_html では `📖 本文抜粋` を出さないことを固定。 |
+| 2026-05-11 JST | 緑確認 | `python3 -m py_compile tests/test_manual_intake.py` OK、AST parse OK、追加 targeted 1 test OK、`tests.test_manual_intake.SourceBodyExcerptExpansionTests` 7 tests OK、`tests.test_manual_intake` 73 tests OK、`tests.test_source_article_body_extractor` 17 tests OK、`python3 -m unittest discover -s tests` 3422 tests OK。 |

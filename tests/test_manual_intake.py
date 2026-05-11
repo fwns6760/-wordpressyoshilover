@@ -1544,6 +1544,61 @@ class SourceBodyExcerptExpansionTests(_IntakeBaseTest):
         self.assertNotIn("📖 本文抜粋", content)
         self.assertNotIn("大城卓三", content)
 
+    def test_rss_pipeline_source_body_excerpt_skips_66331_cross_article_body(self):
+        base_html = (
+            '<div class="nomotoke-card-short-news">'
+            '<p class="nomotoke-lead">巨人はここまで３６試合で１８勝１８敗、'
+            "勝率５割でセ・リーグ３位。</p>"
+            "<h3>🔗 出典記事</h3>"
+            '<p>記事全文は <a href="https://hochi.news/articles/20260511-OHT1T51228.html">'
+            "【巨人】交流戦まで残り１０試合　岐阜、福井で勝率５割から貯金アップ目指す"
+            "</a> をご覧ください。</p>"
+            "</div>"
+        )
+        raw_html = self._source_html(
+            "【巨人】ヒヤリ…大城卓三のヘルメットにバット直撃。"
+            "中日対巨人 9回裏中日1死一、三塁、木下拓哉の空振りしたバットが"
+            "大城卓三の頭に当たりコーチらが駆けつけるもプレーを続行した。"
+        )
+
+        with ExitStack() as stack:
+            for name in (
+                "_build_related_articles_block",
+                "_build_recent_games_block",
+                "_build_standings_block",
+                "_build_next_game_block",
+                "_build_trust_badge_block",
+                "_build_x_embeds_block_safe",
+                "_build_player_stats_block",
+                "_build_share_buttons_block",
+                "_build_meta_header_bar",
+                "_build_toc_block",
+                "_build_tag_chip_block",
+                "_build_jsonld_article_schema",
+            ):
+                stack.enter_context(patch.object(mi, name, return_value=""))
+            stack.enter_context(
+                patch.object(mi, "_inject_toc_anchors", side_effect=lambda html: (html, []))
+            )
+            stack.enter_context(
+                patch.object(mi, "_wrap_first_roster_names_in_lead", side_effect=lambda html: html)
+            )
+            stack.enter_context(
+                patch.object(mi, "_decorate_body_with_emoji_safe", side_effect=lambda html: html)
+            )
+            content = mi.apply_rss_pipeline_enrichment(
+                base_html,
+                title="【巨人】交流戦まで残り１０試合　岐阜、福井で勝率５割から貯金アップ目指す",
+                source_url="https://hochi.news/articles/20260511-OHT1T51228.html",
+                summary="巨人はここまで３６試合で１８勝１８敗、勝率５割でセ・リーグ３位。",
+                source_name="スポーツ報知 巨人 tag",
+                raw_html=raw_html,
+            )
+
+        self.assertIn("🔗 出典記事", content)
+        self.assertNotIn("📖 本文抜粋", content)
+        self.assertNotIn("大城卓三", content)
+
 
 if __name__ == "__main__":
     unittest.main()

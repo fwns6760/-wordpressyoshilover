@@ -2232,6 +2232,82 @@ def get_fan_reaction_excluded_handles() -> set[str]:
     return {handle.lower().lstrip("@") for handle in _env_csv_set("FAN_REACTION_EXCLUDE_HANDLES", DEFAULT_EXCLUDED_REACTION_HANDLES)}
 
 
+# 324-QA fan voice whitelist RSS source registration scaffolding (2026-05-12)
+# Adds source_type="fan_voice_pool" recognition. Entries from fan_voice_pool
+# sources are fetched via feedparser and cached here, NOT articleized and NOT
+# added to media_quote_pool. The picker (325-QA, gated by
+# ENABLE_FAN_VOICE_WHITELIST) consumes this cache. With no config entries of
+# type=fan_voice_pool, the cache stays empty and the cache has no effect on
+# any existing fetch / publish / picker path.
+_FAN_VOICE_POOL_CACHE_LIMIT = 200
+_FAN_VOICE_POOL_CACHE: list[dict] = []
+
+
+def _reset_fan_voice_pool_cache() -> None:
+    """Clear fan_voice_pool cache. Called at run start to drop stale entries."""
+    global _FAN_VOICE_POOL_CACHE
+    _FAN_VOICE_POOL_CACHE = []
+
+
+def _record_fan_voice_pool_entries(source_name: str, entries) -> int:
+    """Normalize and append fan_voice_pool entries to the cache.
+
+    Returns the count of entries actually appended (after dedupe and cap).
+    """
+    if not entries:
+        return 0
+    added = 0
+    cap = _FAN_VOICE_POOL_CACHE_LIMIT
+    seen_urls = {item.get("url") for item in _FAN_VOICE_POOL_CACHE if item.get("url")}
+    for entry in entries:
+        if len(_FAN_VOICE_POOL_CACHE) >= cap:
+            break
+        if not isinstance(entry, dict) and not hasattr(entry, "get"):
+            continue
+        url = ""
+        if hasattr(entry, "get"):
+            url = entry.get("link", "") or entry.get("url", "") or ""
+        if url and url in seen_urls:
+            continue
+        text = ""
+        if hasattr(entry, "get"):
+            text = entry.get("summary", "") or entry.get("description", "") or entry.get("title", "") or ""
+        text = text.strip()
+        if not text:
+            continue
+        handle = _extract_handle_from_tweet_url(url) if url else ""
+        normalized = {
+            "source_name": source_name,
+            "handle": handle,
+            "text": text,
+            "url": url,
+            "created_at": entry.get("published_parsed") if hasattr(entry, "get") else None,
+        }
+        _FAN_VOICE_POOL_CACHE.append(normalized)
+        if url:
+            seen_urls.add(url)
+        added += 1
+    return added
+
+
+def get_fan_voice_pool_entries() -> list[dict]:
+    """Return a defensive copy of currently cached fan_voice_pool entries.
+
+    Consumers: 325-QA picker integration (gated by ENABLE_FAN_VOICE_WHITELIST).
+    Returns an empty list when no fan_voice_pool source has fired.
+    """
+    return list(_FAN_VOICE_POOL_CACHE)
+
+
+def get_fan_voice_whitelist_enabled() -> bool:
+    """Return True iff ENABLE_FAN_VOICE_WHITELIST=1.
+
+    Default OFF. Picker integration (325-QA) reads this flag; with no callers
+    yet wired, this helper is dead-but-safe.
+    """
+    return _env_flag("ENABLE_FAN_VOICE_WHITELIST", False)
+
+
 def enhanced_prompts_enabled() -> bool:
     return os.getenv("ENABLE_ENHANCED_PROMPTS", "0").strip().lower() in TRUE_VALUES
 
@@ -22142,6 +22218,8 @@ def _main(args, logger):
     not_giants_related_info_count = 0
     not_giants_related_sample_titles: list[str] = []
     fetch_started_at = datetime.now(timezone.utc)
+    # 324-QA: drop stale fan_voice_pool entries from any prior in-process run.
+    _reset_fan_voice_pool_cache()
     game_live_source_policy_active = bool(
         has_game and _is_game_live_source_policy_window(fetch_started_at)
     )
@@ -22175,6 +22253,25 @@ def _main(args, logger):
                     },
                     ensure_ascii=False,
                 )
+            )
+            continue
+        # 324-QA: fan_voice_pool sources are RSSHub feeds of curated fan
+        # accounts. Fetch via feedparser, cache for the picker (325-QA), and
+        # skip the per-entry articleize / media_quote_pool / publish loop.
+        # With no fan_voice_pool entries in config today, this branch is dead.
+        if source_type == "fan_voice_pool":
+            logger.info(f"取得中: {name} ({url}) [fan_voice_pool]")
+            try:
+                feed = feedparser.parse(url)
+                pool_entries = feed.entries
+            except Exception as e:
+                logger.error(f"fan_voice_pool fetch failed {name}: {e}")
+                error += 1
+                continue
+            cached = _record_fan_voice_pool_entries(name, pool_entries)
+            total += len(pool_entries)
+            logger.info(
+                f"  fan_voice_pool: {len(pool_entries)} fetched, {cached} cached from {name}"
             )
             continue
         logger.info(f"取得中: {name} ({url})")

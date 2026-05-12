@@ -776,26 +776,55 @@ class WPClient:
             payload["categories"] = categories
         if not featured_media:
             try:
-                from src.player_eyecatch_resolver import resolve_eyecatch_from_title
+                from src.player_eyecatch_resolver import (
+                    detect_person,
+                    resolve_eyecatch_from_title,
+                )
                 # Manual-intake calls = user-driven publish; skip the
                 # team-generic fallback so the user can pick / upload
-                # the eyecatch themselves. Automatic fallback also skips
-                # old per-person / diversified media and prefers the
-                # configured team fallback only.
+                # the eyecatch themselves.
                 is_manual_call = bool(
                     caller and ("manual" in str(caller).lower())
+                )
+                # High-confidence single-player gate: only allow the
+                # per-person WP /media lookup when detect_person()
+                # identifies one canonical 巨人 player in the title.
+                # Generic team-level / postgame / broadcast titles
+                # return None and stay on the team-generic fallback,
+                # matching the 305-QA contract. Diversified pool is
+                # still disabled to prevent the "全部原辰徳/一郎"
+                # regression.
+                confident_person = (
+                    detect_person(title) if not is_manual_call else None
+                )
+                gate_disabled = os.environ.get(
+                    "PLAYER_EYECATCH_HIGH_CONFIDENCE_FALLBACK_DISABLED",
+                    "",
+                ).strip().lower() in {"1", "true", "yes"}
+                allow_person_media = bool(
+                    confident_person and not gate_disabled
                 )
                 resolved = resolve_eyecatch_from_title(
                     title,
                     wp_url=self.base_url,
                     auth=self.auth,
                     use_team_fallback=not is_manual_call,
-                    allow_existing_person_media=False,
+                    allow_existing_person_media=allow_person_media,
                     allow_diversified_pool=False,
                 )
                 if resolved:
                     featured_media = resolved
-                    print(f"[WP] auto-eyecatch hit media_id={resolved} title={title[:40]!r}")
+                    if allow_person_media:
+                        print(
+                            f"[WP] auto-eyecatch high-confidence-player "
+                            f"media_id={resolved} name={confident_person} "
+                            f"title={title[:40]!r}"
+                        )
+                    else:
+                        print(
+                            f"[WP] auto-eyecatch hit media_id={resolved} "
+                            f"title={title[:40]!r}"
+                        )
             except Exception as exc:
                 print(f"[WP] auto-eyecatch resolve failed: {exc}")
         if featured_media:

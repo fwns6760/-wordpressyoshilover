@@ -1353,5 +1353,159 @@ class TestThinBodyStopGate(unittest.TestCase):
         mock_post.assert_not_called()
 
 
+class HighConfidencePlayerEyecatchFallbackTests(unittest.TestCase):
+    def setUp(self):
+        os.environ["WP_URL"] = "https://example.com"
+        os.environ["WP_USER"] = "user"
+        os.environ["WP_APP_PASSWORD"] = "pass"
+        os.environ.pop("PLAYER_EYECATCH_HIGH_CONFIDENCE_FALLBACK_DISABLED", None)
+        self.wp = WPClient()
+
+    @patch("src.player_eyecatch_resolver.resolve_eyecatch_from_title")
+    @patch("src.player_eyecatch_resolver.detect_person")
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_single_player_title_opens_person_media_lookup(
+        self, mock_get, mock_post, mock_detect, mock_resolve
+    ):
+        mock_get.return_value = _mock_response(200, json_data=[])
+        mock_post.return_value = _mock_response(
+            201,
+            json_data={"id": 9001},
+        )
+        mock_detect.return_value = "丸佳浩"
+        mock_resolve.return_value = 70123
+
+        self.wp.create_post(
+            "丸佳浩、若林楽人らがアメリカンノックで右へ左へ",
+            "<p>body</p>",
+            categories=[663],
+            status="draft",
+        )
+
+        self.assertEqual(mock_resolve.call_count, 1)
+        kwargs = mock_resolve.call_args.kwargs
+        self.assertTrue(kwargs["allow_existing_person_media"])
+        self.assertFalse(kwargs["allow_diversified_pool"])
+        self.assertTrue(kwargs["use_team_fallback"])
+
+        sent_payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(sent_payload["featured_media"], 70123)
+
+    @patch("src.player_eyecatch_resolver.resolve_eyecatch_from_title")
+    @patch("src.player_eyecatch_resolver.detect_person")
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_generic_team_level_title_falls_back_to_team_only(
+        self, mock_get, mock_post, mock_detect, mock_resolve
+    ):
+        mock_get.return_value = _mock_response(200, json_data=[])
+        mock_post.return_value = _mock_response(
+            201,
+            json_data={"id": 9002},
+        )
+        mock_detect.return_value = None
+        mock_resolve.return_value = 65953
+
+        self.wp.create_post(
+            "巨人 試合終了 0-5 ヤクルト",
+            "<p>body</p>",
+            categories=[663],
+            status="draft",
+        )
+
+        kwargs = mock_resolve.call_args.kwargs
+        self.assertFalse(kwargs["allow_existing_person_media"])
+        self.assertFalse(kwargs["allow_diversified_pool"])
+
+        sent_payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(sent_payload["featured_media"], 65953)
+
+    @patch.dict(
+        os.environ,
+        {"PLAYER_EYECATCH_HIGH_CONFIDENCE_FALLBACK_DISABLED": "1"},
+        clear=False,
+    )
+    @patch("src.player_eyecatch_resolver.resolve_eyecatch_from_title")
+    @patch("src.player_eyecatch_resolver.detect_person")
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_kill_switch_disables_person_media_lookup(
+        self, mock_get, mock_post, mock_detect, mock_resolve
+    ):
+        mock_get.return_value = _mock_response(200, json_data=[])
+        mock_post.return_value = _mock_response(
+            201,
+            json_data={"id": 9003},
+        )
+        mock_detect.return_value = "丸佳浩"
+        mock_resolve.return_value = 65953
+
+        self.wp.create_post(
+            "丸佳浩、若林楽人らがアメリカンノックで右へ左へ",
+            "<p>body</p>",
+            categories=[663],
+            status="draft",
+        )
+
+        kwargs = mock_resolve.call_args.kwargs
+        self.assertFalse(kwargs["allow_existing_person_media"])
+        self.assertFalse(kwargs["allow_diversified_pool"])
+
+    @patch("src.player_eyecatch_resolver.resolve_eyecatch_from_title")
+    @patch("src.player_eyecatch_resolver.detect_person")
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_manual_caller_skips_person_media_and_team_fallback(
+        self, mock_get, mock_post, mock_detect, mock_resolve
+    ):
+        mock_get.return_value = _mock_response(200, json_data=[])
+        mock_post.return_value = _mock_response(
+            201,
+            json_data={"id": 9004},
+        )
+        mock_detect.return_value = "丸佳浩"
+        mock_resolve.return_value = None
+
+        self.wp.create_post(
+            "丸佳浩、若林楽人らがアメリカンノックで右へ左へ",
+            "<p>body</p>",
+            categories=[663],
+            status="draft",
+            caller="manual_intake.cli",
+        )
+
+        kwargs = mock_resolve.call_args.kwargs
+        self.assertFalse(kwargs["allow_existing_person_media"])
+        self.assertFalse(kwargs["allow_diversified_pool"])
+        self.assertFalse(kwargs["use_team_fallback"])
+
+    @patch("src.player_eyecatch_resolver.resolve_eyecatch_from_title")
+    @patch("src.player_eyecatch_resolver.detect_person")
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_caller_provided_featured_media_skips_resolver(
+        self, mock_get, mock_post, mock_detect, mock_resolve
+    ):
+        mock_get.return_value = _mock_response(200, json_data=[])
+        mock_post.return_value = _mock_response(
+            201,
+            json_data={"id": 9005},
+        )
+
+        self.wp.create_post(
+            "丸佳浩、若林楽人らがアメリカンノックで右へ左へ",
+            "<p>body</p>",
+            categories=[663],
+            status="draft",
+            featured_media=12345,
+        )
+
+        mock_detect.assert_not_called()
+        mock_resolve.assert_not_called()
+        sent_payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(sent_payload["featured_media"], 12345)
+
+
 if __name__ == "__main__":
     unittest.main()

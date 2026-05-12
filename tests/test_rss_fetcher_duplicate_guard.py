@@ -233,6 +233,106 @@ def test_same_run_player_incident_different_titles_groups_as_topic_duplicate():
     assert any('"event": "duplicate_news_pre_gemini_skip"' in message for message in messages)
 
 
+def test_cross_run_topic_history_skips_later_media_without_waiting_for_all_sources():
+    first = _make_context(
+        source_url="https://www.nikkansports.com/baseball/news/202605100000001.html",
+        title="【巨人】大城卓三のヘルメットにバット直撃 中日木下のフォロースイング",
+        summary="巨人大城卓三捕手の頭部に中日木下拓哉捕手のフォロースルーが直撃した。",
+        category="選手情報",
+        published_at=datetime(2026, 5, 10, 12, 0, tzinfo=timezone.utc),
+    )
+    later_same_topic = _make_context(
+        source_url="https://hochi.news/articles/20260510-OHT1T51002.html",
+        title="大城卓三のヘルメットにバット激突…試合後は氷のうを持って歩いてバスへ",
+        summary="巨人大城卓三捕手の頭部にバットが直撃するアクシデントが発生した。",
+        category="選手情報",
+        published_at=datetime(2026, 5, 10, 12, 5, tzinfo=timezone.utc),
+    )
+    different_topic = _make_context(
+        source_url="https://www.sanspo.com/article/20260510-GIANTS-003.html",
+        title="巨人・大城卓三が今季初本塁打 打線をけん引",
+        summary="巨人の大城卓三捕手が今季初本塁打を放った。",
+        category="選手情報",
+        published_at=datetime(2026, 5, 10, 12, 10, tzinfo=timezone.utc),
+    )
+
+    history: dict = {}
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ledger = rss_fetcher._DuplicateNewsLedger(
+            ledger_path=Path(tmpdir) / "duplicate.jsonl",
+            cooldown_hours=6,
+        )
+        with patch.object(rss_fetcher._DuplicateNewsLedger, "shared", return_value=ledger):
+            assert (
+                rss_fetcher._evaluate_pre_gemini_duplicate_guard(
+                    logging.getLogger("rss_fetcher"),
+                    first,
+                    duplicate_history=history,
+                )
+                == "allow"
+            )
+            rss_fetcher._record_duplicate_guard_success(first, 901)
+            rss_fetcher._record_duplicate_topic_history_success(
+                history,
+                first,
+                post_id=901,
+                draft_title="【巨人】大城卓三のヘルメットにバット直撃",
+                source_url="https://www.nikkansports.com/baseball/news/202605100000001.html",
+                now=datetime(2026, 5, 10, 12, 1, tzinfo=timezone.utc),
+            )
+
+            with CaptureLogs("rss_fetcher") as messages:
+                assert (
+                    rss_fetcher._evaluate_pre_gemini_duplicate_guard(
+                        logging.getLogger("rss_fetcher"),
+                        later_same_topic,
+                        duplicate_history=history,
+                    )
+                    == "skip"
+                )
+            assert later_same_topic["guard_outcome"] == "skip"
+            assert (
+                rss_fetcher._evaluate_pre_gemini_duplicate_guard(
+                    logging.getLogger("rss_fetcher"),
+                    different_topic,
+                    duplicate_history=history,
+                )
+                == "allow"
+            )
+
+    assert any('"event": "duplicate_news_pre_gemini_skip"' in message for message in messages)
+
+
+def test_persist_processed_entry_history_records_topic_marker_without_url_for_unpublished_post():
+    context = _make_context(
+        source_url="https://www.nikkansports.com/baseball/news/202605100000001.html",
+        title="【巨人】大城卓三のヘルメットにバット直撃 中日木下のフォロースイング",
+        summary="巨人大城卓三捕手の頭部に中日木下拓哉捕手のフォロースルーが直撃した。",
+        category="選手情報",
+        published_at=datetime(2026, 5, 10, 12, 0, tzinfo=timezone.utc),
+    )
+    history: dict = {}
+    with patch.object(rss_fetcher, "persist_history") as persist_mock:
+        persisted = rss_fetcher.persist_processed_entry_history(
+            history,
+            ["https://www.nikkansports.com/baseball/news/202605100000001.html"],
+            ["大城卓三ヘルメットバット直撃"],
+            rewritten_title="【巨人】大城卓三のヘルメットにバット直撃",
+            original_title="【巨人】大城卓三のヘルメットにバット直撃 中日木下のフォロースイング",
+            published=False,
+            publish_skip_reasons=["featured_media_missing"],
+            duplicate_guard_context=context,
+            post_id=902,
+        )
+
+    assert persisted is True
+    assert context["topic_history_key"] in history
+    assert history[context["topic_history_key"]][0]["post_id"] == 902
+    assert "https://www.nikkansports.com/baseball/news/202605100000001.html" not in history
+    assert "title_norm:大城卓三ヘルメットバット直撃" not in history
+    persist_mock.assert_called_once_with(history)
+
+
 def test_record_duplicate_guard_success_preserves_primary_flag():
     with tempfile.TemporaryDirectory() as tmpdir:
         ledger_path = Path(tmpdir) / "duplicate.jsonl"

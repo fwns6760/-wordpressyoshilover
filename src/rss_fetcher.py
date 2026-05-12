@@ -283,6 +283,11 @@ STRICT_PROMPT_MAX_QUOTES = 2
 THIN_SOURCE_FACT_BLOCK_MIN_CHARS_DEFAULT = 100
 THIN_SOURCE_FACT_BLOCK_MIN_CHARS_SOCIAL_NEWS = 40
 RSS_DUPLICATE_COOLDOWN_HOURS_DEFAULT = 6
+RSS_TOPIC_DEDUP_HISTORY_PREFIX = "topic_dedup"
+RSS_TOPIC_DEDUP_MAX_RECORDS_PER_BUCKET = 12
+RSS_TOPIC_DEDUP_MAX_TERMS = 80
+RSS_TOPIC_DEDUP_MIN_SHARED_TERMS = 6
+RSS_TOPIC_DEDUP_MIN_OVERLAP = 0.34
 GEMINI_CACHE_COOLDOWN_HOURS_DEFAULT = 24
 RSS_FETCHER_LOCK_TIMEOUT_SECONDS = int(os.getenv("RUN_SUBPROCESS_TIMEOUT", "285"))
 RSS_FETCHER_LOCK_TTL_SECONDS = max(RSS_FETCHER_LOCK_TIMEOUT_SECONDS * 2, 900)
@@ -14998,7 +15003,7 @@ X検索で「{query_short} 巨人」に関するファンの声を{fan_reaction_
 # ──────────────────────────────────────────────────────────
 # ニュース記事ブロックHTML生成
 # ──────────────────────────────────────────────────────────
-def build_news_block(title: str, summary: str, url: str, source_name: str, category: str = "コラム", og_image_url: str = "", media_id: int = 0, extra_images: list = None, has_game: bool = True, article_ai_mode_override: str | None = None, source_links: list[dict] | None = None, source_day_label: str = "", source_type: str = "news", media_quotes: list[dict] | None = None, source_entry: dict | None = None, post_context: dict | None = None, published_at: datetime | None = None, duplicate_guard_context: dict | None = None, rewritten_title: str = "", routing_context: Mapping[str, object] | None = None) -> tuple[str, str]:
+def build_news_block(title: str, summary: str, url: str, source_name: str, category: str = "コラム", og_image_url: str = "", media_id: int = 0, extra_images: list = None, has_game: bool = True, article_ai_mode_override: str | None = None, source_links: list[dict] | None = None, source_day_label: str = "", source_type: str = "news", media_quotes: list[dict] | None = None, source_entry: dict | None = None, post_context: dict | None = None, published_at: datetime | None = None, duplicate_guard_context: dict | None = None, duplicate_history: Mapping[str, object] | None = None, rewritten_title: str = "", routing_context: Mapping[str, object] | None = None) -> tuple[str, str]:
     import re
     summary_clean = re.sub(r"<[^>]+>", "", summary).strip()
     resolved_routing = dict(routing_context or {})
@@ -15151,7 +15156,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             source_entry=source_entry,
             source_name=source_name,
         )
-        if _evaluate_pre_gemini_duplicate_guard(logger, duplicate_context) == "skip":
+        if _evaluate_pre_gemini_duplicate_guard(logger, duplicate_context, duplicate_history=duplicate_history) == "skip":
             if isinstance(duplicate_guard_context, dict):
                 duplicate_guard_context.update(duplicate_context)
             return "", ""
@@ -16610,6 +16615,233 @@ def _hash_duplicate_guard_value(value: str | None) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
+_TOPIC_DEDUP_EVENT_TERMS = (
+    "ヘルメット",
+    "頭部",
+    "顔面",
+    "マスク",
+    "バット",
+    "フォロースイング",
+    "フォロースルー",
+    "直撃",
+    "激突",
+    "アクシデント",
+    "救急搬送",
+    "流血",
+    "氷のう",
+    "負傷",
+    "けが",
+    "故障",
+    "離脱",
+    "交代",
+    "復帰",
+    "合流",
+    "登録",
+    "抹消",
+    "昇格",
+    "降格",
+    "本塁打",
+    "ホームラン",
+    "適時打",
+    "タイムリー",
+    "猛打賞",
+    "好守",
+    "好捕",
+    "ファインプレー",
+    "先発",
+    "登板",
+    "予告先発",
+    "完投",
+    "完封",
+    "コメント",
+    "苦言",
+    "称賛",
+    "支配下",
+    "育成",
+    "契約",
+    "移籍",
+    "トレード",
+    "FA",
+)
+
+_TOPIC_DEDUP_GENERIC_TERMS = (
+    "巨人",
+    "読売",
+    "読売ジャイアンツ",
+    "ジャイアンツ",
+    "giants",
+    "yomiurigiants",
+    "選手",
+    "投手",
+    "捕手",
+    "内野手",
+    "外野手",
+    "監督",
+    "コーチ",
+    "ニュース",
+    "記事",
+    "プロ野球",
+)
+
+
+def _topic_dedup_day_key(value: object) -> str:
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        parsed = _parse_duplicate_ledger_datetime(value)
+    if parsed is None:
+        parsed = datetime.now(timezone.utc)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(JST).strftime("%Y-%m-%d")
+
+
+def _topic_dedup_compact_text(title: str, summary: str, player: str) -> str:
+    compact = _normalize_duplicate_subject(f"{title or ''} {summary or ''}")
+    for marker in list(NPB_TEAM_MARKERS) + list(_TOPIC_DEDUP_GENERIC_TERMS):
+        normalized_marker = _normalize_duplicate_subject(marker)
+        if normalized_marker:
+            compact = compact.replace(normalized_marker, "")
+    normalized_player = _normalize_duplicate_subject(player)
+    if normalized_player:
+        compact = compact.replace(normalized_player, "")
+    return compact
+
+
+def _topic_dedup_token_is_useful(token: str) -> bool:
+    if len(token) < 3:
+        return False
+    if token.isdigit():
+        return False
+    if token in {_normalize_duplicate_subject(term) for term in _TOPIC_DEDUP_GENERIC_TERMS}:
+        return False
+    return True
+
+
+def _extract_topic_dedup_terms(title: str, summary: str, player: str) -> list[str]:
+    compact = _topic_dedup_compact_text(title, summary, player)
+    if not compact:
+        return []
+    terms: list[str] = []
+    seen: set[str] = set()
+
+    def add(term: str) -> None:
+        normalized = _normalize_duplicate_subject(term)
+        if not normalized or normalized in seen:
+            return
+        if not _topic_dedup_token_is_useful(normalized):
+            return
+        seen.add(normalized)
+        terms.append(normalized)
+
+    for marker in _TOPIC_DEDUP_EVENT_TERMS:
+        normalized_marker = _normalize_duplicate_subject(marker)
+        if normalized_marker and normalized_marker in compact:
+            add(marker)
+
+    for size in (3, 4):
+        for idx in range(0, max(len(compact) - size + 1, 0)):
+            add(compact[idx : idx + size])
+            if len(terms) >= RSS_TOPIC_DEDUP_MAX_TERMS:
+                return terms
+    return terms
+
+
+def _topic_dedup_history_key(context: Mapping[str, object]) -> str:
+    player = _normalize_duplicate_subject(str(context.get("player") or ""))
+    subtype = _normalize_duplicate_subject(str(context.get("subtype") or ""))
+    if not player or not subtype:
+        return ""
+    if int(context.get("source_family_priority", 4) or 4) > 3:
+        return ""
+    day_key = _topic_dedup_day_key(context.get("published_at"))
+    return f"{RSS_TOPIC_DEDUP_HISTORY_PREFIX}:{day_key}:{player}:{subtype}"
+
+
+def _topic_dedup_overlap(current_terms: list[str], existing_terms: list[str]) -> tuple[int, float]:
+    current = set(current_terms or [])
+    existing = set(existing_terms or [])
+    if not current or not existing:
+        return 0, 0.0
+    shared = len(current & existing)
+    denominator = max(1, min(len(current), len(existing)))
+    return shared, shared / denominator
+
+
+def _topic_dedup_history_records(history: Mapping[str, object] | None, key: str) -> list[dict]:
+    if not history or not key:
+        return []
+    raw_records = history.get(key)
+    if not isinstance(raw_records, list):
+        return []
+    return [record for record in raw_records if isinstance(record, dict)]
+
+
+def _find_duplicate_topic_history_match(
+    duplicate_guard_context: Mapping[str, object],
+    history: Mapping[str, object] | None,
+) -> tuple[dict | None, str]:
+    key = str(duplicate_guard_context.get("topic_history_key") or "") or _topic_dedup_history_key(duplicate_guard_context)
+    if not key:
+        return None, ""
+    topic_key = str(duplicate_guard_context.get("topic_key") or "")
+    current_terms = list(duplicate_guard_context.get("topic_terms") or [])
+    for record in _topic_dedup_history_records(history, key):
+        if topic_key and topic_key == str(record.get("topic_key") or ""):
+            return record, "topic_key"
+        shared, overlap = _topic_dedup_overlap(current_terms, list(record.get("topic_terms") or []))
+        if shared >= RSS_TOPIC_DEDUP_MIN_SHARED_TERMS and overlap >= RSS_TOPIC_DEDUP_MIN_OVERLAP:
+            return record, f"term_overlap:{shared}:{overlap:.2f}"
+    return None, ""
+
+
+def _record_duplicate_topic_history_success(
+    history: dict,
+    duplicate_guard_context: Mapping[str, object] | None,
+    *,
+    post_id: int | str | None,
+    draft_title: str,
+    source_url: str,
+    now: datetime | None = None,
+) -> bool:
+    if not isinstance(history, dict) or not isinstance(duplicate_guard_context, Mapping):
+        return False
+    key = str(duplicate_guard_context.get("topic_history_key") or "") or _topic_dedup_history_key(duplicate_guard_context)
+    if not key:
+        return False
+    terms = list(duplicate_guard_context.get("topic_terms") or [])
+    topic_key = str(duplicate_guard_context.get("topic_key") or "")
+    if not topic_key and len(terms) < RSS_TOPIC_DEDUP_MIN_SHARED_TERMS:
+        return False
+    saved_at = now or datetime.now(timezone.utc)
+    if saved_at.tzinfo is None:
+        saved_at = saved_at.replace(tzinfo=timezone.utc)
+    source_url_hash = str(duplicate_guard_context.get("source_url_hash") or _hash_duplicate_guard_value(source_url))
+    payload = {
+        "saved_at": saved_at.astimezone(JST).isoformat(),
+        "post_id": int(post_id) if isinstance(post_id, int) or str(post_id or "").isdigit() else None,
+        "title": str(draft_title or "")[:160],
+        "source_url_hash": source_url_hash,
+        "source_family": str(duplicate_guard_context.get("source_family") or "unknown"),
+        "source_family_priority": int(duplicate_guard_context.get("source_family_priority", 4) or 4),
+        "player": str(duplicate_guard_context.get("player") or ""),
+        "subtype": str(duplicate_guard_context.get("subtype") or ""),
+        "topic_key": topic_key,
+        "topic_terms": terms[:RSS_TOPIC_DEDUP_MAX_TERMS],
+        "group_signature": str(duplicate_guard_context.get("group_signature") or ""),
+        "match_basis": str(duplicate_guard_context.get("match_basis") or ""),
+    }
+    records = _topic_dedup_history_records(history, key)
+    deduped_records = [
+        record
+        for record in records
+        if str(record.get("source_url_hash") or "") != source_url_hash
+        and str(record.get("group_signature") or "") != payload["group_signature"]
+    ]
+    history[key] = [payload] + deduped_records[: RSS_TOPIC_DEDUP_MAX_RECORDS_PER_BUCKET - 1]
+    return True
+
+
 def _extract_duplicate_game_id(source_url: str, explicit_game_id: str = "") -> str:
     explicit = str(explicit_game_id or "").strip()
     if explicit:
@@ -17069,6 +17301,8 @@ def _build_duplicate_news_context(
         article_subtype=article_subtype,
         player=player,
     )
+    published_at_text = published_at.isoformat() if isinstance(published_at, datetime) else ""
+    topic_terms = _extract_topic_dedup_terms(title, summary, player)
     duplicate_key = compute_duplicate_key(
         source_url=source_url,
         canonical_url=canonical_url,
@@ -17089,7 +17323,7 @@ def _build_duplicate_news_context(
     )
     if not duplicate_key or not group_signature:
         return None
-    return {
+    context = {
         "duplicate_key": duplicate_key,
         "group_signature": group_signature,
         "match_basis": _duplicate_key_basis(
@@ -17108,7 +17342,8 @@ def _build_duplicate_news_context(
         "player": player,
         "game_id": resolved_game_id,
         "topic_key": topic_key,
-        "published_at": published_at.isoformat() if isinstance(published_at, datetime) else "",
+        "topic_terms": topic_terms,
+        "published_at": published_at_text,
         "body_length": len(_strip_html(f"{title} {summary}")),
         "source_name": source_name,
         "source_type": source_type,
@@ -17116,6 +17351,8 @@ def _build_duplicate_news_context(
         "entry_index": int(entry_index or 0),
         "guard_outcome": "allow",
     }
+    context["topic_history_key"] = _topic_dedup_history_key(context)
+    return context
 
 
 def _build_duplicate_news_context_from_prepared_entry(item: dict) -> dict | None:
@@ -17167,9 +17404,13 @@ def _annotate_duplicate_guard_contexts(candidates: list[dict]) -> list[dict]:
 def _evaluate_pre_gemini_duplicate_guard(
     logger: logging.Logger,
     duplicate_guard_context: dict | None,
+    duplicate_history: Mapping[str, object] | None = None,
 ) -> str:
     if not isinstance(duplicate_guard_context, dict) or not duplicate_guard_context.get("duplicate_key"):
         return "allow"
+
+    if duplicate_guard_context.get("duplicate_guard_evaluated"):
+        return str(duplicate_guard_context.get("guard_outcome") or "allow")
 
     duplicate_guard_context["guard_outcome"] = "allow"
 
@@ -17191,6 +17432,7 @@ def _evaluate_pre_gemini_duplicate_guard(
                 ambiguity_reason=str(duplicate_guard_context.get("same_run_ambiguity_reason") or ""),
             )
             duplicate_guard_context["guard_outcome"] = "review"
+            duplicate_guard_context["duplicate_guard_evaluated"] = True
             return "review"
         _emit_duplicate_news_structured(
             logger,
@@ -17204,6 +17446,28 @@ def _evaluate_pre_gemini_duplicate_guard(
             source_family=str(duplicate_guard_context.get("source_family") or ""),
         )
         duplicate_guard_context["guard_outcome"] = "skip"
+        duplicate_guard_context["duplicate_guard_evaluated"] = True
+        return "skip"
+
+    history_match, history_match_basis = _find_duplicate_topic_history_match(
+        duplicate_guard_context,
+        duplicate_history,
+    )
+    if history_match is not None:
+        _emit_duplicate_news_structured(
+            logger,
+            event="duplicate_news_pre_gemini_skip",
+            duplicate_key=str(duplicate_guard_context.get("duplicate_key") or ""),
+            skipped_source_url_hash=str(duplicate_guard_context.get("source_url_hash") or ""),
+            existing_source_url_hash=str(history_match.get("source_url_hash") or ""),
+            primary_post_id=history_match.get("post_id"),
+            title_norm=str(duplicate_guard_context.get("title_norm") or ""),
+            subtype=str(duplicate_guard_context.get("subtype") or ""),
+            source_family=str(duplicate_guard_context.get("source_family") or ""),
+            ambiguity_reason=f"topic_history:{history_match_basis}",
+        )
+        duplicate_guard_context["guard_outcome"] = "skip"
+        duplicate_guard_context["duplicate_guard_evaluated"] = True
         return "skip"
 
     ledger = _DuplicateNewsLedger.shared()
@@ -17212,9 +17476,11 @@ def _evaluate_pre_gemini_duplicate_guard(
         str(duplicate_guard_context.get("group_signature") or ""),
     )
     if recent is None:
+        duplicate_guard_context["duplicate_guard_evaluated"] = True
         return "allow"
 
     if _duplicate_candidate_record_comparison_key(duplicate_guard_context) < _duplicate_candidate_record_comparison_key(recent):
+        duplicate_guard_context["duplicate_guard_evaluated"] = True
         return "allow"
 
     ambiguous, reason = _is_duplicate_review_ambiguous(recent, duplicate_guard_context)
@@ -17232,6 +17498,7 @@ def _evaluate_pre_gemini_duplicate_guard(
             ambiguity_reason=reason,
         )
         duplicate_guard_context["guard_outcome"] = "review"
+        duplicate_guard_context["duplicate_guard_evaluated"] = True
         return "review"
 
     _emit_duplicate_news_structured(
@@ -17246,6 +17513,7 @@ def _evaluate_pre_gemini_duplicate_guard(
         source_family=str(duplicate_guard_context.get("source_family") or ""),
     )
     duplicate_guard_context["guard_outcome"] = "skip"
+    duplicate_guard_context["duplicate_guard_evaluated"] = True
     return "skip"
 
 
@@ -17586,24 +17854,35 @@ def persist_processed_entry_history(
     original_title: str = "",
     published: bool = False,
     publish_skip_reasons: list[str] | None = None,
+    duplicate_guard_context: Mapping[str, object] | None = None,
+    post_id: int | str | None = None,
 ) -> bool:
     reasons = set(publish_skip_reasons or [])
-    if not published and "draft_only" not in reasons:
+    topic_history_recorded = _record_duplicate_topic_history_success(
+        history,
+        duplicate_guard_context,
+        post_id=post_id,
+        draft_title=rewritten_title or original_title,
+        source_url=next((u for u in history_urls if u), ""),
+    )
+    should_persist_entry = published or "draft_only" in reasons
+    if not should_persist_entry and not topic_history_recorded:
         return False
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-    for url in _dedupe_preserve_order([u for u in history_urls if u]):
-        history[url] = now_str
-    for title_norm in _dedupe_preserve_order(history_title_norms or []):
-        if title_norm and len(title_norm) > 5:
-            history[f"title_norm:{title_norm[:60]}"] = now_str
-    rewritten_title_norm = _normalize_history_title(rewritten_title)
-    if rewritten_title_norm and len(rewritten_title_norm) > 5:
-        history[f"rewritten_title_norm:{rewritten_title_norm[:60]}"] = {
-            "post_url": next((u for u in history_urls if u), ""),
-            "original_title": original_title,
-            "rewritten_title": rewritten_title,
-            "saved_at": now_str,
-        }
+    if should_persist_entry:
+        for url in _dedupe_preserve_order([u for u in history_urls if u]):
+            history[url] = now_str
+        for title_norm in _dedupe_preserve_order(history_title_norms or []):
+            if title_norm and len(title_norm) > 5:
+                history[f"title_norm:{title_norm[:60]}"] = now_str
+        rewritten_title_norm = _normalize_history_title(rewritten_title)
+        if rewritten_title_norm and len(rewritten_title_norm) > 5:
+            history[f"rewritten_title_norm:{rewritten_title_norm[:60]}"] = {
+                "post_url": next((u for u in history_urls if u), ""),
+                "original_title": original_title,
+                "rewritten_title": rewritten_title,
+                "saved_at": now_str,
+            }
     persist_history(history)
     return True
 
@@ -21898,6 +22177,18 @@ def _main(args, logger):
                     )
                 continue
             _log_title_template_selected(logger, post_url, raw_title, draft_title, title_template_key, category, title_article_subtype)
+            duplicate_guard_context = item.get("duplicate_guard_context")
+            if isinstance(duplicate_guard_context, dict):
+                duplicate_outcome = _evaluate_pre_gemini_duplicate_guard(
+                    logger,
+                    duplicate_guard_context,
+                    duplicate_history=history,
+                )
+                if duplicate_outcome == "skip":
+                    skip_filter += 1
+                    skip_reason_counts["duplicate_news_pre_gemini_skip"] += 1
+                    _append_skip_reason_sample(skip_reason_sample_titles, "duplicate_news_pre_gemini_skip", draft_title)
+                    continue
             content, ai_body_for_x = build_news_block(
                 title,
                 summary,
@@ -21917,6 +22208,7 @@ def _main(args, logger):
                 post_context=item,
                 published_at=item.get("published_at"),
                 duplicate_guard_context=item.get("duplicate_guard_context"),
+                duplicate_history=history,
                 rewritten_title=draft_title,
                 routing_context=routing_context,
             )
@@ -22531,6 +22823,8 @@ def _main(args, logger):
                 original_title=raw_title,
                 published=published,
                 publish_skip_reasons=publish_skip_reasons,
+                duplicate_guard_context=item.get("duplicate_guard_context"),
+                post_id=post_id,
             )
 
             article_url = ""

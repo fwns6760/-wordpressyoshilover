@@ -990,3 +990,68 @@ LLM(Gemini) は本経路で使用していないため、source 文字列を det
 - NPB block と W/L/S sub-block の描画順序(NPB → W/L/S)不変
 - tail inject の `postgame_yahoo_facts` fetch 条件(常時 fetch)不変
 - Phase 2A-2F 全 logic 不変
+
+---
+
+### Phase 2H: NPB pitcher W/L/S 直接抽出 + Yahoo HTTP 削除(post-work、2026-05-12 PM)
+
+#### 1. やったこと(コード変更)
+
+- **背景**: Phase 2G で「NPB box が W/L/S summary を持たない」と仮定して Yahoo HTTP を常時 fetch にしたが、NPB box の pitcher row には 1 列目に **`○`(勝)/ `●`(敗)/ `S`(セーブ)/ `H`(ホールド)** の indicator が入っている事を確認。Phase 2H で抽出 → Yahoo HTTP を完全 removable に戻す
+- **`src/source_npb_postgame_extractor.py`** 変更:
+  - `_parse_pitcher_rows` で `row[0]` を `result_mark` field として保持(空文字 / `○` / `●` / `S` / `H`)
+  - `_derive_wls_summary(giants_pitchers, opponent_pitchers, giants_name, opponent_name)` を新規追加
+    - 両 team の pitcher row を走査、`○` の最初を `winning_pitcher`、`●` を `losing_pitcher`、`S` を `save_pitcher` に分類
+    - 出力 dict shape は Yahoo `winning_pitcher` 互換(`team` / `name` / `record`)、ただし NPB box には season record 欄が無いため `record` は空
+  - `parse_npb_box_html` 戻り値に `winning_pitcher` / `losing_pitcher` / `save_pitcher` / `giants_team_name` 4 key を追加
+- **`src/rss_fetcher.py`** 変更:
+  - tail inject: NPB facts の W/L/S を `_build_yahoo_wls_pitcher_subblock(postgame_npb_facts)` に渡す(helper は dict shape 互換のため refactor 不要)
+  - Yahoo fetch 条件: Phase 2G で「常時 fetch」に変更したのを「NPB 失敗時のみ」に revert(Phase 2H で W/L/S 用 Yahoo fetch が不要になったため)
+- **新規 unit tests**(`tests/test_source_npb_postgame_extractor.py`、2 case 追加):
+  - `test_pitcher_result_mark_captured`: 船迫 row の `result_mark="○"`、森田 row の `result_mark=""`
+  - `test_wls_summary_derived`: facts に `winning_pitcher / losing_pitcher / save_pitcher` 3 key、勝利 = 巨人船迫 / 敗戦 = 中日メヒア
+- **integration test 更新**(`tests/test_rss_fetcher_postgame_table.py`):
+  - `NPB_BOX_FACTS` fixture に船迫(`result_mark="○"`)/メヒア(`result_mark="●"`)を追加
+  - `winning_pitcher` / `losing_pitcher` / `save_pitcher` / `giants_team_name` の 4 key を fixture に追加
+  - `test_npb_box_takes_priority_for_inning_but_keeps_yahoo_wls` → `test_npb_box_renders_inning_and_wls_directly_from_npb` に rename(Yahoo facts なしで W/L/S sub-block emit を verify)
+
+#### 2. 不変 / 不可触
+
+- Phase 2A / 2A-1 / 2B / 2C / 2D-A / 2D-B / 2E / 2F / 2G 全 logic 不変
+- NPB box parser の内部 stack-based table scan / 14-column row split 不変
+- `_build_yahoo_wls_pitcher_subblock` の marker / column 順 不変(Yahoo / NPB 共通で利用)
+- automation / scheduler / env / secret 一切 untouched
+
+#### 3. 動作確認
+
+- `python3 -m unittest tests.test_source_npb_postgame_extractor`: **8 / 8 GREEN**(従来 6 + Phase 2H 2)
+- `python3 -m unittest tests.test_rss_fetcher_postgame_table`: **15 / 15 GREEN**(Phase 2H で 1 case rename / fixture 拡張のみ、case 数不変)
+- 組合せ `tests.test_source_npb_postgame_extractor tests.test_rss_fetcher_postgame_table tests.test_yahoo_postgame_pitcher_extraction`: **27 / 27 GREEN**
+
+#### 4. テスト結果
+
+- **Phase 2G 着地時 baseline**: 3622 tests / 2 pre-existing fail
+- **Phase 2H 着地後**: `Ran 3624 tests in 75.435s` / **failures=2**(同 baseline、+2 case = unit test 追加)
+- 増加 fail: **0**
+
+#### 5. 残った懸念
+
+1. **NPB box の `S`(セーブ)記号未検証**: 本 fixture は大差勝利でセーブ非該当、`S` 記号の column position は他試合 fixture で要 verify。1 列目想定だが NPB の rendering 仕様未確認。観察 + 次セーブ試合の fixture で再確認推奨
+2. **`record` 欄空文字描画**: NPB box には season 累積 record(`4勝2敗0S` 等)が無いため、`_build_yahoo_wls_pitcher_subblock` の 4 列目「成績」が空欄になる。視覚的に劣化、必要なら別 source 補完(別 phase)
+3. **複数勝敗投手検出**: 通常 1 試合 1 勝 1 敗 1S だが、解析 logic は「最初の `○` / `●` / `S`」を採用するので multiple マークがある場合無視される(発生し難いが理論上)
+
+#### 6. 新しく見つかったデグレ
+
+- 本便差分による新規デグレ **なし**(test 1 case rename は意図変更、既存 case は全 pass)
+
+#### 7. 追加した回帰テスト
+
+- `tests/test_source_npb_postgame_extractor.py` に 2 case 追加(result_mark / W/L/S derive)
+- `tests/test_rss_fetcher_postgame_table.py` の `NPB_BOX_FACTS` fixture 拡張 + test rename
+
+#### 8. 次回触ってはいけない範囲
+
+- `_derive_wls_summary` の `team` field 命名(`巨人` / `中日` のような short name)
+- `result_mark` field 名 (`row[0]` 由来であることを保つ)
+- Phase 2A-2G 全 logic 不変
+- fixture file(`npb_score_2026_0510_d-g-08_*.html`)は real NPB HTML、再加工不可

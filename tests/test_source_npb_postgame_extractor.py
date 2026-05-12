@@ -83,6 +83,35 @@ class ParseNPBBoxHtmlTests(unittest.TestCase):
         self.assertIsNotNone(giants_row)
         self.assertEqual(int(giants_row["total"]), 9)
 
+    def test_pitcher_result_mark_captured(self):
+        """Phase 2H: row[0] (○/●/S/H) を result_mark に保持。"""
+        from src.source_npb_postgame_extractor import parse_npb_box_html
+        facts = parse_npb_box_html(self.html)
+        g_p = facts["giants_pitchers"]
+        funami = next((p for p in g_p if p.get("選手") == "船迫"), None)
+        self.assertIsNotNone(funami)
+        self.assertEqual(funami.get("result_mark"), "○")
+        # 森田(先発、勝敗なし)は空
+        morita = next((p for p in g_p if p.get("選手") == "森田"), None)
+        self.assertIsNotNone(morita)
+        self.assertEqual(morita.get("result_mark"), "")
+
+    def test_wls_summary_derived(self):
+        """Phase 2H: winning_pitcher / losing_pitcher を NPB facts から
+        derive 可能(Yahoo 不要)。"""
+        from src.source_npb_postgame_extractor import parse_npb_box_html
+        facts = parse_npb_box_html(self.html)
+        self.assertIn("winning_pitcher", facts)
+        self.assertIn("losing_pitcher", facts)
+        self.assertIn("save_pitcher", facts)
+        # 5/10 fixture: 巨人 9-4 中日 → 勝利 = 巨人 投手、敗戦 = 中日 投手
+        winner = facts["winning_pitcher"]
+        self.assertEqual(winner.get("team"), "巨人")
+        self.assertEqual(winner.get("name"), "船迫")
+        loser = facts["losing_pitcher"]
+        self.assertEqual(loser.get("team"), "中日")
+        self.assertEqual(loser.get("name"), "メヒア")
+
 
 if __name__ == "__main__":
     unittest.main()

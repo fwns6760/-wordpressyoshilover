@@ -414,9 +414,12 @@ class PostgameNPBBoxIntegrationTests(unittest.TestCase):
              "is_sub": False},
         ],
         "giants_pitchers": [
-            {"選手": "森田", "投球数": "80", "打者": "21", "投球回": "4.1",
-             "安打": "5", "本塁打": "1", "四球": "2", "死球": "0", "三振": "4",
-             "暴投": "0", "ボーク": "0", "失点": "4", "自責点": "4"},
+            {"選手": "森田", "result_mark": "", "投球数": "80", "打者": "21",
+             "投球回": "4.1", "安打": "5", "本塁打": "1", "四球": "2", "死球": "0",
+             "三振": "4", "暴投": "0", "ボーク": "0", "失点": "4", "自責点": "4"},
+            {"選手": "船迫", "result_mark": "○", "投球数": "7", "打者": "2",
+             "投球回": "0.2", "安打": "0", "本塁打": "0", "四球": "0", "死球": "0",
+             "三振": "0", "暴投": "0", "ボーク": "0", "失点": "0", "自責点": "0"},
         ],
         "opponent_batters": [
             {"順": "1", "守備": "右", "選手": "岡林", "打数": "4", "得点": "1",
@@ -424,15 +427,22 @@ class PostgameNPBBoxIntegrationTests(unittest.TestCase):
              "atbats": ["-"] * 9, "is_sub": False},
         ],
         "opponent_pitchers": [
-            {"選手": "髙橋宏", "投球数": "95", "打者": "30", "投球回": "5.0",
-             "安打": "8", "本塁打": "2", "四球": "3", "死球": "0", "三振": "6",
-             "暴投": "0", "ボーク": "0", "失点": "5", "自責点": "5"},
+            {"選手": "髙橋宏", "result_mark": "", "投球数": "95", "打者": "30",
+             "投球回": "5.0", "安打": "8", "本塁打": "2", "四球": "3", "死球": "0",
+             "三振": "6", "暴投": "0", "ボーク": "0", "失点": "5", "自責点": "5"},
+            {"選手": "メヒア", "result_mark": "●", "投球数": "22", "打者": "6",
+             "投球回": "1", "安打": "2", "本塁打": "0", "四球": "1", "死球": "0",
+             "三振": "2", "暴投": "0", "ボーク": "0", "失点": "2", "自責点": "2"},
         ],
         "opponent_team_name": "中日",
+        "giants_team_name": "巨人",
         "inning_score": [
             {"name": "巨人", "innings": ["0","1","0","2","0","2","0","1","3"], "total": 9},
             {"name": "中日", "innings": ["0","0","1","2","1","0","0","0","0"], "total": 4},
         ],
+        "winning_pitcher": {"team": "巨人", "name": "船迫", "record": ""},
+        "losing_pitcher": {"team": "中日", "name": "メヒア", "record": ""},
+        "save_pitcher": {},
     }
 
     def _build_with_npb(self, *, yahoo_facts=None, npb_facts=None):
@@ -486,26 +496,20 @@ class PostgameNPBBoxIntegrationTests(unittest.TestCase):
         self.assertIn("森田", blocks)
         self.assertIn("4.1", blocks)
 
-    def test_npb_box_takes_priority_for_inning_but_keeps_yahoo_wls(self):
-        """Phase 2G: NPB 成功時 inning は NPB が優先(Yahoo inning は描画
-        されない)が、Yahoo W/L/S 投手 sub-block は併存する。"""
-        yahoo = {
-            "team_name": "巨人", "score": "9-4", "result": "win",
-            "date_label": "2026年5月10日", "league_label": "セ・リーグ",
-            "home": "中日ドラゴンズ", "away": "読売ジャイアンツ",
-            "inning_score": [{"name": "巨人", "innings": ["0"]*9, "total": 9},
-                            {"name": "中日", "innings": ["0"]*9, "total": 4}],
-            "one_line_summary": "",
-            "winning_pitcher": {"team": "巨人", "name": "戸郷", "record": "4勝2敗0S"},
-        }
-        blocks, _ = self._build_with_npb(npb_facts=self.NPB_BOX_FACTS, yahoo_facts=yahoo)
-        # NPB block 出てる(batter / pitcher-detail / inning)
+    def test_npb_box_renders_inning_and_wls_directly_from_npb(self):
+        """Phase 2H: NPB facts に W/L/S が含まれていれば、Yahoo facts
+        なしでも W/L/S sub-block が描画される(Yahoo HTTP fetch なし
+        で NPB から直接 derive)。"""
+        blocks, _ = self._build_with_npb(npb_facts=self.NPB_BOX_FACTS, yahoo_facts={})
+        # NPB rich block 出てる(batter / pitcher-detail / inning)
         self.assertIn("nomotoke-card-postgame-batter", blocks)
         self.assertIn("nomotoke-card-postgame-pitcher-detail", blocks)
         self.assertIn("nomotoke-card-postgame-inning", blocks)
-        # Phase 2G: NPB と並走で W/L/S sub-block も出る(NPB は W/L/S summary を持たない)
+        # Phase 2H: NPB facts 自身に winning/losing が入っていれば
+        # W/L/S sub-block が出る(Yahoo facts 不要)
         self.assertIn("nomotoke-card-postgame-pitchers", blocks)
-        self.assertIn("戸郷", blocks)
+        self.assertIn("船迫", blocks)
+        self.assertIn("メヒア", blocks)
         # Phase 2D-B Yahoo の試合結果 header marker は出ない(NPB が inning を支配)
         self.assertNotIn("nomotoke-card-postgame-result", blocks)
 

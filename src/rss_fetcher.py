@@ -15512,12 +15512,13 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     # Yahoo box (inning + W/L/S) を取得する。2軍 / Yahoo 失敗時は
     # postgame_facts (prose A-fallback) に degrade。
     postgame_yahoo_facts: dict = {}
-    # NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2F + Phase 2G: NPB公式
+    # NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2F / 2G / 2H: NPB公式
     # box.html を 1軍 postgame で取得し、per-batter atbat + per-pitcher
-    # 詳細 stats まで揃った rich render に格上げ。NPB box 自体は
-    # 勝利/敗戦/セーブ投手を summary 化しないため、Phase 2G で Yahoo
-    # facts も同時に取得し、NPB block + Yahoo W/L/S sub-block の合成
-    # 描画を可能にした。NPB が空なら従来通り Yahoo block 単独 fallback。
+    # 詳細 stats + W/L/S indicator(○/●/S)まで揃った rich render に
+    # 格上げ。Phase 2H で NPB row[0] の result_mark を解析し、W/L/S
+    # summary を NPB facts のみから derive 可能にしたため、NPB 成功時の
+    # Yahoo HTTP 追加 fetch を removable に戻した(NPB 失敗時のみ Yahoo
+    # box block へ fallback)。
     postgame_npb_facts: dict = {}
     if (
         postgame_facts
@@ -15530,13 +15531,14 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 "postgame_npb_fetch_skipped reason=%s", e
             )
             postgame_npb_facts = {}
-        try:
-            postgame_yahoo_facts = fetch_today_giants_postgame_facts_from_yahoo() or {}
-        except Exception as e:  # noqa: BLE001
-            logging.getLogger("rss_fetcher").warning(
-                "postgame_yahoo_fetch_skipped reason=%s", e
-            )
-            postgame_yahoo_facts = {}
+        if not postgame_npb_facts:
+            try:
+                postgame_yahoo_facts = fetch_today_giants_postgame_facts_from_yahoo() or {}
+            except Exception as e:  # noqa: BLE001
+                logging.getLogger("rss_fetcher").warning(
+                    "postgame_yahoo_fetch_skipped reason=%s", e
+                )
+                postgame_yahoo_facts = {}
     lineup_stats_rendered = False
 
     # 試合がない日は勝敗ヒントを生成しない（架空スコア捏造防止）
@@ -17230,11 +17232,14 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         if not followup_section_rendered:
             blocks += _sep()
         blocks += _build_postgame_npb_block(postgame_npb_facts)
-        # NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2G: NPB box doesn't
-        # surface 勝利/敗戦/セーブ投手 as a summary, so reuse the Yahoo
-        # W/L/S sub-block when Yahoo facts are available alongside NPB.
-        if postgame_yahoo_facts:
-            blocks += _build_yahoo_wls_pitcher_subblock(postgame_yahoo_facts)
+        # NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2H: NPB facts now carry
+        # winning_pitcher/losing_pitcher/save_pitcher derived from
+        # row[0] (○/●/S) so the helper can render the W/L/S sub-block
+        # directly from NPB without fetching Yahoo.
+        if postgame_npb_facts.get("winning_pitcher") or postgame_npb_facts.get(
+            "losing_pitcher"
+        ) or postgame_npb_facts.get("save_pitcher"):
+            blocks += _build_yahoo_wls_pitcher_subblock(postgame_npb_facts)
         followup_section_rendered = True
     elif postgame_yahoo_facts and postgame_yahoo_facts.get("inning_score"):
         if not followup_section_rendered:

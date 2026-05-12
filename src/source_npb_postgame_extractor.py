@@ -228,9 +228,15 @@ def _parse_pitcher_rows(rows: List[List[str]]) -> List[Dict[str, Any]]:
         name = row[1] if len(row) > 1 else ""
         if not name:
             continue
+        # Phase 2H: row[0] carries the W/L/S/H indicator NPB box places
+        # in the leading micro-column (``○`` win, ``●`` loss, ``S`` save,
+        # ``H`` hold). Surface it so callers can derive a W/L/S summary
+        # without a second HTTP fetch to Yahoo.
+        result_mark = (row[0] or "").strip()
         out.append(
             {
                 "選手": name,
+                "result_mark": result_mark,
                 "投球数": row[2] if len(row) > 2 else "",
                 "打者": row[3] if len(row) > 3 else "",
                 "投球回": row[4] if len(row) > 4 else "",
@@ -245,6 +251,41 @@ def _parse_pitcher_rows(rows: List[List[str]]) -> List[Dict[str, Any]]:
                 "自責点": row[13] if len(row) > 13 else "",
             }
         )
+    return out
+
+
+def _derive_wls_summary(
+    giants_pitchers: List[Dict[str, Any]],
+    opponent_pitchers: List[Dict[str, Any]],
+    giants_name: str,
+    opponent_name: str,
+) -> Dict[str, Dict[str, str]]:
+    """Phase 2H: collapse result_mark across both teams into the same
+    ``{winning_pitcher, losing_pitcher, save_pitcher}`` dict shape that
+    Yahoo facts produce. ``record`` is left empty because NPB box rows
+    don't include the season cumulative tally.
+    """
+    out = {
+        "winning_pitcher": {},
+        "losing_pitcher": {},
+        "save_pitcher": {},
+    }
+    pairs = (
+        (giants_pitchers, giants_name),
+        (opponent_pitchers, opponent_name),
+    )
+    for pitchers, team in pairs:
+        for p in pitchers:
+            mark = (p.get("result_mark") or "").strip()
+            name = (p.get("選手") or "").strip()
+            if not mark or not name:
+                continue
+            if mark == "○" and not out["winning_pitcher"]:
+                out["winning_pitcher"] = {"team": team, "name": name, "record": ""}
+            elif mark == "●" and not out["losing_pitcher"]:
+                out["losing_pitcher"] = {"team": team, "name": name, "record": ""}
+            elif mark == "S" and not out["save_pitcher"]:
+                out["save_pitcher"] = {"team": team, "name": name, "record": ""}
     return out
 
 
@@ -287,12 +328,23 @@ def parse_npb_box_html(html: str) -> Optional[Dict[str, Any]]:
         return None
 
     opponent_name = inning[opp_idx].get("name") or inning[opp_idx].get("full_name", "")
+    giants_name = inning[giants_idx].get("name") or inning[giants_idx].get("full_name", "")
+
+    giants_pitchers = _parse_pitcher_rows(pitcher_tables[giants_idx])
+    opponent_pitchers = _parse_pitcher_rows(pitcher_tables[opp_idx])
+    wls = _derive_wls_summary(
+        giants_pitchers, opponent_pitchers, giants_name, opponent_name
+    )
 
     return {
         "giants_batters":   _parse_batter_rows(batter_tables[giants_idx]),
-        "giants_pitchers":  _parse_pitcher_rows(pitcher_tables[giants_idx]),
+        "giants_pitchers":  giants_pitchers,
         "opponent_batters": _parse_batter_rows(batter_tables[opp_idx]),
-        "opponent_pitchers":_parse_pitcher_rows(pitcher_tables[opp_idx]),
+        "opponent_pitchers": opponent_pitchers,
         "opponent_team_name": opponent_name,
+        "giants_team_name": giants_name,
         "inning_score": inning,
+        "winning_pitcher": wls["winning_pitcher"],
+        "losing_pitcher": wls["losing_pitcher"],
+        "save_pitcher": wls["save_pitcher"],
     }

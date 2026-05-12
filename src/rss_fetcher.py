@@ -23854,6 +23854,27 @@ def _main(args, logger):
                 _passthrough_label = "non_x_url_passthrough"
             ai_body_for_x = ""
             draft_title = title
+            # 2026-05-12 hotfix(B、proper fix): else パスでも _article_images と
+            # title_template_key を正規代入する。if-branch と同じ画像抽出
+            # logic を mirror。これで try block(23856+)の _article_images
+            # 参照(23895 eyecatch fallback / 24066 candidate_count log)が
+            # else パス記事(tag_scrape / 非 X URL)でも実 candidate を見る。
+            entry_obj_else = item.get("entry") if isinstance(item.get("entry"), dict) else {}
+            _article_raw_html_else = ""
+            if source_type == "tag_scrape":
+                _article_raw_html_else = str(entry_obj_else.get("_html") or "")
+                if not _article_raw_html_else:
+                    _article_raw_html_else = _fetch_url_html(post_url, max_bytes=240000, timeout=12)
+            _article_images = _extract_source_article_image_urls(
+                source_type,
+                entry_obj_else,
+                post_url,
+                _article_raw_html_else,
+                max_images=3,
+            )
+            _article_images = _filter_image_candidates(_article_images, post_url, logger)
+            _article_images = _refetch_article_images_if_empty(_article_images, post_url, logger, max_images=3)
+            title_template_key = _passthrough_label
             _log_title_template_selected(logger, post_url, raw_title, draft_title, _passthrough_label, category, title_article_subtype)
             if args.dry_run:
                 print(f"  DRY: [{category}] {draft_title[:50]}")

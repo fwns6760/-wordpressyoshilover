@@ -1,25 +1,215 @@
 [
-  {"name": "巨人公式X",           "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/TokyoGiants",     "type": "social_news", "role": ["article_source", "media_quote_pool"]},
-  {"name": "読売ジャイアンツX",    "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/yomiuri_giants", "type": "social_news", "role": ["article_source", "media_quote_pool"]},
-  {"name": "スポーツ報知巨人班X",  "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/hochi_giants",    "type": "social_news", "role": ["article_source", "media_quote_pool", "game_live_primary"]},
-  {"name": "日刊スポーツX",        "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/nikkansports",     "type": "social_news", "role": ["article_source", "media_quote_pool"]},
-  {"name": "スポニチ野球記者X",    "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/SponichiYakyu",    "type": "social_news", "role": ["article_source", "media_quote_pool"]},
-  {"name": "サンスポ巨人X",        "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/Sanspo_Giants",    "type": "social_news", "role": ["article_source", "media_quote_pool"]},
-  {"name": "スポーツ報知X",        "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/SportsHochi",      "type": "social_news", "role": ["media_quote_only", "game_live_primary"]},
-  {"name": "報知野球X",           "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/hochi_baseball",   "type": "social_news", "role": ["media_quote_only", "game_live_primary"]},
-  {"name": "DAZNベースボールX",    "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/DAZNJPNBaseball", "type": "social_news", "role": ["media_quote_only", "game_live_video_signal", "review_only"]},
-  {"name": "NPB公式X",            "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/npb",               "type": "social_news", "role": ["media_quote_only"]},
-  {"name": "日刊巨人班X",          "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/nikkan_giants",    "type": "social_news", "role": ["article_source", "media_quote_pool"]},
-  {"name": "デイリー野球X",        "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/daily_baseball",   "type": "social_news", "role": ["article_source", "media_quote_pool"]},
-  {"name": "Number Web X",        "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/numberweb",        "type": "social_news", "role": ["article_source", "media_quote_pool"]},
-  {"name": "産経新聞X",           "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/sankei_news",       "type": "social_news", "role": ["media_quote_pool"]},
-  {"name": "日刊スポーツ 巨人",    "url": "https://www.nikkansports.com/rss/baseball/professional/atom/giants.xml", "type": "news"},
-  {"name": "ベースボールキング",   "url": "https://baseballking.jp/feed",                                          "type": "news"},
-  {"name": "Full-Count 巨人",     "url": "https://full-count.jp/tag/yomiuri-giants/feed/",                       "type": "news"},
-  {"name": "スポーツ報知 巨人 tag", "url": "https://hochi.news/tag/%E5%B7%A8%E4%BA%BA",                             "type": "tag_scrape", "scraper": "hochi_giants_tag", "max_age_days": 7, "article_limit": 30, "role": ["article_source", "game_live_primary"]},
-  {"name": "デイリー 巨人 index",   "url": "https://www.daily.co.jp/baseball/giants/index.shtml",                  "type": "tag_scrape", "scraper": "daily_giants_tag", "max_age_days": 7, "article_limit": 30},
-  {"name": "読売ジャイアンツYouTube公式", "url": "https://www.youtube.com/channel/UCXxg0igSYUp0tqdd6luPEnQ/videos",      "type": "tag_scrape", "scraper": "youtube_channel", "max_age_days": 14, "article_limit": 10, "role": ["media_quote_only", "official_video_source", "postgame_video_source", "review_only"]},
-  {"name": "上原浩治 雑談魂YT",      "url": "https://www.youtube.com/channel/UCGynN2H7DcNjpN7Qng4dZmg/videos",      "type": "tag_scrape", "scraper": "youtube_channel", "max_age_days": 14, "article_limit": 10, "role": ["media_quote_only"]},
-  {"name": "元木大介YT",          "url": "https://www.youtube.com/channel/UC7alpSrw0vhpihgYxbVFDkA/videos",      "type": "tag_scrape", "scraper": "youtube_channel", "max_age_days": 14, "article_limit": 10, "role": ["media_quote_only"]},
-  {"name": "髙橋尚成HISA YT",     "url": "https://www.youtube.com/channel/UCAMXfvpILgkofiQFbYWeeZA/videos",      "type": "tag_scrape", "scraper": "youtube_channel", "max_age_days": 14, "article_limit": 10, "role": ["media_quote_only"]}
+  {
+    "name": "巨人公式X",
+    "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/TokyoGiants",
+    "type": "social_news",
+    "role": [
+      "article_source",
+      "media_quote_pool",
+      "game_live_primary"
+    ]
+  },
+  {
+    "name": "読売ジャイアンツX",
+    "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/yomiuri_giants",
+    "type": "social_news",
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
+    "name": "スポーツ報知巨人班X",
+    "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/hochi_giants",
+    "type": "social_news",
+    "role": [
+      "article_source",
+      "media_quote_pool",
+      "game_live_primary"
+    ]
+  },
+  {
+    "name": "日刊スポーツX",
+    "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/nikkansports",
+    "type": "social_news",
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
+    "name": "スポニチ野球記者X",
+    "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/SponichiYakyu",
+    "type": "social_news",
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
+    "name": "サンスポ巨人X",
+    "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/Sanspo_Giants",
+    "type": "social_news",
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
+    "name": "スポーツ報知X",
+    "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/SportsHochi",
+    "type": "social_news",
+    "role": [
+      "media_quote_only",
+      "game_live_primary"
+    ]
+  },
+  {
+    "name": "報知野球X",
+    "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/hochi_baseball",
+    "type": "social_news",
+    "role": [
+      "media_quote_only",
+      "game_live_primary"
+    ]
+  },
+  {
+    "name": "DAZNベースボールX",
+    "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/DAZNJPNBaseball",
+    "type": "social_news",
+    "role": [
+      "media_quote_only",
+      "game_live_video_signal",
+      "review_only"
+    ]
+  },
+  {
+    "name": "NPB公式X",
+    "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/npb",
+    "type": "social_news",
+    "role": [
+      "media_quote_only"
+    ]
+  },
+  {
+    "name": "日刊巨人班X",
+    "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/nikkan_giants",
+    "type": "social_news",
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
+    "name": "デイリー野球X",
+    "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/daily_baseball",
+    "type": "social_news",
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
+    "name": "Number Web X",
+    "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/numberweb",
+    "type": "social_news",
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
+    "name": "産経新聞X",
+    "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/sankei_news",
+    "type": "social_news",
+    "role": [
+      "media_quote_pool"
+    ]
+  },
+  {
+    "name": "日刊スポーツ 巨人",
+    "url": "https://www.nikkansports.com/rss/baseball/professional/atom/giants.xml",
+    "type": "news",
+    "role": [
+      "article_source",
+      "game_live_primary"
+    ]
+  },
+  {
+    "name": "ベースボールキング",
+    "url": "https://baseballking.jp/feed",
+    "type": "news"
+  },
+  {
+    "name": "Full-Count 巨人",
+    "url": "https://full-count.jp/tag/yomiuri-giants/feed/",
+    "type": "news"
+  },
+  {
+    "name": "スポーツ報知 巨人 tag",
+    "url": "https://hochi.news/tag/%E5%B7%A8%E4%BA%BA",
+    "type": "tag_scrape",
+    "scraper": "hochi_giants_tag",
+    "max_age_days": 7,
+    "article_limit": 30,
+    "role": [
+      "article_source",
+      "game_live_primary"
+    ]
+  },
+  {
+    "name": "デイリー 巨人 index",
+    "url": "https://www.daily.co.jp/baseball/giants/index.shtml",
+    "type": "tag_scrape",
+    "scraper": "daily_giants_tag",
+    "max_age_days": 7,
+    "article_limit": 30
+  },
+  {
+    "name": "読売ジャイアンツYouTube公式",
+    "url": "https://www.youtube.com/channel/UCXxg0igSYUp0tqdd6luPEnQ/videos",
+    "type": "tag_scrape",
+    "scraper": "youtube_channel",
+    "max_age_days": 14,
+    "article_limit": 10,
+    "role": [
+      "media_quote_only",
+      "official_video_source",
+      "postgame_video_source",
+      "review_only"
+    ]
+  },
+  {
+    "name": "上原浩治 雑談魂YT",
+    "url": "https://www.youtube.com/channel/UCGynN2H7DcNjpN7Qng4dZmg/videos",
+    "type": "tag_scrape",
+    "scraper": "youtube_channel",
+    "max_age_days": 14,
+    "article_limit": 10,
+    "role": [
+      "media_quote_only"
+    ]
+  },
+  {
+    "name": "元木大介YT",
+    "url": "https://www.youtube.com/channel/UC7alpSrw0vhpihgYxbVFDkA/videos",
+    "type": "tag_scrape",
+    "scraper": "youtube_channel",
+    "max_age_days": 14,
+    "article_limit": 10,
+    "role": [
+      "media_quote_only"
+    ]
+  },
+  {
+    "name": "髙橋尚成HISA YT",
+    "url": "https://www.youtube.com/channel/UCAMXfvpILgkofiQFbYWeeZA/videos",
+    "type": "tag_scrape",
+    "scraper": "youtube_channel",
+    "max_age_days": 14,
+    "article_limit": 10,
+    "role": [
+      "media_quote_only"
+    ]
+  }
 ]

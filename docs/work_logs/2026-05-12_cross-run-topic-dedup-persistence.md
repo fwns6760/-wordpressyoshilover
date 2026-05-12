@@ -274,3 +274,84 @@ GO 後は、先に再現テストを追加して赤確認する。
 - アイキャッチ / featured_media
 - frontend / CSS / AdSense
 - unrelated dirty files / build / logs / data
+
+## deploy後追記欄
+
+### deploy前分類
+
+- 本線影響あり: `src/rss_fetcher.py` の本番 fetcher main loop / duplicate guard に入る。
+- ローカル HEAD には user が止めた `410a101 fix: apply game live source policy` が含まれるため、そのまま deploy しない。
+- production revision 元の `ef5fe7b` から隔離 worktree `/tmp/yoshilover-topic-dedup-deploy` を作り、今回の2 commit だけを cherry-pick して deploy した。
+- deploy worktree HEAD:
+  - `211973e fix: dedupe misclassified player incidents`
+  - `fb13969 fix: persist cross-run topic dedupe`
+  - base: `ef5fe7b fix: guard source excerpts against polluted summaries`
+- `git merge-base --is-ancestor 410a101 HEAD` は exit 1。止めた試合中ソース制御は deploy 対象外。
+
+### deploy前テスト結果
+
+- `python3 -m pytest tests/test_rss_fetcher_duplicate_guard.py`: 9 passed
+- `python3 -m py_compile src/rss_fetcher.py tests/test_rss_fetcher_duplicate_guard.py`: OK
+- `python3 -m pytest tests/test_rss_fetcher_duplicate_guard.py tests/test_duplicate_prevention_golden.py tests/test_rss_fetcher_history_duplicate_audit.py tests/test_rss_fetcher.py tests/test_rss_fetcher_reliability_2026_05_08.py`: 78 passed
+- `python3 -m pytest`: 3605 passed, 3 warnings
+- `python3 -m unittest discover -s tests`: 3425 tests OK
+
+### deploy結果
+
+- Cloud Build:
+  - build id: `b9dcac21-a96c-4d2a-b90d-e6be88a4c08f`
+  - image tag: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:211973e`
+  - image digest: `sha256:ca8d23dd62274965d88c28b79f2b97bfcd885fb13f71518ff898916a95e36337`
+  - status: SUCCESS
+- Cloud Run:
+  - service: `yoshilover-fetcher`
+  - revision: `yoshilover-fetcher-00312-9jc`
+  - latestCreatedRevisionName: `yoshilover-fetcher-00312-9jc`
+  - latestReadyRevisionName: `yoshilover-fetcher-00312-9jc`
+  - traffic: `yoshilover-fetcher-00312-9jc=100%`
+  - GET `/health`: HTTP 200
+- env / Secret / Scheduler 定義は変更していない。
+
+### deploy後実行結果
+
+- 手動実行:
+  - `gcloud scheduler jobs run giants-weekday-daytime --project baseballsite --location asia-northeast1`
+- 実行 revision:
+  - `yoshilover-fetcher-00312-9jc`
+- run summary:
+  - `total_entries=332`
+  - `drafts_created=3`
+  - `skip_duplicate=90`
+  - `skip_filter=153`
+  - `error_count=0`
+  - `x_post_count=0`
+  - `review_drafts_created_count=0`
+- 大城ヘルメット直撃系の本番確認:
+  - `duplicate_news_pre_gemini_skip` が出力された。
+  - sample title: `大城卓三のヘルメットにバット激突…試合後は氷のうを持って歩いてバスへ`
+  - `subtype=general` のまま skip できた。
+- ERROR 確認:
+  - 手動実行開始後 `2026-05-12T00:49:00Z` 以降の `severity>=ERROR`: `[]`
+  - 直前に自分が実行した `curl -I /health` の HEAD 501 は別件。GET `/health` は 200。
+- publish / mail 停止確認:
+  - `publish-notice-trigger`: ENABLED
+  - `guarded-publish-trigger`: ENABLED
+  - Cloud Run Jobs `publish-notice` / `guarded-publish`: Ready
+
+### deploy後に新しく見つかったデグレ
+
+- `giants-weekday-daytime` 手動実行中、`@hochi_giants` のレイアウト担当RT由来と思われる `social_news` が、絵文字混じりの弱いタイトルのまま公開ログに到達した。
+- 該当ログ:
+  - `post_id=66420` title=`5/12付 ２❇️年❇️ぶ❇️り 岐❇…`
+  - `post_id=66423` title=`5/12付 💝岐💝阜💝愛💝 💝か💝み💝…`
+  - `category=コラム`
+  - `article_subtype=social_news`
+  - `social_body_template_applied template_version=social_v2`
+  - `[公開] post_id=66420 image=あり`
+  - `[公開] post_id=66423 image=あり`
+- これは今回の cross-run topic dedup とは別系統の品質デグレ。
+- 次回優先候補:
+  - `social_news` の title quality gate 強化
+  - `RT スポーツ報知 レイアウト担当` / 絵文字装飾だけの紙面告知を publish 対象外または review 止め
+  - `social_news` を publish 前に `weak_subject_title` / `emoji_paper_notice` で止める回帰テスト追加
+- 公開済み post は user 明示なしでは触らない。

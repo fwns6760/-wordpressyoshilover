@@ -656,7 +656,78 @@ LLM(Gemini) は本経路で使用していないため、source 文字列を det
 - `giants_roster.json` 不変、subtype 文字列追加なし、env flag 追加なし
 - 234-impl-7 / 247-QA / 254-QA / 309-QA / Phase 2A/2A-1/2B 既存 logic 不変
 
-### Phase 2D 着手時の備考
+### Phase 2D-A(2026-05-12 PM、user GO 後実装、commit に続く)
 
-- 本 §2A の hook pattern(extractor → 構造化 rows → 専用 helper → tail inject)を 4 回再利用済(2A / 2A-1 / 2B / 2C)
-- 2D(試合結果)は postgame body composer に同 pattern で hook、`render_postgame_card` の data contract(yahoo_boxscore extractor 互換)を target に extractor 出力。
+**Scope 選択**: user は C-2(Yahoo box + 2軍 A-fallback)を希望。本 commit は **A-fallback 部分**(prose 抽出)を先行 ship、Yahoo box 統合(C-2 B 部分)は Phase 2D-B で別 commit 予定。
+
+#### 1. 実際に変更したファイル
+
+- **NEW** `src/source_postgame_extractor.py`(~170 行)
+  - `parse_postgame_facts(title, summary, source_name, source_url)` — postgame prose facts parser
+  - allowlist 報知/sponichi/巨人公式X + 巨人 mention gate + 勝利/敗戦 keyword gate + score gate
+  - 抽出: score(`X-Y` / `X―Y` / `X対Y` 等、NFKC で ASCII 化)、勝利投手(5 prose pattern + roster 照合)、result_type(勝利/敗戦/引き分け)、league_level(farm/first)、opponent_team_name
+  - 既存 `is_giants_player` + `extract_opponent_team_name` を import 流用
+- **EDIT** `src/rss_fetcher.py`(+~75 行)
+  - import + `postgame_facts` 変数追加(+~20 行)
+  - 新 nested helper `_build_postgame_result_block(facts)`(2 列 `<table class="nomotoke-card-postgame-result">`、heading `📋 試合結果 (巨人 vs DeNA)` 等、+~50 行)
+  - tail inject 追加(starter rotation の後、fan reactions の前、+~7 行)
+- **NEW** `tests/test_source_postgame_extractor.py`(~125 行、12 case)
+  - allowlist 4 + parse 動作 8(farm/first/no keyword/no score/non-giants/non-allowlist/roster 不一致/draw/return shape)
+- **NEW** `tests/test_rss_fetcher_postgame_table.py`(~150 行、6 case integration)
+  - 2軍 / 1軍 / non-postgame / non-allowlist regression / table marker / score+winner
+
+#### 2. diff 概要
+
+- 報知/sponichi/巨人公式X postgame article から score + 勝利投手 + result_type を prose で抽出 → 2 列 mini-table(項目/内容)で本文末尾に render
+- 例: title `巨人２軍はＤｅＮＡに１―０で勝利` → table `スコア: 1-0 (巨人2軍勝利) / 勝利投手: 又木鉄平`
+- subtype-agnostic 配置、parser が allowlist + 巨人 mention + result keyword + score の 4 gate で fire narrow
+- 既存 lineup / rotation 経路と完全 disjoint、相互影響なし
+
+#### 3. 実行したテスト
+
+- **RED 確認**(実装前): 6 件中 4 件 FAIL(heading / marker / 1軍 table / 2軍 table)
+- **GREEN 確認**: 6/6 OK
+- **extractor 単体**: 12/12 OK
+- **累積 hochi+emoji+rotation+postgame tests**: 96/96 OK
+- **AST + compile**: 全 src + 全 test 全 pass
+- **全件**: full suite で確認(本 §4 参照)
+
+#### 4. テスト結果
+
+- **Phase 2C 着地時 baseline**: 3570 tests / 1 pre-existing fail
+- **Phase 2D-A 着地後**: 本 commit 直前 full suite で確定
+- 期待値: 3570 + 18(6 integration + 12 extractor unit) = 3588 tests / 1 pre-existing fail / 増加 fail 0
+
+#### 5. 残った懸念 / Phase 2D-B follow-up
+
+1. **Yahoo box 統合 未実装**: 1軍 postgame では Yahoo の inning + at-bat + pitching table 取得可能だが、本 commit では prose A レベルのみ。次便 Phase 2D-B で `fetch_today_giants_postgame_facts_from_yahoo()` 追加 + `render_postgame_card` 風の rich block render。
+2. **勝利投手 prose pattern の精度**: 5 pattern + roster 照合で fire narrow。`X が...勝利` 等の自然文に依存、prose 変化で false negative 可能性。観察必要。
+3. **敗戦投手 / セーブ 未抽出**: 本 commit scope 外。1軍 で Yahoo box 取得時に Phase 2D-B で同時抽出予定。
+4. **score 誤マッチ risk**: `5―1` `5-1` `5対1` を score として抽出。記事中に他の数字ペア(例: 中5日 - 防御率5.1)があると誤マッチ可能性。最初の match を取る現実装は最も verbal-prominent な score(通常スコア)を取りやすいが false positive 観察必要。
+5. **2軍 postgame fire 率**: 直近 50 件中 1 件確認、月数件規模。Phase 2A-1 と同じ低発火 path。
+
+#### 6. 新しく見つかったデグレ
+
+- 本便差分による新規デグレ **なし**
+
+#### 7. 追加した回帰テスト
+
+- `tests/test_source_postgame_extractor.py`(12 case): allowlist 4 + parse 動作 8
+- `tests/test_rss_fetcher_postgame_table.py`(6 case integration): 2軍 / 1軍 / non-postgame / non-allowlist + heading / marker / score+winner
+
+#### 8. 次回触ってはいけない範囲
+
+- 本 phase は新 extractor + 新 renderer の追加のみ、既存 path 不変
+- `_build_basic_lineup_table_block` / `_build_starter_rotation_block` / Phase 2A/2A-1/2B/2C 完全 disjoint
+- `nomotoke_card_renderer.render_postgame_card`(manual_intake 経路)は本 commit で wire しない、Phase 2D-B で別便着手
+- `giants_roster.json` 不変、subtype 文字列追加なし、env flag 追加なし
+- Yahoo box fetch 系(`fetch_today_giants_lineup_stats_from_yahoo` 等)は本 commit で touch しない
+
+### Phase 2D-B 着手時の備考(次便、Yahoo box 統合)
+
+- `fetch_today_giants_postgame_facts_from_yahoo()` を `fetch_today_giants_lineup_stats_from_yahoo` パターンで追加
+- `_find_giants_game_info_yahoo` で today's game_id を取得 → Yahoo HTML fetch → `parse_yahoo_game_html` で structured data 抽出
+- 1軍 postgame では Yahoo data 取得成功時に rich 4-table block(inning + at-bat + pitching + opponent lineup)を render
+- 2軍 / Yahoo fetch 失敗 → 本便 A-fallback 維持
+- subtype check `body_subtype == "postgame"` で gate 想定
+- 5-10 case 追加 test 想定

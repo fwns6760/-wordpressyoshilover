@@ -164,6 +164,12 @@ try:
     )
 except Exception:  # noqa: BLE001
     _parse_starter_rotation = None  # type: ignore[assignment]
+try:
+    from src.source_postgame_extractor import (
+        parse_postgame_facts as _parse_postgame_facts,
+    )
+except Exception:  # noqa: BLE001
+    _parse_postgame_facts = None  # type: ignore[assignment]
 from src.body_contract_fail_ledger import (
     BODY_CONTRACT_FAIL_LEDGER_PATH_ENV as BODY_CONTRACT_FAIL_LEDGER_PATH_ENV_FLAG,
     ENABLE_BODY_CONTRACT_FAIL_LEDGER_ENV as BODY_CONTRACT_FAIL_LEDGER_ENV_FLAG,
@@ -15260,6 +15266,25 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             logging.getLogger("rss_fetcher").warning(
                 "starter_rotation_parse_skipped reason=%s", e
             )
+    # NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2D: detect postgame articles
+    # (報知 / スポニチ / 巨人公式X with 勝利 / 敗戦 keywords + score) and
+    # surface a 試合結果 mini-table from prose. Phase 2D-A ships score
+    # + winning pitcher + result + league (1軍/2軍) extraction; Phase
+    # 2D-B will add Yahoo boxscore fetch for richer 1軍 rendering.
+    postgame_facts: dict | None = None
+    if _parse_postgame_facts is not None:
+        try:
+            postgame_facts = _parse_postgame_facts(
+                title=title,
+                summary=summary_clean,
+                source_name=source_name,
+                source_url=url,
+            )
+        except Exception as e:  # noqa: BLE001
+            logging.getLogger("rss_fetcher").warning(
+                "postgame_facts_parse_skipped reason=%s", e
+            )
+            postgame_facts = None
     lineup_stats_rendered = False
 
     # 試合がない日は勝敗ヒントを生成しない（架空スコア捏造防止）
@@ -16007,6 +16032,56 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         )
         return header_html + note_html + table_html
 
+    def _build_postgame_result_block(facts: dict) -> str:
+        """Render a 2-column 試合結果 mini-table from postgame prose facts.
+
+        NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2D-A.  Inputs:
+        ``score`` / ``winning_pitcher`` / ``result_type`` / ``league_level``
+        / ``opponent_team_name`` (from ``parse_postgame_facts``).
+
+        The marker class ``nomotoke-card-postgame-result`` is used by
+        the Phase 2D integration tests and is intentionally distinct
+        from the lineup / rotation markers so downstream post-processes
+        don't collide.
+        """
+        if not facts:
+            return ""
+        score = str(facts.get("score") or "").strip()
+        winning_pitcher = str(facts.get("winning_pitcher") or "").strip()
+        result_type = str(facts.get("result_type") or "").strip()
+        league_level = str(facts.get("league_level") or "first").strip()
+        opponent = str(facts.get("opponent_team_name") or "").strip()
+        if not score:
+            return ""
+        heading_level = 4 if _body_template_v2_enabled() else 3
+        league_label = "巨人2軍" if league_level == "farm" else "巨人"
+        heading_text = f"📋 試合結果 ({league_label})"
+        if opponent:
+            heading_text = f"{heading_text} vs {opponent}"
+        header_html = (
+            f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
+            f'<h{heading_level}>{heading_text}</h{heading_level}>\n'
+            '<!-- /wp:heading -->\n\n'
+        )
+        rows_html: list[str] = ["<tr><th>項目</th><th>内容</th></tr>"]
+        score_text = score
+        if result_type:
+            score_text = f"{score} ({league_label}{result_type})"
+        rows_html.append(f"<tr><td>スコア</td><td>{score_text}</td></tr>")
+        if winning_pitcher:
+            safe_w = winning_pitcher.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            rows_html.append(f"<tr><td>勝利投手</td><td>{safe_w}</td></tr>")
+        table_html = (
+            '<!-- wp:html -->\n'
+            '<div class="yoshilover-lineup-stats" style="overflow-x:auto;margin:0 0 12px;">'
+            '<table class="nomotoke-card-postgame-result" style="width:100%;border-collapse:collapse;font-size:0.92em;">'
+            f"{''.join(rows_html)}"
+            "</table>"
+            "</div>\n"
+            '<!-- /wp:html -->\n\n'
+        )
+        return header_html + table_html
+
     def _player_daily_stat_block(subject_name: str, rows: list[tuple[str, str]]) -> str:
         if not subject_name or not rows:
             return ""
@@ -16627,6 +16702,15 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         if not followup_section_rendered:
             blocks += _sep()
         blocks += _build_starter_rotation_block(starter_rotation_rows, starter_rotation_opponent)
+        followup_section_rendered = True
+
+    # NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2D: subtype-agnostic
+    # postgame mini-table. Parser's gates (allowlist + result keyword
+    # + score + 巨人 mention) keep fire rate narrow.
+    if postgame_facts:
+        if not followup_section_rendered:
+            blocks += _sep()
+        blocks += _build_postgame_result_block(postgame_facts)
         followup_section_rendered = True
 
     # ──────────────────────────────────────────────────────────

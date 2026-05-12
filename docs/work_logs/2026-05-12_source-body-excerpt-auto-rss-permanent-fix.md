@@ -124,6 +124,10 @@
 | timestamp | action | note |
 |---|---|---|
 | 2026-05-12 17:35 JST | 作業記録 Markdown 作成、user GO 待ち | 本ファイル作成のみ実施、code は一切触らず |
+| 2026-05-12 17:45 JST | user GO 受領、実装着手 | red-first テスト作成 → 実装 → green → 全件回帰 → commit → push → cloudbuild → deploy → traffic 100% switch |
+| 2026-05-12 17:50 JST | commit `1378a91`、image `:1378a91` build SUCCESS、revision `00383-puh` deploy 完了 traffic 100% | `/health` 200、active image 確認済 |
+| 2026-05-12 17:52 JST | docs append commit `3e126fe` で別作業の untracked files 5 件混入事故 | git_diff_cached_verify_strict 違反、user 報告 → revert 判断 `A` |
+| 2026-05-12 17:53 JST | `git revert 3e126fe` → `3a2125a` push、混入 files (`src/source_emoji_lineup_extractor.py` 等)を branch から除去 | master 影響なし、deploy image `:1378a91` は本 ticket 実装のみで健全 |
 
 ## 10. Regression Memo欄
 
@@ -145,20 +149,89 @@
 
 ## 作業後追記欄
 
-(GO 後の作業完了時に以下を追記)
-
 ### 1. 実際に変更したファイル
+
+- `src/rss_fetcher.py`
+- `tests/test_rss_fetcher_source_body_excerpt_auto.py`(新規)
+- `docs/work_logs/2026-05-12_source-body-excerpt-auto-rss-permanent-fix.md`(本ファイル)
+
+manual_intake.py / source_article_body_extractor.py は touch せず、関数本体は **無変更で再利用** のみ(import 経由)。
 
 ### 2. diff概要
 
+- `src/rss_fetcher.py` に新関数 `_maybe_insert_auto_rss_source_body_excerpt` を追加。
+  - 引数: `rendered_html`, `raw_html`, `source_url`, `title`, `source_name`, `summary`, `source_type`, `logger`
+  - narrow gate: `source_type in {"news", "tag_scrape"}` かつ `raw_html` non-empty 時のみ apply
+  - 内部で `from src.tools.manual_intake import _maybe_insert_source_body_excerpt` を try/except 経由で呼ぶ
+  - import / 実行のいずれかが例外を投げたら `rendered_html` を unchanged で返す safe fallback
+- `_create_draft_with_same_fire_guard` の signature に `enrichment_source_type: str = ""` を追加。
+- `_apply_rss_pipeline_enrichment` 直後で `enriched_content` を上記 helper に通す呼び出し追加。
+- call site 2 箇所(main create-draft path / review draft path)に `enrichment_source_type=source_type` を追加。
+- 新規 test file `tests/test_rss_fetcher_source_body_excerpt_auto.py` を追加(5 test)。
+
+deploy: commit `1378a91`、image `:1378a91`、revision `yoshilover-fetcher-00383-puh` traffic 100%。
+
 ### 3. 実行したテスト
+
+1. 赤確認(red-first):
+   - `python3 -m unittest tests.test_rss_fetcher_source_body_excerpt_auto` を実装前に実行、`TypeError: _create_draft_with_same_fire_guard() got an unexpected keyword argument 'enrichment_source_type'` で 5 件 ERROR を確認。
+2. 緑確認:
+   - `python3 -m unittest tests.test_rss_fetcher_source_body_excerpt_auto` → `Ran 5 tests ... OK`
+3. 関連テスト:
+   - `python3 -m unittest tests.test_rss_fetcher_source_body_excerpt_auto tests.test_manual_intake tests.test_source_article_body_extractor tests.test_rss_fetcher_body_contract_fail_ledger tests.test_rss_fetcher` → `Ran 105 tests ... OK`
+4. 全件:
+   - `python3 -m unittest discover -s tests` → `Ran 3537 tests in 59.052s` `FAILED (failures=1)`
+   - 1 件 fail: `test_main_passes_36_hour_window_for_postgame_skip_check`
+   - **baseline 検証**: 私の変更を `git stash` で退避して同じ test を実行 → 同じく fail(`AssertionError: 0 != 1`)。pre-existing failure、本 ticket と無関係。
+5. deploy verify:
+   - commit `1378a91` push 成功
+   - cloudbuild `:1378a91` SUCCESS(2M2S)
+   - `gcloud run deploy` + `update-traffic --to-latest` で revision `00383-puh` traffic 100% 確認
+   - `/health` 200
+   - active image: `:1378a91` 確認
 
 ### 4. テスト結果
 
+- 新規 5 test 全 PASS
+- 関連 test 105 件全 PASS(manual_intake 回帰なし)
+- 全件 3537 件中 PASS 3536 / FAIL 1(pre-existing、本変更と無関係)
+- deploy 健全(`/health` 200、active image 反映)
+
 ### 5. 残った懸念
+
+- 実機での `nomotoke-source-excerpt` block 挿入は、次の scheduler 発火(17:30 JST 以降の `giants-realtime-trigger` / `lineup-auto-pregame`)後の draft 生成で初確認可能。本 work log 追記時点では未観測。
+- `_source_excerpt_matches_context` guard(`ef5fe7b` 由来)が strict すぎて多くの news draft で reject される可能性あり。本 ticket では guard 本体は触らないので reject 率は manual_intake と同等のまま。改善が必要なら別 ticket で narrow に緩和する。
+- `nomotoke-source-excerpt` の CSS class が site theme 側で styling 未定義の場合、見た目が崩れる可能性。実機画面確認が必要。
+- pre-existing failure `test_main_passes_36_hour_window_for_postgame_skip_check` は別 ticket で要追跡。
 
 ### 6. 新しく見つかったデグレ
 
+- なし(本 ticket 変更による回帰は test / baseline 共に検出せず)
+
 ### 7. 追加した回帰テスト
 
+`tests/test_rss_fetcher_source_body_excerpt_auto.py::AutoRssSourceBodyExcerptInsertTests`:
+
+1. `test_news_path_inserts_source_body_excerpt_block`
+   - source_type=news + 報知記事 HTML + title マッチ excerpt → `nomotoke-source-excerpt` block が挿入される
+2. `test_news_path_idempotent_when_excerpt_already_present`
+   - 既存 excerpt block が含まれていれば二重挿入されない(1 個だけ)
+3. `test_social_news_path_skips_excerpt_insertion`
+   - source_type=social_news → block 挿入されない(scope 外維持)
+4. `test_empty_raw_html_skips_excerpt_insertion`
+   - raw_html 空 → block 挿入されない(設計通り)
+5. `test_context_drift_excerpt_is_rejected`
+   - title が「岡本和真」なのに excerpt が「中日 高橋宏斗」由来(汚染)→ context guard が reject、block 挿入されない
+
 ### 8. 次回触ってはいけない範囲
+
+- `_source_excerpt_matches_context` guard 本体(`src/tools/manual_intake.py` line 1492-1516)
+- `SOURCE_BODY_EXCERPT_MAX_CHARS = 600` 定数
+- `_maybe_insert_source_body_excerpt` の関数本体(manual_intake.py line 1519-1561)
+- `extract_article_body_excerpt`(src/source_article_body_extractor.py)
+- LLM (Gemini) prompt 構造 / source_body 渡し方
+- 公開済み記事の本文 / featured_media / title / status
+- env / Secret / Scheduler / Cloud Run 設定
+- social_news(X tweet source)経路への excerpt block 適用
+- アイキャッチ系 path / publish gate / X 投稿条件
+- frontend / CSS / theme / Plugin / AdSense

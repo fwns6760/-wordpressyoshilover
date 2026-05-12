@@ -140,12 +140,10 @@ try:
     )
 except Exception:  # noqa: BLE001
     _apply_rss_pipeline_enrichment = None  # type: ignore[assignment]
-try:
-    from src.rss_lineup_table_post_process import (
-        inject_lineup_table_if_enabled as _inject_lineup_table_if_enabled,
-    )
-except Exception:  # noqa: BLE001
-    _inject_lineup_table_if_enabled = None  # type: ignore[assignment]
+# NOMOTOKE-LINEUP-FROM-* Phase 2A-1 superseded ``rss_lineup_table_post_process``
+# (commit 68e836d). The wrapper was removed from ``_create_draft_with_same_fire_guard``
+# in commit ``<2026-05-12 PM>``; the module itself is left on disk for
+# git history. No import needed.
 try:
     from src.source_hochi_compact_lineup_extractor import (
         parse_hochi_compact_lineup as _parse_hochi_compact_lineup,
@@ -18592,31 +18590,20 @@ def _create_draft_with_same_fire_guard(
     # import overhead. The defensive try/except still runs the
     # enrichment in isolation so any helper crash falls back to the
     # original body without breaking the WP draft create.
-    # Narrow lineup-table post-process. Default-OFF env flag
-    # ENABLE_RSS_LINEUP_TABLE_POST_PROCESS. When the flag is OFF (or the
-    # gate conditions in the post-process are not met) the body is
-    # returned byte-identical, so legacy AI-generated bodies stay
-    # untouched. When the flag is ON and the body contains a clean 8+-
-    # line "N番 守備 選手" sequence for a lineup-style template, the
-    # block is replaced with an HTML <table> plus the nomotoke-card
-    # markers so the downstream enrichment then activates.
-    table_injected_content = content
-    if _inject_lineup_table_if_enabled is not None:
-        try:
-            table_injected_content = _inject_lineup_table_if_enabled(
-                content,
-                template_key=enrichment_template_key,
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "rss_lineup_table_post_process_skipped reason=%s", exc
-            )
-            table_injected_content = content
-    enriched_content = table_injected_content
+    # NOMOTOKE-LINEUP-FROM-* Phase 2A-1 / 2B / 2C / 2D / 2E retired
+    # the narrow ``rss_lineup_table_post_process`` (commit 68e836d):
+    # the new extractors (hochi compact / emoji / starter-rotation /
+    # postgame) emit ``<table class="nomotoke-card-lineup-table">`` and
+    # related markers DIRECTLY in ``build_news_block``. The post-process
+    # was a Phase 2A precursor — its `<p>N番 守備 選手</p>` 8-row prose
+    # detector was never produced by the new structured renderers, so
+    # the helper short-circuited every call. Keeping the wrapper as no-op
+    # was harmless but added one log line on each WP draft. Removed.
+    enriched_content = content
     if _apply_rss_pipeline_enrichment is not None:
         try:
             enriched_content = _apply_rss_pipeline_enrichment(
-                table_injected_content,
+                content,
                 title=draft_title,
                 source_url=normalized_source_url,
                 summary=enrichment_summary,
@@ -18629,7 +18616,7 @@ def _create_draft_with_same_fire_guard(
             logger.warning(
                 "rss_pipeline_enrichment_skipped reason=%s", exc
             )
-            enriched_content = table_injected_content
+            enriched_content = content
     # 2026-05-12 source-body-excerpt-auto-rss-permanent-fix:
     # manual_intake で動いている 600 字 source body 抜粋 block (<aside class=
     # "nomotoke-source-excerpt">) を自動 RSS path にも適用する。news / tag_scrape

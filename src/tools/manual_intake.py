@@ -1489,11 +1489,69 @@ def _source_excerpt_context_terms(title: str, summary: str) -> list[str]:
     return terms
 
 
+_NEWS_PUBLISHER_HOSTS_FOR_POLLUTION = frozenset({
+    "hochi.news",
+    "nikkansports.com",
+    "sponichi.co.jp",
+    "daily.co.jp",
+    "sanspo.com",
+    "tokyo-sports.co.jp",
+    "yakyu.jiji.com",
+    "full-count.jp",
+    "baseball-king.jp",
+    "the-ans.jp",
+})
+
+
+_EXCERPT_URL_HOST_RE = re.compile(r"https?://([^/\s)]+)", re.IGNORECASE)
+
+
+def _excerpt_signals_cross_publisher(excerpt: str, source_url: str) -> bool:
+    """True if the excerpt embeds a URL whose host is a different known
+    news publisher than ``source_url``'s host.
+
+    Used as a polluted-excerpt guard after the 2026-05-12 narrow loosening
+    of ``_source_excerpt_matches_context``: when we accept on summary-
+    fallback we must still reject excerpts whose embedded link points
+    elsewhere, because that is the strongest signal that the excerpt
+    was lifted from a neighboring article in the RSS / scrape merge.
+    """
+    if not excerpt or not source_url:
+        return False
+    try:
+        from urllib.parse import urlparse
+
+        source_host = (urlparse(source_url).netloc or "").lower()
+    except Exception:
+        return False
+    if not source_host:
+        return False
+    if source_host.startswith("www."):
+        source_host = source_host[4:]
+    for match in _EXCERPT_URL_HOST_RE.finditer(excerpt):
+        host = (match.group(1) or "").lower()
+        if not host:
+            continue
+        host = host.split(":", 1)[0]
+        if host.startswith("www."):
+            host = host[4:]
+        if host == source_host:
+            continue
+        if host == "news.hochi.news" and source_host == "hochi.news":
+            continue
+        if host == "hochi.news" and source_host == "news.hochi.news":
+            continue
+        if host in _NEWS_PUBLISHER_HOSTS_FOR_POLLUTION:
+            return True
+    return False
+
+
 def _source_excerpt_matches_context(
     excerpt: str,
     *,
     title: str,
     summary: str,
+    source_url: str = "",
 ) -> bool:
     if not excerpt:
         return False
@@ -1501,11 +1559,20 @@ def _source_excerpt_matches_context(
     if not excerpt_compact:
         return False
 
+    # 2026-05-12 narrow-loosen pollution guard: reject before any match
+    # attempt when the excerpt embeds a URL pointing to a *different*
+    # news publisher than ``source_url``. This protects against a real
+    # auto-RSS failure mode where the body excerpt was lifted out of
+    # a neighboring article in the RSS / scrape merge and still carries
+    # the neighbor's link inline.
+    if source_url and _excerpt_signals_cross_publisher(excerpt, source_url):
+        return False
+
     # Source excerpt integrity must be anchored to the source title first.
     # ``summary`` can already be polluted by a neighboring article in RSS /
     # scrape pipelines, so using it as an equal context source can turn a
-    # wrong excerpt into a false positive. Only fall back to summary when the
-    # title itself yields no usable non-generic terms.
+    # wrong excerpt into a false positive. Only fall back to summary when
+    # the title itself yields no usable non-generic terms.
     title_terms = _source_excerpt_context_terms(title, "")
     if title_terms:
         return any(term in excerpt_compact for term in title_terms)
@@ -1556,6 +1623,7 @@ def _maybe_insert_source_body_excerpt(
         excerpt,
         title=title,
         summary=summary,
+        source_url=source_url,
     ):
         return rendered_html
     return _insert_body_excerpt_block(rendered_html, excerpt, source_name)

@@ -68,6 +68,40 @@ class FeaturedMediaHelperTests(unittest.TestCase):
             },
         )
 
+    @patch("src.rss_fetcher.fetch_article_images")
+    def test_tag_scrape_prefers_source_article_html_image_over_entry_linked_image(
+        self,
+        mock_fetch_article_images,
+    ):
+        mock_fetch_article_images.return_value = [
+            "https://www.nikkansports.com/baseball/news/img/202605100001243-w500_0.jpg"
+        ]
+        entry = {
+            "title": "巨人・吉川尚輝「岐阜をかみしめながらプレーしたい」",
+            "summary": (
+                "別記事リンクが混ざっても https://www.nikkansports.com/baseball/news/202605100001243.html "
+                "該当記事の画像を使う"
+            ),
+        }
+        html = (
+            '<meta property="og:image" '
+            'content="https://hochi.news/images/2026/05/11/20260511-OHT1I51491-L.jpg">'
+        )
+
+        images = rss_fetcher._extract_source_article_image_urls(
+            "tag_scrape",
+            entry,
+            "https://hochi.news/articles/20260511-OHT1T51276.html",
+            html,
+            max_images=3,
+        )
+
+        self.assertEqual(
+            images,
+            ["https://hochi.news/images/2026/05/11/20260511-OHT1I51491-L.jpg"],
+        )
+        mock_fetch_article_images.assert_not_called()
+
     def test_resolve_effective_featured_media_uses_existing_post_value(self):
         logger = logging.getLogger("rss_fetcher")
         wp = Mock()

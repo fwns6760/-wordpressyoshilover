@@ -13869,6 +13869,29 @@ def fetch_article_images(url: str, max_images: int = 3) -> list:
     return _extract_article_images_from_html(html, url, max_images=max_images)
 
 
+def _extract_source_article_image_urls(
+    source_type: str,
+    entry: dict,
+    page_url: str,
+    article_raw_html: str,
+    max_images: int = 3,
+) -> list[str]:
+    if source_type in {"news", "tag_scrape"}:
+        return _extract_article_images_from_html(
+            article_raw_html,
+            page_url,
+            max_images=max_images,
+        )
+    images = _extract_entry_image_urls(entry, page_url, max_images=max_images)
+    if images:
+        return images
+    return _extract_article_images_from_html(
+        article_raw_html,
+        page_url,
+        max_images=max_images,
+    )
+
+
 def _extract_entry_image_urls(entry: dict, page_url: str = "", max_images: int = 3) -> list[str]:
     import urllib.parse as _urlparse
 
@@ -21907,20 +21930,13 @@ def _main(args, logger):
                 _article_raw_html = str(entry_obj.get("_html") or "")
                 if not _article_raw_html:
                     _article_raw_html = _fetch_url_html(post_url, max_bytes=240000, timeout=12)
-            if source_type == "news":
-                _article_images = _extract_article_images_from_html(
-                    _article_raw_html,
-                    post_url,
-                    max_images=3,
-                )
-            else:
-                _article_images = _extract_entry_image_urls(entry_obj, post_url, max_images=3)
-                if not _article_images:
-                    _article_images = _extract_article_images_from_html(
-                        _article_raw_html,
-                        post_url,
-                        max_images=3,
-                    )
+            _article_images = _extract_source_article_image_urls(
+                source_type,
+                entry_obj,
+                post_url,
+                _article_raw_html,
+                max_images=3,
+            )
             _article_images = _filter_image_candidates(_article_images, post_url, logger)
             _article_images = _refetch_article_images_if_empty(_article_images, post_url, logger, max_images=3)
             _article_images = _ensure_story_featured_images(

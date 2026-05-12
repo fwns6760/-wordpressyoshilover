@@ -282,10 +282,6 @@ def extract_opponent_team_name(text: str) -> str:
     3. Prose-level ``<team>戦`` pattern (e.g. ``中日戦(バンテリンD…)`` →
        ``中日``). The ``戦`` suffix is the standard Japanese game-name
        indicator and is safe (won't accidentally hit ``中日新聞`` etc.).
-    4. Prose-level ``巨人 vs <team>`` / ``<team> vs 巨人`` pattern
-       (e.g. ``【二軍】巨人 vs ロッテ ...`` → ``ロッテ``). Common in 巨人
-       公式X 2軍 tweet headlines that don't include the team name in
-       ``【XXX】`` markers.
 
     Returns ``""`` when no opponent indicator is found.
     """
@@ -305,20 +301,6 @@ def extract_opponent_team_name(text: str) -> str:
     for npb in _NPB_OPPONENT_TEAM_NAMES:
         if f"{npb}戦" in text:
             return npb
-    # 4: prose `vs <team>` / `<team> vs` fallback (case-insensitive ``vs``)
-    vs_re = re.compile(
-        r"(?:巨人|読売|ジャイアンツ)\s*(?:[vV][sS]|VS|×|🆚)\s*([^\s　]{1,12})"
-        r"|([^\s　]{1,12})\s*(?:[vV][sS]|VS|×|🆚)\s*(?:巨人|読売|ジャイアンツ)"
-    )
-    for m in vs_re.finditer(text):
-        candidate = (m.group(1) or m.group(2) or "").strip()
-        if not candidate or candidate in _OWN_TEAM_MARKERS:
-            continue
-        if candidate in _NPB_OPPONENT_TEAM_NAMES:
-            return candidate
-        for npb in _NPB_OPPONENT_TEAM_NAMES:
-            if npb in candidate:
-                return npb
     return ""
 
 

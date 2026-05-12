@@ -81,7 +81,7 @@ REPAIRABLE_FLAGS = frozenset(
         "title_body_mismatch_partial",
         "numerical_anomaly_low_severity",
         "stale_for_breaking_board",
-        "expired_lineup_or_pregame",
+        "expired_lineup_or_pregame_age",
         "expired_game_context",
         "content_date_unknown",
         "roster_movement_yellow",
@@ -97,7 +97,7 @@ SOFT_CLEANUP_FLAGS = REPAIRABLE_FLAGS
 BACKLOG_ONLY_FRESHNESS_FLAGS = frozenset(
     {
         "stale_for_breaking_board",
-        "expired_lineup_or_pregame",
+        "expired_lineup_or_pregame_age",
         "expired_game_context",
     }
 )
@@ -1152,13 +1152,13 @@ def freshness_check(raw_post: dict[str, Any], record: dict[str, Any], *, now: da
         )
         if now_jst >= game_start_dt:
             freshness_class = "expired"
-            hard_stop_flag = "expired_lineup_or_pregame"
+            hard_stop_flag = "expired_lineup_or_pregame_game_started"
             reason_parts.append(
                 f"game_start_estimate={game_start_dt.strftime('%Y-%m-%dT%H:%M:%S%z')}({start_source})"
             )
         elif _threshold_reached(age_hours, threshold_hours):
             freshness_class = "expired"
-            hard_stop_flag = "expired_lineup_or_pregame"
+            hard_stop_flag = "expired_lineup_or_pregame_age"
     elif subtype in GAME_CONTEXT_FRESHNESS_SUBTYPES and _threshold_reached(age_hours, threshold_hours):
         freshness_class = "expired"
         hard_stop_flag = "expired_game_context"

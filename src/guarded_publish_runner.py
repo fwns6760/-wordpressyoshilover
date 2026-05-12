@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from src import guarded_publish_evaluator as publish_evaluator
-from src.lineup_source_priority import extract_game_id
+from src.lineup_source_priority import extract_game_id, is_hochi_source
 from src.pre_publish_fact_check import extractor
 from src.title_body_nucleus_validator import validate_title_body_nucleus
 from src.wp_client import WPClient
@@ -66,6 +66,7 @@ BACKLOG_NARROW_BLOCKED_SUBTYPES = frozenset(
         "farm_lineup",
     }
 )
+BACKLOG_NARROW_HOCHI_PREGAME_SUBTYPES = frozenset({"lineup", "pregame", "probable_starter", "farm_lineup"})
 SAME_SOURCE_URL_DUPLICATE_HOLD_WINDOW_HOURS = 6
 POSTCHECK_BATCH_SIZE = 10
 DEFAULT_BACKUP_DIR = ROOT / "logs" / "cleanup_backup"
@@ -932,7 +933,7 @@ REPAIRABLE_FLAG_ACTION_MAP = {
     "title_body_mismatch_partial": "warning_only_partial_mismatch",
     "numerical_anomaly_low_severity": "warning_only_low_severity_numeric",
     "stale_for_breaking_board": "freshness_audit_only_no_op",
-    "expired_lineup_or_pregame": "freshness_audit_only_no_op",
+    "expired_lineup_or_pregame_age": "freshness_audit_only_no_op",
     "expired_game_context": "freshness_audit_only_no_op",
     "injury_death": "user_overide_full_publish_no_op",
     "lineup_duplicate_excessive": "user_overide_full_publish_no_op",
@@ -1307,9 +1308,22 @@ def _iter_publishable_entries(report: dict[str, Any]) -> list[dict[str, Any]]:
                 "published_at",
                 "created_at",
                 "date",
+                "source_url",
+                "source_name",
+                "source_domain",
+                "representative_source_url",
+                "candidate_key",
+                "game_id",
+                "lineup_priority_status",
+                "lineup_priority_reason",
+                "is_hochi_source",
             ):
                 if key in entry:
                     payload[key] = entry.get(key)
+            for key in ("source_urls", "source_links", "source_url_pairs"):
+                value = entry.get(key)
+                if value:
+                    payload[key] = value
             entries.append(payload)
     return entries
 
@@ -1495,6 +1509,47 @@ def _emit_backlog_narrow_refusal_event(
     )
 
 
+def _entry_source_urls(entry: dict[str, Any]) -> list[str]:
+    urls: list[str] = []
+
+    def _append(value: Any) -> None:
+        text = str(value or "").strip()
+        if text and text not in urls:
+            urls.append(text)
+
+    for key in ("source_url", "representative_source_url", "canonical_source_url", "post_url", "url"):
+        _append(entry.get(key))
+
+    for key in ("source_urls", "source_links"):
+        values = entry.get(key)
+        if isinstance(values, list):
+            for value in values:
+                if isinstance(value, dict):
+                    for nested_key in ("url", "href", "link"):
+                        _append(value.get(nested_key))
+                else:
+                    _append(value)
+
+    pairs = entry.get("source_url_pairs")
+    if isinstance(pairs, list):
+        for item in pairs:
+            if isinstance(item, dict):
+                _append(item.get("source_url"))
+
+    return urls
+
+
+def _entry_has_hochi_source(entry: dict[str, Any]) -> bool:
+    source_name = str(entry.get("source_name") or "").strip()
+    source_domain = str(entry.get("source_domain") or "").strip()
+    urls = _entry_source_urls(entry)
+    if bool(entry.get("is_hochi_source")) and (urls or source_name or source_domain):
+        return True
+    if is_hochi_source("", source_name, source_domain):
+        return True
+    return any(is_hochi_source(url, source_name, source_domain) for url in urls)
+
+
 def _backlog_narrow_publish_decision(entry: dict[str, Any], *, now: datetime) -> dict[str, Any]:
     reference_now = _now_jst(now)
     cache_key = (
@@ -1544,8 +1599,27 @@ def _backlog_narrow_publish_decision(entry: dict[str, Any], *, now: datetime) ->
         return _finalize(decision)
 
     if subtype in BACKLOG_NARROW_BLOCKED_SUBTYPES:
+        threshold_hours = _resolve_freshness_threshold(subtype)
+        if (
+            subtype in BACKLOG_NARROW_HOCHI_PREGAME_SUBTYPES
+            and threshold_hours is not None
+            and age_hours < threshold_hours
+            and _entry_has_hochi_source(entry)
+        ):
+            return _finalize(
+                {
+                    "eligible": True,
+                    "context": {
+                        "subtype": subtype,
+                        "age_hours": age_hours,
+                        "threshold_hours": threshold_hours,
+                        "narrow_kind": "hochi_fresh_pregame",
+                        "reason": "hochi_fresh_pregame",
+                    },
+                    "reason": "",
+                }
+            )
         if _strict_breaking_news_thresholds_enabled():
-            threshold_hours = _resolve_freshness_threshold(subtype)
             reason = "backlog_only"
             if threshold_hours is not None and age_hours >= threshold_hours:
                 reason = "backlog_only_source_age"

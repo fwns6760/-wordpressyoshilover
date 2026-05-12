@@ -53,9 +53,9 @@ class GuardedPublishRunnerIdempotentHistoryTests(unittest.TestCase):
         return _repairable_entry(
             int(post["id"]),
             str(post["title"]["raw"]),
-            "expired_lineup_or_pregame" if subtype in {"lineup", "pregame", "probable_starter", "farm_lineup"} else "expired_game_context",
+            "expired_lineup_or_pregame_age" if subtype in {"lineup", "pregame", "probable_starter", "farm_lineup"} else "expired_game_context",
             yellow_reasons=[
-                "expired_lineup_or_pregame"
+                "expired_lineup_or_pregame_age"
                 if subtype in {"lineup", "pregame", "probable_starter", "farm_lineup"}
                 else "expired_game_context"
             ],

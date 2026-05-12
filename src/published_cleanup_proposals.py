@@ -24,7 +24,7 @@ WARNING_ONLY_REASON_BY_FLAG = {
     "title_body_mismatch_partial": "warning_only:legacy_repairable_title_body_mismatch_partial",
     "numerical_anomaly_low_severity": "warning_only:legacy_repairable_numerical_anomaly_low_severity",
     "stale_for_breaking_board": "freshness_audit_only_no_op",
-    "expired_lineup_or_pregame": "freshness_audit_only_no_op",
+    "expired_lineup_or_pregame_age": "freshness_audit_only_no_op",
     "expired_game_context": "freshness_audit_only_no_op",
 }
 HIGH_PRIORITY_FLAGS = frozenset(

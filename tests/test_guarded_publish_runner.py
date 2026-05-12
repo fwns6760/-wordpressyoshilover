@@ -216,7 +216,7 @@ class GuardedPublishRunnerTests(unittest.TestCase):
 
     def _backlog_flag_for_subtype(self, subtype: str) -> str:
         if subtype in {"lineup", "pregame", "probable_starter", "farm_lineup"}:
-            return "expired_lineup_or_pregame"
+            return "expired_lineup_or_pregame_age"
         if subtype in {"postgame", "game_result"}:
             return "expired_game_context"
         return "stale_for_breaking_board"
@@ -349,15 +349,16 @@ class GuardedPublishRunnerTests(unittest.TestCase):
         posts = {post_id: candidate}
         if extra_posts:
             posts.update(extra_posts)
+        entry = self._make_backlog_entry(
+            candidate,
+            subtype=subtype,
+            age_hours=age_hours,
+            backlog_only=backlog_only,
+        )
+        if source_url:
+            entry["source_url"] = source_url
         report = _report(
-            yellow=[
-                self._make_backlog_entry(
-                    candidate,
-                    subtype=subtype,
-                    age_hours=age_hours,
-                    backlog_only=backlog_only,
-                )
-            ]
+            yellow=[entry]
         )
         stderr = io.StringIO()
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -2012,6 +2013,166 @@ class GuardedPublishRunnerTests(unittest.TestCase):
 
         self.assertEqual(result["proposed"], [])
         self.assertEqual(result["refused"][0]["reason"], "backlog_only")
+
+    def test_backlog_only_fresh_hochi_lineup_can_publish(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4411,
+            title="巨人スタメン発表 丸佳浩が1番",
+            subtype="lineup",
+            age_hours=1.0,
+            source_url="https://hochi.news/articles/20260512-OHT1T51001.html",
+        )
+
+        self.assertEqual(result["refused"], [])
+        self.assertEqual([item["post_id"] for item in result["proposed"]], [4411])
+
+    def test_backlog_only_fresh_hochi_pregame_can_publish(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4412,
+            title="巨人の試合前情報を整理",
+            subtype="pregame",
+            age_hours=1.0,
+            source_url="https://x.com/hochi_giants/status/2053000000000000001",
+        )
+
+        self.assertEqual(result["refused"], [])
+        self.assertEqual([item["post_id"] for item in result["proposed"]], [4412])
+
+    def test_backlog_only_fresh_hochi_probable_starter_can_publish(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4413,
+            title="巨人の予告先発を整理",
+            subtype="probable_starter",
+            age_hours=1.0,
+            source_url="https://x.com/hochi_baseball/status/2053000000000000002",
+        )
+
+        self.assertEqual(result["refused"], [])
+        self.assertEqual([item["post_id"] for item in result["proposed"]], [4413])
+
+    def test_backlog_only_fresh_sports_hochi_x_pregame_can_publish(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4414,
+            title="巨人の試合前練習を整理",
+            subtype="pregame",
+            age_hours=1.0,
+            source_url="https://x.com/SportsHochi/status/2053000000000000003",
+        )
+
+        self.assertEqual(result["refused"], [])
+        self.assertEqual([item["post_id"] for item in result["proposed"]], [4414])
+
+    def test_backlog_only_fresh_hochi_farm_lineup_can_publish(self):
+        # Bug reproduction (B案 farm_lineup addition): fresh hochi farm_lineup (二軍スタメン) is
+        # currently rejected by backlog narrow. After fix, should be promoted to publish candidate.
+        result, _, _ = self._run_backlog_case(
+            post_id=4418,
+            title="巨人2軍スタメン発表 浅野翔吾が1番",
+            subtype="farm_lineup",
+            age_hours=1.0,
+            source_url="https://hochi.news/articles/20260512-OHT1T51010.html",
+        )
+
+        self.assertEqual(result["refused"], [])
+        self.assertEqual([item["post_id"] for item in result["proposed"]], [4418])
+
+    def test_backlog_only_fresh_hochi_roster_can_publish_regression(self):
+        # Regression for existing behavior: fresh hochi roster article is already eligible via the
+        # BACKLOG_NARROW_ALLOWLIST path (no code change needed). Lock this in so a future change
+        # cannot silently break it.
+        result, _, _ = self._run_backlog_case(
+            post_id=4419,
+            title="巨人 公示 山田太郎を1軍登録",
+            subtype="roster",
+            age_hours=1.0,
+            source_url="https://hochi.news/articles/20260512-OHT1T51020.html",
+        )
+
+        self.assertEqual(result["refused"], [])
+        self.assertEqual([item["post_id"] for item in result["proposed"]], [4419])
+
+    def test_backlog_only_fresh_hochi_comment_can_publish_regression(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4420,
+            title="阿部監督が試合前コメントを発表",
+            subtype="comment",
+            age_hours=1.0,
+            source_url="https://hochi.news/articles/20260512-OHT1T51030.html",
+        )
+
+        self.assertEqual(result["refused"], [])
+        self.assertEqual([item["post_id"] for item in result["proposed"]], [4420])
+
+    def test_backlog_only_fresh_hochi_injury_can_publish_regression(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4421,
+            title="巨人 山田太郎の離脱を発表",
+            subtype="injury",
+            age_hours=1.0,
+            source_url="https://hochi.news/articles/20260512-OHT1T51040.html",
+        )
+
+        self.assertEqual(result["refused"], [])
+        self.assertEqual([item["post_id"] for item in result["proposed"]], [4421])
+
+    def test_backlog_only_fresh_hochi_notice_can_publish_regression(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4422,
+            title="巨人球団からのお知らせ 入団テスト日程",
+            subtype="notice",
+            age_hours=1.0,
+            source_url="https://hochi.news/articles/20260512-OHT1T51050.html",
+        )
+
+        self.assertEqual(result["refused"], [])
+        self.assertEqual([item["post_id"] for item in result["proposed"]], [4422])
+
+    def test_backlog_only_non_hochi_pregame_stays_blocked(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4415,
+            title="巨人の試合前情報を整理",
+            subtype="pregame",
+            age_hours=1.0,
+            source_url="https://www.nikkansports.com/baseball/news/202605120000001.html",
+        )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["refused"][0]["reason"], "backlog_only")
+
+    def test_backlog_only_stale_hochi_pregame_stays_blocked(self):
+        result, _, _ = self._run_backlog_case(
+            post_id=4416,
+            title="巨人の試合前情報を整理",
+            subtype="pregame",
+            age_hours=6.0,
+            source_url="https://hochi.news/articles/20260512-OHT1T51002.html",
+        )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["refused"][0]["reason"], "backlog_only")
+
+    def test_backlog_only_fresh_hochi_lineup_still_honors_same_source_url_duplicate_guard(self):
+        existing = self._make_candidate_post(
+            9417,
+            "巨人スタメン発表 吉川尚輝が1番",
+            subtype="lineup",
+            source_url="https://hochi.news/articles/20260512-OHT1T51003.html",
+            status="publish",
+        )
+        existing["date"] = "2026-04-26T07:00:00+09:00"
+
+        result, _, _ = self._run_backlog_case(
+            post_id=4417,
+            title="巨人スタメン発表 丸佳浩が1番",
+            subtype="lineup",
+            age_hours=1.0,
+            extra_posts={9417: existing},
+            source_url="https://hochi.news/articles/20260512-OHT1T51003.html",
+        )
+
+        self.assertEqual(result["proposed"], [])
+        self.assertEqual(result["refused"][0]["hold_reason"], "review_duplicate_candidate_same_source_url")
+        self.assertEqual(result["refused"][0]["duplicate_reason"], "same_source_url")
 
     def test_backlog_only_postgame_over_age_stays_blocked(self):
         result, _, _ = self._run_backlog_case(

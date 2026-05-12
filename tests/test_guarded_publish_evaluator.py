@@ -334,6 +334,7 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
             (
                 "<p>巨人の皆川岳飛は試合前、おじいちゃんへの思いを胸にグラウンドへ向かった。"
                 "スポーツ報知によると、家族の前で記念ボールを届けたいと話した。</p>"
+                "<p>試合開始 23:59</p>"
                 "<p>参照元: スポーツ報知 https://example.com/source-63475</p>"
             ),
             meta={"article_subtype": "lineup"},
@@ -759,6 +760,7 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
             "巨人 vs 楽天 先発情報",
             (
                 "<p>巨人:則本昂大が先発し、試合前のポイントを整理する。スポーツ報知によると、打線の対応が焦点になる。</p>"
+                "<p>試合開始 23:59</p>"
                 "<p>参照元: スポーツ報知 https://example.com/source-63851</p>"
             ),
             meta={"article_subtype": "pregame"},
@@ -1067,6 +1069,7 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
                 "<p>1番 浅野翔吾</p>"
                 "<p>2番 中山礼都</p>"
                 "<p>3番 秋広優人</p>"
+                "<p>試合開始 23:59</p>"
                 "<p>参照元: スポーツ報知 https://example.com/source-63862</p>"
             ),
             meta={"article_subtype": "farm_lineup"},
@@ -1621,6 +1624,7 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
                 "巨人スタメン 横浜スタジアム 8佐々木",
                 (
                     "<p>巨人のスタメンが発表された。スポーツ報知によると、8佐々木で先発する。</p>"
+                    "<p>試合開始 23:59</p>"
                     "<p>参照元: スポーツ報知 https://example.com/source-j</p>"
                 ),
                 date="2026-04-25T14:00:00",
@@ -1646,11 +1650,12 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         stale_entry = self._find_entry(report, 1541)
         fresh_entry = self._find_entry(report, 1542)
         self.assertIn("lineup_duplicate_excessive", stale_entry["hard_stop_flags"])
-        self.assertIn("expired_lineup_or_pregame", stale_entry["repairable_flags"])
-        self.assertNotIn("expired_lineup_or_pregame", stale_entry["hard_stop_flags"])
+        self.assertIn("expired_lineup_or_pregame_age", stale_entry["repairable_flags"])
+        self.assertNotIn("expired_lineup_or_pregame_age", stale_entry["hard_stop_flags"])
         self.assertEqual(stale_entry["freshness_class"], "expired")
         self.assertIn("lineup_duplicate_excessive", fresh_entry["hard_stop_flags"])
-        self.assertNotIn("expired_lineup_or_pregame", fresh_entry["hard_stop_flags"])
+        self.assertNotIn("expired_lineup_or_pregame_age", fresh_entry["hard_stop_flags"])
+        self.assertNotIn("expired_lineup_or_pregame_game_started", fresh_entry["hard_stop_flags"])
         self.assertEqual(fresh_entry["freshness_class"], "fresh")
 
     def test_stale_lineup_6h_over_is_hard_stop(self):
@@ -1659,6 +1664,7 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
             "巨人スタメン 1番丸 4番岡本",
             (
                 "<p>巨人のスタメンが発表された。スポーツ報知によると、1番丸、4番岡本で先発する。</p>"
+                "<p>試合開始 23:59</p>"
                 "<p>参照元: スポーツ報知 https://hochi.news/articles/20260425-OHT1T51000.html</p>"
             ),
             date="2026-04-25T14:00:00",
@@ -1674,7 +1680,7 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         self.assertEqual(entry["freshness_class"], "expired")
         self.assertEqual(entry["content_date"], "2026-04-25")
         self.assertEqual(entry["hard_stop_flags"], [])
-        self.assertIn("expired_lineup_or_pregame", entry["repairable_flags"])
+        self.assertIn("expired_lineup_or_pregame_age", entry["repairable_flags"])
         self.assertIn("threshold=6h", entry["freshness_reason"])
 
     def test_stale_postgame_24h_over_is_hard_stop(self):
@@ -1980,7 +1986,63 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         self.assertTrue(entry["publishable"])
         self.assertEqual(entry["freshness_class"], "expired")
         self.assertEqual(entry["hard_stop_flags"], [])
-        self.assertIn("expired_lineup_or_pregame", entry["repairable_flags"])
+        self.assertIn("expired_lineup_or_pregame_age", entry["repairable_flags"])
+        self.assertIn("threshold=6h", entry["freshness_reason"])
+
+    def test_lineup_after_game_start_emits_game_started_flag_as_hard_stop(self):
+        # Bug reproduction: a lineup article published 1h before game start, evaluated 30 min after
+        # game start. Source is fresh (age < 6h threshold) BUT game has begun, so this must NOT
+        # be auto-publishable. Before the fix, this entry was repairable (yellow) and could leak
+        # through runner backlog narrow exception.
+        game_started_post = _post(
+            301,
+            "巨人スタメン 1番丸 4番岡本",
+            (
+                "<p>巨人のスタメンが発表された。スポーツ報知によると、1番丸、4番岡本で先発する。</p>"
+                "<p>試合開始 09:00</p>"
+                "<p>参照元: スポーツ報知 https://hochi.news/articles/20260425-OHT1T51100.html</p>"
+            ),
+            date="2026-04-25T20:00:00",
+            modified="2026-04-25T20:30:00",
+            meta={"article_subtype": "lineup"},
+        )
+
+        report = self._evaluate([game_started_post])
+
+        entry = self._find_entry(report, 301)
+        self.assertFalse(entry["publishable"])
+        self.assertEqual(entry["freshness_class"], "expired")
+        self.assertIn("expired_lineup_or_pregame_game_started", entry["hard_stop_flags"])
+        self.assertNotIn("expired_lineup_or_pregame_game_started", entry["repairable_flags"])
+        self.assertFalse(entry["backlog_only"])
+        self.assertIn("game_start_estimate=", entry["freshness_reason"])
+
+    def test_lineup_age_only_not_yet_started_emits_age_flag_as_repairable(self):
+        # Bug reproduction companion: a lineup article 7h old, but game scheduled for 23:59 same
+        # day (i.e., game NOT yet started at FIXED_NOW=21:00). This must remain repairable
+        # (yellow) + backlog_only so the existing backlog narrow path can handle it.
+        age_only_post = _post(
+            302,
+            "巨人スタメン 1番丸 4番岡本",
+            (
+                "<p>巨人のスタメンが発表された。スポーツ報知によると、1番丸、4番岡本で先発する。</p>"
+                "<p>試合開始 23:59</p>"
+                "<p>参照元: スポーツ報知 https://hochi.news/articles/20260425-OHT1T51200.html</p>"
+            ),
+            date="2026-04-25T14:00:00",
+            modified="2026-04-25T20:30:00",
+            meta={"article_subtype": "lineup"},
+        )
+
+        report = self._evaluate([age_only_post])
+
+        entry = self._find_entry(report, 302)
+        self.assertTrue(entry["publishable"])
+        self.assertEqual(entry["freshness_class"], "expired")
+        self.assertEqual(entry["hard_stop_flags"], [])
+        self.assertIn("expired_lineup_or_pregame_age", entry["repairable_flags"])
+        self.assertNotIn("expired_lineup_or_pregame_age", entry["hard_stop_flags"])
+        self.assertTrue(entry["backlog_only"])
         self.assertIn("threshold=6h", entry["freshness_reason"])
 
     def test_program_and_off_field_within_48h_remain_publishable(self):
@@ -2069,6 +2131,12 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         self.assertIn("freshness_source=x_post_date", entry["freshness_reason"])
 
     def test_stale_rss_published_2days_old_lineup_is_backlog_only(self):
+        # rss_published-driven freshness: content_date resolves to 2026-04-25 (2 days before
+        # FOLLOWUP_NOW). The estimated game start (default 18:00 on 2026-04-25) is in the past,
+        # so the entry is now hard_stop with the game_started flag (not backlog_only repairable).
+        # The test name is preserved for git-history continuity; the assertions reflect the
+        # post-fix correct semantic that a 2-day-old lineup whose game has played cannot be
+        # auto-published.
         stale_lineup = _post(
             221,
             "巨人スタメン 1番丸 4番岡本",
@@ -2087,12 +2155,12 @@ class GuardedPublishEvaluatorTests(unittest.TestCase):
         report = self._evaluate_at([stale_lineup], FOLLOWUP_NOW)
 
         entry = self._find_entry(report, 221)
-        self.assertTrue(entry["publishable"])
+        self.assertFalse(entry["publishable"])
         self.assertEqual(entry["content_date"], "2026-04-25")
         self.assertEqual(entry["freshness_source"], "rss_published")
         self.assertEqual(entry["freshness_class"], "expired")
-        self.assertTrue(entry["backlog_only"])
-        self.assertIn("expired_lineup_or_pregame", entry["repairable_flags"])
+        self.assertFalse(entry["backlog_only"])
+        self.assertIn("expired_lineup_or_pregame_game_started", entry["hard_stop_flags"])
 
     def test_fresh_postgame_within_24h_publishable(self):
         fresh_postgame = _post(

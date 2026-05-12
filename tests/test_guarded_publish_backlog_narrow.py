@@ -38,7 +38,7 @@ class GuardedPublishBacklogNarrowTests(unittest.TestCase):
 
     def _backlog_flag_for_subtype(self, subtype: str) -> str:
         if subtype in {"lineup", "pregame", "probable_starter", "farm_lineup"}:
-            return "expired_lineup_or_pregame"
+            return "expired_lineup_or_pregame_age"
         if subtype in {"postgame", "game_result"}:
             return "expired_game_context"
         return "stale_for_breaking_board"

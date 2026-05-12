@@ -140,6 +140,12 @@ try:
     )
 except Exception:  # noqa: BLE001
     _apply_rss_pipeline_enrichment = None  # type: ignore[assignment]
+try:
+    from src.rss_lineup_table_post_process import (
+        inject_lineup_table_if_enabled as _inject_lineup_table_if_enabled,
+    )
+except Exception:  # noqa: BLE001
+    _inject_lineup_table_if_enabled = None  # type: ignore[assignment]
 from src.body_contract_fail_ledger import (
     BODY_CONTRACT_FAIL_LEDGER_PATH_ENV as BODY_CONTRACT_FAIL_LEDGER_PATH_ENV_FLAG,
     ENABLE_BODY_CONTRACT_FAIL_LEDGER_ENV as BODY_CONTRACT_FAIL_LEDGER_ENV_FLAG,
@@ -17808,11 +17814,31 @@ def _create_draft_with_same_fire_guard(
     # import overhead. The defensive try/except still runs the
     # enrichment in isolation so any helper crash falls back to the
     # original body without breaking the WP draft create.
-    enriched_content = content
+    # Narrow lineup-table post-process. Default-OFF env flag
+    # ENABLE_RSS_LINEUP_TABLE_POST_PROCESS. When the flag is OFF (or the
+    # gate conditions in the post-process are not met) the body is
+    # returned byte-identical, so legacy AI-generated bodies stay
+    # untouched. When the flag is ON and the body contains a clean 8+-
+    # line "N番 守備 選手" sequence for a lineup-style template, the
+    # block is replaced with an HTML <table> plus the nomotoke-card
+    # markers so the downstream enrichment then activates.
+    table_injected_content = content
+    if _inject_lineup_table_if_enabled is not None:
+        try:
+            table_injected_content = _inject_lineup_table_if_enabled(
+                content,
+                template_key=enrichment_template_key,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "rss_lineup_table_post_process_skipped reason=%s", exc
+            )
+            table_injected_content = content
+    enriched_content = table_injected_content
     if _apply_rss_pipeline_enrichment is not None:
         try:
             enriched_content = _apply_rss_pipeline_enrichment(
-                content,
+                table_injected_content,
                 title=draft_title,
                 source_url=normalized_source_url,
                 summary=enrichment_summary,
@@ -17825,7 +17851,7 @@ def _create_draft_with_same_fire_guard(
             logger.warning(
                 "rss_pipeline_enrichment_skipped reason=%s", exc
             )
-            enriched_content = content
+            enriched_content = table_injected_content
     if force_status:
         resolved_status = force_status
     else:

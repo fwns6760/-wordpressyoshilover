@@ -152,6 +152,12 @@ try:
     )
 except Exception:  # noqa: BLE001
     _parse_hochi_compact_lineup = None  # type: ignore[assignment]
+try:
+    from src.source_emoji_lineup_extractor import (
+        parse_emoji_lineup as _parse_emoji_lineup,
+    )
+except Exception:  # noqa: BLE001
+    _parse_emoji_lineup = None  # type: ignore[assignment]
 from src.body_contract_fail_ledger import (
     BODY_CONTRACT_FAIL_LEDGER_PATH_ENV as BODY_CONTRACT_FAIL_LEDGER_PATH_ENV_FLAG,
     ENABLE_BODY_CONTRACT_FAIL_LEDGER_ENV as BODY_CONTRACT_FAIL_LEDGER_ENV_FLAG,
@@ -15196,6 +15202,34 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             )
             compact_lineup_rows = []
             compact_opponent_team_name = ""
+    # NOMOTOKE-LINEUP-FROM-EMOJI-001 Phase 2B: emoji-form lineup tweets
+    # (巨人公式X 2軍 / sponichi). Tried as a fallback only when neither
+    # the Yahoo stats path nor the hochi compact parser produced rows,
+    # so the more specific parsers always win when applicable. Same
+    # downstream rendering path (`_build_basic_lineup_table_block`) — the
+    # row shape is identical (`order` / `position` / `name` / `team`).
+    if (
+        not lineup_stat_rows
+        and not compact_lineup_rows
+        and _parse_emoji_lineup is not None
+        and article_subtype in ("lineup", "farm_lineup")
+    ):
+        try:
+            emoji_data = _parse_emoji_lineup(
+                title=title,
+                summary=summary_clean,
+                source_name=source_name,
+                source_url=url,
+            )
+            if emoji_data and emoji_data.get("lineup"):
+                compact_lineup_rows = list(emoji_data["lineup"])
+                compact_opponent_team_name = str(
+                    emoji_data.get("opponent_team_name") or ""
+                )
+        except Exception as e:  # noqa: BLE001
+            logging.getLogger("rss_fetcher").warning(
+                "emoji_lineup_parse_skipped reason=%s", e
+            )
     lineup_stats_rendered = False
 
     # 試合がない日は勝敗ヒントを生成しない（架空スコア捏造防止）
@@ -17963,6 +17997,51 @@ def _log_title_collision_if_needed(
     return rewritten_title_norm
 
 
+def _maybe_insert_auto_rss_source_body_excerpt(
+    rendered_html: str,
+    *,
+    raw_html: str,
+    source_url: str,
+    title: str,
+    source_name: str,
+    summary: str,
+    source_type: str,
+    logger: logging.Logger,
+) -> str:
+    """Apply manual_intake's source body excerpt insertion to the auto RSS path.
+
+    Narrow gate: source_type must be ``news`` or ``tag_scrape`` and ``raw_html``
+    must already be fetched. The reused helper handles its own idempotent and
+    context-drift guards, so failure modes (no excerpt, context drift, generic
+    HTML) silently return the rendered HTML unchanged.
+    """
+    if source_type not in {"news", "tag_scrape"}:
+        return rendered_html
+    if not raw_html:
+        return rendered_html
+    try:
+        from src.tools.manual_intake import _maybe_insert_source_body_excerpt
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "auto_rss_source_body_excerpt_import_failed reason=%s", exc
+        )
+        return rendered_html
+    try:
+        return _maybe_insert_source_body_excerpt(
+            rendered_html,
+            raw_html=raw_html,
+            source_url=source_url,
+            title=title,
+            source_name=source_name,
+            summary=summary,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "auto_rss_source_body_excerpt_skipped reason=%s", exc
+        )
+        return rendered_html
+
+
 def _create_draft_with_same_fire_guard(
     wp: WPClient,
     logger: logging.Logger,
@@ -17980,6 +18059,7 @@ def _create_draft_with_same_fire_guard(
     enrichment_template_key: str = "",
     enrichment_source_name: str = "",
     enrichment_raw_html: str = "",
+    enrichment_source_type: str = "",
 ) -> int:
     normalized_source_url = _html.unescape((source_url or "").strip())
     rewritten_title_norm = _normalize_history_title(draft_title)
@@ -18053,6 +18133,21 @@ def _create_draft_with_same_fire_guard(
                 "rss_pipeline_enrichment_skipped reason=%s", exc
             )
             enriched_content = table_injected_content
+    # 2026-05-12 source-body-excerpt-auto-rss-permanent-fix:
+    # manual_intake で動いている 600 字 source body 抜粋 block (<aside class=
+    # "nomotoke-source-excerpt">) を自動 RSS path にも適用する。news / tag_scrape
+    # で raw_html が取れているときだけ apply、context_drift guard と idempotent
+    # 判定は manual_intake 側 helper をそのまま再利用する。
+    enriched_content = _maybe_insert_auto_rss_source_body_excerpt(
+        enriched_content,
+        raw_html=enrichment_raw_html,
+        source_url=normalized_source_url,
+        title=draft_title,
+        source_name=enrichment_source_name,
+        summary=enrichment_summary,
+        source_type=enrichment_source_type,
+        logger=logger,
+    )
     if force_status:
         resolved_status = force_status
     else:
@@ -22729,6 +22824,7 @@ def _main(args, logger):
                             enrichment_category=category,
                             enrichment_template_key=str(title_template_key or ""),
                             enrichment_source_name=source_name,
+                            enrichment_source_type=source_type,
                         )
                         if review_post_id_logged and review_post_id_logged > 0:
                             review_draft_created = True
@@ -22873,6 +22969,7 @@ def _main(args, logger):
                 enrichment_template_key=str(title_template_key or ""),
                 enrichment_source_name=source_name,
                 enrichment_raw_html=_article_raw_html,
+                enrichment_source_type=source_type,
             )
             if post_id <= 0:
                 # RELIABILITY-2026-05-08-DUP-FIX: same-fire dedup で 0 が返った時、

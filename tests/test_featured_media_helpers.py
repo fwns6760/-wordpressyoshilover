@@ -185,5 +185,86 @@ class FeaturedMediaHelperTests(unittest.TestCase):
         )
 
 
+class CrossPublisherImageFilterTests(unittest.TestCase):
+    def test_filter_excludes_cross_publisher_news_domain_candidate(self):
+        logger = logging.getLogger("rss_fetcher")
+
+        with self.assertLogs("rss_fetcher", level="INFO") as cm:
+            filtered = rss_fetcher._filter_image_candidates(
+                [
+                    "https://www.nikkansports.com/baseball/news/img/202605100001243-w500_0.jpg",
+                    "https://hochi.news/images/2026/05/11/20260511-OHT1I51491-L.jpg",
+                ],
+                source_url="https://hochi.news/articles/20260512-OHT1T51128.html",
+                logger=logger,
+            )
+
+        self.assertEqual(
+            filtered,
+            ["https://hochi.news/images/2026/05/11/20260511-OHT1I51491-L.jpg"],
+        )
+        excluded_events = [
+            json.loads(rec.getMessage())
+            for rec in cm.records
+            if "cross_publisher_news_domain" in rec.getMessage()
+        ]
+        self.assertEqual(len(excluded_events), 1)
+        self.assertEqual(
+            excluded_events[0]["excluded_url"],
+            "https://www.nikkansports.com/baseball/news/img/202605100001243-w500_0.jpg",
+        )
+
+    def test_filter_keeps_twitter_attachment_for_news_source(self):
+        logger = logging.getLogger("rss_fetcher")
+        filtered = rss_fetcher._filter_image_candidates(
+            ["https://pbs.twimg.com/media/abcdef.jpg"],
+            source_url="https://hochi.news/articles/20260512-OHT1T51128.html",
+            logger=logger,
+        )
+        self.assertEqual(filtered, ["https://pbs.twimg.com/media/abcdef.jpg"])
+
+    def test_filter_keeps_same_publisher_image(self):
+        logger = logging.getLogger("rss_fetcher")
+        filtered = rss_fetcher._filter_image_candidates(
+            ["https://www.nikkansports.com/baseball/news/img/202605100001243-w500_0.jpg"],
+            source_url="https://www.nikkansports.com/baseball/news/202605100001243.html",
+            logger=logger,
+        )
+        self.assertEqual(
+            filtered,
+            ["https://www.nikkansports.com/baseball/news/img/202605100001243-w500_0.jpg"],
+        )
+
+    def test_filter_keeps_candidate_when_source_url_is_empty(self):
+        logger = logging.getLogger("rss_fetcher")
+        filtered = rss_fetcher._filter_image_candidates(
+            ["https://www.nikkansports.com/baseball/news/img/202605100001243-w500_0.jpg"],
+            source_url="",
+            logger=logger,
+        )
+        self.assertEqual(
+            filtered,
+            ["https://www.nikkansports.com/baseball/news/img/202605100001243-w500_0.jpg"],
+        )
+
+    def test_filter_keeps_non_news_domain_candidate(self):
+        logger = logging.getLogger("rss_fetcher")
+        filtered = rss_fetcher._filter_image_candidates(
+            ["https://example.com/photo.jpg"],
+            source_url="https://hochi.news/articles/foo.html",
+            logger=logger,
+        )
+        self.assertEqual(filtered, ["https://example.com/photo.jpg"])
+
+    def test_filter_normalizes_hochi_subdomain(self):
+        logger = logging.getLogger("rss_fetcher")
+        filtered = rss_fetcher._filter_image_candidates(
+            ["https://news.hochi.news/images/foo.jpg"],
+            source_url="https://hochi.news/articles/foo.html",
+            logger=logger,
+        )
+        self.assertEqual(filtered, ["https://news.hochi.news/images/foo.jpg"])
+
+
 if __name__ == "__main__":
     unittest.main()

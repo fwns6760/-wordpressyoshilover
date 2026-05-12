@@ -13557,6 +13557,50 @@ def _fetch_url_html(url: str, max_bytes: int = 200000, timeout: int = 12) -> str
             return ""
 
 
+_NEWS_PUBLISHER_HOSTS = frozenset({
+    "hochi.news",
+    "nikkansports.com",
+    "sponichi.co.jp",
+    "daily.co.jp",
+    "sanspo.com",
+    "yakyu.jiji.com",
+    "tokyo-sports.co.jp",
+    "full-count.jp",
+    "baseball-king.jp",
+    "the-ans.jp",
+})
+
+
+def _normalize_publisher_host(host: str) -> str:
+    h = (host or "").lower().strip()
+    if h.startswith("www."):
+        h = h[4:]
+    if h == "news.hochi.news":
+        h = "hochi.news"
+    return h
+
+
+def _is_cross_publisher_image_url(image_url: str, source_url: str) -> bool:
+    if not image_url or not source_url:
+        return False
+    try:
+        import urllib.parse as _urlparse
+
+        image_host = _normalize_publisher_host(_urlparse.urlparse(image_url).netloc)
+        source_host = _normalize_publisher_host(_urlparse.urlparse(source_url).netloc)
+    except Exception:
+        return False
+    if not image_host or not source_host:
+        return False
+    if image_host == source_host:
+        return False
+    if source_host not in _NEWS_PUBLISHER_HOSTS:
+        return False
+    if image_host not in _NEWS_PUBLISHER_HOSTS:
+        return False
+    return True
+
+
 def _get_image_candidate_exclusion_reason(image_url: str) -> str:
     low = _html.unescape((image_url or "").strip()).lower()
     if _re.search(r"\babs(?:-\d+)?\.twimg\.com/emoji/", low):
@@ -13596,6 +13640,15 @@ def _filter_image_candidates(
             payload = {
                 "event": "image_candidate_excluded",
                 "reason": reason,
+                "excluded_url": normalized_url,
+                "source_url": normalized_source_url,
+            }
+            logger.info(json.dumps(payload, ensure_ascii=False))
+            continue
+        if _is_cross_publisher_image_url(normalized_url, normalized_source_url):
+            payload = {
+                "event": "image_candidate_excluded",
+                "reason": "cross_publisher_news_domain",
                 "excluded_url": normalized_url,
                 "source_url": normalized_source_url,
             }

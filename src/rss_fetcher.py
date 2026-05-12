@@ -15512,11 +15512,12 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     # Yahoo box (inning + W/L/S) を取得する。2軍 / Yahoo 失敗時は
     # postgame_facts (prose A-fallback) に degrade。
     postgame_yahoo_facts: dict = {}
-    # NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2F: NPB公式 box.html を
-    # 1軍 postgame で取得し、per-batter atbat + per-pitcher 詳細 stats
-    # まで揃った rich render に格上げ。Yahoo より NPB の方が情報量豊か
-    # なので NPB 成功時 ↑ を採用し Yahoo は skip。NPB 失敗時のみ Yahoo
-    # にフォールバック。
+    # NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2F + Phase 2G: NPB公式
+    # box.html を 1軍 postgame で取得し、per-batter atbat + per-pitcher
+    # 詳細 stats まで揃った rich render に格上げ。NPB box 自体は
+    # 勝利/敗戦/セーブ投手を summary 化しないため、Phase 2G で Yahoo
+    # facts も同時に取得し、NPB block + Yahoo W/L/S sub-block の合成
+    # 描画を可能にした。NPB が空なら従来通り Yahoo block 単独 fallback。
     postgame_npb_facts: dict = {}
     if (
         postgame_facts
@@ -15529,14 +15530,13 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 "postgame_npb_fetch_skipped reason=%s", e
             )
             postgame_npb_facts = {}
-        if not postgame_npb_facts:
-            try:
-                postgame_yahoo_facts = fetch_today_giants_postgame_facts_from_yahoo() or {}
-            except Exception as e:  # noqa: BLE001
-                logging.getLogger("rss_fetcher").warning(
-                    "postgame_yahoo_fetch_skipped reason=%s", e
-                )
-                postgame_yahoo_facts = {}
+        try:
+            postgame_yahoo_facts = fetch_today_giants_postgame_facts_from_yahoo() or {}
+        except Exception as e:  # noqa: BLE001
+            logging.getLogger("rss_fetcher").warning(
+                "postgame_yahoo_fetch_skipped reason=%s", e
+            )
+            postgame_yahoo_facts = {}
     lineup_stats_rendered = False
 
     # 試合がない日は勝敗ヒントを生成しない（架空スコア捏造防止）
@@ -16284,6 +16284,52 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         )
         return header_html + note_html + table_html
 
+    def _build_yahoo_wls_pitcher_subblock(yahoo_facts: dict) -> str:
+        """Render only the 勝利投手 / 敗戦投手 / セーブ mini-table.
+
+        NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2G. Extracted from
+        ``_build_postgame_yahoo_block`` so it can also fire alongside the
+        Phase 2F NPB box block (which doesn't include a W/L/S summary
+        of its own). Marker class ``nomotoke-card-postgame-pitchers``.
+        Returns "" when 勝利/敗戦/セーブ いずれも未抽出.
+        """
+        if not yahoo_facts or not isinstance(yahoo_facts, dict):
+            return ""
+        heading_level = 4 if _body_template_v2_enabled() else 3
+        pitcher_rows_html: list[str] = [
+            "<tr><th>区分</th><th>チーム</th><th>投手</th><th>成績</th></tr>"
+        ]
+        pitcher_specs = [
+            ("勝利投手", yahoo_facts.get("winning_pitcher") or {}),
+            ("敗戦投手", yahoo_facts.get("losing_pitcher") or {}),
+            ("セーブ", yahoo_facts.get("save_pitcher") or {}),
+        ]
+        pitcher_rows_count = 0
+        for label, info in pitcher_specs:
+            if not isinstance(info, dict) or not info.get("name"):
+                continue
+            team = str(info.get("team") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            pname = str(info.get("name") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            record = str(info.get("record") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            pitcher_rows_html.append(
+                f"<tr><td>{label}</td><td>{team}</td><td>{pname}</td><td>{record}</td></tr>"
+            )
+            pitcher_rows_count += 1
+        if pitcher_rows_count < 1:
+            return ""
+        return (
+            f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
+            f'<h{heading_level}>⚾ 投手</h{heading_level}>\n'
+            '<!-- /wp:heading -->\n\n'
+            '<!-- wp:html -->\n'
+            '<div class="yoshilover-lineup-stats" style="overflow-x:auto;margin:0 0 12px;">'
+            '<table class="nomotoke-card-postgame-pitchers" style="width:100%;border-collapse:collapse;font-size:0.92em;">'
+            f"{''.join(pitcher_rows_html)}"
+            "</table>"
+            "</div>\n"
+            '<!-- /wp:html -->\n\n'
+        )
+
     def _build_postgame_yahoo_block(yahoo_facts: dict) -> str:
         """Render a rich postgame block from a Yahoo boxscore facts dict.
 
@@ -16370,41 +16416,11 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             '<!-- /wp:html -->\n\n'
         )
 
-        # NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2E: 勝利投手 / 敗戦投手 /
-        # セーブ section. Renders only the rows the parser actually
-        # extracted. Marker class ``nomotoke-card-postgame-pitchers``.
-        pitcher_rows_html: list[str] = [
-            "<tr><th>区分</th><th>チーム</th><th>投手</th><th>成績</th></tr>"
-        ]
-        pitcher_specs = [
-            ("勝利投手", yahoo_facts.get("winning_pitcher") or {}),
-            ("敗戦投手", yahoo_facts.get("losing_pitcher") or {}),
-            ("セーブ", yahoo_facts.get("save_pitcher") or {}),
-        ]
-        pitcher_rows_count = 0
-        for label, info in pitcher_specs:
-            if not isinstance(info, dict) or not info.get("name"):
-                continue
-            team = str(info.get("team") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            pname = str(info.get("name") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            record = str(info.get("record") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            pitcher_rows_html.append(
-                f"<tr><td>{label}</td><td>{team}</td><td>{pname}</td><td>{record}</td></tr>"
-            )
-            pitcher_rows_count += 1
-        if pitcher_rows_count >= 1:
-            out += (
-                f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
-                f'<h{heading_level}>⚾ 投手</h{heading_level}>\n'
-                '<!-- /wp:heading -->\n\n'
-                '<!-- wp:html -->\n'
-                '<div class="yoshilover-lineup-stats" style="overflow-x:auto;margin:0 0 12px;">'
-                '<table class="nomotoke-card-postgame-pitchers" style="width:100%;border-collapse:collapse;font-size:0.92em;">'
-                f"{''.join(pitcher_rows_html)}"
-                "</table>"
-                "</div>\n"
-                '<!-- /wp:html -->\n\n'
-            )
+        # NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2E / Phase 2G: W/L/S
+        # sub-block is now an extracted helper so it can be reused
+        # alongside the Phase 2F NPB box block (NPB itself does not
+        # surface W/L/S).
+        out += _build_yahoo_wls_pitcher_subblock(yahoo_facts)
 
         return out
 
@@ -17214,6 +17230,11 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         if not followup_section_rendered:
             blocks += _sep()
         blocks += _build_postgame_npb_block(postgame_npb_facts)
+        # NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2G: NPB box doesn't
+        # surface 勝利/敗戦/セーブ投手 as a summary, so reuse the Yahoo
+        # W/L/S sub-block when Yahoo facts are available alongside NPB.
+        if postgame_yahoo_facts:
+            blocks += _build_yahoo_wls_pitcher_subblock(postgame_yahoo_facts)
         followup_section_rendered = True
     elif postgame_yahoo_facts and postgame_yahoo_facts.get("inning_score"):
         if not followup_section_rendered:

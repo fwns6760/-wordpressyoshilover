@@ -486,8 +486,9 @@ class PostgameNPBBoxIntegrationTests(unittest.TestCase):
         self.assertIn("森田", blocks)
         self.assertIn("4.1", blocks)
 
-    def test_npb_box_takes_priority_over_yahoo(self):
-        """NPB 成功時 Yahoo block(W/L/S pitcher marker)は描画されない。"""
+    def test_npb_box_takes_priority_for_inning_but_keeps_yahoo_wls(self):
+        """Phase 2G: NPB 成功時 inning は NPB が優先(Yahoo inning は描画
+        されない)が、Yahoo W/L/S 投手 sub-block は併存する。"""
         yahoo = {
             "team_name": "巨人", "score": "9-4", "result": "win",
             "date_label": "2026年5月10日", "league_label": "セ・リーグ",
@@ -498,10 +499,15 @@ class PostgameNPBBoxIntegrationTests(unittest.TestCase):
             "winning_pitcher": {"team": "巨人", "name": "戸郷", "record": "4勝2敗0S"},
         }
         blocks, _ = self._build_with_npb(npb_facts=self.NPB_BOX_FACTS, yahoo_facts=yahoo)
-        # NPB block 出てる
+        # NPB block 出てる(batter / pitcher-detail / inning)
         self.assertIn("nomotoke-card-postgame-batter", blocks)
-        # Phase 2E Yahoo W/L/S pitcher table marker は出ない(NPB が優先)
-        self.assertNotIn("nomotoke-card-postgame-pitchers", blocks)
+        self.assertIn("nomotoke-card-postgame-pitcher-detail", blocks)
+        self.assertIn("nomotoke-card-postgame-inning", blocks)
+        # Phase 2G: NPB と並走で W/L/S sub-block も出る(NPB は W/L/S summary を持たない)
+        self.assertIn("nomotoke-card-postgame-pitchers", blocks)
+        self.assertIn("戸郷", blocks)
+        # Phase 2D-B Yahoo の試合結果 header marker は出ない(NPB が inning を支配)
+        self.assertNotIn("nomotoke-card-postgame-result", blocks)
 
     def test_npb_box_fails_falls_back_to_yahoo(self):
         yahoo = {

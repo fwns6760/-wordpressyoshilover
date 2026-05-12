@@ -931,3 +931,62 @@ LLM(Gemini) は本経路で使用していないため、source 文字列を det
 - tail inject priority(`if NPB elif Yahoo elif A-fallback`)順序不変
 - fixture file(`npb_score_2026_0510_d-g-08_*.html`)は real NPB HTML、再加工不可
 - Phase 2A-2E 全 logic 不変
+
+---
+
+### Phase 2G: Yahoo W/L/S 投手 sub-block 抽出 + NPB との合成描画(post-work、2026-05-12 PM)
+
+#### 1. やったこと(コード変更)
+
+- **背景**: Phase 2F 着地時、NPB box が fires すると `_build_postgame_yahoo_block` 内の **`nomotoke-card-postgame-pitchers`(勝利/敗戦/セーブ投手 summary table)** が elif chain で skip され、勝敗投手の summary が完全に消えていた。NPB box 自体は per-pitcher detail を持つが「誰が勝ち投手か / セーブ何号か」の集計は持たない。Phase 2G で gap を埋める。
+- **`src/rss_fetcher.py`** 変更:
+  - **helper 抽出**: `_build_yahoo_wls_pitcher_subblock(yahoo_facts)` を新規切り出し
+    - `_build_postgame_yahoo_block` 内に inline していた W/L/S table 描画 code(line 16373-16407)を独立関数化
+    - 入力: `winning_pitcher` / `losing_pitcher` / `save_pitcher` dict
+    - 出力: `nomotoke-card-postgame-pitchers` marker 付き 4-column table HTML(該当 0 件なら "")
+  - `_build_postgame_yahoo_block` から該当 inline code を削除し、`out += _build_yahoo_wls_pitcher_subblock(yahoo_facts)` に置換(挙動不変)
+  - **tail inject 変更**: NPB facts fires 時、追加で `postgame_yahoo_facts` を call し W/L/S sub-block を NPB block 直下に併存描画
+  - **Yahoo facts fetch 条件変更**: 従来 `if not postgame_npb_facts:` guard で NPB 成功時 Yahoo fetch を skip → Phase 2G で **常に両方 fetch**(W/L/S 描画に必要なため)、HTTP 1 call 増(~1-2s、Yahoo schedule cache のため軽量)
+- **test 更新**:
+  - `test_npb_box_takes_priority_over_yahoo` → `test_npb_box_takes_priority_for_inning_but_keeps_yahoo_wls` に rename
+  - 新 assert: NPB inning は NPB が優先(`nomotoke-card-postgame-result` 不在)/ Yahoo W/L/S sub-block は併存(`nomotoke-card-postgame-pitchers` + `戸郷` 存在)
+  - 既存 batter / pitcher-detail / fallback test 3 case は不変
+
+#### 2. 不変 / 不可触
+
+- Phase 2A / 2A-1 / 2B / 2C / 2D-A / 2D-B / 2E / 2F 全 logic 不変
+- `parse_npb_box_html` / `parse_yahoo_game_html` / pitcher extractor 不変
+- NPB block 内部 4 sub-table(inning / 巨人 batter / 巨人 pitcher detail / opp batter / opp pitcher detail)順序不変
+- W/L/S sub-block の marker(`nomotoke-card-postgame-pitchers`)不変(既存 CSS / 観察 query を壊さない)
+- automation / scheduler / env / secret 一切 untouched
+
+#### 3. 動作確認
+
+- `python3 -m unittest tests.test_rss_fetcher_postgame_table tests.test_source_npb_postgame_extractor tests.test_yahoo_postgame_pitcher_extraction`: **25 / 25 GREEN**
+
+#### 4. テスト結果
+
+- **Phase 2F 着地時 baseline**: 3622 tests / 2 pre-existing fail
+- **Phase 2G 着地後**: `Ran 3622 tests in 70.891s` / **failures=2**(同 2 件 baseline、増加 0)
+- 増加 fail: **0**
+
+#### 5. 残った懸念
+
+1. **Yahoo HTTP 1 call 追加**: 1軍 postgame 1 本につき Yahoo `/index` への HTTP fetch が必ず発生(NPB 成功・失敗問わず)。Yahoo は無料 + cache 効くので実害 ¥0 だが latency +1-2s。問題なら NPB facts に `wls_summary` を追加抽出する Phase 2G+ で removable
+2. **NPB pitcher row に勝敗 indicator が含まれる可能性**: NPB box の pitcher detail 行に `(勝)` / `(負)` / `(S)` の表記があるかも(現 parser は抽出していない)。fixture verify で確認後、Yahoo fetch を停止できれば理想
+
+#### 6. 新しく見つかったデグレ
+
+- 本便差分による新規デグレ **なし**(test 1 case rename は意図変更、既存 case は全 pass)
+
+#### 7. 追加した回帰テスト
+
+- 既存 test の意図変更 1 case(`test_npb_box_takes_priority_for_inning_but_keeps_yahoo_wls`)
+- 新規 case 追加なし(rename + assert 強化のみ、scope 完結)
+
+#### 8. 次回触ってはいけない範囲
+
+- `_build_yahoo_wls_pitcher_subblock` の marker / column 順 不変
+- NPB block と W/L/S sub-block の描画順序(NPB → W/L/S)不変
+- tail inject の `postgame_yahoo_facts` fetch 条件(常時 fetch)不変
+- Phase 2A-2F 全 logic 不変

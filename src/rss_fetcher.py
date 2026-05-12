@@ -146,6 +146,12 @@ try:
     )
 except Exception:  # noqa: BLE001
     _inject_lineup_table_if_enabled = None  # type: ignore[assignment]
+try:
+    from src.source_hochi_compact_lineup_extractor import (
+        parse_hochi_compact_lineup as _parse_hochi_compact_lineup,
+    )
+except Exception:  # noqa: BLE001
+    _parse_hochi_compact_lineup = None  # type: ignore[assignment]
 from src.body_contract_fail_ledger import (
     BODY_CONTRACT_FAIL_LEDGER_PATH_ENV as BODY_CONTRACT_FAIL_LEDGER_PATH_ENV_FLAG,
     ENABLE_BODY_CONTRACT_FAIL_LEDGER_ENV as BODY_CONTRACT_FAIL_LEDGER_ENV_FLAG,
@@ -15100,6 +15106,32 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         except Exception as e:
             logging.getLogger("rss_fetcher").warning("スタメン成績の取得失敗: %s", e)
             lineup_stat_rows = []
+    # NOMOTOKE-LINEUP-FROM-HOCHI-COMPACT-001: when no Yahoo stats are
+    # available (e.g. 2軍 farm_lineup, or 1軍 lineup before Yahoo data is
+    # populated) AND the source belongs to the 報知 / スポニチ family,
+    # extract a structured 3-column lineup from the compact tweet shape
+    # (``D東妻 7萩尾3加藤 ...``). Falls through silently to prose body
+    # when extraction fails (parser returns ``None``).
+    compact_lineup_rows: list[dict] = []
+    if (
+        not lineup_stat_rows
+        and _parse_hochi_compact_lineup is not None
+        and article_subtype in ("lineup", "farm_lineup")
+    ):
+        try:
+            compact_data = _parse_hochi_compact_lineup(
+                title=title,
+                summary=summary_clean,
+                source_name=source_name,
+                source_url=url,
+            )
+            if compact_data and compact_data.get("lineup"):
+                compact_lineup_rows = list(compact_data["lineup"])
+        except Exception as e:  # noqa: BLE001
+            logging.getLogger("rss_fetcher").warning(
+                "hochi_compact_lineup_parse_skipped reason=%s", e
+            )
+            compact_lineup_rows = []
     lineup_stats_rendered = False
 
     # 試合がない日は勝敗ヒントを生成しない（架空スコア捏造防止）
@@ -15710,6 +15742,55 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         )
         return header + note + table_html
 
+    def _build_basic_lineup_table_block(rows: list[dict]) -> str:
+        """3-column lineup table for compact-source rows (打順 / 守備 / 選手).
+
+        Used when ``lineup_stat_rows`` (Yahoo 7-column stats) is unavailable
+        but ``compact_lineup_rows`` was extracted from a 報知 / スポニチ
+        compact tweet via ``parse_hochi_compact_lineup``. Renders the same
+        ``<!-- wp:html -->`` envelope as ``_lineup_stats_block`` and uses
+        the ``nomotoke-card-lineup-table`` marker class so the existing
+        narrow ``rss_lineup_table_post_process`` short-circuits and avoids
+        double rendering.
+        """
+        if not rows:
+            return ""
+        heading_level = 4 if _body_template_v2_enabled() else 3
+        header = (
+            f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
+            f'<h{heading_level}>📋 スタメン一覧</h{heading_level}>\n'
+            '<!-- /wp:heading -->\n\n'
+        )
+        note = (
+            '<!-- wp:paragraph -->\n'
+            '<p style="font-size:0.82em;color:#666;">※元記事の発表順に並べています</p>\n'
+            '<!-- /wp:paragraph -->\n\n'
+        )
+        table_rows = [
+            "<tr><th>順</th><th>守備</th><th>選手</th></tr>"
+        ]
+        for row in rows:
+            order = str(row.get("order", "")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            position = str(row.get("position", "")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            name = str(row.get("name", "")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            table_rows.append(
+                "<tr>"
+                f"<td>{order}</td>"
+                f"<td>{position}</td>"
+                f"<td>{name}</td>"
+                "</tr>"
+            )
+        table_html = (
+            '<!-- wp:html -->\n'
+            '<div class="yoshilover-lineup-stats" style="overflow-x:auto;margin:0 0 12px;">'
+            '<table class="nomotoke-card-lineup-table" style="width:100%;border-collapse:collapse;font-size:0.92em;">'
+            f"{''.join(table_rows)}"
+            "</table>"
+            "</div>\n"
+            '<!-- /wp:html -->\n\n'
+        )
+        return header + note + table_html
+
     def _player_daily_stat_block(subject_name: str, rows: list[tuple[str, str]]) -> str:
         if not subject_name or not rows:
             return ""
@@ -16184,6 +16265,24 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 blocks += _lineup_stats_block(lineup_stat_rows)
                 blocks += _lineup_watch_block(lineup_stat_rows)
                 lineup_stats_rendered = True
+            elif (
+                current_heading == "【試合概要】"
+                and body_category == "試合速報"
+                and body_subtype == "lineup"
+                and compact_lineup_rows
+                and not lineup_stats_rendered
+            ):
+                blocks += _build_basic_lineup_table_block(compact_lineup_rows)
+                lineup_stats_rendered = True
+            if (
+                current_heading == "【二軍スタメン一覧】"
+                and body_category == "ドラフト・育成"
+                and body_subtype == "farm_lineup"
+                and compact_lineup_rows
+                and not lineup_stats_rendered
+            ):
+                blocks += _build_basic_lineup_table_block(compact_lineup_rows)
+                lineup_stats_rendered = True
             if (
                 current_heading == "【ニュースの整理】"
                 and body_category == "試合速報"
@@ -16298,6 +16397,12 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         blocks += _lineup_stats_block(lineup_stat_rows)
         blocks += _lineup_watch_block(lineup_stat_rows)
         followup_section_rendered = True
+    elif compact_lineup_rows and not lineup_stats_rendered:
+        if not followup_section_rendered:
+            blocks += _sep()
+        blocks += _build_basic_lineup_table_block(compact_lineup_rows)
+        followup_section_rendered = True
+        lineup_stats_rendered = True
 
     # ──────────────────────────────────────────────────────────
     # ④ ファンの声（Xカード 最大fan_reaction_limit件）

@@ -174,6 +174,16 @@ try:
     )
 except Exception:  # noqa: BLE001
     _parse_npb_box_html = None  # type: ignore[assignment]
+try:
+    from src.source_npb_playbyplay_extractor import (
+        parse_npb_playbyplay_html as _parse_npb_playbyplay_html,
+        extract_giants_scoring_plays as _extract_giants_scoring_plays,
+        extract_scoring_plays as _extract_scoring_plays,
+    )
+except Exception:  # noqa: BLE001
+    _parse_npb_playbyplay_html = None  # type: ignore[assignment]
+    _extract_giants_scoring_plays = None  # type: ignore[assignment]
+    _extract_scoring_plays = None  # type: ignore[assignment]
 from src.body_contract_fail_ledger import (
     BODY_CONTRACT_FAIL_LEDGER_PATH_ENV as BODY_CONTRACT_FAIL_LEDGER_PATH_ENV_FLAG,
     ENABLE_BODY_CONTRACT_FAIL_LEDGER_ENV as BODY_CONTRACT_FAIL_LEDGER_ENV_FLAG,
@@ -4863,6 +4873,52 @@ def fetch_today_giants_npb_box_facts() -> dict:
         logger.warning("NPB box parse failed: %s", e)
         return {}
     return facts or {}
+
+
+# NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2I: NPB公式 playbyplay.html を
+# fetch して得点プレー timeline を抽出。box.html と同じ game path 配下に
+# 同居している(playbyplay.html)ので、index ページ再探索 + playbyplay
+# fetch + parse → ``{"events": [...], "giants_scoring_plays": [...],
+# "scoring_plays": [...]}``。失敗時は ``{}``。
+def fetch_today_giants_npb_playbyplay_facts() -> dict:
+    import urllib.request as _ur
+
+    logger = logging.getLogger("rss_fetcher")
+    index_url = "https://npb.jp/bis/2026/games/"
+    try:
+        req = _ur.Request(index_url, headers={"User-Agent": "Mozilla/5.0"})
+        with _ur.urlopen(req, timeout=10) as res:
+            index_html = res.read().decode("utf-8", errors="ignore")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("NPB games index (playbyplay) fetch failed: %s", e)
+        return {}
+
+    m = _NPB_GIANTS_GAME_URL_RE.search(index_html)
+    if not m:
+        return {}
+    game_path = m.group(0)
+    pbp_url = f"https://npb.jp{game_path}playbyplay.html"
+
+    try:
+        req2 = _ur.Request(pbp_url, headers={"User-Agent": "Mozilla/5.0"})
+        with _ur.urlopen(req2, timeout=10) as res:
+            pbp_html = res.read().decode("utf-8", errors="ignore")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("NPB playbyplay.html fetch failed url=%s: %s", pbp_url, e)
+        return {}
+
+    if _parse_npb_playbyplay_html is None or _extract_giants_scoring_plays is None:
+        return {}
+    try:
+        events = _parse_npb_playbyplay_html(pbp_html) or []
+        return {
+            "events": events,
+            "giants_scoring_plays": _extract_giants_scoring_plays(events),
+            "scoring_plays": _extract_scoring_plays(events) if _extract_scoring_plays else [],
+        }
+    except Exception as e:  # noqa: BLE001
+        logger.warning("NPB playbyplay parse failed: %s", e)
+        return {}
 
 
 # NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2D-B: Yahoo Sportsnavi
@@ -15596,6 +15652,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     # Yahoo HTTP 追加 fetch を removable に戻した(NPB 失敗時のみ Yahoo
     # box block へ fallback)。
     postgame_npb_facts: dict = {}
+    postgame_npb_pbp_facts: dict = {}
     if (
         postgame_facts
         and str(postgame_facts.get("league_level") or "") == "first"
@@ -15615,6 +15672,18 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                     "postgame_yahoo_fetch_skipped reason=%s", e
                 )
                 postgame_yahoo_facts = {}
+        # NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2I: playbyplay.html を
+        # box.html と並行で fetch して得点プレー timeline を抽出。box が
+        # 成功した時のみ playbyplay も取りに行く。失敗は warning に留め、
+        # 空 dict 返却(box 描画は影響なし)。
+        if postgame_npb_facts:
+            try:
+                postgame_npb_pbp_facts = fetch_today_giants_npb_playbyplay_facts() or {}
+            except Exception as e:  # noqa: BLE001
+                logging.getLogger("rss_fetcher").warning(
+                    "postgame_npb_playbyplay_fetch_skipped reason=%s", e
+                )
+                postgame_npb_pbp_facts = {}
     lineup_stats_rendered = False
 
     # 試合がない日は勝敗ヒントを生成しない（架空スコア捏造防止）
@@ -16624,6 +16693,46 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         out += _render_pitcher_subtable(f"⚾ {opp_name} 投手成績", opp_p)
         return out
 
+    def _build_postgame_npb_playbyplay_block(pbp_facts: dict) -> str:
+        """Phase 2I: 得点プレー timeline mini-table.
+
+        Renders scoring plays from both teams in chronological order
+        (inning_no asc, half=表→裏) using marker
+        ``nomotoke-card-postgame-scoring-plays``. 0 件なら "" を返す。
+        """
+        if not pbp_facts or not isinstance(pbp_facts, dict):
+            return ""
+        scoring = pbp_facts.get("scoring_plays") or []
+        if not scoring:
+            return ""
+        heading_level = 4 if _body_template_v2_enabled() else 3
+
+        def _safe(v):
+            return str(v or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+        rows = ["<tr><th>回</th><th>攻撃</th><th>打者</th><th>結果</th></tr>"]
+        for ev in scoring:
+            inning_no = ev.get("inning_no") or ""
+            half = ev.get("half") or ""
+            team = _safe(ev.get("team"))
+            batter = _safe(ev.get("batter"))
+            result = _safe(ev.get("result"))
+            inning_label = f"{inning_no}回{half}"
+            rows.append(
+                f"<tr><td>{_safe(inning_label)}</td><td>{team}</td>"
+                f"<td>{batter}</td><td>{result}</td></tr>"
+            )
+        return (
+            f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
+            f'<h{heading_level}>🏟️ 得点プレー</h{heading_level}>\n'
+            '<!-- /wp:heading -->\n\n'
+            '<!-- wp:html -->\n'
+            '<div class="yoshilover-lineup-stats" style="overflow-x:auto;margin:0 0 12px;">'
+            '<table class="nomotoke-card-postgame-scoring-plays" style="width:100%;border-collapse:collapse;font-size:0.92em;">'
+            f"{''.join(rows)}"
+            "</table></div>\n<!-- /wp:html -->\n\n"
+        )
+
     def _build_postgame_result_block(facts: dict) -> str:
         """Render a 2-column 試合結果 mini-table from postgame prose facts.
 
@@ -17316,6 +17425,11 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             "losing_pitcher"
         ) or postgame_npb_facts.get("save_pitcher"):
             blocks += _build_yahoo_wls_pitcher_subblock(postgame_npb_facts)
+        # NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2I: 得点プレー timeline
+        # を NPB playbyplay.html から render(本塁打/適時/犠飛/押し出し
+        # 等の scoring plays のみ、両 team 時系列順)。
+        if postgame_npb_pbp_facts and postgame_npb_pbp_facts.get("scoring_plays"):
+            blocks += _build_postgame_npb_playbyplay_block(postgame_npb_pbp_facts)
         followup_section_rendered = True
     elif postgame_yahoo_facts and postgame_yahoo_facts.get("inning_score"):
         if not followup_section_rendered:

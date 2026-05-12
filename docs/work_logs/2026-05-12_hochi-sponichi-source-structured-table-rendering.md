@@ -1055,3 +1055,71 @@ LLM(Gemini) は本経路で使用していないため、source 文字列を det
 - `result_mark` field 名 (`row[0]` 由来であることを保つ)
 - Phase 2A-2G 全 logic 不変
 - fixture file(`npb_score_2026_0510_d-g-08_*.html`)は real NPB HTML、再加工不可
+
+---
+
+### Phase 2I: NPB playbyplay.html 得点プレー timeline 描画(post-work、2026-05-12 evening)
+
+#### 1. やったこと(コード変更)
+
+- **新規 module**: `src/source_npb_playbyplay_extractor.py`(NEW)
+  - NPB公式 `/scores/<YYYY>/<MMDD>/<away>-<home>-<N>/playbyplay.html` の static HTML を parse
+  - `<h5 name="comN-X">N回(表|裏)（チームの攻撃）</h5>` を分割 anchor として half-inning ごとに `<table>` block を走査
+  - 各 `<tr>` の 5-cell row(outs / runner / batter / count / result)を event dict 化
+  - `parse_npb_playbyplay_html(html)` → `[{inning_no, half, team, outs, batter, count, result}, ...]` or None
+  - `extract_scoring_plays(events)` / `extract_giants_scoring_plays(events)`: 本塁打 / 適時 / 犠飛 / 押し出し / スクイズ / 「打点」keyword で filter
+  - 5/10 中日 vs 巨人 fixture verify: 82 events / 8 scoring plays / 5 giants scoring plays(ダルベック 2ラン、浦田 タイムリースリーベース等)
+- **`src/rss_fetcher.py`** 追加:
+  - import: `from src.source_npb_playbyplay_extractor import parse_npb_playbyplay_html, extract_giants_scoring_plays, extract_scoring_plays`(defensive try/except None)
+  - 新 fetcher: `fetch_today_giants_npb_playbyplay_facts()` — index page で巨人 game 発見 + `playbyplay.html` GET + parse + scoring filter
+  - 新 renderer: `_build_postgame_npb_playbyplay_block(pbp_facts)` — marker `nomotoke-card-postgame-scoring-plays` の 4 列 mini-table(回 / 攻撃 / 打者 / 結果)、scoring 0 件なら ""
+  - tail inject: NPB box fires 時、追加で `_build_postgame_npb_playbyplay_block(postgame_npb_pbp_facts)` を W/L/S sub-block の後に描画
+  - playbyplay fetch 条件: `postgame_npb_facts` 取得成功時のみ実行(box が無い試合は playbyplay も無い想定)
+- **新 unit tests**: `tests/test_source_npb_playbyplay_extractor.py`(5 case)
+  - event list shape / dict key 検証 / scoring filter / giants scoring filter / empty input None
+- **新 integration tests**: `PostgameNPBBoxIntegrationTests` に 2 case 追加
+  - `test_npb_playbyplay_scoring_marker_emit`: pbp facts 渡し時に marker emit + 両 team 打者 render
+  - `test_npb_playbyplay_skipped_when_no_scoring`: scoring 0 件なら marker 出ない(他 block は描画維持)
+- **integration helper 更新**: `_build_with_npb` に `pbp_facts` kw arg 追加、`fetch_today_giants_npb_playbyplay_facts` mock を patches に追加(real HTTP との混線防止)
+
+#### 2. 不変 / 不可触
+
+- Phase 2A-2H 全 logic 不変
+- `_build_postgame_npb_block` 内部 4 sub-table(inning / 巨人 batter / 巨人 pitcher detail / opp batter / opp pitcher detail)順序不変
+- W/L/S sub-block の挙動不変(Phase 2H 通り NPB facts から derive)
+- playbyplay fetch は box fetch 成功時のみ trigger(box 失敗時の playbyplay 単独 fetch なし)
+- automation / scheduler / env / secret 一切 untouched
+
+#### 3. 動作確認
+
+- `python3 -m unittest tests.test_source_npb_playbyplay_extractor`: **5 / 5 GREEN**
+- `python3 -m unittest tests.test_rss_fetcher_postgame_table`: **17 / 17 GREEN**(Phase 2A-2H 15 + Phase 2I 2)
+- 組合せ `tests.test_source_npb_playbyplay_extractor tests.test_source_npb_postgame_extractor tests.test_rss_fetcher_postgame_table tests.test_yahoo_postgame_pitcher_extraction`: **34 / 34 GREEN**
+
+#### 4. テスト結果
+
+- **Phase 2H 着地時 baseline**: 3624 tests / 2 pre-existing fail
+- **Phase 2I 着地後**: `Ran 3644 tests in 71.055s` / **failures=2**(同 baseline、+20 case = pbp 5 unit + integration 2 + Codex 並走 324-QA fan_voice_pool 13)
+- 増加 fail: **0**
+
+#### 5. 残った懸念
+
+1. **HTTP +1 call**: 1軍 postgame 1 本につき NPB playbyplay.html GET が増える(~70KB、~1-2s)。Phase 2I 唯一の cost、NPB 無料 + cache 効くので ¥0
+2. **scoring filter の broad keyword**: 「打点」は parenthesised RBI 表記(`（打点1）`)を確実に拾えるが、稀な「打点ゼロの本塁打」(意味的に存在しない)等は問題ない想定
+3. **両 team scoring plays render**: 巨人 / opponent 両方の scoring plays を時系列で描画(対戦相手の活躍も透明に開示)、敗戦時の opponent 多本塁打が「悲報感」を増す可能性、観察 + 必要なら巨人のみ filter に切替可
+
+#### 6. 新しく見つかったデグレ
+
+- 本便差分による新規デグレ **なし**
+
+#### 7. 追加した回帰テスト
+
+- `tests/test_source_npb_playbyplay_extractor.py`(5 case): real NPB HTML からの event 抽出 + scoring filter verify
+- `tests/test_rss_fetcher_postgame_table.py::PostgameNPBBoxIntegrationTests`(2 case 追加): marker emit / skip
+
+#### 8. 次回触ってはいけない範囲
+
+- `_HALF_INNING_RE` regex 不変(`com\d+-\d+` id 形式が NPB 側の規約)
+- `_SCORING_KEYWORDS` 一覧の最終形(必要なら追加 OK、削除は scoring 取りこぼし risk)
+- tail inject の描画順序: NPB block → W/L/S sub-block → scoring-plays sub-block 不変
+- fixture file(`npb_score_2026_0510_d-g-08_playbyplay.html`)は real NPB HTML、再加工不可

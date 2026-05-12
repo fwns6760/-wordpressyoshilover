@@ -445,7 +445,7 @@ class PostgameNPBBoxIntegrationTests(unittest.TestCase):
         "save_pitcher": {},
     }
 
-    def _build_with_npb(self, *, yahoo_facts=None, npb_facts=None):
+    def _build_with_npb(self, *, yahoo_facts=None, npb_facts=None, pbp_facts=None):
         patches = [
             patch.dict(os.environ, {"ENABLE_RSS_TEMPLATE_ROUTING_V2": "1"}),
             patch.object(rss_fetcher, "fetch_today_giants_lineup_stats_from_yahoo", return_value=[]),
@@ -454,6 +454,11 @@ class PostgameNPBBoxIntegrationTests(unittest.TestCase):
             patches.append(
                 patch.object(rss_fetcher, "fetch_today_giants_npb_box_facts",
                              return_value=npb_facts or {})
+            )
+        if hasattr(rss_fetcher, "fetch_today_giants_npb_playbyplay_facts"):
+            patches.append(
+                patch.object(rss_fetcher, "fetch_today_giants_npb_playbyplay_facts",
+                             return_value=pbp_facts or {})
             )
         if hasattr(rss_fetcher, "fetch_today_giants_postgame_facts_from_yahoo"):
             patches.append(
@@ -527,6 +532,37 @@ class PostgameNPBBoxIntegrationTests(unittest.TestCase):
         self.assertNotIn("nomotoke-card-postgame-batter", blocks)
         # Yahoo inning fallback 出る
         self.assertIn("nomotoke-card-postgame-inning", blocks)
+
+    def test_npb_playbyplay_scoring_marker_emit(self):
+        """Phase 2I: pbp facts に scoring_plays があれば
+        nomotoke-card-postgame-scoring-plays marker が出る。"""
+        pbp = {
+            "events": [],
+            "scoring_plays": [
+                {"inning_no": 4, "half": "表", "team": "巨人",
+                 "outs": "1アウト", "batter": "ダルベック",
+                 "count": "0-0より", "result": "レフト2ランホームラン（打点2）"},
+                {"inning_no": 4, "half": "裏", "team": "中日",
+                 "outs": "0アウト", "batter": "鵜飼",
+                 "count": "0-1より", "result": "左中間2ランホームラン（打点2）"},
+            ],
+            "giants_scoring_plays": [],
+        }
+        blocks, _ = self._build_with_npb(npb_facts=self.NPB_BOX_FACTS, pbp_facts=pbp)
+        # marker 出る
+        self.assertIn("nomotoke-card-postgame-scoring-plays", blocks)
+        # 得点プレー 2 件描画(両 team 時系列)
+        self.assertIn("ダルベック", blocks)
+        self.assertIn("鵜飼", blocks)
+        self.assertIn("レフト2ランホームラン", blocks)
+
+    def test_npb_playbyplay_skipped_when_no_scoring(self):
+        """Phase 2I: scoring_plays が空なら marker は出ない。"""
+        pbp = {"events": [], "scoring_plays": [], "giants_scoring_plays": []}
+        blocks, _ = self._build_with_npb(npb_facts=self.NPB_BOX_FACTS, pbp_facts=pbp)
+        self.assertNotIn("nomotoke-card-postgame-scoring-plays", blocks)
+        # NPB box block は描画されている(playbyplay 失敗は box render を止めない)
+        self.assertIn("nomotoke-card-postgame-batter", blocks)
 
 
 if __name__ == "__main__":

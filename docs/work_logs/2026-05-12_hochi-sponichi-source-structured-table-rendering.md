@@ -594,9 +594,69 @@ LLM(Gemini) は本経路で使用していないため、source 文字列を det
 - giants_roster.json 不変
 - `_build_basic_lineup_table_block` / `_render_compact_lineup_subtable`(Phase 2A-1 で導入)を再利用、touch なし
 
-### Phase 2C / 2D 着手時の備考
+### Phase 2C(2026-05-12 PM、user GO 後実装、commit に続く)
 
-- 本 §2A の hook pattern(extractor → `compact_lineup_rows` 経路 + `_build_basic_lineup_table_block`-style helper + narrow inject)を再利用可能。
-- 2B(スポニチ emoji 形)は extractor 追加のみで `compact_lineup_rows` を流用、helper 共有。1 commit 想定。
-- 2C(先発ローテ)は新 extractor + 新 helper(`_build_starter_rotation_table_block`)+ 新 inject 点(pregame body composer)。renderer 追加伴う場合は別便分離。
+#### 1. 実際に変更したファイル
+
+- **NEW** `src/source_starter_rotation_extractor.py`(~190 行)
+  - `parse_starter_rotation(title, summary, source_name, source_url)` — `<P1>→<P2>→<P3>` arrow chain parser
+  - `is_starter_rotation_source(...)` — allowlist(報知 + sponichi + 巨人公式X)
+  - keyword gate(`先発ローテ` / `予告先発` 等)+ 巨人 roster ≥ 1 件 gate で誤発火抑止
+  - 既存 `is_giants_player` + `extract_opponent_team_name`(Phase 2A-1 / 2B 由来)を import 流用
+- **EDIT** `src/rss_fetcher.py`(+95 行 / -0 行)
+  - import 追加(defensive try/except)
+  - `starter_rotation_rows` + `starter_rotation_opponent` ローカル変数追加
+  - 新 nested helper `_build_starter_rotation_block(rows, opponent_team_name)`(2 列 `<table class="nomotoke-card-starter-rotation">`)
+  - tail inject 追加(`compact_lineup_rows` の後、fan reactions の前)
+- **NEW** `tests/test_source_starter_rotation_extractor.py`(12 case)
+- **NEW** `tests/test_rss_fetcher_starter_rotation_table.py`(5 case integration)
+
+#### 2. diff 概要
+
+- 報知/スポニチ/巨人公式X 由来の rotation tweet(`<P1>→<P2>→<P3>` 形)を構造化抽出 → 2 列 mini-table(順 / 先発投手)で本文末尾(fan reactions 直前)に render
+- 例: `井上温大→ウィットリー→竹丸和幸` → 3 行 table、heading `📋 先発ローテ予告 (vs DeNA)`
+- subtype-agnostic 配置(parser 自身が source allowlist + keyword + 巨人 roster ≥ 1 で gate)
+- 既存 lineup table 経路と完全 disjoint、相互影響なし
+
+#### 3. 実行したテスト
+
+- **RED 確認**(実装前): 5 件中 1 件 FAIL(`emits_rotation_table_marker`)
+- **bug 修正中の発見**: chain 最初の name に prose prefix(`連戦は井上温大`)混入 → `_NAME_STRICT_CHAR_CLASS`(hiragana 除外)で trailing/leading name 抽出
+- **GREEN 確認**: 5/5 OK
+- **extractor unit**: 12/12 OK
+- **累積 hochi+emoji+rotation tests**: 77/77 OK
+
+#### 4. テスト結果
+
+- **Phase 2B 着地時 baseline**: 3537 tests / 1 pre-existing fail
+- **Phase 2C 着地後**: 本 commit 直前 full suite で確定
+- 期待値: 3537 + 17(5 integration + 12 extractor unit) = 3554 tests / 1 pre-existing fail / 増加 fail 0
+
+#### 5. 残った懸念
+
+1. **prod 発火率の低さ**: rotation tweet は月 1-2 件想定(直近 100 件中 1 件)。deploy 後の実発火観察必要。
+2. **date / opponent 詳細未抽出**: 現実装は arrow chain + opponent_team_name のみ。日付 / 試合番号 / 球場は未対応。将来別 phase。
+3. **roster gaps**: 巨人 roster 0 マッチで None 返却。育成投手の roster 漏れで false negative 可能性。Phase 2A-1 と同じ運用懸念。
+4. **arrow chain 他用途誤マッチ**: `逆転2点三塁打→...` 等は keyword gate で排除済。新ジャンル keyword 漏れで false positive 可能性、観察必要。
+5. **Phase 2B revert 騒動**: 本 phase 着手中に `3a2125a` で Phase 2B が一時 revert → `510fbaa`(reapply commit)で復元。今後は scope 不一致 commit を避ける。
+
+#### 6. 新しく見つかったデグレ
+
+- 本便差分による新規デグレ **なし**
+
+#### 7. 追加した回帰テスト
+
+- `tests/test_source_starter_rotation_extractor.py`(12 case)
+- `tests/test_rss_fetcher_starter_rotation_table.py`(5 case integration)
+
+#### 8. 次回触ってはいけない範囲
+
+- 本 phase は新 extractor + 新 renderer の追加のみ、既存 lineup path(Phase 2A / 2A-1 / 2B)不変
+- `nomotoke_card_renderer` / `source_x_lineup_extractor` / `rss_lineup_table_post_process` 不変
+- `giants_roster.json` 不変、subtype 文字列追加なし、env flag 追加なし
+- 234-impl-7 / 247-QA / 254-QA / 309-QA / Phase 2A/2A-1/2B 既存 logic 不変
+
+### Phase 2D 着手時の備考
+
+- 本 §2A の hook pattern(extractor → 構造化 rows → 専用 helper → tail inject)を 4 回再利用済(2A / 2A-1 / 2B / 2C)
 - 2D(試合結果)は postgame body composer に同 pattern で hook、`render_postgame_card` の data contract(yahoo_boxscore extractor 互換)を target に extractor 出力。

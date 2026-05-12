@@ -158,6 +158,12 @@ try:
     )
 except Exception:  # noqa: BLE001
     _parse_emoji_lineup = None  # type: ignore[assignment]
+try:
+    from src.source_starter_rotation_extractor import (
+        parse_starter_rotation as _parse_starter_rotation,
+    )
+except Exception:  # noqa: BLE001
+    _parse_starter_rotation = None  # type: ignore[assignment]
 from src.body_contract_fail_ledger import (
     BODY_CONTRACT_FAIL_LEDGER_PATH_ENV as BODY_CONTRACT_FAIL_LEDGER_PATH_ENV_FLAG,
     ENABLE_BODY_CONTRACT_FAIL_LEDGER_ENV as BODY_CONTRACT_FAIL_LEDGER_ENV_FLAG,
@@ -15230,6 +15236,30 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             logging.getLogger("rss_fetcher").warning(
                 "emoji_lineup_parse_skipped reason=%s", e
             )
+    # NOMOTOKE-LINEUP-FROM-STARTER-ROTATION-001 Phase 2C: detect starter-
+    # rotation arrow chains (`井上温大→ウィットリー→竹丸和幸`) in the
+    # title / summary and surface them as a 2-column rotation table.
+    # Subtype-agnostic — the parser's own gates (rotation keyword + 巨人
+    # roster member ≥ 1) keep firing narrow.
+    starter_rotation_rows: list[dict] = []
+    starter_rotation_opponent: str = ""
+    if _parse_starter_rotation is not None:
+        try:
+            rot_data = _parse_starter_rotation(
+                title=title,
+                summary=summary_clean,
+                source_name=source_name,
+                source_url=url,
+            )
+            if rot_data and rot_data.get("rotation"):
+                starter_rotation_rows = list(rot_data["rotation"])
+                starter_rotation_opponent = str(
+                    rot_data.get("opponent_team_name") or ""
+                )
+        except Exception as e:  # noqa: BLE001
+            logging.getLogger("rss_fetcher").warning(
+                "starter_rotation_parse_skipped reason=%s", e
+            )
     lineup_stats_rendered = False
 
     # 試合がない日は勝敗ヒントを生成しない（架空スコア捏造防止）
@@ -15921,6 +15951,62 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             out += _render_compact_lineup_subtable(opponent_heading, opponent_rows)
         return out
 
+    def _build_starter_rotation_block(
+        rotation_rows: list[dict],
+        opponent_team_name: str = "",
+    ) -> str:
+        """Render a 2-column starter-rotation mini-table (順 / 投手).
+
+        NOMOTOKE-LINEUP-FROM-STARTER-ROTATION-001 Phase 2C.  Used when
+        ``parse_starter_rotation`` extracted an arrow-chain like
+        ``井上温大→ウィットリー→竹丸和幸`` from a hochi / sponichi / 巨人
+        公式X tweet or article. Heading mentions the opponent team when
+        the parser was able to recover it, so titles that include a
+        ``<team>戦`` / ``vs <team>`` / ``【XXX】`` form get an extra hint
+        (e.g. ``📋 先発ローテ予告 (vs DeNA)``).
+
+        The marker class ``nomotoke-card-starter-rotation`` is used by
+        the integration tests; downstream post-processes intentionally
+        do not collide with it.
+        """
+        if not rotation_rows:
+            return ""
+        heading_level = 4 if _body_template_v2_enabled() else 3
+        heading_text = "📋 先発ローテ予告"
+        if opponent_team_name:
+            heading_text = f"📋 先発ローテ予告 (vs {opponent_team_name})"
+        header_html = (
+            f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
+            f'<h{heading_level}>{heading_text}</h{heading_level}>\n'
+            '<!-- /wp:heading -->\n\n'
+        )
+        note_html = (
+            '<!-- wp:paragraph -->\n'
+            '<p style="font-size:0.82em;color:#666;">'
+            '※元記事の発表順に並べています(giants_roster 照合)。'
+            '</p>\n'
+            '<!-- /wp:paragraph -->\n\n'
+        )
+        table_rows_html = ["<tr><th>順</th><th>先発投手</th></tr>"]
+        for index, row in enumerate(rotation_rows, start=1):
+            pitcher = str(row.get("pitcher", "")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            table_rows_html.append(
+                "<tr>"
+                f"<td>{index}試合目</td>"
+                f"<td>{pitcher}</td>"
+                "</tr>"
+            )
+        table_html = (
+            '<!-- wp:html -->\n'
+            '<div class="yoshilover-lineup-stats" style="overflow-x:auto;margin:0 0 12px;">'
+            '<table class="nomotoke-card-starter-rotation" style="width:100%;border-collapse:collapse;font-size:0.92em;">'
+            f"{''.join(table_rows_html)}"
+            "</table>"
+            "</div>\n"
+            '<!-- /wp:html -->\n\n'
+        )
+        return header_html + note_html + table_html
+
     def _player_daily_stat_block(subject_name: str, rows: list[tuple[str, str]]) -> str:
         if not subject_name or not rows:
             return ""
@@ -16533,6 +16619,15 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         blocks += _build_basic_lineup_table_block(compact_lineup_rows, compact_opponent_team_name)
         followup_section_rendered = True
         lineup_stats_rendered = True
+
+    # NOMOTOKE-LINEUP-FROM-STARTER-ROTATION-001 Phase 2C: subtype-
+    # agnostic — the parser's own gates keep the fire rate narrow, so
+    # we just append the mini-table whenever rotation rows were extracted.
+    if starter_rotation_rows:
+        if not followup_section_rendered:
+            blocks += _sep()
+        blocks += _build_starter_rotation_block(starter_rotation_rows, starter_rotation_opponent)
+        followup_section_rendered = True
 
     # ──────────────────────────────────────────────────────────
     # ④ ファンの声（Xカード 最大fan_reaction_limit件）

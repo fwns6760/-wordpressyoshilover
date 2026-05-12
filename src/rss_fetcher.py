@@ -13739,16 +13739,125 @@ def _ensure_notice_featured_images(
     return [fallback_url] if fallback_url else image_urls
 
 
+def _detect_person_for_eyecatch_priority(title: str) -> str | None:
+    """Wrapped indirection over ``player_eyecatch_resolver.detect_person``
+    so unit tests can patch the detection at the rss_fetcher seam without
+    touching the resolver module directly.
+    """
+    try:
+        from src.player_eyecatch_resolver import detect_person
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        return detect_person(title)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _resolve_high_confidence_player_media_id(
+    title: str,
+    wp: WPClient,
+    logger: logging.Logger | None = None,
+) -> int:
+    """B path: when the article title points to a single 巨人 player
+    whose photo is cached / discoverable in WP /media, return that
+    media_id so it can be used as ``featured_media`` ahead of any
+    source-derived image.
+
+    Returns 0 in any of:
+    - ``EYECATCH_PLAYER_PRIORITY_DISABLED`` env kill switch is set
+    - ``detect_person(title)`` cannot identify a single player
+    - resolver returns no usable id (cache + remote /media both miss)
+    - any unexpected exception fires (safe fallback)
+    """
+    if os.environ.get("EYECATCH_PLAYER_PRIORITY_DISABLED", "").strip().lower() in {"1", "true", "yes"}:
+        return 0
+    logger = logger or logging.getLogger("rss_fetcher")
+    name = _detect_person_for_eyecatch_priority(title or "")
+    if not name:
+        return 0
+    try:
+        from src.player_eyecatch_resolver import resolve_eyecatch_from_title
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "eyecatch_player_priority_import_failed reason=%s", exc
+        )
+        return 0
+    try:
+        resolved = resolve_eyecatch_from_title(
+            title,
+            wp_url=getattr(wp, "base_url", None),
+            auth=getattr(wp, "auth", None),
+            use_team_fallback=False,
+            allow_existing_person_media=True,
+            allow_diversified_pool=False,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "eyecatch_player_priority_resolve_failed reason=%s", exc
+        )
+        return 0
+    media_id = int(resolved or 0)
+    if media_id > 0:
+        logger.info(
+            json.dumps(
+                {
+                    "event": "eyecatch_player_priority_hit",
+                    "name": name,
+                    "featured_media": media_id,
+                },
+                ensure_ascii=False,
+            )
+        )
+    return media_id
+
+
+def _recently_used_featured_media_ids(
+    wp: WPClient,
+    *,
+    window_seconds: int = 3600,
+    logger: logging.Logger | None = None,
+) -> set[int]:
+    """C path: return the set of WP ``featured_media`` ids used in the
+    trailing ``window_seconds`` window. Reads via
+    ``wp.list_recent_featured_media_ids`` so the WPClient owns the REST
+    call; network failure or env kill switch returns ``set()`` so dedupe
+    becomes a quiet no-op.
+    """
+    if os.environ.get("EYECATCH_DEDUPE_RECENT_DISABLED", "").strip().lower() in {"1", "true", "yes"}:
+        return set()
+    logger = logger or logging.getLogger("rss_fetcher")
+    try:
+        ids_iter = wp.list_recent_featured_media_ids(window_seconds=window_seconds)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "eyecatch_recent_dedupe_fetch_failed reason=%s", exc
+        )
+        return set()
+    out: set[int] = set()
+    for raw in ids_iter or []:
+        try:
+            media_id = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if media_id > 0:
+            out.add(media_id)
+    return out
+
+
 def _upload_featured_media_with_fallback(
     wp: WPClient,
     image_urls: list[str],
     post_url: str,
     logger: logging.Logger | None = None,
+    *,
+    recent_used: set[int] | None = None,
 ) -> int:
     logger = logger or logging.getLogger("rss_fetcher")
     candidates = [_html.unescape((url or "").strip()) for url in (image_urls or []) if (url or "").strip()]
     if not candidates:
         return 0
+    recent_used = recent_used or set()
 
     primary_url = candidates[0]
     for candidate_url in candidates:
@@ -13768,6 +13877,24 @@ def _upload_featured_media_with_fallback(
             continue
         existing_media_id = int(wp.find_uploaded_media_id_for_url(candidate_url) or 0)
         if existing_media_id:
+            if existing_media_id in recent_used:
+                # 2026-05-12 narrow-dedupe: skip a media that was already
+                # attached to another post within the recent window. The
+                # caller passes ``recent_used`` populated from a single WP
+                # /posts call. Falls through to the next candidate; if all
+                # are deduped we return 0 so the team fallback kicks in.
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "featured_media_recent_dedupe",
+                            "post_url": post_url,
+                            "candidate_url": candidate_url,
+                            "featured_media": existing_media_id,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                continue
             if candidate_url != primary_url:
                 logger.info(
                     json.dumps(
@@ -23273,18 +23400,39 @@ def _main(args, logger):
             cats = _resolve_draft_category_ids(wp, category, logger)
 
             featured_media = 0
+            # 2026-05-12 B path: high-confidence player photo priority.
+            # When the title names a single 巨人 player whose photo is
+            # cached or discoverable in WP /media, prefer that player
+            # photo over any source-derived image. Returns 0 silently
+            # for generic / multi-player / team-level titles.
+            featured_media = _resolve_high_confidence_player_media_id(
+                draft_title,
+                wp,
+                logger,
+            )
+            # 2026-05-12 C path: recent media dedupe. Fetch the set of
+            # ``featured_media`` ids used in the trailing 1h window so
+            # the source-fallback chain below can skip ids that just
+            # got attached to another post. Empty set on failure /
+            # kill switch => downstream behavior unchanged.
+            recent_used = _recently_used_featured_media_ids(
+                wp,
+                window_seconds=3600,
+                logger=logger,
+            )
             # RELIABILITY-2026-05-08-H: tag scraper / 非 X URL passthrough 経路でも
             # og:image を WP media に upload して featured_media に設定。
             # 17 人 未 upload 選手 / broadcast / 観戦 guide 等で source 側の og:image
             # が relevant な画像 (選手の写真 / 試合シーン) を提供する場合にこれを
             # eyecatch にする。_article_images は上の source_type 分岐で
             # populate 済、image_urls 空なら関数が 0 を返すので safe。
-            if _article_images:
+            if featured_media == 0 and _article_images:
                 featured_media = _upload_featured_media_with_fallback(
                     wp,
                     _article_images,
                     post_url,
                     logger,
+                    recent_used=recent_used,
                 )
 
             post_id = _create_draft_with_same_fire_guard(

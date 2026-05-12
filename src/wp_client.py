@@ -1136,6 +1136,55 @@ class WPClient:
         )
         return resp.json()
 
+    def list_recent_featured_media_ids(
+        self,
+        *,
+        window_seconds: int = 3600,
+        per_page: int = 30,
+    ) -> list[int]:
+        """Return the ``featured_media`` ids attached to WP posts within
+        the trailing ``window_seconds`` window. Used by the rss_fetcher
+        eyecatch dedupe path (2026-05-12) so we can avoid attaching the
+        same media to three consecutive auto-RSS posts.
+
+        Network / parse failure raises so the caller can decide whether
+        to fail open or closed; the rss_fetcher wrapper swallows the
+        exception and falls back to "no recent ids".
+        """
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        after_iso = (now - timedelta(seconds=int(window_seconds))).strftime(
+            "%Y-%m-%dT%H:%M:%S"
+        )
+        params = {
+            "status": "publish,draft",
+            "after": after_iso,
+            "per_page": max(1, min(int(per_page), 100)),
+            "_fields": "id,featured_media",
+            "orderby": "date",
+            "order": "desc",
+        }
+        resp = self._request_with_retry(
+            requests.get,
+            f"{self.api}/posts",
+            action="featured_media recent fetch",
+            params=params,
+        )
+        try:
+            rows = resp.json()
+        except Exception:
+            return []
+        out: list[int] = []
+        for row in rows or []:
+            try:
+                fm = int((row or {}).get("featured_media") or 0)
+            except (TypeError, ValueError):
+                continue
+            if fm > 0:
+                out.append(fm)
+        return out
+
     def list_posts(
         self,
         status: str = "draft",

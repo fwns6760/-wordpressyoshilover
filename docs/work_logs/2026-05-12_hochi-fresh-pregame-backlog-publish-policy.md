@@ -244,3 +244,79 @@
 - この便の流れでアイキャッチ・本文生成・mail・X投稿を混ぜない
 
 v2 では `farm_lineup` まで広げる(v1 の禁止解除)、および `roster` / `comment` / `injury` / `notice` まで広げる(B 案採用)。
+
+---
+
+## v2 着地分(post-work、commit `ba5750c`)
+
+### 1. 実際に変更したファイル
+
+- `src/guarded_publish_evaluator.py`(フラグ split + REPAIRABLE_FLAGS / BACKLOG_ONLY_FRESHNESS_FLAGS 更新)
+- `src/guarded_publish_runner.py`(v1 dirty diff + `BACKLOG_NARROW_HOCHI_PREGAME_SUBTYPES` に `farm_lineup` 追加 + action map flag 名更新)
+- `src/published_cleanup_proposals.py`(action map flag 名更新)
+- `tests/test_guarded_publish_evaluator.py`(bug 再現 2 件追加 + 既存 5 件 assertion / setup 更新)
+- `tests/test_guarded_publish_runner.py`(v1 既存 hochi narrow test に加え farm_lineup bug 再現 1 件 + roster/comment/injury/notice 既存動作 regression 4 件 + `_backlog_flag_for_subtype` helper の flag 名更新)
+- `tests/test_guarded_publish_backlog_narrow.py`(helper flag 名更新)
+- `tests/test_guarded_publish_runner_dedupe_idempotent.py`(helper flag 名更新)
+- `docs/work_logs/2026-05-12_hochi-fresh-pregame-backlog-publish-policy.md`(本ファイル、v1+v2 改訂)
+
+### 2. diff 概要
+
+- evaluator: `expired_lineup_or_pregame` を 2 つの新フラグに分割。`now >= game_start_dt` の場合は `expired_lineup_or_pregame_game_started`(hard_stop / 非 backlog_only)、age >= threshold の場合は `expired_lineup_or_pregame_age`(repairable / backlog_only)
+- runner: `BACKLOG_NARROW_HOCHI_PREGAME_SUBTYPES` に `farm_lineup` を追加。これにより hochi ソース fresh の二軍スタメンが backlog narrow exception を通る
+- action map: `expired_lineup_or_pregame` → `_age` に rename(2 ファイル)。`_game_started` は hard_stop なので action map に載らない
+- 不可触の維持: `BACKLOG_NARROW_BLOCKED_SUBTYPES` / `BACKLOG_NARROW_ALLOWLIST` / その他 routing の構造は変更なし。`roster` / `comment` / `injury` / `notice` は既に ALLOWLIST 経由で eligible のためコード変更不要
+
+### 3. 実行したテスト
+
+- 赤確認(実装前):
+  - `python3 -m unittest tests.test_guarded_publish_evaluator.GuardedPublishEvaluatorTests.test_lineup_after_game_start_emits_game_started_flag_as_hard_stop`
+  - `python3 -m unittest tests.test_guarded_publish_evaluator.GuardedPublishEvaluatorTests.test_lineup_age_only_not_yet_started_emits_age_flag_as_repairable`
+  - `python3 -m unittest tests.test_guarded_publish_runner.GuardedPublishRunnerTests.test_backlog_only_fresh_hochi_farm_lineup_can_publish`
+  - 上記 3 件 RED を確認(`roster` / `comment` / `injury` / `notice` regression 4 件は実装前から GREEN を確認 = 既存動作の証拠)
+- 修正後:
+  - 同じ 7 件再実行 → 全 GREEN
+  - `python3 -m unittest tests.test_guarded_publish_evaluator tests.test_guarded_publish_runner tests.test_guarded_publish_backlog_narrow tests.test_guarded_publish_runner_dedupe_idempotent tests.test_lineup_source_priority` → 244 件 GREEN
+  - `python3 -m unittest discover -s tests` → **3452 件 GREEN**
+- end-to-end probe:
+  - 試合開始済 lineup + fresh hochi → evaluator が `bucket=red`, `publishable=False`, `hard_stop_flags=['expired_lineup_or_pregame_game_started']`, `backlog_only=False` を返すことを直接実行で確認
+
+### 4. テスト結果
+
+- 全件 3452 件 OK / 0 fail / 0 error
+- v1 から +7 件(bug 再現 3 件 + regression 4 件)
+- 既存テスト失敗の修正は 5 件(`test_stale_lineup_6h_over_is_hard_stop` / `test_duplicate_detection_post_freshness_check` / `test_pregame_6h_over_is_hard_stop` / `test_stale_rss_published_2days_old_lineup_is_backlog_only` / 3 件の unrelated lineup default-date test)。すべて意図保持のため body に「試合開始 23:59」追加 or assertion を新 flag 名に更新
+
+### 5. 残った懸念
+
+- `_strict_breaking_news_thresholds_enabled()` mode の event 名が LINEUP_FRESHNESS_SUBTYPES の場合 `backlog_only_source_age` 固定(L1187)。`_game_started` でも同じ event 名が出る。観測 dashboard で区別したい場合は event 名分岐が必要だが、本便の scope 外(ついで修正回避)
+- v1 dirty diff の不可触リストにあった「`farm_lineup` 対象外」は v2 で意図的に解除済。これに依存していた外部システム / log filter があれば挙動が変わる(repo grep 上は src/tests 以外に参照なしを確認)
+- 本 commit は repo level に閉じる。**本番 deploy / Cloud Run image build / Scheduler / env は未変更**。本番 yoshilover-fetcher / guarded-publish に挙動が反映されるのは別便での deploy 後
+- production の log analysis script / dashboard が legacy flag 名 `expired_lineup_or_pregame` を直接参照していた場合、フィルタ更新が必要(src/tests 以外で grep ヒットは 0)
+
+### 6. 新しく見つかったデグレ
+
+- 今回差分による新規デグレはテスト上なし(3452 件全 GREEN)
+- 既存テストの 8 件が flag 名 / setup 不整合で fail したが、すべて意図保持の narrow 更新で解消。新規デグレではなく、フラグ rename に伴う想定範囲内の test 更新
+
+### 7. 追加した回帰テスト
+
+- evaluator:
+  - `test_lineup_after_game_start_emits_game_started_flag_as_hard_stop`(bug 再現)
+  - `test_lineup_age_only_not_yet_started_emits_age_flag_as_repairable`(bug 再現の対)
+- runner:
+  - `test_backlog_only_fresh_hochi_farm_lineup_can_publish`(B 案 farm_lineup bug 再現)
+  - `test_backlog_only_fresh_hochi_roster_can_publish_regression`(既存動作 lock-in)
+  - `test_backlog_only_fresh_hochi_comment_can_publish_regression`(同上)
+  - `test_backlog_only_fresh_hochi_injury_can_publish_regression`(同上)
+  - `test_backlog_only_fresh_hochi_notice_can_publish_regression`(同上)
+
+### 8. 次回触ってはいけない範囲
+
+- `BACKLOG_NARROW_BLOCKED_SUBTYPES` / `BACKLOG_NARROW_ALLOWLIST` / `BACKLOG_NARROW_UNRESOLVED_SUBTYPES` / `BACKLOG_NARROW_FARM_RESULT_SUBTYPES` の構造変更を本便の延長で行わない
+- `BACKLOG_NARROW_AGE_BUFFER_HOURS=12` / `FRESHNESS_THRESHOLDS_HOURS` の数値変更を本便の延長で行わない(別 ticket で扱う)
+- `_strict_breaking_news_thresholds_enabled()` env / mode を本便の延長で切り替えない
+- 報知以外の媒体を `BACKLOG_NARROW_HOCHI_PREGAME_SUBTYPES` に追加しない(別便で要件確定後)
+- Cloud Run env / Secret / Scheduler / GitHub Actions / source / SEO / publish 全体条件 を本便の延長で変更しない
+- 本 commit を本番ブランチに直接 cherry-pick しない(branch 経由で確認)
+- deploy 実施は user 判断境界。本便で deploy 確認なしに進めない

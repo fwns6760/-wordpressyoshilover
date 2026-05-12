@@ -22919,6 +22919,14 @@ def _main(args, logger):
             logger.info(f"上限{args.limit}件に達したため終了")
             break
 
+        # 2026-05-12 hotfix: defaults for variables that are only
+        # populated inside the ``source_type in {"news", "social_news"}``
+        # branch (line 23008+); when an article falls into the else
+        # passthrough branch (tag_scrape / 非 X URL 等)これらを初期化
+        # しないと publish 側の try block で UnboundLocalError になる。
+        _article_images: list = []
+        title_template_key: str = ""
+
         source_type = item["source_type"]
         category = item["category"]
         title = item["title"]

@@ -289,6 +289,59 @@ class PostgameYahooBoxscoreTests(unittest.TestCase):
         # date label
         self.assertIn("2026年5月12日", blocks)
 
+    def test_first_team_postgame_with_yahoo_pitchers_emits_pitcher_table(self):
+        """Phase 2E: Yahoo box に W/L/S pitcher 情報があれば pitcher table 描画。"""
+        yahoo = dict(self.YAHOO_BOXSCORE_DICT)
+        yahoo.update(
+            {
+                "winning_pitcher": {"team": "巨人", "name": "戸郷翔征", "record": "4勝2敗0S"},
+                "losing_pitcher": {"team": "中日", "name": "高橋宏斗", "record": "3勝5敗0S"},
+                "save_pitcher": {"team": "巨人", "name": "大勢", "record": "1勝0敗8S"},
+            }
+        )
+        blocks, _ai_body = self._build_with_yahoo(
+            title=HOCHI_FIRST_POSTGAME_TITLE,
+            summary=HOCHI_FIRST_POSTGAME_SUMMARY,
+            url="https://hochi.news/articles/20260512-OHT9999-first.html",
+            source_name="スポーツ報知 巨人 tag",
+            category="試合速報",
+            yahoo_facts=yahoo,
+        )
+        self.assertIn(
+            "nomotoke-card-postgame-pitchers",
+            blocks,
+            "Phase 2E: pitcher table marker が出ない",
+        )
+        # W/L/S labels + names visible
+        for token in ("勝利投手", "敗戦投手", "セーブ", "戸郷翔征", "高橋宏斗", "大勢"):
+            self.assertIn(token, blocks, f"pitcher token '{token}' missing")
+
+    def test_first_team_postgame_without_pitcher_data_skips_pitcher_table(self):
+        """Phase 2E: pitcher dicts 全て空 → pitcher table は emit しない。"""
+        yahoo = dict(self.YAHOO_BOXSCORE_DICT)
+        yahoo.update(
+            {
+                "winning_pitcher": {},
+                "losing_pitcher": {},
+                "save_pitcher": {},
+            }
+        )
+        blocks, _ai_body = self._build_with_yahoo(
+            title=HOCHI_FIRST_POSTGAME_TITLE,
+            summary=HOCHI_FIRST_POSTGAME_SUMMARY,
+            url="https://hochi.news/articles/20260512-OHT9999-first.html",
+            source_name="スポーツ報知 巨人 tag",
+            category="試合速報",
+            yahoo_facts=yahoo,
+        )
+        # inning still rendered, but no pitcher table marker
+        self.assertIn("nomotoke-card-postgame-inning", blocks)
+        self.assertNotIn(
+            "nomotoke-card-postgame-pitchers",
+            blocks,
+            "pitcher 空でも pitcher table が誤発火",
+        )
+
     def test_first_team_postgame_yahoo_fail_uses_a_fallback(self):
         """Yahoo fetch 失敗 → A-fallback table のみ(inning table 無し)。"""
         blocks, _ai_body = self._build_with_yahoo(

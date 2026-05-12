@@ -16303,6 +16303,43 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             "</div>\n"
             '<!-- /wp:html -->\n\n'
         )
+
+        # NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2E: 勝利投手 / 敗戦投手 /
+        # セーブ section. Renders only the rows the parser actually
+        # extracted. Marker class ``nomotoke-card-postgame-pitchers``.
+        pitcher_rows_html: list[str] = [
+            "<tr><th>区分</th><th>チーム</th><th>投手</th><th>成績</th></tr>"
+        ]
+        pitcher_specs = [
+            ("勝利投手", yahoo_facts.get("winning_pitcher") or {}),
+            ("敗戦投手", yahoo_facts.get("losing_pitcher") or {}),
+            ("セーブ", yahoo_facts.get("save_pitcher") or {}),
+        ]
+        pitcher_rows_count = 0
+        for label, info in pitcher_specs:
+            if not isinstance(info, dict) or not info.get("name"):
+                continue
+            team = str(info.get("team") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            pname = str(info.get("name") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            record = str(info.get("record") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            pitcher_rows_html.append(
+                f"<tr><td>{label}</td><td>{team}</td><td>{pname}</td><td>{record}</td></tr>"
+            )
+            pitcher_rows_count += 1
+        if pitcher_rows_count >= 1:
+            out += (
+                f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
+                f'<h{heading_level}>⚾ 投手</h{heading_level}>\n'
+                '<!-- /wp:heading -->\n\n'
+                '<!-- wp:html -->\n'
+                '<div class="yoshilover-lineup-stats" style="overflow-x:auto;margin:0 0 12px;">'
+                '<table class="nomotoke-card-postgame-pitchers" style="width:100%;border-collapse:collapse;font-size:0.92em;">'
+                f"{''.join(pitcher_rows_html)}"
+                "</table>"
+                "</div>\n"
+                '<!-- /wp:html -->\n\n'
+            )
+
         return out
 
     def _build_postgame_result_block(facts: dict) -> str:

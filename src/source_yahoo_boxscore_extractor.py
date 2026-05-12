@@ -55,6 +55,14 @@ class YahooBoxscoreFacts:
     date_label: str  # 「2026年5月4日」
     league_label: str  # 「セ・リーグ 7回戦」
     one_line_summary: str
+    # NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2E:
+    # 勝利投手 / 敗戦投手 / セーブ rows from Yahoo's ``bb-gameTable``.
+    # Each entry shape: ``{"team": "巨人", "name": "戸郷翔征",
+    #                      "record": "4勝2敗0S"}``. Empty dict when
+    # the corresponding row was missing from the source page.
+    winning_pitcher: Dict[str, str] = None  # type: ignore[assignment]
+    losing_pitcher: Dict[str, str] = None  # type: ignore[assignment]
+    save_pitcher: Dict[str, str] = None  # type: ignore[assignment]
 
     def giants_facts(self) -> Dict[str, Any]:
         """Return the renderer-shaped data_preview for Giants POV.
@@ -84,6 +92,9 @@ class YahooBoxscoreFacts:
             "away": self.away,
             "inning_score": self.inning_score,
             "one_line_summary": self.one_line_summary,
+            "winning_pitcher": self.winning_pitcher or {},
+            "losing_pitcher": self.losing_pitcher or {},
+            "save_pitcher": self.save_pitcher or {},
         }
 
 
@@ -128,6 +139,27 @@ _INNING_TOTAL_RE = re.compile(
     r"\s*([0-9０-９]+|-|x)\s*</td>",
     re.DOTALL,
 )
+
+# NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2E: 勝利投手 / 敗戦投手 / セーブ
+# rows live inside a ``<table class="bb-gameTable...">`` block. Each row
+# has ``<th>{label}</th>`` followed by cells holding ``{team} {name} ({record})``.
+_PITCHER_GAME_TABLE_RE = re.compile(
+    r'<table[^>]*\bbb-gameTable\b[^>]*>(?P<body>.+?)</table>',
+    re.DOTALL,
+)
+# Per-row extractor — captures the entire row after the labelled <th>
+# so we can clean tags and split team/name/record outside the regex.
+def _build_pitcher_row_re(label: str) -> "re.Pattern[str]":
+    return re.compile(
+        r"<th[^>]*>\s*" + re.escape(label) + r"\s*</th>(?P<rest>.+?)</tr>",
+        re.DOTALL,
+    )
+_WINNING_PITCHER_ROW_RE = _build_pitcher_row_re("勝利投手")
+_LOSING_PITCHER_ROW_RE = _build_pitcher_row_re("敗戦投手")
+_SAVE_PITCHER_ROW_RE = _build_pitcher_row_re("セーブ")
+# Record token like ``(4勝1敗0S)`` — captured separately to split it off
+# from the team/name pair.
+_PITCHER_RECORD_RE = re.compile(r"\(([^)]+)\)")
 
 
 # ---------------------------------------------------------------------------
@@ -239,6 +271,14 @@ def parse_yahoo_game_html(html: str) -> Optional[YahooBoxscoreFacts]:
         away_total=away_total,
     )
 
+    # NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2E: try to extract
+    # 勝利投手 / 敗戦投手 / セーブ from the ``bb-gameTable`` block.
+    # Empty dict per slot when the row is missing; the renderer is
+    # responsible for hiding empty rows.
+    winning_pitcher = _extract_pitcher_row(html, _WINNING_PITCHER_ROW_RE)
+    losing_pitcher = _extract_pitcher_row(html, _LOSING_PITCHER_ROW_RE)
+    save_pitcher = _extract_pitcher_row(html, _SAVE_PITCHER_ROW_RE)
+
     return YahooBoxscoreFacts(
         home=home_full,
         away=away_full,
@@ -250,7 +290,35 @@ def parse_yahoo_game_html(html: str) -> Optional[YahooBoxscoreFacts]:
         date_label=date_label,
         league_label=league_label,
         one_line_summary=one_line_summary,
+        winning_pitcher=winning_pitcher,
+        losing_pitcher=losing_pitcher,
+        save_pitcher=save_pitcher,
     )
+
+
+def _extract_pitcher_row(html: str, row_re: "re.Pattern[str]") -> Dict[str, str]:
+    """Pull team / name / record from a 勝利投手 / 敗戦投手 / セーブ row.
+
+    Tolerant of missing record (returns empty record string); empty dict
+    when the row regex doesn't match.
+    """
+    m = row_re.search(html)
+    if not m:
+        return {}
+    rest = m.group("rest")
+    rec_match = _PITCHER_RECORD_RE.search(rest)
+    record = rec_match.group(1).strip() if rec_match else ""
+    # Strip the record from the cleaned text so what remains is team + name.
+    cleaned = re.sub(r"<[^>]+>", " ", rest)
+    cleaned = re.sub(r"\([^)]*\)", " ", cleaned)
+    cleaned = html_lib.unescape(cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    parts = cleaned.split()
+    if not parts:
+        return {}
+    if len(parts) == 1:
+        return {"team": "", "name": parts[0], "record": record}
+    return {"team": parts[0], "name": " ".join(parts[1:]), "record": record}
 
 
 # ---------------------------------------------------------------------------

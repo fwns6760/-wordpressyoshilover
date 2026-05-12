@@ -789,8 +789,66 @@ LLM(Gemini) は本経路で使用していないため、source 文字列を det
 - Phase 2A / 2A-1 / 2B / 2C / 2D-A 全 logic 不変
 - atbat / pitching / opponent_lineup の wire は parser 拡張後の別 phase
 
-### Phase 2E 着手時の備考(将来)
+### Phase 2E(2026-05-12 PM、user GO 後実装、commit に続く)
 
-- Yahoo box parser に atbat / pitching / opposing_pitcher / opponent_lineup を追加 → 1軍 postgame の rich block を 4-table 化(`render_postgame_card` の data contract 完成)
-- 試合中 in-flight 状態判定(8回終了等)で box render を skip(`is_finished_game` 等)
-- Yahoo HTTP のキャッシュ(同日内の重複 fetch 回避)
+#### 1. 実際に変更したファイル
+
+- **EDIT** `src/source_yahoo_boxscore_extractor.py`(+~60 行)
+  - `YahooBoxscoreFacts` dataclass に `winning_pitcher` / `losing_pitcher` / `save_pitcher` field 追加(`Dict[str, str]` shape: `team` / `name` / `record`)
+  - `giants_facts()` で新 field を payload に含める
+  - 新 regex: `_PITCHER_GAME_TABLE_RE` + per-label row regex `_build_pitcher_row_re("勝利投手"/"敗戦投手"/"セーブ")` + `_PITCHER_RECORD_RE`
+  - 新 helper `_extract_pitcher_row(html, row_re)` で team / name / record を分離
+- **EDIT** `src/rss_fetcher.py`(+~40 行)
+  - `_build_postgame_yahoo_block` に W/L/S section 追加(marker class `nomotoke-card-postgame-pitchers`、4 列 区分/チーム/投手/成績、空 dict はskip)
+- **NEW** `tests/test_yahoo_postgame_pitcher_extraction.py`(~55 行、4 case)
+  - real Yahoo HTML fixture(2026-05-10 阪神 vs DeNA、`2021038841`)から W/L/S 全 3 row 抽出を確認
+- **EDIT** `tests/test_rss_fetcher_postgame_table.py`(+~70 行、2 integration case 追加)
+  - Yahoo facts に W/L/S 設定 → pitcher table 描画
+  - W/L/S 全空 → pitcher table emit せず(inning table は引き続き出る)
+- **NEW** `tests/fixtures/yahoo_postgame_2021038841_完了試合.html`(196 kB)
+  - real Yahoo Sportsnavi `/index` HTML、completed game(5/10 阪神 vs DeNA)
+  - parser schema 確認用 fixture(repo commit、再現性確保)
+
+#### 2. diff 概要
+
+- 1軍 postgame で Yahoo box 取得時、既存 inning + 試合 metadata に加えて **勝利投手 / 敗戦投手 / セーブ table** を render(rich 3-table 構成)
+- HTML schema: `<table class="bb-gameTable...">` 内の `<th>勝利投手</th>` 等 row を per-label regex で抽出、`(X勝Y敗ZS)` 形式の record を別 group で分離
+- 既存 path(inning + metadata)に影響なし、新 section は data 空時 skip
+- 報知 article + Yahoo 失敗時は Phase 2D-A prose block fallback 維持
+
+#### 3. 実行したテスト
+
+- **fixture 取得**: `gcloud builds submit` で時間消費中、別途 Yahoo `/index` 5/10 fixture を手動 fetch + commit
+- **parser 確認**: 4 case GREEN(W/L/S 抽出 + dataclass shape)
+- **integration 確認**: 2 case GREEN(pitcher table emit / empty skip)
+- **全件**: full suite 確認(本 §4 参照)
+
+#### 4. テスト結果
+
+- **Phase 2D-B 着地時 baseline**: 3592 tests / 1 pre-existing fail
+- **Phase 2E 着地後**: `Ran 3609 tests in 85.913s` / **failures=1**(同 pre-existing、increase 0)
+- collect 増分: 3592 → 3609(+17 = 4 extractor unit + 2 integration + ~11 discovery diff)
+- 増加 fail: **0**
+
+#### 5. 残った懸念
+
+1. **atbat / opponent_lineup 未抽出**: Yahoo `/index` には atbat / pitching detail / opponent lineup の HTML が含まれていなかった(直接 fetch 確認、`打席結果` / `bb-batter` 等 marker 0 件)。Yahoo の richer detail は JS dynamic render の可能性、static scrape では取れない。本 phase scope 外、別 source(NPB公式 / sports site)探索 or 諦め
+2. **試合進行中の発火**: 今日の Giants 試合(`2021038846`)では 19:07 JST 時点でも `parse_yahoo_game_html` が None 返却。`一球速報` page で inning table 未populate。Yahoo schedule cache lag or 試合長期化 の可能性。完成 game の verify は別便
+3. **fixture が non-巨人 game**: 5/10 阪神 vs DeNA fixture を使用、巨人 game の box 構造は同じ schema を想定するが未直接確認。次の巨人完了 game で verify 推奨
+4. **HTTP 二重 fetch なし**: Phase 2D-B で `fetch_today_giants_postgame_facts_from_yahoo` 1 call、本 phase は同 HTML から W/L/S を一緒に抽出 → 追加 HTTP 不要
+
+#### 6. 新しく見つかったデグレ
+
+- 本便差分による新規デグレ **なし**
+
+#### 7. 追加した回帰テスト
+
+- `tests/test_yahoo_postgame_pitcher_extraction.py`(4 case): real fixture からの W/L/S 抽出
+- `tests/test_rss_fetcher_postgame_table.py::PostgameYahooBoxscoreTests`(2 case 追加): pitcher table render + 空時 skip
+
+#### 8. 次回触ってはいけない範囲
+
+- `source_yahoo_boxscore_extractor.parse_yahoo_game_html` の inning_score logic 不変
+- `_find_giants_game_info_yahoo` 不変
+- Phase 2A / 2A-1 / 2B / 2C / 2D-A / 2D-B 全 logic 不変
+- fixture file(`yahoo_postgame_2021038841_完了試合.html`)は real Yahoo HTML、再加工不可

@@ -232,6 +232,53 @@ class TruncationTests(unittest.TestCase):
         self.assertIn("戸郷5回1失点", out)
         self.assertIn("岡本2本塁打", out)
 
+    def test_publisher_truncated_short_body_backtracks_to_sentence(self):
+        """JSON-LD ``articleBody`` already truncated by the publisher
+        ends mid-word; the cleaner must drop the dangling fragment."""
+        from src.source_article_body_extractor import _truncate_at_sentence
+
+        text = (
+            "巨人の大城卓三捕手（33）が、5日のヤクルト戦（東京D）以来の4号ソロを放った。"
+            "両軍無得点の2回1死、床田の初球真ん中寄りのストレートを右翼席に運び、"
+            "「風に乗ってくれました。先制点が取れたことは大き"
+        )
+        # max_chars > len(text) so the truncate path is the short-text
+        # cleanup branch, not the cap branch.
+        out = _truncate_at_sentence(text, max_chars=600)
+        self.assertFalse(out.endswith("大き"))
+        self.assertTrue(
+            out.endswith("。")
+            or out.endswith("」")
+            or out.endswith("』")
+            or out.endswith("…")
+        )
+
+    def test_quote_close_used_when_no_period_above_half(self):
+        from src.source_article_body_extractor import _truncate_at_sentence
+
+        text = (
+            "巨人の岡本選手はインタビューで「" + "今日は本当にいい当たりだった、"
+            "次も同じ気持ちで打席に立ちたい、" * 10 + "」と話した"
+        )
+        out = _truncate_at_sentence(text, max_chars=120)
+        self.assertLessEqual(len(out), 120)
+        self.assertTrue(
+            out.endswith("」")
+            or out.endswith("、…")
+            or out.endswith("。")
+            or out.endswith("…"),
+            f"unexpected ending: ...{out[-10:]!r}",
+        )
+
+    def test_clause_break_fallback_adds_ellipsis(self):
+        from src.source_article_body_extractor import _truncate_at_sentence
+
+        # No 。 / 」 / \n in head; only 、 as boundary
+        text = "巨人は7日、" + "新人選手の練習で打球の伸びを見ていた、" * 30
+        out = _truncate_at_sentence(text, max_chars=80)
+        self.assertLessEqual(len(out), 80)
+        self.assertTrue(out.endswith("…"), f"unexpected ending: ...{out[-10:]!r}")
+
 
 class TitleEchoTests(unittest.TestCase):
     def test_leading_title_echo_dropped(self):

@@ -250,20 +250,77 @@ def _normalize_title_echo_text(text: str) -> str:
     return _WHITESPACE_RUN_RE.sub(" ", html_lib.unescape(text or "")).strip()
 
 
-def _truncate_at_sentence(text: str, max_chars: int) -> str:
-    """Cap ``text`` at ``max_chars``; prefer the last ``。`` boundary
-    above half the cap. Falls back to a hard cut + ellipsis when no
-    sentence boundary is available."""
-    if not text or len(text) <= max_chars:
+_SENTENCE_END_CHARS = "。！？!?"
+_QUOTE_CLOSE_CHARS = "」』）)"
+_CLAUSE_BREAK_CHARS = "、,"
+_CLEAN_TRAILING_WINDOW = 80
+
+
+def _clean_trailing_fragment(text: str) -> str:
+    """If ``text`` ends mid-word (no sentence / quote / paragraph
+    boundary at the tail), step back to the nearest natural boundary
+    within the trailing window.
+
+    Without this safety net even short excerpts (e.g. JSON-LD
+    ``articleBody`` that the publisher already truncated) can leak a
+    fragment like ``…先制点が取れたことは大き`` into the rendered post.
+    """
+    if not text:
         return text
+    t = text.rstrip()
+    if not t:
+        return t
+    last = t[-1]
+    if last in _SENTENCE_END_CHARS or last in _QUOTE_CLOSE_CHARS or last == "\n":
+        return t
+    cut_floor = max(0, len(t) - _CLEAN_TRAILING_WINDOW)
+    sub = t[cut_floor:]
+    for chars in (_SENTENCE_END_CHARS, _QUOTE_CLOSE_CHARS):
+        last_idx = max((sub.rfind(ch) for ch in chars), default=-1)
+        if last_idx >= 0:
+            return t[: cut_floor + last_idx + 1]
+    last_idx = max((sub.rfind(ch) for ch in _CLAUSE_BREAK_CHARS), default=-1)
+    if last_idx >= 0:
+        return t[: cut_floor + last_idx + 1].rstrip() + "…"
+    return t
+
+
+def _truncate_at_sentence(text: str, max_chars: int) -> str:
+    """Cap ``text`` at ``max_chars`` with a tiered boundary preference:
+
+    1. Sentence-final 「。」 / 「！」 / 「？」 / 「!」 / 「?」 above half-cap
+    2. Quote close 「」」 / 「』」 / 「）」 / 「)」 above half-cap
+    3. Paragraph break ``\\n`` above half-cap
+    4. Clause break 「、」 / 「,」 above half-cap, suffixed with 「…」
+    5. Hard cut + 「…」
+
+    When the text is already within ``max_chars`` it still passes
+    through ``_clean_trailing_fragment`` so a publisher-truncated
+    source body never ends mid-word.
+    """
+    if not text:
+        return text
+    if len(text) <= max_chars:
+        return _clean_trailing_fragment(text)
     head = text[:max_chars]
-    last_jp = head.rfind("。")
-    last_en = head.rfind(". ")
-    boundary = max(last_jp, last_en)
-    if boundary > max_chars // 2:
-        if last_jp == boundary:
-            return head[: boundary + 1]
-        return head[: boundary + 1].rstrip()
+    half = max_chars // 2
+
+    last_idx = max((head.rfind(ch) for ch in _SENTENCE_END_CHARS), default=-1)
+    if last_idx > half:
+        return head[: last_idx + 1]
+
+    last_idx = max((head.rfind(ch) for ch in _QUOTE_CLOSE_CHARS), default=-1)
+    if last_idx > half:
+        return head[: last_idx + 1]
+
+    idx = head.rfind("\n")
+    if idx > half:
+        return head[:idx].rstrip()
+
+    last_idx = max((head.rfind(ch) for ch in _CLAUSE_BREAK_CHARS), default=-1)
+    if last_idx > half:
+        return head[: last_idx + 1].rstrip() + "…"
+
     return head.rstrip() + "…"
 
 

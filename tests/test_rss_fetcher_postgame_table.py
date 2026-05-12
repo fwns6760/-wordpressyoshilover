@@ -194,5 +194,137 @@ class PostgameTableTests(unittest.TestCase):
         )
 
 
+class PostgameYahooBoxscoreTests(unittest.TestCase):
+    """Phase 2D-B integration: when Yahoo boxscore is available, the 1軍
+    postgame article should render a rich block with inning-by-inning
+    score in addition to the score / 勝利投手 line.
+
+    Mock ``fetch_today_giants_postgame_facts_from_yahoo`` so the test
+    doesn't make real HTTP calls.
+    """
+
+    YAHOO_BOXSCORE_DICT = {
+        "team_name": "巨人",
+        "score": "5-1",
+        "result": "win",
+        "date_label": "2026年5月12日",
+        "league_label": "セ・リーグ 8回戦",
+        "home": "読売ジャイアンツ",
+        "away": "中日ドラゴンズ",
+        "inning_score": [
+            {"name": "中日", "innings": ["0", "0", "0", "0", "1", "0", "0", "0", "0"], "total": 1},
+            {"name": "巨人", "innings": ["0", "1", "0", "0", "2", "0", "2", "0", "x"], "total": 5},
+        ],
+        "one_line_summary": "巨人 5-1 中日",
+    }
+
+    def _build_with_yahoo(
+        self,
+        *,
+        title: str,
+        summary: str,
+        url: str,
+        source_name: str,
+        category: str,
+        yahoo_facts: dict | None,
+    ) -> tuple[str, str]:
+        patches = [
+            patch.dict(os.environ, {"ENABLE_RSS_TEMPLATE_ROUTING_V2": "1"}),
+            patch.object(
+                rss_fetcher,
+                "fetch_today_giants_lineup_stats_from_yahoo",
+                return_value=[],
+            ),
+        ]
+        # Phase 2D-B mock — postgame Yahoo fetcher returns the supplied dict.
+        if hasattr(rss_fetcher, "fetch_today_giants_postgame_facts_from_yahoo"):
+            patches.append(
+                patch.object(
+                    rss_fetcher,
+                    "fetch_today_giants_postgame_facts_from_yahoo",
+                    return_value=yahoo_facts or {},
+                )
+            )
+        for fn_name, return_value in (
+            ("fetch_fan_reactions_from_yahoo", []),
+            ("_fetch_fan_reactions_from_yahoo_safe", []),
+            ("generate_article_with_gemini", ""),
+            ("generate_article_with_grok", ("", [], "", "", "")),
+        ):
+            if hasattr(rss_fetcher, fn_name):
+                patches.append(patch.object(rss_fetcher, fn_name, return_value=return_value))
+        for p in patches:
+            p.start()
+        try:
+            return rss_fetcher.build_news_block(
+                title=title,
+                summary=summary,
+                url=url,
+                source_name=source_name,
+                category=category,
+                has_game=True,
+                source_type="news",
+            )
+        finally:
+            for p in reversed(patches):
+                p.stop()
+
+    def test_first_team_postgame_with_yahoo_emits_inning_table(self):
+        """1軍 postgame + Yahoo box success → inning-by-inning table 含む。"""
+        blocks, _ai_body = self._build_with_yahoo(
+            title=HOCHI_FIRST_POSTGAME_TITLE,
+            summary=HOCHI_FIRST_POSTGAME_SUMMARY,
+            url="https://hochi.news/articles/20260512-OHT9999-first.html",
+            source_name="スポーツ報知 巨人 tag",
+            category="試合速報",
+            yahoo_facts=self.YAHOO_BOXSCORE_DICT,
+        )
+        self.assertIn(
+            "nomotoke-card-postgame-inning",
+            blocks,
+            "1軍 postgame で inning table marker が出ない",
+        )
+        # inning header
+        self.assertIn("中日", blocks)
+        # date label
+        self.assertIn("2026年5月12日", blocks)
+
+    def test_first_team_postgame_yahoo_fail_uses_a_fallback(self):
+        """Yahoo fetch 失敗 → A-fallback table のみ(inning table 無し)。"""
+        blocks, _ai_body = self._build_with_yahoo(
+            title=HOCHI_FIRST_POSTGAME_TITLE,
+            summary=HOCHI_FIRST_POSTGAME_SUMMARY,
+            url="https://hochi.news/articles/20260512-OHT9999-first.html",
+            source_name="スポーツ報知 巨人 tag",
+            category="試合速報",
+            yahoo_facts={},  # empty = fetch failed
+        )
+        # A-fallback table marker present
+        self.assertIn("nomotoke-card-postgame-result", blocks)
+        # rich inning table NOT present
+        self.assertNotIn(
+            "nomotoke-card-postgame-inning",
+            blocks,
+            "Yahoo 失敗時に inning table が誤って出ている",
+        )
+
+    def test_farm_postgame_skips_yahoo_and_uses_a_fallback(self):
+        """2軍 postgame では Yahoo fetch を skip して A-fallback のみ。"""
+        blocks, _ai_body = self._build_with_yahoo(
+            title=HOCHI_FARM_POSTGAME_TITLE,
+            summary=HOCHI_FARM_POSTGAME_SUMMARY,
+            url="https://hochi.news/articles/20260512-OHT9999-farm.html",
+            source_name="スポーツ報知 巨人 tag",
+            category="試合速報",
+            yahoo_facts=self.YAHOO_BOXSCORE_DICT,  # supplied but should be ignored for 2軍
+        )
+        self.assertIn("nomotoke-card-postgame-result", blocks)
+        self.assertNotIn(
+            "nomotoke-card-postgame-inning",
+            blocks,
+            "2軍 postgame で 1軍用 inning table が誤発火",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

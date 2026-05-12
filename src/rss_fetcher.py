@@ -4734,6 +4734,47 @@ def fetch_today_giants_lineup_stats_from_yahoo() -> list[dict]:
     return fetch_giants_lineup_stats_from_yahoo()
 
 
+# NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2D-B: Yahoo Sportsnavi
+# boxscore fetcher for today's 1軍 Giants game. Mirrors the lineup-
+# stats fetcher pattern (`_find_giants_game_info_yahoo` + HTTP GET +
+# offline parser). Returns the Giants-POV facts dict (from
+# ``YahooBoxscoreFacts.giants_facts()``) or an empty dict on any
+# failure (network / parsing / not a Giants game / parse_yahoo_game_html
+# returns None).
+def fetch_today_giants_postgame_facts_from_yahoo() -> dict:
+    import urllib.request as _ur
+
+    logger = logging.getLogger("rss_fetcher")
+    try:
+        game_id, _opponent, _venue = _find_giants_game_info_yahoo()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Yahoo postgame fetch game-id resolution failed: %s", e)
+        return {}
+    if not game_id:
+        return {}
+    url = f"https://baseball.yahoo.co.jp/npb/game/{game_id}/index"
+    try:
+        req = _ur.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with _ur.urlopen(req, timeout=10) as res:
+            html = res.read().decode("utf-8", errors="ignore")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Yahoo postgame HTTP failed game_id=%s: %s", game_id, e)
+        return {}
+    try:
+        from src.source_yahoo_boxscore_extractor import parse_yahoo_game_html
+        facts = parse_yahoo_game_html(html)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Yahoo postgame parse failed game_id=%s: %s", game_id, e)
+        return {}
+    if facts is None:
+        return {}
+    try:
+        return facts.giants_facts() or {}
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Yahoo postgame giants_facts() failed: %s", e)
+        return {}
+
+
 def fetch_giants_lineup_stats_for_game(game_id: str, opponent: str = "") -> list[dict]:
     return fetch_giants_lineup_stats_from_yahoo(game_id=game_id, opponent=opponent)
 
@@ -15285,6 +15326,24 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 "postgame_facts_parse_skipped reason=%s", e
             )
             postgame_facts = None
+    # NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2D-B: when the prose
+    # parser flagged a 1軍 (``league_level == "first"``) postgame, also
+    # fetch Yahoo Sportsnavi boxscore for the rich inning table. 2軍 is
+    # intentionally skipped — Yahoo has no farm-league boxscore so the
+    # call would always return ``{}``. Failure here is silent (warning
+    # only) and the renderer falls back to the prose A-block.
+    postgame_yahoo_facts: dict = {}
+    if (
+        postgame_facts
+        and str(postgame_facts.get("league_level") or "") == "first"
+    ):
+        try:
+            postgame_yahoo_facts = fetch_today_giants_postgame_facts_from_yahoo() or {}
+        except Exception as e:  # noqa: BLE001
+            logging.getLogger("rss_fetcher").warning(
+                "postgame_yahoo_fetch_skipped reason=%s", e
+            )
+            postgame_yahoo_facts = {}
     lineup_stats_rendered = False
 
     # 試合がない日は勝敗ヒントを生成しない（架空スコア捏造防止）
@@ -16032,6 +16091,93 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         )
         return header_html + note_html + table_html
 
+    def _build_postgame_yahoo_block(yahoo_facts: dict) -> str:
+        """Render a rich postgame block from a Yahoo boxscore facts dict.
+
+        NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2D-B. Inputs are the
+        ``YahooBoxscoreFacts.giants_facts()`` dict containing ``score``,
+        ``result``, ``date_label``, ``league_label``, ``home``, ``away``,
+        ``inning_score`` (per-team innings + total), and ``one_line_summary``.
+
+        Emits two adjacent blocks:
+        - 試合結果 header table (date / league / score / 勝敗) with marker
+          ``nomotoke-card-postgame-result``.
+        - Inning-by-inning score table with marker
+          ``nomotoke-card-postgame-inning``.
+        """
+        if not yahoo_facts or not isinstance(yahoo_facts, dict):
+            return ""
+        score = str(yahoo_facts.get("score") or "").strip()
+        result = str(yahoo_facts.get("result") or "").strip()
+        result_map = {"win": "勝利", "loss": "敗戦", "draw": "引き分け"}
+        result_label = result_map.get(result, result or "")
+        date_label = str(yahoo_facts.get("date_label") or "").strip()
+        league_label = str(yahoo_facts.get("league_label") or "").strip()
+        home = str(yahoo_facts.get("home") or "").strip()
+        away = str(yahoo_facts.get("away") or "").strip()
+        inning_score = yahoo_facts.get("inning_score") or []
+        if not score or not inning_score or not isinstance(inning_score, list):
+            return ""
+        heading_level = 4 if _body_template_v2_enabled() else 3
+        out = ""
+
+        header_rows = ["<tr><th>項目</th><th>内容</th></tr>"]
+        if date_label:
+            header_rows.append(f"<tr><td>日付</td><td>{date_label}</td></tr>")
+        if league_label:
+            header_rows.append(f"<tr><td>大会</td><td>{league_label}</td></tr>")
+        if home and away:
+            header_rows.append(f"<tr><td>対戦</td><td>{away} vs {home}</td></tr>")
+        score_text = score if not result_label else f"{score} (巨人{result_label})"
+        header_rows.append(f"<tr><td>スコア</td><td>{score_text}</td></tr>")
+        out += (
+            f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
+            f'<h{heading_level}>📋 試合結果 (Yahoo box)</h{heading_level}>\n'
+            '<!-- /wp:heading -->\n\n'
+            '<!-- wp:html -->\n'
+            '<div class="yoshilover-lineup-stats" style="overflow-x:auto;margin:0 0 12px;">'
+            '<table class="nomotoke-card-postgame-result" style="width:100%;border-collapse:collapse;font-size:0.92em;">'
+            f"{''.join(header_rows)}"
+            "</table>"
+            "</div>\n"
+            '<!-- /wp:html -->\n\n'
+        )
+
+        # Inning table.
+        try:
+            max_innings = max(len(team.get("innings") or []) for team in inning_score)
+        except Exception:  # noqa: BLE001
+            max_innings = 9
+        max_innings = max(max_innings, 9)
+        inning_header_cells = "".join(f"<th>{i+1}</th>" for i in range(max_innings))
+        inning_rows = [f"<tr><th>チーム</th>{inning_header_cells}<th>R</th></tr>"]
+        for team in inning_score:
+            name = str(team.get("name") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            innings = team.get("innings") or []
+            total = team.get("total")
+            cells = []
+            for i in range(max_innings):
+                val = innings[i] if i < len(innings) else ""
+                safe_val = str(val).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                cells.append(f"<td>{safe_val}</td>")
+            total_text = str(total if total is not None else "")
+            inning_rows.append(
+                f"<tr><td>{name}</td>{''.join(cells)}<td>{total_text}</td></tr>"
+            )
+        out += (
+            f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
+            f'<h{heading_level}>📊 イニング</h{heading_level}>\n'
+            '<!-- /wp:heading -->\n\n'
+            '<!-- wp:html -->\n'
+            '<div class="yoshilover-lineup-stats" style="overflow-x:auto;margin:0 0 12px;">'
+            '<table class="nomotoke-card-postgame-inning" style="width:100%;border-collapse:collapse;font-size:0.92em;">'
+            f"{''.join(inning_rows)}"
+            "</table>"
+            "</div>\n"
+            '<!-- /wp:html -->\n\n'
+        )
+        return out
+
     def _build_postgame_result_block(facts: dict) -> str:
         """Render a 2-column 試合結果 mini-table from postgame prose facts.
 
@@ -16706,8 +16852,16 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
 
     # NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2D: subtype-agnostic
     # postgame mini-table. Parser's gates (allowlist + result keyword
-    # + score + 巨人 mention) keep fire rate narrow.
-    if postgame_facts:
+    # + score + 巨人 mention) keep fire rate narrow. 1軍 with Yahoo box
+    # available renders the rich Phase 2D-B block (inning + score);
+    # 2軍 or Yahoo fetch failure falls back to the Phase 2D-A prose
+    # mini-table.
+    if postgame_yahoo_facts and postgame_yahoo_facts.get("inning_score"):
+        if not followup_section_rendered:
+            blocks += _sep()
+        blocks += _build_postgame_yahoo_block(postgame_yahoo_facts)
+        followup_section_rendered = True
+    elif postgame_facts:
         if not followup_section_rendered:
             blocks += _sep()
         blocks += _build_postgame_result_block(postgame_facts)

@@ -723,11 +723,74 @@ LLM(Gemini) は本経路で使用していないため、source 文字列を det
 - `giants_roster.json` 不変、subtype 文字列追加なし、env flag 追加なし
 - Yahoo box fetch 系(`fetch_today_giants_lineup_stats_from_yahoo` 等)は本 commit で touch しない
 
-### Phase 2D-B 着手時の備考(次便、Yahoo box 統合)
+### Phase 2D-B(2026-05-12 PM、user GO 後実装、commit に続く)
 
-- `fetch_today_giants_postgame_facts_from_yahoo()` を `fetch_today_giants_lineup_stats_from_yahoo` パターンで追加
-- `_find_giants_game_info_yahoo` で today's game_id を取得 → Yahoo HTML fetch → `parse_yahoo_game_html` で structured data 抽出
-- 1軍 postgame では Yahoo data 取得成功時に rich 4-table block(inning + at-bat + pitching + opponent lineup)を render
-- 2軍 / Yahoo fetch 失敗 → 本便 A-fallback 維持
-- subtype check `body_subtype == "postgame"` で gate 想定
-- 5-10 case 追加 test 想定
+#### 1. 実際に変更したファイル
+
+- **EDIT** `src/rss_fetcher.py`(+~150 行)
+  - 新 fetcher `fetch_today_giants_postgame_facts_from_yahoo()` 追加(line ~4727 隣、`fetch_today_giants_lineup_stats_from_yahoo` パターン流用):
+    - `_find_giants_game_info_yahoo()` で today's game_id 取得
+    - `https://baseball.yahoo.co.jp/npb/game/<game_id>/index` を HTTP GET
+    - `parse_yahoo_game_html(html)` → `YahooBoxscoreFacts` → `giants_facts()` dict 返却
+    - failure 全段で empty dict 返却(network / parse / non-Giants game / fetcher 不在)
+  - `build_news_block` 内に `postgame_yahoo_facts` ローカル変数追加(`postgame_facts` の隣)、`league_level == "first"` の時のみ Yahoo fetch 起動
+  - 新 nested helper `_build_postgame_yahoo_block(facts)`(rich 2-table、`📋 試合結果 (Yahoo box)` + `📊 イニング`、marker class `nomotoke-card-postgame-result` + `nomotoke-card-postgame-inning`)
+  - tail inject 修正: `postgame_yahoo_facts` あれば rich block、無ければ A-fallback(`postgame_facts`)`elif`
+- **EDIT** `tests/test_rss_fetcher_postgame_table.py`(+~100 行、新クラス `PostgameYahooBoxscoreTests` 3 case 追加)
+  - Yahoo facts mock で Phase 2D-B path 検証
+  - 1軍 + Yahoo 成功 → inning table marker / 日付 / opponent 含む
+  - 1軍 + Yahoo 失敗 → A-fallback のみ(inning table marker 無し)
+  - 2軍 → Yahoo facts 提供あっても skip、A-fallback のみ
+- **EDIT** `docs/work_logs/2026-05-12_hochi-sponichi-source-structured-table-rendering.md`(本 file、Phase 2D-B 追記)
+
+#### 2. diff 概要
+
+- 1軍 postgame で Yahoo box データ取得 → inning-by-inning + 試合 metadata(date / league / 対戦カード / score)の rich 表示
+- 2軍 postgame は Yahoo box 不在(farm league)を前提に skip → Phase 2D-A の A-fallback 維持
+- 既存 `source_yahoo_boxscore_extractor.parse_yahoo_game_html`(offline parser)を流用、`giants_facts()` で renderer-friendly dict 化
+- A-fallback vs Yahoo rich の選択は `tail inject` 内の `if/elif` で disjoint、double-render なし
+
+#### 3. 実行したテスト
+
+- **RED 確認**(実装前): 1 件 FAIL(`test_first_team_postgame_with_yahoo_emits_inning_table`)
+- **GREEN 確認**: 9/9 OK(2D-A 6 + 2D-B 3)
+- **累積 hochi+emoji+rotation+postgame tests**: 99/99 OK
+- **AST + compile**: pass
+- **全件**: full suite で確認(本 §4 参照)
+
+#### 4. テスト結果
+
+- **Phase 2D-A 着地時 baseline**: 3589 tests / 1 pre-existing fail
+- **Phase 2D-B 着地後**: 本 commit 直前 full suite で確定
+- 期待値: 3589 + 3(integration) = 3592 tests / 1 pre-existing fail / 増加 fail 0
+
+#### 5. 残った懸念
+
+1. **Yahoo box parser の制約**: `YahooBoxscoreFacts` は inning_score までで、`atbat_results` / `pitching_results` / `opponent_lineup` は parser 未対応(`source_yahoo_boxscore_extractor.py` docstring §"Scope NOT covered" 明示)。本 phase で wire できるのは inning + score のみ、box の richer 列(球数 / 奪三振等)は parser 拡張時に再着手。
+2. **Yahoo game_id 解決 race**: 試合終了直後の数分間、Yahoo schedule にまだ「完了」マークが乗らずに `_find_giants_game_info_yahoo` が「翌試合の game_id」を返す可能性。誤った game の box を render する risk。観察必要、必要なら date_label と article date のマッチ guard 追加。
+3. **試合中の発火**: 1軍 postgame article が試合中(8回裏等)に publish された場合、Yahoo の inning table は途中経過になる。本 phase で gate 設けず、observation 後 必要なら "試合終了" 確認 guard 追加。
+4. **Yahoo HTTP latency**: 1軍 postgame article ごとに Yahoo HTTP GET(10s timeout)。試合終了直後の 1軍 postgame 連投で latency が build_news_block 全体に乗る。観察必要、必要ならキャッシュ(日付 + game_id key)追加。
+
+#### 6. 新しく見つかったデグレ
+
+- 本便差分による新規デグレ **なし**
+
+#### 7. 追加した回帰テスト
+
+`tests/test_rss_fetcher_postgame_table.py::PostgameYahooBoxscoreTests`(3 case):
+- `test_first_team_postgame_with_yahoo_emits_inning_table` — 1軍 + Yahoo 成功時の rich path
+- `test_first_team_postgame_yahoo_fail_uses_a_fallback` — Yahoo 失敗時の A-fallback path
+- `test_farm_postgame_skips_yahoo_and_uses_a_fallback` — 2軍 の Yahoo skip path
+
+#### 8. 次回触ってはいけない範囲
+
+- `source_yahoo_boxscore_extractor.parse_yahoo_game_html` は本 commit 不変(consumer 追加のみ)
+- `_find_giants_game_info_yahoo` 不変
+- Phase 2A / 2A-1 / 2B / 2C / 2D-A 全 logic 不変
+- atbat / pitching / opponent_lineup の wire は parser 拡張後の別 phase
+
+### Phase 2E 着手時の備考(将来)
+
+- Yahoo box parser に atbat / pitching / opposing_pitcher / opponent_lineup を追加 → 1軍 postgame の rich block を 4-table 化(`render_postgame_card` の data contract 完成)
+- 試合中 in-flight 状態判定(8回終了等)で box render を skip(`is_finished_game` 等)
+- Yahoo HTTP のキャッシュ(同日内の重複 fetch 回避)

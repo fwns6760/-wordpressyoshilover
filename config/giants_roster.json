@@ -1230,5 +1230,26 @@
     "position": "投手",
     "jersey_number": "",
     "active": true
+  },
+  {
+    "name": "梶原昂希",
+    "aliases": [
+      "梶原昂希",
+      "梶原"
+    ],
+    "role": "player",
+    "position": "打者",
+    "jersey_number": "",
+    "active": true
+  },
+  {
+    "name": "*梶原 昂希",
+    "aliases": [
+      "*梶原 昂希"
+    ],
+    "role": "player",
+    "position": "打者",
+    "jersey_number": "",
+    "active": true
   }
 ]

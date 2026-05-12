@@ -16747,6 +16747,16 @@ def _extract_topic_dedup_terms(title: str, summary: str, player: str) -> list[st
     return terms
 
 
+def _topic_dedup_event_signal_count(title: str, summary: str) -> int:
+    source_text = f"{title or ''} {summary or ''}"
+    seen: set[str] = set()
+    for marker in _TOPIC_DEDUP_EVENT_TERMS:
+        normalized = _normalize_duplicate_subject(marker)
+        if normalized and marker in source_text:
+            seen.add(normalized)
+    return len(seen)
+
+
 def _topic_dedup_history_key(context: Mapping[str, object]) -> str:
     player = _normalize_duplicate_subject(str(context.get("player") or ""))
     subtype = _normalize_duplicate_subject(str(context.get("subtype") or ""))
@@ -16878,6 +16888,14 @@ def _extract_duplicate_player(title: str, summary: str, category: str) -> str:
         manager_subject = _extract_subject_label(title, summary, category)
         manager_subject = _re.sub(r"(監督|コーチ)$", "", manager_subject).strip()
         return _normalize_duplicate_subject(manager_subject)
+    if _topic_dedup_event_signal_count(title, summary) >= 2:
+        player_subject = _compact_subject_label(title, summary, "選手情報") or _extract_subject_label(
+            title,
+            summary,
+            "選手情報",
+        )
+        if player_subject and title_has_person_name_candidate(player_subject):
+            return _normalize_duplicate_subject(player_subject)
     return ""
 
 
@@ -16911,7 +16929,7 @@ def _extract_duplicate_topic_key(
     if not player:
         return ""
     normalized_subtype = str(article_subtype or "").strip().lower()
-    if normalized_subtype not in {"player", "player_recovery", "player_notice"}:
+    if normalized_subtype not in {"player", "player_recovery", "player_notice", "general"}:
         return ""
     source_text = f"{title or ''} {summary or ''}"
     if not source_text.strip():

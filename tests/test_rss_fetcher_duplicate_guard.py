@@ -303,6 +303,61 @@ def test_cross_run_topic_history_skips_later_media_without_waiting_for_all_sourc
     assert any('"event": "duplicate_news_pre_gemini_skip"' in message for message in messages)
 
 
+def test_cross_run_topic_history_handles_player_incident_misclassified_as_general():
+    first = _make_context(
+        source_url="https://www.nikkansports.com/baseball/news/202605100001722.html",
+        title="【巨人】大城卓三のヘルメットにバット激突…試合後は氷のうを持って歩いてバスへ",
+        summary="巨人大城卓三捕手の頭部にバットが直撃するアクシデントが発生した。",
+        category="コラム",
+        published_at=datetime(2026, 5, 10, 12, 0, tzinfo=timezone.utc),
+    )
+    later_same_topic = _make_context(
+        source_url="https://www.nikkansports.com/baseball/news/202605100001243.html",
+        title="【巨人】ヒヤリ…大城卓三のヘルメットにバット直撃 中日木下のフォロースイング プレーは続行",
+        summary="巨人大城卓三捕手の頭部に中日木下拓哉捕手のフォロースルーが直撃した。",
+        category="コラム",
+        published_at=datetime(2026, 5, 10, 12, 5, tzinfo=timezone.utc),
+    )
+
+    history: dict = {}
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ledger = rss_fetcher._DuplicateNewsLedger(
+            ledger_path=Path(tmpdir) / "duplicate.jsonl",
+            cooldown_hours=6,
+        )
+        with patch.object(rss_fetcher._DuplicateNewsLedger, "shared", return_value=ledger):
+            assert first["subtype"] == "general"
+            assert first["player"] == "大城卓三"
+            assert first["topic_key"] == "player_incident:head_bat_contact"
+            assert (
+                rss_fetcher._evaluate_pre_gemini_duplicate_guard(
+                    logging.getLogger("rss_fetcher"),
+                    first,
+                    duplicate_history=history,
+                )
+                == "allow"
+            )
+            assert rss_fetcher._record_duplicate_topic_history_success(
+                history,
+                first,
+                post_id=66411,
+                draft_title="大城卓三のヘルメットにバット激突…試合後は氷のうを持って歩いてバスへ",
+                source_url="https://www.nikkansports.com/baseball/news/202605100001722.html",
+                now=datetime(2026, 5, 10, 12, 1, tzinfo=timezone.utc),
+            )
+            with CaptureLogs("rss_fetcher") as messages:
+                assert (
+                    rss_fetcher._evaluate_pre_gemini_duplicate_guard(
+                        logging.getLogger("rss_fetcher"),
+                        later_same_topic,
+                        duplicate_history=history,
+                    )
+                    == "skip"
+                )
+
+    assert any('"event": "duplicate_news_pre_gemini_skip"' in message for message in messages)
+
+
 def test_persist_processed_entry_history_records_topic_marker_without_url_for_unpublished_post():
     context = _make_context(
         source_url="https://www.nikkansports.com/baseball/news/202605100000001.html",

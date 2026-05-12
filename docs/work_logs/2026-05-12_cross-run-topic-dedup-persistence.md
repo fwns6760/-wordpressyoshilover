@@ -154,6 +154,7 @@ GO 後は、先に再現テストを追加して赤確認する。
 |---|---|---|
 | 2026-05-12 JST | work log作成 | user 指示により、別 run をまたぐ topic dedup 永続化の作業記録 Markdown を新規作成。この時点で許可された変更は本 Markdown の作成のみ。コード編集・commit・push・deploy・env変更・scheduler変更は未実施。 |
 | 2026-05-12 JST | 方針修正 | user 指摘により、大城 / head_bat_contact 専用ではなく、媒体横断の先着代表方式に目的を修正。複数媒体を待たず、最初の1本は通し、後続の同一話題だけ別 run でも skip する方針に変更。Markdown以外は未変更。 |
+| 2026-05-12 JST | deploy後観測で追加修正 | deploy後の `giants-weekday-daytime` 実行ログで、大城ヘルメット直撃系が `category=コラム / subtype=general` に落ち、初回実装の player/subtype 前提では狙った topic dedup に届かないケースを確認。`コラム/general` でも強い事件語が2つ以上ある場合だけ選手名を復元し、incident topic key を付ける追加回帰テストと修正を実施。 |
 
 ## 10. Regression Memo欄
 
@@ -256,6 +257,9 @@ GO 後は、先に再現テストを追加して赤確認する。
 - `test_persist_processed_entry_history_records_topic_marker_without_url_for_unpublished_post`
   - 投稿されなかった候補でも topic marker は残す。
   - 通常の URL / title 履歴は未投稿候補で増やさない。
+- `test_cross_run_topic_history_handles_player_incident_misclassified_as_general`
+  - 実ログで確認した `category=コラム / subtype=general` の大城ヘルメット直撃系でも player/topic_key を復元する。
+  - 先着1本を履歴化し、後続の同一話題を skip する。
 
 ### 8. 次回触ってはいけない範囲
 

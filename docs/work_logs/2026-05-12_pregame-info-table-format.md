@@ -179,32 +179,75 @@
 
 ### 1. 実際に変更したファイル
 
-(未実装)
+- `src/rss_lineup_table_post_process.py`(NEW、109 行)
+- `src/rss_fetcher.py`(+21 −1、defensive import + `_create_draft_with_same_fire_guard` 内の `apply_rss_pipeline_enrichment` 直前に gate-OFF 時 no-op の post-process 呼び出し)
+- `tests/test_rss_lineup_table_post_process.py`(NEW、152 行、9 テスト)
+- `docs/work_logs/2026-05-12_pregame-info-table-format.md`(本 file、post-work 追記)
 
-### 2. diff概要
+commit: `68e836d`(`feat(rss_fetcher): add narrow lineup-table post-process behind default-OFF flag`)
 
-(未実装)
+### 2. diff 概要
+
+- env flag: `ENABLE_RSS_LINEUP_TABLE_POST_PROCESS`(default OFF)
+- gate 条件(全部 AND):
+  1. Flag ON
+  2. `template_key` が `lineup` または `farm_lineup` を含む
+  3. body に `class="nomotoke-card-"` marker 未存在
+  4. body に `<p>N番 守備 選手</p>` を **8 行以上連続**で含む(False positive 抑止)
+- gate 通過時の出力: prose block を `<table class="nomotoke-card-lineup-table">...</table>` + `<hr class="nomotoke-card-divider">` + `<div class="nomotoke-card-footer">参考: スポーツ報知</div>` に置換
+- 不可触: Gemini prompt、template routing、env / Scheduler / Cloud Run / publish 条件、source 追加 / 削除 / URL 変更、X 投稿、アイキャッチ、SEO
+- 実装方針: 既存 nomotoke renderer を直接 wire するのではなく、Gemini 生成 prose の post-process として narrow に table 化(structured field flow を rss_fetcher に作り込まないことで、blast radius 最小化)
+- 23000 行の rss_fetcher は **import 追加 と 1 箇所の post-process 呼び出し追加** のみで、他のロジックは一切触らない
 
 ### 3. 実行したテスト
 
-(未実装)
+- 新規 unit test 9 件(`tests/test_rss_lineup_table_post_process.py`):
+  - flag OFF で input byte-identical
+  - flag ON + lineup template + 9 batter pattern で table 化
+  - flag ON + template が lineup 以外で unchanged
+  - flag ON + lineup template だが pattern 未存在で unchanged
+  - flag ON + body に nomotoke marker 既存で unchanged(二重描画回避)
+  - flag ON + 部分的(2 行)lineup で unchanged(False positive 抑止)
+  - flag ON + farm_lineup template でも table 化
+  - flag ON + 8 batter(DH-less)でも table 化
+  - empty content で unchanged
+- 全件: `python3 -m unittest discover -s tests` → **3461 件 OK / 0 fail / 0 error**
 
 ### 4. テスト結果
 
-(未実装)
+- v2 baseline 3452 → 3461(+9)
+- 全 GREEN
 
 ### 5. 残った懸念
 
-(未実装)
+- **本実装は narrow なハック**。本来の nomotoke renderer(structured data 経由)を rss_fetcher に wire するのが正しい設計だが、その実装は rss_fetcher の Gemini-prompt 経由 body 生成パスを大規模に変更する必要があり、本 session の scope を超える
+- 表は **prose を読み取り変換** する形式なので、Gemini 出力の表記揺れ(全角 / 半角 / 改行位置 / `番` 前後の空白 / 守備名のバリエーション)で gate を踏み抜く可能性がある。本実装の正規表現は 8 行以上の **連続性** を要件にしているため False positive は出にくいが、False negative(本来 table 化すべきのに変換されない)は発生し得る
+- 既存 active ticket `MANUAL-INTAKE-QUALITY-PARITY-2026-05-08` の本格的な対応(装飾 / 自動化 / 本文長軸の全体設計)は **未着手**。本実装はその一部(装飾軸、lineup subtype のみ、prose-to-table 限定)
+- flag ON での実機検証は未実施。env apply は user 判断境界
+- `pregame` / `probable_starter` / `roster` 等、他の試合前情報 subtype は本実装の対象外
 
 ### 6. 新しく見つかったデグレ
 
-(未実装)
+- 今回差分による新規デグレなし(全件 3461 件 GREEN)
+- production 既存挙動は flag OFF default のため byte-identical で不変
 
 ### 7. 追加した回帰テスト
 
-(未実装)
+`tests/test_rss_lineup_table_post_process.py` 内の 9 件(§3 参照)。flag OFF / ON / template / pattern / marker / fallback / farm_lineup / 8-batter / empty を網羅。
 
 ### 8. 次回触ってはいけない範囲
 
-(未実装)
+- 本実装の流れで Gemini prompt を変更しない(LLM に HTML table を組ませない原則を維持)
+- 本実装の流れで `rss_fetcher.py` の他部分(template routing / body validator / fact check 等)を変更しない
+- 本実装の流れで env / Secret / Scheduler / Cloud Run / GitHub Actions / publish 条件を変更しない
+- 本実装の流れで `_create_draft_with_same_fire_guard` 関数の signature / responsibility を拡張しない
+- 本実装の流れで `apply_rss_pipeline_enrichment` の動作を変更しない(本 post-process は marker 付与のみ、enrichment 本体は不変)
+- 公開済記事の retrofit はしない
+- 報知以外の source への適用は本実装の流れで広げない(現状 footer は「参考: スポーツ報知」固定だが、これは表記であり source 追加ではない)
+- 本実装で `pregame` / `probable_starter` / `roster` などの他 subtype に scope を広げない(別 ticket で実装)
+
+### 後続(別 ticket 候補)
+
+- prod env で `ENABLE_RSS_LINEUP_TABLE_POST_PROCESS=1` を適用して実機観測(user 判断)
+- 観測結果に基づき false positive / negative の有無を判定
+- 本格的な nomotoke renderer wiring(structured data flow)を `MANUAL-INTAKE-QUALITY-PARITY-2026-05-08` の axis 確定後に検討

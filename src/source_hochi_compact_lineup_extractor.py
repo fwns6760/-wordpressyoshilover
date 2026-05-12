@@ -42,8 +42,10 @@ left empty — they would need a separate stats extractor (later phase).
 from __future__ import annotations
 
 import html as html_lib
+import json
 import re
 import unicodedata
+from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
 
@@ -155,6 +157,154 @@ _MAX_LINEUP_TOKEN_COUNT = 22
 
 
 # ---------------------------------------------------------------------------
+# Roster lookup + opponent team detection (NOMOTOKE-LINEUP-FROM-HOCHI-COMPACT-002)
+# ---------------------------------------------------------------------------
+
+# Path to the operator-curated 巨人 roster file. Same path constant scheme
+# as ``src/nomotoke_card_renderer._ROSTER_PATH`` so the two stay in sync
+# even if the project root layout changes.
+_GIANTS_ROSTER_PATH = (
+    Path(__file__).resolve().parent.parent / "config" / "giants_roster.json"
+)
+_GIANTS_ROSTER_CACHE: Optional[List[Dict[str, Any]]] = None
+
+# Marker regex matches ``【XXX】`` (CJK lenticular brackets). Used to detect
+# opponent team name in the tweet text.
+_TEAM_MARKER_RE = re.compile(r"【([^】]{1,12})】")
+
+# Known NPB team name fragments (used both for opponent detection and as
+# the value rendered into the table heading). Order matters for partial
+# matching — longer / more specific names first to avoid prefix collisions.
+_NPB_OPPONENT_TEAM_NAMES: tuple[str, ...] = (
+    "ソフトバンク",
+    "日本ハム",
+    "オリックス",
+    "ヤクルト",
+    "DeNA",
+    "横浜",
+    "阪神",
+    "中日",
+    "広島",
+    "ロッテ",
+    "西武",
+    "楽天",
+)
+
+# Marker tokens that identify the OWN team (巨人) — skipped when searching
+# for the opponent.
+_OWN_TEAM_MARKERS: frozenset[str] = frozenset(
+    {"巨人", "読売", "ジャイアンツ", "読売ジャイアンツ"}
+)
+
+
+def _load_giants_roster() -> List[Dict[str, Any]]:
+    """Return the operator-curated 巨人 roster (cached). Empty list on
+    any read / parse error so the parser never breaks on missing config.
+    """
+    global _GIANTS_ROSTER_CACHE
+    if _GIANTS_ROSTER_CACHE is None:
+        try:
+            with _GIANTS_ROSTER_PATH.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            _GIANTS_ROSTER_CACHE = data if isinstance(data, list) else []
+        except Exception:
+            _GIANTS_ROSTER_CACHE = []
+    return _GIANTS_ROSTER_CACHE or []
+
+
+def _normalize_name_for_match(name: str) -> str:
+    """Strip leading ``*`` (roster convention for 2軍/育成 markers),
+    half/full-width spaces, and trim. Used for both roster entries and
+    parsed source names so they compare cleanly."""
+    if not isinstance(name, str):
+        return ""
+    return name.lstrip("*").replace(" ", "").replace("　", "").strip()
+
+
+def is_giants_player(name: str) -> bool:
+    """Return ``True`` when ``name`` matches a 巨人 roster entry.
+
+    Match strategy (mirrors ``nomotoke_card_renderer._lookup_roster_by_name``):
+
+    1. Exact match against any roster entry's ``name`` or any alias.
+    2. Surname-prefix match (``len(name) in {2, 3, 4}``) against the
+       start of any roster ``name`` / alias.
+
+    Only ``active=True`` entries are consulted so retired players don't
+    cause false positives.
+
+    Known limitation: same-surname players across teams (e.g. ``井上``
+    on 巨人 and DeNA) cannot be disambiguated by surname alone — caller
+    surfaces this through a roster-attribution note in the rendered output.
+    """
+    norm = _normalize_name_for_match(name)
+    if not norm:
+        return False
+    roster = _load_giants_roster()
+    for entry in roster:
+        if not entry.get("active"):
+            continue
+        full = _normalize_name_for_match(entry.get("name") or "")
+        if full and full == norm:
+            return True
+        for alias in entry.get("aliases", []) or []:
+            clean = _normalize_name_for_match(alias)
+            if clean and clean == norm:
+                return True
+    # Compact lineup tweets routinely use 1-char surnames (e.g. ``1丸``
+    # → 丸佳浩, ``9森`` → 森田駿哉). Allow 1-4 char surname-prefix here
+    # (slightly more permissive than ``nomotoke_card_renderer``'s 2-4 cap)
+    # because the position digit prefix in the source token already gives
+    # an extra signal that this is a lineup row and not arbitrary text.
+    if 1 <= len(norm) <= 4:
+        for entry in roster:
+            if not entry.get("active"):
+                continue
+            full = _normalize_name_for_match(entry.get("name") or "")
+            if full and full.startswith(norm):
+                return True
+            for alias in entry.get("aliases", []) or []:
+                clean = _normalize_name_for_match(alias)
+                if clean and clean.startswith(norm):
+                    return True
+    return False
+
+
+def extract_opponent_team_name(text: str) -> str:
+    """Return the first non-巨人 team name found in ``text``.
+
+    Match strategy (in order):
+
+    1. Exact ``【XXX】`` marker where ``XXX`` matches a known NPB team
+       fragment.
+    2. ``【XXX】`` marker substring-containing a known NPB team
+       (e.g. ``【横浜DeNA】`` → ``DeNA``).
+    3. Prose-level ``<team>戦`` pattern (e.g. ``中日戦(バンテリンD…)`` →
+       ``中日``). The ``戦`` suffix is the standard Japanese game-name
+       indicator and is safe (won't accidentally hit ``中日新聞`` etc.).
+
+    Returns ``""`` when no opponent indicator is found.
+    """
+    if not text:
+        return ""
+    # 1 + 2: marker-based extraction
+    for m in _TEAM_MARKER_RE.finditer(text):
+        marker_inner = m.group(1).strip()
+        if not marker_inner or marker_inner in _OWN_TEAM_MARKERS:
+            continue
+        if marker_inner in _NPB_OPPONENT_TEAM_NAMES:
+            return marker_inner
+        for npb in _NPB_OPPONENT_TEAM_NAMES:
+            if npb in marker_inner:
+                return npb
+    # 3: prose `<team>戦` fallback
+    for npb in _NPB_OPPONENT_TEAM_NAMES:
+        if f"{npb}戦" in text:
+            return npb
+    return ""
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -255,16 +405,27 @@ def parse_hochi_compact_lineup(
     if len(deduped) < _MIN_LINEUP_TOKEN_COUNT:
         return None
 
+    # NOMOTOKE-LINEUP-FROM-HOCHI-COMPACT-002: classify each row by 巨人
+    # roster membership and record the opponent team name from the tweet
+    # markers. The renderer in ``rss_fetcher`` uses these fields to split
+    # output into 「巨人スタメン」 / 「<opponent>スタメン」 tables.
     rows: List[Dict[str, str]] = [
-        {"order": str(index), "position": row["position"], "name": row["name"]}
+        {
+            "order": str(index),
+            "position": row["position"],
+            "name": row["name"],
+            "team": "巨人" if is_giants_player(row["name"]) else "相手",
+        }
         for index, row in enumerate(deduped, start=1)
     ]
 
     keyword = next((kw for kw in LINEUP_KEYWORDS if kw in text), "")
+    opponent_team_name = extract_opponent_team_name(text)
     return {
         "lineup": rows,
         "keyword": keyword,
         "raw_position_count": len(matches),
+        "opponent_team_name": opponent_team_name,
     }
 
 

@@ -18,6 +18,8 @@ import unittest
 
 from src.source_hochi_compact_lineup_extractor import (
     HOCHI_SPONICHI_SOURCE_NAMES,
+    extract_opponent_team_name,
+    is_giants_player,
     is_hochi_sponichi_source,
     parse_hochi_compact_lineup,
 )
@@ -265,13 +267,129 @@ class ParseHochiCompactLineupTests(unittest.TestCase):
         self.assertIn("lineup", result)
         self.assertIn("keyword", result)
         self.assertIn("raw_position_count", result)
+        self.assertIn("opponent_team_name", result)
         self.assertIsInstance(result["lineup"], list)
         self.assertIsInstance(result["keyword"], str)
         self.assertIsInstance(result["raw_position_count"], int)
+        self.assertIsInstance(result["opponent_team_name"], str)
         for row in result["lineup"]:
             self.assertIn("order", row)
             self.assertIn("position", row)
             self.assertIn("name", row)
+            self.assertIn("team", row)
+            self.assertIn(row["team"], ("巨人", "相手"))
+
+
+class IsGiantsPlayerTests(unittest.TestCase):
+    """NOMOTOKE-LINEUP-FROM-HOCHI-COMPACT-002: roster lookup."""
+
+    def test_first_team_player_surname_matches(self):
+        """1軍 選手の苗字 (1-2 char) は 巨人 判定。"""
+        for surname in ("吉川", "丸", "大城", "ダルベック", "キャベッジ"):
+            with self.subTest(surname=surname):
+                self.assertTrue(
+                    is_giants_player(surname),
+                    f"surname '{surname}' should be 巨人 (in roster)",
+                )
+
+    def test_farm_player_surname_matches(self):
+        """2軍 / 育成 選手も roster に居れば 巨人 判定。"""
+        for surname in ("萩尾", "浅野", "又木", "山瀬", "湯浅", "ティマ"):
+            with self.subTest(surname=surname):
+                self.assertTrue(
+                    is_giants_player(surname),
+                    f"surname '{surname}' should be 巨人 (in roster)",
+                )
+
+    def test_opponent_player_surname_returns_false(self):
+        """相手チーム (DeNA) 選手の苗字は 巨人 判定されない。"""
+        for surname in ("東妻", "石上", "古市", "片山"):
+            with self.subTest(surname=surname):
+                self.assertFalse(
+                    is_giants_player(surname),
+                    f"surname '{surname}' should NOT be 巨人 (likely DeNA/other)",
+                )
+
+    def test_empty_or_whitespace_returns_false(self):
+        for value in ("", "   ", "\t", None):
+            with self.subTest(value=repr(value)):
+                self.assertFalse(is_giants_player(value))  # type: ignore[arg-type]
+
+    def test_long_input_skips_surname_prefix(self):
+        """5+ char input は surname-prefix 対象外、exact 一致のみ。"""
+        # "吉川尚輝" は exact name または alias で hit
+        self.assertTrue(is_giants_player("吉川尚輝"))
+        # "とても長くて誰でもない名前です" は 5+ char で exact 一致もしない
+        self.assertFalse(is_giants_player("とても長くて誰でもない名前です"))
+
+
+class ExtractOpponentTeamNameTests(unittest.TestCase):
+    """NOMOTOKE-LINEUP-FROM-HOCHI-COMPACT-002: opponent team detection."""
+
+    def test_dena_marker_extracted(self):
+        text = "ファーム・リーグ（Ｇタウン） スタメン 【DeNA】 【巨人】 D東妻 ..."
+        self.assertEqual(extract_opponent_team_name(text), "DeNA")
+
+    def test_chunichi_marker_extracted(self):
+        text = "巨人 vs 中日 本日のスタメン 【中日】 【巨人】 ..."
+        self.assertEqual(extract_opponent_team_name(text), "中日")
+
+    def test_yokohama_dena_combined_marker_extracts_dena(self):
+        """`【横浜DeNA】` のような複合表記からも DeNA を抽出。"""
+        text = "本日のスタメン 【横浜DeNA】 【巨人】 ..."
+        # DeNA が部分一致で勝つ(横浜よりも具体)
+        self.assertIn(extract_opponent_team_name(text), ("DeNA", "横浜"))
+
+    def test_only_giants_marker_returns_empty(self):
+        text = "本日のスタメン 【巨人】 ..."
+        self.assertEqual(extract_opponent_team_name(text), "")
+
+    def test_no_marker_returns_empty(self):
+        text = "本日のスタメンを発表しました。1番吉川 2番キャベッジ"
+        self.assertEqual(extract_opponent_team_name(text), "")
+
+    def test_empty_text_returns_empty(self):
+        self.assertEqual(extract_opponent_team_name(""), "")
+        self.assertEqual(extract_opponent_team_name(None), "")  # type: ignore[arg-type]
+
+
+class ParseLineupReturnsTeamFieldTests(unittest.TestCase):
+    """End-to-end: parse_hochi_compact_lineup returns team field per row."""
+
+    HOCHI_FARM_BOTH_TEAMS = (
+        "ファーム・リーグ（Ｇタウン） スタメン 【DeNA】 【巨人】 "
+        "D東妻 7萩尾 3加藤 9皆川 6石上 6小濱 5宮下 5藤井 7井上 3三塚 "
+        "4小田 8浅野 9梶原 Dティマ 2古市 2山瀬 8濱 4湯浅 P片山 P又木"
+    )
+    HOCHI_FIRST_TEAM_SOLO = (
+        "巨人スタメン 中日戦(バンテリンD、13:30) "
+        "4吉川 7キャベッジ 9丸 5ダルベック 2大城 3増田 8平山 6浦田 1森田"
+    )
+
+    def test_2gun_split_has_both_teams_present(self):
+        result = parse_hochi_compact_lineup(
+            title=self.HOCHI_FARM_BOTH_TEAMS,
+            summary=self.HOCHI_FARM_BOTH_TEAMS,
+            source_name="スポーツ報知巨人班X",
+        )
+        self.assertIsNotNone(result)
+        teams = {r["team"] for r in result["lineup"]}
+        self.assertIn("巨人", teams, "no 巨人 player classified")
+        self.assertIn("相手", teams, "no 相手 player classified")
+        self.assertEqual(result["opponent_team_name"], "DeNA")
+
+    def test_1gun_solo_all_giants(self):
+        """1軍 fixture は全員 巨人 roster member 。"""
+        result = parse_hochi_compact_lineup(
+            title=self.HOCHI_FIRST_TEAM_SOLO,
+            summary=self.HOCHI_FIRST_TEAM_SOLO,
+            source_name="スポーツ報知巨人班X",
+        )
+        self.assertIsNotNone(result)
+        teams = [r["team"] for r in result["lineup"]]
+        self.assertEqual(teams, ["巨人"] * 9, "1軍 fixture not all 巨人")
+        # 中日戦 marker から opponent extract
+        self.assertEqual(result["opponent_team_name"], "中日")
 
 
 if __name__ == "__main__":

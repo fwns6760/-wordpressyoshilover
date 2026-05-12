@@ -15165,7 +15165,14 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     # extract a structured 3-column lineup from the compact tweet shape
     # (``D東妻 7萩尾3加藤 ...``). Falls through silently to prose body
     # when extraction fails (parser returns ``None``).
+    #
+    # NOMOTOKE-LINEUP-FROM-HOCHI-COMPACT-002: each row carries a ``team``
+    # field (``巨人`` / ``相手``) from giants_roster.json membership, and
+    # the parser returns the opponent team name parsed from ``【XXX】``
+    # markers. ``_build_basic_lineup_table_block`` uses these to render
+    # 「巨人スタメン」 / 「<opponent>スタメン」 split tables.
     compact_lineup_rows: list[dict] = []
+    compact_opponent_team_name: str = ""
     if (
         not lineup_stat_rows
         and _parse_hochi_compact_lineup is not None
@@ -15180,11 +15187,15 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             )
             if compact_data and compact_data.get("lineup"):
                 compact_lineup_rows = list(compact_data["lineup"])
+                compact_opponent_team_name = str(
+                    compact_data.get("opponent_team_name") or ""
+                )
         except Exception as e:  # noqa: BLE001
             logging.getLogger("rss_fetcher").warning(
                 "hochi_compact_lineup_parse_skipped reason=%s", e
             )
             compact_lineup_rows = []
+            compact_opponent_team_name = ""
     lineup_stats_rendered = False
 
     # 試合がない日は勝敗ヒントを生成しない（架空スコア捏造防止）
@@ -15795,40 +15806,35 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         )
         return header + note + table_html
 
-    def _build_basic_lineup_table_block(rows: list[dict]) -> str:
-        """3-column lineup table for compact-source rows (打順 / 守備 / 選手).
-
-        Used when ``lineup_stat_rows`` (Yahoo 7-column stats) is unavailable
-        but ``compact_lineup_rows`` was extracted from a 報知 / スポニチ
-        compact tweet via ``parse_hochi_compact_lineup``. Renders the same
-        ``<!-- wp:html -->`` envelope as ``_lineup_stats_block`` and uses
-        the ``nomotoke-card-lineup-table`` marker class so the existing
-        narrow ``rss_lineup_table_post_process`` short-circuits and avoids
-        double rendering.
-        """
-        if not rows:
+    def _render_compact_lineup_subtable(heading_text: str, sub_rows: list[dict]) -> str:
+        """Render a single 3-column ``<table>`` (順 / 守備 / 選手) under the
+        given heading. Rows are renumbered sequentially within this table
+        (1..N) so the displayed 「順」 is per-team, not per-tweet."""
+        if not sub_rows:
             return ""
         heading_level = 4 if _body_template_v2_enabled() else 3
-        header = (
+        header_html = (
             f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
-            f'<h{heading_level}>📋 スタメン一覧</h{heading_level}>\n'
+            f'<h{heading_level}>{heading_text}</h{heading_level}>\n'
             '<!-- /wp:heading -->\n\n'
         )
-        note = (
+        note_html = (
             '<!-- wp:paragraph -->\n'
-            '<p style="font-size:0.82em;color:#666;">※元記事の発表順に並べています</p>\n'
+            '<p style="font-size:0.82em;color:#666;">'
+            '※元記事の発表順に並べています(giants_roster 照合)。'
+            '育成新人など roster 未掲載の選手は相手側に表示される場合があります。'
+            '</p>\n'
             '<!-- /wp:paragraph -->\n\n'
         )
-        table_rows = [
+        table_rows_html = [
             "<tr><th>順</th><th>守備</th><th>選手</th></tr>"
         ]
-        for row in rows:
-            order = str(row.get("order", "")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        for index, row in enumerate(sub_rows, start=1):
             position = str(row.get("position", "")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             name = str(row.get("name", "")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            table_rows.append(
+            table_rows_html.append(
                 "<tr>"
-                f"<td>{order}</td>"
+                f"<td>{index}</td>"
                 f"<td>{position}</td>"
                 f"<td>{name}</td>"
                 "</tr>"
@@ -15837,12 +15843,49 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
             '<!-- wp:html -->\n'
             '<div class="yoshilover-lineup-stats" style="overflow-x:auto;margin:0 0 12px;">'
             '<table class="nomotoke-card-lineup-table" style="width:100%;border-collapse:collapse;font-size:0.92em;">'
-            f"{''.join(table_rows)}"
+            f"{''.join(table_rows_html)}"
             "</table>"
             "</div>\n"
             '<!-- /wp:html -->\n\n'
         )
-        return header + note + table_html
+        return header_html + note_html + table_html
+
+    def _build_basic_lineup_table_block(
+        rows: list[dict],
+        opponent_team_name: str = "",
+    ) -> str:
+        """Render the compact-source lineup as up to 2 sub-tables, split by
+        the ``team`` field on each row (``巨人`` vs ``相手``).
+
+        Used when ``lineup_stat_rows`` (Yahoo 7-column stats) is unavailable
+        but ``compact_lineup_rows`` was extracted from a 報知 / スポニチ
+        compact tweet via ``parse_hochi_compact_lineup``. Each row carries a
+        ``team`` field computed from ``giants_roster.json`` membership; this
+        renderer groups them into a 「巨人スタメン」 table and (if the parser
+        also detected an opponent marker) a ``<opponent>スタメン`` table.
+
+        Empty sub-tables are suppressed so single-team tweets (e.g. 1軍
+        lineup with all 9 names on the 巨人 roster) emit exactly one table.
+        Uses the ``nomotoke-card-lineup-table`` marker class so the existing
+        narrow ``rss_lineup_table_post_process`` short-circuits to avoid
+        double rendering. Heading level honours ``_body_template_v2_enabled``
+        so it matches the surrounding section depth.
+        """
+        if not rows:
+            return ""
+        giants_rows = [r for r in rows if str(r.get("team") or "") == "巨人"]
+        opponent_rows = [r for r in rows if str(r.get("team") or "") == "相手"]
+        opponent_heading = (
+            f"📋 {opponent_team_name}スタメン"
+            if opponent_team_name
+            else "📋 相手スタメン"
+        )
+        out = ""
+        if giants_rows:
+            out += _render_compact_lineup_subtable("📋 巨人スタメン", giants_rows)
+        if opponent_rows:
+            out += _render_compact_lineup_subtable(opponent_heading, opponent_rows)
+        return out
 
     def _player_daily_stat_block(subject_name: str, rows: list[tuple[str, str]]) -> str:
         if not subject_name or not rows:
@@ -16325,7 +16368,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 and compact_lineup_rows
                 and not lineup_stats_rendered
             ):
-                blocks += _build_basic_lineup_table_block(compact_lineup_rows)
+                blocks += _build_basic_lineup_table_block(compact_lineup_rows, compact_opponent_team_name)
                 lineup_stats_rendered = True
             if (
                 current_heading == "【二軍スタメン一覧】"
@@ -16334,7 +16377,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 and compact_lineup_rows
                 and not lineup_stats_rendered
             ):
-                blocks += _build_basic_lineup_table_block(compact_lineup_rows)
+                blocks += _build_basic_lineup_table_block(compact_lineup_rows, compact_opponent_team_name)
                 lineup_stats_rendered = True
             if (
                 current_heading == "【ニュースの整理】"
@@ -16453,7 +16496,7 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     elif compact_lineup_rows and not lineup_stats_rendered:
         if not followup_section_rendered:
             blocks += _sep()
-        blocks += _build_basic_lineup_table_block(compact_lineup_rows)
+        blocks += _build_basic_lineup_table_block(compact_lineup_rows, compact_opponent_team_name)
         followup_section_rendered = True
         lineup_stats_rendered = True
 

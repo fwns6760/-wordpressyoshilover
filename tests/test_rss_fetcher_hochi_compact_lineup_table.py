@@ -209,5 +209,152 @@ class HochiCompactLineupTableTests(unittest.TestCase):
         )
 
 
+class HochiCompactLineupTeamSplitTests(unittest.TestCase):
+    """Phase 2A-1 bug reproduction: 2 tables with team headings.
+
+    `1でいいよ。ただ上にチーム名入れて` (user 2026-05-12 PM).
+    roster (`config/giants_roster.json`) 照合で巨人選手を分離、
+    `【XXX】` marker から対戦相手名を抽出、heading に team 名を明示。
+
+    Phase 2A 着地時点では単一 table。本 phase は 2-table split が前提。
+    Fix 前は RED(team heading が出ない / 単一 table のまま)。
+    """
+
+    HOCHI_FARM_LINEUP_COMPACT = (
+        "ファーム・リーグ（Ｇタウン） スタメン 【DeNA】 【巨人】 "
+        "D東妻 7萩尾 3加藤 9皆川 6石上 6小濱 5宮下 5藤井 7井上 3三塚 "
+        "4小田 8浅野 9梶原 Dティマ 2古市 2山瀬 8濱 4湯浅 P片山 P又木"
+    )
+    HOCHI_FIRST_TEAM_LINEUP_COMPACT = (
+        "巨人スタメン 中日戦(バンテリンD、13:30) "
+        "4吉川 7キャベッジ 9丸 5ダルベック 2大城 3増田 8平山 6浦田 1森田"
+    )
+
+    def _build(
+        self,
+        *,
+        title: str,
+        summary: str,
+        url: str,
+        source_name: str,
+        category: str,
+        has_game: bool = True,
+        source_type: str = "social_news",
+        yahoo_lineup_rows: list[dict] | None = None,
+    ) -> tuple[str, str]:
+        from unittest.mock import patch
+        from src import rss_fetcher
+
+        patches = [
+            patch.object(
+                rss_fetcher,
+                "fetch_today_giants_lineup_stats_from_yahoo",
+                return_value=yahoo_lineup_rows or [],
+            ),
+        ]
+        for fn_name, return_value in (
+            ("fetch_fan_reactions_from_yahoo", []),
+            ("_fetch_fan_reactions_from_yahoo_safe", []),
+            ("generate_article_with_gemini", ""),
+            ("generate_article_with_grok", ("", [], "", "", "")),
+        ):
+            if hasattr(rss_fetcher, fn_name):
+                patches.append(patch.object(rss_fetcher, fn_name, return_value=return_value))
+        for p in patches:
+            p.start()
+        try:
+            return rss_fetcher.build_news_block(
+                title=title,
+                summary=summary,
+                url=url,
+                source_name=source_name,
+                category=category,
+                has_game=has_game,
+                source_type=source_type,
+            )
+        finally:
+            for p in reversed(patches):
+                p.stop()
+
+    def test_hochi_farm_lineup_emits_giants_table_heading(self):
+        """報知 2軍 lineup → body に「巨人スタメン」heading 含む。"""
+        blocks, _ai_body = self._build(
+            title=self.HOCHI_FARM_LINEUP_COMPACT,
+            summary=self.HOCHI_FARM_LINEUP_COMPACT,
+            url="https://twitter.com/hochi_giants/status/2054047155913113832",
+            source_name="スポーツ報知巨人班X",
+            category="ドラフト・育成",
+        )
+        self.assertIn(
+            "巨人スタメン",
+            blocks,
+            "報知 2軍 lineup で「巨人スタメン」 heading が出ない",
+        )
+
+    def test_hochi_farm_lineup_emits_opponent_team_heading(self):
+        """報知 2軍 lineup(vs DeNA)→ body に「DeNAスタメン」heading 含む。"""
+        blocks, _ai_body = self._build(
+            title=self.HOCHI_FARM_LINEUP_COMPACT,
+            summary=self.HOCHI_FARM_LINEUP_COMPACT,
+            url="https://twitter.com/hochi_giants/status/2054047155913113832",
+            source_name="スポーツ報知巨人班X",
+            category="ドラフト・育成",
+        )
+        self.assertIn(
+            "DeNAスタメン",
+            blocks,
+            "報知 2軍 lineup(vs DeNA)で「DeNAスタメン」 heading が出ない",
+        )
+
+    def test_hochi_farm_lineup_emits_two_tables_marker_count_two(self):
+        """報知 2軍 lineup → table marker `nomotoke-card-lineup-table` が 2 回出る(巨人 + 相手)。"""
+        blocks, _ai_body = self._build(
+            title=self.HOCHI_FARM_LINEUP_COMPACT,
+            summary=self.HOCHI_FARM_LINEUP_COMPACT,
+            url="https://twitter.com/hochi_giants/status/2054047155913113832",
+            source_name="スポーツ報知巨人班X",
+            category="ドラフト・育成",
+        )
+        self.assertEqual(
+            blocks.count("nomotoke-card-lineup-table"),
+            2,
+            "報知 2軍 lineup で table が 2 つ出ない(巨人 + 相手 split していない)",
+        )
+
+    def test_hochi_first_team_lineup_only_giants_emits_single_table(self):
+        """報知 1軍 lineup(9 名全員巨人)→ table 1 つのみ、相手 table 出ない。"""
+        blocks, _ai_body = self._build(
+            title=self.HOCHI_FIRST_TEAM_LINEUP_COMPACT,
+            summary=self.HOCHI_FIRST_TEAM_LINEUP_COMPACT,
+            url="https://twitter.com/hochi_giants/status/2053999999999999999",
+            source_name="スポーツ報知巨人班X",
+            category="試合速報",
+            yahoo_lineup_rows=[],
+        )
+        # 巨人 table のみ、相手 table 0 件 → table marker は 1 回のみ
+        self.assertEqual(
+            blocks.count("nomotoke-card-lineup-table"),
+            1,
+            "1軍 9 名全員巨人なのに 2 つ目の table が出ている(相手 empty なら出さない)",
+        )
+        self.assertIn(
+            "巨人スタメン",
+            blocks,
+            "1軍 lineup で「巨人スタメン」heading が出ない",
+        )
+
+    def test_hochi_farm_lineup_emits_roster_transparency_note(self):
+        """報知 2軍 lineup → 透明性 note「roster 照合」「育成新人」等の文言が body に含まれる。"""
+        blocks, _ai_body = self._build(
+            title=self.HOCHI_FARM_LINEUP_COMPACT,
+            summary=self.HOCHI_FARM_LINEUP_COMPACT,
+            url="https://twitter.com/hochi_giants/status/2054047155913113832",
+            source_name="スポーツ報知巨人班X",
+            category="ドラフト・育成",
+        )
+        # roster 照合 + 育成新人など roster 未掲載の言及が body 内に存在
+        self.assertIn("roster", blocks.lower(), "roster 照合 note が body に無い")
+
+
 if __name__ == "__main__":
     unittest.main()

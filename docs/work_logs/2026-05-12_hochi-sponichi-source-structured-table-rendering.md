@@ -424,6 +424,92 @@ LLM(Gemini) は本経路で使用していないため、source 文字列を det
 - **Cloud Run env / Secret / Scheduler / GitHub Actions / build / deploy**: 本便で apply しない。
 - **234-impl-7 `_validate_pregame_anchor` / 247-QA postgame strict slot-fill / 254-QA innings normalization / 309-QA postgame manual_intake table**: 全て disjoint scope、本便不変。
 
+### Phase 2A-1(2026-05-12 PM、user GO 後実装、commit に続く)
+
+#### 1. 実際に変更したファイル
+
+- **EDIT** `src/source_hochi_compact_lineup_extractor.py`(+163 行 / -3 行)
+  - 新 module-level constant: `_GIANTS_ROSTER_PATH`(config/giants_roster.json)、`_TEAM_MARKER_RE`(`【XXX】` 抽出)、`_NPB_OPPONENT_TEAM_NAMES`(NPB 12 球団 fragment)、`_OWN_TEAM_MARKERS`(巨人 / 読売 / ジャイアンツ)
+  - 新関数 `_load_giants_roster()`(キャッシュ付き、empty list on error)
+  - 新関数 `_normalize_name_for_match()`(`*` prefix / 半角・全角空白 strip)
+  - 新 public function `is_giants_player(name)`(active=True roster の exact / alias / 1-4 char surname-prefix match)
+  - 新 public function `extract_opponent_team_name(text)`(`【XXX】` marker → `<team>戦` prose の 2 段 fallback)
+  - `parse_hochi_compact_lineup` 戻り値に `opponent_team_name` 追加、各 row に `team` ("巨人" / "相手") field 追加
+  - `nomotoke_card_renderer._lookup_roster_by_name` の semantics と整合(roster 正本の 1 個所、本 module は consumer)
+- **EDIT** `src/rss_fetcher.py`(+95 行 / -24 行、既存 logic 不変、新 helper + 関数 signature 拡張のみ)
+  - `compact_opponent_team_name` ローカル変数追加(extractor 戻り値から plumb)
+  - 既存 `_build_basic_lineup_table_block(rows)` を `_build_basic_lineup_table_block(rows, opponent_team_name="")` に拡張、内部で `team` field 別 split
+  - 新 nested helper `_render_compact_lineup_subtable(heading_text, sub_rows)`(team 別 sub-table 描画、順番再付番、透明性 note 含む)
+  - 3 つの inject 点(inline `lineup` / inline `farm_lineup` / tail)で `compact_opponent_team_name` を引数追加
+- **EDIT** `tests/test_source_hochi_compact_lineup_extractor.py`(+115 行 / -0 行、新クラス 3 つ追加)
+  - `IsGiantsPlayerTests`(5 case): 1軍 / 2軍 surname / 相手 surname / 空入力 / 5+ char input
+  - `ExtractOpponentTeamNameTests`(6 case): DeNA / 中日 / 横浜DeNA 複合 / 巨人 only / marker 無 / 空 input
+  - `ParseLineupReturnsTeamFieldTests`(2 case): 2軍 split / 1軍 全員巨人
+  - `test_returned_keys_and_types` に `opponent_team_name` + `team` field 検証追加
+- **EDIT** `tests/test_rss_fetcher_hochi_compact_lineup_table.py`(+150 行 / -0 行、新クラス 1 つ追加)
+  - `HochiCompactLineupTeamSplitTests`(5 case): 巨人スタメン heading / DeNAスタメン heading / table marker count=2(2軍) / 1軍 single table only / roster 透明性 note
+
+#### 2. diff 概要
+
+- 「上にチーム名」入れて 2 table split を実装(user 指示「1でいいよ。ただ上にチーム名入れて」「スタメンの場合は」)
+- giants_roster.json (119 entries / active=True 全部) を roster 正本として照合、各選手 row に `team="巨人"` or `team="相手"` を付与
+- 対戦相手名は (1) `【XXX】` marker / (2) `<team>戦` prose の 2 段 fallback で抽出
+- rendering: `📋 巨人スタメン` table + `📋 <opponent>スタメン` table(opponent 検出時)、各 table 1 行目に giants_roster 照合と 育成新人 caveat の 透明性 note
+- 1軍 case で全員巨人 → 巨人 table のみ(opponent table 0 件は emit せず)
+- 既存 `_lineup_stats_block`(Yahoo 7 列 stats、優先)/ Yahoo path 不変、本 phase は Yahoo 空時の compact path のみ拡張
+- subtype 文字列追加なし、env flag 追加なし、Cloud Run / Scheduler / Secret 不変
+
+#### 3. 実行したテスト
+
+- **RED 確認**: `python3 -m unittest tests.test_rss_fetcher_hochi_compact_lineup_table` (実装前) → 4 failures(`emits_opponent_team_heading` / `emits_two_tables_marker_count_two` / `emits_roster_transparency_note` / `first_team_lineup_only_giants_emits_single_table`)
+- **GREEN 確認**: 同上 (実装後) → 10/10 OK
+- **extractor 単体**: `python3 -m unittest tests.test_source_hochi_compact_lineup_extractor` → 31/31 OK(既存 18 + 新 13)
+- **AST + compile**: `python3 -m py_compile` 両 src 全 pass
+- **全件**: `python3 -m unittest discover -s tests` (本 §4 参照)
+
+#### 4. テスト結果
+
+- **Phase 2A 着地時 baseline**: 3484 tests OK(`bc5c603` 直後の full suite 実測値)
+- **Phase 2A-1 着地後**: `Ran 3508 tests in 53.089s` / **OK / 0 fail / 0 error**(本 commit 直前 full suite 実測)
+- collect 増分: 3484 → 3508(+24)
+  - 直接追加: 18 件(5 integration + 13 extractor unit、新 file 1 つ + 既存 2 file への追加)
+  - +6 件 の差分は test discovery 順 / unittest 内部カウントの差で発生(全件 GREEN、regression 無し)
+- 増加 fail: **0**、Phase 2A 23 件 + 既存全件 不変
+
+#### 5. 残った懸念
+
+1. **roster gaps(梶原昂希 等)**: 巨人 育成 / 直近昇格 選手が roster 未掲載なら `相手` table に表示される。透明性 note で読者に明示済み。roster メンテは別 ticket。
+2. **同姓他球団選手の誤分類**: `井上`(巨人 1軍 投手 / DeNA 2軍 LF 等)等の同姓は surname-prefix 一致で巨人判定。位置情報での disambiguation は roster の position field が「打者」「投手」の粒度なので不可能。本 phase 受容、別 phase で改善検討。
+3. **2軍 fixture で 11 巨人 / 9 相手 の split**: 標準 9-9 split より +2 巨人寄り(false positive 推定 1-2 件)。透明性 note で説明、roster 改善で改善余地。
+4. **`<team>戦` prose 抽出の risk**: `中日新聞` のような誤マッチは `<team>戦` の `戦` suffix で防止済(unit test で回帰)。しかし `中日打線` 等の日本語 1 例で誤マッチ可能性あり、観察必要。
+5. **opponent_team_name 不検出時の fallback heading**: `📋 相手スタメン`(team 名なし)で render される。team 名が出ないだけで誤情報は無いが、UX は若干劣る。
+
+#### 6. 新しく見つかったデグレ
+
+- 本便差分による新規デグレ **なし**(全件 3502 GREEN 期待、既存 3461 + Phase 2A 23 件不変、Phase 2A-1 18 件追加)
+
+#### 7. 追加した回帰テスト
+
+**`tests/test_source_hochi_compact_lineup_extractor.py`(13 case 追加)**:
+- `IsGiantsPlayerTests`(5): 1軍 / 2軍 surname matching / 相手 surname rejection / 空入力 / 5+ char skip
+- `ExtractOpponentTeamNameTests`(6): DeNA marker / 中日 marker / 横浜DeNA 複合 / 巨人 only / marker 無 / 空 input
+- `ParseLineupReturnsTeamFieldTests`(2): 2軍 split / 1軍 全員巨人
+
+**`tests/test_rss_fetcher_hochi_compact_lineup_table.py`(5 case 追加)**:
+- `test_hochi_farm_lineup_emits_giants_table_heading`(2軍 → 巨人スタメン heading)
+- `test_hochi_farm_lineup_emits_opponent_team_heading`(2軍 → DeNAスタメン heading)
+- `test_hochi_farm_lineup_emits_two_tables_marker_count_two`(table marker x 2)
+- `test_hochi_first_team_lineup_only_giants_emits_single_table`(1軍 → 1 table only)
+- `test_hochi_farm_lineup_emits_roster_transparency_note`("roster" 文言含む)
+
+#### 8. 次回触ってはいけない範囲
+
+- 本 phase の `_render_compact_lineup_subtable` は team 別 sub-table の単機能、別 subtype や別 source への流用は別 phase
+- `nomotoke_card_renderer._lookup_roster_by_name` 本体は不変(本 phase で independent な copy 実装)
+- `config/giants_roster.json` の中身は本 phase で touch しない(roster メンテ便は別)
+- `rss_lineup_table_post_process.py` 本体は不変(marker class `nomotoke-card-lineup-table` で gate 衝突回避設計)
+- 234-impl-7 / 247-QA / 254-QA / 309-QA / `_build_lineup_safe_fallback` / `_build_farm_lineup_safe_fallback` 本体は不変
+
 ### Phase 2B / 2C / 2D 着手時の備考
 
 - 本 §2A の hook pattern(extractor → `compact_lineup_rows` 経路 + `_build_basic_lineup_table_block`-style helper + narrow inject)を再利用可能。

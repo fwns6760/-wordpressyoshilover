@@ -67,6 +67,16 @@ class PostgameTableTests(unittest.TestCase):
                 return_value=[],
             ),
         ]
+        # Phase 2F: NPB fetcher mock — empty dict so the test exercises
+        # the Yahoo / A-fallback path that existed before Phase 2F.
+        if hasattr(rss_fetcher, "fetch_today_giants_npb_box_facts"):
+            patches.append(
+                patch.object(
+                    rss_fetcher,
+                    "fetch_today_giants_npb_box_facts",
+                    return_value={},
+                )
+            )
         for fn_name, return_value in (
             ("fetch_fan_reactions_from_yahoo", []),
             ("_fetch_fan_reactions_from_yahoo_safe", []),
@@ -236,6 +246,16 @@ class PostgameYahooBoxscoreTests(unittest.TestCase):
                 return_value=[],
             ),
         ]
+        # Phase 2F: NPB fetcher mock — empty dict so the test exercises
+        # the Yahoo / A-fallback path that existed before Phase 2F.
+        if hasattr(rss_fetcher, "fetch_today_giants_npb_box_facts"):
+            patches.append(
+                patch.object(
+                    rss_fetcher,
+                    "fetch_today_giants_npb_box_facts",
+                    return_value={},
+                )
+            )
         # Phase 2D-B mock — postgame Yahoo fetcher returns the supplied dict.
         if hasattr(rss_fetcher, "fetch_today_giants_postgame_facts_from_yahoo"):
             patches.append(
@@ -377,6 +397,126 @@ class PostgameYahooBoxscoreTests(unittest.TestCase):
             blocks,
             "2軍 postgame で 1軍用 inning table が誤発火",
         )
+
+
+class PostgameNPBBoxIntegrationTests(unittest.TestCase):
+    """Phase 2F: NPB box facts produce the rich 4-table layout."""
+
+    NPB_BOX_FACTS = {
+        "giants_batters": [
+            {"順": "1", "守備": "二", "選手": "吉川", "打数": "5", "得点": "0",
+             "安打": "1", "打点": "1", "盗塁": "0",
+             "atbats": ["二ゴロ", "-", "二併打", "-", "三振", "-", "二ゴロ", "-", "右前安"],
+             "is_sub": False},
+            {"順": "2", "守備": "左", "選手": "キャベッジ", "打数": "4", "得点": "0",
+             "安打": "1", "打点": "0", "盗塁": "0",
+             "atbats": ["三振", "-", "中飛", "-", "一ゴロ", "-", "投安", "-", "-"],
+             "is_sub": False},
+        ],
+        "giants_pitchers": [
+            {"選手": "森田", "投球数": "80", "打者": "21", "投球回": "4.1",
+             "安打": "5", "本塁打": "1", "四球": "2", "死球": "0", "三振": "4",
+             "暴投": "0", "ボーク": "0", "失点": "4", "自責点": "4"},
+        ],
+        "opponent_batters": [
+            {"順": "1", "守備": "右", "選手": "岡林", "打数": "4", "得点": "1",
+             "安打": "2", "打点": "0", "盗塁": "0",
+             "atbats": ["-"] * 9, "is_sub": False},
+        ],
+        "opponent_pitchers": [
+            {"選手": "髙橋宏", "投球数": "95", "打者": "30", "投球回": "5.0",
+             "安打": "8", "本塁打": "2", "四球": "3", "死球": "0", "三振": "6",
+             "暴投": "0", "ボーク": "0", "失点": "5", "自責点": "5"},
+        ],
+        "opponent_team_name": "中日",
+        "inning_score": [
+            {"name": "巨人", "innings": ["0","1","0","2","0","2","0","1","3"], "total": 9},
+            {"name": "中日", "innings": ["0","0","1","2","1","0","0","0","0"], "total": 4},
+        ],
+    }
+
+    def _build_with_npb(self, *, yahoo_facts=None, npb_facts=None):
+        patches = [
+            patch.dict(os.environ, {"ENABLE_RSS_TEMPLATE_ROUTING_V2": "1"}),
+            patch.object(rss_fetcher, "fetch_today_giants_lineup_stats_from_yahoo", return_value=[]),
+        ]
+        if hasattr(rss_fetcher, "fetch_today_giants_npb_box_facts"):
+            patches.append(
+                patch.object(rss_fetcher, "fetch_today_giants_npb_box_facts",
+                             return_value=npb_facts or {})
+            )
+        if hasattr(rss_fetcher, "fetch_today_giants_postgame_facts_from_yahoo"):
+            patches.append(
+                patch.object(rss_fetcher, "fetch_today_giants_postgame_facts_from_yahoo",
+                             return_value=yahoo_facts or {})
+            )
+        for fn_name, return_value in (
+            ("fetch_fan_reactions_from_yahoo", []),
+            ("_fetch_fan_reactions_from_yahoo_safe", []),
+            ("generate_article_with_gemini", ""),
+            ("generate_article_with_grok", ("", [], "", "", "")),
+        ):
+            if hasattr(rss_fetcher, fn_name):
+                patches.append(patch.object(rss_fetcher, fn_name, return_value=return_value))
+        for p in patches:
+            p.start()
+        try:
+            return rss_fetcher.build_news_block(
+                title=HOCHI_FIRST_POSTGAME_TITLE,
+                summary=HOCHI_FIRST_POSTGAME_SUMMARY,
+                url="https://hochi.news/articles/20260512-OHT9999-first.html",
+                source_name="スポーツ報知 巨人 tag",
+                category="試合速報",
+                has_game=True,
+                source_type="news",
+            )
+        finally:
+            for p in reversed(patches):
+                p.stop()
+
+    def test_npb_box_emits_batter_table_marker(self):
+        blocks, _ = self._build_with_npb(npb_facts=self.NPB_BOX_FACTS)
+        self.assertIn("nomotoke-card-postgame-batter", blocks)
+        self.assertIn("吉川", blocks)
+        self.assertIn("二ゴロ", blocks)
+
+    def test_npb_box_emits_pitcher_detail_table_marker(self):
+        blocks, _ = self._build_with_npb(npb_facts=self.NPB_BOX_FACTS)
+        self.assertIn("nomotoke-card-postgame-pitcher-detail", blocks)
+        self.assertIn("森田", blocks)
+        self.assertIn("4.1", blocks)
+
+    def test_npb_box_takes_priority_over_yahoo(self):
+        """NPB 成功時 Yahoo block(W/L/S pitcher marker)は描画されない。"""
+        yahoo = {
+            "team_name": "巨人", "score": "9-4", "result": "win",
+            "date_label": "2026年5月10日", "league_label": "セ・リーグ",
+            "home": "中日ドラゴンズ", "away": "読売ジャイアンツ",
+            "inning_score": [{"name": "巨人", "innings": ["0"]*9, "total": 9},
+                            {"name": "中日", "innings": ["0"]*9, "total": 4}],
+            "one_line_summary": "",
+            "winning_pitcher": {"team": "巨人", "name": "戸郷", "record": "4勝2敗0S"},
+        }
+        blocks, _ = self._build_with_npb(npb_facts=self.NPB_BOX_FACTS, yahoo_facts=yahoo)
+        # NPB block 出てる
+        self.assertIn("nomotoke-card-postgame-batter", blocks)
+        # Phase 2E Yahoo W/L/S pitcher table marker は出ない(NPB が優先)
+        self.assertNotIn("nomotoke-card-postgame-pitchers", blocks)
+
+    def test_npb_box_fails_falls_back_to_yahoo(self):
+        yahoo = {
+            "team_name": "巨人", "score": "9-4", "result": "win",
+            "date_label": "2026年5月10日", "league_label": "セ・リーグ",
+            "home": "中日ドラゴンズ", "away": "読売ジャイアンツ",
+            "inning_score": [{"name": "巨人", "innings": ["0"]*9, "total": 9},
+                            {"name": "中日", "innings": ["0"]*9, "total": 4}],
+            "one_line_summary": "",
+        }
+        blocks, _ = self._build_with_npb(npb_facts={}, yahoo_facts=yahoo)
+        # NPB block 出ない
+        self.assertNotIn("nomotoke-card-postgame-batter", blocks)
+        # Yahoo inning fallback 出る
+        self.assertIn("nomotoke-card-postgame-inning", blocks)
 
 
 if __name__ == "__main__":

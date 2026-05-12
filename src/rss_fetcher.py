@@ -168,6 +168,12 @@ try:
     )
 except Exception:  # noqa: BLE001
     _parse_postgame_facts = None  # type: ignore[assignment]
+try:
+    from src.source_npb_postgame_extractor import (
+        parse_npb_box_html as _parse_npb_box_html,
+    )
+except Exception:  # noqa: BLE001
+    _parse_npb_box_html = None  # type: ignore[assignment]
 from src.body_contract_fail_ledger import (
     BODY_CONTRACT_FAIL_LEDGER_PATH_ENV as BODY_CONTRACT_FAIL_LEDGER_PATH_ENV_FLAG,
     ENABLE_BODY_CONTRACT_FAIL_LEDGER_ENV as BODY_CONTRACT_FAIL_LEDGER_ENV_FLAG,
@@ -4730,6 +4736,57 @@ def fetch_giants_lineup_stats_from_yahoo(target_day: str | None = None, game_id:
 
 def fetch_today_giants_lineup_stats_from_yahoo() -> list[dict]:
     return fetch_giants_lineup_stats_from_yahoo()
+
+
+# NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2F: NPB公式 box.html fetcher.
+# NPB公式 ships the full per-batter atbat grid + per-pitcher stats line
+# as plain HTML (no JS, no API key). We discover today's 巨人 game by
+# scraping the ``/bis/<year>/games/`` index page (which lists each day's
+# completed games with team-letter game URLs like ``/scores/<YYYY>/<MMDD>/g-c-06/``),
+# then GET that game's ``box.html``. Failure returns ``{}`` so the
+# caller falls back to the Yahoo /index path (Phase 2D-B / 2E).
+_NPB_GIANTS_GAME_URL_RE = __import__("re").compile(
+    r"/scores/(\d{4})/(\d{4})/([a-z]+-g-\d+|g-[a-z]+-\d+)/"
+)
+
+
+def fetch_today_giants_npb_box_facts() -> dict:
+    import urllib.request as _ur
+    import re as _re
+
+    logger = logging.getLogger("rss_fetcher")
+    # Discover today's 巨人 game URL from the NPB games index.
+    index_url = "https://npb.jp/bis/2026/games/"
+    try:
+        req = _ur.Request(index_url, headers={"User-Agent": "Mozilla/5.0"})
+        with _ur.urlopen(req, timeout=10) as res:
+            index_html = res.read().decode("utf-8", errors="ignore")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("NPB games index fetch failed: %s", e)
+        return {}
+
+    m = _NPB_GIANTS_GAME_URL_RE.search(index_html)
+    if not m:
+        return {}
+    game_path = m.group(0)
+    box_url = f"https://npb.jp{game_path}box.html"
+
+    try:
+        req2 = _ur.Request(box_url, headers={"User-Agent": "Mozilla/5.0"})
+        with _ur.urlopen(req2, timeout=10) as res:
+            box_html = res.read().decode("utf-8", errors="ignore")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("NPB box.html fetch failed url=%s: %s", box_url, e)
+        return {}
+
+    if _parse_npb_box_html is None:
+        return {}
+    try:
+        facts = _parse_npb_box_html(box_html)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("NPB box parse failed: %s", e)
+        return {}
+    return facts or {}
 
 
 # NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2D-B: Yahoo Sportsnavi
@@ -15451,24 +15508,35 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 "postgame_facts_parse_skipped reason=%s", e
             )
             postgame_facts = None
-    # NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2D-B: when the prose
-    # parser flagged a 1軍 (``league_level == "first"``) postgame, also
-    # fetch Yahoo Sportsnavi boxscore for the rich inning table. 2軍 is
-    # intentionally skipped — Yahoo has no farm-league boxscore so the
-    # call would always return ``{}``. Failure here is silent (warning
-    # only) and the renderer falls back to the prose A-block.
+    # NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2D-B / 2E: 1軍 postgame で
+    # Yahoo box (inning + W/L/S) を取得する。2軍 / Yahoo 失敗時は
+    # postgame_facts (prose A-fallback) に degrade。
     postgame_yahoo_facts: dict = {}
+    # NOMOTOKE-LINEUP-FROM-POSTGAME-001 Phase 2F: NPB公式 box.html を
+    # 1軍 postgame で取得し、per-batter atbat + per-pitcher 詳細 stats
+    # まで揃った rich render に格上げ。Yahoo より NPB の方が情報量豊か
+    # なので NPB 成功時 ↑ を採用し Yahoo は skip。NPB 失敗時のみ Yahoo
+    # にフォールバック。
+    postgame_npb_facts: dict = {}
     if (
         postgame_facts
         and str(postgame_facts.get("league_level") or "") == "first"
     ):
         try:
-            postgame_yahoo_facts = fetch_today_giants_postgame_facts_from_yahoo() or {}
+            postgame_npb_facts = fetch_today_giants_npb_box_facts() or {}
         except Exception as e:  # noqa: BLE001
             logging.getLogger("rss_fetcher").warning(
-                "postgame_yahoo_fetch_skipped reason=%s", e
+                "postgame_npb_fetch_skipped reason=%s", e
             )
-            postgame_yahoo_facts = {}
+            postgame_npb_facts = {}
+        if not postgame_npb_facts:
+            try:
+                postgame_yahoo_facts = fetch_today_giants_postgame_facts_from_yahoo() or {}
+            except Exception as e:  # noqa: BLE001
+                logging.getLogger("rss_fetcher").warning(
+                    "postgame_yahoo_fetch_skipped reason=%s", e
+                )
+                postgame_yahoo_facts = {}
     lineup_stats_rendered = False
 
     # 試合がない日は勝敗ヒントを生成しない（架空スコア捏造防止）
@@ -16340,6 +16408,128 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
 
         return out
 
+    def _build_postgame_npb_block(npb_facts: dict) -> str:
+        """Render the rich NPB box block (Phase 2F).
+
+        Two sub-tables per team(巨人 then opponent):
+          - per-batter table (打順/守備/選手/打数/得点/安打/打点/盗塁/1-9)
+          - per-pitcher table (投手/投球数/打者/投球回/安打/本塁打/四球/死球/三振/失点/自責点)
+        plus the inning grid at the top (reused from Phase 2D-B style).
+        Marker classes: ``nomotoke-card-postgame-inning``,
+        ``nomotoke-card-postgame-batter``, ``nomotoke-card-postgame-pitcher-detail``.
+        """
+        if not npb_facts or not isinstance(npb_facts, dict):
+            return ""
+        inning_score = npb_facts.get("inning_score") or []
+        giants_b = npb_facts.get("giants_batters") or []
+        giants_p = npb_facts.get("giants_pitchers") or []
+        opp_b = npb_facts.get("opponent_batters") or []
+        opp_p = npb_facts.get("opponent_pitchers") or []
+        opp_name = str(npb_facts.get("opponent_team_name") or "").strip() or "相手"
+        if not inning_score and not giants_b and not giants_p:
+            return ""
+        heading_level = 4 if _body_template_v2_enabled() else 3
+        out = ""
+
+        # 1. Inning table
+        if inning_score:
+            try:
+                max_innings = max(len(t.get("innings") or []) for t in inning_score)
+            except Exception:  # noqa: BLE001
+                max_innings = 9
+            max_innings = max(max_innings, 9)
+            ih = "".join(f"<th>{i+1}</th>" for i in range(max_innings))
+            rows_html = [f"<tr><th>チーム</th>{ih}<th>R</th></tr>"]
+            for team in inning_score:
+                tn = str(team.get("name") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                innings = team.get("innings") or []
+                cells = []
+                for i in range(max_innings):
+                    v = innings[i] if i < len(innings) else ""
+                    sv = str(v).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    cells.append(f"<td>{sv}</td>")
+                total = team.get("total")
+                rows_html.append(
+                    f"<tr><td>{tn}</td>{''.join(cells)}<td>{total if total is not None else ''}</td></tr>"
+                )
+            out += (
+                f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
+                f'<h{heading_level}>📊 イニング (NPB box)</h{heading_level}>\n'
+                '<!-- /wp:heading -->\n\n'
+                '<!-- wp:html -->\n'
+                '<div class="yoshilover-lineup-stats" style="overflow-x:auto;margin:0 0 12px;">'
+                '<table class="nomotoke-card-postgame-inning" style="width:100%;border-collapse:collapse;font-size:0.92em;">'
+                f"{''.join(rows_html)}"
+                "</table></div>\n<!-- /wp:html -->\n\n"
+            )
+
+        def _render_batter_subtable(heading: str, batters: list) -> str:
+            if not batters:
+                return ""
+            head = (
+                f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
+                f'<h{heading_level}>{heading}</h{heading_level}>\n'
+                '<!-- /wp:heading -->\n\n'
+            )
+            row_cells = ["<tr><th>順</th><th>守</th><th>選手</th><th>打数</th><th>得点</th><th>安打</th><th>打点</th><th>盗塁</th>"
+                         + "".join(f"<th>{i+1}</th>" for i in range(9)) + "</tr>"]
+            for b in batters:
+                def s(k):
+                    return str(b.get(k, "") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                atbats = b.get("atbats") or []
+                ab_cells = "".join(
+                    f"<td>{str(a or '').replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')}</td>"
+                    for a in (atbats + [""] * (9 - len(atbats)))[:9]
+                )
+                row_cells.append(
+                    f"<tr><td>{s('順')}</td><td>{s('守備')}</td><td>{s('選手')}</td>"
+                    f"<td>{s('打数')}</td><td>{s('得点')}</td><td>{s('安打')}</td>"
+                    f"<td>{s('打点')}</td><td>{s('盗塁')}</td>{ab_cells}</tr>"
+                )
+            tbl = (
+                '<!-- wp:html -->\n'
+                '<div class="yoshilover-lineup-stats" style="overflow-x:auto;margin:0 0 12px;">'
+                '<table class="nomotoke-card-postgame-batter" style="width:100%;border-collapse:collapse;font-size:0.88em;">'
+                f"{''.join(row_cells)}"
+                "</table></div>\n<!-- /wp:html -->\n\n"
+            )
+            return head + tbl
+
+        def _render_pitcher_subtable(heading: str, pitchers: list) -> str:
+            if not pitchers:
+                return ""
+            head = (
+                f'<!-- wp:heading {{"level":{heading_level}}} -->\n'
+                f'<h{heading_level}>{heading}</h{heading_level}>\n'
+                '<!-- /wp:heading -->\n\n'
+            )
+            row_cells = [
+                "<tr><th>投手</th><th>投球数</th><th>打者</th><th>投球回</th><th>安打</th><th>本塁打</th><th>四球</th><th>三振</th><th>失点</th><th>自責点</th></tr>"
+            ]
+            for p in pitchers:
+                def s(k):
+                    return str(p.get(k, "") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                row_cells.append(
+                    f"<tr><td>{s('選手')}</td><td>{s('投球数')}</td><td>{s('打者')}</td>"
+                    f"<td>{s('投球回')}</td><td>{s('安打')}</td><td>{s('本塁打')}</td>"
+                    f"<td>{s('四球')}</td><td>{s('三振')}</td>"
+                    f"<td>{s('失点')}</td><td>{s('自責点')}</td></tr>"
+                )
+            tbl = (
+                '<!-- wp:html -->\n'
+                '<div class="yoshilover-lineup-stats" style="overflow-x:auto;margin:0 0 12px;">'
+                '<table class="nomotoke-card-postgame-pitcher-detail" style="width:100%;border-collapse:collapse;font-size:0.88em;">'
+                f"{''.join(row_cells)}"
+                "</table></div>\n<!-- /wp:html -->\n\n"
+            )
+            return head + tbl
+
+        out += _render_batter_subtable("⚾ 巨人 打者成績", giants_b)
+        out += _render_pitcher_subtable("⚾ 巨人 投手成績", giants_p)
+        out += _render_batter_subtable(f"⚾ {opp_name} 打者成績", opp_b)
+        out += _render_pitcher_subtable(f"⚾ {opp_name} 投手成績", opp_p)
+        return out
+
     def _build_postgame_result_block(facts: dict) -> str:
         """Render a 2-column 試合結果 mini-table from postgame prose facts.
 
@@ -17018,7 +17208,14 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     # available renders the rich Phase 2D-B block (inning + score);
     # 2軍 or Yahoo fetch failure falls back to the Phase 2D-A prose
     # mini-table.
-    if postgame_yahoo_facts and postgame_yahoo_facts.get("inning_score"):
+    if postgame_npb_facts and (
+        postgame_npb_facts.get("giants_batters") or postgame_npb_facts.get("inning_score")
+    ):
+        if not followup_section_rendered:
+            blocks += _sep()
+        blocks += _build_postgame_npb_block(postgame_npb_facts)
+        followup_section_rendered = True
+    elif postgame_yahoo_facts and postgame_yahoo_facts.get("inning_score"):
         if not followup_section_rendered:
             blocks += _sep()
         blocks += _build_postgame_yahoo_block(postgame_yahoo_facts)

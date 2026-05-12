@@ -852,3 +852,82 @@ LLM(Gemini) は本経路で使用していないため、source 文字列を det
 - `_find_giants_game_info_yahoo` 不変
 - Phase 2A / 2A-1 / 2B / 2C / 2D-A / 2D-B 全 logic 不変
 - fixture file(`yahoo_postgame_2021038841_完了試合.html`)は real Yahoo HTML、再加工不可
+
+---
+
+### Phase 2F: NPB公式 box.html parser + 全 detail integration(post-work、2026-05-12 PM)
+
+#### 1. やったこと(コード変更)
+
+- **新規 module**: `src/source_npb_postgame_extractor.py`(NEW)
+  - NPB公式 `/scores/<YYYY>/<MMDD>/<away>-<home>-<N>/box.html` の static HTML を pure offline parser で解析
+  - JS render / API key / 課金 不要、¥0 runtime cost
+  - **stack-based `_iter_outer_tables()`** で nested `<table class="table_inning">`(投球回 cell 内) を top-level table 抽出時に depth count、誤終端を防ぐ
+  - **`_flatten_inner_tables()`** で row split 前に nested table を text 化
+  - `parse_npb_box_html(html)` → dict (`giants_batters` / `giants_pitchers` / `opponent_batters` / `opponent_pitchers` / `opponent_team_name` / `inning_score`) or `None`
+  - Position field `(二)` の paren を strip(`re.sub(r"^\(([^)]+)\)$", r"\1", ...)`)
+  - 各 batter row は `打数 / 得点 / 安打 / 打点 / 盗塁` + `atbats[9]`(1-9 inning 打席結果)
+  - 各 pitcher row は `投球数 / 打者 / 投球回 / 安打 / 本塁打 / 四球 / 死球 / 三振 / 暴投 / ボーク / 失点 / 自責点`
+- **`src/rss_fetcher.py`** に追加:
+  - import: `from src.source_npb_postgame_extractor import parse_npb_box_html`(defensive try/except None)
+  - 新 fetcher: `fetch_today_giants_npb_box_facts()`
+    - `/bis/<YYYY>/games/` index page を fetch → regex `r"/scores/(\d{4})/(\d{4})/([a-z]+-g-\d+|g-[a-z]+-\d+)/"` で巨人 game URL を発見
+    - `<game>/box.html` を fetch → `parse_npb_box_html()` 呼び出し
+  - 新 renderer: `_build_postgame_npb_block()`
+    - inning + 巨人 batter + 巨人 pitcher detail + opponent batter の 4 sub-table を nomotoke-card marker 付きで render
+    - marker: `nomotoke-card-postgame-batter` / `nomotoke-card-postgame-pitcher-detail` / `nomotoke-card-postgame-inning` / `nomotoke-card-postgame-opp-batter`
+  - tail inject priority 変更: **NPB > Yahoo > A-fallback**(`if/elif/elif`)、NPB facts 取得時は Yahoo block skip
+- **新 fixture**:
+  - `tests/fixtures/npb_score_2026_0510_d-g-08_box.html`(~107KB、real NPB HTML、5/10 中日 vs 巨人 9-4)
+  - `tests/fixtures/npb_score_2026_0510_d-g-08_playbyplay.html`(~68KB、参考用)
+  - `tests/fixtures/npb_score_2026_0510_d-g-08_roster.html`(~37KB、参考用)
+- **新 unit tests**: `tests/test_source_npb_postgame_extractor.py`(6 case)
+  - dict shape / 巨人 batter row 抽出 / pitcher 森田 抽出 / opponent_team_name=中日 / atbats[9] 1番目=二ゴロ / inning_score 巨人 total=9
+- **integration tests**: `tests/test_rss_fetcher_postgame_table.py` に `PostgameNPBBoxIntegrationTests`(4 case 追加)
+  - NPB facts 存在時 batter marker emit / pitcher-detail marker emit / NPB > Yahoo priority(Yahoo marker NOT present) / NPB 空時 Yahoo fallback
+  - 既存 helpers に `patch.object(rss_fetcher, "fetch_today_giants_npb_box_facts", return_value={})` を追加し、real HTTP との混線を防ぐ
+
+#### 2. 不変 / 不可触
+
+- Phase 2A / 2A-1 / 2B / 2C / 2D-A / 2D-B / 2E 全 logic 不変
+- Yahoo `parse_yahoo_game_html` / pitcher 抽出 不変(NPB fail 時は Yahoo へ fallback)
+- `_select_template_v2` routing 不変
+- automation / scheduler / env / secret 一切 untouched
+
+#### 3. 動作確認
+
+- `python3 -m unittest tests.test_source_npb_postgame_extractor`: **6 / 6 GREEN**
+- `python3 -m unittest tests.test_rss_fetcher_postgame_table`: **15 / 15 GREEN**(Phase 2A-2E 既存 + 2F 新規 4)
+- 組合せ `tests.test_source_npb_postgame_extractor tests.test_rss_fetcher_postgame_table`: **21 / 21 GREEN**
+
+#### 4. テスト結果
+
+- **Phase 2E 着地時 baseline**: 3609 tests / 1 pre-existing fail
+- **Phase 2F 着地後**: `Ran 3622 tests in 90.756s` / **failures=2**
+  - 内訳 baseline 検証: stash 退避 baseline 状態でも同じ 2 failures(`test_game_live_primary_sources_are_hochi_only` / `test_main_passes_36_hour_window_for_postgame_skip_check`)→ **増加 fail 0**(Phase 2F に起因しない既存 fail)
+- collect 増分: 3609 → 3622(+13 = 6 extractor unit + 4 integration + ~3 discovery diff)
+- 増加 fail: **0**
+
+#### 5. 残った懸念
+
+1. **fixture が 5/10 中日 vs 巨人**: real NPB HTML だが本日の game ではない、本日の試合完了後に再 verify 推奨
+2. **playbyplay.html 未使用**: fixture 取得済だが parser/renderer に組み込んでいない。1球速報 / 場面切替の granular data だが scope を絞った
+3. **opponent_pitchers render なし**: `_build_postgame_npb_block` は巨人 detail + opponent batter までで opponent pitcher は data はあるが render skip(縦長化防止)、必要なら別便で render 追加
+4. **巨人 game URL regex の片寄り**: `g-<away>-N` / `<away>-g-N` 両形を想定するが、`g-g-N` 等の異常 URL 形は不一致(問題にならない想定)
+
+#### 6. 新しく見つかったデグレ
+
+- 本便差分による新規デグレ **なし**(baseline 2 failures は Phase 2F 起因ではないことを stash 退避で確認)
+
+#### 7. 追加した回帰テスト
+
+- `tests/test_source_npb_postgame_extractor.py`(6 case): real NPB HTML からの dict 抽出 verify
+- `tests/test_rss_fetcher_postgame_table.py::PostgameNPBBoxIntegrationTests`(4 case 追加): marker emit / priority / fallback
+
+#### 8. 次回触ってはいけない範囲
+
+- `source_npb_postgame_extractor._iter_outer_tables` / `_flatten_inner_tables` 不変(nested table parse の中核)
+- `_NPB_GIANTS_GAME_URL_RE` regex 不変
+- tail inject priority(`if NPB elif Yahoo elif A-fallback`)順序不変
+- fixture file(`npb_score_2026_0510_d-g-08_*.html`)は real NPB HTML、再加工不可
+- Phase 2A-2E 全 logic 不変

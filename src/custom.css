@@ -9161,3 +9161,96 @@ button.cta:hover,
     font-size: 11px;
   }
 }
+
+/* ============================================================
+   nomotoke-source-excerpt（記事末の元記事本文 600 字抜粋ブロック）
+   Giants カラー(オレンジ + ブルー)で「報知/日刊/sponichi 引用」を強調
+   ============================================================ */
+
+aside.nomotoke-source-excerpt {
+  position: relative;
+  margin: 28px 0 32px;
+  padding: 18px 22px 16px 26px;
+  background: var(--orange-light);
+  border-left: 4px solid var(--orange);
+  border-top: 1px solid rgba(0, 61, 165, 0.12);
+  border-right: 1px solid rgba(0, 61, 165, 0.12);
+  border-bottom: 1px solid rgba(0, 61, 165, 0.12);
+  border-radius: 4px 8px 8px 4px;
+  box-shadow: 0 1px 0 rgba(26, 26, 26, 0.04);
+}
+
+/* ラベル（📖 本文抜粋） */
+.nomotoke-source-excerpt__label {
+  display: inline-block;
+  margin: 0 0 10px;
+  padding: 3px 10px;
+  color: var(--white);
+  background: var(--blue);
+  font-family: 'Oswald', 'Noto Sans JP', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.4;
+  border-radius: 3px;
+}
+
+/* 本文 blockquote */
+.nomotoke-source-excerpt__body {
+  margin: 6px 0 10px;
+  padding: 0;
+  border: none;
+  color: var(--black);
+  font-size: 15px;
+  line-height: 1.85;
+  letter-spacing: 0.01em;
+  background: transparent;
+}
+
+.nomotoke-source-excerpt__body p {
+  margin: 0 0 0.6em;
+}
+
+.nomotoke-source-excerpt__body p:last-child {
+  margin-bottom: 0;
+}
+
+/* 出典（— 報知新聞 など） */
+.nomotoke-source-excerpt__attr {
+  margin: 8px 0 0;
+  text-align: right;
+  color: var(--mid-gray);
+  font-size: 12px;
+  font-style: italic;
+  letter-spacing: 0.02em;
+}
+
+.nomotoke-source-excerpt__attr::before {
+  content: "";
+  display: inline-block;
+  width: 18px;
+  height: 1px;
+  margin-right: 6px;
+  vertical-align: middle;
+  background: var(--orange);
+}
+
+/* スマホ最適化 */
+@media (max-width: 599px) {
+  aside.nomotoke-source-excerpt {
+    margin: 22px 0 26px;
+    padding: 14px 16px 12px 18px;
+    border-left-width: 3px;
+  }
+  .nomotoke-source-excerpt__label {
+    font-size: 11px;
+    padding: 2px 8px;
+  }
+  .nomotoke-source-excerpt__body {
+    font-size: 14px;
+    line-height: 1.8;
+  }
+  .nomotoke-source-excerpt__attr {
+    font-size: 11px;
+  }
+}

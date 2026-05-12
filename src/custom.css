@@ -9163,6 +9163,108 @@ button.cta:hover,
 }
 
 /* ============================================================
+   2026-05-12 user 指示「ジャイアンツ=オレンジ、黒は文字くらい」
+   速報帯 / 今週の話題 / 今日の巨人 の黒べた塗りを白ベース +
+   オレンジアクセントに上書き(既存 rule の override で safe)
+   ============================================================ */
+
+.yoshi-breaking-strip {
+  background: var(--white) !important;
+  border: 1px solid var(--light-gray) !important;
+  border-top: 5px solid var(--orange) !important;
+  border-left: 4px solid var(--orange) !important;
+  color: var(--black) !important;
+  box-shadow: 0 1px 0 rgba(26, 26, 26, 0.04) !important;
+}
+.yoshi-breaking-strip__heading {
+  color: var(--black) !important;
+  text-shadow: none !important;
+}
+.yoshi-breaking-strip__note {
+  color: var(--mid-gray) !important;
+}
+.yoshi-breaking-strip__link {
+  background: var(--bg) !important;
+  border: 1px solid var(--light-gray) !important;
+  color: var(--black) !important;
+}
+.yoshi-breaking-strip__link:hover {
+  background: var(--orange-light) !important;
+  border-color: rgba(245, 129, 31, 0.4) !important;
+}
+.yoshi-breaking-strip__chip {
+  background: var(--bg) !important;
+  color: var(--dark-gray) !important;
+  border: 1px solid var(--light-gray);
+}
+.yoshi-breaking-strip__chip--score {
+  background: rgba(245, 129, 31, 0.12) !important;
+  color: var(--orange) !important;
+}
+.yoshi-breaking-strip__time {
+  color: var(--mid-gray) !important;
+}
+.yoshi-breaking-strip__title {
+  color: var(--black) !important;
+  text-shadow: none !important;
+}
+
+.yoshi-topic-hub {
+  background: var(--white) !important;
+  border: 1px solid var(--light-gray) !important;
+  border-top: 5px solid var(--orange) !important;
+  border-left: 4px solid var(--orange) !important;
+  box-shadow: 0 1px 0 rgba(26, 26, 26, 0.04) !important;
+}
+.yoshi-topic-hub__heading {
+  color: var(--black) !important;
+}
+.yoshi-topic-hub__heading::after {
+  color: var(--orange) !important;
+}
+.yoshi-topic-hub__item {
+  background: var(--bg) !important;
+}
+.yoshi-topic-hub__item:hover {
+  background: var(--orange-light) !important;
+}
+
+.yoshi-today-giants {
+  background: var(--white) !important;
+  border: 1px solid var(--light-gray) !important;
+  border-top: 3px solid var(--orange) !important;
+  border-left: 4px solid var(--orange) !important;
+  color: var(--black) !important;
+}
+.yoshi-today-giants__heading {
+  color: var(--black) !important;
+  text-shadow: none !important;
+}
+.yoshi-today-giants__note {
+  color: var(--mid-gray) !important;
+}
+.yoshi-today-giants__link {
+  border-bottom: 1px solid var(--light-gray) !important;
+  color: var(--black) !important;
+}
+.yoshi-today-giants__chip {
+  background: var(--bg) !important;
+  color: var(--dark-gray) !important;
+  border: 1px solid var(--light-gray);
+}
+.yoshi-today-giants__chip--score {
+  background: rgba(245, 129, 31, 0.12) !important;
+  color: var(--orange) !important;
+}
+.yoshi-today-giants__time {
+  color: var(--mid-gray) !important;
+}
+.yoshi-today-giants__title {
+  color: var(--black) !important;
+}
+
+
+/* ============================================================
    nomotoke-source-excerpt（記事末の元記事本文 600 字抜粋ブロック）
    Giants カラー(オレンジ + ブルー)で「報知/日刊/sponichi 引用」を強調
    ============================================================ */

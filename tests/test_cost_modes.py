@@ -528,6 +528,96 @@ class CostModeTests(unittest.TestCase):
         self.assertIn("戸郷翔征", prefix)
         self.assertIn("好投", prefix)
 
+    def test_prior_event_keyword_skip_fires_for_凱旋(self):
+        # 67027 type: 「凱旋」marker で過去 event の retrospective
+        self.assertTrue(
+            rss_fetcher._should_skip_prior_event_postgame(
+                "選手情報",
+                "巨人・吉川が岐阜凱旋　小中学生と交流、質問攻めに",
+                "",
+                True,
+            )
+        )
+
+    def test_prior_event_keyword_skip_fires_for_昨夜(self):
+        self.assertTrue(
+            rss_fetcher._should_skip_prior_event_postgame(
+                "試合速報",
+                "昨夜のサヨナラ勝ちを振り返る",
+                "",
+                True,
+            )
+        )
+
+    def test_prior_event_keyword_skip_passes_for_normal_title(self):
+        self.assertFalse(
+            rss_fetcher._should_skip_prior_event_postgame(
+                "試合速報",
+                "巨人広島戦 戸郷翔征が先発",
+                "",
+                True,
+            )
+        )
+
+    def test_mismatched_today_game_result_marker(self):
+        # 67024 type: title「サヨナラ弾」 + yahoo「試合終了 0-1」 (サヨナラ無し)
+        # → 別試合の記事と判定
+        skip, reason = rss_fetcher._should_skip_mismatched_today_game(
+            category="試合速報",
+            title="巨人・佐々木　自身初サヨナラ弾",
+            summary="",
+            article_subtype="postgame",
+            yahoo_game_status={
+                "ended": True,
+                "state": "試合終了",
+                "opponent": "広島",
+            },
+        )
+        self.assertTrue(skip)
+        self.assertTrue(reason.startswith("result_marker_mismatch"))
+
+    def test_mismatched_today_game_opponent_mismatch(self):
+        # title に「阪神」 (今日は広島戦) → 別カード記事
+        skip, reason = rss_fetcher._should_skip_mismatched_today_game(
+            category="試合速報",
+            title="巨人阪神戦 戸郷7回無失点で勝利",
+            summary="",
+            article_subtype="postgame",
+            yahoo_game_status={
+                "ended": True,
+                "state": "試合終了",
+                "opponent": "広島",
+            },
+        )
+        self.assertTrue(skip)
+        self.assertTrue(reason.startswith("opponent_mismatch"))
+
+    def test_mismatched_today_game_passes_when_game_unfinished(self):
+        # 試合中は postgame_unfinished_skip が担当、ここでは判定しない
+        skip, reason = rss_fetcher._should_skip_mismatched_today_game(
+            category="試合速報",
+            title="巨人・佐々木　自身初サヨナラ弾",
+            summary="",
+            article_subtype="postgame",
+            yahoo_game_status={
+                "ended": False,
+                "state": "8回裏",
+                "opponent": "広島",
+            },
+        )
+        self.assertFalse(skip)
+
+    def test_mismatched_today_game_passes_when_no_yahoo_status(self):
+        # yahoo state 取得失敗時は判定不能で許可側
+        skip, reason = rss_fetcher._should_skip_mismatched_today_game(
+            category="試合速報",
+            title="サヨナラ勝ち",
+            summary="",
+            article_subtype="postgame",
+            yahoo_game_status=None,
+        )
+        self.assertFalse(skip)
+
     def test_pregame_started_skip_log_contains_title_and_timestamps(self):
         now = datetime(2026, 4, 19, 11, 30, tzinfo=rss_fetcher.JST)
         with self.assertLogs("rss_fetcher", level="INFO") as cm:

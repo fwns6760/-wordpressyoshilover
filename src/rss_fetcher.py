@@ -4257,6 +4257,102 @@ def _should_skip_no_entity_non_game(title: str, summary: str) -> str:
     return ""
 
 
+# Prior-event marker. Title が「凱旋」「昨夜」「昨日」「前日」「前夜」「先日」
+# などを含むと、source URL の publish 時刻が today でも content は **過去
+# (= 昨日以前) の試合 / event の retrospective report**。Daily Sports や
+# サンスポ等の大手新聞が「翌朝に前夜の試合 report を 出す」 format で多い。
+# stale_source_guard は publish 時刻 base のため検出できないので、title
+# keyword で narrow skip する。
+_PRIOR_EVENT_TITLE_MARKERS: tuple[str, ...] = (
+    "昨夜", "昨日", "前夜", "前日", "先日",
+    "凱旋", "翌朝",
+)
+# 試合結果 marker — 「サヨナラ」「○○戦勝利/敗戦」のような勝敗確定 narrative
+# が title に出る投稿。yahoo state と cross-check して、今日の試合状況と
+# 矛盾するものは prior game の記事と判定する。
+_TODAY_GAME_RESULT_MARKERS: tuple[str, ...] = (
+    "サヨナラ", "サヨナラ勝", "サヨナラ負", "サヨナラ弾",
+    "完封勝", "完封負", "白星", "黒星",
+    "連勝", "連敗", "○連勝", "○連敗",
+)
+
+
+def _should_skip_prior_event_postgame(
+    category: str,
+    title: str,
+    summary: str,
+    has_game: bool,
+) -> bool:
+    """Title が「凱旋/昨夜/昨日/前日/前夜/先日/翌朝」等の prior-event marker
+    を含み、category=試合速報 系 で対象なら True。試合中話題 / 過去試合の
+    retrospective report を新規記事として skip する。
+    """
+    if category not in {"試合速報", "選手情報", "首脳陣"}:
+        return False
+    text = _strip_html(f"{title} {summary}")
+    return any(marker in text for marker in _PRIOR_EVENT_TITLE_MARKERS)
+
+
+def _should_skip_mismatched_today_game(
+    category: str,
+    title: str,
+    summary: str,
+    article_subtype: str,
+    yahoo_game_status: dict | None,
+) -> tuple[bool, str]:
+    """Article が今日の試合とミスマッチなら True + reason を返す。
+
+    判定ロジック:
+    - category=試合速報 + subtype=postgame/lineup/live_update のみ対象
+    - yahoo_game_status が空なら判定不能で許可側 (= 既存挙動維持)
+    - 今日 ended=True + title に試合結果 marker (「サヨナラ」「完封勝」等)
+      含むが yahoo state にその marker が含まれない → 別試合の記事
+    - 今日 ended=True + title に opponent (例「広島」) が出るべきだが
+      yahoo opponent と異なる → 別カード (postgame のみ厳しめ判定)
+    """
+    if category != "試合速報":
+        return False, ""
+    if article_subtype not in {"postgame", "lineup", "live_update"}:
+        return False, ""
+    if not yahoo_game_status:
+        return False, ""
+    if not yahoo_game_status.get("ended"):
+        # 試合中は postgame_unfinished_skip が担当。ここでは判定しない。
+        return False, ""
+    text = _strip_html(f"{title} {summary}")
+    today_state = _collapse_ws(str(yahoo_game_status.get("state") or ""))
+    today_opp = str(yahoo_game_status.get("opponent") or "").strip()
+
+    # result marker mismatch:title にサヨナラ等の result marker、yahoo state
+    # にその marker が含まれない → 別試合
+    for marker in _TODAY_GAME_RESULT_MARKERS:
+        if marker in text and marker not in today_state:
+            # 「サヨナラ」のような短い marker は state では「試合終了」
+            # としか出ないことも多いため、追加 cross-check:
+            # 「サヨナラ」が title に明示出ていて、yahoo state が単に
+            # 「試合終了」なら、サヨナラ決着が today かどうか判定不能。
+            # safety 優先で「今日 サヨナラ なら yahoo にも『サヨナラ』
+            # 文字が含まれるはず」前提で skip。日常的に
+            # 大手新聞の翌朝記事を防ぐ目的の narrow skip。
+            return True, f"result_marker_mismatch:{marker}"
+
+    # opponent mismatch (postgame のみ): title に今日の opponent と異なる
+    # チーム名が出る → 別カードの記事
+    if article_subtype == "postgame" and today_opp:
+        # 他球団 marker 一覧 (今日の opponent を除く)
+        other_teams = [
+            t for t in ("阪神", "中日", "広島", "DeNA", "ヤクルト",
+                        "ソフトバンク", "ロッテ", "西武", "オリックス",
+                        "楽天", "日本ハム")
+            if t != today_opp
+        ]
+        for team in other_teams:
+            if team in text:
+                return True, f"opponent_mismatch:{team}"
+
+    return False, ""
+
+
 # Mid-game progress markers. When any of these appears in title/summary the
 # article is actual in-progress coverage (e.g. 「N回まで無失点でスタート」),
 # not a true pregame preview. The subtype classifier still falls through to
@@ -23532,6 +23628,65 @@ def _main(args, logger):
                 _append_skip_reason_sample(
                     skip_reason_sample_titles,
                     "postgame_unfinished",
+                    item["title"],
+                )
+                continue
+            if _should_skip_prior_event_postgame(
+                item["category"],
+                item["title"],
+                item["summary"],
+                item.get("entry_has_game", True),
+            ):
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "prior_event_postgame_skip",
+                            "title": item["title"][:120],
+                            "post_url": item.get("post_url", ""),
+                            "source_name": item.get("source_name", ""),
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                skip_filter += 1
+                skip_reason_counts["prior_event_postgame"] += 1
+                _append_skip_reason_sample(
+                    skip_reason_sample_titles,
+                    "prior_event_postgame",
+                    item["title"],
+                )
+                continue
+            _mismatch_skip, _mismatch_reason = _should_skip_mismatched_today_game(
+                category=item["category"],
+                title=item["title"],
+                summary=item["summary"],
+                article_subtype=_detect_article_subtype(
+                    item.get("raw_title", item["title"]),
+                    item.get("summary", ""),
+                    item.get("category", ""),
+                    item.get("entry_has_game", True),
+                ),
+                yahoo_game_status=yahoo_game_status,
+            )
+            if _mismatch_skip:
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "mismatched_today_game_skip",
+                            "reason": _mismatch_reason,
+                            "title": item["title"][:120],
+                            "post_url": item.get("post_url", ""),
+                            "yahoo_opponent": str(yahoo_game_status.get("opponent") or ""),
+                            "yahoo_state": str(yahoo_game_status.get("state") or ""),
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                skip_filter += 1
+                skip_reason_counts["mismatched_today_game"] += 1
+                _append_skip_reason_sample(
+                    skip_reason_sample_titles,
+                    "mismatched_today_game",
                     item["title"],
                 )
                 continue

@@ -32,17 +32,16 @@ Current publish-policy reference:
 
 ## current queue snapshot(2026-05-08 JST)
 
-Active folder is intentionally narrow. 2026-05-08 朝に「0 publish 0 mail」障害発生、緊急対応で 10 commit + 5 env + 2 schedule deploy 済み、5/9 朝 06:00-07:00 が初実機検証 window。
+Active folder is intentionally narrow. 2026-05-08 朝の「0 publish 0 mail」障害復旧は 2026-05-13 close (LIVE_VERIFIED)。2026-05-12 evening の P0 UnboundLocalError incident も hotfix `802511f` / `b8a7f01` で復旧確認済 (revision `00417-wuw` 100%、5/13 朝 publish 投稿=9/2 / エラー=0)。
 
 | bucket | tickets | decision |
 |---|---|---|
-| **observation pending(最優先)** | `RESTORE-2026-05-08-MORNING-RELIABILITY.md` | 2026-05-08 朝の障害復旧を全 deploy 済、5/9 朝 06:00-07:00 で heartbeat + per-post mail 着弾を検証。詳細は同 ticket §4 checklist。 |
 | **observation pending(副次)** | `303-rollback-2026-05-08-frontend-rich-body.md` | manual-intake-service / yoshilover-fetcher を `d34072a` に揃えた audit 反映 ticket。Tier 1+2 の 5 件適用済、Tier 3(49 件)は doc-only。 |
 | **user 方針判断待ち** | `MANUAL-INTAKE-QUALITY-PARITY-2026-05-08.md` | 5/8 PM session 調査:apply_rss_pipeline_enrichment の nomotoke marker gate 発見、RSS auto は marker 付与なしで装飾 skip。「手動を直す」なら本文長 / 装飾 / 自動化 のどの軸かが user 判断必要。 |
 | **frontend audit ready** | `FRONTEND-ENRICHMENT-LIVE-AUDIT-2026-05-08.md` | 5/7 enrichment 装飾が live で 0% / 100% gap、¥0 / デグレ 0 の audit + narrow fix ticket。Phase A 受動 audit から開始。 |
 | **frontend impl ready(¥0 / デグレ 0)** | `H3-STRUCTURE-UNIFY-2026-05-08.md` / `DIGEST-DAILY-MORNING-2026-05-08.md` / `SIDEBAR-WIDGETS-2026-05-08.md` | 5/8 PM 設計、無料で着手可能の 3 ticket。H3 12 set 統一 / 朝まとめ 1 日 1 本 / sidebar 5 widget。各 narrow phase 分割済 |
 | **frontend AdSense UI ready** | `320-FRONT-scroll-ads-uiux-adsense-slot-control.md` | のもとけ型の scroll / sticky AdSense slot UIUX。既存または user 確認済み広告枠のみ、dummy-only ではなく AdSense slot 前提。publish/mail/scheduler/env/Cloud Run/GitHub Actions/SEO は不可触。記憶から再構成 / silent skip / 自己評価OKは禁止。 |
-| **quality review ready** | `305-QA-featured-media-source-priority.md` | source eyecatch を最優先し、同一 source image の WP media reuse を優先。source と無関係な既存 media / diversified pool を外し、source 不在時だけ阿部監督 fallback に落とす narrow fix。repo-only impl + tests 完了、deploy 判断待ち。 |
+| **quality live deployed** | `305-QA-featured-media-source-priority.md` | source eyecatch を最優先し、同一 source image の WP media reuse を優先。source と無関係な既存 media / diversified pool を外し、source 不在時だけ阿部監督 fallback に落とす narrow fix。commit `6163bd0`、revision `00286-z65`、`/run error=0`、publish/mail job success。 |
 | **frontend design pending** | `CATEGORY-RESTRUCTURE-2026-05-08.md` | コラム catch-all 解消、「試合中継」新 category 抽出、巨人 tag 化。user 判断境界(WP admin 操作必要) |
 | **user setup (任意)** | `EXTERNAL-MONITOR-APPS-SCRIPT.md` | yoshilover infra 完全死シナリオ用の独立 GAS ping。user 作業 10 分、明日朝 safety net。 |
 | **design hold** | `246-MKT-today-giants-fan-guide.md`, `255-MKT-fan-guide-expansion-and-comment-badge.md`, `249-INGEST-live-game-ingestion-expansion.md`, `256-QA-manager-player-quote-strict-subset.md`, `260-MKT-fan-original-article-types-and-templates.md` | no field dispatch yet. These are HOLD backlog items for the post-247 observation phase; do not mix them into current QA/template work. |
@@ -51,7 +50,7 @@ Active folder is intentionally narrow. 2026-05-08 朝に「0 publish 0 mail」�
 | **quality next-publish dedup review** | `319-QA-fetcher-topic-dedup-and-slot-fill.md` | 自動起動時に同一話題の重複記事で10枠を消費しないための narrow QA ticket。head/bat contact 事故の再現テスト赤→緑、related/full pytest green。diff review + commit 判断待ち。publish/mail/scheduler/env/Cloud Run/SEO/source追加は不可触。 |
 | **quality source excerpt follow-up** | `323-QA-source-body-excerpt-clean-truncation.md` | `314-QA-rss-source-body-excerpt-followup` 関連。ブログ本文の `📖 本文抜粋` が600文字化後も途中切れ / UI・関連記事混入に見える問題を狭く扱う。publish/mail/scheduler/env/Cloud Run/X/SEO/featured_media は不可触。 |
 | **waiting** | `205-gcp-runtime-drift-audit.md`, `238-night-draft-only-and-morning-decision-report.md`, `288-INGEST-source-coverage-expansion.md` | still useful, but not part of the immediate article-body hallucination fix. `288` remains source-add HOLD; only Phase 0 repo-only audit / dry-run evidence may advance doc-only. |
-| **closed / archived** | `205-COST`, `234-impl-1..6`, `242 parent`, `242-B`, `243`, `244`, `244-B`, `244-followup`, `244-B-followup`, `245-front-hide-auto-post-category-label`, `277-QA-title-player-name-backfill`, `278-QA`, `279-QA-mail-subject-clarity`(2026-05-08 close, `6349995`), `280-QA`, `304-QA-player-manager-common-quality-guard`(2026-05-09 close, `6fb818a`, deploy `00285-5bg`), `246-viral-topic-detection`, `247-QA-postgame-strict-slot-fill-poc`, `254-QA-starter-innings-normalization` | implemented / accepted / superseded; no longer active work. |
+| **closed / archived** | `205-COST`, `234-impl-1..6`, `242 parent`, `242-B`, `243`, `244`, `244-B`, `244-followup`, `244-B-followup`, `245-front-hide-auto-post-category-label`, `277-QA-title-player-name-backfill`, `278-QA`, `279-QA-mail-subject-clarity`(2026-05-08 close, `6349995`), `280-QA`, `304-QA-player-manager-common-quality-guard`(2026-05-09 close, `6fb818a`, deploy `00285-5bg`), `246-viral-topic-detection`, `247-QA-postgame-strict-slot-fill-poc`, `254-QA-starter-innings-normalization`, `RESTORE-2026-05-08-MORNING-RELIABILITY`(2026-05-13 close, LIVE_VERIFIED, 5/13 朝 publish 復活確認) | implemented / accepted / superseded; no longer active work. |
 
 2026-05-08 朝の 10 commit list は `RESTORE-2026-05-08-MORNING-RELIABILITY.md` §2 を参照。
 
@@ -452,7 +451,7 @@ Current lane lock(2026-04-28 JST):
 
 - **alias**: -
 - **priority**: P0.5
-- **status**: REVIEW_NEEDED
+- **status**: LIVE_DEPLOYED
 - **owner**: Claude Code
 - **lane**: A / Claude orchestration
 - **ready_for**: Claude
@@ -1668,15 +1667,15 @@ git add -A禁止。
 - **status**: REVIEW_NEEDED
 - **owner**: Codex B
 - **lane**: B
-- **ready_for**: diff review + deploy judgement
-- **next_action**: pre-deploy checklist を確認し、問題なければ commit / deploy 判断
+- **ready_for**: post-deploy observation
+- **next_action**: 次の自動生成 window で source eyecatch reuse 実例と fallback 見え方を live 観測
 - **blocked_by**: none
 - **user_action_required**: none
 - **write_scope**: `src/rss_fetcher.py`, `src/wp_client.py`, `src/player_eyecatch_resolver.py`, `tests/test_featured_media_fallback.py`, `tests/test_featured_media_helpers.py`, `tests/test_player_eyecatch_resolver.py`, optional narrow regression test, `doc/active/305-QA-featured-media-source-priority.md`
 - **doc_path**: `doc/active/305-QA-featured-media-source-priority.md`
 - **acceptance**: source eyecatch がある時はそれを最優先、既存 WP media があれば reuse、source 不在時だけ阿部監督 fallback、publish/mail/scheduler/env/Cloud Run 設定は非変更
 - **repo_state**: dirty
-- **commit_state**: uncommitted local diff
+- **commit_state**: committed + deployed (`6163bd0`)
 - **next_prompt_path**: -
 - **last_commit**: -
 

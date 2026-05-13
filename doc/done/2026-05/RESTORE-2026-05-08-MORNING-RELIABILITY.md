@@ -4,11 +4,17 @@
 |---|---|
 | ticket_id | RESTORE-2026-05-08-MORNING-RELIABILITY |
 | priority | P0(復元情報、session 切れに備える) |
-| status | LIVE_DEPLOYED, OBSERVATION_PENDING |
-| owner | Claude (実装+deploy 済) → user (受け入れ + 翌朝検証) |
+| status | CLOSED, LIVE_VERIFIED |
+| owner | Claude (実装+deploy 済) → user (受け入れ完了) |
 | lane | OPS / RELIABILITY |
 | created | 2026-05-08 JST 朝 |
-| 検証 | 2026-05-09 04:30-06:30 JST(翌朝の cron 完走で初めて勝敗確定) |
+| 検証 | 2026-05-09 以降の cron 完走で publish 復活確認、2026-05-13 close |
+
+## CLOSE NOTE (2026-05-13)
+
+- 5/9 以降の `/run` で publish 復活、5/13 朝 (06:01 / 07:01 / 08:01 JST) で投稿=9 / 投稿=2 / エラー=0 を確認
+- 2026-05-12 evening の P0 UnboundLocalError incident は別 commit (`2d5c334a` + `0cc0bdf`) 起因で本 RESTORE と無関係、hotfix `802511f` / `b8a7f01` で復旧済 (revision `00417-wuw` 100%)
+- 本 ticket scope (8 skip path + BURST + RUN_DRAFT_ONLY + heartbeat retry) の deploy は live で機能継続中、`doc/done/2026-05/` へ移動
 
 ## 1. 背景
 

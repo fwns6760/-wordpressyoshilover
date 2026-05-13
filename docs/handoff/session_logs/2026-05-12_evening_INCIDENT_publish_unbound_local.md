@@ -36,6 +36,16 @@
 | 21:25 | 12:25 | hotfix B build SUCCESS → revision `00417-wuw` 100% flip | `00417-wuw` |
 | 21:30 | 12:30 | 次回 `/run` で publish 復活 verify(本記録 commit 時点では monitor 待機中)| - |
 
+## VERIFY NOTE (2026-05-13 追記)
+
+- traffic: `00417-wuw` 100% を維持
+- 5/12 21:30 JST 以降の Cloud Run log で `UnboundLocalError` 0 件
+- 2026-05-13 朝の `/run`(JST):
+  - 06:01: エラー=0
+  - 07:01: 投稿=9 / エラー=0
+  - 08:01: 投稿=2 / エラー=0
+- incident は完全収束、`RESTORE-2026-05-08-MORNING-RELIABILITY` も同 verify で close (2026-05-13)
+
 ## Root cause(技術)
 
 ### コード構造の bug

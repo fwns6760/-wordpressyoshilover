@@ -7,7 +7,7 @@
 - `doc/active/OPERATING_LOCK.md`
 - `doc/README.md`
 - `doc/active/assignments.md`
-- **2026-05-08 朝の緊急対応**: `doc/active/RESTORE-2026-05-08-MORNING-RELIABILITY.md` + `docs/handoff/HANDOFF-2026-05-08-NEXT-SESSION.md`
+- **2026-05-08 緊急対応 (close 済)**: `doc/done/2026-05/RESTORE-2026-05-08-MORNING-RELIABILITY.md` + `docs/handoff/HANDOFF-2026-05-08-NEXT-SESSION.md`
 
 ## folder cleanup note(2026-05-02)
 
@@ -15,18 +15,17 @@
 - `205-COST` は done/2026-05 へ移動。
 - READY / REVIEW_NEEDED で現場が拾う可能性のある ticket は勝手に close していない。
 
-## いま active に残すもの(2026-05-08 lock)
+## いま active に残すもの(2026-05-13 lock)
 
 | ticket | status | 判定 | 次 action |
 |---|---|---|---|
-| **RESTORE-2026-05-08-MORNING-RELIABILITY** | LIVE_DEPLOYED, OBSERVATION_PENDING | **5/9 朝 06:00-07:00 が初実機検証** | heartbeat 1通 + per-post 5-10通 で成立。0通なら未網羅 skip path 再調査 → bypass 拡張、それでも復旧しなければ §3 部分 rollback / 最後手 nuclear |
 | **303-rollback-2026-05-08-frontend-rich-body** | LIVE_VERIFIED (Tier 1+2 audit pass) | manual-intake-service / yoshilover-fetcher 両方 `d34072a` 反映済み | manual-intake の rich body 装飾を 5/8 朝 audit Tier 1+2 で 5 件 fix 反映済み。Tier 3 (49 件 doc-only) は別便、現場は live 観察のみ |
 | **MANUAL-INTAKE-QUALITY-PARITY-2026-05-08** | DESIGN_REQUIRED | **user 判断待ち**: 「手動 vs 自動」のどの軸(本文長 / 装飾 / 自動化)を直すか | 5/8 PM session 調査済、apply_rss_pipeline_enrichment の nomotoke marker gate を発見、現状 RSS auto は marker 付与なしで装飾 skip。user に A/B/C/D 軸を提示済み、回答待ち |
 | **FRONTEND-ENRICHMENT-LIVE-AUDIT-2026-05-08** | READY_FOR_AUDIT | 5/7 enrichment 装飾(ToC / 順位表 / share / tag chip / AI badge / JSON-LD 等)が live で 0% / 100% gap。¥0、デグレ 0 の audit + narrow fix | Phase A 受動 audit から開始、root cause 特定 → narrow fix → unit test。3 auto jobs の redeploy は別 ticket |
 | **H3-STRUCTURE-UNIFY-2026-05-08** | READY_FOR_IMPL | H3 が 30+ 種類混在 → 12 set に統一、「📣 関連投稿」3 形式を「💬 ファンの声」に統一、Gemini prompt 自由生成禁止 | ¥0、4-6h、Phase A nomotoke renderer 統一から |
 | **DIGEST-DAILY-MORNING-2026-05-08** | READY_FOR_IMPL | 朝まとめ 1 日 1 本(前日 + 翌日 + 順位 + ファン声 を集約)。既存 block 再利用 | ¥0、4-6h、giants-morning-catchup 内に組み込み |
 | **SIDEBAR-WIDGETS-2026-05-08** | READY_FOR_IMPL | sidebar 5 widget(直近5試合 / 順位 / streak / 次戦 / 1年前の今日)。WP plugin 側 | ¥0、6-8h、phase 分割で順次 |
-| **305-QA featured media source priority** | REVIEW_NEEDED | source eyecatch を最優先し、同一 source image の WP media reuse を優先。source と無関係な既存 media / diversified pool を外し、source 不在時だけ阿部監督 fallback | Codex B が repo-only で impl + regression test 完了。pre-deploy checklist と deploy 判断待ち。publish / mail / scheduler / env / Cloud Run は不可触 |
+| **305-QA featured media source priority** | LIVE_DEPLOYED, USER_ACCEPTANCE_PENDING | source eyecatch を最優先し、同一 source image の WP media reuse を優先。source 不在時は東京ドーム写真 fallback。legacy Ichiro mixed media `36062` は unsafe として除外 | Codex B が repo-only で impl/test/deploy 完了。revision `00293-7lc`、`guarded-publish` / `publish-notice` success、deploy 後新規記事 0 件。次の自動生成 window で user が受け入れ判断。publish / mail / scheduler / env / Cloud Run 設定は追加変更なし |
 | **319-QA fetcher topic dedup and slot fill** | REVIEW_NEEDED | 自動起動時に同じ話題の重複記事が10枠を消費する問題を narrow 修正する ticket。head/bat contact 事故の再現テスト赤→緑、related/full pytest green | diff review + commit 判断待ち。publish / mail / scheduler / env / Cloud Run / SEO / source追加は不可触 |
 | **CATEGORY-RESTRUCTURE-2026-05-08** | DESIGN_REQUIRED | 「コラム」catch-all 解消、「試合中継」新 category 抽出、巨人 tag 化 | user 判断必要(WP admin で新 category 作成)、Claude は設計 + automation script |
 | **EXTERNAL-MONITOR-APPS-SCRIPT** | READY_FOR_USER_SETUP | user 作業 10 分(GAS で完全独立 ping) | 明日朝 yoshilover infra 全死シナリオ用の独立 safety net、user 任意 |
@@ -100,12 +99,12 @@
 | **323-QA source body excerpt clean truncation** | BLOCKED_USER_DIFF_REVIEW。`314-QA-rss-source-body-excerpt-followup` 関連。ブログ本文の `📖 本文抜粋` が600文字化後も途中切れ / UI・関連記事混入に見える問題を狭く扱う | repo local 実装 + 回帰テスト + full unittest OK。diff review と commit 判断待ち。publish / mail / scheduler / env / Cloud Run / X / SEO / featured_media は不可触 |
 | **251/252/253/264/274/283/288/294/295/296** | HOLD / BACKLOG / DESIGN_ONLY / READY_FOR_USER_APPLY 系。active から waiting へ整理 | 各 ticket の解除条件または user GO が来た時 |
 
-## いま動かす指示(2026-05-08 lock)
+## いま動かす指示(2026-05-13 lock)
 
-### 最優先: 5/9 朝 06:00-07:00 検証 window 観察
+### close 済 (2026-05-13)
 
-- heartbeat mail 1通 +(試合あり / 朝 publish あり時)per-post 5-10通 が来れば **完全成功** → RESTORE ticket を `doc/done/2026-05/` 移動 + 本ファイル active 表から外す
-- heartbeat 来ない / per-post 0通 → RESTORE §4 失敗時 checklist に従う(未網羅 skip path 再調査 / 部分 rollback / 最終手段 nuclear)
+- **RESTORE-2026-05-08-MORNING-RELIABILITY**: LIVE_VERIFIED → `doc/done/2026-05/` 移動。5/13 朝 (06:01 / 07:01 / 08:01 JST) で投稿=9 / 2 / エラー=0、cron 安定稼働確認
+- **2026-05-12 evening P0 UnboundLocalError incident**: hotfix `802511f` + `b8a7f01` 復旧確認済 (revision `00417-wuw` 100%、5/13 朝 publish 投稿=9/2 / エラー=0)。incident log は `docs/handoff/session_logs/2026-05-12_evening_INCIDENT_publish_unbound_local.md` (verify note 追記済)
 
 ### user 任意作業
 

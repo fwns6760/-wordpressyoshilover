@@ -2861,6 +2861,72 @@ class MinimalBodyTests(unittest.TestCase):
         self.assertEqual(body, "巨人が接戦を制した")
 
 
+class HtmlBodyPerPostTests(unittest.TestCase):
+    """build_body_html_per_post: HTML alternative carrying 2 tap-large
+    buttons — 「記事を見る」 (canonical URL) and 「𝕏 で投稿」 (X intent
+    URL pre-filled with title + URL). No paid API, X intent is the free
+    public compose-prefill URL X exposes for everyone.
+    """
+
+    def _request(self, **overrides):
+        payload = {
+            "post_id": 123,
+            "title": "巨人が接戦を制した",
+            "canonical_url": "https://yoshilover.com/post-123/",
+            "subtype": "postgame",
+            "publish_time_iso": "2026-04-24T21:15:00+09:00",
+            "summary": "終盤の継投と一打が勝敗を分けた。",
+        }
+        payload.update(overrides)
+        return sender.PublishNoticeRequest(**payload)
+
+    def test_returns_none_when_title_missing(self):
+        result = sender.build_body_html_per_post(self._request(title=""))
+        self.assertIsNone(result)
+
+    def test_returns_none_when_url_missing(self):
+        result = sender.build_body_html_per_post(self._request(canonical_url=""))
+        self.assertIsNone(result)
+
+    def test_returns_none_for_post_gen_validate_kind(self):
+        # post_gen_validate notifications go to ops review, not the
+        # publish-with-X workflow.
+        result = sender.build_body_html_per_post(
+            self._request(notice_kind="post_gen_validate"),
+        )
+        self.assertIsNone(result)
+
+    def test_html_contains_title_url_and_x_intent_button(self):
+        html_body = sender.build_body_html_per_post(self._request())
+        self.assertIsNotNone(html_body)
+        # Title is escaped and rendered
+        self.assertIn("巨人が接戦を制した", html_body)
+        # Canonical URL appears as the 「記事を見る」 button href + text
+        self.assertIn('href="https://yoshilover.com/post-123/"', html_body)
+        self.assertIn("記事を見る", html_body)
+        # X intent URL — must have both ?text= (title) and &url= (canonical)
+        self.assertIn("x.com/intent/tweet", html_body)
+        self.assertIn("text=", html_body)
+        self.assertIn("&amp;url=", html_body)  # HTML-escaped in attribute
+        self.assertIn("𝕏 で投稿", html_body)
+
+    def test_html_intent_url_is_percent_encoded(self):
+        from urllib.parse import quote
+        html_body = sender.build_body_html_per_post(self._request())
+        expected_text = quote("巨人が接戦を制した", safe="")
+        expected_url = quote("https://yoshilover.com/post-123/", safe="")
+        self.assertIn(f"text={expected_text}", html_body)
+        self.assertIn(f"url={expected_url}", html_body)
+
+    def test_html_escapes_dangerous_title_chars(self):
+        # If a title contained < > & " they must be HTML-escaped so the
+        # rendered button does NOT execute as markup.
+        req = self._request(title='<script>alert("x")</script>')
+        html_body = sender.build_body_html_per_post(req)
+        self.assertNotIn("<script>", html_body)
+        self.assertIn("&lt;script&gt;", html_body)
+
+
 class DetailedSubjectTests(unittest.TestCase):
     """279-QA — subject prefix carries subtype + state info by default."""
 

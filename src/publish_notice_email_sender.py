@@ -6,6 +6,7 @@ from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
+import html
 import json
 import os
 from pathlib import Path
@@ -1284,6 +1285,25 @@ def _build_x_intent_url(text: str) -> str:
     return f"https://twitter.com/intent/tweet?text={encoded}"
 
 
+def _build_x_post_intent_url(title: str, article_url: str) -> str:
+    """Build an X compose intent URL pre-filled with ``title`` + the
+    canonical article URL. Tapping the link opens X's tweet composer in
+    the operator's existing X session — no API key, no auth, no cost.
+
+    Format: ``https://x.com/intent/tweet?text=<title>&url=<article_url>``
+
+    X attaches the URL as an Open Graph card preview when the article
+    page has the OG meta tags the renderer already emits.
+    """
+    title_clean = str(title or "").strip()
+    url_clean = str(article_url or "").strip()
+    if not title_clean or not url_clean:
+        return ""
+    encoded_text = quote(title_clean, safe="")
+    encoded_url = quote(url_clean, safe="")
+    return f"https://x.com/intent/tweet?text={encoded_text}&url={encoded_url}"
+
+
 def _render_manual_x_post_candidates(context: ManualXContext) -> list[tuple[str, str]]:
     template_sequence = _manual_x_template_sequence(
         context.article_type,
@@ -2496,6 +2516,11 @@ def build_body_text(
     if _minimal_body_enabled():
         title_only = str(request.title or "").strip()
         url_only = str(request.canonical_url or "").strip()
+        # text body は既存運用と integrity test を尊重して title + URL の
+        # ままにする。HTML alternative (build_body_html_per_post) 側で
+        # 「記事を見る」「𝕏 で投稿」ボタンを描画するため、modern mail client
+        # では 1 タップ運用が可能。text fallback の mail client では URL を
+        # 自分で踏む既存挙動が残る。
         return "\n".join(line for line in (title_only, url_only) if line)
 
     suppression_reason = mail_state.get("suppression_reason")
@@ -2552,6 +2577,78 @@ def build_body_text(
         )
     )
     return "\n".join(lines)
+
+
+def build_body_html_per_post(
+    request: PublishNoticeRequest,
+    *,
+    classification: dict[str, Any] | None = None,
+) -> str | None:
+    """Render an HTML alternative for the per-post publish-notice mail.
+
+    Goal: from the published-notice mail the operator can with two taps
+    (1) open the article to verify it and (2) jump into the X compose
+    screen pre-filled with title + URL. No paid API, no Gemini, no
+    X API — only an ``intent/tweet`` URL X exposes for free.
+
+    Returns ``None`` when the request lacks a title or URL (the bridge
+    falls back to text-only).
+    """
+    if classification is None:
+        classification = _classify_mail(request)
+    notice_kind = str(getattr(request, "notice_kind", "publish") or "publish").strip()
+    if notice_kind == "post_gen_validate":
+        # post_gen_validate notifications go to ops review, not the
+        # publish-with-X workflow — skip HTML enrichment.
+        return None
+    title = str(request.title or "").strip()
+    url = str(request.canonical_url or "").strip()
+    if not title or not url:
+        return None
+    intent_url = _build_x_post_intent_url(title, url)
+    if not intent_url:
+        return None
+    # Inline-styled HTML (mail clients ignore <style> blocks reliably
+    # only via inline styles). Single-column, mobile-first layout.
+    safe_title = html.escape(title)
+    safe_url = html.escape(url)
+    safe_intent = html.escape(intent_url)
+    return (
+        '<!DOCTYPE html><html><body style="margin:0;padding:0;'
+        'background:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,'
+        '\'Segoe UI\',\'Hiragino Sans\',sans-serif;">'
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" '
+        'border="0" style="background:#f5f5f5;padding:20px 0;">'
+        '<tr><td align="center">'
+        '<table role="presentation" width="560" cellspacing="0" cellpadding="0" '
+        'border="0" style="background:#ffffff;border-radius:8px;'
+        'box-shadow:0 1px 3px rgba(0,0,0,0.08);max-width:560px;width:100%;">'
+        '<tr><td style="padding:24px 22px 8px;">'
+        f'<p style="margin:0 0 14px;font-size:17px;line-height:1.5;'
+        f'font-weight:700;color:#1a1a1a;">{safe_title}</p>'
+        '<p style="margin:0 0 18px;font-size:12px;line-height:1.4;'
+        f'color:#666;word-break:break-all;">{safe_url}</p>'
+        '</td></tr>'
+        '<tr><td align="center" style="padding:0 22px 14px;">'
+        f'<a href="{safe_url}" target="_blank" rel="noopener" '
+        'style="display:inline-block;width:100%;max-width:300px;'
+        'padding:13px 20px;background:#003da5;color:#ffffff;'
+        'text-decoration:none;border-radius:6px;font-size:15px;'
+        'font-weight:700;text-align:center;">📰 記事を見る</a>'
+        '</td></tr>'
+        '<tr><td align="center" style="padding:0 22px 24px;">'
+        f'<a href="{safe_intent}" target="_blank" rel="noopener" '
+        'style="display:inline-block;width:100%;max-width:300px;'
+        'padding:13px 20px;background:#000000;color:#ffffff;'
+        'text-decoration:none;border-radius:6px;font-size:15px;'
+        'font-weight:700;text-align:center;">𝕏 で投稿する</a>'
+        '</td></tr>'
+        '<tr><td style="padding:0 22px 18px;border-top:1px solid #eee;">'
+        '<p style="margin:14px 0 0;font-size:11px;line-height:1.5;'
+        'color:#999;text-align:center;">YOSHILOVER 自動公開通知</p>'
+        '</td></tr>'
+        '</table></td></tr></table></body></html>'
+    )
 
 
 def build_summary_body_text(
@@ -2775,6 +2872,7 @@ def _deliver_mail(
     dedupe_post_id: int | str | None = None,
     now: datetime | None = None,
     duplicate_window: timedelta = DEFAULT_DUPLICATE_WINDOW,
+    body_html: str | None = None,
 ) -> PublishNoticeEmailResult:
     normalized_subject = str(subject or "").strip()
     recipients = resolve_recipients(override_recipient)
@@ -2812,6 +2910,7 @@ def _deliver_mail(
         to=recipients,
         subject=normalized_subject,
         text_body=body_text,
+        html_body=body_html if (body_html and body_html.strip()) else None,
         metadata=dict(metadata),
     )
     try:
@@ -2927,6 +3026,7 @@ def send(
     return _deliver_mail(
         subject=subject,
         body_text=build_body_text(normalized_request, classification=mail_state),
+        body_html=build_body_html_per_post(normalized_request, classification=mail_state),
         metadata={
             "post_id": normalized_request.post_id,
             "subtype": normalized_request.subtype,
@@ -3136,6 +3236,7 @@ __all__ = [
     "PublishNoticeEmailResult",
     "PublishNoticeRequest",
     "build_alert_body_text",
+    "build_body_html_per_post",
     "build_alert_subject",
     "build_body_text",
     "build_burst_summary_requests",

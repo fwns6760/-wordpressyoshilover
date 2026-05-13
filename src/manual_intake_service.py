@@ -369,6 +369,7 @@ _HTML_FORM = """<!DOCTYPE html>
   </section>
   <section class=\"tab-panel\" data-tab=\"insight\" id=\"tab-panel-insight\" hidden>
     <p class=\"insight-meta\">蓄積された article_candidates を選手 / 種類 / 期間で検索。検出ロジックは z-score / streak / workload / lineup_jump。data が日々 GCS に蓄積され、2-3 週間後に anomaly が出始める。</p>
+    <h2 style=\"font-size:15px;margin:18px 0 8px;\">🔎 1. signal 検索</h2>
     <form id=\"insight-form\">
       <div class=\"insight-row-grid\">
         <div class=\"field\">
@@ -396,6 +397,45 @@ _HTML_FORM = """<!DOCTYPE html>
       </div>
     </form>
     <div id=\"insight-result\" hidden></div>
+
+    <h2 style=\"font-size:15px;margin:24px 0 8px;\">📊 2. 12 球団 rank (INSIGHT-007)</h2>
+    <p class=\"insight-meta\">advanced metrics (OPS / FIP / wOBA / RF_proxy etc.) で全球団内 rank を出す。UZR は厳密版でない近似 (RF_proxy / UZR_proxy)。data 蓄積 (2〜3 週) 後に意味を持つ。</p>
+    <form id=\"rank-form\">
+      <div class=\"insight-row-grid\">
+        <div class=\"field\">
+          <label for=\"r-metric\">指標</label>
+          <select id=\"r-metric\" name=\"metric\">__INSIGHT_METRIC_OPTIONS__</select>
+        </div>
+        <div class=\"field\">
+          <label for=\"r-position\">守備位置 (RF/UZR proxy 必須)</label>
+          <select id=\"r-position\" name=\"position\">__INSIGHT_POSITION_OPTIONS__</select>
+        </div>
+      </div>
+      <div class=\"insight-row-grid\">
+        <div class=\"field\">
+          <label for=\"r-player\">注目選手 (rank highlight)</label>
+          <select id=\"r-player\" name=\"player\">__INSIGHT_PLAYER_OPTIONS__</select>
+        </div>
+        <div class=\"field\">
+          <label for=\"r-min-sample\">最低サンプル (AB/IP/opps)</label>
+          <input id=\"r-min-sample\" name=\"min_sample\" type=\"number\" min=\"1\" value=\"1\">
+        </div>
+      </div>
+      <div class=\"insight-row-grid\">
+        <div class=\"field\">
+          <label for=\"r-since\">From (YYYY-MM-DD)</label>
+          <input id=\"r-since\" name=\"since\" type=\"text\" placeholder=\"2026-04-01\" autocomplete=\"off\">
+        </div>
+        <div class=\"field\">
+          <label for=\"r-until\">To (YYYY-MM-DD)</label>
+          <input id=\"r-until\" name=\"until\" type=\"text\" placeholder=\"2026-05-31\" autocomplete=\"off\">
+        </div>
+      </div>
+      <div class=\"actions\">
+        <button class=\"primary\" type=\"submit\" id=\"rank-submit-btn\">📊 rank 検索</button>
+      </div>
+    </form>
+    <div id=\"rank-result\" hidden></div>
   </section>
 </main>
 <script>
@@ -474,6 +514,78 @@ _HTML_FORM = """<!DOCTYPE html>
       renderInsight({ ok: false, reason: String(e) });
     } finally {
       if (isubmit) { isubmit.disabled = false; isubmit.textContent = '🔍 検索'; }
+    }
+  });
+
+  // INSIGHT-007: rank query form
+  var rform = document.getElementById('rank-form');
+  var rresult = document.getElementById('rank-result');
+  var rsubmit = document.getElementById('rank-submit-btn');
+  function renderRank(payload) {
+    rresult.hidden = false;
+    if (!payload || !payload.ok) {
+      rresult.className = 'err';
+      rresult.textContent = '失敗: ' + (payload && payload.reason ? payload.reason : 'unknown');
+      return;
+    }
+    var rows = payload.rows || [];
+    if (rows.length === 0) {
+      rresult.className = '';
+      rresult.textContent = '該当データなし（蓄積中、または条件に合う選手がいない）。';
+      return;
+    }
+    rresult.className = '';
+    rresult.innerHTML = '';
+    var meta = document.createElement('div');
+    meta.className = 'insight-meta';
+    var focus = payload.focus_player;
+    if (focus) {
+      meta.textContent = '注目選手「' + focus.player_canonical + '」 → ' + focus.rank + '位 / 全' + focus.total + '人 (値=' + focus.metric_value + ', サンプル=' + focus.sample_size + ')';
+    } else {
+      meta.textContent = payload.count + ' 件表示 / 全' + payload.total + ' 人';
+    }
+    rresult.appendChild(meta);
+    var table = document.createElement('table');
+    table.className = 'result-table';
+    table.innerHTML = '<thead><tr><th>順位</th><th>選手</th><th>team</th><th>値</th><th>サンプル</th></tr></thead>';
+    var tbody = document.createElement('tbody');
+    var focusName = focus ? focus.player_canonical : null;
+    rows.forEach(function(r) {
+      var tr = document.createElement('tr');
+      if (focusName && r.player_canonical === focusName) {
+        tr.style.background = '#fff3e0';
+        tr.style.fontWeight = '600';
+      }
+      function td(t) { var c = document.createElement('td'); c.textContent = t == null ? '' : String(t); return c; }
+      tr.appendChild(td(r.rank + '/' + r.total));
+      tr.appendChild(td(r.player_canonical || ''));
+      tr.appendChild(td(r.team_code || ''));
+      tr.appendChild(td(r.metric_value));
+      tr.appendChild(td(r.sample_size));
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    rresult.appendChild(table);
+  }
+  rform.addEventListener('submit', async function(ev) {
+    ev.preventDefault();
+    rresult.hidden = true;
+    if (rsubmit) { rsubmit.disabled = true; rsubmit.textContent = '📡 検索中...'; }
+    var data = new FormData(rform);
+    var params = new URLSearchParams();
+    data.forEach(function(v, k) { if (v) params.append(k, v); });
+    try {
+      var resp = await fetch('/insight-rank?' + params.toString(), {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        credentials: 'same-origin',
+      });
+      var json = await resp.json().catch(function() { return {}; });
+      renderRank(json);
+    } catch (e) {
+      renderRank({ ok: false, reason: String(e) });
+    } finally {
+      if (rsubmit) { rsubmit.disabled = false; rsubmit.textContent = '📊 rank 検索'; }
     }
   });
 })();
@@ -660,11 +772,20 @@ def _render_form() -> str:
     signal_options = ['<option value="">— 全 signal —</option>']
     for sig in miq.signal_type_options():
         signal_options.append(f'<option value="{sig}">{sig}</option>')
+    # INSIGHT-007: rank-tab option lists
+    metric_options = ['<option value="">— metric を選択 —</option>']
+    for met in miq.metric_options():
+        metric_options.append(f'<option value="{met}">{met}</option>')
+    position_options = ['<option value="">— 全 position (打撃/投球指標は不問) —</option>']
+    for pos in miq.position_options():
+        position_options.append(f'<option value="{pos}">{pos}</option>')
     return (
         _HTML_FORM
         .replace("__ARTICLE_TYPE_OPTIONS__", "".join(options))
         .replace("__INSIGHT_PLAYER_OPTIONS__", "".join(player_options))
         .replace("__INSIGHT_SIGNAL_OPTIONS__", "".join(signal_options))
+        .replace("__INSIGHT_METRIC_OPTIONS__", "".join(metric_options))
+        .replace("__INSIGHT_POSITION_OPTIONS__", "".join(position_options))
     )
 
 
@@ -777,6 +898,42 @@ def build_handler(
                     json.dumps(_MANIFEST, ensure_ascii=False),
                     content_type="application/manifest+json; charset=utf-8",
                 )
+                return
+            if path == "/insight-rank":
+                # INSIGHT-007: cross-team rank query.
+                expected_token = _require_token()
+                if expected_token:
+                    cookie_token = ""
+                    raw_cookie = self.headers.get("Cookie") or ""
+                    for part in raw_cookie.split(";"):
+                        kv = part.strip().split("=", 1)
+                        if len(kv) == 2 and kv[0].strip() == "manual_intake_session":
+                            cookie_token = kv[1].strip()
+                            break
+                    query_token = ""
+                    qtok = parse_qs(parsed.query, keep_blank_values=False).get("token") or []
+                    if qtok:
+                        query_token = (qtok[0] or "").strip()
+                    if cookie_token != expected_token and query_token != expected_token:
+                        _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                        return
+                params = parse_qs(parsed.query, keep_blank_values=False)
+                miq.ensure_local_db()
+                try:
+                    result = miq.query_rank(
+                        metric_name=(params.get("metric") or [""])[0],
+                        player_canonical=(params.get("player") or [""])[0] or None,
+                        position_filter=(params.get("position") or [""])[0] or None,
+                        since=(params.get("since") or [""])[0] or None,
+                        until=(params.get("until") or [""])[0] or None,
+                        min_sample=int((params.get("min_sample") or ["1"])[0]),
+                        limit=int((params.get("limit") or ["200"])[0]),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    bound_logger.exception("insight_rank_failed")
+                    _json_response(self, 500, {"ok": False, "reason": f"rank_error:{exc!r}", "rows": []})
+                    return
+                _json_response(self, 200, result)
                 return
             if path == "/insight-query":
                 # INSIGHT-006: read-only data-query endpoint. Auth flow

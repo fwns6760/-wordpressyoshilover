@@ -79,6 +79,14 @@ def resolve_giants_slug_for_date(html: str, target_date: str) -> Optional[str]:
     return giants[0]["slug"]
 
 
+def resolve_all_slugs_for_date(html: str, target_date: str) -> list[str]:
+    """指定日の **全 NPB 試合** の box slug を返す (INSIGHT-007 multi-team
+    ingest 用)。Giants 試合 + 他 5 試合 = 最大 6 件。順序は schedule HTML
+    上の登場順。"""
+    candidates = parse_npb_schedule_html(html, target_date=target_date)
+    return [c["slug"] for c in candidates]
+
+
 def npb_monthly_schedule_url(year: int, month: int) -> str:
     """NPB の月別 schedule URL。
 

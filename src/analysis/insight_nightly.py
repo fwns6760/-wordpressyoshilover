@@ -41,6 +41,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.analysis import (  # noqa: E402
+    insight_defense_proxy,
     insight_etl,
     insight_fetcher,
     insight_gcs_sync,
@@ -52,6 +53,48 @@ from src.analysis import (  # noqa: E402
 from src.source_npb_postgame_extractor import parse_npb_box_html  # noqa: E402
 
 DEFAULT_DIGEST_DIR = ROOT / "data" / "insight" / "digest"
+
+
+def resolve_all_slugs_auto(
+    *,
+    target_date: dt.date,
+    allow_live: bool = False,
+    http_get=None,
+    cache_dir: Path = insight_fetcher.DEFAULT_CACHE_DIR,
+) -> list[str]:
+    """指定日の **全 NPB 試合** slug をまとめて返す。schedule HTML を 1 度
+    だけ fetch (cache-first)、その上で parse。"""
+    candidates_urls = [
+        (
+            insight_schedule.npb_monthly_schedule_url(target_date.year, target_date.month),
+            f"schedule_{target_date.year}_{target_date.month:02d}.html",
+        ),
+        (
+            insight_schedule.npb_daily_schedule_url(target_date),
+            f"schedule_{target_date.isoformat()}_daily.html",
+        ),
+    ]
+    target_str = target_date.isoformat()
+    last_error: Exception | None = None
+    for url, cache_filename in candidates_urls:
+        try:
+            html, _meta = insight_fetcher.fetch_html_polite(
+                url,
+                cache_filename=cache_filename,
+                http_get=http_get,
+                cache_dir=cache_dir,
+                allow_live=allow_live,
+            )
+        except insight_fetcher.FetchBlocked as exc:
+            last_error = exc
+            continue
+        slugs = insight_schedule.resolve_all_slugs_for_date(html, target_str)
+        if slugs:
+            return slugs
+    raise insight_fetcher.FetchBlocked(
+        f"auto_resolve_all_failed: no slugs found for {target_str} "
+        f"(last error: {last_error!r})"
+    )
 
 
 def resolve_slug_auto(
@@ -202,6 +245,14 @@ def run_nightly(
             conn, game_id=game_id, parsed=parsed,
         )
 
+        # INSIGHT-007: defense_opportunities を atbats から再構築。
+        # 失敗しても pipeline は止めない (best-effort)。
+        try:
+            insight_defense_proxy.rebuild_defense_for_game(conn, game_id=game_id)
+        except Exception:  # noqa: BLE001
+            pass
+        conn.commit()
+
         # Step 4 — multi-game + lineup detectors against full history.
         now_iso = dt.datetime.now(dt.timezone.utc).isoformat()
         multi_run_id = str(uuid.uuid4())
@@ -282,6 +333,10 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         help="auto-resolve slug from NPB schedule (uses --date, default = JST yesterday)",
     )
     p.add_argument(
+        "--all-teams", action="store_true",
+        help="INSIGHT-007: ingest ALL 12-team NPB games for the date (default: Giants only). Requires --auto.",
+    )
+    p.add_argument(
         "--date", default=None,
         help="game date YYYY-MM-DD (default = JST yesterday when --auto)",
     )
@@ -303,7 +358,66 @@ def main(argv: Optional[list[str]] = None) -> int:
     if not args.slug and not args.auto:
         print(json.dumps({"status": "blocked", "reason": "must pass --slug or --auto"}, ensure_ascii=False))
         return 2
+    if args.all_teams and not args.auto:
+        print(json.dumps({"status": "blocked", "reason": "--all-teams requires --auto"}, ensure_ascii=False))
+        return 2
+
     try:
+        if args.all_teams:
+            target = (
+                dt.date.fromisoformat(args.date)
+                if args.date else insight_schedule.previous_jst_date()
+            )
+            slugs = resolve_all_slugs_auto(
+                target_date=target,
+                allow_live=args.live,
+                cache_dir=Path(args.cache_dir),
+            )
+            per_game: list[dict] = []
+            for s in slugs:
+                try:
+                    s_summary = run_nightly(
+                        slug=s,
+                        allow_live=args.live,
+                        db_path=Path(args.db),
+                        csv_path=Path(args.csv),
+                        cache_dir=Path(args.cache_dir),
+                        digest_dir=Path(args.digest_dir),
+                        write_digest=False,  # 個別 digest はまとめない
+                    )
+                    per_game.append({"slug": s, "ok": True, "etl": s_summary.get("etl")})
+                except insight_fetcher.FetchBlocked as exc:
+                    per_game.append({"slug": s, "ok": False, "reason": str(exc)})
+                except Exception as exc:  # noqa: BLE001
+                    per_game.append({"slug": s, "ok": False, "reason": f"unexpected:{exc!r}"})
+            # 最終的に digest を 1 回だけ書く
+            digest_path = None
+            if not args.no_digest:
+                digest_target = Path(args.digest_dir) / f"{target.isoformat()}.md"
+                digest_rows = insight_markdown_summary.write_digest(
+                    db_path=Path(args.db),
+                    game_date=target.isoformat(),
+                    out_path=digest_target,
+                )
+                digest_path = str(digest_target)
+            summary = {
+                "mode": "all_teams",
+                "game_date": target.isoformat(),
+                "slugs": slugs,
+                "per_game": per_game,
+                "digest_path": digest_path,
+            }
+            # GCS push after all games processed
+            try:
+                summary["gcs_push"] = insight_gcs_sync.upload_state(
+                    base_dir=Path(args.db).parent,
+                    digest_dir=Path(args.digest_dir) if not args.no_digest else None,
+                )
+            except Exception as exc:  # noqa: BLE001
+                summary["gcs_push"] = {"skipped": True, "reason": f"upload_error:{exc!r}"}
+            print(json.dumps({"status": "ok", **summary}, ensure_ascii=False))
+            return 0
+
         slug = args.slug
         if args.auto:
             target = (

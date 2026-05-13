@@ -166,6 +166,32 @@ def derive_result(giants_score: int | None, opp_score: int | None) -> str:
 # ─── DB helpers ─────────────────────────────────────────────────────────────
 
 
+_TEAM_NAME_TO_CODE_INTERNAL = {
+    "巨人": "g", "読売": "g", "ジャイアンツ": "g",
+    "阪神": "t", "タイガース": "t",
+    "ヤクルト": "s", "スワローズ": "s",
+    "広島": "c", "カープ": "c",
+    "DeNA": "db", "横浜": "db", "ベイスターズ": "db",
+    "中日": "d", "ドラゴンズ": "d",
+    "ソフトバンク": "h", "ホークス": "h",
+    "西武": "l", "ライオンズ": "l",
+    "ロッテ": "m", "マリーンズ": "m",
+    "楽天": "e", "イーグルス": "e",
+    "オリックス": "b", "バファローズ": "b",
+    "日本ハム": "f", "ファイターズ": "f",
+}
+
+
+def _resolve_team_code_from_name(name: str) -> str:
+    """team display 名から team_code を resolve。マッチしなければ 'unknown'。"""
+    if not name:
+        return "unknown"
+    for token, code in _TEAM_NAME_TO_CODE_INTERNAL.items():
+        if token in name:
+            return code
+    return "unknown"
+
+
 def _ensure_team_name_columns(conn: sqlite3.Connection) -> None:
     """INSIGHT-007: batting_logs / pitching_logs / lineups / fielding_logs に
     ``team_name`` 列を additive に追加 (NULL 許容)。既存 row には影響なし、
@@ -264,6 +290,7 @@ def _upsert_batters(
     team_role: str,
     rows: Iterable[dict],
     aliases: dict[str, str],
+    team_name: Optional[str] = None,
 ) -> int:
     n = 0
     # Each (slot_order, player_display) is unique. Substitutions reuse the slot.
@@ -283,8 +310,8 @@ def _upsert_batters(
             INSERT OR REPLACE INTO batting_logs (
                 game_id, team_role, slot_order, position,
                 player_display, player_canonical, is_sub,
-                AB, R, H, RBI, SB, atbats_json
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                AB, R, H, RBI, SB, atbats_json, team_name
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 game_id,
@@ -300,6 +327,7 @@ def _upsert_batters(
                 _int_or_none(row.get("打点")),
                 _int_or_none(row.get("盗塁")),
                 json.dumps(row.get("atbats") or [], ensure_ascii=False),
+                team_name,
             ),
         )
         n += 1
@@ -315,6 +343,7 @@ def _upsert_pitchers(
     team_role: str,
     rows: Iterable[dict],
     aliases: dict[str, str],
+    team_name: Optional[str] = None,
 ) -> int:
     n = 0
     order = 0
@@ -333,8 +362,8 @@ def _upsert_pitchers(
                 game_id, team_role, appearance_order,
                 player_display, player_canonical,
                 result_mark, pitches, BF, IP,
-                H_allowed, HR_allowed, BB, HBP, K, WP, BK, R, ER
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                H_allowed, HR_allowed, BB, HBP, K, WP, BK, R, ER, team_name
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 game_id,
@@ -355,6 +384,7 @@ def _upsert_pitchers(
                 _int_or_none(row.get("ボーク")),
                 _int_or_none(row.get("失点")),
                 _int_or_none(row.get("自責点")),
+                team_name,
             ),
         )
         n += 1
@@ -618,10 +648,24 @@ def etl_from_html(
             source_kind=source_kind,
             ingested_at=now_iso,
         )
-        n_g_bat = _upsert_batters(conn, game_id, "giants", parsed.get("giants_batters") or [], aliases)
-        n_o_bat = _upsert_batters(conn, game_id, "opponent", parsed.get("opponent_batters") or [], aliases)
-        n_g_pit = _upsert_pitchers(conn, game_id, "giants", parsed.get("giants_pitchers") or [], aliases)
-        n_o_pit = _upsert_pitchers(conn, game_id, "opponent", parsed.get("opponent_pitchers") or [], aliases)
+        giants_team_name = parsed.get("giants_team_name") or "巨人"
+        opponent_team_name = parsed.get("opponent_team_name") or ""
+        n_g_bat = _upsert_batters(
+            conn, game_id, "giants", parsed.get("giants_batters") or [], aliases,
+            team_name=giants_team_name,
+        )
+        n_o_bat = _upsert_batters(
+            conn, game_id, "opponent", parsed.get("opponent_batters") or [], aliases,
+            team_name=opponent_team_name,
+        )
+        n_g_pit = _upsert_pitchers(
+            conn, game_id, "giants", parsed.get("giants_pitchers") or [], aliases,
+            team_name=giants_team_name,
+        )
+        n_o_pit = _upsert_pitchers(
+            conn, game_id, "opponent", parsed.get("opponent_pitchers") or [], aliases,
+            team_name=opponent_team_name,
+        )
 
         conn.execute(
             "INSERT INTO insight_runs (run_id, run_ts, window_start, window_end, n_candidates, notes) "

@@ -272,6 +272,127 @@ def signal_type_options() -> list[str]:
     return sorted(ALLOWED_SIGNAL_TYPES)
 
 
+# INSIGHT-007: position filter values used by the data-query Tab 2.
+POSITION_OPTIONS: tuple[str, ...] = (
+    "投", "捕", "一", "二", "三", "遊", "左", "中", "右",
+)
+
+
+def position_options() -> list[str]:
+    return list(POSITION_OPTIONS)
+
+
+def metric_options() -> list[str]:
+    """Allowed metric names for cross-team rank query."""
+    from src.analysis import insight_rank_query as rq  # local import
+
+    return sorted(rq.KNOWN_METRICS.keys())
+
+
+def query_rank(
+    *,
+    metric_name: str,
+    player_canonical: str | None = None,
+    position_filter: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+    min_sample: int = 1,
+    limit: int = 200,
+    db_path: Path | None = None,
+) -> dict:
+    """INSIGHT-007: 12 球団 rank query。manual-intake-service の Tab 2
+    から呼ばれる。db_path 省略時は cache を見る。"""
+    from src.analysis import insight_rank_query as rq  # local import
+
+    target = db_path or _CACHE.path
+    if not target.exists():
+        return {
+            "ok": False,
+            "reason": "db_not_available",
+            "rows": [],
+            "count": 0,
+            "filters": {
+                "metric": metric_name,
+                "player": player_canonical,
+                "position": position_filter,
+                "since": since,
+                "until": until,
+            },
+        }
+    if metric_name not in rq.KNOWN_METRICS:
+        return {
+            "ok": False,
+            "reason": f"invalid_metric:{metric_name}",
+            "rows": [],
+            "count": 0,
+            "filters": {"metric": metric_name},
+        }
+    if position_filter and position_filter not in POSITION_OPTIONS:
+        return {
+            "ok": False,
+            "reason": f"invalid_position:{position_filter}",
+            "rows": [],
+            "count": 0,
+            "filters": {"position": position_filter},
+        }
+
+    uri = f"file:{target}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = rq.rank_players(
+            conn,
+            metric_name=metric_name,
+            since=_validate_date(since),
+            until=_validate_date(until),
+            position_filter=position_filter,
+            min_sample=min_sample,
+        )
+    finally:
+        conn.close()
+
+    focus = None
+    if player_canonical:
+        for r in rows:
+            if r.player_canonical == player_canonical:
+                focus = {
+                    "player_canonical": r.player_canonical,
+                    "team_code": r.team_code,
+                    "metric_value": r.metric_value,
+                    "sample_size": r.sample_size,
+                    "rank": r.rank,
+                    "total": r.total,
+                }
+                break
+
+    rows_out = [
+        {
+            "player_canonical": r.player_canonical,
+            "team_code": r.team_code,
+            "metric_value": r.metric_value,
+            "sample_size": r.sample_size,
+            "rank": r.rank,
+            "total": r.total,
+        }
+        for r in rows[: max(1, min(limit, 500))]
+    ]
+    return {
+        "ok": True,
+        "rows": rows_out,
+        "count": len(rows_out),
+        "total": len(rows),
+        "focus_player": focus,
+        "filters": {
+            "metric": metric_name,
+            "player": player_canonical,
+            "position": position_filter,
+            "since": since,
+            "until": until,
+            "min_sample": min_sample,
+        },
+    }
+
+
 def roster_options() -> list[dict]:
     """Read ``config/giants_roster.json`` and return active players as
     ``{name, position, role}``. Empty list when the file is missing."""

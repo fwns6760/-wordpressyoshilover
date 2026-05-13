@@ -89,9 +89,15 @@ def _esc(s: str) -> str:
 
 def compose_enrichment_html(group: dict, *, generated_at: dt.datetime) -> str:
     """Build the HTML block that gets inserted between the sentinel
-    comments. Pure function — no WP / network access."""
-    if group.get("kind") != "game_result":
-        raise ValueError(f"compose only valid for game_result groups (got {group.get('kind')})")
+    comments. Pure function — no WP / network access.
+
+    Accepts both ``game_result`` and ``player_topic`` kinds (v2 player ×
+    subtype). ``player_quote`` / ``lineup`` / ``orphan`` are rejected —
+    those groups should not appear in the enricher's eligible set."""
+    if group.get("kind") not in ENRICHMENT_ELIGIBLE_KINDS:
+        raise ValueError(
+            f"compose only valid for {sorted(ENRICHMENT_ELIGIBLE_KINDS)} groups (got {group.get('kind')})"
+        )
 
     by_role: dict[str, list[dict]] = {}
     for ch in group.get("children") or []:
@@ -189,28 +195,45 @@ def patch_parent_content(wp, post_id: int, new_raw_body: str) -> None:
 # ─── main pipeline ──────────────────────────────────────────────────────────
 
 
-def collect_closed_game_result_groups(
+# Subset of "kind" values for which a parent body enrichment makes sense.
+# generic-only events (= player_quote kind) are intentionally excluded: a
+# parent that itself is just a bare quote should not advertise "## 試合
+# の全角度". orphan / lineup events are also skipped.
+ENRICHMENT_ELIGIBLE_KINDS = {"game_result", "player_topic"}
+
+
+def collect_eligible_groups(
     *,
     game_date: dt.date,
     now: dt.datetime,
+    mode: str = "morning",
     fetcher=None,
 ) -> list[dict]:
-    """Return ``game_result`` groups whose window is closed (``now`` >=
-    close_at) for the given ``game_date``. ``fetcher`` is injectable for
-    tests; defaults to the live WP REST fetch."""
+    """Return event_key groups eligible for parent-body enrichment.
+
+    Parameters
+    ----------
+    game_date:
+        The game_date attribution (JST-cutoff aware) to filter to.
+    now:
+        Reference time used for window open/closed evaluation.
+    mode:
+        ``"morning"`` (default) — only groups whose window has CLOSED
+        (post-cutoff sweep semantics).
+        ``"rolling"`` — also include groups whose window is still open;
+        intended for the 15-minute cron that updates parents in
+        near-real-time as new drafts arrive.
+    fetcher:
+        Injectable WP REST fetch — defaults to live.
+    """
     fetch = fetcher or ekl.fetch_published_posts
-    # Fetch the game day + the morning-after window (close_at = next 07:00).
     posts = fetch(
         since=game_date,
         until=game_date + dt.timedelta(days=1, hours=0),
     )
-    # The window-end fetch needs to include articles published 00:00–07:00
-    # on game_date+1, which the previous call already covers because the
-    # caller passes "until" as exclusive next day; the morning-after
-    # roundup falls into that range only when our `until` is at least one
-    # full day after game_date. ekl.fetch_published_posts treats the
-    # before window as ISO00:00, so we widen by an extra day so that
-    # game_date+1's 00:00–07:00 articles are included.
+    # ekl.fetch_published_posts treats the before window as ISO 00:00,
+    # so widen by an extra day to include 00:00–07:00 of game_date+1
+    # (the morning-after roundup that attributes back to game_date).
     extra = fetch(
         since=game_date + dt.timedelta(days=1),
         until=game_date + dt.timedelta(days=2),
@@ -218,13 +241,30 @@ def collect_closed_game_result_groups(
     posts = list(posts) + [p for p in extra if p.get("id") not in {q.get("id") for q in posts}]
     records = [ekl.post_to_record(p) for p in posts]
     groups = ekl.group_records(records, now=now)
-    return [
-        g for g in groups
-        if g.get("kind") == "game_result"
-        and g.get("game_date") == game_date.isoformat()
-        and (g.get("window") or {}).get("status") == "closed"
-        and len(g.get("children") or []) >= 1
-    ]
+    out: list[dict] = []
+    for g in groups:
+        if g.get("kind") not in ENRICHMENT_ELIGIBLE_KINDS:
+            continue
+        if g.get("game_date") != game_date.isoformat():
+            continue
+        if len(g.get("children") or []) < 1:
+            continue
+        win_status = (g.get("window") or {}).get("status")
+        if mode == "morning":
+            if win_status != "closed":
+                continue
+        elif mode == "rolling":
+            if win_status not in {"open", "closed"}:
+                continue
+        else:
+            raise ValueError(f"unknown mode: {mode!r}")
+        out.append(g)
+    return out
+
+
+# Backward-compat alias for the previous public name.
+def collect_closed_game_result_groups(*, game_date, now, fetcher=None):  # noqa: D401
+    return collect_eligible_groups(game_date=game_date, now=now, mode="morning", fetcher=fetcher)
 
 
 def process_group(
@@ -294,11 +334,18 @@ def append_ledger(out_dir: Path, label: str, entries: list[dict]) -> Path:
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Morning event_key parent-article enricher (7:00 JST).")
+    p = argparse.ArgumentParser(description="event_key parent-article enricher.")
     p.add_argument("--date", help="game_date YYYY-MM-DD (default = yesterday in JST)")
     p.add_argument("--apply", action="store_true", help="actually PATCH parent body via WP REST")
     p.add_argument("--dry-run", action="store_true", help="explicit dry-run (default behavior)")
     p.add_argument("--print-html", action="store_true", help="print the composed HTML for each group")
+    p.add_argument(
+        "--mode",
+        choices=("morning", "rolling"),
+        default="morning",
+        help="morning = only closed windows (default, ≈ 07:00 sweep). "
+        "rolling = include open windows too (≈ 15-min cron).",
+    )
     return p.parse_args(argv)
 
 
@@ -321,9 +368,10 @@ def main(argv: list[str] | None = None) -> int:
         print("error: --dry-run and --apply are mutually exclusive", file=sys.stderr)
         return 2
 
-    groups = collect_closed_game_result_groups(game_date=game_date, now=now)
+    groups = collect_eligible_groups(game_date=game_date, now=now, mode=args.mode)
 
     summary: dict[str, Any] = {
+        "mode": args.mode,
         "game_date": game_date.isoformat(),
         "now": now.isoformat(),
         "apply": apply,

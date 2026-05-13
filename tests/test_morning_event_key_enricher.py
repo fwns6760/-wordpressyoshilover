@@ -250,3 +250,97 @@ def test_cli_rejects_dry_run_and_apply_together(capsys) -> None:
     assert rc == 2
     captured = capsys.readouterr()
     assert "mutually exclusive" in captured.err
+
+
+# ─── mode-aware collect_eligible_groups ─────────────────────────────────────
+
+
+def _fake_fetcher(posts):
+    def _fetch(*, since, until, **_kwargs):
+        out = []
+        for p in posts:
+            try:
+                dat = dt.datetime.fromisoformat(str(p.get("date") or "").replace("Z", "")).date()
+            except Exception:
+                continue
+            if since <= dat < until:
+                out.append(p)
+        return out
+    return _fetch
+
+
+def _wp_post(pid: int, date: str, title: str) -> dict:
+    return {
+        "id": pid,
+        "date": date,
+        "title": {"rendered": title},
+        "categories": [],
+        "link": f"https://yoshilover.com/{pid}",
+    }
+
+
+_5_12_POSTS = [
+    _wp_post(66603, "2026-05-12T19:45:24", "【一軍】巨人 vs 広島 ぎふしん長良川球場 18時試合開始"),
+    _wp_post(66669, "2026-05-12T21:15:51", "【巨人】今季初のサヨナラ勝ち！佐々木俊輔に強攻サインで劇的初サヨナラアーチ"),
+    _wp_post(66677, "2026-05-12T21:30:49", "巨人が今季初のサヨナラ勝ち！ 佐々木が中崎から岐阜の夜空にサヨナラ2ラン"),
+]
+
+
+def test_morning_mode_skips_open_window() -> None:
+    """Before 07:00 JST cutoff = window open → morning mode returns []"""
+    fetch = _fake_fetcher(_5_12_POSTS)
+    groups = enricher.collect_eligible_groups(
+        game_date=dt.date(2026, 5, 12),
+        now=dt.datetime(2026, 5, 13, 6, 0, tzinfo=JST),
+        mode="morning",
+        fetcher=fetch,
+    )
+    assert groups == []
+
+
+def test_morning_mode_picks_up_closed_window() -> None:
+    """At/after 07:00 JST cutoff = closed → morning mode finds the group"""
+    fetch = _fake_fetcher(_5_12_POSTS)
+    groups = enricher.collect_eligible_groups(
+        game_date=dt.date(2026, 5, 12),
+        now=dt.datetime(2026, 5, 13, 7, 0, 1, tzinfo=JST),
+        mode="morning",
+        fetcher=fetch,
+    )
+    assert len(groups) == 1
+    assert groups[0]["event_subtype"] == "walk_off"
+    assert groups[0]["parent_id"] == 66669
+
+
+def test_rolling_mode_picks_up_open_window() -> None:
+    """Rolling mode includes open windows so the 15-min cron can edit
+    parents in near-real-time while the night is still active."""
+    fetch = _fake_fetcher(_5_12_POSTS)
+    groups = enricher.collect_eligible_groups(
+        game_date=dt.date(2026, 5, 12),
+        now=dt.datetime(2026, 5, 13, 3, 0, tzinfo=JST),  # 03:00 JST = open
+        mode="rolling",
+        fetcher=fetch,
+    )
+    assert len(groups) == 1
+    assert groups[0]["event_subtype"] == "walk_off"
+    assert groups[0]["window"]["status"] == "open"
+
+
+def test_compose_accepts_player_topic_kind() -> None:
+    """v2 added player_topic kind (home_visit / debut_milestone /
+    record_milestone / lineup_role). compose must not error on those."""
+    g = _group(children=[_child(1, "練習風景", "scene_detail")])
+    g["kind"] = "player_topic"
+    html = enricher.compose_enrichment_html(g, generated_at=NOW)
+    assert enricher.ENRICHMENT_START_MARKER in html
+
+
+def test_compose_rejects_player_quote_kind() -> None:
+    """player_quote (generic-only events) shouldn't get an enrichment
+    section — they're just stand-alone quote articles."""
+    g = _group(children=[_child(1, "コメント", "manager_quote")])
+    g["kind"] = "player_quote"
+    import pytest
+    with pytest.raises(ValueError):
+        enricher.compose_enrichment_html(g, generated_at=NOW)

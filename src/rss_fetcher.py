@@ -24117,39 +24117,38 @@ def _main(args, logger):
             cats = _resolve_draft_category_ids(wp, category, logger)
 
             featured_media = 0
-            # 2026-05-12 B path: high-confidence player photo priority.
-            # When the title names a single 巨人 player whose photo is
-            # cached or discoverable in WP /media, prefer that player
-            # photo over any source-derived image. Returns 0 silently
-            # for generic / multi-player / team-level titles.
-            featured_media = _resolve_high_confidence_player_media_id(
-                draft_title,
-                wp,
-                logger,
-            )
-            # 2026-05-12 C path: recent media dedupe. Fetch the set of
-            # ``featured_media`` ids used in the trailing 1h window so
-            # the source-fallback chain below can skip ids that just
-            # got attached to another post. Empty set on failure /
-            # kill switch => downstream behavior unchanged.
+            # 2026-05-13 user-requested order: ① source og:image
+            # → ② 保存選手写真 → ③ team fallback (巨人マーク).
+            # まず recent media dedupe set を取得して source 候補に渡す。
+            # kill switch: EYECATCH_DEDUPE_RECENT_DISABLED=1
             recent_used = _recently_used_featured_media_ids(
                 wp,
                 window_seconds=3600,
                 logger=logger,
             )
-            # RELIABILITY-2026-05-08-H: tag scraper / 非 X URL passthrough 経路でも
-            # og:image を WP media に upload して featured_media に設定。
-            # 17 人 未 upload 選手 / broadcast / 観戦 guide 等で source 側の og:image
-            # が relevant な画像 (選手の写真 / 試合シーン) を提供する場合にこれを
-            # eyecatch にする。_article_images は上の source_type 分岐で
-            # populate 済、image_urls 空なら関数が 0 を返すので safe。
-            if featured_media == 0 and _article_images:
+            # ① source 由来 og:image を最優先。_article_images は if/else
+            # 両分岐で populate 済(else は 24087+ hotfix B)。generic source
+            # と recent dedupe は内部で skip されるので、全部落ちれば 0 を
+            # 返して次段に進む。
+            if _article_images:
                 featured_media = _upload_featured_media_with_fallback(
                     wp,
                     _article_images,
                     post_url,
                     logger,
                     recent_used=recent_used,
+                )
+            # ② source が 0 のとき、title に巨人選手 1 人が確定するなら
+            # 保存写真にフォールバック。kill switch:
+            # EYECATCH_PLAYER_PRIORITY_DISABLED=1。さらに 0 のときは
+            # 後段の wp_client.create_post 内 auto-eyecatch で
+            # ③ team fallback (PLAYER_EYECATCH_TEAM_FALLBACK_MEDIA_ID,
+            # 巨人マーク) が適用される。
+            if featured_media == 0:
+                featured_media = _resolve_high_confidence_player_media_id(
+                    draft_title,
+                    wp,
+                    logger,
                 )
 
             post_id = _create_draft_with_same_fire_guard(

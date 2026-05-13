@@ -132,9 +132,11 @@ def test_focus_player_giants_full_name():
 
 
 def test_focus_player_surname_fallback():
-    r = nlq.parse_question("吉川の OPS は何位？")
-    # 吉川 surname → 吉川尚輝 (unique in roster)
-    assert r["focus_player"] == "吉川尚輝"
+    r = nlq.parse_question("戸郷の FIP は何位？")
+    # 戸郷 surname → 戸郷翔征 (unique in roster; 吉川 has multiple
+    # entries after the 2026-05-13 roster expansion so surname-only
+    # fallback for 吉川 is intentionally ambiguous and returns None).
+    assert r["focus_player"] == "戸郷翔征"
 
 
 def test_focus_player_unknown_is_none():

@@ -340,5 +340,101 @@ class HallucinationGuardTests(unittest.TestCase):
             self.assertIn(head, decoded_input)
 
 
+class YahooBoilerplateStripTests(unittest.TestCase):
+    """Real-world Yahoo!ニュース body opens with delivery date / comment
+    count / image caption / 関連リンク marker before the actual article.
+    Post 66824 leaked all of these into the rendered excerpt block. The
+    extractor must strip them so only paragraph-level body text remains.
+    """
+
+    YAHOO_TITLE = (
+        "「正直言って困ってしまった」堀内恒夫氏、"
+        "巨人・戸郷翔征にまさかのアドバイス"
+        "（スポーツ報知） - Yahoo!ニュース"
+    )
+
+    def _build_html(self) -> str:
+        return (
+            '<html><body><div class="articleBody">'
+            "<p>「正直言って困ってしまった」堀内恒夫氏、巨人・戸郷翔征にまさかのアドバイス</p>"
+            "<p>5/5(火) 5:20配信</p>"
+            "<p>160</p>"
+            "<p>コメント160件</p>"
+            "<p>力投する戸郷翔征（カメラ・清水 武）</p>"
+            "<p>◆ＪＥＲＡセ・リーグ 巨人１―５ヤクルト（４日・東京ドーム）</p>"
+            "<p>戸郷は投げる腕を今までよりも少し上げて、真っすぐの威力は１５１キロをマークするなど若干アップしたけれど、頼みのフォークの落ちが悪くなってしまった。</p>"
+            "<p>【選手名鑑】戸郷翔征の球歴、年俸など…</p>"
+            "<p>もともと真っすぐはそれほどコントロールがいいわけでもないし、この日もシュート回転したり、逆球も多かった。</p>"
+            "</div></body></html>"
+        )
+
+    def test_strips_yahoo_delivery_date_and_comment_count(self):
+        out = extract_article_body_excerpt(
+            self._build_html(),
+            "https://news.yahoo.co.jp/articles/abc",
+            title=self.YAHOO_TITLE,
+            max_chars=600,
+        )
+        self.assertNotIn("5/5(火) 5:20配信", out)
+        self.assertNotIn("コメント160件", out)
+        self.assertNotRegex(out, r"(^|\n)160(\n|$)")
+
+    def test_strips_title_echo_when_wp_title_has_publisher_suffix(self):
+        out = extract_article_body_excerpt(
+            self._build_html(),
+            "https://news.yahoo.co.jp/articles/abc",
+            title=self.YAHOO_TITLE,
+            max_chars=600,
+        )
+        self.assertFalse(
+            out.startswith(
+                "「正直言って困ってしまった」堀内恒夫氏、巨人・戸郷翔征にまさかのアドバイス"
+            ),
+            "title echo should be stripped even with long WP-stored title",
+        )
+
+    def test_strips_image_caption_with_camera_credit(self):
+        out = extract_article_body_excerpt(
+            self._build_html(),
+            "https://news.yahoo.co.jp/articles/abc",
+            title=self.YAHOO_TITLE,
+            max_chars=600,
+        )
+        self.assertNotIn("カメラ・清水", out)
+
+    def test_strips_related_link_marker(self):
+        out = extract_article_body_excerpt(
+            self._build_html(),
+            "https://news.yahoo.co.jp/articles/abc",
+            title=self.YAHOO_TITLE,
+            max_chars=600,
+        )
+        self.assertNotIn("【選手名鑑】", out)
+
+    def test_keeps_actual_body_paragraphs(self):
+        out = extract_article_body_excerpt(
+            self._build_html(),
+            "https://news.yahoo.co.jp/articles/abc",
+            title=self.YAHOO_TITLE,
+            max_chars=600,
+        )
+        self.assertIn("◆ＪＥＲＡセ・リーグ", out)
+        self.assertIn("戸郷は投げる腕を", out)
+        self.assertIn("もともと真っすぐは", out)
+
+    def test_short_title_in_body_with_long_wp_title_is_stripped(self):
+        """The body has the short article title; WP stores it suffixed.
+        The asymmetric old check missed this, the new bidirectional
+        check catches it."""
+        out = extract_article_body_excerpt(
+            self._build_html(),
+            "https://news.yahoo.co.jp/articles/abc",
+            title=self.YAHOO_TITLE,
+            max_chars=600,
+        )
+        first_paragraph = out.split("\n", 1)[0]
+        self.assertNotIn("正直言って困ってしまった", first_paragraph)
+
+
 if __name__ == "__main__":
     unittest.main()

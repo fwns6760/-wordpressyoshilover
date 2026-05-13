@@ -194,6 +194,13 @@ _DATE_LINE_RE = re.compile(
     r"^\[?\d{4}[./年]\d{1,2}(?:[./月]\d{1,2}日?)?"
     r"(?:\s*\d{1,2}(?::\d{2}(?::\d{2})?|時\d{1,2}分(?:\d{1,2}秒)?))?\]?$"
 )
+_YAHOO_DELIVERY_RE = re.compile(
+    r"^\d{1,2}/\d{1,2}\([月火水木金土日]\)\s*\d{1,2}:\d{2}\s*配信$"
+)
+_COMMENT_COUNT_LABEL_RE = re.compile(r"^コメント\s*\d+\s*件$")
+_DIGITS_ONLY_RE = re.compile(r"^\d{1,4}$")
+_IMAGE_CAPTION_RE = re.compile(r"^[^\n]{0,60}（カメラ[・\s][^）]{0,40}）[^\n]{0,20}$")
+_RELATED_LINK_MARKER_RE = re.compile(r"^【[^】]{1,30}】[^\n]*$")
 _BOILERPLATE_LINES = {
     "PR",
     "広告",
@@ -344,6 +351,76 @@ def _drop_title_echo(text: str, title: str) -> str:
     return text
 
 
+def _is_title_echo(head_for_title: str, title_clean: str) -> bool:
+    """Return True when ``head_for_title`` is essentially the article
+    title (in either direction): exact match, or one is a prefix /
+    substring of the other within a small length tolerance.
+
+    The asymmetric old check broke whenever the source body opened with
+    a short version of the title and the caller passed in a long WP-
+    stored title with publisher suffix (e.g. "（スポーツ報知）- Yahoo!
+    ニュース"), leaving the title duplicated as the first excerpt line.
+    """
+    if not head_for_title or not title_clean:
+        return False
+    if head_for_title == title_clean:
+        return True
+    tol = 20
+    if title_clean in head_for_title and len(head_for_title) <= len(title_clean) + tol:
+        return True
+    if head_for_title in title_clean and len(title_clean) <= len(head_for_title) + tol:
+        return True
+    # Prefix overlap: the shorter one is a leading slice of the longer
+    # one, within tolerance. Catches the Yahoo case where the body
+    # opens with "「正直言って…」堀内恒夫氏…アドバイス" and the WP title
+    # appends "（スポーツ報知）- Yahoo!ニュース".
+    # CAREFUL: this must NOT fire when ``head_for_title`` is a long
+    # body paragraph that merely starts with the title (e.g. JSON-LD
+    # articleBody coming back as one long string). Cap the longer side
+    # at ``shorter + tol`` so this only matches a head line that is
+    # essentially the title plus a short publisher / site suffix.
+    shorter, longer = (
+        (head_for_title, title_clean)
+        if len(head_for_title) <= len(title_clean)
+        else (title_clean, head_for_title)
+    )
+    # Allow a wider tolerance for the prefix-overlap case so the
+    # Yahoo "<title>（スポーツ報知） - Yahoo!ニュース" suffix (~22 chars)
+    # still gets recognised, but reject long body paragraphs that
+    # merely begin with the title.
+    prefix_tol = 30
+    if (
+        len(shorter) >= 12
+        and longer.startswith(shorter)
+        and len(longer) <= len(shorter) + prefix_tol
+    ):
+        return True
+    return False
+
+
+def _is_noise_line(line: str) -> bool:
+    """Return True for lines that are navigation / date / comment-count /
+    image-caption / related-link markers — never part of the article body.
+    """
+    if not line:
+        return True
+    if line in _BOILERPLATE_LINES:
+        return True
+    if _DATE_LINE_RE.match(line):
+        return True
+    if _YAHOO_DELIVERY_RE.match(line):
+        return True
+    if _COMMENT_COUNT_LABEL_RE.match(line):
+        return True
+    if _DIGITS_ONLY_RE.match(line):
+        return True
+    if _IMAGE_CAPTION_RE.match(line):
+        return True
+    if _RELATED_LINK_MARKER_RE.match(line):
+        return True
+    return False
+
+
 def _drop_leading_boilerplate(text: str, title: str = "") -> str:
     """Remove leading navigation/date/title lines before body text."""
     if not text:
@@ -356,17 +433,23 @@ def _drop_leading_boilerplate(text: str, title: str = "") -> str:
         if not head:
             lines.pop(0)
             continue
-        if head in _BOILERPLATE_LINES or _DATE_LINE_RE.match(head):
+        if _is_noise_line(head):
             lines.pop(0)
             continue
-        if title_clean and (
-            head_for_title == title_clean
-            or (title_clean in head_for_title and len(head_for_title) <= len(title_clean) + 20)
-        ):
+        if _is_title_echo(head_for_title, title_clean):
             lines.pop(0)
             continue
         break
-    return "\n".join(lines)
+    # Also strip noise lines interleaved inside the first few lines
+    # (Yahoo emits image caption between delivery date and body).
+    cleaned: list[str] = []
+    for ln in lines:
+        if not cleaned and _is_noise_line(ln.strip()):
+            continue
+        if len(cleaned) < 3 and _is_noise_line(ln.strip()):
+            continue
+        cleaned.append(ln)
+    return "\n".join(cleaned)
 
 
 def _extract_via_jsonld(html: str) -> str:

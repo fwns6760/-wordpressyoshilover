@@ -1433,13 +1433,23 @@ def _insert_body_excerpt_block(
     block is appended at the end. ``source_name`` lands in the
     attribution line (``— {source_name}`` 出典).
     """
-    safe_excerpt = html.escape(excerpt).replace("\n", "<br>")
+    # Render each non-empty source line as its own <p> so paragraph
+    # breaks get real margin (CSS .nomotoke-source-excerpt__body p) and
+    # the excerpt is comfortably scannable on mobile. Joining with <br>
+    # produced an unreadable wall when the source body had many lines.
+    paragraphs = [p.strip() for p in excerpt.split("\n") if p.strip()]
+    if paragraphs:
+        body_inner = "".join(
+            f"<p>{html.escape(p)}</p>" for p in paragraphs
+        )
+    else:
+        body_inner = html.escape(excerpt).replace("\n", "<br>")
     safe_source = html.escape(source_name or "出典")
     block = (
         '<aside class="nomotoke-source-excerpt">'
         '<p class="nomotoke-source-excerpt__label">📖 本文抜粋</p>'
         f'<blockquote class="nomotoke-source-excerpt__body">'
-        f"{safe_excerpt}"
+        f"{body_inner}"
         "</blockquote>"
         f'<p class="nomotoke-source-excerpt__attr">— {safe_source}</p>'
         "</aside>\n"

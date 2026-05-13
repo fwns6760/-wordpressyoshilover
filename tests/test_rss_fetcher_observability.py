@@ -19,7 +19,7 @@ class RssFetcherObservabilityTests(unittest.TestCase):
         entry_link: str,
         roles: list[str] | None = None,
         source_type: str = "news",
-        title: str = "巨人・阿部監督「コメント」",
+        title: str = "巨人4-0で阪神に勝利",
         summary: str = "試合後のコメントあり",
         source_id_mock: Mock | None = None,
         trust_url_mock: Mock | None = None,

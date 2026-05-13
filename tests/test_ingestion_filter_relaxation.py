@@ -115,7 +115,7 @@ class IngestionFilterRelaxationTests(unittest.TestCase):
     def test_main_passes_36_hour_window_for_postgame_skip_check(self):
         args = Namespace(dry_run=True, draft_only=False, limit=10, article_ai_mode=None)
         entry = {
-            "title": "巨人4-0勝利",
+            "title": "巨人4-0で阪神に勝利",
             "summary": "岡本和真が決勝打で巨人が勝利した。",
             "link": "https://hochi.news/articles/20260427-OHT1T51111.html",
         }

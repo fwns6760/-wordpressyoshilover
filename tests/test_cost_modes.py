@@ -372,6 +372,55 @@ class CostModeTests(unittest.TestCase):
         )
         self.assertEqual(reason, "")
 
+    def test_unfinished_postgame_skip_fires_when_game_in_progress(self):
+        # post 66993 type: 試合中なのに postgame source が取り込まれ
+        # 「白星」narrative の事実誤認 article が公開された事象を防ぐ。
+        self.assertTrue(
+            rss_fetcher._should_skip_unfinished_postgame_entry(
+                "試合速報",
+                "【巨人】則本昂大が７回無失点の熱投、今季最多99球　８回に大勢ソロ被弾で移籍後初勝利は消滅",
+                "",
+                True,
+                {"state": "8回裏", "ended": False},
+            )
+        )
+
+    def test_unfinished_postgame_skip_passes_when_game_ended(self):
+        # 試合終了確認後の postgame は従来通り通す。
+        self.assertFalse(
+            rss_fetcher._should_skip_unfinished_postgame_entry(
+                "試合速報",
+                "【巨人】則本昂大が７回無失点の熱投、今季最多99球　８回に大勢ソロ被弾で移籍後初勝利は消滅",
+                "",
+                True,
+                {"state": "試合終了", "ended": True},
+            )
+        )
+
+    def test_unfinished_postgame_skip_only_applies_to_postgame_subtype(self):
+        # pregame subtype は対象外 (pregame_started_skip が担当)。
+        self.assertFalse(
+            rss_fetcher._should_skip_unfinished_postgame_entry(
+                "試合速報",
+                "あす巨人ヤクルト戦 戸郷翔征が先発で意気込み",
+                "",
+                True,
+                {"state": "試合前", "ended": False},
+            )
+        )
+
+    def test_unfinished_postgame_skip_handles_empty_game_status(self):
+        # game_status が空 (試合がない日 / 取得失敗) は safety 側で skip。
+        self.assertTrue(
+            rss_fetcher._should_skip_unfinished_postgame_entry(
+                "試合速報",
+                "巨人広島戦 競り勝って白星",
+                "",
+                True,
+                {},
+            )
+        )
+
     def test_pregame_started_skip_log_contains_title_and_timestamps(self):
         now = datetime(2026, 4, 19, 11, 30, tzinfo=rss_fetcher.JST)
         with self.assertLogs("rss_fetcher", level="INFO") as cm:

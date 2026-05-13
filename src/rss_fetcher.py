@@ -4223,6 +4223,53 @@ def _should_skip_started_pregame_entry(
     return _game_status_indicates_started(game_status)
 
 
+def _should_skip_unfinished_postgame_entry(
+    category: str,
+    title: str,
+    summary: str,
+    has_game: bool,
+    game_status: dict | None,
+) -> bool:
+    """``_should_skip_started_pregame_entry`` の対称。試合がまだ終わって
+    いない時点で「postgame」と判定された source を取り込むと、Gemini AI が
+    「白星」「敗戦」のような勝敗確定 narrative を生成して事実誤認の article
+    が公開される (例: post 66993 「巨人広島戦 則本昂大、試合での見せ場」)。
+
+    source 自体は事実 (例: 「則本昂大が７回無失点の熱投、８回に大勢ソロ被弾
+    で初勝利は消滅」) を書いていても、yoshilover 側で postgame template を
+    適用すると LLM が補完しすぎる。試合終了が確認できるまで postgame 系の
+    取り込みは skip するのが安全。
+    """
+    if category != "試合速報":
+        return False
+    if _detect_article_subtype(title, summary, category, has_game) != "postgame":
+        return False
+    # game_status が None / 空 / ended=False のいずれでも skip 側に倒す。
+    # ended=True が確認できた時のみ通す。
+    return not bool(game_status and game_status.get("ended"))
+
+
+def _log_postgame_unfinished_skip(
+    title: str,
+    summary: str,
+    post_url: str,
+    game_status: dict | None,
+    now: datetime | None = None,
+):
+    reference_now = now or datetime.now(JST)
+    payload = {
+        "event": "postgame_unfinished_skip",
+        "title": title,
+        "post_url": post_url,
+        "now": reference_now.isoformat(),
+        "game_state": _collapse_ws(str((game_status or {}).get("state", ""))),
+        "game_ended": bool((game_status or {}).get("ended")),
+    }
+    logging.getLogger("rss_fetcher").info(
+        json.dumps(payload, ensure_ascii=False)
+    )
+
+
 def _log_pregame_started_skip(
     title: str,
     summary: str,
@@ -23192,6 +23239,27 @@ def _main(args, logger):
                     skip_reason_counts["pregame_started"] += 1
                     _append_skip_reason_sample(skip_reason_sample_titles, "pregame_started", item["title"])
                     continue
+            if _should_skip_unfinished_postgame_entry(
+                item["category"],
+                item["title"],
+                item["summary"],
+                item.get("entry_has_game", True),
+                yahoo_game_status,
+            ):
+                _log_postgame_unfinished_skip(
+                    item["title"],
+                    item.get("summary", ""),
+                    item.get("post_url", ""),
+                    yahoo_game_status,
+                )
+                skip_filter += 1
+                skip_reason_counts["postgame_unfinished"] += 1
+                _append_skip_reason_sample(
+                    skip_reason_sample_titles,
+                    "postgame_unfinished",
+                    item["title"],
+                )
+                continue
             filtered_prepared_entries.append(item)
         prepared_entries = filtered_prepared_entries
 

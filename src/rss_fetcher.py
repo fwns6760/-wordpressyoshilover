@@ -21942,13 +21942,18 @@ _YOSHILOVER_KEY_PLAY_MARKERS: tuple[str, ...] = (
 )
 
 
-def _yoshilover_postgame_narrative(text: str, has_no_runs: bool) -> str:
+def _yoshilover_postgame_narrative(text: str, has_no_runs: bool, title: str = "") -> str:
     """Short fan-voice narrative for postgame articles. Deterministic
     template, no LLM. Picks the most-specific branch that matches.
+
+    主役 player は ``title`` から優先検出。summary 内の secondary 言及 (例:
+    同点被弾の救援投手) が narrative を逆転しないように。
     """
     try:
         from src.player_eyecatch_resolver import detect_person
-        player = detect_person(text) or ""
+        player = detect_person(title) if title else ""
+        if not player:
+            player = detect_person(text) or ""
     except Exception:
         player = ""
     is_noresult = ("ノーゲーム" in text) or ("中止" in text)
@@ -22029,7 +22034,7 @@ def _build_yoshilover_structured_prefix(
     if not rows and not bullets:
         return ""
 
-    narrative = _yoshilover_postgame_narrative(text, has_no_runs)
+    narrative = _yoshilover_postgame_narrative(text, has_no_runs, title=title)
 
     parts: list[str] = []
     parts.append(

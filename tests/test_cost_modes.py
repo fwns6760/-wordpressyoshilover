@@ -339,6 +339,39 @@ class CostModeTests(unittest.TestCase):
             )
         )
 
+    def test_no_entity_non_game_skip_fires_for_promotional_title(self):
+        # 66951 type: official @TokyoGiants RT, no player, promo markers
+        reason = rss_fetcher._should_skip_no_entity_non_game(
+            "RT 【公式】ジャイアンツタウンスタジアム: ／ 締め切り間近！販売は5/1",
+            "",
+        )
+        self.assertEqual(reason, "promotional_no_entity")
+
+    def test_no_entity_non_game_skip_fires_for_umpire_title(self):
+        # 66941 type: umpire roster, no Giants player
+        reason = rss_fetcher._should_skip_no_entity_non_game(
+            "福井 セーレン・ドリームスタジアム 本日の審判団 球審 嶋田 一塁 土山 二",
+            "",
+        )
+        self.assertEqual(reason, "umpire_info_no_entity")
+
+    def test_no_entity_non_game_skip_passes_when_player_present(self):
+        # 66943 type: 大勢 (alias 翁田大勢) survives even with promo-like phrasing
+        reason = rss_fetcher._should_skip_no_entity_non_game(
+            "福井 セーレン・ドリームスタジアム 巨人ベンチ入り控え選手 大勢 田和 赤星",
+            "",
+        )
+        self.assertEqual(reason, "")
+
+    def test_no_entity_non_game_skip_passes_for_player_with_goods_news(self):
+        # Player news that happens to mention グッズ販売 should still pass:
+        # entity present means the article carries player context.
+        reason = rss_fetcher._should_skip_no_entity_non_game(
+            "【巨人】戸郷翔征グッズ販売開始",
+            "",
+        )
+        self.assertEqual(reason, "")
+
     def test_pregame_started_skip_log_contains_title_and_timestamps(self):
         now = datetime(2026, 4, 19, 11, 30, tzinfo=rss_fetcher.JST)
         with self.assertLogs("rss_fetcher", level="INFO") as cm:

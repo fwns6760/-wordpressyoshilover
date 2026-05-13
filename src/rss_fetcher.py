@@ -4152,6 +4152,47 @@ def _game_status_indicates_started(game_status: dict | None) -> bool:
     return bool(state)
 
 
+# Non-player promotional / operational content markers. Used together with
+# detect_person == None to skip entries that carry Giants brand keywords
+# (so is_giants_related passes) but no actual player / 監督 / コーチ entity.
+# Examples: 「ジャイアンツタウン グッズ販売」, 「本日の審判団 球審 嶋田」.
+# detect_person presence overrides → article is kept.
+_NON_PLAYER_PROMOTIONAL_MARKERS: tuple[str, ...] = (
+    "販売", "発売", "予約販売", "予約", "抽選", "グッズ", "ストア",
+    "セール", "割引", "プレゼント", "受注", "限定発売",
+    "締め切り", "締切", "チケット", "ファンクラブ", "申し込み",
+)
+_NON_PLAYER_OPERATIONS_MARKERS: tuple[str, ...] = (
+    "球審", "塁審", "線審", "審判団", "審判員", "本日の審判",
+)
+
+
+def _should_skip_no_entity_non_game(title: str, summary: str) -> str:
+    """Return a non-empty skip reason when the entry text carries no Giants
+    player / 監督 / コーチ entity and matches a non-game (promotional or
+    umpire-only) profile, else ``""`` to keep the entry.
+
+    Examples that should skip:
+      - 「RT 【公式】ジャイアンツタウンスタジアム: 締め切り間近！販売は5/1…」
+      - 「福井 セーレン・ドリームスタジアム 本日の審判団 球審 嶋田 …」
+    Examples that should keep (entity present):
+      - 「巨人ベンチ入り控え選手 大勢 田和 赤星」 (大勢 → 翁田大勢)
+      - 「戸郷翔征グッズ販売開始」 (戸郷翔征)
+    """
+    text = _strip_html(f"{title} {summary}")
+    try:
+        from src.player_eyecatch_resolver import detect_person  # local import to avoid module cycle
+    except Exception:
+        return ""
+    if detect_person(text):
+        return ""
+    if any(marker in text for marker in _NON_PLAYER_PROMOTIONAL_MARKERS):
+        return "promotional_no_entity"
+    if any(marker in text for marker in _NON_PLAYER_OPERATIONS_MARKERS):
+        return "umpire_info_no_entity"
+    return ""
+
+
 # Mid-game progress markers. When any of these appears in title/summary the
 # article is actual in-progress coverage (e.g. 「N回まで無失点でスタート」),
 # not a true pregame preview. The subtype classifier still falls through to
@@ -22848,6 +22889,31 @@ def _main(args, logger):
                     not_giants_related_info_count += 1
                 skip_filter += 1
                 skip_reason_counts["not_giants_related"] += 1
+                continue
+
+            no_entity_reason = _should_skip_no_entity_non_game(
+                entry_title_clean, entry_summary_clean
+            )
+            if no_entity_reason:
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "no_entity_non_game_skip",
+                            "reason": no_entity_reason,
+                            "title": entry_title_clean[:160],
+                            "post_url": post_url,
+                            "source_name": name,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                _append_skip_reason_sample(
+                    skip_reason_sample_titles,
+                    no_entity_reason,
+                    entry_title_clean or post_url,
+                )
+                skip_filter += 1
+                skip_reason_counts[no_entity_reason] += 1
                 continue
 
             raw_title, title_preview = _prepare_source_title_context(entry_title_clean, entry)

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.13.0
+ * Version: 0.14.0
  * Author: yoshilover
  */
 
@@ -2821,14 +2821,27 @@ function yoshilover_063_enqueue_manual_x_share_corner_assets() {
   cursor: pointer;
 }
 .yoshi-x-share-corner__intent {
-  background: var(--yoshi-share-accent);
-  color: #fff;
+  /* 332-QA-style: subtype に関係なく Giants orange を CTA に使用、
+     視認性 + クリック誘導を強化。背景 #F5811F + 文字 #000 (太字) +
+     hover/focus で影を強める。subtype-accent は eyebrow / heading で
+     既に表現済なので intent button は意図的に統一。 */
+  background: #F5811F;
+  color: #000;
+  font-weight: 800;
+  border: 2px solid #000;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.18);
 }
 .yoshi-x-share-corner__copy:hover,
 .yoshi-x-share-corner__intent:hover {
   transform: translateY(-1px);
   box-shadow: 0 8px 20px rgba(26, 26, 26, 0.14);
   opacity: 0.96;
+}
+.yoshi-x-share-corner__intent:hover,
+.yoshi-x-share-corner__intent:focus-visible {
+  background: #FF9F40;
+  color: #000;
+  box-shadow: 0 6px 18px rgba(245, 129, 31, 0.45), 0 2px 0 #000;
 }
 .yoshi-x-share-corner__status {
   min-height: 1.4em;

@@ -169,6 +169,52 @@ def live_fetch(
     }
 
 
+def fetch_html_polite(
+    url: str,
+    *,
+    cache_filename: str,
+    http_get=None,
+    cache_dir: Path = DEFAULT_CACHE_DIR,
+    allow_live: bool = False,
+    timeout: int = DEFAULT_TIMEOUT_SECONDS,
+) -> tuple[str, dict]:
+    """Generic polite fetch + cache for arbitrary URL (used for NPB
+    daily/monthly schedule pages). Cache-first; live HTTP requires
+    ``allow_live=True``. robots.txt check is enforced on live fetch.
+
+    ``cache_filename`` controls where the HTML is stored under
+    ``cache_dir`` (e.g. ``schedule_2026_05.html``).
+    """
+    path = cache_dir / cache_filename
+    if path.exists():
+        return path.read_text(encoding="utf-8"), {
+            "url": url,
+            "status_code": 200,
+            "from_cache": True,
+            "fetched_at": None,
+        }
+    if not allow_live:
+        raise FetchBlocked(
+            f"cache_miss_and_live_disabled: cache={cache_filename} url={url}"
+        )
+    if http_get is None:
+        import requests
+        http_get = requests.get
+    _check_robots(http_get)
+    _enforce_min_interval()
+    resp = http_get(url, timeout=timeout, headers={"User-Agent": USER_AGENT})
+    if resp.status_code >= 400:
+        raise FetchBlocked(f"http_{resp.status_code}")
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    path.write_text(resp.text, encoding="utf-8")
+    return resp.text, {
+        "url": url,
+        "status_code": resp.status_code,
+        "from_cache": False,
+        "fetched_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+    }
+
+
 def cache_or_fetch(
     slug: str,
     *,

@@ -46,10 +46,57 @@ from src.analysis import (  # noqa: E402
     insight_lineup_history,
     insight_markdown_summary,
     insight_multi_game_detector,
+    insight_schedule,
 )
 from src.source_npb_postgame_extractor import parse_npb_box_html  # noqa: E402
 
 DEFAULT_DIGEST_DIR = ROOT / "data" / "insight" / "digest"
+
+
+def resolve_slug_auto(
+    *,
+    target_date: dt.date,
+    allow_live: bool = False,
+    http_get=None,
+    cache_dir: Path = insight_fetcher.DEFAULT_CACHE_DIR,
+) -> str:
+    """指定日の Giants slug を NPB schedule から自動解決する。
+
+    Polite fetch is cache-first; ``allow_live=True`` で実 HTTP を許可。
+    schedule HTML を 2 段で試す: 月別 schedule → 日次 schedule。
+    どちらでも見つからなければ ``FetchBlocked`` を raise。
+    """
+    candidates_urls = [
+        (
+            insight_schedule.npb_monthly_schedule_url(target_date.year, target_date.month),
+            f"schedule_{target_date.year}_{target_date.month:02d}.html",
+        ),
+        (
+            insight_schedule.npb_daily_schedule_url(target_date),
+            f"schedule_{target_date.isoformat()}_daily.html",
+        ),
+    ]
+    last_error: Exception | None = None
+    target_str = target_date.isoformat()
+    for url, cache_filename in candidates_urls:
+        try:
+            html, _meta = insight_fetcher.fetch_html_polite(
+                url,
+                cache_filename=cache_filename,
+                http_get=http_get,
+                cache_dir=cache_dir,
+                allow_live=allow_live,
+            )
+        except insight_fetcher.FetchBlocked as exc:
+            last_error = exc
+            continue
+        slug = insight_schedule.resolve_giants_slug_for_date(html, target_str)
+        if slug:
+            return slug
+    raise insight_fetcher.FetchBlocked(
+        f"auto_resolve_failed: no Giants slug found for {target_str} "
+        f"(last error: {last_error!r})"
+    )
 
 
 def _default_slug_game_id(slug: str) -> str:
@@ -205,9 +252,17 @@ def run_nightly(
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="INSIGHT-003 nightly orchestrator (cache-first, --live opt-in)."
+        description="INSIGHT-003/004 nightly orchestrator (cache-first, --live opt-in)."
     )
-    p.add_argument("--slug", required=True, help="NPB scores slug, e.g. 2026/0510/d-g-08")
+    p.add_argument("--slug", default=None, help="NPB scores slug (omit with --auto)")
+    p.add_argument(
+        "--auto", action="store_true",
+        help="auto-resolve slug from NPB schedule (uses --date, default = JST yesterday)",
+    )
+    p.add_argument(
+        "--date", default=None,
+        help="game date YYYY-MM-DD (default = JST yesterday when --auto)",
+    )
     p.add_argument("--game-id", default=None, help="override (default derived from slug)")
     p.add_argument("--game-date", default=None, help="override (default derived from slug)")
     p.add_argument("--live", action="store_true",
@@ -223,9 +278,23 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: Optional[list[str]] = None) -> int:
     args = _parse_args(argv or sys.argv[1:])
+    if not args.slug and not args.auto:
+        print(json.dumps({"status": "blocked", "reason": "must pass --slug or --auto"}, ensure_ascii=False))
+        return 2
     try:
+        slug = args.slug
+        if args.auto:
+            target = (
+                dt.date.fromisoformat(args.date)
+                if args.date else insight_schedule.previous_jst_date()
+            )
+            slug = resolve_slug_auto(
+                target_date=target,
+                allow_live=args.live,
+                cache_dir=Path(args.cache_dir),
+            )
         summary = run_nightly(
-            slug=args.slug,
+            slug=slug,
             game_id=args.game_id,
             game_date=args.game_date,
             allow_live=args.live,

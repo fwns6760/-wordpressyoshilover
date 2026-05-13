@@ -1,0 +1,51 @@
+# INSIGHT-004 Cloud Run job image — runs the data-analysis nightly
+# pipeline against NPB public box pages.
+#
+# Image scope:
+#   * Only ``src/analysis/*`` + the existing read-only ``src/source_*``
+#     extractors are needed at runtime. WordPress / publish / Gemini /
+#     X API / Cloud Scheduler client are NOT required.
+#   * Output: ``/data/insight/insight.db`` + CSV / markdown digest.
+#     Persisted via mounted volume in production; ephemeral for local.
+#
+# NOT included in this image:
+#   * wp_client / rss_fetcher / guarded_publish_runner / Gemini code paths.
+#     They aren't imported by ``src.analysis.*`` so they'd just bloat.
+#
+# Out of scope for THIS Dockerfile: secret access, env mutations,
+# Scheduler triggers. Those are configured at gcloud-job-create time.
+
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt ./requirements.txt
+RUN python3 -m pip install --no-cache-dir --upgrade pip \
+    && python3 -m pip install --no-cache-dir -r requirements.txt
+
+# Only the directories the insight nightly orchestrator needs:
+COPY src/ ./src/
+COPY vendor/ ./vendor/
+COPY config/ ./config/
+COPY data/insight/schema.sql ./data/insight/schema.sql
+
+RUN useradd --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser \
+    && mkdir -p /app/data/insight/raw_html \
+                /app/data/insight/digest \
+    && chown -R appuser:appuser /app /home/appuser
+
+USER appuser
+
+# Default = auto mode, live HTTP allowed (intended for Cloud Scheduler
+# trigger; runs once and exits). Override via the job's --args= at
+# deploy / invocation time.
+ENTRYPOINT ["python3", "-m", "src.analysis.insight_nightly"]
+CMD ["--auto", "--live"]

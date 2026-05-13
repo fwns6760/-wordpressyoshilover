@@ -1,0 +1,31 @@
+substitutions:
+  _REGION: asia-northeast1
+  _PROJECT_ID: baseballsite
+  _IMAGE_NAME: insight-nightly
+  _TAG: latest-job
+
+steps:
+  - id: build insight-nightly image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - Dockerfile.insight_nightly
+      - -t
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/yoshilover/${_IMAGE_NAME}:${_TAG}
+      - .
+
+  - id: push insight-nightly image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/yoshilover/${_IMAGE_NAME}:${_TAG}
+
+images:
+  - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/yoshilover/${_IMAGE_NAME}:${_TAG}
+
+timeout: 600s
+
+options:
+  machineType: E2_MEDIUM
+  logging: CLOUD_LOGGING_ONLY

@@ -7,6 +7,7 @@ the default.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 from pathlib import Path
 
@@ -183,3 +184,52 @@ def test_cli_runs_with_cache_hit(tmp_path, capsys):
     body = json.loads(out.splitlines()[-1])
     assert body["status"] == "ok"
     assert body["game_id"] == "2026-05-10:d-g-08"
+
+
+def test_cli_requires_slug_or_auto(tmp_path, capsys):
+    rc = insight_nightly.main(["--db", str(tmp_path / "x.db")])
+    assert rc == 2
+    out = capsys.readouterr().out
+    assert "must pass --slug or --auto" in out
+
+
+def test_resolve_slug_auto_uses_cached_schedule(tmp_path):
+    """slug 自動解決が cache から動くことを確認、実 HTTP 0 件。"""
+    cache_dir = tmp_path / "raw_html"
+    cache_dir.mkdir(parents=True)
+    # monthly schedule cache を仕込む
+    (cache_dir / "schedule_2026_05.html").write_text(
+        '<a href="/scores/2026/0510/d-g-08/box.html">x</a>',
+        encoding="utf-8",
+    )
+    slug = insight_nightly.resolve_slug_auto(
+        target_date=dt.date(2026, 5, 10),
+        allow_live=False,
+        cache_dir=cache_dir,
+    )
+    assert slug == "2026/0510/d-g-08"
+
+
+def test_resolve_slug_auto_falls_back_to_daily_cache(tmp_path):
+    """月別 schedule が無くても日次 schedule cache から解決できる。"""
+    cache_dir = tmp_path / "raw_html"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "schedule_2026-05-10_daily.html").write_text(
+        '<a href="/scores/2026/0510/c-g-04/box.html">x</a>',
+        encoding="utf-8",
+    )
+    slug = insight_nightly.resolve_slug_auto(
+        target_date=dt.date(2026, 5, 10),
+        allow_live=False,
+        cache_dir=cache_dir,
+    )
+    assert slug == "2026/0510/c-g-04"
+
+
+def test_resolve_slug_auto_fails_without_cache_and_not_live(tmp_path):
+    with pytest.raises(insight_fetcher.FetchBlocked):
+        insight_nightly.resolve_slug_auto(
+            target_date=dt.date(2026, 5, 10),
+            allow_live=False,
+            cache_dir=tmp_path / "raw_html",
+        )

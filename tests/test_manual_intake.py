@@ -1998,6 +1998,61 @@ class SourceBodyExcerptExpansionTests(_IntakeBaseTest):
         self.assertNotIn("大城卓三", content)
 
 
+class RssPipelineForceEnrichmentTests(unittest.TestCase):
+    """332-QA: ENABLE_RSS_PIPELINE_FORCE_ENRICHMENT で nomotoke-card-
+    marker が無い RSS Gemini body にも enrichment が走るか。"""
+
+    _BODY_WITHOUT_MARKER = (
+        '<p>戸郷翔征が無失点で投球を続けた。</p>'
+        '<h3>🔗 出典記事</h3>'
+        '<p><a href="https://hochi.news/articles/foo.html">出典</a></p>'
+    )
+
+    def _kwargs(self):
+        return dict(
+            title="【巨人】戸郷翔征が無失点投球",
+            source_url="https://hochi.news/articles/foo.html",
+            summary="巨人戸郷翔征投手が無失点で投球を続けた。",
+            category="選手情報",
+            template_key="",
+            source_name="スポーツ報知",
+        )
+
+    def test_flag_off_default_returns_unchanged(self):
+        from src.tools import manual_intake as mi
+        import os
+        os.environ.pop("ENABLE_RSS_PIPELINE_FORCE_ENRICHMENT", None)
+        result = mi.apply_rss_pipeline_enrichment(self._BODY_WITHOUT_MARKER, **self._kwargs())
+        # marker 無し + flag OFF → 入力そのまま (既存挙動)
+        self.assertEqual(result, self._BODY_WITHOUT_MARKER)
+
+    def test_flag_on_runs_enrichment(self):
+        from src.tools import manual_intake as mi
+        import os
+        os.environ["ENABLE_RSS_PIPELINE_FORCE_ENRICHMENT"] = "1"
+        try:
+            result = mi.apply_rss_pipeline_enrichment(self._BODY_WITHOUT_MARKER, **self._kwargs())
+            # marker 無し + flag ON → enrichment 適用、結果が入力より長い
+            # (実 enrichment 結果は環境依存だが、最低限 input != output を期待)
+            self.assertNotEqual(result, self._BODY_WITHOUT_MARKER)
+            # 入力の content は保持 (置換ではなく追加)
+            self.assertIn("戸郷翔征が無失点", result)
+        finally:
+            os.environ.pop("ENABLE_RSS_PIPELINE_FORCE_ENRICHMENT", None)
+
+    def test_marker_present_unaffected_by_flag(self):
+        from src.tools import manual_intake as mi
+        body_with_marker = (
+            self._BODY_WITHOUT_MARKER
+            + '<hr class="nomotoke-card-divider">'
+        )
+        # flag OFF でも marker あれば enrichment 走る (既存挙動)
+        result = mi.apply_rss_pipeline_enrichment(body_with_marker, **self._kwargs())
+        self.assertIn("戸郷翔征が無失点", result)
+        # 出力には何らかの追加要素 (length が入力以上)
+        self.assertGreaterEqual(len(result), len(body_with_marker))
+
+
 class FanVoiceYahooFallbackTests(unittest.TestCase):
     """326-QA-fallback: cached X embed pool が空の時 Yahoo realtime
     fan reactions を fallback として render する。default ON。"""

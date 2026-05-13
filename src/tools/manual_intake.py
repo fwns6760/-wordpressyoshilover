@@ -3289,6 +3289,16 @@ def _extract_article_keywords(title: str, summary: str) -> list[str]:
 _FAN_VOICE_YAHOO_FALLBACK_TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 
 
+def _rss_pipeline_force_enrichment_enabled() -> bool:
+    """332-QA: nomotoke-card- marker が無い RSS Gemini path にも
+    apply_rss_pipeline_enrichment を強制適用する gate。default OFF (deploy
+    時挙動不変)。ENABLE_RSS_PIPELINE_FORCE_ENRICHMENT=1 で active 化、
+    related_posts / standings / next_game / share / tag_chips / ai_badge /
+    json-ld 等の enrichment block が marker 不在 post にも出る。"""
+    val = (os.getenv("ENABLE_RSS_PIPELINE_FORCE_ENRICHMENT") or "0").strip().lower()
+    return val in _FAN_VOICE_YAHOO_FALLBACK_TRUE_VALUES
+
+
 def _fan_voice_yahoo_fallback_enabled() -> bool:
     """ENABLE_FAN_VOICE_YAHOO_FALLBACK gate (default ON).
 
@@ -3747,9 +3757,15 @@ def apply_rss_pipeline_enrichment(
 ) -> str:
     """Public Phase 3 entry point. Apply post-body enrichment to a
     nomotoke-renderer body. Returns the input unchanged when the
-    body is not a nomotoke-renderer output (defensive gate)."""
-    if not content_html or 'class="nomotoke-card-' not in content_html:
+    body is not a nomotoke-renderer output (defensive gate).
+
+    332-QA: ENABLE_RSS_PIPELINE_FORCE_ENRICHMENT=1 で marker 不在 path
+    にも enrichment を強制適用 (default OFF、deploy 時挙動不変)。"""
+    if not content_html:
         return content_html
+    if 'class="nomotoke-card-' not in content_html:
+        if not _rss_pipeline_force_enrichment_enabled():
+            return content_html
     if not source_name:
         source_name = _infer_source_name(source_url)
     article_style_layout = _is_article_style_manual_output(

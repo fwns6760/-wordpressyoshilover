@@ -166,6 +166,24 @@ def derive_result(giants_score: int | None, opp_score: int | None) -> str:
 # ─── DB helpers ─────────────────────────────────────────────────────────────
 
 
+def _ensure_team_name_columns(conn: sqlite3.Connection) -> None:
+    """INSIGHT-007: batting_logs / pitching_logs / lineups / fielding_logs に
+    ``team_name`` 列を additive に追加 (NULL 許容)。既存 row には影響なし、
+    既に存在すれば no-op。``ALTER TABLE`` は CREATE TABLE IF NOT EXISTS と
+    違って冪等でないので column 存在確認を経由する。"""
+    targets = ("batting_logs", "pitching_logs", "lineups", "fielding_logs")
+    for table in targets:
+        try:
+            cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        except sqlite3.OperationalError:
+            continue
+        if "team_name" not in cols:
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN team_name TEXT")
+            except sqlite3.OperationalError:
+                pass
+
+
 def open_db(db_path: Path = DEFAULT_DB_PATH, schema_path: Path = DEFAULT_SCHEMA) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path))
@@ -174,6 +192,7 @@ def open_db(db_path: Path = DEFAULT_DB_PATH, schema_path: Path = DEFAULT_SCHEMA)
     if schema_path.exists():
         with schema_path.open(encoding="utf-8") as f:
             conn.executescript(f.read())
+    _ensure_team_name_columns(conn)
     return conn
 
 

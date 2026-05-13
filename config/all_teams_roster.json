@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "comment": "INSIGHT-007: 12 NPB teams metadata + minimal known rosters. Giants entries inherit from giants_roster.json (loaded separately at runtime). Other teams seeded with empty player lists — populated either by manual roster updates or by harvesting names from NPB box scores at ETL time.",
+  "teams": [
+    {
+      "team_code": "g",
+      "team_name": "巨人",
+      "official_name": "読売ジャイアンツ",
+      "league": "central",
+      "home_park": "東京ドーム",
+      "roster_source": "config/giants_roster.json"
+    },
+    {
+      "team_code": "t",
+      "team_name": "阪神",
+      "official_name": "阪神タイガース",
+      "league": "central",
+      "home_park": "阪神甲子園球場"
+    },
+    {
+      "team_code": "s",
+      "team_name": "ヤクルト",
+      "official_name": "東京ヤクルトスワローズ",
+      "league": "central",
+      "home_park": "明治神宮野球場"
+    },
+    {
+      "team_code": "c",
+      "team_name": "広島",
+      "official_name": "広島東洋カープ",
+      "league": "central",
+      "home_park": "MAZDA Zoom-Zoom スタジアム広島"
+    },
+    {
+      "team_code": "db",
+      "team_name": "DeNA",
+      "official_name": "横浜DeNAベイスターズ",
+      "league": "central",
+      "home_park": "横浜スタジアム"
+    },
+    {
+      "team_code": "d",
+      "team_name": "中日",
+      "official_name": "中日ドラゴンズ",
+      "league": "central",
+      "home_park": "バンテリンドーム ナゴヤ"
+    },
+    {
+      "team_code": "h",
+      "team_name": "ソフトバンク",
+      "official_name": "福岡ソフトバンクホークス",
+      "league": "pacific",
+      "home_park": "福岡PayPayドーム"
+    },
+    {
+      "team_code": "l",
+      "team_name": "西武",
+      "official_name": "埼玉西武ライオンズ",
+      "league": "pacific",
+      "home_park": "ベルーナドーム"
+    },
+    {
+      "team_code": "m",
+      "team_name": "ロッテ",
+      "official_name": "千葉ロッテマリーンズ",
+      "league": "pacific",
+      "home_park": "ZOZOマリンスタジアム"
+    },
+    {
+      "team_code": "e",
+      "team_name": "楽天",
+      "official_name": "東北楽天ゴールデンイーグルス",
+      "league": "pacific",
+      "home_park": "楽天モバイルパーク宮城"
+    },
+    {
+      "team_code": "b",
+      "team_name": "オリックス",
+      "official_name": "オリックス・バファローズ",
+      "league": "pacific",
+      "home_park": "京セラドーム大阪"
+    },
+    {
+      "team_code": "f",
+      "team_name": "日本ハム",
+      "official_name": "北海道日本ハムファイターズ",
+      "league": "pacific",
+      "home_park": "エスコンフィールドHOKKAIDO"
+    }
+  ],
+  "team_name_aliases": {
+    "巨人": "g",
+    "読売": "g",
+    "ジャイアンツ": "g",
+    "阪神": "t",
+    "タイガース": "t",
+    "ヤクルト": "s",
+    "スワローズ": "s",
+    "広島": "c",
+    "カープ": "c",
+    "DeNA": "db",
+    "横浜": "db",
+    "ベイスターズ": "db",
+    "中日": "d",
+    "ドラゴンズ": "d",
+    "ソフトバンク": "h",
+    "ホークス": "h",
+    "西武": "l",
+    "ライオンズ": "l",
+    "ロッテ": "m",
+    "マリーンズ": "m",
+    "楽天": "e",
+    "イーグルス": "e",
+    "オリックス": "b",
+    "バファローズ": "b",
+    "日本ハム": "f",
+    "ファイターズ": "f"
+  }
+}

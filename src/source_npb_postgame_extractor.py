@@ -289,7 +289,7 @@ def _derive_wls_summary(
     return out
 
 
-def parse_npb_box_html(html: str) -> Optional[Dict[str, Any]]:
+def parse_npb_box_html(html: str, *, allow_non_giants: bool = False) -> Optional[Dict[str, Any]]:
     """Parse NPB公式 box.html into a renderer-friendly dict.
 
     Returns ``{giants_batters, giants_pitchers, opponent_batters,
@@ -324,6 +324,13 @@ def parse_npb_box_html(html: str) -> Optional[Dict[str, Any]]:
     elif any(tok in teams[1] for tok in GIANTS_TEAM_TOKENS):
         giants_idx = 1
         opp_idx = 0
+    elif allow_non_giants:
+        # INSIGHT-007: 全 12 球団 ingest 用 fallback。Giants 不在試合では
+        # team_role 'giants' / 'opponent' は単なるラベル扱い (team_name で
+        # 識別する設計に切り替え済み)。inning_score の先頭を 'giants_*'
+        # スロットに、2 番目を 'opponent_*' スロットに割り当てる。
+        giants_idx = 0
+        opp_idx = 1
     else:
         return None
 

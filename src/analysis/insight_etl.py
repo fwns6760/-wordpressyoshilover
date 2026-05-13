@@ -629,7 +629,7 @@ def etl_from_html(
     string so callers (nightly orchestrator) can pass live-fetched or
     cached content without writing it to a temp file first.
     """
-    parsed = parse_npb_box_html(html)
+    parsed = parse_npb_box_html(html, allow_non_giants=True)
     if parsed is None:
         raise ValueError(f"parse_npb_box_html returned None for game_id={game_id}")
 
@@ -765,7 +765,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.dry_run:
         html = fixture_path.read_text(encoding="utf-8")
-        parsed = parse_npb_box_html(html)
+        parsed = parse_npb_box_html(html, allow_non_giants=True)
         summary = {
             "dry_run": True,
             "fixture": str(fixture_path),

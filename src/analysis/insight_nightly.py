@@ -238,7 +238,7 @@ def run_nightly(
     )
 
     # Step 3 — lineup upsert (post-game lineup from the same parsed box).
-    parsed = parse_npb_box_html(html)
+    parsed = parse_npb_box_html(html, allow_non_giants=True)
     conn = insight_etl.open_db(db_path=db_path, schema_path=schema_path)
     try:
         lineup_rows = insight_lineup_history.upsert_lineup_from_parsed_box(

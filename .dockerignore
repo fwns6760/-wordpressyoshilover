@@ -2,6 +2,7 @@
 !.dockerignore
 !Dockerfile.draft_body_editor
 !Dockerfile.publish_notice
+!Dockerfile.insight_nightly
 !bin/
 !bin/**
 !requirements.txt
@@ -12,3 +13,6 @@
 !vendor/**
 !config/
 !config/**
+# INSIGHT-001 schema (consumed by Dockerfile.insight_nightly only)
+!data/insight/
+!data/insight/schema.sql

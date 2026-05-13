@@ -1251,5 +1251,134 @@
     "position": "打者",
     "jersey_number": "",
     "active": true
+  },
+  {
+    "name": "ゼラス・ウィーラー",
+    "aliases": [
+      "ゼラス・ウィーラー",
+      "ゼラス・ウィーラーコーチ"
+    ],
+    "role": "coach",
+    "position": "打撃コーチ",
+    "jersey_number": "86",
+    "active": true
+  },
+  {
+    "name": "李承燁",
+    "aliases": [
+      "李承燁",
+      "李承燁コーチ"
+    ],
+    "role": "coach",
+    "position": "打撃コーチ",
+    "jersey_number": "90",
+    "active": true
+  },
+  {
+    "name": "吉川大幾",
+    "aliases": [
+      "吉川大幾",
+      "吉川大幾コーチ",
+      "吉川コーチ"
+    ],
+    "role": "coach",
+    "position": "内野守備兼走塁コーチ",
+    "jersey_number": "76",
+    "active": true
+  },
+  {
+    "name": "實松一成",
+    "aliases": [
+      "實松一成",
+      "實松一成コーチ",
+      "實松コーチ"
+    ],
+    "role": "coach",
+    "position": "バッテリーコーチ",
+    "jersey_number": "88",
+    "active": true
+  },
+  {
+    "name": "金城龍彦",
+    "aliases": [
+      "金城龍彦",
+      "金城龍彦コーチ",
+      "金城コーチ"
+    ],
+    "role": "coach",
+    "position": "二軍オフェンスチーフコーチ",
+    "jersey_number": "87",
+    "active": true
+  },
+  {
+    "name": "脇谷亮太",
+    "aliases": [
+      "脇谷亮太",
+      "脇谷亮太コーチ",
+      "脇谷コーチ"
+    ],
+    "role": "coach",
+    "position": "二軍ディフェンスチーフコーチ",
+    "jersey_number": "85",
+    "active": true
+  },
+  {
+    "name": "田口昌徳",
+    "aliases": [
+      "田口昌徳",
+      "田口昌徳コーチ",
+      "田口コーチ"
+    ],
+    "role": "coach",
+    "position": "二軍バッテリーコーチ",
+    "jersey_number": "89",
+    "active": true
+  },
+  {
+    "name": "大田泰示",
+    "aliases": [
+      "大田泰示",
+      "大田泰示コーチ",
+      "大田コーチ"
+    ],
+    "role": "coach",
+    "position": "二軍打撃コーチ",
+    "jersey_number": "93",
+    "active": true
+  },
+  {
+    "name": "鈴木尚広",
+    "aliases": [
+      "鈴木尚広",
+      "鈴木尚広コーチ",
+      "鈴木コーチ"
+    ],
+    "role": "coach",
+    "position": "二軍外野守備兼走塁コーチ",
+    "jersey_number": "82",
+    "active": true
+  },
+  {
+    "name": "山口鉄也",
+    "aliases": [
+      "山口鉄也",
+      "山口鉄也コーチ",
+      "山口コーチ"
+    ],
+    "role": "coach",
+    "position": "二軍投手チーフコーチ",
+    "jersey_number": "71",
+    "active": true
+  },
+  {
+    "name": "大竹寛",
+    "aliases": [
+      "大竹寛",
+      "大竹寛コーチ"
+    ],
+    "role": "coach",
+    "position": "二軍投手コーチ",
+    "jersey_number": "72",
+    "active": true
   }
 ]

@@ -20692,6 +20692,48 @@ def _apply_title_player_name_backfill(
                 comparison_title = source_title
         else:
             comparison_title = final_title
+
+    # 330-QA: のもとけ-style SEO title pattern shaping.
+    # backfill / rescue 完了後の final_title を subtype に応じた pattern
+    # (A 発言 / B 状況+結果 / E 日付速報) に reshape。facts 不足時は None を
+    # 返して current title 維持。ENABLE_NOMOTOKE_TITLE_TEMPLATE=0 で無効化可能。
+    try:
+        from src.title_template_assembler import assemble_nomotoke_title
+
+        shaped_title = assemble_nomotoke_title(
+            article_subtype=article_subtype,
+            existing_title=final_title,
+            source_title=source_title,
+            source_body=source_body,
+            summary=summary,
+            player_name=result.player_name or "",
+            role=result.role or "",
+            metadata=metadata,
+        )
+    except Exception:
+        shaped_title = None
+    if shaped_title and shaped_title != final_title:
+        if logger is not None:
+            try:
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "nomotoke_title_template_applied",
+                            "source_url_hash": _hash_duplicate_guard_value(source_url),
+                            "source_name": source_name,
+                            "category": category,
+                            "article_subtype": article_subtype,
+                            "before": final_title,
+                            "after": shaped_title,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+            except Exception:
+                pass
+        final_title = _trim_display_title(shaped_title)
+        comparison_title = source_title
+
     return final_title, comparison_title
 
 

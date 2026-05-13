@@ -175,6 +175,7 @@
 - `PUBLISH_NOTICE_REVIEW_MAX_PER_RUN=10` は mail側上限であり、本ticketでは変更しない。
 - `--limit 10` は serverの `/run` default body `{}` から来る。scheduler body は本ticketで変えない。
 - 最大事故源として、AI の「記憶から再構成」「silent skip」「自己評価 OK」を明示的に禁止する。
+- **2026-05-14 隣接 scope 観測(本 ticket scope 外)**: `test_event_key_ledger.py::test_group_records_picks_player_anchor_over_empty_player` が現在 fail。要因 = 66667「ライデル・マルティネスを 9 回投入 / サヨナラ勝ちに繋げた」が `derive_event_subtype` で walk_off 判定 + `derive_event_player` でマルティネス検出 → 66669 佐々木 walk_off の child でなく独立 walk_off bucket を立てる。本 ticket の rss_fetcher topic_key 抑止とは別 layer(event_key_ledger.py)で起きる「同 サヨナラ event の 2 重カウント」事象。fix は 321-QA(subtype-routing) で derive_event_subtype の relief vs walk_off order を refine するか、event_key_ledger.py で同日同 walk_off の複数 player bucket を hero に merge する logic を入れる方向。本 ticket では env / src を触らない、観測のみ。
 
 ## 作業後に追記すること
 

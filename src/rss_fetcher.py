@@ -114,6 +114,9 @@ from src.postgame_strict_fact_recovery import (
 from src.player_voice_digest_clusterer import (
     find_digest_clusters as _find_player_voice_digest_clusters,
 )
+from src.player_voice_digest_body_renderer import (
+    render_player_voice_digest_body as _render_player_voice_digest_body,
+)
 from src import llm_call_dedupe as _llm_call_dedupe
 from src.gemini_cache import (
     DEFAULT_MODEL_NAME as GEMINI_CACHE_MODEL_NAME,
@@ -24897,20 +24900,50 @@ def _main(args, logger):
                     logger,
                 )
 
+            # 334-QA Phase 3b: player_voice_digest subtype 検出時に body 全置換。
+            # Phase 2c で item.subtype_hint + item.digest_cluster_payload が
+            # 入っている場合のみ動く。render_player_voice_digest_body が空文字
+            # を返した場合 (payload 不整合 etc) は通常 flow に fall-through。
+            # 例外時は existing flow を絶対に壊さない (warning log のみ)。
+            _digest_body_applied = False
+            if item.get("subtype_hint") == "player_voice_digest" and isinstance(
+                item.get("digest_cluster_payload"), dict
+            ):
+                try:
+                    _digest_body = _render_player_voice_digest_body(item)
+                except Exception as _digest_exc:  # noqa: BLE001
+                    logger.warning(
+                        "player_voice_digest_render_failed err=%s post_url=%s",
+                        _digest_exc,
+                        post_url,
+                    )
+                    _digest_body = ""
+                if _digest_body:
+                    content = _digest_body
+                    _digest_body_applied = True
+                    logger.info(json.dumps({
+                        "event": "player_voice_digest_body_applied",
+                        "post_url": post_url,
+                        "body_len": len(_digest_body),
+                    }, ensure_ascii=False))
+
             # 2026-05-13: ヨシラバー voice 構造化 prefix を postgame article の
             # 冒頭に prepend。事実 (スコア / 投球内容) を table + 箇条書き +
             # 短い fan-voice narrative で見せ、「大手新聞 imitation」から脱却。
             # 既存 content には触らず prefix 追加のみ (副作用最小)。
-            _yoshilover_prefix = _build_yoshilover_structured_prefix(
-                draft_title, summary, body_article_subtype
-            )
-            if _yoshilover_prefix:
-                content = _yoshilover_prefix + content
-                logger.info(json.dumps({
-                    "event": "yoshilover_prefix_applied",
-                    "post_url": post_url,
-                    "subtype": body_article_subtype,
-                }, ensure_ascii=False))
+            # digest body 適用済の場合は prefix を skip (digest 自身が
+            # ヨシラバーらしさ section A/B を含む完全 body のため)。
+            if not _digest_body_applied:
+                _yoshilover_prefix = _build_yoshilover_structured_prefix(
+                    draft_title, summary, body_article_subtype
+                )
+                if _yoshilover_prefix:
+                    content = _yoshilover_prefix + content
+                    logger.info(json.dumps({
+                        "event": "yoshilover_prefix_applied",
+                        "post_url": post_url,
+                        "subtype": body_article_subtype,
+                    }, ensure_ascii=False))
 
             post_id = _create_draft_with_same_fire_guard(
                 wp,

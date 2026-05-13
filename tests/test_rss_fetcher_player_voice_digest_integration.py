@@ -261,5 +261,61 @@ class AggregatorBehaviorTests(unittest.TestCase):
         self.assertEqual(len(fail_logs), 1)
 
 
+class BodyRendererIntegrationTests(unittest.TestCase):
+    """334-QA Phase 3b: body renderer の rss_fetcher 接続点 sanity check。
+
+    rss_fetcher.py 内で _render_player_voice_digest_body alias がちゃんと
+    body_renderer module を指していること、digest candidate を渡したときに
+    期待される HTML が返ることを確認 (main flow は invoke しない)。
+    """
+
+    def test_render_alias_callable_from_rss_fetcher(self):
+        self.assertTrue(callable(rss_fetcher._render_player_voice_digest_body))
+
+    def test_render_alias_produces_html_for_digest_candidate(self):
+        body = (
+            "5月14日、東京ドームに集まった満員のファンの前で坂本勇人が決勝弾を放った。"
+            "試合後の取材で坂本勇人は"
+            "「最後まで集中して振り切れたんじゃないかと思いますし、"
+            "ファンの皆さんに感謝しています。"
+            "応援してくれている皆さんに勝利を届けることができて嬉しいです。"
+            "これからも丁寧に積み重ねていきたいです」"
+            "と振り返った。"
+        )
+        cand = {
+            "body": body,
+            "subtype_hint": "player_voice_digest",
+            "digest_cluster_payload": {
+                "player_name": "坂本勇人",
+                "quote": "最後まで集中して振り切れたんじゃないかと思います",
+                "event_token": "300号サヨナラホームラン",
+                "parent_family": "hochi",
+                "children": [
+                    {
+                        "family": "sanspo",
+                        "label": "サンスポ",
+                        "snippet": (
+                            "坂本勇人のサヨナラ本塁打が決勝点、巨人が劇的勝利で連勝を伸ばす"
+                        ),
+                        "url": "https://www.sanspo.com/article/1/",
+                    },
+                ],
+                "officials": [],
+            },
+        }
+        result = rss_fetcher._render_player_voice_digest_body(cand)
+        self.assertIn("坂本勇人", result)
+        self.assertIn("🌐 各社が伝える", result)
+        self.assertIn("サンスポ", result)
+
+    def test_render_alias_returns_empty_for_non_digest(self):
+        cand = {
+            "body": "something",
+            "subtype_hint": "postgame",
+        }
+        result = rss_fetcher._render_player_voice_digest_body(cand)
+        self.assertEqual(result, "")
+
+
 if __name__ == "__main__":
     unittest.main()

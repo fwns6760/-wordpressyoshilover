@@ -50,9 +50,18 @@ Constraints
 
 from __future__ import annotations
 
+import os
 import re
 
 __all__ = ["normalize_h3_in_html"]
+
+
+_TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
+
+
+def _fan_voice_h3_dedup_enabled() -> bool:
+    val = (os.getenv("ENABLE_FAN_VOICE_H3_DEDUP") or "1").strip().lower()
+    return val in _TRUE_VALUES
 
 
 # (旧 H3 text、 新 H3 text) のマッピング表。
@@ -156,4 +165,81 @@ def normalize_h3_in_html(html_body: str) -> str:
             return m.group(0)
         return f"{open_tag}{new_text}{close_tag}"
 
-    return _H3_RE.sub(_replace, html_body)
+    normalized = _H3_RE.sub(_replace, html_body)
+    if _fan_voice_h3_dedup_enabled():
+        normalized = _dedupe_fan_voice_h3(normalized)
+    return normalized
+
+
+_FAN_VOICE_LABEL = "💬 ファンの声"
+
+
+def _dedupe_fan_voice_h3(html_body: str) -> str:
+    """重複した ``💬 ファンの声`` h3 を 1 つに集約する。
+
+    Background
+    ----------
+    Gemini 生成本文に ``【投稿で出ていた内容】`` heading が出ると、
+    h3 normalize で ``💬 ファンの声`` に変換される。一方で
+    ``src/rss_fetcher.py`` が X embed 用に ``<h3>💬 ファンの声（Xより）</h3>``
+    を別に emit する場合があり、結果 2 重 h3 + 中身の薄い filler block が
+    残る (66752 / 66788 等で観測)。
+
+    本関数は **同一ラベル** の連続 / 近接 h3 を 1 つに集約する。残すのは:
+      1. ``twitter-tweet`` blockquote を含む section
+      2. それ以外は内容の長い方
+      3. 同点なら最後の section
+    削除側 section は h3 と本文ごと丸ごと除去する。section 境界は次の
+    ``<h3``、``<hr``、または末尾。
+
+    idempotent: 再 apply しても結果不変。
+    """
+    if not html_body or _FAN_VOICE_LABEL not in html_body:
+        return html_body
+
+    # section = (h3_start_idx, h3_end_idx, body_end_idx, label, has_twitter, body_len)
+    h3_iter = list(_H3_RE.finditer(html_body))
+    if len(h3_iter) < 2:
+        return html_body
+
+    sections = []
+    for i, m in enumerate(h3_iter):
+        inner_text = _strip_h3_inner_to_text(m.group(2))
+        # section body = h3 終端 〜 次 h3 開始 (or next <hr ...> or 末尾)
+        body_start = m.end()
+        body_end = h3_iter[i + 1].start() if i + 1 < len(h3_iter) else len(html_body)
+        # cut at <hr> if any (separator typically indicates section break)
+        hr_match = re.search(r"<hr\b", html_body[body_start:body_end], re.IGNORECASE)
+        if hr_match:
+            body_end = body_start + hr_match.start()
+        body = html_body[body_start:body_end]
+        sections.append({
+            "label": inner_text,
+            "h3_start": m.start(),
+            "body_end": body_end,
+            "has_twitter": "twitter-tweet" in body,
+            "body_len": len(re.sub(r"<[^>]+>", "", body).strip()),
+        })
+
+    # 同 label セクションをまとめる
+    fan_sections = [s for s in sections if s["label"].startswith(_FAN_VOICE_LABEL)]
+    if len(fan_sections) < 2:
+        return html_body
+
+    # keep: twitter-tweet を含むもの優先、なければ body_len 最大、同点なら最後
+    def _keep_priority(s):
+        return (1 if s["has_twitter"] else 0, s["body_len"], s["h3_start"])
+
+    keeper = max(fan_sections, key=_keep_priority)
+    drop_ranges = [
+        (s["h3_start"], s["body_end"]) for s in fan_sections if s is not keeper
+    ]
+    if not drop_ranges:
+        return html_body
+
+    # 後ろから削除して index を保つ
+    drop_ranges.sort(key=lambda r: r[0], reverse=True)
+    result = html_body
+    for start, end in drop_ranges:
+        result = result[:start] + result[end:]
+    return result

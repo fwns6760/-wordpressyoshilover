@@ -1083,5 +1083,76 @@ class GameDayCheckTests(unittest.TestCase):
         )
 
 
+class FanReactionRelevanceTuningTests(unittest.TestCase):
+    """ENABLE_FAN_REACTION_SUBJECT_CONTEXT_REQUIRED と
+    ENABLE_FAN_REACTION_HANDLE_CAP の挙動。両 flag は default OFF
+    (既存挙動互換)、prod env で ON 化して relevance を強化する。"""
+
+    def _entries(self):
+        return [
+            {"summary": "戸郷のフォーム修正、かなり良さそう。次の登板が楽しみだ。",
+             "link": "https://x.com/togofan/status/1"},
+            {"summary": "戸郷のフォーム変更、焦らず仕上げて欲しい。今日の練習に期待。",
+             "link": "https://x.com/giants_love/status/2"},
+            {"summary": "戸郷の今季成績、復活が見えてきたな。次回登板で結果が出るか。",
+             "link": "https://x.com/togofan/status/3"},
+            {"summary": "戸郷の久保コーチとの取り組み、形になってきた感じがする。期待。",
+             "link": "https://x.com/togofan/status/4"},
+            {"summary": "巨人の今日の試合、勝つことを願ってます。応援してます頑張れ。",
+             "link": "https://x.com/randomfan/status/5"},
+        ]
+
+    def test_subject_context_required_drops_generic_post_when_flag_on(self):
+        import os as _os
+        with patch.dict(_os.environ,
+                        {"ENABLE_FAN_REACTION_SUBJECT_CONTEXT_REQUIRED": "1"},
+                        clear=False):
+            with patch.object(rss_fetcher, "fetch_yahoo_realtime_entries",
+                              side_effect=lambda kw: self._entries() if kw.endswith("巨人") else []):
+                reactions = rss_fetcher.fetch_fan_reactions_from_yahoo(
+                    "【巨人】戸郷翔征のフォーム変更",
+                    "巨人戸郷翔征投手がジャイアンツ球場で先発練習。久保コーチと取り組み。",
+                    "選手情報",
+                )
+        self.assertFalse(any("randomfan" in r["url"] for r in reactions),
+                         "subject に触れない randomfan の post が drop されていない")
+        for r in reactions:
+            self.assertIn("戸郷", r["text"])
+
+    def test_handle_cap_limits_same_handle_to_two_when_flag_on(self):
+        import os as _os
+        with patch.dict(_os.environ,
+                        {"ENABLE_FAN_REACTION_HANDLE_CAP": "1",
+                         "ENABLE_FAN_REACTION_SUBJECT_CONTEXT_REQUIRED": "1"},
+                        clear=False):
+            with patch.object(rss_fetcher, "fetch_yahoo_realtime_entries",
+                              side_effect=lambda kw: self._entries() if kw.endswith("巨人") else []):
+                reactions = rss_fetcher.fetch_fan_reactions_from_yahoo(
+                    "【巨人】戸郷翔征のフォーム変更",
+                    "巨人戸郷翔征投手がジャイアンツ球場で先発練習。久保コーチと取り組み。",
+                    "選手情報",
+                )
+        counts: dict = {}
+        for r in reactions:
+            h = (r["handle"] or "").lower().lstrip("@")
+            counts[h] = counts.get(h, 0) + 1
+        for h, c in counts.items():
+            self.assertLessEqual(c, 2, f"handle {h} 超過 cap: {c}")
+
+    def test_defaults_off_preserve_baseline_behavior(self):
+        import os as _os
+        with patch.dict(_os.environ, {}, clear=False):
+            _os.environ.pop("ENABLE_FAN_REACTION_SUBJECT_CONTEXT_REQUIRED", None)
+            _os.environ.pop("ENABLE_FAN_REACTION_HANDLE_CAP", None)
+            with patch.object(rss_fetcher, "fetch_yahoo_realtime_entries",
+                              side_effect=lambda kw: self._entries() if kw.endswith("巨人") else []):
+                reactions = rss_fetcher.fetch_fan_reactions_from_yahoo(
+                    "【巨人】戸郷翔征のフォーム変更",
+                    "巨人戸郷翔征投手がジャイアンツ球場で先発練習。久保コーチと取り組み。",
+                    "選手情報",
+                )
+        self.assertGreaterEqual(len(reactions), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

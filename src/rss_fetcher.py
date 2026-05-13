@@ -2318,6 +2318,30 @@ def get_fan_voice_whitelist_enabled() -> bool:
     return _env_flag("ENABLE_FAN_VOICE_WHITELIST", False)
 
 
+def _fan_reaction_subject_context_required_enabled() -> bool:
+    """Require fan reaction text to contain article subject (player/topic name).
+
+    Default OFF (opt-in via env). Existing test fixtures use generic-keyword
+    mocks; enabling by default would regress them. Prod env sets =1 to
+    actively drop generic 巨人 chatter that doesn't mention the article subject.
+    """
+    return _env_flag("ENABLE_FAN_REACTION_SUBJECT_CONTEXT_REQUIRED", False)
+
+
+def _fan_reaction_handle_cap_enabled() -> bool:
+    """Cap how many reactions a single X handle can occupy in one article.
+
+    Default OFF (opt-in via env). Prod env sets =1 (cap=2 default) to prevent
+    a single handle dominating the fan voice block (e.g. noraneko0122 x4 in
+    post 66788, 2026-05-13 audit).
+    """
+    return _env_flag("ENABLE_FAN_REACTION_HANDLE_CAP", False)
+
+
+def _fan_reaction_handle_cap() -> int:
+    return max(1, _env_int("FAN_REACTION_HANDLE_CAP", 2))
+
+
 def enhanced_prompts_enabled() -> bool:
     return os.getenv("ENABLE_ENHANCED_PROMPTS", "0").strip().lower() in TRUE_VALUES
 
@@ -14466,6 +14490,10 @@ def fetch_fan_reactions_from_yahoo(
                 focus_terms,
             ):
                 continue
+            if _fan_reaction_subject_context_required_enabled() and not _reaction_has_subject_context(
+                text, title, summary, category
+            ):
+                continue
             reaction = {
                 "handle": handle,
                 "text": text,
@@ -14507,15 +14535,24 @@ def fetch_fan_reactions_from_yahoo(
         )
 
     reactions = []
+    handle_counts: dict[str, int] = {}
+    handle_cap_enabled = _fan_reaction_handle_cap_enabled()
+    handle_cap = _fan_reaction_handle_cap() if handle_cap_enabled else 0
     for reaction in primary_candidates + reserve_candidates:
         if any(_reactions_are_too_similar(reaction["text"], selected["text"]) for selected in reactions):
             continue
+        handle_norm = (reaction["handle"] or "").lower().lstrip("@")
+        if handle_cap_enabled and handle_cap > 0 and handle_norm:
+            if handle_counts.get(handle_norm, 0) >= handle_cap:
+                continue
         reactions.append({
             "handle": reaction["handle"],
             "text": reaction["text"],
             "url": reaction["url"],
             "created_at": reaction["created_at"],
         })
+        if handle_norm:
+            handle_counts[handle_norm] = handle_counts.get(handle_norm, 0) + 1
         if len(reactions) >= fan_reaction_limit:
             break
 

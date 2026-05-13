@@ -113,5 +113,73 @@ class TestH3WithInnerHtml(unittest.TestCase):
         self.assertIn("💬 ファンの声", result)
 
 
+class TestFanVoiceH3Dedup(unittest.TestCase):
+    """ENABLE_FAN_VOICE_H3_DEDUP (default ON) で重複 💬 ファンの声 h3 を集約する。"""
+
+    def test_two_fan_voice_h3_collapses_to_one_keeping_twitter(self):
+        # 空 fan voice h3 + filler → 後段に X embed の fan voice h3 = 重複
+        body = (
+            "<h3>💬 ファンの声</h3>"
+            "<p>投稿要点を短く整理します。</p>"
+            "<h3>📅 次の注目</h3>"
+            "<p>出典: example.com</p>"
+            "<h3>💬 ファンの声（Xより）</h3>"
+            '<blockquote class="twitter-tweet"><a>tweet</a></blockquote>'
+        )
+        result = normalize_h3_in_html(body)
+        # 残るのは twitter-tweet を含む方
+        self.assertIn("twitter-tweet", result)
+        self.assertIn("💬 ファンの声（Xより）", result)
+        # 重複は除去
+        self.assertEqual(result.count("💬 ファンの声"), 1)
+        # filler の「整理します」 paragraph も同 section ごと除去
+        self.assertNotIn("整理します", result)
+
+    def test_single_fan_voice_h3_unchanged(self):
+        body = (
+            "<h3>💬 ファンの声</h3>"
+            '<blockquote class="twitter-tweet"><a>tweet</a></blockquote>'
+        )
+        result = normalize_h3_in_html(body)
+        self.assertEqual(result, body)
+
+    def test_dedup_is_idempotent(self):
+        body = (
+            "<h3>💬 ファンの声</h3>"
+            "<p>filler</p>"
+            "<h3>💬 ファンの声（Xより）</h3>"
+            '<blockquote class="twitter-tweet"><a>tweet</a></blockquote>'
+        )
+        once = normalize_h3_in_html(body)
+        twice = normalize_h3_in_html(once)
+        self.assertEqual(once, twice)
+
+    def test_dedup_keeps_longer_when_no_twitter_in_either(self):
+        body = (
+            "<h3>💬 ファンの声</h3>"
+            "<p>short</p>"
+            "<h3>💬 ファンの声</h3>"
+            "<p>longer body content paragraph here with details</p>"
+        )
+        result = normalize_h3_in_html(body)
+        self.assertEqual(result.count("💬 ファンの声"), 1)
+        self.assertIn("longer body content", result)
+
+    def test_dedup_disabled_when_flag_off_keeps_both(self):
+        import os
+        body = (
+            "<h3>💬 ファンの声</h3>"
+            "<p>filler</p>"
+            "<h3>💬 ファンの声（Xより）</h3>"
+            '<blockquote class="twitter-tweet"><a>tweet</a></blockquote>'
+        )
+        os.environ["ENABLE_FAN_VOICE_H3_DEDUP"] = "0"
+        try:
+            result = normalize_h3_in_html(body)
+            self.assertEqual(result.count("💬 ファンの声"), 2)
+        finally:
+            os.environ.pop("ENABLE_FAN_VOICE_H3_DEDUP", None)
+
+
 if __name__ == "__main__":
     unittest.main()

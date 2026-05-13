@@ -1154,5 +1154,85 @@ class FanReactionRelevanceTuningTests(unittest.TestCase):
         self.assertGreaterEqual(len(reactions), 1)
 
 
+class FanReactionTimeDecayTests(unittest.TestCase):
+    """ENABLE_FAN_REACTION_TIME_DECAY (default ON):
+    recency_bucket により新しい post が同 focus_score の古い post より優先される。"""
+
+    def test_recency_bucket_returns_three_for_fresh_post(self):
+        import time as _time
+        now = int(_time.time())
+        # 1h ago
+        self.assertEqual(rss_fetcher._reaction_recency_bucket(now - 3600, now), 3)
+        # 12h ago
+        self.assertEqual(rss_fetcher._reaction_recency_bucket(now - 12 * 3600, now), 2)
+        # 30h ago
+        self.assertEqual(rss_fetcher._reaction_recency_bucket(now - 30 * 3600, now), 1)
+        # 72h ago
+        self.assertEqual(rss_fetcher._reaction_recency_bucket(now - 72 * 3600, now), 0)
+
+    def test_recency_bucket_handles_missing_or_invalid(self):
+        self.assertEqual(rss_fetcher._reaction_recency_bucket(None, 100), 0)
+        self.assertEqual(rss_fetcher._reaction_recency_bucket(0, 100), 0)
+        self.assertEqual(rss_fetcher._reaction_recency_bucket("bad", 100), 0)
+
+    def test_recent_post_ranks_above_old_same_focus(self):
+        import time as _time
+        now = int(_time.time())
+        entries = [
+            # 古い post (72h ago)
+            {"summary": "戸郷のフォーム調整、注目したい。今季の登板を見守りたい。",
+             "link": "https://x.com/oldfan/status/1",
+             "created_at": now - 72 * 3600},
+            # 新しい post (3h ago) - 同じ subject match
+            {"summary": "戸郷のフォーム調整、今日は良かった。次戦も期待。",
+             "link": "https://x.com/freshfan/status/2",
+             "created_at": now - 3 * 3600},
+        ]
+        with patch.object(rss_fetcher, "fetch_yahoo_realtime_entries",
+                          side_effect=lambda kw: entries if kw.endswith("巨人") else []):
+            reactions = rss_fetcher.fetch_fan_reactions_from_yahoo(
+                "【巨人】戸郷翔征のフォーム調整",
+                "巨人戸郷翔征投手がフォーム調整について語った。",
+                "選手情報",
+            )
+        # 新しい post が先に来る
+        if len(reactions) >= 2:
+            urls = [r["url"] for r in reactions]
+            self.assertIn("freshfan", urls[0],
+                          f"recency bucket failed: order={urls}")
+
+
+class FanReactionNERBonusTests(unittest.TestCase):
+    """ENABLE_FAN_REACTION_NER_BONUS (default ON):
+    記事 subject と reaction text の player roster overlap で sort 優先。"""
+
+    def test_roster_overlap_counts_shared_player_names(self):
+        # title 内に "戸郷" あり、text にも "戸郷" あり → overlap >= 1
+        overlap = rss_fetcher._reaction_roster_overlap(
+            "戸郷のフォーム調整が見えてきた、期待。",
+            "【巨人】戸郷翔征のフォーム変更",
+            "巨人戸郷翔征投手がフォーム調整。",
+        )
+        self.assertGreaterEqual(overlap, 1)
+
+    def test_roster_overlap_zero_when_no_shared_player(self):
+        # title 内に "戸郷"、text には別人 (overlap 0)
+        overlap = rss_fetcher._reaction_roster_overlap(
+            "今日は天気がいい",
+            "【巨人】戸郷翔征のフォーム変更",
+            "巨人戸郷翔征投手がフォーム調整。",
+        )
+        self.assertEqual(overlap, 0)
+
+    def test_roster_overlap_capped_at_three(self):
+        # 多人数言及でも cap 3
+        overlap = rss_fetcher._reaction_roster_overlap(
+            "戸郷 阿部 坂本 岡本 吉川 山田",
+            "【巨人】今日の試合、戸郷 阿部 坂本 岡本 吉川 山田 全員が",
+            "戸郷 阿部 坂本 岡本 吉川 山田 が活躍した。",
+        )
+        self.assertLessEqual(overlap, 3)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -2342,6 +2342,67 @@ def _fan_reaction_handle_cap() -> int:
     return max(1, _env_int("FAN_REACTION_HANDLE_CAP", 2))
 
 
+def _fan_reaction_time_decay_enabled() -> bool:
+    """Exponential-tier time decay on fan reaction ranking (default ON).
+
+    Industry standard for news / social aggregators: newer posts rank higher.
+    Implemented as bucket tier (3=<6h, 2=<24h, 1=<48h, 0=>=48h) inserted into
+    the sort key between focus_score and commentary_score, so fresh posts of
+    same focus_score win over older equivalents. Flag OFF reverts to the
+    legacy ordering (created_at only as final tiebreaker)."""
+    return _env_flag("ENABLE_FAN_REACTION_TIME_DECAY", True)
+
+
+def _reaction_recency_bucket(created_at: int | None, now_ts: int) -> int:
+    """Return 0..3 recency tier from post age. Bigger = fresher."""
+    if not created_at:
+        return 0
+    try:
+        age_h = (int(now_ts) - int(created_at)) / 3600.0
+    except (TypeError, ValueError):
+        return 0
+    if age_h < 0:
+        return 3
+    if age_h < 6:
+        return 3
+    if age_h < 24:
+        return 2
+    if age_h < 48:
+        return 1
+    return 0
+
+
+def _fan_reaction_ner_bonus_enabled() -> bool:
+    """NER-based player entity overlap bonus on fan reactions (default ON).
+
+    Industry standard for news matching: shared named entities are strong
+    relevance signal. We reuse giants_roster.json player alias index to
+    detect player name overlap between article subject (title+summary) and
+    the candidate reaction text. Each shared player adds +1 to the bonus
+    (capped at 3). Inserted into the sort key after focus_score so NER
+    overlap promotes posts that mention the same player as the article."""
+    return _env_flag("ENABLE_FAN_REACTION_NER_BONUS", True)
+
+
+def _reaction_roster_overlap(text: str, title: str, summary: str) -> int:
+    """Count of giants roster player names shared between article
+    (title+summary) and the candidate reaction text. Capped at 3."""
+    try:
+        article_entities = set(_matching_giants_roster_names(f"{title} {summary}"))
+    except Exception:
+        return 0
+    if not article_entities:
+        return 0
+    try:
+        reaction_entities = set(_matching_giants_roster_names(text or ""))
+    except Exception:
+        return 0
+    overlap = article_entities & reaction_entities
+    if not overlap:
+        return 0
+    return min(3, len(overlap))
+
+
 def enhanced_prompts_enabled() -> bool:
     return os.getenv("ENABLE_ENHANCED_PROMPTS", "0").strip().lower() in TRUE_VALUES
 
@@ -14494,11 +14555,23 @@ def fetch_fan_reactions_from_yahoo(
                 text, title, summary, category
             ):
                 continue
+            recency_bucket = (
+                _reaction_recency_bucket(created_at, now_ts)
+                if _fan_reaction_time_decay_enabled()
+                else 0
+            )
+            ner_overlap = (
+                _reaction_roster_overlap(text, title, summary)
+                if _fan_reaction_ner_bonus_enabled()
+                else 0
+            )
             reaction = {
                 "handle": handle,
                 "text": text,
                 "url": e.get("link", ""),
                 "created_at": created_at,
+                "recency_bucket": recency_bucket,
+                "ner_overlap": ner_overlap,
             }
             dedupe_key = (reaction["handle"] + reaction["text"]).replace(" ", "").replace("　", "")
             if dedupe_key in seen:
@@ -14527,6 +14600,8 @@ def fetch_fan_reactions_from_yahoo(
             key=lambda r: (
                 0 if r["media_like"] else 1,
                 r["focus_score"],
+                r.get("ner_overlap", 0),
+                r.get("recency_bucket", 0),
                 r["commentary_score"],
                 r["opinion_score"],
                 int(r["created_at"] or 0),

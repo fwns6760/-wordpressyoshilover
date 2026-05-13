@@ -21,6 +21,9 @@ class GameLiveSourcePolicyConfigTests(unittest.TestCase):
             if "game_live_primary" in set(source.get("role") or [])
         }
 
+        # 2026-05-12 commit 0cc0bdf: 巨人公式X + 日刊スポーツ巨人 を
+        # game_live_primary role に追加 (live window primary source 拡張)。
+        # この expected set を同期。
         self.assertEqual(
             live_primary,
             {
@@ -28,6 +31,8 @@ class GameLiveSourcePolicyConfigTests(unittest.TestCase):
                 "スポーツ報知X",
                 "報知野球X",
                 "スポーツ報知 巨人 tag",
+                "巨人公式X",
+                "日刊スポーツ 巨人",
             },
         )
 

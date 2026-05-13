@@ -717,6 +717,106 @@ _HTML_FORM = """<!DOCTYPE html>
   var qform = document.getElementById('ask-form');
   var qresult = document.getElementById('ask-result');
   var qsubmit = document.getElementById('ask-submit-btn');
+  // Convert every Markdown pipe-table block in `md` to an HTML
+  // <table>. Returns a container element wrapping the rendered tables
+  // and any surrounding paragraph text. Returns null when no tables
+  // were found (caller falls back to the textarea alone).
+  function renderMarkdownTables(md) {
+    if (!md) return null;
+    var lines = md.split('\n');
+    var container = document.createElement('div');
+    container.className = 'insight-rendered';
+    container.style.cssText = 'margin-top:8px;';
+    var i = 0;
+    var foundTable = false;
+    var paraBuf = [];
+    function flushPara() {
+      if (!paraBuf.length) return;
+      var txt = paraBuf.join('\n').trim();
+      paraBuf = [];
+      if (!txt) return;
+      // Skip a leading h1 (rendered separately as title).
+      if (txt.charAt(0) === '#') {
+        var stripped = txt.replace(/^#+\s*/, '');
+        if (stripped) {
+          var h = document.createElement('div');
+          h.style.cssText = 'font-weight:600;font-size:14px;margin:10px 0 4px;color:#333;';
+          h.textContent = stripped;
+          container.appendChild(h);
+        }
+        return;
+      }
+      var p = document.createElement('p');
+      p.style.cssText = 'margin:6px 0;font-size:13px;line-height:1.7;color:#222;';
+      p.textContent = txt;
+      container.appendChild(p);
+    }
+    while (i < lines.length) {
+      var line = lines[i];
+      // Detect table header: a line starting with `|` followed by a
+      // separator line of `|---|---|...|`.
+      var isHeader = /^\s*\|.+\|\s*$/.test(line);
+      var nextLine = lines[i + 1] || '';
+      var isSep = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$/.test(nextLine);
+      if (isHeader && isSep) {
+        flushPara();
+        foundTable = true;
+        var headers = line.split('|').map(function(s) { return s.trim(); })
+                          .filter(function(s) { return s.length > 0; });
+        i += 2;
+        var rows = [];
+        while (i < lines.length && /^\s*\|.+\|\s*$/.test(lines[i])) {
+          var cells = lines[i].split('|').map(function(s) { return s.trim(); })
+                              .filter(function(s, idx, arr) {
+                                // Drop the leading/trailing empty cells the
+                                // pipe split produces.
+                                return !(s === '' && (idx === 0 || idx === arr.length - 1));
+                              });
+          rows.push(cells);
+          i++;
+        }
+        var tbl = document.createElement('table');
+        tbl.style.cssText = 'width:100%;border-collapse:collapse;margin:8px 0;font-size:13px;background:#fff;';
+        var thead = document.createElement('thead');
+        var tr = document.createElement('tr');
+        headers.forEach(function(h) {
+          var th = document.createElement('th');
+          th.textContent = h;
+          th.style.cssText = 'padding:6px 8px;background:#003da5;color:#fff;text-align:left;font-weight:600;border-bottom:2px solid #002a73;position:sticky;top:0;';
+          tr.appendChild(th);
+        });
+        thead.appendChild(tr);
+        tbl.appendChild(thead);
+        var tbody = document.createElement('tbody');
+        rows.forEach(function(row, rowIdx) {
+          var rtr = document.createElement('tr');
+          var hasStar = row.some(function(c) { return c.indexOf('★') !== -1; });
+          rtr.style.cssText = (hasStar
+            ? 'background:#fff3cd;font-weight:600;'
+            : (rowIdx % 2 === 0 ? 'background:#fafafa;' : 'background:#fff;'));
+          row.forEach(function(cell) {
+            var td = document.createElement('td');
+            td.textContent = cell;
+            td.style.cssText = 'padding:6px 8px;border-bottom:1px solid #eee;';
+            rtr.appendChild(td);
+          });
+          tbody.appendChild(rtr);
+        });
+        tbl.appendChild(tbody);
+        // Wrap in a scroll container so wide tables don't break
+        // mobile layout.
+        var wrap = document.createElement('div');
+        wrap.style.cssText = 'overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid #ddd;border-radius:4px;';
+        wrap.appendChild(tbl);
+        container.appendChild(wrap);
+        continue;
+      }
+      paraBuf.push(line);
+      i++;
+    }
+    flushPara();
+    return foundTable ? container : null;
+  }
   function renderAsk(payload) {
     qresult.hidden = false;
     qresult.innerHTML = '';
@@ -747,10 +847,22 @@ _HTML_FORM = """<!DOCTYPE html>
     titleDiv.style.cssText = 'font-weight:600;margin:8px 0 4px;font-size:15px;';
     titleDiv.textContent = '提案タイトル: ' + (art.title || '');
     qresult.appendChild(titleDiv);
+    // Render every Markdown pipe-table found in body_md as an actual
+    // HTML <table> so the operator sees a real grid instead of raw
+    // markdown lines. Keeps the textarea below for copy/paste.
+    var rendered = renderMarkdownTables(art.body_md || '');
+    if (rendered) qresult.appendChild(rendered);
+    var detailsBox = document.createElement('details');
+    detailsBox.style.cssText = 'margin-top:10px;';
+    var summary = document.createElement('summary');
+    summary.style.cssText = 'cursor:pointer;font-size:13px;color:#555;';
+    summary.textContent = '📄 Markdown 全文 (コピー用)';
+    detailsBox.appendChild(summary);
     var ta = document.createElement('textarea');
-    ta.style.cssText = 'width:100%;min-height:300px;font-family:ui-monospace,monospace;font-size:12px;padding:10px;';
+    ta.style.cssText = 'width:100%;min-height:220px;margin-top:8px;font-family:ui-monospace,monospace;font-size:12px;padding:10px;';
     ta.value = art.body_md || '';
-    qresult.appendChild(ta);
+    detailsBox.appendChild(ta);
+    qresult.appendChild(detailsBox);
     var tagDiv = document.createElement('div');
     tagDiv.className = 'insight-meta';
     tagDiv.style.cssText = 'margin-top:6px;';

@@ -312,6 +312,57 @@ class SnippetExtractionTests(unittest.TestCase):
         self.assertIn("daily", child_families)
 
 
+class PlayerKeyFallbackTests(unittest.TestCase):
+    """Phase 2b: player_id 不在時に player_name を group key として fallback。"""
+
+    def test_player_name_fallback_when_no_player_id(self):
+        # rss_fetcher candidate には player_id が常に無いケースを想定
+        def _no_pid(**kwargs):
+            c = _cand(**kwargs)
+            c.pop("player_id", None)  # ensure no player_id
+            return c
+
+        # 上の helper はそもそも player_id を default で入れない (なし)
+        candidates = [
+            _no_pid(family="hochi", body=_PARENT_BODY, player_name="坂本勇人"),
+            _no_pid(family="sanspo", title=_SANSPO_TITLE, player_name="坂本勇人"),
+            _no_pid(family="nikkansports", title=_NIKKAN_TITLE, player_name="坂本勇人"),
+        ]
+        clusters = find_digest_clusters(candidates)
+        self.assertEqual(len(clusters), 1)
+        self.assertEqual(clusters[0].player_name, "坂本勇人")
+
+    def test_different_player_names_not_clustered(self):
+        # player_id を明示的に外し、player_name fallback を強制
+        def _no_pid(**kw):
+            c = _cand(**kw)
+            c.pop("player_id", None)
+            return c
+
+        candidates = [
+            _no_pid(family="hochi", body=_PARENT_BODY, player_name="坂本勇人"),
+            _no_pid(family="sanspo", title=_SANSPO_TITLE, player_name="岡本和真"),
+            _no_pid(family="nikkansports", title=_NIKKAN_TITLE, player_name="菅野智之"),
+        ]
+        clusters = find_digest_clusters(candidates)
+        # 3 different player_name → 3 groups of 1 → no cluster
+        self.assertEqual(clusters, [])
+
+    def test_player_name_in_metadata_fallback(self):
+        c1 = _cand(family="hochi", body=_PARENT_BODY)
+        c1.pop("player_name", None)
+        c1["metadata"] = {"player_name": "坂本勇人"}
+        c2 = _cand(family="sanspo", title=_SANSPO_TITLE)
+        c2.pop("player_name", None)
+        c2["metadata"] = {"player_name": "坂本勇人"}
+        c3 = _cand(family="nikkansports", title=_NIKKAN_TITLE)
+        c3.pop("player_name", None)
+        c3["metadata"] = {"player_name": "坂本勇人"}
+        clusters = find_digest_clusters([c1, c2, c3])
+        self.assertEqual(len(clusters), 1)
+        self.assertEqual(clusters[0].player_name, "坂本勇人")
+
+
 class OfficialPanelTests(unittest.TestCase):
     """334-QA Phase 2a-ext: ヨシラバーらしさ Section B (公式情報パネル)."""
 

@@ -221,7 +221,7 @@ def _evaluate_group(
     if not event_token:
         return None
 
-    player_name = str(parent.get("player_name") or "").strip()
+    player_name = _get_player_name(parent)
     if not player_name:
         return None
 
@@ -263,12 +263,35 @@ def _group_by_game_player(
     groups: dict[tuple[str, str], list[Mapping[str, Any]]] = {}
     for c in candidates:
         game_id = str(c.get("game_id") or "").strip()
-        player_id = str(c.get("player_id") or "").strip()
-        if not game_id or not player_id:
+        player_key = _player_group_key(c)
+        if not game_id or not player_key:
             continue
-        key = (game_id, player_id)
+        key = (game_id, player_key)
         groups.setdefault(key, []).append(c)
     return groups
+
+
+def _player_group_key(c: Mapping[str, Any]) -> str:
+    """player_id を優先、無ければ player_name fallback。
+
+    rss_fetcher の candidate dict には player_id が常に populate されないので、
+    player_name (root or metadata) を normalize して group key にする。
+    """
+    pid = str(c.get("player_id") or "").strip()
+    if pid:
+        return pid
+    return _get_player_name(c)
+
+
+def _get_player_name(c: Mapping[str, Any]) -> str:
+    """player_name を root または metadata から取得。"""
+    direct = str(c.get("player_name") or "").strip()
+    if direct:
+        return direct
+    meta = c.get("metadata")
+    if isinstance(meta, Mapping):
+        return str(meta.get("player_name") or "").strip()
+    return ""
 
 
 def _family_for_candidate(c: Mapping[str, Any]) -> str:

@@ -111,6 +111,9 @@ from src.postgame_strict_fact_recovery import (
     postgame_strict_fact_recovery_enabled as _postgame_strict_fact_recovery_enabled,
     recover_postgame_strict_payload as _recover_postgame_strict_payload,
 )
+from src.player_voice_digest_clusterer import (
+    find_digest_clusters as _find_player_voice_digest_clusters,
+)
 from src import llm_call_dedupe as _llm_call_dedupe
 from src.gemini_cache import (
     DEFAULT_MODEL_NAME as GEMINI_CACHE_MODEL_NAME,
@@ -367,6 +370,7 @@ ENABLE_TITLE_HASHTAG_NAME_RECOVERY_ENV_FLAG = "ENABLE_TITLE_HASHTAG_NAME_RECOVER
 WEAK_TITLE_RESCUE_ENV_FLAG = "ENABLE_WEAK_TITLE_RESCUE"
 NARROW_UNLOCK_NON_POSTGAME_ENV_FLAG = "ENABLE_NARROW_UNLOCK_NON_POSTGAME"
 NARROW_UNLOCK_SUBTYPE_AWARE_ENV_FLAG = "ENABLE_NARROW_UNLOCK_SUBTYPE_AWARE"
+PLAYER_VOICE_DIGEST_DETECTION_ENV_FLAG = "ENABLE_PLAYER_VOICE_DIGEST_DETECTION"
 FETCHER_FAN_IMPORTANT_NARROW_EXEMPT_ENV_FLAG = "ENABLE_FETCHER_FAN_IMPORTANT_NARROW_EXEMPT"
 NARROW_UNLOCK_ALLOWED_SUBTYPES = frozenset({"manager", "player", "player_notice", "lineup", "farm_result"})
 FETCHER_FAN_IMPORTANT_PRIORITY_HANDLES = frozenset({"hochi_giants", "sportshochi", "hochi_baseball"})
@@ -19798,6 +19802,64 @@ def _merge_source_summary(candidates: list[dict], max_sentences: int = 6) -> str
     return "。".join(deduped).rstrip("。") + "。"
 
 
+def _player_voice_digest_detection_enabled() -> bool:
+    """334-QA Phase 2b: detection-only gate, default OFF.
+
+    flag を 1 にすると player_voice_digest cluster の検出 + 構造化ログだけ動作する。
+    candidate list の mutation は本 Phase では行わない (Phase 2c で別 commit)。
+    既存 publish flow は flag の値に関係なく不変。
+    """
+    val = (os.getenv(PLAYER_VOICE_DIGEST_DETECTION_ENV_FLAG) or "0").strip().lower()
+    return val in {"1", "true", "yes", "on"}
+
+
+def _aggregate_player_voice_digest_candidates(candidates: list[dict]) -> list[dict]:
+    """334-QA Phase 2b: detection + log のみ、candidate list 不変で返す。
+
+    flag OFF (default) → 即 candidates を返す (no-op、cost 0)。
+    flag ON → find_digest_clusters を呼び出し、検出された cluster 数 / family /
+    player_name を logger.info に出す。candidate list は触らない。
+
+    Phase 2c で本関数を拡張し、検出された cluster の parent candidate を
+    `player_voice_digest` subtype に書き換え + children を consumed 扱いにする
+    予定。今 Phase は観察 only で safety net を厚くする。
+    """
+    if not _player_voice_digest_detection_enabled():
+        return candidates
+    if not candidates:
+        return candidates
+    log = logging.getLogger("rss_fetcher")
+    try:
+        clusters = _find_player_voice_digest_clusters(candidates)
+    except Exception as exc:  # noqa: BLE001 — observation 用、main flow を絶対に壊さない
+        log.warning(
+            "player_voice_digest_detection_failed err=%s candidate_count=%d",
+            exc,
+            len(candidates),
+        )
+        return candidates
+    if not clusters:
+        log.info(
+            "player_voice_digest_detection candidate_count=%d clusters=0",
+            len(candidates),
+        )
+        return candidates
+    for cluster in clusters:
+        log.info(
+            "player_voice_digest_cluster_detected game_id=%s player=%s "
+            "parent_family=%s child_count=%d official_count=%d "
+            "quote_len=%d event_token=%s",
+            cluster.game_id,
+            cluster.player_name,
+            cluster.parent_family,
+            len(cluster.children),
+            len(cluster.officials),
+            len(cluster.quote),
+            cluster.event_token,
+        )
+    return candidates
+
+
 def _aggregate_lineup_candidates(candidates: list[dict]) -> list[dict]:
     grouped: dict[tuple[str, str], list[dict]] = {}
     passthrough: list[dict] = []
@@ -23554,6 +23616,9 @@ def _main(args, logger):
             entry_index += 1
 
     prepared_entries = _aggregate_lineup_candidates(prepared_entries)
+    # 334-QA Phase 2b: digest cluster detection + log のみ、candidate 不変。
+    # ENABLE_PLAYER_VOICE_DIGEST_DETECTION=0 (default) で完全 no-op。
+    prepared_entries = _aggregate_player_voice_digest_candidates(prepared_entries)
 
     yahoo_game_status = {}
     if has_game:

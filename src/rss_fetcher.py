@@ -19814,15 +19814,18 @@ def _player_voice_digest_detection_enabled() -> bool:
 
 
 def _aggregate_player_voice_digest_candidates(candidates: list[dict]) -> list[dict]:
-    """334-QA Phase 2b: detection + log のみ、candidate list 不変で返す。
+    """334-QA Phase 2c: 検出 cluster を実 candidate list に反映する。
 
     flag OFF (default) → 即 candidates を返す (no-op、cost 0)。
-    flag ON → find_digest_clusters を呼び出し、検出された cluster 数 / family /
-    player_name を logger.info に出す。candidate list は触らない。
+    flag ON → find_digest_clusters を呼び出し、検出された cluster ごとに:
+      1. parent candidate に digest_cluster_payload (dict、Phase 3 body renderer
+         が消費) と subtype_hint="player_voice_digest" を付ける
+      2. children (parent と同 cluster の他 family 候補) を candidate list から
+         除去 (consumed、digest に統合済み)
+      3. officials は別 source なので consume しない (公式自体は別 publish 路線)
 
-    Phase 2c で本関数を拡張し、検出された cluster の parent candidate を
-    `player_voice_digest` subtype に書き換え + children を consumed 扱いにする
-    予定。今 Phase は観察 only で safety net を厚くする。
+    例外時は main flow を壊さない (candidates をそのまま返す)。
+    flag を後で OFF に戻せば mutation も止まる (rollback 経路維持)。
     """
     if not _player_voice_digest_detection_enabled():
         return candidates
@@ -19844,7 +19847,43 @@ def _aggregate_player_voice_digest_candidates(candidates: list[dict]) -> list[di
             len(candidates),
         )
         return candidates
+
+    consumed_urls: set[str] = set()
+    parent_url_to_payload: dict[str, dict] = {}
     for cluster in clusters:
+        parent_url = str(
+            cluster.parent_candidate.get("post_url")
+            or cluster.parent_candidate.get("source_url")
+            or ""
+        ).strip()
+        children_urls = [c.url for c in cluster.children if c.url]
+        consumed_urls.update(children_urls)
+        if parent_url:
+            parent_url_to_payload[parent_url] = {
+                "player_name": cluster.player_name,
+                "quote": cluster.quote,
+                "event_token": cluster.event_token,
+                "parent_family": cluster.parent_family,
+                "children": [
+                    {
+                        "family": c.family,
+                        "label": c.label,
+                        "snippet": c.snippet,
+                        "url": c.url,
+                    }
+                    for c in cluster.children
+                ],
+                "officials": [
+                    {
+                        "family": o.family,
+                        "label": o.label,
+                        "snippet": o.snippet,
+                        "url": o.url,
+                    }
+                    for o in cluster.officials
+                ],
+                "child_urls_consumed": children_urls,
+            }
         log.info(
             "player_voice_digest_cluster_detected game_id=%s player=%s "
             "parent_family=%s child_count=%d official_count=%d "
@@ -19857,7 +19896,53 @@ def _aggregate_player_voice_digest_candidates(candidates: list[dict]) -> list[di
             len(cluster.quote),
             cluster.event_token,
         )
-    return candidates
+
+    result: list[dict] = []
+    consumed_count = 0
+    tagged_count = 0
+    for cand in candidates:
+        url = str(cand.get("post_url") or cand.get("source_url") or "").strip()
+        if url and url in consumed_urls:
+            consumed_count += 1
+            log.info(
+                "player_voice_digest_child_consumed url=%s player=%s",
+                url,
+                _get_player_name_for_log(cand),
+            )
+            continue
+        if url and url in parent_url_to_payload:
+            tagged = dict(cand)
+            tagged["digest_cluster_payload"] = parent_url_to_payload[url]
+            tagged["subtype_hint"] = "player_voice_digest"
+            result.append(tagged)
+            tagged_count += 1
+            log.info(
+                "player_voice_digest_parent_tagged url=%s player=%s",
+                url,
+                tagged["digest_cluster_payload"].get("player_name", ""),
+            )
+        else:
+            result.append(cand)
+    log.info(
+        "player_voice_digest_aggregation_summary input=%d output=%d "
+        "tagged_parents=%d consumed_children=%d clusters=%d",
+        len(candidates),
+        len(result),
+        tagged_count,
+        consumed_count,
+        len(clusters),
+    )
+    return result
+
+
+def _get_player_name_for_log(c: Mapping[str, Any]) -> str:
+    direct = str(c.get("player_name") or "").strip()
+    if direct:
+        return direct
+    meta = c.get("metadata")
+    if isinstance(meta, Mapping):
+        return str(meta.get("player_name") or "").strip()
+    return ""
 
 
 def _aggregate_lineup_candidates(candidates: list[dict]) -> list[dict]:

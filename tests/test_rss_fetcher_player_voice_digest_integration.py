@@ -140,7 +140,9 @@ class AggregatorBehaviorTests(unittest.TestCase):
         ]
         with self.assertLogs("rss_fetcher", level="INFO") as logs:
             result = _aggregate_player_voice_digest_candidates(candidates)
-        self.assertIs(result, candidates)
+        # Phase 2c: 新 list を返す (parent tagged + children consumed)、
+        # 同一 object 不保証。代わりに parent tagged の確認は別 test で実施。
+        self.assertIsInstance(result, list)
         cluster_logs = [
             m for m in logs.output if "player_voice_digest_cluster_detected" in m
         ]
@@ -148,6 +150,90 @@ class AggregatorBehaviorTests(unittest.TestCase):
         self.assertIn("game_id=g1", cluster_logs[0])
         self.assertIn("player=坂本勇人", cluster_logs[0])
         self.assertIn("parent_family=hochi", cluster_logs[0])
+
+    def test_flag_on_parent_tagged_with_payload(self):
+        os.environ[PLAYER_VOICE_DIGEST_DETECTION_ENV_FLAG] = "1"
+        long_title = "坂本勇人のサヨナラ本塁打が決勝点、巨人が劇的勝利で連勝を伸ばす"
+        candidates = [
+            _cand(family="hochi", body=_PARENT_BODY),
+            _cand(family="sanspo", title=long_title),
+            _cand(family="nikkansports", title=long_title),
+        ]
+        result = _aggregate_player_voice_digest_candidates(candidates)
+        # parent (hochi) のみ result に残り、payload + subtype_hint タグが付く
+        tagged = [
+            c for c in result if c.get("subtype_hint") == "player_voice_digest"
+        ]
+        self.assertEqual(len(tagged), 1)
+        parent = tagged[0]
+        payload = parent["digest_cluster_payload"]
+        self.assertEqual(payload["player_name"], "坂本勇人")
+        self.assertEqual(payload["event_token"], "300号サヨナラホームラン")
+        self.assertEqual(payload["parent_family"], "hochi")
+        self.assertEqual(len(payload["children"]), 2)
+        child_families = {c["family"] for c in payload["children"]}
+        self.assertEqual(child_families, {"sanspo", "nikkansports"})
+
+    def test_flag_on_children_removed_from_list(self):
+        os.environ[PLAYER_VOICE_DIGEST_DETECTION_ENV_FLAG] = "1"
+        long_title = "坂本勇人のサヨナラ本塁打が決勝点、巨人が劇的勝利で連勝を伸ばす"
+        candidates = [
+            _cand(family="hochi", body=_PARENT_BODY),
+            _cand(family="sanspo", title=long_title),
+            _cand(family="nikkansports", title=long_title),
+        ]
+        original_count = len(candidates)
+        result = _aggregate_player_voice_digest_candidates(candidates)
+        # 3 candidate → 1 (parent only、children removed)
+        self.assertEqual(len(result), 1)
+        self.assertLess(len(result), original_count)
+        sanspo_url = "https://www.sanspo.com/article/1/"
+        nikkan_url = "https://www.nikkansports.com/baseball/news/1.html"
+        result_urls = {c.get("post_url") for c in result}
+        self.assertNotIn(sanspo_url, result_urls)
+        self.assertNotIn(nikkan_url, result_urls)
+
+    def test_flag_on_unrelated_candidates_preserved(self):
+        # digest cluster と無関係の candidate は touch しない
+        os.environ[PLAYER_VOICE_DIGEST_DETECTION_ENV_FLAG] = "1"
+        long_title = "坂本勇人のサヨナラ本塁打が決勝点、巨人が劇的勝利で連勝を伸ばす"
+        candidates = [
+            _cand(family="hochi", body=_PARENT_BODY),
+            _cand(family="sanspo", title=long_title),
+            _cand(family="nikkansports", title=long_title),
+            # 別 game / 別 player の単発記事
+            _cand(
+                family="hochi",
+                game_id="g2",
+                player_name="岡本和真",
+                article_id="2",
+                body="岡本和真が決勝弾",
+            ),
+        ]
+        result = _aggregate_player_voice_digest_candidates(candidates)
+        # cluster 親 1 + 無関係 1 = 2
+        self.assertEqual(len(result), 2)
+        unrelated = next(
+            (c for c in result if c.get("player_name") == "岡本和真"), None
+        )
+        self.assertIsNotNone(unrelated)
+        # 無関係は subtype_hint も payload も付かない (touch されない)
+        self.assertNotIn("subtype_hint", unrelated)
+        self.assertNotIn("digest_cluster_payload", unrelated)
+
+    def test_flag_off_no_mutation(self):
+        # flag off は Phase 2b と同じ no-op
+        long_title = "坂本勇人のサヨナラ本塁打が決勝点、巨人が劇的勝利で連勝を伸ばす"
+        candidates = [
+            _cand(family="hochi", body=_PARENT_BODY),
+            _cand(family="sanspo", title=long_title),
+            _cand(family="nikkansports", title=long_title),
+        ]
+        result = _aggregate_player_voice_digest_candidates(candidates)
+        self.assertIs(result, candidates)
+        for c in result:
+            self.assertNotIn("subtype_hint", c)
+            self.assertNotIn("digest_cluster_payload", c)
 
     def test_exception_in_clusterer_does_not_break_main_flow(self):
         os.environ[PLAYER_VOICE_DIGEST_DETECTION_ENV_FLAG] = "1"

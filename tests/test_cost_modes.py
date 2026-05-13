@@ -421,6 +421,66 @@ class CostModeTests(unittest.TestCase):
             )
         )
 
+    def test_too_short_title_skip_fires(self):
+        # 66931 type: title sanitize の過剰削除で 1 単語 (「探せ」) だけ残った
+        self.assertTrue(rss_fetcher._should_skip_too_short_title("探せ"))
+        self.assertTrue(rss_fetcher._should_skip_too_short_title("打撃"))
+        self.assertTrue(rss_fetcher._should_skip_too_short_title(""))
+
+    def test_too_short_title_skip_passes_for_normal_titles(self):
+        self.assertFalse(
+            rss_fetcher._should_skip_too_short_title(
+                "【巨人】則本昂大が２回まで無失点でスタート"
+            )
+        )
+        self.assertFalse(
+            rss_fetcher._should_skip_too_short_title("内海コーチ「状態非常に良い」")
+        )
+
+    def test_quote_only_no_subject_skip_fires(self):
+        # 66960 type: 役職名「引用」だけで主語抜け
+        self.assertTrue(
+            rss_fetcher._should_skip_quote_only_no_subject_title(
+                "内海コーチ「状態非常に良い」"
+            )
+        )
+        self.assertTrue(
+            rss_fetcher._should_skip_quote_only_no_subject_title(
+                "阿部監督「今の流れを象徴」"
+            )
+        )
+
+    def test_quote_only_no_subject_skip_passes_when_subject_present(self):
+        # 主語付き quote は通常 publish OK
+        self.assertFalse(
+            rss_fetcher._should_skip_quote_only_no_subject_title(
+                "【巨人】気迫全開　則本昂大５回まで０封　内海コーチ「状態非常に良い」"
+            )
+        )
+        # スタメン発表型 (player + position 引用) は対象外
+        self.assertFalse(
+            rss_fetcher._should_skip_quote_only_no_subject_title(
+                "巨人スタメン キャベッジが先制６号ソロ"
+            )
+        )
+
+    def test_dedupe_entity_in_title_removes_second_occurrence(self):
+        # 66939 type: 同 player name 2 回 → 1 回に dedup
+        result = rss_fetcher._dedupe_entity_in_title(
+            "平山功太「平山功太選手はコンディションを考慮してベンチ外となりました」"
+        )
+        # 「平山功太」が 1 回だけ残る
+        self.assertEqual(result.count("平山功太"), 1)
+        # 引用部分の内容は保持
+        self.assertIn("コンディション", result)
+
+    def test_dedupe_entity_in_title_no_op_when_unique(self):
+        original = "【巨人】戸郷翔征が無失点投球"
+        self.assertEqual(
+            rss_fetcher._dedupe_entity_in_title(original),
+            original,
+        )
+
     def test_pregame_started_skip_log_contains_title_and_timestamps(self):
         now = datetime(2026, 4, 19, 11, 30, tzinfo=rss_fetcher.JST)
         with self.assertLogs("rss_fetcher", level="INFO") as cm:

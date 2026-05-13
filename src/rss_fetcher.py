@@ -4167,6 +4167,70 @@ _NON_PLAYER_OPERATIONS_MARKERS: tuple[str, ...] = (
 )
 
 
+_TITLE_QUALITY_MIN_CHARS = 8
+
+# 「{役職名}「{引用}」」だけで対象人物 (= 主語) が抜けている title pattern。
+# 例: 「内海コーチ「状態非常に良い」」 — 誰が「状態非常に良い」か不明。
+_TITLE_QUOTE_ONLY_NO_SUBJECT_RE = _re.compile(
+    r"^[一-龥ぁ-ゔァ-ヴー・]{2,12}(?:監督|コーチ|投手|選手)\s*[「『][^」』]{4,50}[」』]\s*$"
+)
+
+
+def _should_skip_too_short_title(title: str) -> bool:
+    """Title が極端に短い (sanitize の過剰削除で 1-2 単語になった) entry は
+    内容として記事化価値がないため skip。
+    例: 「探せ」 (元 RT 巨人軍 グッズ情報の suffix 残骸)
+    """
+    cleaned = _collapse_ws(_strip_html(title or "")).strip()
+    return len(cleaned) < _TITLE_QUALITY_MIN_CHARS
+
+
+def _dedupe_entity_in_title(title: str) -> str:
+    """Title 内に同じ Giants player name が 2 回以上出てきたら、最初の 1
+    回だけ残して以降を「選手」「投手」等の role 名に置き換える。
+
+    例: 「平山功太「平山功太選手はコンディションを考慮してベンチ外…」」
+        → 「平山功太「選手はコンディションを考慮してベンチ外…」」
+
+    source 側 (報知 X tweet 等) が「{name}『{name}選手は…』」 format を使う
+    ため、yoshilover で passthrough するとそのまま重複が見えてしまう。
+    """
+    if not title:
+        return title
+    try:
+        from src.nomotoke_rss_router import GIANTS_PLAYER_ALLOWLIST
+    except Exception:
+        return title
+    out = title
+    for name in sorted(set(GIANTS_PLAYER_ALLOWLIST), key=lambda x: -len(x)):
+        if len(name) < 2:
+            continue
+        first = out.find(name)
+        if first < 0:
+            continue
+        second = out.find(name, first + len(name))
+        if second < 0:
+            continue
+        # 1 回目は残し、2 回目以降を空文字に置換 (連続呼び出しで残らないよう
+        # 反復しない、最初に検出した name だけ処理する)
+        out = out[: second] + out[second + len(name) :]
+        # 連続削除で空白が二重になる事象を整理
+        out = _collapse_ws(out)
+        return out.strip()
+    return out
+
+
+def _should_skip_quote_only_no_subject_title(title: str) -> bool:
+    """Title が「{役職名}「{引用}」」だけで主語が抜けている (誰について
+    の発言か不明) なら publish 価値がないため skip。subject backfill は
+    別 ticket。
+    """
+    if not title:
+        return False
+    normalized = _collapse_ws(_strip_html(title)).strip()
+    return bool(_TITLE_QUOTE_ONLY_NO_SUBJECT_RE.match(normalized))
+
+
 def _should_skip_no_entity_non_game(title: str, summary: str) -> str:
     """Return a non-empty skip reason when the entry text carries no Giants
     player / 監督 / コーチ entity and matches a non-game (promotional or
@@ -22962,6 +23026,67 @@ def _main(args, logger):
                 skip_filter += 1
                 skip_reason_counts[no_entity_reason] += 1
                 continue
+
+            if _should_skip_too_short_title(entry_title_clean):
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "title_too_short_skip",
+                            "title": entry_title_clean[:80],
+                            "post_url": post_url,
+                            "source_name": name,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                _append_skip_reason_sample(
+                    skip_reason_sample_titles,
+                    "title_too_short",
+                    entry_title_clean or post_url,
+                )
+                skip_filter += 1
+                skip_reason_counts["title_too_short"] += 1
+                continue
+
+            if _should_skip_quote_only_no_subject_title(entry_title_clean):
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "quote_only_no_subject_skip",
+                            "title": entry_title_clean[:80],
+                            "post_url": post_url,
+                            "source_name": name,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                _append_skip_reason_sample(
+                    skip_reason_sample_titles,
+                    "quote_only_no_subject",
+                    entry_title_clean or post_url,
+                )
+                skip_filter += 1
+                skip_reason_counts["quote_only_no_subject"] += 1
+                continue
+
+            # 同 Giants player name が title 内に 2 回以上出てきたら 1 回に dedup。
+            # 例: source 元 (報知) が「{name}『{name}選手は…』」 format を使う
+            # ケースに対応。dedup は entry_title_clean のみ更新、summary は維持。
+            _deduped = _dedupe_entity_in_title(entry_title_clean)
+            if _deduped != entry_title_clean:
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "title_entity_duplicate_deduped",
+                            "before": entry_title_clean[:80],
+                            "after": _deduped[:80],
+                            "post_url": post_url,
+                            "source_name": name,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                entry_title_clean = _deduped
 
             raw_title, title_preview = _prepare_source_title_context(entry_title_clean, entry)
             title = raw_title

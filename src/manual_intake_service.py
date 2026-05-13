@@ -368,6 +368,24 @@ _HTML_FORM = """<!DOCTYPE html>
   <div id=\"result\" hidden></div>
   </section>
   <section class=\"tab-panel\" data-tab=\"insight\" id=\"tab-panel-insight\" hidden>
+    <h2 style=\"font-size:16px;margin:6px 0 8px;\">🗣️ 質問入力 (一番簡単)</h2>
+    <p class=\"insight-meta\">質問を 1 行で入力 → 自動で「指標」「守備位置」「件数」「選手」を読み取り、12 球団 rank + 記事 draft まで生成。例:<br>
+      ・「セリーグのセカンドUZRトップ10は？」<br>
+      ・「先発のFIPランキングトップ5」<br>
+      ・「巨人の戸郷翔征のFIPは何位？」<br>
+      ・「ショートOPSトップ10」</p>
+    <form id=\"ask-form\">
+      <div class=\"field\">
+        <input id=\"ask-q\" name=\"q\" type=\"text\" required placeholder=\"例: セリーグのセカンドUZRトップ10は？\" autocomplete=\"off\" class=\"big\">
+      </div>
+      <div class=\"actions\">
+        <button class=\"primary\" type=\"submit\" id=\"ask-submit-btn\">🗣️ 質問して記事生成</button>
+      </div>
+    </form>
+    <div id=\"ask-result\" hidden></div>
+
+    <details style=\"margin-top:24px;border-top:1px solid #ddd;padding-top:14px;\">
+      <summary style=\"cursor:pointer;font-weight:600;\">⚙️ 詳細検索 (上級者向け、手動で条件指定)</summary>
     <p class=\"insight-meta\">蓄積された article_candidates を選手 / 種類 / 期間で検索。検出ロジックは z-score / streak / workload / lineup_jump。data が日々 GCS に蓄積され、2-3 週間後に anomaly が出始める。</p>
     <h2 style=\"font-size:15px;margin:18px 0 8px;\">🔎 1. signal 検索</h2>
     <form id=\"insight-form\">
@@ -475,6 +493,7 @@ _HTML_FORM = """<!DOCTYPE html>
       </div>
     </form>
     <div id=\"article-result\" hidden></div>
+    </details>
   </section>
 </main>
 <script>
@@ -691,6 +710,82 @@ _HTML_FORM = """<!DOCTYPE html>
       renderArticle({ ok: false, reason: String(e) });
     } finally {
       if (asubmit) { asubmit.disabled = false; asubmit.textContent = '📝 記事 draft 生成'; }
+    }
+  });
+
+  // INSIGHT-009: ask form (natural language input → article)
+  var qform = document.getElementById('ask-form');
+  var qresult = document.getElementById('ask-result');
+  var qsubmit = document.getElementById('ask-submit-btn');
+  function renderAsk(payload) {
+    qresult.hidden = false;
+    qresult.innerHTML = '';
+    if (!payload || !payload.ok) {
+      qresult.className = 'err';
+      var msg = '失敗: ' + (payload && payload.reason ? payload.reason : 'unknown');
+      if (payload && payload.unresolved && payload.unresolved.length) {
+        msg += ' (不足: ' + payload.unresolved.join(', ') + ')';
+      }
+      if (payload && payload.parsed) {
+        msg += '\\n\\n読み取れた条件: ' + JSON.stringify(payload.parsed);
+      }
+      qresult.textContent = msg;
+      return;
+    }
+    qresult.className = '';
+    var parsed = payload.parsed || {};
+    var pmeta = document.createElement('div');
+    pmeta.className = 'insight-meta';
+    pmeta.textContent = '読み取り: 指標=' + (parsed.metric || '?')
+      + ' / 守備=' + (parsed.position || '指定なし')
+      + ' / 件数=' + (parsed.top_n || 10)
+      + (parsed.focus_player ? ' / 選手=' + parsed.focus_player : '')
+      + (parsed.league ? ' / リーグ=' + parsed.league : '');
+    qresult.appendChild(pmeta);
+    var art = payload.article || {};
+    var titleDiv = document.createElement('div');
+    titleDiv.style.cssText = 'font-weight:600;margin:8px 0 4px;font-size:15px;';
+    titleDiv.textContent = '提案タイトル: ' + (art.title || '');
+    qresult.appendChild(titleDiv);
+    var ta = document.createElement('textarea');
+    ta.style.cssText = 'width:100%;min-height:300px;font-family:ui-monospace,monospace;font-size:12px;padding:10px;';
+    ta.value = art.body_md || '';
+    qresult.appendChild(ta);
+    var tagDiv = document.createElement('div');
+    tagDiv.className = 'insight-meta';
+    tagDiv.style.cssText = 'margin-top:6px;';
+    tagDiv.textContent = 'タグ候補: ' + ((art.suggested_tags || []).join(', '));
+    qresult.appendChild(tagDiv);
+    var copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'secondary';
+    copyBtn.textContent = '📋 markdown コピー';
+    copyBtn.style.cssText = 'margin-top:8px;padding:8px 16px;';
+    copyBtn.addEventListener('click', function() {
+      ta.select();
+      try { navigator.clipboard.writeText(ta.value); copyBtn.textContent = '✅ コピー済'; }
+      catch (e) { document.execCommand('copy'); copyBtn.textContent = '✅ コピー済'; }
+      setTimeout(function() { copyBtn.textContent = '📋 markdown コピー'; }, 2000);
+    });
+    qresult.appendChild(copyBtn);
+  }
+  qform.addEventListener('submit', async function(ev) {
+    ev.preventDefault();
+    qresult.hidden = true;
+    if (qsubmit) { qsubmit.disabled = true; qsubmit.textContent = '📡 処理中...'; }
+    var q = document.getElementById('ask-q').value || '';
+    try {
+      var resp = await fetch('/insight-ask?' + new URLSearchParams({q: q}).toString(), {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        credentials: 'same-origin',
+      });
+      var json = await resp.json().catch(function() { return {}; });
+      renderAsk(json);
+    } catch (e) {
+      renderAsk({ ok: false, reason: String(e) });
+    } finally {
+      if (qsubmit) { qsubmit.disabled = false; qsubmit.textContent = '🗣️ 質問して記事生成'; }
     }
   });
 })();
@@ -1003,6 +1098,38 @@ def build_handler(
                     json.dumps(_MANIFEST, ensure_ascii=False),
                     content_type="application/manifest+json; charset=utf-8",
                 )
+                return
+            if path == "/insight-ask":
+                # INSIGHT-009: NL question → parser → article generator.
+                expected_token = _require_token()
+                if expected_token:
+                    cookie_token = ""
+                    raw_cookie = self.headers.get("Cookie") or ""
+                    for part in raw_cookie.split(";"):
+                        kv = part.strip().split("=", 1)
+                        if len(kv) == 2 and kv[0].strip() == "manual_intake_session":
+                            cookie_token = kv[1].strip()
+                            break
+                    query_token = ""
+                    qtok = parse_qs(parsed.query, keep_blank_values=False).get("token") or []
+                    if qtok:
+                        query_token = (qtok[0] or "").strip()
+                    if cookie_token != expected_token and query_token != expected_token:
+                        _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                        return
+                params = parse_qs(parsed.query, keep_blank_values=False)
+                miq.ensure_local_db()
+                question = (params.get("q") or [""])[0]
+                if not question.strip():
+                    _json_response(self, 400, {"ok": False, "reason": "empty_question"})
+                    return
+                try:
+                    result = miq.ask(question=question)
+                except Exception as exc:  # noqa: BLE001
+                    bound_logger.exception("insight_ask_failed")
+                    _json_response(self, 500, {"ok": False, "reason": f"ask_error:{exc!r}"})
+                    return
+                _json_response(self, 200, result)
                 return
             if path == "/insight-article":
                 # INSIGHT-008: generate article draft markdown from rank query.

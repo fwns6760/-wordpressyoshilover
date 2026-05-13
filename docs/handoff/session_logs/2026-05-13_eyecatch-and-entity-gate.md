@@ -190,3 +190,175 @@ image を明示しない update は image 別解決 risk あり。
 - 関連 doc:
   - `docs/work_logs/2026-05-12_eyecatch-player-priority-and-dedupe.md` (B+C 設計、今回 C を env OFF)
   - `feedback_title_quality_extended_requirements.md` (対象者名必須要件)
+
+---
+
+## 9. 追加 deploy (late session 22:00-23:00 JST 分)
+
+session 後半に 5 件追加 commit + deploy。session log 初稿時点では未完。
+
+### 9-A. allowlist roster 動的拡充 (`9afbe89`)
+
+事象: post 66866 (坂本勇人) で `detect_person("坂本勇人") = None` を実走確認。
+allowlist 静的 34 名に主力野手 (坂本/丸/戸郷/吉川/浅野/中山/門脇/内海/則本/
+赤星 等) 未登録。
+
+修正:
+- `_GIANTS_PLAYER_ALLOWLIST_STATIC` (34 名、curated baseline) を残し、
+  `_load_giants_roster_active_names()` で `config/giants_roster.json` の
+  active=True player/coach/manager の canonical name を動的読込
+- roster.json 不揃い (空白/`*` prefix) を loader で正規化
+- union: 34 → 95 names (active 91 + 静的差分 4)
+
+deploy: revision **00360-zlc**、image digest `c5e2c367…`
+
+### 9-B. coach 11 名 roster 追加 (`7a42f62`)
+
+Wikipedia 2026 シーズン Giants コーチ陣 28 名のうち、roster.json 既登録 8 名
+(阿部慎之助/橋上/川相/村田/杉内/内海/亀井/石井) を除いた 1軍+2軍 新規 11 名
+を追加:
+- 1軍: ゼラス・ウィーラー / 李承燁 / 吉川大幾 / 實松一成
+- 2軍: 金城龍彦 / 脇谷亮太 / 田口昌徳 / 大田泰示 / 鈴木尚広 / 山口鉄也 / 大竹寛
+- 3軍 + 巡回 (会田/橋本/若林/市川/立岡/野上/西村/矢野/久保) は user scope
+  外で追加せず
+
+deploy: revision **00361-w8t**、image digest `b18bcf90…`
+
+### 9-C. 試合中 postgame skip 恒久対策 (`ba41c51`)
+
+事象: post 66993「巨人広島戦 則本昂大、試合での見せ場」 21:00 JST publish。
+game state は 8 回 1-1 同点 (進行中) なのに、Gemini fallback template が
+「巨人、競り勝って白星」narrative を生成。事実誤認 article。CLAUDE.md §18
+「事実誤認は致命的 NG」該当。
+
+修正:
+- `_should_skip_started_pregame_entry` の対称関数 `_should_skip_unfinished_postgame_entry`
+  を追加
+- category=試合速報 + subtype=postgame + game_status.ended=False (game_status
+  空も safety で skip) → `postgame_unfinished_skip`
+- main loop の pregame_started_skip 直後に挿入
+- LLM 経路には触らず、上流 (entry filter) で止める
+
+deploy: revision **00362-qvn**、image digest `db31781b…`
+
+### 9-D. title quality 3 件 narrow fix (`4a0dddc`)
+
+事象: 直近 20 件 publish title audit で 4 件 weird:
+- post 66931「探せ」(1 単語、source 元 RT 巨人軍 グッズの suffix 残骸)
+- post 66939「平山功太「平山功太選手は...」」(entity 重複、報知 X tweet 自体
+  format)
+- post 66960「内海コーチ「状態非常に良い」」(主語抜き quote-only)
+- post 66937「泉口友汰「3番・遊撃」」(lineup format、user 判断で OK 扱い)
+
+修正:
+- `_should_skip_too_short_title` (< 8 文字 skip → `title_too_short`)
+- `_should_skip_quote_only_no_subject_title` (役職名「引用」だけ skip →
+  `quote_only_no_subject`)
+- `_dedupe_entity_in_title` (同 player name 2 回 → 1 回字句整形 →
+  `title_entity_duplicate_deduped` event log)
+- 4 件とも LLM ハルシネーションでなく source format / sanitize 過剰削除 /
+  passthrough policy 由来 (実 log で確定済、`x_post_ai_failed` で Gemini は
+  daily_limit、fallback template 経由)
+
+deploy: revision **00363-jz2**、image digest `ef23cb9f…`
+
+### 9-E. ヨシラバー voice prefix (`24694c7` + `2abe53b` narrative fix)
+
+user 体感: yoshilover.com/66990 を webfetch、5 つの問題発見:
+- 本文が極度に短い (「則本昂大投手（35）が...降板した。」のみ)
+- 関連記事セクション過剰
+- シェアボタン重複
+- 「続きを読む」誘導 強調
+- 広告・コメント欄配置不明確
+
+user 指示「のもとけ風 title でいい」「大手新聞のあいだのサイトになっていて、
+ヨシラバーらしさがない」「表あり、スクレイピング、文章も全部やる」を踏まえ、
+postgame body の冒頭に **構造化 prefix** を prepend する narrow MVP。
+
+prefix 構成 (3 section):
+- **📊 試合まとめ (table)**: スコア / 投球回 / 球数 / 失点 / 被安打 / 奪三振
+  を title/summary 内 regex 抽出して並べる
+- **🔑 見どころ (箇条書き)**: summary 文を `key_play_markers` (本塁打/ソロ/
+  打点/盗塁/好投/完投/勝利投手/サヨナラ/逆転/同点/決勝/先制) で filter、
+  8-80 chars に絞り最大 3 件
+- **📝 ヨシラバー的に (短い narrative)**: detect_person で主役 player 抽出、
+  result keyword (勝利/敗戦/同点/中止) と組み合わせて deterministic template
+  (LLM 不要、hallucination 0)
+
+narrative 主役検出 bug (`24694c7` 初版):
+- post 66990 preview で「翁田大勢 の好投が光った試合」と誤判定
+- 真因: detect_person の alias_map ("大勢"→"翁田大勢") が title 検出前に
+  summary 内 "大勢" に hit、主役逆転
+- 修正 `2abe53b`: title から先に detect_person、見つからなければ text に
+  fallback → 「則本昂大 の好投が光った試合」と正しい narrative
+
+deploy:
+- 24694c7 → revision **00364-bp5**、digest `91a448a4…`
+- 2abe53b → revision **00365-whr**、digest `86152f4a…`
+
+### 9-F. stale content 「昨日の記事」恒久対策 (`68f8d2d`)
+
+事象: 22:01 JST publish で 67027「巨人・吉川が岐阜凱旋」+ 67024「巨人・佐々木
+自身初サヨナラ弾」が出る。共に source URL 日付 = 5/13 (今日) だが content は
+5/12 二軍試合 / 5/12 サヨナラ event の retrospective。大手新聞「翌朝に前夜
+試合 report 出す」 format。
+
+stale_source_guard は publish 時刻 base のため検出不能。content vs 今日の
+試合状況 cross-check が必要。
+
+修正 (2 段 narrow):
+1. `_should_skip_prior_event_postgame` (keyword):
+   - 「凱旋/昨夜/昨日/前日/前夜/先日/翌朝」が title/summary に出れば skip
+   - 67027 type を catch
+2. `_should_skip_mismatched_today_game` (yahoo cross-check):
+   - 試合 ended=True + title に試合結果 marker (サヨナラ/完封勝/連勝/連敗
+     等) + yahoo state にその marker 無し → `result_marker_mismatch`
+   - 今日の opponent と異なる他球団 (阪神/中日/広島/DeNA/etc 11 球団) が
+     title に出る → `opponent_mismatch`
+   - yahoo state 空 or 試合中 → 既存挙動 (allow) 維持
+   - 67024 type (サヨナラ弾 mismatch) を catch
+- main loop の yahoo-aware filter (postgame_unfinished の直後) に挿入
+
+deploy: revision **00366-dsz**、image digest `a91185c4…` (今夜 11 件目)
+
+## 10. 最終 deploy chain サマリー (今夜 11 件)
+
+| # | commit | revision | digest 先頭 | 内容 |
+|---|---|---|---|---|
+| 1 | bb205c9 | 00353-6s9 | be528a9d | hashtag entity 保持 (#坂本勇人 → 坂本勇人) |
+| 2 | 7f70343 | 00354-vzv | 95ce88cf | mid-game pregame escape (回まで / 回途中 / 回終了) |
+|   | (env)   | 00358-76f | 95ce88cf | EYECATCH_DEDUPE_RECENT_DISABLED=1 apply (image 維持) |
+| 3 | 4220030 | 00359-57d | 38f20dfe | entity-0 + 販売 / 審判 keyword skip |
+| 4 | 9afbe89 | 00360-zlc | c5e2c367 | GIANTS_PLAYER_ALLOWLIST roster.json 動的拡充 (34→95+) |
+| 5 | 7a42f62 | 00361-w8t | b18bcf90 | coach 11 名追加 (Wikipedia 2026 1軍+2軍) |
+| 6 | ba41c51 | 00362-qvn | db31781b | 試合中 postgame skip (「白星」hallucination 防止) |
+| 7 | 4a0dddc | 00363-jz2 | ef23cb9f | title quality 3 件 (短すぎ/quote-only/重複 dedup) |
+| 8 | 24694c7 | 00364-bp5 | 91a448a4 | ヨシラバー voice prefix (📊 / 🔑 / 📝) |
+| 9 | 2abe53b | 00365-whr | 86152f4a | narrative 主役検出 bug 修正 (title 優先) |
+| 10| 68f8d2d | 00366-dsz | a91185c4 | stale content 2 段 (prior_event keyword + yahoo cross-check) |
+
+env (yoshilover-fetcher): `EYECATCH_DEDUPE_RECENT_DISABLED=1` apply 済。他不変。
+
+## 11. 残課題 (今夜 deploy しない、明朝以降)
+
+| 項目 | 種別 | 状況 |
+|---|---|---|
+| 過去 publish 済 weird/stale article cleanup | data | §11 user 判断、WP REST PUT で featured_media / status 書き換え |
+| post 66866 個別救済 (アイキャッチ差替) | data | 同上 |
+| ENABLE_* feature flag 50+ audit | observability | 別 session で個別 audit、no-op flag の処分判断 |
+| WP_APP_PASSWORD rotation | security | **本日 chat に value 出てしまった** incident、user manual で rotation 推奨 |
+| coach photo upload (Wikipedia commons) | data | password incident 経由で hold、license 確認 path 別 session |
+| roster.json data 整理 (`*則本 昂大` + `則本 昂大` broken format dedup) | data | 動的 loader は正規化で吸収済、整理は別 commit 候補 |
+| 本文短さの本格 redesign | feature | postgame 以外 (lineup/manager/farm/social) 用 prefix、Gemini 経路 OFF or 厳格 grounding 化、別 session |
+
+## 12. protocol 学び (late session 追加分)
+
+- env update `--update-env-vars` 単独実行は image 別解決の罠あり (検知済、
+  即 rollback + redo)、必ず `--image :tag` 明示
+- preview / 実 log で挙動確認するまで「直った」と書かない (narrative bug
+  `24694c7` 初版を preview で検出 → 2abe53b で修正)
+- user 「Gemini 使ってる？」「Gemini は意味がない」 への対応: 実 log で
+  Gemini は daily_limit で呼ばれていない事実を提示、weird title は全部
+  source / sanitize / passthrough 由来と確定 (記憶で説明せず実 data)
+- 並走 commit (user manual commit が私の push 間に混入) 検知時、必ず内容
+  を grep して user に明示 → silent に build/deploy しない

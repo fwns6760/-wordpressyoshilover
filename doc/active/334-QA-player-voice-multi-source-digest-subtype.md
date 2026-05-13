@@ -313,6 +313,110 @@ foundation の一部は既存、cross-source clustering の core は新規。新
 
 これらを実行せず Phase 1 fire するのは「記憶から再構成 / 自己評価 OK」事故源 → 禁止。
 
+## F12. 5 サイト URL inventory(2026-05-14 verified、grep + WebFetch)
+
+### 確認方法
+
+- 一次情報: `src/source_trust.py` / `src/tag_page_scraper.py` / `src/lineup_source_priority.py` / `src/postgame_strict_fact_recovery.py` / `config/rss_sources.json` を grep
+- 二次情報: WebFetch(`hochi.news` / `sponichi.co.jp` / `sanspo.com` / `nikkansports.com` は **Claude Code WebFetch ブロック**、`daily.co.jp` のみ 200)
+- daily 1 サイトのみ WebFetch で article URL pattern verify、他 4 サイトは **repo 内 code が一次情報**
+
+### 5 サイト完全 URL inventory
+
+| サイト | 日本語ラベル | source_trust 登録 domain(verified) | article URL pattern(verified from code) | intake 経路 | _PRIMARY_HOST_LABELS 状態 |
+|---|---|---|---|---|---|
+| **スポーツ報知** | `スポーツ報知` | `hochi.news`, `hochi.co.jp`, `sports.hochi.co.jp`(3 domain) | `https://hochi.news/articles/{YYYYMMDD}-{code}.html` | web scraper(`hochi_giants_tag`、`https://hochi.news/tag/巨人`) + X(`hochi_giants` / `hochi_baseball` / `SportsHochi` rsshub) | `hochi.news` ✓ / `hochi.co.jp` ✗ 不在 / `sports.hochi.co.jp` ✗ 不在 |
+| **サンスポ** | `サンスポ` | `sanspo.com`(1 domain) | `https://www.sanspo.com/article/{YYYYMMDD}-{code}/` | web scraper(code に存在 `tag_url=https://www.sanspo.com/?s=巨人`、ただし `config/rss_sources.json` には未登録) + X(`Sanspo_Giants` rsshub) | `sanspo.com` ✓ / `www.sanspo.com` ✓ |
+| **スポニチ** | `スポニチ` | `sponichi.co.jp`(1 domain) | repo code には article URL pattern 未実装(scraper なし) | X のみ(`SponichiYakyu` rsshub `media_quote_pool`) | `sponichi.co.jp` ✓ / `www.sponichi.co.jp` ✓ |
+| **日刊スポーツ** | `日刊スポーツ` | `nikkansports.com`(1 domain) | `https://www.nikkansports.com/baseball/news/{YYYYMMDDxxxxxxx}.html`(sample `202605030000454.html`) | RSS atom feed(`https://www.nikkansports.com/rss/baseball/professional/atom/giants.xml`) + X(`nikkansports` / `nikkan_giants` rsshub) | `nikkansports.com` ✓ / `www.nikkansports.com` ✓ |
+| **デイリー** | `デイリー`(map 不在、要追加) | `daily.co.jp`(1 domain) | `https://www.daily.co.jp/baseball/{YYYY}/{MM}/{DD}/{Article ID}.shtml`(WebFetch verified) | web scraper(`daily_giants_tag`、`https://www.daily.co.jp/baseball/giants/index.shtml`) + X(`daily_baseball` rsshub) | `daily.co.jp` ✗ **不在** / `www.daily.co.jp` ✗ **不在** |
+
+### 補足注記
+
+- **報知の domain 3 種**: 歴史的に `hochi.co.jp` / `sports.hochi.co.jp` 両方あり、現在は `hochi.news` が主、3 つとも source_trust に登録済み(全部「報知」family)。`_PRIMARY_HOST_LABELS` は `hochi.news` のみマップされている — Phase 1 で `hochi.co.jp` / `sports.hochi.co.jp` も同じ「スポーツ報知」label に追加することで domain 揺れ吸収
+- **サンスポ scraper の status**: code 上 `tag_page_scraper.py` に `sanspo_giants_search` 関数が実装されているが、`config/rss_sources.json` には登録なし。本 ticket は intake 拡張を行わない(forward-only / clustering 専念)、既存 intake 経路で 3 サイト揃ったときのみ digest 化
+- **スポニチ scraper の不在**: 現状 `media_quote_pool` 経由のみ。digest cluster で「スポニチ報じる」section を出すには、X 投稿が記事 link を含むケースのみ拾える。Phase 0 audit 段階では intake 拡張は **scope 外**(本 ticket は cluster + title + body 生成に専念)
+- **WebFetch ブロック 4 件**: hochi / sponichi / sanspo / nikkansports は Claude Code WebFetch から拒否される(`Claude Code is unable to fetch from ...`)。これは **本 ticket の実装には影響しない**(repo 内 code が一次情報、scraper / RSS atom は実 server から取得)
+
+### Phase 1 _PRIMARY_HOST_LABELS patch 完全リスト(6 行追加)
+
+```python
+# 既存 _PRIMARY_HOST_LABELS (nomotoke_card_renderer.py line 1627-1641) に追加:
+    "hochi.co.jp": "スポーツ報知",
+    "www.hochi.co.jp": "スポーツ報知",
+    "sports.hochi.co.jp": "スポーツ報知",
+    "daily.co.jp": "デイリー",
+    "www.daily.co.jp": "デイリー",
+```
+
+5 行(+末尾 1 行余裕) で 5 サイト 全 domain 変種の日本語ラベルが揃う。Phase 1 patch に同梱。
+
+## F13. pytest baseline + 既存 test 一覧(2026-05-14 measured)
+
+### 全体 collect baseline
+
+| 軸 | 数値 | 確認 command |
+|---|---|---|
+| 全体 tests collected | **4261** | `python3 -m pytest --collect-only -q tests/` |
+| 全体 pytest 実行(focused、未測定) | — | Phase 1 PR の CI で全実行、増減 0 を accept gate |
+
+### Phase 1 regression target(narrow scope)focused baseline
+
+| 軸 | 数値 |
+|---|---|
+| `tests/test_title_template_assembler.py` + `tests/test_nomotoke_card_renderer.py` 結合実行 | **202 passed / 0 failed / 30 subtests passed** |
+| 実行時間 | 0.29s |
+| 確認 command | `python3 -m pytest tests/test_title_template_assembler.py tests/test_nomotoke_card_renderer.py -q --no-header` |
+
+→ baseline GREEN を確認。Phase 1 PR で **同 command 結果が 202 passed / 0 failed を維持しない場合は merge せず**。
+
+### test_title_template_assembler.py 既存 test class 一覧(25 件、8 class)
+
+| test class | 件数 | Phase 1 影響 |
+|---|---|---|
+| `EnablementTests` | 2 | 不変(env flag 動作) |
+| `PatternAPlayerCommentTests` | 4 | 不変(player_comment / player_quote subtype) |
+| `PatternAManagerTests` | 2 | 不変(manager subtype) |
+| `PatternACoachTests` | 1 | 不変(coach_comment) |
+| `PatternBPostgameTests` | 2 | 不変(postgame) |
+| `PatternEBroadcastTests` | 2 | 不変(broadcast / program) |
+| `PatternFPostgameDetailTests` | 2 | 不変(postgame fall-through) |
+| `PatternGFarmTests` | 1 | 不変(farm_result) |
+| `PatternOLineupTests` | 2 | 不変(lineup) |
+| `PatternNProbableStarterTests` | 1+ | 不変(pregame) |
+| `UnsupportedSubtypeTests` | 1 | **要更新**: `player_voice_digest` を unsupported から外す or 別 ハンドリング |
+
+### Phase 1 新規追加予定 test class
+
+- `PatternXPlayerVoiceDigestTests`(新規)
+  - positive: 標準 3-token / 長セリフ trim(>40 文字)/ event 数値 fact `300号` / 試合状態 fact `サヨナラホームラン` / 完投投手 fact `7回1失点`
+  - negative: name 欠落 / quote < 20 文字 / event 欠落 / metadata 不在 / LLM rewrite simulated(検出して None 返す)
+  - 計 **10 件**
+
+→ Phase 1 着地後の期待数値: **既存 25 件 + 新規 10 件 = 35 件、全 PASS、focused baseline 結合 202 → 212 passed(`title_template_assembler.py` test 単独で +10)**。
+
+## F14. Phase 1 着手前 verify 完了 checklist(2026-05-14)
+
+| 必須 verify 項目 | 状態 | 結果 |
+|---|---|---|
+| 1. pytest 全体 baseline(collect / pass / fail) | ✓ DONE | 全体 4261 collected、focused 202 passed / 0 failed |
+| 2. `_PRIMARY_HOST_LABELS` 追加候補 host 5 サイト enumerate | ✓ DONE | F12 で 6 行 patch を完全 lock(hochi.co.jp / sports.hochi.co.jp / daily.co.jp / www.daily.co.jp) |
+| 3. `title_template_assembler.py` 既存 test 一覧 grep | ✓ DONE | 25 件 / 8 class、F13 表で影響評価 |
+
+→ **3 件全部 verify 完了**。silent skip / 記憶から再構成 / 自己評価 OK は 0 件。Phase 1 着手 GO。
+
+## Phase 1 fire 条件(本 doc 内で完結)
+
+- F14 の 3 verify 全部 ✓ DONE → **GO 判定**
+- 不可触リスト(本 doc 上部)を Phase 1 commit の commit message に明示
+- Phase 1 PR は narrow:
+  - `src/title_template_assembler.py` +60 行(新 pattern 関数 + elif branch)
+  - `src/nomotoke_card_renderer.py` +6 行(`_PRIMARY_HOST_LABELS` patch)
+  - `tests/test_title_template_assembler.py` +250 行程度(`PatternXPlayerVoiceDigestTests` 10 件 + `UnsupportedSubtypeTests` 更新)
+- focused baseline 202 → 212 passed を accept gate
+- 全体 4261 collected は変動なし(新 test 追加分のみ)
+- Phase 2 (`player_voice_digest_clusterer.py`) は Phase 1 着地後の別 PR
+
 ## Phase 1 spec(Phase 0 結果反映、READY_FOR_IMPL)
 
 ### Phase 1 narrow scope

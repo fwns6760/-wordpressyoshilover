@@ -87,12 +87,13 @@ _ALIAS_MAP = {
 
 # Team-generic fallback used when no per-person match is found.
 #
-# 2026-05-13 user request: 東京ドーム fallback (media 65953) を廃止し、
-# サイト icon (media 60083 = cropped-j_RlNtbr_400x400) を team fallback
-# として採用。Operators can still override via PLAYER_EYECATCH_TEAM_FALLBACK_ID
-# env or disable with "0".
+# 2026-05-13 user request: team fallback を読売ジャイアンツ公式ロゴ
+# (media 66813、Wikimedia Commons public domain、商標は球団保有) に切替。
+# 経緯: 東京ドーム (media 65953) → サイト icon (media 60083) → Giants logo
+# (media 66813)。Operators can still override via
+# PLAYER_EYECATCH_TEAM_FALLBACK_ID env or disable with "0".
 _TEAM_FALLBACK_MEDIA_ID_ENV = "PLAYER_EYECATCH_TEAM_FALLBACK_ID"
-_TEAM_FALLBACK_MEDIA_ID_DEFAULT: Optional[int] = 60083
+_TEAM_FALLBACK_MEDIA_ID_DEFAULT: Optional[int] = 66813
 
 # Legacy 阿部慎之助 fallback media includes イチロー in the media title/image
 # context and does not fit a Giants news-board fallback. Keep it blocked

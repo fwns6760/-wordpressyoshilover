@@ -114,8 +114,8 @@ class CacheRoundtripTests(unittest.TestCase):
 
     def test_default_team_fallback_uses_site_icon_not_legacy_ichiro_media(self):
         # 2026-05-13: 東京ドーム fallback (65953) を廃止し、サイト icon
-        # (60083) を team fallback に採用。
-        self.assertEqual(per._TEAM_FALLBACK_MEDIA_ID_DEFAULT, 60083)
+        # (66813) を team fallback に採用。
+        self.assertEqual(per._TEAM_FALLBACK_MEDIA_ID_DEFAULT, 66813)
         self.assertNotEqual(per._TEAM_FALLBACK_MEDIA_ID_DEFAULT, 36062)
         self.assertNotEqual(per._TEAM_FALLBACK_MEDIA_ID_DEFAULT, 65953)
         media_id = per.resolve_eyecatch_from_title(
@@ -123,7 +123,7 @@ class CacheRoundtripTests(unittest.TestCase):
             allow_remote_lookup=False,
             allow_diversified_pool=False,
         )
-        self.assertEqual(media_id, 60083)
+        self.assertEqual(media_id, 66813)
 
     def test_legacy_ichiro_mixed_media_cache_hit_is_not_returned(self):
         self.cache_path.write_text(
@@ -134,7 +134,7 @@ class CacheRoundtripTests(unittest.TestCase):
             "巨人・阿部監督、試合後にコメント",
             allow_remote_lookup=False,
         )
-        self.assertEqual(media_id, 60083)
+        self.assertEqual(media_id, 66813)
 
     def test_team_fallback_disabled_returns_none(self):
         # Caller explicitly opts out of the generic fallback.

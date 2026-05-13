@@ -321,35 +321,39 @@ foundation の一部は既存、cross-source clustering の core は新規。新
 - 二次情報: WebFetch(`hochi.news` / `sponichi.co.jp` / `sanspo.com` / `nikkansports.com` は **Claude Code WebFetch ブロック**、`daily.co.jp` のみ 200)
 - daily 1 サイトのみ WebFetch で article URL pattern verify、他 4 サイトは **repo 内 code が一次情報**
 
-### 5 サイト完全 URL inventory
+### 6 サイト完全 URL inventory(2026-05-14 user 指示で東スポ 6 サイト目追加)
 
-| サイト | 日本語ラベル | source_trust 登録 domain(verified) | article URL pattern(verified from code) | intake 経路 | _PRIMARY_HOST_LABELS 状態 |
+| サイト | 日本語ラベル | source_trust 登録 domain(verified) | article URL pattern(verified) | intake 経路 | _PRIMARY_HOST_LABELS 状態 |
 |---|---|---|---|---|---|
-| **スポーツ報知** | `スポーツ報知` | `hochi.news`, `hochi.co.jp`, `sports.hochi.co.jp`(3 domain) | `https://hochi.news/articles/{YYYYMMDD}-{code}.html` | web scraper(`hochi_giants_tag`、`https://hochi.news/tag/巨人`) + X(`hochi_giants` / `hochi_baseball` / `SportsHochi` rsshub) | `hochi.news` ✓ / `hochi.co.jp` ✗ 不在 / `sports.hochi.co.jp` ✗ 不在 |
-| **サンスポ** | `サンスポ` | `sanspo.com`(1 domain) | `https://www.sanspo.com/article/{YYYYMMDD}-{code}/` | web scraper(code に存在 `tag_url=https://www.sanspo.com/?s=巨人`、ただし `config/rss_sources.json` には未登録) + X(`Sanspo_Giants` rsshub) | `sanspo.com` ✓ / `www.sanspo.com` ✓ |
-| **スポニチ** | `スポニチ` | `sponichi.co.jp`(1 domain) | repo code には article URL pattern 未実装(scraper なし) | X のみ(`SponichiYakyu` rsshub `media_quote_pool`) | `sponichi.co.jp` ✓ / `www.sponichi.co.jp` ✓ |
-| **日刊スポーツ** | `日刊スポーツ` | `nikkansports.com`(1 domain) | `https://www.nikkansports.com/baseball/news/{YYYYMMDDxxxxxxx}.html`(sample `202605030000454.html`) | RSS atom feed(`https://www.nikkansports.com/rss/baseball/professional/atom/giants.xml`) + X(`nikkansports` / `nikkan_giants` rsshub) | `nikkansports.com` ✓ / `www.nikkansports.com` ✓ |
-| **デイリー** | `デイリー`(map 不在、要追加) | `daily.co.jp`(1 domain) | `https://www.daily.co.jp/baseball/{YYYY}/{MM}/{DD}/{Article ID}.shtml`(WebFetch verified) | web scraper(`daily_giants_tag`、`https://www.daily.co.jp/baseball/giants/index.shtml`) + X(`daily_baseball` rsshub) | `daily.co.jp` ✗ **不在** / `www.daily.co.jp` ✗ **不在** |
+| **スポーツ報知** | `スポーツ報知` | `hochi.news`, `hochi.co.jp`, `sports.hochi.co.jp`(3 domain) | `https://hochi.news/articles/{YYYYMMDD}-{code}.html` | web scraper(`hochi_giants_tag`、`https://hochi.news/tag/巨人`) + X(`hochi_giants` / `hochi_baseball` / `SportsHochi` rsshub) | Phase 1 で 3 domain 全部追加済 ✓ |
+| **サンスポ** | `サンスポ` | `sanspo.com`(1 domain) | `https://www.sanspo.com/article/{YYYYMMDD}-{code}/` | web scraper(code に存在 `tag_url=https://www.sanspo.com/?s=巨人`、ただし `config/rss_sources.json` には未登録) + X(`Sanspo_Giants` rsshub) | ✓ 既存(unchanged) |
+| **スポニチ** | `スポニチ` | `sponichi.co.jp`(1 domain) | repo code には article URL pattern 未実装(scraper なし) | X のみ(`SponichiYakyu` rsshub `media_quote_pool`) | ✓ 既存(unchanged) |
+| **日刊スポーツ** | `日刊スポーツ` | `nikkansports.com`(1 domain) | `https://www.nikkansports.com/baseball/news/{YYYYMMDDxxxxxxx}.html`(sample `202605030000454.html`) | RSS atom feed(`https://www.nikkansports.com/rss/baseball/professional/atom/giants.xml`) + X(`nikkansports` / `nikkan_giants` rsshub) | ✓ 既存(unchanged) |
+| **デイリー** | `デイリー` | `daily.co.jp`(1 domain) | `https://www.daily.co.jp/baseball/{YYYY}/{MM}/{DD}/{Article ID}.shtml`(WebFetch verified) | web scraper(`daily_giants_tag`、`https://www.daily.co.jp/baseball/giants/index.shtml`) + X(`daily_baseball` rsshub) | Phase 1 で 2 domain 追加済 ✓ |
+| **東スポ**(2026-05-14 追加、user 指示) | `東スポ` | `tokyo-sports.co.jp`, `www.tokyo-sports.co.jp`(2 domain、本 commit で source_trust に新規登録、family=`tokyo_sports`、handles=`tospo_giants`) | `https://www.tokyo-sports.co.jp/articles/-/{記事ID}`(WebFetch verified、例 `/articles/-/388115` 坂本 300 号記事) | 巨人 section `https://www.tokyo-sports.co.jp/list/label/%E5%B7%A8%E4%BA%BA`、scraper / RSS 未接続(`doc/waiting/288-INGEST-source-coverage-expansion.md` で planning 状態) | 本 commit で 2 domain 追加 ✓ |
 
 ### 補足注記
 
-- **報知の domain 3 種**: 歴史的に `hochi.co.jp` / `sports.hochi.co.jp` 両方あり、現在は `hochi.news` が主、3 つとも source_trust に登録済み(全部「報知」family)。`_PRIMARY_HOST_LABELS` は `hochi.news` のみマップされている — Phase 1 で `hochi.co.jp` / `sports.hochi.co.jp` も同じ「スポーツ報知」label に追加することで domain 揺れ吸収
+- **報知の domain 3 種**: 歴史的に `hochi.co.jp` / `sports.hochi.co.jp` 両方あり、現在は `hochi.news` が主、3 つとも source_trust に登録済み(全部「報知」family)。Phase 1 で 3 domain 全部 label map に追加済
 - **サンスポ scraper の status**: code 上 `tag_page_scraper.py` に `sanspo_giants_search` 関数が実装されているが、`config/rss_sources.json` には登録なし。本 ticket は intake 拡張を行わない(forward-only / clustering 専念)、既存 intake 経路で 3 サイト揃ったときのみ digest 化
 - **スポニチ scraper の不在**: 現状 `media_quote_pool` 経由のみ。digest cluster で「スポニチ報じる」section を出すには、X 投稿が記事 link を含むケースのみ拾える。Phase 0 audit 段階では intake 拡張は **scope 外**(本 ticket は cluster + title + body 生成に専念)
-- **WebFetch ブロック 4 件**: hochi / sponichi / sanspo / nikkansports は Claude Code WebFetch から拒否される(`Claude Code is unable to fetch from ...`)。これは **本 ticket の実装には影響しない**(repo 内 code が一次情報、scraper / RSS atom は実 server から取得)
+- **東スポ scraper の不在**: 2026-05-14 本 commit で `source_trust` 登録 + label map 追加までは完了、しかし intake pipeline は未接続(`config/rss_sources.json` / `tag_page_scraper.py` 共に東スポ scraper なし)。`doc/waiting/288-INGEST-source-coverage-expansion.md` で東スポ巨人担当 X (`@tospo_giants`) / 東スポ WEB 巨人ラベル両方の planning が既存。digest cluster で「東スポ報じる」section を出すには、Phase 2 で intake 拡張または既存 X 経由 link 取得が必要 — 本 ticket scope では「source_trust に登録されており digest count される 6 サイト目」扱い
+- **WebFetch ブロック**: hochi / sponichi / sanspo / nikkansports は Claude Code WebFetch から拒否される(`Claude Code is unable to fetch from ...`)。daily / tokyo-sports は WebFetch 成功、canonical URL と article pattern を直接 verify。WebFetch 不可サイトは **repo 内 code が一次情報**(scraper / RSS atom は実 server から取得)
 
-### Phase 1 _PRIMARY_HOST_LABELS patch 完全リスト(6 行追加)
+### `_PRIMARY_HOST_LABELS` patch 完全リスト(Phase 1 で 5 行 + 2026-05-14 east-sports で 2 行 = 計 7 行追加済)
 
 ```python
-# 既存 _PRIMARY_HOST_LABELS (nomotoke_card_renderer.py line 1627-1641) に追加:
+# 既存 _PRIMARY_HOST_LABELS (nomotoke_card_renderer.py) に追加済:
     "hochi.co.jp": "スポーツ報知",
     "www.hochi.co.jp": "スポーツ報知",
     "sports.hochi.co.jp": "スポーツ報知",
     "daily.co.jp": "デイリー",
     "www.daily.co.jp": "デイリー",
+    "tokyo-sports.co.jp": "東スポ",
+    "www.tokyo-sports.co.jp": "東スポ",
 ```
 
-5 行(+末尾 1 行余裕) で 5 サイト 全 domain 変種の日本語ラベルが揃う。Phase 1 patch に同梱。
+7 行で 6 サイト全 domain 変種の日本語ラベルが揃う。Phase 1 commit `78f1f79` + 東スポ commit に分割。
 
 ## F13. pytest baseline + 既存 test 一覧(2026-05-14 measured)
 

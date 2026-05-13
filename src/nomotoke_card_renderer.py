@@ -1644,6 +1644,8 @@ _PRIMARY_HOST_LABELS: Dict[str, str] = {
     "www.sponichi.co.jp": "スポニチ",
     "daily.co.jp": "デイリー",
     "www.daily.co.jp": "デイリー",
+    "tokyo-sports.co.jp": "東スポ",
+    "www.tokyo-sports.co.jp": "東スポ",
     # X / Twitter sources land here when a renderer's source_url is the
     # X tweet itself (e.g. pregame_pitcher / quote-comment). Visible body
     # gets ``X`` instead of ``x.com`` / raw URL. Source-name still wins

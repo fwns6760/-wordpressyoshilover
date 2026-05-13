@@ -78,6 +78,13 @@ TRUSTED_SOURCE_PROFILES = (
         domains=("daily.co.jp",),
     ),
     SourceProfile(
+        family="tokyo_sports",
+        trust="secondary",
+        family_trust="mid",
+        domains=("tokyo-sports.co.jp", "www.tokyo-sports.co.jp"),
+        handles=("tospo_giants",),
+    ),
+    SourceProfile(
         family="yomiuri_online",
         trust="secondary",
         family_trust="mid-high",

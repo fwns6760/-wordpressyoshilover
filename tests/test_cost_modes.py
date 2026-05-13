@@ -481,6 +481,53 @@ class CostModeTests(unittest.TestCase):
             original,
         )
 
+    def test_yoshilover_prefix_postgame_with_stats(self):
+        # 則本記事 type: 投球内容 (回数/球数/失点) が title に含まれる
+        prefix = rss_fetcher._build_yoshilover_structured_prefix(
+            "【巨人】則本昂大が初勝利の権利ゲット　7回無失点 99球　被安打5 奪三振7",
+            "",
+            "postgame",
+        )
+        self.assertIn("📊 試合まとめ", prefix)
+        self.assertIn("7回", prefix)
+        self.assertIn("99球", prefix)
+        self.assertIn("無失点", prefix)
+        self.assertIn("被安打", prefix)
+        self.assertIn("奪三振", prefix)
+        self.assertIn("📝 ヨシラバー的に", prefix)
+        self.assertIn("則本昂大", prefix)  # narrative に player 名
+
+    def test_yoshilover_prefix_non_postgame_returns_empty(self):
+        # pregame / lineup / manager 等は prefix 不要
+        self.assertEqual(
+            rss_fetcher._build_yoshilover_structured_prefix(
+                "巨人スタメン 戸郷翔征が先発", "", "pregame"
+            ),
+            "",
+        )
+        self.assertEqual(
+            rss_fetcher._build_yoshilover_structured_prefix(
+                "阿部監督「今の流れを象徴」", "", "manager"
+            ),
+            "",
+        )
+
+    def test_yoshilover_prefix_no_facts_returns_empty(self):
+        # 事実 fact 抽出不能の title は prefix なし (元 body のまま)
+        self.assertEqual(
+            rss_fetcher._build_yoshilover_structured_prefix(
+                "巨人広島戦の試合", "", "postgame"
+            ),
+            "",
+        )
+
+    def test_yoshilover_prefix_narrative_uses_player_for_no_runs(self):
+        prefix = rss_fetcher._build_yoshilover_structured_prefix(
+            "【巨人】戸郷翔征が7回無失点の熱投", "", "postgame"
+        )
+        self.assertIn("戸郷翔征", prefix)
+        self.assertIn("好投", prefix)
+
     def test_pregame_started_skip_log_contains_title_and_timestamps(self):
         now = datetime(2026, 4, 19, 11, 30, tzinfo=rss_fetcher.JST)
         with self.assertLogs("rss_fetcher", level="INFO") as cm:

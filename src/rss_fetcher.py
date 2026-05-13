@@ -21926,6 +21926,151 @@ def _log_manager_body_template_applied(
     logger.info(json.dumps(payload, ensure_ascii=False))
 
 
+# 2026-05-13: ヨシラバー voice 構造化 prefix。postgame article の冒頭に
+# fact table + 見どころ + 短い fan-voice narrative を追加して「大手新聞
+# imitation」から脱却する。LLM 不要 (deterministic、source 由来 fact のみ)、
+# 著作権 risk 小 (短い fact 列挙、creative work copy ではない)。
+_YOSHILOVER_INNINGS_RE = _re.compile(r"(?<![0-9０-９])(?P<innings>[1-9]|1[0-2])回(?![表裏])")
+_YOSHILOVER_PITCH_COUNT_RE = _re.compile(r"(?P<pitches>\d{2,3})球")
+_YOSHILOVER_RUN_GIVEN_RE = _re.compile(r"(?P<runs>無失点|[1-9]\d?失点)")
+_YOSHILOVER_HIT_COUNT_RE = _re.compile(r"被安打(?P<hits>\d+)")
+_YOSHILOVER_K_COUNT_RE = _re.compile(r"奪三振(?P<k>\d+)")
+_YOSHILOVER_KEY_PLAY_MARKERS: tuple[str, ...] = (
+    "本塁打", "ソロ", "ホームラン", "打点", "盗塁",
+    "好投", "完投", "勝利投手", "敗戦投手", "セーブ",
+    "サヨナラ", "逆転", "同点", "決勝", "先制",
+)
+
+
+def _yoshilover_postgame_narrative(text: str, has_no_runs: bool) -> str:
+    """Short fan-voice narrative for postgame articles. Deterministic
+    template, no LLM. Picks the most-specific branch that matches.
+    """
+    try:
+        from src.player_eyecatch_resolver import detect_person
+        player = detect_person(text) or ""
+    except Exception:
+        player = ""
+    is_noresult = ("ノーゲーム" in text) or ("中止" in text)
+    is_win = any(m in text for m in ("勝利", "白星", "サヨナラ勝", "勝ち", "勝った", "勝つ"))
+    is_loss = any(m in text for m in ("敗戦", "黒星", "敗れ", "サヨナラ負", "負け"))
+    is_tied = ("同点" in text) or ("引き分け" in text)
+    is_hr = any(m in text for m in ("本塁打", "ソロ", "ホームラン"))
+
+    if is_noresult:
+        return "今日はノーゲーム / 中止。次戦に切り替えたいところ。"
+    if player and has_no_runs:
+        return f"{player} の好投が光った試合。次回登板への期待も大きい。"
+    if player and is_hr:
+        return f"{player} の一発が試合を動かした。流れを変える一打になった印象。"
+    if player and is_win:
+        return f"{player} の活躍で巨人に勝利。次戦への弾みになる試合だった。"
+    if player and is_loss:
+        return f"{player} の奮闘はあったが今日は黒星。次戦の巻き返しに期待。"
+    if is_win:
+        return "巨人らしく粘った試合だった。次戦への期待値も上がる結果。"
+    if is_loss:
+        return "悔しい敗戦。ファンとしては次戦の巻き返しに期待したい。"
+    if is_tied:
+        return "白黒つかず、終盤の競り合いが見どころに。"
+    return "ファンとしては今日の試合の流れを噛みしめたい結果。"
+
+
+def _build_yoshilover_structured_prefix(
+    title: str,
+    summary: str,
+    article_subtype: str,
+) -> str:
+    """Return an HTML prefix (fact table + 見どころ + 短い fan-voice
+    narrative) to be prepended to postgame article body. Returns ``""``
+    when subtype is not postgame or no facts are extractable.
+    """
+    if article_subtype != "postgame":
+        return ""
+    text = _strip_html(f"{title} {summary}")
+
+    rows: list[tuple[str, str]] = []
+    score = _extract_game_score_token(text)
+    if score:
+        rows.append(("スコア", score))
+    m_inn = _YOSHILOVER_INNINGS_RE.search(text)
+    if m_inn:
+        rows.append(("投球回", f"{m_inn.group('innings')}回"))
+    m_pitch = _YOSHILOVER_PITCH_COUNT_RE.search(text)
+    if m_pitch:
+        rows.append(("球数", f"{m_pitch.group('pitches')}球"))
+    m_runs = _YOSHILOVER_RUN_GIVEN_RE.search(text)
+    has_no_runs = bool(m_runs and "無失点" in m_runs.group("runs"))
+    if m_runs:
+        rows.append(("失点", m_runs.group("runs")))
+    m_hits = _YOSHILOVER_HIT_COUNT_RE.search(text)
+    if m_hits:
+        rows.append(("被安打", f"{m_hits.group('hits')}本"))
+    m_k = _YOSHILOVER_K_COUNT_RE.search(text)
+    if m_k:
+        rows.append(("奪三振", f"{m_k.group('k')}個"))
+
+    bullets: list[str] = []
+    sentences = [s.strip(" 　・") for s in _re.split(r"[。！？\n]+", text) if s.strip()]
+    seen_b: set[str] = set()
+    for s in sentences:
+        if not (8 <= len(s) <= 80):
+            continue
+        if not any(m in s for m in _YOSHILOVER_KEY_PLAY_MARKERS):
+            continue
+        key = s.replace(" ", "").replace("　", "")
+        if key in seen_b:
+            continue
+        seen_b.add(key)
+        bullets.append(s)
+        if len(bullets) >= 3:
+            break
+
+    if not rows and not bullets:
+        return ""
+
+    narrative = _yoshilover_postgame_narrative(text, has_no_runs)
+
+    parts: list[str] = []
+    parts.append(
+        '<aside class="nomotoke-card-yoshilover-fact" '
+        'style="background:#f8fcff;border-left:4px solid #f57f17;'
+        'padding:14px 16px;margin:14px 0;border-radius:6px;">'
+    )
+    if rows:
+        parts.append(
+            '<p style="margin:0 0 8px;color:#1976d2;font-weight:700;font-size:1.05em;">'
+            '📊 試合まとめ</p>'
+        )
+        parts.append(
+            '<table style="width:100%;border-collapse:collapse;margin-bottom:12px;font-size:0.95em;">'
+        )
+        for label, value in rows:
+            parts.append(
+                f'<tr><th style="text-align:left;padding:4px 8px;'
+                f'background:#e3f2fd;width:32%;font-weight:600;">{_html.escape(label)}</th>'
+                f'<td style="padding:4px 8px;">{_html.escape(value)}</td></tr>'
+            )
+        parts.append('</table>')
+    if bullets:
+        parts.append(
+            '<p style="margin:0 0 8px;color:#1976d2;font-weight:700;font-size:1.05em;">'
+            '🔑 見どころ</p>'
+        )
+        parts.append('<ul style="margin:0 0 12px 0;padding-left:1.4em;">')
+        for b in bullets:
+            parts.append(f'<li style="margin-bottom:4px;">{_html.escape(b)}</li>')
+        parts.append('</ul>')
+    if narrative:
+        parts.append(
+            '<p style="margin:0 0 8px;color:#1976d2;font-weight:700;font-size:1.05em;">'
+            '📝 ヨシラバー的に</p>'
+        )
+        parts.append(f'<p style="margin:0;">{_html.escape(narrative)}</p>')
+    parts.append('</aside>')
+    return "".join(parts)
+
+
 def _log_game_body_template_applied(
     logger: logging.Logger,
     post_id: int,
@@ -24441,6 +24586,21 @@ def _main(args, logger):
                     wp,
                     logger,
                 )
+
+            # 2026-05-13: ヨシラバー voice 構造化 prefix を postgame article の
+            # 冒頭に prepend。事実 (スコア / 投球内容) を table + 箇条書き +
+            # 短い fan-voice narrative で見せ、「大手新聞 imitation」から脱却。
+            # 既存 content には触らず prefix 追加のみ (副作用最小)。
+            _yoshilover_prefix = _build_yoshilover_structured_prefix(
+                draft_title, summary, body_article_subtype
+            )
+            if _yoshilover_prefix:
+                content = _yoshilover_prefix + content
+                logger.info(json.dumps({
+                    "event": "yoshilover_prefix_applied",
+                    "post_url": post_url,
+                    "subtype": body_article_subtype,
+                }, ensure_ascii=False))
 
             post_id = _create_draft_with_same_fire_guard(
                 wp,

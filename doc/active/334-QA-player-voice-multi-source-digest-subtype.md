@@ -57,24 +57,47 @@
 
 3-token literal が揃わない → digest 化せず draft 落とし、review。**LLM で title 可能化しない**。
 
-## body 構造
+## body 構造: parent + child モデル(2026-05-14 user lock、追加修正)
+
+flat な「全媒体均等」ではなく、**親 1 記事 + 子 N ポスト/リンク** の hub 型:
 
 ```
-[選手名]「[本人発言 literal 全文 80-150字]」
+[選手名]「[本人発言 literal 80-150字、parent から抜粋]」
 
-(背景の地の文 3-5行、source 由来 fact のみ、AI narrative 禁止)
+(背景の地の文 3-5行、parent の本文要点を literal で並べる、AI narrative 禁止)
 
-▼ 報知が伝える
-本人発言以外の追加情報(literal 短引用 30-50字)
-[元記事リンク]
-
-▼ サンスポが伝える
-本人発言以外の追加情報(literal 短引用 30-50字)
-[元記事リンク]
-
-▼ スポニチが伝える
-...
+【他にも報じられています】
+▼ サンスポ:「短い見出し or 抜粋 (literal 30-50字)」 → 元記事リンク
+▼ 日刊スポーツ:「短い見出し or 抜粋」 → 元記事リンク
+▼ デイリー:「短い見出し or 抜粋」 → 元記事リンク
+▼ 東スポ:「短い見出し or 抜粋」 → 元記事リンク
 ```
+
+### parent + child 構造の役割分担
+
+| 構成要素 | 役割 | 元データ |
+|---|---|---|
+| **parent(親)1 記事** | title 3-token(player / quote / event)+ 本文背骨(セリフ literal + 地の文)を供給 | cluster 内で **本文最長**(tiebreaker: source_trust 高 → 早く出た) |
+| **children(子)N 記事(2〜5 件想定)** | 「他社も報じてる」感を出す、見出し or 抜粋 + URL のみ | cluster 内 parent 以外の全 source |
+
+### 親の選び方(2026-05-14 user lock)
+
+**本文最長** が親。理由: セリフ + 背景の地の文が一番厚くなり、読み物として強い。
+
+tiebreaker(同長):
+1. `source_trust` family_trust が高い方(primary > mid-high > mid)
+2. published time が早い方
+
+### children 表示制約
+
+- 子は 2-5 件(最低 2 = 親含めて 3 サイト clustering 条件を満たすため、最大 5 = 視認性上限)
+- 子の引用は 30-50 字 literal、AI 言い換え禁止
+- 出典名(`_PRIMARY_HOST_LABELS` から literal)+ URL 必須
+- 親と同一 family の他記事は子に含めない(報知の別記事を子にしない、同社内重複を回避)
+
+### 6 サイト体制(2026-05-14 user lock)
+
+報知 / サンスポ / スポニチ / 日刊スポーツ / デイリー / **東スポ**(commit `c622702` で source_trust 登録 + label map 追加)
 
 ### 著作権制約(厳守)
 
@@ -84,14 +107,15 @@
 - マスコミ X 引用は oEmbed 経由のみ(本 ticket は web 媒体集約、X は対象外)
 - 引用要件 4 条件(主従関係 / 出所明示 / 改変なし / 必要範囲)を満たす
 
-## clustering 条件(全条件 AND)
+## clustering 条件(全条件 AND、2026-05-14 update)
 
 1. 同一試合(game_id 一致)
 2. 同一選手(player_id 一致、player-agnostic)
 3. 24h 以内の source 集合
-4. **3 サイト以上の媒体サイト報道**(報知 / サンスポ / スポニチ / 日刊スポーツ / デイリー)
-5. 本人発言が literal で source 内に存在し、20 字以上抽出可能
-6. イベント token(数値 fact / 試合状態 fact)が source から literal 抽出可能
+4. **3 サイト以上の媒体サイト報道**(報知 / サンスポ / スポニチ / 日刊スポーツ / デイリー / 東スポ の 6 family いずれか 3 つ以上)
+5. **親候補**(本文最長)に本人発言 literal が存在し 20 字以上抽出可能
+6. **親候補**からイベント token(数値 fact / 試合状態 fact)が literal 抽出可能
+7. 子候補(parent 以外)から短い見出し or 抜粋(30-50 字)が literal 抽出可能なものが 2 件以上
 
 **hero 検出は不要**: 「3 サイト以上が同選手を取り上げる」事実そのものがヒーロー signal。
 

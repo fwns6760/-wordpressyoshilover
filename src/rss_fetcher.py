@@ -4152,6 +4152,17 @@ def _game_status_indicates_started(game_status: dict | None) -> bool:
     return bool(state)
 
 
+# Mid-game progress markers. When any of these appears in title/summary the
+# article is actual in-progress coverage (e.g. 「N回まで無失点でスタート」),
+# not a true pregame preview. The subtype classifier still falls through to
+# "pregame" because no score / no 試合終了 marker is present, but the
+# pregame_started safety would mis-fire here. Let the article through and
+# rely on body validation downstream.
+_PREGAME_STARTED_SKIP_MID_GAME_MARKERS: tuple[str, ...] = (
+    "回まで", "回途中", "回を投げ", "回終了", "回終わ",
+)
+
+
 def _should_skip_started_pregame_entry(
     category: str,
     title: str,
@@ -4165,6 +4176,8 @@ def _should_skip_started_pregame_entry(
         return False
     source_text = _strip_html(f"{title} {summary}")
     if any(marker in source_text for marker in ("あす", "明日", "翌日")):
+        return False
+    if any(marker in source_text for marker in _PREGAME_STARTED_SKIP_MID_GAME_MARKERS):
         return False
     return _game_status_indicates_started(game_status)
 

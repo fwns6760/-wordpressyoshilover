@@ -312,6 +312,33 @@ class CostModeTests(unittest.TestCase):
             )
         )
 
+    def test_pregame_started_skip_bypassed_for_mid_game_progress_marker(self):
+        # 則本昂大 hochi article style: classifier mis-labels as pregame
+        # (no score yet) but title carries explicit mid-game progress marker.
+        # Skip must NOT fire in this case so the news article can proceed.
+        self.assertFalse(
+            rss_fetcher._should_skip_started_pregame_entry(
+                "試合速報",
+                "【巨人】則本昂大が２回まで無失点でスタート　５度目の挑戦で初勝利へ　相手は前回５失点の広島",
+                "",
+                True,
+                {"state": "4回表", "ended": False},
+            )
+        )
+
+    def test_pregame_started_skip_still_fires_for_genuine_pregame(self):
+        # Regression guard: titles without mid-game markers still skip when
+        # the game has already started.
+        self.assertTrue(
+            rss_fetcher._should_skip_started_pregame_entry(
+                "試合速報",
+                "巨人阪神戦 戸郷翔征先発でどこを見たいか",
+                "戸郷翔征が阪神戦に先発する予定だ。",
+                True,
+                {"state": "4回表", "ended": False},
+            )
+        )
+
     def test_pregame_started_skip_log_contains_title_and_timestamps(self):
         now = datetime(2026, 4, 19, 11, 30, tzinfo=rss_fetcher.JST)
         with self.assertLogs("rss_fetcher", level="INFO") as cm:

@@ -99,6 +99,28 @@ tiebreaker(同長):
 
 報知 / サンスポ / スポニチ / 日刊スポーツ / デイリー / **東スポ**(commit `c622702` で source_trust 登録 + label map 追加)
 
+### ヨシラバーらしさ 3 section(2026-05-14 user lock、複合メディア統合の独自性)
+
+「他のメディアにはない複合メディアを統合した yoshilover らしさ」を出すための 3 section。すべて literal、AI 一切なし。
+
+| Section | 内容 | 実装フェーズ | data source |
+|---|---|---|---|
+| **A 【🌐 各社が伝える】** | 6 媒体の見出し or 抜粋を縦並べ、各 30-50 字 literal + 元 URL | Phase 2a 完 / Phase 3 で body 表示 | `DigestCluster.children`(parent 以外) |
+| **B 【📣 公式が発表】** | 巨人公式(`giants_official` / `giants.jp` + X handle tokyogiants/yomiuri_giants)+ NPB 公式(`npb_official` / `npb.jp` + handle npb)の literal 引用、各 30-50 字 + URL | Phase 2a-ext 完 / Phase 3 で body 表示 | `DigestCluster.officials`(media digest と別 list) |
+| **C 【📊 数字でわかる試合】** | NPB box score / 選手成績 / チーム成績の literal 数値 panel | Phase 4 optional(canary 後判断) | `source_npb_postgame_extractor` 等 既存 stats extractor |
+
+**B 公式 panel の挙動**(Phase 2a-ext で実装済):
+- 各公式 family 最大 1 件(同 family 複数あれば最長 title 1 件)、計 4 件まで
+- snippet は media digest と同じ [30, 50] 字 literal 制約
+- label 自動判別: `giants.jp` host → `巨人公式サイト` / X handle `tokyogiants` `yomiuri_giants` → `巨人公式X` / `npb.jp` host → `NPB公式` / handle `npb` → `NPB公式X`
+- 公式が無くても cluster 自体は valid(Section B は optional bonus、Section A の 3 family + parent quote + event は必須)
+- 公式 family は children list に混ざらない(独立 list)
+
+**著作権境界**:
+- A: 各社見出し 30-50 字 literal + 出典 + 元 URL
+- B: 公式 post / release は literal 引用、主従関係(主=本人セリフ、従=公式)維持
+- C: 数字は事実なので著作権対象外(NPB stats は公的 fact)
+
 ### 著作権制約(厳守)
 
 - 各サイト引用は 30-50字 literal、主従関係保持(主=本人セリフ / 従=各サイト報道)

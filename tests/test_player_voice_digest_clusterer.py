@@ -7,6 +7,7 @@ import unittest
 from src.player_voice_digest_clusterer import (
     DigestChild,
     DigestCluster,
+    DigestOfficial,
     find_digest_clusters,
 )
 
@@ -18,6 +19,16 @@ _HOST_URL = {
     "nikkansports": "https://www.nikkansports.com/baseball/news/{}.html",
     "daily": "https://www.daily.co.jp/baseball/2026/05/14/{}.shtml",
     "tokyo_sports": "https://www.tokyo-sports.co.jp/articles/-/{}",
+    "giants_official": "https://www.giants.jp/news/{}.html",
+    "giants_official_x": (
+        "https://rsshub-487178857517.asia-northeast1.run.app"
+        "/twitter/user/TokyoGiants/{}"
+    ),
+    "npb_official": "https://npb.jp/games/2026/box/{}.html",
+    "npb_official_x": (
+        "https://rsshub-487178857517.asia-northeast1.run.app"
+        "/twitter/user/npb/{}"
+    ),
 }
 
 
@@ -299,6 +310,113 @@ class SnippetExtractionTests(unittest.TestCase):
         self.assertNotIn("sanspo", child_families)
         self.assertIn("nikkansports", child_families)
         self.assertIn("daily", child_families)
+
+
+class OfficialPanelTests(unittest.TestCase):
+    """334-QA Phase 2a-ext: ヨシラバーらしさ Section B (公式情報パネル)."""
+
+    def test_giants_official_site_picked(self):
+        candidates = [
+            _cand(family="hochi", body=_PARENT_BODY),
+            _cand(family="sanspo", title=_SANSPO_TITLE),
+            _cand(family="nikkansports", title=_NIKKAN_TITLE),
+            _cand(
+                family="giants_official",
+                title="坂本勇人選手の通算300号本塁打達成のお知らせ、巨人軍より発表",
+            ),
+        ]
+        clusters = find_digest_clusters(candidates)
+        self.assertEqual(len(clusters), 1)
+        self.assertEqual(len(clusters[0].officials), 1)
+        giants_off = clusters[0].officials[0]
+        self.assertEqual(giants_off.family, "giants_official")
+        self.assertEqual(giants_off.label, "巨人公式サイト")
+        self.assertGreaterEqual(len(giants_off.snippet), 30)
+        self.assertLessEqual(len(giants_off.snippet), 50)
+
+    def test_giants_official_x_handle_label(self):
+        candidates = [
+            _cand(family="hochi", body=_PARENT_BODY),
+            _cand(family="sanspo", title=_SANSPO_TITLE),
+            _cand(family="nikkansports", title=_NIKKAN_TITLE),
+            _cand(
+                family="giants_official_x",
+                title="坂本勇人選手の通算300号、本日のサヨナラ本塁打で達成しました",
+            ),
+        ]
+        clusters = find_digest_clusters(candidates)
+        self.assertEqual(len(clusters), 1)
+        self.assertEqual(len(clusters[0].officials), 1)
+        x_official = clusters[0].officials[0]
+        # giants_official_x URL host は rsshub の twitter feed なので、
+        # _OFFICIAL_X_HANDLE_HINTS の "tokyogiants" hit で「巨人公式X」 label。
+        self.assertEqual(x_official.family, "giants_official")
+        self.assertEqual(x_official.label, "巨人公式X")
+
+    def test_npb_official_picked(self):
+        candidates = [
+            _cand(family="hochi", body=_PARENT_BODY),
+            _cand(family="sanspo", title=_SANSPO_TITLE),
+            _cand(family="nikkansports", title=_NIKKAN_TITLE),
+            _cand(
+                family="npb_official",
+                title="2026年5月14日 巨人対広島 試合結果、坂本勇人通算300号を記録",
+            ),
+        ]
+        clusters = find_digest_clusters(candidates)
+        self.assertEqual(len(clusters), 1)
+        self.assertEqual(len(clusters[0].officials), 1)
+        npb_off = clusters[0].officials[0]
+        self.assertEqual(npb_off.family, "npb_official")
+        self.assertEqual(npb_off.label, "NPB公式")
+
+    def test_no_officials_still_valid_cluster(self):
+        # Section B optional: officials が無くても cluster 自体は valid
+        candidates = [
+            _cand(family="hochi", body=_PARENT_BODY),
+            _cand(family="sanspo", title=_SANSPO_TITLE),
+            _cand(family="nikkansports", title=_NIKKAN_TITLE),
+        ]
+        clusters = find_digest_clusters(candidates)
+        self.assertEqual(len(clusters), 1)
+        self.assertEqual(clusters[0].officials, ())
+
+    def test_officials_excluded_from_media_children(self):
+        # giants_official / npb_official は children に混ざらない、officials のみ
+        candidates = [
+            _cand(family="hochi", body=_PARENT_BODY),
+            _cand(family="sanspo", title=_SANSPO_TITLE),
+            _cand(family="nikkansports", title=_NIKKAN_TITLE),
+            _cand(
+                family="giants_official",
+                title="坂本勇人選手の通算300号本塁打達成のお知らせ、巨人軍より発表",
+            ),
+        ]
+        clusters = find_digest_clusters(candidates)
+        self.assertEqual(len(clusters), 1)
+        child_families = {c.family for c in clusters[0].children}
+        self.assertNotIn("giants_official", child_families)
+        self.assertNotIn("npb_official", child_families)
+
+    def test_multiple_official_families_both_picked(self):
+        candidates = [
+            _cand(family="hochi", body=_PARENT_BODY),
+            _cand(family="sanspo", title=_SANSPO_TITLE),
+            _cand(family="nikkansports", title=_NIKKAN_TITLE),
+            _cand(
+                family="giants_official",
+                title="坂本勇人選手の通算300号本塁打達成のお知らせ、巨人軍より発表",
+            ),
+            _cand(
+                family="npb_official",
+                title="2026年5月14日 巨人対広島 試合結果、坂本勇人通算300号を記録",
+            ),
+        ]
+        clusters = find_digest_clusters(candidates)
+        self.assertEqual(len(clusters), 1)
+        self.assertEqual(len(clusters[0].officials), 2)
+        official_families = {o.family for o in clusters[0].officials}
+        self.assertEqual(official_families, {"giants_official", "npb_official"})
 
 
 def _cand_family(c: dict) -> str:

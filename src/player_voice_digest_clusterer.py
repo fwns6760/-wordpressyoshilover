@@ -41,6 +41,12 @@ _DIGEST_SOURCE_FAMILIES: frozenset[str] = frozenset({
 })
 
 
+_OFFICIAL_FAMILIES: frozenset[str] = frozenset({
+    "giants_official",
+    "npb_official",
+})
+
+
 _FAMILY_LABEL: Mapping[str, str] = {
     "hochi": "スポーツ報知",
     "sanspo": "サンスポ",
@@ -48,6 +54,23 @@ _FAMILY_LABEL: Mapping[str, str] = {
     "nikkansports": "日刊スポーツ",
     "daily": "デイリー",
     "tokyo_sports": "東スポ",
+}
+
+
+_OFFICIAL_WEB_HOSTS: frozenset[str] = frozenset({
+    "giants.jp",
+    "www.giants.jp",
+    "npb.jp",
+    "www.npb.jp",
+    "npb.or.jp",
+    "www.npb.or.jp",
+})
+
+
+_OFFICIAL_X_HANDLE_HINTS: Mapping[str, str] = {
+    "tokyogiants": "巨人公式X",
+    "yomiuri_giants": "巨人公式X",
+    "/twitter/user/npb": "NPB公式X",
 }
 
 
@@ -88,8 +111,23 @@ class DigestChild:
 
 
 @dataclass(frozen=True)
+class DigestOfficial:
+    """digest cluster の公式 source (巨人公式 / NPB 公式)。
+
+    334-QA Phase 2a-ext: ヨシラバーらしさ Section B (公式情報パネル) 用。
+    media digest (parent + children) とは別 list、cluster の付加情報として
+    body renderer で「【📣 公式が発表】」 section に展開する。
+    """
+
+    family: str  # giants_official / npb_official
+    label: str   # 巨人公式サイト / 巨人公式X / NPB公式 等
+    snippet: str  # literal 30-50 chars
+    url: str
+
+
+@dataclass(frozen=True)
 class DigestCluster:
-    """digest cluster (親 1 + 子 N、3 family 以上)。"""
+    """digest cluster (親 1 + 子 N、3 family 以上 + 公式 0-N)。"""
 
     game_id: str
     player_id: str
@@ -99,12 +137,17 @@ class DigestCluster:
     quote: str
     event_token: str
     children: Sequence[DigestChild]
+    officials: Sequence[DigestOfficial] = ()
 
     @property
     def source_families(self) -> frozenset[str]:
         fams = {self.parent_family}
         fams.update(c.family for c in self.children)
         return frozenset(fams)
+
+    @property
+    def official_families(self) -> frozenset[str]:
+        return frozenset(o.family for o in self.officials)
 
 
 def find_digest_clusters(
@@ -193,6 +236,14 @@ def _evaluate_group(
     if len(children) < (min_distinct_families - 1):
         return None
 
+    parent_url = str(parent.get("post_url") or parent.get("source_url") or "").strip()
+    officials = _pick_officials(
+        members=members,
+        parent_url=parent_url,
+        min_snippet_len=min_snippet_len,
+        max_snippet_len=max_snippet_len,
+    )
+
     return DigestCluster(
         game_id=str(game_id),
         player_id=str(player_id),
@@ -202,6 +253,7 @@ def _evaluate_group(
         quote=quote,
         event_token=event_token,
         children=tuple(children),
+        officials=tuple(officials),
     )
 
 
@@ -227,14 +279,25 @@ def _family_for_candidate(c: Mapping[str, Any]) -> str:
     if not url:
         return ""
     try:
-        host = urlparse(url).netloc.lower()
+        parsed = urlparse(url.lower())
     except ValueError:
         return ""
+    host = parsed.netloc
     if not host:
         return ""
+    # 1. domain 完全一致 / subdomain 一致 (web 記事 URL)
     for profile in TRUSTED_SOURCE_PROFILES:
         for domain in profile.domains:
             if host == domain or host.endswith("." + domain):
+                return profile.family
+    # 2. X handle path 一致 (rsshub / twitter / x.com URL)
+    #    例: rsshub.../twitter/user/TokyoGiants/... → giants_official
+    path_parts = [p for p in parsed.path.split("/") if p]
+    for profile in TRUSTED_SOURCE_PROFILES:
+        for handle in profile.handles:
+            if not handle:
+                continue
+            if handle.lower() in path_parts:
                 return profile.family
     return ""
 
@@ -358,6 +421,93 @@ def _pick_children(
     return children
 
 
+def _pick_officials(
+    *,
+    members: list[Mapping[str, Any]],
+    parent_url: str,
+    min_snippet_len: int,
+    max_snippet_len: int,
+    max_officials: int = 4,
+) -> list[DigestOfficial]:
+    """ヨシラバーらしさ Section B 用、公式 source の post / release を抽出。
+
+    media digest (parent + children) とは別 list。giants_official /
+    npb_official の各 family から最大 1 件(同 family 複数あれば最長 title 1 件)、
+    計 max_officials 件まで。snippet は media digest と同じ [min, max] literal 制約。
+    """
+    officials: list[DigestOfficial] = []
+    by_family: dict[str, list[Mapping[str, Any]]] = {}
+    for m in members:
+        url = str(m.get("post_url") or m.get("source_url") or "").strip()
+        if url and parent_url and url == parent_url:
+            continue
+        fam = _family_for_candidate(m)
+        if not fam or fam not in _OFFICIAL_FAMILIES:
+            continue
+        by_family.setdefault(fam, []).append(m)
+
+    for fam in sorted(by_family.keys()):
+        fam_members = by_family[fam]
+        ordered = sorted(
+            fam_members,
+            key=lambda x: -len(str(x.get("title") or x.get("source_title") or "")),
+        )
+        for cand in ordered:
+            snippet = _extract_short_snippet(
+                cand, min_snippet_len, max_snippet_len
+            )
+            if not snippet:
+                continue
+            url = str(cand.get("post_url") or cand.get("source_url") or "").strip()
+            if not url:
+                continue
+            officials.append(
+                DigestOfficial(
+                    family=fam,
+                    label=_official_label(fam, url),
+                    snippet=snippet,
+                    url=url,
+                )
+            )
+            break
+        if len(officials) >= max_officials:
+            break
+    return officials
+
+
+def _official_label(family: str, url: str) -> str:
+    """公式 source の表示 label を URL host / handle hint から導出。
+
+    優先順:
+      1. host が _OFFICIAL_WEB_HOSTS にあれば「巨人公式サイト」「NPB公式」
+      2. URL に _OFFICIAL_X_HANDLE_HINTS の key が含まれれば X 系 label
+      3. それ以外は family default (「巨人公式」「NPB公式」)
+    """
+    url_lower = url.lower()
+    try:
+        host = urlparse(url_lower).netloc
+    except ValueError:
+        host = ""
+
+    if family == "giants_official":
+        if host in {"giants.jp", "www.giants.jp"}:
+            return "巨人公式サイト"
+        for hint, label in _OFFICIAL_X_HANDLE_HINTS.items():
+            if hint in url_lower and "巨人" in label:
+                return label
+        return "巨人公式"
+
+    if family == "npb_official":
+        if host in {"npb.jp", "www.npb.jp", "npb.or.jp", "www.npb.or.jp"}:
+            return "NPB公式"
+        for hint, label in _OFFICIAL_X_HANDLE_HINTS.items():
+            if hint in url_lower and "NPB" in label:
+                return label
+        return "NPB公式"
+
+    return family
+
+
 def _extract_short_snippet(
     candidate: Mapping[str, Any],
     min_len: int,
@@ -395,5 +545,6 @@ def _trim_to_range(text: str, min_len: int, max_len: int) -> str:
 __all__ = [
     "DigestChild",
     "DigestCluster",
+    "DigestOfficial",
     "find_digest_clusters",
 ]

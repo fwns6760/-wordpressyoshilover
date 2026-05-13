@@ -51,6 +51,17 @@ class FetchBlocked(RuntimeError):
     """fetch をブロックすべき条件 (robots disallow / live フラグなし) で raise"""
 
 
+def _decode_response_utf8(resp) -> str:
+    """``requests.Response`` を UTF-8 として decode する。
+
+    NPB は HTML の ``<meta charset="utf-8">`` だけで Content-Type に charset
+    を含めないため、``requests`` の charset 自動検出 (chardet/charset_
+    normalizer) が ISO-8859-1 にフォールバックして mojibake が発生する。
+    本関数は明示的に UTF-8 で decode する。
+    """
+    return resp.content.decode("utf-8", errors="replace")
+
+
 def _slug_to_url(slug: str) -> str:
     """``2026/0510/d-g-08`` → ``https://npb.jp/scores/2026/0510/d-g-08/box.html``"""
     s = slug.strip("/")
@@ -97,7 +108,7 @@ def _check_robots(http_get) -> None:
     if resp.status_code >= 400:
         raise FetchBlocked(f"robots_fetch_http_{resp.status_code}")
     rp = urllib.robotparser.RobotFileParser()
-    rp.parse(resp.text.splitlines())
+    rp.parse(_decode_response_utf8(resp).splitlines())
     if not rp.can_fetch(USER_AGENT, sample_url):
         raise FetchBlocked(f"robots_disallow:{sample_url}")
 
@@ -159,7 +170,7 @@ def live_fetch(
         }
     if resp.status_code >= 400:
         raise FetchBlocked(f"http_{resp.status_code}")
-    html = resp.text
+    html = _decode_response_utf8(resp)
     write_cache(slug, html, cache_dir)
     return html, {
         "url": url,
@@ -206,8 +217,9 @@ def fetch_html_polite(
     if resp.status_code >= 400:
         raise FetchBlocked(f"http_{resp.status_code}")
     cache_dir.mkdir(parents=True, exist_ok=True)
-    path.write_text(resp.text, encoding="utf-8")
-    return resp.text, {
+    html = _decode_response_utf8(resp)
+    path.write_text(html, encoding="utf-8")
+    return html, {
         "url": url,
         "status_code": resp.status_code,
         "from_cache": False,

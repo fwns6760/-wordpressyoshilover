@@ -19,6 +19,9 @@ class _FakeResponse:
     def __init__(self, *, status_code=200, text="<html></html>"):
         self.status_code = status_code
         self.text = text
+        # production fetcher uses resp.content.decode("utf-8") to avoid
+        # requests' charset auto-detection mojibake on NPB pages.
+        self.content = text.encode("utf-8") if isinstance(text, str) else text
 
 
 def _fake_http_factory(routes: dict[str, _FakeResponse]):

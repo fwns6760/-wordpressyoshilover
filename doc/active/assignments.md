@@ -29,6 +29,7 @@
 | **319-QA fetcher topic dedup and slot fill** | REVIEW_NEEDED | 自動起動時に同じ話題の重複記事が10枠を消費する問題を narrow 修正する ticket。head/bat contact 事故の再現テスト赤→緑、related/full pytest green | diff review + commit 判断待ち。publish / mail / scheduler / env / Cloud Run / SEO / source追加は不可触 |
 | **CATEGORY-RESTRUCTURE-2026-05-08** | DESIGN_REQUIRED | 「コラム」catch-all 解消、「試合中継」新 category 抽出、巨人 tag 化 | user 判断必要(WP admin で新 category 作成)、Claude は設計 + automation script |
 | **EXTERNAL-MONITOR-APPS-SCRIPT** | READY_FOR_USER_SETUP | user 作業 10 分(GAS で完全独立 ping) | 明日朝 yoshilover infra 全死シナリオ用の独立 safety net、user 任意 |
+| **334-QA-player-voice-multi-source-digest-subtype** | DESIGN_LOCKED / READY_FOR_PHASE_0_AUDIT | 2026-05-14 user chat lock。のもとけ風 multi-source digest subtype。title 3-token literal assembly(player「セリフ20-40字」event)、AI 禁止、player-agnostic、forward-only、複数 web 媒体サイト集約 | Phase 0 read-only audit から開始。`title_template_assembler.py` 追加位置 + `rss_fetcher.py` clustering hook + source extractor coverage を audit、結果 doc 追記。memory lock: `feedback_title_no_ai` / `project_multi_source_digest_subtype` |
 | **OPERATING_LOCK** | ACTIVE_LOCK | **必要。常時参照** | 事故防止ルール。変更は慎重に、src 実装とは混ぜない |
 | **assignments** | ACTIVE_BOARD | **必要。現在地** | 本ファイル。active を増やしすぎない |
 

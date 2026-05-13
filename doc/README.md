@@ -1717,6 +1717,32 @@ git add -A禁止。
 - **next_prompt_path**: -
 - **last_commit**: -
 
+### 334 player-voice-multi-source-digest-subtype
+
+- **alias**: 334-QA
+- **priority**: P1
+- **status**: DESIGN_LOCKED / READY_FOR_PHASE_0_AUDIT
+- **owner**: Claude Code
+- **lane**: Claude(2026-05-12 lock: Claude が開発・deploy 全権)
+- **ready_for**: Phase 0 read-only audit
+- **next_action**: `title_template_assembler.py` の pattern 追加位置 + `rss_fetcher.py` の clustering hook + source extractor coverage の audit、結果を ticket doc に追記
+- **blocked_by**: -
+- **user_action_required**: Phase 4 canary publish 前(noindex / X OFF 維持なので mutation 影響は WP draft / publish のみ、§11 4 領域に該当しない範囲は Claude 自律)
+- **write_scope**: `src/title_template_assembler.py` (新 pattern 関数 add のみ), 新規 `src/player_voice_digest_clusterer.py`, 新規 `src/player_voice_digest_body_renderer.py`, 関連 tests, `doc/active/334-QA-player-voice-multi-source-digest-subtype.md`
+- **doc_path**: `doc/active/334-QA-player-voice-multi-source-digest-subtype.md`
+- **acceptance**: title 3-token 完全 literal(player / quote / event)、AI 介入 0 件、引用境界違反 0 件、既存 publish flow デグレ 0、pytest baseline 維持(増減 0)、canary 5 本 noindex publish で audit pass
+- **repo_state**: dirty(本 ticket doc + README 更新)
+- **commit_state**: ticket doc + README 更新、未 commit
+- **next_prompt_path**: -
+- **last_commit**: -
+- **memory_lock**: `feedback_title_no_ai` / `project_multi_source_digest_subtype`(2026-05-14、永続)
+- **user_intent_lock(2026-05-14 chat)**:
+  - 媒体名は title 末尾より、イベント(`300号サヨナラホームラン` 等)を採用
+  - player-agnostic(坂本だけでなく全選手)
+  - forward-only(既存記事の遡及 digest 化なし)
+  - 複数 web 媒体サイト(報知 / サンスポ / スポニチ / 日刊スポーツ / デイリー)
+  - title に AI / LLM 一切使わない
+
 ## marketing board
 
 - Marketing ticket source of truth: `doc/marketing/README.md`

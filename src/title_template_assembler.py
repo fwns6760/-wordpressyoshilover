@@ -206,6 +206,211 @@ def _assemble_pattern_E_broadcast(
     return f"{date_label}「巨人vs.{opponent}」{suffix}"
 
 
+_SCORE_RE = re.compile(r"(\d{1,2})[\-－‐−](\d{1,2})")
+_GAME_NUM_RE = re.compile(r"(\d{1,2})\s*回戦")
+
+
+def _score_from_text(*texts: str) -> str:
+    for t in texts:
+        t = _clean(t)
+        if not t:
+            continue
+        m = _SCORE_RE.search(t)
+        if m:
+            return f"{m.group(1)}-{m.group(2)}"
+    return ""
+
+
+def _game_number_from_text(*texts: str) -> str:
+    for t in texts:
+        t = _clean(t)
+        if not t:
+            continue
+        m = _GAME_NUM_RE.search(t)
+        if m:
+            return m.group(1)
+    return ""
+
+
+def _league_label_from_facts(metadata: Mapping[str, object]) -> str:
+    v = str(metadata.get("league_label") or metadata.get("league") or "").strip()
+    if v:
+        return v
+    return "セ・リーグ"
+
+
+def _team_label_for_farm() -> str:
+    return "巨人2軍"
+
+
+def _team_label_for_first() -> str:
+    return "巨人"
+
+
+_NOTICE_ACTION_MARKERS = (
+    ("登録抹消", "登録抹消"),
+    ("抹消", "登録抹消"),
+    ("一軍登録", "登録"),
+    ("登録", "登録"),
+    ("昇格", "昇格"),
+    ("復帰", "復帰"),
+    ("合流", "合流"),
+    ("戦力外", "戦力外"),
+)
+
+
+def _notice_action_from_text(*texts: str) -> str:
+    text = " ".join(_clean(t) for t in texts if t)
+    if not text:
+        return ""
+    for needle, label in _NOTICE_ACTION_MARKERS:
+        if needle in text:
+            return label
+    return ""
+
+
+def _notice_player_count_from_text(*texts: str) -> int:
+    text = " ".join(_clean(t) for t in texts if t)
+    if not text:
+        return 0
+    m = re.search(r"(\d+)\s*(?:人|名)\s*の?\s*選手", text)
+    if m:
+        try:
+            return int(m.group(1))
+        except ValueError:
+            return 0
+    return 0
+
+
+def _assemble_pattern_F_postgame_detail(
+    *,
+    metadata: Mapping[str, object],
+    source_title: str,
+    source_body: str,
+    summary: str,
+    league_level: str = "first",
+) -> Optional[str]:
+    """Pattern F: postgame 試合結果速報 詳細版.
+
+    `<date>(<曜>) <league>X回戦「巨人vs.<opp>」【試合結果】 巨人、<score>で<result>…`
+    """
+    date_label = _date_label_from_facts(metadata)
+    opponent = _opponent_from_facts(metadata)
+    if not date_label or not opponent:
+        return None
+    score = _score_from_text(source_title, source_body, summary)
+    result_phrase = _postgame_result_phrase(source_title, source_body, summary)
+    if not score and not result_phrase:
+        return None
+    league = _league_label_from_facts(metadata)
+    game_num = _game_number_from_text(source_title, summary)
+    game_label = f"{league}{game_num}回戦" if game_num else f"{league}公式戦"
+    team_label = _team_label_for_first() if league_level != "farm" else _team_label_for_farm()
+    tail = f" {team_label}、{score}で{result_phrase}…" if score and result_phrase else (
+        f" {team_label}、{score}…" if score else f" {team_label}、{result_phrase}…"
+    )
+    return f"{date_label} {game_label}「巨人vs.{opponent}」【試合結果】{tail}"
+
+
+def _assemble_pattern_G_farm_detail(
+    *,
+    metadata: Mapping[str, object],
+    source_title: str,
+    source_body: str,
+    summary: str,
+) -> Optional[str]:
+    """Pattern G: ファーム公式戦 試合結果速報.
+
+    `<date>(<曜>) ファーム公式戦「巨人vs.<opp>」【試合結果】 巨人2軍、<score>で<result>…`
+    """
+    date_label = _date_label_from_facts(metadata)
+    opponent = _opponent_from_facts(metadata)
+    if not date_label or not opponent:
+        return None
+    score = _score_from_text(source_title, source_body, summary)
+    result_phrase = _postgame_result_phrase(source_title, source_body, summary)
+    if not score and not result_phrase:
+        return None
+    tail = f" 巨人2軍、{score}で{result_phrase}…" if score and result_phrase else (
+        f" 巨人2軍、{score}…" if score else f" 巨人2軍、{result_phrase}…"
+    )
+    return f"{date_label} ファーム公式戦「巨人vs.{opponent}」【試合結果】{tail}"
+
+
+def _assemble_pattern_O_lineup(
+    *,
+    metadata: Mapping[str, object],
+) -> Optional[str]:
+    """Pattern O: スタメン発表.
+
+    `<date>(<曜>) <league>X回戦「巨人vs.<opp>」 巨人、スタメン発表！！！`
+    """
+    date_label = _date_label_from_facts(metadata)
+    opponent = _opponent_from_facts(metadata)
+    if not date_label or not opponent:
+        return None
+    league = _league_label_from_facts(metadata)
+    game_num = str(metadata.get("game_number") or "").strip()
+    if not game_num:
+        game_num = _game_number_from_text(date_label)
+    game_label = f"{league}{game_num}回戦" if game_num else f"{league}公式戦"
+    return f"{date_label} {game_label}「巨人vs.{opponent}」 巨人、スタメン発表！！！"
+
+
+def _assemble_pattern_N_probable_starter(
+    *,
+    metadata: Mapping[str, object],
+    source_title: str,
+    summary: str,
+) -> Optional[str]:
+    """Pattern N: 予告先発発表.
+
+    minimum: `<date>(<曜>)の予告先発が発表される！！！`
+    enriched (opponent あり時): `<date>(<曜>) <league>X回戦「巨人vs.<opp>」 予告先発が発表される！！！`
+    """
+    date_label = _date_label_from_facts(metadata)
+    if not date_label:
+        return None
+    text = " ".join(_clean(t) for t in (source_title, summary) if t)
+    if "予告先発" not in text:
+        return None
+    opponent = _opponent_from_facts(metadata)
+    if opponent:
+        league = _league_label_from_facts(metadata)
+        game_num = _game_number_from_text(date_label)
+        game_label = f"{league}{game_num}回戦" if game_num else f"{league}公式戦"
+        return f"{date_label} {game_label}「巨人vs.{opponent}」 予告先発が発表される！！！"
+    return f"{date_label}の予告先発が発表される！！！"
+
+
+def _assemble_pattern_M_notice(
+    *,
+    metadata: Mapping[str, object],
+    source_title: str,
+    source_body: str,
+    summary: str,
+) -> Optional[str]:
+    """Pattern M: 公示.
+
+    `【公示】<date>のプロ野球公示 巨人が<N>人の選手を<アクション>`
+    """
+    date_label = _date_label_from_facts(metadata)
+    text = " ".join(_clean(t) for t in (source_title, source_body, summary) if t)
+    if "公示" not in text:
+        return None
+    action = _notice_action_from_text(source_title, source_body, summary)
+    if not action:
+        return None
+    if not date_label:
+        return None
+    count = _notice_player_count_from_text(source_title, source_body, summary)
+    if count > 0:
+        tail = f"巨人が{count}人の選手を{action}"
+    else:
+        tail = f"巨人が選手を{action}"
+    return f"【公示】{date_label}のプロ野球公示 {tail}"
+
+
 def assemble_nomotoke_title(
     *,
     article_subtype: str,
@@ -253,9 +458,27 @@ def assemble_nomotoke_title(
             is_coach=False,
         )
     elif subtype == "postgame":
+        # B (修飾+選手+結果) を先に試す。name + modifier/result が揃わない時は
+        # F (試合結果詳細、score+opp+result) に fall through。
         assembled = _assemble_pattern_B(
             name=name,
             role=role,
+            source_title=source_title,
+            source_body=source_body,
+            summary=summary,
+        )
+        if not assembled:
+            league_level = str(metadata.get("league_level") or "first")
+            assembled = _assemble_pattern_F_postgame_detail(
+                metadata=metadata,
+                source_title=source_title,
+                source_body=source_body,
+                summary=summary,
+                league_level=league_level,
+            )
+    elif subtype in {"farm", "farm_result"}:
+        assembled = _assemble_pattern_G_farm_detail(
+            metadata=metadata,
             source_title=source_title,
             source_body=source_body,
             summary=summary,
@@ -265,7 +488,21 @@ def assemble_nomotoke_title(
             metadata=metadata,
             source_title=source_title,
         )
-    # lineup / notice / pregame は別 pattern、次便で追加
+    elif subtype in {"lineup", "lineup_notice"}:
+        assembled = _assemble_pattern_O_lineup(metadata=metadata)
+    elif subtype in {"pregame", "probable_starter"}:
+        assembled = _assemble_pattern_N_probable_starter(
+            metadata=metadata,
+            source_title=source_title,
+            summary=summary,
+        )
+    elif subtype in {"notice", "official_notice"}:
+        assembled = _assemble_pattern_M_notice(
+            metadata=metadata,
+            source_title=source_title,
+            source_body=source_body,
+            summary=summary,
+        )
 
     if assembled and assembled.strip() and assembled.strip() != _clean(existing_title):
         return assembled.strip()

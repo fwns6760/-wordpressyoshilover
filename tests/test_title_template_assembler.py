@@ -170,12 +170,157 @@ class UnsupportedSubtypeTests(unittest.TestCase):
         )
         self.assertIsNone(result)
 
-    def test_lineup_not_yet_supported(self):
+
+class PatternFPostgameDetailTests(unittest.TestCase):
+    def test_first_team_with_score_and_result(self):
+        # B が modifier 取れない時 F に fall back
+        result = assemble_nomotoke_title(
+            article_subtype="postgame",
+            existing_title="d",
+            source_body="5月13日の試合は 5-3 で勝利。展開が動いた。",
+            source_title="2026年5月13日 セ・リーグ7回戦 巨人vs.広島",
+            metadata={
+                "event_date_label": "5月13日(水)",
+                "opponent": "広島",
+                "league_level": "first",
+            },
+            player_name="",
+        )
+        self.assertIsNotNone(result)
+        self.assertIn("【試合結果】", result)
+        self.assertIn("5-3", result)
+        self.assertIn("巨人vs.広島", result)
+        self.assertIn("勝利", result)
+
+    def test_postgame_b_path_preferred_if_modifier_available(self):
+        # サヨナラ modifier ある時は B 優先
+        result = assemble_nomotoke_title(
+            article_subtype="postgame",
+            existing_title="d",
+            source_body="佐々木俊輔の劇的サヨナラ2ラン。",
+            player_name="佐々木俊輔",
+            role="選手",
+        )
+        self.assertIsNotNone(result)
+        self.assertIn("サヨナラ", result)
+        # B pattern には「【試合結果】」は付かない
+        self.assertNotIn("【試合結果】", result)
+
+
+class PatternGFarmTests(unittest.TestCase):
+    def test_farm_with_score_and_result(self):
+        result = assemble_nomotoke_title(
+            article_subtype="farm",
+            existing_title="d",
+            source_body="2軍は 4-5 で敗戦。",
+            source_title="ファーム 巨人vs.西武",
+            metadata={
+                "event_date_label": "5月13日(水)",
+                "opponent": "西武",
+            },
+        )
+        self.assertIsNotNone(result)
+        self.assertIn("ファーム公式戦", result)
+        self.assertIn("巨人vs.西武", result)
+        self.assertIn("巨人2軍", result)
+        self.assertIn("4-5", result)
+        self.assertIn("敗戦", result)
+
+
+class PatternOLineupTests(unittest.TestCase):
+    def test_lineup_with_date_and_opponent(self):
         result = assemble_nomotoke_title(
             article_subtype="lineup",
             existing_title="d",
-            source_body="戸郷",
-            player_name="戸郷",
+            metadata={
+                "event_date_label": "5月13日(水)",
+                "opponent": "広島",
+                "game_number": "7",
+            },
+        )
+        self.assertEqual(
+            result,
+            "5月13日(水) セ・リーグ7回戦「巨人vs.広島」 巨人、スタメン発表！！！",
+        )
+
+    def test_lineup_missing_opponent_returns_none(self):
+        result = assemble_nomotoke_title(
+            article_subtype="lineup",
+            existing_title="d",
+            metadata={"event_date_label": "5月13日(水)"},
+        )
+        self.assertIsNone(result)
+
+
+class PatternNProbableStarterTests(unittest.TestCase):
+    def test_pregame_with_opponent_enriched(self):
+        result = assemble_nomotoke_title(
+            article_subtype="pregame",
+            existing_title="d",
+            source_title="本日の予告先発が発表される",
+            metadata={
+                "event_date_label": "5月14日(木)",
+                "opponent": "中日",
+            },
+        )
+        self.assertIsNotNone(result)
+        self.assertIn("予告先発", result)
+        self.assertIn("巨人vs.中日", result)
+        self.assertIn("！！！", result)
+
+    def test_probable_starter_minimum_no_opponent(self):
+        result = assemble_nomotoke_title(
+            article_subtype="probable_starter",
+            existing_title="d",
+            source_title="本日の予告先発が発表される",
+            metadata={"event_date_label": "5月14日(木)"},
+        )
+        self.assertEqual(
+            result, "5月14日(木)の予告先発が発表される！！！"
+        )
+
+    def test_pregame_no_keyword_returns_none(self):
+        result = assemble_nomotoke_title(
+            article_subtype="pregame",
+            existing_title="d",
+            source_title="試合前の様子",
+            metadata={"event_date_label": "5月14日(木)"},
+        )
+        self.assertIsNone(result)
+
+
+class PatternMNoticeTests(unittest.TestCase):
+    def test_notice_with_action_and_count(self):
+        result = assemble_nomotoke_title(
+            article_subtype="notice",
+            existing_title="d",
+            source_title="プロ野球公示 巨人が2名の選手を登録抹消",
+            source_body="本日5月13日のプロ野球公示にて、巨人が2人の選手を登録抹消した。",
+            metadata={"event_date_label": "5月13日(火)"},
+        )
+        self.assertIsNotNone(result)
+        self.assertIn("【公示】", result)
+        self.assertIn("5月13日(火)", result)
+        self.assertIn("巨人が2人の選手を登録抹消", result)
+
+    def test_official_notice_no_count(self):
+        result = assemble_nomotoke_title(
+            article_subtype="official_notice",
+            existing_title="d",
+            source_title="プロ野球公示 巨人が選手を登録",
+            source_body="本日5月13日のプロ野球公示にて、巨人が選手を登録した。",
+            metadata={"event_date_label": "5月13日(火)"},
+        )
+        self.assertIsNotNone(result)
+        self.assertIn("巨人が選手を登録", result)
+
+    def test_notice_without_action_returns_none(self):
+        result = assemble_nomotoke_title(
+            article_subtype="notice",
+            existing_title="d",
+            source_title="プロ野球公示",
+            source_body="本日のプロ野球公示。",
+            metadata={"event_date_label": "5月13日(火)"},
         )
         self.assertIsNone(result)
 

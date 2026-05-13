@@ -3286,6 +3286,62 @@ def _extract_article_keywords(title: str, summary: str) -> list[str]:
     return kws[:8]
 
 
+_FAN_VOICE_YAHOO_FALLBACK_TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
+
+
+def _fan_voice_yahoo_fallback_enabled() -> bool:
+    """ENABLE_FAN_VOICE_YAHOO_FALLBACK gate (default ON).
+
+    326-QA-fallback: fallback shell articles (body_too_thin 経由で
+    nomotoke-card-divider/footer marker のみ) は cached X embed pool が空に
+    なりやすく、fan voice 0 件になる。本 flag が ON のとき Yahoo realtime
+    fan reactions を補助的に fetch + render する。"""
+    val = (os.getenv("ENABLE_FAN_VOICE_YAHOO_FALLBACK") or "1").strip().lower()
+    return val in _FAN_VOICE_YAHOO_FALLBACK_TRUE_VALUES
+
+
+def _build_fan_voice_yahoo_fallback_block(reactions: list, limit: int = 5) -> str:
+    """Yahoo realtime fan reactions を ``💬 ファンの声（Xより）`` h3 + X embed
+    の形で render する。format は ``src/rss_fetcher.py:17453`` と整合。
+
+    reactions が空 / URL 無しのみのとき 空文字を返す。返値は idempotent
+    (h3_normalizer の dedup pass で 1 つに集約される)。"""
+    if not reactions:
+        return ""
+    parts: list[str] = [
+        '<!-- wp:heading {"level":3} -->',
+        '<h3>💬 ファンの声（Xより）</h3>',
+        '<!-- /wp:heading -->',
+    ]
+    widget_included = False
+    appended = 0
+    for r in reactions[:limit]:
+        url = ""
+        if isinstance(r, dict):
+            url = (r.get("url") or "").strip()
+        if not url:
+            continue
+        safe_url = html.escape(url)
+        parts.append(
+            '<div class="yoshilover-x-embed yoshilover-x-embed-compact" '
+            'style="margin:0 auto 0 !important;max-width:550px;">'
+            '<blockquote class="twitter-tweet" data-dnt="true" data-lang="ja" '
+            'data-conversation="none" data-cards="hidden">'
+            f'<a href="{safe_url}">{safe_url}</a>'
+            '</blockquote></div>'
+        )
+        if not widget_included:
+            parts.append(
+                '<script async src="https://platform.twitter.com/widgets.js" '
+                'charset="utf-8"></script>'
+            )
+            widget_included = True
+        appended += 1
+    if appended == 0:
+        return ""
+    return "".join(parts)
+
+
 def _build_x_embeds_block(
     title: str,
     summary: str,
@@ -3777,6 +3833,26 @@ def apply_rss_pipeline_enrichment(
         )
         if block:
             extra_blocks.append(block)
+        elif _fan_voice_yahoo_fallback_enabled():
+            # 326-QA-fallback: cached pool が空のとき Yahoo realtime
+            # fan reactions を補助的に fetch + render。circular import
+            # 回避のため lazy import。fetch 失敗 / 0 件 / 全 URL 空のとき
+            # 何も追加しない (regression 0、既存 0-fan-voice 状態を維持)。
+            _yahoo_reactions: list = []
+            try:
+                from src.rss_fetcher import (
+                    fetch_fan_reactions_from_yahoo as _fetch_yahoo_realtime,
+                )
+                _yahoo_reactions = _fetch_yahoo_realtime(
+                    title, summary, category, source_name=source_name
+                ) or []
+            except Exception:
+                _yahoo_reactions = []
+            fallback_block = _build_fan_voice_yahoo_fallback_block(
+                _yahoo_reactions, limit=5
+            )
+            if fallback_block:
+                extra_blocks.append(fallback_block)
 
     # Standings + Next game: 全 nomotoke-marked content + caller 未指定で適用
     # (lenient) — どの subtype でも順位 / 次戦は relevant

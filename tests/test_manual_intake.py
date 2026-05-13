@@ -1998,5 +1998,109 @@ class SourceBodyExcerptExpansionTests(_IntakeBaseTest):
         self.assertNotIn("大城卓三", content)
 
 
+class FanVoiceYahooFallbackTests(unittest.TestCase):
+    """326-QA-fallback: cached X embed pool が空の時 Yahoo realtime
+    fan reactions を fallback として render する。default ON。"""
+
+    _BASE_HTML = (
+        '<p class="nomotoke-lead">本文要約</p>'
+        '<h3>🔗 出典記事</h3>'
+        '<p><a href="https://hochi.news/articles/foo.html">出典</a></p>'
+        '<hr class="nomotoke-card-divider">'
+        '<div class="nomotoke-card-footer">'
+        '<p class="nomotoke-cta-row"><a href="#respond">コメント</a></p>'
+        '</div>'
+    )
+
+    def _kwargs(self):
+        return dict(
+            title="【巨人】戸郷翔征が無失点投球",
+            source_url="https://hochi.news/articles/foo.html",
+            summary="巨人戸郷翔征投手が無失点で投球を続けた。",
+            category="選手情報",
+            template_key="nomotoke_card_short_news_url_v1",
+            source_name="スポーツ報知",
+        )
+
+    def test_fallback_block_helper_renders_h3_and_embeds(self):
+        from src.tools import manual_intake as mi
+        reactions = [
+            {"url": "https://x.com/togofan/status/1"},
+            {"url": "https://x.com/giants_love/status/2"},
+        ]
+        block = mi._build_fan_voice_yahoo_fallback_block(reactions, limit=5)
+        self.assertIn("💬 ファンの声（Xより）", block)
+        self.assertIn("twitter-tweet", block)
+        self.assertIn("https://x.com/togofan/status/1", block)
+        self.assertIn("https://x.com/giants_love/status/2", block)
+        # widgets.js script は 1 度だけ
+        self.assertEqual(block.count("widgets.js"), 1)
+
+    def test_fallback_block_empty_for_no_reactions(self):
+        from src.tools import manual_intake as mi
+        self.assertEqual(mi._build_fan_voice_yahoo_fallback_block([], limit=5), "")
+        self.assertEqual(
+            mi._build_fan_voice_yahoo_fallback_block([{"url": ""}, {"url": "  "}], limit=5),
+            "",
+        )
+
+    def test_fallback_fires_when_cached_pool_empty_and_flag_on(self):
+        from src.tools import manual_intake as mi
+        import os
+        os.environ.pop("ENABLE_FAN_VOICE_YAHOO_FALLBACK", None)  # default ON
+        with patch.object(mi, "_build_x_embeds_block_safe", return_value=""):
+            with patch("src.rss_fetcher.fetch_fan_reactions_from_yahoo",
+                       return_value=[{"url": "https://x.com/togofan/status/1"}]):
+                result = mi.apply_rss_pipeline_enrichment(self._BASE_HTML, **self._kwargs())
+        self.assertIn("💬 ファンの声（Xより）", result)
+        self.assertIn("https://x.com/togofan/status/1", result)
+
+    def test_fallback_skipped_when_cached_pool_provides_block(self):
+        from src.tools import manual_intake as mi
+        cached_block = (
+            '<aside class="nomotoke-x-embeds">'
+            '<p class="nomotoke-x-embeds__label">📲 関連 X 投稿</p>'
+            '<blockquote class="twitter-tweet"><a href="https://x.com/cached/status/9"></a></blockquote>'
+            '</aside>'
+        )
+        with patch.object(mi, "_build_x_embeds_block_safe", return_value=cached_block):
+            with patch("src.rss_fetcher.fetch_fan_reactions_from_yahoo") as mock_fetch:
+                result = mi.apply_rss_pipeline_enrichment(self._BASE_HTML, **self._kwargs())
+                # cached block 採用なので Yahoo fetch は呼ばれない
+                mock_fetch.assert_not_called()
+        self.assertIn("https://x.com/cached/status/9", result)
+        self.assertNotIn("💬 ファンの声（Xより）", result)
+
+    def test_fallback_skipped_when_flag_off(self):
+        from src.tools import manual_intake as mi
+        import os
+        os.environ["ENABLE_FAN_VOICE_YAHOO_FALLBACK"] = "0"
+        try:
+            with patch.object(mi, "_build_x_embeds_block_safe", return_value=""):
+                with patch("src.rss_fetcher.fetch_fan_reactions_from_yahoo") as mock_fetch:
+                    result = mi.apply_rss_pipeline_enrichment(self._BASE_HTML, **self._kwargs())
+                    mock_fetch.assert_not_called()
+            self.assertNotIn("💬 ファンの声（Xより）", result)
+        finally:
+            os.environ.pop("ENABLE_FAN_VOICE_YAHOO_FALLBACK", None)
+
+    def test_fallback_skipped_when_yahoo_returns_zero(self):
+        from src.tools import manual_intake as mi
+        with patch.object(mi, "_build_x_embeds_block_safe", return_value=""):
+            with patch("src.rss_fetcher.fetch_fan_reactions_from_yahoo", return_value=[]):
+                result = mi.apply_rss_pipeline_enrichment(self._BASE_HTML, **self._kwargs())
+        self.assertNotIn("💬 ファンの声（Xより）", result)
+
+    def test_fallback_swallows_yahoo_exception(self):
+        from src.tools import manual_intake as mi
+        with patch.object(mi, "_build_x_embeds_block_safe", return_value=""):
+            with patch("src.rss_fetcher.fetch_fan_reactions_from_yahoo",
+                       side_effect=RuntimeError("network down")):
+                # exception で記事生成が止まらないこと (fallback は黙って skip)
+                result = mi.apply_rss_pipeline_enrichment(self._BASE_HTML, **self._kwargs())
+        self.assertNotIn("💬 ファンの声（Xより）", result)
+        self.assertIn("🔗 出典記事", result)
+
+
 if __name__ == "__main__":
     unittest.main()

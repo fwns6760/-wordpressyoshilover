@@ -98,3 +98,32 @@ h3 dedup は default ON のため env 不要。
   - X embed 数(空 filler section 除去後)
   - 同一 handle ≤ 2 件
 - regression: publish 数 / エラー 数 / 投稿失敗が増えないこと
+
+## 7. 326-QA-fallback 追加(同 commit、2026-05-13)
+
+### 背景
+
+audit で 19 件中 **10 件(53%)が rich-source path で fan voice ゼロ**を発見。これらは `body_too_thin` で nomotoke renderer が拒否 →
+`_render_nomotoke_intake_fallback_shell` が `nomotoke-card-divider/footer` で wrap → `apply_rss_pipeline_enrichment` の marker gate (`'class="nomotoke-card-'`) は通過するが、`_build_x_embeds_block_safe`(cached pool)が空を返すため fan voice block が追加されない。
+
+### fix(default ON)
+
+`src/tools/manual_intake.py` に `_build_fan_voice_yahoo_fallback_block()` + `_fan_voice_yahoo_fallback_enabled()` を追加。`apply_rss_pipeline_enrichment` の X embeds block 出力箇所で、cached pool が空時 Yahoo realtime fan reactions(`fetch_fan_reactions_from_yahoo` lazy import)を fallback として fetch + render。
+
+- env flag: `ENABLE_FAN_VOICE_YAHOO_FALLBACK`(default `1` = ON)
+- fetch 失敗 / 0 件 / 全 URL 空 → 何も追加しない(regression 0)
+- 既存 X embeds(`📲 関連 X 投稿` aside)経路は不変、空時のみ補完
+- render format は `rss_fetcher.py:17453` と整合(`<h3>💬 ファンの声（Xより）</h3>` + `yoshilover-x-embed-compact`)
+- h3 dedup pass で fix 3 と整合
+
+### test
+
+- `tests/test_manual_intake.py::FanVoiceYahooFallbackTests`(7 件、helper unit + 5 integration scenarios)
+- 新 baseline: 76 + 7 = 83 touched-module tests pass
+
+### baseline regression(再評価)
+
+- src 変更前 baseline: 3864 passed / 1 fail(`test_game_live_primary_sources_are_hochi_only`)
+- src + tests 変更後: 3869 passed / 1-3 fail(`test_event_key_ledger.py` 内 2 件が flaky、test 順序依存、test_event_key_ledger 単独 33 pass)
+- `test_event_key_ledger.py` は 2026-05-13 09:56 JST 追加(commit `c86b21f`、別 work)、本 ticket と無関係
+- src behavior 起因の regression は 0

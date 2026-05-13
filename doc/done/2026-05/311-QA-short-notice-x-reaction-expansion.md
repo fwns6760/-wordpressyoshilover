@@ -4,14 +4,15 @@
 
 - number: 311-QA
 - type: short notice / lineup / pregame / notice X reaction expansion
-- status: BLOCKED_USER
+- status: CLOSED, LIVE_VERIFIED
 - priority: P1.5
-- owner: user GO 待ち
-- implementation_owner: Codex after GO
+- owner: Claude (実装+deploy 済)
+- implementation_owner: completed in commit `28b10a9` (2026-05-10 01:19 JST)
 - lane: B
 - created: 2026-05-10
-- doc_path: `doc/waiting/311-QA-short-notice-x-reaction-expansion.md`
-- note: user 制約により初手はこの Markdown 新規作成のみ。code edit、commit、push、deploy、env / scheduler 変更は GO 後まで保留
+- closed: 2026-05-13 (user "まとめて GO" 承認、doc 同期遅延の解消)
+- doc_path: `doc/done/2026-05/311-QA-short-notice-x-reaction-expansion.md`
+- prod_status: live since 2026-05-10、prod revision `00417-wuw` (hotfix B = `b8a7f01`) の ancestor として稼働中
 
 ## 1. 今回の目的
 

@@ -4,14 +4,15 @@
 
 - number: 310-QA
 - type: player / manager body / X reaction expansion / regression-safe rendering
-- status: BLOCKED_USER
+- status: CLOSED, LIVE_VERIFIED
 - priority: P1
-- owner: user GO 待ち
-- implementation_owner: Codex after GO
+- owner: Claude (実装+deploy 済)
+- implementation_owner: completed in commit `f87af66` (2026-05-10 00:47 JST)
 - lane: B
 - created: 2026-05-10
-- doc_path: `doc/waiting/310-QA-player-manager-x-reaction-expansion.md`
-- note: user 制約により初手はこの Markdown 新規作成のみ。code edit、commit、push、deploy、env / scheduler 変更は GO 後まで保留
+- closed: 2026-05-13 (user "まとめて GO" 承認、doc 同期遅延の解消)
+- doc_path: `doc/done/2026-05/310-QA-player-manager-x-reaction-expansion.md`
+- prod_status: live since 2026-05-10、prod revision `00417-wuw` (hotfix B = `b8a7f01`) の ancestor として稼働中
 
 ## 1. 今回の目的
 

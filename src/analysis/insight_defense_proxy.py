@@ -125,20 +125,35 @@ def rebuild_defense_for_game(
 
 
 def _team_codes_for_game(conn: sqlite3.Connection, game_id: str) -> Optional[dict]:
-    """Derive the opponent's team_code for a game. The Giants are always
-    'g'. The opponent code comes from the ``games.opponent`` (team name)
-    looked up via the aliases table once 7e fills it; for now we fall
-    back to a small inline map."""
-    row = conn.execute(
-        "SELECT opponent FROM games WHERE game_id = ?", (game_id,)
-    ).fetchone()
-    if not row:
-        return None
-    opp_name = (row[0] if not hasattr(row, "keys") else row["opponent"]) or ""
-    return {
-        "giants": "g",
-        "opponent": _resolve_team_code(opp_name),
-    }
+    """Derive both sides' team_code for a game.
+
+    INSIGHT-007: batting_logs.team_name 列を直接読む。両 team_role
+    (giants / opponent) について team_name を取得し、それぞれ resolve
+    して team_code に。Giants が試合に居なくても動く (label 'giants' は
+    parse_npb_box_html allow_non_giants の名残で、実体は team_name 経由)。
+    """
+    rows = list(conn.execute(
+        "SELECT DISTINCT team_role, team_name FROM batting_logs "
+        "WHERE game_id = ?",
+        (game_id,),
+    ))
+    role_to_code = {"giants": "unknown", "opponent": "unknown"}
+    for r in rows or []:
+        role = r[0] if not hasattr(r, "keys") else r["team_role"]
+        name = r[1] if not hasattr(r, "keys") else r["team_name"]
+        if role in role_to_code:
+            role_to_code[role] = _resolve_team_code(name or "")
+    # Fallback: rebuild from games.opponent for legacy / partial seeds.
+    if role_to_code["opponent"] == "unknown":
+        game_row = conn.execute(
+            "SELECT opponent FROM games WHERE game_id = ?", (game_id,)
+        ).fetchone()
+        if game_row:
+            opp_name = game_row[0] if not hasattr(game_row, "keys") else game_row["opponent"]
+            role_to_code["opponent"] = _resolve_team_code(opp_name or "")
+    if role_to_code["giants"] == "unknown":
+        role_to_code["giants"] = "g"
+    return role_to_code
 
 
 _TEAM_NAME_TO_CODE = {

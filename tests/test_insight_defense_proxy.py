@@ -31,13 +31,17 @@ def _seed_game(conn, *, game_id, date, opponent="中日"):
     )
 
 
-def _seed_batting(conn, *, game_id, team_role, player, atbats):
+def _seed_batting(conn, *, game_id, team_role, player, atbats, team_name=None):
+    # default team_name follows the giants/opponent convention used by the
+    # existing tests (Giants vs 中日 fixture)
+    if team_name is None:
+        team_name = "巨人" if team_role == "giants" else "中日"
     conn.execute(
         "INSERT INTO batting_logs (game_id, team_role, slot_order, player_display, "
-        "player_canonical, is_sub, AB, R, H, RBI, SB, atbats_json) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        "player_canonical, is_sub, AB, R, H, RBI, SB, atbats_json, team_name) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (game_id, team_role, 1, player, player, 0, 4, 0, 1, 0, 0,
-         json.dumps(atbats, ensure_ascii=False)),
+         json.dumps(atbats, ensure_ascii=False), team_name),
     )
 
 

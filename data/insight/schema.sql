@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS inning_scores (
 -- ─── batting_logs ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS batting_logs (
     game_id TEXT NOT NULL,
-    team_role TEXT NOT NULL,          -- giants | opponent
+    team_role TEXT NOT NULL,          -- giants | opponent (label; team_name で識別)
     slot_order INTEGER,               -- 打順 (substitutions = same slot)
     position TEXT,                    -- 「二」「中」など
     player_display TEXT NOT NULL,     -- fixture 表示名 (姓のみのことあり)
@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS batting_logs (
     is_sub INTEGER NOT NULL DEFAULT 0,
     AB INTEGER, R INTEGER, H INTEGER, RBI INTEGER, SB INTEGER,
     atbats_json TEXT,                 -- per-PA result list JSON
+    team_name TEXT,                   -- INSIGHT-007: 全 12 球団 ingest 用
     PRIMARY KEY (game_id, team_role, slot_order, player_display),
     FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE
 );
@@ -75,6 +76,7 @@ CREATE TABLE IF NOT EXISTS pitching_logs (
     BB INTEGER, HBP INTEGER, K INTEGER,
     WP INTEGER, BK INTEGER,
     R INTEGER, ER INTEGER,
+    team_name TEXT,                   -- INSIGHT-007: 全 12 球団 ingest 用
     PRIMARY KEY (game_id, team_role, appearance_order, player_display),
     FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE
 );

@@ -436,6 +436,45 @@ _HTML_FORM = """<!DOCTYPE html>
       </div>
     </form>
     <div id=\"rank-result\" hidden></div>
+
+    <h2 style=\"font-size:15px;margin:24px 0 8px;\">📝 3. rank → 記事 draft 生成 (INSIGHT-008)</h2>
+    <p class=\"insight-meta\">上の rank 条件で markdown 記事 draft を生成。テンプレ + 解釈 + 注意書きが入った形で、コピーして WordPress に貼り付け or 既存「手動投入」タブから投入できる。Gemini は使わない、無料完結。</p>
+    <form id=\"article-form\">
+      <div class=\"insight-row-grid\">
+        <div class=\"field\">
+          <label for=\"a-metric\">指標</label>
+          <select id=\"a-metric\" name=\"metric\">__INSIGHT_METRIC_OPTIONS__</select>
+        </div>
+        <div class=\"field\">
+          <label for=\"a-position\">守備位置</label>
+          <select id=\"a-position\" name=\"position\">__INSIGHT_POSITION_OPTIONS__</select>
+        </div>
+      </div>
+      <div class=\"insight-row-grid\">
+        <div class=\"field\">
+          <label for=\"a-player\">注目選手</label>
+          <select id=\"a-player\" name=\"player\">__INSIGHT_PLAYER_OPTIONS__</select>
+        </div>
+        <div class=\"field\">
+          <label for=\"a-top-n\">表示件数 (top_n)</label>
+          <input id=\"a-top-n\" name=\"top_n\" type=\"number\" min=\"3\" max=\"30\" value=\"10\">
+        </div>
+      </div>
+      <div class=\"insight-row-grid\">
+        <div class=\"field\">
+          <label for=\"a-since\">From (YYYY-MM-DD)</label>
+          <input id=\"a-since\" name=\"since\" type=\"text\" placeholder=\"2026-04-01\" autocomplete=\"off\">
+        </div>
+        <div class=\"field\">
+          <label for=\"a-until\">To (YYYY-MM-DD)</label>
+          <input id=\"a-until\" name=\"until\" type=\"text\" placeholder=\"2026-05-31\" autocomplete=\"off\">
+        </div>
+      </div>
+      <div class=\"actions\">
+        <button class=\"primary\" type=\"submit\" id=\"article-submit-btn\">📝 記事 draft 生成</button>
+      </div>
+    </form>
+    <div id=\"article-result\" hidden></div>
   </section>
 </main>
 <script>
@@ -586,6 +625,72 @@ _HTML_FORM = """<!DOCTYPE html>
       renderRank({ ok: false, reason: String(e) });
     } finally {
       if (rsubmit) { rsubmit.disabled = false; rsubmit.textContent = '📊 rank 検索'; }
+    }
+  });
+
+  // INSIGHT-008: article generator form
+  var aform = document.getElementById('article-form');
+  var aresult = document.getElementById('article-result');
+  var asubmit = document.getElementById('article-submit-btn');
+  function renderArticle(payload) {
+    aresult.hidden = false;
+    if (!payload || !payload.ok) {
+      aresult.className = 'err';
+      aresult.textContent = '失敗: ' + (payload && payload.reason ? payload.reason : 'unknown');
+      return;
+    }
+    var art = payload.article || {};
+    aresult.className = '';
+    aresult.innerHTML = '';
+    var meta = document.createElement('div');
+    meta.className = 'insight-meta';
+    meta.textContent = '生成完了。下のテキストをコピーして WP に貼り付け、または手動投入タブで投入してください。';
+    aresult.appendChild(meta);
+    var titleDiv = document.createElement('div');
+    titleDiv.style.cssText = 'font-weight:600;margin:8px 0 4px;font-size:15px;';
+    titleDiv.textContent = '提案タイトル: ' + (art.title || '');
+    aresult.appendChild(titleDiv);
+    var ta = document.createElement('textarea');
+    ta.style.cssText = 'width:100%;min-height:300px;font-family:ui-monospace,monospace;font-size:12px;padding:10px;';
+    ta.value = art.body_md || '';
+    aresult.appendChild(ta);
+    var tagDiv = document.createElement('div');
+    tagDiv.className = 'insight-meta';
+    tagDiv.style.cssText = 'margin-top:6px;';
+    tagDiv.textContent = 'タグ候補: ' + ((art.suggested_tags || []).join(', '));
+    aresult.appendChild(tagDiv);
+    var copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'secondary';
+    copyBtn.textContent = '📋 markdown コピー';
+    copyBtn.style.cssText = 'margin-top:8px;padding:8px 16px;';
+    copyBtn.addEventListener('click', function() {
+      ta.select();
+      try { navigator.clipboard.writeText(ta.value); copyBtn.textContent = '✅ コピー済'; }
+      catch (e) { document.execCommand('copy'); copyBtn.textContent = '✅ コピー済'; }
+      setTimeout(function() { copyBtn.textContent = '📋 markdown コピー'; }, 2000);
+    });
+    aresult.appendChild(copyBtn);
+  }
+  aform.addEventListener('submit', async function(ev) {
+    ev.preventDefault();
+    aresult.hidden = true;
+    if (asubmit) { asubmit.disabled = true; asubmit.textContent = '📡 生成中...'; }
+    var data = new FormData(aform);
+    var params = new URLSearchParams();
+    data.forEach(function(v, k) { if (v) params.append(k, v); });
+    try {
+      var resp = await fetch('/insight-article?' + params.toString(), {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        credentials: 'same-origin',
+      });
+      var json = await resp.json().catch(function() { return {}; });
+      renderArticle(json);
+    } catch (e) {
+      renderArticle({ ok: false, reason: String(e) });
+    } finally {
+      if (asubmit) { asubmit.disabled = false; asubmit.textContent = '📝 記事 draft 生成'; }
     }
   });
 })();
@@ -898,6 +1003,42 @@ def build_handler(
                     json.dumps(_MANIFEST, ensure_ascii=False),
                     content_type="application/manifest+json; charset=utf-8",
                 )
+                return
+            if path == "/insight-article":
+                # INSIGHT-008: generate article draft markdown from rank query.
+                expected_token = _require_token()
+                if expected_token:
+                    cookie_token = ""
+                    raw_cookie = self.headers.get("Cookie") or ""
+                    for part in raw_cookie.split(";"):
+                        kv = part.strip().split("=", 1)
+                        if len(kv) == 2 and kv[0].strip() == "manual_intake_session":
+                            cookie_token = kv[1].strip()
+                            break
+                    query_token = ""
+                    qtok = parse_qs(parsed.query, keep_blank_values=False).get("token") or []
+                    if qtok:
+                        query_token = (qtok[0] or "").strip()
+                    if cookie_token != expected_token and query_token != expected_token:
+                        _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                        return
+                params = parse_qs(parsed.query, keep_blank_values=False)
+                miq.ensure_local_db()
+                try:
+                    result = miq.generate_article(
+                        metric_name=(params.get("metric") or [""])[0],
+                        player_canonical=(params.get("player") or [""])[0] or None,
+                        position_filter=(params.get("position") or [""])[0] or None,
+                        since=(params.get("since") or [""])[0] or None,
+                        until=(params.get("until") or [""])[0] or None,
+                        min_sample=int((params.get("min_sample") or ["1"])[0]),
+                        top_n=int((params.get("top_n") or ["10"])[0]),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    bound_logger.exception("insight_article_failed")
+                    _json_response(self, 500, {"ok": False, "reason": f"article_error:{exc!r}"})
+                    return
+                _json_response(self, 200, result)
                 return
             if path == "/insight-rank":
                 # INSIGHT-007: cross-team rank query.

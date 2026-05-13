@@ -393,6 +393,71 @@ def query_rank(
     }
 
 
+def generate_article(
+    *,
+    metric_name: str,
+    player_canonical: str | None = None,
+    position_filter: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+    min_sample: int = 1,
+    top_n: int = 10,
+    db_path: Path | None = None,
+) -> dict:
+    """INSIGHT-008: query_rank → article generator pipeline。
+
+    rank query を実行 → 結果から markdown article draft を生成。
+    返り値: ``{"ok": bool, "article": {"title", "body_md", ...},
+                "filters": ...}``。
+    """
+    rank_result = query_rank(
+        metric_name=metric_name,
+        player_canonical=player_canonical,
+        position_filter=position_filter,
+        since=since,
+        until=until,
+        min_sample=min_sample,
+        limit=max(top_n, 100),
+        db_path=db_path,
+    )
+    if not rank_result.get("ok"):
+        return {
+            "ok": False,
+            "reason": rank_result.get("reason"),
+            "filters": rank_result.get("filters"),
+        }
+
+    from src.analysis import insight_article_generator as gen  # local import
+
+    rows = [
+        gen.RankRow(
+            player_canonical=r["player_canonical"],
+            team_code=r.get("team_code"),
+            metric_value=r["metric_value"],
+            sample_size=r["sample_size"],
+            rank=r["rank"],
+            total=r["total"],
+        )
+        for r in (rank_result.get("rows") or [])
+    ]
+    ctx = gen.ArticleContext(
+        metric_name=metric_name,
+        rows=rows,
+        focus_player=player_canonical or None,
+        position_filter=position_filter or None,
+        since=since,
+        until=until,
+        sample_window_label="通算" if not (since or until) else f"{since or '(no-start)'} 〜 {until or '(no-end)'}",
+    )
+    article = gen.render_article(ctx, top_n=top_n)
+    return {
+        "ok": True,
+        "article": article,
+        "filters": rank_result.get("filters"),
+        "rank_total": rank_result.get("total"),
+    }
+
+
 def roster_options() -> list[dict]:
     """Read ``config/giants_roster.json`` and return active players as
     ``{name, position, role}``. Empty list when the file is missing."""

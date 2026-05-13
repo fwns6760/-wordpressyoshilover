@@ -49,8 +49,11 @@ logger = logging.getLogger(__name__)
 
 JST = dt.timezone(dt.timedelta(hours=9))
 
-# 翌朝刊サイクルの終了 = 翌日 JST 10:00。これを超えた group は closed 扱い。
-MORNING_CUTOFF_HOUR = 10
+# 朝の自動補強 (morning_event_key_enricher) を回す時刻 = 翌日 JST 07:00。
+# この時刻を境に、game_date 帰属 / window close / 自動補強 cron が揃う。
+# - JST 07:00 より前 = 前日試合の朝刊サイクル中 → 前日の game_date に帰属
+# - JST 07:00 以降 = 当日扱い → window=closed → 自動補強 trigger
+MORNING_CUTOFF_HOUR = 7
 
 # ─── opponent dictionary ─────────────────────────────────────────────────────
 
@@ -153,10 +156,16 @@ GIANTS_POSITIVE_SIGNAL_KWS = ("巨人", "ジャイアンツ")
 def has_giants_game_context(rec: PostRecord) -> bool:
     """Return True if the record is plausibly about the 1軍 Giants game
     being grouped. Excludes 二軍/OB/追悼 articles even when they share an
-    opponent or trigger a game-related event_type keyword."""
+    opponent or trigger a game-related event_type keyword.
+
+    Since yoshilover is a Giants-only blog, any CORE event (サヨナラ /
+    HR / etc.) is by definition Giants context — even if the title omits
+    『巨人』 (e.g. 公式 YouTube タイトルで 🐵ジョージが…)."""
     t = rec.title
     if any(k in t for k in OB_OR_OFFGAME_EXCLUSION_KWS):
         return False
+    if rec.event_type in CORE_EVENT_TYPES:
+        return True
     if rec.player:
         return True
     return any(k in t for k in GIANTS_POSITIVE_SIGNAL_KWS)

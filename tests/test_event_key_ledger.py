@@ -62,9 +62,9 @@ def test_classify_event_type(title: str, expected: str) -> None:
     [
         ("2026-05-12T21:15:51", "2026-05-12"),
         ("2026-05-13T04:30:50", "2026-05-12"),  # morning-after → previous day
-        ("2026-05-13T09:59:59", "2026-05-12"),
-        ("2026-05-13T10:00:00", "2026-05-13"),  # cutoff
-        ("2026-05-13T14:00:00", "2026-05-13"),
+        ("2026-05-13T06:59:59", "2026-05-12"),
+        ("2026-05-13T07:00:00", "2026-05-13"),  # cutoff = 7am JST
+        ("2026-05-13T09:00:00", "2026-05-13"),
     ],
 )
 def test_attribute_game_date(iso: str, expected: str) -> None:
@@ -76,7 +76,7 @@ def test_window_close_for() -> None:
     assert close.year == 2026
     assert close.month == 5
     assert close.day == 13
-    assert close.hour == 10
+    assert close.hour == 7
     assert close.tzinfo == m.JST
 
 
@@ -182,7 +182,7 @@ def test_group_records_picks_player_anchor_over_empty_player() -> None:
     # Freeze "now" to before window close so status=open
     groups = m.group_records(
         records,
-        now=dt.datetime(2026, 5, 13, 8, 0, tzinfo=m.JST),
+        now=dt.datetime(2026, 5, 13, 6, 0, tzinfo=m.JST),
     )
     game_results = [g for g in groups if g["kind"] == "game_result"]
     assert len(game_results) == 1
@@ -194,7 +194,7 @@ def test_group_records_picks_player_anchor_over_empty_player() -> None:
 
 def test_group_records_excludes_two_gun_and_ob() -> None:
     records = _build_fixture_records()
-    groups = m.group_records(records, now=dt.datetime(2026, 5, 13, 8, 0, tzinfo=m.JST))
+    groups = m.group_records(records, now=dt.datetime(2026, 5, 13, 6, 0, tzinfo=m.JST))
     gr = next(g for g in groups if g["kind"] == "game_result")
     child_ids = {c["post_id"] for c in gr["children"]}
     standalone_ids = {s["post_id"] for s in gr["standalone"]}
@@ -206,7 +206,7 @@ def test_group_records_excludes_two_gun_and_ob() -> None:
 
 def test_group_records_axis_coverage() -> None:
     records = _build_fixture_records()
-    groups = m.group_records(records, now=dt.datetime(2026, 5, 13, 8, 0, tzinfo=m.JST))
+    groups = m.group_records(records, now=dt.datetime(2026, 5, 13, 6, 0, tzinfo=m.JST))
     gr = next(g for g in groups if g["kind"] == "game_result")
     cov = gr["axis_coverage"]
     assert cov["result_summary"] == 1
@@ -221,21 +221,23 @@ def test_group_records_axis_coverage() -> None:
 
 def test_group_records_window_status_open_before_cutoff() -> None:
     records = _build_fixture_records()
-    groups = m.group_records(records, now=dt.datetime(2026, 5, 13, 9, 0, tzinfo=m.JST))
+    # 06:00 JST = before 7am cutoff = window open
+    groups = m.group_records(records, now=dt.datetime(2026, 5, 13, 6, 0, tzinfo=m.JST))
     gr = next(g for g in groups if g["kind"] == "game_result")
     assert gr["window"]["status"] == "open"
 
 
 def test_group_records_window_status_closed_after_cutoff() -> None:
     records = _build_fixture_records()
-    groups = m.group_records(records, now=dt.datetime(2026, 5, 13, 10, 0, 1, tzinfo=m.JST))
+    # 07:00:01 JST = after 7am cutoff = window closed
+    groups = m.group_records(records, now=dt.datetime(2026, 5, 13, 7, 0, 1, tzinfo=m.JST))
     gr = next(g for g in groups if g["kind"] == "game_result")
     assert gr["window"]["status"] == "closed"
 
 
 def test_group_records_standalone_record_compare_kept_separate() -> None:
     records = _build_fixture_records()
-    groups = m.group_records(records, now=dt.datetime(2026, 5, 13, 8, 0, tzinfo=m.JST))
+    groups = m.group_records(records, now=dt.datetime(2026, 5, 13, 6, 0, tzinfo=m.JST))
     gr = next(g for g in groups if g["kind"] == "game_result")
     sa_ids = {s["post_id"] for s in gr["standalone"]}
     assert 66766 in sa_ids  # 巨人記録室 record_compare
@@ -247,7 +249,7 @@ def test_group_records_standalone_record_compare_kept_separate() -> None:
 
 def test_render_enriched_preview_contains_axes_section() -> None:
     records = _build_fixture_records()
-    groups = m.group_records(records, now=dt.datetime(2026, 5, 13, 8, 0, tzinfo=m.JST))
+    groups = m.group_records(records, now=dt.datetime(2026, 5, 13, 6, 0, tzinfo=m.JST))
     gr = next(g for g in groups if g["kind"] == "game_result")
     md = m.render_enriched_preview(gr)
     assert "## 完成チェックリスト" in md

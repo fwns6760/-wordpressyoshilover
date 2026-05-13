@@ -393,6 +393,43 @@ def query_rank(
     }
 
 
+def ask(
+    *,
+    question: str,
+    db_path: Path | None = None,
+) -> dict:
+    """INSIGHT-009: 自然言語質問 → parse → rank query → article。
+
+    一発で記事 draft を生成する。LLM 不要、rule-based のみ。
+    返り値: ``{ok, parsed: {...}, article: {...}, unresolved: [...]}``
+    """
+    from src.analysis import insight_nl_query as nlq  # local import
+
+    parsed = nlq.parse_question(question)
+    if parsed.get("unresolved"):
+        return {
+            "ok": False,
+            "reason": "unresolved_fields",
+            "parsed": parsed,
+            "unresolved": parsed.get("unresolved"),
+        }
+    if not parsed.get("metric"):
+        return {
+            "ok": False,
+            "reason": "metric_not_detected",
+            "parsed": parsed,
+        }
+    result = generate_article(
+        metric_name=parsed["metric"],
+        player_canonical=parsed.get("focus_player"),
+        position_filter=parsed.get("position"),
+        top_n=parsed.get("top_n") or 10,
+        db_path=db_path,
+    )
+    result["parsed"] = parsed
+    return result
+
+
 def generate_article(
     *,
     metric_name: str,

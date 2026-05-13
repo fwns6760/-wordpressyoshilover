@@ -111,6 +111,15 @@ STANDALONE_LANE_KWS = (
 SCENE_DETAIL_KWS = ("半袖", "練習", "撮影", "🏟️", "🔥📷", "📷")
 QUOTE_BRACKET_RE = re.compile(r"「[^」]+」")
 
+# ─── event_subtype keyword sets (v2 — player × subtype event_key) ───────────
+HOME_VISIT_KWS = ("故郷", "凱旋", "出身校", "出身地", "地元")
+DEBUT_KWS = ("デビュー", "プロ初", "初出場", "初安打", "初本塁打", "初登板", "初猛打賞", "初勝利", "初セーブ")
+RELIEF_KWS = ("救援", "抑え", "セーブ", "クローザー", "降臨")
+STARTING_PITCHER_KWS = ("先発", "完封", "完投")
+DECISIVE_KWS = ("決勝打", "決勝", "勝ち越し")
+PITCHING_INNINGS_RE = re.compile(r"[0-9０-９]+回")
+SUBJECT_MARKER_LOOKAHEAD = 2  # name の直後 N chars 以内に "が" → subject marker
+
 # 「サヨナラ HR」「決勝弾」「初本塁打」など、その日の主役級イベント
 CORE_EVENT_TYPES = {
     "walk_off_hr_result",
@@ -193,6 +202,144 @@ def derive_enrichment_role(rec: PostRecord) -> str:
     if any(k in t for k in COLUMN_KWS):
         return "morning_column"
     return ENRICHMENT_ROLE_BY_EVENT.get(rec.event_type, rec.event_type)
+
+
+# ─── event_subtype + event_player helpers (v2) ──────────────────────────────
+
+
+def derive_event_subtype(title: str) -> str:
+    """Map ``title`` to a player-level event_subtype.
+
+    Order is significant — more specific subtypes win over fall-throughs.
+    The categories below correspond to topics that a single player can
+    have multiple of on the same day; we keep them as **separate**
+    event_keys so 「佐々木サヨナラHR」 and 「佐々木の故郷話」 do not merge.
+    """
+    t = title
+
+    # Hardest signals first.
+    if any(k in t for k in WALK_OFF_KWS):
+        return "walk_off"
+    if any(k in t for k in RECORD_COMPARE_KWS):
+        return "record_milestone"
+    if any(k in t for k in DECISIVE_KWS):
+        return "decisive_hit"
+    has_homerun_kw = any(k in t for k in HOMERUN_KWS) or bool(HOMERUN_NRAN_RE.search(t))
+    has_given_up = any(k in t for k in HOMERUN_GIVEN_UP_KWS)
+    if has_homerun_kw and not has_given_up:
+        return "homerun"
+    if any(k in t for k in HOME_VISIT_KWS):
+        return "home_visit"
+    if any(k in t for k in DEBUT_KWS):
+        return "debut_milestone"
+    if any(k in t for k in STANDALONE_LANE_KWS):
+        return "lineup_role"
+    if any(k in t for k in STARTING_PITCHER_KWS) and PITCHING_INNINGS_RE.search(t):
+        return "starting_pitcher"
+    if any(k in t for k in RELIEF_KWS):
+        return "relief"
+    return "generic"
+
+
+# Subtypes that absorb generic-subtype articles for the same player.
+# Generic articles attach to the player's "primary subtype event" of the
+# day if one exists; otherwise generic forms its own event_key.
+PRIMARY_SUBTYPES_FOR_GENERIC_MERGE = (
+    "walk_off",
+    "homerun",
+    "decisive_hit",
+    "home_visit",
+    "debut_milestone",
+    "starting_pitcher",
+    "relief",
+    "record_milestone",
+    "lineup_role",
+)
+
+
+def _allowlist_pool() -> tuple[str, ...]:
+    """Return the Giants player allowlist (longest first) reused from
+    :mod:`player_eyecatch_resolver`."""
+    from src.player_eyecatch_resolver import _load_giants_name_pool  # noqa: WPS433
+
+    pool, _ = _load_giants_name_pool()
+    return pool
+
+
+def find_all_allowlist_players(title: str) -> list[str]:
+    """All Giants allowlist players in title, longest-first dedup.
+
+    Detection order:
+
+    1. Full-name substring match for every name in the pool (longest
+       first).
+    2. Unique 2-char surname fallback — when a 2-char prefix maps to
+       exactly one allowlist name and that prefix is present, add the
+       full name. Recovers cases like 「佐々木の長打力」 where the title
+       only contains the surname; this mirrors :func:`detect_person`'s
+       own surname fallback so the resulting set is consistent with the
+       primary-player path."""
+    if not title:
+        return []
+    pool = _allowlist_pool()
+    found: list[str] = []
+    for name in pool:
+        if name in title and name not in found:
+            found.append(name)
+    surname_index: dict[str, list[str]] = {}
+    for name in pool:
+        if len(name) >= 2:
+            surname_index.setdefault(name[:2], []).append(name)
+    for surname, cands in surname_index.items():
+        if len(cands) == 1 and surname in title and cands[0] not in found:
+            found.append(cands[0])
+    return found
+
+
+def has_subject_marker(title: str, name: str) -> bool:
+    """True if ``name`` is followed within :data:`SUBJECT_MARKER_LOOKAHEAD`
+    chars by the Japanese subject marker ``が``. This is a crude but
+    effective signal for "who performed the action" in a multi-name
+    title like 「戸郷翔征に今季初勝利を！女房・大城卓三**が**先制４号ソロ」
+    (subject = 大城卓三)."""
+    if not title or not name:
+        return False
+    idx = title.find(name)
+    if idx < 0:
+        return False
+    tail = title[idx + len(name): idx + len(name) + SUBJECT_MARKER_LOOKAHEAD]
+    return "が" in tail
+
+
+def derive_event_player(rec: PostRecord) -> str:
+    """Pick the player whose **story** this article tells.
+
+    Heuristics, in order:
+
+    1. If :func:`detect_person` returned the manager (阿部慎之助) and a
+       different allowlist player appears in the title, prefer that
+       other player (監督 が選手を語る → その選手の event)。
+    2. If multiple allowlist players appear and the primary one has no
+       subject marker (``が``) but another does, prefer the が-marked
+       one (the actor) over the merely-mentioned name.
+    3. Otherwise the primary :func:`detect_person` result wins.
+    """
+    primary = rec.player or ""
+    if not primary:
+        return ""
+    others = [n for n in find_all_allowlist_players(rec.title) if n != primary]
+
+    # Heuristic 1: manager + other → other
+    if primary == "阿部慎之助" and others:
+        return others[0]
+
+    # Heuristic 2: が-subject marker outranks first-mention
+    if others and not has_subject_marker(rec.title, primary):
+        for other in others:
+            if has_subject_marker(rec.title, other):
+                return other
+
+    return primary
 
 
 def classify_event_type(title: str) -> str:
@@ -461,28 +608,24 @@ def fill_inferred_opponents(records: list[PostRecord]) -> list[PostRecord]:
     return out
 
 
-def _find_anchors(records: list[PostRecord]) -> dict[tuple[str, str], PostRecord]:
-    """For each ``(game_date, opponent)`` pick the anchor (= parent of the
-    game_result group) as the **earliest core-event record with a non-empty
-    player**. If no candidate has a player, fall back to the earliest core
-    record regardless of player."""
-    by_key_with_player: dict[tuple[str, str], PostRecord] = {}
-    by_key_fallback: dict[tuple[str, str], PostRecord] = {}
-    for rec in records:
-        if rec.event_type not in CORE_EVENT_TYPES:
-            continue
-        if not rec.opponent:
-            continue
-        key = (rec.game_date, rec.opponent)
-        if rec.player and key not in by_key_with_player:
-            by_key_with_player[key] = rec
-        if key not in by_key_fallback:
-            by_key_fallback[key] = rec
-    return {**by_key_fallback, **by_key_with_player}
+def _make_event_key(game_date: str, opponent: str, player: str, subtype: str) -> str:
+    return f"{game_date or 'undated'}|giants_vs_{opponent or 'none'}|{player or 'team'}|{subtype}"
 
 
-def _make_game_result_key(game_date: str, opponent: str, hero: str) -> str:
-    return f"{game_date}|giants_vs_{opponent}|{hero or 'team'}|game_result"
+def _kind_for(player: str, subtype: str) -> str:
+    """Coarse-grained 'kind' tag for downstream filtering (the enricher,
+    summary reports, etc.). Backward-compat: ``game_result`` is still
+    emitted for the major in-game subtypes so the enricher and existing
+    tests can pivot on it."""
+    if player == "team":
+        return "lineup"
+    if subtype in {"walk_off", "homerun", "decisive_hit", "starting_pitcher", "relief"}:
+        return "game_result"
+    if subtype in {"home_visit", "debut_milestone", "record_milestone", "lineup_role"}:
+        return "player_topic"
+    if subtype == "generic":
+        return "player_quote"
+    return "other"
 
 
 def group_records(
@@ -490,62 +633,175 @@ def group_records(
     *,
     now: Optional[dt.datetime] = None,
 ) -> list[dict]:
-    """Group records into event_key buckets and compute classification.
+    """Group records into ``(game_date, opponent, event_player, subtype)``
+    event_keys (v2 player × subtype design).
 
     Algorithm
     ---------
-    1. Find anchors per ``(game_date, opponent)`` via core event_types.
-    2. For each record:
-       a. If event_type ∈ LINEUP → own event_key (lineup is a separate
-          search intent from game result).
-       b. Else if same ``(game_date, opponent)`` matches an anchor:
-          - If record == anchor → parent
-          - Else if event_type ∈ STANDALONE_INTENT_EVENT_TYPES → join
-            the game_result group's ``standalone`` array (kept publish-
-            worthy on its own).
-          - Else → join ``children`` with an ``enrichment_role``.
-       c. Else → standalone group of its own.
-    3. Compute axis_coverage and window.open/close per group.
+    1. Annotate every record with ``event_player`` (via
+       :func:`derive_event_player`) and ``event_subtype`` (via
+       :func:`derive_event_subtype`).
+    2. ``lineup_pre`` / ``lineup_post`` event_types are *team-level* — they
+       get ``event_player="team"`` and form their own one-record groups
+       (lineup is a distinct search intent from anything a single
+       player did).
+    3. Records lacking Giants context (二軍/OB/追悼 etc.) form orphan
+       solo groups so they appear in the ledger but never join a
+       game-result event.
+    4. Per-day generic-subtype articles for a player attach to that
+       player's strongest non-generic subtype event of the day (if
+       any), so 「大城卓三「風に乗ってくれました」」 (generic) gets
+       absorbed into 「大城 + homerun」.
+    5. For each surviving bucket, the earliest record is the parent and
+       the rest are children. Children carry an :func:`derive_enrichment_role`
+       tag for the morning enricher.
     """
     records_sorted = sorted(records, key=lambda r: r.published_at)
     records_sorted = fill_inferred_opponents(records_sorted)
-    anchors = _find_anchors(records_sorted)
-    groups: dict[str, dict] = {}
     now = now or dt.datetime.now(JST)
 
-    def _ensure_game_result_group(rec: PostRecord) -> dict:
-        anchor = anchors[(rec.game_date, rec.opponent)]
-        hero = anchor.player or rec.player
-        key = _make_game_result_key(rec.game_date, rec.opponent, hero)
-        if key in groups:
-            return groups[key]
-        close_at = window_close_for(rec.game_date)
-        groups[key] = {
-            "event_key": key,
-            "kind": "game_result",
-            "game_date": rec.game_date,
-            "opponent": rec.opponent,
-            "hero_player": hero,
-            "parent_id": None,
-            "parent": None,
-            "children": [],
-            "standalone": [],
-            "all_ids": [],
-            "window": {
-                "open_at": anchor.published_at,
-                "close_at": close_at.isoformat(),
-                "status": "closed" if now >= close_at else "open",
-            },
-        }
-        return groups[key]
+    # Pass 1: annotate
+    annotated: list[tuple[PostRecord, str, str]] = []
+    deferred_no_player_core: list[tuple[PostRecord, str]] = []
+    # annotation_map[post_id] = the event_player attributed in Pass 1.
+    # Used during group construction so that deferred (no-player) records
+    # never become parents of a player-named event_key.
+    annotation_map: dict[int, str] = {}
+    for rec in records_sorted:
+        # OB / 二軍 / 追悼 → orphan solo group
+        if not has_giants_game_context(rec):
+            annotated.append((rec, "", "orphan"))
+            continue
+        # Team-level lineup → its own group
+        if rec.event_type in LINEUP_EVENT_TYPES:
+            annotated.append((rec, "team", rec.event_type))
+            annotation_map[rec.post_id] = "team"
+            continue
+        ep = derive_event_player(rec)
+        sub = derive_event_subtype(rec.title)
+        if not ep:
+            # No allowlist player. If the article carries a strong day-event
+            # signal (walk_off / homerun / standings / video of the result /
+            # etc.), defer it for attachment to the day's dominant player
+            # event of the same subtype (e.g., 📺YouTube公開「ジョージが…」
+            # → 佐々木 walk_off).
+            if sub in PRIMARY_SUBTYPES_FOR_GENERIC_MERGE:
+                deferred_no_player_core.append((rec, sub))
+            else:
+                annotated.append((rec, "", "orphan"))
+            continue
+        annotated.append((rec, ep, sub))
+        annotation_map[rec.post_id] = ep
 
-    def _make_solo_group(rec: PostRecord, *, kind: str) -> None:
-        ek = f"{rec.game_date or 'undated'}|giants_vs_{rec.opponent or 'none'}|{rec.player or 'team'}|{rec.event_type}|{rec.post_id}"
-        groups[ek] = {
+    # Pass 2: bucket by (date, opp, player, subtype)
+    buckets: dict[tuple[str, str, str, str], list[PostRecord]] = {}
+    orphans: list[PostRecord] = []
+    for rec, ep, sub in annotated:
+        if ep == "":
+            orphans.append(rec)
+            continue
+        key = (rec.game_date or "undated", rec.opponent or "none", ep, sub)
+        buckets.setdefault(key, []).append(rec)
+
+    # Pass 2.5: attach deferred no-player CORE-subtype records to the
+    # dominant player event for (date, opponent, subtype).
+    dominant_by_subtype: dict[tuple[str, str, str], tuple[str, str, str, str]] = {}
+    for key, recs in buckets.items():
+        date, opp, player, sub = key
+        if player == "team" or sub not in PRIMARY_SUBTYPES_FOR_GENERIC_MERGE:
+            continue
+        skey = (date, opp, sub)
+        current = dominant_by_subtype.get(skey)
+        if current is None or len(recs) > len(buckets[current]):
+            dominant_by_subtype[skey] = key
+    for rec, sub in deferred_no_player_core:
+        skey = (rec.game_date or "undated", rec.opponent or "none", sub)
+        target = dominant_by_subtype.get(skey)
+        if target is not None:
+            buckets[target].append(rec)
+        else:
+            orphans.append(rec)
+
+    # Pass 3: find each player's primary non-generic subtype event of the
+    # day so generic articles can attach to it.
+    primary_by_player: dict[tuple[str, str, str], tuple[str, str, str, str]] = {}
+    # Iterate in event-priority order so the strongest subtype wins.
+    for priority_sub in PRIMARY_SUBTYPES_FOR_GENERIC_MERGE:
+        for key in buckets:
+            date, opp, player, sub = key
+            if sub != priority_sub or player == "team":
+                continue
+            primary_by_player.setdefault((date, opp, player), key)
+
+    merged: dict[tuple[str, str, str, str], list[PostRecord]] = {}
+    for key, recs in buckets.items():
+        date, opp, player, sub = key
+        if sub == "generic" and player != "team":
+            primary_key = primary_by_player.get((date, opp, player))
+            if primary_key:
+                merged.setdefault(primary_key, []).extend(recs)
+                continue
+        merged.setdefault(key, []).extend(recs)
+
+    # Pass 4: build groups
+    groups: list[dict] = []
+    for key, recs in merged.items():
+        date, opp, player, sub = key
+        recs_in_order = sorted(recs, key=lambda r: r.published_at)
+        # Parent = earliest record that was originally annotated with this
+        # bucket's player. Deferred no-player records can be children but
+        # never the headline parent (we don't want a relief-pitcher
+        # support article to displace 佐々木's HR as the サヨナラ event
+        # parent).
+        native_recs = [r for r in recs_in_order if annotation_map.get(r.post_id) == player]
+        parent_rec = native_recs[0] if native_recs else recs_in_order[0]
+        child_recs = [r for r in recs_in_order if r.post_id != parent_rec.post_id]
+        close_dt = window_close_for(date) if date != "undated" else None
+        window_status: str
+        close_iso: Optional[str]
+        open_iso = parent_rec.published_at
+        if close_dt is not None:
+            close_iso = close_dt.isoformat()
+            window_status = "closed" if now >= close_dt else "open"
+        else:
+            close_iso = None
+            window_status = "n/a"
+        groups.append({
+            "event_key": _make_event_key(date, opp, player, sub),
+            "kind": _kind_for(player, sub),
+            "game_date": "" if date == "undated" else date,
+            "opponent": "" if opp == "none" else opp,
+            "event_player": player,
+            "event_subtype": sub,
+            # Backward-compat alias for the enricher and existing
+            # ``--preview-hero`` CLI; matches event_player except for the
+            # team-lineup case where we expose an empty hero.
+            "hero_player": player if player != "team" else "",
+            "parent_id": parent_rec.post_id,
+            "parent": _record_summary(parent_rec),
+            "children": [
+                {**_record_summary(c), "enrichment_role": derive_enrichment_role(c)}
+                for c in child_recs
+            ],
+            "standalone": [],
+            "all_ids": [r.post_id for r in recs_in_order],
+            "window": {
+                "open_at": open_iso,
+                "close_at": close_iso,
+                "status": window_status,
+            },
+        })
+
+    # Orphan groups for OB / 二軍 / 追悼 / no-player records
+    for rec in orphans:
+        ek = f"{rec.game_date or 'undated'}|giants_vs_{rec.opponent or 'none'}|orphan|{rec.event_type}|{rec.post_id}"
+        groups.append({
             "event_key": ek,
-            "kind": kind,
+            "kind": "orphan",
             "game_date": rec.game_date,
             "opponent": rec.opponent,
+            "event_player": "",
+            "event_subtype": "orphan",
             "hero_player": rec.player,
             "parent_id": rec.post_id,
             "parent": _record_summary(rec),
@@ -553,52 +809,13 @@ def group_records(
             "standalone": [],
             "all_ids": [rec.post_id],
             "window": {"open_at": rec.published_at, "close_at": None, "status": "n/a"},
-        }
+        })
 
-    for rec in records_sorted:
-        # Lineup → own group (not joined into game_result enrichment)
-        if rec.event_type in LINEUP_EVENT_TYPES:
-            _make_solo_group(rec, kind="lineup")
-            continue
-
-        joins_game_result = (
-            rec.opponent
-            and (rec.game_date, rec.opponent) in anchors
-            and rec.event_type in (
-                CORE_EVENT_TYPES
-                | JOINABLE_AS_CHILD_EVENT_TYPES
-                | STANDALONE_INTENT_EVENT_TYPES
-            )
-            and has_giants_game_context(rec)
-        )
-
-        if joins_game_result:
-            grp = _ensure_game_result_group(rec)
-            grp["all_ids"].append(rec.post_id)
-            anchor = anchors[(rec.game_date, rec.opponent)]
-
-            if rec.post_id == anchor.post_id:
-                grp["parent_id"] = rec.post_id
-                grp["parent"] = _record_summary(rec)
-                continue
-
-            if rec.event_type in STANDALONE_INTENT_EVENT_TYPES:
-                grp["standalone"].append({
-                    **_record_summary(rec),
-                    "reason": rec.event_type,
-                })
-                continue
-
-            grp["children"].append({
-                **_record_summary(rec),
-                "enrichment_role": derive_enrichment_role(rec),
-            })
-        else:
-            _make_solo_group(rec, kind="standalone")
-
-    # Compute axis_coverage for game_result groups
-    for grp in groups.values():
-        if grp["kind"] != "game_result":
+    # axis_coverage per group (drives the morning enricher's completeness
+    # checklist). Counts children by enrichment_role plus a +1 for
+    # parent's "result_summary" presence.
+    for grp in groups:
+        if grp.get("kind") not in {"game_result", "player_topic", "player_quote"}:
             continue
         covered: dict[str, int] = {axis: 0 for axis in COMPLETENESS_AXES}
         if grp.get("parent"):
@@ -607,18 +824,12 @@ def group_records(
             role = ch.get("enrichment_role")
             if role in covered:
                 covered[role] += 1
-        # morning_column may also appear in standalone (番記者 + 起用意図)
-        # which already lives in `standalone`. Detect if standalone hits column
-        # keywords too so the report shows column presence.
-        for st in grp["standalone"]:
-            if any(k in (st.get("title") or "") for k in COLUMN_KWS):
-                covered["morning_column"] += 1
         grp["axis_coverage"] = covered
         grp["axes_covered"] = sum(1 for v in covered.values() if v > 0)
         grp["axes_total"] = len(COMPLETENESS_AXES)
         grp["completeness_pct"] = round(100 * grp["axes_covered"] / grp["axes_total"], 1)
 
-    return list(groups.values())
+    return groups
 
 
 # ─── output ─────────────────────────────────────────────────────────────────

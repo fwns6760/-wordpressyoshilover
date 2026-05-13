@@ -151,6 +151,24 @@ def test_fill_inferred_opponents_only_fills_giants_game_context() -> None:
 # ─── group_records full pipeline on the 5/12 fixture subset ──────────────────
 
 
+def _find(groups, *, event_player, event_subtype, game_date="2026-05-12"):
+    """Locate a single group by (event_player, event_subtype, game_date)
+    in the v2 player×subtype output. ``game_date`` defaults to 5/12 so the
+    fixture's 5/13-attributed morning roundup (e.g., 07:01 video) doesn't
+    collide with the day's main event."""
+    matches = [
+        g for g in groups
+        if g.get("event_player") == event_player
+        and g.get("event_subtype") == event_subtype
+        and g.get("game_date") == game_date
+    ]
+    assert len(matches) == 1, (
+        f"expected one match for ({event_player}, {event_subtype}, {game_date}); "
+        f"got {len(matches)}"
+    )
+    return matches[0]
+
+
 def _build_fixture_records() -> list[m.PostRecord]:
     """Minimal subset of 5/12 posts that captures parent + key children
     + standalone for the 佐々木 walk-off HR event_key."""
@@ -179,42 +197,52 @@ def _build_fixture_records() -> list[m.PostRecord]:
 
 def test_group_records_picks_player_anchor_over_empty_player() -> None:
     records = _build_fixture_records()
-    # Freeze "now" to before window close so status=open
     groups = m.group_records(
         records,
         now=dt.datetime(2026, 5, 13, 6, 0, tzinfo=m.JST),
     )
-    game_results = [g for g in groups if g["kind"] == "game_result"]
-    assert len(game_results) == 1
-    gr = game_results[0]
-    assert gr["hero_player"] == "佐々木俊輔"
-    assert gr["parent_id"] == 66669
-    assert gr["event_key"].endswith("|佐々木俊輔|game_result")
+    sasaki_walk_off = _find(groups, event_player="佐々木俊輔", event_subtype="walk_off")
+    assert sasaki_walk_off["hero_player"] == "佐々木俊輔"
+    assert sasaki_walk_off["parent_id"] == 66669
+    assert sasaki_walk_off["event_key"].endswith("|佐々木俊輔|walk_off")
+    # Deferred no-player records (e.g., 66667 ライデル投入) must NOT take
+    # the parent slot away from the player-named anchor.
+    assert any(c["post_id"] == 66667 for c in sasaki_walk_off["children"])
 
 
 def test_group_records_excludes_two_gun_and_ob() -> None:
     records = _build_fixture_records()
     groups = m.group_records(records, now=dt.datetime(2026, 5, 13, 6, 0, tzinfo=m.JST))
-    gr = next(g for g in groups if g["kind"] == "game_result")
-    child_ids = {c["post_id"] for c in gr["children"]}
-    standalone_ids = {s["post_id"] for s in gr["standalone"]}
-    assert 66700 not in child_ids  # OB news
+    sasaki = _find(groups, event_player="佐々木俊輔", event_subtype="walk_off")
+    child_ids = {c["post_id"] for c in sasaki["children"]}
+    assert 66700 not in child_ids  # OB news (氏が)
     assert 66565 not in child_ids  # 二軍 game
-    assert 66700 not in standalone_ids
-    assert 66565 not in standalone_ids
+    # OB / 二軍 must never appear in any non-orphan group
+    for g in groups:
+        if g.get("kind") == "orphan":
+            continue
+        ids = {g["parent_id"]} | {c["post_id"] for c in g["children"]}
+        assert 66700 not in ids
+        assert 66565 not in ids
 
 
-def test_group_records_axis_coverage() -> None:
+def test_group_records_axis_coverage_for_sasaki_walk_off() -> None:
     records = _build_fixture_records()
     groups = m.group_records(records, now=dt.datetime(2026, 5, 13, 6, 0, tzinfo=m.JST))
-    gr = next(g for g in groups if g["kind"] == "game_result")
-    cov = gr["axis_coverage"]
+    sasaki = _find(groups, event_player="佐々木俊輔", event_subtype="walk_off")
+    cov = sasaki["axis_coverage"]
+    # Parent 66669 contributes result_summary
     assert cov["result_summary"] == 1
-    assert cov["manager_quote"] >= 1
+    # 66754 「最高です」 is generic + 佐々木 → merged into walk_off as player_quote
     assert cov["player_quote"] >= 1
+    # 66721 (📺YouTube) + 66783 (【動画】) are deferred-attached and tagged
+    # youtube_video by derive_enrichment_role
     assert cov["youtube_video"] >= 1
+    # 66704 (4位後退) is deferred-attached, tagged standings_impact
     assert cov["standings_impact"] >= 1
-    assert cov["morning_column"] >= 1  # 番記者 in standalone counts
+    # manager_quote / morning_column / instagram_post / fan_voice_x_post
+    # not present in this minimal fixture
+    assert cov["manager_quote"] == 0
     assert cov["instagram_post"] == 0
     assert cov["fan_voice_x_post"] == 0
 
@@ -223,25 +251,33 @@ def test_group_records_window_status_open_before_cutoff() -> None:
     records = _build_fixture_records()
     # 06:00 JST = before 7am cutoff = window open
     groups = m.group_records(records, now=dt.datetime(2026, 5, 13, 6, 0, tzinfo=m.JST))
-    gr = next(g for g in groups if g["kind"] == "game_result")
-    assert gr["window"]["status"] == "open"
+    sasaki = _find(groups, event_player="佐々木俊輔", event_subtype="walk_off")
+    assert sasaki["window"]["status"] == "open"
 
 
 def test_group_records_window_status_closed_after_cutoff() -> None:
     records = _build_fixture_records()
     # 07:00:01 JST = after 7am cutoff = window closed
     groups = m.group_records(records, now=dt.datetime(2026, 5, 13, 7, 0, 1, tzinfo=m.JST))
-    gr = next(g for g in groups if g["kind"] == "game_result")
-    assert gr["window"]["status"] == "closed"
+    sasaki = _find(groups, event_player="佐々木俊輔", event_subtype="walk_off")
+    assert sasaki["window"]["status"] == "closed"
 
 
-def test_group_records_standalone_record_compare_kept_separate() -> None:
+def test_group_records_topic_separation_per_player() -> None:
+    """v2 player×subtype: 同じ選手でも違う subtype は別 event_key になる。
+    佐々木のサヨナラHRと佐々木の記録/起用は混ざらない。"""
     records = _build_fixture_records()
     groups = m.group_records(records, now=dt.datetime(2026, 5, 13, 6, 0, tzinfo=m.JST))
-    gr = next(g for g in groups if g["kind"] == "game_result")
-    sa_ids = {s["post_id"] for s in gr["standalone"]}
-    assert 66766 in sa_ids  # 巨人記録室 record_compare
-    assert 66665 in sa_ids  # 番記者G戦記 standalone_lane
+    walk_off = _find(groups, event_player="佐々木俊輔", event_subtype="walk_off")
+    record = _find(groups, event_player="佐々木俊輔", event_subtype="record_milestone")
+    lineup_role = _find(groups, event_player="佐々木俊輔", event_subtype="lineup_role")
+    # The 巨人記録室 article must be its own event_key, NOT a child of walk_off
+    assert record["parent_id"] == 66766
+    walk_off_ids = {walk_off["parent_id"], *(c["post_id"] for c in walk_off["children"])}
+    assert 66766 not in walk_off_ids
+    # The 番記者G戦記 article is its own lineup_role event_key
+    assert lineup_role["parent_id"] == 66665
+    assert 66665 not in walk_off_ids
 
 
 # ─── render_enriched_preview ────────────────────────────────────────────────
@@ -250,7 +286,7 @@ def test_group_records_standalone_record_compare_kept_separate() -> None:
 def test_render_enriched_preview_contains_axes_section() -> None:
     records = _build_fixture_records()
     groups = m.group_records(records, now=dt.datetime(2026, 5, 13, 6, 0, tzinfo=m.JST))
-    gr = next(g for g in groups if g["kind"] == "game_result")
+    gr = _find(groups, event_player="佐々木俊輔", event_subtype="walk_off")
     md = m.render_enriched_preview(gr)
     assert "## 完成チェックリスト" in md
     assert "✅ result_summary" in md

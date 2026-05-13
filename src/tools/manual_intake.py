@@ -1437,11 +1437,38 @@ def _insert_body_excerpt_block(
     # breaks get real margin (CSS .nomotoke-source-excerpt__body p) and
     # the excerpt is comfortably scannable on mobile. Joining with <br>
     # produced an unreadable wall when the source body had many lines.
+    #
+    # Structural classification (A + B + C readability pass):
+    # - ◆/●/■/▶/▼/★/☆ で始まる行 → 小見出し (heading class)
+    # - 行が長い 「...」 直接話法だけ → blockquote 化 (inner-quote class)
+    # - 1 段落が 80 字超で複数文 → 文末「。」「！」「？」で <br> 軽改行
+    from src.source_article_body_extractor import (
+        classify_excerpt_paragraph,
+        split_paragraph_sentences,
+    )
+
     paragraphs = [p.strip() for p in excerpt.split("\n") if p.strip()]
     if paragraphs:
-        body_inner = "".join(
-            f"<p>{html.escape(p)}</p>" for p in paragraphs
-        )
+        parts: list[str] = []
+        for raw_p in paragraphs:
+            kind = classify_excerpt_paragraph(raw_p)
+            if kind == "heading":
+                parts.append(
+                    '<p class="nomotoke-source-excerpt__heading">'
+                    f"{html.escape(raw_p)}"
+                    "</p>"
+                )
+            elif kind == "quote":
+                parts.append(
+                    '<blockquote class="nomotoke-source-excerpt__inner-quote">'
+                    f"{html.escape(raw_p)}"
+                    "</blockquote>"
+                )
+            else:
+                sentences = split_paragraph_sentences(raw_p)
+                inner = "<br>".join(html.escape(s) for s in sentences)
+                parts.append(f"<p>{inner}</p>")
+        body_inner = "".join(parts)
     else:
         body_inner = html.escape(excerpt).replace("\n", "<br>")
     safe_source = html.escape(source_name or "出典")

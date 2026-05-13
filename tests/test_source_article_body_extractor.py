@@ -436,5 +436,106 @@ class YahooBoilerplateStripTests(unittest.TestCase):
         self.assertNotIn("正直言って困ってしまった", first_paragraph)
 
 
+class ExcerptParagraphFormattingTests(unittest.TestCase):
+    """Tests for the A+B+C readability pass helpers:
+
+    - A: ◆/●/■ で始まる行 → "heading"
+    - B: 「...」 が大半を占める行 → "quote"
+    - C: 長文 (>80 字 + 複数文) → 文末で sentence-split
+    """
+
+    # ─── A. heading detection ─────────────────────────────────────
+
+    def test_heading_diamond_marker_classified_as_heading(self):
+        from src.source_article_body_extractor import classify_excerpt_paragraph
+        self.assertEqual(
+            classify_excerpt_paragraph("◆ＪＥＲＡセ・リーグ 巨人１―５ヤクルト"),
+            "heading",
+        )
+
+    def test_heading_filled_circle_marker(self):
+        from src.source_article_body_extractor import classify_excerpt_paragraph
+        self.assertEqual(classify_excerpt_paragraph("●スタメン発表"), "heading")
+
+    def test_heading_filled_square_marker(self):
+        from src.source_article_body_extractor import classify_excerpt_paragraph
+        self.assertEqual(classify_excerpt_paragraph("■試合経過"), "heading")
+
+    def test_regular_paragraph_not_heading(self):
+        from src.source_article_body_extractor import classify_excerpt_paragraph
+        self.assertEqual(
+            classify_excerpt_paragraph("戸郷は投げる腕を今までよりも少し上げて。"),
+            "para",
+        )
+
+    # ─── B. quote detection ──────────────────────────────────────
+
+    def test_long_japanese_quote_classified_as_quote(self):
+        from src.source_article_body_extractor import classify_excerpt_paragraph
+        line = "「フォークの握りを考えてみてはどうだろう。握力を強化する手もある。」"
+        self.assertEqual(classify_excerpt_paragraph(line), "quote")
+
+    def test_short_quote_in_paragraph_not_quote(self):
+        # quote must be substantial (≥30 chars inside 「」). A short
+        # in-line quote like 「は」と語った should NOT lift to a
+        # blockquote — that would split natural prose.
+        from src.source_article_body_extractor import classify_excerpt_paragraph
+        line = "監督は「準備していた」と語った。"
+        self.assertEqual(classify_excerpt_paragraph(line), "para")
+
+    def test_quote_followed_by_trailing_attribution_not_quote(self):
+        # When 「...」 closes but a long trailing description follows
+        # (more than ~10 chars after 」), keep as paragraph — splitting
+        # would orphan the attribution.
+        from src.source_article_body_extractor import classify_excerpt_paragraph
+        line = (
+            "「フォークの握りを考えてみてはどうだろう。握力を強化する手もある」"
+            "と堀内氏は語った上で、首脳陣にも自分で答えを出すべきと示唆した。"
+        )
+        self.assertEqual(classify_excerpt_paragraph(line), "para")
+
+    # ─── C. sentence split ──────────────────────────────────────
+
+    def test_short_paragraph_not_split(self):
+        from src.source_article_body_extractor import split_paragraph_sentences
+        self.assertEqual(
+            split_paragraph_sentences("戸郷は好投した。"),
+            ["戸郷は好投した。"],
+        )
+
+    def test_long_paragraph_with_multiple_sentences_splits_at_period(self):
+        from src.source_article_body_extractor import split_paragraph_sentences
+        text = (
+            "戸郷は投げる腕を今までよりも少し上げて、真っすぐの威力は１５１キロをマーク。"
+            "初回の武岡こそストライクからボールになるフォークで三振を取れた。"
+            "あとはファウルにされたり、見極められたりしてしまう。"
+        )
+        out = split_paragraph_sentences(text)
+        self.assertEqual(len(out), 3)
+        self.assertTrue(all(s.endswith("。") for s in out))
+        self.assertIn("戸郷は投げる腕", out[0])
+        self.assertIn("初回の武岡こそ", out[1])
+        self.assertIn("あとはファウル", out[2])
+
+    def test_long_paragraph_single_sentence_not_split(self):
+        # >80 chars but only 1 sentence-final char → keep as single line
+        from src.source_article_body_extractor import split_paragraph_sentences
+        text = "戸郷は投げる腕を今までよりも少し上げて、真っすぐの威力は１５１キロをマークするなど若干アップしたけれど、頼みのフォークの落ちが悪くなってしまった。"
+        out = split_paragraph_sentences(text)
+        self.assertEqual(len(out), 1)
+
+    def test_split_preserves_exclamation_and_question(self):
+        from src.source_article_body_extractor import split_paragraph_sentences
+        # Force the threshold low so the test isolates split-character
+        # logic from threshold-tuning.
+        text = (
+            "どうすれば、いいかって？ フォークの握りを考えてみてはどうだろう。"
+            "握力を強化する手もある！ 投げるテンポもゆっくりにして丁寧なピッチングを心がける。"
+        )
+        out = split_paragraph_sentences(text, threshold=20)
+        # 4 sentence finals → 4 chunks
+        self.assertEqual(len(out), 4)
+
+
 if __name__ == "__main__":
     unittest.main()

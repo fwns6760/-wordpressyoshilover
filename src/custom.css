@@ -9311,10 +9311,51 @@ aside.nomotoke-source-excerpt {
 
 .nomotoke-source-excerpt__body p {
   margin: 0 0 1.1em;
+  line-height: 2.0;
 }
 
 .nomotoke-source-excerpt__body p:last-child {
   margin-bottom: 0;
+}
+
+/* A. ◆/●/■/▶/▼ で始まる小見出し行 — 試合概要 / 章タイトル */
+.nomotoke-source-excerpt__body .nomotoke-source-excerpt__heading {
+  margin: 0 0 0.9em;
+  padding: 4px 10px;
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--blue);
+  background: rgba(0, 61, 165, 0.06);
+  border-left: 3px solid var(--blue);
+  border-radius: 0 4px 4px 0;
+}
+
+/* B. 「...」 直接話法を独立 blockquote 化 — 監督・選手・OB コメント */
+.nomotoke-source-excerpt__body .nomotoke-source-excerpt__inner-quote {
+  margin: 0.4em 0 1.1em;
+  padding: 8px 14px;
+  border: none;
+  border-left: 3px solid var(--orange);
+  background: rgba(245, 127, 23, 0.05);
+  border-radius: 0 4px 4px 0;
+  color: var(--black);
+  font-style: normal;
+  font-size: 15px;
+  line-height: 1.95;
+}
+
+/* スマホ最適化 (新規 class) */
+@media (max-width: 599px) {
+  .nomotoke-source-excerpt__body .nomotoke-source-excerpt__heading {
+    font-size: 13px;
+    padding: 3px 8px;
+  }
+  .nomotoke-source-excerpt__body .nomotoke-source-excerpt__inner-quote {
+    font-size: 14px;
+    padding: 6px 11px;
+    line-height: 1.85;
+  }
 }
 
 /* 出典（— 報知新聞 など） */

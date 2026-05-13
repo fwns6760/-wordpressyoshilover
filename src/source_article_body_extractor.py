@@ -599,4 +599,81 @@ def extract_article_body_excerpt(
     return ""
 
 
-__all__ = ["extract_article_body_excerpt"]
+# ---------------------------------------------------------------------------
+# Presentation helpers — used by the body excerpt renderer to make the
+# excerpt block easier to scan. Pure functions; no I/O.
+# ---------------------------------------------------------------------------
+
+
+_HEADING_PREFIXES = ("◆", "●", "■", "▶", "▼", "★", "☆")
+_LONG_PARAGRAPH_THRESHOLD = 80
+_SENTENCE_FINALS = "。！？"
+
+
+def classify_excerpt_paragraph(paragraph: str) -> str:
+    """Return the structural kind of an excerpt paragraph.
+
+    Kinds:
+
+    - ``"heading"`` — opens with a section marker (◆/●/■/▶/▼/★/☆),
+      typically the game-summary or topic line at the top of a body
+      ("◆ＪＥＲＡセ・リーグ 巨人１―５ヤクルト…").
+    - ``"quote"`` — the line is essentially a single long 「…」 direct
+      quote: starts with 「, closes with 」 near the end, and the inside
+      is substantial (≥30 chars). Used to lift player / manager
+      comments into a visual blockquote.
+    - ``"para"`` — regular body paragraph (default).
+    """
+    p = (paragraph or "").strip()
+    if not p:
+        return "para"
+    if p[:1] in _HEADING_PREFIXES:
+        return "heading"
+    if p.startswith("「"):
+        close = p.rfind("」")
+        if close >= 0 and (close - 1) >= 30 and close >= len(p) - 10:
+            return "quote"
+    return "para"
+
+
+def split_paragraph_sentences(text: str, *, threshold: int = _LONG_PARAGRAPH_THRESHOLD) -> list[str]:
+    """Split a long, multi-sentence paragraph into a list of sentences.
+
+    Trigger condition: paragraph length > ``threshold`` AND it contains
+    at least two sentence-final characters (「。」/「！」/「？」). Otherwise
+    returns ``[text]`` — short / single-sentence paragraphs stay intact.
+
+    Each returned sentence keeps its terminating punctuation. Leading
+    / trailing whitespace is stripped.
+
+    Caller controls how to join (e.g. ``<br>`` for intra-paragraph soft
+    breaks, ``</p><p>`` for hard paragraph breaks).
+    """
+    t = (text or "").strip()
+    if not t:
+        return []
+    if len(t) <= threshold:
+        return [t]
+    finals_count = sum(t.count(ch) for ch in _SENTENCE_FINALS)
+    if finals_count < 2:
+        return [t]
+    chunks: list[str] = []
+    buf = ""
+    for ch in t:
+        buf += ch
+        if ch in _SENTENCE_FINALS:
+            stripped = buf.strip()
+            if stripped:
+                chunks.append(stripped)
+            buf = ""
+    tail = buf.strip()
+    if tail:
+        chunks.append(tail)
+    return chunks
+
+
+__all__ = [
+    "extract_article_body_excerpt",
+    "classify_excerpt_paragraph",
+    "split_paragraph_sentences",
+]

@@ -561,8 +561,8 @@ def export_candidates_csv(conn: sqlite3.Connection, csv_path: Path, run_id: str 
 # ─── ETL entry point ─────────────────────────────────────────────────────────
 
 
-def etl_fixture(
-    fixture_path: Path,
+def etl_from_html(
+    html: str,
     *,
     game_id: str,
     game_date: str,
@@ -570,13 +570,19 @@ def etl_fixture(
     schema_path: Path = DEFAULT_SCHEMA,
     csv_path: Path = DEFAULT_CSV,
     source_url: str | None = None,
+    source_kind: str = "html",
+    notes: str | None = None,
     aliases: dict[str, str] | None = None,
 ) -> dict:
-    """Run the full ETL on a fixture HTML file. Returns a summary dict."""
-    html = fixture_path.read_text(encoding="utf-8")
+    """Run the full single-game ETL against a raw NPB box HTML string.
+
+    Identical pipeline to :func:`etl_fixture` but accepts the HTML as a
+    string so callers (nightly orchestrator) can pass live-fetched or
+    cached content without writing it to a temp file first.
+    """
     parsed = parse_npb_box_html(html)
     if parsed is None:
-        raise ValueError(f"parse_npb_box_html returned None for {fixture_path}")
+        raise ValueError(f"parse_npb_box_html returned None for game_id={game_id}")
 
     aliases = aliases or _load_roster_aliases()
     conn = open_db(db_path=db_path, schema_path=schema_path)
@@ -590,7 +596,7 @@ def etl_fixture(
             game_date=game_date,
             parsed=parsed,
             source_url=source_url,
-            source_kind="fixture",
+            source_kind=source_kind,
             ingested_at=now_iso,
         )
         n_g_bat = _upsert_batters(conn, game_id, "giants", parsed.get("giants_batters") or [], aliases)
@@ -601,7 +607,7 @@ def etl_fixture(
         conn.execute(
             "INSERT INTO insight_runs (run_id, run_ts, window_start, window_end, n_candidates, notes) "
             "VALUES (?,?,?,?,?,?)",
-            (run_id, now_iso, game_date, game_date, 0, f"etl fixture {fixture_path.name}"),
+            (run_id, now_iso, game_date, game_date, 0, notes or f"etl_from_html game_id={game_id}"),
         )
 
         candidates = detect_single_game_signals(
@@ -624,7 +630,6 @@ def etl_fixture(
     return {
         "run_id": run_id,
         "game_id": game_id,
-        "fixture": str(fixture_path),
         "batters_giants": n_g_bat,
         "batters_opponent": n_o_bat,
         "pitchers_giants": n_g_pit,
@@ -634,6 +639,37 @@ def etl_fixture(
         "db_path": str(db_path),
         "csv_path": str(csv_path),
     }
+
+
+def etl_fixture(
+    fixture_path: Path,
+    *,
+    game_id: str,
+    game_date: str,
+    db_path: Path = DEFAULT_DB_PATH,
+    schema_path: Path = DEFAULT_SCHEMA,
+    csv_path: Path = DEFAULT_CSV,
+    source_url: str | None = None,
+    aliases: dict[str, str] | None = None,
+) -> dict:
+    """Run the full ETL on a fixture HTML file. Returns a summary dict
+    that includes a ``fixture`` key (back-compat for INSIGHT-001 tests).
+    Internally a thin wrapper over :func:`etl_from_html`."""
+    html = fixture_path.read_text(encoding="utf-8")
+    summary = etl_from_html(
+        html,
+        game_id=game_id,
+        game_date=game_date,
+        db_path=db_path,
+        schema_path=schema_path,
+        csv_path=csv_path,
+        source_url=source_url,
+        source_kind="fixture",
+        notes=f"etl fixture {fixture_path.name}",
+        aliases=aliases,
+    )
+    summary["fixture"] = str(fixture_path)
+    return summary
 
 
 # ─── CLI ─────────────────────────────────────────────────────────────────────

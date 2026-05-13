@@ -1,0 +1,246 @@
+"""INSIGHT-003 — nightly orchestrator.
+
+Binds INSIGHT-001 (ETL) + INSIGHT-002 (fetcher / multi-game / lineup) into
+a single CLI that:
+
+  1. Resolves the NPB box HTML for ``--slug`` via cache-first fetch.
+     Default ``allow_live=False`` so Claude / tests cannot trigger real
+     HTTP; user passes ``--live`` to enable the actual network call.
+  2. Ingests the HTML through :func:`insight_etl.etl_from_html` —
+     inserts game / batting_logs / pitching_logs / single-game signals
+     into the shared SQLite (``data/insight/insight.db``).
+  3. Upserts lineups via :func:`insight_lineup_history.upsert_lineup_from_parsed_box`.
+  4. Runs :func:`insight_multi_game_detector.run_all_detectors` and
+     :func:`insight_lineup_history.run_all_lineup_detectors` across the
+     full accumulated history.
+  5. Persists the freshly emitted candidates and exports a markdown
+     digest via :mod:`insight_markdown_summary`.
+
+Production touch surface:
+
+* Reads / writes ``data/insight/insight.db`` and
+  ``data/insight/article_candidates.csv``.
+* Reads / writes ``data/insight/raw_html/<slug>.html`` (cache).
+* Writes a markdown digest to ``data/insight/digest/<date>.md``.
+* **No WP REST, no Gemini, no X API, no Scheduler / env change.**
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import sqlite3
+import sys
+import uuid
+from pathlib import Path
+from typing import Any, Optional
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.analysis import (  # noqa: E402
+    insight_etl,
+    insight_fetcher,
+    insight_lineup_history,
+    insight_markdown_summary,
+    insight_multi_game_detector,
+)
+from src.source_npb_postgame_extractor import parse_npb_box_html  # noqa: E402
+
+DEFAULT_DIGEST_DIR = ROOT / "data" / "insight" / "digest"
+
+
+def _default_slug_game_id(slug: str) -> str:
+    """``2026/0510/d-g-08`` → ``2026-05-10:d-g-08``"""
+    parts = slug.strip("/").split("/")
+    if len(parts) != 3:
+        return slug.replace("/", "-")
+    year, mmdd, code = parts
+    mm = mmdd[:2]
+    dd = mmdd[2:]
+    return f"{year}-{mm}-{dd}:{code}"
+
+
+def _default_game_date(slug: str) -> str:
+    parts = slug.strip("/").split("/")
+    if len(parts) != 3:
+        return ""
+    year, mmdd, _ = parts
+    return f"{year}-{mmdd[:2]}-{mmdd[2:]}"
+
+
+def run_nightly(
+    *,
+    slug: str,
+    game_id: Optional[str] = None,
+    game_date: Optional[str] = None,
+    allow_live: bool = False,
+    http_get=None,
+    db_path: Path = insight_etl.DEFAULT_DB_PATH,
+    schema_path: Path = insight_etl.DEFAULT_SCHEMA,
+    csv_path: Path = insight_etl.DEFAULT_CSV,
+    cache_dir: Path = insight_fetcher.DEFAULT_CACHE_DIR,
+    digest_dir: Path = DEFAULT_DIGEST_DIR,
+    write_digest: bool = True,
+    fetched_html: Optional[str] = None,
+) -> dict:
+    """Orchestrate one nightly run for a single game ``slug``.
+
+    Parameters
+    ----------
+    slug:
+        NPB scores slug, e.g. ``"2026/0510/d-g-08"``.
+    game_id / game_date:
+        Optional overrides; default derived from ``slug``.
+    allow_live:
+        ``True`` to permit real HTTP on cache miss. ``False`` (default)
+        is safe for tests / Claude — cache miss raises ``FetchBlocked``.
+    http_get:
+        Optional :func:`requests.get` substitute for tests.
+    fetched_html:
+        Optional pre-fetched HTML (bypasses the fetcher entirely).
+        Used in tests / when caller already has the HTML in memory.
+    write_digest:
+        ``False`` skips the markdown digest step (still returns the
+        candidate summary). Useful for tests.
+    """
+    game_id = game_id or _default_slug_game_id(slug)
+    game_date = game_date or _default_game_date(slug)
+    if not game_date:
+        raise ValueError(f"could not derive game_date from slug={slug!r}")
+
+    if fetched_html is None:
+        html, fetch_meta = insight_fetcher.cache_or_fetch(
+            slug,
+            allow_live=allow_live,
+            http_get=http_get,
+            cache_dir=cache_dir,
+        )
+    else:
+        html = fetched_html
+        fetch_meta = {"from_cache": False, "status_code": 200, "url": None,
+                      "fetched_at": dt.datetime.now(dt.timezone.utc).isoformat()}
+
+    # Step 2 — single-game ETL (also inserts single-game candidates).
+    etl_summary = insight_etl.etl_from_html(
+        html,
+        game_id=game_id,
+        game_date=game_date,
+        db_path=db_path,
+        schema_path=schema_path,
+        csv_path=csv_path,
+        source_url=fetch_meta.get("url"),
+        source_kind="live" if not fetch_meta.get("from_cache") else "cache",
+        notes=f"nightly slug={slug}",
+    )
+
+    # Step 3 — lineup upsert (post-game lineup from the same parsed box).
+    parsed = parse_npb_box_html(html)
+    conn = insight_etl.open_db(db_path=db_path, schema_path=schema_path)
+    try:
+        lineup_rows = insight_lineup_history.upsert_lineup_from_parsed_box(
+            conn, game_id=game_id, parsed=parsed,
+        )
+
+        # Step 4 — multi-game + lineup detectors against full history.
+        now_iso = dt.datetime.now(dt.timezone.utc).isoformat()
+        multi_run_id = str(uuid.uuid4())
+        conn.execute(
+            "INSERT INTO insight_runs (run_id, run_ts, window_start, window_end, n_candidates, notes) "
+            "VALUES (?,?,?,?,?,?)",
+            (multi_run_id, now_iso, None, game_date, 0,
+             f"nightly multi-game/lineup pass for slug={slug}"),
+        )
+
+        multi_candidates = insight_multi_game_detector.run_all_detectors(
+            conn, run_id=multi_run_id, created_at=now_iso,
+        )
+        lineup_candidates = insight_lineup_history.run_all_lineup_detectors(
+            conn, run_id=multi_run_id, created_at=now_iso,
+        )
+        all_candidates = list(multi_candidates) + list(lineup_candidates)
+        if all_candidates:
+            insight_etl.insert_candidates(conn, all_candidates)
+        conn.execute(
+            "UPDATE insight_runs SET n_candidates=? WHERE run_id=?",
+            (len(all_candidates), multi_run_id),
+        )
+        conn.commit()
+
+        csv_rows = insight_etl.export_candidates_csv(conn, csv_path)
+    finally:
+        conn.close()
+
+    summary: dict[str, Any] = {
+        "slug": slug,
+        "game_id": game_id,
+        "game_date": game_date,
+        "fetch_meta": fetch_meta,
+        "etl": etl_summary,
+        "lineup_rows": lineup_rows,
+        "multi_run_id": multi_run_id,
+        "multi_game_candidates": len(multi_candidates),
+        "lineup_candidates": len(lineup_candidates),
+        "csv_rows_total": csv_rows,
+        "digest_path": None,
+    }
+
+    if write_digest:
+        digest_path = digest_dir / f"{game_date}.md"
+        n_digest_rows = insight_markdown_summary.write_digest(
+            db_path=db_path,
+            game_date=game_date,
+            out_path=digest_path,
+        )
+        summary["digest_path"] = str(digest_path)
+        summary["digest_rows"] = n_digest_rows
+
+    return summary
+
+
+# ─── CLI ───────────────────────────────────────────────────────────────────
+
+
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="INSIGHT-003 nightly orchestrator (cache-first, --live opt-in)."
+    )
+    p.add_argument("--slug", required=True, help="NPB scores slug, e.g. 2026/0510/d-g-08")
+    p.add_argument("--game-id", default=None, help="override (default derived from slug)")
+    p.add_argument("--game-date", default=None, help="override (default derived from slug)")
+    p.add_argument("--live", action="store_true",
+                   help="permit real HTTP on cache miss (default: cache-only)")
+    p.add_argument("--no-digest", action="store_true",
+                   help="skip markdown digest generation")
+    p.add_argument("--db", default=str(insight_etl.DEFAULT_DB_PATH))
+    p.add_argument("--csv", default=str(insight_etl.DEFAULT_CSV))
+    p.add_argument("--cache-dir", default=str(insight_fetcher.DEFAULT_CACHE_DIR))
+    p.add_argument("--digest-dir", default=str(DEFAULT_DIGEST_DIR))
+    return p.parse_args(argv)
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    args = _parse_args(argv or sys.argv[1:])
+    try:
+        summary = run_nightly(
+            slug=args.slug,
+            game_id=args.game_id,
+            game_date=args.game_date,
+            allow_live=args.live,
+            db_path=Path(args.db),
+            csv_path=Path(args.csv),
+            cache_dir=Path(args.cache_dir),
+            digest_dir=Path(args.digest_dir),
+            write_digest=not args.no_digest,
+        )
+    except insight_fetcher.FetchBlocked as exc:
+        print(json.dumps({"status": "blocked", "reason": str(exc)}, ensure_ascii=False))
+        return 2
+    print(json.dumps({"status": "ok", **summary}, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

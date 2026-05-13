@@ -2372,6 +2372,13 @@ def _reaction_recency_bucket(created_at: int | None, now_ts: int) -> int:
     return 0
 
 
+def _aggressive_title_name_backfill_enabled() -> bool:
+    """329-QA: 316-A backfill が unresolved になる時、giants_roster.json で
+    再 scan して exactly 1 player match があれば強制 backfill する。
+    default ON、ENABLE_AGGRESSIVE_TITLE_NAME_BACKFILL=0 で無効化可能。"""
+    return _env_flag("ENABLE_AGGRESSIVE_TITLE_NAME_BACKFILL", True)
+
+
 def _fan_reaction_ner_bonus_enabled() -> bool:
     """NER-based player entity overlap bonus on fan reactions (default ON).
 
@@ -20580,6 +20587,75 @@ def _apply_title_player_name_backfill(
     )
     final_title = _trim_display_title(result.title or rewritten_title)
     comparison_title = source_title
+
+    # 329-QA: aggressive backfill via giants_roster.json scan.
+    # 316-A の通常 backfill が title_player_name_unresolved になる時、
+    # source body / summary / source_title を roster で再 scan し、exactly 1
+    # player match があれば player_name=<match> を強制 metadata に詰めて
+    # backfill を retry。「title に固有名詞を必ず入れる」user 要望への
+    # narrow extension。default ON、ENABLE_AGGRESSIVE_TITLE_NAME_BACKFILL=0
+    # で無効化可能。
+    if (
+        result.review_reason == "title_player_name_unresolved"
+        and _aggressive_title_name_backfill_enabled()
+    ):
+        try:
+            combined_text = " ".join(
+                s for s in (source_body or "", summary or "", source_title or "") if s
+            )
+            roster_matches = (
+                _matching_giants_roster_names(combined_text) if combined_text else []
+            )
+        except Exception:
+            roster_matches = []
+        if len(roster_matches) == 1:
+            forced_name = roster_matches[0]
+            forced_metadata = dict(metadata)
+            forced_metadata["player_name"] = forced_name
+            if article_subtype == "manager" and not forced_metadata.get("role"):
+                forced_metadata["role"] = "監督"
+            elif article_subtype == "coach" and not forced_metadata.get("role"):
+                forced_metadata["role"] = "コーチ"
+            try:
+                forced_result = backfill_title_player_name(
+                    existing_title=rewritten_title,
+                    source_title=source_title,
+                    body=source_body,
+                    summary=summary,
+                    metadata=forced_metadata,
+                )
+            except Exception:
+                forced_result = None
+            if (
+                forced_result is not None
+                and forced_result.player_name
+                and forced_result.review_reason != "title_player_name_unresolved"
+                and forced_result.title
+                and forced_result.title != final_title
+            ):
+                if logger is not None:
+                    try:
+                        logger.info(
+                            json.dumps(
+                                {
+                                    "event": "aggressive_title_name_backfill_applied",
+                                    "source_url_hash": _hash_duplicate_guard_value(source_url),
+                                    "source_name": source_name,
+                                    "category": category,
+                                    "article_subtype": article_subtype,
+                                    "forced_name": forced_name,
+                                    "original_title": final_title,
+                                    "new_title": forced_result.title,
+                                },
+                                ensure_ascii=False,
+                            )
+                        )
+                    except Exception:
+                        pass
+                final_title = _trim_display_title(forced_result.title)
+                comparison_title = source_title
+                return final_title, comparison_title
+
     if result.review_reason == "title_player_name_unresolved":
         if logger is not None:
             _log_title_player_name_unresolved(

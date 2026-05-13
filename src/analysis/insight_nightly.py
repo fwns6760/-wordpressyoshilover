@@ -43,6 +43,7 @@ if str(ROOT) not in sys.path:
 from src.analysis import (  # noqa: E402
     insight_etl,
     insight_fetcher,
+    insight_gcs_sync,
     insight_lineup_history,
     insight_markdown_summary,
     insight_multi_game_detector,
@@ -158,6 +159,16 @@ def run_nightly(
     if not game_date:
         raise ValueError(f"could not derive game_date from slug={slug!r}")
 
+    # GCS pull (INSIGHT-005): hydrate DB / CSV before ETL so multi-game
+    # detectors have history. No-op when INSIGHT_GCS_BUCKET unset.
+    gcs_pull_summary = None
+    try:
+        gcs_pull_summary = insight_gcs_sync.download_state(
+            base_dir=db_path.parent,
+        )
+    except Exception as exc:  # noqa: BLE001 - download failure must not block pipeline
+        gcs_pull_summary = {"skipped": True, "reason": f"download_error:{exc!r}"}
+
     if fetched_html is None:
         html, fetch_meta = insight_fetcher.cache_or_fetch(
             slug,
@@ -243,6 +254,17 @@ def run_nightly(
         )
         summary["digest_path"] = str(digest_path)
         summary["digest_rows"] = n_digest_rows
+
+    summary["gcs_pull"] = gcs_pull_summary
+
+    # GCS push (INSIGHT-005): persist DB / CSV / digest for next run.
+    try:
+        summary["gcs_push"] = insight_gcs_sync.upload_state(
+            base_dir=db_path.parent,
+            digest_dir=digest_dir if write_digest else None,
+        )
+    except Exception as exc:  # noqa: BLE001 - surface but don't fail
+        summary["gcs_push"] = {"skipped": True, "reason": f"upload_error:{exc!r}"}
 
     return summary
 

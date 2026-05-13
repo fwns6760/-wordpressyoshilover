@@ -747,6 +747,31 @@ class SocialNewsNormalizationTests(unittest.TestCase):
 
         self.assertEqual(cleaned, "田中将大が阪神戦へ向けて好投誓う")
 
+    def test_clean_social_entry_text_keeps_entity_hashtag_as_plain_text(self):
+        raw = (
+            "早出の時間帯からグラウンドに出て、外野で時にノックを受けるなど体を動かしていた"
+            " #坂本勇人 選手 #巨人 #ジャイアンツ #giants"
+        )
+
+        cleaned = rss_fetcher._clean_social_entry_text(raw)
+
+        self.assertIn("坂本勇人", cleaned)
+        self.assertIn("選手", cleaned)
+        self.assertNotIn("#", cleaned)
+        self.assertNotIn("巨人", cleaned)
+        self.assertNotIn("ジャイアンツ", cleaned)
+        self.assertNotIn("giants", cleaned)
+
+    def test_clean_social_entry_text_drops_stop_list_hashtags_only(self):
+        raw = "速報 #大城卓三 が決勝打 #サンスポ #報知 #スポニチ"
+
+        cleaned = rss_fetcher._clean_social_entry_text(raw)
+
+        self.assertIn("大城卓三", cleaned)
+        self.assertNotIn("サンスポ", cleaned)
+        self.assertNotIn("報知", cleaned)
+        self.assertNotIn("スポニチ", cleaned)
+
     def test_rewrite_display_title_uses_manager_name_instead_of_type_noise(self):
         title = "Type「完全に向こうに行った流れを持ってこられた一発」"
         summary = "阿部慎之助 監督、大城卓三の同点弾を激賞"

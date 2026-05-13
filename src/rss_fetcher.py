@@ -3009,10 +3009,29 @@ def _strip_title_prefix(title: str) -> str:
     return clean.strip("。 ")
 
 
+# Generic non-entity hashtags emitted by trusted Giants-related X accounts
+# (sanspo_giants / hochi_giants / sponichi_giants / etc.). These are dropped
+# unconditionally. Any other hashtag is converted to its bare-name plain text
+# so a player / 監督 / coach entity that the source carried only as ``#NAME``
+# survives into the downstream title sanitize + detect_person pipeline.
+_SOCIAL_HASHTAG_STOP_TOKENS: frozenset[str] = frozenset({
+    "巨人", "ジャイアンツ", "giants", "Giants", "GIANTS",
+    "サンスポ", "報知", "スポニチ", "スポーツ報知", "日刊スポーツ",
+    "熱闘撮って出し",
+})
+
+
+def _convert_social_hashtag(match: "_re.Match[str]") -> str:
+    name = match.group(1) or ""
+    if not name or name in _SOCIAL_HASHTAG_STOP_TOKENS:
+        return ""
+    return name
+
+
 def _clean_social_entry_text(text: str) -> str:
     clean = _html.unescape(_strip_html(text or ""))
     clean = _re.sub(r'https?://\S+', '', clean)
-    clean = _re.sub(r'#[\w一-龯ぁ-ゔァ-ヴー々〆〤]+', '', clean)
+    clean = _re.sub(r'#([\w一-龯ぁ-ゔァ-ヴー々〆〤]+)', _convert_social_hashtag, clean)
     clean = _re.sub(r'(?<!\S)@[\w.\-一-龯ぁ-ゔァ-ヴー々〆〤]+[:：]?', '', clean)
     clean = _re.sub(
         r'\s*[-–—]\s*(スポニチ(?: Sponichi Annex)? 野球|Sponichi Annex 野球|スポーツ報知|報知新聞社|日刊スポーツ|サンスポ.*)$',

@@ -9,10 +9,11 @@ from src.analysis import insight_schedule as sch
 
 _SCHEDULE_HTML_SAMPLE = """
 <html><body>
-<a href="/scores/2026/0510/d-g-08/box.html">中日 vs 巨人</a>
+<a href="/scores/2026/0510/d-g-08/box.html">中日 vs 巨人 (box.html 形式)</a>
 <a href="/scores/2026/0510/t-yb-08/box.html">阪神 vs 横浜</a>
 <a href="/scores/2026/0511/g-c-09/box.html">巨人 vs 広島</a>
 <a href="/scores/2026/0510/d-g-08/index.html">無関係 anchor</a>
+<a href="/scores/2026/0512/g-c-06/">巨人 vs 広島 (実 NPB 形式、suffix なし)</a>
 </body></html>
 """
 
@@ -24,6 +25,7 @@ def test_parse_schedule_returns_all_box_anchors_when_no_target():
         "2026/0510/d-g-08",
         "2026/0510/t-yb-08",
         "2026/0511/g-c-09",
+        "2026/0512/g-c-06",  # 実 NPB schedule 形式 (suffix なし)
     }
 
 
@@ -31,6 +33,15 @@ def test_parse_schedule_filters_by_target_date():
     out = sch.parse_npb_schedule_html(_SCHEDULE_HTML_SAMPLE, target_date="2026-05-10")
     slugs = {c["slug"] for c in out}
     assert slugs == {"2026/0510/d-g-08", "2026/0510/t-yb-08"}
+
+
+def test_parse_schedule_handles_real_npb_format_without_suffix():
+    """実 NPB schedule (schedule_<MM>_detail.html) は box.html suffix なし。"""
+    html = '<a href="/scores/2026/0512/g-c-06/">巨人 vs 広島</a>'
+    out = sch.parse_npb_schedule_html(html, target_date="2026-05-12")
+    assert len(out) == 1
+    assert out[0]["slug"] == "2026/0512/g-c-06"
+    assert out[0]["involves_giants"] is True
 
 
 def test_parse_schedule_marks_giants_involvement():
@@ -61,7 +72,7 @@ def test_parse_schedule_empty_html_returns_empty():
 
 
 def test_url_helpers():
-    assert sch.npb_monthly_schedule_url(2026, 5) == "https://npb.jp/games/2026/schedule_202605_01.html"
+    assert sch.npb_monthly_schedule_url(2026, 5) == "https://npb.jp/games/2026/schedule_05_detail.html"
     assert sch.npb_daily_schedule_url(dt.date(2026, 5, 10)) == "https://npb.jp/games/2026/0510/index.html"
 
 

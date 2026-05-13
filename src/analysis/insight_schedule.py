@@ -18,9 +18,14 @@ import datetime as dt
 import re
 from typing import Optional
 
-# ``/scores/YYYY/MMDD/<slug>/box.html`` の slug 部分を拾う。
+# schedule HTML 上の slug anchor を拾う。
+# - 月別 schedule (``schedule_<MM>_detail.html``) は ``/scores/YYYY/MMDD/<slug>/``
+#   形式 (``box.html`` 末尾なし)
+# - 試合 detail ページなど一部は ``/scores/.../box.html`` 直接形式
+# どちらも拾えるように末尾を optional に。
 _BOX_SLUG_RE = re.compile(
-    r'href=["\']/scores/(?P<year>\d{4})/(?P<mmdd>\d{4})/(?P<slug_tail>[a-z0-9\-]+)/box\.html["\']',
+    r'href=["\']/scores/(?P<year>\d{4})/(?P<mmdd>\d{4})/(?P<slug_tail>[a-z0-9\-]+)/'
+    r'(?:box\.html)?["\']',
     re.IGNORECASE,
 )
 
@@ -75,14 +80,12 @@ def resolve_giants_slug_for_date(html: str, target_date: str) -> Optional[str]:
 
 
 def npb_monthly_schedule_url(year: int, month: int) -> str:
-    """NPB の **月別 schedule URL** 推定。
+    """NPB の月別 schedule URL。
 
-    NPB は ``https://npb.jp/games/YYYY/schedule_YYYYMM_<league>.html`` 形式の
-    schedule ページを公開している (cross-league の交流戦含む場合は別 file
-    の可能性)。実 URL は user --live 試走で 1 度確認した上で必要なら
-    parser 側を調整する。
+    実 URL 確認 (2026-05-13): ``https://npb.jp/games/<year>/schedule_<MM>_detail.html``
+    形式が正しい。anchor 例: ``/scores/2026/0512/g-c-06/``
     """
-    return f"https://npb.jp/games/{year}/schedule_{year}{month:02d}_01.html"
+    return f"https://npb.jp/games/{year}/schedule_{month:02d}_detail.html"
 
 
 def npb_daily_schedule_url(date: dt.date) -> str:

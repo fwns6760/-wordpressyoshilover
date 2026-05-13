@@ -41,6 +41,7 @@ if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
 from src.tools import manual_intake as mi  # noqa: E402
+from src import manual_intake_insight_query as miq  # noqa: E402
 
 LOGGER = logging.getLogger("manual_intake_service")
 
@@ -225,6 +226,25 @@ _HTML_FORM = """<!DOCTYPE html>
   .setup-banner { padding: 12px 14px; margin-bottom: 14px; border-radius: 8px; background: #fff8e1; color: #5d4037; border: 1px solid #ffd54f; font-size: 13px; line-height: 1.55; }
   .setup-banner code { background: rgba(0,0,0,0.08); padding: 1px 4px; border-radius: 3px; font-family: ui-monospace, Menlo, Consolas, monospace; }
   button:disabled { opacity: 0.45; cursor: not-allowed; }
+  /* INSIGHT-006: tab navigation */
+  .tab-nav { display: flex; gap: 6px; margin-bottom: 14px; }
+  .tab-btn { flex: 1; padding: 10px 6px; border: 1px solid #ccc; border-radius: 8px; background: #fff; color: #555; font-size: 14px; cursor: pointer; }
+  .tab-btn.active { background: #f57f17; color: #fff; border-color: #f57f17; font-weight: 600; }
+  .tab-panel[hidden] { display: none; }
+  table.result-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+  table.result-table th, table.result-table td { padding: 6px 4px; text-align: left; border-bottom: 1px solid #eee; vertical-align: top; }
+  table.result-table th { background: #f5f5f5; font-weight: 600; color: #333; }
+  table.result-table tr:hover { background: #fafafa; }
+  .insight-row-grid { display: grid; gap: 8px; grid-template-columns: 1fr 1fr; }
+  .insight-row-grid .field { margin: 0; }
+  .insight-meta { font-size: 12px; opacity: 0.7; margin-top: 4px; }
+  @media (prefers-color-scheme: dark) {
+    .tab-btn { background: #1c1c1c; color: #aaa; border-color: #555; }
+    .tab-btn.active { background: #f57f17; color: #fff; border-color: #f57f17; }
+    table.result-table th { background: #2a2a2a; color: #ddd; }
+    table.result-table th, table.result-table td { border-bottom-color: #333; }
+    table.result-table tr:hover { background: #1a1a1a; }
+  }
   /* Dark-mode overrides MUST come last so their selectors win on phones
      that auto-flip to dark. The earlier ordering placed the base
      ``background:#fff`` rule after the dark-mode override, which made the
@@ -246,6 +266,11 @@ _HTML_FORM = """<!DOCTYPE html>
 <body>
 <main>
   <h1>YOSHILOVER 手動投入</h1>
+  <nav class=\"tab-nav\">
+    <button type=\"button\" class=\"tab-btn active\" data-tab=\"intake\" id=\"tab-btn-intake\">📝 手動投入</button>
+    <button type=\"button\" class=\"tab-btn\" data-tab=\"insight\" id=\"tab-btn-insight\">📊 データ要望</button>
+  </nav>
+  <section class=\"tab-panel\" data-tab=\"intake\" id=\"tab-panel-intake\">
   <form id=\"intake\">
     <div class=\"field\">
       <label for=\"url\">記事URL</label>
@@ -341,7 +366,118 @@ _HTML_FORM = """<!DOCTYPE html>
     </div>
   </form>
   <div id=\"result\" hidden></div>
+  </section>
+  <section class=\"tab-panel\" data-tab=\"insight\" id=\"tab-panel-insight\" hidden>
+    <p class=\"insight-meta\">蓄積された article_candidates を選手 / 種類 / 期間で検索。検出ロジックは z-score / streak / workload / lineup_jump。data が日々 GCS に蓄積され、2-3 週間後に anomaly が出始める。</p>
+    <form id=\"insight-form\">
+      <div class=\"insight-row-grid\">
+        <div class=\"field\">
+          <label for=\"q-player\">選手</label>
+          <select id=\"q-player\" name=\"player\">__INSIGHT_PLAYER_OPTIONS__</select>
+        </div>
+        <div class=\"field\">
+          <label for=\"q-signal\">検出軸</label>
+          <select id=\"q-signal\" name=\"signal_type\">__INSIGHT_SIGNAL_OPTIONS__</select>
+        </div>
+      </div>
+      <div class=\"insight-row-grid\">
+        <div class=\"field\">
+          <label for=\"q-since\">From (YYYY-MM-DD)</label>
+          <input id=\"q-since\" name=\"since\" type=\"text\" placeholder=\"2026-05-01\" autocomplete=\"off\">
+        </div>
+        <div class=\"field\">
+          <label for=\"q-until\">To (YYYY-MM-DD)</label>
+          <input id=\"q-until\" name=\"until\" type=\"text\" placeholder=\"2026-05-31\" autocomplete=\"off\">
+        </div>
+      </div>
+      <div class=\"actions\">
+        <button class=\"primary\" type=\"submit\" id=\"insight-submit-btn\">🔍 検索</button>
+        <button class=\"secondary\" type=\"reset\">クリア</button>
+      </div>
+    </form>
+    <div id=\"insight-result\" hidden></div>
+  </section>
 </main>
+<script>
+(function() {
+  // INSIGHT-006: tab switching
+  var tabBtns = document.querySelectorAll('.tab-btn');
+  var tabPanels = document.querySelectorAll('.tab-panel');
+  tabBtns.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var tab = btn.getAttribute('data-tab');
+      tabBtns.forEach(function(b) { b.classList.toggle('active', b.getAttribute('data-tab') === tab); });
+      tabPanels.forEach(function(p) { p.hidden = (p.getAttribute('data-tab') !== tab); });
+    });
+  });
+
+  // INSIGHT-006: insight query form
+  var iform = document.getElementById('insight-form');
+  var iresult = document.getElementById('insight-result');
+  var isubmit = document.getElementById('insight-submit-btn');
+  function renderInsight(payload) {
+    iresult.hidden = false;
+    if (!payload || !payload.ok) {
+      iresult.className = 'err';
+      iresult.textContent = '失敗: ' + (payload && payload.reason ? payload.reason : 'unknown');
+      return;
+    }
+    var rows = payload.rows || [];
+    if (rows.length === 0) {
+      iresult.className = '';
+      iresult.textContent = '該当データなし（蓄積中、または条件に合う signal が無い）。';
+      return;
+    }
+    iresult.className = '';
+    iresult.innerHTML = '';
+    var meta = document.createElement('div');
+    meta.className = 'insight-meta';
+    meta.textContent = payload.count + ' 件 ヒット';
+    iresult.appendChild(meta);
+    var table = document.createElement('table');
+    table.className = 'result-table';
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr><th>P</th><th>signal</th><th>選手</th><th>試合日</th><th>current</th><th>baseline</th><th>notes</th></tr>';
+    table.appendChild(thead);
+    var tbody = document.createElement('tbody');
+    rows.forEach(function(r) {
+      var tr = document.createElement('tr');
+      function td(text) { var c = document.createElement('td'); c.textContent = text == null ? '' : String(text); return c; }
+      tr.appendChild(td('P' + (r.priority || '-')));
+      tr.appendChild(td(r.signal_type || ''));
+      tr.appendChild(td(r.player_canonical || r.player_display || ''));
+      tr.appendChild(td(r.game_date || ''));
+      tr.appendChild(td(r.current_value || ''));
+      tr.appendChild(td(r.baseline_value || ''));
+      tr.appendChild(td(r.notes || ''));
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    iresult.appendChild(table);
+  }
+  iform.addEventListener('submit', async function(ev) {
+    ev.preventDefault();
+    iresult.hidden = true;
+    if (isubmit) { isubmit.disabled = true; isubmit.textContent = '📡 検索中...'; }
+    var data = new FormData(iform);
+    var params = new URLSearchParams();
+    data.forEach(function(v, k) { if (v) params.append(k, v); });
+    try {
+      var resp = await fetch('/insight-query?' + params.toString(), {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        credentials: 'same-origin',
+      });
+      var json = await resp.json().catch(function() { return {}; });
+      renderInsight(json);
+    } catch (e) {
+      renderInsight({ ok: false, reason: String(e) });
+    } finally {
+      if (isubmit) { isubmit.disabled = false; isubmit.textContent = '🔍 検索'; }
+    }
+  });
+})();
+</script>
 <script>
 (function() {
   // Auth is via the ``manual_intake_session`` cookie set by the server
@@ -515,7 +651,21 @@ def _render_form() -> str:
         options.append(
             f'<option value="{value}">{label}</option>'
         )
-    return _HTML_FORM.replace("__ARTICLE_TYPE_OPTIONS__", "".join(options))
+    # INSIGHT-006: roster + signal options for the data-query tab.
+    player_options = ['<option value="">— 全選手 —</option>']
+    for row in miq.roster_options():
+        name = row["name"]
+        label = name + (f" ({row['position']})" if row.get("position") else "")
+        player_options.append(f'<option value="{name}">{label}</option>')
+    signal_options = ['<option value="">— 全 signal —</option>']
+    for sig in miq.signal_type_options():
+        signal_options.append(f'<option value="{sig}">{sig}</option>')
+    return (
+        _HTML_FORM
+        .replace("__ARTICLE_TYPE_OPTIONS__", "".join(options))
+        .replace("__INSIGHT_PLAYER_OPTIONS__", "".join(player_options))
+        .replace("__INSIGHT_SIGNAL_OPTIONS__", "".join(signal_options))
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -627,6 +777,43 @@ def build_handler(
                     json.dumps(_MANIFEST, ensure_ascii=False),
                     content_type="application/manifest+json; charset=utf-8",
                 )
+                return
+            if path == "/insight-query":
+                # INSIGHT-006: read-only data-query endpoint. Auth flow
+                # mirrors POST /manual-intake: when MANUAL_INTAKE_TOKEN is
+                # set, require either the query token or the session
+                # cookie. When unset, OPEN mode (same as the form POST).
+                expected_token = _require_token()
+                if expected_token:
+                    cookie_token = ""
+                    raw_cookie = self.headers.get("Cookie") or ""
+                    for part in raw_cookie.split(";"):
+                        kv = part.strip().split("=", 1)
+                        if len(kv) == 2 and kv[0].strip() == "manual_intake_session":
+                            cookie_token = kv[1].strip()
+                            break
+                    query_token = ""
+                    qtok = parse_qs(parsed.query, keep_blank_values=False).get("token") or []
+                    if qtok:
+                        query_token = (qtok[0] or "").strip()
+                    if cookie_token != expected_token and query_token != expected_token:
+                        _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                        return
+                params = parse_qs(parsed.query, keep_blank_values=False)
+                miq.ensure_local_db()
+                try:
+                    result = miq.query_candidates(
+                        player=(params.get("player") or [""])[0],
+                        signal_type=(params.get("signal_type") or [""])[0],
+                        since_game_date=(params.get("since") or [""])[0],
+                        until_game_date=(params.get("until") or [""])[0],
+                        limit=int((params.get("limit") or ["100"])[0]),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    bound_logger.exception("insight_query_failed")
+                    _json_response(self, 500, {"ok": False, "reason": f"query_error:{exc!r}", "rows": []})
+                    return
+                _json_response(self, 200, result)
                 return
             if path in ("/", "/index.html"):
                 # NOMOTOKE-INTAKE-COOKIE-001: ``GET /?token=<value>``

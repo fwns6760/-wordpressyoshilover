@@ -113,6 +113,118 @@ class TestH3WithInnerHtml(unittest.TestCase):
         self.assertIn("💬 ファンの声", result)
 
 
+class TestH3CleanupMappingsAdded(unittest.TestCase):
+    """333-QA Layer C 拡張: 2 mapping rule 追加。"""
+
+    def test_nigun_lineup_to_fact_card(self):
+        body = "<h3>【二軍スタメン一覧】</h3><p>...</p>"
+        result = normalize_h3_in_html(body)
+        self.assertIn("<h3>📋 事実カード</h3>", result)
+        self.assertNotIn("【二軍スタメン一覧】", result)
+
+    def test_chumoku_player_to_notable_player(self):
+        body = "<h3>【注目選手】</h3><p>...</p>"
+        result = normalize_h3_in_html(body)
+        self.assertIn("<h3>🏆 注目選手</h3>", result)
+        self.assertNotIn("【注目選手】", result)
+
+
+class TestH3TitleDuplicateRemoval(unittest.TestCase):
+    """333-QA TITLE_AS_H3: 記事タイトル風 h3 を body 冒頭から削除。"""
+
+    def setUp(self):
+        import os
+        os.environ.pop("ENABLE_H3_TITLE_DUP_REMOVAL", None)
+
+    def tearDown(self):
+        import os
+        os.environ.pop("ENABLE_H3_TITLE_DUP_REMOVAL", None)
+
+    def test_title_like_h3_at_body_start_removed(self):
+        body = (
+            "<h3>【巨人】前回登板で完封の育成３年目・園田純規が先発 "
+            "ＤｅＮＡ先発は藤浪…２軍・ＤｅＮＡ戦。</h3>"
+            "<h3>📋 事実カード</h3><p>...</p>"
+        )
+        result = normalize_h3_in_html(body)
+        self.assertNotIn("園田純規", result)
+        self.assertIn("📋 事実カード", result)
+
+    def test_university_baseball_title_removed(self):
+        body = (
+            "<h3>【大学野球】近大・宮原廉、関大・米沢友翔のドラフト候補対決"
+            "にスカウト集結 巨人は超異例の１１人態勢。</h3>"
+            "<h3>📅 次の注目</h3><p>...</p>"
+        )
+        result = normalize_h3_in_html(body)
+        self.assertNotIn("大学野球", result)
+        self.assertIn("📅 次の注目", result)
+
+    def test_short_unified_h3_NOT_removed(self):
+        # 12 unified set の短い h3 は対象外
+        body = "<h3>📋 事実カード</h3><p>...</p>"
+        result = normalize_h3_in_html(body)
+        self.assertIn("📋 事実カード", result)
+
+    def test_h3_starts_with_bracket_but_short_NOT_removed(self):
+        # 【ハイライト】 など旧 H3 (短い) は別 normalize path で扱う
+        body = "<h3>【ハイライト】</h3><p>...</p>"
+        result = normalize_h3_in_html(body)
+        # mapping で 📋 事実カード に変換、削除はされない
+        self.assertIn("📋 事実カード", result)
+
+    def test_title_like_h3_NOT_at_body_start_kept(self):
+        # 200 chars 以降の h3 は body 中盤の正当な見出し
+        prefix = "<p>" + "あ" * 250 + "</p>"
+        body = (
+            prefix
+            + "<h3>【巨人】長い見出しっぽい引用が body 中盤に。</h3>"
+            "<p>...</p>"
+        )
+        result = normalize_h3_in_html(body)
+        # 200 chars 以降は保護される
+        self.assertIn("【巨人】長い見出しっぽい引用が body 中盤に。", result)
+
+    def test_h3_without_trailing_period_kept(self):
+        body = (
+            "<h3>【巨人】前回登板で完封の育成３年目・園田純規が先発</h3>"
+            "<p>...</p>"
+        )
+        result = normalize_h3_in_html(body)
+        # 。 で終わらないので削除されない (誤削除予防)
+        self.assertIn("園田純規", result)
+
+    def test_flag_off_keeps_title_h3(self):
+        import os
+        os.environ["ENABLE_H3_TITLE_DUP_REMOVAL"] = "0"
+        body = (
+            "<h3>【巨人】前回登板で完封の育成３年目・園田純規が先発 "
+            "ＤｅＮＡ先発は藤浪…２軍・ＤｅＮＡ戦。</h3>"
+        )
+        result = normalize_h3_in_html(body)
+        self.assertIn("園田純規", result)
+
+
+class TestFanVoiceDedupSuffixVariants(unittest.TestCase):
+    """333-QA: suffix 違い (Xより) を含む fan voice h3 dedup の明示テスト。
+    327-QA で既に suffix 違いも startswith 比較で dedup される実装だが、
+    explicit な regression test として追加。"""
+
+    def test_dedup_handles_xyori_suffix(self):
+        body = (
+            "<h3>💬 ファンの声</h3>"
+            "<p>filler 「整理します」</p>"
+            "<h3>💬 ファンの声（Xより）</h3>"
+            '<blockquote class="twitter-tweet"><a>tweet</a></blockquote>'
+        )
+        result = normalize_h3_in_html(body)
+        # 💬 ファンの声 が 1 つだけ残る (twitter-tweet を含む方)
+        self.assertEqual(result.count("💬 ファンの声"), 1)
+        self.assertIn("（Xより）", result)
+        self.assertIn("twitter-tweet", result)
+        self.assertNotIn("整理します", result)
+
+
 class TestFanVoiceH3Dedup(unittest.TestCase):
     """ENABLE_FAN_VOICE_H3_DEDUP (default ON) で重複 💬 ファンの声 h3 を集約する。"""
 

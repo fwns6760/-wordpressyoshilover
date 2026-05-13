@@ -64,6 +64,12 @@ def _fan_voice_h3_dedup_enabled() -> bool:
     return val in _TRUE_VALUES
 
 
+def _h3_title_dup_removal_enabled() -> bool:
+    """333-QA: body 冒頭の article-title 風 h3 (【...】... 。 形式) を削除。"""
+    val = (os.getenv("ENABLE_H3_TITLE_DUP_REMOVAL") or "1").strip().lower()
+    return val in _TRUE_VALUES
+
+
 # (旧 H3 text、 新 H3 text) のマッピング表。
 # 順序は重要: 長い / 具体的なものを先に置いて部分一致順序の不安定さを避ける。
 # 全部 完全一致 (text 全体が一致) で判定する (部分置換しない)。
@@ -86,10 +92,12 @@ _H3_RULES_EXACT: tuple[tuple[str, str], ...] = (
     ("【試合展開】", "📋 事実カード"),
     ("【チームへの影響と今後の注目点】", "📋 事実カード"),
     ("【スタメン一覧】", "📋 事実カード"),
+    ("【二軍スタメン一覧】", "📋 事実カード"),
     ("【故障の詳細】", "💉 怪我状況"),
     ("【対象選手の基本情報】", "📋 事実カード"),
     ("【ニュースの整理】", "📋 事実カード"),
     ("【注目ポイント】", "📋 事実カード"),
+    ("【注目選手】", "🏆 注目選手"),
     # 絵文字付加(統一)
     ("中継予定", "🎬 中継予定"),
     ("試合スコア", "📋 事実カード"),
@@ -168,7 +176,39 @@ def normalize_h3_in_html(html_body: str) -> str:
     normalized = _H3_RE.sub(_replace, html_body)
     if _fan_voice_h3_dedup_enabled():
         normalized = _dedupe_fan_voice_h3(normalized)
+    if _h3_title_dup_removal_enabled():
+        normalized = _remove_title_duplicate_first_h3(normalized)
     return normalized
+
+
+def _remove_title_duplicate_first_h3(html_body: str) -> str:
+    """body 冒頭の article-title 風 h3 を削除する。
+
+    Heuristics (誤削除を防ぐため strict):
+      - body 冒頭 200 chars 以内にある **first** h3 が対象
+      - inner text length >= 26 chars (短い section h3 は対象外)
+      - ``【`` で始まる (`【巨人】`, `【YouTube】`, `【大学野球】` 等)
+      - ``。`` で終わる (完結した sentence)
+      - 12 unified set のラベル ("📋 事実カード" 等) は ``【`` で始まらないので除外される
+
+    idempotent: 既に削除済 (該当 h3 が無い) なら入力そのまま返す。
+    """
+    if not html_body:
+        return html_body
+    m = _H3_RE.search(html_body)
+    if not m:
+        return html_body
+    # only first h3, and only if early in body
+    if m.start() > 200:
+        return html_body
+    inner = _strip_h3_inner_to_text(m.group(2))
+    if not inner or len(inner) < 26:
+        return html_body
+    if not inner.startswith("【"):
+        return html_body
+    if not inner.endswith("。"):
+        return html_body
+    return html_body[:m.start()] + html_body[m.end():]
 
 
 _FAN_VOICE_LABEL = "💬 ファンの声"

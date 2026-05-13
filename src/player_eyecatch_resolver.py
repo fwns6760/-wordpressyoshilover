@@ -87,11 +87,12 @@ _ALIAS_MAP = {
 
 # Team-generic fallback used when no per-person match is found.
 #
-# 2026-05-10 QA: fallback priority is "source eyecatch first,
-# otherwise Tokyo Dome photo fallback". Operators can still override with
-# env or disable via "0".
+# 2026-05-13 user request: 東京ドーム fallback (media 65953) を廃止し、
+# サイト icon (media 60083 = cropped-j_RlNtbr_400x400) を team fallback
+# として採用。Operators can still override via PLAYER_EYECATCH_TEAM_FALLBACK_ID
+# env or disable with "0".
 _TEAM_FALLBACK_MEDIA_ID_ENV = "PLAYER_EYECATCH_TEAM_FALLBACK_ID"
-_TEAM_FALLBACK_MEDIA_ID_DEFAULT: Optional[int] = 65953
+_TEAM_FALLBACK_MEDIA_ID_DEFAULT: Optional[int] = 60083
 
 # Legacy 阿部慎之助 fallback media includes イチロー in the media title/image
 # context and does not fit a Giants news-board fallback. Keep it blocked

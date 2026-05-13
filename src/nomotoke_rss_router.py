@@ -1011,7 +1011,10 @@ def _extract_video_facts_quoted(raw: str) -> Dict[str, str]:
 # Roster updates: append new players as they appear in live RSS samples;
 # drop retired/transferred players. Matches are full-name strings to avoid
 # 田中将大 vs 田中瑛斗 collisions; nicknames map to a canonical full name.
-GIANTS_PLAYER_ALLOWLIST: Tuple[str, ...] = (
+# Curated static baseline. Roster augmentation pulls active players /
+# coaches / manager from config/giants_roster.json so additions to the
+# roster flow into detect_person without dual-edit on each transfer.
+_GIANTS_PLAYER_ALLOWLIST_STATIC: Tuple[str, ...] = (
     # Pitchers
     "高梨雄平", "田中将大", "田中瑛斗", "竹丸和幸", "小濱佑斗",
     "宮原駿介", "田和廉", "井上温大", "森田駿哉", "石川達也",
@@ -1026,6 +1029,57 @@ GIANTS_PLAYER_ALLOWLIST: Tuple[str, ...] = (
     "キャベッジ", "重信慎之介", "丸佳浩",
     # Farm / called-up
     "三塚琉生",
+)
+
+
+def _load_giants_roster_active_names() -> Tuple[str, ...]:
+    """Return canonical names of active player / coach / manager entries from
+    ``config/giants_roster.json``.
+
+    Returns an empty tuple on read / parse error so module load never breaks
+    in environments where the roster file is unavailable (test env without
+    ``config/`` copied, fresh checkout, etc.). Role-suffix bearing names
+    are filtered out — aliases like 「阿部監督」 should never make it into
+    the allowlist (detect_person handles them via ``_ALIAS_MAP``).
+    """
+    import json
+    from pathlib import Path
+
+    roster_path = Path(__file__).resolve().parent.parent / "config" / "giants_roster.json"
+    try:
+        entries = json.loads(roster_path.read_text(encoding="utf-8"))
+    except Exception:
+        return ()
+    if not isinstance(entries, list):
+        return ()
+    out: list[str] = []
+    seen: set[str] = set()
+    role_suffixes = ("監督", "コーチ", "投手", "捕手", "内野手", "外野手", "選手")
+    for entry in entries:
+        if not isinstance(entry, dict) or not entry.get("active"):
+            continue
+        if entry.get("role") not in {"player", "coach", "manager"}:
+            continue
+        # roster.json は「姓 名」(半角/全角 space 区切り) や先頭 ``*``
+        # (新加入 marker) など format が一様でない。allowlist の static
+        # 側は空白なし canonical 表記なので、ここで正規化して揃える。
+        raw_name = str(entry.get("name") or "").strip()
+        name = raw_name.lstrip("*").replace(" ", "").replace("　", "").strip()
+        if not name or len(name) < 2:
+            continue
+        if any(suffix in name for suffix in role_suffixes):
+            continue
+        if name in seen:
+            continue
+        out.append(name)
+        seen.add(name)
+    return tuple(out)
+
+
+GIANTS_PLAYER_ALLOWLIST: Tuple[str, ...] = tuple(
+    dict.fromkeys(
+        (*_GIANTS_PLAYER_ALLOWLIST_STATIC, *_load_giants_roster_active_names())
+    )
 )
 GIANTS_PLAYER_NICKNAMES: Dict[str, str] = {
     "マー君": "田中将大",

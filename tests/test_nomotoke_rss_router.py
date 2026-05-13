@@ -1852,5 +1852,50 @@ class VideoCrossTeamFilterTests(unittest.TestCase):
         self.assertIn(TEMPLATE_KEY_VIDEO, REQUIRED_FACTS_BY_TEMPLATE)
 
 
+class GiantsPlayerAllowlistRosterAugmentTests(unittest.TestCase):
+    """2026-05-13: GIANTS_PLAYER_ALLOWLIST が config/giants_roster.json
+    から active player/coach/manager を動的拡充することを担保する。
+    """
+
+    def test_static_baseline_preserved(self):
+        from src.nomotoke_rss_router import (
+            GIANTS_PLAYER_ALLOWLIST,
+            _GIANTS_PLAYER_ALLOWLIST_STATIC,
+        )
+        for name in _GIANTS_PLAYER_ALLOWLIST_STATIC:
+            self.assertIn(name, GIANTS_PLAYER_ALLOWLIST)
+
+    def test_roster_only_main_players_present(self):
+        # roster.json にあって static には無い主力 (坂本勇人 等) が
+        # 拡充で allowlist に入ることを確認する。
+        from src.nomotoke_rss_router import (
+            GIANTS_PLAYER_ALLOWLIST,
+            _GIANTS_PLAYER_ALLOWLIST_STATIC,
+        )
+        self.assertNotIn("坂本勇人", _GIANTS_PLAYER_ALLOWLIST_STATIC)
+        self.assertIn("坂本勇人", GIANTS_PLAYER_ALLOWLIST)
+
+    def test_roster_normalization_strips_space_and_asterisk(self):
+        # roster.json は「*則本 昂大」「赤星 優志」のような空白/asterisk
+        # 付き name を含むが、loader で正規化されて canonical 表記で
+        # allowlist に入る。空白付きや asterisk 付きの raw 形は混入しない。
+        from src.nomotoke_rss_router import GIANTS_PLAYER_ALLOWLIST
+        spaced = [
+            n for n in GIANTS_PLAYER_ALLOWLIST
+            if " " in n or "　" in n or n.startswith("*")
+        ]
+        self.assertEqual(spaced, [])
+
+    def test_detect_person_resolves_normalized_roster_name(self):
+        # 拡充の最終目的: title に 則本昂大 / 坂本勇人 等が現れた時に
+        # player_eyecatch_resolver.detect_person が canonical 表記を返す。
+        import src.player_eyecatch_resolver as _r
+        _r._PLAYER_NAMES_CACHE = None  # force pool rebuild
+        from src.player_eyecatch_resolver import detect_person
+        self.assertEqual(detect_person("坂本勇人"), "坂本勇人")
+        self.assertEqual(detect_person("則本昂大"), "則本昂大")
+        self.assertEqual(detect_person("赤星優志"), "赤星優志")
+
+
 if __name__ == "__main__":
     unittest.main()

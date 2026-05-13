@@ -1627,6 +1627,9 @@ _X_OR_TWITTER_HOSTS: tuple = (
 _PRIMARY_HOST_LABELS: Dict[str, str] = {
     "hochi.news": "スポーツ報知",
     "www.hochi.news": "スポーツ報知",
+    "hochi.co.jp": "スポーツ報知",
+    "www.hochi.co.jp": "スポーツ報知",
+    "sports.hochi.co.jp": "スポーツ報知",
     "sanspo.com": "サンスポ",
     "www.sanspo.com": "サンスポ",
     "giants.jp": "巨人公式サイト",
@@ -1639,6 +1642,8 @@ _PRIMARY_HOST_LABELS: Dict[str, str] = {
     "www.nikkansports.com": "日刊スポーツ",
     "sponichi.co.jp": "スポニチ",
     "www.sponichi.co.jp": "スポニチ",
+    "daily.co.jp": "デイリー",
+    "www.daily.co.jp": "デイリー",
     # X / Twitter sources land here when a renderer's source_url is the
     # X tweet itself (e.g. pregame_pitcher / quote-comment). Visible body
     # gets ``X`` instead of ``x.com`` / raw URL. Source-name still wins

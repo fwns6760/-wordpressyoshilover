@@ -66,6 +66,28 @@ def _first_quote(*texts: str, max_len: int = 28) -> str:
     return ""
 
 
+def _first_quote_for_digest(
+    *texts: str,
+    min_len: int = 20,
+    max_len: int = 40,
+) -> str:
+    """player_voice_digest 専用: literal quote を [min_len, max_len] 文字で返す。
+
+    既存 ``_first_quote`` と違い ``…`` の trim を行わない strict literal contract。
+    複数 quote / 複数 text を順に走査し、範囲内のものを最初に拾う。trailing 。、
+    は のもとけ headline style に合わせて strip。範囲内 quote が無ければ空文字。
+    """
+    for t in texts:
+        t = _clean(t)
+        if not t:
+            continue
+        for m in _QUOTE_RE.finditer(t):
+            inner = m.group(1).strip().rstrip("。、")
+            if min_len <= len(inner) <= max_len:
+                return inner
+    return ""
+
+
 def _display_role_suffix(role: str) -> str:
     role = (role or "").strip()
     if role == "監督":
@@ -411,6 +433,31 @@ def _assemble_pattern_M_notice(
     return f"【公示】{date_label}のプロ野球公示 {tail}"
 
 
+def _assemble_pattern_X_player_voice_digest(
+    *,
+    name: str,
+    quote: str,
+    event_token: str,
+) -> Optional[str]:
+    """Pattern X: player_voice_digest (multi-source digest).
+
+    `<選手名>「<セリフ 20-40字>」<イベント>` の literal assembly。3-token 全て
+    source からの literal でなければならず、LLM / AI rewrite を一切経由しない。
+
+    Returns ``None`` when any token is missing or quote length is outside
+    ``[20, 40]`` chars. 上位 caller はこの場合 draft + review に落とす想定で、
+    LLM で「補完」「title 可能化」してはならない (本 ticket の不可触契約)。
+    """
+    name = (name or "").strip()
+    quote = (quote or "").strip()
+    event_token = (event_token or "").strip()
+    if not name or not quote or not event_token:
+        return None
+    if not (20 <= len(quote) <= 40):
+        return None
+    return f"{name}「{quote}」{event_token}"
+
+
 def assemble_nomotoke_title(
     *,
     article_subtype: str,
@@ -439,7 +486,26 @@ def assemble_nomotoke_title(
     name = (player_name or "").strip()
 
     assembled: Optional[str] = None
-    if _is_quote_subtype(subtype):
+    if subtype == "player_voice_digest":
+        # 3-token literal assembly: 選手名「セリフ20-40字」イベント。
+        # metadata['event_token'] は upstream clusterer (Phase 2) が source 由来
+        # の literal 数値 / 試合状態 fact を入れる。Phase 1 では title path のみ。
+        # 3-token のいずれかが揃わなければ None (caller drops to draft + review)。
+        quote = _first_quote_for_digest(
+            source_body,
+            source_title,
+            summary,
+            existing_title,
+            min_len=20,
+            max_len=40,
+        )
+        event_token = str(metadata.get("event_token") or "").strip()
+        assembled = _assemble_pattern_X_player_voice_digest(
+            name=name,
+            quote=quote,
+            event_token=event_token,
+        )
+    elif _is_quote_subtype(subtype):
         quote = _first_quote(existing_title, source_title, source_body, summary)
         assembled = _assemble_pattern_A(
             name=name,

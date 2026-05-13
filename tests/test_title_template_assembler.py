@@ -325,5 +325,140 @@ class PatternMNoticeTests(unittest.TestCase):
         self.assertIsNone(result)
 
 
+class PatternXPlayerVoiceDigestTests(unittest.TestCase):
+    """334-QA player_voice_digest: 3-token literal assembly (player / quote / event).
+
+    AI / LLM 一切禁止、source からの literal のみで title 組み立て。
+    3-token のいずれかが揃わない場合は None を返し、caller は draft + review に
+    落とす (LLM で補完して title 可能化することは禁止)。
+    """
+
+    def test_basic_3_token_assembly(self):
+        result = assemble_nomotoke_title(
+            article_subtype="player_voice_digest",
+            existing_title="d",
+            source_body=(
+                "坂本勇人「最後まで集中して振り切れたんじゃないかと思います」と振り返った。"
+            ),
+            player_name="坂本勇人",
+            metadata={"event_token": "300号サヨナラホームラン"},
+        )
+        self.assertEqual(
+            result,
+            "坂本勇人「最後まで集中して振り切れたんじゃないかと思います」"
+            "300号サヨナラホームラン",
+        )
+
+    def test_quote_exactly_20_chars_minimum_boundary(self):
+        quote = "あ" * 20
+        result = assemble_nomotoke_title(
+            article_subtype="player_voice_digest",
+            existing_title="d",
+            source_body=f"岡本「{quote}」",
+            player_name="岡本和真",
+            metadata={"event_token": "逆転3ラン"},
+        )
+        self.assertEqual(result, f"岡本和真「{quote}」逆転3ラン")
+
+    def test_quote_exactly_40_chars_maximum_boundary(self):
+        quote = "あ" * 40
+        result = assemble_nomotoke_title(
+            article_subtype="player_voice_digest",
+            existing_title="d",
+            source_body=f"岡本「{quote}」",
+            player_name="岡本和真",
+            metadata={"event_token": "完封勝利"},
+        )
+        self.assertEqual(result, f"岡本和真「{quote}」完封勝利")
+
+    def test_quote_too_short_19_chars_returns_none(self):
+        quote = "あ" * 19
+        result = assemble_nomotoke_title(
+            article_subtype="player_voice_digest",
+            existing_title="d",
+            source_body=f"岡本「{quote}」",
+            player_name="岡本和真",
+            metadata={"event_token": "逆転3ラン"},
+        )
+        self.assertIsNone(result)
+
+    def test_quote_too_long_41_chars_returns_none(self):
+        quote = "あ" * 41
+        result = assemble_nomotoke_title(
+            article_subtype="player_voice_digest",
+            existing_title="d",
+            source_body=f"岡本「{quote}」",
+            player_name="岡本和真",
+            metadata={"event_token": "逆転3ラン"},
+        )
+        self.assertIsNone(result)
+
+    def test_no_player_name_returns_none(self):
+        result = assemble_nomotoke_title(
+            article_subtype="player_voice_digest",
+            existing_title="d",
+            source_body="坂本「" + "あ" * 25 + "」",
+            player_name="",
+            metadata={"event_token": "300号サヨナラホームラン"},
+        )
+        self.assertIsNone(result)
+
+    def test_no_event_token_returns_none(self):
+        # metadata.event_token 不在 → 3-token 揃わない → None
+        result = assemble_nomotoke_title(
+            article_subtype="player_voice_digest",
+            existing_title="d",
+            source_body="坂本勇人「" + "あ" * 25 + "」",
+            player_name="坂本勇人",
+            metadata={},
+        )
+        self.assertIsNone(result)
+
+    def test_no_quote_in_source_returns_none(self):
+        # source に literal quote 「」 が無い → LLM で補完しない → None
+        result = assemble_nomotoke_title(
+            article_subtype="player_voice_digest",
+            existing_title="d",
+            source_body="坂本勇人がサヨナラ本塁打を放った。",
+            player_name="坂本勇人",
+            metadata={"event_token": "300号サヨナラホームラン"},
+        )
+        self.assertIsNone(result)
+
+    def test_event_pitcher_innings_token(self):
+        # event_token に投手成績 fact (7回1失点) を入れた case。
+        # 旧版 test は quote が 18 字で min_len=20 を満たさず実装が正しく reject
+        # していたので、quote を 28 字 (実発言寄り) に直して 3-token 完成 case とする。
+        result = assemble_nomotoke_title(
+            article_subtype="player_voice_digest",
+            existing_title="d",
+            source_body="菅野「球が走っていた感触は確かに自分でも手応えのある試合でした」",
+            player_name="菅野智之",
+            metadata={"event_token": "7回1失点"},
+        )
+        self.assertEqual(
+            result,
+            "菅野智之「球が走っていた感触は確かに自分でも手応えのある試合でした」"
+            "7回1失点",
+        )
+
+    def test_trailing_punctuation_stripped(self):
+        # quote 末尾の 。 を のもとけ headline style に合わせて strip
+        result = assemble_nomotoke_title(
+            article_subtype="player_voice_digest",
+            existing_title="d",
+            source_body=(
+                "坂本勇人「最後まで集中して振り切れたんじゃないかと思います。」"
+            ),
+            player_name="坂本勇人",
+            metadata={"event_token": "300号サヨナラホームラン"},
+        )
+        self.assertEqual(
+            result,
+            "坂本勇人「最後まで集中して振り切れたんじゃないかと思います」"
+            "300号サヨナラホームラン",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

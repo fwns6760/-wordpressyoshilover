@@ -24764,6 +24764,12 @@ def _main(args, logger):
                             enrichment_category=category,
                             enrichment_template_key=str(title_template_key or ""),
                             enrichment_source_name=source_name,
+                            # 2026-05-14 fix: review path も raw_html を渡す。
+                            # main path は raw_html を渡しているが review path
+                            # (post_gen_validate fail で要review draft 化された
+                            # 記事) では渡されておらず、引用 block が永続的に
+                            # 出ない silent skip 原因の 1 つだった。
+                            enrichment_raw_html=_article_raw_html,
                             enrichment_source_type=source_type,
                         )
                         if review_post_id_logged and review_post_id_logged > 0:

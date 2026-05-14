@@ -36,14 +36,22 @@ User 指摘「チームもね」(2026-05-14 EVENING)。
 - セリーグ 6 球団 / パリーグ 6 球団で league split(既存 team_ranking_publisher.py の path に乗せる)
 - Giants 関連赤太字 + 集計期間明記 は既存 format 流用
 
-## prerequisite audit
+## prerequisite audit(2026-05-14 EVENING 訂正)
 
-実装前に 1 次 source 確認:
+実装前に 1 次 source 確認(本日 evening の 吉川尚輝 one-shot 記事 67590 作業で判明):
 
-1. NPB 公式 box score に守備項目があるか(失策 / 補殺 / 刺殺 / 守備機会)
-2. 既存 ETL(`src/analysis/insight_etl.py`)で守備データを保存しているか
-   - `batting_logs` / `pitching_logs` はあるが `fielding_logs` table は **無さそう**
-3. もし無ければ scrape 拡張が必要 → 343-INSIGHT-007 と同じ手順
+1. **訂正**: `fielding_logs` table **既に存在**(column: game_id / team_role / player / position / innings / PO / A / E / DP)
+2. **訂正**: `defense_opportunities` table も既に存在(opportunities / converted_outs / hits_allowed / errors)
+3. しかし吉川尚輝の `fielding_logs` row は **ゼロ**(行は空)→ ETL が守備データを抽出していない
+4. NPB 公式 player page には守備項目 **掲載なし**(規定到達後の team-wide page に集約)
+5. NPB 公式 team-wide 守備 page(`fld_c.html`)は **規定打席相当の規定到達者のみ**
+6. 代替 source: nf3.sakura.ne.jp/Central/G/f/2_stat.htm に試合数 + 失策のみあり(刺殺 / 補殺 / 守備率はない)
+
+## 実装の正しい path
+
+- `fielding_logs` schema は既にある、ETL が PO / A / E / DP を game box score から抽出していないだけ
+- 343-INSIGHT-007 と同じ手順で source HTML から守備項目を parse → `fielding_logs` に insert
+- 規定到達者以外は守備率を nf3 / 別 source からの補完 or 「集計中」表示で許容
 
 ## 実装 path 候補
 

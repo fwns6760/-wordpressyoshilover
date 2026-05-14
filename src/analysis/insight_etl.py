@@ -61,6 +61,7 @@ DEFAULT_DB_PATH = ROOT / "data" / "insight" / "insight.db"
 DEFAULT_SCHEMA = ROOT / "data" / "insight" / "schema.sql"
 DEFAULT_CSV = ROOT / "data" / "insight" / "article_candidates.csv"
 ROSTER_PATH = ROOT / "config" / "giants_roster.json"
+NPB_12TEAM_ROSTER_PATH = ROOT / "config" / "npb_12team_roster.json"
 
 CSV_COLUMNS = (
     "candidate_id",
@@ -424,6 +425,100 @@ _PITCHER_LOWER_IS_BETTER: frozenset[str] = frozenset({
 _PITCHER_HIGHER_IS_BETTER: frozenset[str] = frozenset({
     "K_per_9", "K_BB",
 })
+
+
+# ─── 343-INSIGHT-007 follow-up: 12 team team-aware roster resolution ────────
+#
+# giants_roster.json 単独では他 11 球団 player の canonical 解決が不能で、
+# パリーグ + セ・リーグ他 5 球団の player が advanced_metric_snapshots に
+# 入らない問題を解消する。npb_12team_roster.json (NPB 公式 roster scrape 由来)
+# を team-aware lookup の data source として使う。
+
+
+def _load_team_aware_aliases() -> dict[str, dict[str, str]]:
+    """Return ``{team_code: {alias_or_name: canonical}}`` from npb_12team_roster.json.
+
+    各 team 内で surname unique なら surname も alias dict に追加。
+    同 team 内で複数選手の surname が一致する場合は surname を除外
+    (ambiguous な解決を避ける)。
+    """
+    if not NPB_12TEAM_ROSTER_PATH.exists():
+        return {}
+    try:
+        roster = json.loads(NPB_12TEAM_ROSTER_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    by_team: dict[str, dict[str, str]] = {}
+    surname_buckets: dict[str, dict[str, list[str]]] = {}
+    for row in roster:
+        team_code = (row.get("team_code") or "").strip()
+        canon = (row.get("name") or "").strip()
+        if not team_code or not canon:
+            continue
+        team_dict = by_team.setdefault(team_code, {})
+        team_dict[canon] = canon
+        for alias in row.get("aliases") or []:
+            a = (alias or "").strip()
+            if a:
+                team_dict.setdefault(a, canon)
+        if row.get("active") and len(canon) >= 2:
+            surname_buckets.setdefault(team_code, {}).setdefault(canon[:2], []).append(canon)
+    for team_code, buckets in surname_buckets.items():
+        team_dict = by_team[team_code]
+        for surname, cands in buckets.items():
+            if len(cands) == 1:
+                team_dict.setdefault(surname, cands[0])
+    return by_team
+
+
+def resolve_canonical_team_aware(
+    display: str,
+    team_code: str,
+    team_aliases: dict[str, dict[str, str]],
+) -> str | None:
+    """team_code 内で display を canonical 名に解決。見つからなければ None。"""
+    if not display or not team_code:
+        return None
+    team_dict = team_aliases.get(team_code)
+    if not team_dict:
+        return None
+    return team_dict.get(display.strip())
+
+
+def fill_canonical_team_aware(conn: sqlite3.Connection) -> int:
+    """既存 ``batting_logs`` / ``pitching_logs`` の ``player_canonical`` NULL 行を
+    ``npb_12team_roster.json`` + ``team_name`` 解決で UPDATE。
+
+    Giants 戦の opponent player や パ・リーグ player の canonical 解決を
+    遡って fill する migration / backfill 用 helper。next nightly run でも
+    新 game 由来の NULL 行を fill するため run_nightly() から呼ばれる。
+
+    return: アップデートされた行数 (batting + pitching)。
+    """
+    team_aliases = _load_team_aware_aliases()
+    if not team_aliases:
+        return 0
+    updated = 0
+    for table in ("batting_logs", "pitching_logs"):
+        rows = list(conn.execute(
+            f"SELECT rowid, player_display, team_name FROM {table} "
+            f"WHERE (player_canonical IS NULL OR player_canonical = '') "
+            f"AND team_name IS NOT NULL AND team_name != '' "
+            f"AND player_display IS NOT NULL AND player_display != ''"
+        ))
+        for rowid, display, team_name in rows:
+            team_code = _resolve_team_code_from_name(team_name or "")
+            if team_code == "unknown":
+                continue
+            canon = resolve_canonical_team_aware(display, team_code, team_aliases)
+            if canon:
+                conn.execute(
+                    f"UPDATE {table} SET player_canonical = ? WHERE rowid = ?",
+                    (canon, rowid),
+                )
+                updated += 1
+    conn.commit()
+    return updated
 
 
 def compute_advanced_metric_snapshots(

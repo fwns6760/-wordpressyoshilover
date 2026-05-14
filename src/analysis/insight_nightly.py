@@ -252,6 +252,17 @@ def run_nightly(
         except Exception:  # noqa: BLE001
             pass
 
+        # 343-INSIGHT-007 follow-up: 12 team team-aware roster resolution。
+        # npb_12team_roster.json を使って batting_logs / pitching_logs の
+        # player_canonical NULL 行を team_name 経由で fill (Giants 戦の
+        # opponent player や パ・リーグ player の canonical を遡って解決)。
+        # seed_players_from_logs より前に呼ぶことで、解決した canonical が
+        # players table の seed 対象に入る。
+        try:
+            insight_etl.fill_canonical_team_aware(conn)
+        except Exception:  # noqa: BLE001
+            pass
+
         # 343-INSIGHT-007 backfill: teams / players / advanced_metric_snapshots。
         # defense_proxy と同 best-effort pattern、いずれの失敗も pipeline は止めない。
         try:

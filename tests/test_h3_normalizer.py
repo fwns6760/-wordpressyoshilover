@@ -11,9 +11,15 @@ class TestExactMatchNormalization(unittest.TestCase):
     """完全一致 mapping の検証。"""
 
     def test_old_relpost_to_fan_voice(self):
-        body = "<h3>📣 関連投稿</h3><p>...</p>"
+        # Body carries a twitter-tweet so the section survives the new
+        # `_drop_empty_fan_voice_sections` step (canonical fan voice is
+        # X-embed-bearing).
+        body = (
+            "<h3>📣 関連投稿</h3>"
+            '<blockquote class="twitter-tweet"><a>tweet</a></blockquote>'
+        )
         result = normalize_h3_in_html(body)
-        self.assertIn("<h3>💬 ファンの声</h3>", result)
+        self.assertIn("<h3>💬 ファンの声（Xより）</h3>", result)
         self.assertNotIn("📣 関連投稿", result)
 
     def test_gemini_highlight_to_fact_card(self):
@@ -46,22 +52,29 @@ class TestPrefixMatchWithSuffix(unittest.TestCase):
     """attribution suffix 付き H3 の正規化。"""
 
     def test_relpost_with_source_in_parens_japanese(self):
-        body = "<h3>📣 関連投稿(巨人公式X)</h3>"
+        body = (
+            "<h3>📣 関連投稿(巨人公式X)</h3>"
+            '<blockquote class="twitter-tweet"><a>tweet</a></blockquote>'
+        )
         result = normalize_h3_in_html(body)
-        self.assertIn("<h3>💬 ファンの声</h3>", result)
+        self.assertIn("<h3>💬 ファンの声（Xより）</h3>", result)
         self.assertNotIn("📣", result)
 
     def test_relpost_with_source_in_parens_ascii(self):
-        body = "<h3>📣 関連投稿(スポーツ報知巨人班X)</h3>"
+        body = (
+            "<h3>📣 関連投稿(スポーツ報知巨人班X)</h3>"
+            '<blockquote class="twitter-tweet"><a>tweet</a></blockquote>'
+        )
         result = normalize_h3_in_html(body)
-        self.assertIn("<h3>💬 ファンの声</h3>", result)
+        self.assertIn("<h3>💬 ファンの声（Xより）</h3>", result)
 
 
 class TestIdempotent(unittest.TestCase):
     def test_already_unified_passes_through(self):
         body = (
             "<h3>📋 事実カード</h3><p>...</p>"
-            "<h3>💬 ファンの声</h3><p>...</p>"
+            "<h3>💬 ファンの声（Xより）</h3>"
+            '<blockquote class="twitter-tweet"><a>tweet</a></blockquote>'
             "<h3>🔗 出典記事</h3>"
         )
         result = normalize_h3_in_html(body)
@@ -93,12 +106,13 @@ class TestMultipleH3InOneBody(unittest.TestCase):
     def test_multiple_replacements(self):
         body = (
             "<h3>【ハイライト】</h3><p>...</p>"
-            "<h3>📣 関連投稿(巨人公式X)</h3><p>...</p>"
+            "<h3>📣 関連投稿(巨人公式X)</h3>"
+            '<blockquote class="twitter-tweet"><a>tweet</a></blockquote>'
             "<h3>【ファンの関心ポイント】</h3>"
         )
         result = normalize_h3_in_html(body)
         self.assertIn("<h3>📋 事実カード</h3>", result)
-        self.assertIn("<h3>💬 ファンの声</h3>", result)
+        self.assertIn("<h3>💬 ファンの声（Xより）</h3>", result)
         self.assertIn("<h3>📅 次の注目</h3>", result)
         # 旧形式が残ってないか確認
         self.assertNotIn("【ハイライト】", result)
@@ -108,9 +122,12 @@ class TestMultipleH3InOneBody(unittest.TestCase):
 
 class TestH3WithInnerHtml(unittest.TestCase):
     def test_h3_with_span_inside(self):
-        body = "<h3><span>📣 関連投稿</span></h3>"
+        body = (
+            "<h3><span>📣 関連投稿</span></h3>"
+            '<blockquote class="twitter-tweet"><a>tweet</a></blockquote>'
+        )
         result = normalize_h3_in_html(body)
-        self.assertIn("💬 ファンの声", result)
+        self.assertIn("💬 ファンの声（Xより）", result)
 
 
 class TestH3CleanupMappingsAdded(unittest.TestCase):
@@ -267,11 +284,15 @@ class TestFanVoiceH3Dedup(unittest.TestCase):
         self.assertEqual(once, twice)
 
     def test_dedup_keeps_longer_when_no_twitter_in_either(self):
+        # The longer surviving section must have a twitter-tweet so it
+        # isn't subsequently removed by _drop_empty_fan_voice_sections
+        # (which targets fan voice sections without X embeds).
         body = (
             "<h3>💬 ファンの声</h3>"
             "<p>short</p>"
             "<h3>💬 ファンの声</h3>"
             "<p>longer body content paragraph here with details</p>"
+            '<blockquote class="twitter-tweet"><a>tweet</a></blockquote>'
         )
         result = normalize_h3_in_html(body)
         self.assertEqual(result.count("💬 ファンの声"), 1)
@@ -279,11 +300,14 @@ class TestFanVoiceH3Dedup(unittest.TestCase):
 
     def test_dedup_disabled_when_flag_off_keeps_both(self):
         import os
+        # Both sections carry twitter-tweet so neither is removed by the
+        # empty-drop step (we are testing dedup-flag behavior in isolation).
         body = (
             "<h3>💬 ファンの声</h3>"
             "<p>filler</p>"
+            '<blockquote class="twitter-tweet"><a>tweetA</a></blockquote>'
             "<h3>💬 ファンの声（Xより）</h3>"
-            '<blockquote class="twitter-tweet"><a>tweet</a></blockquote>'
+            '<blockquote class="twitter-tweet"><a>tweetB</a></blockquote>'
         )
         os.environ["ENABLE_FAN_VOICE_H3_DEDUP"] = "0"
         try:
@@ -291,6 +315,84 @@ class TestFanVoiceH3Dedup(unittest.TestCase):
             self.assertEqual(result.count("💬 ファンの声"), 2)
         finally:
             os.environ.pop("ENABLE_FAN_VOICE_H3_DEDUP", None)
+
+
+class TestFanVoiceEmptyDrop(unittest.TestCase):
+    """2026-05-14: filler `💬 ファンの声(Xより)` section without X embed
+    must be removed from the published body. Sections that DO contain
+    a `twitter-tweet` blockquote (= legitimate community section) survive."""
+
+    def setUp(self):
+        import os
+        os.environ.pop("ENABLE_FAN_VOICE_EMPTY_DROP", None)
+
+    def tearDown(self):
+        import os
+        os.environ.pop("ENABLE_FAN_VOICE_EMPTY_DROP", None)
+
+    def test_section_with_twitter_tweet_kept(self):
+        body = (
+            "<h3>💬 ファンの声（Xより）</h3>"
+            '<blockquote class="twitter-tweet"><a>tweet</a></blockquote>'
+        )
+        result = normalize_h3_in_html(body)
+        self.assertIn("💬 ファンの声（Xより）", result)
+        self.assertIn("twitter-tweet", result)
+
+    def test_empty_section_dropped(self):
+        # Gemini paraphrase only, no twitter-tweet → section removed.
+        body = (
+            "<h3>💬 ファンの声（Xより）</h3>"
+            "<p>投稿要点を短く整理します。</p>"
+            "<h3>🔗 出典記事</h3><p>...</p>"
+        )
+        result = normalize_h3_in_html(body)
+        self.assertNotIn("💬 ファンの声", result)
+        self.assertNotIn("投稿要点を短く整理します", result)
+        # 後段の出典 h3 は残る
+        self.assertIn("🔗 出典記事", result)
+
+    def test_legacy_plain_label_filler_also_dropped(self):
+        # Backward-compat: a stray plain `💬 ファンの声` (no suffix) with
+        # no twitter is also treated as filler and dropped.
+        body = (
+            "<h3>💬 ファンの声</h3>"
+            "<p>整理します。</p>"
+        )
+        result = normalize_h3_in_html(body)
+        self.assertNotIn("💬 ファンの声", result)
+        self.assertNotIn("整理します", result)
+
+    def test_long_text_section_kept_even_without_twitter(self):
+        # Section body >= threshold chars survives (real fan reaction text).
+        long_body = "ファンの本物の感想文がここに" * 20  # >> 200 chars
+        body = (
+            "<h3>💬 ファンの声（Xより）</h3>"
+            f"<p>{long_body}</p>"
+        )
+        result = normalize_h3_in_html(body)
+        self.assertIn("💬 ファンの声（Xより）", result)
+
+    def test_empty_drop_disabled_when_flag_off(self):
+        import os
+        body = (
+            "<h3>💬 ファンの声（Xより）</h3>"
+            "<p>filler</p>"
+        )
+        os.environ["ENABLE_FAN_VOICE_EMPTY_DROP"] = "0"
+        result = normalize_h3_in_html(body)
+        self.assertIn("💬 ファンの声（Xより）", result)
+        self.assertIn("filler", result)
+
+    def test_empty_drop_idempotent(self):
+        body = (
+            "<h3>💬 ファンの声（Xより）</h3>"
+            "<p>整理します。</p>"
+            "<h3>🔗 出典記事</h3>"
+        )
+        once = normalize_h3_in_html(body)
+        twice = normalize_h3_in_html(once)
+        self.assertEqual(once, twice)
 
 
 if __name__ == "__main__":

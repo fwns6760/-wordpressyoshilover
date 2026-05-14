@@ -1971,12 +1971,15 @@ def _x_embed_block(
     safe = _safe_url(x_url)
     if not safe:
         return ""
-    heading_suffix = f"({_esc(source_name)})" if source_name else ""
+    # 2026-05-14 ラベル統一: fan voice section は canonical
+    # ``💬 ファンの声（Xより）`` で揃える (suffix に source_name を入れる旧
+    # variant `💬 ファンの声(報知)` は廃止)。出所は section 内 anchor / 本文
+    # 出典 line に出るので h3 から除いても情報量は維持。
     anchor_label = _build_related_x_anchor_label(
         source_name=source_name, article_title=article_title
     )
     return (
-        f"<h3>💬 ファンの声{heading_suffix}</h3>"
+        f"<h3>💬 ファンの声（Xより）</h3>"
         '<div class="yoshilover-x-embed" '
         'style="margin:24px auto;max-width:550px;">'
         '<blockquote class="twitter-tweet" data-dnt="true" data-lang="ja">'

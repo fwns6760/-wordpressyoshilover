@@ -1584,14 +1584,17 @@ class BodyFix2FactExtractorTests(unittest.TestCase):
         )
 
     def test_attribution_split_resolved_x_handle_only_in_related(self):
-        # 巨人公式X (source_name) appears only in the 関連投稿 heading +
-        # blockquote anchor — no longer inside the fact card 出典 row.
+        # 巨人公式X (source_name) appears only inside the blockquote
+        # anchor — no longer inside the fact card 出典 row, and (post
+        # 2026-05-14 label unification) no longer inside the fan voice
+        # h3 (which is now fixed `💬 ファンの声（Xより）` regardless of
+        # source name).
         out = self._render(self._data())
         body = out["content_html"]
         # Count occurrences of the X handle.
         n = body.count("巨人公式X")
-        # 関連投稿(巨人公式X) heading + 巨人公式X「関連投稿」 anchor = 2 occurrences.
-        self.assertEqual(n, 2)
+        # Only the blockquote anchor (`巨人公式X「...」`) carries the handle.
+        self.assertEqual(n, 1)
         # 巨人公式サイト (host label) appears at top 出典 + H3 出典記事 anchor.
         self.assertGreaterEqual(body.count("巨人公式サイト"), 2)
 

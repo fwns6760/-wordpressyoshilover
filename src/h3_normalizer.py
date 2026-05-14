@@ -73,15 +73,20 @@ def _h3_title_dup_removal_enabled() -> bool:
 # (旧 H3 text、 新 H3 text) のマッピング表。
 # 順序は重要: 長い / 具体的なものを先に置いて部分一致順序の不安定さを避ける。
 # 全部 完全一致 (text 全体が一致) で判定する (部分置換しない)。
+#
+# 2026-05-14 ラベル統一: fan voice 系は全て ``💬 ファンの声（Xより）`` (suffix
+# 付き) を canonical とする。plain ``💬 ファンの声`` (suffix なし) は中身が空
+# / Gemini paraphrase だけになりやすく「掲示板」価値が薄いため、新規 emit は
+# suffix 付きで統一、空 section は ``_drop_empty_fan_voice_sections`` で除去。
 _H3_RULES_EXACT: tuple[tuple[str, str], ...] = (
-    # X embed 関連投稿 (4 形式統一 → 💬 ファンの声)
-    ("📣 関連投稿", "💬 ファンの声"),
-    ("関連投稿", "💬 ファンの声"),
+    # X embed 関連投稿 (4 形式統一 → 💬 ファンの声（Xより）)
+    ("📣 関連投稿", "💬 ファンの声（Xより）"),
+    ("関連投稿", "💬 ファンの声（Xより）"),
     # Gemini 自由生成 H3 (【...】 形式)
     ("【ハイライト】", "📋 事実カード"),
     ("【ファームのハイライト】", "📋 事実カード"),
     ("【一軍への示唆】", "📅 次の注目"),
-    ("【投稿で出ていた内容】", "💬 ファンの声"),
+    ("【投稿で出ていた内容】", "💬 ファンの声（Xより）"),
     ("【ファンの関心ポイント】", "📅 次の注目"),
     ("【次の注目】", "📅 次の注目"),
     ("【今後の注目点】", "📅 次の注目"),
@@ -176,9 +181,70 @@ def normalize_h3_in_html(html_body: str) -> str:
     normalized = _H3_RE.sub(_replace, html_body)
     if _fan_voice_h3_dedup_enabled():
         normalized = _dedupe_fan_voice_h3(normalized)
+    if _fan_voice_empty_drop_enabled():
+        normalized = _drop_empty_fan_voice_sections(normalized)
     if _h3_title_dup_removal_enabled():
         normalized = _remove_title_duplicate_first_h3(normalized)
     return normalized
+
+
+def _drop_empty_fan_voice_sections(html_body: str) -> str:
+    """``💬 ファンの声`` (suffix 違い含む) h3 + 本文の section を、X embed
+    が無く visible body が ``_FAN_VOICE_EMPTY_TEXT_MAX`` chars 未満の場合に
+    section ごと削除する。
+
+    Background
+    ----------
+    Gemini 生成の ``【投稿で出ていた内容】`` を normalize 経由で
+    ``💬 ファンの声（Xより）`` に変えた section に、本物の X embed が無く
+    Gemini paraphrase 1 文 (例: 「Xの投稿要点を短く整理します。」、
+    「投稿では『…』という表現も出ていました。」) しか入っていない post が
+    多発 (67152 / 67149 / 67126 / 67176 / 67179 等)。「ファンの声」掲示板
+    section として user 価値ゼロなので h3 ごと丸ごと取り除く。
+
+    Drop 条件 (AND):
+      - section が ``twitter-tweet`` blockquote を含まない
+      - section の visible text length < ``_FAN_VOICE_EMPTY_TEXT_MAX``
+
+    Section 境界は ``_dedupe_fan_voice_h3`` と同じく次の ``<h3``、``<hr``、
+    または末尾まで。idempotent (drop 済 body には fan voice h3 が無いので
+    早期 return)。
+    """
+    if not html_body or _FAN_VOICE_BASE not in html_body:
+        return html_body
+
+    h3_iter = list(_H3_RE.finditer(html_body))
+    if not h3_iter:
+        return html_body
+
+    drop_ranges: list[tuple[int, int]] = []
+    for i, m in enumerate(h3_iter):
+        inner_text = _strip_h3_inner_to_text(m.group(2))
+        if not inner_text.startswith(_FAN_VOICE_BASE):
+            continue
+        body_start = m.end()
+        body_end = h3_iter[i + 1].start() if i + 1 < len(h3_iter) else len(html_body)
+        hr_match = re.search(r"<hr\b", html_body[body_start:body_end], re.IGNORECASE)
+        if hr_match:
+            body_end = body_start + hr_match.start()
+        section_html = html_body[body_start:body_end]
+        if "twitter-tweet" in section_html:
+            continue
+        visible = _TAG_RE.sub("", section_html).strip()
+        # collapse whitespace before length check
+        visible = _WS_RE.sub(" ", visible)
+        if len(visible) >= _FAN_VOICE_EMPTY_TEXT_MAX:
+            continue
+        drop_ranges.append((m.start(), body_end))
+
+    if not drop_ranges:
+        return html_body
+
+    drop_ranges.sort(key=lambda r: r[0], reverse=True)
+    result = html_body
+    for start, end in drop_ranges:
+        result = result[:start] + result[end:]
+    return result
 
 
 def _remove_title_duplicate_first_h3(html_body: str) -> str:
@@ -211,7 +277,19 @@ def _remove_title_duplicate_first_h3(html_body: str) -> str:
     return html_body[:m.start()] + html_body[m.end():]
 
 
-_FAN_VOICE_LABEL = "💬 ファンの声"
+# Canonical (= emitted by normalizer / rss_fetcher / nomotoke card path).
+_FAN_VOICE_LABEL = "💬 ファンの声（Xより）"
+# Prefix used to *detect* any fan voice h3 regardless of suffix (legacy plain
+# ``💬 ファンの声``, ``💬 ファンの声(報知)``, etc.). Backward-compat anchor.
+_FAN_VOICE_BASE = "💬 ファンの声"
+# Visible-text threshold below which a fan voice section without a
+# ``twitter-tweet`` blockquote is treated as filler and dropped.
+_FAN_VOICE_EMPTY_TEXT_MAX = 200
+
+
+def _fan_voice_empty_drop_enabled() -> bool:
+    val = (os.getenv("ENABLE_FAN_VOICE_EMPTY_DROP") or "1").strip().lower()
+    return val in _TRUE_VALUES
 
 
 def _dedupe_fan_voice_h3(html_body: str) -> str:
@@ -220,12 +298,13 @@ def _dedupe_fan_voice_h3(html_body: str) -> str:
     Background
     ----------
     Gemini 生成本文に ``【投稿で出ていた内容】`` heading が出ると、
-    h3 normalize で ``💬 ファンの声`` に変換される。一方で
+    h3 normalize で ``💬 ファンの声（Xより）`` に変換される。一方で
     ``src/rss_fetcher.py`` が X embed 用に ``<h3>💬 ファンの声（Xより）</h3>``
     を別に emit する場合があり、結果 2 重 h3 + 中身の薄い filler block が
     残る (66752 / 66788 等で観測)。
 
-    本関数は **同一ラベル** の連続 / 近接 h3 を 1 つに集約する。残すのは:
+    本関数は **同一ラベル** (``💬 ファンの声`` で始まる全 variant、suffix 違い
+    含む) の連続 / 近接 h3 を 1 つに集約する。残すのは:
       1. ``twitter-tweet`` blockquote を含む section
       2. それ以外は内容の長い方
       3. 同点なら最後の section
@@ -234,7 +313,7 @@ def _dedupe_fan_voice_h3(html_body: str) -> str:
 
     idempotent: 再 apply しても結果不変。
     """
-    if not html_body or _FAN_VOICE_LABEL not in html_body:
+    if not html_body or _FAN_VOICE_BASE not in html_body:
         return html_body
 
     # section = (h3_start_idx, h3_end_idx, body_end_idx, label, has_twitter, body_len)
@@ -261,8 +340,8 @@ def _dedupe_fan_voice_h3(html_body: str) -> str:
             "body_len": len(re.sub(r"<[^>]+>", "", body).strip()),
         })
 
-    # 同 label セクションをまとめる
-    fan_sections = [s for s in sections if s["label"].startswith(_FAN_VOICE_LABEL)]
+    # 同 label セクションをまとめる (suffix 違い含む全 fan voice variant)
+    fan_sections = [s for s in sections if s["label"].startswith(_FAN_VOICE_BASE)]
     if len(fan_sections) < 2:
         return html_body
 

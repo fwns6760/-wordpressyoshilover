@@ -20765,6 +20765,33 @@ def is_giants_related(text: str, source_name: str = "", post_url: str = "") -> b
         return False
     return not _is_other_team_transfer_story(source_text, roster_hits)
 
+
+def _is_youtube_post_url(post_url: str) -> bool:
+    """344-INGEST: post_url が YouTube 由来かを判定。"""
+    if not post_url:
+        return False
+    url_l = post_url.lower()
+    return "youtube.com" in url_l or "youtu.be" in url_l
+
+
+def _check_youtube_giants_filter(title: str) -> tuple[bool, str]:
+    """344-INGEST: YouTube 動画 title が巨人 relevance を持つか判定。
+
+    OB roster 検出を追加した filter (`youtube_title_passes_giants_filter`) を呼ぶ。
+    本 helper は import 失敗 / 例外時に空 fallback で main flow を絶対に壊さない。
+    """
+    try:
+        from src.youtube_title_filter import youtube_title_passes_giants_filter
+    except Exception:  # noqa: BLE001
+        return (False, "import_failed")
+    try:
+        return youtube_title_passes_giants_filter(
+            title,
+            giants_roster_matcher=_matching_giants_roster_names,
+        )
+    except Exception:  # noqa: BLE001
+        return (False, "filter_error")
+
 # ──────────────────────────────────────────────────────────
 # カテゴリ自動分類
 # ──────────────────────────────────────────────────────────
@@ -23673,7 +23700,20 @@ def _main(args, logger):
                     if part
                 )
 
-            if not is_giants_related(giants_signal_text, source_name=name, post_url=post_url):
+            # 344-INGEST: YouTube source は OB roster 検出を加えた YouTube 専用 filter で
+            # 巨人 relevance を再評価 (is_giants_related と並行 OR、より広く拾う)。
+            _entry_is_youtube = _is_youtube_post_url(post_url)
+            _youtube_filter_pass = False
+            _youtube_filter_reason = ""
+            if _entry_is_youtube:
+                _youtube_filter_pass, _youtube_filter_reason = _check_youtube_giants_filter(
+                    entry_title_clean
+                )
+
+            if (
+                not is_giants_related(giants_signal_text, source_name=name, post_url=post_url)
+                and not _youtube_filter_pass
+            ):
                 logger.debug(f"  [SKIP:フィルタ] {post_url}")
                 if len(not_giants_related_sample_titles) < 3:
                     not_giants_related_sample_titles.append(entry_title_clean[:80] or post_url)
@@ -23686,6 +23726,19 @@ def _main(args, logger):
                         detected_keywords=_matching_giants_keywords(giants_signal_text),
                     )
                     not_giants_related_info_count += 1
+                if _entry_is_youtube:
+                    logger.info(
+                        json.dumps(
+                            {
+                                "event": "youtube_title_filter_skip",
+                                "reason": _youtube_filter_reason or "no_match",
+                                "title": entry_title_clean[:160],
+                                "post_url": post_url,
+                                "source_name": name,
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
                 skip_filter += 1
                 skip_reason_counts["not_giants_related"] += 1
                 continue

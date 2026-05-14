@@ -126,6 +126,15 @@ def infer_subtype(title: str) -> str:
         return "program"
     if _contains_any(value, PROMOTIONAL_EVENT_KEYWORDS):
         return "off_field"
+    # DATA-INSIGHT-continuous (work record §4): 新 subtype 認識
+    # render_article の title pattern「<player>、<metric> は 12 球団中 <rank>
+    # 位 — <window>データから見る位置」を捕捉
+    if "12 球団" in value or "12球団" in value:
+        if "ERA" in value or "FIP" in value or "WHIP" in value:
+            return "data_ranking_pitching"
+        return "data_ranking_batting"
+    if "データで見る巨人" in value or "データ分析" in value:
+        return "data_ranking_general"
     return "other"
 
 

@@ -1294,6 +1294,59 @@ class WPClient:
                 for c in resp.json()]
 
     # ------------------------------------------------------------------
+    # カテゴリ新規作成 (342-INSIGHT / DATA-INSIGHT-continuous で追加)
+    # ------------------------------------------------------------------
+    def create_category(
+        self,
+        name: str,
+        slug: str | None = None,
+        description: str = "",
+        parent: int = 0,
+    ) -> int:
+        """新 WP category を作成、新 ID を返す。
+
+        既存 name と衝突した場合 (term_exists 400) は既存 ID を返す
+        (idempotent)。application password 権限で REST POST 可能。
+
+        Args:
+            name: category 表示名 (例: "データで見る巨人")
+            slug: URL slug (省略時 WP 側で自動採番)
+            description: category 説明
+            parent: 親 category ID (0 = top-level)
+
+        Returns:
+            category ID (int)。失敗時は 0。
+        """
+        payload: dict[str, Any] = {"name": name}
+        if slug:
+            payload["slug"] = slug
+        if description:
+            payload["description"] = description
+        if parent:
+            payload["parent"] = parent
+        try:
+            resp = self._request_with_retry(
+                requests.post,
+                f"{self.api}/categories",
+                action="カテゴリ作成",
+                json=payload,
+            )
+            return int(resp.json().get("id") or 0)
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == 400:
+                try:
+                    data = e.response.json()
+                except Exception:
+                    data = {}
+                if data.get("code") == "term_exists":
+                    # 既存名で衝突 → search で既存 ID を返す
+                    for cat in self.get_categories():
+                        if cat.get("name") == name:
+                            return cat["id"]
+            print(f"[WP] カテゴリ作成失敗: {name!r}, error={e}")
+            return 0
+
+    # ------------------------------------------------------------------
     # カテゴリ名 → ID 変換
     # ------------------------------------------------------------------
     def resolve_category_id(self, name: str) -> int:

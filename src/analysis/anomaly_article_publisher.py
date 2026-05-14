@@ -70,6 +70,16 @@ def _league_team_filter(league: str) -> list[str]:
     return []
 
 
+# lower-is-better metric (rank 計算で ASC sort)
+_LOWER_IS_BETTER_METRICS = frozenset({
+    "ERA", "WHIP", "FIP", "xFIP", "BB_per_9", "HR_per_9",
+})
+
+
+def _is_higher_better(metric_name: str) -> bool:
+    return metric_name not in _LOWER_IS_BETTER_METRICS
+
+
 def _fetch_ranking_context(
     conn: sqlite3.Connection,
     *,
@@ -93,6 +103,7 @@ def _fetch_ranking_context(
     if not snapshot_date:
         return ([], 0)
     teams = _league_team_filter(league or "")
+    order = "ASC" if not _is_higher_better(metric_name) else "DESC"
     if teams:
         placeholders = ",".join("?" * len(teams))
         rows = conn.execute(
@@ -100,16 +111,16 @@ def _fetch_ranking_context(
             f"FROM advanced_metric_snapshots "
             f"WHERE metric_name = ? AND scope = ? AND snapshot_date = ? "
             f"AND team_code IN ({placeholders}) AND metric_value IS NOT NULL "
-            f"ORDER BY metric_value DESC",
+            f"ORDER BY metric_value {order}",
             (metric_name, scope, snapshot_date, *teams),
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT player_canonical, team_code, metric_value, sample_size "
-            "FROM advanced_metric_snapshots "
-            "WHERE metric_name = ? AND scope = ? AND snapshot_date = ? "
-            "AND metric_value IS NOT NULL "
-            "ORDER BY metric_value DESC",
+            f"SELECT player_canonical, team_code, metric_value, sample_size "
+            f"FROM advanced_metric_snapshots "
+            f"WHERE metric_name = ? AND scope = ? AND snapshot_date = ? "
+            f"AND metric_value IS NOT NULL "
+            f"ORDER BY metric_value {order}",
             (metric_name, scope, snapshot_date),
         ).fetchall()
     total = len(rows)
@@ -143,6 +154,7 @@ def _find_player_rank(
     if not snapshot_date:
         return None
     teams = _league_team_filter(league or "")
+    order = "ASC" if not _is_higher_better(metric_name) else "DESC"
     if teams:
         placeholders = ",".join("?" * len(teams))
         rows = conn.execute(
@@ -150,16 +162,16 @@ def _find_player_rank(
             f"FROM advanced_metric_snapshots "
             f"WHERE metric_name = ? AND scope = ? AND snapshot_date = ? "
             f"AND team_code IN ({placeholders}) AND metric_value IS NOT NULL "
-            f"ORDER BY metric_value DESC",
+            f"ORDER BY metric_value {order}",
             (metric_name, scope, snapshot_date, *teams),
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT player_canonical, team_code, metric_value, sample_size "
-            "FROM advanced_metric_snapshots "
-            "WHERE metric_name = ? AND scope = ? AND snapshot_date = ? "
-            "AND metric_value IS NOT NULL "
-            "ORDER BY metric_value DESC",
+            f"SELECT player_canonical, team_code, metric_value, sample_size "
+            f"FROM advanced_metric_snapshots "
+            f"WHERE metric_name = ? AND scope = ? AND snapshot_date = ? "
+            f"AND metric_value IS NOT NULL "
+            f"ORDER BY metric_value {order}",
             (metric_name, scope, snapshot_date),
         ).fetchall()
     total = len(rows)
@@ -490,21 +502,25 @@ def render_fip_era_divergence_article(
     fip_str = _extract_value(current, "FIP")
 
     if diff > 0:
+        # FIP > ERA: ERA は本来より良く見えてる (運に支えられた)
         why_text = (
-            f"防御率(ERA)と FIP(投手本人の実力指標)を比べると、FIP が **+{diff:.3f}** 高い。"
-            f"つまり ERA は守備や運に支えられた『表面値』で、本質的にはもっと悪い投球内容。"
+            f"防御率(ERA、低いほど良い指標)が **{era_str}** に対し、"
+            f"FIP(投手本人の実力指標、低いほど良い)は **{fip_str}** と高い。"
+            f"ERA は守備や運に支えられた『表面値』で、本質はもっと悪い投球内容。"
             f"シーズン後半に ERA が悪化するリスクがあります。"
         )
         notable_phrase = f"防御率 {era_str} は運の数字(FIP {fip_str})"
-        simple = f"防御率は良く見えますが、本人の実力指標 FIP では中位レベル。今後悪化する可能性あり。"
+        simple = f"防御率は良い数字ですが、本質指標 FIP では平均より悪い。シーズン後半に防御率が悪化する可能性あり。"
     else:
+        # FIP < ERA: ERA は本来より悪く見えてる (運に逆らわれた)
         why_text = (
-            f"防御率(ERA)が **{abs(diff):.3f}** 悪く出ているが、FIP(本人の実力指標)は良い。"
-            f"つまり守備や運に逆らわれている状態で、本来の実力なら防御率はもっと良いはず。"
-            f"今後 ERA が改善する可能性が高い投手です。"
+            f"防御率(ERA、低いほど良い指標)が **{era_str}** に対し、"
+            f"FIP(投手本人の実力指標)は **{fip_str}** と低い(良い)。"
+            f"ERA は守備や運に逆らわれた数字で、本人の実力からすればもっと低い(良い)はず。"
+            f"今後 ERA が改善する可能性があります。"
         )
         notable_phrase = f"防御率 {era_str} は運悪、本来 FIP {fip_str}"
-        simple = f"防御率は悪く見えますが、本人の実力指標 FIP では好調。今後改善する可能性あり。"
+        simple = f"防御率は悪く見えますが、本質指標 FIP では ERA より良い数字。シーズン後半に防御率改善の可能性あり。"
 
     title_template = f"【巨人データを見る】{{player}}、{notable_phrase}"
     return _render_unified_article(

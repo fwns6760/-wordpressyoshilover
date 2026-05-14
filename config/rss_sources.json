@@ -166,6 +166,18 @@
     "article_limit": 30
   },
   {
+    "name": "東スポWEB 巨人 label",
+    "url": "https://www.tokyo-sports.co.jp/list/label/%E5%B7%A8%E4%BA%BA",
+    "type": "tag_scrape",
+    "scraper": "tokyo_sports_giants_label",
+    "max_age_days": 7,
+    "article_limit": 30,
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
     "name": "読売ジャイアンツYouTube公式",
     "url": "https://www.youtube.com/channel/UCXxg0igSYUp0tqdd6luPEnQ/videos",
     "type": "tag_scrape",

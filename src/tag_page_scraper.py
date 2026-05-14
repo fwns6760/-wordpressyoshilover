@@ -678,9 +678,118 @@ def fetch_youtube_channel_entries(
     return entries
 
 
+_TOKYO_SPORTS_ARTICLE_PATH_RE = re.compile(r'/articles/-/(\d+)')
+
+
+def fetch_tokyo_sports_giants_entries(
+    *,
+    tag_url: str = "https://www.tokyo-sports.co.jp/list/label/%E5%B7%A8%E4%BA%BA",
+    max_age_days: int = 7,
+    article_limit: int = 30,
+    logger: logging.Logger | None = None,
+    now: datetime | None = None,
+    fetcher: Callable[..., requests.Response] | None = None,
+) -> list[dict[str, Any]]:
+    """tokyo-sports.co.jp 巨人 label page から最近 N 日分の article entries を返す。
+
+    URL pattern: `/articles/-/{numeric_id}`(URL に date 無し)。
+    label page (`/list/label/巨人`) は東スポ自身が巨人記事を curate しているため
+    post-filter (giants keyword check) は不要。article 毎に
+    `<meta property="article:published_time">` ISO8601 を取って age window 判定。
+    337-INGEST Phase 1 で追加 (2026-05-14)。
+    """
+    logger = logger or logging.getLogger("tag_page_scraper")
+    reference_now = (now or datetime.now(timezone.utc)).astimezone(JST)
+    response = _http_get(tag_url, fetcher=fetcher)
+    if response is None or response.status_code != 200:
+        logger.warning(
+            "tag_page_fetch_failed source=tokyo_sports tag_url=%s status=%s",
+            tag_url,
+            getattr(response, "status_code", "ERR"),
+        )
+        return []
+
+    text = response.text
+    seen_urls: list[str] = []
+    seen_set: set[str] = set()
+    for match in _TOKYO_SPORTS_ARTICLE_PATH_RE.finditer(text):
+        article_id = match.group(1)
+        article_url = f"https://www.tokyo-sports.co.jp/articles/-/{article_id}"
+        if article_url in seen_set:
+            continue
+        seen_set.add(article_url)
+        seen_urls.append(article_url)
+
+    if not seen_urls:
+        logger.info("tag_page_no_recent_articles source=tokyo_sports tag_url=%s", tag_url)
+        return []
+
+    # tag page から取った 件数を article_limit で cap (article 毎に fetch するため
+    # 上限超過は cost 増)
+    seen_urls = seen_urls[:article_limit]
+    logger.info(
+        "tag_page_articles_extracted source=tokyo_sports count=%d (limit %d)",
+        len(seen_urls),
+        article_limit,
+    )
+
+    entries: list[dict[str, Any]] = []
+    age_filtered_out = 0
+    for article_url in seen_urls:
+        article_response = _http_get(article_url, fetcher=fetcher)
+        if article_response is None or article_response.status_code != 200:
+            logger.info(
+                "tag_page_article_fetch_failed source=tokyo_sports url=%s status=%s",
+                article_url,
+                getattr(article_response, "status_code", "ERR"),
+            )
+            continue
+        meta = _extract_og_meta(article_response.text)
+        title = (meta.get("og:title") or "").strip()
+        # 東スポ og:title は「... | 東スポWEB」suffix を持つので取る
+        title = re.sub(
+            r"\s*[|｜]\s*東スポWEB\s*$", "", title, flags=re.IGNORECASE
+        )
+        summary = (meta.get("og:description") or meta.get("description") or "").strip()
+        published_struct = _parse_iso8601_to_struct_time(
+            meta.get("article:published_time", "")
+        )
+        if published_struct is None:
+            # tokyo-sports は URL に date が無く、meta も取れなければ age 判定不可
+            # = age window 外と扱って skip。
+            age_filtered_out += 1
+            continue
+        # age window 判定 (published_time の YYYYMMDD を引っ張る)
+        pub_dt = datetime(*published_struct[:6], tzinfo=timezone.utc).astimezone(JST)
+        date_str = pub_dt.strftime("%Y%m%d")
+        if not _is_ymd_within_window(date_str, max_age_days=max_age_days, now=reference_now):
+            age_filtered_out += 1
+            continue
+        entry: dict[str, Any] = {
+            "link": article_url,
+            "id": article_url,
+            "title": title,
+            "summary": summary,
+            "description": summary,
+            "published_parsed": published_struct,
+            "published": _struct_time_to_rfc822(published_struct),
+        }
+        entries.append(entry)
+
+    logger.info(
+        "tag_page_entries_built source=tokyo_sports count=%d "
+        "(out of %d candidates, %d age-filtered)",
+        len(entries),
+        len(seen_urls),
+        age_filtered_out,
+    )
+    return entries
+
+
 _SCRAPER_REGISTRY: dict[str, Callable[..., list[dict[str, Any]]]] = {
     "hochi_giants_tag": fetch_hochi_giants_entries,
     "daily_giants_tag": fetch_daily_giants_entries,
+    "tokyo_sports_giants_label": fetch_tokyo_sports_giants_entries,
     "youtube_channel": fetch_youtube_channel_entries,
 }
 

@@ -408,6 +408,116 @@ class FetchDailyGiantsEntriesTests(unittest.TestCase):
         )
 
 
+class FetchTokyoSportsGiantsEntriesTests(unittest.TestCase):
+    """337-INGEST Phase 1: tokyo-sports label page scraper test。
+
+    URL pattern `/articles/-/{numeric_id}`、published time は meta property
+    `article:published_time` の ISO8601 から取る。URL に date 無し。
+    """
+
+    def setUp(self):
+        self.now = datetime(2026, 5, 14, 12, 0, 0, tzinfo=JST)
+
+    def _build_label_html(self, article_ids: list[str]) -> str:
+        anchors = "".join(
+            f'<a href="/articles/-/{aid}">title-{aid}</a>' for aid in article_ids
+        )
+        return f"<html><body>{anchors}</body></html>"
+
+    def _build_article_html(
+        self,
+        *,
+        title: str,
+        desc: str = "lead",
+        published_iso: str = "",
+    ) -> str:
+        meta = (
+            f'<meta property="og:title" content="{title}">'
+            f'<meta property="og:description" content="{desc}">'
+        )
+        if published_iso:
+            meta += f'<meta property="article:published_time" content="{published_iso}">'
+        return f"<html><head>{meta}</head><body></body></html>"
+
+    def test_extracts_articles_and_strips_tospo_web_suffix(self):
+        label_html = self._build_label_html(["388121"])
+        article_html = self._build_article_html(
+            title="【巨人】阿部監督 坂本勇人の逆転サヨナラ３ランから見いだした若手への教訓 | 東スポWEB",
+            published_iso="2026-05-14T01:07:00+09:00",
+        )
+
+        def fake_fetcher(url, **kwargs):
+            if url.endswith("%E5%B7%A8%E4%BA%BA"):
+                return _make_response(200, label_html)
+            return _make_response(200, article_html)
+
+        entries = scraper.fetch_tokyo_sports_giants_entries(
+            tag_url="https://www.tokyo-sports.co.jp/list/label/%E5%B7%A8%E4%BA%BA",
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 1)
+        # 「 | 東スポWEB」 suffix を strip
+        self.assertEqual(
+            entries[0]["title"],
+            "【巨人】阿部監督 坂本勇人の逆転サヨナラ３ランから見いだした若手への教訓",
+        )
+        self.assertEqual(
+            entries[0]["link"], "https://www.tokyo-sports.co.jp/articles/-/388121"
+        )
+
+    def test_filters_articles_older_than_max_age_days(self):
+        label_html = self._build_label_html(["388100", "388121"])
+        old_article = self._build_article_html(
+            title="古い記事",
+            published_iso="2026-04-30T10:00:00+09:00",  # 2 weeks old
+        )
+        new_article = self._build_article_html(
+            title="新しい記事",
+            published_iso="2026-05-14T01:07:00+09:00",
+        )
+
+        def fake_fetcher(url, **kwargs):
+            if url.endswith("%E5%B7%A8%E4%BA%BA"):
+                return _make_response(200, label_html)
+            if "388100" in url:
+                return _make_response(200, old_article)
+            return _make_response(200, new_article)
+
+        entries = scraper.fetch_tokyo_sports_giants_entries(
+            tag_url="https://www.tokyo-sports.co.jp/list/label/%E5%B7%A8%E4%BA%BA",
+            max_age_days=7,
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 1)
+        self.assertIn("388121", entries[0]["link"])
+
+    def test_drops_articles_without_published_time(self):
+        # tokyo-sports は URL に date 無いので published_time meta 欠落 = age 判定不可
+        # → age filtered として skip
+        label_html = self._build_label_html(["388121"])
+        article_html = self._build_article_html(
+            title="published_time 無し記事 | 東スポWEB",
+            published_iso="",  # no meta
+        )
+
+        def fake_fetcher(url, **kwargs):
+            if url.endswith("%E5%B7%A8%E4%BA%BA"):
+                return _make_response(200, label_html)
+            return _make_response(200, article_html)
+
+        entries = scraper.fetch_tokyo_sports_giants_entries(
+            tag_url="https://www.tokyo-sports.co.jp/list/label/%E5%B7%A8%E4%BA%BA",
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(entries, [])
+
+    def test_registered_in_scraper_kinds(self):
+        self.assertIn("tokyo_sports_giants_label", list(scraper.list_scraper_kinds()))
+
+
 class FetchYoutubeChannelEntriesTests(unittest.TestCase):
     """RELIABILITY-2026-05-08-Y: YouTube channel page scraper test."""
 

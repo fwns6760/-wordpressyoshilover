@@ -1,13 +1,43 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-05-09 JST
+最終更新: 2026-05-14 PM JST
 
 ## 最初に読む
 
 - `doc/active/OPERATING_LOCK.md`
 - `doc/README.md`
 - `doc/active/assignments.md`
+- **2026-05-14 最新 handoff (本日 2 session 並走)**:
+  - `docs/handoff/session_logs/2026-05-14_pm_336qa_chain_handoff.md` (本 session、336-QA chain LIVE + 13 GH Issue close)
+  - `docs/handoff/session_logs/2026-05-14_session_handoff_343_INSIGHT_007_LIVE.md` (並走 session、343-INSIGHT-007 chain LIVE + 342 unblock)
 - **2026-05-08 緊急対応 (close 済)**: `doc/done/2026-05/RESTORE-2026-05-08-MORNING-RELIABILITY.md` + `docs/handoff/HANDOFF-2026-05-08-NEXT-SESSION.md`
+
+## 2026-05-14 PM session summary
+
+### close 済 (13 GH Issue、1 commit chain)
+
+| 区分 | Issue | commit | 備考 |
+|---|---|---|---|
+| impl | #17 / 338-QA | `ef204c5` | 「無失点」を「失点」誤判定 fix |
+| audit→fix | #19 / 340-OBSERVE → #22 / 341-FIX | `4487e77` | digest 不発 audit → schema adapter |
+| impl | #8 / 335-QA Phase 3 | `ace4b64` | event token 重複圧縮 |
+| impl | #16 / 337-INGEST Phase 3 | `21e4502` | sanspo balanced div extractor |
+| impl | #18 / 339-INGEST | `6dd55f2` | X+Web 同 family dedup (default OFF) |
+| impl | #10/#11/#12 / 336-QA Phase 1+2+3 | `e7a33bd` | 報知優先 parent + 600字 excerpt block |
+| ops 移行 | #5 / 334-QA Phase 4 canary | (cleanup) | implementation 完了で観察 ops 移行 |
+| ops 移行 | #9 / 335-QA Phase 4 canary | (cleanup) | implementation 完了で観察 ops 移行 |
+| ops 移行 | #13 / 336-QA Phase 4 canary | (cleanup) | implementation 完了で観察 ops 移行 |
+| 並走 | #23 / 343-INSIGHT-007 | (並走 session) | Phase 1+2 LIVE deploy 完了で close |
+
+deploy: yoshilover-fetcher rev 00380-dx7 → 00381-n9d → 00382-hqj → 00383-vtd → 00384-c2s → 00385-5xb (6 deploy、build digest = revision sha256 一致全件 verify)
+
+### 残 open (1 件)
+
+| # | ticket | status | blocker |
+|---|---|---|---|
+| #21 | 342-INSIGHT | Phase 0 audit + Phase 1 spec done、impl 未着手 | last_30d batter snapshot 12 球団分 (各 5+ 選手) 蓄積待ち、想定 7-21 日後 |
+
+next session: 朝 06:00 自然 fire 後の log 観察 (silent gap §5 in handoff doc) + #21 着手判断 (data 充足後)
 
 ## folder cleanup note(2026-05-02)
 

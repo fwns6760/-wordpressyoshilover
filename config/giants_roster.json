@@ -99,7 +99,8 @@
     "name": "田中将大",
     "aliases": [
       "田中将大",
-      "マー君"
+      "マー君",
+      "田中 将大"
     ],
     "role": "player",
     "position": "投手",
@@ -120,7 +121,8 @@
     "name": "西舘勇陽",
     "aliases": [
       "西舘勇陽",
-      "西舘"
+      "西舘",
+      "西舘 勇陽"
     ],
     "role": "player",
     "position": "投手",
@@ -131,7 +133,9 @@
     "name": "山﨑伊織",
     "aliases": [
       "山﨑伊織",
-      "山崎伊織"
+      "山崎伊織",
+      "*山﨑 伊織",
+      "山﨑 伊織"
     ],
     "role": "player",
     "position": "投手",
@@ -142,7 +146,8 @@
     "name": "戸郷翔征",
     "aliases": [
       "戸郷翔征",
-      "戸郷"
+      "戸郷",
+      "戸郷 翔征"
     ],
     "role": "player",
     "position": "投手",
@@ -165,7 +170,8 @@
     "name": "中川皓太",
     "aliases": [
       "中川皓太",
-      "中川皓太投手"
+      "中川皓太投手",
+      "*中川 皓太"
     ],
     "role": "player",
     "position": "投手",
@@ -176,7 +182,8 @@
     "name": "高梨雄平",
     "aliases": [
       "高梨雄平",
-      "高梨"
+      "高梨",
+      "*高梨 雄平"
     ],
     "role": "player",
     "position": "投手",
@@ -187,7 +194,8 @@
     "name": "井上温大",
     "aliases": [
       "井上温大",
-      "温大"
+      "温大",
+      "*井上 温大"
     ],
     "role": "player",
     "position": "投手",
@@ -198,7 +206,8 @@
     "name": "甲斐拓也",
     "aliases": [
       "甲斐拓也",
-      "甲斐"
+      "甲斐",
+      "甲斐 拓也"
     ],
     "role": "player",
     "position": "捕手",
@@ -209,7 +218,8 @@
     "name": "小林誠司",
     "aliases": [
       "小林誠司",
-      "小林誠司捕手"
+      "小林誠司捕手",
+      "小林 誠司"
     ],
     "role": "player",
     "position": "捕手",
@@ -220,7 +230,8 @@
     "name": "大城卓三",
     "aliases": [
       "大城卓三",
-      "大城卓三捕手"
+      "大城卓三捕手",
+      "*大城 卓三"
     ],
     "role": "player",
     "position": "捕手",
@@ -231,7 +242,8 @@
     "name": "吉川尚輝",
     "aliases": [
       "吉川尚輝",
-      "尚輝"
+      "尚輝",
+      "*吉川 尚輝"
     ],
     "role": "player",
     "position": "内野手",
@@ -242,7 +254,8 @@
     "name": "門脇誠",
     "aliases": [
       "門脇誠",
-      "門脇"
+      "門脇",
+      "*門脇 誠"
     ],
     "role": "player",
     "position": "内野手",
@@ -253,7 +266,8 @@
     "name": "坂本勇人",
     "aliases": [
       "坂本勇人",
-      "勇人"
+      "勇人",
+      "坂本 勇人"
     ],
     "role": "player",
     "position": "内野手",
@@ -264,7 +278,8 @@
     "name": "石塚裕惺",
     "aliases": [
       "石塚裕惺",
-      "石塚"
+      "石塚",
+      "石塚 裕惺"
     ],
     "role": "player",
     "position": "内野手",
@@ -275,7 +290,8 @@
     "name": "浦田俊輔",
     "aliases": [
       "浦田俊輔",
-      "浦田"
+      "浦田",
+      "*浦田 俊輔"
     ],
     "role": "player",
     "position": "内野手",
@@ -286,7 +302,8 @@
     "name": "泉口友汰",
     "aliases": [
       "泉口友汰",
-      "泉口"
+      "泉口",
+      "*泉口 友汰"
     ],
     "role": "player",
     "position": "内野手",
@@ -307,7 +324,8 @@
     "name": "丸佳浩",
     "aliases": [
       "丸佳浩",
-      "丸佳浩外野手"
+      "丸佳浩外野手",
+      "*丸 佳浩"
     ],
     "role": "player",
     "position": "外野手",
@@ -318,7 +336,8 @@
     "name": "萩尾匡也",
     "aliases": [
       "萩尾匡也",
-      "萩尾"
+      "萩尾",
+      "萩尾 匡也"
     ],
     "role": "player",
     "position": "外野手",
@@ -329,7 +348,8 @@
     "name": "岡田悠希",
     "aliases": [
       "岡田悠希",
-      "岡田悠希外野手"
+      "岡田悠希外野手",
+      "*岡田 悠希"
     ],
     "role": "player",
     "position": "外野手",
@@ -340,7 +360,8 @@
     "name": "中山礼都",
     "aliases": [
       "中山礼都",
-      "礼都"
+      "礼都",
+      "*中山 礼都"
     ],
     "role": "player",
     "position": "外野手",
@@ -351,7 +372,8 @@
     "name": "佐々木俊輔",
     "aliases": [
       "佐々木俊輔",
-      "佐々木俊輔外野手"
+      "佐々木俊輔外野手",
+      "*佐々木 俊輔"
     ],
     "role": "player",
     "position": "外野手",
@@ -362,7 +384,8 @@
     "name": "浅野翔吾",
     "aliases": [
       "浅野翔吾",
-      "浅野"
+      "浅野",
+      "浅野 翔吾"
     ],
     "role": "player",
     "position": "外野手",
@@ -373,7 +396,8 @@
     "name": "若林楽人",
     "aliases": [
       "若林楽人",
-      "若林楽人外野手"
+      "若林楽人外野手",
+      "若林 楽人"
     ],
     "role": "player",
     "position": "外野手",
@@ -404,27 +428,8 @@
   {
     "name": "石川 達也",
     "aliases": [
-      "石川 達也"
-    ],
-    "role": "player",
-    "position": "打者",
-    "jersey_number": "",
-    "active": true
-  },
-  {
-    "name": "石塚 裕惺",
-    "aliases": [
-      "石塚 裕惺"
-    ],
-    "role": "player",
-    "position": "打者",
-    "jersey_number": "",
-    "active": true
-  },
-  {
-    "name": "*泉口 友汰",
-    "aliases": [
-      "*泉口 友汰"
+      "石川 達也",
+      "*石川 達也"
     ],
     "role": "player",
     "position": "打者",
@@ -435,16 +440,6 @@
     "name": "泉 圭輔",
     "aliases": [
       "泉 圭輔"
-    ],
-    "role": "player",
-    "position": "投手",
-    "jersey_number": "",
-    "active": true
-  },
-  {
-    "name": "*井上 温大",
-    "aliases": [
-      "*井上 温大"
     ],
     "role": "player",
     "position": "投手",
@@ -465,36 +460,6 @@
     "name": "*宇都宮 葵星",
     "aliases": [
       "*宇都宮 葵星"
-    ],
-    "role": "player",
-    "position": "打者",
-    "jersey_number": "",
-    "active": true
-  },
-  {
-    "name": "*浦田 俊輔",
-    "aliases": [
-      "*浦田 俊輔"
-    ],
-    "role": "player",
-    "position": "打者",
-    "jersey_number": "",
-    "active": true
-  },
-  {
-    "name": "*大城 卓三",
-    "aliases": [
-      "*大城 卓三"
-    ],
-    "role": "player",
-    "position": "打者",
-    "jersey_number": "",
-    "active": true
-  },
-  {
-    "name": "*門脇 誠",
-    "aliases": [
-      "*門脇 誠"
     ],
     "role": "player",
     "position": "打者",
@@ -542,52 +507,12 @@
     "active": true
   },
   {
-    "name": "小林 誠司",
-    "aliases": [
-      "小林 誠司"
-    ],
-    "role": "player",
-    "position": "打者",
-    "jersey_number": "",
-    "active": true
-  },
-  {
-    "name": "坂本 勇人",
-    "aliases": [
-      "坂本 勇人"
-    ],
-    "role": "player",
-    "position": "打者",
-    "jersey_number": "",
-    "active": true
-  },
-  {
-    "name": "*佐々木 俊輔",
-    "aliases": [
-      "*佐々木 俊輔"
-    ],
-    "role": "player",
-    "position": "打者",
-    "jersey_number": "",
-    "active": true
-  },
-  {
     "name": "ダルベック",
     "aliases": [
       "ダルベック"
     ],
     "role": "player",
     "position": "打者",
-    "jersey_number": "",
-    "active": true
-  },
-  {
-    "name": "*高梨 雄平",
-    "aliases": [
-      "*高梨 雄平"
-    ],
-    "role": "player",
-    "position": "投手",
     "jersey_number": "",
     "active": true
   },
@@ -602,19 +527,10 @@
     "active": true
   },
   {
-    "name": "*田中 瑛斗",
+    "name": "田中 瑛斗",
     "aliases": [
-      "*田中 瑛斗"
-    ],
-    "role": "player",
-    "position": "打者",
-    "jersey_number": "",
-    "active": true
-  },
-  {
-    "name": "田中 将大",
-    "aliases": [
-      "田中 将大"
+      "*田中 瑛斗",
+      "田中 瑛斗"
     ],
     "role": "player",
     "position": "投手",
@@ -632,43 +548,16 @@
     "active": true
   },
   {
-    "name": "戸郷 翔征",
+    "name": "則本昂大",
     "aliases": [
-      "戸郷 翔征"
+      "*則本 昂大",
+      "則本 昂大",
+      "則本昂大",
+      "則本"
     ],
     "role": "player",
     "position": "投手",
-    "jersey_number": "",
-    "active": true
-  },
-  {
-    "name": "*中川 皓太",
-    "aliases": [
-      "*中川 皓太"
-    ],
-    "role": "player",
-    "position": "投手",
-    "jersey_number": "",
-    "active": true
-  },
-  {
-    "name": "*中山 礼都",
-    "aliases": [
-      "*中山 礼都"
-    ],
-    "role": "player",
-    "position": "打者",
-    "jersey_number": "",
-    "active": true
-  },
-  {
-    "name": "*則本 昂大",
-    "aliases": [
-      "*則本 昂大"
-    ],
-    "role": "player",
-    "position": "打者",
-    "jersey_number": "",
+    "jersey_number": "43",
     "active": true
   },
   {
@@ -678,16 +567,6 @@
     ],
     "role": "player",
     "position": "投手",
-    "jersey_number": "",
-    "active": true
-  },
-  {
-    "name": "萩尾 匡也",
-    "aliases": [
-      "萩尾 匡也"
-    ],
-    "role": "player",
-    "position": "打者",
     "jersey_number": "",
     "active": true
   },
@@ -702,12 +581,13 @@
     "active": true
   },
   {
-    "name": "*船迫 大雅",
+    "name": "船迫 大雅",
     "aliases": [
-      "*船迫 大雅"
+      "*船迫 大雅",
+      "船迫 大雅"
     ],
     "role": "player",
-    "position": "打者",
+    "position": "投手",
     "jersey_number": "",
     "active": true
   },
@@ -732,12 +612,13 @@
     "active": true
   },
   {
-    "name": "*マルティネス",
+    "name": "マルティネス",
     "aliases": [
-      "*マルティネス"
+      "*マルティネス",
+      "マルティネス"
     ],
     "role": "player",
-    "position": "打者",
+    "position": "投手",
     "jersey_number": "",
     "active": true
   },
@@ -765,16 +646,6 @@
     "name": "松本 剛",
     "aliases": [
       "松本 剛"
-    ],
-    "role": "player",
-    "position": "打者",
-    "jersey_number": "",
-    "active": true
-  },
-  {
-    "name": "*丸 佳浩",
-    "aliases": [
-      "*丸 佳浩"
     ],
     "role": "player",
     "position": "打者",
@@ -822,16 +693,6 @@
     "active": true
   },
   {
-    "name": "*吉川 尚輝",
-    "aliases": [
-      "*吉川 尚輝"
-    ],
-    "role": "player",
-    "position": "打者",
-    "jersey_number": "",
-    "active": true
-  },
-  {
     "name": "ルシアーノ",
     "aliases": [
       "ルシアーノ"
@@ -842,99 +703,9 @@
     "active": true
   },
   {
-    "name": "若林 楽人",
-    "aliases": [
-      "若林 楽人"
-    ],
-    "role": "player",
-    "position": "打者",
-    "jersey_number": "",
-    "active": true
-  },
-  {
-    "name": "*石川 達也",
-    "aliases": [
-      "*石川 達也"
-    ],
-    "role": "player",
-    "position": "投手",
-    "jersey_number": "",
-    "active": true
-  },
-  {
-    "name": "田中 瑛斗",
-    "aliases": [
-      "田中 瑛斗"
-    ],
-    "role": "player",
-    "position": "投手",
-    "jersey_number": "",
-    "active": true
-  },
-  {
-    "name": "則本 昂大",
-    "aliases": [
-      "則本 昂大"
-    ],
-    "role": "player",
-    "position": "投手",
-    "jersey_number": "",
-    "active": true
-  },
-  {
-    "name": "船迫 大雅",
-    "aliases": [
-      "船迫 大雅"
-    ],
-    "role": "player",
-    "position": "投手",
-    "jersey_number": "",
-    "active": true
-  },
-  {
-    "name": "マルティネス",
-    "aliases": [
-      "マルティネス"
-    ],
-    "role": "player",
-    "position": "投手",
-    "jersey_number": "",
-    "active": true
-  },
-  {
-    "name": "浅野 翔吾",
-    "aliases": [
-      "浅野 翔吾"
-    ],
-    "role": "player",
-    "position": "打者",
-    "jersey_number": "",
-    "active": true
-  },
-  {
     "name": "*荒巻 悠",
     "aliases": [
       "*荒巻 悠"
-    ],
-    "role": "player",
-    "position": "打者",
-    "jersey_number": "",
-    "active": true
-  },
-  {
-    "name": "*岡田 悠希",
-    "aliases": [
-      "*岡田 悠希"
-    ],
-    "role": "player",
-    "position": "打者",
-    "jersey_number": "",
-    "active": true
-  },
-  {
-    "name": "甲斐 拓也",
-    "aliases": [
-      "甲斐 拓也"
     ],
     "role": "player",
     "position": "打者",
@@ -1092,16 +863,6 @@
     "active": true
   },
   {
-    "name": "西舘 勇陽",
-    "aliases": [
-      "西舘 勇陽"
-    ],
-    "role": "player",
-    "position": "投手",
-    "jersey_number": "",
-    "active": true
-  },
-  {
     "name": "*バルドナード",
     "aliases": [
       "*バルドナード"
@@ -1192,16 +953,6 @@
     "active": true
   },
   {
-    "name": "*山﨑 伊織",
-    "aliases": [
-      "*山﨑 伊織"
-    ],
-    "role": "player",
-    "position": "打者",
-    "jersey_number": "",
-    "active": true
-  },
-  {
     "name": "*山田 龍聖",
     "aliases": [
       "*山田 龍聖"
@@ -1222,29 +973,10 @@
     "active": true
   },
   {
-    "name": "山﨑 伊織",
-    "aliases": [
-      "山﨑 伊織"
-    ],
-    "role": "player",
-    "position": "投手",
-    "jersey_number": "",
-    "active": true
-  },
-  {
     "name": "梶原昂希",
     "aliases": [
       "梶原昂希",
-      "梶原"
-    ],
-    "role": "player",
-    "position": "打者",
-    "jersey_number": "",
-    "active": true
-  },
-  {
-    "name": "*梶原 昂希",
-    "aliases": [
+      "梶原",
       "*梶原 昂希"
     ],
     "role": "player",

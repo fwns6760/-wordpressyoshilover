@@ -246,6 +246,19 @@ _REACTION_PATTERN_RE = re.compile(
     r"「([^」]{2,15})」「([^」]{2,15})」"
 )
 
+# 335-QA Phase 2 followup (post 67262 fix):
+# subject + 、 + 任意 descriptor (例 "幼なじみ") + target + の + fact + 任意を + verb + 「q1」「q2」
+# 既存 R が `が` 区切り + を 必須を要求するのに対し、R2 は `、` 区切り + を 任意 + descriptor 任意。
+_REACTION_PATTERN_RE2 = re.compile(
+    r"([^\s「」、【】]{2,8})、"
+    r"(?:[“”\"『][^“”\"』」、]{1,8}[“”\"』])?"
+    r"([^\s「」、【】]{2,8})の"
+    r"([^を「」]{2,30})を?"
+    r"(祝福|称賛|絶賛|賛辞|評価|喜び|反応|感心|驚き|喝采|歓喜|たたえ)"
+    r"\s*"
+    r"「([^」]{2,15})」\s*「([^」]{2,15})」"
+)
+
 
 def _assemble_pattern_R_reaction(
     *,
@@ -255,26 +268,29 @@ def _assemble_pattern_R_reaction(
 ) -> str:
     """Pattern R: 反応記事の literal extraction。
 
-    `[A]が[B]の[fact]を[verb]「[q1]」「[q2]」` 形式の literal substring を
-    source title / body / summary から正規表現で抽出して返す。
+    R: `[A]が[B]の[fact]を[verb]「[q1]」「[q2]」` (既存)
+    R2: `[A]、(任意descriptor)[B]の[fact](任意を)[verb]「[q1]」「[q2]」` (67262 fix)
+
+    R を優先試行、失敗時 R2。output 形式は常に `[A]が[B]の[fact]を[verb]「[q1]」「[q2]」`。
     見つからなければ空文字 (caller は Pattern A 等に fall-through)。
     """
     for text in (source_title, source_body, summary):
         text = _clean(text)
         if not text:
             continue
-        m = _REACTION_PATTERN_RE.search(text)
-        if not m:
-            continue
-        subject = m.group(1).strip()
-        target = m.group(2).strip()
-        fact = m.group(3).strip()
-        verb = m.group(4).strip()
-        q1 = m.group(5).strip().rstrip("。、")
-        q2 = m.group(6).strip().rstrip("。、")
-        if not (subject and target and fact and verb and q1 and q2):
-            continue
-        return f"{subject}が{target}の{fact}を{verb}「{q1}」「{q2}」"
+        for pat in (_REACTION_PATTERN_RE, _REACTION_PATTERN_RE2):
+            m = pat.search(text)
+            if not m:
+                continue
+            subject = m.group(1).strip()
+            target = m.group(2).strip()
+            fact = m.group(3).strip()
+            verb = m.group(4).strip()
+            q1 = m.group(5).strip().rstrip("。、")
+            q2 = m.group(6).strip().rstrip("。、")
+            if not (subject and target and fact and verb and q1 and q2):
+                continue
+            return f"{subject}が{target}の{fact}を{verb}「{q1}」「{q2}」"
     return ""
 
 

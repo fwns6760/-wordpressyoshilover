@@ -130,7 +130,8 @@ YYYY-MM-DD HH:MM JST | event | 内容 | result
 2026-05-14 | COMMIT_1_DONE | config/giants_ob_roster.json (31 OB) + requirements.txt (+youtube-transcript-api) + src/giants_ob_roster.py + tests/test_giants_ob_roster.py | pytest 13/13 + baseline 103+13=116/116 PASS、0 regression。commit 5fa899a push 済
 2026-05-14 | COMMIT_2_DONE | src/youtube_caption_fetcher.py (字幕 fetch wrapper、try/except 隔離) + tests/test_youtube_caption_fetcher.py | pytest 13/13 PASS、mock 経由 lib 動作 verify (lib インストール local 済 = `pip install --user --break-system-packages youtube-transcript-api`)。commit 7764de0 push 済
 2026-05-14 | COMMIT_3_DONE | src/youtube_title_filter.py (巨人 keyword + 現役 player + OB OR ロジック、reason 返却) + tests/test_youtube_title_filter.py (13 case) | pytest 13/13 PASS。commit fd263a3 push 済
-2026-05-14 | COMMIT_4_DONE | rss_fetcher integration: _is_youtube_post_url + _check_youtube_giants_filter helper 追加、entry loop で is_giants_related と並行 OR で YouTube 専用 filter 適用、skip 時 youtube_title_filter_skip 構造化ログ | tests/test_rss_fetcher_youtube_integration.py 11 case PASS、baseline rss_fetcher 28 不変、計 0 regression
+2026-05-14 | COMMIT_4_DONE | rss_fetcher integration: _is_youtube_post_url + _check_youtube_giants_filter helper 追加、entry loop で is_giants_related と並行 OR で YouTube 専用 filter 適用、skip 時 youtube_title_filter_skip 構造化ログ | tests/test_rss_fetcher_youtube_integration.py 11 case PASS、baseline rss_fetcher 28 不変、計 0 regression。commit 5231e41 push 済
+2026-05-14 | COMMIT_5_DONE | YouTube force-draft gate: publish_skip_reasons.append("youtube_source_force_draft") を YouTube source 検出時に追加、auto-publish + X 自動投稿 連動 OFF | baseline 118/118 PASS、0 regression
 ```
 
 ## 10. Regression Memo 欄

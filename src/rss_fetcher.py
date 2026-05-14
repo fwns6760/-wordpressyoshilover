@@ -25553,6 +25553,22 @@ def _main(args, logger):
                 featured_media=effective_featured_media,
                 article_subtype=publish_gate_subtype,
             )
+            # 344-INGEST: YouTube source は user 手動 publish のみ (auto-publish + X
+            # 自動投稿 全部 OFF)。published=False で finalize_post_publication が draft
+            # 維持、X 自動投稿は published=True が前提なので連動 抑制される。
+            if _is_youtube_post_url(post_url):
+                publish_skip_reasons.append("youtube_source_force_draft")
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "youtube_source_force_draft",
+                            "post_id": post_id,
+                            "post_url": post_url,
+                            "draft_title": draft_title[:160],
+                        },
+                        ensure_ascii=False,
+                    )
+                )
             if source_type in {"news", "social_news"} and not args.draft_only:
                 quality_guard = _evaluate_publish_quality_guard(
                     content_html=content,

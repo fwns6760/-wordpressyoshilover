@@ -282,14 +282,40 @@ def render_giants_centric_ranking(
         sample_window_label=sample_window_label,
     )
     result = insight_article_generator.render_article(ctx, top_n=top_n)
-    # 「巨人のデータ」prefix 追加 (クリック率重視、user 指示)
     base_title = result["title"]
     if not base_title.startswith("【"):
-        base_title = f"【巨人を数字で読む】{base_title}"
-    body_html = markdown_to_html(result["body_md"])
+        base_title = f"【巨人データを見る】{base_title}"
+    metric_formula_map = {
+        "OPS": "出塁率(OBP) + 長打率(SLG)",
+        "AVG": "安打数 ÷ 打数",
+        "wOBA": "SABR 系の打撃指標、長打を得点期待値で重み付け",
+        "ISO": "SLG - AVG (純粋な長打力)",
+        "ERA": "(自責点 × 9) ÷ 投球回",
+        "FIP": "((13×HR + 3×(BB+HBP) - 2×K) ÷ IP) + 定数",
+        "WHIP": "(被安打 + 四球) ÷ 投球回",
+    }
+    scope_label_map = {"last_7d": "直近 7 日", "last_30d": "直近 30 日", "season": "シーズン累計"}
+    formula = metric_formula_map.get(metric_name, f"{metric_name} の標準計算式")
+    scope_label_text = scope_label_map.get(scope, scope)
+    footer_md = f"""
+
+---
+
+## このデータについて
+
+- **データ元**: NPB 公式 (https://npb.jp/) の試合 box score page から毎晩 fetch、12 球団全選手・全試合分を集計
+- **対象期間**: 2026 シーズン(開幕 3/27 〜 現在)、合計 220 試合以上
+- **{metric_name} の式**: {formula}
+- **計算方法**: SABR 系統計指標を pure Python で集計、LLM・AI 文章生成は **不使用**
+- **更新頻度**: 毎日 5 回自動更新(02:00 / 07:00 / 12:00 / 17:00 / 21:00 JST)
+- **比較対象**: {scope_label_text} の data で 12 球団全選手の rank / 平均から算出
+- **本記事の position**: ヨシラバー独自の data 駆動分析、大手スポーツメディアが扱わない sabermetric 角度
+"""
+    body_md_with_footer = result["body_md"] + footer_md
+    body_html = markdown_to_html(body_md_with_footer)
     return {
         "title": base_title,
-        "body_md": result["body_md"],
+        "body_md": body_md_with_footer,
         "body_html": body_html,
         "suggested_tags": result["suggested_tags"],
         "meta": result["meta"],

@@ -160,6 +160,26 @@ def _human_metric_label(metric_name: str) -> str:
     }.get(metric_name, metric_name)
 
 
+def _metric_formula(metric_name: str) -> str:
+    """各 metric の簡易計算式 (記事末尾の補足セクション用)."""
+    return {
+        "OPS": "出塁率(OBP) + 長打率(SLG)",
+        "AVG": "安打数 ÷ 打数",
+        "OBP": "(安打 + 四球 + 死球) ÷ (打数 + 四球 + 死球 + 犠飛)",
+        "SLG": "(単打 + 2塁打×2 + 3塁打×3 + 本塁打×4) ÷ 打数",
+        "wOBA": "(0.69×BB + 0.72×HBP + 0.89×1B + 1.27×2B + 1.62×3B + 2.10×HR) ÷ 打席",
+        "ISO": "SLG - AVG (純粋な長打力)",
+        "BABIP": "(安打 - 本塁打) ÷ (打数 - 本塁打 - 三振 + 犠飛)",
+        "ERA": "(自責点 × 9) ÷ 投球回",
+        "FIP": "((13×HR + 3×(BB+HBP) - 2×K) ÷ IP) + リーグ定数(約3.10)",
+        "WHIP": "(被安打 + 四球) ÷ 投球回",
+        "K_per_9": "(奪三振 × 9) ÷ 投球回",
+        "BB_per_9": "(与四球 × 9) ÷ 投球回",
+        "HR_per_9": "(被本塁打 × 9) ÷ 投球回",
+        "K_BB": "奪三振 ÷ 与四球",
+    }.get(metric_name, f"{metric_name} 標準計算式")
+
+
 def _human_metric_explain(metric_name: str) -> str:
     return {
         "OPS": "出塁率と長打率を足した、打者の総合打撃指標(0.800 超で好打者)。",
@@ -267,7 +287,15 @@ def _render_unified_article(
 
 ---
 
-_出典: production DB の advanced_metric_snapshots、自動生成 (rule-based、LLM 不使用)。_
+## このデータについて
+
+- **データ元**: NPB 公式 (https://npb.jp/) の試合 box score page から毎晩 fetch、12 球団全選手・全試合分を集計
+- **対象期間**: 2026 シーズン(開幕 3/27 〜 現在)、合計 220 試合以上
+- **{metric_label} の式**: {_metric_formula(metric_name)}
+- **計算方法**: SABR 系統計指標を pure Python で集計、LLM・AI 文章生成は **不使用**
+- **更新頻度**: 毎日 5 回自動更新(02:00 / 07:00 / 12:00 / 17:00 / 21:00 JST)
+- **比較対象**: 同 scope({scope_label})で 12 球団全選手の rank/平均から算出
+- **本記事の position**: ヨシラバー独自の data 駆動分析、大手スポーツメディアが扱わない sabermetric 角度
 """
     return {"title": title, "body_md": body_md}
 
@@ -287,7 +315,7 @@ def render_zscore_batter_article(
         except Exception:
             pass
     metric_label = _human_metric_label(metric_name)
-    title_template = f"【巨人を数字で読む】{{player}}、{{scope}}{metric_label} {{value}} でリーグ {{rank}} 位 — 12 球団平均超えの好調"
+    title_template = f"【巨人データを見る】{{player}}、{{scope}}{metric_label} {{value}} でリーグ {{rank}} 位 — 12 球団平均超えの好調"
     why_text = f"これはリーグ平均より明確に高い数字で、12 球団中の上位群に入っています。"
     extra_note = f"一般メディアは打率や HR 数で評価しますが、ヨシラバーは {metric_label} のような『リーグ平均からの差』も見て評価します。"
     return _render_unified_article(
@@ -311,7 +339,7 @@ def render_zscore_pitcher_article(
         except Exception:
             pass
     metric_label = _human_metric_label(metric_name)
-    title_template = f"【巨人を数字で読む】{{player}}、{{scope}}{metric_label} {{value}} でリーグ {{rank}} 位 — 12 球団平均より良い投球"
+    title_template = f"【巨人データを見る】{{player}}、{{scope}}{metric_label} {{value}} でリーグ {{rank}} 位 — 12 球団平均より良い投球"
     why_text = f"これは投手として league 上位群の数字、平均的なローテ投手より明確に良い投球内容です。"
     extra_note = f"投手の {metric_label} は数字が低いほど良い指標。一般メディアでは絶対値だけで評価されますが、リーグ全体での順位で見ると本人の実力がより明確になります。"
     return _render_unified_article(
@@ -357,7 +385,7 @@ def render_babip_divergence_article(
         )
         notable_phrase = f"打率 {avg_str} は不本意な低さ、BABIP {babip_str} で運悪の可能性"
 
-    title_template = f"【巨人を数字で読む】{{player}}、{notable_phrase} — 打率とBABIPの差で見る運要素"
+    title_template = f"【巨人データを見る】{{player}}、{notable_phrase} — 打率とBABIPの差で見る運要素"
     extra_note = (
         f"BABIP は long-run で league 平均 ~0.300 に近づく性質。直近のサンプル "
         f"({baseline} / {current})で大きく振れていますが、シーズン進行で平均値に "
@@ -406,7 +434,7 @@ def render_fip_era_divergence_article(
         )
         notable_phrase = f"防御率 {era_str} は運悪の数字、本来は FIP {fip_str} 相当の好調"
 
-    title_template = f"【巨人を数字で読む】{{player}}、{notable_phrase} — 防御率とFIPの差で見る本当の実力"
+    title_template = f"【巨人データを見る】{{player}}、{notable_phrase} — 防御率とFIPの差で見る本当の実力"
     extra_note = (
         f"FIP は本塁打 / 四球 / 三振から計算される投手本人の実力指標で、守備や打球運の影響を "
         f"排除した数字。長期では FIP の方が ERA より本人の実力に近づきます。"
@@ -439,7 +467,7 @@ def render_giants_top_article(
     metric_label = _human_metric_label(metric_name)
 
     pct_pretty = f"{pct*100:.1f}%"
-    title_template = f"【巨人を数字で読む】{{player}}、{metric_label} {{value}} でリーグ {{rank}} 位 — 12 球団上位 {pct_pretty} 圏内"
+    title_template = f"【巨人データを見る】{{player}}、{metric_label} {{value}} でリーグ {{rank}} 位 — 12 球団上位 {pct_pretty} 圏内"
     why_text = (
         f"巨人選手がリーグ全体の上位 {pct_pretty} に入っているのは、"
         f"data 上明確に好調を示すサイン。大手の試合速報では出てこない『全体での位置』軸です。"

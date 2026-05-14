@@ -318,7 +318,12 @@ def _render_unified_article(
     team = _team_label(team_code)
     league = _league_for_team(team_code)
     league_label = _league_label(league)
-    scope_label = {"last_7d": "直近 7 日", "last_30d": "直近 30 日", "season": "シーズン累計"}.get(scope, scope)
+    scope_label = {
+        "last_7d": "1 週間",
+        "last_30d": "1 ヶ月",
+        "season": "今シーズン",
+        "last_5_games": "直近 5 試合",
+    }.get(scope, scope)
     metric_label = _human_metric_label(metric_name)
     metric_explain = _human_metric_explain(metric_name)
 
@@ -400,7 +405,7 @@ def render_zscore_batter_article(
         except Exception:
             pass
     metric_label = _human_metric_label(metric_name)
-    title_template = f"【巨人データを見る】{{player}}、{{scope}}{metric_label} {{value}} で{{league}} {{rank}} 位"
+    title_template = f"【巨人データを見る】{{player}}、{{scope}}の{metric_label} {{value}} で{{league}} {{rank}} 位"
     why_text = f"リーグ平均より明確に高い数字で、12 球団中の上位群に入っています。"
     simple = f"リーグ全体で見て上位の {metric_label} を記録、好調と言える数字です。"
     return _render_unified_article(
@@ -424,7 +429,7 @@ def render_zscore_pitcher_article(
         except Exception:
             pass
     metric_label = _human_metric_label(metric_name)
-    title_template = f"【巨人データを見る】{{player}}、{{scope}}{metric_label} {{value}} で{{league}} {{rank}} 位"
+    title_template = f"【巨人データを見る】{{player}}、{{scope}}の{metric_label} {{value}} で{{league}} {{rank}} 位"
     why_text = f"投手として league 上位群の数字、平均的なローテ投手より明確に良い投球内容です。"
     simple = f"リーグ全体で見て上位の投手、好投が data で明確です。"
     return _render_unified_article(
@@ -472,7 +477,7 @@ def render_babip_divergence_article(
         notable_phrase = f"打率 {avg_str} は運悪の数字(BABIP {babip_str})"
         simple = f"打率が低めですが運悪の要素が大きく、本来の実力はもっと上の可能性があります。"
 
-    title_template = f"【巨人データを見る】{{player}}、{notable_phrase}"
+    title_template = f"【巨人データを見る】{{player}}、{{scope}}の{notable_phrase}"
     return _render_unified_article(
         conn, player=player, team_code=team_code, metric_name="AVG",
         scope="last_30d", title_template=title_template,
@@ -522,7 +527,7 @@ def render_fip_era_divergence_article(
         notable_phrase = f"防御率 {era_str} は運悪、本来 FIP {fip_str}"
         simple = f"防御率は悪く見えますが、本質指標 FIP では ERA より良い数字。シーズン後半に防御率改善の可能性あり。"
 
-    title_template = f"【巨人データを見る】{{player}}、{notable_phrase}"
+    title_template = f"【巨人データを見る】{{player}}、{{scope}}の{notable_phrase}"
     return _render_unified_article(
         conn, player=player, team_code=team_code, metric_name="ERA",
         scope="season", title_template=title_template,
@@ -549,7 +554,7 @@ def render_giants_top_article(
             pass
     metric_label = _human_metric_label(metric_name)
 
-    title_template = f"【巨人データを見る】{{player}}、{metric_label} {{value}} で{{league}} {{rank}} 位"
+    title_template = f"【巨人データを見る】{{player}}、{{scope}}の{metric_label} {{value}} で{{league}} {{rank}} 位"
     why_text = f"巨人選手がリーグ上位に入っている好調を示すデータです。"
     simple = f"巨人選手として、リーグ全体の上位に入っている好調な状態です。"
     scope = "last_30d" if metric_name in ("OPS", "AVG", "wOBA", "BABIP") else "season"

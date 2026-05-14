@@ -461,21 +461,20 @@ def render_babip_divergence_article(
     avg_str = _extract_value(baseline, "AVG")
     babip_str = _extract_value(current, "BABIP")
 
+    notable_phrase = f"打率 {avg_str} / BABIP {babip_str}(差 {diff:+.3f})"
     if diff > 0:
         why_text = (
             f"打率(AVG)と BABIP(打球が安打になる確率)を比べると、BABIP が "
-            f"**+{diff:.3f}** 高い。これは『運に支えられた打率』の signal — 本来の実力以上に "
-            f"安打が出ている可能性があり、シーズン後半に打率が落ち着く(下がる)可能性。"
+            f"**+{diff:.3f}** 高い数字です。BABIP は long-run でリーグ平均 0.300 付近に "
+            f"近づく性質があるため、シーズン後半で打率が下がる可能性があります。"
         )
-        notable_phrase = f"打率 {avg_str} は運込み(BABIP {babip_str})"
-        simple = f"打率は高いですが、運要素が大きく作用している数字です。シーズン後半に下がる可能性あり。"
+        simple = f"打率に対し BABIP が大きく、シーズン後半で打率が下がる可能性のあるデータです。"
     else:
         why_text = (
-            f"打率(AVG)と BABIP の差が **{diff:.3f}** で BABIP が低い。"
-            f"運に逆らわれている状態で、本来の実力ならもっと打率が高いはず — 不調脱出の signal の可能性。"
+            f"打率(AVG)と BABIP の差が **{diff:.3f}** で BABIP が低い数字です。"
+            f"BABIP は long-run でリーグ平均 0.300 付近に近づくため、打率が上昇する可能性があります。"
         )
-        notable_phrase = f"打率 {avg_str} は運悪の数字(BABIP {babip_str})"
-        simple = f"打率が低めですが運悪の要素が大きく、本来の実力はもっと上の可能性があります。"
+        simple = f"打率に対し BABIP が小さく、シーズン後半で打率が上がる可能性のあるデータです。"
 
     title_template = f"【巨人データを見る】{{player}}、{{scope}}の{notable_phrase}"
     return _render_unified_article(
@@ -506,26 +505,21 @@ def render_fip_era_divergence_article(
     era_str = _extract_value(baseline, "ERA")
     fip_str = _extract_value(current, "FIP")
 
+    notable_phrase = f"防御率 {era_str} / FIP {fip_str}(差 {diff:+.3f})"
     if diff > 0:
-        # FIP > ERA: ERA は本来より良く見えてる (運に支えられた)
         why_text = (
             f"防御率(ERA、低いほど良い指標)が **{era_str}** に対し、"
-            f"FIP(投手本人の実力指標、低いほど良い)は **{fip_str}** と高い。"
-            f"ERA は守備や運に支えられた『表面値』で、本質はもっと悪い投球内容。"
-            f"シーズン後半に ERA が悪化するリスクがあります。"
+            f"FIP(投手本人の実力指標、低いほど良い)は **{fip_str}** と高い数字です。"
+            f"FIP は守備や運の影響を排除した本人の指標で、long-run では ERA がこの数字に近づく傾向があります。"
         )
-        notable_phrase = f"防御率 {era_str} は運の数字(FIP {fip_str})"
-        simple = f"防御率は良い数字ですが、本質指標 FIP では平均より悪い。シーズン後半に防御率が悪化する可能性あり。"
+        simple = f"防御率は FIP より良い数字。シーズン後半に防御率が悪化する可能性のあるデータです。"
     else:
-        # FIP < ERA: ERA は本来より悪く見えてる (運に逆らわれた)
         why_text = (
             f"防御率(ERA、低いほど良い指標)が **{era_str}** に対し、"
-            f"FIP(投手本人の実力指標)は **{fip_str}** と低い(良い)。"
-            f"ERA は守備や運に逆らわれた数字で、本人の実力からすればもっと低い(良い)はず。"
-            f"今後 ERA が改善する可能性があります。"
+            f"FIP(投手本人の実力指標)は **{fip_str}** と低い(良い)数字です。"
+            f"FIP は守備や運の影響を排除した本人の指標で、long-run では ERA がこの数字に近づく傾向があります。"
         )
-        notable_phrase = f"防御率 {era_str} は運悪、本来 FIP {fip_str}"
-        simple = f"防御率は悪く見えますが、本質指標 FIP では ERA より良い数字。シーズン後半に防御率改善の可能性あり。"
+        simple = f"防御率は FIP より悪い数字。シーズン後半に防御率が改善する可能性のあるデータです。"
 
     title_template = f"【巨人データを見る】{{player}}、{{scope}}の{notable_phrase}"
     return _render_unified_article(

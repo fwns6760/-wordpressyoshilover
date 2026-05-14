@@ -469,14 +469,17 @@ def main(argv: Optional[list[str]] = None) -> int:
                         # 2. WP draft publish (best-effort)
                         try:
                             wp = wp_mod.WPClient()
+                            # user 指示「優先で出す、一次情報」反映で max 拡大:
+                            # anomaly 3→5、ranking 1→3 (1 trigger あたり最大 8 本)
+                            # 7 日 dedup でも自然に絞り込まれる
                             anomaly_publish_summary = {
                                 "results": anomaly_pub.publish_anomaly_drafts(
-                                    conn, wp, max_per_run=3,
+                                    conn, wp, max_per_run=5,
                                 ),
                             }
                             ranking_publish_summary = {
                                 "results": ranking_pub.publish_default_set(
-                                    conn, wp, max_per_run=1,
+                                    conn, wp, max_per_run=3,
                                 ),
                             }
                         except Exception as exc:  # noqa: BLE001

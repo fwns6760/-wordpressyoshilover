@@ -4149,6 +4149,40 @@ def _should_skip_stale_postgame_entry(
     return source_published_at < threshold
 
 
+def _should_skip_postgame_after_morning_window(
+    category: str,
+    title: str,
+    summary: str,
+    source_published_at: datetime | None,
+    now_jst: datetime | None = None,
+    cutoff_hour: int | None = None,
+) -> bool:
+    # 朝刊 postgame の publish window を JST cutoff_hour で切る。
+    # source_published_at が今朝届いていても、現在時刻が cutoff を過ぎたら skip。
+    # デーゲーム postgame(午後配信) は対象外、別日 RSS は既存 stale-skip に委譲。
+    if category != "試合速報":
+        return False
+    if not source_published_at:
+        return False
+    if _detect_article_subtype(title, summary, category, True) != "postgame":
+        return False
+    if cutoff_hour is None:
+        cutoff_hour = _env_int("STALE_POSTGAME_MORNING_CUTOFF_HOUR", 13)
+    if cutoff_hour <= 0 or cutoff_hour >= 24:
+        return False
+    now = now_jst if now_jst is not None else datetime.now(timezone.utc).astimezone(JST)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=JST)
+    else:
+        now = now.astimezone(JST)
+    local_pub = source_published_at.astimezone(JST)
+    if local_pub.date() != now.date():
+        return False
+    if local_pub.hour >= cutoff_hour:
+        return False
+    return now.hour >= cutoff_hour
+
+
 def _game_status_indicates_started(game_status: dict | None) -> bool:
     if not game_status:
         return False
@@ -24031,6 +24065,12 @@ def _main(args, logger):
                 skip_filter += 1
                 skip_reason_counts["stale_postgame"] += 1
                 _append_skip_reason_sample(skip_reason_sample_titles, "stale_postgame", title)
+                continue
+            if _should_skip_postgame_after_morning_window(category, title, summary, published_at):
+                logger.debug(f"  [SKIP:postgame朝刊window外] {title_preview[:40]}")
+                skip_filter += 1
+                skip_reason_counts["stale_postgame_morning_window"] += 1
+                _append_skip_reason_sample(skip_reason_sample_titles, "stale_postgame_morning_window", title)
                 continue
             if _should_skip_stale_player_status_entry(category, title, summary, published_at):
                 logger.debug(f"  [SKIP:player_status古い] {title_preview[:40]}")

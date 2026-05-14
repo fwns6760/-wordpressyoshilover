@@ -56,6 +56,12 @@ deploy: yoshilover-fetcher rev 00380-dx7 → 00381-n9d → 00382-hqj → 00383-v
 |---|---|---|
 | 344-INGEST(=GH #24、別 actor lane) | YouTube 字幕 + ch 拡充進行中 | 触らない、別 actor の lane |
 
+### waiting(park、別 session 着手)
+
+| ticket | status | next action |
+|---|---|---|
+| `doc/waiting/345-INSIGHT-fielding-and-equal-area-ratio.md` | PARKED | NPB box score の守備項目 audit、A path なら自律実装、B path なら user 判断 |
+
 ### close 済(旧)
 
 | # | ticket | status | blocker |

@@ -228,21 +228,25 @@ def require_enabled() -> None:
 # matching entry is found.
 
 _ROSTER_PATH = Path(__file__).resolve().parent.parent / "config" / "giants_roster.json"
-_ROSTER_CACHE: Optional[List[Dict[str, Any]]] = None
 
 
 def _load_giants_roster() -> List[Dict[str, Any]]:
-    """Return the roster list (cached). Empty list on any read error so
-    the renderer never breaks on missing or malformed config."""
-    global _ROSTER_CACHE
-    if _ROSTER_CACHE is None:
+    """Return the roster list. Delegates to ``giants_roster_loader`` which
+    fetches NPB.jp at runtime (24h cache) and falls back to
+    ``config/giants_roster.json`` when the network is unavailable."""
+    try:
+        from src.giants_roster_loader import load_active_roster
+    except Exception:
         try:
-            with _ROSTER_PATH.open("r", encoding="utf-8") as f:
-                data = json.load(f)
-            _ROSTER_CACHE = data if isinstance(data, list) else []
+            from giants_roster_loader import load_active_roster  # type: ignore[import-not-found]
         except Exception:
-            _ROSTER_CACHE = []
-    return _ROSTER_CACHE or []
+            try:
+                with _ROSTER_PATH.open("r", encoding="utf-8") as f:
+                    data = json.load(f)
+                return data if isinstance(data, list) else []
+            except Exception:
+                return []
+    return load_active_roster()
 
 
 def _lookup_roster_by_name(name: str) -> Optional[Dict[str, Any]]:

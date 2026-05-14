@@ -11693,13 +11693,7 @@ def _build_farm_lineup_safe_fallback(title: str, summary: str, real_reactions: l
         lineup_lines.append("元記事で確認できる打順と選手名を、そのまま追っておきたい二軍スタメンです。")
 
     watch_lines = [farm_lineup_headings[2]]
-    if drafted_story:
-        watch_lines.append("ドラフトや育成の選手がどの打順と守備位置で起用されているかが最初の見どころです。")
-    else:
-        watch_lines.append("若手や調整組をどこに置いたかが、この二軍スタメンの見どころです。")
-    if real_reactions:
-        watch_lines.append("反応を見ると、二軍でも一軍昇格につながる並びかどうかを見たい空気があります。")
-    watch_lines.append("試合が始まったら、並びの意図がどこに出るかを見たいところです。みなさんの意見はコメントで教えてください！")
+    watch_lines.append("一軍のスターも、最初はみんなこの打順に立っていました。二軍もね。")
     return "\n".join(lead_lines + lineup_lines + watch_lines)
 
 

@@ -264,18 +264,35 @@ def parse_emoji_lineup(
     if len(rows) < _MIN_ROW_COUNT:
         return None
 
-    final_rows: List[Dict[str, str]] = [
-        {
-            "order": str(index),
-            "position": row["position"],
-            "name": row["name"],
-            "team": "巨人" if _is_giants_player(row["name"]) else "相手",
-        }
-        for index, row in enumerate(rows, start=1)
-    ]
-
     keyword = "スタメン" if "スタメン" in text else "lineup"
     opponent_team_name = _extract_opponent_team_name(text)
+
+    # Safety net (2026-05-14 67352 incident): 巨人公式X が 自軍 lineup だけ
+    # tweet している 三軍 / 1 team 単独 case では、相手 lineup が source に
+    # 存在しない。 roster check で「相手」と判定された行は、実は名簿未掲載の
+    # 巨人三軍 / 育成選手であることが多い。 opponent marker が text 内に
+    # 検出されなかった場合は、全行を「巨人」扱いにして renderer が空 / 偽の
+    # 相手 table を出すのを防ぐ。
+    if opponent_team_name:
+        final_rows: List[Dict[str, str]] = [
+            {
+                "order": str(index),
+                "position": row["position"],
+                "name": row["name"],
+                "team": "巨人" if _is_giants_player(row["name"]) else "相手",
+            }
+            for index, row in enumerate(rows, start=1)
+        ]
+    else:
+        final_rows = [
+            {
+                "order": str(index),
+                "position": row["position"],
+                "name": row["name"],
+                "team": "巨人",
+            }
+            for index, row in enumerate(rows, start=1)
+        ]
     return {
         "lineup": final_rows,
         "keyword": keyword,

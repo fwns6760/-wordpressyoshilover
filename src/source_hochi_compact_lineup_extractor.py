@@ -166,7 +166,6 @@ _MAX_LINEUP_TOKEN_COUNT = 22
 _GIANTS_ROSTER_PATH = (
     Path(__file__).resolve().parent.parent / "config" / "giants_roster.json"
 )
-_GIANTS_ROSTER_CACHE: Optional[List[Dict[str, Any]]] = None
 
 # Marker regex matches ``【XXX】`` (CJK lenticular brackets). Used to detect
 # opponent team name in the tweet text.
@@ -198,18 +197,22 @@ _OWN_TEAM_MARKERS: frozenset[str] = frozenset(
 
 
 def _load_giants_roster() -> List[Dict[str, Any]]:
-    """Return the operator-curated 巨人 roster (cached). Empty list on
-    any read / parse error so the parser never breaks on missing config.
-    """
-    global _GIANTS_ROSTER_CACHE
-    if _GIANTS_ROSTER_CACHE is None:
+    """Return the 巨人 roster. Delegates to ``giants_roster_loader`` which
+    fetches NPB.jp at runtime (24h cache) and falls back to
+    ``config/giants_roster.json`` when the network is unavailable."""
+    try:
+        from src.giants_roster_loader import load_active_roster
+    except Exception:
         try:
-            with _GIANTS_ROSTER_PATH.open("r", encoding="utf-8") as f:
-                data = json.load(f)
-            _GIANTS_ROSTER_CACHE = data if isinstance(data, list) else []
+            from giants_roster_loader import load_active_roster  # type: ignore[import-not-found]
         except Exception:
-            _GIANTS_ROSTER_CACHE = []
-    return _GIANTS_ROSTER_CACHE or []
+            try:
+                with _GIANTS_ROSTER_PATH.open("r", encoding="utf-8") as f:
+                    data = json.load(f)
+                return data if isinstance(data, list) else []
+            except Exception:
+                return []
+    return load_active_roster()
 
 
 def _normalize_name_for_match(name: str) -> str:
@@ -427,18 +430,37 @@ def parse_hochi_compact_lineup(
     # roster membership and record the opponent team name from the tweet
     # markers. The renderer in ``rss_fetcher`` uses these fields to split
     # output into 「巨人スタメン」 / 「<opponent>スタメン」 tables.
-    rows: List[Dict[str, str]] = [
-        {
-            "order": str(index),
-            "position": row["position"],
-            "name": row["name"],
-            "team": "巨人" if is_giants_player(row["name"]) else "相手",
-        }
-        for index, row in enumerate(deduped, start=1)
-    ]
-
+    #
+    # Safety net (2026-05-14 67352 incident): when the tweet text does NOT
+    # mention an opponent team marker (e.g. 巨人公式X が 自軍 lineup だけ
+    # tweet している 三軍 / 単独 case), the opponent lineup is not in the
+    # source — so any row that the roster check would have flagged as
+    # ``相手`` is actually a 巨人 player whose name is missing from the
+    # roster (typical 三軍 / 育成 drift)。 In that case force every row to
+    # ``巨人`` so the renderer never emits an empty / fabricated 相手 table.
     keyword = next((kw for kw in LINEUP_KEYWORDS if kw in text), "")
     opponent_team_name = extract_opponent_team_name(text)
+
+    if opponent_team_name:
+        rows: List[Dict[str, str]] = [
+            {
+                "order": str(index),
+                "position": row["position"],
+                "name": row["name"],
+                "team": "巨人" if is_giants_player(row["name"]) else "相手",
+            }
+            for index, row in enumerate(deduped, start=1)
+        ]
+    else:
+        rows = [
+            {
+                "order": str(index),
+                "position": row["position"],
+                "name": row["name"],
+                "team": "巨人",
+            }
+            for index, row in enumerate(deduped, start=1)
+        ]
     return {
         "lineup": rows,
         "keyword": keyword,

@@ -131,21 +131,36 @@ def _render_ranking_table_md(
         f"| 順位 | 選手 | チーム | {metric_label} | サンプル |",
         "|---|---|---|---|---|",
     ]
+    # 赤太字 wrapper (user 指示「該当選手は赤太文字」、WP は HTML 直書き OK)
+    def _red_bold(text: str) -> str:
+        return f'<span style="color:#c0392b"><strong>{text}</strong></span>'
+
     focus_in_top = any(r["player"] == focus_player for r in top_rows)
     for r in top_rows:
-        marker = " ★" if r["player"] == focus_player else ""
+        is_focus = (r["player"] == focus_player)
+        marker = " ★" if is_focus else ""
         val = f"{r['value']:.3f}" if r["value"] is not None else "-"
         team_display = _team_label(r["team"])
-        rank_disp = f"**{r['rank']}**" if r["player"] == focus_player else f"{r['rank']}"
-        player_disp = f"**{r['player']}{marker}**" if r["player"] == focus_player else r["player"]
-        lines.append(f"| {rank_disp} | {player_disp} | {team_display} | {val} | {r['sample']} |")
+        if is_focus:
+            rank_disp = _red_bold(str(r["rank"]))
+            player_disp = _red_bold(f"{r['player']}{marker}")
+            team_disp_cell = _red_bold(team_display)
+            val_disp = _red_bold(val)
+            sample_disp = _red_bold(str(r["sample"]))
+        else:
+            rank_disp = str(r["rank"])
+            player_disp = r["player"]
+            team_disp_cell = team_display
+            val_disp = val
+            sample_disp = str(r["sample"])
+        lines.append(f"| {rank_disp} | {player_disp} | {team_disp_cell} | {val_disp} | {sample_disp} |")
     if not focus_in_top and extra_focus_row:
         val = f"{extra_focus_row['value']:.3f}" if extra_focus_row["value"] is not None else "-"
         team_display = _team_label(extra_focus_row["team"])
         lines.append("| ... | ... | ... | ... | ... |")
         lines.append(
-            f"| **{extra_focus_row['rank']}** | **{focus_player} ★** | {team_display} | "
-            f"**{val}** | {extra_focus_row['sample']} |"
+            f"| {_red_bold(str(extra_focus_row['rank']))} | {_red_bold(focus_player + ' ★')} | "
+            f"{_red_bold(team_display)} | {_red_bold(val)} | {_red_bold(str(extra_focus_row['sample']))} |"
         )
     return "\n".join(lines)
 
@@ -269,33 +284,25 @@ def _render_unified_article(
         extra_focus_row=extra_focus,
     )
 
+    sample_str = str(player_rank_info['sample']) if player_rank_info else '-'
     body_md = f"""# {title}
 
-{team} の **{player}** が、{scope_label}の{metric_label} で **{value_str}** ({rank_str} 位)。{why_notable_text}
-
-## データで見ると
+## 12 球団 ranking({scope_label})
 
 {ranking_table}
 
-## なぜ気づかれにくいか
-
-{extra_note or "12 球団横断の sabermetric ranking は一般メディアの試合速報では取り上げられない指標です。data 駆動で見ると、ヨシラバーで紹介する価値のある好調・特徴が浮かび上がります。"}
-
-## 補足: {metric_label}とは
-
-{metric_explain}
-
----
-
 ## このデータについて
 
-- **データ元**: NPB 公式 (https://npb.jp/) の試合 box score page から毎晩 fetch、12 球団全選手・全試合分を集計
-- **対象期間**: 2026 シーズン(開幕 3/27 〜 現在)、合計 220 試合以上
-- **{metric_label} の式**: {_metric_formula(metric_name)}
-- **計算方法**: SABR 系統計指標を pure Python で集計、LLM・AI 文章生成は **不使用**
-- **更新頻度**: 毎日 5 回自動更新(02:00 / 07:00 / 12:00 / 17:00 / 21:00 JST)
-- **比較対象**: 同 scope({scope_label})で 12 球団全選手の rank/平均から算出
-- **本記事の position**: ヨシラバー独自の data 駆動分析、大手スポーツメディアが扱わない sabermetric 角度
+| 項目 | 内容 |
+|---|---|
+| 選手 | **{player}({team})** / サンプル {sample_str} |
+| 指標 | {metric_label} = **{value_str}** / リーグ **{rank_str} 位** |
+| データ元 | NPB 公式 box score(https://npb.jp/) |
+| 期間 | 2026 シーズン(3/27〜)約 220 試合 |
+| 計算式 | {_metric_formula(metric_name)} |
+| 比較 | {scope_label} の 12 球団全選手 |
+| 更新 | 毎日 5 回(02/07/12/17/21 JST) |
+| 生成 | rule-based(LLM 不使用) |
 """
     return {"title": title, "body_md": body_md}
 

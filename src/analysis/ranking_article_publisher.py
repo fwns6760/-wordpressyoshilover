@@ -281,41 +281,95 @@ def render_giants_centric_ranking(
         focus_player=focus_player,
         sample_window_label=sample_window_label,
     )
+    # insight_article_generator は text 多めの body を生成するため、本実装では
+    # title のみ流用、body は table-only で組み立て直す (user 指示「文字少なめ、
+    # 表が目立つ感じ」)
     result = insight_article_generator.render_article(ctx, top_n=top_n)
     base_title = result["title"]
     if not base_title.startswith("【"):
         base_title = f"【巨人データを見る】{base_title}"
+
+    # rebuild table from rows
+    team_label_map = {
+        "g": "巨人", "t": "阪神", "s": "ヤクルト", "c": "広島",
+        "db": "DeNA", "d": "中日", "h": "ソフトバンク", "l": "西武",
+        "m": "ロッテ", "e": "楽天", "b": "オリックス", "f": "日本ハム",
+    }
     metric_formula_map = {
         "OPS": "出塁率(OBP) + 長打率(SLG)",
         "AVG": "安打数 ÷ 打数",
-        "wOBA": "SABR 系の打撃指標、長打を得点期待値で重み付け",
-        "ISO": "SLG - AVG (純粋な長打力)",
+        "wOBA": "SABR 打撃指標(長打を得点期待値で重み付け)",
+        "ISO": "SLG - AVG(純粋な長打力)",
         "ERA": "(自責点 × 9) ÷ 投球回",
         "FIP": "((13×HR + 3×(BB+HBP) - 2×K) ÷ IP) + 定数",
         "WHIP": "(被安打 + 四球) ÷ 投球回",
     }
     scope_label_map = {"last_7d": "直近 7 日", "last_30d": "直近 30 日", "season": "シーズン累計"}
-    formula = metric_formula_map.get(metric_name, f"{metric_name} の標準計算式")
+    formula = metric_formula_map.get(metric_name, f"{metric_name} 標準式")
     scope_label_text = scope_label_map.get(scope, scope)
-    footer_md = f"""
 
----
+    # ranking table (top_n 行、focus_player は赤太字 highlight)
+    def _red_bold(text: str) -> str:
+        return f'<span style="color:#c0392b"><strong>{text}</strong></span>'
+
+    table_lines = [
+        f"| 順位 | 選手 | チーム | {metric_name} | サンプル |",
+        "|---|---|---|---|---|",
+    ]
+    focus_row_obj = None
+    for r in rows[:top_n]:
+        is_focus = (r.player_canonical == focus_player)
+        if is_focus:
+            focus_row_obj = r
+        team_disp = team_label_map.get(r.team_code or "", r.team_code or "?")
+        val = f"{r.metric_value:.3f}" if r.metric_value is not None else "-"
+        if is_focus:
+            rank_disp = _red_bold(str(r.rank))
+            player_disp = _red_bold(f"{r.player_canonical} ★")
+            team_cell = _red_bold(team_disp)
+            val_disp = _red_bold(val)
+            sample_disp = _red_bold(str(r.sample_size))
+        else:
+            rank_disp = str(r.rank)
+            player_disp = r.player_canonical
+            team_cell = team_disp
+            val_disp = val
+            sample_disp = str(r.sample_size)
+        table_lines.append(
+            f"| {rank_disp} | {player_disp} | {team_cell} | {val_disp} | {sample_disp} |"
+        )
+
+    table_md = "\n".join(table_lines)
+
+    # focus row metadata
+    focus_team = team_label_map.get(focus_row_obj.team_code if focus_row_obj else "g", "巨人")
+    focus_val = f"{focus_row_obj.metric_value:.3f}" if focus_row_obj and focus_row_obj.metric_value is not None else "-"
+    focus_rank = f"{focus_row_obj.rank}/{focus_row_obj.total}" if focus_row_obj else "-"
+    focus_sample = f"{focus_row_obj.sample_size}" if focus_row_obj else "-"
+
+    body_md = f"""# {base_title}
+
+## 12 球団 ranking({scope_label_text})
+
+{table_md}
 
 ## このデータについて
 
-- **データ元**: NPB 公式 (https://npb.jp/) の試合 box score page から毎晩 fetch、12 球団全選手・全試合分を集計
-- **対象期間**: 2026 シーズン(開幕 3/27 〜 現在)、合計 220 試合以上
-- **{metric_name} の式**: {formula}
-- **計算方法**: SABR 系統計指標を pure Python で集計、LLM・AI 文章生成は **不使用**
-- **更新頻度**: 毎日 5 回自動更新(02:00 / 07:00 / 12:00 / 17:00 / 21:00 JST)
-- **比較対象**: {scope_label_text} の data で 12 球団全選手の rank / 平均から算出
-- **本記事の position**: ヨシラバー独自の data 駆動分析、大手スポーツメディアが扱わない sabermetric 角度
+| 項目 | 内容 |
+|---|---|
+| 選手 | **{focus_player}({focus_team})** / サンプル {focus_sample} |
+| 指標 | {metric_name} = **{focus_val}** / リーグ **{focus_rank} 位** |
+| データ元 | NPB 公式 box score(https://npb.jp/) |
+| 期間 | 2026 シーズン(3/27〜)約 220 試合 |
+| 計算式 | {formula} |
+| 比較 | {scope_label_text} の 12 球団全選手 |
+| 更新 | 毎日 5 回(02/07/12/17/21 JST) |
+| 生成 | rule-based(LLM 不使用) |
 """
-    body_md_with_footer = result["body_md"] + footer_md
-    body_html = markdown_to_html(body_md_with_footer)
+    body_html = markdown_to_html(body_md)
     return {
         "title": base_title,
-        "body_md": body_md_with_footer,
+        "body_md": body_md,
         "body_html": body_html,
         "suggested_tags": result["suggested_tags"],
         "meta": result["meta"],

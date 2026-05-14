@@ -225,6 +225,31 @@ YYYY-MM-DD HH:MM JST | event | 内容 | commit/log ref
                                   - age_filtered_out=0(全件 1 日以内)
 ```
 
+### Phase 2 実装ログ(sponichi、2026-05-14)
+
+```
+2026-05-14 11:xx JST | impl | src/tag_page_scraper.py に fetch_sponichi_giants_entries 関数追加
+                              (+115 行)
+2026-05-14 11:xx JST | impl | _SCRAPER_REGISTRY に "sponichi_giants_filter" 登録
+2026-05-14 11:xx JST | impl | _SPONICHI_GIANTS_KEYWORDS = ("巨人",) のみ
+                              (「ジャイアンツ」「Giants」だけだと MLB SF Giants 混入)
+2026-05-14 11:xx JST | impl | config/rss_sources.json に「スポニチ 野球 巨人 filter」 entry 追加
+2026-05-14 11:xx JST | test | tests/test_tag_page_scraper.py に FetchSponichiGiantsEntriesTests 5 件追加
+                              - test_extracts_giants_article_strips_sponichi_brand
+                              - test_filters_non_giants_articles_by_keyword
+                              - test_filters_articles_older_than_max_age_days
+                              - test_uses_url_date_at_noon_jst_for_published_time
+                              - test_registered_in_scraper_kinds
+2026-05-14 11:xx JST | verify | AST OK, py_compile OK
+2026-05-14 11:xx JST | verify | pytest test_tag_page_scraper.py: 31 → 36 passed (+5 新規)
+2026-05-14 11:xx JST | verify | 広め smoke (4 file): 291 passed / 0 failed
+2026-05-14 11:xx JST | verify | local fire test (実 fetch):
+                                  - 10 candidates → narrow filter で 1 件 (坂本300号)
+                                  - 大谷翔平 vs SF Giants 系は 「巨人」narrow filter で除外確認
+                                  - title 「 - スポニチ Sponichi Annex 野球」suffix strip 確認
+                                  - URL date / 12:00 JST fallback 動作確認
+```
+
 ## 10. Regression Memo 欄
 
 (本 ticket で新たに見つかった既存挙動の不審点 / 既存テスト不在の領域 / 次回触る時の注意点を時系列に記録)

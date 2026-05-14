@@ -178,6 +178,18 @@
     ]
   },
   {
+    "name": "スポニチ 野球 巨人 filter",
+    "url": "https://www.sponichi.co.jp/baseball/",
+    "type": "tag_scrape",
+    "scraper": "sponichi_giants_filter",
+    "max_age_days": 7,
+    "article_limit": 30,
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
     "name": "読売ジャイアンツYouTube公式",
     "url": "https://www.youtube.com/channel/UCXxg0igSYUp0tqdd6luPEnQ/videos",
     "type": "tag_scrape",

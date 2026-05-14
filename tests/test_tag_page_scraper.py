@@ -408,6 +408,148 @@ class FetchDailyGiantsEntriesTests(unittest.TestCase):
         )
 
 
+class FetchSponichiGiantsEntriesTests(unittest.TestCase):
+    """337-INGEST Phase 2: sponichi /baseball/ top page + 巨人 filter scraper test。
+
+    URL pattern `/baseball/news/YYYY/MM/DD/kiji/{ID}.html`、URL 内 date で age 判定、
+    article 毎に og:title / og:description が「巨人」を含むか post-filter
+    (「ジャイアンツ」「Giants」は MLB SF Giants 混入避けるため除外)。
+    """
+
+    def setUp(self):
+        self.now = datetime(2026, 5, 14, 12, 0, 0, tzinfo=JST)
+
+    def _build_top_html(self, articles: list[tuple[str, str, str, str]]) -> str:
+        """articles: list of (year, month, day, kiji_id)."""
+        anchors = "".join(
+            f'<a href="/baseball/news/{y}/{m}/{d}/kiji/{kid}.html">title-{y}{m}{d}-{kid}</a>'
+            for y, m, d, kid in articles
+        )
+        return f"<html><body>{anchors}</body></html>"
+
+    def _build_article_html(
+        self,
+        *,
+        title: str,
+        desc: str = "lead",
+    ) -> str:
+        meta = (
+            f'<meta property="og:title" content="{title}">'
+            f'<meta property="og:description" content="{desc}">'
+        )
+        return f"<html><head>{meta}</head><body></body></html>"
+
+    def test_extracts_giants_article_strips_sponichi_brand(self):
+        top_html = self._build_top_html(
+            [("2026", "05", "14", "20260514s00001173060000c")]
+        )
+        article_html = self._build_article_html(
+            title="巨人・坂本 延長12回に逆転サヨナラ通算300号！ - スポニチ Sponichi Annex 野球",
+            desc="巨人・坂本勇人内野手が13日の広島戦でサヨナラ3ランを放った",
+        )
+
+        def fake_fetcher(url, **kwargs):
+            if url.endswith("/baseball/"):
+                return _make_response(200, top_html)
+            return _make_response(200, article_html)
+
+        entries = scraper.fetch_sponichi_giants_entries(
+            tag_url="https://www.sponichi.co.jp/baseball/",
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 1)
+        # sponichi suffix strip 確認
+        self.assertEqual(
+            entries[0]["title"], "巨人・坂本 延長12回に逆転サヨナラ通算300号！"
+        )
+
+    def test_filters_non_giants_articles_by_keyword(self):
+        top_html = self._build_top_html(
+            [
+                ("2026", "05", "14", "ARTICLEa"),
+                ("2026", "05", "14", "ARTICLEb"),
+            ]
+        )
+        giants_article = self._build_article_html(
+            title="巨人・坂本 サヨナラ300号",
+            desc="巨人勝利",
+        )
+        # MLB SF Giants 文脈 (大谷 vs ジャイアンツ) は filter で除外されるべき
+        mlb_giants_article = self._build_article_html(
+            title="大谷翔平 ジャイアンツ戦先発",
+            desc="ドジャースの大谷投手がジャイアンツ戦に登板",
+        )
+
+        def fake_fetcher(url, **kwargs):
+            if url.endswith("/baseball/"):
+                return _make_response(200, top_html)
+            if "ARTICLEa" in url:
+                return _make_response(200, giants_article)
+            return _make_response(200, mlb_giants_article)
+
+        entries = scraper.fetch_sponichi_giants_entries(
+            tag_url="https://www.sponichi.co.jp/baseball/",
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 1)
+        self.assertIn("ARTICLEa", entries[0]["link"])
+        self.assertIn("巨人", entries[0]["title"])
+
+    def test_filters_articles_older_than_max_age_days(self):
+        # 古い記事は URL date で age window 外として skip
+        top_html = self._build_top_html(
+            [
+                ("2026", "04", "30", "OLD"),
+                ("2026", "05", "14", "NEW"),
+            ]
+        )
+        giants_article = self._build_article_html(
+            title="巨人・坂本 サヨナラ", desc="巨人勝利"
+        )
+
+        def fake_fetcher(url, **kwargs):
+            if url.endswith("/baseball/"):
+                return _make_response(200, top_html)
+            return _make_response(200, giants_article)
+
+        entries = scraper.fetch_sponichi_giants_entries(
+            tag_url="https://www.sponichi.co.jp/baseball/",
+            max_age_days=7,
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 1)
+        self.assertIn("NEW", entries[0]["link"])
+
+    def test_uses_url_date_at_noon_jst_for_published_time(self):
+        # sponichi は published_time meta が無いので URL date / 12:00 JST fallback
+        top_html = self._build_top_html(
+            [("2026", "05", "14", "abc123")]
+        )
+        article_html = self._build_article_html(
+            title="巨人・坂本 サヨナラ", desc="巨人勝利"
+        )
+
+        def fake_fetcher(url, **kwargs):
+            if url.endswith("/baseball/"):
+                return _make_response(200, top_html)
+            return _make_response(200, article_html)
+
+        entries = scraper.fetch_sponichi_giants_entries(
+            tag_url="https://www.sponichi.co.jp/baseball/",
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 1)
+        # 12:00 JST = 03:00 UTC, "Wed, 14 May 2026 03:00:00 GMT" 形式
+        self.assertIn("14 May 2026 03:00:00", entries[0]["published"])
+
+    def test_registered_in_scraper_kinds(self):
+        self.assertIn("sponichi_giants_filter", list(scraper.list_scraper_kinds()))
+
+
 class FetchTokyoSportsGiantsEntriesTests(unittest.TestCase):
     """337-INGEST Phase 1: tokyo-sports label page scraper test。
 

@@ -678,6 +678,130 @@ def fetch_youtube_channel_entries(
     return entries
 
 
+_SPONICHI_ARTICLE_PATH_RE = re.compile(
+    r'/baseball/news/(\d{4})/(\d{2})/(\d{2})/kiji/([a-zA-Z0-9]+)\.html'
+)
+_SPONICHI_GIANTS_KEYWORDS = ("巨人",)
+# 「ジャイアンツ」「Giants」だけだと MLB SF Giants が混入する false positive (NPB
+# Giants は sponichi 慣例で「巨人」prefix を title に持つ)。narrow に「巨人」一択。
+
+
+def fetch_sponichi_giants_entries(
+    *,
+    tag_url: str = "https://www.sponichi.co.jp/baseball/",
+    max_age_days: int = 7,
+    article_limit: int = 30,
+    logger: logging.Logger | None = None,
+    now: datetime | None = None,
+    fetcher: Callable[..., requests.Response] | None = None,
+) -> list[dict[str, Any]]:
+    """sponichi.co.jp 野球 top page から最近 N 日分の 巨人記事 entries を返す。
+
+    sponichi は giants 専用 tag page を持たない (`/baseball/giants/` 等は 404 確認済)。
+    `/baseball/` top page には野球全般の記事が並ぶため、article fetch 後に
+    og:title / og:description が「巨人」or「ジャイアンツ」 keyword を含むかで post-filter。
+    URL pattern: `/baseball/news/YYYY/MM/DD/kiji/{ID}.html`、URL 内 date で age window 判定
+    (`<meta article:published_time>` が無いため URL date を fallback)。
+    337-INGEST Phase 2 で追加 (2026-05-14)。
+    """
+    logger = logger or logging.getLogger("tag_page_scraper")
+    reference_now = (now or datetime.now(timezone.utc)).astimezone(JST)
+    response = _http_get(tag_url, fetcher=fetcher)
+    if response is None or response.status_code != 200:
+        logger.warning(
+            "tag_page_fetch_failed source=sponichi tag_url=%s status=%s",
+            tag_url,
+            getattr(response, "status_code", "ERR"),
+        )
+        return []
+
+    text = response.text
+    seen_urls: list[tuple[str, str]] = []  # (article_url, yyyymmdd)
+    seen_set: set[str] = set()
+    for match in _SPONICHI_ARTICLE_PATH_RE.finditer(text):
+        year, month, day, code = match.groups()
+        date_str = f"{year}{month}{day}"
+        if not _is_ymd_within_window(date_str, max_age_days=max_age_days, now=reference_now):
+            continue
+        article_url = (
+            f"https://www.sponichi.co.jp/baseball/news/{year}/{month}/{day}/kiji/{code}.html"
+        )
+        if article_url in seen_set:
+            continue
+        seen_set.add(article_url)
+        seen_urls.append((article_url, date_str))
+
+    if not seen_urls:
+        logger.info("tag_page_no_recent_articles source=sponichi tag_url=%s", tag_url)
+        return []
+
+    seen_urls = seen_urls[:article_limit]
+    logger.info(
+        "tag_page_articles_extracted source=sponichi count=%d (after age %dd / limit %d)",
+        len(seen_urls),
+        max_age_days,
+        article_limit,
+    )
+
+    entries: list[dict[str, Any]] = []
+    filtered_out = 0
+    for article_url, date_str in seen_urls:
+        article_response = _http_get(article_url, fetcher=fetcher)
+        if article_response is None or article_response.status_code != 200:
+            logger.info(
+                "tag_page_article_fetch_failed source=sponichi url=%s status=%s",
+                article_url,
+                getattr(article_response, "status_code", "ERR"),
+            )
+            continue
+        meta = _extract_og_meta(article_response.text)
+        title = (meta.get("og:title") or "").strip()
+        # sponichi og:title は「... - スポニチ Sponichi Annex 野球」suffix を持つので取る
+        title = re.sub(
+            r"\s*[-‐−–—ー]\s*スポニチ\s*Sponichi\s*Annex(\s*[^\s].*)?$",
+            "",
+            title,
+            flags=re.IGNORECASE,
+        )
+        summary = (meta.get("og:description") or meta.get("description") or "").strip()
+        # post-filter: title or summary に 巨人 keyword 含むか
+        haystack = f"{title} {summary}"
+        if not any(keyword in haystack for keyword in _SPONICHI_GIANTS_KEYWORDS):
+            filtered_out += 1
+            continue
+        # sponichi article は published_time meta が無いので URL の date 部分から fallback
+        # (12:00 JST を published 時刻として割り当て、daily と同じ pattern)
+        fallback_dt = datetime(
+            int(date_str[:4]),
+            int(date_str[4:6]),
+            int(date_str[6:8]),
+            12,
+            0,
+            0,
+            tzinfo=JST,
+        )
+        published_struct = fallback_dt.astimezone(timezone.utc).timetuple()
+        entry: dict[str, Any] = {
+            "link": article_url,
+            "id": article_url,
+            "title": title,
+            "summary": summary,
+            "description": summary,
+            "published_parsed": published_struct,
+            "published": _struct_time_to_rfc822(published_struct),
+        }
+        entries.append(entry)
+
+    logger.info(
+        "tag_page_entries_built source=sponichi count=%d "
+        "(out of %d candidates, %d filtered as non-giants)",
+        len(entries),
+        len(seen_urls),
+        filtered_out,
+    )
+    return entries
+
+
 _TOKYO_SPORTS_ARTICLE_PATH_RE = re.compile(r'/articles/-/(\d+)')
 
 
@@ -789,6 +913,7 @@ def fetch_tokyo_sports_giants_entries(
 _SCRAPER_REGISTRY: dict[str, Callable[..., list[dict[str, Any]]]] = {
     "hochi_giants_tag": fetch_hochi_giants_entries,
     "daily_giants_tag": fetch_daily_giants_entries,
+    "sponichi_giants_filter": fetch_sponichi_giants_entries,
     "tokyo_sports_giants_label": fetch_tokyo_sports_giants_entries,
     "youtube_channel": fetch_youtube_channel_entries,
 }

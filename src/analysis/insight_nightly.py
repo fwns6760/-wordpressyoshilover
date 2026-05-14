@@ -482,6 +482,12 @@ def main(argv: Optional[list[str]] = None) -> int:
                                     conn, wp, max_per_run=3,
                                 ),
                             }
+                            # team ranking 記事 (球団 metric、user 指示で追加)
+                            try:
+                                from src.analysis import team_ranking_publisher as team_pub
+                                team_pub.publish_team_default_set(conn, wp, max_per_run=2)
+                            except Exception:  # noqa: BLE001
+                                pass
                         except Exception as exc:  # noqa: BLE001
                             anomaly_publish_summary = {
                                 "skipped": True,

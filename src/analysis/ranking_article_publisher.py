@@ -362,7 +362,7 @@ def render_giants_centric_ranking(
     focus_rank = f"{focus_row_obj.rank}/{focus_row_obj.total}" if focus_row_obj else "-"
     focus_sample = f"{focus_row_obj.sample_size}" if focus_row_obj else "-"
 
-    # period date range + 試合数
+    # period date range (試合数削除、user 指示で全12球団合計は誤解招くため)
     today = dt.date.today()
     if scope == "last_7d":
         start_d = today - dt.timedelta(days=6)
@@ -372,14 +372,7 @@ def render_giants_centric_ranking(
         start_d = dt.date(today.year, 3, 27)
     else:
         start_d = today
-    try:
-        n_games = conn.execute(
-            "SELECT COUNT(*) FROM games WHERE game_date BETWEEN ? AND ?",
-            (start_d.isoformat(), today.isoformat()),
-        ).fetchone()[0]
-    except Exception:
-        n_games = 0
-    period_full = f"{start_d.isoformat()} 〜 {today.isoformat()}({n_games}試合)"
+    period_full = f"{start_d.isoformat()} 〜 {today.isoformat()}"
 
     body_md = f"""# {base_title}
 

@@ -1634,16 +1634,36 @@ def _maybe_insert_source_body_excerpt(
     This is presentation-only: failures return the original body, and the
     extractor is pure parsing over already-fetched HTML. It never calls an LLM
     and never invents prose.
+
+    2026-05-14: 直近 10 記事で 0/10 挿入されていなかった事象を受け、
+    各 inner gate に observability log を追加。挿入失敗の root cause を
+    1 fire で identify 可能に。本体ロジックは無変更、log のみ追加。
     """
+    _log = logging.getLogger("manual_intake")
     if not rendered_html or not raw_html:
+        _log.info(
+            "source_body_excerpt_skip reason=empty_input "
+            "rendered_len=%d raw_html_len=%d url=%s",
+            len(rendered_html or ""),
+            len(raw_html or ""),
+            source_url,
+        )
         return rendered_html
     if "nomotoke-source-excerpt" in rendered_html:
+        _log.info(
+            "source_body_excerpt_skip reason=already_inserted url=%s",
+            source_url,
+        )
         return rendered_html
     try:
         from src.source_article_body_extractor import (
             extract_article_body_excerpt,
         )
-    except Exception:
+    except Exception as _exc:
+        _log.warning(
+            "source_body_excerpt_skip reason=extractor_import_failed err=%s",
+            _exc,
+        )
         return rendered_html
     try:
         excerpt = extract_article_body_excerpt(
@@ -1652,9 +1672,19 @@ def _maybe_insert_source_body_excerpt(
             title=title,
             max_chars=SOURCE_BODY_EXCERPT_MAX_CHARS,
         )
-    except Exception:
+    except Exception as _exc:
+        _log.warning(
+            "source_body_excerpt_skip reason=extractor_exception err=%s url=%s",
+            _exc,
+            source_url,
+        )
         excerpt = ""
     if not excerpt:
+        _log.info(
+            "source_body_excerpt_skip reason=extractor_empty url=%s raw_html_len=%d",
+            source_url,
+            len(raw_html),
+        )
         return rendered_html
     if not _source_excerpt_matches_context(
         excerpt,
@@ -1662,7 +1692,20 @@ def _maybe_insert_source_body_excerpt(
         summary=summary,
         source_url=source_url,
     ):
+        _log.info(
+            "source_body_excerpt_skip reason=context_drift "
+            "excerpt_len=%d title_len=%d url=%s",
+            len(excerpt),
+            len(title),
+            source_url,
+        )
         return rendered_html
+    _log.info(
+        "source_body_excerpt_inserted excerpt_len=%d url=%s source=%s",
+        len(excerpt),
+        source_url,
+        source_name,
+    )
     return _insert_body_excerpt_block(rendered_html, excerpt, source_name)
 
 

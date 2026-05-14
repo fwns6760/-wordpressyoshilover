@@ -19328,20 +19328,33 @@ def _maybe_insert_auto_rss_source_body_excerpt(
     must already be fetched. The reused helper handles its own idempotent and
     context-drift guards, so failure modes (no excerpt, context drift, generic
     HTML) silently return the rendered HTML unchanged.
+
+    2026-05-14: 直近 10 記事で excerpt block が 0/10 出現していなかった事象を
+    受け、各 gate での silent skip を log 化して root cause 可視化。
     """
     if source_type not in {"news", "tag_scrape"}:
+        logger.info(
+            "auto_rss_excerpt_skip reason=source_type type=%s url=%s",
+            source_type,
+            source_url,
+        )
         return rendered_html
     if not raw_html:
+        logger.info(
+            "auto_rss_excerpt_skip reason=no_raw_html url=%s",
+            source_url,
+        )
         return rendered_html
     try:
         from src.tools.manual_intake import _maybe_insert_source_body_excerpt
     except Exception as exc:  # noqa: BLE001
         logger.warning(
-            "auto_rss_source_body_excerpt_import_failed reason=%s", exc
+            "auto_rss_excerpt_skip reason=import_failed err=%s",
+            exc,
         )
         return rendered_html
     try:
-        return _maybe_insert_source_body_excerpt(
+        result = _maybe_insert_source_body_excerpt(
             rendered_html,
             raw_html=raw_html,
             source_url=source_url,
@@ -19351,9 +19364,31 @@ def _maybe_insert_auto_rss_source_body_excerpt(
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning(
-            "auto_rss_source_body_excerpt_skipped reason=%s", exc
+            "auto_rss_excerpt_skip reason=insert_exception err=%s url=%s",
+            exc,
+            source_url,
         )
         return rendered_html
+    if result == rendered_html:
+        # helper の inner gate (raw_html 空 / idempotent / extractor empty /
+        # context_drift) で silently 落ちたケース。各 inner gate も後で
+        # 別途 log 化する予定だが、まず外側で「helper が何もしなかった」を
+        # 観測可能化。
+        logger.info(
+            "auto_rss_excerpt_skip reason=helper_silent_skip "
+            "raw_html_len=%d url=%s source=%s",
+            len(raw_html),
+            source_url,
+            source_name,
+        )
+    else:
+        logger.info(
+            "auto_rss_excerpt_inserted delta=%d url=%s source=%s",
+            len(result) - len(rendered_html),
+            source_url,
+            source_name,
+        )
+    return result
 
 
 def _create_draft_with_same_fire_guard(

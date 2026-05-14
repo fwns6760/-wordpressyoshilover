@@ -9312,6 +9312,8 @@ aside.nomotoke-source-excerpt {
 .nomotoke-source-excerpt__body p {
   margin: 0 0 1.1em;
   line-height: 2.0;
+  /* 2026-05-14 user 指示: 引用本文を太字化 (デザインはそのまま、文字だけ太く) */
+  font-weight: 700;
 }
 
 .nomotoke-source-excerpt__body p:last-child {
@@ -9343,6 +9345,8 @@ aside.nomotoke-source-excerpt {
   font-style: normal;
   font-size: 15px;
   line-height: 1.95;
+  /* 2026-05-14 user 指示: 引用本文を太字化 (発言部分も同様) */
+  font-weight: 700;
 }
 
 /* スマホ最適化 (新規 class) */

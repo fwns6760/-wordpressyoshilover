@@ -2653,11 +2653,28 @@ def build_body_html_per_post(
     intent_url = _build_x_post_intent_url(title, url, hashtags=intent_hashtags)
     if not intent_url:
         return None
+    # 2026-05-14 user request: mail に「🚫 非公開にする」 1-click button 追加。
+    # post_id + HMAC token を query で渡し、yoshilover-fetcher /unpublish endpoint
+    # で WP REST status=draft に flip する。token 検証で安全性確保。
+    unpublish_url = _build_unpublish_link(getattr(request, "post_id", None))
     # Inline-styled HTML (mail clients ignore <style> blocks reliably
     # only via inline styles). Single-column, mobile-first layout.
     safe_title = html.escape(title)
     safe_url = html.escape(url)
     safe_intent = html.escape(intent_url)
+    unpublish_button_html = ""
+    if unpublish_url:
+        safe_unpublish = html.escape(unpublish_url)
+        unpublish_button_html = (
+            '<tr><td align="center" style="padding:0 22px 14px;">'
+            f'<a href="{safe_unpublish}" target="_blank" rel="noopener" '
+            'style="display:inline-block;width:100%;max-width:300px;'
+            'padding:11px 20px;background:#ffffff;color:#d73a3a;'
+            'text-decoration:none;border-radius:6px;font-size:13px;'
+            'font-weight:700;text-align:center;border:1px solid #d73a3a;">'
+            '🚫 非公開にする</a>'
+            '</td></tr>'
+        )
     return (
         '<!DOCTYPE html><html><body style="margin:0;padding:0;'
         'background:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,'
@@ -2681,19 +2698,45 @@ def build_body_html_per_post(
         'text-decoration:none;border-radius:6px;font-size:15px;'
         'font-weight:700;text-align:center;">📰 記事を見る</a>'
         '</td></tr>'
-        '<tr><td align="center" style="padding:0 22px 24px;">'
+        '<tr><td align="center" style="padding:0 22px 14px;">'
         f'<a href="{safe_intent}" target="_blank" rel="noopener" '
         'style="display:inline-block;width:100%;max-width:300px;'
         'padding:13px 20px;background:#000000;color:#ffffff;'
         'text-decoration:none;border-radius:6px;font-size:15px;'
         'font-weight:700;text-align:center;">𝕏 で投稿する</a>'
         '</td></tr>'
+        f'{unpublish_button_html}'
         '<tr><td style="padding:0 22px 18px;border-top:1px solid #eee;">'
         '<p style="margin:14px 0 0;font-size:11px;line-height:1.5;'
         'color:#999;text-align:center;">YOSHILOVER 自動公開通知</p>'
         '</td></tr>'
         '</table></td></tr></table></body></html>'
     )
+
+
+_DEFAULT_UNPUBLISH_BASE_URL = (
+    "https://yoshilover-fetcher-487178857517.asia-northeast1.run.app/unpublish"
+)
+
+
+def _build_unpublish_link(post_id) -> str:
+    """344-INGEST 2026-05-14 user request: mail から 1-click 非公開 link 生成。
+
+    post_id が無い / token gen 失敗 → 空文字 (button skip、main flow 不変)。
+    base URL は env `UNPUBLISH_BASE_URL` で override 可。
+    """
+    pid_raw = str(post_id or "").strip()
+    if not pid_raw or not pid_raw.isdigit():
+        return ""
+    try:
+        from src.unpublish_token import generate_unpublish_token
+    except Exception:  # noqa: BLE001
+        return ""
+    token = generate_unpublish_token(pid_raw)
+    if not token:
+        return ""
+    base = os.getenv("UNPUBLISH_BASE_URL", "").strip() or _DEFAULT_UNPUBLISH_BASE_URL
+    return f"{base}?post_id={pid_raw}&token={token}"
 
 
 def build_summary_body_text(

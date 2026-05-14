@@ -624,11 +624,12 @@ GENERIC_TITLE_REPAIR_ACTION_LABELS = (
     ("起用方針", ("起用", "スタメン", "打順", "オーダー")),
     ("安打", ("安打",)),
     ("本塁打", ("本塁打", "ホームラン")),
-    ("失点", ("失点",)),
+    ("失点", ("失点",)),  # 数値必須化は _GENERIC_TITLE_REPAIR_QUANTIFIED_LOSS_RE で実施
     ("好投", ("好投",)),
     ("勝利", ("勝利", "白星")),
     ("敗戦", ("敗戦", "黒星")),
 )
+_GENERIC_TITLE_REPAIR_QUANTIFIED_LOSS_RE = _re.compile(r"\d+失点")
 RSS_SHORT_SCORE_RESULT_MARKERS = NON_GAME_RESULT_WORDS + ("試合終了", "ゲームセット", "終了", "final")
 MANAGER_COMMENT_KEEP_SUBJECT_KEYWORDS = ("阿部監督", "監督", "コーチ")
 MANAGER_COMMENT_KEEP_CONTEXT_KEYWORDS = (
@@ -21518,6 +21519,10 @@ def _generic_title_repair_subject(
 def _generic_title_repair_action(source_title: str, summary: str) -> str:
     source_text = _strip_html(f"{source_title} {summary}")
     for action_label, markers in GENERIC_TITLE_REPAIR_ACTION_LABELS:
+        if action_label == "失点":
+            if _GENERIC_TITLE_REPAIR_QUANTIFIED_LOSS_RE.search(source_text):
+                return action_label
+            continue
         if any(marker in source_text for marker in markers):
             return action_label
     return ""

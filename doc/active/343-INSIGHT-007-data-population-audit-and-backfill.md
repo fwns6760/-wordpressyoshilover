@@ -4,7 +4,7 @@
 |---|---|
 | ticket_id | 343-INSIGHT-007-data-population-audit-and-backfill |
 | priority | P1(342-INSIGHT の prerequisite、INSIGHT 系全体の data quality 基盤) |
-| status | DRAFT(本 doc 作成のみ、user GO 待ち) |
+| status | PHASE_0_AUDIT_DONE_PHASE_1_IMPL_PENDING(2026-05-14 user GO 後 Claude Phase 0 完了、根因 = INSIGHT-007 populate 3 path 未実装) |
 | owner | Claude Code |
 | lane | INSIGHT |
 | created | 2026-05-14 |
@@ -186,6 +186,7 @@
 | 日時 (JST) | 内容 | 結果 |
 | --- | --- | --- |
 | 2026-05-14 PM | 本 ticket doc 作成(342-INSIGHT Phase 1 spec で発見した data 不足 への補強として起票) | user GO 待ち、3 source verify 完了(gh label / gh issue / ls 全部 343 不在) |
+| 2026-05-14 PM | user GO 受領後 Claude が Phase 0 audit 完了(read-only、§10 audit 結果に追記) | 根因確定: INSIGHT-007 schema は landed も populate 実装 3 path(`teams` / `players` / `advanced_metric_snapshots`)が src 全体で 0 hit、未実装。Phase 1 で 3 function 追加 + run_nightly wire + image rebuild + Cloud Run job update が必要 |
 
 ## 10. Regression Memo 欄
 
@@ -213,6 +214,107 @@
 - nightly job の実行時間 + memory 使用量(backfill 追加で timeout 余裕あるか)
 - `INSIGHT_GCS_BUCKET` の SA 権限 + bucket lifecycle 設定
 - 既存 INSIGHT-007 atbats parser が defense_opportunities に書く path(参考実装、advanced_metric_snapshots に同形式で書く path を spec)
+
+### Phase 0 audit 結果(2026-05-14 PM、Claude、user GO 後 read-only)
+
+全項目 1 次 source verify(`feedback_ai_top_failure_modes_meta_rule` 準拠、`feedback_commit_safety_protocol_*` Phase 1+3 適用)。
+
+| # | 項目 | 結果 | 詳細 |
+|---|---|---|---|
+| 1 | `insight-nightly` Cloud Run job 直近 9 execution 状態 | ✓ | `gcloud run jobs executions list --job=insight-nightly --region=asia-northeast1 --project=baseballsite --limit=30` で確認、直近 9 run のうち 7 success + 2 で `failed=1` column 表示。失敗率 ~22% は Phase 1 実装時に併せて見直し |
+| 2 | Cloud Run job image / command / timeout | ✗ | image = `:initial`(初回 build から更新なし、artifact registry path: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/insight-nightly:initial`)、command = `python3 -m src.analysis.insight_nightly --auto --all-teams --live`、timeout = 300s (5 min)。**image 古いため Phase 1 で populate path 追加しても rebuild + update 必須** |
+| 3 | `insight_nightly.py` 内 `advanced_metric_snapshots` INSERT 有無 | ✗ | `grep -nE "(advanced_metric_snapshots\|INSERT.*teams\|INSERT.*players)" src/analysis/insight_nightly.py` → **0 hit**。populate 完全 missing |
+| 4 | `insight_etl.py` 内 `teams` / `players` INSERT 有無 | ✗ | `grep -nE "(INSERT\|teams\|players\|seed\|populate)" src/analysis/insight_etl.py` → INSERT は `games` (line 244) / `inning_scores` (275) / `batting_logs` (310) / `pitching_logs` (361) / `article_candidates` (565) / `insight_runs` (671) のみ、**`teams` / `players` への INSERT は 0 hit** |
+| 5 | 全 src cross-verify INSERT 検索(silent skip 回避) | ✗ | `grep -rnE "INSERT INTO advanced_metric_snapshots\|INSERT INTO teams\|INSERT INTO players" src/` → **全 src で 0 hit**。populate path **完全に未実装**(src grep を nightly/etl に閉じず全 src で cross check 完了) |
+| 6 | `defense_opportunities` populate pattern(動いてる pattern、参考) | ✓ | `src/analysis/insight_defense_proxy.py:108` で `INSERT OR REPLACE INTO defense_opportunities`。`run_nightly()` 内 line 248 で `insight_defense_proxy.rebuild_defense_for_game(conn, game_id=game_id)` per-game 呼び出し(best-effort try/except でエラー吸収)。これが production DB で 163 rows populated の理由、**不足 3 path も同 pattern で実装可能**(idempotent INSERT + try/except + per-game or per-job 呼び出し) |
+| 7 | `insight_advanced_metrics.py` batch helper | ✓ partial | per-line metric 関数 22 個(`avg` / `obp` / `slg` / `ops` / `iso` / `k_pct` / `bb_pct` / `babip` / `woba` / `era` / `whip` / `k_per_9` / `bb_per_9` / `hr_per_9` / `k_bb_ratio` / `fip` / `xfip` / `era_plus`)+ 集約 helper 2 個(`all_batter_metrics(line)` / `all_pitcher_metrics(line)`)+ DB-agnostic(formulas only、SQLite touch 0)。**batch snapshot insert helper は不在**、Phase 1 で `compute_advanced_metric_snapshots(conn, scope, snapshot_date)` を新規追加が必要 |
+| 8 | `run_nightly()` flow(line 165-260) | ✓ | flow: GCS pull → fetch HTML → `insight_etl.etl_from_html` (games/batting/pitching upsert) → `parse_npb_box_html` → `insight_lineup_history.upsert_lineup_from_parsed_box` → `insight_defense_proxy.rebuild_defense_for_game` → `INSERT INTO insight_runs` → multi-game/lineup detectors。**teams / players / advanced_metric_snapshots を populate する step が完全に欠落** |
+| 9 | `insight_nightly.main()` `--all-teams` flag(line 326-400) | ✓ | `--auto` 必須 / `insight_schedule.previous_jst_date()` で前日 JST → `resolve_all_slugs_auto` で 12-team 全 game slug 解決 → 各 slug ごとに `run_nightly()` 呼び出し → 末尾で digest 1 回。**12 球団 ingest path は存在するが、populate 不足は run_nightly 自体の欠落で発生**(--all-teams 関係なし) |
+| 10 | Cloud Run 実 log 確認(read-only) | ✓ partial | 直近 9 run の stderr / stdout は `Container called exit(0).` 以外ほぼ空。application 内 print/log 文が少ない(structured log 経路)。populate 不在は src grep で確定済のため log で twice-confirm 不要 |
+
+**Phase 0 結論**(1 次 source 全部追認):
+
+INSIGHT-007 schema(`data/insight/schema.sql:158-216`)は定義されたが、**populate 実装は `defense_opportunities` のみ着地、`teams` / `players` / `advanced_metric_snapshots` の 3 path は全部未実装**。これが 342-INSIGHT data 不足の根因。
+
+#### Phase 1 で実装必要な path(audit 結果から導出)
+
+**新規 function 3 種**(`src/analysis/insight_etl.py` に追加、`defense_proxy` と同 pattern):
+
+1. `seed_teams(conn: sqlite3.Connection) -> int`(idempotent、12 球団 fixed roster):
+   - `INSERT OR IGNORE INTO teams (team_code, team_name, league, home_park) VALUES (...)`
+   - 12 行 fixed(g/巨人/central/東京ドーム / t/阪神 / s/ヤクルト / c/広島 / db/DeNA / d/中日 / f/日本ハム / b/オリックス / h/ソフトバンク / l/西武 / e/楽天 / m/ロッテ)
+   - return inserted row count
+
+2. `seed_players_from_logs(conn: sqlite3.Connection) -> int`(case B 推奨、既存 logs から induce、新 source 不要):
+   - `SELECT DISTINCT player_canonical, team_name FROM batting_logs WHERE player_canonical IS NOT NULL AND team_name IS NOT NULL UNION SELECT DISTINCT player_canonical, team_name FROM pitching_logs WHERE player_canonical IS NOT NULL AND team_name IS NOT NULL`
+   - team_name → team_code 変換は既存 `_resolve_team_code_from_name()` (insight_etl.py:185) を reuse
+   - role 推定: pitching_logs に出る = `pitcher`、batting_logs にしか出ない = `player`
+   - `INSERT OR IGNORE INTO players (player_canonical, team_code, role, active) VALUES (...)`
+   - return inserted row count
+
+3. `compute_advanced_metric_snapshots(conn, scope: str, snapshot_date: str) -> int`(per-scope batch、`insight_advanced_metrics` を call):
+   - scope = 'season' / 'last_7d' / 'last_30d' / 'last_5_games'
+   - 各 player について BattingLine / PitchingLine を SELECT で集計、`all_batter_metrics(line)` / `all_pitcher_metrics(line)` で全 metric 計算
+   - `INSERT OR REPLACE INTO advanced_metric_snapshots (snapshot_date, scope, player_canonical, team_code, metric_name, metric_value, sample_size, league_rank, league_total, position_rank, position_total) VALUES (...)`
+   - league_rank / position_rank は同 scope 内 sort で計算
+   - 最小 sample 閾値(PA >= 30 / IP >= 10 等)で skip
+   - return inserted snapshot row count
+
+**`run_nightly()` への追加 wire**(line 248 直後、`defense_proxy` 呼び出し直後、同 pattern):
+
+```python
+# 343-INSIGHT-007 backfill: teams / players / advanced_metric_snapshots
+# best-effort、失敗しても pipeline は止めない (defense_proxy と同 pattern)
+try:
+    insight_etl.seed_teams(conn)
+    insight_etl.seed_players_from_logs(conn)
+except Exception:  # noqa: BLE001
+    pass
+try:
+    today = dt.date.today().isoformat()
+    for scope in ('last_7d', 'last_30d', 'season'):
+        insight_etl.compute_advanced_metric_snapshots(conn, scope=scope, snapshot_date=today)
+except Exception:  # noqa: BLE001
+    pass
+conn.commit()
+```
+
+**新規 tests 3 file**:
+- `tests/test_insight_etl_seed_teams.py`(idempotent verify、12 行 fixed)
+- `tests/test_insight_etl_seed_players_from_logs.py`(fixture batting/pitching logs から正しく players induce、role 推定、idempotent)
+- `tests/test_insight_etl_compute_advanced_metric_snapshots.py`(fixture batting で OPS/wOBA snapshot 作成、scope 別 sample 閾値、league_rank 計算)
+
+**image rebuild + Cloud Run job update**:
+- `gcloud builds submit --tag asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/insight-nightly:343 .` (or `Dockerfile.insight_nightly` 専用)
+- `gcloud run jobs update insight-nightly --image=...:343 --region=asia-northeast1 --project=baseballsite`
+- 1 回手動 trigger: `gcloud scheduler jobs run insight-nightly-trigger` (or `gcloud run jobs execute insight-nightly`)
+- 完了後 production DB pull で `teams: 12+ rows / players: 100+ rows / advanced_metric_snapshots: rows` 確認
+
+#### Phase 1 着手前の user GO 判断材料
+
+**option A**(Claude 推奨、自律可能):
+- src + tests を Claude が直接 impl(`src/analysis/insight_etl.py` に 3 function 追加 + `tests/test_insight_etl_*.py` 3 file 追加 + `src/analysis/insight_nightly.py:run_nightly` に wire 追加)
+- minimum-diff、既存 INSIGHT-001 base / INSIGHT-007 defense_proxy には触らない
+- pytest baseline 維持(増減 0)
+- impl + tests 完了で commit + push、Cloud Run image rebuild + Cloud Run job update + 手動 trigger は Claude が実行(`feedback_claude_dev_and_deploy_2026_05_12` user 永続切替で全権、§11 4 領域該当なし、CLAUDE.md §10 自律範囲)
+- 完了後 1 回 trigger → DB pull verify → 7 日蓄積観察に移行
+
+**option B**: src + tests impl のみ Claude、Cloud Run deploy は user 確認後
+
+**option C**: 他 task に切替、343 を user GO 待ちで保留
+
+**A 推奨理由**:
+- §11 4 領域該当なし(content / SNS / scope / 法務・コスト 全部未関与、INSIGHT-007 補強は internal data quality)
+- 343 ticket §6 STOP 条件を厳守すれば rollback 可逆(failed なら image 戻し + Cloud Run job revision rollback)
+- 並走 actor の commit `ace4b64`(2026-05-14 13:53 JST、335-QA Phase 3 src 変更)は scope disjoint(私 = `src/analysis/insight_*` / 並走 = `src/title_*`)、衝突なし
+
+#### Phase 0 audit で **触らなかった** もの(明示)
+
+- `src/analysis/insight_*.py` 14 file(read のみ、edit 0)
+- production DB(GCS から再 pull していない、Phase 1 spec 時の `/tmp/insight_prod/insight.db` を再利用してない)
+- Cloud Scheduler / Cloud Run job(`gcloud ... list / describe / logging read` のみ、mutate / start / pause 0)
+- env / Secret Manager(read もしない)
+- 並走 actor の commit `ace4b64`(scope disjoint、本 ticket と無関係、隔離維持)
 
 ---
 

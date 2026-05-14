@@ -55,6 +55,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.source_npb_postgame_extractor import parse_npb_box_html  # noqa: E402
+from src.analysis import insight_advanced_metrics, insight_atbats_parser  # noqa: E402
 
 DEFAULT_DB_PATH = ROOT / "data" / "insight" / "insight.db"
 DEFAULT_SCHEMA = ROOT / "data" / "insight" / "schema.sql"
@@ -208,6 +209,330 @@ def _ensure_team_name_columns(conn: sqlite3.Connection) -> None:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN team_name TEXT")
             except sqlite3.OperationalError:
                 pass
+
+
+# ─── 343-INSIGHT-007 backfill: teams / players / advanced_metric_snapshots ──
+#
+# 342-INSIGHT Phase 1 spec で発見した data 不足
+# (production DB で teams=0 / players=0 / advanced_metric_snapshots=0)
+# を埋めるための backfill 関数群。defense_proxy.rebuild_defense_for_game と
+# 同 pattern で run_nightly() から best-effort 呼び出しされる想定。
+
+# 12 球団 fixed roster (NPB 2026 season)
+_TEAMS_FIXED_ROSTER: tuple[tuple[str, str, str, str], ...] = (
+    ("g", "巨人", "central", "東京ドーム"),
+    ("t", "阪神", "central", "甲子園"),
+    ("s", "ヤクルト", "central", "明治神宮"),
+    ("c", "広島", "central", "マツダスタジアム"),
+    ("db", "DeNA", "central", "横浜スタジアム"),
+    ("d", "中日", "central", "バンテリンドーム"),
+    ("h", "ソフトバンク", "pacific", "PayPayドーム"),
+    ("l", "西武", "pacific", "ベルーナドーム"),
+    ("m", "ロッテ", "pacific", "ZOZOマリン"),
+    ("e", "楽天", "pacific", "楽天モバイル"),
+    ("b", "オリックス", "pacific", "京セラドーム大阪"),
+    ("f", "日本ハム", "pacific", "エスコンフィールドHOKKAIDO"),
+)
+
+
+def seed_teams(conn: sqlite3.Connection) -> int:
+    """12 球団 fixed roster を ``teams`` table に idempotent insert。
+
+    既存 row は ``INSERT OR IGNORE`` で無視。初回 = 12 行 insert、2 回目以降
+    = 0 行 insert。
+    """
+    inserted = 0
+    for code, name, league, park in _TEAMS_FIXED_ROSTER:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO teams (team_code, team_name, league, home_park) "
+            "VALUES (?, ?, ?, ?)",
+            (code, name, league, park),
+        )
+        inserted += cur.rowcount
+    conn.commit()
+    return inserted
+
+
+def seed_players_from_logs(conn: sqlite3.Connection) -> int:
+    """既存 ``batting_logs`` / ``pitching_logs`` から
+    ``(player_canonical, team_name)`` を SELECT DISTINCT して
+    ``players`` table に induce + INSERT OR IGNORE。
+
+    role 推定: ``pitching_logs`` のみに出現 = ``pitcher``、
+    ``batting_logs`` に出現 = ``player`` (両方なら ``player``)。
+    team_name → team_code は ``_resolve_team_code_from_name`` を reuse、
+    ``unknown`` は skip。
+    """
+    batter_rows = list(conn.execute(
+        "SELECT DISTINCT player_canonical, team_name FROM batting_logs "
+        "WHERE player_canonical IS NOT NULL AND player_canonical != '' "
+        "AND team_name IS NOT NULL AND team_name != ''"
+    ))
+    pitcher_rows = list(conn.execute(
+        "SELECT DISTINCT player_canonical, team_name FROM pitching_logs "
+        "WHERE player_canonical IS NOT NULL AND player_canonical != '' "
+        "AND team_name IS NOT NULL AND team_name != ''"
+    ))
+
+    canonical_to_team_role: dict[str, tuple[str, str]] = {}
+    for row in pitcher_rows:
+        canonical = str(row[0])
+        team_name = str(row[1])
+        canonical_to_team_role[canonical] = (team_name, "pitcher")
+    for row in batter_rows:
+        canonical = str(row[0])
+        team_name = str(row[1])
+        # batter があれば pitcher を上書きして 'player' にする
+        canonical_to_team_role[canonical] = (team_name, "player")
+
+    inserted = 0
+    for canonical, (team_name, role) in canonical_to_team_role.items():
+        team_code = _resolve_team_code_from_name(team_name)
+        if team_code == "unknown":
+            continue
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO players "
+            "(player_canonical, team_code, role, active) "
+            "VALUES (?, ?, ?, 1)",
+            (canonical, team_code, role),
+        )
+        inserted += cur.rowcount
+    conn.commit()
+    return inserted
+
+
+def _scope_window(scope: str, snapshot_date: str) -> tuple[str, str]:
+    """``scope`` と ``snapshot_date`` から ``(window_start, window_end)`` ISO date を返す。
+
+    ``last_5_games`` は per-player なので別 path で扱う (本 helper は range scope のみ)。
+    """
+    end = snapshot_date
+    if scope == "season":
+        year = snapshot_date[:4]
+        return (f"{year}-01-01", end)
+    if scope == "last_7d":
+        d = dt.date.fromisoformat(snapshot_date)
+        return ((d - dt.timedelta(days=6)).isoformat(), end)
+    if scope == "last_30d":
+        d = dt.date.fromisoformat(snapshot_date)
+        return ((d - dt.timedelta(days=29)).isoformat(), end)
+    raise ValueError(f"unknown range scope: {scope!r}")
+
+
+def _aggregate_batting_line(
+    conn: sqlite3.Connection,
+    player_canonical: str,
+    window_start: str,
+    window_end: str,
+) -> insight_advanced_metrics.BattingLine:
+    """``batting_logs`` + ``atbats_json`` から指定 player の ``BattingLine`` を集計。
+
+    ``atbats_json`` を ``insight_atbats_parser.parse_atbat`` で各 PA 解析し、
+    H1/H2/H3/HR/BB/HBP/SF/SH/SO を導出。AB/H は schema 既存列をそのまま合算。
+    """
+    rows = conn.execute(
+        "SELECT bl.AB, bl.H, bl.atbats_json FROM batting_logs bl "
+        "JOIN games g ON bl.game_id = g.game_id "
+        "WHERE bl.player_canonical = ? "
+        "AND g.game_date >= ? AND g.game_date <= ?",
+        (player_canonical, window_start, window_end),
+    ).fetchall()
+
+    line = insight_advanced_metrics.BattingLine()
+    for row in rows:
+        line.AB += int(row[0] or 0)
+        line.H += int(row[1] or 0)
+        atbats_json = row[2] or "[]"
+        try:
+            atbats = json.loads(atbats_json) if isinstance(atbats_json, str) else (atbats_json or [])
+        except (ValueError, TypeError):
+            atbats = []
+        if not isinstance(atbats, list):
+            atbats = []
+        for ab_text in atbats:
+            if not isinstance(ab_text, str) or not ab_text.strip() or ab_text.strip() == "-":
+                continue
+            try:
+                parsed = insight_atbats_parser.parse_atbat(ab_text)
+            except Exception:  # noqa: BLE001 - parser failure must not block aggregation
+                continue
+            if parsed.get("is_hr"):
+                line.HR += 1
+            elif parsed.get("result_class") == "hit":
+                bases = int(parsed.get("bases") or 0)
+                if bases == 1:
+                    line.H1 += 1
+                elif bases == 2:
+                    line.H2 += 1
+                elif bases == 3:
+                    line.H3 += 1
+            if parsed.get("is_walk") or parsed.get("result_class") == "walk":
+                line.BB += 1
+            if parsed.get("result_class") == "hbp":
+                line.HBP += 1
+            if parsed.get("result_class") == "sf":
+                line.SF += 1
+            if parsed.get("result_class") == "sac":
+                line.SH += 1
+            if parsed.get("is_strikeout"):
+                line.SO += 1
+    return line.coerce()
+
+
+def _aggregate_pitching_line(
+    conn: sqlite3.Connection,
+    player_canonical: str,
+    window_start: str,
+    window_end: str,
+) -> insight_advanced_metrics.PitchingLine:
+    """``pitching_logs`` から指定 player の ``PitchingLine`` を集計。
+
+    schema column → ``PitchingLine`` 名対応:
+      H_allowed → H, HR_allowed → HR, K → SO, IP/BB/HBP/ER/R/BF はそのまま。
+    ``IP`` は SQLite 上 REAL なので合算可能 (5.1 → 5.333 形式)。
+    """
+    rows = conn.execute(
+        "SELECT pl.IP, pl.H_allowed, pl.HR_allowed, pl.BB, pl.HBP, pl.K, pl.R, pl.ER, pl.BF "
+        "FROM pitching_logs pl "
+        "JOIN games g ON pl.game_id = g.game_id "
+        "WHERE pl.player_canonical = ? "
+        "AND g.game_date >= ? AND g.game_date <= ?",
+        (player_canonical, window_start, window_end),
+    ).fetchall()
+
+    line = insight_advanced_metrics.PitchingLine()
+    for row in rows:
+        line.IP += float(row[0] or 0.0)
+        line.H += int(row[1] or 0)
+        line.HR += int(row[2] or 0)
+        line.BB += int(row[3] or 0)
+        line.HBP += int(row[4] or 0)
+        line.SO += int(row[5] or 0)
+        line.R += int(row[6] or 0)
+        line.ER += int(row[7] or 0)
+        line.BF += int(row[8] or 0)
+    return line
+
+
+# 「lower-is-better」な投手指標 (rank 計算で reverse しない)
+# key は insight_advanced_metrics.all_pitcher_metrics() の返す dict key と一致させる
+_PITCHER_LOWER_IS_BETTER: frozenset[str] = frozenset({
+    "ERA", "WHIP", "FIP", "xFIP", "BB_per_9", "HR_per_9",
+})
+
+# 「higher-is-better」な投手指標 (打者 metric は全部 higher-is-better と扱う)
+_PITCHER_HIGHER_IS_BETTER: frozenset[str] = frozenset({
+    "K_per_9", "K_BB",
+})
+
+
+def compute_advanced_metric_snapshots(
+    conn: sqlite3.Connection,
+    *,
+    scope: str,
+    snapshot_date: str,
+    min_pa: int = 30,
+    min_ip: float = 10.0,
+) -> int:
+    """指定 ``scope`` (``season`` / ``last_7d`` / ``last_30d``) で全 active player の
+    advanced metrics を計算し、``advanced_metric_snapshots`` に
+    ``INSERT OR REPLACE``。
+
+    最小 sample 閾値 (打者: ``PA >= min_pa`` / 投手: ``IP >= min_ip``) で skip。
+    league_rank / league_total は同 scope 内 metric 別に sort して付与。
+    position_rank / position_total / extra_json は本 phase で NULL (Phase 2 で拡張)。
+    ``last_5_games`` は per-player scope のため本 function では未対応 (return 0)。
+    """
+    if scope == "last_5_games":
+        return 0
+
+    window_start, window_end = _scope_window(scope, snapshot_date)
+
+    # advanced_metric_snapshots schema は snapshot_id AUTOINCREMENT のみで
+    # (snapshot_date, scope, player_canonical, metric_name) に UNIQUE 制約がない。
+    # よって INSERT OR REPLACE では dedupe されない。同 (snapshot_date, scope) の
+    # 既存 row を先に DELETE してから insert することで idempotent を確保する。
+    conn.execute(
+        "DELETE FROM advanced_metric_snapshots WHERE snapshot_date = ? AND scope = ?",
+        (snapshot_date, scope),
+    )
+
+    player_rows = list(conn.execute(
+        "SELECT player_canonical, team_code FROM players "
+        "WHERE active = 1 AND team_code IS NOT NULL AND team_code != 'unknown'"
+    ))
+
+    # {metric_name: {player_canonical: (value, sample_size, team_code)}}
+    batter_metrics_by_name: dict[str, dict[str, tuple[float, int, str]]] = {}
+    pitcher_metrics_by_name: dict[str, dict[str, tuple[float, int, str]]] = {}
+
+    for player_row in player_rows:
+        canonical = str(player_row[0])
+        team_code = str(player_row[1] or "")
+        if not canonical or not team_code:
+            continue
+
+        # batting metrics (role に関係なく試行、PA 不足なら skip)
+        batting_line = _aggregate_batting_line(conn, canonical, window_start, window_end)
+        if batting_line.PA >= min_pa:
+            for metric_name, value in insight_advanced_metrics.all_batter_metrics(batting_line).items():
+                if value is None:
+                    continue
+                batter_metrics_by_name.setdefault(metric_name, {})[canonical] = (
+                    float(value), int(batting_line.PA), team_code,
+                )
+
+        # pitching metrics (role に関係なく試行、IP 不足なら skip)
+        pitching_line = _aggregate_pitching_line(conn, canonical, window_start, window_end)
+        if pitching_line.IP >= min_ip:
+            for metric_name, value in insight_advanced_metrics.all_pitcher_metrics(pitching_line).items():
+                if value is None:
+                    continue
+                pitcher_metrics_by_name.setdefault(metric_name, {})[canonical] = (
+                    float(value), max(1, int(pitching_line.IP)), team_code,
+                )
+
+    inserted = 0
+
+    # batter metrics: 全部 higher-is-better
+    for metric_name, player_map in batter_metrics_by_name.items():
+        sorted_players = sorted(player_map.items(), key=lambda kv: kv[1][0], reverse=True)
+        league_total = len(sorted_players)
+        for rank, (canonical, (value, sample_size, team_code)) in enumerate(sorted_players, start=1):
+            cur = conn.execute(
+                "INSERT OR REPLACE INTO advanced_metric_snapshots "
+                "(snapshot_date, scope, player_canonical, team_code, position, "
+                "metric_name, metric_value, sample_size, league_rank, league_total, "
+                "position_rank, position_total, extra_json) "
+                "VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, NULL, NULL)",
+                (snapshot_date, scope, canonical, team_code,
+                 metric_name, value, sample_size, rank, league_total),
+            )
+            inserted += cur.rowcount
+
+    # pitcher metrics: lower-is-better と higher-is-better を分岐
+    for metric_name, player_map in pitcher_metrics_by_name.items():
+        higher_is_better = metric_name in _PITCHER_HIGHER_IS_BETTER
+        sorted_players = sorted(
+            player_map.items(),
+            key=lambda kv: kv[1][0],
+            reverse=higher_is_better,
+        )
+        league_total = len(sorted_players)
+        for rank, (canonical, (value, sample_size, team_code)) in enumerate(sorted_players, start=1):
+            cur = conn.execute(
+                "INSERT OR REPLACE INTO advanced_metric_snapshots "
+                "(snapshot_date, scope, player_canonical, team_code, position, "
+                "metric_name, metric_value, sample_size, league_rank, league_total, "
+                "position_rank, position_total, extra_json) "
+                "VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, NULL, NULL)",
+                (snapshot_date, scope, canonical, team_code,
+                 metric_name, value, sample_size, rank, league_total),
+            )
+            inserted += cur.rowcount
+
+    conn.commit()
+    return inserted
 
 
 def open_db(db_path: Path = DEFAULT_DB_PATH, schema_path: Path = DEFAULT_SCHEMA) -> sqlite3.Connection:

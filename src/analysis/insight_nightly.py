@@ -251,6 +251,23 @@ def run_nightly(
             insight_defense_proxy.rebuild_defense_for_game(conn, game_id=game_id)
         except Exception:  # noqa: BLE001
             pass
+
+        # 343-INSIGHT-007 backfill: teams / players / advanced_metric_snapshots。
+        # defense_proxy と同 best-effort pattern、いずれの失敗も pipeline は止めない。
+        try:
+            insight_etl.seed_teams(conn)
+            insight_etl.seed_players_from_logs(conn)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            today_iso = dt.date.today().isoformat()
+            for snapshot_scope in ("last_7d", "last_30d", "season"):
+                insight_etl.compute_advanced_metric_snapshots(
+                    conn, scope=snapshot_scope, snapshot_date=today_iso,
+                )
+        except Exception:  # noqa: BLE001
+            pass
+
         conn.commit()
 
         # Step 4 — multi-game + lineup detectors against full history.

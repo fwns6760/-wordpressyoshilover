@@ -8,15 +8,43 @@ Phase B.5-a では social_news 記事の source_url をそのまま返すだけ�
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 
 _TWEET_URL_RE = re.compile(r"https?://(?:x|twitter)\.com/([^/]+)/status/", re.IGNORECASE)
-_NOTICE_TWEET_WINDOW_HOURS = 48
+# 2026-05-14 PM tightened: was 48h; baseball relevance ~24h. Pre-game-day
+# tweets beyond 24h are now rejected outright.
+_NOTICE_TWEET_WINDOW_HOURS = 24
 _NPB_HANDLES = {"@npb"}
 _OFFICIAL_HANDLES = {"@tokyogiants", "@yomiuri_giants"}
 _MEDIA_HANDLES = {"@hochi_giants", "@sportshochi", "@hochi_baseball", "@sponichiyakyu", "@sanspo_giants", "@nikkansports"}
+
+# 2026-05-14 PM: event keyword match + game-time step bonus tuning so the
+# pool ranks tweets that share the article's specific event (HR / サヨナラ /
+# 完投 等) and that fired within the actual real-time reaction window.
+
+# Event tokens scanned in BOTH article title (or text) AND candidate text.
+# A shared token grants ``_EVENT_KEYWORD_BONUS`` once (only one shared event
+# is rewarded — prevents double-stacking when both tokens appear).
+_EVENT_TOKENS: tuple[str, ...] = (
+    "サヨナラ", "逆転", "ホームラン", "本塁打", "ＨＲ", "HR", "弾",
+    "決勝打", "決勝", "先制", "猛打賞", "完封", "完投", "完投勝利",
+    "セーブ", "好投", "好救援", "ノーヒッター", "完投負け", "登板",
+    "初安打", "初打席", "初登板", "初勝利", "初本塁打", "1号", "２号",
+    "勝利投手", "セーブ失敗",
+)
+_EVENT_KEYWORD_BONUS = 20
+_TIME_STEP_BONUS = 30
+# Article publish in JST hours 17:00–23:59 → game / immediate-post-game zone.
+# Inside this zone, fan reactions fire within ~3h of the article. Outside
+# (morning roundup / next-day retrospective at 00:00–16:59 JST), relevant
+# tweets can be up to ~10h older (= previous evening's game).
+_GAME_TIME_HOUR_START_JST = 17
+_GAME_TIME_HOUR_END_JST = 23
+_GAME_TIME_STEP_DELTA_HOURS = 3
+_NON_GAME_TIME_STEP_DELTA_HOURS = 10
+_JST = timezone(timedelta(hours=9))
 
 
 def _normalize_name(value: str) -> str:
@@ -90,6 +118,52 @@ def _candidate_priority(route: str, source_class: str) -> int:
 
 def _match_alias(candidate_text: str, aliases: list[str]) -> str:
     return next((alias for alias in aliases if alias and alias in candidate_text), "")
+
+
+def _shared_event_token(article_text: str, candidate_text: str) -> str:
+    """Return the first ``_EVENT_TOKENS`` element appearing in BOTH the
+    article text and the candidate text, else ``""``.
+
+    Used to award ``_EVENT_KEYWORD_BONUS`` exactly once per pair (no
+    stacking even when multiple tokens overlap)."""
+    if not article_text or not candidate_text:
+        return ""
+    for token in _EVENT_TOKENS:
+        if token and token in article_text and token in candidate_text:
+            return token
+    return ""
+
+
+def _is_game_time_article(article_time: datetime | None) -> bool:
+    """Article published in JST 17:00–23:59 = game / immediate post-game
+    reaction window. Outside this zone (morning roundup, retrospective)
+    fans tweeted hours earlier, so a wider step-bonus delta applies."""
+    if article_time is None:
+        return False
+    jst_hour = article_time.astimezone(_JST).hour
+    return _GAME_TIME_HOUR_START_JST <= jst_hour <= _GAME_TIME_HOUR_END_JST
+
+
+def _time_step_bonus(
+    article_time: datetime | None,
+    candidate_time: datetime | None,
+    delta_hours: float,
+) -> int:
+    """Step bonus added on top of the linear ``time_score``. Returns
+    ``_TIME_STEP_BONUS`` when the article-to-candidate delta is within the
+    realtime reaction tier for that article's publish time, else 0.
+
+    - Game-time article (JST 17–23): tier = ±3h
+    - Other (morning / retrospective): tier = ±10h
+    """
+    if article_time is None or candidate_time is None:
+        return 0
+    threshold = (
+        _GAME_TIME_STEP_DELTA_HOURS
+        if _is_game_time_article(article_time)
+        else _NON_GAME_TIME_STEP_DELTA_HOURS
+    )
+    return _TIME_STEP_BONUS if delta_hours <= threshold else 0
 
 
 def _build_matched_quote(
@@ -399,6 +473,14 @@ def _rank_pool_candidates(
     notice_type: str = "",
 ) -> list[dict[str, str]]:
     article_time = _parse_datetime(entry.get("created_at"))
+    # Article-side text used for event keyword overlap detection (B).
+    # Falls back through fields likely to carry the headline event.
+    article_event_text = _normalize_name(
+        " ".join(
+            str(entry.get(field) or "")
+            for field in ("title", "summary", "notice_type", "story_kind")
+        )
+    )
     ranked_quotes: list[dict[str, str]] = []
 
     for candidate in media_quote_pool:
@@ -423,11 +505,13 @@ def _rank_pool_candidates(
             continue
 
         candidate_time = _parse_datetime(candidate.get("created_at"))
+        time_step = 0
         if article_time and candidate_time:
             delta_hours = abs((article_time - candidate_time).total_seconds()) / 3600.0
             if delta_hours > _NOTICE_TWEET_WINDOW_HOURS:
                 continue
             time_score = max(0, int(_NOTICE_TWEET_WINDOW_HOURS - delta_hours))
+            time_step = _time_step_bonus(article_time, candidate_time, delta_hours)
             match_reason = "composite"
         else:
             time_score = 0
@@ -437,6 +521,12 @@ def _rank_pool_candidates(
         if notice_type and notice_type in candidate_text:
             notice_bonus = 10
 
+        event_bonus = (
+            _EVENT_KEYWORD_BONUS
+            if _shared_event_token(article_event_text, candidate_text)
+            else 0
+        )
+
         ranked_quotes.append(
             _build_matched_quote(
                 candidate,
@@ -444,7 +534,12 @@ def _rank_pool_candidates(
                 section_label,
                 quote_type,
                 match_reason,
-                priority_score + 100 + time_score + notice_bonus,
+                priority_score
+                + 100
+                + time_score
+                + notice_bonus
+                + event_bonus
+                + time_step,
                 matched_alias,
             )
         )

@@ -242,6 +242,9 @@ def markdown_to_html(md: str) -> str:
 # ─── public API ─────────────────────────────────────────────────────────────
 
 
+_CENTRAL_TEAMS = frozenset({"g", "t", "s", "c", "db", "d"})
+
+
 def render_giants_centric_ranking(
     conn: sqlite3.Connection,
     *,
@@ -251,15 +254,25 @@ def render_giants_centric_ranking(
     top_n: int = 30,
     sample_window_label: Optional[str] = None,
 ) -> Optional[dict]:
-    """巨人中心 + 12 球団 ranking article を render。
+    """巨人中心 + セ・リーグ ranking article を render (user 指示「セとパ別」)。
 
     Returns: ``{title, body_html, body_md, suggested_tags, meta}`` or ``None``
-             (data 不在 / 巨人選手が top_n 圏外で focus 取れない時は None で skip)。
     """
-    rows = fetch_ranking_rows(
+    # セ・リーグ 6 球団のみで rank 再計算
+    rows_all = fetch_ranking_rows(
         conn, metric_name=metric_name, scope=scope,
-        snapshot_date=snapshot_date, top_n=top_n,
+        snapshot_date=snapshot_date, top_n=200,
     )
+    rows_central = [r for r in rows_all if (r.team_code or "") in _CENTRAL_TEAMS]
+    # rank 再付与
+    from src.analysis.insight_article_generator import RankRow
+    rows = []
+    for i, r in enumerate(rows_central[:top_n], start=1):
+        rows.append(RankRow(
+            player_canonical=r.player_canonical, team_code=r.team_code,
+            metric_value=r.metric_value, sample_size=r.sample_size,
+            rank=i, total=len(rows_central),
+        ))
     if not rows:
         return None
 
@@ -286,6 +299,8 @@ def render_giants_centric_ranking(
     # 表が目立つ感じ」)
     result = insight_article_generator.render_article(ctx, top_n=top_n)
     base_title = result["title"]
+    # insight_article_generator は「12 球団中」固定文言、セ・リーグ用に置換
+    base_title = base_title.replace("12 球団中", "セ・リーグ").replace("全 30 人中", "セ・リーグ")
     if not base_title.startswith("【"):
         base_title = f"【巨人データを見る】{base_title}"
 
@@ -349,7 +364,7 @@ def render_giants_centric_ranking(
 
     body_md = f"""# {base_title}
 
-## 12 球団 ranking({scope_label_text})
+## セ・リーグ ranking({scope_label_text})
 
 {table_md}
 
@@ -358,11 +373,11 @@ def render_giants_centric_ranking(
 | 項目 | 内容 |
 |---|---|
 | 選手 | **{focus_player}({focus_team})** / サンプル {focus_sample} |
-| 指標 | {metric_name} = **{focus_val}** / リーグ **{focus_rank} 位** |
+| 指標 | {metric_name} = **{focus_val}** / セ・リーグ **{focus_rank} 位** |
 | データ元 | NPB 公式 box score(https://npb.jp/) |
 | 期間 | 2026 シーズン(3/27〜)約 220 試合 |
 | 計算式 | {formula} |
-| 比較 | {scope_label_text} の 12 球団全選手 |
+| 比較 | {scope_label_text} の セ・リーグ 6 球団 内 全選手 |
 | 更新 | 毎日 5 回(02/07/12/17/21 JST) |
 | 生成 | rule-based(LLM 不使用) |
 """

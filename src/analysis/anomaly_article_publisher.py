@@ -43,6 +43,32 @@ DEFAULT_MAX_PER_RUN = int(
 
 # ─── ranking context helper (大城式の table を全 anomaly 記事に共通化) ─────
 
+# リーグ別 team_code 分類 (user 指示「セ/パ で別 ranking」)
+CENTRAL_TEAMS = frozenset({"g", "t", "s", "c", "db", "d"})
+PACIFIC_TEAMS = frozenset({"h", "l", "m", "e", "b", "f"})
+
+
+def _league_for_team(team_code: Optional[str]) -> str:
+    """team_code から 'central' / 'pacific' / 'unknown' を返す."""
+    code = (team_code or "").strip()
+    if code in CENTRAL_TEAMS:
+        return "central"
+    if code in PACIFIC_TEAMS:
+        return "pacific"
+    return "unknown"
+
+
+def _league_label(league: str) -> str:
+    return {"central": "セ・リーグ", "pacific": "パ・リーグ"}.get(league, "リーグ")
+
+
+def _league_team_filter(league: str) -> list[str]:
+    if league == "central":
+        return list(CENTRAL_TEAMS)
+    if league == "pacific":
+        return list(PACIFIC_TEAMS)
+    return []
+
 
 def _fetch_ranking_context(
     conn: sqlite3.Connection,
@@ -51,10 +77,11 @@ def _fetch_ranking_context(
     scope: str,
     snapshot_date: Optional[str] = None,
     top_n: int = 10,
+    league: Optional[str] = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """ranking 上位 ``top_n`` + total league size を返す.
 
-    Returns: (rows[{rank, player, team, value, sample}], league_total)
+    ``league`` 指定時はそのリーグ内のみで rank 再計算 (db 取得後 sort)。
     """
     if snapshot_date is None:
         latest = conn.execute(
@@ -65,22 +92,35 @@ def _fetch_ranking_context(
         snapshot_date = latest[0] if latest else None
     if not snapshot_date:
         return ([], 0)
-    rows = conn.execute(
-        "SELECT player_canonical, team_code, metric_value, sample_size, "
-        "league_rank, league_total FROM advanced_metric_snapshots "
-        "WHERE metric_name = ? AND scope = ? AND snapshot_date = ? "
-        "AND league_rank IS NOT NULL "
-        "ORDER BY league_rank ASC LIMIT ?",
-        (metric_name, scope, snapshot_date, top_n),
-    ).fetchall()
-    result = [
-        {"rank": int(r[4]), "player": r[0], "team": r[1] or "?",
-         "value": float(r[2]) if r[2] is not None else None,
-         "sample": int(r[3] or 0), "total": int(r[5] or 0)}
-        for r in rows
-    ]
-    league_total = result[0]["total"] if result else 0
-    return (result, league_total)
+    teams = _league_team_filter(league or "")
+    if teams:
+        placeholders = ",".join("?" * len(teams))
+        rows = conn.execute(
+            f"SELECT player_canonical, team_code, metric_value, sample_size "
+            f"FROM advanced_metric_snapshots "
+            f"WHERE metric_name = ? AND scope = ? AND snapshot_date = ? "
+            f"AND team_code IN ({placeholders}) AND metric_value IS NOT NULL "
+            f"ORDER BY metric_value DESC",
+            (metric_name, scope, snapshot_date, *teams),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT player_canonical, team_code, metric_value, sample_size "
+            "FROM advanced_metric_snapshots "
+            "WHERE metric_name = ? AND scope = ? AND snapshot_date = ? "
+            "AND metric_value IS NOT NULL "
+            "ORDER BY metric_value DESC",
+            (metric_name, scope, snapshot_date),
+        ).fetchall()
+    total = len(rows)
+    result = []
+    for i, (player, team, value, sample) in enumerate(rows[:top_n], start=1):
+        result.append({
+            "rank": i, "player": player, "team": team or "?",
+            "value": float(value) if value is not None else None,
+            "sample": int(sample or 0), "total": total,
+        })
+    return (result, total)
 
 
 def _find_player_rank(
@@ -90,8 +130,9 @@ def _find_player_rank(
     scope: str,
     snapshot_date: Optional[str],
     player_canonical: str,
+    league: Optional[str] = None,
 ) -> Optional[dict[str, Any]]:
-    """指定 player の rank / value / sample を取得 (top_n 圏外でも全 league から)."""
+    """指定 player の rank / value / sample を league filtered で取得."""
     if snapshot_date is None:
         latest = conn.execute(
             "SELECT MAX(snapshot_date) FROM advanced_metric_snapshots "
@@ -101,22 +142,35 @@ def _find_player_rank(
         snapshot_date = latest[0] if latest else None
     if not snapshot_date:
         return None
-    row = conn.execute(
-        "SELECT player_canonical, team_code, metric_value, sample_size, "
-        "league_rank, league_total FROM advanced_metric_snapshots "
-        "WHERE metric_name = ? AND scope = ? AND snapshot_date = ? "
-        "AND player_canonical = ?",
-        (metric_name, scope, snapshot_date, player_canonical),
-    ).fetchone()
-    if not row:
-        return None
-    return {
-        "rank": int(row[4] or 0),
-        "team": row[1] or "?",
-        "value": float(row[2]) if row[2] is not None else None,
-        "sample": int(row[3] or 0),
-        "total": int(row[5] or 0),
-    }
+    teams = _league_team_filter(league or "")
+    if teams:
+        placeholders = ",".join("?" * len(teams))
+        rows = conn.execute(
+            f"SELECT player_canonical, team_code, metric_value, sample_size "
+            f"FROM advanced_metric_snapshots "
+            f"WHERE metric_name = ? AND scope = ? AND snapshot_date = ? "
+            f"AND team_code IN ({placeholders}) AND metric_value IS NOT NULL "
+            f"ORDER BY metric_value DESC",
+            (metric_name, scope, snapshot_date, *teams),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT player_canonical, team_code, metric_value, sample_size "
+            "FROM advanced_metric_snapshots "
+            "WHERE metric_name = ? AND scope = ? AND snapshot_date = ? "
+            "AND metric_value IS NOT NULL "
+            "ORDER BY metric_value DESC",
+            (metric_name, scope, snapshot_date),
+        ).fetchall()
+    total = len(rows)
+    for i, (p, t, v, s) in enumerate(rows, start=1):
+        if p == player_canonical:
+            return {
+                "rank": i, "team": t or "?",
+                "value": float(v) if v is not None else None,
+                "sample": int(s or 0), "total": total,
+            }
+    return None
 
 
 def _render_ranking_table_md(
@@ -239,6 +293,7 @@ def _render_unified_article(
     title_template: str,
     why_notable_text: str,
     extra_note: Optional[str] = None,
+    simple_explanation: Optional[str] = None,
 ) -> dict[str, str]:
     """全 anomaly 記事の統一形式 (大城式 ranking 表 + 平易な日本語).
 
@@ -249,17 +304,19 @@ def _render_unified_article(
     - 補足: metric の意味 (1 行)
     """
     team = _team_label(team_code)
+    league = _league_for_team(team_code)
+    league_label = _league_label(league)
     scope_label = {"last_7d": "直近 7 日", "last_30d": "直近 30 日", "season": "シーズン累計"}.get(scope, scope)
     metric_label = _human_metric_label(metric_name)
     metric_explain = _human_metric_explain(metric_name)
 
-    # ranking context fetch
+    # ranking context fetch (league filter: セ vs パ 別 ranking)
     top_rows, league_total = _fetch_ranking_context(
-        conn, metric_name=metric_name, scope=scope, top_n=10,
+        conn, metric_name=metric_name, scope=scope, top_n=10, league=league,
     )
     player_rank_info = _find_player_rank(
         conn, metric_name=metric_name, scope=scope,
-        snapshot_date=None, player_canonical=player,
+        snapshot_date=None, player_canonical=player, league=league,
     )
 
     value_str = "-"
@@ -277,6 +334,7 @@ def _render_unified_article(
     title = title_template.format(
         player=player, team=team, metric=metric_label,
         value=value_str, rank=rank_str, scope=scope_label,
+        league=league_label,
     )
 
     ranking_table = _render_ranking_table_md(
@@ -285,9 +343,17 @@ def _render_unified_article(
     )
 
     sample_str = str(player_rank_info['sample']) if player_rank_info else '-'
+    simple_line = simple_explanation or why_notable_text or ""
+    # 1 文目だけに truncate (素人向け 1-2 line max)
+    simple_line = simple_line.split("。")[0] + ("。" if simple_line else "")
+
     body_md = f"""# {title}
 
-## 12 球団 ranking({scope_label})
+## ひとこと
+
+{simple_line}
+
+## {league_label} ranking({scope_label})
 
 {ranking_table}
 
@@ -296,11 +362,11 @@ def _render_unified_article(
 | 項目 | 内容 |
 |---|---|
 | 選手 | **{player}({team})** / サンプル {sample_str} |
-| 指標 | {metric_label} = **{value_str}** / リーグ **{rank_str} 位** |
+| 指標 | {metric_label} = **{value_str}** / {league_label} **{rank_str} 位** |
 | データ元 | NPB 公式 box score(https://npb.jp/) |
 | 期間 | 2026 シーズン(3/27〜)約 220 試合 |
 | 計算式 | {_metric_formula(metric_name)} |
-| 比較 | {scope_label} の 12 球団全選手 |
+| 比較 | {scope_label} の {league_label} 内 全選手 |
 | 更新 | 毎日 5 回(02/07/12/17/21 JST) |
 | 生成 | rule-based(LLM 不使用) |
 """
@@ -322,13 +388,13 @@ def render_zscore_batter_article(
         except Exception:
             pass
     metric_label = _human_metric_label(metric_name)
-    title_template = f"【巨人データを見る】{{player}}、{{scope}}{metric_label} {{value}} でリーグ {{rank}} 位 — 12 球団平均超えの好調"
-    why_text = f"これはリーグ平均より明確に高い数字で、12 球団中の上位群に入っています。"
-    extra_note = f"一般メディアは打率や HR 数で評価しますが、ヨシラバーは {metric_label} のような『リーグ平均からの差』も見て評価します。"
+    title_template = f"【巨人データを見る】{{player}}、{{scope}}{metric_label} {{value}} で{{league}} {{rank}} 位"
+    why_text = f"リーグ平均より明確に高い数字で、12 球団中の上位群に入っています。"
+    simple = f"リーグ全体で見て上位の {metric_label} を記録、好調と言える数字です。"
     return _render_unified_article(
         conn, player=player, team_code=team_code, metric_name=metric_name,
         scope="last_30d", title_template=title_template,
-        why_notable_text=why_text, extra_note=extra_note,
+        why_notable_text=why_text, simple_explanation=simple,
     )
 
 
@@ -346,13 +412,13 @@ def render_zscore_pitcher_article(
         except Exception:
             pass
     metric_label = _human_metric_label(metric_name)
-    title_template = f"【巨人データを見る】{{player}}、{{scope}}{metric_label} {{value}} でリーグ {{rank}} 位 — 12 球団平均より良い投球"
-    why_text = f"これは投手として league 上位群の数字、平均的なローテ投手より明確に良い投球内容です。"
-    extra_note = f"投手の {metric_label} は数字が低いほど良い指標。一般メディアでは絶対値だけで評価されますが、リーグ全体での順位で見ると本人の実力がより明確になります。"
+    title_template = f"【巨人データを見る】{{player}}、{{scope}}{metric_label} {{value}} で{{league}} {{rank}} 位"
+    why_text = f"投手として league 上位群の数字、平均的なローテ投手より明確に良い投球内容です。"
+    simple = f"リーグ全体で見て上位の投手、好投が data で明確です。"
     return _render_unified_article(
         conn, player=player, team_code=team_code, metric_name=metric_name,
         scope="season", title_template=title_template,
-        why_notable_text=why_text, extra_note=extra_note,
+        why_notable_text=why_text, simple_explanation=simple,
     )
 
 
@@ -384,24 +450,21 @@ def render_babip_divergence_article(
             f"**+{diff:.3f}** 高い。これは『運に支えられた打率』の signal — 本来の実力以上に "
             f"安打が出ている可能性があり、シーズン後半に打率が落ち着く(下がる)可能性。"
         )
-        notable_phrase = f"打率 {avg_str} は『運要素込み』の可能性、BABIP {babip_str} で平均値超え"
+        notable_phrase = f"打率 {avg_str} は運込み(BABIP {babip_str})"
+        simple = f"打率は高いですが、運要素が大きく作用している数字です。シーズン後半に下がる可能性あり。"
     else:
         why_text = (
             f"打率(AVG)と BABIP の差が **{diff:.3f}** で BABIP が低い。"
             f"運に逆らわれている状態で、本来の実力ならもっと打率が高いはず — 不調脱出の signal の可能性。"
         )
-        notable_phrase = f"打率 {avg_str} は不本意な低さ、BABIP {babip_str} で運悪の可能性"
+        notable_phrase = f"打率 {avg_str} は運悪の数字(BABIP {babip_str})"
+        simple = f"打率が低めですが運悪の要素が大きく、本来の実力はもっと上の可能性があります。"
 
-    title_template = f"【巨人データを見る】{{player}}、{notable_phrase} — 打率とBABIPの差で見る運要素"
-    extra_note = (
-        f"BABIP は long-run で league 平均 ~0.300 に近づく性質。直近のサンプル "
-        f"({baseline} / {current})で大きく振れていますが、シーズン進行で平均値に "
-        f"収束していくのが一般的です。"
-    )
+    title_template = f"【巨人データを見る】{{player}}、{notable_phrase}"
     return _render_unified_article(
         conn, player=player, team_code=team_code, metric_name="AVG",
         scope="last_30d", title_template=title_template,
-        why_notable_text=why_text, extra_note=extra_note,
+        why_notable_text=why_text, simple_explanation=simple,
     )
 
 
@@ -432,25 +495,22 @@ def render_fip_era_divergence_article(
             f"つまり ERA は守備や運に支えられた『表面値』で、本質的にはもっと悪い投球内容。"
             f"シーズン後半に ERA が悪化するリスクがあります。"
         )
-        notable_phrase = f"防御率 {era_str} は『運に支えられた数字』、本来は FIP {fip_str} 相当"
+        notable_phrase = f"防御率 {era_str} は運の数字(FIP {fip_str})"
+        simple = f"防御率は良く見えますが、本人の実力指標 FIP では中位レベル。今後悪化する可能性あり。"
     else:
         why_text = (
             f"防御率(ERA)が **{abs(diff):.3f}** 悪く出ているが、FIP(本人の実力指標)は良い。"
             f"つまり守備や運に逆らわれている状態で、本来の実力なら防御率はもっと良いはず。"
             f"今後 ERA が改善する可能性が高い投手です。"
         )
-        notable_phrase = f"防御率 {era_str} は運悪の数字、本来は FIP {fip_str} 相当の好調"
+        notable_phrase = f"防御率 {era_str} は運悪、本来 FIP {fip_str}"
+        simple = f"防御率は悪く見えますが、本人の実力指標 FIP では好調。今後改善する可能性あり。"
 
-    title_template = f"【巨人データを見る】{{player}}、{notable_phrase} — 防御率とFIPの差で見る本当の実力"
-    extra_note = (
-        f"FIP は本塁打 / 四球 / 三振から計算される投手本人の実力指標で、守備や打球運の影響を "
-        f"排除した数字。長期では FIP の方が ERA より本人の実力に近づきます。"
-        f"参考 — 該当 player: {baseline}、{current}。"
-    )
+    title_template = f"【巨人データを見る】{{player}}、{notable_phrase}"
     return _render_unified_article(
         conn, player=player, team_code=team_code, metric_name="ERA",
         scope="season", title_template=title_template,
-        why_notable_text=why_text, extra_note=extra_note,
+        why_notable_text=why_text, simple_explanation=simple,
     )
 
 
@@ -473,22 +533,14 @@ def render_giants_top_article(
             pass
     metric_label = _human_metric_label(metric_name)
 
-    pct_pretty = f"{pct*100:.1f}%"
-    title_template = f"【巨人データを見る】{{player}}、{metric_label} {{value}} でリーグ {{rank}} 位 — 12 球団上位 {pct_pretty} 圏内"
-    why_text = (
-        f"巨人選手がリーグ全体の上位 {pct_pretty} に入っているのは、"
-        f"data 上明確に好調を示すサイン。大手の試合速報では出てこない『全体での位置』軸です。"
-    )
-    extra_note = (
-        f"上位 30% 以内に位置する選手は、シーズン全体でも安定した上位群と見られます。"
-        f"複数 metric (OPS / wOBA / 守備指標等) を併読すると本質的な好調がさらに見えます。"
-    )
-    # giants_top は scope を current 由来 で推定 (season / last_30d)
+    title_template = f"【巨人データを見る】{{player}}、{metric_label} {{value}} で{{league}} {{rank}} 位"
+    why_text = f"巨人選手がリーグ上位に入っている好調を示すデータです。"
+    simple = f"巨人選手として、リーグ全体の上位に入っている好調な状態です。"
     scope = "last_30d" if metric_name in ("OPS", "AVG", "wOBA", "BABIP") else "season"
     return _render_unified_article(
         conn, player=player, team_code=team_code, metric_name=metric_name,
         scope=scope, title_template=title_template,
-        why_notable_text=why_text, extra_note=extra_note,
+        why_notable_text=why_text, simple_explanation=simple,
     )
 
 

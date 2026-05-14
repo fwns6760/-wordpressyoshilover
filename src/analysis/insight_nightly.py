@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import sqlite3
 import sys
 import uuid
@@ -440,6 +441,56 @@ def main(argv: Optional[list[str]] = None) -> int:
                     out_path=digest_target,
                 )
                 digest_path = str(digest_target)
+
+            # DATA-INSIGHT-continuous: anomaly detect + draft publish (Iteration B)
+            # 全 slug ETL 完了後に 1 回だけ実行、env flag で完全 disable 可能。
+            # 失敗しても pipeline 止めない (best-effort)。
+            anomaly_publish_summary = {"skipped": True, "reason": "default_disabled"}
+            ranking_publish_summary = {"skipped": True, "reason": "default_disabled"}
+            if os.environ.get("ENABLE_DATA_INSIGHT_AUTO_DRAFT", "0").strip() == "1":
+                try:
+                    from src.analysis import insight_anomaly_detector as anomaly_det
+                    from src.analysis import anomaly_article_publisher as anomaly_pub
+                    from src.analysis import ranking_article_publisher as ranking_pub
+                    from src import wp_client as wp_mod
+                    conn = insight_etl.open_db(
+                        db_path=Path(args.db),
+                        schema_path=insight_etl.DEFAULT_SCHEMA,
+                    )
+                    try:
+                        # 1. anomaly signal を detect (article_candidates に insert)
+                        try:
+                            anomaly_det.run_all_anomaly_detectors(conn)
+                        except Exception as exc:  # noqa: BLE001
+                            print(json.dumps({
+                                "warn": "anomaly_detect_failed",
+                                "error": f"{type(exc).__name__}:{exc}",
+                            }))
+                        # 2. WP draft publish (best-effort)
+                        try:
+                            wp = wp_mod.WPClient()
+                            anomaly_publish_summary = {
+                                "results": anomaly_pub.publish_anomaly_drafts(
+                                    conn, wp, max_per_run=3,
+                                ),
+                            }
+                            ranking_publish_summary = {
+                                "results": ranking_pub.publish_default_set(
+                                    conn, wp, max_per_run=1,
+                                ),
+                            }
+                        except Exception as exc:  # noqa: BLE001
+                            anomaly_publish_summary = {
+                                "skipped": True,
+                                "reason": f"publish_error:{type(exc).__name__}",
+                            }
+                    finally:
+                        conn.close()
+                except Exception as exc:  # noqa: BLE001
+                    anomaly_publish_summary = {
+                        "skipped": True,
+                        "reason": f"import_error:{type(exc).__name__}",
+                    }
             summary = {
                 "mode": "all_teams",
                 "game_date": target.isoformat(),

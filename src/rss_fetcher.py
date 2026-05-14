@@ -17953,6 +17953,31 @@ GIANTS_KEYWORDS = [
     "#GIANTS",
     "#巨人ファン",
 ]
+
+# 非元巨人 MLB 選手 (主役だと巨人 relevance 薄く媒体性質と合わない)。
+# user lock 2026-05-14: 大谷翔平の記事が「ジャイアンツ戦」context で entity gate を
+# 通過してしまうケースの skip 用 (memory: project_mlb_player_inclusion_policy)。
+NON_GIANTS_MLB_PRIMARY_SUBJECTS = (
+    "大谷翔平",
+    "山本由伸",
+    "ダルビッシュ",
+    "ダルビッシュ有",
+    "鈴木誠也",
+    "千賀滉大",
+    "藤浪晋太郎",
+    "前田健太",
+    "菊池雄星",
+    "今永昇太",
+    "佐々木朗希",
+    "吉田正尚",
+    "筒香嘉智",
+)
+
+# 元巨人 OB MLB 選手 allowlist (本人主役記事も OK)。
+EX_GIANTS_OB_MLB = (
+    "菅野智之",
+    "岡本和真",
+)
 GIANTS_TRANSFER_CONTEXT_MARKERS = (
     "FA",
     "トレード",
@@ -20586,6 +20611,30 @@ def _giants_roster_alias_index() -> tuple[dict, ...]:
                 }
             )
     return tuple(index)
+
+
+def _is_non_giants_mlb_primary_subject(title: str, summary: str) -> str:
+    """非元巨人 MLB 選手 (大谷翔平 等) が主役で、巨人 relevance が薄い記事を
+    検出して該当選手名を返す。skip 候補なら non-empty。
+
+    skip 回避条件 (いずれか):
+      1. 巨人 roster 現役選手が言及されている
+      2. EX_GIANTS_OB_MLB (菅野/岡本) が言及されている
+      3. NON_GIANTS_MLB_PRIMARY_SUBJECTS の hit 自体が無い
+
+    user lock 2026-05-14 (memory: project_mlb_player_inclusion_policy)
+    """
+    text = f"{title or ''} {summary or ''}"
+    matched = next(
+        (name for name in NON_GIANTS_MLB_PRIMARY_SUBJECTS if name in text), ""
+    )
+    if not matched:
+        return ""
+    if _matching_giants_roster_names(text):
+        return ""
+    if any(ob in text for ob in EX_GIANTS_OB_MLB):
+        return ""
+    return matched
 
 
 def _matching_giants_roster_names(text: str) -> list[str]:
@@ -23664,6 +23713,31 @@ def _main(args, logger):
                 )
                 skip_filter += 1
                 skip_reason_counts[no_entity_reason] += 1
+                continue
+
+            non_giants_mlb_subject = _is_non_giants_mlb_primary_subject(
+                entry_title_clean, entry_summary_clean
+            )
+            if non_giants_mlb_subject:
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "non_giants_mlb_primary_subject_skip",
+                            "subject": non_giants_mlb_subject,
+                            "title": entry_title_clean[:160],
+                            "post_url": post_url,
+                            "source_name": name,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                _append_skip_reason_sample(
+                    skip_reason_sample_titles,
+                    "non_giants_mlb_primary_subject",
+                    entry_title_clean or post_url,
+                )
+                skip_filter += 1
+                skip_reason_counts["non_giants_mlb_primary_subject"] += 1
                 continue
 
             if _should_skip_too_short_title(entry_title_clean):

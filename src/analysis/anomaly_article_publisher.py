@@ -287,7 +287,7 @@ def render_zscore_batter_article(
         except Exception:
             pass
     metric_label = _human_metric_label(metric_name)
-    title_template = f"【データで見る巨人】{{player}}、{{scope}}{metric_label} {{value}} でリーグ {{rank}} 位 — 平均超えの好調"
+    title_template = f"【巨人のデータ】{{player}}、{{scope}}{metric_label} {{value}} でリーグ {{rank}} 位 — 12 球団平均超えの好調"
     why_text = f"これはリーグ平均より明確に高い数字で、12 球団中の上位群に入っています。"
     extra_note = f"一般メディアは打率や HR 数で評価しますが、ヨシラバーは {metric_label} のような『リーグ平均からの差』も見て評価します。"
     return _render_unified_article(
@@ -311,7 +311,7 @@ def render_zscore_pitcher_article(
         except Exception:
             pass
     metric_label = _human_metric_label(metric_name)
-    title_template = f"【データで見る巨人】{{player}}、{{scope}}{metric_label} {{value}} でリーグ {{rank}} 位 — 平均より良い投球"
+    title_template = f"【巨人のデータ】{{player}}、{{scope}}{metric_label} {{value}} でリーグ {{rank}} 位 — 12 球団平均より良い投球"
     why_text = f"これは投手として league 上位群の数字、平均的なローテ投手より明確に良い投球内容です。"
     extra_note = f"投手の {metric_label} は数字が低いほど良い指標。一般メディアでは絶対値だけで評価されますが、リーグ全体での順位で見ると本人の実力がより明確になります。"
     return _render_unified_article(
@@ -332,21 +332,32 @@ def render_babip_divergence_article(
     current = candidate_row["current_value"]
     team_code = _player_team_code(conn, player) or "?"
 
+    # AVG / BABIP 数値抽出 (baseline_value = "AVG=0.358", current_value = "BABIP=0.420")
+    def _extract_value(text: str, key: str) -> str:
+        if not text:
+            return "-"
+        for part in text.split():
+            if part.startswith(f"{key}="):
+                return part.split("=", 1)[1]
+        return "-"
+    avg_str = _extract_value(baseline, "AVG")
+    babip_str = _extract_value(current, "BABIP")
+
     if diff > 0:
         why_text = (
             f"打率(AVG)と BABIP(打球が安打になる確率)を比べると、BABIP が "
             f"**+{diff:.3f}** 高い。これは『運に支えられた打率』の signal — 本来の実力以上に "
             f"安打が出ている可能性があり、シーズン後半に打率が落ち着く(下がる)可能性。"
         )
-        notable_phrase = f"打率は運要素も含む高さの可能性"
+        notable_phrase = f"打率 {avg_str} は『運要素込み』の可能性、BABIP {babip_str} で平均値超え"
     else:
         why_text = (
             f"打率(AVG)と BABIP の差が **{diff:.3f}** で BABIP が低い。"
             f"運に逆らわれている状態で、本来の実力ならもっと打率が高いはず — 不調脱出の signal の可能性。"
         )
-        notable_phrase = f"打率が不本意な低さ(運悪) — 本来の実力は更に上"
+        notable_phrase = f"打率 {avg_str} は不本意な低さ、BABIP {babip_str} で運悪の可能性"
 
-    title_template = f"【データで見る巨人】{{player}}、{notable_phrase} — 打率とBABIPの差を見る"
+    title_template = f"【巨人のデータ】{{player}}、{notable_phrase} — 打率とBABIPの差で見る運要素"
     extra_note = (
         f"BABIP は long-run で league 平均 ~0.300 に近づく性質。直近のサンプル "
         f"({baseline} / {current})で大きく振れていますが、シーズン進行で平均値に "
@@ -370,22 +381,32 @@ def render_fip_era_divergence_article(
     current = candidate_row["current_value"]
     team_code = _player_team_code(conn, player) or "?"
 
+    def _extract_value(text: str, key: str) -> str:
+        if not text:
+            return "-"
+        for part in text.split():
+            if part.startswith(f"{key}="):
+                return part.split("=", 1)[1]
+        return "-"
+    era_str = _extract_value(baseline, "ERA")
+    fip_str = _extract_value(current, "FIP")
+
     if diff > 0:
         why_text = (
             f"防御率(ERA)と FIP(投手本人の実力指標)を比べると、FIP が **+{diff:.3f}** 高い。"
             f"つまり ERA は守備や運に支えられた『表面値』で、本質的にはもっと悪い投球内容。"
             f"シーズン後半に ERA が悪化するリスクがあります。"
         )
-        notable_phrase = f"防御率は『運に支えられた数字』の可能性"
+        notable_phrase = f"防御率 {era_str} は『運に支えられた数字』、本来は FIP {fip_str} 相当"
     else:
         why_text = (
             f"防御率(ERA)が **{abs(diff):.3f}** 悪く出ているが、FIP(本人の実力指標)は良い。"
             f"つまり守備や運に逆らわれている状態で、本来の実力なら防御率はもっと良いはず。"
             f"今後 ERA が改善する可能性が高い投手です。"
         )
-        notable_phrase = f"防御率が運悪く悪化 — 本来の実力はもっと上"
+        notable_phrase = f"防御率 {era_str} は運悪の数字、本来は FIP {fip_str} 相当の好調"
 
-    title_template = f"【データで見る巨人】{{player}}、{notable_phrase} — 防御率とFIPの差"
+    title_template = f"【巨人のデータ】{{player}}、{notable_phrase} — 防御率とFIPの差で見る本当の実力"
     extra_note = (
         f"FIP は本塁打 / 四球 / 三振から計算される投手本人の実力指標で、守備や打球運の影響を "
         f"排除した数字。長期では FIP の方が ERA より本人の実力に近づきます。"
@@ -418,7 +439,7 @@ def render_giants_top_article(
     metric_label = _human_metric_label(metric_name)
 
     pct_pretty = f"{pct*100:.1f}%"
-    title_template = f"【データで見る巨人】{{player}}、{metric_label} {{value}} でリーグ {{rank}} 位 — 上位 {pct_pretty} 圏内"
+    title_template = f"【巨人のデータ】{{player}}、{metric_label} {{value}} でリーグ {{rank}} 位 — 12 球団上位 {pct_pretty} 圏内"
     why_text = (
         f"巨人選手がリーグ全体の上位 {pct_pretty} に入っているのは、"
         f"data 上明確に好調を示すサイン。大手の試合速報では出てこない『全体での位置』軸です。"

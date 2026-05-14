@@ -282,9 +282,13 @@ def render_giants_centric_ranking(
         sample_window_label=sample_window_label,
     )
     result = insight_article_generator.render_article(ctx, top_n=top_n)
+    # 「巨人のデータ」prefix 追加 (クリック率重視、user 指示)
+    base_title = result["title"]
+    if not base_title.startswith("【"):
+        base_title = f"【巨人のデータ】{base_title}"
     body_html = markdown_to_html(result["body_md"])
     return {
-        "title": result["title"],
+        "title": base_title,
         "body_md": result["body_md"],
         "body_html": body_html,
         "suggested_tags": result["suggested_tags"],

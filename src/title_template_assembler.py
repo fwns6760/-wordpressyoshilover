@@ -190,6 +190,47 @@ def _is_quote_subtype(subtype: str) -> bool:
     }
 
 
+# 335-QA Phase 2: 反応記事 (player A が player B を称賛 / 祝福 + 短引用 2 つ) を
+# source 内 literal で検出する pattern。yoshilover の H2 generator が
+# `AがBのfactをverb「q1」「q2」` 形式を出すケースを直接拾う。AI / LLM 一切なし。
+_REACTION_PATTERN_RE = re.compile(
+    r"([^\s「」]{2,8})が([^\s「」]{2,8})の([^を「」]{2,30})を"
+    r"(祝福|称賛|絶賛|賛辞|評価|喜び|反応|感心|驚き|喝采|歓喜|たたえ)"
+    r"「([^」]{2,15})」「([^」]{2,15})」"
+)
+
+
+def _assemble_pattern_R_reaction(
+    *,
+    source_title: str,
+    source_body: str,
+    summary: str,
+) -> str:
+    """Pattern R: 反応記事の literal extraction。
+
+    `[A]が[B]の[fact]を[verb]「[q1]」「[q2]」` 形式の literal substring を
+    source title / body / summary から正規表現で抽出して返す。
+    見つからなければ空文字 (caller は Pattern A 等に fall-through)。
+    """
+    for text in (source_title, source_body, summary):
+        text = _clean(text)
+        if not text:
+            continue
+        m = _REACTION_PATTERN_RE.search(text)
+        if not m:
+            continue
+        subject = m.group(1).strip()
+        target = m.group(2).strip()
+        fact = m.group(3).strip()
+        verb = m.group(4).strip()
+        q1 = m.group(5).strip().rstrip("。、")
+        q2 = m.group(6).strip().rstrip("。、")
+        if not (subject and target and fact and verb and q1 and q2):
+            continue
+        return f"{subject}が{target}の{fact}を{verb}「{q1}」「{q2}」"
+    return ""
+
+
 def _assemble_pattern_A(
     *,
     name: str,
@@ -525,14 +566,27 @@ def assemble_nomotoke_title(
             event_token=event_token,
         )
     elif _is_quote_subtype(subtype):
-        quote = _first_quote(existing_title, source_title, source_body, summary)
-        assembled = _assemble_pattern_A(
-            name=name,
-            role=role,
-            quote=quote,
-            is_manager=subtype == "manager_comment" or role == "監督",
-            is_coach=subtype == "coach_comment" or role == "コーチ",
+        # 335-QA Phase 2: 反応 pattern を先に試す。source 内に「AがBのfactを
+        # verb「q1」「q2」」 が literal で存在すれば、それをそのまま採用。
+        # 失敗時は通常 Pattern A に fall-through (旧挙動)。
+        reaction_assembled = _assemble_pattern_R_reaction(
+            source_title=source_title,
+            source_body=source_body,
+            summary=summary,
         )
+        if reaction_assembled:
+            assembled = reaction_assembled
+        else:
+            quote = _first_quote(
+                existing_title, source_title, source_body, summary
+            )
+            assembled = _assemble_pattern_A(
+                name=name,
+                role=role,
+                quote=quote,
+                is_manager=subtype == "manager_comment" or role == "監督",
+                is_coach=subtype == "coach_comment" or role == "コーチ",
+            )
     elif subtype == "manager":
         quote = _first_quote(existing_title, source_title, source_body, summary)
         assembled = _assemble_pattern_A(

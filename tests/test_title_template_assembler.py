@@ -325,6 +325,84 @@ class PatternMNoticeTests(unittest.TestCase):
         self.assertIsNone(result)
 
 
+class PatternRReactionTests(unittest.TestCase):
+    """335-QA Phase 2: 反応 pattern (AがBのfactをverb「q1」「q2」) を source から
+    literal extraction する pattern R。LLM / AI 一切なし、regex で source 内 literal
+    substring を直接拾う。"""
+
+    def test_reaction_pattern_from_source_body(self):
+        # 67146 reproduce: yoshilover H2 generator が出した literal を抽出
+        body = (
+            "岡本和真が坂本勇人の劇的通算３００号を祝福"
+            "「さすが」「エンターテイナー」 試合前特打のＢＧＭは竹内まりや"
+        )
+        result = assemble_nomotoke_title(
+            article_subtype="player_comment",
+            existing_title="岡本和真「エンターテイナー」",  # 旧 bad title
+            source_body=body,
+            player_name="岡本和真",
+            role="選手",
+        )
+        self.assertEqual(
+            result,
+            "岡本和真が坂本勇人の劇的通算３００号を祝福「さすが」「エンターテイナー」",
+        )
+
+    def test_reaction_pattern_from_source_title(self):
+        result = assemble_nomotoke_title(
+            article_subtype="player_comment",
+            existing_title="d",
+            source_title=(
+                "戸郷翔征が阿部監督の采配を称賛「感謝」「最高でした」"
+            ),
+            player_name="戸郷翔征",
+            role="投手",
+        )
+        self.assertIsNotNone(result)
+        self.assertIn("戸郷翔征が阿部監督の采配を称賛", result)
+        self.assertIn("「感謝」「最高でした」", result)
+
+    def test_no_reaction_pattern_falls_through_to_a(self):
+        # 反応 pattern が無いケースは Pattern A (player_comment) に fall-through
+        result = assemble_nomotoke_title(
+            article_subtype="player_comment",
+            existing_title="戸郷翔征 試合後コメント",
+            source_body="戸郷翔征選手「自分らしく投げるだけ」と前向きに語った。",
+            player_name="戸郷翔征",
+            role="投手",
+        )
+        # Pattern A 通常出力
+        self.assertEqual(result, "戸郷翔征「自分らしく投げるだけ」")
+
+    def test_reaction_pattern_alt_verbs(self):
+        # 称賛 / 絶賛 / 喝采 等 verb 列挙
+        for verb in ("称賛", "絶賛", "感心", "喝采"):
+            body = f"岡本が坂本の300号を{verb}「さすが」「すごい」"
+            result = assemble_nomotoke_title(
+                article_subtype="player_comment",
+                existing_title="d",
+                source_body=body,
+                player_name="岡本",
+                role="選手",
+            )
+            self.assertIsNotNone(result, msg=f"verb={verb}")
+            self.assertIn(verb, result)
+            self.assertIn("「さすが」「すごい」", result)
+
+    def test_reaction_requires_two_quotes(self):
+        # 短 quote 1 つだけだと Pattern R は match せず Pattern A fall-through
+        body = "岡本和真が坂本勇人の300号を祝福「さすが」と語った"
+        result = assemble_nomotoke_title(
+            article_subtype="player_comment",
+            existing_title="d",
+            source_body=body,
+            player_name="岡本和真",
+            role="選手",
+        )
+        # Pattern A になり「さすが」だけが quote として残る (旧挙動)
+        self.assertEqual(result, "岡本和真「さすが」")
+
+
 class FirstQuoteNaturalBreakTests(unittest.TestCase):
     """335-QA Phase 1: `_first_quote` の `…` truncation 廃止 + max_len 28→40。"""
 

@@ -127,7 +127,8 @@ YYYY-MM-DD HH:MM JST | event | 内容 | result
 2026-05-14 (作成時) | DESIGN_LOCKED | 本 work log Markdown 起票、user GO 待ち | doc-only
 2026-05-14 (GO) | START | user GO 受領、Phase 1a 着手 | baseline pytest 103/103 PASS (test_tag_page_scraper + test_rss_fetcher + test_player_voice_digest_clusterer + test_player_voice_digest_body_renderer)
 2026-05-14 | COMMIT_1_PLAN | OB roster JSON + requirements.txt + roster load helper + tests | scope 開始
-2026-05-14 | COMMIT_1_DONE | config/giants_ob_roster.json (31 OB) + requirements.txt (+youtube-transcript-api) + src/giants_ob_roster.py + tests/test_giants_ob_roster.py | pytest 13/13 + baseline 103+13=116/116 PASS、0 regression
+2026-05-14 | COMMIT_1_DONE | config/giants_ob_roster.json (31 OB) + requirements.txt (+youtube-transcript-api) + src/giants_ob_roster.py + tests/test_giants_ob_roster.py | pytest 13/13 + baseline 103+13=116/116 PASS、0 regression。commit 5fa899a push 済
+2026-05-14 | COMMIT_2_DONE | src/youtube_caption_fetcher.py (字幕 fetch wrapper、try/except 隔離) + tests/test_youtube_caption_fetcher.py | pytest 13/13 PASS、mock 経由 lib 動作 verify (lib インストール local 済 = `pip install --user --break-system-packages youtube-transcript-api`)
 ```
 
 ## 10. Regression Memo 欄

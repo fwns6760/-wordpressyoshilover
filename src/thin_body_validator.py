@@ -134,20 +134,31 @@ _NEWS_BANNER_RE = re.compile(
     r'</div>',
     re.IGNORECASE | re.DOTALL,
 )
+# Fan voice fallback block emitted by h3_normalizer._ensure_fan_voice_section
+# when an article has no organic fan voice section. The h3 + the
+# `関連ポストなし` placeholder paragraph are chrome — they should not
+# rescue an otherwise-thin body from the thin-body publish gate.
+_FAN_VOICE_FALLBACK_RE = re.compile(
+    r"<h3[^>]*>\s*💬\s*ファンの声(?:[^<]*)\s*</h3>\s*"
+    r"<p[^>]*>\s*関連ポストなし\s*</p>",
+    re.IGNORECASE | re.DOTALL,
+)
 _POSTGAME_SCORECARD_ONLY_MAX_TEXT_CHARS = 220
 
 
 def _strip_html_to_text(html: str) -> str:
-    """HTML タグ / script / comment / news-digest banner を除去して text content
-    だけ返す。
+    """HTML タグ / script / comment / news-digest banner / fan-voice
+    fallback block を除去して text content だけ返す。
 
-    純粋な可視文字数測定用。形態素解析等はしない。News digest banner は
-    chrome (source / kicker / title attribution) であり body content では
+    純粋な可視文字数測定用。形態素解析等はしない。News digest banner と
+    ``💬 ファンの声（Xより）`` + ``<p>関連ポストなし</p>`` の fallback は
+    chrome (出典 / 統一見出し / placeholder) であり body content では
     ないので、thin-body 判定の visible-char count からは除く。
     """
     if not html:
         return ""
     html = _NEWS_BANNER_RE.sub("", html)
+    html = _FAN_VOICE_FALLBACK_RE.sub("", html)
     html = _SCRIPT_RE.sub("", html)
     html = _HTML_COMMENT_RE.sub("", html)
     html = _TAG_RE.sub("", html)
@@ -204,9 +215,15 @@ def is_thin_body(body_html: str) -> ThinBodyResult:
     text = _strip_html_to_text(body_html)
     text_chars = len(text)
 
-    has_oembed = bool(_OEMBED_DIV_RE.search(body_html))
-    has_h3 = bool(_HAS_H3_RE.search(body_html))
-    has_text_p = bool(_HAS_TEXT_P_RE.search(body_html))
+    # Strip chrome (news banner + fan voice fallback h3) before checking
+    # body structure markers — those are publish-time decorations and must
+    # not rescue an otherwise-thin body from the thin-body gate.
+    body_for_structure = _FAN_VOICE_FALLBACK_RE.sub(
+        "", _NEWS_BANNER_RE.sub("", body_html)
+    )
+    has_oembed = bool(_OEMBED_DIV_RE.search(body_for_structure))
+    has_h3 = bool(_HAS_H3_RE.search(body_for_structure))
+    has_text_p = bool(_HAS_TEXT_P_RE.search(body_for_structure))
 
     # 2026-05-08 13:04 JST の 10 件 incident pattern を捕える。
     # X embed wrapper が body 全体で、本文側に H3 も text を含む <p> も無い時。

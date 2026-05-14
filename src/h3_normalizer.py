@@ -182,33 +182,55 @@ def normalize_h3_in_html(html_body: str) -> str:
     if _fan_voice_h3_dedup_enabled():
         normalized = _dedupe_fan_voice_h3(normalized)
     if _fan_voice_empty_drop_enabled():
-        normalized = _drop_empty_fan_voice_sections(normalized)
+        normalized = _replace_empty_fan_voice_with_fallback(normalized)
+    if _fan_voice_ensure_enabled():
+        normalized = _ensure_fan_voice_section(normalized)
     if _h3_title_dup_removal_enabled():
         normalized = _remove_title_duplicate_first_h3(normalized)
     return normalized
 
 
-def _drop_empty_fan_voice_sections(html_body: str) -> str:
-    """``💬 ファンの声`` (suffix 違い含む) h3 + 本文の section を、X embed
-    が無く visible body が ``_FAN_VOICE_EMPTY_TEXT_MAX`` chars 未満の場合に
-    section ごと削除する。
+def _ensure_fan_voice_section(html_body: str) -> str:
+    """body に ``💬 ファンの声`` h3 が無ければ ``<h3>💬 ファンの声（Xより）</h3>
+    <p>関連ポストなし</p>`` を追加する。挿入位置は ``🔗 出典記事`` の **前**、
+    出典記事 h3 が無ければ末尾。
 
-    Background
-    ----------
-    Gemini 生成の ``【投稿で出ていた内容】`` を normalize 経由で
-    ``💬 ファンの声（Xより）`` に変えた section に、本物の X embed が無く
-    Gemini paraphrase 1 文 (例: 「Xの投稿要点を短く整理します。」、
-    「投稿では『…』という表現も出ていました。」) しか入っていない post が
-    多発 (67152 / 67149 / 67126 / 67176 / 67179 等)。「ファンの声」掲示板
-    section として user 価値ゼロなので h3 ごと丸ごと取り除く。
+    既に fan voice h3 が存在する body には何もしない (idempotent)。
+    既存の出典記事 h3 を破壊せず、その前段に挿入する。
+    """
+    if not html_body:
+        return html_body
+    if _FAN_VOICE_BASE in html_body:
+        return html_body
+    fan_block = f"<h3>{_FAN_VOICE_LABEL}</h3>{_FAN_VOICE_FALLBACK_BODY}"
+    # Find 🔗 出典記事 h3 (canonical 12-unified) — insert before it.
+    src_re = re.compile(
+        r"<h3[^>]*>\s*🔗\s*出典記事\s*</h3>", re.IGNORECASE
+    )
+    src_match = src_re.search(html_body)
+    if src_match:
+        idx = src_match.start()
+        return html_body[:idx] + fan_block + html_body[idx:]
+    return html_body + fan_block
 
-    Drop 条件 (AND):
+
+def _replace_empty_fan_voice_with_fallback(html_body: str) -> str:
+    """``💬 ファンの声`` (suffix 違い含む) section の **本文だけ** を
+    ``<p>関連ポストなし</p>`` に置換する。h3 自体は canonical
+    ``💬 ファンの声（Xより）`` で残し、空 / Gemini filler だけだった section
+    を一貫した形に揃える。
+
+    旧仕様(2026-05-14 朝): h3 ごと丸ごと drop。
+    新仕様(2026-05-14 PM): user 指示「H3 は残して『関連ポストなし』と書く」
+    に従い、body のみ fallback に置換。
+
+    Replace 条件 (AND):
       - section が ``twitter-tweet`` blockquote を含まない
       - section の visible text length < ``_FAN_VOICE_EMPTY_TEXT_MAX``
 
-    Section 境界は ``_dedupe_fan_voice_h3`` と同じく次の ``<h3``、``<hr``、
-    または末尾まで。idempotent (drop 済 body には fan voice h3 が無いので
-    早期 return)。
+    Section 境界は次の ``<h3``、``<hr``、または末尾。Section h3 の label も
+    canonical (``_FAN_VOICE_LABEL``) に書き換える (旧 plain `💬 ファンの声`
+    を suffix 付きに統一)。idempotent。
     """
     if not html_body or _FAN_VOICE_BASE not in html_body:
         return html_body
@@ -217,7 +239,8 @@ def _drop_empty_fan_voice_sections(html_body: str) -> str:
     if not h3_iter:
         return html_body
 
-    drop_ranges: list[tuple[int, int]] = []
+    # 各 fan voice section について body 範囲と置換可否を計算、後ろから適用。
+    replacements: list[tuple[int, int, str]] = []  # (start, end, replacement_html)
     for i, m in enumerate(h3_iter):
         inner_text = _strip_h3_inner_to_text(m.group(2))
         if not inner_text.startswith(_FAN_VOICE_BASE):
@@ -231,19 +254,24 @@ def _drop_empty_fan_voice_sections(html_body: str) -> str:
         if "twitter-tweet" in section_html:
             continue
         visible = _TAG_RE.sub("", section_html).strip()
-        # collapse whitespace before length check
         visible = _WS_RE.sub(" ", visible)
         if len(visible) >= _FAN_VOICE_EMPTY_TEXT_MAX:
             continue
-        drop_ranges.append((m.start(), body_end))
+        # build the replacement: keep h3 with canonical label, replace body
+        # with fallback. h3 label is rewritten to _FAN_VOICE_LABEL so legacy
+        # plain / source-name variants converge on the canonical form.
+        canonical_h3 = f"<h3>{_FAN_VOICE_LABEL}</h3>"
+        replacements.append(
+            (m.start(), body_end, canonical_h3 + _FAN_VOICE_FALLBACK_BODY)
+        )
 
-    if not drop_ranges:
+    if not replacements:
         return html_body
 
-    drop_ranges.sort(key=lambda r: r[0], reverse=True)
+    replacements.sort(key=lambda r: r[0], reverse=True)
     result = html_body
-    for start, end in drop_ranges:
-        result = result[:start] + result[end:]
+    for start, end, repl in replacements:
+        result = result[:start] + repl + result[end:]
     return result
 
 
@@ -290,6 +318,15 @@ _FAN_VOICE_EMPTY_TEXT_MAX = 200
 def _fan_voice_empty_drop_enabled() -> bool:
     val = (os.getenv("ENABLE_FAN_VOICE_EMPTY_DROP") or "1").strip().lower()
     return val in _TRUE_VALUES
+
+
+def _fan_voice_ensure_enabled() -> bool:
+    """全 post に ``💬 ファンの声（Xより）`` h3 を保証する flag。default ON。"""
+    val = (os.getenv("ENABLE_FAN_VOICE_ENSURE") or "1").strip().lower()
+    return val in _TRUE_VALUES
+
+
+_FAN_VOICE_FALLBACK_BODY = "<p>関連ポストなし</p>"
 
 
 def _dedupe_fan_voice_h3(html_body: str) -> str:

@@ -88,6 +88,18 @@ class TestIdempotent(unittest.TestCase):
 
 
 class TestUnknownH3Preserved(unittest.TestCase):
+    """Unknown h3 はそのまま維持。``_ensure_fan_voice_section`` が動くと
+    末尾に fan voice fallback が付くため、テスト中はその flag を OFF にして
+    純粋な「unknown h3 維持」だけ検証する。"""
+
+    def setUp(self):
+        import os
+        os.environ["ENABLE_FAN_VOICE_ENSURE"] = "0"
+
+    def tearDown(self):
+        import os
+        os.environ.pop("ENABLE_FAN_VOICE_ENSURE", None)
+
     def test_unknown_h3_kept_as_is(self):
         body = "<h3>カスタム見出し テスト</h3>"
         result = normalize_h3_in_html(body)
@@ -317,10 +329,13 @@ class TestFanVoiceH3Dedup(unittest.TestCase):
             os.environ.pop("ENABLE_FAN_VOICE_H3_DEDUP", None)
 
 
-class TestFanVoiceEmptyDrop(unittest.TestCase):
-    """2026-05-14: filler `💬 ファンの声(Xより)` section without X embed
-    must be removed from the published body. Sections that DO contain
-    a `twitter-tweet` blockquote (= legitimate community section) survive."""
+class TestFanVoiceEmptyReplace(unittest.TestCase):
+    """2026-05-14 PM update: filler `💬 ファンの声` section without X embed
+    has its **body** replaced with `<p>関連ポストなし</p>` (the h3 itself
+    stays so every article carries a consistent community-section heading).
+    Sections that DO contain a `twitter-tweet` blockquote (= legitimate
+    community section) survive unchanged.
+    """
 
     def setUp(self):
         import os
@@ -338,30 +353,36 @@ class TestFanVoiceEmptyDrop(unittest.TestCase):
         result = normalize_h3_in_html(body)
         self.assertIn("💬 ファンの声（Xより）", result)
         self.assertIn("twitter-tweet", result)
+        self.assertNotIn("関連ポストなし", result)
 
-    def test_empty_section_dropped(self):
-        # Gemini paraphrase only, no twitter-tweet → section removed.
+    def test_empty_section_body_replaced_with_fallback(self):
+        # Gemini paraphrase only, no twitter-tweet → body replaced with
+        # `<p>関連ポストなし</p>` while h3 stays.
         body = (
             "<h3>💬 ファンの声（Xより）</h3>"
             "<p>投稿要点を短く整理します。</p>"
             "<h3>🔗 出典記事</h3><p>...</p>"
         )
         result = normalize_h3_in_html(body)
-        self.assertNotIn("💬 ファンの声", result)
+        self.assertIn("<h3>💬 ファンの声（Xより）</h3>", result)
+        self.assertIn("関連ポストなし", result)
         self.assertNotIn("投稿要点を短く整理します", result)
-        # 後段の出典 h3 は残る
         self.assertIn("🔗 出典記事", result)
 
-    def test_legacy_plain_label_filler_also_dropped(self):
-        # Backward-compat: a stray plain `💬 ファンの声` (no suffix) with
-        # no twitter is also treated as filler and dropped.
+    def test_legacy_plain_label_filler_rewritten_to_canonical(self):
+        # Backward-compat: a stray plain `💬 ファンの声` (no suffix) with no
+        # twitter is rewritten to the canonical `💬 ファンの声（Xより）`
+        # label and its body replaced with the fallback.
         body = (
             "<h3>💬 ファンの声</h3>"
             "<p>整理します。</p>"
         )
         result = normalize_h3_in_html(body)
-        self.assertNotIn("💬 ファンの声", result)
+        self.assertIn("<h3>💬 ファンの声（Xより）</h3>", result)
         self.assertNotIn("整理します", result)
+        self.assertIn("関連ポストなし", result)
+        # plain (no suffix) label must no longer appear standalone
+        self.assertNotIn("<h3>💬 ファンの声</h3>", result)
 
     def test_long_text_section_kept_even_without_twitter(self):
         # Section body >= threshold chars survives (real fan reaction text).
@@ -372,19 +393,27 @@ class TestFanVoiceEmptyDrop(unittest.TestCase):
         )
         result = normalize_h3_in_html(body)
         self.assertIn("💬 ファンの声（Xより）", result)
+        self.assertNotIn("関連ポストなし", result)
 
-    def test_empty_drop_disabled_when_flag_off(self):
+    def test_empty_replace_disabled_when_flag_off(self):
         import os
+        # When both empty-replace AND ensure are off, filler body stays
+        # untouched and no extra block is appended.
         body = (
             "<h3>💬 ファンの声（Xより）</h3>"
             "<p>filler</p>"
         )
         os.environ["ENABLE_FAN_VOICE_EMPTY_DROP"] = "0"
-        result = normalize_h3_in_html(body)
-        self.assertIn("💬 ファンの声（Xより）", result)
-        self.assertIn("filler", result)
+        os.environ["ENABLE_FAN_VOICE_ENSURE"] = "0"
+        try:
+            result = normalize_h3_in_html(body)
+            self.assertIn("💬 ファンの声（Xより）", result)
+            self.assertIn("filler", result)
+            self.assertNotIn("関連ポストなし", result)
+        finally:
+            os.environ.pop("ENABLE_FAN_VOICE_ENSURE", None)
 
-    def test_empty_drop_idempotent(self):
+    def test_empty_replace_idempotent(self):
         body = (
             "<h3>💬 ファンの声（Xより）</h3>"
             "<p>整理します。</p>"
@@ -393,6 +422,71 @@ class TestFanVoiceEmptyDrop(unittest.TestCase):
         once = normalize_h3_in_html(body)
         twice = normalize_h3_in_html(once)
         self.assertEqual(once, twice)
+
+
+class TestFanVoiceEnsure(unittest.TestCase):
+    """2026-05-14 PM: `_ensure_fan_voice_section` — every article must
+    carry a `💬 ファンの声（Xより）` h3. If the body has none, append one
+    with the `関連ポストなし` fallback (before `🔗 出典記事` if present,
+    else at end). Skip when fan voice h3 already exists (any variant)."""
+
+    def setUp(self):
+        import os
+        os.environ.pop("ENABLE_FAN_VOICE_ENSURE", None)
+
+    def tearDown(self):
+        import os
+        os.environ.pop("ENABLE_FAN_VOICE_ENSURE", None)
+
+    def test_ensure_appends_fallback_when_no_fan_voice_h3(self):
+        body = (
+            "<h3>📋 事実カード</h3><p>fact</p>"
+            "<h3>📅 次の注目</h3><p>next</p>"
+            "<h3>🔗 出典記事</h3><p>src</p>"
+        )
+        result = normalize_h3_in_html(body)
+        self.assertIn("<h3>💬 ファンの声（Xより）</h3>", result)
+        self.assertIn("関連ポストなし", result)
+        # Inserted BEFORE 🔗 出典記事
+        fan_pos = result.find("💬 ファンの声（Xより）")
+        src_pos = result.find("🔗 出典記事")
+        self.assertLess(fan_pos, src_pos)
+
+    def test_ensure_appends_at_end_when_no_source_h3(self):
+        body = "<h3>📋 事実カード</h3><p>fact</p>"
+        result = normalize_h3_in_html(body)
+        self.assertIn("<h3>💬 ファンの声（Xより）</h3>", result)
+        self.assertIn("関連ポストなし", result)
+        # Fan voice block appended after the existing 事実カード section
+        fact_pos = result.find("📋 事実カード")
+        fan_pos = result.find("💬 ファンの声（Xより）")
+        self.assertLess(fact_pos, fan_pos)
+
+    def test_ensure_skips_when_fan_voice_already_present(self):
+        body = (
+            "<h3>💬 ファンの声（Xより）</h3>"
+            '<blockquote class="twitter-tweet"><a>tweet</a></blockquote>'
+            "<h3>🔗 出典記事</h3><p>src</p>"
+        )
+        result = normalize_h3_in_html(body)
+        # exactly one fan voice h3 (no duplicate added)
+        self.assertEqual(result.count("💬 ファンの声（Xより）"), 1)
+        self.assertNotIn("関連ポストなし", result)
+        # X embed preserved
+        self.assertIn("twitter-tweet", result)
+
+    def test_ensure_idempotent(self):
+        body = "<h3>📋 事実カード</h3><p>fact</p><h3>🔗 出典記事</h3>"
+        once = normalize_h3_in_html(body)
+        twice = normalize_h3_in_html(once)
+        self.assertEqual(once, twice)
+
+    def test_ensure_disabled_when_flag_off(self):
+        import os
+        body = "<h3>📋 事実カード</h3>"
+        os.environ["ENABLE_FAN_VOICE_ENSURE"] = "0"
+        result = normalize_h3_in_html(body)
+        self.assertNotIn("💬 ファンの声", result)
 
 
 if __name__ == "__main__":

@@ -285,7 +285,7 @@ def render_giants_centric_ranking(
     # 「巨人のデータ」prefix 追加 (クリック率重視、user 指示)
     base_title = result["title"]
     if not base_title.startswith("【"):
-        base_title = f"【巨人のデータ】{base_title}"
+        base_title = f"【巨人を数字で読む】{base_title}"
     body_html = markdown_to_html(result["body_md"])
     return {
         "title": base_title,

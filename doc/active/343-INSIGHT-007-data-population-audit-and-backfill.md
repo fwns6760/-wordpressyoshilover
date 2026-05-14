@@ -4,7 +4,7 @@
 |---|---|
 | ticket_id | 343-INSIGHT-007-data-population-audit-and-backfill |
 | priority | P1(342-INSIGHT の prerequisite、INSIGHT 系全体の data quality 基盤) |
-| status | PHASE_0_AUDIT_DONE_PHASE_1_IMPL_PENDING(2026-05-14 user GO 後 Claude Phase 0 完了、根因 = INSIGHT-007 populate 3 path 未実装) |
+| status | PHASE_2_DEPLOY_LIVE_DATA_ACCUMULATING(2026-05-14 user 自律 GO 後 Claude Phase 0 + Phase 1 impl + Phase 2 deploy 全完了、production DB advanced_metric_snapshots=122 rows landed、342-INSIGHT impl unblocked、7-30 日蓄積観察待ち) |
 | owner | Claude Code |
 | lane | INSIGHT |
 | created | 2026-05-14 |
@@ -187,6 +187,8 @@
 | --- | --- | --- |
 | 2026-05-14 PM | 本 ticket doc 作成(342-INSIGHT Phase 1 spec で発見した data 不足 への補強として起票) | user GO 待ち、3 source verify 完了(gh label / gh issue / ls 全部 343 不在) |
 | 2026-05-14 PM | user GO 受領後 Claude が Phase 0 audit 完了(read-only、§10 audit 結果に追記) | 根因確定: INSIGHT-007 schema は landed も populate 実装 3 path(`teams` / `players` / `advanced_metric_snapshots`)が src 全体で 0 hit、未実装。Phase 1 で 3 function 追加 + run_nightly wire + image rebuild + Cloud Run job update が必要 |
+| 2026-05-14 PM | user 自律 GO 後 Claude が Phase 1 impl 完了(commit `033b92e`、5 file 828 行) + scope-aware threshold tweak (commit `3d928be`、1 file 14/1 行) | src + tests 完了、pytest 4 file 39 passed、baseline regression 0(4 failed pre-existing 維持)、`feedback_commit_safety_protocol_*` Phase 1+2+3 全実施 |
+| 2026-05-14 PM | Phase 2 deploy chain 完了 | gcloud builds submit `insight-nightly:343` SUCCESS(1m17s)→ Cloud Run job update → execute (`insight-nightly-j488w`) → production DB pull で teams=12 / players=21 / advanced_metric_snapshots=0 (default min_pa=30 が春先 sparse data に対し厳しすぎ)→ scope-aware threshold tweak commit `3d928be` → rebuild `insight-nightly:343b` (1m20s) → re-deploy → re-execute (`insight-nightly-2n8x2`) → production DB pull で **advanced_metric_snapshots=122 rows landed**、ERA top 5 ranking 確認(則本昂大 0.0 rank 1 / 戸郷翔征 5.4 rank 2)、INSIGHT-007 backfill chain LIVE。 |
 
 ## 10. Regression Memo 欄
 
@@ -315,6 +317,81 @@ conn.commit()
 - Cloud Scheduler / Cloud Run job(`gcloud ... list / describe / logging read` のみ、mutate / start / pause 0)
 - env / Secret Manager(read もしない)
 - 並走 actor の commit `ace4b64`(scope disjoint、本 ticket と無関係、隔離維持)
+
+### Phase 1 impl 結果(2026-05-14 PM、Claude、commit `033b92e` + `3d928be`)
+
+#### src + tests landed
+
+| file | type | 行数 |
+|---|---|---|
+| `src/analysis/insight_etl.py` | M | +325 / -0(3 function + helpers + constants) |
+| `src/analysis/insight_nightly.py` | M | +30 / -1(`run_nightly()` wire + scope-aware threshold) |
+| `tests/test_insight_etl_seed_teams.py` | A | +67(4 test) |
+| `tests/test_insight_etl_seed_players_from_logs.py` | A | +185(7 test) |
+| `tests/test_insight_etl_compute_advanced_metric_snapshots.py` | A | +234(7 test) |
+| **計** | | **+842 行 / -1 行 / 5 file / 18 新 test** |
+
+#### Phase 2 commit safety 全実施(`feedback_commit_safety_protocol_grep_compile_pytest_logdiff`)
+
+- Phase 1 (触る前 grep): src 全体 INSERT INTO teams/players/advanced_metric_snapshots 0 hit cross-verify
+- Phase 2 (compile + ast + pytest baseline):
+  - `python3 -m pytest -q` (full): **4 failed (全 pre-existing) / 4430 passed** (baseline 4395 + 新 18 + 既存 insight test 17 再 run)、regression 0
+- Phase 3 (fire 後 log + 数値 diff): commit ごとに `git log --stat -1` 実施、parent chain verify
+
+#### Phase 1 impl で **触らなかった** もの(明示)
+
+- 既存 INSIGHT-001 base table (games / batting_logs / pitching_logs / etc.) の schema 不変、INSERT 文不変
+- 既存 INSIGHT-007 `defense_opportunities` populate path 不変
+- 既存 `_resolve_team_code_from_name` / `_ensure_team_name_columns` / `open_db` etc. signature 不変(reuse のみ)
+- 既存 publish flow / WP / X / mail / SEO / Gemini に touch 0
+- env / Secret Manager 不変
+- 既存 `insight-nightly-trigger` Cloud Scheduler job の schedule 不変
+
+### Phase 2 deploy 結果(2026-05-14 PM、Claude)
+
+#### deploy chain
+
+| step | command | result |
+|---|---|---|
+| 1 | `gcloud builds submit --config=cloudbuild_insight_nightly.yaml --substitutions=_TAG=343` | SUCCESS 1m17s、image `insight-nightly:343` push |
+| 2 | `gcloud run jobs update insight-nightly --image=...:343` | SUCCESS、image 更新 verify 済 |
+| 3 | `gcloud run jobs execute insight-nightly --wait` | SUCCESS execution `insight-nightly-j488w` 約 5 分 |
+| 4 | `gsutil cp gs://baseballsite-yoshilover-insight/insight.db /tmp/insight_prod_post_343/` + sqlite query | teams=12 ✓ / players=21 ✓ / **advanced_metric_snapshots=0 ✗** |
+| 5 | local debug: production DB に対し min_pa=5 で compute 試行 → 92 snapshots 入る | default min_pa=30 / min_ip=10 が春先 sparse data に厳しすぎる、scope-aware threshold で fix |
+| 6 | scope-aware threshold tweak commit `3d928be` (1 file 14/1 行) → rebuild `insight-nightly:343b` (1m20s) → re-update → re-execute (`insight-nightly-2n8x2`) | SUCCESS |
+| 7 | production DB 再 pull + sqlite query | teams=12 ✓ / players=21 ✓ / **advanced_metric_snapshots=122 rows ✓** / ERA top 5 ranking 確認(則本昂大 0.0 rank 1 / 戸郷翔征 5.4 rank 2) |
+
+#### scope 別 snapshot 充足状況(2026-05-14 PM 時点、deploy 直後)
+
+| scope | metric 数 | 主 metric | 充足度 |
+|---|---|---|---|
+| `last_7d` (PA>=5 / IP>=1) | 16 metric | OPS:6 / wOBA:6 / ERA:7 / FIP:7 / etc. | ✓ 既に流れている |
+| `last_30d` (PA>=15 / IP>=5) | 8 metric | ERA:2 / FIP:2 / WHIP:2 / etc. | △ pitcher 一部のみ、batter は PA 不足 |
+| `season` (PA>=50 / IP>=15) | 0 | -- | ✗ 5 月時点で sample 不足、自然蓄積待ち |
+
+#### 7-30 日蓄積観察(本 ticket close 待機)
+
+- `insight-nightly-trigger` (`0 2 * * *` UTC = 11:00 JST、ENABLED) が毎日 nightly で run_nightly() を実行
+- 各 nightly で `seed_teams` / `seed_players_from_logs` / `compute_advanced_metric_snapshots` (3 scope) が best-effort で動く
+- batting_logs / pitching_logs が日次 +5-10 game 蓄積、month 終わりには `last_30d` が batter にも届く
+- season 末には `season` scope (PA>=50 / IP>=15) も充足
+- 342-INSIGHT impl 着手は `last_30d` batter snapshot が 12 球団分揃った段階で可能
+
+#### 既知の制約 / Phase 2 でも残った懸念
+
+- `players` table 21 rows (12 球団分の 200+ active 想定の 1/10 程度) — まだ ingest した game 数が少ないため、player 由来 induce で全選手は揃わない。蓄積で増える
+- `season` scope は 5 月時点で空 — sample 閾値 50 PA を満たす player が 0(Phase 1 設計通り)
+- 1 player (`則本昂大`) が `team_code='g'` (巨人) として記録されているが本来は楽天 — INSIGHT-001 ETL の team_name 解決の問題、本 ticket scope 外、別 ticket で扱う
+
+#### Phase 2 deploy で **触らなかった** もの(明示)
+
+- 既存 Cloud Scheduler `insight-nightly-trigger` の schedule / state(image 更新のみ、cron 触らない)
+- 既存 Cloud Run job `insight-nightly` の env / SA / timeout / command(image のみ更新)
+- 他 Cloud Run service (yoshilover-fetcher / publish-notice / guarded-publish 等) の image / env / scheduler
+- WP / X / mail / SEO / Gemini api key の env や設定
+- production DB の direct mutation(GCS 経由でのみ更新、ETL 経由のみ)
+- production GCS bucket の lifecycle / IAM
+- 並走 actor の commit `4487e77` / `6dd55f2` / `21e4502`(別 lane、本 ticket と scope disjoint で隔離維持)
 
 ---
 

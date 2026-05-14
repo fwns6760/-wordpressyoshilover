@@ -43,6 +43,53 @@ _WS_RE = re.compile(r"\s+")
 _QUOTE_RE = re.compile(r"[「『]([^」』]{2,60})[」』]")
 
 
+# 335-QA Phase 3 / Issue #8: 同一 axis 試合状態 fact 重複圧縮
+# 67169 例「逆転サヨナラ３ラン + ２試合連続のサヨナラ勝」型を 1 件に圧縮。
+# 数値 fact (通算\d+号) / HR 描写 (メモリアル弾) は別軸として共存可、touch しない。
+_SAYONARA_AXIS_RE = re.compile(
+    r"(?:\d+試合連続の?|[０-９]+試合連続の?)?(?:逆転)?サヨナラ"
+    r"(?:[3３]ラン|[2２]ラン|ホームラン|安打|打|勝ち?)?"
+)
+_KANSHU_AXIS_RE = re.compile(r"完封(?:勝ち|勝利|負け)?")
+_KANTO_AXIS_RE = re.compile(r"完投(?:勝利|勝ち|負け)?")
+
+_EVENT_AXIS_PATTERNS: tuple[tuple[str, "re.Pattern[str]"], ...] = (
+    ("sayonara", _SAYONARA_AXIS_RE),
+    ("kanshu", _KANSHU_AXIS_RE),
+    ("kanto", _KANTO_AXIS_RE),
+)
+
+_LEADING_PARTICLES_FOR_DROP = "がはをにでと"
+_TRAILING_PUNCT_FOR_DROP = "、。！!？?…"
+
+
+def compress_event_token_repetition(title: str) -> str:
+    """Same-axis 試合状態 fact が 2+ 出現したら、最初の 1 件を残し以降を drop。
+
+    対象 axis: サヨナラ / 完封 / 完投。数値 fact (通算\\d+号 等) や HR 描写
+    (メモリアル弾) は別 axis として共存可、touch しない。
+    forward-only、idempotent (1 回適用で完了)。
+    """
+    if not title:
+        return title
+    result = title
+    for _axis_name, pattern in _EVENT_AXIS_PATTERNS:
+        matches = list(pattern.finditer(result))
+        if len(matches) < 2:
+            continue
+        keep_start = matches[0].start()
+        for m in reversed(matches[1:]):
+            drop_start, drop_end = m.start(), m.end()
+            if drop_start <= keep_start < drop_end:
+                continue
+            if drop_start > 0 and result[drop_start - 1] in _LEADING_PARTICLES_FOR_DROP:
+                drop_start -= 1
+            while drop_end < len(result) and result[drop_end] in _TRAILING_PUNCT_FOR_DROP:
+                drop_end += 1
+            result = result[:drop_start] + result[drop_end:]
+    return result
+
+
 def _clean(text: str) -> str:
     if not text:
         return ""

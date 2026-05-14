@@ -21212,6 +21212,30 @@ def _apply_title_player_name_backfill(
         final_title = _trim_display_title(shaped_title)
         comparison_title = source_title
 
+    try:
+        from src.title_template_assembler import compress_event_token_repetition
+
+        compressed_title = compress_event_token_repetition(final_title)
+    except Exception:
+        compressed_title = final_title
+    if compressed_title and compressed_title != final_title:
+        if logger is not None:
+            try:
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "event_token_repetition_compressed",
+                            "source_url_hash": _hash_duplicate_guard_value(source_url),
+                            "before": final_title,
+                            "after": compressed_title,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+            except Exception:
+                pass
+        final_title = compressed_title
+
     return final_title, comparison_title
 
 

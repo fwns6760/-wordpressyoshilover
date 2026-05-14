@@ -121,16 +121,33 @@ _SCRIPT_RE = re.compile(
 _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
+# News digest gradient banner emitted at the top of every nomotoke card.
+# Banner is chrome (source / kicker / title attribution) — not body content.
+# Strip it before measuring text/html chars so it doesn't mask thin bodies.
+# The banner block is `<div class="nomotoke-news-banner" ...><div...><span...>
+# ...</span><span...>...</span></div><div...>{title}</div></div>` (3-level
+# fixed structure under our control).
+_NEWS_BANNER_RE = re.compile(
+    r'<div\s+class\s*=\s*["\']nomotoke-news-banner["\'][^>]*>'
+    r'<div[^>]*>(?:<span[^>]*>[^<]*</span>\s*)+</div>'
+    r'<div[^>]*>[^<]*</div>'
+    r'</div>',
+    re.IGNORECASE | re.DOTALL,
+)
 _POSTGAME_SCORECARD_ONLY_MAX_TEXT_CHARS = 220
 
 
 def _strip_html_to_text(html: str) -> str:
-    """HTML タグ / script / comment を除去して text content だけ返す。
+    """HTML タグ / script / comment / news-digest banner を除去して text content
+    だけ返す。
 
-    純粋な可視文字数測定用。形態素解析等はしない。
+    純粋な可視文字数測定用。形態素解析等はしない。News digest banner は
+    chrome (source / kicker / title attribution) であり body content では
+    ないので、thin-body 判定の visible-char count からは除く。
     """
     if not html:
         return ""
+    html = _NEWS_BANNER_RE.sub("", html)
     html = _SCRIPT_RE.sub("", html)
     html = _HTML_COMMENT_RE.sub("", html)
     html = _TAG_RE.sub("", html)

@@ -414,6 +414,67 @@ def _meta_block(date_label: str) -> str:
     return f'<p class="nomotoke-meta">{_esc(date_label)}</p>'
 
 
+_NEWS_DIGEST_KICKER_BY_CATEGORY: Dict[str, str] = {
+    _CATEGORY_GAME: "GIANTS GAME NOTE",
+    _CATEGORY_NOTICE: "GIANTS NEWS DIGEST",
+    _CATEGORY_BROADCAST: "GIANTS BROADCAST",
+    _CATEGORY_VIDEO: "GIANTS VIDEO",
+    _CATEGORY_PLAYER_STATS: "GIANTS PLAYER WATCH",
+    _CATEGORY_MANAGER_COMMENT: "GIANTS MANAGER NOTE",
+    _CATEGORY_PLAYER_COMMENT: "GIANTS PLAYER WATCH",
+    _CATEGORY_NEWS: "GIANTS NEWS DIGEST",
+}
+
+
+def _news_digest_banner_html(
+    *,
+    template_key: str,
+    title: str,
+    source_url: str,
+    source_label: Optional[str],
+) -> str:
+    """Render the GIANTS NEWS DIGEST gradient banner used at the top of every
+    nomotoke card body. Mirrors ``rss_fetcher.build_news_block`` emission so
+    the visual layer is identical across the X-passthrough and card paths.
+
+    Empty when ``title`` is missing (cards that skip publish anyway).
+    """
+    if not title:
+        return ""
+    safe_title = _esc(title)
+    label = (source_label or "").strip()
+    if not label:
+        label = _site_label_for_url(source_url) or ""
+        if not label and source_url:
+            try:
+                from urllib.parse import urlparse as _u
+
+                host = _u(source_url).netloc
+                label = host or "スポーツニュース"
+            except Exception:
+                label = "スポーツニュース"
+        if not label:
+            label = "スポーツニュース"
+    safe_source = _esc(label)
+    category = _TEMPLATE_CATEGORY.get(template_key, "")
+    kicker = _NEWS_DIGEST_KICKER_BY_CATEGORY.get(category, "GIANTS NEWS DIGEST")
+    return (
+        '<div class="nomotoke-news-banner" '
+        'style="background:linear-gradient(135deg,#001e62 0%,#e8272a 100%);'
+        'border-radius:10px;padding:18px 20px;margin:0 0 4px 0;">'
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
+        f'<span style="background:rgba(255,255,255,0.2);color:#fff;'
+        f'font-size:0.78em;font-weight:800;padding:4px 10px;'
+        f'border-radius:20px;letter-spacing:0.05em;">📰 {safe_source}</span>'
+        f'<span style="color:rgba(255,255,255,0.82);font-size:0.72em;'
+        f'font-weight:700;letter-spacing:0.08em;">⚾ {kicker}</span>'
+        '</div>'
+        f'<div style="color:#fff;font-size:1.1em;font-weight:900;'
+        f'line-height:1.4;">{safe_title}</div>'
+        '</div>'
+    )
+
+
 def _source_block(source_url: str, source_label: Optional[str] = None) -> str:
     """Render the source block. Empty string when no safe source_url.
 
@@ -491,6 +552,14 @@ def _result_payload(
 ) -> Dict[str, Any]:
     """Assemble the full content_html and final result dict."""
     parts: List[str] = []
+    banner = _news_digest_banner_html(
+        template_key=template_key,
+        title=title,
+        source_url=source_url,
+        source_label=source_label,
+    )
+    if banner:
+        parts.append(banner)
     meta = _meta_block(date_label)
     if meta:
         parts.append(meta)

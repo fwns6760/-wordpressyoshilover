@@ -885,11 +885,12 @@ class BodyOrderTests(unittest.TestCase):
         self.assert_order(
             out["content_html"],
             [
+                'class="nomotoke-news-banner"',
                 'class="nomotoke-meta"',
                 'class="nomotoke-source"',
                 "■ 2026年5月6日",
-                "打席結果",
-                "投球結果",
+                "📝 打席結果",
+                "⚾ 投球結果",
                 "随時更新します。",
                 'class="nomotoke-card-footer"',
             ],
@@ -2149,6 +2150,81 @@ class Phase2CLeadSanitizerTests(unittest.TestCase):
         self.assertNotIn("https://", visible)
         self.assertNotIn("http://", visible)
         self.assertNotIn("pbs.twimg.com", visible)
+
+
+class NewsDigestBannerTests(unittest.TestCase):
+    """Verify the gradient banner is emitted at the top of every card body
+    (parity with the rss_fetcher.build_news_block X-passthrough path).
+    """
+
+    BANNER_CLASS = 'class="nomotoke-news-banner"'
+    BANNER_GRADIENT = "background:linear-gradient(135deg,#001e62 0%,#e8272a 100%)"
+
+    def _assert_banner_at_top(self, content_html: str, expected_source: str, expected_kicker: str) -> None:
+        self.assertIn(self.BANNER_CLASS, content_html)
+        self.assertIn(self.BANNER_GRADIENT, content_html)
+        self.assertIn(f"📰 {expected_source}", content_html)
+        self.assertIn(f"⚾ {expected_kicker}", content_html)
+        banner_pos = content_html.find(self.BANNER_CLASS)
+        meta_pos = content_html.find('class="nomotoke-meta"')
+        source_pos = content_html.find('class="nomotoke-source"')
+        if meta_pos >= 0:
+            self.assertLess(banner_pos, meta_pos, "banner must precede meta")
+        if source_pos >= 0:
+            self.assertLess(banner_pos, source_pos, "banner must precede source line")
+
+    def test_postgame_card_emits_banner(self):
+        out = render_postgame_card(_full_postgame_data())
+        self._assert_banner_at_top(out["content_html"], "example.com", "GIANTS GAME NOTE")
+
+    def test_lineup_card_emits_banner(self):
+        out = render_lineup_card(_full_lineup_data())
+        self._assert_banner_at_top(out["content_html"], "example.com", "GIANTS GAME NOTE")
+
+    def test_live_at_bats_card_emits_banner(self):
+        out = render_live_at_bats_card(_full_live_at_bats_data())
+        self._assert_banner_at_top(out["content_html"], "example.com", "GIANTS GAME NOTE")
+
+    def test_pregame_pitcher_card_emits_banner(self):
+        out = render_pregame_pitcher_card(_full_pregame_pitcher_data())
+        self._assert_banner_at_top(out["content_html"], "example.com", "GIANTS GAME NOTE")
+
+    def test_official_notice_card_emits_banner(self):
+        out = render_official_notice_card(_full_official_notice_data())
+        self._assert_banner_at_top(out["content_html"], "example.com", "GIANTS NEWS DIGEST")
+
+    def test_video_card_emits_banner(self):
+        out = render_video_card(_full_video_data())
+        self._assert_banner_at_top(out["content_html"], "example.com", "GIANTS VIDEO")
+
+    def test_player_stats_card_emits_banner(self):
+        out = render_player_stats_card(_full_player_stats_data())
+        self._assert_banner_at_top(out["content_html"], "example.com", "GIANTS PLAYER WATCH")
+
+    def test_manager_comment_card_emits_banner(self):
+        out = render_manager_comment_card(_full_manager_comment_data())
+        # sponichi.* host hits the _PRIMARY_HOST_LABELS curated entry,
+        # so the fallback resolves to "スポーツニッポン" not the bare netloc.
+        self._assert_banner_at_top(out["content_html"], "スポーツニッポン", "GIANTS MANAGER NOTE")
+
+    def test_player_comment_card_emits_banner(self):
+        out = render_player_comment_card(_full_player_comment_data())
+        # Player comment fixture uses sponichi.example.com source url.
+        self.assertIn(self.BANNER_CLASS, out["content_html"])
+        self.assertIn("📰", out["content_html"])
+        self.assertIn("⚾ GIANTS PLAYER WATCH", out["content_html"])
+
+    def test_broadcast_card_emits_banner(self):
+        out = render_broadcast_info_card(_full_broadcast_data())
+        self._assert_banner_at_top(out["content_html"], "example.com", "GIANTS BROADCAST")
+
+    def test_banner_falls_back_to_host_label_when_source_label_missing(self):
+        data = _full_postgame_data()
+        data["source_label"] = ""
+        data["source_url"] = "https://example.com/game/123"
+        out = render_postgame_card(data)
+        self.assertIn(self.BANNER_CLASS, out["content_html"])
+        self.assertIn("📰", out["content_html"])
 
 
 if __name__ == "__main__":

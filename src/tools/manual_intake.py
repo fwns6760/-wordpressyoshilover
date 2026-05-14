@@ -1231,17 +1231,12 @@ def _try_render_via_nomotoke(
     # roster aside. When this block fires, the renderer-emitted
     # ``<aside class="nomotoke-roster">...`` is stripped from the
     # rendered body to avoid duplication.
+    # 2026-05-14 fix: template_key allowlist 撤去 — 該当選手 + stats が
+    # 揃った時だけ block emit する safe-empty 動作なので、全 template で
+    # 試行して名簿 hit 無し / stats 無し時は silent skip。
     scan_text = " ".join(s for s in (title, summary) if s)
     player_stats_block = ""
-    if (not article_style_layout) and scan_text and template_key in (
-        "nomotoke_card_short_news_url_v1",
-        "nomotoke_card_postgame_v1",
-        "nomotoke_card_manager_comment_v1",
-        "nomotoke_card_player_comment_v1",
-        "nomotoke_card_video_v1",
-        "nomotoke_card_pregame_pitcher_v1",
-        "nomotoke_card_official_notice_v1",
-    ):
+    if (not article_style_layout) and scan_text:
         player_stats_block = _build_player_stats_block(scan_text)
         if player_stats_block:
             extra_blocks.append(player_stats_block)
@@ -2347,20 +2342,78 @@ def _refresh_player_stats_cache() -> None:
     _PLAYER_STATS_CACHE["fetched_at"] = time.time()
 
 
+def _build_pitcher_name_set() -> set[str]:
+    """Return normalized names whose roster ``position`` says 投手.
+
+    Used by ``_get_player_stats_lookup`` to route same-name collisions
+    (a pitcher who also has a batting entry from a plate appearance)
+    to the pitching bucket so the rendered block matches the player's
+    actual role.
+    """
+    names: set[str] = set()
+    try:
+        from src.nomotoke_card_renderer import _load_giants_roster
+    except Exception:
+        return names
+    for entry in _load_giants_roster():
+        pos = (entry.get("position") or "").strip()
+        role = str(entry.get("role") or "").strip().lower()
+        if "投手" not in pos and role != "pitcher":
+            continue
+        candidates = [entry.get("name") or ""]
+        candidates.extend(entry.get("aliases") or [])
+        for raw in candidates:
+            normalized = (raw or "").replace(" ", "").replace("　", "").lstrip("*").strip()
+            if normalized:
+                names.add(normalized)
+    return names
+
+
+def _stats_key_is_pitcher(stats_key: str, pitcher_set: set[str]) -> bool:
+    """The stats bucket keys arrive in two flavours: bare ``戸郷翔征``
+    and ``*戸郷翔征`` (operator marker for 二軍/育成). Strip the marker
+    + whitespace before comparing against the roster-derived set."""
+    return (
+        (stats_key or "")
+        .replace(" ", "")
+        .replace("　", "")
+        .lstrip("*")
+        .strip()
+        in pitcher_set
+    )
+
+
 def _get_player_stats_lookup() -> dict[str, dict[str, Any]]:
-    """Return ``{normalized_name: {kind: 'batting'|'pitching', record: {...}}}``.
+    """Return ``{stats_bucket_key: {kind: 'batting'|'pitching', record: {...}}}``.
+
+    Routing rule (2026-05-14 fix): for any player whose roster
+    ``position`` is 投手, prefer the **pitching** bucket so the rendered
+    table shows ERA / W-L / K instead of accidental batting stats from
+    a one-off plate appearance.
 
     Lazy refetch every 30 minutes per Cloud Run instance.
     """
     now = time.time()
     if now - _PLAYER_STATS_CACHE.get("fetched_at", 0) > _PLAYER_STATS_TTL_SEC:
         _refresh_player_stats_cache()
+    batting = _PLAYER_STATS_CACHE.get("batting") or {}
+    pitching = _PLAYER_STATS_CACHE.get("pitching") or {}
+    pitcher_names = _build_pitcher_name_set()
+
     out: dict[str, dict[str, Any]] = {}
-    for kind in ("batting", "pitching"):
-        bucket = _PLAYER_STATS_CACHE.get(kind) or {}
-        for name, rec in bucket.items():
-            if name not in out:
-                out[name] = {"kind": kind, "record": rec}
+    all_keys = set(batting.keys()) | set(pitching.keys())
+    for key in all_keys:
+        prefer_pitching = _stats_key_is_pitcher(key, pitcher_names)
+        if prefer_pitching:
+            if key in pitching:
+                out[key] = {"kind": "pitching", "record": pitching[key]}
+            elif key in batting:
+                out[key] = {"kind": "batting", "record": batting[key]}
+        else:
+            if key in batting:
+                out[key] = {"kind": "batting", "record": batting[key]}
+            elif key in pitching:
+                out[key] = {"kind": "pitching", "record": pitching[key]}
     return out
 
 

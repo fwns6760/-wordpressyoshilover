@@ -4,13 +4,13 @@
 |---|---|
 | ticket_id | 342-INSIGHT-data-driven-ranking-auto-publish |
 | priority | P1(ヨシラバー独自 enrichment、INSIGHT 基盤の活用第一弾) |
-| status | PHASE_1_SPEC_DONE_PREREQUISITE_BLOCKED(2026-05-14 user GO 後 Claude Phase 1 spec 完成、ただし production DB data 不足で impl 着手 blocked) |
+| status | READY_FOR_PHASE_1_IMPL(2026-05-14 user GO 後 343-INSIGHT-007 backfill 完了で prerequisite 解消、巨人選手中心の初版 4 候補のうち A1 月次 OPS / E1 直近 hot/cold は data 揃い、user GO で impl 着手可能) |
 | owner | Claude Code |
 | lane | INSIGHT |
 | created | 2026-05-14 |
 | doc_path | doc/active/342-INSIGHT-data-driven-ranking-auto-publish.md |
-| ready_for | user 選択(option A/B/C、本 doc §10 Phase 1 spec 末尾「Phase 1 着手前 user GO 判断材料」)+ user GO → impl 着手 |
-| blocked_by | INSIGHT-007 nightly job が `teams` / `players` / `advanced_metric_snapshots` を populate していない(production GCS DB pull で実 verify)。data 蓄積完了後に 342 impl 着手可能 |
+| ready_for | user GO → Phase 1 impl 着手(初版 A1 月次 OPS ranking + E1 直近 hot/cold ranking 推奨、12 球団系は roster 拡張別 ticket 後) |
+| blocked_by | (343-INSIGHT-007 backfill 完了 commit `prefix unknown` で unblock 済)、ただし「12 球団 top 30」は player roster 偏りで別途解決必要(343 §10 既知制約) |
 | numbering_reserved | doc/README.md に追記予定 |
 
 ## 目的(B 案: 設計 + 初版 + 拡張可能 framework)
@@ -215,6 +215,7 @@ Phase 1 で 1-2 種、Phase 2 で残り or 別系統。
 | 2026-05-14 | 本 ticket doc 作成(B 案: 設計 + 初版 + 拡張 framework) | user GO 待ち |
 | 2026-05-14 PM | user GO 受領後 Claude が Phase 0 audit 完了(7 項目、read-only、§10 audit 結果に追記) | 4 項目 ✓ / 1 項目 △ / 2 項目 ✗、Phase 1 着手前に spec 精度上げ必要 |
 | 2026-05-14 PM | user 2 度目 GO 受領後 Claude が Phase 1 spec 精度上げ完了(4 follow-up: production DB pull / 新 subtype / wp_client.create_category / 月末 cron 戦略、read-only / doc-only、§10 末尾に追記) | spec 完成、ただし重大発見: production DB INSIGHT-007 table は schema 存在も data ほぼ空(advanced_metric_snapshots: 0 / players: 0 / teams: 0 / games: 11 行 2 日分)。342 impl は data 蓄積待ちで blocked。option A/B/C を user に提示 |
+| 2026-05-14 PM | 343-INSIGHT-007 chain LIVE + backfill 完了で prerequisite 解消 | 343 で teams=12 / players=39 / advanced_metric_snapshots=616 / season scope 充足 / `last_30d` batter 14 player + pitcher 18 player。342 status を `READY_FOR_PHASE_1_IMPL` に昇格、初版 A1 月次 OPS / E1 直近 hot/cold は data 揃い、user GO で impl 着手可能。「12 球団 top 30」は player roster 偏り(g=28、f/h/l=0)のため別 ticket 後 |
 
 ## 10. Regression Memo欄
 

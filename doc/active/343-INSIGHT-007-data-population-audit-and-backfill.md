@@ -4,7 +4,7 @@
 |---|---|
 | ticket_id | 343-INSIGHT-007-data-population-audit-and-backfill |
 | priority | P1(342-INSIGHT の prerequisite、INSIGHT 系全体の data quality 基盤) |
-| status | PHASE_2_DEPLOY_LIVE_DATA_ACCUMULATING(2026-05-14 user 自律 GO 後 Claude Phase 0 + Phase 1 impl + Phase 2 deploy 全完了、production DB advanced_metric_snapshots=122 rows landed、342-INSIGHT impl unblocked、7-30 日蓄積観察待ち) |
+| status | PHASE_3_BACKFILL_DONE_READY_FOR_CLOSE(2026-05-14 user GO 後 Claude が 2026 シーズン全試合 backfill (3/27-5/13、227 game) 完了、production DB games=227 / advanced_metric_snapshots=616 / season scope 充足、342-INSIGHT impl 着手 ready、本 ticket は close 候補) |
 | owner | Claude Code |
 | lane | INSIGHT |
 | created | 2026-05-14 |
@@ -189,6 +189,7 @@
 | 2026-05-14 PM | user GO 受領後 Claude が Phase 0 audit 完了(read-only、§10 audit 結果に追記) | 根因確定: INSIGHT-007 schema は landed も populate 実装 3 path(`teams` / `players` / `advanced_metric_snapshots`)が src 全体で 0 hit、未実装。Phase 1 で 3 function 追加 + run_nightly wire + image rebuild + Cloud Run job update が必要 |
 | 2026-05-14 PM | user 自律 GO 後 Claude が Phase 1 impl 完了(commit `033b92e`、5 file 828 行) + scope-aware threshold tweak (commit `3d928be`、1 file 14/1 行) | src + tests 完了、pytest 4 file 39 passed、baseline regression 0(4 failed pre-existing 維持)、`feedback_commit_safety_protocol_*` Phase 1+2+3 全実施 |
 | 2026-05-14 PM | Phase 2 deploy chain 完了 | gcloud builds submit `insight-nightly:343` SUCCESS(1m17s)→ Cloud Run job update → execute (`insight-nightly-j488w`) → production DB pull で teams=12 / players=21 / advanced_metric_snapshots=0 (default min_pa=30 が春先 sparse data に対し厳しすぎ)→ scope-aware threshold tweak commit `3d928be` → rebuild `insight-nightly:343b` (1m20s) → re-deploy → re-execute (`insight-nightly-2n8x2`) → production DB pull で **advanced_metric_snapshots=122 rows landed**、ERA top 5 ranking 確認(則本昂大 0.0 rank 1 / 戸郷翔征 5.4 rank 2)、INSIGHT-007 backfill chain LIVE。 |
+| 2026-05-14 PM | user GO 後 Claude が 2026 シーズン全試合 backfill 実行(`insight_nightly --auto --all-teams --date YYYY-MM-DD --live` を 3/20-5/13 の 55 日 loop) | NPB 開幕日 2026-03-27 確認、227 game ingested(空 14 日 / 失敗 8)、production DB push back (3.9 MB GCS upload)、再 pull で games 11→227、batting_logs 198→4086、pitching_logs 94→1839、players 21→39、advanced_metric_snapshots 122→616、**season scope 新規充足** (10 batter + 6 pitcher per metric)。top 5 OPS (last_30d): 大城卓三 0.93 / ダルベック 0.93 / 井上 0.80 / 平山 0.78 / 岸田 0.77。top 5 ERA (season): 赤星 1.72 / 井上 2.12 / 大竹 2.50 / 則本 2.70 / 高梨 2.79。342-INSIGHT impl 着手 ready。 |
 
 ## 10. Regression Memo 欄
 
@@ -392,6 +393,106 @@ conn.commit()
 - production DB の direct mutation(GCS 経由でのみ更新、ETL 経由のみ)
 - production GCS bucket の lifecycle / IAM
 - 並走 actor の commit `4487e77` / `6dd55f2` / `21e4502`(別 lane、本 ticket と scope disjoint で隔離維持)
+
+### Phase 3: 2026 シーズン全試合 backfill 結果(2026-05-14 PM、Claude、user GO 後)
+
+#### backfill 概要
+
+| 項目 | 値 |
+|---|---|
+| 期間 | 2026-03-20 〜 2026-05-13(55 日) |
+| 開幕日確認 | 2026-03-27(3/20-3/26 は no schedule、3/27 から 6 game/日 で開幕) |
+| 成功 game | **227** |
+| 失敗 game | 8(主に 試合中止 / fixture incomplete) |
+| 空日数 | 14(no schedule、月曜休 / 試合なし日) |
+| 実行時間 | 約 30 分(local Python loop、live HTTP fetch、`time.sleep(0.5)` rate limit) |
+| GCS upload size | 3.9 MB(352 KB → 3.9 MB) |
+| 並列 actor 影響 | 0(local /tmp 経由、production GCS は backfill 完了時に 1 回 push) |
+
+#### before / after row counts(production DB)
+
+| table | before (Phase 2 deploy 後) | after (backfill 後) | delta |
+|---|---|---|---|
+| `games` | 11 (5/12-5/13 のみ) | **227** (3/27-5/13) | **+216** |
+| `batting_logs` | 198 | **4086** | +3888 |
+| `pitching_logs` | 94 | **1839** | +1745 |
+| `players` | 21 | **39** | +18 |
+| `advanced_metric_snapshots` | 122 | **616** | +494 |
+| `defense_opportunities` | 163 | **3388** | +3225 |
+
+#### scope 別 snapshot 充足状況(backfill 後)
+
+| scope | metric 数 | batter player 数 | pitcher player 数 | 充足度 |
+|---|---|---|---|---|
+| `last_7d` (PA>=5 / IP>=1) | 17 metric | 11 player(AVG/OPS/wOBA 等) | 14 player(ERA/FIP 等) | ✓ 揃い |
+| `last_30d` (PA>=15 / IP>=5) | 17 metric | 14 player | 18 player | ✓ 揃い |
+| `season` (PA>=50 / IP>=15) | 17 metric | 10 player | 6 player | ✓ **新規充足** |
+
+**重要**: `season` scope が backfill により新規充足。これにより 342-INSIGHT で「年間 ranking 系」記事(月次 OPS、wOBA、FIP 等)が **即着手可能** な data 状態。
+
+#### sample ranking 確認(production DB)
+
+**top 5 OPS (last_30d)**:
+
+| rank | player | team | OPS | sample (PA) |
+|---|---|---|---|---|
+| 1 | 大城卓三 | g | 0.9313 | 57 |
+| 2 | ダルベック | g | 0.9289 | 91 |
+| 3 | 井上温大 | g | 0.8 | 16 |
+| 4 | 平山 功太 | g | 0.7823 | 51 |
+| 5 | 岸田 行倫 | g | 0.7708 | 34 |
+
+**top 5 ERA (season、IP>=15)**:
+
+| rank | player | team | ERA | sample (IP) |
+|---|---|---|---|---|
+| 1 | 赤星 優志 | g | 1.723 | 15 |
+| 2 | 井上温大 | g | 2.124 | 29 |
+| 3 | 大竹寛 | t | 2.5 | 36 |
+| 4 | 則本昂大 | g(誤、正は e 楽天) | 2.7 | 30 |
+| 5 | 高梨雄平 | g | 2.793 | 38 |
+
+#### 既知の制約 / Phase 3 で残った懸念
+
+- **team_code 誤マッピング**: 則本昂大(本来 e 楽天)が `g` 巨人 として記録されている。INSIGHT-001 ETL の `_resolve_team_code_from_name` の team_name 解決の問題、本 ticket scope 外、別 ticket(未起票)で対応必要
+- **player team 偏り**: g (巨人) 28 player、s/t/m 各 2 player、b/c/d/db/e 各 1 player、**f/h/l 0 player**(パリーグ 3 球団 inducer 失敗)。`config/giants_roster.json` の roster alias が巨人中心のため、他球団選手の `player_canonical` 解決失敗。342 で「12 球団 top 30」記事を出す際の制約、同上 別 ticket 必要
+- **失敗 game 8 件**: 主に試合中止 / fixture HTML incomplete。再 fetch しても回復しない可能性高、現状で OK
+
+#### 342-INSIGHT impl 着手判断(343 close 後)
+
+backfill 完了で 342 ticket §10 「Phase 1 着手前 user GO 判断材料」の **option A prerequisite が完了**:
+- `last_30d` batter snapshot: 14 player ✓ (12 球団分は揃わず巨人中心、ただし「巨人選手 OPS top 10」記事は十分)
+- `season` snapshot: 10 batter + 6 pitcher ✓ (年間 ranking 記事 OK)
+- 月初発火 trigger 設計 + extractor 拡張 spec + wp_client.create_category 追加 spec は 342 §10 で完成済
+
+342-INSIGHT 初版 4 候補のうち実装 ready:
+- ✓ A1 月次 巨人選手 OPS / wOBA / ISO ranking(巨人 14 batter 分 last_30d 揃い)
+- △ B2 守備指標 12 球団 rank(`defense_opportunities` 3388 行あるが UZR proxy 計算 path 別途必要)
+- △ B1 12 球団 OPS top 30(g 28 + 他球団少、cross-team 不足、roster 拡張後)
+- ✓ E1 直近 7 / 14 試合 hot/cold ranking(last_7d 11 player 揃い)
+
+#### Phase 3 で **触らなかった** もの(明示)
+
+- src 一切 touch なし(read-only execution、既存 `insight_nightly --auto --all-teams --date` 引数で run)
+- Cloud Run image / Cloud Run job / Cloud Scheduler の設定一切 touch なし
+- production GCS bucket は **insight.db のみ push** (既存 article_candidates.csv / digest/ には touch なし)
+- WP / X / mail / SEO / Gemini api key 一切 touch なし
+- 並走 actor の commit `e7a33bd`(336-QA digest、disjoint で衝突なし)
+
+### 343 ticket close 候補判断(2026-05-14 PM 時点)
+
+§目的 達成度:
+
+- ✓ INSIGHT-007 nightly job が `teams` / `players` / `advanced_metric_snapshots` を populate していない原因 = src 全体 INSERT 0 hit、Phase 1 で 3 function 追加 + run_nightly wire で解決
+- ✓ 不足 path を backfill 実装 = `seed_teams` / `seed_players_from_logs` / `compute_advanced_metric_snapshots` 全 implementation + production deploy LIVE
+- ✓ INSIGHT-007 系の data quality を本来の設計水準まで引き上げ = 227 game / 4086 batting_logs / 616 snapshot で `season` scope まで充足
+- ✓ 342-INSIGHT impl 着手 unblock = 巨人選手中心の ranking 記事は即実装 ready
+
+§残存課題(別 ticket で対応):
+- team_code 誤マッピング(INSIGHT-001 ETL `_resolve_team_code_from_name` 改善)
+- player roster 拡張(他 11 球団の active player induce 改善 or `config/giants_roster.json` 12 球団拡張版)
+
+これら 2 課題は 342-INSIGHT 初版実装の妨げにならない(巨人中心記事は data 揃い)、343 ticket は **close 候補**。close 判断は user GO で `doc/active/` → `doc/done/2026-05/` 移動 + status `CLOSED`。
 
 ---
 

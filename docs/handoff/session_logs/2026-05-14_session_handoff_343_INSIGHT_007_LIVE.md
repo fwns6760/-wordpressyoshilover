@@ -258,4 +258,83 @@ ERA top 5 (last_30d):
 
 ---
 
-(end of handoff)
+## 12. POST-BACKFILL 更新(2026-05-14 PM 同日、Claude、user GO 後)
+
+**§1 / §3 / §11 を上書きする最新値**(next session 読時はこちらを優先):
+
+### 12-A. 2026 シーズン全試合 backfill 完了
+
+| 項目 | 値 |
+|---|---|
+| 期間 | 2026-03-20 〜 2026-05-13(55 日 loop) |
+| NPB 開幕日確認 | **2026-03-27**(3/20-3/26 は no schedule、3/27 から 6 game/日) |
+| 成功 game | **227** |
+| 失敗 game | 8(主に試合中止 / fixture incomplete) |
+| 空日数 | 14 |
+| 実行時間 | 約 30 分(local Python loop、live HTTP fetch) |
+| GCS upload | 3.9 MB (insight.db、352 KB → 3.9 MB) |
+
+### 12-B. production DB final state(post-backfill)
+
+| table | post-deploy (§1) | **post-backfill (latest)** | delta |
+|---|---|---|---|
+| `games` | 11 | **227** (3/27-5/13) | +216 |
+| `batting_logs` | 198 | **4086** | +3888 |
+| `pitching_logs` | 94 | **1839** | +1745 |
+| `players` | 21 | **39** | +18 |
+| `advanced_metric_snapshots` | 122 | **616** | +494 |
+| `defense_opportunities` | 163 | **3388** | +3225 |
+
+### 12-C. scope 充足状況(post-backfill)
+
+| scope | metric 数 | batter | pitcher | 充足度 |
+|---|---|---|---|---|
+| `last_7d` | 17 | 11 player | 14 player | ✓ 揃い |
+| `last_30d` | 17 | 14 player | 18 player | ✓ 揃い |
+| `season` | 17 | 10 player | 6 player | ✓ **新規充足** |
+
+### 12-D. ticket status 更新(post-backfill)
+
+- **343-INSIGHT-007**: `PHASE_2_DEPLOY_LIVE_DATA_ACCUMULATING` → **`PHASE_3_BACKFILL_DONE_READY_FOR_CLOSE`**(close 候補)
+- **342-INSIGHT**: `PHASE_1_SPEC_DONE_PREREQUISITE_BLOCKED` → **`READY_FOR_PHASE_1_IMPL`**(初版 A1 月次 OPS / E1 直近 hot/cold は data 揃い、user GO で impl 着手可能)
+
+### 12-E. ranking sample(production DB、post-backfill)
+
+**top 5 OPS (last_30d、PA>=15)**:
+1. 大城卓三 (g) OPS=0.9313 PA=57
+2. ダルベック (g) OPS=0.9289 PA=91
+3. 井上温大 (g) OPS=0.8 PA=16
+4. 平山功太 (g) OPS=0.7823 PA=51
+5. 岸田行倫 (g) OPS=0.7708 PA=34
+
+**top 5 ERA (season、IP>=15)**:
+1. 赤星優志 (g) ERA=1.723 IP=15
+2. 井上温大 (g) ERA=2.124 IP=29
+3. 大竹寛 (t) ERA=2.5 IP=36
+4. 則本昂大 (g 誤、本来 e) ERA=2.7 IP=30
+5. 高梨雄平 (g) ERA=2.793 IP=38
+
+### 12-F. 既知制約(残存、別 ticket で対応)
+
+- **team_code 誤マッピング**: 則本昂大が g (本来 e 楽天)、INSIGHT-001 ETL `_resolve_team_code_from_name` 改善必要、343 scope 外
+- **player roster 偏り**: g=28、s/t/m=2、b/c/d/db/e=1、**f/h/l=0**(パリーグ 3 球団 inducer 失敗)。`config/giants_roster.json` の roster alias が巨人中心。「12 球団 top 30」記事には不足、別 ticket 必要
+
+### 12-G. 次 session の最初の動き(更新)
+
+- **Case A**(推奨): 343-INSIGHT-007 close + 342-INSIGHT Phase 1 impl 着手
+  - 343 を `doc/active/` → `doc/done/2026-05/` 移動 + status `CLOSED`
+  - 342 初版 A1 月次 OPS ranking 1 種類で Phase 1 impl 開始
+  - ranking_publisher module + extractor.infer_subtype 拡張 + wp_client.create_category 追加
+- **Case B**: team_code 誤マッピング + roster 拡張 別 ticket(344?) 起票後 342 着手
+- **Case C**: 別 task
+
+### 12-H. 本 backfill で production / src に touch しなかったもの
+
+- src 一切 touch なし(read-only execution、既存 `insight_nightly --auto --all-teams --date` 引数で run)
+- Cloud Run image / Cloud Scheduler / env / Secret Manager 一切 touch なし
+- production GCS bucket は **insight.db のみ push**(article_candidates.csv / digest/ には touch なし)
+- WP / X / mail / SEO / Gemini api key 一切 touch なし
+
+---
+
+(end of handoff、§12 追記完了)

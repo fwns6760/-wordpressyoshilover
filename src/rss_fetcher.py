@@ -20097,6 +20097,10 @@ def _aggregate_player_voice_digest_candidates(candidates: list[dict]) -> list[di
                     for o in cluster.officials
                 ],
                 "child_urls_consumed": children_urls,
+                # 336-QA Phase 3: 親候補処理時の raw_html から populate される
+                # (rss_fetcher の _article_raw_html 取得後、render 前)。
+                # ここでは clusterer の field を初期値として伝播のみ。
+                "hochi_raw_html_excerpt": cluster.hochi_raw_html_excerpt,
             }
         log.info(
             "player_voice_digest_cluster_detected game_id=%s player=%s "
@@ -25170,6 +25174,41 @@ def _main(args, logger):
                     wp,
                     logger,
                 )
+
+            # 336-QA Phase 3: 報知 parent + raw_html 取得済なら 600字 excerpt を
+            # payload.hochi_raw_html_excerpt に populate (render 前)。idempotent。
+            if (
+                item.get("subtype_hint") == "player_voice_digest"
+                and isinstance(item.get("digest_cluster_payload"), dict)
+                and item["digest_cluster_payload"].get("parent_family") == "hochi"
+                and not item["digest_cluster_payload"].get("hochi_raw_html_excerpt")
+                and _article_raw_html
+            ):
+                try:
+                    from src.source_article_body_extractor import (
+                        extract_article_body_excerpt,
+                    )
+                    _hochi_excerpt = extract_article_body_excerpt(
+                        _article_raw_html,
+                        source_url=post_url,
+                        max_chars=600,
+                        title=str(item.get("title") or ""),
+                    )
+                    if _hochi_excerpt:
+                        item["digest_cluster_payload"][
+                            "hochi_raw_html_excerpt"
+                        ] = _hochi_excerpt
+                        logger.info(
+                            "digest_hochi_excerpt_populated url=%s len=%d",
+                            post_url,
+                            len(_hochi_excerpt),
+                        )
+                except Exception as _exc:  # noqa: BLE001
+                    logger.warning(
+                        "digest_hochi_excerpt_failed err=%s url=%s",
+                        _exc,
+                        post_url,
+                    )
 
             # 334-QA Phase 3b: player_voice_digest subtype 検出時に body 全置換。
             # Phase 2c で item.subtype_hint + item.digest_cluster_payload が

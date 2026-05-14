@@ -138,6 +138,10 @@ class DigestCluster:
     event_token: str
     children: Sequence[DigestChild]
     officials: Sequence[DigestOfficial] = ()
+    # 336-QA Phase 1: 報知 raw_html から 600字 literal 抜粋。
+    # clusterer 自身は fetch しない (rss_fetcher が parent 処理時に raw_html を
+    # 取得して payload に populate する設計、Phase 3 配管参照)。
+    hochi_raw_html_excerpt: str = ""
 
     @property
     def source_families(self) -> frozenset[str]:
@@ -342,6 +346,11 @@ def _pick_parent(members: list[Mapping[str, Any]]) -> Optional[Mapping[str, Any]
         published_at = str(m.get("published_at") or m.get("published") or "")
         return (-body_len, trust, published_at)
 
+    hochi_members = [
+        m for m in digest_members if _family_for_candidate(m) == "hochi"
+    ]
+    if hochi_members:
+        return sorted(hochi_members, key=sort_key)[0]
     return sorted(digest_members, key=sort_key)[0]
 
 

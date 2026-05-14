@@ -120,8 +120,9 @@ class BelowMinFamiliesTests(unittest.TestCase):
 
 
 class ParentSelectionTests(unittest.TestCase):
-    def test_parent_picked_by_longest_body(self):
-        # hochi has shorter body, sanspo has longest body (both have quote+event)
+    def test_parent_picked_hochi_priority_over_longest(self):
+        # 336-QA Phase 1: hochi が cluster 内にあれば、本文最長 rule を上書きして
+        # hochi を親に固定する (報知優先 lock)。
         short_body = "坂本勇人「最後まで集中して振り切れたんじゃないかと思います」300号サヨナラホームラン"
         long_body = (
             "5月14日、東京ドームに集まった満員のファンの前で、"
@@ -136,12 +137,27 @@ class ParentSelectionTests(unittest.TestCase):
         ]
         clusters = find_digest_clusters(candidates)
         self.assertEqual(len(clusters), 1)
-        # sanspo wins as parent (longest body)
-        self.assertEqual(clusters[0].parent_family, "sanspo")
+        self.assertEqual(clusters[0].parent_family, "hochi")
         child_families = {c.family for c in clusters[0].children}
-        # hochi body は 43 字、[30, 50] snippet 範囲に入るので child snippet が
-        # 生成され、hochi も children に含まれる (正しい挙動)。
-        self.assertEqual(child_families, {"hochi", "nikkansports"})
+        self.assertEqual(child_families, {"sanspo", "nikkansports"})
+
+    def test_parent_falls_through_to_longest_when_no_hochi(self):
+        # hochi が cluster に居なければ、既存の本文最長 rule に fall-through する。
+        short_body = "坂本勇人「最後まで集中して振り切れたんじゃないかと思います」300号サヨナラホームラン"
+        long_body = (
+            "5月14日、東京ドームに集まった満員のファンの前で、"
+            "坂本勇人は試合後の取材で"
+            "「最後まで集中して振り切れたんじゃないかと思います」"
+            "と振り返った。300号サヨナラホームランで巨人を勝利に導いた。"
+        )
+        candidates = [
+            _cand(family="sanspo", body=long_body, title=_SANSPO_TITLE),
+            _cand(family="sponichi", body=short_body),
+            _cand(family="nikkansports", title=_NIKKAN_TITLE),
+        ]
+        clusters = find_digest_clusters(candidates)
+        self.assertEqual(len(clusters), 1)
+        self.assertEqual(clusters[0].parent_family, "sanspo")
 
     def test_parent_tiebreak_by_published_time(self):
         # Same body length, earlier published_at wins

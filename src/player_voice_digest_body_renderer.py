@@ -72,6 +72,11 @@ def render_player_voice_digest_body(
     for sentence in lead:
         parts.append(f"<p>{html.escape(sentence)}</p>")
 
+    hochi_excerpt = str(payload.get("hochi_raw_html_excerpt") or "").strip()
+    excerpt_block = _render_hochi_excerpt_block(hochi_excerpt)
+    if excerpt_block:
+        parts.append(excerpt_block)
+
     children = payload.get("children") or ()
     section_a = _render_section_a(children)
     if section_a:
@@ -83,6 +88,25 @@ def render_player_voice_digest_body(
         parts.append(section_b)
 
     return "\n".join(parts)
+
+
+def _render_hochi_excerpt_block(excerpt: str) -> str:
+    """336-QA Phase 2: 報知 raw_html から 600字 literal を `nomotoke-source-excerpt`
+    aside block として描画。CSS は 335-QA で太字適用済 (再利用)。
+
+    出典 attribution は「— スポーツ報知」固定。空文字なら空 (caller skip)。
+    """
+    if not excerpt:
+        return ""
+    return (
+        '<aside class="nomotoke-source-excerpt">'
+        '<span class="nomotoke-source-excerpt__label">📖 本文抜粋</span>'
+        '<blockquote class="nomotoke-source-excerpt__body">'
+        f'<p>{html.escape(excerpt)}</p>'
+        '</blockquote>'
+        '<p class="nomotoke-source-excerpt__attr">— スポーツ報知</p>'
+        '</aside>'
+    )
 
 
 def _extract_long_quote(text: str, min_len: int, max_len: int) -> str:

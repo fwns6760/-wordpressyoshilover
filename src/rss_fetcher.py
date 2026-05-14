@@ -19448,6 +19448,9 @@ def _create_draft_with_same_fire_guard(
     enrichment_raw_html: str = "",
     enrichment_source_type: str = "",
 ) -> int:
+    # 344-INGEST: YouTube source なら title 先頭に「【YouTube】」prefix を付与。
+    # mail 件名 + WP admin で即識別可、idempotent。
+    draft_title = _maybe_apply_youtube_title_prefix(draft_title, source_url)
     normalized_source_url = _html.unescape((source_url or "").strip())
     rewritten_title_norm = _normalize_history_title(draft_title)
     # RELIABILITY-2026-05-08-DUP-FIX: same-fire dedup の guard 強化。既存 set は
@@ -20780,6 +20783,24 @@ def _is_youtube_post_url(post_url: str) -> bool:
         return False
     url_l = post_url.lower()
     return "youtube.com" in url_l or "youtu.be" in url_l
+
+
+_YOUTUBE_DRAFT_TITLE_PREFIX = "【YouTube】"
+
+
+def _maybe_apply_youtube_title_prefix(title: str, source_url: str) -> str:
+    """344-INGEST: YouTube source の draft title 先頭に「【YouTube】」prefix を付ける。
+
+    auto-publish 後 mail 件名 / WP admin で即識別可能にし、user の手動編集判断を
+    補助する。idempotent (既に prefix あれば 二重付与しない)。
+    """
+    if not _is_youtube_post_url(source_url):
+        return title
+    if not title:
+        return title
+    if title.startswith(_YOUTUBE_DRAFT_TITLE_PREFIX):
+        return title
+    return _YOUTUBE_DRAFT_TITLE_PREFIX + title
 
 
 def _extract_youtube_video_id(url: str) -> str:
@@ -25647,22 +25668,9 @@ def _main(args, logger):
                 featured_media=effective_featured_media,
                 article_subtype=publish_gate_subtype,
             )
-            # 344-INGEST: YouTube source は user 手動 publish のみ (auto-publish + X
-            # 自動投稿 全部 OFF)。published=False で finalize_post_publication が draft
-            # 維持、X 自動投稿は published=True が前提なので連動 抑制される。
-            if _is_youtube_post_url(post_url):
-                publish_skip_reasons.append("youtube_source_force_draft")
-                logger.info(
-                    json.dumps(
-                        {
-                            "event": "youtube_source_force_draft",
-                            "post_id": post_id,
-                            "post_url": post_url,
-                            "draft_title": draft_title[:160],
-                        },
-                        ensure_ascii=False,
-                    )
-                )
+            # 344-INGEST 2026-05-14 lock 変更: 当初 YouTube は force-draft だったが
+            # 「公開で mail でも OK、title prefix で識別できれば user 手動編集 前提」に
+            # user 切替。force-draft gate を revert、title prefix で対応 (#7)。
             if source_type in {"news", "social_news"} and not args.draft_only:
                 quality_guard = _evaluate_publish_quality_guard(
                     content_html=content,

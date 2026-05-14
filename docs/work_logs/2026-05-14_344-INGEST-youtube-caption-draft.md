@@ -132,7 +132,9 @@ YYYY-MM-DD HH:MM JST | event | 内容 | result
 2026-05-14 | COMMIT_3_DONE | src/youtube_title_filter.py (巨人 keyword + 現役 player + OB OR ロジック、reason 返却) + tests/test_youtube_title_filter.py (13 case) | pytest 13/13 PASS。commit fd263a3 push 済
 2026-05-14 | COMMIT_4_DONE | rss_fetcher integration: _is_youtube_post_url + _check_youtube_giants_filter helper 追加、entry loop で is_giants_related と並行 OR で YouTube 専用 filter 適用、skip 時 youtube_title_filter_skip 構造化ログ | tests/test_rss_fetcher_youtube_integration.py 11 case PASS、baseline rss_fetcher 28 不変、計 0 regression。commit 5231e41 push 済
 2026-05-14 | COMMIT_5_DONE | YouTube force-draft gate: publish_skip_reasons.append("youtube_source_force_draft") を YouTube source 検出時に追加、auto-publish + X 自動投稿 連動 OFF | baseline 118/118 PASS、0 regression。commit e1c1af5 push 済
-2026-05-14 | COMMIT_6_DONE | YouTube caption section: _maybe_append_youtube_caption_section + _extract_youtube_video_id helper、enriched_content 末尾に caption literal 600字 + 出典 + YouTube embed (additive, idempotent), HTML escape | tests 13 case PASS、baseline 91/91 PASS、0 regression
+2026-05-14 | COMMIT_6_DONE | YouTube caption section: _maybe_append_youtube_caption_section + _extract_youtube_video_id helper、enriched_content 末尾に caption literal 600字 + 出典 + YouTube embed (additive, idempotent), HTML escape | tests 13 case PASS、baseline 91/91 PASS、0 regression。commit dfc49da push 済
+2026-05-14 | POLICY_FLIP | user lock 変更: force-draft → auto-publish + title prefix で識別 (mail 新規 path 不要)。理由: 既存 mail logic を触らず安全側、title prefix で user 手動編集判断 補助 | (commit 7 で実装)
+2026-05-14 | COMMIT_7_DONE | revert force-draft (commit #5) + add 【YouTube】title prefix in _create_draft_with_same_fire_guard (idempotent) | baseline 133/133 PASS、0 regression
 ```
 
 ## 10. Regression Memo 欄

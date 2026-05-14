@@ -48,6 +48,9 @@ SIGNAL_ZSCORE_PITCHER = "anomaly_zscore_outlier_pitcher"
 SIGNAL_BABIP_DIVERGENCE = "anomaly_babip_divergence"
 SIGNAL_FIP_ERA_DIVERGENCE = "anomaly_fip_era_divergence"
 SIGNAL_GIANTS_TOP_OUTLIER = "anomaly_giants_top_outlier"
+SIGNAL_PACE_HR_PROJECTION = "anomaly_pace_hr_projection"
+SIGNAL_HIDDEN_OPS_LIMIT = "anomaly_hidden_below_qualifier"  # 規定外好調
+SIGNAL_HIT_STREAK_RUN = "anomaly_consecutive_multi_hit"   # 連続多安打 game
 
 ALL_ANOMALY_SIGNALS = (
     SIGNAL_ZSCORE_BATTER,
@@ -55,6 +58,9 @@ ALL_ANOMALY_SIGNALS = (
     SIGNAL_BABIP_DIVERGENCE,
     SIGNAL_FIP_ERA_DIVERGENCE,
     SIGNAL_GIANTS_TOP_OUTLIER,
+    SIGNAL_PACE_HR_PROJECTION,
+    SIGNAL_HIDDEN_OPS_LIMIT,
+    SIGNAL_HIT_STREAK_RUN,
 )
 
 # default 閾値 (env で override 可能、user「結構緩めていい」適用、巨人 優先)
@@ -476,6 +482,212 @@ def detect_giants_top_outliers(
     return inserted
 
 
+# ─── detector 6: pace HR projection (シーズン換算 HR ペース) ──────────────
+
+
+def detect_hr_pace_outliers(
+    conn: sqlite3.Connection,
+    *,
+    snapshot_date: str,
+    min_games: int = 15,
+    run_id: Optional[str] = None,
+) -> list[int]:
+    """直近 30 日の HR pace から season 換算 (143 試合) で外れ値となる打者を検出。
+
+    各打者の per-game HR 率 × 143 を計算、上位を outlier として emit。
+    """
+    rows = conn.execute(
+        "SELECT bl.player_canonical, bl.team_name, "
+        "COUNT(DISTINCT bl.game_id) AS games, SUM(bl.atbats_json IS NOT NULL) AS pa "
+        "FROM batting_logs bl JOIN games g ON bl.game_id = g.game_id "
+        "WHERE g.game_date >= date(?, '-30 days') AND bl.player_canonical IS NOT NULL "
+        "GROUP BY bl.player_canonical, bl.team_name "
+        "HAVING games >= ?",
+        (snapshot_date, min_games),
+    ).fetchall()
+    if not rows:
+        return []
+    if run_id is None:
+        run_id = str(uuid.uuid4())
+
+    # per player HR count
+    inserted: list[int] = []
+    window_label = f"hr_pace_30d_{snapshot_date}"
+    for player, team_name, games, pa in rows:
+        # parse atbats_json から HR を count
+        hrs = 0
+        for r in conn.execute(
+            "SELECT atbats_json FROM batting_logs bl JOIN games g ON bl.game_id = g.game_id "
+            "WHERE bl.player_canonical = ? AND g.game_date >= date(?, '-30 days')",
+            (player, snapshot_date),
+        ):
+            atbats = r[0]
+            if not atbats:
+                continue
+            try:
+                import json as _j
+                parsed = _j.loads(atbats) if isinstance(atbats, str) else atbats
+            except Exception:
+                continue
+            if not isinstance(parsed, list):
+                continue
+            for ab in parsed:
+                if isinstance(ab, str) and ("本" in ab):
+                    hrs += 1
+        if hrs < 3:  # 30 日で 3 本以上 = season 換算 14 本以上 ペース
+            continue
+        proj = round(hrs / max(games, 1) * 143, 1)  # 143 試合 season
+        if proj < 15:  # 換算 15 本未満は skip
+            continue
+        team_code = _resolve_team_code_from_name(team_name or "")
+        if team_code == "unknown":
+            continue
+        prio = GIANTS_PRIORITY if team_code == "g" else NON_GIANTS_PRIORITY
+        cid = _insert_candidate(
+            conn,
+            run_id=run_id,
+            signal_type=SIGNAL_PACE_HR_PROJECTION,
+            player_canonical=str(player),
+            player_display=None,
+            magnitude=float(proj),
+            baseline_value=f"30日HR={hrs} 試合={games}",
+            current_value=f"season換算HR={proj:.1f}本",
+            window_label=window_label,
+            comparison_target="143game_pace",
+            evidence_json=None,
+            priority=prio,
+            notes=f"team={team_code}",
+        )
+        if cid:
+            inserted.append(cid)
+    conn.commit()
+    return inserted
+
+
+# ─── detector 7: 規定外好調 (hidden below qualifier) ──────────────────────
+
+
+def detect_hidden_below_qualifier_outliers(
+    conn: sqlite3.Connection,
+    *,
+    snapshot_date: str,
+    metric_name: str = "OPS",
+    scope: str = "last_30d",
+    ops_threshold: float = 0.900,
+    min_sample: int = 10,
+    max_sample: int = 50,
+    run_id: Optional[str] = None,
+) -> list[int]:
+    """規定打席外(サンプル <= max_sample)で metric 値が threshold 以上の隠れ好調を検出。
+
+    大手は規定外なので記事化しない、ヨシラバー独自の data 角度。
+    """
+    rows = conn.execute(
+        "SELECT player_canonical, team_code, metric_value, sample_size "
+        "FROM advanced_metric_snapshots "
+        "WHERE metric_name = ? AND scope = ? AND snapshot_date = ? "
+        "AND metric_value >= ? AND sample_size >= ? AND sample_size <= ?",
+        (metric_name, scope, snapshot_date, ops_threshold, min_sample, max_sample),
+    ).fetchall()
+    if not rows:
+        return []
+    if run_id is None:
+        run_id = str(uuid.uuid4())
+    inserted: list[int] = []
+    window_label = f"hidden_below_qualifier_{metric_name}_{scope}_{snapshot_date}"
+    for player, team_code, value, sample in rows:
+        prio = GIANTS_PRIORITY if (team_code or "").strip() == "g" else NON_GIANTS_PRIORITY
+        cid = _insert_candidate(
+            conn,
+            run_id=run_id,
+            signal_type=SIGNAL_HIDDEN_OPS_LIMIT,
+            player_canonical=str(player),
+            player_display=None,
+            magnitude=float(round(value, 3)),
+            baseline_value=f"{metric_name}_threshold={ops_threshold}",
+            current_value=f"{metric_name}={value:.3f} sample={sample}",
+            window_label=window_label,
+            comparison_target="below_qualifier",
+            evidence_json=None,
+            priority=prio,
+            notes=f"team={team_code} 規定外好調",
+        )
+        if cid:
+            inserted.append(cid)
+    conn.commit()
+    return inserted
+
+
+# ─── detector 8: 連続多安打 game streak ───────────────────────────────────
+
+
+def detect_consecutive_multi_hit_streak(
+    conn: sqlite3.Connection,
+    *,
+    snapshot_date: str,
+    min_streak: int = 3,
+    run_id: Optional[str] = None,
+) -> list[int]:
+    """連続 N 試合以上で multi-hit (2安打+) を記録した打者を検出。"""
+    # player 別 game_date 順に H>=2 を判定
+    rows = conn.execute(
+        "SELECT bl.player_canonical, bl.team_name, g.game_date, bl.H "
+        "FROM batting_logs bl JOIN games g ON bl.game_id = g.game_id "
+        "WHERE bl.player_canonical IS NOT NULL AND bl.H IS NOT NULL "
+        "AND g.game_date >= date(?, '-30 days') "
+        "ORDER BY bl.player_canonical, g.game_date ASC",
+        (snapshot_date,),
+    ).fetchall()
+    if not rows:
+        return []
+    if run_id is None:
+        run_id = str(uuid.uuid4())
+
+    # streak 計算 per player
+    from collections import defaultdict
+    player_seqs: dict[str, list[tuple[str, str, int]]] = defaultdict(list)
+    for player, team_name, gdate, h in rows:
+        player_seqs[str(player)].append((str(team_name or ""), gdate, int(h or 0)))
+
+    inserted: list[int] = []
+    window_label = f"multi_hit_streak_30d_{snapshot_date}"
+    for player, seq in player_seqs.items():
+        # 直近の連続 streak を後ろから計算
+        streak = 0
+        last_team_name = ""
+        for team_name, _, h in reversed(seq):
+            if h >= 2:
+                streak += 1
+                last_team_name = team_name
+            else:
+                break
+        if streak < min_streak:
+            continue
+        team_code = _resolve_team_code_from_name(last_team_name)
+        if team_code == "unknown":
+            continue
+        prio = GIANTS_PRIORITY if team_code == "g" else NON_GIANTS_PRIORITY
+        cid = _insert_candidate(
+            conn,
+            run_id=run_id,
+            signal_type=SIGNAL_HIT_STREAK_RUN,
+            player_canonical=player,
+            player_display=None,
+            magnitude=float(streak),
+            baseline_value=f"min_streak={min_streak}",
+            current_value=f"連続{streak}試合multi-hit",
+            window_label=window_label,
+            comparison_target="consecutive_multi_hit",
+            evidence_json=None,
+            priority=prio,
+            notes=f"team={team_code}",
+        )
+        if cid:
+            inserted.append(cid)
+    conn.commit()
+    return inserted
+
+
 # ─── public API: run all detectors ──────────────────────────────────────────
 
 
@@ -527,4 +739,22 @@ def run_all_anomaly_detectors(
         )
     except Exception:  # noqa: BLE001
         out[SIGNAL_GIANTS_TOP_OUTLIER] = []
+    try:
+        out[SIGNAL_PACE_HR_PROJECTION] = detect_hr_pace_outliers(
+            conn, snapshot_date=snapshot_date, run_id=run_id,
+        )
+    except Exception:  # noqa: BLE001
+        out[SIGNAL_PACE_HR_PROJECTION] = []
+    try:
+        out[SIGNAL_HIDDEN_OPS_LIMIT] = detect_hidden_below_qualifier_outliers(
+            conn, snapshot_date=snapshot_date, run_id=run_id,
+        )
+    except Exception:  # noqa: BLE001
+        out[SIGNAL_HIDDEN_OPS_LIMIT] = []
+    try:
+        out[SIGNAL_HIT_STREAK_RUN] = detect_consecutive_multi_hit_streak(
+            conn, snapshot_date=snapshot_date, run_id=run_id,
+        )
+    except Exception:  # noqa: BLE001
+        out[SIGNAL_HIT_STREAK_RUN] = []
     return out

@@ -47,6 +47,91 @@ from src.analysis.insight_article_generator import (  # noqa: E402
 # 新 category 名 (work record §4)
 DEFAULT_CATEGORY_NAME = "データで見る巨人"
 
+
+# ─── SVG chart renderer (表の下に inline 埋め込み、user 指示) ────────────
+
+
+_TEAM_LABEL_JP = {
+    "g": "巨人", "t": "阪神", "s": "ヤクルト", "c": "広島",
+    "db": "DeNA", "d": "中日", "h": "ソフトバンク", "l": "西武",
+    "m": "ロッテ", "e": "楽天", "b": "オリックス", "f": "日本ハム",
+}
+
+
+def render_ranking_svg_bar_chart(
+    rows: list[dict],
+    *,
+    focus_player: str,
+    metric_name: str,
+    title: str = "",
+    subtitle: str = "",
+    width: int = 760,
+) -> str:
+    """横棒 ranking chart の SVG markup (inline 埋め込み用、外部依存なし).
+
+    Args:
+        rows: list of {player, team, value, sample, rank}
+        focus_player: 該当選手 (赤太字 highlight)
+        metric_name: 'OPS' / 'ERA' 等 (X 軸ラベル)
+        title / subtitle: 上部 text
+        width: SVG 幅 (default 760、WP 標準コラム幅)
+    """
+    if not rows:
+        return ""
+    h = 80 + len(rows) * 32
+    margin_l, margin_top, margin_b = 180, 70 if title else 30, 40
+    chart_w = width - margin_l - 60
+    bar_h = 22
+
+    values = [r["value"] for r in rows if r.get("value") is not None]
+    if not values:
+        return ""
+    max_val = max(values)
+    min_val = min(values) * 0.95 if min(values) > 0 else 0
+
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {h}" '
+        f'style="max-width:100%;height:auto;font-family:sans-serif;display:block;margin:1em 0;">',
+        '<style>.t{font-size:18px;font-weight:bold;fill:#222}'
+        '.st{font-size:12px;fill:#555}'
+        '.lb{font-size:13px;fill:#333}'
+        '.v{font-size:13px;font-weight:bold;fill:#fff}'
+        '.vo{font-size:13px;fill:#222}'
+        '.fb{fill:#c0392b}'
+        '.nb{fill:#7faed5}'
+        '.fl{font-weight:bold;fill:#c0392b}'
+        '.ax{stroke:#999;stroke-width:1}</style>',
+    ]
+    if title:
+        parts.append(f'<text x="{width//2}" y="26" text-anchor="middle" class="t">{title}</text>')
+    if subtitle:
+        parts.append(f'<text x="{width//2}" y="50" text-anchor="middle" class="st">{subtitle}</text>')
+
+    for i, r in enumerate(rows, start=1):
+        y = margin_top + (i - 1) * (bar_h + 10)
+        is_focus = (r["player"] == focus_player)
+        bar_class = "fb" if is_focus else "nb"
+        label_class = "fl" if is_focus else "lb"
+        val = r["value"] or 0
+        bar_w = int((val - min_val) / (max_val - min_val) * chart_w) if max_val > min_val else chart_w
+        bar_w = max(20, bar_w)
+        team_disp = _TEAM_LABEL_JP.get(r.get("team", ""), r.get("team", "?"))
+        star = " ★" if is_focus else ""
+        label_text = f"{i}. {r['player']}({team_disp}){star}"
+        parts.append(f'<text x="{margin_l-10}" y="{y+bar_h//2+5}" text-anchor="end" class="{label_class}">{label_text}</text>')
+        parts.append(f'<rect x="{margin_l}" y="{y}" width="{bar_w}" height="{bar_h}" class="{bar_class}" rx="3"/>')
+        if bar_w > 70:
+            parts.append(f'<text x="{margin_l+bar_w-6}" y="{y+bar_h//2+5}" text-anchor="end" class="v">{val:.3f}</text>')
+        else:
+            parts.append(f'<text x="{margin_l+bar_w+6}" y="{y+bar_h//2+5}" text-anchor="start" class="vo">{val:.3f}</text>')
+
+    parts.append(f'<line x1="{margin_l}" y1="{h-margin_b+5}" x2="{margin_l+chart_w}" y2="{h-margin_b+5}" class="ax"/>')
+    parts.append(f'<text x="{margin_l}" y="{h-margin_b+22}" class="lb">{min_val:.2f}</text>')
+    parts.append(f'<text x="{margin_l+chart_w}" y="{h-margin_b+22}" text-anchor="end" class="lb">{max_val:.2f}</text>')
+    parts.append(f'<text x="{margin_l+chart_w//2}" y="{h-margin_b+22}" text-anchor="middle" class="lb">{metric_name}</text>')
+    parts.append('</svg>')
+    return '\n'.join(parts)
+
 # 新 subtype の prefix (extractor + publish_evaluator 拡張時に対応)
 SUBTYPE_DATA_RANKING_PREFIX = "data_ranking_"
 
@@ -64,6 +149,31 @@ ENABLE_DATA_INSIGHT_AUTO_PUBLISH = (
 ENABLE_DATA_INSIGHT_AUTO_PUBLISH_GIANTS = (
     os.environ.get("ENABLE_DATA_INSIGHT_AUTO_PUBLISH_GIANTS", "0").strip() == "1"
 )
+
+
+def _ensure_player_tag(wp_client_obj: Any, player_name: str) -> int:
+    """player 名で WP タグ search、なければ create、tag id を返す."""
+    if not player_name:
+        return 0
+    import requests as _req
+    try:
+        resp = wp_client_obj._request_with_retry(
+            _req.get, f"{wp_client_obj.api}/tags",
+            action="tag_search", params={"search": player_name, "per_page": 10},
+        )
+        for t in resp.json():
+            if t.get("name") == player_name:
+                return int(t["id"])
+    except Exception:
+        pass
+    try:
+        resp = wp_client_obj._request_with_retry(
+            _req.post, f"{wp_client_obj.api}/tags",
+            action="tag_create", json={"name": player_name},
+        )
+        return int(resp.json().get("id", 0) or 0)
+    except Exception:
+        return 0
 
 
 def _resolve_publish_status(*, focus_team_code: Optional[str] = None) -> str:
@@ -374,11 +484,34 @@ def render_giants_centric_ranking(
         start_d = today
     period_full = f"{start_d.isoformat()} 〜 {today.isoformat()}"
 
+    # SVG chart (表の下に inline 埋め込み)
+    chart_rows = [
+        {"player": r.player_canonical, "team": r.team_code or "?",
+         "value": r.metric_value, "sample": r.sample_size, "rank": r.rank}
+        for r in rows[:10]
+    ]
+    chart_svg = render_ranking_svg_bar_chart(
+        chart_rows, focus_player=focus_player, metric_name=metric_name,
+        title=f"{focus_player}、{metric_name} {focus_val} でセ・リーグ {focus_rank} 位",
+        subtitle=f"集計期間: {period_full}",
+    )
+
+    intro_banner = (
+        '<div style="background:#fff8e1;border-left:4px solid #f39c12;padding:10px 15px;margin:1em 0;">'
+        '<strong>🔥 大手ニュースで取り上げないデータ角度</strong><br>'
+        'sabermetric 視点でセ・リーグ全体と比較した、ヨシラバー独自分析です。'
+        '</div>'
+    )
+
     body_md = f"""# {base_title}
+
+{intro_banner}
 
 ## セ・リーグ ranking
 
 {table_md}
+
+{chart_svg}
 
 ## このデータについて
 
@@ -479,11 +612,12 @@ def publish_giants_centric_ranking_draft(
         }
 
     # WP 投入 status 決定 (env flag + 巨人判定)
-    # 巨人 focus の ranking 記事は ENABLE_DATA_INSIGHT_AUTO_PUBLISH_GIANTS=1 なら
-    # 自動 publish。他球団 focus または env flag OFF は 'draft' 維持。
     rows = article.get("meta", {}) or {}
-    focus_team_code = "g"  # ranking 記事は focus_player が常に巨人 (find_giants_top)
+    focus_team_code = "g"
     publish_status = _resolve_publish_status(focus_team_code=focus_team_code)
+    # player tag 自動付与 (回遊 navigation、user 指示)
+    tag_id = _ensure_player_tag(wp_client_obj, article["focus_player"])
+    tags_list = [tag_id] if tag_id else None
     try:
         post_id = wp_client_obj.create_post(
             title=article["title"],
@@ -492,6 +626,16 @@ def publish_giants_centric_ranking_draft(
             status=publish_status,
             caller="ranking_article_publisher",
         )
+        # tag は別 PUT で post に attach (create_post に tags param がないため)
+        if post_id and tags_list:
+            try:
+                import requests as _req
+                wp_client_obj._request_with_retry(
+                    _req.post, f"{wp_client_obj.api}/posts/{post_id}",
+                    action="add_tags", json={"tags": tags_list},
+                )
+            except Exception:
+                pass
     except Exception as e:  # noqa: BLE001
         return {
             "status": "error",

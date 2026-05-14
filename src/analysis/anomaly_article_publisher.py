@@ -380,7 +380,24 @@ def _render_unified_article(
     # 1 文目だけに truncate (素人向け 1-2 line max)
     simple_line = simple_line.split("。")[0] + ("。" if simple_line else "")
 
+    # SVG chart (表の下に inline 埋め込み、user 指示)
+    chart_svg = rap.render_ranking_svg_bar_chart(
+        top_rows, focus_player=player, metric_name=metric_label,
+        title=f"{player}、{scope_label}の{metric_label} {value_str} で{league_label} {rank_str} 位",
+        subtitle=f"集計期間: {period_full_label}",
+    )
+
+    # 冒頭 banner (user 指示「大手ニュースではわからないデータ」強調)
+    intro_banner = (
+        '<div style="background:#fff8e1;border-left:4px solid #f39c12;padding:10px 15px;margin:1em 0;">'
+        '<strong>🔥 大手ニュースで取り上げないデータ角度</strong><br>'
+        f'sabermetric 視点で {league_label} 全体と比較した、ヨシラバー独自分析です。'
+        '</div>'
+    )
+
     body_md = f"""# {title}
+
+{intro_banner}
 
 ## ひとこと
 
@@ -389,6 +406,8 @@ def _render_unified_article(
 ## {league_label} ranking({scope_label})
 
 {ranking_table}
+
+{chart_svg}
 
 ## このデータについて
 

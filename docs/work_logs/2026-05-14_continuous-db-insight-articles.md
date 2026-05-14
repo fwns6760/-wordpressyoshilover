@@ -390,35 +390,149 @@
 
 ### 1. 実際に変更したファイル
 
-(to be filled after implementation)
+**新規追加(5 file)**:
+- `src/analysis/ranking_article_publisher.py`(467 行、巨人中心 ranking article + WP draft / publish)
+- `src/analysis/insight_anomaly_detector.py`(518 行、z-score / 乖離 / pace / Giants top の 5 detector)
+- `src/analysis/anomaly_article_publisher.py`(~600 行、5 signal_type 別 article render + 大城式 table + 赤太字 + 期間表示)
+- `tests/test_ranking_article_publisher.py`(13 test)
+- `tests/test_wp_client_create_category.py`(5 test)
+- `tests/test_insight_anomaly_detector.py`(10 test)
+
+**既存 file 拡張**:
+- `src/wp_client.py` に `create_category()` method 追加
+- `src/pre_publish_fact_check/extractor.py:infer_subtype` に新 subtype(`data_ranking_*`)認識追加
+- `src/analysis/insight_nightly.py:run_nightly` 末尾 main() に anomaly + ranking publish wire 追加
+- `config/player_eyecatch_map.json` に ダルベック entry 追加
+
+**新規データ / インフラ**:
+- WP category 675「データで見る巨人」(新規作成)
+- WP media 67498(ダルベック Wikipedia EN 画像)
+- Cloud Scheduler 4 trigger 追加(`data-insight-morning/noon/pregame/during-game-trigger`)
+- Cloud Run job `insight-nightly` env 追加(`ENABLE_DATA_INSIGHT_AUTO_DRAFT=1` / `ENABLE_DATA_INSIGHT_AUTO_PUBLISH_GIANTS=1`)+ WP secret 3 個 attach
+- Cloud Run image 計 10 build(`:343c` → `:343q`)
 
 ### 2. diff 概要
 
-(to be filled after implementation)
+**LoC 統計**:
+- src 追加: ~1500 行(3 新 module)
+- src 修正: ~80 行(wp_client / extractor / insight_nightly)
+- tests 追加: ~640 行(3 新 test file、計 28 test)
+- config 追加: 1 line(player_eyecatch_map.json)
+- doc 追加: 本 work record 約 600 行
+
+**commit 数**: 本 session で 15+ commit landed(主要):
+- Phase 1A(ranking_article_publisher + create_category): `ee7a5fc`
+- Phase 1B(anomaly detector + publisher + wire): `de6fa3d`
+- threshold 緩和 + 巨人優先 priority: `c9d226f`
+- 巨人 auto-publish env gate: `4bb1330`
+- max_per_run 拡大 + 4 scheduler trigger: `7daa537`
+- title format 改善: `2400233`
+- table 中心 + 赤太字 highlight: `d499ed4`
+- prefix「巨人を数字で読む」→「巨人データを見る」: `347ca1b` → `a8892ce`
+- セ/パ リーグ別 ranking: `6ef5f6b`
+- ダルベック 画像 Wikipedia 取得: `af930b3`
+- ERA ASC ranking fix(lower-is-better): `0d424fa`
+- 期間明示 + 期間 date range + 試合数除去: `30679e1` → `f2fd46a`
 
 ### 3. 実行したテスト
 
-(to be filled after implementation)
+- `pytest tests/test_ranking_article_publisher.py`(13 test)
+- `pytest tests/test_wp_client_create_category.py`(5 test)
+- `pytest tests/test_insight_anomaly_detector.py`(10 test)
+- `pytest -q --tb=no`(full baseline、4500+ test)
+- production DB 直接 dry_run(local script、anomaly detect → article render の sanity check)
+- Cloud Run job 手動 trigger 計 3 回(`insight-nightly-j488w` / `2n8x2` / `mcs78` / `lf8s7` / `wjxjq`)
+- production WP REST 経由 update / publish 30+ 回
 
 ### 4. テスト結果
 
-(to be filled after implementation)
+- 新 28 test 全 PASS
+- 既存 4500+ test:**5 failed(pre-existing、全 parallel actor 由来)/ 4500+ passed**
+- regression 0(本 work で 新規 fail 0)
+- Cloud Run trigger:5 回全 SUCCESS、平均 43-300s
+- Production WP:全 10 article landed、巨人 7 publish、他球団 3 draft
+
+### 5b. 将来 TODO(記事数が増えてから着手)
+
+**選手別ランディング / navigation 強化**(2026-05-14 user 教示):
+- 現在: 記事 10 本 / 選手別最大 2 本程度 → 選手別 page 単独成立しない
+- 将来: 記事数 30+ / 選手別 5+ 本に増えた段階で:
+  - WP tag pages(/tag/<player>/)を専用 template でリッチ化
+  - 「この選手の全 sabermetric 記事」ハブ page
+  - 月別 / scope 別 timeline 表示
+  - 選手プロフィール画像 + 季節成績 chart inline 表示
+- 現時点では既存 WP tag(`大城卓三`=676 等)で navigation 機能、追加 customization 不要
+- 着手判断 trigger: 1 選手で 5 本以上記事が landed した時 OR user 教示時
 
 ### 5. 残った懸念
 
-(to be filled after implementation)
+- **WP eyecatch 不在 2 選手**: 平山功太 / ウィットリー の player image が公開 web source(Wikipedia ja/en、NPB 公式、巨人公式 403)で取得不可。user の WP admin 手動 upload 待ち
+- **「赤星 優志」 space form canonical**: 既存 INSIGHT-001 ETL の `_resolve_team_code_from_name` で space-form name が canonical に残る既知問題、別 ticket 必要
+- **則本昂大 team_code='g' (Giants 移籍済) 認識**: roster ファイルで管理、scrape されない外国人選手画像の問題と並行
+- **NPB roster scrape 鮮度**: 2026-05-13 snapshot、移籍 / 退団があれば再 scrape 必要(週次 or 月次 job)
+- **「直近 5 試合」 scope detector**: `compute_advanced_metric_snapshots` で未実装、必要なら別 phase
+- **記事の人間チェック**: 自動 publish 巨人記事は user 確認なしで site に出る、内容 review が遅延しないか観察必要
 
 ### 6. 新しく見つかったデグレ
 
-(to be filled after implementation)
+なし(本 work での新規デグレ 0)。
+
+並走 actor 由来の事故 1 件:
+- `tests/test_ingestion_filter_relaxation.py::test_main_passes_36_hour_window_for_postgame_skip_check` が 344-INGEST 系の commit で fail に。本 work と完全 disjoint な rss_fetcher module、HEAD stash 後も再現確認済。
 
 ### 7. 追加した回帰テスト
 
-(to be filled after implementation)
+- `test_ranking_article_publisher.py`(13 test):
+  - fetch_ranking_rows top_n / empty / latest snapshot
+  - find_giants_top picks first / returns None
+  - markdown_to_html: h2/h3/table/bold/italic
+  - render_giants_centric_ranking full / no-giants
+  - publish dry_run / no_data / full / category_error / max_per_run
+- `test_wp_client_create_category.py`(5 test):
+  - 201 success / term_exists fallback / 500 error / optional fields / minimal payload
+- `test_insight_anomaly_detector.py`(10 test):
+  - z-score outlier batter / pitcher
+  - BABIP / FIP-ERA divergence
+  - giants_top_outliers
+  - run_all_anomaly_detectors empty DB
+  - 7-day dedup
+  - render anomaly z-score
+  - publish dry_run / DRAFTED status
 
 ### 8. 次回触ってはいけない範囲
 
-(to be filled after implementation)
+**production WP**(現状の content):
+- 既に publish 済 7 巨人 articles(`67329` / `67400` / `67401` / `67402` / `67406` / `67407` / `67408`)
+- WP category 675「データで見る巨人」自体の rename / 削除
+- 巨人 4 巨人 image media(`44424` / `66557` / `67498` Bobby Dalbec)
+- 他球団 3 draft(`67397` / `67398` / `67399`)を勝手に publish
+
+**Cloud infrastructure**:
+- 既存 Cloud Scheduler 33 trigger(33 → 37 に追加した 4 trigger 含む)の pause / 削除 / schedule 変更
+- Cloud Run job `insight-nightly` の image rollback(現 `:343q`)
+- 既存 secret 3 個(`wp-url` / `wp-user` / `wp-app-password`)の value 変更
+
+**env / scheduler**:
+- env flag `ENABLE_DATA_INSIGHT_AUTO_PUBLISH_GIANTS=1` を user 教示なしで OFF
+- env flag `ENABLE_DATA_INSIGHT_AUTO_DRAFT=1` を user 教示なしで OFF
+
+**src**:
+- `src/analysis/insight_*` の signature 変更
+- 既存 INSIGHT-001 / INSIGHT-007 schema の column 削除 / 改名
+- LLM call の path への混入
+
+**roster / config**:
+- `config/player_eyecatch_map.json` の既存 entry 削除(追加のみ可)
+- `config/giants_roster.json` の手動編集(NPB scrape 経由のみ)
+- `config/npb_12team_roster.json` の手動編集(scrape 経由のみ)
+
+**並走 lane**:
+- 並走 actor の commit 上書き(force push 禁止)
+- `src/rss_fetcher.py` / digest / title 系 lane の touch(本 work scope 外)
+
+---
+
+(end of work record、本 session 完了)
 
 ---
 

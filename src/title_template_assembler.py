@@ -49,20 +49,39 @@ def _clean(text: str) -> str:
     return _WS_RE.sub(" ", _HTML_RE.sub(" ", text)).strip()
 
 
-def _first_quote(*texts: str, max_len: int = 28) -> str:
-    """Return the first 2-60 char quote found in any of the inputs, trimmed
-    to ``max_len`` chars. Empty when no quote present."""
+def _first_quote(*texts: str, max_len: int = 40) -> str:
+    """335-QA Phase 1: literal quote を返す、`…` truncation は使わない。
+
+    - 全長 ≤ max_len: そのまま literal を返す (trailing 。、 は strip)
+    - 全長 > max_len: max_len 内で natural break (句読点 。！？、) を探し、
+      その位置で literal 切り出して返す
+    - natural break が無い極端な長文: backward compat 用に末尾 `…` で切る
+      (新規記事では稀、レガシー fallback として残す)
+    - 2 文字未満は空文字
+
+    max_len 既定値を 28 → 40 に拡張([[feedback_title_clickable_descriptive]]
+    で短すぎ引用 + `…` truncation を禁則化した結果)。
+    """
     for t in texts:
         t = _clean(t)
         if not t:
             continue
         m = _QUOTE_RE.search(t)
-        if m:
-            inner = m.group(1).strip()
-            if inner:
-                if len(inner) > max_len:
-                    inner = inner[:max_len].rstrip() + "…"
-                return inner
+        if not m:
+            continue
+        inner = m.group(1).strip().rstrip("。、")
+        if len(inner) < 2:
+            continue
+        if len(inner) <= max_len:
+            return inner
+        # > max_len: natural break で literal 切り出し
+        head = inner[:max_len]
+        for sep in ("。", "！", "？", "、"):
+            idx = head.rfind(sep)
+            if idx >= max(2, max_len // 2):
+                return head[: idx + 1].rstrip("。、")
+        # natural break 無い極端な長文: legacy fallback で `…` 切り
+        return head.rstrip() + "…"
     return ""
 
 

@@ -325,6 +325,69 @@ class PatternMNoticeTests(unittest.TestCase):
         self.assertIsNone(result)
 
 
+class FirstQuoteNaturalBreakTests(unittest.TestCase):
+    """335-QA Phase 1: `_first_quote` の `…` truncation 廃止 + max_len 28→40。"""
+
+    def test_quote_under_40_chars_no_ellipsis(self):
+        # 35 字 quote、max_len 40 内なのでそのまま literal で返る
+        quote = "あ" * 35
+        result = assemble_nomotoke_title(
+            article_subtype="player_comment",
+            existing_title="d",
+            source_body=f"戸郷「{quote}」",
+            player_name="戸郷",
+            role="投手",
+        )
+        self.assertIsNotNone(result)
+        self.assertIn(quote, result)
+        # `…` は出ない
+        self.assertNotIn("…", result)
+
+    def test_quote_natural_break_used_for_long_input(self):
+        # 50 字 quote、句点で natural break して 40 字以内に literal 切り出し
+        body = "戸郷「最後まで集中して投げ切ったと思います。これからも頑張りたい。」"
+        result = assemble_nomotoke_title(
+            article_subtype="player_comment",
+            existing_title="d",
+            source_body=body,
+            player_name="戸郷",
+            role="投手",
+        )
+        self.assertIsNotNone(result)
+        # natural break で 1 文目が選ばれる literal
+        self.assertIn("最後まで集中して投げ切ったと思います", result)
+        # `…` は出ない (natural break が成立した)
+        self.assertNotIn("…", result)
+
+    def test_quote_extremely_long_no_break_fallback_ellipsis(self):
+        # 50 字 連続「あ」(句点無し)→ natural break 不可、legacy `…` fallback
+        quote = "あ" * 50
+        result = assemble_nomotoke_title(
+            article_subtype="player_comment",
+            existing_title="d",
+            source_body=f"戸郷「{quote}」",
+            player_name="戸郷",
+            role="投手",
+        )
+        self.assertIsNotNone(result)
+        # legacy fallback で `…` が出る
+        self.assertIn("…", result)
+
+    def test_quote_trailing_punctuation_stripped(self):
+        # quote 末尾の 。 を strip ([[feedback_title_clickable_descriptive]] 整合)
+        body = "戸郷「自分らしく投げるだけ。」"
+        result = assemble_nomotoke_title(
+            article_subtype="player_comment",
+            existing_title="d",
+            source_body=body,
+            player_name="戸郷",
+            role="投手",
+        )
+        self.assertIsNotNone(result)
+        # quote 内末尾の 。 は strip され "「自分らしく投げるだけ」" になる
+        self.assertIn("「自分らしく投げるだけ」", result)
+
+
 class PatternXPlayerVoiceDigestTests(unittest.TestCase):
     """334-QA player_voice_digest: 3-token literal assembly (player / quote / event).
 

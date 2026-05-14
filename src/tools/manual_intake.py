@@ -3695,8 +3695,17 @@ _SHARE_BUTTONS_VISUAL_HTML = (
 # rendered in the same body).
 _SHARE_BUTTONS_SCRIPT_HTML = (
     "<script>"
-    "(function(){"
+    "(function w(){"
+    # Audit fix C (2026-05-14): aside #1 (top) と aside #2 (bottom) を
+    # 同 article body 内に emit する pattern では、 inline script は
+    # aside #1 の直後 位置で parse される。 IIFE 即時実行 した時点で
+    # aside #2 はまだ parser に到達していないため、
+    # querySelectorAll が 1 個目しか返さず bottom buttons の href が
+    # "#" のまま残る。DOMContentLoaded を待って 全 aside 揃ってから
+    # wire することで race を解消。
     "if(window.__nomotokeShareInit)return;"
+    "if(document.readyState==='loading'){"
+    "document.addEventListener('DOMContentLoaded',w);return;}"
     "window.__nomotokeShareInit=true;"
     "var u=encodeURIComponent(window.location.href);"
     "var t=encodeURIComponent(document.title);"

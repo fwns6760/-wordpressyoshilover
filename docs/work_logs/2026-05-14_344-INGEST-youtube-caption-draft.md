@@ -134,7 +134,8 @@ YYYY-MM-DD HH:MM JST | event | 内容 | result
 2026-05-14 | COMMIT_5_DONE | YouTube force-draft gate: publish_skip_reasons.append("youtube_source_force_draft") を YouTube source 検出時に追加、auto-publish + X 自動投稿 連動 OFF | baseline 118/118 PASS、0 regression。commit e1c1af5 push 済
 2026-05-14 | COMMIT_6_DONE | YouTube caption section: _maybe_append_youtube_caption_section + _extract_youtube_video_id helper、enriched_content 末尾に caption literal 600字 + 出典 + YouTube embed (additive, idempotent), HTML escape | tests 13 case PASS、baseline 91/91 PASS、0 regression。commit dfc49da push 済
 2026-05-14 | POLICY_FLIP | user lock 変更: force-draft → auto-publish + title prefix で識別 (mail 新規 path 不要)。理由: 既存 mail logic を触らず安全側、title prefix で user 手動編集判断 補助 | (commit 7 で実装)
-2026-05-14 | COMMIT_7_DONE | revert force-draft (commit #5) + add 【YouTube】title prefix in _create_draft_with_same_fire_guard (idempotent) | baseline 133/133 PASS、0 regression
+2026-05-14 | COMMIT_7_DONE | revert force-draft (commit #5) + add 【YouTube】title prefix in _create_draft_with_same_fire_guard (idempotent) | baseline 133/133 PASS、0 regression。commit 61b3ed5 push 済
+2026-05-14 | DEPLOY | gcloud builds submit (1m54s SUCCESS) → gcloud run deploy → rev yoshilover-fetcher-00388-r6p (sha256 be2caa5ac15...) → traffic flip 100% + tag yt-344-61b3ed5 → /health 200 | Phase 1a 本番 LIVE 完了
 ```
 
 ## 10. Regression Memo 欄
@@ -153,35 +154,143 @@ YYYY-MM-DD | finding | 内容 | 推奨対応
 
 ## 11. 実際に変更したファイル
 
-(impl 完了後に追記、git diff --name-only ベース)
+### 新規 (7 file)
+- `config/giants_ob_roster.json` (31 元巨人 OB hardcode)
+- `src/giants_ob_roster.py` (roster loader + matching)
+- `src/youtube_caption_fetcher.py` (字幕 fetch wrapper、try/except 隔離)
+- `src/youtube_title_filter.py` (巨人 keyword + 現役 + OB OR ロジック)
+- `tests/test_giants_ob_roster.py` (13 case)
+- `tests/test_youtube_caption_fetcher.py` (13 case)
+- `tests/test_youtube_title_filter.py` (13 case)
+- `tests/test_rss_fetcher_youtube_integration.py` (11 case)
+- `tests/test_rss_fetcher_youtube_caption_section.py` (13 case)
+- `tests/test_rss_fetcher_youtube_title_prefix.py` (6 case)
+- `doc/active/344-INGEST-youtube-caption-draft-expansion.md` (ticket doc)
+- `docs/work_logs/2026-05-14_344-INGEST-youtube-caption-draft.md` (本 file)
+
+### 拡張 (2 file)
+- `requirements.txt` (+youtube-transcript-api 追加)
+- `src/rss_fetcher.py` (+_is_youtube_post_url / _check_youtube_giants_filter /
+  _extract_youtube_video_id / _maybe_append_youtube_caption_section /
+  _maybe_apply_youtube_title_prefix helper、entry loop に YouTube filter
+  並行 OR、_create_draft_with_same_fire_guard で title prefix + caption section
+  injection)
 
 ## 12. diff 概要
 
-(file ごとの追加/削除行数 + 変更要旨、git diff --stat ベース)
+7 commits chain (5fa899a → 7764de0 → fd263a3 → 5231e41 → e1c1af5 → dfc49da → 61b3ed5 → policy flip → 61b3ed5)
+合計約 +1100 行 (src 約 350 行 + tests 約 600 行 + config + doc)。
+
+主要 src 変更:
+- requirements.txt: +1 (youtube-transcript-api)
+- src/rss_fetcher.py: +約 200 行 (5 helper 関数 + entry loop integration + draft creation hook)
+- src/giants_ob_roster.py: +85 行 (新規)
+- src/youtube_caption_fetcher.py: +95 行 (新規)
+- src/youtube_title_filter.py: +57 行 (新規)
+- config/giants_ob_roster.json: +約 200 行 (31 OB)
+
+minimum-diff 維持 (commit ごとに narrow scope、既存 method の改変は
+最小、新規 method として additive)。
 
 ## 13. 実行したテスト
 
-(pytest コマンド + 範囲、新規 test file list)
+各 commit ごとに pytest baseline 走らせ、累計:
+- `pytest tests/test_giants_ob_roster.py` (13 case)
+- `pytest tests/test_youtube_caption_fetcher.py` (13 case)
+- `pytest tests/test_youtube_title_filter.py` (13 case)
+- `pytest tests/test_rss_fetcher_youtube_integration.py` (11 case)
+- `pytest tests/test_rss_fetcher_youtube_caption_section.py` (13 case)
+- `pytest tests/test_rss_fetcher_youtube_title_prefix.py` (6 case)
+- `pytest tests/test_rss_fetcher.py` (28 case、既存 baseline)
+- `pytest tests/test_tag_page_scraper.py` (36 case、既存 baseline)
+- `pytest tests/test_player_voice_digest_clusterer.py` / `_body_renderer.py` (既存)
+
+最終確認 (commit 7 後):
+```
+pytest tests/test_rss_fetcher_youtube_*.py tests/test_giants_ob_roster.py \
+       tests/test_youtube_caption_fetcher.py tests/test_youtube_title_filter.py \
+       tests/test_rss_fetcher.py tests/test_tag_page_scraper.py
+```
+
+AST + py_compile + JSON 全 commit 前に実行 (commit_safety_protocol 準拠)。
 
 ## 14. テスト結果
 
-(pytest 出力の pass/fail count、regression 0 確認)
+最終 baseline (commit 7 後):
+- **133 passed、0 failed、3 warnings (既存 deprecated、本 ticket と無関係)**
+- 0 regression (既存 test 不変)
+- 新規 test 累計 +69 case
+
+## 14b. 本番 deploy verify
+
+- build SUCCESS (1m54s、image sha256:be2caa5ac15...)
+- deploy SUCCESS (rev yoshilover-fetcher-00388-r6p)
+- traffic 100% flip (tag yt-344-61b3ed5)
+- /health 200 OK
+- Cloud Run 設定不変 (env / Scheduler / Secret 全部 touch なし)
 
 ## 15. 残った懸念
 
-(impl 後に明らかになった silent gap / 観察必要事項)
+| 項目 | 内容 | 検証必要 timing |
+|---|---|---|
+| 字幕 API rate limit / IP block | 26 ch 未追加(既存 11 ch のみ動作)。Phase 1b で 26 ch 追加時に注意。Cloud Run egress IP が youtube に block されると全 caption fetch 失敗 (ただし try/except で main flow 壊さない設計) | 朝 06:00 fire 後 youtube_caption_section_appended log 観察 |
+| caption が auto-generated で誤字 | Whisper レベル精度なし、user 手動編集前提 | 実際 publish された動画で確認、許容範囲か user 判断 |
+| YouTube 動画の draft が auto-publish されて user 想定外 | 公開済 mail 件名に【YouTube】prefix で識別可、user は不要なら WP admin で削除 | 朝 fire 後の mail で確認 |
+| OB roster 31 名以外の OB 動画 | filter 漏れ → ingest されない (現状) | Phase 2 で WebSearch 拡充 |
+| caption section の表示崩れ | CSS 未確認、`nomotoke-youtube-caption` class は新規で既存 CSS なし | 実 publish で表示確認、CSS 追加要なら別 ticket |
+| Phase 1b 26 ch 追加 | channel_id verify 必要、user 提供 or WebSearch ベース | user GO 後 |
+| 整合: 既存 youtube_ob_sources.json と rss_sources.json の重複 | 11 ch 内 4 ch 重複 (既存 design)、本 ticket では touch せず | 別 ticket で整理判断 |
 
 ## 16. 新しく見つかったデグレ
 
-(impl 中に判明した既存挙動の不審点)
+なし。
+- 既存 publish flow への副作用 0 (additive integration、既存 method は最小限の if/elif 分岐追加のみ)
+- 0 regression (133/133 baseline 維持)
+- impl 中に既存挙動の不審点も発見せず
 
 ## 17. 追加した回帰テスト
 
-(新規 test file の case list、既存 test に追加した case)
+新規 test file 6 ファイル、計 69 case:
+
+| file | case 数 | 内容 |
+|---|---|---|
+| `test_giants_ob_roster.py` | 13 | OB roster load / alias 検出 / canonical name unique |
+| `test_youtube_caption_fetcher.py` | 13 | mock 経由 lib 動作 / 例外時空文字 fallback / max_chars trim |
+| `test_youtube_title_filter.py` | 13 | 巨人 keyword / 現役 / OB / no_match / matcher 例外 fall-through |
+| `test_rss_fetcher_youtube_integration.py` | 11 | _is_youtube_post_url / _check_youtube_giants_filter |
+| `test_rss_fetcher_youtube_caption_section.py` | 13 | _extract_youtube_video_id / _maybe_append_youtube_caption_section / HTML escape |
+| `test_rss_fetcher_youtube_title_prefix.py` | 6 | _maybe_apply_youtube_title_prefix / idempotent / non-YouTube unchanged |
+
+既存 test に追加した case: 0 (新規 file で追加、既存 test を破壊せず)
 
 ## 18. 次回触ってはいけない範囲
 
-(本 ticket landed 後、次の作業者が触ると壊しやすい領域 + 推奨除外 list)
+| 領域 | 理由 |
+|---|---|
+| `src/youtube_title_filter.py` の `_GIANTS_KEYWORDS` tuple | rss_fetcher 既存 GIANTS_KEYWORDS と意図的に同期、ずらすと is_giants_related と挙動不整合 |
+| `_create_draft_with_same_fire_guard` 冒頭の title prefix logic | 全 callsite (main/review) で自動適用、ここを skip すると prefix 外れる |
+| `_maybe_append_youtube_caption_section` 内の idempotency check | "nomotoke-youtube-caption" string match で再入防止、変更 = 二重挿入 risk |
+| `config/giants_ob_roster.json` の `name` field | filter logic が canonical name lookup する、別 form に変えると整合崩れ |
+| `requirements.txt` の youtube-transcript-api | Cloud Run image build 依存、削除すると import fail で main flow stop |
+| 既存 `is_giants_related` 関数 | YouTube filter と並行 OR で参照、改変は両方 review 必要 |
+| 既存 `youtube_ob_sources.json` の 11 ch | Phase 1b で 26 ch 追加予定、この 11 ch 自体は touch せず維持 |
+| force-draft gate (commit #5) は revert 済 | 再有効化したい場合は commit #7 ロジック (POLICY_FLIP) を再評価必要 |
+
+---
+
+## 19. 完了 summary
+
+344-INGEST Phase 1a 全 chain LIVE deploy 完了:
+- 既存 11 YouTube ch で OB title filter 動作 (巨人 keyword + 現役 + 元巨人 OB のいずれかで pass)
+- caption literal 600字 + 出典 + YouTube embed が 自動 publish 記事 body 末尾に挿入
+- title 先頭に【YouTube】prefix 付与で mail 件名 + WP admin で識別容易
+- LLM 不使用、cost ¥0/月、Cloud Run free tier 内
+- 既存 publish flow への副作用 0、0 regression
+
+次 session (Phase 1b):
+- 新規 26 ch を `youtube_ob_sources.json` に段階追加 (channel_id verify 必要)
+- `max_age_days=2 / article_limit=5` 抑制 start で観察ベース
+- (Phase 2) OB roster 拡充 (WebSearch ベース、現状 31 名 → 50-100 名)
 
 ---
 

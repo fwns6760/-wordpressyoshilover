@@ -96,6 +96,59 @@ def _clean(text: str) -> str:
     return _WS_RE.sub(" ", _HTML_RE.sub(" ", text)).strip()
 
 
+# 67319 fix (2026-05-14): quote が「事実名 only」(数字fact / イベント fact)
+# だった場合は selfie quote ではないと判定して Pattern A skip。
+# 例: "通算300号本塁打" "サヨナラホームラン" "300号HR" 等は 「」で囲まれていても
+# 商品名 / イベント引用、選手のセリフではない。
+_FACT_ONLY_QUOTE_PATTERNS: tuple[re.Pattern, ...] = (
+    re.compile(r"^(?:通算)?[\d０-９]+号(?:サヨナラ)?(?:本塁打|ホームラン|HR)$"),
+    re.compile(r"^[\d０-９]+号$"),
+    re.compile(r"^(?:逆転)?サヨナラ(?:本塁打|ホームラン|HR|安打|打|勝ち?)?$"),
+    re.compile(r"^[\d０-９]+回(?:[\d０-９]+失点)?(?:無失点)?$"),
+    re.compile(r"^完封(?:勝利|勝ち)?$"),
+    re.compile(r"^完投(?:勝利|勝ち)?$"),
+    re.compile(r"^[\d０-９]+奪三振$"),
+    re.compile(r"^猛打賞$"),
+    re.compile(r"^[\d０-９]+連勝$"),
+)
+
+
+def _is_fact_only_quote(quote: str) -> bool:
+    """quote が「事実名 only」(selfie quote ではない) なら True を返す。
+    商品名 / イベント引用検出用 (67319 fix)。
+    """
+    if not quote:
+        return False
+    cleaned = quote.strip().rstrip("。、💥")
+    cleaned = re.sub(r"\s+", "", cleaned)
+    cleaned = re.sub(r"[💥🎉㊗✨🥳]", "", cleaned)
+    return any(pat.match(cleaned) for pat in _FACT_ONLY_QUOTE_PATTERNS)
+
+
+# 67319 fix: source 本文に「グッズ販売 announcement」keyword 検出時は Pattern A skip。
+# 例: 公式 X の「記念グッズ販売開始」「オンラインストア」等は player_voice ではない。
+_ANNOUNCEMENT_KEYWORDS: tuple[str, ...] = (
+    "記念グッズ",
+    "グッズ販売",
+    "グッズ第",
+    "発売開始",
+    "販売開始",
+    "オンラインストア",
+    "GIANTS STORE",
+    "GIANTS-STORE",
+    "予約販売",
+    "受注販売",
+    "限定販売",
+    "予約受付",
+)
+
+
+def _is_announcement_source(source_title: str, source_body: str, summary: str) -> bool:
+    """source 本文に announcement / 物販 keyword 検出時 True (67319 fix)。"""
+    text = " ".join((source_title or "", source_body or "", summary or ""))
+    return any(kw in text for kw in _ANNOUNCEMENT_KEYWORDS)
+
+
 def _first_quote(*texts: str, max_len: int = 40) -> str:
     """335-QA Phase 1: literal quote を返す、`…` truncation は使わない。
 
@@ -643,22 +696,36 @@ def assemble_nomotoke_title(
             quote = _first_quote(
                 existing_title, source_title, source_body, summary
             )
-            assembled = _assemble_pattern_A(
-                name=name,
-                role=role,
-                quote=quote,
-                is_manager=subtype == "manager_comment" or role == "監督",
-                is_coach=subtype == "coach_comment" or role == "コーチ",
-            )
+            # 67319 fix: quote が事実名 only / source が announcement なら
+            # Pattern A skip して上位 caller (rss_fetcher) で他 pattern (B/F 等)
+            # に fall through。記事自体は publish 維持。
+            if _is_fact_only_quote(quote) or _is_announcement_source(
+                source_title, source_body, summary
+            ):
+                assembled = None
+            else:
+                assembled = _assemble_pattern_A(
+                    name=name,
+                    role=role,
+                    quote=quote,
+                    is_manager=subtype == "manager_comment" or role == "監督",
+                    is_coach=subtype == "coach_comment" or role == "コーチ",
+                )
     elif subtype == "manager":
         quote = _first_quote(existing_title, source_title, source_body, summary)
-        assembled = _assemble_pattern_A(
-            name=name,
-            role=role or "監督",
-            quote=quote,
-            is_manager=True,
-            is_coach=False,
-        )
+        # 67319 fix: 同上 (manager subtype でも guard 適用)
+        if _is_fact_only_quote(quote) or _is_announcement_source(
+            source_title, source_body, summary
+        ):
+            assembled = None
+        else:
+            assembled = _assemble_pattern_A(
+                name=name,
+                role=role or "監督",
+                quote=quote,
+                is_manager=True,
+                is_coach=False,
+            )
     elif subtype == "postgame":
         # B (修飾+選手+結果) を先に試す。name + modifier/result が揃わない時は
         # F (試合結果詳細、score+opp+result) に fall through。

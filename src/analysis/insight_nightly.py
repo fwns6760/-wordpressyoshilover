@@ -261,9 +261,21 @@ def run_nightly(
             pass
         try:
             today_iso = dt.date.today().isoformat()
-            for snapshot_scope in ("last_7d", "last_30d", "season"):
+            # 343-INSIGHT-007 scope-aware threshold:
+            # season 早期は data sparse (5月時点で 1 player ~10 AB)、後半は
+            # 充足するため scope 別に最小 sample 閾値を変える。
+            #   last_7d:  PA >= 5  / IP >= 1.0  (週次 hot/cold 用、緩め)
+            #   last_30d: PA >= 15 / IP >= 5.0  (月次 ranking 用、中庸)
+            #   season:   PA >= 50 / IP >= 15.0 (年間 ranking 用、厳しめ)
+            scope_thresholds: tuple[tuple[str, int, float], ...] = (
+                ("last_7d", 5, 1.0),
+                ("last_30d", 15, 5.0),
+                ("season", 50, 15.0),
+            )
+            for snapshot_scope, min_pa, min_ip in scope_thresholds:
                 insight_etl.compute_advanced_metric_snapshots(
                     conn, scope=snapshot_scope, snapshot_date=today_iso,
+                    min_pa=min_pa, min_ip=min_ip,
                 )
         except Exception:  # noqa: BLE001
             pass

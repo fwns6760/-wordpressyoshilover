@@ -5,3 +5,4 @@ tweepy
 google-cloud-storage
 pyyaml
 google-generativeai
+youtube-transcript-api

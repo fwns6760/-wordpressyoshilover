@@ -485,12 +485,58 @@ def _extract_via_jsonld(html: str) -> str:
     return ""
 
 
+_DIV_OPEN_RE = re.compile(r"<div\b", re.IGNORECASE)
+_DIV_CLOSE_RE = re.compile(r"</div\s*>", re.IGNORECASE)
+
+
+def _extract_balanced_div_inner(html: str, opening_pattern: "re.Pattern[str]") -> str:
+    """opening_pattern (1 つの開始 div tag を必ず match する regex) を起点に、
+    div 入れ子をカウントして balanced な inner HTML を返す。
+
+    sanspo のように nested ``<div>`` 内に本物 body が埋まっていて、非貪欲
+    ``.+?`` regex が最初の内側 ``</div>`` で停止して fragment が空になる
+    ケースを正しく扱うため (#16 / 337-INGEST Phase 3)。
+    開始 tag が見つからない / 閉じ div が無い場合は ``""``。
+    """
+    m = opening_pattern.search(html)
+    if not m:
+        return ""
+    body_start = m.end()
+    depth = 1
+    pos = body_start
+    n = len(html)
+    while pos < n:
+        next_open = _DIV_OPEN_RE.search(html, pos)
+        next_close = _DIV_CLOSE_RE.search(html, pos)
+        if not next_close:
+            return ""
+        if next_open and next_open.start() < next_close.start():
+            depth += 1
+            pos = next_open.end()
+        else:
+            depth -= 1
+            if depth == 0:
+                return html[body_start:next_close.start()]
+            pos = next_close.end()
+    return ""
+
+
+_SANSPO_OPENING_DIV_RE = re.compile(
+    r'<div[^>]+class="[^"]*\barticle-body\b[^"]*"[^>]*>',
+    re.IGNORECASE,
+)
+
+
 def _extract_via_site_selectors(html: str, host: str) -> str:
     """Try the curated site-specific selector table for the matching
     host. Returns the inner HTML fragment or ``""``."""
     if not html or not host:
         return ""
     host_l = host.lower()
+    if "sanspo.com" in host_l:
+        balanced = _extract_balanced_div_inner(html, _SANSPO_OPENING_DIV_RE)
+        if balanced and len(balanced.strip()) >= 20:
+            return balanced
     for needle, patterns in _SITE_SELECTORS:
         if needle not in host_l:
             continue

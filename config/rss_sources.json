@@ -190,6 +190,18 @@
     ]
   },
   {
+    "name": "サンスポ 巨人 search",
+    "url": "https://www.sanspo.com/?s=%E5%B7%A8%E4%BA%BA",
+    "type": "tag_scrape",
+    "scraper": "sanspo_giants_search",
+    "max_age_days": 7,
+    "article_limit": 30,
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
     "name": "読売ジャイアンツYouTube公式",
     "url": "https://www.youtube.com/channel/UCXxg0igSYUp0tqdd6luPEnQ/videos",
     "type": "tag_scrape",

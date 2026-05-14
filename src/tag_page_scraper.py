@@ -915,6 +915,7 @@ _SCRAPER_REGISTRY: dict[str, Callable[..., list[dict[str, Any]]]] = {
     "daily_giants_tag": fetch_daily_giants_entries,
     "sponichi_giants_filter": fetch_sponichi_giants_entries,
     "tokyo_sports_giants_label": fetch_tokyo_sports_giants_entries,
+    "sanspo_giants_search": fetch_sanspo_giants_entries,
     "youtube_channel": fetch_youtube_channel_entries,
 }
 

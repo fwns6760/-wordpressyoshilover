@@ -21,8 +21,20 @@ scheduler 7 trigger(02/07/12/15/17/20/21 JST)で出る記事の area 配分も�
 
 ## ゴール
 
-1. 守備指標を 1〜3 軸追加(候補: 守備率 FP% / 失策 E / 守備機会 TC)
-2. scheduler trigger 配分を 打撃 / 投手 / 守備 で **概ね均等**(各 area が同じ頻度で出る)
+1. **選手レベル** 守備指標を 1〜3 軸追加(候補: 守備率 FP% / 失策 E / 守備機会 TC)
+2. **球団レベル** 守備指標も同時追加(球団守備率 / 球団失策数 / 球団 DRS 相当)
+3. scheduler trigger 配分を 打撃 / 投手 / 守備 で **概ね均等**(各 area が同じ頻度で出る)
+4. 各 area を **選手 ranking + 球団 ranking** の 2 layer で出す
+   - 現状: 打撃 + 投手 は選手 + 球団の 2 layer ある、守備だけ完全欠落
+
+## team layer の落とし所(2026-05-14 追記)
+
+User 指摘「チームもね」(2026-05-14 EVENING)。
+
+- 球団守備率 = SUM(球団 PO + A) / SUM(球団 PO + A + E)
+- 球団失策数 = SUM(球団 E)、シーズン累計 / 月間 / 週間
+- セリーグ 6 球団 / パリーグ 6 球団で league split(既存 team_ranking_publisher.py の path に乗せる)
+- Giants 関連赤太字 + 集計期間明記 は既存 format 流用
 
 ## prerequisite audit
 

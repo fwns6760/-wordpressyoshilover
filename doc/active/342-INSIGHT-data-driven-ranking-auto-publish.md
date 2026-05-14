@@ -4,13 +4,13 @@
 |---|---|
 | ticket_id | 342-INSIGHT-data-driven-ranking-auto-publish |
 | priority | P1(ヨシラバー独自 enrichment、INSIGHT 基盤の活用第一弾) |
-| status | DRAFT(本 doc 作成のみ、user GO 待ち) |
+| status | PHASE_0_AUDIT_DONE_PHASE_1_SPEC_PENDING(2026-05-14 user GO 後 Claude Phase 0 完了) |
 | owner | Claude Code |
 | lane | INSIGHT |
 | created | 2026-05-14 |
 | doc_path | doc/active/342-INSIGHT-data-driven-ranking-auto-publish.md |
-| ready_for | user GO → Phase 0 audit |
-| blocked_by | user GO(本 ticket scope 確定) |
+| ready_for | Phase 1 spec 精度上げ(本 doc §10 Phase 0 audit 結果反映)+ user GO → impl 着手 |
+| blocked_by | (Phase 0 完了で unblock)、Phase 1 着手は Phase 0 結果を踏まえた spec 精度上げ + user GO |
 | numbering_reserved | doc/README.md に追記予定 |
 
 ## 目的(B 案: 設計 + 初版 + 拡張可能 framework)
@@ -213,6 +213,7 @@ Phase 1 で 1-2 種、Phase 2 で残り or 別系統。
 | 日時 (JST) | 内容 | 結果 |
 | --- | --- | --- |
 | 2026-05-14 | 本 ticket doc 作成(B 案: 設計 + 初版 + 拡張 framework) | user GO 待ち |
+| 2026-05-14 PM | user GO 受領後 Claude が Phase 0 audit 完了(7 項目、read-only、§10 audit 結果に追記) | 4 項目 ✓ / 1 項目 △ / 2 項目 ✗、Phase 1 着手前に spec 精度上げ必要 |
 
 ## 10. Regression Memo欄
 
@@ -248,6 +249,52 @@ Phase 1 で 1-2 種、Phase 2 で残り or 別系統。
 - 12 球団 batting/pitching の月次 sample 数(N=最小 50 PA / 30 IP 等)を満たす
   選手数
 - WP REST で新 category 作成 + 新 post publish の権限が既存 `WP_USER` で足りるか
+
+### Phase 0 audit 結果(2026-05-14、Claude、user GO 後)
+
+全項目 1 次 source verify(`feedback_ai_top_failure_modes_meta_rule` 準拠、handoff
+2 次 source 推論禁止)。
+
+| # | 項目 | 結果 | 詳細 |
+|---|---|---|---|
+| 1 | INSIGHT DB schema の `advanced_metric_snapshots` 定義 | ✓ | `data/insight/schema.sql:201-216` に既存定義あり、`scope` ('season' / 'last_7d' / 'last_30d' / 'last_5_games')、`metric_name` (free-form: 'OPS' / 'wOBA' / 'FIP' / 'RF_proxy')、`sample_size`、`league_rank`、`position_rank` 揃う。月次は `last_30d` 流用 or 新 scope 値追加 |
+| 2 | `src/analysis/insight_*.py` 公開 API | ✓ | `insight_rank_query.rank_players()` / `get_player_rank()` / `_aggregate_batting/pitching()` (内部) / `RankedRow` class、`insight_article_generator.render_article(ctx, *, top_n=10) -> dict` / `RankRow` / `ArticleContext` class、`insight_defense_proxy.uzr_proxy_for_player()` / `position_summary_for_player()` / `league_position_baseline()` / `rebuild_defense_for_game()` 利用可、改名 / 削除しない |
+| 3 | 既存 WP category 一覧 + 衝突 check | ✓ | `config/categories.json` に 9 件: 試合速報(663) / 選手情報(664) / 首脳陣(665) / ドラフト・育成(666) / OB・解説者(667) / 補強・移籍(668) / 球団情報(669) / コラム(670) / 旧記事(672)。671 空き。提案命名「データで見る巨人」「巨人ランキング」は衝突なし、disjoint |
+| 4 | duplicate_guard / publish gate 挙動(新 subtype 対応) | ✓ partial | `src/guarded_publish_runner.py` に subtype-aware guard 完備(`extractor.infer_subtype(title)` / `publish_evaluator.resolve_guarded_publish_subtype()` / `_resolve_subtype_cleanup()`)。新 subtype は両 module への追記必須、未追記時は `CandidateRefusedError("cleanup_ambiguous", "subtype_unresolved_no_resolution")` で publish が拒否される。dedupe_key は `nomotoke_rss_router._dedupe_key(template_key, canonical)` で sha1[:12] |
+| 5 | Cloud Scheduler 月末 cron 表現可否 | △ | `gcloud scheduler jobs list` で 33 既存 job 確認、月末発火 job は **存在しない**(全部 daily / hourly / weekly / cron-fixed)。標準 cron で「月末」は直接表現不可。**推奨**: (a)`0 23 28-31 * *` 毎日発火 + script 側で末日判定 or (b)月初発火(`0 0 1 * *`)で「先月分 monthly ranking」を出す方が clean。`insight-nightly-trigger`(`0 2 * * *` ENABLED)が既に存在、関連 job として並走 OK |
+| 6 | 12 球団 monthly sample 数 (実 data) | ✗ | local DB(`data/insight/insight.db`、110KB、2026-05-13 更新)が **INSIGHT-007 additive table 全部 missing**(`teams` / `players` / `defense_opportunities` / `advanced_metric_snapshots` 4 table 不在)。INSIGHT-001 base のみ(games:1 / batting_logs:18 / pitching_logs:11)。production DB は GCS bucket `baseballsite-yoshilover-insight` 上(`INSIGHT_GCS_BUCKET` env、`insight_gcs_sync.py` で download / upload)。**Phase 1 前に GCS 経由で本番 DB pull → sample 数 verify 必須**(local では絶対 verify 不能) |
+| 7 | WP REST 新 category 作成 + WP_USER 権限 | ✗ | `src/wp_client.py` には `get_categories()` (line 1283) と `resolve_category_id(name)` (line 1299) のみ、**`create_category` / `add_category` method は不在**。新 category 作成 path は (a)Phase 1 で `wp_client.create_category()` 新 method 実装 or (b)WP admin GUI で手動作成 → `config/categories.json` に手動追記。`WP_USER` + `WP_APP_PASSWORD` (application password) は admin 権限相当、API 側の権限不足は無し(method 実装の問題) |
+
+#### Phase 1 前に必要な spec 精度上げ(audit から導出)
+
+a. **GCS から production DB を pull して 12 球団 monthly sample 数を実 measure** (audit #6 の follow-up)
+   - 最小 PA / IP 閾値(N=50 PA / 30 IP)を満たす選手数を球団別に計測
+   - `last_30d` scope の既存 snapshot 件数 + period coverage(現在 INSIGHT-007 が production で何ヶ月分蓄積されているか)
+   - sample 不足な球団 / position があれば、初版 4 候補のうち実装可能順を再優先順位付け
+
+b. **新 subtype 命名 + extractor / publish_evaluator への追加 spec** (audit #4 の follow-up)
+   - 候補命名: `monthly_ops_ranking` / `defense_uzr_ranking` / `cross_team_ops_top30` / `recent_hot_cold_ranking`
+   - `extractor.infer_subtype(title)` の title 判定 rule(title 中の「月次」「ranking」「top 30」「hot/cold」等)
+   - `publish_evaluator.resolve_guarded_publish_subtype()` の resolution path
+
+c. **`wp_client.create_category()` 新 method の spec** (audit #7 の follow-up)
+   - WP REST POST `/wp/v2/categories` を call、name + slug + parent + description を受ける
+   - 既存 method `get_categories()` (line 1283) と対称、application password で auth 通る
+   - エラーハンドリング: 既存 category 名と衝突したら何を返すか(WP REST は 400 + `term_exists`)
+
+d. **Cloud Scheduler 月末発火戦略の最終決定** (audit #5 の follow-up)
+   - 推奨案 (b)月初発火 `0 0 1 * *` で「先月分 ranking」を出す方が cron 純粋で操作可逆性高い
+   - script 側 ranking 計算 query は「前月 1 日〜末日」を `snapshot_date` で filter、week 系は「直近 7 日」「直近 14 日」で filter
+
+#### Phase 0 audit で **触らなかった** もの(明示)
+
+- `src/analysis/insight_*.py` (全 14 file、read のみ、edit 0)
+- `data/insight/insight.db` (read のみ、edit 0)
+- `src/guarded_publish_runner.py` / `src/wp_client.py` (read のみ、edit 0)
+- `config/categories.json` (read のみ、edit 0)
+- Cloud Scheduler / Cloud Run / GCS (gcloud list のみ、mutate 0)
+- `data/insight/schema.sql` (read のみ、edit 0)
+- production DB / GCS bucket(read もしてない、env 変数の存在確認のみ)
 
 ---
 

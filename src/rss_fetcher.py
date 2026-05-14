@@ -14163,23 +14163,35 @@ def fetch_og_image(url: str) -> str:
 
 
 def _fetch_url_html(url: str, max_bytes: int = 200000, timeout: int = 12) -> str:
+    """2026-05-14: exception を silent swallow していたが、Cloud Run で raw_html 空
+    返却が連続していたので、urllib / curl 両 fallback の失敗理由を log 化して
+    Cloud Run egress / bot block 等の原因切り分けを可能にする。挙動は無変更。
+    """
     import urllib.request
-
+    log = logging.getLogger("rss_fetcher")
     req = urllib.request.Request(url, headers={"User-Agent": HTTP_USER_AGENT})
+    urllib_err: str = ""
     try:
         with urllib.request.urlopen(req, timeout=timeout) as res:
             return res.read(max_bytes).decode("utf-8", errors="ignore")
-    except Exception:
-        try:
-            result = subprocess.run(
-                ["curl", "-fsSL", "-A", HTTP_USER_AGENT, url],
-                capture_output=True,
-                check=True,
-                timeout=timeout + 3,
-            )
-            return result.stdout[:max_bytes].decode("utf-8", errors="ignore")
-        except Exception:
-            return ""
+    except Exception as exc:  # noqa: BLE001
+        urllib_err = f"{type(exc).__name__}:{exc}"
+    try:
+        result = subprocess.run(
+            ["curl", "-fsSL", "-A", HTTP_USER_AGENT, url],
+            capture_output=True,
+            check=True,
+            timeout=timeout + 3,
+        )
+        return result.stdout[:max_bytes].decode("utf-8", errors="ignore")
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "fetch_url_html_failed url=%s urllib_err=%s curl_err=%s",
+            url,
+            urllib_err[:200],
+            f"{type(exc).__name__}:{str(exc)[:200]}",
+        )
+        return ""
 
 
 _NEWS_PUBLISHER_HOSTS = frozenset({
@@ -24190,8 +24202,20 @@ def _main(args, logger):
             _article_raw_html = ""
             if source_type in {"news", "tag_scrape"}:
                 _article_raw_html = str(entry_obj.get("_html") or "")
+                _raw_from_entry = bool(_article_raw_html)
                 if not _article_raw_html:
                     _article_raw_html = _fetch_url_html(post_url, max_bytes=240000, timeout=12)
+                # 2026-05-14: raw_html 0 字事象の root cause 切り分け用 observability。
+                # 期待: source_type=news/tag_scrape では entry _html か _fetch_url_html
+                # のどちらかで >0 字。0 字は excerpt block 永続 skip の原因。
+                logger.info(
+                    "article_raw_html_resolved post_url=%s source_type=%s "
+                    "from_entry=%s raw_html_len=%d",
+                    post_url,
+                    source_type,
+                    _raw_from_entry,
+                    len(_article_raw_html or ""),
+                )
             _article_images = _extract_source_article_image_urls(
                 source_type,
                 entry_obj,

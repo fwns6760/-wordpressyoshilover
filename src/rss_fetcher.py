@@ -19864,6 +19864,138 @@ def _player_voice_digest_detection_enabled() -> bool:
     return val in {"1", "true", "yes", "on"}
 
 
+_SAME_FAMILY_X_WEB_DEDUP_ENV_FLAG = "ENABLE_SAME_FAMILY_X_WEB_DEDUP"
+
+_SAME_FAMILY_DEDUP_EVENT_PATTERNS: tuple[str, ...] = (
+    r"\d+号(?:サヨナラ|逆転)?ホームラン",
+    r"通算\d+号",
+    r"通算[０-９]+号",
+    r"サヨナラ(?:ホームラン|安打|打|勝ち)?",
+    r"完封(?:勝ち|勝利)?",
+    r"完投(?:勝利|勝ち)?",
+    r"\d+回\d+失点",
+)
+_SAME_FAMILY_DEDUP_EVENT_RES: tuple = tuple(
+    _re.compile(p) for p in _SAME_FAMILY_DEDUP_EVENT_PATTERNS
+)
+
+
+def _same_family_x_web_dedup_enabled() -> bool:
+    val = (os.getenv(_SAME_FAMILY_X_WEB_DEDUP_ENV_FLAG) or "0").strip().lower()
+    return val in {"1", "true", "yes", "on"}
+
+
+def _detect_event_token_for_dedup(text: str) -> str:
+    """同 family X+Web dedup 用に text から event token を 1 つ抽出 (#18)。
+    最初に match した pattern の literal を返す。digest clusterer の
+    _EVENT_PATTERNS に整合 (循環 import 避けて 簡易版を持つ)。"""
+    for pat in _SAME_FAMILY_DEDUP_EVENT_RES:
+        m = pat.search(text)
+        if m:
+            return m.group(0)
+    return ""
+
+
+def _enrich_candidate_for_same_family_dedup(candidate: Mapping[str, Any]) -> dict:
+    """family / player / event_token を derive した shallow copy を返す (#18)。"""
+    enriched = dict(candidate)
+    post_url = str(candidate.get("post_url") or "")
+    if not enriched.get("source_family"):
+        enriched["source_family"] = _extract_source_family(post_url)
+    title = str(candidate.get("title") or candidate.get("title_text") or "")
+    summary = str(candidate.get("summary") or "")
+    text = f"{title} {summary}"
+    if not enriched.get("player_name"):
+        roster_hits = _matching_giants_roster_names(text)
+        if roster_hits:
+            enriched["player_name"] = roster_hits[0]
+    enriched["_dedup_event_token"] = _detect_event_token_for_dedup(text)
+    return enriched
+
+
+def _aggregate_same_family_x_web_candidates(candidates: list[dict]) -> list[dict]:
+    """#18 / 339-INGEST: 同 family の X 速報 + Web 記事を 1 件に統合する。
+
+    flag OFF (default) → 即 candidates を返す (no-op、cost 0、rollback 経路)。
+    flag ON → 同 source_family + 同 player_name + 同 event_token の
+    (X candidate, Web candidate) ペアを検出:
+      - kept = Web 記事 (本文長、引用 block 用 raw_html を持つ)
+      - consumed = X 投稿 (WP post 作成 skip)
+      - kept Web に same_family_x_consumed payload (X URL list) を tag
+        (body renderer が後段で optional に embed できるようにする)
+
+    334-QA digest と直交 (本 dedup → digest aggregation の順)。
+    例外時は main flow を壊さない。
+    """
+    if not _same_family_x_web_dedup_enabled():
+        return candidates
+    if not candidates:
+        return candidates
+    log = logging.getLogger("rss_fetcher")
+    try:
+        enriched = [_enrich_candidate_for_same_family_dedup(c) for c in candidates]
+    except Exception as exc:  # noqa: BLE001
+        log.warning("same_family_x_web_enrich_failed err=%s count=%d", exc, len(candidates))
+        return candidates
+
+    groups: dict[tuple[str, str, str], list[int]] = {}
+    for i, e in enumerate(enriched):
+        family = str(e.get("source_family") or "")
+        player = str(e.get("player_name") or "")
+        event = str(e.get("_dedup_event_token") or "")
+        if not family or family == "unknown" or not player or not event:
+            continue
+        key = (family, player, event)
+        groups.setdefault(key, []).append(i)
+
+    consumed_indices: set[int] = set()
+    parent_x_payload: dict[int, list[dict]] = {}
+    for key, indices in groups.items():
+        if len(indices) < 2:
+            continue
+        x_indices = [i for i in indices if enriched[i].get("source_type") == "social_news"]
+        web_indices = [i for i in indices if enriched[i].get("source_type") != "social_news"]
+        if not x_indices or not web_indices:
+            continue
+        web_parent = max(
+            web_indices,
+            key=lambda i: len(str(enriched[i].get("summary") or "")),
+        )
+        for x_i in x_indices:
+            consumed_indices.add(x_i)
+            parent_x_payload.setdefault(web_parent, []).append({
+                "url": str(enriched[x_i].get("post_url") or ""),
+                "title": str(enriched[x_i].get("title") or ""),
+                "source_handle": str(enriched[x_i].get("source_handle") or ""),
+            })
+            log.info(
+                "same_family_x_web_consumed family=%s player=%s event=%s "
+                "x_url=%s web_url=%s",
+                key[0], key[1], key[2],
+                enriched[x_i].get("post_url"),
+                enriched[web_parent].get("post_url"),
+            )
+
+    if not consumed_indices:
+        return candidates
+
+    result: list[dict] = []
+    for i, cand in enumerate(candidates):
+        if i in consumed_indices:
+            continue
+        if i in parent_x_payload:
+            tagged = dict(cand)
+            tagged["same_family_x_consumed"] = parent_x_payload[i]
+            result.append(tagged)
+        else:
+            result.append(cand)
+    log.info(
+        "same_family_x_web_dedup_summary input=%d output=%d consumed=%d",
+        len(candidates), len(result), len(consumed_indices),
+    )
+    return result
+
+
 def _adapt_candidate_for_digest(candidate: Mapping[str, Any]) -> dict:
     """#22 / 341-FIX: prepared_entries → find_digest_clusters 期待 schema 配線。
 
@@ -23811,6 +23943,9 @@ def _main(args, logger):
             entry_index += 1
 
     prepared_entries = _aggregate_lineup_candidates(prepared_entries)
+    # #18 / 339-INGEST: 同 family X 速報 + Web 記事 dedup (digest aggregation の前)。
+    # ENABLE_SAME_FAMILY_X_WEB_DEDUP=0 (default) で完全 no-op。
+    prepared_entries = _aggregate_same_family_x_web_candidates(prepared_entries)
     # 334-QA Phase 2b: digest cluster detection + log のみ、candidate 不変。
     # ENABLE_PLAYER_VOICE_DIGEST_DETECTION=0 (default) で完全 no-op。
     prepared_entries = _aggregate_player_voice_digest_candidates(prepared_entries)

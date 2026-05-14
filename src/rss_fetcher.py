@@ -19864,6 +19864,36 @@ def _player_voice_digest_detection_enabled() -> bool:
     return val in {"1", "true", "yes", "on"}
 
 
+def _adapt_candidate_for_digest(candidate: Mapping[str, Any]) -> dict:
+    """#22 / 341-FIX: prepared_entries → find_digest_clusters 期待 schema 配線。
+
+    元 dict を破壊せず、digest 検出に必要な field のみ enriched shallow copy で
+    返す。既に存在する field は touch しない (idempotent)。
+
+    enrich する field:
+      - source_family: post_url から _extract_source_family で derive
+      - player_name : title + summary を giants_roster alias index 突合
+                       (一致 1 件目を採用、player-agnostic)
+      - game_id     : published_day を coarse な clustering key として採用
+                       (同日同選手の異媒体記事を group する目的)
+    """
+    adapted = dict(candidate)
+    if not adapted.get("source_family"):
+        post_url = str(candidate.get("post_url") or "")
+        adapted["source_family"] = _extract_source_family(post_url)
+    if not adapted.get("player_name"):
+        title = str(candidate.get("title") or candidate.get("title_text") or "")
+        summary = str(candidate.get("summary") or "")
+        roster_hits = _matching_giants_roster_names(f"{title} {summary}")
+        if roster_hits:
+            adapted["player_name"] = roster_hits[0]
+    if not adapted.get("game_id"):
+        published_day = str(candidate.get("published_day") or "").strip()
+        if published_day:
+            adapted["game_id"] = published_day
+    return adapted
+
+
 def _aggregate_player_voice_digest_candidates(candidates: list[dict]) -> list[dict]:
     """334-QA Phase 2c: 検出 cluster を実 candidate list に反映する。
 
@@ -19884,7 +19914,8 @@ def _aggregate_player_voice_digest_candidates(candidates: list[dict]) -> list[di
         return candidates
     log = logging.getLogger("rss_fetcher")
     try:
-        clusters = _find_player_voice_digest_clusters(candidates)
+        adapted_candidates = [_adapt_candidate_for_digest(c) for c in candidates]
+        clusters = _find_player_voice_digest_clusters(adapted_candidates)
     except Exception as exc:  # noqa: BLE001 — observation 用、main flow を絶対に壊さない
         log.warning(
             "player_voice_digest_detection_failed err=%s candidate_count=%d",

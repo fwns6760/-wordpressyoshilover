@@ -4,7 +4,7 @@
 |---|---|
 | ticket_id | 342-INSIGHT-data-driven-ranking-auto-publish |
 | priority | P1(ヨシラバー独自 enrichment、INSIGHT 基盤の活用第一弾) |
-| status | READY_FOR_PHASE_1_IMPL(2026-05-14 user GO 後 343-INSIGHT-007 backfill 完了で prerequisite 解消、巨人選手中心の初版 4 候補のうち A1 月次 OPS / E1 直近 hot/cold は data 揃い、user GO で impl 着手可能) |
+| status | READY_FOR_PHASE_1_IMPL_FULL_12TEAM(2026-05-14 user GO 後 343-INSIGHT-007 Phase 4 完了、12 球団全部 player 充足 + 6394 advanced_metric_snapshots、初版 4 候補全部 data 揃い、user GO で impl 着手可能) |
 | owner | Claude Code |
 | lane | INSIGHT |
 | created | 2026-05-14 |
@@ -216,6 +216,7 @@ Phase 1 で 1-2 種、Phase 2 で残り or 別系統。
 | 2026-05-14 PM | user GO 受領後 Claude が Phase 0 audit 完了(7 項目、read-only、§10 audit 結果に追記) | 4 項目 ✓ / 1 項目 △ / 2 項目 ✗、Phase 1 着手前に spec 精度上げ必要 |
 | 2026-05-14 PM | user 2 度目 GO 受領後 Claude が Phase 1 spec 精度上げ完了(4 follow-up: production DB pull / 新 subtype / wp_client.create_category / 月末 cron 戦略、read-only / doc-only、§10 末尾に追記) | spec 完成、ただし重大発見: production DB INSIGHT-007 table は schema 存在も data ほぼ空(advanced_metric_snapshots: 0 / players: 0 / teams: 0 / games: 11 行 2 日分)。342 impl は data 蓄積待ちで blocked。option A/B/C を user に提示 |
 | 2026-05-14 PM | 343-INSIGHT-007 chain LIVE + backfill 完了で prerequisite 解消 | 343 で teams=12 / players=39 / advanced_metric_snapshots=616 / season scope 充足 / `last_30d` batter 14 player + pitcher 18 player。342 status を `READY_FOR_PHASE_1_IMPL` に昇格、初版 A1 月次 OPS / E1 直近 hot/cold は data 揃い、user GO で impl 着手可能。「12 球団 top 30」は player roster 偏り(g=28、f/h/l=0)のため別 ticket 後 |
+| 2026-05-14 PM | 343-INSIGHT-007 Phase 4 (12 球団 team-aware roster) で「12 球団 top 30」も unblock | NPB 公式 scrape で `npb_12team_roster.json` 1071 entry 生成、fill_canonical_team_aware で 5027 row 補完、players 39→462 (12 球団全部 32-43 人)、advanced_metric_snapshots 616→6394 (10x)。342 status `READY_FOR_PHASE_1_IMPL_FULL_12TEAM` に昇格、初版 4 候補全部 (A1 月次 OPS / B2 守備 UZR / B1 12 球団 top 30 / E1 直近 hot/cold) data 揃い |
 
 ## 10. Regression Memo欄
 

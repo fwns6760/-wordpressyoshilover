@@ -4,7 +4,7 @@
 |---|---|
 | ticket_id | 343-INSIGHT-007-data-population-audit-and-backfill |
 | priority | P1(342-INSIGHT の prerequisite、INSIGHT 系全体の data quality 基盤) |
-| status | PHASE_3_BACKFILL_DONE_READY_FOR_CLOSE(2026-05-14 user GO 後 Claude が 2026 シーズン全試合 backfill (3/27-5/13、227 game) 完了、production DB games=227 / advanced_metric_snapshots=616 / season scope 充足、342-INSIGHT impl 着手 ready、本 ticket は close 候補) |
+| status | PHASE_4_TEAM_AWARE_ROSTER_LANDED_READY_FOR_CLOSE(2026-05-14 user GO 後 Claude が NPB 12 球団 roster scrape + team-aware fill 完了、production DB players 39→462 / advanced_metric_snapshots 616→6394 / 12 球団全部 32-43 player 充足、342-INSIGHT「12 球団 top 30」impl も着手 ready、本 ticket close 候補) |
 | owner | Claude Code |
 | lane | INSIGHT |
 | created | 2026-05-14 |
@@ -190,6 +190,8 @@
 | 2026-05-14 PM | user 自律 GO 後 Claude が Phase 1 impl 完了(commit `033b92e`、5 file 828 行) + scope-aware threshold tweak (commit `3d928be`、1 file 14/1 行) | src + tests 完了、pytest 4 file 39 passed、baseline regression 0(4 failed pre-existing 維持)、`feedback_commit_safety_protocol_*` Phase 1+2+3 全実施 |
 | 2026-05-14 PM | Phase 2 deploy chain 完了 | gcloud builds submit `insight-nightly:343` SUCCESS(1m17s)→ Cloud Run job update → execute (`insight-nightly-j488w`) → production DB pull で teams=12 / players=21 / advanced_metric_snapshots=0 (default min_pa=30 が春先 sparse data に対し厳しすぎ)→ scope-aware threshold tweak commit `3d928be` → rebuild `insight-nightly:343b` (1m20s) → re-deploy → re-execute (`insight-nightly-2n8x2`) → production DB pull で **advanced_metric_snapshots=122 rows landed**、ERA top 5 ranking 確認(則本昂大 0.0 rank 1 / 戸郷翔征 5.4 rank 2)、INSIGHT-007 backfill chain LIVE。 |
 | 2026-05-14 PM | user GO 後 Claude が 2026 シーズン全試合 backfill 実行(`insight_nightly --auto --all-teams --date YYYY-MM-DD --live` を 3/20-5/13 の 55 日 loop) | NPB 開幕日 2026-03-27 確認、227 game ingested(空 14 日 / 失敗 8)、production DB push back (3.9 MB GCS upload)、再 pull で games 11→227、batting_logs 198→4086、pitching_logs 94→1839、players 21→39、advanced_metric_snapshots 122→616、**season scope 新規充足** (10 batter + 6 pitcher per metric)。top 5 OPS (last_30d): 大城卓三 0.93 / ダルベック 0.93 / 井上 0.80 / 平山 0.78 / 岸田 0.77。top 5 ERA (season): 赤星 1.72 / 井上 2.12 / 大竹 2.50 / 則本 2.70 / 高梨 2.79。342-INSIGHT impl 着手 ready。 |
+| 2026-05-14 PM | giants_roster.json dedupe (Phase A、commit `d6a4485`) | 132→102 entry、29 group 統合 + 則本昂大 position「打者→投手」修正 + 6 regression test、resolve 後方互換確認 |
+| 2026-05-14 PM | 12 球団 team-aware roster + NULL canonical fill (Phase B、commit `b8824f7`) | NPB 公式 (`npb.jp/bis/teams/rst_<code>.html`) を 12 球団 scrape (1071 entry)、`config/npb_12team_roster.json` 生成、`_load_team_aware_aliases` / `resolve_canonical_team_aware` / `fill_canonical_team_aware` 3 function 追加、run_nightly wire (defense_proxy 直後 / seed_teams 直前)、8 新 test。migration 実行 (local DB pull → fill_canonical 5027 行 update → re-seed 423 new player → re-compute 全 scope) で players 39→462 / advanced_metric_snapshots 616→**6394** (10x)、12 球団全部 32-43 player 充足。GCS push back (5.0 MB)、image rebuild `insight-nightly:343c` (1m18s) + Cloud Run job update 完了、次 nightly 以降も自動 fill 動作。top 10 OPS last_30d で 12 球団分布確認 (1.ネビン(l) / 2.佐藤輝明(t) / 3.桑原将志(l) / 4.佐藤都志也(m) / 5.坂倉将吾(c) / 6.増田珠(s) / 7.牧秀悟(db) / 8.庄子雄大(h) / 9.近藤健介(h) / 10.森下翔太(t))。top 5 ERA season: 髙橋遥人(t) 0.375 / 髙橋光成(l) / 早川隆久(e) / 平良海馬(l) / 栗林良吏(c)。342-INSIGHT「12 球団 top 30」も impl ready。 |
 
 ## 10. Regression Memo 欄
 

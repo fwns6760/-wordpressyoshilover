@@ -338,3 +338,114 @@ ERA top 5 (last_30d):
 ---
 
 (end of handoff、§12 追記完了)
+
+---
+
+## 13. POST-12TEAM-ROSTER 更新(2026-05-14 PM 同日、Claude、user「セリーグは直してほしい」+「NPBからもってきて」GO 後)
+
+**§12 を更に上書きする最新値**(next session 読時はこちらを優先):
+
+### 13-A. 12 球団 team-aware roster scrape 完了
+
+| 項目 | 値 |
+|---|---|
+| source | `https://npb.jp/bis/teams/rst_<code>.html` (12 球団 NPB 公式) |
+| fetch 方式 | urllib + 1 秒間隔 rate limit + User-Agent 明示 |
+| 抽出 | HTML parser で `<tr class="rosterPlayer">` 行から jersey/name/position/投/打 |
+| total entries | **1071**(g=105 / t=79 / s=79 / c=79 / db=83 / d=82 / h=117 / l=102 / m=88 / e=81 / b=93 / f=83) |
+| file | `config/npb_12team_roster.json`(commit `b8824f7`) |
+
+### 13-B. team-aware fill migration 結果
+
+| 項目 | 値 |
+|---|---|
+| fill_canonical_team_aware | **5027 row update**(batting/pitching_logs の NULL canonical を team_name 経由で解決) |
+| seed_players_from_logs (re-seed) | **+423 new players** |
+| compute_advanced_metric_snapshots | last_7d=2135 / last_30d=2634 / season=1625 = **計 6394 snapshot** |
+| GCS push | 5.0 MB upload 成功 |
+
+### 13-C. production DB final state(post-team-aware)
+
+| table | post-backfill (§12) | **post-12team (latest)** | delta |
+|---|---|---|---|
+| `players` | 39 | **462** | +423 |
+| `advanced_metric_snapshots` | 616 | **6394** | +5778 (10x) |
+| batting_logs NULL canonical | 3781 | 242 | -3539 |
+| pitching_logs NULL canonical | 1669 | 181 | -1488 |
+
+### 13-D. team 別 active player(12 球団全部 充足)
+
+```
+b (オリックス): 40
+c (広島):       37
+d (中日):       43
+db (DeNA):      42
+e (楽天):       36
+f (日本ハム):   38
+g (巨人):       41
+h (ソフトバンク): 32
+l (西武):       37
+m (ロッテ):     40
+s (ヤクルト):   36
+t (阪神):       40
+total:          462
+```
+
+### 13-E. ranking sample(12 球団分布確認、production DB)
+
+**top 10 OPS (last_30d、PA>=15)**:
+1. ネビン (l 西武) 1.3639 PA=45
+2. 佐藤輝明 (t 阪神) 1.1897 PA=90
+3. 桑原将志 (l 西武) 1.0985 PA=24
+4. 佐藤都志也 (m ロッテ) 1.075 PA=45
+5. 坂倉将吾 (c 広島) 1.0335 PA=78
+6. 増田珠 (s ヤクルト) 1.0152 PA=38
+7. 牧秀悟 (db DeNA) 1.0072 PA=31
+8. 庄子雄大 (h ソフトバンク) 0.9794 PA=21
+9. 近藤健介 (h ソフトバンク) 0.9752 PA=85
+10. 森下翔太 (t 阪神) 0.9501 PA=96
+
+→ **12 球団中 8 球団から top 10 入り**、ranking 記事の cross-team 比較が機能。
+
+**top 5 ERA (season、IP>=15)**:
+1. 髙橋遥人 (t 阪神) ERA=0.375 IP=48
+2. 髙橋光成 (l 西武) ERA=0.865 IP=52
+3. 早川隆久 (e 楽天) ERA=0.931 IP=29
+4. 平良海馬 (l 西武) ERA=0.947 IP=38
+5. 栗林良吏 (c 広島) ERA=0.964 IP=37
+
+### 13-F. ticket status 更新(post-12team)
+
+- **343-INSIGHT-007**: `PHASE_3_BACKFILL_DONE_READY_FOR_CLOSE` → **`PHASE_4_TEAM_AWARE_ROSTER_LANDED_READY_FOR_CLOSE`**
+- **342-INSIGHT**: `READY_FOR_PHASE_1_IMPL` → **`READY_FOR_PHASE_1_IMPL_FULL_12TEAM`**
+  - 初版 4 候補すべて data 揃い: A1 月次 OPS / B2 守備 UZR / **B1 12 球団 top 30**(unblock!) / E1 直近 hot/cold
+
+### 13-G. 既知制約(更に絞られた、残存)
+
+- **NULL canonical 残 423 行** (batting 242 + pitching 181 = 全体 5925 中 7%): roster にない引退選手 / 育成だけ載ってる選手 / 姓 ambiguous な外国人。許容範囲、別 ticket 必要なし(自然消滅 or 後日 manual fix)
+- **則本昂大 = 巨人(roster と user 教示で確認済)**: 私の training data 記憶「則本=楽天」は無効、roster + user 教示が source of truth
+- **roster は 2026-05-13 時点 snapshot**: 移籍 / 退団があれば再 scrape 必要(週次 or 月次 update job 別途検討余地)
+
+### 13-H. 次 session 着手 case(更新)
+
+- **Case A**(推奨): 343 close + 342 Phase 1 impl 着手
+  - 343 `doc/active/` → `doc/done/2026-05/` 移動 + status `CLOSED`
+  - 342 初版 4 候補から 1 種類で Phase 1 impl(`ranking_publisher.py` + extractor 拡張 + `wp_client.create_category` 追加 + tests + draft 1 本生成)
+  - 推奨初版: B1「2026-04 月次 12 球団 OPS top 30 + 巨人選手の位置」(横断比較 + 巨人軸 両立、343 で newly unblock)
+- **Case B**: 別 ticket(週次 roster re-scrape job、ranking schedule 別 trigger 設計 等)
+- **Case C**: 別 task
+
+### 13-I. 本 12team work で production / src に touch しなかったもの
+
+- 既存 `giants_roster.json` は dedupe (`d6a4485`) 以外 触らず、backward compat 維持
+- 既存 `_load_roster_aliases` / `resolve_canonical` 既存 signature 不変
+- 既存 INSIGHT-001 ETL (etl_from_html / upsert_*) signature 不変
+- 既存 defense_proxy / lineup_history populate path 不変
+- Cloud Run image rebuild は `insight-nightly:343c` 1 個のみ、他 service 完全 disjoint
+- Cloud Scheduler の schedule / state 不変
+- env / Secret Manager 不変
+- WP / X / mail / SEO / Gemini 一切 unchanged
+
+---
+
+(end of handoff、§13 追記完了 — session 区切り準備 OK)

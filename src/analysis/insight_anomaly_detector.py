@@ -57,13 +57,20 @@ ALL_ANOMALY_SIGNALS = (
     SIGNAL_GIANTS_TOP_OUTLIER,
 )
 
-# default 閾値 (env で override 可能)
+# default 閾値 (env で override 可能、user「結構緩めていい」適用、巨人 優先)
 DEFAULT_ZSCORE_THRESHOLD = float(
-    os.environ.get("DATA_INSIGHT_ANOMALY_THRESHOLD_SIGMA", "2.0") or "2.0"
+    os.environ.get("DATA_INSIGHT_ANOMALY_THRESHOLD_SIGMA", "1.0") or "1.0"
 )
-DEFAULT_BABIP_DIVERGENCE = 0.080  # AVG vs BABIP 差 (大きいほど運要素)
-DEFAULT_FIP_ERA_DIVERGENCE = 1.50  # FIP vs ERA 差 (大きいほど運要素)
-DEFAULT_GIANTS_TOP_PCT = 0.05  # league top 5% 以内
+DEFAULT_BABIP_DIVERGENCE = 0.050  # AVG vs BABIP 差 (緩和、運要素 候補広げ)
+DEFAULT_FIP_ERA_DIVERGENCE = 1.00  # FIP vs ERA 差 (緩和)
+DEFAULT_GIANTS_TOP_PCT = 0.30  # league top 30% 以内 (大幅緩和、巨人 拾いやすく)
+DEFAULT_MIN_SAMPLE_BATTER = 20  # PA 最低 (default 30 から緩和)
+DEFAULT_MIN_SAMPLE_PITCHER = 10  # IP 最低 (default 15 から緩和)
+
+# 巨人 優先 priority (publish 順序を巨人 first にする)
+GIANTS_PRIORITY = 1
+NON_GIANTS_PRIORITY = 3
+SIGNAL_TREND_RISING = "anomaly_trend_monthly_rising"  # 月別 OPS slope 上昇
 
 
 # ─── 統計 helper ────────────────────────────────────────────────────────────
@@ -191,6 +198,8 @@ def detect_zscore_batter_outliers(
         z = _zscore(float(value), mean, std)
         if z < threshold_sigma:
             continue
+        # 巨人選手は priority=1 (publish 先頭)、他球団は priority=3
+        prio = GIANTS_PRIORITY if (team_code or "").strip() == "g" else NON_GIANTS_PRIORITY
         cid = _insert_candidate(
             conn,
             run_id=run_id,
@@ -203,7 +212,7 @@ def detect_zscore_batter_outliers(
             window_label=window_label,
             comparison_target=f"league_{scope}",
             evidence_json=None,
-            priority=1 if z >= threshold_sigma + 1.0 else 2,
+            priority=prio,
             notes=f"team={team_code} metric={metric_name}",
         )
         if cid:
@@ -253,6 +262,7 @@ def detect_zscore_pitcher_outliers(
         effective_z = -z if lower_is_better else z
         if effective_z < threshold_sigma:
             continue
+        prio = GIANTS_PRIORITY if (team_code or "").strip() == "g" else NON_GIANTS_PRIORITY
         cid = _insert_candidate(
             conn,
             run_id=run_id,
@@ -265,7 +275,7 @@ def detect_zscore_pitcher_outliers(
             window_label=window_label,
             comparison_target=f"league_{scope}",
             evidence_json=None,
-            priority=1 if effective_z >= threshold_sigma + 1.0 else 2,
+            priority=prio,
             notes=f"team={team_code} metric={metric_name} lower_is_better={lower_is_better}",
         )
         if cid:
@@ -292,8 +302,8 @@ def detect_babip_divergence(
     支えで実力値より高い AVG、-0.08 以下なら BABIP 不運で AVG 抑えられている。
     """
     avg_rows = {
-        r[0]: r[1] for r in conn.execute(
-            "SELECT player_canonical, metric_value FROM advanced_metric_snapshots "
+        r[0]: (r[1], r[2]) for r in conn.execute(
+            "SELECT player_canonical, metric_value, team_code FROM advanced_metric_snapshots "
             "WHERE metric_name = 'AVG' AND scope = ? AND snapshot_date = ? "
             "AND sample_size >= ?",
             (scope, snapshot_date, min_sample),
@@ -313,7 +323,7 @@ def detect_babip_divergence(
         run_id = str(uuid.uuid4())
     inserted: list[int] = []
     window_label = f"BABIP_divergence_{scope}_{snapshot_date}"
-    for player, avg_val in avg_rows.items():
+    for player, (avg_val, team_code) in avg_rows.items():
         babip_val = babip_rows.get(player)
         if babip_val is None or avg_val is None:
             continue
@@ -321,6 +331,7 @@ def detect_babip_divergence(
         if abs(diff) < threshold:
             continue
         direction = "BABIP高_運に支えられ" if diff > 0 else "BABIP低_運に逆らわれ"
+        prio = GIANTS_PRIORITY if (team_code or "").strip() == "g" else NON_GIANTS_PRIORITY
         cid = _insert_candidate(
             conn,
             run_id=run_id,
@@ -333,8 +344,8 @@ def detect_babip_divergence(
             window_label=window_label,
             comparison_target="BABIP_vs_AVG",
             evidence_json=None,
-            priority=2,
-            notes=direction,
+            priority=prio,
+            notes=f"{direction} team={team_code}",
         )
         if cid:
             inserted.append(cid)
@@ -357,8 +368,8 @@ def detect_fip_era_divergence(
     """ERA vs FIP の乖離。FIP-ERA > +1.5 は ERA が運に支えられた表面値、
     FIP-ERA < -1.5 は ERA が運悪く、本質指標では好調。"""
     era_rows = {
-        r[0]: r[1] for r in conn.execute(
-            "SELECT player_canonical, metric_value FROM advanced_metric_snapshots "
+        r[0]: (r[1], r[2]) for r in conn.execute(
+            "SELECT player_canonical, metric_value, team_code FROM advanced_metric_snapshots "
             "WHERE metric_name = 'ERA' AND scope = ? AND snapshot_date = ? "
             "AND sample_size >= ?",
             (scope, snapshot_date, min_sample),
@@ -378,7 +389,7 @@ def detect_fip_era_divergence(
         run_id = str(uuid.uuid4())
     inserted: list[int] = []
     window_label = f"FIP_ERA_divergence_{scope}_{snapshot_date}"
-    for player, era_val in era_rows.items():
+    for player, (era_val, team_code) in era_rows.items():
         fip_val = fip_rows.get(player)
         if fip_val is None or era_val is None:
             continue
@@ -386,6 +397,7 @@ def detect_fip_era_divergence(
         if abs(diff) < threshold:
             continue
         direction = "FIP高_ERAが運に支えられた表面値" if diff > 0 else "FIP低_ERAが運悪く本質は好調"
+        prio = GIANTS_PRIORITY if (team_code or "").strip() == "g" else NON_GIANTS_PRIORITY
         cid = _insert_candidate(
             conn,
             run_id=run_id,
@@ -398,8 +410,8 @@ def detect_fip_era_divergence(
             window_label=window_label,
             comparison_target="FIP_vs_ERA",
             evidence_json=None,
-            priority=2,
-            notes=direction,
+            priority=prio,
+            notes=f"{direction} team={team_code}",
         )
         if cid:
             inserted.append(cid)

@@ -89,48 +89,52 @@ def render_ranking_svg_bar_chart(
     max_val = max(values)
     min_val = min(values) * 0.95 if min(values) > 0 else 0
 
+    # inline style: WP の wpautop は SVG 内 <style> block を見て前後に </p><p> を
+    # 挿入してしまうため、class を使わず style 属性で書く。同じ理由で改行も入れない。
+    S_T = 'font-size:18px;font-weight:bold;fill:#222'
+    S_ST = 'font-size:12px;fill:#555'
+    S_LB = 'font-size:13px;fill:#333'
+    S_V = 'font-size:13px;font-weight:bold;fill:#fff'
+    S_VO = 'font-size:13px;fill:#222'
+    S_FB = 'fill:#c0392b'
+    S_NB = 'fill:#7faed5'
+    S_FL = 'font-size:13px;font-weight:bold;fill:#c0392b'
+    S_AX = 'stroke:#999;stroke-width:1;fill:none'
+
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {h}" '
         f'style="max-width:100%;height:auto;font-family:sans-serif;display:block;margin:1em 0;">',
-        '<style>.t{font-size:18px;font-weight:bold;fill:#222}'
-        '.st{font-size:12px;fill:#555}'
-        '.lb{font-size:13px;fill:#333}'
-        '.v{font-size:13px;font-weight:bold;fill:#fff}'
-        '.vo{font-size:13px;fill:#222}'
-        '.fb{fill:#c0392b}'
-        '.nb{fill:#7faed5}'
-        '.fl{font-weight:bold;fill:#c0392b}'
-        '.ax{stroke:#999;stroke-width:1}</style>',
     ]
     if title:
-        parts.append(f'<text x="{width//2}" y="26" text-anchor="middle" class="t">{title}</text>')
+        parts.append(f'<text x="{width//2}" y="26" text-anchor="middle" style="{S_T}">{title}</text>')
     if subtitle:
-        parts.append(f'<text x="{width//2}" y="50" text-anchor="middle" class="st">{subtitle}</text>')
+        parts.append(f'<text x="{width//2}" y="50" text-anchor="middle" style="{S_ST}">{subtitle}</text>')
 
     for i, r in enumerate(rows, start=1):
         y = margin_top + (i - 1) * (bar_h + 10)
         is_focus = (r["player"] == focus_player)
-        bar_class = "fb" if is_focus else "nb"
-        label_class = "fl" if is_focus else "lb"
+        bar_style = S_FB if is_focus else S_NB
+        label_style = S_FL if is_focus else S_LB
         val = r["value"] or 0
         bar_w = int((val - min_val) / (max_val - min_val) * chart_w) if max_val > min_val else chart_w
         bar_w = max(20, bar_w)
         team_disp = _TEAM_LABEL_JP.get(r.get("team", ""), r.get("team", "?"))
         star = " ★" if is_focus else ""
         label_text = f"{i}. {r['player']}({team_disp}){star}"
-        parts.append(f'<text x="{margin_l-10}" y="{y+bar_h//2+5}" text-anchor="end" class="{label_class}">{label_text}</text>')
-        parts.append(f'<rect x="{margin_l}" y="{y}" width="{bar_w}" height="{bar_h}" class="{bar_class}" rx="3"/>')
+        parts.append(f'<text x="{margin_l-10}" y="{y+bar_h//2+5}" text-anchor="end" style="{label_style}">{label_text}</text>')
+        parts.append(f'<rect x="{margin_l}" y="{y}" width="{bar_w}" height="{bar_h}" style="{bar_style}" rx="3"/>')
         if bar_w > 70:
-            parts.append(f'<text x="{margin_l+bar_w-6}" y="{y+bar_h//2+5}" text-anchor="end" class="v">{val:.3f}</text>')
+            parts.append(f'<text x="{margin_l+bar_w-6}" y="{y+bar_h//2+5}" text-anchor="end" style="{S_V}">{val:.3f}</text>')
         else:
-            parts.append(f'<text x="{margin_l+bar_w+6}" y="{y+bar_h//2+5}" text-anchor="start" class="vo">{val:.3f}</text>')
+            parts.append(f'<text x="{margin_l+bar_w+6}" y="{y+bar_h//2+5}" text-anchor="start" style="{S_VO}">{val:.3f}</text>')
 
-    parts.append(f'<line x1="{margin_l}" y1="{h-margin_b+5}" x2="{margin_l+chart_w}" y2="{h-margin_b+5}" class="ax"/>')
-    parts.append(f'<text x="{margin_l}" y="{h-margin_b+22}" class="lb">{min_val:.2f}</text>')
-    parts.append(f'<text x="{margin_l+chart_w}" y="{h-margin_b+22}" text-anchor="end" class="lb">{max_val:.2f}</text>')
-    parts.append(f'<text x="{margin_l+chart_w//2}" y="{h-margin_b+22}" text-anchor="middle" class="lb">{metric_name}</text>')
+    parts.append(f'<line x1="{margin_l}" y1="{h-margin_b+5}" x2="{margin_l+chart_w}" y2="{h-margin_b+5}" style="{S_AX}"/>')
+    parts.append(f'<text x="{margin_l}" y="{h-margin_b+22}" style="{S_LB}">{min_val:.2f}</text>')
+    parts.append(f'<text x="{margin_l+chart_w}" y="{h-margin_b+22}" text-anchor="end" style="{S_LB}">{max_val:.2f}</text>')
+    parts.append(f'<text x="{margin_l+chart_w//2}" y="{h-margin_b+22}" text-anchor="middle" style="{S_LB}">{metric_name}</text>')
     parts.append('</svg>')
-    return '\n'.join(parts)
+    # 1 行で返す: WP の wpautop が改行を見て前後に </p><p> を入れるのを防ぐ
+    return ''.join(parts)
 
 # 新 subtype の prefix (extractor + publish_evaluator 拡張時に対応)
 SUBTYPE_DATA_RANKING_PREFIX = "data_ranking_"

@@ -244,3 +244,66 @@ gcloud run deploy yoshilover-fetcher \
 - コメント記事 / 1プレー深掘り / 起用整理の精度をどう上げるか
 
 そのため、しばらくは `draft-only` で回し、下書きを見てソースと記事型を選別する運用にしています。
+
+## DATA-INSIGHT-continuous(大手が出さないデータ記事)
+
+報知・スポーツ報知・ニッカン等の大手スポーツ媒体が**取り上げない**「気づかない pattern」を、NPB 公式の打撃 / 投手成績から異常値検出して自動公開する継続改善 system。GH Issue #25 で運用中。チケットではなく **DB 改善 system** として継続稼働。
+
+### 出る記事の type
+
+1. **データランキング 4 軸**(セ・パ別、Giants 関連赤太文字)
+   - 打撃: OPS / 打率
+   - 投手: ERA / WHIP(防御率は低いほうがよい、ASC sort)
+2. **球団ランキング 7 軸**(セリーグ 6 球団、開幕から / 1 ヶ月)
+   - HR / 打率 / OPS / ERA / WHIP / FIP / K/9
+3. **異常値検出 8 種**
+   - SIGNAL_ZSCORE_BATTER / SIGNAL_ZSCORE_PITCHER(z-score ±1.0)
+   - BABIP_DIVERGENCE(運要素)
+   - FIP_ERA_DIVERGENCE(実力 vs 結果)
+   - GIANTS_TOP_OUTLIER(上位 30%)
+   - PACE_HR_PROJECTION
+   - HIDDEN_OPS_LIMIT
+   - HIT_STREAK_RUN
+
+### 自動公開 trigger(Cloud Scheduler、Asia/Tokyo)
+
+- `02:00` nightly insight ETL(全 metric snapshot 更新)
+- `07:00` 朝便(Giants 中心 + 球団ランキング)
+- `12:00` 昼便
+- `15:00` 午後便
+- `17:00` 試合前便
+- `20:00` 夜便
+- `21:00` 試合中便
+
+各 trigger は `ENABLE_DATA_INSIGHT_AUTO_DRAFT=1` + `ENABLE_DATA_INSIGHT_AUTO_PUBLISH_GIANTS=1` の env flag gate 経由。**Giants 関連だけ自動 publish**、他球団は draft 落とし(§11 user 判断境界、Giants only 解放済)。
+
+### 記事 format(read-friendly tuned)
+
+- title: `【巨人データを見る】1 ヶ月のセ・リーグ OPS 上位 5 人、巨人選手 X 位`(期間明記、何のデータか明示)
+- 本文: 表中心、文字最小限、該当選手は `<span style="color:#c0392b"><strong>赤太字</strong></span>`
+- 表の下に inline SVG 棒 chart(matplotlib 依存なし、純 SVG、wpautop 対策で全 element `style` 属性 inline)
+- 出典: NPB 公式 + 期間明記(`YYYY-MM-DD 〜 YYYY-MM-DD`)
+- WP category: `データで見る巨人`(ID 675、slug `data-de-miru-giants`)
+- player tag(回遊用)
+- 大手にない banner
+
+### 関連 module
+
+- `src/analysis/insight_etl.py` — 12 球団 roster 統合、advanced metric snapshot 計算
+- `src/analysis/insight_anomaly_detector.py` — 8 detector + 7 日 dedup
+- `src/analysis/ranking_article_publisher.py` — 選手ランキング render + publish(SVG 生成も)
+- `src/analysis/team_ranking_publisher.py` — 球団ランキング render + publish
+- `src/analysis/anomaly_article_publisher.py` — 異常値記事 render(統一 format)
+- `src/analysis/insight_nightly.py` — `--all-teams` 末尾で detect + publish を統合
+- `config/npb_12team_roster.json` — 1071 名 NPB 公式 scrape
+- `config/player_eyecatch_map.json` — eyecatch image 紐付け
+
+### 運用 doc
+
+- 作業記録: `docs/work_logs/2026-05-14_continuous-db-insight-articles.md`
+- 引き継ぎ: `docs/handoff/session_logs/2026-05-14_session_handoff_DATA_INSIGHT_continuous_LIVE.md`
+- GitHub: Issue #25(継続 thread)
+
+### コスト目安
+
+WP REST + Cloud Run job + Scheduler 込みで **月 50〜100 円程度**。OPS / FIP / WHIP 等の集計は SQLite + 軽量 SQL のため Gemini call 増加なし。

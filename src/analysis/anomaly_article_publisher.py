@@ -443,12 +443,15 @@ def publish_anomaly_drafts(
                 "candidate_id": cand["candidate_id"],
             })
             continue
+        # WP 投入 status 決定 (巨人選手は env flag 設定時 publish 化)
+        team_code_for_pub = _player_team_code(conn, cand["player_canonical"])
+        publish_status = rap._resolve_publish_status(focus_team_code=team_code_for_pub)
         try:
             post_id = wp_client_obj.create_post(
                 title=article["title"],
                 content=article["body_html"],
                 categories=[category_id],
-                status="draft",
+                status=publish_status,
                 caller="anomaly_article_publisher",
             )
             # mark candidate as DRAFTED
@@ -458,13 +461,15 @@ def publish_anomaly_drafts(
             )
             conn.commit()
             results.append({
-                "status": "published_draft",
+                "status": "published" if publish_status == "publish" else "published_draft",
+                "wp_status": publish_status,
                 "candidate_id": cand["candidate_id"],
                 "signal_type": cand["signal_type"],
                 "title": article["title"],
                 "post_id": int(post_id or 0),
                 "category_id": int(category_id),
                 "player_canonical": cand["player_canonical"],
+                "team_code": team_code_for_pub,
             })
             published += 1
         except Exception as e:  # noqa: BLE001

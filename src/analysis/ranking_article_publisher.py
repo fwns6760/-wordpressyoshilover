@@ -58,6 +58,27 @@ ENABLE_DATA_INSIGHT_AUTO_PUBLISH = (
     os.environ.get("ENABLE_DATA_INSIGHT_AUTO_PUBLISH", "0").strip() == "1"
 )
 
+# 巨人記事のみ auto-publish (user 明示 GO「巨人は自動公開でもいいよ」)
+# focus_player が巨人 (team_code='g') の ranking 記事のみ status='publish'、
+# 他球団は draft 維持 (§11 user 判断境界)
+ENABLE_DATA_INSIGHT_AUTO_PUBLISH_GIANTS = (
+    os.environ.get("ENABLE_DATA_INSIGHT_AUTO_PUBLISH_GIANTS", "0").strip() == "1"
+)
+
+
+def _resolve_publish_status(*, focus_team_code: Optional[str] = None) -> str:
+    """env flag + team_code から WP publish status を決定。
+
+    - ENABLE_DATA_INSIGHT_AUTO_PUBLISH=1: 全 record auto publish
+    - ENABLE_DATA_INSIGHT_AUTO_PUBLISH_GIANTS=1 + focus_team_code='g': 巨人のみ publish
+    - 上記以外: 'draft' (user 確認待ち)
+    """
+    if ENABLE_DATA_INSIGHT_AUTO_PUBLISH:
+        return "publish"
+    if ENABLE_DATA_INSIGHT_AUTO_PUBLISH_GIANTS and (focus_team_code or "").strip() == "g":
+        return "publish"
+    return "draft"
+
 
 # ─── snapshot DB query ──────────────────────────────────────────────────────
 
@@ -348,13 +369,18 @@ def publish_giants_centric_ranking_draft(
             "error": f"category {category_name!r} unresolvable",
         }
 
-    # WP draft 投入 (status='draft' 固定、auto-publish env flag は呼び出し側 gate)
+    # WP 投入 status 決定 (env flag + 巨人判定)
+    # 巨人 focus の ranking 記事は ENABLE_DATA_INSIGHT_AUTO_PUBLISH_GIANTS=1 なら
+    # 自動 publish。他球団 focus または env flag OFF は 'draft' 維持。
+    rows = article.get("meta", {}) or {}
+    focus_team_code = "g"  # ranking 記事は focus_player が常に巨人 (find_giants_top)
+    publish_status = _resolve_publish_status(focus_team_code=focus_team_code)
     try:
         post_id = wp_client_obj.create_post(
             title=article["title"],
             content=article["body_html"],
             categories=[category_id],
-            status="draft",
+            status=publish_status,
             caller="ranking_article_publisher",
         )
     except Exception as e:  # noqa: BLE001
@@ -365,7 +391,8 @@ def publish_giants_centric_ranking_draft(
         }
 
     return {
-        "status": "published_draft",
+        "status": "published" if publish_status == "publish" else "published_draft",
+        "wp_status": publish_status,
         "title": article["title"],
         "post_id": int(post_id or 0),
         "category_id": int(category_id),

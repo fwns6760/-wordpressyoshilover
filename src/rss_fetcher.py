@@ -23951,6 +23951,10 @@ def _main(args, logger):
         # passthrough branch (tag_scrape / 非 X URL 等)これらを初期化
         # しないと publish 側の try block で UnboundLocalError になる。
         _article_images: list = []
+        # 2026-05-14 C body fix: 前 iter からの stale value で
+        # _create_draft_with_same_fire_guard(enrichment_raw_html=...) が呼ばれて
+        # excerpt block が誤注入される事故防止 (各 iter 開始で空に reset)。
+        _article_raw_html: str = ""
         title_template_key: str = ""
 
         source_type = item["source_type"]
@@ -24909,6 +24913,13 @@ def _main(args, logger):
                 _article_raw_html_else = str(entry_obj_else.get("_html") or "")
                 if not _article_raw_html_else:
                     _article_raw_html_else = _fetch_url_html(post_url, max_bytes=240000, timeout=12)
+            # 2026-05-14 C body fix: tag_scrape (hochi / daily / tokyo-sports /
+            # sponichi の web 記事) で取得した raw_html を後段の
+            # _create_draft_with_same_fire_guard(enrichment_raw_html=...) にも
+            # 反映する。直前まで _article_raw_html_else は image 抽出にしか
+            # 使われず、excerpt insertion 用 _article_raw_html は空のまま
+            # (no_raw_html silent skip の root cause だった)。
+            _article_raw_html = _article_raw_html_else
             _article_images = _extract_source_article_image_urls(
                 source_type,
                 entry_obj_else,

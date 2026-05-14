@@ -2926,6 +2926,110 @@ class HtmlBodyPerPostTests(unittest.TestCase):
         self.assertNotIn("<script>", html_body)
         self.assertIn("&lt;script&gt;", html_body)
 
+    def test_html_intent_url_contains_fixed_giants_hashtag(self):
+        """Every per-post intent URL must include the fixed `#巨人`
+        hashtag so the manual X repost feeds carry a discoverable tag."""
+        html_body = sender.build_body_html_per_post(self._request())
+        # hashtags param appears HTML-escaped in attributes
+        self.assertIn("&amp;hashtags=", html_body)
+        # 巨人 is URL-encoded inside the hashtags value
+        from urllib.parse import quote
+        self.assertIn(quote("巨人", safe=""), html_body)
+
+    def test_html_intent_url_includes_player_names_from_title(self):
+        """When the title contains Giants allowlist player names, they
+        are appended to the intent URL hashtags param."""
+        req = self._request(
+            title="坂本勇人の逆転サヨナラ３００号",
+        )
+        html_body = sender.build_body_html_per_post(req)
+        from urllib.parse import quote
+        # Both 巨人 (fixed) and 坂本勇人 (detected from title) must show up
+        self.assertIn(quote("巨人", safe=""), html_body)
+        self.assertIn(quote("坂本勇人", safe=""), html_body)
+        # Both inside the single &hashtags= param, comma-joined
+        self.assertIn("&amp;hashtags=", html_body)
+
+    def test_html_intent_url_omits_non_player_words(self):
+        """Non-player words from the title (event tokens etc.) must NOT
+        leak into hashtags — only Giants allowlist player names plus the
+        fixed `#巨人` tag are emitted. The title itself still appears in
+        ``text=`` (the tweet body), so we inspect only the hashtags
+        param value, not the whole HTML body.
+        """
+        import re
+        from urllib.parse import unquote, urlparse, parse_qs
+        req = self._request(
+            title="逆転サヨナラ３００号",  # no player name in title
+        )
+        html_body = sender.build_body_html_per_post(req)
+        # Pull the X intent URL out of the HTML (still HTML-escaped).
+        match = re.search(r'href="(https://x\.com/intent/tweet[^"]+)"', html_body)
+        self.assertIsNotNone(match)
+        intent_url = match.group(1).replace("&amp;", "&")
+        hashtags_q = parse_qs(urlparse(intent_url).query).get("hashtags", [])
+        self.assertEqual(hashtags_q, ["巨人"], "only fixed 巨人 hashtag expected")
+        hashtags_value = unquote(hashtags_q[0])
+        self.assertNotIn("サヨナラ", hashtags_value)
+        self.assertNotIn("３００号", hashtags_value)
+
+
+class XIntentHashtagBuilderTests(unittest.TestCase):
+    """Unit tests for _build_x_post_intent_url(hashtags=...) and
+    _derive_x_intent_hashtags(title) — the helpers behind the per-post
+    HTML mail intent URL."""
+
+    def test_intent_url_without_hashtags_unchanged(self):
+        url = sender._build_x_post_intent_url(
+            "test title", "https://example.com/p"
+        )
+        self.assertIn("text=", url)
+        self.assertIn("url=", url)
+        self.assertNotIn("hashtags=", url)
+
+    def test_intent_url_with_hashtags_appended(self):
+        url = sender._build_x_post_intent_url(
+            "test title", "https://example.com/p", hashtags=["巨人", "坂本勇人"]
+        )
+        from urllib.parse import quote
+        self.assertIn("hashtags=", url)
+        self.assertIn(quote("巨人", safe=""), url)
+        self.assertIn(quote("坂本勇人", safe=""), url)
+
+    def test_intent_url_hashtag_normalization_strips_pound_and_whitespace(self):
+        url = sender._build_x_post_intent_url(
+            "t", "https://example.com/p", hashtags=["#巨人", " 坂本勇人 ", "巨人"]
+        )
+        from urllib.parse import quote, unquote
+        from urllib.parse import urlparse, parse_qs
+        parsed = parse_qs(urlparse(url).query)
+        hashtags_value = unquote(parsed["hashtags"][0])
+        # leading # stripped, whitespace stripped, duplicates removed
+        self.assertEqual(hashtags_value.split(","), ["巨人", "坂本勇人"])
+
+    def test_intent_url_empty_hashtags_omits_param(self):
+        url = sender._build_x_post_intent_url(
+            "t", "https://example.com/p", hashtags=[]
+        )
+        self.assertNotIn("hashtags=", url)
+
+    def test_derive_hashtags_returns_only_fixed_when_no_player(self):
+        out = sender._derive_x_intent_hashtags("逆転サヨナラ勝利")
+        self.assertEqual(out, ("巨人",))
+
+    def test_derive_hashtags_extends_with_player_names(self):
+        out = sender._derive_x_intent_hashtags("坂本勇人の逆転サヨナラ３００号")
+        self.assertIn("巨人", out)
+        self.assertIn("坂本勇人", out)
+
+    def test_derive_hashtags_caps_at_max(self):
+        # Construct a title with many players — the cap is 5 total
+        # (1 fixed + 4 players).
+        title = "戸郷翔征 大城卓三 岡本和真 坂本勇人 吉川尚輝 浦田俊輔 が登場"
+        out = sender._derive_x_intent_hashtags(title)
+        self.assertLessEqual(len(out), sender._X_INTENT_HASHTAGS_MAX)
+        self.assertEqual(out[0], "巨人")
+
 
 class DetailedSubjectTests(unittest.TestCase):
     """279-QA — subject prefix carries subtype + state info by default."""

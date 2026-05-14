@@ -1285,7 +1285,12 @@ def _build_x_intent_url(text: str) -> str:
     return f"https://twitter.com/intent/tweet?text={encoded}"
 
 
-def _build_x_post_intent_url(title: str, article_url: str) -> str:
+def _build_x_post_intent_url(
+    title: str,
+    article_url: str,
+    *,
+    hashtags: Sequence[str] | None = None,
+) -> str:
     """Build an X compose intent URL pre-filled with ``title`` + the
     canonical article URL. Tapping the link opens X's tweet composer in
     the operator's existing X session — no API key, no auth, no cost.
@@ -1294,6 +1299,10 @@ def _build_x_post_intent_url(title: str, article_url: str) -> str:
 
     X attaches the URL as an Open Graph card preview when the article
     page has the OG meta tags the renderer already emits.
+
+    When ``hashtags`` is provided, appends ``&hashtags=tag1,tag2,...``
+    (X official param). Each tag is normalized (leading ``#`` stripped,
+    whitespace removed) and URL-encoded as a comma-joined list.
     """
     title_clean = str(title or "").strip()
     url_clean = str(article_url or "").strip()
@@ -1301,7 +1310,42 @@ def _build_x_post_intent_url(title: str, article_url: str) -> str:
         return ""
     encoded_text = quote(title_clean, safe="")
     encoded_url = quote(url_clean, safe="")
-    return f"https://x.com/intent/tweet?text={encoded_text}&url={encoded_url}"
+    base = f"https://x.com/intent/tweet?text={encoded_text}&url={encoded_url}"
+    normalized: list[str] = []
+    for tag in hashtags or ():
+        cleaned = str(tag or "").strip().lstrip("#").replace(" ", "").replace("　", "")
+        if cleaned and cleaned not in normalized:
+            normalized.append(cleaned)
+    if normalized:
+        base += f"&hashtags={quote(','.join(normalized), safe=',')}"
+    return base
+
+
+_X_INTENT_FIXED_HASHTAGS = ("巨人",)
+_X_INTENT_HASHTAGS_MAX = 5
+
+
+def _derive_x_intent_hashtags(title: str) -> tuple[str, ...]:
+    """Derive the X intent hashtags for a published article: fixed
+    ``#巨人`` plus every Giants allowlist player name detected in the
+    title (longest-first dedup via :func:`find_all_allowlist_players`).
+    Capped at :data:`_X_INTENT_HASHTAGS_MAX` to keep the post short.
+
+    Empty / non-title input returns just the fixed hashtags.
+    """
+    fixed = list(_X_INTENT_FIXED_HASHTAGS)
+    try:
+        from src.event_key_ledger import find_all_allowlist_players  # noqa: WPS433
+    except Exception:
+        return tuple(fixed)
+    players = find_all_allowlist_players(title or "")
+    out: list[str] = list(fixed)
+    for name in players:
+        if name and name not in out:
+            out.append(name)
+        if len(out) >= _X_INTENT_HASHTAGS_MAX:
+            break
+    return tuple(out)
 
 
 def _render_manual_x_post_candidates(context: ManualXContext) -> list[tuple[str, str]]:
@@ -2605,7 +2649,8 @@ def build_body_html_per_post(
     url = str(request.canonical_url or "").strip()
     if not title or not url:
         return None
-    intent_url = _build_x_post_intent_url(title, url)
+    intent_hashtags = _derive_x_intent_hashtags(title)
+    intent_url = _build_x_post_intent_url(title, url, hashtags=intent_hashtags)
     if not intent_url:
         return None
     # Inline-styled HTML (mail clients ignore <style> blocks reliably

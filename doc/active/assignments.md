@@ -1,15 +1,22 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-05-14 PM JST
+最終更新: 2026-05-14 EVENING JST
+
+## チケット管理方針(2026-05-14 EVENING lock)
+
+- **正本 = repo doc 一本**(`doc/README.md` + 本 `doc/active/assignments.md`)
+- **GH Issues 運用は停止**。今日 #1〜#25 を試したが、二重管理のため撤収
+- 1 人 + AI 運用では本 file + `doc/active/` / `doc/waiting/` / `doc/done/YYYY-MM/` の 4 layer で十分
 
 ## 最初に読む
 
 - `doc/active/OPERATING_LOCK.md`
 - `doc/README.md`
 - `doc/active/assignments.md`
-- **2026-05-14 最新 handoff (本日 2 session 並走)**:
-  - `docs/handoff/session_logs/2026-05-14_pm_336qa_chain_handoff.md` (本 session、336-QA chain LIVE + 13 GH Issue close)
-  - `docs/handoff/session_logs/2026-05-14_session_handoff_343_INSIGHT_007_LIVE.md` (並走 session、343-INSIGHT-007 chain LIVE + 342 unblock)
+- **2026-05-14 最新 handoff (本日 3 session)**:
+  - `docs/handoff/session_logs/2026-05-14_pm_336qa_chain_handoff.md` (PM、336-QA chain LIVE)
+  - `docs/handoff/session_logs/2026-05-14_session_handoff_343_INSIGHT_007_LIVE.md` (PM 並走、343-INSIGHT-007 chain LIVE + 342 unblock)
+  - `docs/handoff/session_logs/2026-05-14_session_handoff_DATA_INSIGHT_continuous_LIVE.md` (EVENING、342 LIVE 公開 + DATA-INSIGHT-continuous system 稼働 + SVG fix)
 - **2026-05-08 緊急対応 (close 済)**: `doc/done/2026-05/RESTORE-2026-05-08-MORNING-RELIABILITY.md` + `docs/handoff/HANDOFF-2026-05-08-NEXT-SESSION.md`
 
 ## 2026-05-14 PM session summary
@@ -31,7 +38,25 @@
 
 deploy: yoshilover-fetcher rev 00380-dx7 → 00381-n9d → 00382-hqj → 00383-vtd → 00384-c2s → 00385-5xb (6 deploy、build digest = revision sha256 一致全件 verify)
 
-### 残 open (1 件)
+## 2026-05-14 EVENING session summary
+
+### close 済(本 session)
+
+| 区分 | ticket | commit | 備考 |
+|---|---|---|---|
+| impl | 342-INSIGHT(=旧 GH #21) | 多数 | data-driven ranking 自動 publish 基盤 LIVE。本日 Giants 12 件 + 球団 5 件 + 異常値 5 件 publish |
+| impl | DATA-INSIGHT-continuous(=旧 GH #25) | 多数 | 継続改善 system 稼働。異常値検出 8 種 + ランキング 4 軸 + 球団ランキング 7 軸 |
+| ops | Cloud Scheduler 7 trigger 配備 | 設定 | 02/07/12/15/17/20/21 JST、`ENABLE_DATA_INSIGHT_AUTO_PUBLISH_GIANTS=1` で Giants のみ auto publish |
+| fix | SVG inline-style fix | `7da3956` | WP wpautop で `<style>` が `</p><p>` 分割していた bug、既存 17 記事一括 patch も済 |
+| ci | xfail 4 pre-existing | `578a598` | baseline 一致 fail を unblock、regression 検知力は xfail で保持 |
+
+### 残 open(別 actor lane)
+
+| ticket | status | blocker |
+|---|---|---|
+| 344-INGEST(=GH #24、別 actor lane) | YouTube 字幕 + ch 拡充進行中 | 触らない、別 actor の lane |
+
+### close 済(旧)
 
 | # | ticket | status | blocker |
 |---|---|---|---|

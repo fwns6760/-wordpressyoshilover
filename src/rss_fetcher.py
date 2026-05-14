@@ -19524,6 +19524,14 @@ def _create_draft_with_same_fire_guard(
         source_type=enrichment_source_type,
         logger=logger,
     )
+    # 344-INGEST: YouTube source なら 字幕 600字 literal + 出典 + embed section を
+    # 本文末尾に追加 (additive、idempotent)。LLM 不使用、字幕 API は無料。
+    enriched_content = _maybe_append_youtube_caption_section(
+        enriched_content,
+        source_url=normalized_source_url,
+        source_name=enrichment_source_name,
+        logger=logger,
+    )
     if force_status:
         resolved_status = force_status
     else:
@@ -20772,6 +20780,92 @@ def _is_youtube_post_url(post_url: str) -> bool:
         return False
     url_l = post_url.lower()
     return "youtube.com" in url_l or "youtu.be" in url_l
+
+
+def _extract_youtube_video_id(url: str) -> str:
+    """344-INGEST: YouTube URL から video_id を抽出 (youtu.be / watch / shorts / embed)。
+    抽出不可なら空文字。"""
+    if not url:
+        return ""
+    try:
+        from urllib.parse import urlparse, parse_qs
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+        if host in {"youtu.be", "www.youtu.be"}:
+            parts = [p for p in parsed.path.split("/") if p]
+            return parts[0] if parts else ""
+        if host in {"youtube.com", "www.youtube.com", "m.youtube.com", "mobile.youtube.com"}:
+            if parsed.path == "/watch":
+                return parse_qs(parsed.query).get("v", [""])[0]
+            parts = [p for p in parsed.path.split("/") if p]
+            if len(parts) >= 2 and parts[0] in {"shorts", "live", "embed", "v"}:
+                return parts[1]
+    except Exception:  # noqa: BLE001
+        return ""
+    return ""
+
+
+def _maybe_append_youtube_caption_section(
+    rendered_html: str,
+    *,
+    source_url: str,
+    source_name: str,
+    logger: logging.Logger,
+) -> str:
+    """344-INGEST: YouTube source なら caption literal + 出典 + embed section を末尾に追加。
+
+    additive (本文に追加するのみ、既存 body 削除なし)、idempotent
+    (既に nomotoke-youtube-caption marker あれば skip)。
+    LLM 不使用、字幕 API call は無料。
+    例外時は元 HTML を返して main flow を絶対に壊さない。
+    """
+    if not _is_youtube_post_url(source_url):
+        return rendered_html
+    if "nomotoke-youtube-caption" in (rendered_html or ""):
+        return rendered_html
+    video_id = _extract_youtube_video_id(source_url)
+    if not video_id:
+        logger.info(
+            "youtube_caption_section_skip reason=no_video_id url=%s", source_url
+        )
+        return rendered_html
+    try:
+        from src.youtube_caption_fetcher import fetch_youtube_caption
+        caption = fetch_youtube_caption(video_id, max_chars=600, logger=logger)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "youtube_caption_section_fetch_failed err=%s url=%s",
+            exc,
+            source_url,
+        )
+        return rendered_html
+    if not caption:
+        logger.info(
+            "youtube_caption_section_skip reason=no_caption url=%s", source_url
+        )
+        return rendered_html
+    embed_url = f"https://www.youtube.com/embed/{video_id}"
+    section = (
+        '<aside class="nomotoke-youtube-caption">'
+        '<h3>📺 字幕抜粋</h3>'
+        '<blockquote class="nomotoke-youtube-caption__body">'
+        f'<p>{_html.escape(caption)}</p>'
+        '</blockquote>'
+        f'<p class="nomotoke-youtube-caption__attr">— '
+        f'{_html.escape(source_name or "YouTube")} (字幕より、引用法 32 条範囲内)</p>'
+        '<div class="nomotoke-youtube-caption__embed">'
+        f'<iframe width="560" height="315" src="{embed_url}" '
+        f'frameborder="0" allowfullscreen></iframe>'
+        '</div>'
+        '</aside>'
+    )
+    logger.info(
+        "youtube_caption_section_appended url=%s video_id=%s caption_len=%d",
+        source_url,
+        video_id,
+        len(caption),
+    )
+    return rendered_html + section
 
 
 def _check_youtube_giants_filter(title: str) -> tuple[bool, str]:

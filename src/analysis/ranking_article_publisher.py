@@ -362,9 +362,28 @@ def render_giants_centric_ranking(
     focus_rank = f"{focus_row_obj.rank}/{focus_row_obj.total}" if focus_row_obj else "-"
     focus_sample = f"{focus_row_obj.sample_size}" if focus_row_obj else "-"
 
+    # period date range + 試合数
+    today = dt.date.today()
+    if scope == "last_7d":
+        start_d = today - dt.timedelta(days=6)
+    elif scope == "last_30d":
+        start_d = today - dt.timedelta(days=29)
+    elif scope == "season":
+        start_d = dt.date(today.year, 3, 27)
+    else:
+        start_d = today
+    try:
+        n_games = conn.execute(
+            "SELECT COUNT(*) FROM games WHERE game_date BETWEEN ? AND ?",
+            (start_d.isoformat(), today.isoformat()),
+        ).fetchone()[0]
+    except Exception:
+        n_games = 0
+    period_full = f"{start_d.isoformat()} 〜 {today.isoformat()}({n_games}試合)"
+
     body_md = f"""# {base_title}
 
-## セ・リーグ ranking({scope_label_text})
+## セ・リーグ ranking
 
 {table_md}
 
@@ -375,11 +394,9 @@ def render_giants_centric_ranking(
 | 選手 | **{focus_player}({focus_team})** / サンプル {focus_sample} |
 | 指標 | {metric_name} = **{focus_val}** / セ・リーグ **{focus_rank} 位** |
 | データ元 | NPB 公式 box score(https://npb.jp/) |
-| 期間 | 2026 シーズン(3/27〜)約 220 試合 |
+| 集計期間 | {period_full} |
 | 計算式 | {formula} |
-| 比較 | {scope_label_text} の セ・リーグ 6 球団 内 全選手 |
-| 更新 | 毎日 5 回(02/07/12/17/21 JST) |
-| 生成 | rule-based(LLM 不使用) |
+| 比較 | この期間の セ・リーグ 6 球団 内 全選手 |
 """
     body_html = markdown_to_html(body_md)
     return {

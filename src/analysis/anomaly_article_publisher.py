@@ -318,12 +318,31 @@ def _render_unified_article(
     team = _team_label(team_code)
     league = _league_for_team(team_code)
     league_label = _league_label(league)
-    scope_label = {
-        "last_7d": "1 週間",
-        "last_30d": "1 ヶ月",
-        "season": "今シーズン",
-        "last_5_games": "直近 5 試合",
-    }.get(scope, scope)
+
+    # 期間: 具体 from-to date + game 数 (user 指示「何月何日から何月何日」)
+    import datetime as _dt
+    today = _dt.date.today()
+    if scope == "last_7d":
+        start_d = today - _dt.timedelta(days=6)
+    elif scope == "last_30d":
+        start_d = today - _dt.timedelta(days=29)
+    elif scope == "season":
+        start_d = _dt.date(today.year, 3, 27)  # NPB 開幕推定
+    else:
+        start_d = today
+    end_d = today
+    # period の試合数 (全 12 球団 games table から)
+    try:
+        n_games = conn.execute(
+            "SELECT COUNT(*) FROM games WHERE game_date BETWEEN ? AND ?",
+            (start_d.isoformat(), end_d.isoformat()),
+        ).fetchone()[0]
+    except Exception:
+        n_games = 0
+    period_date_label = f"{start_d.month}/{start_d.day}〜{end_d.month}/{end_d.day}"
+    period_full_label = f"{start_d.isoformat()} 〜 {end_d.isoformat()}({n_games}試合)"
+    scope_label = f"{period_date_label}({n_games}試合)"
+
     metric_label = _human_metric_label(metric_name)
     metric_explain = _human_metric_explain(metric_name)
 
@@ -381,11 +400,9 @@ def _render_unified_article(
 | 選手 | **{player}({team})** / サンプル {sample_str} |
 | 指標 | {metric_label} = **{value_str}** / {league_label} **{rank_str} 位** |
 | データ元 | NPB 公式 box score(https://npb.jp/) |
-| 期間 | 2026 シーズン(3/27〜)約 220 試合 |
+| 集計期間 | {period_full_label} |
 | 計算式 | {_metric_formula(metric_name)} |
-| 比較 | {scope_label} の {league_label} 内 全選手 |
-| 更新 | 毎日 5 回(02/07/12/17/21 JST) |
-| 生成 | rule-based(LLM 不使用) |
+| 比較 | この期間の {league_label} 内 全選手 |
 """
     return {"title": title, "body_md": body_md}
 

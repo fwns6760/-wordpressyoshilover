@@ -29,9 +29,9 @@ HOLD という曖昧 status を使わず、必ず「状態 / 解除条件 / owne
 | ticket | 状態 | 概要 | 解除条件 | owner | 次確認 | 関連 file | cost |
 |---|---|---|---|---|---|---|---|
 | **248-MKT-3b** default_review / 弱 title 記事 noindex 拡張 | not-now | 既存 noindex policy への追加(対象拡大) | 251-SEO 戦略確定 + GSC 観察 | Codex A(後段) | 251-SEO 解除後 | src/yoshilover-063-frontend.php | 0 |
-| **248-MKT-4** 同じ選手の記事回遊 | not-now | single 記事下部に「同じ選手の記事」list(248-MKT-2 同 game の選手版) | 248-MKT-2 効果観察(2-3 週) | Codex A(後段) | 248-MKT-2 観察後 | src/yoshilover-063-frontend.php | 0 |
-| **248-MKT-5** 同カテゴリ強化 | not-now | article_bundle 拡張、subtype 重み付け | 248-MKT-2 / 248-MKT-4 効果観察 | Codex A(後段) | 248-MKT-4 後 | src/yoshilover-063-frontend.php | 0 |
 | **250-QA** manager / player_comment subtype strict 展開 | not-now | 247-QA strict slot-fill pattern を manager_comment / player_comment subtype に展開 | 247-QA flag ON 観察 + fact error rate 改善確認 | Codex B(後段) | 247-QA 1-2 試合日 観察後 | src/postgame_strict_template.py 拡張 + src/rss_fetcher.py narrow | 0(同 1 Gemini call) |
+
+(248-MKT-4 / 248-MKT-5 は本ファイル「即実装(本日 active)」へ移動 — commit `bb68e21` で着地済、production rendering 確認 2026-05-14。)
 
 ## ingestion 系 backlog
 
@@ -56,6 +56,7 @@ HOLD という曖昧 status を使わず、必ず「状態 / 解除条件 / owne
 | 248-MKT-2 same-game articles | DONE | single 記事下部「この試合の関連記事」 | `04309ae` |
 | 248-MKT-3a wrapper helper + matrix doc | DONE | 表示判定 4 helper 集約 + subtype × 表示先 matrix | `f339692` |
 | 248-MKT-3c shortcode placement runbook | DONE(handoff doc only) | editor 用 shortcode 配置手順書 | (ambient untracked、user side 後段 commit) |
+| 248-MKT-4 同選手回遊 + 248-MKT-5 同カテゴリ | DONE | article_bundles で same_player / same_topic group 表示(2026-05-14 production rendering 確認) | `bb68e21` |
 | 254-QA innings normalization | IN_PROGRESS(Codex B b47yvlyjx) | 投手回数表記揺れ吸収 | (進行中) |
 
 ## 本日 fire 順位ロック(参考)

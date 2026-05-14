@@ -1721,13 +1721,13 @@ git add -A禁止。
 
 - **alias**: 334-QA
 - **priority**: P1
-- **status**: DESIGN_LOCKED / READY_FOR_PHASE_0_AUDIT
+- **status**: PHASE_4_READY(Phase 0-3b 着地済、env flag OFF で dark ship 中)
 - **owner**: Claude Code
 - **lane**: Claude(2026-05-12 lock: Claude が開発・deploy 全権)
-- **ready_for**: Phase 0 read-only audit
-- **next_action**: `title_template_assembler.py` の pattern 追加位置 + `rss_fetcher.py` の clustering hook + source extractor coverage の audit、結果を ticket doc に追記
-- **blocked_by**: -
-- **user_action_required**: Phase 4 canary publish 前(noindex / X OFF 維持なので mutation 影響は WP draft / publish のみ、§11 4 領域に該当しない範囲は Claude 自律)
+- **ready_for**: Phase 4 live canary(env `ENABLE_PLAYER_VOICE_DIGEST_DETECTION=1` 適用、user GO 必要)
+- **next_action**: user GO 後、fetcher env を `ENABLE_PLAYER_VOICE_DIGEST_DETECTION=1` で apply → 1-5 本 canary 観察 → scope 拡大 / template 改善 / OFF rollback 判断
+- **blocked_by**: user GO(env flag = §11 user 判断境界)
+- **user_action_required**: Phase 4 canary publish 前(env flag = §11 user 判断、ON 後は Claude 自律で観察 / rollback)
 - **write_scope**: `src/title_template_assembler.py` (新 pattern 関数 add のみ), 新規 `src/player_voice_digest_clusterer.py`, 新規 `src/player_voice_digest_body_renderer.py`, 関連 tests, `doc/active/334-QA-player-voice-multi-source-digest-subtype.md`
 - **doc_path**: `doc/active/334-QA-player-voice-multi-source-digest-subtype.md`
 - **acceptance**: title 3-token 完全 literal(player / quote / event)、AI 介入 0 件、引用境界違反 0 件、既存 publish flow デグレ 0、pytest baseline 維持(増減 0)、canary 5 本 noindex publish で audit pass

@@ -217,14 +217,21 @@ tiebreaker(同長):
 ## numbering / folder policy
 
 - ticket 番号: 334(README で reserve)
-- folder: `doc/active/`(本 ticket、DESIGN_LOCKED / READY_FOR_PHASE_0_AUDIT)
+- folder: `doc/active/`(本 ticket、Phase 4 READY、env flag OFF で dark ship 中)
 - status 変更時は CLAUDE.md ticket folder policy に従い移動 + README doc_path 更新 + assignments.md 同 commit 更新
 
 ## next action
 
 1. ~~Claude Code が Phase 0 read-only audit を実施(本日中、code 変更なし)~~ **完了 2026-05-14**
 2. ~~監査結果を本 doc に追記~~ **完了(下記 Phase 0 結果)**
-3. Phase 1 narrow impl 着手判断(本 doc Phase 1 spec 参照)
+3. ~~Phase 1 narrow impl(title 3-token literal assembly)~~ **完了 commit `78f1f79`**
+4. ~~Phase 2a clusterer 新規 module(parent + child + 6 family)~~ **完了 commit `5875247`**
+5. ~~Phase 2a-ext Section B(公式情報パネル)を clusterer に実装~~ **完了 commit `c072884`**
+6. ~~Phase 2b rss_fetcher に clusterer detection-only 接続~~ **完了 commit `cf80239`(flag OFF default)**
+7. ~~Phase 2c 検出 cluster を candidate list に反映~~ **完了 commit `6d1d7a6`**
+8. ~~Phase 3 body renderer 新規 module(HTML 出力)~~ **完了 commit `bf79c64`**
+9. ~~Phase 3b body renderer を rss_fetcher 本文 path に接続~~ **完了 commit `a008bdf`**
+10. **Phase 4 live canary**: `ENABLE_PLAYER_VOICE_DIGEST_DETECTION=1` を本番 fetcher に apply → 1-5 本 publish 観察 → scope 拡大 / template 改善 / OFF rollback 判断。**user GO 必要**(env flag = §11 user 判断境界)。
 
 ## Phase 0 audit 結果(2026-05-14、read-only、code 変更なし)
 

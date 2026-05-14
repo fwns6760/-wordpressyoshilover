@@ -152,7 +152,11 @@
     "title": "長野久義"
   },
   "*キャベッジ": null,
-  "ダルベック": null,
+  "ダルベック": {
+    "id": 67498,
+    "title": "ダルベック",
+    "source": "wikipedia_en_bobby_dalbec"
+  },
   "ハワード": null,
   "マタ": null,
   "*マルティネス": null,
@@ -187,5 +191,6 @@
     "title": "岡本和真"
   },
   "萩原哲": null,
-  "増田陸": null
+  "増田陸": null,
+  "則本昂大": null
 }

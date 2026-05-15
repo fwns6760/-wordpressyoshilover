@@ -148,6 +148,10 @@ def render_ranking_svg_bar_chart(
 # 完全な publisher integration は別 ticket、 現状は aggregate のみ提供。
 
 
+_CENTRAL_TEAM_NAMES = ("巨人", "阪神", "ヤクルト", "広島", "DeNA", "横浜", "中日")
+_PACIFIC_TEAM_NAMES = ("ソフトバンク", "西武", "ロッテ", "楽天", "オリックス", "日本ハム")
+
+
 def aggregate_player_counting_stat(
     conn: sqlite3.Connection,
     *,
@@ -156,14 +160,18 @@ def aggregate_player_counting_stat(
     scope: str,
     today: Optional[Any] = None,
     top_n: int = 10,
+    league: Optional[str] = None,
 ) -> list[dict]:
-    """指定 counting stat (HR / H / RBI / SB / W / K 等) を全 12 球団 player で
-    集計し、 top_n を return。 348 step 3 part 2 D-1 minimum。
+    """指定 counting stat (HR / H / RBI / SB / W / K 等) を player 別集計、 top_n 返却。
+
+    348 step 3 spec §2.5: 「セ / パ リーグ別 ranking (リーグ横断 NG)」適用、
+    `league='central'` / `'pacific'` で filter (default None は後方互換で全 12 球団)。
 
     Args:
         stat_col: SQL column 名 (例 'H' / 'HR' / 'RBI' / 'K')
         table: 'batting_logs' / 'pitching_logs' / 'fielding_logs'
         scope: 'season' / 'last_30d' 等 (range scope のみ)
+        league: 'central' / 'pacific' / None (= 12 球団全体、 spec 違反、 deprecated)
 
     return: list of {"player": str, "team": str, "value": int}
     """
@@ -188,15 +196,27 @@ def aggregate_player_counting_stat(
         raise ValueError(f"unsafe stat_col: {stat_col!r}")
     if table not in ("batting_logs", "pitching_logs", "fielding_logs"):
         raise ValueError(f"unsupported table: {table!r}")
+    # 348 step 3 spec: league filter (セ/パ 横断 NG)
+    league_clause = ""
+    league_params: tuple = ()
+    if league == "central":
+        placeholders = ",".join("?" * len(_CENTRAL_TEAM_NAMES))
+        league_clause = f" AND bl.team_name IN ({placeholders})"
+        league_params = _CENTRAL_TEAM_NAMES
+    elif league == "pacific":
+        placeholders = ",".join("?" * len(_PACIFIC_TEAM_NAMES))
+        league_clause = f" AND bl.team_name IN ({placeholders})"
+        league_params = _PACIFIC_TEAM_NAMES
     rows = conn.execute(
         f"SELECT bl.player_canonical, bl.team_name, SUM(bl.{safe_col}) AS total "
         f"FROM {table} bl JOIN games g ON bl.game_id = g.game_id "
         f"WHERE g.game_date >= ? AND g.game_date <= ? "
         f"AND bl.player_canonical IS NOT NULL "
-        f"AND bl.player_canonical != '' "
+        f"AND bl.player_canonical != ''"
+        f"{league_clause} "
         f"GROUP BY bl.player_canonical "
         f"ORDER BY total DESC LIMIT ?",
-        (start.isoformat(), end.isoformat(), top_n),
+        (start.isoformat(), end.isoformat(), *league_params, top_n),
     ).fetchall()
     return [
         {"player": p, "team": _team_name_to_code(t), "value": int(v or 0)}
@@ -583,12 +603,8 @@ def render_giants_centric_ranking(
         subtitle=f"集計期間: {period_full}",
     )
 
-    intro_banner = (
-        '<div style="background:#fff8e1;border-left:4px solid #f39c12;padding:10px 15px;margin:1em 0;">'
-        '<strong>🔥 大手ニュースで取り上げないデータ角度</strong><br>'
-        'sabermetric 視点でセ・リーグ全体と比較した、ヨシラバー独自分析です。'
-        '</div>'
-    )
+    # 348 step 3 spec §2.5: 「大手にない」 banner 廃止 (全種類で省略)。
+    intro_banner = ""
 
     body_md = f"""# {base_title}
 
@@ -760,6 +776,7 @@ def aggregate_player_counting_stat_split(
     split_value: str,  # "home" / "away" / 'g' / 't' / ...
     today: Optional[Any] = None,
     top_n: int = 10,
+    league: Optional[str] = None,
 ) -> list[dict]:
     """ホーム/アウェイ別 / 対戦相手別 counting 集計 (348 step 3 完全達成、 §4 file list)."""
     import datetime as _dt
@@ -785,16 +802,28 @@ def aggregate_player_counting_stat_split(
         raise ValueError(f"unsupported table: {table!r}")
     if split_field not in ("home_away", "opponent"):
         raise ValueError(f"unsupported split_field: {split_field!r}")
+    # 348 step 3 spec: league filter (セ/パ 横断 NG)
+    league_clause = ""
+    league_params: tuple = ()
+    if league == "central":
+        placeholders = ",".join("?" * len(_CENTRAL_TEAM_NAMES))
+        league_clause = f" AND bl.team_name IN ({placeholders})"
+        league_params = _CENTRAL_TEAM_NAMES
+    elif league == "pacific":
+        placeholders = ",".join("?" * len(_PACIFIC_TEAM_NAMES))
+        league_clause = f" AND bl.team_name IN ({placeholders})"
+        league_params = _PACIFIC_TEAM_NAMES
     rows = conn.execute(
         f"SELECT bl.player_canonical, bl.team_name, SUM(bl.{safe_col}) AS total "
         f"FROM {table} bl JOIN games g ON bl.game_id = g.game_id "
         f"WHERE g.game_date >= ? AND g.game_date <= ? "
         f"AND g.{split_field} = ? "
         f"AND bl.player_canonical IS NOT NULL "
-        f"AND bl.player_canonical != '' "
+        f"AND bl.player_canonical != ''"
+        f"{league_clause} "
         f"GROUP BY bl.player_canonical "
         f"ORDER BY total DESC LIMIT ?",
-        (start.isoformat(), end.isoformat(), split_value, top_n),
+        (start.isoformat(), end.isoformat(), split_value, *league_params, top_n),
     ).fetchall()
     return [
         {"player": p, "team": _team_name_to_code(t), "value": int(v or 0)}
@@ -815,9 +844,11 @@ def render_player_counting_split_article(
     top_n: int = 10,
 ) -> Optional[dict]:
     """ホーム/アウェイ別 / 対戦相手別 counting ranking 記事 (348 step 3 完全達成)."""
+    # 348 step 3 spec §2.5: セ・リーグ別 ranking (巨人 = central 固定)
     rows = aggregate_player_counting_stat_split(
         conn, stat_col=stat_col, table=table, scope=scope,
-        split_field=split_field, split_value=split_value, top_n=max(top_n, 30),
+        split_field=split_field, split_value=split_value,
+        top_n=max(top_n, 30), league="central",
     )
     if not rows:
         return None
@@ -836,7 +867,7 @@ def render_player_counting_split_article(
     }.get(scope, scope)
     title = (
         f"【巨人データ】{top_player} {metric_label_jp} {top_value} で"
-        f"{split_label_jp} リーグ {giants_rank} 位 ({scope_label})"
+        f"{split_label_jp} セ・リーグ {giants_rank} 位 ({scope_label})"
     )
     table_lines = [
         f"| 順位 | 選手 | チーム | {metric_label_jp}({split_label_jp}) |",
@@ -860,7 +891,7 @@ def render_player_counting_split_article(
 ## ひとこと
 
 巨人 {top_player} の **{split_label_jp}** での {metric_label_jp} は **{top_value}**
-({scope_label} 時点)、 セ・パ 12 球団中 リーグ **{giants_rank} 位**。
+({scope_label} 時点)、 セ・リーグ内 **{giants_rank} 位**。
 
 ## リーグ TOP {top_n}({split_label_jp})
 
@@ -959,8 +990,10 @@ def render_player_counting_article(
     例: stat_col='HR', table='batting_logs', metric_label_jp='本塁打数'
         → 「本塁打数 ranking、 巨人 N/M 位」 記事を生成
     """
+    # 348 step 3 spec §2.5: セ・リーグ別 ranking (巨人 = central 固定)
     rows = aggregate_player_counting_stat(
-        conn, stat_col=stat_col, table=table, scope=scope, top_n=max(top_n, 30),
+        conn, stat_col=stat_col, table=table, scope=scope,
+        top_n=max(top_n, 30), league="central",
     )
     if not rows:
         return None
@@ -1005,7 +1038,7 @@ def render_player_counting_article(
 
     title = (
         f"【巨人データ】{top_player} {metric_label_jp} {top_value} で"
-        f"リーグ {giants_rank} 位 ({scope_label})"
+        f"セ・リーグ {giants_rank} 位 ({scope_label})"
     )
 
     # 表 (TOP 10)
@@ -1029,7 +1062,7 @@ def render_player_counting_article(
 ## ひとこと
 
 巨人 {top_player} の {metric_label_jp} は **{top_value}** ({scope_label} 時点)、
-セ・パ 12 球団中 リーグ **{giants_rank} 位**。
+セ・リーグ内 **{giants_rank} 位**。
 
 ## リーグ TOP {top_n}
 

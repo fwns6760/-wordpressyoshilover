@@ -319,12 +319,8 @@ def render_team_metric_article(
         subtitle=f"集計期間: {start_str} 〜 {end_str}",
     )
 
-    intro_banner = (
-        '<div style="background:#fff8e1;border-left:4px solid #f39c12;padding:10px 15px;margin:1em 0;">'
-        '<strong>🔥 大手ニュースで取り上げないデータ角度</strong><br>'
-        f'sabermetric 視点でセ・リーグ全体の球団 {metric_label} を比較した、ヨシラバー独自分析です。'
-        '</div>'
-    )
+    # 348 step 3 spec §2.5: 「大手にない」 banner 廃止 (全種類で省略)。
+    intro_banner = ""
 
     body_md = f"""# {title}
 

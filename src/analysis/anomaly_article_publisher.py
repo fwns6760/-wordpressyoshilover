@@ -415,13 +415,8 @@ def _render_unified_article(
         subtitle=f"集計期間: {period_full_label}",
     )
 
-    # 冒頭 banner (user 指示「大手ニュースではわからないデータ」強調)
-    intro_banner = (
-        '<div style="background:#fff8e1;border-left:4px solid #f39c12;padding:10px 15px;margin:1em 0;">'
-        '<strong>🔥 大手ニュースで取り上げないデータ角度</strong><br>'
-        f'sabermetric 視点で {league_label} 全体と比較した、ヨシラバー独自分析です。'
-        '</div>'
-    )
+    # 348 step 3 spec §2.5: 「大手にない」 banner 廃止 (全種類で省略)。
+    intro_banner = ""
 
     body_md = f"""# {title}
 
@@ -639,13 +634,8 @@ def _render_box_score_article(
     `_render_simple_data_article` の bullet list を 表形式 (key/value table)
     に置き換えた variant。 試合後イベント / record event の詳細 stat 表示用。
     """
-    intro_banner = (
-        '<div style="background:#fff8e1;border-left:4px solid #f39c12;'
-        'padding:10px 15px;margin:1em 0;">'
-        '<strong>🔥 大手ニュースで取り上げないデータ角度</strong><br>'
-        'sabermetric 視点での ヨシラバー 独自分析です。'
-        '</div>'
-    )
+    # 348 step 3 spec §2.5: 「大手にない」 banner 廃止 (全種類で省略)。
+    intro_banner = ""
     table_lines = ["| 項目 | 数値 |", "|---|---|"]
     for label, value in box_table_rows:
         table_lines.append(f"| {label} | {value} |")
@@ -693,13 +683,8 @@ def _render_simple_data_article(
     prefix を入れない (集計日時は body の 集計期間 row に表記)。
     """
     body_title = title
-    intro_banner = (
-        '<div style="background:#fff8e1;border-left:4px solid #f39c12;'
-        'padding:10px 15px;margin:1em 0;">'
-        '<strong>🔥 大手ニュースで取り上げないデータ角度</strong><br>'
-        'sabermetric 視点での ヨシラバー 独自分析です。'
-        '</div>'
-    )
+    # 348 step 3 spec §2.5: 「大手にない」 banner 廃止 (全種類で省略)。
+    intro_banner = ""
     detail_md = "\n".join(f"- {line}" for line in detail_lines)
     body_md = f"""# {body_title}
 
@@ -1116,8 +1101,11 @@ def render_milestone_crossed_article(
             box_rows.append(("対戦相手", opponent_jp))
         if game_id:
             box_rows.append(("game_id", game_id))
-        # 過去 record list (lookup は手動、 placeholder で structure 提示)
-        box_rows.append(("過去同 record", "NPB 公式 / Wikipedia で手動 lookup"))
+        # 348 step 3 spec §2.5「✅ 史上 N 人目 / 何年ぶり 入れる、 lookup は手動」
+        # placeholder structure (record DB 整備しない、 user / Claude 手動 fill)
+        box_rows.append(("史上 N 人目", "_ 人目(NPB 公式 / Wikipedia で手動 lookup)"))
+        box_rows.append(("何年ぶり", "_ 年ぶり(同上)"))
+        box_rows.append(("前回達成者", "_(同上)"))
         return _render_box_score_article(
             title=title,
             headline=headline,

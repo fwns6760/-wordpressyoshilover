@@ -38,6 +38,37 @@
 
 deploy: yoshilover-fetcher rev 00380-dx7 → 00381-n9d → 00382-hqj → 00383-vtd → 00384-c2s → 00385-5xb (6 deploy、build digest = revision sha256 一致全件 verify)
 
+## 2026-05-15 session summary
+
+### close 済(本 session、 348 chain)
+
+| 区分 | ticket | commit | image digest |
+|---|---|---|---|
+| impl + deploy | 348 step 1: × whitelist gate + config JSON | `86d4724` | `sha256:43aeb2b5...` |
+| impl + deploy | 348 step 2: 勝率/守備率 + publisher 日本語 label | `bf010ba` | `sha256:e26ac26d...` |
+| impl + deploy | 348 step 3 part 1: scope 拡張 (last_5/10_games / monthly / weekly) | `8b962e5` | `sha256:16129274...` |
+| impl + deploy | 348 step 3 part 2: record detector + team ranking + counting helper | `7a10c6e` | `sha256:6e633c8b...` |
+
+test: 382 passed (= 302 baseline + 35 step1 + 18 step2 + 14 step3p1 + 13 step3p2)、regression 0、schema migration 0
+
+### 起票(本 session 発見、 user 確認後 着手判断)
+
+| ticket | status | 内容 |
+|---|---|---|
+| `doc/active/352-postgame-auto-thin-body-false-positive.md` | READY | 5/12 から `postgame-auto` Cloud Run Job 連続失敗 (exit 20 = EXIT_WP_FAILED)。 仮説: `thin_body_validator._is_postgame_scorecard_only` の detail-heading regex が postgame card に match せず false positive で reject。 348 scope 外、 別 ticket 化 |
+
+### user 判断 残
+
+| 件 | 内容 |
+|---|---|
+| 既存 wOBA 5 件 post (68064-68068) | × metric が title 流出、 §11 GATE。 削除/書き換え/放置 のどれか |
+| 352 着手 GO 判断 | postgame-auto 自動投稿停止の影響評価 + 着手 timing |
+
+### 翌日の verify gap
+
+- 明朝 07:00 JST insight-nightly 自然 fire 後、 348 step 3 で導入した新 scope (last_5_games / last_10_games / monthly / weekly) で実 publish が出るか確認
+- 「奪三振率 / 与四球率 / 被本塁打率」「勝率 / 守備率」の日本語 label が新規 publish title に反映されているか
+
 ## 2026-05-14 EVENING session summary
 
 ### close 済(本 session)

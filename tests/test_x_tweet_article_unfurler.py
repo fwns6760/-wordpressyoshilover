@@ -129,6 +129,68 @@ def test_tco_no_location_skipped(logger: logging.Logger) -> None:
     assert (url, html) == ("", "")
 
 
+def test_rss_fetcher_inserts_excerpt_before_topic_summary(
+    logger: logging.Logger,
+) -> None:
+    """Integration: when an X-source draft body contains both
+    「📌 関連ポスト」(with twitter-tweet) and 「【話題の要旨】」, the
+    rss_fetcher helper must place the orange excerpt block AFTER the tweet
+    and BEFORE 「【話題の要旨】」, with a link in the attribution.
+    """
+    from src import rss_fetcher
+    from src import x_tweet_article_unfurler as unfurl_mod
+
+    article_html = (
+        '<html><head><script type="application/ld+json">{"@type":'
+        '"NewsArticle","articleBody":"日本テレビは１６、１７日の巨人・'
+        'ＤｅＮＡ戦（東京Ｄ）を地上波生中継（関東）する。「ＮＥＸＴ」'
+        'と「ＮＯＷ」をテーマに、次のイニング、次の打席、次の１球で'
+        '試合が動くか先読みしながら中継する。"}</script></head>'
+        '<body></body></html>'
+    )
+    body = (
+        '<!-- wp:html --><div>banner</div><!-- /wp:html -->'
+        '<!-- wp:paragraph --><p>title rehash</p><!-- /wp:paragraph -->'
+        '<!-- wp:heading {"level":4} --><h4>📌 関連ポスト</h4>'
+        '<!-- /wp:heading -->'
+        '<!-- wp:html --><div class="yoshilover-x-embed">'
+        '<blockquote class="twitter-tweet" data-dnt="true">'
+        '<a href="https://twitter.com/x/status/1">x</a></blockquote>'
+        '</div><!-- /wp:html -->'
+        '<!-- wp:heading --><h2>【話題の要旨】</h2><!-- /wp:heading -->'
+        '<!-- wp:paragraph --><p>summary rehash</p><!-- /wp:paragraph -->'
+    )
+
+    with mock.patch.object(
+        unfurl_mod,
+        "fetch_outbound_article_for_tweet",
+        return_value=("https://hochi.news/articles/x.html", article_html),
+    ):
+        out = rss_fetcher._maybe_insert_x_outbound_article_excerpt(
+            body,
+            source_url="https://twitter.com/hochi_giants/status/1",
+            title="巨人ーＤｅＮＡ戦を日テレが２日連続地上波で生中継",
+            summary="",
+            logger=logger,
+        )
+
+    assert "nomotoke-source-excerpt" in out
+    assert "スポーツ報知 原文</a>" in out
+    assert 'color:#c54500' in out
+
+    positions = [
+        out.find(k)
+        for k in (
+            "📌 関連ポスト",
+            'class="twitter-tweet"',
+            "📖 本文抜粋",
+            "【話題の要旨】",
+        )
+    ]
+    assert all(p >= 0 for p in positions), positions
+    assert positions == sorted(positions), positions
+
+
 def test_first_allowed_link_wins_over_disallowed(logger: logging.Logger) -> None:
     payload = {
         "html": (

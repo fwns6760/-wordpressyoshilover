@@ -19483,34 +19483,102 @@ def _maybe_insert_x_outbound_article_excerpt(
         return rendered_html
     article_source_name = source_name_for_article_url(article_url) or "出典"
     try:
-        result = _maybe_insert_source_body_excerpt(
-            rendered_html,
-            raw_html=article_html,
-            source_url=article_url,
-            title=title,
-            source_name=article_source_name,
-            summary=summary,
+        from src.source_article_body_extractor import (
+            classify_excerpt_paragraph,
+            extract_article_body_excerpt,
+            split_paragraph_sentences,
+        )
+        from src.speech_quote_emphasizer import wrap_speech_quotes
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "x_unfurl_skip reason=builder_import_failed err=%s", exc
+        )
+        return rendered_html
+    # Note: the t.co chain (tweet → publisher-owned short URL → whitelisted
+    # publisher host) is itself the provenance guarantee, so the
+    # title-vs-excerpt context_drift guard used by the news-source path is
+    # not re-applied here. Re-applying it would silently skip legitimate
+    # cases when the publisher article phrases the lead slightly differently
+    # from the tweet title.
+    _ = summary  # kept for signature parity; not used in this branch
+    try:
+        excerpt = extract_article_body_excerpt(
+            article_html, article_url, max_chars=600, title=title,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning(
-            "x_unfurl_skip reason=insert_exception err=%s url=%s",
+            "x_unfurl_skip reason=extractor_exception err=%s url=%s",
             exc,
             article_url,
         )
         return rendered_html
-    if result == rendered_html:
+    if not excerpt:
         logger.info(
-            "x_unfurl_skip reason=helper_silent_skip article=%s tweet=%s",
-            article_url,
-            source_url,
+            "x_unfurl_skip reason=extractor_empty article=%s", article_url
         )
-    else:
-        logger.info(
-            "x_unfurl_excerpt_inserted delta=%d tweet=%s article=%s",
-            len(result) - len(rendered_html),
-            source_url,
-            article_url,
-        )
+        return rendered_html
+    paragraphs = [p.strip() for p in excerpt.split("\n") if p.strip()]
+    parts: list[str] = []
+    for raw_p in paragraphs:
+        kind = classify_excerpt_paragraph(raw_p)
+        if kind == "heading":
+            parts.append(
+                '<p class="nomotoke-source-excerpt__heading">'
+                f"{_html.escape(raw_p)}</p>"
+            )
+        elif kind == "quote":
+            parts.append(
+                '<blockquote class="nomotoke-source-excerpt__inner-quote">'
+                f"{_html.escape(raw_p)}</blockquote>"
+            )
+        else:
+            sentences = split_paragraph_sentences(raw_p)
+            inner = "<br>".join(_html.escape(s) for s in sentences)
+            parts.append(f"<p>{inner}</p>")
+    body_inner = wrap_speech_quotes("".join(parts))
+    safe_url = _html.escape(article_url, quote=True)
+    safe_name = _html.escape(article_source_name)
+    attr_html = (
+        f'— <a href="{safe_url}" target="_blank" rel="noopener nofollow">'
+        f"{safe_name} 原文</a>"
+    )
+    block = (
+        '<aside class="nomotoke-source-excerpt">'
+        '<p class="nomotoke-source-excerpt__label">📖 本文抜粋</p>'
+        f'<blockquote class="nomotoke-source-excerpt__body">{body_inner}'
+        "</blockquote>"
+        f'<p class="nomotoke-source-excerpt__attr">{attr_html}</p>'
+        "</aside>\n"
+    )
+    # Anchor priority for X-source posts:
+    #   1) before 【話題の要旨】 (X-source 経路 — 67612 確認済)
+    #   2) before <h3>🔗 出典記事</h3>
+    #   3) append at end
+    for anchor_re in (
+        r"<!-- wp:heading[^>]*-->\s*<h2>【話題の要旨】</h2>",
+        r"<h3>🔗 出典記事</h3>",
+    ):
+        m = _re.search(anchor_re, rendered_html)
+        if m:
+            anchor = m.group(0)
+            result = rendered_html.replace(anchor, block + anchor, 1)
+            logger.info(
+                "x_unfurl_excerpt_inserted anchor=%s delta=%d tweet=%s "
+                "article=%s",
+                anchor_re[:40],
+                len(result) - len(rendered_html),
+                source_url,
+                article_url,
+            )
+            return result
+    result = rendered_html + block
+    logger.info(
+        "x_unfurl_excerpt_inserted anchor=append delta=%d tweet=%s "
+        "article=%s",
+        len(result) - len(rendered_html),
+        source_url,
+        article_url,
+    )
     return result
 
 

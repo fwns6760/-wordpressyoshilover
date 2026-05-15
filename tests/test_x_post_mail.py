@@ -735,5 +735,150 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
             )
 
 
+class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
+    """354: 直近 N 巨人試合 variation (案 A 巨人内限定、 pool 17 → 23、
+    novelty="high"、 giants_only=True、 min_sample_override で AB 閾値緩和)
+    の検証。 sqlite tempfile fixture で games table を seed する。
+    """
+
+    def setUp(self) -> None:
+        import shutil
+        import sqlite3
+        import tempfile
+        from pathlib import Path
+
+        self._sqlite3 = sqlite3
+        self._shutil = shutil
+        self._tmpdir = tempfile.mkdtemp(prefix="x_post_354_")
+        self.db_path = str(Path(self._tmpdir) / "insight.db")
+
+    def tearDown(self) -> None:
+        self._shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    def _seed_games(self, dates: list[str]) -> None:
+        """Create the games table and INSERT one row per date.
+
+        Mirrors data/insight/schema.sql (Giants-centric, 1 row =
+        1 巨人試合). NULL-safe ingested_at to satisfy NOT NULL.
+        """
+        conn = self._sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                "CREATE TABLE games ("
+                "game_id TEXT PRIMARY KEY, "
+                "game_date TEXT NOT NULL, "
+                "opponent TEXT NOT NULL, "
+                "home_away TEXT NOT NULL, "
+                "giants_score INTEGER, "
+                "opp_score INTEGER, "
+                "result TEXT, "
+                "league_label TEXT, "
+                "one_line_summary TEXT, "
+                "winning_pitcher TEXT, "
+                "losing_pitcher TEXT, "
+                "save_pitcher TEXT, "
+                "source_url TEXT, "
+                "source_kind TEXT, "
+                "ingested_at TEXT NOT NULL"
+                ")"
+            )
+            for idx, d in enumerate(dates):
+                conn.execute(
+                    "INSERT INTO games "
+                    "(game_id, game_date, opponent, home_away, ingested_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (f"test-{d}-{idx}", d, "test", "home", "2026-01-01T00:00:00"),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def test_query_recent_n_games_date_range_returns_tuple(self) -> None:
+        from src.x_post_mail_lane import _query_recent_n_games_date_range
+        self._seed_games(["2026-05-10", "2026-05-12", "2026-05-13", "2026-05-15", "2026-05-16"])
+        # most recent 5 = entire seed; since=oldest 5/10, until=newest 5/16
+        result = _query_recent_n_games_date_range(5, self.db_path)
+        self.assertEqual(result, ("2026-05-10", "2026-05-16"))
+
+    def test_query_recent_n_games_returns_none_when_insufficient(self) -> None:
+        from src.x_post_mail_lane import _query_recent_n_games_date_range
+        self._seed_games(["2026-05-15", "2026-05-16"])  # only 2 games
+        self.assertIsNone(_query_recent_n_games_date_range(5, self.db_path))
+
+    def test_build_combos_no_db_path_keeps_17(self) -> None:
+        """db_path=None で 353 と同じ 17 combo 互換維持。"""
+        from src.x_post_mail_lane import _build_combos
+        combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST))
+        self.assertEqual(len(combos), 17)
+
+    def test_build_combos_with_db_path_adds_6_last_n(self) -> None:
+        """db_path 指定で 23 combo (17 + 直近 5 × 3 + 直近 10 × 3)。"""
+        from src.x_post_mail_lane import _build_combos
+        # need ≥10 distinct game dates for both 5-game and 10-game windows
+        dates = [f"2026-05-{day:02d}" for day in range(1, 16)]  # 15 dates
+        self._seed_games(dates)
+        combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST), db_path=self.db_path)
+        self.assertEqual(len(combos), 23)
+
+    def test_last_n_games_combos_are_high_novelty_and_giants_only(self) -> None:
+        from src.x_post_mail_lane import _build_combos
+        dates = [f"2026-05-{day:02d}" for day in range(1, 16)]
+        self._seed_games(dates)
+        combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST), db_path=self.db_path)
+        last_n_combos = [c for c in combos if c.period_label in ("直近5試合", "直近10試合")]
+        self.assertEqual(len(last_n_combos), 6)
+        for c in last_n_combos:
+            self.assertEqual(c.novelty, "high", msg=f"non-high novelty leaked: {c}")
+            self.assertTrue(c.giants_only, msg=f"non-giants combo leaked: {c}")
+            self.assertIn(c.metric, ("OPS", "AVG", "ERA"))
+            self.assertIn(c.min_sample_override, (5, 10))
+
+    def test_last_n_games_period_range_uses_game_dates(self) -> None:
+        """直近 N 試合 combo の since/until が seed date と一致。"""
+        from src.x_post_mail_lane import _build_combos
+        dates = [f"2026-05-{day:02d}" for day in (1, 3, 5, 7, 9, 11, 13, 14, 15, 16)]
+        self._seed_games(dates)
+        combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST), db_path=self.db_path)
+        last5 = [c for c in combos if c.period_label == "直近5試合"]
+        self.assertGreaterEqual(len(last5), 1)
+        # most recent 5 of the seed: 5/9, 5/11, 5/13, 5/14, 5/15, 5/16 — top 5 desc
+        # = 5/16, 5/15, 5/14, 5/13, 5/11 → since=5/11, until=5/16
+        self.assertEqual(last5[0].since, "2026-05-11")
+        self.assertEqual(last5[0].until, "2026-05-16")
+
+    def test_min_sample_override_honoured_in_pick_candidates(self) -> None:
+        """combo.min_sample_override が pick_candidates 内で min_sample より優先。"""
+        captured: list[dict] = []
+
+        def _capture(**kw):
+            captured.append(kw)
+            return {"ok": True, "rows": _MIXED_12_TEAM_ROWS, "count": 12, "total": 60, "focus_player": None}
+
+        dates = [f"2026-05-{day:02d}" for day in range(1, 16)]
+        self._seed_games(dates)
+        pick_candidates(
+            _capture,
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=23,
+            min_sample=30,  # default
+            min_central_rows=3,
+            db_path=self.db_path,
+        )
+        # 直近 5 試合 combo の query_rank call は min_sample=5、 直近 10 試合 は 10
+        ms_values = [c.get("min_sample") for c in captured]
+        self.assertIn(5, ms_values, msg=f"min_sample=5 not honoured: {ms_values}")
+        self.assertIn(10, ms_values, msg=f"min_sample=10 not honoured: {ms_values}")
+        # And the default 30 should still appear for non-override combos
+        self.assertIn(30, ms_values, msg=f"default 30 missing: {ms_values}")
+
+    def test_db_path_with_insufficient_games_falls_back_gracefully(self) -> None:
+        """games 件数不足の時、 直近 N 試合 combo は追加されず 17 維持。"""
+        from src.x_post_mail_lane import _build_combos
+        # only 3 games → both n=5 and n=10 windows return None
+        self._seed_games(["2026-05-14", "2026-05-15", "2026-05-16"])
+        combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST), db_path=self.db_path)
+        self.assertEqual(len(combos), 17, msg=f"unexpected combo count: {len(combos)}")
+
+
 if __name__ == "__main__":
     unittest.main()

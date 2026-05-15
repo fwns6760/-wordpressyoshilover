@@ -102,18 +102,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     LOG.info("Downloading insight.db cache (read-only)…")
+    db_path: str | None = None
     try:
-        miq.ensure_local_db()
+        db_info = miq.ensure_local_db()
+        if db_info.get("ok"):
+            db_path = db_info.get("path")
     except Exception as exc:  # noqa: BLE001
         LOG.exception("ensure_local_db failed: %r", exc)
         return 3
 
-    LOG.info("Picking candidates (max=%d, min_sample=%d)…",
-             args.max_candidates, args.min_sample)
+    LOG.info("Picking candidates (max=%d, min_sample=%d, db_path=%s)…",
+             args.max_candidates, args.min_sample, bool(db_path))
     candidates = lane.pick_candidates(
         miq.query_rank,
         max_candidates=args.max_candidates,
         min_sample=args.min_sample,
+        db_path=db_path,
     )
     if not candidates:
         LOG.warning("No candidates generated — skip send (insight.db likely sparse).")

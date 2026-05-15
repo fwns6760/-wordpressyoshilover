@@ -24,6 +24,7 @@ import logging
 import math as _math
 import random as _random
 import re as _re
+import sqlite3 as _sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Callable, Optional
@@ -202,6 +203,11 @@ class _MetricCombo:
     ``"mid"`` = 中間 (大手も月次は出すが毎日連載ではない、 今月 / 先月 /
     直近 30 日)、 ``"low"`` = 大手定番 (削除 — pool に入れない前提だが
     将来再導入時の dial として残す)。
+
+    354: ``min_sample_override`` allows recent-N-games combos to lower
+    the AB / IP threshold (e.g. 5 for 直近 5 試合) since players have
+    only N appearances in that window. ``None`` keeps the caller's
+    default (``pick_candidates(..., min_sample=...)``).
     """
 
     metric: str
@@ -211,6 +217,7 @@ class _MetricCombo:
     position: Optional[str] = None
     giants_only: bool = False
     novelty: str = "mid"
+    min_sample_override: Optional[int] = None
 
 
 def _prev_month_range(now: datetime) -> tuple[str, str]:
@@ -224,7 +231,48 @@ def _prev_month_range(now: datetime) -> tuple[str, str]:
     )
 
 
-def _build_combos(now: datetime) -> list[_MetricCombo]:
+def _query_recent_n_games_date_range(
+    n: int, db_path: str
+) -> Optional[tuple[str, str]]:
+    """354: read-only SELECT from ``insight.db`` for the most recent
+    ``n`` distinct giants ``game_date`` values. Returns
+    ``(since_iso, until_iso)`` or ``None`` when fewer than ``n``
+    games exist.
+
+    ``games`` table is Giants-centric (1 row = 1 巨人試合、 verify済
+    in ticket 354). The returned range therefore demarcates the
+    period of the most recent N 巨人試合, suitable for
+    ``giants_only=True`` ranking combos.
+    """
+    if n <= 0:
+        return None
+    try:
+        conn = _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except _sqlite3.Error as exc:  # noqa: BLE001
+        LOG.warning("_query_recent_n_games_date_range: open failed: %r", exc)
+        return None
+    try:
+        cur = conn.execute(
+            "SELECT DISTINCT game_date FROM games "
+            "WHERE game_date IS NOT NULL "
+            "ORDER BY game_date DESC LIMIT ?",
+            (n,),
+        )
+        dates = [row[0] for row in cur if row and row[0]]
+    except _sqlite3.Error as exc:  # noqa: BLE001
+        LOG.warning("_query_recent_n_games_date_range: query failed: %r", exc)
+        return None
+    finally:
+        conn.close()
+    if len(dates) < n:
+        return None
+    # dates is sorted DESC, so dates[0] = newest, dates[-1] = oldest.
+    return (dates[-1], dates[0])
+
+
+def _build_combos(
+    now: datetime, db_path: Optional[str] = None
+) -> list[_MetricCombo]:
     """Compose the metric × period × position combo pool for one mail.
 
     353: 大手新聞が毎日連載で出している「シーズン累積 OPS/AVG/ERA/OBP/SLG」
@@ -235,7 +283,12 @@ def _build_combos(now: datetime) -> list[_MetricCombo]:
     shuffle で high が先頭に来やすく、 「大手にないコンセプト」を mail で
     具現化する。
 
-    Pool size: 17 combo (旧 22 から シーズン累積 5 削除)。
+    354: ``db_path`` を渡すと 直近 5/10 巨人試合 × OPS/AVG/ERA × giants_only
+    の 6 combo (全部 novelty="high"、 min_sample_override で AB 閾値緩和)
+    を追加し、 pool 17 → 23。 ``db_path=None`` (default) では既存 17 combo
+    のみ返し、 test / 旧呼出 互換を維持する。
+
+    Pool size: 17 combo (db_path=None) / 23 combo (db_path 指定で games 充足)。
     """
     combos: list[_MetricCombo] = []
     # 353: シーズン累積 (大手定番 OPS/AVG/ERA/OBP/SLG) は完全除外。
@@ -268,6 +321,28 @@ def _build_combos(now: datetime) -> list[_MetricCombo]:
     # 7. 351: 巨人内 ranking — filter final rows to 巨人 rows only.
     for m in ("OPS", "AVG", "ERA"):
         combos.append(_MetricCombo(m, None, "今シーズン", giants_only=True, novelty="high"))
+
+    # 8. 354: 直近 5/10 巨人試合 × OPS/AVG/ERA × giants_only — yoshilover 独自
+    # の試合数 base ranking。 games table が読めて且つ N 試合分の row が
+    # あれば追加 (case-by-case fallback、 取得失敗時は skip)。
+    if db_path:
+        for n_games, label in ((5, "直近5試合"), (10, "直近10試合")):
+            window = _query_recent_n_games_date_range(n_games, db_path)
+            if window is None:
+                continue
+            since, until = window
+            for m in ("OPS", "AVG", "ERA"):
+                combos.append(
+                    _MetricCombo(
+                        m,
+                        since,
+                        label,
+                        until=until,
+                        giants_only=True,
+                        novelty="high",
+                        min_sample_override=n_games,
+                    )
+                )
     return combos
 
 
@@ -537,6 +612,7 @@ def pick_candidates(
     max_candidates: int = 10,
     min_sample: int = 30,
     min_central_rows: int = 5,
+    db_path: Optional[str] = None,
 ) -> list[Candidate]:
     """Build up to ``max_candidates`` セ-only X post candidates.
 
@@ -551,34 +627,46 @@ def pick_candidates(
         Reference timestamp. Defaults to ``datetime.now(JST)``.
     min_sample:
         Minimum AB/IP/opps sample to count for rank — keeps trivial
-        small samples out.
+        small samples out. Combos with ``min_sample_override`` set
+        (354: 直近 5/10 試合) bypass this default.
     min_central_rows:
         Minimum number of セ teams that must appear in a query result
         for the candidate to be emitted. If fewer than this number of
         セ rows show up, that combo is skipped (silent fallback to the
         next combo).
+    db_path:
+        354: optional path to a read-only ``insight.db`` SQLite file.
+        When provided and the table has ≥10 distinct game dates,
+        adds 直近 5 試合 / 直近 10 試合 × OPS/AVG/ERA × giants_only
+        combos (6 combos). ``None`` keeps the legacy 17-combo pool.
     """
     if now is None:
         now = datetime.now(JST)
     out: list[Candidate] = []
-    # 351: shuffle the combo pool with a (date, hour) seed so each trigger
-    # picks a different variety slice while staying reproducible inside a
-    # single run.
+    # 351+354: shuffle the combo pool with a (date, hour) seed so each
+    # trigger picks a different variety slice while staying reproducible
+    # inside a single run. 354 adds 直近 N 試合 combos when db_path given.
+    combos = _build_combos(now, db_path=db_path)
     shuffled = _select_with_diversity(
-        _build_combos(now),
-        max_candidates=len(_build_combos(now)),
+        combos,
+        max_candidates=len(combos),
         now=now,
     )
     for combo in shuffled:
         if len(out) >= max_candidates:
             break
+        effective_min_sample = (
+            combo.min_sample_override
+            if combo.min_sample_override is not None
+            else min_sample
+        )
         try:
             result = query_rank_fn(
                 metric_name=combo.metric,
                 since=combo.since,
                 until=combo.until,
                 position_filter=combo.position,
-                min_sample=min_sample,
+                min_sample=effective_min_sample,
                 limit=60,  # enough to capture all 12 teams' top players
             )
         except Exception as exc:  # noqa: BLE001
@@ -602,7 +690,7 @@ def pick_candidates(
                      combo.period_label, combo.giants_only, combo.position)
             continue
         rows = _rebuild_ranks_within_central(rows)
-        candidate = _format_one(combo, rows, min_sample=min_sample, now=now)
+        candidate = _format_one(combo, rows, min_sample=effective_min_sample, now=now)
         if candidate:
             out.append(candidate)
     return out[:max_candidates]

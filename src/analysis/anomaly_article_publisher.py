@@ -980,9 +980,51 @@ def render_milestone_crossed_article(
     conn: sqlite3.Connection,
     candidate_row: dict[str, Any],
 ) -> dict[str, str]:
-    """SIGNAL_MILESTONE_CROSSED — シーズン累計節目越え。"""
+    """SIGNAL_MILESTONE_CROSSED — シーズン累計節目 + record event(348 step 3 part 2)。
+
+    notes に ``record=cycle|no_hitter|perfect_game`` がある場合は record event
+    として専用 title / body を生成。 それ以外は数値 threshold milestone。
+    """
     player = candidate_row["player_canonical"]
     notes = _parse_kv_blob(candidate_row.get("notes") or "")
+    record = notes.get("record", "")
+
+    if record in ("cycle", "no_hitter", "perfect_game"):
+        # 348 step 3 part 2 D-3: record event の専用 render
+        opponent_code = notes.get("opponent", "")
+        opponent_jp = _team_label(opponent_code) if opponent_code else ""
+        game_id = notes.get("game", "")
+        # game_date を game_id から抽出 (format: "2026-05-15:..." or just date prefix)
+        game_date = game_id.split(":", 1)[0] if game_id else ""
+        record_label = {
+            "cycle": "サイクル安打",
+            "no_hitter": "ノーヒットノーラン",
+            "perfect_game": "完全試合",
+        }[record]
+        title = (
+            f"【巨人データ】{player} {record_label} 達成"
+            + (f" ({game_date} vs {opponent_jp})" if game_date else "")
+        )
+        headline = (
+            f"{player} が **{record_label}** を達成。"
+            + (f" ({game_date} vs {opponent_jp} 戦)" if opponent_jp else "")
+        )
+        detail = [
+            f"達成内容: {record_label}",
+        ]
+        if game_date:
+            detail.append(f"達成日: {game_date}")
+        if opponent_jp:
+            detail.append(f"対戦相手: {opponent_jp}")
+        return _render_simple_data_article(
+            title=title,
+            headline=headline,
+            detail_lines=detail,
+            period_label=game_date or "本日",
+            source_note="史上 N 人目 / 何年ぶり 等の lookup は手動 (NPB 公式 / Wikipedia)。",
+        )
+
+    # 既存 path: 数値 threshold milestone (シーズン HR 30 到達 等)
     metric = notes.get("metric", "")
     threshold = notes.get("threshold", "")
     value = notes.get("value", "")

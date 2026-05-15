@@ -750,6 +750,155 @@ def publish_giants_centric_ranking_draft(
 # ─── CLI / wire helper ──────────────────────────────────────────────────────
 
 
+def render_player_counting_article(
+    conn: sqlite3.Connection,
+    *,
+    stat_col: str,
+    table: str,
+    metric_label_jp: str,
+    scope: str,
+    top_n: int = 10,
+) -> Optional[dict]:
+    """player counting stat ranking 記事を render (348 step 3 part 2 D-1)。
+
+    例: stat_col='HR', table='batting_logs', metric_label_jp='本塁打数'
+        → 「本塁打数 ranking、 巨人 N/M 位」 記事を生成
+    """
+    rows = aggregate_player_counting_stat(
+        conn, stat_col=stat_col, table=table, scope=scope, top_n=max(top_n, 30),
+    )
+    if not rows:
+        return None
+    # 巨人選手を抽出
+    giants_rows = [r for r in rows if r.get("team") == "g"]
+    if not giants_rows:
+        return None
+    top_giants = giants_rows[0]
+    top_player = top_giants["player"]
+    top_value = top_giants["value"]
+    # giants_rank in the league: position of top_giants in full sorted rows
+    giants_rank = next(
+        (i + 1 for i, r in enumerate(rows) if r["player"] == top_player),
+        len(rows),
+    )
+
+    scope_label = {
+        "last_7d": "1 週間",
+        "last_30d": "1 ヶ月",
+        "season": "今シーズン",
+        "monthly": "月別",
+        "weekly": "週別",
+    }.get(scope, scope)
+
+    title = (
+        f"【巨人データ】{top_player} {metric_label_jp} {top_value} で"
+        f"リーグ {giants_rank} 位 ({scope_label})"
+    )
+
+    # 表 (TOP 10)
+    table_lines = [f"| 順位 | 選手 | チーム | {metric_label_jp} |", "|---|---|---|---|"]
+    for i, r in enumerate(rows[:top_n], start=1):
+        team_disp = _TEAM_LABEL_JP.get(r.get("team", ""), r.get("team", "?"))
+        is_focus = r["player"] == top_player
+        if is_focus:
+            r_disp = f'<span style="color:#c0392b"><strong>{i}</strong></span>'
+            p_disp = f'<span style="color:#c0392b"><strong>{r["player"]} ★</strong></span>'
+            v_disp = f'<span style="color:#c0392b"><strong>{r["value"]}</strong></span>'
+        else:
+            r_disp = str(i)
+            p_disp = r["player"]
+            v_disp = str(r["value"])
+        table_lines.append(f"| {r_disp} | {p_disp} | {team_disp} | {v_disp} |")
+    table_md = "\n".join(table_lines)
+
+    body_md = f"""# {title}
+
+## ひとこと
+
+巨人 {top_player} の {metric_label_jp} は **{top_value}** ({scope_label} 時点)、
+セ・パ 12 球団中 リーグ **{giants_rank} 位**。
+
+## リーグ TOP {top_n}
+
+{table_md}
+
+## このデータについて
+
+| 項目 | 内容 |
+|---|---|
+| 選手 | **{top_player}**(巨人) |
+| 指標 | {metric_label_jp} = **{top_value}** |
+| 順位 | リーグ {giants_rank} 位 |
+| データ元 | NPB 公式 box score(https://npb.jp/) |
+| 集計式 | SUM({stat_col}) over {table} (期間内全試合) |
+| 集計期間 | {scope_label} |
+"""
+    body_html = markdown_to_html(body_md)
+    return {
+        "title": title,
+        "body_md": body_md,
+        "body_html": body_html,
+        "stat_col": stat_col,
+        "scope": scope,
+        "top_player": top_player,
+        "giants_rank": giants_rank,
+    }
+
+
+def publish_player_counting_draft(
+    conn: sqlite3.Connection,
+    wp_client_obj: Any,
+    *,
+    stat_col: str,
+    table: str,
+    metric_label_jp: str,
+    scope: str,
+    category_name: str = DEFAULT_CATEGORY_NAME,
+    dry_run: bool = False,
+) -> dict:
+    """player counting stat ranking 記事を WP draft / publish (348 step 3 part 2 D-1)."""
+    article = render_player_counting_article(
+        conn, stat_col=stat_col, table=table,
+        metric_label_jp=metric_label_jp, scope=scope, top_n=10,
+    )
+    if article is None:
+        return {"status": "skip", "reason": "no_data_or_no_giants",
+                "stat_col": stat_col, "scope": scope}
+    if dry_run:
+        return {"status": "dry_run", "title": article["title"]}
+    try:
+        category_id = wp_client_obj.create_category(category_name)
+    except Exception:
+        category_id = 0
+    if not category_id:
+        try:
+            category_id = wp_client_obj.resolve_category_id(category_name)
+        except Exception:
+            category_id = 0
+    if not category_id:
+        return {"status": "error", "stage": "category"}
+    publish_status = _resolve_publish_status(focus_team_code="g")
+    _banner = _giants_news_banner_html(
+        article["title"], _BANNER_SOURCE_LABEL, category_name
+    )
+    try:
+        post_id = wp_client_obj.create_post(
+            title=article["title"],
+            content=_banner + article["body_html"],
+            categories=[category_id],
+            status=publish_status,
+            caller="ranking_article_publisher_counting",
+        )
+        return {
+            "status": "published" if publish_status == "publish" else "published_draft",
+            "title": article["title"],
+            "post_id": int(post_id or 0),
+            "stat_col": stat_col, "scope": scope,
+        }
+    except Exception as e:
+        return {"status": "error", "error": f"{type(e).__name__}: {e}"}
+
+
 def publish_default_set(
     conn: sqlite3.Connection,
     wp_client_obj: Any,

@@ -415,6 +415,90 @@ def publish_team_metric_draft(
         return {"status": "error", "error": f"{type(e).__name__}: {e}"}
 
 
+def render_team_streak_article(conn: sqlite3.Connection) -> Optional[dict]:
+    """巨人の連勝/連敗 streak 記事を render (348 step 3 part 2 D-2)。
+
+    streak >= 3 で記事化、 それ未満は None で skip。
+    """
+    s = aggregate_team_winning_streak(conn)
+    streak = int(s.get("streak", 0))
+    kind = s.get("kind", "none")
+    if streak < 3 or kind not in ("win", "loss"):
+        return None
+    kind_label = "連勝" if kind == "win" else "連敗"
+    today = dt.date.today().isoformat()
+    title = f"【巨人データ】チーム {streak} {kind_label} ({today} 時点)"
+    body_md = f"""# {title}
+
+## ひとこと
+
+巨人は直近 **{streak} 試合連続{kind_label}** ({today} 時点)。
+
+## このデータについて
+
+| 項目 | 内容 |
+|---|---|
+| 球団 | **巨人** |
+| 状況 | {streak} {kind_label} |
+| データ元 | NPB 公式 box score(https://npb.jp/) |
+| 集計基準 | 最新試合から逆順 scan で同 result が連続している試合数 |
+| 計算式 | games.result を最新から逆順 scan、 同 kind が break するまで count |
+| 注 | 中止 / 中断試合は含めない |
+"""
+    body_html = rap.markdown_to_html(body_md)
+    return {
+        "title": title,
+        "body_md": body_md,
+        "body_html": body_html,
+        "streak": streak,
+        "kind": kind,
+    }
+
+
+def publish_team_streak_draft(
+    conn: sqlite3.Connection,
+    wp_client_obj: Any,
+    *,
+    category_name: str = DEFAULT_CATEGORY_NAME,
+    dry_run: bool = False,
+) -> dict:
+    article = render_team_streak_article(conn)
+    if article is None:
+        return {"status": "skip", "reason": "no_active_streak"}
+    if dry_run:
+        return {"status": "dry_run", "title": article["title"]}
+    try:
+        category_id = wp_client_obj.create_category(category_name)
+    except Exception:
+        category_id = 0
+    if not category_id:
+        try:
+            category_id = wp_client_obj.resolve_category_id(category_name)
+        except Exception:
+            category_id = 0
+    if not category_id:
+        return {"status": "error", "stage": "category"}
+    publish_status = rap._resolve_publish_status(focus_team_code="g")
+    _banner = _giants_news_banner_html(
+        article["title"], rap._BANNER_SOURCE_LABEL, category_name
+    )
+    try:
+        post_id = wp_client_obj.create_post(
+            title=article["title"],
+            content=_banner + article["body_html"],
+            categories=[category_id],
+            status=publish_status,
+            caller="team_ranking_publisher_streak",
+        )
+        return {
+            "status": "published" if publish_status == "publish" else "published_draft",
+            "title": article["title"],
+            "post_id": int(post_id or 0),
+        }
+    except Exception as e:
+        return {"status": "error", "error": f"{type(e).__name__}: {e}"}
+
+
 def publish_team_default_set(
     conn: sqlite3.Connection,
     wp_client_obj: Any,
@@ -449,4 +533,8 @@ def publish_team_default_set(
         results.append(r)
         if r.get("status") in ("published", "published_draft", "dry_run"):
             published += 1
+    # 348 step 3 part 2 D-2: streak article (active >= 3 連勝/連敗 時のみ)
+    if published < max_per_run:
+        streak_r = publish_team_streak_draft(conn, wp_client_obj, dry_run=dry_run)
+        results.append(streak_r)
     return results

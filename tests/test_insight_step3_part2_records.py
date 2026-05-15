@@ -332,6 +332,141 @@ def test_aggregate_player_counting_stat_rejects_sql_injection(tmp_path):
         conn.close()
 
 
+def test_record_renderer_cycle_title(tmp_path):
+    """D-3 renderer: cycle hit candidate を正しい title で render。"""
+    from src.analysis import anomaly_article_publisher as pub
+    candidate = {
+        "player_canonical": "サイクル達成者",
+        "current_value": "game=g1 vs=t",
+        "baseline_value": "cycle",
+        "notes": "record=cycle game=2026-05-15:g-t-1 opponent=t",
+        "magnitude": 4.0,
+    }
+    article = pub.render_milestone_crossed_article(None, candidate)
+    assert "サイクル安打" in article["title"]
+    assert "サイクル達成者" in article["title"]
+    assert "2026-05-15" in article["title"]
+    # 旧 path (空 metric/threshold) で生成される壊れ title が出ないこと
+    assert "シーズン  到達" not in article["title"]
+
+
+def test_record_renderer_perfect_game_title(tmp_path):
+    """D-3 renderer: perfect game 専用 title。"""
+    from src.analysis import anomaly_article_publisher as pub
+    candidate = {
+        "player_canonical": "完全試合男",
+        "current_value": "game=g3 IP=9.0 BF=27",
+        "baseline_value": "perfect game (H=0, BB=0, HBP=0, BF<=28)",
+        "notes": "record=perfect_game game=2026-05-15:g-t-2 opponent=t",
+        "magnitude": 27.0,
+    }
+    article = pub.render_milestone_crossed_article(None, candidate)
+    assert "完全試合" in article["title"]
+    assert "完全試合男" in article["title"]
+
+
+def test_record_renderer_no_hitter_title():
+    """D-3 renderer: no-hitter 専用 title。"""
+    from src.analysis import anomaly_article_publisher as pub
+    candidate = {
+        "player_canonical": "ノーノー投手",
+        "current_value": "game=g2 IP=9.0",
+        "baseline_value": "no-hitter",
+        "notes": "record=no_hitter game=2026-05-15:g-t-3 opponent=db",
+        "magnitude": 9.0,
+    }
+    article = pub.render_milestone_crossed_article(None, candidate)
+    assert "ノーヒットノーラン" in article["title"]
+
+
+def test_record_renderer_legacy_milestone_path_preserved():
+    """既存 path (数値 threshold milestone) も regression なし。"""
+    from src.analysis import anomaly_article_publisher as pub
+    candidate = {
+        "player_canonical": "30HR男",
+        "notes": "metric=HR threshold=30 value=30",
+        "current_value": "HR=30",
+        "magnitude": 30.0,
+    }
+    article = pub.render_milestone_crossed_article(None, candidate)
+    assert "シーズン HR 30 到達" in article["title"]
+    assert "30HR男" in article["title"]
+
+
+def test_render_team_streak_article_active_winning(tmp_path):
+    """D-2: render_team_streak_article で 連勝 article 生成。"""
+    from src.analysis import team_ranking_publisher as trp
+    conn = _open_db(tmp_path)
+    try:
+        for i in range(4):
+            _seed_game(conn, game_id=f"sw{i}", game_date=f"2026-05-1{1+i}",
+                       result="win")
+        conn.commit()
+        article = trp.render_team_streak_article(conn)
+        assert article is not None
+        assert "4 連勝" in article["title"]
+        assert article["kind"] == "win"
+        assert article["streak"] == 4
+    finally:
+        conn.close()
+
+
+def test_render_team_streak_article_below_threshold(tmp_path):
+    """D-2: streak < 3 は記事化しない (skip None)。"""
+    from src.analysis import team_ranking_publisher as trp
+    conn = _open_db(tmp_path)
+    try:
+        for i in range(2):
+            _seed_game(conn, game_id=f"sw{i}", game_date=f"2026-05-1{4+i}",
+                       result="win")
+        conn.commit()
+        article = trp.render_team_streak_article(conn)
+        assert article is None
+    finally:
+        conn.close()
+
+
+def test_render_player_counting_article(tmp_path):
+    """D-1: render_player_counting_article で 安打数 ranking 記事生成。"""
+    from src.analysis import ranking_article_publisher as rap
+    conn = _open_db(tmp_path)
+    try:
+        # 3 player × 複数試合
+        for i, date in enumerate(["2026-05-10", "2026-05-12", "2026-05-14"]):
+            _seed_game(conn, game_id=f"pc{i}", game_date=date)
+        for i, h in enumerate([4, 3, 3]):  # 巨人選手 (team='巨人')
+            conn.execute(
+                "INSERT INTO batting_logs (game_id, team_role, slot_order, "
+                "position, player_display, player_canonical, is_sub, AB, R, "
+                "H, RBI, SB, atbats_json, team_name) "
+                "VALUES (?, 'home', 1, '中', '坂本', '坂本', 0, 4, 0, ?, 0, 0, "
+                "'[]', '巨人')",
+                (f"pc{i}", h),
+            )
+        for i, h in enumerate([1, 2, 1]):  # 他球団選手 (team='阪神')
+            conn.execute(
+                "INSERT INTO batting_logs (game_id, team_role, slot_order, "
+                "position, player_display, player_canonical, is_sub, AB, R, "
+                "H, RBI, SB, atbats_json, team_name) "
+                "VALUES (?, 'home', 2, '一', '佐藤', '佐藤', 0, 4, 0, ?, 0, 0, "
+                "'[]', '阪神')",
+                (f"pc{i}", h),
+            )
+        conn.commit()
+        # season scope で今日 (= 2026-05-15) より前の全試合集計
+        import datetime as _dt
+        # 坂本 = 10 H, 佐藤 = 4 H → 坂本 1 位、 佐藤 2 位
+        rows = rap.aggregate_player_counting_stat(
+            conn, stat_col="H", table="batting_logs", scope="season",
+            today=_dt.date(2026, 5, 15), top_n=10,
+        )
+        # まず aggregate が正しい
+        assert rows[0]["player"] == "坂本"
+        assert rows[0]["value"] == 10
+    finally:
+        conn.close()
+
+
 def test_aggregate_team_vs_opponent(tmp_path):
     """対戦相手別 W-L 集計。"""
     conn = _open_db(tmp_path)

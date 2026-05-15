@@ -21,6 +21,8 @@ import html
 import re
 from typing import Any, Mapping, Sequence
 
+from src.speech_quote_emphasizer import wrap_speech_quotes
+
 
 _QUOTE_RE = re.compile(r"[「『]([^」』]+)[」』]")
 _SENTENCE_RE = re.compile(r"([^。！？]+[。！？])")
@@ -98,11 +100,12 @@ def _render_hochi_excerpt_block(excerpt: str) -> str:
     """
     if not excerpt:
         return ""
+    body_inner = wrap_speech_quotes(f"<p>{html.escape(excerpt)}</p>")
     return (
         '<aside class="nomotoke-source-excerpt">'
         '<span class="nomotoke-source-excerpt__label">📖 本文抜粋</span>'
         '<blockquote class="nomotoke-source-excerpt__body">'
-        f'<p>{html.escape(excerpt)}</p>'
+        f'{body_inner}'
         '</blockquote>'
         '<p class="nomotoke-source-excerpt__attr">— スポーツ報知</p>'
         '</aside>'

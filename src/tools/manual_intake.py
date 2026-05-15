@@ -1441,6 +1441,7 @@ def _insert_body_excerpt_block(
         classify_excerpt_paragraph,
         split_paragraph_sentences,
     )
+    from src.speech_quote_emphasizer import wrap_speech_quotes
 
     paragraphs = [p.strip() for p in excerpt.split("\n") if p.strip()]
     if paragraphs:
@@ -1463,9 +1464,11 @@ def _insert_body_excerpt_block(
                 sentences = split_paragraph_sentences(raw_p)
                 inner = "<br>".join(html.escape(s) for s in sentences)
                 parts.append(f"<p>{inner}</p>")
-        body_inner = "".join(parts)
+        body_inner = wrap_speech_quotes("".join(parts))
     else:
-        body_inner = html.escape(excerpt).replace("\n", "<br>")
+        body_inner = wrap_speech_quotes(
+            html.escape(excerpt).replace("\n", "<br>")
+        )
     safe_source = html.escape(source_name or "出典")
     block = (
         '<aside class="nomotoke-source-excerpt">'

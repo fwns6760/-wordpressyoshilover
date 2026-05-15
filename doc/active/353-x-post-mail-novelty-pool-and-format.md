@@ -214,15 +214,21 @@ python -m pytest tests/ -v --tb=short 2>&1 | tail -30
 2026-05-15 23:05 JST | impl 完了 | phase_2 | x_post_mail_lane.py edits (_MetricCombo novelty / _METRIC_HEADER_EMOJI / _RANKING_ROW_PATTERN / _build_combos 17 combo / _select_with_diversity weighted / _format_one rewrite + _rewrite_ranking_rows + _truncate_to_x_limit_top_n) | test_x_post_mail.py edits (期待値 update 2 + 新 9 test)
 2026-05-15 23:08 JST | pytest 確認 | phase_2_verify | tests/test_x_post_mail.py + test_format_as_x_post.py + test_mail_delivery_bridge.py = 79 pass / 0 fail | full pytest
 2026-05-15 23:10 JST | full pytest | phase_2_verify | 4839 pass / 4 xfailed (pre-existing) / 0 regression | impl commit
+2026-05-15 23:45 JST | impl commit | phase_3 | 3b90a84: src/x_post_mail_lane.py + tests/test_x_post_mail.py + doc/active/353-* (3 files, +709/-46) push 済 | cloudbuild
+2026-05-15 23:48 JST | cloudbuild SUCCESS | phase_3 | image asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/x-post-mail-lane:353-novelty-pool-format / digest sha256:873040b1... / build_id 871d2df1-aa9f-4b5b-b8f1-13a9dd09ac78 (1m30s) | jobs update
+2026-05-15 23:49 JST | jobs update SUCCESS | phase_3 | x-post-mail-lane revision 更新 (image 351-variations → 353-novelty-pool-format) | execute
+2026-05-15 23:52 JST | execute SUCCESS | phase_3 | execution x-post-mail-lane-wfrtv / Composing mail with 10 candidates / mail send result: status=sent reason=None refused={} / Container exit(0) | log verify
+2026-05-15 23:54 JST | log verify | phase_3 | mail sent to fwns6760@gmail.com、 user 朝に Gmail で実機 rendering check | done (next session で実機判定)
 ```
 
 ## 10. Regression Memo 欄
 
-(実装中、 検知した regression / 回避策を 1 行で記録)
+```
+2026-05-15 23:08 JST | test_giants_marker_present_when_giants_in_top | 既存 assert `← 巨人` が新 format `←⭐巨人` で fail | 期待値を `←⭐巨人` に update + 旧 `← 巨人` が出ないことを追加 assert | 0 件 新規追加 (期待値 update のみ)
+2026-05-15 23:08 JST | test_combo_pool_size_22_for_diversity | pool 22 → 17 で fail | test 名 + assertEqual を 17 に変更、 mainstream_season combo 0 件 assert を追加 | 0 件 新規追加 (期待値 update のみ)
+```
 
-```
-YYYY-MM-DD HH:MM JST | <test> | <regression> | <fix> | <test added>
-```
+(Regression メモは 「既存挙動が意図的に変わったもの」 → test 期待値 update で対応。 production behaviour の意図しない退行は 0 件。)
 
 ---
 
@@ -295,11 +301,15 @@ python3 -m pytest tests/ --tb=short -q   # full pytest
 
 ## 5. 残った懸念
 
-(deploy + Cloud Logging verify 後に追記)
+1. **user 実機 Gmail rendering 未 verify**: Claude は Gmail に access できないため、 HTML / 🐦 button / column / 絵文字 (🥇🥈🥉 / ⚾⚡ / ⭐) の Gmail client 上の表示は user 朝確認待ち。 致命的崩れがあれば followup ticket。
+2. **`OPS/直近7日` と `ERA/今月` が production data 不足で skip 連発**: log で `Too few rows (0 < 5)` 観測。 シーズン進行 (試合数増) で自然解消の見込み、 ただし明朝の自然 fire (07:00) で何 candidates 出るかは未確認。
+3. **意外性 sampling の効果は 1-2 週観察が必要**: weighted shuffle で high 70% / mid 30% は単発 mail の 10 候補のみ見ても判断難。 連日 mail で大手定番除外による「意外性 体感」が上がるか user feedback 待ち。
+4. **280 字 cap で truncation 発動の頻度未測定**: 全 candidate cap compliant は pytest で verify したが、 production data (real 選手名 長さ) で実 cap 超過がどのくらい発生するかは scheduler 自然 fire で観察。
+5. **巨人内 ranking で 巨人 rows ≥ 3 必要条件**: 巨人選手の規定打席 30+ が 3 人未満だと skip、 シーズン初期に頻発する可能性 (現状 problem 顕在化なし)。
 
 ## 6. 新しく見つかったデグレ
 
-(deploy + Cloud Logging verify 後に追記)
+なし (production behaviour の意図しない退行 0 件、 pytest full baseline 4839 pass 維持)。 後続観察で出現すれば追記。
 
 ## 7. 追加した回帰テスト
 
@@ -307,8 +317,9 @@ python3 -m pytest tests/ --tb=short -q   # full pytest
 
 ## 8. 次回触ってはいけない範囲
 
-(deploy verify 後に最終確定。 現時点で確定済の不可触:)
-
-- `src/analysis/anomaly_article_publisher.py` / `src/analysis/team_ranking_publisher.py` — 別作業の unstaged 進行中分、 本 ticket では一切 touch せず (cloudbuild は x-post-mail-lane image のみ build、 これらは別 service の image なので production に影響しない経路で deploy)
-- `src/format_as_x_post.py` (346 PWA scope、 本 ticket は read-only import のみ)
-- 348/349 file 群 (`insight_*.py` / `ranking_article_publisher.py` / `config/insight_whitelist.json` 等)
+- **`src/x_post_mail_lane.py` の post-process logic** — `_rewrite_ranking_rows` / `_truncate_to_x_limit_top_n` / `_select_with_diversity` weighted shuffle は新 fixture を伴う変更なので、 次に触る ticket は必ず本 ticket の test を読んだ上で扱う (期待値が新 format と密結合)。
+- **`src/analysis/anomaly_article_publisher.py` / `src/analysis/team_ranking_publisher.py`** — 別作業 (348 step 残 or 別 ticket) の unstaged 進行中分、 本 ticket 完了後も他 lane が進行中の前提で扱う。
+- **`src/format_as_x_post.py`** (346 PWA scope、 本 ticket は read-only import のみ、 触る ticket は 346 PWA 経路の影響評価が必要)。
+- **348/349 file 群** (`insight_anomaly_detector.py` / `insight_etl.py` / `insight_advanced_metrics.py` / `insight_nightly.py` / `ranking_article_publisher.py` / `anomaly_article_publisher.py` / `team_ranking_publisher.py` / `config/insight_whitelist.json` / `article_candidates` table) — 348 step 4 / 349 cascade で扱う、 本 ticket では一切 touch せず。
+- **Cloud Run Job `x-post-mail-lane` の Scheduler** (`x-post-mail-am-1` / `lunch` / `afternoon` / `evening` / `postgame` の 5 個 ENABLED) — 起動時刻 / 頻度の変更は 別 ticket で user 判断必要 (本 ticket は image 入替のみ、 scheduler 不変)。
+- **mail SMTP credentials / X API secret** (`seo-web-runtime` SA に grant 済) — secret rotation は user 判断境界 (§11 法務・コスト軸)。

@@ -527,6 +527,65 @@ _SANSPO_OPENING_DIV_RE = re.compile(
 )
 
 
+def _extract_via_giants_jp_next_data(html: str) -> str:
+    """giants.jp の Next.js SSR HTML から本文を抽出。
+
+    Page HTML 内 ``<script id="__NEXT_DATA__">…</script>`` の JSON に、
+    ``props.pageProps.responseNewsDetail.result[0].contents.__dynamic_parts``
+    の配列が入っている。各要素の ``items.headline`` と ``items.text`` を
+    順番に結合してプレーンテキスト本文として返す。
+
+    抽出失敗時は空文字 (silent fallback to next strategy)。
+    """
+    import json as _json
+    import re as _re
+
+    m = _re.search(
+        r'<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)</script>',
+        html,
+        _re.S,
+    )
+    if not m:
+        return ""
+    try:
+        data = _json.loads(m.group(1))
+    except (ValueError, _json.JSONDecodeError):
+        return ""
+
+    try:
+        result = (
+            data.get("props", {})
+            .get("pageProps", {})
+            .get("responseNewsDetail", {})
+            .get("result")
+        )
+    except AttributeError:
+        return ""
+    if not isinstance(result, list) or not result:
+        return ""
+
+    contents = result[0].get("contents") or {}
+    parts = contents.get("__dynamic_parts") or []
+    if not isinstance(parts, list):
+        return ""
+
+    paragraphs: list[str] = []
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        items = part.get("items") or {}
+        if not isinstance(items, dict):
+            continue
+        headline = (items.get("headline") or "").strip()
+        text = (items.get("text") or "").strip()
+        if headline:
+            paragraphs.append(headline)
+        if text:
+            paragraphs.append(text)
+
+    return "\n".join(paragraphs).strip()
+
+
 def _extract_via_site_selectors(html: str, host: str) -> str:
     """Try the curated site-specific selector table for the matching
     host. Returns the inner HTML fragment or ``""``."""
@@ -619,6 +678,14 @@ def extract_article_body_excerpt(
     if jsonld_body:
         # JSON-LD articleBody is already plain text per spec.
         candidates.append((jsonld_body, False))
+
+    # 2026-05-15 giants.jp は Next.js SPA で本文が __NEXT_DATA__ JSON 内に
+    # ある。news / 試合関連ページの responseNewsDetail / responseGameDetail を
+    # 検出して dynamic_parts.items.text を結合する。
+    if "giants.jp" in host:
+        next_body = _extract_via_giants_jp_next_data(raw_html)
+        if next_body:
+            candidates.append((next_body, False))
 
     site_frag = _extract_via_site_selectors(raw_html, host)
     if site_frag:

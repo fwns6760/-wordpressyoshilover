@@ -1744,6 +1744,62 @@ git add -A禁止。
   - 複数 web 媒体サイト(報知 / サンスポ / スポニチ / 日刊スポーツ / デイリー)
   - title に AI / LLM 一切使わない
 
+### 346 PWA-insight-to-x-post-draft
+
+- **alias**: -
+- **status**: CLOSED(commit `934007a`)
+- **owner**: Claude Code / **lane**: Claude
+- **doc_path**: 個別 ticket doc なし(commit のみ)
+
+### 347 x-post-suggest-mail-lane
+
+- **alias**: -
+- **status**: READY / **priority**: P2
+- **owner**: Claude Code / **lane**: Claude
+- **doc_path**: `doc/active/347-x-post-suggest-mail-lane.md`
+- **last_commit**: `3fc973c`
+
+### 348 INSIGHT-whitelist-implementation
+
+- **alias**: -
+- **status**: CLOSED(step 1 + step 2 + step 3 part 1 + step 3 part 2 + honesty audit fix 全完了、 2026-05-15)
+- **owner**: Claude Code / **lane**: Claude
+- **doc_path**: `doc/active/348-INSIGHT-whitelist-implementation-step1-to-3.md`
+- **commits**: `86d4724` (step1) → `bf010ba` (step2) → `8b962e5` (step3p1) → `7a10c6e` (step3p2) → `21a8e7a` (audit fix)
+- **deploy**: insight-nightly image 5 回更新、 直近 digest `sha256:588973a3...`、 production で新規 4 巨人データ post (キャベッジ安打 / ダルベック打点 / 浦田盗塁 / 井上奪三振) 生成 verify 済
+- **tests**: 389 passed (= 302 baseline + 87 new)、 regression 0
+
+### 349 INSIGHT-dedup-cooldown-cascade
+
+- **alias**: -
+- **status**: READY(348 deploy 完了 + 観察後着手、 数値 3 つ user 確定 pending) / **priority**: medium-high
+- **owner**: Claude Code / **lane**: Claude
+- **doc_path**: `doc/active/349-INSIGHT-dedup-cooldown-cascade.md`
+- **blocked_by**: user 数値確定 (cooldown 日数 / 変化量閾値 / 順位 band)
+
+### 350 x-post-mail-precision-improvements
+
+- **alias**: -
+- **status**: CLOSED(commit `925703b`)
+- **owner**: Claude Code / **lane**: Claude
+- **doc_path**: `doc/active/350-x-post-mail-precision-improvements.md`
+
+### 351 x-post-mail-variation-expansion
+
+- **alias**: -
+- **status**: READY / **priority**: P2
+- **owner**: Claude Code / **lane**: Claude
+- **doc_path**: `doc/active/351-x-post-mail-variation-expansion.md`
+
+### 352 postgame-auto-thin-body-false-positive
+
+- **alias**: -
+- **status**: READY(user GO 待ち) / **priority**: medium
+- **owner**: Claude Code / **lane**: Claude
+- **doc_path**: `doc/active/352-postgame-auto-thin-body-false-positive.md`
+- **背景**: `postgame-auto` Cloud Run Job が 2026-05-12 22:30 JST から 4 日連続失敗 (exit 20 = EXIT_WP_FAILED)、 thin_body_validator の false positive 仮説。 348 scope 完全分離
+- **last_commit**: `8b9b4a4` (起票 + assignments 更新)
+
 ## marketing board
 
 - Marketing ticket source of truth: `doc/marketing/README.md`

@@ -33,6 +33,9 @@ if str(ROOT) not in sys.path:
 
 from src.analysis import insight_anomaly_detector as detector  # noqa: E402
 from src.analysis import ranking_article_publisher as rap  # noqa: E402
+from src.giants_news_banner import (  # noqa: E402
+    giants_news_banner_html as _giants_news_banner_html,
+)
 
 DEFAULT_CATEGORY_NAME = rap.DEFAULT_CATEGORY_NAME
 
@@ -728,10 +731,15 @@ def publish_anomaly_drafts(
         # WP 投入 status 決定 (巨人選手は env flag 設定時 publish 化)
         team_code_for_pub = _player_team_code(conn, cand["player_canonical"])
         publish_status = rap._resolve_publish_status(focus_team_code=team_code_for_pub)
+        # NEWS-BANNER-FIX-2026-05-15: anomaly 記事も赤紫グラデ banner を冒頭に
+        # prepend し、全 publish 経路で content の先頭に banner が立つ状態を維持。
+        _banner = _giants_news_banner_html(
+            article["title"], rap._BANNER_SOURCE_LABEL, category_name
+        )
         try:
             post_id = wp_client_obj.create_post(
                 title=article["title"],
-                content=article["body_html"],
+                content=_banner + article["body_html"],
                 categories=[category_id],
                 status=publish_status,
                 caller="anomaly_article_publisher",

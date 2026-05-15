@@ -42,6 +42,14 @@ from src.analysis.insight_article_generator import (  # noqa: E402
     ArticleContext,
     RankRow,
 )
+from src.giants_news_banner import (  # noqa: E402
+    giants_news_banner_html as _giants_news_banner_html,
+)
+
+
+# NEWS-BANNER-FIX-2026-05-15: insight 系 publisher 共通の source label。
+# 外部メディア由来ではなく ヨシラバー の独自データ分析記事を示す。
+_BANNER_SOURCE_LABEL = "ヨシラバー巨人ラボ"
 
 
 # 新 category 名 (work record §4)
@@ -622,10 +630,15 @@ def publish_giants_centric_ranking_draft(
     # player tag 自動付与 (回遊 navigation、user 指示)
     tag_id = _ensure_player_tag(wp_client_obj, article["focus_player"])
     tags_list = [tag_id] if tag_id else None
+    # NEWS-BANNER-FIX-2026-05-15: insight 記事も赤紫グラデ banner を冒頭に
+    # prepend し、全 publish 経路で content の先頭に banner が立つ状態を維持。
+    _banner = _giants_news_banner_html(
+        article["title"], _BANNER_SOURCE_LABEL, category_name
+    )
     try:
         post_id = wp_client_obj.create_post(
             title=article["title"],
-            content=article["body_html"],
+            content=_banner + article["body_html"],
             categories=[category_id],
             status=publish_status,
             caller="ranking_article_publisher",

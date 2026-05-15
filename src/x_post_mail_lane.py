@@ -21,6 +21,9 @@ from __future__ import annotations
 
 import html as _html
 import logging
+import math as _math
+import random as _random
+import re as _re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Callable, Optional
@@ -96,6 +99,29 @@ _METRIC_LABELS_JP: dict[str, str] = {
     "ERA": "防御率",
 }
 
+# 353: metric 別 header 絵文字。 batting (AVG/OBP/SLG/OPS) = ⚾、 pitching
+# (ERA) = ⚡、 守備 (将来 SAFE_METRICS 拡張時) = 🛡️。 fallback は 📊。
+_METRIC_HEADER_EMOJI: dict[str, str] = {
+    "AVG": "⚾",
+    "OBP": "⚾",
+    "SLG": "⚾",
+    "OPS": "⚾",
+    "ERA": "⚡",
+    "FldPct": "🛡️",
+}
+
+# 353: format_as_x_post の ranking 行を post-process するための正規表現。
+# 1 行 = `{rank}. {name}（{team}）{value}{marker}` を分解する。
+# value は metric_jp 前置前の生数値 (.945 / 2.85 / .315 等)。
+# marker = ` ← 巨人` (半角空白付き) または空。
+_RANKING_ROW_PATTERN = _re.compile(
+    r"^(?P<rank>\d+)\.\s+"
+    r"(?P<name>[^（]+)"
+    r"（(?P<team>[^）]+)）"
+    r"(?P<value>\S+?)"
+    r"(?P<marker>\s+←\s+巨人)?$"
+)
+
 # 351: 守備位置 single-kanji code → readable header label. Mirrors
 # insight_rank_query's POSITION_ALIASES canonical kanji.
 _POSITION_DISPLAY_JP: dict[str, str] = {
@@ -169,6 +195,13 @@ class _MetricCombo:
     Extended in 351 with optional ``until``, ``position`` (守備位置 single
     kanji), and ``giants_only`` (filter the final ranking to 巨人 rows
     only, used for 「巨人内 OPS top 5」 style posts).
+
+    353: ``novelty`` tag drives the weighted shuffle in
+    :func:`_select_with_diversity`. ``"high"`` = yoshilover 独自
+    (大手新聞が出さない slice、 直近 7/14 日 / 守備位置別 / 巨人内 等)、
+    ``"mid"`` = 中間 (大手も月次は出すが毎日連載ではない、 今月 / 先月 /
+    直近 30 日)、 ``"low"`` = 大手定番 (削除 — pool に入れない前提だが
+    将来再導入時の dial として残す)。
     """
 
     metric: str
@@ -177,6 +210,7 @@ class _MetricCombo:
     until: Optional[str] = None
     position: Optional[str] = None
     giants_only: bool = False
+    novelty: str = "mid"
 
 
 def _prev_month_range(now: datetime) -> tuple[str, str]:
@@ -193,45 +227,57 @@ def _prev_month_range(now: datetime) -> tuple[str, str]:
 def _build_combos(now: datetime) -> list[_MetricCombo]:
     """Compose the metric × period × position combo pool for one mail.
 
-    351: pool grows from 10 to 22+ entries. ``pick_candidates`` samples
-    ``max_candidates`` (default 10) from this pool with diversity-seeded
-    randomness so identical-hour mails on different days don't repeat
-    the same combo set.
+    353: 大手新聞が毎日連載で出している「シーズン累積 OPS/AVG/ERA/OBP/SLG」
+    5 combo を pool から完全除外し、 yoshilover 独自度の高い slice (直近 7
+    日 / 直近 14 日 / 守備位置別 / 巨人内 ranking) を novelty_high、 大手
+    も月次は出すが毎日ではない slice (今月 / 先月 / 直近 30 日) を
+    novelty_mid に tag 付与する。 ``_select_with_diversity`` の weighted
+    shuffle で high が先頭に来やすく、 「大手にないコンセプト」を mail で
+    具現化する。
 
-    Caller takes the first ``max_candidates`` successful ones after
-    shuffling (see ``_select_with_diversity``).
+    Pool size: 17 combo (旧 22 から シーズン累積 5 削除)。
     """
     combos: list[_MetricCombo] = []
-    # 1. Season-wide (5 metrics)
-    for m in ("OPS", "AVG", "ERA", "OBP", "SLG"):
-        combos.append(_MetricCombo(m, None, "今シーズン"))
-    # 2. Monthly = current month (3 metrics)
+    # 353: シーズン累積 (大手定番 OPS/AVG/ERA/OBP/SLG) は完全除外。
+    # 守備位置別 / 巨人内 ranking は since=None だが、 別 subset で大手出さない
+    # ので残す (下の 7. 8. で追加)。
+
+    # 1. Monthly = current month (3 metrics, novelty_mid)
     month_since = now.replace(day=1).strftime("%Y-%m-%d")
     for m in ("OPS", "AVG", "ERA"):
-        combos.append(_MetricCombo(m, month_since, "今月"))
-    # 3. Last 30 days (2 metrics)
+        combos.append(_MetricCombo(m, month_since, "今月", novelty="mid"))
+    # 2. Last 30 days (2 metrics, novelty_mid)
     last30 = (now - timedelta(days=30)).strftime("%Y-%m-%d")
     for m in ("OPS", "AVG"):
-        combos.append(_MetricCombo(m, last30, "直近30日"))
-    # 4. 351: Previous month (2 metrics) — closed range
+        combos.append(_MetricCombo(m, last30, "直近30日", novelty="mid"))
+    # 3. 351: Previous month (2 metrics, novelty_mid) — closed range
     prev_since, prev_until = _prev_month_range(now)
     for m in ("OPS", "AVG"):
-        combos.append(_MetricCombo(m, prev_since, "先月", until=prev_until))
-    # 5. 351: Last 7 days (1 metric)
+        combos.append(_MetricCombo(m, prev_since, "先月", until=prev_until, novelty="mid"))
+    # 4. 351: Last 7 days (1 metric, novelty_high)
     last7 = (now - timedelta(days=7)).strftime("%Y-%m-%d")
-    combos.append(_MetricCombo("OPS", last7, "直近7日"))
-    # 6. 351: Last 14 days (2 metrics)
+    combos.append(_MetricCombo("OPS", last7, "直近7日", novelty="high"))
+    # 5. 351: Last 14 days (2 metrics, novelty_high)
     last14 = (now - timedelta(days=14)).strftime("%Y-%m-%d")
     for m in ("OPS", "AVG"):
-        combos.append(_MetricCombo(m, last14, "直近14日"))
-    # 7. 351: 守備位置別 — niche slice that 大手 / のもとけ rarely cover.
+        combos.append(_MetricCombo(m, last14, "直近14日", novelty="high"))
+    # 6. 351: 守備位置別 — niche slice that 大手 / のもとけ rarely cover.
     # 守備位置 single-kanji codes match insight_rank_query expectations.
     for pos in ("捕", "二", "遊", "三"):
-        combos.append(_MetricCombo("OPS", None, "今シーズン", position=pos))
-    # 8. 351: 巨人内 ranking — filter final rows to 巨人 rows only.
+        combos.append(_MetricCombo("OPS", None, "今シーズン", position=pos, novelty="high"))
+    # 7. 351: 巨人内 ranking — filter final rows to 巨人 rows only.
     for m in ("OPS", "AVG", "ERA"):
-        combos.append(_MetricCombo(m, None, "今シーズン", giants_only=True))
+        combos.append(_MetricCombo(m, None, "今シーズン", giants_only=True, novelty="high"))
     return combos
+
+
+# 353: novelty tag → sampling weight。 high が 70% / mid 30% / low 10%
+# (low は本 pool に存在しないが将来再導入時の dial として残す)。
+_NOVELTY_WEIGHTS: dict[str, float] = {
+    "high": 70.0,
+    "mid": 30.0,
+    "low": 10.0,
+}
 
 
 def _select_with_diversity(
@@ -240,21 +286,35 @@ def _select_with_diversity(
     max_candidates: int,
     now: datetime,
 ) -> list[_MetricCombo]:
-    """Shuffle ``combos`` deterministically per (date, hour) seed and
-    return up to ``max_candidates``.
+    """Weighted-shuffle ``combos`` deterministically per (date, hour)
+    seed and return up to ``max_candidates``.
 
-    Same hour on the same day yields the same order (so the schedule's
-    7:00 → 7:00 next day rotates), but day-over-day or band-over-band
-    produces different sets. Avoids the 「毎日同じ ranking ばかり」
-    fatigue while keeping the run reproducible inside one trigger
-    window.
+    353: shuffle is now **weighted by novelty tag** so 「大手にない」
+    combo (novelty="high") get sampled first more often than 中間
+    (novelty="mid"). Implementation uses the classical exp-distributed
+    key trick (a.k.a. weighted reservoir sampling via key
+    ``-log(uniform()) / weight``) which yields a deterministic
+    weighted permutation given a fixed RNG seed.
+
+    Same hour on the same day yields the same order; day-over-day or
+    band-over-band produces different orderings while keeping the
+    high-novelty bias intact.
     """
-    import random as _random
-
+    if not combos:
+        return []
     seed = int(now.strftime("%Y%m%d")) * 100 + now.hour
     rng = _random.Random(seed)
-    shuffled = list(combos)
-    rng.shuffle(shuffled)
+    keyed: list[tuple[float, _MetricCombo]] = []
+    for combo in combos:
+        weight = _NOVELTY_WEIGHTS.get(combo.novelty, _NOVELTY_WEIGHTS["mid"])
+        u = rng.random()
+        if u <= 0.0:
+            u = 1e-12
+        # higher weight → smaller key → sorts first (= sampled first)
+        key = -_math.log(u) / max(weight, 1e-9)
+        keyed.append((key, combo))
+    keyed.sort(key=lambda x: x[0])
+    shuffled = [c for _, c in keyed]
     return shuffled[: max(1, max_candidates)]
 
 
@@ -315,6 +375,77 @@ def _format_period_range(combo: _MetricCombo, now: datetime) -> str:
         return combo.period_label
 
 
+def _rewrite_ranking_rows(
+    lines: list[str],
+    metric_jp: str,
+) -> list[str]:
+    """353: post-process the ``format_as_x_post`` body so each ranking
+    row gets a medal prefix (🥇/🥈/🥉 for ranks 1-3, ``N.`` for 4+),
+    a strong Giants marker (``←⭐巨人``), a metric-label-prefixed
+    value (``OPS .945``), and a blank separator line between top-3
+    and the remainder.
+    """
+    new_lines: list[str] = []
+    for line in lines:
+        m = _RANKING_ROW_PATTERN.match(line)
+        if not m:
+            new_lines.append(line)
+            continue
+        rank_num = int(m.group("rank"))
+        name = m.group("name")
+        team = m.group("team")
+        value = m.group("value")
+        marker = m.group("marker") or ""
+        # Strong Giants marker (← 巨人 → ←⭐巨人, drop the half-width
+        # space so the star sits flush against the arrow).
+        if marker.strip():
+            new_marker = " ←⭐巨人"
+        else:
+            new_marker = ""
+        # Medal prefix for top 3, numeric otherwise.
+        if rank_num == 1:
+            prefix = "🥇"
+        elif rank_num == 2:
+            prefix = "🥈"
+        elif rank_num == 3:
+            prefix = "🥉"
+        else:
+            prefix = f"{rank_num}."
+        # Metric label prefix on value (e.g. ``OPS .945``).
+        new_value = f"{metric_jp} {value}"
+        new_lines.append(f"{prefix} {name}（{team}）{new_value}{new_marker}")
+        # Blank line between top 3 and the rest.
+        if rank_num == 3:
+            new_lines.append("")
+    return new_lines
+
+
+def _truncate_to_x_limit_top_n(text: str, top_n: int) -> str:
+    """353: if ``text`` exceeds ``X_CHAR_LIMIT``, drop ranking rows
+    beyond ``top_n`` while keeping header, blank separators, and the
+    hashtag footer intact.
+
+    Falls back to nothing if the trim is not enough — the caller's
+    final ``[: X_CHAR_LIMIT - 1] + "…"`` safety net handles that.
+    """
+    lines = text.split("\n")
+    kept: list[str] = []
+    rank_seen = 0
+    for line in lines:
+        is_ranking = (
+            line.startswith("🥇")
+            or line.startswith("🥈")
+            or line.startswith("🥉")
+            or bool(_re.match(r"^\d+\.\s", line))
+        )
+        if is_ranking:
+            rank_seen += 1
+            if rank_seen > top_n:
+                continue  # drop rows beyond top_n
+        kept.append(line)
+    return "\n".join(kept)
+
+
 def _format_one(
     combo: _MetricCombo,
     rows: list[dict],
@@ -341,21 +472,23 @@ def _format_one(
         LOG.warning("format_as_x_post failed for %s (%s): %s",
                     combo.metric, combo.period_label, formatted.get("reason"))
         return None
-    # 350+351: header に 具体的 date range + 規定 sample 閾値 + 状況 slice を明示。
+    # 350+351+353: header に 具体的 date range + 規定 sample 閾値 + 状況 slice を明示。
+    # 353: header 絵文字は metric 別 (⚾打撃 / ⚡投手 / 🛡️守備、 fallback 📊)、
+    # period_suffix は header line[0] には連結せず line[1] に挿入する。
     text = formatted["draft_text"]
     lines = text.split("\n")
     period_range = _format_period_range(combo, now)
     sample_label = _sample_label_for_metric(combo.metric)
     period_suffix = f"（{period_range}・規定{sample_label} {min_sample}+）"
     metric_jp = _METRIC_LABELS_JP.get(combo.metric, combo.metric)
+    header_emoji = _METRIC_HEADER_EMOJI.get(combo.metric, "📊")
 
-    # 351: 守備位置別 / 巨人内 ranking で header の prefix を切替。
+    # 351+353: 守備位置別 / 巨人内 ranking で header の prefix を切替。
     # 346 format_as_x_post の output 1 行目は「セ・{metric_jp} ランキング 📊」固定
-    # なので、prefix を「セ・捕手 {metric_jp} ランキング」「巨人内 {metric_jp} ランキング」
-    # 等に置換する。
+    # なので、 1 行目を新 prefix + metric 別絵文字で置換する。
     if combo.giants_only:
         if lines and "ランキング" in lines[0]:
-            lines[0] = f"巨人内 {metric_jp} ランキング 📊" + period_suffix
+            lines[0] = f"巨人内 {metric_jp} ランキング {header_emoji}"
         title = (
             f"巨人内 {metric_jp} top {min(10, len(rows))} "
             f"({period_range}・規定{sample_label} {min_sample}+)"
@@ -363,19 +496,31 @@ def _format_one(
     elif combo.position:
         position_jp = _POSITION_DISPLAY_JP.get(combo.position, combo.position)
         if lines and "ランキング" in lines[0]:
-            lines[0] = f"セ・{position_jp} {metric_jp} ランキング 📊" + period_suffix
+            lines[0] = f"セ・{position_jp} {metric_jp} ランキング {header_emoji}"
         title = (
             f"セ・{position_jp} {metric_jp} top {min(10, len(rows))} "
             f"({period_range}・規定{sample_label} {min_sample}+)"
         )
     else:
         if lines and "ランキング" in lines[0]:
-            lines[0] = lines[0].rstrip() + period_suffix
+            lines[0] = f"セ・{metric_jp} ランキング {header_emoji}"
         title = (
             f"セ {metric_jp} top {min(10, len(rows))} "
             f"({period_range}・規定{sample_label} {min_sample}+)"
         )
+    # 353: period_suffix を 1 行目 append から 2 行目挿入に変更。
+    lines.insert(1, period_suffix)
+
+    # 353: ranking rows に medal / metric label / strong Giants marker を post-process。
+    lines = _rewrite_ranking_rows(lines, metric_jp)
+
     draft_text = "\n".join(lines)
+    # 353: 280 字 cap を超えたら top 5 まで cut (rows-only trim)、 それでも
+    # 超過なら最終手段として末尾 truncation + … で安全網。
+    if len(draft_text) > X_CHAR_LIMIT:
+        draft_text = _truncate_to_x_limit_top_n(draft_text, top_n=5)
+        if len(draft_text) > X_CHAR_LIMIT:
+            draft_text = draft_text[: X_CHAR_LIMIT - 1] + "…"
     return Candidate(
         title=title,
         metric=combo.metric,

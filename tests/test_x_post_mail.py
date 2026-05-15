@@ -164,7 +164,8 @@ class PickCandidatesTests(unittest.TestCase):
         })
         cands = pick_candidates(query_mock, now=datetime(2026, 5, 16, 7, 0, tzinfo=JST), max_candidates=1, min_sample=1)
         self.assertEqual(len(cands), 1)
-        self.assertIn("← 巨人", cands[0].draft_text)
+        # 353: marker 強化 — ` ← 巨人` から ` ←⭐巨人` に変更
+        self.assertIn("←⭐巨人", cands[0].draft_text)
 
     def test_too_few_central_rows_skipped(self) -> None:
         # Only 1 セ row → skip (351: giants_only combos may still pass since
@@ -445,11 +446,24 @@ class VariationExpansionTests(unittest.TestCase):
         # 巨人 players appear
         self.assertIn("岡本和真", text)
 
-    def test_combo_pool_size_22_for_diversity(self) -> None:
-        """351: combo pool は 22 件 (シーズン 5 + 月 3 + 30 日 2 + 先月 2 + 7 日 1 + 14 日 2 + 守備 4 + 巨人内 3 = 22)。"""
+    def test_combo_pool_size_17_after_mainstream_excluded(self) -> None:
+        """353: 大手定番 シーズン累積 5 (OPS/AVG/ERA/OBP/SLG) を pool から削除。
+        残り = 月 3 + 30 日 2 + 先月 2 + 7 日 1 + 14 日 2 + 守備 4 + 巨人内 3 = 17。
+        """
         from src.x_post_mail_lane import _build_combos
         combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST))
-        self.assertEqual(len(combos), 22)
+        self.assertEqual(len(combos), 17)
+        # シーズン累積 (since=None、 position=None、 giants_only=False) は存在しない
+        # ただし position / giants_only で限定された since=None combo は OK で残す。
+        mainstream_season = [
+            c for c in combos
+            if c.since is None and c.position is None and not c.giants_only
+        ]
+        self.assertEqual(
+            len(mainstream_season),
+            0,
+            msg=f"mainstream season combos leaked: {mainstream_season}",
+        )
 
     def test_diversity_seed_changes_per_hour(self) -> None:
         """diversity shuffle が hour 違うと違う順序になる。"""
@@ -529,6 +543,196 @@ class EmptyResultBehaviourTests(unittest.TestCase):
         mail = compose_mail([], now=ts)
         self.assertEqual(mail.candidate_count, 0)
         self.assertIn("0件", mail.subject)
+
+
+class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
+    """353: 大手なし pool + 意外性 sampling + 4 見た目改善 (改行 / metric 別
+    絵文字 / 上位 3 メダル / ⭐巨人 / metric label / 1 行空け) の検証。
+    """
+
+    def _make_mock(self) -> MagicMock:
+        return MagicMock(return_value={
+            "ok": True,
+            "rows": _MIXED_12_TEAM_ROWS,
+            "count": 12,
+            "total": 60,
+            "focus_player": None,
+        })
+
+    def test_period_line_separated_to_second_row(self) -> None:
+        """period_suffix が lines[0] append から lines[1] 分離になっている。"""
+        cands = pick_candidates(
+            self._make_mock(),
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=17,
+            min_sample=1,
+            min_central_rows=3,
+        )
+        self.assertGreaterEqual(len(cands), 1)
+        for c in cands:
+            lines = c.draft_text.split("\n")
+            # lines[0] = header (ランキング + 絵文字)、 lines[1] = period 括弧
+            self.assertIn("ランキング", lines[0])
+            self.assertTrue(
+                lines[1].startswith("（") and lines[1].endswith("）"),
+                msg=f"period not on line 1: {lines[1]!r}",
+            )
+
+    def test_metric_header_emoji_batting_pitching(self) -> None:
+        """OPS/AVG/OBP/SLG header = ⚾、 ERA = ⚡。"""
+        # Batter combo (any of monthly OPS/AVG)
+        cands = pick_candidates(
+            self._make_mock(),
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=17,
+            min_sample=1,
+            min_central_rows=3,
+        )
+        batter_cands = [c for c in cands if c.metric in ("OPS", "AVG", "OBP", "SLG")]
+        self.assertGreaterEqual(len(batter_cands), 1)
+        for c in batter_cands:
+            header = c.draft_text.split("\n", 1)[0]
+            self.assertIn("⚾", header, msg=f"batter header missing ⚾: {header}")
+            self.assertNotIn("📊", header, msg=f"old emoji leaked: {header}")
+        # Pitcher combo (monthly ERA)
+        pitcher_rows = [
+            {"rank": i, "total": 30, "player_canonical": f"投手{i}",
+             "team_code": team, "metric_value": 2.0 + i * 0.1, "sample_size": 40}
+            for i, team in enumerate(
+                ["巨人", "阪神", "DeNA", "ヤクルト", "中日", "広島"], start=1
+            )
+        ]
+        era_cands = pick_candidates(
+            MagicMock(return_value={"ok": True, "rows": pitcher_rows, "count": 6, "total": 30, "focus_player": None}),
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=17,
+            min_sample=10,
+            min_central_rows=3,
+        )
+        era_only = [c for c in era_cands if c.metric == "ERA"]
+        self.assertGreaterEqual(len(era_only), 1)
+        for c in era_only:
+            header = c.draft_text.split("\n", 1)[0]
+            self.assertIn("⚡", header, msg=f"pitcher header missing ⚡: {header}")
+
+    def test_top3_medal_prefix(self) -> None:
+        """ranking 行 1/2/3 = 🥇🥈🥉、 4 位以降 = N. 数字。"""
+        cands = pick_candidates(
+            self._make_mock(),
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=17,
+            min_sample=1,
+            min_central_rows=3,
+        )
+        self.assertGreaterEqual(len(cands), 1)
+        text = cands[0].draft_text
+        self.assertIn("🥇", text)
+        self.assertIn("🥈", text)
+        self.assertIn("🥉", text)
+        # 4 位は通常の数字 prefix
+        self.assertIn("4.", text)
+
+    def test_giants_marker_strong_form(self) -> None:
+        """巨人行 marker は ` ← 巨人` ではなく ` ←⭐巨人`。"""
+        cands = pick_candidates(
+            self._make_mock(),
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=17,
+            min_sample=1,
+            min_central_rows=3,
+        )
+        # find a candidate that should highlight a Giants row
+        with_giants = [
+            c for c in cands
+            if "巨人" in c.draft_text and "←" in c.draft_text
+        ]
+        self.assertGreaterEqual(len(with_giants), 1)
+        for c in with_giants:
+            self.assertIn("←⭐巨人", c.draft_text)
+            # 旧 form は出ない
+            self.assertNotIn("← 巨人", c.draft_text)
+
+    def test_metric_label_prefix_before_value(self) -> None:
+        """ranking 行の数値前に metric_jp 前置 (例: ``打率 .945``、 ``OPS .945``、 ``防御率 2.10``)。"""
+        cands = pick_candidates(
+            self._make_mock(),
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=17,
+            min_sample=1,
+            min_central_rows=3,
+        )
+        avg_cands = [c for c in cands if c.metric == "AVG"]
+        self.assertGreaterEqual(len(avg_cands), 1)
+        text = avg_cands[0].draft_text
+        # `打率 .945` 等の形式が ranking 行に出る
+        self.assertIn("打率 .", text, msg=f"AVG label missing: {text}")
+
+    def test_blank_line_between_top3_and_rest(self) -> None:
+        """1-3 位 ranking 行と 4 位以降の間に空行 1 行。"""
+        cands = pick_candidates(
+            self._make_mock(),
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=17,
+            min_sample=1,
+            min_central_rows=3,
+        )
+        self.assertGreaterEqual(len(cands), 1)
+        text = cands[0].draft_text
+        lines = text.split("\n")
+        # find index of 🥉 (3rd medal row)
+        bronze_idx = next((i for i, ln in enumerate(lines) if ln.startswith("🥉")), -1)
+        self.assertGreaterEqual(bronze_idx, 0, msg="🥉 row not found")
+        # Next line should be blank, line after that should start with "4."
+        self.assertEqual(lines[bronze_idx + 1], "", msg=f"missing blank after 🥉: {lines[bronze_idx + 1]!r}")
+        self.assertTrue(
+            lines[bronze_idx + 2].startswith("4."),
+            msg=f"line after blank not 4.: {lines[bronze_idx + 2]!r}",
+        )
+
+    def test_mainstream_combos_excluded_from_pool(self) -> None:
+        """シーズン累積 OPS/AVG/ERA/OBP/SLG の since=None / position=None /
+        giants_only=False combo は pool に存在しない (大手定番除外)。
+        """
+        from src.x_post_mail_lane import _build_combos
+        combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST))
+        for c in combos:
+            if c.since is None and c.position is None and not c.giants_only:
+                self.fail(f"mainstream season combo leaked: {c}")
+
+    def test_novelty_weighted_shuffle_high_appears_early(self) -> None:
+        """weighted shuffle で novelty=high が先頭側に偏って出る (seed
+        固定 deterministic、 上位 5 のうち少なくとも 3 件は high)。
+        """
+        from src.x_post_mail_lane import _build_combos, _select_with_diversity
+        combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST))
+        top5 = _select_with_diversity(combos, max_candidates=5, now=datetime(2026, 5, 16, 7, 0, tzinfo=JST))
+        novelty_counts = {"high": 0, "mid": 0, "low": 0}
+        for c in top5:
+            novelty_counts[c.novelty] = novelty_counts.get(c.novelty, 0) + 1
+        # high 70% / mid 30% weighting + 5 picks → high が 3 件以上は十分期待。
+        # (deterministic なので fixed seed で常に同じ結果が出る)
+        self.assertGreaterEqual(
+            novelty_counts["high"],
+            3,
+            msg=f"high novelty under-represented in top 5: {novelty_counts}",
+        )
+
+    def test_x_char_cap_enforced_on_all_candidates(self) -> None:
+        """全 candidate の char_count が X_CHAR_LIMIT (280) 以内。"""
+        cands = pick_candidates(
+            self._make_mock(),
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=17,
+            min_sample=1,
+            min_central_rows=3,
+        )
+        self.assertGreaterEqual(len(cands), 1)
+        for c in cands:
+            self.assertLessEqual(
+                c.char_count,
+                X_CHAR_LIMIT,
+                msg=f"candidate exceeds cap: {c.char_count} chars / title={c.title}",
+            )
 
 
 if __name__ == "__main__":

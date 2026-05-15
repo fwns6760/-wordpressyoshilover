@@ -61,22 +61,25 @@ SIGNAL_MILESTONE_CROSSED = "anomaly_milestone_crossed"  # シーズン累計節�
 SIGNAL_STANDINGS_SHIFT = "anomaly_standings_shift"  # 球団順位変動
 SIGNAL_STAT_DELTA = "anomaly_stat_delta"  # snapshot 急変
 
+# 2026-05-15 user 指示「C(マニアック)D(サバメトリクス)はいらない、変化率も
+# title から消す」適用、publish 対象 signal_type を縮小。 backlog candidate
+# (status='NEW' で残った旧 signal) もこの list に無いものは publisher が
+# fetch せず、未配信のまま skip される。
+#
+# disabled 一覧 (DB に NEW 残ってても publish されない):
+#   - SIGNAL_BABIP_DIVERGENCE / SIGNAL_FIP_ERA_DIVERGENCE (D サバメトリクス)
+#   - SIGNAL_STAT_DELTA (変化率 title が user 不可)
+#   - SIGNAL_GIANTS_TOP_OUTLIER / SIGNAL_PACE_HR_PROJECTION /
+#     SIGNAL_HIDDEN_OPS_LIMIT / SIGNAL_HIT_STREAK_RUN (C マニアック)
+#   - SIGNAL_DEFENSE_UZR_OUTLIER (UZR_proxy はサバメトリクス、守備率は残)
 ALL_ANOMALY_SIGNALS = (
     SIGNAL_ZSCORE_BATTER,
     SIGNAL_ZSCORE_PITCHER,
-    SIGNAL_BABIP_DIVERGENCE,
-    SIGNAL_FIP_ERA_DIVERGENCE,
-    SIGNAL_GIANTS_TOP_OUTLIER,
-    SIGNAL_PACE_HR_PROJECTION,
-    SIGNAL_HIDDEN_OPS_LIMIT,
-    SIGNAL_HIT_STREAK_RUN,
-    SIGNAL_DEFENSE_UZR_OUTLIER,
     SIGNAL_DEFENSE_FIELDING_PCT,
     SIGNAL_GAME_HERO_BATTER,
     SIGNAL_GAME_PITCHER_PERF,
     SIGNAL_MILESTONE_CROSSED,
     SIGNAL_STANDINGS_SHIFT,
-    SIGNAL_STAT_DELTA,
 )
 
 # default 閾値 (env で override 可能、user「もっと緩めていい、metric 多様化」適用、
@@ -1287,12 +1290,11 @@ def detect_stat_delta(
 # のみ scan する。FIP / xFIP / wOBA / BABIP / ISO / K_pct / BB_pct は削除。
 # 残す: AVG (打率) / OBP (出塁率) / SLG (長打率) / OPS / ERA / WHIP / K_per_9
 # (奪三振率) / 守備率 (fielding_pct)。
+# 2026-05-15 user 指示「C(マニアック)D(サバメトリクス)はいらない」適用。
+# 投手は ERA のみ(WHIP/K_per_9 は drop)。 batter は OPS/AVG/OBP/SLG。
 _ZSCORE_BATTER_METRICS = ("OPS", "AVG", "OBP", "SLG")
-_ZSCORE_PITCHER_METRICS = ("ERA", "WHIP", "K_per_9")
-_GIANTS_TOP_METRICS = (
-    "OPS", "AVG", "OBP", "SLG",
-    "ERA", "WHIP", "K_per_9",
-)
+_ZSCORE_PITCHER_METRICS = ("ERA",)
+_GIANTS_TOP_METRICS = ()  # 巨人 top% 検出器 drop (マニアック判定)
 _ZSCORE_BATTER_SCOPES = ("last_30d", "season", "last_7d")
 _ZSCORE_PITCHER_SCOPES = ("season", "last_30d", "last_7d")
 _GIANTS_TOP_SCOPES = ("last_30d", "season", "last_7d")
@@ -1361,24 +1363,13 @@ def run_all_anomaly_detectors(
                 )
             except Exception:  # noqa: BLE001
                 pass
-    try:
-        out[SIGNAL_PACE_HR_PROJECTION] = detect_hr_pace_outliers(
-            conn, snapshot_date=snapshot_date, run_id=run_id,
-        )
-    except Exception:  # noqa: BLE001
-        out[SIGNAL_PACE_HR_PROJECTION] = []
-    try:
-        out[SIGNAL_HIDDEN_OPS_LIMIT] = detect_hidden_below_qualifier_outliers(
-            conn, snapshot_date=snapshot_date, run_id=run_id,
-        )
-    except Exception:  # noqa: BLE001
-        out[SIGNAL_HIDDEN_OPS_LIMIT] = []
-    try:
-        out[SIGNAL_HIT_STREAK_RUN] = detect_consecutive_multi_hit_streak(
-            conn, snapshot_date=snapshot_date, run_id=run_id,
-        )
-    except Exception:  # noqa: BLE001
-        out[SIGNAL_HIT_STREAK_RUN] = []
+    # 2026-05-15 user 指示「マニアック drop」適用、HR pace / 規定外好調 / 連続
+    # 多安打 / 巨人 top% は detector call せず空 (signal_type 自体は backward-
+    # compat で残し、env / code 復活余地)。
+    out[SIGNAL_PACE_HR_PROJECTION] = []
+    out[SIGNAL_HIDDEN_OPS_LIMIT] = []
+    # 連続多安打 も「マニアック」分類で drop (user 指示)
+    out[SIGNAL_HIT_STREAK_RUN] = []
     # 2026-05-15 user 指示「サバメトリクスはいらない」適用、UZR_proxy は
     # 計算式自体がサバメトリクスのため drop、fielding_pct (一般的な守備率)
     # のみ残す。

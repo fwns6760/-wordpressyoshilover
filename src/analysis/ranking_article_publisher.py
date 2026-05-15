@@ -668,6 +668,18 @@ def publish_giants_centric_ranking_draft(
         ``{status, title, post_id, category_id, focus_player}`` or
         ``{status: 'skip', reason: ...}``
     """
+    # 348 step 1 defense-in-depth: × metric (WHIP/FIP/xFIP/wOBA/BABIP/ISO/K_BB/
+    # K_pct/BB_pct/UZR_proxy/RF_proxy) を publisher 入口で reject。
+    # insight_anomaly_detector の z-score gate に加え、 publish_default_set
+    # default_jobs 経由の path もここで gate (future leak risk 撤去)。
+    from src.analysis import insight_whitelist as _wl
+    if not _wl.is_metric_allowed(metric_name):
+        return {
+            "status": "skip",
+            "reason": "x_metric_blocked",
+            "metric_name": metric_name,
+            "scope": scope,
+        }
     article = render_giants_centric_ranking(
         conn, metric_name=metric_name, scope=scope,
         snapshot_date=snapshot_date, top_n=top_n,
@@ -1178,7 +1190,9 @@ def publish_default_set(
     if max_per_run is None:
         max_per_run = DEFAULT_MAX_PER_RUN
     # 2026-05-15 user 指示「サバメトリクスはいらない」適用、wOBA / FIP 除外。
-    # 残す指標: OPS / AVG / OBP / SLG / ERA / WHIP / K_per_9。
+    # 348 step 1 defense-in-depth (2026-05-16): WHIP も × metric なので除外
+    # (publish_giants_centric_ranking_draft 内 gate と二重防御)。
+    # 残す指標: OPS / AVG / OBP / SLG / ERA / K_per_9。
     default_jobs = [
         # batter (last_30d、最近 1 ヶ月)
         {"metric_name": "OPS", "scope": "last_30d", "top_n": 50},
@@ -1188,13 +1202,11 @@ def publish_default_set(
         # batter (season、累積)
         {"metric_name": "OPS", "scope": "season", "top_n": 50},
         {"metric_name": "AVG", "scope": "season", "top_n": 50},
-        # pitcher (season、累積)
+        # pitcher (season、累積) — WHIP は × で削除済
         {"metric_name": "ERA", "scope": "season", "top_n": 30},
-        {"metric_name": "WHIP", "scope": "season", "top_n": 30},
         {"metric_name": "K_per_9", "scope": "season", "top_n": 30},
-        # pitcher (last_30d、最近 1 ヶ月)
+        # pitcher (last_30d、最近 1 ヶ月) — WHIP は × で削除済
         {"metric_name": "ERA", "scope": "last_30d", "top_n": 30},
-        {"metric_name": "WHIP", "scope": "last_30d", "top_n": 30},
     ]
     results: list[dict] = []
     published = 0

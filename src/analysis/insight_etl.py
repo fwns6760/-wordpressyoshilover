@@ -48,7 +48,7 @@ import sqlite3
 import sys
 import uuid
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Optional
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -305,7 +305,8 @@ def seed_players_from_logs(conn: sqlite3.Connection) -> int:
 def _scope_window(scope: str, snapshot_date: str) -> tuple[str, str]:
     """``scope`` と ``snapshot_date`` から ``(window_start, window_end)`` ISO date を返す。
 
-    ``last_5_games`` は per-player なので別 path で扱う (本 helper は range scope のみ)。
+    ``last_5_games`` / ``last_10_games`` は per-player なので別 path で扱う
+    (本 helper は range scope のみ)。 348 step 3 で monthly / weekly 追加。
     """
     end = snapshot_date
     if scope == "season":
@@ -317,7 +318,43 @@ def _scope_window(scope: str, snapshot_date: str) -> tuple[str, str]:
     if scope == "last_30d":
         d = dt.date.fromisoformat(snapshot_date)
         return ((d - dt.timedelta(days=29)).isoformat(), end)
+    if scope == "monthly":
+        # 348 step 3: 当月 1 日から snapshot_date まで
+        d = dt.date.fromisoformat(snapshot_date)
+        return (d.replace(day=1).isoformat(), end)
+    if scope == "weekly":
+        # 348 step 3: ISO 週の月曜から snapshot_date まで
+        d = dt.date.fromisoformat(snapshot_date)
+        monday = d - dt.timedelta(days=d.weekday())
+        return (monday.isoformat(), end)
     raise ValueError(f"unknown range scope: {scope!r}")
+
+
+def _player_last_n_game_window(
+    conn: sqlite3.Connection,
+    player_canonical: str,
+    n_games: int,
+    snapshot_date: str,
+    table: str = "batting_logs",
+) -> Optional[tuple[str, str]]:
+    """player の直近 n_games の (oldest_date, latest_date) を返す。
+
+    試合数が n_games に満たない場合は None (集計 skip)。 348 step 3 で
+    last_5_games / last_10_games の per-player rolling window 用 helper。
+    """
+    if table not in ("batting_logs", "pitching_logs", "fielding_logs"):
+        raise ValueError(f"unsupported table: {table!r}")
+    rows = conn.execute(
+        f"SELECT g.game_date FROM games g "
+        f"JOIN {table} bl ON bl.game_id = g.game_id "
+        f"WHERE bl.player_canonical = ? AND g.game_date <= ? "
+        f"GROUP BY g.game_id "
+        f"ORDER BY g.game_date DESC LIMIT ?",
+        (player_canonical, snapshot_date, n_games),
+    ).fetchall()
+    if len(rows) < n_games:
+        return None
+    return (rows[-1][0], rows[0][0])
 
 
 def _aggregate_batting_line(
@@ -566,19 +603,25 @@ def compute_advanced_metric_snapshots(
     min_pa: int = 30,
     min_ip: float = 10.0,
 ) -> int:
-    """指定 ``scope`` (``season`` / ``last_7d`` / ``last_30d``) で全 active player の
-    advanced metrics を計算し、``advanced_metric_snapshots`` に
-    ``INSERT OR REPLACE``。
+    """指定 ``scope`` で全 active player の advanced metrics を計算し、
+    ``advanced_metric_snapshots`` に ``INSERT OR REPLACE``。
+
+    対応 scope (348 step 3 で拡張):
+      * range scope: ``season`` / ``last_7d`` / ``last_30d`` / ``monthly`` / ``weekly``
+      * per-player rolling: ``last_5_games`` / ``last_10_games``
 
     最小 sample 閾値 (打者: ``PA >= min_pa`` / 投手: ``IP >= min_ip``) で skip。
     league_rank / league_total は同 scope 内 metric 別に sort して付与。
-    position_rank / position_total / extra_json は本 phase で NULL (Phase 2 で拡張)。
-    ``last_5_games`` は per-player scope のため本 function では未対応 (return 0)。
+    position_rank / position_total / extra_json は本 phase で NULL。
     """
-    if scope == "last_5_games":
-        return 0
-
-    window_start, window_end = _scope_window(scope, snapshot_date)
+    _ROLLING_N = {"last_5_games": 5, "last_10_games": 10}
+    is_rolling = scope in _ROLLING_N
+    if is_rolling:
+        n_games = _ROLLING_N[scope]
+        window_start = window_end = None
+    else:
+        # range scope (raise if unknown)
+        window_start, window_end = _scope_window(scope, snapshot_date)
 
     # advanced_metric_snapshots schema は snapshot_id AUTOINCREMENT のみで
     # (snapshot_date, scope, player_canonical, metric_name) に UNIQUE 制約がない。
@@ -604,25 +647,39 @@ def compute_advanced_metric_snapshots(
         if not canonical or not team_code:
             continue
 
+        # 348 step 3: per-player rolling は player ごとに window を再計算
+        if is_rolling:
+            bat_window = _player_last_n_game_window(
+                conn, canonical, n_games, snapshot_date, "batting_logs",
+            )
+            pit_window = _player_last_n_game_window(
+                conn, canonical, n_games, snapshot_date, "pitching_logs",
+            )
+        else:
+            bat_window = (window_start, window_end)
+            pit_window = (window_start, window_end)
+
         # batting metrics (role に関係なく試行、PA 不足なら skip)
-        batting_line = _aggregate_batting_line(conn, canonical, window_start, window_end)
-        if batting_line.PA >= min_pa:
-            for metric_name, value in insight_advanced_metrics.all_batter_metrics(batting_line).items():
-                if value is None:
-                    continue
-                batter_metrics_by_name.setdefault(metric_name, {})[canonical] = (
-                    float(value), int(batting_line.PA), team_code,
-                )
+        if bat_window is not None:
+            batting_line = _aggregate_batting_line(conn, canonical, bat_window[0], bat_window[1])
+            if batting_line.PA >= min_pa:
+                for metric_name, value in insight_advanced_metrics.all_batter_metrics(batting_line).items():
+                    if value is None:
+                        continue
+                    batter_metrics_by_name.setdefault(metric_name, {})[canonical] = (
+                        float(value), int(batting_line.PA), team_code,
+                    )
 
         # pitching metrics (role に関係なく試行、IP 不足なら skip)
-        pitching_line = _aggregate_pitching_line(conn, canonical, window_start, window_end)
-        if pitching_line.IP >= min_ip:
-            for metric_name, value in insight_advanced_metrics.all_pitcher_metrics(pitching_line).items():
-                if value is None:
-                    continue
-                pitcher_metrics_by_name.setdefault(metric_name, {})[canonical] = (
-                    float(value), max(1, int(pitching_line.IP)), team_code,
-                )
+        if pit_window is not None:
+            pitching_line = _aggregate_pitching_line(conn, canonical, pit_window[0], pit_window[1])
+            if pitching_line.IP >= min_ip:
+                for metric_name, value in insight_advanced_metrics.all_pitcher_metrics(pitching_line).items():
+                    if value is None:
+                        continue
+                    pitcher_metrics_by_name.setdefault(metric_name, {})[canonical] = (
+                        float(value), max(1, int(pitching_line.IP)), team_code,
+                    )
 
     inserted = 0
 

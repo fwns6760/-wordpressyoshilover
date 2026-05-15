@@ -276,13 +276,22 @@ def run_nightly(
             # 343-INSIGHT-007 scope-aware threshold:
             # season 早期は data sparse (5月時点で 1 player ~10 AB)、後半は
             # 充足するため scope 別に最小 sample 閾値を変える。
-            #   last_7d:  PA >= 5  / IP >= 1.0  (週次 hot/cold 用、緩め)
-            #   last_30d: PA >= 15 / IP >= 5.0  (月次 ranking 用、中庸)
-            #   season:   PA >= 50 / IP >= 15.0 (年間 ranking 用、厳しめ)
+            #   last_7d:    PA >= 5  / IP >= 1.0  (週次 hot/cold 用、緩め)
+            #   last_30d:   PA >= 15 / IP >= 5.0  (月次 ranking 用、中庸)
+            #   season:     PA >= 50 / IP >= 15.0 (年間 ranking 用、厳しめ)
+            # 348 step 3 拡張:
+            #   last_5_games:  PA >= 3 / IP >= 0.0 (直近 5 試合 rolling)
+            #   last_10_games: PA >= 6 / IP >= 0.0 (直近 10 試合 rolling)
+            #   weekly:        PA >= 5 / IP >= 1.0 (ISO 週、 last_7d と類似)
+            #   monthly:       PA >= 15 / IP >= 5.0 (当月 1 日〜snapshot 日)
             scope_thresholds: tuple[tuple[str, int, float], ...] = (
                 ("last_7d", 5, 1.0),
                 ("last_30d", 15, 5.0),
                 ("season", 50, 15.0),
+                ("last_5_games", 3, 0.0),
+                ("last_10_games", 6, 0.0),
+                ("weekly", 5, 1.0),
+                ("monthly", 15, 5.0),
             )
             for snapshot_scope, min_pa, min_ip in scope_thresholds:
                 insight_etl.compute_advanced_metric_snapshots(

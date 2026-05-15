@@ -333,11 +333,15 @@ def _render_unified_article(
     league_label = _league_label(league)
 
     # title 用 short scope label (user 指示「期間で良いよ。一か月」)
+    # 348 step 3: 新 scope (last_10_games / monthly / weekly) を追加、 既存表記維持
     scope_label = {
         "last_7d": "1 週間",
         "last_30d": "1 ヶ月",
         "season": "今シーズン",
         "last_5_games": "直近 5 試合",
+        "last_10_games": "直近 10 試合",
+        "monthly": "月別",
+        "weekly": "週別",
     }.get(scope, scope)
 
     # footer 用 具体 date range (title には出さず、本文 footer のみ)
@@ -349,7 +353,15 @@ def _render_unified_article(
         start_d = today - _dt.timedelta(days=29)
     elif scope == "season":
         start_d = _dt.date(today.year, 3, 27)
+    elif scope == "monthly":
+        # 348 step 3: 当月 1 日から
+        start_d = today.replace(day=1)
+    elif scope == "weekly":
+        # 348 step 3: ISO 週月曜から
+        start_d = today - _dt.timedelta(days=today.weekday())
     else:
+        # last_5_games / last_10_games / unknown は today から (per-player rolling は
+        # footer 表示用なので近似で OK、 厳密 date range は本文ranking表から読める)
         start_d = today
     period_full_label = f"{start_d.isoformat()} 〜 {today.isoformat()}"
 

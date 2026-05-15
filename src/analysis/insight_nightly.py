@@ -500,26 +500,31 @@ def main(argv: Optional[list[str]] = None) -> int:
                             except Exception:  # noqa: BLE001
                                 pass
                             # 348 step 3 part 2 D-1: player counting stats ranking
+                            # title variation のため multi-scope 投入
+                            # (season / last_30d / monthly / weekly)、 step 3 part 1
+                            # で追加した新 scope を実 publish で使う。
                             try:
-                                counting_jobs = [
+                                counting_metrics = [
                                     {"stat_col": "H", "table": "batting_logs",
-                                     "metric_label_jp": "安打数", "scope": "season"},
+                                     "metric_label_jp": "安打数"},
                                     {"stat_col": "HR", "table": "batting_logs",
-                                     "metric_label_jp": "本塁打数", "scope": "season"},
+                                     "metric_label_jp": "本塁打数"},
                                     {"stat_col": "RBI", "table": "batting_logs",
-                                     "metric_label_jp": "打点", "scope": "season"},
+                                     "metric_label_jp": "打点"},
                                     {"stat_col": "SB", "table": "batting_logs",
-                                     "metric_label_jp": "盗塁", "scope": "season"},
+                                     "metric_label_jp": "盗塁"},
                                     {"stat_col": "K", "table": "pitching_logs",
-                                     "metric_label_jp": "奪三振数", "scope": "season"},
+                                     "metric_label_jp": "奪三振数"},
                                 ]
-                                for job in counting_jobs:
-                                    try:
-                                        ranking_pub.publish_player_counting_draft(
-                                            conn, wp, **job,
-                                        )
-                                    except Exception:  # noqa: BLE001
-                                        continue
+                                counting_scopes = ["season", "last_30d", "monthly", "weekly"]
+                                for metric in counting_metrics:
+                                    for scope in counting_scopes:
+                                        try:
+                                            ranking_pub.publish_player_counting_draft(
+                                                conn, wp, scope=scope, **metric,
+                                            )
+                                        except Exception:  # noqa: BLE001
+                                            continue
                             except Exception:  # noqa: BLE001
                                 pass
                         except Exception as exc:  # noqa: BLE001

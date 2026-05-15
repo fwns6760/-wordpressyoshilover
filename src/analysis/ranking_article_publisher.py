@@ -790,6 +790,24 @@ def render_player_counting_article(
         "weekly": "週別",
     }.get(scope, scope)
 
+    # 348 step 3 part 2 fix: body 集計期間 を実日付範囲で表示 (title variation
+    # 補完 + 透明性、 user 指摘「期間がない」反映)
+    import datetime as _dt
+    _today = _dt.date.today()
+    if scope == "last_7d":
+        _start = _today - _dt.timedelta(days=6)
+    elif scope == "last_30d":
+        _start = _today - _dt.timedelta(days=29)
+    elif scope == "season":
+        _start = _dt.date(_today.year, 1, 1)
+    elif scope == "monthly":
+        _start = _today.replace(day=1)
+    elif scope == "weekly":
+        _start = _today - _dt.timedelta(days=_today.weekday())
+    else:
+        _start = _today
+    period_range = f"{_start.isoformat()} 〜 {_today.isoformat()}"
+
     title = (
         f"【巨人データ】{top_player} {metric_label_jp} {top_value} で"
         f"リーグ {giants_rank} 位 ({scope_label})"
@@ -831,7 +849,7 @@ def render_player_counting_article(
 | 順位 | リーグ {giants_rank} 位 |
 | データ元 | NPB 公式 box score(https://npb.jp/) |
 | 集計式 | SUM({stat_col}) over {table} (期間内全試合) |
-| 集計期間 | {scope_label} |
+| 集計期間 | {scope_label}({period_range}) |
 """
     body_html = markdown_to_html(body_md)
     return {

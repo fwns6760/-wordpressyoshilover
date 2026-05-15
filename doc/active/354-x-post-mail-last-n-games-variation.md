@@ -224,11 +224,17 @@ python3 -m pytest tests/ --tb=short -q   # full baseline
 
 ```
 2026-05-16 00:10 JST | doc 起票 | phase_0 | 354 ticket doc 完成 / user GO 待ち | wait
-2026-05-16 00:15 JST | user GO 受領 | phase_1 | pytest baseline 79 pass (target 3 file) / full 4848 pass | phase_2 impl
+2026-05-16 00:15 JST | user GO 受領 | phase_1 | pytest baseline 79 pass (target 3 file) | phase_2 impl
 2026-05-16 00:20 JST | impl 完了 | phase_2 | src/x_post_mail_lane.py edits (sqlite3 import / _MetricCombo.min_sample_override / _query_recent_n_games_date_range helper / _build_combos signature 拡張 with db_path / pick_candidates signature 拡張 + effective_min_sample logic) | src/tools/run_x_post_mail.py edits (db_path 引き渡し)
 2026-05-16 00:23 JST | tests 追加 | phase_2 | TicketThreeFiftyFourLastNGamesTests クラス + 8 test (sqlite tempfile fixture) | pytest verify
 2026-05-16 00:25 JST | pytest 確認 | phase_2_verify | test_x_post_mail.py 52 pass (44 → 52、 +8 new 354) | full pytest
 2026-05-16 00:27 JST | full pytest | phase_2_verify | 4853 pass / 4 xfailed (pre-existing) / 0 regression | impl commit
+2026-05-16 00:30 JST | impl commit | phase_3 | b455817: src + tests + doc (4 files, +563/-13) push 済 | cloudbuild
+2026-05-16 00:38 JST | cloudbuild SUCCESS | phase_3 | image x-post-mail-lane:354-last-n-games / digest sha256:dba80a8a... / build_id 9d1a17bd-1991-48ac-b637-423344b07e16 (1m25s) | jobs update
+2026-05-16 00:39 JST | jobs update SUCCESS | phase_3 | image 353-novelty-pool-format → 354-last-n-games | execute
+2026-05-16 00:41 JST | execute SUCCESS | phase_3 | execution x-post-mail-lane-xwdq5 / Composing mail with 10 candidates / db_path=True / Too few rows (1<3) for ERA/直近10試合 graceful skip / status=sent / Container exit(0) | log verify
+2026-05-16 00:43 JST | log verify | phase_3 | mail sent to fwns6760@gmail.com、 user 朝に Gmail 実機 rendering check (直近 N 試合 combo 採用有無) | GH Issue 起票 + 2nd commit
+2026-05-16 00:48 JST | GH Issue 起票 | phase_4 | #28 (353) + #29 (354) created | 2nd commit (doc-only)
 ```
 
 ## 10. Regression Memo 欄
@@ -287,16 +293,20 @@ python3 -m pytest tests/ --tb=short -q   # full baseline
 ## 4. テスト結果
 
 - target file `test_x_post_mail.py`: **52 passed / 0 fail** (44 → 52、 +8 new 354)
-- full pytest: **4853 passed / 4 xfailed (pre-existing) / 0 fail** (regression 0)
-- 353 baseline post-impl: 4839 + 9 = 4848 (353 で 9 test 追加) → 354 で +8 = 4856 想定だが actual 4853、 diff 3 = 既存 test 内の collection (= subtests count 影響、 全 pass なので問題なし)
+- full pytest: **4853 passed / 4 xfailed (pre-existing) / 0 fail** (regression count = 0)
+- 353 post-impl baseline (Phase 1 で測定) → 354 post-impl actual の差分計算は実 measurement に基づかない推測になるため記録しない。 verify の根拠は **"0 fail" の事実**のみ。
 
 ## 5. 残った懸念
 
-(deploy + Cloud Logging verify 後に追記)
+1. **直近 10 試合 ERA combo が 巨人投手 sample 不足で skip**: execution `xwdq5` の log で `Too few rows (1 < 3) for ERA/直近10試合 (giants_only=True)` 観測 = 規定投球回 10 を満たす 巨人投手が 1 人のみ。 シーズン進行 (登板数増) で自然解消の見込み、 ただし明朝の自然 fire でも継続する可能性。
+2. **直近 5/10 試合 OPS/AVG combo の log 表示なし = 採用されたかは log では確定できない**: 「Too few rows」が出ない = filter pass、 だが mail の中身 (どの combo が選ばれたか) は user 朝 Gmail で実機 verify が必要。 production の巨人選手 規定打席 5/10 充足状況に依存。
+3. **意外性 sampling (high 70% / 23 combo 中 6 が 直近 N 試合) で出現確率 26% × high bias**: 1 日 5 通 mail × 1-2 週間で「直近 N 試合 ranking」体感頻度が user 期待と合うかは観察必要。
+4. **user 実機 Gmail rendering 未 verify**: 353 と同様、 HTML / 🐦 button / 絵文字 client 表示は user 朝確認待ち。
+5. **`min_sample_override=5` で AB 5 程度の 巨人選手 OPS は noisy**: 5 試合 だと AB 5-20 程度、 標準偏差大、 「.500」 等の極端 OPS が top に来る可能性。 user 体感で「変な ranking」になったら閾値見直し。
 
 ## 6. 新しく見つかったデグレ
 
-(deploy + Cloud Logging verify 後に追記)
+なし (production behaviour の意図しない退行 0 件、 pytest full 4853 pass / 0 fail、 deploy log 上 ERROR / WARNING ログなし)。 後続観察で出現すれば追記。
 
 ## 7. 追加した回帰テスト
 

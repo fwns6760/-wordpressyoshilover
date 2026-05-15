@@ -144,6 +144,81 @@ def render_ranking_svg_bar_chart(
     # 1 行で返す: WP の wpautop が改行を見て前後に </p><p> を入れるのを防ぐ
     return ''.join(parts)
 
+# 348 step 3 part 2: counting stats ranking helper (D-1 minimum impl)
+# 完全な publisher integration は別 ticket、 現状は aggregate のみ提供。
+
+
+def aggregate_player_counting_stat(
+    conn: sqlite3.Connection,
+    *,
+    stat_col: str,
+    table: str,
+    scope: str,
+    today: Optional[Any] = None,
+    top_n: int = 10,
+) -> list[dict]:
+    """指定 counting stat (HR / H / RBI / SB / W / K 等) を全 12 球団 player で
+    集計し、 top_n を return。 348 step 3 part 2 D-1 minimum。
+
+    Args:
+        stat_col: SQL column 名 (例 'H' / 'HR' / 'RBI' / 'K')
+        table: 'batting_logs' / 'pitching_logs' / 'fielding_logs'
+        scope: 'season' / 'last_30d' 等 (range scope のみ)
+
+    return: list of {"player": str, "team": str, "value": int}
+    """
+    import datetime as _dt
+    if today is None:
+        today = _dt.date.today()
+    if scope == "last_7d":
+        start = today - _dt.timedelta(days=6)
+    elif scope == "last_30d":
+        start = today - _dt.timedelta(days=29)
+    elif scope == "season":
+        start = _dt.date(today.year, 1, 1)
+    elif scope == "monthly":
+        start = today.replace(day=1)
+    elif scope == "weekly":
+        start = today - _dt.timedelta(days=today.weekday())
+    else:
+        raise ValueError(f"unsupported scope: {scope!r}")
+    end = today
+    safe_col = "".join(c for c in stat_col if c.isalnum() or c == "_")
+    if safe_col != stat_col:
+        raise ValueError(f"unsafe stat_col: {stat_col!r}")
+    if table not in ("batting_logs", "pitching_logs", "fielding_logs"):
+        raise ValueError(f"unsupported table: {table!r}")
+    rows = conn.execute(
+        f"SELECT bl.player_canonical, bl.team_name, SUM(bl.{safe_col}) AS total "
+        f"FROM {table} bl JOIN games g ON bl.game_id = g.game_id "
+        f"WHERE g.game_date >= ? AND g.game_date <= ? "
+        f"AND bl.player_canonical IS NOT NULL "
+        f"AND bl.player_canonical != '' "
+        f"GROUP BY bl.player_canonical "
+        f"ORDER BY total DESC LIMIT ?",
+        (start.isoformat(), end.isoformat(), top_n),
+    ).fetchall()
+    return [
+        {"player": p, "team": _team_name_to_code(t), "value": int(v or 0)}
+        for p, t, v in rows
+    ]
+
+
+def _team_name_to_code(team_name: Optional[str]) -> str:
+    if not team_name:
+        return "?"
+    name = str(team_name)
+    for token, code in {
+        "巨人": "g", "読売": "g", "阪神": "t", "ヤクルト": "s",
+        "広島": "c", "DeNA": "db", "横浜": "db", "中日": "d",
+        "ソフトバンク": "h", "西武": "l", "ロッテ": "m",
+        "楽天": "e", "オリックス": "b", "日本ハム": "f",
+    }.items():
+        if token in name:
+            return code
+    return "?"
+
+
 # 新 subtype の prefix (extractor + publish_evaluator 拡張時に対応)
 SUBTYPE_DATA_RANKING_PREFIX = "data_ranking_"
 

@@ -126,6 +126,78 @@ def aggregate_team_avg(conn: sqlite3.Connection, *, scope: str) -> list[dict]:
     return result
 
 
+def aggregate_team_run_diff(conn: sqlite3.Connection, *, scope: str) -> list[dict]:
+    """セ・リーグ 6 球団の得失点差 = SUM(giants_score - opp_score) 各球団視点で集計
+
+    348 step 3 part 2: 得失点差 ranking。 巨人試合は games.giants_score - opp_score、
+    他球団試合は team_name 経由で対戦結果から逆算が必要だが、 現 schema では
+    巨人視点しか取れないため、 巨人のみ計算 (他球団は 0 で list 化、 表示時
+    に注記)。
+    """
+    start, end = _scope_window(scope)
+    row = conn.execute(
+        "SELECT SUM(giants_score), SUM(opp_score) FROM games "
+        "WHERE game_date >= ? AND game_date <= ? "
+        "AND giants_score IS NOT NULL AND opp_score IS NOT NULL",
+        (start, end),
+    ).fetchone()
+    gscore, oscore = row if row else (0, 0)
+    diff = int(gscore or 0) - int(oscore or 0)
+    # 巨人のみ実値、 他球団は schema 制約で 0 (display 側で「不明」と扱う)
+    return [{"team": tc, "value": diff if tc == "g" else 0} for tc in CENTRAL_TEAMS]
+
+
+def aggregate_team_winning_streak(conn: sqlite3.Connection) -> dict:
+    """巨人の現在の連勝/連敗を games table の result から計算 (348 step 3 part 2)。
+
+    return: {"team": "g", "streak": int, "kind": "win" | "loss" | "none"}
+    最近の試合から逆順で同 result が続く回数を count。
+    """
+    rows = conn.execute(
+        "SELECT result FROM games "
+        "WHERE result IS NOT NULL AND result != 'unknown' "
+        "ORDER BY game_date DESC LIMIT 30",
+    ).fetchall()
+    if not rows:
+        return {"team": "g", "streak": 0, "kind": "none"}
+    first = (rows[0][0] or "").lower()
+    if first not in ("win", "loss"):
+        return {"team": "g", "streak": 0, "kind": "none"}
+    streak = 0
+    for r in rows:
+        if (r[0] or "").lower() == first:
+            streak += 1
+        else:
+            break
+    return {"team": "g", "streak": streak, "kind": first}
+
+
+def aggregate_team_vs_opponent(
+    conn: sqlite3.Connection, *, opponent: str, scope: str,
+) -> dict:
+    """巨人 vs 指定対戦相手 の W-L 集計 (348 step 3 part 2)。
+
+    return: {"opponent": <str>, "W": int, "L": int, "T": int, "scope": <str>}
+    """
+    start, end = _scope_window(scope)
+    rows = conn.execute(
+        "SELECT result FROM games "
+        "WHERE game_date >= ? AND game_date <= ? "
+        "AND opponent = ? AND result IS NOT NULL",
+        (start, end, opponent),
+    ).fetchall()
+    w = l = t = 0
+    for (r,) in rows:
+        rl = (r or "").lower()
+        if rl == "win":
+            w += 1
+        elif rl == "loss":
+            l += 1
+        elif rl == "draw":
+            t += 1
+    return {"opponent": opponent, "W": w, "L": l, "T": t, "scope": scope}
+
+
 def aggregate_team_era(conn: sqlite3.Connection, *, scope: str) -> list[dict]:
     """セ・リーグ 6 球団の team 防御率 = SUM(ER)*9 / SUM(IP)."""
     start, end = _scope_window(scope)

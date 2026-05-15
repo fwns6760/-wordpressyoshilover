@@ -1169,6 +1169,175 @@ def detect_milestone_crossed(
     return inserted
 
 
+# ─── 348 step 3 part 2: record / milestone event detectors ──────────────
+
+
+def detect_cycle_hits(
+    conn: sqlite3.Connection,
+    *,
+    snapshot_date: str,
+    run_id: Optional[str] = None,
+) -> list[int]:
+    """サイクルヒット検出 (348 step 3 part 2)。
+
+    snapshot_date の Giants 試合の batting_logs.atbats_json を parse、
+    同一打者で 1B + 2B + 3B + HR を 1 試合で達成した player を検出。
+    """
+    import json as _json
+    if run_id is None:
+        run_id = str(uuid.uuid4())
+    inserted: list[int] = []
+
+    rows = conn.execute(
+        "SELECT bl.game_id, bl.player_canonical, bl.atbats_json, g.opponent "
+        "FROM batting_logs bl JOIN games g ON bl.game_id = g.game_id "
+        "WHERE g.game_date = ? AND bl.team_name LIKE '%巨人%' "
+        "AND bl.player_canonical IS NOT NULL AND bl.atbats_json IS NOT NULL",
+        (snapshot_date,),
+    ).fetchall()
+
+    for game_id, player, atbats_json, opponent in rows:
+        try:
+            atbats = _json.loads(atbats_json) if isinstance(atbats_json, str) else atbats_json
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(atbats, list):
+            continue
+        hit_types: set[int] = set()
+        for ab_text in atbats:
+            if not isinstance(ab_text, str):
+                continue
+            try:
+                from src.analysis import insight_atbats_parser as _parser
+                parsed = _parser.parse_atbat(ab_text)
+            except Exception:  # noqa: BLE001
+                continue
+            if parsed.get("is_hr"):
+                hit_types.add(4)
+            elif parsed.get("result_class") == "hit":
+                bases = int(parsed.get("bases") or 0)
+                if bases in (1, 2, 3):
+                    hit_types.add(bases)
+        if hit_types == {1, 2, 3, 4}:
+            window_label = f"cycle_{snapshot_date}_{game_id}"
+            cid = _insert_candidate(
+                conn,
+                run_id=run_id,
+                signal_type=SIGNAL_MILESTONE_CROSSED,
+                player_canonical=str(player),
+                player_display=None,
+                magnitude=4.0,
+                baseline_value="cycle (1B+2B+3B+HR same game)",
+                current_value=f"game={game_id} vs={opponent}",
+                window_label=window_label,
+                comparison_target="record_cycle",
+                evidence_json=None,
+                priority=GIANTS_PRIORITY,
+                notes=f"record=cycle game={game_id} opponent={opponent}",
+            )
+            if cid:
+                inserted.append(cid)
+    conn.commit()
+    return inserted
+
+
+def detect_no_hitter(
+    conn: sqlite3.Connection,
+    *,
+    snapshot_date: str,
+    run_id: Optional[str] = None,
+) -> list[int]:
+    """ノーヒットノーラン検出 (348 step 3 part 2)。
+
+    snapshot_date の Giants 投手で H_allowed=0 AND IP>=9.0 を検出。
+    完投 + 0 安打を条件にする (ノーノー)。 完全試合は別 detector。
+    """
+    if run_id is None:
+        run_id = str(uuid.uuid4())
+    inserted: list[int] = []
+    rows = conn.execute(
+        "SELECT pl.game_id, pl.player_canonical, pl.IP, pl.H_allowed, "
+        "pl.BB, pl.HBP, pl.BF, g.opponent "
+        "FROM pitching_logs pl JOIN games g ON pl.game_id = g.game_id "
+        "WHERE g.game_date = ? AND pl.team_name LIKE '%巨人%' "
+        "AND pl.player_canonical IS NOT NULL "
+        "AND pl.H_allowed = 0 AND pl.IP >= 9.0",
+        (snapshot_date,),
+    ).fetchall()
+    for game_id, player, ip, h_allowed, bb, hbp, bf, opponent in rows:
+        # 完全試合は別 detector で扱うため、 ここではノーノーのみ
+        # (BB > 0 or HBP > 0 でも H=0 なら ノーノー成立)
+        is_perfect = (int(bb or 0) == 0 and int(hbp or 0) == 0 and int(bf or 0) <= 28)
+        if is_perfect:
+            continue  # 完全試合は detect_perfect_game で別 emit
+        window_label = f"no_hitter_{snapshot_date}_{game_id}"
+        cid = _insert_candidate(
+            conn,
+            run_id=run_id,
+            signal_type=SIGNAL_MILESTONE_CROSSED,
+            player_canonical=str(player),
+            player_display=None,
+            magnitude=float(ip),
+            baseline_value="no-hitter (H=0, IP>=9.0)",
+            current_value=f"game={game_id} IP={ip} BB={bb} HBP={hbp}",
+            window_label=window_label,
+            comparison_target="record_no_hitter",
+            evidence_json=None,
+            priority=GIANTS_PRIORITY,
+            notes=f"record=no_hitter game={game_id} opponent={opponent}",
+        )
+        if cid:
+            inserted.append(cid)
+    conn.commit()
+    return inserted
+
+
+def detect_perfect_game(
+    conn: sqlite3.Connection,
+    *,
+    snapshot_date: str,
+    run_id: Optional[str] = None,
+) -> list[int]:
+    """完全試合検出 (348 step 3 part 2)。
+
+    H_allowed=0 AND BB=0 AND HBP=0 AND IP>=9.0 AND BF<=28 (27 打者で完投、
+    エラー等で 28 まで OK の運用)。
+    """
+    if run_id is None:
+        run_id = str(uuid.uuid4())
+    inserted: list[int] = []
+    rows = conn.execute(
+        "SELECT pl.game_id, pl.player_canonical, pl.IP, pl.BF, g.opponent "
+        "FROM pitching_logs pl JOIN games g ON pl.game_id = g.game_id "
+        "WHERE g.game_date = ? AND pl.team_name LIKE '%巨人%' "
+        "AND pl.player_canonical IS NOT NULL "
+        "AND pl.H_allowed = 0 AND pl.BB = 0 AND pl.HBP = 0 "
+        "AND pl.IP >= 9.0 AND pl.BF <= 28",
+        (snapshot_date,),
+    ).fetchall()
+    for game_id, player, ip, bf, opponent in rows:
+        window_label = f"perfect_game_{snapshot_date}_{game_id}"
+        cid = _insert_candidate(
+            conn,
+            run_id=run_id,
+            signal_type=SIGNAL_MILESTONE_CROSSED,
+            player_canonical=str(player),
+            player_display=None,
+            magnitude=27.0,
+            baseline_value="perfect game (H=0, BB=0, HBP=0, BF<=28)",
+            current_value=f"game={game_id} IP={ip} BF={bf}",
+            window_label=window_label,
+            comparison_target="record_perfect_game",
+            evidence_json=None,
+            priority=GIANTS_PRIORITY,
+            notes=f"record=perfect_game game={game_id} opponent={opponent}",
+        )
+        if cid:
+            inserted.append(cid)
+    conn.commit()
+    return inserted
+
+
 def detect_standings_shift(
     conn: sqlite3.Connection,
     *,
@@ -1410,9 +1579,30 @@ def run_all_anomaly_detectors(
     except Exception:  # noqa: BLE001
         out[SIGNAL_GAME_PITCHER_PERF] = []
     try:
-        out[SIGNAL_MILESTONE_CROSSED] = detect_milestone_crossed(
+        milestone_ids = detect_milestone_crossed(
             conn, snapshot_date=snapshot_date, run_id=run_id,
         )
+        # 348 step 3 part 2: record events (cycle / no-hitter / perfect game) も
+        # SIGNAL_MILESTONE_CROSSED で emit、 同一 signal type にまとめる
+        try:
+            milestone_ids += detect_cycle_hits(
+                conn, snapshot_date=snapshot_date, run_id=run_id,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            milestone_ids += detect_no_hitter(
+                conn, snapshot_date=snapshot_date, run_id=run_id,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            milestone_ids += detect_perfect_game(
+                conn, snapshot_date=snapshot_date, run_id=run_id,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        out[SIGNAL_MILESTONE_CROSSED] = milestone_ids
     except Exception:  # noqa: BLE001
         out[SIGNAL_MILESTONE_CROSSED] = []
     try:

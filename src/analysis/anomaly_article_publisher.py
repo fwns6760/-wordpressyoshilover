@@ -32,6 +32,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.analysis import insight_anomaly_detector as detector  # noqa: E402
+from src.analysis import insight_whitelist as _wl  # noqa: E402
 from src.analysis import ranking_article_publisher as rap  # noqa: E402
 from src.giants_news_banner import (  # noqa: E402
     giants_news_banner_html as _giants_news_banner_html,
@@ -235,12 +236,21 @@ def _render_ranking_table_md(
 
 
 def _human_metric_label(metric_name: str) -> str:
+    """348 step 2: config JSON (insight_whitelist) 経由で日本語化。
+
+    K_per_9 → 奪三振率, BB_per_9 → 与四球率, HR_per_9 → 被本塁打率,
+    WIN_PCT → 勝率, FIELDING_PCT → 守備率, RISP → 得点圏打率。
+    OPS / UZR / WAR は英略号のまま。
+
+    config 不在時 or mapping 不在時は既存 fallback (× metric の internal
+    display 用、 publish されない経路でも label 維持)。
+    """
+    label = _wl.metric_name_ja(metric_name)
+    if label != metric_name:
+        return label
     return {
-        "OPS": "OPS", "AVG": "打率", "OBP": "出塁率", "SLG": "長打率",
         "wOBA": "wOBA", "ISO": "ISO(長打力)", "BABIP": "BABIP",
-        "ERA": "防御率", "FIP": "FIP", "WHIP": "WHIP",
-        "K_per_9": "K/9", "BB_per_9": "BB/9", "HR_per_9": "HR/9",
-        "K_BB": "K/BB",
+        "FIP": "FIP", "WHIP": "WHIP", "K_BB": "K/BB",
     }.get(metric_name, metric_name)
 
 

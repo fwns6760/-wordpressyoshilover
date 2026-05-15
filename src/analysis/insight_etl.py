@@ -390,10 +390,12 @@ def _aggregate_pitching_line(
 
     schema column → ``PitchingLine`` 名対応:
       H_allowed → H, HR_allowed → HR, K → SO, IP/BB/HBP/ER/R/BF はそのまま。
+    ``result_mark`` から W (勝) / L (敗) を count (348 step 2 で勝率計算用)。
     ``IP`` は SQLite 上 REAL なので合算可能 (5.1 → 5.333 形式)。
     """
     rows = conn.execute(
-        "SELECT pl.IP, pl.H_allowed, pl.HR_allowed, pl.BB, pl.HBP, pl.K, pl.R, pl.ER, pl.BF "
+        "SELECT pl.IP, pl.H_allowed, pl.HR_allowed, pl.BB, pl.HBP, pl.K, "
+        "pl.R, pl.ER, pl.BF, pl.result_mark "
         "FROM pitching_logs pl "
         "JOIN games g ON pl.game_id = g.game_id "
         "WHERE pl.player_canonical = ? "
@@ -412,6 +414,41 @@ def _aggregate_pitching_line(
         line.R += int(row[6] or 0)
         line.ER += int(row[7] or 0)
         line.BF += int(row[8] or 0)
+        mark = (row[9] or "").strip()
+        if mark == "勝":
+            line.W += 1
+        elif mark == "敗":
+            line.L += 1
+    return line
+
+
+def _aggregate_fielding_line(
+    conn: sqlite3.Connection,
+    player_canonical: str,
+    window_start: str,
+    window_end: str,
+) -> insight_advanced_metrics.FieldingLine:
+    """``fielding_logs`` から指定 player の ``FieldingLine`` を集計。
+
+    NPB 公式 box に守備 stat が無い場合 fielding_logs は空、 全 0 が返る
+    (守備率は None で skip される)。 348 step 2。
+    """
+    rows = conn.execute(
+        "SELECT fl.PO, fl.A, fl.E, fl.DP, fl.innings "
+        "FROM fielding_logs fl "
+        "JOIN games g ON fl.game_id = g.game_id "
+        "WHERE fl.player_canonical = ? "
+        "AND g.game_date >= ? AND g.game_date <= ?",
+        (player_canonical, window_start, window_end),
+    ).fetchall()
+
+    line = insight_advanced_metrics.FieldingLine()
+    for row in rows:
+        line.PO += int(row[0] or 0)
+        line.A += int(row[1] or 0)
+        line.E += int(row[2] or 0)
+        line.DP += int(row[3] or 0)
+        line.innings += float(row[4] or 0.0)
     return line
 
 

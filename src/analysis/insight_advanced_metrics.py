@@ -91,6 +91,22 @@ class PitchingLine:
     R: int = 0            # runs allowed
     BF: int = 0           # batters faced
     pitches: int = 0      # total pitches thrown
+    W: int = 0            # wins (result_mark='勝' を集計、 348 step 2)
+    L: int = 0            # losses (result_mark='敗' を集計、 348 step 2)
+
+
+@dataclass
+class FieldingLine:
+    """Single player's accumulated fielding line (348 step 2).
+
+    fielding_logs (PO/A/E) を集計した値。 守備率 = (PO + A) / (PO + A + E)。
+    NPB 公式 box が空の場合は全 0 のままで fielding_pct() は None を返す。
+    """
+    PO: int = 0           # putouts (刺殺)
+    A: int = 0            # assists (補殺)
+    E: int = 0            # errors (失策)
+    DP: int = 0           # double plays (併殺)
+    innings: float = 0.0  # 守備イニング
 
 
 # ─── batting metrics ──────────────────────────────────────────────────────
@@ -269,6 +285,31 @@ def era_plus(player_era: Optional[float], league_era: Optional[float]) -> Option
     return round(league_era / player_era * 100.0, 1)
 
 
+def win_pct(line: PitchingLine) -> Optional[float]:
+    """投手勝率 = W / (W + L)。 決着試合 0 (no decision のみ) は None.
+
+    348 step 2: spec 標準率 ◯。
+    """
+    decisions = line.W + line.L
+    if decisions <= 0:
+        return None
+    return round(line.W / decisions, 3)
+
+
+# ─── fielding metrics ─────────────────────────────────────────────────────
+
+
+def fielding_pct(line: FieldingLine) -> Optional[float]:
+    """守備率 = (PO + A) / (PO + A + E)。 機会 0 は None.
+
+    348 step 2: spec 標準率 ◯ (RF / UZR は × なので別)。
+    """
+    chances = line.PO + line.A + line.E
+    if chances <= 0:
+        return None
+    return round((line.PO + line.A) / chances, 4)
+
+
 # ─── batch helper for snapshot generation ─────────────────────────────────
 
 
@@ -296,4 +337,12 @@ def all_pitcher_metrics(line: PitchingLine) -> dict[str, Optional[float]]:
         "K_BB": k_bb_ratio(line),
         "FIP": fip(line),
         "xFIP": xfip(line),
+        "WIN_PCT": win_pct(line),
+    }
+
+
+def all_fielding_metrics(line: FieldingLine) -> dict[str, Optional[float]]:
+    """守備系 metric dict (348 step 2)。 現状は守備率のみ ◯。"""
+    return {
+        "FIELDING_PCT": fielding_pct(line),
     }

@@ -171,10 +171,11 @@ def test_all_batter_metrics_returns_full_set():
 
 
 def test_all_pitcher_metrics_returns_full_set():
+    # 348 step 2: WIN_PCT added to all_pitcher_metrics (勝率)
     line = m.PitchingLine(IP=6.0, H=4, HR=1, BB=2, SO=8, ER=2)
     result = m.all_pitcher_metrics(line)
     expected_keys = {"ERA", "WHIP", "K_per_9", "BB_per_9", "HR_per_9",
-                     "K_BB", "FIP", "xFIP"}
+                     "K_BB", "FIP", "xFIP", "WIN_PCT"}
     assert set(result.keys()) == expected_keys
 
 

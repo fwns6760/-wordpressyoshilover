@@ -750,6 +750,201 @@ def publish_giants_centric_ranking_draft(
 # ─── CLI / wire helper ──────────────────────────────────────────────────────
 
 
+def aggregate_player_counting_stat_split(
+    conn: sqlite3.Connection,
+    *,
+    stat_col: str,
+    table: str,
+    scope: str,
+    split_field: str,  # "home_away" or "opponent"
+    split_value: str,  # "home" / "away" / 'g' / 't' / ...
+    today: Optional[Any] = None,
+    top_n: int = 10,
+) -> list[dict]:
+    """ホーム/アウェイ別 / 対戦相手別 counting 集計 (348 step 3 完全達成、 §4 file list)."""
+    import datetime as _dt
+    if today is None:
+        today = _dt.date.today()
+    if scope == "last_7d":
+        start = today - _dt.timedelta(days=6)
+    elif scope == "last_30d":
+        start = today - _dt.timedelta(days=29)
+    elif scope == "season":
+        start = _dt.date(today.year, 1, 1)
+    elif scope == "monthly":
+        start = today.replace(day=1)
+    elif scope == "weekly":
+        start = today - _dt.timedelta(days=today.weekday())
+    else:
+        raise ValueError(f"unsupported scope: {scope!r}")
+    end = today
+    safe_col = "".join(c for c in stat_col if c.isalnum() or c == "_")
+    if safe_col != stat_col:
+        raise ValueError(f"unsafe stat_col: {stat_col!r}")
+    if table not in ("batting_logs", "pitching_logs", "fielding_logs"):
+        raise ValueError(f"unsupported table: {table!r}")
+    if split_field not in ("home_away", "opponent"):
+        raise ValueError(f"unsupported split_field: {split_field!r}")
+    rows = conn.execute(
+        f"SELECT bl.player_canonical, bl.team_name, SUM(bl.{safe_col}) AS total "
+        f"FROM {table} bl JOIN games g ON bl.game_id = g.game_id "
+        f"WHERE g.game_date >= ? AND g.game_date <= ? "
+        f"AND g.{split_field} = ? "
+        f"AND bl.player_canonical IS NOT NULL "
+        f"AND bl.player_canonical != '' "
+        f"GROUP BY bl.player_canonical "
+        f"ORDER BY total DESC LIMIT ?",
+        (start.isoformat(), end.isoformat(), split_value, top_n),
+    ).fetchall()
+    return [
+        {"player": p, "team": _team_name_to_code(t), "value": int(v or 0)}
+        for p, t, v in rows
+    ]
+
+
+def render_player_counting_split_article(
+    conn: sqlite3.Connection,
+    *,
+    stat_col: str,
+    table: str,
+    metric_label_jp: str,
+    scope: str,
+    split_field: str,
+    split_value: str,
+    split_label_jp: str,  # "ホーム" / "アウェイ" / "vs 阪神" 等
+    top_n: int = 10,
+) -> Optional[dict]:
+    """ホーム/アウェイ別 / 対戦相手別 counting ranking 記事 (348 step 3 完全達成)."""
+    rows = aggregate_player_counting_stat_split(
+        conn, stat_col=stat_col, table=table, scope=scope,
+        split_field=split_field, split_value=split_value, top_n=max(top_n, 30),
+    )
+    if not rows:
+        return None
+    giants_rows = [r for r in rows if r.get("team") == "g"]
+    if not giants_rows:
+        return None
+    top_giants = giants_rows[0]
+    top_player = top_giants["player"]
+    top_value = top_giants["value"]
+    giants_rank = next(
+        (i + 1 for i, r in enumerate(rows) if r["player"] == top_player), len(rows),
+    )
+    scope_label = {
+        "last_7d": "1 週間", "last_30d": "1 ヶ月", "season": "今シーズン",
+        "monthly": "月別", "weekly": "週別",
+    }.get(scope, scope)
+    title = (
+        f"【巨人データ】{top_player} {metric_label_jp} {top_value} で"
+        f"{split_label_jp} リーグ {giants_rank} 位 ({scope_label})"
+    )
+    table_lines = [
+        f"| 順位 | 選手 | チーム | {metric_label_jp}({split_label_jp}) |",
+        "|---|---|---|---|",
+    ]
+    for i, r in enumerate(rows[:top_n], start=1):
+        team_disp = _TEAM_LABEL_JP.get(r.get("team", ""), r.get("team", "?"))
+        is_focus = r["player"] == top_player
+        if is_focus:
+            r_disp = f'<span style="color:#c0392b"><strong>{i}</strong></span>'
+            p_disp = f'<span style="color:#c0392b"><strong>{r["player"]} ★</strong></span>'
+            v_disp = f'<span style="color:#c0392b"><strong>{r["value"]}</strong></span>'
+        else:
+            r_disp = str(i)
+            p_disp = r["player"]
+            v_disp = str(r["value"])
+        table_lines.append(f"| {r_disp} | {p_disp} | {team_disp} | {v_disp} |")
+    table_md = "\n".join(table_lines)
+    body_md = f"""# {title}
+
+## ひとこと
+
+巨人 {top_player} の **{split_label_jp}** での {metric_label_jp} は **{top_value}**
+({scope_label} 時点)、 セ・パ 12 球団中 リーグ **{giants_rank} 位**。
+
+## リーグ TOP {top_n}({split_label_jp})
+
+{table_md}
+
+## このデータについて
+
+| 項目 | 内容 |
+|---|---|
+| 選手 | **{top_player}**(巨人) |
+| 指標 | {metric_label_jp}({split_label_jp}) = **{top_value}** |
+| 順位 | リーグ {giants_rank} 位 |
+| split | {split_field}={split_value}({split_label_jp}) |
+| データ元 | NPB 公式 box score(https://npb.jp/) |
+| 集計式 | SUM({stat_col}) over {table} WHERE games.{split_field}=:{split_value} |
+| 集計期間 | {scope_label} |
+"""
+    body_html = markdown_to_html(body_md)
+    return {
+        "title": title, "body_md": body_md, "body_html": body_html,
+        "stat_col": stat_col, "scope": scope,
+        "split_field": split_field, "split_value": split_value,
+    }
+
+
+def publish_player_counting_split_draft(
+    conn: sqlite3.Connection,
+    wp_client_obj: Any,
+    *,
+    stat_col: str,
+    table: str,
+    metric_label_jp: str,
+    scope: str,
+    split_field: str,
+    split_value: str,
+    split_label_jp: str,
+    category_name: str = DEFAULT_CATEGORY_NAME,
+    dry_run: bool = False,
+) -> dict:
+    article = render_player_counting_split_article(
+        conn, stat_col=stat_col, table=table,
+        metric_label_jp=metric_label_jp, scope=scope,
+        split_field=split_field, split_value=split_value,
+        split_label_jp=split_label_jp, top_n=10,
+    )
+    if article is None:
+        return {"status": "skip", "reason": "no_data_or_no_giants",
+                "stat_col": stat_col, "scope": scope,
+                "split": f"{split_field}={split_value}"}
+    if dry_run:
+        return {"status": "dry_run", "title": article["title"]}
+    try:
+        category_id = wp_client_obj.create_category(category_name)
+    except Exception:
+        category_id = 0
+    if not category_id:
+        try:
+            category_id = wp_client_obj.resolve_category_id(category_name)
+        except Exception:
+            category_id = 0
+    if not category_id:
+        return {"status": "error", "stage": "category"}
+    publish_status = _resolve_publish_status(focus_team_code="g")
+    _banner = _giants_news_banner_html(
+        article["title"], _BANNER_SOURCE_LABEL, category_name,
+    )
+    try:
+        post_id = wp_client_obj.create_post(
+            title=article["title"],
+            content=_banner + article["body_html"],
+            categories=[category_id],
+            status=publish_status,
+            caller="ranking_article_publisher_counting_split",
+        )
+        return {
+            "status": "published" if publish_status == "publish" else "published_draft",
+            "title": article["title"], "post_id": int(post_id or 0),
+            "stat_col": stat_col, "scope": scope,
+            "split": f"{split_field}={split_value}",
+        }
+    except Exception as e:
+        return {"status": "error", "error": f"{type(e).__name__}: {e}"}
+
+
 def render_player_counting_article(
     conn: sqlite3.Connection,
     *,

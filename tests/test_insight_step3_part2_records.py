@@ -467,6 +467,147 @@ def test_render_player_counting_article(tmp_path):
         conn.close()
 
 
+def test_detect_consecutive_hit_streak(tmp_path):
+    """7 試合連続 H>0 → emit。"""
+    conn = _open_db(tmp_path)
+    try:
+        for i in range(8):
+            _seed_game(conn, game_id=f"ch{i}", game_date=f"2026-05-{8+i:02d}")
+            _seed_batting_atbats(
+                conn, game_id=f"ch{i}", player_canonical="安打男",
+                team_name="巨人", atbats=["単安", "単安"],
+            )
+        conn.commit()
+        ids = det.detect_consecutive_hit_streak(
+            conn, snapshot_date="2026-05-15", min_games=7,
+        )
+        assert len(ids) >= 1
+    finally:
+        conn.close()
+
+
+def test_detect_consecutive_hit_streak_break(tmp_path):
+    """1 試合で H=0 が混じれば streak が中断、 min 未達で skip。"""
+    conn = _open_db(tmp_path)
+    try:
+        _seed_game(conn, game_id="b0", game_date="2026-05-08")
+        # 0 hit game
+        conn.execute(
+            "INSERT INTO batting_logs (game_id, team_role, slot_order, position, "
+            "player_display, player_canonical, is_sub, AB, R, H, RBI, SB, "
+            "atbats_json, team_name) "
+            "VALUES (?, 'home', 1, '中', '中断男', '中断男', 0, 4, 0, 0, 0, 0, '[]', '巨人')",
+            ("b0",),
+        )
+        for i in range(5):  # only 5 hit games after the break
+            _seed_game(conn, game_id=f"b{i+1}", game_date=f"2026-05-{9+i:02d}")
+            _seed_batting_atbats(
+                conn, game_id=f"b{i+1}", player_canonical="中断男",
+                team_name="巨人", atbats=["単安"],
+            )
+        conn.commit()
+        ids = det.detect_consecutive_hit_streak(
+            conn, snapshot_date="2026-05-15", min_games=7,
+        )
+        # 5 hit games + break + ... = current streak (before snapshot) is 5 from latest
+        # Actually streak from latest backward: 5/13 14 13 12 11 10 9 (depends)
+        # Let me just check this person not in candidates (5 < 7)
+        rows = conn.execute(
+            "SELECT player_canonical FROM article_candidates WHERE candidate_id IN ("
+            + ",".join("?" * len(ids)) + ")", ids,
+        ).fetchall() if ids else []
+        assert "中断男" not in [r[0] for r in rows]
+    finally:
+        conn.close()
+
+
+def test_render_team_run_diff_article(tmp_path):
+    """得失点差 render: positive diff → '+N' title。"""
+    from src.analysis import team_ranking_publisher as trp
+    conn = _open_db(tmp_path)
+    try:
+        for i in range(3):
+            _seed_game(conn, game_id=f"rd{i}", game_date=f"2026-05-1{i}",
+                       giants_score=5, opp_score=2)
+        conn.commit()
+        article = trp.render_team_run_diff_article(conn, scope="season")
+        assert article is not None
+        # 3 game × (5-2) = +9
+        assert "+9" in article["title"]
+        assert article["value"] == 9
+    finally:
+        conn.close()
+
+
+def test_render_team_vs_opponent_article(tmp_path):
+    """対戦相手別 W-L 記事 render: 3 試合以上で出る。"""
+    from src.analysis import team_ranking_publisher as trp
+    conn = _open_db(tmp_path)
+    try:
+        _seed_game(conn, game_id="vo1", game_date="2026-05-10", opponent="t", result="win")
+        _seed_game(conn, game_id="vo2", game_date="2026-05-11", opponent="t", result="win")
+        _seed_game(conn, game_id="vo3", game_date="2026-05-12", opponent="t", result="loss")
+        conn.commit()
+        article = trp.render_team_vs_opponent_article(conn, opponent="t", scope="season")
+        assert article is not None
+        assert "対 阪神" in article["title"]
+        assert "2勝1敗" in article["title"]
+        assert article["W"] == 2
+    finally:
+        conn.close()
+
+
+def test_render_milestone_crossed_consecutive(tmp_path):
+    """連続記録 render path (consecutive_hit_streak)。"""
+    from src.analysis import anomaly_article_publisher as pub
+    candidate = {
+        "player_canonical": "連続男",
+        "current_value": "12 連続安打試合",
+        "baseline_value": "streak=12",
+        "notes": "record=consecutive_hit streak=12 as_of=2026-05-15",
+        "magnitude": 12.0,
+    }
+    article = pub.render_milestone_crossed_article(None, candidate)
+    assert "連続安打試合" in article["title"]
+    assert "連続男" in article["title"]
+    assert "12" in article["title"]
+
+
+def test_aggregate_player_counting_stat_split_home(tmp_path):
+    """home/away 別 counting 集計 (348 step 3 完全達成 §4 file list)."""
+    from src.analysis import ranking_article_publisher as rap
+    import datetime as _dt
+    conn = _open_db(tmp_path)
+    try:
+        # 2 home + 1 away
+        for i, ha in enumerate(["home", "home", "away"]):
+            game_id = f"split{i}"
+            conn.execute(
+                "INSERT INTO games (game_id, game_date, opponent, home_away, "
+                "giants_score, opp_score, result, source_url, source_kind, ingested_at) "
+                "VALUES (?, ?, 't', ?, 0, 0, '', '', 'test', '2026-05-15T00:00:00Z')",
+                (game_id, f"2026-05-{10+i:02d}", ha),
+            )
+            conn.execute(
+                "INSERT INTO batting_logs (game_id, team_role, slot_order, position, "
+                "player_display, player_canonical, is_sub, AB, R, H, RBI, SB, "
+                "atbats_json, team_name) "
+                "VALUES (?, 'home', 1, '中', '坂本', '坂本', 0, 4, 0, 3, 0, 0, '[]', '巨人')",
+                (game_id,),
+            )
+        conn.commit()
+        # home 限定 → 2 試合分 H=6
+        rows = rap.aggregate_player_counting_stat_split(
+            conn, stat_col="H", table="batting_logs", scope="season",
+            split_field="home_away", split_value="home",
+            today=_dt.date(2026, 5, 15), top_n=10,
+        )
+        assert len(rows) >= 1
+        assert rows[0]["value"] == 6  # 2 home games × 3 H
+    finally:
+        conn.close()
+
+
 def test_aggregate_team_vs_opponent(tmp_path):
     """対戦相手別 W-L 集計。"""
     conn = _open_db(tmp_path)

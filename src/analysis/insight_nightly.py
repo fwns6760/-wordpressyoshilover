@@ -525,6 +525,31 @@ def main(argv: Optional[list[str]] = None) -> int:
                                             )
                                         except Exception:  # noqa: BLE001
                                             continue
+                                # 348 step 3 完全達成: ホーム/アウェイ + 対戦相手別 grouping
+                                home_away_splits = [
+                                    ("home_away", "home", "ホーム"),
+                                    ("home_away", "away", "アウェイ"),
+                                ]
+                                opp_splits = [
+                                    ("opponent", "t", "vs 阪神"),
+                                    ("opponent", "s", "vs ヤクルト"),
+                                    ("opponent", "c", "vs 広島"),
+                                    ("opponent", "db", "vs DeNA"),
+                                    ("opponent", "d", "vs 中日"),
+                                ]
+                                # split は H/HR/RBI のみ × season (爆発防止)
+                                split_metrics = [m for m in counting_metrics
+                                                 if m["stat_col"] in ("H", "HR", "RBI")]
+                                for metric in split_metrics:
+                                    for sf, sv, sl in home_away_splits + opp_splits:
+                                        try:
+                                            ranking_pub.publish_player_counting_split_draft(
+                                                conn, wp, scope="season",
+                                                split_field=sf, split_value=sv,
+                                                split_label_jp=sl, **metric,
+                                            )
+                                        except Exception:  # noqa: BLE001
+                                            continue
                             except Exception:  # noqa: BLE001
                                 pass
                         except Exception as exc:  # noqa: BLE001

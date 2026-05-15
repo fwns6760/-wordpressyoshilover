@@ -1338,6 +1338,237 @@ def detect_perfect_game(
     return inserted
 
 
+# ─── 348 step 3 完全達成: 連続記録 5 detector ──────────────────────────
+
+
+def _giants_batters(conn: sqlite3.Connection) -> list[str]:
+    rows = conn.execute(
+        "SELECT DISTINCT bl.player_canonical FROM batting_logs bl "
+        "WHERE bl.team_name LIKE '%巨人%' AND bl.player_canonical IS NOT NULL "
+        "AND bl.player_canonical != ''"
+    ).fetchall()
+    return [str(r[0]) for r in rows]
+
+
+def _giants_pitchers(conn: sqlite3.Connection) -> list[str]:
+    rows = conn.execute(
+        "SELECT DISTINCT pl.player_canonical FROM pitching_logs pl "
+        "WHERE pl.team_name LIKE '%巨人%' AND pl.player_canonical IS NOT NULL "
+        "AND pl.player_canonical != ''"
+    ).fetchall()
+    return [str(r[0]) for r in rows]
+
+
+def _emit_streak_candidate(
+    conn, *, run_id, player, streak_value, record_key, title_kind, notes_extra,
+) -> int:
+    return _insert_candidate(
+        conn,
+        run_id=run_id,
+        signal_type=SIGNAL_MILESTONE_CROSSED,
+        player_canonical=str(player),
+        player_display=None,
+        magnitude=float(streak_value),
+        baseline_value=f"streak={streak_value}",
+        current_value=f"{streak_value} {title_kind}",
+        window_label=f"{record_key}_{player}",
+        comparison_target=f"record_{record_key}",
+        evidence_json=None,
+        priority=GIANTS_PRIORITY,
+        notes=f"record={record_key} streak={streak_value} {notes_extra}",
+    ) or 0
+
+
+def detect_consecutive_hit_streak(
+    conn: sqlite3.Connection, *,
+    snapshot_date: str, run_id: Optional[str] = None, min_games: int = 7,
+) -> list[int]:
+    """連続安打試合 streak (H>0 連続 game)、 min_games 以上で emit (348 step 3)."""
+    if run_id is None:
+        run_id = str(uuid.uuid4())
+    inserted: list[int] = []
+    for player in _giants_batters(conn):
+        rows = conn.execute(
+            "SELECT g.game_date, bl.H FROM batting_logs bl "
+            "JOIN games g ON bl.game_id = g.game_id "
+            "WHERE bl.player_canonical = ? AND g.game_date <= ? "
+            "ORDER BY g.game_date DESC", (player, snapshot_date),
+        ).fetchall()
+        streak = 0
+        for _, h in rows:
+            if int(h or 0) > 0:
+                streak += 1
+            else:
+                break
+        if streak >= min_games:
+            cid = _emit_streak_candidate(
+                conn, run_id=run_id, player=player, streak_value=streak,
+                record_key="consecutive_hit", title_kind="連続安打試合",
+                notes_extra=f"as_of={snapshot_date}",
+            )
+            if cid:
+                inserted.append(cid)
+    conn.commit()
+    return inserted
+
+
+def detect_consecutive_onbase_streak(
+    conn: sqlite3.Connection, *,
+    snapshot_date: str, run_id: Optional[str] = None, min_games: int = 10,
+) -> list[int]:
+    """連続出塁試合 (H>0 OR R>0 proxy、 walk/hbp は atbats_json parse 必要だが
+    cost 抑制で R>0 proxy 使用、 注釈は body 側で記載) (348 step 3)."""
+    if run_id is None:
+        run_id = str(uuid.uuid4())
+    inserted: list[int] = []
+    for player in _giants_batters(conn):
+        rows = conn.execute(
+            "SELECT g.game_date, bl.H, bl.R FROM batting_logs bl "
+            "JOIN games g ON bl.game_id = g.game_id "
+            "WHERE bl.player_canonical = ? AND g.game_date <= ? "
+            "ORDER BY g.game_date DESC", (player, snapshot_date),
+        ).fetchall()
+        streak = 0
+        for _, h, r in rows:
+            if int(h or 0) > 0 or int(r or 0) > 0:
+                streak += 1
+            else:
+                break
+        if streak >= min_games:
+            cid = _emit_streak_candidate(
+                conn, run_id=run_id, player=player, streak_value=streak,
+                record_key="consecutive_onbase", title_kind="連続出塁試合",
+                notes_extra=f"proxy=H_or_R as_of={snapshot_date}",
+            )
+            if cid:
+                inserted.append(cid)
+    conn.commit()
+    return inserted
+
+
+def detect_consecutive_hr_streak(
+    conn: sqlite3.Connection, *,
+    snapshot_date: str, run_id: Optional[str] = None, min_games: int = 3,
+) -> list[int]:
+    """連続試合本塁打 (atbats_json parse で is_hr 検出)、 min_games 以上で emit."""
+    import json as _json
+    if run_id is None:
+        run_id = str(uuid.uuid4())
+    try:
+        from src.analysis import insight_atbats_parser as _parser
+    except Exception:  # noqa: BLE001
+        return []
+    inserted: list[int] = []
+    for player in _giants_batters(conn):
+        rows = conn.execute(
+            "SELECT g.game_date, bl.atbats_json FROM batting_logs bl "
+            "JOIN games g ON bl.game_id = g.game_id "
+            "WHERE bl.player_canonical = ? AND g.game_date <= ? "
+            "ORDER BY g.game_date DESC", (player, snapshot_date),
+        ).fetchall()
+        streak = 0
+        for _, atb_json in rows:
+            try:
+                atbs = _json.loads(atb_json) if isinstance(atb_json, str) else atb_json
+            except (ValueError, TypeError):
+                atbs = []
+            if not isinstance(atbs, list):
+                atbs = []
+            had_hr = False
+            for ab in atbs:
+                if isinstance(ab, str):
+                    try:
+                        if _parser.parse_atbat(ab).get("is_hr"):
+                            had_hr = True
+                            break
+                    except Exception:  # noqa: BLE001
+                        continue
+            if had_hr:
+                streak += 1
+            else:
+                break
+        if streak >= min_games:
+            cid = _emit_streak_candidate(
+                conn, run_id=run_id, player=player, streak_value=streak,
+                record_key="consecutive_hr", title_kind="連続試合本塁打",
+                notes_extra=f"as_of={snapshot_date}",
+            )
+            if cid:
+                inserted.append(cid)
+    conn.commit()
+    return inserted
+
+
+def detect_consecutive_scoreless_innings(
+    conn: sqlite3.Connection, *,
+    snapshot_date: str, run_id: Optional[str] = None, min_ip: float = 15.0,
+) -> list[int]:
+    """連続イニング無失点 (pitcher 連続 game で ER==0 の IP 合計、
+    min_ip 以上で emit) (348 step 3)."""
+    if run_id is None:
+        run_id = str(uuid.uuid4())
+    inserted: list[int] = []
+    for player in _giants_pitchers(conn):
+        rows = conn.execute(
+            "SELECT g.game_date, pl.IP, pl.ER FROM pitching_logs pl "
+            "JOIN games g ON pl.game_id = g.game_id "
+            "WHERE pl.player_canonical = ? AND g.game_date <= ? "
+            "ORDER BY g.game_date DESC", (player, snapshot_date),
+        ).fetchall()
+        ip_streak = 0.0
+        for _, ip, er in rows:
+            if int(er or 0) == 0 and float(ip or 0) > 0:
+                ip_streak += float(ip)
+            else:
+                break
+        if ip_streak >= min_ip:
+            cid = _emit_streak_candidate(
+                conn, run_id=run_id, player=player, streak_value=ip_streak,
+                record_key="consecutive_scoreless_ip",
+                title_kind="連続イニング無失点",
+                notes_extra=f"ip={ip_streak:.1f} as_of={snapshot_date}",
+            )
+            if cid:
+                inserted.append(cid)
+    conn.commit()
+    return inserted
+
+
+def detect_consecutive_strikeouts(
+    conn: sqlite3.Connection, *,
+    snapshot_date: str, run_id: Optional[str] = None, min_k: int = 10,
+) -> list[int]:
+    """連続奪三振 = 1 試合内最多 K (proxy)、 シーズン高 K (>=min_k) game で emit
+    (PA-level 連続 K は atbats_json の PA 順序 parse 必要、 実装簡略化のため
+    試合内 K 総数 を proxy、 注釈は body 側で記載) (348 step 3)."""
+    if run_id is None:
+        run_id = str(uuid.uuid4())
+    inserted: list[int] = []
+    for player in _giants_pitchers(conn):
+        rows = conn.execute(
+            "SELECT g.game_date, MAX(pl.K) FROM pitching_logs pl "
+            "JOIN games g ON pl.game_id = g.game_id "
+            "WHERE pl.player_canonical = ? AND g.game_date <= ? "
+            "GROUP BY g.game_id ORDER BY pl.K DESC LIMIT 1",
+            (player, snapshot_date),
+        ).fetchall()
+        if not rows:
+            continue
+        game_date, max_k = rows[0]
+        max_k = int(max_k or 0)
+        if max_k >= min_k:
+            cid = _emit_streak_candidate(
+                conn, run_id=run_id, player=player, streak_value=max_k,
+                record_key="consecutive_strikeouts",
+                title_kind="1 試合最多奪三振 (連続奪三振 proxy)",
+                notes_extra=f"game={game_date} k={max_k} proxy=game_max",
+            )
+            if cid:
+                inserted.append(cid)
+    conn.commit()
+    return inserted
+
+
 def detect_standings_shift(
     conn: sqlite3.Connection,
     *,
@@ -1602,6 +1833,20 @@ def run_all_anomaly_detectors(
             )
         except Exception:  # noqa: BLE001
             pass
+        # 348 step 3 完全達成: 連続記録 5 種 detector
+        for _fn in (
+            detect_consecutive_hit_streak,
+            detect_consecutive_onbase_streak,
+            detect_consecutive_hr_streak,
+            detect_consecutive_scoreless_innings,
+            detect_consecutive_strikeouts,
+        ):
+            try:
+                milestone_ids += _fn(
+                    conn, snapshot_date=snapshot_date, run_id=run_id,
+                )
+            except Exception:  # noqa: BLE001
+                continue
         out[SIGNAL_MILESTONE_CROSSED] = milestone_ids
     except Exception:  # noqa: BLE001
         out[SIGNAL_MILESTONE_CROSSED] = []

@@ -626,6 +626,53 @@ def render_giants_top_article(
 # 連続多安打) と新規 2 種 (守備 UZR / 守備率) を記事化対応。
 
 
+def _render_box_score_article(
+    *,
+    title: str,
+    headline: str,
+    box_table_rows: list[tuple[str, str]],
+    period_label: str,
+    source_note: str,
+) -> dict[str, str]:
+    """box score 表形式 layout (348 step 3 完全達成 D-4)。
+
+    `_render_simple_data_article` の bullet list を 表形式 (key/value table)
+    に置き換えた variant。 試合後イベント / record event の詳細 stat 表示用。
+    """
+    intro_banner = (
+        '<div style="background:#fff8e1;border-left:4px solid #f39c12;'
+        'padding:10px 15px;margin:1em 0;">'
+        '<strong>🔥 大手ニュースで取り上げないデータ角度</strong><br>'
+        'sabermetric 視点での ヨシラバー 独自分析です。'
+        '</div>'
+    )
+    table_lines = ["| 項目 | 数値 |", "|---|---|"]
+    for label, value in box_table_rows:
+        table_lines.append(f"| {label} | {value} |")
+    box_md = "\n".join(table_lines)
+    body_md = f"""# {title}
+
+{intro_banner}
+
+## ひとこと
+
+{headline}
+
+## box score 抜粋
+
+{box_md}
+
+## このデータについて
+
+| 項目 | 内容 |
+|---|---|
+| 集計期間 | {period_label} |
+| データ元 | NPB 公式 box score(https://npb.jp/) |
+| 注意点 | {source_note} |
+"""
+    return {"title": title, "body_md": body_md}
+
+
 def _render_simple_data_article(
     *,
     title: str,
@@ -912,15 +959,22 @@ def render_game_hero_batter_article(
         + (f" / {hr} 本塁打" if hr != "0" else "")
         + f"。試合結果は **{result_match or '結果確定'}** ({score or 'スコア未取得'})。"
     )
-    detail = [
-        f"打数: {ab} / 安打: {h} / 得点: {current.get('R', '0')} / 打点: {rbi}",
-        f"本塁打: {hr} / 盗塁: {current.get('SB', '0')}",
-        f"試合: {result_match} ({score})",
+    # 348 step 3 完全達成 D-4: bullet list → box score 表形式
+    box_rows = [
+        ("打数", ab),
+        ("安打", h),
+        ("本塁打", hr),
+        ("打点", rbi),
+        ("得点", current.get("R", "0")),
+        ("盗塁", current.get("SB", "0")),
+        ("試合スコア", score or "-"),
+        ("試合結果", result_match or "-"),
+        ("対戦相手", opponent_match or "-"),
     ]
-    return _render_simple_data_article(
+    return _render_box_score_article(
         title=title,
         headline=headline,
-        detail_lines=detail,
+        box_table_rows=box_rows,
         period_label="今日の試合",
         source_note="NPB 公式 box score 由来。打撃成績の単発活躍は次戦継続するかが鍵。",
     )
@@ -961,16 +1015,22 @@ def render_game_pitcher_performance_article(
         f"**{ip} 回 {er} 自責点 {k} 奪三振** の {direction}。"
         f" 試合結果 **{result_match or '結果確定'}**。"
     )
-    detail = [
-        f"投球回: {ip} / 自責点: {er}",
-        f"被安打: {h_allowed} / 与四球: {bb} / 奪三振: {k}",
-        f"被本塁打: {current.get('HR', '0')}",
-        f"記録: {current.get('mark', '')}",
+    # 348 step 3 完全達成 D-4: bullet list → box score 表形式
+    box_rows = [
+        ("投球回", ip),
+        ("自責点", er),
+        ("被安打", h_allowed),
+        ("被本塁打", current.get("HR", "0")),
+        ("与四球", bb),
+        ("奪三振", k),
+        ("記録", current.get("mark", "") or "-"),
+        ("試合結果", result_match or "-"),
+        ("対戦相手", opponent_match or "-"),
     ]
-    return _render_simple_data_article(
+    return _render_box_score_article(
         title=title,
         headline=headline,
-        detail_lines=detail,
+        box_table_rows=box_rows,
         period_label="今日の試合",
         source_note="NPB 公式 box score 由来。1 試合の数字、シーズン累計とは別。",
     )
@@ -989,12 +1049,49 @@ def render_milestone_crossed_article(
     notes = _parse_kv_blob(candidate_row.get("notes") or "")
     record = notes.get("record", "")
 
+    # 348 step 3 完全達成: 連続記録 5 種 (consecutive_*) を専用 render (box score 表形式)
+    if record.startswith("consecutive_"):
+        record_label = {
+            "consecutive_hit": "連続安打試合",
+            "consecutive_onbase": "連続出塁試合",
+            "consecutive_hr": "連続試合本塁打",
+            "consecutive_scoreless_ip": "連続イニング無失点",
+            "consecutive_strikeouts": "1 試合最多奪三振",
+        }.get(record, record)
+        streak = notes.get("streak", "")
+        unit = "イニング" if record == "consecutive_scoreless_ip" else (
+            "個" if record == "consecutive_strikeouts" else "試合"
+        )
+        title = f"【巨人データ】{player} {record_label} {streak} {unit} 継続中"
+        headline = (
+            f"{player} は **{record_label} {streak} {unit}** を継続中 (snapshot_date 時点)。"
+        )
+        box_rows = [
+            ("記録名", record_label),
+            ("連続値", f"{streak} {unit}"),
+            ("選手", player),
+        ]
+        game = notes.get("game", "")
+        if game:
+            box_rows.append(("観測 game", game))
+        # proxy 透明性 (348 step 3 完全達成 D-4: 表形式 + 注釈分離)
+        if record == "consecutive_onbase":
+            box_rows.append(("注", "出塁判定 = H>0 OR R>0 proxy (BB/HBP は atbats_json parse 範囲外)"))
+        if record == "consecutive_strikeouts":
+            box_rows.append(("注", "PA レベル連続 K でなく 1 試合内 K 総数 max を proxy"))
+        return _render_box_score_article(
+            title=title,
+            headline=headline,
+            box_table_rows=box_rows,
+            period_label="シーズン進行中",
+            source_note="史上 N 人目 / 何年ぶり 等の lookup は手動 (NPB 公式 / Wikipedia)。",
+        )
+
     if record in ("cycle", "no_hitter", "perfect_game"):
-        # 348 step 3 part 2 D-3: record event の専用 render
+        # 348 step 3 完全達成 D-3 + D-4: record event の専用 render (box score 表形式)
         opponent_code = notes.get("opponent", "")
         opponent_jp = _team_label(opponent_code) if opponent_code else ""
         game_id = notes.get("game", "")
-        # game_date を game_id から抽出 (format: "2026-05-15:..." or just date prefix)
         game_date = game_id.split(":", 1)[0] if game_id else ""
         record_label = {
             "cycle": "サイクル安打",
@@ -1009,17 +1106,22 @@ def render_milestone_crossed_article(
             f"{player} が **{record_label}** を達成。"
             + (f" ({game_date} vs {opponent_jp} 戦)" if opponent_jp else "")
         )
-        detail = [
-            f"達成内容: {record_label}",
+        box_rows = [
+            ("達成内容", record_label),
+            ("選手", player),
         ]
         if game_date:
-            detail.append(f"達成日: {game_date}")
+            box_rows.append(("達成日", game_date))
         if opponent_jp:
-            detail.append(f"対戦相手: {opponent_jp}")
-        return _render_simple_data_article(
+            box_rows.append(("対戦相手", opponent_jp))
+        if game_id:
+            box_rows.append(("game_id", game_id))
+        # 過去 record list (lookup は手動、 placeholder で structure 提示)
+        box_rows.append(("過去同 record", "NPB 公式 / Wikipedia で手動 lookup"))
+        return _render_box_score_article(
             title=title,
             headline=headline,
-            detail_lines=detail,
+            box_table_rows=box_rows,
             period_label=game_date or "本日",
             source_note="史上 N 人目 / 何年ぶり 等の lookup は手動 (NPB 公式 / Wikipedia)。",
         )

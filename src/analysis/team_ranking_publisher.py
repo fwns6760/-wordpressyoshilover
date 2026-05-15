@@ -499,6 +499,172 @@ def publish_team_streak_draft(
         return {"status": "error", "error": f"{type(e).__name__}: {e}"}
 
 
+def render_team_run_diff_article(
+    conn: sqlite3.Connection, *, scope: str = "season",
+) -> Optional[dict]:
+    """得失点差 article を render (348 step 3 part 2 D-2 完全達成).
+
+    巨人試合の SUM(giants_score) - SUM(opp_score) を集計。
+    """
+    rows = aggregate_team_run_diff(conn, scope=scope)
+    giants = next((r for r in rows if r["team"] == "g"), None)
+    if not giants:
+        return None
+    diff = int(giants["value"])
+    if diff == 0:
+        return None  # 0 だと記事化価値 低
+    scope_label = _scope_label_jp(scope)
+    start, end = _scope_window(scope)
+    sign = "+" if diff > 0 else ""
+    title = f"【巨人データ】チーム 得失点差 {sign}{diff} ({scope_label})"
+    body_md = f"""# {title}
+
+## ひとこと
+
+巨人の {scope_label} 得失点差は **{sign}{diff}** 点。
+
+## このデータについて
+
+| 項目 | 内容 |
+|---|---|
+| 球団 | **巨人** |
+| 指標 | 得失点差 = **{sign}{diff}** |
+| データ元 | NPB 公式 box score(https://npb.jp/) |
+| 集計式 | SUM(giants_score) - SUM(opp_score) over games |
+| 集計期間 | {scope_label}({start} 〜 {end}) |
+| 注 | 中止 / 中断試合は含めない |
+"""
+    body_html = rap.markdown_to_html(body_md)
+    return {"title": title, "body_md": body_md, "body_html": body_html,
+            "value": diff, "scope": scope}
+
+
+def publish_team_run_diff_draft(
+    conn: sqlite3.Connection, wp_client_obj: Any, *,
+    scope: str = "season",
+    category_name: str = DEFAULT_CATEGORY_NAME,
+    dry_run: bool = False,
+) -> dict:
+    article = render_team_run_diff_article(conn, scope=scope)
+    if article is None:
+        return {"status": "skip", "reason": "no_data_or_zero_diff", "scope": scope}
+    if dry_run:
+        return {"status": "dry_run", "title": article["title"]}
+    try:
+        category_id = wp_client_obj.create_category(category_name)
+    except Exception:
+        category_id = 0
+    if not category_id:
+        try:
+            category_id = wp_client_obj.resolve_category_id(category_name)
+        except Exception:
+            category_id = 0
+    if not category_id:
+        return {"status": "error", "stage": "category"}
+    publish_status = rap._resolve_publish_status(focus_team_code="g")
+    _banner = _giants_news_banner_html(
+        article["title"], rap._BANNER_SOURCE_LABEL, category_name,
+    )
+    try:
+        post_id = wp_client_obj.create_post(
+            title=article["title"],
+            content=_banner + article["body_html"],
+            categories=[category_id],
+            status=publish_status,
+            caller="team_ranking_publisher_run_diff",
+        )
+        return {"status": "published" if publish_status == "publish" else "published_draft",
+                "title": article["title"], "post_id": int(post_id or 0), "scope": scope}
+    except Exception as e:
+        return {"status": "error", "error": f"{type(e).__name__}: {e}"}
+
+
+def render_team_vs_opponent_article(
+    conn: sqlite3.Connection, *, opponent: str, scope: str = "season",
+) -> Optional[dict]:
+    """対戦相手別 W-L 集計記事 (348 step 3 part 2 D-2 完全達成).
+
+    例: opponent='t' → 巨人 vs 阪神 W-L 記事。
+    """
+    r = aggregate_team_vs_opponent(conn, opponent=opponent, scope=scope)
+    w, l, t = r["W"], r["L"], r["T"]
+    if w + l + t < 3:
+        return None  # 3 試合未満は記事化しない
+    opp_jp = rap._TEAM_LABEL_JP.get(opponent, opponent)
+    scope_label = _scope_label_jp(scope)
+    start, end = _scope_window(scope)
+    title = (
+        f"【巨人データ】対 {opp_jp} {w}勝{l}敗{t}分 ({scope_label})"
+        if t > 0 else
+        f"【巨人データ】対 {opp_jp} {w}勝{l}敗 ({scope_label})"
+    )
+    win_pct = round(w / (w + l), 3) if (w + l) > 0 else None
+    win_pct_str = f"{win_pct:.3f}" if win_pct is not None else "-"
+    body_md = f"""# {title}
+
+## ひとこと
+
+巨人 vs {opp_jp} の {scope_label} 対戦成績は **{w} 勝 {l} 敗 {t} 分**(勝率 {win_pct_str})。
+
+## このデータについて
+
+| 項目 | 内容 |
+|---|---|
+| 球団 | **巨人** |
+| 対戦相手 | {opp_jp} |
+| 勝敗 | {w}-{l}-{t} |
+| 勝率 | {win_pct_str} |
+| データ元 | NPB 公式 box score(https://npb.jp/) |
+| 集計式 | games WHERE opponent='{opponent}' の result count |
+| 集計期間 | {scope_label}({start} 〜 {end}) |
+"""
+    body_html = rap.markdown_to_html(body_md)
+    return {"title": title, "body_md": body_md, "body_html": body_html,
+            "opponent": opponent, "scope": scope, "W": w, "L": l, "T": t}
+
+
+def publish_team_vs_opponent_draft(
+    conn: sqlite3.Connection, wp_client_obj: Any, *,
+    opponent: str, scope: str = "season",
+    category_name: str = DEFAULT_CATEGORY_NAME,
+    dry_run: bool = False,
+) -> dict:
+    article = render_team_vs_opponent_article(conn, opponent=opponent, scope=scope)
+    if article is None:
+        return {"status": "skip", "reason": "insufficient_games",
+                "opponent": opponent, "scope": scope}
+    if dry_run:
+        return {"status": "dry_run", "title": article["title"]}
+    try:
+        category_id = wp_client_obj.create_category(category_name)
+    except Exception:
+        category_id = 0
+    if not category_id:
+        try:
+            category_id = wp_client_obj.resolve_category_id(category_name)
+        except Exception:
+            category_id = 0
+    if not category_id:
+        return {"status": "error", "stage": "category"}
+    publish_status = rap._resolve_publish_status(focus_team_code="g")
+    _banner = _giants_news_banner_html(
+        article["title"], rap._BANNER_SOURCE_LABEL, category_name,
+    )
+    try:
+        post_id = wp_client_obj.create_post(
+            title=article["title"],
+            content=_banner + article["body_html"],
+            categories=[category_id],
+            status=publish_status,
+            caller="team_ranking_publisher_vs_opponent",
+        )
+        return {"status": "published" if publish_status == "publish" else "published_draft",
+                "title": article["title"], "post_id": int(post_id or 0),
+                "opponent": opponent, "scope": scope}
+    except Exception as e:
+        return {"status": "error", "error": f"{type(e).__name__}: {e}"}
+
+
 def publish_team_default_set(
     conn: sqlite3.Connection,
     wp_client_obj: Any,
@@ -537,4 +703,22 @@ def publish_team_default_set(
     if published < max_per_run:
         streak_r = publish_team_streak_draft(conn, wp_client_obj, dry_run=dry_run)
         results.append(streak_r)
+    # 348 step 3 完全達成: 得失点差 publisher (scope=season / last_30d)
+    for scope in ("season", "last_30d"):
+        if published >= max_per_run:
+            break
+        rd_r = publish_team_run_diff_draft(conn, wp_client_obj, scope=scope, dry_run=dry_run)
+        results.append(rd_r)
+        if rd_r.get("status") in ("published", "published_draft", "dry_run"):
+            published += 1
+    # 348 step 3 完全達成: 対戦相手別 publisher (セ・リーグ 5 球団 vs 巨人)
+    for opp in ("t", "s", "c", "db", "d"):  # 阪神/ヤクルト/広島/DeNA/中日
+        if published >= max_per_run:
+            break
+        vs_r = publish_team_vs_opponent_draft(
+            conn, wp_client_obj, opponent=opp, scope="season", dry_run=dry_run,
+        )
+        results.append(vs_r)
+        if vs_r.get("status") in ("published", "published_draft", "dry_run"):
+            published += 1
     return results

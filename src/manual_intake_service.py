@@ -6,6 +6,8 @@ Routes:
     GET  /health      — liveness probe (no auth)
     GET  /manifest.webmanifest — minimal PWA manifest (no auth)
     POST /manual-intake — JSON or form-encoded submission (token required)
+    GET  /x-post-draft  — 346: NL question → X post draft (no LLM)
+    POST /x-post-direct — 346: post arbitrary text to X via x_api_client
 
 Auth:
     The ``MANUAL_INTAKE_TOKEN`` env var is required at runtime. Requests
@@ -268,7 +270,7 @@ _HTML_FORM = """<!DOCTYPE html>
   <h1>YOSHILOVER 手動投入</h1>
   <nav class=\"tab-nav\">
     <button type=\"button\" class=\"tab-btn active\" data-tab=\"intake\" id=\"tab-btn-intake\">📝 手動投入</button>
-    <button type=\"button\" class=\"tab-btn\" data-tab=\"insight\" id=\"tab-btn-insight\">📊 データ要望</button>
+    <button type=\"button\" class=\"tab-btn\" data-tab=\"insight\" id=\"tab-btn-insight\">🐦 X 投稿 (データ)</button>
   </nav>
   <section class=\"tab-panel\" data-tab=\"intake\" id=\"tab-panel-intake\">
   <form id=\"intake\">
@@ -368,6 +370,22 @@ _HTML_FORM = """<!DOCTYPE html>
   <div id=\"result\" hidden></div>
   </section>
   <section class=\"tab-panel\" data-tab=\"insight\" id=\"tab-panel-insight\" hidden>
+    <h2 style=\"font-size:16px;margin:6px 0 8px;\">🐦 X 投稿用 post 案 (LLM 不使用)</h2>
+    <p class=\"insight-meta\">質問を 1 行で入力 → insight.db (verified data) から rank query → 280 字以内の X 投稿文を生成。<strong>LLM 呼出ゼロ</strong>、Python テンプレで整形。例:<br>
+      ・「OPS 10 位」<br>
+      ・「セ・リーグ OPS 上位 5」<br>
+      ・「岡本和真の wOBA は何位？」<br>
+      ・「先発 FIP ランキング top 10」</p>
+    <form id=\"x-post-draft-form\">
+      <div class=\"field\">
+        <input id=\"x-post-q\" name=\"q\" type=\"text\" required placeholder=\"例: OPS 10 位\" autocomplete=\"off\" class=\"big\">
+      </div>
+      <div class=\"actions\">
+        <button class=\"primary\" type=\"submit\" id=\"x-post-draft-btn\">📝 post 案を作る</button>
+      </div>
+    </form>
+    <div id=\"x-post-draft-result\" hidden></div>
+    <hr style=\"margin:24px 0 18px;border:none;border-top:1px solid #ddd;\">
     <h2 style=\"font-size:16px;margin:6px 0 8px;\">🗣️ 質問入力 (一番簡単)</h2>
     <p class=\"insight-meta\">質問を 1 行で入力 → 自動で「指標」「守備位置」「件数」「選手」を読み取り、12 球団 rank + 記事 draft まで生成。例:<br>
       ・「セリーグのセカンドUZRトップ10は？」<br>
@@ -900,6 +918,126 @@ _HTML_FORM = """<!DOCTYPE html>
       if (qsubmit) { qsubmit.disabled = false; qsubmit.textContent = '🗣️ 質問して記事生成'; }
     }
   });
+
+  // 346: X post draft generation tab.
+  var xpForm = document.getElementById('x-post-draft-form');
+  var xpResult = document.getElementById('x-post-draft-result');
+  var xpBtn = document.getElementById('x-post-draft-btn');
+  function renderXPost(payload) {
+    xpResult.hidden = false;
+    xpResult.innerHTML = '';
+    if (!payload || !payload.ok) {
+      xpResult.className = 'err';
+      var msg = '失敗: ' + (payload && payload.reason ? payload.reason : 'unknown');
+      if (payload && payload.unresolved && payload.unresolved.length) {
+        msg += ' (不足: ' + payload.unresolved.join(', ') + ')';
+      }
+      if (payload && payload.parsed) {
+        msg += '\n\n読み取れた条件: ' + JSON.stringify(payload.parsed);
+      }
+      xpResult.textContent = msg;
+      return;
+    }
+    xpResult.className = '';
+    var parsed = payload.parsed || {};
+    var meta = document.createElement('div');
+    meta.className = 'insight-meta';
+    meta.textContent = '読み取り: 指標=' + (parsed.metric || '?')
+      + ' / 守備=' + (parsed.position || '指定なし')
+      + ' / 件数=' + (parsed.top_n || 10)
+      + (parsed.focus_player ? ' / 選手=' + parsed.focus_player : '')
+      + (parsed.league ? ' / リーグ=' + parsed.league : '')
+      + ' / rank行=' + (payload.row_count || 0);
+    xpResult.appendChild(meta);
+    var ta = document.createElement('textarea');
+    ta.id = 'x-post-text';
+    ta.rows = 12;
+    ta.style.cssText = 'width:100%;min-height:200px;margin-top:8px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;padding:10px;white-space:pre-wrap;';
+    ta.value = payload.draft_text || '';
+    xpResult.appendChild(ta);
+    var counter = document.createElement('div');
+    counter.className = 'insight-meta';
+    counter.style.cssText = 'margin-top:4px;';
+    function updateCount() {
+      var n = (ta.value || '').length;
+      counter.textContent = n + ' / 280 字' + (n > 280 ? ' ⚠️ 超過' : '');
+      counter.style.color = (n > 280) ? '#b71c1c' : '';
+    }
+    updateCount();
+    ta.addEventListener('input', updateCount);
+    xpResult.appendChild(counter);
+    var actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;';
+    var postBtn = document.createElement('button');
+    postBtn.type = 'button';
+    postBtn.className = 'primary';
+    postBtn.textContent = '🐦 X 投稿';
+    postBtn.style.cssText = 'flex:1;padding:12px;font-size:15px;';
+    var copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'secondary';
+    copyBtn.textContent = '📋 コピー';
+    copyBtn.style.cssText = 'flex:0 0 auto;padding:12px 16px;font-size:15px;';
+    copyBtn.addEventListener('click', function() {
+      ta.select();
+      try { navigator.clipboard.writeText(ta.value); copyBtn.textContent = '✅ コピー済'; }
+      catch (e) { document.execCommand('copy'); copyBtn.textContent = '✅ コピー済'; }
+      setTimeout(function() { copyBtn.textContent = '📋 コピー'; }, 2000);
+    });
+    postBtn.addEventListener('click', async function() {
+      var text = ta.value || '';
+      if (!text.trim()) { return; }
+      if (text.length > 280) {
+        alert('280 字を超過しています。短くしてから投稿してください。');
+        return;
+      }
+      postBtn.disabled = true;
+      postBtn.textContent = '🚀 投稿中...';
+      try {
+        var resp = await fetch('/x-post-direct', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ text: text }),
+        });
+        var json = await resp.json().catch(function() { return {}; });
+        if (json && json.ok) {
+          postBtn.textContent = '✅ 投稿成功 (id=' + (json.tweet_id || '?') + ')';
+          postBtn.disabled = true;
+        } else {
+          postBtn.textContent = '❌ 失敗: ' + (json.reason || ('status ' + resp.status));
+          postBtn.disabled = false;
+        }
+      } catch (e) {
+        postBtn.textContent = '❌ エラー: ' + String(e);
+        postBtn.disabled = false;
+      }
+    });
+    actions.appendChild(postBtn);
+    actions.appendChild(copyBtn);
+    xpResult.appendChild(actions);
+  }
+  if (xpForm) {
+    xpForm.addEventListener('submit', async function(ev) {
+      ev.preventDefault();
+      xpResult.hidden = true;
+      if (xpBtn) { xpBtn.disabled = true; xpBtn.textContent = '📡 生成中...'; }
+      var q = document.getElementById('x-post-q').value || '';
+      try {
+        var resp = await fetch('/x-post-draft?' + new URLSearchParams({q: q}).toString(), {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+          credentials: 'same-origin',
+        });
+        var json = await resp.json().catch(function() { return {}; });
+        renderXPost(json);
+      } catch (e) {
+        renderXPost({ ok: false, reason: String(e) });
+      } finally {
+        if (xpBtn) { xpBtn.disabled = false; xpBtn.textContent = '📝 post 案を作る'; }
+      }
+    });
+  }
 })();
 </script>
 <script>
@@ -1352,6 +1490,82 @@ def build_handler(
                     return
                 _json_response(self, 200, result)
                 return
+            if path == "/x-post-draft":
+                # 346: natural-language question → parse → rank query
+                # → format_as_x_post → ready-to-post X draft. Mirrors the
+                # auth flow of /insight-ask: when MANUAL_INTAKE_TOKEN is
+                # set, require cookie or query token. No X API call here;
+                # the operator reviews the draft and submits via
+                # POST /x-post-direct.
+                expected_token = _require_token()
+                if expected_token:
+                    cookie_token = ""
+                    raw_cookie = self.headers.get("Cookie") or ""
+                    for part in raw_cookie.split(";"):
+                        kv = part.strip().split("=", 1)
+                        if len(kv) == 2 and kv[0].strip() == "manual_intake_session":
+                            cookie_token = kv[1].strip()
+                            break
+                    query_token = ""
+                    qtok = parse_qs(parsed.query, keep_blank_values=False).get("token") or []
+                    if qtok:
+                        query_token = (qtok[0] or "").strip()
+                    if cookie_token != expected_token and query_token != expected_token:
+                        _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                        return
+                params = parse_qs(parsed.query, keep_blank_values=False)
+                question = (params.get("q") or [""])[0]
+                if not question.strip():
+                    _json_response(self, 400, {"ok": False, "reason": "empty_question"})
+                    return
+                miq.ensure_local_db()
+                try:
+                    from src.analysis import insight_nl_query as _nlq
+                    from src.format_as_x_post import format_as_x_post as _fmt
+
+                    parsed_q = _nlq.parse_question(question)
+                    if parsed_q.get("unresolved"):
+                        _json_response(
+                            self,
+                            200,
+                            {
+                                "ok": False,
+                                "reason": "unresolved_fields",
+                                "parsed": parsed_q,
+                                "unresolved": parsed_q.get("unresolved"),
+                            },
+                        )
+                        return
+                    if not parsed_q.get("metric"):
+                        _json_response(
+                            self,
+                            200,
+                            {
+                                "ok": False,
+                                "reason": "metric_not_detected",
+                                "parsed": parsed_q,
+                            },
+                        )
+                        return
+                    rank_result = miq.query_rank(
+                        metric_name=parsed_q["metric"],
+                        player_canonical=parsed_q.get("focus_player"),
+                        position_filter=parsed_q.get("position"),
+                        min_sample=1,
+                        limit=max(parsed_q.get("top_n") or 10, 30),
+                    )
+                    formatted = _fmt(parsed_q, rank_result)
+                    formatted["parsed"] = parsed_q
+                    formatted["row_count"] = rank_result.get("count", 0)
+                    _json_response(self, 200, formatted)
+                except Exception as exc:  # noqa: BLE001
+                    bound_logger.exception("x_post_draft_failed")
+                    _json_response(
+                        self,
+                        500,
+                        {"ok": False, "reason": f"x_post_draft_error:{exc!r}"},
+                    )
+                return
             if path in ("/", "/index.html"):
                 # NOMOTOKE-INTAKE-COOKIE-001: ``GET /?token=<value>``
                 # validates the token and sets ``manual_intake_session``
@@ -1380,6 +1594,75 @@ def build_handler(
 
         def do_POST(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
+            if parsed.path == "/x-post-direct":
+                # 346: post arbitrary text to X. Reuses the same
+                # MANUAL_INTAKE_TOKEN auth so cookie / header / body
+                # token all work. Body: {"text": str}. Never calls
+                # Gemini; only x_api_client.create_tweet().
+                expected_token = _require_token()
+                body, body_err = _read_body(self)
+                if body_err == "body_too_large":
+                    _json_response(self, 413, {"ok": False, "reason": "body_too_large"})
+                    return
+                content_type = self.headers.get("Content-Type", "")
+                payload, parse_err = _parse_request_body(body, content_type)
+                if parse_err:
+                    _json_response(self, 400, {"ok": False, "reason": parse_err})
+                    return
+                if expected_token:
+                    supplied = _request_token(self, payload.get("token") or "")
+                    if supplied != expected_token:
+                        _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                        return
+                text = (payload.get("text") or "").strip()
+                if not text:
+                    _json_response(self, 400, {"ok": False, "reason": "empty_text"})
+                    return
+                if len(text) > 280:
+                    _json_response(
+                        self,
+                        400,
+                        {"ok": False, "reason": "text_too_long", "char_count": len(text)},
+                    )
+                    return
+                try:
+                    from src import x_api_client as _xc
+
+                    client = _xc.get_client()
+                    resp = client.create_tweet(text=text)
+                except KeyError as exc:
+                    bound_logger.exception("x_post_direct_env_missing")
+                    _json_response(
+                        self,
+                        503,
+                        {"ok": False, "reason": f"env_missing:{exc!s}"},
+                    )
+                    return
+                except Exception as exc:  # noqa: BLE001
+                    bound_logger.exception("x_post_direct_failed")
+                    _json_response(
+                        self,
+                        502,
+                        {"ok": False, "reason": f"x_api_error:{exc!r}"},
+                    )
+                    return
+                tweet_id = None
+                try:
+                    data = getattr(resp, "data", None) or {}
+                    if isinstance(data, dict):
+                        tweet_id = data.get("id")
+                except Exception:  # noqa: BLE001
+                    tweet_id = None
+                _json_response(
+                    self,
+                    200,
+                    {
+                        "ok": True,
+                        "tweet_id": tweet_id,
+                        "char_count": len(text),
+                    },
+                )
+                return
             if parsed.path != "/manual-intake":
                 _json_response(self, 404, {"ok": False, "reason": "not_found"})
                 return

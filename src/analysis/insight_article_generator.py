@@ -166,23 +166,21 @@ def _find_focus_row(rows: list[RankRow], focus_player: Optional[str]) -> Optiona
 
 
 def _make_title(ctx: ArticleContext, label: str, focus: Optional[RankRow], kind: str) -> str:
-    # 2026-05-15: title prefix を「日付 + 時刻」化、毎 fire で unique title →
-    # 時間帯まんべんなく記事 流す (user 指示「毎時間4本くらい+他の記事も」)。
-    _now_jst = dt.datetime.utcnow() + dt.timedelta(hours=9)
-    date_prefix = f"{_now_jst.month}/{_now_jst.day}-{_now_jst.hour:02d}時時点 "
+    # 2026-05-15 user 指示「日時 prefix なし、人間にわかりやすく」適用。
+    # 期間は title 末尾の sample_window_label に含まれる (例: 4/15〜5/14)。
     if focus and ctx.position_filter:
         return (
-            f"{date_prefix}巨人・{focus.player_canonical}、12 球団{ctx.position_filter}手の{label}で"
+            f"巨人・{focus.player_canonical}、12 球団{ctx.position_filter}手の{label}で"
             f"{focus.rank}位 / {focus.total}人 (期間: {ctx.sample_window_label})"
         )
     if focus:
         return (
-            f"{date_prefix}{focus.player_canonical}、{label} は 12 球団中 {focus.rank} 位 — "
+            f"{focus.player_canonical}、{label} は 12 球団中 {focus.rank} 位 — "
             f"{ctx.sample_window_label}データから見る位置"
         )
     if ctx.position_filter:
-        return f"{date_prefix}12 球団{ctx.position_filter}手の{label}ランキング {ctx.sample_window_label}"
-    return f"{date_prefix}12 球団 {label} ランキング {ctx.sample_window_label}"
+        return f"12 球団{ctx.position_filter}手の{label}ランキング {ctx.sample_window_label}"
+    return f"12 球団 {label} ランキング {ctx.sample_window_label}"
 
 
 def _make_lead(ctx: ArticleContext, label: str, focus: Optional[RankRow], kind: str) -> str:

@@ -1056,13 +1056,13 @@ def detect_game_pitcher_performance(
     return inserted
 
 
-# C-1: シーズン累計の節目越え (HR / H / 防御率 等)
+# C-1: シーズン累計の節目越え (HR / 防御率 / WHIP)
+# 2026-05-15 サバメトリクス drop で FIP は除外。
 _MILESTONE_THRESHOLDS_BATTER = {
     "HR": (5, 10, 15, 20, 25, 30),       # 本塁打 5/10/15/20/25/30
 }
 _MILESTONE_THRESHOLDS_PITCHER_LOWER = {
     "ERA": (2.00, 2.50, 3.00),           # 防御率 (低い方が良い)、threshold を下回ったら milestone
-    "FIP": (2.50, 3.00, 3.50),
     "WHIP": (1.00, 1.10, 1.20),
 }
 
@@ -1205,8 +1205,9 @@ def detect_standings_shift(
 
 
 _STAT_DELTA_THRESHOLDS = {
-    "OPS": 0.020, "wOBA": 0.015, "AVG": 0.015, "OBP": 0.015, "SLG": 0.020,
-    "ERA": 0.30, "FIP": 0.30, "WHIP": 0.08,
+    # 2026-05-15 サバメトリクス drop: wOBA / FIP 除外。
+    "OPS": 0.020, "AVG": 0.015, "OBP": 0.015, "SLG": 0.020,
+    "ERA": 0.30, "WHIP": 0.08,
 }
 
 
@@ -1282,19 +1283,15 @@ def detect_stat_delta(
 # ─── public API: run all detectors ──────────────────────────────────────────
 
 
-# 2026-05-15 user 指示「もっと幅広く」適用。ETL が populate する全 metric を
-# scan する (insight_advanced_metrics.all_batter_metrics / all_pitcher_metrics
-# と同じ keyspace)。同 player が異 metric で複数 candidate 化されるが
-# window_label が metric を含むため dedupe で吸収される。
-_ZSCORE_BATTER_METRICS = (
-    "OPS", "wOBA", "AVG", "OBP", "SLG", "ISO", "BABIP", "K_pct", "BB_pct",
-)
-_ZSCORE_PITCHER_METRICS = (
-    "ERA", "FIP", "xFIP", "WHIP", "K_per_9", "BB_per_9", "HR_per_9", "K_BB",
-)
+# 2026-05-15 user 指示「サバメトリクスはいらない」適用、一般 + 中上級の指標
+# のみ scan する。FIP / xFIP / wOBA / BABIP / ISO / K_pct / BB_pct は削除。
+# 残す: AVG (打率) / OBP (出塁率) / SLG (長打率) / OPS / ERA / WHIP / K_per_9
+# (奪三振率) / 守備率 (fielding_pct)。
+_ZSCORE_BATTER_METRICS = ("OPS", "AVG", "OBP", "SLG")
+_ZSCORE_PITCHER_METRICS = ("ERA", "WHIP", "K_per_9")
 _GIANTS_TOP_METRICS = (
-    "OPS", "wOBA", "AVG", "OBP", "SLG", "ISO",
-    "ERA", "FIP", "xFIP", "WHIP", "K_per_9", "K_BB",
+    "OPS", "AVG", "OBP", "SLG",
+    "ERA", "WHIP", "K_per_9",
 )
 _ZSCORE_BATTER_SCOPES = ("last_30d", "season", "last_7d")
 _ZSCORE_PITCHER_SCOPES = ("season", "last_30d", "last_7d")
@@ -1347,18 +1344,11 @@ def run_all_anomaly_detectors(
                 )
             except Exception:  # noqa: BLE001
                 pass
-    try:
-        out[SIGNAL_BABIP_DIVERGENCE] = detect_babip_divergence(
-            conn, snapshot_date=snapshot_date, run_id=run_id,
-        )
-    except Exception:  # noqa: BLE001
-        out[SIGNAL_BABIP_DIVERGENCE] = []
-    try:
-        out[SIGNAL_FIP_ERA_DIVERGENCE] = detect_fip_era_divergence(
-            conn, snapshot_date=snapshot_date, run_id=run_id,
-        )
-    except Exception:  # noqa: BLE001
-        out[SIGNAL_FIP_ERA_DIVERGENCE] = []
+    # 2026-05-15 user 指示「サバメトリクスはいらない」適用、BABIP / FIP-ERA
+    # 乖離 detector は call せず空に固定 (signal_type 自体は backward-compat
+    # のため残し、再開する場合は env で復活させる前提)。
+    out[SIGNAL_BABIP_DIVERGENCE] = []
+    out[SIGNAL_FIP_ERA_DIVERGENCE] = []
     out[SIGNAL_GIANTS_TOP_OUTLIER] = []
     for metric in _GIANTS_TOP_METRICS:
         for scope in _GIANTS_TOP_SCOPES:
@@ -1389,11 +1379,14 @@ def run_all_anomaly_detectors(
         )
     except Exception:  # noqa: BLE001
         out[SIGNAL_HIT_STREAK_RUN] = []
+    # 2026-05-15 user 指示「サバメトリクスはいらない」適用、UZR_proxy は
+    # 計算式自体がサバメトリクスのため drop、fielding_pct (一般的な守備率)
+    # のみ残す。
     try:
-        uzr_ids, fpct_ids = detect_giants_defense_outliers(
+        _uzr_ids, fpct_ids = detect_giants_defense_outliers(
             conn, snapshot_date=snapshot_date, run_id=run_id,
         )
-        out[SIGNAL_DEFENSE_UZR_OUTLIER] = uzr_ids
+        out[SIGNAL_DEFENSE_UZR_OUTLIER] = []  # drop UZR
         out[SIGNAL_DEFENSE_FIELDING_PCT] = fpct_ids
     except Exception:  # noqa: BLE001
         out[SIGNAL_DEFENSE_UZR_OUTLIER] = []

@@ -221,12 +221,12 @@ def render_team_metric_article(
     scope_label = _scope_label_jp(scope)
     start_str, end_str = _scope_window(scope)
 
-    # 2026-05-15: title prefix を「日付 + 時刻」化、毎 fire (7 fires/day) で
-    # unique title → 同 fire 内 reuse / 異 fire 間新規。時間帯まんべんなく
-    # 記事 流すため (user 指示「毎回ふやす + まんべんなく」)。
-    _now_jst = dt.datetime.utcnow() + dt.timedelta(hours=9)
-    _date_prefix = f"{_now_jst.month}/{_now_jst.day}-{_now_jst.hour:02d}時時点 "
-    title = f"【巨人データを見る】{_date_prefix}{scope_label}のセ・リーグ球団{metric_label}、巨人 {giants_rank}/6 位({giants_val_str})"
+    # 2026-05-15 user 指示「期間は末尾に」適用、日時 prefix なし、scope を
+    # title 末尾に括弧書き。集計期間は body 内「集計期間」row にも記載。
+    title = (
+        f"【巨人データ】セ・リーグ球団{metric_label}、巨人 {giants_rank}/6 位 "
+        f"{giants_val_str} ({scope_label})"
+    )
 
     # table md
     table_md = _build_team_table_md(sorted_rows, focus_tc="g", value_label=metric_label,

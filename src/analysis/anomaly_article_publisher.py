@@ -367,24 +367,14 @@ def _render_unified_article(
         extra_focus = player_rank_info
         extra_focus["player"] = player
 
-    # 2026-05-15: title prefix を「日付 + 時刻」化、毎 fire (7 fires/day) で
-    # unique title → 同 fire 内 reuse / 異 fire 間新規。時間帯まんべんなく
-    # 記事 流すため (user 指示「毎回ふやす + まんべんなく」)。
-    import datetime as _dt_mod
-    _now_jst = _dt_mod.datetime.utcnow() + _dt_mod.timedelta(hours=9)
-    _date_prefix = f"{_now_jst.month}/{_now_jst.day}-{_now_jst.hour:02d}時時点 "
+    # 2026-05-15 user 指示「人間にわかりやすいタイトル」適用、title には
+    # 日時 prefix を入れない (集計日時は body の 集計期間 row に表記)。
+    # 同 title 重複時は wp_client.create_post の reuse 機構に委ねる。
     title = title_template.format(
         player=player, team=team, metric=metric_label,
         value=value_str, rank=rank_str, scope=scope_label,
         league=league_label,
     )
-    # Prepend date prefix after format() so caller-supplied templates don't
-    # need a `{date}` placeholder. Templates already start with 【巨人デー
-    # タを見る】 so we insert after that bracket.
-    if title.startswith("【巨人データを見る】"):
-        title = "【巨人データを見る】" + _date_prefix + title[len("【巨人データを見る】"):]
-    else:
-        title = _date_prefix + title
 
     ranking_table = _render_ranking_table_md(
         top_rows, focus_player=player, metric_label=metric_label,
@@ -454,7 +444,7 @@ def render_zscore_batter_article(
         except Exception:
             pass
     metric_label = _human_metric_label(metric_name)
-    title_template = f"【巨人データを見る】{{player}}、{{scope}}の{metric_label} {{value}} で{{league}} {{rank}} 位"
+    title_template = f"【巨人データ】{{player}}、{metric_label} {{value}} で{{league}} {{rank}} 位 ({{scope}})"
     why_text = f"リーグ平均より明確に高い数字で、12 球団中の上位群に入っています。"
     simple = f"リーグ全体で見て上位の {metric_label} を記録、好調と言える数字です。"
     return _render_unified_article(
@@ -478,7 +468,7 @@ def render_zscore_pitcher_article(
         except Exception:
             pass
     metric_label = _human_metric_label(metric_name)
-    title_template = f"【巨人データを見る】{{player}}、{{scope}}の{metric_label} {{value}} で{{league}} {{rank}} 位"
+    title_template = f"【巨人データ】{{player}}、{metric_label} {{value}} で{{league}} {{rank}} 位 ({{scope}})"
     why_text = f"投手として league 上位群の数字、平均的なローテ投手より明確に良い投球内容です。"
     simple = f"リーグ全体で見て上位の投手、好投が data で明確です。"
     return _render_unified_article(
@@ -525,7 +515,7 @@ def render_babip_divergence_article(
         )
         simple = f"打率に対し BABIP が小さく、シーズン後半で打率が上がる可能性のあるデータです。"
 
-    title_template = f"【巨人データを見る】{{player}}、{{scope}}の{notable_phrase}"
+    title_template = f"【巨人データ】{{player}}、{notable_phrase} ({{scope}})"
     return _render_unified_article(
         conn, player=player, team_code=team_code, metric_name="AVG",
         scope="last_30d", title_template=title_template,
@@ -570,7 +560,7 @@ def render_fip_era_divergence_article(
         )
         simple = f"防御率は FIP より悪い数字。シーズン後半に防御率が改善する可能性のあるデータです。"
 
-    title_template = f"【巨人データを見る】{{player}}、{{scope}}の{notable_phrase}"
+    title_template = f"【巨人データ】{{player}}、{notable_phrase} ({{scope}})"
     return _render_unified_article(
         conn, player=player, team_code=team_code, metric_name="ERA",
         scope="season", title_template=title_template,
@@ -597,7 +587,7 @@ def render_giants_top_article(
             pass
     metric_label = _human_metric_label(metric_name)
 
-    title_template = f"【巨人データを見る】{{player}}、{{scope}}の{metric_label} {{value}} で{{league}} {{rank}} 位"
+    title_template = f"【巨人データ】{{player}}、{metric_label} {{value}} で{{league}} {{rank}} 位 ({{scope}})"
     why_text = f"巨人選手がリーグ上位に入っている好調を示すデータです。"
     simple = f"巨人選手として、リーグ全体の上位に入っている好調な状態です。"
     scope = "last_30d" if metric_name in ("OPS", "AVG", "wOBA", "BABIP") else "season"
@@ -629,7 +619,11 @@ def _render_simple_data_article(
 
     `_render_unified_article` の league ranking が無くてもデータの「なぜ
     特筆すべきか」が伝わる構成 (HR pace / 守備系 等)。
+
+    2026-05-15 user 指示「人間にわかりやすいタイトル」適用、title には日時
+    prefix を入れない (集計日時は body の 集計期間 row に表記)。
     """
+    body_title = title
     intro_banner = (
         '<div style="background:#fff8e1;border-left:4px solid #f39c12;'
         'padding:10px 15px;margin:1em 0;">'
@@ -638,7 +632,7 @@ def _render_simple_data_article(
         '</div>'
     )
     detail_md = "\n".join(f"- {line}" for line in detail_lines)
-    body_md = f"""# {title}
+    body_md = f"""# {body_title}
 
 {intro_banner}
 
@@ -658,7 +652,7 @@ def _render_simple_data_article(
 | データ元 | NPB 公式 box score(https://npb.jp/) |
 | 注意点 | {source_note} |
 """
-    return {"title": title, "body_md": body_md}
+    return {"title": body_title, "body_md": body_md}
 
 
 def render_hr_pace_article(
@@ -670,7 +664,7 @@ def render_hr_pace_article(
     magnitude = candidate_row["magnitude"]
     current = candidate_row.get("current_value") or ""
     title = (
-        f"【巨人データを見る】{player}、直近 30 日 HR ペースを 143 試合換算で約 {magnitude:.1f} 本ペース"
+        f"【巨人データ】{player}、直近 30 日 HR ペースを 143 試合換算で約 {magnitude:.1f} 本ペース"
     )
     headline = (
         f"{player} の直近 30 日 HR ペースをフルシーズン換算すると、約 **{magnitude:.1f} 本**"
@@ -695,7 +689,7 @@ def render_hidden_below_qualifier_article(
     magnitude = candidate_row["magnitude"]
     current = candidate_row.get("current_value") or ""
     title = (
-        f"【巨人データを見る】{player}、規定打席未満ながら OPS {magnitude:.3f} の好調"
+        f"【巨人データ】今シーズン {player}、規定打席未満ながら OPS {magnitude:.3f} の好調"
     )
     headline = (
         f"{player} は規定打席にはまだ届いていないものの、OPS が **{magnitude:.3f}**"
@@ -722,7 +716,7 @@ def render_hit_streak_run_article(
     player = candidate_row["player_canonical"]
     streak = int(candidate_row.get("magnitude") or 0)
     title = (
-        f"【巨人データを見る】{player}、連続 {streak} 試合で multi-hit"
+        f"【巨人データ】{player}、連続 {streak} 試合で multi-hit"
     )
     headline = (
         f"{player} は **{streak} 試合連続**で 1 試合 2 安打以上を記録しています。"
@@ -756,7 +750,7 @@ def render_defense_uzr_article(
             position = token.split("=", 1)[1]
     direction = "平均超え" if diff >= 0 else "平均未満"
     title = (
-        f"【巨人データを見る】{player}、{position}守備の UZR_proxy が {direction}({diff:+.3f})"
+        f"【巨人データ】直近 1 ヶ月 {player}、{position}守備の UZR_proxy が {direction}({diff:+.3f})"
     )
     if diff >= 0:
         headline = (
@@ -802,7 +796,7 @@ def render_defense_fielding_pct_article(
             position = token.split("=", 1)[1]
     direction = "平均超え" if diff >= 0 else "平均未満"
     title = (
-        f"【巨人データを見る】{player}、{position}守備率が {direction}({diff:+.3f})"
+        f"【巨人データ】{player}、{position}守備率が {direction}({diff:+.3f})"
     )
     if diff >= 0:
         headline = (
@@ -833,6 +827,21 @@ def render_defense_fielding_pct_article(
 
 
 # ─── 2026-05-15 試合後 ファンが気になる指標 renderer (5 種) ────────────────
+
+
+def _scope_label_jp(scope: str) -> str:
+    """scope code を読者向け JP 表記に変換 (2026-05-15 user 指示「期間を入れる」)。
+
+    raw code (last_7d / last_30d / season / last_5_games) が title に出ると
+    読者に伝わらない。「直近 1 週間」「直近 1 ヶ月」「今シーズン」「直近 5 試合」
+    へ 1 か所で変換。
+    """
+    return {
+        "last_7d": "直近 1 週間",
+        "last_30d": "直近 1 ヶ月",
+        "season": "今シーズン",
+        "last_5_games": "直近 5 試合",
+    }.get(scope or "", scope or "")
 
 
 def _parse_kv_blob(text: str) -> dict[str, str]:
@@ -866,10 +875,15 @@ def render_game_hero_batter_article(
     rbi = current.get("RBI", "0")
     hr = current.get("HR", "0")
     ab = current.get("AB", "0")
+    # 試合日 抽出 (baseline_value 形式: "game=2026-05-15:db-d-08 ...")
+    import re as _re_d
+    _m = _re_d.search(r"game=(\d{4})-(\d{2})-(\d{2})", baseline)
+    date_part = f"{int(_m.group(2))}/{int(_m.group(3))} " if _m else ""
     title = (
-        f"【巨人データを見る】試合後 {player} {ab} 打数 {h} 安打 {rbi} 打点"
-        + (f" ({hr} HR)" if hr != "0" else "")
-        + (f" vs {opponent_match}" if opponent_match else "")
+        f"【巨人データ】{player}、"
+        + (f"{hr} 本塁打 " if hr != "0" else "")
+        + f"{h} 安打 {rbi} 打点"
+        + (f" ({date_part}{opponent_match}戦)" if opponent_match else "")
     )
     headline = (
         f"{player} は今日の {opponent_match or '相手'} 戦で **{ab} 打数 {h} 安打 {rbi} 打点**"
@@ -912,9 +926,13 @@ def render_game_pitcher_performance_article(
     k = current.get("K", "0")
     bb = current.get("BB", "0")
     h_allowed = current.get("H", "0")
+    # 試合日 抽出 (baseline_value 形式: "game=2026-05-15:db-d-08 ...")
+    import re as _re_dp
+    _mp = _re_dp.search(r"game=(\d{4})-(\d{2})-(\d{2})", baseline)
+    date_part = f"{int(_mp.group(2))}/{int(_mp.group(3))} " if _mp else ""
     title = (
-        f"【巨人データを見る】試合後 {player} {ip} 回 {er} 自責点 {k} 奪三振"
-        f" ({direction}) vs {opponent_match}"
+        f"【巨人データ】{player}、{ip} 回 {er} 自責 {k} 奪三振"
+        + (f" ({date_part}{opponent_match}戦)" if opponent_match else "")
     )
     headline = (
         f"{player} は今日の {opponent_match or '相手'} 戦で "
@@ -947,7 +965,7 @@ def render_milestone_crossed_article(
     threshold = notes.get("threshold", "")
     value = notes.get("value", "")
     title = (
-        f"【巨人データを見る】{player} シーズン {metric} {threshold} 到達 (現在 {value})"
+        f"【巨人データ】{player} シーズン {metric} {threshold} 到達 (現在 {value})"
     )
     headline = (
         f"{player} はシーズン {metric} が **{threshold} の節目** に到達 (現在 {value})。"
@@ -981,7 +999,7 @@ def render_standings_shift_article(
     l = current.get("L", "?")
     gb = current.get("GB", "?")
     title = (
-        f"【巨人データを見る】巨人、順位 {prev_rank} → {new_rank} ({direction})"
+        f"【巨人データ】巨人、順位 {prev_rank} → {new_rank} ({direction})"
     )
     headline = (
         f"巨人 の順位が **{prev_rank} 位 → {new_rank} 位** に {direction} しました。"
@@ -1013,16 +1031,23 @@ def render_stat_delta_article(
     delta = notes.get("delta", "")
     current = candidate_row.get("current_value") or ""
     baseline = candidate_row.get("baseline_value") or ""
+    scope_jp = _scope_label_jp(scope)
+    # 2026-05-15 user 指示「title に変化率はいらない、実数値が欲しい」適用、
+    # title は current 実値のみ。 delta は body に説明として残す。
+    # current_value 形式: "current=0.770 (2026-05-15) rank 3→5" 等
+    import re as _re
+    _cur_match = _re.search(r"current=([\d\.\-]+)", current)
+    cur_val = _cur_match.group(1) if _cur_match else "-"
+    period_suffix = f" ({scope_jp})" if scope_jp else ""
     title = (
-        f"【巨人データを見る】{player}、{metric} ({scope}) が {delta} 変動"
+        f"【巨人データ】{player}、{metric} {cur_val}{period_suffix}"
     )
     headline = (
-        f"{player} の {metric} ({scope}) が **{delta}** 変動しました。"
-        f" {baseline} → {current}。"
+        f"{player} の {metric} が **{delta}** 変動しました ({baseline} → {current})。"
     )
     detail = [
         f"対象指標: {metric}",
-        f"集計期間: {scope}",
+        f"集計期間: {scope_jp}",
         f"前回値: {baseline}",
         f"現在値: {current}",
         f"変動: {delta}",
@@ -1031,7 +1056,7 @@ def render_stat_delta_article(
         title=title,
         headline=headline,
         detail_lines=detail,
-        period_label=f"{scope} (前 snapshot vs 直近 snapshot)",
+        period_label=f"{scope_jp} (前 snapshot vs 直近 snapshot)",
         source_note="数値変動は短期 trend、長期 trend (1 ヶ月以上) と組み合わせて評価が望ましい。",
     )
 

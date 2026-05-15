@@ -424,7 +424,7 @@ def render_giants_centric_ranking(
     # insight_article_generator は「12 球団中」固定文言、セ・リーグ用に置換
     base_title = base_title.replace("12 球団中", "セ・リーグ").replace("全 30 人中", "セ・リーグ")
     if not base_title.startswith("【"):
-        base_title = f"【巨人データを見る】{base_title}"
+        base_title = f"【巨人データ】{base_title}"
 
     # rebuild table from rows
     team_label_map = {
@@ -689,26 +689,24 @@ def publish_default_set(
     """
     if max_per_run is None:
         max_per_run = DEFAULT_MAX_PER_RUN
-    # 2026-05-15 user 指示「もっといろいろな指標」適用、batter / pitcher の
-    # 主要 metric を 2 scope 分で回す。top_n も 50 / 30 へ緩めて巨人選手が
-    # rank 圏外で skip される確率を下げる。default_jobs 数を増やしても
-    # max_per_run cap で実 publish 数は制御される。
+    # 2026-05-15 user 指示「サバメトリクスはいらない」適用、wOBA / FIP 除外。
+    # 残す指標: OPS / AVG / OBP / SLG / ERA / WHIP / K_per_9。
     default_jobs = [
-        # batter (last_30d)
+        # batter (last_30d、最近 1 ヶ月)
         {"metric_name": "OPS", "scope": "last_30d", "top_n": 50},
-        {"metric_name": "wOBA", "scope": "last_30d", "top_n": 50},
         {"metric_name": "AVG", "scope": "last_30d", "top_n": 50},
         {"metric_name": "OBP", "scope": "last_30d", "top_n": 50},
+        {"metric_name": "SLG", "scope": "last_30d", "top_n": 50},
         # batter (season、累積)
         {"metric_name": "OPS", "scope": "season", "top_n": 50},
-        {"metric_name": "wOBA", "scope": "season", "top_n": 50},
+        {"metric_name": "AVG", "scope": "season", "top_n": 50},
         # pitcher (season、累積)
         {"metric_name": "ERA", "scope": "season", "top_n": 30},
-        {"metric_name": "FIP", "scope": "season", "top_n": 30},
         {"metric_name": "WHIP", "scope": "season", "top_n": 30},
-        # pitcher (last_30d、最近の調子)
+        {"metric_name": "K_per_9", "scope": "season", "top_n": 30},
+        # pitcher (last_30d、最近 1 ヶ月)
         {"metric_name": "ERA", "scope": "last_30d", "top_n": 30},
-        {"metric_name": "FIP", "scope": "last_30d", "top_n": 30},
+        {"metric_name": "WHIP", "scope": "last_30d", "top_n": 30},
     ]
     results: list[dict] = []
     published = 0

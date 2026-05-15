@@ -1,0 +1,92 @@
+{
+  "version": "1.0",
+  "lock_date": "2026-05-15",
+  "source_of_truth": "doc/reference/data-insight-metric-whitelist.md",
+  "format_decision": "JSON (user 2026-05-15 「バグデグレ少ない方」発言で YAML→JSON、 既存 config/ pattern fit, stdlib のみ)",
+
+  "metrics_allowed": {
+    "batting_rate": ["AVG", "OBP", "SLG", "OPS"],
+    "batting_split": ["RISP"],
+    "pitching_rate": ["ERA", "WIN_PCT"],
+    "pitching_per9": ["K_per_9", "BB_per_9", "HR_per_9"],
+    "defense_rate": ["FIELDING_PCT"],
+    "composite": ["WAR"]
+  },
+
+  "metrics_disallowed": [
+    "ISO",
+    "wOBA",
+    "BABIP",
+    "K_pct",
+    "BB_pct",
+    "WHIP",
+    "K_BB",
+    "FIP",
+    "xFIP",
+    "UZR_proxy",
+    "RF_proxy"
+  ],
+
+  "thresholds": {
+    "zscore_sigma_rate": 1.5,
+    "counting_top_n": 10,
+    "min_sample_batter_pa": 20,
+    "min_sample_pitcher_ip": 10
+  },
+
+  "team_filter": {
+    "subject_team_code": "g",
+    "subject_team_label": "巨人",
+    "baseline_scope": "all_npb",
+    "comment": "title 主語は巨人選手のみ、 baseline 計算は 12 球団全選手"
+  },
+
+  "period_scopes": [
+    "season",
+    "last_7d",
+    "last_30d",
+    "last_5_games",
+    "last_10_games",
+    "monthly",
+    "weekly"
+  ],
+
+  "metric_name_ja": {
+    "AVG": "打率",
+    "OBP": "出塁率",
+    "SLG": "長打率",
+    "OPS": "OPS",
+    "ERA": "防御率",
+    "WIN_PCT": "勝率",
+    "K_per_9": "奪三振率",
+    "BB_per_9": "与四球率",
+    "HR_per_9": "被本塁打率",
+    "FIELDING_PCT": "守備率",
+    "WAR": "WAR",
+    "RISP": "得点圏打率"
+  },
+
+  "scope_ja": {
+    "season": "今シーズン",
+    "last_7d": "直近7日",
+    "last_30d": "直近30日",
+    "last_5_games": "直近5試合",
+    "last_10_games": "直近10試合",
+    "monthly": "月別",
+    "weekly": "週別"
+  },
+
+  "title_format": {
+    "prefix": "【巨人データ】",
+    "case_a_player_stat": "{prefix}{player} {metric_ja} {value}、 リーグ {rank} 位 ({scope_ja})",
+    "case_b_game_event": "{prefix}{player} {event} ({game_date} vs {opponent})",
+    "case_c_record_milestone": "{prefix}{player} {achievement} ({achievement_date})",
+    "case_d_team_ranking": "{prefix}チーム{metric_ja} {value_or_rank} ({scope_ja})",
+    "constraints": {
+      "max_length": 60,
+      "no_truncation_ellipsis": true,
+      "no_duplicate_event": true,
+      "min_length": 12
+    }
+  }
+}

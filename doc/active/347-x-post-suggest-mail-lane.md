@@ -90,7 +90,7 @@
 - `src/analysis/ranking_article_publisher.py`
 - `src/analysis/anomaly_article_publisher.py`
 - `src/analysis/team_ranking_publisher.py`
-- `config/insight_whitelist.yaml` (未存在、348 で新規予定だが 347 で touch しない)
+- `config/insight_whitelist.json` (未存在、348 で新規予定だが 347 で touch しない)
 - `article_candidates` table への **write** (read も避ける、別 lane なので)
 - `insight.db` の schema 改修 (read-only access のみ)
 
@@ -479,7 +479,7 @@ minimum-diff 完遂: 既存 file 修正 0、新規 file のみ、namespace prefi
 2. **`SAFE_METRICS`**: AVG / OBP / SLG / OPS / ERA の 5 metric で固定、user lock 済 (× サバメトリクス系 ISO/wOBA/BABIP/FIP/xFIP/WHIP/K_per_9/UZR_proxy は意図的に excluded)。追加禁止、新 metric は別 ticket で whitelist 拡張
 3. **`_build_combos` の 10 combo 配分**: season 5 + monthly 3 + last-30 2 = 10、`max_candidates=10` と整合済。combo 追加 / 削除時は test の `test_max_candidates_cap_honored` と一緒に更新
 4. **`encode_x_intent_url`**: `safe=""` で全文字 encode、`#` を `%23` に変換 (X intent URL の fragment 誤判定回避)。`safe` を変えると `#` がハッシュタグでなく URL fragment と扱われる
-5. **`348` が触ってる範囲は本 ticket と完全 disjoint**: `src/analysis/insight_*.py` / `ranking_article_publisher.py` / `anomaly_article_publisher.py` / `team_ranking_publisher.py` / `config/insight_whitelist.yaml` (348 が将来追加予定) / `article_candidates` table への read/write は 347 で一切しない
+5. **`348` が触ってる範囲は本 ticket と完全 disjoint**: `src/analysis/insight_*.py` / `ranking_article_publisher.py` / `anomaly_article_publisher.py` / `team_ranking_publisher.py` / `config/insight_whitelist.json` (348 が将来追加予定) / `article_candidates` table への read/write は 347 で一切しない
 6. **Cloud Run Job 名 `x-post-mail-lane`**: 既存 `publish-notice` / `guarded-publish` 等と衝突なし。rename 不可 (5 scheduler の URI が hardcode 参照)
 7. **5 schedulers 時刻**: 7:00 / 12:00 / 15:00 / 17:30 / 22:30 JST、user 確定済。変更時は publish-notice (`5 6-15` / `5,35 16-22`) との時刻 conflict を再 check
 8. **mail 送信先**: `fwns6760@gmail.com` (env `MAIL_BRIDGE_TO`)、publish-notice と同じ recipient。変更時は user 判断必須 (memory: 「mail recipient 変更は user 判断境界」)

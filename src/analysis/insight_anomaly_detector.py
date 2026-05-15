@@ -41,6 +41,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from src.analysis import insight_whitelist as _wl  # noqa: E402
+
 
 # 新 signal_type (既存 11 種と disjoint verify 済)
 SIGNAL_ZSCORE_BATTER = "anomaly_zscore_outlier_batter"
@@ -208,7 +210,12 @@ def detect_zscore_batter_outliers(
 
     検出 candidate を `article_candidates` に insert (signal_type=
     `anomaly_zscore_outlier_batter`)。return: inserted candidate_ids list。
+
+    348 step 1 gate: × metric (BABIP / wOBA / 等) は冒頭で skip、 baseline 計算
+    は 12 球団全選手だが candidate insert は巨人 (team_code='g') のみ。
     """
+    if not _wl.is_metric_allowed(metric_name):
+        return []
     rows = conn.execute(
         "SELECT player_canonical, team_code, metric_value, sample_size "
         "FROM advanced_metric_snapshots "
@@ -230,8 +237,8 @@ def detect_zscore_batter_outliers(
         z = _zscore(float(value), mean, std)
         if z < threshold_sigma:
             continue
-        # 巨人選手は priority=1 (publish 先頭)、他球団は priority=3
-        prio = GIANTS_PRIORITY if (team_code or "").strip() == "g" else NON_GIANTS_PRIORITY
+        if not _wl.is_subject_team(team_code):
+            continue  # baseline には使うが title 主語にはならない
         cid = _insert_candidate(
             conn,
             run_id=run_id,
@@ -244,7 +251,7 @@ def detect_zscore_batter_outliers(
             window_label=window_label,
             comparison_target=f"league_{scope}",
             evidence_json=None,
-            priority=prio,
+            priority=GIANTS_PRIORITY,
             notes=f"team={team_code} metric={metric_name}",
         )
         if cid:
@@ -269,7 +276,13 @@ def detect_zscore_pitcher_outliers(
     min_sample: int = 15,
     run_id: Optional[str] = None,
 ) -> list[int]:
-    """投手 metric (lower-is-better は反転で `+threshold_sigma 以上良い`を検出)."""
+    """投手 metric (lower-is-better は反転で `+threshold_sigma 以上良い`を検出).
+
+    348 step 1 gate: × metric (FIP / xFIP / WHIP / K_BB) は冒頭で skip、 candidate
+    insert は巨人 (team_code='g') のみ。 baseline 計算は 12 球団全選手。
+    """
+    if not _wl.is_metric_allowed(metric_name):
+        return []
     rows = conn.execute(
         "SELECT player_canonical, team_code, metric_value, sample_size "
         "FROM advanced_metric_snapshots "
@@ -294,7 +307,8 @@ def detect_zscore_pitcher_outliers(
         effective_z = -z if lower_is_better else z
         if effective_z < threshold_sigma:
             continue
-        prio = GIANTS_PRIORITY if (team_code or "").strip() == "g" else NON_GIANTS_PRIORITY
+        if not _wl.is_subject_team(team_code):
+            continue  # baseline には使うが title 主語にはならない
         cid = _insert_candidate(
             conn,
             run_id=run_id,
@@ -307,7 +321,7 @@ def detect_zscore_pitcher_outliers(
             window_label=window_label,
             comparison_target=f"league_{scope}",
             evidence_json=None,
-            priority=prio,
+            priority=GIANTS_PRIORITY,
             notes=f"team={team_code} metric={metric_name} lower_is_better={lower_is_better}",
         )
         if cid:

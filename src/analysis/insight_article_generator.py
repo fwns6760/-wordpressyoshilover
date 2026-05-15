@@ -166,9 +166,10 @@ def _find_focus_row(rows: list[RankRow], focus_player: Optional[str]) -> Optiona
 
 
 def _make_title(ctx: ArticleContext, label: str, focus: Optional[RankRow], kind: str) -> str:
-    # 2026-05-15: title に日付 prefix を入れて毎日新規生成 (reuse 回避)。
-    _today_jst = (dt.datetime.utcnow() + dt.timedelta(hours=9)).date()
-    date_prefix = f"{_today_jst.month}/{_today_jst.day}時点 "
+    # 2026-05-15: title prefix を「日付 + 時刻」化、毎 fire で unique title →
+    # 時間帯まんべんなく記事 流す (user 指示「毎時間4本くらい+他の記事も」)。
+    _now_jst = dt.datetime.utcnow() + dt.timedelta(hours=9)
+    date_prefix = f"{_now_jst.month}/{_now_jst.day}-{_now_jst.hour:02d}時時点 "
     if focus and ctx.position_filter:
         return (
             f"{date_prefix}巨人・{focus.player_canonical}、12 球団{ctx.position_filter}手の{label}で"

@@ -367,11 +367,12 @@ def _render_unified_article(
         extra_focus = player_rank_info
         extra_focus["player"] = player
 
-    # 2026-05-15: title に日付 prefix を入れて毎日新規生成 (reuse 回避)。
-    # 同一日内の同一 player+metric は reuse、翌日は新規 post。
+    # 2026-05-15: title prefix を「日付 + 時刻」化、毎 fire (7 fires/day) で
+    # unique title → 同 fire 内 reuse / 異 fire 間新規。時間帯まんべんなく
+    # 記事 流すため (user 指示「毎回ふやす + まんべんなく」)。
     import datetime as _dt_mod
-    _today_jst = (_dt_mod.datetime.utcnow() + _dt_mod.timedelta(hours=9)).date()
-    _date_prefix = f"{_today_jst.month}/{_today_jst.day}時点 "
+    _now_jst = _dt_mod.datetime.utcnow() + _dt_mod.timedelta(hours=9)
+    _date_prefix = f"{_now_jst.month}/{_now_jst.day}-{_now_jst.hour:02d}時時点 "
     title = title_template.format(
         player=player, team=team, metric=metric_label,
         value=value_str, rank=rank_str, scope=scope_label,
@@ -831,6 +832,210 @@ def render_defense_fielding_pct_article(
     )
 
 
+# ─── 2026-05-15 試合後 ファンが気になる指標 renderer (5 種) ────────────────
+
+
+def _parse_kv_blob(text: str) -> dict[str, str]:
+    """``key=value`` を空白区切りで持つ文字列を dict に。"""
+    out: dict[str, str] = {}
+    for token in (text or "").split():
+        if "=" in token:
+            k, v = token.split("=", 1)
+            out[k] = v
+    return out
+
+
+def render_game_hero_batter_article(
+    conn: sqlite3.Connection,
+    candidate_row: dict[str, Any],
+) -> dict[str, str]:
+    """SIGNAL_GAME_HERO_BATTER — 試合で活躍した打者の今日のヒーロー記事。"""
+    player = candidate_row["player_canonical"]
+    current = _parse_kv_blob(candidate_row.get("current_value") or "")
+    baseline = candidate_row.get("baseline_value") or ""
+    notes = _parse_kv_blob(candidate_row.get("notes") or "")
+    score = notes.get("game_score") or ""
+    opponent_match = ""
+    result_match = ""
+    for token in (baseline or "").split():
+        if token.startswith("opponent="):
+            opponent_match = token.split("=", 1)[1]
+        elif token.startswith("result="):
+            result_match = token.split("=", 1)[1]
+    h = current.get("H", "0")
+    rbi = current.get("RBI", "0")
+    hr = current.get("HR", "0")
+    ab = current.get("AB", "0")
+    title = (
+        f"【巨人データを見る】試合後 {player} {ab} 打数 {h} 安打 {rbi} 打点"
+        + (f" ({hr} HR)" if hr != "0" else "")
+        + (f" vs {opponent_match}" if opponent_match else "")
+    )
+    headline = (
+        f"{player} は今日の {opponent_match or '相手'} 戦で **{ab} 打数 {h} 安打 {rbi} 打点**"
+        + (f" / {hr} 本塁打" if hr != "0" else "")
+        + f"。試合結果は **{result_match or '結果確定'}** ({score or 'スコア未取得'})。"
+    )
+    detail = [
+        f"打数: {ab} / 安打: {h} / 得点: {current.get('R', '0')} / 打点: {rbi}",
+        f"本塁打: {hr} / 盗塁: {current.get('SB', '0')}",
+        f"試合: {result_match} ({score})",
+    ]
+    return _render_simple_data_article(
+        title=title,
+        headline=headline,
+        detail_lines=detail,
+        period_label="今日の試合",
+        source_note="NPB 公式 box score 由来。打撃成績の単発活躍は次戦継続するかが鍵。",
+    )
+
+
+def render_game_pitcher_performance_article(
+    conn: sqlite3.Connection,
+    candidate_row: dict[str, Any],
+) -> dict[str, str]:
+    """SIGNAL_GAME_PITCHER_PERF — 投手の今日の好投 / 不調。"""
+    player = candidate_row["player_canonical"]
+    current = _parse_kv_blob(candidate_row.get("current_value") or "")
+    baseline = candidate_row.get("baseline_value") or ""
+    notes = _parse_kv_blob(candidate_row.get("notes") or "")
+    direction = notes.get("direction", "登板")
+    opponent_match = ""
+    result_match = ""
+    for token in (baseline or "").split():
+        if token.startswith("opponent="):
+            opponent_match = token.split("=", 1)[1]
+        elif token.startswith("result="):
+            result_match = token.split("=", 1)[1]
+    ip = current.get("IP", "0")
+    er = current.get("ER", "0")
+    k = current.get("K", "0")
+    bb = current.get("BB", "0")
+    h_allowed = current.get("H", "0")
+    title = (
+        f"【巨人データを見る】試合後 {player} {ip} 回 {er} 自責点 {k} 奪三振"
+        f" ({direction}) vs {opponent_match}"
+    )
+    headline = (
+        f"{player} は今日の {opponent_match or '相手'} 戦で "
+        f"**{ip} 回 {er} 自責点 {k} 奪三振** の {direction}。"
+        f" 試合結果 **{result_match or '結果確定'}**。"
+    )
+    detail = [
+        f"投球回: {ip} / 自責点: {er}",
+        f"被安打: {h_allowed} / 与四球: {bb} / 奪三振: {k}",
+        f"被本塁打: {current.get('HR', '0')}",
+        f"記録: {current.get('mark', '')}",
+    ]
+    return _render_simple_data_article(
+        title=title,
+        headline=headline,
+        detail_lines=detail,
+        period_label="今日の試合",
+        source_note="NPB 公式 box score 由来。1 試合の数字、シーズン累計とは別。",
+    )
+
+
+def render_milestone_crossed_article(
+    conn: sqlite3.Connection,
+    candidate_row: dict[str, Any],
+) -> dict[str, str]:
+    """SIGNAL_MILESTONE_CROSSED — シーズン累計節目越え。"""
+    player = candidate_row["player_canonical"]
+    notes = _parse_kv_blob(candidate_row.get("notes") or "")
+    metric = notes.get("metric", "")
+    threshold = notes.get("threshold", "")
+    value = notes.get("value", "")
+    title = (
+        f"【巨人データを見る】{player} シーズン {metric} {threshold} 到達 (現在 {value})"
+    )
+    headline = (
+        f"{player} はシーズン {metric} が **{threshold} の節目** に到達 (現在 {value})。"
+    )
+    detail = [
+        f"対象指標: {metric}",
+        f"節目: {threshold}",
+        f"現在値: {value}",
+    ]
+    return _render_simple_data_article(
+        title=title,
+        headline=headline,
+        detail_lines=detail,
+        period_label="シーズン累計",
+        source_note="節目通過は次の節目を狙えるかの起点。",
+    )
+
+
+def render_standings_shift_article(
+    conn: sqlite3.Connection,
+    candidate_row: dict[str, Any],
+) -> dict[str, str]:
+    """SIGNAL_STANDINGS_SHIFT — 球団順位変動。"""
+    notes = _parse_kv_blob(candidate_row.get("notes") or "")
+    direction = notes.get("direction", "変動")
+    current = _parse_kv_blob(candidate_row.get("current_value") or "")
+    baseline = _parse_kv_blob(candidate_row.get("baseline_value") or "")
+    prev_rank = baseline.get("prev_rank", "?")
+    new_rank = current.get("current_rank", "?")
+    w = current.get("W", "?")
+    l = current.get("L", "?")
+    gb = current.get("GB", "?")
+    title = (
+        f"【巨人データを見る】巨人、順位 {prev_rank} → {new_rank} ({direction})"
+    )
+    headline = (
+        f"巨人 の順位が **{prev_rank} 位 → {new_rank} 位** に {direction} しました。"
+        f" 現状 {w} 勝 {l} 敗、ゲーム差 {gb}。"
+    )
+    detail = [
+        f"前回順位: {prev_rank}",
+        f"現順位: {new_rank}",
+        f"勝敗: {w}-{l} (GB {gb})",
+    ]
+    return _render_simple_data_article(
+        title=title,
+        headline=headline,
+        detail_lines=detail,
+        period_label="シーズン進行中",
+        source_note="順位変動は単日の勝敗で動きやすい、月単位 trend と合わせて見るのが本筋。",
+    )
+
+
+def render_stat_delta_article(
+    conn: sqlite3.Connection,
+    candidate_row: dict[str, Any],
+) -> dict[str, str]:
+    """SIGNAL_STAT_DELTA — snapshot 間 数値急変。"""
+    player = candidate_row["player_canonical"]
+    notes = _parse_kv_blob(candidate_row.get("notes") or "")
+    metric = notes.get("metric", "")
+    scope = notes.get("scope", "")
+    delta = notes.get("delta", "")
+    current = candidate_row.get("current_value") or ""
+    baseline = candidate_row.get("baseline_value") or ""
+    title = (
+        f"【巨人データを見る】{player}、{metric} ({scope}) が {delta} 変動"
+    )
+    headline = (
+        f"{player} の {metric} ({scope}) が **{delta}** 変動しました。"
+        f" {baseline} → {current}。"
+    )
+    detail = [
+        f"対象指標: {metric}",
+        f"集計期間: {scope}",
+        f"前回値: {baseline}",
+        f"現在値: {current}",
+        f"変動: {delta}",
+    ]
+    return _render_simple_data_article(
+        title=title,
+        headline=headline,
+        detail_lines=detail,
+        period_label=f"{scope} (前 snapshot vs 直近 snapshot)",
+        source_note="数値変動は短期 trend、長期 trend (1 ヶ月以上) と組み合わせて評価が望ましい。",
+    )
+
+
 # signal_type → render function map
 _RENDERERS = {
     detector.SIGNAL_ZSCORE_BATTER: render_zscore_batter_article,
@@ -844,6 +1049,12 @@ _RENDERERS = {
     detector.SIGNAL_HIT_STREAK_RUN: render_hit_streak_run_article,
     detector.SIGNAL_DEFENSE_UZR_OUTLIER: render_defense_uzr_article,
     detector.SIGNAL_DEFENSE_FIELDING_PCT: render_defense_fielding_pct_article,
+    # 2026-05-15 追加 (試合後 ファンが気になる 5 種)
+    detector.SIGNAL_GAME_HERO_BATTER: render_game_hero_batter_article,
+    detector.SIGNAL_GAME_PITCHER_PERF: render_game_pitcher_performance_article,
+    detector.SIGNAL_MILESTONE_CROSSED: render_milestone_crossed_article,
+    detector.SIGNAL_STANDINGS_SHIFT: render_standings_shift_article,
+    detector.SIGNAL_STAT_DELTA: render_stat_delta_article,
 }
 
 

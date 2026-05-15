@@ -54,6 +54,12 @@ SIGNAL_HIT_STREAK_RUN = "anomaly_consecutive_multi_hit"   # 連続多安打 game
 # 2026-05-15 user 指示「守備もだよ」適用、守備系 signal を追加。
 SIGNAL_DEFENSE_UZR_OUTLIER = "anomaly_defense_uzr_outlier"  # UZR_proxy 平均比
 SIGNAL_DEFENSE_FIELDING_PCT = "anomaly_defense_fielding_pct"  # 守備率
+# 2026-05-15 user 指示「試合後にファンが気になる指標」適用、試合後 signal を追加。
+SIGNAL_GAME_HERO_BATTER = "anomaly_game_hero_batter"  # 今日のヒーロー (打者)
+SIGNAL_GAME_PITCHER_PERF = "anomaly_game_pitcher_perf"  # 今日の好投 / 不調 (投手)
+SIGNAL_MILESTONE_CROSSED = "anomaly_milestone_crossed"  # シーズン累計節目越え
+SIGNAL_STANDINGS_SHIFT = "anomaly_standings_shift"  # 球団順位変動
+SIGNAL_STAT_DELTA = "anomaly_stat_delta"  # snapshot 急変
 
 ALL_ANOMALY_SIGNALS = (
     SIGNAL_ZSCORE_BATTER,
@@ -66,6 +72,11 @@ ALL_ANOMALY_SIGNALS = (
     SIGNAL_HIT_STREAK_RUN,
     SIGNAL_DEFENSE_UZR_OUTLIER,
     SIGNAL_DEFENSE_FIELDING_PCT,
+    SIGNAL_GAME_HERO_BATTER,
+    SIGNAL_GAME_PITCHER_PERF,
+    SIGNAL_MILESTONE_CROSSED,
+    SIGNAL_STANDINGS_SHIFT,
+    SIGNAL_STAT_DELTA,
 )
 
 # default 閾値 (env で override 可能、user「もっと緩めていい、metric 多様化」適用、
@@ -882,6 +893,392 @@ def detect_giants_defense_outliers(
     return uzr_ids, fpct_ids
 
 
+# ─── detector 11-15: 試合後 ファンが気になる指標 (2026-05-15 user 指示) ────
+# 試合後、選手と球団の「ファンが気になる」を data から自動抽出して記事化。
+#   - A: 今日のヒーロー (打者活躍)        SIGNAL_GAME_HERO_BATTER
+#   - B: 投手の好投 / 不調              SIGNAL_GAME_PITCHER_PERF
+#   - C: シーズン節目越え / 順位変動    SIGNAL_MILESTONE_CROSSED / SIGNAL_STANDINGS_SHIFT
+#   - D: 数字の急変 (snapshot delta)    SIGNAL_STAT_DELTA
+
+
+def _latest_giants_game(
+    conn: sqlite3.Connection, *, snapshot_date: str
+) -> Optional[dict]:
+    """``snapshot_date`` 以前で最新の Giants 試合 (result 確定済) を返す。"""
+    row = conn.execute(
+        "SELECT game_id, game_date, opponent, result, giants_score, opp_score, "
+        "winning_pitcher, losing_pitcher, save_pitcher "
+        "FROM games WHERE result IS NOT NULL AND result != 'unknown' "
+        "AND game_date <= ? ORDER BY game_date DESC, game_id DESC LIMIT 1",
+        (snapshot_date,),
+    ).fetchone()
+    if not row:
+        return None
+    return {
+        "game_id": str(row[0]),
+        "game_date": str(row[1]),
+        "opponent": str(row[2] or ""),
+        "result": str(row[3] or ""),
+        "giants_score": row[4],
+        "opp_score": row[5],
+        "winning_pitcher": str(row[6] or ""),
+        "losing_pitcher": str(row[7] or ""),
+        "save_pitcher": str(row[8] or ""),
+    }
+
+
+def detect_game_hero_batter(
+    conn: sqlite3.Connection,
+    *,
+    snapshot_date: str,
+    run_id: Optional[str] = None,
+) -> list[int]:
+    """A: 直近 Giants 試合で活躍した打者を「今日のヒーロー」候補化。
+
+    対象基準 (いずれか満たせば候補化):
+      - H >= 3 (multi-hit 以上)
+      - H >= 2 AND RBI >= 1
+      - RBI >= 2
+      - HR を 1 本以上 (atbats_json に 'HR' 含む)
+    """
+    import json as _json
+    game = _latest_giants_game(conn, snapshot_date=snapshot_date)
+    if not game:
+        return []
+    if run_id is None:
+        run_id = str(uuid.uuid4())
+    rows = conn.execute(
+        "SELECT player_canonical, player_display, AB, R, H, RBI, SB, atbats_json "
+        "FROM batting_logs WHERE game_id = ? AND team_role = 'giants' "
+        "AND player_canonical IS NOT NULL",
+        (game["game_id"],),
+    ).fetchall()
+    inserted: list[int] = []
+    window_label = f"game_hero_{game['game_date']}_{game['game_id']}"
+    for player, display, ab, r, h, rbi, sb, atbats_json in rows:
+        ab = int(ab or 0); r = int(r or 0); h = int(h or 0)
+        rbi = int(rbi or 0); sb = int(sb or 0)
+        hr_count = 0
+        if atbats_json:
+            try:
+                ab_list = _json.loads(atbats_json) or []
+                hr_count = sum(1 for x in ab_list if "HR" in str(x))
+            except Exception:  # noqa: BLE001
+                hr_count = 0
+        qualifies = (
+            h >= 3
+            or (h >= 2 and rbi >= 1)
+            or rbi >= 2
+            or hr_count >= 1
+        )
+        if not qualifies:
+            continue
+        magnitude = float(h + rbi + (hr_count * 2))  # 簡易 hero score
+        cid = _insert_candidate(
+            conn,
+            run_id=run_id,
+            signal_type=SIGNAL_GAME_HERO_BATTER,
+            player_canonical=str(player),
+            player_display=str(display) if display else None,
+            magnitude=magnitude,
+            baseline_value=f"game={game['game_id']} opponent={game['opponent']} result={game['result']}",
+            current_value=f"AB={ab} R={r} H={h} RBI={rbi} HR={hr_count} SB={sb}",
+            window_label=window_label,
+            comparison_target=f"giants_game_{game['game_date']}",
+            evidence_json=None,
+            priority=GIANTS_PRIORITY,
+            notes=f"hero_score={magnitude} game_score={game['giants_score']}-{game['opp_score']}",
+        )
+        if cid:
+            inserted.append(cid)
+    conn.commit()
+    return inserted
+
+
+def detect_game_pitcher_performance(
+    conn: sqlite3.Connection,
+    *,
+    snapshot_date: str,
+    run_id: Optional[str] = None,
+) -> list[int]:
+    """B: 直近 Giants 試合で登板した投手の好投 / 不調を検出。
+
+    対象基準 (いずれか満たせば候補化):
+      - 好投: IP >= 5 AND ER <= 2 (先発の quality start 近似)
+      - 救援好投: IP >= 1 AND ER == 0 AND result_mark in ('S','H')
+      - 不調: IP < 5 AND ER >= 4 (KO 級)
+    """
+    game = _latest_giants_game(conn, snapshot_date=snapshot_date)
+    if not game:
+        return []
+    if run_id is None:
+        run_id = str(uuid.uuid4())
+    rows = conn.execute(
+        "SELECT player_canonical, player_display, appearance_order, result_mark, "
+        "IP, H_allowed, BB, K, ER, HR_allowed "
+        "FROM pitching_logs WHERE game_id = ? AND team_role = 'giants' "
+        "AND player_canonical IS NOT NULL",
+        (game["game_id"],),
+    ).fetchall()
+    inserted: list[int] = []
+    window_label = f"game_pitcher_{game['game_date']}_{game['game_id']}"
+    for player, display, order, result_mark, ip, h_allowed, bb, k, er, hr_allowed in rows:
+        ip = float(ip or 0); er = int(er or 0); k = int(k or 0)
+        h_allowed = int(h_allowed or 0); bb = int(bb or 0)
+        hr_allowed = int(hr_allowed or 0)
+        result_mark = str(result_mark or "")
+        qualifies_good = (ip >= 5 and er <= 2) or (
+            ip >= 1 and er == 0 and result_mark in ("S", "H", "勝")
+        )
+        qualifies_bad = ip < 5 and er >= 4
+        if not (qualifies_good or qualifies_bad):
+            continue
+        direction = "好投" if qualifies_good else "不調"
+        magnitude = float(round(k - er * 2, 2))  # 簡易 quality score
+        cid = _insert_candidate(
+            conn,
+            run_id=run_id,
+            signal_type=SIGNAL_GAME_PITCHER_PERF,
+            player_canonical=str(player),
+            player_display=str(display) if display else None,
+            magnitude=magnitude,
+            baseline_value=f"game={game['game_id']} opponent={game['opponent']} result={game['result']}",
+            current_value=f"IP={ip} H={h_allowed} BB={bb} K={k} ER={er} HR={hr_allowed} mark={result_mark}",
+            window_label=window_label,
+            comparison_target=f"giants_game_{game['game_date']}",
+            evidence_json=None,
+            priority=GIANTS_PRIORITY,
+            notes=f"direction={direction} order={order}",
+        )
+        if cid:
+            inserted.append(cid)
+    conn.commit()
+    return inserted
+
+
+# C-1: シーズン累計の節目越え (HR / H / 防御率 等)
+_MILESTONE_THRESHOLDS_BATTER = {
+    "HR": (5, 10, 15, 20, 25, 30),       # 本塁打 5/10/15/20/25/30
+}
+_MILESTONE_THRESHOLDS_PITCHER_LOWER = {
+    "ERA": (2.00, 2.50, 3.00),           # 防御率 (低い方が良い)、threshold を下回ったら milestone
+    "FIP": (2.50, 3.00, 3.50),
+    "WHIP": (1.00, 1.10, 1.20),
+}
+
+
+def detect_milestone_crossed(
+    conn: sqlite3.Connection,
+    *,
+    snapshot_date: str,
+    run_id: Optional[str] = None,
+) -> list[int]:
+    """C-1: Giants 選手のシーズン累計が境界 (milestone) を越えたか check。
+
+    現状 snapshot_date のみ見て「閾値超えてる」を全件出す簡易版。重複防止
+    は ``_insert_candidate`` の (player + window_label) dedup に任せる。
+    """
+    if run_id is None:
+        run_id = str(uuid.uuid4())
+    inserted: list[int] = []
+    window_label = f"milestone_{snapshot_date}"
+
+    for metric, thresholds in _MILESTONE_THRESHOLDS_BATTER.items():
+        rows = conn.execute(
+            "SELECT player_canonical, metric_value, sample_size "
+            "FROM advanced_metric_snapshots "
+            "WHERE metric_name = ? AND scope = 'season' AND snapshot_date = ? "
+            "AND team_code = 'g' AND metric_value IS NOT NULL",
+            (metric, snapshot_date),
+        ).fetchall()
+        for player, value, sample in rows:
+            value = float(value or 0)
+            # 直近に超えた threshold を 1 つだけ採用 (最も大きいもの)
+            crossed = max((t for t in thresholds if value >= t), default=None)
+            if crossed is None:
+                continue
+            cid = _insert_candidate(
+                conn,
+                run_id=run_id,
+                signal_type=SIGNAL_MILESTONE_CROSSED,
+                player_canonical=str(player),
+                player_display=None,
+                magnitude=float(crossed),
+                baseline_value=f"threshold={crossed}",
+                current_value=f"{metric}={value:.0f} sample={sample}",
+                window_label=window_label,
+                comparison_target=f"milestone_{metric}_{int(crossed)}",
+                evidence_json=None,
+                priority=GIANTS_PRIORITY,
+                notes=f"metric={metric} threshold={crossed} value={value:.0f}",
+            )
+            if cid:
+                inserted.append(cid)
+
+    for metric, thresholds in _MILESTONE_THRESHOLDS_PITCHER_LOWER.items():
+        rows = conn.execute(
+            "SELECT player_canonical, metric_value, sample_size "
+            "FROM advanced_metric_snapshots "
+            "WHERE metric_name = ? AND scope = 'season' AND snapshot_date = ? "
+            "AND team_code = 'g' AND metric_value IS NOT NULL",
+            (metric, snapshot_date),
+        ).fetchall()
+        for player, value, sample in rows:
+            value = float(value or 0)
+            if value <= 0:
+                continue
+            # threshold を下回ってるか、低い方から
+            crossed = min((t for t in thresholds if value <= t), default=None)
+            if crossed is None:
+                continue
+            cid = _insert_candidate(
+                conn,
+                run_id=run_id,
+                signal_type=SIGNAL_MILESTONE_CROSSED,
+                player_canonical=str(player),
+                player_display=None,
+                magnitude=float(crossed),
+                baseline_value=f"threshold={crossed}",
+                current_value=f"{metric}={value:.3f} sample={sample}",
+                window_label=window_label,
+                comparison_target=f"milestone_{metric}_{crossed}",
+                evidence_json=None,
+                priority=GIANTS_PRIORITY,
+                notes=f"metric={metric} threshold={crossed} value={value:.3f} (lower_is_better)",
+            )
+            if cid:
+                inserted.append(cid)
+    conn.commit()
+    return inserted
+
+
+def detect_standings_shift(
+    conn: sqlite3.Connection,
+    *,
+    snapshot_date: str,
+    run_id: Optional[str] = None,
+) -> list[int]:
+    """C-2: standings_snapshots の直近 2 件を比較、Giants 順位 が動いたら emit。"""
+    if run_id is None:
+        run_id = str(uuid.uuid4())
+    rows = conn.execute(
+        "SELECT DISTINCT snap_date FROM standings_snapshots "
+        "WHERE snap_date <= ? ORDER BY snap_date DESC LIMIT 2",
+        (snapshot_date,),
+    ).fetchall()
+    if len(rows) < 2:
+        return []
+    latest_date = str(rows[0][0])
+    prev_date = str(rows[1][0])
+    latest = conn.execute(
+        "SELECT rank, W, L, T, games_behind FROM standings_snapshots "
+        "WHERE snap_date = ? AND team = 'g'",
+        (latest_date,),
+    ).fetchone()
+    prev = conn.execute(
+        "SELECT rank, W, L, T, games_behind FROM standings_snapshots "
+        "WHERE snap_date = ? AND team = 'g'",
+        (prev_date,),
+    ).fetchone()
+    if not latest or not prev:
+        return []
+    if latest[0] == prev[0]:
+        return []  # 順位変化なし
+    direction = "上昇" if (latest[0] or 0) < (prev[0] or 0) else "下降"
+    window_label = f"standings_shift_{latest_date}"
+    cid = _insert_candidate(
+        conn,
+        run_id=run_id,
+        signal_type=SIGNAL_STANDINGS_SHIFT,
+        player_canonical="巨人",
+        player_display="読売ジャイアンツ",
+        magnitude=float((prev[0] or 0) - (latest[0] or 0)),
+        baseline_value=f"prev_rank={prev[0]} prev_W={prev[1]} prev_L={prev[2]}",
+        current_value=f"current_rank={latest[0]} W={latest[1]} L={latest[2]} T={latest[3]} GB={latest[4]}",
+        window_label=window_label,
+        comparison_target=f"standings_shift_{prev_date}_to_{latest_date}",
+        evidence_json=None,
+        priority=GIANTS_PRIORITY,
+        notes=f"direction={direction} prev_date={prev_date} latest_date={latest_date}",
+    )
+    return [cid] if cid else []
+
+
+_STAT_DELTA_THRESHOLDS = {
+    "OPS": 0.020, "wOBA": 0.015, "AVG": 0.015, "OBP": 0.015, "SLG": 0.020,
+    "ERA": 0.30, "FIP": 0.30, "WHIP": 0.08,
+}
+
+
+def detect_stat_delta(
+    conn: sqlite3.Connection,
+    *,
+    snapshot_date: str,
+    run_id: Optional[str] = None,
+) -> list[int]:
+    """D: advanced_metric_snapshots の最新 vs 直前 snapshot を比較、 Giants 選手で
+    顕著な変化があれば候補化。snapshot 同日 2 件はないため (snapshot_date 単位)、
+    直前 snapshot_date を 1 つ前の DISTINCT date とする。"""
+    if run_id is None:
+        run_id = str(uuid.uuid4())
+    rows = conn.execute(
+        "SELECT DISTINCT snapshot_date FROM advanced_metric_snapshots "
+        "WHERE snapshot_date <= ? ORDER BY snapshot_date DESC LIMIT 2",
+        (snapshot_date,),
+    ).fetchall()
+    if len(rows) < 2:
+        return []
+    latest_date = str(rows[0][0])
+    prev_date = str(rows[1][0])
+    inserted: list[int] = []
+    window_label = f"stat_delta_{latest_date}_vs_{prev_date}"
+
+    for metric, threshold in _STAT_DELTA_THRESHOLDS.items():
+        # 同 player x metric x scope で 2 日分 join、Giants のみ
+        delta_rows = conn.execute(
+            "SELECT a.player_canonical, a.scope, a.metric_value AS new_val, "
+            "b.metric_value AS old_val, a.league_rank AS new_rank, "
+            "b.league_rank AS old_rank "
+            "FROM advanced_metric_snapshots a "
+            "JOIN advanced_metric_snapshots b "
+            "  ON a.player_canonical = b.player_canonical "
+            "  AND a.metric_name = b.metric_name "
+            "  AND a.scope = b.scope "
+            "WHERE a.metric_name = ? AND a.snapshot_date = ? "
+            "AND b.snapshot_date = ? AND a.team_code = 'g' "
+            "AND a.metric_value IS NOT NULL AND b.metric_value IS NOT NULL",
+            (metric, latest_date, prev_date),
+        ).fetchall()
+        for player, scope, new_val, old_val, new_rank, old_rank in delta_rows:
+            delta = float(new_val) - float(old_val)
+            if abs(delta) < threshold:
+                continue
+            rank_change = ""
+            if new_rank is not None and old_rank is not None:
+                diff_rank = int(new_rank) - int(old_rank)
+                if diff_rank != 0:
+                    rank_change = f" rank {old_rank}→{new_rank}"
+            cid = _insert_candidate(
+                conn,
+                run_id=run_id,
+                signal_type=SIGNAL_STAT_DELTA,
+                player_canonical=str(player),
+                player_display=None,
+                magnitude=float(round(delta, 4)),
+                baseline_value=f"prev={old_val:.3f} ({prev_date})",
+                current_value=f"current={new_val:.3f} ({latest_date}){rank_change}",
+                window_label=window_label,
+                comparison_target=f"stat_delta_{metric}_{scope}",
+                evidence_json=None,
+                priority=GIANTS_PRIORITY,
+                notes=f"metric={metric} scope={scope} delta={delta:+.3f}{rank_change}",
+            )
+            if cid:
+                inserted.append(cid)
+    conn.commit()
+    return inserted
+
+
 # ─── public API: run all detectors ──────────────────────────────────────────
 
 
@@ -1001,4 +1398,35 @@ def run_all_anomaly_detectors(
     except Exception:  # noqa: BLE001
         out[SIGNAL_DEFENSE_UZR_OUTLIER] = []
         out[SIGNAL_DEFENSE_FIELDING_PCT] = []
+    # 2026-05-15 試合後 ファンが気になる指標 5 detector
+    try:
+        out[SIGNAL_GAME_HERO_BATTER] = detect_game_hero_batter(
+            conn, snapshot_date=snapshot_date, run_id=run_id,
+        )
+    except Exception:  # noqa: BLE001
+        out[SIGNAL_GAME_HERO_BATTER] = []
+    try:
+        out[SIGNAL_GAME_PITCHER_PERF] = detect_game_pitcher_performance(
+            conn, snapshot_date=snapshot_date, run_id=run_id,
+        )
+    except Exception:  # noqa: BLE001
+        out[SIGNAL_GAME_PITCHER_PERF] = []
+    try:
+        out[SIGNAL_MILESTONE_CROSSED] = detect_milestone_crossed(
+            conn, snapshot_date=snapshot_date, run_id=run_id,
+        )
+    except Exception:  # noqa: BLE001
+        out[SIGNAL_MILESTONE_CROSSED] = []
+    try:
+        out[SIGNAL_STANDINGS_SHIFT] = detect_standings_shift(
+            conn, snapshot_date=snapshot_date, run_id=run_id,
+        )
+    except Exception:  # noqa: BLE001
+        out[SIGNAL_STANDINGS_SHIFT] = []
+    try:
+        out[SIGNAL_STAT_DELTA] = detect_stat_delta(
+            conn, snapshot_date=snapshot_date, run_id=run_id,
+        )
+    except Exception:  # noqa: BLE001
+        out[SIGNAL_STAT_DELTA] = []
     return out

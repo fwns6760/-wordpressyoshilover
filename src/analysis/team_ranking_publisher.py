@@ -221,7 +221,11 @@ def render_team_metric_article(
     scope_label = _scope_label_jp(scope)
     start_str, end_str = _scope_window(scope)
 
-    title = f"【巨人データを見る】{scope_label}のセ・リーグ球団{metric_label}、巨人 {giants_rank}/6 位({giants_val_str})"
+    # 2026-05-15: title に日付 prefix を入れて毎日新規生成 (reuse 回避)。
+    # JST date を MM/DD で短く付与、reuse window 内で同一日なら重複防止が効く。
+    _today_jst = (dt.datetime.utcnow() + dt.timedelta(hours=9)).date()
+    _date_prefix = f"{_today_jst.month}/{_today_jst.day}時点 "
+    title = f"【巨人データを見る】{_date_prefix}{scope_label}のセ・リーグ球団{metric_label}、巨人 {giants_rank}/6 位({giants_val_str})"
 
     # table md
     table_md = _build_team_table_md(sorted_rows, focus_tc="g", value_label=metric_label,
@@ -342,18 +346,25 @@ def publish_team_default_set(
     conn: sqlite3.Connection,
     wp_client_obj: Any,
     *,
-    max_per_run: int = 3,
+    max_per_run: int = 100,
     dry_run: bool = False,
 ) -> list[dict]:
-    """デフォルト team metric publish set (user 指示「開幕から」優先 + 月間も)."""
+    """デフォルト team metric publish set。
+    2026-05-15 user 指示「データサイト化、上限なし」適用、3 → 100 (実質 cap 無し)。
+    """
     default_jobs = [
-        {"metric": "HR", "scope": "season"},     # 開幕からの 球団 HR
-        {"metric": "AVG", "scope": "season"},    # 開幕からの 球団打率
-        {"metric": "ERA", "scope": "season"},    # 開幕からの 球団防御率
-        {"metric": "HR", "scope": "last_30d"},   # 月間 HR
-        {"metric": "AVG", "scope": "last_30d"},  # 月間打率
-        {"metric": "ERA", "scope": "last_30d"},  # 月間防御率
-        {"metric": "HR", "scope": "last_7d"},    # 週間 HR
+        # 開幕から (season)
+        {"metric": "HR", "scope": "season"},
+        {"metric": "AVG", "scope": "season"},
+        {"metric": "ERA", "scope": "season"},
+        # 月間 (last_30d)
+        {"metric": "HR", "scope": "last_30d"},
+        {"metric": "AVG", "scope": "last_30d"},
+        {"metric": "ERA", "scope": "last_30d"},
+        # 週間 (last_7d)
+        {"metric": "HR", "scope": "last_7d"},
+        {"metric": "AVG", "scope": "last_7d"},
+        {"metric": "ERA", "scope": "last_7d"},
     ]
     results = []
     published = 0

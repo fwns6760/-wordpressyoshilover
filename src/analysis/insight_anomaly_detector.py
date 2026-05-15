@@ -51,6 +51,9 @@ SIGNAL_GIANTS_TOP_OUTLIER = "anomaly_giants_top_outlier"
 SIGNAL_PACE_HR_PROJECTION = "anomaly_pace_hr_projection"
 SIGNAL_HIDDEN_OPS_LIMIT = "anomaly_hidden_below_qualifier"  # 規定外好調
 SIGNAL_HIT_STREAK_RUN = "anomaly_consecutive_multi_hit"   # 連続多安打 game
+# 2026-05-15 user 指示「守備もだよ」適用、守備系 signal を追加。
+SIGNAL_DEFENSE_UZR_OUTLIER = "anomaly_defense_uzr_outlier"  # UZR_proxy 平均比
+SIGNAL_DEFENSE_FIELDING_PCT = "anomaly_defense_fielding_pct"  # 守備率
 
 ALL_ANOMALY_SIGNALS = (
     SIGNAL_ZSCORE_BATTER,
@@ -61,17 +64,26 @@ ALL_ANOMALY_SIGNALS = (
     SIGNAL_PACE_HR_PROJECTION,
     SIGNAL_HIDDEN_OPS_LIMIT,
     SIGNAL_HIT_STREAK_RUN,
+    SIGNAL_DEFENSE_UZR_OUTLIER,
+    SIGNAL_DEFENSE_FIELDING_PCT,
 )
 
-# default 閾値 (env で override 可能、user「結構緩めていい」適用、巨人 優先)
+# default 閾値 (env で override 可能、user「もっと緩めていい、metric 多様化」適用、
+# 2026-05-15 user 指示で全閾値を約 2x 緩和、記事数 2-3 倍狙い)
 DEFAULT_ZSCORE_THRESHOLD = float(
-    os.environ.get("DATA_INSIGHT_ANOMALY_THRESHOLD_SIGMA", "1.0") or "1.0"
+    os.environ.get("DATA_INSIGHT_ANOMALY_THRESHOLD_SIGMA", "0.5") or "0.5"
 )
-DEFAULT_BABIP_DIVERGENCE = 0.050  # AVG vs BABIP 差 (緩和、運要素 候補広げ)
-DEFAULT_FIP_ERA_DIVERGENCE = 1.00  # FIP vs ERA 差 (緩和)
-DEFAULT_GIANTS_TOP_PCT = 0.30  # league top 30% 以内 (大幅緩和、巨人 拾いやすく)
-DEFAULT_MIN_SAMPLE_BATTER = 20  # PA 最低 (default 30 から緩和)
-DEFAULT_MIN_SAMPLE_PITCHER = 10  # IP 最低 (default 15 から緩和)
+DEFAULT_BABIP_DIVERGENCE = float(
+    os.environ.get("DATA_INSIGHT_BABIP_DIVERGENCE", "0.025") or "0.025"
+)  # AVG vs BABIP 差 (緩和 0.05 → 0.025)
+DEFAULT_FIP_ERA_DIVERGENCE = float(
+    os.environ.get("DATA_INSIGHT_FIP_ERA_DIVERGENCE", "0.50") or "0.50"
+)  # FIP vs ERA 差 (緩和 1.0 → 0.5)
+DEFAULT_GIANTS_TOP_PCT = float(
+    os.environ.get("DATA_INSIGHT_GIANTS_TOP_PCT", "0.50") or "0.50"
+)  # league top 50% 以内 (緩和 30% → 50%、巨人 さらに拾いやすく)
+DEFAULT_MIN_SAMPLE_BATTER = 20  # PA 最低
+DEFAULT_MIN_SAMPLE_PITCHER = 10  # IP 最低
 
 # 巨人 優先 priority (publish 順序を巨人 first にする)
 GIANTS_PRIORITY = 1
@@ -688,7 +700,208 @@ def detect_consecutive_multi_hit_streak(
     return inserted
 
 
+# ─── detector 9 / 10: 守備 (UZR_proxy / fielding_pct) ───────────────────────
+# 2026-05-15 user 指示「守備もだよ」適用。defense_opportunities table から
+# RF_proxy / UZR_proxy / fielding_pct を集計し、巨人選手をポジション別に
+# league baseline と比較する。真の UZR ではなく box-score 由来の proxy だが、
+# 「守備が平均より良い / 悪い」傾向は数値で示せる。
+#
+# 注: defense_opportunities は ``hits_allowed`` を持つが、これは「打球方向が
+# その position に飛び、安打となった」を示すので、(converted_outs + errors)
+# とは別の母数。 fielding_pct は伝統的に PO+A vs E の比なので、
+# converted_outs / (converted_outs + errors) を採用 (PB / WP は box から
+# 取得困難なため次世代対応)。
+
+
+DEFAULT_DEFENSE_UZR_THRESHOLD = float(
+    os.environ.get("DATA_INSIGHT_DEFENSE_UZR_THRESHOLD", "0.05") or "0.05"
+)  # |RF_proxy - league_baseline| >= 5% 以上
+DEFAULT_DEFENSE_FIELDING_PCT_THRESHOLD = float(
+    os.environ.get("DATA_INSIGHT_DEFENSE_FIELDING_PCT_THRESHOLD", "0.03") or "0.03"
+)  # |fielding_pct - league_baseline| >= 3% 以上
+DEFAULT_DEFENSE_MIN_OPPORTUNITIES = int(
+    os.environ.get("DATA_INSIGHT_DEFENSE_MIN_OPPORTUNITIES", "10") or "10"
+)
+
+
+def _giants_defense_rows(
+    conn: sqlite3.Connection, *, since_date: str
+) -> list[dict]:
+    """直近の Giants 守備 opportunities を player × position で aggregate。"""
+    rows = conn.execute(
+        "SELECT d.player_canonical, d.position, "
+        "SUM(d.opportunities) AS opps, "
+        "SUM(d.converted_outs) AS outs, "
+        "SUM(d.errors) AS errs "
+        "FROM defense_opportunities d "
+        "JOIN games g ON d.game_id = g.game_id "
+        "WHERE d.team_code = 'g' "
+        "AND d.player_canonical IS NOT NULL "
+        "AND g.game_date >= ? "
+        "GROUP BY d.player_canonical, d.position",
+        (since_date,),
+    ).fetchall()
+    return [
+        {
+            "player": str(r[0]),
+            "position": str(r[1]),
+            "opportunities": int(r[2] or 0),
+            "converted_outs": int(r[3] or 0),
+            "errors": int(r[4] or 0),
+        }
+        for r in rows
+    ]
+
+
+def _league_position_baseline(
+    conn: sqlite3.Connection, *, position: str, since_date: str
+) -> tuple[Optional[float], Optional[float]]:
+    """指定 position の league 平均 (RF_proxy, fielding_pct) を返す。"""
+    row = conn.execute(
+        "SELECT SUM(opportunities), SUM(converted_outs), SUM(errors) "
+        "FROM defense_opportunities d "
+        "JOIN games g ON d.game_id = g.game_id "
+        "WHERE d.position = ? AND g.game_date >= ?",
+        (position, since_date),
+    ).fetchone()
+    if not row or not row[0]:
+        return None, None
+    opps = int(row[0] or 0)
+    outs = int(row[1] or 0)
+    errs = int(row[2] or 0)
+    if opps <= 0:
+        return None, None
+    rf_baseline = outs / opps
+    denom = outs + errs
+    fpct_baseline = (outs / denom) if denom > 0 else None
+    return rf_baseline, fpct_baseline
+
+
+def detect_giants_defense_outliers(
+    conn: sqlite3.Connection,
+    *,
+    snapshot_date: str,
+    window_days: int = 30,
+    min_opportunities: int = DEFAULT_DEFENSE_MIN_OPPORTUNITIES,
+    uzr_threshold: float = DEFAULT_DEFENSE_UZR_THRESHOLD,
+    fielding_pct_threshold: float = DEFAULT_DEFENSE_FIELDING_PCT_THRESHOLD,
+    run_id: Optional[str] = None,
+) -> tuple[list[int], list[int]]:
+    """Giants 選手の守備 outlier を検出 (UZR_proxy + fielding_pct 二系列)。
+
+    `window_days` 期間 (default 30 日) の defense_opportunities を集計し、
+    player × position で league baseline と比較。閾値超えで candidate insert。
+
+    Returns: ``(uzr_candidate_ids, fielding_pct_candidate_ids)``
+    """
+    since_date = (
+        dt.date.fromisoformat(snapshot_date) - dt.timedelta(days=window_days)
+    ).isoformat()
+    rows = _giants_defense_rows(conn, since_date=since_date)
+    if not rows:
+        return [], []
+    if run_id is None:
+        run_id = str(uuid.uuid4())
+
+    uzr_ids: list[int] = []
+    fpct_ids: list[int] = []
+    uzr_window = f"defense_uzr_30d_{snapshot_date}"
+    fpct_window = f"defense_fpct_30d_{snapshot_date}"
+
+    # baseline は position ごとに 1 回だけ計算 (call 回数削減)
+    baseline_cache: dict[str, tuple[Optional[float], Optional[float]]] = {}
+    for r in rows:
+        if r["opportunities"] < min_opportunities:
+            continue
+        pos = r["position"]
+        if pos not in baseline_cache:
+            baseline_cache[pos] = _league_position_baseline(
+                conn, position=pos, since_date=since_date
+            )
+        rf_baseline, fpct_baseline = baseline_cache[pos]
+        rf_player = r["converted_outs"] / r["opportunities"]
+        denom = r["converted_outs"] + r["errors"]
+        fpct_player = (r["converted_outs"] / denom) if denom > 0 else None
+
+        # ── UZR_proxy outlier ────────────────────────────────────────────
+        if rf_baseline is not None:
+            uzr_value = rf_player - rf_baseline
+            if abs(uzr_value) >= uzr_threshold:
+                direction = "守備平均超え" if uzr_value > 0 else "守備平均未満"
+                cid = _insert_candidate(
+                    conn,
+                    run_id=run_id,
+                    signal_type=SIGNAL_DEFENSE_UZR_OUTLIER,
+                    player_canonical=r["player"],
+                    player_display=None,
+                    magnitude=float(round(uzr_value, 4)),
+                    baseline_value=(
+                        f"position={pos} league_RF_baseline={rf_baseline:.3f}"
+                    ),
+                    current_value=(
+                        f"RF_proxy={rf_player:.3f} opportunities={r['opportunities']} "
+                        f"converted_outs={r['converted_outs']} errors={r['errors']}"
+                    ),
+                    window_label=uzr_window,
+                    comparison_target=f"defense_uzr_{pos}",
+                    evidence_json=None,
+                    priority=GIANTS_PRIORITY,
+                    notes=f"position={pos} {direction}",
+                )
+                if cid:
+                    uzr_ids.append(cid)
+
+        # ── fielding_pct outlier ─────────────────────────────────────────
+        if fpct_baseline is not None and fpct_player is not None:
+            fpct_diff = fpct_player - fpct_baseline
+            if abs(fpct_diff) >= fielding_pct_threshold:
+                direction = "守備率高" if fpct_diff > 0 else "守備率低"
+                cid = _insert_candidate(
+                    conn,
+                    run_id=run_id,
+                    signal_type=SIGNAL_DEFENSE_FIELDING_PCT,
+                    player_canonical=r["player"],
+                    player_display=None,
+                    magnitude=float(round(fpct_diff, 4)),
+                    baseline_value=(
+                        f"position={pos} league_fpct_baseline={fpct_baseline:.3f}"
+                    ),
+                    current_value=(
+                        f"fielding_pct={fpct_player:.3f} converted_outs={r['converted_outs']} "
+                        f"errors={r['errors']}"
+                    ),
+                    window_label=fpct_window,
+                    comparison_target=f"defense_fpct_{pos}",
+                    evidence_json=None,
+                    priority=GIANTS_PRIORITY,
+                    notes=f"position={pos} {direction}",
+                )
+                if cid:
+                    fpct_ids.append(cid)
+    conn.commit()
+    return uzr_ids, fpct_ids
+
+
 # ─── public API: run all detectors ──────────────────────────────────────────
+
+
+# 2026-05-15 user 指示「もっと幅広く」適用。ETL が populate する全 metric を
+# scan する (insight_advanced_metrics.all_batter_metrics / all_pitcher_metrics
+# と同じ keyspace)。同 player が異 metric で複数 candidate 化されるが
+# window_label が metric を含むため dedupe で吸収される。
+_ZSCORE_BATTER_METRICS = (
+    "OPS", "wOBA", "AVG", "OBP", "SLG", "ISO", "BABIP", "K_pct", "BB_pct",
+)
+_ZSCORE_PITCHER_METRICS = (
+    "ERA", "FIP", "xFIP", "WHIP", "K_per_9", "BB_per_9", "HR_per_9", "K_BB",
+)
+_GIANTS_TOP_METRICS = (
+    "OPS", "wOBA", "AVG", "OBP", "SLG", "ISO",
+    "ERA", "FIP", "xFIP", "WHIP", "K_per_9", "K_BB",
+)
+_ZSCORE_BATTER_SCOPES = ("last_30d", "season", "last_7d")
+_ZSCORE_PITCHER_SCOPES = ("season", "last_30d", "last_7d")
+_GIANTS_TOP_SCOPES = ("last_30d", "season", "last_7d")
 
 
 def run_all_anomaly_detectors(
@@ -697,7 +910,11 @@ def run_all_anomaly_detectors(
     snapshot_date: Optional[str] = None,
     run_id: Optional[str] = None,
 ) -> dict[str, list[int]]:
-    """全 5 detector を best-effort で実行、結果を dict で返す。
+    """全 detector を best-effort で実行、結果を dict で返す。
+
+    2026-05-15 拡張: z-score 打者 / 投手 / Giants top% は 複数 metric を
+    全 scan する (記事多様性向上)。同 player が異 metric で複数 candidate
+    化されるが、window_label が metric を含むため dedupe で吸収される。
 
     Returns: ``{signal_type: [candidate_ids]}``
     """
@@ -709,18 +926,30 @@ def run_all_anomaly_detectors(
     if run_id is None:
         run_id = str(uuid.uuid4())
     out: dict[str, list[int]] = {}
-    try:
-        out[SIGNAL_ZSCORE_BATTER] = detect_zscore_batter_outliers(
-            conn, snapshot_date=snapshot_date, run_id=run_id,
-        )
-    except Exception:  # noqa: BLE001
-        out[SIGNAL_ZSCORE_BATTER] = []
-    try:
-        out[SIGNAL_ZSCORE_PITCHER] = detect_zscore_pitcher_outliers(
-            conn, snapshot_date=snapshot_date, run_id=run_id,
-        )
-    except Exception:  # noqa: BLE001
-        out[SIGNAL_ZSCORE_PITCHER] = []
+    out[SIGNAL_ZSCORE_BATTER] = []
+    for metric in _ZSCORE_BATTER_METRICS:
+        for scope in _ZSCORE_BATTER_SCOPES:
+            try:
+                out[SIGNAL_ZSCORE_BATTER].extend(
+                    detect_zscore_batter_outliers(
+                        conn, snapshot_date=snapshot_date, run_id=run_id,
+                        metric_name=metric, scope=scope,
+                    )
+                )
+            except Exception:  # noqa: BLE001
+                pass
+    out[SIGNAL_ZSCORE_PITCHER] = []
+    for metric in _ZSCORE_PITCHER_METRICS:
+        for scope in _ZSCORE_PITCHER_SCOPES:
+            try:
+                out[SIGNAL_ZSCORE_PITCHER].extend(
+                    detect_zscore_pitcher_outliers(
+                        conn, snapshot_date=snapshot_date, run_id=run_id,
+                        metric_name=metric, scope=scope,
+                    )
+                )
+            except Exception:  # noqa: BLE001
+                pass
     try:
         out[SIGNAL_BABIP_DIVERGENCE] = detect_babip_divergence(
             conn, snapshot_date=snapshot_date, run_id=run_id,
@@ -733,12 +962,18 @@ def run_all_anomaly_detectors(
         )
     except Exception:  # noqa: BLE001
         out[SIGNAL_FIP_ERA_DIVERGENCE] = []
-    try:
-        out[SIGNAL_GIANTS_TOP_OUTLIER] = detect_giants_top_outliers(
-            conn, snapshot_date=snapshot_date, run_id=run_id,
-        )
-    except Exception:  # noqa: BLE001
-        out[SIGNAL_GIANTS_TOP_OUTLIER] = []
+    out[SIGNAL_GIANTS_TOP_OUTLIER] = []
+    for metric in _GIANTS_TOP_METRICS:
+        for scope in _GIANTS_TOP_SCOPES:
+            try:
+                out[SIGNAL_GIANTS_TOP_OUTLIER].extend(
+                    detect_giants_top_outliers(
+                        conn, snapshot_date=snapshot_date, run_id=run_id,
+                        metric_name=metric, scope=scope,
+                    )
+                )
+            except Exception:  # noqa: BLE001
+                pass
     try:
         out[SIGNAL_PACE_HR_PROJECTION] = detect_hr_pace_outliers(
             conn, snapshot_date=snapshot_date, run_id=run_id,
@@ -757,4 +992,13 @@ def run_all_anomaly_detectors(
         )
     except Exception:  # noqa: BLE001
         out[SIGNAL_HIT_STREAK_RUN] = []
+    try:
+        uzr_ids, fpct_ids = detect_giants_defense_outliers(
+            conn, snapshot_date=snapshot_date, run_id=run_id,
+        )
+        out[SIGNAL_DEFENSE_UZR_OUTLIER] = uzr_ids
+        out[SIGNAL_DEFENSE_FIELDING_PCT] = fpct_ids
+    except Exception:  # noqa: BLE001
+        out[SIGNAL_DEFENSE_UZR_OUTLIER] = []
+        out[SIGNAL_DEFENSE_FIELDING_PCT] = []
     return out

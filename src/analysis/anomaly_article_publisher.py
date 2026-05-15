@@ -40,7 +40,7 @@ from src.giants_news_banner import (  # noqa: E402
 DEFAULT_CATEGORY_NAME = rap.DEFAULT_CATEGORY_NAME
 
 DEFAULT_MAX_PER_RUN = int(
-    os.environ.get("DATA_INSIGHT_PUBLISH_MAX_PER_RUN", "3") or "3"
+    os.environ.get("DATA_INSIGHT_PUBLISH_MAX_PER_RUN", "100") or "100"
 )
 
 
@@ -367,11 +367,23 @@ def _render_unified_article(
         extra_focus = player_rank_info
         extra_focus["player"] = player
 
+    # 2026-05-15: title に日付 prefix を入れて毎日新規生成 (reuse 回避)。
+    # 同一日内の同一 player+metric は reuse、翌日は新規 post。
+    import datetime as _dt_mod
+    _today_jst = (_dt_mod.datetime.utcnow() + _dt_mod.timedelta(hours=9)).date()
+    _date_prefix = f"{_today_jst.month}/{_today_jst.day}時点 "
     title = title_template.format(
         player=player, team=team, metric=metric_label,
         value=value_str, rank=rank_str, scope=scope_label,
         league=league_label,
     )
+    # Prepend date prefix after format() so caller-supplied templates don't
+    # need a `{date}` placeholder. Templates already start with 【巨人デー
+    # タを見る】 so we insert after that bracket.
+    if title.startswith("【巨人データを見る】"):
+        title = "【巨人データを見る】" + _date_prefix + title[len("【巨人データを見る】"):]
+    else:
+        title = _date_prefix + title
 
     ranking_table = _render_ranking_table_md(
         top_rows, focus_player=player, metric_label=metric_label,
@@ -595,6 +607,230 @@ def render_giants_top_article(
     )
 
 
+# ─── 2026-05-15 追加 renderer (取りこぼし 3 種 + 守備 2 種) ─────────────────
+# user 指示「上限なし、閾値を超えたものは全部出す」「守備もだよ」適用。
+# 既存は 5 種だけ renderer 有り → 残 3 signal type (HR pace / 規定外好調 /
+# 連続多安打) と新規 2 種 (守備 UZR / 守備率) を記事化対応。
+
+
+def _render_simple_data_article(
+    *,
+    title: str,
+    headline: str,
+    detail_lines: list[str],
+    period_label: str,
+    source_note: str,
+) -> dict[str, str]:
+    """ranking table を持たないシンプルな data 記事 body を組み立てる helper。
+
+    title / headline / detail_lines / period_label / source_note の組合せで
+    短い記事 body (banner + ひとこと + 詳細 list + データ元) を返す。
+
+    `_render_unified_article` の league ranking が無くてもデータの「なぜ
+    特筆すべきか」が伝わる構成 (HR pace / 守備系 等)。
+    """
+    intro_banner = (
+        '<div style="background:#fff8e1;border-left:4px solid #f39c12;'
+        'padding:10px 15px;margin:1em 0;">'
+        '<strong>🔥 大手ニュースで取り上げないデータ角度</strong><br>'
+        'sabermetric 視点での ヨシラバー 独自分析です。'
+        '</div>'
+    )
+    detail_md = "\n".join(f"- {line}" for line in detail_lines)
+    body_md = f"""# {title}
+
+{intro_banner}
+
+## ひとこと
+
+{headline}
+
+## データ
+
+{detail_md}
+
+## このデータについて
+
+| 項目 | 内容 |
+|---|---|
+| 集計期間 | {period_label} |
+| データ元 | NPB 公式 box score(https://npb.jp/) |
+| 注意点 | {source_note} |
+"""
+    return {"title": title, "body_md": body_md}
+
+
+def render_hr_pace_article(
+    conn: sqlite3.Connection,
+    candidate_row: dict[str, Any],
+) -> dict[str, str]:
+    """SIGNAL_PACE_HR_PROJECTION — 直近 30 日 HR ペースを 143 試合換算。"""
+    player = candidate_row["player_canonical"]
+    magnitude = candidate_row["magnitude"]
+    current = candidate_row.get("current_value") or ""
+    title = (
+        f"【巨人データを見る】{player}、直近 30 日 HR ペースを 143 試合換算で約 {magnitude:.1f} 本ペース"
+    )
+    headline = (
+        f"{player} の直近 30 日 HR ペースをフルシーズン換算すると、約 **{magnitude:.1f} 本**"
+        f" のペースです。"
+    )
+    detail = [f"換算ベース: {current or '直近 30 日 HR ペース × 143 試合'}"]
+    return _render_simple_data_article(
+        title=title,
+        headline=headline,
+        detail_lines=detail,
+        period_label="直近 30 日",
+        source_note="長打ペースはサンプル次第で変動します、後半失速 / 加速の可能性あり。",
+    )
+
+
+def render_hidden_below_qualifier_article(
+    conn: sqlite3.Connection,
+    candidate_row: dict[str, Any],
+) -> dict[str, str]:
+    """SIGNAL_HIDDEN_OPS_LIMIT — 規定打席未満で上位 OPS の選手。"""
+    player = candidate_row["player_canonical"]
+    magnitude = candidate_row["magnitude"]
+    current = candidate_row.get("current_value") or ""
+    title = (
+        f"【巨人データを見る】{player}、規定打席未満ながら OPS {magnitude:.3f} の好調"
+    )
+    headline = (
+        f"{player} は規定打席にはまだ届いていないものの、OPS が **{magnitude:.3f}**"
+        f" と league 上位帯の数字です。"
+    )
+    detail = [
+        f"現状値: {current or '-'}",
+        "規定打席 (=試合数 × 3.1) に届けば公式 ranking 入りする pace。",
+    ]
+    return _render_simple_data_article(
+        title=title,
+        headline=headline,
+        detail_lines=detail,
+        period_label="シーズン累計",
+        source_note="サンプル数が規定未満のため、長期的にこの数値が維持されるとは限りません。",
+    )
+
+
+def render_hit_streak_run_article(
+    conn: sqlite3.Connection,
+    candidate_row: dict[str, Any],
+) -> dict[str, str]:
+    """SIGNAL_HIT_STREAK_RUN — 連続多安打試合 streak。"""
+    player = candidate_row["player_canonical"]
+    streak = int(candidate_row.get("magnitude") or 0)
+    title = (
+        f"【巨人データを見る】{player}、連続 {streak} 試合で multi-hit"
+    )
+    headline = (
+        f"{player} は **{streak} 試合連続**で 1 試合 2 安打以上を記録しています。"
+    )
+    detail = [
+        f"連続記録: {streak} 試合",
+        "1 試合 2 安打以上 (multi-hit) を継続中。",
+    ]
+    return _render_simple_data_article(
+        title=title,
+        headline=headline,
+        detail_lines=detail,
+        period_label="直近",
+        source_note="streak は単打 / 長打を区別しないため、出塁率の質は別途要確認。",
+    )
+
+
+def render_defense_uzr_article(
+    conn: sqlite3.Connection,
+    candidate_row: dict[str, Any],
+) -> dict[str, str]:
+    """SIGNAL_DEFENSE_UZR_OUTLIER — 守備位置別 UZR_proxy 平均比。"""
+    player = candidate_row["player_canonical"]
+    diff = candidate_row.get("magnitude") or 0.0
+    notes = candidate_row.get("notes") or ""
+    current = candidate_row.get("current_value") or ""
+    baseline = candidate_row.get("baseline_value") or ""
+    position = ""
+    for token in notes.split():
+        if token.startswith("position="):
+            position = token.split("=", 1)[1]
+    direction = "平均超え" if diff >= 0 else "平均未満"
+    title = (
+        f"【巨人データを見る】{player}、{position}守備の UZR_proxy が {direction}({diff:+.3f})"
+    )
+    if diff >= 0:
+        headline = (
+            f"{player} の {position} 守備での球を out に変換する率は、"
+            f"NPB 全体の {position} 守備平均より **+{diff:.3f}** 高い数字です。"
+        )
+    else:
+        headline = (
+            f"{player} の {position} 守備での球を out に変換する率は、"
+            f"NPB 全体の {position} 守備平均より **{diff:.3f}** 低い数字です。"
+        )
+    detail = [
+        f"対象 position: {position}",
+        f"player 数値: {current}",
+        f"league baseline: {baseline}",
+        f"差分 (UZR_proxy 近似): {diff:+.3f}",
+    ]
+    return _render_simple_data_article(
+        title=title,
+        headline=headline,
+        detail_lines=detail,
+        period_label="直近 30 日",
+        source_note=(
+            "これは本物の UZR ではなく box-score 由来の近似指標 (RF_proxy − ポジション league 平均)。"
+            "NPB は打球座標を公開しないため、真の UZR は計算不可。方向性のみを示す参考値。"
+        ),
+    )
+
+
+def render_defense_fielding_pct_article(
+    conn: sqlite3.Connection,
+    candidate_row: dict[str, Any],
+) -> dict[str, str]:
+    """SIGNAL_DEFENSE_FIELDING_PCT — 守備位置別 fielding_pct 平均比。"""
+    player = candidate_row["player_canonical"]
+    diff = candidate_row.get("magnitude") or 0.0
+    notes = candidate_row.get("notes") or ""
+    current = candidate_row.get("current_value") or ""
+    baseline = candidate_row.get("baseline_value") or ""
+    position = ""
+    for token in notes.split():
+        if token.startswith("position="):
+            position = token.split("=", 1)[1]
+    direction = "平均超え" if diff >= 0 else "平均未満"
+    title = (
+        f"【巨人データを見る】{player}、{position}守備率が {direction}({diff:+.3f})"
+    )
+    if diff >= 0:
+        headline = (
+            f"{player} の {position} 守備率は、NPB 全体の {position} 守備平均より"
+            f" **+{diff:.3f}** 高い数字です。"
+        )
+    else:
+        headline = (
+            f"{player} の {position} 守備率は、NPB 全体の {position} 守備平均より"
+            f" **{diff:.3f}** 低い数字です。"
+        )
+    detail = [
+        f"対象 position: {position}",
+        f"player 数値: {current}",
+        f"league baseline: {baseline}",
+        f"差分: {diff:+.3f}",
+    ]
+    return _render_simple_data_article(
+        title=title,
+        headline=headline,
+        detail_lines=detail,
+        period_label="直近 30 日",
+        source_note=(
+            "守備率 = converted_outs / (converted_outs + errors)。"
+            "box-score の direction marker ベースのため、捕逸 / 暴投 は含まれない簡易版。"
+        ),
+    )
+
+
 # signal_type → render function map
 _RENDERERS = {
     detector.SIGNAL_ZSCORE_BATTER: render_zscore_batter_article,
@@ -602,6 +838,12 @@ _RENDERERS = {
     detector.SIGNAL_BABIP_DIVERGENCE: render_babip_divergence_article,
     detector.SIGNAL_FIP_ERA_DIVERGENCE: render_fip_era_divergence_article,
     detector.SIGNAL_GIANTS_TOP_OUTLIER: render_giants_top_article,
+    # 2026-05-15 追加 (取りこぼし 3 + 守備 2)
+    detector.SIGNAL_PACE_HR_PROJECTION: render_hr_pace_article,
+    detector.SIGNAL_HIDDEN_OPS_LIMIT: render_hidden_below_qualifier_article,
+    detector.SIGNAL_HIT_STREAK_RUN: render_hit_streak_run_article,
+    detector.SIGNAL_DEFENSE_UZR_OUTLIER: render_defense_uzr_article,
+    detector.SIGNAL_DEFENSE_FIELDING_PCT: render_defense_fielding_pct_article,
 }
 
 

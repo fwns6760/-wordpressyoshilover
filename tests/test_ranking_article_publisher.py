@@ -260,9 +260,16 @@ def test_publish_default_set_respects_max_per_run(tmp_path):
     db = tmp_path / "test.db"
     conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
     try:
-        # OPS / wOBA / ERA / FIP 全 metric 用意 (4 job だが max=2 で 2 publish)
-        for metric, scope in [("OPS", "last_30d"), ("wOBA", "last_30d"),
-                              ("ERA", "season"), ("FIP", "season")]:
+        # default_jobs に含まれる全 metric × scope を seed して
+        # max_per_run cap が published_count を制限することを verify。
+        # 2026-05-15: default_jobs は 11 件に拡張済 (打者 6 + 投手 5)。
+        for metric, scope in [
+            ("OPS", "last_30d"), ("wOBA", "last_30d"),
+            ("AVG", "last_30d"), ("OBP", "last_30d"),
+            ("OPS", "season"), ("wOBA", "season"),
+            ("ERA", "season"), ("FIP", "season"), ("WHIP", "season"),
+            ("ERA", "last_30d"), ("FIP", "last_30d"),
+        ]:
             _seed_snapshots(conn, snapshot_date="2026-05-14", scope=scope, metric=metric,
                             ranking=[("巨人A", "g", 0.5, 90, 1, 30)])
         wp_mock = MagicMock()
@@ -271,7 +278,9 @@ def test_publish_default_set_respects_max_per_run(tmp_path):
         results = rap.publish_default_set(conn, wp_mock, max_per_run=2)
         published_count = sum(1 for r in results if r.get("status") == "published_draft")
         skip_max_count = sum(1 for r in results if r.get("status") == "skip_max_per_run")
+        # max_per_run=2 で 2 件のみ publish、残り (全 jobs - 2) は skip_max_per_run。
         assert published_count == 2
-        assert skip_max_count == 2
+        assert skip_max_count == len(results) - 2
+        assert skip_max_count >= 1  # 11 jobs → skip 9 期待だが、最低 1 件は skip される
     finally:
         conn.close()

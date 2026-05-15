@@ -469,23 +469,25 @@ def main(argv: Optional[list[str]] = None) -> int:
                         # 2. WP draft publish (best-effort)
                         try:
                             wp = wp_mod.WPClient()
-                            # user 指示「優先で出す、一次情報」反映で max 拡大:
-                            # anomaly 3→5、ranking 1→3 (1 trigger あたり最大 8 本)
-                            # 7 日 dedup でも自然に絞り込まれる
+                            # 2026-05-15 user 指示「データサイト化、上限なし、
+                            # 閾値超えたものは全部出す」適用、max_per_run 100 で
+                            # 実質 cap 撤廃。同 trigger で多本数 publish される
+                            # が、wp_client の title reuse / 7 日 dedup で自然に
+                            # 絞り込まれる。
                             anomaly_publish_summary = {
                                 "results": anomaly_pub.publish_anomaly_drafts(
-                                    conn, wp, max_per_run=5,
+                                    conn, wp, max_per_run=100,
                                 ),
                             }
                             ranking_publish_summary = {
                                 "results": ranking_pub.publish_default_set(
-                                    conn, wp, max_per_run=3,
+                                    conn, wp, max_per_run=100,
                                 ),
                             }
                             # team ranking 記事 (球団 metric、user 指示で追加)
                             try:
                                 from src.analysis import team_ranking_publisher as team_pub
-                                team_pub.publish_team_default_set(conn, wp, max_per_run=2)
+                                team_pub.publish_team_default_set(conn, wp, max_per_run=100)
                             except Exception:  # noqa: BLE001
                                 pass
                         except Exception as exc:  # noqa: BLE001

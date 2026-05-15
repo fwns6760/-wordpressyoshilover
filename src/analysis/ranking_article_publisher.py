@@ -148,7 +148,7 @@ def render_ranking_svg_bar_chart(
 SUBTYPE_DATA_RANKING_PREFIX = "data_ranking_"
 
 # 1 trigger で publish する最大 article 数 (暴走防止、env で override 可)
-DEFAULT_MAX_PER_RUN = int(os.environ.get("DATA_INSIGHT_PUBLISH_MAX_PER_RUN", "3") or "3")
+DEFAULT_MAX_PER_RUN = int(os.environ.get("DATA_INSIGHT_PUBLISH_MAX_PER_RUN", "100") or "100")
 
 # auto-publish env flag (本 module は draft 固定、auto-publish は呼び出し側)
 ENABLE_DATA_INSIGHT_AUTO_PUBLISH = (
@@ -689,11 +689,26 @@ def publish_default_set(
     """
     if max_per_run is None:
         max_per_run = DEFAULT_MAX_PER_RUN
+    # 2026-05-15 user 指示「もっといろいろな指標」適用、batter / pitcher の
+    # 主要 metric を 2 scope 分で回す。top_n も 50 / 30 へ緩めて巨人選手が
+    # rank 圏外で skip される確率を下げる。default_jobs 数を増やしても
+    # max_per_run cap で実 publish 数は制御される。
     default_jobs = [
-        {"metric_name": "OPS", "scope": "last_30d", "top_n": 30},
-        {"metric_name": "wOBA", "scope": "last_30d", "top_n": 30},
-        {"metric_name": "ERA", "scope": "season", "top_n": 20},
-        {"metric_name": "FIP", "scope": "season", "top_n": 20},
+        # batter (last_30d)
+        {"metric_name": "OPS", "scope": "last_30d", "top_n": 50},
+        {"metric_name": "wOBA", "scope": "last_30d", "top_n": 50},
+        {"metric_name": "AVG", "scope": "last_30d", "top_n": 50},
+        {"metric_name": "OBP", "scope": "last_30d", "top_n": 50},
+        # batter (season、累積)
+        {"metric_name": "OPS", "scope": "season", "top_n": 50},
+        {"metric_name": "wOBA", "scope": "season", "top_n": 50},
+        # pitcher (season、累積)
+        {"metric_name": "ERA", "scope": "season", "top_n": 30},
+        {"metric_name": "FIP", "scope": "season", "top_n": 30},
+        {"metric_name": "WHIP", "scope": "season", "top_n": 30},
+        # pitcher (last_30d、最近の調子)
+        {"metric_name": "ERA", "scope": "last_30d", "top_n": 30},
+        {"metric_name": "FIP", "scope": "last_30d", "top_n": 30},
     ]
     results: list[dict] = []
     published = 0

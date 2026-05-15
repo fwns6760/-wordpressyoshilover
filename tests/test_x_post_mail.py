@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
 from src.x_post_mail_lane import (
@@ -878,6 +878,195 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
         self._seed_games(["2026-05-14", "2026-05-15", "2026-05-16"])
         combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST), db_path=self.db_path)
         self.assertEqual(len(combos), 17, msg=f"unexpected combo count: {len(combos)}")
+
+
+class TicketThreeFiftyFiveDedupTests(unittest.TestCase):
+    """355: 24h dedup (GCS-backed JSONL) 検証。 GCS は in-memory fake で
+    mock し、 `_get_storage_client` を patch する。
+    """
+
+    def _fake_storage_client(self, store: dict[str, str]):
+        """Build a fake GCS client with an in-memory `store` (path -> text).
+
+        ``store[blob_path]`` is the object body; missing keys behave as
+        non-existent blobs.
+        """
+        class FakeBlob:
+            def __init__(self, path: str) -> None:
+                self.path = path
+
+            def exists(self) -> bool:
+                return self.path in store
+
+            def download_as_text(self) -> str:
+                return store.get(self.path, "")
+
+            def upload_from_string(self, body: str, content_type: str = "") -> None:  # noqa: ARG002
+                store[self.path] = body
+
+        class FakeBucket:
+            def blob(self, path: str) -> FakeBlob:
+                return FakeBlob(path)
+
+        class FakeClient:
+            def bucket(self, name: str) -> FakeBucket:  # noqa: ARG002
+                return FakeBucket()
+
+        return FakeClient()
+
+    def test_combo_signature_format(self) -> None:
+        from src.x_post_mail_lane import _MetricCombo, _combo_signature
+        combo = _MetricCombo("OPS", "2026-05-01", "今月", novelty="mid")
+        self.assertEqual(_combo_signature(combo), "OPS|今月|False|None")
+
+    def test_combo_signature_unique_per_dimensions(self) -> None:
+        from src.x_post_mail_lane import _MetricCombo, _combo_signature
+        c1 = _MetricCombo("OPS", None, "今シーズン", position="捕")
+        c2 = _MetricCombo("OPS", None, "今シーズン", position="二")
+        c3 = _MetricCombo("OPS", None, "今シーズン", giants_only=True)
+        sigs = {_combo_signature(c1), _combo_signature(c2), _combo_signature(c3)}
+        self.assertEqual(len(sigs), 3, msg=f"signatures collided: {sigs}")
+
+    def test_load_recent_dedup_signatures_returns_set(self) -> None:
+        from unittest.mock import patch
+        import src.x_post_mail_lane as lane
+
+        ts_today = datetime(2026, 5, 16, 6, 30, tzinfo=JST).isoformat()
+        ts_yesterday = datetime(2026, 5, 15, 20, 0, tzinfo=JST).isoformat()
+        store = {
+            "x_post_mail/dedup/2026-05-16.jsonl":
+                f'{{"ts": "{ts_today}", "signature": "OPS|今月|False|None"}}\n',
+            "x_post_mail/dedup/2026-05-15.jsonl":
+                f'{{"ts": "{ts_yesterday}", "signature": "AVG|直近30日|False|None"}}\n',
+        }
+        now = datetime(2026, 5, 16, 7, 0, tzinfo=JST)
+        with patch.object(lane, "_get_storage_client",
+                          return_value=self._fake_storage_client(store)):
+            sigs = lane._load_recent_dedup_signatures("test-bucket", now)
+        self.assertEqual(sigs, {"OPS|今月|False|None", "AVG|直近30日|False|None"})
+
+    def test_load_recent_dedup_signatures_filters_old(self) -> None:
+        """24h 超 (= 30h 前) の record は除外。"""
+        from unittest.mock import patch
+        import src.x_post_mail_lane as lane
+
+        old_ts = (datetime(2026, 5, 16, 7, 0, tzinfo=JST) - timedelta(hours=30)).isoformat()
+        recent_ts = (datetime(2026, 5, 16, 7, 0, tzinfo=JST) - timedelta(hours=2)).isoformat()
+        store = {
+            "x_post_mail/dedup/2026-05-15.jsonl":
+                f'{{"ts": "{old_ts}", "signature": "STALE|x|False|None"}}\n'
+                f'{{"ts": "{recent_ts}", "signature": "FRESH|y|False|None"}}\n',
+        }
+        now = datetime(2026, 5, 16, 7, 0, tzinfo=JST)
+        with patch.object(lane, "_get_storage_client",
+                          return_value=self._fake_storage_client(store)):
+            sigs = lane._load_recent_dedup_signatures("test-bucket", now)
+        self.assertIn("FRESH|y|False|None", sigs)
+        self.assertNotIn("STALE|x|False|None", sigs)
+
+    def test_load_recent_dedup_signatures_silent_fallback_on_error(self) -> None:
+        """GCS client init が raise しても empty set を返す。"""
+        from unittest.mock import patch
+        import src.x_post_mail_lane as lane
+
+        def _boom():
+            raise RuntimeError("simulated GCS auth failure")
+        now = datetime(2026, 5, 16, 7, 0, tzinfo=JST)
+        with patch.object(lane, "_get_storage_client", side_effect=_boom):
+            sigs = lane._load_recent_dedup_signatures("test-bucket", now)
+        self.assertEqual(sigs, set())
+
+    def test_pick_candidates_skips_combos_in_dedup_set(self) -> None:
+        """dedup_set に含まれる signature の combo は select されない。"""
+        # Build a dedup_set covering the entire 17-combo pool minus a couple
+        # to force pick_candidates to honour the gate.
+        from src.x_post_mail_lane import _build_combos, _combo_signature
+
+        all_combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST))
+        # Block every combo except OPS/今月
+        dedup_set = {
+            _combo_signature(c) for c in all_combos
+            if not (c.metric == "OPS" and c.period_label == "今月")
+        }
+        query_mock = MagicMock(return_value={
+            "ok": True, "rows": _MIXED_12_TEAM_ROWS, "count": 12,
+            "total": 60, "focus_player": None,
+        })
+        cands = pick_candidates(
+            query_mock,
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=10,
+            min_sample=1,
+            min_central_rows=3,
+            dedup_set=dedup_set,
+        )
+        # All surviving candidates must be OPS / 今月
+        for c in cands:
+            self.assertEqual(c.metric, "OPS")
+            self.assertEqual(c.period_label, "今月")
+            self.assertEqual(c.signature, "OPS|今月|False|None")
+
+    def test_pick_candidates_dedup_set_none_keeps_legacy_behaviour(self) -> None:
+        """dedup_set=None default で従来挙動と同じ。"""
+        query_mock = MagicMock(return_value={
+            "ok": True, "rows": _MIXED_12_TEAM_ROWS, "count": 12,
+            "total": 60, "focus_player": None,
+        })
+        cands = pick_candidates(
+            query_mock,
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=5,
+            min_sample=1,
+            min_central_rows=3,
+        )
+        # Candidates must carry signatures even without dedup gating.
+        self.assertGreaterEqual(len(cands), 1)
+        for c in cands:
+            self.assertTrue(c.signature, msg="candidate signature missing")
+
+    def test_record_dedup_signatures_writes_jsonl(self) -> None:
+        from unittest.mock import patch
+        import src.x_post_mail_lane as lane
+
+        store: dict[str, str] = {}
+        now = datetime(2026, 5, 16, 7, 5, tzinfo=JST)
+        with patch.object(lane, "_get_storage_client",
+                          return_value=self._fake_storage_client(store)):
+            ok = lane._record_dedup_signatures(
+                "test-bucket",
+                ["OPS|今月|False|None", "ERA|直近5試合|True|None"],
+                now,
+            )
+        self.assertTrue(ok)
+        path = "x_post_mail/dedup/2026-05-16.jsonl"
+        self.assertIn(path, store)
+        lines = [ln for ln in store[path].split("\n") if ln.strip()]
+        self.assertEqual(len(lines), 2)
+        import json
+        rec0 = json.loads(lines[0])
+        self.assertEqual(rec0["signature"], "OPS|今月|False|None")
+        self.assertIn("ts", rec0)
+
+    def test_record_dedup_signatures_appends_to_existing(self) -> None:
+        """既存 record に append (= 上書きしない)。"""
+        from unittest.mock import patch
+        import src.x_post_mail_lane as lane
+
+        path = "x_post_mail/dedup/2026-05-16.jsonl"
+        store = {
+            path: '{"ts": "2026-05-16T03:00:00+09:00", "signature": "EXISTING|x|False|None"}\n',
+        }
+        now = datetime(2026, 5, 16, 12, 5, tzinfo=JST)
+        with patch.object(lane, "_get_storage_client",
+                          return_value=self._fake_storage_client(store)):
+            lane._record_dedup_signatures(
+                "test-bucket",
+                ["NEW|y|False|None"],
+                now,
+            )
+        body = store[path]
+        self.assertIn("EXISTING|x|False|None", body)
+        self.assertIn("NEW|y|False|None", body)
 
 
 if __name__ == "__main__":

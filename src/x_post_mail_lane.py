@@ -20,13 +20,14 @@ Hard constraints (mirrors ticket 347):
 from __future__ import annotations
 
 import html as _html
+import json as _json
 import logging
 import math as _math
 import random as _random
 import re as _re
 import sqlite3 as _sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as _tz
 from typing import Callable, Optional
 from urllib.parse import quote as _url_quote
 from zoneinfo import ZoneInfo
@@ -400,6 +401,10 @@ class Candidate:
     period_label: str
     draft_text: str
     char_count: int
+    # 355: combo signature for 24h dedup gate. ``""`` (default) keeps
+    # backward compatibility with older tests that build Candidate
+    # directly without going through ``pick_candidates``.
+    signature: str = ""
 
 
 def _rebuild_ranks_within_central(rows: list[dict]) -> list[dict]:
@@ -521,6 +526,144 @@ def _truncate_to_x_limit_top_n(text: str, top_n: int) -> str:
     return "\n".join(kept)
 
 
+# ---------------------------------------------------------------------------
+# 355: 24h dedup (GCS-backed) — prevents the same combo signature from
+# appearing repeatedly in mails sent within the past 24 hours.
+# ---------------------------------------------------------------------------
+
+
+def _combo_signature(combo: _MetricCombo) -> str:
+    """355: combo identity for dedup. Same ``(metric, period_label,
+    giants_only, position)`` tuple == "same ranking" — minor differences
+    like ``since`` drift across days do not count as a different
+    ranking for user perception.
+    """
+    pos = combo.position or "None"
+    return f"{combo.metric}|{combo.period_label}|{combo.giants_only}|{pos}"
+
+
+def _get_storage_client():
+    """Lazy-imported GCS client builder. Wrapped as a module-level
+    function so tests can patch it via
+    :func:`unittest.mock.patch` without touching ``google.cloud``.
+    """
+    from google.cloud import storage  # noqa: WPS433
+    return storage.Client()
+
+
+def _dedup_blob_path(date_str: str) -> str:
+    return f"x_post_mail/dedup/{date_str}.jsonl"
+
+
+def _load_recent_dedup_signatures(
+    bucket_name: str,
+    now: datetime,
+    *,
+    lookback_hours: int = 24,
+) -> set[str]:
+    """355: read JSONL files in ``gs://{bucket_name}/x_post_mail/dedup/``
+    for today + yesterday, filter to records with ``ts >= now -
+    lookback_hours``, and return the set of seen signatures.
+
+    Returns an empty set on any GCS error (silent fallback — the mail
+    send must never block on dedup infrastructure problems).
+    """
+    if not bucket_name:
+        return set()
+    try:
+        client = _get_storage_client()
+        bucket = client.bucket(bucket_name)
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("_load_recent_dedup_signatures: client init failed: %r", exc)
+        return set()
+    cutoff = now - timedelta(hours=lookback_hours)
+    today = now.strftime("%Y-%m-%d")
+    yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    out: set[str] = set()
+    for date_str in (today, yesterday):
+        blob = bucket.blob(_dedup_blob_path(date_str))
+        try:
+            if not blob.exists():
+                continue
+            content = blob.download_as_text()
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning("_load_recent_dedup_signatures: read %s failed: %r",
+                        date_str, exc)
+            continue
+        for line in content.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = _json.loads(line)
+            except Exception:  # noqa: BLE001
+                continue
+            ts_str = rec.get("ts") or ""
+            signature = rec.get("signature") or ""
+            if not signature or not ts_str:
+                continue
+            try:
+                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                continue
+            if ts.tzinfo is None:
+                # Treat naive timestamps as JST per project convention.
+                ts = ts.replace(tzinfo=JST)
+            if ts >= cutoff:
+                out.add(signature)
+    return out
+
+
+def _record_dedup_signatures(
+    bucket_name: str,
+    signatures: list[str],
+    now: datetime,
+) -> bool:
+    """355: append signatures to today's JSONL on GCS. Returns ``True``
+    on success, ``False`` on any error (silent failure — never abort
+    the calling flow).
+
+    GCS objects are immutable so we read + concat + re-upload. The
+    Schedulers' staggered fire times (07/12/15/17:30/22:30 JST) keep
+    write contention low; on manual co-fire there is a small race
+    window but it would only drop one batch of signatures, not break
+    the mail send.
+    """
+    if not signatures or not bucket_name:
+        return False
+    try:
+        client = _get_storage_client()
+        bucket = client.bucket(bucket_name)
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("_record_dedup_signatures: client init failed: %r", exc)
+        return False
+    date_str = now.strftime("%Y-%m-%d")
+    blob = bucket.blob(_dedup_blob_path(date_str))
+    if now.tzinfo is None:
+        ts_iso = now.replace(tzinfo=JST).isoformat()
+    else:
+        ts_iso = now.isoformat()
+    new_lines = [
+        _json.dumps({"ts": ts_iso, "signature": s}, ensure_ascii=False)
+        for s in signatures
+    ]
+    new_block = "\n".join(new_lines) + "\n"
+    try:
+        existing = blob.download_as_text() if blob.exists() else ""
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("_record_dedup_signatures: read existing failed: %r", exc)
+        existing = ""
+    try:
+        blob.upload_from_string(
+            existing + new_block,
+            content_type="application/x-jsonlines",
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("_record_dedup_signatures: upload failed: %r", exc)
+        return False
+
+
 def _format_one(
     combo: _MetricCombo,
     rows: list[dict],
@@ -602,6 +745,7 @@ def _format_one(
         period_label=combo.period_label,
         draft_text=draft_text,
         char_count=len(draft_text),
+        signature=_combo_signature(combo),
     )
 
 
@@ -613,6 +757,7 @@ def pick_candidates(
     min_sample: int = 30,
     min_central_rows: int = 5,
     db_path: Optional[str] = None,
+    dedup_set: Optional[set[str]] = None,
 ) -> list[Candidate]:
     """Build up to ``max_candidates`` セ-only X post candidates.
 
@@ -639,6 +784,11 @@ def pick_candidates(
         When provided and the table has ≥10 distinct game dates,
         adds 直近 5 試合 / 直近 10 試合 × OPS/AVG/ERA × giants_only
         combos (6 combos). ``None`` keeps the legacy 17-combo pool.
+    dedup_set:
+        355: optional set of combo signatures already sent within
+        the past 24 hours. Combos whose signature is present are
+        skipped during selection. ``None`` (default) disables the
+        dedup gate (legacy behaviour).
     """
     if now is None:
         now = datetime.now(JST)
@@ -655,6 +805,14 @@ def pick_candidates(
     for combo in shuffled:
         if len(out) >= max_candidates:
             break
+        # 355: skip combo if its signature appears in recent 24h dedup
+        # set. Logged at INFO so production observability sees why a
+        # combo went unused.
+        signature = _combo_signature(combo)
+        if dedup_set is not None and signature in dedup_set:
+            LOG.info("dedup skip combo %s/%s (signature=%s)",
+                     combo.metric, combo.period_label, signature)
+            continue
         effective_min_sample = (
             combo.min_sample_override
             if combo.min_sample_override is not None

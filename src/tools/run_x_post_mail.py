@@ -18,8 +18,10 @@ import argparse
 import logging
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Sequence
+from zoneinfo import ZoneInfo
 
 if __package__ in {None, ""}:  # pragma: no cover - direct script execution
     REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -111,13 +113,35 @@ def main(argv: Sequence[str] | None = None) -> int:
         LOG.exception("ensure_local_db failed: %r", exc)
         return 3
 
-    LOG.info("Picking candidates (max=%d, min_sample=%d, db_path=%s)…",
-             args.max_candidates, args.min_sample, bool(db_path))
+    # 355: load 24h dedup set so combos already mailed in the past day
+    # do not repeat. Disabled when ``X_POST_MAIL_DEDUP_DISABLED=1`` or
+    # bucket env missing. GCS errors silently return empty set
+    # (= dedup off for this run, mail still sends).
+    dedup_set: set[str] | None = None
+    bucket_name = os.environ.get("INSIGHT_GCS_BUCKET") or ""
+    dedup_disabled = (os.environ.get("X_POST_MAIL_DEDUP_DISABLED") or "").strip()
+    now_jst = datetime.now(ZoneInfo("Asia/Tokyo"))
+    if bucket_name and dedup_disabled not in {"1", "true", "yes"}:
+        try:
+            dedup_set = lane._load_recent_dedup_signatures(bucket_name, now_jst)
+            LOG.info("Loaded 24h dedup set: %d signatures", len(dedup_set))
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning("dedup load failed (continuing without dedup): %r", exc)
+            dedup_set = set()
+    else:
+        LOG.info("Dedup disabled (bucket=%s, disabled_env=%s)",
+                 bool(bucket_name), dedup_disabled)
+
+    LOG.info("Picking candidates (max=%d, min_sample=%d, db_path=%s, dedup=%s)…",
+             args.max_candidates, args.min_sample, bool(db_path),
+             len(dedup_set) if dedup_set is not None else "off")
     candidates = lane.pick_candidates(
         miq.query_rank,
+        now=now_jst,
         max_candidates=args.max_candidates,
         min_sample=args.min_sample,
         db_path=db_path,
+        dedup_set=dedup_set,
     )
     if not candidates:
         LOG.warning("No candidates generated — skip send (insight.db likely sparse).")
@@ -149,6 +173,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     if result.status not in {"sent", "dry_run"}:
         LOG.error("mail send not sent (status=%s) — exit non-zero", result.status)
         return 4
+    # 355: record the signatures of the candidates we just shipped so
+    # subsequent runs (within 24h) can dedup them. Only runs when the
+    # dedup feature is enabled (bucket env present + not opted-out).
+    if (
+        dedup_set is not None
+        and bucket_name
+        and result.status == "sent"
+    ):
+        signatures = [c.signature for c in candidates if c.signature]
+        if signatures:
+            ok = lane._record_dedup_signatures(bucket_name, signatures, now_jst)
+            LOG.info("Recorded %d dedup signatures (ok=%s)",
+                     len(signatures), ok)
     return 0
 
 

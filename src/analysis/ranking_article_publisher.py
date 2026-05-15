@@ -873,10 +873,12 @@ def render_player_counting_split_article(
         f"| 順位 | 選手 | チーム | {metric_label_jp}({split_label_jp}) |",
         "|---|---|---|---|",
     ]
+    focus_in_top_n = False
     for i, r in enumerate(rows[:top_n], start=1):
         team_disp = _TEAM_LABEL_JP.get(r.get("team", ""), r.get("team", "?"))
         is_focus = r["player"] == top_player
         if is_focus:
+            focus_in_top_n = True
             r_disp = f'<span style="color:#c0392b"><strong>{i}</strong></span>'
             p_disp = f'<span style="color:#c0392b"><strong>{r["player"]} ★</strong></span>'
             v_disp = f'<span style="color:#c0392b"><strong>{r["value"]}</strong></span>'
@@ -884,6 +886,13 @@ def render_player_counting_split_article(
             r_disp = str(i)
             p_disp = r["player"]
             v_disp = str(r["value"])
+        table_lines.append(f"| {r_disp} | {p_disp} | {team_disp} | {v_disp} |")
+    # 圏外 focus_player を末尾別行で表示 (spec §2.5「焦点選手 = 赤太字 + ★」必須)
+    if not focus_in_top_n:
+        team_disp = _TEAM_LABEL_JP.get(top_giants.get("team", ""), "?")
+        r_disp = f'<span style="color:#c0392b"><strong>{giants_rank}</strong></span>'
+        p_disp = f'<span style="color:#c0392b"><strong>{top_player} ★</strong></span>'
+        v_disp = f'<span style="color:#c0392b"><strong>{top_value}</strong></span>'
         table_lines.append(f"| {r_disp} | {p_disp} | {team_disp} | {v_disp} |")
     table_md = "\n".join(table_lines)
     body_md = f"""# {title}
@@ -1041,12 +1050,14 @@ def render_player_counting_article(
         f"セ・リーグ {giants_rank} 位 ({scope_label})"
     )
 
-    # 表 (TOP 10)
+    # 表 (TOP 10)、 348 step 3 spec §2.5: 焦点選手 = 赤太字 + ★ (圏外時は別行追加)
     table_lines = [f"| 順位 | 選手 | チーム | {metric_label_jp} |", "|---|---|---|---|"]
+    focus_in_top_n = False
     for i, r in enumerate(rows[:top_n], start=1):
         team_disp = _TEAM_LABEL_JP.get(r.get("team", ""), r.get("team", "?"))
         is_focus = r["player"] == top_player
         if is_focus:
+            focus_in_top_n = True
             r_disp = f'<span style="color:#c0392b"><strong>{i}</strong></span>'
             p_disp = f'<span style="color:#c0392b"><strong>{r["player"]} ★</strong></span>'
             v_disp = f'<span style="color:#c0392b"><strong>{r["value"]}</strong></span>'
@@ -1054,6 +1065,13 @@ def render_player_counting_article(
             r_disp = str(i)
             p_disp = r["player"]
             v_disp = str(r["value"])
+        table_lines.append(f"| {r_disp} | {p_disp} | {team_disp} | {v_disp} |")
+    # 圏外 focus_player を末尾別行で表示 (spec §2.5「焦点選手 = 赤太字 + ★」必須)
+    if not focus_in_top_n:
+        team_disp = _TEAM_LABEL_JP.get(top_giants.get("team", ""), "?")
+        r_disp = f'<span style="color:#c0392b"><strong>{giants_rank}</strong></span>'
+        p_disp = f'<span style="color:#c0392b"><strong>{top_player} ★</strong></span>'
+        v_disp = f'<span style="color:#c0392b"><strong>{top_value}</strong></span>'
         table_lines.append(f"| {r_disp} | {p_disp} | {team_disp} | {v_disp} |")
     table_md = "\n".join(table_lines)
 

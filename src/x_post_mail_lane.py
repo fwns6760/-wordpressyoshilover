@@ -96,6 +96,22 @@ _METRIC_LABELS_JP: dict[str, str] = {
     "ERA": "防御率",
 }
 
+# 351: 守備位置 single-kanji code → readable header label. Mirrors
+# insight_rank_query's POSITION_ALIASES canonical kanji.
+_POSITION_DISPLAY_JP: dict[str, str] = {
+    "投": "投手",
+    "捕": "捕手",
+    "一": "一塁",
+    "二": "二塁",
+    "三": "三塁",
+    "遊": "遊撃",
+    "左": "左翼",
+    "中": "中堅",
+    "右": "右翼",
+    "外": "外野",
+    "指": "DH",
+}
+
 # X 280-char limit (we copy 346's constant intentionally — duplicating
 # rather than importing keeps coupling minimal).
 X_CHAR_LIMIT = 280
@@ -126,6 +142,18 @@ def is_central_league(team_code: Optional[str]) -> bool:
     return team_code.strip() in CENTRAL_LEAGUE_TEAM_ALIASES
 
 
+# 351: 巨人 alias subset (CENTRAL_LEAGUE_TEAM_ALIASES の中の Giants 限定 set)
+_GIANTS_ALIASES = frozenset(
+    {"巨人", "読売", "読売ジャイアンツ", "ジャイアンツ", "Giants", "GIANTS", "G", "g"}
+)
+
+
+def _is_giants(team_code: Optional[str]) -> bool:
+    if not team_code:
+        return False
+    return team_code.strip() in _GIANTS_ALIASES
+
+
 def filter_central_league(rows: list[dict]) -> list[dict]:
     """Keep only the rows whose ``team_code`` is one of the 6 セ teams.
 
@@ -136,30 +164,98 @@ def filter_central_league(rows: list[dict]) -> list[dict]:
 
 @dataclass(frozen=True)
 class _MetricCombo:
+    """Description of one X post candidate to attempt.
+
+    Extended in 351 with optional ``until``, ``position`` (守備位置 single
+    kanji), and ``giants_only`` (filter the final ranking to 巨人 rows
+    only, used for 「巨人内 OPS top 5」 style posts).
+    """
+
     metric: str
     since: Optional[str]
     period_label: str
+    until: Optional[str] = None
+    position: Optional[str] = None
+    giants_only: bool = False
+
+
+def _prev_month_range(now: datetime) -> tuple[str, str]:
+    """Return (since, until) for the previous calendar month as ISO dates."""
+    first_of_this = now.replace(day=1)
+    last_of_prev = first_of_this - timedelta(days=1)
+    first_of_prev = last_of_prev.replace(day=1)
+    return (
+        first_of_prev.strftime("%Y-%m-%d"),
+        last_of_prev.strftime("%Y-%m-%d"),
+    )
 
 
 def _build_combos(now: datetime) -> list[_MetricCombo]:
-    """Compose the metric × period combos we try for one mail.
+    """Compose the metric × period × position combo pool for one mail.
 
-    Order: season-wide first (most stable), then monthly, then last-30.
-    Caller takes the first N successful ones.
+    351: pool grows from 10 to 22+ entries. ``pick_candidates`` samples
+    ``max_candidates`` (default 10) from this pool with diversity-seeded
+    randomness so identical-hour mails on different days don't repeat
+    the same combo set.
+
+    Caller takes the first ``max_candidates`` successful ones after
+    shuffling (see ``_select_with_diversity``).
     """
     combos: list[_MetricCombo] = []
-    # 1. Season-wide
+    # 1. Season-wide (5 metrics)
     for m in ("OPS", "AVG", "ERA", "OBP", "SLG"):
         combos.append(_MetricCombo(m, None, "今シーズン"))
-    # 2. Monthly (since 1st of current month)
+    # 2. Monthly = current month (3 metrics)
     month_since = now.replace(day=1).strftime("%Y-%m-%d")
     for m in ("OPS", "AVG", "ERA"):
         combos.append(_MetricCombo(m, month_since, "今月"))
-    # 3. Last 30 days
+    # 3. Last 30 days (2 metrics)
     last30 = (now - timedelta(days=30)).strftime("%Y-%m-%d")
     for m in ("OPS", "AVG"):
         combos.append(_MetricCombo(m, last30, "直近30日"))
+    # 4. 351: Previous month (2 metrics) — closed range
+    prev_since, prev_until = _prev_month_range(now)
+    for m in ("OPS", "AVG"):
+        combos.append(_MetricCombo(m, prev_since, "先月", until=prev_until))
+    # 5. 351: Last 7 days (1 metric)
+    last7 = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+    combos.append(_MetricCombo("OPS", last7, "直近7日"))
+    # 6. 351: Last 14 days (2 metrics)
+    last14 = (now - timedelta(days=14)).strftime("%Y-%m-%d")
+    for m in ("OPS", "AVG"):
+        combos.append(_MetricCombo(m, last14, "直近14日"))
+    # 7. 351: 守備位置別 — niche slice that 大手 / のもとけ rarely cover.
+    # 守備位置 single-kanji codes match insight_rank_query expectations.
+    for pos in ("捕", "二", "遊", "三"):
+        combos.append(_MetricCombo("OPS", None, "今シーズン", position=pos))
+    # 8. 351: 巨人内 ranking — filter final rows to 巨人 rows only.
+    for m in ("OPS", "AVG", "ERA"):
+        combos.append(_MetricCombo(m, None, "今シーズン", giants_only=True))
     return combos
+
+
+def _select_with_diversity(
+    combos: list[_MetricCombo],
+    *,
+    max_candidates: int,
+    now: datetime,
+) -> list[_MetricCombo]:
+    """Shuffle ``combos`` deterministically per (date, hour) seed and
+    return up to ``max_candidates``.
+
+    Same hour on the same day yields the same order (so the schedule's
+    7:00 → 7:00 next day rotates), but day-over-day or band-over-band
+    produces different sets. Avoids the 「毎日同じ ranking ばかり」
+    fatigue while keeping the run reproducible inside one trigger
+    window.
+    """
+    import random as _random
+
+    seed = int(now.strftime("%Y%m%d")) * 100 + now.hour
+    rng = _random.Random(seed)
+    shuffled = list(combos)
+    rng.shuffle(shuffled)
+    return shuffled[: max(1, max_candidates)]
 
 
 @dataclass(frozen=True)
@@ -200,13 +296,20 @@ def _format_period_range(combo: _MetricCombo, now: datetime) -> str:
     window the ranking covers. Season-wide collapses to ``開幕〜M/D 累積``
     because the actual opening-day date is not embedded in this module
     (would require a games-table query, deferred per 348 disjoint).
+
+    351: ``combo.until`` (e.g. 先月 = until=last day of prev month) is
+    honoured when present so closed ranges show their explicit end.
     """
     today_md = f"{now.month}/{now.day}"
     if combo.since is None:
         return f"開幕〜{today_md} 累積"
     try:
-        d = datetime.strptime(combo.since, "%Y-%m-%d")
-        since_md = f"{d.month}/{d.day}"
+        d_since = datetime.strptime(combo.since, "%Y-%m-%d")
+        since_md = f"{d_since.month}/{d_since.day}"
+        if combo.until:
+            d_until = datetime.strptime(combo.until, "%Y-%m-%d")
+            until_md = f"{d_until.month}/{d_until.day}"
+            return f"{since_md}〜{until_md}"
         return f"{since_md}〜{today_md}"
     except (ValueError, TypeError):
         return combo.period_label
@@ -238,23 +341,41 @@ def _format_one(
         LOG.warning("format_as_x_post failed for %s (%s): %s",
                     combo.metric, combo.period_label, formatted.get("reason"))
         return None
-    # 350: header に 具体的 date range + 規定 sample 閾値 を明示。
-    # `（{M/D〜M/D}・規定{打席|投球回} N+）` 形式で「期間 (どこからどこまで
-    # の data か)」「最低 sample size はいくつか」を読み手に伝える。
-    # 346 module は不可触、本 ticket は post-process で suffix 付与。
+    # 350+351: header に 具体的 date range + 規定 sample 閾値 + 状況 slice を明示。
     text = formatted["draft_text"]
     lines = text.split("\n")
     period_range = _format_period_range(combo, now)
     sample_label = _sample_label_for_metric(combo.metric)
     period_suffix = f"（{period_range}・規定{sample_label} {min_sample}+）"
-    if lines and "ランキング" in lines[0]:
-        lines[0] = lines[0].rstrip() + period_suffix
-    draft_text = "\n".join(lines)
     metric_jp = _METRIC_LABELS_JP.get(combo.metric, combo.metric)
-    title = (
-        f"セ {metric_jp} top {min(10, len(rows))} "
-        f"({period_range}・規定{sample_label} {min_sample}+)"
-    )
+
+    # 351: 守備位置別 / 巨人内 ranking で header の prefix を切替。
+    # 346 format_as_x_post の output 1 行目は「セ・{metric_jp} ランキング 📊」固定
+    # なので、prefix を「セ・捕手 {metric_jp} ランキング」「巨人内 {metric_jp} ランキング」
+    # 等に置換する。
+    if combo.giants_only:
+        if lines and "ランキング" in lines[0]:
+            lines[0] = f"巨人内 {metric_jp} ランキング 📊" + period_suffix
+        title = (
+            f"巨人内 {metric_jp} top {min(10, len(rows))} "
+            f"({period_range}・規定{sample_label} {min_sample}+)"
+        )
+    elif combo.position:
+        position_jp = _POSITION_DISPLAY_JP.get(combo.position, combo.position)
+        if lines and "ランキング" in lines[0]:
+            lines[0] = f"セ・{position_jp} {metric_jp} ランキング 📊" + period_suffix
+        title = (
+            f"セ・{position_jp} {metric_jp} top {min(10, len(rows))} "
+            f"({period_range}・規定{sample_label} {min_sample}+)"
+        )
+    else:
+        if lines and "ランキング" in lines[0]:
+            lines[0] = lines[0].rstrip() + period_suffix
+        title = (
+            f"セ {metric_jp} top {min(10, len(rows))} "
+            f"({period_range}・規定{sample_label} {min_sample}+)"
+        )
+    draft_text = "\n".join(lines)
     return Candidate(
         title=title,
         metric=combo.metric,
@@ -295,14 +416,23 @@ def pick_candidates(
     if now is None:
         now = datetime.now(JST)
     out: list[Candidate] = []
-    for combo in _build_combos(now):
+    # 351: shuffle the combo pool with a (date, hour) seed so each trigger
+    # picks a different variety slice while staying reproducible inside a
+    # single run.
+    shuffled = _select_with_diversity(
+        _build_combos(now),
+        max_candidates=len(_build_combos(now)),
+        now=now,
+    )
+    for combo in shuffled:
         if len(out) >= max_candidates:
             break
         try:
             result = query_rank_fn(
                 metric_name=combo.metric,
                 since=combo.since,
-                until=None,
+                until=combo.until,
+                position_filter=combo.position,
                 min_sample=min_sample,
                 limit=60,  # enough to capture all 12 teams' top players
             )
@@ -315,10 +445,16 @@ def pick_candidates(
                      combo.metric, combo.period_label, result.get("reason"))
             continue
         rows = filter_central_league(result.get("rows") or [])
-        if len(rows) < min_central_rows:
-            LOG.info("Too few セ rows (%d < %d) for %s/%s — skip",
-                     len(rows), min_central_rows, combo.metric,
-                     combo.period_label)
+        # 351: 巨人内 ranking — keep only Giants rows after the セ filter.
+        if combo.giants_only:
+            rows = [r for r in rows if _is_giants(r.get("team_code"))]
+            min_rows_required = 3  # only need a few 巨人 players for a meaningful list
+        else:
+            min_rows_required = min_central_rows
+        if len(rows) < min_rows_required:
+            LOG.info("Too few rows (%d < %d) for %s/%s (giants_only=%s, position=%s) — skip",
+                     len(rows), min_rows_required, combo.metric,
+                     combo.period_label, combo.giants_only, combo.position)
             continue
         rows = _rebuild_ranks_within_central(rows)
         candidate = _format_one(combo, rows, min_sample=min_sample, now=now)

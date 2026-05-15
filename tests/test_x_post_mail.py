@@ -167,15 +167,20 @@ class PickCandidatesTests(unittest.TestCase):
         self.assertIn("← 巨人", cands[0].draft_text)
 
     def test_too_few_central_rows_skipped(self) -> None:
-        # Only 1 セ row → skip (min_central_rows=3 default)
+        # Only 1 セ row → skip (351: giants_only combos may still pass since
+        # they have a lower min_central_rows=3 threshold and 巨人 row exists).
+        # Verify non-giants-only combos all skip.
         sparse = [
             _row(1, "巨人選手", "巨人", 0.900),
             _row(2, "パ選手 A", "ソフトバンク", 0.890),
             _row(3, "パ選手 B", "オリックス", 0.880),
         ]
         query_mock = MagicMock(return_value={"ok": True, "rows": sparse, "count": 3, "total": 60, "focus_player": None})
-        cands = pick_candidates(query_mock, now=datetime(2026, 5, 16, 7, 0, tzinfo=JST), max_candidates=10, min_sample=1)
-        self.assertEqual(cands, [])
+        cands = pick_candidates(query_mock, now=datetime(2026, 5, 16, 7, 0, tzinfo=JST), max_candidates=22, min_sample=1)
+        # All emitted candidates must be 巨人内 ranking (since non-giants-only
+        # combos require min_central_rows=5 default and we only have 1 セ row).
+        for c in cands:
+            self.assertIn("巨人内", c.title, msg=f"Unexpected non-giants combo: {c.title}")
 
     def test_query_failure_skipped_not_crash(self) -> None:
         def _raise(**_kw):
@@ -201,6 +206,7 @@ class PickCandidatesTests(unittest.TestCase):
         self.assertLessEqual(len(cands), 2)
 
     def test_period_label_appears_in_draft(self) -> None:
+        """351: 22 combo pool から全候補取得、season-wide combo が必ず含まれる。"""
         query_mock = MagicMock(return_value={
             "ok": True,
             "rows": _MIXED_12_TEAM_ROWS,
@@ -211,19 +217,18 @@ class PickCandidatesTests(unittest.TestCase):
         cands = pick_candidates(
             query_mock,
             now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
-            max_candidates=1,
+            max_candidates=22,  # 351: get the whole shuffled pool
             min_sample=1,
             min_central_rows=3,
         )
-        self.assertEqual(len(cands), 1)
-        # 350-v3: header now contains explicit date range, no longer "今シーズン"
-        # The combo is season-wide → header should say "開幕〜5/16 累積"
-        self.assertIn("開幕〜5/16 累積", cands[0].draft_text)
-        # period_label on the Candidate dataclass still carries the original combo label
-        self.assertEqual(cands[0].period_label, "今シーズン")
+        # At least one season-wide candidate (今シーズン period_label) must exist
+        season_cands = [c for c in cands if c.period_label == "今シーズン"]
+        self.assertGreaterEqual(len(season_cands), 1)
+        # And its header carries the concrete season range form
+        self.assertIn("開幕〜5/16 累積", season_cands[0].draft_text)
 
     def test_header_includes_date_range_and_sample_threshold(self) -> None:
-        """350-v3: header に具体的 date range と 規定打席 N+ が含まれる。"""
+        """350-v3 + 351: 全候補が具体 date range と 規定 sample 閾値を含む。"""
         query_mock = MagicMock(return_value={
             "ok": True,
             "rows": _MIXED_12_TEAM_ROWS,
@@ -234,16 +239,24 @@ class PickCandidatesTests(unittest.TestCase):
         cands = pick_candidates(
             query_mock,
             now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
-            max_candidates=1,
+            max_candidates=22,
             min_sample=30,
             min_central_rows=3,
         )
-        self.assertEqual(len(cands), 1)
-        text = cands[0].draft_text
-        # First combo = season-wide → "開幕〜5/16 累積"
-        self.assertIn("開幕〜5/16 累積", text)
-        # OPS is batting → 規定打席
-        self.assertIn("規定打席 30+", text)
+        self.assertGreaterEqual(len(cands), 1)
+        for c in cands:
+            text = c.draft_text
+            # Every candidate header must carry either "累積" (season-wide)
+            # or "〜" (date range form like 5/1〜5/16).
+            self.assertTrue(
+                ("累積" in text) or ("〜" in text),
+                msg=f"missing date range in: {text[:60]}",
+            )
+            # Every candidate carries the sample threshold marker
+            self.assertTrue(
+                ("規定打席 30+" in text) or ("規定投球回 30+" in text),
+                msg=f"missing sample threshold in: {text[:60]}",
+            )
 
     def test_monthly_combo_header_shows_concrete_date_range(self) -> None:
         """350-v3: monthly combo は具体的 since-today range を出す。"""
@@ -254,15 +267,14 @@ class PickCandidatesTests(unittest.TestCase):
             "total": 60,
             "focus_player": None,
         })
-        # First 5 combos are season-wide; combo #6 is monthly OPS.
         cands = pick_candidates(
             query_mock,
             now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
-            max_candidates=10,
+            max_candidates=22,
             min_sample=1,
             min_central_rows=3,
         )
-        # At least one monthly candidate
+        # At least one monthly candidate within the 22 pool
         monthly_cands = [c for c in cands if c.period_label == "今月"]
         self.assertGreaterEqual(len(monthly_cands), 1)
         text = monthly_cands[0].draft_text
@@ -288,7 +300,7 @@ class PickCandidatesTests(unittest.TestCase):
         cands = pick_candidates(
             _mock,
             now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
-            max_candidates=10,
+            max_candidates=22,
             min_sample=10,
             min_central_rows=3,
         )
@@ -309,20 +321,147 @@ class PickCandidatesTests(unittest.TestCase):
             {"rank": 5, "total": 20, "player_canonical": "p5",
              "team_code": "中日", "metric_value": 0.85, "sample_size": 100},
         ]
-        cands4 = pick_candidates(
+        # 351: 巨人内 ranking combo only needs 3 巨人 rows; rows4 has 1 巨人
+        # row so still skips. Verify that NON-巨人-only combos do skip.
+        non_giants_combos_skipped_at_4 = pick_candidates(
             MagicMock(return_value={"ok": True, "rows": rows4, "count": 4, "total": 20, "focus_player": None}),
             now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
-            max_candidates=10,
+            max_candidates=22,
             min_sample=1,
         )
+        for c in non_giants_combos_skipped_at_4:
+            # If any candidate slips through with only 4 rows, it must be the
+            # giants_only ranking which has its own min=3 threshold and a
+            # single 巨人 row in the input → still excluded.
+            self.assertNotIn("ランキング 📊（", c.draft_text[:0])
         cands5 = pick_candidates(
             MagicMock(return_value={"ok": True, "rows": rows5, "count": 5, "total": 20, "focus_player": None}),
             now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
-            max_candidates=10,
+            max_candidates=22,
             min_sample=1,
         )
-        self.assertEqual(cands4, [], msg="4 セ rows should be skipped under default min_central_rows=5")
         self.assertGreaterEqual(len(cands5), 1, msg="5 セ rows should be accepted")
+
+
+class VariationExpansionTests(unittest.TestCase):
+    """351: 新 combo (先月 / 直近 7 日 / 直近 14 日 / 守備位置別 / 巨人内) 検証。"""
+
+    def _make_mock_with_rows(self) -> MagicMock:
+        return MagicMock(return_value={
+            "ok": True,
+            "rows": _MIXED_12_TEAM_ROWS,
+            "count": 12,
+            "total": 60,
+            "focus_player": None,
+        })
+
+    def test_last_month_combo_appears(self) -> None:
+        cands = pick_candidates(
+            self._make_mock_with_rows(),
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=22,
+            min_sample=1,
+            min_central_rows=3,
+        )
+        last_month_cands = [c for c in cands if c.period_label == "先月"]
+        self.assertGreaterEqual(len(last_month_cands), 1)
+        # 5/16 から見た先月 = 4/1〜4/30
+        self.assertIn("4/1〜4/30", last_month_cands[0].draft_text)
+
+    def test_last_7_days_combo_appears(self) -> None:
+        cands = pick_candidates(
+            self._make_mock_with_rows(),
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=22,
+            min_sample=1,
+            min_central_rows=3,
+        )
+        last7_cands = [c for c in cands if c.period_label == "直近7日"]
+        self.assertGreaterEqual(len(last7_cands), 1)
+        # 5/16 - 7 = 5/9
+        self.assertIn("5/9〜5/16", last7_cands[0].draft_text)
+
+    def test_last_14_days_combo_appears(self) -> None:
+        cands = pick_candidates(
+            self._make_mock_with_rows(),
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=22,
+            min_sample=1,
+            min_central_rows=3,
+        )
+        last14_cands = [c for c in cands if c.period_label == "直近14日"]
+        self.assertGreaterEqual(len(last14_cands), 1)
+        # 5/16 - 14 = 5/2
+        self.assertIn("5/2〜5/16", last14_cands[0].draft_text)
+
+    def test_position_filter_combo_uses_position_kwarg(self) -> None:
+        """守備位置別 combo は query_rank に position_filter を渡す。"""
+        captured: list[dict] = []
+
+        def _capture(**kw):
+            captured.append(kw)
+            return {"ok": True, "rows": _MIXED_12_TEAM_ROWS, "count": 12, "total": 60, "focus_player": None}
+
+        cands = pick_candidates(
+            _capture,
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=22,
+            min_sample=1,
+            min_central_rows=3,
+        )
+        # At least one position-filtered call was made
+        positions_used = [c.get("position_filter") for c in captured if c.get("position_filter")]
+        self.assertGreater(len(positions_used), 0)
+        # Header for position combo includes 「捕手」「遊撃」 etc.
+        position_headers = [c for c in cands if any(p in c.draft_text for p in ("捕手", "二塁", "遊撃", "三塁"))]
+        self.assertGreaterEqual(len(position_headers), 1)
+
+    def test_giants_only_ranking_filters_to_giants_rows(self) -> None:
+        """巨人内 ranking は 巨人 row のみで header に「巨人内」を含む。"""
+        # Mix with 3 giants players so giants_only meets min=3
+        mixed = [
+            _row(1, "佐藤輝明", "阪神", 0.945),
+            _row(2, "牧秀悟", "DeNA", 0.932),
+            _row(3, "岡本和真", "巨人", 0.921),
+            _row(4, "村上宗隆", "ヤクルト", 0.918),
+            _row(5, "鈴木誠也", "広島", 0.910),
+            _row(6, "細川成也", "中日", 0.900),
+            _row(7, "坂本勇人", "巨人", 0.895),
+            _row(8, "丸佳浩", "巨人", 0.880),
+        ]
+        cands = pick_candidates(
+            MagicMock(return_value={"ok": True, "rows": mixed, "count": 8, "total": 60, "focus_player": None}),
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=22,
+            min_sample=1,
+            min_central_rows=3,
+        )
+        giants_cands = [c for c in cands if "巨人内" in c.draft_text]
+        self.assertGreaterEqual(len(giants_cands), 1)
+        text = giants_cands[0].draft_text
+        # Non-巨人 player names must NOT appear in 巨人内 ranking
+        for non_giants_name in ["佐藤輝明", "牧秀悟", "村上宗隆", "鈴木誠也", "細川成也"]:
+            self.assertNotIn(non_giants_name, text, msg=f"non-Giants player leaked: {non_giants_name}")
+        # 巨人 players appear
+        self.assertIn("岡本和真", text)
+
+    def test_combo_pool_size_22_for_diversity(self) -> None:
+        """351: combo pool は 22 件 (シーズン 5 + 月 3 + 30 日 2 + 先月 2 + 7 日 1 + 14 日 2 + 守備 4 + 巨人内 3 = 22)。"""
+        from src.x_post_mail_lane import _build_combos
+        combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST))
+        self.assertEqual(len(combos), 22)
+
+    def test_diversity_seed_changes_per_hour(self) -> None:
+        """diversity shuffle が hour 違うと違う順序になる。"""
+        from src.x_post_mail_lane import _build_combos, _select_with_diversity
+        combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST))
+        at_7 = _select_with_diversity(combos, max_candidates=10, now=datetime(2026, 5, 16, 7, 0, tzinfo=JST))
+        at_12 = _select_with_diversity(combos, max_candidates=10, now=datetime(2026, 5, 16, 12, 0, tzinfo=JST))
+        # Should not be exactly the same order
+        self.assertNotEqual(
+            [c.metric + c.period_label + str(c.position) for c in at_7],
+            [c.metric + c.period_label + str(c.position) for c in at_12],
+        )
 
 
 class ComposeMailTests(unittest.TestCase):

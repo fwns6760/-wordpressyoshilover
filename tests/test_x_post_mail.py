@@ -208,11 +208,121 @@ class PickCandidatesTests(unittest.TestCase):
             "total": 60,
             "focus_player": None,
         })
-        cands = pick_candidates(query_mock, now=datetime(2026, 5, 16, 7, 0, tzinfo=JST), max_candidates=1, min_sample=1)
+        cands = pick_candidates(
+            query_mock,
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=1,
+            min_sample=1,
+            min_central_rows=3,
+        )
         self.assertEqual(len(cands), 1)
-        # First combo is OPS / season → header should carry「（今シーズン）」
-        self.assertIn("（今シーズン）", cands[0].draft_text)
+        # 350-v3: header now contains explicit date range, no longer "今シーズン"
+        # The combo is season-wide → header should say "開幕〜5/16 累積"
+        self.assertIn("開幕〜5/16 累積", cands[0].draft_text)
+        # period_label on the Candidate dataclass still carries the original combo label
         self.assertEqual(cands[0].period_label, "今シーズン")
+
+    def test_header_includes_date_range_and_sample_threshold(self) -> None:
+        """350-v3: header に具体的 date range と 規定打席 N+ が含まれる。"""
+        query_mock = MagicMock(return_value={
+            "ok": True,
+            "rows": _MIXED_12_TEAM_ROWS,
+            "count": 12,
+            "total": 60,
+            "focus_player": None,
+        })
+        cands = pick_candidates(
+            query_mock,
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=1,
+            min_sample=30,
+            min_central_rows=3,
+        )
+        self.assertEqual(len(cands), 1)
+        text = cands[0].draft_text
+        # First combo = season-wide → "開幕〜5/16 累積"
+        self.assertIn("開幕〜5/16 累積", text)
+        # OPS is batting → 規定打席
+        self.assertIn("規定打席 30+", text)
+
+    def test_monthly_combo_header_shows_concrete_date_range(self) -> None:
+        """350-v3: monthly combo は具体的 since-today range を出す。"""
+        query_mock = MagicMock(return_value={
+            "ok": True,
+            "rows": _MIXED_12_TEAM_ROWS,
+            "count": 12,
+            "total": 60,
+            "focus_player": None,
+        })
+        # First 5 combos are season-wide; combo #6 is monthly OPS.
+        cands = pick_candidates(
+            query_mock,
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=10,
+            min_sample=1,
+            min_central_rows=3,
+        )
+        # At least one monthly candidate
+        monthly_cands = [c for c in cands if c.period_label == "今月"]
+        self.assertGreaterEqual(len(monthly_cands), 1)
+        text = monthly_cands[0].draft_text
+        # 5/1〜5/16 form expected for May 16 timestamp
+        self.assertIn("5/1〜5/16", text)
+
+    def test_era_uses_innings_pitched_threshold_label(self) -> None:
+        """350: ERA は 打席 ではなく 投球回 ベースで表記する。"""
+        # Pitcher rows
+        pitcher_rows = [
+            {"rank": i, "total": 30, "player_canonical": f"投手{i}",
+             "team_code": team, "metric_value": 2.0 + i * 0.1, "sample_size": 40}
+            for i, team in enumerate(
+                ["巨人", "阪神", "DeNA", "ヤクルト", "中日", "広島"], start=1
+            )
+        ]
+
+        def _mock(metric_name=None, **_kw):
+            if metric_name == "ERA":
+                return {"ok": True, "rows": pitcher_rows, "count": 6, "total": 30, "focus_player": None}
+            return {"ok": False, "rows": [], "reason": "skip"}
+
+        cands = pick_candidates(
+            _mock,
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=10,
+            min_sample=10,
+            min_central_rows=3,
+        )
+        self.assertGreaterEqual(len(cands), 1)
+        # At least one ERA candidate should appear with 投球回 label
+        era_cands = [c for c in cands if c.metric == "ERA"]
+        self.assertGreaterEqual(len(era_cands), 1)
+        self.assertIn("投球回", era_cands[0].draft_text)
+
+    def test_min_central_rows_default_strict(self) -> None:
+        """350: 4 row では skip、5 row で採用される (default 5)。"""
+        rows4 = [
+            {"rank": i, "total": 20, "player_canonical": f"p{i}",
+             "team_code": team, "metric_value": 0.9 - i * 0.01, "sample_size": 100}
+            for i, team in enumerate(["巨人", "阪神", "DeNA", "ヤクルト"], start=1)
+        ]
+        rows5 = rows4 + [
+            {"rank": 5, "total": 20, "player_canonical": "p5",
+             "team_code": "中日", "metric_value": 0.85, "sample_size": 100},
+        ]
+        cands4 = pick_candidates(
+            MagicMock(return_value={"ok": True, "rows": rows4, "count": 4, "total": 20, "focus_player": None}),
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=10,
+            min_sample=1,
+        )
+        cands5 = pick_candidates(
+            MagicMock(return_value={"ok": True, "rows": rows5, "count": 5, "total": 20, "focus_player": None}),
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=10,
+            min_sample=1,
+        )
+        self.assertEqual(cands4, [], msg="4 セ rows should be skipped under default min_central_rows=5")
+        self.assertGreaterEqual(len(cands5), 1, msg="5 セ rows should be accepted")
 
 
 class ComposeMailTests(unittest.TestCase):

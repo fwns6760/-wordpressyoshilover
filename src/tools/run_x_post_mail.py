@@ -86,8 +86,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--min-sample",
         type=int,
-        default=10,
-        help="Minimum AB/IP/opps sample size for ranking inclusion (default 10).",
+        default=30,
+        help="Minimum AB/IP/opps sample size for ranking inclusion (default 30, 350: tightened from 10).",
     )
     return parser.parse_args(argv)
 

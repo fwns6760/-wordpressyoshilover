@@ -182,7 +182,43 @@ def _rebuild_ranks_within_central(rows: list[dict]) -> list[dict]:
     return out
 
 
-def _format_one(combo: _MetricCombo, rows: list[dict]) -> Optional[Candidate]:
+def _sample_label_for_metric(metric: str) -> str:
+    """Return the Japanese unit label used in the 規定打席 / 投球回 suffix.
+
+    Batting metrics use 打席 (PA). Pitching (ERA) uses 投球回 (IP).
+    """
+    if metric == "ERA":
+        return "投球回"
+    return "打席"
+
+
+def _format_period_range(combo: _MetricCombo, now: datetime) -> str:
+    """Return a concrete date-range label for the header.
+
+    Replaces vague labels (今シーズン / 今月 / 直近30日) with explicit
+    ``M/D〜M/D`` ranges so the operator (and X readers) see exactly what
+    window the ranking covers. Season-wide collapses to ``開幕〜M/D 累積``
+    because the actual opening-day date is not embedded in this module
+    (would require a games-table query, deferred per 348 disjoint).
+    """
+    today_md = f"{now.month}/{now.day}"
+    if combo.since is None:
+        return f"開幕〜{today_md} 累積"
+    try:
+        d = datetime.strptime(combo.since, "%Y-%m-%d")
+        since_md = f"{d.month}/{d.day}"
+        return f"{since_md}〜{today_md}"
+    except (ValueError, TypeError):
+        return combo.period_label
+
+
+def _format_one(
+    combo: _MetricCombo,
+    rows: list[dict],
+    *,
+    min_sample: int,
+    now: datetime,
+) -> Optional[Candidate]:
     parsed = {
         "metric": combo.metric,
         "position": None,
@@ -202,18 +238,23 @@ def _format_one(combo: _MetricCombo, rows: list[dict]) -> Optional[Candidate]:
         LOG.warning("format_as_x_post failed for %s (%s): %s",
                     combo.metric, combo.period_label, formatted.get("reason"))
         return None
-    # Append period label to the header line. 346 format does not include
-    # period; we post-process the first line without modifying the 346
-    # module. Header looks like 「セ・OPS ランキング 📊」 — splice the
-    # period suffix in. Use the simplest splice that preserves trailing
-    # emoji ordering.
+    # 350: header に 具体的 date range + 規定 sample 閾値 を明示。
+    # `（{M/D〜M/D}・規定{打席|投球回} N+）` 形式で「期間 (どこからどこまで
+    # の data か)」「最低 sample size はいくつか」を読み手に伝える。
+    # 346 module は不可触、本 ticket は post-process で suffix 付与。
     text = formatted["draft_text"]
     lines = text.split("\n")
+    period_range = _format_period_range(combo, now)
+    sample_label = _sample_label_for_metric(combo.metric)
+    period_suffix = f"（{period_range}・規定{sample_label} {min_sample}+）"
     if lines and "ランキング" in lines[0]:
-        lines[0] = lines[0].rstrip() + f"（{combo.period_label}）"
+        lines[0] = lines[0].rstrip() + period_suffix
     draft_text = "\n".join(lines)
     metric_jp = _METRIC_LABELS_JP.get(combo.metric, combo.metric)
-    title = f"セ {metric_jp} top {min(10, len(rows))} ({combo.period_label})"
+    title = (
+        f"セ {metric_jp} top {min(10, len(rows))} "
+        f"({period_range}・規定{sample_label} {min_sample}+)"
+    )
     return Candidate(
         title=title,
         metric=combo.metric,
@@ -228,8 +269,8 @@ def pick_candidates(
     *,
     now: Optional[datetime] = None,
     max_candidates: int = 10,
-    min_sample: int = 10,
-    min_central_rows: int = 3,
+    min_sample: int = 30,
+    min_central_rows: int = 5,
 ) -> list[Candidate]:
     """Build up to ``max_candidates`` セ-only X post candidates.
 
@@ -280,7 +321,7 @@ def pick_candidates(
                      combo.period_label)
             continue
         rows = _rebuild_ranks_within_central(rows)
-        candidate = _format_one(combo, rows)
+        candidate = _format_one(combo, rows, min_sample=min_sample, now=now)
         if candidate:
             out.append(candidate)
     return out[:max_candidates]

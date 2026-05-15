@@ -19436,6 +19436,84 @@ def _maybe_insert_auto_rss_source_body_excerpt(
     return result
 
 
+def _maybe_insert_x_outbound_article_excerpt(
+    rendered_html: str,
+    *,
+    source_url: str,
+    title: str,
+    summary: str,
+    logger: logging.Logger,
+) -> str:
+    """When ``source_url`` is a tweet, try to attach the linked news-article
+    body as a source-body excerpt block. No-op when already inserted, when the
+    tweet has no outbound link, or when the outbound host is not whitelisted.
+    """
+    if "nomotoke-source-excerpt" in rendered_html:
+        return rendered_html
+    try:
+        from src.x_tweet_article_unfurler import (
+            fetch_outbound_article_for_tweet,
+            is_tweet_url,
+            source_name_for_article_url,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("x_unfurl_skip reason=import_failed err=%s", exc)
+        return rendered_html
+    if not is_tweet_url(source_url):
+        return rendered_html
+    try:
+        article_url, article_html = fetch_outbound_article_for_tweet(
+            source_url, logger
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "x_unfurl_skip reason=fetch_exception err=%s url=%s",
+            exc,
+            source_url,
+        )
+        return rendered_html
+    if not article_url or not article_html:
+        return rendered_html
+    try:
+        from src.tools.manual_intake import _maybe_insert_source_body_excerpt
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "x_unfurl_skip reason=insert_helper_import_failed err=%s", exc
+        )
+        return rendered_html
+    article_source_name = source_name_for_article_url(article_url) or "出典"
+    try:
+        result = _maybe_insert_source_body_excerpt(
+            rendered_html,
+            raw_html=article_html,
+            source_url=article_url,
+            title=title,
+            source_name=article_source_name,
+            summary=summary,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "x_unfurl_skip reason=insert_exception err=%s url=%s",
+            exc,
+            article_url,
+        )
+        return rendered_html
+    if result == rendered_html:
+        logger.info(
+            "x_unfurl_skip reason=helper_silent_skip article=%s tweet=%s",
+            article_url,
+            source_url,
+        )
+    else:
+        logger.info(
+            "x_unfurl_excerpt_inserted delta=%d tweet=%s article=%s",
+            len(result) - len(rendered_html),
+            source_url,
+            article_url,
+        )
+    return result
+
+
 def _create_draft_with_same_fire_guard(
     wp: WPClient,
     logger: logging.Logger,
@@ -19532,6 +19610,18 @@ def _create_draft_with_same_fire_guard(
         source_name=enrichment_source_name,
         summary=enrichment_summary,
         source_type=enrichment_source_type,
+        logger=logger,
+    )
+    # 2026-05-15 X-tweet → outbound-article unfurl:
+    # source_url が twitter.com / x.com で、まだ excerpt block が無い時のみ、
+    # tweet 内の t.co 短縮 → 許可ドメインの news 記事 URL を辿って raw_html を
+    # 取得し、既存の source body excerpt helper に流す。X tweet 本文は
+    # コピーせず、記事元のみを引用する (主従関係明示・出典 link 必須)。
+    enriched_content = _maybe_insert_x_outbound_article_excerpt(
+        enriched_content,
+        source_url=normalized_source_url,
+        title=draft_title,
+        summary=enrichment_summary,
         logger=logger,
     )
     # 344-INGEST: YouTube source なら 字幕 600字 literal + 出典 + embed section を

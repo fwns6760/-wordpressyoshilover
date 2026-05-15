@@ -1334,11 +1334,15 @@ def _default_fetch(base_url: str, after_iso: str) -> list[Mapping[str, Any]]:
     published post is edited.
     """
     endpoint = urljoin(base_url.rstrip("/") + "/", "posts")
+    # 2026-05-15 user 指示「mail 即時に来ない」適用、per_page 20 → 100 へ。
+    # WP REST default max は 100、 これで 1 fire で publish 全件 drain。
+    # ピーク fire (data-insight 75 件 publish) でも 1 fire 内で処理完了し
+    # 67977 等の publish 5 分後にメール送信される。
     query = urlencode(
         {
             "status": "publish",
             "modified_after": after_iso,
-            "per_page": 20,
+            "per_page": 100,
             "orderby": "modified",
             "order": "asc",
             "_fields": "id,title,excerpt,content,link,date,modified,status,meta,article_subtype,subtype",

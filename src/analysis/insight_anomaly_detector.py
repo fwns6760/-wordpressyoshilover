@@ -1416,10 +1416,8 @@ def run_all_anomaly_detectors(
         )
     except Exception:  # noqa: BLE001
         out[SIGNAL_STANDINGS_SHIFT] = []
-    try:
-        out[SIGNAL_STAT_DELTA] = detect_stat_delta(
-            conn, snapshot_date=snapshot_date, run_id=run_id,
-        )
-    except Exception:  # noqa: BLE001
-        out[SIGNAL_STAT_DELTA] = []
+    # 2026-05-15 user 指示「変化率はタイトルじゃわかりにくい、サバメトリ
+    # クス分類で drop」適用、stat_delta detector も BABIP/FIP-ERA と同様
+    # に call せず空。signal_type 自体は backward-compat で残す。
+    out[SIGNAL_STAT_DELTA] = []
     return out

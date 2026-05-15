@@ -29,6 +29,7 @@ if os.path.isdir(_vendor) and _vendor not in sys.path:
 from dotenv import load_dotenv
 
 from wp_client import WPClient
+from src.giants_news_banner import giants_news_banner_html as _giants_news_banner_html
 
 load_dotenv(ROOT / ".env")
 
@@ -561,6 +562,10 @@ def cmd_caught_stealing(args: argparse.Namespace) -> None:
     report = build_caught_stealing_report(args.year)
     title = build_caught_stealing_title(report)
     content = build_caught_stealing_content(report)
+    # NEWS-BANNER-FIX-2026-05-15: data 記事は build_news_block を通らず banner が
+    # 付かなかった。helper で同じ赤紫グラデ banner を冒頭に prepend し、全 publish
+    # 経路で content 先頭に banner が立つ状態を維持。
+    content = _giants_news_banner_html(title, NPB_CAUGHT_STEALING_SOURCE_LABEL, "コラム") + content
 
     if args.dry_run:
         print(title)
@@ -588,6 +593,10 @@ def cmd_on_base(args: argparse.Namespace) -> None:
     report = build_on_base_report(args.year)
     title = build_on_base_title(report)
     content = build_on_base_content(report)
+    # NEWS-BANNER-FIX-2026-05-15: data 記事は build_news_block を通らず banner が
+    # 付かなかった。helper で同じ赤紫グラデ banner を冒頭に prepend し、全 publish
+    # 経路で content 先頭に banner が立つ状態を維持。
+    content = _giants_news_banner_html(title, NPB_BATTING_SOURCE_LABEL, "コラム") + content
 
     if args.dry_run:
         print(title)

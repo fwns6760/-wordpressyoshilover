@@ -117,6 +117,10 @@ from src.player_voice_digest_clusterer import (
 from src.player_voice_digest_body_renderer import (
     render_player_voice_digest_body as _render_player_voice_digest_body,
 )
+from src.giants_news_banner import (
+    giants_news_banner_html as _giants_news_banner_html,
+    summary_kicker as _summary_kicker,
+)
 from src import llm_call_dedupe as _llm_call_dedupe
 from src.gemini_cache import (
     DEFAULT_MODEL_NAME as GEMINI_CACHE_MODEL_NAME,
@@ -8946,19 +8950,6 @@ def _article_section_headings(category: str, has_game: bool = True) -> tuple[str
     return first, second, third
 
 
-def _summary_kicker(category: str) -> str:
-    mapping = {
-        "試合速報": "GIANTS GAME NOTE",
-        "選手情報": "GIANTS PLAYER WATCH",
-        "首脳陣": "GIANTS MANAGER NOTE",
-        "補強・移籍": "GIANTS ROSTER WATCH",
-        "球団情報": "GIANTS FRONT NOTE",
-        "ドラフト・育成": "GIANTS FARM WATCH",
-        "OB・解説者": "GIANTS VOICE CHECK",
-    }
-    return mapping.get(category, "GIANTS NEWS DIGEST")
-
-
 def _voice_intro(category: str, subject: str) -> str:
     if category == "試合速報":
         return "先に、巨人ファンが試合前から気にしていた論点を整理します。"
@@ -17550,22 +17541,10 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         for item in (source_links or [{"name": source_name or "スポーツニュース", "url": url}])
     ]
     source_badge = " / ".join(
-        (item.get("name") or "スポーツニュース").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        (item.get("name") or "スポーツニュース")
         for item in display_source_links[:3]
     )
-    safe_source = source_badge if source_badge else "スポーツニュース"
-    summary_kicker = _summary_kicker(category)
-    blocks += (
-        f'<!-- wp:html -->\n'
-        f'<div style="background:linear-gradient(135deg,#001e62 0%,#e8272a 100%);border-radius:10px;padding:18px 20px;margin:0 0 4px 0;">'
-          f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
-            f'<span style="background:rgba(255,255,255,0.2);color:#fff;font-size:0.78em;font-weight:800;padding:4px 10px;border-radius:20px;letter-spacing:0.05em;">📰 {safe_source}</span>'
-            f'<span style="color:rgba(255,255,255,0.82);font-size:0.72em;font-weight:700;letter-spacing:0.08em;">⚾ {summary_kicker}</span>'
-          f'</div>'
-          f'<div style="color:#fff;font-size:1.1em;font-weight:900;line-height:1.4;">{safe_title}</div>'
-        f'</div>\n'
-        f'<!-- /wp:html -->\n\n'
-    )
+    blocks += _giants_news_banner_html(title, source_badge, category)
     blocks += _para(summary_text_to_show) + _sep()
 
     if media_quotes:
@@ -25364,12 +25343,16 @@ def _main(args, logger):
             # nomotoke-shell passthrough body (lead + 出典 + footer) を生成、
             # nomotoke-card- marker 入りで enrichment が走る形にする。
             from wp_draft_creator import is_x_url as _is_x_url
+            # NEWS-BANNER-FIX-2026-05-15: passthrough 経路 (oembed / 非 X URL) は
+            # build_news_block を通らないため、helper で banner を冒頭に prepend
+            # し、build_news_block 経路と同じ赤紫グラデ banner で揃える。
+            _passthrough_banner = _giants_news_banner_html(title, source_name, category)
             if _is_x_url(post_url):
-                content = build_oembed_block(post_url)
+                content = _passthrough_banner + build_oembed_block(post_url)
                 _passthrough_label = "oembed_passthrough"
             else:
                 from src.tools.manual_intake import _build_body_for_news
-                content = _build_body_for_news(
+                content = _passthrough_banner + _build_body_for_news(
                     source_url=post_url,
                     title=title,
                     summary=summary or "",
@@ -25505,7 +25488,14 @@ def _main(args, logger):
                     )
                     _digest_body = ""
                 if _digest_body:
-                    content = _digest_body
+                    # NEWS-BANNER-FIX-2026-05-15: digest 本文は build_news_block
+                    # の出力を完全置換するため、そのまま代入すると赤紫グラデ
+                    # banner が消える。helper で同じ banner を冒頭に prepend し、
+                    # 全 publish 経路で content の先頭に banner が立つ状態を維持。
+                    _digest_banner = _giants_news_banner_html(
+                        draft_title or title, source_name, category
+                    )
+                    content = _digest_banner + _digest_body
                     _digest_body_applied = True
                     logger.info(json.dumps({
                         "event": "player_voice_digest_body_applied",

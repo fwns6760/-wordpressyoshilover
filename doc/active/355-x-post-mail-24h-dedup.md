@@ -191,6 +191,11 @@ python3 -m pytest tests/ --tb=short -q
 2026-05-16 01:12 JST | tests 追加 | phase_2 | TicketThreeFiftyFiveDedupTests クラス + 9 test (FakeBlob/FakeBucket/FakeClient in-memory mock) | pytest verify
 2026-05-16 01:13 JST | pytest 確認 | phase_2_verify | test_x_post_mail.py 61 pass (52→61、 +9 new 355) | full pytest
 2026-05-16 01:15 JST | full pytest | phase_2_verify | 4862 pass / 4 xfailed (pre-existing) / 0 regression | impl commit
+2026-05-16 01:20 JST | impl commit | phase_3 | a54a773: src + tests + doc (4 files, +670/-4) push 済 | cloudbuild
+2026-05-16 01:26 JST | cloudbuild SUCCESS | phase_3 | image x-post-mail-lane:355-24h-dedup / digest sha256:a7badfff... / build_id e31a97ce-4c4c-4011-95dc-0f680c833b94 (1m27s) | jobs update
+2026-05-16 01:27 JST | jobs update SUCCESS | phase_3 | image 354-last-n-games → 355-24h-dedup | execute
+2026-05-16 01:29 JST | execute SUCCESS | phase_3 | execution x-post-mail-lane-qclg8 / Loaded 24h dedup set: 0 signatures (初回) / db_path=True, dedup=0 / Composing 10 candidates / status=sent / Recorded 10 dedup signatures (ok=True) / Container exit(0) | log verify
+2026-05-16 01:31 JST | log verify | phase_3 | mail sent to fwns6760@gmail.com、 GCS write 動作確認 (gs://baseballsite-yoshilover-insight/x_post_mail/dedup/2026-05-16.jsonl に 10 signatures 書き込み確認) | GH Issue 起票 + 2nd commit
 ```
 
 ## 10. Regression Memo 欄
@@ -261,11 +266,15 @@ python3 -m pytest tests/ --tb=short -q   # full baseline
 
 ## 5. 残った懸念
 
-(deploy + Cloud Logging verify 後に追記)
+1. **次 fire (= Scheduler 自然 06:00 / 07:00 etc) で dedup gate 効果未 verify**: 初回 fire は `Loaded 0 signatures` で skip ゼロ、 次回以降の fire で `Loaded ≥1 signatures` + 「dedup skip combo ...」 log が出るかは Scheduler 自然 fire まで未確認 (`gcloud logging read` で検出可)。
+2. **24h 後 file rotation 未 verify**: 翌日 (5/17) になると `2026-05-17.jsonl` を新規作成 + 5/16 file は 24h window から自然脱落するが、 翌日 file 作成の挙動は production で未確認。
+3. **race condition (manual fire 重複)**: Scheduler は時刻分散だが user が手動 fire を連打すると `_record_dedup_signatures` の read-existing → append → upload が衝突する可能性 (= 後勝ち、 1 batch 喪失)。 致命的にはならない。
+4. **`Recorded 10 dedup signatures` で 10 全部 = max_candidates 上限 = 採用件数。 dedup gate で skip された combo は count に入らない**: 次 fire で 10 + 新 signature が record される、 24h 経つと自然脱落で list 大きくならない設計。
+5. **bucket prefix 衝突なし verify 未完**: `gs://baseballsite-yoshilover-insight` の他 user (insight.db cache / 348 nightly etc) が `x_post_mail/dedup/*` prefix を読まない前提だが、 1 次 source で完全 verify はしていない (但し path 分離なので衝突 risk 極低)。
 
 ## 6. 新しく見つかったデグレ
 
-(deploy + Cloud Logging verify 後に追記)
+なし (production behaviour の意図しない退行 0 件、 pytest full 4862 pass / 0 fail、 deploy log 上 ERROR / WARNING ログなし、 mail 1 通 status=sent 配信完了、 GCS write `ok=True`)。 後続観察で出現すれば追記。
 
 ## 7. 追加した回帰テスト
 

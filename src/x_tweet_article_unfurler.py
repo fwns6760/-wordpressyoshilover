@@ -25,6 +25,7 @@ from urllib.parse import urlparse
 import requests
 
 ARTICLE_HOST_TO_SOURCE_NAME: dict[str, str] = {
+    # 既存 5 媒体 (実機抽出 OK 確認済)
     "hochi.news": "スポーツ報知",
     "www.hochi.news": "スポーツ報知",
     "sanspo.com": "サンスポ",
@@ -35,6 +36,25 @@ ARTICLE_HOST_TO_SOURCE_NAME: dict[str, str] = {
     "www.nikkansports.com": "日刊スポーツ",
     "sponichi.co.jp": "スポニチ",
     "www.sponichi.co.jp": "スポニチ",
+    # 2026-05-15 新規追加: 実機 verify で本文 590/570 字抽出確認
+    "full-count.jp": "Full-Count",
+    "www.full-count.jp": "Full-Count",
+    "news.yahoo.co.jp": "Yahoo!ニュース",
+    # 2026-05-15 forward-coverage 追加 (現時点 extractor は body 0 だが、
+    # 将来 JSON-LD 対応 or 個別 selector 追加で extractor 改善時に効く):
+    "giants.jp": "読売ジャイアンツ公式",
+    "www.giants.jp": "読売ジャイアンツ公式",
+    "npb.jp": "NPB公式",
+    "www.npb.jp": "NPB公式",
+    "mainichi.jp": "毎日新聞",
+    "www.mainichi.jp": "毎日新聞",
+    "asahi.com": "朝日新聞",
+    "www.asahi.com": "朝日新聞",
+    "sankei.com": "産経新聞",
+    "www.sankei.com": "産経新聞",
+    "chunichi.co.jp": "中日スポーツ",
+    "www.chunichi.co.jp": "中日スポーツ",
+    "number.bunshun.jp": "Number Web",
 }
 ALLOWED_ARTICLE_HOSTS = frozenset(ARTICLE_HOST_TO_SOURCE_NAME.keys())
 

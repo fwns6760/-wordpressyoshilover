@@ -29,6 +29,7 @@ Hard constraints (work record §7):
 from __future__ import annotations
 
 import datetime as dt
+import logging
 import math
 import os
 import sqlite3
@@ -42,6 +43,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.analysis import insight_whitelist as _wl  # noqa: E402
+
+LOGGER = logging.getLogger(__name__)
+DETECTOR_ERROR_KEY = "__detector_errors__"
 
 
 # 新 signal_type (既存 11 種と disjoint verify 済)
@@ -1747,14 +1751,15 @@ def run_all_anomaly_detectors(
     *,
     snapshot_date: Optional[str] = None,
     run_id: Optional[str] = None,
-) -> dict[str, list[int]]:
+) -> dict[str, list[Any]]:
     """全 detector を best-effort で実行、結果を dict で返す。
 
     2026-05-15 拡張: z-score 打者 / 投手 / Giants top% は 複数 metric を
     全 scan する (記事多様性向上)。同 player が異 metric で複数 candidate
     化されるが、window_label が metric を含むため dedupe で吸収される。
 
-    Returns: ``{signal_type: [candidate_ids]}``
+    Returns: ``{signal_type: [candidate_ids]}``. Detector failures are kept
+    under ``__detector_errors__`` so best-effort does not become silent skip.
     """
     if snapshot_date is None:
         latest = conn.execute(
@@ -1763,7 +1768,18 @@ def run_all_anomaly_detectors(
         snapshot_date = latest[0] if latest else dt.date.today().isoformat()
     if run_id is None:
         run_id = str(uuid.uuid4())
-    out: dict[str, list[int]] = {}
+    out: dict[str, list[Any]] = {}
+
+    def _record_error(detector_name: str, exc: Exception) -> None:
+        message = f"{detector_name}:{type(exc).__name__}:{exc}"
+        out.setdefault(DETECTOR_ERROR_KEY, []).append(message)
+        LOGGER.warning(
+            "insight_anomaly_detector_failed detector=%s error=%s",
+            detector_name,
+            f"{type(exc).__name__}:{exc}",
+            exc_info=True,
+        )
+
     out[SIGNAL_ZSCORE_BATTER] = []
     for metric in _ZSCORE_BATTER_METRICS:
         for scope in _ZSCORE_BATTER_SCOPES:
@@ -1774,8 +1790,8 @@ def run_all_anomaly_detectors(
                         metric_name=metric, scope=scope,
                     )
                 )
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001
+                _record_error(f"{SIGNAL_ZSCORE_BATTER}:{metric}:{scope}", exc)
     out[SIGNAL_ZSCORE_PITCHER] = []
     for metric in _ZSCORE_PITCHER_METRICS:
         for scope in _ZSCORE_PITCHER_SCOPES:
@@ -1786,8 +1802,8 @@ def run_all_anomaly_detectors(
                         metric_name=metric, scope=scope,
                     )
                 )
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001
+                _record_error(f"{SIGNAL_ZSCORE_PITCHER}:{metric}:{scope}", exc)
     # 2026-05-15 user 指示「サバメトリクスはいらない」適用、BABIP / FIP-ERA
     # 乖離 detector は call せず空に固定 (signal_type 自体は backward-compat
     # のため残し、再開する場合は env で復活させる前提)。
@@ -1803,8 +1819,8 @@ def run_all_anomaly_detectors(
                         metric_name=metric, scope=scope,
                     )
                 )
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001
+                _record_error(f"{SIGNAL_GIANTS_TOP_OUTLIER}:{metric}:{scope}", exc)
     # 2026-05-15 user 指示「マニアック drop」適用、HR pace / 規定外好調 / 連続
     # 多安打 / 巨人 top% は detector call せず空 (signal_type 自体は backward-
     # compat で残し、env / code 復活余地)。
@@ -1820,7 +1836,8 @@ def run_all_anomaly_detectors(
         )
         out[SIGNAL_DEFENSE_UZR_OUTLIER] = uzr_ids
         out[SIGNAL_DEFENSE_FIELDING_PCT] = fpct_ids
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        _record_error("detect_giants_defense_outliers", exc)
         out[SIGNAL_DEFENSE_UZR_OUTLIER] = []
         out[SIGNAL_DEFENSE_FIELDING_PCT] = []
     # 2026-05-15 試合後 ファンが気になる指標 5 detector
@@ -1828,13 +1845,15 @@ def run_all_anomaly_detectors(
         out[SIGNAL_GAME_HERO_BATTER] = detect_game_hero_batter(
             conn, snapshot_date=snapshot_date, run_id=run_id,
         )
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        _record_error(SIGNAL_GAME_HERO_BATTER, exc)
         out[SIGNAL_GAME_HERO_BATTER] = []
     try:
         out[SIGNAL_GAME_PITCHER_PERF] = detect_game_pitcher_performance(
             conn, snapshot_date=snapshot_date, run_id=run_id,
         )
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        _record_error(SIGNAL_GAME_PITCHER_PERF, exc)
         out[SIGNAL_GAME_PITCHER_PERF] = []
     try:
         milestone_ids = detect_milestone_crossed(
@@ -1846,20 +1865,20 @@ def run_all_anomaly_detectors(
             milestone_ids += detect_cycle_hits(
                 conn, snapshot_date=snapshot_date, run_id=run_id,
             )
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            _record_error("detect_cycle_hits", exc)
         try:
             milestone_ids += detect_no_hitter(
                 conn, snapshot_date=snapshot_date, run_id=run_id,
             )
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            _record_error("detect_no_hitter", exc)
         try:
             milestone_ids += detect_perfect_game(
                 conn, snapshot_date=snapshot_date, run_id=run_id,
             )
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            _record_error("detect_perfect_game", exc)
         # 348 step 3 完全達成: 連続記録 5 種 detector
         for _fn in (
             detect_consecutive_hit_streak,
@@ -1872,16 +1891,19 @@ def run_all_anomaly_detectors(
                 milestone_ids += _fn(
                     conn, snapshot_date=snapshot_date, run_id=run_id,
                 )
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                _record_error(_fn.__name__, exc)
                 continue
         out[SIGNAL_MILESTONE_CROSSED] = milestone_ids
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        _record_error(SIGNAL_MILESTONE_CROSSED, exc)
         out[SIGNAL_MILESTONE_CROSSED] = []
     try:
         out[SIGNAL_STANDINGS_SHIFT] = detect_standings_shift(
             conn, snapshot_date=snapshot_date, run_id=run_id,
         )
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        _record_error(SIGNAL_STANDINGS_SHIFT, exc)
         out[SIGNAL_STANDINGS_SHIFT] = []
     # 2026-05-15 user 指示「変化率はタイトルじゃわかりにくい、サバメトリ
     # クス分類で drop」適用、stat_delta detector も BABIP/FIP-ERA と同様

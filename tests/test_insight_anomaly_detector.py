@@ -153,6 +153,26 @@ def test_run_all_anomaly_detectors_handles_empty_db(tmp_path):
         conn.close()
 
 
+def test_run_all_anomaly_detectors_reports_partial_failures(tmp_path, monkeypatch):
+    db = tmp_path / "t.db"
+    conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(det, "detect_game_hero_batter", boom)
+    try:
+        result = det.run_all_anomaly_detectors(conn)
+        assert result.get(det.SIGNAL_GAME_HERO_BATTER) == []
+        errors = result.get(det.DETECTOR_ERROR_KEY, [])
+        assert any(
+            det.SIGNAL_GAME_HERO_BATTER in e and "RuntimeError:boom" in e
+            for e in errors
+        )
+    finally:
+        conn.close()
+
+
 def test_dedup_within_7days(tmp_path):
     """同 player + 同 signal_type + 同 window_label を 7 日以内で再 insert しない."""
     db = tmp_path / "t.db"

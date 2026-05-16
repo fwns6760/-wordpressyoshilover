@@ -243,7 +243,7 @@ def _team_name_to_code(team_name: Optional[str]) -> str:
 SUBTYPE_DATA_RANKING_PREFIX = "data_ranking_"
 
 # 1 trigger で publish する最大 article 数 (暴走防止、env で override 可)
-DEFAULT_MAX_PER_RUN = int(os.environ.get("DATA_INSIGHT_PUBLISH_MAX_PER_RUN", "100") or "100")
+DEFAULT_MAX_PER_RUN = int(os.environ.get("DATA_INSIGHT_PUBLISH_MAX_PER_RUN", "3") or "3")
 
 # auto-publish env flag (本 module は draft 固定、auto-publish は呼び出し側)
 ENABLE_DATA_INSIGHT_AUTO_PUBLISH = (

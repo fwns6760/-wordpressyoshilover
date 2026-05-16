@@ -649,11 +649,11 @@ def publish_team_default_set(
     conn: sqlite3.Connection,
     wp_client_obj: Any,
     *,
-    max_per_run: int = 100,
+    max_per_run: int = 3,
     dry_run: bool = False,
 ) -> list[dict]:
     """デフォルト team metric publish set。
-    2026-05-15 user 指示「データサイト化、上限なし」適用、3 → 100 (実質 cap 無し)。
+    2026-05-16: default は安全側の 3。大量投入は env / caller で明示 override。
     """
     default_jobs = [
         # 2026-05-16 user feedback: season / last_30d / last_7d を同時に

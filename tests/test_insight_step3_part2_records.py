@@ -631,6 +631,34 @@ def test_publish_team_default_set_uses_short_term_once(monkeypatch):
     assert not any(r.get("status") == "skip_duplicate_metric_period" for r in results)
 
 
+def test_publish_team_default_set_default_cap_is_three(monkeypatch):
+    """明示 override なしの自動公開は 1 run 3 本までに抑える。"""
+    metric_calls = []
+
+    def fake_metric(_conn, _wp, *, metric, scope, dry_run=False):
+        metric_calls.append((metric, scope))
+        return {"status": "published_draft", "metric": metric, "scope": scope}
+
+    def fake_streak(_conn, _wp, *, dry_run=False):
+        raise AssertionError("streak must not run after the default cap is reached")
+
+    def fake_run_diff(_conn, _wp, *, scope, dry_run=False):
+        raise AssertionError("run diff must not run after the default cap is reached")
+
+    def fake_vs(_conn, _wp, *, opponent, scope, dry_run=False):
+        raise AssertionError("vs opponent must not run after the default cap is reached")
+
+    monkeypatch.setattr(trp, "publish_team_metric_draft", fake_metric)
+    monkeypatch.setattr(trp, "publish_team_streak_draft", fake_streak)
+    monkeypatch.setattr(trp, "publish_team_run_diff_draft", fake_run_diff)
+    monkeypatch.setattr(trp, "publish_team_vs_opponent_draft", fake_vs)
+
+    results = trp.publish_team_default_set(object(), object())
+
+    assert metric_calls == [("HR", "last_7d"), ("AVG", "last_7d"), ("ERA", "last_7d")]
+    assert sum(1 for r in results if r.get("status") == "published_draft") == 3
+
+
 def test_render_team_streak_article_below_threshold(tmp_path):
     """D-2: streak < 3 は記事化しない (skip None)。"""
     from src.analysis import team_ranking_publisher as trp

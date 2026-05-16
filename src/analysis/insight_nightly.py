@@ -467,38 +467,52 @@ def main(argv: Optional[list[str]] = None) -> int:
                         schema_path=insight_etl.DEFAULT_SCHEMA,
                     )
                     try:
+                        auto_draft_max_per_run = int(
+                            os.environ.get("DATA_INSIGHT_PUBLISH_MAX_PER_RUN", "3") or "3"
+                        )
                         # 1. anomaly signal を detect (article_candidates に insert)
                         try:
-                            anomaly_det.run_all_anomaly_detectors(conn)
+                            anomaly_detect_summary = anomaly_det.run_all_anomaly_detectors(conn)
+                            detector_errors = anomaly_detect_summary.get(
+                                anomaly_det.DETECTOR_ERROR_KEY, []
+                            )
+                            if detector_errors:
+                                print(json.dumps({
+                                    "warn": "anomaly_detector_partial_failures",
+                                    "errors": detector_errors,
+                                }, ensure_ascii=False))
                         except Exception as exc:  # noqa: BLE001
                             print(json.dumps({
                                 "warn": "anomaly_detect_failed",
                                 "error": f"{type(exc).__name__}:{exc}",
-                            }))
+                            }, ensure_ascii=False))
                         # 2. WP draft publish (best-effort)
                         try:
                             wp = wp_mod.WPClient()
-                            # 2026-05-15 user 指示「データサイト化、上限なし、
-                            # 閾値超えたものは全部出す」適用、max_per_run 100 で
-                            # 実質 cap 撤廃。同 trigger で多本数 publish される
-                            # が、wp_client の title reuse / 7 日 dedup で自然に
-                            # 絞り込まれる。
+                            # 2026-05-16 user feedback: same-player / same-metric
+                            # articles and mails were too frequent. Keep the default
+                            # cap conservative; callers can override by env.
                             anomaly_publish_summary = {
                                 "results": anomaly_pub.publish_anomaly_drafts(
-                                    conn, wp, max_per_run=100,
+                                    conn, wp, max_per_run=auto_draft_max_per_run,
                                 ),
                             }
                             ranking_publish_summary = {
                                 "results": ranking_pub.publish_default_set(
-                                    conn, wp, max_per_run=100,
+                                    conn, wp, max_per_run=auto_draft_max_per_run,
                                 ),
                             }
                             # team ranking 記事 (球団 metric、user 指示で追加)
                             try:
                                 from src.analysis import team_ranking_publisher as team_pub
-                                team_pub.publish_team_default_set(conn, wp, max_per_run=100)
-                            except Exception:  # noqa: BLE001
-                                pass
+                                team_summary = team_pub.publish_team_default_set(
+                                    conn, wp, max_per_run=auto_draft_max_per_run
+                                )
+                                ranking_publish_summary["team_results"] = team_summary
+                            except Exception as exc:  # noqa: BLE001
+                                ranking_publish_summary["team_error"] = (
+                                    f"{type(exc).__name__}:{exc}"
+                                )
                             # 348 step 3 part 2 D-1: player counting stats ranking
                             # title variation のため multi-scope 投入
                             # (season / last_30d / monthly / weekly)、 step 3 part 1
@@ -523,14 +537,28 @@ def main(argv: Optional[list[str]] = None) -> int:
                                 # counting window here; longer windows need
                                 # a separate change gate before re-emitting.
                                 counting_scopes = ["weekly"]
+                                counting_published = 0
                                 for metric in counting_metrics:
                                     for scope in counting_scopes:
+                                        if counting_published >= auto_draft_max_per_run:
+                                            break
                                         try:
-                                            ranking_pub.publish_player_counting_draft(
+                                            counting_result = ranking_pub.publish_player_counting_draft(
                                                 conn, wp, scope=scope, **metric,
                                             )
-                                        except Exception:  # noqa: BLE001
-                                            continue
+                                            if counting_result.get("status") in (
+                                                "published", "published_draft", "dry_run",
+                                            ):
+                                                counting_published += 1
+                                        except Exception as exc:  # noqa: BLE001
+                                            print(json.dumps({
+                                                "warn": "player_counting_publish_failed",
+                                                "metric": metric.get("stat_col"),
+                                                "scope": scope,
+                                                "error": f"{type(exc).__name__}:{exc}",
+                                            }, ensure_ascii=False))
+                                    if counting_published >= auto_draft_max_per_run:
+                                        break
                                 # 348 step 3 完全達成: ホーム/アウェイ + 対戦相手別 grouping
                                 home_away_splits = [
                                     ("home_away", "home", "ホーム"),
@@ -546,18 +574,34 @@ def main(argv: Optional[list[str]] = None) -> int:
                                 # split は H/HR/RBI のみ × season (爆発防止)
                                 split_metrics = [m for m in counting_metrics
                                                  if m["stat_col"] in ("H", "HR", "RBI")]
+                                split_published = 0
                                 for metric in split_metrics:
                                     for sf, sv, sl in home_away_splits + opp_splits:
+                                        if split_published >= auto_draft_max_per_run:
+                                            break
                                         try:
-                                            ranking_pub.publish_player_counting_split_draft(
+                                            split_result = ranking_pub.publish_player_counting_split_draft(
                                                 conn, wp, scope="season",
                                                 split_field=sf, split_value=sv,
                                                 split_label_jp=sl, **metric,
                                             )
-                                        except Exception:  # noqa: BLE001
-                                            continue
-                            except Exception:  # noqa: BLE001
-                                pass
+                                            if split_result.get("status") in (
+                                                "published", "published_draft", "dry_run",
+                                            ):
+                                                split_published += 1
+                                        except Exception as exc:  # noqa: BLE001
+                                            print(json.dumps({
+                                                "warn": "player_counting_split_publish_failed",
+                                                "metric": metric.get("stat_col"),
+                                                "split": f"{sf}={sv}",
+                                                "error": f"{type(exc).__name__}:{exc}",
+                                            }, ensure_ascii=False))
+                                    if split_published >= auto_draft_max_per_run:
+                                        break
+                            except Exception as exc:  # noqa: BLE001
+                                ranking_publish_summary["counting_error"] = (
+                                    f"{type(exc).__name__}:{exc}"
+                                )
                         except Exception as exc:  # noqa: BLE001
                             anomaly_publish_summary = {
                                 "skipped": True,

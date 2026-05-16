@@ -41,7 +41,7 @@ from src.giants_news_banner import (  # noqa: E402
 DEFAULT_CATEGORY_NAME = rap.DEFAULT_CATEGORY_NAME
 
 DEFAULT_MAX_PER_RUN = int(
-    os.environ.get("DATA_INSIGHT_PUBLISH_MAX_PER_RUN", "100") or "100"
+    os.environ.get("DATA_INSIGHT_PUBLISH_MAX_PER_RUN", "3") or "3"
 )
 
 

@@ -22,6 +22,14 @@ from src.analysis import insight_etl  # noqa: E402
 from src.analysis import ranking_article_publisher as rap  # noqa: E402
 
 
+def test_default_publish_cap_is_conservative():
+    """DATA_INSIGHT_PUBLISH_MAX_PER_RUN 未指定時は 1 run 3 本に抑える。"""
+    from src.analysis import anomaly_article_publisher as anomaly_pub
+
+    assert rap.DEFAULT_MAX_PER_RUN == 3
+    assert anomaly_pub.DEFAULT_MAX_PER_RUN == 3
+
+
 def _seed_snapshots(conn, *, snapshot_date, scope, metric, ranking):
     """sample snapshots を insert。``ranking`` は (player, team, value, sample, rank, total) tuple."""
     for player, team, value, sample, rank, total in ranking:

@@ -46,6 +46,51 @@ def _seed_player_table(conn, players):
     conn.commit()
 
 
+def _insert_candidate(
+    conn,
+    *,
+    signal_type,
+    player="巨人A",
+    current_value="OPS=1.000 rank=1",
+    baseline_value="league_mean=0.700",
+    window_label="last_30d_2026-05-16",
+    notes="metric=OPS scope=last_30d",
+    priority=1,
+    created_at="2026-05-16T00:00:00+00:00",
+):
+    conn.execute(
+        "INSERT OR IGNORE INTO insight_runs "
+        "(run_id, run_ts, window_start, window_end, n_candidates, notes) "
+        "VALUES (?, ?, NULL, NULL, 0, ?)",
+        ("test-run", created_at, "test"),
+    )
+    cur = conn.execute(
+        "INSERT INTO article_candidates (run_id, game_id, player_canonical, "
+        "player_display, signal_type, magnitude, baseline_value, current_value, "
+        "window_label, comparison_target, evidence_json, priority, status, "
+        "created_at, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            "test-run",
+            None,
+            player,
+            player,
+            signal_type,
+            0.1,
+            baseline_value,
+            current_value,
+            window_label,
+            "league",
+            "{}",
+            priority,
+            "NEW",
+            created_at,
+            notes,
+        ),
+    )
+    conn.commit()
+    return int(cur.lastrowid)
+
+
 def _central_zscore_ranking():
     return [
         ("阪神A", "t", 0.700, 50, 2, 6),
@@ -336,5 +381,135 @@ def test_publish_anomaly_drafts_marks_drafted(tmp_path):
         # status='draft' で投稿されたか
         for c in wp_mock.create_post.call_args_list:
             assert c.kwargs.get("status") == "draft"
+    finally:
+        conn.close()
+
+
+def test_cleanup_anomaly_queue_expires_stale_and_drops_disabled_signals(tmp_path):
+    db = tmp_path / "t.db"
+    conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
+    now = dt.datetime(2026, 5, 16, 12, 0, tzinfo=dt.timezone.utc)
+    try:
+        expired_id = _insert_candidate(
+            conn,
+            signal_type=det.SIGNAL_DEFENSE_UZR_OUTLIER,
+            player="古い巨人",
+            current_value="RF_proxy=0.900",
+            notes="position=遊 metric=UZR_proxy scope=last_30d",
+            created_at="2026-05-13T12:00:00+00:00",
+        )
+        disabled_id = _insert_candidate(
+            conn,
+            signal_type="pitcher_workload_warning",
+            player="対象外巨人",
+            created_at="2026-05-16T11:00:00+00:00",
+        )
+        kept_id = _insert_candidate(
+            conn,
+            signal_type=det.SIGNAL_DEFENSE_FIELDING_PCT,
+            player="残す巨人",
+            current_value="fielding_pct=0.990",
+            notes="position=遊 metric=FIELDING_PCT scope=last_30d",
+            created_at="2026-05-16T11:00:00+00:00",
+        )
+
+        summary = pub.cleanup_anomaly_queue(conn, ttl_hours=48, now=now)
+
+        statuses = dict(conn.execute(
+            "SELECT candidate_id, status FROM article_candidates"
+        ).fetchall())
+        assert summary["expired"] == 1
+        assert summary["disabled_signal"] == 1
+        assert statuses[expired_id] == pub.QUEUE_STATUS_EXPIRED
+        assert statuses[disabled_id] == pub.QUEUE_STATUS_DROPPED_DISABLED_SIGNAL
+        assert statuses[kept_id] == "NEW"
+    finally:
+        conn.close()
+
+
+def test_publish_anomaly_drafts_caps_same_metric_per_run(tmp_path):
+    db = tmp_path / "t.db"
+    conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
+    try:
+        first_id = _insert_candidate(
+            conn,
+            signal_type=det.SIGNAL_DEFENSE_UZR_OUTLIER,
+            player="泉口友汰",
+            current_value="RF_proxy=0.912",
+            baseline_value="position_avg=1.000",
+            notes="position=遊 metric=UZR_proxy scope=last_30d",
+            created_at="2026-05-16T11:00:00+00:00",
+        )
+        second_id = _insert_candidate(
+            conn,
+            signal_type=det.SIGNAL_DEFENSE_UZR_OUTLIER,
+            player="中山礼都",
+            current_value="RF_proxy=0.901",
+            baseline_value="position_avg=1.000",
+            notes="position=遊 metric=UZR_proxy scope=last_30d",
+            created_at="2026-05-16T10:59:00+00:00",
+        )
+
+        wp_mock = MagicMock()
+        wp_mock.create_category.return_value = 675
+        wp_mock.create_post.return_value = 12345
+
+        results = pub.publish_anomaly_drafts(
+            conn,
+            wp_mock,
+            max_per_run=3,
+            cleanup_queue=False,
+            metric_max_per_run=1,
+        )
+
+        assert [r["status"] for r in results].count("published_draft") == 1
+        skipped = [r for r in results if r.get("status") == "skip_metric_run_cap"]
+        assert len(skipped) == 1
+        assert skipped[0]["metric_name"] == "UZR_proxy"
+        wp_mock.create_post.assert_called_once()
+        statuses = dict(conn.execute(
+            "SELECT candidate_id, status FROM article_candidates"
+        ).fetchall())
+        assert statuses[first_id] == "DRAFTED"
+        assert statuses[second_id] == pub.QUEUE_STATUS_DROPPED_METRIC_RUN_CAP
+    finally:
+        conn.close()
+
+
+def test_publish_anomaly_drafts_dry_run_does_not_cleanup_or_mutate_status(tmp_path):
+    db = tmp_path / "t.db"
+    conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
+    try:
+        disabled_id = _insert_candidate(
+            conn,
+            signal_type="pitcher_workload_warning",
+            player="対象外巨人",
+            created_at="2026-05-13T12:00:00+00:00",
+        )
+        publishable_id = _insert_candidate(
+            conn,
+            signal_type=det.SIGNAL_DEFENSE_UZR_OUTLIER,
+            player="泉口友汰",
+            current_value="RF_proxy=0.912",
+            baseline_value="position_avg=1.000",
+            notes="position=遊 metric=UZR_proxy scope=last_30d",
+            created_at="2026-05-13T12:00:00+00:00",
+        )
+
+        wp_mock = MagicMock()
+        pub.publish_anomaly_drafts(
+            conn,
+            wp_mock,
+            max_per_run=3,
+            dry_run=True,
+            cleanup_queue=True,
+        )
+
+        statuses = dict(conn.execute(
+            "SELECT candidate_id, status FROM article_candidates"
+        ).fetchall())
+        assert statuses[disabled_id] == "NEW"
+        assert statuses[publishable_id] == "NEW"
+        wp_mock.create_post.assert_not_called()
     finally:
         conn.close()

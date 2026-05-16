@@ -48,6 +48,13 @@ DEFAULT_MAX_PER_RUN = int(
     os.environ.get("DATA_INSIGHT_PUBLISH_MAX_PER_RUN", "3") or "3"
 )
 
+DEFAULT_METRIC_MAX_PER_RUN = 1
+DEFAULT_QUEUE_TTL_HOURS = 48
+
+QUEUE_STATUS_EXPIRED = "EXPIRED"
+QUEUE_STATUS_DROPPED_DISABLED_SIGNAL = "DROPPED_DISABLED_SIGNAL"
+QUEUE_STATUS_DROPPED_METRIC_RUN_CAP = "DROPPED_METRIC_RUN_CAP"
+
 
 # ─── ranking context helper (大城式の table を全 anomaly 記事に共通化) ─────
 
@@ -881,6 +888,12 @@ def _render_defense_team_table_md(
     return "\n".join(lines)
 
 
+def _defense_metric_formula(metric: str) -> str:
+    if metric == "FIELDING_PCT":
+        return "アウト数 ÷ (アウト数 + 失策数)"
+    return "球団アウト化率 − セ・リーグ同守備位置平均アウト化率"
+
+
 def _render_defense_team_comparison_article(
     conn: Optional[sqlite3.Connection],
     *,
@@ -934,6 +947,7 @@ def _render_defense_team_comparison_article(
 | 守備位置 | {position_label} |
 | データ元 | NPB 公式 box score(https://npb.jp/) |
 | 集計期間 | {since} 〜 {until} |
+| 計算式 | {_defense_metric_formula(metric)} |
 | 比較 | セ・リーグ同守備位置の球団別比較 |
 | 注意点 | {source_note} |
 """
@@ -1204,6 +1218,85 @@ def _dedup_context_for_candidate(candidate_row: dict[str, Any]) -> Optional[dict
         "value": dedup_gate.parse_first_number(current, preferred_key=metric),
         "rank": dedup_gate.parse_rank(current),
         "total": None,
+    }
+
+
+def _utc_now() -> dt.datetime:
+    return dt.datetime.now(dt.timezone.utc)
+
+
+def _metric_run_key(candidate_row: dict[str, Any]) -> str:
+    context = _dedup_context_for_candidate(candidate_row)
+    if context:
+        return str(context.get("metric_name") or "").strip()
+    notes = _parse_kv_blob(candidate_row.get("notes") or "")
+    metric = str(notes.get("metric") or "").strip()
+    if metric:
+        return metric
+    current = str(candidate_row.get("current_value") or "")
+    if "=" in current:
+        return current.split("=", 1)[0].strip()
+    return ""
+
+
+def _mark_candidate_status(
+    conn: sqlite3.Connection,
+    *,
+    candidate_id: Any,
+    status: str,
+) -> int:
+    cur = conn.execute(
+        "UPDATE article_candidates SET status = ? "
+        "WHERE candidate_id = ? AND status = 'NEW'",
+        (status, candidate_id),
+    )
+    conn.commit()
+    return int(cur.rowcount or 0)
+
+
+def cleanup_anomaly_queue(
+    conn: sqlite3.Connection,
+    *,
+    allowed_signal_types: Optional[list[str]] = None,
+    ttl_hours: int = DEFAULT_QUEUE_TTL_HOURS,
+    now: Optional[dt.datetime] = None,
+) -> dict[str, Any]:
+    """Move non-publishable ``NEW`` candidates out of the hot queue.
+
+    Rows are never deleted.  Status changes keep the audit trail while stopping
+    disabled or stale candidates from being fetched every run.
+    """
+    allowed = list(allowed_signal_types or detector.ALL_ANOMALY_SIGNALS)
+    now_dt = (now or _utc_now()).astimezone(dt.timezone.utc)
+    ttl = max(1, int(ttl_hours or DEFAULT_QUEUE_TTL_HOURS))
+    cutoff = now_dt - dt.timedelta(hours=ttl)
+
+    expired = int(conn.execute(
+        "UPDATE article_candidates SET status = ? "
+        "WHERE status = 'NEW' AND created_at < ?",
+        (QUEUE_STATUS_EXPIRED, cutoff.isoformat()),
+    ).rowcount or 0)
+
+    if allowed:
+        placeholders = ",".join("?" * len(allowed))
+        disabled = int(conn.execute(
+            f"UPDATE article_candidates SET status = ? "
+            f"WHERE status = 'NEW' AND signal_type NOT IN ({placeholders})",
+            (QUEUE_STATUS_DROPPED_DISABLED_SIGNAL, *allowed),
+        ).rowcount or 0)
+    else:
+        disabled = int(conn.execute(
+            "UPDATE article_candidates SET status = ? WHERE status = 'NEW'",
+            (QUEUE_STATUS_DROPPED_DISABLED_SIGNAL,),
+        ).rowcount or 0)
+
+    if expired or disabled:
+        conn.commit()
+    return {
+        "expired": expired,
+        "disabled_signal": disabled,
+        "ttl_hours": ttl,
+        "allowed_signal_count": len(allowed),
     }
 
 
@@ -1746,6 +1839,9 @@ def publish_anomaly_drafts(
     wp_client_obj: Any,
     *,
     max_per_run: Optional[int] = None,
+    metric_max_per_run: int = DEFAULT_METRIC_MAX_PER_RUN,
+    cleanup_queue: bool = True,
+    queue_ttl_hours: int = DEFAULT_QUEUE_TTL_HOURS,
     category_name: str = DEFAULT_CATEGORY_NAME,
     dry_run: bool = False,
     priority_max: int = 2,
@@ -1759,12 +1855,25 @@ def publish_anomaly_drafts(
     """
     if max_per_run is None:
         max_per_run = DEFAULT_MAX_PER_RUN
+    metric_cap = max(1, int(metric_max_per_run or DEFAULT_METRIC_MAX_PER_RUN))
+
+    cleanup_result: Optional[dict[str, Any]] = None
+    if cleanup_queue and not dry_run:
+        cleanup_summary = cleanup_anomaly_queue(
+            conn,
+            ttl_hours=queue_ttl_hours,
+        )
+        if cleanup_summary.get("expired") or cleanup_summary.get("disabled_signal"):
+            cleanup_result = {
+                "status": "queue_cleanup",
+                **cleanup_summary,
+            }
 
     candidates = fetch_pending_anomalies(
         conn, limit=max_per_run * 3, priority_max=priority_max,
     )
     if not candidates:
-        return []
+        return [cleanup_result] if cleanup_result else []
 
     # category 確保 (idempotent)
     category_id = 0
@@ -1780,13 +1889,35 @@ def publish_anomaly_drafts(
                 category_id = 0
 
     results: list[dict[str, Any]] = []
+    if cleanup_result:
+        results.append(cleanup_result)
     published = 0
+    metric_counts: dict[str, int] = {}
     for cand in candidates:
         if published >= max_per_run:
             results.append({
                 "status": "skip_max_per_run",
                 "candidate_id": cand["candidate_id"],
                 "signal_type": cand["signal_type"],
+            })
+            continue
+        metric_key = _metric_run_key(cand)
+        if metric_key and metric_counts.get(metric_key, 0) >= metric_cap:
+            changed = 0
+            if not dry_run:
+                changed = _mark_candidate_status(
+                    conn,
+                    candidate_id=cand["candidate_id"],
+                    status=QUEUE_STATUS_DROPPED_METRIC_RUN_CAP,
+                )
+            results.append({
+                "status": "skip_metric_run_cap",
+                "candidate_id": cand["candidate_id"],
+                "signal_type": cand["signal_type"],
+                "player_canonical": cand["player_canonical"],
+                "metric_name": metric_key,
+                "metric_max_per_run": metric_cap,
+                "queue_status_updated": changed,
             })
             continue
         article = render_anomaly_article(conn, cand)
@@ -1835,6 +1966,8 @@ def publish_anomaly_drafts(
                 "body_html": article["body_html"],
                 "player_canonical": cand["player_canonical"],
             })
+            if metric_key:
+                metric_counts[metric_key] = metric_counts.get(metric_key, 0) + 1
             published += 1
             continue
         if not category_id:
@@ -1891,6 +2024,8 @@ def publish_anomaly_drafts(
                 "dedup_history_id": dedup_history_id,
                 "dedup_record_error": dedup_record_error,
             })
+            if metric_key:
+                metric_counts[metric_key] = metric_counts.get(metric_key, 0) + 1
             published += 1
         except Exception as e:  # noqa: BLE001
             results.append({

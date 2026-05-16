@@ -1870,6 +1870,19 @@ git add -A禁止。
 - **tests**: `test_insight_step3_part2_records.py` + `test_insight_quality_gate.py` 44 passed、関連 4 file 102 passed、py_compile / compileall / AST / scoped diff-check PASS。production DB copy preview PASS。
 - **deploy**: commit `a9b208e`、Cloud Build `b027f92a-b3f7-4aed-b448-cdded17740fb` SUCCESS、image `insight-nightly:361-title-league-a9b208e`、digest `sha256:b2fb813a542a0ce7b79ea8c395f939fa3027001ce88f97bca123c2c65877ff69`、Job generation `50`。Scheduler / env / Secret は未変更、`data-insight-*` 7 triggers ENABLED 確認。手動 execute は追加 publish/mail 回避のため未実行。
 
+### 362-INSIGHT-queue-cleanup-and-metric-run-cap
+
+- **alias**: -
+- **status**: REPO_IMPL_READY / **priority**: high
+- **owner**: Codex / **lane**: B
+- **doc_path**: `doc/active/362-INSIGHT-queue-cleanup-and-metric-run-cap.md`
+- **背景**: 15:00 JST に UZR 記事が 3 本連続で出た。production DB copy では `article_candidates.NEW=15,938` まで増えており、現在の自動公開対象外 signal も `NEW` に残り続けている。
+- **方針**: anomaly auto publish は 1 run 同一 metric 1 本まで。metric cap / disabled signal / stale candidate は削除せず status 変更で監査可能に残す。`dry_run=True` は status mutation しない。
+- **acceptance**: 同じ metric の連続 publish を止める。古い `NEW` は `EXPIRED`、対象外 signal は `DROPPED_DISABLED_SIGNAL`、metric cap 余剰は `DROPPED_METRIC_RUN_CAP` へ移す。既存公開 WP post / Scheduler / env / Secret / X / SNS は変更しない。
+- **tests**: anomaly publisher / table contract / quality gate / whitelist / ranking 関連 118 passed、nightly / dedup 関連 20 passed、py_compile / compileall / scoped diff-check PASS。
+- **production DB copy smoke**: `/tmp` copy のみで `NEW 15938 -> 822`、`EXPIRED 3856`、`DROPPED_DISABLED_SIGNAL 11257`、UZR 3 件は 1 件 draft candidate + 2 件 `DROPPED_METRIC_RUN_CAP`。
+- **deploy**: pending。
+
 ## marketing board
 
 - Marketing ticket source of truth: `doc/marketing/README.md`

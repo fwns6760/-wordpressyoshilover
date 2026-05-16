@@ -78,6 +78,7 @@ test: 382 passed (= 302 baseline + 35 step1 + 18 step2 + 14 step3p1 + 13 step3p2
 | `348-INSIGHT` follow-up | LIVE_DEPLOYED_OBSERVE | `BABIP` / `FIP` が detector bypass や direct renderer から再流出しないよう二重防御。UZR は user 指示通り許可側維持 |
 | `349-INSIGHT-dedup-cooldown-cascade` | LIVE_DEPLOYED_OBSERVE | 同じ subject + metric を期間違いでも 7 日 cooldown。例外は 5% 以上の値変化または順位 band 変化。title 期間 runtime guard も deploy 済み。schema migration なし、既存 `article_candidates` を ledger として利用 |
 | `356-INSIGHT-data-quality-publish-gate` | LIVE_DEPLOYED_OBSERVE | GitHub Issue #31 起票済み。sample不足 / ranking coverage不足 / stale snapshot / 本文根拠不足を publish 直前に止める data quality gate を `insight-nightly:ca03019` へ本番 deploy 済み。Cloud Build `19c2e97d-f4f9-48e9-8db4-7a303003892e` SUCCESS、digest `sha256:a71bbe0f...`、Job generation `46`。env / Scheduler / Secret / X / SNS は未変更、手動 execute 未実行 |
+| `362-INSIGHT-queue-cleanup-and-metric-run-cap` | REPO_IMPL_READY | anomaly auto publish を 1 run 同一 metric 1 本までに制限し、古い NEW / 対象外 signal / metric cap 余剰を status 変更で掃除する実装・テスト完了。production DB copy smoke では `NEW 15938 -> 822`、UZR 3 件は 1 件 draft candidate + 2 件 cap drop。既存公開 WP post / Scheduler / env / Secret / X / SNS は対象外 |
 
 deploy: `insight-nightly:ca03019` / digest `sha256:a71bbe0f943c969349a61413da3a6addb016f8286e506229e0b3a3a0a76bc41f`。Cloud Build `19c2e97d-f4f9-48e9-8db4-7a303003892e` SUCCESS。Scheduler / env / Secret は未変更、手動 execute 未実行。
 

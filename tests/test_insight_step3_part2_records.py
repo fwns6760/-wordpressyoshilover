@@ -514,6 +514,7 @@ def test_defense_uzr_article_uses_team_comparison_table(tmp_path):
         assert "| 順位 | 球団 | 簡易UZR | 守備機会 | アウト化率 |" in article["body_md"]
         assert '<span style="color:#c0392b"><strong>巨人 ★</strong></span>' in article["body_md"]
         assert "| 関連した巨人選手 | 泉口友汰 |" in article["body_md"]
+        assert "| 計算式 | 球団アウト化率" in article["body_md"]
         assert "セ・リーグ同守備位置の球団別比較" in article["body_md"]
     finally:
         conn.close()

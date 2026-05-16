@@ -2,7 +2,7 @@
 
 ## meta
 
-- status: REVIEW_NEEDED
+- status: LIVE_DEPLOYED_OBSERVE
 - priority: high
 - owner: Codex
 - lane: B
@@ -264,7 +264,9 @@ AI 実装で事故になりやすい以下 3 点を禁止する。
 - 同じ source family の候補は本 ticket の cross-family skip では落とさない。
 - skip log は既存 `duplicate_news_pre_gemini_skip` と分け、`cross_family_same_event_duplicate_skip` として `event_key` / `subject_key` / `phase_key` を出す。
 - 報知 > 日刊 > スポニチ > サンスポ > デイリー > 東スポ > その他の同 run tie-break を追加。cross-run ledger の既存 review 挙動は維持。
-- deploy / Scheduler / env / Secret / WP既存記事 / X / SNS / mail 条件は未変更。
+- Cloud Build `440b7747-e8f4-4ca7-adc2-f0299ab3ddd5` SUCCESS、image `yoshilover-fetcher:364-cross-family-4929278` を push 済み。
+- deploy は `yoshilover-fetcher-00401-dxs` へ反映済み、traffic 100%、digest `sha256:c2f85e1a4bb2a27ae35be2f6819d2d49180b97e400f8814f673bd3106056ca65`。
+- Scheduler / env / Secret / WP既存記事 / X / SNS / mail 条件は未変更。
 
 ## 検証
 
@@ -289,6 +291,15 @@ AI 実装で事故になりやすい以下 3 点を禁止する。
 - `python3 -m pytest tests/test_rss_fetcher_duplicate_guard.py -q` -> 13 passed
 - `python3 -m pytest tests/test_duplicate_prevention_golden.py tests/test_rss_fetcher_reliability_2026_05_08.py -q` -> 36 passed / 3 xfailed / 3 subtests passed
 - `python3 -m pytest tests/test_rss_fetcher.py -q` -> 28 passed
+- `gcloud builds describe 440b7747-e8f4-4ca7-adc2-f0299ab3ddd5 --project baseballsite --region asia-northeast1` -> SUCCESS
+- `gcloud run deploy yoshilover-fetcher --image asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:364-cross-family-4929278 --project baseballsite --region asia-northeast1 --quiet` -> revision `yoshilover-fetcher-00401-dxs`, traffic 100%
+- `curl -sS https://yoshilover-fetcher-487178857517.asia-northeast1.run.app/health` -> OK
+- Cloud Run log: revision `yoshilover-fetcher-00401-dxs` startup probe succeeded, `/health` 200
+
+未完了:
+
+- 自然 fire 後に `cross_family_same_event_duplicate_skip` が出るか、対象なしで問題なく完走するかを観察する。
+- GitHub Issue #33 は自然 fire / log evidence 後に close する。
 
 ## 完了条件
 

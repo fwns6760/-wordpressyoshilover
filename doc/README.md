@@ -1905,14 +1905,14 @@ git add -A禁止。
 ### 364-QA-cross-family-same-event-dedup
 
 - **alias**: -
-- **status**: REVIEW_NEEDED / **priority**: high
+- **status**: LIVE_DEPLOYED_OBSERVE / **priority**: high
 - **owner**: Codex / **lane**: B
 - **doc_path**: `doc/active/364-QA-cross-family-same-event-dedup.md`
 - **背景**: 報知 / スポニチ / デイリー / 東スポなどが同じ巨人ニュースを別タイトル・別URLで出すと、同一URL dedup や 363 の同一タイトル dedup では止まらない。X と雑誌 / Web メディア間でも同じ重複が起きる。既存 319 は事故系 topic key に限定、339 は同 family X+Web 限定、334 は 3媒体以上の選手発言 digest 限定。
 - **方針**: AI 類似判定は使わず、同一日/同一試合 + phase + 同じ選手 literal + 明確な出来事 token + 同じ主語 / 視点 + 別 source family の `cross_family_event_key` で、2媒体以上の同一ニュースだけ 1本に絞る。同じ坂本勇人300号でも田中将大 / 父 / 監督など別主体コメント記事は潰さない。新聞各紙や X / 雑誌が同じ事実を書く前提で、2本目以降は無視ではなく `related_sources` として扱う。試合直後と翌日深掘りは役割が違うため原則潰さない。記憶再構成 / silent skip / 自己評価OKは禁止。X は同一媒体X+Web / 公式X+媒体Web / X+雑誌/Web / 媒体違いWebで扱いを分ける。
 - **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/33
 - **acceptance**: cross-family same player same event は 1本だけ通す。different player/event は両方残す。同じ player/event でも別主体コメントは残す。X+雑誌/Web も literal 一致なら束ねる。skip は `cross_family_same_event_duplicate_skip` 構造化ログに残す。Scheduler / env / Secret / WP既存記事 / X / SNS / mail 条件は変更しない。
-- **implementation**: repo 実装 + fixture-backed tests 完了、deploy 未実行。`py_compile` / `compileall` / AST parse PASS。pytest: `test_rss_fetcher_duplicate_guard.py` 13 passed、duplicate+reliability 36 passed / 3 xfailed / 3 subtests passed、`test_rss_fetcher.py` 28 passed。
+- **implementation**: repo 実装 + fixture-backed tests 完了、Cloud Build `440b7747-e8f4-4ca7-adc2-f0299ab3ddd5` SUCCESS。image `yoshilover-fetcher:364-cross-family-4929278` / digest `sha256:c2f85e1a4bb2a27ae35be2f6819d2d49180b97e400f8814f673bd3106056ca65` を `yoshilover-fetcher-00401-dxs` へ deploy、traffic 100%、`/health` OK、startup probe succeeded。`py_compile` / `compileall` / AST parse PASS。pytest: `test_rss_fetcher_duplicate_guard.py` 13 passed、duplicate+reliability 36 passed / 3 xfailed / 3 subtests passed、`test_rss_fetcher.py` 28 passed。Scheduler / env / Secret / WP既存記事 / X / SNS / mail 条件は未変更。GitHub Issue #33 は自然 fire / log evidence 後に close。
 
 ## marketing board
 

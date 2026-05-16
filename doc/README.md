@@ -1909,7 +1909,7 @@ git add -A禁止。
 - **owner**: Codex / **lane**: B
 - **doc_path**: `doc/active/364-QA-cross-family-same-event-dedup.md`
 - **背景**: 報知 / スポニチ / デイリー / 東スポなどが同じ巨人ニュースを別タイトル・別URLで出すと、同一URL dedup や 363 の同一タイトル dedup では止まらない。既存 319 は事故系 topic key に限定、339 は同 family X+Web 限定、334 は 3媒体以上の選手発言 digest 限定。
-- **方針**: AI 類似判定は使わず、同一日/同一試合 + 同じ選手 literal + 明確な出来事 token + 別 source family の `cross_family_event_key` で、2媒体以上の同一ニュースだけ 1本に絞る。弱い token では止めない。
+- **方針**: AI 類似判定は使わず、同一日/同一試合 + phase + 同じ選手 literal + 明確な出来事 token + 別 source family の `cross_family_event_key` で、2媒体以上の同一ニュースだけ 1本に絞る。新聞各紙が同じ事実を書く前提で、2本目以降は無視ではなく `related_sources` として扱う。試合直後と翌日深掘りは役割が違うため原則潰さない。X は同一媒体X+Web / 公式X+媒体Web / 媒体違いWebで扱いを分ける。
 - **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/33
 - **acceptance**: cross-family same player same event は 1本だけ通す。different player/event は両方残す。skip は構造化ログに残す。Scheduler / env / Secret / WP既存記事 / X / SNS / mail 条件は変更しない。
 

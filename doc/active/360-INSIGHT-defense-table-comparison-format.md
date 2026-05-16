@@ -2,7 +2,7 @@
 
 ## status
 
-- **status**: REVIEW_NEEDED
+- **status**: LIVE_DEPLOYED_OBSERVE
 - **owner**: Codex
 - **lane**: B
 - **created**: 2026-05-16 JST
@@ -15,6 +15,9 @@
 - `68499` などの UZR 記事は出したい
 - ただし個人の平均差だけではなく、球団ごとの表形式順位が欲しい
 - 方針としてデータ記事は表形式にする
+
+注: 「全てが表形式」は、数値・比較・根拠の表示を table に寄せる意味で扱う。
+読者向けの短い `ひとこと` は残すが、判断材料になるデータ部は表で見せる。
 
 ## implementation contract
 
@@ -62,6 +65,11 @@
 
 ## deploy notes
 
-- live 反映には `insight-nightly` image rebuild + Cloud Run Job image update が必要
+- commit: `269fd37`
+- Cloud Build: `7cf61309-f315-4fb9-9a2f-5ec130c26c23` SUCCESS
+- image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/insight-nightly:360-defense-table-269fd37`
+- digest: `sha256:0e2abc58b2704a03eb8f49481dae1f3a858986b068cd087854b38a1594af72c7`
+- Cloud Run Job: `insight-nightly` generation `48`
+- Scheduler: `data-insight-*` 7 triggers ENABLED のまま確認
 - Scheduler / env / Secret は変更しない
-- 手動 execute は追加 publish/mail を発生させる可能性があるため原則実行しない。次回自然 fire で確認する
+- 手動 execute は追加 publish/mail を発生させる可能性があるため未実行。次回自然 fire で live output を確認する

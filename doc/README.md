@@ -1851,12 +1851,13 @@ git add -A禁止。
 ### 360-INSIGHT-defense-table-comparison-format
 
 - **alias**: -
-- **status**: REVIEW_NEEDED / **priority**: high
+- **status**: LIVE_DEPLOYED_OBSERVE / **priority**: high
 - **owner**: Codex / **lane**: B
 - **doc_path**: `doc/active/360-INSIGHT-defense-table-comparison-format.md`
 - **背景**: `68499` などの UZR 記事は出したいが、個人の平均差だけでは読者が比較しづらい。user 方針としてデータ記事は表形式に寄せる。
-- **方針**: UZR / 守備率記事はセ・リーグ球団別 ranking table を本文主役にし、関連した巨人選手名は本文表に残す。シンプルデータ記事の `## データ` も箇条書きから `| 項目 | 数値 |` table にする。既存公開 post / WP / Scheduler / env / Secret / X は触らない。
+- **方針**: UZR / 守備率記事はセ・リーグ球団別 ranking table を本文主役にし、関連した巨人選手名は本文表に残す。シンプルデータ記事の `## データ` も箇条書きから `| 項目 | 数値 |` table にする。「全てが表形式」は数値・比較・根拠の表示を table に寄せる意味で扱い、短い `ひとこと` は残す。
 - **tests**: `test_insight_step3_part2_records.py` 37 passed、関連 4 file 100 passed、py_compile / compileall / AST / scoped diff-check PASS。production DB copy preview PASS。
+- **deploy**: commit `269fd37`、Cloud Build `7cf61309-f315-4fb9-9a2f-5ec130c26c23` SUCCESS、image `insight-nightly:360-defense-table-269fd37`、digest `sha256:0e2abc58b2704a03eb8f49481dae1f3a858986b068cd087854b38a1594af72c7`、Job generation `48`。Scheduler / env / Secret は未変更、`data-insight-*` 7 triggers ENABLED 確認。手動 execute は追加 publish/mail 回避のため未実行。
 
 ## marketing board
 

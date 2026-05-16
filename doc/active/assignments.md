@@ -107,7 +107,7 @@ user 指示「他の自動通知も来るから分からない」を受け、X �
 
 ### 360 INSIGHT defense table comparison format (2026-05-16 JST)
 
-user 指示「UZR は出したいが球団ごとの表形式比較が欲しい」「方針として全てが表形式」を受け、`doc/active/360-INSIGHT-defense-table-comparison-format.md` を起票。未来生成分の `anomaly_article_publisher` で、UZR / 守備率記事をセ・リーグ球団別 table 主体に変更。シンプルデータ記事の `## データ` も箇条書きから table 化。production DB copy preview では `泉口友汰 / 遊撃守備` が `セ・リーグ球団別 遊撃守備の簡易UZR、巨人 6/6位 -0.088（直近30日）` と6球団表で出ることを確認。関連 pytest `100 passed`。既存公開 post / WP update / Cloud Run / Scheduler / env / Secret / X / SNS は触らない。
+user 指示「UZR は出したいが球団ごとの表形式比較が欲しい」「方針として全てが表形式」を受け、`doc/active/360-INSIGHT-defense-table-comparison-format.md` を起票。未来生成分の `anomaly_article_publisher` で、UZR / 守備率記事をセ・リーグ球団別 table 主体に変更。シンプルデータ記事の `## データ` も箇条書きから table 化。「全てが表形式」は数値・比較・根拠を table に寄せる方針として記録。production DB copy preview では `泉口友汰 / 遊撃守備` が `セ・リーグ球団別 遊撃守備の簡易UZR、巨人 6/6位 -0.088（直近30日）` と6球団表で出ることを確認。commit `269fd37`、Cloud Build `7cf61309-f315-4fb9-9a2f-5ec130c26c23` SUCCESS、image digest `sha256:0e2abc58b2704a03eb8f49481dae1f3a858986b068cd087854b38a1594af72c7`、Job generation `48`。関連 pytest `100 passed`。既存公開 post / WP update / Scheduler / env / Secret / X / SNS は触らない。手動 execute は追加 publish/mail 回避のため未実行。
 
 ## 2026-05-14 EVENING session summary
 

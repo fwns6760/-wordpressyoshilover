@@ -906,7 +906,7 @@ def _render_defense_team_comparison_article(
     )
     title = (
         f"【巨人データ】{player}の{position_label}、"
-        f"{metric_label} {value_str}で巨人{giants['rank']}/{giants['total']}位（直近30日）"
+        f"巨人は{metric_label} {value_str}でセ・リーグ{giants['rank']}/{giants['total']}位（直近30日）"
     )
     title_check = title_guard.ensure_title_period(title, period_label="直近30日")
     if title_check.ok:

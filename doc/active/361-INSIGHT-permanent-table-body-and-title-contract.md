@@ -36,7 +36,7 @@
 
 ## accepted behavior
 
-- UZR / 守備率の title は、`{巨人選手名}の{守備位置}、{指標} {値}で巨人N/6位（期間）` 型にする
+- UZR / 守備率の title は、`{巨人選手名}の{守備位置}、巨人は{指標} {値}でセ・リーグN/6位（期間）` 型にする
 - title 先頭で `セ・リーグ球団別` を主語にしない。本文の表でセ・リーグ比較を見せる
 - data insight の publish-time quality gate で、本文に markdown/html table が無い記事を止める
 - `## データ` / `## このデータについて` / ranking / 比較 section は table 必須
@@ -60,7 +60,7 @@
 - scoped `git diff --check`
   - PASS
 - production DB copy local preview
-  - PASS: `泉口友汰の遊撃守備、簡易UZR -0.088で巨人6/6位（直近30日）`
+  - PASS: `泉口友汰の遊撃守備、巨人は簡易UZR -0.088でセ・リーグ6/6位（直近30日）`
 
 ## deploy notes
 

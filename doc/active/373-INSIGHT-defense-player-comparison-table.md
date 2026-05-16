@@ -4,7 +4,7 @@
 
 - ticket: 373-INSIGHT-defense-player-comparison-table
 - github_issue: https://github.com/fwns6760/-wordpressyoshilover/issues/42
-- status: REVIEW_NEEDED
+- status: LIVE_DEPLOYED_OBSERVE
 - priority: high
 - owner: Codex
 - lane: B
@@ -84,6 +84,15 @@ When the title says `中山礼都`, the comparison table must rank players at th
 
 ## deploy / observe
 
-- Pending deploy to `insight-nightly`.
-- Scheduler / env / Secret / X / SNS / mail must remain unchanged.
-- Do not manually execute the job unless user explicitly asks; natural fire can verify future generation.
+- Commit:
+  - `3260e7a` (`373: use player comparison for defense articles`)
+- Deploy:
+  - Cloud Build `afc27377-94d5-4756-9694-16daae910588` SUCCESS
+  - image `insight-nightly:373-defense-player-3260e7a`
+  - digest `sha256:7a3f569bfb1eb825e4a63c15b245b92eb21f1e946d825a00138dc978f048e103`
+  - fully qualified digest `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/insight-nightly@sha256:7a3f569bfb1eb825e4a63c15b245b92eb21f1e946d825a00138dc978f048e103`
+  - Cloud Run Job `insight-nightly` generation `52`
+  - previous generation was `51`
+  - executionCount remained `40`, so no manual execute / extra publish / extra mail was triggered.
+- Scheduler / env / Secret / X / SNS / mail were not changed.
+- Natural `data-insight-*` fire will verify future generation.

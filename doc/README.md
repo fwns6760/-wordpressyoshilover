@@ -1889,7 +1889,7 @@ git add -A禁止。
 ### 373-INSIGHT-defense-player-comparison-table
 
 - **alias**: -
-- **status**: REVIEW_NEEDED / **priority**: high
+- **status**: LIVE_DEPLOYED_OBSERVE / **priority**: high
 - **owner**: Codex / **lane**: B
 - **doc_path**: `doc/active/373-INSIGHT-defense-player-comparison-table.md`
 - **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/42
@@ -1897,7 +1897,7 @@ git add -A禁止。
 - **方針**: UZR / 守備率の守備系 anomaly は、まず同ポジションの選手別表にする。セ・リーグ選手名が十分なら `セ・リーグ選手別`、他球団の選手名が薄い場合も球団順位へ戻さず `巨人選手別` に fallback。title は選手名 / 指標値 / 順位 / 期間を維持。
 - **WP repair**: `68665` は status `publish` 確認後、title/content のみ更新。新 title `【巨人データ】中山礼都、右翼守備の簡易UZR -0.067で巨人選手別2/2位（直近30日）`、本文 `巨人選手別ランキング`、旧 `セ・リーグ球団別` / `巨人は簡易UZR` なし。status は `publish` 維持。
 - **tests**: py_compile PASS、compileall PASS、AST PASS、関連 4 file `103 passed, 3 warnings`。production DB copy preview PASS。
-- **deploy**: pending。Scheduler / env / Secret / X / SNS / mail は変更しない。手動 execute は追加 publish/mail 回避のため実行しない。
+- **deploy**: commit `3260e7a`、Cloud Build `afc27377-94d5-4756-9694-16daae910588` SUCCESS、image `insight-nightly:373-defense-player-3260e7a`、digest `sha256:7a3f569bfb1e...`、Cloud Run Job generation `52`。Scheduler / env / Secret / X / SNS / mail は未変更、executionCount `40` 維持で手動 execute 未実行。
 
 ### 362-INSIGHT-queue-cleanup-and-metric-run-cap
 

@@ -9,7 +9,7 @@
     "batting_split": ["RISP"],
     "pitching_rate": ["ERA", "WIN_PCT"],
     "pitching_per9": ["K_per_9", "BB_per_9", "HR_per_9"],
-    "defense_rate": ["FIELDING_PCT"],
+    "defense_rate": ["FIELDING_PCT", "UZR_proxy"],
     "composite": ["WAR"]
   },
 
@@ -23,7 +23,6 @@
     "K_BB",
     "FIP",
     "xFIP",
-    "UZR_proxy",
     "RF_proxy"
   ],
 
@@ -62,6 +61,7 @@
     "BB_per_9": "与四球率",
     "HR_per_9": "被本塁打率",
     "FIELDING_PCT": "守備率",
+    "UZR_proxy": "簡易UZR",
     "WAR": "総合貢献度",
     "RISP": "得点圏打率"
   },

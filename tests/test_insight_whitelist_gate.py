@@ -2,9 +2,9 @@
 
 検証軸:
   1. config load: JSON ファイルから ◯/× / 巨人 filter / 閾値 / label を取得できる
-  2. metric gate: × metric (ISO/wOBA/BABIP/K_pct/BB_pct/WHIP/K_BB/FIP/xFIP/UZR_proxy/RF_proxy)
+  2. metric gate: × metric (ISO/wOBA/BABIP/K_pct/BB_pct/WHIP/K_BB/FIP/xFIP/RF_proxy)
      を渡された detector は candidate insert しない
-  3. ◯ metric (OPS/AVG/OBP/SLG/ERA/K_per_9/BB_per_9/HR_per_9) は通常通り insert
+  3. ◯ metric (OPS/AVG/OBP/SLG/ERA/K_per_9/BB_per_9/HR_per_9/UZR_proxy) は通常通り insert
   4. 巨人 only filter: 非巨人 team_code (t/c/db/...) の選手は candidate insert されない
      (baseline 計算には使われるが title 主語にはならない)
   5. backward-compat: config 不在時は 既存挙動 (全 team 許可) を維持
@@ -77,7 +77,7 @@ def test_config_returns_none_when_missing(tmp_path):
 @pytest.mark.parametrize("bad_metric", [
     "ISO", "wOBA", "BABIP", "K_pct", "BB_pct",
     "WHIP", "K_BB", "FIP", "xFIP",
-    "UZR_proxy", "RF_proxy",
+    "RF_proxy",
 ])
 def test_is_metric_allowed_blocks_x_metrics(bad_metric):
     """× metric は is_metric_allowed False を返す。"""
@@ -87,7 +87,7 @@ def test_is_metric_allowed_blocks_x_metrics(bad_metric):
 @pytest.mark.parametrize("good_metric", [
     "AVG", "OBP", "SLG", "OPS",
     "ERA", "K_per_9", "BB_per_9", "HR_per_9",
-    "WIN_PCT", "FIELDING_PCT", "WAR", "RISP",
+    "WIN_PCT", "FIELDING_PCT", "UZR_proxy", "WAR", "RISP",
 ])
 def test_is_metric_allowed_passes_o_metrics(good_metric):
     """◯ metric は is_metric_allowed True を返す。"""
@@ -134,6 +134,7 @@ def test_metric_name_ja_mapping():
     assert wl.metric_name_ja("ERA") == "防御率"
     assert wl.metric_name_ja("K_per_9") == "奪三振率"
     assert wl.metric_name_ja("FIELDING_PCT") == "守備率"
+    assert wl.metric_name_ja("UZR_proxy") == "簡易UZR"
     assert wl.metric_name_ja("OPS") == "OPS"
     assert wl.metric_name_ja("WAR") == "総合貢献度"
     # mapping 不在は原文 fallback
@@ -150,6 +151,20 @@ def test_manual_metric_options_hide_disallowed_metrics():
     assert "FIP" not in opts
     assert "wOBA" not in opts
     assert "WHIP" not in opts
+    assert "UZR_proxy" in opts
+
+
+def test_manual_query_rank_blocks_disallowed_fip_before_db_check(tmp_path):
+    """直接 query API でも FIP は db 有無に関係なく拒否する。"""
+    from src import manual_intake_insight_query as miq
+
+    blocked = miq.query_rank(metric_name="FIP", db_path=tmp_path / "missing.db")
+    assert blocked["ok"] is False
+    assert blocked["reason"] == "metric_not_allowed:FIP"
+
+    allowed = miq.query_rank(metric_name="UZR_proxy", db_path=tmp_path / "missing.db")
+    assert allowed["ok"] is False
+    assert allowed["reason"] == "db_not_available"
 
 
 def test_scope_ja_mapping():

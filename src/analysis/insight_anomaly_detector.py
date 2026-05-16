@@ -73,10 +73,11 @@ SIGNAL_STAT_DELTA = "anomaly_stat_delta"  # snapshot 急変
 #   - SIGNAL_STAT_DELTA (変化率 title が user 不可)
 #   - SIGNAL_GIANTS_TOP_OUTLIER / SIGNAL_PACE_HR_PROJECTION /
 #     SIGNAL_HIDDEN_OPS_LIMIT / SIGNAL_HIT_STREAK_RUN (C マニアック)
-#   - SIGNAL_DEFENSE_UZR_OUTLIER (UZR_proxy はサバメトリクス、守備率は残)
+#   - SIGNAL_DEFENSE_UZR_OUTLIER (user 2026-05-16: FIP は不要、UZR は必要)
 ALL_ANOMALY_SIGNALS = (
     SIGNAL_ZSCORE_BATTER,
     SIGNAL_ZSCORE_PITCHER,
+    SIGNAL_DEFENSE_UZR_OUTLIER,
     SIGNAL_DEFENSE_FIELDING_PCT,
     SIGNAL_GAME_HERO_BATTER,
     SIGNAL_GAME_PITCHER_PERF,
@@ -1811,14 +1812,13 @@ def run_all_anomaly_detectors(
     out[SIGNAL_HIDDEN_OPS_LIMIT] = []
     # 連続多安打 も「マニアック」分類で drop (user 指示)
     out[SIGNAL_HIT_STREAK_RUN] = []
-    # 2026-05-15 user 指示「サバメトリクスはいらない」適用、UZR_proxy は
-    # 計算式自体がサバメトリクスのため drop、fielding_pct (一般的な守備率)
-    # のみ残す。
+    # 2026-05-16 user 指示「FIPはいらない。UZRはいる」適用。
+    # FIP 系は drop 維持、UZR は title 側で "簡易UZR" として読者向けに表示する。
     try:
-        _uzr_ids, fpct_ids = detect_giants_defense_outliers(
+        uzr_ids, fpct_ids = detect_giants_defense_outliers(
             conn, snapshot_date=snapshot_date, run_id=run_id,
         )
-        out[SIGNAL_DEFENSE_UZR_OUTLIER] = []  # drop UZR
+        out[SIGNAL_DEFENSE_UZR_OUTLIER] = uzr_ids
         out[SIGNAL_DEFENSE_FIELDING_PCT] = fpct_ids
     except Exception:  # noqa: BLE001
         out[SIGNAL_DEFENSE_UZR_OUTLIER] = []

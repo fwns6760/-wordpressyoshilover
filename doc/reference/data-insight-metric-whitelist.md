@@ -1,7 +1,7 @@
 # data-insight metric/記事タイプ whitelist 正本
 
 **status**: REFERENCE (恒久仕様、ticket ではない)
-**lock 日**: 2026-05-15
+**lock 日**: 2026-05-16
 **source of truth**: 本 file
 **user 決定**: 全 metric / 記事タイプを ◯ (publish + mail 対象) / × (drop) で明示確定
 
@@ -23,7 +23,7 @@
 ## 表記 rule
 
 - user 向けの記事 title / 本文 / mail / 表示は **日本語表記** が原則
-- 例外で英略号のまま許容: **OPS** のみ
+- 例外で英略号を含めて許容: **OPS / UZR**
 - 内部コード (ERA / AVG / OBP / SLG / FIELDING_PCT / K_per_9 等) も 日本語 (防御率 / 打率 / 出塁率 / 長打率 / 守備率 / 奪三振率) で表示
 - × 側 (FIP / xFIP / wOBA / BABIP / ISO / BB% / K% / WHIP / K/BB) は site 非表示。万一表示 fallback に来ても日本語説明へ寄せる
 
@@ -57,6 +57,12 @@ user 2026-05-15「奪三振率/被本塁打率/与四球率/WAR をいれて」(
 ### composite 指数
 
 総合貢献度
+
+### 守備指数
+
+user 2026-05-16「FIPはいらない。UZRはいる」適用。
+
+簡易UZR
 
 ### rolling 期間 slice (user 2026-05-15「5 試合や 10 試合もね」)
 
@@ -114,7 +120,7 @@ WHIP / K/BB / FIP / xFIP
 
 ### 守備サバメトリクス
 
-守備RF / 守備UZR
+守備RF
 
 ### split metric (得点圏 / 月別 / 週別 / 球場別 以外)
 
@@ -126,9 +132,9 @@ WHIP / K/BB / FIP / xFIP
 
 ## 判断 pattern (新規 metric 追加時の判定軸)
 
-- ◯ = counting stats 全部 + 標準率 + 投手 /9 系率 + WAR + 得点圏打率 + 球団 ranking 全部 + 試合後イベント + record/milestone
-- × = 残りのサバメトリクス指数 (FIP/xFIP/wOBA/BABIP/ISO/BB%/K%/WHIP/K/BB/守備RF/守備UZR) + 得点圏打率以外の split metric
-- 表記: 日本語、ただし OPS だけ英略号 OK
+- ◯ = counting stats 全部 + 標準率 + 投手 /9 系率 + WAR + 簡易UZR + 得点圏打率 + 球団 ranking 全部 + 試合後イベント + record/milestone
+- × = 残りのサバメトリクス指数 (FIP/xFIP/wOBA/BABIP/ISO/BB%/K%/WHIP/K/BB/守備RF) + 得点圏打率以外の split metric
+- 表記: 日本語、ただし OPS / UZR は英略号 OK。UZR_proxy とは書かず「簡易UZR」と表示する。
 - 新規 metric は **個別 user 確認** が default、推測 ◯/× しない
 
 ---
@@ -148,4 +154,4 @@ WHIP / K/BB / FIP / xFIP
 - 前段 memo: `feedback_data_insight_user_preferences_2026_05_15.md` (AI memory 側、本 file が公式正本)
 - 関連: `project_data_insight_aggressive_publishing.md` (閾値 publish policy)、`project_site_direction_data_focus.md` (データサイト方向)、`project_mail_schedule_alignment.md` (mail 5-35 分)
 - 2026-05-15 中の reversal 経緯: K/9・BB/9・HR/9 は当初 × → user「奪三振率/与四球率/被本塁打率/WAR をいれて」で ◯ に変更
-- 矛盾解消: 前回 session で user table に書かれた「守備UZR ✅」は誤情報として破棄、本 file「守備UZR ×」が正
+- 2026-05-16 reversal: user「FIPはいらない。UZRはいる」により、守備UZRは「簡易UZR」として ◯ に変更。

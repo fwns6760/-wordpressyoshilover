@@ -68,7 +68,7 @@ _METRIC_LABEL_JA: dict[str, str] = {
     "FIP": "守備非依存防御率",
     "xFIP": "補正守備非依存防御率",
     "RF_proxy": "守備範囲指標",
-    "UZR_proxy": "守備評価指標",
+    "UZR_proxy": "簡易UZR",
     "WAR": "総合貢献度",
 }
 
@@ -166,13 +166,32 @@ def _find_focus_row(rows: list[RankRow], focus_player: Optional[str]) -> Optiona
     return None
 
 
+def _position_role_label(position: Optional[str]) -> str:
+    mapping = {
+        "投": "投手",
+        "捕": "捕手",
+        "一": "一塁",
+        "二": "二塁",
+        "三": "三塁",
+        "遊": "遊撃",
+        "左": "左翼",
+        "中": "中堅",
+        "右": "右翼",
+    }
+    if not position:
+        return ""
+    base = mapping.get(position, position)
+    return f"{base}守備"
+
+
 def _make_title(ctx: ArticleContext, label: str, focus: Optional[RankRow], kind: str) -> str:
     # 2026-05-15 user 指示「日時 prefix なし、人間にわかりやすく」適用。
     # 期間は title 末尾の sample_window_label に含まれる (例: 4/15〜5/14)。
     if focus and ctx.position_filter:
+        position_label = _position_role_label(ctx.position_filter)
         return (
-            f"巨人・{focus.player_canonical}、12 球団{ctx.position_filter}手の{label}で"
-            f"{focus.rank}位 / {focus.total}人 (期間: {ctx.sample_window_label})"
+            f"巨人・{focus.player_canonical}、{position_label}の{label}で"
+            f"12球団 {focus.rank}/{focus.total}位（期間: {ctx.sample_window_label}）"
         )
     if focus:
         return (
@@ -180,7 +199,8 @@ def _make_title(ctx: ArticleContext, label: str, focus: Optional[RankRow], kind:
             f"{ctx.sample_window_label}データから見る位置"
         )
     if ctx.position_filter:
-        return f"12 球団{ctx.position_filter}手の{label}ランキング {ctx.sample_window_label}"
+        position_label = _position_role_label(ctx.position_filter)
+        return f"12球団 {position_label}の{label}ランキング {ctx.sample_window_label}"
     return f"12 球団 {label} ランキング {ctx.sample_window_label}"
 
 
@@ -302,7 +322,7 @@ def _suggest_tags(ctx: ArticleContext, focus: Optional[RankRow], kind: str) -> l
     if focus and focus.player_canonical:
         tags.append(focus.player_canonical)
     if ctx.position_filter:
-        tags.append(f"{ctx.position_filter}手")
+        tags.append(_position_role_label(ctx.position_filter))
     if kind == "defense":
         tags.append("守備")
     elif kind == "pitching":

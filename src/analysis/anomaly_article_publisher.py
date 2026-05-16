@@ -336,8 +336,8 @@ def _render_unified_article(
     # title 用 short scope label (user 指示「期間で良いよ。一か月」)
     # 348 step 3: 新 scope (last_10_games / monthly / weekly) を追加、 既存表記維持
     scope_label = {
-        "last_7d": "1 週間",
-        "last_30d": "1 ヶ月",
+        "last_7d": "直近1週間",
+        "last_30d": "直近30日",
         "season": "今シーズン",
         "last_5_games": "直近 5 試合",
         "last_10_games": "直近 10 試合",
@@ -454,7 +454,7 @@ def render_zscore_batter_article(
         except Exception:
             pass
     metric_label = _human_metric_label(metric_name)
-    title_template = f"【巨人データ】{{player}}、{metric_label} {{value}} で{{league}} {{rank}} 位 ({{scope}})"
+    title_template = f"【巨人データ】{{player}}、{metric_label}{{value}}で{{league}}{{rank}}位（{{scope}}）"
     why_text = f"リーグ平均より明確に高い数字で、12 球団中の上位群に入っています。"
     simple = f"リーグ全体で見て上位の {metric_label} を記録、好調と言える数字です。"
     return _render_unified_article(
@@ -478,7 +478,7 @@ def render_zscore_pitcher_article(
         except Exception:
             pass
     metric_label = _human_metric_label(metric_name)
-    title_template = f"【巨人データ】{{player}}、{metric_label} {{value}} で{{league}} {{rank}} 位 ({{scope}})"
+    title_template = f"【巨人データ】{{player}}、{metric_label}{{value}}で{{league}}{{rank}}位（{{scope}}）"
     why_text = f"投手として league 上位群の数字、平均的なローテ投手より明確に良い投球内容です。"
     simple = f"リーグ全体で見て上位の投手、好投が data で明確です。"
     return _render_unified_article(
@@ -597,7 +597,7 @@ def render_giants_top_article(
             pass
     metric_label = _human_metric_label(metric_name)
 
-    title_template = f"【巨人データ】{{player}}、{metric_label} {{value}} で{{league}} {{rank}} 位 ({{scope}})"
+    title_template = f"【巨人データ】{{player}}、{metric_label}{{value}}で{{league}}{{rank}}位（{{scope}}）"
     why_text = f"巨人選手がリーグ上位に入っている好調を示すデータです。"
     simple = f"巨人選手として、リーグ全体の上位に入っている好調な状態です。"
     scope = "last_30d" if metric_name in ("OPS", "AVG", "wOBA", "BABIP") else "season"
@@ -702,6 +702,42 @@ def _render_simple_data_article(
     return {"title": body_title, "body_md": body_md}
 
 
+def _extract_kv_value(text: str, key: str) -> str:
+    for token in (text or "").split():
+        if token.startswith(f"{key}="):
+            return token.split("=", 1)[1]
+    return ""
+
+
+def _format_stat_value(raw_value: str, *, decimals: int = 3) -> str:
+    if not raw_value:
+        return "-"
+    try:
+        return f"{float(raw_value):.{decimals}f}"
+    except ValueError:
+        return raw_value
+
+
+def _defense_position_label(position: str) -> str:
+    mapping = {
+        "投": "投手",
+        "捕": "捕手",
+        "一": "一塁",
+        "二": "二塁",
+        "三": "三塁",
+        "遊": "遊撃",
+        "左": "左翼",
+        "中": "中堅",
+        "右": "右翼",
+    }
+    base = mapping.get(position, position)
+    return f"{base}守備" if base else "守備"
+
+
+def _average_comparison_phrase(diff: float) -> str:
+    return "守備位置平均を上回る" if diff >= 0 else "守備位置平均を下回る"
+
+
 def render_hr_pace_article(
     conn: sqlite3.Connection,
     candidate_row: dict[str, Any],
@@ -763,14 +799,14 @@ def render_hit_streak_run_article(
     player = candidate_row["player_canonical"]
     streak = int(candidate_row.get("magnitude") or 0)
     title = (
-        f"【巨人データ】{player}、連続 {streak} 試合で multi-hit"
+        f"【巨人データ】{player}、{streak}試合連続で複数安打"
     )
     headline = (
         f"{player} は **{streak} 試合連続**で 1 試合 2 安打以上を記録しています。"
     )
     detail = [
         f"連続記録: {streak} 試合",
-        "1 試合 2 安打以上 (multi-hit) を継続中。",
+        "1 試合 2 安打以上を継続中。",
     ]
     return _render_simple_data_article(
         title=title,
@@ -795,25 +831,28 @@ def render_defense_uzr_article(
     for token in notes.split():
         if token.startswith("position="):
             position = token.split("=", 1)[1]
-    direction = "平均超え" if diff >= 0 else "平均未満"
+    position_label = _defense_position_label(position)
+    direction = _average_comparison_phrase(diff)
     title = (
-        f"【巨人データ】直近 1 ヶ月 {player}、{position}守備の UZR_proxy が {direction}({diff:+.3f})"
+        f"【巨人データ】{player}、{position_label}の簡易UZRが{direction}（直近30日）"
     )
+    uzr_value = _format_stat_value(_extract_kv_value(current, "RF_proxy"))
     if diff >= 0:
         headline = (
-            f"{player} の {position} 守備での球を out に変換する率は、"
-            f"NPB 全体の {position} 守備平均より **+{diff:.3f}** 高い数字です。"
+            f"{player} の {position_label}での簡易UZRは、"
+            f"NPB 全体の {position_label}平均より **+{diff:.3f}** 高い数字です。"
         )
     else:
         headline = (
-            f"{player} の {position} 守備での球を out に変換する率は、"
-            f"NPB 全体の {position} 守備平均より **{diff:.3f}** 低い数字です。"
+            f"{player} の {position_label}での簡易UZRは、"
+            f"NPB 全体の {position_label}平均より **{diff:.3f}** 低い数字です。"
         )
     detail = [
-        f"対象 position: {position}",
-        f"player 数値: {current}",
-        f"league baseline: {baseline}",
-        f"差分 (UZR_proxy 近似): {diff:+.3f}",
+        f"対象守備位置: {position_label}",
+        f"選手の簡易UZR: {uzr_value}",
+        f"守備位置平均との差: {diff:+.3f}",
+        f"元データ: {current}",
+        f"比較基準: {baseline}",
     ]
     return _render_simple_data_article(
         title=title,
@@ -841,25 +880,28 @@ def render_defense_fielding_pct_article(
     for token in notes.split():
         if token.startswith("position="):
             position = token.split("=", 1)[1]
-    direction = "平均超え" if diff >= 0 else "平均未満"
+    position_label = _defense_position_label(position)
+    direction = _average_comparison_phrase(diff)
+    fielding_pct = _format_stat_value(_extract_kv_value(current, "fielding_pct"))
     title = (
-        f"【巨人データ】{player}、{position}守備率が {direction}({diff:+.3f})"
+        f"【巨人データ】{player}、{position_label}率{fielding_pct}が{direction}（直近30日）"
     )
     if diff >= 0:
         headline = (
-            f"{player} の {position} 守備率は、NPB 全体の {position} 守備平均より"
+            f"{player} の {position_label}率は、NPB 全体の {position_label}平均より"
             f" **+{diff:.3f}** 高い数字です。"
         )
     else:
         headline = (
-            f"{player} の {position} 守備率は、NPB 全体の {position} 守備平均より"
+            f"{player} の {position_label}率は、NPB 全体の {position_label}平均より"
             f" **{diff:.3f}** 低い数字です。"
         )
     detail = [
-        f"対象 position: {position}",
-        f"player 数値: {current}",
-        f"league baseline: {baseline}",
-        f"差分: {diff:+.3f}",
+        f"対象守備位置: {position_label}",
+        f"選手の守備率: {fielding_pct}",
+        f"守備位置平均との差: {diff:+.3f}",
+        f"元データ: {current}",
+        f"比較基準: {baseline}",
     ]
     return _render_simple_data_article(
         title=title,
@@ -1268,6 +1310,7 @@ def render_stat_delta_article(
     notes = _parse_kv_blob(candidate_row.get("notes") or "")
     metric = notes.get("metric", "")
     scope = notes.get("scope", "")
+    metric_label = _human_metric_label(metric)
     delta = notes.get("delta", "")
     current = candidate_row.get("current_value") or ""
     baseline = candidate_row.get("baseline_value") or ""
@@ -1278,15 +1321,16 @@ def render_stat_delta_article(
     import re as _re
     _cur_match = _re.search(r"current=([\d\.\-]+)", current)
     cur_val = _cur_match.group(1) if _cur_match else "-"
-    period_suffix = f" ({scope_jp})" if scope_jp else ""
+    scope_title = scope_jp.replace(" ", "")
+    period_suffix = f"（{scope_title}）" if scope_title else ""
     title = (
-        f"【巨人データ】{player}、{metric} {cur_val}{period_suffix}"
+        f"【巨人データ】{player}、{metric_label}{cur_val}{period_suffix}"
     )
     headline = (
-        f"{player} の {metric} が **{delta}** 変動しました ({baseline} → {current})。"
+        f"{player} の {metric_label} が **{delta}** 変動しました ({baseline} → {current})。"
     )
     detail = [
-        f"対象指標: {metric}",
+        f"対象指標: {metric_label}",
         f"集計期間: {scope_jp}",
         f"前回値: {baseline}",
         f"現在値: {current}",
@@ -1322,6 +1366,13 @@ _RENDERERS = {
     detector.SIGNAL_STAT_DELTA: render_stat_delta_article,
 }
 
+_SIGNAL_PRIMARY_METRIC = {
+    detector.SIGNAL_BABIP_DIVERGENCE: "BABIP",
+    detector.SIGNAL_FIP_ERA_DIVERGENCE: "FIP",
+    detector.SIGNAL_DEFENSE_UZR_OUTLIER: "UZR_proxy",
+    detector.SIGNAL_DEFENSE_FIELDING_PCT: "FIELDING_PCT",
+}
+
 
 # ─── public API ─────────────────────────────────────────────────────────────
 
@@ -1337,6 +1388,9 @@ def render_anomaly_article(
     signal_type = candidate_row.get("signal_type")
     renderer = _RENDERERS.get(signal_type)
     if renderer is None:
+        return None
+    signal_metric = _SIGNAL_PRIMARY_METRIC.get(signal_type)
+    if signal_metric and not _wl.is_metric_allowed(signal_metric):
         return None
     metric = _parse_kv_blob(candidate_row.get("notes") or "").get("metric", "")
     if metric and not _wl.is_metric_allowed(metric):

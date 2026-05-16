@@ -304,7 +304,24 @@ def query_rank(
     """INSIGHT-007: 12 球団 rank query。manual-intake-service の Tab 2
     から呼ばれる。db_path 省略時は cache を見る。"""
     from src.analysis import insight_rank_query as rq  # local import
+    from src.analysis import insight_whitelist as wl  # local import
 
+    if metric_name not in rq.KNOWN_METRICS:
+        return {
+            "ok": False,
+            "reason": f"invalid_metric:{metric_name}",
+            "rows": [],
+            "count": 0,
+            "filters": {"metric": metric_name},
+        }
+    if not wl.is_metric_allowed(metric_name):
+        return {
+            "ok": False,
+            "reason": f"metric_not_allowed:{metric_name}",
+            "rows": [],
+            "count": 0,
+            "filters": {"metric": metric_name},
+        }
     target = db_path or _CACHE.path
     if not target.exists():
         return {
@@ -319,14 +336,6 @@ def query_rank(
                 "since": since,
                 "until": until,
             },
-        }
-    if metric_name not in rq.KNOWN_METRICS:
-        return {
-            "ok": False,
-            "reason": f"invalid_metric:{metric_name}",
-            "rows": [],
-            "count": 0,
-            "filters": {"metric": metric_name},
         }
     if position_filter and position_filter not in POSITION_OPTIONS:
         return {

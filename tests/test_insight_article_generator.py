@@ -43,7 +43,8 @@ def test_focus_player_appears_in_title_and_lead():
     )
     out = gen.render_article(ctx)
     assert "吉川尚輝" in out["title"]
-    assert "二" in out["title"]
+    assert "二塁守備" in out["title"]
+    assert "二手" not in out["title"]
     assert "吉川尚輝" in out["body_md"]
 
 
@@ -141,7 +142,7 @@ def test_tags_include_metric_label_and_player():
     assert "巨人" in tags
     assert "吉川尚輝" in tags
     assert "OPS" in tags
-    assert "二手" in tags
+    assert "二塁守備" in tags
 
 
 def test_tags_include_defense_label_for_defense_metric():

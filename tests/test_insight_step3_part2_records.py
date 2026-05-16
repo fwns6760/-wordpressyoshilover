@@ -441,6 +441,85 @@ def test_record_renderer_era_uses_rank_period_and_no_reached_title(tmp_path):
         conn.close()
 
 
+def test_defense_titles_are_reader_friendly():
+    """守備系 title に内部名や差分だけの表現を出さない。"""
+    from src.analysis import anomaly_article_publisher as pub
+
+    uzr_article = pub.render_defense_uzr_article(None, {
+        "player_canonical": "吉川尚輝",
+        "magnitude": 0.052,
+        "notes": "position=二 守備平均超え",
+        "current_value": "RF_proxy=0.985 opportunities=40 converted_outs=39 errors=0",
+        "baseline_value": "position=二 league_RF_baseline=0.933",
+    })
+    assert uzr_article["title"] == (
+        "【巨人データ】吉川尚輝、二塁守備の簡易UZRが守備位置平均を上回る（直近30日）"
+    )
+    assert "UZR_proxy" not in uzr_article["title"]
+    assert "+0.052" not in uzr_article["title"]
+
+    fielding_article = pub.render_defense_fielding_pct_article(None, {
+        "player_canonical": "吉川尚輝",
+        "magnitude": 0.052,
+        "notes": "position=二 守備率高",
+        "current_value": "fielding_pct=0.985 converted_outs=39 errors=0",
+        "baseline_value": "position=二 league_fpct_baseline=0.933",
+    })
+    assert fielding_article["title"] == (
+        "【巨人データ】吉川尚輝、二塁守備率0.985が守備位置平均を上回る（直近30日）"
+    )
+    assert "+0.052" not in fielding_article["title"]
+    assert "平均超え" not in fielding_article["title"]
+
+
+def test_stat_delta_title_uses_japanese_metric_and_not_delta():
+    """変化率 signal の title は日本語指標 + 現在値 + 期間にする。"""
+    from src.analysis import anomaly_article_publisher as pub
+
+    article = pub.render_stat_delta_article(None, {
+        "player_canonical": "巨人投手",
+        "notes": "metric=ERA scope=last_7d delta=+0.30",
+        "current_value": "current=2.800 (2026-05-15) rank 2→3",
+        "baseline_value": "prev=2.500 (2026-05-14)",
+        "magnitude": 0.30,
+    })
+    assert article["title"] == "【巨人データ】巨人投手、防御率2.800（直近1週間）"
+    assert "ERA" not in article["title"]
+    assert "+0.30" not in article["title"]
+
+
+def test_render_anomaly_article_blocks_fip_but_allows_uzr(tmp_path):
+    """FIP は出さず、UZR は簡易UZR title として通す。"""
+    from src.analysis import anomaly_article_publisher as pub
+
+    conn = _open_db(tmp_path)
+    try:
+        fip_candidate = {
+            "signal_type": det.SIGNAL_FIP_ERA_DIVERGENCE,
+            "player_canonical": "巨人投手",
+            "magnitude": 0.8,
+            "baseline_value": "ERA=2.800",
+            "current_value": "FIP=4.000",
+            "notes": "",
+        }
+        assert pub.render_anomaly_article(conn, fip_candidate) is None
+
+        uzr_candidate = {
+            "signal_type": det.SIGNAL_DEFENSE_UZR_OUTLIER,
+            "player_canonical": "吉川尚輝",
+            "magnitude": 0.052,
+            "notes": "position=二 守備平均超え",
+            "current_value": "RF_proxy=0.985 opportunities=40 converted_outs=39 errors=0",
+            "baseline_value": "position=二 league_RF_baseline=0.933",
+        }
+        article = pub.render_anomaly_article(conn, uzr_candidate)
+        assert article is not None
+        assert "簡易UZR" in article["title"]
+        assert "UZR_proxy" not in article["title"]
+    finally:
+        conn.close()
+
+
 def test_milestone_detector_skips_disallowed_whip(tmp_path):
     """WHIP は whitelist × なので milestone candidate も作らない。"""
     conn = _open_db(tmp_path)

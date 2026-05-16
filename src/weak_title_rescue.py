@@ -31,6 +31,10 @@ _NAMED_EVENT_RE = re.compile(
     r"^(?P<name>[A-Za-zＡ-Ｚａ-ｚ一-龯々ァ-ヴー・･\.\-]{2,24})[、,，]\s*"
     r"(?P<rest>[^。!！?？「」『』]*(?:[0-9０-９]+勝目|神生還|神走塁|好走塁|特大弾|復帰へ前進)[^。!！?？「」『』]*)"
 )
+_SHORT_PLAYER_EVENT_TITLE_RE = re.compile(
+    r"^(?P<name>[A-Za-zＡ-Ｚａ-ｚ一-龯々ァ-ヴー・･\.\-]{2,24})[、,，]\s*"
+    r"(?P<label>発言|コメント|安打|打撃|活躍|結果|関連発言)\s*$"
+)
 _QUOTE_RE = re.compile(r"[「『]([^」』]{1,80})[」』]")
 _RELATED_INFO_ESCAPE_RE = re.compile(r"(?:昇格・復帰|登録抹消|合流)\s*関連情報\s*$")
 _BLACKLIST_RESCUE_RE = re.compile(r"(?:ベンチ関連の発言ポイント|ベンチ関連発言|関連発言)\s*$")
@@ -78,6 +82,9 @@ _STRONG_EVENT_MARKERS = (
     "ホームラン",
     "サヨナラ",
     "タイムリー",
+    "適時打",
+    "猛打賞",
+    "マルチ安打",
     "決勝打",
     "復帰へ前進",
     "復帰",
@@ -129,6 +136,22 @@ _OPPONENT_MARKERS = (
     "楽天",
     "オリックス",
     "西武",
+)
+_SCORE_CONTEXT_RE = re.compile(
+    r"(?P<context>(?:巨人\s*)?[0-9０-９]{1,2}\s*[－\-–]\s*[0-9０-９]{1,2}\s*"
+    r"(?:DeNA|ＤｅＮＡ|阪神|中日|ヤクルト|広島|ソフトバンク|日本ハム|日ハム|ロッテ|楽天|オリックス|西武)?)"
+)
+_PLAYER_COMMENT_EVENT_PATTERNS = (
+    re.compile(r"(?P<event>(?:東京ドーム\s*)?[0-9０-９]+回(?:表|裏)?(?:同点|勝ち越し|先制)?適時打)"),
+    re.compile(r"(?P<event>(?:同点|勝ち越し|先制|決勝)適時打)"),
+)
+_PLAYER_PERFORMANCE_PATTERNS = (
+    re.compile(r"(?P<event>[0-9０-９]+安打[0-9０-９]+打点猛打賞)"),
+    re.compile(r"(?P<event>[0-9０-９]+安打[0-9０-９]+打点)"),
+    re.compile(r"(?P<event>[0-9０-９]+安打(?:[0-9０-９]+本塁打)?)"),
+    re.compile(r"(?P<event>猛打賞)"),
+    re.compile(r"(?P<event>マルチ安打)"),
+    re.compile(r"(?P<event>(?:同点|勝ち越し|先制|決勝)?適時打)"),
 )
 _NOTICE_EVENT_MARKERS = (
     "一軍昇格",
@@ -354,6 +377,54 @@ def _clip_quote(quote: str, limit: int = 28) -> str:
     if len(cleaned) <= limit:
         return cleaned
     return cleaned[:limit].rstrip(" ・、。") + "…"
+
+
+def _first_quote_sentence(quote: str, limit: int = 24) -> str:
+    cleaned = _clean_text(quote).strip(" 「」『』")
+    if not cleaned:
+        return ""
+    first = re.split(r"[。！？]", cleaned, maxsplit=1)[0].strip(" ・、")
+    if first and len(first) <= limit:
+        return first
+    if first and len(first) > limit:
+        return first[:limit].rstrip(" ・、")
+    return cleaned[:limit].rstrip(" ・、。")
+
+
+def _normalize_event_phrase(phrase: str) -> str:
+    return _clean_text(phrase).replace(" ", "").strip(" ・、。")
+
+
+def _extract_score_context(texts: list[str]) -> str:
+    for text in texts:
+        match = _SCORE_CONTEXT_RE.search(text)
+        if match:
+            context = _normalize_event_phrase(match.group("context"))
+            has_opponent = any(context.endswith(marker) for marker in _OPPONENT_MARKERS)
+            if context and not context.startswith("巨人") and not has_opponent:
+                continue
+            if context and not context.startswith("巨人"):
+                return f"巨人{context}"
+            return context
+    return ""
+
+
+def _extract_player_comment_event(texts: list[str]) -> str:
+    for text in texts:
+        for pattern in _PLAYER_COMMENT_EVENT_PATTERNS:
+            match = pattern.search(text)
+            if match:
+                return _normalize_event_phrase(match.group("event"))
+    return ""
+
+
+def _extract_player_performance_event(texts: list[str]) -> str:
+    for text in texts:
+        for pattern in _PLAYER_PERFORMANCE_PATTERNS:
+            match = pattern.search(text)
+            if match:
+                return _normalize_event_phrase(match.group("event"))
+    return ""
 
 
 def _has_farm_signal(texts: list[str], metadata: Mapping[str, object]) -> bool:
@@ -652,6 +723,73 @@ def rescue_blacklist_phrase(
     return RescueResult(title=rescued, strategy="blacklist_phrase_quote_event")
 
 
+def rescue_short_player_event_title(
+    *,
+    gen_title: str,
+    source_title: str,
+    body: str,
+    summary: str,
+    metadata: Mapping[str, object],
+) -> RescueResult | None:
+    normalized_title = _clean_text(gen_title)
+    title_match = _SHORT_PLAYER_EVENT_TITLE_RE.match(normalized_title)
+    if not title_match:
+        return None
+    if _contains_safety_blockers(
+        gen_title=gen_title,
+        source_title=source_title,
+        body=body,
+        summary=summary,
+        metadata=metadata,
+    ):
+        return None
+
+    source_texts = _source_like_texts(source_title, summary, body)
+    if not source_texts:
+        return None
+
+    title_name = _strip_role_suffix(title_match.group("name"))
+    primary_name = _resolve_primary_name(
+        gen_title=gen_title,
+        source_title=source_texts[0],
+        body=body,
+        summary=summary,
+        metadata=metadata,
+    )
+    if not primary_name:
+        primary_name = title_name
+    if not _looks_like_name(primary_name):
+        return None
+    combined = " ".join(source_texts)
+    if title_name and title_name not in combined and primary_name not in combined:
+        return None
+
+    quote = _best_quote(source_texts)
+    comment_event = _extract_player_comment_event(source_texts)
+    if quote and comment_event:
+        quote_head = _first_quote_sentence(quote)
+        if quote_head:
+            return RescueResult(
+                title=f"{primary_name}、{comment_event}「{quote_head}」",
+                strategy="short_player_event_quote",
+            )
+
+    performance_event = _extract_player_performance_event(source_texts)
+    if performance_event:
+        score_context = _extract_score_context(source_texts)
+        if score_context:
+            return RescueResult(
+                title=f"{primary_name}、{score_context} {performance_event}",
+                strategy="short_player_event_performance",
+            )
+        return RescueResult(
+            title=f"{primary_name}、{performance_event}",
+            strategy="short_player_event_performance",
+        )
+
+    return None
+
+
 def rescue_subtype_aware(
     *,
     gen_title: str,
@@ -774,5 +912,6 @@ __all__ = [
     "is_strong_with_name_and_event",
     "rescue_blacklist_phrase",
     "rescue_related_info_escape",
+    "rescue_short_player_event_title",
     "rescue_subtype_aware",
 ]

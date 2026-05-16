@@ -60,6 +60,7 @@ from weak_title_rescue import (
     is_strong_with_name_and_event,
     rescue_blacklist_phrase,
     rescue_related_info_escape,
+    rescue_short_player_event_title,
     rescue_subtype_aware,
 )
 from wp_client import WPClient
@@ -22482,6 +22483,14 @@ def _maybe_apply_weak_title_rescue(
     )
     rescue_metadata.update(_merge_weak_title_metadata(metadata))
     rescue_result = (
+        rescue_short_player_event_title(
+            gen_title=rewritten_title,
+            source_title=source_title,
+            body=source_body,
+            summary=summary,
+            metadata=rescue_metadata,
+        )
+    ) or (
         rescue_subtype_aware(
             gen_title=rewritten_title,
             source_title=source_title,

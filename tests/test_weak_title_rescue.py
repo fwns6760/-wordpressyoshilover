@@ -178,6 +178,43 @@ class WeakTitleRescueHelperTests(unittest.TestCase):
 
         self.assertIsNone(result)
 
+    def test_short_player_event_rescues_comment_title_from_literal_x_text(self):
+        result = weak_title_rescue.rescue_short_player_event_title(
+            gen_title="浦田俊輔、発言",
+            source_title="東京ドーム 2回適時打の浦田俊輔選手のコメント「打ったのは真っすぐです。追い込まれていたので食らいついていきました。ランナーをかえすことができてよかったです」",
+            body="東京ドーム2回適時打の浦田俊輔選手のコメント「打ったのは真っすぐです。追い込まれていたので食らいついていきました」",
+            summary="東京ドーム2回適時打の浦田俊輔選手のコメント「打ったのは真っすぐです」",
+            metadata={"article_subtype": "player", "player_name": "浦田俊輔", "role": "選手"},
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.title, "浦田俊輔、東京ドーム2回適時打「打ったのは真っすぐです」")
+        self.assertEqual(result.strategy, "short_player_event_quote")
+
+    def test_short_player_event_rescues_performance_title_from_literal_x_text(self):
+        result = weak_title_rescue.rescue_short_player_event_title(
+            gen_title="浦田俊輔、安打",
+            source_title="【一軍】巨人 4-3 DeNA 3安打1打点猛打賞の活躍‼️浦田俊輔 選手👍 HERO IS HERE!",
+            body="【一軍】巨人 4-3 DeNA3安打1打点猛打賞の活躍‼️浦田俊輔 選手👍HERO IS HERE!",
+            summary="巨人公式Xが浦田俊輔の3安打1打点猛打賞を伝えた。",
+            metadata={"article_subtype": "player", "player_name": "浦田俊輔", "role": "選手"},
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.title, "浦田俊輔、巨人4-3DeNA 3安打1打点猛打賞")
+        self.assertEqual(result.strategy, "short_player_event_performance")
+
+    def test_short_player_event_rescue_requires_name_in_source(self):
+        result = weak_title_rescue.rescue_short_player_event_title(
+            gen_title="浦田俊輔、安打",
+            source_title="巨人 4-3 DeNA 3安打1打点猛打賞",
+            body="別選手の活躍を伝えた。",
+            summary="別選手の活躍を伝えた。",
+            metadata={"article_subtype": "player"},
+        )
+
+        self.assertIsNone(result)
+
 
 class WeakTitleStrongMarkerTests(unittest.TestCase):
     def test_name_and_event_exception_allows_hirayama_swim_title(self):
@@ -200,6 +237,18 @@ class WeakTitleStrongMarkerTests(unittest.TestCase):
     def test_name_and_event_exception_stays_narrow(self):
         self.assertFalse(weak_title_rescue.is_strong_with_name_and_event("内海「今日俺の誕生日」 関連発言"))
         self.assertFalse(weak_title_rescue.is_strong_with_name_and_event("前向きな材料を整理して見どころを確認"))
+
+    def test_name_and_event_exception_allows_literal_player_event_titles(self):
+        self.assertTrue(
+            weak_title_rescue.is_strong_with_name_and_event(
+                "浦田俊輔、東京ドーム2回適時打「打ったのは真っすぐです」"
+            )
+        )
+        self.assertTrue(
+            weak_title_rescue.is_strong_with_name_and_event(
+                "浦田俊輔、巨人4-3DeNA 3安打1打点猛打賞"
+            )
+        )
 
 
 class WeakTitleRescueFetcherTests(unittest.TestCase):
@@ -261,6 +310,24 @@ class WeakTitleRescueFetcherTests(unittest.TestCase):
 
         self.assertEqual(title, "阿部監督から竹丸へのメッセージ 宮本和知氏")
         self.assertEqual(reason, "weak_generated_title:blacklist_phrase:ベンチ関連の発言ポイント")
+
+    def test_fetcher_rescue_rewrites_short_player_event_title(self):
+        with patch.dict("os.environ", {rss_fetcher.WEAK_TITLE_RESCUE_ENV_FLAG: "1"}, clear=False):
+            title, reason = rss_fetcher._maybe_apply_weak_title_rescue(
+                rewritten_title="浦田俊輔、安打",
+                source_title="【一軍】巨人 4-3 DeNA 3安打1打点猛打賞の活躍‼️浦田俊輔 選手👍 HERO IS HERE!",
+                source_body="【一軍】巨人 4-3 DeNA3安打1打点猛打賞の活躍‼️浦田俊輔 選手👍HERO IS HERE!",
+                summary="巨人公式Xが浦田俊輔の3安打1打点猛打賞を伝えた。",
+                category="選手情報",
+                article_subtype="player",
+                notice_subject="浦田俊輔",
+                logger=logging.getLogger("rss_fetcher"),
+                source_name="巨人公式X",
+                source_url="https://twitter.com/TokyoGiants/status/2055571698033082546",
+            )
+
+        self.assertEqual(title, "浦田俊輔、巨人4-3DeNA 3安打1打点猛打賞")
+        self.assertEqual(reason, "weak_generated_title:title_too_short")
 
 
 if __name__ == "__main__":

@@ -129,13 +129,17 @@ class SubjectAndTimeBandTests(unittest.TestCase):
     def test_subject_format(self) -> None:
         ts = datetime(2026, 5, 16, 7, 0, tzinfo=JST)
         subject = build_subject(ts, 7)
-        self.assertEqual(subject, "[X 投稿候補 7件] 朝 / 2026-05-16 07:00 JST")
+        self.assertEqual(
+            subject,
+            "📮【要確認：巨人データX投稿候補 7件】朝 2026-05-16 07:00 JST",
+        )
 
     def test_subject_zero_candidates_does_not_crash(self) -> None:
         ts = datetime(2026, 5, 16, 22, 30, tzinfo=JST)
         subject = build_subject(ts, 0)
         self.assertIn("0件", subject)
         self.assertIn("試合後", subject)
+        self.assertIn("要確認：巨人データX投稿候補", subject)
 
 
 class PickCandidatesTests(unittest.TestCase):
@@ -489,6 +493,10 @@ class ComposeMailTests(unittest.TestCase):
         self.assertIn("朝", mail.subject)
         self.assertIn("テスト候補 1", mail.text_body)
         self.assertIn("テスト候補 1", mail.html_body)
+        self.assertIn("📮 巨人データX投稿候補", mail.text_body)
+        self.assertIn("公開通知ではありません", mail.text_body)
+        self.assertIn("📮 巨人データX投稿候補", mail.html_body)
+        self.assertIn("公開通知ではなく", mail.html_body)
 
     def test_text_body_has_lf_newlines_only(self) -> None:
         ts = datetime(2026, 5, 16, 12, 0, tzinfo=JST)

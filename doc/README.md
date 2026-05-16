@@ -1837,6 +1837,16 @@ git add -A禁止。
 - **verify**: fake GCS targeted pytest `34 passed`、production GCS read-only smoke PASS。GCS latest `games.game_date=2026-05-16` / Giants latest `2026-05-16` / staleness `0`。
 - **非対象**: Cloud Run / Scheduler / Secret / env / GCS upload / WP publish / mail send / X / SNS は変更しない。
 
+### 359 x-post-mail-subject-visibility
+
+- **alias**: -
+- **status**: REVIEW_NEEDED / **priority**: medium-high
+- **owner**: Codex / **lane**: B
+- **doc_path**: `doc/active/359-x-post-mail-subject-visibility.md`
+- **背景**: 他の自動通知が多く、X 投稿候補 mail が受信箱で気づきにくい。
+- **方針**: 件名を `📮【要確認：巨人データX投稿候補 N件】午後 2026-05-16 15:00 JST` 形式へ変更し、本文冒頭にも「公開通知ではない」ことを明記する。候補生成 / DB / SMTP / Scheduler / env / Secret / WP / X / SNS は変更しない。
+- **tests**: `test_x_post_mail.py` 69 passed、関連 3 file 105 passed、py_compile / compileall / AST / scoped diff-check PASS。
+
 ## marketing board
 
 - Marketing ticket source of truth: `doc/marketing/README.md`

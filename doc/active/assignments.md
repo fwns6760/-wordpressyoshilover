@@ -101,6 +101,10 @@ user 指示「DB当日更新はやらないの？」を受け、`--auto` target 
 
 DB 同士の「同期」はしない方針で決定。production source of truth は GCS `insight.db`、local `data/insight/insight.db` は生成物として扱う。ローカルが古いことによる誤判断だけを防ぐため、`src/tools/pull_insight_db_from_gcs.py` を追加し、default `/tmp/yoshilover-insight-latest.db` へ download-only pull + 最新試合日 / 巨人最新試合日 / row count を JSON 表示する。local Python に `google-cloud-storage` が無い場合は `gcloud storage cp` fallback。targeted pytest `34 passed`、production GCS read-only smoke は latest `2026-05-16` / Giants latest `2026-05-16` / staleness `0`。Cloud Run / Scheduler / env / Secret / GCS upload / WP publish / mail / X / SNS は未変更。
 
+### 359 x-post-mail subject visibility (2026-05-16 JST)
+
+user 指示「他の自動通知も来るから分からない」を受け、X 投稿候補 mail の件名を `📮【要確認：巨人データX投稿候補 N件】午後 2026-05-16 15:00 JST` 形式へ変更。本文冒頭にも「公開通知ではない」ことを明記。targeted pytest `69 passed`、関連 `105 passed`。候補生成 / DB / GCS dedup / SMTP 宛先 / Scheduler / env / Secret / WP publish / X / SNS は変更しない。
+
 ## 2026-05-14 EVENING session summary
 
 ### close 済(本 session)

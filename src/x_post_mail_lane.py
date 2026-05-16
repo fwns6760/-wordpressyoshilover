@@ -996,14 +996,18 @@ def time_band_label(hour: int) -> str:
 
 def build_subject(now: datetime, n_candidates: int) -> str:
     band = time_band_label(now.hour)
-    return f"[X 投稿候補 {n_candidates}件] {band} / {now.strftime('%Y-%m-%d %H:%M')} JST"
+    return (
+        f"📮【要確認：巨人データX投稿候補 {n_candidates}件】"
+        f"{band} {now.strftime('%Y-%m-%d %H:%M')} JST"
+    )
 
 
 def _compose_text_body(candidates: list[Candidate], now: datetime) -> str:
     band = time_band_label(now.hour)
     parts = [
-        f"X 投稿候補 — {band} / {now.strftime('%Y-%m-%d %H:%M')} JST",
+        f"📮 巨人データX投稿候補 — {band} / {now.strftime('%Y-%m-%d %H:%M')} JST",
         "",
+        "公開通知ではありません。X に手動投稿するための候補メールです。",
         "各候補のテキストをコピーして X アプリに貼り付けて投稿してください。",
         "(HTML mail を表示できる client なら 🐦 ボタンで X アプリが直接開きます)",
         "",
@@ -1056,13 +1060,14 @@ def _compose_html_body(candidates: list[Candidate], now: datetime) -> str:
     return (
         "<!DOCTYPE html>\n"
         "<html lang=\"ja\"><head><meta charset=\"utf-8\">"
-        "<title>X 投稿候補</title></head>"
+        "<title>巨人データX投稿候補</title></head>"
         "<body style=\"font-family:-apple-system,BlinkMacSystemFont,"
         "'Hiragino Sans','Yu Gothic',sans-serif;color:#222;"
         "max-width:680px;margin:0 auto;padding:18px;\">"
-        f"<h2 style=\"font-size:17px;margin:0 0 8px;\">X 投稿候補 — {band} / "
+        f"<h2 style=\"font-size:17px;margin:0 0 8px;\">📮 巨人データX投稿候補 — {band} / "
         f"{now.strftime('%Y-%m-%d %H:%M')} JST</h2>"
         "<p style=\"font-size:13px;color:#555;margin:0 0 14px;\">"
+        "公開通知ではなく、X に手動投稿するための候補メールです。"
         "各候補の <strong>🐦 X で投稿</strong> ボタンを押すと X アプリ "
         "(または x.com) が本文プリフィル済で開きます。タップして "
         "「ポスト」だけ押せば投稿完了です。テキスト編集も可能。</p>"

@@ -33,6 +33,79 @@ _HOCHI_PAGE_HTML = """
 
 
 class AutoRssSourceBodyExcerptInsertTests(unittest.TestCase):
+    def test_relocates_excerpt_after_media_post_before_body_heading(self):
+        content = (
+            "<p>リード。</p>"
+            '<!-- wp:heading {"level":4} -->\n'
+            "<h4>📌 関連ポスト</h4>\n"
+            "<!-- /wp:heading -->\n"
+            '<blockquote class="twitter-tweet">post</blockquote>'
+            "<hr>"
+            '<!-- wp:heading {"level":4} -->\n'
+            "<h4>【話題の要旨】</h4>\n"
+            "<!-- /wp:heading -->\n"
+            "<p>本文。</p>"
+            '<!-- wp:paragraph -->\n<p style="font-size:0.8em;">📰 参照元: link</p>\n<!-- /wp:paragraph -->'
+            '<aside class="nomotoke-source-excerpt">'
+            '<p class="nomotoke-source-excerpt__label">📖 本文抜粋</p>'
+            "<blockquote>引用</blockquote></aside>"
+        )
+
+        relocated = rss_fetcher._relocate_source_excerpt_to_primary_slot(content)
+
+        self.assertLess(
+            relocated.index('class="nomotoke-source-excerpt"'),
+            relocated.index("【話題の要旨】"),
+        )
+        self.assertGreater(
+            relocated.index('class="nomotoke-source-excerpt"'),
+            relocated.index('twitter-tweet'),
+        )
+        self.assertLess(
+            relocated.index('class="nomotoke-source-excerpt"'),
+            relocated.index("📰 参照元"),
+        )
+
+    def test_relocates_excerpt_before_body_heading_when_no_media_post(self):
+        content = (
+            "<p>リード。</p>"
+            '<!-- wp:heading {"level":4} -->\n'
+            "<h4>【話題の要旨】</h4>\n"
+            "<!-- /wp:heading -->\n"
+            "<p>本文。</p>"
+            '<!-- wp:paragraph -->\n<p style="font-size:0.8em;">📰 参照元: link</p>\n<!-- /wp:paragraph -->'
+            '<aside class="nomotoke-source-excerpt">'
+            '<p class="nomotoke-source-excerpt__label">📖 本文抜粋</p>'
+            "<blockquote>引用</blockquote></aside>"
+        )
+
+        relocated = rss_fetcher._relocate_source_excerpt_to_primary_slot(content)
+
+        self.assertLess(
+            relocated.index('class="nomotoke-source-excerpt"'),
+            relocated.index("【話題の要旨】"),
+        )
+        self.assertLess(
+            relocated.index('class="nomotoke-source-excerpt"'),
+            relocated.index("📰 参照元"),
+        )
+
+    def test_relocates_excerpt_before_source_footer_as_last_resort(self):
+        content = (
+            "<p>本文だけ。</p>"
+            '<!-- wp:paragraph -->\n<p style="font-size:0.8em;">📰 参照元: link</p>\n<!-- /wp:paragraph -->'
+            '<aside class="nomotoke-source-excerpt">'
+            '<p class="nomotoke-source-excerpt__label">📖 本文抜粋</p>'
+            "<blockquote>引用</blockquote></aside>"
+        )
+
+        relocated = rss_fetcher._relocate_source_excerpt_to_primary_slot(content)
+
+        self.assertLess(
+            relocated.index('class="nomotoke-source-excerpt"'),
+            relocated.index("📰 参照元"),
+        )
+
     @patch("src.rss_fetcher.WPClient")
     def test_news_path_inserts_source_body_excerpt_block(self, _wp_cls):
         wp = _wp_cls.return_value
@@ -67,6 +140,50 @@ class AutoRssSourceBodyExcerptInsertTests(unittest.TestCase):
         self.assertIn("nomotoke-source-excerpt", sent_content)
         # 元の本文も保持されていること
         self.assertIn("本文の AI 生成テキスト。", sent_content)
+
+    @patch("src.rss_fetcher.WPClient")
+    def test_news_path_places_source_excerpt_before_first_body_heading(self, _wp_cls):
+        wp = _wp_cls.return_value
+        wp.create_post.return_value = 9105
+
+        rendered_body_html = (
+            "<p>リード。</p>"
+            '<!-- wp:heading {"level":4} -->\n'
+            "<h4>【話題の要旨】</h4>\n"
+            "<!-- /wp:heading -->\n"
+            "<p>本文。</p>"
+            '<!-- wp:paragraph -->\n'
+            '<p style="font-size:0.8em;color:#999;">📰 参照元: link</p>\n'
+            "<!-- /wp:paragraph -->"
+        )
+
+        rss_fetcher._create_draft_with_same_fire_guard(
+            wp,
+            __import__("logging").getLogger("rss_fetcher.test"),
+            set(),
+            {},
+            "【巨人】岡本和真がフリー打撃でスタンドへ豪快弾",
+            rendered_body_html,
+            [663],
+            "https://hochi.news/articles/test-okamoto-slot.html",
+            featured_media=None,
+            enrichment_summary="岡本和真がフリー打撃で快音を響かせた。",
+            enrichment_category="選手情報",
+            enrichment_template_key="",
+            enrichment_source_name="報知新聞",
+            enrichment_raw_html=_HOCHI_PAGE_HTML,
+            enrichment_source_type="news",
+        )
+
+        sent_content = wp.create_post.call_args.args[1]
+        self.assertLess(
+            sent_content.index('class="nomotoke-source-excerpt"'),
+            sent_content.index("【話題の要旨】"),
+        )
+        self.assertLess(
+            sent_content.index('class="nomotoke-source-excerpt"'),
+            sent_content.index("📰 参照元"),
+        )
 
     @patch("src.rss_fetcher.WPClient")
     def test_news_path_idempotent_when_excerpt_already_present(self, _wp_cls):

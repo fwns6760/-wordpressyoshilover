@@ -19636,6 +19636,114 @@ def _maybe_insert_auto_rss_source_body_excerpt(
     return result
 
 
+_SOURCE_EXCERPT_BLOCK_RE = _re.compile(
+    r'(?P<block><aside\b[^>]*class=["\'][^"\']*\bnomotoke-source-excerpt\b[^"\']*["\'][^>]*>[\s\S]*?</aside>\s*)',
+    _re.IGNORECASE,
+)
+_SOURCE_EXCERPT_HEADING_RE = _re.compile(
+    r'(?:<!--\s*wp:heading\b[^>]*-->\s*)?'
+    r'<h(?P<level>[2-4])\b[^>]*>\s*(?P<label>【[^<]{2,48}】)\s*</h(?P=level)>\s*'
+    r'(?:<!--\s*/wp:heading\s*-->\s*)?',
+    _re.DOTALL,
+)
+_SOURCE_EXCERPT_SOURCE_FOOTER_RE = _re.compile(
+    r'<!--\s*wp:paragraph\s*-->\s*<p\b[^>]*>\s*📰\s*参照元:',
+    _re.DOTALL,
+)
+
+
+def _source_excerpt_primary_heading_labels() -> tuple[str, ...]:
+    labels: list[str] = [
+        "【ニュースの整理】",
+        "【今回のポイント】",
+    ]
+    for group in (
+        MANAGER_REQUIRED_HEADINGS,
+        MANAGER_REQUIRED_HEADINGS_V2,
+        NOTICE_REQUIRED_HEADINGS,
+        NOTICE_REQUIRED_HEADINGS_V2,
+        RECOVERY_REQUIRED_HEADINGS,
+        RECOVERY_REQUIRED_HEADINGS_V2,
+        SOCIAL_REQUIRED_HEADINGS,
+        SOCIAL_REQUIRED_HEADINGS_V2,
+    ):
+        if group:
+            labels.append(group[0])
+    for heading_map in (
+        GAME_REQUIRED_HEADINGS,
+        GAME_REQUIRED_HEADINGS_V2,
+        FARM_REQUIRED_HEADINGS,
+        FARM_REQUIRED_HEADINGS_V2,
+    ):
+        for group in heading_map.values():
+            if group:
+                labels.append(group[0])
+    return tuple(dict.fromkeys(labels))
+
+
+def _find_source_excerpt_primary_anchor(rendered_html: str) -> _re.Match[str] | None:
+    primary_labels = set(_source_excerpt_primary_heading_labels())
+    first_bracket_heading: _re.Match[str] | None = None
+    for match in _SOURCE_EXCERPT_HEADING_RE.finditer(rendered_html or ""):
+        label = (match.group("label") or "").strip()
+        if label in primary_labels:
+            return match
+        if first_bracket_heading is None and label not in {"【関連記事】"}:
+            first_bracket_heading = match
+    return first_bracket_heading
+
+
+def _relocate_source_excerpt_to_primary_slot(
+    rendered_html: str,
+    *,
+    logger: logging.Logger | None = None,
+    source_url: str = "",
+) -> str:
+    """Keep source-literal excerpts high in the article.
+
+    Source excerpt helpers run after the main body is assembled. Older helper
+    behavior appended the block when the legacy ``出典記事`` heading was absent,
+    which pushed the quote below footer/source metadata. The canonical slot is
+    just before the first body heading. When a media/X post block exists, that
+    heading appears after the embed, so this places the excerpt immediately
+    after the post. When no post exists, it lands before the body prose.
+    """
+    match = _SOURCE_EXCERPT_BLOCK_RE.search(rendered_html or "")
+    if not match:
+        return rendered_html
+    excerpt_block = match.group("block")
+    without_excerpt = (
+        rendered_html[: match.start()] + rendered_html[match.end() :]
+    )
+    anchor = _find_source_excerpt_primary_anchor(without_excerpt)
+    anchor_kind = "primary_heading"
+    if anchor is None:
+        anchor = _SOURCE_EXCERPT_SOURCE_FOOTER_RE.search(without_excerpt)
+        anchor_kind = "source_footer"
+    if anchor is None:
+        if logger is not None:
+            logger.info(
+                "source_excerpt_relocation_skip reason=no_anchor url=%s",
+                source_url,
+            )
+        return rendered_html
+    relocated = (
+        without_excerpt[: anchor.start()]
+        + excerpt_block.strip()
+        + "\n"
+        + without_excerpt[anchor.start() :]
+    )
+    if relocated != rendered_html and logger is not None:
+        logger.info(
+            "source_excerpt_relocated anchor=%s old_pos=%d new_pos=%d url=%s",
+            anchor_kind,
+            match.start(),
+            anchor.start(),
+            source_url,
+        )
+    return relocated
+
+
 def _maybe_insert_x_outbound_article_excerpt(
     rendered_html: str,
     *,
@@ -19952,6 +20060,11 @@ def _create_draft_with_same_fire_guard(
         source_url=normalized_source_url,
         source_name=enrichment_source_name,
         logger=logger,
+    )
+    enriched_content = _relocate_source_excerpt_to_primary_slot(
+        enriched_content,
+        logger=logger,
+        source_url=normalized_source_url,
     )
     if force_status:
         resolved_status = force_status

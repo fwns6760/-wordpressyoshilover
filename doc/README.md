@@ -57,6 +57,7 @@ Active folder is intentionally narrow. 2026-05-08 朝の「0 publish 0 mail」�
 | **quality next-publish dedup review** | `319-QA-fetcher-topic-dedup-and-slot-fill.md` | 自動起動時に同一話題の重複記事で10枠を消費しないための narrow QA ticket。head/bat contact 事故の再現テスト赤→緑、related/full pytest green。diff review + commit 判断待ち。publish/mail/scheduler/env/Cloud Run/SEO/source追加は不可触。 |
 | **quality cross-media duplicate follow-up** | `364-QA-cross-family-same-event-dedup.md` | 報知 / スポニチ / デイリー等が同じ巨人ニュースを別タイトルで出す穴を扱う。既存 319/339/334/363 は対象が狭く、2媒体以上の同一選手・同一出来事を event_key で止める層が未実装。GitHub Issue 連動、実装前 ticket。 |
 | **quality social X related-post specificity** | `365-QA-social-x-related-post-specificity.md` | 68489 型。SNS記事の「関連ポスト」が同一選手名だけで別話題Xを束ねる穴を、literal detail overlap 必須にして恒久修正する。GitHub Issue #34。 |
+| **quality source excerpt placement** | `366-QA-source-excerpt-placement.md` | 68321 / 68622 型。引用記事（本文抜粋）が本文末尾や参照元付近に落ちる穴を、HTML 構造だけで関連ポスト直後 / 本文見出し前へ正規化する。GitHub Issue #35。 |
 | **quality source excerpt follow-up** | `323-QA-source-body-excerpt-clean-truncation.md` | `314-QA-rss-source-body-excerpt-followup` 関連。ブログ本文の `📖 本文抜粋` が600文字化後も途中切れ / UI・関連記事混入に見える問題を狭く扱う。publish/mail/scheduler/env/Cloud Run/X/SEO/featured_media は不可触。 |
 | **waiting** | `205-gcp-runtime-drift-audit.md`, `238-night-draft-only-and-morning-decision-report.md`, `288-INGEST-source-coverage-expansion.md` | still useful, but not part of the immediate article-body hallucination fix. `288` remains source-add HOLD; only Phase 0 repo-only audit / dry-run evidence may advance doc-only. |
 | **INSIGHT lane (342 ready full-12team, 343 phase-4 done)** | `342-INSIGHT-data-driven-ranking-auto-publish.md`, `343-INSIGHT-007-data-population-audit-and-backfill.md` | 343 Phase 4 (12 球団 team-aware roster) LIVE: NPB 公式 scrape で `config/npb_12team_roster.json` 1071 entry 生成、`fill_canonical_team_aware` で 5027 row 補完、production DB players 21→462 (12 球団全部 32-43 人)、advanced_metric_snapshots 122→6394 (50x)。image `insight-nightly:343c` deploy 済、次 nightly 以降も自動 fill 動作。342 status `READY_FOR_PHASE_1_IMPL_FULL_12TEAM`、初版 4 候補全部 (A1 月次 OPS / B2 守備 UZR / B1 12 球団 top 30 / E1 直近 hot/cold) data 揃い、user GO で impl 着手可能。GH Issue #21(342) + #23(343)。 |
@@ -1926,6 +1927,18 @@ git add -A禁止。
 - **方針**: AI 類似判定 / 記憶再構成は禁止。social_news の2本目X投稿は、選手名一致だけでは許可せず、source tweet と候補 tweet の title / summary に `キャッチボール` / `昆陽里` / `登録` / `抹消` / `スタメン` 等の具体 detail token が literal に重なる場合だけ許可する。拒否は silent skip にせず `topic_detail_mismatch` で残す。自己評価OKではなく 68489 型 fixture-backed test で固定する。
 - **acceptance**: 同一選手名だけの別話題Xは関連ポストに入らない。具体 detail overlap があるXは2本目として入る。`topic_detail_mismatch` が残る。既存の公示 / 監督コメント / social own source quote が回帰しない。Scheduler / env / Secret / WP既存記事 / X / SNS / mail 条件は変更しない。
 - **implementation**: `src/media_xpost_selector.py` に concrete detail overlap gate を追加し、`src/rss_fetcher.py` から selector へ source title / summary を渡す。`tests/test_media_xpost_selector.py` に 68489 型 regression を追加。`py_compile` / `compileall` / AST parse PASS。pytest: `tests/test_media_xpost_selector.py` 24 passed / 3 warnings、media selector + build block 83 passed / 4 warnings、duplicate guard 13 passed / 3 warnings。Cloud Build `a46132b5-d25a-4bf0-b44f-6bb92b39fbff` SUCCESS、image `yoshilover-fetcher:365-social-x-7440089` / digest `sha256:6161a8b640e53d2eb0312d38cfcf15ead2953ac6c4240659c531099465eb911b` を `yoshilover-fetcher-00402-4vc` へ deploy、traffic 100%、`/health` OK、startup probe succeeded。Scheduler / env / Secret / WP既存記事 / X / SNS / mail 条件は未変更。GitHub Issue #34 は自然 fire / log evidence 後に close。
+
+### 366-QA-source-excerpt-placement
+
+- **alias**: -
+- **status**: IN_FLIGHT / **priority**: high
+- **owner**: Codex / **lane**: B
+- **doc_path**: `doc/active/366-QA-source-excerpt-placement.md`
+- **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/35
+- **背景**: `68321` は関連ポストの後ではなく本文抜粋が末尾付近へ落ち、`68622` は関連ポストがないのに本文抜粋が参照元付近まで下がっていた。原因は source excerpt helper が旧 `🔗 出典記事` anchor 不在時に append していたこと。
+- **方針**: 本文抜粋を作る条件は変えず、生成済み `<aside class="nomotoke-source-excerpt">` を HTML 構造だけで正規 slot へ移動する。関連ポストがあれば関連ポスト直後 / 最初の本文見出し前、関連ポストがなければ最初の本文見出し前。AI 類似判定 / 記憶再構成は禁止、relocation / no-anchor skip は log に残す。
+- **acceptance**: 68321 型は関連ポスト後に本文抜粋が出る。68622 型は本文見出し前に本文抜粋が出る。参照元 footer より下に落ちない。既存の本文抜粋生成可否は変えない。Scheduler / env / Secret / X / SNS / mail 条件は変更しない。
+- **implementation**: `src/rss_fetcher.py` に `_relocate_source_excerpt_to_primary_slot` を追加し、`_create_draft_with_same_fire_guard` の enrichment 完了直前で relocation。`tests/test_rss_fetcher_source_body_excerpt_auto.py` に 68321 型 / 68622 型 / fallback / draft 作成経路 regression を追加。`py_compile` / `compileall` / AST parse PASS。pytest: source excerpt 9 passed / 4 warnings、source excerpt + build block 68 passed / 4 warnings。deploy evidence 待ち。
 
 ## marketing board
 

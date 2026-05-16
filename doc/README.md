@@ -20,6 +20,13 @@ This file is the execution queue source of truth.
 - `docs/handoff/codex_requests/` = prompts generated from this board
 - `docs/handoff/codex_responses/` and `docs/handoff/run_logs/` = execution evidence
 
+2026-05-16 user lock:
+
+- 新規/修正 ticket は GitHub Issue も作る
+- GitHub Issue は日本語で、人間が読んで分かる題名・原因・直す内容・完了条件を書く
+- Issue は作っただけで完了にしない。変更 diff、テスト、deploy / log 証跡、受け入れ条件の一致が揃った後に close する
+- repo doc は引き続き正本。GitHub Issue は user が追いやすい外部台帳として同期する
+
 If this file conflicts with an individual ticket doc:
 
 - execution order / status / owner / lane / blocked state: follow this file
@@ -1886,13 +1893,13 @@ git add -A禁止。
 ### 363-QA-same-fire-cross-source-title-duplicate-stop
 
 - **alias**: -
-- **status**: REVIEW_NEEDED / **priority**: high
+- **status**: CLOSED / **priority**: high
 - **owner**: Codex / **lane**: B
-- **doc_path**: `doc/active/363-QA-same-fire-cross-source-title-duplicate-stop.md`
+- **doc_path**: `doc/done/2026-05/363-QA-same-fire-cross-source-title-duplicate-stop.md`
 - **背景**: WP drafts `68478` / `68480` は別の東京巨人公式 X source URL だったが、title rewrite が同じ `巨人スタメン 巨人 vs DeNA 東京ドーム 14時試合開始` に潰した。ログは `title_collision_detected` / `same_fire_distinct_source_detected` を出していたが、既存コードは同一 source_url しか止めず、別 URL 同 title は作成していた。
 - **方針**: global title-only reuse は誤吸収 risk があるため入れない。lineup / pregame / postgame / rainout slide / player status / player quote / manager quote の高確度 family だけ、同一 fire 内で別 URL 同 title なら 2 本目を `post_id=0` で skip する。
 - **tests**: py_compile PASS、dedup + reliability targeted は 36 passed / 3 xfailed / 3 warnings / 3 subtests passed。lineup 周辺込みの追加 targeted は 79 passed / 3 xfailed / 3 warnings / 3 subtests passed。初回 test は既存 logger.info 併発を見落として 1 failure、assert を「期待ログが含まれる」に修正済み。
-- **deploy**: 未実施。Scheduler / env / Secret / 既存 WP post / X / SNS は未変更。
+- **deploy**: commit `10ae4ef`、Cloud Build `7a9f0bc1-439f-43ee-9a84-63a0df766fd1` SUCCESS、image `yoshilover-fetcher:363-cross-source-10ae4ef`、digest `sha256:53dd60aa908d483c61cf2b5756706b70d8ea67b0a29335a7a3ba7d051152d40a`、revision `yoshilover-fetcher-00400-f29`、traffic 100%、service generation `542`、`/health` OK。Scheduler / env / Secret / 既存 WP post / X / SNS は未変更。GitHub Issue #32 は日本語化して close。
 
 ## marketing board
 

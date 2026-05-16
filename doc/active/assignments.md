@@ -5,8 +5,10 @@
 ## チケット管理方針(2026-05-14 EVENING lock)
 
 - **正本 = repo doc 一本**(`doc/README.md` + 本 `doc/active/assignments.md`)
-- **GH Issues 運用は停止**。今日 #1〜#25 を試したが、二重管理のため撤収
-- 1 人 + AI 運用では本 file + `doc/active/` / `doc/waiting/` / `doc/done/YYYY-MM/` の 4 layer で十分
+- **2026-05-16 user lock: 新規/修正 ticket は GitHub Issue も作る**
+- GitHub Issue は日本語で、人間が読んで分かる題名・原因・直す内容・完了条件を書く
+- Issue は作っただけで完了にしない。変更 diff、テスト、deploy / log 証跡、受け入れ条件の一致が揃った後に close する
+- repo doc は引き続き正本。GitHub Issue は user が追いやすい外部台帳として同期する
 
 ## 最初に読む
 
@@ -79,7 +81,7 @@ test: 382 passed (= 302 baseline + 35 step1 + 18 step2 + 14 step3p1 + 13 step3p2
 | `349-INSIGHT-dedup-cooldown-cascade` | LIVE_DEPLOYED_OBSERVE | 同じ subject + metric を期間違いでも 7 日 cooldown。例外は 5% 以上の値変化または順位 band 変化。title 期間 runtime guard も deploy 済み。schema migration なし、既存 `article_candidates` を ledger として利用 |
 | `356-INSIGHT-data-quality-publish-gate` | LIVE_DEPLOYED_OBSERVE | GitHub Issue #31 起票済み。sample不足 / ranking coverage不足 / stale snapshot / 本文根拠不足を publish 直前に止める data quality gate を `insight-nightly:ca03019` へ本番 deploy 済み。Cloud Build `19c2e97d-f4f9-48e9-8db4-7a303003892e` SUCCESS、digest `sha256:a71bbe0f...`、Job generation `46`。env / Scheduler / Secret / X / SNS は未変更、手動 execute 未実行 |
 | `362-INSIGHT-queue-cleanup-and-metric-run-cap` | LIVE_DEPLOYED_OBSERVE | anomaly auto publish を 1 run 同一 metric 1 本までに制限し、古い NEW / 対象外 signal / metric cap 余剰を status 変更で掃除する実装を `insight-nightly:362-queue-80b87ea` へ deploy 済み。production DB copy smoke では `NEW 15938 -> 822`、UZR 3 件は 1 件 draft candidate + 2 件 cap drop。Scheduler / env / Secret / X / SNS は未変更、手動 execute 未実行 |
-| `363-QA-same-fire-cross-source-title-duplicate-stop` | REVIEW_NEEDED | 68478/68480 型の別 source URL・同 generated title の連続 draft を、lineup / pregame / postgame / player quote など高確度 family に限って same-fire で止める。generic title collision は従来通り observe-only。py_compile PASS、lineup 周辺込み targeted pytest 79 passed / 3 xfailed。deploy 未実施、Scheduler / env / Secret / WP既存記事 / X / SNS は未変更 |
+| `363-QA-same-fire-cross-source-title-duplicate-stop` | CLOSED | 68478/68480 型の別 source URL・同 generated title の連続 draft を、lineup / pregame / postgame / player quote など高確度 family に限って same-fire で止める。generic title collision は従来通り observe-only。py_compile PASS、lineup 周辺込み targeted pytest 79 passed / 3 xfailed。Cloud Build SUCCESS、`yoshilover-fetcher-00400-f29` へ deploy、`/health` OK。Scheduler / env / Secret / WP既存記事 / X / SNS は未変更。GitHub Issue #32 は日本語化して close |
 
 deploy: `insight-nightly:ca03019` / digest `sha256:a71bbe0f943c969349a61413da3a6addb016f8286e506229e0b3a3a0a76bc41f`。Cloud Build `19c2e97d-f4f9-48e9-8db4-7a303003892e` SUCCESS。Scheduler / env / Secret は未変更、手動 execute 未実行。
 

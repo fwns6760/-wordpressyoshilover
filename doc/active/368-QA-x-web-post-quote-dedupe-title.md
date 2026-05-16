@@ -2,7 +2,7 @@
 
 ## meta
 
-- status: IN_FLIGHT
+- status: LIVE_DEPLOYED_OBSERVE
 - priority: high
 - owner: Codex
 - lane: B
@@ -94,17 +94,19 @@ title も `関連発言` 型に劣化し、記事の核が分かりにくかっ�
 - `python3 -m pytest tests/test_related_posts.py tests/test_rss_fetcher_same_family_x_web_dedup.py tests/test_build_news_block.py tests/test_media_xpost_selector.py -q` -> 103 passed / 4 warnings
 - `git diff --check -- src/rss_fetcher.py tests/test_related_posts.py tests/test_rss_fetcher_same_family_x_web_dedup.py doc/README.md doc/active/assignments.md doc/active/368-QA-x-web-post-quote-dedupe-title.md`
 - Cloud Run env read-only check: `ENABLE_SAME_FAMILY_X_WEB_DEDUP` explicit overrideなし（code default ON が有効）
+- commit `8b0b420` (`368: keep x quote articles and dedupe web copies`)
+- `gcloud builds submit --project baseballsite --region asia-northeast1 --tag asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:368-x-web-8b0b420 .` -> Cloud Build `26d505cd-8fe3-43cd-a99b-aceb93cf7766` SUCCESS
+- image digest `sha256:d8414f326603d22caa514d10c5b12c63dc849e29f6b5e7cd70d206112d685596`
+- `gcloud run deploy yoshilover-fetcher --image asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:368-x-web-8b0b420 --project baseballsite --region asia-northeast1 --quiet` -> revision `yoshilover-fetcher-00405-t9l`, traffic 100%
+- `curl -sS https://yoshilover-fetcher-487178857517.asia-northeast1.run.app/health` -> OK
+- Cloud Run log: revision `yoshilover-fetcher-00405-t9l` Ready condition true、startup TCP probe succeeded
+- GitHub Issue evidence comment: https://github.com/fwns6760/-wordpressyoshilover/issues/37#issuecomment-4466671286
 
 未実行:
 
-- commit
-- deploy
-- Cloud Run health/log verify
+- natural fire / log evidence
 
 ## 未完了
 
-- final compile / AST / expanded pytest
-- commit
-- deploy
 - natural fire / log evidence
 - GitHub Issue #37 close

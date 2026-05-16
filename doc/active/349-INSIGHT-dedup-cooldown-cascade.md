@@ -255,4 +255,3 @@ YYYY-MM-DD HH:MM JST | <test> | <regression> | <fix> | <test added>
 - Scheduler 本数削減や時刻変更。
 - env / Secret 変更。
 - WP 既存記事の削除・修正。
-- X / SNS 自動投稿設定変更。

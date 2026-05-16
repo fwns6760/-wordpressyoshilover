@@ -213,6 +213,7 @@ GAME_LIVE_SOURCE_POLICY_END_MINUTE = 21 * 60 + 30
 GAME_LIVE_SOURCE_POLICY_ROLES = frozenset(
     {"game_live_primary", "game_live_video_signal"}
 )
+ENABLE_GAME_LIVE_SOURCE_POLICY_ENV = "ENABLE_GAME_LIVE_SOURCE_POLICY"
 AUTO_POST_CATEGORY_ID = 673
 DRAFT_CATEGORY_FALLBACK_NAME = "コラム"
 PUBLISH_SUBTYPE_ENV_MAP = {
@@ -267,11 +268,19 @@ def _is_game_live_source_policy_window(now: datetime | None = None) -> bool:
     )
 
 
+def _game_live_source_policy_enabled() -> bool:
+    # 371-QA: user policy is to keep all sources flowing and let dedupe gates
+    # handle duplicates. The old live-window source allowlist is now opt-in.
+    return _env_flag(ENABLE_GAME_LIVE_SOURCE_POLICY_ENV, False)
+
+
 def _source_allowed_by_game_live_policy(
     source_roles: set[str],
     *,
     now: datetime | None = None,
 ) -> bool:
+    if not _game_live_source_policy_enabled():
+        return True
     if not _is_game_live_source_policy_window(now):
         return True
     return bool(source_roles & GAME_LIVE_SOURCE_POLICY_ROLES)
@@ -24463,7 +24472,9 @@ def _main(args, logger):
     # 324-QA: drop stale fan_voice_pool entries from any prior in-process run.
     _reset_fan_voice_pool_cache()
     game_live_source_policy_active = bool(
-        has_game and _is_game_live_source_policy_window(fetch_started_at)
+        has_game
+        and _game_live_source_policy_enabled()
+        and _is_game_live_source_policy_window(fetch_started_at)
     )
     game_live_source_policy_skipped_sources = 0
     # RSS-255: 同一 run 内で同じ x_status_id の 2 件目以降を skip。
@@ -26740,6 +26751,7 @@ def _main(args, logger):
         "bypass_full_invocation_count": bypass_full_invocation_count,
         "tag_scraper_per_source": _counter_to_plain_dict(tag_scraper_per_source),
         "scraper_fetch_failures": scraper_fetch_failures,
+        "game_live_source_policy_enabled": _game_live_source_policy_enabled(),
         "game_live_source_policy_active": game_live_source_policy_active,
         "game_live_source_policy_window": GAME_LIVE_SOURCE_POLICY_WINDOW_LABEL,
         "game_live_source_policy_skipped_sources": game_live_source_policy_skipped_sources,

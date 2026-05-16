@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import tempfile
 import unittest
 from argparse import Namespace
@@ -142,30 +143,38 @@ class RssFetcherObservabilityTests(unittest.TestCase):
             "\n".join(cm.output),
         )
 
-    def test_game_live_window_blocks_default_article_sources(self):
+    def test_game_live_window_allows_default_article_sources_by_default(self):
         live_now = datetime(2026, 5, 12, 18, 0, tzinfo=timezone(timedelta(hours=9)))
         default_roles = rss_fetcher._source_roles_from_config(None)
 
         self.assertTrue(rss_fetcher._is_game_live_source_policy_window(live_now))
-        self.assertFalse(
-            rss_fetcher._source_allowed_by_game_live_policy(default_roles, now=live_now)
-        )
+        with patch.dict(os.environ, {"ENABLE_GAME_LIVE_SOURCE_POLICY": "0"}):
+            self.assertTrue(
+                rss_fetcher._source_allowed_by_game_live_policy(default_roles, now=live_now)
+            )
 
-    def test_game_live_window_allows_hochi_and_dazn_roles(self):
+    def test_game_live_window_can_be_opted_in_for_legacy_allowlist(self):
         live_now = datetime(2026, 5, 12, 18, 0, tzinfo=timezone(timedelta(hours=9)))
 
-        self.assertTrue(
-            rss_fetcher._source_allowed_by_game_live_policy(
-                {"article_source", "game_live_primary"},
-                now=live_now,
+        with patch.dict(os.environ, {"ENABLE_GAME_LIVE_SOURCE_POLICY": "1"}):
+            self.assertFalse(
+                rss_fetcher._source_allowed_by_game_live_policy(
+                    {"article_source"},
+                    now=live_now,
+                )
             )
-        )
-        self.assertTrue(
-            rss_fetcher._source_allowed_by_game_live_policy(
-                {"media_quote_only", "game_live_video_signal", "review_only"},
-                now=live_now,
+            self.assertTrue(
+                rss_fetcher._source_allowed_by_game_live_policy(
+                    {"article_source", "game_live_primary"},
+                    now=live_now,
+                )
             )
-        )
+            self.assertTrue(
+                rss_fetcher._source_allowed_by_game_live_policy(
+                    {"media_quote_only", "game_live_video_signal", "review_only"},
+                    now=live_now,
+                )
+            )
 
     def test_game_live_window_ends_at_2130_jst(self):
         after_window = datetime(2026, 5, 12, 21, 30, tzinfo=timezone(timedelta(hours=9)))
@@ -178,7 +187,7 @@ class RssFetcherObservabilityTests(unittest.TestCase):
             )
         )
 
-    def test_main_skips_non_live_sources_during_game_live_policy(self):
+    def test_main_does_not_skip_non_live_sources_during_game_live_window_by_default(self):
         args = Namespace(dry_run=True, draft_only=False, limit=10, article_ai_mode=None)
 
         with tempfile.TemporaryDirectory() as tmpdir, ExitStack() as stack:
@@ -217,16 +226,19 @@ class RssFetcherObservabilityTests(unittest.TestCase):
             stack.enter_context(patch.object(rss_fetcher, "load_history", return_value={}))
             stack.enter_context(patch.object(rss_fetcher.feedparser, "parse", parse_mock))
             stack.enter_context(patch.object(rss_fetcher, "_is_game_live_source_policy_window", return_value=True))
+            stack.enter_context(patch.dict(os.environ, {"ENABLE_GAME_LIVE_SOURCE_POLICY": "0"}))
 
             with self.assertLogs("rss_fetcher", level="INFO") as cm:
                 rss_fetcher._main(args, logging.getLogger("rss_fetcher"))
 
-        parse_mock.assert_called_once_with("https://feed.example.com/hochi.xml")
+        self.assertEqual(parse_mock.call_count, 2)
+        parse_mock.assert_any_call("https://feed.example.com/nikkan.xml")
+        parse_mock.assert_any_call("https://feed.example.com/hochi.xml")
         logs = "\n".join(cm.output)
-        self.assertIn('"event": "game_live_source_policy_skip"', logs)
-        self.assertIn('"source_name": "日刊スポーツX"', logs)
-        self.assertIn('"game_live_source_policy_active": true', logs)
-        self.assertIn('"game_live_source_policy_skipped_sources": 1', logs)
+        self.assertNotIn('"event": "game_live_source_policy_skip"', logs)
+        self.assertIn('"game_live_source_policy_enabled": false', logs)
+        self.assertIn('"game_live_source_policy_active": false', logs)
+        self.assertIn('"game_live_source_policy_skipped_sources": 0', logs)
 
 
 if __name__ == "__main__":

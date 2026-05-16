@@ -2,7 +2,7 @@
 
 ## 1. ticket header
 
-- **status**: REVIEW_NEEDED
+- **status**: LIVE_DEPLOYED_OBSERVE
 - **priority**: high
 - **owner**: Codex
 - **lane**: B
@@ -71,6 +71,7 @@ data-insight の自動公開直前に、データ記事として最低限の信�
 2026-05-16 JST | repo ticket 356 作成 | doc/active + README + assignments 同期
 2026-05-16 JST | 実装 | publish 直前 data quality gate を ranking / anomaly / team publisher に追加
 2026-05-16 JST | 検証 | targeted pytest 231 passed、full unittest は既存赤 11 failures / 3 errors
+2026-05-16 JST | 本番 deploy | clean archive `ca03019` から `insight-nightly:ca03019` build/deploy。Scheduler/env/Secret は未変更、手動 execute 未実行
 ```
 
 ## 8. 作業後追記
@@ -125,12 +126,39 @@ data-insight の自動公開直前に、データ記事として最低限の信�
   - `Ran 4191 tests`
   - `FAILED (failures=11, errors=3)`
 
+### deploy 前再確認
+
+- `python3 -m pytest tests/test_insight_quality_gate.py tests/test_ranking_article_publisher.py tests/test_insight_anomaly_detector.py tests/test_insight_whitelist_gate.py tests/test_insight_title_guard.py tests/test_insight_dedup_gate.py tests/test_insight_step3_part2_records.py tests/test_insight_article_generator.py tests/test_insight_step2_metrics.py tests/test_x_post_mail.py tests/test_format_as_x_post.py -q`
+  - `231 passed, 3 warnings in 50.39s`
+
+### 本番 deploy 証跡
+
+- commit: `ca03019 356: add insight data quality publish gate`
+- build context: `git archive --format=tar --output=/tmp/insight-nightly-ca03019.tar ca03019` -> `/tmp/insight-nightly-ca03019.argezy`
+- Cloud Build: `19c2e97d-f4f9-48e9-8db4-7a303003892e` / `SUCCESS`
+- image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/insight-nightly:ca03019`
+- digest: `sha256:a71bbe0f943c969349a61413da3a6addb016f8286e506229e0b3a3a0a76bc41f`
+- fully qualified digest: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/insight-nightly@sha256:a71bbe0f943c969349a61413da3a6addb016f8286e506229e0b3a3a0a76bc41f`
+- Cloud Run Job `insight-nightly`: generation `46`
+- Job args unchanged: `python3 -m src.analysis.insight_nightly --auto --all-teams --live`
+- env / Secret unchanged:
+  - `INSIGHT_GCS_BUCKET=baseballsite-yoshilover-insight`
+  - `ENABLE_DATA_INSIGHT_AUTO_DRAFT=1`
+  - `ENABLE_DATA_INSIGHT_AUTO_PUBLISH_GIANTS=1`
+  - `WP_URL` / `WP_USER` / `WP_APP_PASSWORD` remain Secret Manager refs
+  - `DATA_INSIGHT_ANOMALY_THRESHOLD_SIGMA=1.5`
+  - `DATA_INSIGHT_GIANTS_TOP_PCT=0.10`
+  - `DATA_INSIGHT_DEFENSE_FIELDING_PCT_THRESHOLD=0.05`
+- Scheduler unchanged: existing `data-insight-*` triggers remain ENABLED at 07:00 / 10:00 / 12:00 / 15:00 / 17:00 / 20:00 / 21:00 JST.
+- manual execute 未実行: 追加記事 / mail を発生させないため、deploy 後の `gcloud run jobs execute insight-nightly` は実行していない。次回 Scheduler 自然 fire で確認する。
+- latest execution count remained `36` at verify, latest execution `insight-nightly-rzvp4` (2026-05-16T03:00Z run) was pre-deploy.
+
 ### 未実行 / 対象外
 
-- Cloud Run / Cloud Build / Scheduler deploy: 未実行。記事数を減らす可能性がある live gate のため、repo commit 後に user / authenticated executor 判断。
 - env / Secret / Scheduler 変更: 対象外、未実行。
 - WP 既存記事の削除 / 修正: 対象外、未実行。
 - X / SNS 自動投稿: 対象外、未実行。
+- Git push: repo lock により未実行。push は Claude / user 側の外部手順。
 
 ### full unittest 既存赤
 

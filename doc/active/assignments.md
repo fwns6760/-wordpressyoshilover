@@ -77,11 +77,11 @@ test: 382 passed (= 302 baseline + 35 step1 + 18 step2 + 14 step3p1 + 13 step3p2
 |---|---|---|
 | `348-INSIGHT` follow-up | LIVE_DEPLOYED_OBSERVE | `BABIP` / `FIP` が detector bypass や direct renderer から再流出しないよう二重防御。UZR は user 指示通り許可側維持 |
 | `349-INSIGHT-dedup-cooldown-cascade` | LIVE_DEPLOYED_OBSERVE | 同じ subject + metric を期間違いでも 7 日 cooldown。例外は 5% 以上の値変化または順位 band 変化。title 期間 runtime guard も deploy 済み。schema migration なし、既存 `article_candidates` を ledger として利用 |
-| `356-INSIGHT-data-quality-publish-gate` | REVIEW_NEEDED | GitHub Issue #31 起票済み。sample不足 / ranking coverage不足 / stale snapshot / 本文根拠不足を publish 直前に止める data quality gate を実装済み。targeted pytest 231 passed、full unittest は既存赤。env / Scheduler / Secret / X / SNS / deploy は未実行 |
+| `356-INSIGHT-data-quality-publish-gate` | LIVE_DEPLOYED_OBSERVE | GitHub Issue #31 起票済み。sample不足 / ranking coverage不足 / stale snapshot / 本文根拠不足を publish 直前に止める data quality gate を `insight-nightly:ca03019` へ本番 deploy 済み。Cloud Build `19c2e97d-f4f9-48e9-8db4-7a303003892e` SUCCESS、digest `sha256:a71bbe0f...`、Job generation `46`。env / Scheduler / Secret / X / SNS は未変更、手動 execute 未実行 |
 
-deploy: `insight-nightly:5a4e5e6` / digest `sha256:73c0b4b0bdd4524d7d445be0444f4ac4d0693a4db4b5429f91a4af387ce638c8`。Cloud Build `abf66df4-42b8-402f-8099-0e342923f24e` SUCCESS。Scheduler / env / Secret は未変更、手動 execute 未実行。
+deploy: `insight-nightly:ca03019` / digest `sha256:a71bbe0f943c969349a61413da3a6addb016f8286e506229e0b3a3a0a76bc41f`。Cloud Build `19c2e97d-f4f9-48e9-8db4-7a303003892e` SUCCESS。Scheduler / env / Secret は未変更、手動 execute 未実行。
 
-test: deploy 前 data-insight 関連 pytest 226 passed。full unittest は既存の `manual_intake_service` socket PermissionError、`manual_intake_service_x_post` 403 expectation、`duplicate_prevention_golden` logger call-count で赤のまま。
+test: deploy 前 data-insight 関連 pytest 231 passed。full unittest は既存の `manual_intake_service` socket PermissionError、`manual_intake_service_x_post` 403 expectation、`duplicate_prevention_golden` logger call-count で赤のまま。
 
 様子見リスク: 記事減りすぎ / まだ多い / mail過多 / 既存投稿 backfill 未実装 / title期間必須 runtime guard の live 観察待ち。次 action は次回 Scheduler 自然 fire のログ観察。
 

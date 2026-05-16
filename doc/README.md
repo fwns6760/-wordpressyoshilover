@@ -1805,12 +1805,13 @@ git add -A禁止。
 ### 356 INSIGHT-data-quality-publish-gate
 
 - **alias**: -
-- **status**: REVIEW_NEEDED / **priority**: high
+- **status**: LIVE_DEPLOYED_OBSERVE / **priority**: high
 - **owner**: Codex / **lane**: B
 - **doc_path**: `doc/active/356-INSIGHT-data-quality-publish-gate.md`
 - **GH Issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/31
 - **背景**: 348/349/title期間guard 後の残 risk。sample不足、ranking coverage不足、stale snapshot、本文根拠不足を publish 直前に止める data quality gate を追加する。
-- **実装**: `insight_quality_gate.py` 追加、ranking / anomaly / team publisher に wire。targeted pytest 231 passed。full unittest は既存赤 11 failures / 3 errors。Cloud Run deploy は未実行。
+- **実装**: `insight_quality_gate.py` 追加、ranking / anomaly / team publisher に wire。targeted pytest 231 passed。full unittest は既存赤 11 failures / 3 errors。
+- **deploy**: `insight-nightly:ca03019` / digest `sha256:a71bbe0f943c969349a61413da3a6addb016f8286e506229e0b3a3a0a76bc41f` / Cloud Build `19c2e97d-f4f9-48e9-8db4-7a303003892e` SUCCESS。Cloud Run Job generation `46`。Scheduler / env / Secret は未変更、手動 execute 未実行。
 
 ## marketing board
 

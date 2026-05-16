@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from src.analysis import insight_fetcher, insight_nightly
+from src.analysis import insight_fetcher, insight_nightly, insight_schedule
 
 REPO = Path(__file__).resolve().parents[1]
 FIXTURE = REPO / "tests" / "fixtures" / "npb_score_2026_0510_d-g-08_box.html"
@@ -119,6 +119,22 @@ def test_nightly_no_digest_flag(tmp_path):
         write_digest=False,
     )
     assert summary["digest_path"] is None
+
+
+def test_auto_target_date_uses_yesterday_before_afternoon():
+    JST = dt.timezone(dt.timedelta(hours=9))
+    target = insight_schedule.auto_target_jst_date(
+        dt.datetime(2026, 5, 16, 12, 0, tzinfo=JST),
+    )
+    assert target == dt.date(2026, 5, 15)
+
+
+def test_auto_target_date_uses_today_from_afternoon():
+    JST = dt.timezone(dt.timedelta(hours=9))
+    target = insight_schedule.auto_target_jst_date(
+        dt.datetime(2026, 5, 16, 15, 0, tzinfo=JST),
+    )
+    assert target == dt.date(2026, 5, 16)
 
 
 # ─── HTTP invariant ─────────────────────────────────────────────────────────

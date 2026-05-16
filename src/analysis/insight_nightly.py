@@ -416,7 +416,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         if args.all_teams:
             target = (
                 dt.date.fromisoformat(args.date)
-                if args.date else insight_schedule.previous_jst_date()
+                if args.date else insight_schedule.auto_target_jst_date()
             )
             slugs = resolve_all_slugs_auto(
                 target_date=target,
@@ -571,7 +571,10 @@ def main(argv: Optional[list[str]] = None) -> int:
                                     ("opponent", "db", "vs DeNA"),
                                     ("opponent", "d", "vs 中日"),
                                 ]
-                                # split は H/HR/RBI のみ × season (爆発防止)
+                                # split は H/HR/RBI のみ × weekly。
+                                # 2026-05-16 user feedback: 大手が出す
+                                # season / full-period は auto publish から
+                                # 外す。長期 split は別 gate で再導入判断。
                                 split_metrics = [m for m in counting_metrics
                                                  if m["stat_col"] in ("H", "HR", "RBI")]
                                 split_published = 0
@@ -581,7 +584,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                                             break
                                         try:
                                             split_result = ranking_pub.publish_player_counting_split_draft(
-                                                conn, wp, scope="season",
+                                                conn, wp, scope="weekly",
                                                 split_field=sf, split_value=sv,
                                                 split_label_jp=sl, **metric,
                                             )
@@ -636,7 +639,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         if args.auto:
             target = (
                 dt.date.fromisoformat(args.date)
-                if args.date else insight_schedule.previous_jst_date()
+                if args.date else insight_schedule.auto_target_jst_date()
             )
             slug = resolve_slug_auto(
                 target_date=target,

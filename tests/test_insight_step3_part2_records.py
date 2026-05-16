@@ -604,6 +604,7 @@ def test_publish_team_default_set_uses_short_term_once(monkeypatch):
     """球団 AVG/ERA/HR と得失点差の default run は last_7d に寄せる。"""
     metric_calls = []
     run_diff_calls = []
+    vs_calls = []
 
     def fake_metric(_conn, _wp, *, metric, scope, dry_run=False):
         metric_calls.append((metric, scope))
@@ -617,6 +618,7 @@ def test_publish_team_default_set_uses_short_term_once(monkeypatch):
         return {"status": "published_draft", "metric": "RUN_DIFF", "scope": scope}
 
     def fake_vs(_conn, _wp, *, opponent, scope, dry_run=False):
+        vs_calls.append((opponent, scope))
         return {"status": "skip_no_candidate", "opponent": opponent, "scope": scope}
 
     monkeypatch.setattr(trp, "publish_team_metric_draft", fake_metric)
@@ -628,6 +630,13 @@ def test_publish_team_default_set_uses_short_term_once(monkeypatch):
 
     assert metric_calls == [("HR", "last_7d"), ("AVG", "last_7d"), ("ERA", "last_7d")]
     assert run_diff_calls == ["last_7d"]
+    assert vs_calls == [
+        ("t", "last_7d"),
+        ("s", "last_7d"),
+        ("c", "last_7d"),
+        ("db", "last_7d"),
+        ("d", "last_7d"),
+    ]
     assert not any(r.get("status") == "skip_duplicate_metric_period" for r in results)
 
 

@@ -897,11 +897,13 @@ def publish_team_default_set(
             seen_metric_periods.add("RUN_DIFF")
             published += 1
     # 348 step 3 完全達成: 対戦相手別 publisher (セ・リーグ 5 球団 vs 巨人)
+    # 2026-05-16 user feedback: season / full-period は auto publish から
+    # 外す。直近7日で3試合未満なら render 側で skip される。
     for opp in ("t", "s", "c", "db", "d"):  # 阪神/ヤクルト/広島/DeNA/中日
         if published >= max_per_run:
             break
         vs_r = publish_team_vs_opponent_draft(
-            conn, wp_client_obj, opponent=opp, scope="season", dry_run=dry_run,
+            conn, wp_client_obj, opponent=opp, scope="last_7d", dry_run=dry_run,
         )
         results.append(vs_r)
         if vs_r.get("status") in ("published", "published_draft", "dry_run"):

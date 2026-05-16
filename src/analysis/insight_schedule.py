@@ -113,3 +113,24 @@ def previous_jst_date(now: Optional[dt.datetime] = None) -> dt.date:
     elif now.tzinfo is None:
         now = now.replace(tzinfo=JST)
     return (now.astimezone(JST).date() - dt.timedelta(days=1))
+
+
+def auto_target_jst_date(
+    now: Optional[dt.datetime] = None, *, same_day_after_hour: int = 15
+) -> dt.date:
+    """Return the safe default target date for ``--auto`` jobs.
+
+    Morning/noon triggers keep using yesterday's completed games. From
+    the afternoon onward, the data lane may refresh today's games so the
+    DB does not stay one day behind all day. ``same_day_after_hour`` is
+    JST hour, inclusive.
+    """
+    JST = dt.timezone(dt.timedelta(hours=9))
+    if now is None:
+        now = dt.datetime.now(JST)
+    elif now.tzinfo is None:
+        now = now.replace(tzinfo=JST)
+    jst_now = now.astimezone(JST)
+    if jst_now.hour >= same_day_after_hour:
+        return jst_now.date()
+    return jst_now.date() - dt.timedelta(days=1)

@@ -2,7 +2,7 @@
 
 ## status
 
-- **status**: REVIEW_NEEDED
+- **status**: LIVE_DEPLOYED_OBSERVE
 - **owner**: Codex
 - **lane**: B
 - **created**: 2026-05-16 JST
@@ -60,6 +60,10 @@
 
 ## deploy notes
 
-- live 反映には `x-post-mail-lane` image rebuild + Cloud Run Job image update が必要
+- repo commit: `902689c` (`359: improve x post mail subject visibility`)
+- Cloud Build: `a89b7e8e-b565-4c3f-aaab-40da89ec6611` SUCCESS
+- image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/x-post-mail-lane:359-subject-902689c`
+- digest: `sha256:b5c6aa968959351a691337c256f1d14671be4b539894c91db61ebd600824d120`
+- Cloud Run Job: `x-post-mail-lane` generation `10`
 - Scheduler / env / Secret は変更しない
-- 手動 execute は追加 mail を送るため、原則実行しない。次回自然 fire で確認する
+- 手動 execute は追加 mail を送るため未実行。次回自然 fire で確認する

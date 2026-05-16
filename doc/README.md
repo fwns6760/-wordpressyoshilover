@@ -1840,12 +1840,13 @@ git add -A禁止。
 ### 359 x-post-mail-subject-visibility
 
 - **alias**: -
-- **status**: REVIEW_NEEDED / **priority**: medium-high
+- **status**: LIVE_DEPLOYED_OBSERVE / **priority**: medium-high
 - **owner**: Codex / **lane**: B
 - **doc_path**: `doc/active/359-x-post-mail-subject-visibility.md`
 - **背景**: 他の自動通知が多く、X 投稿候補 mail が受信箱で気づきにくい。
 - **方針**: 件名を `📮【要確認：巨人データX投稿候補 N件】午後 2026-05-16 15:00 JST` 形式へ変更し、本文冒頭にも「公開通知ではない」ことを明記する。候補生成 / DB / SMTP / Scheduler / env / Secret / WP / X / SNS は変更しない。
 - **tests**: `test_x_post_mail.py` 69 passed、関連 3 file 105 passed、py_compile / compileall / AST / scoped diff-check PASS。
+- **deploy**: commit `902689c`、Cloud Build `a89b7e8e-b565-4c3f-aaab-40da89ec6611` SUCCESS、image `x-post-mail-lane:359-subject-902689c`、digest `sha256:b5c6aa968959351a691337c256f1d14671be4b539894c91db61ebd600824d120`、Job generation `10`。Scheduler / env / Secret は未変更、手動 execute 未実行。
 
 ## marketing board
 

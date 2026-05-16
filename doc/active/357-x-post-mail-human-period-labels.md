@@ -51,6 +51,7 @@
 実行済み:
 
 - GitHub Issue #29 comment: https://github.com/fwns6760/-wordpressyoshilover/issues/29#issuecomment-4465826892
+- GitHub Issue #29 deploy comment: https://github.com/fwns6760/-wordpressyoshilover/issues/29#issuecomment-4465848146
 - `python3 -m py_compile src/x_post_mail_lane.py tests/test_x_post_mail.py` — PASS
 - `python3 -m pytest tests/test_x_post_mail.py -q` — PASS (`65 passed, 3 warnings`)
 - `python3 -m py_compile src/x_post_mail_lane.py src/tools/run_x_post_mail.py tests/test_x_post_mail.py` — PASS
@@ -68,5 +69,12 @@
 
 ## deploy
 
-- この ticket 作成時点では未 deploy。
-- Cloud Run Job `x-post-mail-lane` の image 更新は user 明示 GO 後に行う。
+- 2026-05-16 14:35 JST deploy 済み。
+- build context: clean `git archive HEAD` export `/tmp/x-post-mail-deploy-15ff032` (dirty worktree / unrelated conflict marker を混入させない)
+- Cloud Build: `99349741-1b32-4f75-87a9-8c2d76896acd` SUCCESS
+- image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/x-post-mail-lane:357-db-freshness-15ff032`
+- digest: `sha256:ef71d320a4125b7060137b5db62947922d2797b2de1246fe906fc037b32888b8`
+- Cloud Run Job: `x-post-mail-lane` generation `9`
+- changed: Job image only
+- unchanged: Scheduler / env / Secret / WP publish / X API / X live post
+- manual execute: 未実行 (追加 mail を避け、次回自然 fire で観察)

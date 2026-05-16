@@ -1823,7 +1823,7 @@ git add -A禁止。
 - **実装方針**: X 投稿候補 mail の 2 行目と候補 title を人間向け period label に変更。全期間 / 今シーズンを pool から排除し、守備位置別も直近7日に寄せる。月別は月初 3 日だけ前月成績を巨人内 ranking として追加。2026-05-16 follow-up で all-NPB DB 化後も直近5/10試合の期間窓が巨人試合だけになるよう `batting_logs` 巨人 row で判定し、DB最新試合日が2日超古い場合は X 投稿候補 mail を候補生成前に止める freshness guard を追加。
 - **production DB確認**: GCS `gs://baseballsite-yoshilover-insight/insight.db` は 2026-05-16 12:01:51 JST 更新、copy DB の `MAX(games.game_date)=2026-05-15`、巨人 recent window は 5試合 `2026-05-09〜2026-05-15` / 10試合 `2026-05-03〜2026-05-15`。
 - **tests**: `test_x_post_mail.py` 69 passed、関連 3 file 101 passed、compileall / AST / scoped diff-check PASS。全体 `git diff --check` は unrelated `src/yoshilover-063-frontend.php` conflict marker で FAIL。
-- **deploy**: 未実行。Cloud Run Job `x-post-mail-lane` image 更新は user 明示 GO 後。
+- **deploy**: 2026-05-16 14:35 JST `x-post-mail-lane:357-db-freshness-15ff032` deploy 済み。Cloud Build `99349741-1b32-4f75-87a9-8c2d76896acd` SUCCESS、digest `sha256:ef71d320a4125b7060137b5db62947922d2797b2de1246fe906fc037b32888b8`、Cloud Run Job generation `9`。Scheduler / env / Secret / WP publish / X API は未変更、追加 mail 回避のため手動 execute 未実行。
 
 ## marketing board
 

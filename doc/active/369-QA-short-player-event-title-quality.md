@@ -4,7 +4,7 @@
 
 - ticket: 369-QA-short-player-event-title-quality
 - github_issue: https://github.com/fwns6760/-wordpressyoshilover/issues/38
-- status: CODE_DONE_DEPLOY_PENDING
+- status: LIVE_DEPLOYED_OBSERVE
 - priority: P0.5
 - owner: Codex
 - lane: B
@@ -67,3 +67,12 @@ X-centered player event articles can lose their concrete source facts during tit
   - `python3 -m pytest tests/test_weak_title_rescue.py tests/test_narrow_unlock_subtype_aware.py tests/test_rss_fetcher_fan_important_narrow_exempt.py tests/test_cost_modes.py -q` = 107 passed, 9 subtests passed
   - `python3 -m compileall -q src/weak_title_rescue.py src/rss_fetcher.py tests/test_weak_title_rescue.py tests/test_narrow_unlock_subtype_aware.py`
   - AST parse OK
+- Commit: `548840c`
+- Deploy:
+  - Cloud Build `483e5022-0a83-4b64-b69d-ed1435251ab3` SUCCESS
+  - image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:369-short-title-548840c`
+  - digest `sha256:3d65a565baa429114fb70ca9c861d7b0bc005ad3179befefebd8ccb883663170`
+  - Cloud Run revision `yoshilover-fetcher-00406-5hj`, 100% traffic
+  - `/health` = `OK`
+  - startup log: `Default STARTUP TCP probe succeeded after 1 attempt`
+  - Scheduler / env / Secret / X / SNS / mail 条件は未変更

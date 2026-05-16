@@ -240,7 +240,7 @@ def _human_metric_label(metric_name: str) -> str:
 
     K_per_9 → 奪三振率, BB_per_9 → 与四球率, HR_per_9 → 被本塁打率,
     WIN_PCT → 勝率, FIELDING_PCT → 守備率, RISP → 得点圏打率。
-    OPS / UZR / WAR は英略号のまま。
+    OPS のみ英略号のまま。
 
     config 不在時 or mapping 不在時は既存 fallback (× metric の internal
     display 用、 publish されない経路でも label 維持)。
@@ -249,8 +249,9 @@ def _human_metric_label(metric_name: str) -> str:
     if label != metric_name:
         return label
     return {
-        "wOBA": "wOBA", "ISO": "ISO(長打力)", "BABIP": "BABIP",
-        "FIP": "FIP", "WHIP": "WHIP", "K_BB": "K/BB",
+        "wOBA": "加重出塁率", "ISO": "純長打率", "BABIP": "インプレー打率",
+        "FIP": "守備非依存防御率", "WHIP": "1イニングあたり被出塁数",
+        "K_BB": "奪三振/与四球比",
     }.get(metric_name, metric_name)
 
 

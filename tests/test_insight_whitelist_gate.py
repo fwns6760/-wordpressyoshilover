@@ -129,16 +129,27 @@ def test_is_subject_team_default_true_when_config_no_file(tmp_path):
 
 
 def test_metric_name_ja_mapping():
-    """metric_name → 日本語 (OPS/UZR/WAR は英略号のまま)。"""
+    """metric_name → 日本語 (OPS だけ英略号のまま)。"""
     assert wl.metric_name_ja("AVG") == "打率"
     assert wl.metric_name_ja("ERA") == "防御率"
     assert wl.metric_name_ja("K_per_9") == "奪三振率"
     assert wl.metric_name_ja("FIELDING_PCT") == "守備率"
-    # 英略号許容組
     assert wl.metric_name_ja("OPS") == "OPS"
-    assert wl.metric_name_ja("WAR") == "WAR"
+    assert wl.metric_name_ja("WAR") == "総合貢献度"
     # mapping 不在は原文 fallback
     assert wl.metric_name_ja("UNKNOWN_METRIC") == "UNKNOWN_METRIC"
+
+
+def test_manual_metric_options_hide_disallowed_metrics():
+    """手動画面候補にも × 指標を出さない。"""
+    from src import manual_intake_insight_query as miq
+
+    opts = miq.metric_options()
+    assert "ERA" in opts
+    assert "OPS" in opts
+    assert "FIP" not in opts
+    assert "wOBA" not in opts
+    assert "WHIP" not in opts
 
 
 def test_scope_ja_mapping():

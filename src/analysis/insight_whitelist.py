@@ -105,7 +105,7 @@ def is_subject_team(team_code: Optional[str], *, config: Any = _UNSET) -> bool:
 def metric_name_ja(metric_name: str, *, config: Any = _UNSET) -> str:
     """`metric_name` の日本語表記を返す。 mapping 不在なら原文 fallback。
 
-    例外: OPS / UZR / WAR の 3 つは英略号のまま (mapping で同名)。
+    例外: OPS のみ英略号のまま (mapping で同名)。
     """
     cfg = _resolve_config(config)
     if cfg is None:

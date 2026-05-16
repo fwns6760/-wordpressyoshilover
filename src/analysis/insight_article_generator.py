@@ -54,21 +54,22 @@ _METRIC_LABEL_JA: dict[str, str] = {
     "OBP": "出塁率",
     "SLG": "長打率",
     "OPS": "OPS",
-    "ISO": "純長打 (ISO)",
-    "wOBA": "wOBA",
+    "ISO": "純長打率",
+    "wOBA": "加重出塁率",
     "K_pct": "三振率",
     "BB_pct": "四球率",
-    "BABIP": "BABIP",
+    "BABIP": "インプレー打率",
     "ERA": "防御率",
-    "WHIP": "WHIP",
-    "K_per_9": "K/9",
-    "BB_per_9": "BB/9",
-    "HR_per_9": "HR/9",
-    "K_BB": "K/BB",
-    "FIP": "FIP",
-    "xFIP": "xFIP",
-    "RF_proxy": "Range Factor 代理 (守備機会の out 変換率)",
-    "UZR_proxy": "UZR 代理 (RF_proxy − リーグ位置平均)",
+    "WHIP": "1イニングあたり被出塁数",
+    "K_per_9": "奪三振率",
+    "BB_per_9": "与四球率",
+    "HR_per_9": "被本塁打率",
+    "K_BB": "奪三振/与四球比",
+    "FIP": "守備非依存防御率",
+    "xFIP": "補正守備非依存防御率",
+    "RF_proxy": "守備範囲指標",
+    "UZR_proxy": "守備評価指標",
+    "WAR": "総合貢献度",
 }
 
 # 値が高い = 良い metric
@@ -119,7 +120,7 @@ def render_article(ctx: ArticleContext, *, top_n: int = 10) -> dict:
     table = _render_rank_table(ctx.rows[:top_n], focus_row, label)
     interpretation = _make_interpretation(ctx, label, focus_row, higher, kind)
     disclaimer = _make_disclaimer(kind)
-    meta_footer = _make_meta_footer(ctx)
+    meta_footer = _make_meta_footer(ctx, label)
 
     parts = [
         f"# {title}",
@@ -281,17 +282,17 @@ def _make_disclaimer(kind: str) -> str:
     )
 
 
-def _make_meta_footer(ctx: ArticleContext) -> str:
+def _make_meta_footer(ctx: ArticleContext, label: str) -> str:
     now = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     lines = [
         f"---",
-        f"_metric: {ctx.metric_name}_ ・ _scope: {ctx.sample_window_label}_",
-        f"_generated_at: {now}_ ・ _source: NPB official box scores_",
+        f"_指標: {label}_ ・ _期間: {ctx.sample_window_label}_",
+        f"_生成日時: {now}_ ・ _出典: NPB公式記録_",
     ]
     if ctx.since or ctx.until:
-        lines.append(f"_window: {ctx.since or '(no-start)'} 〜 {ctx.until or '(no-end)'}_")
+        lines.append(f"_集計期間: {ctx.since or '(開始日なし)'} 〜 {ctx.until or '(終了日なし)'}_")
     if ctx.position_filter:
-        lines.append(f"_position: {ctx.position_filter}_")
+        lines.append(f"_守備位置: {ctx.position_filter}_")
     return "\n".join(lines)
 
 

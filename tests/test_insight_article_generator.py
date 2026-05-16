@@ -174,14 +174,15 @@ def test_empty_rows_returns_no_data_marker():
     assert "該当データなし" in out["body_md"]
 
 
-def test_meta_footer_includes_timestamp_and_metric():
+def test_meta_footer_uses_japanese_metric_label():
     ctx = gen.ArticleContext(
         metric_name="FIP",
         rows=[_row("X", 1, 5, 2.5)],
     )
     body = gen.render_article(ctx)["body_md"]
-    assert "metric: FIP" in body
-    assert "generated_at" in body
+    assert "指標: 守備非依存防御率" in body
+    assert "metric: FIP" not in body
+    assert "生成日時" in body
 
 
 def test_top_n_caps_table_rows():

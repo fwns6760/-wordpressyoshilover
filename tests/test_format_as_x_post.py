@@ -138,6 +138,22 @@ class FormatAsXPostRankingTests(unittest.TestCase):
         self.assertIn("1.85", text)
         self.assertIn("防御率", text)
 
+    def test_per_nine_metrics_use_japanese_labels(self) -> None:
+        parsed = {"metric": "K_per_9", "top_n": 3}
+        result = format_as_x_post(
+            parsed,
+            _make_rank_result(
+                [
+                    _row(1, "戸郷翔征", "巨人", 8.75),
+                    _row(2, "村上頌樹", "阪神", 8.20),
+                ]
+            ),
+        )
+        self.assertTrue(result["ok"])
+        text = result["draft_text"]
+        self.assertIn("奪三振率 ランキング", text)
+        self.assertNotIn("K/9", text)
+
 
 class FormatAsXPostFocusPlayerTests(unittest.TestCase):
     def test_focus_player_renders_single_player_template(self) -> None:

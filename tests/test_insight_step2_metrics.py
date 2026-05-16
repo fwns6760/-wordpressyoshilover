@@ -224,10 +224,10 @@ def test_human_metric_label_japanese():
     assert pub._human_metric_label("ERA") == "防御率"
 
 
-def test_human_metric_label_keeps_english_for_ops_war():
-    """OPS / WAR は spec 例外で英略号のまま。"""
+def test_human_metric_label_keeps_english_for_ops_only():
+    """OPS だけ spec 例外で英略号のまま。"""
     assert pub._human_metric_label("OPS") == "OPS"
-    assert pub._human_metric_label("WAR") == "WAR"
+    assert pub._human_metric_label("WAR") == "総合貢献度"
 
 
 def test_human_metric_label_unknown_fallback():
@@ -236,8 +236,7 @@ def test_human_metric_label_unknown_fallback():
 
 
 def test_human_metric_label_x_metric_internal_display():
-    """× metric (publish されないが internal display 用) は既存表記維持。"""
-    # wOBA / FIP / WHIP / K_BB / BABIP / ISO は内部表記残る
-    assert pub._human_metric_label("wOBA") == "wOBA"
-    assert pub._human_metric_label("FIP") == "FIP"
-    assert pub._human_metric_label("WHIP") == "WHIP"
+    """× metric が漏れても user-facing label は日本語に寄せる。"""
+    assert pub._human_metric_label("wOBA") == "加重出塁率"
+    assert pub._human_metric_label("FIP") == "守備非依存防御率"
+    assert pub._human_metric_label("WHIP") == "1イニングあたり被出塁数"

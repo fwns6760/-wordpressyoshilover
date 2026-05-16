@@ -285,8 +285,9 @@ def position_options() -> list[str]:
 def metric_options() -> list[str]:
     """Allowed metric names for cross-team rank query."""
     from src.analysis import insight_rank_query as rq  # local import
+    from src.analysis import insight_whitelist as wl  # local import
 
-    return sorted(rq.KNOWN_METRICS.keys())
+    return sorted(m for m in rq.KNOWN_METRICS.keys() if wl.is_metric_allowed(m))
 
 
 def query_rank(

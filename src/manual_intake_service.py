@@ -374,8 +374,8 @@ _HTML_FORM = """<!DOCTYPE html>
     <p class=\"insight-meta\">質問を 1 行で入力 → insight.db (verified data) から rank query → 280 字以内の X 投稿文を生成。<strong>LLM 呼出ゼロ</strong>、Python テンプレで整形。例:<br>
       ・「OPS 10 位」<br>
       ・「セ・リーグ OPS 上位 5」<br>
-      ・「岡本和真の wOBA は何位？」<br>
-      ・「先発 FIP ランキング top 10」</p>
+      ・「岡本和真の打率は何位？」<br>
+      ・「先発 防御率 ランキング top 10」</p>
     <form id=\"x-post-draft-form\">
       <div class=\"field\">
         <input id=\"x-post-q\" name=\"q\" type=\"text\" required placeholder=\"例: OPS 10 位\" autocomplete=\"off\" class=\"big\">
@@ -388,9 +388,9 @@ _HTML_FORM = """<!DOCTYPE html>
     <hr style=\"margin:24px 0 18px;border:none;border-top:1px solid #ddd;\">
     <h2 style=\"font-size:16px;margin:6px 0 8px;\">🗣️ 質問入力 (一番簡単)</h2>
     <p class=\"insight-meta\">質問を 1 行で入力 → 自動で「指標」「守備位置」「件数」「選手」を読み取り、12 球団 rank + 記事 draft まで生成。例:<br>
-      ・「セリーグのセカンドUZRトップ10は？」<br>
-      ・「先発のFIPランキングトップ5」<br>
-      ・「巨人の戸郷翔征のFIPは何位？」<br>
+      ・「セリーグのセカンドOPSトップ10は？」<br>
+      ・「先発の防御率ランキングトップ5」<br>
+      ・「巨人の戸郷翔征の防御率は何位？」<br>
       ・「ショートOPSトップ10」</p>
     <form id=\"ask-form\">
       <div class=\"field\">
@@ -435,7 +435,7 @@ _HTML_FORM = """<!DOCTYPE html>
     <div id=\"insight-result\" hidden></div>
 
     <h2 style=\"font-size:15px;margin:24px 0 8px;\">📊 2. 12 球団 rank (INSIGHT-007)</h2>
-    <p class=\"insight-meta\">advanced metrics (OPS / FIP / wOBA / RF_proxy etc.) で全球団内 rank を出す。UZR は厳密版でない近似 (RF_proxy / UZR_proxy)。data 蓄積 (2〜3 週) 後に意味を持つ。</p>
+    <p class=\"insight-meta\">許可済みのデータ指標で全球団内 rank を出す。data 蓄積 (2〜3 週) 後に意味を持つ。</p>
     <form id=\"rank-form\">
       <div class=\"insight-row-grid\">
         <div class=\"field\">
@@ -755,7 +755,7 @@ _HTML_FORM = """<!DOCTYPE html>
       if (!txt) return;
       // Skip a leading h1 (rendered separately as title).
       if (txt.charAt(0) === '#') {
-        var stripped = txt.replace(/^#+\s*/, '');
+        var stripped = txt.replace(/^#+\\s*/, '');
         if (stripped) {
           var h = document.createElement('div');
           h.style.cssText = 'font-weight:600;font-size:14px;margin:10px 0 4px;color:#333;';
@@ -773,9 +773,9 @@ _HTML_FORM = """<!DOCTYPE html>
       var line = lines[i];
       // Detect table header: a line starting with `|` followed by a
       // separator line of `|---|---|...|`.
-      var isHeader = /^\s*\|.+\|\s*$/.test(line);
+      var isHeader = /^\\s*\\|.+\\|\\s*$/.test(line);
       var nextLine = lines[i + 1] || '';
-      var isSep = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$/.test(nextLine);
+      var isSep = /^\\s*\\|?\\s*:?-+:?\\s*(\\|\\s*:?-+:?\\s*)+\\|?\\s*$/.test(nextLine);
       if (isHeader && isSep) {
         flushPara();
         foundTable = true;
@@ -783,7 +783,7 @@ _HTML_FORM = """<!DOCTYPE html>
                           .filter(function(s) { return s.length > 0; });
         i += 2;
         var rows = [];
-        while (i < lines.length && /^\s*\|.+\|\s*$/.test(lines[i])) {
+        while (i < lines.length && /^\\s*\\|.+\\|\\s*$/.test(lines[i])) {
           var cells = lines[i].split('|').map(function(s) { return s.trim(); })
                               .filter(function(s, idx, arr) {
                                 // Drop the leading/trailing empty cells the
@@ -1223,10 +1223,12 @@ def _render_form() -> str:
     for sig in miq.signal_type_options():
         signal_options.append(f'<option value="{sig}">{sig}</option>')
     # INSIGHT-007: rank-tab option lists
-    metric_options = ['<option value="">— metric を選択 —</option>']
+    from src.analysis import insight_whitelist as wl
+
+    metric_options = ['<option value="">— 指標を選択 —</option>']
     for met in miq.metric_options():
-        metric_options.append(f'<option value="{met}">{met}</option>')
-    position_options = ['<option value="">— 全 position (打撃/投球指標は不問) —</option>']
+        metric_options.append(f'<option value="{met}">{wl.metric_name_ja(met)}</option>')
+    position_options = ['<option value="">— 全ポジション (打撃/投球指標は不問) —</option>']
     for pos in miq.position_options():
         position_options.append(f'<option value="{pos}">{pos}</option>')
     return (

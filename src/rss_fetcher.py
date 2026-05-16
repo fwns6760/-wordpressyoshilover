@@ -23312,6 +23312,252 @@ def _generic_title_blocklist_v2_phrase(title: str) -> str:
     return ""
 
 
+_HUMAN_CONTEXT_TITLE_THIN_ACTION_RE = _re.compile(
+    r"、(?:先発|登板|発言|コメント|安打|好投|勝利|敗戦)\s*$"
+)
+_HUMAN_CONTEXT_TITLE_GENERIC_RE = _re.compile(
+    r"(?:関連情報|関連発言|発言整理|コメント整理|ベンチ関連発言|ベンチ関連の発言ポイント)\s*$"
+)
+_HUMAN_CONTEXT_TITLE_GENERIC_SUBJECT_RE = _re.compile(
+    r"^(?:選手|投手|コーチ|監督|首脳陣)(?:[、，,\s]|[「『])"
+)
+_HUMAN_CONTEXT_TITLE_QUOTE_ONLY_RE = _re.compile(
+    r"^(?P<subject>[A-Za-zＡ-Ｚａ-ｚ一-龥々ァ-ヴー・･.\-]{2,22})"
+    r"[「『](?P<quote>[^」』]{2,24})[」』]\s*$"
+)
+_HUMAN_CONTEXT_STAFF_TARGET_RE = _re.compile(
+    r"(?P<staff>[A-Za-zＡ-Ｚａ-ｚ一-龥々ァ-ヴー・･.\-]{2,24}"
+    r"(?:投手|打撃|守備|総合|ヘッド|チーフ)?コーチ)"
+    r".{0,18}?先発[・･](?P<target>[A-Za-zＡ-Ｚａ-ｚ一-龥々ァ-ヴー・･.\-]{2,24})投手について"
+)
+_HUMAN_CONTEXT_PITCHING_LINE_RE = _re.compile(
+    r"(?P<innings>[0-9]+)回[^。]{0,40}?"
+    r"(?P<hits>[0-9]+)安打(?P<runs>無失点|[0-9]+失点|0封)"
+    r"(?:[^。]{0,16}?(?P<ks>[0-9]+)奪三振)?"
+)
+_HUMAN_CONTEXT_PITCHING_K_ZERO_RE = _re.compile(
+    r"(?P<innings>[0-9]+)回[^。]{0,18}?"
+    r"(?P<ks>[0-9]+)奪三振(?P<runs>無失点|0封|[0-9]+失点)"
+)
+_HUMAN_CONTEXT_WIN_RE = _re.compile(r"(?P<win>[0-9]+勝目)")
+_HUMAN_CONTEXT_SOURCE_DETAIL_MARKERS = (
+    "無失点",
+    "0封",
+    "奪三振",
+    "勝目",
+    "連勝",
+    "完封",
+    "本塁打",
+    "ホームラン",
+    "適時打",
+    "先制",
+    "決勝",
+    "無失点リレー",
+    "リリーフ",
+    "先発",
+    "スタメン",
+    "一軍合流",
+    "登録抹消",
+    "早出",
+    "練習",
+    "打撃練習",
+    "ノック",
+    "激励",
+    "紙面",
+    "掲載",
+    "YouTube",
+    "企画",
+    "警告",
+    "危険スイング",
+    "キャッチボール",
+    "300号",
+    "月間MVP",
+    "月間ベストヒーロー",
+    "理由",
+    "評価",
+    "言及",
+)
+
+
+def _to_ascii_digits_for_title_context(text: str) -> str:
+    return str(text or "").translate(str.maketrans("０１２３４５６７８９", "0123456789"))
+
+
+def _title_needs_human_context_repair(title: str) -> bool:
+    clean = _collapse_ws(_strip_html(title or "")).strip(" ・、。")
+    if not clean:
+        return False
+    if _HUMAN_CONTEXT_TITLE_GENERIC_SUBJECT_RE.search(clean):
+        return True
+    if _HUMAN_CONTEXT_TITLE_GENERIC_RE.search(clean):
+        return True
+    if _HUMAN_CONTEXT_TITLE_THIN_ACTION_RE.search(clean):
+        return True
+    quote_match = _HUMAN_CONTEXT_TITLE_QUOTE_ONLY_RE.match(clean)
+    if quote_match:
+        subject = quote_match.group("subject")
+        if "、" not in subject and not _re.search(r"[0-9０-９]", subject):
+            return True
+    return False
+
+
+def _clean_human_context_source_title(source_title: str) -> str:
+    clean = _clean_display_title_text(source_title)
+    clean = _re.sub(r"^RT\s+[^:：]{2,50}[:：]\s*", "", clean)
+    clean = _re.sub(r"https?://\S+", "", clean)
+    clean = _re.sub(r"[#＃][A-Za-zＡ-Ｚａ-ｚ0-9０-９一-龥々ぁ-ゔァ-ヴー・･.\-]+", "", clean)
+    clean = _re.sub(r"\s*[-－]\s*(?:スポニチ.*|Sponichi.*|日刊スポーツ.*|サンスポ.*)$", "", clean)
+    clean = _re.sub(r"^(?:【記事全文】|【とっておきメモ】)\s*", "", clean)
+    clean = _collapse_ws(clean).strip(" ・、。")
+    return clean
+
+
+def _human_context_title_subject(
+    title: str,
+    source_title: str,
+    summary: str,
+    analysis: Mapping[str, object] | None = None,
+) -> str:
+    actor = str((analysis or {}).get("actor_name") or "").strip()
+    if actor and actor not in {"選手", "投手", "監督", "コーチ", "首脳陣"}:
+        return _re.sub(r"(投手|捕手|内野手|外野手|選手)$", "", actor).strip()
+    quote_match = _HUMAN_CONTEXT_TITLE_QUOTE_ONLY_RE.match(_collapse_ws(_strip_html(title or "")).strip(" ・、。"))
+    if quote_match:
+        return _re.sub(r"(投手|捕手|内野手|外野手|選手)$", "", quote_match.group("subject")).strip()
+    for category in ("選手情報", "首脳陣"):
+        subject = _compact_subject_label(source_title, summary, category)
+        if subject and subject not in {"巨人", "選手", "首脳陣"}:
+            return subject
+    return ""
+
+
+def _extract_human_context_staff_target_title(source_text: str) -> str:
+    clean = _collapse_ws(_strip_html(source_text or ""))
+    for match in _HUMAN_CONTEXT_STAFF_TARGET_RE.finditer(clean):
+        staff = match.group("staff").strip()
+        target = match.group("target").strip()
+        if staff and target:
+            return _trim_display_title(f"{staff}、{target}の投球に言及", max_chars=50)
+    return ""
+
+
+def _extract_human_context_pitching_title(
+    subject: str,
+    source_text: str,
+) -> str:
+    subject = _re.sub(r"(投手|捕手|内野手|外野手|選手)$", "", str(subject or "")).strip()
+    if not subject:
+        return ""
+    if subject.endswith(("監督", "コーチ", "氏")):
+        return ""
+    clean = _to_ascii_digits_for_title_context(_collapse_ws(_strip_html(source_text or "")))
+    if subject not in clean:
+        return ""
+    subject_near = ""
+    subject_index = clean.find(subject)
+    if subject_index >= 0:
+        subject_near = clean[subject_index: subject_index + len(subject) + 12]
+    if any(role in subject_near for role in ("監督", "コーチ", "評論", "解説")):
+        return ""
+    if not any(marker in clean for marker in ("投手", "先発", "登板", "マウンド", "投げ")):
+        return ""
+
+    match = _HUMAN_CONTEXT_PITCHING_LINE_RE.search(clean)
+    if match:
+        runs = "無失点" if match.group("runs") == "0封" else match.group("runs")
+        event = f"{match.group('innings')}回{match.group('hits')}安打{runs}"
+        if match.group("ks"):
+            event += f"{match.group('ks')}奪三振"
+        win_match = _HUMAN_CONTEXT_WIN_RE.search(clean[match.start(): match.end() + 80])
+        if win_match:
+            event += f"で{win_match.group('win')}"
+        return _trim_display_title(f"{subject}、{event}", max_chars=50)
+
+    match = _HUMAN_CONTEXT_PITCHING_K_ZERO_RE.search(clean)
+    if match:
+        runs = "無失点" if match.group("runs") == "0封" else match.group("runs")
+        event = f"{match.group('innings')}回{match.group('ks')}奪三振{runs}"
+        win_match = _HUMAN_CONTEXT_WIN_RE.search(clean[match.start(): match.end() + 80])
+        if win_match:
+            event += f"で{win_match.group('win')}"
+        return _trim_display_title(f"{subject}、{event}", max_chars=50)
+    return ""
+
+
+def _source_title_is_human_contextual(
+    candidate: str,
+    generated_title: str,
+    source_text: str,
+) -> bool:
+    clean = _collapse_ws(_strip_html(candidate or "")).strip(" ・、。")
+    if len(clean) < 14:
+        return False
+    if _normalize_title_for_dedupe(clean) == _normalize_title_for_dedupe(generated_title):
+        return False
+    if clean in {"関連情報", "関連発言", "コメント整理", "発言整理"}:
+        return False
+    detail_text = _collapse_ws(_strip_html(f"{clean} {source_text}"))
+    if SCORE_TOKEN_RE.search(detail_text) or _re.search(r"[0-9０-９]+(?:回|安打|奪三振|勝目|号|打点|番)", detail_text):
+        return True
+    return bool(title_has_person_name_candidate(clean) and any(marker in detail_text for marker in _HUMAN_CONTEXT_SOURCE_DETAIL_MARKERS))
+
+
+def _repair_human_context_title(
+    title: str,
+    *,
+    source_title: str = "",
+    summary: str = "",
+    analysis: Mapping[str, object] | None = None,
+) -> tuple[str, str]:
+    clean_title = _collapse_ws(_strip_html(title or "")).strip(" ・、。")
+    if not _title_needs_human_context_repair(clean_title):
+        return title, ""
+
+    source_text = _collapse_ws(_strip_html(f"{source_title} {summary}"))
+    staff_title = _extract_human_context_staff_target_title(source_text)
+    if staff_title:
+        return staff_title, "staff_target_context"
+
+    subject = _human_context_title_subject(clean_title, source_title, summary, analysis)
+    pitching_title = _extract_human_context_pitching_title(subject, source_text)
+    if pitching_title:
+        return pitching_title, "pitching_line_context"
+
+    source_candidate = _clean_human_context_source_title(source_title)
+    if _source_title_is_human_contextual(source_candidate, clean_title, source_text):
+        return _trim_display_title(source_candidate, max_chars=56), "source_title_context"
+
+    return title, ""
+
+
+def _log_human_context_title_repaired(
+    logger: logging.Logger | None,
+    *,
+    source_url: str,
+    category: str,
+    article_subtype: str,
+    original_title: str,
+    repaired_title: str,
+    reason: str,
+) -> None:
+    if logger is None or not reason or original_title == repaired_title:
+        return
+    logger.info(
+        json.dumps(
+            {
+                "event": "human_context_title_repaired",
+                "source_url_hash": _hash_duplicate_guard_value(source_url),
+                "category": category,
+                "article_subtype": article_subtype,
+                "original_title": original_title,
+                "repaired_title": repaired_title,
+                "reason": reason,
+            },
+            ensure_ascii=False,
+        )
+    )
+
+
 def _extract_v2_title_action(
     *,
     source_title: str,
@@ -23396,12 +23642,34 @@ def _finalize_title(
     source_title: str = "",
     summary: str = "",
     analysis: Mapping[str, object] | None = None,
+    logger: logging.Logger | None = None,
+    source_url: str = "",
+    category: str = "",
+    article_subtype: str = "",
 ) -> tuple[str, _WeakTitleReviewFallback | None]:
     raw_title = _recover_title_from_hashtag_name(
         raw_title,
         source_title=source_title,
         summary=summary,
     )
+    repaired_title, repair_reason = _repair_human_context_title(
+        raw_title,
+        source_title=source_title,
+        summary=summary,
+        analysis=analysis,
+    )
+    if repair_reason:
+        _log_human_context_title_repaired(
+            logger,
+            source_url=source_url,
+            category=category,
+            article_subtype=article_subtype,
+            original_title=raw_title,
+            repaired_title=repaired_title,
+            reason=repair_reason,
+        )
+        return repaired_title, None
+
     blocklisted_phrase = _generic_title_blocklist_v2_phrase(raw_title)
     if not blocklisted_phrase:
         return raw_title, None
@@ -23410,7 +23678,25 @@ def _finalize_title(
     actor_name = str(source_analysis.get("actor_name") or "").strip()
     quote_phrases = _extract_quote_phrases(f"{source_title}\n{summary}", max_phrases=1)
     if actor_name and quote_phrases:
-        return _trim_display_title(f"{actor_name}「{_clip_manager_quote_short_title_quote(quote_phrases[0])}」", max_chars=50), None
+        rewritten = _trim_display_title(f"{actor_name}「{_clip_manager_quote_short_title_quote(quote_phrases[0])}」", max_chars=50)
+        repaired_title, repair_reason = _repair_human_context_title(
+            rewritten,
+            source_title=source_title,
+            summary=summary,
+            analysis=analysis,
+        )
+        if repair_reason:
+            _log_human_context_title_repaired(
+                logger,
+                source_url=source_url,
+                category=category,
+                article_subtype=article_subtype,
+                original_title=rewritten,
+                repaired_title=repaired_title,
+                reason=repair_reason,
+            )
+            return repaired_title, None
+        return rewritten, None
 
     action = _extract_v2_title_action(
         source_title=source_title,
@@ -23422,7 +23708,25 @@ def _finalize_title(
             rewritten = f"{actor_name}{action}"
         else:
             rewritten = f"{actor_name}、{action}"
-        return _trim_display_title(rewritten, max_chars=42), None
+        rewritten = _trim_display_title(rewritten, max_chars=42)
+        repaired_title, repair_reason = _repair_human_context_title(
+            rewritten,
+            source_title=source_title,
+            summary=summary,
+            analysis=analysis,
+        )
+        if repair_reason:
+            _log_human_context_title_repaired(
+                logger,
+                source_url=source_url,
+                category=category,
+                article_subtype=article_subtype,
+                original_title=rewritten,
+                repaired_title=repaired_title,
+                reason=repair_reason,
+            )
+            return repaired_title, None
+        return rewritten, None
 
     return raw_title, _WeakTitleReviewFallback(f"blacklist_phrase:{blocklisted_phrase}")
 
@@ -25482,6 +25786,10 @@ def _main(args, logger):
                         source_title=raw_title,
                         summary=summary,
                         analysis=routing_context.get("source_analysis_v2") if isinstance(routing_context.get("source_analysis_v2"), Mapping) else None,
+                        logger=logger,
+                        source_url=post_url,
+                        category=category,
+                        article_subtype=title_article_subtype,
                     )
                 _log_title_template_selected(logger, post_url, raw_title, draft_title, title_template_key, category, title_article_subtype)
                 print(f"  DRY: [{category}] {draft_title[:50]}")
@@ -25687,6 +25995,10 @@ def _main(args, logger):
                     source_title=raw_title,
                     summary=summary,
                     analysis=routing_context.get("source_analysis_v2") if isinstance(routing_context.get("source_analysis_v2"), Mapping) else None,
+                    logger=logger,
+                    source_url=post_url,
+                    category=category,
+                    article_subtype=title_article_subtype,
                 )
                 if isinstance(finalize_title_review, _WeakTitleReviewFallback) and _post_gen_validate_trusted_bypass(post_url):
                     logger.info(json.dumps({

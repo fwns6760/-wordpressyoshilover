@@ -246,6 +246,41 @@ def test_publish_full_flow_creates_draft(tmp_path):
         conn.close()
 
 
+def test_publish_ranking_skips_same_player_metric_after_history(tmp_path):
+    db = tmp_path / "test.db"
+    conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
+    try:
+        _seed_snapshots(conn, snapshot_date="2026-05-14", scope="last_7d", metric="OPS",
+                        ranking=[("大城卓三", "g", 0.80, 91, 6, 60)])
+        _seed_snapshots(conn, snapshot_date="2026-05-14", scope="season", metric="OPS",
+                        ranking=[("大城卓三", "g", 0.805, 191, 7, 60)])
+        wp_mock = MagicMock()
+        wp_mock.create_category.return_value = 671
+        wp_mock.create_post.return_value = 67500
+
+        first = rap.publish_giants_centric_ranking_draft(
+            conn, wp_mock,
+            metric_name="OPS", scope="last_7d", snapshot_date="2026-05-14",
+        )
+        second = rap.publish_giants_centric_ranking_draft(
+            conn, wp_mock,
+            metric_name="OPS", scope="season", snapshot_date="2026-05-14",
+        )
+
+        assert first["status"] == "published_draft"
+        assert first["dedup_history_id"] > 0
+        assert second["status"] == "skip_dedup_cooldown"
+        assert second["dedup"]["scope_family"] == "metric_all_periods"
+        second_same_scope = rap.publish_giants_centric_ranking_draft(
+            conn, wp_mock,
+            metric_name="OPS", scope="last_7d", snapshot_date="2026-05-14",
+        )
+        assert second_same_scope["status"] == "skip_dedup_cooldown"
+        assert wp_mock.create_post.call_count == 1
+    finally:
+        conn.close()
+
+
 def test_publish_error_on_category_failure(tmp_path):
     db = tmp_path / "test.db"
     conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)

@@ -38,6 +38,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.analysis import insight_article_generator  # noqa: E402
+from src.analysis import insight_dedup_gate as dedup_gate  # noqa: E402
 from src.analysis.insight_article_generator import (  # noqa: E402
     ArticleContext,
     RankRow,
@@ -624,6 +625,9 @@ def render_giants_centric_ranking(
         "focus_player": focus_player,
         "metric_name": metric_name,
         "scope": scope,
+        "focus_value": focus_row_obj.metric_value if focus_row_obj else None,
+        "focus_rank": focus_row_obj.rank if focus_row_obj else None,
+        "focus_total": focus_row_obj.total if focus_row_obj else None,
     }
 
 
@@ -678,6 +682,24 @@ def publish_giants_centric_ranking_draft(
             "metric_name": metric_name,
             "scope": scope,
         }
+    dedup_context = {
+        "subject_key": article["focus_player"],
+        "metric_name": metric_name,
+        "scope": scope,
+        "value": article.get("focus_value"),
+        "rank": article.get("focus_rank"),
+        "total": article.get("focus_total"),
+    }
+    dedup_decision = dedup_gate.evaluate_metric_cooldown(conn, **dedup_context)
+    if not dedup_decision.get("allowed"):
+        return {
+            "status": "skip_dedup_cooldown",
+            "reason": dedup_decision.get("reason"),
+            "focus_player": article["focus_player"],
+            "metric_name": metric_name,
+            "scope": scope,
+            "dedup": dedup_decision,
+        }
 
     if dry_run:
         return {
@@ -725,6 +747,8 @@ def publish_giants_centric_ranking_draft(
     _banner = _giants_news_banner_html(
         article["title"], _BANNER_SOURCE_LABEL, category_name
     )
+    dedup_history_id = 0
+    dedup_record_error = ""
     try:
         post_id = wp_client_obj.create_post(
             title=article["title"],
@@ -743,6 +767,16 @@ def publish_giants_centric_ranking_draft(
                 )
             except Exception:
                 pass
+        try:
+            dedup_history_id = dedup_gate.record_metric_publish(
+                conn,
+                **dedup_context,
+                title=article["title"],
+                post_id=int(post_id or 0),
+                wp_status=publish_status,
+            )
+        except Exception as exc:  # noqa: BLE001
+            dedup_record_error = f"{type(exc).__name__}: {exc}"
     except Exception as e:  # noqa: BLE001
         return {
             "status": "error",
@@ -759,6 +793,8 @@ def publish_giants_centric_ranking_draft(
         "focus_player": article["focus_player"],
         "metric_name": metric_name,
         "scope": scope,
+        "dedup_history_id": dedup_history_id,
+        "dedup_record_error": dedup_record_error,
     }
 
 
@@ -922,6 +958,10 @@ def render_player_counting_split_article(
         "title": title, "body_md": body_md, "body_html": body_html,
         "stat_col": stat_col, "scope": scope,
         "split_field": split_field, "split_value": split_value,
+        "top_player": top_player,
+        "top_value": top_value,
+        "giants_rank": giants_rank,
+        "league_total": len(rows),
     }
 
 
@@ -949,6 +989,25 @@ def publish_player_counting_split_draft(
         return {"status": "skip", "reason": "no_data_or_no_giants",
                 "stat_col": stat_col, "scope": scope,
                 "split": f"{split_field}={split_value}"}
+    metric_key = f"{stat_col}:{split_field}={split_value}"
+    dedup_context = {
+        "subject_key": article["top_player"],
+        "metric_name": metric_key,
+        "scope": scope,
+        "value": article.get("top_value"),
+        "rank": article.get("giants_rank"),
+        "total": article.get("league_total"),
+    }
+    dedup_decision = dedup_gate.evaluate_metric_cooldown(conn, **dedup_context)
+    if not dedup_decision.get("allowed"):
+        return {
+            "status": "skip_dedup_cooldown",
+            "reason": dedup_decision.get("reason"),
+            "stat_col": stat_col,
+            "scope": scope,
+            "split": f"{split_field}={split_value}",
+            "dedup": dedup_decision,
+        }
     if dry_run:
         return {"status": "dry_run", "title": article["title"]}
     try:
@@ -966,6 +1025,8 @@ def publish_player_counting_split_draft(
     _banner = _giants_news_banner_html(
         article["title"], _BANNER_SOURCE_LABEL, category_name,
     )
+    dedup_history_id = 0
+    dedup_record_error = ""
     try:
         post_id = wp_client_obj.create_post(
             title=article["title"],
@@ -974,11 +1035,23 @@ def publish_player_counting_split_draft(
             status=publish_status,
             caller="ranking_article_publisher_counting_split",
         )
+        try:
+            dedup_history_id = dedup_gate.record_metric_publish(
+                conn,
+                **dedup_context,
+                title=article["title"],
+                post_id=int(post_id or 0),
+                wp_status=publish_status,
+            )
+        except Exception as exc:  # noqa: BLE001
+            dedup_record_error = f"{type(exc).__name__}: {exc}"
         return {
             "status": "published" if publish_status == "publish" else "published_draft",
             "title": article["title"], "post_id": int(post_id or 0),
             "stat_col": stat_col, "scope": scope,
             "split": f"{split_field}={split_value}",
+            "dedup_history_id": dedup_history_id,
+            "dedup_record_error": dedup_record_error,
         }
     except Exception as e:
         return {"status": "error", "error": f"{type(e).__name__}: {e}"}
@@ -1104,7 +1177,9 @@ def render_player_counting_article(
         "stat_col": stat_col,
         "scope": scope,
         "top_player": top_player,
+        "top_value": top_value,
         "giants_rank": giants_rank,
+        "league_total": len(rows),
     }
 
 
@@ -1127,6 +1202,24 @@ def publish_player_counting_draft(
     if article is None:
         return {"status": "skip", "reason": "no_data_or_no_giants",
                 "stat_col": stat_col, "scope": scope}
+    dedup_context = {
+        "subject_key": article["top_player"],
+        "metric_name": stat_col,
+        "scope": scope,
+        "value": article.get("top_value"),
+        "rank": article.get("giants_rank"),
+        "total": article.get("league_total"),
+    }
+    dedup_decision = dedup_gate.evaluate_metric_cooldown(conn, **dedup_context)
+    if not dedup_decision.get("allowed"):
+        return {
+            "status": "skip_dedup_cooldown",
+            "reason": dedup_decision.get("reason"),
+            "stat_col": stat_col,
+            "scope": scope,
+            "focus_player": article["top_player"],
+            "dedup": dedup_decision,
+        }
     if dry_run:
         return {"status": "dry_run", "title": article["title"]}
     try:
@@ -1144,6 +1237,8 @@ def publish_player_counting_draft(
     _banner = _giants_news_banner_html(
         article["title"], _BANNER_SOURCE_LABEL, category_name
     )
+    dedup_history_id = 0
+    dedup_record_error = ""
     try:
         post_id = wp_client_obj.create_post(
             title=article["title"],
@@ -1152,11 +1247,23 @@ def publish_player_counting_draft(
             status=publish_status,
             caller="ranking_article_publisher_counting",
         )
+        try:
+            dedup_history_id = dedup_gate.record_metric_publish(
+                conn,
+                **dedup_context,
+                title=article["title"],
+                post_id=int(post_id or 0),
+                wp_status=publish_status,
+            )
+        except Exception as exc:  # noqa: BLE001
+            dedup_record_error = f"{type(exc).__name__}: {exc}"
         return {
             "status": "published" if publish_status == "publish" else "published_draft",
             "title": article["title"],
             "post_id": int(post_id or 0),
             "stat_col": stat_col, "scope": scope,
+            "dedup_history_id": dedup_history_id,
+            "dedup_record_error": dedup_record_error,
         }
     except Exception as e:
         return {"status": "error", "error": f"{type(e).__name__}: {e}"}
@@ -1221,6 +1328,6 @@ def publish_default_set(
         results.append(result)
         if result.get("status") in ("published", "published_draft", "dry_run"):
             seen_metric_periods.add(metric_key)
-        if result.get("status") in ("published_draft", "dry_run"):
+        if result.get("status") in ("published", "published_draft", "dry_run"):
             published += 1
     return results

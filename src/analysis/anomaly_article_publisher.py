@@ -32,6 +32,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.analysis import insight_anomaly_detector as detector  # noqa: E402
+from src.analysis import insight_dedup_gate as dedup_gate  # noqa: E402
 from src.analysis import insight_whitelist as _wl  # noqa: E402
 from src.analysis import ranking_article_publisher as rap  # noqa: E402
 from src.giants_news_banner import (  # noqa: E402
@@ -491,8 +492,10 @@ def render_zscore_pitcher_article(
 def render_babip_divergence_article(
     conn: sqlite3.Connection,
     candidate_row: dict[str, Any],
-) -> dict[str, str]:
+) -> Optional[dict[str, str]]:
     """打率 vs BABIP 乖離 = 運要素 / 実力の差を可視化."""
+    if not _wl.is_metric_allowed("BABIP"):
+        return None
     player = candidate_row["player_canonical"]
     diff = candidate_row["magnitude"]
     baseline = candidate_row["baseline_value"]
@@ -536,8 +539,10 @@ def render_babip_divergence_article(
 def render_fip_era_divergence_article(
     conn: sqlite3.Connection,
     candidate_row: dict[str, Any],
-) -> dict[str, str]:
+) -> Optional[dict[str, str]]:
     """防御率 vs FIP 乖離 = 運に支えられた数字 / 本質指標."""
+    if not _wl.is_metric_allowed("FIP"):
+        return None
     player = candidate_row["player_canonical"]
     diff = candidate_row["magnitude"]
     baseline = candidate_row["baseline_value"]
@@ -941,6 +946,46 @@ def _parse_kv_blob(text: str) -> dict[str, str]:
             k, v = token.split("=", 1)
             out[k] = v
     return out
+
+
+def _scope_from_candidate(candidate_row: dict[str, Any]) -> str:
+    notes = _parse_kv_blob(candidate_row.get("notes") or "")
+    if notes.get("scope"):
+        return notes["scope"]
+    label = str(candidate_row.get("window_label") or "")
+    for scope in (
+        "last_10_games", "last_5_games", "last_30d",
+        "last_7d", "monthly", "weekly", "season",
+    ):
+        if scope in label:
+            return scope
+    return "season"
+
+
+def _dedup_context_for_candidate(candidate_row: dict[str, Any]) -> Optional[dict[str, Any]]:
+    notes = _parse_kv_blob(candidate_row.get("notes") or "")
+    signal_type = candidate_row.get("signal_type")
+    metric = (
+        _SIGNAL_PRIMARY_METRIC.get(signal_type)
+        or notes.get("metric")
+        or ""
+    )
+    current = str(candidate_row.get("current_value") or "")
+    if not metric and "=" in current:
+        metric = current.split("=", 1)[0].strip()
+    if not metric or not _wl.is_metric_allowed(metric):
+        return None
+    player = str(candidate_row.get("player_canonical") or "").strip()
+    if not player:
+        return None
+    return {
+        "subject_key": player,
+        "metric_name": metric,
+        "scope": _scope_from_candidate(candidate_row),
+        "value": dedup_gate.parse_first_number(current, preferred_key=metric),
+        "rank": dedup_gate.parse_rank(current),
+        "total": None,
+    }
 
 
 def render_game_hero_batter_article(
@@ -1396,6 +1441,8 @@ def render_anomaly_article(
     if metric and not _wl.is_metric_allowed(metric):
         return None
     result = renderer(conn, candidate_row)
+    if result is None:
+        return None
     return {
         "title": result["title"],
         "body_md": result["body_md"],
@@ -1486,6 +1533,22 @@ def publish_anomaly_drafts(
                 "signal_type": cand["signal_type"],
             })
             continue
+        dedup_context = _dedup_context_for_candidate(cand)
+        if dedup_context:
+            dedup_decision = dedup_gate.evaluate_metric_cooldown(
+                conn, **dedup_context,
+            )
+            if not dedup_decision.get("allowed"):
+                results.append({
+                    "status": "skip_dedup_cooldown",
+                    "candidate_id": cand["candidate_id"],
+                    "signal_type": cand["signal_type"],
+                    "player_canonical": cand["player_canonical"],
+                    "metric_name": dedup_context["metric_name"],
+                    "scope": dedup_context["scope"],
+                    "dedup": dedup_decision,
+                })
+                continue
         if dry_run:
             results.append({
                 "status": "dry_run",
@@ -1525,6 +1588,19 @@ def publish_anomaly_drafts(
                 (cand["candidate_id"],),
             )
             conn.commit()
+            dedup_history_id = 0
+            dedup_record_error = ""
+            if dedup_context:
+                try:
+                    dedup_history_id = dedup_gate.record_metric_publish(
+                        conn,
+                        **dedup_context,
+                        title=article["title"],
+                        post_id=int(post_id or 0),
+                        wp_status=publish_status,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    dedup_record_error = f"{type(exc).__name__}: {exc}"
             results.append({
                 "status": "published" if publish_status == "publish" else "published_draft",
                 "wp_status": publish_status,
@@ -1535,6 +1611,8 @@ def publish_anomaly_drafts(
                 "category_id": int(category_id),
                 "player_canonical": cand["player_canonical"],
                 "team_code": team_code_for_pub,
+                "dedup_history_id": dedup_history_id,
+                "dedup_record_error": dedup_record_error,
             })
             published += 1
         except Exception as e:  # noqa: BLE001

@@ -9,8 +9,8 @@ emit する。
   * `anomaly_zscore_outlier_batter` — リーグ平均から +2σ 以上の打者
   * `anomaly_zscore_outlier_pitcher` — リーグ平均から +2σ 以上の投手
     (lower-is-better metric は反転)
-  * `anomaly_babip_divergence` — AVG vs BABIP 乖離(運要素過半 / 過小)
-  * `anomaly_fip_era_divergence` — FIP vs ERA 乖離(運に支えられた表面値)
+  * `anomaly_babip_divergence` — disabled by whitelist (legacy signal only)
+  * `anomaly_fip_era_divergence` — disabled by whitelist (legacy signal only)
   * `anomaly_giants_top_outlier` — 巨人選手で league top 5 % 以内の異常値
 
 設計方針:
@@ -77,7 +77,7 @@ SIGNAL_STAT_DELTA = "anomaly_stat_delta"  # snapshot 急変
 #   - SIGNAL_STAT_DELTA (変化率 title が user 不可)
 #   - SIGNAL_GIANTS_TOP_OUTLIER / SIGNAL_PACE_HR_PROJECTION /
 #     SIGNAL_HIDDEN_OPS_LIMIT / SIGNAL_HIT_STREAK_RUN (C マニアック)
-#   - SIGNAL_DEFENSE_UZR_OUTLIER (user 2026-05-16: FIP は不要、UZR は必要)
+#   - SIGNAL_DEFENSE_UZR_OUTLIER は user 2026-05-16「UZR はいる」で復帰
 ALL_ANOMALY_SIGNALS = (
     SIGNAL_ZSCORE_BATTER,
     SIGNAL_ZSCORE_PITCHER,
@@ -375,6 +375,8 @@ def detect_babip_divergence(
     league 平均 BABIP は ~0.300、AVG との乖離が +0.08 以上なら高 BABIP
     支えで実力値より高い AVG、-0.08 以下なら BABIP 不運で AVG 抑えられている。
     """
+    if not _wl.is_metric_allowed("BABIP"):
+        return []
     avg_rows = {
         r[0]: (r[1], r[2]) for r in conn.execute(
             "SELECT player_canonical, metric_value, team_code FROM advanced_metric_snapshots "
@@ -441,6 +443,8 @@ def detect_fip_era_divergence(
 ) -> list[int]:
     """ERA vs FIP の乖離。FIP-ERA > +1.5 は ERA が運に支えられた表面値、
     FIP-ERA < -1.5 は ERA が運悪く、本質指標では好調。"""
+    if not _wl.is_metric_allowed("FIP"):
+        return []
     era_rows = {
         r[0]: (r[1], r[2]) for r in conn.execute(
             "SELECT player_canonical, metric_value, team_code FROM advanced_metric_snapshots "

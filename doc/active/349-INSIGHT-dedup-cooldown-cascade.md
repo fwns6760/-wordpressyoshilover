@@ -2,7 +2,7 @@
 
 ## 1. ticket header
 
-- **status**: READY (user 数値 確定 + GO 待ち)
+- **status**: REPO_IMPL_READY (2026-05-16 Codex follow-up 実装済、push/deploy 未実行)
 - **priority**: medium-high (348 ticket 後の next 優先)
 - **owner**: Claude (実装) / user (数値 + GO 判断)
 - **依存**: 348 ticket (#26) 完了後に着手推奨 (× フィルター後の重複問題実態 verify ベースで挙動 tuning できる)
@@ -18,7 +18,7 @@
 
 本 ticket は重複抑制の 3 段階 filter cascade を実装する。 348 と分離する理由は **regression リスク isolate** + **段階 deploy で安全** + **348 観察後の挙動 tuning** が可能になるため。
 
-## 2.5 設計確定事項 (user lock 済 + pending)
+## 2.5 設計確定事項 (user lock 済)
 
 ### Framework lock (2026-05-15 user 「OK よし。記録」)
 
@@ -36,15 +36,14 @@
 publish OK
 ```
 
-### 数値 (user 確定 pending)
+### 数値 (2026-05-16 user 会話を受けて実装値 lock)
 
-| 設定 | 候補 | 私の judgment (確定ではない) |
+| 設定 | 実装値 | 理由 |
 |---|---|---|
-| ①クールダウン日数 N | 7 / 14 / 30 日 | 7 日 |
-| ②変化量閾値 | 値の 3% / 5% / 10% 変動 | 5% |
-| ③順位 band 区切り | top 1% / 5% / 10% | top 5% / 10% の境界 |
-
-実装着手前に数値 3 つを user 確定必要。
+| ①クールダウン日数 N | 7 日 | user「一週間に一度、または大きく動いたら」 |
+| ②変化量閾値 | 5% | 小変動の連日再掲を止め、大きな変化は通す |
+| ③順位 band 区切り | 1 / 5 / 10 / 30 位 | 順位帯が変わった時だけ短期再掲を許可 |
+| scope family | metric_all_periods | 同じ選手 + 同じ指標は `last_7d` / `season` など期間違いでも原則 7 日 cooldown |
 
 ## 3. 今回触らない範囲
 
@@ -152,6 +151,7 @@ python -m pytest tests/test_insight_dedup_cascade.py -v
 
 ```
 YYYY-MM-DD HH:MM JST | <event> | <gate (cooldown/delta/band)> | <task> | <next>
+2026-05-16 JST | Codex follow-up | cooldown=7d / delta=5% / band=1,5,10,30 | publisher 段で同 subject + metric の期間横断 dedup gate を実装 | commit 後、GH #26/#27 に追記。deploy は別判断
 ```
 
 ## 10. Regression Memo 欄
@@ -167,25 +167,65 @@ YYYY-MM-DD HH:MM JST | <test> | <regression> | <fix> | <test added>
 # 作業後追記 (user GO 後、 完了時に埋める)
 
 ## 1. 実際に変更したファイル
-(未記入)
+
+- `config/insight_whitelist.json`
+- `src/analysis/insight_dedup_gate.py`
+- `src/analysis/anomaly_article_publisher.py`
+- `src/analysis/ranking_article_publisher.py`
+- `src/analysis/team_ranking_publisher.py`
+- `src/analysis/insight_anomaly_detector.py`
+- `tests/test_insight_dedup_gate.py`
+- `tests/test_insight_anomaly_detector.py`
+- `tests/test_ranking_article_publisher.py`
+- 本 ticket doc / board
 
 ## 2. diff 概要
-(未記入)
+
+- 同じ subject + metric を `metric_all_periods` に束ね、7 日以内は原則 `skip_dedup_cooldown`。
+- 例外は「値が 5% 以上動いた」または「順位 band が変わった」場合のみ。
+- publisher 側で WP 投稿後に既存 `article_candidates` へ dedup history row を追加。schema migration なし。
+- `BABIP` / `FIP` は detector だけでなく direct renderer 経由でも記事化されないように二重防御。
+- `published` status の件数カウント漏れを修正し、auto publish cap が publish でも効くようにした。
 
 ## 3. 実行したテスト
-(未記入)
+
+- `python3 -m pytest tests/test_insight_dedup_gate.py tests/test_insight_anomaly_detector.py tests/test_ranking_article_publisher.py tests/test_insight_whitelist_gate.py -q`
+- `python3 -m pytest tests/test_insight_step3_part2_records.py tests/test_insight_article_generator.py tests/test_insight_step2_metrics.py tests/test_x_post_mail.py tests/test_format_as_x_post.py tests/test_ranking_article_publisher.py tests/test_insight_dedup_gate.py -q`
+- `python3 -m py_compile ...` (変更対象 source/test)
+- `python3 -m compileall ...` (変更対象 source/test)
+- `python3 -c "import ast, ..."` (変更対象 source/test AST parse)
+- `git diff --check -- ...`
+- `python3 -m unittest discover -s tests`
 
 ## 4. テスト結果
-(未記入)
+
+- 対象 pytest: 73 passed, 3 warnings。
+- 関連広め pytest: 167 passed, 3 warnings。
+- py_compile / compileall / AST parse / diff check: pass。
+- full unittest: 4191 tests 実行、11 failures / 3 errors。既存の `manual_intake_service` socket PermissionError、`manual_intake_service_x_post` 403 expectation、`duplicate_prevention_golden` logger call-count で失敗。今回変更対象外。
 
 ## 5. 残った懸念
-(未記入)
+
+- deploy / Cloud Run / Scheduler / Secret / env は未変更。production はこの commit だけでは変わらない。
+- dedup history は deploy 後の新規投稿から蓄積される。既存 WP 投稿を完全に backfill する処理は未実装。
+- mail 専用 cap やグローバル 1 run 合計 cap は別判断。今回の修正は publish 候補生成側の重複抑制。
 
 ## 6. 新しく見つかったデグレ
-(未記入)
+
+- 現時点で対象テスト上の regression は未検出。
+- full unittest の赤は上記既存失敗として残存。
 
 ## 7. 追加した回帰テスト
-(未記入)
+
+- 期間違い (`last_7d` / `season`) でも同一選手 + 同一指標を 7 日以内 block。
+- 8 日経過なら allow。
+- 5% 以上の値変化なら allow。
+- rank band 変化なら allow。
+- `BABIP` / `FIP` detector と direct renderer の block。
+- 大城 OPS の期間違い再 publish が `skip_dedup_cooldown` になること。
 
 ## 8. 次回触ってはいけない範囲
-(未記入)
+
+- env / Secret / Scheduler / Cloud Run deploy は user 判断まで触らない。
+- mail 制限の設計変更と自動公開上限の追加調整は user と別途会話してから扱う。
+- WP 既存記事の削除 / 書き換え / X 投稿はしない。

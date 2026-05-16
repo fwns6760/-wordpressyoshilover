@@ -1,6 +1,6 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-05-14 EVENING JST
+最終更新: 2026-05-16 JST
 
 ## チケット管理方針(2026-05-14 EVENING lock)
 
@@ -68,6 +68,19 @@ test: 382 passed (= 302 baseline + 35 step1 + 18 step2 + 14 step3p1 + 13 step3p2
 
 - 明朝 07:00 JST insight-nightly 自然 fire 後、 348 step 3 で導入した新 scope (last_5_games / last_10_games / monthly / weekly) で実 publish が出るか確認
 - 「奪三振率 / 与四球率 / 被本塁打率」「勝率 / 守備率」の日本語 label が新規 publish title に反映されているか
+
+## 2026-05-16 session summary
+
+### repo 実装済、push/deploy 未実行
+
+| ticket | status | 内容 |
+|---|---|---|
+| `348-INSIGHT` follow-up | REPO_IMPL_READY | `BABIP` / `FIP` が detector bypass や direct renderer から再流出しないよう二重防御。UZR は user 指示通り許可側維持 |
+| `349-INSIGHT-dedup-cooldown-cascade` | REPO_IMPL_READY | 同じ subject + metric を期間違いでも 7 日 cooldown。例外は 5% 以上の値変化または順位 band 変化。schema migration なし、既存 `article_candidates` を ledger として利用 |
+
+test: 対象 pytest 73 passed / 関連広め pytest 167 passed。full unittest は既存の `manual_intake_service` socket PermissionError、`manual_intake_service_x_post` 403 expectation、`duplicate_prevention_golden` logger call-count で赤のまま。
+
+次 action: commit 後、GH #26/#27 に実装内容と未deployを追記。Cloud Run / Scheduler / env / mail 制限の追加調整は user 判断待ち。
 
 ## 2026-05-14 EVENING session summary
 

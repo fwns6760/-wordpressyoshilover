@@ -27,6 +27,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.analysis import insight_atbats_parser  # noqa: E402
+from src.analysis import insight_dedup_gate as dedup_gate  # noqa: E402
 from src.analysis import ranking_article_publisher as rap  # noqa: E402
 from src.giants_news_banner import (  # noqa: E402
     giants_news_banner_html as _giants_news_banner_html,
@@ -340,6 +341,8 @@ def render_team_metric_article(
         "metric": metric,
         "scope": scope,
         "giants_rank": giants_rank,
+        "giants_value": giants_value,
+        "league_total": len(sorted_rows),
     }
 
 
@@ -355,6 +358,23 @@ def publish_team_metric_draft(
     article = render_team_metric_article(conn, metric=metric, scope=scope)
     if article is None:
         return {"status": "skip", "reason": "no_data", "metric": metric, "scope": scope}
+    dedup_context = {
+        "subject_key": "team:g",
+        "metric_name": f"TEAM_{metric}",
+        "scope": scope,
+        "value": article.get("giants_value"),
+        "rank": article.get("giants_rank"),
+        "total": article.get("league_total"),
+    }
+    dedup_decision = dedup_gate.evaluate_metric_cooldown(conn, **dedup_context)
+    if not dedup_decision.get("allowed"):
+        return {
+            "status": "skip_dedup_cooldown",
+            "reason": dedup_decision.get("reason"),
+            "metric": metric,
+            "scope": scope,
+            "dedup": dedup_decision,
+        }
     if dry_run:
         return {"status": "dry_run", "title": article["title"], "metric": metric, "scope": scope}
     category_id = 0
@@ -377,6 +397,8 @@ def publish_team_metric_draft(
     _banner = _giants_news_banner_html(
         article["title"], rap._BANNER_SOURCE_LABEL, category_name
     )
+    dedup_history_id = 0
+    dedup_record_error = ""
     try:
         post_id = wp_client_obj.create_post(
             title=article["title"],
@@ -385,11 +407,23 @@ def publish_team_metric_draft(
             status=publish_status,
             caller="team_ranking_publisher",
         )
+        try:
+            dedup_history_id = dedup_gate.record_metric_publish(
+                conn,
+                **dedup_context,
+                title=article["title"],
+                post_id=int(post_id or 0),
+                wp_status=publish_status,
+            )
+        except Exception as exc:  # noqa: BLE001
+            dedup_record_error = f"{type(exc).__name__}: {exc}"
         return {
             "status": "published" if publish_status == "publish" else "published_draft",
             "title": article["title"],
             "post_id": int(post_id or 0),
             "metric": metric, "scope": scope,
+            "dedup_history_id": dedup_history_id,
+            "dedup_record_error": dedup_record_error,
         }
     except Exception as e:
         return {"status": "error", "error": f"{type(e).__name__}: {e}"}
@@ -445,6 +479,21 @@ def publish_team_streak_draft(
     article = render_team_streak_article(conn)
     if article is None:
         return {"status": "skip", "reason": "no_active_streak"}
+    dedup_context = {
+        "subject_key": "team:g",
+        "metric_name": f"TEAM_STREAK_{article['kind']}",
+        "scope": "current",
+        "value": article.get("streak"),
+        "rank": None,
+        "total": None,
+    }
+    dedup_decision = dedup_gate.evaluate_metric_cooldown(conn, **dedup_context)
+    if not dedup_decision.get("allowed"):
+        return {
+            "status": "skip_dedup_cooldown",
+            "reason": dedup_decision.get("reason"),
+            "dedup": dedup_decision,
+        }
     if dry_run:
         return {"status": "dry_run", "title": article["title"]}
     try:
@@ -462,6 +511,8 @@ def publish_team_streak_draft(
     _banner = _giants_news_banner_html(
         article["title"], rap._BANNER_SOURCE_LABEL, category_name
     )
+    dedup_history_id = 0
+    dedup_record_error = ""
     try:
         post_id = wp_client_obj.create_post(
             title=article["title"],
@@ -470,10 +521,22 @@ def publish_team_streak_draft(
             status=publish_status,
             caller="team_ranking_publisher_streak",
         )
+        try:
+            dedup_history_id = dedup_gate.record_metric_publish(
+                conn,
+                **dedup_context,
+                title=article["title"],
+                post_id=int(post_id or 0),
+                wp_status=publish_status,
+            )
+        except Exception as exc:  # noqa: BLE001
+            dedup_record_error = f"{type(exc).__name__}: {exc}"
         return {
             "status": "published" if publish_status == "publish" else "published_draft",
             "title": article["title"],
             "post_id": int(post_id or 0),
+            "dedup_history_id": dedup_history_id,
+            "dedup_record_error": dedup_record_error,
         }
     except Exception as e:
         return {"status": "error", "error": f"{type(e).__name__}: {e}"}
@@ -528,6 +591,22 @@ def publish_team_run_diff_draft(
     article = render_team_run_diff_article(conn, scope=scope)
     if article is None:
         return {"status": "skip", "reason": "no_data_or_zero_diff", "scope": scope}
+    dedup_context = {
+        "subject_key": "team:g",
+        "metric_name": "TEAM_RUN_DIFF",
+        "scope": scope,
+        "value": article.get("value"),
+        "rank": None,
+        "total": None,
+    }
+    dedup_decision = dedup_gate.evaluate_metric_cooldown(conn, **dedup_context)
+    if not dedup_decision.get("allowed"):
+        return {
+            "status": "skip_dedup_cooldown",
+            "reason": dedup_decision.get("reason"),
+            "scope": scope,
+            "dedup": dedup_decision,
+        }
     if dry_run:
         return {"status": "dry_run", "title": article["title"]}
     try:
@@ -545,6 +624,8 @@ def publish_team_run_diff_draft(
     _banner = _giants_news_banner_html(
         article["title"], rap._BANNER_SOURCE_LABEL, category_name,
     )
+    dedup_history_id = 0
+    dedup_record_error = ""
     try:
         post_id = wp_client_obj.create_post(
             title=article["title"],
@@ -553,8 +634,20 @@ def publish_team_run_diff_draft(
             status=publish_status,
             caller="team_ranking_publisher_run_diff",
         )
+        try:
+            dedup_history_id = dedup_gate.record_metric_publish(
+                conn,
+                **dedup_context,
+                title=article["title"],
+                post_id=int(post_id or 0),
+                wp_status=publish_status,
+            )
+        except Exception as exc:  # noqa: BLE001
+            dedup_record_error = f"{type(exc).__name__}: {exc}"
         return {"status": "published" if publish_status == "publish" else "published_draft",
-                "title": article["title"], "post_id": int(post_id or 0), "scope": scope}
+                "title": article["title"], "post_id": int(post_id or 0), "scope": scope,
+                "dedup_history_id": dedup_history_id,
+                "dedup_record_error": dedup_record_error}
     except Exception as e:
         return {"status": "error", "error": f"{type(e).__name__}: {e}"}
 
@@ -613,6 +706,23 @@ def publish_team_vs_opponent_draft(
     if article is None:
         return {"status": "skip", "reason": "insufficient_games",
                 "opponent": opponent, "scope": scope}
+    dedup_context = {
+        "subject_key": "team:g",
+        "metric_name": f"TEAM_VS_{opponent}",
+        "scope": scope,
+        "value": int(article.get("W", 0)) - int(article.get("L", 0)),
+        "rank": None,
+        "total": None,
+    }
+    dedup_decision = dedup_gate.evaluate_metric_cooldown(conn, **dedup_context)
+    if not dedup_decision.get("allowed"):
+        return {
+            "status": "skip_dedup_cooldown",
+            "reason": dedup_decision.get("reason"),
+            "opponent": opponent,
+            "scope": scope,
+            "dedup": dedup_decision,
+        }
     if dry_run:
         return {"status": "dry_run", "title": article["title"]}
     try:
@@ -630,6 +740,8 @@ def publish_team_vs_opponent_draft(
     _banner = _giants_news_banner_html(
         article["title"], rap._BANNER_SOURCE_LABEL, category_name,
     )
+    dedup_history_id = 0
+    dedup_record_error = ""
     try:
         post_id = wp_client_obj.create_post(
             title=article["title"],
@@ -638,9 +750,21 @@ def publish_team_vs_opponent_draft(
             status=publish_status,
             caller="team_ranking_publisher_vs_opponent",
         )
+        try:
+            dedup_history_id = dedup_gate.record_metric_publish(
+                conn,
+                **dedup_context,
+                title=article["title"],
+                post_id=int(post_id or 0),
+                wp_status=publish_status,
+            )
+        except Exception as exc:  # noqa: BLE001
+            dedup_record_error = f"{type(exc).__name__}: {exc}"
         return {"status": "published" if publish_status == "publish" else "published_draft",
                 "title": article["title"], "post_id": int(post_id or 0),
-                "opponent": opponent, "scope": scope}
+                "opponent": opponent, "scope": scope,
+                "dedup_history_id": dedup_history_id,
+                "dedup_record_error": dedup_record_error}
     except Exception as e:
         return {"status": "error", "error": f"{type(e).__name__}: {e}"}
 
@@ -683,6 +807,8 @@ def publish_team_default_set(
     if published < max_per_run:
         streak_r = publish_team_streak_draft(conn, wp_client_obj, dry_run=dry_run)
         results.append(streak_r)
+        if streak_r.get("status") in ("published", "published_draft", "dry_run"):
+            published += 1
     # 348 step 3 完全達成: 得失点差 publisher。
     # 2026-05-16: default auto publish は短期変化のみ。
     for scope in ("last_7d",):

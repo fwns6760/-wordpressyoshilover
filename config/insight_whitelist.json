@@ -50,6 +50,14 @@
     "weekly"
   ],
 
+  "dedup": {
+    "cooldown_days": 7,
+    "delta_ratio": 0.05,
+    "rank_bands": [1, 5, 10, 30],
+    "scope_family": "metric_all_periods",
+    "comment": "同じ subject + metric は期間違いでも原則 7 日 cooldown。5%以上の値変化または順位 band 変化だけ再掲許可。"
+  },
+
   "metric_name_ja": {
     "AVG": "打率",
     "OBP": "出塁率",

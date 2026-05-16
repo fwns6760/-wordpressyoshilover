@@ -89,7 +89,7 @@ def test_zscore_pitcher_detects_lower_is_better_outlier(tmp_path):
         conn.close()
 
 
-def test_babip_divergence_detects(tmp_path):
+def test_babip_divergence_is_blocked_by_whitelist(tmp_path):
     db = tmp_path / "t.db"
     conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
     try:
@@ -98,12 +98,17 @@ def test_babip_divergence_detects(tmp_path):
         _seed_snapshots(conn, snapshot_date="2026-05-14", scope="last_30d", metric="BABIP",
                         ranking=[("luck", "t", 0.420, 60, 1, 1)])  # +0.120 over AVG
         ids = det.detect_babip_divergence(conn, snapshot_date="2026-05-14")
-        assert len(ids) == 1
+        assert ids == []
+        cnt = conn.execute(
+            "SELECT COUNT(*) FROM article_candidates "
+            "WHERE signal_type = ?", (det.SIGNAL_BABIP_DIVERGENCE,),
+        ).fetchone()[0]
+        assert cnt == 0
     finally:
         conn.close()
 
 
-def test_fip_era_divergence_detects(tmp_path):
+def test_fip_era_divergence_is_blocked_by_whitelist(tmp_path):
     db = tmp_path / "t.db"
     conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
     try:
@@ -112,7 +117,12 @@ def test_fip_era_divergence_detects(tmp_path):
         _seed_snapshots(conn, snapshot_date="2026-05-14", scope="season", metric="FIP",
                         ranking=[("lucky_pitcher", "t", 4.500, 30, 1, 1)])  # +3.0 vs ERA
         ids = det.detect_fip_era_divergence(conn, snapshot_date="2026-05-14")
-        assert len(ids) == 1
+        assert ids == []
+        cnt = conn.execute(
+            "SELECT COUNT(*) FROM article_candidates "
+            "WHERE signal_type = ?", (det.SIGNAL_FIP_ERA_DIVERGENCE,),
+        ).fetchone()[0]
+        assert cnt == 0
     finally:
         conn.close()
 
@@ -238,6 +248,31 @@ def test_render_anomaly_article_zscore_batter(tmp_path):
         assert "OPS" in result["title"]
         assert "<table>" in result["body_html"]
         assert "<svg" not in result["body_html"]
+    finally:
+        conn.close()
+
+
+def test_direct_fip_babip_renderers_are_blocked(tmp_path):
+    db = tmp_path / "t.db"
+    conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
+    try:
+        _seed_player_table(conn, [("巨人A", "g", "player")])
+        babip = {
+            "signal_type": det.SIGNAL_BABIP_DIVERGENCE,
+            "player_canonical": "巨人A",
+            "magnitude": 0.120,
+            "baseline_value": "AVG=0.300",
+            "current_value": "BABIP=0.420",
+        }
+        fip = {
+            "signal_type": det.SIGNAL_FIP_ERA_DIVERGENCE,
+            "player_canonical": "巨人A",
+            "magnitude": 1.500,
+            "baseline_value": "ERA=2.000",
+            "current_value": "FIP=3.500",
+        }
+        assert pub.render_babip_divergence_article(conn, babip) is None
+        assert pub.render_fip_era_divergence_article(conn, fip) is None
     finally:
         conn.close()
 

@@ -91,7 +91,7 @@ test: deploy 前 data-insight 関連 pytest 231 passed。full unittest は既存
 
 ### 357 x-post-mail period 表示 tuning (2026-05-16 JST)
 
-user 指示「日付だけでは分かりにくい」「直近5試合 / 直近10試合を前面」「7月成績のような月別は分かりやすい」「大手が出す全期間はいらない」を受け、`doc/active/357-x-post-mail-human-period-labels.md` を起票。repo 実装 + targeted tests 完了、status `REVIEW_NEEDED`。対象は X 投稿候補 mail の表示と候補 pool のみ。X / SNS live post、Scheduler、env、Secret、WP publish、Cloud Run Job deploy は未変更。
+user 指示「日付だけでは分かりにくい」「直近5試合 / 直近10試合を前面」「7月成績のような月別は分かりやすい」「大手が出す全期間はいらない」を受け、`doc/active/357-x-post-mail-human-period-labels.md` を起票。repo 実装 + targeted tests 完了、status `REVIEW_NEEDED`。2026-05-16 follow-up で production GCS DB 更新状況を確認し、all-NPB DB 化後の直近5/10試合 window を `batting_logs` 巨人 row で絞る修正と、DB最新試合日が2日超古い場合に X 投稿候補 mail を候補生成前に止める freshness guard を追加。X / SNS live post、Scheduler、env、Secret、WP publish、Cloud Run Job deploy は未変更。
 
 ## 2026-05-14 EVENING session summary
 

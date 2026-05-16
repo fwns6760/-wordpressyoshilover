@@ -17,11 +17,11 @@ handoff Task 4 + user 2026-05-16 「最近 5 試合 / 10 試合 書ける？」�
 
 ## 2.5 設計確定事項 (verify ベース)
 
-### games table verify 結果 (2026-05-16 lock)
+### games table verify 結果 (2026-05-16 update)
 
-- `games` table は **Giants-centric**: `opponent`, `home_away`, `giants_score`, `opp_score` column が示す通り 1 row = 1 巨人試合
-- `batting_logs.game_id` は `games.game_id` への FK = batting_logs は **巨人試合の log only** (12 球団選手の log は 巨人と戦った試合のみ)
-- 「直近 N 試合」 = 「直近 N 巨人試合」の意味 (verify 済)
+- 旧 lock の「`games` table は Giants-centric」は production GCS DB では成り立たない。2026-05-16 12:01 JST 更新の production DB は all-NPB で、`games` 最新日 2026-05-15、同日 6 試合を保持している。
+- 「直近 N 試合」 = 「直近 N 巨人試合」の意味は維持するが、判定は `games` 日付だけでなく `batting_logs.game_id = games.game_id` かつ `batting_logs.team_name` が巨人 alias の row を持つ日付に絞る。
+- follow-up 実装は 357 に集約: `_query_recent_n_games_date_range` を all-NPB DB 対応へ修正し、X 投稿候補 mail CLI に DB freshness guard を追加。
 
 ### 案 A 採用 (巨人内 ranking 限定)
 
@@ -48,10 +48,15 @@ def _query_recent_n_games_date_range(n: int, db_path: str) -> Optional[tuple[str
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
         cur = conn.execute(
-            "SELECT DISTINCT game_date FROM games "
-            "WHERE game_date IS NOT NULL "
-            "ORDER BY game_date DESC LIMIT ?",
-            (n,),
+            "SELECT DISTINCT g.game_date FROM games g "
+            "WHERE g.game_date IS NOT NULL "
+            "AND EXISTS ("
+            "  SELECT 1 FROM batting_logs b "
+            "  WHERE b.game_id = g.game_id "
+            "  AND b.team_name IN (<giants aliases>)"
+            ") "
+            "ORDER BY g.game_date DESC LIMIT ?",
+            (*giants_aliases, n),
         )
         dates = [row[0] for row in cur]
         if len(dates) < n:

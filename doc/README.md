@@ -1820,8 +1820,9 @@ git add -A禁止。
 - **owner**: Codex / **lane**: B
 - **doc_path**: `doc/active/357-x-post-mail-human-period-labels.md`
 - **背景**: user 指示「日付だけでは分かりにくい」「直近5試合 / 直近10試合を前面」「7月成績のような月別は分かりやすい」「大手が出す全期間はいらない」。
-- **実装方針**: X 投稿候補 mail の 2 行目と候補 title を人間向け period label に変更。全期間 / 今シーズンを pool から排除し、守備位置別も直近7日に寄せる。月別は月初 3 日だけ前月成績を巨人内 ranking として追加。
-- **tests**: `test_x_post_mail.py` 65 passed、関連 3 file 101 passed、compileall / AST / scoped diff-check PASS。全体 `git diff --check` は unrelated `src/yoshilover-063-frontend.php` conflict marker で FAIL。
+- **実装方針**: X 投稿候補 mail の 2 行目と候補 title を人間向け period label に変更。全期間 / 今シーズンを pool から排除し、守備位置別も直近7日に寄せる。月別は月初 3 日だけ前月成績を巨人内 ranking として追加。2026-05-16 follow-up で all-NPB DB 化後も直近5/10試合の期間窓が巨人試合だけになるよう `batting_logs` 巨人 row で判定し、DB最新試合日が2日超古い場合は X 投稿候補 mail を候補生成前に止める freshness guard を追加。
+- **production DB確認**: GCS `gs://baseballsite-yoshilover-insight/insight.db` は 2026-05-16 12:01:51 JST 更新、copy DB の `MAX(games.game_date)=2026-05-15`、巨人 recent window は 5試合 `2026-05-09〜2026-05-15` / 10試合 `2026-05-03〜2026-05-15`。
+- **tests**: `test_x_post_mail.py` 69 passed、関連 3 file 101 passed、compileall / AST / scoped diff-check PASS。全体 `git diff --check` は unrelated `src/yoshilover-063-frontend.php` conflict marker で FAIL。
 - **deploy**: 未実行。Cloud Run Job `x-post-mail-lane` image 更新は user 明示 GO 後。
 
 ## marketing board

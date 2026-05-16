@@ -27,7 +27,7 @@ import random as _random
 import re as _re
 import sqlite3 as _sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone as _tz
+from datetime import date as _date, datetime, timedelta, timezone as _tz
 from typing import Callable, Optional
 from urllib.parse import quote as _url_quote
 from zoneinfo import ZoneInfo
@@ -174,6 +174,7 @@ def is_central_league(team_code: Optional[str]) -> bool:
 _GIANTS_ALIASES = frozenset(
     {"巨人", "読売", "読売ジャイアンツ", "ジャイアンツ", "Giants", "GIANTS", "G", "g"}
 )
+_GIANTS_SQL_ALIASES = tuple(sorted(_GIANTS_ALIASES))
 
 
 def _is_giants(team_code: Optional[str]) -> bool:
@@ -240,10 +241,10 @@ def _query_recent_n_games_date_range(
     ``(since_iso, until_iso)`` or ``None`` when fewer than ``n``
     games exist.
 
-    ``games`` table is Giants-centric (1 row = 1 巨人試合、 verify済
-    in ticket 354). The returned range therefore demarcates the
-    period of the most recent N 巨人試合, suitable for
-    ``giants_only=True`` ranking combos.
+    Production DB is now all-NPB. Therefore the window must be limited
+    to games whose logs actually contain a Giants team row; otherwise
+    Pacific / non-Giants dates would shrink or distort the "直近 N
+    試合" period used by ``giants_only=True`` ranking combos.
     """
     if n <= 0:
         return None
@@ -253,11 +254,17 @@ def _query_recent_n_games_date_range(
         LOG.warning("_query_recent_n_games_date_range: open failed: %r", exc)
         return None
     try:
+        placeholders = ",".join("?" for _ in _GIANTS_SQL_ALIASES)
         cur = conn.execute(
-            "SELECT DISTINCT game_date FROM games "
-            "WHERE game_date IS NOT NULL "
-            "ORDER BY game_date DESC LIMIT ?",
-            (n,),
+            "SELECT DISTINCT g.game_date FROM games g "
+            "WHERE g.game_date IS NOT NULL "
+            "AND EXISTS ("
+            "  SELECT 1 FROM batting_logs b "
+            "  WHERE b.game_id = g.game_id "
+            f"  AND b.team_name IN ({placeholders})"
+            ") "
+            "ORDER BY g.game_date DESC LIMIT ?",
+            (*_GIANTS_SQL_ALIASES, n),
         )
         dates = [row[0] for row in cur if row and row[0]]
     except _sqlite3.Error as exc:  # noqa: BLE001
@@ -269,6 +276,49 @@ def _query_recent_n_games_date_range(
         return None
     # dates is sorted DESC, so dates[0] = newest, dates[-1] = oldest.
     return (dates[-1], dates[0])
+
+
+def query_db_latest_game_date(db_path: str) -> Optional[str]:
+    """Return the newest ``games.game_date`` from a read-only insight DB."""
+    try:
+        conn = _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except _sqlite3.Error as exc:  # noqa: BLE001
+        LOG.warning("query_db_latest_game_date: open failed: %r", exc)
+        return None
+    try:
+        cur = conn.execute(
+            "SELECT MAX(game_date) FROM games WHERE game_date IS NOT NULL"
+        )
+        row = cur.fetchone()
+        value = row[0] if row else None
+        return str(value) if value else None
+    except _sqlite3.Error as exc:  # noqa: BLE001
+        LOG.warning("query_db_latest_game_date: query failed: %r", exc)
+        return None
+    finally:
+        conn.close()
+
+
+def db_staleness_days(
+    latest_game_date: Optional[str], now: Optional[datetime] = None
+) -> Optional[int]:
+    """Return JST date difference from ``latest_game_date``.
+
+    ``None`` means the date is missing or malformed, so callers should
+    avoid treating the DB as fresh.
+    """
+    if not latest_game_date:
+        return None
+    try:
+        latest = _date.fromisoformat(latest_game_date)
+    except ValueError:
+        return None
+    if now is None:
+        now = datetime.now(JST)
+    elif now.tzinfo is None:
+        now = now.replace(tzinfo=JST)
+    today = now.astimezone(JST).date()
+    return (today - latest).days
 
 
 def _build_combos(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from src.x_post_mail_lane import (
     CENTRAL_LEAGUE_TEAM_ALIASES,
@@ -730,7 +730,8 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
 class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
     """354/356: 直近 N 巨人試合 variation (案 A 巨人内限定、 pool 10 → 16、
     novelty="high"、 giants_only=True、 min_sample_override で AB 閾値緩和)
-    の検証。 sqlite tempfile fixture で games table を seed する。
+    の検証。 all-NPB 化後の production DB に合わせ、 games + batting_logs
+    の sqlite tempfile fixture を seed する。
     """
 
     def setUp(self) -> None:
@@ -747,12 +748,10 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
     def tearDown(self) -> None:
         self._shutil.rmtree(self._tmpdir, ignore_errors=True)
 
-    def _seed_games(self, dates: list[str]) -> None:
-        """Create the games table and INSERT one row per date.
-
-        Mirrors data/insight/schema.sql (Giants-centric, 1 row =
-        1 巨人試合). NULL-safe ingested_at to satisfy NOT NULL.
-        """
+    def _seed_games(self, dates: list[str], giants_dates: set[str] | None = None) -> None:
+        """Create minimal games/batting_logs tables and seed one row per date."""
+        if giants_dates is None:
+            giants_dates = set(dates)
         conn = self._sqlite3.connect(self.db_path)
         try:
             conn.execute(
@@ -774,12 +773,23 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
                 "ingested_at TEXT NOT NULL"
                 ")"
             )
+            conn.execute(
+                "CREATE TABLE batting_logs ("
+                "game_id TEXT NOT NULL, "
+                "team_name TEXT NOT NULL"
+                ")"
+            )
             for idx, d in enumerate(dates):
+                game_id = f"test-{d}-{idx}"
                 conn.execute(
                     "INSERT INTO games "
                     "(game_id, game_date, opponent, home_away, ingested_at) "
                     "VALUES (?, ?, ?, ?, ?)",
-                    (f"test-{d}-{idx}", d, "test", "home", "2026-01-01T00:00:00"),
+                    (game_id, d, "test", "home", "2026-01-01T00:00:00"),
+                )
+                conn.execute(
+                    "INSERT INTO batting_logs (game_id, team_name) VALUES (?, ?)",
+                    (game_id, "巨人" if d in giants_dates else "西武"),
                 )
             conn.commit()
         finally:
@@ -792,10 +802,35 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
         result = _query_recent_n_games_date_range(5, self.db_path)
         self.assertEqual(result, ("2026-05-10", "2026-05-16"))
 
+    def test_query_recent_n_games_ignores_non_giants_recent_dates(self) -> None:
+        from src.x_post_mail_lane import _query_recent_n_games_date_range
+        dates = [
+            "2026-05-10",
+            "2026-05-11",
+            "2026-05-12",
+            "2026-05-13",
+            "2026-05-14",
+            "2026-05-15",
+            "2026-05-16",
+        ]
+        self._seed_games(dates, giants_dates=set(dates[:-1]))
+        result = _query_recent_n_games_date_range(5, self.db_path)
+        self.assertEqual(result, ("2026-05-11", "2026-05-15"))
+
     def test_query_recent_n_games_returns_none_when_insufficient(self) -> None:
         from src.x_post_mail_lane import _query_recent_n_games_date_range
         self._seed_games(["2026-05-15", "2026-05-16"])  # only 2 games
         self.assertIsNone(_query_recent_n_games_date_range(5, self.db_path))
+
+    def test_query_db_latest_game_date_and_staleness(self) -> None:
+        from src.x_post_mail_lane import db_staleness_days, query_db_latest_game_date
+        self._seed_games(["2026-05-14", "2026-05-15"])
+        latest = query_db_latest_game_date(self.db_path)
+        self.assertEqual(latest, "2026-05-15")
+        self.assertEqual(
+            db_staleness_days(latest, now=datetime(2026, 5, 16, 12, 0, tzinfo=JST)),
+            1,
+        )
 
     def test_build_combos_no_db_path_keeps_10(self) -> None:
         """db_path=None で短期寄せの 10 combo を維持。"""
@@ -927,6 +962,54 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
         self._seed_games(["2026-05-14", "2026-05-15", "2026-05-16"])
         combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST), db_path=self.db_path)
         self.assertEqual(len(combos), 10, msg=f"unexpected combo count: {len(combos)}")
+
+
+class XPostMailEntrypointFreshnessTests(unittest.TestCase):
+    """DB freshness guard for the X post mail CLI entrypoint."""
+
+    def test_main_aborts_before_candidate_pick_when_db_is_stale(self) -> None:
+        from src.tools import run_x_post_mail
+
+        with patch.dict(
+            "os.environ",
+            {
+                "MAIL_BRIDGE_TO": "ops@example.test",
+                "X_POST_MAIL_DEDUP_DISABLED": "1",
+            },
+            clear=False,
+        ), patch.object(
+            run_x_post_mail.miq,
+            "ensure_local_db",
+            return_value={"ok": True, "path": "/tmp/insight.db"},
+        ), patch.object(
+            run_x_post_mail.lane,
+            "query_db_latest_game_date",
+            return_value="2026-05-13",
+        ), patch.object(
+            run_x_post_mail.lane,
+            "db_staleness_days",
+            return_value=3,
+        ), patch.object(
+            run_x_post_mail.lane,
+            "pick_candidates",
+        ) as pick_candidates:
+            result = run_x_post_mail.main([])
+
+        self.assertEqual(result, 4)
+        pick_candidates.assert_not_called()
+
+    def test_invalid_staleness_env_falls_back_to_default(self) -> None:
+        from src.tools import run_x_post_mail
+
+        with patch.dict(
+            "os.environ",
+            {"X_POST_MAIL_MAX_DB_STALENESS_DAYS": "bad"},
+            clear=False,
+        ):
+            self.assertEqual(
+                run_x_post_mail._resolve_max_db_staleness_days(),
+                run_x_post_mail.DEFAULT_MAX_DB_STALENESS_DAYS,
+            )
 
 
 class TicketThreeFiftyFiveDedupTests(unittest.TestCase):

@@ -22,6 +22,7 @@
 変更する:
 
 - `src/x_post_mail_lane.py`
+- `src/tools/run_x_post_mail.py`
 - `tests/test_x_post_mail.py`
 - 本 ticket / board docs
 
@@ -42,13 +43,23 @@
 - 全期間 / 今シーズン候補は X 投稿候補 mail pool から出さない
 - 守備位置別も全期間ではなく `直近7日` に寄せる
 - 24h dedup と period-family skip は維持する
+- 直近5/10試合の期間窓は all-NPB `games` 日付ではなく、`batting_logs` に巨人 row がある試合日だけで作る
+- X 投稿候補 mail は `insight.db` の最新 `games.game_date` が JST 今日から 2 日超古い場合、候補生成前に停止する
 
 ## verification
 
 実行済み:
 
+- GitHub Issue #29 comment: https://github.com/fwns6760/-wordpressyoshilover/issues/29#issuecomment-4465826892
 - `python3 -m py_compile src/x_post_mail_lane.py tests/test_x_post_mail.py` — PASS
 - `python3 -m pytest tests/test_x_post_mail.py -q` — PASS (`65 passed, 3 warnings`)
+- `python3 -m py_compile src/x_post_mail_lane.py src/tools/run_x_post_mail.py tests/test_x_post_mail.py` — PASS
+- `python3 -m pytest tests/test_x_post_mail.py -q` — PASS (`69 passed, 3 warnings`)
+- production GCS DB copy `/tmp/insight-prod-20260516.db` smoke:
+  - `latest_game_date 2026-05-15`
+  - `staleness_days_at_2026_05_16_noon 1`
+  - `recent5_giants_window ('2026-05-09', '2026-05-15')`
+  - `recent10_giants_window ('2026-05-03', '2026-05-15')`
 - `python3 -m compileall -q src/x_post_mail_lane.py tests/test_x_post_mail.py` — PASS
 - `python3 -c "... ast.parse ..."` — PASS (`ast_ok`)
 - `python3 -m pytest tests/test_x_post_mail.py tests/test_format_as_x_post.py tests/test_mail_delivery_bridge.py -q` — PASS (`101 passed, 3 warnings, 6 subtests passed`)

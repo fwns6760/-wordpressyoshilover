@@ -34,6 +34,7 @@ from src import x_post_mail_lane as lane  # noqa: E402
 
 
 LOG = logging.getLogger("x_post_mail")
+DEFAULT_MAX_DB_STALENESS_DAYS = 2
 
 
 def _configure_logging() -> None:
@@ -64,6 +65,22 @@ def _resolve_sender() -> str | None:
 
 def _resolve_reply_to() -> str | None:
     return os.environ.get("MAIL_BRIDGE_REPLY_TO") or os.environ.get("NOTIFY_REPLY_TO")
+
+
+def _resolve_max_db_staleness_days() -> int:
+    raw = (
+        os.environ.get("X_POST_MAIL_MAX_DB_STALENESS_DAYS")
+        or str(DEFAULT_MAX_DB_STALENESS_DAYS)
+    ).strip()
+    try:
+        return int(raw)
+    except ValueError:
+        LOG.warning(
+            "Invalid X_POST_MAIL_MAX_DB_STALENESS_DAYS=%r; using default %d",
+            raw,
+            DEFAULT_MAX_DB_STALENESS_DAYS,
+        )
+        return DEFAULT_MAX_DB_STALENESS_DAYS
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
@@ -112,6 +129,30 @@ def main(argv: Sequence[str] | None = None) -> int:
     except Exception as exc:  # noqa: BLE001
         LOG.exception("ensure_local_db failed: %r", exc)
         return 3
+    now_jst = datetime.now(ZoneInfo("Asia/Tokyo"))
+    if not db_path:
+        LOG.error("insight.db cache unavailable: %s", db_info)
+        return 3
+    latest_game_date = lane.query_db_latest_game_date(db_path)
+    staleness_days = lane.db_staleness_days(latest_game_date, now=now_jst)
+    max_staleness_days = _resolve_max_db_staleness_days()
+    LOG.info(
+        "insight.db freshness latest_game_date=%s staleness_days=%s max=%d path=%s",
+        latest_game_date,
+        staleness_days,
+        max_staleness_days,
+        db_path,
+    )
+    if max_staleness_days >= 0 and (
+        staleness_days is None or staleness_days > max_staleness_days
+    ):
+        LOG.error(
+            "insight.db stale; aborting mail latest_game_date=%s staleness_days=%s max=%d",
+            latest_game_date,
+            staleness_days,
+            max_staleness_days,
+        )
+        return 4
 
     # 355: load 24h dedup set so combos already mailed in the past day
     # do not repeat. Disabled when ``X_POST_MAIL_DEDUP_DISABLED=1`` or
@@ -120,7 +161,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     dedup_set: set[str] | None = None
     bucket_name = os.environ.get("INSIGHT_GCS_BUCKET") or ""
     dedup_disabled = (os.environ.get("X_POST_MAIL_DEDUP_DISABLED") or "").strip()
-    now_jst = datetime.now(ZoneInfo("Asia/Tokyo"))
     if bucket_name and dedup_disabled not in {"1", "true", "yes"}:
         try:
             dedup_set = lane._load_recent_dedup_signatures(bucket_name, now_jst)

@@ -82,6 +82,48 @@ def test_body_evidence_missing_formula_is_blocked():
     assert "formula" in decision.details["missing"]
 
 
+def test_body_table_format_blocks_data_section_bullets():
+    decision = qg.validate_body_table_format(
+        "# title\n\n"
+        "## ひとこと\n\n短い説明。\n\n"
+        "## データ\n\n"
+        "- 指標: 簡易UZR\n"
+        "- 順位: 巨人 6/6位\n\n"
+        "## このデータについて\n\n"
+        "| 項目 | 内容 |\n"
+        "|---|---|\n"
+        "| データ元 | NPB 公式 box score |\n"
+        "| 集計期間 | 直近30日 |\n"
+        "| 計算式 | アウト化率平均との差 |\n"
+    )
+    assert decision.allowed is False
+    assert decision.status == qg.STATUS_TABLE_FORMAT
+    assert decision.reason == "section_without_table"
+    assert decision.details["section"] == "データ"
+
+
+def test_basic_article_requires_markdown_tables_permanent_contract():
+    article = {
+        "body_md": (
+            "# title\n\n"
+            "## ひとこと\n\n短い説明。\n\n"
+            "## データ\n\n"
+            "| 項目 | 数値 |\n"
+            "|---|---|\n"
+            "| 指標 | 簡易UZR -0.088 |\n\n"
+            "## このデータについて\n\n"
+            "| 項目 | 内容 |\n"
+            "|---|---|\n"
+            "| データ元 | NPB 公式 box score |\n"
+            "| 集計期間 | 直近30日 |\n"
+            "| 計算式 | チーム別アウト化率から平均差を算出 |\n"
+        )
+    }
+    decision = qg.validate_basic_article(article)
+    assert decision.allowed is True
+    assert decision.details["table"]["format"] == "markdown_table"
+
+
 def test_publish_ranking_skips_insufficient_focus_sample(tmp_path):
     conn = _open_db(tmp_path)
     try:

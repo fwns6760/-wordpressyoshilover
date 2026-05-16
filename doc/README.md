@@ -1859,6 +1859,17 @@ git add -A禁止。
 - **tests**: `test_insight_step3_part2_records.py` 37 passed、関連 4 file 100 passed、py_compile / compileall / AST / scoped diff-check PASS。production DB copy preview PASS。
 - **deploy**: commit `269fd37`、Cloud Build `7cf61309-f315-4fb9-9a2f-5ec130c26c23` SUCCESS、image `insight-nightly:360-defense-table-269fd37`、digest `sha256:0e2abc58b2704a03eb8f49481dae1f3a858986b068cd087854b38a1594af72c7`、Job generation `48`。Scheduler / env / Secret は未変更、`data-insight-*` 7 triggers ENABLED 確認。手動 execute は追加 publish/mail 回避のため未実行。
 
+### 361-INSIGHT-permanent-table-body-and-title-contract
+
+- **alias**: -
+- **status**: REVIEW_NEEDED / **priority**: high
+- **owner**: Codex / **lane**: B
+- **doc_path**: `doc/active/361-INSIGHT-permanent-table-body-and-title-contract.md`
+- **背景**: 360 の表形式は本文側の対応だったため、恒久対応として publish-time quality gate へ table contract を入れる。巨人サイトなので title はセ・リーグ球団別を主語にせず、巨人選手名を入口にする。
+- **方針**: UZR / 守備率 title は `{巨人選手名}の{守備位置}、{指標} {値}で巨人N/6位（期間）` 型。本文ではセ・リーグ球団別 table を見せる。`## データ` / `## このデータについて` / ranking / 比較 section は table 必須、`## データ` の bullet list 回帰は quality gate で止める。
+- **tests**: `test_insight_step3_part2_records.py` + `test_insight_quality_gate.py` 44 passed、関連 4 file 102 passed、py_compile / compileall / AST / scoped diff-check PASS。production DB copy preview PASS。
+- **deploy**: 未実施。live 反映には `insight-nightly` rebuild + Cloud Run Job image update が必要。Scheduler / env / Secret は変更しない。手動 execute は追加 publish/mail 回避のため実行しない。
+
 ## marketing board
 
 - Marketing ticket source of truth: `doc/marketing/README.md`

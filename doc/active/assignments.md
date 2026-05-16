@@ -109,6 +109,10 @@ user 指示「他の自動通知も来るから分からない」を受け、X �
 
 user 指示「UZR は出したいが球団ごとの表形式比較が欲しい」「方針として全てが表形式」を受け、`doc/active/360-INSIGHT-defense-table-comparison-format.md` を起票。未来生成分の `anomaly_article_publisher` で、UZR / 守備率記事をセ・リーグ球団別 table 主体に変更。シンプルデータ記事の `## データ` も箇条書きから table 化。「全てが表形式」は数値・比較・根拠を table に寄せる方針として記録。production DB copy preview では `泉口友汰 / 遊撃守備` が `セ・リーグ球団別 遊撃守備の簡易UZR、巨人 6/6位 -0.088（直近30日）` と6球団表で出ることを確認。commit `269fd37`、Cloud Build `7cf61309-f315-4fb9-9a2f-5ec130c26c23` SUCCESS、image digest `sha256:0e2abc58b2704a03eb8f49481dae1f3a858986b068cd087854b38a1594af72c7`、Job generation `48`。関連 pytest `100 passed`。既存公開 post / WP update / Scheduler / env / Secret / X / SNS は触らない。手動 execute は追加 publish/mail 回避のため未実行。
 
+### 361 INSIGHT permanent table body and title contract (2026-05-16 JST)
+
+user 指示「恒久対応」「title は巨人の選手の名前と指数と何位と期間」「巨人サイトだから」を受け、`doc/active/361-INSIGHT-permanent-table-body-and-title-contract.md` を起票。UZR / 守備率 title を `泉口友汰の遊撃守備、簡易UZR -0.088で巨人6/6位（直近30日）` 型へ変更し、本文のセ・リーグ球団別表は維持。`insight_quality_gate` に table contract を追加し、`## データ` / `## このデータについて` / ranking / 比較 section が table でない記事、または `## データ` が bullet list に戻った記事を publish/draft 投入前に止める。py_compile / compileall / AST PASS、関連 pytest `102 passed`、production DB copy preview PASS。既存公開 post / WP update / Scheduler / env / Secret / X / SNS は触らない。live 反映には `insight-nightly` rebuild + Job image update が必要。
+
 ## 2026-05-14 EVENING session summary
 
 ### close 済(本 session)

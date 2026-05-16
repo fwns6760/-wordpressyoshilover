@@ -34,6 +34,7 @@ STATUS_SAMPLE = "skip_data_quality_sample"
 STATUS_COVERAGE = "skip_data_quality_coverage"
 STATUS_STALE = "skip_data_quality_stale_snapshot"
 STATUS_EVIDENCE = "skip_data_quality_missing_evidence"
+STATUS_TABLE_FORMAT = "skip_data_quality_table_format"
 
 
 @dataclass(frozen=True)
@@ -335,6 +336,89 @@ def validate_body_evidence(
     return ok(require_sample=require_sample, require_comparison=require_comparison)
 
 
+def _is_markdown_table_separator(line: str) -> bool:
+    text = str(line or "").strip()
+    if not (text.startswith("|") and text.endswith("|")):
+        return False
+    cells = [cell.strip() for cell in text.strip("|").split("|")]
+    if not cells:
+        return False
+    return all(cell and "-" in cell and set(cell) <= {"-", ":", " "} for cell in cells)
+
+
+def _has_markdown_table(text: str) -> bool:
+    lines = [line.rstrip() for line in str(text or "").splitlines()]
+    for idx, line in enumerate(lines[:-1]):
+        current = line.strip()
+        if current.startswith("|") and current.endswith("|") and _is_markdown_table_separator(lines[idx + 1]):
+            return True
+    return False
+
+
+def _markdown_sections(text: str) -> dict[str, str]:
+    sections: dict[str, list[str]] = {}
+    current = ""
+    for line in str(text or "").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            current = stripped[3:].strip()
+            sections[current] = []
+            continue
+        if current:
+            sections[current].append(line)
+    return {name: "\n".join(lines) for name, lines in sections.items()}
+
+
+def validate_body_table_format(body_text: str) -> QualityDecision:
+    """Permanent table-first contract for data insight article bodies.
+
+    User policy (2026-05-16): numeric data, comparisons, and evidence in
+    article bodies must be table-first. Short prose such as ``ひとこと`` is
+    allowed, but ``## データ`` and evidence/comparison sections must not fall
+    back to bullet-only text.
+    """
+    text = str(body_text or "")
+    if "<table" in text.lower() and "</table>" in text.lower():
+        return ok(format="html_table")
+    if not _has_markdown_table(text):
+        return block(
+            STATUS_TABLE_FORMAT,
+            "missing_markdown_table",
+        )
+
+    sections = _markdown_sections(text)
+    for name, section in sections.items():
+        normalized = name.replace(" ", "")
+        requires_table = (
+            normalized == "データ"
+            or normalized == "このデータについて"
+            or "ランキング" in normalized
+            or "ranking" in normalized.lower()
+            or "比較" in normalized
+        )
+        if not requires_table:
+            continue
+        if not _has_markdown_table(section):
+            return block(
+                STATUS_TABLE_FORMAT,
+                "section_without_table",
+                section=name,
+            )
+        if normalized == "データ":
+            bullet_lines = [
+                line.strip() for line in section.splitlines()
+                if line.lstrip().startswith(("- ", "* "))
+            ]
+            if bullet_lines:
+                return block(
+                    STATUS_TABLE_FORMAT,
+                    "data_section_uses_bullets",
+                    section=name,
+                    bullet_count=len(bullet_lines),
+                )
+    return ok(format="markdown_table")
+
+
 def validate_player_snapshot_article(
     conn: sqlite3.Connection,
     article: dict[str, Any],
@@ -389,11 +473,17 @@ def validate_player_snapshot_article(
     )
     if not evidence.allowed:
         return evidence
+    table = validate_body_table_format(
+        article.get("body_md") or article.get("body_html") or ""
+    )
+    if not table.allowed:
+        return table
     return ok(
         freshness=freshness.details,
         coverage=coverage.details,
         sample=sample.details,
         evidence=evidence.details,
+        table=table.details,
     )
 
 
@@ -425,7 +515,12 @@ def validate_counting_article(article: dict[str, Any]) -> QualityDecision:
     )
     if not evidence.allowed:
         return evidence
-    return ok(team_coverage=team_coverage, league_total=league_total)
+    table = validate_body_table_format(
+        article.get("body_md") or article.get("body_html") or ""
+    )
+    if not table.allowed:
+        return table
+    return ok(team_coverage=team_coverage, league_total=league_total, table=table.details)
 
 
 def validate_team_metric_article(article: dict[str, Any]) -> QualityDecision:
@@ -446,7 +541,12 @@ def validate_team_metric_article(article: dict[str, Any]) -> QualityDecision:
     )
     if not evidence.allowed:
         return evidence
-    return ok(league_total=league_total)
+    table = validate_body_table_format(
+        article.get("body_md") or article.get("body_html") or ""
+    )
+    if not table.allowed:
+        return table
+    return ok(league_total=league_total, table=table.details)
 
 
 def validate_basic_article(article: dict[str, Any]) -> QualityDecision:
@@ -458,4 +558,9 @@ def validate_basic_article(article: dict[str, Any]) -> QualityDecision:
     )
     if not evidence.allowed:
         return evidence
-    return ok()
+    table = validate_body_table_format(
+        article.get("body_md") or article.get("body_html") or ""
+    )
+    if not table.allowed:
+        return table
+    return ok(table=table.details)

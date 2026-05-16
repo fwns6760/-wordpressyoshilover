@@ -504,9 +504,11 @@ def test_defense_uzr_article_uses_team_comparison_table(tmp_path):
             "baseline_value": "position=遊 league_RF_baseline=0.854",
         })
 
-        assert article["title"].startswith(
-            "【巨人データ】セ・リーグ球団別 遊撃守備の簡易UZR、巨人 "
-        )
+        assert article["title"].startswith("【巨人データ】泉口友汰の遊撃守備、簡易UZR ")
+        assert "で巨人" in article["title"]
+        assert "/6位" in article["title"]
+        assert "（直近30日）" in article["title"]
+        assert "セ・リーグ球団別" not in article["title"]
         assert "UZR_proxy" not in article["title"]
         assert "| 順位 | 球団 | 簡易UZR | 守備機会 | アウト化率 |" in article["body_md"]
         assert '<span style="color:#c0392b"><strong>巨人 ★</strong></span>' in article["body_md"]

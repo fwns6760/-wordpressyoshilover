@@ -55,6 +55,7 @@ Active folder is intentionally narrow. 2026-05-08 朝の「0 publish 0 mail」�
 | **keep active** | `229-gemini-cost-governor-and-llm-call-reduction.md` | still needed as the cost-reduction parent; next action depends on fetcher 100% / ledger observation. |
 | **social video full-connect tickets** | `318-A-INGEST-youtube-source-registry-to-intake.md`, `318-B-INGEST-social-video-notice-pipeline-connection.md`, `318-C-QA-social-video-safe-title-fallback.md`, `318-D-INGEST-instagram-registered-url-intake.md`, `318-E-QA-social-video-full-connect-regression-pack.md` | 2026-05-10 user GOでdoc-only分割起票。318-C safe title fallback は repo実装 + full pytest PASS、`doc/active/` で REVIEW_NEEDED。318-A/B/D/E は `doc/waiting/` のまま。publish/mail/scheduler/env/deploy/X/SEOは不可触。 |
 | **quality next-publish dedup review** | `319-QA-fetcher-topic-dedup-and-slot-fill.md` | 自動起動時に同一話題の重複記事で10枠を消費しないための narrow QA ticket。head/bat contact 事故の再現テスト赤→緑、related/full pytest green。diff review + commit 判断待ち。publish/mail/scheduler/env/Cloud Run/SEO/source追加は不可触。 |
+| **quality cross-media duplicate follow-up** | `364-QA-cross-family-same-event-dedup.md` | 報知 / スポニチ / デイリー等が同じ巨人ニュースを別タイトルで出す穴を扱う。既存 319/339/334/363 は対象が狭く、2媒体以上の同一選手・同一出来事を event_key で止める層が未実装。GitHub Issue 連動、実装前 ticket。 |
 | **quality source excerpt follow-up** | `323-QA-source-body-excerpt-clean-truncation.md` | `314-QA-rss-source-body-excerpt-followup` 関連。ブログ本文の `📖 本文抜粋` が600文字化後も途中切れ / UI・関連記事混入に見える問題を狭く扱う。publish/mail/scheduler/env/Cloud Run/X/SEO/featured_media は不可触。 |
 | **waiting** | `205-gcp-runtime-drift-audit.md`, `238-night-draft-only-and-morning-decision-report.md`, `288-INGEST-source-coverage-expansion.md` | still useful, but not part of the immediate article-body hallucination fix. `288` remains source-add HOLD; only Phase 0 repo-only audit / dry-run evidence may advance doc-only. |
 | **INSIGHT lane (342 ready full-12team, 343 phase-4 done)** | `342-INSIGHT-data-driven-ranking-auto-publish.md`, `343-INSIGHT-007-data-population-audit-and-backfill.md` | 343 Phase 4 (12 球団 team-aware roster) LIVE: NPB 公式 scrape で `config/npb_12team_roster.json` 1071 entry 生成、`fill_canonical_team_aware` で 5027 row 補完、production DB players 21→462 (12 球団全部 32-43 人)、advanced_metric_snapshots 122→6394 (50x)。image `insight-nightly:343c` deploy 済、次 nightly 以降も自動 fill 動作。342 status `READY_FOR_PHASE_1_IMPL_FULL_12TEAM`、初版 4 候補全部 (A1 月次 OPS / B2 守備 UZR / B1 12 球団 top 30 / E1 直近 hot/cold) data 揃い、user GO で impl 着手可能。GH Issue #21(342) + #23(343)。 |
@@ -1900,6 +1901,17 @@ git add -A禁止。
 - **方針**: global title-only reuse は誤吸収 risk があるため入れない。lineup / pregame / postgame / rainout slide / player status / player quote / manager quote の高確度 family だけ、同一 fire 内で別 URL 同 title なら 2 本目を `post_id=0` で skip する。
 - **tests**: py_compile PASS、dedup + reliability targeted は 36 passed / 3 xfailed / 3 warnings / 3 subtests passed。lineup 周辺込みの追加 targeted は 79 passed / 3 xfailed / 3 warnings / 3 subtests passed。初回 test は既存 logger.info 併発を見落として 1 failure、assert を「期待ログが含まれる」に修正済み。
 - **deploy**: commit `10ae4ef`、Cloud Build `7a9f0bc1-439f-43ee-9a84-63a0df766fd1` SUCCESS、image `yoshilover-fetcher:363-cross-source-10ae4ef`、digest `sha256:53dd60aa908d483c61cf2b5756706b70d8ea67b0a29335a7a3ba7d051152d40a`、revision `yoshilover-fetcher-00400-f29`、traffic 100%、service generation `542`、`/health` OK。Scheduler / env / Secret / 既存 WP post / X / SNS は未変更。GitHub Issue #32 は日本語化して close。
+
+### 364-QA-cross-family-same-event-dedup
+
+- **alias**: -
+- **status**: READY / **priority**: high
+- **owner**: Codex / **lane**: B
+- **doc_path**: `doc/active/364-QA-cross-family-same-event-dedup.md`
+- **背景**: 報知 / スポニチ / デイリー / 東スポなどが同じ巨人ニュースを別タイトル・別URLで出すと、同一URL dedup や 363 の同一タイトル dedup では止まらない。既存 319 は事故系 topic key に限定、339 は同 family X+Web 限定、334 は 3媒体以上の選手発言 digest 限定。
+- **方針**: AI 類似判定は使わず、同一日/同一試合 + 同じ選手 literal + 明確な出来事 token + 別 source family の `cross_family_event_key` で、2媒体以上の同一ニュースだけ 1本に絞る。弱い token では止めない。
+- **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/33
+- **acceptance**: cross-family same player same event は 1本だけ通す。different player/event は両方残す。skip は構造化ログに残す。Scheduler / env / Secret / WP既存記事 / X / SNS / mail 条件は変更しない。
 
 ## marketing board
 

@@ -85,6 +85,10 @@ test: deploy 前 data-insight 関連 pytest 231 passed。full unittest は既存
 
 様子見リスク: 記事減りすぎ / まだ多い / mail過多 / 既存投稿 backfill 未実装 / title期間必須 runtime guard の live 観察待ち。次 action は次回 Scheduler 自然 fire のログ観察。
 
+### x-post-mail scheduler 403 fix (2026-05-16 13:40 JST)
+
+353〜355 の X投稿候補 mail lane は code / manual execute / mail send / GCS dedup write は成功していたが、07:00 / 12:00 の自然 Scheduler fire が HTTP 403 `PERMISSION_DENIED` で失敗。原因は `x-post-mail-*` Scheduler jobs の OAuth service account が `seo-scheduler-invoker@baseballsite.iam.gserviceaccount.com` になっていたこと。正常稼働中の `data-insight-*` と同じ `487178857517-compute@developer.gserviceaccount.com` へ 5 jobs だけ更新済み。schedule / env / Secret / Job image / mail body は未変更。手動 execute は追加 mail 回避のため未実行、次回自然 fire は 15:00 JST。
+
 ## 2026-05-14 EVENING session summary
 
 ### close 済(本 session)

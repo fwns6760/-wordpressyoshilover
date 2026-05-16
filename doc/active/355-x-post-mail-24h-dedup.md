@@ -276,6 +276,50 @@ python3 -m pytest tests/ --tb=short -q   # full baseline
 
 なし (production behaviour の意図しない退行 0 件、 pytest full 4862 pass / 0 fail、 deploy log 上 ERROR / WARNING ログなし、 mail 1 通 status=sent 配信完了、 GCS write `ok=True`)。 後続観察で出現すれば追記。
 
+## 6.1 2026-05-16 Scheduler 403 incident / fix
+
+### 発見
+
+- 2026-05-16 13:31 JST 時点で `x-post-mail-lane` latest execution は `x-post-mail-lane-qclg8` のまま。
+- 07:00 JST `x-post-mail-am-1` と 12:00 JST `x-post-mail-lunch` は Cloud Scheduler 側で実行試行済みだが、Cloud Run Job 実行は作成されていなかった。
+- Cloud Scheduler log:
+  - `x-post-mail-am-1`: HTTP 403 / `PERMISSION_DENIED`
+  - `x-post-mail-lunch`: HTTP 403 / `PERMISSION_DENIED`
+- 手動 execute / mail send / GCS dedup write は 2026-05-16 01:08 JST に成功済みなので、候補生成 code / mail send code ではなく Scheduler invoke 権限の問題。
+
+### 原因
+
+- 失敗していた `x-post-mail-*` Scheduler jobs の OAuth service account:
+  - `seo-scheduler-invoker@baseballsite.iam.gserviceaccount.com`
+- 正常稼働中の `data-insight-*` Scheduler jobs の OAuth service account:
+  - `487178857517-compute@developer.gserviceaccount.com`
+- `x-post-mail-*` 側だけ Cloud Run Job `x-post-mail-lane:run` を呼べず 403 になっていた。
+
+### 修正
+
+以下 5 jobs の OAuth service account だけを `487178857517-compute@developer.gserviceaccount.com` に更新。schedule / timezone / URI / Job image / env / Secret / mail body は変更なし。
+
+- `x-post-mail-am-1`: `0 7 * * *`
+- `x-post-mail-lunch`: `0 12 * * *`
+- `x-post-mail-afternoon`: `0 15 * * *`
+- `x-post-mail-evening`: `30 17 * * *`
+- `x-post-mail-postgame`: `30 22 * * *`
+
+### 検証
+
+- 更新後 describe で 5 jobs すべて:
+  - state: `ENABLED`
+  - OAuth service account: `487178857517-compute@developer.gserviceaccount.com`
+  - URI: `https://asia-northeast1-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/baseballsite/jobs/x-post-mail-lane:run`
+- 対象 test:
+  - `python3 -m pytest tests/test_x_post_mail.py tests/test_format_as_x_post.py tests/test_mail_delivery_bridge.py -q`
+  - `98 passed, 3 warnings, 6 subtests passed`
+
+### 未実行
+
+- 手動 `gcloud scheduler jobs run ...` / `gcloud run jobs execute x-post-mail-lane` は未実行。
+- 理由: 追加 mail を発生させないため。次回自然 fire (`x-post-mail-afternoon` 2026-05-16 15:00 JST) で確認する。
+
 ## 7. 追加した回帰テスト
 
 `tests/test_x_post_mail.py::TicketThreeFiftyFiveDedupTests` の 9 test (上記 §2 参照)。

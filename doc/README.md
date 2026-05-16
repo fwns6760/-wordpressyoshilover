@@ -1883,6 +1883,17 @@ git add -A禁止。
 - **production DB copy smoke**: `/tmp` copy のみで `NEW 15938 -> 822`、`EXPIRED 3856`、`DROPPED_DISABLED_SIGNAL 11257`、UZR 3 件は 1 件 draft candidate + 2 件 `DROPPED_METRIC_RUN_CAP`。
 - **deploy**: commit `80b87ea`、Cloud Build `67bcb6db-468d-45ff-887a-74ff6e830a70` SUCCESS、image `insight-nightly:362-queue-80b87ea`、digest `sha256:b05e30ece3a0d90062ecf6d38acb2d2b81d3511389ab98e75993d8634786d136`、Cloud Run Job generation `51`。Scheduler / env / Secret は未変更、`data-insight-*` 7 triggers ENABLED 確認。手動 execute は追加 publish/mail 回避のため未実行。
 
+### 363-QA-same-fire-cross-source-title-duplicate-stop
+
+- **alias**: -
+- **status**: REVIEW_NEEDED / **priority**: high
+- **owner**: Codex / **lane**: B
+- **doc_path**: `doc/active/363-QA-same-fire-cross-source-title-duplicate-stop.md`
+- **背景**: WP drafts `68478` / `68480` は別の東京巨人公式 X source URL だったが、title rewrite が同じ `巨人スタメン 巨人 vs DeNA 東京ドーム 14時試合開始` に潰した。ログは `title_collision_detected` / `same_fire_distinct_source_detected` を出していたが、既存コードは同一 source_url しか止めず、別 URL 同 title は作成していた。
+- **方針**: global title-only reuse は誤吸収 risk があるため入れない。lineup / pregame / postgame / rainout slide / player status / player quote / manager quote の高確度 family だけ、同一 fire 内で別 URL 同 title なら 2 本目を `post_id=0` で skip する。
+- **tests**: py_compile PASS、dedup + reliability targeted は 36 passed / 3 xfailed / 3 warnings / 3 subtests passed。lineup 周辺込みの追加 targeted は 79 passed / 3 xfailed / 3 warnings / 3 subtests passed。初回 test は既存 logger.info 併発を見落として 1 failure、assert を「期待ログが含まれる」に修正済み。
+- **deploy**: 未実施。Scheduler / env / Secret / 既存 WP post / X / SNS は未変更。
+
 ## marketing board
 
 - Marketing ticket source of truth: `doc/marketing/README.md`

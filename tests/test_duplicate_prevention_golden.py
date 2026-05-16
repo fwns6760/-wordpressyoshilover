@@ -64,7 +64,7 @@ class DuplicatePreventionGoldenTests(unittest.TestCase):
                 )
                 self.assertEqual(actual, case["expected_duplicate"])
 
-    def _run_same_fire_guard(self, rewritten_title, source_urls):
+    def _run_same_fire_guard(self, rewritten_title, source_urls, **kwargs):
         wp = FakeWPClient()
         logger = Mock()
         same_fire_source_urls = set()
@@ -81,9 +81,70 @@ class DuplicatePreventionGoldenTests(unittest.TestCase):
                     "<p>body</p>",
                     [673],
                     source_url,
+                    **kwargs,
                 )
             )
         return wp, logger, post_ids
+
+    def test_same_fire_lineup_title_collision_skips_second_source(self):
+        rewritten_title = "巨人スタメン 巨人 vs DeNA 東京ドーム 14時試合開始"
+        source_urls = [
+            "https://twitter.com/TokyoGiants/status/2055511381106098274",
+            "https://twitter.com/TokyoGiants/status/2055509985573163155",
+        ]
+
+        wp, logger, post_ids = self._run_same_fire_guard(
+            rewritten_title,
+            source_urls,
+            enrichment_category="試合速報",
+            enrichment_template_key="game_lineup",
+        )
+
+        self.assertEqual(post_ids, [900, 0])
+        self.assertEqual(len(wp.calls), 1)
+        self.assertEqual(wp.calls[0]["source_url"], source_urls[0])
+        logged = "\n".join(str(call.args[0]) for call in logger.info.call_args_list)
+        self.assertIn("same_fire_cross_source_title_duplicate_skip", logged)
+        self.assertIn(source_urls[1], logged)
+
+    def test_same_fire_player_quote_title_collision_skips_second_source(self):
+        rewritten_title = "坂本勇人「状態は上がっている」 関連発言"
+        source_urls = [
+            "https://hochi.news/articles/20260516-OHT1T50001.html",
+            "https://www.sponichi.co.jp/baseball/news/2026/05/16/kiji/0001.html",
+        ]
+
+        wp, logger, post_ids = self._run_same_fire_guard(
+            rewritten_title,
+            source_urls,
+            enrichment_category="選手情報",
+            enrichment_template_key="player_quote",
+        )
+
+        self.assertEqual(post_ids, [900, 0])
+        self.assertEqual(len(wp.calls), 1)
+        logged = "\n".join(str(call.args[0]) for call in logger.info.call_args_list)
+        self.assertIn("same_fire_cross_source_title_duplicate_skip", logged)
+
+    def test_same_fire_generic_title_collision_still_observes_only(self):
+        rewritten_title = "巨人ニュース"
+        source_urls = [
+            "https://example.com/general/1",
+            "https://example.com/general/2",
+        ]
+
+        wp, logger, post_ids = self._run_same_fire_guard(rewritten_title, source_urls)
+
+        self.assertEqual(post_ids, [900, 901])
+        self.assertEqual(len(wp.calls), 2)
+        self.assertIn(
+            (
+                "same_fire_distinct_source_detected source_url=%s rewritten_title=%s",
+                source_urls[1],
+                rewritten_title,
+            ),
+            [call.args for call in logger.info.call_args_list],
+        )
 
     @pytest.mark.xfail(reason="pre-existing duplicate-prevention regression, baseline-confirmed at e298fa4; tracked separately", strict=False)
     def test_same_fire_distinct_farm_sources_split_post_ids(self):

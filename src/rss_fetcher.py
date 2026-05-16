@@ -19582,6 +19582,45 @@ def _maybe_insert_x_outbound_article_excerpt(
     return result
 
 
+_SAME_FIRE_CROSS_SOURCE_TITLE_SKIP_TEMPLATE_PREFIXES = (
+    "game_lineup",
+    "lineup",
+    "farm_lineup",
+    "pregame",
+    "game_postgame",
+    "game_rainout_slide",
+    "player_status",
+    "player_quote",
+    "manager_quote",
+)
+
+
+def _should_skip_same_fire_cross_source_title_duplicate(
+    *,
+    draft_title: str,
+    enrichment_category: str,
+    enrichment_template_key: str,
+) -> bool:
+    template_key = (enrichment_template_key or "").strip()
+    if any(
+        template_key == prefix or template_key.startswith(f"{prefix}_")
+        for prefix in _SAME_FIRE_CROSS_SOURCE_TITLE_SKIP_TEMPLATE_PREFIXES
+    ):
+        return True
+
+    title = draft_title or ""
+    if enrichment_category == "試合速報" and any(
+        token in title for token in ("スタメン", "試合後", "試合内容", "スライド登板")
+    ):
+        return True
+    if enrichment_category in {"選手情報", "首脳陣"} and any(
+        token in title
+        for token in ("関連発言", "関連情報", "登録抹消", "一軍合流", "昇格・復帰")
+    ):
+        return True
+    return False
+
+
 def _create_draft_with_same_fire_guard(
     wp: WPClient,
     logger: logging.Logger,
@@ -19618,16 +19657,30 @@ def _create_draft_with_same_fire_guard(
         }, ensure_ascii=False))
         return 0
     if normalized_source_url:
-        same_fire_source_urls.add(normalized_source_url)
         if rewritten_title_norm and len(rewritten_title_norm) > 5:
             seen_sources = same_fire_title_sources.setdefault(rewritten_title_norm, set())
             if seen_sources and normalized_source_url not in seen_sources:
+                if _should_skip_same_fire_cross_source_title_duplicate(
+                    draft_title=draft_title,
+                    enrichment_category=enrichment_category,
+                    enrichment_template_key=enrichment_template_key,
+                ):
+                    logger.info(json.dumps({
+                        "event": "same_fire_cross_source_title_duplicate_skip",
+                        "source_url": normalized_source_url,
+                        "draft_title": draft_title[:80],
+                        "template_key": enrichment_template_key,
+                        "category": enrichment_category,
+                        "seen_source_count": len(seen_sources),
+                    }, ensure_ascii=False))
+                    return 0
                 logger.info(
                     "same_fire_distinct_source_detected source_url=%s rewritten_title=%s",
                     normalized_source_url,
                     draft_title,
                 )
             seen_sources.add(normalized_source_url)
+        same_fire_source_urls.add(normalized_source_url)
     # NOMOTOKE-RSS-PIPELINE-ENRICHMENT-001 (Phase 3): apply
     # post-body enrichment when the body was rendered by the
     # nomotoke renderer (5 ALLOWED templates). The conditional gate

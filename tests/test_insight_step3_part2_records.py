@@ -472,27 +472,27 @@ def test_defense_titles_are_reader_friendly():
     assert "平均超え" not in fielding_article["title"]
 
 
-def test_defense_uzr_article_uses_team_comparison_table(tmp_path):
-    """UZR 記事は個人の箇条書きではなく、球団別の表形式比較にする。"""
+def test_defense_uzr_article_uses_player_comparison_table(tmp_path):
+    """選手主語の UZR 記事は球団別ではなく、選手別の表形式比較にする。"""
     from src.analysis import anomaly_article_publisher as pub
 
     conn = _open_db(tmp_path)
     try:
         _seed_game(conn, game_id="def-g", game_date="2026-05-16")
-        for team, opps, outs, errors in [
-            ("g", 100, 75, 1),
-            ("t", 100, 82, 1),
-            ("s", 100, 67, 1),
-            ("c", 100, 79, 1),
-            ("db", 100, 70, 1),
-            ("d", 100, 64, 1),
+        for team, player, opps, outs, errors in [
+            ("g", "泉口友汰", 33, 23, 1),
+            ("t", "阪神遊撃", 30, 26, 1),
+            ("s", "ヤクルト遊撃", 28, 19, 1),
+            ("c", "広島遊撃", 31, 25, 1),
+            ("db", "DeNA遊撃", 29, 20, 1),
+            ("d", "中日遊撃", 30, 18, 1),
         ]:
             conn.execute(
                 "INSERT INTO defense_opportunities "
                 "(game_id, team_code, position, player_canonical, opportunities, "
                 "converted_outs, hits_allowed, errors) "
                 "VALUES (?, ?, '遊', ?, ?, ?, 0, ?)",
-                ("def-g", team, f"{team}-ss", opps, outs, errors),
+                ("def-g", team, player, opps, outs, errors),
             )
         conn.commit()
 
@@ -504,18 +504,74 @@ def test_defense_uzr_article_uses_team_comparison_table(tmp_path):
             "baseline_value": "position=遊 league_RF_baseline=0.854",
         })
 
-        assert article["title"].startswith("【巨人データ】泉口友汰の遊撃守備、巨人は簡易UZR ")
-        assert "巨人は簡易UZR" in article["title"]
-        assert "でセ・リーグ" in article["title"]
-        assert "/6位" in article["title"]
+        assert article["title"].startswith("【巨人データ】泉口友汰、遊撃守備の簡易UZR ")
+        assert "セ・リーグ選手別" in article["title"]
+        assert "巨人は簡易UZR" not in article["title"]
         assert "（直近30日）" in article["title"]
         assert "セ・リーグ球団別" not in article["title"]
         assert "UZR_proxy" not in article["title"]
-        assert "| 順位 | 球団 | 簡易UZR | 守備機会 | アウト化率 |" in article["body_md"]
-        assert '<span style="color:#c0392b"><strong>巨人 ★</strong></span>' in article["body_md"]
-        assert "| 関連した巨人選手 | 泉口友汰 |" in article["body_md"]
-        assert "| 計算式 | 球団アウト化率" in article["body_md"]
-        assert "セ・リーグ同守備位置の球団別比較" in article["body_md"]
+        assert "| 順位 | 選手 | 球団 | 簡易UZR | 守備機会 | アウト化率 |" in article["body_md"]
+        assert '<span style="color:#c0392b"><strong>泉口友汰 ★</strong></span>' in article["body_md"]
+        assert "| 選手 | **泉口友汰** / セ・リーグ選手別 " in article["body_md"]
+        assert "| 計算式 | 選手アウト化率" in article["body_md"]
+        assert "セ・リーグ同守備位置の選手別比較" in article["body_md"]
+        assert "セ・リーグ同守備位置の球団別比較" not in article["body_md"]
+    finally:
+        conn.close()
+
+
+def test_defense_uzr_article_falls_back_to_giants_player_comparison(tmp_path):
+    """他球団の選手名が薄い場合も、球団順位へ戻さず巨人内選手比較にする。"""
+    from src.analysis import anomaly_article_publisher as pub
+
+    conn = _open_db(tmp_path)
+    try:
+        _seed_game(conn, game_id="def-g", game_date="2026-05-16")
+        for player, opps, outs, errors in [
+            ("平山功太", 36, 13, 0),
+            ("中山礼都", 15, 4, 0),
+        ]:
+            conn.execute(
+                "INSERT INTO defense_opportunities "
+                "(game_id, team_code, position, player_canonical, opportunities, "
+                "converted_outs, hits_allowed, errors) "
+                "VALUES (?, 'g', '右', ?, ?, ?, 0, ?)",
+                ("def-g", player, opps, outs, errors),
+            )
+        for team, opps, outs, errors in [
+            ("t", 40, 31, 1),
+            ("s", 38, 29, 1),
+            ("c", 41, 28, 1),
+            ("db", 39, 30, 1),
+            ("d", 37, 27, 1),
+        ]:
+            conn.execute(
+                "INSERT INTO defense_opportunities "
+                "(game_id, team_code, position, player_canonical, opportunities, "
+                "converted_outs, hits_allowed, errors) "
+                "VALUES (?, ?, '右', NULL, ?, ?, 0, ?)",
+                ("def-g", team, opps, outs, errors),
+            )
+        conn.commit()
+
+        article = pub.render_defense_uzr_article(conn, {
+            "player_canonical": "中山礼都",
+            "magnitude": -0.095,
+            "notes": "position=右 metric=UZR_proxy scope=last_30d",
+            "current_value": "RF_proxy=0.267 opportunities=15 converted_outs=4 errors=0",
+            "baseline_value": "position=右 league_RF_baseline=0.362",
+        })
+
+        assert article["title"].startswith("【巨人データ】中山礼都、右翼守備の簡易UZR ")
+        assert "巨人選手別" in article["title"]
+        assert "セ・リーグ球団別" not in article["title"]
+        assert "巨人は簡易UZR" not in article["title"]
+        assert "| 順位 | 選手 | 球団 | 簡易UZR | 守備機会 | アウト化率 |" in article["body_md"]
+        assert "## 巨人選手別ランキング（右翼守備・直近30日）" in article["body_md"]
+        assert '<span style="color:#c0392b"><strong>中山礼都 ★</strong></span>' in article["body_md"]
+        assert "巨人の同守備位置の選手別比較" in article["body_md"]
+        assert "チーム別アウト化率" not in article["body_md"]
+        assert "セ・リーグ同守備位置の球団別比較" not in article["body_md"]
     finally:
         conn.close()
 

@@ -1886,6 +1886,19 @@ git add -A禁止。
 - **tests**: `test_insight_step3_part2_records.py` + `test_insight_quality_gate.py` 44 passed、関連 4 file 102 passed、py_compile / compileall / AST / scoped diff-check PASS。production DB copy preview PASS。
 - **deploy**: commit `a9b208e`、Cloud Build `b027f92a-b3f7-4aed-b448-cdded17740fb` SUCCESS、image `insight-nightly:361-title-league-a9b208e`、digest `sha256:b2fb813a542a0ce7b79ea8c395f939fa3027001ce88f97bca123c2c65877ff69`、Job generation `50`。Scheduler / env / Secret は未変更、`data-insight-*` 7 triggers ENABLED 確認。手動 execute は追加 publish/mail 回避のため未実行。
 
+### 373-INSIGHT-defense-player-comparison-table
+
+- **alias**: -
+- **status**: REVIEW_NEEDED / **priority**: high
+- **owner**: Codex / **lane**: B
+- **doc_path**: `doc/active/373-INSIGHT-defense-player-comparison-table.md`
+- **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/42
+- **背景**: `68665` は title が `中山礼都` 主語なのに、本文が `巨人` の球団順位表になっていた。選手主語の守備 anomaly 記事で球団別比較を優先した 360/361 の副作用。
+- **方針**: UZR / 守備率の守備系 anomaly は、まず同ポジションの選手別表にする。セ・リーグ選手名が十分なら `セ・リーグ選手別`、他球団の選手名が薄い場合も球団順位へ戻さず `巨人選手別` に fallback。title は選手名 / 指標値 / 順位 / 期間を維持。
+- **WP repair**: `68665` は status `publish` 確認後、title/content のみ更新。新 title `【巨人データ】中山礼都、右翼守備の簡易UZR -0.067で巨人選手別2/2位（直近30日）`、本文 `巨人選手別ランキング`、旧 `セ・リーグ球団別` / `巨人は簡易UZR` なし。status は `publish` 維持。
+- **tests**: py_compile PASS、compileall PASS、AST PASS、関連 4 file `103 passed, 3 warnings`。production DB copy preview PASS。
+- **deploy**: pending。Scheduler / env / Secret / X / SNS / mail は変更しない。手動 execute は追加 publish/mail 回避のため実行しない。
+
 ### 362-INSIGHT-queue-cleanup-and-metric-run-cap
 
 - **alias**: -

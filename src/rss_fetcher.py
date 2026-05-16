@@ -3544,6 +3544,103 @@ def _candidate_related_story_subtype(post: dict, category: str, has_game: bool) 
     return _resolve_related_story_subtype(title, summary, category, base_subtype, has_game)
 
 
+_SOCIAL_RELATED_DETAIL_MARKERS: tuple[str, ...] = (
+    "ブルペンは家族",
+    "家族構成",
+    "ブルペン",
+    "おじ",
+    "お父さん",
+    "猛打賞",
+    "いとこ",
+    "タイムリー",
+    "適時打",
+    "決勝打",
+    "サヨナラ",
+    "ホームラン",
+    "本塁打",
+    "完封",
+    "完投",
+    "無失点",
+    "神生還",
+    "スイム",
+    "復帰",
+    "再登録",
+    "登録抹消",
+    "昇格",
+    "合流",
+    "フリー打撃",
+    "救急搬送",
+    "緊急降板",
+    "スタメン",
+    "スライド登板",
+)
+_SOCIAL_RELATED_QUOTE_RE = _re.compile(r"[「『]([^」』]{3,60})[」』]")
+_SOCIAL_RELATED_NUMERIC_EVENT_RE = _re.compile(
+    r"[0-9０-９]+(?:度目|勝目|セーブ|号|安打|打点|失点|回|連勝|連敗)"
+)
+
+
+def _is_social_related_posts_strict_target(current_url: str) -> bool:
+    return bool(_re.search(r"https?://(?:x|twitter)\.com/", current_url or "", _re.IGNORECASE))
+
+
+def _normalize_related_detail_token(value: str) -> str:
+    token = _normalize_title_for_dedupe(value or "")
+    return token.replace(" ", "")
+
+
+def _social_related_detail_tokens(text: str, *, player_subject: str = "") -> set[str]:
+    clean = _collapse_ws(_html.unescape(_strip_html(text or "")))
+    if not clean:
+        return set()
+
+    player_norms = {
+        _normalize_related_detail_token(player_subject),
+    }
+    try:
+        player_norms.update(_normalize_related_detail_token(name) for name in _matching_giants_roster_names(clean))
+    except Exception:
+        pass
+    player_norms.discard("")
+
+    tokens: set[str] = set()
+    for quote in _SOCIAL_RELATED_QUOTE_RE.findall(clean):
+        normalized_quote = _normalize_related_detail_token(quote)
+        if normalized_quote and normalized_quote not in player_norms:
+            tokens.add(normalized_quote)
+    for marker in _SOCIAL_RELATED_DETAIL_MARKERS:
+        if marker in clean:
+            normalized_marker = _normalize_related_detail_token(marker)
+            if normalized_marker and normalized_marker not in player_norms:
+                tokens.add(normalized_marker)
+    for match in _SOCIAL_RELATED_NUMERIC_EVENT_RE.finditer(clean):
+        normalized_match = _normalize_related_detail_token(match.group(0))
+        if normalized_match:
+            tokens.add(normalized_match)
+    return tokens
+
+
+def _social_related_has_topic_detail_overlap(
+    *,
+    current_title: str,
+    current_summary: str,
+    candidate_title: str,
+    candidate_excerpt: str,
+    player_subject: str,
+) -> bool:
+    current_tokens = _social_related_detail_tokens(
+        f"{current_title} {current_summary}",
+        player_subject=player_subject,
+    )
+    if not current_tokens:
+        return False
+    candidate_tokens = _social_related_detail_tokens(
+        f"{candidate_title} {candidate_excerpt}",
+        player_subject=player_subject,
+    )
+    return bool(current_tokens & candidate_tokens)
+
+
 def _search_recent_publish_posts(
     wp: WPClient,
     *,
@@ -3585,6 +3682,7 @@ def _select_related_posts(
     category_posts: list[dict],
     player_subject: str,
     current_title: str,
+    current_summary: str,
     current_url: str,
     category: str,
     article_subtype: str,
@@ -3598,6 +3696,7 @@ def _select_related_posts(
     selected: list[dict] = []
     seen_ids: set[int] = set()
     seen_links: set[str] = set()
+    strict_social_topic = _is_social_related_posts_strict_target(current_url)
 
     def _maybe_add(post: dict, *, require_player: bool = False, require_subtype: bool = False) -> None:
         if len(selected) >= max_items:
@@ -3605,6 +3704,7 @@ def _select_related_posts(
         title_text = _extract_post_title_text(post)
         if not title_text:
             return
+        excerpt_text = _extract_post_excerpt_text(post)
         title_norm = WPClient._normalize_title(title_text)
         link = str((post or {}).get("link") or "").strip()
         post_id = int((post or {}).get("id") or 0)
@@ -3627,6 +3727,15 @@ def _select_related_posts(
             candidate_subtype = _candidate_related_story_subtype(post, category, has_game)
             if candidate_subtype != article_subtype:
                 return
+
+        if strict_social_topic and not _social_related_has_topic_detail_overlap(
+            current_title=current_title,
+            current_summary=current_summary,
+            candidate_title=title_text,
+            candidate_excerpt=excerpt_text,
+            player_subject=player_subject,
+        ):
+            return
 
         selected.append(
             {
@@ -3711,6 +3820,7 @@ def _find_related_posts_for_article(
         category_posts=category_posts,
         player_subject=player_subject,
         current_title=title,
+        current_summary=summary,
         current_url=current_url,
         category=category,
         article_subtype=article_subtype,
@@ -20573,6 +20683,11 @@ _SAME_FAMILY_DEDUP_EVENT_PATTERNS: tuple[str, ...] = (
     r"完封(?:勝ち|勝利)?",
     r"完投(?:勝利|勝ち)?",
     r"\d+回\d+失点",
+    r"ブルペンは家族",
+    r"家族構成",
+    r"猛打賞",
+    r"適時打",
+    r"タイムリー",
 )
 _SAME_FAMILY_DEDUP_EVENT_RES: tuple = tuple(
     _re.compile(p) for p in _SAME_FAMILY_DEDUP_EVENT_PATTERNS
@@ -20580,7 +20695,7 @@ _SAME_FAMILY_DEDUP_EVENT_RES: tuple = tuple(
 
 
 def _same_family_x_web_dedup_enabled() -> bool:
-    val = (os.getenv(_SAME_FAMILY_X_WEB_DEDUP_ENV_FLAG) or "0").strip().lower()
+    val = (os.getenv(_SAME_FAMILY_X_WEB_DEDUP_ENV_FLAG) or "1").strip().lower()
     return val in {"1", "true", "yes", "on"}
 
 
@@ -20592,6 +20707,10 @@ def _detect_event_token_for_dedup(text: str) -> str:
         m = pat.search(text)
         if m:
             return m.group(0)
+    for quote in _re.findall(r"[「『]([^」』]{4,60})[」』]", text or ""):
+        clean = _collapse_ws(quote).strip(" ・、。")
+        if clean and not any(marker in clean for marker in QUOTE_SKIP_MARKERS):
+            return clean
     return ""
 
 
@@ -20615,13 +20734,13 @@ def _enrich_candidate_for_same_family_dedup(candidate: Mapping[str, Any]) -> dic
 def _aggregate_same_family_x_web_candidates(candidates: list[dict]) -> list[dict]:
     """#18 / 339-INGEST: 同 family の X 速報 + Web 記事を 1 件に統合する。
 
-    flag OFF (default) → 即 candidates を返す (no-op、cost 0、rollback 経路)。
+    ENABLE_SAME_FAMILY_X_WEB_DEDUP=0 → 即 candidates を返す (rollback 経路)。
     flag ON → 同 source_family + 同 player_name + 同 event_token の
     (X candidate, Web candidate) ペアを検出:
-      - kept = Web 記事 (本文長、引用 block 用 raw_html を持つ)
-      - consumed = X 投稿 (WP post 作成 skip)
-      - kept Web に same_family_x_consumed payload (X URL list) を tag
-        (body renderer が後段で optional に embed できるようにする)
+      - kept = X 投稿 (WP 本文の主素材は X embed)
+      - consumed = Web 記事 (WP post 作成 skip)
+      - kept X に Web source title / summary を寄せる
+        (title 劣化と X/Web 二重 draft を同時に止める)
 
     334-QA digest と直交 (本 dedup → digest aggregation の順)。
     例外時は main flow を壊さない。
@@ -20648,7 +20767,8 @@ def _aggregate_same_family_x_web_candidates(candidates: list[dict]) -> list[dict
         groups.setdefault(key, []).append(i)
 
     consumed_indices: set[int] = set()
-    parent_x_payload: dict[int, list[dict]] = {}
+    parent_web_payload: dict[int, list[dict]] = {}
+    parent_web_projection: dict[int, dict[str, Any]] = {}
     for key, indices in groups.items():
         if len(indices) < 2:
             continue
@@ -20656,24 +20776,47 @@ def _aggregate_same_family_x_web_candidates(candidates: list[dict]) -> list[dict
         web_indices = [i for i in indices if enriched[i].get("source_type") != "social_news"]
         if not x_indices or not web_indices:
             continue
+        x_parent = max(
+            x_indices,
+            key=lambda i: len(str(enriched[i].get("title") or "")) + len(str(enriched[i].get("summary") or "")),
+        )
         web_parent = max(
             web_indices,
             key=lambda i: len(str(enriched[i].get("summary") or "")),
         )
-        for x_i in x_indices:
-            consumed_indices.add(x_i)
-            parent_x_payload.setdefault(web_parent, []).append({
-                "url": str(enriched[x_i].get("post_url") or ""),
-                "title": str(enriched[x_i].get("title") or ""),
-                "source_handle": str(enriched[x_i].get("source_handle") or ""),
+        for web_i in web_indices:
+            consumed_indices.add(web_i)
+            parent_web_payload.setdefault(x_parent, []).append({
+                "url": str(enriched[web_i].get("post_url") or ""),
+                "title": str(enriched[web_i].get("title") or enriched[web_i].get("raw_title") or ""),
+                "summary": str(enriched[web_i].get("summary") or ""),
+                "source_name": str(enriched[web_i].get("source_name") or ""),
             })
             log.info(
                 "same_family_x_web_consumed family=%s player=%s event=%s "
-                "x_url=%s web_url=%s",
+                "kept_x_url=%s consumed_web_url=%s",
                 key[0], key[1], key[2],
-                enriched[x_i].get("post_url"),
-                enriched[web_parent].get("post_url"),
+                enriched[x_parent].get("post_url"),
+                enriched[web_i].get("post_url"),
             )
+        web_title = str(
+            enriched[web_parent].get("raw_title")
+            or enriched[web_parent].get("title")
+            or enriched[x_parent].get("raw_title")
+            or enriched[x_parent].get("title")
+            or ""
+        ).strip()
+        merged_summary = _merge_source_summary([enriched[web_parent], enriched[x_parent]]) or str(
+            enriched[web_parent].get("summary")
+            or enriched[x_parent].get("summary")
+            or ""
+        )
+        parent_web_projection[x_parent] = {
+            "raw_title": web_title,
+            "title": web_title,
+            "summary": merged_summary,
+            "web_parent_index": web_parent,
+        }
 
     if not consumed_indices:
         return candidates
@@ -20682,9 +20825,27 @@ def _aggregate_same_family_x_web_candidates(candidates: list[dict]) -> list[dict
     for i, cand in enumerate(candidates):
         if i in consumed_indices:
             continue
-        if i in parent_x_payload:
+        if i in parent_web_payload:
             tagged = dict(cand)
-            tagged["same_family_x_consumed"] = parent_x_payload[i]
+            projection = parent_web_projection.get(i) or {}
+            if projection.get("title"):
+                tagged["raw_title"] = str(projection["title"])
+                tagged["title"] = str(projection["title"])
+            if projection.get("summary"):
+                tagged["summary"] = str(projection["summary"])
+            tagged["same_family_web_consumed"] = parent_web_payload[i]
+            history_urls = list(tagged.get("history_urls") or [])
+            history_title_norms = list(tagged.get("history_title_norms") or [])
+            for payload in parent_web_payload[i]:
+                url = str(payload.get("url") or "")
+                title = str(payload.get("title") or "")
+                if url:
+                    history_urls.append(url)
+                title_norm = _normalize_title_for_dedupe(title)
+                if title_norm:
+                    history_title_norms.append(title_norm)
+            tagged["history_urls"] = _dedupe_preserve_order(history_urls)
+            tagged["history_title_norms"] = _dedupe_preserve_order(history_title_norms)
             result.append(tagged)
         else:
             result.append(cand)
@@ -24859,7 +25020,7 @@ def _main(args, logger):
 
     prepared_entries = _aggregate_lineup_candidates(prepared_entries)
     # #18 / 339-INGEST: 同 family X 速報 + Web 記事 dedup (digest aggregation の前)。
-    # ENABLE_SAME_FAMILY_X_WEB_DEDUP=0 (default) で完全 no-op。
+    # ENABLE_SAME_FAMILY_X_WEB_DEDUP=0 で rollback no-op。
     prepared_entries = _aggregate_same_family_x_web_candidates(prepared_entries)
     # 334-QA Phase 2b: digest cluster detection + log のみ、candidate 不変。
     # ENABLE_PLAYER_VOICE_DIGEST_DETECTION=0 (default) で完全 no-op。

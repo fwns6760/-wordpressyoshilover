@@ -15,7 +15,8 @@ class SameFamilyXWebDedupFlagTests(unittest.TestCase):
     def tearDown(self):
         os.environ.pop(rss_fetcher._SAME_FAMILY_X_WEB_DEDUP_ENV_FLAG, None)
 
-    def test_flag_off_default_returns_input_unchanged(self):
+    def test_flag_zero_returns_input_unchanged(self):
+        os.environ[rss_fetcher._SAME_FAMILY_X_WEB_DEDUP_ENV_FLAG] = "0"
         candidates = [
             {
                 "post_url": "https://hochi.news/x.html",
@@ -45,7 +46,7 @@ class SameFamilyXWebDedupBehaviorTests(unittest.TestCase):
     def tearDown(self):
         os.environ.pop(rss_fetcher._SAME_FAMILY_X_WEB_DEDUP_ENV_FLAG, None)
 
-    def test_hochi_x_consumed_when_paired_with_hochi_web(self):
+    def test_hochi_web_consumed_when_paired_with_hochi_x(self):
         candidates = [
             {
                 "post_url": "https://hochi.news/articles/20260514.html",
@@ -62,10 +63,12 @@ class SameFamilyXWebDedupBehaviorTests(unittest.TestCase):
         ]
         result = rss_fetcher._aggregate_same_family_x_web_candidates(candidates)
         self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]["post_url"], "https://hochi.news/articles/20260514.html")
-        self.assertIn("same_family_x_consumed", result[0])
-        self.assertEqual(len(result[0]["same_family_x_consumed"]), 1)
-        self.assertIn("x.com/hochi_giants", result[0]["same_family_x_consumed"][0]["url"])
+        self.assertEqual(result[0]["post_url"], "https://x.com/hochi_giants/status/123")
+        self.assertEqual(result[0]["raw_title"], "坂本勇人がサヨナラホームラン")
+        self.assertIn("same_family_web_consumed", result[0])
+        self.assertEqual(len(result[0]["same_family_web_consumed"]), 1)
+        self.assertIn("hochi.news/articles", result[0]["same_family_web_consumed"][0]["url"])
+        self.assertIn("https://hochi.news/articles/20260514.html", result[0]["history_urls"])
 
     def test_different_family_pair_not_deduped(self):
         candidates = [
@@ -132,6 +135,34 @@ class SameFamilyXWebDedupBehaviorTests(unittest.TestCase):
         ]
         result = rss_fetcher._aggregate_same_family_x_web_candidates(candidates)
         self.assertEqual(len(result), 2)
+
+    def test_quote_event_token_pairs_x_and_web_and_uses_web_title(self):
+        candidates = [
+            {
+                "post_url": "https://twitter.com/hochi_giants/status/2055593793936560129",
+                "title": "マルティネス「ブルペンは家族」 関連発言",
+                "summary": "マルティネスが「ブルペンは家族」と語った。",
+                "source_type": "social_news",
+                "history_urls": ["https://twitter.com/hochi_giants/status/2055593793936560129"],
+            },
+            {
+                "post_url": "https://hochi.news/articles/20260516-OHT1T51321.html",
+                "title": "【巨人】「ブルペンは家族」鉄壁リリーフ陣の“家族構成”が判明　ライデル・マルティネスは「おじ」",
+                "summary": "マルティネスは自身の立ち位置を「おじくらい」と表現した。",
+                "source_type": "news",
+                "history_urls": ["https://hochi.news/articles/20260516-OHT1T51321.html"],
+            },
+        ]
+
+        result = rss_fetcher._aggregate_same_family_x_web_candidates(candidates)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["post_url"], "https://twitter.com/hochi_giants/status/2055593793936560129")
+        self.assertEqual(
+            result[0]["raw_title"],
+            "【巨人】「ブルペンは家族」鉄壁リリーフ陣の“家族構成”が判明　ライデル・マルティネスは「おじ」",
+        )
+        self.assertIn("https://hochi.news/articles/20260516-OHT1T51321.html", result[0]["history_urls"])
 
 
 class DetectEventTokenForDedupTests(unittest.TestCase):

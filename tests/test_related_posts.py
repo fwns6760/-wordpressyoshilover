@@ -192,6 +192,80 @@ class RelatedPostsTests(TestCase):
         self.assertNotEqual(queries[0], "田中")
         self.assertEqual([post["id"] for post in related], [102])
 
+    def test_social_related_posts_require_topic_detail_overlap(self):
+        player_posts = [
+            _post(
+                101,
+                "浦田俊輔、安打",
+                days_ago=1,
+                link="https://yoshilover.com/p101",
+                excerpt="浦田俊輔が安打を放った。",
+            ),
+            _post(
+                102,
+                "浦田俊輔が今季3度目の猛打賞",
+                days_ago=1,
+                link="https://yoshilover.com/p102",
+                excerpt="浦田俊輔が猛打賞を記録した。",
+            ),
+        ]
+
+        def search_posts(**kwargs):
+            if kwargs["search"] == "浦田俊輔":
+                return player_posts
+            return []
+
+        related = rss_fetcher._find_related_posts_for_article(
+            title="浦田俊輔「いとこが見に来ていたので打ってやろうと」今季3度目の猛打賞",
+            summary="浦田俊輔が今季3度目の猛打賞。いとこが見に来ていたと話した。",
+            category="選手情報",
+            article_subtype="player",
+            current_url="https://twitter.com/hochi_giants/status/2055583669096464476",
+            has_game=True,
+            wp_factory=DummyWP,
+            search_posts=search_posts,
+            now=datetime(2026, 4, 18, 12, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual([post["id"] for post in related], [102])
+
+    def test_social_related_posts_drop_same_category_unrelated_quote_articles(self):
+        category_posts = [
+            _post(
+                201,
+                "浦田俊輔「いとこが見に来ていたので打ってやろうと」",
+                days_ago=1,
+                link="https://yoshilover.com/68619",
+                excerpt="浦田俊輔が猛打賞を記録した。",
+            ),
+            _post(
+                202,
+                "平山功太「勝負をかけて」決勝ホームイン",
+                days_ago=1,
+                link="https://yoshilover.com/68613",
+                excerpt="平山功太が走塁を振り返った。",
+            ),
+        ]
+
+        def search_posts(**kwargs):
+            if kwargs["category_id"] == 663:
+                return category_posts
+            return []
+
+        related = rss_fetcher._find_related_posts_for_article(
+            title="マルティネス「ブルペンは家族」巨人リリーフ陣の“家族構成”",
+            summary="マルティネスがブルペンを家族と表現し、自身はおじくらいと話した。",
+            category="選手情報",
+            article_subtype="player",
+            current_url="https://twitter.com/hochi_giants/status/2055593793936560129",
+            has_game=True,
+            wp_factory=DummyWP,
+            search_posts=search_posts,
+            now=datetime(2026, 4, 18, 12, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(related, [])
+
     def test_related_posts_section_is_omitted_when_empty(self):
         self.assertEqual(rss_fetcher._build_related_posts_section([]), "")
 

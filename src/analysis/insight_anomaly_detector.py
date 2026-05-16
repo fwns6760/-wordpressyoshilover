@@ -1124,6 +1124,8 @@ def detect_milestone_crossed(
     window_label = f"milestone_{snapshot_date}"
 
     for metric, thresholds in _MILESTONE_THRESHOLDS_BATTER.items():
+        if not _wl.is_metric_allowed(metric):
+            continue
         rows = conn.execute(
             "SELECT player_canonical, metric_value, sample_size "
             "FROM advanced_metric_snapshots "
@@ -1156,6 +1158,8 @@ def detect_milestone_crossed(
                 inserted.append(cid)
 
     for metric, thresholds in _MILESTONE_THRESHOLDS_PITCHER_LOWER.items():
+        if not _wl.is_metric_allowed(metric):
+            continue
         rows = conn.execute(
             "SELECT player_canonical, metric_value, sample_size "
             "FROM advanced_metric_snapshots "

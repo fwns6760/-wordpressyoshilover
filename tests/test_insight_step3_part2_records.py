@@ -73,6 +73,19 @@ def _seed_pitching(conn, *, game_id, player_canonical, team_name,
     )
 
 
+def _seed_metric_snapshots(conn, *, snapshot_date, scope, metric, ranking):
+    """ranking = list of (player, team, value, sample, rank, total)."""
+    for player, team, value, sample, rank, total in ranking:
+        conn.execute(
+            "INSERT INTO advanced_metric_snapshots "
+            "(snapshot_date, scope, player_canonical, team_code, "
+            "metric_name, metric_value, sample_size, league_rank, league_total) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (snapshot_date, scope, player, team, metric, value, sample, rank, total),
+        )
+    conn.commit()
+
+
 # ─── cycle detection ─────────────────────────────────────────────────────
 
 
@@ -380,7 +393,7 @@ def test_record_renderer_no_hitter_title():
 
 
 def test_record_renderer_legacy_milestone_path_preserved():
-    """既存 path (数値 threshold milestone) も regression なし。"""
+    """数値 threshold milestone title も raw metric / 到達 title に戻さない。"""
     from src.analysis import anomaly_article_publisher as pub
     candidate = {
         "player_canonical": "30HR男",
@@ -389,8 +402,77 @@ def test_record_renderer_legacy_milestone_path_preserved():
         "magnitude": 30.0,
     }
     article = pub.render_milestone_crossed_article(None, candidate)
-    assert "シーズン HR 30 到達" in article["title"]
+    assert "本塁打30本" in article["title"]
+    assert "今シーズン" in article["title"]
+    assert "到達" not in article["title"]
     assert "30HR男" in article["title"]
+
+
+def test_record_renderer_era_uses_rank_period_and_no_reached_title(tmp_path):
+    """防御率は lower-is-better なので「3.0 到達」と書かない。"""
+    from src.analysis import anomaly_article_publisher as pub
+
+    conn = _open_db(tmp_path)
+    try:
+        _seed_metric_snapshots(
+            conn,
+            snapshot_date="2026-05-15",
+            scope="season",
+            metric="ERA",
+            ranking=[
+                ("セ投手A", "t", 2.100, 30, 1, 3),
+                ("竹丸和幸", "g", 2.883, 20, 2, 3),
+                ("セ投手B", "db", 3.200, 30, 3, 3),
+            ],
+        )
+        candidate = {
+            "player_canonical": "竹丸和幸",
+            "notes": "metric=ERA threshold=3.0 value=2.883 (lower_is_better)",
+            "current_value": "ERA=2.883 sample=20",
+            "window_label": "milestone_2026-05-15",
+            "magnitude": 3.0,
+        }
+        article = pub.render_milestone_crossed_article(conn, candidate)
+        assert article["title"] == "【巨人データ】竹丸和幸、防御率2.88でセ・リーグ2/3位（今シーズン）"
+        assert "ERA" not in article["title"]
+        assert "到達" not in article["title"]
+        assert "防御率3.00以下" in article["body_md"]
+    finally:
+        conn.close()
+
+
+def test_milestone_detector_skips_disallowed_whip(tmp_path):
+    """WHIP は whitelist × なので milestone candidate も作らない。"""
+    conn = _open_db(tmp_path)
+    try:
+        _seed_metric_snapshots(
+            conn,
+            snapshot_date="2026-05-15",
+            scope="season",
+            metric="WHIP",
+            ranking=[("巨人投手", "g", 1.00, 20, 1, 1)],
+        )
+        ids = det.detect_milestone_crossed(conn, snapshot_date="2026-05-15")
+        assert ids == []
+    finally:
+        conn.close()
+
+
+def test_anomaly_renderer_skips_existing_disallowed_metric_candidate():
+    """既存 backlog に WHIP candidate が残っていても render しない。"""
+    from src.analysis import anomaly_article_publisher as pub
+
+    article = pub.render_anomaly_article(
+        None,
+        {
+            "signal_type": det.SIGNAL_MILESTONE_CROSSED,
+            "player_canonical": "巨人投手",
+            "notes": "metric=WHIP threshold=1.20 value=1.00",
+            "current_value": "WHIP=1.00",
+            "window_label": "milestone_2026-05-15",
+        },
+    )
+    assert article is None
 
 
 def test_render_team_streak_article_active_winning(tmp_path):

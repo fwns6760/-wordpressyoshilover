@@ -1014,8 +1014,64 @@ def render_game_pitcher_performance_article(
     )
 
 
+def _format_milestone_value(metric_name: str, raw_value: Any) -> str:
+    """Render milestone value for user-facing title/body."""
+    try:
+        value = float(str(raw_value))
+    except (TypeError, ValueError):
+        return str(raw_value or "")
+    if metric_name in {"ERA", "WHIP", "FIP", "xFIP", "K_per_9", "BB_per_9", "HR_per_9", "K_BB"}:
+        return f"{value:.2f}"
+    if metric_name in {"HR", "H", "RBI", "SB", "SO"}:
+        if value.is_integer():
+            return str(int(value))
+    return f"{value:g}"
+
+
+def _metric_value_with_unit(metric_name: str, value_text: str) -> str:
+    if metric_name == "HR" and value_text:
+        return f"{value_text}本"
+    return value_text
+
+
+def _snapshot_date_from_candidate(candidate_row: dict[str, Any]) -> Optional[str]:
+    snapshot = str(candidate_row.get("snapshot_date") or "").strip()
+    if snapshot:
+        return snapshot
+    window = str(candidate_row.get("window_label") or "").strip()
+    prefix = "milestone_"
+    if window.startswith(prefix):
+        candidate = window[len(prefix):]
+        if len(candidate) >= 10:
+            return candidate[:10]
+    return None
+
+
+def _milestone_rank_context(
+    conn: Optional[sqlite3.Connection],
+    *,
+    candidate_row: dict[str, Any],
+    metric_name: str,
+    player: str,
+) -> Optional[dict[str, Any]]:
+    if conn is None:
+        return None
+    snapshot_date = _snapshot_date_from_candidate(candidate_row)
+    try:
+        return _find_player_rank(
+            conn,
+            metric_name=metric_name,
+            scope="season",
+            snapshot_date=snapshot_date,
+            player_canonical=player,
+            league="central",
+        )
+    except sqlite3.Error:
+        return None
+
+
 def render_milestone_crossed_article(
-    conn: sqlite3.Connection,
+    conn: Optional[sqlite3.Connection],
     candidate_row: dict[str, Any],
 ) -> dict[str, str]:
     """SIGNAL_MILESTONE_CROSSED — シーズン累計節目 + record event(348 step 3 part 2)。
@@ -1111,23 +1167,60 @@ def render_milestone_crossed_article(
     metric = notes.get("metric", "")
     threshold = notes.get("threshold", "")
     value = notes.get("value", "")
+    metric_label = _human_metric_label(metric)
+    if metric == "HR":
+        metric_label = "本塁打"
+    value_text = _format_milestone_value(metric, value)
+    threshold_text = _format_milestone_value(metric, threshold)
+    value_with_unit = _metric_value_with_unit(metric, value_text)
+    threshold_with_unit = _metric_value_with_unit(metric, threshold_text)
+    lower_is_better = metric in _LOWER_IS_BETTER_METRICS
+    rank_context = _milestone_rank_context(
+        conn, candidate_row=candidate_row, metric_name=metric, player=player
+    )
+    rank_phrase = ""
+    if rank_context:
+        rank_phrase = f"でセ・リーグ{rank_context['rank']}/{rank_context['total']}位"
     title = (
-        f"【巨人データ】{player} シーズン {metric} {threshold} 到達 (現在 {value})"
+        f"【巨人データ】{player}、{metric_label}{value_with_unit}{rank_phrase}"
+        "（今シーズン）"
     )
-    headline = (
-        f"{player} はシーズン {metric} が **{threshold} の節目** に到達 (現在 {value})。"
-    )
+    if lower_is_better:
+        headline = f"{player} の今シーズン{metric_label}は **{value_with_unit}**"
+        if rank_context:
+            headline += f"、セ・リーグ **{rank_context['rank']}/{rank_context['total']}位**。"
+        else:
+            headline += "。"
+        if threshold_with_unit:
+            headline += f" {metric_label}{threshold_with_unit}以下の水準です。"
+    else:
+        headline = f"{player} の今シーズン{metric_label}は **{value_with_unit}**"
+        if rank_context:
+            headline += f"、セ・リーグ **{rank_context['rank']}/{rank_context['total']}位**。"
+        else:
+            headline += "。"
+        if threshold_with_unit:
+            headline += f" {threshold_with_unit}の節目に到達しています。"
     detail = [
-        f"対象指標: {metric}",
-        f"節目: {threshold}",
-        f"現在値: {value}",
+        f"対象指標: {metric_label}",
+        "集計期間: 今シーズン",
+        f"現在値: {value_with_unit}",
     ]
+    if rank_context:
+        detail.append(f"セ・リーグ順位: {rank_context['rank']}/{rank_context['total']}位")
+    if threshold_with_unit:
+        threshold_label = "基準ライン" if lower_is_better else "節目"
+        detail.append(f"{threshold_label}: {threshold_with_unit}")
     return _render_simple_data_article(
         title=title,
         headline=headline,
         detail_lines=detail,
         period_label="シーズン累計",
-        source_note="節目通過は次の節目を狙えるかの起点。",
+        source_note=(
+            "防御率など低いほど良い指標は「到達」ではなく、現在値・順位・期間で見る。"
+            if lower_is_better
+            else "節目通過は次の節目を狙えるかの起点。"
+        ),
     )
 
 
@@ -1244,6 +1337,9 @@ def render_anomaly_article(
     signal_type = candidate_row.get("signal_type")
     renderer = _RENDERERS.get(signal_type)
     if renderer is None:
+        return None
+    metric = _parse_kv_blob(candidate_row.get("notes") or "").get("metric", "")
+    if metric and not _wl.is_metric_allowed(metric):
         return None
     result = renderer(conn, candidate_row)
     return {

@@ -20693,6 +20693,16 @@ _SAME_FAMILY_DEDUP_EVENT_PATTERNS: tuple[str, ...] = (
 _SAME_FAMILY_DEDUP_EVENT_RES: tuple = tuple(
     _re.compile(p) for p in _SAME_FAMILY_DEDUP_EVENT_PATTERNS
 )
+_SAME_FAMILY_STAFF_SUBJECT_RE = _re.compile(
+    r"(?P<name>[A-Za-zＡ-Ｚａ-ｚ一-龯々ァ-ヴー・･]{2,18}?)"
+    r"(?P<role>投手チーフコーチ|投手コーチ|打撃チーフコーチ|打撃コーチ|"
+    r"守備走塁コーチ|バッテリーチーフコーチ|バッテリーコーチ|"
+    r"ディフェンスチーフコーチ|オフェンスチーフコーチ|ヘッドコーチ|"
+    r"チーフコーチ|監督|コーチ)"
+)
+_SAME_FAMILY_STAFF_GENERIC_NAMES = frozenset(
+    {"巨人", "読売", "ジャイアンツ", "チーム", "球団", "首脳陣", "ベンチ"}
+)
 
 
 def _same_family_x_web_dedup_enabled() -> bool:
@@ -20715,6 +20725,41 @@ def _detect_event_token_for_dedup(text: str) -> str:
     return ""
 
 
+def _canonical_same_family_staff_role(role: str) -> str:
+    normalized = _collapse_ws(role or "").replace("チーフ", "")
+    if normalized == "コーチ":
+        return "コーチ"
+    if normalized.endswith("コーチ"):
+        return normalized
+    if normalized == "監督":
+        return "監督"
+    return normalized or role
+
+
+def _detect_staff_subject_for_same_family_dedup(text: str) -> str:
+    """Return a canonical manager/coach subject for X+Web dedup.
+
+    368 originally keyed only on player names. 370 keeps the same X-parent /
+    Web-consumed rule but lets staff quote articles (杉内投手コーチ etc.) form
+    the same deterministic key without relying on an incidental player mention.
+    """
+    cleaned = _collapse_ws(_strip_html(text or ""))
+    if not cleaned or not any(marker in cleaned for marker in ("監督", "コーチ")):
+        return ""
+    for match in _SAME_FAMILY_STAFF_SUBJECT_RE.finditer(cleaned):
+        name = _collapse_ws(match.group("name")).strip(" ・、。")
+        role = _canonical_same_family_staff_role(match.group("role"))
+        if not name or name in _SAME_FAMILY_STAFF_GENERIC_NAMES:
+            continue
+        if any(token in name for token in _SAME_FAMILY_STAFF_GENERIC_NAMES):
+            continue
+        alias_text = f"{name}{'監督' if role == '監督' else 'コーチ'}"
+        roster_hits = _matching_giants_roster_names(alias_text)
+        canonical_name = roster_hits[0] if roster_hits else name
+        return f"{canonical_name}{role}"
+    return ""
+
+
 def _enrich_candidate_for_same_family_dedup(candidate: Mapping[str, Any]) -> dict:
     """family / player / event_token を derive した shallow copy を返す (#18)。"""
     enriched = dict(candidate)
@@ -20724,6 +20769,12 @@ def _enrich_candidate_for_same_family_dedup(candidate: Mapping[str, Any]) -> dic
     title = str(candidate.get("title") or candidate.get("title_text") or "")
     summary = str(candidate.get("summary") or "")
     text = f"{title} {summary}"
+    staff_subject = _detect_staff_subject_for_same_family_dedup(text)
+    if staff_subject and (
+        str(candidate.get("category") or "") == "首脳陣"
+        or any(marker in text for marker in ("監督", "コーチ"))
+    ):
+        enriched["player_name"] = staff_subject
     if not enriched.get("player_name"):
         roster_hits = _matching_giants_roster_names(text)
         if roster_hits:

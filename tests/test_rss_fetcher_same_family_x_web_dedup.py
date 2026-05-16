@@ -164,6 +164,37 @@ class SameFamilyXWebDedupBehaviorTests(unittest.TestCase):
         )
         self.assertIn("https://hochi.news/articles/20260516-OHT1T51321.html", result[0]["history_urls"])
 
+    def test_staff_quote_event_pairs_x_and_web_without_player_name(self):
+        candidates = [
+            {
+                "post_url": "https://twitter.com/hochi_giants/status/2055602460085936131",
+                "title": "杉内投手コーチ「ピッチャーに四球を出すところは本人が一番反省しているでしょう」",
+                "summary": "杉内投手コーチのコメント「ピッチャーに四球を出すところは本人が一番反省しているでしょう」",
+                "source_type": "social_news",
+                "category": "首脳陣",
+                "history_urls": ["https://twitter.com/hochi_giants/status/2055602460085936131"],
+            },
+            {
+                "post_url": "https://hochi.news/articles/20260516-OHT1T51338.html",
+                "title": "【巨人】杉内投手コーチがウィットリーの投球に言及「ピッチャーに四球を出すところは本人が一番反省しているでしょう」",
+                "summary": "杉内投手コーチはウィットリーについて「ピッチャーに四球を出すところは本人が一番反省しているでしょう」と語った。",
+                "source_type": "news",
+                "category": "首脳陣",
+                "history_urls": ["https://hochi.news/articles/20260516-OHT1T51338.html"],
+            },
+        ]
+
+        result = rss_fetcher._aggregate_same_family_x_web_candidates(candidates)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["post_url"], "https://twitter.com/hochi_giants/status/2055602460085936131")
+        self.assertEqual(
+            result[0]["raw_title"],
+            "【巨人】杉内投手コーチがウィットリーの投球に言及「ピッチャーに四球を出すところは本人が一番反省しているでしょう」",
+        )
+        self.assertIn("same_family_web_consumed", result[0])
+        self.assertIn("https://hochi.news/articles/20260516-OHT1T51338.html", result[0]["history_urls"])
+
 
 class DetectEventTokenForDedupTests(unittest.TestCase):
     def test_sayonara_homerun(self):

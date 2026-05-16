@@ -33,6 +33,14 @@
     "min_sample_pitcher_ip": 10
   },
 
+  "data_quality": {
+    "max_snapshot_age_days": 3,
+    "min_central_teams": 6,
+    "min_league_total": 6,
+    "min_sample_fielding": 10,
+    "comment": "356 publish-time data quality gate。sample / coverage / stale snapshot / body evidence を WP create_post 前に検査する。"
+  },
+
   "team_filter": {
     "subject_team_code": "g",
     "subject_team_label": "巨人",

@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import sqlite3
 import sys
 from pathlib import Path
@@ -20,6 +21,8 @@ sys.path.insert(0, str(ROOT))
 
 from src.analysis import insight_etl  # noqa: E402
 from src.analysis import ranking_article_publisher as rap  # noqa: E402
+
+TODAY = dt.date.today().isoformat()
 
 
 def test_default_publish_cap_is_conservative():
@@ -41,6 +44,24 @@ def _seed_snapshots(conn, *, snapshot_date, scope, metric, ranking):
             (snapshot_date, scope, player, team, metric, value, sample, rank, total),
         )
     conn.commit()
+
+
+def _central_ranking(
+    *,
+    player: str = "巨人A",
+    value: float = 0.93,
+    sample: int = 91,
+    total: int = 30,
+) -> list[tuple[str, str, float, int, int, int]]:
+    """Publish-path tests need all six Central teams for quality gate coverage."""
+    return [
+        (player, "g", value, sample, 1, total),
+        ("阪神A", "t", value - 0.01, sample, 2, total),
+        ("広島A", "c", value - 0.02, sample, 3, total),
+        ("DeNAA", "db", value - 0.03, sample, 4, total),
+        ("中日A", "d", value - 0.04, sample, 5, total),
+        ("ヤクルトA", "s", value - 0.05, sample, 6, total),
+    ]
 
 
 def test_fetch_ranking_rows_returns_top_n(tmp_path):
@@ -211,12 +232,12 @@ def test_publish_dry_run_returns_article_dict(tmp_path):
     db = tmp_path / "test.db"
     conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
     try:
-        _seed_snapshots(conn, snapshot_date="2026-05-14", scope="last_30d", metric="OPS",
-                        ranking=[("巨人A", "g", 0.93, 91, 1, 30)])
+        _seed_snapshots(conn, snapshot_date=TODAY, scope="last_30d", metric="OPS",
+                        ranking=_central_ranking())
         wp_mock = MagicMock()
         result = rap.publish_giants_centric_ranking_draft(
             conn, wp_mock,
-            metric_name="OPS", scope="last_30d", snapshot_date="2026-05-14",
+            metric_name="OPS", scope="last_30d", snapshot_date=TODAY,
             dry_run=True,
         )
         assert result["status"] == "dry_run"
@@ -248,14 +269,14 @@ def test_publish_full_flow_creates_draft(tmp_path):
     db = tmp_path / "test.db"
     conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
     try:
-        _seed_snapshots(conn, snapshot_date="2026-05-14", scope="last_30d", metric="OPS",
-                        ranking=[("巨人A", "g", 0.93, 91, 1, 30)])
+        _seed_snapshots(conn, snapshot_date=TODAY, scope="last_30d", metric="OPS",
+                        ranking=_central_ranking())
         wp_mock = MagicMock()
         wp_mock.create_category.return_value = 671
         wp_mock.create_post.return_value = 67500
         result = rap.publish_giants_centric_ranking_draft(
             conn, wp_mock,
-            metric_name="OPS", scope="last_30d", snapshot_date="2026-05-14",
+            metric_name="OPS", scope="last_30d", snapshot_date=TODAY,
         )
         assert result["status"] == "published_draft"
         assert result["post_id"] == 67500
@@ -271,21 +292,21 @@ def test_publish_ranking_skips_same_player_metric_after_history(tmp_path):
     db = tmp_path / "test.db"
     conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
     try:
-        _seed_snapshots(conn, snapshot_date="2026-05-14", scope="last_7d", metric="OPS",
-                        ranking=[("大城卓三", "g", 0.80, 91, 6, 60)])
-        _seed_snapshots(conn, snapshot_date="2026-05-14", scope="season", metric="OPS",
-                        ranking=[("大城卓三", "g", 0.805, 191, 7, 60)])
+        _seed_snapshots(conn, snapshot_date=TODAY, scope="last_7d", metric="OPS",
+                        ranking=_central_ranking(player="大城卓三", value=0.80, sample=91, total=60))
+        _seed_snapshots(conn, snapshot_date=TODAY, scope="season", metric="OPS",
+                        ranking=_central_ranking(player="大城卓三", value=0.805, sample=191, total=60))
         wp_mock = MagicMock()
         wp_mock.create_category.return_value = 671
         wp_mock.create_post.return_value = 67500
 
         first = rap.publish_giants_centric_ranking_draft(
             conn, wp_mock,
-            metric_name="OPS", scope="last_7d", snapshot_date="2026-05-14",
+            metric_name="OPS", scope="last_7d", snapshot_date=TODAY,
         )
         second = rap.publish_giants_centric_ranking_draft(
             conn, wp_mock,
-            metric_name="OPS", scope="season", snapshot_date="2026-05-14",
+            metric_name="OPS", scope="season", snapshot_date=TODAY,
         )
 
         assert first["status"] == "published_draft"
@@ -294,7 +315,7 @@ def test_publish_ranking_skips_same_player_metric_after_history(tmp_path):
         assert second["dedup"]["scope_family"] == "metric_all_periods"
         second_same_scope = rap.publish_giants_centric_ranking_draft(
             conn, wp_mock,
-            metric_name="OPS", scope="last_7d", snapshot_date="2026-05-14",
+            metric_name="OPS", scope="last_7d", snapshot_date=TODAY,
         )
         assert second_same_scope["status"] == "skip_dedup_cooldown"
         assert wp_mock.create_post.call_count == 1
@@ -306,14 +327,14 @@ def test_publish_error_on_category_failure(tmp_path):
     db = tmp_path / "test.db"
     conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
     try:
-        _seed_snapshots(conn, snapshot_date="2026-05-14", scope="last_30d", metric="OPS",
-                        ranking=[("巨人A", "g", 0.93, 91, 1, 30)])
+        _seed_snapshots(conn, snapshot_date=TODAY, scope="last_30d", metric="OPS",
+                        ranking=_central_ranking())
         wp_mock = MagicMock()
         wp_mock.create_category.return_value = 0
         wp_mock.resolve_category_id.return_value = 0
         result = rap.publish_giants_centric_ranking_draft(
             conn, wp_mock,
-            metric_name="OPS", scope="last_30d", snapshot_date="2026-05-14",
+            metric_name="OPS", scope="last_30d", snapshot_date=TODAY,
         )
         assert result["status"] == "error"
         wp_mock.create_post.assert_not_called()
@@ -336,8 +357,8 @@ def test_publish_default_set_respects_max_per_run(tmp_path):
             ("ERA", "last_7d"),
             ("K_per_9", "last_7d"),
         ]:
-            _seed_snapshots(conn, snapshot_date="2026-05-14", scope=scope, metric=metric,
-                            ranking=[("巨人A", "g", 0.5, 90, 1, 30)])
+            _seed_snapshots(conn, snapshot_date=TODAY, scope=scope, metric=metric,
+                            ranking=_central_ranking(value=0.5, sample=90, total=30))
         wp_mock = MagicMock()
         wp_mock.create_category.return_value = 671
         wp_mock.create_post.return_value = 12345
@@ -360,10 +381,10 @@ def test_publish_default_set_uses_last_7d_only_by_default(tmp_path):
         for scope in ["last_7d", "last_30d", "season"]:
             _seed_snapshots(
                 conn,
-                snapshot_date="2026-05-14",
+                snapshot_date=TODAY,
                 scope=scope,
                 metric="OPS",
-                ranking=[("巨人A", "g", 0.9, 90, 1, 30)],
+                ranking=_central_ranking(value=0.9, sample=90, total=30),
             )
         wp_mock = MagicMock()
         wp_mock.create_category.return_value = 671

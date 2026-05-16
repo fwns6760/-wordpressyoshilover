@@ -1802,6 +1802,16 @@ git add -A禁止。
 - **背景**: `postgame-auto` Cloud Run Job が 2026-05-12 22:30 JST から 4 日連続失敗 (exit 20 = EXIT_WP_FAILED)、 thin_body_validator の false positive 仮説。 348 scope 完全分離
 - **last_commit**: `8b9b4a4` (起票 + assignments 更新)
 
+### 356 INSIGHT-data-quality-publish-gate
+
+- **alias**: -
+- **status**: REVIEW_NEEDED / **priority**: high
+- **owner**: Codex / **lane**: B
+- **doc_path**: `doc/active/356-INSIGHT-data-quality-publish-gate.md`
+- **GH Issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/31
+- **背景**: 348/349/title期間guard 後の残 risk。sample不足、ranking coverage不足、stale snapshot、本文根拠不足を publish 直前に止める data quality gate を追加する。
+- **実装**: `insight_quality_gate.py` 追加、ranking / anomaly / team publisher に wire。targeted pytest 231 passed。full unittest は既存赤 11 failures / 3 errors。Cloud Run deploy は未実行。
+
 ## marketing board
 
 - Marketing ticket source of truth: `doc/marketing/README.md`

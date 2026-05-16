@@ -33,6 +33,7 @@ if str(ROOT) not in sys.path:
 
 from src.analysis import insight_anomaly_detector as detector  # noqa: E402
 from src.analysis import insight_dedup_gate as dedup_gate  # noqa: E402
+from src.analysis import insight_quality_gate as quality_gate  # noqa: E402
 from src.analysis import insight_title_guard as title_guard  # noqa: E402
 from src.analysis import insight_whitelist as _wl  # noqa: E402
 from src.analysis import ranking_article_publisher as rap  # noqa: E402
@@ -655,6 +656,7 @@ def _render_box_score_article(
 |---|---|
 | 集計期間 | {period_label} |
 | データ元 | NPB 公式 box score(https://npb.jp/) |
+| 計算式 | box score 抜粋行を集計 |
 | 注意点 | {source_note} |
 """
     return {"title": title, "body_md": body_md}
@@ -702,6 +704,7 @@ def _render_simple_data_article(
 |---|---|
 | 集計期間 | {period_label} |
 | データ元 | NPB 公式 box score(https://npb.jp/) |
+| 計算式 | 詳細行と注意点を参照 |
 | 注意点 | {source_note} |
 """
     return {"title": body_title, "body_md": body_md}
@@ -1121,12 +1124,46 @@ def _snapshot_date_from_candidate(candidate_row: dict[str, Any]) -> Optional[str
     if snapshot:
         return snapshot
     window = str(candidate_row.get("window_label") or "").strip()
+    import re as _re_snapshot
+    match = _re_snapshot.search(r"(\d{4}-\d{2}-\d{2})", window)
+    if match:
+        return match.group(1)
     prefix = "milestone_"
     if window.startswith(prefix):
         candidate = window[len(prefix):]
         if len(candidate) >= 10:
             return candidate[:10]
     return None
+
+
+_SNAPSHOT_QUALITY_SIGNALS = frozenset({
+    detector.SIGNAL_ZSCORE_BATTER,
+    detector.SIGNAL_ZSCORE_PITCHER,
+    detector.SIGNAL_GIANTS_TOP_OUTLIER,
+    detector.SIGNAL_STAT_DELTA,
+})
+
+
+def _quality_decision_for_candidate(
+    conn: sqlite3.Connection,
+    candidate_row: dict[str, Any],
+    article: dict[str, str],
+    dedup_context: Optional[dict[str, Any]],
+) -> quality_gate.QualityDecision:
+    """Choose the strictest safe quality gate for an anomaly candidate."""
+    if (
+        candidate_row.get("signal_type") in _SNAPSHOT_QUALITY_SIGNALS
+        and dedup_context
+    ):
+        return quality_gate.validate_player_snapshot_article(
+            conn,
+            article,
+            metric_name=dedup_context["metric_name"],
+            scope=dedup_context["scope"],
+            focus_player=dedup_context["subject_key"],
+            snapshot_date=_snapshot_date_from_candidate(candidate_row),
+        )
+    return quality_gate.validate_basic_article(article)
 
 
 def _milestone_rank_context(
@@ -1541,6 +1578,18 @@ def publish_anomaly_drafts(
             })
             continue
         dedup_context = _dedup_context_for_candidate(cand)
+        quality_decision = _quality_decision_for_candidate(
+            conn, cand, article, dedup_context
+        )
+        if not quality_decision.allowed:
+            results.append(quality_gate.skip_result(
+                quality_decision,
+                candidate_id=cand["candidate_id"],
+                signal_type=cand["signal_type"],
+                player_canonical=cand["player_canonical"],
+                title=article["title"],
+            ))
+            continue
         if dedup_context:
             dedup_decision = dedup_gate.evaluate_metric_cooldown(
                 conn, **dedup_context,

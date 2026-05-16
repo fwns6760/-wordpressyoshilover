@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import sqlite3
 import sys
 from pathlib import Path
@@ -17,6 +18,8 @@ sys.path.insert(0, str(ROOT))
 from src.analysis import insight_etl  # noqa: E402
 from src.analysis import insight_anomaly_detector as det  # noqa: E402
 from src.analysis import anomaly_article_publisher as pub  # noqa: E402
+
+TODAY = dt.date.today().isoformat()
 
 
 def _seed_snapshots(conn, *, snapshot_date, scope, metric, ranking):
@@ -41,6 +44,17 @@ def _seed_player_table(conn, players):
             (canonical, team_code, role),
         )
     conn.commit()
+
+
+def _central_zscore_ranking():
+    return [
+        ("阪神A", "t", 0.700, 50, 2, 6),
+        ("広島A", "c", 0.700, 50, 3, 6),
+        ("DeNAA", "db", 0.700, 50, 4, 6),
+        ("中日A", "d", 0.700, 50, 5, 6),
+        ("ヤクルトA", "s", 0.700, 50, 6, 6),
+        ("巨人A", "g", 1.500, 100, 1, 6),
+    ]
 
 
 def test_zscore_batter_detects_outlier(tmp_path):
@@ -283,11 +297,9 @@ def test_publish_anomaly_drafts_dry_run(tmp_path):
     try:
         _seed_player_table(conn, [("巨人A", "g", "player")])
         # candidate を直接 insert
-        ranking = [(f"avg_{i}", "t", 0.700, 50, i + 2, 6) for i in range(5)]
-        ranking.append(("巨人A", "g", 1.500, 100, 1, 6))
-        _seed_snapshots(conn, snapshot_date="2026-05-14", scope="last_30d",
-                        metric="OPS", ranking=ranking)
-        det.detect_zscore_batter_outliers(conn, snapshot_date="2026-05-14")
+        _seed_snapshots(conn, snapshot_date=TODAY, scope="last_30d",
+                        metric="OPS", ranking=_central_zscore_ranking())
+        det.detect_zscore_batter_outliers(conn, snapshot_date=TODAY)
 
         wp_mock = MagicMock()
         results = pub.publish_anomaly_drafts(
@@ -305,11 +317,9 @@ def test_publish_anomaly_drafts_marks_drafted(tmp_path):
     conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
     try:
         _seed_player_table(conn, [("巨人A", "g", "player")])
-        ranking = [(f"avg_{i}", "t", 0.700, 50, i + 2, 6) for i in range(5)]
-        ranking.append(("巨人A", "g", 1.500, 100, 1, 6))
-        _seed_snapshots(conn, snapshot_date="2026-05-14", scope="last_30d",
-                        metric="OPS", ranking=ranking)
-        det.detect_zscore_batter_outliers(conn, snapshot_date="2026-05-14")
+        _seed_snapshots(conn, snapshot_date=TODAY, scope="last_30d",
+                        metric="OPS", ranking=_central_zscore_ranking())
+        det.detect_zscore_batter_outliers(conn, snapshot_date=TODAY)
 
         wp_mock = MagicMock()
         wp_mock.create_category.return_value = 675

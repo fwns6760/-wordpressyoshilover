@@ -39,6 +39,7 @@ if str(ROOT) not in sys.path:
 
 from src.analysis import insight_article_generator  # noqa: E402
 from src.analysis import insight_dedup_gate as dedup_gate  # noqa: E402
+from src.analysis import insight_quality_gate as quality_gate  # noqa: E402
 from src.analysis import insight_title_guard as title_guard  # noqa: E402
 from src.analysis.insight_article_generator import (  # noqa: E402
     ArticleContext,
@@ -692,6 +693,22 @@ def publish_giants_centric_ranking_draft(
             "title": article["title"],
         }
     article["title"] = title_check.title
+    quality_decision = quality_gate.validate_player_snapshot_article(
+        conn,
+        article,
+        metric_name=metric_name,
+        scope=scope,
+        focus_player=article.get("focus_player"),
+        snapshot_date=snapshot_date,
+    )
+    if not quality_decision.allowed:
+        return quality_gate.skip_result(
+            quality_decision,
+            focus_player=article.get("focus_player"),
+            metric_name=metric_name,
+            scope=scope,
+            title=article["title"],
+        )
     dedup_context = {
         "subject_key": article["focus_player"],
         "metric_name": metric_name,
@@ -973,6 +990,7 @@ def render_player_counting_split_article(
         "top_value": top_value,
         "giants_rank": giants_rank,
         "league_total": len(rows),
+        "team_coverage": len({r.get("team") for r in rows if r.get("team")}),
     }
 
 
@@ -1011,6 +1029,15 @@ def publish_player_counting_split_draft(
             "title": article["title"],
         }
     article["title"] = title_check.title
+    quality_decision = quality_gate.validate_counting_article(article)
+    if not quality_decision.allowed:
+        return quality_gate.skip_result(
+            quality_decision,
+            stat_col=stat_col,
+            scope=scope,
+            split=f"{split_field}={split_value}",
+            title=article["title"],
+        )
     metric_key = f"{stat_col}:{split_field}={split_value}"
     dedup_context = {
         "subject_key": article["top_player"],
@@ -1203,6 +1230,7 @@ def render_player_counting_article(
         "top_value": top_value,
         "giants_rank": giants_rank,
         "league_total": len(rows),
+        "team_coverage": len({r.get("team") for r in rows if r.get("team")}),
     }
 
 
@@ -1235,6 +1263,14 @@ def publish_player_counting_draft(
             "title": article["title"],
         }
     article["title"] = title_check.title
+    quality_decision = quality_gate.validate_counting_article(article)
+    if not quality_decision.allowed:
+        return quality_gate.skip_result(
+            quality_decision,
+            stat_col=stat_col,
+            scope=scope,
+            title=article["title"],
+        )
     dedup_context = {
         "subject_key": article["top_player"],
         "metric_name": stat_col,

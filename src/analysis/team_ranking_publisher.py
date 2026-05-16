@@ -28,6 +28,7 @@ if str(ROOT) not in sys.path:
 
 from src.analysis import insight_atbats_parser  # noqa: E402
 from src.analysis import insight_dedup_gate as dedup_gate  # noqa: E402
+from src.analysis import insight_quality_gate as quality_gate  # noqa: E402
 from src.analysis import insight_title_guard as title_guard  # noqa: E402
 from src.analysis import ranking_article_publisher as rap  # noqa: E402
 from src.giants_news_banner import (  # noqa: E402
@@ -370,6 +371,14 @@ def publish_team_metric_draft(
             "title": article["title"],
         }
     article["title"] = title_check.title
+    quality_decision = quality_gate.validate_team_metric_article(article)
+    if not quality_decision.allowed:
+        return quality_gate.skip_result(
+            quality_decision,
+            metric=metric,
+            scope=scope,
+            title=article["title"],
+        )
     dedup_context = {
         "subject_key": "team:g",
         "metric_name": f"TEAM_{metric}",
@@ -468,6 +477,7 @@ def render_team_streak_article(conn: sqlite3.Connection) -> Optional[dict]:
 | 球団 | **巨人** |
 | 状況 | {streak} {kind_label} |
 | データ元 | NPB 公式 box score(https://npb.jp/) |
+| 集計期間 | {today} 時点 |
 | 集計基準 | 最新試合から逆順 scan で同 result が連続している試合数 |
 | 計算式 | games.result を最新から逆順 scan、 同 kind が break するまで count |
 | 注 | 中止 / 中断試合は含めない |
@@ -500,6 +510,12 @@ def publish_team_streak_draft(
             "title": article["title"],
         }
     article["title"] = title_check.title
+    quality_decision = quality_gate.validate_basic_article(article)
+    if not quality_decision.allowed:
+        return quality_gate.skip_result(
+            quality_decision,
+            title=article["title"],
+        )
     dedup_context = {
         "subject_key": "team:g",
         "metric_name": f"TEAM_STREAK_{article['kind']}",
@@ -622,6 +638,13 @@ def publish_team_run_diff_draft(
             "title": article["title"],
         }
     article["title"] = title_check.title
+    quality_decision = quality_gate.validate_basic_article(article)
+    if not quality_decision.allowed:
+        return quality_gate.skip_result(
+            quality_decision,
+            scope=scope,
+            title=article["title"],
+        )
     dedup_context = {
         "subject_key": "team:g",
         "metric_name": "TEAM_RUN_DIFF",
@@ -748,6 +771,14 @@ def publish_team_vs_opponent_draft(
             "title": article["title"],
         }
     article["title"] = title_check.title
+    quality_decision = quality_gate.validate_basic_article(article)
+    if not quality_decision.allowed:
+        return quality_gate.skip_result(
+            quality_decision,
+            opponent=opponent,
+            scope=scope,
+            title=article["title"],
+        )
     dedup_context = {
         "subject_key": "team:g",
         "metric_name": f"TEAM_VS_{opponent}",

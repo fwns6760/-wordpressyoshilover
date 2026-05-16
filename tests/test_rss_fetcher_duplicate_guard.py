@@ -233,6 +233,211 @@ def test_same_run_player_incident_different_titles_groups_as_topic_duplicate():
     assert any('"event": "duplicate_news_pre_gemini_skip"' in message for message in messages)
 
 
+def test_cross_family_same_player_event_skips_second_candidate():
+    candidates = [
+        {
+            "entry_index": 1,
+            "source_rank": 1,
+            "source_name": "スポーツ報知",
+            "source_type": "news",
+            "entry": {},
+            "post_url": "https://news.hochi.news/articles/202605160000001.html",
+            "raw_title": "坂本勇人が通算300号サヨナラ弾",
+            "title": "坂本勇人が通算300号サヨナラ弾",
+            "category": "選手情報",
+            "summary": "巨人の坂本勇人内野手が300号サヨナラホームランを放った。",
+            "entry_has_game": True,
+            "published_at": datetime(2026, 5, 16, 12, 0, tzinfo=timezone.utc),
+        },
+        {
+            "entry_index": 2,
+            "source_rank": 2,
+            "source_name": "スポニチ",
+            "source_type": "news",
+            "entry": {},
+            "post_url": "https://www.sponichi.co.jp/baseball/news/2026/05/16/kiji.html",
+            "raw_title": "巨人・坂本勇人、300号サヨナラホームラン",
+            "title": "巨人・坂本勇人、300号サヨナラホームラン",
+            "category": "選手情報",
+            "summary": "坂本勇人が通算300号となるサヨナラ本塁打を記録した。",
+            "entry_has_game": True,
+            "published_at": datetime(2026, 5, 16, 12, 5, tzinfo=timezone.utc),
+        },
+    ]
+
+    annotated = rss_fetcher._annotate_duplicate_guard_contexts(candidates)
+    contexts = [item["duplicate_guard_context"] for item in annotated]
+
+    assert contexts[0]["topic_key"].startswith("cross_family_event:")
+    assert contexts[0]["topic_key"] == contexts[1]["topic_key"]
+    assert contexts[0]["cross_family_event_token"] == "300号サヨナラホームラン"
+    assert contexts[0]["cross_family_subject_key"] == "坂本勇人"
+    assert contexts[0]["cross_family_phase_key"] == "record_milestone"
+    assert contexts[0]["same_run_primary"] is True
+    assert contexts[1]["same_run_primary"] is False
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ledger = rss_fetcher._DuplicateNewsLedger(
+            ledger_path=Path(tmpdir) / "duplicate.jsonl",
+            cooldown_hours=6,
+        )
+        with patch.object(rss_fetcher._DuplicateNewsLedger, "shared", return_value=ledger):
+            with CaptureLogs("rss_fetcher") as messages:
+                assert rss_fetcher._evaluate_pre_gemini_duplicate_guard(
+                    logging.getLogger("rss_fetcher"),
+                    contexts[1],
+                ) == "skip"
+
+    assert any('"event": "cross_family_same_event_duplicate_skip"' in message for message in messages)
+    assert any('"event_key": "300号サヨナラホームラン"' in message for message in messages)
+
+
+def test_cross_family_same_event_different_subject_angle_is_kept():
+    candidates = [
+        {
+            "entry_index": 1,
+            "source_rank": 1,
+            "source_name": "スポーツ報知",
+            "source_type": "news",
+            "entry": {},
+            "post_url": "https://news.hochi.news/articles/202605160000002.html",
+            "raw_title": "坂本勇人が通算300号サヨナラ弾",
+            "title": "坂本勇人が通算300号サヨナラ弾",
+            "category": "選手情報",
+            "summary": "巨人の坂本勇人内野手が300号サヨナラホームランを放った。",
+            "entry_has_game": True,
+            "published_at": datetime(2026, 5, 16, 12, 0, tzinfo=timezone.utc),
+        },
+        {
+            "entry_index": 2,
+            "source_rank": 2,
+            "source_name": "スポニチ",
+            "source_type": "news",
+            "entry": {},
+            "post_url": "https://www.sponichi.co.jp/baseball/news/2026/05/16/kiji-2.html",
+            "raw_title": "田中将大が坂本勇人の300号サヨナラ弾を祝福",
+            "title": "田中将大が坂本勇人の300号サヨナラ弾を祝福",
+            "category": "選手情報",
+            "summary": "田中将大投手が坂本勇人の300号を祝福した。",
+            "entry_has_game": True,
+            "published_at": datetime(2026, 5, 16, 12, 5, tzinfo=timezone.utc),
+        },
+    ]
+
+    annotated = rss_fetcher._annotate_duplicate_guard_contexts(candidates)
+    contexts = [item["duplicate_guard_context"] for item in annotated]
+
+    assert contexts[0]["topic_key"] != contexts[1]["topic_key"]
+    assert contexts[0]["same_run_group_size"] == 1
+    assert contexts[1]["same_run_group_size"] == 1
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ledger = rss_fetcher._DuplicateNewsLedger(
+            ledger_path=Path(tmpdir) / "duplicate.jsonl",
+            cooldown_hours=6,
+        )
+        with patch.object(rss_fetcher._DuplicateNewsLedger, "shared", return_value=ledger):
+            assert rss_fetcher._evaluate_pre_gemini_duplicate_guard(
+                logging.getLogger("rss_fetcher"),
+                contexts[0],
+            ) == "allow"
+            assert rss_fetcher._evaluate_pre_gemini_duplicate_guard(
+                logging.getLogger("rss_fetcher"),
+                contexts[1],
+            ) == "allow"
+
+
+def test_x_and_magazine_same_subject_event_is_grouped_with_structured_skip():
+    candidates = [
+        {
+            "entry_index": 1,
+            "source_rank": 1,
+            "source_name": "巨人公式X",
+            "source_type": "social_news",
+            "entry": {},
+            "post_url": "https://x.com/TokyoGiants/status/1780000000000000000",
+            "raw_title": "坂本勇人が300号サヨナラホームラン",
+            "title": "坂本勇人が300号サヨナラホームラン",
+            "category": "選手情報",
+            "summary": "坂本勇人が300号サヨナラホームランを放った。",
+            "entry_has_game": True,
+            "published_at": datetime(2026, 5, 16, 12, 0, tzinfo=timezone.utc),
+        },
+        {
+            "entry_index": 2,
+            "source_rank": 2,
+            "source_name": "Number Web",
+            "source_type": "news",
+            "entry": {},
+            "post_url": "https://number.bunshun.jp/articles/-/999999",
+            "raw_title": "坂本勇人、300号サヨナラ弾の舞台裏",
+            "title": "坂本勇人、300号サヨナラ弾の舞台裏",
+            "category": "選手情報",
+            "summary": "坂本勇人の300号サヨナラホームランについて伝えた。",
+            "entry_has_game": True,
+            "published_at": datetime(2026, 5, 16, 12, 10, tzinfo=timezone.utc),
+        },
+    ]
+
+    annotated = rss_fetcher._annotate_duplicate_guard_contexts(candidates)
+    contexts = [item["duplicate_guard_context"] for item in annotated]
+    secondary = next(context for context in contexts if not context["same_run_primary"])
+
+    assert contexts[0]["topic_key"] == contexts[1]["topic_key"]
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ledger = rss_fetcher._DuplicateNewsLedger(
+            ledger_path=Path(tmpdir) / "duplicate.jsonl",
+            cooldown_hours=6,
+        )
+        with patch.object(rss_fetcher._DuplicateNewsLedger, "shared", return_value=ledger):
+            with CaptureLogs("rss_fetcher") as messages:
+                assert rss_fetcher._evaluate_pre_gemini_duplicate_guard(
+                    logging.getLogger("rss_fetcher"),
+                    secondary,
+                ) == "skip"
+
+    assert any('"event": "cross_family_same_event_duplicate_skip"' in message for message in messages)
+
+
+def test_cross_family_weak_event_token_does_not_group():
+    candidates = [
+        {
+            "entry_index": 1,
+            "source_rank": 1,
+            "source_name": "スポーツ報知",
+            "source_type": "news",
+            "entry": {},
+            "post_url": "https://news.hochi.news/articles/202605160000003.html",
+            "raw_title": "坂本勇人が勝利に貢献",
+            "title": "坂本勇人が勝利に貢献",
+            "category": "選手情報",
+            "summary": "坂本勇人が攻守で活躍した。",
+            "entry_has_game": True,
+            "published_at": datetime(2026, 5, 16, 12, 0, tzinfo=timezone.utc),
+        },
+        {
+            "entry_index": 2,
+            "source_rank": 2,
+            "source_name": "スポニチ",
+            "source_type": "news",
+            "entry": {},
+            "post_url": "https://www.sponichi.co.jp/baseball/news/2026/05/16/kiji-3.html",
+            "raw_title": "巨人・坂本勇人が活躍",
+            "title": "巨人・坂本勇人が活躍",
+            "category": "選手情報",
+            "summary": "坂本勇人がチームの勝利に貢献した。",
+            "entry_has_game": True,
+            "published_at": datetime(2026, 5, 16, 12, 5, tzinfo=timezone.utc),
+        },
+    ]
+
+    annotated = rss_fetcher._annotate_duplicate_guard_contexts(candidates)
+    contexts = [item["duplicate_guard_context"] for item in annotated]
+
+    assert contexts[0]["topic_key"] == ""
+    assert contexts[1]["topic_key"] == ""
+    assert contexts[0]["group_signature"] != contexts[1]["group_signature"]
+
+
 def test_cross_run_topic_history_skips_later_media_without_waiting_for_all_sources():
     first = _make_context(
         source_url="https://www.nikkansports.com/baseball/news/202605100000001.html",

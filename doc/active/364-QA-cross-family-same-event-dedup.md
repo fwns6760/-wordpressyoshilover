@@ -2,7 +2,7 @@
 
 ## meta
 
-- status: READY
+- status: REVIEW_NEEDED
 - priority: high
 - owner: Codex
 - lane: B
@@ -13,6 +13,7 @@
 ## 何が起きているか
 
 報知 / スポニチ / デイリー / 東スポなどが、同じ巨人ニュースを別タイトル・別URLで出すことがある。
+新聞系 Web だけでなく、X 投稿と雑誌 / Web メディア記事の間でも同じ重複が起きる。
 今の仕組みは同一URLや同一タイトルには強くなってきたが、媒体ごとに少し違うタイトルになると「別記事」として通りやすい。
 
 その結果、読者から見ると「同じ話題の記事が連続している」状態になる。
@@ -49,8 +50,10 @@
 - 同一日または同一試合
 - 同じ選手名が明確
 - 同じ出来事 token が明確
+- 同じ主語 / 同じ記事角度が明確
 - 2媒体以上
 - source family が別
+- source type が X / newspaper web / magazine web で分かれていても、同じ主題なら比較対象にする
 
 対象にする出来事 token の例:
 
@@ -69,6 +72,10 @@
 
 初回実装では、曖昧な「勝利」「敗戦」「好投」「活躍」だけでは重複扱いしない。
 別角度の記事を落としすぎるため。
+
+さらに、同じ出来事 token があっても、記事の主語 / 視点が違う場合は重複扱いしない。
+たとえば「坂本勇人 300号」の周辺記事でも、田中将大が主語の記事、父のコメントが主語の記事、監督の起用判断が主語の記事は、同じ 300号 event の補足記事であって同一記事ではない。
+初回実装では `subject_key` を別軸にし、`player + event` だけで落とさない。
 
 ## 難しい点と扱い
 
@@ -95,6 +102,7 @@ phase の初期案:
 
 逆に、同じ `phase_key` の中で同じ `player + event` なら重複候補にする。
 たとえば、同じ翌朝に報知とスポニチが「坂本勇人 300号サヨナラホームラン」を出した場合は 1本に絞る。
+ただし、同じ `player + event` でも `subject_key` が田中将大 / 父 / 監督 / チームメートなど別主体を示す場合は止めない。
 
 ## 新聞各紙が同じことを書く前提の扱い
 
@@ -122,9 +130,16 @@ X と Web は同じ情報源でも役割が違うため、媒体違い Web 記�
 - 公式 X + 媒体 Web
   - 公式 X は一次情報として価値があるため、すぐ捨てない。
   - 同じ event の Web 記事がある場合は、Web 記事を本文主役にし、公式 X は補足候補にする。
+- 公式 X + 雑誌 / Web メディア
+  - 公式 X は一次情報、雑誌 / Web メディアは解説・談話・背景の可能性があるため、event だけでは潰さない。
+  - 同じ phase / subject / event で、雑誌側に新しい fact token や別主体コメントがない場合は 1本に束ねる。
+  - 雑誌側に独自インタビュー、関係者コメント、父 / チームメート / 相手選手など別主体のコメントがある場合は別記事として残す。
+- 媒体 X + 雑誌 / Web メディア
+  - 同一媒体 X + 同一媒体記事は既存 339 領域に近いが、別媒体 X + 雑誌記事でも重複は起こる。
+  - 初回では X 側の token が短すぎる場合は止めず、title / source metadata から phase / subject / event が明確な場合だけ束ねる。
 - 媒体違い Web + Web
   - 本 ticket の主対象。
-  - 同じ phase / player / event なら 1本に絞る。
+  - 同じ phase / subject / player / event なら 1本に絞る。
 - X だけ複数
   - 初回では強く潰さない。
   - X は短文で event token が弱いことが多く、誤判定しやすいため。
@@ -139,6 +154,7 @@ X と Web は同じ情報源でも役割が違うため、媒体違い Web 記�
 
 - 新しい選手コメントがある
 - 監督コメントが主題
+- 家族 / チームメート / 相手選手など、主語が別のコメント記事である
 - 登録 / 抹消 / 状態確認など新しい事実がある
 - 記録達成の整理など、`record_milestone` として主題が明確
 - 前日試合の背景整理、起用理由、本人談話、監督談話が増えている
@@ -148,6 +164,7 @@ X と Web は同じ情報源でも役割が違うため、媒体違い Web 記�
 - 同じ phase
 - 同じ選手
 - 同じ強い event token
+- 同じ主語 / 同じ記事角度
 - 別媒体だが主題が同じ
 - 新しい fact token が見つからない
 - 翌日記事同士で、どちらも同じ浅い焼き直しに見える
@@ -165,8 +182,19 @@ X と Web は同じ情報源でも役割が違うため、媒体違い Web 記�
 
 - 報知: `巨人がDeNAに勝利`
 - スポニチ: `阿部監督が試合後にコメント`
+- 報知: `坂本勇人が通算300号、劇的サヨナラ弾`
+- スポニチ: `田中将大が坂本勇人の300号を祝福`
+- デイリー: `坂本勇人の父が300号にコメント`
 
 同じ試合でも、記事の主語と出来事が違うため別記事として残す。
+
+## 実装ガード
+
+AI 実装で事故になりやすい以下 3 点を禁止する。
+
+- 記憶から再構成しない。event / subject / phase は title / source metadata / fixture の literal token から作り、推測で補完しない。
+- silent skip しない。skip する場合は必ず構造化ログと reason payload に kept / skipped source を残す。
+- 自己評価 OK にしない。fixture test / targeted regression / structured log evidence がないものは完了扱いしない。
 
 ## 実装スコープ
 
@@ -198,8 +226,9 @@ X と Web は同じ情報源でも役割が違うため、媒体違い Web 記�
    - 日付または game_id
    - Giants player literal
    - event token literal
+   - subject literal
    - subtype
-2. 同じ run 内で `cross_family_event_key` が一致し、source family が違う場合は 2本目以降を skip。
+2. 同じ run 内で `cross_family_event_key` が一致し、source family が違い、`subject_key` も同じ場合は 2本目以降を skip。
 3. skip 時は silent skip しない。
    - `cross_family_same_event_duplicate_skip` の構造化ログを出す。
    - skip reason に source family / kept URL / skipped URL / event key を残す。
@@ -215,24 +244,51 @@ X と Web は同じ情報源でも役割が違うため、媒体違い Web 記�
 - デイリー + 東スポの同一選手・同一出来事・同一日候補は 1本だけ通る。
 - 2本目以降の媒体 URL / 見出し / source family は `related_sources` または構造化ログに残る。
 - 同じ試合でも player または event token が違う候補は両方残る。
+- 同じ player / event でも記事の主語や視点が違う候補は両方残る。
 - 同じ試合でも phase が違う候補は原則両方残る。
 - 「勝利」「敗戦」「活躍」だけの弱い token では dedup しない。
 - 公式 X は媒体 Web と同じ扱いで即捨てず、補足素材として残す余地を持つ。
+- X と雑誌 / Web メディアの重複も、phase / subject / event が literal に一致する場合は束ねる。
+- X と雑誌 / Web メディアでも、雑誌側に独自コメント / 別主体 / 追加 fact がある場合は潰さない。
 - skip は構造化ログに残り、silent skip にならない。
+- 記憶から再構成した event key / subject key を使わない。
+- 自己評価だけで完了にせず、fixture と targeted regression の PASS を evidence にする。
 - 既存の同一URL dedup、同一タイトル dedup、same-family X+Web dedup の回帰がない。
 - Scheduler / env / Secret / WP既存記事 / X / SNS / mail 条件を変更しない。
 
-## 検証予定
+## 実装結果(2026-05-16 Codex)
+
+- `src/rss_fetcher.py` の既存 `duplicate_guard_context` に `cross_family_event` topic key を追加。
+- event / subject / phase は title / summary / source metadata の literal token だけから作る。AI 類似判定や記憶からの補完は使わない。
+- 同一 run 内では `phase + subject + player + event + day` が一致し、source family が違う候補だけ 2本目以降を skip。
+- 同じ source family の候補は本 ticket の cross-family skip では落とさない。
+- skip log は既存 `duplicate_news_pre_gemini_skip` と分け、`cross_family_same_event_duplicate_skip` として `event_key` / `subject_key` / `phase_key` を出す。
+- 報知 > 日刊 > スポニチ > サンスポ > デイリー > 東スポ > その他の同 run tie-break を追加。cross-run ledger の既存 review 挙動は維持。
+- deploy / Scheduler / env / Secret / WP既存記事 / X / SNS / mail 条件は未変更。
+
+## 検証
 
 - 新規 fixture test:
   - cross-family same player same event -> second candidate skipped
   - cross-family same game different player/event -> both kept
+  - same player/event but different subject angle -> both kept
+  - X plus magazine/web same subject/event -> one kept with related source
+  - X plus magazine/web with unique comment/subject -> both kept
   - weak event token -> both kept
   - source priority keeps stronger family
 - 関連テスト:
   - `python3 -m py_compile src/rss_fetcher.py tests/test_duplicate_prevention_golden.py`
   - `python3 -m pytest tests/test_duplicate_prevention_golden.py tests/test_rss_fetcher_reliability_2026_05_08.py -q`
   - 追加 test file があればそれも実行
+
+実行済み:
+
+- `python3 -m py_compile src/rss_fetcher.py tests/test_rss_fetcher_duplicate_guard.py tests/test_duplicate_prevention_golden.py`
+- `python3 -m compileall -q src/rss_fetcher.py tests/test_rss_fetcher_duplicate_guard.py tests/test_duplicate_prevention_golden.py tests/test_rss_fetcher_reliability_2026_05_08.py`
+- `python3 -c "import ast, pathlib; paths=[pathlib.Path('src/rss_fetcher.py'), pathlib.Path('tests/test_rss_fetcher_duplicate_guard.py')]; [ast.parse(p.read_text(encoding='utf-8'), filename=str(p)) for p in paths]; print('AST_OK', ','.join(str(p) for p in paths))"`
+- `python3 -m pytest tests/test_rss_fetcher_duplicate_guard.py -q` -> 13 passed
+- `python3 -m pytest tests/test_duplicate_prevention_golden.py tests/test_rss_fetcher_reliability_2026_05_08.py -q` -> 36 passed / 3 xfailed / 3 subtests passed
+- `python3 -m pytest tests/test_rss_fetcher.py -q` -> 28 passed
 
 ## 完了条件
 
@@ -245,6 +301,7 @@ X と Web は同じ情報源でも役割が違うため、媒体違い Web 記�
 ## STOP条件
 
 - AI が本文意味を推測して event key を作らないと判定できない。
+- 主語 / 視点を literal token で切れず、同じ event の別角度記事を落とす可能性がある。
 - 弱い token まで止めないと効果が出ない。
 - 2媒体ではなく 3媒体 digest の仕様変更に広がる。
 - publish / mail / scheduler / env 変更が必要になる。

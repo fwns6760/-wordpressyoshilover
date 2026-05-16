@@ -18222,6 +18222,22 @@ def _duplicate_source_family_priority(family: str) -> int:
     return 4
 
 
+def _duplicate_source_family_tiebreak(family: str) -> int:
+    order = {
+        "giants_official": 0,
+        "npb_official": 1,
+        "yomiuri_online": 2,
+        "hochi": 3,
+        "nikkansports": 4,
+        "sponichi": 5,
+        "sanspo": 6,
+        "daily": 7,
+        "tokyo_sports": 8,
+        "yahoo_news_aggregator": 9,
+    }
+    return order.get(str(family or "").strip(), 99)
+
+
 def _is_first_tier_duplicate_family(family: str) -> bool:
     normalized = str(family or "").strip()
     if not normalized or normalized == "yahoo_news_aggregator":
@@ -18305,6 +18321,137 @@ _TOPIC_DEDUP_GENERIC_TERMS = (
     "記事",
     "プロ野球",
 )
+
+
+_CROSS_FAMILY_EVENT_PATTERNS: tuple[str, ...] = (
+    r"(?:通算)?[0-9０-９]+号(?:サヨナラ|逆転)?(?:ホームラン|本塁打|弾)",
+    r"(?:通算)?[0-9０-９]+号",
+    r"(?:サヨナラ|逆転)[0-9０-９]+ラン",
+    r"(?:サヨナラ|逆転)(?:ホームラン|本塁打|弾|安打|打)",
+    r"(?:出場選手)?登録抹消",
+    r"登録を?抹消",
+    r"抹消",
+    r"(?:一軍|1軍|１軍)?(?:昇格|登録|再登録)",
+    r"(?:途中|負傷)交代",
+    r"完封(?:勝利|勝ち)?",
+    r"完投(?:勝利|勝ち)?",
+    r"[0-9０-９]+回[0-9０-９]+失点",
+    r"スタメン",
+    r"先発",
+)
+_CROSS_FAMILY_EVENT_RES: tuple = tuple(_re.compile(pattern) for pattern in _CROSS_FAMILY_EVENT_PATTERNS)
+
+
+def _normalize_cross_family_event_token(token: str) -> str:
+    normalized = _normalize_duplicate_subject(token)
+    if not normalized:
+        return ""
+    normalized = normalized.replace("通算", "")
+    normalized = normalized.replace("本塁打", "ホームラン").replace("弾", "ホームラン")
+    normalized = normalized.replace("３ラン", "3ラン")
+    if "登録抹消" in normalized or "抹消" in normalized:
+        return "抹消"
+    if "再登録" in normalized:
+        return "登録"
+    if normalized in {"1軍登録", "１軍登録", "一軍登録"}:
+        return "登録"
+    return normalized
+
+
+def _detect_cross_family_event_token(title: str, summary: str) -> str:
+    source_text = _strip_html(f"{title or ''} {summary or ''}")
+    if not source_text.strip():
+        return ""
+    for pattern in _CROSS_FAMILY_EVENT_RES:
+        match = pattern.search(source_text)
+        if match:
+            return _normalize_cross_family_event_token(match.group(0))
+    return ""
+
+
+def _cross_family_event_phase_key(article_subtype: str, event_token: str) -> str:
+    subtype = str(article_subtype or "").strip().lower()
+    event = str(event_token or "")
+    if not event:
+        return ""
+    if "抹消" in event or "登録" in event or "昇格" in event:
+        return "roster_status"
+    if "交代" in event:
+        return "injury_status"
+    if "号" in event:
+        return "record_milestone"
+    if event in {"スタメン", "先発"}:
+        return "lineup"
+    if subtype == "manager":
+        return "manager_quote"
+    if subtype == "postgame":
+        return "same_day_postgame"
+    return subtype or "general"
+
+
+def _extract_cross_family_subject_key(title: str, summary: str, category: str, player: str) -> str:
+    source_text = _strip_html(f"{title or ''} {summary or ''}")
+    normalized_player = _normalize_duplicate_subject(player)
+    if normalized_player:
+        for relation in ("父親", "父", "母親", "母", "家族"):
+            if f"{normalized_player}の{relation}" in source_text or f"{normalized_player}{relation}" in source_text:
+                return f"{normalized_player}:{_normalize_duplicate_subject(relation)}"
+    subject = _compact_subject_label(title, summary, category) or _extract_subject_label(title, summary, category)
+    subject_key = _normalize_duplicate_subject(subject)
+    if subject_key and subject_key not in {"巨人", "選手", "首脳陣"}:
+        return subject_key
+    return normalized_player
+
+
+def _extract_cross_family_event_topic_key(
+    *,
+    title: str,
+    summary: str,
+    category: str,
+    article_subtype: str,
+    player: str,
+    published_at: datetime | None = None,
+) -> tuple[str, str, str, str]:
+    if not player:
+        return "", "", "", ""
+    event_token = _detect_cross_family_event_token(title, summary)
+    if not event_token:
+        return "", "", "", ""
+    phase_key = _cross_family_event_phase_key(article_subtype, event_token)
+    if not phase_key:
+        return "", "", "", ""
+    subject_key = _extract_cross_family_subject_key(title, summary, category, player)
+    if not subject_key:
+        return "", "", "", ""
+    day_key = _topic_dedup_day_key(published_at) if published_at is not None else ""
+    topic_parts = ["cross_family_event"]
+    if day_key:
+        topic_parts.append(day_key)
+    topic_parts.extend([phase_key, subject_key, player, event_token])
+    return ":".join(topic_parts), event_token, subject_key, phase_key
+
+
+def _is_cross_family_event_context(context: Mapping[str, object] | None) -> bool:
+    if not isinstance(context, Mapping):
+        return False
+    topic_key = str(context.get("topic_key") or "")
+    return topic_key.startswith("cross_family_event:")
+
+
+def _duplicate_skip_event_name(context: Mapping[str, object] | None) -> str:
+    if _is_cross_family_event_context(context):
+        return "cross_family_same_event_duplicate_skip"
+    return "duplicate_news_pre_gemini_skip"
+
+
+def _duplicate_structured_event_fields(context: Mapping[str, object] | None) -> dict[str, str]:
+    if not _is_cross_family_event_context(context):
+        return {}
+    return {
+        "event_key": str(context.get("cross_family_event_token") or ""),
+        "subject_key": str(context.get("cross_family_subject_key") or ""),
+        "phase_key": str(context.get("cross_family_phase_key") or ""),
+    }
 
 
 def _topic_dedup_day_key(value: object) -> str:
@@ -18548,15 +18695,16 @@ def _extract_duplicate_topic_key(
     category: str,
     article_subtype: str,
     player: str,
-) -> str:
+    published_at: datetime | None = None,
+) -> tuple[str, str, str, str]:
     if not player:
-        return ""
+        return "", "", "", ""
     normalized_subtype = str(article_subtype or "").strip().lower()
-    if normalized_subtype not in {"player", "player_recovery", "player_notice", "general"}:
-        return ""
+    if normalized_subtype not in {"player", "player_recovery", "player_notice", "general", "manager", "postgame", "roster"}:
+        return "", "", "", ""
     source_text = f"{title or ''} {summary or ''}"
     if not source_text.strip():
-        return ""
+        return "", "", "", ""
 
     head_markers = ("ヘルメット", "頭部", "顔面", "頭", "マスク")
     bat_markers = ("バット", "フォロースイング", "フォロースルー")
@@ -18566,9 +18714,16 @@ def _extract_duplicate_topic_key(
         and any(marker in source_text for marker in bat_markers)
         and any(marker in source_text for marker in contact_markers)
     ):
-        return "player_incident:head_bat_contact"
+        return "player_incident:head_bat_contact", "", "", ""
 
-    return ""
+    return _extract_cross_family_event_topic_key(
+        title=title,
+        summary=summary,
+        category=category,
+        article_subtype=article_subtype,
+        player=player,
+        published_at=published_at,
+    )
 
 
 def compute_duplicate_key(
@@ -18675,6 +18830,7 @@ def _duplicate_hours_gap(existing: object, current: object) -> float | None:
 def _duplicate_candidate_priority_sort_key(candidate: dict) -> tuple[object, ...]:
     return (
         int(candidate.get("source_family_priority", 4) or 4),
+        _duplicate_source_family_tiebreak(str(candidate.get("source_family") or "")),
         0 if candidate.get("canonical_url") else 1,
         -int(candidate.get("body_length", 0) or 0),
         _duplicate_candidate_time_sort_value(candidate.get("published_at")),
@@ -18854,6 +19010,9 @@ def _emit_duplicate_news_structured(
     existing_source_url_hash: str = "",
     primary_post_id: int | None = None,
     ambiguity_reason: str = "",
+    event_key: str = "",
+    subject_key: str = "",
+    phase_key: str = "",
 ) -> None:
     payload = {
         "event": event,
@@ -18875,6 +19034,12 @@ def _emit_duplicate_news_structured(
         payload["primary_post_id"] = primary_post_id
     if ambiguity_reason:
         payload["ambiguity_reason"] = ambiguity_reason
+    if event_key:
+        payload["event_key"] = str(event_key or "")
+    if subject_key:
+        payload["subject_key"] = str(subject_key or "")
+    if phase_key:
+        payload["phase_key"] = str(phase_key or "")
     logger.info(json.dumps(payload, ensure_ascii=False))
 
 
@@ -18935,14 +19100,15 @@ def _build_duplicate_news_context(
     source_family = _extract_source_family(source_url)
     player = _extract_duplicate_player(title, summary, category)
     resolved_game_id = _extract_duplicate_game_id(source_url, explicit_game_id=game_id)
-    topic_key = _extract_duplicate_topic_key(
+    published_at_text = published_at.isoformat() if isinstance(published_at, datetime) else ""
+    topic_key, cross_family_event_token, cross_family_subject_key, cross_family_phase_key = _extract_duplicate_topic_key(
         title=title,
         summary=summary,
         category=category,
         article_subtype=article_subtype,
         player=player,
+        published_at=published_at,
     )
-    published_at_text = published_at.isoformat() if isinstance(published_at, datetime) else ""
     topic_terms = _extract_topic_dedup_terms(title, summary, player)
     duplicate_key = compute_duplicate_key(
         source_url=source_url,
@@ -18984,6 +19150,9 @@ def _build_duplicate_news_context(
         "game_id": resolved_game_id,
         "topic_key": topic_key,
         "topic_terms": topic_terms,
+        "cross_family_event_token": cross_family_event_token,
+        "cross_family_subject_key": cross_family_subject_key,
+        "cross_family_phase_key": cross_family_phase_key,
         "published_at": published_at_text,
         "body_length": len(_strip_html(f"{title} {summary}")),
         "source_name": source_name,
@@ -19029,6 +19198,20 @@ def _annotate_duplicate_guard_contexts(candidates: list[dict]) -> list[dict]:
 
     for contexts in groups.values():
         primary = min(contexts, key=_duplicate_candidate_priority_sort_key)
+        if any(_is_cross_family_event_context(context) for context in contexts):
+            primary_family = str(primary.get("source_family") or "")
+            for context in contexts:
+                context["same_run_group_size"] = len(contexts)
+                context["same_run_primary_source_url_hash"] = primary.get("source_url_hash", "")
+                context["same_run_primary_post_id"] = primary.get("post_id")
+                context_family = str(context.get("source_family") or "")
+                if context is primary or context_family == primary_family:
+                    context["same_run_primary"] = True
+                    continue
+                context["same_run_primary"] = False
+                context["same_run_ambiguous"] = False
+                context["same_run_ambiguity_reason"] = ""
+            continue
         for context in contexts:
             context["same_run_group_size"] = len(contexts)
             context["same_run_primary"] = context is primary
@@ -19077,7 +19260,7 @@ def _evaluate_pre_gemini_duplicate_guard(
             return "review"
         _emit_duplicate_news_structured(
             logger,
-            event="duplicate_news_pre_gemini_skip",
+            event=_duplicate_skip_event_name(duplicate_guard_context),
             duplicate_key=str(duplicate_guard_context.get("duplicate_key") or ""),
             skipped_source_url_hash=str(duplicate_guard_context.get("source_url_hash") or ""),
             primary_source_url_hash=str(duplicate_guard_context.get("same_run_primary_source_url_hash") or ""),
@@ -19085,6 +19268,7 @@ def _evaluate_pre_gemini_duplicate_guard(
             title_norm=str(duplicate_guard_context.get("title_norm") or ""),
             subtype=str(duplicate_guard_context.get("subtype") or ""),
             source_family=str(duplicate_guard_context.get("source_family") or ""),
+            **_duplicate_structured_event_fields(duplicate_guard_context),
         )
         duplicate_guard_context["guard_outcome"] = "skip"
         duplicate_guard_context["duplicate_guard_evaluated"] = True
@@ -19095,9 +19279,16 @@ def _evaluate_pre_gemini_duplicate_guard(
         duplicate_history,
     )
     if history_match is not None:
+        if (
+            _is_cross_family_event_context(duplicate_guard_context)
+            and str(history_match.get("source_family") or "") == str(duplicate_guard_context.get("source_family") or "")
+        ):
+            history_match = None
+
+    if history_match is not None:
         _emit_duplicate_news_structured(
             logger,
-            event="duplicate_news_pre_gemini_skip",
+            event=_duplicate_skip_event_name(duplicate_guard_context),
             duplicate_key=str(duplicate_guard_context.get("duplicate_key") or ""),
             skipped_source_url_hash=str(duplicate_guard_context.get("source_url_hash") or ""),
             existing_source_url_hash=str(history_match.get("source_url_hash") or ""),
@@ -19106,6 +19297,7 @@ def _evaluate_pre_gemini_duplicate_guard(
             subtype=str(duplicate_guard_context.get("subtype") or ""),
             source_family=str(duplicate_guard_context.get("source_family") or ""),
             ambiguity_reason=f"topic_history:{history_match_basis}",
+            **_duplicate_structured_event_fields(duplicate_guard_context),
         )
         duplicate_guard_context["guard_outcome"] = "skip"
         duplicate_guard_context["duplicate_guard_evaluated"] = True
@@ -19117,6 +19309,13 @@ def _evaluate_pre_gemini_duplicate_guard(
         str(duplicate_guard_context.get("group_signature") or ""),
     )
     if recent is None:
+        duplicate_guard_context["duplicate_guard_evaluated"] = True
+        return "allow"
+
+    if (
+        _is_cross_family_event_context(duplicate_guard_context)
+        and str(recent.get("source_family") or "") == str(duplicate_guard_context.get("source_family") or "")
+    ):
         duplicate_guard_context["duplicate_guard_evaluated"] = True
         return "allow"
 
@@ -19144,7 +19343,7 @@ def _evaluate_pre_gemini_duplicate_guard(
 
     _emit_duplicate_news_structured(
         logger,
-        event="duplicate_news_pre_gemini_skip",
+        event=_duplicate_skip_event_name(duplicate_guard_context),
         duplicate_key=str(duplicate_guard_context.get("duplicate_key") or ""),
         skipped_source_url_hash=str(duplicate_guard_context.get("source_url_hash") or ""),
         primary_source_url_hash=str(recent.get("source_url_hash") or ""),
@@ -19152,6 +19351,7 @@ def _evaluate_pre_gemini_duplicate_guard(
         title_norm=str(duplicate_guard_context.get("title_norm") or ""),
         subtype=str(duplicate_guard_context.get("subtype") or ""),
         source_family=str(duplicate_guard_context.get("source_family") or ""),
+        **_duplicate_structured_event_fields(duplicate_guard_context),
     )
     duplicate_guard_context["guard_outcome"] = "skip"
     duplicate_guard_context["duplicate_guard_evaluated"] = True

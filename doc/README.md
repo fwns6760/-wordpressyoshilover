@@ -1899,6 +1899,18 @@ git add -A禁止。
 - **tests**: py_compile PASS、compileall PASS、AST PASS、関連 4 file `103 passed, 3 warnings`。production DB copy preview PASS。
 - **deploy**: commit `3260e7a`、Cloud Build `afc27377-94d5-4756-9694-16daae910588` SUCCESS、image `insight-nightly:373-defense-player-3260e7a`、digest `sha256:7a3f569bfb1e...`、Cloud Run Job generation `52`。Scheduler / env / Secret / X / SNS / mail は未変更、executionCount `40` 維持で手動 execute 未実行。
 
+### 374-x-post-mail-dedup-starvation-fallback
+
+- **alias**: -
+- **status**: REVIEW_NEEDED / **priority**: high
+- **owner**: Codex / **lane**: B
+- **doc_path**: `doc/active/374-x-post-mail-dedup-starvation-fallback.md`
+- **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/43
+- **背景**: 353〜355 の確認で送った 10 候補が 24h dedup ledger に残り、15:00 JST は 1 候補、17:30 JST は 0 候補で mail skip になった。07:00 / 12:00 JST は別途 Scheduler 403 修正済み。
+- **方針**: 24h dedup は通常維持。ただし dedup 後候補が default 3 件未満なら、dedup-safe 候補を先頭に残したまま dedup なし候補で不足分を backfill する。重複抑制を hard stop ではなく soft preference にし、候補 mail 自体が枯れる事故を止める。
+- **tests**: py_compile PASS、compileall PASS、AST PASS、`test_x_post_mail.py` 71 passed、関連 3 file `107 passed, 3 warnings, 6 subtests passed`。
+- **deploy**: pending。Scheduler / env / Secret / WP / X / SNS は変更しない。追加 mail 回避のため手動 execute は未実行予定。
+
 ### 362-INSIGHT-queue-cleanup-and-metric-run-cap
 
 - **alias**: -

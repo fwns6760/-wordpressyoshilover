@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 from src.x_post_mail_lane import (
     CENTRAL_LEAGUE_TEAM_ALIASES,
@@ -975,6 +975,16 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
 class XPostMailEntrypointFreshnessTests(unittest.TestCase):
     """DB freshness guard for the X post mail CLI entrypoint."""
 
+    def _entrypoint_candidate(self, signature: str) -> Candidate:
+        return Candidate(
+            title=f"候補 {signature}",
+            metric="OPS",
+            period_label="直近5試合",
+            draft_text=f"候補 {signature}\n#巨人 #ジャイアンツ",
+            char_count=24,
+            signature=signature,
+        )
+
     def test_main_aborts_before_candidate_pick_when_db_is_stale(self) -> None:
         from src.tools import run_x_post_mail
 
@@ -1018,6 +1028,134 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
                 run_x_post_mail._resolve_max_db_staleness_days(),
                 run_x_post_mail.DEFAULT_MAX_DB_STALENESS_DAYS,
             )
+
+    def test_dedup_starvation_backfills_relaxed_candidates(self) -> None:
+        """24h dedupで候補が少なすぎる時は、mail自体を枯らさず不足分を埋める。"""
+        from src.tools import run_x_post_mail
+
+        fresh = self._entrypoint_candidate("fresh-sig")
+        relaxed = [
+            self._entrypoint_candidate("fresh-sig"),
+            self._entrypoint_candidate("old-sig-1"),
+            self._entrypoint_candidate("old-sig-2"),
+            self._entrypoint_candidate("old-sig-3"),
+        ]
+        send_result = run_x_post_mail.mdb.MailResult(
+            status="sent",
+            refused_recipients={},
+            smtp_response=[],
+            reason=None,
+        )
+        with patch.dict(
+            "os.environ",
+            {
+                "MAIL_BRIDGE_TO": "ops@example.test",
+                "INSIGHT_GCS_BUCKET": "insight-bucket",
+                "X_POST_MAIL_DEDUP_MIN_CANDIDATES": "3",
+            },
+            clear=False,
+        ), patch.object(
+            run_x_post_mail.miq,
+            "ensure_local_db",
+            return_value={"ok": True, "path": "/tmp/insight.db"},
+        ), patch.object(
+            run_x_post_mail.lane,
+            "query_db_latest_game_date",
+            return_value="2026-05-16",
+        ), patch.object(
+            run_x_post_mail.lane,
+            "db_staleness_days",
+            return_value=0,
+        ), patch.object(
+            run_x_post_mail.lane,
+            "_load_recent_dedup_signatures",
+            return_value={"old-sig-1", "old-sig-2", "old-sig-3"},
+        ), patch.object(
+            run_x_post_mail.lane,
+            "pick_candidates",
+            side_effect=[[fresh], relaxed],
+        ) as pick_candidates, patch.object(
+            run_x_post_mail.mdb,
+            "send",
+            return_value=send_result,
+        ) as send, patch.object(
+            run_x_post_mail.lane,
+            "_record_dedup_signatures",
+            return_value=True,
+        ) as record:
+            result = run_x_post_mail.main(["--max-candidates", "4"])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(pick_candidates.call_count, 2)
+        self.assertEqual(
+            pick_candidates.call_args_list[0].kwargs["dedup_set"],
+            {"old-sig-1", "old-sig-2", "old-sig-3"},
+        )
+        self.assertIsNone(pick_candidates.call_args_list[1].kwargs["dedup_set"])
+        request = send.call_args.args[0]
+        self.assertEqual(request.metadata["candidate_count"], 4)
+        record.assert_called_once_with(
+            "insight-bucket",
+            ["fresh-sig", "old-sig-1", "old-sig-2", "old-sig-3"],
+            ANY,
+        )
+
+    def test_dedup_sufficient_candidates_do_not_retry(self) -> None:
+        """dedup後に候補が十分あれば従来通り1回だけ選別する。"""
+        from src.tools import run_x_post_mail
+
+        cands = [
+            self._entrypoint_candidate("sig-1"),
+            self._entrypoint_candidate("sig-2"),
+            self._entrypoint_candidate("sig-3"),
+        ]
+        send_result = run_x_post_mail.mdb.MailResult(
+            status="sent",
+            refused_recipients={},
+            smtp_response=[],
+            reason=None,
+        )
+        with patch.dict(
+            "os.environ",
+            {
+                "MAIL_BRIDGE_TO": "ops@example.test",
+                "INSIGHT_GCS_BUCKET": "insight-bucket",
+                "X_POST_MAIL_DEDUP_MIN_CANDIDATES": "3",
+            },
+            clear=False,
+        ), patch.object(
+            run_x_post_mail.miq,
+            "ensure_local_db",
+            return_value={"ok": True, "path": "/tmp/insight.db"},
+        ), patch.object(
+            run_x_post_mail.lane,
+            "query_db_latest_game_date",
+            return_value="2026-05-16",
+        ), patch.object(
+            run_x_post_mail.lane,
+            "db_staleness_days",
+            return_value=0,
+        ), patch.object(
+            run_x_post_mail.lane,
+            "_load_recent_dedup_signatures",
+            return_value={"old-sig"},
+        ), patch.object(
+            run_x_post_mail.lane,
+            "pick_candidates",
+            return_value=cands,
+        ) as pick_candidates, patch.object(
+            run_x_post_mail.mdb,
+            "send",
+            return_value=send_result,
+        ), patch.object(
+            run_x_post_mail.lane,
+            "_record_dedup_signatures",
+            return_value=True,
+        ):
+            result = run_x_post_mail.main([])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(pick_candidates.call_count, 1)
 
 
 class TicketThreeFiftyFiveDedupTests(unittest.TestCase):

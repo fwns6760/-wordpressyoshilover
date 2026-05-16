@@ -35,6 +35,7 @@ from src import x_post_mail_lane as lane  # noqa: E402
 
 LOG = logging.getLogger("x_post_mail")
 DEFAULT_MAX_DB_STALENESS_DAYS = 2
+DEFAULT_DEDUP_MIN_CANDIDATES = 3
 
 
 def _configure_logging() -> None:
@@ -81,6 +82,56 @@ def _resolve_max_db_staleness_days() -> int:
             DEFAULT_MAX_DB_STALENESS_DAYS,
         )
         return DEFAULT_MAX_DB_STALENESS_DAYS
+
+
+def _resolve_dedup_min_candidates() -> int:
+    raw = (
+        os.environ.get("X_POST_MAIL_DEDUP_MIN_CANDIDATES")
+        or str(DEFAULT_DEDUP_MIN_CANDIDATES)
+    ).strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        LOG.warning(
+            "Invalid X_POST_MAIL_DEDUP_MIN_CANDIDATES=%r; using default %d",
+            raw,
+            DEFAULT_DEDUP_MIN_CANDIDATES,
+        )
+        return DEFAULT_DEDUP_MIN_CANDIDATES
+    if value < 0:
+        LOG.warning(
+            "Invalid X_POST_MAIL_DEDUP_MIN_CANDIDATES=%r; using default %d",
+            raw,
+            DEFAULT_DEDUP_MIN_CANDIDATES,
+        )
+        return DEFAULT_DEDUP_MIN_CANDIDATES
+    return value
+
+
+def _backfill_dedup_starved_candidates(
+    candidates: list[lane.Candidate],
+    relaxed_candidates: list[lane.Candidate],
+    *,
+    max_candidates: int,
+) -> list[lane.Candidate]:
+    """Keep fresh dedup-safe candidates first, then fill with relaxed ones.
+
+    The 24h dedup gate is useful while there are enough alternative
+    combos. When it leaves the mail nearly empty, the operator loses the
+    actual review queue, so duplicate suppression must become a soft
+    preference instead of a hard skip.
+    """
+    merged = list(candidates)
+    seen_signatures = {c.signature for c in merged if c.signature}
+    for cand in relaxed_candidates:
+        if len(merged) >= max_candidates:
+            break
+        if cand.signature and cand.signature in seen_signatures:
+            continue
+        merged.append(cand)
+        if cand.signature:
+            seen_signatures.add(cand.signature)
+    return merged
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
@@ -183,6 +234,39 @@ def main(argv: Sequence[str] | None = None) -> int:
         db_path=db_path,
         dedup_set=dedup_set,
     )
+    dedup_min_candidates = _resolve_dedup_min_candidates()
+    if dedup_set is not None and len(candidates) < dedup_min_candidates:
+        LOG.warning(
+            "24h dedup left only %d candidates (<%d); retrying without dedup "
+            "to avoid starving scheduled mail.",
+            len(candidates),
+            dedup_min_candidates,
+        )
+        relaxed_candidates = lane.pick_candidates(
+            miq.query_rank,
+            now=now_jst,
+            max_candidates=args.max_candidates,
+            min_sample=args.min_sample,
+            db_path=db_path,
+            dedup_set=None,
+        )
+        backfilled = _backfill_dedup_starved_candidates(
+            candidates,
+            relaxed_candidates,
+            max_candidates=args.max_candidates,
+        )
+        if len(backfilled) > len(candidates):
+            LOG.info(
+                "Dedup fallback backfilled candidates: %d -> %d",
+                len(candidates),
+                len(backfilled),
+            )
+            candidates = backfilled
+        else:
+            LOG.info(
+                "Dedup fallback found no additional candidates (relaxed=%d)",
+                len(relaxed_candidates),
+            )
     if not candidates:
         LOG.warning("No candidates generated — skip send (insight.db likely sparse).")
         return 0

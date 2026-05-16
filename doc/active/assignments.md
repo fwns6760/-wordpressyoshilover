@@ -71,7 +71,7 @@ test: 382 passed (= 302 baseline + 35 step1 + 18 step2 + 14 step3p1 + 13 step3p2
 
 ## 2026-05-16 session summary
 
-### repo 実装済、push/deploy 済、自然 fire 観察待ち
+### repo 実装済、deploy 済、push は repo lock により未実行、自然 fire 観察待ち
 
 | ticket | status | 内容 |
 |---|---|---|

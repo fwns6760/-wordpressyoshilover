@@ -2,7 +2,7 @@
 
 ## meta
 
-- status: REVIEW_NEEDED
+- status: LIVE_DEPLOYED_OBSERVE
 - priority: high
 - owner: Codex
 - lane: B
@@ -79,11 +79,15 @@
 - `python3 -m compileall -q src/source_postgame_extractor.py src/rss_fetcher.py tests/test_source_postgame_extractor.py tests/test_rss_fetcher_postgame_table.py tests/test_build_news_block.py`
 - AST parse -> `AST_OK src/source_postgame_extractor.py,src/rss_fetcher.py,tests/test_source_postgame_extractor.py,tests/test_rss_fetcher_postgame_table.py`
 - `python3 -m pytest tests/test_source_postgame_extractor.py tests/test_rss_fetcher_postgame_table.py tests/test_build_news_block.py -q` -> 92 passed / 4 warnings / 12 subtests passed
+- commit `6664e16` (`367: guard farm postgame boxscore routing`)
+- `gcloud builds submit --project baseballsite --region asia-northeast1 --tag asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:367-farm-box-6664e16 .` -> Cloud Build `f321dc67-1491-49a3-87b3-077abf922a20` SUCCESS
+- image digest `sha256:9c6dcd9294d5f36fc745d4d4e9311a6d8156e710fce2366c8c6188cbe56f1618`
+- `gcloud run deploy yoshilover-fetcher --image asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:367-farm-box-6664e16 --project baseballsite --region asia-northeast1 --quiet` -> revision `yoshilover-fetcher-00404-kds`, traffic 100%
+- `curl -sS https://yoshilover-fetcher-487178857517.asia-northeast1.run.app/health` -> OK
+- Cloud Run log: revision `yoshilover-fetcher-00404-kds` startup TCP probe succeeded; Ready condition true
+- published post `68610` は status=publish のため未更新
 
 ## 未完了
 
-- commit
-- deploy
-- `/health` smoke
 - natural fire / log evidence
 - GitHub Issue #36 close

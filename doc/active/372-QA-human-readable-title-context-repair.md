@@ -4,7 +4,7 @@
 
 - ticket: 372-QA-human-readable-title-context-repair
 - github_issue: https://github.com/fwns6760/-wordpressyoshilover/issues/41
-- status: REVIEW_NEEDED
+- status: LIVE_DEPLOYED_OBSERVE
 - priority: P0.5
 - owner: Codex
 - lane: B
@@ -80,6 +80,16 @@ The weak-title rescue covered some short player-event titles, but not these broa
   - Updated 41 posts via WP REST after status check.
   - Updated `title` and JSON-LD `headline`; status was not changed.
   - Verification: 41 checked, `headline_mismatches=0`.
+- Commit/deploy:
+  - commit `097c4c8` (`372: repair context-thin RSS titles`)
+  - Cloud Build `9faa589c-fa6d-40c9-930b-3c80e80fd076` SUCCESS
+  - image `372-title-context-097c4c8`
+  - digest `sha256:1f557f4c909dc3d0737978ad4ce2bcc6ae921ce9ccbd0dece96b6f0af31e8242`
+  - revision `yoshilover-fetcher-00409-jkg` 100%
+  - `/health` => `OK`
+  - startup log: `Default STARTUP TCP probe succeeded after 1 attempt`
+  - Scheduler / env / Secret / X / SNS / mail conditions were not changed.
+  - Manual `/run` was not executed to avoid extra publish/mail side effects.
 
 ## observe
 

@@ -64,11 +64,11 @@
 
 ## deploy notes
 
-- commit: `8447109`
-- Cloud Build: `a2ced6da-5d6a-46e7-bcb1-e1ae93092fdf` SUCCESS
-- image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/insight-nightly:361-table-title-8447109`
-- digest: `sha256:bf0000bff08570ed0a93f57115e5a66252ce85682089c3dbdd4c331ea56fe7eb`
-- Cloud Run Job: `insight-nightly` generation `49`
+- commit: `a9b208e`
+- Cloud Build: `b027f92a-b3f7-4aed-b448-cdded17740fb` SUCCESS
+- image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/insight-nightly:361-title-league-a9b208e`
+- digest: `sha256:b2fb813a542a0ce7b79ea8c395f939fa3027001ce88f97bca123c2c65877ff69`
+- Cloud Run Job: `insight-nightly` generation `50`
 - Scheduler: `data-insight-*` 7 triggers ENABLED のまま確認
 - Scheduler / env / Secret は変更しない
 - 手動 execute は追加 publish/mail を発生させる可能性があるため未実行。次回自然 fire で live output を確認する

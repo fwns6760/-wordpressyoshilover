@@ -260,3 +260,12 @@ YYYY-MM-DD HH:MM JST | <test> | <regression> | <fix> | <test added>
 - `src/analysis/insight_title_guard.py` を追加し、data-insight title が読者向け期間を持つか runtime で判定。
 - `last_5_games` / `last_10_games` / `last_7d` / `last_30d` などの raw scope code は title 期間扱いにせず、日本語 label を補完。
 - 対象は data-insight publish 経路のみ。RSS 通常記事 / X / SNS / Scheduler / env / Secret は対象外。
+
+### 2026-05-16 follow-up deploy evidence
+
+- commit: `5a4e5e6 fix(data-insight): enforce title period guard`
+- build: `abf66df4-42b8-402f-8099-0e342923f24e` SUCCESS
+- image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/insight-nightly:5a4e5e6`
+- digest: `sha256:73c0b4b0bdd4524d7d445be0444f4ac4d0693a4db4b5429f91a4af387ce638c8`
+- Cloud Run Job `insight-nightly` generation `45` now points to `:5a4e5e6`.
+- Scheduler / env / Secret は未変更。手動 `gcloud run jobs execute insight-nightly` は追加記事/mail を避けるため未実行。

@@ -36,6 +36,7 @@ _EVENT_TOKENS: tuple[str, ...] = (
 )
 _EVENT_KEYWORD_BONUS = 20
 _TIME_STEP_BONUS = 30
+_SOCIAL_SECONDARY_DETAIL_BONUS = 25
 # Article publish in JST hours 17:00–23:59 → game / immediate-post-game zone.
 # Inside this zone, fan reactions fire within ~3h of the article. Outside
 # (morning roundup / next-day retrospective at 00:00–16:59 JST), relevant
@@ -45,6 +46,51 @@ _GAME_TIME_HOUR_END_JST = 23
 _GAME_TIME_STEP_DELTA_HOURS = 3
 _NON_GAME_TIME_STEP_DELTA_HOURS = 10
 _JST = timezone(timedelta(hours=9))
+_SOCIAL_SECONDARY_STRONG_TERMS: tuple[str, ...] = (
+    "キャッチボール",
+    "チームメート",
+    "昆陽里",
+    "こやのさと",
+    "伊丹",
+    "合流",
+    "昇格",
+    "登録",
+    "抹消",
+    "復帰",
+    "負傷",
+    "交代",
+    "スタメン",
+    "先発",
+    "ブルペン",
+    "ノック",
+    "サヨナラ",
+    "ホームラン",
+    "本塁打",
+    "完封",
+    "完投",
+)
+_SOCIAL_SECONDARY_GENERIC_FRAGMENTS: tuple[str, ...] = (
+    "巨人",
+    "ジャイアンツ",
+    "選手",
+    "投手",
+    "監督",
+    "コーチ",
+    "内野手",
+    "外野手",
+    "捕手",
+    "東京ドーム",
+    "ジャイアンツ球場",
+    "スポーツ報知",
+    "サンスポ",
+    "スポニチ",
+    "日刊スポーツ",
+    "報知新聞",
+    "巨人班",
+    "関連情報",
+    "投稿",
+    "ポスト",
+)
 
 
 def _normalize_name(value: str) -> str:
@@ -131,6 +177,62 @@ def _shared_event_token(article_text: str, candidate_text: str) -> str:
     for token in _EVENT_TOKENS:
         if token and token in article_text and token in candidate_text:
             return token
+    return ""
+
+
+def _compact_social_detail_text(value: str, aliases: list[str]) -> str:
+    clean = re.sub(r"https?://\S+|pic\.twitter\.com/\S+|@\w+", "", value or "")
+    clean = _normalize_name(clean)
+    for alias in aliases:
+        normalized_alias = _normalize_name(alias)
+        if normalized_alias:
+            clean = clean.replace(normalized_alias, "")
+    for fragment in _SOCIAL_SECONDARY_GENERIC_FRAGMENTS:
+        normalized_fragment = _normalize_name(fragment)
+        if normalized_fragment:
+            clean = clean.replace(normalized_fragment, "")
+    clean = re.sub(r"[^\w一-龥ぁ-んァ-ヴー]", "", clean)
+    return clean
+
+
+def _shared_social_detail_token(article_text: str, candidate_text: str, aliases: list[str]) -> str:
+    """Return a concrete shared detail for social-news secondary embeds.
+
+    Player-name overlap alone is too broad for X posts. A second media tweet
+    must share a concrete event/detail token with the source tweet; otherwise
+    unrelated posts about the same player get rendered as one article.
+    """
+    event_token = _shared_event_token(article_text, candidate_text)
+    if event_token:
+        return event_token
+
+    compact_article = _compact_social_detail_text(article_text, aliases)
+    compact_candidate = _compact_social_detail_text(candidate_text, aliases)
+    if not compact_article or not compact_candidate:
+        return ""
+
+    for term in _SOCIAL_SECONDARY_STRONG_TERMS:
+        normalized = _normalize_name(term)
+        if normalized and normalized in compact_article and normalized in compact_candidate:
+            return normalized
+
+    # Final deterministic fallback for unusual but literal same-topic phrases.
+    # Four Japanese chars is intentionally narrow after alias/generic stripping.
+    if len(compact_article) <= len(compact_candidate):
+        shorter = compact_article
+        longer = compact_candidate
+    else:
+        shorter = compact_candidate
+        longer = compact_article
+    for size in (8, 7, 6, 5, 4):
+        if len(shorter) < size:
+            continue
+        for index in range(0, len(shorter) - size + 1):
+            token = shorter[index : index + size]
+            if token.isdigit():
+                continue
+            if token in longer:
+                return token
     return ""
 
 
@@ -431,6 +533,54 @@ def _second_quote_skip_meta(
     )
 
 
+def _social_second_quote_skip_meta(
+    prepared_candidates: list[dict[str, Any]],
+    aliases: list[str],
+    article_time: datetime | None,
+    first_quote: dict[str, str],
+) -> dict[str, Any]:
+    base_meta = _second_quote_skip_meta(
+        prepared_candidates,
+        aliases,
+        article_time,
+        first_quote,
+        {"media"},
+    )
+    if base_meta.get("skip_reason") != "score_below_threshold":
+        return base_meta
+
+    article_text = _normalize_name(
+        " ".join(
+            str(first_quote.get(field) or "")
+            for field in ("source_title", "source_summary")
+        )
+    )
+    if not article_text:
+        return base_meta
+
+    alias_matches = [
+        item
+        for item in prepared_candidates
+        if item.get("source_class") == "media"
+        and _match_alias(str(item.get("candidate_text") or ""), aliases)
+        and _candidate_within_window(article_time, item.get("candidate_time"))
+    ]
+    if not alias_matches:
+        return base_meta
+    if any(
+        _shared_social_detail_token(
+            article_text,
+            str(item.get("candidate_text") or ""),
+            aliases,
+        )
+        for item in alias_matches
+    ):
+        return base_meta
+    updated = dict(base_meta)
+    updated["skip_reason"] = "topic_detail_mismatch"
+    return updated
+
+
 def _primary_quote_skip_meta(
     prepared_candidates: list[dict[str, Any]],
     aliases: list[str],
@@ -504,6 +654,16 @@ def _rank_pool_candidates(
         if not matched_alias:
             continue
 
+        social_detail_token = ""
+        if route == "social_secondary":
+            social_detail_token = _shared_social_detail_token(
+                article_event_text,
+                candidate_text,
+                aliases,
+            )
+            if not social_detail_token:
+                continue
+
         candidate_time = _parse_datetime(candidate.get("created_at"))
         time_step = 0
         if article_time and candidate_time:
@@ -526,6 +686,7 @@ def _rank_pool_candidates(
             if _shared_event_token(article_event_text, candidate_text)
             else 0
         )
+        detail_bonus = _SOCIAL_SECONDARY_DETAIL_BONUS if social_detail_token else 0
 
         ranked_quotes.append(
             _build_matched_quote(
@@ -533,12 +694,13 @@ def _rank_pool_candidates(
                 source_class,
                 section_label,
                 quote_type,
-                match_reason,
+                "topic_detail_overlap" if social_detail_token else match_reason,
                 priority_score
                 + 100
                 + time_score
                 + notice_bonus
                 + event_bonus
+                + detail_bonus
                 + time_step,
                 matched_alias,
             )
@@ -588,6 +750,8 @@ def _build_source_quote(entry: dict[str, Any]) -> dict[str, str] | None:
         "section_label": "📌 関連ポスト",
         "match_reason": "own_source",
         "match_score": 100,
+        "source_title": (entry.get("title") or "").strip(),
+        "source_summary": (entry.get("summary") or "").strip(),
     }
 
 
@@ -754,6 +918,15 @@ def evaluate_media_quote_selection(
                     quotes[0],
                     {"media"},
                 )
+                if skip_meta and skip_meta.get("skip_reason") == "score_below_threshold":
+                    quotes[0]["source_title"] = str(entry.get("title") or "").strip()
+                    quotes[0]["source_summary"] = str(entry.get("summary") or "").strip()
+                    skip_meta = _social_second_quote_skip_meta(
+                        prepared_candidates,
+                        topic_aliases,
+                        article_time,
+                        quotes[0],
+                    )
         return {
             "quotes": quotes,
             "selector_type": selector_type,

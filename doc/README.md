@@ -56,6 +56,7 @@ Active folder is intentionally narrow. 2026-05-08 朝の「0 publish 0 mail」�
 | **social video full-connect tickets** | `318-A-INGEST-youtube-source-registry-to-intake.md`, `318-B-INGEST-social-video-notice-pipeline-connection.md`, `318-C-QA-social-video-safe-title-fallback.md`, `318-D-INGEST-instagram-registered-url-intake.md`, `318-E-QA-social-video-full-connect-regression-pack.md` | 2026-05-10 user GOでdoc-only分割起票。318-C safe title fallback は repo実装 + full pytest PASS、`doc/active/` で REVIEW_NEEDED。318-A/B/D/E は `doc/waiting/` のまま。publish/mail/scheduler/env/deploy/X/SEOは不可触。 |
 | **quality next-publish dedup review** | `319-QA-fetcher-topic-dedup-and-slot-fill.md` | 自動起動時に同一話題の重複記事で10枠を消費しないための narrow QA ticket。head/bat contact 事故の再現テスト赤→緑、related/full pytest green。diff review + commit 判断待ち。publish/mail/scheduler/env/Cloud Run/SEO/source追加は不可触。 |
 | **quality cross-media duplicate follow-up** | `364-QA-cross-family-same-event-dedup.md` | 報知 / スポニチ / デイリー等が同じ巨人ニュースを別タイトルで出す穴を扱う。既存 319/339/334/363 は対象が狭く、2媒体以上の同一選手・同一出来事を event_key で止める層が未実装。GitHub Issue 連動、実装前 ticket。 |
+| **quality social X related-post specificity** | `365-QA-social-x-related-post-specificity.md` | 68489 型。SNS記事の「関連ポスト」が同一選手名だけで別話題Xを束ねる穴を、literal detail overlap 必須にして恒久修正する。GitHub Issue #34。 |
 | **quality source excerpt follow-up** | `323-QA-source-body-excerpt-clean-truncation.md` | `314-QA-rss-source-body-excerpt-followup` 関連。ブログ本文の `📖 本文抜粋` が600文字化後も途中切れ / UI・関連記事混入に見える問題を狭く扱う。publish/mail/scheduler/env/Cloud Run/X/SEO/featured_media は不可触。 |
 | **waiting** | `205-gcp-runtime-drift-audit.md`, `238-night-draft-only-and-morning-decision-report.md`, `288-INGEST-source-coverage-expansion.md` | still useful, but not part of the immediate article-body hallucination fix. `288` remains source-add HOLD; only Phase 0 repo-only audit / dry-run evidence may advance doc-only. |
 | **INSIGHT lane (342 ready full-12team, 343 phase-4 done)** | `342-INSIGHT-data-driven-ranking-auto-publish.md`, `343-INSIGHT-007-data-population-audit-and-backfill.md` | 343 Phase 4 (12 球団 team-aware roster) LIVE: NPB 公式 scrape で `config/npb_12team_roster.json` 1071 entry 生成、`fill_canonical_team_aware` で 5027 row 補完、production DB players 21→462 (12 球団全部 32-43 人)、advanced_metric_snapshots 122→6394 (50x)。image `insight-nightly:343c` deploy 済、次 nightly 以降も自動 fill 動作。342 status `READY_FOR_PHASE_1_IMPL_FULL_12TEAM`、初版 4 候補全部 (A1 月次 OPS / B2 守備 UZR / B1 12 球団 top 30 / E1 直近 hot/cold) data 揃い、user GO で impl 着手可能。GH Issue #21(342) + #23(343)。 |
@@ -1913,6 +1914,18 @@ git add -A禁止。
 - **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/33
 - **acceptance**: cross-family same player same event は 1本だけ通す。different player/event は両方残す。同じ player/event でも別主体コメントは残す。X+雑誌/Web も literal 一致なら束ねる。skip は `cross_family_same_event_duplicate_skip` 構造化ログに残す。Scheduler / env / Secret / WP既存記事 / X / SNS / mail 条件は変更しない。
 - **implementation**: repo 実装 + fixture-backed tests 完了、Cloud Build `440b7747-e8f4-4ca7-adc2-f0299ab3ddd5` SUCCESS。image `yoshilover-fetcher:364-cross-family-4929278` / digest `sha256:c2f85e1a4bb2a27ae35be2f6819d2d49180b97e400f8814f673bd3106056ca65` を `yoshilover-fetcher-00401-dxs` へ deploy、traffic 100%、`/health` OK、startup probe succeeded。`py_compile` / `compileall` / AST parse PASS。pytest: `test_rss_fetcher_duplicate_guard.py` 13 passed、duplicate+reliability 36 passed / 3 xfailed / 3 subtests passed、`test_rss_fetcher.py` 28 passed。Scheduler / env / Secret / WP既存記事 / X / SNS / mail 条件は未変更。GitHub Issue #33 は自然 fire / log evidence 後に close。
+
+### 365-QA-social-x-related-post-specificity
+
+- **alias**: -
+- **status**: REVIEW_NEEDED / **priority**: high
+- **owner**: Codex / **lane**: B
+- **doc_path**: `doc/active/365-QA-social-x-related-post-specificity.md`
+- **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/34
+- **背景**: post `68489` で、坂本勇人のSNS記事に別話題X投稿が「関連ポスト」として入り、2つの関係ないポストを混ぜた記事に見えた。原因は social_news の secondary media quote が選手名一致だけで候補を通しやすかったこと。
+- **方針**: AI 類似判定 / 記憶再構成は禁止。social_news の2本目X投稿は、選手名一致だけでは許可せず、source tweet と候補 tweet の title / summary に `キャッチボール` / `昆陽里` / `登録` / `抹消` / `スタメン` 等の具体 detail token が literal に重なる場合だけ許可する。拒否は silent skip にせず `topic_detail_mismatch` で残す。自己評価OKではなく 68489 型 fixture-backed test で固定する。
+- **acceptance**: 同一選手名だけの別話題Xは関連ポストに入らない。具体 detail overlap があるXは2本目として入る。`topic_detail_mismatch` が残る。既存の公示 / 監督コメント / social own source quote が回帰しない。Scheduler / env / Secret / WP既存記事 / X / SNS / mail 条件は変更しない。
+- **implementation**: `src/media_xpost_selector.py` に concrete detail overlap gate を追加し、`src/rss_fetcher.py` から selector へ source title / summary を渡す。`tests/test_media_xpost_selector.py` に 68489 型 regression を追加。`py_compile` / `compileall` / AST parse PASS。pytest: `tests/test_media_xpost_selector.py` 24 passed / 3 warnings、media selector + build block 83 passed / 4 warnings、duplicate guard 13 passed / 3 warnings。deploy evidence は未記録。
 
 ## marketing board
 

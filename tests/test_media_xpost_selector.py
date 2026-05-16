@@ -305,6 +305,8 @@ class MediaXpostSelectorTests(unittest.TestCase):
                 "source_name": "巨人公式X",
                 "created_at": "2026-04-16T10:00:00+09:00",
                 "category": "選手情報",
+                "title": "皆川岳飛が一軍に合流",
+                "summary": "皆川岳飛が一軍に合流して練習に参加した。",
                 "topic_aliases": ["皆川岳飛", "皆川"],
             },
             max_count=2,
@@ -322,6 +324,64 @@ class MediaXpostSelectorTests(unittest.TestCase):
         self.assertEqual(len(quotes), 2)
         self.assertEqual(quotes[0]["handle"], "@TokyoGiants")
         self.assertEqual(quotes[1]["handle"], "@hochi_giants")
+
+    def test_social_news_rejects_second_media_quote_when_only_player_overlaps(self):
+        result = evaluate_media_quote_selection(
+            {
+                "source_type": "social_news",
+                "source_url": "https://twitter.com/hochi_giants/status/2055509815892557886",
+                "source_name": "スポーツ報知巨人班X",
+                "created_at": "2026-05-16T14:00:00+09:00",
+                "category": "選手情報",
+                "title": "東京ドーム 坂本勇人選手と田中将大投手がキャッチボール",
+                "summary": "2人は兵庫・伊丹市「昆陽里(こやのさと)タイガース」のチームメートです。",
+                "topic_aliases": ["坂本勇人", "坂本"],
+            },
+            max_count=2,
+            media_quote_pool=[
+                {
+                    "source_name": "サンスポ巨人X",
+                    "source_url": "https://twitter.com/sanspo_giants/status/2055508529159754064",
+                    "title": "坂本勇人が早出で打撃練習",
+                    "summary": "坂本勇人が試合前に打撃練習で汗を流した。",
+                    "created_at": "2026-05-16T13:55:00+09:00",
+                }
+            ],
+        )
+
+        self.assertEqual(len(result["quotes"]), 1)
+        self.assertEqual(result["quotes"][0]["handle"], "@hochi_giants")
+        self.assertEqual(result["skip_meta"]["skip_reason"], "topic_detail_mismatch")
+        self.assertEqual(result["skip_meta"]["best_candidate_handle"], "@sanspo_giants")
+
+    def test_social_news_allows_second_media_quote_when_specific_detail_overlaps(self):
+        quotes = select_media_quotes(
+            {
+                "source_type": "social_news",
+                "source_url": "https://twitter.com/hochi_giants/status/2055509815892557886",
+                "source_name": "スポーツ報知巨人班X",
+                "created_at": "2026-05-16T14:00:00+09:00",
+                "category": "選手情報",
+                "title": "東京ドーム 坂本勇人選手と田中将大投手がキャッチボール",
+                "summary": "2人は兵庫・伊丹市「昆陽里(こやのさと)タイガース」のチームメートです。",
+                "topic_aliases": ["坂本勇人", "坂本"],
+            },
+            max_count=2,
+            media_quote_pool=[
+                {
+                    "source_name": "サンスポ巨人X",
+                    "source_url": "https://twitter.com/sanspo_giants/status/2055508529159754064",
+                    "title": "坂本勇人と田中将大が東京ドームでキャッチボール",
+                    "summary": "昆陽里タイガース時代のチームメートが練習で並んだ。",
+                    "created_at": "2026-05-16T13:55:00+09:00",
+                }
+            ],
+        )
+
+        self.assertEqual(len(quotes), 2)
+        self.assertEqual(quotes[0]["handle"], "@hochi_giants")
+        self.assertEqual(quotes[1]["handle"], "@sanspo_giants")
+        self.assertEqual(quotes[1]["match_reason"], "topic_detail_overlap")
 
     def test_evaluate_marks_social_news_as_target(self):
         result = evaluate_media_quote_selection(

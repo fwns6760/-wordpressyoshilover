@@ -25052,6 +25052,8 @@ def _main(args, logger):
                     "source_type": source_type,
                     "source_url": post_url,
                     "source_name": source_name,
+                    "title": raw_title,
+                    "summary": summary,
                     "created_at": item.get("published_at").isoformat() if item.get("published_at") else "",
                     "story_kind": media_story_kind,
                     "player_name": notice_subject,

@@ -1826,6 +1826,17 @@ git add -A禁止。
 - **tests**: `test_x_post_mail.py` 69 passed、関連 3 file 101 passed、compileall / AST / scoped diff-check PASS。全体 `git diff --check` は unrelated `src/yoshilover-063-frontend.php` conflict marker で FAIL。
 - **deploy**: 2026-05-16 14:35 JST `x-post-mail-lane:357-db-freshness-15ff032` deploy 済み。Cloud Build `99349741-1b32-4f75-87a9-8c2d76896acd` SUCCESS、digest `sha256:ef71d320a4125b7060137b5db62947922d2797b2de1246fe906fc037b32888b8`、Cloud Run Job generation `9`。Scheduler / env / Secret / WP publish / X API は未変更、追加 mail 回避のため手動 execute 未実行。
 
+### 358 INSIGHT-local-production-db-pull
+
+- **alias**: -
+- **status**: REVIEW_NEEDED / **priority**: medium
+- **owner**: Codex / **lane**: B
+- **doc_path**: `doc/active/358-INSIGHT-local-production-db-pull.md`
+- **背景**: local `data/insight/insight.db` は生成物で、本番 source of truth は GCS `insight.db`。local が古いことで「本番DBも古い」と誤判断しないため、確認時だけ production GCS から `/tmp` へ download-only pull する。
+- **方針**: local -> production sync は禁止。default は `/tmp/yoshilover-insight-latest.db` に保存し、`--replace-local` 明示時だけ repo-local generated DB を上書きする。local Python に `google-cloud-storage` が無い場合は `gcloud storage cp` に fallback する。
+- **verify**: fake GCS targeted pytest `34 passed`、production GCS read-only smoke PASS。GCS latest `games.game_date=2026-05-16` / Giants latest `2026-05-16` / staleness `0`。
+- **非対象**: Cloud Run / Scheduler / Secret / env / GCS upload / WP publish / mail send / X / SNS は変更しない。
+
 ## marketing board
 
 - Marketing ticket source of truth: `doc/marketing/README.md`

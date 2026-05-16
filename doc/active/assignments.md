@@ -97,6 +97,10 @@ user 指示「日付だけでは分かりにくい」「直近5試合 / 直近10
 
 user 指示「DB当日更新はやらないの？」を受け、`--auto` target を 15:00 JST 以降は当日、朝/昼は前日に切替。auto publish に残っていた `season` split / vs opponent 経路を `weekly` / `last_7d` へ変更。commit `2949f98`、Cloud Build `a9574fbf-f26c-4a17-b977-cb56f7e94f72` SUCCESS、image `insight-nightly:358-sameday-auto-2949f98`、digest `sha256:3afff4dfe4e80791e833c149a41d3f973e9f005365f4033b599042feba8b707a`、Cloud Run Job generation `47`。Scheduler / env / Secret は未変更、手動 execute は追加 publish/mail 回避のため未実行。
 
+### 358 local production DB pull tool (2026-05-16 JST)
+
+DB 同士の「同期」はしない方針で決定。production source of truth は GCS `insight.db`、local `data/insight/insight.db` は生成物として扱う。ローカルが古いことによる誤判断だけを防ぐため、`src/tools/pull_insight_db_from_gcs.py` を追加し、default `/tmp/yoshilover-insight-latest.db` へ download-only pull + 最新試合日 / 巨人最新試合日 / row count を JSON 表示する。local Python に `google-cloud-storage` が無い場合は `gcloud storage cp` fallback。targeted pytest `34 passed`、production GCS read-only smoke は latest `2026-05-16` / Giants latest `2026-05-16` / staleness `0`。Cloud Run / Scheduler / env / Secret / GCS upload / WP publish / mail / X / SNS は未変更。
+
 ## 2026-05-14 EVENING session summary
 
 ### close 済(本 session)

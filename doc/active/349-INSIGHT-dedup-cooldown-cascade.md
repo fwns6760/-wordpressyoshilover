@@ -2,7 +2,7 @@
 
 ## 1. ticket header
 
-- **status**: REPO_IMPL_READY (2026-05-16 Codex follow-up 実装済、push/deploy 未実行)
+- **status**: LIVE_DEPLOYED_OBSERVE (2026-05-16 Codex follow-up 実装 + push + `insight-nightly:be96f18` deploy 済、自然 fire 観察待ち)
 - **priority**: medium-high (348 ticket 後の next 優先)
 - **owner**: Claude (実装) / user (数値 + GO 判断)
 - **依存**: 348 ticket (#26) 完了後に着手推奨 (× フィルター後の重複問題実態 verify ベースで挙動 tuning できる)
@@ -152,6 +152,7 @@ python -m pytest tests/test_insight_dedup_cascade.py -v
 ```
 YYYY-MM-DD HH:MM JST | <event> | <gate (cooldown/delta/band)> | <task> | <next>
 2026-05-16 JST | Codex follow-up | cooldown=7d / delta=5% / band=1,5,10,30 | publisher 段で同 subject + metric の期間横断 dedup gate を実装 | commit 後、GH #26/#27 に追記。deploy は別判断
+2026-05-16 JST | deploy | same image only | clean `git archive HEAD` export から `insight-nightly:be96f18` build/deploy。Scheduler/env/Secret は未変更、手動 execute 未実行 | 次回自然 fire で記事数・mail数・skip理由を観察
 ```
 
 ## 10. Regression Memo 欄
@@ -206,7 +207,7 @@ YYYY-MM-DD HH:MM JST | <test> | <regression> | <fix> | <test added>
 
 ## 5. 残った懸念
 
-- deploy / Cloud Run / Scheduler / Secret / env は未変更。production はこの commit だけでは変わらない。
+- Cloud Run Job `insight-nightly` image は `be96f18` へ deploy 済み。Scheduler / Secret / env は未変更。
 - dedup history は deploy 後の新規投稿から蓄積される。既存 WP 投稿を完全に backfill する処理は未実装。
 - mail 専用 cap やグローバル 1 run 合計 cap は別判断。今回の修正は publish 候補生成側の重複抑制。
 
@@ -229,3 +230,29 @@ YYYY-MM-DD HH:MM JST | <test> | <regression> | <fix> | <test added>
 - env / Secret / Scheduler / Cloud Run deploy は user 判断まで触らない。
 - mail 制限の設計変更と自動公開上限の追加調整は user と別途会話してから扱う。
 - WP 既存記事の削除 / 書き換え / X 投稿はしない。
+
+## 9. deploy 後の様子見リスク / やっていないこと (2026-05-16)
+
+### 様子見リスク
+
+- **記事が減りすぎる risk**: 同じ subject + metric を 7 日 cooldown で束ねたため、短期的に data-insight 記事が 0〜少数に落ちる可能性がある。次回自然 fire で `published` / `skip_dedup_cooldown` / `skip_max_per_run` の比率を見る。
+- **記事がまだ多い risk**: cap は publisher path ごとの上限で、nightly 全体の 1 日総量 cap ではない。anomaly / ranking / team / counting / split が別々に動くため、全体本数が想定より多くなる可能性がある。
+- **mail がまだ多い risk**: 今回は publish 候補生成側の重複抑制。mail 専用の「同選手 1 日 1 通」「1 日 N 通まで」「まとめ mail」は未実装。
+- **初回だけ既存投稿と重複する risk**: dedup ledger は deploy 後の新規 publish/draft から蓄積。過去 WP 投稿の backfill はしていないため、初回 fire は既存記事との完全重複を止めきれない可能性がある。
+- **5% delta の指標別感度 risk**: OPS / 防御率 / 本塁打数などで「5%」の意味が違う。実 mail/article を見て、指標別閾値に分ける必要が出る可能性がある。
+- **rank band 境界 risk**: 1 / 5 / 10 / 30 位の境界をまたぐだけで再掲される。境界付近で行き来すると短期再掲が増える可能性がある。
+- **期間 title guard は未強制**: title 例は config/spec/test に入れたが、「期間が title に無い記事を必ず落とす/補完する」runtime guard は未実装。
+- **manual execute 未実行**: 追加記事・mail を発生させないため deploy 後の手動 `gcloud run jobs execute insight-nightly` は実行していない。次回 Scheduler 自然 fire で確認する。
+- **full unittest 赤は残存**: `manual_intake_service` socket PermissionError、`manual_intake_service_x_post` 403 expectation、`duplicate_prevention_golden` logger call-count は今回対象外で未修正。
+
+### やっていないこと
+
+- 1 日全体の data-insight publish 総量 cap。
+- mail 専用 cap / mail digest / 同選手同指標 mail cooldown。
+- 既存 WP 投稿から dedup history を backfill する処理。
+- title 期間必須の runtime validation / auto補完。
+- 指標別 delta 閾値。
+- Scheduler 本数削減や時刻変更。
+- env / Secret 変更。
+- WP 既存記事の削除・修正。
+- X / SNS 自動投稿設定変更。

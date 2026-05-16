@@ -1772,11 +1772,12 @@ git add -A禁止。
 ### 349 INSIGHT-dedup-cooldown-cascade
 
 - **alias**: -
-- **status**: REPO_IMPL_READY(2026-05-16 Codex follow-up 実装済、push/deploy 未実行) / **priority**: medium-high
+- **status**: LIVE_DEPLOYED_OBSERVE(2026-05-16 Codex follow-up 実装 + push + `insight-nightly:be96f18` deploy 済、自然 fire 観察待ち) / **priority**: medium-high
 - **owner**: Claude Code / **lane**: Claude
 - **doc_path**: `doc/active/349-INSIGHT-dedup-cooldown-cascade.md`
 - **implemented**: cooldown 7 日 / delta 5% / rank band 1,5,10,30 / scope family `metric_all_periods`。同じ subject + metric は期間違いでも原則 7 日 block、値または順位帯が大きく動いた場合だけ再掲許可。
-- **blocked_by**: deploy / Cloud Run / Scheduler / mail 制限の追加調整は user 判断待ち
+- **observe_risks**: 記事減りすぎ / まだ多い / mail過多 / 既存投稿 backfill 未実装 / title期間必須 runtime guard 未実装 / full unittest既存赤
+- **blocked_by**: mail 制限、1日総量cap、Scheduler調整、既存投稿backfill は user 判断待ち
 
 ### 350 x-post-mail-precision-improvements
 

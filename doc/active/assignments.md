@@ -71,16 +71,18 @@ test: 382 passed (= 302 baseline + 35 step1 + 18 step2 + 14 step3p1 + 13 step3p2
 
 ## 2026-05-16 session summary
 
-### repo 実装済、push/deploy 未実行
+### repo 実装済、push/deploy 済、自然 fire 観察待ち
 
 | ticket | status | 内容 |
 |---|---|---|
-| `348-INSIGHT` follow-up | REPO_IMPL_READY | `BABIP` / `FIP` が detector bypass や direct renderer から再流出しないよう二重防御。UZR は user 指示通り許可側維持 |
-| `349-INSIGHT-dedup-cooldown-cascade` | REPO_IMPL_READY | 同じ subject + metric を期間違いでも 7 日 cooldown。例外は 5% 以上の値変化または順位 band 変化。schema migration なし、既存 `article_candidates` を ledger として利用 |
+| `348-INSIGHT` follow-up | LIVE_DEPLOYED_OBSERVE | `BABIP` / `FIP` が detector bypass や direct renderer から再流出しないよう二重防御。UZR は user 指示通り許可側維持 |
+| `349-INSIGHT-dedup-cooldown-cascade` | LIVE_DEPLOYED_OBSERVE | 同じ subject + metric を期間違いでも 7 日 cooldown。例外は 5% 以上の値変化または順位 band 変化。schema migration なし、既存 `article_candidates` を ledger として利用 |
 
-test: 対象 pytest 73 passed / 関連広め pytest 167 passed。full unittest は既存の `manual_intake_service` socket PermissionError、`manual_intake_service_x_post` 403 expectation、`duplicate_prevention_golden` logger call-count で赤のまま。
+deploy: `insight-nightly:be96f18` / digest `sha256:5ed4eef2114906c5abd608bc7b34399217206e319549e942aa4836b970f4eaaf`。Scheduler / env / Secret は未変更、手動 execute 未実行。
 
-次 action: commit 後、GH #26/#27 に実装内容と未deployを追記。Cloud Run / Scheduler / env / mail 制限の追加調整は user 判断待ち。
+test: deploy 前 data-insight 関連 pytest 218 passed。full unittest は既存の `manual_intake_service` socket PermissionError、`manual_intake_service_x_post` 403 expectation、`duplicate_prevention_golden` logger call-count で赤のまま。
+
+様子見リスク: 記事減りすぎ / まだ多い / mail過多 / 既存投稿 backfill 未実装 / title期間必須 runtime guard 未実装。次 action は次回 Scheduler 自然 fire のログ観察。
 
 ## 2026-05-14 EVENING session summary
 

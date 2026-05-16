@@ -304,6 +304,20 @@ GAME_ARTICLE_KEYWORDS = ("試合結果", "スタメン", "先発", "登板", "�
 LINEUP_ARTICLE_KEYWORDS = ("スタメン", "スターティングメンバー", "オーダー", "打順", "1番", "2番", "3番", "4番")
 LINEUP_CORE_KEYWORDS = ("スタメン", "スターティングメンバー", "オーダー")
 FARM_LINEUP_MARKERS = ("二軍", "2軍", "ファーム", "イースタン", "三軍")
+POSTGAME_THIRD_TEAM_MARKERS = ("三軍戦", "３軍戦", "3軍戦", "三軍", "３軍", "3軍")
+POSTGAME_FARM_TEAM_MARKERS = (
+    "二軍戦",
+    "２軍戦",
+    "2軍戦",
+    "ファーム戦",
+    "二軍",
+    "２軍",
+    "2軍",
+    "ファーム",
+    "イースタン",
+    "ウエスタン",
+    "育成",
+)
 LIVE_UPDATE_KEYWORDS = ("途中経過", "試合中", "回表", "回裏", "勝ち越し", "同点", "逆転")
 LIVE_UPDATE_FRAGMENT_KEYWORDS = LIVE_UPDATE_KEYWORDS + ("継投", "満塁", "3者凡退", "サイクル", "サイクル安打", "王手")
 LINEUP_ORDER_SLOT_RE = _re.compile(r"(?<![0-9０-９])[1-9１-９]番(?!手)")
@@ -5425,6 +5439,87 @@ def _farm_category_markers() -> tuple[str, ...]:
     if _farm_subtype_split_enabled():
         markers.extend(("三軍戦", "３軍戦", "3軍戦", "三軍", "３軍", "3軍"))
     return tuple(markers)
+
+
+def _infer_postgame_non_first_league_level_from_context(
+    title: str,
+    summary: str,
+    *,
+    category: str = "",
+    article_subtype: str = "",
+    body_subtype: str = "",
+    validator_subtype: str = "",
+    routing_category: str = "",
+    generation_category: str = "",
+    body_category: str = "",
+    effective_generation_category: str = "",
+) -> str:
+    """Return a non-first league level implied by routing/source context.
+
+    This is a defensive layer for postgame enrichment. The NPB/Yahoo
+    fetchers only know about the current first-team game, so a farm/third
+    article must not reach them even if the prose parser mislabels it.
+    """
+    source_text = f"{title or ''}\n{summary or ''}"
+    if any(marker in source_text for marker in POSTGAME_THIRD_TEAM_MARKERS):
+        return "third"
+    if any(marker in source_text for marker in POSTGAME_FARM_TEAM_MARKERS):
+        return "farm"
+
+    subtype_values = (
+        article_subtype,
+        body_subtype,
+        validator_subtype,
+    )
+    if any(str(value or "").startswith("farm") for value in subtype_values):
+        return "farm"
+
+    category_values = (
+        category,
+        routing_category,
+        generation_category,
+        body_category,
+        effective_generation_category,
+    )
+    if "ドラフト・育成" in {str(value or "") for value in category_values}:
+        return "farm"
+    return ""
+
+
+def _should_fetch_first_team_postgame_boxscore(
+    postgame_facts: Mapping[str, object] | None,
+    title: str,
+    summary: str,
+    *,
+    category: str = "",
+    article_subtype: str = "",
+    body_subtype: str = "",
+    validator_subtype: str = "",
+    routing_category: str = "",
+    generation_category: str = "",
+    body_category: str = "",
+    effective_generation_category: str = "",
+) -> tuple[bool, str, str]:
+    if not postgame_facts:
+        return False, "no_postgame_facts", ""
+    league_level = str(postgame_facts.get("league_level") or "").strip()
+    if league_level != "first":
+        return False, "non_first_league", league_level
+    inferred_non_first = _infer_postgame_non_first_league_level_from_context(
+        title,
+        summary,
+        category=category,
+        article_subtype=article_subtype,
+        body_subtype=body_subtype,
+        validator_subtype=validator_subtype,
+        routing_category=routing_category,
+        generation_category=generation_category,
+        body_category=body_category,
+        effective_generation_category=effective_generation_category,
+    )
+    if inferred_non_first:
+        return False, "farm_or_third_team_context", inferred_non_first
+    return True, "", ""
 
 
 def _farm_split_keyword_hits(text: str) -> list[str]:
@@ -16091,10 +16186,42 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
     # box block へ fallback)。
     postgame_npb_facts: dict = {}
     postgame_npb_pbp_facts: dict = {}
-    if (
-        postgame_facts
-        and str(postgame_facts.get("league_level") or "") == "first"
-    ):
+    should_fetch_first_team_box, first_team_box_skip_reason, inferred_non_first_level = (
+        _should_fetch_first_team_postgame_boxscore(
+            postgame_facts,
+            title,
+            summary_clean,
+            category=category,
+            article_subtype=article_subtype,
+            body_subtype=body_subtype,
+            validator_subtype=validator_subtype,
+            routing_category=routing_category,
+            generation_category=generation_category,
+            body_category=body_category,
+            effective_generation_category=effective_generation_category,
+        )
+    )
+    if postgame_facts and inferred_non_first_level in ("farm", "third"):
+        postgame_facts = dict(postgame_facts)
+        postgame_facts["league_level"] = inferred_non_first_level
+    if postgame_facts and first_team_box_skip_reason == "farm_or_third_team_context":
+        logging.getLogger("rss_fetcher").info(
+            json.dumps(
+                {
+                    "event": "postgame_first_team_box_fetch_skipped",
+                    "reason": first_team_box_skip_reason,
+                    "inferred_league_level": inferred_non_first_level,
+                    "source_url": url,
+                    "category": category,
+                    "routing_category": routing_category,
+                    "article_subtype": article_subtype,
+                    "body_subtype": body_subtype,
+                    "title": title,
+                },
+                ensure_ascii=False,
+            )
+        )
+    if should_fetch_first_team_box:
         try:
             postgame_npb_facts = fetch_today_giants_npb_box_facts() or {}
         except Exception as e:  # noqa: BLE001
@@ -17193,7 +17320,12 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
         if not score:
             return ""
         heading_level = 4 if _body_template_v2_enabled() else 3
-        league_label = "巨人2軍" if league_level == "farm" else "巨人"
+        if league_level == "third":
+            league_label = "巨人3軍"
+        elif league_level == "farm":
+            league_label = "巨人2軍"
+        else:
+            league_label = "巨人"
         heading_text = f"📋 試合結果 ({league_label})"
         if opponent:
             heading_text = f"{heading_text} vs {opponent}"

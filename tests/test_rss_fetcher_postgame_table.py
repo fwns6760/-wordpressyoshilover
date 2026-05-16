@@ -398,6 +398,95 @@ class PostgameYahooBoxscoreTests(unittest.TestCase):
             "2軍 postgame で 1軍用 inning table が誤発火",
         )
 
+    def test_third_team_context_blocks_first_team_box_fetch_even_if_parser_says_first(self):
+        """三軍 result が first と誤分類されても当日1軍 box を取りに行かない。"""
+        title = "【三軍】巨人 4-2 信濃グランセローズ 先発の鈴木圭晋投手が4回2失点"
+        summary = "巨人三軍は信濃グランセローズに4-2で勝利した。育成選手の内容を確認したい試合だった。"
+        patched_facts = {
+            "score": "4-2",
+            "winning_pitcher": "",
+            "result_type": "勝利",
+            "league_level": "first",
+            "opponent_team_name": "信濃グランセローズ",
+        }
+        with (
+            patch.dict(os.environ, {"ENABLE_RSS_TEMPLATE_ROUTING_V2": "1"}),
+            patch.object(rss_fetcher, "_parse_postgame_facts", return_value=patched_facts),
+            patch.object(
+                rss_fetcher,
+                "fetch_today_giants_npb_box_facts",
+                side_effect=AssertionError("三軍記事で1軍NPB box fetchが呼ばれた"),
+            ),
+            patch.object(
+                rss_fetcher,
+                "fetch_today_giants_postgame_facts_from_yahoo",
+                side_effect=AssertionError("三軍記事で1軍Yahoo box fetchが呼ばれた"),
+            ),
+            patch.object(
+                rss_fetcher,
+                "fetch_today_giants_npb_playbyplay_facts",
+                side_effect=AssertionError("三軍記事で1軍NPB play-by-play fetchが呼ばれた"),
+            ),
+            patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]),
+            patch.object(rss_fetcher, "_fetch_fan_reactions_from_yahoo_safe", return_value=[]),
+            patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""),
+            patch.object(rss_fetcher, "generate_article_with_grok", return_value=("", [], "", "", "")),
+        ):
+            blocks, _ai_body = rss_fetcher.build_news_block(
+                title=title,
+                summary=summary,
+                url="https://twitter.com/TokyoGiants/status/2055581006317703555",
+                source_name="巨人公式X",
+                category="ドラフト・育成",
+                has_game=True,
+                source_type="social_news",
+            )
+        self.assertIn("nomotoke-card-postgame-result", blocks)
+        self.assertIn("巨人3軍", blocks)
+        self.assertNotIn("nomotoke-card-postgame-batter", blocks)
+        self.assertNotIn("nomotoke-card-postgame-inning", blocks)
+
+    def test_farm_denA_context_blocks_first_team_box_fetch_even_if_parser_says_first(self):
+        """二軍DeNA戦でも当日の一軍DeNA戦 box と混線させない。"""
+        patched_facts = {
+            "score": "4-3",
+            "winning_pitcher": "",
+            "result_type": "勝利",
+            "league_level": "first",
+            "opponent_team_name": "DeNA",
+        }
+        with (
+            patch.dict(os.environ, {"ENABLE_RSS_TEMPLATE_ROUTING_V2": "1"}),
+            patch.object(rss_fetcher, "_parse_postgame_facts", return_value=patched_facts),
+            patch.object(
+                rss_fetcher,
+                "fetch_today_giants_npb_box_facts",
+                side_effect=AssertionError("二軍記事で1軍NPB box fetchが呼ばれた"),
+            ),
+            patch.object(
+                rss_fetcher,
+                "fetch_today_giants_postgame_facts_from_yahoo",
+                side_effect=AssertionError("二軍記事で1軍Yahoo box fetchが呼ばれた"),
+            ),
+            patch.object(rss_fetcher, "fetch_fan_reactions_from_yahoo", return_value=[]),
+            patch.object(rss_fetcher, "_fetch_fan_reactions_from_yahoo_safe", return_value=[]),
+            patch.object(rss_fetcher, "generate_article_with_gemini", return_value=""),
+            patch.object(rss_fetcher, "generate_article_with_grok", return_value=("", [], "", "", "")),
+        ):
+            blocks, _ai_body = rss_fetcher.build_news_block(
+                title="【二軍】巨人 4-3 DeNA ティマが決勝打",
+                summary="巨人二軍はDeNAとの二軍戦に4-3で勝利した。",
+                url="https://hochi.news/articles/20260516-OHT9999-farm.html",
+                source_name="スポーツ報知 巨人 tag",
+                category="試合速報",
+                has_game=True,
+                source_type="news",
+            )
+        self.assertIn("nomotoke-card-postgame-result", blocks)
+        self.assertIn("巨人2軍", blocks)
+        self.assertNotIn("nomotoke-card-postgame-batter", blocks)
+        self.assertNotIn("nomotoke-card-postgame-inning", blocks)
+
 
 class PostgameNPBBoxIntegrationTests(unittest.TestCase):
     """Phase 2F: NPB box facts produce the rich 4-table layout."""

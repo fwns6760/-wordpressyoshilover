@@ -10,7 +10,7 @@ Phase 2D-A scope (this module): prose extraction of
 - score (``X-Y`` / ``X―Y`` / ``X対Y`` variants, NFKC-normalised)
 - winning pitcher name (matched against ``config/giants_roster.json``)
 - result-type (勝利 / 敗戦 / 引き分け)
-- league (1軍 / 2軍) — surface so the renderer can pick the heading
+- league (1軍 / 2軍 / 3軍) — surface so the renderer can pick the heading
 - opponent team name (reuses hochi extractor's helper)
 
 Phase 2D-B (deferred follow-up): Yahoo boxscore integration for 1軍
@@ -96,6 +96,22 @@ _RESULT_KEYWORDS: tuple[str, ...] = (
     "引き分け",
     "ドロー",
 )
+_THIRD_TEAM_MARKERS: tuple[str, ...] = (
+    "三軍戦",
+    "3軍戦",
+    "三軍",
+    "3軍",
+)
+_FARM_LEAGUE_MARKERS: tuple[str, ...] = (
+    "二軍戦",
+    "2軍戦",
+    "ファーム戦",
+    "二軍",
+    "2軍",
+    "ファーム",
+    "ウエスタン",
+    "イースタン",
+)
 
 # Strict name char class (kanji / katakana / UPPER latin — no hiragana
 # so prose particles don't bleed into the name).
@@ -149,7 +165,7 @@ def parse_postgame_facts(
           "score": "1-0",
           "winning_pitcher": "又木鉄平" | "",
           "result_type": "勝利" | "敗戦" | "引き分け",
-          "league_level": "farm" | "first",
+          "league_level": "farm" | "third" | "first",
           "opponent_team_name": "DeNA",
         }
 
@@ -202,8 +218,11 @@ def parse_postgame_facts(
             winning_pitcher = candidate
             break
 
-    # League level: 2軍 / ファーム markers → farm, otherwise first.
-    if any(m in text for m in ("二軍", "2軍", "ファーム", "ウエスタン", "イースタン")):
+    # League level: 2軍 / 3軍 / ファーム markers must never fall through
+    # to first-team boxscore enrichment.
+    if any(m in text for m in _THIRD_TEAM_MARKERS):
+        league_level = "third"
+    elif any(m in text for m in _FARM_LEAGUE_MARKERS):
         league_level = "farm"
     else:
         league_level = "first"

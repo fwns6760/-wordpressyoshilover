@@ -20,6 +20,9 @@ FARM_SUMMARY = "巨人２軍はＤｅＮＡに１―０で勝利した。又木�
 FIRST_TITLE = "【巨人】戸郷翔征が８回１失点の力投で４勝目　巨人が中日に５―１で快勝"
 FIRST_SUMMARY = "巨人は中日に５―１で勝利した。戸郷翔征が８回１失点で４勝目を挙げ、エースの仕事を果たした。"
 
+THIRD_TITLE = "【三軍】巨人 4-2 信濃グランセローズ 先発の鈴木圭晋投手が4回2失点"
+THIRD_SUMMARY = "巨人三軍は信濃グランセローズに4-2で勝利した。育成選手の内容を確認したい試合だった。"
+
 
 class IsPostgameSourceTests(unittest.TestCase):
     def test_known_names_recognised(self):
@@ -58,6 +61,17 @@ class ParsePostgameFactsTests(unittest.TestCase):
         self.assertEqual(r["result_type"], "勝利")
         self.assertEqual(r["league_level"], "farm")
         self.assertEqual(r["opponent_team_name"], "DeNA")
+
+    def test_third_team_fixture(self):
+        r = parse_postgame_facts(
+            title=THIRD_TITLE,
+            summary=THIRD_SUMMARY,
+            source_name="巨人公式X",
+        )
+        self.assertIsNotNone(r)
+        self.assertEqual(r["score"], "4-2")
+        self.assertEqual(r["result_type"], "勝利")
+        self.assertEqual(r["league_level"], "third")
 
     def test_first_team_fixture(self):
         r = parse_postgame_facts(

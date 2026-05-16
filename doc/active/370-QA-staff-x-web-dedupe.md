@@ -4,7 +4,7 @@
 
 - ticket: 370-QA-staff-x-web-dedupe
 - github_issue: https://github.com/fwns6760/-wordpressyoshilover/issues/39
-- status: IN_FLIGHT
+- status: LIVE_DEPLOYED_OBSERVE
 - priority: P0.5
 - owner: Codex
 - lane: B
@@ -65,3 +65,16 @@ When the X candidate did not expose the player name in the same way as the Web c
   - `python3 -m compileall -q src/rss_fetcher.py tests/test_rss_fetcher_same_family_x_web_dedup.py tests/test_related_posts.py tests/test_build_news_block.py tests/test_media_xpost_selector.py`
   - AST parse OK for `src/rss_fetcher.py` and `tests/test_rss_fetcher_same_family_x_web_dedup.py`
   - `python3 -m pytest tests/test_rss_fetcher_same_family_x_web_dedup.py tests/test_related_posts.py tests/test_build_news_block.py tests/test_media_xpost_selector.py -q` => `104 passed, 4 warnings`
+- Commit/deploy:
+  - code commit `e98bb8c` (`370: dedupe staff quote x web pairs`)
+  - Cloud Build `3df7fcf2-b845-46d4-84f5-a56e9bf307d1` SUCCESS
+  - image `370-staff-x-web-e98bb8c`
+  - digest `sha256:6189023b74d9eda2ecafd56f02e6919051bfa6a0a8487a400ba3e75d3164566e`
+  - revision `yoshilover-fetcher-00407-h9v` 100%
+  - `/health` => `OK`
+  - startup log: `Default STARTUP TCP probe succeeded after 1 attempt`
+  - Scheduler / env / Secret / X / SNS / mail conditions were not changed.
+
+## observe
+
+- Keep GitHub Issue #39 open until a natural same-family staff X+Web fire produces `same_family_web_consumed` evidence in production logs.

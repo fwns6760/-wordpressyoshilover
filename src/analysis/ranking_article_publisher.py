@@ -591,19 +591,8 @@ def render_giants_centric_ranking(
         start_d = today
     period_full = f"{start_d.isoformat()} 〜 {today.isoformat()}"
 
-    # SVG chart (表の下に inline 埋め込み)
-    chart_rows = [
-        {"player": r.player_canonical, "team": r.team_code or "?",
-         "value": r.metric_value, "sample": r.sample_size, "rank": r.rank}
-        for r in rows[:10]
-    ]
-    chart_svg = render_ranking_svg_bar_chart(
-        chart_rows, focus_player=focus_player, metric_name=metric_name,
-        title=f"{focus_player}、{metric_name} {focus_val} でセ・リーグ {focus_rank} 位",
-        subtitle=f"集計期間: {period_full}",
-    )
-
     # 348 step 3 spec §2.5: 「大手にない」 banner 廃止 (全種類で省略)。
+    # 同じ lock で SVG chart も廃止。本文は表形式だけで構成する。
     intro_banner = ""
 
     body_md = f"""# {base_title}
@@ -613,8 +602,6 @@ def render_giants_centric_ranking(
 ## セ・リーグ ranking
 
 {table_md}
-
-{chart_svg}
 
 ## このデータについて
 

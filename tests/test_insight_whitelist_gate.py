@@ -154,6 +154,7 @@ def test_thresholds_from_config():
     """率系 z-score 閾値 = 1.5σ、 counting TOP = 10。"""
     assert wl.zscore_sigma() == 1.5
     assert wl.counting_top_n() == 10
+    assert det.DEFAULT_ZSCORE_THRESHOLD == 1.5
 
 
 # ─── detector integration: × metric が candidate に入らない ────────────────

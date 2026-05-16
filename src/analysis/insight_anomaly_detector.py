@@ -87,7 +87,10 @@ ALL_ANOMALY_SIGNALS = (
 # default 閾値 (env で override 可能、user「もっと緩めていい、metric 多様化」適用、
 # 2026-05-15 user 指示で全閾値を約 2x 緩和、記事数 2-3 倍狙い)
 DEFAULT_ZSCORE_THRESHOLD = float(
-    os.environ.get("DATA_INSIGHT_ANOMALY_THRESHOLD_SIGMA", "0.5") or "0.5"
+    os.environ.get(
+        "DATA_INSIGHT_ANOMALY_THRESHOLD_SIGMA",
+        str(_wl.zscore_sigma()),
+    ) or str(_wl.zscore_sigma())
 )
 DEFAULT_BABIP_DIVERGENCE = float(
     os.environ.get("DATA_INSIGHT_BABIP_DIVERGENCE", "0.025") or "0.025"

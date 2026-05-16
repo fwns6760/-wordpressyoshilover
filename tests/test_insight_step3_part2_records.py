@@ -411,6 +411,34 @@ def test_render_team_streak_article_active_winning(tmp_path):
         conn.close()
 
 
+def test_render_team_metric_article_omits_svg_chart(tmp_path):
+    """348 画面設計 lock: team metric 記事も SVG chart を出さない。"""
+    from src.analysis import team_ranking_publisher as trp
+    conn = _open_db(tmp_path)
+    try:
+        for team, ab, h in [
+            ("巨人", 100, 31),
+            ("阪神", 100, 30),
+            ("広島", 100, 29),
+            ("DeNA", 100, 28),
+        ]:
+            _seed_game(conn, game_id=f"tm-{team}", game_date="2026-05-15")
+            conn.execute(
+                "INSERT INTO batting_logs (game_id, team_role, slot_order, "
+                "position, player_display, player_canonical, is_sub, AB, R, "
+                "H, RBI, SB, atbats_json, team_name) "
+                "VALUES (?, 'home', 1, '中', ?, ?, 0, ?, 0, ?, 0, 0, '[]', ?)",
+                (f"tm-{team}", team, team, ab, h, team),
+            )
+        conn.commit()
+        article = trp.render_team_metric_article(conn, metric="AVG", scope="season")
+        assert article is not None
+        assert "<table>" in article["body_html"]
+        assert "<svg" not in article["body_html"]
+    finally:
+        conn.close()
+
+
 def test_render_team_streak_article_below_threshold(tmp_path):
     """D-2: streak < 3 は記事化しない (skip None)。"""
     from src.analysis import team_ranking_publisher as trp

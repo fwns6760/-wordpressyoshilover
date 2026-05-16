@@ -151,6 +151,7 @@ def test_render_giants_centric_ranking_full(tmp_path):
         assert "ダルベック" in result["title"]
         assert "<h2>" in result["body_html"]
         assert "<table>" in result["body_html"]
+        assert "<svg" not in result["body_html"]
         assert result["focus_player"] == "ダルベック"
         assert result["metric_name"] == "OPS"
         assert result["scope"] == "last_30d"

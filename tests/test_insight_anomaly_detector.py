@@ -189,6 +189,7 @@ def test_render_anomaly_article_zscore_batter(tmp_path):
         assert "巨人A" in result["title"]
         assert "OPS" in result["title"]
         assert "<table>" in result["body_html"]
+        assert "<svg" not in result["body_html"]
     finally:
         conn.close()
 

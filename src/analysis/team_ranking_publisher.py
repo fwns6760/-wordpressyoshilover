@@ -304,22 +304,8 @@ def render_team_metric_article(
     table_md = _build_team_table_md(sorted_rows, focus_tc="g", value_label=metric_label,
                                      higher_is_better=higher_is_better)
 
-    # SVG chart
-    chart_rows = [
-        {"player": rap._TEAM_LABEL_JP.get(r["team"], r["team"]),
-         "team": r["team"], "value": float(r["value"]),
-         "sample": r.get("ab", r.get("ip", 0)) or 0,
-         "rank": i+1}
-        for i, r in enumerate(sorted_rows)
-    ]
-    chart_svg = rap.render_ranking_svg_bar_chart(
-        chart_rows, focus_player=rap._TEAM_LABEL_JP.get("g", "巨人"),
-        metric_name=metric_label,
-        title=f"セ・リーグ 球団{metric_label} {scope_label}",
-        subtitle=f"集計期間: {start_str} 〜 {end_str}",
-    )
-
     # 348 step 3 spec §2.5: 「大手にない」 banner 廃止 (全種類で省略)。
+    # 同じ lock で SVG chart も廃止。本文は表形式だけで構成する。
     intro_banner = ""
 
     body_md = f"""# {title}
@@ -333,8 +319,6 @@ def render_team_metric_article(
 ## セ・リーグ 球団 ranking({scope_label})
 
 {table_md}
-
-{chart_svg}
 
 ## このデータについて
 

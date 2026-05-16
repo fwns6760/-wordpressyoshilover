@@ -408,14 +408,8 @@ def _render_unified_article(
     # 1 文目だけに truncate (素人向け 1-2 line max)
     simple_line = simple_line.split("。")[0] + ("。" if simple_line else "")
 
-    # SVG chart (表の下に inline 埋め込み、user 指示)
-    chart_svg = rap.render_ranking_svg_bar_chart(
-        top_rows, focus_player=player, metric_name=metric_label,
-        title=f"{player}、{scope_label}の{metric_label} {value_str} で{league_label} {rank_str} 位",
-        subtitle=f"集計期間: {period_full_label}",
-    )
-
     # 348 step 3 spec §2.5: 「大手にない」 banner 廃止 (全種類で省略)。
+    # 同じ lock で SVG chart も廃止。本文は表形式だけで構成する。
     intro_banner = ""
 
     body_md = f"""# {title}
@@ -429,8 +423,6 @@ def _render_unified_article(
 ## {league_label} ranking({scope_label})
 
 {ranking_table}
-
-{chart_svg}
 
 ## このデータについて
 

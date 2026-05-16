@@ -1,6 +1,6 @@
 # 362-INSIGHT queue cleanup and metric run cap
 
-- **status**: REPO_IMPL_READY
+- **status**: LIVE_DEPLOYED_OBSERVE
 - **owner**: Codex
 - **priority**: high
 - **created_at**: 2026-05-16
@@ -61,6 +61,16 @@ user 方針:
 - `python3 -m pytest tests/test_insight_nightly.py tests/test_insight_dedup_gate.py -q` -> 20 passed
 - scoped `git diff --check` -> pass
 - production DB copy smoke on `/tmp` only: `NEW 15938 -> 822`, `EXPIRED 3856`, `DROPPED_DISABLED_SIGNAL 11257`, one UZR draft candidate, two UZR `DROPPED_METRIC_RUN_CAP`
+
+## Deploy
+
+- code commit: `80b87ea`
+- Cloud Build: `67bcb6db-468d-45ff-887a-74ff6e830a70` SUCCESS
+- image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/insight-nightly:362-queue-80b87ea`
+- digest: `sha256:b05e30ece3a0d90062ecf6d38acb2d2b81d3511389ab98e75993d8634786d136`
+- Cloud Run Job: `insight-nightly`, generation `51`
+- Scheduler: `data-insight-*` 7 triggers ENABLED
+- manual execute: not run, to avoid extra publish/mail outside natural schedule
 
 ## Not Done
 

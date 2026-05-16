@@ -2,7 +2,7 @@
 
 ## status
 
-- **status**: REVIEW_NEEDED
+- **status**: LIVE_DEPLOYED_OBSERVE
 - **owner**: Codex
 - **lane**: B
 - **created**: 2026-05-16 JST
@@ -63,8 +63,21 @@
 
 ## deploy
 
-- pre-deploy: pending
-- manual execute: 未実行予定 (追加 mail を避け、次回自然 fire で観察)
+- commit: `c939b77`
+- build context: clean `git archive HEAD` export `/tmp/x-post-mail-deploy-c939b77-q2kzcq` (dirty worktree 混入なし)
+- Cloud Build: `7a6ae843-f49c-4a23-90ed-af1d57831f30` SUCCESS
+- image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/x-post-mail-lane:374-dedup-starvation-c939b77`
+- digest: `sha256:739e16042fbb2fb8b58ca3be1e17bc571f035fe4ec6a17daa7fa8944b45bce3f`
+- Cloud Run Job: `x-post-mail-lane` generation `11`
+- changed: Job image only
+- unchanged: Scheduler / env / Secret / WP / X / SNS
+- manual execute: 未実行 (追加 mail を避け、次回自然 fire で観察)
+
+## live observation
+
+- 2026-05-16 22:30 JST の自然 fire `x-post-mail-lane-pmtph` は Job 更新直前の旧 image で実行され、`Loaded 24h dedup set: 11 signatures` → `No candidates generated — skip send` で終了
+- その後、Job generation `11` が修正版 digest を参照していることを確認
+- 次回自然 fire は 2026-05-17 07:00 JST
 
 ## notes
 

@@ -1902,14 +1902,15 @@ git add -A禁止。
 ### 374-x-post-mail-dedup-starvation-fallback
 
 - **alias**: -
-- **status**: REVIEW_NEEDED / **priority**: high
+- **status**: LIVE_DEPLOYED_OBSERVE / **priority**: high
 - **owner**: Codex / **lane**: B
 - **doc_path**: `doc/active/374-x-post-mail-dedup-starvation-fallback.md`
 - **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/43
 - **背景**: 353〜355 の確認で送った 10 候補が 24h dedup ledger に残り、15:00 JST は 1 候補、17:30 JST は 0 候補で mail skip になった。07:00 / 12:00 JST は別途 Scheduler 403 修正済み。
 - **方針**: 24h dedup は通常維持。ただし dedup 後候補が default 3 件未満なら、dedup-safe 候補を先頭に残したまま dedup なし候補で不足分を backfill する。重複抑制を hard stop ではなく soft preference にし、候補 mail 自体が枯れる事故を止める。
 - **tests**: py_compile PASS、compileall PASS、AST PASS、`test_x_post_mail.py` 71 passed、関連 3 file `107 passed, 3 warnings, 6 subtests passed`。
-- **deploy**: pending。Scheduler / env / Secret / WP / X / SNS は変更しない。追加 mail 回避のため手動 execute は未実行予定。
+- **deploy**: commit `c939b77`、Cloud Build `7a6ae843-f49c-4a23-90ed-af1d57831f30` SUCCESS、image `x-post-mail-lane:374-dedup-starvation-c939b77`、digest `sha256:739e16042fbb...`、Cloud Run Job generation `11`。Scheduler / env / Secret / WP / X / SNS は未変更、手動 execute は追加 mail 回避のため未実行。
+- **live note**: 2026-05-16 22:30 JST の自然 fire は Job 更新直前の旧 image で走り、候補 0 件で mail skip。generation `11` は修正版 digest 参照済み。次回自然 fire は 2026-05-17 07:00 JST。
 
 ### 362-INSIGHT-queue-cleanup-and-metric-run-cap
 

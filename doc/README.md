@@ -1918,14 +1918,14 @@ git add -A禁止。
 ### 365-QA-social-x-related-post-specificity
 
 - **alias**: -
-- **status**: REVIEW_NEEDED / **priority**: high
+- **status**: LIVE_DEPLOYED_OBSERVE / **priority**: high
 - **owner**: Codex / **lane**: B
 - **doc_path**: `doc/active/365-QA-social-x-related-post-specificity.md`
 - **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/34
 - **背景**: post `68489` で、坂本勇人のSNS記事に別話題X投稿が「関連ポスト」として入り、2つの関係ないポストを混ぜた記事に見えた。原因は social_news の secondary media quote が選手名一致だけで候補を通しやすかったこと。
 - **方針**: AI 類似判定 / 記憶再構成は禁止。social_news の2本目X投稿は、選手名一致だけでは許可せず、source tweet と候補 tweet の title / summary に `キャッチボール` / `昆陽里` / `登録` / `抹消` / `スタメン` 等の具体 detail token が literal に重なる場合だけ許可する。拒否は silent skip にせず `topic_detail_mismatch` で残す。自己評価OKではなく 68489 型 fixture-backed test で固定する。
 - **acceptance**: 同一選手名だけの別話題Xは関連ポストに入らない。具体 detail overlap があるXは2本目として入る。`topic_detail_mismatch` が残る。既存の公示 / 監督コメント / social own source quote が回帰しない。Scheduler / env / Secret / WP既存記事 / X / SNS / mail 条件は変更しない。
-- **implementation**: `src/media_xpost_selector.py` に concrete detail overlap gate を追加し、`src/rss_fetcher.py` から selector へ source title / summary を渡す。`tests/test_media_xpost_selector.py` に 68489 型 regression を追加。`py_compile` / `compileall` / AST parse PASS。pytest: `tests/test_media_xpost_selector.py` 24 passed / 3 warnings、media selector + build block 83 passed / 4 warnings、duplicate guard 13 passed / 3 warnings。deploy evidence は未記録。
+- **implementation**: `src/media_xpost_selector.py` に concrete detail overlap gate を追加し、`src/rss_fetcher.py` から selector へ source title / summary を渡す。`tests/test_media_xpost_selector.py` に 68489 型 regression を追加。`py_compile` / `compileall` / AST parse PASS。pytest: `tests/test_media_xpost_selector.py` 24 passed / 3 warnings、media selector + build block 83 passed / 4 warnings、duplicate guard 13 passed / 3 warnings。Cloud Build `a46132b5-d25a-4bf0-b44f-6bb92b39fbff` SUCCESS、image `yoshilover-fetcher:365-social-x-7440089` / digest `sha256:6161a8b640e53d2eb0312d38cfcf15ead2953ac6c4240659c531099465eb911b` を `yoshilover-fetcher-00402-4vc` へ deploy、traffic 100%、`/health` OK、startup probe succeeded。Scheduler / env / Secret / WP既存記事 / X / SNS / mail 条件は未変更。GitHub Issue #34 は自然 fire / log evidence 後に close。
 
 ## marketing board
 

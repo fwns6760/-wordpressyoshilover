@@ -2,7 +2,7 @@
 
 ## meta
 
-- status: REVIEW_NEEDED
+- status: LIVE_DEPLOYED_OBSERVE
 - priority: high
 - owner: Codex
 - lane: B
@@ -77,13 +77,13 @@ X投稿は短いため、選手名だけでは同一話題の根拠にならな�
 - AST parse -> `AST_OK src/media_xpost_selector.py,src/rss_fetcher.py,tests/test_media_xpost_selector.py`
 - `python3 -m pytest tests/test_media_xpost_selector.py tests/test_build_news_block.py -q` -> 83 passed / 4 warnings
 - `python3 -m pytest tests/test_rss_fetcher_duplicate_guard.py -q` -> 13 passed / 3 warnings
-
-追加予定:
-
-- deploy する場合は Cloud Build / Cloud Run revision / `/health`
+- `gcloud builds submit --project baseballsite --region asia-northeast1 --tag asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:365-social-x-7440089 .` -> Cloud Build `a46132b5-d25a-4bf0-b44f-6bb92b39fbff` SUCCESS
+- image digest `sha256:6161a8b640e53d2eb0312d38cfcf15ead2953ac6c4240659c531099465eb911b`
+- `gcloud run deploy yoshilover-fetcher --image asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:365-social-x-7440089 --project baseballsite --region asia-northeast1 --quiet` -> revision `yoshilover-fetcher-00402-4vc`, traffic 100%
+- `curl -sS https://yoshilover-fetcher-487178857517.asia-northeast1.run.app/health` -> OK
+- Cloud Run log: revision `yoshilover-fetcher-00402-4vc` startup probe succeeded, `/health` 200
 
 ## 未完了
 
-- deploy evidence
 - 自然 fire 後の `media_xpost_skipped` / `topic_detail_mismatch` または問題なく完走した evidence
 - GitHub Issue #34 close

@@ -167,6 +167,27 @@ def test_render_giants_centric_ranking_full(tmp_path):
         conn.close()
 
 
+def test_render_giants_centric_ranking_auto_uses_japanese_period_for_last_5_games(tmp_path):
+    """raw scope code ではなく title に読者向け期間が入る。"""
+    db = tmp_path / "test.db"
+    conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
+    try:
+        _seed_snapshots(conn, snapshot_date="2026-05-14", scope="last_5_games", metric="OPS",
+                        ranking=[
+                            ("大城卓三", "g", 0.912, 25, 4, 30),
+                            ("佐藤輝明", "t", 0.950, 24, 1, 30),
+                        ])
+        result = rap.render_giants_centric_ranking(
+            conn, metric_name="OPS", scope="last_5_games",
+            snapshot_date="2026-05-14", top_n=10,
+        )
+        assert result is not None
+        assert "直近5試合" in result["title"]
+        assert "last_5_games" not in result["title"]
+    finally:
+        conn.close()
+
+
 def test_render_returns_none_when_no_giants_in_top_n(tmp_path):
     """巨人選手が ranking 圏外なら focus 取れず None で skip."""
     db = tmp_path / "test.db"

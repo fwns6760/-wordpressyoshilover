@@ -82,7 +82,7 @@ deploy: `insight-nightly:be96f18` / digest `sha256:5ed4eef2114906c5abd608bc7b343
 
 test: deploy 前 data-insight 関連 pytest 218 passed。full unittest は既存の `manual_intake_service` socket PermissionError、`manual_intake_service_x_post` 403 expectation、`duplicate_prevention_golden` logger call-count で赤のまま。
 
-様子見リスク: 記事減りすぎ / まだ多い / mail過多 / 既存投稿 backfill 未実装 / title期間必須 runtime guard 未実装。次 action は次回 Scheduler 自然 fire のログ観察。
+様子見リスク: 記事減りすぎ / まだ多い / mail過多 / 既存投稿 backfill 未実装 / title期間必須 runtime guard の live 観察待ち。次 action は次回 Scheduler 自然 fire のログ観察。
 
 ## 2026-05-14 EVENING session summary
 

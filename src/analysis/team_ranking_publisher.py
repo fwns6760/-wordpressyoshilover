@@ -28,6 +28,7 @@ if str(ROOT) not in sys.path:
 
 from src.analysis import insight_atbats_parser  # noqa: E402
 from src.analysis import insight_dedup_gate as dedup_gate  # noqa: E402
+from src.analysis import insight_title_guard as title_guard  # noqa: E402
 from src.analysis import ranking_article_publisher as rap  # noqa: E402
 from src.giants_news_banner import (  # noqa: E402
     giants_news_banner_html as _giants_news_banner_html,
@@ -248,7 +249,7 @@ def _build_team_table_md(rows: list[dict], focus_tc: str = "g", value_label: str
 
 
 def _scope_label_jp(scope: str) -> str:
-    return {"last_7d": "1 週間", "last_30d": "1 ヶ月", "season": "今シーズン"}.get(scope, scope)
+    return title_guard.period_label_for_scope(scope) or scope
 
 
 def render_team_metric_article(
@@ -300,6 +301,7 @@ def render_team_metric_article(
         f"【巨人データ】セ・リーグ球団{metric_label}、巨人 {giants_rank}/6 位 "
         f"{giants_val_str} ({scope_label})"
     )
+    title = title_guard.ensure_title_period(title, scope=scope).title
 
     # table md
     table_md = _build_team_table_md(sorted_rows, focus_tc="g", value_label=metric_label,
@@ -358,6 +360,16 @@ def publish_team_metric_draft(
     article = render_team_metric_article(conn, metric=metric, scope=scope)
     if article is None:
         return {"status": "skip", "reason": "no_data", "metric": metric, "scope": scope}
+    title_check = title_guard.ensure_title_period(article["title"], scope=scope)
+    if not title_check.ok:
+        return {
+            "status": "skip_title_period_guard",
+            "reason": title_check.reason,
+            "metric": metric,
+            "scope": scope,
+            "title": article["title"],
+        }
+    article["title"] = title_check.title
     dedup_context = {
         "subject_key": "team:g",
         "metric_name": f"TEAM_{metric}",
@@ -442,6 +454,7 @@ def render_team_streak_article(conn: sqlite3.Connection) -> Optional[dict]:
     kind_label = "連勝" if kind == "win" else "連敗"
     today = dt.date.today().isoformat()
     title = f"【巨人データ】チーム {streak} {kind_label} ({today} 時点)"
+    title = title_guard.ensure_title_period(title, period_label=today).title
     body_md = f"""# {title}
 
 ## ひとこと
@@ -479,6 +492,14 @@ def publish_team_streak_draft(
     article = render_team_streak_article(conn)
     if article is None:
         return {"status": "skip", "reason": "no_active_streak"}
+    title_check = title_guard.ensure_title_period(article["title"], scope="current")
+    if not title_check.ok:
+        return {
+            "status": "skip_title_period_guard",
+            "reason": title_check.reason,
+            "title": article["title"],
+        }
+    article["title"] = title_check.title
     dedup_context = {
         "subject_key": "team:g",
         "metric_name": f"TEAM_STREAK_{article['kind']}",
@@ -560,6 +581,7 @@ def render_team_run_diff_article(
     start, end = _scope_window(scope)
     sign = "+" if diff > 0 else ""
     title = f"【巨人データ】チーム 得失点差 {sign}{diff} ({scope_label})"
+    title = title_guard.ensure_title_period(title, scope=scope).title
     body_md = f"""# {title}
 
 ## ひとこと
@@ -591,6 +613,15 @@ def publish_team_run_diff_draft(
     article = render_team_run_diff_article(conn, scope=scope)
     if article is None:
         return {"status": "skip", "reason": "no_data_or_zero_diff", "scope": scope}
+    title_check = title_guard.ensure_title_period(article["title"], scope=scope)
+    if not title_check.ok:
+        return {
+            "status": "skip_title_period_guard",
+            "reason": title_check.reason,
+            "scope": scope,
+            "title": article["title"],
+        }
+    article["title"] = title_check.title
     dedup_context = {
         "subject_key": "team:g",
         "metric_name": "TEAM_RUN_DIFF",
@@ -671,6 +702,7 @@ def render_team_vs_opponent_article(
         if t > 0 else
         f"【巨人データ】対 {opp_jp} {w}勝{l}敗 ({scope_label})"
     )
+    title = title_guard.ensure_title_period(title, scope=scope).title
     win_pct = round(w / (w + l), 3) if (w + l) > 0 else None
     win_pct_str = f"{win_pct:.3f}" if win_pct is not None else "-"
     body_md = f"""# {title}
@@ -706,6 +738,16 @@ def publish_team_vs_opponent_draft(
     if article is None:
         return {"status": "skip", "reason": "insufficient_games",
                 "opponent": opponent, "scope": scope}
+    title_check = title_guard.ensure_title_period(article["title"], scope=scope)
+    if not title_check.ok:
+        return {
+            "status": "skip_title_period_guard",
+            "reason": title_check.reason,
+            "opponent": opponent,
+            "scope": scope,
+            "title": article["title"],
+        }
+    article["title"] = title_check.title
     dedup_context = {
         "subject_key": "team:g",
         "metric_name": f"TEAM_VS_{opponent}",

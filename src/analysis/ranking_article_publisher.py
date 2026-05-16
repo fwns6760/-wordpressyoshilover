@@ -39,6 +39,7 @@ if str(ROOT) not in sys.path:
 
 from src.analysis import insight_article_generator  # noqa: E402
 from src.analysis import insight_dedup_gate as dedup_gate  # noqa: E402
+from src.analysis import insight_title_guard as title_guard  # noqa: E402
 from src.analysis.insight_article_generator import (  # noqa: E402
     ArticleContext,
     RankRow,
@@ -500,11 +501,7 @@ def render_giants_centric_ranking(
         return None
 
     if sample_window_label is None:
-        sample_window_label = {
-            "last_7d": "直近 7 日",
-            "last_30d": "直近 30 日",
-            "season": "シーズン累計",
-        }.get(scope, scope)
+        sample_window_label = title_guard.period_label_for_scope(scope) or scope
 
     ctx = ArticleContext(
         metric_name=metric_name,
@@ -521,6 +518,10 @@ def render_giants_centric_ranking(
     base_title = base_title.replace("12 球団中", "セ・リーグ").replace("全 30 人中", "セ・リーグ")
     if not base_title.startswith("【"):
         base_title = f"【巨人データ】{base_title}"
+    title_check = title_guard.ensure_title_period(base_title, scope=scope)
+    if not title_check.ok:
+        return None
+    base_title = title_check.title
 
     # rebuild table from rows
     team_label_map = {
@@ -537,9 +538,8 @@ def render_giants_centric_ranking(
         "FIP": "((13×HR + 3×(BB+HBP) - 2×K) ÷ IP) + 定数",
         "WHIP": "(被安打 + 四球) ÷ 投球回",
     }
-    scope_label_map = {"last_7d": "直近 7 日", "last_30d": "直近 30 日", "season": "シーズン累計"}
     formula = metric_formula_map.get(metric_name, f"{metric_name} 標準式")
-    scope_label_text = scope_label_map.get(scope, scope)
+    scope_label_text = title_guard.period_label_for_scope(scope) or scope
 
     # ranking table (top_n 行、focus_player は赤太字 highlight)
     def _red_bold(text: str) -> str:
@@ -682,6 +682,16 @@ def publish_giants_centric_ranking_draft(
             "metric_name": metric_name,
             "scope": scope,
         }
+    title_check = title_guard.ensure_title_period(article["title"], scope=scope)
+    if not title_check.ok:
+        return {
+            "status": "skip_title_period_guard",
+            "reason": title_check.reason,
+            "metric_name": metric_name,
+            "scope": scope,
+            "title": article["title"],
+        }
+    article["title"] = title_check.title
     dedup_context = {
         "subject_key": article["focus_player"],
         "metric_name": metric_name,
@@ -904,6 +914,7 @@ def render_player_counting_split_article(
         f"【巨人データ】{top_player} {metric_label_jp} {top_value} で"
         f"{split_label_jp} セ・リーグ {giants_rank} 位 ({scope_label})"
     )
+    title = title_guard.ensure_title_period(title, scope=scope).title
     table_lines = [
         f"| 順位 | 選手 | チーム | {metric_label_jp}({split_label_jp}) |",
         "|---|---|---|---|",
@@ -989,6 +1000,17 @@ def publish_player_counting_split_draft(
         return {"status": "skip", "reason": "no_data_or_no_giants",
                 "stat_col": stat_col, "scope": scope,
                 "split": f"{split_field}={split_value}"}
+    title_check = title_guard.ensure_title_period(article["title"], scope=scope)
+    if not title_check.ok:
+        return {
+            "status": "skip_title_period_guard",
+            "reason": title_check.reason,
+            "stat_col": stat_col,
+            "scope": scope,
+            "split": f"{split_field}={split_value}",
+            "title": article["title"],
+        }
+    article["title"] = title_check.title
     metric_key = f"{stat_col}:{split_field}={split_value}"
     dedup_context = {
         "subject_key": article["top_player"],
@@ -1121,6 +1143,7 @@ def render_player_counting_article(
         f"【巨人データ】{top_player} {metric_label_jp} {top_value} で"
         f"セ・リーグ {giants_rank} 位 ({scope_label})"
     )
+    title = title_guard.ensure_title_period(title, scope=scope).title
 
     # 表 (TOP 10)、 348 step 3 spec §2.5: 焦点選手 = 赤太字 + ★ (圏外時は別行追加)
     table_lines = [f"| 順位 | 選手 | チーム | {metric_label_jp} |", "|---|---|---|---|"]
@@ -1202,6 +1225,16 @@ def publish_player_counting_draft(
     if article is None:
         return {"status": "skip", "reason": "no_data_or_no_giants",
                 "stat_col": stat_col, "scope": scope}
+    title_check = title_guard.ensure_title_period(article["title"], scope=scope)
+    if not title_check.ok:
+        return {
+            "status": "skip_title_period_guard",
+            "reason": title_check.reason,
+            "stat_col": stat_col,
+            "scope": scope,
+            "title": article["title"],
+        }
+    article["title"] = title_check.title
     dedup_context = {
         "subject_key": article["top_player"],
         "metric_name": stat_col,

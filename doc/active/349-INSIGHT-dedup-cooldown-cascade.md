@@ -241,7 +241,7 @@ YYYY-MM-DD HH:MM JST | <test> | <regression> | <fix> | <test added>
 - **初回だけ既存投稿と重複する risk**: dedup ledger は deploy 後の新規 publish/draft から蓄積。過去 WP 投稿の backfill はしていないため、初回 fire は既存記事との完全重複を止めきれない可能性がある。
 - **5% delta の指標別感度 risk**: OPS / 防御率 / 本塁打数などで「5%」の意味が違う。実 mail/article を見て、指標別閾値に分ける必要が出る可能性がある。
 - **rank band 境界 risk**: 1 / 5 / 10 / 30 位の境界をまたぐだけで再掲される。境界付近で行き来すると短期再掲が増える可能性がある。
-- **期間 title guard は未強制**: title 例は config/spec/test に入れたが、「期間が title に無い記事を必ず落とす/補完する」runtime guard は未実装。
+- **期間 title guard は repo 実装済、live 観察待ち**: 期間が分かる title は `（直近5試合）` 等を自動補完し、期間が分からない title は `skip_title_period_guard` で止める。deploy / Scheduler 自然 fire 後に実 title を確認する。
 - **manual execute 未実行**: 追加記事・mail を発生させないため deploy 後の手動 `gcloud run jobs execute insight-nightly` は実行していない。次回 Scheduler 自然 fire で確認する。
 - **full unittest 赤は残存**: `manual_intake_service` socket PermissionError、`manual_intake_service_x_post` 403 expectation、`duplicate_prevention_golden` logger call-count は今回対象外で未修正。
 
@@ -250,8 +250,13 @@ YYYY-MM-DD HH:MM JST | <test> | <regression> | <fix> | <test added>
 - 1 日全体の data-insight publish 総量 cap。
 - mail 専用 cap / mail digest / 同選手同指標 mail cooldown。
 - 既存 WP 投稿から dedup history を backfill する処理。
-- title 期間必須の runtime validation / auto補完。
 - 指標別 delta 閾値。
 - Scheduler 本数削減や時刻変更。
 - env / Secret 変更。
 - WP 既存記事の削除・修正。
+
+### 2026-05-16 follow-up: title 期間 runtime guard
+
+- `src/analysis/insight_title_guard.py` を追加し、data-insight title が読者向け期間を持つか runtime で判定。
+- `last_5_games` / `last_10_games` / `last_7d` / `last_30d` などの raw scope code は title 期間扱いにせず、日本語 label を補完。
+- 対象は data-insight publish 経路のみ。RSS 通常記事 / X / SNS / Scheduler / env / Secret は対象外。

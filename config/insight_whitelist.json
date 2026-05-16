@@ -76,8 +76,8 @@
 
   "scope_ja": {
     "season": "今シーズン",
-    "last_7d": "直近7日",
-    "last_30d": "直近30日",
+    "last_7d": "直近1週間",
+    "last_30d": "直近1ヶ月",
     "last_5_games": "直近5試合",
     "last_10_games": "直近10試合",
     "monthly": "月別",

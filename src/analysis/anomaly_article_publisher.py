@@ -33,6 +33,7 @@ if str(ROOT) not in sys.path:
 
 from src.analysis import insight_anomaly_detector as detector  # noqa: E402
 from src.analysis import insight_dedup_gate as dedup_gate  # noqa: E402
+from src.analysis import insight_title_guard as title_guard  # noqa: E402
 from src.analysis import insight_whitelist as _wl  # noqa: E402
 from src.analysis import ranking_article_publisher as rap  # noqa: E402
 from src.giants_news_banner import (  # noqa: E402
@@ -334,17 +335,9 @@ def _render_unified_article(
     league = _league_for_team(team_code)
     league_label = _league_label(league)
 
-    # title 用 short scope label (user 指示「期間で良いよ。一か月」)
-    # 348 step 3: 新 scope (last_10_games / monthly / weekly) を追加、 既存表記維持
-    scope_label = {
-        "last_7d": "直近1週間",
-        "last_30d": "直近30日",
-        "season": "今シーズン",
-        "last_5_games": "直近 5 試合",
-        "last_10_games": "直近 10 試合",
-        "monthly": "月別",
-        "weekly": "週別",
-    }.get(scope, scope)
+    # title 用 short scope label。config の日本語表記に寄せ、raw scope code は
+    # title に出さない。
+    scope_label = title_guard.period_label_for_scope(scope) or scope
 
     # footer 用 具体 date range (title には出さず、本文 footer のみ)
     import datetime as _dt
@@ -399,6 +392,9 @@ def _render_unified_article(
         value=value_str, rank=rank_str, scope=scope_label,
         league=league_label,
     )
+    title_check = title_guard.ensure_title_period(title, scope=scope)
+    if title_check.ok:
+        title = title_check.title
 
     ranking_table = _render_ranking_table_md(
         top_rows, focus_player=player, metric_label=metric_label,
@@ -632,6 +628,9 @@ def _render_box_score_article(
     `_render_simple_data_article` の bullet list を 表形式 (key/value table)
     に置き換えた variant。 試合後イベント / record event の詳細 stat 表示用。
     """
+    title_check = title_guard.ensure_title_period(title, period_label=period_label)
+    if title_check.ok:
+        title = title_check.title
     # 348 step 3 spec §2.5: 「大手にない」 banner 廃止 (全種類で省略)。
     intro_banner = ""
     table_lines = ["| 項目 | 数値 |", "|---|---|"]
@@ -680,7 +679,8 @@ def _render_simple_data_article(
     2026-05-15 user 指示「人間にわかりやすいタイトル」適用、title には日時
     prefix を入れない (集計日時は body の 集計期間 row に表記)。
     """
-    body_title = title
+    title_check = title_guard.ensure_title_period(title, period_label=period_label)
+    body_title = title_check.title if title_check.ok else title
     # 348 step 3 spec §2.5: 「大手にない」 banner 廃止 (全種類で省略)。
     intro_banner = ""
     detail_md = "\n".join(f"- {line}" for line in detail_lines)
@@ -930,12 +930,7 @@ def _scope_label_jp(scope: str) -> str:
     読者に伝わらない。「直近 1 週間」「直近 1 ヶ月」「今シーズン」「直近 5 試合」
     へ 1 か所で変換。
     """
-    return {
-        "last_7d": "直近 1 週間",
-        "last_30d": "直近 1 ヶ月",
-        "season": "今シーズン",
-        "last_5_games": "直近 5 試合",
-    }.get(scope or "", scope or "")
+    return title_guard.period_label_for_scope(scope) or (scope or "")
 
 
 def _parse_kv_blob(text: str) -> dict[str, str]:
@@ -1443,6 +1438,17 @@ def render_anomaly_article(
     result = renderer(conn, candidate_row)
     if result is None:
         return None
+    title_check = title_guard.ensure_title_period(
+        result["title"],
+        scope=_scope_from_candidate(candidate_row),
+    )
+    if not title_check.ok:
+        return None
+    if title_check.title != result["title"]:
+        result["body_md"] = result["body_md"].replace(
+            f"# {result['title']}", f"# {title_check.title}", 1
+        )
+    result["title"] = title_check.title
     return {
         "title": result["title"],
         "body_md": result["body_md"],
@@ -1528,9 +1534,10 @@ def publish_anomaly_drafts(
         article = render_anomaly_article(conn, cand)
         if article is None:
             results.append({
-                "status": "skip_unknown_signal",
+                "status": "skip_unknown_signal_or_title_guard",
                 "candidate_id": cand["candidate_id"],
                 "signal_type": cand["signal_type"],
+                "reason": "unknown_signal_or_missing_period_in_title",
             })
             continue
         dedup_context = _dedup_context_for_candidate(cand)

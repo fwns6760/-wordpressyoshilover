@@ -169,6 +169,8 @@ def test_manual_query_rank_blocks_disallowed_fip_before_db_check(tmp_path):
 
 def test_scope_ja_mapping():
     assert wl.scope_ja("season") == "今シーズン"
+    assert wl.scope_ja("last_7d") == "直近1週間"
+    assert wl.scope_ja("last_30d") == "直近1ヶ月"
     assert wl.scope_ja("last_5_games") == "直近5試合"
     assert wl.scope_ja("monthly") == "月別"
 

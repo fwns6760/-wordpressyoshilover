@@ -171,6 +171,34 @@ def test_dedup_within_7days(tmp_path):
         conn.close()
 
 
+def test_zscore_dedup_same_player_metric_across_periods(tmp_path):
+    """同じ player + metric は last_30d / season の期間違いを 7日内で重ねない。"""
+    db = tmp_path / "t.db"
+    conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
+    try:
+        for scope in ("last_30d", "season"):
+            ranking = [(f"avg_{scope}_{i}", "t", 0.700 + i * 0.005, 50, i + 2, 6)
+                       for i in range(5)]
+            ranking.append(("巨人A", "g", 1.500, 100, 1, 6))
+            _seed_snapshots(
+                conn,
+                snapshot_date="2026-05-14",
+                scope=scope,
+                metric="OPS",
+                ranking=ranking,
+            )
+        ids1 = det.detect_zscore_batter_outliers(
+            conn, snapshot_date="2026-05-14", scope="last_30d",
+        )
+        ids2 = det.detect_zscore_batter_outliers(
+            conn, snapshot_date="2026-05-14", scope="season",
+        )
+        assert len(ids1) >= 1
+        assert ids2 == []
+    finally:
+        conn.close()
+
+
 def test_render_anomaly_article_zscore_batter(tmp_path):
     db = tmp_path / "t.db"
     conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)

@@ -516,7 +516,13 @@ def main(argv: Optional[list[str]] = None) -> int:
                                     {"stat_col": "K", "table": "pitching_logs",
                                      "metric_label_jp": "奪三振数"},
                                 ]
-                                counting_scopes = ["season", "last_30d", "monthly", "weekly"]
+                                # 2026-05-16 user feedback: one-week /
+                                # one-month / season variants of the same
+                                # metric firing together is noisy. Auto
+                                # publish only the most time-sensitive
+                                # counting window here; longer windows need
+                                # a separate change gate before re-emitting.
+                                counting_scopes = ["weekly"]
                                 for metric in counting_metrics:
                                     for scope in counting_scopes:
                                         try:

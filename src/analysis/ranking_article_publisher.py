@@ -1171,8 +1171,8 @@ def publish_default_set(
 ) -> list[dict]:
     """default rank set を順番に投入 (per-run 上限まで)。
 
-    現状は OPS / wOBA / ERA / FIP の 4 種類を ``last_30d`` で投入。tuning で
-    metric 種類追加 / scope 変更可能。
+    2026-05-16: default auto publish は短期変化を見る ``last_7d`` に寄せる。
+    season / last_30d は手動判断または別 gate 付きの再導入対象。
     """
     if max_per_run is None:
         max_per_run = DEFAULT_MAX_PER_RUN
@@ -1180,27 +1180,33 @@ def publish_default_set(
     # 348 step 1 defense-in-depth (2026-05-16): WHIP も × metric なので除外
     # (publish_giants_centric_ranking_draft 内 gate と二重防御)。
     # 残す指標: OPS / AVG / OBP / SLG / ERA / K_per_9。
+    # 2026-05-16 user feedback: 大手が出しやすい season / 30d を
+    # default auto publish から外し、短期変化 (last_7d) に寄せる。
     default_jobs = [
-        # batter (last_30d、最近 1 ヶ月)
-        {"metric_name": "OPS", "scope": "last_30d", "top_n": 50},
-        {"metric_name": "AVG", "scope": "last_30d", "top_n": 50},
-        {"metric_name": "OBP", "scope": "last_30d", "top_n": 50},
-        {"metric_name": "SLG", "scope": "last_30d", "top_n": 50},
-        # batter (season、累積)
-        {"metric_name": "OPS", "scope": "season", "top_n": 50},
-        {"metric_name": "AVG", "scope": "season", "top_n": 50},
-        # pitcher (season、累積) — WHIP は × で削除済
-        {"metric_name": "ERA", "scope": "season", "top_n": 30},
-        {"metric_name": "K_per_9", "scope": "season", "top_n": 30},
-        # pitcher (last_30d、最近 1 ヶ月) — WHIP は × で削除済
-        {"metric_name": "ERA", "scope": "last_30d", "top_n": 30},
+        # batter (last_7d、短期変化)
+        {"metric_name": "OPS", "scope": "last_7d", "top_n": 50},
+        {"metric_name": "AVG", "scope": "last_7d", "top_n": 50},
+        {"metric_name": "OBP", "scope": "last_7d", "top_n": 50},
+        {"metric_name": "SLG", "scope": "last_7d", "top_n": 50},
+        # pitcher (last_7d、短期変化) — WHIP は × で削除済
+        {"metric_name": "ERA", "scope": "last_7d", "top_n": 30},
+        {"metric_name": "K_per_9", "scope": "last_7d", "top_n": 30},
     ]
     results: list[dict] = []
     published = 0
+    seen_metric_periods: set[str] = set()
     for job in default_jobs:
         if published >= max_per_run:
             results.append({
                 "status": "skip_max_per_run",
+                "metric_name": job["metric_name"],
+                "scope": job["scope"],
+            })
+            continue
+        metric_key = str(job["metric_name"])
+        if metric_key in seen_metric_periods:
+            results.append({
+                "status": "skip_duplicate_metric_period",
                 "metric_name": job["metric_name"],
                 "scope": job["scope"],
             })
@@ -1213,6 +1219,8 @@ def publish_default_set(
             dry_run=dry_run,
         )
         results.append(result)
+        if result.get("status") in ("published", "published_draft", "dry_run"):
+            seen_metric_periods.add(metric_key)
         if result.get("status") in ("published_draft", "dry_run"):
             published += 1
     return results

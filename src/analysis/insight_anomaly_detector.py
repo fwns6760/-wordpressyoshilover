@@ -181,6 +181,18 @@ def _insert_candidate(
     ).fetchone()
     if existing:
         return 0
+    metric_token = _extract_note_token(notes, "metric")
+    if metric_token and signal_type in {SIGNAL_ZSCORE_BATTER, SIGNAL_ZSCORE_PITCHER}:
+        metric_existing = conn.execute(
+            "SELECT candidate_id FROM article_candidates "
+            "WHERE signal_type = ? AND player_canonical = ? "
+            "AND notes LIKE ? "
+            "AND status IN ('NEW', 'REVIEWED', 'DRAFTED') "
+            "AND created_at > datetime('now', '-7 days')",
+            (signal_type, player_canonical, f"%metric={metric_token}%"),
+        ).fetchone()
+        if metric_existing:
+            return 0
     _ensure_insight_run(conn, run_id)
     now_iso = dt.datetime.now(dt.timezone.utc).isoformat()
     cur = conn.execute(
@@ -194,6 +206,14 @@ def _insert_candidate(
          evidence_json, priority, now_iso, notes),
     )
     return int(cur.lastrowid or 0)
+
+
+def _extract_note_token(notes: Optional[str], key: str) -> str:
+    prefix = f"{key}="
+    for part in (notes or "").split():
+        if part.startswith(prefix):
+            return part[len(prefix):].strip()
+    return ""
 
 
 # ─── detector 1: z-score batter outlier ─────────────────────────────────────

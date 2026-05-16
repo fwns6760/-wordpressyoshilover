@@ -200,9 +200,9 @@ class _MetricCombo:
 
     353: ``novelty`` tag drives the weighted shuffle in
     :func:`_select_with_diversity`. ``"high"`` = yoshilover 独自
-    (大手新聞が出さない slice、 直近 7/14 日 / 守備位置別 / 巨人内 等)、
-    ``"mid"`` = 中間 (大手も月次は出すが毎日連載ではない、 今月 / 先月 /
-    直近 30 日)、 ``"low"`` = 大手定番 (削除 — pool に入れない前提だが
+    (大手新聞が出さない slice、 直近 5/10 試合 / 直近 7 日 /
+    守備位置別 / 巨人内の短期変化 等)、 ``"mid"`` = 中間、
+    ``"low"`` = 大手定番 (削除 — pool に入れない前提だが
     将来再導入時の dial として残す)。
 
     354: ``min_sample_override`` allows recent-N-games combos to lower
@@ -276,54 +276,35 @@ def _build_combos(
 ) -> list[_MetricCombo]:
     """Compose the metric × period × position combo pool for one mail.
 
-    353: 大手新聞が毎日連載で出している「シーズン累積 OPS/AVG/ERA/OBP/SLG」
-    5 combo を pool から完全除外し、 yoshilover 独自度の高い slice (直近 7
-    日 / 直近 14 日 / 守備位置別 / 巨人内 ranking) を novelty_high、 大手
-    も月次は出すが毎日ではない slice (今月 / 先月 / 直近 30 日) を
-    novelty_mid に tag 付与する。 ``_select_with_diversity`` の weighted
-    shuffle で high が先頭に来やすく、 「大手にないコンセプト」を mail で
-    具現化する。
+    353/356: 大手新聞が出しやすい「シーズン累積 / 月間 / 直近30日」
+    combo を pool から除外し、 yoshilover 独自度の高い slice
+    (直近 5/10 試合 / 直近 7 日 / 守備位置別 / 巨人内の短期変化) だけを
+    novelty_high として扱う。
 
     354: ``db_path`` を渡すと 直近 5/10 巨人試合 × OPS/AVG/ERA × giants_only
     の 6 combo (全部 novelty="high"、 min_sample_override で AB 閾値緩和)
-    を追加し、 pool 17 → 23。 ``db_path=None`` (default) では既存 17 combo
+    を追加し、 pool 10 → 16。 ``db_path=None`` (default) では既存 10 combo
     のみ返し、 test / 旧呼出 互換を維持する。
 
-    Pool size: 17 combo (db_path=None) / 23 combo (db_path 指定で games 充足)。
+    Pool size: 10 combo (db_path=None) / 16 combo (db_path 指定で games 充足)。
     """
     combos: list[_MetricCombo] = []
-    # 353: シーズン累積 (大手定番 OPS/AVG/ERA/OBP/SLG) は完全除外。
-    # 守備位置別 / 巨人内 ranking は since=None だが、 別 subset で大手出さない
-    # ので残す (下の 7. 8. で追加)。
+    # 356: シーズン累積 / 今月 / 先月 / 直近30日 は大手が出しやすく、同じ
+    # mail に複数期間が並ぶ原因にもなるため pool から外す。
 
-    # 1. Monthly = current month (3 metrics, novelty_mid)
-    month_since = now.replace(day=1).strftime("%Y-%m-%d")
-    for m in ("OPS", "AVG", "ERA"):
-        combos.append(_MetricCombo(m, month_since, "今月", novelty="mid"))
-    # 2. Last 30 days (2 metrics, novelty_mid)
-    last30 = (now - timedelta(days=30)).strftime("%Y-%m-%d")
-    for m in ("OPS", "AVG"):
-        combos.append(_MetricCombo(m, last30, "直近30日", novelty="mid"))
-    # 3. 351: Previous month (2 metrics, novelty_mid) — closed range
-    prev_since, prev_until = _prev_month_range(now)
-    for m in ("OPS", "AVG"):
-        combos.append(_MetricCombo(m, prev_since, "先月", until=prev_until, novelty="mid"))
-    # 4. 351: Last 7 days (1 metric, novelty_high)
+    # 1. 直近 7 日 — short-term league slice.
     last7 = (now - timedelta(days=7)).strftime("%Y-%m-%d")
-    combos.append(_MetricCombo("OPS", last7, "直近7日", novelty="high"))
-    # 5. 351: Last 14 days (2 metrics, novelty_high)
-    last14 = (now - timedelta(days=14)).strftime("%Y-%m-%d")
-    for m in ("OPS", "AVG"):
-        combos.append(_MetricCombo(m, last14, "直近14日", novelty="high"))
-    # 6. 351: 守備位置別 — niche slice that 大手 / のもとけ rarely cover.
+    for m in ("OPS", "AVG", "ERA"):
+        combos.append(_MetricCombo(m, last7, "直近7日", novelty="high"))
+    # 2. 守備位置別 — niche slice that 大手 / のもとけ rarely cover.
     # 守備位置 single-kanji codes match insight_rank_query expectations.
     for pos in ("捕", "二", "遊", "三"):
         combos.append(_MetricCombo("OPS", None, "今シーズン", position=pos, novelty="high"))
-    # 7. 351: 巨人内 ranking — filter final rows to 巨人 rows only.
+    # 3. 巨人内の短期変化 — last7 window, filter final rows to 巨人 rows only.
     for m in ("OPS", "AVG", "ERA"):
-        combos.append(_MetricCombo(m, None, "今シーズン", giants_only=True, novelty="high"))
+        combos.append(_MetricCombo(m, last7, "直近7日", giants_only=True, novelty="high"))
 
-    # 8. 354: 直近 5/10 巨人試合 × OPS/AVG/ERA × giants_only — yoshilover 独自
+    # 4. 354: 直近 5/10 巨人試合 × OPS/AVG/ERA × giants_only — yoshilover 独自
     # の試合数 base ranking。 games table が読めて且つ N 試合分の row が
     # あれば追加 (case-by-case fallback、 取得失敗時は skip)。
     if db_path:
@@ -540,6 +521,18 @@ def _combo_signature(combo: _MetricCombo) -> str:
     """
     pos = combo.position or "None"
     return f"{combo.metric}|{combo.period_label}|{combo.giants_only}|{pos}"
+
+
+def _period_family_key(combo: _MetricCombo) -> str:
+    """Identity used to avoid sending multiple time windows of the same
+    ranking in one mail.
+
+    Example: OPS 直近5試合 / 直近10試合 / 直近7日 are distinct dedup
+    signatures for 24h history, but they are the same user-facing
+    ranking family inside a single mail. Keep only one per mail.
+    """
+    pos = combo.position or "None"
+    return f"{combo.metric}|{combo.giants_only}|{pos}"
 
 
 def _get_storage_client():
@@ -783,7 +776,7 @@ def pick_candidates(
         354: optional path to a read-only ``insight.db`` SQLite file.
         When provided and the table has ≥10 distinct game dates,
         adds 直近 5 試合 / 直近 10 試合 × OPS/AVG/ERA × giants_only
-        combos (6 combos). ``None`` keeps the legacy 17-combo pool.
+        combos (6 combos). ``None`` keeps the base 10-combo pool.
     dedup_set:
         355: optional set of combo signatures already sent within
         the past 24 hours. Combos whose signature is present are
@@ -802,6 +795,7 @@ def pick_candidates(
         max_candidates=len(combos),
         now=now,
     )
+    seen_period_families: set[str] = set()
     for combo in shuffled:
         if len(out) >= max_candidates:
             break
@@ -812,6 +806,11 @@ def pick_candidates(
         if dedup_set is not None and signature in dedup_set:
             LOG.info("dedup skip combo %s/%s (signature=%s)",
                      combo.metric, combo.period_label, signature)
+            continue
+        family_key = _period_family_key(combo)
+        if family_key in seen_period_families:
+            LOG.info("period-family skip combo %s/%s (family=%s)",
+                     combo.metric, combo.period_label, family_key)
             continue
         effective_min_sample = (
             combo.min_sample_override
@@ -851,6 +850,7 @@ def pick_candidates(
         candidate = _format_one(combo, rows, min_sample=effective_min_sample, now=now)
         if candidate:
             out.append(candidate)
+            seen_period_families.add(family_key)
     return out[:max_candidates]
 
 

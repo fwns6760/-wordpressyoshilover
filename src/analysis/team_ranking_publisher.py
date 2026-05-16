@@ -656,40 +656,46 @@ def publish_team_default_set(
     2026-05-15 user 指示「データサイト化、上限なし」適用、3 → 100 (実質 cap 無し)。
     """
     default_jobs = [
-        # 開幕から (season)
-        {"metric": "HR", "scope": "season"},
-        {"metric": "AVG", "scope": "season"},
-        {"metric": "ERA", "scope": "season"},
-        # 月間 (last_30d)
-        {"metric": "HR", "scope": "last_30d"},
-        {"metric": "AVG", "scope": "last_30d"},
-        {"metric": "ERA", "scope": "last_30d"},
-        # 週間 (last_7d)
+        # 2026-05-16 user feedback: season / last_30d / last_7d を同時に
+        # 出すと同じ指標の重複記事になるため、default auto publish は
+        # 短期変化 (last_7d) に寄せる。
         {"metric": "HR", "scope": "last_7d"},
         {"metric": "AVG", "scope": "last_7d"},
         {"metric": "ERA", "scope": "last_7d"},
     ]
     results = []
     published = 0
+    seen_metric_periods: set[str] = set()
     for job in default_jobs:
         if published >= max_per_run:
             results.append({"status": "skip_max", **job})
             continue
+        metric_key = str(job["metric"])
+        if metric_key in seen_metric_periods:
+            results.append({"status": "skip_duplicate_metric_period", **job})
+            continue
         r = publish_team_metric_draft(conn, wp_client_obj, dry_run=dry_run, **job)
         results.append(r)
         if r.get("status") in ("published", "published_draft", "dry_run"):
+            seen_metric_periods.add(metric_key)
             published += 1
     # 348 step 3 part 2 D-2: streak article (active >= 3 連勝/連敗 時のみ)
     if published < max_per_run:
         streak_r = publish_team_streak_draft(conn, wp_client_obj, dry_run=dry_run)
         results.append(streak_r)
-    # 348 step 3 完全達成: 得失点差 publisher (scope=season / last_30d)
-    for scope in ("season", "last_30d"):
+    # 348 step 3 完全達成: 得失点差 publisher。
+    # 2026-05-16: default auto publish は短期変化のみ。
+    for scope in ("last_7d",):
         if published >= max_per_run:
             break
+        if "RUN_DIFF" in seen_metric_periods:
+            results.append({"status": "skip_duplicate_metric_period",
+                            "metric": "RUN_DIFF", "scope": scope})
+            continue
         rd_r = publish_team_run_diff_draft(conn, wp_client_obj, scope=scope, dry_run=dry_run)
         results.append(rd_r)
         if rd_r.get("status") in ("published", "published_draft", "dry_run"):
+            seen_metric_periods.add("RUN_DIFF")
             published += 1
     # 348 step 3 完全達成: 対戦相手別 publisher (セ・リーグ 5 球団 vs 巨人)
     for opp in ("t", "s", "c", "db", "d"):  # 阪神/ヤクルト/広島/DeNA/中日

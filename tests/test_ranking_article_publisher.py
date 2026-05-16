@@ -263,13 +263,14 @@ def test_publish_default_set_respects_max_per_run(tmp_path):
     try:
         # default_jobs に含まれる全 metric × scope を seed して
         # max_per_run cap が published_count を制限することを verify。
-        # 2026-05-15: default_jobs は 11 件に拡張済 (打者 6 + 投手 5)。
+        # 2026-05-16: default_jobs は短期変化 last_7d の 6 件。
         for metric, scope in [
-            ("OPS", "last_30d"), ("wOBA", "last_30d"),
-            ("AVG", "last_30d"), ("OBP", "last_30d"),
-            ("OPS", "season"), ("wOBA", "season"),
-            ("ERA", "season"), ("FIP", "season"), ("WHIP", "season"),
-            ("ERA", "last_30d"), ("FIP", "last_30d"),
+            ("OPS", "last_7d"),
+            ("AVG", "last_7d"),
+            ("OBP", "last_7d"),
+            ("SLG", "last_7d"),
+            ("ERA", "last_7d"),
+            ("K_per_9", "last_7d"),
         ]:
             _seed_snapshots(conn, snapshot_date="2026-05-14", scope=scope, metric=metric,
                             ranking=[("巨人A", "g", 0.5, 90, 1, 30)])
@@ -282,6 +283,42 @@ def test_publish_default_set_respects_max_per_run(tmp_path):
         # max_per_run=2 で 2 件のみ publish、残り (全 jobs - 2) は skip_max_per_run。
         assert published_count == 2
         assert skip_max_count == len(results) - 2
-        assert skip_max_count >= 1  # 11 jobs → skip 9 期待だが、最低 1 件は skip される
+        assert skip_max_count >= 1  # 6 jobs → skip 4 期待だが、最低 1 件は skip される
+    finally:
+        conn.close()
+
+
+def test_publish_default_set_uses_last_7d_only_by_default(tmp_path):
+    """default auto run は OPS の season / 30d を出さず last_7d だけ使う。"""
+    db = tmp_path / "test.db"
+    conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
+    try:
+        for scope in ["last_7d", "last_30d", "season"]:
+            _seed_snapshots(
+                conn,
+                snapshot_date="2026-05-14",
+                scope=scope,
+                metric="OPS",
+                ranking=[("巨人A", "g", 0.9, 90, 1, 30)],
+            )
+        wp_mock = MagicMock()
+        wp_mock.create_category.return_value = 671
+        wp_mock.create_post.return_value = 12345
+
+        results = rap.publish_default_set(conn, wp_mock, max_per_run=100)
+
+        ops_created = [
+            r for r in results
+            if r.get("metric_name") == "OPS"
+            and r.get("status") in ("published", "published_draft")
+        ]
+        assert len(ops_created) == 1
+        assert ops_created[0]["scope"] == "last_7d"
+        assert all(
+            r.get("scope") not in {"last_30d", "season"}
+            for r in results
+            if r.get("metric_name") == "OPS"
+        )
+        assert wp_mock.create_post.call_count == 1
     finally:
         conn.close()

@@ -439,6 +439,37 @@ def test_render_team_metric_article_omits_svg_chart(tmp_path):
         conn.close()
 
 
+def test_publish_team_default_set_uses_short_term_once(monkeypatch):
+    """球団 AVG/ERA/HR と得失点差の default run は last_7d に寄せる。"""
+    metric_calls = []
+    run_diff_calls = []
+
+    def fake_metric(_conn, _wp, *, metric, scope, dry_run=False):
+        metric_calls.append((metric, scope))
+        return {"status": "published_draft", "metric": metric, "scope": scope}
+
+    def fake_streak(_conn, _wp, *, dry_run=False):
+        return {"status": "skip_no_active_streak"}
+
+    def fake_run_diff(_conn, _wp, *, scope, dry_run=False):
+        run_diff_calls.append(scope)
+        return {"status": "published_draft", "metric": "RUN_DIFF", "scope": scope}
+
+    def fake_vs(_conn, _wp, *, opponent, scope, dry_run=False):
+        return {"status": "skip_no_candidate", "opponent": opponent, "scope": scope}
+
+    monkeypatch.setattr(trp, "publish_team_metric_draft", fake_metric)
+    monkeypatch.setattr(trp, "publish_team_streak_draft", fake_streak)
+    monkeypatch.setattr(trp, "publish_team_run_diff_draft", fake_run_diff)
+    monkeypatch.setattr(trp, "publish_team_vs_opponent_draft", fake_vs)
+
+    results = trp.publish_team_default_set(object(), object(), max_per_run=100)
+
+    assert metric_calls == [("HR", "last_7d"), ("AVG", "last_7d"), ("ERA", "last_7d")]
+    assert run_diff_calls == ["last_7d"]
+    assert not any(r.get("status") == "skip_duplicate_metric_period" for r in results)
+
+
 def test_render_team_streak_article_below_threshold(tmp_path):
     """D-2: streak < 3 は記事化しない (skip None)。"""
     from src.analysis import team_ranking_publisher as trp

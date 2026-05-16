@@ -4,7 +4,7 @@
 
 - ticket: 371-QA-disable-game-live-source-policy
 - github_issue: https://github.com/fwns6760/-wordpressyoshilover/issues/40
-- status: IN_FLIGHT
+- status: LIVE_DEPLOYED_OBSERVE
 - priority: P0.5
 - owner: Codex
 - lane: B
@@ -65,3 +65,17 @@ This suppresses normal article sources such as Sanspo X / Sanspo Web even after 
   - AST parse OK for `src/rss_fetcher.py` and `tests/test_rss_fetcher_observability.py`
   - `python3 -m pytest tests/test_rss_fetcher_observability.py tests/test_rss_fetcher_same_family_x_web_dedup.py tests/test_rss_fetcher_duplicate_guard.py -q` => `32 passed, 3 warnings`
   - `python3 -m pytest tests/test_rss_fetcher_observability.py tests/test_rss_fetcher_same_family_x_web_dedup.py tests/test_rss_fetcher_duplicate_guard.py tests/test_duplicate_target_integrity.py tests/test_rss_fetcher_history_duplicate_audit.py -q` => `41 passed, 3 warnings`
+- Commit/deploy:
+  - commit `639040e` (`371: disable game live source policy by default`)
+  - Cloud Build `dec33608-4335-40fe-8b63-9867d3e5f79d` SUCCESS
+  - image `371-source-unlock-639040e`
+  - digest `sha256:86370ac5b7e696e3be352dd49362f31e0fae880bb4e525418d6e9d652f917c9b`
+  - revision `yoshilover-fetcher-00408-l7b` 100%
+  - `/health` => `OK`
+  - startup log: `Default STARTUP TCP probe succeeded after 1 attempt`
+  - Scheduler / env / Secret / X / SNS / mail conditions were not changed.
+  - Manual `/run` was not executed to avoid extra publish/mail side effects.
+
+## observe
+
+- Next natural fetcher run should report `game_live_source_policy_enabled=false`, `game_live_source_policy_active=false`, and no `game_live_source_policy_skip` for Sanspo sources unless the opt-in env is explicitly added later.

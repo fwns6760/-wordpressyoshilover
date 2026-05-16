@@ -90,6 +90,12 @@
     "case_b_game_event": "{prefix}{player} {event} ({game_date} vs {opponent})",
     "case_c_record_milestone": "{prefix}{player} {achievement} ({achievement_date})",
     "case_d_team_ranking": "{prefix}チーム{metric_ja} {value_or_rank} ({scope_ja})",
+    "examples": {
+      "last_5_games": "【巨人データ】大城卓三 OPS .912、リーグ4位（直近5試合）",
+      "last_10_games": "【巨人データ】岡本和真 本塁打3本、チーム最多（直近10試合）",
+      "season": "【巨人データ】山崎伊織 防御率1.80、リーグ3位（今シーズン）",
+      "series": "【巨人データ】巨人 チーム打率.286（阪神3連戦）"
+    },
     "constraints": {
       "max_length": 60,
       "no_truncation_ellipsis": true,

@@ -173,6 +173,17 @@ def test_scope_ja_mapping():
     assert wl.scope_ja("monthly") == "月別"
 
 
+def test_title_format_examples_include_periods():
+    """title examples は人間が期間を即判断できる形に固定する。"""
+    cfg = wl.load_whitelist_config(force_reload=True)
+    examples = cfg["title_format"]["examples"]
+    assert examples["last_5_games"] == "【巨人データ】大城卓三 OPS .912、リーグ4位（直近5試合）"
+    assert "（直近10試合）" in examples["last_10_games"]
+    assert "（今シーズン）" in examples["season"]
+    assert "（阪神3連戦）" in examples["series"]
+    assert all("（" in title and "）" in title for title in examples.values())
+
+
 # ─── 閾値 ────────────────────────────────────────────────────────────────────
 
 

@@ -472,6 +472,64 @@ def test_defense_titles_are_reader_friendly():
     assert "平均超え" not in fielding_article["title"]
 
 
+def test_defense_uzr_article_uses_team_comparison_table(tmp_path):
+    """UZR 記事は個人の箇条書きではなく、球団別の表形式比較にする。"""
+    from src.analysis import anomaly_article_publisher as pub
+
+    conn = _open_db(tmp_path)
+    try:
+        _seed_game(conn, game_id="def-g", game_date="2026-05-16")
+        for team, opps, outs, errors in [
+            ("g", 100, 75, 1),
+            ("t", 100, 82, 1),
+            ("s", 100, 67, 1),
+            ("c", 100, 79, 1),
+            ("db", 100, 70, 1),
+            ("d", 100, 64, 1),
+        ]:
+            conn.execute(
+                "INSERT INTO defense_opportunities "
+                "(game_id, team_code, position, player_canonical, opportunities, "
+                "converted_outs, hits_allowed, errors) "
+                "VALUES (?, ?, '遊', ?, ?, ?, 0, ?)",
+                ("def-g", team, f"{team}-ss", opps, outs, errors),
+            )
+        conn.commit()
+
+        article = pub.render_defense_uzr_article(conn, {
+            "player_canonical": "泉口友汰",
+            "magnitude": -0.157,
+            "notes": "position=遊 守備平均割れ",
+            "current_value": "RF_proxy=0.697 opportunities=33 converted_outs=23 errors=1",
+            "baseline_value": "position=遊 league_RF_baseline=0.854",
+        })
+
+        assert article["title"].startswith(
+            "【巨人データ】セ・リーグ球団別 遊撃守備の簡易UZR、巨人 "
+        )
+        assert "UZR_proxy" not in article["title"]
+        assert "| 順位 | 球団 | 簡易UZR | 守備機会 | アウト化率 |" in article["body_md"]
+        assert '<span style="color:#c0392b"><strong>巨人 ★</strong></span>' in article["body_md"]
+        assert "| 関連した巨人選手 | 泉口友汰 |" in article["body_md"]
+        assert "セ・リーグ同守備位置の球団別比較" in article["body_md"]
+    finally:
+        conn.close()
+
+
+def test_simple_data_article_details_are_table_format():
+    """方針: シンプルなデータ記事も箇条書きではなく表形式にする。"""
+    from src.analysis import anomaly_article_publisher as pub
+
+    article = pub.render_hit_streak_run_article(None, {
+        "player_canonical": "巨人選手",
+        "magnitude": 3,
+    })
+
+    assert "| 項目 | 数値 |" in article["body_md"]
+    assert "| 連続記録 | 3 試合 |" in article["body_md"]
+    assert "- 連続記録" not in article["body_md"]
+
+
 def test_stat_delta_title_uses_japanese_metric_and_not_delta():
     """変化率 signal の title は日本語指標 + 現在値 + 期間にする。"""
     from src.analysis import anomaly_article_publisher as pub

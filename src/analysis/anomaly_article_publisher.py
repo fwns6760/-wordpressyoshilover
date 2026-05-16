@@ -21,6 +21,7 @@ Hard constraints (work record §7):
 
 from __future__ import annotations
 
+import datetime as dt
 import os
 import sqlite3
 import sys
@@ -685,7 +686,7 @@ def _render_simple_data_article(
     body_title = title_check.title if title_check.ok else title
     # 348 step 3 spec §2.5: 「大手にない」 banner 廃止 (全種類で省略)。
     intro_banner = ""
-    detail_md = "\n".join(f"- {line}" for line in detail_lines)
+    detail_md = _detail_lines_to_table_md(detail_lines)
     body_md = f"""# {body_title}
 
 {intro_banner}
@@ -708,6 +709,27 @@ def _render_simple_data_article(
 | 注意点 | {source_note} |
 """
     return {"title": body_title, "body_md": body_md}
+
+
+def _detail_lines_to_table_md(detail_lines: list[str]) -> str:
+    """Convert simple ``label: value`` details into a reader-friendly table.
+
+    User policy (2026-05-16): data articles should be table-first, not
+    bullet-first, so readers can compare numbers quickly.
+    """
+    lines = ["| 項目 | 数値 |", "|---|---|"]
+    for raw in detail_lines:
+        item = str(raw or "").strip()
+        if not item:
+            continue
+        if ":" in item:
+            label, value = item.split(":", 1)
+        elif "：" in item:
+            label, value = item.split("：", 1)
+        else:
+            label, value = "要点", item
+        lines.append(f"| {label.strip()} | {value.strip()} |")
+    return "\n".join(lines)
 
 
 def _extract_kv_value(text: str, key: str) -> str:
@@ -744,6 +766,178 @@ def _defense_position_label(position: str) -> str:
 
 def _average_comparison_phrase(diff: float) -> str:
     return "守備位置平均を上回る" if diff >= 0 else "守備位置平均を下回る"
+
+
+def _latest_game_date(conn: sqlite3.Connection) -> Optional[dt.date]:
+    row = conn.execute(
+        "SELECT MAX(game_date) FROM games WHERE game_date IS NOT NULL"
+    ).fetchone()
+    if not row or not row[0]:
+        return None
+    try:
+        return dt.date.fromisoformat(str(row[0]))
+    except ValueError:
+        return None
+
+
+def _defense_team_comparison_rows(
+    conn: Optional[sqlite3.Connection],
+    *,
+    position: str,
+    metric: str,
+    days: int = 30,
+) -> tuple[list[dict[str, Any]], str, str]:
+    """Return セ・リーグ team comparison rows for defense metrics.
+
+    ``UZR_proxy`` is a team-level proxy here:
+    team converted-out rate minus セ・リーグ baseline for the same
+    position and window. It is still not true UZR; the article note
+    explains the limitation.
+    """
+    if conn is None or not position:
+        return [], "", ""
+    latest = _latest_game_date(conn)
+    if latest is None:
+        return [], "", ""
+    since = latest - dt.timedelta(days=max(days - 1, 0))
+    raw_rows = conn.execute(
+        "SELECT d.team_code, SUM(d.opportunities), SUM(d.converted_outs), "
+        "SUM(d.errors) "
+        "FROM defense_opportunities d "
+        "JOIN games g ON g.game_id = d.game_id "
+        "WHERE d.position = ? "
+        "AND g.game_date >= ? AND g.game_date <= ? "
+        "AND d.team_code IN ('g','t','s','c','db','d') "
+        "GROUP BY d.team_code",
+        (position, since.isoformat(), latest.isoformat()),
+    ).fetchall()
+    if not raw_rows:
+        return [], since.isoformat(), latest.isoformat()
+
+    league_opps = sum(int(r[1] or 0) for r in raw_rows)
+    league_outs = sum(int(r[2] or 0) for r in raw_rows)
+    baseline = (league_outs / league_opps) if league_opps else 0.0
+    out: list[dict[str, Any]] = []
+    for team_code, opps, outs, errors in raw_rows:
+        opps_i = int(opps or 0)
+        outs_i = int(outs or 0)
+        errors_i = int(errors or 0)
+        if opps_i <= 0:
+            continue
+        out_rate = outs_i / opps_i
+        if metric == "FIELDING_PCT":
+            denom = outs_i + errors_i
+            value = (outs_i / denom) if denom else 0.0
+        else:
+            value = out_rate - baseline
+        out.append({
+            "team": team_code,
+            "value": round(value, 4),
+            "opportunities": opps_i,
+            "converted_outs": outs_i,
+            "out_rate": round(out_rate, 4),
+        })
+    out.sort(key=lambda r: r["value"], reverse=True)
+    for idx, row in enumerate(out, start=1):
+        row["rank"] = idx
+        row["total"] = len(out)
+    return out, since.isoformat(), latest.isoformat()
+
+
+def _format_signed(value: float) -> str:
+    return f"{value:+.3f}"
+
+
+def _render_defense_team_table_md(
+    rows: list[dict[str, Any]],
+    *,
+    metric_label: str,
+    signed_value: bool,
+) -> str:
+    lines = [
+        f"| 順位 | 球団 | {metric_label} | 守備機会 | アウト化率 |",
+        "|---|---|---|---|---|",
+    ]
+
+    def _red_bold(text: str) -> str:
+        return f'<span style="color:#c0392b"><strong>{text}</strong></span>'
+
+    for row in rows:
+        team = _team_label(row.get("team"))
+        rank = str(row.get("rank"))
+        val = (
+            _format_signed(float(row.get("value") or 0.0))
+            if signed_value else f"{float(row.get('value') or 0.0):.3f}"
+        )
+        opps = str(int(row.get("opportunities") or 0))
+        out_rate = f"{float(row.get('out_rate') or 0.0):.3f}"
+        if row.get("team") == "g":
+            rank = _red_bold(rank)
+            team = _red_bold(f"{team} ★")
+            val = _red_bold(val)
+            opps = _red_bold(opps)
+            out_rate = _red_bold(out_rate)
+        lines.append(f"| {rank} | {team} | {val} | {opps} | {out_rate} |")
+    return "\n".join(lines)
+
+
+def _render_defense_team_comparison_article(
+    conn: Optional[sqlite3.Connection],
+    *,
+    player: str,
+    position: str,
+    metric: str,
+    metric_label: str,
+    source_note: str,
+) -> Optional[dict[str, str]]:
+    rows, since, until = _defense_team_comparison_rows(
+        conn, position=position, metric=metric, days=30,
+    )
+    if len(rows) < 4:
+        return None
+    giants = next((r for r in rows if r["team"] == "g"), None)
+    if not giants:
+        return None
+    position_label = _defense_position_label(position)
+    signed_value = metric == "UZR_proxy"
+    value_str = (
+        _format_signed(float(giants["value"]))
+        if signed_value else f"{float(giants['value']):.3f}"
+    )
+    title = (
+        f"【巨人データ】セ・リーグ球団別 {position_label}の{metric_label}、"
+        f"巨人 {giants['rank']}/{giants['total']}位 {value_str}（直近30日）"
+    )
+    title_check = title_guard.ensure_title_period(title, period_label="直近30日")
+    if title_check.ok:
+        title = title_check.title
+    table_md = _render_defense_team_table_md(
+        rows, metric_label=metric_label, signed_value=signed_value,
+    )
+    body_md = f"""# {title}
+
+## ひとこと
+
+巨人の{position_label}の{metric_label}は、セ・リーグ{giants['total']}球団中 **{giants['rank']}位**({value_str})。
+
+## セ・リーグ球団別ランキング（{position_label}・直近30日）
+
+{table_md}
+
+## このデータについて
+
+| 項目 | 内容 |
+|---|---|
+| 球団 | **巨人** / セ・リーグ {giants['rank']}/{giants['total']}位 |
+| 指標 | {metric_label} = **{value_str}** |
+| 関連した巨人選手 | {player} |
+| 守備位置 | {position_label} |
+| データ元 | NPB 公式 box score(https://npb.jp/) |
+| 集計期間 | {since} 〜 {until} |
+| 比較 | セ・リーグ同守備位置の球団別比較 |
+| 注意点 | {source_note} |
+"""
+    return {"title": title, "body_md": body_md}
 
 
 def render_hr_pace_article(
@@ -839,6 +1033,20 @@ def render_defense_uzr_article(
     for token in notes.split():
         if token.startswith("position="):
             position = token.split("=", 1)[1]
+    team_article = _render_defense_team_comparison_article(
+        conn,
+        player=player,
+        position=position,
+        metric="UZR_proxy",
+        metric_label="簡易UZR",
+        source_note=(
+            "これは本物の UZR ではなく box-score 由来の近似指標。"
+            "チーム別アウト化率からセ・リーグ同守備位置平均との差を見た参考値。"
+            "NPB は打球座標を公開しないため、真の UZR は計算不可。"
+        ),
+    )
+    if team_article is not None:
+        return team_article
     position_label = _defense_position_label(position)
     direction = _average_comparison_phrase(diff)
     title = (
@@ -888,6 +1096,19 @@ def render_defense_fielding_pct_article(
     for token in notes.split():
         if token.startswith("position="):
             position = token.split("=", 1)[1]
+    team_article = _render_defense_team_comparison_article(
+        conn,
+        player=player,
+        position=position,
+        metric="FIELDING_PCT",
+        metric_label="守備率",
+        source_note=(
+            "守備率 = converted_outs / (converted_outs + errors)。"
+            "box-score の direction marker ベースのため、捕逸 / 暴投 は含めない簡易版。"
+        ),
+    )
+    if team_article is not None:
+        return team_article
     position_label = _defense_position_label(position)
     direction = _average_comparison_phrase(diff)
     fielding_pct = _format_stat_value(_extract_kv_value(current, "fielding_pct"))

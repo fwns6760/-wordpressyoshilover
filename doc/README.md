@@ -1848,6 +1848,16 @@ git add -A禁止。
 - **tests**: `test_x_post_mail.py` 69 passed、関連 3 file 105 passed、py_compile / compileall / AST / scoped diff-check PASS。
 - **deploy**: commit `902689c`、Cloud Build `a89b7e8e-b565-4c3f-aaab-40da89ec6611` SUCCESS、image `x-post-mail-lane:359-subject-902689c`、digest `sha256:b5c6aa968959351a691337c256f1d14671be4b539894c91db61ebd600824d120`、Job generation `10`。Scheduler / env / Secret は未変更、手動 execute 未実行。
 
+### 360-INSIGHT-defense-table-comparison-format
+
+- **alias**: -
+- **status**: REVIEW_NEEDED / **priority**: high
+- **owner**: Codex / **lane**: B
+- **doc_path**: `doc/active/360-INSIGHT-defense-table-comparison-format.md`
+- **背景**: `68499` などの UZR 記事は出したいが、個人の平均差だけでは読者が比較しづらい。user 方針としてデータ記事は表形式に寄せる。
+- **方針**: UZR / 守備率記事はセ・リーグ球団別 ranking table を本文主役にし、関連した巨人選手名は本文表に残す。シンプルデータ記事の `## データ` も箇条書きから `| 項目 | 数値 |` table にする。既存公開 post / WP / Scheduler / env / Secret / X は触らない。
+- **tests**: `test_insight_step3_part2_records.py` 37 passed、関連 4 file 100 passed、py_compile / compileall / AST / scoped diff-check PASS。production DB copy preview PASS。
+
 ## marketing board
 
 - Marketing ticket source of truth: `doc/marketing/README.md`

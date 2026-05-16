@@ -105,6 +105,10 @@ DB 同士の「同期」はしない方針で決定。production source of truth
 
 user 指示「他の自動通知も来るから分からない」を受け、X 投稿候補 mail の件名を `📮【要確認：巨人データX投稿候補 N件】午後 2026-05-16 15:00 JST` 形式へ変更。本文冒頭にも「公開通知ではない」ことを明記。commit `902689c`、Cloud Build `a89b7e8e-b565-4c3f-aaab-40da89ec6611` SUCCESS、image `x-post-mail-lane:359-subject-902689c`、digest `sha256:b5c6aa968959351a691337c256f1d14671be4b539894c91db61ebd600824d120`、Job generation `10`。targeted pytest `69 passed`、関連 `105 passed`。候補生成 / DB / GCS dedup / SMTP 宛先 / Scheduler / env / Secret / WP publish / X / SNS は変更しない。手動 execute は追加 mail 回避のため未実行。
 
+### 360 INSIGHT defense table comparison format (2026-05-16 JST)
+
+user 指示「UZR は出したいが球団ごとの表形式比較が欲しい」「方針として全てが表形式」を受け、`doc/active/360-INSIGHT-defense-table-comparison-format.md` を起票。未来生成分の `anomaly_article_publisher` で、UZR / 守備率記事をセ・リーグ球団別 table 主体に変更。シンプルデータ記事の `## データ` も箇条書きから table 化。production DB copy preview では `泉口友汰 / 遊撃守備` が `セ・リーグ球団別 遊撃守備の簡易UZR、巨人 6/6位 -0.088（直近30日）` と6球団表で出ることを確認。関連 pytest `100 passed`。既存公開 post / WP update / Cloud Run / Scheduler / env / Secret / X / SNS は触らない。
+
 ## 2026-05-14 EVENING session summary
 
 ### close 済(本 session)

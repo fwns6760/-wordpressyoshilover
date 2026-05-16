@@ -1772,10 +1772,11 @@ git add -A禁止。
 ### 349 INSIGHT-dedup-cooldown-cascade
 
 - **alias**: -
-- **status**: LIVE_DEPLOYED_OBSERVE(2026-05-16 Codex follow-up 実装 + push + `insight-nightly:be96f18` deploy 済、自然 fire 観察待ち) / **priority**: medium-high
+- **status**: LIVE_DEPLOYED_OBSERVE(2026-05-16 Codex follow-up 実装 + `insight-nightly:358-sameday-auto-2949f98` deploy 済、自然 fire 観察待ち) / **priority**: medium-high
 - **owner**: Claude Code / **lane**: Claude
 - **doc_path**: `doc/active/349-INSIGHT-dedup-cooldown-cascade.md`
 - **implemented**: cooldown 7 日 / delta 5% / rank band 1,5,10,30 / scope family `metric_all_periods`。同じ subject + metric は期間違いでも原則 7 日 block、値または順位帯が大きく動いた場合だけ再掲許可。
+- **2026-05-16 bugfix**: `--auto` は 15:00 JST 以降当日 DB 更新へ切替。auto publish に残っていた `season` split / vs opponent 経路を `weekly` / `last_7d` に変更。Cloud Build `a9574fbf-f26c-4a17-b977-cb56f7e94f72` SUCCESS、digest `sha256:3afff4dfe4e80791e833c149a41d3f973e9f005365f4033b599042feba8b707a`、Job generation `47`。Scheduler / env / Secret は未変更、手動 execute 未実行。
 - **observe_risks**: 記事減りすぎ / まだ多い / mail過多 / 既存投稿 backfill 未実装 / title期間必須 runtime guard 未実装 / full unittest既存赤
 - **blocked_by**: mail 制限、1日総量cap、Scheduler調整、既存投稿backfill は user 判断待ち
 

@@ -153,6 +153,7 @@ python -m pytest tests/test_insight_dedup_cascade.py -v
 YYYY-MM-DD HH:MM JST | <event> | <gate (cooldown/delta/band)> | <task> | <next>
 2026-05-16 JST | Codex follow-up | cooldown=7d / delta=5% / band=1,5,10,30 | publisher 段で同 subject + metric の期間横断 dedup gate を実装 | commit 後、GH #26/#27 に追記。deploy は別判断
 2026-05-16 JST | deploy | same image only | clean `git archive HEAD` export から `insight-nightly:be96f18` build/deploy。Scheduler/env/Secret は未変更、手動 execute 未実行 | 次回自然 fire で記事数・mail数・skip理由を観察
+2026-05-16 JST | Codex bugfix | same-day auto + no season auto path | `--auto` target を 15:00 JST 以降は当日に変更。auto publish に残っていた `season` split / vs opponent 経路を `weekly` / `last_7d` に変更 | commit `2949f98`、deploy `insight-nightly:358-sameday-auto-2949f98`
 ```
 
 ## 10. Regression Memo 欄
@@ -207,7 +208,8 @@ YYYY-MM-DD HH:MM JST | <test> | <regression> | <fix> | <test added>
 
 ## 5. 残った懸念
 
-- Cloud Run Job `insight-nightly` image は `be96f18` へ deploy 済み。Scheduler / Secret / env は未変更。
+- Cloud Run Job `insight-nightly` image は `358-sameday-auto-2949f98` へ deploy 済み。Scheduler / Secret / env は未変更。
+- 2026-05-16 14:49 JST deploy evidence: Cloud Build `a9574fbf-f26c-4a17-b977-cb56f7e94f72` SUCCESS、digest `sha256:3afff4dfe4e80791e833c149a41d3f973e9f005365f4033b599042feba8b707a`、Cloud Run Job generation `47`。
 - dedup history は deploy 後の新規投稿から蓄積される。既存 WP 投稿を完全に backfill する処理は未実装。
 - mail 専用 cap やグローバル 1 run 合計 cap は別判断。今回の修正は publish 候補生成側の重複抑制。
 

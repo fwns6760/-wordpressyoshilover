@@ -1862,13 +1862,13 @@ git add -A禁止。
 ### 361-INSIGHT-permanent-table-body-and-title-contract
 
 - **alias**: -
-- **status**: REVIEW_NEEDED / **priority**: high
+- **status**: LIVE_DEPLOYED_OBSERVE / **priority**: high
 - **owner**: Codex / **lane**: B
 - **doc_path**: `doc/active/361-INSIGHT-permanent-table-body-and-title-contract.md`
 - **背景**: 360 の表形式は本文側の対応だったため、恒久対応として publish-time quality gate へ table contract を入れる。巨人サイトなので title はセ・リーグ球団別を主語にせず、巨人選手名を入口にする。
 - **方針**: UZR / 守備率 title は `{巨人選手名}の{守備位置}、{指標} {値}で巨人N/6位（期間）` 型。本文ではセ・リーグ球団別 table を見せる。`## データ` / `## このデータについて` / ranking / 比較 section は table 必須、`## データ` の bullet list 回帰は quality gate で止める。
 - **tests**: `test_insight_step3_part2_records.py` + `test_insight_quality_gate.py` 44 passed、関連 4 file 102 passed、py_compile / compileall / AST / scoped diff-check PASS。production DB copy preview PASS。
-- **deploy**: 未実施。live 反映には `insight-nightly` rebuild + Cloud Run Job image update が必要。Scheduler / env / Secret は変更しない。手動 execute は追加 publish/mail 回避のため実行しない。
+- **deploy**: commit `8447109`、Cloud Build `a2ced6da-5d6a-46e7-bcb1-e1ae93092fdf` SUCCESS、image `insight-nightly:361-table-title-8447109`、digest `sha256:bf0000bff08570ed0a93f57115e5a66252ce85682089c3dbdd4c331ea56fe7eb`、Job generation `49`。Scheduler / env / Secret は未変更、`data-insight-*` 7 triggers ENABLED 確認。手動 execute は追加 publish/mail 回避のため未実行。
 
 ## marketing board
 

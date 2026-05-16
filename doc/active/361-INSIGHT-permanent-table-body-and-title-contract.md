@@ -2,7 +2,7 @@
 
 ## status
 
-- **status**: REVIEW_NEEDED
+- **status**: LIVE_DEPLOYED_OBSERVE
 - **owner**: Codex
 - **lane**: B
 - **created**: 2026-05-16 JST
@@ -64,6 +64,11 @@
 
 ## deploy notes
 
-- live 反映には `insight-nightly` image rebuild + Cloud Run Job image update が必要
+- commit: `8447109`
+- Cloud Build: `a2ced6da-5d6a-46e7-bcb1-e1ae93092fdf` SUCCESS
+- image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/insight-nightly:361-table-title-8447109`
+- digest: `sha256:bf0000bff08570ed0a93f57115e5a66252ce85682089c3dbdd4c331ea56fe7eb`
+- Cloud Run Job: `insight-nightly` generation `49`
+- Scheduler: `data-insight-*` 7 triggers ENABLED のまま確認
 - Scheduler / env / Secret は変更しない
-- 手動 execute は追加 publish/mail を発生させる可能性があるため実行しない
+- 手動 execute は追加 publish/mail を発生させる可能性があるため未実行。次回自然 fire で live output を確認する

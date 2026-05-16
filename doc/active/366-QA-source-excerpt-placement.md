@@ -2,7 +2,7 @@
 
 ## meta
 
-- status: IN_FLIGHT
+- status: LIVE_DEPLOYED_OBSERVE
 - priority: high
 - owner: Codex
 - lane: B
@@ -68,6 +68,8 @@
 - 見出しが無い場合は `📰 参照元` footer 直前へ fallback する。
 - `_create_draft_with_same_fire_guard` の enrichment 完了直前で relocation を実行する。
 - `tests/test_rss_fetcher_source_body_excerpt_auto.py` に 68321 型 / 68622 型 / fallback / draft 作成経路の regression を追加。
+- draft `68622` は status=draft を確認後、保存済み raw content の本文抜粋位置だけを修正。更新後 `excerpt_pos < heading_pos < source_pos` を確認。
+- published post `68321` は user 明示 go なしのため未更新。
 
 ## 検証
 
@@ -78,10 +80,14 @@
 - `python3 -m compileall -q src/rss_fetcher.py tests/test_rss_fetcher_source_body_excerpt_auto.py tests/test_build_news_block.py`
 - AST parse -> `AST_OK src/rss_fetcher.py,tests/test_rss_fetcher_source_body_excerpt_auto.py`
 - `python3 -m pytest tests/test_rss_fetcher_source_body_excerpt_auto.py tests/test_build_news_block.py -q` -> 68 passed / 4 warnings
+- `gcloud builds submit --project baseballsite --region asia-northeast1 --tag asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:366-excerpt-placement-4021792 .` -> Cloud Build `593207f8-ad5d-4ddd-a5ea-cc56bb436772` SUCCESS
+- image digest `sha256:e4bf5f00d105b1cb0d2f032c57f7d2a383f5282d79a63222dc1914ae815e99ff`
+- `gcloud run deploy yoshilover-fetcher --image asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:366-excerpt-placement-4021792 --project baseballsite --region asia-northeast1 --quiet` -> revision `yoshilover-fetcher-00403-ssj`, traffic 100%
+- `curl -sS https://yoshilover-fetcher-487178857517.asia-northeast1.run.app/health` -> OK
+- Cloud Run log: revision `yoshilover-fetcher-00403-ssj` startup TCP probe succeeded
+- GitHub Issue evidence comment: https://github.com/fwns6760/-wordpressyoshilover/issues/35#issuecomment-4466572475
 
 ## 未完了
 
-- deploy evidence
-- `/health` evidence
 - natural fire / log evidence
 - GitHub Issue #35 close

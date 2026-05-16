@@ -1931,14 +1931,14 @@ git add -A禁止。
 ### 366-QA-source-excerpt-placement
 
 - **alias**: -
-- **status**: IN_FLIGHT / **priority**: high
+- **status**: LIVE_DEPLOYED_OBSERVE / **priority**: high
 - **owner**: Codex / **lane**: B
 - **doc_path**: `doc/active/366-QA-source-excerpt-placement.md`
 - **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/35
 - **背景**: `68321` は関連ポストの後ではなく本文抜粋が末尾付近へ落ち、`68622` は関連ポストがないのに本文抜粋が参照元付近まで下がっていた。原因は source excerpt helper が旧 `🔗 出典記事` anchor 不在時に append していたこと。
 - **方針**: 本文抜粋を作る条件は変えず、生成済み `<aside class="nomotoke-source-excerpt">` を HTML 構造だけで正規 slot へ移動する。関連ポストがあれば関連ポスト直後 / 最初の本文見出し前、関連ポストがなければ最初の本文見出し前。AI 類似判定 / 記憶再構成は禁止、relocation / no-anchor skip は log に残す。
 - **acceptance**: 68321 型は関連ポスト後に本文抜粋が出る。68622 型は本文見出し前に本文抜粋が出る。参照元 footer より下に落ちない。既存の本文抜粋生成可否は変えない。Scheduler / env / Secret / X / SNS / mail 条件は変更しない。
-- **implementation**: `src/rss_fetcher.py` に `_relocate_source_excerpt_to_primary_slot` を追加し、`_create_draft_with_same_fire_guard` の enrichment 完了直前で relocation。`tests/test_rss_fetcher_source_body_excerpt_auto.py` に 68321 型 / 68622 型 / fallback / draft 作成経路 regression を追加。`py_compile` / `compileall` / AST parse PASS。pytest: source excerpt 9 passed / 4 warnings、source excerpt + build block 68 passed / 4 warnings。deploy evidence 待ち。
+- **implementation**: `src/rss_fetcher.py` に `_relocate_source_excerpt_to_primary_slot` を追加し、`_create_draft_with_same_fire_guard` の enrichment 完了直前で relocation。`tests/test_rss_fetcher_source_body_excerpt_auto.py` に 68321 型 / 68622 型 / fallback / draft 作成経路 regression を追加。`py_compile` / `compileall` / AST parse PASS。pytest: source excerpt 9 passed / 4 warnings、source excerpt + build block 68 passed / 4 warnings。Cloud Build `593207f8-ad5d-4ddd-a5ea-cc56bb436772` SUCCESS、image `yoshilover-fetcher:366-excerpt-placement-4021792` / digest `sha256:e4bf5f00d105b1cb0d2f032c57f7d2a383f5282d79a63222dc1914ae815e99ff` を `yoshilover-fetcher-00403-ssj` へ deploy、traffic 100%、`/health` OK、startup TCP probe succeeded。draft `68622` は status=draft 確認後に本文抜粋位置のみ修正。published `68321` は user 明示 go なしのため未更新。Scheduler / env / Secret / X / SNS / mail 条件は未変更。GitHub Issue #35 は自然 fire / log evidence 後に close。
 
 ## marketing board
 

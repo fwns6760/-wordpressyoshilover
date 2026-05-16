@@ -89,6 +89,10 @@ test: deploy 前 data-insight 関連 pytest 231 passed。full unittest は既存
 
 353〜355 の X投稿候補 mail lane は code / manual execute / mail send / GCS dedup write は成功していたが、07:00 / 12:00 の自然 Scheduler fire が HTTP 403 `PERMISSION_DENIED` で失敗。原因は `x-post-mail-*` Scheduler jobs の OAuth service account が `seo-scheduler-invoker@baseballsite.iam.gserviceaccount.com` になっていたこと。正常稼働中の `data-insight-*` と同じ `487178857517-compute@developer.gserviceaccount.com` へ 5 jobs だけ更新済み。schedule / env / Secret / Job image / mail body は未変更。手動 execute は追加 mail 回避のため未実行、次回自然 fire は 15:00 JST。
 
+### 357 x-post-mail period 表示 tuning (2026-05-16 JST)
+
+user 指示「日付だけでは分かりにくい」「直近5試合 / 直近10試合を前面」「7月成績のような月別は分かりやすい」「大手が出す全期間はいらない」を受け、`doc/active/357-x-post-mail-human-period-labels.md` を起票。repo 実装 + targeted tests 完了、status `REVIEW_NEEDED`。対象は X 投稿候補 mail の表示と候補 pool のみ。X / SNS live post、Scheduler、env、Secret、WP publish、Cloud Run Job deploy は未変更。
+
 ## 2026-05-14 EVENING session summary
 
 ### close 済(本 session)

@@ -1813,6 +1813,17 @@ git add -A禁止。
 - **実装**: `insight_quality_gate.py` 追加、ranking / anomaly / team publisher に wire。targeted pytest 231 passed。full unittest は既存赤 11 failures / 3 errors。
 - **deploy**: `insight-nightly:ca03019` / digest `sha256:a71bbe0f943c969349a61413da3a6addb016f8286e506229e0b3a3a0a76bc41f` / Cloud Build `19c2e97d-f4f9-48e9-8db4-7a303003892e` SUCCESS。Cloud Run Job generation `46`。Scheduler / env / Secret は未変更、手動 execute 未実行。
 
+### 357 x-post-mail-human-period-labels
+
+- **alias**: -
+- **status**: REVIEW_NEEDED / **priority**: medium-high
+- **owner**: Codex / **lane**: B
+- **doc_path**: `doc/active/357-x-post-mail-human-period-labels.md`
+- **背景**: user 指示「日付だけでは分かりにくい」「直近5試合 / 直近10試合を前面」「7月成績のような月別は分かりやすい」「大手が出す全期間はいらない」。
+- **実装方針**: X 投稿候補 mail の 2 行目と候補 title を人間向け period label に変更。全期間 / 今シーズンを pool から排除し、守備位置別も直近7日に寄せる。月別は月初 3 日だけ前月成績を巨人内 ranking として追加。
+- **tests**: `test_x_post_mail.py` 65 passed、関連 3 file 101 passed、compileall / AST / scoped diff-check PASS。全体 `git diff --check` は unrelated `src/yoshilover-063-frontend.php` conflict marker で FAIL。
+- **deploy**: 未実行。Cloud Run Job `x-post-mail-lane` image 更新は user 明示 GO 後。
+
 ## marketing board
 
 - Marketing ticket source of truth: `doc/marketing/README.md`

@@ -276,30 +276,34 @@ def _build_combos(
 ) -> list[_MetricCombo]:
     """Compose the metric × period × position combo pool for one mail.
 
-    353/356: 大手新聞が出しやすい「シーズン累積 / 月間 / 直近30日」
+    353/356: 大手新聞が出しやすい「シーズン累積 / 直近30日」
     combo を pool から除外し、 yoshilover 独自度の高い slice
-    (直近 5/10 試合 / 直近 7 日 / 守備位置別 / 巨人内の短期変化) だけを
+    (直近 5/10 試合 / 直近 7 日 / 守備位置別 / 巨人内の短期変化) を
     novelty_high として扱う。
 
     354: ``db_path`` を渡すと 直近 5/10 巨人試合 × OPS/AVG/ERA × giants_only
     の 6 combo (全部 novelty="high"、 min_sample_override で AB 閾値緩和)
-    を追加し、 pool 10 → 16。 ``db_path=None`` (default) では既存 10 combo
-    のみ返し、 test / 旧呼出 互換を維持する。
+    を追加する。 ``db_path=None`` (default) では直近 N 試合 combo を除外し、
+    test / 旧呼出 互換を維持する。
 
-    Pool size: 10 combo (db_path=None) / 16 combo (db_path 指定で games 充足)。
+    357: 月別は毎日出すと mail 過多になるため、月初 3 日だけ前月成績を
+    巨人内 ranking として追加する (例: 8/1-8/3 に「7月成績」)。
     """
     combos: list[_MetricCombo] = []
-    # 356: シーズン累積 / 今月 / 先月 / 直近30日 は大手が出しやすく、同じ
-    # mail に複数期間が並ぶ原因にもなるため pool から外す。
+    # 356+357: シーズン累積 / 直近30日 は大手が出しやすく、同じ
+    # mail に複数期間が並ぶ原因にもなるため pool から外す。月別は
+    # 月初だけ下の branch で制限付き追加。
 
     # 1. 直近 7 日 — short-term league slice.
     last7 = (now - timedelta(days=7)).strftime("%Y-%m-%d")
     for m in ("OPS", "AVG", "ERA"):
         combos.append(_MetricCombo(m, last7, "直近7日", novelty="high"))
     # 2. 守備位置別 — niche slice that 大手 / のもとけ rarely cover.
+    # 357: 全期間 / 今シーズンは大手も出すため使わない。守備位置別も
+    # 直近 7 日に寄せる。
     # 守備位置 single-kanji codes match insight_rank_query expectations.
     for pos in ("捕", "二", "遊", "三"):
-        combos.append(_MetricCombo("OPS", None, "今シーズン", position=pos, novelty="high"))
+        combos.append(_MetricCombo("OPS", last7, "直近7日", position=pos, novelty="high"))
     # 3. 巨人内の短期変化 — last7 window, filter final rows to 巨人 rows only.
     for m in ("OPS", "AVG", "ERA"):
         combos.append(_MetricCombo(m, last7, "直近7日", giants_only=True, novelty="high"))
@@ -325,6 +329,24 @@ def _build_combos(
                         min_sample_override=n_games,
                     )
                 )
+    # 5. 357: 前月成績 — 「7月成績」のような月別表記は分かりやすいが、
+    # 毎日出すと過剰なので月初だけ候補に入れる。巨人内に限定し、
+    # period-family skip と 24h dedup の対象にする。
+    if 1 <= now.day <= 3:
+        month_since, month_until = _prev_month_range(now)
+        month_label = _month_period_label(month_since, month_until) or "前月成績"
+        for m in ("OPS", "AVG", "ERA"):
+            combos.append(
+                _MetricCombo(
+                    m,
+                    month_since,
+                    month_label,
+                    until=month_until,
+                    giants_only=True,
+                    novelty="high",
+                    min_sample_override=10 if m == "ERA" else 30,
+                )
+            )
     return combos
 
 
@@ -410,13 +432,11 @@ def _sample_label_for_metric(metric: str) -> str:
 
 
 def _format_period_range(combo: _MetricCombo, now: datetime) -> str:
-    """Return a concrete date-range label for the header.
+    """Return a concrete date-range fallback label.
 
-    Replaces vague labels (今シーズン / 今月 / 直近30日) with explicit
-    ``M/D〜M/D`` ranges so the operator (and X readers) see exactly what
-    window the ranking covers. Season-wide collapses to ``開幕〜M/D 累積``
-    because the actual opening-day date is not embedded in this module
-    (would require a games-table query, deferred per 348 disjoint).
+    357 keeps production X mail copy on human period labels such as
+    ``直近5試合`` and ``7月成績``. This helper remains as a defensive
+    fallback for malformed / future combos that have no period label.
 
     351: ``combo.until`` (e.g. 先月 = until=last day of prev month) is
     honoured when present so closed ranges show their explicit end.
@@ -434,6 +454,44 @@ def _format_period_range(combo: _MetricCombo, now: datetime) -> str:
         return f"{since_md}〜{today_md}"
     except (ValueError, TypeError):
         return combo.period_label
+
+
+def _month_period_label(since: Optional[str], until: Optional[str]) -> Optional[str]:
+    """Return ``N月成績`` when ``since`` / ``until`` are one calendar month."""
+    if not since or not until:
+        return None
+    try:
+        d_since = datetime.strptime(since, "%Y-%m-%d")
+        d_until = datetime.strptime(until, "%Y-%m-%d")
+    except (ValueError, TypeError):
+        return None
+    if (
+        d_since.year == d_until.year
+        and d_since.month == d_until.month
+        and d_since.day == 1
+    ):
+        return f"{d_since.month}月成績"
+    return None
+
+
+def _format_period_label(combo: _MetricCombo, now: datetime) -> str:
+    """Human-first period label for X text.
+
+    User-facing copy should lead with baseball terms such as
+    ``直近5試合`` / ``直近10試合`` instead of raw date ranges. Closed
+    calendar months use ``7月成績`` style labels.
+    """
+    month_label = _month_period_label(combo.since, combo.until)
+    if month_label:
+        return month_label
+    if combo.period_label:
+        return combo.period_label
+    return _format_period_range(combo, now)
+
+
+def _sample_threshold_label(metric: str, min_sample: int) -> str:
+    sample_label = _sample_label_for_metric(metric)
+    return f"規定{sample_label}{min_sample}以上"
 
 
 def _rewrite_ranking_rows(
@@ -683,16 +741,18 @@ def _format_one(
         LOG.warning("format_as_x_post failed for %s (%s): %s",
                     combo.metric, combo.period_label, formatted.get("reason"))
         return None
-    # 350+351+353: header に 具体的 date range + 規定 sample 閾値 + 状況 slice を明示。
+    # 350+351+353+357: header に 人間が読める period label + 規定 sample
+    # 閾値 + 状況 slice を明示。日付範囲だけの表示は避ける。
     # 353: header 絵文字は metric 別 (⚾打撃 / ⚡投手 / 🛡️守備、 fallback 📊)、
     # period_suffix は header line[0] には連結せず line[1] に挿入する。
     text = formatted["draft_text"]
     lines = text.split("\n")
-    period_range = _format_period_range(combo, now)
-    sample_label = _sample_label_for_metric(combo.metric)
-    period_suffix = f"（{period_range}・規定{sample_label} {min_sample}+）"
+    period_label = _format_period_label(combo, now)
+    threshold_label = _sample_threshold_label(combo.metric, min_sample)
+    period_suffix = f"（{period_label}・{threshold_label}）"
     metric_jp = _METRIC_LABELS_JP.get(combo.metric, combo.metric)
     header_emoji = _METRIC_HEADER_EMOJI.get(combo.metric, "📊")
+    top_count = min(10, len(rows))
 
     # 351+353: 守備位置別 / 巨人内 ranking で header の prefix を切替。
     # 346 format_as_x_post の output 1 行目は「セ・{metric_jp} ランキング 📊」固定
@@ -701,23 +761,23 @@ def _format_one(
         if lines and "ランキング" in lines[0]:
             lines[0] = f"巨人内 {metric_jp} ランキング {header_emoji}"
         title = (
-            f"巨人内 {metric_jp} top {min(10, len(rows))} "
-            f"({period_range}・規定{sample_label} {min_sample}+)"
+            f"巨人内 {metric_jp} 上位{top_count} "
+            f"({period_label}・{threshold_label})"
         )
     elif combo.position:
         position_jp = _POSITION_DISPLAY_JP.get(combo.position, combo.position)
         if lines and "ランキング" in lines[0]:
             lines[0] = f"セ・{position_jp} {metric_jp} ランキング {header_emoji}"
         title = (
-            f"セ・{position_jp} {metric_jp} top {min(10, len(rows))} "
-            f"({period_range}・規定{sample_label} {min_sample}+)"
+            f"セ・{position_jp} {metric_jp} 上位{top_count} "
+            f"({period_label}・{threshold_label})"
         )
     else:
         if lines and "ランキング" in lines[0]:
             lines[0] = f"セ・{metric_jp} ランキング {header_emoji}"
         title = (
-            f"セ {metric_jp} top {min(10, len(rows))} "
-            f"({period_range}・規定{sample_label} {min_sample}+)"
+            f"セ {metric_jp} 上位{top_count} "
+            f"({period_label}・{threshold_label})"
         )
     # 353: period_suffix を 1 行目 append から 2 行目挿入に変更。
     lines.insert(1, period_suffix)

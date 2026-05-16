@@ -28,7 +28,7 @@ handoff Task 5: 1 日 5 通 mail (07/12/15/17:30/22:30) で **同 metric / 同 p
   - 利点: 新 bucket / 新 IAM 不要 (= user 判断境界回避)、 同 SA で read/write
   - **user 確認 pending**: 同 bucket prefix 分離での write 増加 OK か (insight.db cache と衝突なし設計、 GCS 無料枠 5GB/月 余裕)
 - **format**: JSON Lines (append 友好、 部分 read 可能)
-  - 1 record = `{"ts": "2026-05-16T07:05:23Z", "signature": "OPS|今月|False|None", "candidate_count": 10}`
+  - 1 record = `{"ts": "2026-05-16T07:05:23Z", "signature": "OPS|直近7日|False|None", "candidate_count": 10}`
 - **rotation**: 日付別 file = 自然な 24h window、 古い file は新 file ロード時 自動的に out of scope
 - **24h sliding window**: 「直近 24h の record」 = 当日 file + 前日 file の `ts >= now - 24h` filter
 - **race condition**: Cloud Run Job 5 個 Scheduler は 7:00 / 12:00 / 15:00 / 17:30 / 22:30 = 重ならない、 append-only なので衝突 risk 低、 lock 不要
@@ -36,7 +36,7 @@ handoff Task 5: 1 日 5 通 mail (07/12/15/17:30/22:30) で **同 metric / 同 p
 ### dedup signature 設計
 
 - signature = `f"{combo.metric}|{combo.period_label}|{combo.giants_only}|{combo.position}"`
-- 例: `OPS|直近5試合|True|None` / `AVG|今月|False|None` / `OPS|今シーズン|False|捕`
+- 例: `OPS|直近5試合|True|None` / `AVG|7月成績|True|None` / `OPS|直近7日|False|捕`
 - 同 signature が **24h 以内** に既出 → skip (combo pool から候補としても外す)
 
 ### dedup gate のタイミング
@@ -241,7 +241,7 @@ YYYY-MM-DD HH:MM JST | <test> | <regression> | <fix> | <test added>
 - `timedelta` import 追加
 - 新 class `TicketThreeFiftyFiveDedupTests`: FakeBlob / FakeBucket / FakeClient で in-memory GCS mock、 `_get_storage_client` を patch
 - 9 test:
-  - `test_combo_signature_format` — `OPS|今月|False|None` 形式
+  - `test_combo_signature_format` — `OPS|直近7日|False|None` 形式
   - `test_combo_signature_unique_per_dimensions` — 異なる dimension は異なる signature
   - `test_load_recent_dedup_signatures_returns_set` — today + yesterday JSONL から set 構築
   - `test_load_recent_dedup_signatures_filters_old` — 24h 超 record を除外

@@ -46,7 +46,7 @@ scope (合意済、 全部 1 commit):
 - 「大手新聞が毎日あるデータ」が具体的にどの combo か:
   - **Claude 推定** (= verify ベースではない、 user 確認必要):
     - シーズン累積 OPS / AVG / ERA / OBP / SLG = 大手毎日連載確実 → pool から除外
-    - 月別 (今月) OPS / AVG / ERA = 大手も月初 / 月末は出すが毎日かは不明 → user 判断
+    - 月別 OPS / AVG / ERA = 357 follow-up で月初 3 日だけ前月成績 (`7月成績` 形式) として採用。毎日は出さない
     - 先月 closed range / 直近 30 日 / 直近 14 日 / 直近 7 日 / 守備位置別 / 巨人内 ranking = 大手出さない (yoshilover 独自) → 保持
 - 意外性 sampling の重み付け値:
   - **Claude 推定**: novelty_high (yoshilover 独自) 60% / novelty_mid (中間) 30% / novelty_low (大手定番) 10%

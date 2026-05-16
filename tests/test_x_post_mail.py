@@ -229,8 +229,8 @@ class PickCandidatesTests(unittest.TestCase):
             self.assertNotIn(key, seen, msg=f"duplicate period family: {cand.signature}")
             seen.add(key)
 
-    def test_period_label_appears_in_draft(self) -> None:
-        """守備位置別の season slice は具体 range を表示する。"""
+    def test_full_season_period_removed_from_draft(self) -> None:
+        """357: X 候補 mail では全期間 / 今シーズン slice を出さない。"""
         query_mock = MagicMock(return_value={
             "ok": True,
             "rows": _MIXED_12_TEAM_ROWS,
@@ -245,18 +245,16 @@ class PickCandidatesTests(unittest.TestCase):
             min_sample=1,
             min_central_rows=3,
         )
-        # Broad season-wide combo is removed, but position-specific season
-        # slices remain because 守備位置別 is a niche view.
-        season_cands = [
-            c for c in cands
-            if c.period_label == "今シーズン" and c.signature.endswith(("捕", "二", "遊", "三"))
-        ]
-        self.assertGreaterEqual(len(season_cands), 1)
-        # And its header carries the concrete season range form
-        self.assertIn("開幕〜5/16 累積", season_cands[0].draft_text)
+        self.assertFalse(
+            [c for c in cands if c.period_label == "今シーズン"],
+            msg="full-season candidate leaked into X post mail",
+        )
+        for c in cands:
+            self.assertNotIn("開幕〜", c.draft_text)
+            self.assertNotIn("今シーズン", c.draft_text)
 
-    def test_header_includes_date_range_and_sample_threshold(self) -> None:
-        """350-v3 + 351: 全候補が具体 date range と 規定 sample 閾値を含む。"""
+    def test_header_includes_human_period_label_and_sample_threshold(self) -> None:
+        """357: 日付だけではなく、人間向け period label と規定数を表示。"""
         query_mock = MagicMock(return_value={
             "ok": True,
             "rows": _MIXED_12_TEAM_ROWS,
@@ -274,23 +272,24 @@ class PickCandidatesTests(unittest.TestCase):
         self.assertGreaterEqual(len(cands), 1)
         for c in cands:
             text = c.draft_text
-            # Every candidate header must carry either "累積" (season-wide)
-            # or "〜" (date range form like 5/1〜5/16).
+            # Every candidate header must carry a baseball-friendly
+            # period label instead of only raw dates.
             self.assertTrue(
-                ("累積" in text) or ("〜" in text),
-                msg=f"missing date range in: {text[:60]}",
+                ("直近7日" in text) or ("直近5試合" in text) or ("直近10試合" in text),
+                msg=f"missing human period label in: {text[:80]}",
             )
             # Every candidate carries the sample threshold marker
             self.assertTrue(
-                ("規定打席 30+" in text) or ("規定投球回 30+" in text),
+                ("規定打席30以上" in text) or ("規定投球回30以上" in text),
                 msg=f"missing sample threshold in: {text[:60]}",
             )
 
     def test_monthly_combo_removed_from_pool(self) -> None:
-        """356: monthly combo は mail pool から外す。"""
+        """357: 月別 combo は月中に出さない。"""
         from src.x_post_mail_lane import _build_combos
         combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST))
         self.assertNotIn("今月", {c.period_label for c in combos})
+        self.assertFalse({c.period_label for c in combos} & {"4月成績", "5月成績"})
 
     def test_era_uses_innings_pitched_threshold_label(self) -> None:
         """350: ERA は 打席 ではなく 投球回 ベースで表記する。"""
@@ -366,10 +365,22 @@ class VariationExpansionTests(unittest.TestCase):
             "focus_player": None,
         })
 
-    def test_last_month_combo_removed(self) -> None:
+    def test_last_month_combo_removed_outside_month_start(self) -> None:
         from src.x_post_mail_lane import _build_combos
         combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST))
         self.assertNotIn("先月", {c.period_label for c in combos})
+        self.assertNotIn("4月成績", {c.period_label for c in combos})
+
+    def test_previous_month_combo_appears_only_at_month_start(self) -> None:
+        """357: 月別は月初だけ「7月成績」のように出す。"""
+        from src.x_post_mail_lane import _build_combos
+        mid_month = _build_combos(datetime(2026, 8, 16, 7, 0, tzinfo=JST))
+        month_start = _build_combos(datetime(2026, 8, 2, 7, 0, tzinfo=JST))
+        self.assertNotIn("7月成績", {c.period_label for c in mid_month})
+        monthly = [c for c in month_start if c.period_label == "7月成績"]
+        self.assertEqual(len(monthly), 3)
+        self.assertTrue(all(c.giants_only for c in monthly))
+        self.assertEqual({c.metric for c in monthly}, {"OPS", "AVG", "ERA"})
 
     def test_last_7_days_combo_appears(self) -> None:
         from src.x_post_mail_lane import _build_combos
@@ -436,25 +447,15 @@ class VariationExpansionTests(unittest.TestCase):
         self.assertIn("岡本和真", text)
 
     def test_combo_pool_size_10_after_mainstream_periods_excluded(self) -> None:
-        """356: 大手が出しやすい season / month / 30d / 14d を pool から削除。
-        残り = 直近7日 3 + 守備 4 + 巨人内直近7日 3 = 10。
+        """357: 大手が出しやすい season / daily month / 30d / 14d を削除。
+        残り = 直近7日 3 + 守備位置別直近7日 4 + 巨人内直近7日 3 = 10。
         """
         from src.x_post_mail_lane import _build_combos
         combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST))
         self.assertEqual(len(combos), 10)
         self.assertTrue(all(c.novelty == "high" for c in combos))
-        self.assertFalse({"今月", "先月", "直近30日", "直近14日"} & {c.period_label for c in combos})
-        # シーズン累積 (since=None、 position=None、 giants_only=False) は存在しない
-        # ただし position / giants_only で限定された since=None combo は OK で残す。
-        mainstream_season = [
-            c for c in combos
-            if c.since is None and c.position is None and not c.giants_only
-        ]
-        self.assertEqual(
-            len(mainstream_season),
-            0,
-            msg=f"mainstream season combos leaked: {mainstream_season}",
-        )
+        self.assertFalse({"今月", "先月", "今シーズン", "直近30日", "直近14日"} & {c.period_label for c in combos})
+        self.assertFalse([c for c in combos if c.since is None], msg=f"full-period combo leaked: {combos}")
 
     def test_diversity_seed_changes_per_hour(self) -> None:
         """diversity shuffle が hour 違うと違う順序になる。"""
@@ -474,7 +475,7 @@ class ComposeMailTests(unittest.TestCase):
         return Candidate(
             title=f"テスト候補 {idx}",
             metric="OPS",
-            period_label="今シーズン",
+            period_label="直近7日",
             draft_text=text,
             char_count=len(text),
         )
@@ -837,6 +838,63 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
         self.assertEqual(last5[0].since, "2026-05-11")
         self.assertEqual(last5[0].until, "2026-05-16")
 
+    def test_last_n_games_draft_uses_human_period_label(self) -> None:
+        """357: X 本文は日付だけでなく「直近5試合」を前面に出す。"""
+        from src.x_post_mail_lane import _MetricCombo, _format_one
+        rows = [
+            _row(1, "岡本和真", "巨人", 0.950),
+            _row(2, "坂本勇人", "巨人", 0.910),
+            _row(3, "丸佳浩", "巨人", 0.880),
+        ]
+        combo = _MetricCombo(
+            "OPS",
+            "2026-05-11",
+            "直近5試合",
+            until="2026-05-16",
+            giants_only=True,
+            min_sample_override=5,
+        )
+        cand = _format_one(
+            combo,
+            rows,
+            min_sample=5,
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+        )
+        self.assertIsNotNone(cand)
+        assert cand is not None
+        self.assertIn("直近5試合", cand.draft_text.split("\n")[1])
+        self.assertIn("規定打席5以上", cand.draft_text.split("\n")[1])
+        self.assertNotIn("5/11〜5/16", cand.draft_text.split("\n")[1])
+        self.assertIn("直近5試合", cand.title)
+
+    def test_monthly_draft_uses_month_record_label(self) -> None:
+        """357: 月別は「7月成績」のように表示する。"""
+        from src.x_post_mail_lane import _MetricCombo, _format_one
+        rows = [
+            _row(1, "岡本和真", "巨人", 0.950),
+            _row(2, "坂本勇人", "巨人", 0.910),
+            _row(3, "丸佳浩", "巨人", 0.880),
+        ]
+        combo = _MetricCombo(
+            "OPS",
+            "2026-07-01",
+            "7月成績",
+            until="2026-07-31",
+            giants_only=True,
+            min_sample_override=30,
+        )
+        cand = _format_one(
+            combo,
+            rows,
+            min_sample=30,
+            now=datetime(2026, 8, 2, 7, 0, tzinfo=JST),
+        )
+        self.assertIsNotNone(cand)
+        assert cand is not None
+        self.assertIn("7月成績", cand.draft_text.split("\n")[1])
+        self.assertIn("規定打席30以上", cand.draft_text.split("\n")[1])
+        self.assertNotIn("7/1〜7/31", cand.draft_text.split("\n")[1])
+
     def test_min_sample_override_honoured_in_pick_candidates(self) -> None:
         """combo.min_sample_override が pick_candidates 内で min_sample より優先。"""
         captured: list[dict] = []
@@ -912,9 +970,9 @@ class TicketThreeFiftyFiveDedupTests(unittest.TestCase):
 
     def test_combo_signature_unique_per_dimensions(self) -> None:
         from src.x_post_mail_lane import _MetricCombo, _combo_signature
-        c1 = _MetricCombo("OPS", None, "今シーズン", position="捕")
-        c2 = _MetricCombo("OPS", None, "今シーズン", position="二")
-        c3 = _MetricCombo("OPS", None, "今シーズン", giants_only=True)
+        c1 = _MetricCombo("OPS", "2026-05-09", "直近7日", position="捕")
+        c2 = _MetricCombo("OPS", "2026-05-09", "直近7日", position="二")
+        c3 = _MetricCombo("OPS", "2026-05-09", "直近7日", giants_only=True)
         sigs = {_combo_signature(c1), _combo_signature(c2), _combo_signature(c3)}
         self.assertEqual(len(sigs), 3, msg=f"signatures collided: {sigs}")
 

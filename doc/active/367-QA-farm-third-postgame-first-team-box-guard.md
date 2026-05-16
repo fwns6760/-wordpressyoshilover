@@ -86,6 +86,8 @@
 - `curl -sS https://yoshilover-fetcher-487178857517.asia-northeast1.run.app/health` -> OK
 - Cloud Run log: revision `yoshilover-fetcher-00404-kds` startup TCP probe succeeded; Ready condition true
 - published post `68610` は status=publish のため未更新
+- GitHub Issue evidence comment: https://github.com/fwns6760/-wordpressyoshilover/issues/36#issuecomment-4466612943
+- GitHub Issue log-event補足: https://github.com/fwns6760/-wordpressyoshilover/issues/36#issuecomment-4466613417
 
 ## 未完了
 

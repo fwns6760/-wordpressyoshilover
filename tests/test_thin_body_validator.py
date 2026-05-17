@@ -193,6 +193,30 @@ class TestScoreboardOnlyPostgameDetection(unittest.TestCase):
         self.assertTrue(result.is_thin)
         self.assertEqual(result.reason, "postgame_scorecard_only")
 
+    def test_rendered_postgame_with_pitcher_result_section_passes(self) -> None:
+        body = render_postgame_card(
+            {
+                "date_label": "2026年5月16日",
+                "league_label": "セ・リーグ 8回戦",
+                "home": "読売ジャイアンツ",
+                "away": "横浜DeNAベイスターズ",
+                "team_name": "巨人",
+                "score": "4-3",
+                "result": "win",
+                "one_line_summary": "読売ジャイアンツが4-3で勝利",
+                "source_url": "https://baseball.yahoo.co.jp/npb/game/2021038866/index",
+                "inning_score": [
+                    {"name": "DeNA", "innings": [0, 0, 2, 0, 1, 0, 0, 0, 0], "total": 3},
+                    {"name": "巨人", "innings": [0, 1, 0, 1, 0, 1, 1, 0, "x"], "total": 4},
+                ],
+                "winning_pitcher": {"team": "巨人", "name": "高梨", "record": "1勝0敗0S"},
+                "losing_pitcher": {"team": "DeNA", "name": "中川", "record": "0勝1敗0S"},
+                "save_pitcher": {"team": "巨人", "name": "マルティネス", "record": "0勝0敗12S"},
+            }
+        )["content_html"]
+        result = is_thin_body(body)
+        self.assertFalse(result.is_thin, msg=f"unexpected: {result.reason}")
+
     def test_rendered_postgame_with_detail_sections_passes(self) -> None:
         payload = {
             "date_label": "2026年5月6日",

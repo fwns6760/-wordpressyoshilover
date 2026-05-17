@@ -335,6 +335,20 @@ class HappyPathTests(unittest.TestCase):
         self.assertIn("<h3>📝 打席結果</h3>", out["content_html"])
         self.assertIn("<h3>⚾ 投球結果</h3>", out["content_html"])
 
+    def test_postgame_card_yahoo_minimal_pitcher_result_path(self):
+        data = _full_postgame_data()
+        data["atbat_results"] = []
+        data["pitching_results"] = []
+        data["winning_pitcher"] = {"team": "巨人", "name": "高梨", "record": "1勝0敗0S"}
+        data["losing_pitcher"] = {"team": "阪神", "name": "青柳", "record": "0勝1敗0S"}
+        data["save_pitcher"] = {"team": "巨人", "name": "マルティネス", "record": "0勝0敗12S"}
+        out = render_postgame_card(data)
+        self.assertTrue(out["validation_ok"])
+        self.assertIn("【試合結果】", out["title"])
+        self.assertNotIn("【試合結果、打席結果】", out["title"])
+        self.assertIn("<h3>🏆 勝敗投手</h3>", out["content_html"])
+        self.assertIn("高梨", out["content_html"])
+
     def test_official_notice_card_happy_path(self):
         out = render_official_notice_card(_full_official_notice_data())
         self.assertTrue(out["validation_ok"])

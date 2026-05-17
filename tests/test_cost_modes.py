@@ -421,6 +421,21 @@ class CostModeTests(unittest.TestCase):
             )
         )
 
+    def test_unfinished_postgame_skip_does_not_apply_today_status_to_previous_day_source(self):
+        # 5/17 朝に 5/16 試合後記事を処理する場合、5/17 の試合前
+        # Yahoo state (見どころ / ended=False) を前日 postgame に当てない。
+        self.assertFalse(
+            rss_fetcher._should_skip_unfinished_postgame_entry(
+                "試合速報",
+                "【巨人】破竹の今季最長５連勝　２度追いつき、仕掛けて勝ち越し",
+                "",
+                True,
+                {"state": "見どころ", "ended": False},
+                source_published_at=datetime(2026, 5, 16, 22, 12, tzinfo=rss_fetcher.JST),
+                now_jst=datetime(2026, 5, 17, 4, 31, tzinfo=rss_fetcher.JST),
+            )
+        )
+
     def test_too_short_title_skip_fires(self):
         # 66931 type: title sanitize の過剰削除で 1 単語 (「探せ」) だけ残った
         self.assertTrue(rss_fetcher._should_skip_too_short_title("探せ"))

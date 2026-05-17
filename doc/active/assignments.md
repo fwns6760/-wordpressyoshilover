@@ -57,14 +57,14 @@ test: 382 passed (= 302 baseline + 35 step1 + 18 step2 + 14 step3p1 + 13 step3p2
 
 | ticket | status | 内容 |
 |---|---|---|
-| `doc/active/352-postgame-auto-thin-body-false-positive.md` | READY | 5/12 から `postgame-auto` Cloud Run Job 連続失敗 (exit 20 = EXIT_WP_FAILED)。 仮説: `thin_body_validator._is_postgame_scorecard_only` の detail-heading regex が postgame card に match せず false positive で reject。 348 scope 外、 別 ticket 化 |
+| `doc/active/352-postgame-auto-thin-body-false-positive.md` | REVIEW_NEEDED | 2026-05-17 user GO で repo fix 完了。Yahoo minimal postgame は勝敗投手 table を本文に出し `【試合結果】` title へ補正、scorecard-only STOP は維持。朝 catchup は前日配信 postgame に当日朝の `見どころ` state を当てない。targeted tests green、live deploy 未実行 |
 
 ### user 判断 残
 
 | 件 | 内容 |
 |---|---|
 | 既存 wOBA 5 件 post (68064-68068) | × metric が title 流出、 §11 GATE。 削除/書き換え/放置 のどれか |
-| 352 着手 GO 判断 | postgame-auto 自動投稿停止の影響評価 + 着手 timing |
+| 352 着手 GO 判断 | 済。repo fix 完了、live deploy / 自然 fire 観察待ち |
 
 ### 翌日の verify gap
 

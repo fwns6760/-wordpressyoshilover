@@ -107,7 +107,7 @@ _POSTGAME_SCORE_HEADING_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 _POSTGAME_DETAIL_HEADING_RE = re.compile(
-    r"<h3[^>]*>.*?(?:打席結果|投球結果|相手スタメン).*?</h3>",
+    r"<h3[^>]*>.*?(?:打席結果|投球結果|勝敗投手|相手スタメン).*?</h3>",
     re.IGNORECASE | re.DOTALL,
 )
 _POSTGAME_GENERIC_CLOSING_RE = re.compile(

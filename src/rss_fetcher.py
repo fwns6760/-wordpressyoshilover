@@ -4569,6 +4569,8 @@ def _should_skip_unfinished_postgame_entry(
     summary: str,
     has_game: bool,
     game_status: dict | None,
+    source_published_at: datetime | None = None,
+    now_jst: datetime | None = None,
 ) -> bool:
     """``_should_skip_started_pregame_entry`` の対称。試合がまだ終わって
     いない時点で「postgame」と判定された source を取り込むと、Gemini AI が
@@ -4584,6 +4586,18 @@ def _should_skip_unfinished_postgame_entry(
         return False
     if _detect_article_subtype(title, summary, category, has_game) != "postgame":
         return False
+    if source_published_at is not None:
+        reference_now = now_jst if now_jst is not None else datetime.now(timezone.utc).astimezone(JST)
+        if reference_now.tzinfo is None:
+            reference_now = reference_now.replace(tzinfo=JST)
+        else:
+            reference_now = reference_now.astimezone(JST)
+        if source_published_at.tzinfo is None:
+            local_published = source_published_at.replace(tzinfo=JST)
+        else:
+            local_published = source_published_at.astimezone(JST)
+        if local_published.date() < reference_now.date():
+            return False
     # game_status が None / 空 / ended=False のいずれでも skip 側に倒す。
     # ended=True が確認できた時のみ通す。
     return not bool(game_status and game_status.get("ended"))
@@ -25462,6 +25476,7 @@ def _main(args, logger):
                 item["summary"],
                 item.get("entry_has_game", True),
                 yahoo_game_status,
+                item.get("published_at") if isinstance(item.get("published_at"), datetime) else None,
             ):
                 _log_postgame_unfinished_skip(
                     item["title"],

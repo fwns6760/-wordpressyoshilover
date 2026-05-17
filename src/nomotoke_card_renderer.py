@@ -115,6 +115,7 @@ _BODY_HEADING_EMOJI_DECORATIONS: tuple[tuple[str, str], ...] = (
     ("試合スコア", "📊"),
     ("打席結果", "📝"),
     ("投球結果", "⚾"),
+    ("勝敗投手", "🏆"),
     ("相手スタメン", "🧾"),
     ("登録選手", "✅"),
     ("抹消選手", "❌"),
@@ -710,6 +711,39 @@ def _render_pitching_table(rows: Iterable[Dict[str, Any]]) -> str:
     return head + "".join(body_rows) + "</tbody></table>"
 
 
+def _render_pitcher_result_table(data: Dict[str, Any]) -> str:
+    head = (
+        "<table><thead><tr>"
+        "<th>区分</th><th>投手</th><th>記録</th>"
+        "</tr></thead><tbody>"
+    )
+    body_rows: List[str] = []
+    for label, key in (
+        ("勝利投手", "winning_pitcher"),
+        ("敗戦投手", "losing_pitcher"),
+        ("セーブ", "save_pitcher"),
+    ):
+        raw = data.get(key) or {}
+        if not isinstance(raw, dict):
+            continue
+        name = str(raw.get("name") or "").strip()
+        if not name:
+            continue
+        team = str(raw.get("team") or "").strip()
+        record = str(raw.get("record") or "").strip()
+        pitcher_label = f"{team} {name}".strip()
+        body_rows.append(
+            "<tr>"
+            f"<td>{_esc(label)}</td>"
+            f"<td>{_esc(pitcher_label)}</td>"
+            f"<td>{_esc(record)}</td>"
+            "</tr>"
+        )
+    if not body_rows:
+        return ""
+    return head + "".join(body_rows) + "</tbody></table>"
+
+
 def _render_link_list(links: Iterable[Dict[str, Any]]) -> str:
     """Render a ``<ul>`` of safe links. Empty/unsafe ones are skipped."""
     items: List[str] = []
@@ -913,10 +947,13 @@ def render_postgame_card(data: Dict[str, Any]) -> Dict[str, Any]:
         return _skip(template_key, "missing_inning_score", source_url_raw)
 
     one_line_summary = (data.get("one_line_summary") or "").strip()
+    atbat_results = data.get("atbat_results") or []
+    has_atbat_results = isinstance(atbat_results, list) and bool(atbat_results)
 
+    title_detail = "試合結果、打席結果" if has_atbat_results else "試合結果"
     title = (
         f"{date_label} {league_label}「{home}vs.{away}」"
-        f"【試合結果、打席結果】 {team_name}、{score}で{result_label}！！！"
+        f"【{title_detail}】 {team_name}、{score}で{result_label}！！！"
     )
     if one_line_summary:
         title = f"{title} {one_line_summary}"
@@ -931,8 +968,12 @@ def render_postgame_card(data: Dict[str, Any]) -> Dict[str, Any]:
 
     parts.append(_INLINE_CTA_HTML)
 
-    atbat_results = data.get("atbat_results") or []
-    if isinstance(atbat_results, list) and atbat_results:
+    pitcher_result_table = _render_pitcher_result_table(data)
+    if pitcher_result_table:
+        parts.append("<h3>勝敗投手</h3>")
+        parts.append(pitcher_result_table)
+
+    if has_atbat_results:
         parts.append("<h3>打席結果</h3>")
         parts.append(_render_atbat_table(atbat_results))
 

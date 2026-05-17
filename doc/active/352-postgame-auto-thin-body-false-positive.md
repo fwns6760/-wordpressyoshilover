@@ -2,7 +2,7 @@
 
 ## 1. ticket header
 
-- **status**: READY(user 確認待ち、原因仮説まで完了)
+- **status**: REVIEW_NEEDED(repo fix complete、live deploy 未実行)
 - **priority**: medium(自動 publish 4 日停止だが緊急度低、user 手動投稿で代替可)
 - **owner**: Claude(実装) / user(GO 判断)
 - **依存 (audit)**: `docs/handoff/session_logs/`(2026-05-15 348 step 3 verify 時に発見)
@@ -165,7 +165,8 @@ python3 -m pytest tests/test_thin_body_validator.py tests/test_wp_client.py -v
 (実装中追記、 user GO 後に作業開始)
 
 ```
-YYYY-MM-DD HH:MM JST | <event> | <step> | <task> | <next>
+2026-05-17 09:45 JST | user_go | impl | 今朝の publish/mail 減少調査から postgame-auto thin stop と朝 catchup 前日 postgame skip を同時修正 | tests
+2026-05-17 10:05 JST | tests_green | verify | thin_body / renderer / cost-mode / yahoo fixture / morning-window targeted tests PASS | review/deploy
 ```
 
 ## 10. Regression Memo 欄
@@ -181,25 +182,59 @@ YYYY-MM-DD HH:MM JST | <test> | <regression> | <fix> | <test added>
 # 作業後追記 (user GO 後、 完了時に埋める)
 
 ## 1. 実際に変更したファイル
-(未記入)
+
+- `src/nomotoke_card_renderer.py`
+- `src/thin_body_validator.py`
+- `src/rss_fetcher.py`
+- `tests/test_thin_body_validator.py`
+- `tests/test_nomotoke_card_renderer.py`
+- `tests/test_cost_modes.py`
 
 ## 2. diff 概要
-(未記入)
+
+- Yahoo postgame minimal path で既に抽出済みの `winning_pitcher` / `losing_pitcher` / `save_pitcher` を「勝敗投手」table として本文に出す。
+- 打席結果が無い postgame title は `【試合結果】` にし、`【試合結果、打席結果】` を出さない。
+- thin-body validator は「勝敗投手」heading を detail section として認識する。ただし既存の scorecard-only postgame STOP は維持。
+- 朝 catchup の unfinished-postgame gate は、前日配信の postgame source に当日朝の Yahoo 試合前 state を当てない。
 
 ## 3. 実行したテスト
-(未記入)
+
+- `python3 -m py_compile src/nomotoke_card_renderer.py src/thin_body_validator.py src/rss_fetcher.py tests/test_thin_body_validator.py tests/test_nomotoke_card_renderer.py tests/test_cost_modes.py`
+- `python3 -m pytest tests/test_thin_body_validator.py tests/test_nomotoke_card_renderer.py tests/test_cost_modes.py -q`
+- `python3 -m pytest tests/test_source_yahoo_boxscore_extractor.py tests/test_rss_fetcher_postgame_morning_window.py -q`
+- `python3 -m pytest tests/test_wp_client.py::TestThinBodyStopGate::test_scoreboard_only_postgame_card_raises_thin_body_stop -q`
+- `python3 -m compileall -q src/nomotoke_card_renderer.py src/thin_body_validator.py src/rss_fetcher.py tests/test_thin_body_validator.py tests/test_nomotoke_card_renderer.py tests/test_cost_modes.py`
+- AST parse over touched Python files
+- `python3 -m src.tools.run_postgame_from_yahoo https://baseball.yahoo.co.jp/npb/game/fixture/index --from-file tests/fixtures/yahoo_game/2026_05_04_giants_swallows.html --mode dry-run`
+- `git diff --check -- <touched files>`
 
 ## 4. テスト結果
-(未記入)
+
+- py_compile PASS
+- targeted pytest PASS: 260 passed / 39 subtests passed
+- Yahoo source + morning-window pytest PASS: 28 passed
+- WP thin-body regression PASS: 1 passed
+- compileall PASS
+- AST parse PASS
+- Yahoo fixture dry-run PASS: title `【試合結果】`、thin-body `False`、勝敗投手 section あり
+- touched-files diff check PASS
 
 ## 5. 残った懸念
-(未記入)
+
+- live deploy は未実行。`postgame-auto` と `yoshilover-fetcher` の本番 image に反映後、自然 fire または authorized execute で確認が必要。
+- repo 全体の `git diff --check` は既存未関係 file `src/yoshilover-063-frontend.php` の conflict marker で失敗するため、今回 touched files に限定して check 済み。
 
 ## 6. 新しく見つかったデグレ
-(未記入)
+
+- なし。scorecard-only postgame STOP の既存回帰テストは green。
 
 ## 7. 追加した回帰テスト
-(未記入)
+
+- 勝敗投手 section ありの Yahoo minimal postgame が thin-body STOP されないこと。
+- 打席結果なし postgame title が `【試合結果】` になること。
+- 前日配信 postgame source に当日朝の `見どころ` / `ended=False` を適用しないこと。
 
 ## 8. 次回触ってはいけない範囲
-(未記入)
+
+- env / Secret / Scheduler / X / SNS は引き続き不可触。
+- 既存 published 記事の本文書き換えは user 明示 GO なしでは不可。

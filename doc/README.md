@@ -1813,10 +1813,11 @@ git add -A禁止。
 ### 352 postgame-auto-thin-body-false-positive
 
 - **alias**: -
-- **status**: READY(user GO 待ち) / **priority**: medium
+- **status**: REVIEW_NEEDED(repo fix complete、live deploy 未実行) / **priority**: medium
 - **owner**: Claude Code / **lane**: Claude
 - **doc_path**: `doc/active/352-postgame-auto-thin-body-false-positive.md`
-- **背景**: `postgame-auto` Cloud Run Job が 2026-05-12 22:30 JST から 4 日連続失敗 (exit 20 = EXIT_WP_FAILED)、 thin_body_validator の false positive 仮説。 348 scope 完全分離
+- **背景**: `postgame-auto` Cloud Run Job が 2026-05-12 22:30 JST から連続失敗 (exit 20 = EXIT_WP_FAILED)。2026-05-17 朝の調査で、Yahoo minimal postgame が scorecard-only thin STOP され、朝 catchup も前日 postgame に当日朝の試合前 state を適用していたことを確認
+- **実装**: Yahoo minimal postgame に勝敗投手 table を出し `【試合結果】` title へ補正。scorecard-only STOP は維持。前日配信 postgame source は当日朝の unfinished state で skip しない。targeted pytest green、live deploy 未実行
 - **last_commit**: `8b9b4a4` (起票 + assignments 更新)
 
 ### 356 INSIGHT-data-quality-publish-gate

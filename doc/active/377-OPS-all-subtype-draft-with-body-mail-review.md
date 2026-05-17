@@ -91,13 +91,96 @@ fetch → article 生成 → draft 確定 →
 - 全部 ¥0 (env flag 切替、 mail 既存 SMTP 流用、 Cloud Run free tier 内)
 - LLM 不使用 (memory rule [[feedback_title_no_ai]] 維持)
 
-## phase
+## phase (2026-05-17 PM 改訂、 risk 明示版)
 
-| phase | scope | gate |
+### Phase 1A (着地済 commit bdcf185)
+
+- src/wp_client.py: RUN_DRAFT_ONLY=True 時 publish→draft 強制
+- pytest 4 件、 backward compat 確認済
+
+### Phase 1B (着地済 commit 2035c6b)
+
+- PublishNoticeRequest に body_excerpt / admin_edit_url field 追加
+- build_body_text が両 field を表示
+- pytest 6 件、 minimal body mode 不変確認済
+
+### Phase 1C (未着手、 次 session)
+
+scanner / runner を改修して body_excerpt + admin_edit_url を populate。
+**risk が複数あるため事前に inventory 必要**:
+
+1. **PublishNoticeRequest 構築箇所の inventory** (5 箇所以上、 全部 grep で洗い出す)
+   - scanner: scan_guarded_publish_history / scan_post_gen_validate_history / scan_preflight_skip_history / _scan_direct_publish_phase / _scan_review_phase
+   - 各箇所で body_excerpt + admin_edit_url を populate する必要あり (silent skip した箇所は古い mail のまま)
+
+2. **body 抜粋の source 決定** (3 option):
+   - (a) guarded_publish JSONL に body 追記 → runner 改修必要、 historical data 互換性
+   - (b) WP REST で post_id から body fetch → latency +200ms / fail mode +1
+   - (c) candidate row.body から直接取得 → guarded_publish_runner で既に in-memory ある場合
+   - 推奨: (c) → (b) fallback。 (c) でほとんどカバー、 残りは REST で取り直し
+
+3. **admin_edit_url の builder**:
+   - format: `{wp_base_url}/wp-admin/post.php?post={post_id}&action=edit`
+   - wp_base_url は env WP_URL から (既存)
+   - canonical_url から post_id 抽出 helper (既に存在? grep verify 必要)
+
+4. **excerpt 化** (600-1000 字):
+   - HTML strip + whitespace collapse
+   - 既存 helper (_strip_html / _normalize_summary 等) 流用検討
+   - 「📌 関連ポスト」「💬 ファンの声」section は除外 (X embed が visual ノイズになる)
+
+### Phase 2 (env apply)
+
+- Cloud Run yoshilover-fetcher env に RUN_DRAFT_ONLY=True 追加
+- 自然 fire で mail 受信 verify
+- 既存 publish 済記事の non-mutation 確認
+
+## risk + 対処 (再定義)
+
+| risk | 影響 | 対処 |
 |---|---|---|
-| **Phase 1** | RUN_DRAFT_ONLY=True 切替 + wp_client draft 強制 + 既存 publish-notice mail template 拡張 (本文 + admin link) | targeted pytest pass |
-| **Phase 2** | publish-notice scanner trigger を draft 検出に変更 + 4 便 Scheduler 流用 verify | mail 受信 verify |
-| **Phase 3** | 翌日朝の receive verify + 既存 publish 済記事の non-mutation 確認 | user 受け入れ確認 |
+| scanner 3000+ 行で改修箇所 silent skip | mail の一部だけ body 出る、 一貫性無 | Phase 1C-1 で全 PublishNoticeRequest 構築箇所を grep で洗い出し、 改修対象を確定してから着手 |
+| guarded_publish JSONL に body 未格納 | (c) option 失敗 | (b) WP REST fallback で救う、 fail-open (body 空のまま mail 送る) |
+| WP REST fetch の latency / fail | scanner 遅延 / mail 遅延 | timeout 5s + fail-open (body 空) + log warning |
+| 既存 mail の minimal body mode に副作用 | publish 通知が冗長になる | body_excerpt None 時は minimal body 不変 (Phase 1B で verify 済) |
+| RUN_DRAFT_ONLY=True で試合スタメンも draft | 試合前の即時公開できない | user lock 「全 subtype OK」 (2026-05-17、 SEO 考慮) で受容、 朝 mail で対応 |
+| 試合中の live_update も draft | 試合速報の即時性消える | user lock 受容。 必要なら個別 subtype に exception flag 追加 (Phase 3) |
+| WP login cookie 切れで admin link click 失敗 | user が WP login し直し必要 | 既存 WP 動作、 範囲外 |
+| 既存 publish 済記事への retroactive 影響 | 公開済記事が draft 化される | wp_client は status downgrade しない (existing post の status は触らない logic)、 forward-only |
+| mail サイズ膨張 (本文 1000 字 × N 件 = 数 KB) | SMTP 無料枠の制限 | 1 mail 上限 5-10 件、 N 件超は次便繰越 (既存 batch 設計) |
+
+## rollback plan
+
+- Cloud Run env `RUN_DRAFT_ONLY=False` (1 toggle) → 即座 publish 経路復活
+- code 自体は backward compat (両 field None で minimal body 不変)、 revert 不要
+- 既存 publish 済記事は不変、 ロールバック後の publish も従来通り
+
+## 着手前の pre-flight checklist (Phase 1C 開始時)
+
+- [ ] PublishNoticeRequest 構築箇所を `grep -n "PublishNoticeRequest(" src/`で全 site 抽出
+- [ ] 各 site の caller flow を 1 つずつ trace (silent skip しない)
+- [ ] guarded_publish_runner が JSONL に body を書いてるか実 file で verify (memory rule)
+- [ ] _strip_html / _normalize_summary 等の既存 helper の挙動を sample data で verify
+- [ ] admin URL builder の format を 既存 WP_URL config から正確に組み立て (env mismatch 無)
+- [ ] dry-run mail 1 件で body / admin link / 本文長 を実 mail に出して目視 verify
+- [ ] pytest 全 publish_notice 系 + 関連 wp_client / scanner test pass
+- [ ] Cloud Logging で env apply 前の base line 取得 (mail 件数 / 失敗率)
+
+## 完了条件 (再定義)
+
+1. 全 subtype が `status="draft"` で WP に着地 (Phase 1A 着地済)
+2. 既存 publish 済記事は変更なし (forward-only)
+3. mail に title + 本文サマリ 600-1000 字 + wp-admin edit link が含まれる (Phase 1B + 1C)
+4. user が WP login 済状態で admin link → 編集画面到達 → 「公開」 publish 可能
+5. X / SNS / Scheduler / Secret は不変
+6. mail 1 通あたりサイズ < 50 KB
+7. dry-run で実 mail を目視確認、 受け入れ後 env apply
+8. rollback 手順 (env=False) を 1 step で実行可能
+
+## next action
+
+次 session で Phase 1C-1 (PublishNoticeRequest 構築箇所の inventory) から開始。
+全 inventory 完了 → 改修対象確定 → 7 点提示 → user GO で実装。
 
 ## 関連 ticket / memory
 

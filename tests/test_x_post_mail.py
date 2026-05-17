@@ -131,7 +131,7 @@ class SubjectAndTimeBandTests(unittest.TestCase):
         subject = build_subject(ts, 7)
         self.assertEqual(
             subject,
-            "📮【要確認：巨人データX投稿候補 7件】朝 2026-05-16 07:00 JST",
+            "🟠🐦📮【手動X投稿 7件】🌅朝 07:00 JST",
         )
 
     def test_subject_zero_candidates_does_not_crash(self) -> None:
@@ -139,7 +139,22 @@ class SubjectAndTimeBandTests(unittest.TestCase):
         subject = build_subject(ts, 0)
         self.assertIn("0件", subject)
         self.assertIn("試合後", subject)
-        self.assertIn("要確認：巨人データX投稿候補", subject)
+        self.assertIn("🌙", subject)
+        self.assertIn("手動X投稿", subject)
+
+    def test_subject_emoji_per_time_band(self) -> None:
+        for hour, expected_emoji, expected_band in [
+            (7, "🌅", "朝"),
+            (12, "🌞", "昼"),
+            (15, "☀️", "午後"),
+            (17, "🌆", "夕方"),
+            (22, "🌙", "試合後"),
+        ]:
+            ts = datetime(2026, 5, 17, hour, 0, tzinfo=JST)
+            subject = build_subject(ts, 3)
+            self.assertIn(expected_emoji, subject, msg=f"hour={hour}")
+            self.assertIn(expected_band, subject, msg=f"hour={hour}")
+            self.assertTrue(subject.startswith("🟠🐦📮"), msg=f"hour={hour}")
 
 
 class PickCandidatesTests(unittest.TestCase):

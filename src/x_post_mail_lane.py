@@ -158,6 +158,16 @@ _TIME_BANDS = (
     (range(21, 24), "試合後"),
 )
 
+# Time-band emoji prefixed to the mail subject so the message stands out
+# among other automatic notifications in the inbox.
+_TIME_BAND_EMOJI = {
+    "朝": "🌅",
+    "昼": "🌞",
+    "午後": "☀️",
+    "夕方": "🌆",
+    "試合後": "🌙",
+}
+
 
 # ---------------------------------------------------------------------------
 # Filter & candidate selection
@@ -1024,9 +1034,10 @@ def time_band_label(hour: int) -> str:
 
 def build_subject(now: datetime, n_candidates: int) -> str:
     band = time_band_label(now.hour)
+    band_emoji = _TIME_BAND_EMOJI.get(band, "")
     return (
-        f"📮【要確認：巨人データX投稿候補 {n_candidates}件】"
-        f"{band} {now.strftime('%Y-%m-%d %H:%M')} JST"
+        f"🟠🐦📮【手動X投稿 {n_candidates}件】"
+        f"{band_emoji}{band} {now.strftime('%H:%M')} JST"
     )
 
 

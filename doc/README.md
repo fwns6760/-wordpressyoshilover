@@ -1916,14 +1916,14 @@ git add -A禁止。
 ### 375-QA-paper-layout-social-promo-skip
 
 - **alias**: -
-- **status**: REPO_IMPL_READY / **priority**: P0.5
+- **status**: LIVE_DEPLOYED_OBSERVE / **priority**: P0.5
 - **owner**: Codex / **lane**: B
 - **doc_path**: `doc/active/375-QA-paper-layout-social-promo-skip.md`
 - **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/46
 - **背景**: `68812` は `RT スポーツ報知 レイアウト担当: 5/17付 スポーツ報知` の紙面告知RTだったが、`5連勝` や選手語が混ざっていたため `social_v2` の記事として作られ、本文も素材メモに近くなった。ログ上は直後に `unpublish_success` で下書きへ戻っている。
 - **方針**: `レイアウト担当` / `紙面レイアウト` / `5/17付 スポーツ報知` などの日付付き新聞紙面告知は、選手名や試合語が入っていても記事候補にしない。trusted social rescue / weak social rescue / template v2 / main intake の各入口で hard stop し、`paper_layout_social_promo_skip` を出す。
 - **tests**: `tests/test_rss_trusted_social_rescue.py` 28 passed、関連 4 file 113 passed、py_compile / compileall / AST PASS。
-- **deploy**: implementation commit 後に `yoshilover-fetcher` へ deploy 予定。Scheduler / env / Secret / X / SNS / mail 条件は変更しない。
+- **deploy**: commit `ed237ea`、Cloud Build `3daeb97b-9252-4fb6-82d8-bc546ae46403` SUCCESS、image `375-paper-layout-ed237ea`、digest `sha256:3f2aff2f70245bb2034fd6f290f1389dcfda13fdbcdc32329f92ba5c372e3db2`、revision `yoshilover-fetcher-00412-4kg` 100%、`/health` OK、startup probe succeeded、新 revision ERROR logs 0。Scheduler / env / Secret / X / SNS / mail 条件は変更しない。
 
 ### 362-INSIGHT-queue-cleanup-and-metric-run-cap
 

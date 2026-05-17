@@ -4,7 +4,7 @@
 
 - ticket: 375-QA-paper-layout-social-promo-skip
 - github_issue: https://github.com/fwns6760/-wordpressyoshilover/issues/46
-- status: REPO_IMPL_READY
+- status: LIVE_DEPLOYED_OBSERVE
 - priority: P0.5
 - owner: Codex
 - lane: B
@@ -67,4 +67,19 @@ The trusted social rescue and weak social evaluation treated important game word
 
 ## deploy
 
-- Pending authenticated Cloud Run deploy from the implementation commit.
+- commit: `ed237ea`
+- build context: clean `git archive HEAD` export `/tmp/yoshilover-build-ed237ea.hqaMLl` (dirty worktree 混入なし)
+- Cloud Build: `3daeb97b-9252-4fb6-82d8-bc546ae46403` SUCCESS
+- image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:375-paper-layout-ed237ea`
+- digest: `sha256:3f2aff2f70245bb2034fd6f290f1389dcfda13fdbcdc32329f92ba5c372e3db2`
+- Cloud Run revision: `yoshilover-fetcher-00412-4kg`
+- traffic: 100%
+- `/health`: `OK`
+- startup log: `Default STARTUP TCP probe succeeded after 1 attempt`
+- new revision ERROR logs: 0
+- Scheduler / env / Secret / X / SNS / mail 条件は未変更。
+
+## live notes
+
+- Public WP REST for `68812` returns `rest_forbidden` 401, consistent with the post no longer being public.
+- Natural fire observation should show `paper_layout_social_promo_skip` when the same pattern appears again.

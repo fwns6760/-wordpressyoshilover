@@ -23386,6 +23386,8 @@ _HUMAN_CONTEXT_SOURCE_DETAIL_MARKERS = (
     "危険スイング",
     "キャッチボール",
     "300号",
+    "通算",
+    "日米通算",
     "月間MVP",
     "月間ベストヒーロー",
     "理由",
@@ -23512,7 +23514,10 @@ def _source_title_is_human_contextual(
     if clean in {"関連情報", "関連発言", "コメント整理", "発言整理"}:
         return False
     detail_text = _collapse_ws(_strip_html(f"{clean} {source_text}"))
-    if SCORE_TOKEN_RE.search(detail_text) or _re.search(r"[0-9０-９]+(?:回|安打|奪三振|勝目|号|打点|番)", detail_text):
+    if SCORE_TOKEN_RE.search(detail_text) or _re.search(
+        r"[0-9０-９]+(?:回|安打|奪三振|勝(?:目)?|号|打点|番)",
+        detail_text,
+    ):
         return True
     return bool(title_has_person_name_candidate(clean) and any(marker in detail_text for marker in _HUMAN_CONTEXT_SOURCE_DETAIL_MARKERS))
 

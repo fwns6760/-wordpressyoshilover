@@ -44,6 +44,23 @@ class HumanContextTitleRepairTests(unittest.TestCase):
         self.assertIsNone(review)
         self.assertEqual(title, "無失点リレーのリリーフ陣に杉内投手チーフコーチ「つないでよく頑張ってくれた」")
 
+    def test_short_quote_uses_milestone_source_headline(self):
+        title, review = rss_fetcher._finalize_title(
+            "菅野智之「阿部さん」",
+            source_title="菅野智之が日米通算１５０勝 「阿部さん」「小林誠司」「ラッチマン」名前を挙げて歴代捕手に感謝",
+            summary=(
+                "菅野智之投手が日米通算150勝目を達成した。"
+                "阿部さん、小林誠司、ラッチマンら歴代捕手への感謝を口にした。"
+            ),
+            analysis={"actor_name": "菅野智之"},
+        )
+
+        self.assertIsNone(review)
+        self.assertEqual(
+            title,
+            "菅野智之が日米通算１５０勝 「阿部さん」「小林誠司」「ラッチマン」名前を挙げて歴代捕手に感謝",
+        )
+
     def test_generic_related_info_uses_specific_source_headline(self):
         title, review = rss_fetcher._finalize_title(
             "泉口友汰の現状整理 関連情報",

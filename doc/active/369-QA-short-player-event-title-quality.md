@@ -76,3 +76,18 @@ X-centered player event articles can lose their concrete source facts during tit
   - `/health` = `OK`
   - startup log: `Default STARTUP TCP probe succeeded after 1 attempt`
   - Scheduler / env / Secret / X / SNS / mail 条件は未変更
+
+## 2026-05-17 follow-up: 68795 milestone quote-only title
+
+### observed facts
+
+- `68795` is `publish`, title `菅野智之「阿部さん」`.
+- Source X URL is `https://twitter.com/hochi_giants/status/2055793277862089145`.
+- Source headline in the article body is `菅野智之が日米通算１５０勝 「阿部さん」「小林誠司」「ラッチマン」名前を挙げて歴代捕手に感謝`.
+- The old title kept only the short quote and dropped the milestone fact `日米通算１５０勝`.
+
+### follow-up fix
+
+- Extend human-context title repair so numeric milestone facts like `150勝` / `日米通算150勝` make the source headline eligible.
+- Keep the repair deterministic: source title / summary only, no LLM, no memory reconstruction.
+- Add fixture-backed regression in `tests/test_human_context_title_repair.py`.

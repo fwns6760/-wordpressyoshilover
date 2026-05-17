@@ -1160,21 +1160,25 @@ def _render_defense_team_comparison_article(
 
 
 def render_hr_pace_article(
-    conn: sqlite3.Connection,
+    conn: Optional[sqlite3.Connection],
     candidate_row: dict[str, Any],
 ) -> dict[str, str]:
     """SIGNAL_PACE_HR_PROJECTION — 直近 30 日 HR ペースを 143 試合換算。"""
     player = candidate_row["player_canonical"]
     magnitude = candidate_row["magnitude"]
     current = candidate_row.get("current_value") or ""
+    # issue #44 B-3 (2026-05-17 user lock): title を case A 寄りに refit
+    # (期間を末尾括弧へ、 「本塁打」日本語表記、 1 sentence → 短い形)。
+    # ranking 表 wire は HR が advanced_metric_snapshots に格納されないため
+    # 別 ticket。
     title = (
-        f"【巨人データ】{player}、直近 30 日 HR ペースを 143 試合換算で約 {magnitude:.1f} 本ペース"
+        f"【巨人データ】{player}、本塁打ペース 143 試合換算 約 {magnitude:.1f} 本（直近30日）"
     )
     headline = (
-        f"{player} の直近 30 日 HR ペースをフルシーズン換算すると、約 **{magnitude:.1f} 本**"
+        f"{player} の直近 30 日 本塁打ペースをフルシーズン換算すると、約 **{magnitude:.1f} 本**"
         f" のペースです。"
     )
-    detail = [f"換算ベース: {current or '直近 30 日 HR ペース × 143 試合'}"]
+    detail = [f"換算ベース: {current or '直近 30 日 本塁打ペース × 143 試合'}"]
     return _render_simple_data_article(
         title=title,
         headline=headline,

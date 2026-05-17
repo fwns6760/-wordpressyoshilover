@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": "2026-05-12",
+  "updated": "2026-05-17",
   "policy": "Broad Giants official/OB YouTube shelf for human review. Unknown channels are not silently confirmed. Video articles must use source embeds, not copied media.",
   "sources": [
     {
@@ -110,6 +110,231 @@
       "channel_handle": "",
       "reference": "test-sentinel",
       "notes": "review candidateにしないためのsentinel"
+    },
+    {
+      "channel_id": "UC2vnK-QoXQrl1LVTNFDfUaQ",
+      "display_name": "[ラミレス公式]ラミちゃんねる",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
+      "notes": "アレックス・ラミレス、 元巨人 2008-2011 (後 DeNA 監督)。 title filter は OB roster (giants_ob_roster.json) 経由"
+    },
+    {
+      "channel_id": "UCl5XxVyJYNq7gOkemprMBiA",
+      "display_name": "元巨人・中日小田幸平のはげch",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
+      "notes": "小田幸平、 元巨人 1995-2004 後中日"
+    },
+    {
+      "channel_id": "UCMJ0UAF5JTDnfndnHyLOgUQ",
+      "display_name": "今成亮太チャンネル by DIAMOND ALLIANS",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
+      "notes": "今成亮太、 元巨人 2009-2010 後阪神/日ハム"
+    },
+    {
+      "channel_id": "UCbf6IAYfPy8CwHVgcHbxmNw",
+      "display_name": "フルタの方程式【古田敦也 公式チャンネル】",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "@furuta-houteishiki",
+      "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
+      "notes": "古田敦也 (元ヤクルト)。 巨人話を含む title のみ ingest (title filter で gate)"
+    },
+    {
+      "channel_id": "UCFCtAX45lgHcf4s0vAgAxww",
+      "display_name": "Satozaki Channel",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
+      "notes": "里崎智也 (元ロッテ)"
+    },
+    {
+      "channel_id": "UCar_QGP908qB3NJ2nLWdczA",
+      "display_name": "解体慎書【宮本慎也公式YouTubeチャンネル】",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
+      "notes": "宮本慎也 (元ヤクルト)"
+    },
+    {
+      "channel_id": "UCz7tOXB0x7yfESq6WPkA11g",
+      "display_name": "藤川球児の真向勝負",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "@kyuji22fujikawa",
+      "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
+      "notes": "藤川球児 (元阪神)"
+    },
+    {
+      "channel_id": "UCSFE1o0ihc5mfODf2FybeuA",
+      "display_name": "片岡篤史チャンネル",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "@kataokaCH",
+      "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
+      "notes": "片岡篤史 (元日ハム/阪神/中日)"
+    },
+    {
+      "channel_id": "UCgr5CkgytiVfdnk4C0M42nQ",
+      "display_name": "高木 豊 Takagi Yutaka",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
+      "notes": "高木豊 (元大洋/横浜)"
+    },
+    {
+      "channel_id": "UCjvkQ57Em5hczwIafhKG9ww",
+      "display_name": "中村紀洋公式チャンネル【N's method】",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
+      "notes": "中村紀洋 (元近鉄/中日/楽天 等)"
+    },
+    {
+      "channel_id": "UCujKx9MOD0zja02WXkDAwwA",
+      "display_name": "田尾安志【TAO CHANNEL】公式YouTube",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
+      "notes": "田尾安志 (元中日/西武/阪神)"
+    },
+    {
+      "channel_id": "UCVhXntGHOpB4vnfkBdN5HlA",
+      "display_name": "【イバTV】井端弘和公式チャンネル",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
+      "notes": "井端弘和 (元中日/巨人)、 巨人在籍歴あり"
+    },
+    {
+      "channel_id": "UCFUAjeyVai7kXP2b3or7fFg",
+      "display_name": "川上憲伸 カットボールチャンネル",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
+      "notes": "川上憲伸 (元中日 / MLB Atlanta)"
+    },
+    {
+      "channel_id": "UCvWaA1NrOj9gk1W0R9GQdiQ",
+      "display_name": "森本稀哲のひちょりズム",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
+      "notes": "森本稀哲 (元日ハム/横浜/西武)"
+    },
+    {
+      "channel_id": "UCPZTIne5_lbA02WroeXhJtQ",
+      "display_name": "斉藤和巳 / KAZUMI SAITOH",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "@kazumisaitoh1140",
+      "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
+      "notes": "斉藤和巳 (元ソフトバンク)"
+    },
+    {
+      "channel_id": "UCqQFVQTo9nMfXUwlNi9q86g",
+      "display_name": "ふみちゅーぶ【高橋聡文公式】",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
+      "notes": "高橋聡文 (元中日/阪神)"
+    },
+    {
+      "channel_id": "UCjt6NPFj7irkSHbntZyxMKw",
+      "display_name": "新庄剛志ちゃんねる【Tsuyoshi Shinjo】",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
+      "notes": "新庄剛志 (元阪神 / MLB Mets,Giants / 日ハム監督)"
+    },
+    {
+      "channel_id": "UCDtT1H9LRU5xKea65hImTUw",
+      "display_name": "イガちゃんねる 〜五十嵐亮太の人生は旅だ〜",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "@IGA-CHANNEL53",
+      "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
+      "notes": "五十嵐亮太 (元ヤクルト / MLB / ソフトバンク)"
+    },
+    {
+      "channel_id": "UC7CeOxGzcmmxbf_Oacxf7sg",
+      "display_name": "岩本勉チャンネル",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
+      "notes": "岩本勉 (元日ハム)"
+    },
+    {
+      "channel_id": "UCaqc4dehAPvc47IiXs1rPpA",
+      "display_name": "JOH×ジョウチャンネル (旧 川藤部屋)",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "@kawatokouzoyokotashintaro6314",
+      "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
+      "notes": "旧 川藤部屋 (川藤幸三・横田慎太郎)、 2023 横田氏逝去後 北條史也が継承し改称。 川藤本人は現在不参加、 阪神 OB 主導 ch として ingest 候補"
+    },
+    {
+      "channel_id": "UCCfNYHACqlFnno0Y1DVjIMQ",
+      "display_name": "キダゴch",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "@ch-ng2ui",
+      "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
+      "notes": "喜田剛 (元阪神/広島/オリックス/DeNA)"
+    },
+    {
+      "channel_id": "UC4cUlSRV5qNcUTNUJc2vfdA",
+      "display_name": "プロ野球OBクラブチャンネル",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "344-INGEST-phase-1b-2026-05-17-memory-verified",
+      "notes": "プロ野球OBクラブ集合 ch、 12 球団 OB の出演あり、 巨人 OB / 巨人話 出演時 ingest"
+    },
+    {
+      "channel_id": "UC9ycDcfxt5ge3hUFfnqnQ9Q",
+      "display_name": "名球会チャンネル",
+      "role": "ob",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "344-INGEST-phase-1b-2026-05-17-memory-verified",
+      "notes": "名球会 (2000 本安打 / 200 勝)、 巨人 OB (王 / 長嶋 / 桑田 / 上原 等) 出演時 ingest"
+    },
+    {
+      "channel_id": "UCJ4fZlvkA18aNgxPuYsMFKA",
+      "display_name": "報知プロ野球チャンネル",
+      "role": "media",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "344-INGEST-phase-1b-2026-05-17-memory-verified",
+      "notes": "スポーツ報知 公式 (巨人特化担当 / hochi_giants と同系列)、 巨人記事 / 解説重要 source"
+    },
+    {
+      "channel_id": "UCQhxtM_x7tu0Nm35zBAaLfA",
+      "display_name": "スポーツナビ 野球チャンネル",
+      "role": "media",
+      "status": "candidate",
+      "channel_handle": "",
+      "reference": "344-INGEST-phase-1b-2026-05-17-memory-verified",
+      "notes": "スポナビ 野球公式、 巨人試合ハイライト等"
     }
   ]
 }

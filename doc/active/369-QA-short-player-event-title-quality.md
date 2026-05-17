@@ -91,3 +91,23 @@ X-centered player event articles can lose their concrete source facts during tit
 - Extend human-context title repair so numeric milestone facts like `150勝` / `日米通算150勝` make the source headline eligible.
 - Keep the repair deterministic: source title / summary only, no LLM, no memory reconstruction.
 - Add fixture-backed regression in `tests/test_human_context_title_repair.py`.
+
+### follow-up evidence
+
+- Commit: `d3e2e9b`
+- Tests:
+  - `python3 -m pytest tests/test_human_context_title_repair.py -q` = 8 passed
+  - `python3 -m pytest tests/test_human_context_title_repair.py tests/test_rss_fetcher_title_style_alignment.py tests/test_rss_template_routing_v2.py tests/test_rss_classification_regression_2026_05_17.py -q` = 30 passed, 47 subtests passed
+  - `python3 -m compileall -q src/rss_fetcher.py tests/test_human_context_title_repair.py`
+  - AST parse OK
+- Deploy:
+  - Cloud Build `192a645c-1460-4d89-ba5d-b2a37845765a` SUCCESS
+  - image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:369-milestone-title-d3e2e9b`
+  - digest `sha256:5873728ce350252c0a991c24591d130ecba7fa7a528c52aeb7a28d142a2c0ce1`
+  - Cloud Run revision `yoshilover-fetcher-00411-4xl`, 100% traffic
+  - `/health` = `OK`
+  - new revision ERROR logs = 0
+- WP patch:
+  - `68795` status checked as `publish`
+  - title/headline updated to `菅野智之が日米通算１５０勝 「阿部さん」「小林誠司」「ラッチマン」名前を挙げて歴代捕手に感謝`
+- Scheduler / env / Secret / X / SNS / mail 条件は未変更。

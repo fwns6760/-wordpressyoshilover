@@ -292,12 +292,20 @@ def _compose_html_body(candidates: list[MeigenCandidate], now: datetime) -> str:
             "<div style=\"border:1px solid #e2e2e2;border-radius:8px;"
             "padding:12px 16px;margin:0 0 16px;background:#fff;\">"
         )
-        # ヘッダー: 「小林誠司名言集 NO①」 + 日付
+        # ヘッダー: 「小林誠司名言集」 + 大型「NO①」 (連番強調)
         parts.append(
-            "<div style=\"font-size:14px;font-weight:700;color:#c0392b;"
-            "padding-bottom:6px;margin:0 0 10px;"
-            "border-bottom:2px solid #c0392b;\">"
-            f"小林誠司名言集 NO{_html.escape(no_label)}"
+            "<div style=\"border-bottom:2px solid #c0392b;"
+            "padding-bottom:8px;margin:0 0 12px;\">"
+            "<div style=\"font-size:13px;color:#666;letter-spacing:1px;"
+            "margin:0 0 2px;font-weight:600;\">"
+            "小林誠司名言集"
+            "</div>"
+            "<div style=\"font-size:14px;color:#c0392b;font-weight:700;"
+            "line-height:1.1;\">"
+            "NO"
+            f"<span style=\"font-size:42px;font-weight:900;vertical-align:-4px;"
+            f"margin-left:2px;\">{_html.escape(no_label)}</span>"
+            "</div>"
             "</div>"
         )
         parts.append(

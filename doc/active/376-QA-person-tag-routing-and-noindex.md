@@ -67,8 +67,15 @@
 
 ## live state
 
-- repo implementation done.
-- live WP tag sync not executed.
-- Cloud Run deploy not executed.
+- repo implementation done and committed as `a995071`.
+- live WP tag sync executed with `DISABLE_NPB_ROSTER_FETCH=1 python3 src/tools/sync_wp_person_tags.py`: `ok_count=173`, `missing_count=0`.
+- noindex plugin ZIP prepared for manual WP upload:
+  - WSL: `/home/fwns6/Desktop/yoshilover-post-noindex.zip`
+  - Windows: `C:\Users\fwns6\Desktop\yoshilover-post-noindex.zip`
+- Cloud Build `43fb75f9-4f92-4b79-a204-08cc8d343d3d` SUCCESS.
+- Image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:376-person-tags-a995071`, digest `sha256:52ac886e05a59a5dc65199d6f234e25fbf6fa8084821c310df166f9e885714c6`.
+- Cloud Run service `yoshilover-fetcher` deployed to revision `yoshilover-fetcher-00421-vzd`, latest revision 100% traffic.
+- `/health` OK, new revision ERROR logs `[]`.
 - Scheduler / env / Secret unchanged.
 - X / SNS post unchanged.
+- Manual WP plugin upload is still required before tag archives are guaranteed live `noindex, follow`.

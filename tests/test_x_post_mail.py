@@ -183,8 +183,9 @@ class PickCandidatesTests(unittest.TestCase):
         })
         cands = pick_candidates(query_mock, now=datetime(2026, 5, 16, 7, 0, tzinfo=JST), max_candidates=1, min_sample=1)
         self.assertEqual(len(cands), 1)
-        # 353: marker 強化 — ` ← 巨人` から ` ←⭐巨人` に変更
-        self.assertIn("←⭐巨人", cands[0].draft_text)
+        # STEP1: marker 形式 — ` ← 巨人` → `  ⭐巨人` (arrow drop, 半角2sp)
+        self.assertIn("⭐巨人", cands[0].draft_text)
+        self.assertNotIn("←", cands[0].draft_text)
 
     def test_too_few_central_rows_skipped(self) -> None:
         # Only 1 セ row → skip. The mail no longer falls back to 巨人内
@@ -222,7 +223,7 @@ class PickCandidatesTests(unittest.TestCase):
         self.assertLessEqual(len(cands), 2)
 
     def test_same_metric_period_family_only_once_per_mail(self) -> None:
-        """OPS の直近5/10試合/直近7日を同じ mail に並べない。"""
+        """OPS の直近5/10試合/直近1週間を同じ mail に並べない。"""
         query_mock = MagicMock(return_value={
             "ok": True,
             "rows": _MIXED_12_TEAM_ROWS,
@@ -290,7 +291,11 @@ class PickCandidatesTests(unittest.TestCase):
             # Every candidate header must carry a baseball-friendly
             # period label instead of only raw dates.
             self.assertTrue(
-                ("直近7日" in text) or ("直近5試合" in text) or ("直近10試合" in text),
+                ("直近1週間" in text)
+                or ("直近5試合" in text)
+                or ("直近10試合" in text)
+                or ("今週" in text)
+                or ("今月" in text),
                 msg=f"missing human period label in: {text[:80]}",
             )
             # Every candidate carries the sample threshold marker
@@ -299,12 +304,17 @@ class PickCandidatesTests(unittest.TestCase):
                 msg=f"missing sample threshold in: {text[:60]}",
             )
 
-    def test_monthly_combo_removed_from_pool(self) -> None:
-        """357: 月別 combo は月中に出さない。"""
+    def test_monthly_combo_year_round_after_step1(self) -> None:
+        """STEP1 (2026-05-17): 今月 combo は年通開放、 月別「N月成績」は
+        月初 3 日だけ前月分を出す現状を維持。
+        """
         from src.x_post_mail_lane import _build_combos
-        combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST))
-        self.assertNotIn("今月", {c.period_label for c in combos})
-        self.assertFalse({c.period_label for c in combos} & {"4月成績", "5月成績"})
+        mid_month = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST))
+        # 今月 combo は年通で pool に存在 (8 metric)。
+        today_combos = [c for c in mid_month if c.period_label == "今月"]
+        self.assertEqual(len(today_combos), 8)
+        # 月中なので前月成績 (4月成績) は pool に居ない。
+        self.assertFalse({c.period_label for c in mid_month} & {"4月成績"})
 
     def test_era_uses_innings_pitched_threshold_label(self) -> None:
         """350: ERA は 打席 ではなく 投球回 ベースで表記する。"""
@@ -392,14 +402,18 @@ class VariationExpansionTests(unittest.TestCase):
         month_start = _build_combos(datetime(2026, 8, 2, 7, 0, tzinfo=JST))
         self.assertNotIn("7月成績", {c.period_label for c in mid_month})
         monthly = [c for c in month_start if c.period_label == "7月成績"]
-        self.assertEqual(len(monthly), 3)
+        # STEP1 (2026-05-17): metric pool 8 化に伴い 前月成績も 8 metric。
+        self.assertEqual(len(monthly), 8)
         self.assertFalse(any(c.giants_only for c in monthly))
-        self.assertEqual({c.metric for c in monthly}, {"OPS", "AVG", "ERA"})
+        self.assertEqual(
+            {c.metric for c in monthly},
+            {"OPS", "AVG", "ERA", "OBP", "SLG", "K_per_9", "BB_per_9", "HR_per_9"},
+        )
 
     def test_last_7_days_combo_appears(self) -> None:
         from src.x_post_mail_lane import _build_combos
         combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST))
-        last7_cands = [c for c in combos if c.period_label == "直近7日"]
+        last7_cands = [c for c in combos if c.period_label == "直近1週間"]
         self.assertGreaterEqual(len(last7_cands), 1)
         # 5/16 - 7 = 5/9
         self.assertEqual(last7_cands[0].since, "2026-05-09")
@@ -464,7 +478,8 @@ class VariationExpansionTests(unittest.TestCase):
         self.assertIn("牧秀悟", text)
         # 巨人 players appear with strong marker.
         self.assertIn("岡本和真", text)
-        self.assertIn("←⭐巨人", text)
+        self.assertIn("⭐巨人", text)
+        self.assertNotIn("←⭐巨人", text)
 
     def test_giants_focus_row_survives_when_outside_top_five(self) -> None:
         """X字数調整で上位だけに削っても巨人最上位 row は残す。"""
@@ -485,7 +500,7 @@ class VariationExpansionTests(unittest.TestCase):
         ]
         ranked = _rebuild_ranks_within_central(rows)
         cand = _format_one(
-            _MetricCombo("OPS", "2026-05-09", "直近7日"),
+            _MetricCombo("OPS", "2026-05-09", "直近1週間"),
             ranked,
             min_sample=30,
             now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
@@ -493,18 +508,28 @@ class VariationExpansionTests(unittest.TestCase):
         self.assertIsNotNone(cand)
         assert cand is not None
         self.assertIn("巨人最上位: 岡本和真 セ・リーグ 11/11位", cand.draft_text)
-        self.assertIn("11. 岡本和真（巨人）OPS .900 ←⭐巨人", cand.draft_text)
+        self.assertIn("11. 岡本和真（巨人）OPS .900  ⭐巨人", cand.draft_text)
         self.assertLessEqual(cand.char_count, X_CHAR_LIMIT)
 
-    def test_combo_pool_size_10_after_mainstream_periods_excluded(self) -> None:
-        """357: 大手が出しやすい season / daily month / 30d / 14d を削除。
-        残り = 直近7日 3 + 守備位置別直近7日 4 = 7。
+    def test_combo_pool_size_after_step1_expansion(self) -> None:
+        """STEP1 (2026-05-17): metric 8 (OPS/AVG/ERA/OBP/SLG/K_per_9/BB_per_9/HR_per_9)
+        × period (直近1週間 + 今週 + 今月 + 守備位置別) で pool 拡張。
+
+        db_path=None で:
+          - 直近1週間 × 8 metric  = 8
+          - 守備位置別直近1週間 OPS × 4 pos = 4
+          - 今週 × 8 metric            = 8 (週初め以外、 当日 Monday なら 0)
+          - 今月 × 8 metric            = 8
+        2026-05-16 (Sat) は週初め (Mon=05-11) と直近1週間 (05-09) が違うので 今週 enabled = 8 combo。
+        計 28 combo。
         """
         from src.x_post_mail_lane import _build_combos
         combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST))
-        self.assertEqual(len(combos), 7)
+        self.assertEqual(len(combos), 28)
         self.assertTrue(all(c.novelty == "high" for c in combos))
-        self.assertFalse({"今月", "先月", "今シーズン", "直近30日", "直近14日"} & {c.period_label for c in combos})
+        # 大手が出しやすい "今シーズン" 系 / 直近30日 / 直近14日 は除外維持。
+        self.assertFalse({"今シーズン", "直近30日", "直近14日"} & {c.period_label for c in combos})
+        # 全 combo は since 付き (period 限定なし combo は許可しない)。
         self.assertFalse([c for c in combos if c.since is None], msg=f"full-period combo leaked: {combos}")
 
     def test_diversity_seed_changes_per_hour(self) -> None:
@@ -525,7 +550,7 @@ class ComposeMailTests(unittest.TestCase):
         return Candidate(
             title=f"テスト候補 {idx}",
             metric="OPS",
-            period_label="直近7日",
+            period_label="直近1週間",
             draft_text=text,
             char_count=len(text),
         )
@@ -592,8 +617,10 @@ class EmptyResultBehaviourTests(unittest.TestCase):
 
 
 class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
-    """353: 大手なし pool + 意外性 sampling + 4 見た目改善 (改行 / metric 別
-    絵文字 / 上位 3 メダル / ⭐巨人 / metric label / 1 行空け) の検証。
+    """353/STEP1: 大手なし pool + 意外性 sampling + format 見た目改善
+    (改行 / metric 別絵文字 / 数字 prefix / ⭐巨人 / metric label) の検証。
+    STEP1 (2026-05-17): medal 🥇🥈🥉 + top3 空行を廃止、 全行数字 prefix
+    に統一。 ←⭐巨人 → ⭐巨人 へ。
     """
 
     def _make_mock(self) -> MagicMock:
@@ -661,8 +688,8 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
             header = c.draft_text.split("\n", 1)[0]
             self.assertIn("⚡", header, msg=f"pitcher header missing ⚡: {header}")
 
-    def test_top3_medal_prefix(self) -> None:
-        """ranking 行 1/2/3 = 🥇🥈🥉、 4 位以降 = N. 数字。"""
+    def test_all_ranks_use_numeric_prefix(self) -> None:
+        """STEP1 (2026-05-17): 全行 数字 prefix (`1.` `2.` ...)、 medal 廃止。"""
         cands = pick_candidates(
             self._make_mock(),
             now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
@@ -672,14 +699,18 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
         )
         self.assertGreaterEqual(len(cands), 1)
         text = cands[0].draft_text
-        self.assertIn("🥇", text)
-        self.assertIn("🥈", text)
-        self.assertIn("🥉", text)
-        # 4 位は通常の数字 prefix
-        self.assertIn("4.", text)
+        # 数字 prefix が rank 1-3 でも使われる。
+        self.assertIn("1.", text)
+        self.assertIn("2.", text)
+        self.assertIn("3.", text)
+        # Medal 🥇🥈🥉 は使われない。
+        self.assertNotIn("🥇", text)
+        self.assertNotIn("🥈", text)
+        self.assertNotIn("🥉", text)
 
     def test_giants_marker_strong_form(self) -> None:
-        """巨人行 marker は ` ← 巨人` ではなく ` ←⭐巨人`。"""
+        """STEP1 (2026-05-17): 巨人行 marker は `  ⭐巨人` (半角2 spc + ⭐巨人、
+        arrow 削除)。"""
         cands = pick_candidates(
             self._make_mock(),
             now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
@@ -690,13 +721,15 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
         # find a candidate that should highlight a Giants row
         with_giants = [
             c for c in cands
-            if "巨人" in c.draft_text and "←" in c.draft_text
+            if "巨人" in c.draft_text and "⭐巨人" in c.draft_text
         ]
         self.assertGreaterEqual(len(with_giants), 1)
         for c in with_giants:
-            self.assertIn("←⭐巨人", c.draft_text)
-            # 旧 form は出ない
+            self.assertIn("⭐巨人", c.draft_text)
+            # 旧 form (arrow 付き、 半角1 spc) は出ない
+            self.assertNotIn("←⭐巨人", c.draft_text)
             self.assertNotIn("← 巨人", c.draft_text)
+            self.assertNotIn(" ←", c.draft_text)
 
     def test_metric_label_prefix_before_value(self) -> None:
         """ranking 行の数値前に metric_jp 前置 (例: ``打率 .945``、 ``OPS .945``、 ``防御率 2.10``)。"""
@@ -713,8 +746,8 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
         # `打率 .945` 等の形式が ranking 行に出る
         self.assertIn("打率 .", text, msg=f"AVG label missing: {text}")
 
-    def test_blank_line_between_top3_and_rest(self) -> None:
-        """1-3 位 ranking 行と 4 位以降の間に空行 1 行。"""
+    def test_no_blank_between_ranks_after_step1(self) -> None:
+        """STEP1 (2026-05-17): 旧 medal 区切り空行を廃止、 ranking は連続表示。"""
         cands = pick_candidates(
             self._make_mock(),
             now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
@@ -725,15 +758,20 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
         self.assertGreaterEqual(len(cands), 1)
         text = cands[0].draft_text
         lines = text.split("\n")
-        # find index of 🥉 (3rd medal row)
-        bronze_idx = next((i for i, ln in enumerate(lines) if ln.startswith("🥉")), -1)
-        self.assertGreaterEqual(bronze_idx, 0, msg="🥉 row not found")
-        # Next line should be blank, line after that should start with "4."
-        self.assertEqual(lines[bronze_idx + 1], "", msg=f"missing blank after 🥉: {lines[bronze_idx + 1]!r}")
-        self.assertTrue(
-            lines[bronze_idx + 2].startswith("4."),
-            msg=f"line after blank not 4.: {lines[bronze_idx + 2]!r}",
+        # 3 位の row index を見つけ、 直後が 4. で始まる (間に空行なし) こと。
+        idx_3 = next(
+            (i for i, ln in enumerate(lines) if ln.startswith("3.")),
+            -1,
         )
+        self.assertGreaterEqual(idx_3, 0, msg="3. row not found")
+        # idx_3 の直後行が 4. で始まる (もしくは ranking 末尾)。
+        if idx_3 + 1 < len(lines):
+            self.assertTrue(
+                lines[idx_3 + 1].startswith("4.") or not lines[idx_3 + 1].strip()
+                or lines[idx_3 + 1].startswith("#")  # hashtag footer の場合
+                or lines[idx_3 + 1].startswith("巨人最上位:"),
+                msg=f"unexpected line after 3.: {lines[idx_3 + 1]!r}",
+            )
 
     def test_mainstream_combos_excluded_from_pool(self) -> None:
         """シーズン累積 OPS/AVG/ERA/OBP/SLG の since=None / position=None /
@@ -886,20 +924,21 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
             1,
         )
 
-    def test_build_combos_no_db_path_keeps_7(self) -> None:
-        """db_path=None で短期寄せの 7 combo を維持。"""
+    def test_build_combos_no_db_path_after_step1(self) -> None:
+        """STEP1 (2026-05-17): db_path=None で 28 combo (直近1週間 8 +
+        守備位置別 4 + 今週 8 + 今月 8)。 5/16 は土曜なので 今週 enabled。"""
         from src.x_post_mail_lane import _build_combos
         combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST))
-        self.assertEqual(len(combos), 7)
+        self.assertEqual(len(combos), 28)
 
-    def test_build_combos_with_db_path_adds_6_last_n(self) -> None:
-        """db_path 指定で 13 combo (7 + 直近 5 × 3 + 直近 10 × 3)。"""
+    def test_build_combos_with_db_path_adds_last_n_after_step1(self) -> None:
+        """STEP1: db_path 指定で 28 + 直近5試合 8 + 直近10試合 8 = 44 combo。"""
         from src.x_post_mail_lane import _build_combos
         # need ≥10 distinct game dates for both 5-game and 10-game windows
         dates = [f"2026-05-{day:02d}" for day in range(1, 16)]  # 15 dates
         self._seed_games(dates)
         combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST), db_path=self.db_path)
-        self.assertEqual(len(combos), 13)
+        self.assertEqual(len(combos), 44)
 
     def test_last_n_games_combos_are_high_novelty_and_league_scoped(self) -> None:
         from src.x_post_mail_lane import _build_combos
@@ -907,11 +946,15 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
         self._seed_games(dates)
         combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST), db_path=self.db_path)
         last_n_combos = [c for c in combos if c.period_label in ("直近5試合", "直近10試合")]
-        self.assertEqual(len(last_n_combos), 6)
+        # STEP1: 8 metric × 2 period = 16
+        self.assertEqual(len(last_n_combos), 16)
         for c in last_n_combos:
             self.assertEqual(c.novelty, "high", msg=f"non-high novelty leaked: {c}")
             self.assertFalse(c.giants_only, msg=f"giants-only combo leaked: {c}")
-            self.assertIn(c.metric, ("OPS", "AVG", "ERA"))
+            self.assertIn(
+                c.metric,
+                ("OPS", "AVG", "ERA", "OBP", "SLG", "K_per_9", "BB_per_9", "HR_per_9"),
+            )
             self.assertIn(c.min_sample_override, (5, 10))
 
     def test_last_n_games_period_range_uses_game_dates(self) -> None:
@@ -1012,12 +1055,13 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
         self.assertIn(30, ms_values, msg=f"default 30 missing: {ms_values}")
 
     def test_db_path_with_insufficient_games_falls_back_gracefully(self) -> None:
-        """games 件数不足の時、 直近 N 試合 combo は追加されず 10 維持。"""
+        """STEP1 (2026-05-17): games 件数不足の時、 直近 N 試合 combo は追加
+        されず base 28 (直近1週間 8 + 守備位置別 4 + 今週 8 + 今月 8) 維持。"""
         from src.x_post_mail_lane import _build_combos
         # only 3 games → both n=5 and n=10 windows return None
         self._seed_games(["2026-05-14", "2026-05-15", "2026-05-16"])
         combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST), db_path=self.db_path)
-        self.assertEqual(len(combos), 7, msg=f"unexpected combo count: {len(combos)}")
+        self.assertEqual(len(combos), 28, msg=f"unexpected combo count: {len(combos)}")
 
 
 class XPostMailEntrypointFreshnessTests(unittest.TestCase):
@@ -1242,13 +1286,13 @@ class TicketThreeFiftyFiveDedupTests(unittest.TestCase):
 
     def test_combo_signature_format(self) -> None:
         from src.x_post_mail_lane import _MetricCombo, _combo_signature
-        combo = _MetricCombo("OPS", "2026-05-09", "直近7日", novelty="high")
-        self.assertEqual(_combo_signature(combo), "OPS|直近7日|False|None")
+        combo = _MetricCombo("OPS", "2026-05-09", "直近1週間", novelty="high")
+        self.assertEqual(_combo_signature(combo), "OPS|直近1週間|False|None")
 
     def test_combo_signature_unique_per_dimensions(self) -> None:
         from src.x_post_mail_lane import _MetricCombo, _combo_signature
-        c1 = _MetricCombo("OPS", "2026-05-09", "直近7日", position="捕")
-        c2 = _MetricCombo("OPS", "2026-05-09", "直近7日", position="二")
+        c1 = _MetricCombo("OPS", "2026-05-09", "直近1週間", position="捕")
+        c2 = _MetricCombo("OPS", "2026-05-09", "直近1週間", position="二")
         c3 = _MetricCombo("OPS", "2026-05-01", "直近5試合")
         sigs = {_combo_signature(c1), _combo_signature(c2), _combo_signature(c3)}
         self.assertEqual(len(sigs), 3, msg=f"signatures collided: {sigs}")
@@ -1261,15 +1305,15 @@ class TicketThreeFiftyFiveDedupTests(unittest.TestCase):
         ts_yesterday = datetime(2026, 5, 15, 20, 0, tzinfo=JST).isoformat()
         store = {
             "x_post_mail/dedup/2026-05-16.jsonl":
-                f'{{"ts": "{ts_today}", "signature": "OPS|直近7日|False|None"}}\n',
+                f'{{"ts": "{ts_today}", "signature": "OPS|直近1週間|False|None"}}\n',
             "x_post_mail/dedup/2026-05-15.jsonl":
-                f'{{"ts": "{ts_yesterday}", "signature": "AVG|直近7日|False|None"}}\n',
+                f'{{"ts": "{ts_yesterday}", "signature": "AVG|直近1週間|False|None"}}\n',
         }
         now = datetime(2026, 5, 16, 7, 0, tzinfo=JST)
         with patch.object(lane, "_get_storage_client",
                           return_value=self._fake_storage_client(store)):
             sigs = lane._load_recent_dedup_signatures("test-bucket", now)
-        self.assertEqual(sigs, {"OPS|直近7日|False|None", "AVG|直近7日|False|None"})
+        self.assertEqual(sigs, {"OPS|直近1週間|False|None", "AVG|直近1週間|False|None"})
 
     def test_load_recent_dedup_signatures_filters_old(self) -> None:
         """24h 超 (= 30h 前) の record は除外。"""
@@ -1309,12 +1353,12 @@ class TicketThreeFiftyFiveDedupTests(unittest.TestCase):
         from src.x_post_mail_lane import _build_combos, _combo_signature
 
         all_combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST))
-        # Block every combo except league-wide OPS/直近7日.
+        # Block every combo except league-wide OPS/直近1週間.
         dedup_set = {
             _combo_signature(c) for c in all_combos
             if not (
                 c.metric == "OPS"
-                and c.period_label == "直近7日"
+                and c.period_label == "直近1週間"
                 and not c.giants_only
                 and c.position is None
             )
@@ -1331,11 +1375,11 @@ class TicketThreeFiftyFiveDedupTests(unittest.TestCase):
             min_central_rows=3,
             dedup_set=dedup_set,
         )
-        # All surviving candidates must be league-wide OPS / 直近7日.
+        # All surviving candidates must be league-wide OPS / 直近1週間.
         for c in cands:
             self.assertEqual(c.metric, "OPS")
-            self.assertEqual(c.period_label, "直近7日")
-            self.assertEqual(c.signature, "OPS|直近7日|False|None")
+            self.assertEqual(c.period_label, "直近1週間")
+            self.assertEqual(c.signature, "OPS|直近1週間|False|None")
 
     def test_pick_candidates_dedup_set_none_keeps_legacy_behaviour(self) -> None:
         """dedup_set=None default で従来挙動と同じ。"""
@@ -1365,7 +1409,7 @@ class TicketThreeFiftyFiveDedupTests(unittest.TestCase):
                           return_value=self._fake_storage_client(store)):
             ok = lane._record_dedup_signatures(
                 "test-bucket",
-                ["OPS|直近7日|False|None", "ERA|直近5試合|True|None"],
+                ["OPS|直近1週間|False|None", "ERA|直近5試合|True|None"],
                 now,
             )
         self.assertTrue(ok)
@@ -1375,7 +1419,7 @@ class TicketThreeFiftyFiveDedupTests(unittest.TestCase):
         self.assertEqual(len(lines), 2)
         import json
         rec0 = json.loads(lines[0])
-        self.assertEqual(rec0["signature"], "OPS|直近7日|False|None")
+        self.assertEqual(rec0["signature"], "OPS|直近1週間|False|None")
         self.assertIn("ts", rec0)
 
     def test_record_dedup_signatures_appends_to_existing(self) -> None:

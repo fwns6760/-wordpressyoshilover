@@ -89,7 +89,10 @@ CENTRAL_LEAGUE_TEAM_ALIASES = frozenset(
 # are filtered out so this lane never proposes ISO/wOBA/FIP/etc.).
 # Restricted to ``insight_rank_query.KNOWN_METRICS`` intersection so
 # ``miq.query_rank`` accepts the name.
-SAFE_METRICS = ("AVG", "OBP", "SLG", "OPS", "ERA")
+SAFE_METRICS = (
+    "AVG", "OBP", "SLG", "OPS",
+    "ERA", "K_per_9", "BB_per_9", "HR_per_9",
+)
 
 # Friendly Japanese label per metric (mirrors 346 format_as_x_post
 # helper but inline here to avoid coupling to a private constant).
@@ -99,16 +102,23 @@ _METRIC_LABELS_JP: dict[str, str] = {
     "SLG": "長打率",
     "OPS": "OPS",
     "ERA": "防御率",
+    "K_per_9": "奪三振率",
+    "BB_per_9": "与四球率",
+    "HR_per_9": "被本塁打率",
 }
 
 # 353: metric 別 header 絵文字。 batting (AVG/OBP/SLG/OPS) = ⚾、 pitching
-# (ERA) = ⚡、 守備 (将来 SAFE_METRICS 拡張時) = 🛡️。 fallback は 📊。
+# (ERA / K_per_9 / BB_per_9 / HR_per_9) = ⚡、 守備 (将来拡張時) = 🛡️。
+# fallback は 📊。
 _METRIC_HEADER_EMOJI: dict[str, str] = {
     "AVG": "⚾",
     "OBP": "⚾",
     "SLG": "⚾",
     "OPS": "⚾",
     "ERA": "⚡",
+    "K_per_9": "⚡",
+    "BB_per_9": "⚡",
+    "HR_per_9": "⚡",
     "FldPct": "🛡️",
 }
 
@@ -339,33 +349,30 @@ def _build_combos(
 
     353/356: 大手新聞が出しやすい「シーズン累積 / 直近30日」
     combo を pool から除外し、 yoshilover 独自度の高い slice
-    (直近 5/10 試合 / 直近 7 日 / 守備位置別 / 巨人最上位の短期変化) を
-    novelty_high として扱う。
+    (直近1週間 / 直近5試合 / 直近10試合 / 今週 / 今月 / 守備位置別
+    / 巨人最上位の短期変化) を novelty_high として扱う。
 
-    354: ``db_path`` を渡すと 直近 5/10 巨人試合 × OPS/AVG/ERA の
-    6 combo (全部 novelty="high"、 min_sample_override で AB 閾値緩和)
-    を追加する。 ``db_path=None`` (default) では直近 N 試合 combo を除外し、
-    test / 旧呼出 互換を維持する。
-
-    357: 月別は毎日出すと mail 過多になるため、月初 3 日だけ前月成績を
-    セ・リーグ ranking として追加する (例: 8/1-8/3 に「7月成績」)。
+    STEP1 (2026-05-17): metric pool を 3 → 8 に拡張 (OPS/AVG/ERA +
+    OBP/SLG/K_per_9/BB_per_9/HR_per_9)、 period pool を 直近1週間
+    のみ → 直近1週間 + 直近5試合 + 直近10試合 + 今週 + 今月 + 前月
+    に拡張。 24h dedup の signature が ``(metric, period_label, position)``
+    だから combo pool が広いほど starvation 解消、 連日同じ ranking が
+    出にくくなる。 1 mail 中の `_period_family_key` ({metric}|{position})
+    で同一 metric 多窓の重複は防止される。
     """
     combos: list[_MetricCombo] = []
-    # 356+357: シーズン累積 / 直近30日 は大手が出しやすく、同じ
-    # mail に複数期間が並ぶ原因にもなるため pool から外す。月別は
-    # 月初だけ下の branch で制限付き追加。
 
-    # 1. 直近 7 日 — short-term league slice.
+    # 1. 直近1週間 — short-term league slice (8 metric)
     last7 = (now - timedelta(days=7)).strftime("%Y-%m-%d")
-    for m in ("OPS", "AVG", "ERA"):
-        combos.append(_MetricCombo(m, last7, "直近7日", novelty="high"))
-    # 2. 守備位置別 — niche slice that 大手 / のもとけ rarely cover.
-    # 357: 全期間 / 今シーズンは大手も出すため使わない。守備位置別も
-    # 直近 7 日に寄せる。
+    for m in SAFE_METRICS:
+        combos.append(_MetricCombo(m, last7, "直近1週間", novelty="high"))
+    # 2. 守備位置別 OPS (直近1週間) — niche slice
     # 守備位置 single-kanji codes match insight_rank_query expectations.
     for pos in ("捕", "二", "遊", "三"):
-        combos.append(_MetricCombo("OPS", last7, "直近7日", position=pos, novelty="high"))
-    # 3. 354: 直近 5/10 巨人試合 × OPS/AVG/ERA — yoshilover 独自
+        combos.append(
+            _MetricCombo("OPS", last7, "直近1週間", position=pos, novelty="high")
+        )
+    # 3. 354+STEP1: 直近 5/10 巨人試合 × 8 metric — yoshilover 独自
     # の試合数 base ranking。 games table が読めて且つ N 試合分の row が
     # あれば追加 (case-by-case fallback、 取得失敗時は skip)。
     if db_path:
@@ -374,7 +381,7 @@ def _build_combos(
             if window is None:
                 continue
             since, until = window
-            for m in ("OPS", "AVG", "ERA"):
+            for m in SAFE_METRICS:
                 combos.append(
                     _MetricCombo(
                         m,
@@ -385,13 +392,29 @@ def _build_combos(
                         min_sample_override=n_games,
                     )
                 )
-    # 4. 357: 前月成績 — 「7月成績」のような月別表記は分かりやすいが、
-    # 毎日出すと過剰なので月初だけ候補に入れる。セ・リーグ内で
-    # 巨人最上位を見せ、period-family skip と 24h dedup の対象にする。
+    # 4. STEP1: 今週 — current ISO week Monday to today × 8 metric.
+    # 直近1週間 と微妙に窓が違う (週初始まり) ことで day-over-day variety を増やす。
+    week_since = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
+    if week_since != last7:
+        for m in SAFE_METRICS:
+            combos.append(
+                _MetricCombo(m, week_since, "今週", novelty="high")
+            )
+    # 5. STEP1: 今月 — current month 1st to today × 8 metric (年通開放).
+    month_first = now.replace(day=1).strftime("%Y-%m-%d")
+    for m in SAFE_METRICS:
+        combos.append(
+            _MetricCombo(m, month_first, "今月", novelty="high")
+        )
+    # 6. 357: 前月成績 — 「N月成績」 表記、 月初 3 日だけ追加 (毎日出すと
+    # 今月 combo と重複過剰になるため期間限定)。
     if 1 <= now.day <= 3:
         month_since, month_until = _prev_month_range(now)
         month_label = _month_period_label(month_since, month_until) or "前月成績"
-        for m in ("OPS", "AVG", "ERA"):
+        for m in SAFE_METRICS:
+            min_sample_override = (
+                10 if m in ("ERA", "K_per_9", "BB_per_9", "HR_per_9") else 30
+            )
             combos.append(
                 _MetricCombo(
                     m,
@@ -399,7 +422,7 @@ def _build_combos(
                     month_label,
                     until=month_until,
                     novelty="high",
-                    min_sample_override=10 if m == "ERA" else 30,
+                    min_sample_override=min_sample_override,
                 )
             )
     return combos
@@ -589,11 +612,14 @@ def _rewrite_ranking_rows(
     lines: list[str],
     metric_jp: str,
 ) -> list[str]:
-    """353: post-process the ``format_as_x_post`` body so each ranking
-    row gets a medal prefix (🥇/🥈/🥉 for ranks 1-3, ``N.`` for 4+),
-    a strong Giants marker (``←⭐巨人``), a metric-label-prefixed
-    value (``OPS .945``), and a blank separator line between top-3
-    and the remainder.
+    """STEP1 (2026-05-17): post-process each ranking row to use a
+    consistent numeric prefix (``N.``), a flush Giants marker
+    (``  ⭐巨人`` with two half-width spaces, no left arrow), and a
+    metric-label-prefixed value (``打率 .315`` / ``OPS .945``).
+
+    Earlier 353 variant used medals 🥇🥈🥉 for ranks 1-3 + a blank
+    separator line + ``←⭐巨人`` arrow marker. STEP1 unifies the rows
+    so the entire ranking reads in a single block.
     """
     new_lines: list[str] = []
     for line in lines:
@@ -606,27 +632,18 @@ def _rewrite_ranking_rows(
         team = m.group("team")
         value = m.group("value")
         marker = m.group("marker") or ""
-        # Strong Giants marker (← 巨人 → ←⭐巨人, drop the half-width
-        # space so the star sits flush against the arrow).
+        # Giants marker: ` ← 巨人` → `  ⭐巨人` (two half-width spaces,
+        # no arrow). The double-space separates the marker visually
+        # from the value while staying ASCII-aligned across rows.
         if marker.strip():
-            new_marker = " ←⭐巨人"
+            new_marker = "  ⭐巨人"
         else:
             new_marker = ""
-        # Medal prefix for top 3, numeric otherwise.
-        if rank_num == 1:
-            prefix = "🥇"
-        elif rank_num == 2:
-            prefix = "🥈"
-        elif rank_num == 3:
-            prefix = "🥉"
-        else:
-            prefix = f"{rank_num}."
-        # Metric label prefix on value (e.g. ``OPS .945``).
+        # Numeric prefix for every rank (no medals).
+        prefix = f"{rank_num}."
+        # Metric label prefix on value (e.g. ``打率 .315`` / ``OPS .945``).
         new_value = f"{metric_jp} {value}"
         new_lines.append(f"{prefix} {name}（{team}）{new_value}{new_marker}")
-        # Blank line between top 3 and the rest.
-        if rank_num == 3:
-            new_lines.append("")
     return new_lines
 
 
@@ -642,15 +659,10 @@ def _truncate_to_x_limit_top_n(text: str, top_n: int) -> str:
     kept: list[str] = []
     rank_seen = 0
     for line in lines:
-        is_ranking = (
-            line.startswith("🥇")
-            or line.startswith("🥈")
-            or line.startswith("🥉")
-            or bool(_re.match(r"^\d+\.\s", line))
-        )
+        is_ranking = bool(_re.match(r"^\d+\.\s", line))
         if is_ranking:
             rank_seen += 1
-            if rank_seen > top_n and "←⭐巨人" not in line:
+            if rank_seen > top_n and "⭐巨人" not in line:
                 continue  # drop rows beyond top_n
         kept.append(line)
     return "\n".join(kept)

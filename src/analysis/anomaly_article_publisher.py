@@ -1222,14 +1222,18 @@ def render_hidden_below_qualifier_article(
 
 
 def render_hit_streak_run_article(
-    conn: sqlite3.Connection,
+    conn: Optional[sqlite3.Connection],
     candidate_row: dict[str, Any],
 ) -> dict[str, str]:
     """SIGNAL_HIT_STREAK_RUN — 連続多安打試合 streak。"""
     player = candidate_row["player_canonical"]
     streak = int(candidate_row.get("magnitude") or 0)
+    # issue #44 B-5 (2026-05-17 user lock): title を milestone consecutive_*
+    # path と統一 (case C 寄り、 「{N} 試合連続 {event} 継続中」)。
+    # streak は player 単独指標で Central League ranking infra 無し、
+    # ranking 表 wire は対象外。
     title = (
-        f"【巨人データ】{player}、{streak}試合連続で複数安打"
+        f"【巨人データ】{player} {streak} 試合連続 複数安打 継続中"
     )
     headline = (
         f"{player} は **{streak} 試合連続**で 1 試合 2 安打以上を記録しています。"

@@ -38,6 +38,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.analysis import insight_article_generator  # noqa: E402
+from src.analysis import insight_atbats_parser  # noqa: E402
 from src.analysis import insight_dedup_gate as dedup_gate  # noqa: E402
 from src.analysis import insight_quality_gate as quality_gate  # noqa: E402
 from src.analysis import insight_title_guard as title_guard  # noqa: E402
@@ -155,6 +156,100 @@ _CENTRAL_TEAM_NAMES = ("巨人", "阪神", "ヤクルト", "広島", "DeNA", "�
 _PACIFIC_TEAM_NAMES = ("ソフトバンク", "西武", "ロッテ", "楽天", "オリックス", "日本ハム")
 
 
+def _scope_window(scope: str, today: Optional[Any] = None) -> tuple[Any, Any]:
+    """Common scope-to-(start, end) date computation. Returns (date, date)."""
+    import datetime as _dt
+    if today is None:
+        today = _dt.date.today()
+    if scope == "last_7d":
+        start = today - _dt.timedelta(days=6)
+    elif scope == "last_30d":
+        start = today - _dt.timedelta(days=29)
+    elif scope == "season":
+        start = _dt.date(today.year, 1, 1)
+    elif scope == "monthly":
+        start = today.replace(day=1)
+    elif scope == "weekly":
+        start = today - _dt.timedelta(days=today.weekday())
+    else:
+        raise ValueError(f"unsupported scope: {scope!r}")
+    return start, today
+
+
+def aggregate_player_hr_from_atbats(
+    conn: sqlite3.Connection,
+    *,
+    scope: str,
+    today: Optional[Any] = None,
+    top_n: int = 10,
+    league: Optional[str] = None,
+) -> list[dict]:
+    """選手別 HR 数を ``atbats_json`` から集計 (issue #44 G follow-up).
+
+    ``batting_logs`` schema には HR 列が存在せず、 HR は ``atbats_json`` の
+    各打席文字列 (例 ``中本``) に格納されている。 SQL ``SUM(bl.HR)`` は
+    ``OperationalError`` を出すため、 ``insight_atbats_parser.parse_atbat``
+    を経由して per-row count。 ``team_ranking_publisher.aggregate_team_hr``
+    と同じ pattern を player level に extend。
+
+    Returns: list of {"player": str, "team": str, "value": int} (top_n)
+    """
+    start, end = _scope_window(scope, today)
+    league_clause = ""
+    league_params: tuple = ()
+    if league == "central":
+        placeholders = ",".join("?" * len(_CENTRAL_TEAM_NAMES))
+        league_clause = f" AND bl.team_name IN ({placeholders})"
+        league_params = _CENTRAL_TEAM_NAMES
+    elif league == "pacific":
+        placeholders = ",".join("?" * len(_PACIFIC_TEAM_NAMES))
+        league_clause = f" AND bl.team_name IN ({placeholders})"
+        league_params = _PACIFIC_TEAM_NAMES
+    rows = conn.execute(
+        f"SELECT bl.player_canonical, bl.team_name, bl.atbats_json "
+        f"FROM batting_logs bl JOIN games g ON bl.game_id = g.game_id "
+        f"WHERE g.game_date >= ? AND g.game_date <= ? "
+        f"AND bl.player_canonical IS NOT NULL "
+        f"AND bl.player_canonical != '' "
+        f"AND bl.atbats_json IS NOT NULL"
+        f"{league_clause}",
+        (start.isoformat(), end.isoformat(), *league_params),
+    ).fetchall()
+
+    import json as _json
+    hr_by_key: dict[tuple[str, str], int] = {}
+    for player, team_name, atbats_json in rows:
+        try:
+            atbats = _json.loads(atbats_json) if isinstance(atbats_json, str) else atbats_json
+        except Exception:
+            continue
+        if not isinstance(atbats, list):
+            continue
+        hrs = 0
+        for ab in atbats:
+            if not isinstance(ab, str):
+                continue
+            try:
+                if insight_atbats_parser.parse_atbat(ab).get("is_hr"):
+                    hrs += 1
+            except Exception:
+                continue
+        if hrs <= 0:
+            continue
+        key = (player, team_name or "")
+        hr_by_key[key] = hr_by_key.get(key, 0) + hrs
+
+    ranked = sorted(
+        (
+            {"player": p, "team": _team_name_to_code(t), "value": v}
+            for (p, t), v in hr_by_key.items()
+        ),
+        key=lambda r: r["value"],
+        reverse=True,
+    )
+    return ranked[:top_n]
+
+
 def aggregate_player_counting_stat(
     conn: sqlite3.Connection,
     *,
@@ -178,6 +273,12 @@ def aggregate_player_counting_stat(
 
     return: list of {"player": str, "team": str, "value": int}
     """
+    # issue #44 G follow-up: HR は batting_logs に列が無く atbats_json 集計が必要。
+    # SQL SUM(bl.HR) は OperationalError を出すため、 専用 helper に dispatch。
+    if stat_col == "HR" and table == "batting_logs":
+        return aggregate_player_hr_from_atbats(
+            conn, scope=scope, today=today, top_n=top_n, league=league,
+        )
     import datetime as _dt
     if today is None:
         today = _dt.date.today()

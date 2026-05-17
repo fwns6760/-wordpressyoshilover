@@ -55,14 +55,17 @@ from src.source_npb_postgame_extractor import parse_npb_box_html  # noqa: E402
 
 DEFAULT_DIGEST_DIR = ROOT / "data" / "insight" / "digest"
 
-# issue #44 C: counting metric ranking publish 対象。 batting_logs schema は
-# AB, R, H, RBI, SB のみで HR 列が無い (HR は atbats_json 内) ため、
-# HR は **意図的に除外**。 atbats_json 経由の HR 集計は別 ticket。
-# commit 21a8e7a (2026-05-15) で HR entry が追加され、 毎 nightly run で
-# 8 件 OperationalError: no such column: bl.HR を log 出力していた問題の修正。
+# issue #44 G: counting metric ranking publish 対象。 batting_logs schema は
+# AB, R, H, RBI, SB のみで HR 列が無い (HR は atbats_json 内) が、
+# ranking_article_publisher.aggregate_player_counting_stat が stat_col="HR"
+# を検出して atbats_json 経由の集計 (aggregate_player_hr_from_atbats) に
+# dispatch するため、 HR row も COUNTING_METRICS に含める (本塁打数 ranking
+# 記事を publish するため)。
 COUNTING_METRICS: tuple[dict[str, str], ...] = (
     {"stat_col": "H", "table": "batting_logs",
      "metric_label_jp": "安打数"},
+    {"stat_col": "HR", "table": "batting_logs",
+     "metric_label_jp": "本塁打数"},
     {"stat_col": "RBI", "table": "batting_logs",
      "metric_label_jp": "打点"},
     {"stat_col": "SB", "table": "batting_logs",

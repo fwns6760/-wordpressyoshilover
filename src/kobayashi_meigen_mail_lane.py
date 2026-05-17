@@ -108,19 +108,28 @@ _X_POST_CHAR_LIMIT = 270
 def _build_x_intent_url(text: str, archive_number: int = 0) -> str:
     """X Web Intent (twitter.com/intent/tweet) で開く 投稿 URL。
 
-    archive_number > 0 の時、 先頭に「小林誠司名言集 NO① 」 (series 感
-    出すための header) を prepend する。 X 280 char hard limit を
-    守りつつ header は必ず残し、 オーバー分は quote text 側を末尾 …
+    archive_number > 0 の時、 先頭に series header (🟠 brand + 第○回
+    + 罫線) を prepend、 末尾に hashtag を append。 series 感と
+    discoverability を上げる。 X 280 char hard limit を守りつつ
+    header/footer は必ず残し、 オーバー分は quote text 側を末尾 …
     で切る。 改行 / 特殊文字は quote(safe="") で full encode。
     """
     raw = text or ""
     header = ""
+    footer = ""
     if archive_number and archive_number > 0:
-        header = f"小林誠司名言集 NO{_circled_number(archive_number)}\n"
-    available_for_text = _X_POST_CHAR_LIMIT - len(header)
+        no_str = _circled_number(archive_number)
+        header = (
+            "🏆 小林誠司 名言集 🏆\n"
+            "━━━━━━━━━━━━\n"
+            f"   第 {no_str} 回\n"
+            "━━━━━━━━━━━━\n\n"
+        )
+        footer = "\n\n#巨人 #小林誠司"
+    available_for_text = _X_POST_CHAR_LIMIT - len(header) - len(footer)
     if len(raw) > available_for_text:
         raw = raw[: max(0, available_for_text - 1)] + "…"
-    body = f"{header}{raw}"
+    body = f"{header}{raw}{footer}"
     return f"https://twitter.com/intent/tweet?text={_url_quote(body, safe='')}"
 
 

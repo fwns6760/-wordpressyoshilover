@@ -475,6 +475,46 @@ class PublishNoticeScannerTests(unittest.TestCase):
 
         self.assertEqual(subtype, "lineup")
 
+    def test_extract_subtype_fallback_player_title_beats_related_lineup_word(self):
+        subtype = scanner._extract_subtype(
+            self._post(
+                title={"rendered": "巨人・浦田俊輔、いとこもアスリート 東京ドームに招待し猛打賞"},
+                excerpt={"rendered": "<p>打ちました！あざっす</p>"},
+                content={"rendered": "<p>関連記事: ウィーラーコーチ肝いり打順</p>"},
+                meta={},
+                article_subtype="",
+                subtype="",
+            )
+        )
+
+        self.assertEqual(subtype, "player")
+
+    def test_extract_subtype_fallback_player_pitcher_title_beats_lineup_word(self):
+        subtype = scanner._extract_subtype(
+            self._post(
+                title={"rendered": "巨人・高梨雄平がお父さんでライデルはおじさん！？ 絆の救援リレー"},
+                content={"rendered": "<p>試合後の関連リンクにスタメン情報があります。</p>"},
+                meta={},
+                article_subtype="",
+                subtype="",
+            )
+        )
+
+        self.assertEqual(subtype, "player")
+
+    def test_extract_subtype_fallback_manager_title_beats_lineup_word(self):
+        subtype = scanner._extract_subtype(
+            self._post(
+                title={"rendered": "【巨人】橋上コーチ 泉口友汰の今季初2番起用を説明"},
+                content={"rendered": "<p>本文下部の関連記事に打順という語がある。</p>"},
+                meta={},
+                article_subtype="",
+                subtype="",
+            )
+        )
+
+        self.assertEqual(subtype, "manager")
+
     def test_extract_subtype_fallback_postgame(self):
         subtype = scanner._extract_subtype(
             self._post(title={"rendered": "巨人 7-2 勝利"}, meta={}, article_subtype="", subtype="")

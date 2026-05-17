@@ -30,6 +30,7 @@ _TAG_RE = re.compile(r"<[^>]+>")
 _WHITESPACE_RE = re.compile(r"\s+")
 _LINEUP_ORDER_RE = re.compile(r"(?<![0-9０-９])[1-9１-９]\s*番")
 _SCORE_RE = re.compile(r"(?<![0-9０-９])[0-9０-９]+\s*[-－ー]\s*[0-9０-９]+(?![0-9０-９])")
+_GIANTS_PLAYER_PREFIX_RE = re.compile(r"巨人[・の][^、。！？\s]{2,18}")
 _HISTORY_WINDOW = timedelta(hours=24)
 _REVIEW_NOTICE_MAX_PER_RUN_DEFAULT = 10
 _REVIEW_NOTICE_WINDOW_HOURS_DEFAULT = 24.0
@@ -783,6 +784,25 @@ def _matches_lineup(text: str, text_lower: str) -> bool:
     )
 
 
+def _matches_manager(text: str, text_lower: str) -> bool:
+    return _has_any_keyword(text, ("監督", "コーチ", "首脳陣")) or _has_any_keyword(
+        text_lower, ("manager", "coach")
+    )
+
+
+def _matches_player(text: str, text_lower: str) -> bool:
+    if _matches_manager(text, text_lower):
+        return False
+    if _GIANTS_PLAYER_PREFIX_RE.search(text):
+        return True
+    if (
+        _has_any_keyword(text, ("選手", "投手", "捕手", "内野手", "外野手", "右腕", "左腕", "守護神"))
+        and ("巨人" in text or "giants" in text_lower)
+    ):
+        return True
+    return False
+
+
 def _matches_postgame(text: str, text_lower: str) -> bool:
     return (
         _has_any_keyword(text, ("勝利", "敗戦", "結果", "試合後", "コメント"))
@@ -814,6 +834,8 @@ def _infer_subtype(post: Mapping[str, Any]) -> str:
     title_compact = _WHITESPACE_RE.sub("", title)
     title_lower = title.lower()
     title_checks = (
+        ("manager", _matches_manager(title, title_lower)),
+        ("player", _matches_player(title, title_lower)),
         ("lineup", _matches_lineup(title, title_lower)),
         ("farm", _matches_farm(title, title_lower)),
         ("notice", _matches_notice(title, title_lower)),

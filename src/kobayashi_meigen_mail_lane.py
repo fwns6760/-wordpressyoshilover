@@ -125,7 +125,11 @@ def _build_x_intent_url(text: str, archive_number: int = 0) -> str:
 
 
 def _circled_number(n: int) -> str:
-    """1..50 は ① ② … ㊿、 51+ は plain digits を返す。"""
+    """1..50 は ① ② … ㊿、 51+ は plain digits。
+
+    X 投稿テキスト (plain text) で使う text-safe な representation。
+    HTML mail 側は :func:`_format_no_circle_html` を使う。
+    """
     if 1 <= n <= 20:
         return chr(0x2460 + n - 1)
     if 21 <= n <= 35:
@@ -133,6 +137,33 @@ def _circled_number(n: int) -> str:
     if 36 <= n <= 50:
         return chr(0x32B1 + n - 36)
     return str(n)
+
+
+def _format_no_circle_html(n: int) -> str:
+    """HTML 用 大型赤丸 + 中の数字 (CSS circle、 Unicode 円囲み 不使用).
+
+    桁数別に font-size を調整して 1 〜 836 まで 1 つの 96px 円に
+    収まる。 Modern mail client (Gmail 等) は完璧表示、 古い client
+    は丸が消えて plain digits に fallback。
+    """
+    digits = str(n) if n > 0 else "1"
+    if len(digits) == 1:
+        font_size = 56
+    elif len(digits) == 2:
+        font_size = 44
+    elif len(digits) == 3:
+        font_size = 32
+    else:
+        font_size = 24
+    return (
+        "<div style=\"display:inline-block;"
+        "width:96px;height:96px;line-height:96px;"
+        "border-radius:50%;background:#c0392b;color:#fff;"
+        f"font-size:{font_size}px;font-weight:900;"
+        "text-align:center;letter-spacing:1px;\">"
+        f"{digits}"
+        "</div>"
+    )
 
 
 def _record_to_candidate(rec: dict[str, Any], archive_number: int = 0) -> MeigenCandidate:
@@ -292,20 +323,16 @@ def _compose_html_body(candidates: list[MeigenCandidate], now: datetime) -> str:
             "<div style=\"border:1px solid #e2e2e2;border-radius:8px;"
             "padding:12px 16px;margin:0 0 16px;background:#fff;\">"
         )
-        # ヘッダー: 「小林誠司名言集」 + 大型「NO①」 (連番強調)
+        # ヘッダー: 「小林誠司名言集 NO」 + 大型 CSS 円 (赤背景白抜き)
+        circle_html = _format_no_circle_html(c.archive_number or idx)
         parts.append(
-            "<div style=\"border-bottom:2px solid #c0392b;"
-            "padding-bottom:8px;margin:0 0 12px;\">"
-            "<div style=\"font-size:13px;color:#666;letter-spacing:1px;"
-            "margin:0 0 2px;font-weight:600;\">"
-            "小林誠司名言集"
+            "<div style=\"text-align:center;padding:12px 0 16px;"
+            "border-bottom:2px solid #c0392b;margin:0 0 16px;\">"
+            "<div style=\"font-size:13px;color:#666;letter-spacing:2px;"
+            "font-weight:600;margin:0 0 8px;\">"
+            "小林誠司名言集 NO"
             "</div>"
-            "<div style=\"font-size:14px;color:#c0392b;font-weight:700;"
-            "line-height:1.1;\">"
-            "NO"
-            f"<span style=\"font-size:42px;font-weight:900;vertical-align:-4px;"
-            f"margin-left:2px;\">{_html.escape(no_label)}</span>"
-            "</div>"
+            f"{circle_html}"
             "</div>"
         )
         parts.append(

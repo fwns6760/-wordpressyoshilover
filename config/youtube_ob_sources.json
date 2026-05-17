@@ -335,6 +335,24 @@
       "channel_handle": "",
       "reference": "344-INGEST-phase-1b-2026-05-17-memory-verified",
       "notes": "スポナビ 野球公式、 巨人試合ハイライト等"
+    },
+    {
+      "channel_id": "UC9SoTt4kJ_qhyBF9k9OGl3g",
+      "display_name": "日本野球機構(NPB)公式チャンネル",
+      "role": "official",
+      "status": "candidate",
+      "channel_handle": "@NPB.official",
+      "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
+      "notes": "NPB (12 球団統括) 公式、 セ・パ 試合ハイライト / 表彰式 / プロ野球 公式コンテンツ"
+    },
+    {
+      "channel_id": "UCfWaYoWWSlY-K2TJU0UW-pQ",
+      "display_name": "J SPORTS 野球【公式】",
+      "role": "media",
+      "status": "candidate",
+      "channel_handle": "@jsports_yakyu",
+      "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
+      "notes": "J SPORTS 野球専門 ch (広島ホーム / 中日 / DeNA 試合 hi 多)、 巨人話 含む title のみ ingest"
     }
   ]
 }

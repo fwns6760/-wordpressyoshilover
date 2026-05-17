@@ -62,6 +62,10 @@ _GENERIC_NAME_TOKENS = frozenset(
         "コメント整理",
         "発言ポイント",
         "試合後",
+        "De",
+        "NA",
+        "DeNA",
+        "Dena",
     }
 )
 _ROLE_SUFFIXES = ("投手", "捕手", "内野手", "外野手", "選手", "監督", "コーチ", "氏")
@@ -149,6 +153,7 @@ _PLAYER_PERFORMANCE_PATTERNS = (
     re.compile(r"(?P<event>[0-9０-９]+安打[0-9０-９]+打点猛打賞)"),
     re.compile(r"(?P<event>[0-9０-９]+安打[0-9０-９]+打点)"),
     re.compile(r"(?P<event>[0-9０-９]+安打(?:[0-9０-９]+本塁打)?)"),
+    re.compile(r"(?P<event>技あり安打(?:[→⇒、・!！\s]*(?:二盗|三盗)){0,2})"),
     re.compile(r"(?P<event>猛打賞)"),
     re.compile(r"(?P<event>マルチ安打)"),
     re.compile(r"(?P<event>(?:同点|勝ち越し|先制|決勝)?適時打)"),
@@ -206,6 +211,9 @@ def _strip_source_prefixes(value: str) -> str:
 def _looks_like_name(name: str) -> bool:
     candidate = _clean_text(name).strip("・･、, ")
     if not candidate or len(candidate) < 2:
+        return False
+    compact_candidate = re.sub(r"\s+", "", candidate)
+    if re.fullmatch(r"[A-Za-zＡ-Ｚａ-ｚ]{1,3}", compact_candidate):
         return False
     if candidate in _GENERIC_NAME_TOKENS:
         return False

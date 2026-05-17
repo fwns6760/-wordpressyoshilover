@@ -1438,6 +1438,12 @@ SUBJECT_LABEL_STOPWORDS = {
     "Yahoo",
     "News",
     "Giants",
+    "De",
+    "NA",
+    "DeNA",
+    "Dena",
+    "雨天中止",
+    "今季",
     "班X",
     "巨人班X",
 }
@@ -3382,15 +3388,16 @@ def _extract_subject_label(title: str, summary: str, category: str) -> str:
     player_role_pattern = rf"({subject_name_pattern}\s*(?:投手|捕手|内野手|外野手|選手))"
     staff_role_pattern = rf"({subject_name_pattern}\s*{staff_suffix_pattern})"
     priority_patterns = [
-        rf"^({subject_name_pattern})(?:(?:投手|捕手|内野手|外野手|選手)?)(?:が|は|、|「)(?=.{{0,60}}(?:「|$))",
-        rf"(?:初先発の|先発の|(?:今日の)?先発は|選んだのは)({subject_name_pattern})(?:(?:投手|捕手|内野手|外野手|選手)?(?:が|は|を|に|で|、|「))?",
+        rf"^({subject_name_pattern})\s*(?:(?:投手|捕手|内野手|外野手|選手)?\s*)?(?:が|は|、|「)(?=.{{0,60}}(?:「|$))",
+        rf"({japanese_subject_pattern})\s*(?:(?:投手|捕手|内野手|外野手|選手)?\s*)?(?:が|は|も|を|に|で|、|「)(?=.{{0,60}}(?:安打|盗塁|二盗|三盗|本塁打|適時打|コメント|登板|投球|好投|先発|打点|猛打賞|活躍|かく乱|登録|抹消|合流|復帰|昇格|スライド登板))",
+        rf"(?:初先発の|先発の|(?:今日の)?先発は|選んだのは)({subject_name_pattern})(?:(?:投手|捕手|内野手|外野手|選手)?\s*(?:が|は|を|に|で|、|「))?",
         rf"({japanese_subject_pattern}[・･][一-龥々ァ-ヴー]{1,8})(?:が|は|を|に|で|、)",
     ]
     named_subject_patterns = [
-        rf"(?:巨人|ジャイアンツ)(?:】|の|・|[\s　])?({subject_name_pattern})(?:(?:投手|捕手|内野手|外野手|選手|{staff_suffix_pattern})?(?:が|は|を|に|で|、|「))",
-        rf"^({japanese_subject_pattern})(?:(?:投手|捕手|内野手|外野手|選手)?)(?:が|は|、|「)(?=.{{0,60}}「)",
-        rf"(?:初戦は|第[0-9一二三四五六七八九十]+戦は|復帰は|昇格は|登録は|抹消は)({japanese_subject_pattern})(?:(?:投手|捕手|内野手|外野手|選手)?(?:が|は|を|に|で|、|「))?",
-        rf"({japanese_subject_pattern})(?:(?:投手|捕手|内野手|外野手|選手)?(?:が|は|を|に|で|、|「))(?:先発|調整|復帰|昇格|登録|抹消|語った|明かした|狙う|務める|濃厚|有力|予定|見込み)",
+        rf"(?:巨人|ジャイアンツ)(?:】|の|・|[\s　])?({subject_name_pattern})\s*(?:(?:投手|捕手|内野手|外野手|選手|{staff_suffix_pattern})?\s*(?:が|は|を|に|で|、|「))",
+        rf"^({japanese_subject_pattern})\s*(?:(?:投手|捕手|内野手|外野手|選手)?\s*)?(?:が|は|、|「)(?=.{{0,60}}「)",
+        rf"(?:初戦は|第[0-9一二三四五六七八九十]+戦は|復帰は|昇格は|登録は|抹消は)({japanese_subject_pattern})(?:(?:投手|捕手|内野手|外野手|選手)?\s*(?:が|は|を|に|で|、|「))?",
+        rf"({japanese_subject_pattern})\s*(?:(?:投手|捕手|内野手|外野手|選手)?\s*(?:が|は|を|に|で|、|「))(?:先発|調整|復帰|昇格|登録|抹消|語った|明かした|狙う|務める|濃厚|有力|予定|見込み)",
     ]
     patterns = [r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})"]
     if category == "選手情報":
@@ -3408,6 +3415,13 @@ def _extract_subject_label(title: str, summary: str, category: str) -> str:
 
     def _is_valid_subject_candidate(label: str) -> bool:
         if not label:
+            return False
+        compact_label = _re.sub(r"\s+", "", label)
+        if compact_label in SUBJECT_LABEL_STOPWORDS:
+            return False
+        if _re.fullmatch(r"[A-Za-zＡ-Ｚａ-ｚ]{1,3}", compact_label):
+            return False
+        if category == "選手情報" and compact_label.endswith(("監督", "コーチ")):
             return False
         if label in SUBJECT_LABEL_STOPWORDS:
             return False

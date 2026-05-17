@@ -70,6 +70,10 @@ _STOPWORDS = frozenset(
         "関連情報",
         "コメント整理",
         "発言ポイント",
+        "De",
+        "NA",
+        "DeNA",
+        "Dena",
     }
 )
 _ROLE_NORMALIZATION = {
@@ -174,6 +178,9 @@ def _split_name_role(value: str, role_hint: str = "") -> tuple[str, str]:
 def _is_valid_name(name: str) -> bool:
     candidate = _clean_text(name).strip("・･、, ")
     if not candidate:
+        return False
+    compact_candidate = re.sub(r"\s+", "", candidate)
+    if re.fullmatch(r"[A-Za-zＡ-Ｚａ-ｚ]{1,3}", compact_candidate):
         return False
     if candidate in _STOPWORDS:
         return False

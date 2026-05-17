@@ -204,6 +204,19 @@ class WeakTitleRescueHelperTests(unittest.TestCase):
         self.assertEqual(result.title, "浦田俊輔、巨人4-3DeNA 3安打1打点猛打賞")
         self.assertEqual(result.strategy, "short_player_event_performance")
 
+    def test_short_player_event_rescue_ignores_dena_fragment_and_uses_player_name(self):
+        result = weak_title_rescue.rescue_short_player_event_title(
+            gen_title="De、安打",
+            source_title="まるで忍者？ 浦田俊輔 がDeNAバッテリーかく乱 171センチの小兵が技あり安打→二盗！三盗！",
+            body="まるで忍者。浦田俊輔 がDeNAバッテリーかく乱 171センチの小兵が技あり安打→二盗。",
+            summary="まるで忍者。浦田俊輔 がDeNAバッテリーかく乱 171センチの小兵が技あり安打→二盗。",
+            metadata={"article_subtype": "player", "player_name": "浦田俊輔", "role": "選手"},
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.title, "浦田俊輔、技あり安打→二盗！三盗")
+        self.assertEqual(result.strategy, "short_player_event_performance")
+
     def test_short_player_event_rescue_requires_name_in_source(self):
         result = weak_title_rescue.rescue_short_player_event_title(
             gen_title="浦田俊輔、安打",

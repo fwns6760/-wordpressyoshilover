@@ -190,6 +190,17 @@ class DisplayTitleRewriteTests(unittest.TestCase):
 
         self.assertEqual(subject, "田中将大")
 
+    def test_extract_subject_label_ignores_dena_fragment_with_spaced_player_particle(self):
+        title = "まるで忍者？ 浦田俊輔 がDeNAバッテリーかく乱 171センチの小兵が技あり安打→二盗！三盗！"
+        summary = "まるで忍者。浦田俊輔 がDeNAバッテリーかく乱 171センチの小兵が技あり安打→二盗。"
+
+        subject = rss_fetcher._extract_subject_label(title, summary, "選手情報")
+        compact = rss_fetcher._compact_subject_label(title, summary, "選手情報")
+
+        self.assertEqual(subject, "浦田俊輔")
+        self.assertEqual(compact, "浦田俊輔")
+        self.assertNotEqual(subject, "De")
+
     def test_prepare_source_title_context_keeps_full_title_for_processing(self):
         title = "戸郷翔征がＧＷ９連戦で今季初１軍昇格へ 阿部監督「たぶん９連戦のどこかで入れると思います」"
 

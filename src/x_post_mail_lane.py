@@ -90,17 +90,32 @@ CENTRAL_LEAGUE_TEAM_ALIASES = frozenset(
 # are filtered out so this lane never proposes ISO/wOBA/FIP/etc.).
 # Restricted to ``insight_rank_query.KNOWN_METRICS`` intersection so
 # ``miq.query_rank`` accepts the name.
-# NOTE (2026-05-17 hotfix): OBP / SLG / OPS は除外している。
-# `src.analysis.insight_rank_query._aggregate_batting` が `batting_logs`
-# から AB / H しか読まないため、 BattingLine の 2B/3B/HR/BB/HBP/SF
-# が常に 0 になり、 結果として SLG=0、 OBP=AVG、 OPS=AVG という
-# broken 値で ranking に乗ってしまう (浦田俊輔 5/17 14:00 mail 事例)。
-# `advanced_metric_snapshots` には正しい OBP/SLG/OPS が入っているので、
-# 復活させる場合は rank_players ではなくそちら経由に切替が必要 (別 ticket)。
+#
+# 2026-05-17 OBP/SLG/OPS 復活: batting metrics (AVG/OBP/SLG/OPS) は
+# `advanced_metric_snapshots` 経由で query する dispatch を追加した。
+# 旧 `_aggregate_batting` が 2B/3B/HR/BB/HBP/SF を batting_logs から
+# 読まず TB=0 / SLG=0 / OBP=AVG / OPS=AVG という broken 値を返して
+# いた問題を、 snapshot table の事前計算 値で回避する (浦田俊輔
+# 5/17 14:00 事例)。 守備位置別 と pitching metric は legacy path 維持。
 SAFE_METRICS = (
-    "AVG",
+    "AVG", "OBP", "SLG", "OPS",
     "ERA", "K_per_9", "BB_per_9", "HR_per_9",
 )
+
+# Batting metrics that go through the snapshot table (correct values).
+# Pitching metrics keep using the legacy `query_rank_fn` path because
+# `_aggregate_pitching` correctly reads `pitching_logs` columns.
+_BATTING_SNAPSHOT_METRICS = frozenset({"AVG", "OBP", "SLG", "OPS"})
+
+# period_label → snapshot scope mapping. period_label not in this map
+# falls back to the legacy `query_rank_fn` path.
+_PERIOD_LABEL_TO_SNAPSHOT_SCOPE: dict[str, str] = {
+    "直近1週間": "last_7d",
+    "直近5試合": "last_5_games",
+    "直近10試合": "last_10_games",
+    "今週": "weekly",
+    "今月": "monthly",
+}
 
 # Friendly Japanese label per metric (mirrors 346 format_as_x_post
 # helper but inline here to avoid coupling to a private constant).
@@ -470,6 +485,130 @@ def query_db_latest_game_date(db_path: str) -> Optional[str]:
         conn.close()
 
 
+def _query_rank_from_snapshots(
+    db_path: str,
+    *,
+    metric_name: str,
+    snapshot_scope: str,
+    min_sample: int = 1,
+    limit: int = 200,
+) -> dict:
+    """Query ``advanced_metric_snapshots`` for a metric ranking.
+
+    Returns rows shaped like
+    :func:`src.manual_intake_insight_query.query_rank`'s output so
+    callers can use either path without branching the consumer.
+
+    Used for batting metrics (AVG / OBP / SLG / OPS) where the legacy
+    `_aggregate_batting` is broken (only reads AB / H from
+    `batting_logs`, leaving 2B/3B/HR/BB/HBP/SF at 0 and producing
+    SLG=0 / OBP=AVG / OPS=AVG misleadingly). The snapshot table has
+    correct pre-computed values across all 7 scopes (last_7d /
+    last_30d / last_5_games / last_10_games / weekly / monthly /
+    season), populated by `insight_nightly`.
+
+    `team_code` is normalised to the team's Japanese display name
+    (via the `teams` table) so existing
+    :data:`CENTRAL_LEAGUE_TEAM_ALIASES` filter and the
+    `format_as_x_post` body composer accept it unchanged. Position
+    filter is not supported (snapshot's `position` column is always
+    NULL on production).
+    """
+    try:
+        from src.analysis import insight_rank_query as rq  # local import
+    except ImportError as exc:  # noqa: BLE001
+        LOG.warning("_query_rank_from_snapshots: import failed: %r", exc)
+        return {
+            "ok": False,
+            "reason": "import_failed",
+            "rows": [],
+            "count": 0,
+            "total": 0,
+            "focus_player": None,
+        }
+    if metric_name not in rq.KNOWN_METRICS:
+        return {
+            "ok": False,
+            "reason": f"invalid_metric:{metric_name}",
+            "rows": [],
+            "count": 0,
+            "total": 0,
+            "focus_player": None,
+        }
+    _kind, higher_is_better = rq.KNOWN_METRICS[metric_name]
+    order_dir = "DESC" if higher_is_better else "ASC"
+    try:
+        conn = _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except _sqlite3.Error as exc:  # noqa: BLE001
+        LOG.warning("_query_rank_from_snapshots: open failed: %r", exc)
+        return {
+            "ok": False,
+            "reason": "db_open_failed",
+            "rows": [],
+            "count": 0,
+            "total": 0,
+            "focus_player": None,
+        }
+    sql = (
+        "WITH latest AS ( "
+        "  SELECT MAX(snapshot_date) AS d "
+        "  FROM advanced_metric_snapshots "
+        "  WHERE metric_name = ? AND scope = ? "
+        ") "
+        "SELECT s.player_canonical, "
+        "       COALESCE(t.team_name, s.team_code) AS team_name, "
+        "       s.metric_value, "
+        "       s.sample_size "
+        "FROM advanced_metric_snapshots s "
+        "JOIN latest l ON 1=1 "
+        "LEFT JOIN teams t ON t.team_code = s.team_code "
+        "WHERE s.metric_name = ? "
+        "  AND s.scope = ? "
+        "  AND s.snapshot_date = l.d "
+        "  AND s.player_canonical IS NOT NULL "
+        "  AND s.sample_size >= ? "
+        f"ORDER BY s.metric_value {order_dir} "
+        "LIMIT ?"
+    )
+    try:
+        rows = conn.execute(
+            sql,
+            (metric_name, snapshot_scope, metric_name, snapshot_scope,
+             min_sample, limit),
+        ).fetchall()
+    except _sqlite3.Error as exc:  # noqa: BLE001
+        LOG.warning("_query_rank_from_snapshots: query failed: %r", exc)
+        return {
+            "ok": False,
+            "reason": "query_failed",
+            "rows": [],
+            "count": 0,
+            "total": 0,
+            "focus_player": None,
+        }
+    finally:
+        conn.close()
+    total = len(rows)
+    rows_out = [
+        {
+            "player_canonical": r[0],
+            "team_code": r[1],
+            "metric_value": float(r[2]) if r[2] is not None else 0.0,
+            "sample_size": int(r[3] or 0),
+            "rank": i + 1,
+            "total": total,
+        }
+        for i, r in enumerate(rows)
+    ]
+    return {
+        "ok": True,
+        "rows": rows_out,
+        "count": len(rows_out),
+        "total": total,
+        "focus_player": None,
+    }
+
+
 def db_staleness_days(
     latest_game_date: Optional[str], now: Optional[datetime] = None
 ) -> Optional[int]:
@@ -517,8 +656,9 @@ def _build_combos(
     for m in SAFE_METRICS:
         combos.append(_MetricCombo(m, last7, "直近1週間", novelty="high"))
     # 2. 守備位置別 AVG (直近1週間) — niche slice。
-    # 旧来は OPS だったが、 `_aggregate_batting` の broken aggregation
-    # により OPS=AVG になるため、 表記の正しさを優先して AVG に統一。
+    # snapshot path は position 列が常に NULL なので、 守備位置別は
+    # legacy `_aggregate_batting` を使う必要がある。 そちらは AVG が
+    # 正しく計算されるが OBP/SLG/OPS は broken なので AVG のみ採用。
     # 守備位置 single-kanji codes match insight_rank_query expectations.
     for pos in ("捕", "二", "遊", "三"):
         combos.append(
@@ -1330,15 +1470,34 @@ def pick_candidates(
             if combo.min_sample_override is not None
             else min_sample
         )
+        # 2026-05-17 dispatch: batting metrics without position are
+        # answered by the snapshot table (correct OPS/OBP/SLG values);
+        # everything else uses the legacy aggregator path.
+        use_snapshot = (
+            db_path is not None
+            and combo.metric in _BATTING_SNAPSHOT_METRICS
+            and combo.position is None
+            and combo.period_label in _PERIOD_LABEL_TO_SNAPSHOT_SCOPE
+        )
         try:
-            result = query_rank_fn(
-                metric_name=combo.metric,
-                since=combo.since,
-                until=combo.until,
-                position_filter=combo.position,
-                min_sample=effective_min_sample,
-                limit=60,  # enough to capture all 12 teams' top players
-            )
+            if use_snapshot:
+                snapshot_scope = _PERIOD_LABEL_TO_SNAPSHOT_SCOPE[combo.period_label]
+                result = _query_rank_from_snapshots(
+                    db_path,
+                    metric_name=combo.metric,
+                    snapshot_scope=snapshot_scope,
+                    min_sample=effective_min_sample,
+                    limit=60,
+                )
+            else:
+                result = query_rank_fn(
+                    metric_name=combo.metric,
+                    since=combo.since,
+                    until=combo.until,
+                    position_filter=combo.position,
+                    min_sample=effective_min_sample,
+                    limit=60,  # enough to capture all 12 teams' top players
+                )
         except Exception as exc:  # noqa: BLE001
             LOG.warning("query_rank failed for %s/%s: %r",
                         combo.metric, combo.period_label, exc)

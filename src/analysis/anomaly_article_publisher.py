@@ -1932,13 +1932,64 @@ def render_milestone_crossed_article(
     )
 
 
+def _render_central_standings_table_md(
+    conn: Optional[sqlite3.Connection],
+    snap_date: str,
+) -> Optional[str]:
+    """セ・リーグ 6 球団の順位表 markdown を構築 (巨人 ★ 赤太字 highlight).
+
+    standings_snapshots の指定 snap_date から rank / W / L / T / GB を取得し、
+    順位順 6 行の markdown table を返す。 data 不足 (< 4 球団) なら None。
+    """
+    if conn is None or not snap_date:
+        return None
+    try:
+        rows = conn.execute(
+            "SELECT team, rank, W, L, T, games_behind FROM standings_snapshots "
+            "WHERE snap_date = ? AND team IN ('g','t','s','c','db','d') "
+            "ORDER BY rank ASC",
+            (snap_date,),
+        ).fetchall()
+    except sqlite3.Error:
+        return None
+    if len(rows) < 4:
+        return None
+
+    def _red_bold(text: str) -> str:
+        return f'<span style="color:#c0392b"><strong>{text}</strong></span>'
+
+    lines = [
+        "| 順位 | 球団 | 勝 | 負 | 引分 | ゲーム差 |",
+        "|---|---|---|---|---|---|",
+    ]
+    for team, rank, w, l, t, gb in rows:
+        team_label = _team_label(team)
+        rank_str = str(rank if rank is not None else "?")
+        w_str = str(w if w is not None else "?")
+        l_str = str(l if l is not None else "?")
+        t_str = str(t if t is not None else "?")
+        gb_str = f"{float(gb):.1f}" if gb is not None else "-"
+        if team == "g":
+            rank_str = _red_bold(rank_str)
+            team_label = _red_bold(f"{team_label} ★")
+            w_str = _red_bold(w_str)
+            l_str = _red_bold(l_str)
+            t_str = _red_bold(t_str)
+            gb_str = _red_bold(gb_str)
+        lines.append(
+            f"| {rank_str} | {team_label} | {w_str} | {l_str} | {t_str} | {gb_str} |"
+        )
+    return "\n".join(lines)
+
+
 def render_standings_shift_article(
-    conn: sqlite3.Connection,
+    conn: Optional[sqlite3.Connection],
     candidate_row: dict[str, Any],
 ) -> dict[str, str]:
     """SIGNAL_STANDINGS_SHIFT — 球団順位変動。"""
     notes = _parse_kv_blob(candidate_row.get("notes") or "")
     direction = notes.get("direction", "変動")
+    latest_date = notes.get("latest_date", "")
     current = _parse_kv_blob(candidate_row.get("current_value") or "")
     baseline = _parse_kv_blob(candidate_row.get("baseline_value") or "")
     prev_rank = baseline.get("prev_rank", "?")
@@ -1946,8 +1997,12 @@ def render_standings_shift_article(
     w = current.get("W", "?")
     l = current.get("L", "?")
     gb = current.get("GB", "?")
+
+    # issue #44 B-6 (2026-05-17 user lock): title を case D に refit (team
+    # subject「チーム」prefix + 期間末尾括弧)。 本文に セ・リーグ 6 球団順位表
+    # を出す (standings_snapshots latest snap_date を参照)。
     title = (
-        f"【巨人データ】巨人、順位 {prev_rank} → {new_rank} ({direction})"
+        f"【巨人データ】チーム 順位 {prev_rank}→{new_rank}（今シーズン進行中）"
     )
     headline = (
         f"巨人 の順位が **{prev_rank} 位 → {new_rank} 位** に {direction} しました。"
@@ -1957,13 +2012,16 @@ def render_standings_shift_article(
         f"前回順位: {prev_rank}",
         f"現順位: {new_rank}",
         f"勝敗: {w}-{l} (GB {gb})",
+        f"変動方向: {direction}",
     ]
+    standings_table_md = _render_central_standings_table_md(conn, latest_date)
     return _render_simple_data_article(
         title=title,
         headline=headline,
         detail_lines=detail,
         period_label="シーズン進行中",
         source_note="順位変動は単日の勝敗で動きやすい、月単位 trend と合わせて見るのが本筋。",
+        ranking_table_md=standings_table_md,
     )
 
 

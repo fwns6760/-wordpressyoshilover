@@ -528,6 +528,27 @@ PUBLISH_QUALITY_LEAK_MARKERS = (
 )
 LIVE_UPDATE_LINEUP_TITLE_PREFIX = "巨人スタメン"
 LIVE_UPDATE_LINEUP_HEADING_KEYWORDS = ("打順", "スタメン", "先発メンバー")
+
+# issue #44 follow-up (2026-05-17 user lock): farm/二軍 article は巨人の
+# スタメンのみ表示し、 相手球団 lineup は suppress する (post 68856 で
+# 「📋 西武スタメン」が出ていた問題)。 1軍 article は従来通り両方表示。
+FARM_LINEUP_GIANTS_ONLY_SUBTYPES = frozenset({"farm", "farm_lineup"})
+
+
+def _filter_lineup_rows_for_subtype(
+    rows: list[dict],
+    body_subtype: str,
+) -> list[dict]:
+    """farm subtype の場合、 相手 row を除外して巨人 row のみ返す.
+
+    1軍 article (lineup / live_update / pregame / postgame 等) は従来通り
+    全 row を返す。 farm subtype のみ巨人 row に絞る。
+    """
+    if not rows:
+        return rows
+    if str(body_subtype or "") in FARM_LINEUP_GIANTS_ONLY_SUBTYPES:
+        return [r for r in rows if str(r.get("team") or "") != "相手"]
+    return rows
 CORE_SUBTYPES = ("pregame", "live_anchor", "postgame", "fact_notice", "farm")
 NON_LINEUP_STARMEN_GUARD_SUBTYPES = {
     "pregame",
@@ -17988,7 +18009,10 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 and compact_lineup_rows
                 and not lineup_stats_rendered
             ):
-                blocks += _build_basic_lineup_table_block(compact_lineup_rows, compact_opponent_team_name)
+                blocks += _build_basic_lineup_table_block(
+                    _filter_lineup_rows_for_subtype(compact_lineup_rows, body_subtype),
+                    compact_opponent_team_name,
+                )
                 lineup_stats_rendered = True
             if (
                 current_heading == "【二軍スタメン一覧】"
@@ -17997,7 +18021,10 @@ def build_news_block(title: str, summary: str, url: str, source_name: str, categ
                 and compact_lineup_rows
                 and not lineup_stats_rendered
             ):
-                blocks += _build_basic_lineup_table_block(compact_lineup_rows, compact_opponent_team_name)
+                blocks += _build_basic_lineup_table_block(
+                    _filter_lineup_rows_for_subtype(compact_lineup_rows, body_subtype),
+                    compact_opponent_team_name,
+                )
                 lineup_stats_rendered = True
             if (
                 current_heading == "【ニュースの整理】"

@@ -291,8 +291,13 @@ class HochiCompactLineupTeamSplitTests(unittest.TestCase):
             "報知 2軍 lineup で「巨人スタメン」 heading が出ない",
         )
 
-    def test_hochi_farm_lineup_emits_opponent_team_heading(self):
-        """報知 2軍 lineup(vs DeNA)→ body に「DeNAスタメン」heading 含む。"""
+    def test_hochi_farm_lineup_does_not_emit_opponent_team_heading(self):
+        """報知 2軍 lineup(vs DeNA)→ 巨人スタメンのみ、 相手「DeNAスタメン」は出さない.
+
+        issue #44 follow-up (2026-05-17 user lock): farm/二軍 article は今後
+        巨人のスタメンだけでよい。 _filter_lineup_rows_for_subtype で相手 row
+        を除外する。
+        """
         blocks, _ai_body = self._build(
             title=self.HOCHI_FARM_LINEUP_COMPACT,
             summary=self.HOCHI_FARM_LINEUP_COMPACT,
@@ -300,14 +305,22 @@ class HochiCompactLineupTeamSplitTests(unittest.TestCase):
             source_name="スポーツ報知巨人班X",
             category="ドラフト・育成",
         )
-        self.assertIn(
+        self.assertNotIn(
             "DeNAスタメン",
             blocks,
-            "報知 2軍 lineup(vs DeNA)で「DeNAスタメン」 heading が出ない",
+            "報知 2軍 lineup で相手 (DeNA) スタメン heading が残っている",
+        )
+        self.assertNotIn(
+            "相手スタメン",
+            blocks,
+            "報知 2軍 lineup で「相手スタメン」 fallback heading が残っている",
         )
 
-    def test_hochi_farm_lineup_emits_two_tables_marker_count_two(self):
-        """報知 2軍 lineup → table marker `nomotoke-card-lineup-table` が 2 回出る(巨人 + 相手)。"""
+    def test_hochi_farm_lineup_emits_only_giants_table(self):
+        """報知 2軍 lineup → table marker は 1 回のみ (巨人 table のみ).
+
+        issue #44 follow-up (2026-05-17 user lock): farm article は巨人のみ。
+        """
         blocks, _ai_body = self._build(
             title=self.HOCHI_FARM_LINEUP_COMPACT,
             summary=self.HOCHI_FARM_LINEUP_COMPACT,
@@ -317,8 +330,13 @@ class HochiCompactLineupTeamSplitTests(unittest.TestCase):
         )
         self.assertEqual(
             blocks.count("nomotoke-card-lineup-table"),
-            2,
-            "報知 2軍 lineup で table が 2 つ出ない(巨人 + 相手 split していない)",
+            1,
+            "報知 2軍 lineup で table が 1 つではない (巨人 only に絞れていない)",
+        )
+        self.assertIn(
+            "巨人スタメン",
+            blocks,
+            "報知 2軍 lineup で「巨人スタメン」 heading が消えている (退行)",
         )
 
     def test_hochi_first_team_lineup_only_giants_emits_single_table(self):

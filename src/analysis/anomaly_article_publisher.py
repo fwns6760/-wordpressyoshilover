@@ -1252,20 +1252,33 @@ def render_defense_uzr_article(
     for token in notes.split():
         if token.startswith("position="):
             position = token.split("=", 1)[1]
+    uzr_source_note = (
+        "これは本物の UZR ではなく box-score 由来の近似指標。"
+        "選手別アウト化率から同守備位置平均との差を見た参考値。"
+        "NPB は打球座標を公開しないため、真の UZR は計算不可。"
+    )
     player_article = _render_defense_player_comparison_article(
         conn,
         player=player,
         position=position,
         metric="UZR_proxy",
         metric_label="簡易UZR",
-        source_note=(
-            "これは本物の UZR ではなく box-score 由来の近似指標。"
-            "選手別アウト化率から同守備位置平均との差を見た参考値。"
-            "NPB は打球座標を公開しないため、真の UZR は計算不可。"
-        ),
+        source_note=uzr_source_note,
     )
     if player_article is not None:
         return player_article
+    # issue #44 B-2 (2026-05-17 user lock): player_comparison が出せない場合
+    # も球団別 ranking を fallback で出す。
+    team_article = _render_defense_team_comparison_article(
+        conn,
+        player=player,
+        position=position,
+        metric="UZR_proxy",
+        metric_label="簡易UZR",
+        source_note=uzr_source_note,
+    )
+    if team_article is not None:
+        return team_article
     position_label = _defense_position_label(position)
     direction = _average_comparison_phrase(diff)
     title = (
@@ -1315,19 +1328,32 @@ def render_defense_fielding_pct_article(
     for token in notes.split():
         if token.startswith("position="):
             position = token.split("=", 1)[1]
+    fielding_source_note = (
+        "守備率 = converted_outs / (converted_outs + errors)。"
+        "box-score の direction marker ベースのため、捕逸 / 暴投 は含めない簡易版。"
+    )
     player_article = _render_defense_player_comparison_article(
         conn,
         player=player,
         position=position,
         metric="FIELDING_PCT",
         metric_label="守備率",
-        source_note=(
-            "守備率 = converted_outs / (converted_outs + errors)。"
-            "box-score の direction marker ベースのため、捕逸 / 暴投 は含めない簡易版。"
-        ),
+        source_note=fielding_source_note,
     )
     if player_article is not None:
         return player_article
+    # issue #44 B-2 (2026-05-17 user lock): player_comparison が出せない場合
+    # も球団別 ranking を fallback で出す。
+    team_article = _render_defense_team_comparison_article(
+        conn,
+        player=player,
+        position=position,
+        metric="FIELDING_PCT",
+        metric_label="守備率",
+        source_note=fielding_source_note,
+    )
+    if team_article is not None:
+        return team_article
     position_label = _defense_position_label(position)
     direction = _average_comparison_phrase(diff)
     fielding_pct = _format_stat_value(_extract_kv_value(current, "fielding_pct"))

@@ -77,7 +77,9 @@ class SubjectAndComposeTests(unittest.TestCase):
             lane.pick_candidates(_make_records(), sent_ids=set(), n=2),
             now=now,
         )
-        self.assertIn("📮", mail.subject)
+        # filter prefix + suffix (yoshilover folder 振り分け用)
+        self.assertIn("🟠🐦📮", mail.subject)
+        self.assertTrue(mail.subject.endswith("| YOSHILOVER"))
         self.assertIn("小林誠司 名言", mail.subject)
         self.assertIn("2件", mail.subject)
         self.assertIn("12:00 JST", mail.subject)

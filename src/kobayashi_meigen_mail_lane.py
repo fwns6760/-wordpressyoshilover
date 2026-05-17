@@ -70,9 +70,17 @@ def _band_for_hour(hour: int) -> str:
 
 
 def _build_subject(now: datetime, n: int) -> str:
+    """Subject 形式は yoshilover Gmail folder filter に揃える:
+    - prefix `🟠🐦📮` (x-post-mail と同じ orange + bird marker)
+    - suffix ` | YOSHILOVER` (publish-notice / alert と同じ brand 名)
+    どちらかが filter rule に一致すれば「ヨシラバー」folder へ振り分けられる。
+    """
     band = _band_for_hour(now.hour)
     emoji = _TIME_BAND_EMOJI.get(band, "📮")
-    return f"📮【小林誠司 名言 {n}件】{emoji}{band} {now.strftime('%H:%M')} JST"
+    return (
+        f"🟠🐦📮【小林誠司 名言 {n}件】{emoji}{band} "
+        f"{now.strftime('%H:%M')} JST | YOSHILOVER"
+    )
 
 
 def _format_jst_date(iso_utc: str) -> str:

@@ -3303,6 +3303,50 @@ def get_story_fallback_image_url(category: str, article_subtype: str) -> str:
     ).strip()
 
 
+# 永続対策 (post 69144 follow-up): notice keyword の直後 N 字以内に
+# 「意欲表明 / 推測 / 計画」qualifier がある場合、 公示としての分類を skip。
+# 「1軍再昇格アピール」「復帰目指す」「抹消濃厚」等の媒体評論を player_notice
+# 誤分類から救う。 「実戦復帰」「登録抹消を発表」等の definitive announcement は
+# qualifier が無いので通常通り classify。
+_NOTICE_ASPIRATIONAL_QUALIFIERS: tuple[str, ...] = (
+    "アピール",
+    "目指", "を目指", "目指す", "目指し",
+    "狙う", "狙い", "を狙",
+    "視野",
+    "意欲", "意気込",
+    "希望",
+    "期待",
+    "向け",
+    "候補",
+    "見込", "見据",
+    "計画",
+    "予想", "予測", "予定",
+    "濃厚",
+    "の構え",
+    "を視",
+    "に意",
+)
+
+
+def _notice_marker_is_aspirational(
+    text: str,
+    marker_start: int,
+    marker_len: int,
+    *,
+    window: int = 12,
+) -> bool:
+    """marker の直後 ``window`` 字以内に意欲/推測 qualifier があれば True (skip).
+
+    Examples:
+        "1軍再昇格アピール" の "昇格" → True (アピール が直後)
+        "復帰目指す" の "復帰" → True (目指 が直後)
+        "実戦復帰" の "復帰" → False (qualifier 無し → 通常 classify)
+        "抹消濃厚" の "登録抹消" → 「濃厚」が直後 → True
+    """
+    tail = text[marker_start + marker_len: marker_start + marker_len + window]
+    return any(q in tail for q in _NOTICE_ASPIRATIONAL_QUALIFIERS)
+
+
 def _extract_notice_type_label(text: str) -> str:
     source_text = _strip_html(text or "")
     checks = (
@@ -3334,7 +3378,19 @@ def _extract_notice_type_label(text: str) -> str:
         ("昇格", "昇格"),
     )
     for marker, label in checks:
-        if marker in source_text:
+        # 永続対策: 同 marker が複数回出ても、 1 つでも qualifier 無の occurrence が
+        # あれば classify (definitive marker)。 全 occurrence が aspirational なら skip。
+        start = 0
+        found_definitive = False
+        while True:
+            idx = source_text.find(marker, start)
+            if idx < 0:
+                break
+            if not _notice_marker_is_aspirational(source_text, idx, len(marker)):
+                found_definitive = True
+                break
+            start = idx + len(marker)
+        if found_definitive:
             return label
     return ""
 

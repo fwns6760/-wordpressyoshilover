@@ -1189,15 +1189,20 @@ def render_hr_pace_article(
 
 
 def render_hidden_below_qualifier_article(
-    conn: sqlite3.Connection,
+    conn: Optional[sqlite3.Connection],
     candidate_row: dict[str, Any],
 ) -> dict[str, str]:
     """SIGNAL_HIDDEN_OPS_LIMIT — 規定打席未満で上位 OPS の選手。"""
     player = candidate_row["player_canonical"]
     magnitude = candidate_row["magnitude"]
     current = candidate_row.get("current_value") or ""
+    # issue #44 B-4 (2026-05-17 user lock): title から「今シーズン」prefix を
+    # 廃止し、 期間 + context を末尾括弧へ移動 (case A spec 準拠)。
+    # ranking 表 wire は規定未到達者の Central League ranking infra が無いため
+    # 対象外、 title refit のみ。
     title = (
-        f"【巨人データ】今シーズン {player}、規定打席未満ながら OPS {magnitude:.3f} の好調"
+        f"【巨人データ】{player}、OPS {magnitude:.3f} の好調"
+        f"（規定打席未満・今シーズン）"
     )
     headline = (
         f"{player} は規定打席にはまだ届いていないものの、OPS が **{magnitude:.3f}**"

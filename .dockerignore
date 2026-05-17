@@ -3,6 +3,7 @@
 !Dockerfile.draft_body_editor
 !Dockerfile.publish_notice
 !Dockerfile.insight_nightly
+!Dockerfile.kobayashi_meigen_mail
 !bin/
 !bin/**
 !requirements.txt

@@ -79,8 +79,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     candidates = lane.pick_candidates(records, sent_ids=sent_ids, n=args.n)
     LOG.info("Picked %d candidates (oldest_first, unsent)", len(candidates))
 
+    # 周回 loop: 1 周配信し切ったら cursor を消して oldest からまた回す。
+    # archive 836 件 / 3 件/日 = 約 9 ヶ月で 1 周完了。
+    if not candidates and len(sent_ids) >= len(records):
+        LOG.info(
+            "Cycle complete (sent=%d / archive=%d) — rotating cursor to start.",
+            len(sent_ids), len(records),
+        )
+        try:
+            bucket.blob(args.cursor_key).delete()
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning("cursor delete failed: %r", exc)
+        sent_ids = set()
+        candidates = lane.pick_candidates(records, sent_ids=sent_ids, n=args.n)
+        LOG.info("Picked %d candidates (cycle restart, oldest_first)",
+                 len(candidates))
+
     if not candidates:
-        LOG.info("No unsent candidates remain — archive fully delivered. exit 0.")
+        LOG.info("No unsent candidates remain — exit 0.")
         return 0
 
     mail = lane.compose_mail(candidates, now=now)

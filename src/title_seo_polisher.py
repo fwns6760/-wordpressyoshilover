@@ -113,6 +113,51 @@ def _is_protected(title: str) -> bool:
     return any(title.startswith(p) for p in _PROTECTED_PREFIXES)
 
 
+# issue #44 follow-up (2026-05-17 user lock、 post 68870): title が "…" で
+# 終わっていて主語+述語が読み取れない場合、 summary 側に full text があれば
+# その第一文を再構成して title に当てる。 location/emoji 装飾 prefix
+# (ジャイアンツ球場⚾️ 等) も剥がして player+動作 を前に出す。
+# location + emoji 装飾 prefix (例: "ジャイアンツ球場⚾️ ") を player+選手 の
+# 直前で剥がす。 emoji (⚾🏟⭐✨🎯💪🔥💯 等) が prefix に含まれる場合のみ
+# 適用、 通常の player 列 (例: "巨人の岡本和真 選手") は剥がさない。
+_DECORATION_PREFIX_RE = re.compile(
+    r"^\S*[⚾🏟⭐✨🎯💪🔥💯]\S*\s+(?=[一-龥ぁ-んァ-ヴー]{2,6}\s*選手)"
+)
+_FIRST_SENTENCE_RE = re.compile(r"([^。！？…\n]+[。！？])")
+
+
+def recover_from_trailing_ellipsis(title: str, summary: str) -> str:
+    """``…`` 末尾 truncation title を summary 第一文で再構成する.
+
+    Returns: 再構成後の title。 復元不能なら原 title をそのまま返す。
+
+    Examples (post 68870 actual):
+        title="ジャイアンツ球場⚾️ 石塚裕惺…"
+        summary="RT 水上智恵【スポーツ報知・巨人担当】: ジャイアンツ球場⚾️ "
+                "石塚裕惺 選手がマシン打撃を再開しました！"
+        → "石塚裕惺 選手がマシン打撃を再開しました！"
+    """
+    if not isinstance(title, str) or not title.endswith("…"):
+        return title
+    if not isinstance(summary, str) or not summary:
+        return title
+    summary_clean = _strip_rt_prefix(_html.unescape(summary)).strip()
+    if not summary_clean:
+        return title
+    sentence_match = _FIRST_SENTENCE_RE.match(summary_clean)
+    if not sentence_match:
+        return title
+    sentence = sentence_match.group(1).strip()
+    if not sentence or sentence.endswith("…"):
+        return title
+    sentence = _DECORATION_PREFIX_RE.sub("", sentence).strip()
+    if not sentence:
+        return title
+    if len(sentence) > DEFAULT_MAX_TITLE_LENGTH:
+        sentence = sentence[: DEFAULT_MAX_TITLE_LENGTH - 1].rstrip() + "…"
+    return sentence
+
+
 def polish_title(
     title: str,
     *,

@@ -25277,6 +25277,24 @@ def _main(args, logger):
             raw_title, title_preview = _prepare_source_title_context(entry_title_clean, entry)
             title = raw_title
             summary  = entry_summary_clean
+            # issue #44 follow-up (2026-05-17 user lock、 post 68870):
+            # title が "…" truncation で player+述語 が欠ける場合、 summary
+            # 第一文から再構成して title に当て直す。 RT prefix と
+            # location/emoji 装飾 prefix を剥がす。
+            if title and isinstance(title, str) and title.endswith("…") and summary:
+                try:
+                    from src.title_seo_polisher import recover_from_trailing_ellipsis
+                    recovered = recover_from_trailing_ellipsis(title, summary)
+                    if recovered and recovered != title:
+                        logger.info(json.dumps({
+                            "event": "title_ellipsis_recovered",
+                            "before": title,
+                            "after": recovered,
+                            "source_url": post_url,
+                        }, ensure_ascii=False))
+                        title = recovered
+                except Exception as _exc:
+                    logger.warning(f"title_ellipsis_recovery skipped: {_exc}")
             category = classify_category(
                 title_text,
                 keywords,

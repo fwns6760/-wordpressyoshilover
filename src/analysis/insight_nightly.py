@@ -623,6 +623,12 @@ def main(argv: Optional[list[str]] = None) -> int:
                 "slugs": slugs,
                 "per_game": per_game,
                 "digest_path": digest_path,
+                # issue #44 H: per-candidate publish 結果 / gate skip 理由を
+                # Cloud Logging に流すために summary に格納する。
+                # auto-draft default disabled 時も
+                # {"skipped": True, "reason": "default_disabled"} が見える。
+                "anomaly_publish": anomaly_publish_summary,
+                "ranking_publish": ranking_publish_summary,
             }
             # GCS push after all games processed
             try:

@@ -690,6 +690,16 @@ class WPClient:
                     source_lane: str | None = None,
                     source_published_at_iso: str | None = None) -> int:
         requested_status = (status or "publish").lower()
+        # 377-OPS (GH #51): RUN_DRAFT_ONLY=True なら全 caller の publish 要求を
+        # draft に強制 downgrade。 既存 publish 済記事の reuse / status upgrade は
+        # 別 logic で gate される。 user 手動 publish フローへ移行。
+        if requested_status == "publish":
+            import os as _os
+            _flag = _os.environ.get("RUN_DRAFT_ONLY", "").strip().lower()
+            if _flag in ("1", "true", "yes", "on"):
+                requested_status = "draft"
+                status = "draft"
+                allow_status_upgrade = False  # publish への自動昇格も止める
         normalized_source_url = self._normalize_source_url(source_url)
         if allow_title_only_reuse is None:
             allow_title_only_reuse = not bool(normalized_source_url)

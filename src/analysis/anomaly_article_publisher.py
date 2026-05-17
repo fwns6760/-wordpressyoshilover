@@ -677,14 +677,16 @@ def _render_simple_data_article(
     detail_lines: list[str],
     period_label: str,
     source_note: str,
+    ranking_table_md: Optional[str] = None,
 ) -> dict[str, str]:
     """ranking table を持たないシンプルな data 記事 body を組み立てる helper。
 
     title / headline / detail_lines / period_label / source_note の組合せで
     短い記事 body (banner + ひとこと + 詳細 list + データ元) を返す。
 
-    `_render_unified_article` の league ranking が無くてもデータの「なぜ
-    特筆すべきか」が伝わる構成 (HR pace / 守備系 等)。
+    issue #44 A (2026-05-17 user lock): ``ranking_table_md`` 引数で
+    「## データ」 section の中身を他チーム選手込み ranking 表に差し替え可能。
+    None 時は従来の 1 選手 key-value sheet (後方互換)。
 
     2026-05-15 user 指示「人間にわかりやすいタイトル」適用、title には日時
     prefix を入れない (集計日時は body の 集計期間 row に表記)。
@@ -693,7 +695,7 @@ def _render_simple_data_article(
     body_title = title_check.title if title_check.ok else title
     # 348 step 3 spec §2.5: 「大手にない」 banner 廃止 (全種類で省略)。
     intro_banner = ""
-    detail_md = _detail_lines_to_table_md(detail_lines)
+    data_section_md = ranking_table_md if ranking_table_md else _detail_lines_to_table_md(detail_lines)
     body_md = f"""# {body_title}
 
 {intro_banner}
@@ -704,7 +706,7 @@ def _render_simple_data_article(
 
 ## データ
 
-{detail_md}
+{data_section_md}
 
 ## このデータについて
 
@@ -1847,6 +1849,36 @@ def render_milestone_crossed_article(
     if threshold_with_unit:
         threshold_label = "基準ライン" if lower_is_better else "節目"
         detail.append(f"{threshold_label}: {threshold_with_unit}")
+    # issue #44 A: 「## データ」 section にセ・リーグ ranking 表 (他チーム
+    # 選手込み、 focal 選手は ★ 赤太字) を入れる。 focal が top 10 圏外なら
+    # 周辺 row を末尾に追加。 conn / metric が無いケースは従来 path に fallback。
+    ranking_table_md: Optional[str] = None
+    if conn is not None and metric:
+        try:
+            snapshot_date = _snapshot_date_from_candidate(candidate_row)
+            top_rows, _total = _fetch_ranking_context(
+                conn, metric_name=metric, scope="season",
+                snapshot_date=snapshot_date, league="central", top_n=10,
+            )
+            if top_rows:
+                extra_focus_row: Optional[dict[str, Any]] = None
+                focus_in_top = any(r["player"] == player for r in top_rows)
+                if rank_context and not focus_in_top:
+                    extra_focus_row = {
+                        "rank": rank_context["rank"],
+                        "player": player,
+                        "team": rank_context.get("team", "?"),
+                        "value": rank_context.get("value"),
+                        "sample": rank_context.get("sample", 0),
+                    }
+                ranking_table_md = _render_ranking_table_md(
+                    top_rows,
+                    focus_player=player,
+                    metric_label=metric_label,
+                    extra_focus_row=extra_focus_row,
+                )
+        except sqlite3.Error:
+            ranking_table_md = None
     return _render_simple_data_article(
         title=title,
         headline=headline,
@@ -1857,6 +1889,7 @@ def render_milestone_crossed_article(
             if lower_is_better
             else "節目通過は次の節目を狙えるかの起点。"
         ),
+        ranking_table_md=ranking_table_md,
     )
 
 

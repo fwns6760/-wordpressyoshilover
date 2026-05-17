@@ -26,4 +26,5 @@ RUN useradd --create-home --home-dir /home/appuser --shell /usr/sbin/nologin app
 
 USER appuser
 
-CMD ["python3", "-m", "src.tools.run_kobayashi_meigen_mail"]
+ENTRYPOINT ["python3", "-m", "src.tools.run_kobayashi_meigen_mail"]
+CMD []

@@ -187,6 +187,38 @@ class CursorTests(unittest.TestCase):
         self.assertIn('"tweet_id": "300"', body)
 
 
+class XIntentButtonTests(unittest.TestCase):
+    def test_intent_url_url_encodes_text(self) -> None:
+        url = lane._build_x_intent_url("こんにちは #小林誠司")
+        self.assertTrue(url.startswith("https://twitter.com/intent/tweet?text="))
+        self.assertIn("%23", url)  # # is url-encoded
+        self.assertNotIn(" ", url)
+
+    def test_intent_url_truncates_long_text(self) -> None:
+        long_text = "あ" * 400
+        url = lane._build_x_intent_url(long_text)
+        # decoded length must be ≤ 270
+        from urllib.parse import unquote
+        decoded = unquote(url.split("text=", 1)[1])
+        self.assertLessEqual(len(decoded), 270)
+        self.assertTrue(decoded.endswith("…"))
+
+    def test_html_body_includes_x_intent_button(self) -> None:
+        records = _make_records()
+        cands = lane.pick_candidates(records, sent_ids=set(), n=1)
+        now = datetime(2026, 5, 18, 12, 0, tzinfo=JST)
+        mail = lane.compose_mail(cands, now=now)
+        self.assertIn("twitter.com/intent/tweet", mail.html_body)
+        self.assertIn("🐦 X に投稿", mail.html_body)
+
+    def test_text_body_includes_intent_link(self) -> None:
+        records = _make_records()
+        cands = lane.pick_candidates(records, sent_ids=set(), n=1)
+        now = datetime(2026, 5, 18, 12, 0, tzinfo=JST)
+        mail = lane.compose_mail(cands, now=now)
+        self.assertIn("twitter.com/intent/tweet", mail.text_body)
+
+
 class LoadArchiveTests(unittest.TestCase):
     def test_load_archive_parses_jsonl(self) -> None:
         store = {

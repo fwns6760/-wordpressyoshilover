@@ -43,8 +43,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         description="Send one 小林誠司 名言 mail (377-ARCHIVE Phase 2).",
     )
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--n", type=int, default=3,
-                        help="Tweets per mail (default 3)")
+    parser.add_argument("--n", type=int, default=1,
+                        help="Tweets per mail (default 1)")
     parser.add_argument("--bucket", default=lane.DEFAULT_BUCKET)
     parser.add_argument("--archive-key", default=lane.ARCHIVE_KEY)
     parser.add_argument("--cursor-key", default=lane.CURSOR_KEY)

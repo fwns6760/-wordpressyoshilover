@@ -23,6 +23,7 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
+from urllib.parse import quote as _url_quote
 from zoneinfo import ZoneInfo
 
 LOG = logging.getLogger(__name__)
@@ -86,6 +87,23 @@ def _format_jst_date(iso_utc: str) -> str:
 
 def _permalink(tweet_id: str) -> str:
     return f"https://twitter.com/sakaikkotaiso/status/{tweet_id}"
+
+
+# X 280-char hard limit on Web Intent URL pre-fill (longer text is silently
+# dropped by X). Keep a few char margin for the ellipsis.
+_X_POST_CHAR_LIMIT = 270
+
+
+def _build_x_intent_url(text: str) -> str:
+    """X Web Intent (twitter.com/intent/tweet) で開く 投稿 URL。
+
+    text は 270 char cap、 超えたら末尾 … で切る。 改行 / 特殊文字は
+    quote(safe="") で full encode。
+    """
+    body = text or ""
+    if len(body) > _X_POST_CHAR_LIMIT:
+        body = body[: _X_POST_CHAR_LIMIT - 1] + "…"
+    return f"https://twitter.com/intent/tweet?text={_url_quote(body, safe='')}"
 
 
 def _record_to_candidate(rec: dict[str, Any]) -> MeigenCandidate:
@@ -200,6 +218,7 @@ def _compose_text_body(candidates: list[MeigenCandidate], now: datetime) -> str:
                 lines.append("📷 画像あり (URL 取得は 6/12 cycle reset 後)")
         elif c.has_media:
             lines.append("📷 画像あり (URL 取得は 6/12 cycle reset 後)")
+        lines.append(f"🐦 X に投稿: {_build_x_intent_url(c.text)}")
         lines.append(f"🔗 元 tweet: {c.permalink}")
         lines.append(
             f"♥ {c.like_count}   🔁 {c.retweet_count}"
@@ -254,6 +273,18 @@ def _compose_html_body(candidates: list[MeigenCandidate], now: datetime) -> str:
                     "<div style=\"font-size:12px;color:#a00;margin:0 0 8px;\">"
                     "📷 画像あり (URL backfill 6/12 以降)</div>"
                 )
+        intent_url = _build_x_intent_url(c.text)
+        parts.append(
+            "<div style=\"margin:8px 0 4px;\">"
+            f"<a href=\"{_html.escape(intent_url)}\" "
+            "style=\"display:inline-block;background:#1d9bf0;color:#fff;"
+            "text-decoration:none;font-size:14px;font-weight:600;"
+            "padding:8px 16px;border-radius:9999px;"
+            "border:1px solid #1d9bf0;\">"
+            "🐦 X に投稿"
+            "</a>"
+            "</div>"
+        )
         parts.append(
             f"<div style=\"font-size:12px;color:#888;\">"
             f"<a href=\"{_html.escape(c.permalink)}\" "

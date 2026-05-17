@@ -520,8 +520,10 @@ def test_defense_uzr_article_uses_player_comparison_table(tmp_path):
         conn.close()
 
 
-def test_defense_uzr_article_falls_back_to_giants_player_comparison(tmp_path):
-    """他球団の選手名が薄い場合も、球団順位へ戻さず巨人内選手比較にする。"""
+def test_defense_uzr_article_falls_back_to_team_when_only_giants(tmp_path):
+    """2026-05-17 user lock「巨人だけの ranking はいらない、 他球団と比べる
+    から意味がある」: player_canonical が巨人だけの場合、 「巨人選手別 N/M
+    位」 ではなく セ・リーグ球団別 ranking に fallback する。"""
     from src.analysis import anomaly_article_publisher as pub
 
     conn = _open_db(tmp_path)
@@ -562,16 +564,14 @@ def test_defense_uzr_article_falls_back_to_giants_player_comparison(tmp_path):
             "baseline_value": "position=右 league_RF_baseline=0.362",
         })
 
-        assert article["title"].startswith("【巨人データ】中山礼都、右翼守備の簡易UZR ")
-        assert "巨人選手別" in article["title"]
-        assert "セ・リーグ球団別" not in article["title"]
-        assert "巨人は簡易UZR" not in article["title"]
-        assert "| 順位 | 選手 | 球団 | 簡易UZR | 守備機会 | アウト化率 |" in article["body_md"]
-        assert "## 巨人選手別ランキング（右翼守備・直近30日）" in article["body_md"]
-        assert '<span style="color:#c0392b"><strong>中山礼都 ★</strong></span>' in article["body_md"]
-        assert "巨人の同守備位置の選手別比較" in article["body_md"]
-        assert "チーム別アウト化率" not in article["body_md"]
-        assert "セ・リーグ同守備位置の球団別比較" not in article["body_md"]
+        # 2026-05-17 user lock: 巨人選手別 ranking は出さない。
+        assert "巨人選手別" not in article["title"]
+        assert "巨人選手別ランキング" not in article["body_md"]
+        # かわりに セ・リーグ球団別 ranking (チームベース) に fallback。
+        assert "巨人は簡易UZR" in article["title"]
+        assert "セ・リーグ" in article["title"]
+        assert "セ・リーグ球団別ランキング" in article["body_md"]
+        assert "セ・リーグ同守備位置の球団別比較" in article["body_md"]
     finally:
         conn.close()
 

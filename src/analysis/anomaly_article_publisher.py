@@ -967,19 +967,12 @@ def _defense_player_comparison_rows(
             "セ・リーグ同守備位置平均アウト化率",
         )
 
-    giants_raw_rows = [r for r in raw_rows if r[1] == "g"]
-    giants_ranked = _rank_rows(giants_raw_rows)
-    if len(giants_ranked) >= 2:
-        return (
-            giants_ranked,
-            since.isoformat(),
-            latest.isoformat(),
-            "巨人選手別",
-            "巨人の同守備位置の選手別比較",
-            "巨人同守備位置平均アウト化率",
-        )
-
-    if len(all_ranked) >= 2:
+    # 2026-05-17: user 指示「巨人だけはいらない、 他球団と比べるから
+    # 意味がある」(post 69034 = キャベッジ UZR 巨人選手別 2/2 位 事例)。
+    # 旧来あった「巨人選手別」branch と、 all_ranked が giants だけの
+    # 「選手別」fallback は廃止。 他球団選手を含まないなら draft 生成
+    # しない (caller 側で空 result を skip)。
+    if len(all_ranked) >= 2 and has_non_giants:
         return (
             all_ranked,
             since.isoformat(),

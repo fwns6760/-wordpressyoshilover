@@ -378,6 +378,11 @@ class PublishNoticeRequest:
     record_type: str | None = None
     skip_layer: str | None = None
     fail_axes: tuple[str, ...] = ()
+    # 377-OPS (GH #51) Phase 1B: draft mode mail で本文判断を可能にするため、
+    # 本文抜粋 (600-1000 字) と wp-admin edit link を追加。 scanner が draft
+    # 検出時にこれらを populate する。 publish 経路では従来通り未使用 (None)。
+    body_excerpt: str | None = None
+    admin_edit_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -2565,7 +2570,20 @@ def build_body_text(
         # 「記事を見る」「𝕏 で投稿」ボタンを描画するため、modern mail client
         # では 1 タップ運用が可能。text fallback の mail client では URL を
         # 自分で踏む既存挙動が残る。
-        return "\n".join(line for line in (title_only, url_only) if line)
+        # 377-OPS (GH #51) Phase 1B: draft mode で body_excerpt / admin_edit_url
+        # が populate された場合のみ、 minimal body を拡張して本文 + admin link
+        # を追加する。 publish mode (両方 None) では minimal body 不変。
+        minimal_lines = [line for line in (title_only, url_only) if line]
+        body_excerpt = str(getattr(request, "body_excerpt", "") or "").strip()
+        admin_edit_url = str(getattr(request, "admin_edit_url", "") or "").strip()
+        if body_excerpt:
+            minimal_lines.append("")
+            minimal_lines.append("本文(抜粋):")
+            minimal_lines.append(body_excerpt)
+        if admin_edit_url:
+            minimal_lines.append("")
+            minimal_lines.append(f"編集 / 公開: {admin_edit_url}")
+        return "\n".join(minimal_lines)
 
     suppression_reason = mail_state.get("suppression_reason")
     manual_x_candidates = list(
@@ -2594,6 +2612,17 @@ def build_body_text(
         ]
     )
     lines.extend(_format_summary_lines(request.summary, reason=reason))
+    # 377-OPS (GH #51) Phase 1B: draft mode で本文判断を可能にする。
+    # body_excerpt / admin_edit_url が populate されている時のみ表示。
+    body_excerpt = str(getattr(request, "body_excerpt", "") or "").strip()
+    if body_excerpt:
+        lines.append("")
+        lines.append("本文(抜粋):")
+        lines.append(body_excerpt)
+    admin_edit_url = str(getattr(request, "admin_edit_url", "") or "").strip()
+    if admin_edit_url:
+        lines.append("")
+        lines.append(f"編集 / 公開: {admin_edit_url}")
     if suppression_reason == "roster_movement_yellow":
         lines.append("warning: [Warning] roster movement 系記事、X 自動投稿対象外")
     if show_manual_x_candidates:

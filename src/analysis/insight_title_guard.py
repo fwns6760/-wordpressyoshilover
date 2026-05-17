@@ -29,6 +29,10 @@ _SCOPE_FALLBACKS = {
 
 _PERIOD_KEYWORD_RE = re.compile(
     r"(直近\s*\d+\s*(?:日|試合|週間|ヶ月|か月|月)|"
+    # issue #44 E (2026-05-17): 週別 / 月別 を period marker として認識する。
+    # 半角 (週別) を ranking_article_publisher が先に append、 ensure_title_period
+    # は全角（週別）を再 append → (週別)（週別) 重複の root cause。
+    r"週別|月別|"
     r"今シーズン|シーズン累計|シーズン進行中|"
     r"今日の試合|本日|"
     r"\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}|"

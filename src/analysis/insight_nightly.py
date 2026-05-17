@@ -55,6 +55,22 @@ from src.source_npb_postgame_extractor import parse_npb_box_html  # noqa: E402
 
 DEFAULT_DIGEST_DIR = ROOT / "data" / "insight" / "digest"
 
+# issue #44 C: counting metric ranking publish 対象。 batting_logs schema は
+# AB, R, H, RBI, SB のみで HR 列が無い (HR は atbats_json 内) ため、
+# HR は **意図的に除外**。 atbats_json 経由の HR 集計は別 ticket。
+# commit 21a8e7a (2026-05-15) で HR entry が追加され、 毎 nightly run で
+# 8 件 OperationalError: no such column: bl.HR を log 出力していた問題の修正。
+COUNTING_METRICS: tuple[dict[str, str], ...] = (
+    {"stat_col": "H", "table": "batting_logs",
+     "metric_label_jp": "安打数"},
+    {"stat_col": "RBI", "table": "batting_logs",
+     "metric_label_jp": "打点"},
+    {"stat_col": "SB", "table": "batting_logs",
+     "metric_label_jp": "盗塁"},
+    {"stat_col": "K", "table": "pitching_logs",
+     "metric_label_jp": "奪三振数"},
+)
+
 
 def resolve_all_slugs_auto(
     *,
@@ -526,18 +542,9 @@ def main(argv: Optional[list[str]] = None) -> int:
                             # (season / last_30d / monthly / weekly)、 step 3 part 1
                             # で追加した新 scope を実 publish で使う。
                             try:
-                                counting_metrics = [
-                                    {"stat_col": "H", "table": "batting_logs",
-                                     "metric_label_jp": "安打数"},
-                                    {"stat_col": "HR", "table": "batting_logs",
-                                     "metric_label_jp": "本塁打数"},
-                                    {"stat_col": "RBI", "table": "batting_logs",
-                                     "metric_label_jp": "打点"},
-                                    {"stat_col": "SB", "table": "batting_logs",
-                                     "metric_label_jp": "盗塁"},
-                                    {"stat_col": "K", "table": "pitching_logs",
-                                     "metric_label_jp": "奪三振数"},
-                                ]
+                                # issue #44 C: COUNTING_METRICS は module
+                                # 定数化、 HR 行除外 (batting_logs に HR 列無し)
+                                counting_metrics = list(COUNTING_METRICS)
                                 # 2026-05-16 user feedback: one-week /
                                 # one-month / season variants of the same
                                 # metric firing together is noisy. Auto

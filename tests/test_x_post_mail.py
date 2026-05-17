@@ -15,7 +15,9 @@ from src.x_post_mail_lane import (
     compose_mail,
     encode_x_intent_url,
     filter_central_league,
+    focus_player_names_from_lineup_rows,
     is_central_league,
+    normalize_focus_player_names,
     pick_candidates,
     time_band_label,
 )
@@ -156,6 +158,14 @@ class SubjectAndTimeBandTests(unittest.TestCase):
             self.assertIn(expected_band, subject, msg=f"hour={hour}")
             self.assertTrue(subject.startswith("🟠🐦📮"), msg=f"hour={hour}")
 
+    def test_subject_can_show_lineup_context(self) -> None:
+        ts = datetime(2026, 5, 17, 17, 30, tzinfo=JST)
+        subject = build_subject(ts, 2, context_label="今日のスタメン")
+        self.assertEqual(
+            subject,
+            "🟠🐦📮【Xポスト案 2件】🌆夕方｜今日のスタメン 17:30 JST",
+        )
+
 
 class PickCandidatesTests(unittest.TestCase):
     def test_pick_central_only_excludes_pacific(self) -> None:
@@ -221,6 +231,65 @@ class PickCandidatesTests(unittest.TestCase):
         })
         cands = pick_candidates(query_mock, now=datetime(2026, 5, 16, 7, 0, tzinfo=JST), max_candidates=2, min_sample=1)
         self.assertLessEqual(len(cands), 2)
+
+    def test_lineup_focus_prefers_today_starter_over_top_giants_row(self) -> None:
+        rows = [
+            _row(1, "佐藤輝明", "阪神", 0.945),
+            _row(2, "牧秀悟", "DeNA", 0.932),
+            _row(3, "岡本和真", "巨人", 0.921),
+            _row(4, "村上宗隆", "ヤクルト", 0.918),
+            _row(5, "鈴木誠也", "広島", 0.910),
+            _row(6, "細川成也", "中日", 0.900),
+            _row(7, "泉口友汰", "巨人", 0.895),
+        ]
+
+        def _mock(metric_name=None, **_kw):
+            if metric_name == "AVG":
+                return {
+                    "ok": True,
+                    "rows": rows,
+                    "count": len(rows),
+                    "total": len(rows),
+                    "focus_player": None,
+                }
+            return {"ok": False, "rows": [], "reason": "skip"}
+
+        cands = pick_candidates(
+            _mock,
+            now=datetime(2026, 5, 17, 17, 30, tzinfo=JST),
+            max_candidates=3,
+            min_sample=1,
+            min_central_rows=3,
+            focus_player_names={"泉口"},
+            context_label="今日のスタメン",
+        )
+        self.assertGreaterEqual(len(cands), 1)
+        cand = cands[0]
+        self.assertIn("今日のスタメン 泉口友汰", cand.title)
+        self.assertIn("今日のスタメンから", cand.post_text)
+        self.assertIn("泉口友汰", cand.post_text)
+        self.assertNotIn("岡本和真", cand.post_text)
+        self.assertIn("今日のスタメン: 泉口友汰", cand.draft_text)
+        self.assertNotIn("巨人最上位: 泉口友汰", cand.draft_text)
+        self.assertEqual(cand.context_label, "今日のスタメン")
+
+    def test_lineup_focus_names_from_rows_canonicalizes_surname(self) -> None:
+        rows = [
+            {"order": "1", "position": "中", "name": "丸"},
+            {"order": "2", "position": "遊", "name": "泉口"},
+            {"order": "3", "position": "左", "name": "キャベッジ"},
+        ]
+        names = focus_player_names_from_lineup_rows(rows)
+        self.assertIn("丸佳浩", names)
+        self.assertIn("泉口友汰", names)
+        self.assertIn("キャベッジ", names)
+
+    def test_normalize_focus_player_names_keeps_raw_when_alias_missing(self) -> None:
+        names = normalize_focus_player_names(
+            {"未知選手"},
+            alias_map={"泉口": "泉口友汰"},
+        )
+        self.assertEqual(names, {"未知選手"})
 
     def test_same_metric_period_family_only_once_per_mail(self) -> None:
         """OPS の直近5/10試合/直近1週間を同じ mail に並べない。"""
@@ -650,6 +719,18 @@ class ComposeMailTests(unittest.TestCase):
         mail = compose_mail([cand], now=ts)
         self.assertIn("⚠️ 超過", mail.html_body)
         self.assertIn("300", mail.html_body)
+
+    def test_compose_mail_includes_lineup_context_note(self) -> None:
+        ts = datetime(2026, 5, 17, 17, 30, tzinfo=JST)
+        mail = compose_mail(
+            [self._make_cand(1)],
+            now=ts,
+            context_label="今日のスタメン",
+            context_note="今日のスタメン優先: 丸佳浩、泉口友汰",
+        )
+        self.assertIn("今日のスタメン", mail.subject)
+        self.assertIn("今日のスタメン優先: 丸佳浩、泉口友汰", mail.text_body)
+        self.assertIn("今日のスタメン優先: 丸佳浩、泉口友汰", mail.html_body)
 
 
 class EmptyResultBehaviourTests(unittest.TestCase):

@@ -23,6 +23,7 @@ import html as _html
 import json as _json
 import logging
 import math as _math
+from pathlib import Path as _Path
 import random as _random
 import re as _re
 import sqlite3 as _sqlite3
@@ -208,6 +209,9 @@ _FORBIDDEN_POST_TERMS = (
     "覚醒",
 )
 
+_ROSTER_PATH = _Path(__file__).resolve().parents[1] / "config" / "giants_roster.json"
+_PLAYER_NAME_CLEAN_RE = _re.compile(r"[\s　*・.．。,\-_/／（）()【】「」『』\[\]]+")
+
 
 # ---------------------------------------------------------------------------
 # Filter & candidate selection
@@ -231,6 +235,122 @@ def _is_giants(team_code: Optional[str]) -> bool:
     if not team_code:
         return False
     return team_code.strip() in _GIANTS_ALIASES
+
+
+def _normalize_player_name(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return _PLAYER_NAME_CLEAN_RE.sub("", text)
+
+
+def _load_giants_player_aliases(
+    roster_path: _Path = _ROSTER_PATH,
+) -> dict[str, str]:
+    """Return normalized active Giants player aliases -> canonical name.
+
+    This is intentionally local to the X mail lane so lineup focus can
+    resolve names without importing the heavier RSS pipeline. Coaches /
+    manager entries are excluded because lineup focus must be players
+    only.
+    """
+    if not roster_path.exists():
+        return {}
+    try:
+        roster = _json.loads(roster_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("failed to load Giants roster aliases: %r", exc)
+        return {}
+
+    out: dict[str, str] = {}
+    prefix_buckets: dict[str, set[str]] = {}
+    for row in roster:
+        if not row.get("active"):
+            continue
+        if row.get("role") != "player":
+            continue
+        canonical = str(row.get("name") or "").strip()
+        if not canonical:
+            continue
+        aliases = [canonical, *(row.get("aliases") or [])]
+        for alias in aliases:
+            key = _normalize_player_name(alias)
+            if key:
+                out.setdefault(key, canonical)
+        # Yahoo lineup cells can be surname-only. Use unique short
+        # prefixes defensively, including one-char names such as 丸.
+        for n in (1, 2):
+            prefix = _normalize_player_name(canonical)[:n]
+            if prefix:
+                prefix_buckets.setdefault(prefix, set()).add(canonical)
+    for prefix, candidates in prefix_buckets.items():
+        if len(candidates) == 1:
+            out.setdefault(prefix, next(iter(candidates)))
+    return out
+
+
+def normalize_focus_player_names(
+    names: Optional[list[str] | tuple[str, ...] | set[str]],
+    *,
+    alias_map: Optional[dict[str, str]] = None,
+) -> set[str]:
+    """Normalize lineup/focus names into canonical-ish match keys.
+
+    ``names`` normally comes from Yahoo lineup rows. The return set
+    contains canonical names plus raw normalized keys so matching still
+    works when the roster file is unavailable.
+    """
+    if not names:
+        return set()
+    aliases = alias_map if alias_map is not None else _load_giants_player_aliases()
+    out: set[str] = set()
+    for name in names:
+        key = _normalize_player_name(name)
+        if not key:
+            continue
+        canonical = aliases.get(key)
+        if canonical:
+            out.add(_normalize_player_name(canonical))
+        out.add(key)
+    return out
+
+
+def focus_player_names_from_lineup_rows(rows: list[dict]) -> list[str]:
+    """Return canonical active Giants player names from lineup row dicts."""
+    if not rows:
+        return []
+    aliases = _load_giants_player_aliases()
+    out: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        raw = str(row.get("name") or "").strip()
+        key = _normalize_player_name(raw)
+        if not key:
+            continue
+        canonical = aliases.get(key) or raw
+        canonical_key = _normalize_player_name(canonical)
+        if canonical_key and canonical_key not in seen:
+            seen.add(canonical_key)
+            out.append(canonical)
+    return out
+
+
+def _row_matches_focus_player(row: dict, focus_names: set[str]) -> bool:
+    if not focus_names:
+        return False
+    player_key = _normalize_player_name(row.get("player_canonical"))
+    if not player_key:
+        return False
+    if player_key in focus_names:
+        return True
+    for focus_key in focus_names:
+        # Keep substring matching conservative. It mainly covers
+        # surname-only lineup cells after roster fallback misses.
+        if len(focus_key) >= 2 and (
+            player_key.startswith(focus_key) or focus_key.startswith(player_key)
+        ):
+            return True
+    return False
 
 
 def filter_central_league(rows: list[dict]) -> list[dict]:
@@ -522,6 +642,9 @@ class Candidate:
     # card / ranking proof; compose_mail uses this field for the actual
     # X intent URL when present.
     post_text: str = ""
+    # Optional fact-locked context, e.g. "今日のスタメン". This changes
+    # only the framing, not the numeric facts.
+    context_label: str = ""
 
 
 def _rebuild_ranks_within_central(rows: list[dict]) -> list[dict]:
@@ -535,15 +658,30 @@ def _rebuild_ranks_within_central(rows: list[dict]) -> list[dict]:
     return out
 
 
-def _top_giants_row(rows: list[dict]) -> Optional[dict]:
+def _top_giants_row(
+    rows: list[dict],
+    *,
+    focus_player_names: Optional[set[str]] = None,
+) -> Optional[dict]:
     """Return the highest-ranked Giants row from already-ranked rows."""
+    focus_names = focus_player_names or set()
+    if focus_names:
+        for row in rows:
+            if _is_giants(row.get("team_code")) and _row_matches_focus_player(row, focus_names):
+                return row
+        return None
     for row in rows:
         if _is_giants(row.get("team_code")):
             return row
     return None
 
 
-def _rows_with_giants_focus(rows: list[dict], *, max_rows: int = 10) -> list[dict]:
+def _rows_with_giants_focus(
+    rows: list[dict],
+    *,
+    max_rows: int = 10,
+    focus_row: Optional[dict] = None,
+) -> list[dict]:
     """Return display rows while guaranteeing the top Giants row is visible.
 
     The mail must answer "巨人の選手がセ・リーグで何位か". If the first
@@ -553,7 +691,7 @@ def _rows_with_giants_focus(rows: list[dict], *, max_rows: int = 10) -> list[dic
     if max_rows <= 0:
         return []
     top_rows = list(rows[:max_rows])
-    focus = _top_giants_row(rows)
+    focus = focus_row if focus_row is not None else _top_giants_row(rows)
     if focus is None:
         return top_rows
     if any(r.get("player_canonical") == focus.get("player_canonical")
@@ -774,6 +912,7 @@ def _build_branded_post_text(
     scope_label: str,
     rank: object,
     total: object,
+    context_label: str = "",
 ) -> str:
     """Build the actual X post copy shown in the button.
 
@@ -788,7 +927,15 @@ def _build_branded_post_text(
     _, angle = _angle_for_combo(combo)
     variant = _stable_variant_index(combo, focus_name)
 
-    if combo.position:
+    if context_label == "今日のスタメン":
+        body = (
+            "今日のスタメンから、数字を一つ。\n\n"
+            f"{focus_name}は{period_label}の{metric_jp}で{rank_text}。\n"
+            f"数字は{value_text}、{threshold_label}の条件です。\n\n"
+            "試合前に見ておくと、打席や登板の見え方が少し変わる数字。\n\n"
+            "この数字、どう見ますか？"
+        )
+    elif combo.position:
         position_jp = _POSITION_DISPLAY_JP.get(combo.position, combo.position)
         body = (
             "同じ条件で並べると、見え方が変わる。\n\n"
@@ -994,12 +1141,17 @@ def _format_one(
     *,
     min_sample: int,
     now: datetime,
+    focus_player_names: Optional[set[str]] = None,
+    context_label: str = "",
 ) -> Optional[Candidate]:
-    focus_row = _top_giants_row(rows)
+    focus_row = _top_giants_row(
+        rows,
+        focus_player_names=focus_player_names,
+    )
     if focus_row is None:
         LOG.info("No Giants row for %s/%s — skip", combo.metric, combo.period_label)
         return None
-    display_rows = _rows_with_giants_focus(rows, max_rows=10)
+    display_rows = _rows_with_giants_focus(rows, max_rows=10, focus_row=focus_row)
     parsed = {
         "metric": combo.metric,
         "position": None,
@@ -1045,14 +1197,16 @@ def _format_one(
     else:
         if lines and "ランキング" in lines[0]:
             lines[0] = f"セ・リーグ {metric_jp} ランキング {header_emoji}"
+    context_prefix = f"{context_label} " if context_label else ""
     title = (
         f"{_angle_for_combo(combo)[0]} Xポスト案｜"
-        f"{focus_name} {metric_jp} {scope_label} {focus_rank}/{focus_total}位 "
+        f"{context_prefix}{focus_name} {metric_jp} {scope_label} {focus_rank}/{focus_total}位 "
         f"({period_label}・{threshold_label})"
     )
     # 353: period_suffix を 1 行目 append から 2 行目挿入に変更。
     lines.insert(1, period_suffix)
-    lines.insert(2, f"巨人最上位: {focus_name} {scope_label} {focus_rank}/{focus_total}位")
+    focus_line_prefix = context_label or "巨人最上位"
+    lines.insert(2, f"{focus_line_prefix}: {focus_name} {scope_label} {focus_rank}/{focus_total}位")
 
     # 353: ranking rows に medal / metric label / strong Giants marker を post-process。
     lines = _rewrite_ranking_rows(lines, metric_jp)
@@ -1073,6 +1227,7 @@ def _format_one(
         scope_label=scope_label,
         rank=focus_rank,
         total=focus_total,
+        context_label=context_label,
     )
     if not _is_safe_post_text(post_text):
         LOG.warning(
@@ -1089,6 +1244,7 @@ def _format_one(
         char_count=len(post_text or draft_text),
         signature=_combo_signature(combo),
         post_text=post_text,
+        context_label=context_label,
     )
 
 
@@ -1101,6 +1257,8 @@ def pick_candidates(
     min_central_rows: int = 5,
     db_path: Optional[str] = None,
     dedup_set: Optional[set[str]] = None,
+    focus_player_names: Optional[list[str] | tuple[str, ...] | set[str]] = None,
+    context_label: str = "",
 ) -> list[Candidate]:
     """Build up to ``max_candidates`` セ-only X post candidates.
 
@@ -1132,10 +1290,15 @@ def pick_candidates(
         the past 24 hours. Combos whose signature is present are
         skipped during selection. ``None`` (default) disables the
         dedup gate (legacy behaviour).
+    focus_player_names:
+        Optional player-name gate, normally today's Giants lineup. When
+        provided, a candidate is emitted only if the highest available
+        Giants row for that ranking belongs to one of these players.
     """
     if now is None:
         now = datetime.now(JST)
     out: list[Candidate] = []
+    focus_names = normalize_focus_player_names(focus_player_names)
     # 351+354: shuffle the combo pool with a (date, hour) seed so each
     # trigger picks a different variety slice while staying reproducible
     # inside a single run. 354 adds 直近 N 試合 combos when db_path given.
@@ -1192,11 +1355,18 @@ def pick_candidates(
                      combo.period_label, combo.position)
             continue
         rows = _rebuild_ranks_within_central(rows)
-        if _top_giants_row(rows) is None:
+        if _top_giants_row(rows, focus_player_names=focus_names) is None:
             LOG.info("No Giants row in central ranking for %s/%s (position=%s) — skip",
                      combo.metric, combo.period_label, combo.position)
             continue
-        candidate = _format_one(combo, rows, min_sample=effective_min_sample, now=now)
+        candidate = _format_one(
+            combo,
+            rows,
+            min_sample=effective_min_sample,
+            now=now,
+            focus_player_names=focus_names,
+            context_label=context_label if focus_names else "",
+        )
         if candidate:
             out.append(candidate)
             seen_period_families.add(family_key)
@@ -1233,17 +1403,27 @@ def time_band_label(hour: int) -> str:
     return "夜"  # fall-through (should not happen with TIME_BANDS coverage)
 
 
-def build_subject(now: datetime, n_candidates: int) -> str:
+def build_subject(
+    now: datetime,
+    n_candidates: int,
+    *,
+    context_label: str = "",
+) -> str:
     band = time_band_label(now.hour)
     band_emoji = _TIME_BAND_EMOJI.get(band, "")
-    purpose = _TIME_BAND_PURPOSE.get(band, "Xポスト案")
+    purpose = context_label or _TIME_BAND_PURPOSE.get(band, "Xポスト案")
     return (
         f"🟠🐦📮【Xポスト案 {n_candidates}件】"
         f"{band_emoji}{band}｜{purpose} {now.strftime('%H:%M')} JST"
     )
 
 
-def _compose_text_body(candidates: list[Candidate], now: datetime) -> str:
+def _compose_text_body(
+    candidates: list[Candidate],
+    now: datetime,
+    *,
+    context_note: str = "",
+) -> str:
     band = time_band_label(now.hour)
     parts = [
         f"📮 巨人データXポスト案 — {band} / {now.strftime('%Y-%m-%d %H:%M')} JST",
@@ -1253,6 +1433,8 @@ def _compose_text_body(candidates: list[Candidate], now: datetime) -> str:
         "(HTML mail を表示できる client なら 🐦 ボタンで X アプリが直接開きます)",
         "",
     ]
+    if context_note:
+        parts.extend([context_note, ""])
     for idx, cand in enumerate(candidates, start=1):
         post_text = _candidate_post_text(cand)
         parts.append("━" * 40)
@@ -1273,7 +1455,12 @@ def _compose_text_body(candidates: list[Candidate], now: datetime) -> str:
     return "\n".join(parts)
 
 
-def _compose_html_body(candidates: list[Candidate], now: datetime) -> str:
+def _compose_html_body(
+    candidates: list[Candidate],
+    now: datetime,
+    *,
+    context_note: str = "",
+) -> str:
     band = time_band_label(now.hour)
     rows_html: list[str] = []
     for idx, cand in enumerate(candidates, start=1):
@@ -1332,6 +1519,12 @@ def _compose_html_body(candidates: list[Candidate], now: datetime) -> str:
         "各候補の <strong>🐦 X で投稿</strong> ボタンを押すと X アプリ "
         "(または x.com) が本文プリフィル済で開きます。タップして "
         "「ポスト」だけ押せば投稿完了です。テキスト編集も可能。</p>"
+        + (
+            "<p style=\"font-size:12px;color:#5d4037;background:#fff8e1;"
+            "border-left:3px solid #f57f17;padding:8px 10px;margin:0 0 12px;\">"
+            f"{_html.escape(context_note)}</p>"
+            if context_note else ""
+        )
         + "\n".join(rows_html)
         + "</body></html>"
     )
@@ -1349,12 +1542,14 @@ def compose_mail(
     candidates: list[Candidate],
     *,
     now: Optional[datetime] = None,
+    context_label: str = "",
+    context_note: str = "",
 ) -> ComposedMail:
     if now is None:
         now = datetime.now(JST)
-    subject = build_subject(now, len(candidates))
-    text_body = _compose_text_body(candidates, now)
-    html_body = _compose_html_body(candidates, now)
+    subject = build_subject(now, len(candidates), context_label=context_label)
+    text_body = _compose_text_body(candidates, now, context_note=context_note)
+    html_body = _compose_html_body(candidates, now, context_note=context_note)
     return ComposedMail(
         subject=subject,
         text_body=text_body,

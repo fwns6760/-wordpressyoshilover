@@ -36,6 +36,7 @@ from src import x_post_mail_lane as lane  # noqa: E402
 LOG = logging.getLogger("x_post_mail")
 DEFAULT_MAX_DB_STALENESS_DAYS = 2
 DEFAULT_DEDUP_MIN_CANDIDATES = 3
+DEFAULT_LINEUP_FOCUS_MIN_CANDIDATES = 1
 
 
 def _configure_logging() -> None:
@@ -106,6 +107,63 @@ def _resolve_dedup_min_candidates() -> int:
         )
         return DEFAULT_DEDUP_MIN_CANDIDATES
     return value
+
+
+def _resolve_lineup_focus_min_candidates() -> int:
+    raw = (
+        os.environ.get("X_POST_MAIL_LINEUP_FOCUS_MIN_CANDIDATES")
+        or str(DEFAULT_LINEUP_FOCUS_MIN_CANDIDATES)
+    ).strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        LOG.warning(
+            "Invalid X_POST_MAIL_LINEUP_FOCUS_MIN_CANDIDATES=%r; using default %d",
+            raw,
+            DEFAULT_LINEUP_FOCUS_MIN_CANDIDATES,
+        )
+        return DEFAULT_LINEUP_FOCUS_MIN_CANDIDATES
+    if value < 0:
+        LOG.warning(
+            "Invalid X_POST_MAIL_LINEUP_FOCUS_MIN_CANDIDATES=%r; using default %d",
+            raw,
+            DEFAULT_LINEUP_FOCUS_MIN_CANDIDATES,
+        )
+        return DEFAULT_LINEUP_FOCUS_MIN_CANDIDATES
+    return value
+
+
+def _lineup_focus_disabled() -> bool:
+    raw = (os.environ.get("X_POST_MAIL_LINEUP_FOCUS_DISABLED") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _fetch_today_lineup_focus_names() -> list[str]:
+    """Scrape today's Giants lineup and return canonical player names.
+
+    Failure is a soft fallback: the X post mail still works from the
+    existing data-ranking pool when lineup is not published yet or Yahoo
+    changes markup.
+    """
+    if _lineup_focus_disabled():
+        LOG.info("Lineup focus disabled by X_POST_MAIL_LINEUP_FOCUS_DISABLED")
+        return []
+    try:
+        from src.rss_fetcher import fetch_today_giants_lineup_stats_from_yahoo
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("Lineup focus import failed; continuing without focus: %r", exc)
+        return []
+    try:
+        rows = fetch_today_giants_lineup_stats_from_yahoo()
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("Lineup focus fetch failed; continuing without focus: %r", exc)
+        return []
+    names = lane.focus_player_names_from_lineup_rows(rows)
+    if names:
+        LOG.info("Lineup focus enabled: %d players %s", len(names), names)
+    else:
+        LOG.info("Lineup focus unavailable: no lineup rows returned")
+    return names
 
 
 def _backfill_dedup_starved_candidates(
@@ -226,6 +284,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     LOG.info("Picking candidates (max=%d, min_sample=%d, db_path=%s, dedup=%s)…",
              args.max_candidates, args.min_sample, bool(db_path),
              len(dedup_set) if dedup_set is not None else "off")
+    lineup_focus_names = _fetch_today_lineup_focus_names()
+    context_label = "今日のスタメン" if lineup_focus_names else ""
     candidates = lane.pick_candidates(
         miq.query_rank,
         now=now_jst,
@@ -233,7 +293,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         min_sample=args.min_sample,
         db_path=db_path,
         dedup_set=dedup_set,
+        focus_player_names=lineup_focus_names,
+        context_label=context_label,
     )
+    if lineup_focus_names and len(candidates) < _resolve_lineup_focus_min_candidates():
+        LOG.warning(
+            "Lineup focus produced only %d candidates; retrying without lineup "
+            "focus so the scheduled mail does not disappear entirely.",
+            len(candidates),
+        )
+        candidates = lane.pick_candidates(
+            miq.query_rank,
+            now=now_jst,
+            max_candidates=args.max_candidates,
+            min_sample=args.min_sample,
+            db_path=db_path,
+            dedup_set=dedup_set,
+        )
+        context_label = ""
     dedup_min_candidates = _resolve_dedup_min_candidates()
     if dedup_set is not None and len(candidates) < dedup_min_candidates:
         LOG.warning(
@@ -249,6 +326,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             min_sample=args.min_sample,
             db_path=db_path,
             dedup_set=None,
+            focus_player_names=lineup_focus_names if context_label else None,
+            context_label=context_label,
         )
         backfilled = _backfill_dedup_starved_candidates(
             candidates,
@@ -272,7 +351,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     LOG.info("Composing mail with %d candidates…", len(candidates))
-    mail = lane.compose_mail(candidates)
+    context_note = ""
+    if context_label and lineup_focus_names:
+        context_note = "今日のスタメン優先: " + "、".join(lineup_focus_names)
+    mail = lane.compose_mail(
+        candidates,
+        context_label=context_label,
+        context_note=context_note,
+    )
 
     if args.dry_run:
         LOG.info("[dry-run] subject=%s", mail.subject)

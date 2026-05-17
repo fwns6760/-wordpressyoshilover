@@ -182,6 +182,150 @@ scanner / runner を改修して body_excerpt + admin_edit_url を populate。
 次 session で Phase 1C-1 (PublishNoticeRequest 構築箇所の inventory) から開始。
 全 inventory 完了 → 改修対象確定 → 7 点提示 → user GO で実装。
 
+---
+
+## 🛑 次 session 開始時の必須 verify protocol (AI 事故源 対策)
+
+memory rule: **AI は「記憶から再構成」「silent skip」「自己評価 OK」が最大の事故源。**
+ticket と commit message を読んだ「気になる」状態で着手しない。 以下を **コピペで実行** し、 1 次 source で **現在状態** を確認してから判断する。
+
+### 1. 現在の deploy 状態を image tag で verify (記憶ではなく gcloud で確認)
+
+```bash
+gcloud run services describe yoshilover-fetcher --region=asia-northeast1 --project=baseballsite --format='value(spec.template.spec.containers[0].image)'
+```
+
+期待: tag に `377-phase1ab-` が含まれているか、 もしくはそれ以降の commit hash。
+含まれていない場合: Phase 1A / 1B の deploy が rollback されたか、 別 image に上書きされた。 ticket の「着地済」記述を **信じず**、 git log で commit が remote にあるか check。
+
+### 2. Phase 1A wp_client draft 強制が実際に効いているか実コードで grep
+
+```bash
+grep -n "RUN_DRAFT_ONLY" src/wp_client.py
+```
+
+期待: `create_post` 内に `RUN_DRAFT_ONLY` を見て publish→draft 降格する block がある。
+無ければ: commit が revert された。 1A から再着手。
+
+### 3. Phase 1B PublishNoticeRequest field の存在確認
+
+```bash
+grep -n "body_excerpt\|admin_edit_url" src/publish_notice_email_sender.py
+```
+
+期待: dataclass 定義に両 field、 `build_body_text` 内で minimal body mode 内に両 field を展開する block。
+無ければ: revert された。 1B から再着手。
+
+### 4. env RUN_DRAFT_ONLY の現状 (Cloud Run env、 production)
+
+```bash
+gcloud run services describe yoshilover-fetcher --region=asia-northeast1 --project=baseballsite --format='value(spec.template.spec.containers[0].env)' | tr ';' '\n' | grep -i "RUN_DRAFT_ONLY"
+```
+
+期待: 空 (= env 未設定 = default False) もしくは `name=RUN_DRAFT_ONLY value=False`。
+**True になっていたら**: Phase 2 が既に apply 済。 即座に Cloud Logging で publish 状態を verify (本当に draft 化されているか実 post で確認) してから次に進む。
+
+### 5. Phase 1C 着手前の inventory (PublishNoticeRequest 構築箇所全部)
+
+```bash
+grep -n "PublishNoticeRequest(" src/publish_notice_scanner.py src/publish_notice_email_sender.py src/guarded_publish_runner.py
+```
+
+期待: 5-7 箇所 hit。 各箇所の関数名を **書き出してから** 改修対象を決める。
+**「主要な X 箇所だけやれば良い」と判断しない**。 全箇所 reviewer 視点で trace。
+
+### 6. guarded_publish_runner の JSONL に body が含まれるか実 file で verify
+
+```bash
+ls -lt /tmp/guarded_publish*.jsonl 2>&1 | head -3  # local sample
+# または production:
+gsutil ls gs://yoshilover-publish-history/ 2>&1 | head -5
+```
+
+期待: JSONL 1 件読んで、 entry 内に `body` または `content` field があるか確認。
+無ければ: Phase 1C で body fetch source を (c) candidate row ではなく (b) WP REST fallback に決める根拠になる。
+
+### 7. WP REST で post body 取得の sample 確認
+
+```bash
+python3 -c "
+import os, urllib.request, base64, json
+from dotenv import load_dotenv; load_dotenv()
+u=os.getenv('WP_USER'); p=os.getenv('WP_APP_PASSWORD')
+auth=base64.b64encode(f'{u}:{p}'.encode()).decode()
+# 直近 draft 1 件を取得 (status=draft で filter)
+url='https://yoshilover.com/wp-json/wp/v2/posts?status=draft&per_page=1&_fields=id,title,content,link&context=edit'
+req=urllib.request.Request(url, headers={'Authorization': f'Basic {auth}'})
+r=json.loads(urllib.request.urlopen(req, timeout=20).read())
+print(json.dumps(r[:1], ensure_ascii=False, indent=2)[:1500])
+"
+```
+
+期待: 既に draft が WP に存在し、 body が取れる。 取れたら excerpt 化 helper の design に進める。
+
+---
+
+## 🚫 次 session で **やってはいけない** こと (silent skip / 記憶再構成 対策)
+
+### NG 1: ticket の「着地済」だけ見て Phase 1C に着手
+
+→ deploy 状態 / commit 状態を **gcloud + git で 1 次 source 確認** してから着手。 image tag が違ったら別問題 (rollback / 上書き) を先に解決。
+
+### NG 2: 「PublishNoticeRequest 構築箇所は主要な 1-2 箇所」と決め打ち
+
+→ grep で 全箇所 inventory、 各箇所の caller flow を **trace してから** 改修対象を確定。 「他の箇所は影響しないはず」は silent skip。
+
+### NG 3: WP REST で body 取れると仮定して latency 見積もり
+
+→ verify protocol #7 を実行して、 sample で body 取れるか確認。 timeout / error rate を base line として記録してから設計。
+
+### NG 4: 「既存 test 通れば OK」で deploy
+
+→ dry-run で実 mail body を **目視 verify** (本文抜粋 / admin link / サイズ / 改行) してから env apply。 SMTP が来ない / 文字化け / link 切れ は test だけでは検出不能。
+
+### NG 5: 「env apply は 1 toggle なので safe」と楽観
+
+→ apply 後の 1 fire (朝 06:30 JST or 手動 trigger) を待って publish 数 / draft 数 / mail 件数を Cloud Logging で **数値で verify**。 「動いてるはず」は事故源。
+
+### NG 6: 「Phase 1A + 1B 着地済の前提が崩れた時の handling」を未定義のまま進める
+
+→ verify protocol #1-3 で前提崩れを検出した場合の手順を 先に決める。 「revert された / image 上書き」のリカバリ手順は本 ticket に明記してない (今後追記)。
+
+---
+
+## 📝 着手 commit に必ず書く内容 (将来の自分への申し送り)
+
+各 Phase 1C / 2 commit message に以下を含める:
+
+```
+# verify 実施 (本 commit 着手前)
+- gcloud run services describe ... → image tag: ...
+- grep RUN_DRAFT_ONLY src/wp_client.py → present at line ...
+- PublishNoticeRequest 構築箇所 inventory: 5 件 (line ..., ...)
+- WP REST sample fetch → body 取得 OK (latency Xms)
+- dry-run mail body サイズ X KB / 内容目視 verify pass
+
+# 改修 scope
+- 触る file: ...
+- 触らない file: ...
+
+# rollback
+- env RUN_DRAFT_ONLY=False で 1 toggle 復旧
+```
+
+これで次 session 以降も「記憶」「silent skip」「自己評価」を回避できる。
+
+---
+
+## 📌 user GO 待ち事項 (現時点 open)
+
+- なし (Phase 1A + 1B 着地済、 env apply は Phase 1C 完了後)
+
+## 📌 user 操作待ち事項
+
+- WP login (cookie 保持) → Phase 2 env apply 直前
+- 翌日朝 mail check → Phase 3 受け入れ判断
+
 ## 関連 ticket / memory
 
 - `[[feedback_title_no_ai]]` (LLM 不使用)

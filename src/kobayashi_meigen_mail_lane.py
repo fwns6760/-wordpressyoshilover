@@ -118,11 +118,11 @@ def _build_x_intent_url(text: str, archive_number: int = 0) -> str:
     header = ""
     footer = ""
     if archive_number and archive_number > 0:
-        no_str = _circled_number(archive_number)
+        no_str = str(archive_number)  # plain digit (1, 100, 836 全部統一)
         header = (
             "🏆 小林誠司 名言集 🏆\n"
             "━━━━━━━━━━━━\n"
-            f"   第 {no_str} 回\n"
+            f"       第 {no_str} 回\n"
             "━━━━━━━━━━━━\n\n"
         )
         footer = "\n\n#巨人 #小林誠司"
@@ -133,46 +133,22 @@ def _build_x_intent_url(text: str, archive_number: int = 0) -> str:
     return f"https://twitter.com/intent/tweet?text={_url_quote(body, safe='')}"
 
 
-def _circled_number(n: int) -> str:
-    """1..50 は ① ② … ㊿、 51+ は plain digits。
+_KEYCAP_DIGITS = {
+    "0": "0️⃣", "1": "1️⃣", "2": "2️⃣", "3": "3️⃣", "4": "4️⃣",
+    "5": "5️⃣", "6": "6️⃣", "7": "7️⃣", "8": "8️⃣", "9": "9️⃣",
+}
 
-    X 投稿テキスト (plain text) で使う text-safe な representation。
-    HTML mail 側は :func:`_format_no_circle_html` を使う。
+
+def _emoji_number(n: int) -> str:
+    """N の各桁を keycap emoji (0️⃣..9️⃣) で連結。
+
+    例: 1 → 1️⃣、 10 → 1️⃣0️⃣、 100 → 1️⃣0️⃣0️⃣、 836 → 8️⃣3️⃣6️⃣。
+    全番号で emoji size が統一されて plain text 環境 (X post / mail
+    text body) でも 数字が ちゃんと大きく見える。
     """
-    if 1 <= n <= 20:
-        return chr(0x2460 + n - 1)
-    if 21 <= n <= 35:
-        return chr(0x3251 + n - 21)
-    if 36 <= n <= 50:
-        return chr(0x32B1 + n - 36)
-    return str(n)
-
-
-def _format_no_circle_html(n: int) -> str:
-    """HTML 用 大型赤丸 + 中の数字 (CSS circle、 Unicode 円囲み 不使用).
-
-    桁数別に font-size を調整して 1 〜 836 まで 1 つの 96px 円に
-    収まる。 Modern mail client (Gmail 等) は完璧表示、 古い client
-    は丸が消えて plain digits に fallback。
-    """
-    digits = str(n) if n > 0 else "1"
-    if len(digits) == 1:
-        font_size = 56
-    elif len(digits) == 2:
-        font_size = 44
-    elif len(digits) == 3:
-        font_size = 32
-    else:
-        font_size = 24
-    return (
-        "<div style=\"display:inline-block;"
-        "width:96px;height:96px;line-height:96px;"
-        "border-radius:50%;background:#c0392b;color:#fff;"
-        f"font-size:{font_size}px;font-weight:900;"
-        "text-align:center;letter-spacing:1px;\">"
-        f"{digits}"
-        "</div>"
-    )
+    if n <= 0:
+        return str(n) if n else "0️⃣"
+    return "".join(_KEYCAP_DIGITS.get(c, c) for c in str(n))
 
 
 def _record_to_candidate(rec: dict[str, Any], archive_number: int = 0) -> MeigenCandidate:
@@ -287,10 +263,11 @@ def _compose_text_body(candidates: list[MeigenCandidate], now: datetime) -> str:
         "",
     ]
     for idx, c in enumerate(candidates, start=1):
-        no_label = _circled_number(c.archive_number) if c.archive_number else f"{idx}"
-        lines.append(f"━━━━━━━━━━━━━━━━━━━━")
-        lines.append(f"小林誠司名言集 NO{no_label}")
-        lines.append(f"━━━━━━━━━━━━━━━━━━━━")
+        no_label = str(c.archive_number) if c.archive_number else str(idx)
+        lines.append("🏆 小林誠司 名言集 🏆")
+        lines.append("━━━━━━━━━━━━")
+        lines.append(f"       第 {no_label} 回")
+        lines.append("━━━━━━━━━━━━")
         lines.append(f"📅 {_format_jst_date(c.created_at)}")
         lines.append("")
         lines.append(c.text)
@@ -327,21 +304,22 @@ def _compose_html_body(candidates: list[MeigenCandidate], now: datetime) -> str:
     for idx, c in enumerate(candidates, start=1):
         date_str = _format_jst_date(c.created_at)
         text_html = _html.escape(c.text).replace("\n", "<br>")
-        no_label = _circled_number(c.archive_number) if c.archive_number else f"{idx}"
+        no_label = str(c.archive_number) if c.archive_number else str(idx)
         parts.append(
             "<div style=\"border:1px solid #e2e2e2;border-radius:8px;"
             "padding:12px 16px;margin:0 0 16px;background:#fff;\">"
         )
-        # ヘッダー: 「小林誠司名言集 NO」 + 大型 CSS 円 (赤背景白抜き)
-        circle_html = _format_no_circle_html(c.archive_number or idx)
+        # ヘッダー: X post 本文と同じ装飾 (🏆 + 罫線 + plain digit) を
+        # text-align:center で再現、 「mail で見たまま X に投稿される」 体験。
         parts.append(
-            "<div style=\"text-align:center;padding:12px 0 16px;"
-            "border-bottom:2px solid #c0392b;margin:0 0 16px;\">"
-            "<div style=\"font-size:13px;color:#666;letter-spacing:2px;"
-            "font-weight:600;margin:0 0 8px;\">"
-            "小林誠司名言集 NO"
-            "</div>"
-            f"{circle_html}"
+            "<div style=\"text-align:center;font-family:monospace;"
+            "font-size:15px;line-height:1.6;color:#222;"
+            "padding:8px 0 12px;margin:0 0 12px;"
+            "border-bottom:1px solid #ddd;\">"
+            "🏆 小林誠司 名言集 🏆<br>"
+            "━━━━━━━━━━━━<br>"
+            f"第 {_html.escape(no_label)} 回<br>"
+            "━━━━━━━━━━━━"
             "</div>"
         )
         parts.append(

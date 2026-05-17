@@ -57,6 +57,7 @@ class XShortPlayerPostgameRescueTests(unittest.TestCase):
         )
         # RSS-259: x_short_player が postgame_strict より先 hit
         self.assertEqual(ctx["template_selector_v2_key"], "x_short_player")
+        self.assertEqual(ctx["category"], "選手情報")
         self.assertEqual(ctx["title_subtype"], "x_short_player")
         self.assertEqual(ctx["validator_subtype"], "social_news")
 
@@ -70,6 +71,7 @@ class XShortPlayerPostgameRescueTests(unittest.TestCase):
             category="試合速報",
         )
         self.assertEqual(ctx["template_selector_v2_key"], "x_short_player")
+        self.assertEqual(ctx["category"], "選手情報")
 
     def test_x_hero_interview_routes_to_x_short_player(self):
         # 重要 keyword「ヒーロー」「お立ち台」「コメント」 含む trusted X
@@ -81,6 +83,7 @@ class XShortPlayerPostgameRescueTests(unittest.TestCase):
             category="試合速報",
         )
         self.assertEqual(ctx["template_selector_v2_key"], "x_short_player")
+        self.assertEqual(ctx["category"], "選手情報")
 
     def test_x_postgame_without_important_keyword_keeps_existing_path(self):
         # spec 重要 keyword 含まない X postgame (live 3 件 sample 相当)

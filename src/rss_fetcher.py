@@ -1486,6 +1486,7 @@ TRUSTED_SOCIAL_SOURCE_NAMES = {
     "日刊スポーツX",
     "スポニチ野球記者X",
     "サンスポ巨人X",
+    "東スポ巨人担当X",
     "スポーツ報知X",
     "報知野球X",
     "NPB公式X",
@@ -1495,6 +1496,7 @@ GIANTS_EXCLUSIVE_SOCIAL_SOURCE_NAMES = {
     "読売ジャイアンツX",
     "スポーツ報知巨人班X",
     "サンスポ巨人X",
+    "東スポ巨人担当X",
 }
 TRUSTED_SOCIAL_SOURCE_HANDLES = {
     "yoshilover6760",
@@ -1507,6 +1509,7 @@ TRUSTED_SOCIAL_SOURCE_HANDLES = {
     "hochi_baseball",
     "sponichiyakyu",
     "nikkansports",
+    "tospo_giants",
     "npb",
     "npb_official",
 }
@@ -1516,6 +1519,7 @@ GIANTS_EXCLUSIVE_SOCIAL_HANDLES = {
     "yomiurigiants",
     "hochi_giants",
     "sanspo_giants",
+    "tospo_giants",
 }
 GIANTS_ROSTER_EXTRA_ALIASES = {
     "オコエ瑠偉": ("オコエ瑠偉", "オコエ"),
@@ -6128,14 +6132,11 @@ def _resolve_rss_story_type_context_v2(
         validator_subtype = "social_news"
     elif template_key == "x_short_player":
         # RSS-257: 長文テンプレに乗せず短文記事として作る subtype。
-        # category は news 推定値を Giants の主要 4 category 内に限定して維持、
-        # 範囲外なら "選手情報" にフォールバック (front 整理のため)。
+        # x_short_player は選手・投手の短文記事を救う経路なので、上流の
+        # keyword 推定が「試合速報」に寄っていても front rail は「選手情報」に固定する。
         # validator_subtype="social_news" で軽量 contract、generation prompt は
         # 既存 social_news 系の短文 prompt が使われる。
-        if category in {"選手情報", "試合速報", "首脳陣", "ドラフト・育成"}:
-            resolved_category = category
-        else:
-            resolved_category = "選手情報"
+        resolved_category = "選手情報"
         title_subtype = "x_short_player"
         body_subtype = "x_short_player"
         validator_subtype = "social_news"

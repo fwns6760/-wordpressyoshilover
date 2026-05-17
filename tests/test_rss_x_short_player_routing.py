@@ -361,11 +361,11 @@ class XShortPlayerGuardSkipTests(unittest.TestCase):
 
 
 class XShortPlayerCategoryFallbackTests(unittest.TestCase):
-    """x_short_player の category fallback 挙動を pin."""
+    """x_short_player の category correction 挙動を pin."""
 
-    def test_known_category_kept(self):
-        # 「選手情報」「試合速報」「首脳陣」「ドラフト・育成」 はそのまま維持
-        for category in ("選手情報", "試合速報", "首脳陣", "ドラフト・育成"):
+    def test_x_short_player_routes_to_player_info_category(self):
+        # x_short_player は上流 category が試合速報等に寄っても選手情報へ寄せる。
+        for category in ("選手情報", "試合速報", "首脳陣", "ドラフト・育成", "コラム"):
             with self.subTest(category=category):
                 ctx = _resolve(
                     title="巨人投手が好投",
@@ -375,19 +375,29 @@ class XShortPlayerCategoryFallbackTests(unittest.TestCase):
                     category=category,
                 )
                 if ctx["template_selector_v2_key"] == "x_short_player":
-                    self.assertEqual(ctx["category"], category)
+                    self.assertEqual(ctx["category"], "選手情報")
 
-    def test_unknown_category_falls_back_to_player_info(self):
-        # 上記 4 カテゴリ外 (「コラム」「球団情報」 等) は「選手情報」にフォールバック
+    def test_takanashi_relief_family_story_is_not_kept_as_score(self):
         ctx = _resolve(
-            title="巨人投手が好投",
-            summary="今日の試合で投手が無失点で好投した。",
-            source_url="https://x.com/hochi_giants/status/2057400000000000002",
+            title="巨人・高梨雄平がお父さんでライデルはおじさん！？絆の救援リレー",
+            summary="チーム5連勝中、救援陣が22人でわずか2失点に抑えた。",
+            source_url="https://x.com/hochi_giants/status/2055745869941473424",
             source_name="スポーツ報知巨人班X",
-            category="コラム",
+            category="試合速報",
         )
-        if ctx["template_selector_v2_key"] == "x_short_player":
-            self.assertEqual(ctx["category"], "選手情報")
+        self.assertEqual(ctx["template_selector_v2_key"], "x_short_player")
+        self.assertEqual(ctx["category"], "選手情報")
+
+    def test_tospo_coach_lineup_explanation_routes_to_manager_category(self):
+        ctx = _resolve(
+            title="【巨人】橋上コーチ 泉口友汰の今季初2番起用を説明",
+            summary="橋上コーチが打撃の調子を見ながら2番起用の意図を説明した。",
+            source_url="https://x.com/tospo_giants/status/2055775973594042741",
+            source_name="東スポ巨人担当X",
+            category="試合速報",
+        )
+        self.assertIn(ctx["template_selector_v2_key"], ("manager_short", "manager_quote_short", "manager"))
+        self.assertEqual(ctx["category"], "首脳陣")
 
 
 class XShortTemplateSubtypesConstantTests(unittest.TestCase):

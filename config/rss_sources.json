@@ -56,6 +56,15 @@
     ]
   },
   {
+    "name": "東スポ巨人担当X",
+    "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/tospo_giants",
+    "type": "social_news",
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
     "name": "スポーツ報知X",
     "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/SportsHochi",
     "type": "social_news",

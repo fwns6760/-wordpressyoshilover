@@ -223,21 +223,24 @@ def test_run_all_anomaly_detectors_handles_empty_db(tmp_path):
 
 
 def test_run_all_anomaly_detectors_reports_partial_failures(tmp_path, monkeypatch):
+    """issue #44 B: game_hero_batter / game_pitcher_perf は完全 skip した
+    ため、 partial failure reporting 機構の verification は別の active な
+    detector (detect_milestone_crossed) で行う。
+    """
     db = tmp_path / "t.db"
     conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
 
     def boom(*_args, **_kwargs):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(det, "detect_game_hero_batter", boom)
+    monkeypatch.setattr(det, "detect_milestone_crossed", boom)
     try:
         result = det.run_all_anomaly_detectors(conn)
-        assert result.get(det.SIGNAL_GAME_HERO_BATTER) == []
+        assert result.get(det.SIGNAL_MILESTONE_CROSSED) == []
         errors = result.get(det.DETECTOR_ERROR_KEY, [])
         assert any(
-            det.SIGNAL_GAME_HERO_BATTER in e and "RuntimeError:boom" in e
-            for e in errors
-        )
+            "RuntimeError:boom" in e for e in errors
+        ), f"partial failure が errors に記録されていない: {errors}"
     finally:
         conn.close()
 

@@ -1844,21 +1844,12 @@ def run_all_anomaly_detectors(
         _record_error("detect_giants_defense_outliers", exc)
         out[SIGNAL_DEFENSE_UZR_OUTLIER] = []
         out[SIGNAL_DEFENSE_FIELDING_PCT] = []
-    # 2026-05-15 試合後 ファンが気になる指標 5 detector
-    try:
-        out[SIGNAL_GAME_HERO_BATTER] = detect_game_hero_batter(
-            conn, snapshot_date=snapshot_date, run_id=run_id,
-        )
-    except Exception as exc:  # noqa: BLE001
-        _record_error(SIGNAL_GAME_HERO_BATTER, exc)
-        out[SIGNAL_GAME_HERO_BATTER] = []
-    try:
-        out[SIGNAL_GAME_PITCHER_PERF] = detect_game_pitcher_performance(
-            conn, snapshot_date=snapshot_date, run_id=run_id,
-        )
-    except Exception as exc:  # noqa: BLE001
-        _record_error(SIGNAL_GAME_PITCHER_PERF, exc)
-        out[SIGNAL_GAME_PITCHER_PERF] = []
+    # issue #44 B (2026-05-17 user lock): 1 試合 postgame data 記事
+    # (浦田 3 安打 1 打点 / マルティネス 1 イニング 0 自責 等) を完全 off。
+    # detect_game_hero_batter / detect_game_pitcher_performance の関数本体と
+    # renderer は残置 (将来再有効化のため)、 ここで呼び出しのみ skip。
+    out[SIGNAL_GAME_HERO_BATTER] = []
+    out[SIGNAL_GAME_PITCHER_PERF] = []
     try:
         milestone_ids = detect_milestone_crossed(
             conn, snapshot_date=snapshot_date, run_id=run_id,

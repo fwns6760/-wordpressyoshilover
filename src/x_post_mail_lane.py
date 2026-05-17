@@ -178,6 +178,29 @@ _TIME_BAND_EMOJI = {
     "試合後": "🌙",
 }
 
+_TIME_BAND_PURPOSE = {
+    "朝": "直近データ",
+    "昼": "直近数字",
+    "午後": "直近変化",
+    "夕方": "試合前データ",
+    "試合後": "見返したい数字",
+}
+
+_FORBIDDEN_POST_TERMS = (
+    "昇格候補",
+    "昇格待ったなし",
+    "起用理由",
+    "阿部監督",
+    "首脳陣",
+    "監督評価",
+    "評価している",
+    "ファンの反応",
+    "期待が高ま",
+    "注目している",
+    "ブレイク確定",
+    "覚醒",
+)
+
 
 # ---------------------------------------------------------------------------
 # Filter & candidate selection
@@ -486,6 +509,10 @@ class Candidate:
     # backward compatibility with older tests that build Candidate
     # directly without going through ``pick_candidates``.
     signature: str = ""
+    # Human-facing X post copy. ``draft_text`` keeps the detailed data
+    # card / ranking proof; compose_mail uses this field for the actual
+    # X intent URL when present.
+    post_text: str = ""
 
 
 def _rebuild_ranks_within_central(rows: list[dict]) -> list[dict]:
@@ -608,6 +635,25 @@ def _sample_threshold_label(metric: str, min_sample: int) -> str:
     return f"規定{sample_label}{min_sample}以上"
 
 
+def _format_metric_value(metric: str, value: object) -> str:
+    if value is None:
+        return "-"
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if metric in {"AVG", "OBP", "SLG", "OPS"}:
+        s = f"{v:.3f}"
+        if s.startswith("0."):
+            return s[1:]
+        if s.startswith("-0."):
+            return "-" + s[2:]
+        return s
+    if metric in {"ERA", "K_per_9", "BB_per_9", "HR_per_9"}:
+        return f"{v:.2f}"
+    return f"{v:g}"
+
+
 def _rewrite_ranking_rows(
     lines: list[str],
     metric_jp: str,
@@ -666,6 +712,121 @@ def _truncate_to_x_limit_top_n(text: str, top_n: int) -> str:
                 continue  # drop rows beyond top_n
         kept.append(line)
     return "\n".join(kept)
+
+
+def _angle_for_combo(combo: _MetricCombo) -> tuple[str, str]:
+    """Return the visible brand angle for the mail card title.
+
+    This is a deterministic label, not an LLM judgement. It only
+    describes the already-selected data slice.
+    """
+    if combo.position:
+        return ("🆚", "比較")
+    if combo.metric in {"ERA", "K_per_9", "BB_per_9", "HR_per_9"}:
+        return ("⚡", "投手")
+    if combo.period_label in {"直近5試合", "直近10試合", "直近1週間", "今週"}:
+        return ("📊", "短期変化")
+    if combo.period_label.endswith("月成績") or combo.period_label == "今月":
+        return ("🗓️", "月別メモ")
+    return ("📌", "巨人データメモ")
+
+
+def _stable_variant_index(combo: _MetricCombo, focus_name: str) -> int:
+    seed = f"{combo.metric}|{combo.period_label}|{combo.position or ''}|{focus_name}"
+    return sum(ord(ch) for ch in seed) % 3
+
+
+def _finalize_post_text(body: str) -> str:
+    tags = "#巨人 #ジャイアンツ"
+    text = body.strip()
+    if tags not in text:
+        text = f"{text}\n{tags}".strip()
+    if len(text) <= X_CHAR_LIMIT:
+        return text
+
+    prefix, _, suffix = text.rpartition(tags)
+    if not suffix:
+        suffix = tags
+    budget = X_CHAR_LIMIT - len(suffix) - 2
+    if budget <= 0:
+        return text[: X_CHAR_LIMIT - 1] + "…"
+    prefix = prefix.strip()
+    trimmed = prefix[: max(1, budget - 1)].rstrip("、。 \n") + "…"
+    return f"{trimmed}\n{suffix}"
+
+
+def _build_branded_post_text(
+    combo: _MetricCombo,
+    focus_row: dict,
+    *,
+    metric_jp: str,
+    period_label: str,
+    threshold_label: str,
+    scope_label: str,
+    rank: object,
+    total: object,
+) -> str:
+    """Build the actual X post copy shown in the button.
+
+    The copy is fact-locked: player, metric, rank, value, period and
+    sample threshold come from the ranking row / combo only. The rest is
+    generic framing, not baseball judgement.
+    """
+    focus_name = str(focus_row.get("player_canonical") or "巨人選手").strip()
+    value = _format_metric_value(combo.metric, focus_row.get("metric_value"))
+    rank_text = f"{scope_label} {rank}/{total}位"
+    value_text = f"{metric_jp} {value}"
+    _, angle = _angle_for_combo(combo)
+    variant = _stable_variant_index(combo, focus_name)
+
+    if combo.position:
+        position_jp = _POSITION_DISPLAY_JP.get(combo.position, combo.position)
+        body = (
+            "同じ条件で並べると、見え方が変わる。\n\n"
+            f"{focus_name}は{period_label}の{position_jp}{metric_jp}で{rank_text}。\n"
+            f"数字は{value_text}、{threshold_label}の条件です。\n\n"
+            "数字だけで決める話ではないけど、比較材料として一度拾っておきたい。\n\n"
+            "どう見ますか？"
+        )
+    elif variant == 0:
+        body = (
+            "今日の巨人データメモ。\n\n"
+            f"{focus_name}、{period_label}の{metric_jp}は{rank_text}。\n"
+            f"数字は{value_text}、{threshold_label}の条件です。\n\n"
+            "結果や印象だけでは流れやすいので、あとで見返したい数字。\n\n"
+            "この数字、どう見ますか？"
+        )
+    elif variant == 1:
+        body = (
+            "直近だけで見ると、少し印象が変わる。\n\n"
+            f"{focus_name}の{metric_jp}は{period_label}で{rank_text}。\n"
+            f"{threshold_label}で見ると、{value_text}です。\n\n"
+            "大きく騒ぐ話ではなくても、議論の材料にはなりそう。\n\n"
+            "今の状態、どう見えてますか？"
+        )
+    else:
+        body = (
+            f"{angle}として拾っておきたい数字。\n\n"
+            f"{focus_name}は{period_label}の{metric_jp}で{rank_text}。\n"
+            f"{value_text}、{threshold_label}。\n\n"
+            "数字だけで語り切る話ではないけど、一度見ておきたいところ。\n\n"
+            "どう見ますか？"
+        )
+    return _finalize_post_text(body)
+
+
+def _is_safe_post_text(text: str) -> bool:
+    if not text.strip():
+        return False
+    return not any(term in text for term in _FORBIDDEN_POST_TERMS)
+
+
+def _candidate_post_text(candidate: Candidate) -> str:
+    return candidate.post_text or candidate.draft_text
+
+
+def _candidate_char_count(candidate: Candidate) -> int:
+    return len(_candidate_post_text(candidate))
 
 
 # ---------------------------------------------------------------------------
@@ -876,6 +1037,7 @@ def _format_one(
         if lines and "ランキング" in lines[0]:
             lines[0] = f"セ・リーグ {metric_jp} ランキング {header_emoji}"
     title = (
+        f"{_angle_for_combo(combo)[0]} Xポスト案｜"
         f"{focus_name} {metric_jp} {scope_label} {focus_rank}/{focus_total}位 "
         f"({period_label}・{threshold_label})"
     )
@@ -893,13 +1055,31 @@ def _format_one(
         draft_text = _truncate_to_x_limit_top_n(draft_text, top_n=5)
         if len(draft_text) > X_CHAR_LIMIT:
             draft_text = draft_text[: X_CHAR_LIMIT - 1] + "…"
+    post_text = _build_branded_post_text(
+        combo,
+        focus_row,
+        metric_jp=metric_jp,
+        period_label=period_label,
+        threshold_label=threshold_label,
+        scope_label=scope_label,
+        rank=focus_rank,
+        total=focus_total,
+    )
+    if not _is_safe_post_text(post_text):
+        LOG.warning(
+            "unsafe branded X post text skipped for %s/%s",
+            combo.metric,
+            combo.period_label,
+        )
+        post_text = ""
     return Candidate(
         title=title,
         metric=combo.metric,
         period_label=combo.period_label,
         draft_text=draft_text,
-        char_count=len(draft_text),
+        char_count=len(post_text or draft_text),
         signature=_combo_signature(combo),
+        post_text=post_text,
     )
 
 
@@ -1047,16 +1227,17 @@ def time_band_label(hour: int) -> str:
 def build_subject(now: datetime, n_candidates: int) -> str:
     band = time_band_label(now.hour)
     band_emoji = _TIME_BAND_EMOJI.get(band, "")
+    purpose = _TIME_BAND_PURPOSE.get(band, "Xポスト案")
     return (
-        f"🟠🐦📮【手動X投稿 {n_candidates}件】"
-        f"{band_emoji}{band} {now.strftime('%H:%M')} JST"
+        f"🟠🐦📮【Xポスト案 {n_candidates}件】"
+        f"{band_emoji}{band}｜{purpose} {now.strftime('%H:%M')} JST"
     )
 
 
 def _compose_text_body(candidates: list[Candidate], now: datetime) -> str:
     band = time_band_label(now.hour)
     parts = [
-        f"📮 巨人データX投稿候補 — {band} / {now.strftime('%Y-%m-%d %H:%M')} JST",
+        f"📮 巨人データXポスト案 — {band} / {now.strftime('%Y-%m-%d %H:%M')} JST",
         "",
         "公開通知ではありません。X に手動投稿するための候補メールです。",
         "各候補のテキストをコピーして X アプリに貼り付けて投稿してください。",
@@ -1064,16 +1245,21 @@ def _compose_text_body(candidates: list[Candidate], now: datetime) -> str:
         "",
     ]
     for idx, cand in enumerate(candidates, start=1):
+        post_text = _candidate_post_text(cand)
         parts.append("━" * 40)
         parts.append(f"■ 候補 {idx}: {cand.title}")
         parts.append("━" * 40)
         parts.append("")
-        parts.append(cand.draft_text)
+        parts.append(post_text)
         parts.append("")
-        parts.append(f"【文字数】{cand.char_count} / {X_CHAR_LIMIT}")
+        parts.append(f"【文字数】{_candidate_char_count(cand)} / {X_CHAR_LIMIT}")
+        if cand.post_text and cand.draft_text and cand.post_text != cand.draft_text:
+            parts.append("")
+            parts.append("【根拠データ】")
+            parts.append(cand.draft_text)
         parts.append("")
         parts.append("🐦 X 投稿 URL:")
-        parts.append(encode_x_intent_url(cand.draft_text))
+        parts.append(encode_x_intent_url(post_text))
         parts.append("")
     return "\n".join(parts)
 
@@ -1082,10 +1268,24 @@ def _compose_html_body(candidates: list[Candidate], now: datetime) -> str:
     band = time_band_label(now.hour)
     rows_html: list[str] = []
     for idx, cand in enumerate(candidates, start=1):
-        intent_url = encode_x_intent_url(cand.draft_text)
-        over = cand.char_count > X_CHAR_LIMIT
+        post_text = _candidate_post_text(cand)
+        intent_url = encode_x_intent_url(post_text)
+        char_count = _candidate_char_count(cand)
+        over = char_count > X_CHAR_LIMIT
         counter_color = "#b71c1c" if over else "#666"
         counter_suffix = " ⚠️ 超過" if over else ""
+        proof_html = ""
+        if cand.post_text and cand.draft_text and cand.post_text != cand.draft_text:
+            proof_html = (
+                "<details style=\"margin-top:8px;font-size:12px;color:#444;\">"
+                "<summary style=\"cursor:pointer;\">根拠データを開く</summary>"
+                "<pre style=\"white-space:pre-wrap;word-break:keep-all;"
+                "font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans',"
+                "'Yu Gothic',monospace;font-size:12px;line-height:1.45;"
+                "background:#fffef7;padding:8px;border:1px solid #eadca6;"
+                f"border-radius:4px;margin:6px 0 0;\">{_html.escape(cand.draft_text)}</pre>"
+                "</details>"
+            )
         rows_html.append(
             "<div style=\"border-left:3px solid #f57f17;"
             "padding:10px 14px;margin:14px 0;background:#fff8e1;"
@@ -1096,7 +1296,8 @@ def _compose_html_body(candidates: list[Candidate], now: datetime) -> str:
             "font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans',"
             "'Yu Gothic',monospace;font-size:13px;line-height:1.5;"
             "background:#fff;padding:10px;border:1px solid #ddd;"
-            f"border-radius:4px;margin:0;\">{_html.escape(cand.draft_text)}</pre>"
+            f"border-radius:4px;margin:0;\">{_html.escape(post_text)}</pre>"
+            f"{proof_html}"
             "<div style=\"display:flex;gap:10px;align-items:center;"
             "margin-top:8px;flex-wrap:wrap;\">"
             f"<a href=\"{_html.escape(intent_url)}\" "
@@ -1104,18 +1305,18 @@ def _compose_html_body(candidates: list[Candidate], now: datetime) -> str:
             "color:#fff;text-decoration:none;border-radius:6px;font-size:13px;"
             "font-weight:600;\">🐦 X で投稿</a>"
             f"<div style=\"font-size:11px;color:{counter_color};\">"
-            f"{cand.char_count} / {X_CHAR_LIMIT} 字{counter_suffix}</div>"
+            f"{char_count} / {X_CHAR_LIMIT} 字{counter_suffix}</div>"
             "</div>"
             "</div>"
         )
     return (
         "<!DOCTYPE html>\n"
         "<html lang=\"ja\"><head><meta charset=\"utf-8\">"
-        "<title>巨人データX投稿候補</title></head>"
+        "<title>巨人データXポスト案</title></head>"
         "<body style=\"font-family:-apple-system,BlinkMacSystemFont,"
         "'Hiragino Sans','Yu Gothic',sans-serif;color:#222;"
         "max-width:680px;margin:0 auto;padding:18px;\">"
-        f"<h2 style=\"font-size:17px;margin:0 0 8px;\">📮 巨人データX投稿候補 — {band} / "
+        f"<h2 style=\"font-size:17px;margin:0 0 8px;\">📮 巨人データXポスト案 — {band} / "
         f"{now.strftime('%Y-%m-%d %H:%M')} JST</h2>"
         "<p style=\"font-size:13px;color:#555;margin:0 0 14px;\">"
         "公開通知ではなく、X に手動投稿するための候補メールです。"

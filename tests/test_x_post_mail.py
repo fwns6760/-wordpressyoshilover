@@ -131,7 +131,7 @@ class SubjectAndTimeBandTests(unittest.TestCase):
         subject = build_subject(ts, 7)
         self.assertEqual(
             subject,
-            "🟠🐦📮【手動X投稿 7件】🌅朝 07:00 JST",
+            "🟠🐦📮【Xポスト案 7件】🌅朝｜直近データ 07:00 JST",
         )
 
     def test_subject_zero_candidates_does_not_crash(self) -> None:
@@ -140,7 +140,7 @@ class SubjectAndTimeBandTests(unittest.TestCase):
         self.assertIn("0件", subject)
         self.assertIn("試合後", subject)
         self.assertIn("🌙", subject)
-        self.assertIn("手動X投稿", subject)
+        self.assertIn("Xポスト案", subject)
 
     def test_subject_emoji_per_time_band(self) -> None:
         for hour, expected_emoji, expected_band in [
@@ -481,6 +481,28 @@ class VariationExpansionTests(unittest.TestCase):
         self.assertIn("⭐巨人", text)
         self.assertNotIn("←⭐巨人", text)
 
+    def test_format_one_adds_branded_post_text_and_emoji_title(self) -> None:
+        """X intent 用の本文はランキング表ではなく、ブランド投稿案にする。"""
+        from src.x_post_mail_lane import _MetricCombo, _format_one, _rebuild_ranks_within_central
+
+        ranked = _rebuild_ranks_within_central(_MIXED_12_TEAM_ROWS)
+        cand = _format_one(
+            _MetricCombo("OPS", "2026-05-09", "直近1週間"),
+            ranked,
+            min_sample=30,
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+        )
+        self.assertIsNotNone(cand)
+        assert cand is not None
+        self.assertTrue(cand.title.startswith("📊 Xポスト案｜"))
+        self.assertIn("#巨人 #ジャイアンツ", cand.post_text)
+        self.assertIn("岡本和真", cand.post_text)
+        self.assertIn("OPS", cand.post_text)
+        self.assertIn("セ・リーグ", cand.post_text)
+        self.assertNotIn("🥇", cand.post_text)
+        self.assertNotIn("阿部監督", cand.post_text)
+        self.assertLessEqual(len(cand.post_text), X_CHAR_LIMIT)
+
     def test_giants_focus_row_survives_when_outside_top_five(self) -> None:
         """X字数調整で上位だけに削っても巨人最上位 row は残す。"""
         from src.x_post_mail_lane import _MetricCombo, _format_one, _rebuild_ranks_within_central
@@ -564,9 +586,9 @@ class ComposeMailTests(unittest.TestCase):
         self.assertIn("朝", mail.subject)
         self.assertIn("テスト候補 1", mail.text_body)
         self.assertIn("テスト候補 1", mail.html_body)
-        self.assertIn("📮 巨人データX投稿候補", mail.text_body)
+        self.assertIn("📮 巨人データXポスト案", mail.text_body)
         self.assertIn("公開通知ではありません", mail.text_body)
-        self.assertIn("📮 巨人データX投稿候補", mail.html_body)
+        self.assertIn("📮 巨人データXポスト案", mail.html_body)
         self.assertIn("公開通知ではなく", mail.html_body)
 
     def test_text_body_has_lf_newlines_only(self) -> None:
@@ -582,6 +604,23 @@ class ComposeMailTests(unittest.TestCase):
         self.assertIn("%23", mail.html_body)  # # in text was URL-encoded
         # The plain text body also lists the URL for fallback copy.
         self.assertIn("twitter.com/intent/tweet", mail.text_body)
+
+    def test_html_uses_post_text_for_x_intent_when_present(self) -> None:
+        ts = datetime(2026, 5, 16, 17, 30, tzinfo=JST)
+        cand = Candidate(
+            title="📊 Xポスト案｜テスト",
+            metric="OPS",
+            period_label="直近5試合",
+            draft_text="根拠データ #巨人",
+            post_text="投稿本文 #巨人",
+            char_count=len("投稿本文 #巨人"),
+        )
+        mail = compose_mail([cand], now=ts)
+        self.assertIn("投稿本文 #巨人", mail.text_body)
+        self.assertIn("根拠データ", mail.text_body)
+        self.assertIn("投稿本文 #巨人", mail.html_body)
+        self.assertIn("根拠データを開く", mail.html_body)
+        self.assertIn("%E6%8A%95%E7%A8%BF%E6%9C%AC%E6%96%87", mail.html_body)
 
     def test_html_escapes_special_chars(self) -> None:
         # Draft text containing `<` `>` `&` must be escaped so the

@@ -1929,7 +1929,7 @@ def render_standings_shift_article(
 
 
 def render_stat_delta_article(
-    conn: sqlite3.Connection,
+    conn: Optional[sqlite3.Connection],
     candidate_row: dict[str, Any],
 ) -> dict[str, str]:
     """SIGNAL_STAT_DELTA — snapshot 間 数値急変。"""
@@ -1950,8 +1950,51 @@ def render_stat_delta_article(
     cur_val = _cur_match.group(1) if _cur_match else "-"
     scope_title = scope_jp.replace(" ", "")
     period_suffix = f"（{scope_title}）" if scope_title else ""
+
+    # issue #44 B (2026-05-17 user lock): 本文に セ・リーグ ranking 表 + title
+    # に case A の rank phrase を入れる。 conn / metric / scope が揃わない
+    # ケースは従来 path に fallback (snapshot 不在 / conn=None も同様)。
+    rank_context: Optional[dict[str, Any]] = None
+    ranking_table_md: Optional[str] = None
+    if conn is not None and metric and scope:
+        try:
+            snapshot_date = _snapshot_date_from_candidate(candidate_row)
+            rank_context = _find_player_rank(
+                conn, metric_name=metric, scope=scope,
+                snapshot_date=snapshot_date, player_canonical=player,
+                league="central",
+            )
+            top_rows, _total = _fetch_ranking_context(
+                conn, metric_name=metric, scope=scope,
+                snapshot_date=snapshot_date, league="central", top_n=10,
+            )
+            if top_rows:
+                extra_focus_row: Optional[dict[str, Any]] = None
+                focus_in_top = any(r["player"] == player for r in top_rows)
+                if rank_context and not focus_in_top:
+                    extra_focus_row = {
+                        "rank": rank_context["rank"],
+                        "player": player,
+                        "team": rank_context.get("team", "?"),
+                        "value": rank_context.get("value"),
+                        "sample": rank_context.get("sample", 0),
+                    }
+                ranking_table_md = _render_ranking_table_md(
+                    top_rows,
+                    focus_player=player,
+                    metric_label=metric_label,
+                    extra_focus_row=extra_focus_row,
+                )
+        except sqlite3.Error:
+            rank_context = None
+            ranking_table_md = None
+
+    rank_phrase = ""
+    if rank_context:
+        rank_phrase = f"でセ・リーグ{rank_context['rank']}/{rank_context['total']}位"
+
     title = (
-        f"【巨人データ】{player}、{metric_label}{cur_val}{period_suffix}"
+        f"【巨人データ】{player}、{metric_label}{cur_val}{rank_phrase}{period_suffix}"
     )
     headline = (
         f"{player} の {metric_label} が **{delta}** 変動しました ({baseline} → {current})。"
@@ -1969,6 +2012,7 @@ def render_stat_delta_article(
         detail_lines=detail,
         period_label=f"{scope_jp} (前 snapshot vs 直近 snapshot)",
         source_note="数値変動は短期 trend、長期 trend (1 ヶ月以上) と組み合わせて評価が望ましい。",
+        ranking_table_md=ranking_table_md,
     )
 
 

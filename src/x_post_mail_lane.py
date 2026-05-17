@@ -89,8 +89,15 @@ CENTRAL_LEAGUE_TEAM_ALIASES = frozenset(
 # are filtered out so this lane never proposes ISO/wOBA/FIP/etc.).
 # Restricted to ``insight_rank_query.KNOWN_METRICS`` intersection so
 # ``miq.query_rank`` accepts the name.
+# NOTE (2026-05-17 hotfix): OBP / SLG / OPS は除外している。
+# `src.analysis.insight_rank_query._aggregate_batting` が `batting_logs`
+# から AB / H しか読まないため、 BattingLine の 2B/3B/HR/BB/HBP/SF
+# が常に 0 になり、 結果として SLG=0、 OBP=AVG、 OPS=AVG という
+# broken 値で ranking に乗ってしまう (浦田俊輔 5/17 14:00 mail 事例)。
+# `advanced_metric_snapshots` には正しい OBP/SLG/OPS が入っているので、
+# 復活させる場合は rank_players ではなくそちら経由に切替が必要 (別 ticket)。
 SAFE_METRICS = (
-    "AVG", "OBP", "SLG", "OPS",
+    "AVG",
     "ERA", "K_per_9", "BB_per_9", "HR_per_9",
 )
 
@@ -389,11 +396,13 @@ def _build_combos(
     last7 = (now - timedelta(days=7)).strftime("%Y-%m-%d")
     for m in SAFE_METRICS:
         combos.append(_MetricCombo(m, last7, "直近1週間", novelty="high"))
-    # 2. 守備位置別 OPS (直近1週間) — niche slice
+    # 2. 守備位置別 AVG (直近1週間) — niche slice。
+    # 旧来は OPS だったが、 `_aggregate_batting` の broken aggregation
+    # により OPS=AVG になるため、 表記の正しさを優先して AVG に統一。
     # 守備位置 single-kanji codes match insight_rank_query expectations.
     for pos in ("捕", "二", "遊", "三"):
         combos.append(
-            _MetricCombo("OPS", last7, "直近1週間", position=pos, novelty="high")
+            _MetricCombo("AVG", last7, "直近1週間", position=pos, novelty="high")
         )
     # 3. 354+STEP1: 直近 5/10 巨人試合 × 8 metric — yoshilover 独自
     # の試合数 base ranking。 games table が読めて且つ N 試合分の row が

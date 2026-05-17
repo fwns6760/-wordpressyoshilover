@@ -310,9 +310,9 @@ class PickCandidatesTests(unittest.TestCase):
         """
         from src.x_post_mail_lane import _build_combos
         mid_month = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST))
-        # 今月 combo は年通で pool に存在 (8 metric)。
+        # 今月 combo は年通で pool に存在 (5 metric、 OBP/SLG/OPS は除外)。
         today_combos = [c for c in mid_month if c.period_label == "今月"]
-        self.assertEqual(len(today_combos), 8)
+        self.assertEqual(len(today_combos), 5)
         # 月中なので前月成績 (4月成績) は pool に居ない。
         self.assertFalse({c.period_label for c in mid_month} & {"4月成績"})
 
@@ -402,12 +402,12 @@ class VariationExpansionTests(unittest.TestCase):
         month_start = _build_combos(datetime(2026, 8, 2, 7, 0, tzinfo=JST))
         self.assertNotIn("7月成績", {c.period_label for c in mid_month})
         monthly = [c for c in month_start if c.period_label == "7月成績"]
-        # STEP1 (2026-05-17): metric pool 8 化に伴い 前月成績も 8 metric。
-        self.assertEqual(len(monthly), 8)
+        # STEP1 + OBP/SLG/OPS 除外 hotfix (2026-05-17): 5 metric。
+        self.assertEqual(len(monthly), 5)
         self.assertFalse(any(c.giants_only for c in monthly))
         self.assertEqual(
             {c.metric for c in monthly},
-            {"OPS", "AVG", "ERA", "OBP", "SLG", "K_per_9", "BB_per_9", "HR_per_9"},
+            {"AVG", "ERA", "K_per_9", "BB_per_9", "HR_per_9"},
         )
 
     def test_last_7_days_combo_appears(self) -> None:
@@ -537,22 +537,27 @@ class VariationExpansionTests(unittest.TestCase):
         """STEP1 (2026-05-17): metric 8 (OPS/AVG/ERA/OBP/SLG/K_per_9/BB_per_9/HR_per_9)
         × period (直近1週間 + 今週 + 今月 + 守備位置別) で pool 拡張。
 
+        STEP1 + OBP/SLG/OPS broken-aggregator hotfix (2026-05-17):
+        metric 5 (AVG / ERA / K_per_9 / BB_per_9 / HR_per_9) で pool 構成。
+
         db_path=None で:
-          - 直近1週間 × 8 metric  = 8
-          - 守備位置別直近1週間 OPS × 4 pos = 4
-          - 今週 × 8 metric            = 8 (週初め以外、 当日 Monday なら 0)
-          - 今月 × 8 metric            = 8
-        2026-05-16 (Sat) は週初め (Mon=05-11) と直近1週間 (05-09) が違うので 今週 enabled = 8 combo。
-        計 28 combo。
+          - 直近1週間 × 5 metric  = 5
+          - 守備位置別直近1週間 AVG × 4 pos = 4
+          - 今週 × 5 metric            = 5 (週初め以外、 当日 Monday なら 0)
+          - 今月 × 5 metric            = 5
+        2026-05-16 (Sat) は週初め (Mon=05-11) と直近1週間 (05-09) が違うので 今週 enabled = 5 combo。
+        計 19 combo。
         """
         from src.x_post_mail_lane import _build_combos
         combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST))
-        self.assertEqual(len(combos), 28)
+        self.assertEqual(len(combos), 19)
         self.assertTrue(all(c.novelty == "high" for c in combos))
         # 大手が出しやすい "今シーズン" 系 / 直近30日 / 直近14日 は除外維持。
         self.assertFalse({"今シーズン", "直近30日", "直近14日"} & {c.period_label for c in combos})
         # 全 combo は since 付き (period 限定なし combo は許可しない)。
         self.assertFalse([c for c in combos if c.since is None], msg=f"full-period combo leaked: {combos}")
+        # broken aggregator 由来 metric (OBP/SLG/OPS) は除外。
+        self.assertFalse({"OBP", "SLG", "OPS"} & {c.metric for c in combos})
 
     def test_diversity_seed_changes_per_hour(self) -> None:
         """diversity shuffle が hour 違うと違う順序になる。"""
@@ -964,20 +969,22 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
         )
 
     def test_build_combos_no_db_path_after_step1(self) -> None:
-        """STEP1 (2026-05-17): db_path=None で 28 combo (直近1週間 8 +
-        守備位置別 4 + 今週 8 + 今月 8)。 5/16 は土曜なので 今週 enabled。"""
+        """STEP1 + OBP/SLG/OPS hotfix (2026-05-17): db_path=None で 19 combo
+        (直近1週間 5 + 守備位置別 AVG 4 + 今週 5 + 今月 5)。 5/16 は土曜
+        なので 今週 enabled。"""
         from src.x_post_mail_lane import _build_combos
         combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST))
-        self.assertEqual(len(combos), 28)
+        self.assertEqual(len(combos), 19)
 
     def test_build_combos_with_db_path_adds_last_n_after_step1(self) -> None:
-        """STEP1: db_path 指定で 28 + 直近5試合 8 + 直近10試合 8 = 44 combo。"""
+        """STEP1 + OBP/SLG/OPS hotfix: db_path 指定で 19 + 直近5試合 5 +
+        直近10試合 5 = 29 combo。"""
         from src.x_post_mail_lane import _build_combos
         # need ≥10 distinct game dates for both 5-game and 10-game windows
         dates = [f"2026-05-{day:02d}" for day in range(1, 16)]  # 15 dates
         self._seed_games(dates)
         combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST), db_path=self.db_path)
-        self.assertEqual(len(combos), 44)
+        self.assertEqual(len(combos), 29)
 
     def test_last_n_games_combos_are_high_novelty_and_league_scoped(self) -> None:
         from src.x_post_mail_lane import _build_combos
@@ -985,14 +992,14 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
         self._seed_games(dates)
         combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST), db_path=self.db_path)
         last_n_combos = [c for c in combos if c.period_label in ("直近5試合", "直近10試合")]
-        # STEP1: 8 metric × 2 period = 16
-        self.assertEqual(len(last_n_combos), 16)
+        # STEP1 + hotfix: 5 metric × 2 period = 10
+        self.assertEqual(len(last_n_combos), 10)
         for c in last_n_combos:
             self.assertEqual(c.novelty, "high", msg=f"non-high novelty leaked: {c}")
             self.assertFalse(c.giants_only, msg=f"giants-only combo leaked: {c}")
             self.assertIn(
                 c.metric,
-                ("OPS", "AVG", "ERA", "OBP", "SLG", "K_per_9", "BB_per_9", "HR_per_9"),
+                ("AVG", "ERA", "K_per_9", "BB_per_9", "HR_per_9"),
             )
             self.assertIn(c.min_sample_override, (5, 10))
 
@@ -1094,13 +1101,14 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
         self.assertIn(30, ms_values, msg=f"default 30 missing: {ms_values}")
 
     def test_db_path_with_insufficient_games_falls_back_gracefully(self) -> None:
-        """STEP1 (2026-05-17): games 件数不足の時、 直近 N 試合 combo は追加
-        されず base 28 (直近1週間 8 + 守備位置別 4 + 今週 8 + 今月 8) 維持。"""
+        """STEP1 + OBP/SLG/OPS hotfix (2026-05-17): games 件数不足の時、
+        直近 N 試合 combo は追加されず base 19 (直近1週間 5 + 守備位置別
+        AVG 4 + 今週 5 + 今月 5) 維持。"""
         from src.x_post_mail_lane import _build_combos
         # only 3 games → both n=5 and n=10 windows return None
         self._seed_games(["2026-05-14", "2026-05-15", "2026-05-16"])
         combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST), db_path=self.db_path)
-        self.assertEqual(len(combos), 28, msg=f"unexpected combo count: {len(combos)}")
+        self.assertEqual(len(combos), 19, msg=f"unexpected combo count: {len(combos)}")
 
 
 class XPostMailEntrypointFreshnessTests(unittest.TestCase):

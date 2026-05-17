@@ -272,6 +272,42 @@ class PickCandidatesTests(unittest.TestCase):
         self.assertIn("今日のスタメン: 泉口友汰", cand.draft_text)
         self.assertNotIn("巨人最上位: 泉口友汰", cand.draft_text)
         self.assertEqual(cand.context_label, "今日のスタメン")
+        self.assertEqual(cand.focus_player, "泉口友汰")
+
+    def test_lineup_focus_spreads_across_starters_before_repeating(self) -> None:
+        rows = [
+            _row(1, "佐藤輝明", "阪神", 0.945),
+            _row(2, "牧秀悟", "DeNA", 0.932),
+            _row(3, "浦田俊輔", "巨人", 0.921),
+            _row(4, "泉口友汰", "巨人", 0.910),
+            _row(5, "丸佳浩", "巨人", 0.905),
+            _row(6, "村上宗隆", "ヤクルト", 0.900),
+            _row(7, "鈴木誠也", "広島", 0.890),
+            _row(8, "細川成也", "中日", 0.880),
+        ]
+
+        def _mock(**_kw):
+            return {
+                "ok": True,
+                "rows": rows,
+                "count": len(rows),
+                "total": len(rows),
+                "focus_player": None,
+            }
+
+        cands = pick_candidates(
+            _mock,
+            now=datetime(2026, 5, 17, 17, 30, tzinfo=JST),
+            max_candidates=3,
+            min_sample=1,
+            min_central_rows=3,
+            focus_player_names=["浦田俊輔", "泉口友汰", "丸佳浩"],
+            context_label="今日のスタメン",
+        )
+        self.assertEqual(
+            [c.focus_player for c in cands],
+            ["浦田俊輔", "泉口友汰", "丸佳浩"],
+        )
 
     def test_lineup_focus_names_from_rows_canonicalizes_surname(self) -> None:
         rows = [

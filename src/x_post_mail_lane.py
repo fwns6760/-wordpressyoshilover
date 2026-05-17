@@ -785,6 +785,9 @@ class Candidate:
     # Optional fact-locked context, e.g. "今日のスタメン". This changes
     # only the framing, not the numeric facts.
     context_label: str = ""
+    # Player selected as the post focus. Used to spread one mail across
+    # multiple lineup players before repeating the same name.
+    focus_player: str = ""
 
 
 def _rebuild_ranks_within_central(rows: list[dict]) -> list[dict]:
@@ -802,14 +805,25 @@ def _top_giants_row(
     rows: list[dict],
     *,
     focus_player_names: Optional[set[str]] = None,
+    avoid_player_names: Optional[set[str]] = None,
 ) -> Optional[dict]:
     """Return the highest-ranked Giants row from already-ranked rows."""
     focus_names = focus_player_names or set()
     if focus_names:
-        for row in rows:
-            if _is_giants(row.get("team_code")) and _row_matches_focus_player(row, focus_names):
-                return row
-        return None
+        matches = [
+            row for row in rows
+            if _is_giants(row.get("team_code"))
+            and _row_matches_focus_player(row, focus_names)
+        ]
+        if not matches:
+            return None
+        avoid_names = avoid_player_names or set()
+        if avoid_names:
+            for row in matches:
+                player_key = _normalize_player_name(row.get("player_canonical"))
+                if player_key and player_key not in avoid_names:
+                    return row
+        return matches[0]
     for row in rows:
         if _is_giants(row.get("team_code")):
             return row
@@ -1282,11 +1296,13 @@ def _format_one(
     min_sample: int,
     now: datetime,
     focus_player_names: Optional[set[str]] = None,
+    avoid_player_names: Optional[set[str]] = None,
     context_label: str = "",
 ) -> Optional[Candidate]:
     focus_row = _top_giants_row(
         rows,
         focus_player_names=focus_player_names,
+        avoid_player_names=avoid_player_names,
     )
     if focus_row is None:
         LOG.info("No Giants row for %s/%s — skip", combo.metric, combo.period_label)
@@ -1385,6 +1401,7 @@ def _format_one(
         signature=_combo_signature(combo),
         post_text=post_text,
         context_label=context_label,
+        focus_player=str(focus_name or ""),
     )
 
 
@@ -1439,6 +1456,16 @@ def pick_candidates(
         now = datetime.now(JST)
     out: list[Candidate] = []
     focus_names = normalize_focus_player_names(focus_player_names)
+    focus_input_count = len(
+        {
+            _normalize_player_name(name)
+            for name in (focus_player_names or [])
+            if _normalize_player_name(name)
+        }
+    )
+    used_focus_player_keys: set[str] = set()
+    repeat_backlog: list[tuple[str, Candidate]] = []
+    repeat_backlog_families: set[str] = set()
     # 351+354: shuffle the combo pool with a (date, hour) seed so each
     # trigger picks a different variety slice while staying reproducible
     # inside a single run. 354 adds 直近 N 試合 combos when db_path given.
@@ -1514,7 +1541,16 @@ def pick_candidates(
                      combo.period_label, combo.position)
             continue
         rows = _rebuild_ranks_within_central(rows)
-        if _top_giants_row(rows, focus_player_names=focus_names) is None:
+        avoid_names = (
+            used_focus_player_keys
+            if focus_names and len(used_focus_player_keys) < focus_input_count
+            else set()
+        )
+        if _top_giants_row(
+            rows,
+            focus_player_names=focus_names,
+            avoid_player_names=avoid_names,
+        ) is None:
             LOG.info("No Giants row in central ranking for %s/%s (position=%s) — skip",
                      combo.metric, combo.period_label, combo.position)
             continue
@@ -1524,11 +1560,33 @@ def pick_candidates(
             min_sample=effective_min_sample,
             now=now,
             focus_player_names=focus_names,
+            avoid_player_names=avoid_names,
             context_label=context_label if focus_names else "",
         )
         if candidate:
+            focus_player_key = _normalize_player_name(candidate.focus_player)
+            is_focus_repeat = (
+                bool(focus_names)
+                and bool(focus_player_key)
+                and focus_player_key in used_focus_player_keys
+                and len(used_focus_player_keys) < focus_input_count
+            )
+            if is_focus_repeat:
+                if family_key not in repeat_backlog_families:
+                    repeat_backlog.append((family_key, candidate))
+                    repeat_backlog_families.add(family_key)
+                continue
             out.append(candidate)
             seen_period_families.add(family_key)
+            if focus_player_key:
+                used_focus_player_keys.add(focus_player_key)
+    for family_key, candidate in repeat_backlog:
+        if len(out) >= max_candidates:
+            break
+        if family_key in seen_period_families:
+            continue
+        out.append(candidate)
+        seen_period_families.add(family_key)
     return out[:max_candidates]
 
 

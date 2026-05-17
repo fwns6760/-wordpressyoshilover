@@ -52,6 +52,9 @@ class MeigenCandidate:
     has_media: bool
     media: list[dict[str, Any]] = field(default_factory=list)
     permalink: str = ""
+    # archive 内 chronological 位置 (1-based、 oldest=1)。 rotate しても
+    # 同じ tweet は同じ番号、 「NO①」「NO②」…の通し番号として使う。
+    archive_number: int = 0
 
 
 @dataclass(frozen=True)
@@ -102,19 +105,37 @@ def _permalink(tweet_id: str) -> str:
 _X_POST_CHAR_LIMIT = 270
 
 
-def _build_x_intent_url(text: str) -> str:
+def _build_x_intent_url(text: str, archive_number: int = 0) -> str:
     """X Web Intent (twitter.com/intent/tweet) で開く 投稿 URL。
 
-    text は 270 char cap、 超えたら末尾 … で切る。 改行 / 特殊文字は
-    quote(safe="") で full encode。
+    archive_number > 0 の時、 先頭に「小林誠司名言集 NO① 」 (series 感
+    出すための header) を prepend する。 X 280 char hard limit を
+    守りつつ header は必ず残し、 オーバー分は quote text 側を末尾 …
+    で切る。 改行 / 特殊文字は quote(safe="") で full encode。
     """
-    body = text or ""
-    if len(body) > _X_POST_CHAR_LIMIT:
-        body = body[: _X_POST_CHAR_LIMIT - 1] + "…"
+    raw = text or ""
+    header = ""
+    if archive_number and archive_number > 0:
+        header = f"小林誠司名言集 NO{_circled_number(archive_number)}\n"
+    available_for_text = _X_POST_CHAR_LIMIT - len(header)
+    if len(raw) > available_for_text:
+        raw = raw[: max(0, available_for_text - 1)] + "…"
+    body = f"{header}{raw}"
     return f"https://twitter.com/intent/tweet?text={_url_quote(body, safe='')}"
 
 
-def _record_to_candidate(rec: dict[str, Any]) -> MeigenCandidate:
+def _circled_number(n: int) -> str:
+    """1..50 は ① ② … ㊿、 51+ は plain digits を返す。"""
+    if 1 <= n <= 20:
+        return chr(0x2460 + n - 1)
+    if 21 <= n <= 35:
+        return chr(0x3251 + n - 21)
+    if 36 <= n <= 50:
+        return chr(0x32B1 + n - 36)
+    return str(n)
+
+
+def _record_to_candidate(rec: dict[str, Any], archive_number: int = 0) -> MeigenCandidate:
     pm = rec.get("public_metrics") or {}
     tid = rec["tweet_id"]
     return MeigenCandidate(
@@ -126,6 +147,7 @@ def _record_to_candidate(rec: dict[str, Any]) -> MeigenCandidate:
         has_media=bool(rec.get("has_media")),
         media=list(rec.get("media") or []),
         permalink=_permalink(tid),
+        archive_number=archive_number,
     )
 
 
@@ -201,10 +223,20 @@ def pick_candidates(
     sent_ids: set[str],
     n: int,
 ) -> list[MeigenCandidate]:
-    """Return up to ``n`` unsent candidates in created_at asc (oldest first)."""
-    unsent = [r for r in records if str(r.get("tweet_id")) not in sent_ids]
-    unsent.sort(key=lambda r: r.get("created_at") or "")
-    return [_record_to_candidate(r) for r in unsent[:n]]
+    """Return up to ``n`` unsent candidates in created_at asc (oldest first).
+
+    archive_number は archive 全体を created_at asc で並べた時の
+    1-based position。 同じ tweet は rotate しても同じ番号。
+    """
+    chronological = sorted(records, key=lambda r: r.get("created_at") or "")
+    position_map: dict[str, int] = {
+        str(r["tweet_id"]): i + 1 for i, r in enumerate(chronological)
+    }
+    unsent = [r for r in chronological if str(r.get("tweet_id")) not in sent_ids]
+    return [
+        _record_to_candidate(r, archive_number=position_map[str(r["tweet_id"])])
+        for r in unsent[:n]
+    ]
 
 
 def _compose_text_body(candidates: list[MeigenCandidate], now: datetime) -> str:
@@ -215,7 +247,12 @@ def _compose_text_body(candidates: list[MeigenCandidate], now: datetime) -> str:
         "",
     ]
     for idx, c in enumerate(candidates, start=1):
-        lines.append(f"■ {idx}. ({_format_jst_date(c.created_at)})")
+        no_label = _circled_number(c.archive_number) if c.archive_number else f"{idx}"
+        lines.append(f"━━━━━━━━━━━━━━━━━━━━")
+        lines.append(f"小林誠司名言集 NO{no_label}")
+        lines.append(f"━━━━━━━━━━━━━━━━━━━━")
+        lines.append(f"📅 {_format_jst_date(c.created_at)}")
+        lines.append("")
         lines.append(c.text)
         if c.has_media and c.media:
             urls = [m.get("url") or m.get("preview_image_url") for m in c.media]
@@ -226,7 +263,7 @@ def _compose_text_body(candidates: list[MeigenCandidate], now: datetime) -> str:
                 lines.append("📷 画像あり (URL 取得は 6/12 cycle reset 後)")
         elif c.has_media:
             lines.append("📷 画像あり (URL 取得は 6/12 cycle reset 後)")
-        lines.append(f"🐦 X に投稿: {_build_x_intent_url(c.text)}")
+        lines.append(f"🐦 X に投稿: {_build_x_intent_url(c.text, archive_number=c.archive_number)}")
         lines.append(f"🔗 元 tweet: {c.permalink}")
         lines.append(
             f"♥ {c.like_count}   🔁 {c.retweet_count}"
@@ -250,12 +287,21 @@ def _compose_html_body(candidates: list[MeigenCandidate], now: datetime) -> str:
     for idx, c in enumerate(candidates, start=1):
         date_str = _format_jst_date(c.created_at)
         text_html = _html.escape(c.text).replace("\n", "<br>")
+        no_label = _circled_number(c.archive_number) if c.archive_number else f"{idx}"
         parts.append(
             "<div style=\"border:1px solid #e2e2e2;border-radius:8px;"
             "padding:12px 16px;margin:0 0 16px;background:#fff;\">"
         )
+        # ヘッダー: 「小林誠司名言集 NO①」 + 日付
         parts.append(
-            f"<div style=\"font-size:13px;color:#888;margin:0 0 6px;\">■ {idx}. {date_str}</div>"
+            "<div style=\"font-size:14px;font-weight:700;color:#c0392b;"
+            "padding-bottom:6px;margin:0 0 10px;"
+            "border-bottom:2px solid #c0392b;\">"
+            f"小林誠司名言集 NO{_html.escape(no_label)}"
+            "</div>"
+        )
+        parts.append(
+            f"<div style=\"font-size:12px;color:#888;margin:0 0 8px;\">📅 {date_str}</div>"
         )
         parts.append(
             f"<div style=\"font-size:15px;line-height:1.7;margin:0 0 10px;\">{text_html}</div>"
@@ -281,7 +327,7 @@ def _compose_html_body(candidates: list[MeigenCandidate], now: datetime) -> str:
                     "<div style=\"font-size:12px;color:#a00;margin:0 0 8px;\">"
                     "📷 画像あり (URL backfill 6/12 以降)</div>"
                 )
-        intent_url = _build_x_intent_url(c.text)
+        intent_url = _build_x_intent_url(c.text, archive_number=c.archive_number)
         parts.append(
             "<div style=\"margin:8px 0 4px;\">"
             f"<a href=\"{_html.escape(intent_url)}\" "

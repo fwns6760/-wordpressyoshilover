@@ -847,6 +847,36 @@ def _select_social_source_quotes(
     source_quote = _build_source_quote(entry)
     if source_quote is None:
         return []
+    # issue #44 follow-up (2026-05-17 user lock): merge bug 観察 log。
+    # post 68872 (title=ノック話 / source_url=SANSPO 父300HR) のように
+    # entry.title と source_url の content が不一致な状態 (= upstream で
+    # fan-voice cluster と media tweet が merge された結果) を診断する。
+    # source_class=="media" の場合に entry 構造を構造化 log で出力し、
+    # 翌日の prod log で merge 発生 path を pinpoint する。 挙動変更なし。
+    try:
+        source_class = source_quote.get("source_class") or _candidate_source_class({
+            "source_url": source_quote.get("url") or "",
+            "source_name": source_quote.get("source_name") or "",
+        })
+        if source_class == "media":
+            import json as _json_log
+            import logging as _logging_log
+            _logger = _logging_log.getLogger("media_xpost_selector")
+            _logger.info(_json_log.dumps({
+                "event": "media_primary_attach_decision",
+                "source_url": source_quote.get("url") or "",
+                "source_class": source_class,
+                "source_handle": source_quote.get("handle") or "",
+                "entry_title_head": (str(entry.get("title") or "")[:80]),
+                "entry_summary_head": (str(entry.get("summary") or "")[:80]),
+                "entry_source_type": str(entry.get("source_type") or ""),
+                "entry_story_kind": str(entry.get("story_kind") or ""),
+                "entry_topic_aliases_count": len(entry.get("topic_aliases") or []),
+                "media_quote_pool_size": len(media_quote_pool or []),
+                "decision": "attach_primary",
+            }, ensure_ascii=False))
+    except Exception:
+        pass
     selected_quotes = [source_quote]
     if max_count <= 1:
         return selected_quotes

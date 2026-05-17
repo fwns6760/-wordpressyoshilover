@@ -20417,14 +20417,56 @@ def _create_draft_with_same_fire_guard(
     # 既存 wp_client.find_recent_post_by_title が動く path、code 変更 narrow。
     # env で gate して default OFF、ENABLE_FETCHER_CROSS_SOURCE_TITLE_REUSE=1 で有効化。
     allow_title_reuse = _env_flag("ENABLE_FETCHER_CROSS_SOURCE_TITLE_REUSE", False)
+    tag_ids: list[int] = []
+    try:
+        from src.person_tag_router import (
+            resolve_existing_wp_tag_ids,
+            route_tag_names,
+        )
+
+        tag_routing = route_tag_names(
+            title=draft_title,
+            summary=enrichment_summary,
+            category=enrichment_category,
+            article_subtype=enrichment_template_key,
+            source_name=enrichment_source_name,
+            source_type=enrichment_source_type,
+        )
+        tag_ids, missing_tags = resolve_existing_wp_tag_ids(
+            wp,
+            tag_routing.tag_names,
+            logger=logger,
+        )
+        logger.info(json.dumps({
+            "event": "person_tag_routing",
+            "source_url": normalized_source_url,
+            "title": draft_title[:80],
+            "person_tags": list(tag_routing.person_tags),
+            "context_tags": list(tag_routing.context_tags),
+            "tag_ids": tag_ids,
+            "missing_tags": missing_tags,
+            "skip_reasons": list(tag_routing.skip_reasons),
+        }, ensure_ascii=False))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "person_tag_routing_failed reason=%s source_url=%s title=%s",
+            exc,
+            normalized_source_url,
+            draft_title[:80],
+        )
+    post_kwargs = {
+        "categories": categories,
+        "status": resolved_status,
+        "featured_media": featured_media or None,
+        "source_url": normalized_source_url or None,
+        "allow_title_only_reuse": allow_title_reuse,
+    }
+    if tag_ids:
+        post_kwargs["tags"] = tag_ids
     return wp.create_post(
         draft_title,
         enriched_content,
-        categories=categories,
-        status=resolved_status,
-        featured_media=featured_media or None,
-        source_url=normalized_source_url or None,
-        allow_title_only_reuse=allow_title_reuse,
+        **post_kwargs,
     )
 
 

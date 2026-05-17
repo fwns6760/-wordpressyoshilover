@@ -492,6 +492,7 @@ class WPClient:
                 "status",
                 "featured_media",
                 "categories",
+                "tags",
                 "meta",
                 *self._source_url_meta_keys(),
             ]
@@ -566,6 +567,7 @@ class WPClient:
         existing: dict,
         title: str,
         categories: list | None = None,
+        tags: list | None = None,
         status: str = "publish",
         featured_media: int | None = None,
         source_url: str | None = None,
@@ -593,6 +595,16 @@ class WPClient:
                 and existing_status in {"draft", "pending", "future", "auto-draft"}
             ):
                 update_fields["categories"] = categories
+
+        if tags:
+            existing_tags = set(existing.get("tags") or [])
+            requested_tags = set(tags)
+            if (
+                requested_tags
+                and requested_tags != existing_tags
+                and existing_status in {"draft", "pending", "future", "auto-draft"}
+            ):
+                update_fields["tags"] = tags
 
         requested_status = (status or "publish").lower()
         if requested_status == "publish" and existing_status != "publish":
@@ -669,6 +681,7 @@ class WPClient:
     # 記事投稿（status指定可）
     # ------------------------------------------------------------------
     def create_post(self, title: str, content: str, categories: list = None,
+                    tags: list = None,
                     status: str = "publish", featured_media: int = None,
                     source_url: str | None = None,
                     allow_title_only_reuse: bool | None = None,
@@ -697,6 +710,7 @@ class WPClient:
                 existing,
                 title,
                 categories=categories,
+                tags=tags,
                 status=status,
                 featured_media=featured_media,
                 source_url=normalized_source_url,
@@ -774,6 +788,8 @@ class WPClient:
         }
         if categories:
             payload["categories"] = categories
+        if tags:
+            payload["tags"] = tags
         if not featured_media:
             try:
                 from src.player_eyecatch_resolver import (
@@ -1037,6 +1053,7 @@ class WPClient:
         title: str,
         content: str,
         categories: list = None,
+        tags: list = None,
         featured_media: int = None,
         source_url: str | None = None,
         allow_title_only_reuse: bool | None = None,
@@ -1066,6 +1083,7 @@ class WPClient:
                 existing,
                 title,
                 categories=categories,
+                tags=tags,
                 status="draft",
                 featured_media=featured_media,
                 source_url=normalized_source_url,
@@ -1078,6 +1096,8 @@ class WPClient:
         }
         if categories:
             payload["categories"] = categories
+        if tags:
+            payload["tags"] = tags
         if featured_media:
             payload["featured_media"] = featured_media
         source_meta_payload = self._build_source_url_meta_payload(normalized_source_url)
@@ -1292,6 +1312,95 @@ class WPClient:
         )
         return [{"id": c["id"], "name": c["name"], "slug": c["slug"]}
                 for c in resp.json()]
+
+    # ------------------------------------------------------------------
+    # タグ一覧 / 作成 / 名称 → ID 変換
+    # ------------------------------------------------------------------
+    def get_tags(self, search: str = "", per_page: int = 100) -> list:
+        """
+        WPタグ一覧を [{id, name, slug}, ...] で返す。
+
+        search を渡した場合も、呼び出し側は exact name match だけを採用する。
+        """
+        params = {"per_page": max(1, min(int(per_page), 100))}
+        if (search or "").strip():
+            params["search"] = search.strip()
+        resp = self._request_with_retry(
+            requests.get,
+            f"{self.api}/tags",
+            action="タグ取得",
+            params=params,
+        )
+        return [
+            {"id": tag["id"], "name": tag["name"], "slug": tag["slug"]}
+            for tag in resp.json()
+        ]
+
+    def resolve_tag_id(self, name: str) -> int:
+        """タグ名からWP tag IDを返す。見つからない場合は0。
+
+        Runtime article creation uses this resolver only; it does not
+        create tags. Missing tags must be fixed by the explicit sync CLI.
+        """
+        target = html.unescape(str(name or "").strip())
+        if not target:
+            return 0
+        for tag in self.get_tags(search=target):
+            if html.unescape(str(tag.get("name") or "").strip()) == target:
+                return int(tag.get("id") or 0)
+        print(f"[WP] 警告: タグ '{target}' が見つかりません。0を返します。")
+        return 0
+
+    def resolve_tag_ids(self, names: list[str] | tuple[str, ...]) -> list[int]:
+        ids: list[int] = []
+        seen: set[int] = set()
+        for name in names or []:
+            tag_id = self.resolve_tag_id(str(name or ""))
+            if tag_id > 0 and tag_id not in seen:
+                seen.add(tag_id)
+                ids.append(tag_id)
+        return ids
+
+    def create_tag(
+        self,
+        name: str,
+        slug: str | None = None,
+        description: str = "",
+    ) -> int:
+        """新 WP tag を作成、新 ID を返す。
+
+        既存 name と衝突した場合 (term_exists 400) は既存 ID を返す。
+        """
+        target = html.unescape(str(name or "").strip())
+        if not target:
+            return 0
+        existing_id = self.resolve_tag_id(target)
+        if existing_id:
+            return existing_id
+
+        payload: dict = {"name": target}
+        if slug:
+            payload["slug"] = slug
+        if description:
+            payload["description"] = description
+        try:
+            resp = self._request_with_retry(
+                requests.post,
+                f"{self.api}/tags",
+                action="タグ作成",
+                json=payload,
+            )
+            return int(resp.json().get("id") or 0)
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == 400:
+                try:
+                    data = e.response.json()
+                except Exception:
+                    data = {}
+                if data.get("code") == "term_exists":
+                    return self.resolve_tag_id(target)
+            print(f"[WP] タグ作成失敗: {target!r}, error={e}")
+            return 0
 
     # ------------------------------------------------------------------
     # カテゴリ新規作成 (342-INSIGHT / DATA-INSIGHT-continuous で追加)

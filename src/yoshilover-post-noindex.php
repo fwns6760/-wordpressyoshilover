@@ -17,7 +17,20 @@ add_filter( 'wp_robots', function( $robots ) {
             $robots['noindex'] = true;
         }
     }
+    if ( is_tag() ) {
+        unset( $robots['index'] );
+        $robots['noindex'] = true;
+        if ( ! isset( $robots['nofollow'] ) ) {
+            $robots['follow'] = true;
+        }
+    }
     return $robots;
+} );
+
+add_action( 'send_headers', function() {
+    if ( is_tag() ) {
+        header( 'X-Robots-Tag: noindex, follow' );
+    }
 } );
 
 // ── 管理画面：記事編集画面にインデックス許可チェックボックスを追加 ──

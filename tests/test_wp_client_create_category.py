@@ -112,3 +112,35 @@ def test_create_category_omits_empty_optionals(wp_client):
         wp_client.create_category("最小限")
         payload = captured_kwargs.get("json", {})
         assert payload == {"name": "最小限"}
+
+
+def test_resolve_tag_id_requires_exact_name_match(wp_client):
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = [
+        {"id": 101, "name": "浦田俊輔ニュース", "slug": "urata-news"},
+        {"id": 102, "name": "浦田俊輔", "slug": "urata-shunsuke"},
+    ]
+    with patch.object(wp_client, "_request_with_retry", return_value=mock_resp):
+        result = wp_client.resolve_tag_id("浦田俊輔")
+        assert result == 102
+
+
+def test_create_tag_returns_existing_id_without_posting(wp_client):
+    with patch.object(wp_client, "resolve_tag_id", return_value=102) as resolve:
+        with patch.object(wp_client, "_request_with_retry") as request:
+            result = wp_client.create_tag("浦田俊輔")
+        assert result == 102
+        resolve.assert_called_once_with("浦田俊輔")
+        request.assert_not_called()
+
+
+def test_create_tag_posts_when_missing(wp_client):
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"id": 103, "name": "岡本和真", "slug": "okamoto"}
+    with patch.object(wp_client, "resolve_tag_id", side_effect=[0]) as resolve:
+        with patch.object(wp_client, "_request_with_retry", return_value=mock_resp) as request:
+            result = wp_client.create_tag("岡本和真")
+        assert result == 103
+        resolve.assert_called_once_with("岡本和真")
+        payload = request.call_args.kwargs["json"]
+        assert payload == {"name": "岡本和真"}

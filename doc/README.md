@@ -64,6 +64,7 @@ Active folder is intentionally narrow. 2026-05-08 朝の「0 publish 0 mail」�
 | **quality staff X+Web dedupe** | `370-QA-staff-x-web-dedupe.md` | 68649 / 68653 型。368 の `player_name` 前提から漏れた杉内投手コーチなどの staff/manager/coach quote X+Web 重複を、staff subject + quote/event token で同 fire 消費する。GitHub Issue #39。 |
 | **quality live-window source unlock** | `371-QA-disable-game-live-source-policy.md` | user 方針「絞らないでいい。重複だけがいや」。試合あり 17:00-21:30 JST の `game_live_source_policy` をデフォルト解除し、サンスポX/Webなど通常sourceも流す。重複は既存dedupe gatesで止める。GitHub Issue #40。 |
 | **quality human-readable title repair** | `372-QA-human-readable-title-context-repair.md` | 68537 / 68622 型。短い引用・`先発` だけ・`関連情報` / `関連発言` / generic `選手` で止まる読みにくい title を、source title / summary の literal context で恒久補正する。GitHub Issue #41。 |
+| **quality person tag routing / noindex** | `376-QA-person-tag-routing-and-noindex.md` | のもとけ風に選手・首脳陣・OBの人物タグを事前作成し、RSS記事作成時は既存タグだけ自動付与する。tag archive はまず noindex。GitHub Issue #49。 |
 | **quality source excerpt follow-up** | `323-QA-source-body-excerpt-clean-truncation.md` | `314-QA-rss-source-body-excerpt-followup` 関連。ブログ本文の `📖 本文抜粋` が600文字化後も途中切れ / UI・関連記事混入に見える問題を狭く扱う。publish/mail/scheduler/env/Cloud Run/X/SEO/featured_media は不可触。 |
 | **waiting** | `205-gcp-runtime-drift-audit.md`, `238-night-draft-only-and-morning-decision-report.md`, `288-INGEST-source-coverage-expansion.md` | still useful, but not part of the immediate article-body hallucination fix. `288` remains source-add HOLD; only Phase 0 repo-only audit / dry-run evidence may advance doc-only. |
 | **INSIGHT lane (342 ready full-12team, 343 phase-4 done)** | `342-INSIGHT-data-driven-ranking-auto-publish.md`, `343-INSIGHT-007-data-population-audit-and-backfill.md` | 343 Phase 4 (12 球団 team-aware roster) LIVE: NPB 公式 scrape で `config/npb_12team_roster.json` 1071 entry 生成、`fill_canonical_team_aware` で 5027 row 補完、production DB players 21→462 (12 球団全部 32-43 人)、advanced_metric_snapshots 122→6394 (50x)。image `insight-nightly:343c` deploy 済、次 nightly 以降も自動 fill 動作。342 status `READY_FOR_PHASE_1_IMPL_FULL_12TEAM`、初版 4 候補全部 (A1 月次 OPS / B2 守備 UZR / B1 12 球団 top 30 / E1 直近 hot/cold) data 揃い、user GO で impl 着手可能。GH Issue #21(342) + #23(343)。 |
@@ -1924,6 +1925,19 @@ git add -A禁止。
 - **方針**: `レイアウト担当` / `紙面レイアウト` / `5/17付 スポーツ報知` などの日付付き新聞紙面告知は、選手名や試合語が入っていても記事候補にしない。trusted social rescue / weak social rescue / template v2 / main intake の各入口で hard stop し、`paper_layout_social_promo_skip` を出す。
 - **tests**: `tests/test_rss_trusted_social_rescue.py` 28 passed、関連 4 file 113 passed、py_compile / compileall / AST PASS。
 - **deploy**: commit `ed237ea`、Cloud Build `3daeb97b-9252-4fb6-82d8-bc546ae46403` SUCCESS、image `375-paper-layout-ed237ea`、digest `sha256:3f2aff2f70245bb2034fd6f290f1389dcfda13fdbcdc32329f92ba5c372e3db2`、revision `yoshilover-fetcher-00412-4kg` 100%、`/health` OK、startup probe succeeded、新 revision ERROR logs 0。Scheduler / env / Secret / X / SNS / mail 条件は変更しない。
+
+### 376-QA-person-tag-routing-and-noindex
+
+- **alias**: -
+- **status**: REVIEW_NEEDED / **priority**: P0.5
+- **owner**: Codex / **lane**: B
+- **doc_path**: `doc/active/376-QA-person-tag-routing-and-noindex.md`
+- **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/49
+- **背景**: user lock。選手タグはあらかじめ全部作り、タグアーカイブはまず noindex。記事カテゴリは今の大分類を維持し、選手・首脳陣・OBの人物タグで記事を束ねる。AI の「記憶から再構成」「silent skip」「自己評価 OK」は禁止。
+- **方針**: deterministic registry router で人物タグ / 文脈タグを決める。runtime では WP tag を新規作成せず、既存 tag ID にだけ紐づける。missing / ambiguous / no hit は log に残す。
+- **implementation**: `person_tag_router.py`、`sync_wp_person_tags.py`、`WPClient` tags / tag API、`rss_fetcher` draft chokepoint tag routing、`yoshilover-post-noindex.php` tag archive noindex。
+- **tests**: py_compile PASS、person tag / WP tag API / noindex / RSS integration 16 passed、WP client 66 passed、RSS same-fire/reliability/categories/person-tag 41 passed / 3 xfailed / 3 subtests、sync dry-run 173 tags。
+- **live**: repo implementation done。WP tag sync / Cloud Run deploy / Scheduler / env / Secret / X / SNS は未実行。
 
 ### 362-INSIGHT-queue-cleanup-and-metric-run-cap
 

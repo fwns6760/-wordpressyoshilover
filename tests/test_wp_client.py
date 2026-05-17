@@ -133,6 +133,37 @@ class TestWPClientDedup(unittest.TestCase):
             status="publish",
         )
 
+    @patch.object(WPClient, "update_post_fields")
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_contract_reused_draft_backfills_tags(self, mock_get, mock_post, mock_update):
+        mock_get.return_value = Mock(
+            status_code=200,
+            json=lambda: [
+                {
+                    "id": 765,
+                    "title": {"raw": "浦田俊輔と岡本和真がスタメン入り"},
+                    "status": "draft",
+                    "date": "2099-04-14T17:39:28",
+                    "featured_media": 0,
+                    "categories": [663],
+                    "tags": [],
+                }
+            ],
+        )
+
+        post_id = self.wp.create_post(
+            "浦田俊輔と岡本和真がスタメン入り",
+            "<p>body</p>",
+            categories=[663],
+            tags=[101, 102, 201],
+            status="draft",
+        )
+
+        self.assertEqual(post_id, 765)
+        mock_post.assert_not_called()
+        mock_update.assert_called_once_with(765, tags=[101, 102, 201])
+
     @patch("src.wp_client.requests.post")
     @patch("src.wp_client.requests.get")
     def test_contract_wp_api_403_search_falls_back_to_relaxed_query(self, mock_get, mock_post):
@@ -241,6 +272,25 @@ class TestWPClientDedup(unittest.TestCase):
             payload["meta"],
             {WPClient.SOURCE_URL_META_KEY: "https://example.com/source/b"},
         )
+
+    @patch("src.wp_client.requests.post")
+    @patch("src.wp_client.requests.get")
+    def test_create_post_payload_includes_tags(self, mock_get, mock_post):
+        mock_get.return_value = Mock(status_code=200, json=lambda: [])
+        mock_post.return_value = Mock(status_code=201, json=lambda: {"id": 444})
+
+        post_id = self.wp.create_post(
+            "浦田俊輔、初スタメン",
+            "<p>body</p>",
+            categories=[663],
+            tags=[101, 201],
+            status="draft",
+        )
+
+        self.assertEqual(post_id, 444)
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(payload["categories"], [663])
+        self.assertEqual(payload["tags"], [101, 201])
 
     @patch("src.wp_client.requests.get")
     def test_find_recent_post_by_title_allows_title_only_reuse_when_enabled(self, mock_get):

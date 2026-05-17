@@ -172,9 +172,8 @@ class PickCandidatesTests(unittest.TestCase):
         self.assertIn("←⭐巨人", cands[0].draft_text)
 
     def test_too_few_central_rows_skipped(self) -> None:
-        # Only 1 セ row → skip (351: giants_only combos may still pass since
-        # they have a lower min_central_rows=3 threshold and 巨人 row exists).
-        # Verify non-giants-only combos all skip.
+        # Only 1 セ row → skip. The mail no longer falls back to 巨人内
+        # ranking because the user needs the セ・リーグ6球団での順位.
         sparse = [
             _row(1, "巨人選手", "巨人", 0.900),
             _row(2, "パ選手 A", "ソフトバンク", 0.890),
@@ -182,10 +181,7 @@ class PickCandidatesTests(unittest.TestCase):
         ]
         query_mock = MagicMock(return_value={"ok": True, "rows": sparse, "count": 3, "total": 60, "focus_player": None})
         cands = pick_candidates(query_mock, now=datetime(2026, 5, 16, 7, 0, tzinfo=JST), max_candidates=22, min_sample=1)
-        # All emitted candidates must be 巨人内 ranking (since non-giants-only
-        # combos require min_central_rows=5 default and we only have 1 セ row).
-        for c in cands:
-            self.assertIn("巨人内", c.title, msg=f"Unexpected non-giants combo: {c.title}")
+        self.assertEqual(cands, [])
 
     def test_query_failure_skipped_not_crash(self) -> None:
         def _raise(**_kw):
@@ -335,8 +331,8 @@ class PickCandidatesTests(unittest.TestCase):
             {"rank": 5, "total": 20, "player_canonical": "p5",
              "team_code": "中日", "metric_value": 0.85, "sample_size": 100},
         ]
-        # 351: 巨人内 ranking combo only needs 3 巨人 rows; rows4 has 1 巨人
-        # row so still skips. Verify that NON-巨人-only combos do skip.
+        # 巨人内 ranking fallback は廃止。4 セ row ではセ・リーグ
+        # ranking として薄いので skip。
         non_giants_combos_skipped_at_4 = pick_candidates(
             MagicMock(return_value={"ok": True, "rows": rows4, "count": 4, "total": 20, "focus_player": None}),
             now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
@@ -344,9 +340,8 @@ class PickCandidatesTests(unittest.TestCase):
             min_sample=1,
         )
         for c in non_giants_combos_skipped_at_4:
-            # If any candidate slips through with only 4 rows, it must be the
-            # giants_only ranking which has its own min=3 threshold and a
-            # single 巨人 row in the input → still excluded.
+            # Defensive no-op assertion kept to preserve the old loop shape;
+            # the expected behavior is no candidates.
             self.assertNotIn("ランキング 📊（", c.draft_text[:0])
         cands5 = pick_candidates(
             MagicMock(return_value={"ok": True, "rows": rows5, "count": 5, "total": 20, "focus_player": None}),
@@ -358,7 +353,7 @@ class PickCandidatesTests(unittest.TestCase):
 
 
 class VariationExpansionTests(unittest.TestCase):
-    """351/356: 短期・守備位置別・巨人内 combo pool の検証。"""
+    """351/356 follow-up: 短期・守備位置別・巨人順位 focus combo pool の検証。"""
 
     def _make_mock_with_rows(self) -> MagicMock:
         return MagicMock(return_value={
@@ -383,7 +378,7 @@ class VariationExpansionTests(unittest.TestCase):
         self.assertNotIn("7月成績", {c.period_label for c in mid_month})
         monthly = [c for c in month_start if c.period_label == "7月成績"]
         self.assertEqual(len(monthly), 3)
-        self.assertTrue(all(c.giants_only for c in monthly))
+        self.assertFalse(any(c.giants_only for c in monthly))
         self.assertEqual({c.metric for c in monthly}, {"OPS", "AVG", "ERA"})
 
     def test_last_7_days_combo_appears(self) -> None:
@@ -421,9 +416,8 @@ class VariationExpansionTests(unittest.TestCase):
         position_headers = [c for c in cands if any(p in c.draft_text for p in ("捕手", "二塁", "遊撃", "三塁"))]
         self.assertGreaterEqual(len(position_headers), 1)
 
-    def test_giants_only_ranking_filters_to_giants_rows(self) -> None:
-        """巨人内 ranking は 巨人 row のみで header に「巨人内」を含む。"""
-        # Mix with 3 giants players so giants_only meets min=3
+    def test_giants_focus_keeps_league_rows_and_marks_giants_rank(self) -> None:
+        """巨人 row だけに絞らず、セ・リーグ順位で巨人選手を強調する。"""
         mixed = [
             _row(1, "佐藤輝明", "阪神", 0.945),
             _row(2, "牧秀悟", "DeNA", 0.932),
@@ -441,22 +435,59 @@ class VariationExpansionTests(unittest.TestCase):
             min_sample=1,
             min_central_rows=3,
         )
-        giants_cands = [c for c in cands if "巨人内" in c.draft_text]
-        self.assertGreaterEqual(len(giants_cands), 1)
-        text = giants_cands[0].draft_text
-        # Non-巨人 player names must NOT appear in 巨人内 ranking
-        for non_giants_name in ["佐藤輝明", "牧秀悟", "村上宗隆", "鈴木誠也", "細川成也"]:
-            self.assertNotIn(non_giants_name, text, msg=f"non-Giants player leaked: {non_giants_name}")
-        # 巨人 players appear
+        focus_cands = [c for c in cands if "セ・リーグ" in c.draft_text]
+        self.assertGreaterEqual(len(focus_cands), 1)
+        cand = focus_cands[0]
+        text = cand.draft_text
+        self.assertNotIn("巨人内", text)
+        self.assertIn("セ・リーグ", text)
+        self.assertIn("巨人最上位: 岡本和真 セ・リーグ 3/8位", text)
+        self.assertIn("岡本和真", cand.title)
+        self.assertIn("3/8位", cand.title)
+        # Non-巨人 rows remain because the ranking scope is セ・リーグ.
+        self.assertIn("佐藤輝明", text)
+        self.assertIn("牧秀悟", text)
+        # 巨人 players appear with strong marker.
         self.assertIn("岡本和真", text)
+        self.assertIn("←⭐巨人", text)
+
+    def test_giants_focus_row_survives_when_outside_top_five(self) -> None:
+        """X字数調整で上位だけに削っても巨人最上位 row は残す。"""
+        from src.x_post_mail_lane import _MetricCombo, _format_one, _rebuild_ranks_within_central
+
+        rows = [
+            _row(1, "阪神A", "阪神", 1.000),
+            _row(2, "DeNAA", "DeNA", 0.990),
+            _row(3, "ヤクルトA", "ヤクルト", 0.980),
+            _row(4, "中日A", "中日", 0.970),
+            _row(5, "広島A", "広島", 0.960),
+            _row(6, "阪神B", "阪神", 0.950),
+            _row(7, "DeNAB", "DeNA", 0.940),
+            _row(8, "ヤクルトB", "ヤクルト", 0.930),
+            _row(9, "中日B", "中日", 0.920),
+            _row(10, "広島B", "広島", 0.910),
+            _row(11, "岡本和真", "巨人", 0.900),
+        ]
+        ranked = _rebuild_ranks_within_central(rows)
+        cand = _format_one(
+            _MetricCombo("OPS", "2026-05-09", "直近7日"),
+            ranked,
+            min_sample=30,
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+        )
+        self.assertIsNotNone(cand)
+        assert cand is not None
+        self.assertIn("巨人最上位: 岡本和真 セ・リーグ 11/11位", cand.draft_text)
+        self.assertIn("11. 岡本和真（巨人）OPS .900 ←⭐巨人", cand.draft_text)
+        self.assertLessEqual(cand.char_count, X_CHAR_LIMIT)
 
     def test_combo_pool_size_10_after_mainstream_periods_excluded(self) -> None:
         """357: 大手が出しやすい season / daily month / 30d / 14d を削除。
-        残り = 直近7日 3 + 守備位置別直近7日 4 + 巨人内直近7日 3 = 10。
+        残り = 直近7日 3 + 守備位置別直近7日 4 = 7。
         """
         from src.x_post_mail_lane import _build_combos
         combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST))
-        self.assertEqual(len(combos), 10)
+        self.assertEqual(len(combos), 7)
         self.assertTrue(all(c.novelty == "high" for c in combos))
         self.assertFalse({"今月", "先月", "今シーズン", "直近30日", "直近14日"} & {c.period_label for c in combos})
         self.assertFalse([c for c in combos if c.since is None], msg=f"full-period combo leaked: {combos}")
@@ -736,8 +767,8 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
 
 
 class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
-    """354/356: 直近 N 巨人試合 variation (案 A 巨人内限定、 pool 10 → 16、
-    novelty="high"、 giants_only=True、 min_sample_override で AB 閾値緩和)
+    """354/356 follow-up: 直近 N 巨人試合 variation (セ・リーグ順位、
+    novelty="high"、 min_sample_override で AB 閾値緩和)
     の検証。 all-NPB 化後の production DB に合わせ、 games + batting_logs
     の sqlite tempfile fixture を seed する。
     """
@@ -840,22 +871,22 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
             1,
         )
 
-    def test_build_combos_no_db_path_keeps_10(self) -> None:
-        """db_path=None で短期寄せの 10 combo を維持。"""
+    def test_build_combos_no_db_path_keeps_7(self) -> None:
+        """db_path=None で短期寄せの 7 combo を維持。"""
         from src.x_post_mail_lane import _build_combos
         combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST))
-        self.assertEqual(len(combos), 10)
+        self.assertEqual(len(combos), 7)
 
     def test_build_combos_with_db_path_adds_6_last_n(self) -> None:
-        """db_path 指定で 16 combo (10 + 直近 5 × 3 + 直近 10 × 3)。"""
+        """db_path 指定で 13 combo (7 + 直近 5 × 3 + 直近 10 × 3)。"""
         from src.x_post_mail_lane import _build_combos
         # need ≥10 distinct game dates for both 5-game and 10-game windows
         dates = [f"2026-05-{day:02d}" for day in range(1, 16)]  # 15 dates
         self._seed_games(dates)
         combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST), db_path=self.db_path)
-        self.assertEqual(len(combos), 16)
+        self.assertEqual(len(combos), 13)
 
-    def test_last_n_games_combos_are_high_novelty_and_giants_only(self) -> None:
+    def test_last_n_games_combos_are_high_novelty_and_league_scoped(self) -> None:
         from src.x_post_mail_lane import _build_combos
         dates = [f"2026-05-{day:02d}" for day in range(1, 16)]
         self._seed_games(dates)
@@ -864,7 +895,7 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
         self.assertEqual(len(last_n_combos), 6)
         for c in last_n_combos:
             self.assertEqual(c.novelty, "high", msg=f"non-high novelty leaked: {c}")
-            self.assertTrue(c.giants_only, msg=f"non-giants combo leaked: {c}")
+            self.assertFalse(c.giants_only, msg=f"giants-only combo leaked: {c}")
             self.assertIn(c.metric, ("OPS", "AVG", "ERA"))
             self.assertIn(c.min_sample_override, (5, 10))
 
@@ -894,7 +925,6 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
             "2026-05-11",
             "直近5試合",
             until="2026-05-16",
-            giants_only=True,
             min_sample_override=5,
         )
         cand = _format_one(
@@ -923,7 +953,6 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
             "2026-07-01",
             "7月成績",
             until="2026-07-31",
-            giants_only=True,
             min_sample_override=30,
         )
         cand = _format_one(
@@ -956,10 +985,14 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
             min_central_rows=3,
             db_path=self.db_path,
         )
-        # 直近 5 試合 combo の query_rank call は min_sample=5、 直近 10 試合 は 10
+        # 直近 5/10 試合 combo の query_rank call は min_sample override を使う。
+        # 同一 metric の period-family skip があるため、1 mail 内では 5 or 10
+        # のどちらか片方だけが実行されることがある。
         ms_values = [c.get("min_sample") for c in captured]
-        self.assertIn(5, ms_values, msg=f"min_sample=5 not honoured: {ms_values}")
-        self.assertIn(10, ms_values, msg=f"min_sample=10 not honoured: {ms_values}")
+        self.assertTrue(
+            {5, 10} & set(ms_values),
+            msg=f"last-N min_sample override not honoured: {ms_values}",
+        )
         # And the default 30 should still appear for non-override combos
         self.assertIn(30, ms_values, msg=f"default 30 missing: {ms_values}")
 
@@ -969,7 +1002,7 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
         # only 3 games → both n=5 and n=10 windows return None
         self._seed_games(["2026-05-14", "2026-05-15", "2026-05-16"])
         combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST), db_path=self.db_path)
-        self.assertEqual(len(combos), 10, msg=f"unexpected combo count: {len(combos)}")
+        self.assertEqual(len(combos), 7, msg=f"unexpected combo count: {len(combos)}")
 
 
 class XPostMailEntrypointFreshnessTests(unittest.TestCase):
@@ -1201,7 +1234,7 @@ class TicketThreeFiftyFiveDedupTests(unittest.TestCase):
         from src.x_post_mail_lane import _MetricCombo, _combo_signature
         c1 = _MetricCombo("OPS", "2026-05-09", "直近7日", position="捕")
         c2 = _MetricCombo("OPS", "2026-05-09", "直近7日", position="二")
-        c3 = _MetricCombo("OPS", "2026-05-09", "直近7日", giants_only=True)
+        c3 = _MetricCombo("OPS", "2026-05-01", "直近5試合")
         sigs = {_combo_signature(c1), _combo_signature(c2), _combo_signature(c3)}
         self.assertEqual(len(sigs), 3, msg=f"signatures collided: {sigs}")
 

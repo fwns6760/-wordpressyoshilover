@@ -195,14 +195,15 @@ def filter_central_league(rows: list[dict]) -> list[dict]:
 class _MetricCombo:
     """Description of one X post candidate to attempt.
 
-    Extended in 351 with optional ``until``, ``position`` (守備位置 single
-    kanji), and ``giants_only`` (filter the final ranking to 巨人 rows
-    only, used for 「巨人内 OPS top 5」 style posts).
+    Extended in 351 with optional ``until`` and ``position`` (守備位置 single
+    kanji). ``giants_only`` remains only as a legacy signature dimension;
+    new mail candidates keep the セ・リーグ field and highlight the top Giants
+    row instead of re-ranking only Giants players.
 
     353: ``novelty`` tag drives the weighted shuffle in
     :func:`_select_with_diversity`. ``"high"`` = yoshilover 独自
     (大手新聞が出さない slice、 直近 5/10 試合 / 直近 7 日 /
-    守備位置別 / 巨人内の短期変化 等)、 ``"mid"`` = 中間、
+    守備位置別 / 巨人最上位の短期変化 等)、 ``"mid"`` = 中間、
     ``"low"`` = 大手定番 (削除 — pool に入れない前提だが
     将来再導入時の dial として残す)。
 
@@ -244,7 +245,7 @@ def _query_recent_n_games_date_range(
     Production DB is now all-NPB. Therefore the window must be limited
     to games whose logs actually contain a Giants team row; otherwise
     Pacific / non-Giants dates would shrink or distort the "直近 N
-    試合" period used by ``giants_only=True`` ranking combos.
+    試合" period used by the Giants-game-window ranking combos.
     """
     if n <= 0:
         return None
@@ -328,16 +329,16 @@ def _build_combos(
 
     353/356: 大手新聞が出しやすい「シーズン累積 / 直近30日」
     combo を pool から除外し、 yoshilover 独自度の高い slice
-    (直近 5/10 試合 / 直近 7 日 / 守備位置別 / 巨人内の短期変化) を
+    (直近 5/10 試合 / 直近 7 日 / 守備位置別 / 巨人最上位の短期変化) を
     novelty_high として扱う。
 
-    354: ``db_path`` を渡すと 直近 5/10 巨人試合 × OPS/AVG/ERA × giants_only
-    の 6 combo (全部 novelty="high"、 min_sample_override で AB 閾値緩和)
+    354: ``db_path`` を渡すと 直近 5/10 巨人試合 × OPS/AVG/ERA の
+    6 combo (全部 novelty="high"、 min_sample_override で AB 閾値緩和)
     を追加する。 ``db_path=None`` (default) では直近 N 試合 combo を除外し、
     test / 旧呼出 互換を維持する。
 
     357: 月別は毎日出すと mail 過多になるため、月初 3 日だけ前月成績を
-    巨人内 ranking として追加する (例: 8/1-8/3 に「7月成績」)。
+    セ・リーグ ranking として追加する (例: 8/1-8/3 に「7月成績」)。
     """
     combos: list[_MetricCombo] = []
     # 356+357: シーズン累積 / 直近30日 は大手が出しやすく、同じ
@@ -354,11 +355,7 @@ def _build_combos(
     # 守備位置 single-kanji codes match insight_rank_query expectations.
     for pos in ("捕", "二", "遊", "三"):
         combos.append(_MetricCombo("OPS", last7, "直近7日", position=pos, novelty="high"))
-    # 3. 巨人内の短期変化 — last7 window, filter final rows to 巨人 rows only.
-    for m in ("OPS", "AVG", "ERA"):
-        combos.append(_MetricCombo(m, last7, "直近7日", giants_only=True, novelty="high"))
-
-    # 4. 354: 直近 5/10 巨人試合 × OPS/AVG/ERA × giants_only — yoshilover 独自
+    # 3. 354: 直近 5/10 巨人試合 × OPS/AVG/ERA — yoshilover 独自
     # の試合数 base ranking。 games table が読めて且つ N 試合分の row が
     # あれば追加 (case-by-case fallback、 取得失敗時は skip)。
     if db_path:
@@ -374,14 +371,13 @@ def _build_combos(
                         since,
                         label,
                         until=until,
-                        giants_only=True,
                         novelty="high",
                         min_sample_override=n_games,
                     )
                 )
-    # 5. 357: 前月成績 — 「7月成績」のような月別表記は分かりやすいが、
-    # 毎日出すと過剰なので月初だけ候補に入れる。巨人内に限定し、
-    # period-family skip と 24h dedup の対象にする。
+    # 4. 357: 前月成績 — 「7月成績」のような月別表記は分かりやすいが、
+    # 毎日出すと過剰なので月初だけ候補に入れる。セ・リーグ内で
+    # 巨人最上位を見せ、period-family skip と 24h dedup の対象にする。
     if 1 <= now.day <= 3:
         month_since, month_until = _prev_month_range(now)
         month_label = _month_period_label(month_since, month_until) or "前月成績"
@@ -392,7 +388,6 @@ def _build_combos(
                     month_since,
                     month_label,
                     until=month_until,
-                    giants_only=True,
                     novelty="high",
                     min_sample_override=10 if m == "ERA" else 30,
                 )
@@ -469,6 +464,42 @@ def _rebuild_ranks_within_central(rows: list[dict]) -> list[dict]:
         # shallow copy keeps the original rank result intact for caller
         out.append({**r, "rank": idx, "total": len(rows)})
     return out
+
+
+def _top_giants_row(rows: list[dict]) -> Optional[dict]:
+    """Return the highest-ranked Giants row from already-ranked rows."""
+    for row in rows:
+        if _is_giants(row.get("team_code")):
+            return row
+    return None
+
+
+def _rows_with_giants_focus(rows: list[dict], *, max_rows: int = 10) -> list[dict]:
+    """Return display rows while guaranteeing the top Giants row is visible.
+
+    The mail must answer "巨人の選手がセ・リーグで何位か". If the first
+    Giants row falls outside the top-N display, replace the last display row
+    with that Giants row rather than switching to a Giants-only ranking.
+    """
+    if max_rows <= 0:
+        return []
+    top_rows = list(rows[:max_rows])
+    focus = _top_giants_row(rows)
+    if focus is None:
+        return top_rows
+    if any(r.get("player_canonical") == focus.get("player_canonical")
+           and r.get("team_code") == focus.get("team_code") for r in top_rows):
+        return top_rows
+    if len(top_rows) >= max_rows:
+        return top_rows[:-1] + [focus]
+    return top_rows + [focus]
+
+
+def _scope_label(combo: _MetricCombo) -> str:
+    if combo.position:
+        position_jp = _POSITION_DISPLAY_JP.get(combo.position, combo.position)
+        return f"セ・{position_jp}"
+    return "セ・リーグ"
 
 
 def _sample_label_for_metric(metric: str) -> str:
@@ -609,7 +640,7 @@ def _truncate_to_x_limit_top_n(text: str, top_n: int) -> str:
         )
         if is_ranking:
             rank_seen += 1
-            if rank_seen > top_n:
+            if rank_seen > top_n and "←⭐巨人" not in line:
                 continue  # drop rows beyond top_n
         kept.append(line)
     return "\n".join(kept)
@@ -623,7 +654,7 @@ def _truncate_to_x_limit_top_n(text: str, top_n: int) -> str:
 
 def _combo_signature(combo: _MetricCombo) -> str:
     """355: combo identity for dedup. Same ``(metric, period_label,
-    giants_only, position)`` tuple == "same ranking" — minor differences
+    legacy ``giants_only`` flag, position)`` tuple == "same ranking" — minor differences
     like ``since`` drift across days do not count as a different
     ranking for user perception.
     """
@@ -772,17 +803,22 @@ def _format_one(
     min_sample: int,
     now: datetime,
 ) -> Optional[Candidate]:
+    focus_row = _top_giants_row(rows)
+    if focus_row is None:
+        LOG.info("No Giants row for %s/%s — skip", combo.metric, combo.period_label)
+        return None
+    display_rows = _rows_with_giants_focus(rows, max_rows=10)
     parsed = {
         "metric": combo.metric,
         "position": None,
-        "top_n": min(10, len(rows)),
+        "top_n": min(10, len(display_rows)),
         "league": "セ",
         "focus_player": None,
     }
     rank_result = {
         "ok": True,
-        "rows": rows[:10],
-        "count": min(10, len(rows)),
+        "rows": display_rows,
+        "count": len(display_rows),
         "total": len(rows),
         "focus_player": None,
     }
@@ -802,35 +838,28 @@ def _format_one(
     period_suffix = f"（{period_label}・{threshold_label}）"
     metric_jp = _METRIC_LABELS_JP.get(combo.metric, combo.metric)
     header_emoji = _METRIC_HEADER_EMOJI.get(combo.metric, "📊")
-    top_count = min(10, len(rows))
+    focus_rank = focus_row.get("rank")
+    focus_total = focus_row.get("total") or len(rows)
+    focus_name = focus_row.get("player_canonical") or "巨人選手"
+    scope_label = _scope_label(combo)
 
-    # 351+353: 守備位置別 / 巨人内 ranking で header の prefix を切替。
+    # 351+353 follow-up: 守備位置別 / セ・リーグ ranking で header の prefix を切替。
     # 346 format_as_x_post の output 1 行目は「セ・{metric_jp} ランキング 📊」固定
     # なので、 1 行目を新 prefix + metric 別絵文字で置換する。
-    if combo.giants_only:
-        if lines and "ランキング" in lines[0]:
-            lines[0] = f"巨人内 {metric_jp} ランキング {header_emoji}"
-        title = (
-            f"巨人内 {metric_jp} 上位{top_count} "
-            f"({period_label}・{threshold_label})"
-        )
-    elif combo.position:
+    if combo.position:
         position_jp = _POSITION_DISPLAY_JP.get(combo.position, combo.position)
         if lines and "ランキング" in lines[0]:
             lines[0] = f"セ・{position_jp} {metric_jp} ランキング {header_emoji}"
-        title = (
-            f"セ・{position_jp} {metric_jp} 上位{top_count} "
-            f"({period_label}・{threshold_label})"
-        )
     else:
         if lines and "ランキング" in lines[0]:
-            lines[0] = f"セ・{metric_jp} ランキング {header_emoji}"
-        title = (
-            f"セ {metric_jp} 上位{top_count} "
-            f"({period_label}・{threshold_label})"
-        )
+            lines[0] = f"セ・リーグ {metric_jp} ランキング {header_emoji}"
+    title = (
+        f"{focus_name} {metric_jp} {scope_label} {focus_rank}/{focus_total}位 "
+        f"({period_label}・{threshold_label})"
+    )
     # 353: period_suffix を 1 行目 append から 2 行目挿入に変更。
     lines.insert(1, period_suffix)
+    lines.insert(2, f"巨人最上位: {focus_name} {scope_label} {focus_rank}/{focus_total}位")
 
     # 353: ranking rows に medal / metric label / strong Giants marker を post-process。
     lines = _rewrite_ranking_rows(lines, metric_jp)
@@ -885,7 +914,7 @@ def pick_candidates(
     db_path:
         354: optional path to a read-only ``insight.db`` SQLite file.
         When provided and the table has ≥10 distinct game dates,
-        adds 直近 5 試合 / 直近 10 試合 × OPS/AVG/ERA × giants_only
+        adds 直近 5 試合 / 直近 10 試合 × OPS/AVG/ERA
         combos (6 combos). ``None`` keeps the base 10-combo pool.
     dedup_set:
         355: optional set of combo signatures already sent within
@@ -945,18 +974,17 @@ def pick_candidates(
                      combo.metric, combo.period_label, result.get("reason"))
             continue
         rows = filter_central_league(result.get("rows") or [])
-        # 351: 巨人内 ranking — keep only Giants rows after the セ filter.
-        if combo.giants_only:
-            rows = [r for r in rows if _is_giants(r.get("team_code"))]
-            min_rows_required = 3  # only need a few 巨人 players for a meaningful list
-        else:
-            min_rows_required = min_central_rows
+        min_rows_required = min_central_rows
         if len(rows) < min_rows_required:
-            LOG.info("Too few rows (%d < %d) for %s/%s (giants_only=%s, position=%s) — skip",
+            LOG.info("Too few rows (%d < %d) for %s/%s (position=%s) — skip",
                      len(rows), min_rows_required, combo.metric,
-                     combo.period_label, combo.giants_only, combo.position)
+                     combo.period_label, combo.position)
             continue
         rows = _rebuild_ranks_within_central(rows)
+        if _top_giants_row(rows) is None:
+            LOG.info("No Giants row in central ranking for %s/%s (position=%s) — skip",
+                     combo.metric, combo.period_label, combo.position)
+            continue
         candidate = _format_one(combo, rows, min_sample=effective_min_sample, now=now)
         if candidate:
             out.append(candidate)

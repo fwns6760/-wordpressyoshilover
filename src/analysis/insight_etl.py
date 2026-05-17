@@ -595,6 +595,40 @@ def fill_canonical_team_aware(conn: sqlite3.Connection) -> int:
     return updated
 
 
+_CENTRAL_LEAGUE_TEAM_NAMES_FOR_QUALIFIED: tuple[str, ...] = (
+    "巨人", "阪神", "ヤクルト", "広島", "DeNA", "中日",
+)
+# 空 DB / セ・リーグ試合 0 件時の fallback。 16 試合は qualified_pa ≈ 50 /
+# qualified_ip = 16.0 を生み、 legacy 固定値 (min_pa=50, min_ip=15) を
+# 概ね再現する保守的下限。
+_QUALIFIED_FALLBACK_TEAM_GAMES = 16
+
+
+def team_games_for_qualified_thresholds(conn: sqlite3.Connection) -> int:
+    """セ・リーグ各球団の試合数の max を返す (= リーグ最進行球団基準)。
+
+    NPB 公式 ranking はリーグ最進行球団の試合数を基準に **規定打席
+    (試合数 × 3.1)** / **規定投球回 (試合数 × 1.0)** を判定する慣行。
+    本 helper は season scope の動的閾値の根拠を返す。
+
+    issue #44 #1: 則本 IP=30 / 竹丸 IP=34 が IP>=15 固定閾値で snapshot
+    に入り「セ・リーグ N/M 位」と表示されていた水増しの修正。
+
+    パ・リーグ球団は除外。 空 DB (テスト等) は安全側 fallback
+    (``_QUALIFIED_FALLBACK_TEAM_GAMES``) を返す。
+    """
+    placeholders = ",".join(["?"] * len(_CENTRAL_LEAGUE_TEAM_NAMES_FOR_QUALIFIED))
+    rows = conn.execute(
+        f"SELECT COUNT(DISTINCT game_id) FROM batting_logs "
+        f"WHERE team_name IN ({placeholders}) "
+        f"GROUP BY team_name",
+        _CENTRAL_LEAGUE_TEAM_NAMES_FOR_QUALIFIED,
+    ).fetchall()
+    if not rows:
+        return _QUALIFIED_FALLBACK_TEAM_GAMES
+    return int(max(r[0] for r in rows))
+
+
 def compute_advanced_metric_snapshots(
     conn: sqlite3.Connection,
     *,

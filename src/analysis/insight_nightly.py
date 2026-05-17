@@ -284,10 +284,18 @@ def run_nightly(
             #   last_10_games: PA >= 6 / IP >= 0.0 (直近 10 試合 rolling)
             #   weekly:        PA >= 5 / IP >= 1.0 (ISO 週、 last_7d と類似)
             #   monthly:       PA >= 15 / IP >= 5.0 (当月 1 日〜snapshot 日)
+            # issue #44 #1: season scope は規定打席 (試合数 × 3.1) /
+            # 規定投球回 (試合数 × 1.0) の動的閾値に切替。 短期 scope は
+            # 公式記録ではない (= 規定到達は意味なし) ため現状の固定値
+            # 維持。 詳細は ``insight_etl.team_games_for_qualified_thresholds``
+            # docstring。
+            team_games = insight_etl.team_games_for_qualified_thresholds(conn)
+            qualified_pa = int(team_games * 3.1)
+            qualified_ip = float(team_games * 1.0)
             scope_thresholds: tuple[tuple[str, int, float], ...] = (
                 ("last_7d", 5, 1.0),
                 ("last_30d", 15, 5.0),
-                ("season", 50, 15.0),
+                ("season", qualified_pa, qualified_ip),
                 ("last_5_games", 3, 0.0),
                 ("last_10_games", 6, 0.0),
                 ("weekly", 5, 1.0),

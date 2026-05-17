@@ -826,6 +826,15 @@ TRUSTED_SOCIAL_GIANTS_RESCUE_NEGATIVE_KEYWORDS = (
     "こども",
     "RT ",
 )
+PAPER_LAYOUT_SOCIAL_PROMO_PUBLISHERS = (
+    "スポーツ報知",
+    "報知",
+    "日刊スポーツ",
+    "スポニチ",
+    "サンスポ",
+    "デイリー",
+    "東スポ",
+)
 MANAGER_BODY_TEMPLATE_VERSION = "manager_v1"
 MANAGER_BODY_TEMPLATE_VERSION_V2 = "manager_v2"
 MANAGER_REQUIRED_HEADINGS = (
@@ -4441,6 +4450,24 @@ def _should_skip_no_entity_non_game(title: str, summary: str) -> str:
     return ""
 
 
+def _should_skip_paper_layout_social_promo(title: str, summary: str) -> str:
+    """紙面告知 / レイアウト担当 RT は選手名や試合語があっても記事化しない。"""
+    text = _collapse_ws(_strip_html(f"{title or ''} {summary or ''}"))
+    if not text:
+        return ""
+    compact = _re.sub(r"\s+", "", text)
+    if "レイアウト担当" in text or "紙面レイアウト" in compact:
+        return "paper_layout_social_promo"
+    if text.startswith("RT ") and ("紙面" in text or "レイアウト" in text):
+        return "paper_layout_social_promo"
+    for publisher in PAPER_LAYOUT_SOCIAL_PROMO_PUBLISHERS:
+        if _re.search(r"\d{1,2}/\d{1,2}付\s*" + _re.escape(publisher), text):
+            return "paper_layout_social_promo"
+        if _re.search(r"\d{1,2}/\d{1,2}付" + _re.escape(publisher), compact):
+            return "paper_layout_social_promo"
+    return ""
+
+
 # Prior-event marker. Title が「凱旋」「昨夜」「昨日」「前日」「前夜」「先日」
 # などを含むと、source URL の publish 時刻が today でも content は **過去
 # (= 昨日以前) の試合 / event の retrospective report**。Daily Sports や
@@ -4941,6 +4968,8 @@ def _trusted_social_giants_keyword_hits(text: str) -> list[str]:
     """
     clean = _strip_html(text or "")
     if not clean:
+        return []
+    if _should_skip_paper_layout_social_promo(clean, ""):
         return []
     if any(neg in clean for neg in TRUSTED_SOCIAL_GIANTS_RESCUE_NEGATIVE_KEYWORDS):
         positive_for_negative_balance: list[str] = [
@@ -5952,6 +5981,8 @@ def _select_template_v2(
         )
         entry_source_url = str(entry.get("source_url") or entry.get("post_url") or entry.get("url") or "")
         entry_source_name = str(entry.get("source_name") or "")
+    if entry_text and _should_skip_paper_layout_social_promo(entry_text, ""):
+        return "skip", "paper_layout_social_promo"
     has_lineup_signal = bool(entry_text) and (
         _has_lineup_core(entry_text)
         or (
@@ -21879,6 +21910,8 @@ def _evaluate_authoritative_social_entry(
     source_url: str = "",
 ) -> tuple[bool, dict | None]:
     text = _strip_html(f"{title} {summary}")
+    if _should_skip_paper_layout_social_promo(title, summary):
+        return False, None
     trusted_source = _is_trusted_social_source(source_handle, source_name)
     if _is_promotional_video_entry(title, summary) or any(marker in text for marker in SOCIAL_VIDEO_SKIP_MARKERS):
         return False, None
@@ -25076,6 +25109,32 @@ def _main(args, logger):
                 skip_filter += 1
                 skip_reason_counts["not_giants_related"] += 1
                 continue
+
+            if source_type == "social_news":
+                paper_layout_reason = _should_skip_paper_layout_social_promo(
+                    entry_title_clean, entry_summary_clean
+                )
+                if paper_layout_reason:
+                    logger.info(
+                        json.dumps(
+                            {
+                                "event": "paper_layout_social_promo_skip",
+                                "reason": paper_layout_reason,
+                                "title": entry_title_clean[:160],
+                                "post_url": post_url,
+                                "source_name": name,
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
+                    _append_skip_reason_sample(
+                        skip_reason_sample_titles,
+                        paper_layout_reason,
+                        entry_title_clean or post_url,
+                    )
+                    skip_filter += 1
+                    skip_reason_counts[paper_layout_reason] += 1
+                    continue
 
             no_entity_reason = _should_skip_no_entity_non_game(
                 entry_title_clean, entry_summary_clean

@@ -1913,6 +1913,18 @@ git add -A禁止。
 - **deploy**: commit `c939b77`、Cloud Build `7a6ae843-f49c-4a23-90ed-af1d57831f30` SUCCESS、image `x-post-mail-lane:374-dedup-starvation-c939b77`、digest `sha256:739e16042fbb...`、Cloud Run Job generation `11`。Scheduler / env / Secret / WP / X / SNS は未変更、手動 execute は追加 mail 回避のため未実行。
 - **live note**: 2026-05-16 22:30 JST の自然 fire は Job 更新直前の旧 image で走り、候補 0 件で mail skip。generation `11` は修正版 digest 参照済み。次回自然 fire は 2026-05-17 07:00 JST。
 
+### 375-QA-paper-layout-social-promo-skip
+
+- **alias**: -
+- **status**: REPO_IMPL_READY / **priority**: P0.5
+- **owner**: Codex / **lane**: B
+- **doc_path**: `doc/active/375-QA-paper-layout-social-promo-skip.md`
+- **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/46
+- **背景**: `68812` は `RT スポーツ報知 レイアウト担当: 5/17付 スポーツ報知` の紙面告知RTだったが、`5連勝` や選手語が混ざっていたため `social_v2` の記事として作られ、本文も素材メモに近くなった。ログ上は直後に `unpublish_success` で下書きへ戻っている。
+- **方針**: `レイアウト担当` / `紙面レイアウト` / `5/17付 スポーツ報知` などの日付付き新聞紙面告知は、選手名や試合語が入っていても記事候補にしない。trusted social rescue / weak social rescue / template v2 / main intake の各入口で hard stop し、`paper_layout_social_promo_skip` を出す。
+- **tests**: `tests/test_rss_trusted_social_rescue.py` 28 passed、関連 4 file 113 passed、py_compile / compileall / AST PASS。
+- **deploy**: implementation commit 後に `yoshilover-fetcher` へ deploy 予定。Scheduler / env / Secret / X / SNS / mail 条件は変更しない。
+
 ### 362-INSIGHT-queue-cleanup-and-metric-run-cap
 
 - **alias**: -

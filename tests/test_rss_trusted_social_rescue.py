@@ -261,6 +261,27 @@ class TrustedSocialGiantsRescueNegativeTests(unittest.TestCase):
         )
         self.assertIsNone(meta)
 
+    def test_hochi_layout_retweet_with_game_keywords_is_rejected(self):
+        title = "RT スポーツ報知 レイアウト担当: 5/17付 スポーツ報知 🔶🔶🔶5連勝…"
+        summary = (
+            "RT スポーツ報知 レイアウト担当: 5/17付 スポーツ報知 "
+            "🔶🔶🔶5連勝🔶🔶🔶 平山の足‼ 投ゴロでV生還"
+        )
+        meta = _evaluate(
+            title=title,
+            summary=summary,
+            category="コラム",
+            article_subtype="social_news",
+            source_url="https://x.com/hochi_giants/status/2055771985750397083",
+            source_name="スポーツ報知巨人班X",
+            source_handle="hochi_giants",
+        )
+        self.assertIsNone(meta)
+        self.assertEqual(
+            rss_fetcher._should_skip_paper_layout_social_promo(title, summary),
+            "paper_layout_social_promo",
+        )
+
     def test_no_player_or_team_context(self):
         # trusted source だが巨人特化ではない (sportshochi)、本文に巨人 keyword なし
         # → is_giants_related が False になり rescue しない
@@ -384,6 +405,46 @@ class AuthoritativeSocialEntryIntegrationTests(unittest.TestCase):
         )
         self.assertFalse(worthy)
         self.assertIsNone(meta)
+
+    def test_paper_layout_retweet_stays_unworthy_even_when_weak_rescue_enabled(self):
+        title = "RT スポーツ報知 レイアウト担当: 5/17付 スポーツ報知 🔶🔶🔶5連勝…"
+        summary = (
+            "RT スポーツ報知 レイアウト担当: 5/17付 スポーツ報知 "
+            "🔶🔶🔶5連勝🔶🔶🔶 平山の足‼ 投ゴロでV生還"
+        )
+        with patch.object(
+            rss_fetcher,
+            "_social_too_weak_narrow_rescue_enabled",
+            return_value=True,
+        ):
+            worthy, meta = _is_worthy(
+                title=title,
+                summary=summary,
+                category="コラム",
+                article_subtype="social_news",
+                source_url="https://x.com/hochi_giants/status/2055771985750397083",
+                source_name="スポーツ報知巨人班X",
+                source_handle="hochi_giants",
+            )
+        self.assertFalse(worthy)
+        self.assertIsNone(meta)
+
+    def test_template_v2_marks_paper_layout_retweet_as_skip(self):
+        entry = {
+            "title": "RT スポーツ報知 レイアウト担当: 5/17付 スポーツ報知 🔶🔶🔶5連勝…",
+            "summary": (
+                "RT スポーツ報知 レイアウト担当: 5/17付 スポーツ報知 "
+                "🔶🔶🔶5連勝🔶🔶🔶 平山の足‼ 投ゴロでV生還"
+            ),
+            "source_url": "https://x.com/hochi_giants/status/2055771985750397083",
+            "source_name": "スポーツ報知巨人班X",
+            "source_type": "social_news",
+        }
+        analysis = rss_fetcher._analyze_source(entry)
+        self.assertEqual(
+            rss_fetcher._select_template_v2(analysis, entry),
+            ("skip", "paper_layout_social_promo"),
+        )
 
 
 if __name__ == "__main__":  # pragma: no cover

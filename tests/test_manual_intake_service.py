@@ -18,6 +18,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.parse
@@ -150,6 +151,16 @@ class HealthAndFormTests(unittest.TestCase):
         # The detail disclosure is collapsed by default — operators see
         # only URL + 記事タイプ + 「記事化」 button on first load.
         self.assertIn("詳細設定", text)
+        self.assertIn('data-tab="sources"', text)
+        self.assertIn('id="source-form"', text)
+        for source_name in (
+            "読売新聞オンライン プロ野球",
+            "朝日新聞スポーツRSS",
+            "毎日新聞スポーツRSS",
+            "週刊ベースボールONLINE RSS",
+            "FRIDAY ジャイアンツ tag",
+        ):
+            self.assertIn(source_name, text)
 
     def test_manifest_returns_json(self):
         status, headers, body = _invoke_handler(
@@ -230,6 +241,44 @@ class AuthTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["mode"], "dry-run")
         self.assertEqual(payload["article_type"], mi.ARTICLE_TYPE_AUTO)
+
+    def test_source_candidates_requires_token_when_configured(self):
+        status, _h, raw = _invoke_handler(
+            method="GET",
+            path="/source-candidates?source=%E8%AA%AD%E5%A3%B2",
+        )
+        self.assertEqual(status, 403)
+        self.assertEqual(_json_body(raw)["reason"], "forbidden")
+
+    def test_source_candidates_endpoint_returns_items(self):
+        fake_payload = {
+            "ok": True,
+            "source": "読売新聞オンライン プロ野球",
+            "source_count": 1,
+            "fetched_source_count": 1,
+            "count": 1,
+            "items": [
+                {
+                    "source_name": "読売新聞オンライン プロ野球",
+                    "source_type": "tag_scrape",
+                    "title": "巨人・テスト記事",
+                    "url": "https://www.yomiuri.co.jp/sports/npb/test/",
+                    "summary": "巨人のテスト記事",
+                    "published_at": "2026-05-18T12:00:00+09:00",
+                    "article_type": "コラム",
+                }
+            ],
+        }
+        with patch.object(svc, "_source_candidates_payload", return_value=fake_payload):
+            status, _h, raw = _invoke_handler(
+                method="GET",
+                path="/source-candidates?source=%E8%AA%AD%E5%A3%B2%E6%96%B0%E8%81%9E%E3%82%AA%E3%83%B3%E3%83%A9%E3%82%A4%E3%83%B3%20%E3%83%97%E3%83%AD%E9%87%8E%E7%90%83",
+                headers={svc.TOKEN_HEADER: "secret-token-xyz"},
+            )
+        self.assertEqual(status, 200)
+        payload = _json_body(raw)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["items"][0]["source_name"], "読売新聞オンライン プロ野球")
 
     def test_token_unconfigured_env_runs_in_open_mode(self):
         # NOMOTOKE-INTAKE-OPEN-001: when MANUAL_INTAKE_TOKEN is unset on
@@ -384,15 +433,46 @@ class IntakeBehaviourTests(unittest.TestCase):
         self.assertEqual(resp["reason"], "missing_url")
 
     def test_invalid_mode_returns_400(self):
+        # publish is now an accepted mode (operator-vetted manual intake).
+        # 'bogus' stands in as the explicit-rejection sentinel.
         status, resp = self._post(
             {
                 "url": "https://x.com/foo/status/1",
-                "mode": "publish",  # explicit publish must NEVER be honored
+                "mode": "bogus",
                 "title": "巨人 試合終了 0-5 ヤクルト",
             }
         )
         self.assertEqual(status, 400)
         self.assertEqual(resp["reason"], "invalid_mode")
+
+    def test_publish_mode_creates_wp_post_with_status_publish(self):
+        captured: dict = {}
+
+        def fake_create(**kwargs):
+            captured.update(kwargs)
+            return 9999
+
+        wp = MagicMock()
+        wp.create_post = fake_create
+        handler_cls = svc.build_handler(wp_client_factory=lambda: wp)
+
+        status, resp = self._post(
+            {
+                "url": "https://hochi.news/articles/xyz.html",
+                "mode": "publish",
+                "title": "巨人 サヨナラ勝ち 5-4 ヤクルト",
+                "summary": "9回サヨナラ本塁打",
+                "article_type": "試合結果",
+            },
+            handler_cls=handler_cls,
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(resp["ok"])
+        self.assertEqual(resp["post_id"], 9999)
+        self.assertEqual(resp["mode"], "publish")
+        self.assertEqual(resp.get("wp_status"), "publish")
+        self.assertEqual(captured.get("status"), "publish")
+        self.assertEqual(captured.get("caller"), "manual_intake")
 
     def test_x_url_normalized_through_service(self):
         captured: dict = {}
@@ -462,6 +542,58 @@ class IntakeBehaviourTests(unittest.TestCase):
         )
         self.assertEqual(status, 200)
         self.assertNotIn("token", resp)
+
+
+class SourceCandidateHelperTests(unittest.TestCase):
+    def test_manual_source_sources_include_general_newspapers_and_magazines(self):
+        names = {source.get("name") for source in svc._load_manual_source_sources()}
+        for expected in (
+            "読売新聞オンライン プロ野球",
+            "朝日新聞スポーツRSS",
+            "毎日新聞スポーツRSS",
+            "週刊ベースボールONLINE RSS",
+            "FRIDAY ジャイアンツ tag",
+            "Smart FLASH 巨人 tag",
+            "週刊女性PRIME 巨人 tag",
+            "文春オンライン 読売ジャイアンツ",
+            "NEWSポストセブン 巨人 search",
+            "デイリー新潮 巨人 search",
+            "現代ビジネス 巨人 search",
+            "アサ芸プラス 巨人 search",
+        ):
+            self.assertIn(expected, names)
+
+    def test_source_candidates_payload_filters_non_giants_entries(self):
+        source = {
+            "name": "朝日新聞スポーツRSS",
+            "url": "https://www.asahi.com/rss/asahi/sports.rdf",
+            "type": "news",
+            "role": ["article_source"],
+        }
+        fake_entries = [
+            {
+                "title": "巨人・テスト記事",
+                "link": "https://www.asahi.com/articles/test1.html",
+                "summary": "読売ジャイアンツのテスト",
+                "published_parsed": time.gmtime(0),
+            },
+            {
+                "title": "サッカー日本代表の記事",
+                "link": "https://www.asahi.com/articles/test2.html",
+                "summary": "代表戦の結果",
+                "published_parsed": time.gmtime(0),
+            },
+        ]
+        with patch.object(svc, "_fetch_manual_source_entries", return_value=fake_entries):
+            payload = svc._source_candidates_payload(
+                source_name="朝日新聞スポーツRSS",
+                sources=[source],
+                limit=5,
+            )
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["items"][0]["title"], "巨人・テスト記事")
+        self.assertEqual(payload["items"][0]["source_name"], "朝日新聞スポーツRSS")
 
 
 class LiveServerSmokeTest(unittest.TestCase):

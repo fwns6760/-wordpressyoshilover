@@ -261,6 +261,26 @@ class RunManualIntakeTests(_IntakeBaseTest):
         self.assertEqual(kwargs.get("source_url"), "https://twitter.com/foo/status/1")
         self.assertEqual(kwargs.get("caller"), "manual_intake")
         self.assertEqual(out["post_id"], 77)
+        self.assertEqual(out.get("wp_status"), "draft")
+
+    # 6b. publish mode calls create_post(status="publish")
+    def test_6b_publish_calls_create_post_with_status_publish(self):
+        wp = MagicMock()
+        wp.create_post = MagicMock(return_value=78)
+        code, out = mi.run_manual_intake(
+            url="https://x.com/foo/status/1",
+            title_override="巨人 試合終了 0-5 ヤクルト",
+            mode="publish",
+            wp_client_factory=lambda: wp,
+            rate_limit_lockfile=self.lockfile,
+        )
+        self.assertEqual(code, mi.EXIT_OK)
+        wp.create_post.assert_called_once()
+        kwargs = wp.create_post.call_args.kwargs
+        self.assertEqual(kwargs.get("status"), "publish")
+        self.assertEqual(kwargs.get("caller"), "manual_intake")
+        self.assertEqual(out["post_id"], 78)
+        self.assertEqual(out.get("wp_status"), "publish")
 
     # 7. duplicate (history) -> exit 13
     def test_7_history_duplicate_exit_13(self):
@@ -486,9 +506,16 @@ class CLIArgParserTests(unittest.TestCase):
             )
 
     def test_parser_rejects_invalid_mode(self):
+        # 'publish' is now a valid CLI mode (status=publish path).
+        # 'bogus' stands in as the rejection sentinel.
         p = mi._build_arg_parser()
         with self.assertRaises(SystemExit):
-            p.parse_args(["https://x.com/foo/status/1", "--mode", "publish"])
+            p.parse_args(["https://x.com/foo/status/1", "--mode", "bogus"])
+
+    def test_parser_accepts_publish_mode(self):
+        p = mi._build_arg_parser()
+        args = p.parse_args(["https://x.com/foo/status/1", "--mode", "publish"])
+        self.assertEqual(args.mode, "publish")
 
 
 class ArticleTypeNormalizationTests(unittest.TestCase):

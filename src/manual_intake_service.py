@@ -25,13 +25,17 @@ Hard constraints (mirror the CLI):
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import html
 import json
 import logging
 import os
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
+from urllib import request as urlrequest
 from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -52,6 +56,13 @@ TOKEN_HEADER = "X-Manual-Intake-Token"
 PORT_ENV = "PORT"
 DEFAULT_PORT = 8080
 MAX_BODY_BYTES = 32 * 1024  # 32 KiB — enough for URL + memo + summary
+RSS_SOURCES_FILE = ROOT / "config" / "rss_sources.json"
+SOURCE_CANDIDATE_SOURCE_LIMIT = 32
+SOURCE_CANDIDATE_ENTRY_LIMIT = 5
+SOURCE_CANDIDATE_TOTAL_LIMIT = 20
+SOURCE_CANDIDATE_TIMEOUT_SECONDS = 8
+SOURCE_CANDIDATE_TYPES = {"news", "tag_scrape"}
+SOURCE_CANDIDATE_GIANTS_KEYWORDS = ("巨人", "読売ジャイアンツ", "ジャイアンツ")
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +188,228 @@ def _parse_request_body(
 
 
 # ---------------------------------------------------------------------------
+# Source candidate helpers
+# ---------------------------------------------------------------------------
+
+
+def _roles_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    return []
+
+
+def _source_candidate_has_giants_topic(title: str, summary: str) -> bool:
+    haystack = f"{title} {summary}"
+    return any(keyword in haystack for keyword in SOURCE_CANDIDATE_GIANTS_KEYWORDS)
+
+
+def _source_candidate_is_giants_specific(source: dict[str, Any]) -> bool:
+    text = f"{source.get('name') or ''} {source.get('url') or ''}"
+    return _source_candidate_has_giants_topic(text, "")
+
+
+def _load_manual_source_sources(
+    path: Path = RSS_SOURCES_FILE,
+) -> list[dict[str, Any]]:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return []
+    if not isinstance(raw, list):
+        return []
+
+    out: list[dict[str, Any]] = []
+    for source in raw:
+        if not isinstance(source, dict):
+            continue
+        source_type = str(source.get("type") or "").strip()
+        if source_type not in SOURCE_CANDIDATE_TYPES:
+            continue
+        roles = _roles_list(source.get("role"))
+        if roles and "article_source" not in roles:
+            continue
+        if source_type == "tag_scrape" and not str(source.get("scraper") or "").strip():
+            continue
+        url = str(source.get("url") or "").strip()
+        if not url.startswith(("http://", "https://")):
+            continue
+        name = str(source.get("name") or "").strip()
+        if not name:
+            continue
+        out.append(source)
+    return out
+
+
+def _published_struct_to_iso(published: Any) -> str:
+    if not isinstance(published, time.struct_time):
+        return ""
+    try:
+        return datetime(*published[:6], tzinfo=timezone.utc).astimezone(mi.JST).isoformat()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _manual_source_entry_payload(
+    source: dict[str, Any],
+    entry: dict[str, Any],
+) -> dict[str, str] | None:
+    title = str(entry.get("title") or "").strip()
+    url = str(entry.get("link") or entry.get("url") or entry.get("id") or "").strip()
+    summary = str(
+        entry.get("summary") or entry.get("description") or entry.get("subtitle") or ""
+    ).strip()
+    if not title or not url.startswith(("http://", "https://")):
+        return None
+    if not _source_candidate_is_giants_specific(source) and not _source_candidate_has_giants_topic(title, summary):
+        return None
+    source_name = str(source.get("name") or "").strip()
+    article_type = mi._auto_guess_article_type(url=url, title=title, summary=summary)
+    return {
+        "source_name": source_name,
+        "source_type": str(source.get("type") or "").strip(),
+        "title": title,
+        "url": url,
+        "summary": summary,
+        "published_at": _published_struct_to_iso(entry.get("published_parsed")),
+        "article_type": article_type if article_type in mi.ARTICLE_TYPE_CHOICES else mi.ARTICLE_TYPE_AUTO,
+    }
+
+
+def _fetch_rss_source_entries(
+    source: dict[str, Any],
+    *,
+    timeout_seconds: int = SOURCE_CANDIDATE_TIMEOUT_SECONDS,
+    entry_limit: int = SOURCE_CANDIDATE_ENTRY_LIMIT,
+) -> list[dict[str, Any]]:
+    try:
+        import feedparser
+    except Exception:  # noqa: BLE001
+        return []
+    req = urlrequest.Request(
+        str(source.get("url") or ""),
+        headers={"User-Agent": "YOSHILOVERManualIntake/1.0"},
+    )
+    with urlrequest.urlopen(req, timeout=timeout_seconds) as resp:  # noqa: S310
+        parsed = feedparser.parse(resp.read())
+    entries = list(getattr(parsed, "entries", []) or [])
+    return [dict(entry) for entry in entries[: max(1, entry_limit)]]
+
+
+def _fetch_manual_source_entries(
+    source: dict[str, Any],
+    *,
+    timeout_seconds: int = SOURCE_CANDIDATE_TIMEOUT_SECONDS,
+    entry_limit: int = SOURCE_CANDIDATE_ENTRY_LIMIT,
+    logger: logging.Logger | None = None,
+) -> list[dict[str, Any]]:
+    source_type = str(source.get("type") or "").strip()
+    try:
+        if source_type == "tag_scrape":
+            from src import tag_page_scraper
+
+            article_limit = int(source.get("article_limit") or entry_limit)
+            article_limit = max(1, min(article_limit, entry_limit))
+            return tag_page_scraper.fetch_tag_page_entries(
+                scraper=str(source.get("scraper") or ""),
+                url=str(source.get("url") or ""),
+                max_age_days=int(source.get("max_age_days") or 7),
+                article_limit=article_limit,
+                logger=logger,
+            )
+        return _fetch_rss_source_entries(
+            source,
+            timeout_seconds=timeout_seconds,
+            entry_limit=entry_limit,
+        )
+    except Exception as exc:  # noqa: BLE001
+        if logger is not None:
+            logger.warning(
+                "manual_source_candidate_fetch_failed source=%s reason=%r",
+                source.get("name"),
+                exc,
+            )
+        return []
+
+
+def _source_candidates_payload(
+    *,
+    source_name: str = "",
+    limit: int = SOURCE_CANDIDATE_TOTAL_LIMIT,
+    source_limit: int = SOURCE_CANDIDATE_SOURCE_LIMIT,
+    entry_limit: int = SOURCE_CANDIDATE_ENTRY_LIMIT,
+    logger: logging.Logger | None = None,
+    sources: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    loaded_sources = list(sources) if sources is not None else _load_manual_source_sources()
+    selected = (source_name or "").strip()
+    if selected:
+        fetch_sources = [
+            source for source in loaded_sources
+            if str(source.get("name") or "").strip() == selected
+        ]
+    else:
+        fetch_sources = loaded_sources[: max(1, source_limit)]
+
+    items: list[dict[str, str]] = []
+    seen_urls: set[str] = set()
+    for source in fetch_sources:
+        for entry in _fetch_manual_source_entries(
+            source,
+            entry_limit=entry_limit,
+            logger=logger,
+        ):
+            payload = _manual_source_entry_payload(source, entry)
+            if not payload:
+                continue
+            url = payload["url"]
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
+            items.append(payload)
+            if len(items) >= max(1, limit):
+                break
+        if len(items) >= max(1, limit):
+            break
+
+    return {
+        "ok": True,
+        "source": selected,
+        "source_count": len(loaded_sources),
+        "fetched_source_count": len(fetch_sources),
+        "count": len(items),
+        "items": items,
+    }
+
+
+def _get_cookie_session_token(handler: BaseHTTPRequestHandler) -> str:
+    raw_cookie = handler.headers.get("Cookie") or ""
+    for part in raw_cookie.split(";"):
+        kv = part.strip().split("=", 1)
+        if len(kv) == 2 and kv[0].strip() == SESSION_COOKIE_NAME:
+            return kv[1].strip()
+    return ""
+
+
+def _is_authorized_get(handler: BaseHTTPRequestHandler, parsed) -> bool:
+    expected_token = _require_token()
+    if not expected_token:
+        return True
+    header_token = (handler.headers.get(TOKEN_HEADER, "") or "").strip()
+    params = parse_qs(parsed.query, keep_blank_values=False)
+    query_token = ""
+    qtok = params.get("token") or []
+    if qtok:
+        query_token = (qtok[0] or "").strip()
+    return (
+        header_token == expected_token
+        or _get_cookie_session_token(handler) == expected_token
+        or query_token == expected_token
+    )
+
+
+# ---------------------------------------------------------------------------
 # HTML form (mobile-first)
 # ---------------------------------------------------------------------------
 
@@ -240,12 +473,19 @@ _HTML_FORM = """<!DOCTYPE html>
   .insight-row-grid { display: grid; gap: 8px; grid-template-columns: 1fr 1fr; }
   .insight-row-grid .field { margin: 0; }
   .insight-meta { font-size: 12px; opacity: 0.7; margin-top: 4px; }
+  .source-item { padding: 10px 0; border-bottom: 1px solid #eee; }
+  .source-item-title { font-weight: 600; font-size: 14px; line-height: 1.5; }
+  .source-item-meta { font-size: 12px; opacity: 0.72; margin-top: 3px; }
+  .source-item-url { display: block; font-size: 12px; margin-top: 4px; word-break: break-all; color: #003da5; }
+  .source-use-btn { width: auto; flex: 0 0 auto; margin-top: 8px; padding: 8px 12px; font-size: 13px; }
   @media (prefers-color-scheme: dark) {
     .tab-btn { background: #1c1c1c; color: #aaa; border-color: #555; }
     .tab-btn.active { background: #f57f17; color: #fff; border-color: #f57f17; }
     table.result-table th { background: #2a2a2a; color: #ddd; }
     table.result-table th, table.result-table td { border-bottom-color: #333; }
     table.result-table tr:hover { background: #1a1a1a; }
+    .source-item { border-bottom-color: #333; }
+    .source-item-url { color: #90caf9; }
   }
   /* Dark-mode overrides MUST come last so their selectors win on phones
      that auto-flip to dark. The earlier ordering placed the base
@@ -270,6 +510,7 @@ _HTML_FORM = """<!DOCTYPE html>
   <h1>YOSHILOVER 手動投入</h1>
   <nav class=\"tab-nav\">
     <button type=\"button\" class=\"tab-btn active\" data-tab=\"intake\" id=\"tab-btn-intake\">📝 手動投入</button>
+    <button type=\"button\" class=\"tab-btn\" data-tab=\"sources\" id=\"tab-btn-sources\">📰 ソース候補</button>
     <button type=\"button\" class=\"tab-btn\" data-tab=\"insight\" id=\"tab-btn-insight\">🐦 X 投稿 (データ)</button>
   </nav>
   <section class=\"tab-panel\" data-tab=\"intake\" id=\"tab-panel-intake\">
@@ -359,15 +600,32 @@ _HTML_FORM = """<!DOCTYPE html>
         <textarea id=\"memo\" name=\"memo\" rows=\"2\"></textarea>
       </div>
       <div class=\"field\">
+        <label><input type=\"checkbox\" id=\"save-as-draft-toggle\"> 下書きで保存（公開しない）— 既定は即時公開。チェック時は status=draft で作成し guarded-publish の昇格を待つ</label>
+      </div>
+      <div class=\"field\">
         <label><input type=\"checkbox\" id=\"dry-run-toggle\"> 確認のみ（dry-run）— チェック時は WP に書き込まずレスポンスだけ返す</label>
       </div>
     </details>
     <div class=\"actions\">
-      <button class=\"primary\" type=\"submit\" id=\"submit-btn\">記事化</button>
+      <button class=\"primary\" type=\"submit\" id=\"submit-btn\">記事化 → 公開</button>
       <button class=\"secondary\" type=\"reset\">クリア</button>
     </div>
   </form>
   <div id=\"result\" hidden></div>
+  </section>
+  <section class=\"tab-panel\" data-tab=\"sources\" id=\"tab-panel-sources\" hidden>
+    <h2 style=\"font-size:16px;margin:6px 0 8px;\">📰 巨人ソース候補</h2>
+    <p class=\"insight-meta\">rss_sources.json の article source から最新候補を取得します。候補の「このURLを投入」で手動投入フォームへ反映します。</p>
+    <form id=\"source-form\">
+      <div class=\"field\">
+        <label for=\"source-name\">ソース</label>
+        <select id=\"source-name\" name=\"source\">__SOURCE_OPTIONS__</select>
+      </div>
+      <div class=\"actions\">
+        <button class=\"primary\" type=\"submit\" id=\"source-submit-btn\">候補を取得</button>
+      </div>
+    </form>
+    <div id=\"source-result\" hidden></div>
   </section>
   <section class=\"tab-panel\" data-tab=\"insight\" id=\"tab-panel-insight\" hidden>
     <h2 style=\"font-size:16px;margin:6px 0 8px;\">🐦 X 投稿用 post 案 (LLM 不使用)</h2>
@@ -1059,17 +1317,17 @@ _HTML_FORM = """<!DOCTYPE html>
   // Per-article-type submit label + hint text. Free-form objects keep
   // it easy to extend later without touching the form HTML.
   const SUBMIT_LABEL = {
-    '監督談話': '監督談話を記事化',
-    '選手コメント': '選手コメントを記事化',
-    '予告先発': '予告先発を記事化',
-    '公示': '公示を記事化',
-    '動画': '動画を記事化',
-    '試合結果': '試合結果を記事化',
-    '試合速報': '試合速報を記事化',
-    '成績': '成績を記事化',
-    '番組情報': '番組情報を記事化',
-    'コラム': 'コラムを記事化',
-    'ニュース': 'ニュースを記事化',
+    '監督談話': '監督談話を記事化 → 公開',
+    '選手コメント': '選手コメントを記事化 → 公開',
+    '予告先発': '予告先発を記事化 → 公開',
+    '公示': '公示を記事化 → 公開',
+    '動画': '動画を記事化 → 公開',
+    '試合結果': '試合結果を記事化 → 公開',
+    '試合速報': '試合速報を記事化 → 公開',
+    '成績': '成績を記事化 → 公開',
+    '番組情報': '番組情報を記事化 → 公開',
+    'コラム': 'コラムを記事化 → 公開',
+    'ニュース': 'ニュースを記事化 → 公開',
   };
   const TYPE_HINT = {
     '試合結果': 'Yahoo!スポーツの試合詳細URL（baseball.yahoo.co.jp/npb/game/...）を貼ると、回ごとのスコア表が出ます。',
@@ -1083,7 +1341,7 @@ _HTML_FORM = """<!DOCTYPE html>
 
   function syncTypeUI() {
     const t = articleType ? articleType.value : '';
-    if (submitBtn) submitBtn.textContent = SUBMIT_LABEL[t] || '記事化';
+    if (submitBtn) submitBtn.textContent = SUBMIT_LABEL[t] || '記事化 → 公開';
     if (typeHint) typeHint.textContent = TYPE_HINT[t] || DEFAULT_HINT;
     factsBlocks.forEach(function(block) {
       const types = (block.getAttribute('data-types') || '').split(',').map(s => s.trim());
@@ -1093,6 +1351,104 @@ _HTML_FORM = """<!DOCTYPE html>
   }
   if (articleType) articleType.addEventListener('change', syncTypeUI);
   syncTypeUI();
+
+  var sourceForm = document.getElementById('source-form');
+  var sourceResult = document.getElementById('source-result');
+  var sourceSubmit = document.getElementById('source-submit-btn');
+  function setInputValue(id, value) {
+    var el = document.getElementById(id);
+    if (el && value) el.value = value;
+  }
+  function fillIntakeFromSource(item) {
+    setInputValue('url', item.url || '');
+    setInputValue('title', item.title || '');
+    setInputValue('summary', item.summary || '');
+    setInputValue('source_published_at', item.published_at || '');
+    if (articleType && item.article_type) {
+      articleType.value = item.article_type;
+      syncTypeUI();
+    }
+    var intakeTab = document.getElementById('tab-btn-intake');
+    if (intakeTab) intakeTab.click();
+    var urlInput = document.getElementById('url');
+    if (urlInput) urlInput.focus();
+  }
+  function renderSourceCandidates(payload) {
+    if (!sourceResult) return;
+    sourceResult.hidden = false;
+    sourceResult.innerHTML = '';
+    if (!payload || !payload.ok) {
+      sourceResult.className = 'err';
+      sourceResult.textContent = '失敗: ' + (payload && payload.reason ? payload.reason : 'unknown');
+      return;
+    }
+    var items = payload.items || [];
+    if (!items.length) {
+      sourceResult.className = '';
+      sourceResult.textContent = '候補なし。該当ソースに巨人記事が無い、または鮮度条件で除外されています。';
+      return;
+    }
+    sourceResult.className = '';
+    var meta = document.createElement('div');
+    meta.className = 'insight-meta';
+    meta.textContent = items.length + ' 件 / source ' + (payload.fetched_source_count || 0) + ' 件取得';
+    sourceResult.appendChild(meta);
+    items.forEach(function(item) {
+      var row = document.createElement('div');
+      row.className = 'source-item';
+      var title = document.createElement('div');
+      title.className = 'source-item-title';
+      title.textContent = item.title || '';
+      row.appendChild(title);
+      var m = document.createElement('div');
+      m.className = 'source-item-meta';
+      m.textContent = (item.source_name || '') + (item.published_at ? ' / ' + item.published_at : '') + (item.article_type ? ' / ' + item.article_type : '');
+      row.appendChild(m);
+      var a = document.createElement('a');
+      a.className = 'source-item-url';
+      a.href = item.url || '#';
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = item.url || '';
+      row.appendChild(a);
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'primary source-use-btn';
+      btn.textContent = 'このURLを投入';
+      btn.addEventListener('click', function() { fillIntakeFromSource(item); });
+      row.appendChild(btn);
+      sourceResult.appendChild(row);
+    });
+  }
+  if (sourceForm) {
+    sourceForm.addEventListener('submit', async function(ev) {
+      ev.preventDefault();
+      if (sourceResult) sourceResult.hidden = true;
+      if (sourceSubmit) {
+        sourceSubmit.disabled = true;
+        sourceSubmit.textContent = '取得中...';
+      }
+      var data = new FormData(sourceForm);
+      var params = new URLSearchParams();
+      data.forEach(function(v, k) { if (v) params.append(k, v); });
+      try {
+        var resp = await fetch('/source-candidates?' + params.toString(), {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+          credentials: 'same-origin',
+        });
+        var json = await resp.json().catch(function() { return {}; });
+        renderSourceCandidates(json);
+      } catch (e) {
+        renderSourceCandidates({ ok: false, reason: String(e) });
+      } finally {
+        if (sourceSubmit) {
+          sourceSubmit.disabled = false;
+          sourceSubmit.textContent = '候補を取得';
+        }
+      }
+    });
+  }
 
   function render(ok, payload) {
     result.hidden = false;
@@ -1122,8 +1478,13 @@ _HTML_FORM = """<!DOCTYPE html>
       result.textContent = msg;
       return;
     }
+    const _resultLabel = (
+      payload.mode === 'publish' ? '✅ 公開 OK (status=publish)'
+      : payload.mode === 'draft' ? '✅ 下書き作成 OK'
+      : '✅ 確認 OK'
+    );
     const lines = [
-      '結果: ' + (payload.mode === 'draft' ? '✅ 下書き作成 OK' : '✅ 確認 OK'),
+      '結果: ' + _resultLabel,
       'タイトル: ' + (payload.title || ''),
       'カテゴリ: ' + (payload.category || ''),
       '記事タイプ: ' + (payload.article_type || ''),
@@ -1145,7 +1506,7 @@ _HTML_FORM = """<!DOCTYPE html>
       const link = document.createElement('a');
       link.href = payload.draft_url;
       link.target = '_blank';
-      link.textContent = '🔗 下書きを開く';
+      link.textContent = (payload.mode === 'publish' ? '🔗 公開記事を開く' : '🔗 下書きを開く');
       link.style.cssText = 'display:inline-block;margin-top:10px;';
       result.appendChild(document.createElement('br'));
       result.appendChild(link);
@@ -1167,7 +1528,12 @@ _HTML_FORM = """<!DOCTYPE html>
     const data = new FormData(form);
     const body = new URLSearchParams();
     data.forEach((v, k) => { if (v) body.append(k, v); });
-    body.set('mode', dryRunToggle && dryRunToggle.checked ? 'dry-run' : 'draft');
+    const saveAsDraftToggle = document.getElementById('save-as-draft-toggle');
+    let _mode;
+    if (dryRunToggle && dryRunToggle.checked) { _mode = 'dry-run'; }
+    else if (saveAsDraftToggle && saveAsDraftToggle.checked) { _mode = 'draft'; }
+    else { _mode = 'publish'; }
+    body.set('mode', _mode);
     try {
       const resp = await fetch('/manual-intake', {
         method: 'POST',
@@ -1182,7 +1548,7 @@ _HTML_FORM = """<!DOCTYPE html>
     } finally {
       if (submitBtn) {
         submitBtn.disabled = false;
-        submitBtn.textContent = originalLabel || '記事化';
+        submitBtn.textContent = originalLabel || '記事化 → 公開';
       }
     }
   });
@@ -1213,6 +1579,18 @@ def _render_form() -> str:
         options.append(
             f'<option value="{value}">{label}</option>'
         )
+    source_options = ['<option value="">すべて（上位ソースから取得）</option>']
+    for source in _load_manual_source_sources():
+        name = str(source.get("name") or "").strip()
+        source_type = str(source.get("type") or "").strip()
+        if not name:
+            continue
+        source_options.append(
+            '<option value="{value}">{label}</option>'.format(
+                value=html.escape(name, quote=True),
+                label=html.escape(f"{name} / {source_type}", quote=False),
+            )
+        )
     # INSIGHT-006: roster + signal options for the data-query tab.
     player_options = ['<option value="">— 全選手 —</option>']
     for row in miq.roster_options():
@@ -1234,6 +1612,7 @@ def _render_form() -> str:
     return (
         _HTML_FORM
         .replace("__ARTICLE_TYPE_OPTIONS__", "".join(options))
+        .replace("__SOURCE_OPTIONS__", "".join(source_options))
         .replace("__INSIGHT_PLAYER_OPTIONS__", "".join(player_options))
         .replace("__INSIGHT_SIGNAL_OPTIONS__", "".join(signal_options))
         .replace("__INSIGHT_METRIC_OPTIONS__", "".join(metric_options))
@@ -1259,7 +1638,7 @@ def _handle_manual_intake(
         return 400, {"ok": False, "reason": "missing_url"}
 
     mode = (payload.get("mode") or "dry-run").strip().lower()
-    if mode not in {"dry-run", "draft"}:
+    if mode not in {"dry-run", "draft", "publish"}:
         return 400, {"ok": False, "reason": "invalid_mode"}
 
     article_type = (payload.get("article_type") or "").strip()
@@ -1350,6 +1729,33 @@ def build_handler(
                     json.dumps(_MANIFEST, ensure_ascii=False),
                     content_type="application/manifest+json; charset=utf-8",
                 )
+                return
+            if path == "/source-candidates":
+                if not _is_authorized_get(self, parsed):
+                    _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                    return
+                params = parse_qs(parsed.query, keep_blank_values=False)
+                source_name = (params.get("source") or [""])[0].strip()
+                try:
+                    limit = int((params.get("limit") or [str(SOURCE_CANDIDATE_TOTAL_LIMIT)])[0])
+                except ValueError:
+                    limit = SOURCE_CANDIDATE_TOTAL_LIMIT
+                limit = max(1, min(limit, SOURCE_CANDIDATE_TOTAL_LIMIT))
+                try:
+                    payload = _source_candidates_payload(
+                        source_name=source_name,
+                        limit=limit,
+                        logger=bound_logger,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    bound_logger.exception("source_candidates_failed")
+                    _json_response(
+                        self,
+                        500,
+                        {"ok": False, "reason": f"source_candidates_error:{exc!r}"},
+                    )
+                    return
+                _json_response(self, 200, payload)
                 return
             if path == "/insight-ask":
                 # INSIGHT-009: NL question → parser → article generator.

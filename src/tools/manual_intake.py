@@ -4264,16 +4264,22 @@ def _wp_create_draft(
     source_published_at_iso: str,
     logger: logging.Logger,
     featured_media: int | None = None,
+    wp_status: str = "draft",
 ) -> tuple[int | None, str | None]:
-    """Create a draft via WPClient. WPClient has its own dedupe via
-    find_recent_post_by_title + source_url. Returns (post_id, draft_url).
-    Caller name 'manual_intake' is recorded for audit."""
+    """Create a post via WPClient. WPClient has its own dedupe via
+    find_recent_post_by_title + source_url. Returns (post_id, post_url).
+    Caller name 'manual_intake' is recorded for audit.
+
+    ``wp_status`` controls the WP post status. Default is ``draft`` so
+    callers go through the guarded-publish quality gate. The manual-
+    intake service passes ``publish`` when the operator picked the
+    publish-direct mode (human has already vetted the source URL)."""
     categories = _resolve_wp_category_ids(category, logger)
     result = wp.create_post(
         title=title,
         content=content,
         categories=categories,
-        status="draft",
+        status=wp_status,
         source_url=source_url,
         caller="manual_intake",
         source_lane="manual_intake",
@@ -4651,6 +4657,7 @@ def run_manual_intake(
             source_published_at_iso=normalized_source_published_at,
             logger=logger,
             featured_media=featured_media,
+            wp_status=("publish" if mode == "publish" else "draft"),
         )
     except AssertionError:
         raise
@@ -4661,6 +4668,7 @@ def run_manual_intake(
 
     output["post_id"] = post_id
     output["draft_url"] = draft_url
+    output["wp_status"] = "publish" if mode == "publish" else "draft"
     # AUDIT FIX #30: build a WP edit URL from WP_URL env so the form
     # can render a clickable 「編集する」 button instead of just a raw
     # post_id text. ``draft_url`` from WPClient is sometimes ``None``
@@ -4671,7 +4679,9 @@ def run_manual_intake(
             f"{wp_base}/wp-admin/post.php?post={post_id}&action=edit"
         )
     output["ok"] = True
-    output["downstream_handoff"] = "guarded_publish_polling"
+    output["downstream_handoff"] = (
+        "publish_notice_polling" if mode == "publish" else "guarded_publish_polling"
+    )
     if memo:
         output["memo"] = memo
     return EXIT_OK, output
@@ -4694,9 +4704,14 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--mode",
-        choices=("draft", "dry-run"),
+        choices=("draft", "dry-run", "publish"),
         default="draft",
-        help="default 'draft'; 'dry-run' skips WP write",
+        help=(
+            "default 'draft' (downstream guarded-publish promotes); "
+            "'dry-run' skips WP write; 'publish' creates the WP post "
+            "directly with status=publish (bypasses guarded-publish "
+            "gate — only safe for operator-vetted manual URLs)"
+        ),
     )
     p.add_argument("--title", default="", help="override fetched title")
     p.add_argument("--summary", default="", help="override fetched summary")

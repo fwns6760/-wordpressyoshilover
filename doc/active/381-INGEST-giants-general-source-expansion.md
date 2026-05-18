@@ -4,13 +4,14 @@ status: LIVE_DEPLOYED_OBSERVE
 owner: Codex
 created: 2026-05-18 JST
 github_issue: #55
-scope: source expansion + X post mail news/opinion fallback coverage
+scope: source expansion + X post mail news/opinion fallback coverage + manual intake source picker
 
 ## User problem
 
 - 2026-05-18 07:00 / 12:01 / 13:07 の X 投稿候補 mail で同じ選手が繰り返し出た。
 - user 要望: データだけでなく、ニュース記事への意見でもよい。巨人だけ総合で拾う。
 - user 要望: Full-Count / 日テレ / 一般誌 / 週刊誌 / 読売新聞 / 朝日新聞 / 毎日新聞 / 週刊ベースボールも対象にする。
+- user 追加要望: `manual-intake-service` app でも同じ source 候補を選べるようにする。
 - hard rule: 記憶から再構成しない、silent skip しない、自己評価で OK にしない。証拠だけ出す。
 
 ## Root cause found
@@ -26,6 +27,7 @@ scope: source expansion + X post mail news/opinion fallback coverage
 - `src/source_trust.py`
 - `src/rss_fetcher.py`
 - `src/tools/run_x_post_mail.py`
+- `src/manual_intake_service.py`
 - targeted tests under `tests/`
 
 Out of scope:
@@ -83,6 +85,7 @@ Not lowered:
 - [x] GitHub Issue を作成して本 ticket と同期する。#55
 - [x] commit。
 - [x] deploy decision。
+- [x] manual-intake-service app に source 候補 tab / `/source-candidates` endpoint を追加して deploy。
 - [ ] 次回自然 mail で user-visible acceptance を確認する。
 
 ## Verification
@@ -96,6 +99,12 @@ Not lowered:
   - default limit: `32`
   - total loaded article sources: `32`
   - positions 23-32 include 読売新聞オンライン / 日テレ / FRIDAY / Smart FLASH / 週刊女性PRIME / 文春 / NEWSポストセブン / デイリー新潮 / 現代ビジネス / アサ芸プラス
+- Manual intake app verification:
+  - `python3 -m py_compile src/manual_intake_service.py tests/test_manual_intake_service.py` PASS
+  - `python3 -m unittest tests.test_manual_intake_service` PASS (`Ran 25 tests ... OK`; sandbox localhost smoke requires escalated run)
+  - `python3 -m unittest tests.test_manual_intake tests.test_manual_intake_service` PASS (`Ran 116 tests ... OK`; escalated for localhost smoke)
+  - live HTML contains `data-tab="sources"`, `id="source-form"`, 読売新聞オンライン / FRIDAY options
+  - live `/source-candidates?source=読売新聞オンライン プロ野球&limit=3` returned `count=3` with 読売 Giants articles
 
 ## Deploy evidence
 
@@ -124,3 +133,14 @@ Deployed on 2026-05-18 JST. No env / Secret / Scheduler changes.
 - post-health-check ERROR logs after `2026-05-18T07:53:30Z`: `0`
 
 Note: `curl -I /health` produced one `HEAD /health` 501 request at `2026-05-18T07:52:58Z`. Follow-up `GET /health` returned `OK`; the HEAD 501 is excluded from acceptance because the service does not implement HEAD for that endpoint.
+
+### manual-intake-service
+
+- build: `9329593b-237d-414c-a898-7b774fa10800` SUCCESS
+- image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/manual-intake-service:source-candidates-202605181726`
+- digest: `sha256:994eb3929c414ed7134d06c0e4dfa4bc66c298b5a2b82e0bf48c35dff5fc5ca5`
+- revision: `manual-intake-service-00084-bzv`
+- traffic: `100%`
+- `GET /health`: `{"ok": true}`
+- new revision ERROR logs: `0`
+- endpoint evidence: `/source-candidates?source=読売新聞オンライン プロ野球&limit=3` returned `count=3`, including `スミ１で巨人を６連勝に導いた岸田行倫...`

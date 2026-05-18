@@ -605,6 +605,9 @@ SOURCE_LINK_ONLY_TEMPLATE_SUBTYPES = frozenset(
 # upstream の clean_title fallback を使わせる (None 返却)。
 _TITLE_GENERIC_SUBJECT_LABELS = frozenset(
     {
+        # 2026-05-18 PM: position 名詞のみ。 team 名 (「巨人」「ジャイアンツ」) は
+        # 正常 subject として大多数の記事で使われるため除外 (13:00 fetcher fire
+        # drafts_created=0 root cause、 12:00 比 9→0 急落)。
         "選手",
         "投手",
         "捕手",
@@ -616,8 +619,6 @@ _TITLE_GENERIC_SUBJECT_LABELS = frozenset(
         "首脳陣",
         "球団",
         "ベンチ",
-        "巨人",
-        "ジャイアンツ",
     }
 )
 

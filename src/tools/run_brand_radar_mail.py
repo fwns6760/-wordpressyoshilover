@@ -62,7 +62,12 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--to", help="Override recipients, comma-separated.")
     parser.add_argument("--sources", default=str(RSS_SOURCES_FILE), help="rss_sources.json path.")
     parser.add_argument("--max-plans", type=int, default=brand_radar.DEFAULT_MAX_TOPICS)
-    parser.add_argument("--x-search-cap", type=int, default=brand_radar.DEFAULT_X_SEARCH_CAP)
+    parser.add_argument(
+        "--x-search-cap",
+        type=int,
+        default=brand_radar.DEFAULT_X_SEARCH_CAP,
+        help="Max paid xAI x_search calls per run. Default 0 disables paid API calls.",
+    )
     parser.add_argument("--source-limit", type=int, default=brand_radar.DEFAULT_SOURCE_LIMIT)
     parser.add_argument("--entry-limit", type=int, default=brand_radar.DEFAULT_ENTRY_LIMIT)
     parser.add_argument("--timeout-seconds", type=int, default=4)

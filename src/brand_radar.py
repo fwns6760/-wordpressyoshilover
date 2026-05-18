@@ -33,7 +33,7 @@ X_INTENT_URL_BASE = "https://twitter.com/intent/tweet"
 XAI_RESPONSES_URL = "https://api.x.ai/v1/responses"
 DEFAULT_MODEL = "grok-4-1-fast-non-reasoning"
 DEFAULT_MAX_TOPICS = 3
-DEFAULT_X_SEARCH_CAP = 3
+DEFAULT_X_SEARCH_CAP = 0
 DEFAULT_SOURCE_LIMIT = 32
 DEFAULT_ENTRY_LIMIT = 5
 DEFAULT_TIMEOUT_SECONDS = 30
@@ -88,6 +88,7 @@ class XSearchSignal:
     summary: str = ""
     evidence_urls: tuple[str, ...] = ()
     error_type: str = ""
+    credential_source: str = ""
     usage: dict[str, Any] = field(default_factory=dict)
     attempted: bool = False
 
@@ -524,16 +525,41 @@ def _http_error_type(code: int) -> str:
     return f"http_{code}"
 
 
+def resolve_xai_bearer_token(explicit_token: str | None = None) -> tuple[str, str]:
+    """Return the bearer token and visible credential source.
+
+    Official xAI docs use ``XAI_API_KEY`` for the API-key path. Hermes
+    OAuth also ends up as a bearer token for the same xAI Responses
+    endpoint. ``GROK_API_KEY`` remains only as backwards compatibility
+    because older repo code used that env name.
+    """
+    if explicit_token is not None:
+        token = explicit_token.strip()
+        return token, "explicit" if token else ""
+    for key, source in (
+        ("XAI_OAUTH_BEARER_TOKEN", "xai_oauth_bearer_token"),
+        ("XAI_BEARER_TOKEN", "xai_bearer_token"),
+        ("XAI_API_KEY", "xai_api_key"),
+        ("GROK_API_KEY", "legacy_grok_api_key"),
+    ):
+        value = os.environ.get(key, "").strip()
+        if value:
+            return value, source
+    return "", ""
+
+
 class XAIResponsesXSearchClient:
     def __init__(
         self,
         *,
         api_key: str | None = None,
+        bearer_token: str | None = None,
         model: str = DEFAULT_MODEL,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
         opener: Callable[..., Any] | None = None,
     ) -> None:
-        self.api_key = (api_key if api_key is not None else os.environ.get("GROK_API_KEY", "")).strip()
+        explicit_token = bearer_token if bearer_token is not None else api_key
+        self.bearer_token, self.credential_source = resolve_xai_bearer_token(explicit_token)
         self.model = model
         self.timeout_seconds = timeout_seconds
         self.opener = opener or urlrequest.urlopen
@@ -543,13 +569,14 @@ class XAIResponsesXSearchClient:
         from_date = (active_now - timedelta(days=1)).strftime("%Y-%m-%d")
         to_date = active_now.strftime("%Y-%m-%d")
         query = build_x_search_query(topic)
-        if not self.api_key:
+        if not self.bearer_token:
             return XSearchSignal(
                 query=query,
                 from_date=from_date,
                 to_date=to_date,
                 status="x_search_error",
                 error_type="missing_api_key",
+                credential_source=self.credential_source,
                 attempted=False,
             )
 
@@ -582,7 +609,7 @@ class XAIResponsesXSearchClient:
                 data=payload,
                 headers={
                     "Content-Type": "application/json",
-                    "Authorization": f"Bearer {self.api_key}",
+                    "Authorization": f"Bearer {self.bearer_token}",
                 },
             )
             with self.opener(req, timeout=self.timeout_seconds) as response:
@@ -594,6 +621,7 @@ class XAIResponsesXSearchClient:
                 to_date=to_date,
                 status="x_search_error",
                 error_type=_http_error_type(int(getattr(exc, "code", 0) or 0)),
+                credential_source=self.credential_source,
                 attempted=True,
             )
         except TimeoutError:
@@ -603,6 +631,7 @@ class XAIResponsesXSearchClient:
                 to_date=to_date,
                 status="x_search_error",
                 error_type="timeout",
+                credential_source=self.credential_source,
                 attempted=True,
             )
         except Exception:  # noqa: BLE001
@@ -612,6 +641,7 @@ class XAIResponsesXSearchClient:
                 to_date=to_date,
                 status="x_search_error",
                 error_type="request_error",
+                credential_source=self.credential_source,
                 attempted=True,
             )
 
@@ -626,6 +656,7 @@ class XAIResponsesXSearchClient:
                 status="x_search_empty",
                 summary="",
                 evidence_urls=urls,
+                credential_source=self.credential_source,
                 usage=usage,
                 attempted=True,
             )
@@ -637,6 +668,7 @@ class XAIResponsesXSearchClient:
             status=status,
             summary=_shorten(re.sub(r"X_SIGNAL_EMPTY", "", text), 120),
             evidence_urls=urls[:5],
+            credential_source=self.credential_source,
             usage=usage,
             attempted=True,
         )
@@ -650,6 +682,7 @@ def _empty_signal(topic: FreshArticleTopic, *, now: datetime, status: str, error
         to_date=active_now.strftime("%Y-%m-%d"),
         status=status,
         error_type=error_type,
+        credential_source="",
         attempted=False,
     )
 
@@ -788,6 +821,9 @@ def build_brand_post_plans(
             break
         if provider_disabled:
             signal = _empty_signal(topic, now=active_now, status="x_search_error", error_type="provider_disabled")
+        elif x_search_call_cap <= 0:
+            signal = _empty_signal(topic, now=active_now, status="x_search_error", error_type="x_search_disabled_no_paid_api")
+            active_stats.add_skip("x_search_disabled_no_paid_api")
         elif active_stats.x_search_calls_used >= x_search_call_cap:
             signal = _empty_signal(topic, now=active_now, status="x_search_error", error_type="x_search_cap_exceeded")
             active_stats.add_skip("x_search_cap_exceeded")
@@ -859,6 +895,7 @@ def build_subject(now: datetime, n_candidates: int) -> str:
 def _format_signal_text(signal: XSearchSignal) -> list[str]:
     lines = [
         f"- X Search status: {signal.status}",
+        f"- X Search credential: {signal.credential_source or 'unavailable'}",
         f"- X Search query: {signal.query}",
         f"- X Search date range: {signal.from_date}..{signal.to_date}",
     ]

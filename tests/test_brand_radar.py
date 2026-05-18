@@ -240,6 +240,26 @@ class BrandRadarPlanTests(unittest.TestCase):
         self.assertEqual(result.plans[2].signal.error_type, "x_search_cap_exceeded")
         self.assertEqual(result.stats.skipped_by_reason["x_search_cap_exceeded"], 1)
 
+    def test_default_x_search_cap_is_zero_to_avoid_paid_api(self) -> None:
+        self.assertEqual(brand_radar.DEFAULT_X_SEARCH_CAP, 0)
+
+    def test_zero_x_search_cap_never_calls_provider(self) -> None:
+        now = datetime(2026, 5, 18, 18, 0, tzinfo=JST)
+        fake = FakeXSearchClient([])
+
+        result = brand_radar.build_brand_post_plans(
+            [_topic("巨人・ニュース1", base_score=100)],
+            x_search_client=fake,
+            now=now,
+            max_plans=1,
+            x_search_call_cap=0,
+        )
+
+        self.assertEqual(fake.calls, 0)
+        self.assertEqual(result.stats.x_search_calls_used, 0)
+        self.assertEqual(result.plans[0].signal.error_type, "x_search_disabled_no_paid_api")
+        self.assertEqual(result.stats.skipped_by_reason["x_search_disabled_no_paid_api"], 1)
+
     def test_no_x_live_post_or_wp_mutation_strings_in_mail(self) -> None:
         now = datetime(2026, 5, 18, 18, 0, tzinfo=JST)
         result = brand_radar.build_brand_post_plans(
@@ -247,7 +267,7 @@ class BrandRadarPlanTests(unittest.TestCase):
             x_search_client=FakeXSearchClient([]),
             now=now,
             max_plans=1,
-            x_search_call_cap=1,
+            x_search_call_cap=0,
         )
         mail = brand_radar.compose_brand_radar_mail(result.plans, now=now, stats=result.stats)
 
@@ -262,7 +282,7 @@ class BrandRadarXAIClientTests(unittest.TestCase):
         self.assertEqual(brand_radar._http_error_type(401), "x_search_auth_required")
         self.assertEqual(brand_radar._http_error_type(403), "x_search_auth_required")
 
-    def test_missing_grok_key_is_visible_error(self) -> None:
+    def test_missing_xai_credential_is_visible_error(self) -> None:
         now = datetime(2026, 5, 18, 18, 0, tzinfo=JST)
         with patch.dict("os.environ", {}, clear=True):
             signal = brand_radar.XAIResponsesXSearchClient().search(
@@ -273,6 +293,24 @@ class BrandRadarXAIClientTests(unittest.TestCase):
         self.assertEqual(signal.status, "x_search_error")
         self.assertEqual(signal.error_type, "missing_api_key")
         self.assertFalse(signal.attempted)
+
+    def test_xai_api_key_is_preferred_over_legacy_grok_env(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {"XAI_API_KEY": "xai-token", "GROK_API_KEY": "legacy-token"},
+            clear=True,
+        ):
+            token, source = brand_radar.resolve_xai_bearer_token()
+
+        self.assertEqual(token, "xai-token")
+        self.assertEqual(source, "xai_api_key")
+
+    def test_oauth_bearer_env_is_visible_credential_source(self) -> None:
+        with patch.dict("os.environ", {"XAI_OAUTH_BEARER_TOKEN": "oauth-token"}, clear=True):
+            token, source = brand_radar.resolve_xai_bearer_token()
+
+        self.assertEqual(token, "oauth-token")
+        self.assertEqual(source, "xai_oauth_bearer_token")
 
     def test_http_403_from_provider_is_visible_auth_required(self) -> None:
         now = datetime(2026, 5, 18, 18, 0, tzinfo=JST)
@@ -285,6 +323,7 @@ class BrandRadarXAIClientTests(unittest.TestCase):
 
         self.assertEqual(signal.status, "x_search_error")
         self.assertEqual(signal.error_type, "x_search_auth_required")
+        self.assertEqual(signal.credential_source, "explicit")
         self.assertTrue(signal.attempted)
 
 

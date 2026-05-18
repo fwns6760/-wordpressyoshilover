@@ -11,6 +11,8 @@ from src.x_post_mail_lane import (
     JST,
     X_CHAR_LIMIT,
     Candidate,
+    _load_giants_player_aliases,
+    build_comment_numeric_candidate,
     build_news_opinion_candidate,
     build_subject,
     compose_mail,
@@ -703,10 +705,13 @@ class VariationExpansionTests(unittest.TestCase):
         self.assertIsNotNone(cand)
         assert cand is not None
         self.assertTrue(cand.title.startswith("📊 Xポスト案｜"))
-        self.assertIn("#巨人 #ジャイアンツ", cand.post_text)
+        self.assertNotIn("#巨人", cand.post_text)
+        self.assertNotIn("#ジャイアンツ", cand.post_text)
         self.assertIn("岡本和真", cand.post_text)
         self.assertIn("OPS", cand.post_text)
         self.assertIn("セ・リーグ", cand.post_text)
+        self.assertNotIn("https://", cand.post_text)
+        self.assertNotIn("整理しました", cand.post_text)
         self.assertNotIn("🥇", cand.post_text)
         self.assertNotIn("阿部監督", cand.post_text)
         self.assertLessEqual(len(cand.post_text), X_CHAR_LIMIT)
@@ -875,7 +880,7 @@ class ComposeMailTests(unittest.TestCase):
     def test_news_opinion_candidate_uses_source_evidence_label(self) -> None:
         ts = datetime(2026, 5, 18, 7, 0, tzinfo=JST)
         cand = build_news_opinion_candidate(
-            source_title="巨人・岸田行倫が攻守で存在感",
+            source_title="巨人・岸田行倫が攻守で存在感とコメント",
             source_url="https://example.test/giants-kishida",
             source_name="テスト新聞",
             source_excerpt="巨人の岸田行倫についての記事。",
@@ -885,8 +890,16 @@ class ComposeMailTests(unittest.TestCase):
         self.assertIsNotNone(cand)
         assert cand is not None
         self.assertEqual(cand.metric, "NEWS_OPINION")
+        self.assertIn("要確認: 数値未照合｜コメント案｜岸田行倫", cand.title)
         self.assertIn("岸田行倫", cand.post_text)
-        self.assertIn("巨人・岸田行倫が攻守で存在感", cand.post_text)
+        self.assertIn("コメント", cand.post_text)
+        self.assertNotIn("https://example.test/giants-kishida", cand.post_text)
+        self.assertNotIn("#巨人", cand.post_text)
+        self.assertNotIn("#ジャイアンツ", cand.post_text)
+        self.assertNotIn("整理しました", cand.post_text)
+        self.assertIn("材料種別: コメント (comment)", cand.draft_text)
+        self.assertIn("論点種別: なし", cand.draft_text)
+        self.assertIn("DB数値照合: なし", cand.draft_text)
         self.assertIn("https://example.test/giants-kishida", cand.draft_text)
 
         mail = compose_mail([self._make_cand(1), cand], now=ts)
@@ -894,6 +907,119 @@ class ComposeMailTests(unittest.TestCase):
         self.assertIn("📮 巨人Xポスト案", mail.text_body)
         self.assertNotIn("📮 巨人データXポスト案", mail.text_body)
         self.assertIn("📮 巨人Xポスト案", mail.html_body)
+
+    def test_comment_numeric_candidate_uses_same_player_db_fact_only(self) -> None:
+        ts = datetime(2026, 5, 18, 7, 0, tzinfo=JST)
+        news = build_news_opinion_candidate(
+            source_title="巨人・岸田行倫が打撃について試合後にコメント",
+            source_url="https://example.test/comment",
+            source_name="テスト新聞",
+            player_name="岸田行倫",
+            now=ts,
+        )
+        assert news is not None
+        data = Candidate(
+            title="DB候補 岸田",
+            metric="SLG",
+            period_label="直近5試合",
+            draft_text="セ・リーグ 長打率ランキング\n巨人最上位: 岸田行倫 セ・リーグ 4/20位",
+            post_text="岸田行倫は直近5試合の長打率でセ・リーグ 4/20位。",
+            char_count=26,
+            signature="data-sig-kishida",
+            focus_player="岸田行倫",
+            db_fact_line="岸田行倫は直近5試合の長打率でセ・リーグ 4/20位（長打率 .500、規定打席の半分以上）",
+        )
+        combined = build_comment_numeric_candidate(news, data)
+        self.assertIsNotNone(combined)
+        assert combined is not None
+        self.assertIn("DB照合済: フルネーム+論点一致｜コメント×DB｜岸田行倫", combined.title)
+        self.assertEqual(combined.metric, "COMMENT_DB")
+        self.assertIn("DBで確認できる数字", combined.post_text)
+        self.assertIn("長打率 .500", combined.post_text)
+        self.assertNotIn("https://example.test/comment", combined.post_text)
+        self.assertNotIn("#巨人", combined.post_text)
+        self.assertIn("DB数値照合: あり（同一フルネーム+論点一致）", combined.draft_text)
+        self.assertIn("論点照合: あり（コメント=打撃 / DB=打撃）", combined.draft_text)
+        self.assertIn("https://example.test/comment", combined.draft_text)
+        self.assertIn("セ・リーグ 長打率ランキング", combined.draft_text)
+
+        mismatch = build_comment_numeric_candidate(
+            news,
+            Candidate(
+                title="DB候補 別選手",
+                metric="OPS",
+                period_label="直近5試合",
+                draft_text="DB根拠",
+                char_count=4,
+                focus_player="大城卓三",
+                db_fact_line="大城卓三は直近5試合のOPSでセ・リーグ 1/20位（OPS 1.000、規定打席の半分以上）",
+            ),
+        )
+        self.assertIsNone(mismatch)
+
+    def test_comment_numeric_candidate_rejects_same_player_without_topic_match(self) -> None:
+        news = build_news_opinion_candidate(
+            source_title="巨人・岸田行倫が試合後にコメント",
+            source_url="https://example.test/no-topic",
+            source_name="テスト新聞",
+            player_name="岸田行倫",
+        )
+        assert news is not None
+        data = Candidate(
+            title="DB候補 岸田",
+            metric="OPS",
+            period_label="直近5試合",
+            draft_text="DB根拠",
+            char_count=4,
+            signature="data-no-topic",
+            focus_player="岸田行倫",
+            db_fact_line="岸田行倫は直近5試合のOPSでセ・リーグ 4/20位（OPS .900、規定打席の半分以上）",
+        )
+        self.assertIsNone(build_comment_numeric_candidate(news, data))
+
+    def test_comment_numeric_candidate_rejects_same_player_topic_mismatch(self) -> None:
+        news = build_news_opinion_candidate(
+            source_title="巨人・田中将大が打線についてコメント",
+            source_url="https://example.test/topic-mismatch",
+            source_name="テスト新聞",
+            player_name="田中将大",
+        )
+        assert news is not None
+        data = Candidate(
+            title="DB候補 田中将大",
+            metric="ERA",
+            period_label="直近5試合",
+            draft_text="DB根拠",
+            char_count=4,
+            signature="data-topic-mismatch",
+            focus_player="田中将大",
+            db_fact_line="田中将大は直近5試合の防御率でセ・リーグ 4/20位（防御率 2.00、規定投球回の半分以上）",
+        )
+        self.assertIsNone(build_comment_numeric_candidate(news, data))
+
+    def test_comment_numeric_candidate_rejects_ambiguous_surname_only_match(self) -> None:
+        news = Candidate(
+            title="要確認: 数値未照合｜コメント案｜田中｜巨人・田中がコメント",
+            metric="NEWS_OPINION",
+            period_label="コメント",
+            draft_text="DB数値照合: なし",
+            post_text="田中の言葉を見たい。",
+            char_count=10,
+            signature="news-tanaka",
+            focus_player="田中",
+            source_material_type="comment",
+        )
+        data = Candidate(
+            title="DB候補 田中",
+            metric="ERA",
+            period_label="直近5試合",
+            draft_text="DB根拠",
+            char_count=4,
+            signature="data-tanaka",
+            focus_player="田中",
+            db_fact_line="田中は直近5試合の防御率でセ・リーグ 4/20位（防御率 2.00、規定投球回の半分以上）",
+        )
+        self.assertIsNone(build_comment_numeric_candidate(news, data))
 
     def test_detect_giants_player_name_requires_source_alias(self) -> None:
         alias_map = {
@@ -911,6 +1037,39 @@ class ComposeMailTests(unittest.TestCase):
         self.assertEqual(detect_giants_player_name("ただの巨人ニュース", alias_map=alias_map), "")
         self.assertEqual(detect_giants_player_name("丸が出塁", alias_map=alias_map), "")
         self.assertEqual(detect_giants_player_name("巨人・丸が出塁", alias_map=alias_map), "丸佳浩")
+
+    def test_duplicate_surname_alias_is_not_loaded_as_player_alias(self) -> None:
+        import json
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            roster_path = Path(tmpdir) / "roster.json"
+            roster_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "name": "田中将大",
+                            "aliases": ["田中将大", "田中 将大"],
+                            "role": "player",
+                            "active": True,
+                        },
+                        {
+                            "name": "田中 瑛斗",
+                            "aliases": ["田中 瑛斗", "田中瑛斗"],
+                            "role": "player",
+                            "active": True,
+                        },
+                    ],
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            aliases = _load_giants_player_aliases(roster_path)
+
+        self.assertEqual(aliases["田中将大"], "田中将大")
+        self.assertEqual(aliases["田中瑛斗"], "田中 瑛斗")
+        self.assertNotIn("田中", aliases)
 
 
 class EmptyResultBehaviourTests(unittest.TestCase):
@@ -1647,7 +1806,7 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
         self.assertEqual(request.metadata["candidate_count"], 1)
 
     def test_news_opinion_fallback_fills_sparse_data_candidates(self) -> None:
-        """データ候補が少ない時だけ、source-backed fallback をメールに足す。"""
+        """source-backed RSS/comment 候補をデータ候補と同じメールに足す。"""
         from src.tools import run_x_post_mail
 
         data_cand = self._entrypoint_candidate("data-sig")
@@ -1706,6 +1865,88 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
         self.assertIn("データ+ニュース意見", request.subject)
         self.assertIn("巨人Xポスト案", request.text_body)
         self.assertIn("岸田行倫", request.text_body)
+
+    def test_news_opinion_candidates_take_priority_over_full_data_mail(self) -> None:
+        """DB候補が満枠でも、RSS/comment 候補を先頭側に入れる。"""
+        from src.tools import run_x_post_mail
+
+        data_cands = [
+            Candidate(
+                title=f"DB候補 {idx}",
+                metric="OPS",
+                period_label="直近5試合",
+                draft_text=f"DB候補 {idx}",
+                post_text=f"DB投稿 {idx}",
+                char_count=len(f"DB投稿 {idx}"),
+                signature=f"data-sig-{idx}",
+                focus_player="岸田行倫" if idx == 1 else f"DB選手{idx}",
+                db_fact_line=(
+                    "岸田行倫は直近5試合のOPSでセ・リーグ 4/20位"
+                    "（OPS .900、規定打席の半分以上）"
+                    if idx == 1 else ""
+                ),
+            )
+            for idx in range(1, 4)
+        ]
+        news_cand = build_news_opinion_candidate(
+            source_title="巨人・岸田行倫が打撃について試合後にコメント",
+            source_url="https://example.test/news",
+            source_name="テスト新聞",
+            player_name="岸田行倫",
+        )
+        assert news_cand is not None
+        send_result = run_x_post_mail.mdb.MailResult(
+            status="sent",
+            refused_recipients={},
+            smtp_response=[],
+            reason=None,
+        )
+        with patch.dict(
+            "os.environ",
+            {
+                "MAIL_BRIDGE_TO": "ops@example.test",
+                "X_POST_MAIL_DEDUP_DISABLED": "1",
+                "X_POST_MAIL_LINEUP_FOCUS_DISABLED": "1",
+                "X_POST_MAIL_NEWS_PRIORITY_CANDIDATES": "1",
+            },
+            clear=False,
+        ), patch.object(
+            run_x_post_mail.miq,
+            "ensure_local_db",
+            return_value={"ok": True, "path": "/tmp/insight.db"},
+        ), patch.object(
+            run_x_post_mail.lane,
+            "query_db_latest_game_date",
+            return_value="2026-05-16",
+        ), patch.object(
+            run_x_post_mail.lane,
+            "db_staleness_days",
+            return_value=0,
+        ), patch.object(
+            run_x_post_mail.lane,
+            "pick_candidates",
+            return_value=data_cands,
+        ), patch.object(
+            run_x_post_mail,
+            "_fetch_news_opinion_fallback_candidates",
+            return_value=[news_cand],
+        ), patch.object(
+            run_x_post_mail.mdb,
+            "send",
+            return_value=send_result,
+        ) as send:
+            result = run_x_post_mail.main(["--max-candidates", "3"])
+
+        self.assertEqual(result, 0)
+        request = send.call_args.args[0]
+        self.assertEqual(request.metadata["candidate_count"], 3)
+        self.assertIn("DB照合済: フルネーム+論点一致｜コメント×DB｜岸田行倫", request.text_body)
+        self.assertIn("OPS .900", request.text_body)
+        self.assertLess(
+            request.text_body.index("岸田行倫"),
+            request.text_body.index("DB候補 2"),
+        )
+        self.assertNotIn("#巨人", request.text_body)
 
     def test_news_opinion_fallback_skips_recent_history_player(self) -> None:
         """380 follow-up: news fallback も直近24h既出 player を補充しない。"""

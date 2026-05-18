@@ -43,6 +43,7 @@ DEFAULT_LINEUP_FOCUS_MIN_CANDIDATES = 1
 DEFAULT_NEWS_FALLBACK_SOURCE_LIMIT = 32
 DEFAULT_NEWS_FALLBACK_ENTRY_LIMIT = 5
 DEFAULT_NEWS_FALLBACK_TIMEOUT_SECONDS = 4
+DEFAULT_NEWS_PRIORITY_CANDIDATES = 5
 RSS_SOURCES_FILE = Path(__file__).resolve().parents[2] / "config" / "rss_sources.json"
 
 
@@ -161,6 +162,15 @@ def _resolve_int_env(name: str, default: int, *, min_value: int = 0) -> int:
         LOG.warning("Invalid %s=%r; using default %d", name, raw, default)
         return default
     return value
+
+
+def _resolve_news_priority_candidates(max_candidates: int) -> int:
+    value = _resolve_int_env(
+        "X_POST_MAIL_NEWS_PRIORITY_CANDIDATES",
+        DEFAULT_NEWS_PRIORITY_CANDIDATES,
+        min_value=0,
+    )
+    return max(0, min(value, max_candidates))
 
 
 def _fetch_today_lineup_focus_names() -> list[str]:
@@ -390,6 +400,102 @@ def _backfill_dedup_starved_candidates(
     return merged
 
 
+def _candidate_identity(candidate: lane.Candidate) -> str:
+    if candidate.signature:
+        return candidate.signature
+    return "|".join(
+        [
+            str(candidate.metric or ""),
+            str(candidate.period_label or ""),
+            str(candidate.title or ""),
+        ]
+    )
+
+
+def _build_comment_numeric_priority(
+    news_candidates: list[lane.Candidate],
+    data_candidates: list[lane.Candidate],
+) -> tuple[list[lane.Candidate], set[str], set[str]]:
+    combined: list[lane.Candidate] = []
+    consumed_news: set[str] = set()
+    consumed_data: set[str] = set()
+    for news_candidate in news_candidates:
+        news_id = _candidate_identity(news_candidate)
+        news_player = lane._normalize_player_name(news_candidate.focus_player)
+        if not news_player:
+            continue
+        for data_candidate in data_candidates:
+            data_id = _candidate_identity(data_candidate)
+            if data_id in consumed_data:
+                continue
+            if lane._normalize_player_name(data_candidate.focus_player) != news_player:
+                continue
+            comment_db = lane.build_comment_numeric_candidate(
+                news_candidate,
+                data_candidate,
+            )
+            if comment_db is None:
+                continue
+            combined.append(comment_db)
+            consumed_news.add(news_id)
+            consumed_data.add(data_id)
+            break
+    return combined, consumed_news, consumed_data
+
+
+def _merge_news_priority_candidates(
+    news_candidates: list[lane.Candidate],
+    data_candidates: list[lane.Candidate],
+    *,
+    max_candidates: int,
+) -> list[lane.Candidate]:
+    """Put source-backed news/comment candidates first, then DB data.
+
+    This keeps the mail schedule and UI unchanged while shifting the
+    content from repeated metric-only candidates toward RSS/comment
+    hooks. Player diversity is enforced first; if that would leave the
+    mail short, DB candidates may backfill as a second pass.
+    """
+    merged: list[lane.Candidate] = []
+    seen_identities: set[str] = set()
+    used_players: set[str] = set()
+    comment_db_candidates, consumed_news, consumed_data = _build_comment_numeric_priority(
+        news_candidates,
+        data_candidates,
+    )
+
+    def add(candidate: lane.Candidate, *, enforce_player: bool) -> bool:
+        if len(merged) >= max_candidates:
+            return False
+        identity = _candidate_identity(candidate)
+        if identity in seen_identities:
+            return False
+        player_key = lane._normalize_player_name(candidate.focus_player)
+        if enforce_player and player_key and player_key in used_players:
+            return False
+        merged.append(candidate)
+        seen_identities.add(identity)
+        if player_key:
+            used_players.add(player_key)
+        return True
+
+    for candidate in comment_db_candidates:
+        add(candidate, enforce_player=True)
+    for candidate in news_candidates:
+        if _candidate_identity(candidate) in consumed_news:
+            continue
+        add(candidate, enforce_player=True)
+    for candidate in data_candidates:
+        if _candidate_identity(candidate) in consumed_data:
+            continue
+        add(candidate, enforce_player=True)
+    for candidate in data_candidates:
+        if _candidate_identity(candidate) in consumed_data:
+            continue
+        add(candidate, enforce_player=False)
+    return merged[:max_candidates]
+
+
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Send one セ・リーグ X post candidate mail (347).",
@@ -560,7 +666,36 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "Dedup fallback found no additional candidates (relaxed=%d)",
                 len(relaxed_candidates),
             )
-    if len(candidates) < args.max_candidates:
+    news_priority_count = _resolve_news_priority_candidates(args.max_candidates)
+    news_fallback_enabled = not _news_fallback_disabled()
+    fallback_candidates: list[lane.Candidate] = []
+    if not news_fallback_enabled:
+        LOG.info("News/opinion fallback disabled by X_POST_MAIL_NEWS_FALLBACK_DISABLED")
+    if news_fallback_enabled and news_priority_count:
+        fallback_candidates = _fetch_news_opinion_fallback_candidates(
+            [],
+            max_candidates=news_priority_count,
+            now=now_jst,
+            recent_player_counts=recent_player_counts,
+        )
+        if fallback_candidates:
+            before = len(candidates)
+            candidates = _merge_news_priority_candidates(
+                fallback_candidates,
+                candidates,
+                max_candidates=args.max_candidates,
+            )
+            LOG.info(
+                "News/opinion priority merged candidates: data=%d news=%d total=%d",
+                before,
+                len(fallback_candidates),
+                len(candidates),
+            )
+    if (
+        news_fallback_enabled
+        and not fallback_candidates
+        and len(candidates) < args.max_candidates
+    ):
         fallback_candidates = _fetch_news_opinion_fallback_candidates(
             candidates,
             max_candidates=args.max_candidates,

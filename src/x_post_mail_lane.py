@@ -130,6 +130,14 @@ _METRIC_LABELS_JP: dict[str, str] = {
     "BB_per_9": "与四球率",
     "HR_per_9": "被本塁打率",
 }
+_BATTING_METRICS = frozenset({"AVG", "OBP", "SLG", "OPS"})
+_PITCHING_METRICS = frozenset({"ERA", "K_per_9", "BB_per_9", "HR_per_9"})
+_FIELDING_METRICS = frozenset({"FldPct", "UZR"})
+_TOPIC_FAMILY_LABELS = {
+    "batting": "打撃",
+    "pitching": "投球",
+    "fielding": "守備",
+}
 
 # 353: metric 別 header 絵文字。 batting (AVG/OBP/SLG/OPS) = ⚾、 pitching
 # (ERA / K_per_9 / BB_per_9 / HR_per_9) = ⚡、 守備 (将来拡張時) = 🛡️。
@@ -303,6 +311,24 @@ def _load_giants_player_aliases(
         if len(candidates) == 1:
             out.setdefault(prefix, next(iter(candidates)))
     return out
+
+
+def _active_giants_canonical_player_keys() -> set[str]:
+    return {
+        _normalize_player_name(canonical)
+        for canonical in _load_giants_player_aliases().values()
+        if _normalize_player_name(canonical)
+    }
+
+
+def _is_verified_full_giants_player_name(player_name: object) -> bool:
+    key = _normalize_player_name(player_name)
+    if not key:
+        return False
+    canonical_keys = _active_giants_canonical_player_keys()
+    if canonical_keys:
+        return key in canonical_keys
+    return len(key) >= 3
 
 
 def normalize_focus_player_names(
@@ -789,10 +815,109 @@ class Candidate:
     # Player selected as the post focus. Used to spread one mail across
     # multiple lineup players before repeating the same name.
     focus_player: str = ""
+    # Source-backed material classification for RSS/news candidates.
+    source_material_type: str = ""
+    # One DB-verified numeric fact line. Empty means no numeric fact is
+    # safe to place in the public post text.
+    db_fact_line: str = ""
+    # Source-backed topic family for safe comment x DB merging.
+    source_topic_family: str = ""
 
 
 _DEFAULT_PLAYER_MAX_PER_MAIL = 2
 _NEWS_OPINION_METRIC = "NEWS_OPINION"
+_COMMENT_DB_METRIC = "COMMENT_DB"
+_COMMENT_TERMS = (
+    "コメント",
+    "語った",
+    "話した",
+    "明かした",
+    "強調",
+    "振り返った",
+    "意気込",
+    "語気",
+    "一問一答",
+    "談話",
+    "「",
+    "」",
+)
+_RECORD_TERMS = (
+    "記録",
+    "達成",
+    "節目",
+    "通算",
+    "連続",
+    "初勝利",
+    "初安打",
+    "初本塁打",
+    "初打点",
+    "初登板",
+    "初先発",
+    "初出場",
+    "最速",
+    "最年少",
+)
+_FARM_TERMS = (
+    "2軍",
+    "二軍",
+    "ファーム",
+    "イースタン",
+    "育成",
+)
+_BATTING_TOPIC_TERMS = (
+    "打撃",
+    "打席",
+    "打率",
+    "出塁",
+    "長打",
+    "OPS",
+    "安打",
+    "本塁打",
+    "ホームラン",
+    "打点",
+    "打線",
+    "バット",
+    "打つ",
+    "打った",
+    "打ち",
+    "猛打賞",
+    "適時打",
+    "タイムリー",
+)
+_PITCHING_TOPIC_TERMS = (
+    "投球",
+    "登板",
+    "先発",
+    "リリーフ",
+    "救援",
+    "マウンド",
+    "投手",
+    "防御率",
+    "奪三振",
+    "三振",
+    "四球",
+    "与四球",
+    "被本塁打",
+    "失点",
+    "無失点",
+    "完封",
+    "好投",
+)
+_FIELDING_TOPIC_TERMS = (
+    "守備",
+    "捕球",
+    "失策",
+    "遊撃",
+    "二塁",
+    "三塁",
+    "一塁",
+    "外野",
+    "中堅",
+    "右翼",
+    "左翼",
+    "捕手",
+    "送球",
+)
 
 
 def _truncate_text(value: object, max_chars: int) -> str:
@@ -802,6 +927,151 @@ def _truncate_text(value: object, max_chars: int) -> str:
     if len(text) <= max_chars:
         return text
     return text[: max(0, max_chars - 1)].rstrip() + "…"
+
+
+def _classify_news_material(title: str, excerpt: str) -> tuple[str, str]:
+    """Classify RSS/source material without inventing facts."""
+    haystack = f"{title} {excerpt}"
+    if any(term in haystack for term in _COMMENT_TERMS):
+        return "comment", "コメント"
+    if any(term in haystack for term in _RECORD_TERMS):
+        return "record", "記録/節目"
+    if any(term in haystack for term in _FARM_TERMS):
+        return "farm", "ファーム"
+    return "trend", "話題"
+
+
+def _infer_source_topic_family(title: str, excerpt: str) -> str:
+    haystack = f"{title} {excerpt}"
+    hits = []
+    if any(term in haystack for term in _BATTING_TOPIC_TERMS):
+        hits.append("batting")
+    if any(term in haystack for term in _PITCHING_TOPIC_TERMS):
+        hits.append("pitching")
+    if any(term in haystack for term in _FIELDING_TOPIC_TERMS):
+        hits.append("fielding")
+    return hits[0] if len(hits) == 1 else ""
+
+
+def _metric_topic_family(metric: str) -> str:
+    if metric in _BATTING_METRICS:
+        return "batting"
+    if metric in _PITCHING_METRICS:
+        return "pitching"
+    if metric in _FIELDING_METRICS:
+        return "fielding"
+    return ""
+
+
+def _build_source_backed_post_text(player: str, material_type: str) -> str:
+    """Build URL-free, hashtag-free copy from verified source presence only.
+
+    RSS titles/summaries can contain unverified numbers, so the public
+    post text only uses the detected player name and the source-backed
+    material type. The URL/title stay in ``draft_text`` as evidence.
+    """
+    if material_type == "comment":
+        body = (
+            "コメントは、数字より先に空気が出る。\n\n"
+            f"{player}の言葉は、今の状態を見直す材料になる。\n"
+            "強気なのか、課題を見ているのか。\n\n"
+            "巨人ファンとしては、次の出番で確かめたいところ。"
+        )
+    elif material_type == "record":
+        body = (
+            "記録は、数字そのものより積み重ねが出る。\n\n"
+            f"{player}のこの話題は、あとで振り返る材料として残しておきたい。\n\n"
+            "巨人の中でどんな意味を持つかまで見たい。"
+        )
+    elif material_type == "farm":
+        body = (
+            "ファームの話題は、今すぐの結論より次の準備として見たい。\n\n"
+            f"{player}の名前が出ているなら、一軍の流れとつなげて追っておきたい。\n\n"
+            "巨人の層を考える材料になる。"
+        )
+    else:
+        body = (
+            "名前が続けて出てくる時は、少し意味がある。\n\n"
+            f"{player}の話題は、結果だけでなく起用や立ち位置まで見たくなる。\n\n"
+            "今の巨人でどう扱われるか、次の流れを追いたい。"
+        )
+    return _finalize_post_text(body)
+
+
+def build_comment_numeric_candidate(
+    news_candidate: Candidate,
+    data_candidate: Candidate,
+) -> Optional[Candidate]:
+    """Combine a source-backed comment hook with one DB-verified fact.
+
+    The merge is intentionally narrow: the RSS side must be classified
+    as a comment, both candidates must resolve to the same focus player,
+    and the data side must carry a prebuilt ``db_fact_line`` copied from
+    the ranking result.
+    """
+    player = str(news_candidate.focus_player or "").strip()
+    player_key = _normalize_player_name(player)
+    data_player_key = _normalize_player_name(data_candidate.focus_player)
+    source_topic_family = str(news_candidate.source_topic_family or "").strip()
+    data_topic_family = _metric_topic_family(data_candidate.metric)
+    if (
+        news_candidate.metric != _NEWS_OPINION_METRIC
+        or news_candidate.source_material_type != "comment"
+        or not player_key
+        or player_key != data_player_key
+        or not _is_verified_full_giants_player_name(player)
+        or not source_topic_family
+        or not data_topic_family
+        or source_topic_family != data_topic_family
+        or not str(data_candidate.db_fact_line or "").strip()
+    ):
+        return None
+    fact_line = str(data_candidate.db_fact_line or "").strip().rstrip("。")
+    body = (
+        "コメントは、数字より先に空気が出る。\n\n"
+        f"{player}の言葉を見たうえで、DBで確認できる数字も一つ。\n"
+        f"{fact_line}。\n\n"
+        "数字だけで決めず、次の出番でどう出るか見たい。"
+    )
+    post_text = _finalize_post_text(body)
+    if not _is_safe_post_text(post_text):
+        return None
+    signature_hash = _hashlib.sha1(
+        f"{news_candidate.signature}\n{data_candidate.signature}\n{player_key}".encode("utf-8")
+    ).hexdigest()[:16]
+    draft_text = "\n".join(
+        [
+            "【根拠: コメント×DB照合済み数値】",
+            "DB数値照合: あり（同一フルネーム+論点一致）",
+            "論点照合: あり（"
+            f"コメント={_TOPIC_FAMILY_LABELS.get(source_topic_family, source_topic_family)} / "
+            f"DB={_TOPIC_FAMILY_LABELS.get(data_topic_family, data_topic_family)}）",
+            f"結合選手: {player}",
+            "",
+            "【コメント根拠】",
+            news_candidate.draft_text,
+            "",
+            "【DB数値根拠】",
+            data_candidate.draft_text,
+        ]
+    )
+    metric_label = _METRIC_LABELS_JP.get(data_candidate.metric, data_candidate.metric)
+    return Candidate(
+        title=(
+            f"DB照合済: フルネーム+論点一致｜コメント×DB｜"
+            f"{player}｜{metric_label} {data_candidate.period_label}"
+        ),
+        metric=_COMMENT_DB_METRIC,
+        period_label="コメント×DB",
+        draft_text=draft_text,
+        char_count=len(post_text),
+        signature=f"comment_db|{signature_hash}|False|None",
+        post_text=post_text,
+        focus_player=player,
+        source_material_type="comment_db",
+        db_fact_line=fact_line,
+        source_topic_family=source_topic_family,
+    )
 
 
 def detect_giants_player_name(
@@ -851,46 +1121,39 @@ def build_news_opinion_candidate(
     url = str(source_url or "").strip()
     if not title or not url or not player:
         return None
+    if not _is_verified_full_giants_player_name(player):
+        return None
     source = _truncate_text(source_name, 28)
-    title_for_post = _truncate_text(title, 48)
-    post_text = (
-        "巨人ニュースのメモ。\n\n"
-        f"{player}の話題です。\n"
-        f"見出しは「{title_for_post}」。\n\n"
-        "数字だけでは見えない流れとして、あとで見返したい材料です。\n\n"
-        "この話題、どう見ますか？\n"
-        "#巨人 #ジャイアンツ"
-    )
-    if len(post_text) > X_CHAR_LIMIT:
-        title_for_post = _truncate_text(title, 28)
-        post_text = (
-            "巨人ニュースのメモ。\n\n"
-            f"{player}の話題です。\n"
-            f"見出しは「{title_for_post}」。\n\n"
-            "あとで見返したい材料です。\n\n"
-            "この話題、どう見ますか？\n"
-            "#巨人 #ジャイアンツ"
-        )
-    proof_lines = [
-        "【ニュース意見 fallback】",
-        f"source: {source or 'unknown'}",
-        f"title: {title}",
-        f"url: {url}",
-        f"detected_player: {player}",
-    ]
     excerpt = _truncate_text(source_excerpt, 120)
+    material_type, material_label = _classify_news_material(title, excerpt)
+    source_topic_family = _infer_source_topic_family(title, excerpt)
+    post_text = _build_source_backed_post_text(player, material_type)
+    proof_lines = [
+        "【根拠: RSS/ニュース候補】",
+        f"材料種別: {material_label} ({material_type})",
+        "論点種別: "
+        f"{_TOPIC_FAMILY_LABELS.get(source_topic_family, 'なし')}"
+        "（DB結合は同一論点の時だけ）",
+        f"元媒体: {source or 'unknown'}",
+        f"元記事タイトル: {title}",
+        f"元記事URL: {url}",
+        f"検出選手: {player}",
+        "DB数値照合: なし（未照合のため投稿本文には数値を入れない）",
+    ]
     if excerpt:
-        proof_lines.append(f"excerpt: {excerpt}")
+        proof_lines.append(f"元記事抜粋: {excerpt}")
     signature_hash = _hashlib.sha1(f"{url}\n{player}".encode("utf-8")).hexdigest()[:16]
     return Candidate(
-        title=f"ニュース意見｜{player}｜{title}",
+        title=f"要確認: 数値未照合｜{material_label}案｜{player}｜{title}",
         metric=_NEWS_OPINION_METRIC,
-        period_label="ニュース意見",
+        period_label=material_label,
         draft_text="\n".join(proof_lines),
         char_count=len(post_text),
         signature=f"news_opinion|{signature_hash}|False|None",
         post_text=post_text,
         focus_player=player,
+        source_material_type=material_type,
+        source_topic_family=source_topic_family,
     )
 
 
@@ -1147,22 +1410,10 @@ def _stable_variant_index(combo: _MetricCombo, focus_name: str) -> int:
 
 
 def _finalize_post_text(body: str) -> str:
-    tags = "#巨人 #ジャイアンツ"
     text = body.strip()
-    if tags not in text:
-        text = f"{text}\n{tags}".strip()
     if len(text) <= X_CHAR_LIMIT:
         return text
-
-    prefix, _, suffix = text.rpartition(tags)
-    if not suffix:
-        suffix = tags
-    budget = X_CHAR_LIMIT - len(suffix) - 2
-    if budget <= 0:
-        return text[: X_CHAR_LIMIT - 1] + "…"
-    prefix = prefix.strip()
-    trimmed = prefix[: max(1, budget - 1)].rstrip("、。 \n") + "…"
-    return f"{trimmed}\n{suffix}"
+    return text[: X_CHAR_LIMIT - 1].rstrip("、。 \n") + "…"
 
 
 def _build_branded_post_text(
@@ -1512,12 +1763,14 @@ def _format_one(
     focus_total = focus_row.get("total") or len(rows)
     focus_name = focus_row.get("player_canonical") or "巨人選手"
     scope_label = _scope_label(combo)
+    fact_metric_label = metric_jp
 
     # 351+353 follow-up: 守備位置別 / セ・リーグ ranking で header の prefix を切替。
     # 346 format_as_x_post の output 1 行目は「セ・{metric_jp} ランキング 📊」固定
     # なので、 1 行目を新 prefix + metric 別絵文字で置換する。
     if combo.position:
         position_jp = _POSITION_DISPLAY_JP.get(combo.position, combo.position)
+        fact_metric_label = f"{position_jp}{metric_jp}"
         if lines and "ランキング" in lines[0]:
             lines[0] = f"セ・{position_jp} {metric_jp} ランキング {header_emoji}"
     else:
@@ -1562,6 +1815,12 @@ def _format_one(
             combo.period_label,
         )
         post_text = ""
+    value_text = f"{metric_jp} {_format_metric_value(combo.metric, focus_row.get('metric_value'))}"
+    db_fact_line = (
+        f"{focus_name}は{period_label}の{fact_metric_label}で"
+        f"{scope_label} {focus_rank}/{focus_total}位"
+        f"（{value_text}、{threshold_label}）"
+    )
     return Candidate(
         title=title,
         metric=combo.metric,
@@ -1572,6 +1831,7 @@ def _format_one(
         post_text=post_text,
         context_label=context_label,
         focus_player=str(focus_name or ""),
+        db_fact_line=db_fact_line,
     )
 
 
@@ -1923,7 +2183,7 @@ def build_subject(
 
 
 def _has_news_opinion_candidate(candidates: list[Candidate]) -> bool:
-    return any(c.metric == _NEWS_OPINION_METRIC for c in candidates)
+    return any(c.metric in {_NEWS_OPINION_METRIC, _COMMENT_DB_METRIC} for c in candidates)
 
 
 def _mail_header_label(candidates: list[Candidate]) -> str:

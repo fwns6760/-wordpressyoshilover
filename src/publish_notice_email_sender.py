@@ -2086,6 +2086,13 @@ def _is_recent_per_post_duplicate(
     return False
 
 
+def _duplicate_within_reason(duplicate_window: timedelta) -> str:
+    if duplicate_window >= timedelta(hours=24):
+        return "DUPLICATE_WITHIN_24H"
+    minutes = max(1, int(duplicate_window.total_seconds() // 60))
+    return f"DUPLICATE_WITHIN_{minutes}MIN"
+
+
 def _replay_window_dedup_enabled() -> bool:
     return str(os.environ.get(_REPLAY_WINDOW_DEDUP_ENV_FLAG, "")).strip().lower() in {
         "1",
@@ -3097,7 +3104,7 @@ def _deliver_mail(
         now=now,
         duplicate_window=duplicate_window,
     ):
-        return _suppressed("DUPLICATE_WITHIN_30MIN", subject=normalized_subject, recipients=recipients)
+        return _suppressed(_duplicate_within_reason(duplicate_window), subject=normalized_subject, recipients=recipients)
 
     mail_request = _BridgeMailRequest(
         to=recipients,

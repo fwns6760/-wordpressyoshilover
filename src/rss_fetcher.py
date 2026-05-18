@@ -1523,6 +1523,8 @@ SUBJECT_LABEL_STOPWORDS = {
     "今季",
     "班X",
     "巨人班X",
+    "先発",
+    "ファーム",
 }
 SOURCE_BRAND_LABELS = (
     ("スポーツ報知", "報知新聞"),
@@ -1564,6 +1566,7 @@ SUBJECT_CANDIDATE_STOPWORDS = {
     "シーズンシート",
     "ジャイアンツ球場",
     "東京ドーム",
+    "練習",
     "スタメン",
     "オーダー",
     "打順",
@@ -3555,6 +3558,7 @@ def _extract_subject_label(title: str, summary: str, category: str) -> str:
     player_role_pattern = rf"({subject_name_pattern}\s*(?:投手|捕手|内野手|外野手|選手))"
     staff_role_pattern = rf"({subject_name_pattern}\s*{staff_suffix_pattern})"
     priority_patterns = [
+        rf"(?:巨人|ジャイアンツ)\s*[・･]?\s*({japanese_subject_pattern})\s*(?:投手|捕手|内野手|外野手|選手)(?:が|は|も|を|に|で|、|「|（|\()",
         rf"^({subject_name_pattern})\s*(?:(?:投手|捕手|内野手|外野手|選手)?\s*)?(?:が|は|、|「)(?=.{{0,60}}(?:「|$))",
         rf"({japanese_subject_pattern})\s*(?:(?:投手|捕手|内野手|外野手|選手)?\s*)?(?:が|は|も|を|に|で|、|「)(?=.{{0,60}}(?:安打|盗塁|二盗|三盗|本塁打|適時打|コメント|登板|投球|好投|先発|打点|猛打賞|活躍|かく乱|登録|抹消|合流|復帰|昇格|スライド登板))",
         rf"(?:初先発の|先発の|(?:今日の)?先発は|選んだのは)({subject_name_pattern})(?:(?:投手|捕手|内野手|外野手|選手)?\s*(?:が|は|を|に|で|、|「))?",
@@ -4308,7 +4312,8 @@ def _extract_player_confirmed_fact_lines(title: str, summary: str, source_day_la
     if _extract_quote_phrases(f"{title}\n{summary}", max_phrases=1):
         comment_target = _extract_player_comment_target_label(title, summary)
         if comment_target:
-            _push_fact_line(f"コメントの主題は{comment_target}です")
+            subject_prefix = f"{subject}の" if subject else ""
+            _push_fact_line(f"{subject_prefix}コメントの主題は{comment_target}です")
 
     milestone_fact = _find_source_sentence_with_markers(
         title,

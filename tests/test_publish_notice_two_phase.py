@@ -48,7 +48,7 @@ class PublishNoticeTwoPhaseTests(unittest.TestCase):
             skip_reason=skip_reason,
         )
 
-    def _post(self, post_id: int, *, status: str = "publish", date: str = "2026-05-06T08:00:00+09:00") -> dict[str, object]:
+    def _post(self, post_id: int, *, status: str = "draft", date: str = "2026-05-06T08:00:00+09:00") -> dict[str, object]:
         return {
             "id": post_id,
             "title": {"rendered": f"公開記事 {post_id}"},

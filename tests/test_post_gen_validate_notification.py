@@ -361,7 +361,7 @@ class PostGenValidateNotificationTests(unittest.TestCase):
                     guarded_cursor_path=guarded_cursor_path,
                     post_gen_validate_history_path=post_gen_history_path,
                     post_gen_validate_cursor_path=post_gen_cursor_path,
-                    fetch=lambda base, after: [self._post(id=701, date="2026-04-30T14:45:00+09:00")],
+                    fetch=lambda base, after: [self._post(id=701, status="draft", date="2026-04-30T14:45:00+09:00")],
                     now=lambda: NOW,
                 )
 

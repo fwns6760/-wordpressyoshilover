@@ -235,7 +235,7 @@ class IngestVisibilityFixRound2Tests(unittest.TestCase):
                         queue_path=queue_path,
                         guarded_publish_history_path=guarded_history_path,
                         guarded_cursor_path=guarded_cursor_path,
-                        fetch=lambda base, after: [self._publish_post()],
+                        fetch=lambda base, after: [self._publish_post(status="draft")],
                         now=lambda: NOW,
                     )
 

@@ -302,7 +302,7 @@ class PublishNoticeBurstSummaryTests(unittest.TestCase):
         self.assertEqual(result, 777)
         self.assertEqual(sender.build_emergency_subject(request), "【緊急】X/SNS 確認 | YOSHILOVER")
 
-    def test_layer5_duplicate_within_30min_suppressed(self):
+    def test_layer5_duplicate_within_24h_suppressed(self):
         bridge_send = MagicMock(return_value=self._bridge_result())
         now = datetime(2026, 4, 26, 21, 0, tzinfo=sender.JST)
 
@@ -334,10 +334,10 @@ class PublishNoticeBurstSummaryTests(unittest.TestCase):
                 )
 
         self.assertEqual(result.status, "suppressed")
-        self.assertEqual(result.reason, "DUPLICATE_WITHIN_30MIN")
+        self.assertEqual(result.reason, "DUPLICATE_WITHIN_24H")
         bridge_send.assert_not_called()
 
-    def test_layer5_duplicate_after_30min_not_suppressed(self):
+    def test_layer5_duplicate_after_24h_not_suppressed(self):
         bridge_send = MagicMock(return_value=self._bridge_result())
         now = datetime(2026, 4, 26, 21, 0, tzinfo=sender.JST)
 
@@ -349,7 +349,7 @@ class PublishNoticeBurstSummaryTests(unittest.TestCase):
                         "status": "sent",
                         "reason": None,
                         "post_id": 100,
-                        "recorded_at": (now - timedelta(minutes=31)).isoformat(),
+                        "recorded_at": (now - timedelta(hours=24, minutes=1)).isoformat(),
                         "notice_kind": "per_post",
                     },
                     ensure_ascii=False,

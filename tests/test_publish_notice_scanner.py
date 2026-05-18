@@ -20,7 +20,7 @@ class PublishNoticeScannerTests(unittest.TestCase):
             "content": {"rendered": "<p>本文1段落目。</p><p>本文2段落目。</p>"},
             "link": "https://yoshilover.com/post-101/",
             "date": "2026-04-24T10:00:00+09:00",
-            "status": "publish",
+            "status": "draft",
             "meta": {"article_subtype": "postgame"},
         }
         payload.update(overrides)

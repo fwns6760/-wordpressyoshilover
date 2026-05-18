@@ -2135,7 +2135,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
             )
 
         self.assertEqual(result.status, "suppressed")
-        self.assertEqual(result.reason, "DUPLICATE_WITHIN_30MIN")
+        self.assertEqual(result.reason, "DUPLICATE_WITHIN_24H")
         bridge_send.assert_not_called()
 
     def test_send_replay_window_flag_off_ignores_recent_publish_history_overlap(self):
@@ -2862,11 +2862,7 @@ class MinimalBodyTests(unittest.TestCase):
 
 
 class HtmlBodyPerPostTests(unittest.TestCase):
-    """build_body_html_per_post: HTML alternative carrying 2 tap-large
-    buttons — 「記事を見る」 (canonical URL) and 「𝕏 で投稿」 (X intent
-    URL pre-filled with title + URL). No paid API, X intent is the free
-    public compose-prefill URL X exposes for everyone.
-    """
+    """build_body_html_per_post: HTML alternative for draft-first mail."""
 
     def _request(self, **overrides):
         payload = {
@@ -2896,7 +2892,7 @@ class HtmlBodyPerPostTests(unittest.TestCase):
         )
         self.assertIsNone(result)
 
-    def test_html_contains_title_url_and_x_intent_button(self):
+    def test_html_contains_title_url_and_article_button_only(self):
         html_body = sender.build_body_html_per_post(self._request())
         self.assertIsNotNone(html_body)
         # Title is escaped and rendered
@@ -2904,19 +2900,8 @@ class HtmlBodyPerPostTests(unittest.TestCase):
         # Canonical URL appears as the 「記事を見る」 button href + text
         self.assertIn('href="https://yoshilover.com/post-123/"', html_body)
         self.assertIn("記事を見る", html_body)
-        # X intent URL — must have both ?text= (title) and &url= (canonical)
-        self.assertIn("x.com/intent/tweet", html_body)
-        self.assertIn("text=", html_body)
-        self.assertIn("&amp;url=", html_body)  # HTML-escaped in attribute
-        self.assertIn("𝕏 で投稿", html_body)
-
-    def test_html_intent_url_is_percent_encoded(self):
-        from urllib.parse import quote
-        html_body = sender.build_body_html_per_post(self._request())
-        expected_text = quote("巨人が接戦を制した", safe="")
-        expected_url = quote("https://yoshilover.com/post-123/", safe="")
-        self.assertIn(f"text={expected_text}", html_body)
-        self.assertIn(f"url={expected_url}", html_body)
+        self.assertNotIn("x.com/intent/tweet", html_body)
+        self.assertNotIn("𝕏 で投稿", html_body)
 
     def test_html_escapes_dangerous_title_chars(self):
         # If a title contained < > & " they must be HTML-escaped so the
@@ -2926,52 +2911,27 @@ class HtmlBodyPerPostTests(unittest.TestCase):
         self.assertNotIn("<script>", html_body)
         self.assertIn("&lt;script&gt;", html_body)
 
-    def test_html_intent_url_contains_fixed_giants_hashtag(self):
-        """Every per-post intent URL must include the fixed `#巨人`
-        hashtag so the manual X repost feeds carry a discoverable tag."""
+    def test_html_omits_x_intent_hashtag_param(self):
         html_body = sender.build_body_html_per_post(self._request())
-        # hashtags param appears HTML-escaped in attributes
-        self.assertIn("&amp;hashtags=", html_body)
-        # 巨人 is URL-encoded inside the hashtags value
-        from urllib.parse import quote
-        self.assertIn(quote("巨人", safe=""), html_body)
+        self.assertNotIn("&amp;hashtags=", html_body)
 
-    def test_html_intent_url_includes_player_names_from_title(self):
-        """When the title contains Giants allowlist player names, they
-        are appended to the intent URL hashtags param."""
+    def test_html_omits_player_hashtag_intent_from_title(self):
         req = self._request(
             title="坂本勇人の逆転サヨナラ３００号",
         )
         html_body = sender.build_body_html_per_post(req)
-        from urllib.parse import quote
-        # Both 巨人 (fixed) and 坂本勇人 (detected from title) must show up
-        self.assertIn(quote("巨人", safe=""), html_body)
-        self.assertIn(quote("坂本勇人", safe=""), html_body)
-        # Both inside the single &hashtags= param, comma-joined
-        self.assertIn("&amp;hashtags=", html_body)
+        self.assertIn("坂本勇人の逆転サヨナラ３００号", html_body)
+        self.assertNotIn("&amp;hashtags=", html_body)
+        self.assertNotIn("x.com/intent/tweet", html_body)
 
-    def test_html_intent_url_omits_non_player_words(self):
-        """Non-player words from the title (event tokens etc.) must NOT
-        leak into hashtags — only Giants allowlist player names plus the
-        fixed `#巨人` tag are emitted. The title itself still appears in
-        ``text=`` (the tweet body), so we inspect only the hashtags
-        param value, not the whole HTML body.
-        """
-        import re
-        from urllib.parse import unquote, urlparse, parse_qs
+    def test_html_omits_x_intent_for_non_player_title(self):
         req = self._request(
             title="逆転サヨナラ３００号",  # no player name in title
         )
         html_body = sender.build_body_html_per_post(req)
-        # Pull the X intent URL out of the HTML (still HTML-escaped).
-        match = re.search(r'href="(https://x\.com/intent/tweet[^"]+)"', html_body)
-        self.assertIsNotNone(match)
-        intent_url = match.group(1).replace("&amp;", "&")
-        hashtags_q = parse_qs(urlparse(intent_url).query).get("hashtags", [])
-        self.assertEqual(hashtags_q, ["巨人"], "only fixed 巨人 hashtag expected")
-        hashtags_value = unquote(hashtags_q[0])
-        self.assertNotIn("サヨナラ", hashtags_value)
-        self.assertNotIn("３００号", hashtags_value)
+        self.assertIn("逆転サヨナラ３００号", html_body)
+        self.assertNotIn("&amp;hashtags=", html_body)
+        self.assertNotIn("x.com/intent/tweet", html_body)
 
     # --- 379-OPS (GH #53): 「公開してX投稿画面へ」 + 「WP編集画面で確認」 button ---
 
@@ -3005,16 +2965,14 @@ class HtmlBodyPerPostTests(unittest.TestCase):
         self.assertIn("✏️ WP編集画面で確認", html_body)
         self.assertIn("wp-admin/post.php?post=123", html_body)
 
-    def test_publish_button_comes_before_x_intent_in_html(self):
-        """UX: 公開してX投稿画面へ は X intent ボタンより上に置く."""
+    def test_publish_button_is_primary_without_x_intent_button(self):
         url = "https://fetcher.test/publish-and-tweet?post_id=1&token=t.h"
         req = self._request(publish_button_url=url)
         html_body = sender.build_body_html_per_post(req)
         publish_pos = html_body.find("公開してX投稿画面へ")
-        x_intent_pos = html_body.find("𝕏 で投稿")
         self.assertGreater(publish_pos, 0)
-        self.assertGreater(x_intent_pos, 0)
-        self.assertLess(publish_pos, x_intent_pos)
+        self.assertNotIn("𝕏 で投稿", html_body)
+        self.assertNotIn("x.com/intent/tweet", html_body)
 
 
 class XIntentHashtagBuilderTests(unittest.TestCase):

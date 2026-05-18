@@ -2,7 +2,7 @@
 
 ## meta
 
-- status: DESIGN_REVIEW_NEEDED (377-OPS Phase 1C 完了 が前提依存)
+- status: LIVE_DEPLOYED_OBSERVE (2026-05-18、 同 session で実装 + deploy)
 - priority: P2 (運用効率改善、 user 判断必須は維持)
 - owner: Claude
 - created: 2026-05-18
@@ -143,12 +143,41 @@
 
 ## next action
 
-1. 377-OPS Phase 1C 完了待ち (mail body populate)
-2. user に本 ticket の設計詳細を 7 点提示 → 設計確定
-3. token design (HMAC + 期限 + 1 回限り の実装方式)
-4. mail スキャナ対策 (confirmation page 方式 vs POST-only 方式) を 決定
-5. test scenario 確定
-6. 実装
+2026-05-18 着地: 全項目 1-6 完了。 残り:
+- mail 自然 fire 後の user 受信 mail に「公開してX投稿画面へ:」 link が含まれるか目視 verify
+- ボタン click → confirmation page → 公開 → X intent 遷移の 1 click 動作 verify
+- 21:05 JST 以降の publish-notice 自然 fire (publish-notice-trigger-evening cron `5,35 16-22`) で観察
+
+## 着地 log (2026-05-18)
+
+commit `9fdbeca`:
+- `src/publish_button_token.py`: HMAC + 24h expiry + URL builder (28 tests)
+- `src/publish_button_handler.py`: GET confirmation page + POST publish→302 X intent (23 tests)
+- `src/server.py`: GET/POST `/publish-and-tweet` 配線
+- `src/publish_notice_email_sender.py`: `publish_button_url` field + minimal/standard mode 描画 (5 tests)
+- `src/publish_notice_scanner.py`: `_resolve_fetcher_base_url` + populate + rewrap 継承
+- `src/tools/run_publish_notice_email_dry_run.py`: dry-run field 追加
+
+Cloud Build:
+- yoshilover-fetcher: build `717d9e6e` SUCCESS 2m7s、 image `379-publish-button-9fdbeca` digest `sha256:002393725ab8...`
+- publish-notice: build `ea417159` SUCCESS 4m3s、 image `379-publish-button-9fdbeca` digest `sha256:4f8f9cdc0789...`
+
+Deploy:
+- yoshilover-fetcher service: revision `00425-vmd` 100% traffic、 旧 rev `00424-sc8` (RUN_DRAFT_ONLY=True 適用 Phase 2 直後の rev) を rollback 用に Cloud Run history で保持
+- publish-notice Job: image 更新 Ready=True、 旧 image `377-phase1c-0467180` (Phase 1C deploy 直後) を rollback 用に保持
+
+Smoke test (curl 実 verify):
+- `GET /health` → 200
+- `GET /publish-and-tweet?post_id=abc&token=xyz` → 400 (invalid post_id、 想定通り)
+- `GET /publish-and-tweet?post_id=999999&token=invalid.token` → 403 (invalid token、 想定通り)
+
+verification:
+- publish_notice + publish_button 系 396 tests passed、 regression 0
+- py_compile PASS
+
+env / Scheduler / Secret は **未変更**:
+- 必須 env なし (FETCHER_PUBLIC_BASE_URL 未設定でも default で動く)
+- PUBLISH_BUTTON_TOKEN_SECRET も default 定数 fallback (yoshilover noindex 環境用、 必要に応じて後で Secret Manager に移行可能)
 
 ## user GO 待ち事項 (現時点)
 

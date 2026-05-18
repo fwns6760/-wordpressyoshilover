@@ -1390,12 +1390,11 @@ def _default_fetch(base_url: str, after_iso: str) -> list[Mapping[str, Any]]:
     #      entry が永久 lost (今回の 11:02 drafts incident、 2026-05-18)。 必ず直近 6h を
     #      再 fetch することで取りこぼしを catch、 重複 mail は per-post-id dedup で防止。
     effective_after = _apply_fetch_freshness_backcap(after_iso)
-    # WP REST: status は comma-separated 形式で複数指定可。
-    # `status[]` 配列形式は認証付き context=edit 下で draft を返さない挙動を verify 済 (2026-05-18)、
-    # comma 形式の `status=publish,draft` を採用 (manual curl で draft+publish 両方返却確認)。
+    # 2026-05-18 user 仕様: 新規 draft 通知のみ。 publish 済記事の編集 modified は mail 対象外。
+    # 377-OPS Phase 2 で全 subtype が draft 着地するため、 status=draft で過不足なし。
     query = urlencode(
         {
-            "status": "publish,draft",
+            "status": "draft",
             "modified_after": effective_after,
             "per_page": 100,
             "orderby": "modified",
@@ -2973,9 +2972,8 @@ def _scan_direct_publish_phase(
 
     for post in posts:
         post_status = str(post.get("status") or "").strip().lower()
-        # 377-OPS Phase 2 (2026-05-18) RUN_DRAFT_ONLY=True で新規記事は draft 着地。
-        # publish (legacy + status flip) + draft (新規、 user 判断待ち) 両方 mail 対象。
-        if post_status not in {"publish", "draft"}:
+        # 2026-05-18 user 仕様: 新規 draft 通知のみ、 publish は mail 不要。
+        if post_status != "draft":
             continue
 
         post_id = post.get("id", "")

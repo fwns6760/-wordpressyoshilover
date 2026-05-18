@@ -114,6 +114,9 @@ def _request_from_payload(payload: dict[str, Any]) -> PublishNoticeRequest:
         is_backlog=payload.get("is_backlog"),
         notice_kind=str(payload.get("notice_kind") or "publish"),
         subject_override=None if payload.get("subject_override") is None else str(payload.get("subject_override")),
+        # 377-OPS Phase 1C (GH #51): dry-run でも body_excerpt / admin_edit_url を渡せるように
+        body_excerpt=None if payload.get("body_excerpt") is None else str(payload.get("body_excerpt")),
+        admin_edit_url=None if payload.get("admin_edit_url") is None else str(payload.get("admin_edit_url")),
     )
 
 

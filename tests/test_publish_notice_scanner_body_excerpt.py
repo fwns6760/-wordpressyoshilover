@@ -150,5 +150,80 @@ class RequestFromPostPopulateTests(unittest.TestCase):
         assert req.summary is not None
 
 
+class EndToEndIntegrationTests(unittest.TestCase):
+    """WP post dict → scanner._request_from_post → email_sender.build_body_text の
+    全パスで body_excerpt + admin link が mail 本文に到達することを verify する
+    integration test."""
+
+    def test_full_pipeline_includes_body_and_admin_link_in_mail_body(self):
+        from src.publish_notice_email_sender import build_body_text
+
+        wp_post = {
+            "id": 999,
+            "title": {"rendered": "巨人 5-2 中日 戸郷 7 回好投"},
+            "excerpt": {"rendered": "<p>巨人が中日に勝利。</p>"},
+            "content": {
+                "rendered": (
+                    "<h2>試合結果</h2>"
+                    "<p>巨人 5-2 中日。 戸郷翔征が 7 回 1 失点と好投、 救援陣も無失点で繋いだ。 "
+                    "打線は岡本和真の 3 試合連続 HR、 坂本勇人のタイムリー二塁打で 5 点を奪った。</p>"
+                    "<h2>勝敗投手</h2>"
+                    "<p>勝利投手: 戸郷翔征 (3 勝 1 敗) / 敗戦投手: 大野雄大 (2 勝 2 敗)</p>"
+                    "<h2>💬 ファンの声</h2>"
+                    "<blockquote class=\"twitter-tweet\"><p>戸郷ナイスピッチング</p></blockquote>"
+                )
+            },
+            "link": "https://yoshilover.com/post-999/",
+            "date": "2026-05-18T22:00:00+09:00",
+            "status": "publish",
+            "meta": {"article_subtype": "postgame"},
+        }
+        env = {"WP_URL": "https://yoshilover.com"}
+        with patch.dict(os.environ, env, clear=True):
+            req = scanner._request_from_post(wp_post)
+            body_text = build_body_text(req)
+
+        # mail body に本文抜粋が含まれる
+        assert "本文(抜粋):" in body_text
+        assert "巨人 5-2 中日" in body_text
+        assert "戸郷翔征" in body_text
+        assert "岡本和真" in body_text
+        # mail body に admin link が含まれる
+        assert "編集 / 公開:" in body_text
+        assert (
+            "https://yoshilover.com/wp-admin/post.php?post=999&action=edit"
+            in body_text
+        )
+        # X embed と ファンの声 section は mail body に出ない
+        assert "ファンの声" not in body_text
+        assert "戸郷ナイスピッチング" not in body_text
+        # title と canonical URL も従来通り出る
+        assert "巨人 5-2 中日 戸郷 7 回好投" in body_text
+        assert "https://yoshilover.com/post-999/" in body_text
+
+    def test_full_pipeline_without_env_still_provides_body_but_no_admin_link(self):
+        from src.publish_notice_email_sender import build_body_text
+
+        wp_post = {
+            "id": 888,
+            "title": {"rendered": "テスト"},
+            "excerpt": {"rendered": ""},
+            "content": {"rendered": "<p>本文があるだけ。</p>"},
+            "link": "https://yoshilover.com/post-888/",
+            "date": "2026-05-18T20:00:00+09:00",
+            "status": "publish",
+            "meta": {"article_subtype": "news"},
+        }
+        with patch.dict(os.environ, {}, clear=True):
+            req = scanner._request_from_post(wp_post)
+            body_text = build_body_text(req)
+
+        # 本文 excerpt は env なしでも populate される
+        assert "本文(抜粋):" in body_text
+        assert "本文があるだけ。" in body_text
+        # admin link は env なしなら出ない (fail-open)
+        assert "編集 / 公開:" not in body_text
+
+
 if __name__ == "__main__":
     unittest.main()

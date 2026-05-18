@@ -15,12 +15,15 @@ Cloud Run Job entrypoint: ``python -m src.tools.run_x_post_mail``.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Sequence
+from urllib import request as urlrequest
+from urllib.error import URLError
 from zoneinfo import ZoneInfo
 
 if __package__ in {None, ""}:  # pragma: no cover - direct script execution
@@ -37,6 +40,10 @@ LOG = logging.getLogger("x_post_mail")
 DEFAULT_MAX_DB_STALENESS_DAYS = 2
 DEFAULT_DEDUP_MIN_CANDIDATES = 3
 DEFAULT_LINEUP_FOCUS_MIN_CANDIDATES = 1
+DEFAULT_NEWS_FALLBACK_SOURCE_LIMIT = 4
+DEFAULT_NEWS_FALLBACK_ENTRY_LIMIT = 5
+DEFAULT_NEWS_FALLBACK_TIMEOUT_SECONDS = 4
+RSS_SOURCES_FILE = Path(__file__).resolve().parents[2] / "config" / "rss_sources.json"
 
 
 def _configure_logging() -> None:
@@ -138,6 +145,24 @@ def _lineup_focus_disabled() -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def _news_fallback_disabled() -> bool:
+    raw = (os.environ.get("X_POST_MAIL_NEWS_FALLBACK_DISABLED") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _resolve_int_env(name: str, default: int, *, min_value: int = 0) -> int:
+    raw = (os.environ.get(name) or str(default)).strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        LOG.warning("Invalid %s=%r; using default %d", name, raw, default)
+        return default
+    if value < min_value:
+        LOG.warning("Invalid %s=%r; using default %d", name, raw, default)
+        return default
+    return value
+
+
 def _fetch_today_lineup_focus_names() -> list[str]:
     """Scrape today's Giants lineup and return canonical player names.
 
@@ -164,6 +189,146 @@ def _fetch_today_lineup_focus_names() -> list[str]:
     else:
         LOG.info("Lineup focus unavailable: no lineup rows returned")
     return names
+
+
+def _load_news_fallback_sources(path: Path = RSS_SOURCES_FILE) -> list[dict]:
+    try:
+        sources = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("news/opinion fallback source load failed: %r", exc)
+        return []
+    out: list[dict] = []
+    for source in sources:
+        source_type = str(source.get("type") or "")
+        roles = source.get("role") or []
+        if isinstance(roles, str):
+            roles = [roles]
+        if source_type not in {"news", "social_news"}:
+            continue
+        if source_type == "social_news" and "article_source" not in roles:
+            continue
+        url = str(source.get("url") or "").strip()
+        if not url.startswith(("http://", "https://")):
+            continue
+        out.append(source)
+    return out
+
+
+def _fetch_feed_entries(source: dict, *, timeout_seconds: int) -> list[dict]:
+    try:
+        import feedparser
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("news/opinion fallback feedparser import failed: %r", exc)
+        return []
+    url = str(source.get("url") or "")
+    req = urlrequest.Request(
+        url,
+        headers={
+            "User-Agent": "yoshilover-x-post-mail/1.0",
+            "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+        },
+    )
+    try:
+        with urlrequest.urlopen(req, timeout=timeout_seconds) as response:  # noqa: S310
+            data = response.read()
+    except (OSError, URLError) as exc:
+        LOG.warning(
+            "news/opinion fallback fetch failed source=%s url=%s error=%r",
+            source.get("name"),
+            url,
+            exc,
+        )
+        return []
+    parsed = feedparser.parse(data)
+    return list(parsed.entries or [])
+
+
+def _entry_text(entry: dict) -> tuple[str, str, str]:
+    title = str(entry.get("title") or "").strip()
+    link = str(entry.get("link") or entry.get("id") or "").strip()
+    summary = str(
+        entry.get("summary")
+        or entry.get("description")
+        or entry.get("subtitle")
+        or ""
+    ).strip()
+    return title, link, summary
+
+
+def _fetch_news_opinion_fallback_candidates(
+    existing_candidates: list[lane.Candidate],
+    *,
+    max_candidates: int,
+    now: datetime,
+) -> list[lane.Candidate]:
+    """Fill sparse data mails with source-backed news/opinion candidates.
+
+    This fallback reads public RSS/Atom feeds only. It does not call WP,
+    X API, LLMs, or the ``article_candidates`` table.
+    """
+    needed = max(0, max_candidates - len(existing_candidates))
+    if needed <= 0:
+        return []
+    if _news_fallback_disabled():
+        LOG.info("News/opinion fallback disabled by X_POST_MAIL_NEWS_FALLBACK_DISABLED")
+        return []
+    source_limit = _resolve_int_env(
+        "X_POST_MAIL_NEWS_FALLBACK_SOURCE_LIMIT",
+        DEFAULT_NEWS_FALLBACK_SOURCE_LIMIT,
+        min_value=0,
+    )
+    entry_limit = _resolve_int_env(
+        "X_POST_MAIL_NEWS_FALLBACK_ENTRY_LIMIT",
+        DEFAULT_NEWS_FALLBACK_ENTRY_LIMIT,
+        min_value=1,
+    )
+    timeout_seconds = _resolve_int_env(
+        "X_POST_MAIL_NEWS_FALLBACK_TIMEOUT_SECONDS",
+        DEFAULT_NEWS_FALLBACK_TIMEOUT_SECONDS,
+        min_value=1,
+    )
+    if source_limit <= 0:
+        return []
+    existing_player_keys = {
+        lane._normalize_player_name(c.focus_player)
+        for c in existing_candidates
+        if lane._normalize_player_name(c.focus_player)
+    }
+    seen_urls: set[str] = set()
+    out: list[lane.Candidate] = []
+    for source in _load_news_fallback_sources()[:source_limit]:
+        if len(out) >= needed:
+            break
+        for entry in _fetch_feed_entries(source, timeout_seconds=timeout_seconds)[:entry_limit]:
+            if len(out) >= needed:
+                break
+            title, link, summary = _entry_text(entry)
+            if not title or not link or link in seen_urls:
+                continue
+            player = lane.detect_giants_player_name(f"{title} {summary}")
+            player_key = lane._normalize_player_name(player)
+            if not player_key or player_key in existing_player_keys:
+                continue
+            cand = lane.build_news_opinion_candidate(
+                source_title=title,
+                source_url=link,
+                source_excerpt=summary,
+                source_name=str(source.get("name") or ""),
+                player_name=player,
+                now=now,
+            )
+            if cand is None:
+                continue
+            out.append(cand)
+            seen_urls.add(link)
+            existing_player_keys.add(player_key)
+            LOG.info(
+                "news_opinion_fallback_candidate_added source=%s player=%s url=%s",
+                source.get("name"),
+                player,
+                link,
+            )
+    return out
 
 
 def _backfill_dedup_starved_candidates(
@@ -345,6 +510,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             LOG.info(
                 "Dedup fallback found no additional candidates (relaxed=%d)",
                 len(relaxed_candidates),
+            )
+    if len(candidates) < args.max_candidates:
+        fallback_candidates = _fetch_news_opinion_fallback_candidates(
+            candidates,
+            max_candidates=args.max_candidates,
+            now=now_jst,
+        )
+        if fallback_candidates:
+            before = len(candidates)
+            candidates = candidates + fallback_candidates
+            LOG.info(
+                "News/opinion fallback filled candidates: %d -> %d",
+                before,
+                len(candidates),
             )
     if not candidates:
         LOG.warning("No candidates generated — skip send (insight.db likely sparse).")

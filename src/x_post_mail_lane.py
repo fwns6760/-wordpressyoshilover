@@ -20,6 +20,7 @@ Hard constraints (mirrors ticket 347):
 from __future__ import annotations
 
 import html as _html
+import hashlib as _hashlib
 import json as _json
 import logging
 import math as _math
@@ -790,6 +791,109 @@ class Candidate:
     focus_player: str = ""
 
 
+_DEFAULT_PLAYER_MAX_PER_MAIL = 2
+_NEWS_OPINION_METRIC = "NEWS_OPINION"
+
+
+def _truncate_text(value: object, max_chars: int) -> str:
+    text = " ".join(str(value or "").split())
+    if max_chars <= 0:
+        return ""
+    if len(text) <= max_chars:
+        return text
+    return text[: max(0, max_chars - 1)].rstrip() + "…"
+
+
+def detect_giants_player_name(
+    text: object,
+    *,
+    alias_map: Optional[dict[str, str]] = None,
+) -> str:
+    """Return a source-evidence player name mentioned in ``text``.
+
+    This is used only for news/opinion fallback candidates. It does not
+    infer a player from context; it requires an active Giants roster
+    alias to appear in the source title/summary text.
+    """
+    normalized_text = _normalize_player_name(text)
+    if not normalized_text:
+        return ""
+    aliases = alias_map if alias_map is not None else _load_giants_player_aliases()
+    if not aliases:
+        return ""
+    for key, canonical in sorted(aliases.items(), key=lambda item: len(item[0]), reverse=True):
+        if len(key) < 2 and key != "丸":
+            continue
+        if len(key) < 2 and "巨人" not in str(text) and "ジャイアンツ" not in str(text):
+            continue
+        if key and key in normalized_text:
+            return str(canonical or "").strip()
+    return ""
+
+
+def build_news_opinion_candidate(
+    *,
+    source_title: str,
+    source_url: str,
+    player_name: str,
+    source_name: str = "",
+    source_excerpt: str = "",
+    now: Optional[datetime] = None,  # noqa: ARG001 - kept for caller symmetry/tests
+) -> Optional[Candidate]:
+    """Build a fallback X candidate from explicit source text only.
+
+    The generated post avoids invented stats, quotes, and claims. It
+    names the player only when the caller supplies a detected roster
+    match from the source title/summary.
+    """
+    title = _truncate_text(source_title, 70)
+    player = str(player_name or "").strip()
+    url = str(source_url or "").strip()
+    if not title or not url or not player:
+        return None
+    source = _truncate_text(source_name, 28)
+    title_for_post = _truncate_text(title, 48)
+    post_text = (
+        "巨人ニュースのメモ。\n\n"
+        f"{player}の話題です。\n"
+        f"見出しは「{title_for_post}」。\n\n"
+        "数字だけでは見えない流れとして、あとで見返したい材料です。\n\n"
+        "この話題、どう見ますか？\n"
+        "#巨人 #ジャイアンツ"
+    )
+    if len(post_text) > X_CHAR_LIMIT:
+        title_for_post = _truncate_text(title, 28)
+        post_text = (
+            "巨人ニュースのメモ。\n\n"
+            f"{player}の話題です。\n"
+            f"見出しは「{title_for_post}」。\n\n"
+            "あとで見返したい材料です。\n\n"
+            "この話題、どう見ますか？\n"
+            "#巨人 #ジャイアンツ"
+        )
+    proof_lines = [
+        "【ニュース意見 fallback】",
+        f"source: {source or 'unknown'}",
+        f"title: {title}",
+        f"url: {url}",
+        f"detected_player: {player}",
+    ]
+    excerpt = _truncate_text(source_excerpt, 120)
+    if excerpt:
+        proof_lines.append(f"excerpt: {excerpt}")
+    signature_hash = _hashlib.sha1(f"{url}\n{player}".encode("utf-8")).hexdigest()[:16]
+    return Candidate(
+        title=f"ニュース意見｜{player}｜{title}",
+        metric=_NEWS_OPINION_METRIC,
+        period_label="ニュース意見",
+        draft_text="\n".join(proof_lines),
+        char_count=len(post_text),
+        signature=f"news_opinion|{signature_hash}|False|None",
+        post_text=post_text,
+        focus_player=player,
+    )
+
+
 def _rebuild_ranks_within_central(rows: list[dict]) -> list[dict]:
     """After filtering to セ-only, rewrite ``rank`` so the column shows
     1..N within the 6-team scope (not the 12-team residual).
@@ -809,6 +913,7 @@ def _top_giants_row(
 ) -> Optional[dict]:
     """Return the highest-ranked Giants row from already-ranked rows."""
     focus_names = focus_player_names or set()
+    avoid_names = avoid_player_names or set()
     if focus_names:
         matches = [
             row for row in rows
@@ -817,17 +922,21 @@ def _top_giants_row(
         ]
         if not matches:
             return None
-        avoid_names = avoid_player_names or set()
         if avoid_names:
             for row in matches:
                 player_key = _normalize_player_name(row.get("player_canonical"))
                 if player_key and player_key not in avoid_names:
                     return row
         return matches[0]
-    for row in rows:
-        if _is_giants(row.get("team_code")):
-            return row
-    return None
+    matches = [row for row in rows if _is_giants(row.get("team_code"))]
+    if not matches:
+        return None
+    if avoid_names:
+        for row in matches:
+            player_key = _normalize_player_name(row.get("player_canonical"))
+            if player_key and player_key not in avoid_names:
+                return row
+    return matches[0]
 
 
 def _rows_with_giants_focus(
@@ -1416,6 +1525,7 @@ def pick_candidates(
     dedup_set: Optional[set[str]] = None,
     focus_player_names: Optional[list[str] | tuple[str, ...] | set[str]] = None,
     context_label: str = "",
+    max_per_player: int = _DEFAULT_PLAYER_MAX_PER_MAIL,
 ) -> list[Candidate]:
     """Build up to ``max_candidates`` セ-only X post candidates.
 
@@ -1451,10 +1561,16 @@ def pick_candidates(
         Optional player-name gate, normally today's Giants lineup. When
         provided, a candidate is emitted only if the highest available
         Giants row for that ranking belongs to one of these players.
+    max_per_player:
+        380: upper bound for the same focused player inside one mail.
+        Distinct players are preferred first; duplicates are kept only
+        as a fallback so the mail does not disappear.
     """
     if now is None:
         now = datetime.now(JST)
+    player_cap = max(1, int(max_per_player or _DEFAULT_PLAYER_MAX_PER_MAIL))
     out: list[Candidate] = []
+    used_player_counts: dict[str, int] = {}
     focus_names = normalize_focus_player_names(focus_player_names)
     focus_input_count = len(
         {
@@ -1541,10 +1657,16 @@ def pick_candidates(
                      combo.period_label, combo.position)
             continue
         rows = _rebuild_ranks_within_central(rows)
-        avoid_names = (
+        diversity_avoid_names = set(used_player_counts)
+        focus_avoid_names = (
             used_focus_player_keys
             if focus_names and len(used_focus_player_keys) < focus_input_count
             else set()
+        )
+        avoid_names = diversity_avoid_names | focus_avoid_names
+        top_without_avoid = _top_giants_row(
+            rows,
+            focus_player_names=focus_names,
         )
         if _top_giants_row(
             rows,
@@ -1571,7 +1693,43 @@ def pick_candidates(
                 and focus_player_key in used_focus_player_keys
                 and len(used_focus_player_keys) < focus_input_count
             )
-            if is_focus_repeat:
+            player_count = (
+                used_player_counts.get(focus_player_key, 0)
+                if focus_player_key
+                else 0
+            )
+            is_player_repeat = bool(focus_player_key) and player_count > 0
+            top_player_key = (
+                _normalize_player_name(top_without_avoid.get("player_canonical"))
+                if top_without_avoid
+                else ""
+            )
+            if (
+                focus_player_key
+                and top_player_key
+                and focus_player_key != top_player_key
+                and top_player_key in diversity_avoid_names
+            ):
+                LOG.info(
+                    "player_diversity_alternate_selected metric=%s period=%s "
+                    "skipped_player=%s selected_player=%s",
+                    combo.metric,
+                    combo.period_label,
+                    top_without_avoid.get("player_canonical"),
+                    candidate.focus_player,
+                )
+            if is_focus_repeat or is_player_repeat:
+                if focus_player_key and player_count >= player_cap:
+                    LOG.info(
+                        "player_diversity_cap_skip metric=%s period=%s "
+                        "player=%s count=%d cap=%d",
+                        combo.metric,
+                        combo.period_label,
+                        candidate.focus_player,
+                        player_count,
+                        player_cap,
+                    )
+                    continue
                 if family_key not in repeat_backlog_families:
                     repeat_backlog.append((family_key, candidate))
                     repeat_backlog_families.add(family_key)
@@ -1579,14 +1737,45 @@ def pick_candidates(
             out.append(candidate)
             seen_period_families.add(family_key)
             if focus_player_key:
+                used_player_counts[focus_player_key] = player_count + 1
                 used_focus_player_keys.add(focus_player_key)
     for family_key, candidate in repeat_backlog:
         if len(out) >= max_candidates:
             break
         if family_key in seen_period_families:
             continue
+        focus_player_key = _normalize_player_name(candidate.focus_player)
+        player_count = (
+            used_player_counts.get(focus_player_key, 0)
+            if focus_player_key
+            else 0
+        )
+        if focus_player_key and player_count >= player_cap:
+            LOG.info(
+                "player_diversity_backlog_cap_skip metric=%s period=%s "
+                "player=%s count=%d cap=%d",
+                candidate.metric,
+                candidate.period_label,
+                candidate.focus_player,
+                player_count,
+                player_cap,
+            )
+            continue
+        if focus_player_key:
+            LOG.info(
+                "player_diversity_duplicate_fallback metric=%s period=%s "
+                "player=%s count_before=%d cap=%d",
+                candidate.metric,
+                candidate.period_label,
+                candidate.focus_player,
+                player_count,
+                player_cap,
+            )
         out.append(candidate)
         seen_period_families.add(family_key)
+        if focus_player_key:
+            used_player_counts[focus_player_key] = player_count + 1
+            used_focus_player_keys.add(focus_player_key)
     return out[:max_candidates]
 
 
@@ -1635,6 +1824,16 @@ def build_subject(
     )
 
 
+def _has_news_opinion_candidate(candidates: list[Candidate]) -> bool:
+    return any(c.metric == _NEWS_OPINION_METRIC for c in candidates)
+
+
+def _mail_header_label(candidates: list[Candidate]) -> str:
+    if _has_news_opinion_candidate(candidates):
+        return "巨人Xポスト案"
+    return "巨人データXポスト案"
+
+
 def _compose_text_body(
     candidates: list[Candidate],
     now: datetime,
@@ -1642,8 +1841,9 @@ def _compose_text_body(
     context_note: str = "",
 ) -> str:
     band = time_band_label(now.hour)
+    header_label = _mail_header_label(candidates)
     parts = [
-        f"📮 巨人データXポスト案 — {band} / {now.strftime('%Y-%m-%d %H:%M')} JST",
+        f"📮 {header_label} — {band} / {now.strftime('%Y-%m-%d %H:%M')} JST",
         "",
         "公開通知ではありません。X に手動投稿するための候補メールです。",
         "各候補のテキストをコピーして X アプリに貼り付けて投稿してください。",
@@ -1679,6 +1879,7 @@ def _compose_html_body(
     context_note: str = "",
 ) -> str:
     band = time_band_label(now.hour)
+    header_label = _mail_header_label(candidates)
     rows_html: list[str] = []
     for idx, cand in enumerate(candidates, start=1):
         post_text = _candidate_post_text(cand)
@@ -1725,11 +1926,11 @@ def _compose_html_body(
     return (
         "<!DOCTYPE html>\n"
         "<html lang=\"ja\"><head><meta charset=\"utf-8\">"
-        "<title>巨人データXポスト案</title></head>"
+        f"<title>{_html.escape(header_label)}</title></head>"
         "<body style=\"font-family:-apple-system,BlinkMacSystemFont,"
         "'Hiragino Sans','Yu Gothic',sans-serif;color:#222;"
         "max-width:680px;margin:0 auto;padding:18px;\">"
-        f"<h2 style=\"font-size:17px;margin:0 0 8px;\">📮 巨人データXポスト案 — {band} / "
+        f"<h2 style=\"font-size:17px;margin:0 0 8px;\">📮 {_html.escape(header_label)} — {band} / "
         f"{now.strftime('%Y-%m-%d %H:%M')} JST</h2>"
         "<p style=\"font-size:13px;color:#555;margin:0 0 14px;\">"
         "公開通知ではなく、X に手動投稿するための候補メールです。"
@@ -1764,6 +1965,8 @@ def compose_mail(
 ) -> ComposedMail:
     if now is None:
         now = datetime.now(JST)
+    if not context_label and _has_news_opinion_candidate(candidates):
+        context_label = "データ+ニュース意見"
     subject = build_subject(now, len(candidates), context_label=context_label)
     text_body = _compose_text_body(candidates, now, context_note=context_note)
     html_body = _compose_html_body(candidates, now, context_note=context_note)

@@ -2,7 +2,7 @@
 
 ## status
 
-- **status**: READY
+- **status**: REVIEW_NEEDED
 - **owner**: Codex
 - **lane**: B
 - **created**: 2026-05-18 JST
@@ -168,6 +168,69 @@ Confirmed from code:
 - Same player across different metrics is not generally capped.
 - On this run, lineup focus was unavailable, so the focus player spread path did not apply.
 - Current 347 lane explicitly says `article_candidates` is never read or written, so news/opinion fallback is not implemented in the current lane.
+
+## implementation evidence — 2026-05-18 JST
+
+Changed files:
+
+- `src/x_post_mail_lane.py`
+- `src/tools/run_x_post_mail.py`
+- `tests/test_x_post_mail.py`
+
+Implemented:
+
+- Same-player cap added to `pick_candidates()` with default `max_per_player=2`.
+- When a ranking's top Giants row is an already-used player, `_top_giants_row(..., avoid_player_names=...)` now selects the next available Giants row before repeating the same player.
+- Repeated-player candidates are deferred into `repeat_backlog`; they are restored only when needed and only under the cap.
+- Logs added for:
+  - `player_diversity_alternate_selected`
+  - `player_diversity_cap_skip`
+  - `player_diversity_duplicate_fallback`
+  - `player_diversity_backlog_cap_skip`
+- Data-first behavior remains: metric ranking candidates are selected before fallback.
+- If data candidates do not fill the mail, `run_x_post_mail` can add public RSS/Atom source-backed news/opinion candidates.
+- News/opinion fallback uses only:
+  - source title
+  - source URL
+  - source excerpt/summary if present
+  - active Giants roster alias detection
+- News/opinion fallback does not call:
+  - LLM
+  - X API
+  - WP API
+  - `article_candidates`
+  - production DB/GCS write
+- Mixed data + news/opinion mail changes the label from `巨人データXポスト案` to `巨人Xポスト案`, and the subject purpose to `データ+ニュース意見`.
+
+Verification commands:
+
+- `python3 -m py_compile src/x_post_mail_lane.py src/tools/run_x_post_mail.py tests/test_x_post_mail.py`
+- `python3 -m pytest -q tests/test_x_post_mail.py`
+  - result: `89 passed, 3 warnings in 1.62s`
+- `python3 -m unittest tests.test_x_post_mail`
+  - result: `Ran 89 tests in 0.513s` / `OK`
+
+Targeted test evidence:
+
+- `test_player_diversity_uses_next_giants_row_before_repeating`
+  - proves next Giants row is selected before repeating the same player.
+- `test_player_diversity_caps_same_player_when_no_alternative`
+  - proves no-alternative duplicate fallback is capped at 2.
+- `test_news_opinion_candidate_uses_source_evidence_label`
+  - proves news/opinion candidate carries source URL/title evidence and mixed mail label is not data-only.
+- `test_detect_giants_player_name_requires_source_alias`
+  - proves player detection requires a source text alias match.
+- `test_news_opinion_fallback_fills_sparse_data_candidates`
+  - proves sparse data candidates can be supplemented before mail send.
+
+Not changed:
+
+- Cloud Scheduler: unchanged.
+- Cloud Run env / Secret: unchanged.
+- SMTP credential / recipient: unchanged.
+- WP publish / WP existing posts: unchanged.
+- X API / SNS live post: unchanged.
+- production GCS DB upload/write: unchanged.
 
 ## implementation contract
 

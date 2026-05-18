@@ -11,8 +11,10 @@ from src.x_post_mail_lane import (
     JST,
     X_CHAR_LIMIT,
     Candidate,
+    build_news_opinion_candidate,
     build_subject,
     compose_mail,
+    detect_giants_player_name,
     encode_x_intent_url,
     filter_central_league,
     focus_player_names_from_lineup_rows,
@@ -309,6 +311,74 @@ class PickCandidatesTests(unittest.TestCase):
             ["浦田俊輔", "泉口友汰", "丸佳浩"],
         )
 
+    def test_player_diversity_uses_next_giants_row_before_repeating(self) -> None:
+        """380: top 巨人 row が既出なら同 ranking の次の巨人 row を使う。"""
+        rows = [
+            _row(1, "佐藤輝明", "阪神", 1.045),
+            _row(2, "岸田 行倫", "巨人", 0.990),
+            _row(3, "平山 功太", "巨人", 0.980),
+            _row(4, "キャベッジ", "巨人", 0.970),
+            _row(5, "浦田俊輔", "巨人", 0.960),
+            _row(6, "泉口友汰", "巨人", 0.950),
+            _row(7, "丸佳浩", "巨人", 0.940),
+            _row(8, "牧秀悟", "DeNA", 0.930),
+            _row(9, "村上宗隆", "ヤクルト", 0.920),
+            _row(10, "細川成也", "中日", 0.910),
+            _row(11, "坂倉将吾", "広島", 0.900),
+        ]
+
+        def _mock(**_kw):
+            return {
+                "ok": True,
+                "rows": rows,
+                "count": len(rows),
+                "total": len(rows),
+                "focus_player": None,
+            }
+
+        cands = pick_candidates(
+            _mock,
+            now=datetime(2026, 5, 18, 7, 0, tzinfo=JST),
+            max_candidates=6,
+            min_sample=1,
+            min_central_rows=3,
+        )
+        players = [c.focus_player for c in cands]
+        self.assertEqual(len(players), 6)
+        self.assertEqual(len(set(players)), 6)
+        self.assertEqual(players[0], "岸田 行倫")
+        self.assertIn("平山 功太", players)
+
+    def test_player_diversity_caps_same_player_when_no_alternative(self) -> None:
+        """380: 代替巨人 row が無い時だけ同一選手を最大2件まで戻す。"""
+        rows = [
+            _row(1, "佐藤輝明", "阪神", 1.045),
+            _row(2, "マルティネス", "巨人", 0.990),
+            _row(3, "牧秀悟", "DeNA", 0.930),
+            _row(4, "村上宗隆", "ヤクルト", 0.920),
+            _row(5, "細川成也", "中日", 0.910),
+            _row(6, "坂倉将吾", "広島", 0.900),
+        ]
+
+        def _mock(**_kw):
+            return {
+                "ok": True,
+                "rows": rows,
+                "count": len(rows),
+                "total": len(rows),
+                "focus_player": None,
+            }
+
+        cands = pick_candidates(
+            _mock,
+            now=datetime(2026, 5, 18, 7, 0, tzinfo=JST),
+            max_candidates=8,
+            min_sample=1,
+            min_central_rows=3,
+        )
+        players = [c.focus_player for c in cands]
+        self.assertEqual(players, ["マルティネス", "マルティネス"])
+
     def test_lineup_focus_names_from_rows_canonicalizes_surname(self) -> None:
         rows = [
             {"order": "1", "position": "中", "name": "丸"},
@@ -542,6 +612,7 @@ class VariationExpansionTests(unittest.TestCase):
             max_candidates=22,
             min_sample=1,
             min_central_rows=3,
+            max_per_player=99,
         )
         # At least one position-filtered call was made
         positions_used = [c.get("position_filter") for c in captured if c.get("position_filter")]
@@ -769,6 +840,46 @@ class ComposeMailTests(unittest.TestCase):
         self.assertIn("今日のスタメン優先: 丸佳浩、泉口友汰", mail.text_body)
         self.assertIn("今日のスタメン優先: 丸佳浩、泉口友汰", mail.html_body)
 
+    def test_news_opinion_candidate_uses_source_evidence_label(self) -> None:
+        ts = datetime(2026, 5, 18, 7, 0, tzinfo=JST)
+        cand = build_news_opinion_candidate(
+            source_title="巨人・岸田行倫が攻守で存在感",
+            source_url="https://example.test/giants-kishida",
+            source_name="テスト新聞",
+            source_excerpt="巨人の岸田行倫についての記事。",
+            player_name="岸田行倫",
+            now=ts,
+        )
+        self.assertIsNotNone(cand)
+        assert cand is not None
+        self.assertEqual(cand.metric, "NEWS_OPINION")
+        self.assertIn("岸田行倫", cand.post_text)
+        self.assertIn("巨人・岸田行倫が攻守で存在感", cand.post_text)
+        self.assertIn("https://example.test/giants-kishida", cand.draft_text)
+
+        mail = compose_mail([self._make_cand(1), cand], now=ts)
+        self.assertIn("データ+ニュース意見", mail.subject)
+        self.assertIn("📮 巨人Xポスト案", mail.text_body)
+        self.assertNotIn("📮 巨人データXポスト案", mail.text_body)
+        self.assertIn("📮 巨人Xポスト案", mail.html_body)
+
+    def test_detect_giants_player_name_requires_source_alias(self) -> None:
+        alias_map = {
+            "岸田行倫": "岸田行倫",
+            "岸田": "岸田行倫",
+            "丸": "丸佳浩",
+        }
+        self.assertEqual(
+            detect_giants_player_name(
+                "巨人・岸田行倫が攻守で存在感",
+                alias_map=alias_map,
+            ),
+            "岸田行倫",
+        )
+        self.assertEqual(detect_giants_player_name("ただの巨人ニュース", alias_map=alias_map), "")
+        self.assertEqual(detect_giants_player_name("丸が出塁", alias_map=alias_map), "")
+        self.assertEqual(detect_giants_player_name("巨人・丸が出塁", alias_map=alias_map), "丸佳浩")
+
 
 class EmptyResultBehaviourTests(unittest.TestCase):
     def test_compose_mail_with_empty_candidates_no_crash(self) -> None:
@@ -802,6 +913,7 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
             max_candidates=17,
             min_sample=1,
             min_central_rows=3,
+            max_per_player=99,
         )
         self.assertGreaterEqual(len(cands), 1)
         for c in cands:
@@ -822,6 +934,7 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
             max_candidates=17,
             min_sample=1,
             min_central_rows=3,
+            max_per_player=99,
         )
         batter_cands = [c for c in cands if c.metric in ("OPS", "AVG", "OBP", "SLG")]
         self.assertGreaterEqual(len(batter_cands), 1)
@@ -843,6 +956,7 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
             max_candidates=17,
             min_sample=10,
             min_central_rows=3,
+            max_per_player=99,
         )
         era_only = [c for c in era_cands if c.metric == "ERA"]
         self.assertGreaterEqual(len(era_only), 1)
@@ -858,6 +972,7 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
             max_candidates=17,
             min_sample=1,
             min_central_rows=3,
+            max_per_player=99,
         )
         self.assertGreaterEqual(len(cands), 1)
         text = cands[0].draft_text
@@ -901,6 +1016,7 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
             max_candidates=17,
             min_sample=1,
             min_central_rows=3,
+            max_per_player=99,
         )
         avg_cands = [c for c in cands if c.metric == "AVG"]
         self.assertGreaterEqual(len(avg_cands), 1)
@@ -1309,6 +1425,8 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
                 "MAIL_BRIDGE_TO": "ops@example.test",
                 "INSIGHT_GCS_BUCKET": "insight-bucket",
                 "X_POST_MAIL_DEDUP_MIN_CANDIDATES": "3",
+                "X_POST_MAIL_LINEUP_FOCUS_DISABLED": "1",
+                "X_POST_MAIL_NEWS_FALLBACK_DISABLED": "1",
             },
             clear=False,
         ), patch.object(
@@ -1378,6 +1496,8 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
                 "MAIL_BRIDGE_TO": "ops@example.test",
                 "INSIGHT_GCS_BUCKET": "insight-bucket",
                 "X_POST_MAIL_DEDUP_MIN_CANDIDATES": "3",
+                "X_POST_MAIL_LINEUP_FOCUS_DISABLED": "1",
+                "X_POST_MAIL_NEWS_FALLBACK_DISABLED": "1",
             },
             clear=False,
         ), patch.object(
@@ -1413,6 +1533,67 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         self.assertEqual(pick_candidates.call_count, 1)
+
+    def test_news_opinion_fallback_fills_sparse_data_candidates(self) -> None:
+        """データ候補が少ない時だけ、source-backed fallback をメールに足す。"""
+        from src.tools import run_x_post_mail
+
+        data_cand = self._entrypoint_candidate("data-sig")
+        news_cand = build_news_opinion_candidate(
+            source_title="巨人・岸田行倫が攻守で存在感",
+            source_url="https://example.test/news",
+            source_name="テスト新聞",
+            player_name="岸田行倫",
+        )
+        assert news_cand is not None
+        send_result = run_x_post_mail.mdb.MailResult(
+            status="sent",
+            refused_recipients={},
+            smtp_response=[],
+            reason=None,
+        )
+        with patch.dict(
+            "os.environ",
+            {
+                "MAIL_BRIDGE_TO": "ops@example.test",
+                "X_POST_MAIL_DEDUP_DISABLED": "1",
+                "X_POST_MAIL_LINEUP_FOCUS_DISABLED": "1",
+            },
+            clear=False,
+        ), patch.object(
+            run_x_post_mail.miq,
+            "ensure_local_db",
+            return_value={"ok": True, "path": "/tmp/insight.db"},
+        ), patch.object(
+            run_x_post_mail.lane,
+            "query_db_latest_game_date",
+            return_value="2026-05-16",
+        ), patch.object(
+            run_x_post_mail.lane,
+            "db_staleness_days",
+            return_value=0,
+        ), patch.object(
+            run_x_post_mail.lane,
+            "pick_candidates",
+            return_value=[data_cand],
+        ), patch.object(
+            run_x_post_mail,
+            "_fetch_news_opinion_fallback_candidates",
+            return_value=[news_cand],
+        ) as fallback, patch.object(
+            run_x_post_mail.mdb,
+            "send",
+            return_value=send_result,
+        ) as send:
+            result = run_x_post_mail.main(["--max-candidates", "3"])
+
+        self.assertEqual(result, 0)
+        fallback.assert_called_once()
+        request = send.call_args.args[0]
+        self.assertEqual(request.metadata["candidate_count"], 2)
+        self.assertIn("データ+ニュース意見", request.subject)
+        self.assertIn("巨人Xポスト案", request.text_body)
+        self.assertIn("岸田行倫", request.text_body)
 
 
 class TicketThreeFiftyFiveDedupTests(unittest.TestCase):

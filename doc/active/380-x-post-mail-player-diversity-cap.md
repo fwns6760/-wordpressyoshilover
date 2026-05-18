@@ -298,6 +298,43 @@ Dry-run note:
 - This did not send mail. Gmail search after the attempt still showed only the 12:01 `Xポスト案` mail for 2026-05-18.
 - Job template itself remains args-free and points to the corrected image, so scheduled execution will use the Dockerfile CMD.
 
+Live verification mail:
+
+- Manual execution: `x-post-mail-lane-d6w4h`
+- execution creation: `2026-05-18T04:07:08Z` = 2026-05-18 13:07 JST
+- execution image digest: `sha256:64e78e6f799dedc16323c49df502dc2d07c4d0cbb545ab549f899368a9e9666c`
+- execution status: `Completed=True`, `succeededCount=1`
+- log: `insight.db freshness latest_game_date=2026-05-17 staleness_days=1 max=2`
+- log: `Dedup fallback backfilled candidates: 0 -> 8`
+- log: `News/opinion fallback filled candidates: 8 -> 10`
+- log: `mail send result: status=sent reason=None refused={}`
+- log: `Recorded 10 dedup signatures (ok=True)`
+- Gmail message id: `19e39446c4ac0f79`
+- subject: `🟠🐦📮【Xポスト案 10件】🌞昼｜データ+ニュース意見 13:07 JST`
+- body header: `📮 巨人Xポスト案 — 昼 / 2026-05-18 13:07 JST`
+
+13:07 candidate focus player count:
+
+| # | player | type |
+|---|---|---|
+| 1 | キャベッジ | data |
+| 2 | 浦田俊輔 | data |
+| 3 | マルティネス | data |
+| 4 | 平山 功太 | data |
+| 5 | 戸郷翔征 | data |
+| 6 | 岸田 行倫 | data |
+| 7 | 井上温大 | data |
+| 8 | 則本昂大 | data |
+| 9 | 山瀬 慎之助 | news/opinion fallback |
+| 10 | 竹丸 和幸 | news/opinion fallback |
+
+Result:
+
+- same-player repeat in candidate focus: `0`
+- data candidates: `8`
+- news/opinion fallback candidates: `2`
+- mixed label used: `巨人Xポスト案` / `データ+ニュース意見`
+
 ## implementation contract
 
 変更してよい:

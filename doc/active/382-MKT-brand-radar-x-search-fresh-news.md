@@ -1,6 +1,6 @@
 # 382-MKT brand radar X search fresh news
 
-status: BLOCKED_USER
+status: REVIEW_NEEDED
 owner: Codex
 lane: A
 created: 2026-05-18 JST
@@ -12,6 +12,7 @@ scope: Yoshilover branding X-post planning mail from fresh Giants news + X searc
 - user lock: ヨシラバーの X 投稿案は、成績ランキングではなく「巨人の新鮮なニュース」を軸にしたい。
 - user lock: 目的はブランディング。「ヨシラバーのポストを見たい」と思わせる。
 - user idea: Hermes Agent / X Premium / X Search と記事記録を合わせて、巨人ファン向けの投稿企画を作る。
+- user clarification: `@yoshilover6760` がヨシラバー本人で、X Premium に入っている。X Search のライセンス / 認証が必要な場合は明示する。
 - user constraint: PC を落とすため、ローカル常駐前提の仕組みは弱い。
 - hard rule: 推測で補わない。隠さない。自己評価で OK にしない。証拠だけ出す。
 
@@ -143,6 +144,24 @@ Each candidate must show:
 
 No X live post. No WP mutation. Mail only.
 
+## Implementation landed
+
+- Added `src/brand_radar.py`.
+  - `FreshArticleTopic` / `XSearchSignal` / `BrandPostPlan` models.
+  - Fresh article collector from `config/rss_sources.json`.
+  - Article sources are prioritized over official/social X sources.
+  - General RSS summary-only Giants hits are rejected; Giants-specific source name, title keyword, or known Giants player name is required.
+  - xAI Responses API `x_search` client uses `GROK_API_KEY`.
+  - HTTP 401 / 403 from xAI is surfaced as `x_search_auth_required` for Premium/license follow-up instead of hidden fallback.
+  - Missing key is surfaced as `missing_api_key`.
+  - X Search empty / cap / provider errors are printed in mail evidence.
+- Added `src/tools/run_brand_radar_mail.py`.
+  - Default is dry-run.
+  - `--send` is required for real mail delivery.
+  - No X live post and no WP mutation.
+  - Subject: `ヨシラバー投稿企画案｜巨人ニュース鮮度レーダー HH:MM JST`.
+- Added `tests/test_brand_radar.py`.
+
 ## GCP / local decision
 
 Recommended path:
@@ -196,25 +215,22 @@ Acceptance must log and mail:
 ## Acceptance
 
 - [x] Ticket has GitHub Issue linked. #56
-- [ ] Repo-only tests prove fresh-news-first ordering: fresh article candidates outrank data-only candidates.
-- [ ] Repo-only tests prove official X is lower priority than newspaper / specialist / magazine sources when fresh article sources exist.
-- [ ] Repo-only tests prove X Search empty/failure is visible, not silently skipped.
-- [ ] Repo-only tests prove no X live post or WP mutation is possible from this lane.
-- [ ] Mail fixture contains source URL, source time, X Search query, evidence URLs or explicit unavailable reason.
-- [ ] Cost guard fixture enforces per-run and per-day x_search caps.
-- [ ] User approves one of:
-  - A: GCP direct xAI API key
-  - B: local Hermes smoke first
-  - C: do not use X Search, article-only branding radar
+- [x] Repo-only tests prove fresh-news-first ordering: fresh article candidates outrank data-only candidates.
+- [x] Repo-only tests prove official X is lower priority than newspaper / specialist / magazine sources when fresh article sources exist.
+- [x] Repo-only tests prove X Search empty/failure is visible, not silently skipped.
+- [x] Repo-only tests prove no X live post or WP mutation is possible from this lane.
+- [x] Mail fixture contains source URL, source time, X Search query, evidence URLs or explicit unavailable reason.
+- [x] Cost guard fixture enforces per-run and per-day x_search caps.
+- [x] User approved A for repo implementation: GCP direct xAI API / X Search path. Live deploy / env / scheduler remains separate.
+- [x] Auth/license follow-up is visible: xAI HTTP 401/403 becomes `x_search_auth_required`.
+- [x] Dry-run source smoke with `--x-search-cap 0` proved source mail rendering and showed skip reasons.
 
 ## Proposed write scope after user GO
 
 - `src/brand_radar.py`
 - `src/tools/run_brand_radar_mail.py`
 - `tests/test_brand_radar.py`
-- `Dockerfile.brand_radar` or reuse existing x-post mail image pattern
-- `cloudbuild_brand_radar.yaml` if creating a separate image
-- `doc/waiting/382-MKT-brand-radar-x-search-fresh-news.md`
+- `doc/active/382-MKT-brand-radar-x-search-fresh-news.md`
 - `doc/README.md`
 - `doc/active/assignments.md`
 
@@ -229,10 +245,22 @@ Acceptance must log and mail:
 - `RUN_DRAFT_ONLY`
 - unrelated frontend/plugin files
 
-## Current blocker
+## Verification
 
-User decision required:
+- `python3 -m py_compile src/brand_radar.py src/tools/run_brand_radar_mail.py tests/test_brand_radar.py` PASS.
+- `python3 -m unittest tests.test_brand_radar` PASS: 13 tests.
+- `python3 -m src.tools.run_brand_radar_mail --source-limit 0 --print-body` PASS, dry-run mail body generated, no network, no send.
+- Source dry-run with network approval:
+  - command: `python3 -m src.tools.run_brand_radar_mail --source-limit 3 --entry-limit 1 --x-search-cap 0 --print-body`
+  - result: candidates_sent=1, x_search_calls_used=0, skipped `{"non_giants_topic": 1, "stale_article": 1, "x_search_cap_exceeded": 1}`
+  - evidence: DeNA-looking general RSS topic was rejected as `non_giants_topic`; Full-Count 巨人 坂本記事 remained.
 
-1. Use existing GCP `GROK_API_KEY` / xAI API path for implementation?
-2. Initial budget cap: accept the proposed 15 x_search calls/day, or choose a lower number?
-3. Should the first implementation be a new `brand-radar` Job, or should it replace the current `x-post-mail-lane` output?
+## Remaining blocker
+
+- Live GCP deploy / Secret wiring / Scheduler creation is not done in this commit.
+- `x-post-mail-lane` is not replaced.
+- To run on GCP with real X Search, the next approval must explicitly cover:
+  1. deploy target: new `brand-radar` Job or replacement of existing `x-post-mail-lane`
+  2. Secret/env wiring: `GROK_API_KEY` for the chosen runtime
+  3. mail cadence and daily `x_search` cap
+  4. if xAI returns `x_search_auth_required`, use `@yoshilover6760` Premium/license path for auth follow-up

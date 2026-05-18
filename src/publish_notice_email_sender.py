@@ -3091,6 +3091,9 @@ def send(
         record_type=getattr(request, "record_type", None),
         skip_layer=getattr(request, "skip_layer", None),
         fail_axes=tuple(getattr(request, "fail_axes", ()) or ()),
+        # 377-OPS Phase 1C (GH #51): body_excerpt / admin_edit_url を mail まで継承
+        body_excerpt=getattr(request, "body_excerpt", None),
+        admin_edit_url=getattr(request, "admin_edit_url", None),
     )
     mail_state = _classify_mail(normalized_request)
     if normalized_request.notice_kind != "publish":

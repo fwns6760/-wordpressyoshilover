@@ -20,6 +20,7 @@ from urllib.parse import urlencode, urljoin
 import urllib.request
 from zoneinfo import ZoneInfo
 
+from src.publish_notice_body_excerpt import build_admin_edit_url, build_body_excerpt
 from src.publish_notice_email_sender import PublishNoticeRequest, build_subject
 
 
@@ -1392,10 +1393,12 @@ def _wp_basic_auth_header() -> str:
 
 def _default_fetch_post_detail(base_url: str, post_id: int | str) -> Mapping[str, Any] | None:
     endpoint = urljoin(base_url.rstrip("/") + "/", f"posts/{post_id}")
+    # 377-OPS Phase 1C (GH #51): content + excerpt を含めて mail card 用の body_excerpt
+    # を populate できるようにする。
     query = urlencode(
         {
             "context": "edit",
-            "_fields": "id,title,link,date,status,meta,article_subtype,subtype",
+            "_fields": "id,title,excerpt,content,link,date,status,meta,article_subtype,subtype",
         }
     )
     request = urllib.request.Request(
@@ -1408,6 +1411,24 @@ def _default_fetch_post_detail(base_url: str, post_id: int | str) -> Mapping[str
     with urllib.request.urlopen(request, timeout=30) as response:
         payload = json.loads(response.read().decode("utf-8"))
     return payload if isinstance(payload, Mapping) else None
+
+
+def _resolve_wp_base_url(wp_base_url: str | None = None) -> str | None:
+    """WP site root URL (for admin link) を解決する。
+
+    Why: ``build_admin_edit_url`` に渡す ``{wp_base_url}/wp-admin/...`` の base 用。
+    優先順位: 明示引数 → ``WP_URL`` env → ``WP_API_BASE`` から ``/wp-json/...`` 部分を strip。
+    """
+    if wp_base_url is not None and str(wp_base_url).strip():
+        return str(wp_base_url).strip().rstrip("/")
+    env_value = str(os.environ.get("WP_URL", "")).strip()
+    if env_value:
+        return env_value.rstrip("/")
+    api_base = str(os.environ.get("WP_API_BASE", "")).strip()
+    if api_base:
+        # WP_API_BASE = "https://yoshilover.com/wp-json/wp/v2" → "https://yoshilover.com"
+        return re.sub(r"/wp-json/.*$", "", api_base.rstrip("/")) or None
+    return None
 
 
 def _resolve_wp_api_base(wp_api_base: str | None) -> str:
@@ -1431,15 +1452,25 @@ def _request_from_post(
     post: Mapping[str, Any],
     *,
     notice_origin: str | None = None,
+    wp_base_url: str | None = None,
 ) -> PublishNoticeRequest:
+    # 377-OPS Phase 1C (GH #51): mail card に「本文 600-1000 字」と「WP 編集 / 公開 link」を出す。
+    post_id = post.get("id", "")
+    content_html = _extract_rendered(post.get("content"))
+    excerpt_html = _extract_rendered(post.get("excerpt"))
+    body_html = content_html or excerpt_html
+    body_excerpt = build_body_excerpt(body_html) if body_html else None
+    admin_edit_url = build_admin_edit_url(post_id, _resolve_wp_base_url(wp_base_url))
     return PublishNoticeRequest(
-        post_id=post.get("id", ""),
+        post_id=post_id,
         title=_extract_title(post),
         canonical_url=str(post.get("link") or "").strip(),
         subtype=_extract_subtype(post),
         publish_time_iso=_isoformat_jst(post.get("date")),
         summary=_extract_summary(post),
         notice_origin=notice_origin,
+        body_excerpt=body_excerpt,
+        admin_edit_url=admin_edit_url,
     )
 
 
@@ -1922,6 +1953,9 @@ def scan_guarded_publish_history(
                 judgment=judgment,
                 hold_reason=hold_reason,
             ),
+            # 377-OPS Phase 1C: base_request から body_excerpt / admin_edit_url を継承
+            body_excerpt=base_request.body_excerpt,
+            admin_edit_url=base_request.admin_edit_url,
         )
         emitted.append(request)
         seen_post_ids.add(post_key)
@@ -2523,6 +2557,9 @@ def _build_24h_budget_summary_only_request(
         record_type=_PUBLISH_NOTICE_24H_BUDGET_RECORD_TYPE,
         skip_layer=_PUBLISH_NOTICE_24H_BUDGET_SKIP_LAYER,
         fail_axes=tuple(getattr(request, "fail_axes", ()) or ()),
+        # 377-OPS Phase 1C: budget demotion でも body_excerpt / admin_edit_url を継承
+        body_excerpt=getattr(request, "body_excerpt", None),
+        admin_edit_url=getattr(request, "admin_edit_url", None),
     )
 
 

@@ -65,6 +65,7 @@ Active folder is intentionally narrow. 2026-05-08 朝の「0 publish 0 mail」�
 | **quality live-window source unlock** | `371-QA-disable-game-live-source-policy.md` | user 方針「絞らないでいい。重複だけがいや」。試合あり 17:00-21:30 JST の `game_live_source_policy` をデフォルト解除し、サンスポX/Webなど通常sourceも流す。重複は既存dedupe gatesで止める。GitHub Issue #40。 |
 | **quality human-readable title repair** | `372-QA-human-readable-title-context-repair.md` | 68537 / 68622 型。短い引用・`先発` だけ・`関連情報` / `関連発言` / generic `選手` で止まる読みにくい title を、source title / summary の literal context で恒久補正する。GitHub Issue #41。 |
 | **quality person tag routing / noindex** | `376-QA-person-tag-routing-and-noindex.md` | のもとけ風に選手・首脳陣・OBの人物タグを事前作成し、RSS記事作成時は既存タグだけ自動付与する。WP tag sync 173 OK、fetcher deploy 済。tag archive noindex は WP plugin upload 後に live verified。GitHub Issue #49。 |
+| **x-post-mail player diversity** | `380-x-post-mail-player-diversity-cap.md` | 2026-05-18 07:00 JST の X 投稿候補 mail 8 件で `マルティネス` 3 件 / `岸田 行倫` 2 件。07:00 mail log は GCS DB `latest_game_date=2026-05-17 staleness_days=1 max=2`。repo-local DB は stale だが production source of truth ではない。現行 dedup は combo 単位で player cap がないため、same-player cap + next Giants row fallback + structured log を実装する。GitHub Issue #54。 |
 | **quality source excerpt follow-up** | `323-QA-source-body-excerpt-clean-truncation.md` | `314-QA-rss-source-body-excerpt-followup` 関連。ブログ本文の `📖 本文抜粋` が600文字化後も途中切れ / UI・関連記事混入に見える問題を狭く扱う。publish/mail/scheduler/env/Cloud Run/X/SEO/featured_media は不可触。 |
 | **waiting** | `205-gcp-runtime-drift-audit.md`, `238-night-draft-only-and-morning-decision-report.md`, `288-INGEST-source-coverage-expansion.md` | still useful, but not part of the immediate article-body hallucination fix. `288` remains source-add HOLD; only Phase 0 repo-only audit / dry-run evidence may advance doc-only. |
 | **INSIGHT lane (342 ready full-12team, 343 phase-4 done)** | `342-INSIGHT-data-driven-ranking-auto-publish.md`, `343-INSIGHT-007-data-population-audit-and-backfill.md` | 343 Phase 4 (12 球団 team-aware roster) LIVE: NPB 公式 scrape で `config/npb_12team_roster.json` 1071 entry 生成、`fill_canonical_team_aware` で 5027 row 補完、production DB players 21→462 (12 球団全部 32-43 人)、advanced_metric_snapshots 122→6394 (50x)。image `insight-nightly:343c` deploy 済、次 nightly 以降も自動 fill 動作。342 status `READY_FOR_PHASE_1_IMPL_FULL_12TEAM`、初版 4 候補全部 (A1 月次 OPS / B2 守備 UZR / B1 12 球団 top 30 / E1 直近 hot/cold) data 揃い、user GO で impl 着手可能。GH Issue #21(342) + #23(343)。 |
@@ -1938,6 +1939,17 @@ git add -A禁止。
 - **implementation**: `person_tag_router.py`、`sync_wp_person_tags.py`、`WPClient` tags / tag API、`rss_fetcher` draft chokepoint tag routing、`yoshilover-post-noindex.php` tag archive noindex。
 - **tests**: py_compile PASS、person tag / WP tag API / noindex / RSS integration 16 passed、WP client 66 passed、RSS same-fire/reliability/categories/person-tag 41 passed / 3 xfailed / 3 subtests、sync dry-run 173 tags。
 - **live**: commit `a995071`、deploy source HEAD `242aab2` includes `a995071`。WP tag sync `ok_count=173` / `missing_count=0`。Cloud Build `43fb75f9-4f92-4b79-a204-08cc8d343d3d` SUCCESS、image `376-person-tags-a995071`、digest `sha256:52ac886e05a59a5dc65199d6f234e25fbf6fa8084821c310df166f9e885714c6`、revision `yoshilover-fetcher-00421-vzd` 100%、`/health` OK、新 revision ERROR logs 0。WP plugin upload 後、tag archive `吉川尚輝` で `x-robots-tag: noindex, follow` と HTML robots `max-image-preview:large, noindex, follow` を確認。Scheduler / env / Secret / X / SNS は未変更。自然 RSS fire で実記事 tag 付与 evidence 待ち。
+
+### 380-x-post-mail-player-diversity-cap
+
+- **alias**: -
+- **status**: READY / **priority**: high
+- **owner**: Codex / **lane**: B
+- **doc_path**: `doc/active/380-x-post-mail-player-diversity-cap.md`
+- **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/54
+- **背景**: 2026-05-18 07:00 JST の X 投稿候補 mail 8 件で `マルティネス` が 3 件、`岸田 行倫` が 2 件出た。現行 code evidence では dedup key が `metric|period_label|giants_only|position` で player を含まず、lineup focus 外では一般の same-player cap がない。
+- **DB evidence**: repo-local `data/insight/insight.db` は `mtime=2026-05-14T22:01:21` / `latest_game_date=2026-05-13` で stale。ただし production source of truth ではない。production GCS `insight.db` は `Update Time=2026-05-18T01:01:30Z`、pull summary は `latest_game_date=2026-05-17` / `latest_giants_game_date=2026-05-17` / `staleness_days=1` / `advanced_metric_snapshots=64076`。07:00 x-post-mail log も `latest_game_date=2026-05-17 staleness_days=1 max=2`。
+- **acceptance**: 2026-05-18 mail 型 fixture を赤で固定し、修正後は十分な代替 row がある時は同一 player 1 件まで、代替不足時も default 2 件までに抑える。既出 player が top Giants row の metric は次の Giants row へ差し替え可能なら差し替える。skip / fallback は structured log に残す。24h combo dedup / 374 starvation fallback / lineup focus spread は維持する。Scheduler / env / Secret / WP / X / SNS / production DB は変更しない。
 
 ### 362-INSIGHT-queue-cleanup-and-metric-run-cap
 

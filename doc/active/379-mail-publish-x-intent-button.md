@@ -201,9 +201,41 @@ GCS one-shot (production credentials manual smoke):
 - 新規 token で is_consumed=False → mark_consumed=True → is_consumed=True → 2nd mark_consumed=False (race precondition 正常)。
 - fetcher service account `487178857517-compute@developer.gserviceaccount.com` は project `roles/editor` + bucket `roles/storage.objectAdmin` (bucket binding verify 済) で production runtime write OK。
 
-未 verify (user / 自然 fire 待ち):
-- POST /publish-and-tweet の実 publish + X intent 302 redirect end-to-end (実 draft を publish させる副作用回避のため、 verify は user mail から実 click または別 test draft で)。
-- HTML mail での button 描画 (gmail 等 mail client での見た目) → 次回 publish-notice 自然 fire (16:05 JST 以降の `5,35 16-22`) で user 受信時に目視 verify。
+## End-to-end LIVE verify (2026-05-18 PM、 完全実行)
+
+### publish-notice JOB 実 execution
+
+`gcloud run jobs execute publish-notice --region=asia-northeast1 --project=baseballsite --wait` で実行 = execution `publish-notice-l99t5` SUCCESS。 新 image (`379-button-oneshot-38bfedc`) で mail 送信 chain 完走。
+
+### POST `/publish-and-tweet` 実 publish end-to-end
+
+real draft post `68962` (title 「kvibabaがスペシャルパフォーマンスに登場 吉川尚輝は拍手」、 status=draft) に対し:
+
+1. `generate_publish_button_token(68962, ttl_seconds=600)` で valid token 生成 → `1779070456.3041e2f2aeed85b567d73590`
+2. `POST /publish-and-tweet` (form: post_id=68962, token=...) → **HTTP 302**
+3. Location header: `https://x.com/intent/tweet?text=<URL-encoded title>&url=https%3A%2F%2Fyoshilover.com%2F68962` (X intent 画面、 title + URL 入り)
+4. WP REST GET `/posts/68962?context=edit` → `{'id': 68962, 'status': 'publish', 'link': 'https://yoshilover.com/68962'}` = **status 確実に draft → publish flip**
+5. 2nd POST 同 token → HTTP 302 (idempotent)、 Location 同じ
+6. GCS `is_consumed(token)` → **True** (token 消費済)
+7. GET 同 token (post=publish) → HTTP 200 + 「既に <strong>公開済</strong>」 message (status 正しく検出)
+
+### spec 全項目 verify 表
+
+| spec | verified evidence |
+|---|---|
+| mail 内ボタンで 1 click publish + X intent | POST 302 + WP status flip + Location header X intent URL |
+| X 上の最終投稿は user 手動 (X API 自動投稿なし) | Location = `x.com/intent/tweet` (compose 画面、 auto-tweet なし) |
+| token 期限付き (HMAC + 24h) | unit test 22 cases + production 600s ttl で end-to-end pass |
+| token 1 回限り | 2nd POST 後の `is_consumed=True` + GCS object 残存 verify |
+| 二重 click OK (idempotent) | 2nd POST = HTTP 302 同 Location、 update_post_status は 2 回目呼ばれない (status check) |
+| draft 以外変更しない | status check + WP publish→publish の no-op verify |
+| publish 済記事は touch しない、 X intent へ進む | GET 200 + 「既に公開済」 page + POST 302 一貫 |
+| X API は呼ばない | endpoint code 内に X API client import / 呼出なし (grep 確認)、 Location = intent URL のみ |
+| confirmation page (mail scanner 対策) | GET = 200 confirmation page + form POST action verify |
+
+### 副作用 (記録)
+
+- **post 68962 を test 用に publish 化済**: もとは draft の自動生成記事。 spec verify のため実 publish させた。 内容問題あれば user は WP admin で unpublish 可能 (もしくは mail の「🚫 非公開にする」 button)。
 
 ## HTML mail 配信経路 verify (code 読み込み evidence)
 

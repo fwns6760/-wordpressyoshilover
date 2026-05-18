@@ -104,7 +104,43 @@ fetch → article 生成 → draft 確定 →
 - build_body_text が両 field を表示
 - pytest 6 件、 minimal body mode 不変確認済
 
-### Phase 1C (未着手、 次 session)
+### Phase 1C (着地済 2026-05-18、 LIVE_DEPLOYED_OBSERVE)
+
+**1C-1 commit 11128d5**: helper module `src/publish_notice_body_excerpt.py` 新規 + tests 39 cases。
+- `build_body_excerpt(html, max_chars=1000)`: script/style/twitter-tweet/yoshilover-related-posts/💬ファンの声 section 除去 + HTML strip + 1000字 truncate。
+- `build_admin_edit_url(post_id, wp_base_url)`: `{wp_base_url}/wp-admin/post.php?post={id}&action=edit` 組み立て、 invalid input は None fail-open。
+- Python re engine 挙動メモ: lookahead alternation に `\Z` を入れると lazy `.*?` が greedy 化するため 2 pass (next heading / end) に分割。 section header alternation は `\S*` を避けて literal 列挙、 `</(?P=htag)>` の backtrack 越境を防止。
+
+**1C-2 commit cb5b477**: scanner 改修 + tests 15 cases。
+- `_request_from_post`: post.content (or excerpt fallback) → body_excerpt populate、 post_id + _resolve_wp_base_url() → admin_edit_url populate。
+- `_resolve_wp_base_url(arg)`: 明示引数 → WP_URL env → WP_API_BASE strip → None の優先順位。
+- review_hold path / 24h budget summary rewrap で base_request から body_excerpt / admin_edit_url を継承。
+- `_default_fetch_post_detail` の _fields に content,excerpt 追加 (review path も body 取得)。
+- email_sender の `normalized_request` rewrap (line ~3074) で両 field を継承。
+
+**1C-4 commit 0467180**: dry-run tool + end-to-end integration tests 2 cases。
+- dry-run tool に body_excerpt / admin_edit_url field 追加。
+- WP post dict → scanner → email_sender 全パス通る integration test (env あり / なし)。
+
+**1C-6 (build + deploy)** 2026-05-18 10:00 JST:
+- Cloud Build `1aa5e4f2-8322-4809-8945-1694454c7409` SUCCESS、 duration 2m47s。
+- Image: `publish-notice:377-phase1c-0467180`、 digest `sha256:e01bccd9e503...`。
+- Cloud Run Job `publish-notice` を新 image に update、 Ready=True 確認。
+- 旧 image (rollback 用): `publish-notice:classification-316cb03`。
+
+verification (deploy 直後):
+- publish_notice 系 12 files 340 tests passed (regression 0)。
+- py_compile PASS。
+- env (`RUN_DRAFT_ONLY`、 `WP_URL`、 `ENABLE_X_POST_FOR_NOTICE` 等) 全て 変更なし。
+- Scheduler 4 jobs (`publish-notice-trigger 5 6-15` / `-evening 5,35 16-22` / `-burst-tail 10 7,10,12,15,17,20,21` / `-extra-20260517-game` for 5/17 only) 全て不変。
+- 次回自然 fire = 10:05 JST (publish-notice-trigger)。
+
+待ち事項 (1C-5 observe):
+- 当日中の publish-notice 自然 fire 後、 user 受信 mail に「本文(抜粋):」 + 「編集 / 公開:」 link が含まれているか目視 verify。
+- body_excerpt が 600-1000 字に正しく整形されているか確認。
+- 既存 mail format (minimal body) が backward compat で壊れていないか確認。
+
+### Phase 1C 旧 placeholder (supersede 済)
 
 scanner / runner を改修して body_excerpt + admin_edit_url を populate。
 **risk が複数あるため事前に inventory 必要**:

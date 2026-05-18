@@ -14,6 +14,7 @@
 
 | ticket | status | 内容 |
 |---|---|---|
+| `doc/active/377-OPS-...md` Phase 1C (GH #51) | LIVE_DEPLOYED_OBSERVE | mail に body_excerpt + admin_edit_url を populate。 commits `11128d5` (helper module + 39 tests) → `cb5b477` (scanner wiring + 15 tests) → `0467180` (dry-run tool + e2e integration 2 tests)。 Cloud Build `1aa5e4f2` SUCCESS、 image `publish-notice:377-phase1c-0467180` digest `sha256:e01bccd9e503...`、 Cloud Run Job update Ready=True (旧 image `classification-316cb03` rollback 用に保持)。 env (RUN_DRAFT_ONLY=0 維持) / Secret / Scheduler / WP / X / SNS 全て不変、 手動 execute は追加 mail 回避のため未実行。 publish_notice 系 12 files 340 tests pass、 regression 0。 次回自然 fire = 10:05 JST (publish-notice-trigger)。 本文 / admin link 目視 verify 待ち。 |
 | `doc/active/379-mail-publish-x-intent-button.md` (GH #53) | DESIGN_REVIEW_NEEDED | mail 内「公開してX投稿画面へ」ボタンで draft → publish + X intent URL (https://x.com/intent/tweet) 遷移。 X 上の最終投稿ボタンは user 手動 (X API 自動投稿は絶対しない、 AUTO_TWEET 触らない)。 token 期限付き + 1 回限り + 二重 click 安全 + mail スキャナ対策。 前提依存: 377-OPS Phase 2 (RUN_DRAFT_ONLY=True env apply) + Phase 1C (mail body_excerpt populate)。 cost +$0.06/月 (Secret 1 件)。 設計詳細 (token 仕様 / confirmation page 方式) は user GO 待ち。 |
 
 ## チケット管理方針(2026-05-14 EVENING lock)

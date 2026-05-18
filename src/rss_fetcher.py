@@ -18,7 +18,7 @@ import subprocess
 import time
 import uuid
 from collections import Counter
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from email.utils import parsedate_to_datetime
 from functools import lru_cache
 from pathlib import Path
@@ -4690,20 +4690,69 @@ _TODAY_GAME_RESULT_MARKERS: tuple[str, ...] = (
 )
 
 
+# 2026-05-18 EVENING user 仕様: 「常に新鮮」 = 過去日付 (M月N日 / M/N / N日) も
+# title/summary から検出して skip。 既存 relative keyword と並行 OR で適用。
+_STALE_ABSOLUTE_DATE_PATTERNS = (
+    _re.compile(r"(\d{1,2})月(\d{1,2})日"),  # 「M月N日」 form
+    _re.compile(r"(?<!\d)(\d{1,2})/(\d{1,2})(?!\d)"),  # 「M/N」 form
+)
+_STALE_STANDALONE_DAY_RE = _re.compile(r"(?<![/0-9月年])(\d{1,2})日(?:の|に|から|付|頃)?")
+
+
+def _is_stale_absolute_date(text: str, *, now: datetime | None = None) -> bool:
+    """text に M月N日 / M/N / N日 の絶対日付があり、 JST today より過去なら True。
+
+    Why: 「5月17日朝」 等の昨日以前の event を 朝の RSS で配信されても skip。
+    年情報が無い場合は current year 推定。 standalone N日 は同月内 day 比較のみ。
+    """
+    current = (now or datetime.now(JST)).astimezone(JST)
+    today = current.date()
+    for pat in _STALE_ABSOLUTE_DATE_PATTERNS:
+        for match in pat.finditer(text):
+            try:
+                month = int(match.group(1))
+                day = int(match.group(2))
+            except (ValueError, TypeError):
+                continue
+            if not (1 <= month <= 12 and 1 <= day <= 31):
+                continue
+            try:
+                candidate = date(today.year, month, day)
+            except ValueError:
+                continue
+            if candidate < today:
+                return True
+    for match in _STALE_STANDALONE_DAY_RE.finditer(text):
+        try:
+            day = int(match.group(1))
+        except (ValueError, TypeError):
+            continue
+        if 1 <= day < today.day:
+            return True
+    return False
+
+
 def _should_skip_prior_event_postgame(
     category: str,
     title: str,
     summary: str,
     has_game: bool,
+    *,
+    now: datetime | None = None,
 ) -> bool:
     """Title が「凱旋/昨夜/昨日/前日/前夜/先日/翌朝」等の prior-event marker
     を含み、category=試合速報 系 で対象なら True。試合中話題 / 過去試合の
     retrospective report を新規記事として skip する。
+    2026-05-18 EVENING: 絶対日付 (M月N日 / M/N / N日) で過去も skip 追加。
     """
     if category not in {"試合速報", "選手情報", "首脳陣"}:
         return False
     text = _strip_html(f"{title} {summary}")
-    return any(marker in text for marker in _PRIOR_EVENT_TITLE_MARKERS)
+    if any(marker in text for marker in _PRIOR_EVENT_TITLE_MARKERS):
+        return True
+    if _is_stale_absolute_date(text, now=now):
+        return True
+    return False
 
 
 def _should_skip_mismatched_today_game(

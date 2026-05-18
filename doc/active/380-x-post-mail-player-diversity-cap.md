@@ -2,7 +2,7 @@
 
 ## status
 
-- **status**: IN_FLIGHT
+- **status**: LIVE_DEPLOYED_OBSERVE
 - **owner**: Codex
 - **lane**: B
 - **created**: 2026-05-18 JST
@@ -435,6 +435,52 @@ Targeted test evidence:
   - proves news fallback does not re-add a recent-history player.
 - `test_player_history_zero_candidate_relaxes_as_last_resort`
   - proves history is relaxed only after zero candidates remain, to avoid a missing scheduled mail.
+
+## follow-up live deploy evidence — 2026-05-18 JST
+
+Deploy source:
+
+- git archive source commit: `157b26b`
+- reason: repo HEAD advanced to unrelated commit `3c1612d` after this fix; x-post-mail image was built from explicit commit `157b26b` so unrelated `rss_fetcher.py` change was not mixed into this deploy.
+- export dir: `/tmp/x-post-mail-deploy-380-history-JKGrR6`
+
+Cloud Build:
+
+- build id: `8dad3a83-bda3-4a0d-8103-befda9656915`
+- status: `SUCCESS`
+- image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/x-post-mail-lane:380-player-history-157b26b`
+- digest: `sha256:15cd06766cdc4ee6a3780ce3a25bba2ee3ddbe482d3b0a56d0116f3a9914ecd1`
+- finishTime: `2026-05-18T05:01:33.653114Z`
+
+Cloud Run Job update:
+
+- job: `x-post-mail-lane`
+- generation: `21`
+- Ready condition: `True`
+- image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/x-post-mail-lane:380-player-history-157b26b`
+- operation id: `cf3224c4-123b-42cc-b044-4f3e776ead51`
+
+Scheduler evidence:
+
+- `x-post-mail-am-1`: `0 7 * * *`, ENABLED
+- `x-post-mail-lunch`: `0 12 * * *`, ENABLED
+- `x-post-mail-afternoon`: `0 15 * * *`, ENABLED
+- `x-post-mail-evening`: `30 17 * * *`, ENABLED
+- `x-post-mail-postgame`: `30 22 * * *`, ENABLED
+- `x-post-mail-extra-20260517-game`: `0 14,16,17 17 5 *`, ENABLED
+
+Not executed:
+
+- No post-update manual `gcloud run jobs execute` was run.
+- Reason: manual execute sends an additional real email. Post-update user-visible mail acceptance remains pending until the next natural fire.
+- Latest execution shown by job describe was `x-post-mail-lane-l9652` / `EXECUTION_SUCCEEDED`, created at the 15:00 JST scheduler fire before the generation 21 image update; it is not evidence of the new image running.
+
+Not changed:
+
+- Cloud Scheduler definitions: unchanged.
+- Cloud Run env / Secret: unchanged.
+- SMTP sender / recipient: unchanged.
+- WP / X / SNS / production DB: unchanged.
 
 ## implementation contract
 

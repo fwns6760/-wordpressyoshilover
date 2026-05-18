@@ -6,7 +6,7 @@
 - priority: P2 (運用効率改善、 user 判断必須は維持)
 - owner: Claude
 - created: 2026-05-18
-- github_issue: TBD
+- github_issue: https://github.com/fwns6760/-wordpressyoshilover/issues/53
 - depends_on: 377-OPS Phase 1C (mail body_excerpt populate)
 
 ## user intent (2026-05-18 chat lock、 原文要約)

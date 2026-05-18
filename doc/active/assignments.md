@@ -8,13 +8,13 @@
 
 | ticket | status | 内容 |
 |---|---|---|
-| `doc/active/378-evening-peak-fetch-15min.md` | LIVE_DEPLOYED_OBSERVE | 試合後ピーク (20:00-22:00 JST) の `yoshilover-fetcher /run` fetch を 15min cadence 化、 22-23 時を 30min cadence 補強。 既存 `giants-realtime-trigger 0,30 17-21` `giants-postgame-catchup-am 0 22` は不変 (gcloud list で verify 済)、 新規 3 jobs ENABLED で着地 (`giants-realtime-peak-15min 15,45 20-21`, `giants-realtime-2230 30 22`, `giants-realtime-2300 0 23`)。 auth は既存 trigger と同じ `seo-web-runtime@baseballsite.iam.gserviceaccount.com` + oidcToken (5/16 x-post-mail 403 事故回避)。 guarded-publish-trigger `*/30` / publish-notice-trigger-evening `5,35 16-22` / WP / X / SNS / env / Secret 不変、 mail 仕様も不変。 cost +$0.30/月、 user confirm 済。 23:00 fetch の mail は翌朝 (`publish-notice-trigger 5 6-15`)、 判断サイクル完全 15min 化は別 ticket (guarded-publish + publish-notice 連動 15min 化、 +$0.30/月)。 |
+| `doc/active/378-evening-peak-fetch-15min.md` (GH #52) | LIVE_DEPLOYED_OBSERVE | 試合後ピーク (20:00-22:00 JST) の `yoshilover-fetcher /run` fetch を 15min cadence 化、 22-23 時を 30min cadence 補強。 既存 `giants-realtime-trigger 0,30 17-21` `giants-postgame-catchup-am 0 22` は不変 (gcloud list で verify 済)、 新規 3 jobs ENABLED で着地 (`giants-realtime-peak-15min 15,45 20-21`, `giants-realtime-2230 30 22`, `giants-realtime-2300 0 23`)。 auth は既存 trigger と同じ `seo-web-runtime@baseballsite.iam.gserviceaccount.com` + oidcToken (5/16 x-post-mail 403 事故回避)。 guarded-publish-trigger `*/30` / publish-notice-trigger-evening `5,35 16-22` / WP / X / SNS / env / Secret 不変、 mail 仕様も不変。 cost +$0.30/月、 user confirm 済。 23:00 fetch の mail は翌朝 (`publish-notice-trigger 5 6-15`)、 判断サイクル完全 15min 化は別 ticket (guarded-publish + publish-notice 連動 15min 化、 +$0.30/月)。 |
 
 ### 起票 (DESIGN 段階、 377-OPS Phase 1C / Phase 2 完了後着手)
 
 | ticket | status | 内容 |
 |---|---|---|
-| `doc/active/379-mail-publish-x-intent-button.md` | DESIGN_REVIEW_NEEDED | mail 内「公開してX投稿画面へ」ボタンで draft → publish + X intent URL (https://x.com/intent/tweet) 遷移。 X 上の最終投稿ボタンは user 手動 (X API 自動投稿は絶対しない、 AUTO_TWEET 触らない)。 token 期限付き + 1 回限り + 二重 click 安全 + mail スキャナ対策。 前提依存: 377-OPS Phase 2 (RUN_DRAFT_ONLY=True env apply) + Phase 1C (mail body_excerpt populate)。 cost +$0.06/月 (Secret 1 件)。 設計詳細 (token 仕様 / confirmation page 方式) は user GO 待ち。 |
+| `doc/active/379-mail-publish-x-intent-button.md` (GH #53) | DESIGN_REVIEW_NEEDED | mail 内「公開してX投稿画面へ」ボタンで draft → publish + X intent URL (https://x.com/intent/tweet) 遷移。 X 上の最終投稿ボタンは user 手動 (X API 自動投稿は絶対しない、 AUTO_TWEET 触らない)。 token 期限付き + 1 回限り + 二重 click 安全 + mail スキャナ対策。 前提依存: 377-OPS Phase 2 (RUN_DRAFT_ONLY=True env apply) + Phase 1C (mail body_excerpt populate)。 cost +$0.06/月 (Secret 1 件)。 設計詳細 (token 仕様 / confirmation page 方式) は user GO 待ち。 |
 
 ## チケット管理方針(2026-05-14 EVENING lock)
 

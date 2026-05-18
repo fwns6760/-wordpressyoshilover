@@ -6,7 +6,7 @@
 - priority: P2 (運用改善、 既存壊さない可逆変更)
 - owner: Claude
 - created: 2026-05-18
-- github_issue: TBD (本 ticket commit 後に作成)
+- github_issue: https://github.com/fwns6760/-wordpressyoshilover/issues/52
 
 ## user intent (2026-05-18 chat lock)
 

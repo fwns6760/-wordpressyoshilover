@@ -1829,6 +1829,16 @@ def scan_guarded_publish_history(
     write_cursor: bool = True,
     capture_only: bool = False,
 ) -> GuardedPublishHistoryScanResult:
+    # 2026-05-18 user 仕様: 新規 draft 通知のみ。 env ``DRAFT_ONLY_SCAN_MODE=1`` で
+    # 4 月の 64xxx 古い「【要確認】」 review hold mail を完全 cut。 空 result を返す。
+    if str(os.environ.get("DRAFT_ONLY_SCAN_MODE", "")).strip().lower() in {"1", "true", "yes", "on"}:
+        return GuardedPublishHistoryScanResult(
+            emitted=[],
+            skipped=[],
+            history_after={},
+            cursor_before=None,
+            cursor_after=None,
+        )
     current_now = _coerce_now(now)
     history_file = _path(history_path)
     guarded_cursor_file = _resolve_guarded_publish_history_cursor_path(cursor_path)

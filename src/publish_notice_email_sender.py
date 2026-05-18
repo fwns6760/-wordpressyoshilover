@@ -24,7 +24,9 @@ JST = ZoneInfo("Asia/Tokyo")
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SUMMARY_EVERY = 10
 DEFAULT_DAILY_CAP = 100
-DEFAULT_DUPLICATE_WINDOW = timedelta(minutes=30)
+# 2026-05-18 user 仕様 (新 draft 1 通 1 回): 30min → 24h に拡大。
+# 30min だと同 post が 12:00 / 14:00 fire で 2 回送られる ("古い再送" の苦情)。
+DEFAULT_DUPLICATE_WINDOW = timedelta(hours=24)
 DEFAULT_GUARDED_PUBLISH_YELLOW_LOG_PATH = ROOT / "logs" / "guarded_publish_yellow_log.jsonl"
 DEFAULT_GUARDED_PUBLISH_HISTORY_PATH = ROOT / "logs" / "guarded_publish_history.jsonl"
 FORCED_SUMMARY_THRESHOLD = 10

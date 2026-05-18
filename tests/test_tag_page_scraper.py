@@ -295,6 +295,195 @@ class FetchTagPageEntriesDispatchTests(unittest.TestCase):
         kinds = list(scraper.list_scraper_kinds())
         self.assertIn("hochi_giants_tag", kinds)
         self.assertIn("daily_giants_tag", kinds)
+        self.assertIn("friday_giants_tag", kinds)
+        self.assertIn("ntv_news_giants_tag", kinds)
+        self.assertIn("yomiuri_npb_giants_filter", kinds)
+        self.assertIn("gendai_media_giants_search", kinds)
+        self.assertIn("asagei_giants_search", kinds)
+
+
+class FetchGeneralMagazineGiantsEntriesTests(unittest.TestCase):
+    def setUp(self):
+        self.now = datetime(2026, 5, 18, 12, 0, 0, tzinfo=JST)
+
+    def test_friday_requires_giants_topic_and_parses_article_meta(self):
+        listing_html = """
+        <a href="/article/426377">giants</a>
+        <a href="/article/426999">non giants</a>
+        """
+        article_html = {
+            "https://friday.kodansha.co.jp/article/426377": """
+                <meta property="og:title" content="巨人・砂川リチャードの現在地 | FRIDAYデジタル">
+                <meta property="og:description" content="ジャイアンツの話題">
+                <meta property="article:published_time" content="2026-05-17T07:00:25+09:00">
+            """,
+            "https://friday.kodansha.co.jp/article/426999": """
+                <meta property="og:title" content="阪神の話題 | FRIDAYデジタル">
+                <meta property="og:description" content="他球団のみ">
+                <meta property="article:published_time" content="2026-05-17T07:00:25+09:00">
+            """,
+        }
+
+        def fake_fetcher(url, **kwargs):
+            if "/tag/" in url:
+                return _make_response(200, listing_html)
+            return _make_response(200, article_html[url])
+
+        entries = scraper.fetch_friday_giants_entries(
+            tag_url="https://friday.kodansha.co.jp/tag/%E3%82%B8%E3%83%A3%E3%82%A4%E3%82%A2%E3%83%B3%E3%83%84",
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["link"], "https://friday.kodansha.co.jp/article/426377")
+        self.assertEqual(entries[0]["title"], "巨人・砂川リチャードの現在地")
+
+    def test_smart_flash_strips_tracking_query_and_uses_json_ld_date(self):
+        listing_html = """
+        <a href="https://smart-flash.jp/sports/406275/?rf=2">giants</a>
+        """
+        article_html = """
+            <meta property="og:title" content="巨人の補強が注目される | Smart FLASH/スマフラ[光文社週刊誌]">
+            <meta property="og:description" content="巨人ファンが知りたい話題">
+            <script type="application/ld+json">{"datePublished":"2026-05-05T11:00:00+09:00"}</script>
+        """
+
+        def fake_fetcher(url, **kwargs):
+            if "/tag/" in url:
+                return _make_response(200, listing_html)
+            self.assertEqual(url, "https://smart-flash.jp/sports/406275/")
+            return _make_response(200, article_html)
+
+        entries = scraper.fetch_smart_flash_giants_entries(
+            tag_url="https://smart-flash.jp/tag/%E5%B7%A8%E4%BA%BA/",
+            max_age_days=30,
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["link"], "https://smart-flash.jp/sports/406275/")
+
+    def test_ntv_news_tag_scraper_uses_tag_article_urls(self):
+        listing_html = '<a href="/category/sports/abcd1234">巨人記事</a>'
+        article_html = """
+            <meta property="og:title" content="【巨人】岸田行倫が攻守で存在感｜日テレNEWS NNN">
+            <meta property="og:description" content="読売ジャイアンツの試合情報">
+            <meta property="article:published_time" content="2026-05-18T10:00:00+09:00">
+        """
+
+        def fake_fetcher(url, **kwargs):
+            if "/tag/" in url:
+                return _make_response(200, listing_html)
+            return _make_response(200, article_html)
+
+        entries = scraper.fetch_ntv_news_giants_entries(
+            tag_url="https://news.ntv.co.jp/tag/%E5%B7%A8%E4%BA%BA",
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["link"], "https://news.ntv.co.jp/category/sports/abcd1234")
+        self.assertEqual(entries[0]["title"], "【巨人】岸田行倫が攻守で存在感")
+
+    def test_yomiuri_npb_scraper_filters_to_giants_articles(self):
+        listing_html = """
+        <a href="/sports/npb/20260517-GYT1T00242/">giants</a>
+        <a href="/sports/npb/20260517-GYT1T00118/">other</a>
+        """
+        article_html = {
+            "https://www.yomiuri.co.jp/sports/npb/20260517-GYT1T00242/": """
+                <meta property="og:title" content="スミ１で巨人を６連勝に導いた岸田行倫">
+                <meta property="og:description" content="巨人１－０ＤｅＮＡ">
+                <meta property="article:published_time" content="2026-05-18T06:00:00+09:00">
+            """,
+            "https://www.yomiuri.co.jp/sports/npb/20260517-GYT1T00118/": """
+                <meta property="og:title" content="西武が今季初の首位浮上">
+                <meta property="og:description" content="パ・リーグの話題">
+                <meta property="article:published_time" content="2026-05-18T06:00:00+09:00">
+            """,
+        }
+
+        def fake_fetcher(url, **kwargs):
+            if url.endswith("/sports/npb/"):
+                return _make_response(200, listing_html)
+            return _make_response(200, article_html[url])
+
+        entries = scraper.fetch_yomiuri_npb_giants_entries(
+            tag_url="https://www.yomiuri.co.jp/sports/npb/",
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(
+            entries[0]["link"],
+            "https://www.yomiuri.co.jp/sports/npb/20260517-GYT1T00242/",
+        )
+
+    def test_gendai_media_search_filters_non_giants_results(self):
+        listing_html = """
+        <a href="/articles/-/167002?fromRanking=true">non giants</a>
+        <a href="/articles/-/167777">giants</a>
+        """
+        article_html = {
+            "https://gendai.media/articles/-/167002": """
+                <meta property="og:title" content="メジャーで活躍する村上宗隆の英語力 | 現代ビジネス | 講談社">
+                <meta property="og:description" content="一般的なメジャーの話題">
+                <script type="application/ld+json">{"datePublished":"2026-05-17T21:00:00.000Z"}</script>
+            """,
+            "https://gendai.media/articles/-/167777": """
+                <meta property="og:title" content="巨人・阿部監督の采配に注目 | 現代ビジネス | 講談社">
+                <meta property="og:description" content="読売ジャイアンツの話題">
+                <script type="application/ld+json">{"datePublished":"2026-05-17T21:00:00.000Z"}</script>
+            """,
+        }
+
+        def fake_fetcher(url, **kwargs):
+            if "/search?" in url:
+                return _make_response(200, listing_html)
+            return _make_response(200, article_html[url])
+
+        entries = scraper.fetch_gendai_media_giants_entries(
+            tag_url="https://gendai.media/search?fulltext=%E5%B7%A8%E4%BA%BA&media=gb",
+            max_age_days=30,
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["link"], "https://gendai.media/articles/-/167777")
+        self.assertEqual(entries[0]["title"], "巨人・阿部監督の采配に注目")
+
+    def test_asagei_search_uses_datetime_attr_when_meta_date_missing(self):
+        listing_html = """
+        <a href="https://www.asagei.com/excerpt/347876">giants</a>
+        <a href="https://www.asagei.com/excerpt/347000">non giants</a>
+        """
+        article_html = {
+            "https://www.asagei.com/excerpt/347876": """
+                <meta property="og:title" content="巨人・坂本勇人の一打が注目される | アサ芸プラス">
+                <meta property="og:description" content="ジャイアンツファンの話題">
+                <div class="sp-posted-at" datetime="2026-05-18 11:30">2026年05月18日 11:30</div>
+            """,
+            "https://www.asagei.com/excerpt/347000": """
+                <meta property="og:title" content="阪神の話題 | アサ芸プラス">
+                <meta property="og:description" content="他球団のみ">
+                <div class="sp-posted-at" datetime="2026-05-18 11:30">2026年05月18日 11:30</div>
+            """,
+        }
+
+        def fake_fetcher(url, **kwargs):
+            if "?s=" in url:
+                return _make_response(200, listing_html)
+            return _make_response(200, article_html[url])
+
+        entries = scraper.fetch_asagei_giants_entries(
+            tag_url="https://www.asagei.com/?s=%E5%B7%A8%E4%BA%BA",
+            max_age_days=30,
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["link"], "https://www.asagei.com/excerpt/347876")
+        self.assertEqual(entries[0]["title"], "巨人・坂本勇人の一打が注目される")
 
 
 class FetchDailyGiantsEntriesTests(unittest.TestCase):

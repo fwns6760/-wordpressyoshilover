@@ -1744,6 +1744,46 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
         self.assertNotIn("浦田俊輔", players)
         self.assertIn("岸田行倫", players)
 
+    def test_news_opinion_fallback_reads_tag_scrape_sources(self) -> None:
+        """巨人だけ総合: RSSなし媒体の tag_scrape も12時メール補完に使う。"""
+        from src.tools import run_x_post_mail
+        import src.x_post_mail_lane as lane
+
+        tag_entries = [
+            {
+                "title": "巨人・岸田行倫が攻守で存在感",
+                "link": "https://news.ntv.co.jp/category/sports/abcd1234",
+                "summary": "読売ジャイアンツの話題",
+            }
+        ]
+        with patch.object(
+            run_x_post_mail,
+            "_load_news_fallback_sources",
+            return_value=[
+                {
+                    "name": "日テレNEWS NNN 巨人 tag",
+                    "url": "https://news.ntv.co.jp/tag/%E5%B7%A8%E4%BA%BA",
+                    "type": "tag_scrape",
+                    "scraper": "ntv_news_giants_tag",
+                    "max_age_days": 7,
+                    "article_limit": 30,
+                    "role": ["article_source", "media_quote_pool"],
+                }
+            ],
+        ), patch(
+            "src.tag_page_scraper.fetch_tag_page_entries",
+            return_value=tag_entries,
+        ) as tag_fetch:
+            cands = run_x_post_mail._fetch_news_opinion_fallback_candidates(
+                [],
+                max_candidates=1,
+                now=datetime(2026, 5, 18, 13, 7, tzinfo=JST),
+            )
+
+        tag_fetch.assert_called_once()
+        players = [lane._normalize_player_name(c.focus_player) for c in cands]
+        self.assertEqual(players, ["岸田行倫"])
+
 
 class TicketThreeFiftyFiveDedupTests(unittest.TestCase):
     """355: 24h dedup (GCS-backed JSONL) 検証。 GCS は in-memory fake で

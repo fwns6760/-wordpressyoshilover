@@ -151,8 +151,44 @@
   },
   {
     "name": "Full-Count 巨人",
-    "url": "https://full-count.jp/tag/yomiuri-giants/feed/",
+    "url": "https://full-count.jp/category/npb/central-league/kyojin/feed/",
     "type": "news"
+  },
+  {
+    "name": "ベースボールチャンネル 巨人",
+    "url": "https://www.baseballchannel.jp/npb/giants/feed/",
+    "type": "news",
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
+    "name": "朝日新聞スポーツRSS",
+    "url": "https://www.asahi.com/rss/asahi/sports.rdf",
+    "type": "news",
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
+    "name": "毎日新聞スポーツRSS",
+    "url": "https://mainichi.jp/rss/etc/mainichi-sports.rss",
+    "type": "news",
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
+    "name": "週刊ベースボールONLINE RSS",
+    "url": "https://sp.baseball.findfriends.jp/?pid=rss_baseball&nourlencode=1",
+    "type": "news",
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
   },
   {
     "name": "スポーツ報知 巨人 tag",
@@ -204,6 +240,126 @@
     "type": "tag_scrape",
     "scraper": "sanspo_giants_search",
     "max_age_days": 7,
+    "article_limit": 30,
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
+    "name": "読売新聞オンライン プロ野球",
+    "url": "https://www.yomiuri.co.jp/sports/npb/",
+    "type": "tag_scrape",
+    "scraper": "yomiuri_npb_giants_filter",
+    "max_age_days": 7,
+    "article_limit": 30,
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
+    "name": "日テレNEWS NNN 巨人 tag",
+    "url": "https://news.ntv.co.jp/tag/%E5%B7%A8%E4%BA%BA",
+    "type": "tag_scrape",
+    "scraper": "ntv_news_giants_tag",
+    "max_age_days": 7,
+    "article_limit": 30,
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
+    "name": "FRIDAY ジャイアンツ tag",
+    "url": "https://friday.kodansha.co.jp/tag/%E3%82%B8%E3%83%A3%E3%82%A4%E3%82%A2%E3%83%B3%E3%83%84",
+    "type": "tag_scrape",
+    "scraper": "friday_giants_tag",
+    "max_age_days": 120,
+    "article_limit": 30,
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
+    "name": "Smart FLASH 巨人 tag",
+    "url": "https://smart-flash.jp/tag/%E5%B7%A8%E4%BA%BA/",
+    "type": "tag_scrape",
+    "scraper": "smart_flash_giants_tag",
+    "max_age_days": 120,
+    "article_limit": 30,
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
+    "name": "週刊女性PRIME 巨人 tag",
+    "url": "https://www.jprime.jp/list/tag/%E5%B7%A8%E4%BA%BA",
+    "type": "tag_scrape",
+    "scraper": "jprime_giants_tag",
+    "max_age_days": 180,
+    "article_limit": 30,
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
+    "name": "文春オンライン 読売ジャイアンツ",
+    "url": "https://bunshun.jp/category/baseball-column-giants?page=1",
+    "type": "tag_scrape",
+    "scraper": "bunshun_giants_category",
+    "max_age_days": 365,
+    "article_limit": 30,
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
+    "name": "NEWSポストセブン 巨人 search",
+    "url": "https://www.news-postseven.com/?s=%E5%B7%A8%E4%BA%BA",
+    "type": "tag_scrape",
+    "scraper": "news_postseven_giants_search",
+    "max_age_days": 180,
+    "article_limit": 30,
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
+    "name": "デイリー新潮 巨人 search",
+    "url": "https://www.dailyshincho.jp/search/?fulltext=%E5%B7%A8%E4%BA%BA",
+    "type": "tag_scrape",
+    "scraper": "daily_shincho_giants_search",
+    "max_age_days": 180,
+    "article_limit": 30,
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
+    "name": "現代ビジネス 巨人 search",
+    "url": "https://gendai.media/search?fulltext=%E5%B7%A8%E4%BA%BA&media=gb",
+    "type": "tag_scrape",
+    "scraper": "gendai_media_giants_search",
+    "max_age_days": 180,
+    "article_limit": 30,
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
+    "name": "アサ芸プラス 巨人 search",
+    "url": "https://www.asagei.com/?s=%E5%B7%A8%E4%BA%BA",
+    "type": "tag_scrape",
+    "scraper": "asagei_giants_search",
+    "max_age_days": 180,
     "article_limit": 30,
     "role": [
       "article_source",

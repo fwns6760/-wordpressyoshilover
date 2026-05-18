@@ -65,6 +65,29 @@ def test_yahoo_aggregator_recognized():
     assert source_trust.classify_url_family("https://news.yahoo.co.jp/articles/abcdef1234567890") == "yahoo_news_aggregator"
 
 
+@pytest.mark.parametrize(
+    ("url", "expected_family"),
+    [
+        ("https://full-count.jp/2026/05/18/post1234567/", "full_count"),
+        ("https://www.baseballchannel.jp/npb/giants/123456/", "baseball_channel"),
+        ("https://news.ntv.co.jp/category/sports/abcd1234", "ntv_news"),
+        ("https://www.asahi.com/articles/ASV5J3K46V5JUTQP011M.html", "asahi"),
+        ("https://mainichi.jp/articles/20260518/k00/00m/050/027000c", "mainichi"),
+        ("https://column.sp.baseball.findfriends.jp/?pid=column_detail&id=097-20260518-120", "weekly_baseball"),
+        ("https://friday.kodansha.co.jp/article/426377", "friday"),
+        ("https://smart-flash.jp/sports/406275/", "smart_flash"),
+        ("https://www.jprime.jp/articles/-/40564", "jprime"),
+        ("https://bunshun.jp/articles/-/71152", "bunshun"),
+        ("https://www.news-postseven.com/archives/20260518_2109651.html", "news_postseven"),
+        ("https://www.dailyshincho.jp/article/2026/05121005/", "daily_shincho"),
+    ],
+)
+def test_general_giants_topic_sources_recognized(url, expected_family):
+    assert source_trust.classify_url(url) == "secondary"
+    assert source_trust.classify_url_family(url) == expected_family
+    assert source_trust.get_family_trust_level(expected_family) == "mid"
+
+
 def test_trust_level_giants_official_is_high():
     assert source_trust.get_family_trust_level("giants_official") == "high"
 

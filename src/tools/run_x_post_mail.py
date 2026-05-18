@@ -40,7 +40,7 @@ LOG = logging.getLogger("x_post_mail")
 DEFAULT_MAX_DB_STALENESS_DAYS = 2
 DEFAULT_DEDUP_MIN_CANDIDATES = 3
 DEFAULT_LINEUP_FOCUS_MIN_CANDIDATES = 1
-DEFAULT_NEWS_FALLBACK_SOURCE_LIMIT = 4
+DEFAULT_NEWS_FALLBACK_SOURCE_LIMIT = 32
 DEFAULT_NEWS_FALLBACK_ENTRY_LIMIT = 5
 DEFAULT_NEWS_FALLBACK_TIMEOUT_SECONDS = 4
 RSS_SOURCES_FILE = Path(__file__).resolve().parents[2] / "config" / "rss_sources.json"
@@ -203,9 +203,13 @@ def _load_news_fallback_sources(path: Path = RSS_SOURCES_FILE) -> list[dict]:
         roles = source.get("role") or []
         if isinstance(roles, str):
             roles = [roles]
-        if source_type not in {"news", "social_news"}:
+        if source_type not in {"news", "social_news", "tag_scrape"}:
             continue
         if source_type == "social_news" and "article_source" not in roles:
+            continue
+        if source_type == "tag_scrape" and roles and "article_source" not in roles:
+            continue
+        if source_type == "tag_scrape" and not str(source.get("scraper") or "").strip():
             continue
         url = str(source.get("url") or "").strip()
         if not url.startswith(("http://", "https://")):
@@ -215,6 +219,18 @@ def _load_news_fallback_sources(path: Path = RSS_SOURCES_FILE) -> list[dict]:
 
 
 def _fetch_feed_entries(source: dict, *, timeout_seconds: int) -> list[dict]:
+    if str(source.get("type") or "") == "tag_scrape":
+        from src import tag_page_scraper
+
+        article_limit = int(source.get("article_limit") or DEFAULT_NEWS_FALLBACK_ENTRY_LIMIT)
+        article_limit = max(1, min(article_limit, DEFAULT_NEWS_FALLBACK_ENTRY_LIMIT))
+        return tag_page_scraper.fetch_tag_page_entries(
+            scraper=str(source.get("scraper") or ""),
+            url=str(source.get("url") or ""),
+            max_age_days=int(source.get("max_age_days") or 7),
+            article_limit=article_limit,
+            logger=LOG,
+        )
     try:
         import feedparser
     except Exception as exc:  # noqa: BLE001

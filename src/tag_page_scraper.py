@@ -25,8 +25,10 @@ import logging
 import re
 import time
 from datetime import datetime, timezone, timedelta
+from html import unescape
 from html.parser import HTMLParser
 from typing import Any, Callable, Iterable
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
 
@@ -138,6 +140,242 @@ def _http_get(
     except Exception:  # noqa: BLE001 — DNS / connection error 等は logger に任せて None 返す
         return None
     return response
+
+
+_GIANTS_TOPIC_KEYWORDS = ("巨人", "読売ジャイアンツ", "ジャイアンツ")
+_EMBEDDED_PUBLISHED_DATE_RE = re.compile(
+    r'"(?:datePublished|published_at|last_published_date|first_publish_date|original_first_publish_date)"\s*:\s*"([^"]+)"',
+    flags=re.IGNORECASE,
+)
+
+
+def _has_giants_topic(title: str, summary: str) -> bool:
+    haystack = f"{title} {summary}"
+    return any(keyword in haystack for keyword in _GIANTS_TOPIC_KEYWORDS)
+
+
+def _extract_embedded_published_date(html_text: str) -> str:
+    match = _EMBEDDED_PUBLISHED_DATE_RE.search(html_text or "")
+    return match.group(1).strip() if match else ""
+
+
+def _extract_datetime_attr(html_text: str) -> str:
+    match = re.search(
+        r'\bdatetime=[\"\']([^\"\']{10,40})[\"\']',
+        html_text or "",
+        flags=re.IGNORECASE,
+    )
+    return match.group(1).strip() if match else ""
+
+
+def _canonical_article_url(raw_url: str, *, base_url: str, keep_query: bool = False) -> str:
+    url = urljoin(base_url, unescape(str(raw_url or "").strip()))
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return url
+    query = parts.query if keep_query else ""
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, query, ""))
+
+
+def _published_struct_within_window(
+    published_struct: time.struct_time,
+    *,
+    max_age_days: int,
+    now: datetime,
+) -> bool:
+    pub_dt = datetime(*published_struct[:6], tzinfo=timezone.utc).astimezone(JST)
+    return _is_ymd_within_window(
+        pub_dt.strftime("%Y%m%d"), max_age_days=max_age_days, now=now
+    )
+
+
+def _fallback_struct_from_yyyymmdd(yyyymmdd: str) -> time.struct_time | None:
+    if not yyyymmdd or len(yyyymmdd) != 8 or not yyyymmdd.isdigit():
+        return None
+    try:
+        fallback_dt = datetime(
+            int(yyyymmdd[:4]),
+            int(yyyymmdd[4:6]),
+            int(yyyymmdd[6:8]),
+            12,
+            0,
+            0,
+            tzinfo=JST,
+        )
+    except ValueError:
+        return None
+    return fallback_dt.astimezone(timezone.utc).timetuple()
+
+
+def _extract_article_urls(
+    html_text: str,
+    *,
+    url_pattern: re.Pattern[str],
+    base_url: str,
+    keep_query: bool = False,
+    url_builder: Callable[[str, str], str] | None = None,
+) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    builder = url_builder or (
+        lambda raw, base: _canonical_article_url(
+            raw, base_url=base, keep_query=keep_query
+        )
+    )
+    for match in url_pattern.finditer(html_text or ""):
+        raw_url = next((group for group in match.groups() if group), "")
+        article_url = builder(raw_url, base_url)
+        if not article_url or article_url in seen:
+            continue
+        seen.add(article_url)
+        out.append(article_url)
+    return out
+
+
+def _build_entry_from_article_meta(
+    *,
+    source: str,
+    article_url: str,
+    article_html: str,
+    title_suffix_re: re.Pattern[str] | None,
+    max_age_days: int,
+    now: datetime,
+    fallback_yyyymmdd: str = "",
+    require_giants_topic: bool = True,
+) -> tuple[dict[str, Any] | None, str]:
+    meta = _extract_og_meta(article_html)
+    title = unescape(
+        (
+            meta.get("og:title")
+            or meta.get("twitter:title")
+            or meta.get("title")
+            or ""
+        ).strip()
+    )
+    if title_suffix_re is not None:
+        title = title_suffix_re.sub("", title).strip()
+    summary = unescape(
+        (
+            meta.get("og:description")
+            or meta.get("description")
+            or meta.get("twitter:description")
+            or ""
+        ).strip()
+    )
+    if require_giants_topic and not _has_giants_topic(title, summary):
+        return None, "non_giants"
+    published_struct = _parse_iso8601_to_struct_time(
+        meta.get("article:published_time", "")
+        or meta.get("date", "")
+        or _extract_embedded_published_date(article_html)
+        or _extract_datetime_attr(article_html)
+    )
+    if published_struct is None and fallback_yyyymmdd:
+        published_struct = _fallback_struct_from_yyyymmdd(fallback_yyyymmdd)
+    if published_struct is None:
+        return None, "date_unknown"
+    if not _published_struct_within_window(
+        published_struct, max_age_days=max_age_days, now=now
+    ):
+        return None, "age_filtered"
+    if not title:
+        return None, "title_empty"
+    entry: dict[str, Any] = {
+        "link": article_url,
+        "id": article_url,
+        "title": title,
+        "summary": summary,
+        "description": summary,
+        "published_parsed": published_struct,
+        "published": _struct_time_to_rfc822(published_struct),
+    }
+    return entry, ""
+
+
+def _fetch_generic_giants_entries(
+    *,
+    source: str,
+    tag_url: str,
+    article_url_pattern: re.Pattern[str],
+    title_suffix_re: re.Pattern[str] | None,
+    max_age_days: int,
+    article_limit: int,
+    logger: logging.Logger,
+    now: datetime,
+    fetcher: Callable[..., requests.Response] | None,
+    keep_query: bool = False,
+    url_date_re: re.Pattern[str] | None = None,
+    require_giants_topic: bool = True,
+    url_builder: Callable[[str, str], str] | None = None,
+) -> list[dict[str, Any]]:
+    response = _http_get(tag_url, fetcher=fetcher)
+    if response is None or response.status_code != 200:
+        logger.warning(
+            "tag_page_fetch_failed source=%s tag_url=%s status=%s",
+            source,
+            tag_url,
+            getattr(response, "status_code", "ERR"),
+        )
+        return []
+
+    article_urls = _extract_article_urls(
+        response.text,
+        url_pattern=article_url_pattern,
+        base_url=tag_url,
+        keep_query=keep_query,
+        url_builder=url_builder,
+    )[:article_limit]
+    if not article_urls:
+        logger.info("tag_page_no_recent_articles source=%s tag_url=%s", source, tag_url)
+        return []
+
+    entries: list[dict[str, Any]] = []
+    filtered: dict[str, int] = {
+        "non_giants": 0,
+        "date_unknown": 0,
+        "age_filtered": 0,
+        "title_empty": 0,
+        "fetch_failed": 0,
+    }
+    for article_url in article_urls:
+        article_response = _http_get(article_url, fetcher=fetcher)
+        if article_response is None or article_response.status_code != 200:
+            filtered["fetch_failed"] += 1
+            logger.info(
+                "tag_page_article_fetch_failed source=%s url=%s status=%s",
+                source,
+                article_url,
+                getattr(article_response, "status_code", "ERR"),
+            )
+            continue
+        fallback_date = ""
+        if url_date_re is not None:
+            date_match = url_date_re.search(article_url)
+            fallback_date = date_match.group(1) if date_match else ""
+        entry, reason = _build_entry_from_article_meta(
+            source=source,
+            article_url=article_url,
+            article_html=article_response.text,
+            title_suffix_re=title_suffix_re,
+            max_age_days=max_age_days,
+            now=now,
+            fallback_yyyymmdd=fallback_date,
+            require_giants_topic=require_giants_topic,
+        )
+        if entry is None:
+            filtered[reason] = filtered.get(reason, 0) + 1
+            continue
+        entries.append(entry)
+
+    logger.info(
+        "tag_page_entries_built source=%s count=%d candidates=%d filtered=%s",
+        source,
+        len(entries),
+        len(article_urls),
+        filtered,
+    )
+    return entries
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -910,6 +1148,311 @@ def fetch_tokyo_sports_giants_entries(
     return entries
 
 
+_NTV_NEWS_ARTICLE_RE = re.compile(
+    r'href=[\"\']([^\"\']*/category/sports/[0-9a-z]+(?:\?[^\"\']*)?)[\"\']',
+    flags=re.IGNORECASE,
+)
+_YOMIURI_NPB_ARTICLE_RE = re.compile(
+    r'href=[\"\']([^\"\']*/sports/npb/\d{8}-[A-Z0-9]+/(?:\?[^\"\']*)?)[\"\']',
+    flags=re.IGNORECASE,
+)
+_FRIDAY_ARTICLE_RE = re.compile(
+    r'href=[\"\']([^\"\']*/article/\d+(?:\?[^\"\']*)?)[\"\']|\"id\"\s*:\s*(\d{5,})',
+    flags=re.IGNORECASE,
+)
+_SMART_FLASH_ARTICLE_RE = re.compile(
+    r'href=[\"\'](https?://smart-flash\.jp/[a-z0-9_-]+/\d+/(?:\?[^\"\']*)?)[\"\']',
+    flags=re.IGNORECASE,
+)
+_JPRIME_ARTICLE_RE = re.compile(
+    r'href=[\"\']([^\"\']*/articles/-/\d+(?:\?[^\"\']*)?)[\"\']',
+    flags=re.IGNORECASE,
+)
+_BUNSHUN_ARTICLE_RE = re.compile(
+    r'href=[\"\']([^\"\']*/articles/-/\d+(?:\?[^\"\']*)?)[\"\']',
+    flags=re.IGNORECASE,
+)
+_NEWS_POSTSEVEN_ARTICLE_RE = re.compile(
+    r'href=[\"\'](https?://www\.news-postseven\.com/archives/\d+_\d+\.html(?:\?[^\"\']*)?)[\"\']',
+    flags=re.IGNORECASE,
+)
+_DAILY_SHINCHO_ARTICLE_RE = re.compile(
+    r'href=[\"\'](https?://www\.dailyshincho\.jp/article/\d{4}/\d{8}/(?:\?[^\"\']*)?)[\"\']',
+    flags=re.IGNORECASE,
+)
+_GENDAI_ARTICLE_RE = re.compile(
+    r'href=[\"\']([^\"\']*/articles/-/\d+(?:\?[^\"\']*)?)[\"\']',
+    flags=re.IGNORECASE,
+)
+_ASAGEI_ARTICLE_RE = re.compile(
+    r'href=[\"\'](https?://www\.asagei\.com/excerpt/\d+(?:\?[^\"\']*)?)[\"\']',
+    flags=re.IGNORECASE,
+)
+_DAILY_SHINCHO_URL_DATE_RE = re.compile(r"/article/\d{4}/(\d{8})/")
+
+_NTV_NEWS_TITLE_SUFFIX_RE = re.compile(
+    r"(?:（\d{4}年\d{1,2}月\d{1,2}日掲載）)?\s*[|｜]\s*日テレNEWS\s*NNN.*$"
+)
+_FRIDAY_TITLE_SUFFIX_RE = re.compile(r"\s*[|｜]\s*FRIDAYデジタル\s*$")
+_SMART_FLASH_TITLE_SUFFIX_RE = re.compile(
+    r"\s*(?:[|｜]|[-‐−–—ー])\s*Smart FLASH.*$", re.IGNORECASE
+)
+_JPRIME_TITLE_SUFFIX_RE = re.compile(r"\s*[|｜]\s*週刊女性PRIME\s*$")
+_BUNSHUN_TITLE_SUFFIX_RE = re.compile(r"\s*[|｜]\s*文春オンライン\s*$")
+_NEWS_POSTSEVEN_TITLE_SUFFIX_RE = re.compile(r"\s*[|｜]\s*NEWSポストセブン\s*$")
+_DAILY_SHINCHO_TITLE_SUFFIX_RE = re.compile(r"\s*[|｜]\s*デイリー新潮\s*$")
+_GENDAI_TITLE_SUFFIX_RE = re.compile(r"\s*[|｜]\s*現代ビジネス(?:\s*[|｜]\s*講談社)?\s*$")
+_ASAGEI_TITLE_SUFFIX_RE = re.compile(r"\s*[|｜]\s*アサ芸プラス\s*$")
+
+
+def _friday_article_url(raw_url: str, base_url: str) -> str:
+    raw = str(raw_url or "").strip()
+    if raw.isdigit():
+        return f"https://friday.kodansha.co.jp/article/{raw}"
+    return _canonical_article_url(raw, base_url=base_url)
+
+
+def fetch_ntv_news_giants_entries(
+    *,
+    tag_url: str = "https://news.ntv.co.jp/tag/%E5%B7%A8%E4%BA%BA",
+    max_age_days: int = 7,
+    article_limit: int = 30,
+    logger: logging.Logger | None = None,
+    now: datetime | None = None,
+    fetcher: Callable[..., requests.Response] | None = None,
+) -> list[dict[str, Any]]:
+    logger = logger or logging.getLogger("tag_page_scraper")
+    reference_now = (now or datetime.now(timezone.utc)).astimezone(JST)
+    return _fetch_generic_giants_entries(
+        source="ntv_news",
+        tag_url=tag_url,
+        article_url_pattern=_NTV_NEWS_ARTICLE_RE,
+        title_suffix_re=_NTV_NEWS_TITLE_SUFFIX_RE,
+        max_age_days=max_age_days,
+        article_limit=article_limit,
+        logger=logger,
+        now=reference_now,
+        fetcher=fetcher,
+    )
+
+
+def fetch_yomiuri_npb_giants_entries(
+    *,
+    tag_url: str = "https://www.yomiuri.co.jp/sports/npb/",
+    max_age_days: int = 7,
+    article_limit: int = 30,
+    logger: logging.Logger | None = None,
+    now: datetime | None = None,
+    fetcher: Callable[..., requests.Response] | None = None,
+) -> list[dict[str, Any]]:
+    logger = logger or logging.getLogger("tag_page_scraper")
+    reference_now = (now or datetime.now(timezone.utc)).astimezone(JST)
+    return _fetch_generic_giants_entries(
+        source="yomiuri_online",
+        tag_url=tag_url,
+        article_url_pattern=_YOMIURI_NPB_ARTICLE_RE,
+        title_suffix_re=None,
+        max_age_days=max_age_days,
+        article_limit=article_limit,
+        logger=logger,
+        now=reference_now,
+        fetcher=fetcher,
+    )
+
+
+def fetch_friday_giants_entries(
+    *,
+    tag_url: str = "https://friday.kodansha.co.jp/tag/%E3%82%B8%E3%83%A3%E3%82%A4%E3%82%A2%E3%83%B3%E3%83%84",
+    max_age_days: int = 120,
+    article_limit: int = 30,
+    logger: logging.Logger | None = None,
+    now: datetime | None = None,
+    fetcher: Callable[..., requests.Response] | None = None,
+) -> list[dict[str, Any]]:
+    logger = logger or logging.getLogger("tag_page_scraper")
+    reference_now = (now or datetime.now(timezone.utc)).astimezone(JST)
+    return _fetch_generic_giants_entries(
+        source="friday",
+        tag_url=tag_url,
+        article_url_pattern=_FRIDAY_ARTICLE_RE,
+        title_suffix_re=_FRIDAY_TITLE_SUFFIX_RE,
+        max_age_days=max_age_days,
+        article_limit=article_limit,
+        logger=logger,
+        now=reference_now,
+        fetcher=fetcher,
+    )
+
+
+def fetch_smart_flash_giants_entries(
+    *,
+    tag_url: str = "https://smart-flash.jp/tag/%E5%B7%A8%E4%BA%BA/",
+    max_age_days: int = 120,
+    article_limit: int = 30,
+    logger: logging.Logger | None = None,
+    now: datetime | None = None,
+    fetcher: Callable[..., requests.Response] | None = None,
+) -> list[dict[str, Any]]:
+    logger = logger or logging.getLogger("tag_page_scraper")
+    reference_now = (now or datetime.now(timezone.utc)).astimezone(JST)
+    return _fetch_generic_giants_entries(
+        source="smart_flash",
+        tag_url=tag_url,
+        article_url_pattern=_SMART_FLASH_ARTICLE_RE,
+        title_suffix_re=_SMART_FLASH_TITLE_SUFFIX_RE,
+        max_age_days=max_age_days,
+        article_limit=article_limit,
+        logger=logger,
+        now=reference_now,
+        fetcher=fetcher,
+    )
+
+
+def fetch_jprime_giants_entries(
+    *,
+    tag_url: str = "https://www.jprime.jp/list/tag/%E5%B7%A8%E4%BA%BA",
+    max_age_days: int = 180,
+    article_limit: int = 30,
+    logger: logging.Logger | None = None,
+    now: datetime | None = None,
+    fetcher: Callable[..., requests.Response] | None = None,
+) -> list[dict[str, Any]]:
+    logger = logger or logging.getLogger("tag_page_scraper")
+    reference_now = (now or datetime.now(timezone.utc)).astimezone(JST)
+    return _fetch_generic_giants_entries(
+        source="jprime",
+        tag_url=tag_url,
+        article_url_pattern=_JPRIME_ARTICLE_RE,
+        title_suffix_re=_JPRIME_TITLE_SUFFIX_RE,
+        max_age_days=max_age_days,
+        article_limit=article_limit,
+        logger=logger,
+        now=reference_now,
+        fetcher=fetcher,
+    )
+
+
+def fetch_bunshun_giants_entries(
+    *,
+    tag_url: str = "https://bunshun.jp/category/baseball-column-giants?page=1",
+    max_age_days: int = 365,
+    article_limit: int = 30,
+    logger: logging.Logger | None = None,
+    now: datetime | None = None,
+    fetcher: Callable[..., requests.Response] | None = None,
+) -> list[dict[str, Any]]:
+    logger = logger or logging.getLogger("tag_page_scraper")
+    reference_now = (now or datetime.now(timezone.utc)).astimezone(JST)
+    return _fetch_generic_giants_entries(
+        source="bunshun",
+        tag_url=tag_url,
+        article_url_pattern=_BUNSHUN_ARTICLE_RE,
+        title_suffix_re=_BUNSHUN_TITLE_SUFFIX_RE,
+        max_age_days=max_age_days,
+        article_limit=article_limit,
+        logger=logger,
+        now=reference_now,
+        fetcher=fetcher,
+    )
+
+
+def fetch_news_postseven_giants_entries(
+    *,
+    tag_url: str = "https://www.news-postseven.com/?s=%E5%B7%A8%E4%BA%BA",
+    max_age_days: int = 180,
+    article_limit: int = 30,
+    logger: logging.Logger | None = None,
+    now: datetime | None = None,
+    fetcher: Callable[..., requests.Response] | None = None,
+) -> list[dict[str, Any]]:
+    logger = logger or logging.getLogger("tag_page_scraper")
+    reference_now = (now or datetime.now(timezone.utc)).astimezone(JST)
+    return _fetch_generic_giants_entries(
+        source="news_postseven",
+        tag_url=tag_url,
+        article_url_pattern=_NEWS_POSTSEVEN_ARTICLE_RE,
+        title_suffix_re=_NEWS_POSTSEVEN_TITLE_SUFFIX_RE,
+        max_age_days=max_age_days,
+        article_limit=article_limit,
+        logger=logger,
+        now=reference_now,
+        fetcher=fetcher,
+    )
+
+
+def fetch_daily_shincho_giants_entries(
+    *,
+    tag_url: str = "https://www.dailyshincho.jp/search/?fulltext=%E5%B7%A8%E4%BA%BA",
+    max_age_days: int = 180,
+    article_limit: int = 30,
+    logger: logging.Logger | None = None,
+    now: datetime | None = None,
+    fetcher: Callable[..., requests.Response] | None = None,
+) -> list[dict[str, Any]]:
+    logger = logger or logging.getLogger("tag_page_scraper")
+    reference_now = (now or datetime.now(timezone.utc)).astimezone(JST)
+    return _fetch_generic_giants_entries(
+        source="daily_shincho",
+        tag_url=tag_url,
+        article_url_pattern=_DAILY_SHINCHO_ARTICLE_RE,
+        title_suffix_re=_DAILY_SHINCHO_TITLE_SUFFIX_RE,
+        max_age_days=max_age_days,
+        article_limit=article_limit,
+        logger=logger,
+        now=reference_now,
+        fetcher=fetcher,
+        url_date_re=_DAILY_SHINCHO_URL_DATE_RE,
+    )
+
+
+def fetch_gendai_media_giants_entries(
+    *,
+    tag_url: str = "https://gendai.media/search?fulltext=%E5%B7%A8%E4%BA%BA&media=gb",
+    max_age_days: int = 180,
+    article_limit: int = 30,
+    logger: logging.Logger | None = None,
+    now: datetime | None = None,
+    fetcher: Callable[..., requests.Response] | None = None,
+) -> list[dict[str, Any]]:
+    logger = logger or logging.getLogger("tag_page_scraper")
+    reference_now = (now or datetime.now(timezone.utc)).astimezone(JST)
+    return _fetch_generic_giants_entries(
+        source="gendai_media",
+        tag_url=tag_url,
+        article_url_pattern=_GENDAI_ARTICLE_RE,
+        title_suffix_re=_GENDAI_TITLE_SUFFIX_RE,
+        max_age_days=max_age_days,
+        article_limit=article_limit,
+        logger=logger,
+        now=reference_now,
+        fetcher=fetcher,
+    )
+
+
+def fetch_asagei_giants_entries(
+    *,
+    tag_url: str = "https://www.asagei.com/?s=%E5%B7%A8%E4%BA%BA",
+    max_age_days: int = 180,
+    article_limit: int = 30,
+    logger: logging.Logger | None = None,
+    now: datetime | None = None,
+    fetcher: Callable[..., requests.Response] | None = None,
+) -> list[dict[str, Any]]:
+    logger = logger or logging.getLogger("tag_page_scraper")
+    reference_now = (now or datetime.now(timezone.utc)).astimezone(JST)
+    return _fetch_generic_giants_entries(
+        source="asagei",
+        tag_url=tag_url,
+        article_url_pattern=_ASAGEI_ARTICLE_RE,
+        title_suffix_re=_ASAGEI_TITLE_SUFFIX_RE,
+        max_age_days=max_age_days,
+        article_limit=article_limit,
+        logger=logger,
+        now=reference_now,
+        fetcher=fetcher,
+    )
+
+
 _SCRAPER_REGISTRY: dict[str, Callable[..., list[dict[str, Any]]]] = {
     "hochi_giants_tag": fetch_hochi_giants_entries,
     "daily_giants_tag": fetch_daily_giants_entries,
@@ -917,6 +1460,16 @@ _SCRAPER_REGISTRY: dict[str, Callable[..., list[dict[str, Any]]]] = {
     "tokyo_sports_giants_label": fetch_tokyo_sports_giants_entries,
     "sanspo_giants_search": fetch_sanspo_giants_entries,
     "youtube_channel": fetch_youtube_channel_entries,
+    "ntv_news_giants_tag": fetch_ntv_news_giants_entries,
+    "yomiuri_npb_giants_filter": fetch_yomiuri_npb_giants_entries,
+    "friday_giants_tag": fetch_friday_giants_entries,
+    "smart_flash_giants_tag": fetch_smart_flash_giants_entries,
+    "jprime_giants_tag": fetch_jprime_giants_entries,
+    "bunshun_giants_category": fetch_bunshun_giants_entries,
+    "news_postseven_giants_search": fetch_news_postseven_giants_entries,
+    "daily_shincho_giants_search": fetch_daily_shincho_giants_entries,
+    "gendai_media_giants_search": fetch_gendai_media_giants_entries,
+    "asagei_giants_search": fetch_asagei_giants_entries,
 }
 
 

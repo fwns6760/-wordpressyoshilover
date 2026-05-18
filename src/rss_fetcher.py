@@ -1807,19 +1807,53 @@ _POST_GEN_VALIDATE_TRUSTED_FAMILIES = frozenset(
     }
 )
 
+# 2026-05-18: 一般誌/総合ニュースは事実一次ソースではないが、「同じ選手ばかり」
+# のデータ偏重を逃がす話題枠として使う。ここで許すのは weak title /
+# routing review / generic title repair の限定 bypass だけで、full bypass や
+# numeric/fact validators には入れない。
+_POST_GEN_VALIDATE_TOPIC_SOURCE_FAMILIES = frozenset(
+    {
+        "baseball_channel",
+        "full_count",
+        "ntv_news",
+        "yomiuri_online",
+        "asahi",
+        "mainichi",
+        "weekly_baseball",
+        "tokyo_sports",
+        "friday",
+        "smart_flash",
+        "jprime",
+        "bunshun",
+        "news_postseven",
+        "daily_shincho",
+        "gendai_media",
+        "asagei",
+    }
+)
+
 
 def _post_gen_validate_trusted_bypass_enabled() -> bool:
     return _env_flag("ENABLE_POST_GEN_VALIDATE_TRUSTED_BYPASS", False)
 
 
+def _post_gen_validate_topic_source_bypass_enabled() -> bool:
+    return _env_flag("ENABLE_POST_GEN_VALIDATE_TOPIC_SOURCE_BYPASS", True)
+
+
 def _post_gen_validate_trusted_bypass(post_url: str | None) -> bool:
-    if not _post_gen_validate_trusted_bypass_enabled():
-        return False
     url = str(post_url or "").strip()
     if not url:
         return False
     family = _source_trust_classify_url_family(url)
-    return family in _POST_GEN_VALIDATE_TRUSTED_FAMILIES
+    if _post_gen_validate_trusted_bypass_enabled() and family in _POST_GEN_VALIDATE_TRUSTED_FAMILIES:
+        return True
+    if (
+        _post_gen_validate_topic_source_bypass_enabled()
+        and family in _POST_GEN_VALIDATE_TOPIC_SOURCE_FAMILIES
+    ):
+        return True
+    return False
 
 
 # RELIABILITY-2026-05-08-D: trusted source の post_gen_validate 全 fail axes bypass。

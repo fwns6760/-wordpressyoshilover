@@ -73,6 +73,20 @@ class TrustedBypassFullHelperTests(unittest.TestCase):
             self.assertFalse(rss_fetcher._post_gen_validate_trusted_bypass_full(None))
             self.assertFalse(rss_fetcher._post_gen_validate_trusted_bypass_full("   "))
 
+    def test_topic_source_gets_limited_bypass_but_not_full_bypass(self):
+        url = "https://friday.kodansha.co.jp/article/426377"
+        with patch.dict(
+            os.environ,
+            {
+                "ENABLE_POST_GEN_VALIDATE_TOPIC_SOURCE_BYPASS": "1",
+                "ENABLE_POST_GEN_VALIDATE_TRUSTED_BYPASS": "0",
+                "ENABLE_POST_GEN_VALIDATE_TRUSTED_BYPASS_FULL": "1",
+            },
+            clear=False,
+        ):
+            self.assertTrue(rss_fetcher._post_gen_validate_trusted_bypass(url))
+            self.assertFalse(rss_fetcher._post_gen_validate_trusted_bypass_full(url))
+
 
 class ReviewDraftFlagTests(unittest.TestCase):
     def test_flag_off_returns_false(self):

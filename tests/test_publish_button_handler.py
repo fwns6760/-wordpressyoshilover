@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, urlparse
 from src.publish_button_handler import (
     _build_x_intent_url,
     handle_get,
-    handle_post,
+    handle_post as _handle_post_real,
 )
 from src.publish_button_token import generate_publish_button_token
 
@@ -27,6 +27,17 @@ def _wp_draft_post(post_id: int = 123, status: str = "draft"):
         "link": "https://yoshilover.com/post-123/",
         "status": status,
     }
+
+
+def handle_post(*args, **kwargs):
+    """test wrapper: GCS callable を default mock (consumed=False / mark=True) で injection。
+
+    Why: handler の default は real GCS を叩く。 test では副作用 (real bucket への
+    書き込み試行 + warnings) を出さないため、 明示しない限り「未消費 + mark 成功」 mock を入れる。
+    """
+    kwargs.setdefault("is_consumed", lambda token: False)
+    kwargs.setdefault("mark_consumed", lambda token, **_: True)
+    return _handle_post_real(*args, **kwargs)
 
 
 # --- _build_x_intent_url ---------------------------------------------------
@@ -326,6 +337,122 @@ class HandlePostTests(unittest.TestCase):
         qs = parse_qs(parsed.query)
         assert qs["text"] == ["巨人 3-1 阪神 岡本 2 試合連続 HR"]
         assert qs["url"] == ["https://yoshilover.com/post-123/"]
+
+    # --- one-shot token (consumed store) integration ---
+
+    def test_consumed_token_with_draft_post_returns_409(self):
+        """token 既消費 + post draft = suspicious、 publish しない."""
+        update_mock = MagicMock()
+        code, body, _ = _handle_post_real(
+            post_id_raw="123",
+            token=_TOKEN,
+            fetch_post=lambda pid: _wp_draft_post(status="draft"),
+            update_post_status=update_mock,
+            now=_VERIFY_NOW,
+            is_consumed=lambda token: True,
+            mark_consumed=lambda token, **_: True,
+        )
+        assert code == 409
+        assert "既に使用済" in body
+        update_mock.assert_not_called()
+
+    def test_consumed_token_with_publish_post_redirects_idempotent(self):
+        """token 既消費 + post publish = idempotent UX、 X intent へ進む."""
+        update_mock = MagicMock()
+        code, body, headers = _handle_post_real(
+            post_id_raw="123",
+            token=_TOKEN,
+            fetch_post=lambda pid: _wp_draft_post(status="publish"),
+            update_post_status=update_mock,
+            now=_VERIFY_NOW,
+            is_consumed=lambda token: True,
+            mark_consumed=lambda token, **_: True,
+        )
+        assert code == 302
+        assert headers["Location"].startswith("https://x.com/intent/tweet?")
+        update_mock.assert_not_called()
+
+    def test_unconsumed_token_with_draft_marks_consumed_after_publish(self):
+        """正常パス: token 未消費 + draft → publish + mark_consumed 呼ばれる."""
+        update_mock = MagicMock()
+        mark_mock = MagicMock(return_value=True)
+        post_state = {"status": "draft"}
+
+        def fetch(pid):
+            return {
+                "id": pid,
+                "title": {"rendered": "巨人勝利"},
+                "link": "https://yoshilover.com/post-123/",
+                "status": post_state["status"],
+            }
+
+        def update(pid, new_status, **kwargs):
+            update_mock(pid, new_status, **kwargs)
+            post_state["status"] = new_status
+
+        code, _, _ = _handle_post_real(
+            post_id_raw="123",
+            token=_TOKEN,
+            fetch_post=fetch,
+            update_post_status=update,
+            now=_VERIFY_NOW,
+            is_consumed=lambda token: False,
+            mark_consumed=mark_mock,
+        )
+        assert code == 302
+        update_mock.assert_called_once_with(123, "publish")
+        mark_mock.assert_called_once()
+        # mark_consumed の引数に post_id が入る
+        call_kwargs = mark_mock.call_args.kwargs
+        assert call_kwargs.get("post_id") == 123
+
+    def test_unconsumed_token_with_publish_post_does_not_mark(self):
+        """既 publish 記事は token を消費しない (再利用余地を残す)."""
+        update_mock = MagicMock()
+        mark_mock = MagicMock(return_value=True)
+        code, _, headers = _handle_post_real(
+            post_id_raw="123",
+            token=_TOKEN,
+            fetch_post=lambda pid: _wp_draft_post(status="publish"),
+            update_post_status=update_mock,
+            now=_VERIFY_NOW,
+            is_consumed=lambda token: False,
+            mark_consumed=mark_mock,
+        )
+        assert code == 302
+        update_mock.assert_not_called()
+        mark_mock.assert_not_called()
+
+    def test_mark_consumed_failure_still_completes_publish_and_redirects(self):
+        """mark_consumed が GCS fail で False 返しても publish は完了して redirect する (fail-open)."""
+        update_mock = MagicMock()
+        mark_mock = MagicMock(return_value=False)  # GCS write failed
+        post_state = {"status": "draft"}
+
+        def fetch(pid):
+            return {
+                "id": pid,
+                "title": {"rendered": "巨人勝利"},
+                "link": "https://yoshilover.com/post-123/",
+                "status": post_state["status"],
+            }
+
+        def update(pid, new_status, **kwargs):
+            update_mock(pid, new_status, **kwargs)
+            post_state["status"] = new_status
+
+        code, _, headers = _handle_post_real(
+            post_id_raw="123",
+            token=_TOKEN,
+            fetch_post=fetch,
+            update_post_status=update,
+            now=_VERIFY_NOW,
+            is_consumed=lambda token: False,
+            mark_consumed=mark_mock,
+        )
+        assert code == 302
+        update_mock.assert_called_once()
+        mark_mock.assert_called_once()
 
     def test_no_x_api_call_happens(self):
         """X API client を呼ばないことを verify (X 自動投稿は絶対しない hard rule)."""

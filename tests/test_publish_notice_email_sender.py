@@ -2973,6 +2973,49 @@ class HtmlBodyPerPostTests(unittest.TestCase):
         self.assertNotIn("サヨナラ", hashtags_value)
         self.assertNotIn("３００号", hashtags_value)
 
+    # --- 379-OPS (GH #53): 「公開してX投稿画面へ」 + 「WP編集画面で確認」 button ---
+
+    def test_publish_button_html_omitted_when_url_not_set(self):
+        html_body = sender.build_body_html_per_post(self._request())
+        self.assertNotIn("公開してX投稿画面へ", html_body)
+        self.assertNotIn("/publish-and-tweet", html_body)
+
+    def test_publish_button_html_included_when_url_set(self):
+        url = "https://yoshilover-fetcher.example.com/publish-and-tweet?post_id=123&token=1700.abc"
+        req = self._request(publish_button_url=url)
+        html_body = sender.build_body_html_per_post(req)
+        self.assertIn("🚀 公開してX投稿画面へ", html_body)
+        # URL は href に HTML-escape された形で含まれる
+        self.assertIn("/publish-and-tweet?post_id=123", html_body)
+        self.assertIn("&amp;token=1700.abc", html_body)
+
+    def test_publish_button_html_escapes_dangerous_chars_in_url(self):
+        url = 'https://x.test/?a=1&b="><script>'
+        req = self._request(publish_button_url=url)
+        html_body = sender.build_body_html_per_post(req)
+        # raw script tag は HTML 内に live で出ない
+        self.assertNotIn('"><script>', html_body)
+        self.assertIn("&quot;", html_body)
+
+    def test_admin_edit_button_html_included_when_url_set(self):
+        req = self._request(
+            admin_edit_url="https://yoshilover.com/wp-admin/post.php?post=123&action=edit",
+        )
+        html_body = sender.build_body_html_per_post(req)
+        self.assertIn("✏️ WP編集画面で確認", html_body)
+        self.assertIn("wp-admin/post.php?post=123", html_body)
+
+    def test_publish_button_comes_before_x_intent_in_html(self):
+        """UX: 公開してX投稿画面へ は X intent ボタンより上に置く."""
+        url = "https://fetcher.test/publish-and-tweet?post_id=1&token=t.h"
+        req = self._request(publish_button_url=url)
+        html_body = sender.build_body_html_per_post(req)
+        publish_pos = html_body.find("公開してX投稿画面へ")
+        x_intent_pos = html_body.find("𝕏 で投稿")
+        self.assertGreater(publish_pos, 0)
+        self.assertGreater(x_intent_pos, 0)
+        self.assertLess(publish_pos, x_intent_pos)
+
 
 class XIntentHashtagBuilderTests(unittest.TestCase):
     """Unit tests for _build_x_post_intent_url(hashtags=...) and

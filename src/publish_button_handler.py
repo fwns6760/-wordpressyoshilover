@@ -13,6 +13,10 @@ import html
 import logging
 from urllib.parse import quote, urlencode
 
+from src.publish_button_consumed_store import (
+    is_consumed as default_is_consumed,
+    mark_consumed as default_mark_consumed,
+)
 from src.publish_button_token import verify_publish_button_token
 
 
@@ -142,12 +146,24 @@ def handle_post(
     fetch_post,
     update_post_status,
     now: int | float | None = None,
+    is_consumed=None,
+    mark_consumed=None,
 ) -> tuple[int, str, dict]:
     """POST /publish-and-tweet: token 検証 → draft なら publish → X intent URL に 302 redirect。
 
     ``fetch_post(post_id) -> dict | None``: post 情報 (status / title / link 取得)
     ``update_post_status(post_id, "publish")``: WP REST で status を flip (caller が wp_client wrap)
+    ``is_consumed`` / ``mark_consumed``: token 1 回限り (one-shot) store callable
+    (テスト時 injection、 実本番は GCS-backed ``publish_button_consumed_store``)。
+
+    one-shot logic:
+      - token consumed + post publish → idempotent redirect (UX)
+      - token consumed + post draft → 409 (suspicious、 mark 失敗 で stale だった可能性)
+      - token not consumed + post draft → publish + mark + redirect
+      - token not consumed + post publish → redirect (mark しない、 既 publish なら token 余地残す)
     """
+    is_consumed_fn = is_consumed if is_consumed is not None else default_is_consumed
+    mark_consumed_fn = mark_consumed if mark_consumed is not None else default_mark_consumed
     if not post_id_raw or not post_id_raw.isdigit():
         return 400, _result_page("公開ボタン エラー", "post_id が不正です", success=False), {}
     if not token:
@@ -181,7 +197,19 @@ def handle_post(
         post_title = str(title_field.get("rendered") or "").strip()
     else:
         post_title = str(title_field or "").strip()
+
+    # 379-OPS one-shot check: 既に token 消費済の場合の挙動
+    token_already_consumed = bool(is_consumed_fn(token))
+
     if current_status == "draft":
+        if token_already_consumed:
+            # token は 1 回限り。 draft 状態で再使用は suspicious (実は一度 publish したのに
+            # WP 側で draft 戻された / mark_consumed 失敗で stale 等)。 明示 409 で止める。
+            return 409, _result_page(
+                "公開ボタン エラー",
+                f"この token は既に使用済です (1 回限り)。 post_id={post_id} は draft のままなので、 mail を再受信するか WP admin で確認してください。",
+                success=False,
+            ), {}
         try:
             update_post_status(post_id, "publish")
         except Exception as exc:  # noqa: BLE001
@@ -196,6 +224,13 @@ def handle_post(
                 f"WP REST publish 失敗 (post_id={post_id}): {err_msg[:200]}",
                 success=False,
             ), {}
+        # token を消費 (atomic write、 race 時は 1 つだけ True)
+        marked = bool(mark_consumed_fn(token, post_id=post_id, now=now))
+        if not marked:
+            _log.info(
+                "publish_button_token_mark_failed post_id=%s (idempotent OK)",
+                post_id,
+            )
         # publish 直後は WP REST の link field がまだ古い slug の可能性があるため
         # 念のため refetch して最新 link を取る。 失敗時は元 link を fallback。
         try:
@@ -211,9 +246,11 @@ def handle_post(
             post_id,
         )
     elif current_status == "publish":
+        # 既 publish の場合は token 消費せず redirect (idempotent UX)。
         _log.info(
-            "publish_button_already_published post_id=%s caller=mail_publish_and_tweet_endpoint",
+            "publish_button_already_published post_id=%s caller=mail_publish_and_tweet_endpoint token_consumed=%s",
             post_id,
+            token_already_consumed,
         )
     else:
         return 409, _result_page(

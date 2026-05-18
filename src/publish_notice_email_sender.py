@@ -2718,6 +2718,37 @@ def build_body_html_per_post(
             '🚫 非公開にする</a>'
             '</td></tr>'
         )
+    # 379-OPS (GH #53): mail 内「公開してX投稿画面へ」 button HTML。
+    # publish_button_url が populate されている時のみ render、 既存運用と backward compat。
+    publish_button_url_raw = str(getattr(request, "publish_button_url", "") or "").strip()
+    publish_button_html = ""
+    if publish_button_url_raw:
+        safe_publish_button = html.escape(publish_button_url_raw)
+        publish_button_html = (
+            '<tr><td align="center" style="padding:0 22px 14px;">'
+            f'<a href="{safe_publish_button}" target="_blank" rel="noopener" '
+            'style="display:inline-block;width:100%;max-width:300px;'
+            'padding:13px 20px;background:#1b8a3e;color:#ffffff;'
+            'text-decoration:none;border-radius:6px;font-size:15px;'
+            'font-weight:700;text-align:center;">'
+            '🚀 公開してX投稿画面へ</a>'
+            '</td></tr>'
+        )
+    # admin edit link (377-OPS Phase 1B 由来) を HTML mail にも 1 つ button として出す。
+    admin_edit_url_raw = str(getattr(request, "admin_edit_url", "") or "").strip()
+    admin_edit_button_html = ""
+    if admin_edit_url_raw:
+        safe_admin_edit = html.escape(admin_edit_url_raw)
+        admin_edit_button_html = (
+            '<tr><td align="center" style="padding:0 22px 14px;">'
+            f'<a href="{safe_admin_edit}" target="_blank" rel="noopener" '
+            'style="display:inline-block;width:100%;max-width:300px;'
+            'padding:11px 20px;background:#ffffff;color:#003da5;'
+            'text-decoration:none;border-radius:6px;font-size:13px;'
+            'font-weight:700;text-align:center;border:1px solid #003da5;">'
+            '✏️ WP編集画面で確認</a>'
+            '</td></tr>'
+        )
     return (
         '<!DOCTYPE html><html><body style="margin:0;padding:0;'
         'background:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,'
@@ -2741,13 +2772,15 @@ def build_body_html_per_post(
         'text-decoration:none;border-radius:6px;font-size:15px;'
         'font-weight:700;text-align:center;">📰 記事を見る</a>'
         '</td></tr>'
+        f'{publish_button_html}'
         '<tr><td align="center" style="padding:0 22px 14px;">'
         f'<a href="{safe_intent}" target="_blank" rel="noopener" '
         'style="display:inline-block;width:100%;max-width:300px;'
         'padding:13px 20px;background:#000000;color:#ffffff;'
         'text-decoration:none;border-radius:6px;font-size:15px;'
-        'font-weight:700;text-align:center;">𝕏 で投稿する</a>'
+        'font-weight:700;text-align:center;">𝕏 で投稿する (公開済記事用)</a>'
         '</td></tr>'
+        f'{admin_edit_button_html}'
         f'{unpublish_button_html}'
         '<tr><td style="padding:0 22px 18px;border-top:1px solid #eee;">'
         '<p style="margin:14px 0 0;font-size:11px;line-height:1.5;'

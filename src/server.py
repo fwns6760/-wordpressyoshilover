@@ -3,6 +3,8 @@ Cloud Run用HTTPサーバー
 POST /run → rss_fetcher.pyを実行
 GET  /health → ヘルスチェック
 GET  /unpublish → mail 1-click 非公開 (post_id + token、2026-05-14 user request)
+GET  /publish-and-tweet → mail 内「公開してX投稿画面へ」ボタンの confirmation page (379-OPS / GH #53)
+POST /publish-and-tweet → token 検証 + draft→publish flip + X intent URL に 302 redirect
 """
 import json
 import logging
@@ -306,6 +308,57 @@ def _run_unpublish(post_id_raw: str, token: str) -> tuple[int, str]:
     )
 
 
+def _run_publish_and_tweet(
+    method: str,
+    post_id_raw: str,
+    token: str,
+) -> tuple[int, str, dict]:
+    """379-OPS (GH #53): mail 内「公開してX投稿画面へ」ボタンの handler 本体。
+
+    Returns ``(status_code, body, extra_headers)``。
+    """
+    log = logging.getLogger("server.publish_and_tweet")
+    try:
+        from src.publish_button_handler import handle_get, handle_post
+    except Exception as exc:  # noqa: BLE001
+        log.warning("publish_button_handler_import_failed err=%s", exc)
+        return 500, "<h2>内部エラー</h2><p>handler import 失敗</p>", {}
+    try:
+        from src.wp_client import WPClient
+    except Exception as exc:  # noqa: BLE001
+        log.warning("publish_button_wp_client_import_failed err=%s", exc)
+        return 500, "<h2>内部エラー</h2><p>wp_client import 失敗</p>", {}
+
+    wp = WPClient()
+
+    def _fetch(pid: int):
+        try:
+            return wp.get_post(pid)
+        except Exception:
+            return None
+
+    def _update(pid: int, new_status: str) -> None:
+        wp.update_post_status(
+            pid,
+            new_status,
+            caller="server.publish_and_tweet_endpoint",
+            source_lane="mail_publish_and_tweet",
+        )
+
+    if method == "GET":
+        return handle_get(
+            post_id_raw=post_id_raw,
+            token=token,
+            fetch_post=_fetch,
+        )
+    return handle_post(
+        post_id_raw=post_id_raw,
+        token=token,
+        fetch_post=_fetch,
+        update_post_status=_update,
+    )
+
+
 def _unpublish_html(status: str, message: str, post_id: int | None = None) -> str:
     """unpublish endpoint 用の簡易 HTML response。"""
     title = "非公開化 完了" if status == "success" else "非公開化 エラー"
@@ -385,10 +438,28 @@ class Handler(BaseHTTPRequestHandler):
             token = (qs.get("token", [""])[0] or "").strip()
             code, html = _run_unpublish(post_id_raw, token)
             self._respond(code, html, content_type="text/html; charset=utf-8")
+        elif parsed.path == "/publish-and-tweet":
+            # 379-OPS (GH #53): mail 内「公開してX投稿画面へ」ボタン confirmation page。
+            qs = parse_qs(parsed.query or "")
+            post_id_raw = (qs.get("post_id", [""])[0] or "").strip()
+            token = (qs.get("token", [""])[0] or "").strip()
+            code, body, extra_headers = _run_publish_and_tweet("GET", post_id_raw, token)
+            self._respond(code, body, content_type="text/html; charset=utf-8", extra_headers=extra_headers)
         else:
             self._respond(404, "Not Found")
 
     def do_POST(self):
+        parsed = urlparse(self.path)
+        if parsed.path == "/publish-and-tweet":
+            # 379-OPS (GH #53): confirmation page から submit された publish + X intent。
+            length = int(self.headers.get("Content-Length", 0))
+            raw_body = self.rfile.read(length).decode() if length else ""
+            form = parse_qs(raw_body)
+            post_id_raw = (form.get("post_id", [""])[0] or "").strip()
+            token = (form.get("token", [""])[0] or "").strip()
+            code, body, extra_headers = _run_publish_and_tweet("POST", post_id_raw, token)
+            self._respond(code, body, content_type="text/html; charset=utf-8", extra_headers=extra_headers)
+            return
         if self.path != "/run":
             self._respond(404, "Not Found")
             return
@@ -406,9 +477,12 @@ class Handler(BaseHTTPRequestHandler):
         code, message = _run_fetcher(limit)
         self._respond(code, message)
 
-    def _respond(self, code, body, content_type="text/plain"):
+    def _respond(self, code, body, content_type="text/plain", extra_headers=None):
         self.send_response(code)
         self.send_header("Content-Type", content_type)
+        if extra_headers:
+            for name, value in extra_headers.items():
+                self.send_header(name, value)
         self.end_headers()
         self.wfile.write(body.encode())
 

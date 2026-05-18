@@ -20,6 +20,7 @@ from urllib.parse import urlencode, urljoin
 import urllib.request
 from zoneinfo import ZoneInfo
 
+from src.publish_button_token import build_publish_button_url
 from src.publish_notice_body_excerpt import build_admin_edit_url, build_body_excerpt
 from src.publish_notice_email_sender import PublishNoticeRequest, build_subject
 
@@ -1413,6 +1414,25 @@ def _default_fetch_post_detail(base_url: str, post_id: int | str) -> Mapping[str
     return payload if isinstance(payload, Mapping) else None
 
 
+_DEFAULT_FETCHER_PUBLIC_BASE_URL = (
+    "https://yoshilover-fetcher-487178857517.asia-northeast1.run.app"
+)
+
+
+def _resolve_fetcher_base_url(fetcher_base_url: str | None = None) -> str | None:
+    """publish-and-tweet endpoint を hosting する fetcher service の public URL を解決する。
+
+    Why: mail に出す「公開してX投稿画面へ」ボタンの href base に使う (379-OPS / GH #53)。
+    優先順位: 明示引数 → ``FETCHER_PUBLIC_BASE_URL`` env → 既知 default URL。
+    """
+    if fetcher_base_url is not None and str(fetcher_base_url).strip():
+        return str(fetcher_base_url).strip().rstrip("/")
+    env_value = str(os.environ.get("FETCHER_PUBLIC_BASE_URL", "")).strip()
+    if env_value:
+        return env_value.rstrip("/")
+    return _DEFAULT_FETCHER_PUBLIC_BASE_URL
+
+
 def _resolve_wp_base_url(wp_base_url: str | None = None) -> str | None:
     """WP site root URL (for admin link) を解決する。
 
@@ -1455,12 +1475,14 @@ def _request_from_post(
     wp_base_url: str | None = None,
 ) -> PublishNoticeRequest:
     # 377-OPS Phase 1C (GH #51): mail card に「本文 600-1000 字」と「WP 編集 / 公開 link」を出す。
+    # 379-OPS (GH #53): さらに「公開してX投稿画面へ」ボタン用 URL を populate する。
     post_id = post.get("id", "")
     content_html = _extract_rendered(post.get("content"))
     excerpt_html = _extract_rendered(post.get("excerpt"))
     body_html = content_html or excerpt_html
     body_excerpt = build_body_excerpt(body_html) if body_html else None
     admin_edit_url = build_admin_edit_url(post_id, _resolve_wp_base_url(wp_base_url))
+    publish_button_url = build_publish_button_url(post_id, _resolve_fetcher_base_url())
     return PublishNoticeRequest(
         post_id=post_id,
         title=_extract_title(post),
@@ -1471,6 +1493,7 @@ def _request_from_post(
         notice_origin=notice_origin,
         body_excerpt=body_excerpt,
         admin_edit_url=admin_edit_url,
+        publish_button_url=publish_button_url,
     )
 
 
@@ -1956,6 +1979,8 @@ def scan_guarded_publish_history(
             # 377-OPS Phase 1C: base_request から body_excerpt / admin_edit_url を継承
             body_excerpt=base_request.body_excerpt,
             admin_edit_url=base_request.admin_edit_url,
+            # 379-OPS (GH #53): publish_button_url も継承
+            publish_button_url=base_request.publish_button_url,
         )
         emitted.append(request)
         seen_post_ids.add(post_key)
@@ -2560,6 +2585,8 @@ def _build_24h_budget_summary_only_request(
         # 377-OPS Phase 1C: budget demotion でも body_excerpt / admin_edit_url を継承
         body_excerpt=getattr(request, "body_excerpt", None),
         admin_edit_url=getattr(request, "admin_edit_url", None),
+        # 379-OPS (GH #53): publish_button_url も継承
+        publish_button_url=getattr(request, "publish_button_url", None),
     )
 
 

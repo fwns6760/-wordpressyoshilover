@@ -194,6 +194,9 @@ class EndToEndIntegrationTests(unittest.TestCase):
             "https://yoshilover.com/wp-admin/post.php?post=999&action=edit"
             in body_text
         )
+        # 379-OPS (GH #53): mail body に「公開してX投稿画面へ」 link が含まれる
+        assert "公開してX投稿画面へ:" in body_text
+        assert "/publish-and-tweet?post_id=999&token=" in body_text
         # X embed と ファンの声 section は mail body に出ない
         assert "ファンの声" not in body_text
         assert "戸郷ナイスピッチング" not in body_text

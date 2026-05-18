@@ -383,6 +383,10 @@ class PublishNoticeRequest:
     # 検出時にこれらを populate する。 publish 経路では従来通り未使用 (None)。
     body_excerpt: str | None = None
     admin_edit_url: str | None = None
+    # 379-OPS (GH #53): mail 内「公開してX投稿画面へ」ボタン用 URL。
+    # `/publish-and-tweet?post_id=X&token=Y` 形式、 token は HMAC + 24h 期限。
+    # None 時は link を出さない (fail-open、 既存 mail format 不変)。
+    publish_button_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -2576,10 +2580,15 @@ def build_body_text(
         minimal_lines = [line for line in (title_only, url_only) if line]
         body_excerpt = str(getattr(request, "body_excerpt", "") or "").strip()
         admin_edit_url = str(getattr(request, "admin_edit_url", "") or "").strip()
+        publish_button_url = str(getattr(request, "publish_button_url", "") or "").strip()
         if body_excerpt:
             minimal_lines.append("")
             minimal_lines.append("本文(抜粋):")
             minimal_lines.append(body_excerpt)
+        if publish_button_url:
+            # 379-OPS (GH #53): 「公開してX投稿画面へ」ボタン link を最優先表示。
+            minimal_lines.append("")
+            minimal_lines.append(f"公開してX投稿画面へ: {publish_button_url}")
         if admin_edit_url:
             minimal_lines.append("")
             minimal_lines.append(f"編集 / 公開: {admin_edit_url}")
@@ -2619,6 +2628,11 @@ def build_body_text(
         lines.append("")
         lines.append("本文(抜粋):")
         lines.append(body_excerpt)
+    publish_button_url = str(getattr(request, "publish_button_url", "") or "").strip()
+    if publish_button_url:
+        # 379-OPS (GH #53): 「公開してX投稿画面へ」ボタン link。
+        lines.append("")
+        lines.append(f"公開してX投稿画面へ: {publish_button_url}")
     admin_edit_url = str(getattr(request, "admin_edit_url", "") or "").strip()
     if admin_edit_url:
         lines.append("")
@@ -3094,6 +3108,8 @@ def send(
         # 377-OPS Phase 1C (GH #51): body_excerpt / admin_edit_url を mail まで継承
         body_excerpt=getattr(request, "body_excerpt", None),
         admin_edit_url=getattr(request, "admin_edit_url", None),
+        # 379-OPS (GH #53): publish_button_url も mail まで継承
+        publish_button_url=getattr(request, "publish_button_url", None),
     )
     mail_state = _classify_mail(normalized_request)
     if normalized_request.notice_kind != "publish":

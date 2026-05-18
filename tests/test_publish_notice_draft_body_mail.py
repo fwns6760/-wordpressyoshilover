@@ -75,3 +75,56 @@ def test_body_text_minimal_mode_default_keeps_title_url_only():
     assert "https://yoshilover.com/12345" in text
     # 旧 summary line は minimal mode では出ない
     assert "summary:" not in text or "本文(抜粋):" in text
+
+
+# --- 379-OPS (GH #53): publish_button_url 表示 ---------------------------
+
+
+def test_body_text_includes_publish_button_url_when_provided():
+    """publish_button_url が provided されたら 「公開してX投稿画面へ:」 link 出る."""
+    url = "https://yoshilover-fetcher-487178857517.asia-northeast1.run.app/publish-and-tweet?post_id=12345&token=1700000000.abcdef"
+    text = build_body_text(_req(publish_button_url=url))
+    assert "公開してX投稿画面へ:" in text
+    assert url in text
+
+
+def test_body_text_omits_publish_button_url_when_none():
+    """publish_button_url=None では 「公開してX投稿画面へ:」 line 出ない (backward compat)."""
+    text = build_body_text(_req())
+    assert "公開してX投稿画面へ:" not in text
+
+
+def test_body_text_omits_publish_button_url_when_empty_string():
+    """publish_button_url='' でも line 出ない."""
+    text = build_body_text(_req(publish_button_url=""))
+    assert "公開してX投稿画面へ:" not in text
+
+
+def test_body_text_renders_all_three_fields_together():
+    """body_excerpt + admin_edit_url + publish_button_url 全部 provided で全部出る."""
+    excerpt = "本文抜粋テキスト。"
+    admin = "https://yoshilover.com/wp-admin/post.php?post=12345&action=edit"
+    btn = "https://fetcher.example.com/publish-and-tweet?post_id=12345&token=t"
+    text = build_body_text(_req(
+        body_excerpt=excerpt,
+        admin_edit_url=admin,
+        publish_button_url=btn,
+    ))
+    assert "本文(抜粋):" in text
+    assert excerpt in text
+    assert "公開してX投稿画面へ:" in text
+    assert btn in text
+    assert "編集 / 公開:" in text
+    assert admin in text
+
+
+def test_body_text_publish_button_url_comes_before_admin_edit_url():
+    """user 主眼の操作 (1-click publish + X intent) を上に置く UX."""
+    admin = "https://yoshilover.com/wp-admin/post.php?post=12345&action=edit"
+    btn = "https://fetcher.example.com/publish-and-tweet?post_id=12345&token=t"
+    text = build_body_text(_req(admin_edit_url=admin, publish_button_url=btn))
+    btn_pos = text.find("公開してX投稿画面へ:")
+    admin_pos = text.find("編集 / 公開:")
+    assert btn_pos > 0
+    assert admin_pos > 0
+    assert btn_pos < admin_pos

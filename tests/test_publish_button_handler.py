@@ -43,8 +43,11 @@ def handle_post(*args, **kwargs):
 # --- _build_x_intent_url ---------------------------------------------------
 
 
+_BRAND_TAG = "🐰 ヨシラバー｜⚾ 読売ジャイアンツ速報掲示板"
+
+
 class BuildXIntentUrlTests(unittest.TestCase):
-    def test_returns_url_with_text_and_url(self):
+    def test_returns_url_with_text_url_and_brand_tag(self):
         url = _build_x_intent_url(
             title="巨人勝利",
             article_url="https://yoshilover.com/post-1/",
@@ -54,27 +57,30 @@ class BuildXIntentUrlTests(unittest.TestCase):
         assert parsed.netloc == "x.com"
         assert parsed.path == "/intent/tweet"
         qs = parse_qs(parsed.query)
-        assert qs["text"] == ["巨人勝利"]
+        # title + brand tag が text に同居 (改行区切り)
+        assert qs["text"][0].startswith("巨人勝利")
+        assert _BRAND_TAG in qs["text"][0]
         assert qs["url"] == ["https://yoshilover.com/post-1/"]
 
-    def test_truncates_long_title(self):
+    def test_truncates_long_title_brand_tag_still_appears(self):
         long_title = "あ" * 200
         url = _build_x_intent_url(title=long_title, article_url="https://x.test/")
         qs = parse_qs(urlparse(url).query)
         text = qs["text"][0]
-        assert len(text) == 80
-        assert text.endswith("…")
+        # title 部分は 80 字 truncate、 brand tag は別途付与
+        assert text.startswith("あ" * 79 + "…")
+        assert _BRAND_TAG in text
 
     def test_url_encodes_japanese(self):
         url = _build_x_intent_url(title="巨人", article_url="https://yoshilover.com/post-1/")
         # 日本語が % escape されている
         assert "%E5%B7%A8%E4%BA%BA" in url
 
-    def test_empty_title_still_returns_url(self):
+    def test_empty_title_brand_tag_only(self):
         url = _build_x_intent_url(title="", article_url="https://yoshilover.com/post-1/")
         qs = parse_qs(urlparse(url).query)
-        # urlencode は "" を消すのでない、 text key は出るが値は空
-        # parse_qs default は blank value を drop するので text key 不存在 OK
+        # title 空でも brand tag は付く
+        assert _BRAND_TAG in qs["text"][0]
         assert qs.get("url") == ["https://yoshilover.com/post-1/"]
 
 
@@ -335,7 +341,8 @@ class HandlePostTests(unittest.TestCase):
         loc = headers["Location"]
         parsed = urlparse(loc)
         qs = parse_qs(parsed.query)
-        assert qs["text"] == ["巨人 3-1 阪神 岡本 2 試合連続 HR"]
+        assert qs["text"][0].startswith("巨人 3-1 阪神 岡本 2 試合連続 HR")
+        assert _BRAND_TAG in qs["text"][0]
         assert qs["url"] == ["https://yoshilover.com/post-123/"]
 
     # --- one-shot token (consumed store) integration ---

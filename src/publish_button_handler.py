@@ -24,6 +24,10 @@ _log = logging.getLogger("server.publish_and_tweet")
 
 _X_INTENT_BASE_URL = "https://x.com/intent/tweet"
 _TITLE_MAX_CHARS_FOR_X = 80  # X 280 文字制限 + URL の余裕考慮、 title は 80 字以内
+# 2026-05-18 user 仕様: X 投稿 text にブランド署名を入れる。
+# 280 - URL (X は ~23 char で計算) - title (max 80) - 改行 = ~177 char 余裕、
+# 30 char 程度に収めて間延びしない範囲。
+_X_INTENT_BRAND_TAG = "\n🐰 ヨシラバー｜⚾ 読売ジャイアンツ速報掲示板"
 
 
 def _result_page(title: str, message: str, *, success: bool) -> str:
@@ -78,11 +82,13 @@ def _build_x_intent_url(*, title: str, article_url: str) -> str:
 
     Why: title が長すぎると X 投稿画面で truncate されて見栄えが悪いので 80 字に丸める。
     URL escape は ``urllib.parse.urlencode`` 任せで XSS / open redirect を防ぐ。
+    2026-05-18 user 仕様: text 末尾に「🐰 ヨシラバー｜⚾ 読売ジャイアンツ速報掲示板」 を付ける。
     """
     compact_title = (title or "").strip()
     if len(compact_title) > _TITLE_MAX_CHARS_FOR_X:
         compact_title = compact_title[: _TITLE_MAX_CHARS_FOR_X - 1] + "…"
-    params = {"text": compact_title, "url": article_url or ""}
+    text_with_brand = f"{compact_title}{_X_INTENT_BRAND_TAG}" if compact_title else _X_INTENT_BRAND_TAG.strip()
+    params = {"text": text_with_brand, "url": article_url or ""}
     return f"{_X_INTENT_BASE_URL}?{urlencode(params, quote_via=quote)}"
 
 

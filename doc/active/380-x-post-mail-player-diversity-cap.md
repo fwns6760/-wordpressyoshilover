@@ -15,6 +15,8 @@
 
 - `巨人データXポスト案 — 朝 / 2026-05-18 07:00 JST` の mail で同じ選手ばかり出る
 - DB 記録は最新でないといけない
+- データだけでなくてもよい
+- データ候補が足りない場合、同じ選手の記事ニュースに対する意見案でもよい
 - 推測で補わない
 - silent skip しない
 - 自己評価 OK にしない
@@ -165,6 +167,7 @@ Confirmed from code:
 - Same metric multi-window repetition is suppressed.
 - Same player across different metrics is not generally capped.
 - On this run, lineup focus was unavailable, so the focus player spread path did not apply.
+- Current 347 lane explicitly says `article_candidates` is never read or written, so news/opinion fallback is not implemented in the current lane.
 
 ## implementation contract
 
@@ -173,6 +176,7 @@ Confirmed from code:
 - `src/x_post_mail_lane.py`
 - `src/tools/run_x_post_mail.py` if needed for config / logging only
 - `tests/test_x_post_mail.py`
+- Optional new read-only helper for recent Giants news/opinion fallback, if data-only diversity cannot fill the mail
 - 本 ticket / board docs
 
 変更しない:
@@ -184,6 +188,7 @@ Confirmed from code:
 - X API / SNS live post
 - `insight-nightly` article publish lane
 - production DB / GCS upload
+- source article mutation
 
 ## desired behavior
 
@@ -194,12 +199,24 @@ Confirmed from code:
 - 候補数が不足する場合は mail 枯れを避けるため duplicate player を fallback として戻してよい。ただし default では同一 player `2` 件までを upper bound にする。
 - どの player が cap で後回し / fallback になったかを log に残す。silent skip しない。
 - 24h combo dedup と 374 の starvation fallback は維持する。
+- Data candidates remain the first choice.
+- If distinct-player data candidates are insufficient, the mail may include news/opinion X post candidates for different players.
+- News/opinion fallback must be evidence-backed:
+  - source article title
+  - source URL or WP post URL
+  - source excerpt / existing draft excerpt if used
+  - detected player name
+- News/opinion fallback must not invent facts, quotes, statistics, or claims from memory.
+- If a mail mixes data and news/opinion candidates, the subject/body label must not imply that every candidate is data-only. Use a mixed label such as `巨人Xポスト案` or candidate-level labels `データ` / `ニュース意見`.
 
 ## acceptance
 
 - Fixture: 2026-05-18 mail 型の 8 候補を再現し、`マルティネス 3/8` / `岸田 行倫 2/8` が発生する現状 test を先に赤で固定する。
 - 修正後、十分な代替 Giants row がある fixture では同一 player は 1 件までになる。
 - 代替 row が足りない fixture では同一 player は最大 2 件までで、候補数を 0 にしない。
+- Data candidates aloneで distinct player が足りない fixture では、recent news/opinion fallback で別 player 候補を補充する。
+- News/opinion fallback candidate は source title / source URL / excerpt / player detection evidence を mail card または log に持つ。
+- News/opinion fallback candidate は source に無い quote / 数字 / 断定を作らない。
 - `focus_player_names` がある時の既存 lineup spread 挙動は壊さない。
 - `dedup_set` がある時の combo dedup は壊さない。
 - 374 の dedup starvation fallback は壊さない。

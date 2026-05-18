@@ -1359,22 +1359,29 @@ def _default_fetch(base_url: str, after_iso: str) -> list[Mapping[str, Any]]:
     """
     endpoint = urljoin(base_url.rstrip("/") + "/", "posts")
     # 2026-05-15 user 指示「mail 即時に来ない」適用、per_page 20 → 100 へ。
-    # WP REST default max は 100、 これで 1 fire で publish 全件 drain。
-    # ピーク fire (data-insight 75 件 publish) でも 1 fire 内で処理完了し
-    # 67977 等の publish 5 分後にメール送信される。
+    # WP REST default max は 100、 これで 1 fire で全件 drain。
+    # 377-OPS Phase 2 (2026-05-18) で全 subtype が RUN_DRAFT_ONLY=True により
+    # draft 化されるため、 status filter に draft を追加。 既存 publish 経路も維持
+    # (legacy publish 記事の modified 変更 + 既存 publish flow の backward compat)。
     query = urlencode(
-        {
-            "status": "publish",
-            "modified_after": after_iso,
-            "per_page": 100,
-            "orderby": "modified",
-            "order": "asc",
-            "_fields": "id,title,excerpt,content,link,date,modified,status,meta,article_subtype,subtype",
-        }
+        [
+            ("status[]", "publish"),
+            ("status[]", "draft"),
+            ("modified_after", after_iso),
+            ("per_page", 100),
+            ("orderby", "modified"),
+            ("order", "asc"),
+            ("_fields", "id,title,excerpt,content,link,date,modified,status,meta,article_subtype,subtype"),
+            ("context", "edit"),
+        ]
     )
+    # draft post + context=edit には Basic auth が必須 (WP REST は draft を unauth で返さない)。
     request = urllib.request.Request(
         f"{endpoint}?{query}",
-        headers={"Accept": "application/json"},
+        headers={
+            "Accept": "application/json",
+            "Authorization": _wp_basic_auth_header(),
+        },
     )
     with urllib.request.urlopen(request, timeout=30) as response:
         payload = json.loads(response.read().decode("utf-8"))
@@ -2919,7 +2926,9 @@ def _scan_direct_publish_phase(
 
     for post in posts:
         post_status = str(post.get("status") or "").strip().lower()
-        if post_status != "publish":
+        # 377-OPS Phase 2 (2026-05-18) RUN_DRAFT_ONLY=True で新規記事は draft 着地。
+        # publish (legacy + status flip) + draft (新規、 user 判断待ち) 両方 mail 対象。
+        if post_status not in {"publish", "draft"}:
             continue
 
         post_id = post.get("id", "")

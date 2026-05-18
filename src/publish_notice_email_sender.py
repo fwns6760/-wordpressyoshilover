@@ -2704,22 +2704,28 @@ def build_body_html_per_post(
     # only via inline styles). Single-column, mobile-first layout.
     safe_title = html.escape(title)
     safe_url = html.escape(url)
-    safe_intent = html.escape(intent_url)
-    unpublish_button_html = ""
-    if unpublish_url:
-        safe_unpublish = html.escape(unpublish_url)
-        unpublish_button_html = (
-            '<tr><td align="center" style="padding:0 22px 14px;">'
-            f'<a href="{safe_unpublish}" target="_blank" rel="noopener" '
-            'style="display:inline-block;width:100%;max-width:300px;'
-            'padding:11px 20px;background:#ffffff;color:#d73a3a;'
-            'text-decoration:none;border-radius:6px;font-size:13px;'
-            'font-weight:700;text-align:center;border:1px solid #d73a3a;">'
-            '🚫 非公開にする</a>'
+    # 379-OPS (GH #53) 2026-05-18 user feedback:
+    # - draft 主体運用なので「🚫 非公開にする」 button は不要 (削除)
+    # - 「𝕏 で投稿する (公開済記事用)」 single-button は不要 (draft URL では intent 意味なし、 削除)
+    # - 本文抜粋 (body_excerpt) を HTML mail にも入れる (mail で内容判断するため)
+    # publish_button_url (HMAC + 24h、 publish + X intent に進む) が draft 主動線、 これを残す。
+    # admin_edit_url (WP 編集画面) は draft 編集に必要なので残す。
+    # 「📰 記事を見る」 button は publish 後の article 確認用なので残す (draft では preview)。
+
+    body_excerpt_raw = str(getattr(request, "body_excerpt", "") or "").strip()
+    body_excerpt_html_block = ""
+    if body_excerpt_raw:
+        # newline は <br> へ、 連続 <br> は 1 つに圧縮 (mail HTML 簡素化)。
+        safe_excerpt = html.escape(body_excerpt_raw).replace("\n", "<br>")
+        body_excerpt_html_block = (
+            '<tr><td style="padding:0 22px 18px;">'
+            '<p style="margin:0 0 6px;font-size:12px;line-height:1.4;'
+            'color:#888;font-weight:700;">本文(抜粋)</p>'
+            f'<p style="margin:0;font-size:14px;line-height:1.7;color:#333;'
+            f'white-space:pre-wrap;word-break:break-word;">{safe_excerpt}</p>'
             '</td></tr>'
         )
-    # 379-OPS (GH #53): mail 内「公開してX投稿画面へ」 button HTML。
-    # publish_button_url が populate されている時のみ render、 既存運用と backward compat。
+
     publish_button_url_raw = str(getattr(request, "publish_button_url", "") or "").strip()
     publish_button_html = ""
     if publish_button_url_raw:
@@ -2734,7 +2740,6 @@ def build_body_html_per_post(
             '🚀 公開してX投稿画面へ</a>'
             '</td></tr>'
         )
-    # admin edit link (377-OPS Phase 1B 由来) を HTML mail にも 1 つ button として出す。
     admin_edit_url_raw = str(getattr(request, "admin_edit_url", "") or "").strip()
     admin_edit_button_html = ""
     if admin_edit_url_raw:
@@ -2765,6 +2770,7 @@ def build_body_html_per_post(
         '<p style="margin:0 0 18px;font-size:12px;line-height:1.4;'
         f'color:#666;word-break:break-all;">{safe_url}</p>'
         '</td></tr>'
+        f'{body_excerpt_html_block}'
         '<tr><td align="center" style="padding:0 22px 14px;">'
         f'<a href="{safe_url}" target="_blank" rel="noopener" '
         'style="display:inline-block;width:100%;max-width:300px;'
@@ -2773,15 +2779,7 @@ def build_body_html_per_post(
         'font-weight:700;text-align:center;">📰 記事を見る</a>'
         '</td></tr>'
         f'{publish_button_html}'
-        '<tr><td align="center" style="padding:0 22px 14px;">'
-        f'<a href="{safe_intent}" target="_blank" rel="noopener" '
-        'style="display:inline-block;width:100%;max-width:300px;'
-        'padding:13px 20px;background:#000000;color:#ffffff;'
-        'text-decoration:none;border-radius:6px;font-size:15px;'
-        'font-weight:700;text-align:center;">𝕏 で投稿する (公開済記事用)</a>'
-        '</td></tr>'
         f'{admin_edit_button_html}'
-        f'{unpublish_button_html}'
         '<tr><td style="padding:0 22px 18px;border-top:1px solid #eee;">'
         '<p style="margin:14px 0 0;font-size:11px;line-height:1.5;'
         'color:#999;text-align:center;">YOSHILOVER 自動公開通知</p>'

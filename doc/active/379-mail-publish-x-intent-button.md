@@ -148,6 +148,29 @@
 - ボタン click → confirmation page → 公開 → X intent 遷移の 1 click 動作 verify
 - 21:05 JST 以降の publish-notice 自然 fire (publish-notice-trigger-evening cron `5,35 16-22`) で観察
 
+## PublishNoticeRequest 全構築 site inventory (evidence ベース、 2026-05-18 PM)
+
+`grep -n "PublishNoticeRequest(" src/publish_notice_scanner.py src/publish_notice_email_sender.py` 出力で **計 8 site** verified:
+
+| line | function | publish_button_url 状態 | 理由 |
+|---|---|---|---|
+| `src/publish_notice_scanner.py:1486` | `_request_from_post` | **populate** (build_publish_button_url) | 正本 entry、 post.id + WP_URL から組み立て |
+| `src/publish_notice_scanner.py:1964` | review_hold rewrap | **inherit** (`base_request.publish_button_url`) | base_request 経由 |
+| `src/publish_notice_scanner.py:2206` | post_gen_validate path | **不付与** (None default) | WP post 未作成、 valid post_id なし、 publish 対象外 → button 出さない (mail には skip 理由のみ) |
+| `src/publish_notice_scanner.py:2418` | preflight_skip path | **不付与** (None default) | 同上、 publish 候補ですらない rejected entry |
+| `src/publish_notice_scanner.py:2565` | 24h_budget rewrap | **inherit** (`getattr(request, "publish_button_url", None)`) | 元 request から継承 |
+| `src/publish_notice_scanner.py:2665` | post_gen_validate digest | **不付与** (None default) | 複数 reject entry の集約 digest、 publish 対象なし |
+| `src/publish_notice_email_sender.py:3121` | normalized_request rewrap | **inherit** (`getattr(...)`) | mail 直前の last hop |
+
+`grep -c publish_button_url src/publish_notice_scanner.py src/publish_notice_email_sender.py`:
+- scanner = 7 references (1 import + 1 helper _resolve + 5 field 関連)
+- email_sender = 13 references (1 dataclass field + 6 text mode 描画 + 6 HTML mode 描画 + 1 rewrap)
+
+**post_gen_validate / preflight_skip / digest path で publish_button_url を populate しない判断は意図的**:
+- これらは「公開候補から弾かれた entry」 の通知で、 WP 上に publish 可能な post そのものが存在しない
+- 「公開してX投稿画面へ」 button を出しても publish 先がない
+- 既存の mail body は「skip 理由 / generated_title / source_url_hash」 を出すだけで draft 操作不要
+
 ## v2 着地 log (2026-05-18 PM、 commit `38bfedc`)
 
 HTML mail button + token 1 回限り (GCS one-shot) を追加。
@@ -181,6 +204,31 @@ GCS one-shot (production credentials manual smoke):
 未 verify (user / 自然 fire 待ち):
 - POST /publish-and-tweet の実 publish + X intent 302 redirect end-to-end (実 draft を publish させる副作用回避のため、 verify は user mail から実 click または別 test draft で)。
 - HTML mail での button 描画 (gmail 等 mail client での見た目) → 次回 publish-notice 自然 fire (16:05 JST 以降の `5,35 16-22`) で user 受信時に目視 verify。
+
+## HTML mail 配信経路 verify (code 読み込み evidence)
+
+`src/publish_notice_email_sender.py:3198` で `build_body_html_per_post(normalized_request)` を呼び出し、
+`src/publish_notice_email_sender.py:3077` で `html_body=body_html if (body_html and body_html.strip()) else None` として
+`send_publish_notice_email` に渡される。 mail bridge 側 `src/mail_delivery_bridge.py:237-238`
+で `if request.html_body and request.html_body.strip(): message.add_alternative(request.html_body, subtype="html")` を実行、
+multipart/alternative の HTML part として配信される。
+
+つまり button HTML は: scanner populate publish_button_url → email_sender build_body_html_per_post で button HTML 描画 →
+mail bridge で multipart/alternative HTML part 配信 → gmail 等 HTML 対応 client で「🚀 公開してX投稿画面へ」 button 表示 になる。
+
+text-only mail client (旧式) では minimal text mode の URL line にしか出ない (`build_body_text` 側で別途出力)。
+
+## rollback image registry 在庫 (gcloud artifacts docker images list verify 2026-05-18 PM)
+
+| service | tag | role |
+|---|---|---|
+| yoshilover-fetcher | `379-button-oneshot-38bfedc` | current v2 (live) |
+| yoshilover-fetcher | `379-publish-button-9fdbeca` | v1 (HTML/oneshot 無し)、 1 step rollback |
+| yoshilover-fetcher | `377-phase1ab-2035c6b` | pre-379 (full rollback)、 wp_client Phase 1A+1B 込み |
+| publish-notice | `379-button-oneshot-38bfedc` | current v2 (live) |
+| publish-notice | `379-publish-button-9fdbeca` | v1 1 step rollback |
+| publish-notice | `377-phase1c-0467180` | Phase 1C only、 pre-379 mail full rollback |
+| publish-notice | `classification-316cb03` | Phase 1C 以前、 完全 rollback (377-OPS ticket 着手前) |
 
 ## 着地 log (2026-05-18、 v1 commit `9fdbeca`)
 

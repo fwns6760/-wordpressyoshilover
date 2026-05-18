@@ -379,6 +379,38 @@ class PickCandidatesTests(unittest.TestCase):
         players = [c.focus_player for c in cands]
         self.assertEqual(players, ["マルティネス", "マルティネス"])
 
+    def test_recent_player_history_uses_next_giants_row(self) -> None:
+        """380 follow-up: 直近24h既出 player は次の巨人 row に差し替える。"""
+        rows = [
+            _row(1, "佐藤輝明", "阪神", 1.045),
+            _row(2, "浦田俊輔", "巨人", 0.990),
+            _row(3, "平山 功太", "巨人", 0.980),
+            _row(4, "キャベッジ", "巨人", 0.970),
+            _row(5, "牧秀悟", "DeNA", 0.930),
+            _row(6, "村上宗隆", "ヤクルト", 0.920),
+            _row(7, "細川成也", "中日", 0.910),
+            _row(8, "坂倉将吾", "広島", 0.900),
+        ]
+
+        def _mock(**_kw):
+            return {
+                "ok": True,
+                "rows": rows,
+                "count": len(rows),
+                "total": len(rows),
+                "focus_player": None,
+            }
+
+        cands = pick_candidates(
+            _mock,
+            now=datetime(2026, 5, 18, 13, 7, tzinfo=JST),
+            max_candidates=1,
+            min_sample=1,
+            min_central_rows=3,
+            recent_player_counts={"浦田俊輔": 3},
+        )
+        self.assertEqual([c.focus_player for c in cands], ["平山 功太"])
+
     def test_lineup_focus_names_from_rows_canonicalizes_surname(self) -> None:
         rows = [
             {"order": "1", "position": "中", "name": "丸"},
@@ -1443,8 +1475,12 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
             return_value=0,
         ), patch.object(
             run_x_post_mail.lane,
-            "_load_recent_dedup_signatures",
-            return_value={"old-sig-1", "old-sig-2", "old-sig-3"},
+            "_load_recent_dedup_records",
+            return_value=[
+                {"signature": "old-sig-1", "focus_player": "浦田俊輔"},
+                {"signature": "old-sig-2", "focus_player": "浦田俊輔"},
+                {"signature": "old-sig-3", "focus_player": "浦田俊輔"},
+            ],
         ), patch.object(
             run_x_post_mail.lane,
             "pick_candidates",
@@ -1466,13 +1502,24 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
             pick_candidates.call_args_list[0].kwargs["dedup_set"],
             {"old-sig-1", "old-sig-2", "old-sig-3"},
         )
+        self.assertEqual(
+            pick_candidates.call_args_list[0].kwargs["recent_player_counts"],
+            {"浦田俊輔": 3},
+        )
         self.assertIsNone(pick_candidates.call_args_list[1].kwargs["dedup_set"])
+        self.assertEqual(
+            pick_candidates.call_args_list[1].kwargs["recent_player_counts"],
+            {"浦田俊輔": 3},
+        )
         request = send.call_args.args[0]
         self.assertEqual(request.metadata["candidate_count"], 4)
         record.assert_called_once_with(
             "insight-bucket",
             ["fresh-sig", "old-sig-1", "old-sig-2", "old-sig-3"],
             ANY,
+            focus_players=["", "", "", ""],
+            metrics=["OPS", "OPS", "OPS", "OPS"],
+            period_labels=["直近5試合", "直近5試合", "直近5試合", "直近5試合"],
         )
 
     def test_dedup_sufficient_candidates_do_not_retry(self) -> None:
@@ -1514,8 +1561,8 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
             return_value=0,
         ), patch.object(
             run_x_post_mail.lane,
-            "_load_recent_dedup_signatures",
-            return_value={"old-sig"},
+            "_load_recent_dedup_records",
+            return_value=[{"signature": "old-sig"}],
         ), patch.object(
             run_x_post_mail.lane,
             "pick_candidates",
@@ -1533,6 +1580,71 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         self.assertEqual(pick_candidates.call_count, 1)
+
+    def test_player_history_zero_candidate_relaxes_as_last_resort(self) -> None:
+        """380 follow-up: player history で0件化する場合だけ最後に緩める。"""
+        from src.tools import run_x_post_mail
+
+        relaxed = [self._entrypoint_candidate("relaxed-sig")]
+        send_result = run_x_post_mail.mdb.MailResult(
+            status="sent",
+            refused_recipients={},
+            smtp_response=[],
+            reason=None,
+        )
+        with patch.dict(
+            "os.environ",
+            {
+                "MAIL_BRIDGE_TO": "ops@example.test",
+                "INSIGHT_GCS_BUCKET": "insight-bucket",
+                "X_POST_MAIL_DEDUP_MIN_CANDIDATES": "0",
+                "X_POST_MAIL_LINEUP_FOCUS_DISABLED": "1",
+                "X_POST_MAIL_NEWS_FALLBACK_DISABLED": "1",
+            },
+            clear=False,
+        ), patch.object(
+            run_x_post_mail.miq,
+            "ensure_local_db",
+            return_value={"ok": True, "path": "/tmp/insight.db"},
+        ), patch.object(
+            run_x_post_mail.lane,
+            "query_db_latest_game_date",
+            return_value="2026-05-16",
+        ), patch.object(
+            run_x_post_mail.lane,
+            "db_staleness_days",
+            return_value=0,
+        ), patch.object(
+            run_x_post_mail.lane,
+            "_load_recent_dedup_records",
+            return_value=[{"signature": "old-sig", "focus_player": "浦田俊輔"}],
+        ), patch.object(
+            run_x_post_mail.lane,
+            "pick_candidates",
+            side_effect=[[], relaxed],
+        ) as pick_candidates, patch.object(
+            run_x_post_mail.mdb,
+            "send",
+            return_value=send_result,
+        ) as send, patch.object(
+            run_x_post_mail.lane,
+            "_record_dedup_signatures",
+            return_value=True,
+        ):
+            result = run_x_post_mail.main(["--max-candidates", "1"])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(pick_candidates.call_count, 2)
+        self.assertEqual(
+            pick_candidates.call_args_list[0].kwargs["recent_player_counts"],
+            {"浦田俊輔": 1},
+        )
+        self.assertEqual(
+            pick_candidates.call_args_list[1].kwargs["recent_player_counts"],
+            {},
+        )
+        request = send.call_args.args[0]
+        self.assertEqual(request.metadata["candidate_count"], 1)
 
     def test_news_opinion_fallback_fills_sparse_data_candidates(self) -> None:
         """データ候補が少ない時だけ、source-backed fallback をメールに足す。"""
@@ -1594,6 +1706,43 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
         self.assertIn("データ+ニュース意見", request.subject)
         self.assertIn("巨人Xポスト案", request.text_body)
         self.assertIn("岸田行倫", request.text_body)
+
+    def test_news_opinion_fallback_skips_recent_history_player(self) -> None:
+        """380 follow-up: news fallback も直近24h既出 player を補充しない。"""
+        from src.tools import run_x_post_mail
+        import src.x_post_mail_lane as lane
+
+        entries = [
+            {
+                "title": "巨人・浦田俊輔が攻守で存在感",
+                "link": "https://example.test/urata",
+                "summary": "浦田俊輔の話題",
+            },
+            {
+                "title": "巨人・岸田行倫が攻守で存在感",
+                "link": "https://example.test/kishida",
+                "summary": "岸田行倫の話題",
+            },
+        ]
+        with patch.object(
+            run_x_post_mail,
+            "_load_news_fallback_sources",
+            return_value=[{"name": "テスト新聞", "url": "https://example.test/feed"}],
+        ), patch.object(
+            run_x_post_mail,
+            "_fetch_feed_entries",
+            return_value=entries,
+        ):
+            cands = run_x_post_mail._fetch_news_opinion_fallback_candidates(
+                [],
+                max_candidates=2,
+                now=datetime(2026, 5, 18, 13, 7, tzinfo=JST),
+                recent_player_counts={"浦田俊輔": 3},
+            )
+
+        players = [lane._normalize_player_name(c.focus_player) for c in cands]
+        self.assertNotIn("浦田俊輔", players)
+        self.assertIn("岸田行倫", players)
 
 
 class TicketThreeFiftyFiveDedupTests(unittest.TestCase):
@@ -1692,6 +1841,26 @@ class TicketThreeFiftyFiveDedupTests(unittest.TestCase):
             sigs = lane._load_recent_dedup_signatures("test-bucket", now)
         self.assertEqual(sigs, set())
 
+    def test_load_recent_player_counts_from_dedup_records(self) -> None:
+        """380 follow-up: GCS dedup JSONL から focus_player count を読む。"""
+        from unittest.mock import patch
+        import src.x_post_mail_lane as lane
+
+        ts = datetime(2026, 5, 18, 12, 1, tzinfo=JST).isoformat()
+        store = {
+            "x_post_mail/dedup/2026-05-18.jsonl":
+                f'{{"ts": "{ts}", "signature": "AVG|今月|False|None", "focus_player": "浦田俊輔"}}\n'
+                f'{{"ts": "{ts}", "signature": "OBP|直近10試合|False|None", "focus_player": "浦田俊輔"}}\n'
+                f'{{"ts": "{ts}", "signature": "OPS|今月|False|None", "focus_player": "岸田 行倫"}}\n'
+                f'{{"ts": "{ts}", "signature": "LEGACY|x|False|None"}}\n',
+        }
+        now = datetime(2026, 5, 18, 13, 7, tzinfo=JST)
+        with patch.object(lane, "_get_storage_client",
+                          return_value=self._fake_storage_client(store)):
+            counts = lane._load_recent_player_counts("test-bucket", now)
+        self.assertEqual(counts["浦田俊輔"], 2)
+        self.assertEqual(counts["岸田行倫"], 1)
+
     def test_pick_candidates_skips_combos_in_dedup_set(self) -> None:
         """dedup_set に含まれる signature の combo は select されない。"""
         # Build a dedup_set covering the entire combo pool minus one
@@ -1767,6 +1936,30 @@ class TicketThreeFiftyFiveDedupTests(unittest.TestCase):
         rec0 = json.loads(lines[0])
         self.assertEqual(rec0["signature"], "OPS|直近1週間|False|None")
         self.assertIn("ts", rec0)
+
+    def test_record_dedup_signatures_can_write_focus_player_fields(self) -> None:
+        from unittest.mock import patch
+        import json
+        import src.x_post_mail_lane as lane
+
+        store: dict[str, str] = {}
+        now = datetime(2026, 5, 18, 13, 7, tzinfo=JST)
+        with patch.object(lane, "_get_storage_client",
+                          return_value=self._fake_storage_client(store)):
+            ok = lane._record_dedup_signatures(
+                "test-bucket",
+                ["OPS|今月|False|None"],
+                now,
+                focus_players=["浦田俊輔"],
+                metrics=["OPS"],
+                period_labels=["今月"],
+            )
+        self.assertTrue(ok)
+        rec = json.loads(store["x_post_mail/dedup/2026-05-18.jsonl"].strip())
+        self.assertEqual(rec["signature"], "OPS|今月|False|None")
+        self.assertEqual(rec["focus_player"], "浦田俊輔")
+        self.assertEqual(rec["metric"], "OPS")
+        self.assertEqual(rec["period_label"], "今月")
 
     def test_record_dedup_signatures_appends_to_existing(self) -> None:
         """既存 record に append (= 上書きしない)。"""

@@ -65,7 +65,7 @@ Active folder is intentionally narrow. 2026-05-08 朝の「0 publish 0 mail」�
 | **quality live-window source unlock** | `371-QA-disable-game-live-source-policy.md` | user 方針「絞らないでいい。重複だけがいや」。試合あり 17:00-21:30 JST の `game_live_source_policy` をデフォルト解除し、サンスポX/Webなど通常sourceも流す。重複は既存dedupe gatesで止める。GitHub Issue #40。 |
 | **quality human-readable title repair** | `372-QA-human-readable-title-context-repair.md` | 68537 / 68622 型。短い引用・`先発` だけ・`関連情報` / `関連発言` / generic `選手` で止まる読みにくい title を、source title / summary の literal context で恒久補正する。GitHub Issue #41。 |
 | **quality person tag routing / noindex** | `376-QA-person-tag-routing-and-noindex.md` | のもとけ風に選手・首脳陣・OBの人物タグを事前作成し、RSS記事作成時は既存タグだけ自動付与する。WP tag sync 173 OK、fetcher deploy 済。tag archive noindex は WP plugin upload 後に live verified。GitHub Issue #49。 |
-| **x-post-mail player diversity** | `380-x-post-mail-player-diversity-cap.md` | 2026-05-18 12:01 JST mail も旧 image `376-lineup-spread-e488052` で浦田俊輔 3 件 / マルティネス 3 件を確認。原因は repo 実装 `31aa4e7` 未 deploy。Cloud Build `ba632b1d-0bdd-4a09-b314-e7b8b3ea1c3e` SUCCESS、image `x-post-mail-lane:380-player-diversity-31aa4e7` digest `sha256:64e78e6f799...`、Job generation `20` に image only deploy。13:07 手動 execution `x-post-mail-lane-d6w4h` SUCCESS、Gmail id `19e39446c4ac0f79` は候補10件すべて focus player 別、mixed label `巨人Xポスト案`。Scheduler / env / Secret / WP / X / SNS / production DB は未変更。GitHub Issue #54。 |
+| **x-post-mail player diversity** | `380-x-post-mail-player-diversity-cap.md` | 2026-05-18 13:07 手動 mail でも、12:01 で 3 回出た `浦田俊輔` が再登場したため user-visible acceptance 未達。follow-up IN_FLIGHT: GCS 24h dedup JSONL に `focus_player / metric / period_label` を記録し、直近24h player history から既出 player を避ける。ranking 内に別の巨人 player があれば差し替え、無ければ `player_history_skip` を log して news/opinion fallback で別 player を補充する。旧 `signature` only record 互換は維持。Scheduler / env / Secret / WP / X / SNS / production DB は変更しない。GitHub Issue #54。 |
 | **quality source excerpt follow-up** | `323-QA-source-body-excerpt-clean-truncation.md` | `314-QA-rss-source-body-excerpt-followup` 関連。ブログ本文の `📖 本文抜粋` が600文字化後も途中切れ / UI・関連記事混入に見える問題を狭く扱う。publish/mail/scheduler/env/Cloud Run/X/SEO/featured_media は不可触。 |
 | **waiting** | `205-gcp-runtime-drift-audit.md`, `238-night-draft-only-and-morning-decision-report.md`, `288-INGEST-source-coverage-expansion.md` | still useful, but not part of the immediate article-body hallucination fix. `288` remains source-add HOLD; only Phase 0 repo-only audit / dry-run evidence may advance doc-only. |
 | **INSIGHT lane (342 ready full-12team, 343 phase-4 done)** | `342-INSIGHT-data-driven-ranking-auto-publish.md`, `343-INSIGHT-007-data-population-audit-and-backfill.md` | 343 Phase 4 (12 球団 team-aware roster) LIVE: NPB 公式 scrape で `config/npb_12team_roster.json` 1071 entry 生成、`fill_canonical_team_aware` で 5027 row 補完、production DB players 21→462 (12 球団全部 32-43 人)、advanced_metric_snapshots 122→6394 (50x)。image `insight-nightly:343c` deploy 済、次 nightly 以降も自動 fill 動作。342 status `READY_FOR_PHASE_1_IMPL_FULL_12TEAM`、初版 4 候補全部 (A1 月次 OPS / B2 守備 UZR / B1 12 球団 top 30 / E1 直近 hot/cold) data 揃い、user GO で impl 着手可能。GH Issue #21(342) + #23(343)。 |
@@ -1943,7 +1943,7 @@ git add -A禁止。
 ### 380-x-post-mail-player-diversity-cap
 
 - **alias**: -
-- **status**: LIVE_DEPLOYED_OBSERVE / **priority**: high
+- **status**: IN_FLIGHT / **priority**: high
 - **owner**: Codex / **lane**: B
 - **doc_path**: `doc/active/380-x-post-mail-player-diversity-cap.md`
 - **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/54
@@ -1956,6 +1956,7 @@ git add -A禁止。
 - **live verification**: 13:07 JST 手動 execution `x-post-mail-lane-d6w4h` SUCCESS、Gmail id `19e39446c4ac0f79`、subject `🟠🐦📮【Xポスト案 10件】🌞昼｜データ+ニュース意見 13:07 JST`。candidate focus players = キャベッジ / 浦田俊輔 / マルティネス / 平山 功太 / 戸郷翔征 / 岸田 行倫 / 井上温大 / 則本昂大 / 山瀬慎之助 / 竹丸和幸、同一 focus repeat 0。log は `News/opinion fallback filled candidates: 8 -> 10`、`mail send result: status=sent`。
 - **not changed**: Cloud Scheduler / Cloud Run env / Secret / SMTP credential / WP publish / WP existing posts / X API / SNS live post / production GCS DB write は未変更。
 - **dry-run note**: execution `x-post-mail-lane-bjs5v` は `--args=--dry-run` が Dockerfile CMD を置換したため `Application exec likely failed` で失敗。Gmail search では追加 mail なし。Job template は args-free のまま corrected image を参照。
+- **follow-up 2026-05-18**: 13:07 手動 mail は 1 通内 repeat 0 だったが、12:01 に 3 回出た `浦田俊輔` が再登場した。受け入れ条件は「1 通内」だけでは不足。追加 acceptance は、直近24h player history に出た player を次回候補選定で避け、別 Giants row があれば差し替え、無ければ log して news/opinion fallback で別 player を補充すること。GCS dedup JSONL の旧 `signature` only record は読み続け、新規 record は `focus_player / metric / period_label` を持つ。
 
 ### 362-INSIGHT-queue-cleanup-and-metric-run-cap
 

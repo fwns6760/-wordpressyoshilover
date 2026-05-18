@@ -1289,31 +1289,31 @@ def _dedup_blob_path(date_str: str) -> str:
     return f"x_post_mail/dedup/{date_str}.jsonl"
 
 
-def _load_recent_dedup_signatures(
+def _load_recent_dedup_records(
     bucket_name: str,
     now: datetime,
     *,
     lookback_hours: int = 24,
-) -> set[str]:
+) -> list[dict]:
     """355: read JSONL files in ``gs://{bucket_name}/x_post_mail/dedup/``
-    for today + yesterday, filter to records with ``ts >= now -
-    lookback_hours``, and return the set of seen signatures.
+    for today + yesterday and filter to records with ``ts >= now -
+    lookback_hours``.
 
-    Returns an empty set on any GCS error (silent fallback — the mail
-    send must never block on dedup infrastructure problems).
+    Returns an empty list on any GCS error after logging the failure.
+    The mail send must never block on dedup infrastructure problems.
     """
     if not bucket_name:
-        return set()
+        return []
     try:
         client = _get_storage_client()
         bucket = client.bucket(bucket_name)
     except Exception as exc:  # noqa: BLE001
-        LOG.warning("_load_recent_dedup_signatures: client init failed: %r", exc)
-        return set()
+        LOG.warning("_load_recent_dedup_records: client init failed: %r", exc)
+        return []
     cutoff = now - timedelta(hours=lookback_hours)
     today = now.strftime("%Y-%m-%d")
     yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
-    out: set[str] = set()
+    out: list[dict] = []
     for date_str in (today, yesterday):
         blob = bucket.blob(_dedup_blob_path(date_str))
         try:
@@ -1321,7 +1321,7 @@ def _load_recent_dedup_signatures(
                 continue
             content = blob.download_as_text()
         except Exception as exc:  # noqa: BLE001
-            LOG.warning("_load_recent_dedup_signatures: read %s failed: %r",
+            LOG.warning("_load_recent_dedup_records: read %s failed: %r",
                         date_str, exc)
             continue
         for line in content.splitlines():
@@ -1333,8 +1333,7 @@ def _load_recent_dedup_signatures(
             except Exception:  # noqa: BLE001
                 continue
             ts_str = rec.get("ts") or ""
-            signature = rec.get("signature") or ""
-            if not signature or not ts_str:
+            if not ts_str:
                 continue
             try:
                 ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
@@ -1344,18 +1343,67 @@ def _load_recent_dedup_signatures(
                 # Treat naive timestamps as JST per project convention.
                 ts = ts.replace(tzinfo=JST)
             if ts >= cutoff:
-                out.add(signature)
+                out.append(rec)
     return out
+
+
+def _load_recent_dedup_signatures(
+    bucket_name: str,
+    now: datetime,
+    *,
+    lookback_hours: int = 24,
+) -> set[str]:
+    """Return recent combo signatures from the GCS-backed dedup JSONL."""
+    records = _load_recent_dedup_records(
+        bucket_name,
+        now,
+        lookback_hours=lookback_hours,
+    )
+    return {
+        str(rec.get("signature") or "")
+        for rec in records
+        if str(rec.get("signature") or "")
+    }
+
+
+def _player_counts_from_dedup_records(records: list[dict]) -> dict[str, int]:
+    """Return normalized focus-player counts from recent dedup records."""
+    counts: dict[str, int] = {}
+    for rec in records:
+        player_key = _normalize_player_name(rec.get("focus_player"))
+        if not player_key:
+            continue
+        counts[player_key] = counts.get(player_key, 0) + 1
+    return counts
+
+
+def _load_recent_player_counts(
+    bucket_name: str,
+    now: datetime,
+    *,
+    lookback_hours: int = 24,
+) -> dict[str, int]:
+    """Return recent focus-player counts from the GCS-backed dedup JSONL."""
+    records = _load_recent_dedup_records(
+        bucket_name,
+        now,
+        lookback_hours=lookback_hours,
+    )
+    return _player_counts_from_dedup_records(records)
 
 
 def _record_dedup_signatures(
     bucket_name: str,
     signatures: list[str],
     now: datetime,
+    *,
+    focus_players: Optional[list[str]] = None,
+    metrics: Optional[list[str]] = None,
+    period_labels: Optional[list[str]] = None,
 ) -> bool:
     """355: append signatures to today's JSONL on GCS. Returns ``True``
-    on success, ``False`` on any error (silent failure — never abort
-    the calling flow).
+    on success, ``False`` on any error. Failures are logged and never
+    abort the calling flow.
 
     GCS objects are immutable so we read + concat + re-upload. The
     Schedulers' staggered fire times (07/12/15/17:30/22:30 JST) keep
@@ -1377,10 +1425,23 @@ def _record_dedup_signatures(
         ts_iso = now.replace(tzinfo=JST).isoformat()
     else:
         ts_iso = now.isoformat()
-    new_lines = [
-        _json.dumps({"ts": ts_iso, "signature": s}, ensure_ascii=False)
-        for s in signatures
-    ]
+    new_records: list[dict] = []
+    for idx, signature in enumerate(signatures):
+        rec = {"ts": ts_iso, "signature": signature}
+        if focus_players is not None and idx < len(focus_players):
+            player = str(focus_players[idx] or "").strip()
+            if player:
+                rec["focus_player"] = player
+        if metrics is not None and idx < len(metrics):
+            metric = str(metrics[idx] or "").strip()
+            if metric:
+                rec["metric"] = metric
+        if period_labels is not None and idx < len(period_labels):
+            period = str(period_labels[idx] or "").strip()
+            if period:
+                rec["period_label"] = period
+        new_records.append(rec)
+    new_lines = [_json.dumps(rec, ensure_ascii=False) for rec in new_records]
     new_block = "\n".join(new_lines) + "\n"
     try:
         existing = blob.download_as_text() if blob.exists() else ""
@@ -1526,6 +1587,7 @@ def pick_candidates(
     focus_player_names: Optional[list[str] | tuple[str, ...] | set[str]] = None,
     context_label: str = "",
     max_per_player: int = _DEFAULT_PLAYER_MAX_PER_MAIL,
+    recent_player_counts: Optional[dict[str, int]] = None,
 ) -> list[Candidate]:
     """Build up to ``max_candidates`` セ-only X post candidates.
 
@@ -1565,12 +1627,22 @@ def pick_candidates(
         380: upper bound for the same focused player inside one mail.
         Distinct players are preferred first; duplicates are kept only
         as a fallback so the mail does not disappear.
+    recent_player_counts:
+        380 follow-up: normalized focus-player counts from recent
+        mails. Players that already appeared in the lookback window are
+        avoided before news/opinion fallback is needed.
     """
     if now is None:
         now = datetime.now(JST)
     player_cap = max(1, int(max_per_player or _DEFAULT_PLAYER_MAX_PER_MAIL))
     out: list[Candidate] = []
     used_player_counts: dict[str, int] = {}
+    history_player_counts = {
+        _normalize_player_name(name): int(count or 0)
+        for name, count in (recent_player_counts or {}).items()
+        if _normalize_player_name(name) and int(count or 0) > 0
+    }
+    history_avoid_names = set(history_player_counts)
     focus_names = normalize_focus_player_names(focus_player_names)
     focus_input_count = len(
         {
@@ -1657,7 +1729,7 @@ def pick_candidates(
                      combo.period_label, combo.position)
             continue
         rows = _rebuild_ranks_within_central(rows)
-        diversity_avoid_names = set(used_player_counts)
+        diversity_avoid_names = set(used_player_counts) | history_avoid_names
         focus_avoid_names = (
             used_focus_player_keys
             if focus_names and len(used_focus_player_keys) < focus_input_count
@@ -1668,13 +1740,29 @@ def pick_candidates(
             rows,
             focus_player_names=focus_names,
         )
-        if _top_giants_row(
+        top_with_avoid = _top_giants_row(
             rows,
             focus_player_names=focus_names,
             avoid_player_names=avoid_names,
-        ) is None:
-            LOG.info("No Giants row in central ranking for %s/%s (position=%s) — skip",
-                     combo.metric, combo.period_label, combo.position)
+        )
+        if top_with_avoid is None:
+            top_player_key = (
+                _normalize_player_name(top_without_avoid.get("player_canonical"))
+                if top_without_avoid
+                else ""
+            )
+            if top_player_key and top_player_key in history_avoid_names:
+                LOG.info(
+                    "player_history_skip metric=%s period=%s player=%s "
+                    "previous_count=%d reason=no_alternative",
+                    combo.metric,
+                    combo.period_label,
+                    top_without_avoid.get("player_canonical"),
+                    history_player_counts.get(top_player_key, 0),
+                )
+            else:
+                LOG.info("No Giants row in central ranking for %s/%s (position=%s) — skip",
+                         combo.metric, combo.period_label, combo.position)
             continue
         candidate = _format_one(
             combo,
@@ -1710,6 +1798,16 @@ def pick_candidates(
                 and focus_player_key != top_player_key
                 and top_player_key in diversity_avoid_names
             ):
+                if top_player_key in history_avoid_names:
+                    LOG.info(
+                        "player_history_alternate_selected metric=%s period=%s "
+                        "skipped_player=%s previous_count=%d selected_player=%s",
+                        combo.metric,
+                        combo.period_label,
+                        top_without_avoid.get("player_canonical"),
+                        history_player_counts.get(top_player_key, 0),
+                        candidate.focus_player,
+                    )
                 LOG.info(
                     "player_diversity_alternate_selected metric=%s period=%s "
                     "skipped_player=%s selected_player=%s",

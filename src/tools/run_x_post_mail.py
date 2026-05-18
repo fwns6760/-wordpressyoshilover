@@ -260,6 +260,7 @@ def _fetch_news_opinion_fallback_candidates(
     *,
     max_candidates: int,
     now: datetime,
+    recent_player_counts: dict[str, int] | None = None,
 ) -> list[lane.Candidate]:
     """Fill sparse data mails with source-backed news/opinion candidates.
 
@@ -294,6 +295,12 @@ def _fetch_news_opinion_fallback_candidates(
         for c in existing_candidates
         if lane._normalize_player_name(c.focus_player)
     }
+    history_player_counts = {
+        lane._normalize_player_name(name): int(count or 0)
+        for name, count in (recent_player_counts or {}).items()
+        if lane._normalize_player_name(name) and int(count or 0) > 0
+    }
+    history_player_keys = set(history_player_counts)
     seen_urls: set[str] = set()
     out: list[lane.Candidate] = []
     for source in _load_news_fallback_sources()[:source_limit]:
@@ -308,6 +315,16 @@ def _fetch_news_opinion_fallback_candidates(
             player = lane.detect_giants_player_name(f"{title} {summary}")
             player_key = lane._normalize_player_name(player)
             if not player_key or player_key in existing_player_keys:
+                continue
+            if player_key in history_player_keys:
+                LOG.info(
+                    "news_opinion_fallback_player_history_skip source=%s "
+                    "player=%s previous_count=%d url=%s",
+                    source.get("name"),
+                    player,
+                    history_player_counts.get(player_key, 0),
+                    link,
+                )
                 continue
             cand = lane.build_news_opinion_candidate(
                 source_title=title,
@@ -430,18 +447,31 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # 355: load 24h dedup set so combos already mailed in the past day
     # do not repeat. Disabled when ``X_POST_MAIL_DEDUP_DISABLED=1`` or
-    # bucket env missing. GCS errors silently return empty set
-    # (= dedup off for this run, mail still sends).
+    # bucket env missing. GCS errors are logged and treated as empty
+    # state (= dedup off for this run, mail still sends).
     dedup_set: set[str] | None = None
+    recent_player_counts: dict[str, int] = {}
     bucket_name = os.environ.get("INSIGHT_GCS_BUCKET") or ""
     dedup_disabled = (os.environ.get("X_POST_MAIL_DEDUP_DISABLED") or "").strip()
     if bucket_name and dedup_disabled not in {"1", "true", "yes"}:
         try:
-            dedup_set = lane._load_recent_dedup_signatures(bucket_name, now_jst)
+            dedup_records = lane._load_recent_dedup_records(bucket_name, now_jst)
+            dedup_set = {
+                str(rec.get("signature") or "")
+                for rec in dedup_records
+                if str(rec.get("signature") or "")
+            }
             LOG.info("Loaded 24h dedup set: %d signatures", len(dedup_set))
+            recent_player_counts = lane._player_counts_from_dedup_records(dedup_records)
+            LOG.info(
+                "Loaded 24h player history: %d players, %d appearances",
+                len(recent_player_counts),
+                sum(recent_player_counts.values()),
+            )
         except Exception as exc:  # noqa: BLE001
             LOG.warning("dedup load failed (continuing without dedup): %r", exc)
             dedup_set = set()
+            recent_player_counts = {}
     else:
         LOG.info("Dedup disabled (bucket=%s, disabled_env=%s)",
                  bool(bucket_name), dedup_disabled)
@@ -460,6 +490,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         dedup_set=dedup_set,
         focus_player_names=lineup_focus_names,
         context_label=context_label,
+        recent_player_counts=recent_player_counts,
     )
     if lineup_focus_names and len(candidates) < _resolve_lineup_focus_min_candidates():
         LOG.warning(
@@ -474,6 +505,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             min_sample=args.min_sample,
             db_path=db_path,
             dedup_set=dedup_set,
+            recent_player_counts=recent_player_counts,
         )
         context_label = ""
     dedup_min_candidates = _resolve_dedup_min_candidates()
@@ -493,6 +525,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             dedup_set=None,
             focus_player_names=lineup_focus_names if context_label else None,
             context_label=context_label,
+            recent_player_counts=recent_player_counts,
         )
         backfilled = _backfill_dedup_starved_candidates(
             candidates,
@@ -516,6 +549,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             candidates,
             max_candidates=args.max_candidates,
             now=now_jst,
+            recent_player_counts=recent_player_counts,
         )
         if fallback_candidates:
             before = len(candidates)
@@ -523,6 +557,32 @@ def main(argv: Sequence[str] | None = None) -> int:
             LOG.info(
                 "News/opinion fallback filled candidates: %d -> %d",
                 before,
+                len(candidates),
+            )
+    if not candidates and recent_player_counts:
+        LOG.warning(
+            "Player history left 0 candidates after news/opinion fallback; "
+            "retrying without player history to avoid starving scheduled mail.",
+        )
+        relaxed_history_candidates = lane.pick_candidates(
+            miq.query_rank,
+            now=now_jst,
+            max_candidates=args.max_candidates,
+            min_sample=args.min_sample,
+            db_path=db_path,
+            dedup_set=None,
+            focus_player_names=lineup_focus_names if context_label else None,
+            context_label=context_label,
+            recent_player_counts={},
+        )
+        if relaxed_history_candidates:
+            candidates = _backfill_dedup_starved_candidates(
+                candidates,
+                relaxed_history_candidates,
+                max_candidates=args.max_candidates,
+            )
+            LOG.info(
+                "Player history fallback backfilled candidates: 0 -> %d",
                 len(candidates),
             )
     if not candidates:
@@ -572,7 +632,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     ):
         signatures = [c.signature for c in candidates if c.signature]
         if signatures:
-            ok = lane._record_dedup_signatures(bucket_name, signatures, now_jst)
+            signed_candidates = [c for c in candidates if c.signature]
+            ok = lane._record_dedup_signatures(
+                bucket_name,
+                signatures,
+                now_jst,
+                focus_players=[c.focus_player for c in signed_candidates],
+                metrics=[c.metric for c in signed_candidates],
+                period_labels=[c.period_label for c in signed_candidates],
+            )
             LOG.info("Recorded %d dedup signatures (ok=%s)",
                      len(signatures), ok)
     return 0

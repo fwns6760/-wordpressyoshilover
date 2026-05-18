@@ -2,7 +2,7 @@
 
 ## status
 
-- **status**: LIVE_DEPLOYED_OBSERVE
+- **status**: IN_FLIGHT
 - **owner**: Codex
 - **lane**: B
 - **created**: 2026-05-18 JST
@@ -21,6 +21,56 @@
 - silent skip しない
 - 自己評価 OK にしない
 - 証拠を ticket に入れる
+
+2026-05-18 follow-up user 指摘:
+
+- 12:01 JST mail で浦田俊輔が 3 回出た
+- 13:07 JST mail でも浦田俊輔が再度出た
+- 1 通内の `max_per_player` だけでは、当日 / 直近24hの同一選手連発を止められない
+- user-visible acceptance は未達
+
+## follow-up design — player history dedup
+
+現行の不足:
+
+- GCS 24h dedup JSONL は `signature = metric|period_label|giants_only|position` を記録する
+- `focus_player` は記録していない
+- そのため 12:01 で `浦田俊輔` が複数回出ても、13:07 の候補選定では `浦田俊輔` が既出 player だと判定できない
+
+実装する仕組み:
+
+- 新規送信分の dedup JSONL に `focus_player`, `metric`, `period_label` を追加する
+- 旧 JSONL record は `signature` のみでも読み続ける
+- mail 生成時、直近24hの dedup JSONL から `focus_player` count を集計する
+- `recent_player_counts` を `pick_candidates()` に渡す
+- 候補選定時、直近24hに出た player は `avoid_player_names` に入れる
+- ranking 内に別の巨人選手があれば、その player に差し替える
+- 差し替え不能なら `player_history_skip` を log してデータ候補からは外す
+- 候補数が足りなければ、news/opinion fallback を使う
+- news/opinion fallback も直近24h既出 player は補充しない
+- それでも候補不足の場合だけ、既存の starvation fallback により mail 0 件化を避ける。ただし skip / fallback は log に残す
+
+想定 JSONL:
+
+```json
+{"ts":"2026-05-18T12:01:06+09:00","signature":"OPS|今月|False|None","focus_player":"浦田俊輔","metric":"OPS","period_label":"今月"}
+```
+
+必要 log:
+
+- `Loaded 24h player history: ...`
+- `player_history_alternate_selected ... skipped_player=浦田俊輔 previous_count=3 selected_player=...`
+- `player_history_skip ... player=浦田俊輔 previous_count=3 reason=no_alternative`
+- `news_opinion_fallback_player_history_skip ... player=浦田俊輔 previous_count=3 ...`
+
+追加 acceptance:
+
+- 12:01 -> 13:07 型の test で、12:01 既出 player が次回 data candidate の主役に再登場しない
+- ranking 内に別の巨人 player がいれば差し替える
+- news/opinion fallback は直近24h既出 player を補充しない
+- GCS dedup JSONL は旧 `signature` only record と互換
+- 新規 record は `focus_player` evidence を持つ
+- skip / fallback は log に残り、silent skip しない
 
 ## evidence confirmed
 
@@ -334,6 +384,57 @@ Result:
 - data candidates: `8`
 - news/opinion fallback candidates: `2`
 - mixed label used: `巨人Xポスト案` / `データ+ニュース意見`
+
+## follow-up implementation evidence — 2026-05-18 JST
+
+Changed files:
+
+- `src/x_post_mail_lane.py`
+- `src/tools/run_x_post_mail.py`
+- `tests/test_x_post_mail.py`
+- `doc/active/380-x-post-mail-player-diversity-cap.md`
+- `doc/README.md`
+- `doc/active/assignments.md`
+
+Implemented:
+
+- GCS dedup JSONL reader split into record reader + signature set + player count derivation.
+- Existing `signature` only dedup records remain readable.
+- New dedup writes can include `focus_player`, `metric`, and `period_label`.
+- `pick_candidates()` now accepts `recent_player_counts`.
+- Recent player counts are normalized and added to `avoid_player_names` before selecting the Giants row.
+- If the top Giants row is a recent player and another Giants row exists, the other player is selected.
+- If no alternate exists, `player_history_skip` is logged with `previous_count`.
+- News/opinion fallback also skips players in recent player history and logs `news_opinion_fallback_player_history_skip`.
+- If player history + news/opinion fallback leave zero candidates, the runner logs that fact and relaxes player history only as a last-resort zero-mail prevention fallback.
+
+Verification commands:
+
+- `python3 -m py_compile src/x_post_mail_lane.py src/tools/run_x_post_mail.py tests/test_x_post_mail.py`
+  - result: PASS
+- `python3 -m compileall -q src/x_post_mail_lane.py src/tools/run_x_post_mail.py tests/test_x_post_mail.py`
+  - result: PASS
+- `python3 -c "import ast, pathlib; [ast.parse(pathlib.Path(p).read_text(encoding='utf-8'), filename=p) for p in ['src/x_post_mail_lane.py','src/tools/run_x_post_mail.py','tests/test_x_post_mail.py']]; print('AST OK')"`
+  - result: `AST OK`
+- `python3 -m pytest -q tests/test_x_post_mail.py`
+  - result: `94 passed, 3 warnings`
+- `python3 -m unittest tests.test_x_post_mail`
+  - result: `Ran 94 tests` / `OK`
+- `git diff --check -- src/x_post_mail_lane.py src/tools/run_x_post_mail.py tests/test_x_post_mail.py doc/active/380-x-post-mail-player-diversity-cap.md doc/README.md doc/active/assignments.md`
+  - result: PASS
+
+Targeted test evidence:
+
+- `test_recent_player_history_uses_next_giants_row`
+  - proves a 12:01 already-seen `浦田俊輔` history causes the next candidate to choose `平山 功太`.
+- `test_load_recent_player_counts_from_dedup_records`
+  - proves GCS dedup JSONL `focus_player` records become player counts and legacy signature-only records do not break parsing.
+- `test_record_dedup_signatures_can_write_focus_player_fields`
+  - proves new records include `focus_player`, `metric`, and `period_label`.
+- `test_news_opinion_fallback_skips_recent_history_player`
+  - proves news fallback does not re-add a recent-history player.
+- `test_player_history_zero_candidate_relaxes_as_last_resort`
+  - proves history is relaxed only after zero candidates remain, to avoid a missing scheduled mail.
 
 ## implementation contract
 

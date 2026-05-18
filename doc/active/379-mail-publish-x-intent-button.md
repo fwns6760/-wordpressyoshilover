@@ -148,7 +148,41 @@
 - ボタン click → confirmation page → 公開 → X intent 遷移の 1 click 動作 verify
 - 21:05 JST 以降の publish-notice 自然 fire (publish-notice-trigger-evening cron `5,35 16-22`) で観察
 
-## 着地 log (2026-05-18)
+## v2 着地 log (2026-05-18 PM、 commit `38bfedc`)
+
+HTML mail button + token 1 回限り (GCS one-shot) を追加。
+
+src 改修:
+- `src/publish_notice_email_sender.py`: build_body_html_per_post に「🚀 公開してX投稿画面へ」 緑 button + 「✏️ WP編集画面で確認」 青枠 button 追加。
+- 新規 `src/publish_button_consumed_store.py`: GCS-backed one-shot (bucket=baseballsite-yoshilover-state、 path=publish-button-consumed/{hash[:32]}.json、 if_generation_match=0 で atomic create)、 fail-open。
+- `src/publish_button_handler.py` handle_post: is_consumed / mark_consumed injection、 one-shot logic (consumed+draft=409 / consumed+publish=302 idempotent / not consumed+draft=publish+mark+302 / not consumed+publish=302 mark せず)。
+
+tests: publish_button 系 16 (store) + 28 (handler) + publish_notice 系 (HTML 5 + draft body 11 + body excerpt 39 + scanner body excerpt 17 + 既存) で **計 422 cases pass**、 regression 0。
+
+Cloud Build:
+- yoshilover-fetcher: build `f0c171e7-c350-402a-8940-65b6e1ed50f7` SUCCESS 1m25s、 image `379-button-oneshot-38bfedc` digest `sha256:c11342bcb7b3...`。
+- publish-notice: build `1c353967-86c1-42dd-8359-b9b9dc2477f5` SUCCESS 3m37s、 image `379-button-oneshot-38bfedc` digest `sha256:ad36917a2e98...`。
+
+Deploy:
+- yoshilover-fetcher service rev `00426-45l` 100% traffic (rollback 用に v1 `00425-vmd` Cloud Run history で保持)。
+- publish-notice Job image 更新済 (rollback 用に v1 `379-publish-button-9fdbeca`)。
+
+Production live verify:
+- `/health` → 200。
+- `/publish-and-tweet?post_id=abc&token=xyz` → 400。
+- `/publish-and-tweet?post_id=999999&token=invalid.token` → 403。
+- `/publish-and-tweet?post_id=999999&token=<valid HMAC>` → 404 (post 不存在、 error page 描画 verify)。
+- `/publish-and-tweet?post_id=68962&token=<valid HMAC>` → **200**、 実 draft post 「kvibabaがスペシャルパフォーマンスに登場 吉川尚輝は拍手」 が confirmation page に描画、 form POST action=/publish-and-tweet、 hidden post_id/token 配置 verify。
+
+GCS one-shot (production credentials manual smoke):
+- 新規 token で is_consumed=False → mark_consumed=True → is_consumed=True → 2nd mark_consumed=False (race precondition 正常)。
+- fetcher service account `487178857517-compute@developer.gserviceaccount.com` は project `roles/editor` + bucket `roles/storage.objectAdmin` (bucket binding verify 済) で production runtime write OK。
+
+未 verify (user / 自然 fire 待ち):
+- POST /publish-and-tweet の実 publish + X intent 302 redirect end-to-end (実 draft を publish させる副作用回避のため、 verify は user mail から実 click または別 test draft で)。
+- HTML mail での button 描画 (gmail 等 mail client での見た目) → 次回 publish-notice 自然 fire (16:05 JST 以降の `5,35 16-22`) で user 受信時に目視 verify。
+
+## 着地 log (2026-05-18、 v1 commit `9fdbeca`)
 
 commit `9fdbeca`:
 - `src/publish_button_token.py`: HMAC + 24h expiry + URL builder (28 tests)

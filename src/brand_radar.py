@@ -61,6 +61,13 @@ LOW_VALUE_TOPIC_PATTERNS = (
 URL_RE = re.compile(r"https?://[^\s<>()\"']+")
 MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^)]+)\)")
 TITLE_CLEAN_RE = re.compile(r"\s+")
+NUMERIC_STAT_CLAIM_RE = re.compile(
+    r"(?:"
+    r"(?:打率|防御率|OPS|出塁率|長打率|勝率|守備率)\s*(?:[0-9０-９]+(?:\.[0-9０-９]+)?|\.[0-9０-９]+)"
+    r"|[0-9０-９]+(?:\.[0-9０-９]+)?"
+    r"(?:回|安打|打点|本塁打|号|奪三振|四球|失点|自責点|勝|敗|セーブ|ホールド|連勝|連敗)"
+    r")"
+)
 
 
 @dataclass(frozen=True)
@@ -155,6 +162,32 @@ def _shorten(value: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[: max(0, limit - 1)].rstrip() + "…"
+
+
+def _has_numeric_stat_claim(value: str) -> bool:
+    return bool(NUMERIC_STAT_CLAIM_RE.search(value or ""))
+
+
+def _numeric_claim_db_verified(topic: FreshArticleTopic) -> bool:
+    return any(str(note).startswith("db_numeric_verified") for note in topic.skip_notes)
+
+
+def _sanitize_unverified_numeric_claims(value: str) -> str:
+    text = _one_line(value)
+    if not text:
+        return text
+    text = re.sub(
+        r"(打率|防御率|OPS|出塁率|長打率|勝率|守備率)\s*(?:[0-9０-９]+(?:\.[0-9０-９]+)?|\.[0-9０-９]+)",
+        r"\1の数字",
+        text,
+    )
+    text = re.sub(
+        r"[0-9０-９]+(?:\.[0-9０-９]+)?(?:回|安打|打点|本塁打|号|奪三振|四球|失点|自責点|勝|敗|セーブ|ホールド|連勝|連敗)",
+        "数字面",
+        text,
+    )
+    text = re.sub(r"(数字面){2,}", "数字面", text)
+    return _one_line(text)
 
 
 def _normal_title_key(title: str) -> str:
@@ -708,13 +741,7 @@ def _risk_label(topic: FreshArticleTopic, signal: XSearchSignal) -> str:
 
 
 def _confidence_label(signal: XSearchSignal) -> str:
-    if signal.status == "x_search_cited":
-        return "source+x_search_url"
-    if signal.status == "x_search_uncited":
-        return "source+x_search_uncited"
-    if signal.status == "x_search_empty":
-        return "source_only_x_empty"
-    return f"source_only_x_error:{signal.error_type or 'unknown'}"
+    return "source_only"
 
 
 def _topic_type_jp(topic_type: str) -> str:
@@ -733,30 +760,25 @@ def _topic_type_jp(topic_type: str) -> str:
 
 
 def compose_post_text(topic: FreshArticleTopic, signal: XSearchSignal) -> str:
-    title = _shorten(topic.title, 62)
+    title_text = topic.title
+    if _has_numeric_stat_claim(title_text) and not _numeric_claim_db_verified(topic):
+        title_text = _sanitize_unverified_numeric_claims(title_text)
+    title = _shorten(title_text, 62)
     topic_label = _topic_type_jp(topic.topic_type)
-    if signal.status in {"x_search_cited", "x_search_uncited"} and signal.summary:
-        hook = _shorten(signal.summary, 42)
-        text = (
-            f"巨人ファン的に今日見るべき論点。\n"
-            f"{title}\n"
-            f"Xでは「{hook}」が気になる流れ。\n"
-            f"ヨシラバーでは{topic_label}として追います。\n"
-            "#巨人 #ジャイアンツ"
-        )
-    else:
-        text = (
-            f"巨人ファン的に今日見るべき論点。\n"
-            f"{title}\n"
-            f"ヨシラバーでは{topic_label}として、事実ベースで整理します。\n"
-            "#巨人 #ジャイアンツ"
-        )
-    if len(text) <= 140:
+    text = (
+        "この話題、巨人ファンの見方が分かれそうです。\n"
+        f"{title}\n"
+        f"ヨシラバーでは{topic_label}として、事実とファン目線を分けて整理しました。\n"
+        "{記事URL}\n"
+        "#巨人 #ジャイアンツ"
+    )
+    if len(text) <= 220:
         return text
     return (
-        f"巨人ファン的に今日見るべき論点。\n"
-        f"{_shorten(topic.title, 54)}\n"
-        f"ヨシラバーでは{topic_label}として追います。\n"
+        "巨人ファンが今日考えたい論点。\n"
+        f"{_shorten(title_text, 54)}\n"
+        "ヨシラバーで整理しました。\n"
+        "{記事URL}\n"
         "#巨人 #ジャイアンツ"
     )
 
@@ -776,15 +798,12 @@ def _why_now(topic: FreshArticleTopic, signal: XSearchSignal) -> str:
         fresh = f"within 24h {topic.freshness_hours:.1f}h"
     else:
         fresh = f"magazine context {topic.freshness_hours:.1f}h"
-    if signal.status == "x_search_cited":
-        x_part = f"X evidence URLs={len(signal.evidence_urls)}"
-    elif signal.status == "x_search_uncited":
-        x_part = "X summary returned without URL"
-    elif signal.status == "x_search_empty":
-        x_part = "X signal empty"
-    else:
-        x_part = f"X unavailable: {signal.error_type or signal.status}"
-    return f"{fresh}; {x_part}; source={topic.source_name}"
+    numeric_part = (
+        "numeric claims db-verified"
+        if _numeric_claim_db_verified(topic)
+        else "numeric claims omitted unless DB-verified"
+    )
+    return f"{fresh}; {numeric_part}; source={topic.source_name}"
 
 
 def _brand_judgement(topic: FreshArticleTopic, signal: XSearchSignal) -> str:
@@ -793,12 +812,10 @@ def _brand_judgement(topic: FreshArticleTopic, signal: XSearchSignal) -> str:
         _topic_type_jp(topic.topic_type),
         "記事URLあり",
     ]
-    if signal.status == "x_search_cited":
-        parts.append("X Search URL証拠あり")
-    elif signal.status == "x_search_uncited":
-        parts.append("X Search要約のみ")
+    if _numeric_claim_db_verified(topic):
+        parts.append("数値DB照合済み")
     else:
-        parts.append("X Search証拠なし")
+        parts.append("未照合数値はポスト案から除外")
     return " / ".join(parts)
 
 
@@ -822,8 +839,7 @@ def build_brand_post_plans(
         if provider_disabled:
             signal = _empty_signal(topic, now=active_now, status="x_search_error", error_type="provider_disabled")
         elif x_search_call_cap <= 0:
-            signal = _empty_signal(topic, now=active_now, status="x_search_error", error_type="x_search_disabled_no_paid_api")
-            active_stats.add_skip("x_search_disabled_no_paid_api")
+            signal = _empty_signal(topic, now=active_now, status="x_search_error", error_type="external_signal_removed_by_scope")
         elif active_stats.x_search_calls_used >= x_search_call_cap:
             signal = _empty_signal(topic, now=active_now, status="x_search_error", error_type="x_search_cap_exceeded")
             active_stats.add_skip("x_search_cap_exceeded")
@@ -837,7 +853,12 @@ def build_brand_post_plans(
                     provider_disabled = True
         score = topic.base_score + _signal_score(signal)
         post_text = compose_post_text(topic, signal)
-        notes = tuple([*topic.skip_notes, signal.error_type] if signal.error_type else topic.skip_notes)
+        notes_list = list(topic.skip_notes)
+        if _has_numeric_stat_claim(topic.title) and not _numeric_claim_db_verified(topic):
+            notes_list.append("unverified_numeric_claim_omitted_from_post_text")
+        if signal.error_type and signal.error_type != "external_signal_removed_by_scope":
+            notes_list.append(signal.error_type)
+        notes = tuple(notes_list)
         plans.append(
             BrandPostPlan(
                 topic=topic,
@@ -925,12 +946,10 @@ def compose_brand_radar_mail(
         f"ヨシラバー投稿企画案 — 巨人ニュース鮮度レーダー / {active_now.astimezone(JST).strftime('%Y-%m-%d %H:%M')} JST",
         "",
         "公開通知ではありません。X自動投稿もWP更新もしません。",
-        "目的: ヨシラバーのポストを見たいと思わせるため、巨人ニュース + X温度感 + 証拠で候補を絞る。",
+        "目的: ヨシラバーのポストを見たいと思わせるため、巨人ニュース + 記事証拠 + 必要ならDB照合で候補を絞る。",
         "",
         "run evidence:",
-        f"- x_search_calls_used: {active_stats.x_search_calls_used}",
-        f"- x_search_call_cap: {active_stats.x_search_call_cap}",
-        f"- provider_error_count: {active_stats.provider_error_count}",
+        "- external_reaction_scope: removed_by_user_request",
         f"- candidates_sent: {len(plans)}",
         f"- candidates_skipped_by_reason: {json.dumps(active_stats.skipped_by_reason, ensure_ascii=False, sort_keys=True)}",
         "",
@@ -952,7 +971,6 @@ def compose_brand_radar_mail(
                 f"- source: {topic.source_name} ({topic.source_type})",
                 f"- source_url: {topic.url}",
                 f"- source_time: {_format_source_time(topic)}",
-                *_format_signal_text(signal),
                 "",
                 "ブランド判定:",
                 f"- {plan.brand_judgement}",
@@ -962,17 +980,14 @@ def compose_brand_radar_mail(
                 f"- score: {plan.score:.1f}",
                 "",
                 "注意:",
-                "- DBが古い場合でも、この候補は記事ソースとX Search証拠だけで扱う。",
-                "- X signal unavailable の場合は、ファン反応を作らない。",
+                "- 未照合の数字はポスト案から外す。数字を入れる場合はDB照合済みだけにする。",
+                "- {記事URL} は公開後のヨシラバー記事URLに差し替える。",
                 *[f"- note: {note}" for note in plan.notes],
                 "",
                 "X投稿URL:",
                 encode_x_intent_url(plan.post_text),
                 "",
             ]
-        )
-        evidence_html = "".join(
-            f"<li>{html.escape(line)}</li>" for line in _format_signal_text(signal)
         )
         html_cards.append(
             "<section style=\"border-left:4px solid #f57f17;padding:12px 14px;margin:16px 0;"
@@ -987,7 +1002,6 @@ def compose_brand_radar_mail(
             f"<li>source: {html.escape(topic.source_name)} ({html.escape(topic.source_type)})</li>"
             f"<li>source_url: <a href=\"{html.escape(topic.url)}\">{html.escape(topic.url)}</a></li>"
             f"<li>source_time: {html.escape(_format_source_time(topic))}</li>"
-            f"{evidence_html}"
             "</ul>"
             f"<p><strong>ブランド判定:</strong> {html.escape(plan.brand_judgement)}"
             f" / confidence={html.escape(plan.confidence_label)}"
@@ -1005,11 +1019,9 @@ def compose_brand_radar_mail(
         "max-width:720px;margin:0 auto;padding:18px;color:#222;\">"
         f"<h2>{html.escape(subject)}</h2>"
         "<p>公開通知ではありません。X自動投稿もWP更新もしません。</p>"
-        "<p>目的: ヨシラバーのポストを見たいと思わせるため、巨人ニュース + X温度感 + 証拠で候補を絞る。</p>"
+        "<p>目的: ヨシラバーのポストを見たいと思わせるため、巨人ニュース + 記事証拠 + 必要ならDB照合で候補を絞る。</p>"
         "<ul>"
-        f"<li>x_search_calls_used: {active_stats.x_search_calls_used}</li>"
-        f"<li>x_search_call_cap: {active_stats.x_search_call_cap}</li>"
-        f"<li>provider_error_count: {active_stats.provider_error_count}</li>"
+        "<li>external_reaction_scope: removed_by_user_request</li>"
         f"<li>candidates_sent: {len(plans)}</li>"
         f"<li>candidates_skipped_by_reason: {html.escape(json.dumps(active_stats.skipped_by_reason, ensure_ascii=False, sort_keys=True))}</li>"
         "</ul>"

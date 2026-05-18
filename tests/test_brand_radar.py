@@ -160,7 +160,7 @@ class BrandRadarTopicTests(unittest.TestCase):
 
 
 class BrandRadarPlanTests(unittest.TestCase):
-    def test_x_search_cited_result_is_visible_in_mail_fixture(self) -> None:
+    def test_branding_post_mail_fixture_uses_article_evidence_not_x_search(self) -> None:
         now = datetime(2026, 5, 18, 18, 0, tzinfo=JST)
         signal = brand_radar.XSearchSignal(
             query="巨人 阿部監督 起用",
@@ -187,12 +187,14 @@ class BrandRadarPlanTests(unittest.TestCase):
         self.assertIn("投稿案", mail.text_body)
         self.assertIn("狙い:", mail.text_body)
         self.assertIn("証拠:", mail.text_body)
-        self.assertIn("X Search query: 巨人 阿部監督 起用", mail.text_body)
-        self.assertIn("https://x.com/fan/status/1", mail.text_body)
-        self.assertIn("provider usage", mail.text_body)
+        self.assertIn("source_url:", mail.text_body)
+        self.assertIn("{記事URL}", mail.text_body)
+        self.assertNotIn("X Search query", mail.text_body)
+        self.assertNotIn("https://x.com/fan/status/1", mail.text_body)
+        self.assertNotIn("provider usage", mail.text_body)
         self.assertIn("twitter.com/intent/tweet", mail.text_body)
 
-    def test_x_search_empty_is_not_silently_skipped(self) -> None:
+    def test_removed_x_search_scope_is_visible_without_fan_reaction_claim(self) -> None:
         now = datetime(2026, 5, 18, 18, 0, tzinfo=JST)
         empty = brand_radar.XSearchSignal(
             query="巨人 若手",
@@ -210,9 +212,25 @@ class BrandRadarPlanTests(unittest.TestCase):
         )
         mail = brand_radar.compose_brand_radar_mail(result.plans, now=now, stats=result.stats)
 
-        self.assertIn("X Search status: x_search_empty", mail.text_body)
-        self.assertIn("X signal unavailable: x_search_empty", mail.text_body)
+        self.assertIn("external_reaction_scope: removed_by_user_request", mail.text_body)
+        self.assertNotIn("X Search status", mail.text_body)
+        self.assertNotIn("X signal unavailable", mail.text_body)
         self.assertNotIn("ファンが盛り上がっている", mail.text_body)
+
+    def test_unverified_numeric_claim_is_omitted_from_post_text(self) -> None:
+        now = datetime(2026, 5, 18, 18, 0, tzinfo=JST)
+
+        result = brand_radar.build_brand_post_plans(
+            [_topic("打率.160でも…坂本勇人が必要なワケ", topic_type="fresh_news")],
+            x_search_client=FakeXSearchClient([]),
+            now=now,
+            max_plans=1,
+            x_search_call_cap=0,
+        )
+
+        self.assertIn("打率の数字", result.plans[0].post_text)
+        self.assertNotIn("打率.160", result.plans[0].post_text)
+        self.assertIn("unverified_numeric_claim_omitted_from_post_text", result.plans[0].notes)
 
     def test_cost_guard_enforces_x_search_cap(self) -> None:
         now = datetime(2026, 5, 18, 18, 0, tzinfo=JST)
@@ -257,8 +275,8 @@ class BrandRadarPlanTests(unittest.TestCase):
 
         self.assertEqual(fake.calls, 0)
         self.assertEqual(result.stats.x_search_calls_used, 0)
-        self.assertEqual(result.plans[0].signal.error_type, "x_search_disabled_no_paid_api")
-        self.assertEqual(result.stats.skipped_by_reason["x_search_disabled_no_paid_api"], 1)
+        self.assertEqual(result.plans[0].signal.error_type, "external_signal_removed_by_scope")
+        self.assertNotIn("external_signal_removed_by_scope", result.stats.skipped_by_reason)
 
     def test_no_x_live_post_or_wp_mutation_strings_in_mail(self) -> None:
         now = datetime(2026, 5, 18, 18, 0, tzinfo=JST)

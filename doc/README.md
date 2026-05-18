@@ -67,8 +67,7 @@ Active folder is intentionally narrow. 2026-05-08 朝の「0 publish 0 mail」�
 | **quality person tag routing / noindex** | `376-QA-person-tag-routing-and-noindex.md` | のもとけ風に選手・首脳陣・OBの人物タグを事前作成し、RSS記事作成時は既存タグだけ自動付与する。WP tag sync 173 OK、fetcher deploy 済。tag archive noindex は WP plugin upload 後に live verified。GitHub Issue #49。 |
 | **x-post-mail player diversity** | `380-x-post-mail-player-diversity-cap.md` | 2026-05-18 13:07 手動 mail でも、12:01 で 3 回出た `浦田俊輔` が再登場したため user-visible acceptance 未達。follow-up deploy 済み: GCS 24h dedup JSONL に `focus_player / metric / period_label` を記録し、直近24h player history から既出 player を避ける。commit `157b26b`、Cloud Build `8dad3a83` SUCCESS、image `x-post-mail-lane:380-player-history-157b26b` digest `sha256:15cd067...`、Job generation `21`。手動 execute は追加 real mail 回避で未実行、post-update user-visible acceptance は次回自然 fire 待ち。Scheduler / env / Secret / WP / X / SNS / production DB は変更しない。GitHub Issue #54。 |
 | **Giants-only general source expansion** | `381-INGEST-giants-general-source-expansion.md` | user 要望「巨人だけ総合」「読売新聞/朝日新聞/毎日新聞/週刊ベースボール/一般誌」。commit `c791f52` 実装 + deploy 済。Full-Count feed 修正、ベースボールチャンネル、朝日/毎日スポーツRSS、週刊ベースボールONLINE、読売オンライン、日テレ、FRIDAY、Smart FLASH、週刊女性PRIME、文春、NEWSポストセブン、デイリー新潮、現代ビジネス、アサ芸を追加。x-post-mail fallback は tag_scrape 対応 + source limit 32 で全32 article sources 到達。manual-intake-service に source 候補 tab + `/source-candidates` を追加 deploy 済み、live 読売 endpoint `count=3`。一般誌/新聞は limited topic bypass のみ、full bypass / numeric fact / hard stop は不変。deploy evidence: x-post-mail build `a8a5ea80` SUCCESS / Job generation `22` Ready=True、fetcher build `2b60df25` SUCCESS / revision `yoshilover-fetcher-00431-vl9` 100% / `GET /health` OK、manual-intake build `9329593b` SUCCESS / revision `manual-intake-service-00084-bzv` 100%。Scheduler / env / Secret / WP / X は未変更、manual execute 未実行、post-update mail acceptance は次回自然 fire 待ち。GitHub Issue #55。 |
-| **branding radar fresh news X Search** | `382-MKT-brand-radar-x-search-fresh-news.md` | user 要望「巨人だから新鮮なニュースが良い」「ヨシラバーのポストを見たいと思わせる」。repo implementation landed: `src/brand_radar.py` + `src/tools/run_brand_radar_mail.py` + `tests/test_brand_radar.py`。3候補の `ヨシラバー投稿企画案｜巨人ニュース鮮度レーダー` mail を生成し、記事ソース優先 / X Search evidence / `X signal unavailable` 明示 / `x_search_auth_required` 明示 / no X live post / no WP mutation。paid xAI API は default disabled (`x_search_cap=0`)。Hermes docs evidence から `@yoshilover6760` Premium + Hermes OAuth は GCP smoke 実験として追う。tests 17 OK、source dry-run は Full-Count 巨人 坂本候補のみ残し、DeNA-looking general RSS は `non_giants_topic` で reject。status `REVIEW_NEEDED`: live GCP deploy、Hermes OAuth smoke、Secret/Scheduler/cadence は未実施。GitHub Issue #56。 |
-| **fan voice X Search precision** | `383-QA-fan-voice-x-search-precision.md` | user 要望「本文の皆の声も同じ仕様で X Search で精度を上げたい」。現行 `💬 ファンの声（Xより）` は主に `fetch_fan_reactions_from_yahoo()` の Yahoo realtime path。382 と同じく paid xAI API は default disabled、`@yoshilover6760` Premium + Hermes OAuth の GCP smoke 成功後に X Search URL-backed fan voice を検討する。status `BLOCKED_USER`: ticket-only request、実装は user GO 待ち。GitHub Issue #57。 |
+| **Yoshilover branding post planning mail** | `382-MKT-yoshilover-branding-post-planning-mail.md` | user 要望「目的はヨシラバーのブランディングポスト案」。X Premium / Hermes / X Search / 本文のみんなの声は目的外として scope から削除。repo implementation は `src/brand_radar.py` + `src/tools/run_brand_radar_mail.py` + `tests/test_brand_radar.py`。記事ソース優先、X live post / WP mutation なし、`{記事URL}` を含む編集前提のXポスト案を生成。未照合の数字はポスト案から除外/一般化し、 exact 数値はDB照合済みだけ許可。status `REVIEW_NEEDED`: DB numeric verification wiring / live GCP deploy / Scheduler/cadence は未実施。GitHub Issue #56。 |
 | **quality source excerpt follow-up** | `323-QA-source-body-excerpt-clean-truncation.md` | `314-QA-rss-source-body-excerpt-followup` 関連。ブログ本文の `📖 本文抜粋` が600文字化後も途中切れ / UI・関連記事混入に見える問題を狭く扱う。publish/mail/scheduler/env/Cloud Run/X/SEO/featured_media は不可触。 |
 | **waiting** | `205-gcp-runtime-drift-audit.md`, `238-night-draft-only-and-morning-decision-report.md`, `288-INGEST-source-coverage-expansion.md` | still useful, but not part of the immediate article-body hallucination fix. `288` remains source-add HOLD; only Phase 0 repo-only audit / dry-run evidence may advance doc-only. |
 | **INSIGHT lane (342 ready full-12team, 343 phase-4 done)** | `342-INSIGHT-data-driven-ranking-auto-publish.md`, `343-INSIGHT-007-data-population-audit-and-backfill.md` | 343 Phase 4 (12 球団 team-aware roster) LIVE: NPB 公式 scrape で `config/npb_12team_roster.json` 1071 entry 生成、`fill_canonical_team_aware` で 5027 row 補完、production DB players 21→462 (12 球団全部 32-43 人)、advanced_metric_snapshots 122→6394 (50x)。image `insight-nightly:343c` deploy 済、次 nightly 以降も自動 fill 動作。342 status `READY_FOR_PHASE_1_IMPL_FULL_12TEAM`、初版 4 候補全部 (A1 月次 OPS / B2 守備 UZR / B1 12 球団 top 30 / E1 直近 hot/cold) data 揃い、user GO で impl 着手可能。GH Issue #21(342) + #23(343)。 |
@@ -1962,35 +1961,20 @@ git add -A禁止。
 - **follow-up 2026-05-18**: 13:07 手動 mail は 1 通内 repeat 0 だったが、12:01 に 3 回出た `浦田俊輔` が再登場した。受け入れ条件は「1 通内」だけでは不足。追加 acceptance は、直近24h player history に出た player を次回候補選定で避け、別 Giants row があれば差し替え、無ければ log して news/opinion fallback で別 player を補充すること。GCS dedup JSONL の旧 `signature` only record は読み続け、新規 record は `focus_player / metric / period_label` を持つ。
 - **follow-up deploy 2026-05-18**: source commit `157b26b` を clean archive して build。Cloud Build `8dad3a83-bda3-4a0d-8103-befda9656915` SUCCESS、image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/x-post-mail-lane:380-player-history-157b26b`、digest `sha256:15cd06766cdc4ee6a3780ce3a25bba2ee3ddbe482d3b0a56d0116f3a9914ecd1`。Cloud Run Job generation `21` / Ready True / image updated。手動 execute は追加 real mail 回避のため未実行。latest execution `x-post-mail-lane-l9652` は generation 21 update 前の 15:00 JST scheduler fire であり、新 image 実行証拠ではない。
 
-### 382-MKT-brand-radar-x-search-fresh-news
+### 382-MKT-yoshilover-branding-post-planning-mail
 
 - **alias**: -
 - **status**: REVIEW_NEEDED / **priority**: high
 - **owner**: Codex / **lane**: A
-- **doc_path**: `doc/active/382-MKT-brand-radar-x-search-fresh-news.md`
+- **doc_path**: `doc/active/382-MKT-yoshilover-branding-post-planning-mail.md`
 - **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/56
-- **背景**: user lock。「巨人だから新鮮なニュースが良い」「ヨシラバーのポストを見たいと思わせる」。成績ランキングではなく、記事記録 + X Search 反応でヨシラバーのブランディング用投稿企画 mail を作る。
-- **調査証拠**: local `hermes` command は未導入。Secret Manager には legacy `yoshilover-grok-api-key` が存在し、`yoshilover-fetcher` Cloud Run service には `GROK_API_KEY` として wired 済み。`x-post-mail-lane` Job には xAI/X Search credential は未設定。repo code には `src/rss_fetcher.py` / `src/x_post_generator.py` に `https://api.x.ai/v1/responses` + `tools: [{"type": "x_search"}]` の既存実装がある。official docs evidence: Hermes X Search は SuperGrok OAuth or `XAI_API_KEY` で、SuperGrok OAuth が優先される。Hermes remote-host docs には `hermes auth add xai-oauth --no-browser` と SSH tunnel 手順がある。
-- **判断**: paid xAI API / X Developer API は既定で使わない。repo default は GCP Cloud Run Job でも `x_search_cap=0` の記事/RSS鮮度 mail。`@yoshilover6760` Premium + Hermes OAuth は「GCPで動くか」を smoke test する別 track とし、token artifact / refresh / log redaction を証拠で確認する。
-- **implementation**: `src/brand_radar.py` / `src/tools/run_brand_radar_mail.py` / `tests/test_brand_radar.py` を追加。fresh article collector、xAI Responses API `x_search` client、3候補 mail composer、dry-run default CLI、evidence/cost/skip logging を実装。credential は `XAI_OAUTH_BEARER_TOKEN` / `XAI_BEARER_TOKEN` / `XAI_API_KEY` 優先、legacy `GROK_API_KEY` fallback。default `x_search_cap=0` で paid API call は発生させない。
-- **verification**: py_compile PASS、`python3 -m unittest tests.test_brand_radar` 17 tests OK。ネットワーク承認 source dry-run: candidates_sent=1、x_search_calls_used=0、`x_search_disabled_no_paid_api` 明示、DeNA-looking general RSS は `non_giants_topic` で reject、Full-Count 巨人 坂本候補のみ残存。
-- **cost guard**: default max topics/run=3、paid xAI x_search/run=0、paid xAI x_search/day=0。Hermes OAuth smoke は manual one-off 1 query/run。Scheduler は user が cadence を承認するまで作らない。
-- **blocked_by**: live deploy / env / Scheduler decision。new `brand-radar` Job or existing `x-post-mail-lane` replacement、mail cadence。real X Search は Hermes install check、`@yoshilover6760` OAuth setup、Secret artifact storage、one-off GCP smoke、log redaction acceptance が未完了。
-- **do_not_touch**: `.env`、secret values、Cloud Scheduler、Cloud Run env、既存 WP posts、X live post、`RUN_DRAFT_ONLY`、unrelated frontend/plugin files。
-
-### 383-QA-fan-voice-x-search-precision
-
-- **alias**: -
-- **status**: BLOCKED_USER / **priority**: high
-- **owner**: Codex / **lane**: B
-- **doc_path**: `doc/waiting/383-QA-fan-voice-x-search-precision.md`
-- **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/57
-- **背景**: user request。「本文の皆の声も同じ仕様で X Search で精度を上げたい」。対象は記事本文の canonical block `💬 ファンの声（Xより）`。
-- **調査証拠**: `src/rss_fetcher.py` の現行主経路は `fetch_fan_reactions_from_yahoo()` で Yahoo リアルタイム検索 entries を filter している。render slot は reaction URL があれば既存 `build_oembed_block()` で embed する。repo には `fetch_fan_reactions_with_grok()` / `generate_article_with_grok()` / `src/x_post_generator.py` の xAI Responses API `x_search` 既存実装がある。382 調査により `yoshilover-grok-api-key` secret と `yoshilover-fetcher` の `GROK_API_KEY` wiring は確認済み。
-- **判断**: 382 と同じ。paid xAI API は default disabled。`@yoshilover6760` Premium + Hermes OAuth の GCP smoke が成功した場合だけ、X Search URL-backed fan voice を本線候補にする。
-- **proposal**: X Search URL-backed fan voice を Yahoo より優先し、X Search empty/error は visible log + Yahoo fallback にする。subject overlap / freshness / low-value rejection / handle cap / near-duplicate gate を通す。
-- **cost guard**: 初期案は max x_search/run=5、max x_search/article=1、timeout=30s、provider error が続いたら run 内で X Search disable。
-- **blocked_by**: ticket-only request。implementation は user GO 待ち。
+- **背景**: user lock。「目的はヨシラバーのブランディングポスト案」。記事は WordPress 側で出し、X は記事を読ませるための編集可能な見立て文にする。
+- **scope削除**: X Premium / Hermes OAuth / X Search / article-body `皆の声` はこの ticket から削除。#57 は user request で canceled。
+- **判断**: ブランディングポスト案は、記事ソース + source time + 必要なら DB 照合済み数値だけで作る。未照合の数字は X 文案から除外または一般化する。
+- **implementation**: `src/brand_radar.py` / `src/tools/run_brand_radar_mail.py` / `tests/test_brand_radar.py`。fresh article collector、mail-only composer、dry-run default CLI、source evidence / skip logging を実装。X live post / WP mutation はなし。User-facing mail は X Search / Hermes / みんなの声 claim を出さない。
+- **copy contract**: X 文案は `{記事URL}` placeholder を含める。`この話題、巨人ファンの見方が分かれそうです。...ヨシラバーでは...事実とファン目線を分けて整理しました。` 型を基本にする。
+- **numeric contract**: exact 数値は DB 照合済みだけ許可。未照合の source title 数値は `unverified_numeric_claim_omitted_from_post_text` として note に残し、文案では一般化する。
+- **blocked_by**: DB numeric verification wiring / live GCP deploy / Scheduler decision。new `brand-radar` Job or existing `x-post-mail-lane` replacement、mail cadence。
 - **do_not_touch**: `.env`、secret values、Cloud Scheduler、Cloud Run env、既存 WP posts、X live post、`RUN_DRAFT_ONLY`、unrelated frontend/plugin files。
 
 ### 362-INSIGHT-queue-cleanup-and-metric-run-cap

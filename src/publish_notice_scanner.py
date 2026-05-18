@@ -1996,6 +1996,14 @@ def scan_guarded_publish_history(
                 skipped.append((post_id, "REVIEW_RECENT_DUPLICATE"))
                 continue
 
+        # 2026-05-18 user 仕様: 新規 draft 通知のみ。 24h 以上前の review entry は STALE で skip。
+        # 4 月の 64xxx 古い post 群が「【要確認】」 mail として流入していた問題への恒久 fix。
+        entry_dt = _guarded_publish_entry_datetime(entry)
+        post_modified_dt = _parse_datetime_to_jst(post.get("modified")) if isinstance(post, Mapping) else None
+        effective_dt = post_modified_dt or entry_dt
+        if effective_dt and (current_now - effective_dt) > timedelta(hours=24):
+            skipped.append((post_id, "STALE_REVIEW"))
+            continue
         base_request = _request_from_post(post)
         request = PublishNoticeRequest(
             post_id=base_request.post_id,
@@ -2239,6 +2247,11 @@ def scan_post_gen_validate_history(
 
         skip_reason = _resolve_post_gen_validate_skip_reason(entry)
         fail_axes = _normalize_fail_axes(entry.get("fail_axis") or entry.get("fail_axes"))
+        # 2026-05-18 user 仕様: 24h 以上前の reject entry は STALE で skip。
+        entry_dt = _post_gen_validate_entry_datetime(entry)
+        if entry_dt and (current_now - entry_dt) > timedelta(hours=24):
+            skipped.append((dedupe_key, "STALE_POST_GEN_VALIDATE"))
+            continue
         request = PublishNoticeRequest(
             post_id=dedupe_key,
             title=_post_gen_validate_title(entry),
@@ -2451,6 +2464,11 @@ def scan_preflight_skip_history(
             continue
 
         skip_reason = _resolve_preflight_skip_reason(entry)
+        # 2026-05-18 user 仕様: 24h 以上前の preflight skip は STALE で skip。
+        entry_dt = _preflight_skip_entry_datetime(entry)
+        if entry_dt and (current_now - entry_dt) > timedelta(hours=24):
+            skipped.append((dedupe_key, "STALE_PREFLIGHT_SKIP"))
+            continue
         request = PublishNoticeRequest(
             post_id=dedupe_key,
             title=_preflight_skip_title(entry),

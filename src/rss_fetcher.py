@@ -622,6 +622,32 @@ _TITLE_GENERIC_SUBJECT_LABELS = frozenset(
     }
 )
 
+# 2026-05-18 EVENING: post 69348 「SponichiAnnex「究極のプロフェッショナル」」 fix。
+# 元 source title `... - スポニチ Sponichi Annex 野球` の媒体名末尾を actor_name に
+# 誤抽出した root cause。 媒体名は title subject 位置に literal 出てはならない。
+_TITLE_MEDIA_OUTLET_LABELS = frozenset(
+    {
+        # スポニチ系
+        "Sponichi", "SponichiAnnex", "Sponichi Annex", "スポニチ", "スポニチアネックス",
+        "SponichiYakyu",
+        # 報知系
+        "Hochi", "ScoopHochi", "スポーツ報知", "報知新聞", "報知",
+        # 日刊スポーツ
+        "Nikkan", "NikkanSports", "Nikkan Sports", "日刊スポーツ", "ニッカン",
+        # 東スポ
+        "TokyoSports", "Tokyo Sports", "東スポ", "東京スポーツ", "TospoWeb",
+        # デイリー
+        "Daily", "DailySports", "Daily Sports", "デイリー", "デイリースポーツ",
+        # サンスポ
+        "Sankei", "SankeiSports", "Sanspo", "サンケイスポーツ", "サンスポ",
+        # その他
+        "BaseballKing", "Baseball King", "ベースボールキング",
+        "FullCount", "Full-Count", "フルカウント",
+        "NPB", "NPB.jp", "BaseballGate", "Baseball Gate",
+        "Number", "ナンバー", "BBM", "週ベ", "週刊ベースボール",
+    }
+)
+
 
 def _is_generic_title_subject(value: str | None) -> bool:
     """title template の subject/actor_name が単独の generic label か判定。
@@ -639,6 +665,12 @@ def _is_generic_title_subject(value: str | None) -> bool:
     # 末尾 position suffix を剥がしても generic なら NG (例: "投手選手")
     for suffix in ("投手", "捕手", "内野手", "外野手", "選手", "監督", "コーチ"):
         if stripped.endswith(suffix) and stripped[: -len(suffix)].strip() == "":
+            return True
+    # 2026-05-18 EVENING (post 69348): 媒体名 (SponichiAnnex 等) も subject 不可。
+    # 大文字小文字 / 全半角空白を正規化して比較。
+    normalized = stripped.replace(" ", "").replace("　", "").lower()
+    for media in _TITLE_MEDIA_OUTLET_LABELS:
+        if normalized == media.replace(" ", "").replace("　", "").lower():
             return True
     return False
 

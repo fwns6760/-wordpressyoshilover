@@ -89,11 +89,14 @@ _ALIAS_MAP = {
 #
 # 2026-05-13 user request: team fallback を読売ジャイアンツ公式ロゴ
 # (media 66813、Wikimedia Commons public domain、商標は球団保有) に切替。
-# 経緯: 東京ドーム (media 65953) → サイト icon (media 60083) → Giants logo
-# (media 66813)。Operators can still override via
-# PLAYER_EYECATCH_TEAM_FALLBACK_ID env or disable with "0".
+# 2026-05-18 EVENING user request: 球団ロゴ → ヨシラバー独自画像
+# (media 63578、 cropped-31d0201c-..., 512x512 PNG) に切替。 X large_image
+# card の brand 強化目的。 経緯: 東京ドーム (media 65953) → サイト icon
+# (media 60083) → Giants logo (media 66813) → yoshilover brand (media 63578)。
+# Operators can still override via PLAYER_EYECATCH_TEAM_FALLBACK_ID env or
+# disable with "0".
 _TEAM_FALLBACK_MEDIA_ID_ENV = "PLAYER_EYECATCH_TEAM_FALLBACK_ID"
-_TEAM_FALLBACK_MEDIA_ID_DEFAULT: Optional[int] = 66813
+_TEAM_FALLBACK_MEDIA_ID_DEFAULT: Optional[int] = 63578
 
 # Legacy 阿部慎之助 fallback media includes イチロー in the media title/image
 # context and does not fit a Giants news-board fallback. Keep it blocked

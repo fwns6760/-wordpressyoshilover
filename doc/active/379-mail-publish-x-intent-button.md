@@ -171,6 +171,58 @@
 - 「公開してX投稿画面へ」 button を出しても publish 先がない
 - 既存の mail body は「skip 理由 / generated_title / source_url_hash」 を出すだけで draft 操作不要
 
+## 2026-05-18 EVENING 様子見 (LIVE_DEPLOYED_OBSERVE)
+
+### 最終 deploy 状態
+
+| service / config | 値 |
+|---|---|
+| yoshilover-fetcher | `fix-team-label-3c1612d` (rev `00429-m9h` 100%) |
+| publish-notice Job | `dedup-24h-feb27e3` |
+| env RUN_DRAFT_ONLY | True |
+| env DRAFT_ONLY_SCAN_MODE | 1 |
+| env ENABLE_POST_GEN_VALIDATE_NOTIFICATION | 0 |
+| env ENABLE_PREFLIGHT_SKIP_NOTIFICATION | 0 |
+| env ENABLE_PUBLISH_ONLY_MAIL_FILTER | 0 |
+| DEFAULT_DUPLICATE_WINDOW | 24h (元 30 分) |
+
+### 当日 fix list (commit + 内容)
+
+| commit | 内容 | 検出 / fix 経緯 |
+|---|---|---|
+| `9fdbeca` | 379 v1: text mail URL + endpoint + token | 初実装 |
+| `38bfedc` | 379 v2: HTML mail button + GCS one-shot | 仕様強化 |
+| `be1cc62` | scanner draft scan + HTML body_excerpt | 11:02 drafts 不可視問題 |
+| `4a85a8a` | WP REST status filter comma 形式 | status[] が draft 返さなかった bug |
+| `585a208` | 「選手」 generic title guard + cursor backcap + body 段落保持 | post 69299 「選手「...」」 title bug |
+| `b9281a3` | 24h STALE filter (3 history scan path) | 古い review mail 流入問題 |
+| `f3a961f` | scanner status filter publish,draft → draft only | user 仕様 |
+| `b998f0a` | DRAFT_ONLY_SCAN_MODE env で history scan 全 disable | STALE filter 単独では古い 64xxx 漏れた |
+| `3c1612d` | 「巨人」「ジャイアンツ」 を generic block から除外 | 13:00 fetcher 0 件 root cause |
+| `feb27e3` | dedup window 30min → 24h | 14:05 fire で 12:00 post 再送問題 |
+
+### end-to-end LIVE verify
+
+post 69348 / 69349 / 69350 = user が 15:11-15:12 JST に mail 緑 button click → `caller=mail_publish_and_tweet_endpoint` で publish 化 (Cloud Logging で確認、 `publish_button_publish_success` × 3)。 spec end-to-end flow (fetcher → draft → mail → user click → publish) **本日 first 完全動作**。
+
+### 様子見 point (16:05 以降の自然 fire 観察)
+
+- 16:05 / 16:35 / 17:05 等の自然 fire で **mail 件数が baseline (5-10 通) で安定**するか
+- 24h dedup が効いて **再送 0** か
+- 新規 draft が 14:00 並みの 10 件 / 時で安定生成されるか
+- 「選手「...」」「投手「...」」 title bug が再発しないか
+- 21:00-22:00 試合後ピーク (378-evening-peak-fetch-15min 効) で mail 量 spike するか
+
+### コスト
+
+button click = ほぼ 0 円 (Cloud Run free tier 200 万 req/月 + GCS write $0.05/10000 ops、 1 日 100 click 想定で月数銭)。
+
+### 別 ticket 候補 (次 session)
+
+- title quality 弱化 case (「坂本「サヨナラ勝利」」 / 「巨人広島戦 初打席の注目選手」 等) は scope 外。 別 ticket で扱う。
+- `_apply_fetch_freshness_backcap` (6h cursor 巻き戻し) の影響範囲再検討。
+- 24h STALE filter が 13:05 fire で効かなかった root cause 未特定 (DRAFT_ONLY_SCAN_MODE 回避策で代用)、 次 session でコード trace 必要。
+
 ## v2 着地 log (2026-05-18 PM、 commit `38bfedc`)
 
 HTML mail button + token 1 回限り (GCS one-shot) を追加。

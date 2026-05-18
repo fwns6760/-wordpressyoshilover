@@ -1344,6 +1344,28 @@ def _preflight_skip_dedupe_key(entry: Mapping[str, Any]) -> str:
     return ":".join(parts)
 
 
+_DIRECT_FETCH_FRESHNESS_BACKCAP_HOURS = 6
+
+
+def _apply_fetch_freshness_backcap(after_iso: str, *, now: datetime | None = None) -> str:
+    """cursor が今より N 時間以上新しい時は「now - N 時間」 まで巻き戻す。
+
+    Why: cursor が前回 scan で skip した entry も含めて advance してしまうと、
+    skip 救済不能で entry が永久 lost。 後続 scan で必ず最近 N 時間を再 fetch
+    することで draft 着地遅延 + skip 経路の取りこぼしを catch。 重複 mail は
+    dedup history (per post_id) が防止する。
+    """
+    cap_dt = (now or datetime.now(JST)) - timedelta(hours=_DIRECT_FETCH_FRESHNESS_BACKCAP_HOURS)
+    cap_iso = cap_dt.isoformat()
+    try:
+        cursor_dt = datetime.fromisoformat(str(after_iso).strip())
+    except (TypeError, ValueError):
+        return cap_iso
+    if cursor_dt > cap_dt:
+        return cap_iso
+    return after_iso
+
+
 def _default_fetch(base_url: str, after_iso: str) -> list[Mapping[str, Any]]:
     """Fetch publish posts whose ``modified`` timestamp is after the
     cursor.
@@ -1363,13 +1385,18 @@ def _default_fetch(base_url: str, after_iso: str) -> list[Mapping[str, Any]]:
     # 377-OPS Phase 2 (2026-05-18) で全 subtype が RUN_DRAFT_ONLY=True により
     # draft 化されるため、 status filter に draft を追加。 既存 publish 経路も維持
     # (legacy publish 記事の modified 変更 + 既存 publish flow の backward compat)。
+    # cursor が直近 6h 内なら現状維持、 6h 超で前進していたら 6h まで back-cap。
+    # Why: cursor が「skip した entry」 も含めて advance すると、 後で filter を直しても
+    #      entry が永久 lost (今回の 11:02 drafts incident、 2026-05-18)。 必ず直近 6h を
+    #      再 fetch することで取りこぼしを catch、 重複 mail は per-post-id dedup で防止。
+    effective_after = _apply_fetch_freshness_backcap(after_iso)
     # WP REST: status は comma-separated 形式で複数指定可。
     # `status[]` 配列形式は認証付き context=edit 下で draft を返さない挙動を verify 済 (2026-05-18)、
     # comma 形式の `status=publish,draft` を採用 (manual curl で draft+publish 両方返却確認)。
     query = urlencode(
         {
             "status": "publish,draft",
-            "modified_after": after_iso,
+            "modified_after": effective_after,
             "per_page": 100,
             "orderby": "modified",
             "order": "asc",

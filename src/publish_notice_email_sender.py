@@ -2715,14 +2715,31 @@ def build_body_html_per_post(
     body_excerpt_raw = str(getattr(request, "body_excerpt", "") or "").strip()
     body_excerpt_html_block = ""
     if body_excerpt_raw:
-        # newline は <br> へ、 連続 <br> は 1 つに圧縮 (mail HTML 簡素化)。
-        safe_excerpt = html.escape(body_excerpt_raw).replace("\n", "<br>")
+        # 段落 (\n\n) 単位で <p>、 段落内 \n は <br> へ。 escape は段落ごとに実施。
+        paragraphs_html_parts = []
+        for paragraph in body_excerpt_raw.split("\n\n"):
+            paragraph = paragraph.strip()
+            if not paragraph:
+                continue
+            escaped = html.escape(paragraph).replace("\n", "<br>")
+            paragraphs_html_parts.append(
+                '<p style="margin:0 0 14px;font-size:15px;line-height:1.85;'
+                f'color:#1a1a1a;word-break:break-word;">{escaped}</p>'
+            )
+        # 最終段落の下マージンを 0 に上書きして余白を整える。
+        if paragraphs_html_parts:
+            paragraphs_html_parts[-1] = paragraphs_html_parts[-1].replace(
+                'margin:0 0 14px', 'margin:0', 1
+            )
+        paragraphs_html = "".join(paragraphs_html_parts)
         body_excerpt_html_block = (
-            '<tr><td style="padding:0 22px 18px;">'
-            '<p style="margin:0 0 6px;font-size:12px;line-height:1.4;'
-            'color:#888;font-weight:700;">本文(抜粋)</p>'
-            f'<p style="margin:0;font-size:14px;line-height:1.7;color:#333;'
-            f'white-space:pre-wrap;word-break:break-word;">{safe_excerpt}</p>'
+            '<tr><td style="padding:6px 22px 22px;">'
+            '<div style="background:#f7f9f7;border-left:4px solid #1b8a3e;'
+            'padding:18px 20px;border-radius:4px;">'
+            '<p style="margin:0 0 12px;font-size:11px;line-height:1.4;'
+            'color:#566;font-weight:700;letter-spacing:0.6px;">📄 本文(抜粋)</p>'
+            f'{paragraphs_html}'
+            '</div>'
             '</td></tr>'
         )
 

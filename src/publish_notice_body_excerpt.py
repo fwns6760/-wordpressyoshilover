@@ -14,6 +14,17 @@ import re
 
 _TAG_RE = re.compile(r"<[^>]+>")
 _WHITESPACE_RE = re.compile(r"\s+")
+# 段落境界 (block-level closing tag) を改行 marker に置換するため。
+_BLOCK_CLOSE_RE = re.compile(
+    r"(?is)</\s*(?:p|h[1-6]|div|li|blockquote|tr|td|article|section)\s*>"
+)
+# 単独 <br> も改行 marker に。
+_BR_RE = re.compile(r"(?is)<br\s*/?>")
+# 行内の空白圧縮 (改行は残す)。
+_INLINE_WS_RE = re.compile(r"[ \t]+")
+# 改行周りの余白 / 3 連以上の改行を 2 改行 (= 1 空行) に圧縮。
+_NEWLINE_TRIM_RE = re.compile(r"[ \t]*\n[ \t]*")
+_NEWLINE_COLLAPSE_RE = re.compile(r"\n{3,}")
 
 _SCRIPT_STYLE_BLOCK_RE = re.compile(
     r"(?is)<(?P<tag>script|style)\b[^>]*>.*?</(?P=tag)>"
@@ -112,8 +123,14 @@ def build_body_excerpt(
     text = _RELATED_POSTS_BLOCK_RE.sub("", text)
     text = _FAN_VOICE_SECTION_TO_NEXT_HEADING_RE.sub("", text)
     text = _FAN_VOICE_SECTION_TO_END_RE.sub("", text)
+    # 段落構造を保持: block-level 終了タグ → 2 改行 (= 1 空行)、 <br> → 1 改行。
+    text = _BLOCK_CLOSE_RE.sub("\n\n", text)
+    text = _BR_RE.sub("\n", text)
     text = _TAG_RE.sub(" ", html.unescape(text))
-    text = _WHITESPACE_RE.sub(" ", text).strip()
+    # 行内空白圧縮 → 改行周り trim → 3 連改行を 2 連に圧縮。
+    text = _INLINE_WS_RE.sub(" ", text)
+    text = _NEWLINE_TRIM_RE.sub("\n", text)
+    text = _NEWLINE_COLLAPSE_RE.sub("\n\n", text).strip()
     text = _LEADING_LABEL_RE.sub("", text).strip()
     if len(text) < _MIN_USEFUL_CHARS:
         return None

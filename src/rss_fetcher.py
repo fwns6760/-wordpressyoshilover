@@ -598,6 +598,50 @@ SOURCE_LINK_ONLY_TEMPLATE_SUBTYPES = frozenset(
         "player_recovery",
     }
 )
+# 2026-05-18 user feedback (post 69299 「選手「ジャイアンツアカデミー キッズ野球教室」 関連発言」):
+# title template の subject/actor_name 位置に literal "選手" 等の generic label が
+# 入ると「選手「...」 関連発言」 と意味不明な title になる。 恒久 fix として、
+# template build 前に subject が この set にマッチする場合は template を skip して
+# upstream の clean_title fallback を使わせる (None 返却)。
+_TITLE_GENERIC_SUBJECT_LABELS = frozenset(
+    {
+        "選手",
+        "投手",
+        "捕手",
+        "内野手",
+        "外野手",
+        "コーチ",
+        "監督",
+        "チーム",
+        "首脳陣",
+        "球団",
+        "ベンチ",
+        "巨人",
+        "ジャイアンツ",
+    }
+)
+
+
+def _is_generic_title_subject(value: str | None) -> bool:
+    """title template の subject/actor_name が単独の generic label か判定。
+
+    Why: post 69299 型「選手「event」 関連発言」 のように人名抽出失敗時に generic
+    label を literal で title に流すと意味不明な title が出来上がる。
+    """
+    if not value:
+        return False
+    stripped = str(value).strip()
+    if not stripped:
+        return False
+    if stripped in _TITLE_GENERIC_SUBJECT_LABELS:
+        return True
+    # 末尾 position suffix を剥がしても generic なら NG (例: "投手選手")
+    for suffix in ("投手", "捕手", "内野手", "外野手", "選手", "監督", "コーチ"):
+        if stripped.endswith(suffix) and stripped[: -len(suffix)].strip() == "":
+            return True
+    return False
+
+
 GENERIC_TITLE_ONLY_MARKERS = (
     "関連情報",
     "関連発言",
@@ -23142,6 +23186,10 @@ def _rewrite_display_title_with_template_v2(
         return _result(f"巨人{score} 試合結果の要点", routing_template_key, max_chars=34)
 
     if routing_template_key in {"short_comment", "player_quote_short", "manager_quote_short"} and actor_name:
+        # 379-OPS (GH #53) 2026-05-18: actor_name が generic label (選手 / 投手 等) なら
+        # 「選手「quote」 関連発言」 になって意味不明 → template skip。 None で upstream fallback。
+        if _is_generic_title_subject(actor_name):
+            return None
         if quote_text:
             return _result(f"{actor_name}「{quote_text}」 関連発言", routing_template_key, max_chars=50)
         action = _generic_title_repair_action(title, summary)
@@ -23264,11 +23312,19 @@ def _rewrite_display_title_with_template(
             if generic_player_status_subject and not generic_player_subject_blocked:
                 status_subject = generic_player_status_subject
             return _result(f"{status_subject}、昇格・復帰 関連情報", "player_status_return")
+        # 379-OPS (GH #53) 2026-05-18: post 69299 「選手「ジャイアンツアカデミー...」 関連発言」 fix。
+        # subject が generic label (選手 / 投手 等) のままだと title が意味不明。 template skip。
+        if _is_generic_title_subject(subject):
+            return None
         if quote_text:
             return _result(f"{subject}「{quote_text}」 関連発言", "player_quote")
         return _result(f"{subject}の現状整理 関連情報", "player_generic")
 
     if category == "首脳陣":
+        # 379-OPS (GH #53) 2026-05-18: manager_display_subject が generic label (監督 / コーチ 等)
+        # で「監督「quote」 ...」 になる事を防ぐ。 template skip で upstream fallback。
+        if _is_generic_title_subject(manager_display_subject):
+            return None
         if quote_text and ("若手" in source_text or "競争" in source_text):
             return _result(
                 f"{manager_display_subject}「{quote_text}」 若手起用で序列はどう動くか",

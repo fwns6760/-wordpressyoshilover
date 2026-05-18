@@ -98,7 +98,8 @@ class TestBuildBodyExcerpt:
     def test_strips_simple_html_tags(self):
         html_text = "<p>巨人は3-1で勝利した。</p><p>岡本がHR。</p>"
         result = build_body_excerpt(html_text)
-        assert result == "巨人は3-1で勝利した。 岡本がHR。"
+        # 段落 (<p></p>) 境界は \n\n で保持される (HTML mail で <p> render)。
+        assert result == "巨人は3-1で勝利した。\n\n岡本がHR。"
 
     def test_decodes_html_entities(self):
         html_text = "<p>巨人&nbsp;3 &amp; 阪神 1</p>"
@@ -110,7 +111,9 @@ class TestBuildBodyExcerpt:
     def test_collapses_whitespace(self):
         html_text = "<p>巨人は\n\n  勝利した。</p>"
         result = build_body_excerpt(html_text)
-        assert result == "巨人は 勝利した。"
+        # inline space は collapse、 source の \n\n は段落 break として保持
+        # (HTML mail で <p> separation で render される)。
+        assert result == "巨人は\n\n勝利した。"
 
     def test_removes_related_posts_div(self):
         html_text = (

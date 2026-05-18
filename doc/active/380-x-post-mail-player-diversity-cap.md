@@ -2,7 +2,7 @@
 
 ## status
 
-- **status**: REVIEW_NEEDED
+- **status**: LIVE_DEPLOYED_OBSERVE
 - **owner**: Codex
 - **lane**: B
 - **created**: 2026-05-18 JST
@@ -231,6 +231,72 @@ Not changed:
 - WP publish / WP existing posts: unchanged.
 - X API / SNS live post: unchanged.
 - production GCS DB upload/write: unchanged.
+
+## 12:01 JST regression report and live deploy — 2026-05-18 JST
+
+User report:
+
+- `12時のメールなおってないよ。`
+
+Confirmed 12:01 mail:
+
+- Gmail message id: `19e3907b7bdba8e5`
+- subject: `🟠🐦📮【Xポスト案 8件】🌞昼｜直近数字 12:01 JST`
+- body header: `📮 巨人データXポスト案 — 昼 / 2026-05-18 12:01 JST`
+- candidate count: `8`
+
+Candidate player count:
+
+- `浦田俊輔`: 3 / 8
+- `マルティネス`: 3 / 8
+- `岸田 行倫`: 1 / 8
+- `則本昂大`: 1 / 8
+
+Confirmed cause:
+
+- `x-post-mail-lane` at the 12:01 run was still using old image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/x-post-mail-lane:376-lineup-spread-e488052`.
+- Therefore commit `31aa4e7 fix: cap x post mail player repeats` was not live for the 12:01 mail.
+
+Pre-deploy job evidence:
+
+- job: `x-post-mail-lane`
+- generation: `19`
+- latest execution: `x-post-mail-lane-rgp25`
+- latest execution creation: `2026-05-18T03:00:04Z` = 2026-05-18 12:00 JST
+- latest execution completion: `2026-05-18T03:01:09Z`
+- image before deploy: `x-post-mail-lane:376-lineup-spread-e488052`
+
+Deploy performed:
+
+- build source: clean `git archive 31aa4e7` export `/tmp/x-post-mail-deploy-31aa4e7-7OoXxc`
+- Cloud Build: `ba632b1d-0bdd-4a09-b314-e7b8b3ea1c3e`
+- Cloud Build status: `SUCCESS`
+- image tag: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/x-post-mail-lane:380-player-diversity-31aa4e7`
+- image digest: `sha256:64e78e6f799dedc16323c49df502dc2d07c4d0cbb545ab549f899368a9e9666c`
+- Cloud Run Job update: success
+- job generation after deploy: `20`
+- image after deploy: `x-post-mail-lane:380-player-diversity-31aa4e7`
+
+Changed live:
+
+- Cloud Run Job image only.
+
+Unchanged live:
+
+- Cloud Scheduler: unchanged.
+- Cloud Run env / Secret: unchanged.
+- SMTP credential / recipient: unchanged.
+- WP publish / WP existing posts: unchanged.
+- X API / SNS live post: unchanged.
+- production GCS DB upload/write: unchanged.
+
+Dry-run note:
+
+- A dry-run execution attempt `x-post-mail-lane-bjs5v` used `--args=--dry-run`.
+- Cloud Run treated `--args` as a replacement for the Dockerfile CMD and tried to execute `--dry-run` directly.
+- Result: `Application exec likely failed`; exit code `1`.
+- This did not send mail. Gmail search after the attempt still showed only the 12:01 `Xポスト案` mail for 2026-05-18.
+- Job template itself remains args-free and points to the corrected image, so scheduled execution will use the Dockerfile CMD.
 
 ## implementation contract
 

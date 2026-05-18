@@ -1,11 +1,12 @@
 # 382-MKT yoshilover branding post planning mail
 
-status: REVIEW_NEEDED
+status: CLOSED
 owner: Codex
 lane: A
 created: 2026-05-18 JST
+closed: 2026-05-19 JST
 github_issue: #56
-scope: Yoshilover branding X-post planning mail from fresh Giants articles and DB-verified numbers
+scope: Existing x-post-mail branding candidate copy from fresh Giants topics and DB-verified numbers
 
 ## User problem
 
@@ -20,10 +21,11 @@ scope: Yoshilover branding X-post planning mail from fresh Giants articles and D
 
 - This ticket is not an X Search / Hermes OAuth ticket.
 - This ticket is not an article-body `皆の声` / fan voice ticket.
-- This ticket is only for editable Yoshilover branding post proposals.
+- This ticket is only for editable Yoshilover branding post proposals inside the existing x-post-mail lane.
 - X account integration status: not connected.
 - X Search status: removed from this scope.
 - Fan voice X Search ticket #57 is canceled by user request.
+- Final implementation uses the existing x-post-mail mail, schedule, UI, and buttons. No new mail, Scheduler, Secret, or env was created.
 
 ## Evidence already verified
 
@@ -54,21 +56,33 @@ scope: Yoshilover branding X-post planning mail from fresh Giants articles and D
 3. Weekly / magazine context if Giants-specific.
 4. Data support only as a supporting angle, not as the whole post theme.
 
-### Post text rule
+### Final post text rule
 
-The X copy must be Yoshilover's framing, not a copied article title.
+The X copy must be Yoshilover's framing, not a copied article title. The 2026-05-18 GitHub Issue #56 comment supersedes the earlier `{記事URL}` placeholder draft.
 
-Required shape:
+Must not include:
+
+- Article URL.
+- Hashtag.
+- `ヨシラバーで整理しました`.
+- Site-induction copy.
+- Fabricated fan reaction.
+
+Representative shapes:
 
 ```text
-この話題、巨人ファンの見方が分かれそうです。
-{話題の核}
-ヨシラバーでは{topic_type}として、事実とファン目線を分けて整理しました。
-{記事URL}
-#巨人 #ジャイアンツ
+{選手名}のコメントで気になるのは、結果よりも今の立場。
+
+{DB照合済みの短い数字文}
+数字だけで結論は出せないけど、次にどの場面で使われるかは見ておきたい。
 ```
 
-`{記事URL}` is a placeholder for the published Yoshilover article URL. The mail is a proposal, so the user can edit before posting.
+```text
+複数の媒体で名前が出てくる時は、少し意味がある。
+
+単発のニュースではなく、流れになりかけている話題。
+今の巨人でどう扱われるかを見たい。
+```
 
 ### Numeric rule
 
@@ -94,6 +108,16 @@ Examples:
 
 ## Implementation landed
 
+- `src/x_post_mail_lane.py`
+  - Existing x-post-mail candidates now include branding-oriented post drafts with no article URL, no hashtag, no `ヨシラバーで整理しました`, and no site-induction copy.
+  - Unverified RSS / comment / trend numbers are not placed in the post text.
+  - DB-verified numbers may be used when the candidate has DB fact evidence.
+  - Comment x DB number combination is allowed only for same full name, active Giants player, source comment material, matching topic family, and DB fact evidence.
+  - Ambiguous surname-only candidates are rejected when multiple Giants players share the surname.
+- `src/tools/run_x_post_mail.py`
+  - Existing job entrypoint remains the deployment path.
+- `tests/test_x_post_mail.py`
+  - Tests cover the branding copy contract, numeric omission / DB evidence rules, and ambiguous-name guard.
 - `src/brand_radar.py`
   - Fresh article collector from `config/rss_sources.json`.
   - Article sources prioritized over official/social X sources.
@@ -130,8 +154,9 @@ Examples:
 - [x] User-facing mail does not claim X Search / Hermes / fan voice evidence.
 - [x] Paid xAI API is disabled by default.
 - [x] Unverified numeric claims are omitted/generalized in the X post proposal.
-- [ ] DB numeric verification is wired before exact numeric claims are allowed.
-- [ ] Live GCP deploy / Scheduler cadence is explicitly approved and executed.
+- [x] DB numeric verification is wired before exact numeric claims are allowed in the existing x-post-mail candidate path.
+- [x] Live GCP deploy executed on existing x-post-mail lane.
+- [x] Existing Scheduler cadence was left unchanged.
 
 ## Verification
 
@@ -143,6 +168,18 @@ Examples:
   - no send
   - body shows `external_reaction_scope: removed_by_user_request`
   - no X live post / WP mutation
+- `python3 -m py_compile src/x_post_mail_lane.py src/tools/run_x_post_mail.py tests/test_x_post_mail.py` PASS.
+- `python3 -m compileall -q src/x_post_mail_lane.py src/tools/run_x_post_mail.py tests/test_x_post_mail.py` PASS.
+- `python3 -m unittest tests.test_x_post_mail` PASS: 101 tests.
+- `python3 -m unittest discover -s tests` PASS after follow-up commit `1013716`: 4435 tests OK.
+- Cloud Build `1629e082-f0c6-4b99-a1c0-a53cd9fd3d1f` SUCCESS.
+- Cloud Run Job `x-post-mail-lane` generation 23 Ready=True with image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/x-post-mail-lane:382-branding-4507257`.
+- Natural Scheduler execution `x-post-mail-lane-psp2s` at 2026-05-19 07:00 JST completed successfully:
+  - `Composing mail with 10 candidates`
+  - `mail send result: status=sent`
+  - `Recorded 10 dedup signatures (ok=True)`
+  - no ERROR logs for the execution.
+- Not performed: manual job execute, X live post, WP write, env / Secret / Scheduler changes.
 
 ## Do not touch
 

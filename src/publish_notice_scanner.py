@@ -1363,17 +1363,19 @@ def _default_fetch(base_url: str, after_iso: str) -> list[Mapping[str, Any]]:
     # 377-OPS Phase 2 (2026-05-18) で全 subtype が RUN_DRAFT_ONLY=True により
     # draft 化されるため、 status filter に draft を追加。 既存 publish 経路も維持
     # (legacy publish 記事の modified 変更 + 既存 publish flow の backward compat)。
+    # WP REST: status は comma-separated 形式で複数指定可。
+    # `status[]` 配列形式は認証付き context=edit 下で draft を返さない挙動を verify 済 (2026-05-18)、
+    # comma 形式の `status=publish,draft` を採用 (manual curl で draft+publish 両方返却確認)。
     query = urlencode(
-        [
-            ("status[]", "publish"),
-            ("status[]", "draft"),
-            ("modified_after", after_iso),
-            ("per_page", 100),
-            ("orderby", "modified"),
-            ("order", "asc"),
-            ("_fields", "id,title,excerpt,content,link,date,modified,status,meta,article_subtype,subtype"),
-            ("context", "edit"),
-        ]
+        {
+            "status": "publish,draft",
+            "modified_after": after_iso,
+            "per_page": 100,
+            "orderby": "modified",
+            "order": "asc",
+            "_fields": "id,title,excerpt,content,link,date,modified,status,meta,article_subtype,subtype",
+            "context": "edit",
+        }
     )
     # draft post + context=edit には Basic auth が必須 (WP REST は draft を unauth で返さない)。
     request = urllib.request.Request(

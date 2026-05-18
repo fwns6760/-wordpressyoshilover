@@ -1,6 +1,6 @@
 # 381-INGEST Giants general source expansion
 
-status: REVIEW_NEEDED_DEPLOY_PENDING
+status: LIVE_DEPLOYED_OBSERVE
 owner: Codex
 created: 2026-05-18 JST
 github_issue: #55
@@ -82,7 +82,7 @@ Not lowered:
 - [x] 同じ選手だけになる時、DB候補だけでなく news/opinion fallback が別選手・別話題を補える。
 - [x] GitHub Issue を作成して本 ticket と同期する。#55
 - [x] commit。
-- [ ] deploy decision。
+- [x] deploy decision。
 - [ ] 次回自然 mail で user-visible acceptance を確認する。
 
 ## Verification
@@ -97,6 +97,30 @@ Not lowered:
   - total loaded article sources: `32`
   - positions 23-32 include 読売新聞オンライン / 日テレ / FRIDAY / Smart FLASH / 週刊女性PRIME / 文春 / NEWSポストセブン / デイリー新潮 / 現代ビジネス / アサ芸プラス
 
-## Deploy note
+## Deploy evidence
 
-Repo implementation only at ticket creation time. Production behavior will not change until the relevant Cloud Run image/job is deployed.
+Deployed on 2026-05-18 JST. No env / Secret / Scheduler changes.
+
+### x-post-mail-lane
+
+- build: `a8a5ea80-db47-4eec-9582-86a195bdba8b` SUCCESS
+- image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/x-post-mail-lane:381-general-sources-c791f52`
+- digest: `sha256:a39a7415ed59bf75218dd82778735d1723a8d58bb65b5200c47ecdbd8af0145e`
+- Cloud Run Job: `x-post-mail-lane`
+- generation: `22`
+- observedGeneration: `22`
+- Ready: `True`
+- latest execution after update: none. Latest listed execution remains `x-post-mail-lane-l9652`, created `2026-05-18T06:00:04Z`, before generation 22 update. Manual execute avoided to prevent extra real mail.
+
+### yoshilover-fetcher
+
+- build: `2b60df25-25b7-4ab1-bf9e-8ca9504c0f3e` SUCCESS
+- image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:381-general-sources-c791f52`
+- digest: `sha256:ad8fd151885a15fb8e24c1672bb8cab5bca4756fd7662e0e085b39c96bf1ed1e`
+- revision: `yoshilover-fetcher-00431-vl9`
+- traffic: `100%`
+- startup probe: succeeded
+- `GET /health`: `OK`
+- post-health-check ERROR logs after `2026-05-18T07:53:30Z`: `0`
+
+Note: `curl -I /health` produced one `HEAD /health` 501 request at `2026-05-18T07:52:58Z`. Follow-up `GET /health` returned `OK`; the HEAD 501 is excluded from acceptance because the service does not implement HEAD for that endpoint.

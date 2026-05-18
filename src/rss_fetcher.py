@@ -23577,7 +23577,7 @@ def _rewrite_display_title_with_guard(
 ) -> tuple[str, str]:
     resolved_subtype = article_subtype or _detect_article_subtype(title, summary, category, has_game)
     routing_payload = dict(routing_context or {})
-    rewritten_title, template_key = _rewrite_display_title_with_template(
+    template_result = _rewrite_display_title_with_template(
         title,
         summary,
         category,
@@ -23586,6 +23586,13 @@ def _rewrite_display_title_with_guard(
         routing_template_key=str(routing_payload.get("template_selector_v2_key") or ""),
         source_analysis=routing_payload.get("source_analysis_v2") if isinstance(routing_payload.get("source_analysis_v2"), Mapping) else None,
     )
+    # 2026-05-18 EVENING fix: _rewrite_display_title_with_template が None を返す
+    # 既存 branch (line 23152, 23158 等) + 私の generic guard branch (585a208) に
+    # 対応。 None 時は clean_title fallback で「title rewrite なし」 として扱う。
+    if template_result is None:
+        rewritten_title, template_key = title, ""
+    else:
+        rewritten_title, template_key = template_result
     if not _title_validator_supports_subtype(resolved_subtype):
         return rewritten_title, template_key
 

@@ -24048,6 +24048,11 @@ def _finalize_title(
     source_analysis = analysis or {}
     actor_name = str(source_analysis.get("actor_name") or "").strip()
     quote_phrases = _extract_quote_phrases(f"{source_title}\n{summary}", max_phrases=1)
+    # 2026-05-18 EVENING: post 69394 「SponichiAnnex「ワークマン」」 fix。
+    # actor_name が generic / 媒体名 (Sponichi 等) なら weak title rewrite を skip して
+    # source_title をそのまま採用 (= 「巨人の“黄色い稲妻”浦田俊輔がお願い ...」 を保持)。
+    if actor_name and _is_generic_title_subject(actor_name):
+        return raw_title, None
     if actor_name and quote_phrases:
         rewritten = _trim_display_title(f"{actor_name}「{_clip_manager_quote_short_title_quote(quote_phrases[0])}」", max_chars=50)
         repaired_title, repair_reason = _repair_human_context_title(

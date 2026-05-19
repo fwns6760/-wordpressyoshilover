@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.14.0
+ * Version: 0.15.0
  * Author: yoshilover
  */
 
@@ -165,6 +165,57 @@ function yoshilover_063_get_term_link_candidates( $taxonomy, $candidate_keys ) {
     return $items;
 }
 
+/**
+ * 388: post count 上位の player タグを dense nav に展開する。
+ *
+ * 既知の概念タグ (一軍 / 二軍 / 三軍 / 育成 / 速報 / 監督コメント /
+ * OB解説 / 雑誌報道) と admin タグ (keep) は除外し、残った post_tag を
+ * count 降順で並べる。 残った 上位 N 件は事実上ほぼ player 名タグになる
+ * (387 で生成側が選手検出した name タグだけ付与する設計)。 cap=$limit。
+ */
+function yoshilover_063_get_top_player_tags( $limit = 30 ) {
+    $exclude_names = array(
+        'keep', '一軍', '二軍', '三軍', '育成', '速報',
+        '監督コメント', 'OB解説', '雑誌報道',
+    );
+
+    $terms = get_terms( array(
+        'taxonomy'   => 'post_tag',
+        'orderby'    => 'count',
+        'order'      => 'DESC',
+        'number'     => max( 1, (int) $limit ) + count( $exclude_names ),
+        'hide_empty' => true,
+    ) );
+
+    if ( is_wp_error( $terms ) || ! is_array( $terms ) ) {
+        return array();
+    }
+
+    $items = array();
+    foreach ( $terms as $term ) {
+        if ( ! $term instanceof WP_Term ) {
+            continue;
+        }
+        if ( in_array( $term->name, $exclude_names, true ) ) {
+            continue;
+        }
+        $url = get_term_link( $term );
+        if ( is_wp_error( $url ) || ! is_string( $url ) || $url === '' ) {
+            continue;
+        }
+        $items[] = array(
+            'label' => $term->name,
+            'url'   => $url,
+            'tone'  => 'player',
+        );
+        if ( count( $items ) >= $limit ) {
+            break;
+        }
+    }
+
+    return $items;
+}
+
 function yoshilover_063_get_dense_nav_items() {
     $items = array(
         array(
@@ -231,6 +282,12 @@ function yoshilover_063_get_dense_nav_items() {
         );
     }
 
+    // 388: 概念タグ (監督/公示/試合結果/球団情報) の後ろに player 名タグ
+    // top 30 を付け足す。 既存タグと重複したら sanitize 段で seen dedupe。
+    foreach ( yoshilover_063_get_top_player_tags( 30 ) as $player_item ) {
+        $items[] = $player_item;
+    }
+
     $items = apply_filters( 'yoshilover_063_dense_nav_items', $items );
     if ( ! is_array( $items ) ) {
         return array();
@@ -261,7 +318,8 @@ function yoshilover_063_get_dense_nav_items() {
         );
     }
 
-    return array_slice( $sanitized, 0, 10 );
+    // 388: HOME / 全記事 / 概念 6 + player 30 = 約 38 件まで許容。
+    return array_slice( $sanitized, 0, 50 );
 }
 
 function yoshilover_063_render_dense_nav( $atts = array() ) {

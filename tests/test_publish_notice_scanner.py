@@ -125,6 +125,74 @@ class PublishNoticeScannerTests(unittest.TestCase):
         # Cursor advances to the post's modified time, not the date.
         self.assertEqual(result.cursor_after, "2026-04-24T11:00:00+09:00")
 
+    def test_scan_emits_published_data_insight_when_flag_enabled(self):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            "os.environ",
+            {"ENABLE_DATA_INSIGHT_PUBLISHED_NOTICE": "1"},
+            clear=False,
+        ):
+            cursor_path = Path(tmpdir) / "cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            cursor_path.write_text("2026-04-24T08:00:00+09:00\n", encoding="utf-8")
+            history_path.write_text("{}\n", encoding="utf-8")
+
+            result = scanner.scan_direct_publish_only(
+                cursor_path=cursor_path,
+                history_path=history_path,
+                queue_path=queue_path,
+                fetch=lambda base, after: [
+                    self._post(
+                        id=904,
+                        status="publish",
+                        title={"rendered": "【巨人データ】セ・リーグ球団打率、巨人 1/6 位"},
+                        date="2026-04-24T11:00:00+09:00",
+                        modified="2026-04-24T11:00:00+09:00",
+                    ),
+                    self._post(
+                        id=905,
+                        status="publish",
+                        title={"rendered": "通常の公開済み記事"},
+                        date="2026-04-24T11:10:00+09:00",
+                        modified="2026-04-24T11:10:00+09:00",
+                    ),
+                ],
+                now=lambda: NOW,
+            )
+
+        self.assertEqual([request.post_id for request in result.emitted], [904])
+        self.assertEqual(result.cursor_after, "2026-04-24T11:00:00+09:00")
+
+    def test_scan_skips_published_data_insight_when_flag_disabled(self):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            "os.environ",
+            {"ENABLE_DATA_INSIGHT_PUBLISHED_NOTICE": ""},
+            clear=False,
+        ):
+            cursor_path = Path(tmpdir) / "cursor.txt"
+            history_path = Path(tmpdir) / "history.json"
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            cursor_path.write_text("2026-04-24T08:00:00+09:00\n", encoding="utf-8")
+            history_path.write_text("{}\n", encoding="utf-8")
+
+            result = scanner.scan_direct_publish_only(
+                cursor_path=cursor_path,
+                history_path=history_path,
+                queue_path=queue_path,
+                fetch=lambda base, after: [
+                    self._post(
+                        id=906,
+                        status="publish",
+                        title={"rendered": "【巨人データ】セ・リーグ球団打率、巨人 1/6 位"},
+                        date="2026-04-24T11:00:00+09:00",
+                        modified="2026-04-24T11:00:00+09:00",
+                    ),
+                ],
+                now=lambda: NOW,
+            )
+
+        self.assertEqual(result.emitted, [])
+
     def test_scan_with_existing_cursor_emits_two_requests(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             cursor_path = Path(tmpdir) / "cursor.txt"

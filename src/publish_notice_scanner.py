@@ -43,6 +43,8 @@ _INGEST_VISIBILITY_FIX_V1_ENV_FLAG = "ENABLE_INGEST_VISIBILITY_FIX_V1"
 _PUBLISH_NOTICE_24H_BUDGET_GOVERNOR_ENV_FLAG = "ENABLE_PUBLISH_NOTICE_24H_BUDGET_GOVERNOR"
 _PUBLISH_ONLY_MAIL_FILTER_ENV_FLAG = "ENABLE_PUBLISH_ONLY_MAIL_FILTER"
 _PUBLISH_NOTICE_HISTORY_STRICT_STAMP_ENV_FLAG = "ENABLE_PUBLISH_NOTICE_HISTORY_STRICT_STAMP"
+_DATA_INSIGHT_PUBLISHED_NOTICE_ENV_FLAG = "ENABLE_DATA_INSIGHT_PUBLISHED_NOTICE"
+_DATA_INSIGHT_TITLE_PREFIX = "【巨人データ】"
 _PUBLISH_ONLY_MAIL_PREFIX = "【公開済】"
 _DIRECT_PUBLISH_NOTICE_ORIGIN = "direct_publish_scan"
 _PUBLISH_NOTICE_24H_BUDGET_SOFT_THRESHOLD_ENV = "PUBLISH_NOTICE_24H_BUDGET_SOFT_THRESHOLD"
@@ -1392,9 +1394,26 @@ def _default_fetch(base_url: str, after_iso: str) -> list[Mapping[str, Any]]:
     effective_after = _apply_fetch_freshness_backcap(after_iso)
     # 2026-05-18 user 仕様: 新規 draft 通知のみ。 publish 済記事の編集 modified は mail 対象外。
     # 377-OPS Phase 2 で全 subtype が draft 着地するため、 status=draft で過不足なし。
+    posts = _default_fetch_by_status(endpoint, effective_after, status="draft")
+    if _data_insight_published_notice_enabled():
+        posts.extend(
+            post for post in _default_fetch_by_status(endpoint, effective_after, status="publish")
+            if _is_data_insight_published_post(post)
+        )
+    return sorted(
+        posts,
+        key=lambda post: (
+            _parse_datetime_to_jst(post.get("modified"))
+            or _parse_datetime_to_jst(post.get("date"))
+            or datetime.min.replace(tzinfo=JST)
+        ),
+    )
+
+
+def _default_fetch_by_status(endpoint: str, effective_after: str, *, status: str) -> list[Mapping[str, Any]]:
     query = urlencode(
         {
-            "status": "draft",
+            "status": status,
             "modified_after": effective_after,
             "per_page": 100,
             "orderby": "modified",
@@ -1403,7 +1422,6 @@ def _default_fetch(base_url: str, after_iso: str) -> list[Mapping[str, Any]]:
             "context": "edit",
         }
     )
-    # draft post + context=edit には Basic auth が必須 (WP REST は draft を unauth で返さない)。
     request = urllib.request.Request(
         f"{endpoint}?{query}",
         headers={
@@ -1416,6 +1434,22 @@ def _default_fetch(base_url: str, after_iso: str) -> list[Mapping[str, Any]]:
     if not isinstance(payload, list):
         raise ValueError("publish notice scan response must be a list")
     return [item for item in payload if isinstance(item, Mapping)]
+
+
+def _data_insight_published_notice_enabled() -> bool:
+    return str(os.environ.get(_DATA_INSIGHT_PUBLISHED_NOTICE_ENV_FLAG, "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _is_data_insight_published_post(post: Mapping[str, Any]) -> bool:
+    return (
+        str(post.get("status") or "").strip().lower() == "publish"
+        and _extract_title(post).startswith(_DATA_INSIGHT_TITLE_PREFIX)
+    )
 
 
 def _wp_basic_auth_header() -> str:
@@ -2983,7 +3017,10 @@ def _scan_direct_publish_phase(
     for post in posts:
         post_status = str(post.get("status") or "").strip().lower()
         # 2026-05-18 user 仕様: 新規 draft 通知のみ、 publish は mail 不要。
-        if post_status != "draft":
+        if post_status != "draft" and not (
+            _data_insight_published_notice_enabled()
+            and _is_data_insight_published_post(post)
+        ):
             continue
 
         post_id = post.get("id", "")

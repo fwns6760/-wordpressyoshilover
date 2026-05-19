@@ -316,6 +316,11 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
                 ["bridge@example.com", "backup@example.com"],
             ),
             (
+                {"FACT_CHECK_EMAIL_TO": "fact@example.com"},
+                None,
+                ["fact@example.com"],
+            ),
+            (
                 {"PUBLISH_NOTICE_EMAIL_TO": "notice@example.com", "MAIL_BRIDGE_TO": "bridge@example.com"},
                 ["override@example.com, second@example.com"],
                 ["override@example.com", "second@example.com"],

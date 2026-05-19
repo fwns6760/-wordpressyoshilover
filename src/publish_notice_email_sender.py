@@ -2534,7 +2534,12 @@ def resolve_recipients(override: list[str] | None) -> list[str]:
     if publish_notice_recipients:
         return publish_notice_recipients
 
-    return _normalized_recipients([os.environ.get("MAIL_BRIDGE_TO", "")])
+    return _normalized_recipients(
+        [
+            os.environ.get("MAIL_BRIDGE_TO", ""),
+            os.environ.get("FACT_CHECK_EMAIL_TO", ""),
+        ]
+    )
 
 
 def build_body_text(

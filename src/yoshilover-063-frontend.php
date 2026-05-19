@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.15.0
+ * Version: 0.16.0
  * Author: yoshilover
  */
 
@@ -283,8 +283,9 @@ function yoshilover_063_get_dense_nav_items() {
     }
 
     // 388: 概念タグ (監督/公示/試合結果/球団情報) の後ろに player 名タグ
-    // top 30 を付け足す。 既存タグと重複したら sanitize 段で seen dedupe。
-    foreach ( yoshilover_063_get_top_player_tags( 30 ) as $player_item ) {
+    // top 100 を付け足す (dnomotoke PC ヘッダー 133 player に追随)。
+    // 既存タグと重複したら sanitize 段で seen dedupe。
+    foreach ( yoshilover_063_get_top_player_tags( 100 ) as $player_item ) {
         $items[] = $player_item;
     }
 
@@ -318,8 +319,9 @@ function yoshilover_063_get_dense_nav_items() {
         );
     }
 
-    // 388: HOME / 全記事 / 概念 6 + player 30 = 約 38 件まで許容。
-    return array_slice( $sanitized, 0, 50 );
+    // 388: HOME / 全記事 / 概念 6 + player 100 = 約 108 件まで許容
+    // (dnomotoke PC ヘッダー 136 link に追随)。
+    return array_slice( $sanitized, 0, 150 );
 }
 
 function yoshilover_063_render_dense_nav( $atts = array() ) {
@@ -337,6 +339,12 @@ function yoshilover_063_render_dense_nav( $atts = array() ) {
     }
 
     $html  = '<nav class="yoshi-dense-nav" aria-label="' . esc_attr( $atts['heading'] ) . '" data-yoshi-phase="5">';
+    // 388: dnomotoke PC ヘッダー風に nav 内に検索 form を埋め込む。
+    // タイトル検索 (WP 標準 search)、 sidebar widget (390) と独立に動作。
+    $html .= '<form role="search" method="get" class="yoshi-dense-nav__search" action="' . esc_url( home_url( '/' ) ) . '">';
+    $html .= '<input type="search" name="s" class="yoshi-dense-nav__search-input" placeholder="記事タイトルで検索" aria-label="検索" />';
+    $html .= '<button type="submit" class="yoshi-dense-nav__search-submit" aria-label="検索を実行">🔍</button>';
+    $html .= '</form>';
     $html .= '<div class="yoshi-dense-nav__scroll">';
     $html .= '<ul class="yoshi-dense-nav__list">';
 

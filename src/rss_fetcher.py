@@ -20797,6 +20797,11 @@ _FETCHER_INLINE_DRAFT_NOTICE_ENV = "ENABLE_FETCHER_INLINE_DRAFT_NOTICE"
 _FETCHER_INLINE_DRAFT_NOTICE_INDIVIDUAL_LIMIT_ENV = "FETCHER_INLINE_DRAFT_NOTICE_INDIVIDUAL_LIMIT"
 _FETCHER_INLINE_DRAFT_NOTICE_PART_SIZE_ENV = "FETCHER_INLINE_DRAFT_NOTICE_PART_SIZE"
 _FETCHER_INLINE_DRAFT_NOTICE_QUEUE_PATH_ENV = "FETCHER_INLINE_DRAFT_NOTICE_QUEUE_PATH"
+_FETCHER_INLINE_DRAFT_NOTICE_REMOTE_QUEUE_ENV = "ENABLE_FETCHER_INLINE_DRAFT_NOTICE_REMOTE_QUEUE"
+_FETCHER_INLINE_DRAFT_NOTICE_STATE_BUCKET_ENV = "FETCHER_INLINE_DRAFT_NOTICE_STATE_BUCKET"
+_FETCHER_INLINE_DRAFT_NOTICE_STATE_PREFIX_ENV = "FETCHER_INLINE_DRAFT_NOTICE_STATE_PREFIX"
+_DEFAULT_PUBLISH_NOTICE_STATE_BUCKET = "baseballsite-yoshilover-state"
+_DEFAULT_PUBLISH_NOTICE_STATE_PREFIX = "publish_notice"
 
 
 def _positive_int_env(name: str, default: int) -> int:
@@ -20808,6 +20813,154 @@ def _positive_int_env(name: str, default: int) -> int:
     except ValueError:
         return max(1, int(default))
     return max(1, value)
+
+
+def _cloud_run_runtime() -> bool:
+    return any(str(os.environ.get(key, "")).strip() for key in ("K_SERVICE", "CLOUD_RUN_JOB", "CLOUD_RUN_EXECUTION"))
+
+
+def _fetcher_inline_remote_queue_enabled() -> bool:
+    raw = os.environ.get(_FETCHER_INLINE_DRAFT_NOTICE_REMOTE_QUEUE_ENV)
+    if raw is not None:
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+    return _cloud_run_runtime()
+
+
+def _fetcher_inline_notice_state_bucket() -> str:
+    return (
+        str(os.environ.get(_FETCHER_INLINE_DRAFT_NOTICE_STATE_BUCKET_ENV, "")).strip()
+        or str(os.environ.get("GCS_STATE_BUCKET", "")).strip()
+        or _DEFAULT_PUBLISH_NOTICE_STATE_BUCKET
+    )
+
+
+def _fetcher_inline_notice_state_prefix() -> str:
+    return (
+        str(os.environ.get(_FETCHER_INLINE_DRAFT_NOTICE_STATE_PREFIX_ENV, "")).strip().strip("/")
+        or str(os.environ.get("GCS_STATE_PREFIX", "")).strip().strip("/")
+        or _DEFAULT_PUBLISH_NOTICE_STATE_PREFIX
+    )
+
+
+def _fetcher_inline_notice_queue_blob():
+    client = _gcs_client()
+    if not client:
+        raise RuntimeError("GCS client is not available")
+    bucket = client.bucket(_fetcher_inline_notice_state_bucket())
+    prefix = _fetcher_inline_notice_state_prefix()
+    key = f"{prefix}/queue.jsonl" if prefix else "queue.jsonl"
+    return bucket.blob(key)
+
+
+def _merge_inline_notice_queue_jsonl_texts(*texts: str) -> str:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for text in texts:
+        for raw_line in str(text or "").splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            key = line
+            try:
+                payload = json.loads(line)
+            except (TypeError, ValueError):
+                payload = None
+            if isinstance(payload, Mapping):
+                key = json.dumps(
+                    {
+                        "notice_kind": payload.get("notice_kind"),
+                        "post_id": payload.get("post_id"),
+                        "status": payload.get("status"),
+                        "reason": payload.get("reason"),
+                        "sent_at": payload.get("sent_at"),
+                        "recorded_at": payload.get("recorded_at"),
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(line)
+    return "\n".join(merged) + ("\n" if merged else "")
+
+
+def _download_fetcher_inline_notice_remote_queue(queue_path: str | Path, logger: logging.Logger) -> bool:
+    path = Path(queue_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        blob = _fetcher_inline_notice_queue_blob()
+        if not blob.exists():
+            path.write_text("", encoding="utf-8")
+            return True
+        blob.reload()
+        path.write_text(blob.download_as_text(encoding="utf-8"), encoding="utf-8")
+        return True
+    except Exception as exc:
+        logger.error(
+            json.dumps(
+                {
+                    "event": "fetcher_inline_draft_notice_remote_queue_download_failed",
+                    "error": str(exc),
+                },
+                ensure_ascii=False,
+            )
+        )
+        return False
+
+
+def _upload_fetcher_inline_notice_remote_queue(queue_path: str | Path, logger: logging.Logger) -> bool:
+    path = Path(queue_path)
+    if not path.exists():
+        return True
+    try:
+        from google.api_core.exceptions import PreconditionFailed
+    except Exception:  # pragma: no cover - dependency may not be importable in stripped envs
+        PreconditionFailed = None
+
+    local_text = path.read_text(encoding="utf-8")
+    for attempt in range(4):
+        try:
+            blob = _fetcher_inline_notice_queue_blob()
+            if blob.exists():
+                blob.reload()
+                generation = int(blob.generation or 0)
+                remote_text = blob.download_as_text(encoding="utf-8")
+            else:
+                generation = 0
+                remote_text = ""
+            payload = _merge_inline_notice_queue_jsonl_texts(remote_text, local_text)
+            blob.upload_from_string(
+                payload,
+                content_type="application/x-ndjson",
+                if_generation_match=generation if generation else 0,
+            )
+            return True
+        except Exception as exc:
+            if PreconditionFailed is not None and isinstance(exc, PreconditionFailed):
+                logger.warning("fetcher inline notice queue generation conflict; retrying")
+                continue
+            logger.error(
+                json.dumps(
+                    {
+                        "event": "fetcher_inline_draft_notice_remote_queue_upload_failed",
+                        "attempt": attempt + 1,
+                        "error": str(exc),
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            return False
+    logger.error(
+        json.dumps(
+            {
+                "event": "fetcher_inline_draft_notice_remote_queue_upload_failed",
+                "reason": "generation_conflict_retries_exhausted",
+            },
+            ensure_ascii=False,
+        )
+    )
+    return False
 
 
 def _extract_wp_rendered(value: Any) -> str:
@@ -20891,6 +21044,10 @@ def _send_fetcher_inline_draft_notices(
     individual_limit = _positive_int_env(_FETCHER_INLINE_DRAFT_NOTICE_INDIVIDUAL_LIMIT_ENV, 5)
     part_size = _positive_int_env(_FETCHER_INLINE_DRAFT_NOTICE_PART_SIZE_ENV, 20)
     counts = {"sent": 0, "suppressed": 0, "errors": 0}
+    remote_queue_enabled = _fetcher_inline_remote_queue_enabled()
+    if remote_queue_enabled and not _download_fetcher_inline_notice_remote_queue(queue_path, logger):
+        counts["errors"] = len(requests)
+        return counts
 
     def _count_result(result: Any) -> None:
         status = str(getattr(result, "status", "") or "").strip()
@@ -20925,6 +21082,8 @@ def _send_fetcher_inline_draft_notices(
                 "status": result.status,
                 "reason": result.reason,
             }, ensure_ascii=False))
+        if remote_queue_enabled and not _upload_fetcher_inline_notice_remote_queue(queue_path, logger):
+            counts["errors"] += 1
         return counts
 
     entries = [
@@ -20978,6 +21137,8 @@ def _send_fetcher_inline_draft_notices(
                 post_id=entry.post_id,
                 result=marker_result,
             )
+    if remote_queue_enabled and not _upload_fetcher_inline_notice_remote_queue(queue_path, logger):
+        counts["errors"] += 1
     return counts
 
 

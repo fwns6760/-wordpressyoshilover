@@ -103,6 +103,32 @@ class PersonTagRouterTests(unittest.TestCase):
         self.assertIn("高橋由伸", tags)
         self.assertIn("速報", tags)
 
+    def test_fallback_default_tag_when_no_person_or_context(self):
+        """387: person 0 + context 0 で 速報 fallback を付与する。"""
+        routing = person_tag_router.route_tag_names(
+            title="RT 公式: イベント告知",
+            active_roster=ACTIVE_ROSTER,
+            ob_roster=OB_ROSTER,
+        )
+
+        self.assertEqual(routing.person_tags, ())
+        self.assertEqual(routing.context_tags, ("速報",))
+        self.assertIn("fallback_default_tag_speedreport", routing.skip_reasons)
+
+    def test_fallback_not_triggered_when_context_present(self):
+        """387: context tag が 1 件でもあれば fallback 不要 (重複付与しない)。"""
+        routing = person_tag_router.route_tag_names(
+            title="二軍 ファーム練習",
+            active_roster=ACTIVE_ROSTER,
+            ob_roster=OB_ROSTER,
+        )
+
+        self.assertEqual(routing.person_tags, ())
+        self.assertIn("二軍", routing.context_tags)
+        self.assertNotIn(
+            "fallback_default_tag_speedreport", routing.skip_reasons
+        )
+
     def test_resolve_existing_wp_tag_ids_never_creates_tags(self):
         wp = Mock()
         wp.resolve_tag_id.side_effect = lambda name: {"浦田俊輔": 101, "速報": 201}.get(name, 0)

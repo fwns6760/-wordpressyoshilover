@@ -266,6 +266,13 @@ def route_tag_names(
         source_type=source_type,
         has_ob_hit=bool(ob_hits),
     )
+    # 387: 全 post に最低 1 tag を保証する fallback。person + context が共に
+    # 0 件のままだと c-tagList chip 0 = 内部リンク 0 になり回遊が止まるため、
+    # 既存 WP tag「速報」を catch-all として付与する。semantic 厳密性は
+    # Phase 2 (subtype-aware fallback) で調整する。
+    if not person_tags and not context_tags:
+        context_tags = ("速報",)
+        reasons = (*reasons, "fallback_default_tag_speedreport")
     return PersonTagRouting(
         person_tags=person_tags,
         context_tags=context_tags,

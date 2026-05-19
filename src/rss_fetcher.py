@@ -1933,6 +1933,7 @@ _POST_GEN_VALIDATE_TOPIC_SOURCE_FAMILIES = frozenset(
         "sankei",
         "nikkan_spa",
         "chunichi",
+        "yahoo_news_aggregator",
     }
 )
 

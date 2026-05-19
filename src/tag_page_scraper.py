@@ -25,6 +25,7 @@ import logging
 import re
 import time
 from datetime import datetime, timezone, timedelta
+from email.utils import parsedate_to_datetime
 from html import unescape
 from html.parser import HTMLParser
 from typing import Any, Callable, Iterable
@@ -1567,6 +1568,145 @@ def fetch_nikkan_spa_giants_entries(
     )
 
 
+# 384-INGEST Phase 5: Yahoo!ニュース sports RSS 経由で、既存 source family に **存在しない**
+# 媒体 (産経 / 中日 / NHK / 共同 / 時事) の巨人記事だけを通す passthrough scraper。
+# Yahoo は転載 aggregator なので link が news.yahoo.co.jp URL になり実 sankei.com 等
+# には curl で到達できないが、title から媒体名が判別可能 (suffix `(媒体名)`)。
+# 既存 16 family 由来の記事は dedup ではなく title 段階で skip し、純粋な追加分のみ
+# 通すことで volume 膨張を防ぐ。
+_YAHOO_PASSTHROUGH_MEDIA = frozenset(
+    {
+        "産経新聞",
+        "中日スポーツ",
+        "中日新聞",
+        "NHK",
+        "NHKニュース",
+        "NHK NEWS WEB",
+        "共同通信",
+        "時事通信",
+        "毎日新聞",  # 既存 mainichi RSS が空なときの補完
+        "読売新聞オンライン",  # 既存 yomiuri_npb_giants_filter の補完
+    }
+)
+_YAHOO_NEWS_MEDIA_SUFFIX_RE = re.compile(r"\s*[(（]([^()（）]+)[)）]\s*$")
+
+
+def fetch_yahoo_news_sports_giants_entries(
+    *,
+    tag_url: str = "https://news.yahoo.co.jp/rss/categories/sports.xml",
+    max_age_days: int = 7,
+    article_limit: int = 30,
+    logger: logging.Logger | None = None,
+    now: datetime | None = None,
+    fetcher: Callable[..., requests.Response] | None = None,
+) -> list[dict[str, Any]]:
+    """Yahoo!ニュース sports RSS から既存 family にない媒体の巨人記事だけ取得する。
+
+    title 末尾の `(媒体名)` suffix で媒体判別、`_YAHOO_PASSTHROUGH_MEDIA` whitelist
+    で filter。link は Yahoo aggregator URL (実 媒体 URL には curl で到達不能)。
+    """
+    logger = logger or logging.getLogger("tag_page_scraper")
+    reference_now = (now or datetime.now(timezone.utc)).astimezone(JST)
+    response = _http_get(tag_url, fetcher=fetcher)
+    if response is None or response.status_code != 200:
+        logger.warning(
+            "tag_page_fetch_failed source=yahoo_news_sports tag_url=%s status=%s",
+            tag_url,
+            getattr(response, "status_code", "ERR"),
+        )
+        return []
+
+    text = response.text
+    items = re.findall(r"<item>(.+?)</item>", text, re.DOTALL)
+    if not items:
+        logger.info(
+            "tag_page_no_recent_articles source=yahoo_news_sports tag_url=%s", tag_url
+        )
+        return []
+
+    entries: list[dict[str, Any]] = []
+    filtered_counts: dict[str, int] = {
+        "media_not_whitelisted": 0,
+        "non_giants": 0,
+        "age_filtered": 0,
+        "date_unknown": 0,
+        "title_empty": 0,
+    }
+
+    for item in items:
+        title_m = re.search(
+            r"<title>(?:<!\[CDATA\[)?(.+?)(?:\]\]>)?</title>", item, re.DOTALL
+        )
+        link_m = re.search(
+            r"<link>(?:<!\[CDATA\[)?(.+?)(?:\]\]>)?</link>", item, re.DOTALL
+        )
+        pubdate_m = re.search(
+            r"<pubDate>(?:<!\[CDATA\[)?(.+?)(?:\]\]>)?</pubDate>", item, re.DOTALL
+        )
+        if not (title_m and link_m):
+            continue
+        title_raw = unescape(title_m.group(1).strip())
+        link = link_m.group(1).strip()
+
+        media_m = _YAHOO_NEWS_MEDIA_SUFFIX_RE.search(title_raw)
+        if media_m is None:
+            filtered_counts["media_not_whitelisted"] += 1
+            continue
+        media = media_m.group(1).strip()
+        if media not in _YAHOO_PASSTHROUGH_MEDIA:
+            filtered_counts["media_not_whitelisted"] += 1
+            continue
+
+        if not _has_giants_topic(title_raw, ""):
+            filtered_counts["non_giants"] += 1
+            continue
+
+        if not title_raw:
+            filtered_counts["title_empty"] += 1
+            continue
+
+        published_struct = None
+        if pubdate_m:
+            try:
+                dt = parsedate_to_datetime(pubdate_m.group(1).strip())
+                if dt is not None:
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=JST)
+                    published_struct = dt.astimezone(timezone.utc).timetuple()
+            except (TypeError, ValueError):
+                pass
+        if published_struct is None:
+            filtered_counts["date_unknown"] += 1
+            continue
+        if not _published_struct_within_window(
+            published_struct, max_age_days=max_age_days, now=reference_now
+        ):
+            filtered_counts["age_filtered"] += 1
+            continue
+
+        entries.append(
+            {
+                "link": link,
+                "id": link,
+                "title": title_raw,
+                "summary": title_raw,
+                "description": title_raw,
+                "published_parsed": published_struct,
+                "published": _struct_time_to_rfc822(published_struct),
+            }
+        )
+        if len(entries) >= article_limit:
+            break
+
+    logger.info(
+        "tag_page_entries_built source=yahoo_news_sports count=%d candidates=%d filtered=%s",
+        len(entries),
+        len(items),
+        filtered_counts,
+    )
+    return entries
+
+
 _SCRAPER_REGISTRY: dict[str, Callable[..., list[dict[str, Any]]]] = {
     "hochi_giants_tag": fetch_hochi_giants_entries,
     "daily_giants_tag": fetch_daily_giants_entries,
@@ -1587,6 +1727,7 @@ _SCRAPER_REGISTRY: dict[str, Callable[..., list[dict[str, Any]]]] = {
     "sankei_giants_search": fetch_sankei_giants_entries,
     "nikkan_spa_giants_search": fetch_nikkan_spa_giants_entries,
     "chunichi_chuspo_giants_search": fetch_chunichi_chuspo_giants_entries,
+    "yahoo_news_sports_giants_passthrough": fetch_yahoo_news_sports_giants_entries,
 }
 
 

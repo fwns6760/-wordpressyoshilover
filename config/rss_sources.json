@@ -403,6 +403,18 @@
     ]
   },
   {
+    "name": "Yahoo!ニュース sports 産経/中日/NHK/共同 passthrough",
+    "url": "https://news.yahoo.co.jp/rss/categories/sports.xml",
+    "type": "tag_scrape",
+    "scraper": "yahoo_news_sports_giants_passthrough",
+    "max_age_days": 3,
+    "article_limit": 20,
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
     "name": "読売ジャイアンツYouTube公式",
     "url": "https://www.youtube.com/channel/UCXxg0igSYUp0tqdd6luPEnQ/videos",
     "type": "tag_scrape",

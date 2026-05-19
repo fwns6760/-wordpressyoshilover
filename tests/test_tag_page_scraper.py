@@ -686,6 +686,90 @@ class FetchChunichiChuspoGiantsEntriesTests(unittest.TestCase):
         # title suffix ` ：中日スポーツ・東京中日スポーツ` が strip される
         self.assertEqual(entries[0]["title"], "巨人・戸郷翔征 中日戦で完投勝利")
 
+    def test_yahoo_passthrough_filters_existing_family_keeps_new_media(self):
+        # Yahoo!ニュース sports RSS から passthrough 媒体 (産経 / 中日スポ / NHK) +
+        # 巨人 keyword を含む item のみ通す
+        rss_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+<item>
+  <title>巨人・戸郷翔征が完投勝利 ヤクルト戦で快投(産経新聞)</title>
+  <link>https://news.yahoo.co.jp/articles/abc111</link>
+  <pubDate>Mon, 19 May 2026 03:00:00 +0900</pubDate>
+</item>
+<item>
+  <title>大谷翔平が今季初の盗塁失敗 ドジャース戦(日刊スポーツ)</title>
+  <link>https://news.yahoo.co.jp/articles/abc222</link>
+  <pubDate>Mon, 19 May 2026 04:00:00 +0900</pubDate>
+</item>
+<item>
+  <title>巨人・坂本勇人が通算300号 ヤクルト戦で(中日スポーツ)</title>
+  <link>https://news.yahoo.co.jp/articles/abc333</link>
+  <pubDate>Mon, 19 May 2026 05:00:00 +0900</pubDate>
+</item>
+<item>
+  <title>巨人・阿部監督の采配が議論を呼ぶ(NHK)</title>
+  <link>https://news.yahoo.co.jp/articles/abc444</link>
+  <pubDate>Mon, 19 May 2026 06:00:00 +0900</pubDate>
+</item>
+<item>
+  <title>阪神タイガースが連勝 巨人を超える勢い(産経新聞)</title>
+  <link>https://news.yahoo.co.jp/articles/abc555</link>
+  <pubDate>Mon, 19 May 2026 07:00:00 +0900</pubDate>
+</item>
+<item>
+  <title>巨人が逆転勝ち 5連勝(日刊スポーツ)</title>
+  <link>https://news.yahoo.co.jp/articles/abc666</link>
+  <pubDate>Mon, 19 May 2026 08:00:00 +0900</pubDate>
+</item>
+</channel>
+</rss>"""
+
+        def fake_fetcher(url, **kwargs):
+            return _make_response(200, rss_xml)
+
+        entries = scraper.fetch_yahoo_news_sports_giants_entries(
+            tag_url="https://news.yahoo.co.jp/rss/categories/sports.xml",
+            max_age_days=3,
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        # passthrough かつ巨人 keyword:
+        # - abc111 (産経 + 巨人戸郷) ✓
+        # - abc333 (中日スポ + 巨人坂本) ✓
+        # - abc444 (NHK + 巨人阿部) ✓
+        # - abc555 (産経 + 巨人 keyword in title - 阪神...巨人を超える) ✓ (title に巨人含む)
+        # 既存 family (日刊スポ): abc222 (大谷) / abc666 (巨人逆転) は skip (重複防止)
+        self.assertEqual(len(entries), 4)
+        links = [e["link"] for e in entries]
+        self.assertIn("https://news.yahoo.co.jp/articles/abc111", links)
+        self.assertIn("https://news.yahoo.co.jp/articles/abc333", links)
+        self.assertIn("https://news.yahoo.co.jp/articles/abc444", links)
+        self.assertNotIn("https://news.yahoo.co.jp/articles/abc222", links)
+        self.assertNotIn("https://news.yahoo.co.jp/articles/abc666", links)
+
+    def test_yahoo_passthrough_age_filter(self):
+        # max_age_days 超の item は age_filtered で skip
+        rss_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel>
+<item>
+  <title>巨人・坂本勇人が通算300号(産経新聞)</title>
+  <link>https://news.yahoo.co.jp/articles/old111</link>
+  <pubDate>Tue, 13 May 2026 05:00:00 +0900</pubDate>
+</item>
+</channel></rss>"""
+
+        def fake_fetcher(url, **kwargs):
+            return _make_response(200, rss_xml)
+
+        entries = scraper.fetch_yahoo_news_sports_giants_entries(
+            tag_url="https://news.yahoo.co.jp/rss/categories/sports.xml",
+            max_age_days=3,
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 0)
+
     def test_chunichi_non_giants_filtered(self):
         # 中日 specific (vs 阪神等) で巨人言及無い記事は post_filter で除外
         listing_html = """

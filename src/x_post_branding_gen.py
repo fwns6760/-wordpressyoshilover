@@ -178,21 +178,26 @@ def _build_system_prompt(now_jst_hour: int, today_jst: str) -> str:
     )
 
 
+_TAVILY_INCLUDE_DOMAINS = ("sports.yahoo.co.jp", "hochi.news")
+
+
 def _tavily_search(
     query: str,
     api_key: str,
     *,
     max_results: int = 3,
     timeout_seconds: int = 30,
-    same_day_only: bool = True,
+    same_day_only: bool = False,
 ) -> list[dict]:
-    """Tavily REST API 検索。
+    """Tavily REST API 検索 (日本 sport 記事のみ)。
 
-    成功時は result dict list を返す。 network / 4xx / 5xx / JSON parse 失敗
-    時は空 list 返却 (caller は no context として skip 判断する)。
+    Yahoo Japan sport + 報知 に絞って巨人関連の新鮮な記事だけ拾う。
+    全 web 検索だと SF Giants (MLB) / NBA / 関係ない海外 sport が混入
+    して Gemma が hallucinate するため domain 限定 (2026-05-20 fix)。
 
-    same_day_only=True の場合、 published_date が JST 当日のものだけ残す
-    (post-filter)。 当日 0 件なら caller は no context として silent skip する。
+    days=2 で前日+当日のみ。 same_day_only=True にすれば JST 当日 only
+    (test 用)、 default は False (朝 fire で前夜試合の記事を拾えるよう
+    に)。 0 件返却なら caller は no context として silent skip する。
     """
     if not query or not api_key:
         return []
@@ -206,7 +211,8 @@ def _tavily_search(
                 "max_results": max_results,
                 "search_depth": "basic",
                 "topic": "news",
-                "days": 1,
+                "days": 2,
+                "include_domains": list(_TAVILY_INCLUDE_DOMAINS),
             },
             timeout=timeout_seconds,
         )
@@ -299,7 +305,7 @@ def build_db_fact_line(
 
             cur.execute(
                 "SELECT game_id, opponent, giants_score, opp_score, result "
-                "FROM games WHERE game_date = ? "
+                "FROM games WHERE game_date = ? AND giants_score IS NOT NULL "
                 "ORDER BY ingested_at DESC LIMIT 1",
                 (today,),
             )
@@ -374,43 +380,343 @@ def build_db_fact_line(
                         lines.append(f"- {player_canonical} 投球 (今日): " + " ".join(parts))
 
             if streak_window > 0:
+                # 直近 loss が出るまで遡って「連勝中」 / 「連敗中」 / 「混在」
+                # を集計する。 引き分けは streak を切らない (NPB 慣習)。
                 cur.execute(
                     "SELECT game_date, result FROM games "
                     "WHERE game_date <= ? AND result IN ('win', 'loss', 'draw') "
-                    "ORDER BY game_date DESC LIMIT ?",
-                    (today, streak_window),
+                    "AND giants_score IS NOT NULL "
+                    "ORDER BY game_date DESC LIMIT 40",
+                    (today,),
                 )
                 recent = cur.fetchall()
                 if recent:
-                    marks = []
-                    wins = losses = draws = 0
+                    # 現在 streak: 最新試合 (recent[0]) の result から start。
+                    # win 連続なら 連勝、 loss 連続なら 連敗、 引き分けが先頭
+                    # なら 「直近 △ 後の状況」 で扱う。
+                    latest_result = (recent[0][1] or "").lower()
+                    current_streak_wins = 0
+                    current_streak_draws = 0
+                    current_streak_losses = 0
+                    current_mode: Optional[str] = None
                     for _, r in recent:
                         rl = (r or "").lower()
+                        if current_mode is None:
+                            if rl == "draw":
+                                current_streak_draws += 1
+                                continue
+                            current_mode = rl
+                        if current_mode == "win":
+                            if rl == "win":
+                                current_streak_wins += 1
+                            elif rl == "draw":
+                                current_streak_draws += 1
+                            else:
+                                break
+                        elif current_mode == "loss":
+                            if rl == "loss":
+                                current_streak_losses += 1
+                            elif rl == "draw":
+                                current_streak_draws += 1
+                            else:
+                                break
+                    streak_phrase = ""
+                    if current_mode == "win" and current_streak_wins > 0:
+                        streak_phrase = f"現在 {current_streak_wins}連勝中"
+                        if current_streak_draws > 0:
+                            streak_phrase += f" (間に△{current_streak_draws})"
+                    elif current_mode == "loss" and current_streak_losses > 0:
+                        streak_phrase = f"現在 {current_streak_losses}連敗中"
+                        if current_streak_draws > 0:
+                            streak_phrase += f" (間に△{current_streak_draws})"
+                    elif current_mode is None and current_streak_draws > 0:
+                        streak_phrase = f"直近{current_streak_draws}試合 引き分け続き"
+                    if streak_phrase:
+                        lines.append(f"- {streak_phrase}")
+                    # 直近 streak_window 試合の marks (補助情報)
+                    short = recent[: max(streak_window, 5)]
+                    marks_short = []
+                    for _, r in short:
+                        rl = (r or "").lower()
                         if rl == "win":
-                            marks.append("○")
-                            wins += 1
+                            marks_short.append("○")
                         elif rl == "loss":
-                            marks.append("●")
-                            losses += 1
+                            marks_short.append("●")
                         else:
-                            marks.append("△")
-                            draws += 1
-                    streak_parts = [f"直近{len(recent)}試合: " + "".join(marks)]
-                    summary = []
-                    if wins:
-                        summary.append(f"{wins}勝")
-                    if losses:
-                        summary.append(f"{losses}敗")
-                    if draws:
-                        summary.append(f"{draws}分")
-                    if summary:
-                        streak_parts.append("(" + "".join(summary) + ")")
-                    lines.append("- " + " ".join(streak_parts))
+                            marks_short.append("△")
+                    if marks_short:
+                        lines.append(
+                            f"- 直近{len(marks_short)}試合: "
+                            + "".join(marks_short)
+                        )
         finally:
             con.close()
     except Exception:
         return ""
     return "\n".join(lines)
+
+
+def build_team_roundup_fact_line(
+    db_path: str,
+    *,
+    target_date: Optional[str] = None,
+    top_batter_h_threshold: int = 2,
+    top_pitcher_ip_threshold: float = 1.0,
+) -> str:
+    """勝利後 roundup 用に、 今日試合に絡んだ複数 player の stat をまとめる。
+
+    今日試合が win の時だけ返す。 それ以外 (loss / draw / unknown / no
+    game) は空 string。 caller は空なら single-player mode に fallback。
+
+    形式:
+        - 今日(YYYY-MM-DD) 巨人 vs OPP: GS-OS 勝利
+        - PLAYER1: X打数Y安打 ZHR
+        - PLAYER2: X打数Y安打 Z打点
+        - PITCHER1: X.Y回 Z失点 K奪三振 (○)
+        - PITCHER2: X.Y回 Z失点 K奪三振 (H)
+        - 直近5試合: ○●○●○ (X勝Y敗)
+    """
+    if not db_path:
+        return ""
+    from datetime import datetime, timezone, timedelta
+    jst = timezone(timedelta(hours=9))
+    today = target_date or datetime.now(jst).strftime("%Y-%m-%d")
+    lines: list[str] = []
+    try:
+        import sqlite3
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            cur = con.cursor()
+            cur.execute(
+                "SELECT game_id, opponent, giants_score, opp_score, result "
+                "FROM games WHERE game_date = ? AND giants_score IS NOT NULL "
+                "ORDER BY ingested_at DESC LIMIT 1",
+                (today,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return ""
+            game_id, opp, gs, op_s, res = row
+            if (res or "").lower() != "win":
+                return ""
+            score = f"{gs}-{op_s}" if gs is not None and op_s is not None else ""
+            parts = [f"今日({today}) 巨人 vs {opp}"]
+            if score:
+                parts.append(score)
+            parts.append("勝利")
+            lines.append("- " + " ".join(parts))
+
+            cur.execute(
+                "SELECT player_canonical, AB, H, RBI, R, SB FROM batting_logs "
+                "WHERE game_id = ? AND team_role = 'giants' AND H >= ? "
+                "ORDER BY H DESC, RBI DESC LIMIT 5",
+                (game_id, top_batter_h_threshold),
+            )
+            for player, ab, h, rbi, r, sb in cur.fetchall():
+                if not player:
+                    continue
+                bat_parts = []
+                if ab is not None and h is not None:
+                    bat_parts.append(f"{ab}打数{h}安打")
+                if rbi:
+                    bat_parts.append(f"{rbi}打点")
+                if r:
+                    bat_parts.append(f"{r}得点")
+                if sb:
+                    bat_parts.append(f"{sb}盗塁")
+                if bat_parts:
+                    lines.append(f"- {player} 打撃: " + " ".join(bat_parts))
+
+            cur.execute(
+                "SELECT player_canonical, IP, ER, R, K, BB, H_allowed, result_mark "
+                "FROM pitching_logs "
+                "WHERE game_id = ? AND team_role = 'giants' AND IP >= ? "
+                "ORDER BY appearance_order LIMIT 5",
+                (game_id, top_pitcher_ip_threshold),
+            )
+            for player, ip, er, r, k, bb, h_a, mark in cur.fetchall():
+                if not player:
+                    continue
+                pit_parts = []
+                if ip is not None:
+                    pit_parts.append(f"{ip}回")
+                if er is not None:
+                    pit_parts.append(f"{er}失点")
+                elif r is not None:
+                    pit_parts.append(f"{r}失点")
+                if k:
+                    pit_parts.append(f"{k}K")
+                if bb:
+                    pit_parts.append(f"{bb}四球")
+                if h_a is not None:
+                    pit_parts.append(f"被安打{h_a}")
+                if mark:
+                    pit_parts.append(f"({mark})")
+                if pit_parts:
+                    lines.append(f"- {player} 投球: " + " ".join(pit_parts))
+
+            cur.execute(
+                "SELECT result FROM games "
+                "WHERE game_date <= ? AND result IN ('win', 'loss', 'draw') "
+                "AND giants_score IS NOT NULL "
+                "ORDER BY game_date DESC LIMIT 40",
+                (today,),
+            )
+            recent = cur.fetchall()
+            if recent:
+                latest_result = (recent[0][0] or "").lower()
+                wins_in_streak = 0
+                draws_in_streak = 0
+                losses_in_streak = 0
+                current_mode: Optional[str] = None
+                for (rl,) in recent:
+                    rl_lower = (rl or "").lower()
+                    if current_mode is None:
+                        if rl_lower == "draw":
+                            draws_in_streak += 1
+                            continue
+                        current_mode = rl_lower
+                    if current_mode == "win":
+                        if rl_lower == "win":
+                            wins_in_streak += 1
+                        elif rl_lower == "draw":
+                            draws_in_streak += 1
+                        else:
+                            break
+                    elif current_mode == "loss":
+                        if rl_lower == "loss":
+                            losses_in_streak += 1
+                        elif rl_lower == "draw":
+                            draws_in_streak += 1
+                        else:
+                            break
+                if current_mode == "win" and wins_in_streak > 0:
+                    sp = f"現在 {wins_in_streak}連勝中"
+                    if draws_in_streak > 0:
+                        sp += f" (間に△{draws_in_streak})"
+                    lines.append(f"- {sp}")
+                elif current_mode == "loss" and losses_in_streak > 0:
+                    sp = f"現在 {losses_in_streak}連敗中"
+                    if draws_in_streak > 0:
+                        sp += f" (間に△{draws_in_streak})"
+                    lines.append(f"- {sp}")
+        finally:
+            con.close()
+    except Exception:
+        return ""
+    # 試合 line + 直近 streak しか無い (player 0 件) なら roundup として
+    # 意味薄いので空返却 (caller は single-player にフォールバック)
+    if len(lines) < 3:
+        return ""
+    return "\n".join(lines)
+
+
+def build_team_roundup_candidate(
+    fact_line: str,
+    *,
+    gemini_api_key: str,
+    tavily_api_key: str,
+    timeout_seconds: int = 30,
+    model_id: str = _GEMMA_BRANDING_MODEL,
+    temperature: float = 0.7,
+    logger: Optional[_logging.Logger] = None,
+) -> Optional[Candidate]:
+    """勝利後 roundup post を 1 件返す。
+
+    複数 player を total 化したファン voice の post を生成する。 fact line
+    は build_team_roundup_fact_line() で取得済み (空なら caller が roundup
+    mode を発火しない)。 Tavily は使わず DB fact + プロンプト指示のみで
+    安全に書く (Tavily snippet は player roundup の文脈に弱いため省略)。
+    """
+    log = logger or _logging.getLogger("x_post_branding_gen")
+    if not fact_line.strip() or not gemini_api_key:
+        log.info("team_roundup_skip reason=missing_input")
+        return None
+    from datetime import datetime, timezone, timedelta
+    jst = timezone(timedelta(hours=9))
+    now_jst = datetime.now(jst)
+    system_prompt = _build_system_prompt(
+        now_jst_hour=now_jst.hour,
+        today_jst=now_jst.strftime("%Y-%m-%d"),
+    )
+    # Yahoo Japan + 報知から試合の news を context として注入
+    # (個人選手と違って team / 連勝 / 試合 の話を拾う)
+    news_results = _tavily_search(
+        "巨人",
+        tavily_api_key,
+        max_results=5,
+        timeout_seconds=timeout_seconds,
+        same_day_only=False,
+    )
+    news_ctx = _format_tavily_context(news_results) if news_results else ""
+    prompt_parts = [
+        system_prompt,
+        "",
+        "今日の試合の DB 照合済み数字 (使ってよい数字):",
+        fact_line,
+        "",
+    ]
+    if news_ctx:
+        prompt_parts.extend([
+            "Yahoo Japan + 報知の最新巨人記事 (参考、 引用 / 媒体名 / URL は使わない):",
+            news_ctx,
+            "",
+        ])
+    prompt_parts.extend([
+        "上記の DB facts + ニュース記事を参考に、 ファンらしく今日の試合を",
+        "1 件の roundup post にまとめてください。 投手 / 打者 / 試合運び /",
+        "結果 / 連勝 / news で話題になっている観点 を総括する。",
+        "個別 stat を一行ずつ淡々と書かず、 ファン voice で短い感嘆 + 観点。",
+        "選手名は DB か news に出てきた選手のみ。 出てない選手を勝手に書かない。",
+    ])
+    prompt = "\n".join(prompt_parts)
+    try:
+        from google import genai
+        client = genai.Client(api_key=gemini_api_key)
+        response = client.models.generate_content(
+            model=model_id,
+            contents=prompt,
+            config={"temperature": temperature},
+        )
+        text = (getattr(response, "text", None) or "").strip()
+    except Exception as exc:  # noqa: BLE001 - silent skip per fault tolerance
+        log.warning("team_roundup_skip reason=gemini_error err=%r", exc)
+        return None
+    text = _finalize_post_text(text)
+    if not _gemma_branding_safety_check(text):
+        log.warning(
+            "team_roundup_skip reason=safety_check_failed text_preview=%r",
+            text[:60],
+        )
+        return None
+    signature_hash = _hashlib.sha1(
+        f"team_roundup|{today_str(now_jst)}|{text[:80]}".encode("utf-8")
+    ).hexdigest()[:16]
+    draft_lines = [
+        "【根拠: Gemma 4 team roundup + DB fact】",
+        "対象: 今日の勝利試合 (複数選手 total)",
+        f"model: {model_id}",
+        "",
+        "【DB fact line】",
+        fact_line,
+    ]
+    log.info("team_roundup_candidate_built text_len=%d", len(text))
+    return Candidate(
+        title=f"Gemma 4 試合後 roundup",
+        metric=_GEMMA_BRANDING_METRIC,
+        period_label="試合後 roundup",
+        draft_text="\n".join(draft_lines),
+        post_text=text,
+        char_count=len(text),
+        signature=f"team_roundup|{signature_hash}|False|None",
+        focus_player="(roundup)",
+        source_material_type="gemma_branding",
+    )
+
+
+def today_str(now_jst) -> str:
+    """Helper for signature hashing (separate function to keep build_team_roundup_candidate readable)."""
+    return now_jst.strftime("%Y-%m-%d")
 
 
 def _format_tavily_context(results: list[dict], *, snippet_len: int = 300) -> str:

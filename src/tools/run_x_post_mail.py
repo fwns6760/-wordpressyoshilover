@@ -544,7 +544,49 @@ def _build_gemma_branding_candidates(
         LOG.info("Gemma branding skipped: no eligible players from lineup/candidates")
         return []
     out: list[lane.Candidate] = []
-    for player, lineup_fact in players:
+
+    # 試合 in DB + 勝利時は roundup mode を 1 件 priority で fire (時間帯
+    # 問わず)。 朝 fire でも前夜の勝利 game が DB にあれば roundup 出せる。
+    # roundup fact line が空 (no game / loss / draw) なら single-player のみ。
+    # 今日試合が DB に無ければ昨日も試す (朝 fire で前夜試合を拾うため)。
+    from datetime import datetime, timezone, timedelta
+    jst = timezone(timedelta(hours=9))
+    now_jst = datetime.now(jst)
+    roundup_added = False
+    roundup_fact = ""
+    if db_path:
+        for offset in (0, 1):
+            target_date = (now_jst - timedelta(days=offset)).strftime("%Y-%m-%d")
+            try:
+                rf = _xbg.build_team_roundup_fact_line(db_path, target_date=target_date)
+            except Exception as exc:  # noqa: BLE001
+                LOG.warning("build_team_roundup_fact_line failed err=%r", exc)
+                rf = ""
+            if rf:
+                roundup_fact = rf
+                LOG.info("roundup fact found at offset=%d (date=%s)", offset, target_date)
+                break
+        if roundup_fact:
+            try:
+                rc = _xbg.build_team_roundup_candidate(
+                    roundup_fact,
+                    gemini_api_key=gemini_key,
+                    tavily_api_key=tavily_key,
+                    logger=LOG,
+                )
+            except Exception as exc:  # noqa: BLE001
+                LOG.warning("build_team_roundup_candidate failed err=%r", exc)
+                rc = None
+            if rc is not None:
+                out.append(rc)
+                roundup_added = True
+                LOG.info("Gemma roundup candidate appended (postgame win)")
+
+    # roundup が出た時は残り枠 = max_count - 1、 出てない時は max_count 全部 single-player
+    remaining = max_count - (1 if roundup_added else 0)
+    if remaining <= 0:
+        return out
+    for player, lineup_fact in players[:remaining]:
         db_fact = ""
         if db_path:
             try:

@@ -678,9 +678,14 @@ def _build_combos(
     """
     combos: list[_MetricCombo] = []
 
-    # 1. 直近1週間 — short-term league slice (8 metric)
+    # 1. 直近1週間 — short-term league slice (打撃 only).
+    # 先発投手は週 1 回しか投げないため、 直近1週間で投手指標を取ると
+    # 1 登板分に依存する不安定な数値になる。 投手は今月 / シーズン /
+    # 前月 等の長窓のみで集計する (394 fix)。
     last7 = (now - timedelta(days=7)).strftime("%Y-%m-%d")
     for m in SAFE_METRICS:
+        if m in _PITCHING_METRICS:
+            continue
         combos.append(_MetricCombo(m, last7, "直近1週間", novelty="high"))
     # 2. 守備位置別 AVG (直近1週間) — niche slice。
     # snapshot path は position 列が常に NULL なので、 守備位置別は
@@ -701,6 +706,11 @@ def _build_combos(
                 continue
             since, until = window
             for m in SAFE_METRICS:
+                # 394 fix: 先発投手は週 1 回しか投げないため、 「直近 5/10
+                # 試合」 (team game window) は投手指標には合わない。 投手は
+                # 今月 / シーズン / 前月 等の長窓のみで集計する。
+                if m in _PITCHING_METRICS:
+                    continue
                 combos.append(
                     _MetricCombo(
                         m,
@@ -716,6 +726,9 @@ def _build_combos(
     week_since = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
     if week_since != last7:
         for m in SAFE_METRICS:
+            # 394 fix: 今週 (Mon-today) も短窓のため投手指標は除外
+            if m in _PITCHING_METRICS:
+                continue
             combos.append(
                 _MetricCombo(m, week_since, "今週", novelty="high")
             )

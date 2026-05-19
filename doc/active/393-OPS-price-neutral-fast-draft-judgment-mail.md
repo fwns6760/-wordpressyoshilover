@@ -1,6 +1,6 @@
 # 393: 価格据え置きの本文付き公開判断メール即時化 / 大量時 Part 分割
 
-status: IN_FLIGHT
+status: LIVE_DEPLOYED_OBSERVE
 owner: Codex
 lane: A
 priority: P0
@@ -87,3 +87,45 @@ user 要件:
 ## 7. 作業ログ
 
 - 2026-05-19: user GO。GitHub Issue #68 作成。
+- 2026-05-19: repo 実装 commit `a626bda`。
+  `publish_notice_email_sender` に `judgment_batch` summary mode を追加し、
+  `run_publish_notice_email_dry_run` に batch summary + per-post sent marker を接続。
+  `rss_fetcher` には draft 作成同一実行内の inline notice helper を追加。
+- 2026-05-19: follow-up commit `bd0bb07` で fetcher inline notice queue を
+  既存 `publish_notice/queue.jsonl` GCS state と共有。inline mail 送信済み post を
+  後続 `publish-notice` で再送しないための merge/upload path を追加。
+- 2026-05-19: follow-up commit `b495f6a` で fetcher 側の既存
+  `FACT_CHECK_EMAIL_TO` を publish notice 宛先 fallback として利用。Secret 追加なし。
+- 2026-05-19: tests:
+  `python3 -m unittest tests.test_publish_notice_burst_summary tests.test_publish_notice_email_sender tests.test_run_publish_notice_email_dry_run`
+  → 196 OK。
+  `python3 -m pytest tests/test_rss_fetcher.py -q` → 30 passed。
+  `python3 -m unittest tests.test_publish_notice_email_sender` → 176 OK。
+- 2026-05-19: deploy:
+  publish-notice image `publish-notice:393-judgment-bd0bb07`
+  (Cloud Build `f22f5f1e-0bcf-41b8-9ae1-e146c7e2fe83`, digest
+  `sha256:22991dbf0dda236636e86f2f973d07519e8abaaf685d18dc016262094f349bbe`)
+  を Cloud Run Job generation `111` へ反映。
+- 2026-05-19: deploy:
+  fetcher image `yoshilover-fetcher:393-inline-mail-b495f6a`
+  (Cloud Build `be7cbe88-0e60-4754-8def-3d8f3207bd74`, digest
+  `sha256:b9797071571a08302bb92d7d818523741f4c877285889a35827afc5198dc5c77`)
+  を revision `yoshilover-fetcher-00445-zm7` / traffic 100% へ反映。
+  `/health` → `OK`。
+- 2026-05-19: live env:
+  `ENABLE_PUBLISH_NOTICE_JUDGMENT_BATCH=1`,
+  `PUBLISH_NOTICE_JUDGMENT_BATCH_THRESHOLD=6`,
+  `PUBLISH_NOTICE_JUDGMENT_BATCH_PART_SIZE=20`,
+  `PUBLISH_NOTICE_BURST_THRESHOLD=-1`,
+  `DISABLE_BURST_SUMMARY_MAIL=0`,
+  `ENABLE_FETCHER_INLINE_DRAFT_NOTICE=1`,
+  `FETCHER_INLINE_DRAFT_NOTICE_INDIVIDUAL_LIMIT=5`,
+  `FETCHER_INLINE_DRAFT_NOTICE_PART_SIZE=20`,
+  `ENABLE_FETCHER_INLINE_DRAFT_NOTICE_REMOTE_QUEUE=1`。
+- 2026-05-19: price-neutral cleanup:
+  追加していた `publish-notice-peak-followup` は `PAUSED`
+  (`25,55 20-21 * * *` / Asia/Tokyo)。以後は既存 fetch 実行内 inline mail で
+  追加 Cloud Run 実行なし。
+- 2026-05-19: 残 acceptance:
+  次回自然 fetch で draft が作成された時に
+  `fetcher_inline_draft_notice_result` log と実 mail 本文を確認する。

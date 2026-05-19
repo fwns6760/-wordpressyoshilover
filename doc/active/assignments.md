@@ -8,7 +8,7 @@
 
 | ticket | status | 内容 |
 |---|---|---|
-| `doc/active/393-OPS-price-neutral-fast-draft-judgment-mail.md` (GH #68) | IN_FLIGHT | user 要件: Cloud Run / Scheduler 起動回数を増やさず、記事作成後に本文付き mail で公開判断したい。タイトルだけのまとめは禁止。大量時は 1 記事 1 通ではなく、本文抜粋・編集リンク・公開ボタン付きの Part 分割 mail にする。scope: `publish_notice_email_sender` に `judgment_batch` summary mode を追加し、`rss_fetcher` から draft 作成同一実行内で少数時は個別、多数時は Part 分割 mail を送れるようにする。`sent` / batch 成功時だけ queue に記録し、suppressed / error は通知済みにしない。Scheduler 追加 / 5分間隔化 / Cloud Run 新規 job / Secret 値変更 / WP既存記事変更 / X live post / `RUN_DRAFT_ONLY` は不可触。 |
+| `doc/active/393-OPS-price-neutral-fast-draft-judgment-mail.md` (GH #68) | LIVE_DEPLOYED_OBSERVE | repo commits `a626bda` / `bd0bb07` / `b495f6a`。本文抜粋・編集リンク・公開ボタン付き `judgment_batch` summary mode と fetcher inline draft notice を実装 / deploy 済み。publish-notice image `393-judgment-bd0bb07` Job generation `111`、fetcher image `393-inline-mail-b495f6a` revision `00445-zm7` 100%、`/health` OK。inline sent marker は GCS `publish_notice/queue.jsonl` に merge して後続 publish-notice の再送を止める。追加 Scheduler `publish-notice-peak-followup` は価格据え置きのため `PAUSED`。残 acceptance は次回自然 fetch の `fetcher_inline_draft_notice_result` と実 mail 本文確認。 |
 
 ### 394 — Gemma branding に insight.db 当日試合 / player log / 連勝記録の fact line 注入 (392 拡張、 user 明示「データベースは当日のきろくがいい」 2026-05-19)
 

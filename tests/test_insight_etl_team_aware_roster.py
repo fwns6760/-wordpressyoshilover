@@ -126,3 +126,90 @@ def test_npb_12team_roster_json_valid():
     assert len(data) >= 800, f"expected >= 800 entries, got {len(data)}"
     team_codes = {e.get("team_code") for e in data if e.get("team_code")}
     assert team_codes == {"g", "t", "s", "c", "db", "d", "h", "l", "m", "e", "b", "f"}
+
+
+# 395 fix regression: _upsert_batters / _upsert_pitchers が非巨人 row に
+# giants-only resolver を当てて別球団選手 (Hawks の井上朋也 等) を巨人選手
+# (井上温大) に潰す bug の再発防止。
+
+
+def test_upsert_batters_skips_giants_resolver_for_non_giants_team(tmp_path):
+    """非巨人 team_name の row では giants-only resolver は呼ばれず、
+    player_canonical は NULL のまま (後段 fill_canonical_team_aware に委譲)。"""
+    db = tmp_path / "insight.db"
+    conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO games (game_id, game_date, opponent, home_away, ingested_at) "
+            "VALUES ('t-game-non-giants', '2026-05-10', 'ロッテ', 'away', '2026-05-11T00:00:00Z')",
+        )
+        aliases = insight_etl._load_roster_aliases()
+        # 巨人 surname unique なので "井上" → "井上温大" を返す
+        assert insight_etl.resolve_canonical("井上", aliases) == "井上温大"
+        # ロッテ row の "井上" は giants resolver を skip するべき
+        rows = [{"順": 8, "選手": "井上", "守備": "指", "is_sub": False,
+                 "打数": 3, "安打": 1, "得点": 0, "打点": 0, "盗塁": 0, "atbats": []}]
+        n = insight_etl._upsert_batters(
+            conn, "t-game-non-giants", "opponent", rows, aliases, team_name="ロッテ",
+        )
+        assert n == 1
+        canonical = conn.execute(
+            "SELECT player_canonical FROM batting_logs WHERE game_id='t-game-non-giants'"
+        ).fetchone()[0]
+        assert canonical is None, \
+            f"expected NULL for non-Giants row, got {canonical!r} — surname-only " \
+            f"giants resolver leaked into non-Giants row (395 regression)"
+    finally:
+        conn.close()
+
+
+def test_upsert_batters_still_resolves_for_giants_team(tmp_path):
+    """巨人 row では従来通り surname-only でも canonical 解決が効くこと
+    (浦田/戸郷/則本 等の既存 contract を保つ)。"""
+    db = tmp_path / "insight.db"
+    conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO games (game_id, game_date, opponent, home_away, ingested_at) "
+            "VALUES ('t-game-giants', '2026-05-10', 'ロッテ', 'home', '2026-05-11T00:00:00Z')",
+        )
+        aliases = insight_etl._load_roster_aliases()
+        rows = [{"順": 8, "選手": "浦田", "守備": "三", "is_sub": False,
+                 "打数": 3, "安打": 1, "得点": 0, "打点": 0, "盗塁": 0, "atbats": []}]
+        n = insight_etl._upsert_batters(
+            conn, "t-game-giants", "giants", rows, aliases, team_name="巨人",
+        )
+        assert n == 1
+        canonical = conn.execute(
+            "SELECT player_canonical FROM batting_logs WHERE game_id='t-game-giants'"
+        ).fetchone()[0]
+        assert canonical == "浦田俊輔"
+    finally:
+        conn.close()
+
+
+def test_upsert_pitchers_skips_giants_resolver_for_non_giants_team(tmp_path):
+    """投手 log 側も同じ team gate 挙動。"""
+    db = tmp_path / "insight.db"
+    conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO games (game_id, game_date, opponent, home_away, ingested_at) "
+            "VALUES ('t-game-non-giants-pit', '2026-05-10', '阪神', 'away', '2026-05-11T00:00:00Z')",
+        )
+        aliases = insight_etl._load_roster_aliases()
+        rows = [{"選手": "戸郷", "result_mark": "○", "投球数": 90, "打者": 25,
+                 "投球回": "6.0", "安打": 4, "本塁打": 0, "四球": 1, "死球": 0,
+                 "奪三振": 6, "暴投": 0, "ボーク": 0, "失点": 1, "自責点": 1}]
+        # 巨人 resolver では "戸郷" → "戸郷翔征" だが、 これは阪神 row なので
+        # 別球団に同姓がいる場合に潰さないよう giants resolver は skip 必須
+        n = insight_etl._upsert_pitchers(
+            conn, "t-game-non-giants-pit", "opponent", rows, aliases, team_name="阪神",
+        )
+        assert n == 1
+        canonical = conn.execute(
+            "SELECT player_canonical FROM pitching_logs WHERE game_id='t-game-non-giants-pit'"
+        ).fetchone()[0]
+        assert canonical is None
+    finally:
+        conn.close()

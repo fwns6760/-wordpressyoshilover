@@ -853,6 +853,16 @@ def _upsert_batters(
         display = (row.get("選手") or "").strip()
         if not display:
             continue
+        # 395 fix: giants-only resolver は team が巨人と確定した時のみ適用。
+        # surname-only alias (例: "井上"→"井上温大") は giants 内 unique 前提
+        # で構築されているため、 非巨人 row に当てると別球団選手 (Hawks の
+        # 井上朋也 等) を巨人選手に潰す。 非巨人 row は NULL のまま残し、
+        # run_nightly が後段で呼ぶ fill_canonical_team_aware に委譲する。
+        canonical = (
+            resolve_canonical(display, aliases)
+            if _resolve_team_code_from_name(team_name or "") == "g"
+            else None
+        )
         conn.execute(
             """
             INSERT OR REPLACE INTO batting_logs (
@@ -867,7 +877,7 @@ def _upsert_batters(
                 slot,
                 (row.get("守備") or "").strip() or None,
                 display,
-                resolve_canonical(display, aliases),
+                canonical,
                 int(bool(row.get("is_sub"))),
                 _int_or_none(row.get("打数")),
                 _int_or_none(row.get("得点")),
@@ -904,6 +914,13 @@ def _upsert_pitchers(
             continue
         order += 1
         row = raw
+        # 395 fix: 非巨人 team の row では giants-only resolver を skip。
+        # 詳細は _upsert_batters の同名 comment 参照。
+        canonical = (
+            resolve_canonical(display, aliases)
+            if _resolve_team_code_from_name(team_name or "") == "g"
+            else None
+        )
         conn.execute(
             """
             INSERT OR REPLACE INTO pitching_logs (
@@ -918,7 +935,7 @@ def _upsert_pitchers(
                 team_role,
                 order,
                 display,
-                resolve_canonical(display, aliases),
+                canonical,
                 (row.get("result_mark") or "").strip() or None,
                 _int_or_none(row.get("投球数")),
                 _int_or_none(row.get("打者")),

@@ -2,11 +2,18 @@
 
 ## meta
 
-- status: DESIGN_LOCKED / READY_FOR_IMPL
+- status: LIVE_DEPLOYED_OBSERVE
 - priority: P1
 - owner: Claude
 - created: 2026-05-19
 - github_issue: https://github.com/fwns6760/-wordpressyoshilover/issues/59
+- deploy: Phase 1+2 commit `620121c` (sankei + nikkan-spa + modified_time fallback) + Phase 3 commit `c289704` (chunichi-chuspo via JSON-LD datePublished、message "385:" prefix で着地、src は 384 Phase 3 帰属)
+- live state (2026-05-19 11:05 JST):
+  - fetcher service: revision `yoshilover-fetcher-00439-ksd` 100% traffic、image `384-chunichi-c289704` digest `sha256:03e3ccf...`、`/health` 200 OK
+  - x-post-mail-lane job: generation `25` Ready=True、image `384-chunichi-c289704` digest `sha256:f3e75438...`
+  - Cloud Build SUCCESS 4 件 (sankei/spa fetcher + xpm、chunichi fetcher + xpm)
+  - pytest 5306 passed (baseline 5303 + 3 chunichi 新規、regression 0)
+- next live verify: 自然 fire (10:30/11:00/12:00/15:00 JST cycle) で `[SOURCE] url=https://www.sankei.com/article/` / `https://nikkan-spa.jp/` / `https://www.chunichi.co.jp/article/` log + `freshness_basis="source_time"` evidence、24h baseline 比較は 5/20 朝集計
 - scope: 産経 / 日刊SPA / 中日新聞 / 中日スポーツ / THE ANSWER 等の source 追加 + meta なし媒体の publish-time 抽出 fallback
 
 ## user intent (2026-05-19 chat lock)

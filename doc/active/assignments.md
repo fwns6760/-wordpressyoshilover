@@ -4,6 +4,17 @@
 
 ## 2026-05-19 session update
 
+### のもとけ風サイト構造 chain (387-390、 user GO 「A=phase ごと別 ticket」 + 「index はまだいらない」)
+
+| ticket | status | 内容 |
+|---|---|---|
+| `doc/active/387-FRONT-tag-attachment-coverage-100.md` (GH #62) | READY_FOR_IMPL | 最新 10 post 中 5 件 (50%) で tags=[]。 chip 出ない = 内部リンク 0。 root cause 特定 + subtype/「速報」/「巨人」 fallback で全 post 最低 1 tag 保証。 388-390 の前提 ticket。 fetcher 側 root fix、 WP plugin / theme / env / Secret / Scheduler / X / SNS / 既存 publish 記事は不可触。 |
+| `doc/active/388-FRONT-header-nav-player-tag-expansion.md` (GH #63) | READY_FOR_IMPL | `yoshi-dense-nav` 4 link → 選手タグ 30 + カテゴリ拡張 (のもとけ 40+ 模倣)。 WP plugin 側、 post count top 30 ∩ giants_roster、 水平スクロール mobile 対応。 depends_on 387。 fetcher / env / Secret / Scheduler / publish / X / SNS は不可触。 |
+| `doc/active/389-FRONT-sidebar-popular-posts-widget.md` (GH #64) | READY_FOR_IMPL | サイドバーに「直近3日 人気記事」 widget 30 件 list (のもとけ模倣)。 「人気」定義は user 判断 (GA4 / comment / 編集独自ランク / hybrid)、 cost ¥0 推奨は編集独自ランク。 5-15 min cache。 既存 widget (breaking-strip / topic-hub / AdSense slot) 削除禁止、 fetcher / env / Secret / Scheduler / publish / X / SNS は不可触。 |
+| `doc/active/390-FRONT-sidebar-search-monthly-archive.md` (GH #65) | READY_FOR_IMPL | サイドバー 検索 widget (WP 標準 search form) + 月別アーカイブ widget (直近 12 ヶ月、 post 数 badge)。 フッター mirror は任意。 **タグページ index 解放は scope 外** (user 判断「index はまだいらない」)。 fetcher / env / Secret / Scheduler / publish / X / SNS / WP DB は不可触。 |
+
+### 既存 5/19 着地
+
 | ticket | status | 内容 |
 |---|---|---|
 | `doc/done/2026-05/383-INGEST-youtube-source-articleize-fix.md` (GH #58) | CLOSED | 344 の YouTube 記事が出ない件。YouTube channel scraper だけ `media_quote_only` でも記事化 path へ進め、`youtube_ob_sources.json` の confirmed / candidate ch を runtime 展開。tests: 344/YouTube suite 68 OK、rss_fetcher + tag_page + YouTube integration 57 OK、compileall / AST / diff-check OK。Cloud Build `7ed5103a` SUCCESS、fetcher rev `yoshilover-fetcher-00436-7zq` 100%、`/health` OK、新 revision ERROR 0。2026-05-19 natural fire で `tag_page_entries_built source=youtube` と `youtube_title_filter_skip` を確認し、YouTube path log acceptance を満たしたため GitHub Issue #58 close。Scheduler / env / Secret / WP既存記事 / X / frontend は未変更。 |

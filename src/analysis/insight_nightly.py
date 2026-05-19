@@ -86,6 +86,211 @@ COUNTING_METRICS: tuple[dict[str, str], ...] = (
 )
 
 
+def _data_insight_auto_draft_enabled() -> bool:
+    return os.environ.get("ENABLE_DATA_INSIGHT_AUTO_DRAFT", "0").strip() == "1"
+
+
+def _data_insight_no_game_day_publish_enabled() -> bool:
+    return os.environ.get("ENABLE_DATA_INSIGHT_NO_GAME_DAY_PUBLISH", "0").strip() == "1"
+
+
+def _run_data_insight_auto_publish(*, db_path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Run the DATA-INSIGHT article publish lane from the current DB state."""
+    anomaly_publish_summary = {"skipped": True, "reason": "default_disabled"}
+    ranking_publish_summary = {"skipped": True, "reason": "default_disabled"}
+    if not _data_insight_auto_draft_enabled():
+        return anomaly_publish_summary, ranking_publish_summary
+
+    try:
+        from src.analysis import insight_anomaly_detector as anomaly_det
+        from src.analysis import anomaly_article_publisher as anomaly_pub
+        from src.analysis import ranking_article_publisher as ranking_pub
+        from src import wp_client as wp_mod
+        conn = insight_etl.open_db(
+            db_path=db_path,
+            schema_path=insight_etl.DEFAULT_SCHEMA,
+        )
+        try:
+            auto_draft_max_per_run = int(
+                os.environ.get("DATA_INSIGHT_PUBLISH_MAX_PER_RUN", "3") or "3"
+            )
+            # 1. anomaly signal を detect (article_candidates に insert)
+            try:
+                anomaly_detect_summary = anomaly_det.run_all_anomaly_detectors(conn)
+                detector_errors = anomaly_detect_summary.get(
+                    anomaly_det.DETECTOR_ERROR_KEY, []
+                )
+                if detector_errors:
+                    print(json.dumps({
+                        "warn": "anomaly_detector_partial_failures",
+                        "errors": detector_errors,
+                    }, ensure_ascii=False))
+            except Exception as exc:  # noqa: BLE001
+                print(json.dumps({
+                    "warn": "anomaly_detect_failed",
+                    "error": f"{type(exc).__name__}:{exc}",
+                }, ensure_ascii=False))
+            # 2. WP draft publish (best-effort)
+            try:
+                wp = wp_mod.WPClient()
+                # 2026-05-16 user feedback: same-player / same-metric
+                # articles and mails were too frequent. Keep the default
+                # cap conservative; callers can override by env.
+                anomaly_publish_summary = {
+                    "results": anomaly_pub.publish_anomaly_drafts(
+                        conn, wp, max_per_run=auto_draft_max_per_run,
+                    ),
+                }
+                ranking_publish_summary = {
+                    "results": ranking_pub.publish_default_set(
+                        conn, wp, max_per_run=auto_draft_max_per_run,
+                    ),
+                }
+                # team ranking 記事 (球団 metric、user 指示で追加)
+                try:
+                    from src.analysis import team_ranking_publisher as team_pub
+                    team_summary = team_pub.publish_team_default_set(
+                        conn, wp, max_per_run=auto_draft_max_per_run
+                    )
+                    ranking_publish_summary["team_results"] = team_summary
+                except Exception as exc:  # noqa: BLE001
+                    ranking_publish_summary["team_error"] = (
+                        f"{type(exc).__name__}:{exc}"
+                    )
+                # 348 step 3 part 2 D-1: player counting stats ranking
+                # title variation のため multi-scope 投入
+                # (season / last_30d / monthly / weekly)、 step 3 part 1
+                # で追加した新 scope を実 publish で使う。
+                try:
+                    # issue #44 C: COUNTING_METRICS は module
+                    # 定数化、 HR 行除外 (batting_logs に HR 列無し)
+                    counting_metrics = list(COUNTING_METRICS)
+                    # 2026-05-16 user feedback: one-week /
+                    # one-month / season variants of the same
+                    # metric firing together is noisy. Auto
+                    # publish only the most time-sensitive
+                    # counting window here; longer windows need
+                    # a separate change gate before re-emitting.
+                    counting_scopes = ["weekly"]
+                    counting_published = 0
+                    for metric in counting_metrics:
+                        for scope in counting_scopes:
+                            if counting_published >= auto_draft_max_per_run:
+                                break
+                            try:
+                                counting_result = ranking_pub.publish_player_counting_draft(
+                                    conn, wp, scope=scope, **metric,
+                                )
+                                if counting_result.get("status") in (
+                                    "published", "published_draft", "dry_run",
+                                ):
+                                    counting_published += 1
+                            except Exception as exc:  # noqa: BLE001
+                                print(json.dumps({
+                                    "warn": "player_counting_publish_failed",
+                                    "metric": metric.get("stat_col"),
+                                    "scope": scope,
+                                    "error": f"{type(exc).__name__}:{exc}",
+                                }, ensure_ascii=False))
+                        if counting_published >= auto_draft_max_per_run:
+                            break
+                    # 348 step 3 完全達成: ホーム/アウェイ + 対戦相手別 grouping
+                    home_away_splits = [
+                        ("home_away", "home", "ホーム"),
+                        ("home_away", "away", "アウェイ"),
+                    ]
+                    opp_splits = [
+                        ("opponent", "t", "vs 阪神"),
+                        ("opponent", "s", "vs ヤクルト"),
+                        ("opponent", "c", "vs 広島"),
+                        ("opponent", "db", "vs DeNA"),
+                        ("opponent", "d", "vs 中日"),
+                    ]
+                    # split は H/HR/RBI のみ × weekly。
+                    # 2026-05-16 user feedback: 大手が出す
+                    # season / full-period は auto publish から
+                    # 外す。長期 split は別 gate で再導入判断。
+                    split_metrics = [m for m in counting_metrics
+                                     if m["stat_col"] in ("H", "HR", "RBI")]
+                    split_published = 0
+                    for metric in split_metrics:
+                        for sf, sv, sl in home_away_splits + opp_splits:
+                            if split_published >= auto_draft_max_per_run:
+                                break
+                            try:
+                                split_result = ranking_pub.publish_player_counting_split_draft(
+                                    conn, wp, scope="weekly",
+                                    split_field=sf, split_value=sv,
+                                    split_label_jp=sl, **metric,
+                                )
+                                if split_result.get("status") in (
+                                    "published", "published_draft", "dry_run",
+                                ):
+                                    split_published += 1
+                            except Exception as exc:  # noqa: BLE001
+                                print(json.dumps({
+                                    "warn": "player_counting_split_publish_failed",
+                                    "metric": metric.get("stat_col"),
+                                    "split": f"{sf}={sv}",
+                                    "error": f"{type(exc).__name__}:{exc}",
+                                }, ensure_ascii=False))
+                        if split_published >= auto_draft_max_per_run:
+                            break
+                except Exception as exc:  # noqa: BLE001
+                    ranking_publish_summary["counting_error"] = (
+                        f"{type(exc).__name__}:{exc}"
+                    )
+            except Exception as exc:  # noqa: BLE001
+                anomaly_publish_summary = {
+                    "skipped": True,
+                    "reason": f"publish_error:{type(exc).__name__}",
+                }
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001
+        anomaly_publish_summary = {
+            "skipped": True,
+            "reason": f"import_error:{type(exc).__name__}",
+        }
+    return anomaly_publish_summary, ranking_publish_summary
+
+
+def _run_no_game_day_publish_if_enabled(*, args: argparse.Namespace) -> dict[str, Any]:
+    """Optionally publish DATA-INSIGHT articles when the schedule has no games."""
+    if not getattr(args, "all_teams", False):
+        return {"enabled": False, "reason": "single_game_mode"}
+    if not _data_insight_auto_draft_enabled():
+        return {"enabled": False, "reason": "auto_draft_disabled"}
+    if not _data_insight_no_game_day_publish_enabled():
+        return {"enabled": False, "reason": "flag_disabled"}
+
+    db_path = Path(args.db)
+    try:
+        gcs_pull_summary = insight_gcs_sync.download_state(
+            base_dir=db_path.parent,
+        )
+    except Exception as exc:  # noqa: BLE001
+        gcs_pull_summary = {"skipped": True, "reason": f"download_error:{exc!r}"}
+
+    anomaly_publish_summary, ranking_publish_summary = _run_data_insight_auto_publish(
+        db_path=db_path,
+    )
+    try:
+        gcs_push_summary = insight_gcs_sync.upload_state(
+            base_dir=db_path.parent,
+            digest_dir=None,
+        )
+    except Exception as exc:  # noqa: BLE001
+        gcs_push_summary = {"skipped": True, "reason": f"upload_error:{exc!r}"}
+    return {
+        "enabled": True,
+        "gcs_pull": gcs_pull_summary,
+        "anomaly_publish": anomaly_publish_summary,
+        "ranking_publish": ranking_publish_summary,
+        "gcs_push": gcs_push_summary,
+    }
+
+
 def resolve_all_slugs_auto(
     *,
     target_date: dt.date,
@@ -510,160 +715,9 @@ def main(argv: Optional[list[str]] = None) -> int:
             # DATA-INSIGHT-continuous: anomaly detect + draft publish (Iteration B)
             # 全 slug ETL 完了後に 1 回だけ実行、env flag で完全 disable 可能。
             # 失敗しても pipeline 止めない (best-effort)。
-            anomaly_publish_summary = {"skipped": True, "reason": "default_disabled"}
-            ranking_publish_summary = {"skipped": True, "reason": "default_disabled"}
-            if os.environ.get("ENABLE_DATA_INSIGHT_AUTO_DRAFT", "0").strip() == "1":
-                try:
-                    from src.analysis import insight_anomaly_detector as anomaly_det
-                    from src.analysis import anomaly_article_publisher as anomaly_pub
-                    from src.analysis import ranking_article_publisher as ranking_pub
-                    from src import wp_client as wp_mod
-                    conn = insight_etl.open_db(
-                        db_path=Path(args.db),
-                        schema_path=insight_etl.DEFAULT_SCHEMA,
-                    )
-                    try:
-                        auto_draft_max_per_run = int(
-                            os.environ.get("DATA_INSIGHT_PUBLISH_MAX_PER_RUN", "3") or "3"
-                        )
-                        # 1. anomaly signal を detect (article_candidates に insert)
-                        try:
-                            anomaly_detect_summary = anomaly_det.run_all_anomaly_detectors(conn)
-                            detector_errors = anomaly_detect_summary.get(
-                                anomaly_det.DETECTOR_ERROR_KEY, []
-                            )
-                            if detector_errors:
-                                print(json.dumps({
-                                    "warn": "anomaly_detector_partial_failures",
-                                    "errors": detector_errors,
-                                }, ensure_ascii=False))
-                        except Exception as exc:  # noqa: BLE001
-                            print(json.dumps({
-                                "warn": "anomaly_detect_failed",
-                                "error": f"{type(exc).__name__}:{exc}",
-                            }, ensure_ascii=False))
-                        # 2. WP draft publish (best-effort)
-                        try:
-                            wp = wp_mod.WPClient()
-                            # 2026-05-16 user feedback: same-player / same-metric
-                            # articles and mails were too frequent. Keep the default
-                            # cap conservative; callers can override by env.
-                            anomaly_publish_summary = {
-                                "results": anomaly_pub.publish_anomaly_drafts(
-                                    conn, wp, max_per_run=auto_draft_max_per_run,
-                                ),
-                            }
-                            ranking_publish_summary = {
-                                "results": ranking_pub.publish_default_set(
-                                    conn, wp, max_per_run=auto_draft_max_per_run,
-                                ),
-                            }
-                            # team ranking 記事 (球団 metric、user 指示で追加)
-                            try:
-                                from src.analysis import team_ranking_publisher as team_pub
-                                team_summary = team_pub.publish_team_default_set(
-                                    conn, wp, max_per_run=auto_draft_max_per_run
-                                )
-                                ranking_publish_summary["team_results"] = team_summary
-                            except Exception as exc:  # noqa: BLE001
-                                ranking_publish_summary["team_error"] = (
-                                    f"{type(exc).__name__}:{exc}"
-                                )
-                            # 348 step 3 part 2 D-1: player counting stats ranking
-                            # title variation のため multi-scope 投入
-                            # (season / last_30d / monthly / weekly)、 step 3 part 1
-                            # で追加した新 scope を実 publish で使う。
-                            try:
-                                # issue #44 C: COUNTING_METRICS は module
-                                # 定数化、 HR 行除外 (batting_logs に HR 列無し)
-                                counting_metrics = list(COUNTING_METRICS)
-                                # 2026-05-16 user feedback: one-week /
-                                # one-month / season variants of the same
-                                # metric firing together is noisy. Auto
-                                # publish only the most time-sensitive
-                                # counting window here; longer windows need
-                                # a separate change gate before re-emitting.
-                                counting_scopes = ["weekly"]
-                                counting_published = 0
-                                for metric in counting_metrics:
-                                    for scope in counting_scopes:
-                                        if counting_published >= auto_draft_max_per_run:
-                                            break
-                                        try:
-                                            counting_result = ranking_pub.publish_player_counting_draft(
-                                                conn, wp, scope=scope, **metric,
-                                            )
-                                            if counting_result.get("status") in (
-                                                "published", "published_draft", "dry_run",
-                                            ):
-                                                counting_published += 1
-                                        except Exception as exc:  # noqa: BLE001
-                                            print(json.dumps({
-                                                "warn": "player_counting_publish_failed",
-                                                "metric": metric.get("stat_col"),
-                                                "scope": scope,
-                                                "error": f"{type(exc).__name__}:{exc}",
-                                            }, ensure_ascii=False))
-                                    if counting_published >= auto_draft_max_per_run:
-                                        break
-                                # 348 step 3 完全達成: ホーム/アウェイ + 対戦相手別 grouping
-                                home_away_splits = [
-                                    ("home_away", "home", "ホーム"),
-                                    ("home_away", "away", "アウェイ"),
-                                ]
-                                opp_splits = [
-                                    ("opponent", "t", "vs 阪神"),
-                                    ("opponent", "s", "vs ヤクルト"),
-                                    ("opponent", "c", "vs 広島"),
-                                    ("opponent", "db", "vs DeNA"),
-                                    ("opponent", "d", "vs 中日"),
-                                ]
-                                # split は H/HR/RBI のみ × weekly。
-                                # 2026-05-16 user feedback: 大手が出す
-                                # season / full-period は auto publish から
-                                # 外す。長期 split は別 gate で再導入判断。
-                                split_metrics = [m for m in counting_metrics
-                                                 if m["stat_col"] in ("H", "HR", "RBI")]
-                                split_published = 0
-                                for metric in split_metrics:
-                                    for sf, sv, sl in home_away_splits + opp_splits:
-                                        if split_published >= auto_draft_max_per_run:
-                                            break
-                                        try:
-                                            split_result = ranking_pub.publish_player_counting_split_draft(
-                                                conn, wp, scope="weekly",
-                                                split_field=sf, split_value=sv,
-                                                split_label_jp=sl, **metric,
-                                            )
-                                            if split_result.get("status") in (
-                                                "published", "published_draft", "dry_run",
-                                            ):
-                                                split_published += 1
-                                        except Exception as exc:  # noqa: BLE001
-                                            print(json.dumps({
-                                                "warn": "player_counting_split_publish_failed",
-                                                "metric": metric.get("stat_col"),
-                                                "split": f"{sf}={sv}",
-                                                "error": f"{type(exc).__name__}:{exc}",
-                                            }, ensure_ascii=False))
-                                    if split_published >= auto_draft_max_per_run:
-                                        break
-                            except Exception as exc:  # noqa: BLE001
-                                ranking_publish_summary["counting_error"] = (
-                                    f"{type(exc).__name__}:{exc}"
-                                )
-                        except Exception as exc:  # noqa: BLE001
-                            anomaly_publish_summary = {
-                                "skipped": True,
-                                "reason": f"publish_error:{type(exc).__name__}",
-                            }
-                    finally:
-                        conn.close()
-                except Exception as exc:  # noqa: BLE001
-                    anomaly_publish_summary = {
-                        "skipped": True,
-                        "reason": f"import_error:{type(exc).__name__}",
-                    }
+            anomaly_publish_summary, ranking_publish_summary = _run_data_insight_auto_publish(
+                db_path=Path(args.db),
+            )
             summary = {
                 "mode": "all_teams",
                 "game_date": target.isoformat(),
@@ -714,11 +768,13 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(json.dumps({"status": "blocked", "reason": str(exc)}, ensure_ascii=False))
         return 2
     except NoScheduledGames as exc:
+        no_game_publish = _run_no_game_day_publish_if_enabled(args=args)
         print(json.dumps({
             "status": "no_game_day",
             "game_date": exc.target_date.isoformat(),
             "scope": exc.scope,
             "reason": exc.reason,
+            "data_insight_no_game_publish": no_game_publish,
         }, ensure_ascii=False))
         return 0
     print(json.dumps({"status": "ok", **summary}, ensure_ascii=False))

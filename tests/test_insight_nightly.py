@@ -305,3 +305,57 @@ def test_cli_all_teams_no_game_day_returns_zero(tmp_path, capsys):
     assert body["status"] == "no_game_day"
     assert body["game_date"] == "2026-05-18"
     assert body["scope"] == "npb"
+    assert body["data_insight_no_game_publish"]["enabled"] is False
+    assert body["data_insight_no_game_publish"]["reason"] == "auto_draft_disabled"
+
+
+def test_cli_all_teams_no_game_day_can_publish_from_existing_state(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    cache_dir = tmp_path / "raw_html"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "schedule_2026_05.html").write_text(
+        '<a href="/scores/2026/0517/d-g-08/box.html">previous day</a>',
+        encoding="utf-8",
+    )
+    calls = {"download": 0, "publish": 0, "upload": 0}
+
+    def fake_download_state(**kwargs):
+        calls["download"] += 1
+        return {"skipped": False, "downloaded": [{"object": "insight.db"}]}
+
+    def fake_publish(**kwargs):
+        calls["publish"] += 1
+        assert kwargs["db_path"] == tmp_path / "db.sqlite"
+        return (
+            {"results": [{"status": "published", "title": "anomaly"}]},
+            {"results": [{"status": "published", "title": "ranking"}]},
+        )
+
+    def fake_upload_state(**kwargs):
+        calls["upload"] += 1
+        return {"skipped": False, "uploaded": [{"object": "insight.db"}]}
+
+    monkeypatch.setenv("ENABLE_DATA_INSIGHT_AUTO_DRAFT", "1")
+    monkeypatch.setenv("ENABLE_DATA_INSIGHT_NO_GAME_DAY_PUBLISH", "1")
+    monkeypatch.setattr(insight_nightly.insight_gcs_sync, "download_state", fake_download_state)
+    monkeypatch.setattr(insight_nightly.insight_gcs_sync, "upload_state", fake_upload_state)
+    monkeypatch.setattr(insight_nightly, "_run_data_insight_auto_publish", fake_publish)
+
+    rc = insight_nightly.main([
+        "--auto", "--all-teams",
+        "--date", "2026-05-18",
+        "--db", str(tmp_path / "db.sqlite"),
+        "--csv", str(tmp_path / "candidates.csv"),
+        "--cache-dir", str(cache_dir),
+        "--digest-dir", str(tmp_path / "digest"),
+    ])
+    assert rc == 0
+    body = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert body["status"] == "no_game_day"
+    assert body["data_insight_no_game_publish"]["enabled"] is True
+    assert body["data_insight_no_game_publish"]["anomaly_publish"]["results"][0]["status"] == "published"
+    assert body["data_insight_no_game_publish"]["ranking_publish"]["results"][0]["status"] == "published"
+    assert calls == {"download": 1, "publish": 1, "upload": 1}

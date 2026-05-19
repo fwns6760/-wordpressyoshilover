@@ -119,6 +119,33 @@ Natural fire observation is still pending. Expected evidence is at least one of:
 - `youtube_caption_section_appended`
 - `【YouTube】` draft title creation
 
+## follow-up request: caption excerpt length / summary policy
+
+2026-05-19 user request:
+
+- 記事が長くなりすぎるため、YouTube 字幕引用は長文をそのまま載せるより、短い引用 + 要約寄りにしたい。
+- LLM なしで可能なら、まず非 LLM の deterministic 処理を優先したい。
+- 推測で補わない。記憶から再構成しない。silent skip しない。自己評価で OK にしない。証拠だけで判断する。
+
+Current implementation evidence:
+
+- `src/youtube_caption_fetcher.py` uses `youtube-transcript-api`; comment says LLM is not used.
+- `src/youtube_caption_fetcher.py` joins caption segments and normalizes whitespace.
+- `src/rss_fetcher.py` calls `fetch_youtube_caption(video_id, max_chars=600, logger=logger)`.
+- `src/rss_fetcher.py` appends one `<aside class="nomotoke-youtube-caption">` section with heading `📺 字幕抜粋`, source attribution, and YouTube embed.
+- There is no current summarization, quote ranking, or "short quote + summary" generation path in this ticket.
+
+Non-blocking follow-up idea:
+
+- Add a separate narrow ticket for YouTube caption presentation v2.
+- Keep LLM off by default.
+- Convert one long caption block into:
+  - up to 1-2 short quote excerpts selected from caption sentences,
+  - each quote capped by deterministic character limits,
+  - a short factual bullet summary generated only from selected caption text or source title,
+  - explicit log events when caption is unavailable, too short, or skipped.
+- Do not treat this as acceptance for the 383 connection fix; 383 should close after natural fire proves YouTube source articleization works.
+
 ## next action
 
 Observe the next natural fire and close GitHub Issue #58 only after YouTube path log / draft evidence appears.

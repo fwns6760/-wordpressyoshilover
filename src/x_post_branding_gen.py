@@ -186,6 +186,152 @@ def _gemma_branding_safety_check(text: str) -> bool:
     return True
 
 
+def build_db_fact_line(
+    player_canonical: str,
+    db_path: str,
+    *,
+    target_date: Optional[str] = None,
+    streak_window: int = 5,
+) -> str:
+    """``insight.db`` から today の試合 / player stat / 直近連勝 を 1 fact line に。
+
+    Read-only SELECT only。 DB に該当 record が無ければ各 line を skip、
+    全件無ければ空 string を返す (Gemma 側で「DB fact 注入: なし」 扱い)。
+
+    formats (改行区切り、 全部 facts のみ、 narrative なし):
+        - 今日(YYYY-MM-DD) 巨人 vs OPP: GS-OS WIN/LOSS/DRAW
+        - PLAYER 打撃: AB打数 H安打 HR本塁打 RBI打点 (today)
+        - PLAYER 投球: IP回 R失点 K奪三振 (result_mark) (today)
+        - 直近N試合: ○●○●○ (W3-L2)
+    """
+    if not player_canonical or not db_path:
+        return ""
+    from datetime import datetime, timezone, timedelta
+    jst = timezone(timedelta(hours=9))
+    today = target_date or datetime.now(jst).strftime("%Y-%m-%d")
+    lines: list[str] = []
+    try:
+        import sqlite3
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            cur = con.cursor()
+
+            cur.execute(
+                "SELECT game_id, opponent, giants_score, opp_score, result "
+                "FROM games WHERE game_date = ? "
+                "ORDER BY ingested_at DESC LIMIT 1",
+                (today,),
+            )
+            game_row = cur.fetchone()
+            today_game_id: Optional[str] = None
+            if game_row:
+                today_game_id, opp, gs, op_s, res = game_row
+                res_jp = {
+                    "win": "勝利",
+                    "loss": "敗戦",
+                    "draw": "引分",
+                }.get((res or "").lower(), "")
+                score = (
+                    f"{gs}-{op_s}"
+                    if gs is not None and op_s is not None
+                    else ""
+                )
+                game_parts = [f"今日({today}) 巨人 vs {opp}"]
+                if score:
+                    game_parts.append(score)
+                if res_jp:
+                    game_parts.append(f"({res_jp})")
+                lines.append("- " + " ".join(game_parts))
+
+            if today_game_id:
+                cur.execute(
+                    "SELECT AB, H, R, RBI, SB FROM batting_logs "
+                    "WHERE game_id = ? AND player_canonical = ? AND team_role = 'giants' "
+                    "LIMIT 1",
+                    (today_game_id, player_canonical),
+                )
+                bat = cur.fetchone()
+                if bat:
+                    ab, h, r, rbi, sb = bat
+                    parts = []
+                    if ab is not None and h is not None:
+                        parts.append(f"{ab}打数{h}安打")
+                    if rbi:
+                        parts.append(f"{rbi}打点")
+                    if r:
+                        parts.append(f"{r}得点")
+                    if sb:
+                        parts.append(f"{sb}盗塁")
+                    if parts:
+                        lines.append(f"- {player_canonical} 打撃 (今日): " + " ".join(parts))
+
+                cur.execute(
+                    "SELECT IP, H_allowed, R, ER, K, BB, result_mark FROM pitching_logs "
+                    "WHERE game_id = ? AND player_canonical = ? AND team_role = 'giants' "
+                    "LIMIT 1",
+                    (today_game_id, player_canonical),
+                )
+                pit = cur.fetchone()
+                if pit:
+                    ip, h_a, r, er, k, bb, mark = pit
+                    parts = []
+                    if ip is not None:
+                        parts.append(f"{ip}回")
+                    if er is not None:
+                        parts.append(f"{er}失点")
+                    elif r is not None:
+                        parts.append(f"{r}失点")
+                    if h_a is not None:
+                        parts.append(f"被安打{h_a}")
+                    if k:
+                        parts.append(f"{k}K")
+                    if bb:
+                        parts.append(f"{bb}四球")
+                    if mark:
+                        parts.append(f"({mark})")
+                    if parts:
+                        lines.append(f"- {player_canonical} 投球 (今日): " + " ".join(parts))
+
+            if streak_window > 0:
+                cur.execute(
+                    "SELECT game_date, result FROM games "
+                    "WHERE game_date <= ? AND result IN ('win', 'loss', 'draw') "
+                    "ORDER BY game_date DESC LIMIT ?",
+                    (today, streak_window),
+                )
+                recent = cur.fetchall()
+                if recent:
+                    marks = []
+                    wins = losses = draws = 0
+                    for _, r in recent:
+                        rl = (r or "").lower()
+                        if rl == "win":
+                            marks.append("○")
+                            wins += 1
+                        elif rl == "loss":
+                            marks.append("●")
+                            losses += 1
+                        else:
+                            marks.append("△")
+                            draws += 1
+                    streak_parts = [f"直近{len(recent)}試合: " + "".join(marks)]
+                    summary = []
+                    if wins:
+                        summary.append(f"{wins}勝")
+                    if losses:
+                        summary.append(f"{losses}敗")
+                    if draws:
+                        summary.append(f"{draws}分")
+                    if summary:
+                        streak_parts.append("(" + "".join(summary) + ")")
+                    lines.append("- " + " ".join(streak_parts))
+        finally:
+            con.close()
+    except Exception:
+        return ""
+    return "\n".join(lines)
+
+
 def _format_tavily_context(results: list[dict], *, snippet_len: int = 300) -> str:
     lines = []
     for r in results:

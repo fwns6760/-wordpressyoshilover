@@ -287,5 +287,140 @@ class BuildCandidateTests(unittest.TestCase):
         self.assertLessEqual(len(result.post_text), xbg.X_CHAR_LIMIT)
 
 
+class BuildDbFactLineTests(unittest.TestCase):
+    """Ticket 394: build_db_fact_line() の SQLite read-only path test。"""
+
+    def _seed_db(self, db_path: str) -> None:
+        import sqlite3
+        from datetime import datetime, timezone, timedelta
+        jst = timezone(timedelta(hours=9))
+        today = datetime.now(jst).strftime("%Y-%m-%d")
+        yesterday = (datetime.now(jst) - timedelta(days=1)).strftime("%Y-%m-%d")
+        two_days_ago = (datetime.now(jst) - timedelta(days=2)).strftime("%Y-%m-%d")
+        con = sqlite3.connect(db_path)
+        cur = con.cursor()
+        cur.executescript(
+            """
+            CREATE TABLE games (
+                game_id TEXT PRIMARY KEY,
+                game_date TEXT NOT NULL,
+                opponent TEXT NOT NULL,
+                home_away TEXT,
+                giants_score INTEGER,
+                opp_score INTEGER,
+                result TEXT,
+                league_label TEXT,
+                one_line_summary TEXT,
+                winning_pitcher TEXT,
+                losing_pitcher TEXT,
+                save_pitcher TEXT,
+                source_url TEXT,
+                source_kind TEXT,
+                ingested_at TEXT NOT NULL
+            );
+            CREATE TABLE batting_logs (
+                game_id TEXT NOT NULL,
+                team_role TEXT NOT NULL,
+                slot_order INTEGER,
+                position TEXT,
+                player_display TEXT NOT NULL,
+                player_canonical TEXT,
+                is_sub INTEGER NOT NULL DEFAULT 0,
+                AB INTEGER, R INTEGER, H INTEGER, RBI INTEGER, SB INTEGER,
+                atbats_json TEXT, team_name TEXT,
+                PRIMARY KEY (game_id, team_role, slot_order, player_display)
+            );
+            CREATE TABLE pitching_logs (
+                game_id TEXT NOT NULL,
+                team_role TEXT NOT NULL,
+                appearance_order INTEGER NOT NULL,
+                player_display TEXT NOT NULL,
+                player_canonical TEXT,
+                result_mark TEXT, pitches INTEGER, BF INTEGER, IP REAL,
+                H_allowed INTEGER, HR_allowed INTEGER, BB INTEGER, HBP INTEGER,
+                K INTEGER, WP INTEGER, BK INTEGER, R INTEGER, ER INTEGER,
+                team_name TEXT,
+                PRIMARY KEY (game_id, team_role, appearance_order)
+            );
+            """
+        )
+        cur.execute(
+            "INSERT INTO games VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("g-today", today, "DeNA", "home", 3, 1, "win", None, None,
+             None, None, None, None, None, "2026-05-19T13:00:00Z"),
+        )
+        cur.execute(
+            "INSERT INTO games VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("g-y1", yesterday, "DeNA", "home", 5, 2, "win", None, None,
+             None, None, None, None, None, "2026-05-18T13:00:00Z"),
+        )
+        cur.execute(
+            "INSERT INTO games VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("g-y2", two_days_ago, "ヤクルト", "away", 1, 4, "loss", None, None,
+             None, None, None, None, None, "2026-05-17T13:00:00Z"),
+        )
+        # 戸郷翔征 投手 今日
+        cur.execute(
+            "INSERT INTO pitching_logs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("g-today", "giants", 1, "戸郷翔征", "戸郷翔征", "○", 87, 24, 6.0,
+             4, 0, 1, 0, 8, 0, 0, 1, 1, "巨人"),
+        )
+        # 平山功太 打撃 今日
+        cur.execute(
+            "INSERT INTO batting_logs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("g-today", "giants", 1, "中堅", "平山 功太", "平山 功太", 0,
+             4, 1, 2, 1, 0, None, "巨人"),
+        )
+        con.commit()
+        con.close()
+
+    def test_db_fact_line_with_game_and_pitcher(self) -> None:
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            db = os.path.join(tmp, "insight.db")
+            self._seed_db(db)
+            fact = xbg.build_db_fact_line("戸郷翔征", db)
+            self.assertIn("巨人 vs DeNA", fact)
+            self.assertIn("3-1", fact)
+            self.assertIn("勝利", fact)
+            self.assertIn("戸郷翔征 投球", fact)
+            self.assertIn("6.0回", fact)
+            self.assertIn("8K", fact)
+            self.assertIn("(○)", fact)
+            self.assertIn("直近", fact)
+            self.assertIn("○", fact)
+            self.assertIn("●", fact)
+
+    def test_db_fact_line_with_batter(self) -> None:
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            db = os.path.join(tmp, "insight.db")
+            self._seed_db(db)
+            fact = xbg.build_db_fact_line("平山 功太", db)
+            self.assertIn("平山 功太 打撃", fact)
+            self.assertIn("4打数2安打", fact)
+            self.assertIn("1打点", fact)
+
+    def test_db_fact_line_empty_when_no_game(self) -> None:
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            db = os.path.join(tmp, "insight.db")
+            self._seed_db(db)
+            fact = xbg.build_db_fact_line(
+                "戸郷翔征", db, target_date="2030-01-01"
+            )
+            # No today game, no player log → 連勝 line のみ or 空
+            self.assertNotIn("巨人 vs", fact)
+
+    def test_db_fact_line_missing_db_path_returns_empty(self) -> None:
+        self.assertEqual(xbg.build_db_fact_line("戸郷翔征", ""), "")
+
+    def test_db_fact_line_missing_player_returns_empty(self) -> None:
+        self.assertEqual(xbg.build_db_fact_line("", "/tmp/x.db"), "")
+
+
 if __name__ == "__main__":
     unittest.main()

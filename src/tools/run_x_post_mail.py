@@ -509,11 +509,17 @@ def _build_gemma_branding_candidates(
     lineup_focus_names: list[str] | None,
     recent_player_counts: dict[str, int] | None,
     max_count: int,
+    db_path: str | None = None,
 ) -> list[lane.Candidate]:
     """392: max_count 件まで Gemma branding candidate を生成。
 
     silent skip 設計: 例外 / Tavily 失敗 / Gemma 失敗 / validator drop で
     None 返却された分は単に出力 list から除外。 既存 mail は止めない。
+
+    db_path が渡された場合、 player ごとに ``build_db_fact_line()`` で
+    insight.db の今日試合 / player log / 直近連勝 を fact line に整形し、
+    Gemma 入力 prompt に注入する (RAG hallucination 抑制)。 DB 該当 record
+    が無ければ空 string、 caller fact (lineup pick の補助 fact) を fallback。
     """
     if _xbg is None:
         LOG.info(
@@ -538,7 +544,19 @@ def _build_gemma_branding_candidates(
         LOG.info("Gemma branding skipped: no eligible players from lineup/candidates")
         return []
     out: list[lane.Candidate] = []
-    for player, fact in players:
+    for player, lineup_fact in players:
+        db_fact = ""
+        if db_path:
+            try:
+                db_fact = _xbg.build_db_fact_line(player, db_path)
+            except Exception as exc:  # noqa: BLE001 - silent skip per fault-tolerance contract
+                LOG.warning(
+                    "build_db_fact_line failed (player=%s err=%r); falling back to lineup fact",
+                    player,
+                    exc,
+                )
+                db_fact = ""
+        fact = db_fact or lineup_fact
         cand = _xbg.build_gemma_branding_candidate(
             player,
             gemini_api_key=gemini_key,
@@ -817,6 +835,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 lineup_focus_names=lineup_focus_names,
                 recent_player_counts=recent_player_counts,
                 max_count=gemma_count,
+                db_path=db_path,
             )
             if gemma_candidates:
                 before = len(candidates)

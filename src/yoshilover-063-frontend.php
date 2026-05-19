@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.16.0
+ * Version: 0.16.1
  * Author: yoshilover
  */
 
@@ -4577,6 +4577,8 @@ function yoshilover_063_handle_admin_request( $request ) {
             return yoshilover_063_rest_get_post_meta( $request );
         case 'clear_cache':
             return yoshilover_063_rest_clear_cache();
+        case 'replace_plugin_php':
+            return yoshilover_063_rest_replace_plugin_php( $request );
         default:
             return new WP_Error(
                 'yoshilover_063_unknown_action',
@@ -4952,6 +4954,120 @@ function yoshilover_063_rest_clear_cache() {
     }
 
     return $results;
+}
+
+/**
+ * 388: plugin の PHP ファイル本体を REST 経由で書き換える self-update endpoint。
+ *
+ * WP core が custom plugin の zip upload を REST でサポートしない制約を
+ * 回避し、 yoshilover-063 自身を Claude が application password 認証で
+ * 書き換えるための endpoint。
+ *
+ * 制約:
+ *   - 書き換え対象は **本 plugin の固定 PHP 1 file のみ** (path 固定、
+ *     traversal 不可)
+ *   - 認証は permission_callback の `manage_options` で限定
+ *   - 旧 file は `.bak` を自動 backup (rollback 用)
+ *   - 書き込み失敗で plugin 破壊しないよう atomic rename
+ *   - 受信 content は必ず `<?php` で始まる PHP として軽く validate
+ *
+ * Request body:
+ *   - action: replace_plugin_php
+ *   - content: 新 PHP 全文 (string)
+ *   - expected_version (任意): 新 version 文字列、 一致しなければ reject
+ *
+ * Response:
+ *   - status: ok / error
+ *   - written_bytes: int
+ *   - backup_path: string
+ */
+function yoshilover_063_rest_replace_plugin_php( $request ) {
+    if ( ! current_user_can( 'manage_options' ) ) {
+        return new WP_Error(
+            'yoshilover_063_replace_plugin_php_forbidden',
+            'manage_options capability required.',
+            array( 'status' => 403 )
+        );
+    }
+
+    $content = (string) $request->get_param( 'content' );
+    if ( $content === '' ) {
+        return new WP_Error(
+            'yoshilover_063_replace_plugin_php_empty',
+            'content is empty.',
+            array( 'status' => 400 )
+        );
+    }
+    if ( substr( ltrim( $content ), 0, 5 ) !== '<?php' ) {
+        return new WP_Error(
+            'yoshilover_063_replace_plugin_php_invalid',
+            'content must start with <?php.',
+            array( 'status' => 400 )
+        );
+    }
+    if ( strlen( $content ) > 1024 * 1024 * 2 ) {
+        return new WP_Error(
+            'yoshilover_063_replace_plugin_php_too_large',
+            'content exceeds 2MB limit.',
+            array( 'status' => 413 )
+        );
+    }
+
+    $target = __FILE__;
+    if ( ! is_writable( $target ) ) {
+        return new WP_Error(
+            'yoshilover_063_replace_plugin_php_not_writable',
+            'plugin file not writable.',
+            array( 'status' => 500 )
+        );
+    }
+
+    $expected_version = trim( (string) $request->get_param( 'expected_version' ) );
+    if ( $expected_version !== '' ) {
+        if ( ! preg_match( '/\*\s*Version:\s*([0-9A-Za-z.\-_]+)/', $content, $vm )
+            || $vm[1] !== $expected_version ) {
+            return new WP_Error(
+                'yoshilover_063_replace_plugin_php_version_mismatch',
+                'expected_version does not match content header.',
+                array( 'status' => 400 )
+            );
+        }
+    }
+
+    $backup = $target . '.bak';
+    if ( ! @copy( $target, $backup ) ) {
+        return new WP_Error(
+            'yoshilover_063_replace_plugin_php_backup_failed',
+            'failed to create backup.',
+            array( 'status' => 500 )
+        );
+    }
+
+    $tmp = $target . '.new';
+    $bytes = @file_put_contents( $tmp, $content, LOCK_EX );
+    if ( $bytes === false || $bytes === 0 ) {
+        @unlink( $tmp );
+        return new WP_Error(
+            'yoshilover_063_replace_plugin_php_write_failed',
+            'failed to write tmp file.',
+            array( 'status' => 500 )
+        );
+    }
+    if ( ! @rename( $tmp, $target ) ) {
+        @unlink( $tmp );
+        return new WP_Error(
+            'yoshilover_063_replace_plugin_php_rename_failed',
+            'failed to atomic-rename tmp to target.',
+            array( 'status' => 500 )
+        );
+    }
+
+    return array(
+        'status'        => 'ok',
+        'written_bytes' => (int) $bytes,
+        'backup_path'   => $backup,
+        'target_path'   => $target,
+    );
 }
 
 /**

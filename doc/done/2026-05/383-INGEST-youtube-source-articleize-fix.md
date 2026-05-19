@@ -3,7 +3,7 @@
 ## meta
 
 - ticket: 383-INGEST-youtube-source-articleize-fix
-- status: LIVE_DEPLOYED_OBSERVE
+- status: CLOSED
 - owner: Codex A
 - lane: A
 - priority: P0.5
@@ -48,7 +48,7 @@ Fix the 344 connection bug only.
 
 - `src/rss_fetcher.py`
 - `tests/test_rss_fetcher_youtube_integration.py`
-- `doc/active/383-INGEST-youtube-source-articleize-fix.md`
+- `doc/done/2026-05/383-INGEST-youtube-source-articleize-fix.md`
 - `doc/README.md`
 - `doc/active/assignments.md`
 
@@ -119,6 +119,14 @@ Natural fire observation is still pending. Expected evidence is at least one of:
 - `youtube_caption_section_appended`
 - `【YouTube】` draft title creation
 
+2026-05-19 natural fire verification:
+
+- GitHub Issue #58 closed.
+- Cloud Logging showed YouTube source fetch path running after deploy.
+- Evidence: `tag_page_entries_built source=youtube`.
+- Evidence: `youtube_title_filter_skip` at `2026-05-19T03:04:39Z`, reason `no_match`, source `J SPORTS 野球【公式】`, URL `https://www.youtube.com/watch?v=4KYm8HQVkVA`.
+- This satisfies the acceptance condition that at least one YouTube path log appears after natural fire.
+
 ## follow-up request: caption excerpt length / summary policy
 
 2026-05-19 user request:
@@ -148,4 +156,4 @@ Non-blocking follow-up idea:
 
 ## next action
 
-Observe the next natural fire and close GitHub Issue #58 only after YouTube path log / draft evidence appears.
+Closed. Continue YouTube caption presentation observation under 385 / GitHub Issue #60.

@@ -1,6 +1,6 @@
 # 391: 巨人 X 投稿案生成 — Tavily MCP (stdio 同梱) + Gemma 4 31B (Phase 1 CLI)
 
-status: PLANNING (user GO 待ち)
+status: PHASE_1_LANDED / SMOKE_PENDING (user 側で env var セット + CLI 実行待ち)
 owner: Claude Code
 lane: (未確定、user 指示待ち)
 priority: (未確定、user 指示待ち)
@@ -160,15 +160,106 @@ coexist 可能。 ただし `pip install --dry-run` で resolver 確認必要。
 
 ## 10. 作業ログ欄
 
-(post-work で append)
-
-- (例) HH:MM JST | event | detail
+- 2026-05-19 ~14:00 JST | user 「Gemma 4 + Tavily MCP を 0 ドルで」 要望
+- 2026-05-19 15:xx JST | ticket 切らずに code 2 file を書き始めた (process 違反)
+- 2026-05-19 16:00 JST | user 「ちょっと。 チケットきってる?」 指摘 → code 編集 stop
+- 2026-05-19 16:10 JST | 本 Markdown 作成 (PLANNING)
+- 2026-05-19 16:20 JST | user 「チケットGO」 → GH Issue #66 作成 + README + assignments 更新
+- 2026-05-19 16:30 JST | user が Tavily key を chat に直接貼った (漏洩)
+- 2026-05-19 16:35 JST | warn + rotate 推奨 → user 「やってくれ」 → Secret Manager に登録 (TAVILY_API_KEY version 1)
+- 2026-05-19 16:40 JST | user 「設定ができないGCP」 確認 → Phase 1 local CLI 進行決定
+- 2026-05-19 16:50 JST | user 「だからやって」 → code 編集 GO 受領
+- 2026-05-19 17:00 JST | tests/test_x_post_gen_mcp.py 10 test 追加 + requirements.txt 更新
+- 2026-05-19 17:05 JST | py_compile pass / unittest 10 OK / full suite 4471 OK (baseline 4461 + 10)
+- 2026-05-19 17:10 JST | commit `4a65a3a` → push 完了 (branch `feat/377-phase1c-mail-body-excerpt`)
 
 ## 11. Regression Memo 欄
 
-(post-work で append)
+- fastmcp / google-genai が CI 未 install のため、 test は sys.modules pre-injection で fake module を差し込んで実 API 接続を回避する設計に変更。 実 API 動作の verify は user smoke run でのみ可能。
+- requirements.txt 追加 (google-genai, fastmcp) は `pip install --user` が PEP 668 で WSL system Python で blocked。 user が pip install する時は venv または `--break-system-packages` 必要。
+- 既存 lane (382 multi-source shape B / 387 ranking_article_publisher) には触っていない (確認済、 git status で staged 7 file のみ確認)。
+- Cloud Run / Vertex AI / Cloud Build / Scheduler / 既存 Secret は変更なし (Secret Manager に TAVILY_API_KEY を新規追加のみ、 既存 secret は不変)。
 
-- (例) 観測した予期しない挙動 / 追加 test case / future risk
+## post-work 1. 実際に変更したファイル
+
+commit `4a65a3a` で 7 file (新規 4 + 修正 3、 809 insertions):
+
+```
+A  doc/active/391-x-post-gen-mcp-tavily-gemma4-phase1.md  (本ファイル、 PLANNING + post-work 含む)
+A  src/x_post_gen_mcp.py                                   (core、 ~150 行)
+A  src/tools/run_x_post_gen_mcp.py                         (CLI、 ~165 行)
+A  tests/test_x_post_gen_mcp.py                            (10 mock test、 ~190 行)
+M  doc/README.md                                           (391 board row 追加)
+M  doc/active/assignments.md                               (391 section 追加)
+M  requirements.txt                                        (google-genai + fastmcp 追加、 既存依存維持)
+```
+
+GCP side (本 commit 外):
+- Secret Manager `TAVILY_API_KEY` (project `baseballsite`) を新規作成 + version 1 投入。
+
+## post-work 2. diff 概要
+
+- `src/x_post_gen_mcp.py`: `DEFAULT_QUERIES` (巨人 specific 5 query) / `GEMMA_MODEL_ID = "gemma-4-31b-it"` / `SYSTEM_PROMPT` (spec 382 hard rule 継承) / `PostDraft` dataclass / `_generate_one_draft` (async、 try/except で error 閉じる) / `generate_post_drafts` (fastmcp.Client + StdioTransport で `npx -y tavily-mcp@latest` 起動 + genai.Client で Gemma 4 31B 推論) / `generate_post_drafts_sync` (sync wrapper)。
+- `src/tools/run_x_post_gen_mcp.py`: argparse、 `--dry-run` (credentials 不要)、 `--output {stdout,json}`、 `--max-queries`、 `--queries`、 `--model`、 `--temperature`、 env var で API key、 dep 未 install / Node 不在は clean error + 非 zero exit。
+- `tests/test_x_post_gen_mcp.py`: `DefaultsTests` (3) + `PostDraftDataclassTests` (2) + `GenerateOneDraftTests` (3 async) + `GeneratePostDraftsTests` (2 async) = 10 test、 全 mock。
+- `requirements.txt`: `+google-genai` `+fastmcp`、 既存 `google-generativeai` は coexist で残す。
+- `doc/README.md`: queue snapshot 表に 391 行追加。
+- `doc/active/assignments.md`: `## 2026-05-19 session update` 直下に `### 391` section 新設。
+
+## post-work 3. 実行したテスト
+
+- `python3 -m py_compile src/x_post_gen_mcp.py src/tools/run_x_post_gen_mcp.py tests/test_x_post_gen_mcp.py` → exit 0
+- `python3 -m unittest tests.test_x_post_gen_mcp` → 10 test pass
+- `python3 -m unittest discover -s tests` (全 suite) → `Ran 4471 tests in 168.239s OK`
+- `git status --short` (3 回) で stage scope leakage が無いこと確認 (391 関連 7 file のみ stage、 382 / 387 dirty は未 stage 維持)
+
+## post-work 4. テスト結果
+
+- 391 単独: 10 / 10 pass
+- baseline full suite: 4461 OK → 4471 OK (+10 new tests、 regression 0)
+- 実 API smoke: 未実施 (user 側 WSL で env var セット後に user が `python -m src.tools.run_x_post_gen_mcp --max-queries 2` 実行する必要あり)
+
+## post-work 5. 残った懸念
+
+- **Gemma 4 31B model id の正確性**: pricing page には "Gemma 4" のみ表記。 実 API では `gemma-4-31b-it` で取れるか未確認、 smoke 1 回目に 404 / model not found なら別 id (`models/gemma-4-31b-it` 等) 試す必要。
+- **Gemini API free tier rate limit**: Gemma 4 specific の RPM / RPD / TPM が公開なし。 smoke で 429 連発したら STOP 条件該当、 別 model (Gemini 2.5 Flash-Lite) へ切替検討。
+- **Tavily MCP stdio の Node 依存**: user の WSL に Node.js 20+ が install されているか未確認。 `node --version` が古いと `npx -y tavily-mcp@latest` が失敗する。
+- **漏れた TAVILY_API_KEY**: user が rotate するまで chat history 経由で第三者がアクセス可能 (free tier 1000 credits/月 上限のため金銭被害は 0、 ただし rotate 推奨)。
+- **Gemma 4 31B の日本語 + 巨人 context 出力品質**: smoke run が無いため未verify、 「精度良くない」 (382 と同じ問題) になる可能性あり。 user 目視確認必須。
+- **branch `feat/377-phase1c-mail-body-excerpt` 上で commit**: 元 branch は 377 phase1c 用、 既に複数 ticket commit が混在している。 master merge / PR 化は別 turn。
+
+## post-work 6. 新しく見つかったデグレ
+
+- 既存 test (4461 → 4471、 +10 のみ) で regression なし。
+- `requirements.txt` の `google-genai` 追加で既存 `google-generativeai` と `google.*` namespace で衝突する可能性ありとされたが、 unittest discover で `src/main.py` 等の既存 lane import は全部 pass しているため runtime 衝突は確認されず (smoke 段階で問題出る可能性は残る)。
+
+## post-work 7. 追加した回帰テスト
+
+`tests/test_x_post_gen_mcp.py` に 10 test:
+
+1. `test_default_queries_are_giants_specific` — 全 default query に "巨人" が含まれる (spec 382 巨人特化制約)
+2. `test_gemma_model_id_is_31b` — model id が `gemma-4-31b-it` で固定 ($0 制約)
+3. `test_system_prompt_forbids_url_hashtag` — system prompt に URL / hashtag / 未検証 禁止が記述されている (spec 382 hard rule)
+4. `test_default_error_is_none` — PostDraft の error default
+5. `test_error_field_is_settable` — error field 動作
+6. `test_returns_draft_text_on_success` — Gemini response.text を draft に格納
+7. `test_passes_mcp_session_as_tool` — `config.tools` に MCP session が渡る (Tavily 連携の hook)
+8. `test_captures_exception_in_error_field` — 例外時 error field に閉じる (broken pipe / rate limit 等)
+9. `test_empty_query_list_returns_empty` — 空 query は API 呼ばずに空返し (cost 0 不変条件)
+10. `test_query_count_equals_draft_count` — query 数 = 出力数 不変条件
+
+実 API 接続なしの mock-only。
+
+## post-work 8. 次回触ってはいけない範囲
+
+Phase 2 (Cloud Run Job 化) を別 ticket で起票する時の不可触:
+
+- 本 commit の Phase 1 code (`src/x_post_gen_mcp.py` core 関数 signature は Phase 2 でも再利用する想定、 hot-fix 以外は API 変更しない)
+- 既存 `src/x_post_mail_lane.py` / `src/analysis/` / `src/main.py` etc. (391 の責任範囲外)
+- 既存 Cloud Run Job (`yoshilover-fetcher` / `x-post-mail-lane` / `publish-notice` / `guarded-publish` / `insight-nightly` 等) は新 Job 追加で、 既存触らない
+- 既存 Cloud Scheduler trigger (`giants-*` / `publish-notice-*` / `x-post-mail-*` / `data-insight-*` 等) は触らない、 新 Job 用は新 Scheduler 追加
+- 既存 Secret (`gemini-api-key` / `wp-app-password` / `mail-bridge-*` 等) は変更しない、 必要なら新規追加
+- WP REST / X live posting / Hermes OAuth は Phase 2 でも引き続き scope 外
 
 ---
 

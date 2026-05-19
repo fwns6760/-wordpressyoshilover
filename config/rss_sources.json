@@ -391,6 +391,18 @@
     ]
   },
   {
+    "name": "中日スポーツ 巨人 search",
+    "url": "https://www.chunichi.co.jp/?s=%E5%B7%A8%E4%BA%BA&genre=chuspo",
+    "type": "tag_scrape",
+    "scraper": "chunichi_chuspo_giants_search",
+    "max_age_days": 14,
+    "article_limit": 30,
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
     "name": "読売ジャイアンツYouTube公式",
     "url": "https://www.youtube.com/channel/UCXxg0igSYUp0tqdd6luPEnQ/videos",
     "type": "tag_scrape",

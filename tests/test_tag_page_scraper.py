@@ -647,6 +647,75 @@ class FetchNikkanSpaGiantsEntriesTests(unittest.TestCase):
         self.assertEqual(len(entries), 0)
 
 
+# 384-INGEST Phase 3: 中日スポーツ (chunichi `?s=巨人&genre=chuspo`) tag_scrape tests
+class FetchChunichiChuspoGiantsEntriesTests(unittest.TestCase):
+    def setUp(self):
+        self.now = datetime(2026, 5, 19, 12, 0, 0, tzinfo=JST)
+
+    def test_chunichi_chuspo_extracts_via_json_ld_date_published(self):
+        # 中日スポーツは meta article:published_time 無し、JSON-LD datePublished 有り
+        # → 既存 _extract_embedded_published_date で取れる
+        listing_html = """
+        <a href="https://www.chunichi.co.jp/article/1253368?genre=chuspo">giants</a>
+        """
+        article_html = {
+            "https://www.chunichi.co.jp/article/1253368?genre=chuspo": """
+                <meta property="og:title" content="巨人・戸郷翔征 中日戦で完投勝利：中日スポーツ・東京中日スポーツ">
+                <meta property="og:description" content="読売ジャイアンツのエースが好投">
+                <script type="application/ld+json">
+                {"@context":"https://schema.org","@type":"NewsArticle",
+                 "headline":"巨人・戸郷翔征 中日戦で完投勝利",
+                 "datePublished":"2026-05-19T05:00:00+09:00",
+                 "dateModified":"2026-05-19T07:30:00+09:00"}
+                </script>
+            """,
+        }
+
+        def fake_fetcher(url, **kwargs):
+            if "?s=" in url and "/article/" not in url:
+                return _make_response(200, listing_html)
+            return _make_response(200, article_html[url])
+
+        entries = scraper.fetch_chunichi_chuspo_giants_entries(
+            tag_url="https://www.chunichi.co.jp/?s=%E5%B7%A8%E4%BA%BA&genre=chuspo",
+            max_age_days=14,
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 1)
+        # title suffix ` ：中日スポーツ・東京中日スポーツ` が strip される
+        self.assertEqual(entries[0]["title"], "巨人・戸郷翔征 中日戦で完投勝利")
+
+    def test_chunichi_non_giants_filtered(self):
+        # 中日 specific (vs 阪神等) で巨人言及無い記事は post_filter で除外
+        listing_html = """
+        <a href="https://www.chunichi.co.jp/article/1253367?genre=chuspo">non giants</a>
+        """
+        article_html = {
+            "https://www.chunichi.co.jp/article/1253367?genre=chuspo": """
+                <meta property="og:title" content="中日・板山祐太郎、阪神戦で反攻打：中日スポーツ・東京中日スポーツ">
+                <meta property="og:description" content="中日打線で最も乗っている男">
+                <script type="application/ld+json">
+                {"@context":"https://schema.org","@type":"NewsArticle",
+                 "datePublished":"2026-05-18T23:03:00+09:00"}
+                </script>
+            """,
+        }
+
+        def fake_fetcher(url, **kwargs):
+            if "?s=" in url and "/article/" not in url:
+                return _make_response(200, listing_html)
+            return _make_response(200, article_html[url])
+
+        entries = scraper.fetch_chunichi_chuspo_giants_entries(
+            tag_url="https://www.chunichi.co.jp/?s=%E5%B7%A8%E4%BA%BA&genre=chuspo",
+            max_age_days=14,
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 0)
+
+
 # 384-INGEST Phase 2: article:modified_time fallback regression test
 class ModifiedTimeFallbackTests(unittest.TestCase):
     def setUp(self):

@@ -3,7 +3,7 @@
 ## meta
 
 - ticket: 385-INGEST-youtube-caption-short-quote-summary
-- status: REVIEW_NEEDED
+- status: LIVE_DEPLOYED_OBSERVE
 - owner: Codex A
 - lane: A
 - priority: P0.5
@@ -114,8 +114,16 @@ Implement YouTube caption presentation v2 only.
 
 ## live evidence
 
-Pending.
+2026-05-19 live deploy:
+
+- Cloud Build `0752f06d-a07d-4fbc-ba62-4c49c99c8b41` SUCCESS.
+- Image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:385-youtube-caption-24c1707` pushed.
+- Cloud Run service `yoshilover-fetcher` deployed revision `yoshilover-fetcher-00438-k8l`.
+- Traffic: `yoshilover-fetcher-00438-k8l` 100%.
+- Service health: `GET /health` returned `OK`.
+- New revision ERROR log check returned `[]`.
+- Env / Secret / Scheduler / `RUN_DRAFT_ONLY` / WP existing posts / X / frontend were not changed.
 
 ## next action
 
-Implement deterministic caption presentation v2, test, deploy `yoshilover-fetcher` only after local validation is green, then observe next natural fire.
+Observe the next natural fire for `youtube_caption_section_appended` with `quote_count` / `summary_count`, then close GitHub Issue #60 if live article output matches acceptance.

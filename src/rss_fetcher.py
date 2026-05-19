@@ -1932,6 +1932,7 @@ _POST_GEN_VALIDATE_TOPIC_SOURCE_FAMILIES = frozenset(
         "asagei",
         "sankei",
         "nikkan_spa",
+        "chunichi",
     }
 )
 

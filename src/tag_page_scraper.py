@@ -1491,6 +1491,46 @@ def fetch_sankei_giants_entries(
     )
 
 
+# 384-INGEST: 中日スポーツ (chunichi.co.jp `?s=巨人&genre=chuspo`) tag_scrape。
+# URL pattern は連番 ID `/article/<digits>` で URL から日付抽出不可、article page の
+# meta には `article:published_time` / `modified_time` 無し。代わりに HTML 内に
+# JSON-LD `"datePublished": "ISO8601"` が含まれており、既存 `_extract_embedded_published_date`
+# (l.147 regex `datePublished` 含む) で取れる。title は og:title あり、suffix 「：中日新聞 / 中日スポーツ・東京中日スポーツ」を strip。
+# 巨人 specific 記事は中日 vs 巨人 直接対戦時のみで weekly 1-3 件想定、補完素材。
+_CHUNICHI_CHUSPO_ARTICLE_RE = re.compile(
+    r'href=[\"\'](https?://www\.chunichi\.co\.jp/article/\d+(?:\?[^\"\']*)?)[\"\']',
+    flags=re.IGNORECASE,
+)
+_CHUNICHI_TITLE_SUFFIX_RE = re.compile(
+    r"\s*[:：]\s*(?:中日新聞Web|中日スポーツ・東京中日スポーツ|中日新聞)\s*$"
+)
+
+
+def fetch_chunichi_chuspo_giants_entries(
+    *,
+    tag_url: str = "https://www.chunichi.co.jp/?s=%E5%B7%A8%E4%BA%BA&genre=chuspo",
+    max_age_days: int = 14,
+    article_limit: int = 30,
+    logger: logging.Logger | None = None,
+    now: datetime | None = None,
+    fetcher: Callable[..., requests.Response] | None = None,
+) -> list[dict[str, Any]]:
+    logger = logger or logging.getLogger("tag_page_scraper")
+    reference_now = (now or datetime.now(timezone.utc)).astimezone(JST)
+    return _fetch_generic_giants_entries(
+        source="chunichi",
+        tag_url=tag_url,
+        article_url_pattern=_CHUNICHI_CHUSPO_ARTICLE_RE,
+        title_suffix_re=_CHUNICHI_TITLE_SUFFIX_RE,
+        max_age_days=max_age_days,
+        article_limit=article_limit,
+        logger=logger,
+        now=reference_now,
+        fetcher=fetcher,
+        keep_query=True,
+    )
+
+
 # 384-INGEST: 日刊SPA! (nikkan-spa.jp) tag_scrape。URL pattern は連番 ID
 # `https://nikkan-spa.jp/<digits>` で URL から日付抽出不可、article page は
 # `<meta property="article:published_time">` で publish-time 取れる。
@@ -1546,6 +1586,7 @@ _SCRAPER_REGISTRY: dict[str, Callable[..., list[dict[str, Any]]]] = {
     "asagei_giants_search": fetch_asagei_giants_entries,
     "sankei_giants_search": fetch_sankei_giants_entries,
     "nikkan_spa_giants_search": fetch_nikkan_spa_giants_entries,
+    "chunichi_chuspo_giants_search": fetch_chunichi_chuspo_giants_entries,
 }
 
 

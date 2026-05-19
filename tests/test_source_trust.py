@@ -82,6 +82,7 @@ def test_yahoo_aggregator_recognized():
         ("https://www.dailyshincho.jp/article/2026/05121005/", "daily_shincho"),
         ("https://www.sankei.com/article/20260519-A6XIRYB5NNLQVFENL4HBB33QSY/", "sankei"),
         ("https://nikkan-spa.jp/2137462", "nikkan_spa"),
+        ("https://www.chunichi.co.jp/article/1253368", "chunichi"),
     ],
 )
 def test_general_giants_topic_sources_recognized(url, expected_family):

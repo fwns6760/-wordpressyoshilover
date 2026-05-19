@@ -718,6 +718,42 @@ def test_render_team_metric_article_omits_svg_chart(tmp_path):
         conn.close()
 
 
+def test_render_team_metric_article_era_marks_lower_is_better(tmp_path):
+    """球団防御率は低い順で順位付けし、記事にも低いほど良いと明示する。"""
+    conn = _open_db(tmp_path)
+    try:
+        today = trp.dt.date.today().isoformat()
+        for team, ip, er in [
+            ("巨人", 18.0, 2),
+            ("阪神", 18.0, 4),
+            ("ヤクルト", 18.0, 5),
+            ("広島", 18.0, 6),
+            ("DeNA", 18.0, 7),
+            ("中日", 18.0, 8),
+        ]:
+            game_id = f"era-{team}"
+            _seed_game(conn, game_id=game_id, game_date=today)
+            conn.execute(
+                "INSERT INTO pitching_logs (game_id, team_role, appearance_order, "
+                "player_display, player_canonical, result_mark, pitches, BF, IP, "
+                "H_allowed, HR_allowed, BB, HBP, K, R, ER, team_name) "
+                "VALUES (?, 'home', 1, ?, ?, '', 30, 9, ?, 0, 0, 0, 0, 1, ?, ?, ?)",
+                (game_id, team, team, ip, er, er, team),
+            )
+        conn.commit()
+
+        article = trp.render_team_metric_article(conn, metric="ERA", scope="season")
+
+        assert article is not None
+        assert article["giants_rank"] == 1
+        assert article["giants_value"] == 1.0
+        assert "低い順で1/6 位" in article["title"]
+        assert "**低い順で1/6 位**(1.000)" in article["body_md"]
+        assert "防御率(低いほど良い)" in article["body_md"]
+    finally:
+        conn.close()
+
+
 def test_publish_team_default_set_uses_short_term_once(monkeypatch):
     """球団 AVG/ERA/HR と得失点差の default run は last_7d に寄せる。"""
     metric_calls = []

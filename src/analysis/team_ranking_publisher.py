@@ -292,6 +292,9 @@ def render_team_metric_article(
         giants_val_str = f"{giants_value:.3f}"
     else:
         giants_val_str = str(giants_value)
+    rank_phrase = f"{giants_rank}/6 位"
+    if metric == "ERA":
+        rank_phrase = f"低い順で{giants_rank}/6 位"
 
     scope_label = _scope_label_jp(scope)
     start_str, end_str = _scope_window(scope)
@@ -299,13 +302,14 @@ def render_team_metric_article(
     # 2026-05-15 user 指示「期間は末尾に」適用、日時 prefix なし、scope を
     # title 末尾に括弧書き。集計期間は body 内「集計期間」row にも記載。
     title = (
-        f"【巨人データ】セ・リーグ球団{metric_label}、巨人 {giants_rank}/6 位 "
+        f"【巨人データ】セ・リーグ球団{metric_label}、巨人 {rank_phrase} "
         f"{giants_val_str} ({scope_label})"
     )
     title = title_guard.ensure_title_period(title, scope=scope).title
 
     # table md
-    table_md = _build_team_table_md(sorted_rows, focus_tc="g", value_label=metric_label,
+    table_value_label = "防御率(低いほど良い)" if metric == "ERA" else metric_label
+    table_md = _build_team_table_md(sorted_rows, focus_tc="g", value_label=table_value_label,
                                      higher_is_better=higher_is_better)
 
     # 348 step 3 spec §2.5: 「大手にない」 banner 廃止 (全種類で省略)。
@@ -318,7 +322,7 @@ def render_team_metric_article(
 
 ## ひとこと
 
-セ・リーグ 6 球団中で巨人の {metric_label} は **{giants_rank} 位**({giants_val_str})。
+セ・リーグ 6 球団中で巨人の {metric_label} は **{rank_phrase}**({giants_val_str})。
 
 ## セ・リーグ 球団 ranking({scope_label})
 

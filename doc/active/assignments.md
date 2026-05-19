@@ -4,6 +4,12 @@
 
 ## 2026-05-19 session update
 
+### 391 — 巨人 X 投稿案生成 (Tavily MCP stdio 同梱 + Gemma 4 31B、Phase 1 CLI、 user GO 「チケットGO」 2026-05-19)
+
+| ticket | status | 内容 |
+|---|---|---|
+| `doc/active/391-x-post-gen-mcp-tavily-gemma4-phase1.md` (GH #66) | PLANNING / user GO 待ち (code 編集 stop) | user 要望 (2026-05-19 chat): 巨人関連を Tavily MCP (stdio 同梱、 `npx -y tavily-mcp@latest`) で web 検索 → Gemma 4 31B (Gemini API free tier) で X 投稿案を生成する CLI smoke を新設。 $0 制約 hard rule (Gemini API free / Tavily 1000 credits/月 / Cloud Run・Vertex AI 自前 host 禁止)。 Phase 1 scope = `src/x_post_gen_mcp.py` + `src/tools/run_x_post_gen_mcp.py` + `tests/test_x_post_gen_mcp.py` + `requirements.txt` に `google-genai` + `fastmcp` 追加、 出力 stdout のみ、 mail / WP / X 連携は Phase 2 (別 ticket)。 必要 API: Gemini key (https://ai.google.dev/) + Tavily key (https://tavily.com/)、 両方無料 signup credit card 不要。 不可触: 382 改修中 `src/x_post_mail_lane.py` / 387 改修中 `src/analysis/` / automation / scheduler / env / secret / WP / X / 既存 Cloud Run Job。 spec 382 hard rule (URL / hashtag / 未検証数字 / 引用 / 媒体名 禁止) 継承。 **process compliance**: 私が ticket 切らずに code 2 file (`src/x_post_gen_mcp.py` / `src/tools/run_x_post_gen_mcp.py`) を書いた事実を user が指摘、 本 ticket は後付け正規化。 既に書いた 2 file は dirty 残置 commit 待ち。 次 step: user が code 編集 GO を出したら、 tests/test_x_post_gen_mcp.py 追加 + requirements.txt 更新 + py_compile + pytest + commit / push。 |
+
 ### のもとけ風サイト構造 chain (387-390、 user GO 「A=phase ごと別 ticket」 + 「index はまだいらない」)
 
 | ticket | status | 内容 |

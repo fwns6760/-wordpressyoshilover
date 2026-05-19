@@ -6,3 +6,8 @@ google-cloud-storage
 pyyaml
 google-generativeai
 youtube-transcript-api
+# 391: Tavily MCP (stdio 同梱) + Gemma 4 31B via Gemini API free tier.
+# google-genai is the new Gemini SDK with native MCP client support.
+# google-generativeai (older SDK) is kept for other lanes that depend on it.
+google-genai
+fastmcp

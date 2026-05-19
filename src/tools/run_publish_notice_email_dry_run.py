@@ -24,8 +24,10 @@ from src.publish_notice_email_sender import (  # noqa: E402
     DEFAULT_DAILY_CAP,
     DEFAULT_SUMMARY_EVERY,
     EmergencyMailRequest,
+    PublishNoticeEmailResult,
     PublishNoticeRequest,
     build_burst_summary_requests,
+    build_judgment_batch_summary_requests,
     build_alert_body_text,
     build_body_text,
     build_emergency_subject,
@@ -89,6 +91,36 @@ def _load_state_fetch_reasons_from_env() -> dict[str, int] | None:
     return cleaned or None
 
 
+_JUDGMENT_BATCH_ENABLED_ENV = "ENABLE_PUBLISH_NOTICE_JUDGMENT_BATCH"
+_JUDGMENT_BATCH_THRESHOLD_ENV = "PUBLISH_NOTICE_JUDGMENT_BATCH_THRESHOLD"
+_JUDGMENT_BATCH_PART_SIZE_ENV = "PUBLISH_NOTICE_JUDGMENT_BATCH_PART_SIZE"
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _positive_int_env(name: str, default: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return max(1, int(default))
+    try:
+        value = int(raw)
+    except ValueError:
+        return max(1, int(default))
+    return max(1, value)
+
+
+def _should_use_judgment_batch(requests: Sequence[PublishNoticeRequest]) -> bool:
+    if not _env_flag(_JUDGMENT_BATCH_ENABLED_ENV, False):
+        return False
+    threshold = _positive_int_env(_JUDGMENT_BATCH_THRESHOLD_ENV, 6)
+    return len(requests) >= threshold
+
+
 def _read_payload_from_path(path: str) -> dict[str, Any]:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -130,6 +162,11 @@ def _summary_entry_from_request(request: PublishNoticeRequest) -> BurstSummaryEn
         publishable=True,
         cleanup_required=False,
         cleanup_success=None,
+        subtype=request.subtype,
+        canonical_url=request.canonical_url,
+        body_excerpt=getattr(request, "body_excerpt", None),
+        admin_edit_url=getattr(request, "admin_edit_url", None),
+        publish_button_url=getattr(request, "publish_button_url", None),
     )
 
 
@@ -146,6 +183,11 @@ def _summary_request_from_payload(payload: dict[str, Any]) -> BurstSummaryReques
             publishable=bool(entry.get("publishable")),
             cleanup_required=bool(entry.get("cleanup_required")),
             cleanup_success=entry.get("cleanup_success"),
+            subtype=None if entry.get("subtype") is None else str(entry.get("subtype")),
+            canonical_url=None if entry.get("canonical_url") is None else str(entry.get("canonical_url")),
+            body_excerpt=None if entry.get("body_excerpt") is None else str(entry.get("body_excerpt")),
+            admin_edit_url=None if entry.get("admin_edit_url") is None else str(entry.get("admin_edit_url")),
+            publish_button_url=None if entry.get("publish_button_url") is None else str(entry.get("publish_button_url")),
         )
         for entry in payload.get("entries") or []
     ]
@@ -303,7 +345,8 @@ def _send_summary_requests(
     dry_run: bool,
     send_enabled: bool,
     ledger_sink: runner_ledger_integration.BestEffortLedgerSink,
-) -> None:
+) -> list[Any]:
+    results: list[Any] = []
     for summary_request in summary_requests:
         summary_result = send_summary(
             summary_request,
@@ -330,6 +373,75 @@ def _send_summary_requests(
             },
         )
         _print_result("summary", summary_post_id, summary_result)
+        results.append(summary_result)
+    return results
+
+
+def _append_judgment_batch_sent_markers(
+    summary_requests: Sequence[BurstSummaryRequest],
+    summary_results: Sequence[PublishNoticeEmailResult],
+    *,
+    queue_path: str,
+) -> None:
+    for summary_request, summary_result in zip(summary_requests, summary_results):
+        if str(getattr(summary_result, "status", "") or "").strip() != "sent":
+            continue
+        marker_result = PublishNoticeEmailResult(
+            status="sent",
+            reason="BATCH_SENT",
+            subject=str(getattr(summary_result, "subject", "") or ""),
+            recipients=list(getattr(summary_result, "recipients", []) or []),
+            bridge_result=getattr(summary_result, "bridge_result", None),
+        )
+        for entry in summary_request.entries:
+            append_send_result(
+                queue_path,
+                notice_kind="per_post",
+                post_id=entry.post_id,
+                result=marker_result,
+            )
+
+
+def _send_direct_publish_requests(
+    requests: Sequence[PublishNoticeRequest],
+    *,
+    queue_path: str,
+    history_path: str,
+    dry_run: bool,
+    send_enabled: bool,
+    ledger_sink: runner_ledger_integration.BestEffortLedgerSink,
+) -> list[Any]:
+    if not _should_use_judgment_batch(requests):
+        return _send_per_post_requests(
+            requests,
+            queue_path=queue_path,
+            history_path=history_path,
+            dry_run=dry_run,
+            send_enabled=send_enabled,
+            ledger_sink=ledger_sink,
+        )
+    summary_entries = [
+        _summary_entry_from_request(request)
+        for request in requests
+        if _is_publish_notice_request(request)
+    ]
+    summary_requests = build_judgment_batch_summary_requests(
+        summary_entries,
+        entries_per_part=_positive_int_env(_JUDGMENT_BATCH_PART_SIZE_ENV, 20),
+    )
+    summary_results = _send_summary_requests(
+        summary_requests,
+        queue_path=queue_path,
+        dry_run=dry_run,
+        send_enabled=send_enabled,
+        ledger_sink=ledger_sink,
+    )
+    _append_judgment_batch_sent_markers(
+        summary_requests,
+        summary_results,
+        queue_path=queue_path,
+    )
+    return summary_results
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -358,7 +470,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 for post_id, reason in direct_result.skipped:
                     print(f"[skip] phase=direct post_id={post_id} reason={reason}")
-                direct_results = _send_per_post_requests(
+                direct_results = _send_direct_publish_requests(
                     direct_result.emitted,
                     queue_path=args.queue_path,
                     history_path=args.history_path,
@@ -369,23 +481,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                 per_post_results.extend(direct_results)
                 total_emitted += len(direct_result.emitted)
 
-                summary_entries = [
-                    _summary_entry_from_request(request)
-                    for request in direct_result.emitted
-                    if _is_publish_notice_request(request)
-                ]
-                summary_requests = build_burst_summary_requests(
-                    summary_entries,
-                    summary_every=args.summary_every,
-                    daily_cap=args.daily_cap,
-                )
-                _send_summary_requests(
-                    summary_requests,
-                    queue_path=args.queue_path,
-                    dry_run=dry_run,
-                    send_enabled=send_enabled,
-                    ledger_sink=ledger_sink,
-                )
+                if not _should_use_judgment_batch(direct_result.emitted):
+                    summary_entries = [
+                        _summary_entry_from_request(request)
+                        for request in direct_result.emitted
+                        if _is_publish_notice_request(request)
+                    ]
+                    summary_requests = build_burst_summary_requests(
+                        summary_entries,
+                        summary_every=args.summary_every,
+                        daily_cap=args.daily_cap,
+                    )
+                    _send_summary_requests(
+                        summary_requests,
+                        queue_path=args.queue_path,
+                        dry_run=dry_run,
+                        send_enabled=send_enabled,
+                        ledger_sink=ledger_sink,
+                    )
 
                 if direct_result.cursor_before is not None:
                     try:
@@ -430,7 +543,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 for post_id, reason in result.skipped:
                     print(f"[skip] post_id={post_id} reason={reason}")
-                legacy_results = _send_per_post_requests(
+                legacy_results = _send_direct_publish_requests(
                     result.emitted,
                     queue_path=args.queue_path,
                     history_path=args.history_path,
@@ -439,23 +552,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                     ledger_sink=ledger_sink,
                 )
                 per_post_results.extend(legacy_results)
-                summary_entries = [
-                    _summary_entry_from_request(request)
-                    for request in result.emitted
-                    if _is_publish_notice_request(request)
-                ]
-                summary_requests = build_burst_summary_requests(
-                    summary_entries,
-                    summary_every=args.summary_every,
-                    daily_cap=args.daily_cap,
-                )
-                _send_summary_requests(
-                    summary_requests,
-                    queue_path=args.queue_path,
-                    dry_run=dry_run,
-                    send_enabled=send_enabled,
-                    ledger_sink=ledger_sink,
-                )
+                if not _should_use_judgment_batch(result.emitted):
+                    summary_entries = [
+                        _summary_entry_from_request(request)
+                        for request in result.emitted
+                        if _is_publish_notice_request(request)
+                    ]
+                    summary_requests = build_burst_summary_requests(
+                        summary_entries,
+                        summary_every=args.summary_every,
+                        daily_cap=args.daily_cap,
+                    )
+                    _send_summary_requests(
+                        summary_requests,
+                        queue_path=args.queue_path,
+                        dry_run=dry_run,
+                        send_enabled=send_enabled,
+                        ledger_sink=ledger_sink,
+                    )
                 total_emitted = len(result.emitted)
 
             state_fetch_reasons = _load_state_fetch_reasons_from_env()

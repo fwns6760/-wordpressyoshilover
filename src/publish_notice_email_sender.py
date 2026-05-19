@@ -416,6 +416,11 @@ class BurstSummaryEntry:
     cleanup_required: bool
     cleanup_success: bool | None
     is_backlog: bool | None = None
+    subtype: str | None = None
+    canonical_url: str | None = None
+    body_excerpt: str | None = None
+    admin_edit_url: str | None = None
+    publish_button_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -425,7 +430,9 @@ class BurstSummaryRequest:
     daily_cap: int = DEFAULT_DAILY_CAP
     hard_stop_count: int = 0
     hold_count: int = 0
-    summary_mode: Literal["default", "backlog_only", "burst_forced"] = "default"
+    summary_mode: Literal["default", "backlog_only", "burst_forced", "judgment_batch"] = "default"
+    part_index: int = 1
+    part_total: int = 1
 
 
 @dataclass(frozen=True)
@@ -2025,6 +2032,7 @@ def _classify_mail(
         reason = {
             "backlog_only": "backlog_summary_ready",
             "burst_forced": "burst_summary_ready",
+            "judgment_batch": "draft_judgment_batch_ready",
         }.get(str(request.summary_mode or "default").strip(), "batch_summary_ready")
         return {
             "mail_type": "batch_summary",
@@ -2297,6 +2305,10 @@ def build_subject(
 
 
 def build_summary_subject(request: BurstSummaryRequest) -> str:
+    if str(request.summary_mode or "").strip() == "judgment_batch":
+        part_total = max(1, int(getattr(request, "part_total", 1) or 1))
+        part_index = min(max(1, int(getattr(request, "part_index", 1) or 1)), part_total)
+        return f"【公開判断まとめ {part_index}/{part_total}】新着{len(request.entries)}件{_SUBJECT_BRAND_SUFFIX}"
     prefix = _mail_class_config("summary")["prefix"]
     return f"{prefix}直近{len(request.entries)}件{_SUBJECT_BRAND_SUFFIX}"
 
@@ -2878,16 +2890,70 @@ def build_summary_body_text(
         ]
     )
     for entry in request.entries:
-        lines.append(
-            "  - "
-            f"post_id={entry.post_id} | "
-            f"title={_collapse_title(entry.title)} | "
-            f"category={str(entry.category or '').strip() or 'unknown'} | "
-            f"publishable={_normalize_bool(entry.publishable)} | "
-            f"cleanup_required={_normalize_bool(entry.cleanup_required)} | "
-            f"cleanup_success={_normalize_bool(entry.cleanup_success)}"
-        )
+        if str(request.summary_mode or "").strip() == "judgment_batch":
+            entry_index = len([line for line in lines if line.startswith("  [")]) + 1
+            subtype = str(entry.subtype or entry.category or "").strip() or "unknown"
+            body_excerpt = str(entry.body_excerpt or "").strip() or "(本文抜粋なし)"
+            lines.extend(
+                [
+                    f"  [{entry_index}] post_id={entry.post_id} | subtype={subtype}",
+                    f"      title: {_collapse_title(entry.title)}",
+                    f"      url: {str(entry.canonical_url or '').strip() or '(none)'}",
+                    "      body_excerpt:",
+                    *[f"        {line}" for line in body_excerpt.splitlines()],
+                    f"      edit_url: {str(entry.admin_edit_url or '').strip() or '(none)'}",
+                    f"      publish_button_url: {str(entry.publish_button_url or '').strip() or '(none)'}",
+                ]
+            )
+        else:
+            lines.append(
+                "  - "
+                f"post_id={entry.post_id} | "
+                f"title={_collapse_title(entry.title)} | "
+                f"category={str(entry.category or '').strip() or 'unknown'} | "
+                f"publishable={_normalize_bool(entry.publishable)} | "
+                f"cleanup_required={_normalize_bool(entry.cleanup_required)} | "
+                f"cleanup_success={_normalize_bool(entry.cleanup_success)}"
+            )
     return "\n".join(lines)
+
+
+def build_judgment_batch_summary_requests(
+    entries: Sequence[BurstSummaryEntry],
+    *,
+    entries_per_part: int = 20,
+    cumulative_before: int = 0,
+    daily_cap: int = DEFAULT_DAILY_CAP,
+) -> list[BurstSummaryRequest]:
+    """Build body-rich draft judgment mails split into deterministic parts.
+
+    Used when a fetch creates many drafts at once: each part carries the
+    excerpt and action links needed for publish/no-publish decisions, while
+    avoiding one SMTP message per article.
+    """
+    resolved_entries = [entry for entry in entries if str(entry.post_id or "").strip()]
+    if not resolved_entries:
+        return []
+    part_size = max(1, int(entries_per_part or 1))
+    chunks = [
+        resolved_entries[start : start + part_size]
+        for start in range(0, len(resolved_entries), part_size)
+    ]
+    part_total = len(chunks)
+    requests: list[BurstSummaryRequest] = []
+    offset = int(cumulative_before)
+    for index, chunk in enumerate(chunks, start=1):
+        requests.append(
+            BurstSummaryRequest(
+                entries=list(chunk),
+                cumulative_published_count=offset + min(len(resolved_entries), index * part_size),
+                daily_cap=int(daily_cap),
+                summary_mode="judgment_batch",
+                part_index=index,
+                part_total=part_total,
+            )
+        )
+    return requests
 
 
 def build_alert_body_text(
@@ -3445,6 +3511,7 @@ __all__ = [
     "build_alert_subject",
     "build_body_text",
     "build_burst_summary_requests",
+    "build_judgment_batch_summary_requests",
     "build_execution_summary_log",
     "build_emergency_subject",
     "build_manual_x_post_candidates",

@@ -193,6 +193,70 @@ class RunPublishNoticeEmailDryRunScanTests(unittest.TestCase):
         self.assertEqual(len(captured_entries), 1)
         self.assertEqual(captured_entries[0].post_id, 63105)
 
+    def test_judgment_batch_mode_sends_parts_and_marks_items_sent(self) -> None:
+        requests = [
+            PublishNoticeRequest(
+                post_id=70000 + index,
+                title=f"公開判断記事 {index}",
+                canonical_url=f"https://yoshilover.com/{70000 + index}",
+                subtype="postgame",
+                publish_time_iso="2026-05-19T21:45:00+09:00",
+                body_excerpt=f"本文抜粋 {index}",
+                admin_edit_url=f"https://yoshilover.com/wp-admin/post.php?post={70000 + index}&action=edit",
+                publish_button_url=f"https://run.app/publish-and-tweet?post_id={70000 + index}&token=t",
+            )
+            for index in range(6)
+        ]
+
+        class _Sink:
+            enabled = False
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            os.environ,
+            {
+                "ENABLE_PUBLISH_NOTICE_JUDGMENT_BATCH": "1",
+                "PUBLISH_NOTICE_JUDGMENT_BATCH_THRESHOLD": "6",
+                "PUBLISH_NOTICE_JUDGMENT_BATCH_PART_SIZE": "4",
+            },
+            clear=False,
+        ), patch(
+            "src.tools.run_publish_notice_email_dry_run.send_summary",
+            return_value=PublishNoticeEmailResult(
+                status="sent",
+                reason=None,
+                subject="【公開判断まとめ 1/2】新着4件 | YOSHILOVER",
+                recipients=["notice@example.com"],
+            ),
+        ), patch(
+            "src.tools.run_publish_notice_email_dry_run._emit_notice_ledger",
+        ), patch("sys.stdout", io.StringIO()):
+            queue_path = str(Path(tmpdir) / "queue.jsonl")
+            results = runner._send_direct_publish_requests(
+                requests,
+                queue_path=queue_path,
+                history_path=str(Path(tmpdir) / "history.json"),
+                dry_run=False,
+                send_enabled=True,
+                ledger_sink=_Sink(),
+            )
+
+            rows = [
+                json.loads(line)
+                for line in Path(queue_path).read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+
+        self.assertEqual(len(results), 2)
+        summary_rows = [row for row in rows if row["notice_kind"] == "summary"]
+        marker_rows = [
+            row
+            for row in rows
+            if row["notice_kind"] == "per_post" and row["reason"] == "BATCH_SENT"
+        ]
+        self.assertEqual(len(summary_rows), 2)
+        self.assertEqual(len(marker_rows), 6)
+        self.assertEqual({str(row["post_id"]) for row in marker_rows}, {str(70000 + index) for index in range(6)})
+
 
 class LoadStateFetchReasonsFromEnvTests(unittest.TestCase):
     def test_returns_none_when_env_unset(self) -> None:

@@ -159,6 +159,43 @@ class PublishNoticeBurstSummaryTests(unittest.TestCase):
         self.assertIn("daily_cap_remaining: 90", first_body)
         self.assertIn("post_id=1 | title=公開記事 1 | category=試合速報", first_body)
 
+    def test_judgment_batch_summary_preserves_body_and_action_links(self):
+        entries = [
+            sender.BurstSummaryEntry(
+                post_id=70000 + index,
+                title=f"公開判断記事 {index}",
+                category="postgame",
+                publishable=True,
+                cleanup_required=False,
+                cleanup_success=None,
+                subtype="postgame",
+                canonical_url=f"https://yoshilover.com/post-{70000 + index}/",
+                body_excerpt=f"本文抜粋 {index}\n二行目 {index}",
+                admin_edit_url=f"https://yoshilover.com/wp-admin/post.php?post={70000 + index}&action=edit",
+                publish_button_url=f"https://run.app/publish-and-tweet?post_id={70000 + index}&token=t",
+            )
+            for index in range(1, 4)
+        ]
+
+        requests = sender.build_judgment_batch_summary_requests(entries, entries_per_part=2)
+
+        self.assertEqual(len(requests), 2)
+        self.assertEqual([request.part_index for request in requests], [1, 2])
+        self.assertEqual([request.part_total for request in requests], [2, 2])
+        self.assertEqual(
+            sender.build_summary_subject(requests[0]),
+            "【公開判断まとめ 1/2】新着2件 | YOSHILOVER",
+        )
+        body = sender.build_summary_body_text(requests[0])
+        self.assertIn("reason: draft_judgment_batch_ready", body)
+        self.assertIn("[1] post_id=70001 | subtype=postgame", body)
+        self.assertIn("title: 公開判断記事 1", body)
+        self.assertIn("body_excerpt:", body)
+        self.assertIn("本文抜粋 1", body)
+        self.assertIn("二行目 1", body)
+        self.assertIn("edit_url: https://yoshilover.com/wp-admin/post.php?post=70001&action=edit", body)
+        self.assertIn("publish_button_url: https://run.app/publish-and-tweet?post_id=70001&token=t", body)
+
     def test_build_burst_summary_requests_returns_empty_when_disable_flag_set(self):
         cases = {
             "backlog_only": self._summary_entries(1, 3, is_backlog=True),

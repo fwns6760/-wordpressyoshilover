@@ -20793,6 +20793,194 @@ def _create_draft_with_same_fire_guard(
     )
 
 
+_FETCHER_INLINE_DRAFT_NOTICE_ENV = "ENABLE_FETCHER_INLINE_DRAFT_NOTICE"
+_FETCHER_INLINE_DRAFT_NOTICE_INDIVIDUAL_LIMIT_ENV = "FETCHER_INLINE_DRAFT_NOTICE_INDIVIDUAL_LIMIT"
+_FETCHER_INLINE_DRAFT_NOTICE_PART_SIZE_ENV = "FETCHER_INLINE_DRAFT_NOTICE_PART_SIZE"
+_FETCHER_INLINE_DRAFT_NOTICE_QUEUE_PATH_ENV = "FETCHER_INLINE_DRAFT_NOTICE_QUEUE_PATH"
+
+
+def _positive_int_env(name: str, default: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return max(1, int(default))
+    try:
+        value = int(raw)
+    except ValueError:
+        return max(1, int(default))
+    return max(1, value)
+
+
+def _extract_wp_rendered(value: Any) -> str:
+    if isinstance(value, Mapping):
+        return str(value.get("rendered") or "").strip()
+    return str(value or "").strip()
+
+
+def _resolve_inline_notice_wp_base_url() -> str | None:
+    wp_url = str(os.environ.get("WP_URL", "")).strip()
+    if wp_url:
+        return wp_url.rstrip("/")
+    api_base = str(os.environ.get("WP_API_BASE", "")).strip()
+    if api_base:
+        return _re.sub(r"/wp-json/.*$", "", api_base.rstrip("/")) or None
+    return None
+
+
+def _resolve_inline_notice_fetcher_base_url() -> str | None:
+    value = str(os.environ.get("FETCHER_PUBLIC_BASE_URL", "")).strip()
+    if value:
+        return value.rstrip("/")
+    return "https://yoshilover-fetcher-487178857517.asia-northeast1.run.app"
+
+
+def _build_inline_draft_notice_request(
+    *,
+    post_data: Mapping[str, Any],
+    post_id: int,
+    title: str,
+    canonical_url: str,
+    subtype: str,
+    body_html: str,
+):
+    from src.publish_button_token import build_publish_button_url
+    from src.publish_notice_body_excerpt import build_admin_edit_url, build_body_excerpt
+    from src.publish_notice_email_sender import PublishNoticeRequest
+
+    content_html = _extract_wp_rendered(post_data.get("content"))
+    excerpt_html = _extract_wp_rendered(post_data.get("excerpt"))
+    effective_body = content_html or excerpt_html or body_html
+    link = str(post_data.get("link") or "").strip() or canonical_url
+    publish_time_iso = str(post_data.get("date") or post_data.get("modified") or "").strip()
+    return PublishNoticeRequest(
+        post_id=post_id,
+        title=title,
+        canonical_url=link,
+        subtype=str(subtype or "").strip() or "unknown",
+        publish_time_iso=publish_time_iso,
+        summary=None,
+        notice_kind="publish",
+        notice_origin="fetcher_inline_draft_notice",
+        body_excerpt=build_body_excerpt(effective_body, max_chars=1000),
+        admin_edit_url=build_admin_edit_url(post_id, _resolve_inline_notice_wp_base_url()),
+        publish_button_url=build_publish_button_url(post_id, _resolve_inline_notice_fetcher_base_url()),
+    )
+
+
+def _send_fetcher_inline_draft_notices(
+    requests: list[Any],
+    *,
+    logger: logging.Logger,
+) -> dict[str, int]:
+    if not _env_flag(_FETCHER_INLINE_DRAFT_NOTICE_ENV, False):
+        return {"sent": 0, "suppressed": 0, "errors": 0}
+    if not requests:
+        return {"sent": 0, "suppressed": 0, "errors": 0}
+
+    from src.publish_notice_email_sender import (
+        BurstSummaryEntry,
+        PublishNoticeEmailResult,
+        append_send_result,
+        build_judgment_batch_summary_requests,
+        send,
+        send_summary,
+    )
+
+    queue_path = str(
+        os.environ.get(_FETCHER_INLINE_DRAFT_NOTICE_QUEUE_PATH_ENV, "/tmp/publish_notice_queue.jsonl")
+    ).strip() or "/tmp/publish_notice_queue.jsonl"
+    individual_limit = _positive_int_env(_FETCHER_INLINE_DRAFT_NOTICE_INDIVIDUAL_LIMIT_ENV, 5)
+    part_size = _positive_int_env(_FETCHER_INLINE_DRAFT_NOTICE_PART_SIZE_ENV, 20)
+    counts = {"sent": 0, "suppressed": 0, "errors": 0}
+
+    def _count_result(result: Any) -> None:
+        status = str(getattr(result, "status", "") or "").strip()
+        if status == "sent":
+            counts["sent"] += 1
+        elif status == "error":
+            counts["errors"] += 1
+        elif status == "suppressed":
+            counts["suppressed"] += 1
+
+    if len(requests) <= individual_limit:
+        for request in requests:
+            result = send(
+                request,
+                dry_run=False,
+                send_enabled=True,
+                duplicate_history_path=queue_path,
+            )
+            append_send_result(
+                queue_path,
+                notice_kind="per_post",
+                post_id=request.post_id,
+                result=result,
+                publish_time_iso=request.publish_time_iso,
+                request=request,
+            )
+            _count_result(result)
+            logger.info(json.dumps({
+                "event": "fetcher_inline_draft_notice_result",
+                "kind": "per_post",
+                "post_id": request.post_id,
+                "status": result.status,
+                "reason": result.reason,
+            }, ensure_ascii=False))
+        return counts
+
+    entries = [
+        BurstSummaryEntry(
+            post_id=request.post_id,
+            title=request.title,
+            category=request.subtype,
+            publishable=True,
+            cleanup_required=False,
+            cleanup_success=None,
+            subtype=request.subtype,
+            canonical_url=request.canonical_url,
+            body_excerpt=request.body_excerpt,
+            admin_edit_url=request.admin_edit_url,
+            publish_button_url=request.publish_button_url,
+        )
+        for request in requests
+    ]
+    summary_requests = build_judgment_batch_summary_requests(entries, entries_per_part=part_size)
+    for summary_request in summary_requests:
+        result = send_summary(summary_request, dry_run=False, send_enabled=True)
+        append_send_result(
+            queue_path,
+            notice_kind="summary",
+            post_id=f"fetcher_inline_summary:{summary_request.part_index}:{summary_request.part_total}",
+            result=result,
+        )
+        _count_result(result)
+        logger.info(json.dumps({
+            "event": "fetcher_inline_draft_notice_result",
+            "kind": "judgment_batch",
+            "part_index": summary_request.part_index,
+            "part_total": summary_request.part_total,
+            "entries": len(summary_request.entries),
+            "status": result.status,
+            "reason": result.reason,
+        }, ensure_ascii=False))
+        if str(result.status).strip() != "sent":
+            continue
+        marker_result = PublishNoticeEmailResult(
+            status="sent",
+            reason="BATCH_SENT",
+            subject=result.subject,
+            recipients=result.recipients,
+            bridge_result=result.bridge_result,
+        )
+        for entry in summary_request.entries:
+            append_send_result(
+                queue_path,
+                notice_kind="per_post",
+                post_id=entry.post_id,
+                result=marker_result,
+            )
+    return counts
+
+
 def _resolve_effective_featured_media(
     wp: WPClient,
     post_id: int,
@@ -25456,6 +25644,7 @@ def _main(args, logger):
     x_ai_generation_count = history.get(f"x_ai_generation_count_{today_str}", 0)
     prepared_entries = []
     media_quote_pool = []
+    inline_draft_notice_requests: list[Any] = []
     entry_index = 0
     not_giants_related_info_count = 0
     not_giants_related_sample_titles: list[str] = []
@@ -27484,6 +27673,17 @@ def _main(args, logger):
             effective_featured_media = _resolve_effective_featured_media(wp, post_id, featured_media, logger)
             draft_post_data = wp.get_post(post_id)
             draft_article_url = draft_post_data.get("link", "") or post_url
+            if str((draft_post_data or {}).get("status") or "").strip().lower() == "draft":
+                inline_draft_notice_requests.append(
+                    _build_inline_draft_notice_request(
+                        post_data=draft_post_data,
+                        post_id=post_id,
+                        title=draft_title,
+                        canonical_url=draft_article_url,
+                        subtype=title_article_subtype,
+                        body_html=content,
+                    )
+                )
             success += 1
             _record_duplicate_guard_success(item.get("duplicate_guard_context"), post_id)
             created_category_counts[category] += 1
@@ -27775,6 +27975,10 @@ def _main(args, logger):
         f"=== 完了: 取得={total} / 投稿={success} / 重複スキップ={skip_dup} "
         f"/ フィルタスキップ={skip_filter} / エラー={error} ==="
     )
+    inline_notice_counts = _send_fetcher_inline_draft_notices(
+        inline_draft_notice_requests,
+        logger=logger,
+    )
     run_summary_payload: dict[str, Any] = {
         "event": "rss_fetcher_run_summary",
         "dry_run": bool(args.dry_run),
@@ -27803,6 +28007,11 @@ def _main(args, logger):
         "game_live_source_policy_active": game_live_source_policy_active,
         "game_live_source_policy_window": GAME_LIVE_SOURCE_POLICY_WINDOW_LABEL,
         "game_live_source_policy_skipped_sources": game_live_source_policy_skipped_sources,
+        "inline_draft_notice_enabled": _env_flag(_FETCHER_INLINE_DRAFT_NOTICE_ENV, False),
+        "inline_draft_notice_candidates": len(inline_draft_notice_requests),
+        "inline_draft_notice_sent": inline_notice_counts.get("sent", 0),
+        "inline_draft_notice_suppressed": inline_notice_counts.get("suppressed", 0),
+        "inline_draft_notice_errors": inline_notice_counts.get("errors", 0),
     }
     if _fetcher_log_sampling_v1_enabled() or _pre_post_gen_validate_skip_enabled():
         run_summary_payload["log_sampling_v1"] = _build_log_sampling_summary()

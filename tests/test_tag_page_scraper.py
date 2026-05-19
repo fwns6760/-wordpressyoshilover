@@ -486,6 +486,237 @@ class FetchGeneralMagazineGiantsEntriesTests(unittest.TestCase):
         self.assertEqual(entries[0]["title"], "巨人・坂本勇人の一打が注目される")
 
 
+# 384-INGEST: 産経新聞 (sankei.com) tag_scrape tests
+class FetchSankeiGiantsEntriesTests(unittest.TestCase):
+    def setUp(self):
+        self.now = datetime(2026, 5, 19, 12, 0, 0, tzinfo=JST)
+
+    def test_sankei_meta_name_attribute_extracted(self):
+        # 産経の meta は `name="article:published_time"` (`property=` でなく `name=`)
+        listing_html = """
+        <a href="https://www.sankei.com/article/20260519-A6XIRYB5NNLQVFENL4HBB33QSY/">giants</a>
+        <a href="https://www.sankei.com/article/20260518-FZRESCZEBZC5LNXMFLMMJLPCCQ/">also giants</a>
+        """
+        article_html = {
+            "https://www.sankei.com/article/20260519-A6XIRYB5NNLQVFENL4HBB33QSY/": """
+                <meta property="og:title" content="巨人・戸郷翔征が完投勝利 - 産経ニュース">
+                <meta property="og:description" content="ジャイアンツの先発が好投">
+                <meta name="article:published_time" content="2026-05-19T05:30:00+09:00"/>
+            """,
+            "https://www.sankei.com/article/20260518-FZRESCZEBZC5LNXMFLMMJLPCCQ/": """
+                <meta property="og:title" content="巨人・坂本勇人 通算300号 - 産経ニュース">
+                <meta property="og:description" content="読売ジャイアンツの主将">
+                <meta name="article:published_time" content="2026-05-18T20:00:00+09:00"/>
+            """,
+        }
+
+        def fake_fetcher(url, **kwargs):
+            if "?s=" in url:
+                return _make_response(200, listing_html)
+            return _make_response(200, article_html[url])
+
+        entries = scraper.fetch_sankei_giants_entries(
+            tag_url="https://www.sankei.com/?s=%E5%B7%A8%E4%BA%BA",
+            max_age_days=7,
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 2)
+        # title suffix ` - 産経ニュース` が strip される
+        self.assertEqual(entries[0]["title"], "巨人・戸郷翔征が完投勝利")
+        self.assertEqual(entries[0]["link"],
+            "https://www.sankei.com/article/20260519-A6XIRYB5NNLQVFENL4HBB33QSY/")
+
+    def test_sankei_old_url_filtered_by_age(self):
+        # 8 日前の URL → max_age_days=7 で article fetch 段階で age_filtered
+        listing_html = """
+        <a href="https://www.sankei.com/article/20260511-OLDHASH/">old giants</a>
+        """
+        article_html = {
+            "https://www.sankei.com/article/20260511-OLDHASH/": """
+                <meta property="og:title" content="巨人・古い記事 - 産経ニュース">
+                <meta property="og:description" content="ジャイアンツ過去の話題">
+                <meta name="article:published_time" content="2026-05-11T05:30:00+09:00"/>
+            """,
+        }
+
+        def fake_fetcher(url, **kwargs):
+            if "?s=" in url:
+                return _make_response(200, listing_html)
+            return _make_response(200, article_html[url])
+
+        entries = scraper.fetch_sankei_giants_entries(
+            tag_url="https://www.sankei.com/?s=%E5%B7%A8%E4%BA%BA",
+            max_age_days=7,
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 0)
+
+    def test_sankei_non_giants_filtered(self):
+        # 巨人 keyword 無しは post_filter で除外
+        listing_html = """
+        <a href="https://www.sankei.com/article/20260519-OTHERHASH/">non giants</a>
+        """
+        article_html = {
+            "https://www.sankei.com/article/20260519-OTHERHASH/": """
+                <meta property="og:title" content="阪神タイガースが勝利 - 産経ニュース">
+                <meta property="og:description" content="セ・リーグ他球団の話題">
+                <meta name="article:published_time" content="2026-05-19T05:30:00+09:00"/>
+            """,
+        }
+
+        def fake_fetcher(url, **kwargs):
+            if "?s=" in url:
+                return _make_response(200, listing_html)
+            return _make_response(200, article_html[url])
+
+        entries = scraper.fetch_sankei_giants_entries(
+            tag_url="https://www.sankei.com/?s=%E5%B7%A8%E4%BA%BA",
+            max_age_days=7,
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 0)
+
+
+# 384-INGEST: 日刊SPA! (nikkan-spa.jp) tag_scrape tests
+class FetchNikkanSpaGiantsEntriesTests(unittest.TestCase):
+    def setUp(self):
+        self.now = datetime(2026, 5, 19, 12, 0, 0, tzinfo=JST)
+
+    def test_nikkan_spa_property_attribute_extracted(self):
+        # 日刊SPA は `property="article:published_time"` で取れる
+        listing_html = """
+        <a href="https://nikkan-spa.jp/2150000">giants article</a>
+        <a href="https://nikkan-spa.jp/2150001">also giants</a>
+        """
+        article_html = {
+            "https://nikkan-spa.jp/2150000": """
+                <meta property="og:title" content="巨人の阿部監督が会見を拒否 | 日刊SPA!">
+                <meta property="og:description" content="読売ジャイアンツの会見について">
+                <meta property="article:published_time" content="2026-05-18T08:52:30+09:00">
+            """,
+            "https://nikkan-spa.jp/2150001": """
+                <meta property="og:title" content="巨人のスター選手秘話 | 日刊SPA!">
+                <meta property="og:description" content="ジャイアンツ歴代の名場面">
+                <meta property="article:published_time" content="2026-05-17T08:52:30+09:00">
+            """,
+        }
+
+        def fake_fetcher(url, **kwargs):
+            if "?s=" in url:
+                return _make_response(200, listing_html)
+            return _make_response(200, article_html[url])
+
+        entries = scraper.fetch_nikkan_spa_giants_entries(
+            tag_url="https://nikkan-spa.jp/?s=%E5%B7%A8%E4%BA%BA",
+            max_age_days=30,
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 2)
+        # title suffix ` | 日刊SPA!` が strip される
+        self.assertEqual(entries[0]["title"], "巨人の阿部監督が会見を拒否")
+        self.assertEqual(entries[0]["link"], "https://nikkan-spa.jp/2150000")
+
+    def test_nikkan_spa_old_article_filtered_by_meta_age(self):
+        # search 結果が日付 sort でない時、article fetch 後の meta age で 30 日超は filter
+        listing_html = """
+        <a href="https://nikkan-spa.jp/2137462">old giants</a>
+        """
+        article_html = {
+            "https://nikkan-spa.jp/2137462": """
+                <meta property="og:title" content="巨人の昔の話題 | 日刊SPA!">
+                <meta property="og:description" content="ジャイアンツ過去記事">
+                <meta property="article:published_time" content="2026-01-11T08:52:30+09:00">
+            """,
+        }
+
+        def fake_fetcher(url, **kwargs):
+            if "?s=" in url:
+                return _make_response(200, listing_html)
+            return _make_response(200, article_html[url])
+
+        entries = scraper.fetch_nikkan_spa_giants_entries(
+            tag_url="https://nikkan-spa.jp/?s=%E5%B7%A8%E4%BA%BA",
+            max_age_days=30,
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 0)
+
+
+# 384-INGEST Phase 2: article:modified_time fallback regression test
+class ModifiedTimeFallbackTests(unittest.TestCase):
+    def setUp(self):
+        self.now = datetime(2026, 5, 19, 12, 0, 0, tzinfo=JST)
+
+    def test_modified_time_used_when_published_missing(self):
+        # published_time 無し、modified_time あり → modified を fallback に使う
+        listing_html = """
+        <a href="https://www.asagei.com/excerpt/347876">giants</a>
+        """
+        article_html = {
+            "https://www.asagei.com/excerpt/347876": """
+                <meta property="og:title" content="巨人・坂本勇人の一打 | アサ芸プラス">
+                <meta property="og:description" content="ジャイアンツの話題">
+                <meta property="article:modified_time" content="2026-05-18T11:30:00+09:00">
+            """,
+        }
+
+        def fake_fetcher(url, **kwargs):
+            if "?s=" in url:
+                return _make_response(200, listing_html)
+            return _make_response(200, article_html[url])
+
+        entries = scraper.fetch_asagei_giants_entries(
+            tag_url="https://www.asagei.com/?s=%E5%B7%A8%E4%BA%BA",
+            max_age_days=30,
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["title"], "巨人・坂本勇人の一打")
+        # published_parsed が modified_time の値 (2026-05-18) で立つ
+        self.assertEqual(entries[0]["published_parsed"].tm_year, 2026)
+        self.assertEqual(entries[0]["published_parsed"].tm_mon, 5)
+        self.assertEqual(entries[0]["published_parsed"].tm_mday, 18)
+
+    def test_published_time_preferred_over_modified_time(self):
+        # published_time も modified_time もあれば published_time が優先
+        # NOTE: published_parsed は UTC 換算 struct_time を返す設計 (l.101 astimezone(UTC))
+        listing_html = """
+        <a href="https://www.asagei.com/excerpt/347876">giants</a>
+        """
+        article_html = {
+            "https://www.asagei.com/excerpt/347876": """
+                <meta property="og:title" content="巨人・坂本勇人の一打 | アサ芸プラス">
+                <meta property="og:description" content="ジャイアンツの話題">
+                <meta property="article:published_time" content="2026-05-19T11:00:00+09:00">
+                <meta property="article:modified_time" content="2026-05-17T11:30:00+09:00">
+            """,
+        }
+
+        def fake_fetcher(url, **kwargs):
+            if "?s=" in url:
+                return _make_response(200, listing_html)
+            return _make_response(200, article_html[url])
+
+        entries = scraper.fetch_asagei_giants_entries(
+            tag_url="https://www.asagei.com/?s=%E5%B7%A8%E4%BA%BA",
+            max_age_days=30,
+            now=self.now,
+            fetcher=fake_fetcher,
+        )
+        self.assertEqual(len(entries), 1)
+        # published 5/19 11:00 JST → UTC 5/19 02:00 → tm_mday=19
+        # modified の場合は 5/17 11:30 JST → UTC 5/17 02:30 → tm_mday=17 になるはず
+        self.assertEqual(entries[0]["published_parsed"].tm_year, 2026)
+        self.assertEqual(entries[0]["published_parsed"].tm_mon, 5)
+        self.assertEqual(entries[0]["published_parsed"].tm_mday, 19)
+
+
 class FetchDailyGiantsEntriesTests(unittest.TestCase):
     def setUp(self):
         self.now = datetime(2026, 5, 8, 12, 0, 0, tzinfo=JST)

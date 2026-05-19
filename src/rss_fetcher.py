@@ -1930,6 +1930,8 @@ _POST_GEN_VALIDATE_TOPIC_SOURCE_FAMILIES = frozenset(
         "daily_shincho",
         "gendai_media",
         "asagei",
+        "sankei",
+        "nikkan_spa",
     }
 )
 
@@ -22119,6 +22121,32 @@ def _is_youtube_post_url(post_url: str) -> bool:
 
 
 _YOUTUBE_DRAFT_TITLE_PREFIX = "【YouTube】"
+_YOUTUBE_CAPTION_MAX_QUOTES = 2
+_YOUTUBE_CAPTION_MAX_SUMMARY_BULLETS = 3
+_YOUTUBE_CAPTION_QUOTE_MAX_CHARS = 110
+_YOUTUBE_CAPTION_SUMMARY_MAX_CHARS = 76
+_YOUTUBE_CAPTION_CHUNK_MAX_CHARS = 90
+_YOUTUBE_CAPTION_IMPORTANT_TERMS = (
+    "巨人",
+    "ジャイアンツ",
+    "読売",
+    "阿部",
+    "監督",
+    "選手",
+    "投手",
+    "捕手",
+    "先発",
+    "登板",
+    "打席",
+    "本塁打",
+    "適時打",
+    "勝利",
+    "復帰",
+    "登録",
+    "抹消",
+    "一軍",
+    "二軍",
+)
 
 
 def _maybe_apply_youtube_title_prefix(title: str, source_url: str) -> str:
@@ -22157,6 +22185,135 @@ def _extract_youtube_video_id(url: str) -> str:
     except Exception:  # noqa: BLE001
         return ""
     return ""
+
+
+def _trim_youtube_caption_piece(text: str, max_chars: int) -> str:
+    """Caption text 由来の短い表示片に trim。推測補完はしない。"""
+    clean = _re.sub(r"\s+", " ", str(text or "")).strip()
+    if not clean or len(clean) <= max_chars:
+        return clean
+    head = clean[:max_chars]
+    for sep in ("。", "！", "？", ".", "!", "?", "、", "，", " "):
+        idx = head.rfind(sep)
+        if idx >= max_chars // 2:
+            return head[: idx + 1].strip()
+    return head.strip()
+
+
+def _split_long_youtube_caption_sentence(sentence: str) -> list[str]:
+    """句点が少ない自動字幕を固定長寄りに分割する。文字は追加しない。"""
+    rest = _re.sub(r"\s+", " ", str(sentence or "")).strip()
+    chunks: list[str] = []
+    while len(rest) > _YOUTUBE_CAPTION_CHUNK_MAX_CHARS:
+        head = rest[:_YOUTUBE_CAPTION_CHUNK_MAX_CHARS]
+        boundary = -1
+        for sep in ("。", "！", "？", ".", "!", "?", "、", "，", " "):
+            idx = head.rfind(sep)
+            if idx >= _YOUTUBE_CAPTION_CHUNK_MAX_CHARS // 2:
+                boundary = idx + 1
+                break
+        if boundary <= 0:
+            boundary = _YOUTUBE_CAPTION_CHUNK_MAX_CHARS
+        chunk = rest[:boundary].strip()
+        if chunk:
+            chunks.append(chunk)
+        rest = rest[boundary:].strip()
+    if rest:
+        chunks.append(rest)
+    return chunks
+
+
+def _split_youtube_caption_sentences(caption: str) -> list[str]:
+    """字幕を表示候補の文に分割。LLM/要約なし、caption text のみを使う。"""
+    text = _re.sub(r"\s+", " ", str(caption or "")).strip()
+    if not text:
+        return []
+    rough_parts = _re.split(r"(?<=[。！？.!?])\s*", text)
+    sentences: list[str] = []
+    seen: set[str] = set()
+    for part in rough_parts:
+        part = part.strip()
+        if not part:
+            continue
+        for chunk in _split_long_youtube_caption_sentence(part):
+            if len(chunk) < 8:
+                continue
+            if chunk in seen:
+                continue
+            seen.add(chunk)
+            sentences.append(chunk)
+    return sentences
+
+
+def _youtube_caption_sentence_score(sentence: str) -> int:
+    """重要そうな字幕文を deterministic に並べるための軽い scoring。"""
+    text = str(sentence or "")
+    score = 0
+    if "「" in text or "」" in text:
+        score += 4
+    if any(term in text for term in _YOUTUBE_CAPTION_IMPORTANT_TERMS):
+        score += 3
+    length = len(text)
+    if 22 <= length <= _YOUTUBE_CAPTION_QUOTE_MAX_CHARS:
+        score += 2
+    elif length > 140:
+        score -= 1
+    return score
+
+
+def _build_youtube_caption_quote_summary(caption: str) -> tuple[list[str], list[str]]:
+    """字幕から短い引用と要点を抽出する。新しい事実は生成しない。"""
+    sentences = _split_youtube_caption_sentences(caption)
+    if not sentences:
+        return ([], [])
+
+    ranked = sorted(
+        enumerate(sentences),
+        key=lambda item: (-_youtube_caption_sentence_score(item[1]), item[0]),
+    )
+
+    quotes: list[str] = []
+    used_indexes: set[int] = set()
+    seen_quotes: set[str] = set()
+    for idx, sentence in ranked:
+        quote = _trim_youtube_caption_piece(
+            sentence, _YOUTUBE_CAPTION_QUOTE_MAX_CHARS
+        )
+        if not quote or quote in seen_quotes:
+            continue
+        quotes.append(quote)
+        seen_quotes.add(quote)
+        used_indexes.add(idx)
+        if len(quotes) >= _YOUTUBE_CAPTION_MAX_QUOTES:
+            break
+
+    summary: list[str] = []
+    seen_summary: set[str] = set()
+    for idx, sentence in ranked:
+        if idx in used_indexes and len(sentences) > len(used_indexes):
+            continue
+        bullet = _trim_youtube_caption_piece(
+            sentence, _YOUTUBE_CAPTION_SUMMARY_MAX_CHARS
+        )
+        if not bullet or bullet in seen_summary:
+            continue
+        summary.append(bullet)
+        seen_summary.add(bullet)
+        if len(summary) >= _YOUTUBE_CAPTION_MAX_SUMMARY_BULLETS:
+            break
+
+    if not summary:
+        for quote in quotes:
+            bullet = _trim_youtube_caption_piece(
+                quote, _YOUTUBE_CAPTION_SUMMARY_MAX_CHARS
+            )
+            if bullet and bullet not in seen_summary:
+                summary.append(bullet)
+                seen_summary.add(bullet)
+            if len(summary) >= _YOUTUBE_CAPTION_MAX_SUMMARY_BULLETS:
+                break
+
+    return (quotes, summary)
 
 
 def _maybe_append_youtube_caption_section(
@@ -22198,13 +22355,56 @@ def _maybe_append_youtube_caption_section(
             "youtube_caption_section_skip reason=no_caption url=%s", source_url
         )
         return rendered_html
+    quotes, summary = _build_youtube_caption_quote_summary(caption)
+    if not quotes:
+        fallback_quote = _trim_youtube_caption_piece(
+            caption, _YOUTUBE_CAPTION_QUOTE_MAX_CHARS
+        )
+        if fallback_quote:
+            quotes = [fallback_quote]
+            logger.info(
+                "youtube_caption_v2_fallback reason=no_extracted_quotes url=%s",
+                source_url,
+            )
+    if not summary and quotes:
+        summary = [
+            _trim_youtube_caption_piece(
+                quotes[0], _YOUTUBE_CAPTION_SUMMARY_MAX_CHARS
+            )
+        ]
+        logger.info(
+            "youtube_caption_v2_fallback reason=no_summary url=%s",
+            source_url,
+        )
+    if not quotes:
+        logger.info(
+            "youtube_caption_section_skip reason=no_extractable_quote url=%s",
+            source_url,
+        )
+        return rendered_html
+
     embed_url = f"https://www.youtube.com/embed/{video_id}"
+    quote_html = "".join(
+        f"<p>{_html.escape(quote)}</p>" for quote in quotes if quote
+    )
+    summary_html = ""
+    if summary:
+        summary_items = "".join(
+            f"<li>{_html.escape(item)}</li>" for item in summary if item
+        )
+        summary_html = (
+            '<div class="nomotoke-youtube-caption__summary">'
+            '<h4>要点</h4>'
+            f"<ul>{summary_items}</ul>"
+            "</div>"
+        )
     section = (
         '<aside class="nomotoke-youtube-caption">'
         '<h3>📺 字幕抜粋</h3>'
         '<blockquote class="nomotoke-youtube-caption__body">'
-        f'<p>{_html.escape(caption)}</p>'
+        f"{quote_html}"
         '</blockquote>'
+        f"{summary_html}"
         f'<p class="nomotoke-youtube-caption__attr">— '
         f'{_html.escape(source_name or "YouTube")} (字幕より、引用法 32 条範囲内)</p>'
         '<div class="nomotoke-youtube-caption__embed">'
@@ -22214,10 +22414,12 @@ def _maybe_append_youtube_caption_section(
         '</aside>'
     )
     logger.info(
-        "youtube_caption_section_appended url=%s video_id=%s caption_len=%d",
+        "youtube_caption_section_appended url=%s video_id=%s caption_len=%d quote_count=%d summary_count=%d",
         source_url,
         video_id,
         len(caption),
+        len(quotes),
+        len(summary),
     )
     return rendered_html + section
 

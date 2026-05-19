@@ -80,6 +80,8 @@ def test_yahoo_aggregator_recognized():
         ("https://bunshun.jp/articles/-/71152", "bunshun"),
         ("https://www.news-postseven.com/archives/20260518_2109651.html", "news_postseven"),
         ("https://www.dailyshincho.jp/article/2026/05121005/", "daily_shincho"),
+        ("https://www.sankei.com/article/20260519-A6XIRYB5NNLQVFENL4HBB33QSY/", "sankei"),
+        ("https://nikkan-spa.jp/2137462", "nikkan_spa"),
     ],
 )
 def test_general_giants_topic_sources_recognized(url, expected_family):

@@ -367,6 +367,30 @@
     ]
   },
   {
+    "name": "産経新聞 巨人 search",
+    "url": "https://www.sankei.com/?s=%E5%B7%A8%E4%BA%BA",
+    "type": "tag_scrape",
+    "scraper": "sankei_giants_search",
+    "max_age_days": 7,
+    "article_limit": 30,
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
+    "name": "日刊SPA! 巨人 search",
+    "url": "https://nikkan-spa.jp/?s=%E5%B7%A8%E4%BA%BA",
+    "type": "tag_scrape",
+    "scraper": "nikkan_spa_giants_search",
+    "max_age_days": 30,
+    "article_limit": 30,
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
     "name": "読売ジャイアンツYouTube公式",
     "url": "https://www.youtube.com/channel/UCXxg0igSYUp0tqdd6luPEnQ/videos",
     "type": "tag_scrape",

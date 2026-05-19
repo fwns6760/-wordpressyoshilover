@@ -29,6 +29,8 @@ SourceFamily = Literal[
     "asagei",
     "yomiuri_online",
     "yahoo_news_aggregator",
+    "sankei",
+    "nikkan_spa",
     "unknown",
 ]
 FamilyTrustLevel = Literal["high", "mid-high", "mid", "unknown"]
@@ -194,6 +196,18 @@ TRUSTED_SOURCE_PROFILES = (
         trust="secondary",
         family_trust="mid",
         domains=("news.yahoo.co.jp",),
+    ),
+    SourceProfile(
+        family="sankei",
+        trust="secondary",
+        family_trust="mid",
+        domains=("sankei.com", "www.sankei.com"),
+    ),
+    SourceProfile(
+        family="nikkan_spa",
+        trust="secondary",
+        family_trust="mid",
+        domains=("nikkan-spa.jp",),
     ),
 )
 

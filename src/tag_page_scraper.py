@@ -267,6 +267,7 @@ def _build_entry_from_article_meta(
         return None, "non_giants"
     published_struct = _parse_iso8601_to_struct_time(
         meta.get("article:published_time", "")
+        or meta.get("article:modified_time", "")
         or meta.get("date", "")
         or _extract_embedded_published_date(article_html)
         or _extract_datetime_attr(article_html)
@@ -1453,6 +1454,79 @@ def fetch_asagei_giants_entries(
     )
 
 
+# 384-INGEST: 産経新聞 (sankei.com) tag_scrape。URL pattern は sanspo と同じ
+# `/article/YYYYMMDD-HASH/` で URL から日付抽出可、article page は
+# `<meta name="article:published_time">` (name attribute) で publish-time 取れる
+# = `_extract_og_meta` が property/name 両方拾う既存設計で対応可。
+_SANKEI_ARTICLE_RE = re.compile(
+    r'href=[\"\'](https?://www\.sankei\.com/article/\d{8}-[A-Z0-9]+/(?:\?[^\"\']*)?)[\"\']',
+    flags=re.IGNORECASE,
+)
+_SANKEI_URL_DATE_RE = re.compile(r"/article/(\d{8})-")
+_SANKEI_TITLE_SUFFIX_RE = re.compile(r"\s*[-‐−–—ー]\s*産経ニュース\s*$")
+
+
+def fetch_sankei_giants_entries(
+    *,
+    tag_url: str = "https://www.sankei.com/?s=%E5%B7%A8%E4%BA%BA",
+    max_age_days: int = 7,
+    article_limit: int = 30,
+    logger: logging.Logger | None = None,
+    now: datetime | None = None,
+    fetcher: Callable[..., requests.Response] | None = None,
+) -> list[dict[str, Any]]:
+    logger = logger or logging.getLogger("tag_page_scraper")
+    reference_now = (now or datetime.now(timezone.utc)).astimezone(JST)
+    return _fetch_generic_giants_entries(
+        source="sankei",
+        tag_url=tag_url,
+        article_url_pattern=_SANKEI_ARTICLE_RE,
+        title_suffix_re=_SANKEI_TITLE_SUFFIX_RE,
+        max_age_days=max_age_days,
+        article_limit=article_limit,
+        logger=logger,
+        now=reference_now,
+        fetcher=fetcher,
+        url_date_re=_SANKEI_URL_DATE_RE,
+    )
+
+
+# 384-INGEST: 日刊SPA! (nikkan-spa.jp) tag_scrape。URL pattern は連番 ID
+# `https://nikkan-spa.jp/<digits>` で URL から日付抽出不可、article page は
+# `<meta property="article:published_time">` で publish-time 取れる。
+# search 結果は日付 sort でない可能性ありで article fetch 後の `_published_struct_within_window`
+# で max_age_days 内に絞る (2 重 guard)。
+_NIKKAN_SPA_ARTICLE_RE = re.compile(
+    r'href=[\"\'](https?://nikkan-spa\.jp/\d+(?:\?[^\"\']*)?)[\"\']',
+    flags=re.IGNORECASE,
+)
+_NIKKAN_SPA_TITLE_SUFFIX_RE = re.compile(r"\s*[|｜]\s*日刊SPA!\s*$")
+
+
+def fetch_nikkan_spa_giants_entries(
+    *,
+    tag_url: str = "https://nikkan-spa.jp/?s=%E5%B7%A8%E4%BA%BA",
+    max_age_days: int = 30,
+    article_limit: int = 30,
+    logger: logging.Logger | None = None,
+    now: datetime | None = None,
+    fetcher: Callable[..., requests.Response] | None = None,
+) -> list[dict[str, Any]]:
+    logger = logger or logging.getLogger("tag_page_scraper")
+    reference_now = (now or datetime.now(timezone.utc)).astimezone(JST)
+    return _fetch_generic_giants_entries(
+        source="nikkan_spa",
+        tag_url=tag_url,
+        article_url_pattern=_NIKKAN_SPA_ARTICLE_RE,
+        title_suffix_re=_NIKKAN_SPA_TITLE_SUFFIX_RE,
+        max_age_days=max_age_days,
+        article_limit=article_limit,
+        logger=logger,
+        now=reference_now,
+        fetcher=fetcher,
+    )
+
+
 _SCRAPER_REGISTRY: dict[str, Callable[..., list[dict[str, Any]]]] = {
     "hochi_giants_tag": fetch_hochi_giants_entries,
     "daily_giants_tag": fetch_daily_giants_entries,
@@ -1470,6 +1544,8 @@ _SCRAPER_REGISTRY: dict[str, Callable[..., list[dict[str, Any]]]] = {
     "daily_shincho_giants_search": fetch_daily_shincho_giants_entries,
     "gendai_media_giants_search": fetch_gendai_media_giants_entries,
     "asagei_giants_search": fetch_asagei_giants_entries,
+    "sankei_giants_search": fetch_sankei_giants_entries,
+    "nikkan_spa_giants_search": fetch_nikkan_spa_giants_entries,
 }
 
 

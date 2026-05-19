@@ -53,13 +53,43 @@ class TavilySearchTests(unittest.TestCase):
             ]
         }
         with patch("requests.post", return_value=mock_resp) as mock_post:
-            results = xbg._tavily_search("巨人 戸郷", "tvly-fake")
+            results = xbg._tavily_search(
+                "巨人 戸郷", "tvly-fake", same_day_only=False
+            )
         self.assertEqual(len(results), 2)
         self.assertEqual(results[0]["title"], "戸郷投手 復帰")
         mock_post.assert_called_once()
         # api.tavily.com endpoint 確認
         args, kwargs = mock_post.call_args
         self.assertIn("api.tavily.com", args[0])
+
+    def test_same_day_filter_keeps_today_drops_others(self) -> None:
+        from datetime import datetime, timezone, timedelta
+        from email.utils import format_datetime
+        jst = timezone(timedelta(hours=9))
+        today_jst = datetime.now(jst).replace(hour=12, minute=0, second=0, microsecond=0)
+        yesterday_jst = today_jst - timedelta(days=1)
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "results": [
+                {
+                    "title": "今日の戸郷",
+                    "content": "...",
+                    "published_date": format_datetime(today_jst.astimezone(timezone.utc)),
+                },
+                {
+                    "title": "昨日の戸郷",
+                    "content": "...",
+                    "published_date": format_datetime(yesterday_jst.astimezone(timezone.utc)),
+                },
+                {"title": "日付不明", "content": "..."},
+            ]
+        }
+        with patch("requests.post", return_value=mock_resp):
+            results = xbg._tavily_search("巨人 戸郷", "tvly-fake", same_day_only=True)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["title"], "今日の戸郷")
 
     def test_non_200_returns_empty(self) -> None:
         mock_resp = MagicMock()

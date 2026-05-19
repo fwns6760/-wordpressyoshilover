@@ -48,7 +48,7 @@ _GEMMA_BRANDING_FORBIDDEN_PATTERNS = (
 )
 
 
-_SYSTEM_PROMPT = """あなたは巨人を主題とした野球メディアの編集者です。
+_SYSTEM_PROMPT_BASE = """あなたは巨人を主題にした野球メディアの編集者です。
 Tavily で巨人関連トピックを web 検索し、 X 投稿案を 1 件生成してください。
 
 制約 (hard rule、 違反したら出力しないこと):
@@ -61,18 +61,40 @@ Tavily で巨人関連トピックを web 検索し、 X 投稿案を 1 件生�
 - 公開済み MLB の元巨人 OB (菅野・岡本等) は OK、 非元巨人 MLB は NG
 
 トーン制約 (重要):
-- 過剰な応援トーン禁止: 「ついに」「我が軍」「連覇のピース」「待ち望んでいた」「物語がここから始まる」「その時が来た」「核心に迫る」 等の cheerleading 語を使わない
-- 「巨人ファン向け」 framing を避け、 野球ファン一般が読んで成立する視点で書く
-- 客観的だが熱量のある分析調で。 cheerleading や煽り口調ではなく、 具体観点を 2〜3 個 厚く書く (打撃の質、 守備位置の意味、 起用法、 対戦相手との相性、 数字の傾向 等)
+- 巨人ファンの自然な voice は OK: 連勝の喜び、 優勝争いへの期待、 特定選手への信頼、 悔しさ、 「噛み締める」 テンション、 ガチで凄い・とんでもない 等の素直な熱量、 内輪ネタ (栄冠は君に輝く 等) は自然に書いてよい
+- 一方、 編集者が装ったファンっぽい煽り定型語は禁止: 「ついに」「我が軍」「連覇のピース」「待ち望んでいた」「物語がここから始まる」「その時が来た」「核心に迫る」「いよいよ」 は使わない
+- 具体観点を 2〜3 個 厚く入れる (打撃の質、 守備位置の意味、 起用法、 対戦相手との相性、 数字の傾向、 直近の成績推移 等)。 1 軸だけの薄い post は避ける
 - 結論を急がない。 観点を提示して読み手に考えさせる
 
 時系列制約 (重要):
 - Tavily snippet の日付を必ず確認する。 1 週間以上前 / 日付不明 / 復帰前提・開幕直後 など過去文脈の snippet では、 「ついに」「これから」「もうすぐ」「いよいよ」 等の未来形・直近形を使わない
 - 古い snippet しか無い場合は、 一般的な傾向 / 過去の経緯 / 起用の文脈 として淡々と書く。 現在進行形・直近形で書かない
-- 季節 / 開幕 / 復帰 等の文脈は snippet 日付と現在 (2026 年 5 月) の差を踏まえて慎重に扱う
+- 季節 / 開幕 / 復帰 等の文脈は snippet 日付と現在 ({today_jst}) の差を踏まえて慎重に扱う
+
+時間帯トーン ({hour_jst} 時 JST):
+{time_tone_hint}
 
 出力形式: post 本文のみ。 説明や前置きは書かない。
 """
+
+
+def _build_system_prompt(now_jst_hour: int, today_jst: str) -> str:
+    if 5 <= now_jst_hour < 11:
+        hint = (
+            "- 朝なので落ち着いた分析調 + 静かな熱量で書く\n"
+            "- 朝の落ち着きの中で観点を厚く提示する。 騒がしい表現は控える"
+        )
+    else:
+        hint = (
+            "- 昼以降なので試合・話題に応じてファンの自然な熱量で書いてよい\n"
+            "- 喜び・悔しさ・期待・信頼 を素直に出してよいが、 cheerleading 定型語は禁止のまま\n"
+            "- 観点の厚みは維持する。 熱量だけで観点が薄い post は避ける"
+        )
+    return _SYSTEM_PROMPT_BASE.format(
+        hour_jst=now_jst_hour,
+        today_jst=today_jst,
+        time_tone_hint=hint,
+    )
 
 
 def _tavily_search(
@@ -81,11 +103,15 @@ def _tavily_search(
     *,
     max_results: int = 3,
     timeout_seconds: int = 30,
+    same_day_only: bool = True,
 ) -> list[dict]:
     """Tavily REST API 検索。
 
     成功時は result dict list を返す。 network / 4xx / 5xx / JSON parse 失敗
     時は空 list 返却 (caller は no context として skip 判断する)。
+
+    same_day_only=True の場合、 published_date が JST 当日のものだけ残す
+    (post-filter)。 当日 0 件なら caller は no context として silent skip する。
     """
     if not query or not api_key:
         return []
@@ -99,7 +125,7 @@ def _tavily_search(
                 "max_results": max_results,
                 "search_depth": "basic",
                 "topic": "news",
-                "days": 7,
+                "days": 1,
             },
             timeout=timeout_seconds,
         )
@@ -111,7 +137,36 @@ def _tavily_search(
     results = data.get("results")
     if not isinstance(results, list):
         return []
-    return results
+    if not same_day_only:
+        return results
+    return _filter_same_day_jst(results)
+
+
+def _filter_same_day_jst(results: list[dict]) -> list[dict]:
+    """JST 当日 published のものだけ残す。
+
+    published_date は Tavily news topic で RFC 1123 (例: "Tue, 19 May 2026
+    13:30:00 GMT") で返ることが多いが、 形式不明 / parse 失敗時は除外する
+    (silent fallback、 hallucination 抑制を優先)。
+    """
+    from datetime import datetime, timezone, timedelta
+    from email.utils import parsedate_to_datetime
+    jst = timezone(timedelta(hours=9))
+    today_jst = datetime.now(jst).date()
+    kept: list[dict] = []
+    for r in results:
+        raw = r.get("published_date") or ""
+        if not raw:
+            continue
+        try:
+            dt = parsedate_to_datetime(raw)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            if dt.astimezone(jst).date() == today_jst:
+                kept.append(r)
+        except (TypeError, ValueError):
+            continue
+    return kept
 
 
 def _gemma_branding_safety_check(text: str) -> bool:
@@ -196,14 +251,21 @@ def build_gemma_branding_candidate(
         )
         return None
 
-    # 2. Gemma 4 生成
+    # 2. Gemma 4 生成 (時間帯 tone hint を含む system prompt)
+    from datetime import datetime, timezone, timedelta
+    jst = timezone(timedelta(hours=9))
+    now_jst = datetime.now(jst)
+    system_prompt = _build_system_prompt(
+        now_jst_hour=now_jst.hour,
+        today_jst=now_jst.strftime("%Y-%m-%d"),
+    )
     prompt = (
-        f"{_SYSTEM_PROMPT}\n\n"
+        f"{system_prompt}\n\n"
         f"対象選手: {player}\n\n"
         f"DB 照合済み数字 (使ってよい数字): {db_fact_line or 'なし'}\n\n"
         f"Tavily 検索結果 (context、 ここから不検証数字 / 引用 / 媒体名 / URL は使わない):\n"
         f"{context}\n\n"
-        "上記情報を踏まえて、 ヨシラバー独自の framing で X 投稿案を 1 件、 本文のみ書いてください。"
+        "上記情報を踏まえて、 独自の視点で X 投稿案を 1 件、 本文のみ書いてください。"
     )
     try:
         from google import genai

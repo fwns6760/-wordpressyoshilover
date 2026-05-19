@@ -34,6 +34,12 @@ if __package__ in {None, ""}:  # pragma: no cover - direct script execution
 from src import manual_intake_insight_query as miq  # noqa: E402
 from src import mail_delivery_bridge as mdb  # noqa: E402
 from src import x_post_mail_lane as lane  # noqa: E402
+# 392: optional import — only used when X_POST_MAIL_GEMMA_GEN_ENABLED=1。
+# 既存 (flag OFF) 経路で import 失敗時に mail を止めないため lazy import。
+try:
+    from src import x_post_branding_gen as _xbg  # noqa: E402
+except Exception:  # noqa: BLE001 - keep mail lane working even if 392 deps missing
+    _xbg = None  # type: ignore[assignment]
 
 
 LOG = logging.getLogger("x_post_mail")
@@ -149,6 +155,25 @@ def _lineup_focus_disabled() -> bool:
 def _news_fallback_disabled() -> bool:
     raw = (os.environ.get("X_POST_MAIL_NEWS_FALLBACK_DISABLED") or "").strip().lower()
     return raw in {"1", "true", "yes", "on"}
+
+
+def _gemma_branding_enabled() -> bool:
+    """392: env flag for Gemma 4 + Tavily REST branding candidate.
+
+    Default OFF。 ON 時のみ news_opinion fallback を skip して Gemma 候補
+    を mail に append する。 flag OFF では既存挙動完全不変。
+    """
+    raw = (os.environ.get("X_POST_MAIL_GEMMA_GEN_ENABLED") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _gemma_branding_max_per_run() -> int:
+    """392: Gemma 候補数 / fire の上限 (default 2)。"""
+    return _resolve_int_env(
+        "X_POST_MAIL_GEMMA_GEN_MAX",
+        2,
+        min_value=0,
+    )
 
 
 def _resolve_int_env(name: str, default: int, *, min_value: int = 0) -> int:
@@ -412,6 +437,120 @@ def _candidate_identity(candidate: lane.Candidate) -> str:
     )
 
 
+def _resolve_gemma_api_keys() -> tuple[str, str]:
+    """392: env var から Gemini / Tavily API key を読む。
+
+    Cloud Run Job では Secret Manager binding 経由で ``GEMINI_API_KEY`` と
+    ``TAVILY_API_KEY`` が env として渡る前提。 未設定なら空文字を返し、
+    caller (Gemma builder) が None 返却で silent skip する。
+    """
+    gemini = (
+        os.environ.get("GEMINI_API_KEY")
+        or os.environ.get("GOOGLE_API_KEY")
+        or ""
+    )
+    tavily = os.environ.get("TAVILY_API_KEY") or ""
+    return gemini, tavily
+
+
+def _pick_gemma_branding_players(
+    existing_candidates: list[lane.Candidate],
+    *,
+    lineup_focus_names: list[str] | None,
+    recent_player_counts: dict[str, int] | None,
+    max_count: int,
+) -> list[tuple[str, str]]:
+    """392: Gemma 生成対象の player を最大 max_count 件選ぶ。
+
+    優先順位:
+        1. lineup focus names (今日のスタメン): まだ既存 candidates に居ない player
+        2. 既存 candidates の focus_player で db_fact_line を持つもの
+        3. 既存 candidates の focus_player (DB fact line 空でも)
+        4. 既存 candidates から取れない場合は giants_roster default を使わず空返却
+
+    返り値: ``(player_name, db_fact_line)`` の tuple list。
+    """
+    if max_count <= 0:
+        return []
+    history = {k: v for k, v in (recent_player_counts or {}).items() if v}
+    seen_keys: set[str] = set()
+    picks: list[tuple[str, str]] = []
+
+    def _add(name: str, fact: str) -> None:
+        nonlocal picks, seen_keys
+        if len(picks) >= max_count:
+            return
+        n = str(name or "").strip()
+        if not n:
+            return
+        key = lane._normalize_player_name(n)
+        if not key or key in seen_keys:
+            return
+        if history.get(key, 0) >= 3:
+            # 24h で 3 回以上既出は skip (既存 player diversity 思想継承)
+            return
+        seen_keys.add(key)
+        picks.append((n, fact))
+
+    # 1. lineup focus (今日のスタメン)
+    for name in (lineup_focus_names or []):
+        _add(name, "")
+    # 2-3. 既存 candidates から (db_fact_line 持ち優先)
+    candidates_with_fact = [c for c in existing_candidates if (c.db_fact_line or "").strip()]
+    candidates_without_fact = [c for c in existing_candidates if not (c.db_fact_line or "").strip()]
+    for cand in candidates_with_fact + candidates_without_fact:
+        _add(cand.focus_player, cand.db_fact_line or "")
+    return picks
+
+
+def _build_gemma_branding_candidates(
+    existing_candidates: list[lane.Candidate],
+    *,
+    lineup_focus_names: list[str] | None,
+    recent_player_counts: dict[str, int] | None,
+    max_count: int,
+) -> list[lane.Candidate]:
+    """392: max_count 件まで Gemma branding candidate を生成。
+
+    silent skip 設計: 例外 / Tavily 失敗 / Gemma 失敗 / validator drop で
+    None 返却された分は単に出力 list から除外。 既存 mail は止めない。
+    """
+    if _xbg is None:
+        LOG.info(
+            "Gemma branding skipped: src.x_post_branding_gen import failed at module load"
+        )
+        return []
+    gemini_key, tavily_key = _resolve_gemma_api_keys()
+    if not gemini_key or not tavily_key:
+        LOG.warning(
+            "Gemma branding skipped: missing API key (gemini=%s tavily=%s)",
+            bool(gemini_key),
+            bool(tavily_key),
+        )
+        return []
+    players = _pick_gemma_branding_players(
+        existing_candidates,
+        lineup_focus_names=lineup_focus_names,
+        recent_player_counts=recent_player_counts,
+        max_count=max_count,
+    )
+    if not players:
+        LOG.info("Gemma branding skipped: no eligible players from lineup/candidates")
+        return []
+    out: list[lane.Candidate] = []
+    for player, fact in players:
+        cand = _xbg.build_gemma_branding_candidate(
+            player,
+            gemini_api_key=gemini_key,
+            tavily_api_key=tavily_key,
+            db_fact_line=fact,
+            logger=LOG,
+        )
+        if cand is not None:
+            out.append(cand)
+    return out
+
+
 def _build_comment_numeric_priority(
     news_candidates: list[lane.Candidate],
     data_candidates: list[lane.Candidate],
@@ -666,10 +805,41 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "Dedup fallback found no additional candidates (relaxed=%d)",
                 len(relaxed_candidates),
             )
+    # 392: flag ON 時は news_opinion fallback (template) を skip し、 Gemma 4
+    # + Tavily REST で branding candidate を 1-3 件生成して append する。
+    # flag OFF (default) では既存挙動を 100% 維持 (rollback 余地)。
+    gemma_enabled = _gemma_branding_enabled()
+    if gemma_enabled:
+        gemma_count = _gemma_branding_max_per_run()
+        if gemma_count > 0:
+            gemma_candidates = _build_gemma_branding_candidates(
+                candidates,
+                lineup_focus_names=lineup_focus_names,
+                recent_player_counts=recent_player_counts,
+                max_count=gemma_count,
+            )
+            if gemma_candidates:
+                before = len(candidates)
+                candidates = candidates + gemma_candidates
+                LOG.info(
+                    "Gemma branding appended: data=%d gemma=%d total=%d",
+                    before,
+                    len(gemma_candidates),
+                    len(candidates),
+                )
+            else:
+                LOG.info(
+                    "Gemma branding produced 0 candidates "
+                    "(silent skip on Tavily / Gemini errors or validator drops)."
+                )
+        # flag ON ルートでは template-based news_opinion fallback を呼ばない
+        news_fallback_enabled = False
+        fallback_candidates: list[lane.Candidate] = []
+    else:
+        news_fallback_enabled = not _news_fallback_disabled()
+        fallback_candidates = []
     news_priority_count = _resolve_news_priority_candidates(args.max_candidates)
-    news_fallback_enabled = not _news_fallback_disabled()
-    fallback_candidates: list[lane.Candidate] = []
-    if not news_fallback_enabled:
+    if not news_fallback_enabled and not gemma_enabled:
         LOG.info("News/opinion fallback disabled by X_POST_MAIL_NEWS_FALLBACK_DISABLED")
     if news_fallback_enabled and news_priority_count:
         fallback_candidates = _fetch_news_opinion_fallback_candidates(

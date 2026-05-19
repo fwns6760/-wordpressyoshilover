@@ -4,6 +4,12 @@
 
 ## 2026-05-19 session update
 
+### 392 — ヨシラバー branding X 投稿案 LLM 生成 Phase 2 (Gemma 4 + Tavily HTTP REST、 既存 382 mail/Scheduler 流用、 user GO 「GO」 2026-05-19)
+
+| ticket | status | 内容 |
+|---|---|---|
+| `doc/active/392-x-post-branding-mcp-phase2.md` (GH #67) | PLANNING / user GO 後着手中 | 391 Phase 1 CLI を本番 `x-post-mail-lane` に組み込み、 既存 template-based branding builder を LLM 生成 (Gemma 4 31B + Tavily HTTP REST direct + 任意 insight.db 参照) で置き換える Phase 2。 user 明示制約: rules は 382 継承 / mail format は既存 / Scheduler は既存 / 0 ドル / 「いままで LLM がうまく使えなかった」 ので Tavily 検索 ground + 任意 DB fact RAG で hallucination 抑制。 **stdio 同梱は既存 Dockerfile.x_post_mail の「Never Gemini」 設計を壊し +100MB / +5-15 秒 cold start のため回避**、 Tavily を **HTTP REST direct** で叩く設計に切替 (Node 不要、 image / cold start 不変)。 spec 382 hard rule (URL / hashtag / 未検証数字 / 引用 / 媒体名 禁止 / yoshilover framing / 巨人 specific) は system prompt + post-gen regex validator で gate。 env flag `X_POST_MAIL_GEMMA_GEN_ENABLED` default OFF で gating、 rollback 余地。 fault tolerance: Gemma / Tavily 例外時 None 返却 + WARNING log + 既存 mail 送信続行。 私が 382 改修中で dirty 残置の multi-source shape B (`build_multi_source_candidate`) は本 ticket で supersede。 次 step: code 実装 (`build_gemma_branding_candidate` + caller 切替 + tests) → py_compile + pytest → commit / push → Cloud Build image rebuild → Cloud Run Job Secret binding + image update → flag OFF で no-traffic verify → 別便で flag ON 判断。 |
+
 ### 391 — 巨人 X 投稿案生成 (Tavily MCP stdio 同梱 + Gemma 4 31B、Phase 1 CLI、 user GO 「チケットGO」 2026-05-19)
 
 | ticket | status | 内容 |

@@ -87,6 +87,17 @@ Change only `insight-nightly` schedule resolution and tests.
 - result: completed successfully, exit `0`, succeeded count `1`
 - log evidence: `status=no_game_day`, reason `no scheduled NPB games for 2026-05-18`
 
+## 2026-05-19 follow-up: no-game data mail
+
+- cause verified: `insight-nightly` args have no `--date`, so `auto_target_jst_date()` kept the 2026-05-19 morning/noon runs on `2026-05-18`; `no_game_day` returned before the DATA-INSIGHT publish block.
+- code: commit `8454a21` adds `ENABLE_DATA_INSIGHT_NO_GAME_DAY_PUBLISH=1` path so no-game days can still run DATA-INSIGHT publish from persisted GCS DB state.
+- deploy: image `insight-nightly:386-no-game-publish-8454a21`, Job generation `68`, execution `insight-nightly-j4sbm` completed successfully.
+- WP evidence: `insight-nightly-j4sbm` published post IDs `69545`, `69546`, `69547`, all titled with `【巨人データ】`.
+- mail cause verified: `publish-notice` had `DRAFT_ONLY_SCAN_MODE=1`, while DATA-INSIGHT Giants articles publish directly via `ENABLE_DATA_INSIGHT_AUTO_PUBLISH_GIANTS=1`; published `【巨人データ】` posts were outside the mail scanner.
+- code: commit `0d09c10` adds `ENABLE_DATA_INSIGHT_PUBLISHED_NOTICE=1` so published posts whose title starts `【巨人データ】` are mail-scanned; other published posts remain excluded.
+- deploy: image `publish-notice:data-insight-mail-0d09c10`, Job generation `107`, execution `publish-notice-gm5tb` completed successfully.
+- mail evidence: `publish-notice-gm5tb` logged `sent=3`; per-post sent for `69545`, `69546`, `69547`; summary mail also sent.
+
 ## next action
 
-Closed. Continue normal `insight-nightly` observation on the next natural scheduled run.
+Closed. Continue normal `insight-nightly` and `publish-notice` observation on the next natural scheduled run.

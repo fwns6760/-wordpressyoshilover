@@ -3,7 +3,7 @@
 ## meta
 
 - ticket: 383-INGEST-youtube-source-articleize-fix
-- status: REVIEW_NEEDED
+- status: LIVE_DEPLOYED_OBSERVE
 - owner: Codex A
 - lane: A
 - priority: P0.5
@@ -102,8 +102,23 @@ Fix the 344 connection bug only.
 
 ## live evidence
 
-Pending deploy / natural fire observation.
+2026-05-19 live deploy:
+
+- Cloud Build `7ed5103a-2986-44db-be30-4701a8bd3427` SUCCESS.
+- Image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:383-youtube-5253932` pushed.
+- Cloud Run service `yoshilover-fetcher` deployed revision `yoshilover-fetcher-00436-7zq`.
+- Traffic: `yoshilover-fetcher-00436-7zq` 100%.
+- Service health: `GET /health` returned `OK`.
+- New revision ERROR log check returned `[]`.
+- Env / Secret / Scheduler / WP existing posts / X / frontend were not changed.
+
+Natural fire observation is still pending. Expected evidence is at least one of:
+
+- `youtube_registry_sources_added`
+- `youtube_title_filter_skip`
+- `youtube_caption_section_appended`
+- `【YouTube】` draft title creation
 
 ## next action
 
-Commit the repo fix, create / link GitHub Issue, deploy `yoshilover-fetcher`, then observe the next natural fire.
+Observe the next natural fire and close GitHub Issue #58 only after YouTube path log / draft evidence appears.

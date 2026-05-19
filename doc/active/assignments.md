@@ -6,7 +6,7 @@
 
 | ticket | status | 内容 |
 |---|---|---|
-| `doc/active/383-INGEST-youtube-source-articleize-fix.md` (GH #58) | REVIEW_NEEDED | 344 の YouTube 記事が出ない件。live では `youtube_channel` 取得は出ていたが、`media_quote_only` で articleize path に進まず、`youtube_caption_section_appended` / `youtube_title_filter_skip` が 0 件だった。repo fix: YouTube channel scraper だけ `media_quote_only` でも記事化 path へ進め、`youtube_ob_sources.json` の confirmed / candidate ch を runtime 展開。tests: 344/YouTube suite 68 OK、rss_fetcher + tag_page + YouTube integration 57 OK、compileall / AST / diff-check OK。deploy / natural fire observation 待ち。Scheduler / env / Secret / WP既存記事 / X / frontend は未変更。 |
+| `doc/active/383-INGEST-youtube-source-articleize-fix.md` (GH #58) | LIVE_DEPLOYED_OBSERVE | 344 の YouTube 記事が出ない件。live では `youtube_channel` 取得は出ていたが、`media_quote_only` で articleize path に進まず、`youtube_caption_section_appended` / `youtube_title_filter_skip` が 0 件だった。repo fix: YouTube channel scraper だけ `media_quote_only` でも記事化 path へ進め、`youtube_ob_sources.json` の confirmed / candidate ch を runtime 展開。tests: 344/YouTube suite 68 OK、rss_fetcher + tag_page + YouTube integration 57 OK、compileall / AST / diff-check OK。Cloud Build `7ed5103a` SUCCESS、fetcher rev `yoshilover-fetcher-00436-7zq` 100%、`/health` OK、新 revision ERROR 0。次は自然 fire で YouTube path log / draft evidence 待ち。Scheduler / env / Secret / WP既存記事 / X / frontend は未変更。 |
 
 ## 2026-05-18 session summary
 

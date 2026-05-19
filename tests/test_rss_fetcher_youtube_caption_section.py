@@ -92,7 +92,11 @@ class MaybeAppendYoutubeCaptionSectionTests(unittest.TestCase):
         html = "<p>既存本文</p>"
         with patch(
             "src.youtube_caption_fetcher.fetch_youtube_caption",
-            return_value="巨人・坂本勇人が逆転サヨナラ３ラン。「一生忘れない」と語った。",
+            return_value=(
+                "巨人・坂本勇人が逆転サヨナラ３ラン。"
+                "阿部監督は状態を見て判断すると説明した。"
+                "「一生忘れない」と語った。"
+            ),
         ):
             result = rss_fetcher._maybe_append_youtube_caption_section(
                 html,
@@ -102,10 +106,49 @@ class MaybeAppendYoutubeCaptionSectionTests(unittest.TestCase):
             )
         self.assertIn("nomotoke-youtube-caption", result)
         self.assertIn("📺 字幕抜粋", result)
+        self.assertIn("要点", result)
         self.assertIn("巨人・坂本勇人", result)
         self.assertIn("巨人公式", result)
         self.assertIn("youtube.com/embed/abc12345678", result)
         self.assertIn("引用法 32 条範囲内", result)
+
+    def test_long_caption_is_split_into_short_quotes_and_summary(self):
+        html = "<p>既存本文</p>"
+        long_sentence = (
+            "巨人の試合後に阿部監督が先発投手の状態について説明し、"
+            "次回登板はコンディションを確認してから判断すると話した。"
+            "岡本和真の打撃についても内容は悪くないと語り、"
+            "チームとしては守備から流れを作りたいと説明した。"
+            "ファンに向けては明日も全員で戦うと締めくくった。"
+        )
+        with patch(
+            "src.youtube_caption_fetcher.fetch_youtube_caption",
+            return_value=long_sentence,
+        ):
+            result = rss_fetcher._maybe_append_youtube_caption_section(
+                html,
+                source_url="https://www.youtube.com/watch?v=abc12345678",
+                source_name="巨人公式",
+                logger=self.logger,
+            )
+        self.assertIn("nomotoke-youtube-caption__summary", result)
+        self.assertIn("<li>", result)
+        self.assertNotIn(long_sentence, result)
+        self.assertLessEqual(
+            max(len(piece) for piece in rss_fetcher._build_youtube_caption_quote_summary(long_sentence)[0]),
+            110,
+        )
+
+    def test_caption_without_punctuation_is_chunked(self):
+        caption = (
+            "巨人 阿部監督 先発投手の状態を確認して次回登板を判断する "
+            "岡本和真の打撃内容についても確認しながら明日の試合へ準備する"
+        )
+        quotes, summary = rss_fetcher._build_youtube_caption_quote_summary(caption)
+        self.assertTrue(quotes)
+        self.assertTrue(summary)
+        self.assertLessEqual(max(len(quote) for quote in quotes), 110)
+        self.assertLessEqual(max(len(item) for item in summary), 76)
 
     def test_no_caption_returns_unchanged(self):
         html = "<p>既存</p>"

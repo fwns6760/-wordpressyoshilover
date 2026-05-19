@@ -24,6 +24,7 @@ JST = ZoneInfo("Asia/Tokyo")
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SUMMARY_EVERY = 10
 DEFAULT_DAILY_CAP = 100
+DEFAULT_JUDGMENT_BATCH_PART_SIZE = 100
 # 2026-05-18 user 仕様 (新 draft 1 通 1 回): 30min → 24h に拡大。
 # 30min だと同 post が 12:00 / 14:00 fire で 2 回送られる ("古い再送" の苦情)。
 DEFAULT_DUPLICATE_WINDOW = timedelta(hours=24)
@@ -2926,7 +2927,7 @@ def build_summary_body_text(
 def build_judgment_batch_summary_requests(
     entries: Sequence[BurstSummaryEntry],
     *,
-    entries_per_part: int = 20,
+    entries_per_part: int = DEFAULT_JUDGMENT_BATCH_PART_SIZE,
     cumulative_before: int = 0,
     daily_cap: int = DEFAULT_DAILY_CAP,
 ) -> list[BurstSummaryRequest]:

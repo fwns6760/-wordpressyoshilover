@@ -21041,8 +21041,16 @@ def _send_fetcher_inline_draft_notices(
     queue_path = str(
         os.environ.get(_FETCHER_INLINE_DRAFT_NOTICE_QUEUE_PATH_ENV, "/tmp/publish_notice_queue.jsonl")
     ).strip() or "/tmp/publish_notice_queue.jsonl"
-    individual_limit = _positive_int_env(_FETCHER_INLINE_DRAFT_NOTICE_INDIVIDUAL_LIMIT_ENV, 5)
-    part_size = _positive_int_env(_FETCHER_INLINE_DRAFT_NOTICE_PART_SIZE_ENV, 20)
+    # User lock 2026-05-20: 100 件までは元の 1 記事 1 通 HTML で受け取る。
+    # Live env に古い 5 / 20 が残っていても、ここでは 100 未満に下げない。
+    individual_limit = max(
+        _positive_int_env(_FETCHER_INLINE_DRAFT_NOTICE_INDIVIDUAL_LIMIT_ENV, 100),
+        100,
+    )
+    part_size = max(
+        _positive_int_env(_FETCHER_INLINE_DRAFT_NOTICE_PART_SIZE_ENV, 100),
+        100,
+    )
     counts = {"sent": 0, "suppressed": 0, "errors": 0}
     remote_queue_enabled = _fetcher_inline_remote_queue_enabled()
     if remote_queue_enabled and not _download_fetcher_inline_notice_remote_queue(queue_path, logger):

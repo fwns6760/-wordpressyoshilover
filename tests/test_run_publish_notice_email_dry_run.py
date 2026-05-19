@@ -193,7 +193,7 @@ class RunPublishNoticeEmailDryRunScanTests(unittest.TestCase):
         self.assertEqual(len(captured_entries), 1)
         self.assertEqual(captured_entries[0].post_id, 63105)
 
-    def test_judgment_batch_mode_sends_parts_and_marks_items_sent(self) -> None:
+    def test_judgment_batch_mode_keeps_original_html_until_100_items(self) -> None:
         requests = [
             PublishNoticeRequest(
                 post_id=70000 + index,
@@ -205,11 +205,93 @@ class RunPublishNoticeEmailDryRunScanTests(unittest.TestCase):
                 admin_edit_url=f"https://yoshilover.com/wp-admin/post.php?post={70000 + index}&action=edit",
                 publish_button_url=f"https://run.app/publish-and-tweet?post_id={70000 + index}&token=t",
             )
-            for index in range(6)
+            for index in range(100)
         ]
 
         class _Sink:
             enabled = False
+
+        send_calls = []
+
+        def fake_send(request, **kwargs):
+            send_calls.append((request, kwargs))
+            return PublishNoticeEmailResult(
+                status="sent",
+                reason=None,
+                subject=f"【投稿候補】{request.title} | YOSHILOVER",
+                recipients=["notice@example.com"],
+            )
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            os.environ,
+            {
+                "ENABLE_PUBLISH_NOTICE_JUDGMENT_BATCH": "1",
+                "PUBLISH_NOTICE_JUDGMENT_BATCH_THRESHOLD": "6",
+                "PUBLISH_NOTICE_JUDGMENT_BATCH_PART_SIZE": "4",
+            },
+            clear=False,
+        ), patch(
+            "src.tools.run_publish_notice_email_dry_run.send",
+            side_effect=fake_send,
+        ), patch(
+            "src.tools.run_publish_notice_email_dry_run.send_summary",
+            side_effect=AssertionError("100 items must remain per-post HTML mails"),
+        ), patch(
+            "src.tools.run_publish_notice_email_dry_run._emit_notice_ledger",
+        ), patch("sys.stdout", io.StringIO()):
+            queue_path = str(Path(tmpdir) / "queue.jsonl")
+            results = runner._send_direct_publish_requests(
+                requests,
+                queue_path=queue_path,
+                history_path=str(Path(tmpdir) / "history.json"),
+                dry_run=False,
+                send_enabled=True,
+                ledger_sink=_Sink(),
+            )
+
+            rows = [
+                json.loads(line)
+                for line in Path(queue_path).read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+
+        self.assertEqual(len(results), 100)
+        self.assertEqual(len(send_calls), 100)
+        summary_rows = [row for row in rows if row["notice_kind"] == "summary"]
+        per_post_rows = [row for row in rows if row["notice_kind"] == "per_post"]
+        self.assertEqual(len(summary_rows), 0)
+        self.assertEqual(len(per_post_rows), 100)
+        self.assertEqual({str(row["post_id"]) for row in per_post_rows}, {str(70000 + index) for index in range(100)})
+
+    def test_judgment_batch_mode_sends_parts_only_after_100_items(self) -> None:
+        requests = [
+            PublishNoticeRequest(
+                post_id=71000 + index,
+                title=f"公開判断記事 {index}",
+                canonical_url=f"https://yoshilover.com/{71000 + index}",
+                subtype="postgame",
+                publish_time_iso="2026-05-19T21:45:00+09:00",
+                body_excerpt=f"本文抜粋 {index}",
+                admin_edit_url=f"https://yoshilover.com/wp-admin/post.php?post={71000 + index}&action=edit",
+                publish_button_url=f"https://run.app/publish-and-tweet?post_id={71000 + index}&token=t",
+            )
+            for index in range(101)
+        ]
+
+        class _Sink:
+            enabled = False
+
+        captured_summary_sizes: list[int] = []
+
+        def fake_send_summary(summary_request, **kwargs):
+            captured_summary_sizes.append(len(summary_request.entries))
+            return PublishNoticeEmailResult(
+                status="sent",
+                reason=None,
+                subject=f"【公開判断まとめ {summary_request.part_index}/{summary_request.part_total}】"
+                f"新着{len(summary_request.entries)}件 | YOSHILOVER",
+                recipients=["notice@example.com"],
+            )
 
         with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
             os.environ,
@@ -221,12 +303,7 @@ class RunPublishNoticeEmailDryRunScanTests(unittest.TestCase):
             clear=False,
         ), patch(
             "src.tools.run_publish_notice_email_dry_run.send_summary",
-            return_value=PublishNoticeEmailResult(
-                status="sent",
-                reason=None,
-                subject="【公開判断まとめ 1/2】新着4件 | YOSHILOVER",
-                recipients=["notice@example.com"],
-            ),
+            side_effect=fake_send_summary,
         ), patch(
             "src.tools.run_publish_notice_email_dry_run._emit_notice_ledger",
         ), patch("sys.stdout", io.StringIO()):
@@ -247,6 +324,7 @@ class RunPublishNoticeEmailDryRunScanTests(unittest.TestCase):
             ]
 
         self.assertEqual(len(results), 2)
+        self.assertEqual(captured_summary_sizes, [100, 1])
         summary_rows = [row for row in rows if row["notice_kind"] == "summary"]
         marker_rows = [
             row
@@ -254,8 +332,8 @@ class RunPublishNoticeEmailDryRunScanTests(unittest.TestCase):
             if row["notice_kind"] == "per_post" and row["reason"] == "BATCH_SENT"
         ]
         self.assertEqual(len(summary_rows), 2)
-        self.assertEqual(len(marker_rows), 6)
-        self.assertEqual({str(row["post_id"]) for row in marker_rows}, {str(70000 + index) for index in range(6)})
+        self.assertEqual(len(marker_rows), 101)
+        self.assertEqual({str(row["post_id"]) for row in marker_rows}, {str(71000 + index) for index in range(101)})
 
 
 class LoadStateFetchReasonsFromEnvTests(unittest.TestCase):

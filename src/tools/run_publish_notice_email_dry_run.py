@@ -94,6 +94,7 @@ def _load_state_fetch_reasons_from_env() -> dict[str, int] | None:
 _JUDGMENT_BATCH_ENABLED_ENV = "ENABLE_PUBLISH_NOTICE_JUDGMENT_BATCH"
 _JUDGMENT_BATCH_THRESHOLD_ENV = "PUBLISH_NOTICE_JUDGMENT_BATCH_THRESHOLD"
 _JUDGMENT_BATCH_PART_SIZE_ENV = "PUBLISH_NOTICE_JUDGMENT_BATCH_PART_SIZE"
+_JUDGMENT_BATCH_MIN_INDIVIDUAL_MAILS = 100
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -117,8 +118,24 @@ def _positive_int_env(name: str, default: int) -> int:
 def _should_use_judgment_batch(requests: Sequence[PublishNoticeRequest]) -> bool:
     if not _env_flag(_JUDGMENT_BATCH_ENABLED_ENV, False):
         return False
-    threshold = _positive_int_env(_JUDGMENT_BATCH_THRESHOLD_ENV, 6)
+    threshold = max(
+        _positive_int_env(
+            _JUDGMENT_BATCH_THRESHOLD_ENV,
+            _JUDGMENT_BATCH_MIN_INDIVIDUAL_MAILS + 1,
+        ),
+        _JUDGMENT_BATCH_MIN_INDIVIDUAL_MAILS + 1,
+    )
     return len(requests) >= threshold
+
+
+def _judgment_batch_part_size() -> int:
+    return max(
+        _positive_int_env(
+            _JUDGMENT_BATCH_PART_SIZE_ENV,
+            _JUDGMENT_BATCH_MIN_INDIVIDUAL_MAILS,
+        ),
+        _JUDGMENT_BATCH_MIN_INDIVIDUAL_MAILS,
+    )
 
 
 def _read_payload_from_path(path: str) -> dict[str, Any]:
@@ -427,7 +444,7 @@ def _send_direct_publish_requests(
     ]
     summary_requests = build_judgment_batch_summary_requests(
         summary_entries,
-        entries_per_part=_positive_int_env(_JUDGMENT_BATCH_PART_SIZE_ENV, 20),
+        entries_per_part=_judgment_batch_part_size(),
     )
     summary_results = _send_summary_requests(
         summary_requests,

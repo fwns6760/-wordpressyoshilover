@@ -2,6 +2,12 @@
 
 最終更新: 2026-05-19 JST
 
+## 2026-05-19 session update
+
+| ticket | status | 内容 |
+|---|---|---|
+| `doc/active/383-INGEST-youtube-source-articleize-fix.md` (GH #58) | REVIEW_NEEDED | 344 の YouTube 記事が出ない件。live では `youtube_channel` 取得は出ていたが、`media_quote_only` で articleize path に進まず、`youtube_caption_section_appended` / `youtube_title_filter_skip` が 0 件だった。repo fix: YouTube channel scraper だけ `media_quote_only` でも記事化 path へ進め、`youtube_ob_sources.json` の confirmed / candidate ch を runtime 展開。tests: 344/YouTube suite 68 OK、rss_fetcher + tag_page + YouTube integration 57 OK、compileall / AST / diff-check OK。deploy / natural fire observation 待ち。Scheduler / env / Secret / WP既存記事 / X / frontend は未変更。 |
+
 ## 2026-05-18 session summary
 
 ### 着地 (Cloud Scheduler 3 jobs 追加、 repo code 不変)

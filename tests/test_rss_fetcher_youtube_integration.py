@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import unittest
 
 from src import rss_fetcher
@@ -60,6 +61,98 @@ class CheckYoutubeGiantsFilterTests(unittest.TestCase):
     def test_empty_input_safe(self):
         ok, reason = rss_fetcher._check_youtube_giants_filter("")
         self.assertFalse(ok)
+
+
+class YoutubeSourceArticleizeTests(unittest.TestCase):
+    def test_youtube_channel_media_quote_only_still_articleizes_for_344(self):
+        source = {
+            "type": "tag_scrape",
+            "scraper": "youtube_channel",
+            "role": ["media_quote_only"],
+        }
+        roles = rss_fetcher._source_roles_from_config(source["role"])
+
+        self.assertTrue(
+            rss_fetcher._should_articleize_source(
+                source_type="tag_scrape",
+                source=source,
+                source_roles=roles,
+            )
+        )
+
+    def test_non_youtube_media_quote_only_remains_pool_only(self):
+        source = {
+            "type": "tag_scrape",
+            "scraper": "instagram_tag",
+            "role": ["media_quote_only"],
+        }
+        roles = rss_fetcher._source_roles_from_config(source["role"])
+
+        self.assertFalse(
+            rss_fetcher._should_articleize_source(
+                source_type="tag_scrape",
+                source=source,
+                source_roles=roles,
+            )
+        )
+
+
+class YoutubeRegistryExpansionTests(unittest.TestCase):
+    def test_youtube_registry_sources_are_appended_when_youtube_scraper_present(self):
+        base_sources = [
+            {
+                "name": "読売ジャイアンツYouTube公式",
+                "url": "https://www.youtube.com/channel/UCXxg0igSYUp0tqdd6luPEnQ/videos",
+                "type": "tag_scrape",
+                "scraper": "youtube_channel",
+                "role": ["media_quote_only"],
+            }
+        ]
+
+        expanded = rss_fetcher._expand_sources_with_youtube_registry(
+            base_sources,
+            logger=logging.getLogger("test"),
+        )
+        names = {source["name"] for source in expanded}
+
+        self.assertIn("デーブ大久保チャンネル", names)
+        self.assertIn("日本野球機構(NPB)公式チャンネル", names)
+        self.assertNotIn("sample non Giants YouTube channel", names)
+        self.assertEqual(
+            sum(
+                1
+                for source in expanded
+                if "UCXxg0igSYUp0tqdd6luPEnQ" in source.get("url", "")
+            ),
+            1,
+        )
+        added = next(
+            source for source in expanded if source["name"] == "デーブ大久保チャンネル"
+        )
+        self.assertEqual(added["type"], "tag_scrape")
+        self.assertEqual(added["scraper"], "youtube_channel")
+        self.assertEqual(added["max_age_days"], 2)
+        self.assertEqual(added["article_limit"], 5)
+        self.assertIn("media_quote_only", added["role"])
+        self.assertIn("review_only", added["role"])
+
+    def test_registry_not_appended_when_base_sources_have_no_youtube_scraper(self):
+        base_sources = [
+            {
+                "name": "報知",
+                "url": "https://hochi.news/",
+                "type": "tag_scrape",
+                "scraper": "hochi_giants_tag",
+                "role": ["article_source"],
+            }
+        ]
+
+        expanded = rss_fetcher._expand_sources_with_youtube_registry(
+            base_sources,
+            logger=logging.getLogger("test"),
+        )
+
+        self.assertEqual(expanded, base_sources)
 
 
 if __name__ == "__main__":

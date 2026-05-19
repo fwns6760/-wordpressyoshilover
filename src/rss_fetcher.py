@@ -286,6 +286,104 @@ def _source_allowed_by_game_live_policy(
     return bool(source_roles & GAME_LIVE_SOURCE_POLICY_ROLES)
 
 
+def _is_youtube_channel_scrape_source(
+    source_type: str,
+    source: Mapping[str, Any],
+) -> bool:
+    return (
+        source_type == "tag_scrape"
+        and str(source.get("scraper") or "") == "youtube_channel"
+    )
+
+
+def _should_articleize_source(
+    *,
+    source_type: str,
+    source: Mapping[str, Any],
+    source_roles: set[str],
+) -> bool:
+    if "media_quote_only" not in source_roles:
+        return True
+    # 344-INGEST: YouTube source was originally quote-pool only, but the
+    # current ticket contract requires title-filtered YouTube videos to become
+    # reviewable articles. Keep other media_quote_only sources pool-only.
+    return _is_youtube_channel_scrape_source(source_type, source)
+
+
+def _youtube_registry_source_to_rss_source(source: Any) -> dict[str, Any]:
+    role = str(getattr(source, "role", "") or "")
+    roles = ["media_quote_only", "youtube_review_source", "review_only"]
+    if role == "official":
+        roles.append("official_video_source")
+    if role in {"media", "broadcast"}:
+        roles.append("media_quote_pool")
+    return {
+        "name": str(getattr(source, "display_name", "") or "YouTube").strip(),
+        "url": f"https://www.youtube.com/channel/{source.channel_id}/videos",
+        "type": "tag_scrape",
+        "scraper": "youtube_channel",
+        "max_age_days": 2,
+        "article_limit": 5,
+        "role": roles,
+    }
+
+
+def _expand_sources_with_youtube_registry(
+    sources: list[dict[str, Any]],
+    *,
+    logger: logging.Logger | None = None,
+) -> list[dict[str, Any]]:
+    """Append reviewable YouTube OB/official registry entries to RSS sources.
+
+    Phase 1b added channels to ``config/youtube_ob_sources.json``; this helper
+    makes that shelf visible to the normal fetcher without duplicating the
+    channel list in ``rss_sources.json``. If the base config has no YouTube
+    channel scraper, leave custom/test source lists untouched.
+    """
+    if not any(
+        _is_youtube_channel_scrape_source(str(source.get("type", "news")), source)
+        for source in sources
+        if isinstance(source, dict)
+    ):
+        return sources
+    log = logger or logging.getLogger("rss_fetcher")
+    try:
+        from src.youtube_ob_source_registry import (
+            is_review_candidate,
+            load_youtube_ob_sources,
+            normalize_youtube_channel_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("youtube_registry_import_failed err=%s", exc)
+        return sources
+
+    existing_channel_ids = {
+        normalize_youtube_channel_id(str(source.get("url") or ""))
+        for source in sources
+        if isinstance(source, dict)
+        and _is_youtube_channel_scrape_source(str(source.get("type", "news")), source)
+    }
+    expanded = list(sources)
+    added = 0
+    try:
+        registry_sources = load_youtube_ob_sources()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("youtube_registry_load_failed err=%s", exc)
+        return sources
+    for registry_source in registry_sources:
+        channel_id = str(getattr(registry_source, "channel_id", "") or "")
+        if not channel_id or channel_id in existing_channel_ids:
+            continue
+        if not is_review_candidate(registry_source):
+            continue
+        expanded.append(_youtube_registry_source_to_rss_source(registry_source))
+        existing_channel_ids.add(channel_id)
+        added += 1
+    if added:
+        log.info("youtube_registry_sources_added count=%d", added)
+    return expanded
+
+
 ENABLE_LIVE_UPDATE_ARTICLES = os.getenv("ENABLE_LIVE_UPDATE_ARTICLES", "0").strip().lower() in TRUE_VALUES
 SCORE_TOKEN_RE = _re.compile(r"\d{1,2}\s*[－\-–]\s*\d{1,2}")
 NUMERIC_TOKEN_RE = _re.compile(r"\d+(?:\.\d+)?(?:[%％]|本|打点|勝|敗|回|失点|奪三振|号|位|年|月|日|人|円|試合|打席|安打|点|本塁打|打率|防御率|OPS|WHIP|WAR|wRC\+?|K/9)?")
@@ -25119,6 +25217,7 @@ def _main(args, logger):
     # 設定読み込み
     with open(RSS_SOURCES_FILE, encoding="utf-8") as f:
         sources = json.load(f)
+    sources = _expand_sources_with_youtube_registry(sources, logger=logger)
     with open(KEYWORDS_FILE, encoding="utf-8") as f:
         keywords = json.load(f)
 
@@ -25172,7 +25271,11 @@ def _main(args, logger):
         source_roles = _source_roles_from_config(source.get("role"))
         prepared_source_roles = sorted(source_roles)
         should_add_to_media_quote_pool = bool(source_roles & {"media_quote_pool", "media_quote_only"})
-        should_articleize = "media_quote_only" not in source_roles
+        should_articleize = _should_articleize_source(
+            source_type=source_type,
+            source=source,
+            source_roles=source_roles,
+        )
         if game_live_source_policy_active and not _source_allowed_by_game_live_policy(
             source_roles,
             now=fetch_started_at,

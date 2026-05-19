@@ -135,6 +135,17 @@ Implement YouTube caption presentation v2 only.
 - New revision ERROR log check returned `[]`.
 - Env / Secret / Scheduler / `RUN_DRAFT_ONLY` / WP existing posts / X / frontend were not changed.
 
+2026-05-19 follow-up live deploy:
+
+- Cloud Build `82719b1a-b443-4960-b0f2-bb1139df9845` SUCCESS.
+- Image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:385-youtube-caption-1500-6904c98` pushed.
+- Image digest `sha256:2d696966d794565f2ace305e61f2a91cdff40c41dca8c0124334b146cc0578be`.
+- Cloud Run service `yoshilover-fetcher` deployed revision `yoshilover-fetcher-00441-xj8`.
+- Traffic: `yoshilover-fetcher-00441-xj8` 100%.
+- Service health: `GET /health` returned `OK`.
+- New revision ERROR log check returned `[]`.
+- Env / Secret / Scheduler / `RUN_DRAFT_ONLY` / WP existing posts / X / frontend were not changed.
+
 ## next action
 
 Observe the next natural fire for `youtube_caption_section_appended` with `quote_count` / `summary_count`, then close GitHub Issue #60 if live article output matches acceptance.

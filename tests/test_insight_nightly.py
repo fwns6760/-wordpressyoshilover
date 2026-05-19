@@ -249,3 +249,59 @@ def test_resolve_slug_auto_fails_without_cache_and_not_live(tmp_path):
             allow_live=False,
             cache_dir=tmp_path / "raw_html",
         )
+
+
+def test_resolve_all_slugs_auto_no_game_day_from_readable_monthly_schedule(tmp_path):
+    cache_dir = tmp_path / "raw_html"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "schedule_2026_05.html").write_text(
+        '<a href="/scores/2026/0517/d-g-08/box.html">previous day</a>',
+        encoding="utf-8",
+    )
+    with pytest.raises(insight_nightly.NoScheduledGames) as excinfo:
+        insight_nightly.resolve_all_slugs_auto(
+            target_date=dt.date(2026, 5, 18),
+            allow_live=False,
+            cache_dir=cache_dir,
+        )
+    assert excinfo.value.scope == "npb"
+    assert excinfo.value.target_date == dt.date(2026, 5, 18)
+
+
+def test_resolve_slug_auto_no_giants_game_when_other_games_exist(tmp_path):
+    cache_dir = tmp_path / "raw_html"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "schedule_2026_05.html").write_text(
+        '<a href="/scores/2026/0518/t-yb-08/box.html">阪神 vs DeNA</a>',
+        encoding="utf-8",
+    )
+    with pytest.raises(insight_nightly.NoScheduledGames) as excinfo:
+        insight_nightly.resolve_slug_auto(
+            target_date=dt.date(2026, 5, 18),
+            allow_live=False,
+            cache_dir=cache_dir,
+        )
+    assert excinfo.value.scope == "giants"
+    assert excinfo.value.target_date == dt.date(2026, 5, 18)
+
+
+def test_cli_all_teams_no_game_day_returns_zero(tmp_path, capsys):
+    cache_dir = tmp_path / "raw_html"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "schedule_2026_05.html").write_text(
+        '<a href="/scores/2026/0517/d-g-08/box.html">previous day</a>',
+        encoding="utf-8",
+    )
+    rc = insight_nightly.main([
+        "--auto", "--all-teams",
+        "--date", "2026-05-18",
+        "--db", str(tmp_path / "db.sqlite"),
+        "--csv", str(tmp_path / "candidates.csv"),
+        "--cache-dir", str(cache_dir),
+        "--digest-dir", str(tmp_path / "digest"),
+    ])
+    assert rc == 0
+    body = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert body["status"] == "no_game_day"
+    assert body["game_date"] == "2026-05-18"
+    assert body["scope"] == "npb"

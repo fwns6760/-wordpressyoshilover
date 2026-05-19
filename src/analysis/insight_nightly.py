@@ -55,6 +55,17 @@ from src.source_npb_postgame_extractor import parse_npb_box_html  # noqa: E402
 
 DEFAULT_DIGEST_DIR = ROOT / "data" / "insight" / "digest"
 
+
+class NoScheduledGames(RuntimeError):
+    """Schedule page was readable, but no target game exists for this lane."""
+
+    def __init__(self, *, target_date: dt.date, scope: str, reason: str):
+        super().__init__(reason)
+        self.target_date = target_date
+        self.scope = scope
+        self.reason = reason
+
+
 # issue #44 G: counting metric ranking publish 対象。 batting_logs schema は
 # AB, R, H, RBI, SB のみで HR 列が無い (HR は atbats_json 内) が、
 # ranking_article_publisher.aggregate_player_counting_stat が stat_col="HR"
@@ -96,6 +107,7 @@ def resolve_all_slugs_auto(
     ]
     target_str = target_date.isoformat()
     last_error: Exception | None = None
+    parsed_schedule_seen = False
     for url, cache_filename in candidates_urls:
         try:
             html, _meta = insight_fetcher.fetch_html_polite(
@@ -108,9 +120,17 @@ def resolve_all_slugs_auto(
         except insight_fetcher.FetchBlocked as exc:
             last_error = exc
             continue
+        if insight_schedule.parse_npb_schedule_html(html):
+            parsed_schedule_seen = True
         slugs = insight_schedule.resolve_all_slugs_for_date(html, target_str)
         if slugs:
             return slugs
+    if parsed_schedule_seen:
+        raise NoScheduledGames(
+            target_date=target_date,
+            scope="npb",
+            reason=f"no scheduled NPB games for {target_str}",
+        )
     raise insight_fetcher.FetchBlocked(
         f"auto_resolve_all_failed: no slugs found for {target_str} "
         f"(last error: {last_error!r})"
@@ -142,6 +162,7 @@ def resolve_slug_auto(
     ]
     last_error: Exception | None = None
     target_str = target_date.isoformat()
+    parsed_schedule_seen = False
     for url, cache_filename in candidates_urls:
         try:
             html, _meta = insight_fetcher.fetch_html_polite(
@@ -154,9 +175,17 @@ def resolve_slug_auto(
         except insight_fetcher.FetchBlocked as exc:
             last_error = exc
             continue
+        if insight_schedule.parse_npb_schedule_html(html):
+            parsed_schedule_seen = True
         slug = insight_schedule.resolve_giants_slug_for_date(html, target_str)
         if slug:
             return slug
+    if parsed_schedule_seen:
+        raise NoScheduledGames(
+            target_date=target_date,
+            scope="giants",
+            reason=f"no scheduled Giants game for {target_str}",
+        )
     raise insight_fetcher.FetchBlocked(
         f"auto_resolve_failed: no Giants slug found for {target_str} "
         f"(last error: {last_error!r})"
@@ -684,6 +713,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     except insight_fetcher.FetchBlocked as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)}, ensure_ascii=False))
         return 2
+    except NoScheduledGames as exc:
+        print(json.dumps({
+            "status": "no_game_day",
+            "game_date": exc.target_date.isoformat(),
+            "scope": exc.scope,
+            "reason": exc.reason,
+        }, ensure_ascii=False))
+        return 0
     print(json.dumps({"status": "ok", **summary}, ensure_ascii=False))
     return 0
 

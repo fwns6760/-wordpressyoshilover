@@ -29,9 +29,10 @@ User lock:
 - `src/youtube_caption_fetcher.py` uses `youtube-transcript-api`.
 - `src/youtube_caption_fetcher.py` comment says LLM is not used.
 - `src/youtube_caption_fetcher.py` joins caption segments and normalizes whitespace.
-- `src/rss_fetcher.py` calls `fetch_youtube_caption(video_id, max_chars=600, logger=logger)`.
+- `src/rss_fetcher.py` calls `fetch_youtube_caption(video_id, max_chars=_YOUTUBE_CAPTION_FETCH_MAX_CHARS, logger=logger)`.
+- `_YOUTUBE_CAPTION_FETCH_MAX_CHARS = 1500`; this widens the caption material window before deterministic extraction.
 - `src/rss_fetcher.py` appends one `<aside class="nomotoke-youtube-caption">` section with heading `📺 字幕抜粋`, source attribution, and YouTube embed.
-- There is no current summarization, quote ranking, or short quote split path.
+- `src/rss_fetcher.py` then extracts max 2 short quotes and max 3 "要点" bullets from caption text only.
 
 ## scope
 
@@ -96,6 +97,7 @@ Implement YouTube caption presentation v2 only.
 - Added deterministic caption sentence splitting in `src/rss_fetcher.py`.
 - Added quote / summary selection from caption text only.
 - Added max 2 quote excerpts and max 3 summary bullets.
+- Widened the caption fetch material window from 600 to 1500 chars while keeping visible quote / bullet caps unchanged.
 - Kept source attribution and YouTube embed.
 - Kept LLM off.
 - Added explicit fallback / skip logs for no extracted quote and no summary cases.
@@ -111,6 +113,15 @@ Implement YouTube caption presentation v2 only.
 - `python3 -m py_compile tests/test_rss_fetcher_youtube_caption_section.py` passed.
 - AST parse passed for `src/rss_fetcher.py` and `tests/test_rss_fetcher_youtube_caption_section.py`.
 - `git diff --check` passed for touched 385 files.
+
+2026-05-19 follow-up local:
+
+- `python3 -m unittest tests.test_rss_fetcher_youtube_caption_section tests.test_youtube_caption_fetcher tests.test_rss_fetcher_youtube_title_prefix tests.test_youtube_title_filter tests.test_rss_fetcher_youtube_integration` passed: 63 tests.
+- `python3 -m compileall src/rss_fetcher.py` passed.
+- `python3 -m py_compile tests/test_rss_fetcher_youtube_caption_section.py` passed.
+- AST parse passed for `src/rss_fetcher.py` and `tests/test_rss_fetcher_youtube_caption_section.py`.
+- `git diff --check` passed.
+- Added regression test proving `fetch_youtube_caption(... max_chars=1500 ...)` is used.
 
 ## live evidence
 

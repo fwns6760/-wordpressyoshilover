@@ -22124,6 +22124,7 @@ def _is_youtube_post_url(post_url: str) -> bool:
 _YOUTUBE_DRAFT_TITLE_PREFIX = "【YouTube】"
 _YOUTUBE_CAPTION_MAX_QUOTES = 2
 _YOUTUBE_CAPTION_MAX_SUMMARY_BULLETS = 3
+_YOUTUBE_CAPTION_FETCH_MAX_CHARS = 1500
 _YOUTUBE_CAPTION_QUOTE_MAX_CHARS = 110
 _YOUTUBE_CAPTION_SUMMARY_MAX_CHARS = 76
 _YOUTUBE_CAPTION_CHUNK_MAX_CHARS = 90
@@ -22343,7 +22344,9 @@ def _maybe_append_youtube_caption_section(
         return rendered_html
     try:
         from src.youtube_caption_fetcher import fetch_youtube_caption
-        caption = fetch_youtube_caption(video_id, max_chars=600, logger=logger)
+        caption = fetch_youtube_caption(
+            video_id, max_chars=_YOUTUBE_CAPTION_FETCH_MAX_CHARS, logger=logger
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "youtube_caption_section_fetch_failed err=%s url=%s",

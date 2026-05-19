@@ -112,6 +112,23 @@ class MaybeAppendYoutubeCaptionSectionTests(unittest.TestCase):
         self.assertIn("youtube.com/embed/abc12345678", result)
         self.assertIn("引用法 32 条範囲内", result)
 
+    def test_caption_fetch_uses_wider_material_window(self):
+        html = "<p>既存本文</p>"
+        with patch(
+            "src.youtube_caption_fetcher.fetch_youtube_caption",
+            return_value=(
+                "巨人・坂本勇人が逆転サヨナラ３ラン。"
+                "阿部監督は状態を見て判断すると説明した。"
+            ),
+        ) as mock_fetch:
+            rss_fetcher._maybe_append_youtube_caption_section(
+                html,
+                source_url="https://www.youtube.com/watch?v=abc12345678",
+                source_name="巨人公式",
+                logger=self.logger,
+            )
+        self.assertEqual(mock_fetch.call_args.kwargs["max_chars"], 1500)
+
     def test_long_caption_is_split_into_short_quotes_and_summary(self):
         html = "<p>既存本文</p>"
         long_sentence = (

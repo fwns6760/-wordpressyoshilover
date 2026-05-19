@@ -4,11 +4,23 @@
 
 ## 2026-05-19 session update
 
+### 393 — 価格据え置きの本文付き公開判断メール即時化 / 大量時 Part 分割 (user GO 2026-05-19)
+
+| ticket | status | 内容 |
+|---|---|---|
+| `doc/active/393-OPS-price-neutral-fast-draft-judgment-mail.md` (GH #68) | IN_FLIGHT | user 要件: Cloud Run / Scheduler 起動回数を増やさず、記事作成後に本文付き mail で公開判断したい。タイトルだけのまとめは禁止。大量時は 1 記事 1 通ではなく、本文抜粋・編集リンク・公開ボタン付きの Part 分割 mail にする。scope: `publish_notice_email_sender` に `judgment_batch` summary mode を追加し、`rss_fetcher` から draft 作成同一実行内で少数時は個別、多数時は Part 分割 mail を送れるようにする。`sent` / batch 成功時だけ queue に記録し、suppressed / error は通知済みにしない。Scheduler 追加 / 5分間隔化 / Cloud Run 新規 job / Secret 値変更 / WP既存記事変更 / X live post / `RUN_DRAFT_ONLY` は不可触。 |
+
+### 394 — Gemma branding に insight.db 当日試合 / player log / 連勝記録の fact line 注入 (392 拡張、 user 明示「データベースは当日のきろくがいい」 2026-05-19)
+
+| ticket | status | 内容 |
+|---|---|---|
+| `doc/active/394-x-post-gemma-db-fact-line.md` | LIVE_DEPLOYED_OBSERVE | 22:30 fire 観察で 392 Gemma 出力に cheerleading + 古い snippet の現在化問題が見つかった対応。 同夜の 414d411 (tone tune) / 1a55d59 (same-day filter + 時間帯 hint) に加え、 本 commit `ef1e756` で `build_db_fact_line()` 追加: `insight.db` を read-only SELECT で叩き、 (1) games table から今日試合の opponent / score / 勝敗、 (2) batting_logs / pitching_logs JOIN games で player の今日 stat、 (3) 直近 N 試合 result から ○●△ streak、 を改行区切りの facts line に整形して Gemma context に注入。 既存 `_build_gemma_branding_candidates` に `db_path` 引数追加、 caller の既 download 済 insight.db cache を再利用 (追加 GCS access なし)。 Gemma は **DB fact 内 verified 数字のみ post 本文に使用可** (spec 382 hard rule、 Tavily snippet の数字は使ってはいけない、 system prompt + validator で gate)。 fault tolerance: build_db_fact_line 例外時は空 string → caller は lineup_fact fallback → 最終的に Tavily snippet のみ context、 既存 mail は止めない。 user 「勝ち負けは RSS で拾える?」 への回答 = 既存 ETL の `games.result` で取得済 + 直近 streak も計算済、 別途 RSS source 不要。 tests 24/24 + 関連 126/126 pass (regression 0)。 image `394-db-fact-ef1e756` build 後 Job update、 翌 07:00 JST am-1 fire で実 verify。 392 / 391 既存 commit は supersede しない、 機能拡張のみ。 |
+
 ### 392 — ヨシラバー branding X 投稿案 LLM 生成 Phase 2 (Gemma 4 + Tavily HTTP REST、 既存 382 mail/Scheduler 流用、 user GO 「GO」 2026-05-19)
 
 | ticket | status | 内容 |
 |---|---|---|
-| `doc/active/392-x-post-branding-mcp-phase2.md` (GH #67) | PLANNING / user GO 後着手中 | 391 Phase 1 CLI を本番 `x-post-mail-lane` に組み込み、 既存 template-based branding builder を LLM 生成 (Gemma 4 31B + Tavily HTTP REST direct + 任意 insight.db 参照) で置き換える Phase 2。 user 明示制約: rules は 382 継承 / mail format は既存 / Scheduler は既存 / 0 ドル / 「いままで LLM がうまく使えなかった」 ので Tavily 検索 ground + 任意 DB fact RAG で hallucination 抑制。 **stdio 同梱は既存 Dockerfile.x_post_mail の「Never Gemini」 設計を壊し +100MB / +5-15 秒 cold start のため回避**、 Tavily を **HTTP REST direct** で叩く設計に切替 (Node 不要、 image / cold start 不変)。 spec 382 hard rule (URL / hashtag / 未検証数字 / 引用 / 媒体名 禁止 / yoshilover framing / 巨人 specific) は system prompt + post-gen regex validator で gate。 env flag `X_POST_MAIL_GEMMA_GEN_ENABLED` default OFF で gating、 rollback 余地。 fault tolerance: Gemma / Tavily 例外時 None 返却 + WARNING log + 既存 mail 送信続行。 私が 382 改修中で dirty 残置の multi-source shape B (`build_multi_source_candidate`) は本 ticket で supersede。 次 step: code 実装 (`build_gemma_branding_candidate` + caller 切替 + tests) → py_compile + pytest → commit / push → Cloud Build image rebuild → Cloud Run Job Secret binding + image update → flag OFF で no-traffic verify → 別便で flag ON 判断。 |
+| `doc/active/392-x-post-branding-mcp-phase2.md` (GH #67) | LIVE_DEPLOYED_OBSERVE | 391 Phase 1 CLI を本番 `x-post-mail-lane` に組み込み済 (commit `a15d852`)。 **22:30 fire 観察結果 (実 mail 確認済)**: Gemma 生成 2 件 (吉川尚輝 / 泉口友汰) は cheerleading 定型語 (ついに / 物語が / 核心に迫る) + Tavily 古い snippet (Wikipedia / 2024-2026年3月) の現在化で品質低下 → user 指摘「内容をあつく、 巨人ファンよりでない」「朝はまた違うがテンション昼もK」「これはインプがあるファン」 を受けて同夜 2 commit で改修: (1) commit `414d411` tone tune (cheerleading 定型語 ban + ファン自然 voice 許容 + 「巨人ファン向け」 framing 撤回) + Tavily news/days=7。 (2) commit `1a55d59` same-day filter (Tavily `days=1` + JST 当日 published_date filter post-process) + 時間帯 tone hint (朝 5-11 時は分析調、 昼以降はファン熱量 OK、 _build_system_prompt() で動的注入)。 実 API demo (戸郷翔征 22:46 JST / 22:50 JST) で 5 軸厚い post 生成、 cheerleading 0、 時系列ズレ 0 を確認。 image `392-tune-1a55d59` Job generation 28 deploy 済 (build d3b4a3bf SUCCESS 1m43s)。 env `X_POST_MAIL_GEMMA_GEN_ENABLED=1` (ON、 5 fire/日 × MAX=2) のまま観察継続、 翌 07:00 JST am-1 fire で改修版実 verify、 さらに 394 拡張 (DB fact line) が `394-db-fact-ef1e756` で同時 deploy 予定。 spec 382 hard rule (URL / hashtag / 未検証数字 / 引用 / 媒体名 禁止) 維持。 fault tolerance: silent skip on Tavily / Gemma error、 既存 mail は止めない。 0 ドル維持 (Gemini API free / Tavily ~300/月)。 GitHub Issue #67。 |
 
 ### 391 — 巨人 X 投稿案生成 (Tavily MCP stdio 同梱 + Gemma 4 31B、Phase 1 CLI、 user GO 「チケットGO」 2026-05-19)
 

@@ -2,7 +2,7 @@
 
 ## meta
 
-- status: LIVE_DEPLOYED_OBSERVE (2026-05-18、 同 session で実装 + deploy)
+- status: CLOSED (2026-05-19 user 判断、 deploy 後 観察期間で close)
 - priority: P2 (運用効率改善、 user 判断必須は維持)
 - owner: Claude
 - created: 2026-05-18

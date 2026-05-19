@@ -1949,9 +1949,9 @@ git add -A禁止。
 ### 380-x-post-mail-player-diversity-cap
 
 - **alias**: -
-- **status**: LIVE_DEPLOYED_OBSERVE / **priority**: high
+- **status**: CLOSED (2026-05-19) / **priority**: high
 - **owner**: Codex / **lane**: B
-- **doc_path**: `doc/active/380-x-post-mail-player-diversity-cap.md`
+- **doc_path**: `doc/done/2026-05/380-x-post-mail-player-diversity-cap.md`
 - **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/54
 - **背景**: 2026-05-18 07:00 JST の X 投稿候補 mail 8 件で `マルティネス` が 3 件、`岸田 行倫` が 2 件出た。現行 code evidence では dedup key が `metric|period_label|giants_only|position` で player を含まず、lineup focus 外では一般の same-player cap がない。
 - **DB evidence**: repo-local `data/insight/insight.db` は `mtime=2026-05-14T22:01:21` / `latest_game_date=2026-05-13` で stale。ただし production source of truth ではない。production GCS `insight.db` は `Update Time=2026-05-18T01:01:30Z`、pull summary は `latest_game_date=2026-05-17` / `latest_giants_game_date=2026-05-17` / `staleness_days=1` / `advanced_metric_snapshots=64076`。07:00 x-post-mail log も `latest_game_date=2026-05-17 staleness_days=1 max=2`。

@@ -2,7 +2,7 @@
 
 ## meta
 
-- status: IMPL_IN_PROGRESS
+- status: CLOSED (2026-05-19 user 判断 scope 縮小、 IMPL_IN_PROGRESS で停止)
 - priority: P2 (運用改善、 既存壊さない可逆変更)
 - owner: Claude
 - created: 2026-05-18

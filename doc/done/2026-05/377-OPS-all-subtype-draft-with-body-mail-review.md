@@ -2,7 +2,7 @@
 
 ## meta
 
-- status: DESIGN_LOCKED / READY_FOR_IMPL
+- status: CLOSED (2026-05-19 user 判断 scope 縮小、 impl 着手前で停止)
 - priority: P1 (事故防止 + SEO 品質担保)
 - owner: Claude
 - created: 2026-05-17

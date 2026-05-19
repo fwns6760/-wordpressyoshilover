@@ -870,6 +870,11 @@ def publish_giants_centric_ranking_draft(
     # player tag 自動付与 (回遊 navigation、user 指示)
     tag_id = _ensure_player_tag(wp_client_obj, article["focus_player"])
     tags_list = [tag_id] if tag_id else None
+    # 387: focus_player 不在 (team-level metric 等) でも最低 1 tag を保証
+    # する fallback。 既存 WP tag「速報」 (id=850) を attach することで
+    # c-tagList chip 0 = 内部リンク 0 を防ぐ。
+    if not tags_list:
+        tags_list = [850]
     # NEWS-BANNER-FIX-2026-05-15: insight 記事も赤紫グラデ banner を冒頭に
     # prepend し、全 publish 経路で content の先頭に banner が立つ状態を維持。
     _banner = _giants_news_banner_html(

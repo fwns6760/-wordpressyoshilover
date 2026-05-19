@@ -3,7 +3,7 @@
 ## meta
 
 - ticket: 386-INSIGHT-no-game-day-normal-exit
-- status: REVIEW_NEEDED
+- status: CLOSED
 - owner: Codex A
 - lane: A
 - priority: P0.5
@@ -55,7 +55,7 @@ Change only `insight-nightly` schedule resolution and tests.
 
 - `src/analysis/insight_nightly.py`
 - `tests/test_insight_nightly.py`
-- `doc/active/386-INSIGHT-no-game-day-normal-exit.md`
+- `doc/done/2026-05/386-INSIGHT-no-game-day-normal-exit.md`
 - `doc/README.md`
 - `doc/active/assignments.md`
 
@@ -79,8 +79,14 @@ Change only `insight-nightly` schedule resolution and tests.
 
 ## deploy
 
-Pending.
+- commit: `a852abf` (`386: treat insight no-game days as normal no-op`)
+- Cloud Run Job: `insight-nightly`
+- deployed image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/insight-nightly:386-no-game-a852abf`
+- job generation: `67`
+- latest execution: `insight-nightly-mf69g`
+- result: completed successfully, exit `0`, succeeded count `1`
+- log evidence: `status=no_game_day`, reason `no scheduled NPB games for 2026-05-18`
 
 ## next action
 
-Commit implementation, build / deploy `insight-nightly`, then verify a `--date 2026-05-18 --auto --all-teams --live` no-op smoke returns `status=no_game_day` without ERROR.
+Closed. Continue normal `insight-nightly` observation on the next natural scheduled run.

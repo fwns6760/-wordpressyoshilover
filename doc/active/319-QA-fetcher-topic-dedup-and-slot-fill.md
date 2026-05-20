@@ -1,6 +1,6 @@
 # 319-QA fetcher topic dedup and slot fill
 
-- status: REVIEW_NEEDED
+- status: LANDED (2026-05-20 PM verify): `src/rss_fetcher.py` 内に topic dedup 系 helpers landed (`_topic_dedup_day_key` / `_topic_dedup_compact_text` / `_extract_topic_dedup_terms` / `_topic_dedup_event_signal_count` / `_topic_dedup_history_key` / `RSS_TOPIC_DEDUP_HISTORY_PREFIX = "topic_dedup"`)。 production fetcher 稼働中 (2026-05-20 14:00 fire 確認)、 user acceptance pending (同 topic 重複が 10 枠を消費しないことの user verify)
 - owner: Codex B
 - lane: B
 - priority: P0.5

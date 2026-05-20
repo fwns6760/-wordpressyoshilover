@@ -4,7 +4,7 @@
 
 - number: 305-QA
 - type: featured media / eyecatch priority fix
-- status: REVIEW_NEEDED
+- status: LANDED (2026-05-20 PM verify): `src/rss_fetcher.py` L15060-15130 で `_detect_person_for_eyecatch_priority` + `resolve_eyecatch_from_title(use_team_fallback=False, allow_diversified_pool=False)` の「source eyecatch 優先 + diversified pool 禁止」 logic landed。 env flag `EYECATCH_PLAYER_PRIORITY_DISABLED` で OFF 可、 default ON。 production log 今日 trigger なし (今日 fetch では本 path 発火 case 発生せず)、 user acceptance pending
 - priority: P0.5
 - owner: Codex B
 - implementation_owner: Codex B

@@ -1476,6 +1476,324 @@ def publish_player_counting_split_draft(
         return {"status": "error", "error": f"{type(e).__name__}: {e}"}
 
 
+# ─── 415: vs 左右投手 platoon split (approach (a) starter 限定 approx) ─────
+#
+# 415 MVP (2026-05-20 PM、 user GO「別チケットで GO して」):
+# - approach (a) starter 限定 approx: 「打者の全 PA = 対戦相手 starter と仮定」
+# - 制約: starter 5-6 IP / 試合 = batter の 5 PA 中 3-4 PA が starter 対戦、
+#   残り 1-2 PA は reliever (本 MVP では reliever 区別なし、 全部 starter とみなす)
+# - throws data: config/npb_pitcher_throws.json (NPB roster scrape、 405 投手)
+# - metric MVP: AVG only (OPS / OBP / SLG は別 follow-up)
+
+_NPB_PITCHER_THROWS_CACHE: dict[str, str] | None = None
+
+
+def _load_npb_pitcher_throws() -> dict[str, str]:
+    """{player_name: "L"|"R"|"S"} を返す module-level cache。 file 不在 / parse 失敗
+    時は空 dict を返し silent fallback。"""
+    global _NPB_PITCHER_THROWS_CACHE
+    if _NPB_PITCHER_THROWS_CACHE is not None:
+        return _NPB_PITCHER_THROWS_CACHE
+    import json as _json
+    from pathlib import Path as _Path
+    path = _Path(__file__).resolve().parents[2] / "config" / "npb_pitcher_throws.json"
+    out: dict[str, str] = {}
+    try:
+        with path.open(encoding="utf-8") as f:
+            raw = _json.load(f)
+        for name, entry in (raw or {}).items():
+            throws = (entry or {}).get("throws") if isinstance(entry, dict) else None
+            if name and throws in ("L", "R", "S"):
+                out[name] = throws
+    except Exception:
+        pass
+    _NPB_PITCHER_THROWS_CACHE = out
+    return out
+
+
+def aggregate_batter_vs_lr_split(
+    conn: sqlite3.Connection,
+    *,
+    pitcher_hand: str,  # "L" or "R"
+    scope: str,
+    today: Optional[Any] = None,
+    top_n: int = 10,
+    league: Optional[str] = None,
+    focus_player: Optional[str] = None,
+    min_ab: int = 15,
+) -> list[dict]:
+    """415 MVP: 打者 × 対戦相手 starter throws 別 AVG ranking。
+
+    approach (a) approx: 「打者の AB は全部 starter 対戦と仮定」 (reliever 区別なし)。
+
+    手順:
+    1. _scope_window で対象期間 (start, end) 取得
+    2. 期間内の全 games について、 opposing team の starter (appearance_order=1)
+       を pitching_logs から取得
+    3. starter の throws を npb_pitcher_throws.json から lookup
+    4. batter ごとに、 throws=pitcher_hand の game の SUM(AB), SUM(H) を集計
+    5. AVG = H / AB、 HAVING AB >= min_ab、 DESC sort
+    """
+    if pitcher_hand not in ("L", "R"):
+        raise ValueError(f"unsupported pitcher_hand: {pitcher_hand!r}")
+    throws_map = _load_npb_pitcher_throws()
+    if not throws_map:
+        return []  # data 無し silent fallback
+    start, end = _scope_window(
+        scope, today, conn=conn, focus_player=focus_player,
+    )
+    # 期間内の全 games + 各 game の opposing 投手 starter を取得
+    # SELECT batting team_name + opposing starter player_canonical
+    # batting_logs と pitching_logs の team_role が反対の組合せ
+    rows = conn.execute(
+        "SELECT bl.player_canonical, bl.team_name, bl.AB, bl.H, "
+        "pl.player_canonical AS opp_starter "
+        "FROM batting_logs bl "
+        "JOIN games g ON bl.game_id = g.game_id "
+        "JOIN pitching_logs pl ON pl.game_id = g.game_id "
+        "WHERE g.game_date >= ? AND g.game_date <= ? "
+        "AND bl.player_canonical IS NOT NULL AND bl.player_canonical != '' "
+        "AND bl.team_role != pl.team_role "
+        "AND pl.appearance_order = 1 "
+        "AND bl.AB IS NOT NULL",
+        (start.isoformat(), end.isoformat()),
+    ).fetchall()
+    league_team_filter = None
+    if league == "central":
+        league_team_filter = set(_CENTRAL_TEAM_NAMES)
+    elif league == "pacific":
+        league_team_filter = set(_PACIFIC_TEAM_NAMES)
+    # batter ごとの集計 (filter to starter throws == pitcher_hand)
+    agg: dict[str, dict] = {}
+    for batter, team_name, ab, h, opp_starter in rows:
+        if league_team_filter is not None and team_name not in league_team_filter:
+            continue
+        if not opp_starter:
+            continue
+        starter_throws = throws_map.get(opp_starter)
+        if starter_throws != pitcher_hand:
+            continue
+        entry = agg.setdefault(batter, {"team_name": team_name, "ab": 0, "h": 0})
+        entry["ab"] += int(ab or 0)
+        entry["h"] += int(h or 0)
+    out = []
+    for batter, e in agg.items():
+        if e["ab"] < min_ab:
+            continue
+        avg = e["h"] / e["ab"] if e["ab"] > 0 else 0.0
+        out.append({
+            "player": batter,
+            "team": _team_name_to_code(e["team_name"]),
+            "value": round(avg, 3),
+            "ab": e["ab"],
+            "h": e["h"],
+        })
+    out.sort(key=lambda r: r["value"], reverse=True)
+    return out[:top_n]
+
+
+def render_batter_vs_lr_split_article(
+    conn: sqlite3.Connection,
+    *,
+    pitcher_hand: str,
+    scope: str,
+    top_n: int = 10,
+) -> Optional[dict]:
+    """415 MVP: vs L/R 別 AVG ranking 記事。"""
+    if pitcher_hand not in ("L", "R"):
+        return None
+    hand_label = "対左投手" if pitcher_hand == "L" else "対右投手"
+    rows = aggregate_batter_vs_lr_split(
+        conn, pitcher_hand=pitcher_hand, scope=scope,
+        top_n=max(top_n, 30), league="central",
+    )
+    if not rows:
+        return None
+    giants_rows = [r for r in rows if r.get("team") == "g"]
+    if not giants_rows:
+        return None
+    top_giants = giants_rows[0]
+    top_player = top_giants["player"]
+    top_avg = top_giants["value"]
+    giants_rank = next(
+        (i + 1 for i, r in enumerate(rows) if r["player"] == top_player), len(rows),
+    )
+    scope_label = title_guard.period_label_for_scope(scope) or scope
+    title = (
+        f"【巨人データ】{top_player} {hand_label}打率 {top_avg} "
+        f"でセ・リーグ {giants_rank} 位 ({scope_label})"
+    )
+    title = title_guard.ensure_title_period(title, scope=scope).title
+    table_lines = [
+        f"| 順位 | 選手 | チーム | 打率({hand_label}) | 打数 |",
+        "|---|---|---|---|---|",
+    ]
+    focus_in_top_n = False
+    for i, r in enumerate(rows[:top_n], start=1):
+        team_disp = _TEAM_LABEL_JP.get(r.get("team", ""), r.get("team", "?"))
+        is_focus = r["player"] == top_player
+        if is_focus:
+            focus_in_top_n = True
+            r_disp = f'<span style="color:#c0392b"><strong>{i}</strong></span>'
+            p_disp = f'<span style="color:#c0392b"><strong>{r["player"]} ★</strong></span>'
+            v_disp = f'<span style="color:#c0392b"><strong>{r["value"]:.3f}</strong></span>'
+        else:
+            r_disp = str(i)
+            p_disp = r["player"]
+            v_disp = f'{r["value"]:.3f}'
+        table_lines.append(f"| {r_disp} | {p_disp} | {team_disp} | {v_disp} | {r['ab']} |")
+    if not focus_in_top_n:
+        team_disp = _TEAM_LABEL_JP.get(top_giants.get("team", ""), "?")
+        r_disp = f'<span style="color:#c0392b"><strong>{giants_rank}</strong></span>'
+        p_disp = f'<span style="color:#c0392b"><strong>{top_player} ★</strong></span>'
+        v_disp = f'<span style="color:#c0392b"><strong>{top_avg:.3f}</strong></span>'
+        table_lines.append(f"| {r_disp} | {p_disp} | {team_disp} | {v_disp} | {top_giants['ab']} |")
+    table_md = "\n".join(table_lines)
+    body_md = f"""# {title}
+
+## ひとこと
+
+巨人 {top_player} の **{hand_label}** での打率は **{top_avg:.3f}**
+({scope_label} 時点)、 セ・リーグ内 **{giants_rank} 位**。
+
+※ 415 MVP: 「打者の全 PA = 対戦相手 starter と仮定」 する approx。
+リリーフ投手対戦は本集計に含まれず、 starter のみで calculation。
+
+## リーグ TOP {top_n}({hand_label})
+
+{table_md}
+
+## このデータについて
+
+| 項目 | 内容 |
+|---|---|
+| 選手 | **{top_player}**(巨人) |
+| 指標 | 打率({hand_label}) = **{top_avg:.3f}** |
+| 打数 | {top_giants['ab']} |
+| 順位 | リーグ {giants_rank} 位 |
+| 集計式 | SUM(H) / SUM(AB) over 対戦 starter throws='{pitcher_hand}' games |
+| データ元 | NPB 公式 box score(https://npb.jp/) + roster (投/throws) |
+| approx | starter 限定 (reliever 対戦は集計外) |
+| 集計期間 | {scope_label} |
+"""
+    body_html = markdown_to_html(body_md)
+    return {
+        "title": title, "body_md": body_md, "body_html": body_html,
+        "pitcher_hand": pitcher_hand, "hand_label": hand_label, "scope": scope,
+        "top_player": top_player, "top_value": top_avg,
+        "giants_rank": giants_rank, "league_total": len(rows),
+        "team_coverage": len({r.get("team") for r in rows if r.get("team")}),
+    }
+
+
+def publish_batter_vs_lr_split_draft(
+    conn: sqlite3.Connection,
+    wp_client_obj: Any,
+    *,
+    pitcher_hand: str,
+    scope: str,
+    category_name: str = DEFAULT_CATEGORY_NAME,
+    dry_run: bool = False,
+) -> dict:
+    """415 MVP: vs L/R AVG publish (387/411 統合 pattern)."""
+    article = render_batter_vs_lr_split_article(
+        conn, pitcher_hand=pitcher_hand, scope=scope, top_n=10,
+    )
+    if article is None:
+        return {"status": "skip", "reason": "no_data_or_no_giants",
+                "pitcher_hand": pitcher_hand, "scope": scope}
+    title_check = title_guard.ensure_title_period(article["title"], scope=scope)
+    if not title_check.ok:
+        return {"status": "skip_title_period_guard",
+                "reason": title_check.reason,
+                "pitcher_hand": pitcher_hand, "scope": scope,
+                "title": article["title"]}
+    article["title"] = title_check.title
+    quality_decision = quality_gate.validate_counting_article(article)
+    if not quality_decision.allowed:
+        return quality_gate.skip_result(
+            quality_decision,
+            pitcher_hand=pitcher_hand, scope=scope, title=article["title"],
+        )
+    metric_key = f"AVG:vs_{pitcher_hand}"
+    dedup_context = {
+        "subject_key": article["top_player"],
+        "metric_name": metric_key,
+        "scope": scope,
+        "value": article.get("top_value"),
+        "rank": article.get("giants_rank"),
+        "total": article.get("league_total"),
+    }
+    dedup_decision = dedup_gate.evaluate_metric_cooldown(conn, **dedup_context)
+    if not dedup_decision.get("allowed"):
+        return {"status": "skip_dedup_cooldown",
+                "reason": dedup_decision.get("reason"),
+                "pitcher_hand": pitcher_hand, "scope": scope,
+                "dedup": dedup_decision}
+    if dry_run:
+        return {"status": "dry_run", "title": article["title"]}
+    try:
+        category_id = wp_client_obj.create_category(category_name)
+    except Exception:
+        category_id = 0
+    if not category_id:
+        try:
+            category_id = wp_client_obj.resolve_category_id(category_name)
+        except Exception:
+            category_id = 0
+    if not category_id:
+        return {"status": "skip", "reason": "category_resolution_failed",
+                "pitcher_hand": pitcher_hand, "scope": scope}
+    publish_status = _resolve_publish_status(focus_team_code="g")
+    tag_id = _ensure_player_tag(wp_client_obj, article["top_player"])
+    tags_list = [tag_id] if tag_id else None
+    if not tags_list:
+        tags_list = [850]
+    _banner = _giants_news_banner_html(
+        article["title"], _BANNER_SOURCE_LABEL, category_name,
+    )
+    dedup_history_id = 0
+    dedup_record_error = ""
+    try:
+        post_id = wp_client_obj.create_post(
+            title=article["title"],
+            content=_banner + article["body_html"],
+            categories=[category_id],
+            status=publish_status,
+            caller="ranking_article_publisher_batter_lr_split",
+        )
+        if post_id and tags_list:
+            try:
+                import requests as _req
+                wp_client_obj._request_with_retry(
+                    _req.post, f"{wp_client_obj.api}/posts/{post_id}",
+                    action="add_tags", json={"tags": tags_list},
+                )
+            except Exception:
+                pass
+        try:
+            dedup_history_id = dedup_gate.record_metric_publish(
+                conn, **dedup_context,
+                title=article["title"],
+                post_id=int(post_id or 0),
+                wp_status=publish_status,
+            )
+        except Exception as exc:  # noqa: BLE001
+            dedup_record_error = f"{type(exc).__name__}: {exc}"
+        return {
+            "status": "published" if publish_status == "publish" else "published_draft",
+            "wp_status": publish_status,
+            "title": article["title"],
+            "post_id": int(post_id or 0),
+            "category_id": int(category_id),
+            "pitcher_hand": pitcher_hand, "scope": scope,
+            "dedup_history_id": dedup_history_id,
+            "dedup_record_error": dedup_record_error,
+        }
+    except Exception as e:
+        return {"status": "error", "error": f"{type(e).__name__}: {e}"}
+
+
 # ─── 404: 登板 inning 別 publisher (リリーフ専、 setup / closer 区別) ──────
 #
 # pitching_logs.start_inning を split key にした登板 inning 別 ranking。

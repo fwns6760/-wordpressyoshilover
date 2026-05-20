@@ -294,6 +294,27 @@ def _run_data_insight_auto_publish(*, db_path: Path) -> tuple[dict[str, Any], di
                                 "inning": inning,
                                 "error": f"{type(exc).__name__}:{exc}",
                             }, ensure_ascii=False))
+                    # 415 MVP (2026-05-20): vs 左右投手 split (approach (a) approx)。
+                    # starter 限定 platoon、 NPB roster scrape の throws data 利用。
+                    # last_10_games scope (last_5 では starter 対戦 sample 不足)。
+                    lr_published = 0
+                    for hand in ("L", "R"):
+                        if lr_published >= auto_draft_max_per_run:
+                            break
+                        try:
+                            lr_result = ranking_pub.publish_batter_vs_lr_split_draft(
+                                conn, wp, scope="last_10_games", pitcher_hand=hand,
+                            )
+                            if lr_result.get("status") in (
+                                "published", "published_draft", "dry_run",
+                            ):
+                                lr_published += 1
+                        except Exception as exc:  # noqa: BLE001
+                            print(json.dumps({
+                                "warn": "batter_vs_lr_split_publish_failed",
+                                "pitcher_hand": hand,
+                                "error": f"{type(exc).__name__}:{exc}",
+                            }, ensure_ascii=False))
                 except Exception as exc:  # noqa: BLE001
                     ranking_publish_summary["counting_error"] = (
                         f"{type(exc).__name__}:{exc}"

@@ -1,0 +1,1622 @@
+{
+  "アドゥワ誠": {
+    "team": "c",
+    "throws": "R"
+  },
+  "アブレウ": {
+    "team": "d",
+    "throws": "R"
+  },
+  "ウィットリー": {
+    "team": "g",
+    "throws": "R"
+  },
+  "ウィンゲンター": {
+    "team": "l",
+    "throws": "R"
+  },
+  "ウォルターズ": {
+    "team": "s",
+    "throws": "R"
+  },
+  "ウレーニャ": {
+    "team": "e",
+    "throws": "R"
+  },
+  "エスピノーザ": {
+    "team": "b",
+    "throws": "R"
+  },
+  "オスナ": {
+    "team": "h",
+    "throws": "R"
+  },
+  "カスティーヨ": {
+    "team": "m",
+    "throws": "L"
+  },
+  "キハダ": {
+    "team": "s",
+    "throws": "L"
+  },
+  "ケムナ誠": {
+    "team": "c",
+    "throws": "R"
+  },
+  "コックス": {
+    "team": "db",
+    "throws": "L"
+  },
+  "コントレラス": {
+    "team": "e",
+    "throws": "R"
+  },
+  "ジェリー": {
+    "team": "b",
+    "throws": "R"
+  },
+  "ジャクソン": {
+    "team": "m",
+    "throws": "R"
+  },
+  "スチュワート・ジュニア": {
+    "team": "h",
+    "throws": "R"
+  },
+  "ターノック": {
+    "team": "c",
+    "throws": "R"
+  },
+  "デュプランティエ": {
+    "team": "db",
+    "throws": "R"
+  },
+  "ドリス": {
+    "team": "t",
+    "throws": "R"
+  },
+  "ハワード": {
+    "team": "g",
+    "throws": "R"
+  },
+  "ハーン": {
+    "team": "c",
+    "throws": "L"
+  },
+  "バルドナード": {
+    "team": "g",
+    "throws": "L"
+  },
+  "ヘルナンデス": {
+    "team": "h",
+    "throws": "L"
+  },
+  "ペルドモ": {
+    "team": "b",
+    "throws": "R"
+  },
+  "ボー・タカハシ": {
+    "team": "l",
+    "throws": "R"
+  },
+  "マタ": {
+    "team": "g",
+    "throws": "R"
+  },
+  "マチャド": {
+    "team": "b",
+    "throws": "R"
+  },
+  "マラー": {
+    "team": "d",
+    "throws": "L"
+  },
+  "マルセリーノ": {
+    "team": "db",
+    "throws": "R"
+  },
+  "マルティネス": {
+    "team": "g",
+    "throws": "R"
+  },
+  "メヒア": {
+    "team": "d",
+    "throws": "R"
+  },
+  "モイネロ": {
+    "team": "h",
+    "throws": "L"
+  },
+  "モレッタ": {
+    "team": "t",
+    "throws": "R"
+  },
+  "ラオ": {
+    "team": "f",
+    "throws": "R"
+  },
+  "ラグズデール": {
+    "team": "t",
+    "throws": "R"
+  },
+  "リランソ": {
+    "team": "s",
+    "throws": "R"
+  },
+  "ルイーズ": {
+    "team": "db",
+    "throws": "R"
+  },
+  "ルシアーノ": {
+    "team": "g",
+    "throws": "R"
+  },
+  "ルーカス": {
+    "team": "t",
+    "throws": "L"
+  },
+  "レイノルズ": {
+    "team": "db",
+    "throws": "R"
+  },
+  "ロング": {
+    "team": "m",
+    "throws": "L"
+  },
+  "ワイナンス": {
+    "team": "l",
+    "throws": "R"
+  },
+  "一條力真": {
+    "team": "m",
+    "throws": "R"
+  },
+  "三浦瑞樹": {
+    "team": "d",
+    "throws": "L"
+  },
+  "上原健太": {
+    "team": "f",
+    "throws": "L"
+  },
+  "上沢直之": {
+    "team": "h",
+    "throws": "R"
+  },
+  "上田大河": {
+    "team": "l",
+    "throws": "R"
+  },
+  "上茶谷大河": {
+    "team": "h",
+    "throws": "R"
+  },
+  "下川隼佑": {
+    "team": "s",
+    "throws": "R"
+  },
+  "下村海翔": {
+    "team": "t",
+    "throws": "R"
+  },
+  "中川皓太": {
+    "team": "g",
+    "throws": "L"
+  },
+  "中川虎大": {
+    "team": "db",
+    "throws": "R"
+  },
+  "中川颯": {
+    "team": "db",
+    "throws": "R"
+  },
+  "中村優斗": {
+    "team": "s",
+    "throws": "R"
+  },
+  "中村祐太": {
+    "team": "l",
+    "throws": "R"
+  },
+  "中村稔弥": {
+    "team": "h",
+    "throws": "L"
+  },
+  "中森俊介": {
+    "team": "m",
+    "throws": "R"
+  },
+  "中西聖輝": {
+    "team": "d",
+    "throws": "R"
+  },
+  "中込陽翔": {
+    "team": "e",
+    "throws": "R"
+  },
+  "中﨑翔太": {
+    "team": "c",
+    "throws": "R"
+  },
+  "丸山翔大": {
+    "team": "s",
+    "throws": "R"
+  },
+  "九谷瑠": {
+    "team": "e",
+    "throws": "R"
+  },
+  "九里亜蓮": {
+    "team": "b",
+    "throws": "R"
+  },
+  "井上温大": {
+    "team": "g",
+    "throws": "L"
+  },
+  "今朝丸裕喜": {
+    "team": "t",
+    "throws": "R"
+  },
+  "今野龍太": {
+    "team": "e",
+    "throws": "R"
+  },
+  "仲地礼亜": {
+    "team": "d",
+    "throws": "R"
+  },
+  "伊勢大夢": {
+    "team": "db",
+    "throws": "R"
+  },
+  "伊原陵人": {
+    "team": "t",
+    "throws": "L"
+  },
+  "伊藤優輔": {
+    "team": "h",
+    "throws": "R"
+  },
+  "伊藤大晟": {
+    "team": "e",
+    "throws": "L"
+  },
+  "伊藤大海": {
+    "team": "f",
+    "throws": "R"
+  },
+  "伊藤将司": {
+    "team": "t",
+    "throws": "L"
+  },
+  "伊藤樹": {
+    "team": "e",
+    "throws": "R"
+  },
+  "伊藤茉央": {
+    "team": "d",
+    "throws": "R"
+  },
+  "佐々木千隼": {
+    "team": "db",
+    "throws": "R"
+  },
+  "佐藤一磨": {
+    "team": "b",
+    "throws": "L"
+  },
+  "佐藤柳之介": {
+    "team": "c",
+    "throws": "L"
+  },
+  "佐藤爽": {
+    "team": "l",
+    "throws": "L"
+  },
+  "佐藤隼輔": {
+    "team": "l",
+    "throws": "L"
+  },
+  "佐藤龍月": {
+    "team": "b",
+    "throws": "L"
+  },
+  "入山海斗": {
+    "team": "b",
+    "throws": "R"
+  },
+  "入江大生": {
+    "team": "db",
+    "throws": "R"
+  },
+  "八木彬": {
+    "team": "m",
+    "throws": "R"
+  },
+  "内星龍": {
+    "team": "e",
+    "throws": "R"
+  },
+  "冨士大和": {
+    "team": "l",
+    "throws": "L"
+  },
+  "冨士隼斗": {
+    "team": "m",
+    "throws": "R"
+  },
+  "則本昂大": {
+    "team": "g",
+    "throws": "R"
+  },
+  "前田健太": {
+    "team": "e",
+    "throws": "R"
+  },
+  "前田悠伍": {
+    "team": "h",
+    "throws": "L"
+  },
+  "前田純": {
+    "team": "h",
+    "throws": "L"
+  },
+  "加治屋蓮": {
+    "team": "e",
+    "throws": "R"
+  },
+  "加藤貴之": {
+    "team": "f",
+    "throws": "L"
+  },
+  "勝野昌慶": {
+    "team": "d",
+    "throws": "R"
+  },
+  "北山亘基": {
+    "team": "f",
+    "throws": "R"
+  },
+  "北浦竜次": {
+    "team": "g",
+    "throws": "L"
+  },
+  "博志": {
+    "team": "b",
+    "throws": "R"
+  },
+  "又木鉄平": {
+    "team": "g",
+    "throws": "L"
+  },
+  "及川雅貴": {
+    "team": "t",
+    "throws": "L"
+  },
+  "古林睿煬": {
+    "team": "f",
+    "throws": "R"
+  },
+  "古田島成龍": {
+    "team": "b",
+    "throws": "R"
+  },
+  "古謝樹": {
+    "team": "e",
+    "throws": "L"
+  },
+  "古賀康誠": {
+    "team": "e",
+    "throws": "L"
+  },
+  "吉川悠斗": {
+    "team": "m",
+    "throws": "L"
+  },
+  "吉村貢司郎": {
+    "team": "s",
+    "throws": "R"
+  },
+  "吉田聖弥": {
+    "team": "d",
+    "throws": "L"
+  },
+  "吉田輝星": {
+    "team": "b",
+    "throws": "R"
+  },
+  "吉野光樹": {
+    "team": "db",
+    "throws": "R"
+  },
+  "唐川侑己": {
+    "team": "m",
+    "throws": "R"
+  },
+  "坂井遼": {
+    "team": "m",
+    "throws": "R"
+  },
+  "坂井陽翔": {
+    "team": "e",
+    "throws": "R"
+  },
+  "坂口翔颯": {
+    "team": "db",
+    "throws": "R"
+  },
+  "坂本光士郎": {
+    "team": "m",
+    "throws": "L"
+  },
+  "坂本拓己": {
+    "team": "s",
+    "throws": "L"
+  },
+  "坂本裕哉": {
+    "team": "db",
+    "throws": "L"
+  },
+  "堀岡隼人": {
+    "team": "db",
+    "throws": "R"
+  },
+  "堀瑞輝": {
+    "team": "f",
+    "throws": "L"
+  },
+  "堀田賢慎": {
+    "team": "g",
+    "throws": "R"
+  },
+  "堀越啓太": {
+    "team": "l",
+    "throws": "R"
+  },
+  "塹江敦哉": {
+    "team": "c",
+    "throws": "L"
+  },
+  "増居翔太": {
+    "team": "s",
+    "throws": "L"
+  },
+  "大内誠弥": {
+    "team": "e",
+    "throws": "R"
+  },
+  "大勢": {
+    "team": "g",
+    "throws": "R"
+  },
+  "大山凌": {
+    "team": "h",
+    "throws": "R"
+  },
+  "大川慈英": {
+    "team": "f",
+    "throws": "R"
+  },
+  "大江竜聖": {
+    "team": "h",
+    "throws": "L"
+  },
+  "大津亮介": {
+    "team": "h",
+    "throws": "R"
+  },
+  "大瀬良大地": {
+    "team": "c",
+    "throws": "R"
+  },
+  "大竹耕太郎": {
+    "team": "t",
+    "throws": "L"
+  },
+  "大竹風雅": {
+    "team": "h",
+    "throws": "R"
+  },
+  "大聖": {
+    "team": "m",
+    "throws": "R"
+  },
+  "大西広樹": {
+    "team": "s",
+    "throws": "R"
+  },
+  "大谷輝龍": {
+    "team": "m",
+    "throws": "R"
+  },
+  "大貫晋一": {
+    "team": "db",
+    "throws": "R"
+  },
+  "大道温貴": {
+    "team": "s",
+    "throws": "R"
+  },
+  "大野稼頭央": {
+    "team": "h",
+    "throws": "L"
+  },
+  "大野雄大": {
+    "team": "d",
+    "throws": "L"
+  },
+  "大関友久": {
+    "team": "h",
+    "throws": "L"
+  },
+  "奥川恭伸": {
+    "team": "s",
+    "throws": "R"
+  },
+  "奥村頼人": {
+    "team": "m",
+    "throws": "L"
+  },
+  "孫易磊": {
+    "team": "f",
+    "throws": "R"
+  },
+  "安德駿": {
+    "team": "h",
+    "throws": "R"
+  },
+  "宋家豪": {
+    "team": "e",
+    "throws": "R"
+  },
+  "宮原駿介": {
+    "team": "g",
+    "throws": "L"
+  },
+  "宮國凌空": {
+    "team": "b",
+    "throws": "R"
+  },
+  "宮城大弥": {
+    "team": "b",
+    "throws": "L"
+  },
+  "宮城滝太": {
+    "team": "db",
+    "throws": "R"
+  },
+  "宮西尚生": {
+    "team": "f",
+    "throws": "L"
+  },
+  "宮﨑颯": {
+    "team": "m",
+    "throws": "L"
+  },
+  "富山凌雅": {
+    "team": "b",
+    "throws": "L"
+  },
+  "富田蓮": {
+    "team": "t",
+    "throws": "L"
+  },
+  "寺西成騎": {
+    "team": "b",
+    "throws": "R"
+  },
+  "小園健太": {
+    "team": "db",
+    "throws": "R"
+  },
+  "小島和哉": {
+    "team": "m",
+    "throws": "L"
+  },
+  "小川泰弘": {
+    "team": "s",
+    "throws": "R"
+  },
+  "小澤怜史": {
+    "team": "s",
+    "throws": "R"
+  },
+  "小野郁": {
+    "team": "m",
+    "throws": "R"
+  },
+  "尾形崇斗": {
+    "team": "db",
+    "throws": "R"
+  },
+  "山下舜平大": {
+    "team": "b",
+    "throws": "R"
+  },
+  "山口廉王": {
+    "team": "b",
+    "throws": "R"
+  },
+  "山城京平": {
+    "team": "g",
+    "throws": "L"
+  },
+  "山城航太郎": {
+    "team": "f",
+    "throws": "R"
+  },
+  "山岡泰輔": {
+    "team": "b",
+    "throws": "R"
+  },
+  "山崎太陽": {
+    "team": "s",
+    "throws": "R"
+  },
+  "山本拓実": {
+    "team": "f",
+    "throws": "R"
+  },
+  "山田修義": {
+    "team": "b",
+    "throws": "L"
+  },
+  "山田陽翔": {
+    "team": "l",
+    "throws": "R"
+  },
+  "山田龍聖": {
+    "team": "g",
+    "throws": "L"
+  },
+  "山野太一": {
+    "team": "s",
+    "throws": "L"
+  },
+  "山﨑伊織": {
+    "team": "g",
+    "throws": "R"
+  },
+  "山﨑康晃": {
+    "team": "db",
+    "throws": "R"
+  },
+  "山﨑福也": {
+    "team": "f",
+    "throws": "L"
+  },
+  "山﨑颯一郎": {
+    "team": "b",
+    "throws": "R"
+  },
+  "岡本駿": {
+    "team": "c",
+    "throws": "R"
+  },
+  "岡留英貴": {
+    "team": "t",
+    "throws": "R"
+  },
+  "岩井俊介": {
+    "team": "h",
+    "throws": "R"
+  },
+  "岩城颯空": {
+    "team": "l",
+    "throws": "L"
+  },
+  "岩崎優": {
+    "team": "t",
+    "throws": "L"
+  },
+  "岩崎峻典": {
+    "team": "h",
+    "throws": "R"
+  },
+  "岩嵜翔": {
+    "team": "b",
+    "throws": "R"
+  },
+  "岩田将貴": {
+    "team": "db",
+    "throws": "L"
+  },
+  "岩貞祐太": {
+    "team": "t",
+    "throws": "L"
+  },
+  "岸孝之": {
+    "team": "e",
+    "throws": "R"
+  },
+  "島内颯太郎": {
+    "team": "c",
+    "throws": "R"
+  },
+  "島本浩也": {
+    "team": "f",
+    "throws": "L"
+  },
+  "島田舜也": {
+    "team": "db",
+    "throws": "R"
+  },
+  "川瀬堅斗": {
+    "team": "b",
+    "throws": "R"
+  },
+  "工藤泰己": {
+    "team": "c",
+    "throws": "R"
+  },
+  "工藤泰成": {
+    "team": "t",
+    "throws": "R"
+  },
+  "常廣羽也斗": {
+    "team": "c",
+    "throws": "R"
+  },
+  "平内龍太": {
+    "team": "g",
+    "throws": "R"
+  },
+  "平良拳太郎": {
+    "team": "db",
+    "throws": "R"
+  },
+  "平良海馬": {
+    "team": "l",
+    "throws": "R"
+  },
+  "平野佳寿": {
+    "team": "b",
+    "throws": "R"
+  },
+  "床田寛樹": {
+    "team": "c",
+    "throws": "L"
+  },
+  "廣池康志郎": {
+    "team": "m",
+    "throws": "R"
+  },
+  "廣澤優": {
+    "team": "s",
+    "throws": "R"
+  },
+  "廣畑敦也": {
+    "team": "m",
+    "throws": "R"
+  },
+  "徐若熙": {
+    "team": "h",
+    "throws": "R"
+  },
+  "成田晴風": {
+    "team": "l",
+    "throws": "R"
+  },
+  "戸郷翔征": {
+    "team": "g",
+    "throws": "R"
+  },
+  "才木浩人": {
+    "team": "t",
+    "throws": "R"
+  },
+  "才木海翔": {
+    "team": "b",
+    "throws": "R"
+  },
+  "拓也": {
+    "team": "s",
+    "throws": "R"
+  },
+  "斉藤優汰": {
+    "team": "c",
+    "throws": "R"
+  },
+  "日當直喜": {
+    "team": "e",
+    "throws": "R"
+  },
+  "日髙暖己": {
+    "team": "c",
+    "throws": "R"
+  },
+  "早坂響": {
+    "team": "m",
+    "throws": "R"
+  },
+  "早川太貴": {
+    "team": "t",
+    "throws": "R"
+  },
+  "早川隆久": {
+    "team": "e",
+    "throws": "L"
+  },
+  "早瀬朔": {
+    "team": "t",
+    "throws": "R"
+  },
+  "星知弥": {
+    "team": "s",
+    "throws": "R"
+  },
+  "曽谷龍平": {
+    "team": "b",
+    "throws": "L"
+  },
+  "有原航平": {
+    "team": "f",
+    "throws": "R"
+  },
+  "有馬惠叶": {
+    "team": "d",
+    "throws": "R"
+  },
+  "木下里都": {
+    "team": "t",
+    "throws": "R"
+  },
+  "木村優人": {
+    "team": "m",
+    "throws": "R"
+  },
+  "木村光": {
+    "team": "h",
+    "throws": "R"
+  },
+  "木村大成": {
+    "team": "h",
+    "throws": "L"
+  },
+  "木澤尚文": {
+    "team": "s",
+    "throws": "R"
+  },
+  "杉山一樹": {
+    "team": "h",
+    "throws": "R"
+  },
+  "杉山遙希": {
+    "team": "l",
+    "throws": "L"
+  },
+  "杉浦稔大": {
+    "team": "d",
+    "throws": "R"
+  },
+  "村上頌樹": {
+    "team": "t",
+    "throws": "R"
+  },
+  "東克樹": {
+    "team": "db",
+    "throws": "L"
+  },
+  "東妻勇輔": {
+    "team": "m",
+    "throws": "R"
+  },
+  "東晃平": {
+    "team": "b",
+    "throws": "R"
+  },
+  "東松快征": {
+    "team": "b",
+    "throws": "L"
+  },
+  "東浜巨": {
+    "team": "h",
+    "throws": "R"
+  },
+  "松山晋也": {
+    "team": "d",
+    "throws": "R"
+  },
+  "松木平優太": {
+    "team": "d",
+    "throws": "R"
+  },
+  "松本健吾": {
+    "team": "s",
+    "throws": "R"
+  },
+  "松本凌人": {
+    "team": "db",
+    "throws": "R"
+  },
+  "松本晴": {
+    "team": "h",
+    "throws": "L"
+  },
+  "松本竜也": {
+    "team": "c",
+    "throws": "R"
+  },
+  "松本航": {
+    "team": "l",
+    "throws": "R"
+  },
+  "松本裕樹": {
+    "team": "h",
+    "throws": "R"
+  },
+  "松浦慶斗": {
+    "team": "g",
+    "throws": "L"
+  },
+  "松葉貴大": {
+    "team": "d",
+    "throws": "L"
+  },
+  "林優樹": {
+    "team": "e",
+    "throws": "L"
+  },
+  "柳川大晟": {
+    "team": "f",
+    "throws": "R"
+  },
+  "柳裕也": {
+    "team": "d",
+    "throws": "R"
+  },
+  "柴田大地": {
+    "team": "e",
+    "throws": "R"
+  },
+  "柴田獅子": {
+    "team": "f",
+    "throws": "R"
+  },
+  "栗林良吏": {
+    "team": "c",
+    "throws": "R"
+  },
+  "根尾昂": {
+    "team": "d",
+    "throws": "R"
+  },
+  "桐敷拓馬": {
+    "team": "t",
+    "throws": "L"
+  },
+  "梅野雄吾": {
+    "team": "d",
+    "throws": "R"
+  },
+  "森下暢仁": {
+    "team": "c",
+    "throws": "R"
+  },
+  "森原康平": {
+    "team": "db",
+    "throws": "R"
+  },
+  "森浦大輔": {
+    "team": "c",
+    "throws": "L"
+  },
+  "森田駿哉": {
+    "team": "g",
+    "throws": "L"
+  },
+  "森翔平": {
+    "team": "c",
+    "throws": "L"
+  },
+  "森陽樹": {
+    "team": "b",
+    "throws": "R"
+  },
+  "椋木蓮": {
+    "team": "b",
+    "throws": "R"
+  },
+  "椎葉剛": {
+    "team": "t",
+    "throws": "R"
+  },
+  "権田琉成": {
+    "team": "b",
+    "throws": "R"
+  },
+  "横山陸人": {
+    "team": "m",
+    "throws": "R"
+  },
+  "横川凱": {
+    "team": "g",
+    "throws": "L"
+  },
+  "橋本侑樹": {
+    "team": "d",
+    "throws": "L"
+  },
+  "橋本達弥": {
+    "team": "db",
+    "throws": "R"
+  },
+  "櫻井頼之介": {
+    "team": "d",
+    "throws": "R"
+  },
+  "武内夏暉": {
+    "team": "l",
+    "throws": "L"
+  },
+  "武田陸玖": {
+    "team": "db",
+    "throws": "L"
+  },
+  "毛利海大": {
+    "team": "m",
+    "throws": "L"
+  },
+  "江原雅裕": {
+    "team": "e",
+    "throws": "R"
+  },
+  "池田隆英": {
+    "team": "f",
+    "throws": "R"
+  },
+  "河村説人": {
+    "team": "m",
+    "throws": "R"
+  },
+  "河野竜生": {
+    "team": "f",
+    "throws": "L"
+  },
+  "沼田翔平": {
+    "team": "s",
+    "throws": "R"
+  },
+  "泉圭輔": {
+    "team": "g",
+    "throws": "R"
+  },
+  "泰勝利": {
+    "team": "e",
+    "throws": "L"
+  },
+  "津森宥紀": {
+    "team": "h",
+    "throws": "R"
+  },
+  "津田淳哉": {
+    "team": "t",
+    "throws": "R"
+  },
+  "津留﨑大成": {
+    "team": "e",
+    "throws": "R"
+  },
+  "浅利太門": {
+    "team": "f",
+    "throws": "R"
+  },
+  "浜屋将太": {
+    "team": "l",
+    "throws": "L"
+  },
+  "涌井秀章": {
+    "team": "d",
+    "throws": "R"
+  },
+  "深沢鳳介": {
+    "team": "db",
+    "throws": "R"
+  },
+  "清水大暉": {
+    "team": "f",
+    "throws": "R"
+  },
+  "清水昇": {
+    "team": "s",
+    "throws": "R"
+  },
+  "清水達也": {
+    "team": "d",
+    "throws": "R"
+  },
+  "渡辺翔太": {
+    "team": "e",
+    "throws": "R"
+  },
+  "渡邉勇太朗": {
+    "team": "l",
+    "throws": "R"
+  },
+  "湯浅京己": {
+    "team": "t",
+    "throws": "R"
+  },
+  "滝田一希": {
+    "team": "c",
+    "throws": "L"
+  },
+  "澤田圭佑": {
+    "team": "m",
+    "throws": "R"
+  },
+  "瀧中瞭太": {
+    "team": "e",
+    "throws": "R"
+  },
+  "片山楽生": {
+    "team": "b",
+    "throws": "R"
+  },
+  "片山皓心": {
+    "team": "db",
+    "throws": "L"
+  },
+  "牧野憲伸": {
+    "team": "d",
+    "throws": "L"
+  },
+  "狩生聖真": {
+    "team": "l",
+    "throws": "R"
+  },
+  "玉井大翔": {
+    "team": "f",
+    "throws": "R"
+  },
+  "玉村昇悟": {
+    "team": "c",
+    "throws": "L"
+  },
+  "生田目翼": {
+    "team": "f",
+    "throws": "R"
+  },
+  "田中千晴": {
+    "team": "e",
+    "throws": "R"
+  },
+  "田中将大": {
+    "team": "g",
+    "throws": "R"
+  },
+  "田中晴也": {
+    "team": "m",
+    "throws": "R"
+  },
+  "田中正義": {
+    "team": "f",
+    "throws": "R"
+  },
+  "田中瑛斗": {
+    "team": "g",
+    "throws": "R"
+  },
+  "田口麗斗": {
+    "team": "s",
+    "throws": "L"
+  },
+  "田和廉": {
+    "team": "g",
+    "throws": "R"
+  },
+  "田嶋大樹": {
+    "team": "b",
+    "throws": "L"
+  },
+  "甲斐野央": {
+    "team": "l",
+    "throws": "R"
+  },
+  "畔柳亨丞": {
+    "team": "f",
+    "throws": "R"
+  },
+  "畠世周": {
+    "team": "t",
+    "throws": "R"
+  },
+  "益田武尚": {
+    "team": "c",
+    "throws": "R"
+  },
+  "益田直也": {
+    "team": "m",
+    "throws": "R"
+  },
+  "相良雅斗": {
+    "team": "h",
+    "throws": "R"
+  },
+  "矢澤宏太": {
+    "team": "f",
+    "throws": "L"
+  },
+  "石井大智": {
+    "team": "t",
+    "throws": "R"
+  },
+  "石原勇輝": {
+    "team": "s",
+    "throws": "L"
+  },
+  "石山泰稚": {
+    "team": "s",
+    "throws": "R"
+  },
+  "石川柊太": {
+    "team": "m",
+    "throws": "R"
+  },
+  "石川達也": {
+    "team": "g",
+    "throws": "L"
+  },
+  "石川雅規": {
+    "team": "s",
+    "throws": "L"
+  },
+  "石田健大": {
+    "team": "db",
+    "throws": "L"
+  },
+  "石田裕太郎": {
+    "team": "db",
+    "throws": "R"
+  },
+  "石黒佑弥": {
+    "team": "t",
+    "throws": "R"
+  },
+  "福島蓮": {
+    "team": "f",
+    "throws": "R"
+  },
+  "福敬登": {
+    "team": "d",
+    "throws": "L"
+  },
+  "福田幸之介": {
+    "team": "d",
+    "throws": "L"
+  },
+  "福谷浩司": {
+    "team": "f",
+    "throws": "R"
+  },
+  "種市篤暉": {
+    "team": "m",
+    "throws": "R"
+  },
+  "稲川竜汰": {
+    "team": "h",
+    "throws": "R"
+  },
+  "竹丸和幸": {
+    "team": "g",
+    "throws": "L"
+  },
+  "竹田祐": {
+    "team": "db",
+    "throws": "R"
+  },
+  "篠原響": {
+    "team": "l",
+    "throws": "R"
+  },
+  "篠木健太郎": {
+    "team": "db",
+    "throws": "R"
+  },
+  "篠﨑国忠": {
+    "team": "d",
+    "throws": "R"
+  },
+  "糸川亮太": {
+    "team": "l",
+    "throws": "R"
+  },
+  "細野晴希": {
+    "team": "f",
+    "throws": "L"
+  },
+  "羽田慎之介": {
+    "team": "l",
+    "throws": "L"
+  },
+  "能登嵩都": {
+    "team": "t",
+    "throws": "R"
+  },
+  "與座海人": {
+    "team": "l",
+    "throws": "R"
+  },
+  "船迫大雅": {
+    "team": "g",
+    "throws": "R"
+  },
+  "若松尚輝": {
+    "team": "db",
+    "throws": "R"
+  },
+  "茨木秀俊": {
+    "team": "t",
+    "throws": "R"
+  },
+  "草加勝": {
+    "team": "d",
+    "throws": "R"
+  },
+  "荘司宏太": {
+    "team": "s",
+    "throws": "L"
+  },
+  "荘司康誠": {
+    "team": "e",
+    "throws": "R"
+  },
+  "菅井信也": {
+    "team": "l",
+    "throws": "L"
+  },
+  "菊地ハルン": {
+    "team": "c",
+    "throws": "R"
+  },
+  "菊地吏玖": {
+    "team": "m",
+    "throws": "R"
+  },
+  "菊地大稀": {
+    "team": "f",
+    "throws": "R"
+  },
+  "藤井皓哉": {
+    "team": "h",
+    "throws": "R"
+  },
+  "藤井聖": {
+    "team": "e",
+    "throws": "L"
+  },
+  "藤原大翔": {
+    "team": "h",
+    "throws": "R"
+  },
+  "藤原聡大": {
+    "team": "e",
+    "throws": "R"
+  },
+  "藤嶋健人": {
+    "team": "d",
+    "throws": "R"
+  },
+  "藤川敦也": {
+    "team": "b",
+    "throws": "R"
+  },
+  "藤平尚真": {
+    "team": "e",
+    "throws": "R"
+  },
+  "藤浪晋太郎": {
+    "team": "db",
+    "throws": "R"
+  },
+  "藤田琉生": {
+    "team": "f",
+    "throws": "L"
+  },
+  "西勇輝": {
+    "team": "t",
+    "throws": "R"
+  },
+  "西口直人": {
+    "team": "e",
+    "throws": "R"
+  },
+  "西垣雅矢": {
+    "team": "e",
+    "throws": "R"
+  },
+  "西舘勇陽": {
+    "team": "g",
+    "throws": "R"
+  },
+  "西野勇士": {
+    "team": "m",
+    "throws": "R"
+  },
+  "豆田泰志": {
+    "team": "l",
+    "throws": "R"
+  },
+  "赤星優志": {
+    "team": "g",
+    "throws": "R"
+  },
+  "赤木晴哉": {
+    "team": "c",
+    "throws": "R"
+  },
+  "辛島航": {
+    "team": "e",
+    "throws": "L"
+  },
+  "辻大雅": {
+    "team": "c",
+    "throws": "L"
+  },
+  "近藤廉": {
+    "team": "d",
+    "throws": "L"
+  },
+  "達孝太": {
+    "team": "f",
+    "throws": "R"
+  },
+  "遠藤淳志": {
+    "team": "c",
+    "throws": "R"
+  },
+  "酒居知史": {
+    "team": "e",
+    "throws": "R"
+  },
+  "金丸夢斗": {
+    "team": "d",
+    "throws": "L"
+  },
+  "金村尚真": {
+    "team": "f",
+    "throws": "R"
+  },
+  "鈴木健矢": {
+    "team": "c",
+    "throws": "R"
+  },
+  "鈴木昭汰": {
+    "team": "m",
+    "throws": "L"
+  },
+  "鈴木翔天": {
+    "team": "e",
+    "throws": "L"
+  },
+  "鈴木蓮吾": {
+    "team": "s",
+    "throws": "L"
+  },
+  "鈴木豪太": {
+    "team": "h",
+    "throws": "R"
+  },
+  "長谷川宙輝": {
+    "team": "s",
+    "throws": "L"
+  },
+  "長谷部銀次": {
+    "team": "c",
+    "throws": "L"
+  },
+  "門別啓人": {
+    "team": "t",
+    "throws": "L"
+  },
+  "阪口皓亮": {
+    "team": "s",
+    "throws": "R"
+  },
+  "阿部翔太": {
+    "team": "b",
+    "throws": "R"
+  },
+  "隅田知一郎": {
+    "team": "l",
+    "throws": "L"
+  },
+  "青山美夏人": {
+    "team": "l",
+    "throws": "R"
+  },
+  "青柳晃洋": {
+    "team": "s",
+    "throws": "R"
+  },
+  "飯田琉斗": {
+    "team": "s",
+    "throws": "R"
+  },
+  "高梨裕稔": {
+    "team": "s",
+    "throws": "R"
+  },
+  "高梨雄平": {
+    "team": "g",
+    "throws": "L"
+  },
+  "高橋奎二": {
+    "team": "s",
+    "throws": "L"
+  },
+  "高橋幸佑": {
+    "team": "d",
+    "throws": "L"
+  },
+  "高橋昂也": {
+    "team": "c",
+    "throws": "L"
+  },
+  "高野脩汰": {
+    "team": "m",
+    "throws": "L"
+  },
+  "髙太一": {
+    "team": "c",
+    "throws": "L"
+  },
+  "髙島泰都": {
+    "team": "b",
+    "throws": "R"
+  },
+  "髙木快大": {
+    "team": "c",
+    "throws": "R"
+  },
+  "髙橋光成": {
+    "team": "l",
+    "throws": "R"
+  },
+  "髙橋宏斗": {
+    "team": "d",
+    "throws": "R"
+  },
+  "髙橋遥人": {
+    "team": "t",
+    "throws": "L"
+  },
+  "髙谷舟": {
+    "team": "b",
+    "throws": "R"
+  },
+  "黒原拓未": {
+    "team": "c",
+    "throws": "L"
+  },
+  "黒木優太": {
+    "team": "l",
+    "throws": "R"
+  },
+  "黒田将矢": {
+    "team": "l",
+    "throws": "R"
+  },
+  "齊藤汰直": {
+    "team": "c",
+    "throws": "R"
+  },
+  "齋藤友貴哉": {
+    "team": "f",
+    "throws": "R"
+  },
+  "齋藤綱記": {
+    "team": "d",
+    "throws": "L"
+  },
+  "齋藤響介": {
+    "team": "b",
+    "throws": "R"
+  },
+  "Ｅ．ラミレス": {
+    "team": "l",
+    "throws": "R"
+  }
+}

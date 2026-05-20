@@ -212,6 +212,103 @@ def _ensure_team_name_columns(conn: sqlite3.Connection) -> None:
                 pass
 
 
+def _ensure_pitcher_inning_columns(conn: sqlite3.Connection) -> None:
+    """404 (2026-05-20): pitching_logs に start_inning / end_inning 列を
+    additive 追加。 既に存在すれば no-op。 [[415]] (vs 左右投手) は別 ticket。
+
+    start_inning / end_inning は IP cumsum + appearance_order から derive
+    (NPB box の inning 別 pitcher table は parse 不要、 既存 data から計算可能)。
+    """
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(pitching_logs)")}
+    except sqlite3.OperationalError:
+        return
+    for col in ("start_inning", "end_inning"):
+        if col not in cols:
+            try:
+                conn.execute(f"ALTER TABLE pitching_logs ADD COLUMN {col} INTEGER")
+            except sqlite3.OperationalError:
+                pass
+
+
+def derive_pitcher_innings(rows: list[tuple]) -> list[tuple[int, int]]:
+    """404 (2026-05-20): IP cumsum + appearance_order から各 pitcher の
+    (start_inning, end_inning) を derive する。
+
+    入力: rows = sorted by appearance_order の (appearance_order, IP) list
+    出力: same order の (start_inning, end_inning) list (1-indexed)
+
+    derive logic:
+    - start_inning = floor(cumulative_IP_before_this_pitcher) + 1
+    - end_inning = ceil(cumulative_IP_after_this_pitcher)
+      (frac == 0 なら floor、 frac > 0 なら ceil + 1 = 次回 mid-inning)
+
+    例: starter 5.1 + relief 1.2 + closer 1.0 =
+      starter: start=1, end=ceil(5.333)=6  (entered 6th)
+      relief: start=floor(5.333)+1=6, end=ceil(7.0)=7
+      closer: start=floor(7.0)+1=8, end=ceil(8.0)=8
+
+    edge: IP 0.0 や malformed は skip (NULL)。
+    """
+    import math
+    result: list[tuple[int, int]] = []
+    cum = 0.0
+    for _order, ip in rows:
+        if ip is None:
+            result.append((None, None))  # type: ignore[arg-type]
+            continue
+        try:
+            ip_f = float(ip)
+        except (TypeError, ValueError):
+            result.append((None, None))  # type: ignore[arg-type]
+            continue
+        if ip_f <= 0:
+            result.append((None, None))  # type: ignore[arg-type]
+            continue
+        start = int(math.floor(cum)) + 1
+        cum += ip_f
+        # end: ceil if cum has fraction, else equal to int
+        end = int(math.ceil(cum)) if (cum - int(cum)) > 0.001 else int(cum)
+        result.append((start, end))
+    return result
+
+
+def backfill_pitcher_innings(conn: sqlite3.Connection) -> int:
+    """404 (2026-05-20): 既存 pitching_logs row に start_inning / end_inning
+    を derive して populate。 game_id ごとに appearance_order 順に処理。
+
+    Returns: 更新 row 数。
+    """
+    # game_id ごとに team_role 別 (giants / opponent) で順に処理
+    game_team_pairs = conn.execute(
+        "SELECT DISTINCT game_id, team_role FROM pitching_logs "
+        "WHERE start_inning IS NULL OR end_inning IS NULL"
+    ).fetchall()
+    total_updated = 0
+    for game_id, team_role in game_team_pairs:
+        rows = conn.execute(
+            "SELECT appearance_order, IP, player_display FROM pitching_logs "
+            "WHERE game_id = ? AND team_role = ? "
+            "ORDER BY appearance_order",
+            (game_id, team_role),
+        ).fetchall()
+        if not rows:
+            continue
+        derived = derive_pitcher_innings([(r[0], r[1]) for r in rows])
+        for (order, _ip, player), (start, end) in zip(rows, derived):
+            if start is None or end is None:
+                continue
+            conn.execute(
+                "UPDATE pitching_logs SET start_inning = ?, end_inning = ? "
+                "WHERE game_id = ? AND team_role = ? AND appearance_order = ? "
+                "AND player_display = ?",
+                (start, end, game_id, team_role, order, player),
+            )
+            total_updated += 1
+    conn.commit()
+    return total_updated
+
+
 # ─── 343-INSIGHT-007 backfill: teams / players / advanced_metric_snapshots ──
 #
 # 342-INSIGHT Phase 1 spec で発見した data 不足
@@ -904,6 +1001,7 @@ def open_db(db_path: Path = DEFAULT_DB_PATH, schema_path: Path = DEFAULT_SCHEMA)
         with schema_path.open(encoding="utf-8") as f:
             conn.executescript(f.read())
     _ensure_team_name_columns(conn)
+    _ensure_pitcher_inning_columns(conn)
     return conn
 
 

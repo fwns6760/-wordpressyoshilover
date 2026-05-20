@@ -77,6 +77,8 @@ CREATE TABLE IF NOT EXISTS pitching_logs (
     WP INTEGER, BK INTEGER,
     R INTEGER, ER INTEGER,
     team_name TEXT,                   -- INSIGHT-007: 全 12 球団 ingest 用
+    start_inning INTEGER,             -- 404: 登板開始 inning (cumsum IP + appearance_order から derive)
+    end_inning INTEGER,               -- 404: 登板終了 inning (含む、 1-indexed)
     PRIMARY KEY (game_id, team_role, appearance_order, player_display),
     FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE
 );

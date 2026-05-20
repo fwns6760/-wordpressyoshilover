@@ -2,7 +2,10 @@
 
 ## 1. ticket header
 
-- **status**: BLOCKED_BY=403 (Stage 2、 403 完了 + 観察後着手)
+- **status**: PARTIAL (2026-05-20 PM、 user 判断「左右選手は重要、 別チケットにして残す。 他は登板はやる」):
+  - **登板 inning 別**: 実装着手 (本 ticket scope)、 schema 拡張 + derive logic 完了 (commit pending)
+  - **vs 左右投手**: [[415]] (#91) に split out、 PARKED user 判断 (a) approx / (b) 厳密 後
+  - **デーゲーム / ナイター**: marginal value (年 10-15 試合のみ) で drop、 必要なら別 ticket で復活
 - **priority**: medium (ファン視点 cut の第二弾、 403 安定後に追加)
 - **owner**: Claude / **lane**: Claude
 - **stage**: Phase 2 / 段階式 ([[403]] の follow-up)

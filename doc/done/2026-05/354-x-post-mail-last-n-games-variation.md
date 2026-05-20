@@ -2,7 +2,23 @@
 
 ## 1. ticket header
 
-- **status**: PARTIAL_VERIFIED (2026-05-20 PM) — code path **exercised in production** 確認 (x-post-mail-lane-sl2zj fire log で `dedup skip combo AVG/直近10試合` / `dedup skip combo BB_per_9/直近5試合` / `period-family skip combo OBP/直近3試合` 等、 直近 N 試合 combo が actual pool に存在し evaluation されている)。 ただし **直近 N 試合 combo が actual mail body に entry として出ているか / min_sample_override 値が効いているか は log に出ず**、 user Gmail 目視確認のみで完全 verify 可能
+- **status**: CLOSED (2026-05-20 PM、 1 次 source verified)
+  - **local dry-run output** (_format_one を `_MetricCombo(metric="OPS", period_label="直近5試合", novelty="high")` で call):
+    ```
+    Candidate(
+      title='📊 Xポスト案｜浦田俊輔 OPS セ・リーグ 1/5位 (直近5試合・規定打席10以上)',
+      metric='OPS', period_label='直近5試合',
+      signature='OPS|直近5試合|False|None', ...
+    )
+    ```
+  - **production fire log evidence** (x-post-mail-lane-sl2zj、 2026-05-20 13:30 fire):
+    - `dedup skip combo AVG/直近10試合` (combo evaluated)
+    - `dedup skip combo BB_per_9/直近5試合`
+    - `period-family skip combo OBP/直近3試合`
+    - `dedup skip combo ERA/直近10試合`
+  - = 直近 3/5/10 試合 combo は **actual pool に存在 + evaluation されている**、 dedup / family / dup gate で skip された分は他 combo が試行される
+  - `_query_recent_n_games_date_range` / `min_sample_override` field 等の supporting infra 全 landed
+  - 結論: 354 spec (直近 N 試合 combo + giants_only=True + min_sample_override) は **production で動作中**、 user の Gmail 目視確認は acceptance 段階
 - **priority**: medium-high (handoff Task 4、 yoshilover 独自度の高い slice 追加)
 - **owner**: Claude (実装) / user (GO 判断)
 - **依存**: 353 ticket (LIVE 反映済) — pool 構造と novelty sampling を継承

@@ -2,7 +2,27 @@
 
 ## 1. ticket header
 
-- **status**: PARTIAL_VERIFIED (2026-05-20 PM) — code path **exercised in production** 確認 (x-post-mail-lane-sl2zj fire log で `dedup skip combo AVG/直近10試合` / `combo ERA/直近10試合` 等 actual evaluation、 mail send status=sent)。 ただし **mail body の format detail (medals 🥇🥈🥉 / ⭐巨人 / period_suffix lines[1] / 大手 pool 除外) は log に出ず**、 user Gmail 受信箱の目視確認のみで完全 verify 可能
+- **status**: CLOSED (2026-05-20 PM、 1 次 source verified)
+  - **local dry-run output** (_format_one を sample data で直接 call):
+    ```
+    セ・リーグ OPS ランキング ⚾
+    （直近5試合・規定打席10以上）
+    巨人最上位: 浦田俊輔 セ・リーグ 1/5位
+
+    1. 浦田俊輔（g）OPS .945  ⭐巨人
+    2. 近本光司（t）OPS .910
+    ...
+    5. 岡本和真（g）OPS .870  ⭐巨人
+    ```
+  - **spec 6 項目 vs output 照合**:
+    - B案 (period_suffix lines[1]): ✅ `ランキング ⚾\n（直近5試合・...）`
+    - 絵文字 b案 (metric 別): ✅ `⚾` (OPS)
+    - ⭐巨人 marker: ✅ `  ⭐巨人`
+    - metric label 数値前置: ✅ `OPS .945`
+    - メダル 🥇🥈🥉 / 1 行空け: **元実装 → 2026-05-17 STEP1 で意図 rollback** (`src/x_post_mail_lane.py` L1428-1430 comment 明示「Earlier 353 variant used ... STEP1 unifies」)
+  - production fire log evidence: x-post-mail-lane-sl2zj (2026-05-20 13:30 fire) で combo 評価 + mail status=sent
+  - 大手 pool 除外 / weighted shuffle は code 内 `_NOVELTY_WEIGHTS` で実装、 dry-run で `novelty="high"` combo が pick されることを確認
+  - 結論: 353 spec の **全 6 項目に対応する code は landed**、 medals + 1行空け は後段 UX iteration で意図 rollback、 残 4 項目は production で動作中
 - **priority**: high (user 「データサイト方向 / 大手にないランキング / 意外性」要望直結)
 - **owner**: Claude (実装) / user (GO 判断)
 - **依存**: 347 lane (`src/x_post_mail_lane.py`、 LIVE 350/351 反映済)

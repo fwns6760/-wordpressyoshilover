@@ -20,6 +20,7 @@ start 不変)。
 from __future__ import annotations
 
 import hashlib as _hashlib
+import json as _json
 import logging as _logging
 import re as _re
 from typing import Optional
@@ -45,6 +46,14 @@ _GEMMA_BRANDING_FORBIDDEN_PATTERNS = (
     _re.compile(r"#\S+"),
     _re.compile(r"ヨシラバー(で|を|に)?整理しました"),
     _re.compile(r"Xでは|X上では|みんなの声"),
+    # 414 axis 1 (2026-05-20): \d+位 を一律 drop (user 報告 岸田 28位 hallucination 事例)
+    _re.compile(r"\d+位"),
+    # 414 axis C3: 打率 / 出塁率 / OPS / 防御率 系 rate 数字を drop
+    # 未検証の rate 数字は spec 382 違反、 Gemma が prompt 破った時の safety net
+    # `.345` (1軍打率風) と `3.456` (OPS 風) 両方カバー、 防御率は別 pattern。
+    _re.compile(r"(?<!\d)\.\d{3}"),
+    _re.compile(r"\d+\.\d{3}"),
+    _re.compile(r"防御率\s*\d+\.\d{1,2}"),
 )
 
 
@@ -66,6 +75,10 @@ X 投稿案を 1 件生成してください。
 - **140 字未満の薄い post は禁止** (具体観点 + 試合運び + 数字感 + ファン感情を最低 3 軸盛り込む)
 - 巨人以外の球団選手の話題は除外
 - 公開済み MLB の元巨人 OB (菅野・岡本等) は OK、 非元巨人 MLB は NG
+- **【414 hard rule、 厳守】 順位表現 / rate 数字は出力禁止**:
+  - **BAD**: 「出塁率28位」 「打率3位」 「歴代5位」 「セ・リーグOPS2位」 「.345」 「防御率1.85」
+  - **GOOD**: 「出塁率の数字いい」 「打率は安定」 「歴代でも上位」 「セで上の方」 「数字を残してる」
+  - 違反したら出力全体破棄。 「◯位」 という表現は **どんな文脈でも禁止**
 
 トーン (重要):
 - **本物の巨人ファンらしく**: 連勝の喜び、 優勝争いへの期待、 特定選手への信頼、 悔しさ、 「噛み締める」 テンション、 「ガチで凄い」「とんでもない」 等の素直な熱量、 内輪ネタ (栄冠は君に輝く 等) は自然に出してよい。 ファンとして堂々と巨人寄りで書く
@@ -155,6 +168,10 @@ _SYSTEM_PROMPT_KANDUME = """あなたは熱心な巨人ファンとして X 投�
 - **140 字未満の薄い post は禁止** (試合状況 + 選手反応 + 次への期待 を最低 3 観点)
 - 巨人以外の球団選手の話題は除外
 - 公開済み MLB の元巨人 OB (菅野・岡本等) は OK、 非元巨人 MLB は NG
+- **【414 hard rule、 厳守】 順位表現 / rate 数字は出力禁止**:
+  - **BAD**: 「出塁率28位」 「打率3位」 「歴代5位」 「セ・リーグOPS2位」 「.345」 「防御率1.85」
+  - **GOOD**: 「出塁率いいね」 「打率いい感じ」 「歴代でも上位」 「ピッチャーの数字いい」
+  - 違反したら出力全体破棄。 「◯位」 という表現は **どんな文脈でも禁止**
 
 トーン (重要):
 - **試合中実況の voice**: 「◯回終わって◯-◯」「次の打席◯◯」「この回しのげれば」「来た！」「ここでこの場面!」 のような実況・実感の voice
@@ -448,6 +465,75 @@ def _gemma_branding_safety_check(text: str) -> bool:
     if not _is_safe_post_text(text):
         return False
     return True
+
+
+# 414 axis 2 (2026-05-20): 数値 whitelist helper.
+# verified_text (db_fact + Tavily content の連結) に literal 出現しない数字を
+# unverified としてリストする。 1 件でもあれば caller は candidate を drop。
+# 「verified set 内なら hallucination ではない」 という保守的判定 (false-negative
+# 寄り = 多めに drop)。
+_NUMERIC_TOKEN_RE = _re.compile(r"\d+(?:\.\d+)?")
+
+
+def _extract_unverified_numbers(text: str, verified_text: str) -> list[str]:
+    """text 内の数字 token のうち verified_text に literal 出現しないものを返す.
+
+    生成 text から `\\d+(?:\\.\\d+)?` で数字 (整数 + 小数) を抽出。 各数字が
+    verified_text の substring として現れない場合 unverified。 verified_text には
+    db_fact_line と Tavily 検索結果の content / title を連結したものを caller が
+    渡す想定 (414 axis 2 hallucination 防止)。
+    """
+    if not text:
+        return []
+    safe_verified = verified_text or ""
+    found: list[str] = []
+    for match in _NUMERIC_TOKEN_RE.finditer(text):
+        token = match.group(0)
+        if token not in safe_verified:
+            found.append(token)
+    return found
+
+
+# 414 axis 6 (2026-05-20): published_date 7日超過 entry を context から drop.
+# 現状 _format_tavily_context は全 entry を Gemma に渡しており、 古い snippet の
+# 「ついに」「これから」 を Gemma が現在化する事故が起きうる。 朝 fire で前日試合
+# 記事は欲しい (1 日前は残す) ので default 7 日 (= 1 週間) に。
+def _recent_published_within_days(results: list[dict], days: int = 7) -> list[dict]:
+    """published_date が直近 days 日以内の entry のみを返す.
+
+    parse 失敗 / date 不明の entry は **残す** (false-negative 寄り、 caller の
+    Gemma context に注入される、 prompt 制約で 「日付不明は淡々と書く」 と既に指示)。
+    days <= 0 なら same-day-only モード (414 axis 9 と同等)。
+    """
+    if not results:
+        return []
+    from datetime import datetime, timezone, timedelta
+    from email.utils import parsedate_to_datetime
+    jst = timezone(timedelta(hours=9))
+    today_jst = datetime.now(jst).date()
+    cutoff = today_jst - timedelta(days=max(0, days))
+    kept: list[dict] = []
+    for r in results:
+        raw = r.get("published_date") or ""
+        if not raw:
+            # 日付不明: 残す (false-negative 寄り)
+            kept.append(r)
+            continue
+        try:
+            dt = parsedate_to_datetime(raw)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            entry_date = dt.astimezone(jst).date()
+        except (TypeError, ValueError):
+            # parse 失敗: 残す
+            kept.append(r)
+            continue
+        if days <= 0:
+            if entry_date == today_jst:
+                kept.append(r)
+        elif entry_date >= cutoff:
+            kept.append(r)
+    return kept
 
 
 def build_db_fact_line(
@@ -984,10 +1070,12 @@ def build_gemma_branding_candidate(
     max_tavily_results: int = 3,
     timeout_seconds: int = 30,
     model_id: str = _GEMMA_BRANDING_MODEL,
-    temperature: float = 0.6,
+    temperature: float = 0.4,
     logger: Optional[_logging.Logger] = None,
     db_path: str = "",
     persona: Optional[str] = None,
+    same_day_only: Optional[bool] = None,
+    db_fact_streak_window: Optional[int] = None,
 ) -> Optional[Candidate]:
     """Tavily REST 検索 + Gemma 4 31B 生成で 1 件の Candidate を返す。
 
@@ -1007,6 +1095,23 @@ def build_gemma_branding_candidate(
         log.info("gemma_branding_skip reason=not_verified_giants_player player=%r", player)
         return None
 
+    # 411 / 414 axis C9: persona 自動選択。 試合日 18-21時 = 缶詰、 他 = フーガ。
+    # caller が persona kwarg で明示指定すれば自動選択を override。 同じく
+    # same_day_only / db_fact_streak_window も persona に応じて自動 (缶詰=当日 only)。
+    from datetime import datetime, timezone, timedelta
+    jst = timezone(timedelta(hours=9))
+    now_jst = datetime.now(jst)
+    if persona is None:
+        is_game_day = is_giants_game_day(now_jst, db_path) if db_path else False
+        resolved_persona = select_branding_persona(now_jst, is_game_day)
+    else:
+        resolved_persona = persona
+    # 414 axis C9: 缶詰 persona (試合中実況) は当日 only (古い snippet / 過去 streak を拾わない)
+    if same_day_only is None:
+        same_day_only = (resolved_persona == "kandume")
+    if db_fact_streak_window is None:
+        db_fact_streak_window = 0 if resolved_persona == "kandume" else 5
+
     # 1. Tavily 検索 (factual ground)
     query = f"巨人 {player} 最新"
     results = _tavily_search(
@@ -1014,10 +1119,23 @@ def build_gemma_branding_candidate(
         tavily_api_key,
         max_results=max_tavily_results,
         timeout_seconds=timeout_seconds,
+        same_day_only=same_day_only,
     )
     if not results:
         log.warning(
-            "gemma_branding_skip reason=no_tavily_results query=%r player=%s",
+            "gemma_branding_skip reason=no_tavily_results query=%r player=%s persona=%s same_day_only=%s",
+            query,
+            player,
+            resolved_persona,
+            same_day_only,
+        )
+        return None
+    # 414 axis C6: persona=fuuga (古い snippet 許容) でも 7 日超は strict drop。
+    # 缶詰 (same_day_only=True) は既に当日 filter 経由なので no-op に近い。
+    results = _recent_published_within_days(results, days=7)
+    if not results:
+        log.warning(
+            "gemma_branding_skip reason=tavily_results_too_old query=%r player=%s",
             query,
             player,
         )
@@ -1030,18 +1148,6 @@ def build_gemma_branding_candidate(
             player,
         )
         return None
-
-    # 2. Gemma 4 生成 (時間帯 tone hint を含む system prompt)
-    from datetime import datetime, timezone, timedelta
-    jst = timezone(timedelta(hours=9))
-    now_jst = datetime.now(jst)
-    # 411 (2026-05-20): persona 自動選択 (試合日 18-21時 = 缶詰、 他 = フーガ)。
-    # caller が persona kwarg で明示指定すれば自動選択を override。
-    if persona is None:
-        is_game_day = is_giants_game_day(now_jst, db_path) if db_path else False
-        resolved_persona = select_branding_persona(now_jst, is_game_day)
-    else:
-        resolved_persona = persona
     system_prompt = _build_system_prompt(
         now_jst_hour=now_jst.hour,
         today_jst=now_jst.strftime("%Y-%m-%d"),
@@ -1074,12 +1180,48 @@ def build_gemma_branding_candidate(
 
     text = _finalize_post_text(text)
 
-    # 3. spec 382 hard rule validator
+    # 3. spec 382 hard rule validator (414 axis C1/C3 regex 含む)
     if not _gemma_branding_safety_check(text):
+        # 414 axis C7: 構造化 drop log (どの pattern が hit したか含む)
+        matched_pattern = None
+        for pattern in _GEMMA_BRANDING_FORBIDDEN_PATTERNS:
+            match = pattern.search(text)
+            if match:
+                matched_pattern = pattern.pattern
+                break
         log.warning(
-            "gemma_branding_skip reason=safety_check_failed player=%s text_preview=%r",
-            player,
-            text[:60],
+            _json.dumps(
+                {
+                    "event": "gemma_branding_drop",
+                    "reason": "safety_check_failed",
+                    "player": player,
+                    "persona": resolved_persona,
+                    "matched_pattern": matched_pattern,
+                    "text_preview": text[:80],
+                    "text_len": len(text),
+                },
+                ensure_ascii=False,
+            )
+        )
+        return None
+
+    # 414 axis C2: 数値 whitelist。 verified_text = db_fact_line + Tavily context。
+    # 生成 text の数字で verified_text に literal 含まれない場合は drop。
+    verified_text = " ".join(filter(None, [db_fact_line or "", context]))
+    unverified = _extract_unverified_numbers(text, verified_text)
+    if unverified:
+        log.warning(
+            _json.dumps(
+                {
+                    "event": "gemma_branding_drop",
+                    "reason": "unverified_numbers",
+                    "player": player,
+                    "persona": resolved_persona,
+                    "unverified_numbers": unverified[:10],
+                    "text_preview": text[:80],
+                },
+                ensure_ascii=False,
+            )
         )
         return None
 

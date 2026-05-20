@@ -588,6 +588,94 @@ class SelectBrandingPersonaTests411(unittest.TestCase):
         self.assertEqual(xbg.select_branding_persona(self._now_at(19), False), "fuuga")
 
 
+class HallucinationPreventionAxisCTests414(unittest.TestCase):
+    """414 axis C: hallucination 防止 (regex + 数値 whitelist + temperature + date filter)."""
+
+    # axis C1: \d+位 forbidden
+    def test_safety_check_rejects_rank_28(self) -> None:
+        self.assertFalse(xbg._gemma_branding_safety_check("岸田は出塁率28位の数字を残してる"))
+
+    def test_safety_check_rejects_rank_3(self) -> None:
+        self.assertFalse(xbg._gemma_branding_safety_check("打率3位の選手だ"))
+
+    def test_safety_check_accepts_no_rank(self) -> None:
+        # 順位表現なしの 220+ 字の post
+        text = (
+            "戸郷さん 完投ナイスピッチ "
+            "ボールに伸びがあった 直球で押し込めるのは大きい 連勝の流れに乗れそう "
+            "あと打線が早めに点取れるようになると更に楽になる 試合運びの完成度上がってる "
+            "明日からのカードも楽しみで仕方ない 噛み締めましょう "
+            "次の中継ぎ陣も整ってきた感じあるし やってる野球が強い"
+        )
+        self.assertTrue(xbg._gemma_branding_safety_check(text))
+
+    # axis C3: rate forbidden
+    def test_safety_check_rejects_batting_average(self) -> None:
+        self.assertFalse(xbg._gemma_branding_safety_check("岸田は打率.345を残してる"))
+
+    def test_safety_check_rejects_era_specific(self) -> None:
+        self.assertFalse(xbg._gemma_branding_safety_check("戸郷の防御率1.85は素晴らしい"))
+
+    # axis C2: 数値 whitelist
+    def test_extract_unverified_numbers_returns_unverified(self) -> None:
+        text = "今日の戸郷は7回1失点 8奪三振 28イニング無失点"
+        verified = "戸郷 7回 1失点 8奪三振"
+        unverified = xbg._extract_unverified_numbers(text, verified)
+        self.assertIn("28", unverified)
+
+    def test_extract_unverified_numbers_empty_when_all_verified(self) -> None:
+        text = "戸郷は 7回 1失点 8奪三振"
+        verified = "戸郷 7回 1失点 8奪三振 連勝中"
+        self.assertEqual(xbg._extract_unverified_numbers(text, verified), [])
+
+    def test_extract_unverified_numbers_handles_empty_text(self) -> None:
+        self.assertEqual(xbg._extract_unverified_numbers("", "anything"), [])
+
+    # axis C5: temperature default
+    def test_build_gemma_branding_candidate_default_temperature(self) -> None:
+        import inspect
+        sig = inspect.signature(xbg.build_gemma_branding_candidate)
+        self.assertEqual(sig.parameters["temperature"].default, 0.4)
+
+    # axis C6: published_date 7 日超 drop
+    def test_recent_published_within_days_drops_old_entry(self) -> None:
+        from datetime import datetime, timezone, timedelta
+        from email.utils import format_datetime
+        jst = timezone(timedelta(hours=9))
+        today_jst = datetime.now(jst).replace(hour=12)
+        very_old = today_jst - timedelta(days=30)
+        recent = today_jst - timedelta(days=3)
+        results = [
+            {"title": "古い", "published_date": format_datetime(very_old.astimezone(timezone.utc))},
+            {"title": "最近", "published_date": format_datetime(recent.astimezone(timezone.utc))},
+        ]
+        kept = xbg._recent_published_within_days(results, days=7)
+        titles = [r["title"] for r in kept]
+        self.assertNotIn("古い", titles)
+        self.assertIn("最近", titles)
+
+    def test_recent_published_within_days_keeps_unknown_date(self) -> None:
+        results = [{"title": "日付不明", "content": "本文"}]
+        kept = xbg._recent_published_within_days(results, days=7)
+        # 日付不明は false-negative 寄りで残す
+        self.assertEqual(len(kept), 1)
+
+    def test_recent_published_within_days_zero_means_same_day_only(self) -> None:
+        from datetime import datetime, timezone, timedelta
+        from email.utils import format_datetime
+        jst = timezone(timedelta(hours=9))
+        today_jst = datetime.now(jst).replace(hour=12)
+        yesterday = today_jst - timedelta(days=1)
+        results = [
+            {"title": "昨日", "published_date": format_datetime(yesterday.astimezone(timezone.utc))},
+            {"title": "今日", "published_date": format_datetime(today_jst.astimezone(timezone.utc))},
+        ]
+        kept = xbg._recent_published_within_days(results, days=0)
+        titles = [r["title"] for r in kept]
+        self.assertNotIn("昨日", titles)
+        self.assertIn("今日", titles)
+
+
 class BuildSystemPromptPersonaTests411(unittest.TestCase):
     """411: _build_system_prompt が persona 引数で フーガ / 缶詰 を切替."""
 

@@ -8203,6 +8203,64 @@ button.cta:hover,
   color: #20845e;
 }
 
+/* 398-SEO (2026-05-20): home 末 (</main> 直前) に挿入される brand 定義 section。
+   ヨシラバー = 巨人専門 という entity 認識を Google と visitor 双方に強化。 */
+.yoshi-brand-about {
+  margin: 32px 0 16px;
+  padding: 20px 22px 18px;
+  background: #fafafa;
+  border-radius: 6px;
+  border-left: 4px solid #f5811f;
+}
+.yoshi-brand-about__heading {
+  font-size: 18px;
+  font-weight: 800;
+  color: #1a1a1a;
+  margin: 0 0 10px;
+  letter-spacing: 0.5px;
+  border: none;
+  padding: 0;
+}
+.yoshi-brand-about__lead {
+  font-size: 14px;
+  line-height: 1.7;
+  color: #333;
+  margin: 0 0 12px;
+}
+.yoshi-brand-about__topics {
+  list-style: disc;
+  margin: 0 0 12px 22px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #333;
+}
+.yoshi-brand-about__topics li {
+  margin: 0 0 2px;
+}
+.yoshi-brand-about__author {
+  font-size: 12px;
+  color: #666;
+  margin: 8px 0 0;
+  border-top: 1px solid #e5e5e5;
+  padding-top: 8px;
+}
+@media (max-width: 600px) {
+  .yoshi-brand-about {
+    padding: 16px 14px 14px;
+  }
+  .yoshi-brand-about__heading {
+    font-size: 16px;
+  }
+  .yoshi-brand-about__lead {
+    font-size: 13px;
+  }
+  .yoshi-brand-about__topics {
+    font-size: 12px;
+    margin-left: 18px;
+  }
+}
+
 /* 388 (2026-05-20): H1 (c-headLogo) 内に real DOM の span で site title を併記、
    その直下に H2 を subtitle として配置。 SWELL の SEO 構造 (H1 + alt) を維持しつつ、
    mobile で「画像だけ」 になる問題を解消、 自然な見た目に整える。 */

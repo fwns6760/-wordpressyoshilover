@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.17.0
+ * Version: 0.17.1
  * Author: yoshilover
  */
 
@@ -126,6 +126,30 @@ function yoshilover_063_buffer_inject_header_titles( $buffer ) {
         '"url":"https:\\/\\/yoshilover.com\\/"',
         $buffer
     );
+
+    // 398-SEO (2026-05-20): home に「ヨシラバーとは」 brand 定義 section を </main> 直前に挿入。
+    // brand entity 認識 + ユーザの「これは何のサイト?」 を Google + visitor 両方に伝える。
+    // home (is_front_page) のみ。 dedup は section tag そのもので判定。
+    if ( is_front_page() && strpos( $buffer, '<section class="yoshi-brand-about"' ) === false ) {
+        $brand_html  = '<section class="yoshi-brand-about" aria-label="ヨシラバーについて">';
+        $brand_html .= '<h2 class="yoshi-brand-about__heading">ヨシラバーとは</h2>';
+        $brand_html .= '<p class="yoshi-brand-about__lead">ヨシラバーは、 読売ジャイアンツ専門 の速報・データサイトです。 試合速報、 スタメン、 試合結果、 選手情報、 投手成績、 打撃成績、 連勝・連敗記録、 順位・ゲーム差、 監督コメント、 ファーム情報まで、 巨人ファンが知りたい一次情報と現場の声をまとめています。</p>';
+        $brand_html .= '<ul class="yoshi-brand-about__topics">';
+        $brand_html .= '<li>試合速報・試合結果(セ・リーグ)</li>';
+        $brand_html .= '<li>スタメン・先発投手 発表まとめ</li>';
+        $brand_html .= '<li>選手成績・データ分析(打率 / OPS / 防御率 / WAR 等)</li>';
+        $brand_html .= '<li>監督コメント・選手コメント</li>';
+        $brand_html .= '<li>ファーム(2 軍)情報・若手選手の活躍</li>';
+        $brand_html .= '<li>記録・連勝記録・首位攻防 速報</li>';
+        $brand_html .= '</ul>';
+        $brand_html .= '<p class="yoshi-brand-about__author">運営: ヨシラバー(柴田義彦)。 巨人ファンが集まる速報・データ メディア。</p>';
+        $brand_html .= '</section>';
+
+        $main_close_pos = strpos( $buffer, '</main>' );
+        if ( $main_close_pos !== false ) {
+            $buffer = substr_replace( $buffer, $brand_html, $main_close_pos, 0 );
+        }
+    }
 
     // 398-SEO (2026-05-20): home の meta description と og:description にブランド名と
     // 具体内容を入れて CTR + entity 認識を補強。 既存値が generic な場合のみ上書き。

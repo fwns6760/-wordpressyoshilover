@@ -27,11 +27,11 @@ user 方針「受け入れ NG はまた起票」+「一人開発で Active 多�
 
 ## 2026-05-20 session update
 
-### 414 — X-POST hallucination 防止 9-axis pack (順位 captcha + 数値 whitelist + 1軍 filter + 当日 only)
+### 414 — X-POST brand voice quality framework (A 型分離 / B voice / C 精度 9 axis / D 炎上 6 check / E 試合前 7 テーマ)
 
 | ticket | status | 内容 |
 |---|---|---|
-| `doc/active/414-X-POST-HALLUCINATION-PREVENTION-9AXIS.md` | DRAFT (user GO 受領、 実装着手中) | user 報告 2026-05-20 chat hallucination 事例 3 件 (岸田 28位 / 山瀬 2軍混入 / 試合中古い data) を 9 axis で fix。 `_GEMMA_BRANDING_FORBIDDEN_PATTERNS` に `\d+位` `\d+\.\d{3}` `防御率\s*\d+\.\d{1,2}` 追加、 数値 whitelist helper (verified set 外 drop)、 prompt bad example 強化、 temperature 0.6→0.4、 published_date 7日超 drop strict、 drop log 構造化、 `src/analysis/active_roster_filter.py` 新規 (`is_first_team_active(player, db, window_days=14, min_games=3)`)、 persona=kandume で `same_day_only=True` + `streak_window=0` (当日 only)。 並走 agent (403 chain) と `ranking_article_publisher.py` 衝突 risk、 commit 直列。 cost ¥0/post 維持。 GH Issue 別途。 |
+| `doc/active/414-X-POST-BRAND-VOICE-QUALITY-FRAMEWORK.md` | DRAFT (user GO 受領、 実装着手中) | 元 9 axis hallucination 防止を user 追加 spec で A-E 5 軸 framework に拡張: A 型分離 5 種 (速報/感情/データ/次の展開/ポジティブ) / B voice persona (411 既実装) / C 精度 9 axis (順位/数値whitelist/率系/prompt/temp/published_date/log/1軍filter/当日only) / D 炎上 6 check (批判/断定/雑批判/監督批判/誤字/煽り) / E 試合前 7 テーマ (先発/昨日/注目/打順/昇格/相性/反応)。 7 commit 段階実装、 各 commit 後 push + pytest。 並走 agent (403) と ranking_article_publisher.py 衝突 risk = commit 直列。 spec 382 hard rule 不変、 cost ¥0/post 維持。 GH Issue #90 (元 9 axis 起票 → A-E 拡張は ticket .md 反映)。 memory 起点軸 F-Z (timing / thread / A/B / mascot 等) は 414 scope 外、 別 ticket 化要件。 |
 
 ### 411 — X-POST branding voice persona (Tavily whitelist 拡張 + フーガ/缶詰 2 persona + 試合日/18時 gate)
 

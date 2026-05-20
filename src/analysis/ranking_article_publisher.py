@@ -1460,6 +1460,304 @@ def publish_player_counting_split_draft(
         return {"status": "error", "error": f"{type(e).__name__}: {e}"}
 
 
+# ─── 403 Stage B: 打順別 publisher (band 化: 上位 / クリーンナップ / 下位) ───
+#
+# batting_logs.slot_order を split key にした打順別 ranking publisher。
+# audit (2026-05-20) で個別 slot publish は 4 番固定 (= 岡本ばかり) リスク
+# あったため、 3 band に集約: 上位打線 (1-2) / クリーンナップ (3-5) /
+# 下位打線 (6-9)。 is_sub=0 で先発 lineup のみ集計。
+#
+# 既存 split publisher (home_away / opponent) と分離した dedicated function
+# とした (slot_order は games ではなく batting_logs の列、 SQL 構造が異なる)。
+
+_SLOT_BANDS: dict[str, tuple[tuple[int, ...], str]] = {
+    "top": ((1, 2), "上位打線"),
+    "cleanup": ((3, 4, 5), "クリーンナップ"),
+    "bottom": ((6, 7, 8, 9), "下位打線"),
+}
+
+
+def aggregate_player_counting_stat_by_slot_band(
+    conn: sqlite3.Connection,
+    *,
+    stat_col: str,
+    scope: str,
+    slot_band: str,
+    today: Optional[Any] = None,
+    top_n: int = 10,
+    league: Optional[str] = None,
+    focus_player: Optional[str] = None,
+) -> list[dict]:
+    """打順 band 別の counting 集計 (403 Stage B、 打者専用).
+
+    batting_logs.slot_order ∈ band の先発 (is_sub=0) 出場時の集計のみ。
+    HR は atbats_json 集計 (batting_logs に列無し) に dispatch するが、
+    slot 別の atbats_json 集計は本実装では未対応 (skip)。
+    """
+    if slot_band not in _SLOT_BANDS:
+        raise ValueError(f"unsupported slot_band: {slot_band!r}")
+    slots, _label = _SLOT_BANDS[slot_band]
+    # HR は batting_logs に列が無いので、 slot 別の HR は本実装で未対応 (skip)
+    if stat_col == "HR":
+        return []
+    safe_col = "".join(c for c in stat_col if c.isalnum() or c == "_")
+    if safe_col != stat_col:
+        raise ValueError(f"unsafe stat_col: {stat_col!r}")
+    start, end = _scope_window(
+        scope, today, conn=conn, focus_player=focus_player,
+    )
+    league_clause = ""
+    league_params: tuple = ()
+    if league == "central":
+        placeholders = ",".join("?" * len(_CENTRAL_TEAM_NAMES))
+        league_clause = f" AND bl.team_name IN ({placeholders})"
+        league_params = _CENTRAL_TEAM_NAMES
+    elif league == "pacific":
+        placeholders = ",".join("?" * len(_PACIFIC_TEAM_NAMES))
+        league_clause = f" AND bl.team_name IN ({placeholders})"
+        league_params = _PACIFIC_TEAM_NAMES
+    slot_placeholders = ",".join("?" * len(slots))
+    rows = conn.execute(
+        f"SELECT bl.player_canonical, bl.team_name, SUM(bl.{safe_col}) AS total "
+        f"FROM batting_logs bl JOIN games g ON bl.game_id = g.game_id "
+        f"WHERE g.game_date >= ? AND g.game_date <= ? "
+        f"AND bl.slot_order IN ({slot_placeholders}) "
+        f"AND bl.is_sub = 0 "
+        f"AND bl.player_canonical IS NOT NULL "
+        f"AND bl.player_canonical != ''"
+        f"{league_clause} "
+        f"GROUP BY bl.player_canonical "
+        f"ORDER BY total DESC LIMIT ?",
+        (start.isoformat(), end.isoformat(), *slots, *league_params, top_n),
+    ).fetchall()
+    return [
+        {"player": p, "team": _team_name_to_code(t), "value": int(v or 0)}
+        for p, t, v in rows
+    ]
+
+
+def render_player_counting_by_slot_band_article(
+    conn: sqlite3.Connection,
+    *,
+    stat_col: str,
+    metric_label_jp: str,
+    scope: str,
+    slot_band: str,
+    top_n: int = 10,
+) -> Optional[dict]:
+    """打順 band 別の counting ranking 記事 (403 Stage B)."""
+    if slot_band not in _SLOT_BANDS:
+        return None
+    _slots, band_label = _SLOT_BANDS[slot_band]
+    rows = aggregate_player_counting_stat_by_slot_band(
+        conn, stat_col=stat_col, scope=scope, slot_band=slot_band,
+        top_n=max(top_n, 30), league="central",
+    )
+    if not rows:
+        return None
+    giants_rows = [r for r in rows if r.get("team") == "g"]
+    if not giants_rows:
+        return None
+    top_giants = giants_rows[0]
+    top_player = top_giants["player"]
+    top_value = top_giants["value"]
+    giants_rank = next(
+        (i + 1 for i, r in enumerate(rows) if r["player"] == top_player), len(rows),
+    )
+    scope_label = title_guard.period_label_for_scope(scope) or scope
+    title = (
+        f"【巨人データ】{top_player} {band_label} {metric_label_jp} {top_value} "
+        f"でセ・リーグ {giants_rank} 位 ({scope_label})"
+    )
+    title = title_guard.ensure_title_period(title, scope=scope).title
+    table_lines = [
+        f"| 順位 | 選手 | チーム | {metric_label_jp}({band_label}) |",
+        "|---|---|---|---|",
+    ]
+    focus_in_top_n = False
+    for i, r in enumerate(rows[:top_n], start=1):
+        team_disp = _TEAM_LABEL_JP.get(r.get("team", ""), r.get("team", "?"))
+        is_focus = r["player"] == top_player
+        if is_focus:
+            focus_in_top_n = True
+            r_disp = f'<span style="color:#c0392b"><strong>{i}</strong></span>'
+            p_disp = f'<span style="color:#c0392b"><strong>{r["player"]} ★</strong></span>'
+            v_disp = f'<span style="color:#c0392b"><strong>{r["value"]}</strong></span>'
+        else:
+            r_disp = str(i)
+            p_disp = r["player"]
+            v_disp = str(r["value"])
+        table_lines.append(f"| {r_disp} | {p_disp} | {team_disp} | {v_disp} |")
+    if not focus_in_top_n:
+        team_disp = _TEAM_LABEL_JP.get(top_giants.get("team", ""), "?")
+        r_disp = f'<span style="color:#c0392b"><strong>{giants_rank}</strong></span>'
+        p_disp = f'<span style="color:#c0392b"><strong>{top_player} ★</strong></span>'
+        v_disp = f'<span style="color:#c0392b"><strong>{top_value}</strong></span>'
+        table_lines.append(f"| {r_disp} | {p_disp} | {team_disp} | {v_disp} |")
+    table_md = "\n".join(table_lines)
+    body_md = f"""# {title}
+
+## ひとこと
+
+巨人 {top_player} の **{band_label}** での {metric_label_jp} は **{top_value}**
+({scope_label} 時点)、 セ・リーグ内 **{giants_rank} 位**。
+
+## リーグ TOP {top_n}({band_label})
+
+{table_md}
+
+## このデータについて
+
+| 項目 | 内容 |
+|---|---|
+| 選手 | **{top_player}**(巨人) |
+| 指標 | {metric_label_jp}({band_label}) = **{top_value}** |
+| 順位 | リーグ {giants_rank} 位 |
+| 打順 band | {band_label}(打順 {','.join(str(s) for s in _slots)} 番) |
+| データ元 | NPB 公式 box score(https://npb.jp/) |
+| 集計式 | SUM({stat_col}) over batting_logs WHERE slot_order IN ({','.join(str(s) for s in _slots)}) AND is_sub=0 |
+| 集計期間 | {scope_label} |
+"""
+    body_html = markdown_to_html(body_md)
+    return {
+        "title": title, "body_md": body_md, "body_html": body_html,
+        "stat_col": stat_col, "scope": scope,
+        "slot_band": slot_band, "band_label": band_label,
+        "top_player": top_player,
+        "top_value": top_value,
+        "giants_rank": giants_rank,
+        "league_total": len(rows),
+        "team_coverage": len({r.get("team") for r in rows if r.get("team")}),
+    }
+
+
+def publish_player_counting_by_slot_band_draft(
+    conn: sqlite3.Connection,
+    wp_client_obj: Any,
+    *,
+    stat_col: str,
+    metric_label_jp: str,
+    scope: str,
+    slot_band: str,
+    category_name: str = DEFAULT_CATEGORY_NAME,
+    dry_run: bool = False,
+) -> dict:
+    """打順 band 別の counting ranking publish (403 Stage B、 mirror of split publish)."""
+    article = render_player_counting_by_slot_band_article(
+        conn, stat_col=stat_col, metric_label_jp=metric_label_jp,
+        scope=scope, slot_band=slot_band, top_n=10,
+    )
+    if article is None:
+        return {"status": "skip", "reason": "no_data_or_no_giants",
+                "stat_col": stat_col, "scope": scope,
+                "slot_band": slot_band}
+    title_check = title_guard.ensure_title_period(article["title"], scope=scope)
+    if not title_check.ok:
+        return {
+            "status": "skip_title_period_guard",
+            "reason": title_check.reason,
+            "stat_col": stat_col,
+            "scope": scope,
+            "slot_band": slot_band,
+            "title": article["title"],
+        }
+    article["title"] = title_check.title
+    quality_decision = quality_gate.validate_counting_article(article)
+    if not quality_decision.allowed:
+        return quality_gate.skip_result(
+            quality_decision,
+            stat_col=stat_col,
+            scope=scope,
+            slot_band=slot_band,
+            title=article["title"],
+        )
+    metric_key = f"{stat_col}:slot_band={slot_band}"
+    dedup_context = {
+        "subject_key": article["top_player"],
+        "metric_name": metric_key,
+        "scope": scope,
+        "value": article.get("top_value"),
+        "rank": article.get("giants_rank"),
+        "total": article.get("league_total"),
+    }
+    dedup_decision = dedup_gate.evaluate_metric_cooldown(conn, **dedup_context)
+    if not dedup_decision.get("allowed"):
+        return {
+            "status": "skip_dedup_cooldown",
+            "reason": dedup_decision.get("reason"),
+            "stat_col": stat_col,
+            "scope": scope,
+            "slot_band": slot_band,
+            "dedup": dedup_decision,
+        }
+    if dry_run:
+        return {"status": "dry_run", "title": article["title"]}
+    try:
+        category_id = wp_client_obj.create_category(category_name)
+    except Exception:
+        category_id = 0
+    if not category_id:
+        try:
+            category_id = wp_client_obj.resolve_category_id(category_name)
+        except Exception:
+            category_id = 0
+    if not category_id:
+        return {
+            "status": "skip", "reason": "category_resolution_failed",
+            "stat_col": stat_col, "scope": scope, "slot_band": slot_band,
+        }
+    publish_status = _resolve_publish_status()
+    tags_list = _resolve_post_tags(wp_client_obj, focus_player=article["top_player"])
+    if not tags_list:
+        tags_list = [850]
+    _banner = _giants_news_banner_html(
+        article["title"], _BANNER_SOURCE_LABEL, category_name
+    )
+    dedup_history_id = 0
+    dedup_record_error = ""
+    try:
+        post_id = wp_client_obj.create_post(
+            title=article["title"],
+            content=_banner + article["body_html"],
+            categories=[category_id],
+            status=publish_status,
+            caller="ranking_article_publisher",
+        )
+        if post_id and tags_list:
+            try:
+                import requests as _req
+                wp_client_obj._request_with_retry(
+                    _req.post, f"{wp_client_obj.api}/posts/{post_id}",
+                    action="add_tags", json={"tags": tags_list},
+                )
+            except Exception:
+                pass
+        try:
+            dedup_history_id = dedup_gate.record_metric_publish(
+                conn,
+                **dedup_context,
+                title=article["title"],
+                post_id=int(post_id or 0),
+                wp_status=publish_status,
+            )
+        except Exception as exc:  # noqa: BLE001
+            dedup_record_error = f"{type(exc).__name__}: {exc}"
+        return {
+            "status": "published" if publish_status == "publish" else "published_draft",
+            "wp_status": publish_status,
+            "title": article["title"],
+            "post_id": int(post_id or 0),
+            "category_id": int(category_id),
+            "stat_col": stat_col,
+            "scope": scope,
+            "slot_band": slot_band,
+            "dedup_history_id": dedup_history_id,
+            "dedup_record_error": dedup_record_error,
+        }
+    except Exception as e:
+        return {"status": "error", "error": f"{type(e).__name__}: {e}"}
+
+
 def render_player_counting_article(
     conn: sqlite3.Connection,
     *,

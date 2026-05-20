@@ -19,8 +19,18 @@ _SCOPE_FALLBACKS = {
     "season": "今シーズン",
     "last_7d": "直近1週間",
     "last_30d": "直近1ヶ月",
+    # 403 (2026-05-20): 試合数 / PA / 登板数 / IP base 新 scope
+    "last_3_games": "直近3試合",
     "last_5_games": "直近5試合",
     "last_10_games": "直近10試合",
+    "last_30_pa": "直近30打席",
+    "last_50_pa": "直近50打席",
+    "last_100_pa": "直近100打席",
+    "last_3_appearances": "直近3登板",
+    "last_5_appearances": "直近5登板",
+    "last_10_appearances": "直近10登板",
+    "last_5_ip": "直近5投球回",
+    "last_10_ip": "直近10投球回",
     "monthly": "月別",
     "weekly": "週別",
     "today": "今日の試合",
@@ -28,7 +38,7 @@ _SCOPE_FALLBACKS = {
 }
 
 _PERIOD_KEYWORD_RE = re.compile(
-    r"(直近\s*\d+\s*(?:日|試合|週間|ヶ月|か月|月)|"
+    r"(直近\s*\d+\s*(?:日|試合|週間|ヶ月|か月|月|打席|登板|投球回)|"
     # issue #44 E (2026-05-17): 週別 / 月別 を period marker として認識する。
     # 半角 (週別) を ranking_article_publisher が先に append、 ensure_title_period
     # は全角（週別）を再 append → (週別)（週別) 重複の root cause。
@@ -41,7 +51,12 @@ _PERIOD_KEYWORD_RE = re.compile(
 )
 
 _INTERNAL_SCOPE_RE = re.compile(
-    r"\b(?:season|last_7d|last_30d|last_5_games|last_10_games|monthly|weekly)\b"
+    r"\b(?:season|last_7d|last_30d|"
+    r"last_3_games|last_5_games|last_10_games|"
+    r"last_30_pa|last_50_pa|last_100_pa|"
+    r"last_3_appearances|last_5_appearances|last_10_appearances|"
+    r"last_5_ip|last_10_ip|"
+    r"monthly|weekly)\b"
 )
 
 
@@ -59,6 +74,8 @@ def compact_period_label(label: str) -> str:
     if text in {"直近", "近期", "recent"}:
         return ""
     replacements = (
+        # 試合 base (403 で 3 追加)
+        ("直近 3 試合", "直近3試合"),
         ("直近 5 試合", "直近5試合"),
         ("直近 10 試合", "直近10試合"),
         ("直近 7 日", "直近7日"),
@@ -68,10 +85,19 @@ def compact_period_label(label: str) -> str:
         ("直近 1 か月", "直近1か月"),
         ("1 週間", "1週間"),
         ("1 ヶ月", "1ヶ月"),
+        # 403 新 unit: 打席 / 登板 / 投球回
+        ("直近 30 打席", "直近30打席"),
+        ("直近 50 打席", "直近50打席"),
+        ("直近 100 打席", "直近100打席"),
+        ("直近 3 登板", "直近3登板"),
+        ("直近 5 登板", "直近5登板"),
+        ("直近 10 登板", "直近10登板"),
+        ("直近 5 投球回", "直近5投球回"),
+        ("直近 10 投球回", "直近10投球回"),
     )
     for src, dst in replacements:
         text = text.replace(src, dst)
-    if re.fullmatch(r"(?:直近)?\s*\d+\s*(?:日|試合|週間|ヶ月|か月)", text):
+    if re.fullmatch(r"(?:直近)?\s*\d+\s*(?:日|試合|週間|ヶ月|か月|打席|登板|投球回)", text):
         text = re.sub(r"\s+", "", text)
     return text
 

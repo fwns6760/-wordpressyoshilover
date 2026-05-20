@@ -3,7 +3,7 @@
 ## meta
 
 - ticket: 395-INGEST-official-youtube-titleless-intake
-- status: IN_FLIGHT
+- status: LIVE_DEPLOYED_OBSERVE
 - owner: Codex A
 - lane: A
 - priority: P0.5
@@ -80,10 +80,17 @@ Official Giants YouTube source intake only.
 - `python3 -m py_compile tests/test_rss_fetcher_youtube_integration.py` passed.
 - AST parse passed for `src/rss_fetcher.py` and `tests/test_rss_fetcher_youtube_integration.py`.
 - `git diff --check -- src/rss_fetcher.py tests/test_rss_fetcher_youtube_integration.py` passed.
+- commit `43b101a` (`395: allow official YouTube weak-title intake`).
+- Cloud Build `c3ee2df3-1dee-4c04-867e-409b929c9b09` SUCCESS.
+- image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:395-official-youtube-43b101a`.
+- image digest `sha256:44ecb346e26631233f9d5ff58395275f83cf63d4c63ac08eaf38791de5c457e7`.
+- Cloud Run service `yoshilover-fetcher` deployed to revision `yoshilover-fetcher-00448-5zr`, latest revision 100% traffic.
+- `/health` returned `OK`.
+- Cloud Run log: startup TCP probe succeeded; new revision ERROR log count 0.
 
 ## live evidence
 
-Pending deploy / natural fire observation.
+Deploy verified. Natural fire observation is still pending.
 
 Expected evidence:
 
@@ -94,5 +101,5 @@ Expected evidence:
 
 ## next action
 
-Deploy fetcher with no env / scheduler / secret changes, then observe the next
-natural fire.
+Observe the next natural fire and verify that official Giants YouTube weak-title
+videos no longer stop at `youtube_title_filter_skip reason=no_match`.

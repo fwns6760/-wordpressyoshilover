@@ -8,7 +8,7 @@
 
 | ticket | status | 内容 |
 |---|---|---|
-| `doc/active/395-INGEST-official-youtube-titleless-intake.md` (GH #72) | IN_FLIGHT | 383 で YouTube articleize path は復旧済みだが、巨人公式 YouTube の `小林の肩 vs 朝井の声` が `youtube_title_filter_skip reason=no_match` で落ちていた。`official_video_source` ロールだけ source-aware に titleless / weak-title pass させ、非公式 / OB / candidate YouTube は既存 title filter を維持する narrow fix。local: YouTube integration/title/caption/caption fetcher 59 tests OK、compileall / py_compile / AST / diff-check OK。deploy / natural fire evidence 待ち。env / Secret / Scheduler / RUN_DRAFT_ONLY / WP既存記事 / X / frontend は不可触。 |
+| `doc/active/395-INGEST-official-youtube-titleless-intake.md` (GH #72) | LIVE_DEPLOYED_OBSERVE | 383 で YouTube articleize path は復旧済みだが、巨人公式 YouTube の `小林の肩 vs 朝井の声` が `youtube_title_filter_skip reason=no_match` で落ちていた。`official_video_source` ロールだけ source-aware に titleless / weak-title pass させ、非公式 / OB / candidate YouTube は既存 title filter を維持する narrow fix。local: YouTube integration/title/caption/caption fetcher 59 tests OK、compileall / py_compile / AST / diff-check OK。commit `43b101a`、Cloud Build `c3ee2df3-1dee-4c04-867e-409b929c9b09` SUCCESS、fetcher rev `yoshilover-fetcher-00448-5zr` 100%、`/health` OK、新 revision ERROR 0。自然 fire evidence 待ち。env / Secret / Scheduler / RUN_DRAFT_ONLY / WP既存記事 / X / frontend は不可触。 |
 
 ## 2026-05-19 session update
 

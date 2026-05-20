@@ -185,16 +185,16 @@ _X_HOSTS = {
 _MIN_TITLE_CHARS = 8
 
 _META_PATTERNS: tuple[tuple[str, str], ...] = (
-    (r'<meta\s+property=["\']og:title["\']\s+content=["\']([^"\']+)["\']', "title"),
-    (r'<meta\s+content=["\']([^"\']+)["\']\s+property=["\']og:title["\']', "title"),
-    (r'<meta\s+name=["\']twitter:title["\']\s+content=["\']([^"\']+)["\']', "title"),
-    (r'<meta\s+property=["\']og:description["\']\s+content=["\']([^"\']+)["\']', "summary"),
-    (r'<meta\s+content=["\']([^"\']+)["\']\s+property=["\']og:description["\']', "summary"),
-    (r'<meta\s+name=["\']description["\']\s+content=["\']([^"\']+)["\']', "summary"),
-    (r'<meta\s+name=["\']twitter:description["\']\s+content=["\']([^"\']+)["\']', "summary"),
-    (r'<meta\s+property=["\']og:image["\']\s+content=["\']([^"\']+)["\']', "image"),
-    (r'<meta\s+content=["\']([^"\']+)["\']\s+property=["\']og:image["\']', "image"),
-    (r'<meta\s+name=["\']twitter:image["\']\s+content=["\']([^"\']+)["\']', "image"),
+    (r'<meta\b[^>]*\sproperty=["\']og:title["\'][^>]*\scontent=["\']([^"\']+)["\']', "title"),
+    (r'<meta\b[^>]*\scontent=["\']([^"\']+)["\'][^>]*\sproperty=["\']og:title["\']', "title"),
+    (r'<meta\b[^>]*\sname=["\']twitter:title["\'][^>]*\scontent=["\']([^"\']+)["\']', "title"),
+    (r'<meta\b[^>]*\sproperty=["\']og:description["\'][^>]*\scontent=["\']([^"\']+)["\']', "summary"),
+    (r'<meta\b[^>]*\scontent=["\']([^"\']+)["\'][^>]*\sproperty=["\']og:description["\']', "summary"),
+    (r'<meta\b[^>]*\sname=["\']description["\'][^>]*\scontent=["\']([^"\']+)["\']', "summary"),
+    (r'<meta\b[^>]*\sname=["\']twitter:description["\'][^>]*\scontent=["\']([^"\']+)["\']', "summary"),
+    (r'<meta\b[^>]*\sproperty=["\']og:image["\'][^>]*\scontent=["\']([^"\']+)["\']', "image"),
+    (r'<meta\b[^>]*\scontent=["\']([^"\']+)["\'][^>]*\sproperty=["\']og:image["\']', "image"),
+    (r'<meta\b[^>]*\sname=["\']twitter:image["\'][^>]*\scontent=["\']([^"\']+)["\']', "image"),
 )
 
 _YAHOO_BOXSCORE_URL_RE = re.compile(
@@ -396,7 +396,7 @@ def _parse_og_meta(html_text: str) -> dict[str, str]:
             elif key == "image":
                 image = value
     if not title:
-        match = re.search(r"<title>([^<]+)</title>", html_text, re.IGNORECASE)
+        match = re.search(r"<title\b[^>]*>([^<]+)</title>", html_text, re.IGNORECASE)
         if match:
             title = html.unescape(match.group(1).strip())
     return {"title": title, "summary": summary, "image": image}

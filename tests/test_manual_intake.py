@@ -141,6 +141,44 @@ class ParseMetaTests(unittest.TestCase):
         m = mi._parse_og_meta(html_text)
         self.assertEqual(m["title"], "A & B")
 
+    def test_react_helmet_attribute_first_meta(self):
+        # NTV (news.ntv.co.jp) ships React Helmet markup where every
+        # meta tag carries data-react-helmet="true" as the first
+        # attribute. The legacy ``<meta\s+property=`` patterns failed
+        # to match this shape and returned empty meta, which propagated
+        # up as missing_title_or_summary for any NTV URL.
+        html_text = (
+            '<html><head>'
+            '<meta data-react-helmet="true" property="og:title" '
+            'content="ナショナルズのウッドが激走で満塁ホームラン"/>'
+            '<meta data-react-helmet="true" property="og:description" '
+            'content="◇MLB ナショナルズ9-6メッツ"/>'
+            '<meta data-react-helmet="true" property="og:image" '
+            'content="https://news.ntv.co.jp/gimage/.../hero.jpg?w=1200"/>'
+            '</head></html>'
+        )
+        m = mi._parse_og_meta(html_text)
+        self.assertEqual(
+            m["title"], "ナショナルズのウッドが激走で満塁ホームラン"
+        )
+        self.assertEqual(m["summary"], "◇MLB ナショナルズ9-6メッツ")
+        self.assertEqual(
+            m["image"], "https://news.ntv.co.jp/gimage/.../hero.jpg?w=1200"
+        )
+
+    def test_react_helmet_title_tag_with_attribute(self):
+        # When og: meta is absent, the fallback regex must still match
+        # ``<title data-react-helmet="true">...</title>`` — the React
+        # Helmet shape adds a data-* attribute that the original
+        # ``<title>(...)</title>`` literal did not allow.
+        html_text = (
+            '<html><head>'
+            '<title data-react-helmet="true">日テレNEWS NNN タイトル</title>'
+            '</head></html>'
+        )
+        m = mi._parse_og_meta(html_text)
+        self.assertEqual(m["title"], "日テレNEWS NNN タイトル")
+
 
 class _IntakeBaseTest(unittest.TestCase):
     """Common fixtures: per-test isolated lockfile + lightweight routing patch."""

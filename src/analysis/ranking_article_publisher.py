@@ -250,6 +250,82 @@ def aggregate_player_hr_from_atbats(
     return ranked[:top_n]
 
 
+def aggregate_player_hr_from_atbats_split(
+    conn: sqlite3.Connection,
+    *,
+    scope: str,
+    split_field: str,  # "home_away" or "opponent"
+    split_value: str,
+    today: Optional[Any] = None,
+    top_n: int = 10,
+    league: Optional[str] = None,
+) -> list[dict]:
+    """ホーム/アウェイ別 / 対戦相手別 HR 数を ``atbats_json`` から集計 (406 fix).
+
+    ``aggregate_player_hr_from_atbats`` の split 対応版。 ``batting_logs.HR``
+    列が無いため ``aggregate_player_counting_stat_split`` の ``SUM(bl.HR)``
+    が ``OperationalError`` を返す問題を、 split 経路でも atbats_json 集計に
+    dispatch して回避する。
+    """
+    if split_field not in ("home_away", "opponent"):
+        raise ValueError(f"unsupported split_field: {split_field!r}")
+    start, end = _scope_window(scope, today)
+    league_clause = ""
+    league_params: tuple = ()
+    if league == "central":
+        placeholders = ",".join("?" * len(_CENTRAL_TEAM_NAMES))
+        league_clause = f" AND bl.team_name IN ({placeholders})"
+        league_params = _CENTRAL_TEAM_NAMES
+    elif league == "pacific":
+        placeholders = ",".join("?" * len(_PACIFIC_TEAM_NAMES))
+        league_clause = f" AND bl.team_name IN ({placeholders})"
+        league_params = _PACIFIC_TEAM_NAMES
+    rows = conn.execute(
+        f"SELECT bl.player_canonical, bl.team_name, bl.atbats_json "
+        f"FROM batting_logs bl JOIN games g ON bl.game_id = g.game_id "
+        f"WHERE g.game_date >= ? AND g.game_date <= ? "
+        f"AND g.{split_field} = ? "
+        f"AND bl.player_canonical IS NOT NULL "
+        f"AND bl.player_canonical != '' "
+        f"AND bl.atbats_json IS NOT NULL"
+        f"{league_clause}",
+        (start.isoformat(), end.isoformat(), split_value, *league_params),
+    ).fetchall()
+
+    import json as _json
+    hr_by_key: dict[tuple[str, str], int] = {}
+    for player, team_name, atbats_json in rows:
+        try:
+            atbats = _json.loads(atbats_json) if isinstance(atbats_json, str) else atbats_json
+        except Exception:
+            continue
+        if not isinstance(atbats, list):
+            continue
+        hrs = 0
+        for ab in atbats:
+            if not isinstance(ab, str):
+                continue
+            try:
+                if insight_atbats_parser.parse_atbat(ab).get("is_hr"):
+                    hrs += 1
+            except Exception:
+                continue
+        if hrs <= 0:
+            continue
+        key = (player, team_name or "")
+        hr_by_key[key] = hr_by_key.get(key, 0) + hrs
+
+    ranked = sorted(
+        (
+            {"player": p, "team": _team_name_to_code(t), "value": v}
+            for (p, t), v in hr_by_key.items()
+        ),
+        key=lambda r: r["value"],
+        reverse=True,
+    )
+    return ranked[:top_n]
+
+
 def aggregate_player_counting_stat(
     conn: sqlite3.Connection,
     *,
@@ -947,6 +1023,14 @@ def aggregate_player_counting_stat_split(
     league: Optional[str] = None,
 ) -> list[dict]:
     """ホーム/アウェイ別 / 対戦相手別 counting 集計 (348 step 3 完全達成、 §4 file list)."""
+    # 406 fix: HR は batting_logs に列が無く atbats_json 集計が必要。
+    # SQL SUM(bl.HR) は OperationalError を出すため、 split 対応 helper に dispatch。
+    if stat_col == "HR" and table == "batting_logs":
+        return aggregate_player_hr_from_atbats_split(
+            conn, scope=scope,
+            split_field=split_field, split_value=split_value,
+            today=today, top_n=top_n, league=league,
+        )
     import datetime as _dt
     if today is None:
         today = _dt.date.today()

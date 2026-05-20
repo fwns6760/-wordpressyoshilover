@@ -3,7 +3,7 @@
 ## meta
 
 - ticket: 395-INGEST-official-youtube-titleless-intake
-- status: LIVE_DEPLOYED_OBSERVE
+- status: CLOSED
 - owner: Codex A
 - lane: A
 - priority: P0.5
@@ -139,5 +139,5 @@ Expected evidence:
 
 ## next action
 
-395 scope is verified. Track the full-source Cloud Run timeout and the
-non-YouTube/X `media_quote_evaluation` error separately if they recur.
+395 scope is verified and GitHub Issue #72 was closed on 2026-05-20.
+Natural fire acceptance observation is not held in this ticket; create a separate ticket if needed.

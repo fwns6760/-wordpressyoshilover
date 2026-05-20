@@ -8,17 +8,18 @@ user 方針「受け入れ NG はまた起票」+「一人開発で Active 多�
 
 | ticket | 移動先 | 旧 GH Issue |
 |---|---|---|
-| 317-QA-ob-youtube-review-only-intake.md | `doc/done/2026-05/` | #76 |
+| 344-INGEST-youtube-caption-draft-expansion.md | `doc/done/2026-05/` (SUPERSEDED) | #24 (closed before 2026-05-20) |
+| 317-QA-ob-youtube-review-only-intake.md | `doc/done/2026-05/` | #76 (closed 2026-05-20) |
 | 381-INGEST-giants-general-source-expansion.md | `doc/done/2026-05/` | #55 |
 | 384-INGEST-source-expansion-with-publish-time-fallback.md | `doc/waiting/` (PARKED) | #59 |
-| 385-INGEST-youtube-caption-short-quote-summary.md | `doc/done/2026-05/` | #60 |
+| 385-INGEST-youtube-caption-short-quote-summary.md | `doc/done/2026-05/` | #60 (closed 2026-05-20) |
 | 389-FRONT-sidebar-popular-posts-widget.md | `doc/waiting/` (PARKED) | #64 |
 | 390-FRONT-sidebar-search-monthly-archive.md | `doc/waiting/` (PARKED) | #65 |
 | 391-x-post-gen-mcp-tavily-gemma4-phase1.md | `doc/waiting/` (PARKED) | #66 |
 | 392-x-post-branding-mcp-phase2.md | `doc/done/2026-05/` | #67 |
 | 393-OPS-price-neutral-fast-draft-judgment-mail.md | `doc/done/2026-05/` | #68 |
-| 395-INGEST-official-youtube-titleless-intake.md | `doc/done/2026-05/` | #72 |
-| 398-INGEST-media-quote-evaluation-default.md | `doc/done/2026-05/` | #73 |
+| 395-INGEST-official-youtube-titleless-intake.md | `doc/done/2026-05/` | #72 (closed 2026-05-20) |
+| 398-INGEST-media-quote-evaluation-default.md | `doc/done/2026-05/` | #73 (closed 2026-05-20) |
 | 399-INGEST-manual-intake-react-helmet-meta-extract.md | `doc/done/2026-05/` | (no GH) |
 | 400-QA-source-body-excerpt-share-ui-strip.md | `doc/done/2026-05/` | (no GH) |
 
@@ -42,20 +43,20 @@ user 方針「受け入れ NG はまた起票」+「一人開発で Active 多�
 
 | ticket | status | 内容 |
 |---|---|---|
-| `doc/done/2026-05/317-QA-ob-youtube-review-only-intake.md` (GH #76) | LIVE_DEPLOYED_OBSERVE | user 判断「下書きで作ってもらうでよい。公開は私が判断する」→「ならデプロイ」。巨人OB YouTube source を RSS 本線へ draft-only 接続。`giants_ob` source は weak title でも候補化し、`OB・解説者` category + `social_video_notice` body / YouTube embed で draft 作成。publish skip reason は `draft_only,youtube_review_source_draft_only`。非巨人OBは従来 title relevance gate 維持、公式YouTube 395 は別扱いで既存挙動維持。実装 commit `021c85c`。対象 unittest 77 OK / targeted pytest 77 passed / full pytest baseline 5388 passed, 1 xfailed, 3 xpassed / pre-deploy full pytest 5390 passed, 1 xfailed, 3 xpassed / py_compile・compileall・AST OK。deploy: clean archive `021c85c`、Cloud Build `6a0c0d80-84ad-42fa-9c75-5c547e819b3f` SUCCESS、image `317-ob-youtube-021c85c` digest `sha256:2f147904...`、fetcher rev `yoshilover-fetcher-00454-ntj` 100%、`/health` OK、新 revision ERROR 0。数値 diff: generation / observed `594/594` -> `596/596`、traffic 100% 維持、`RUN_DRAFT_ONLY=True` / `AUTO_TWEET_ENABLED=0` 維持。current refresh: fetcher rev `yoshilover-fetcher-00455-lcf` / image `400-ext-readable-0a29e7f` / generation `597/597` に進行済みだが、`0a29e7f` は `021c85c` descendant のため 317 実装は live 維持、`/health` OK、新 rev ERROR 0。quote-only guard: user 確認「引用だけになるか」を受け、`youtube_review_notice` は字幕引用 block のみで `要点` list を出さない。`[音楽]` / `[拍手]` / `チャンネル登録` / `高評価` / `概要欄` / `コメント欄` / URL 系は caption 候補から除外。targeted pytest 43 passed、実出力で summary なし / noise なし / blockquote 引用のみ確認。env / Secret / Scheduler / YouTube Data API / WP既存記事 / X / manual `/run` fire は未変更。次 natural fire で OB YouTube draft の status/category/embed/caption quote-only と ERROR なしを観察。 |
+| `doc/done/2026-05/317-QA-ob-youtube-review-only-intake.md` (GH #76) | CLOSED | 巨人OB YouTube source を RSS 本線へ draft-only 接続済み。`giants_ob` source は weak title でも候補化し、`OB・解説者` category + YouTube embed で draft 作成、publish skip reason は `draft_only,youtube_review_source_draft_only`。quote-only guard により `youtube_review_notice` は字幕引用 block のみ、`要点` list なし。current live image `402-meta-fallback-671df22` は 317 / 401 descendant。user 判断により受け入れ観察は別 ticket 化し、GitHub Issue #76 close。 |
 | `doc/done/2026-05/317-QA-ob-youtube-review-only-intake.md` / 401 runtime refresh | LIVE_DEPLOYED_VERIFIED | `1fd6a6c` で `youtube_review_notice` は字幕引用 block のみ (`要点` list なし) にし、CTA / 音楽・拍手 / URL 系ノイズを引用候補から除外。関連/本文抜粋は `src/tools/manual_intake.py` の `SOURCE_BODY_EXCERPT_MAX_CHARS = 1200` と `src/rss_fetcher.py` の `extract_article_body_excerpt(..., max_chars=1200)` で manual-intake-service / fetcher 両方 1200 字に統一。baseline: `git diff --check` OK、py_compile OK、compileall OK、AST `618` OK、sandbox外 full pytest `5398 passed, 1 xfailed, 3 xpassed`。deploy: manual-intake-service revision `00088-vn8` image `401-excerpt-1200-1fd6a6c` generation `101/101` 100% / `/health` OK / ERROR 0。fetcher clean archive `d1c5d7a`、Cloud Build `f9799b40-89b7-400d-9b21-2ba972e80189` SUCCESS、image `401-excerpt-quote-d1c5d7a` digest `sha256:8dcae877...`、revision `00457-pcr` 100%、generation `597/597` -> `599/599`、`/health` OK / ERROR 0。final current: 後続 402 deploy で fetcher `00458-2dq` / manual `00089-xtf`、image `402-meta-fallback-671df22`、generation `600/600` / `102/102` に進行。`671df22` は `1fd6a6c` / `d1c5d7a` descendant のため、1200 字化と quote-only guard は live 維持。両 `/health` OK / ERROR 0。env / Secret / Scheduler / RUN_DRAFT_ONLY / WP既存記事 / X / manual `/run` fire は未変更。 |
 
 ### 398 — media_quote_evaluation 未初期化エラーの再発防止
 
 | ticket | status | 内容 |
 |---|---|---|
-| `doc/done/2026-05/398-INGEST-media-quote-evaluation-default.md` (GH #73) | LIVE_DEPLOYED_OBSERVE | 395 手動 run で non-YouTube/X candidate が `cannot access local variable 'media_quote_evaluation' where it is not associated with a value` により `[ERROR] 公開失敗` へ落ちた。YouTube draft 作成自体は成功済みだが、後続候補を削るリスクがあるため、各 entry 処理開始時に `media_quote_evaluation` / `media_quotes` の safe default を置く narrow fix。tests: media quote/default guard 27 OK、compileall / diff-check OK。commit `6969375`、Cloud Build `14880fed-c77f-44a1-b168-b5705561bf12` SUCCESS、image digest `sha256:67df1d62...`、fetcher rev `yoshilover-fetcher-00452-glk` 100%、`/health` OK、新 revision ERROR 0。env / Secret / Scheduler / RUN_DRAFT_ONLY / WP既存記事 / X / frontend / unrelated staged changes は不可触。次自然 run で同 UnboundLocalError 不在を観察。 |
+| `doc/done/2026-05/398-INGEST-media-quote-evaluation-default.md` (GH #73) | CLOSED | `media_quote_evaluation` / `media_quotes` safe default を各 entry 処理開始時に置く narrow fix。tests 27 OK、Cloud Build `14880fed-c77f-44a1-b168-b5705561bf12` SUCCESS、fetcher rev `yoshilover-fetcher-00452-glk` 100%、`/health` OK、新 revision ERROR 0。user 判断により受け入れ観察は別 ticket 化し、GitHub Issue #73 close。 |
 
 ### 395 — 公式 YouTube の弱いタイトルでも取り込む (user 要望「YouTube の取り込みも」)
 
 | ticket | status | 内容 |
 |---|---|---|
-| `doc/done/2026-05/395-INGEST-official-youtube-titleless-intake.md` (GH #72) | LIVE_DEPLOYED_OBSERVE | 383 で YouTube articleize path は復旧済みだが、巨人公式 YouTube の `小林の肩 vs 朝井の声` が `youtube_title_filter_skip reason=no_match` で落ちていた。`official_video_source` ロールだけ source-aware に titleless / weak-title pass させ、非公式 / OB / candidate YouTube は既存 title filter を維持する narrow fix。commit `43b101a`、Cloud Build `c3ee2df3-1dee-4c04-867e-409b929c9b09` SUCCESS、fetcher rev `yoshilover-fetcher-00448-5zr` 100%、`/health` OK。手動 `giants-weekday-daytime` run で公式YouTube 10件取得、最新戸郷動画は `[HIT]`、`小林の肩 vs 朝井の声` は title filter ではなく `stale_rss_entry source_age_hours=120.0` で skip。手動 run は全体 285s timeout 504 になったため、追加で official YouTube を作成順上位へ寄せる follow-up を実装 / deploy。commit `ffdb668`、Cloud Build `d2bfad47-cfd7-42ee-8ca2-c1342b2ccd29` SUCCESS、fetcher rev `yoshilover-fetcher-00449-lkq` 100%、`/health` OK、新 revision ERROR 0。優先順位修正後の手動 run で公式YouTube post_id `69846` を draft 作成確認（`【YouTube】みんなが待ってた！戸郷翔征投手の今季初勝利に球団カメラが密着！` / `https://www.youtube.com/watch?v=1syvtigdsVk`）。同 run は request-level 504 / 286s で、全体 timeout と non-YouTube/X `media_quote_evaluation` error は別リスクとして残観測。env / Secret / Scheduler / RUN_DRAFT_ONLY / WP既存記事 / X / frontend は不可触。 |
+| `doc/done/2026-05/395-INGEST-official-youtube-titleless-intake.md` (GH #72) | CLOSED | 巨人公式 YouTube の weak-title / titleless pass を `official_video_source` ロールに限定して追加し、非公式 / OB / candidate YouTube は既存 title filter 維持。commit `43b101a` + priority follow-up `ffdb668` deploy 済み。手動 run で公式YouTube post_id `69846` draft 作成確認。user 判断により受け入れ観察は別 ticket 化し、GitHub Issue #72 close。 |
 
 ## 2026-05-19 session update
 
@@ -98,7 +99,7 @@ user 方針「受け入れ NG はまた起票」+「一人開発で Active 多�
 |---|---|---|
 | `doc/done/2026-05/383-INGEST-youtube-source-articleize-fix.md` (GH #58) | CLOSED | 344 の YouTube 記事が出ない件。YouTube channel scraper だけ `media_quote_only` でも記事化 path へ進め、`youtube_ob_sources.json` の confirmed / candidate ch を runtime 展開。tests: 344/YouTube suite 68 OK、rss_fetcher + tag_page + YouTube integration 57 OK、compileall / AST / diff-check OK。Cloud Build `7ed5103a` SUCCESS、fetcher rev `yoshilover-fetcher-00436-7zq` 100%、`/health` OK、新 revision ERROR 0。2026-05-19 natural fire で `tag_page_entries_built source=youtube` と `youtube_title_filter_skip` を確認し、YouTube path log acceptance を満たしたため GitHub Issue #58 close。Scheduler / env / Secret / WP既存記事 / X / frontend は未変更。 |
 | `doc/waiting/384-INGEST-source-expansion-with-publish-time-fallback.md` (GH #59) | DESIGN_LOCKED / READY_FOR_IMPL | user 要望「ソースをふやしたい、ガードに引っかからない」(2026-05-19 chat lock)。chat verify 結果: 5/19 9 時 cycle で 52 件 `source_time_missing_review` review 落ち = 既存 381 16 family にも meta なし媒体が混在している evidence (Full-Count / 週刊女性PRIME / 読売新聞は meta あり、朝日 / 毎日 / FRIDAY 等は root では meta なし)。新規候補 verify: 産経 (`<meta name="article:published_time">` あり、5/19 朝記事 age 4h) ✓、日刊SPA (`<meta property=...>` あり、search 最新 sort 要 verify) ✓、中日新聞・中日スポーツ (meta なし、SPA 構造) ✗、THE ANSWER (search SPA で article href 抽出不能) ✗。Phase 1 = 産経 + 日刊SPA 追加 (`config/rss_sources.json` + `source_trust.py` SourceProfile + `rss_fetcher.py` `_POST_GEN_VALIDATE_TOPIC_SOURCE_FAMILIES`)、Phase 2 = `tag_page_scraper.py` に publish-time fallback chain (property/name/modified_time/URL date/body 日付表記)、Phase 3 = 中日系追加 (Phase 2 effect ベース判断)、Phase 4 = THE ANSWER (SPA、別 ticket)。デグレ試験: 既存 16 family 挙動不変 + `STRICT_BREAKING_NEWS_THRESHOLDS` 閾値不変 + scraper `_is_ymd_within_window` で古い記事 2 重 guard。`_POST_GEN_VALIDATE_TRUSTED_FAMILIES` (full bypass) / numeric fact validator / close_marker / placeholder_body / hard-stop は不可触、env / Secret / Scheduler / X / SNS / WP既存記事も不可触。 |
-| `doc/done/2026-05/385-INGEST-youtube-caption-short-quote-summary.md` (GH #60) | LIVE_DEPLOYED_OBSERVE | user GO。YouTube 字幕を長い 600 字 1 block ではなく、LLM なし / 推測なしで短い引用 + 要点表示に寄せる。実装: caption text を deterministic に文分割し、最大2 quote + 最大3要点 bullet に整形。推測補完なし、HTML escape、出典 / embed 維持。follow-up: 取得材料 window を 600→1500 chars に拡大、表示 cap は維持。tests: YouTube caption/title/integration 63 OK、compileall / py_compile / AST / diff-check OK。Cloud Build `82719b1a` SUCCESS、image `385-youtube-caption-1500-6904c98` digest `sha256:2d696966...`、fetcher rev `yoshilover-fetcher-00441-xj8` 100%、`/health` OK、新 revision ERROR 0。次は自然 fire で quote_count / summary_count evidence 待ち。env / Secret / Scheduler / RUN_DRAFT_ONLY / WP既存記事 / X / frontend は不可触。 |
+| `doc/done/2026-05/385-INGEST-youtube-caption-short-quote-summary.md` (GH #60) | CLOSED | YouTube 字幕を LLM なし / 推測なしで短い引用 + 要点表示に寄せ、取得材料 window は 600→1500 chars に拡大。tests 63 OK、Cloud Build `82719b1a` SUCCESS、fetcher rev `yoshilover-fetcher-00441-xj8` 100%、`/health` OK、新 revision ERROR 0。user 判断により受け入れ観察は別 ticket 化し、GitHub Issue #60 close。 |
 | `doc/done/2026-05/386-INSIGHT-no-game-day-normal-exit.md` (GH #61) | CLOSED | 2026-05-18(月) 試合なしで `insight-nightly` が `auto_resolve_all_failed` / exit 2 になった件。`status=no_game_day` / exit 0 修正を deploy / live verify 済み。follow-up で no-game 日でも DATA-INSIGHT publish/mail が出る path を追加。commits `a852abf` / `8454a21` / `0d09c10`。evidence: `insight-nightly:386-no-game-publish-8454a21` Job generation `68`、execution `insight-nightly-j4sbm` 成功、`【巨人データ】` post IDs `69545` / `69546` / `69547` publish。`publish-notice:data-insight-mail-0d09c10` Job generation `107`、execution `publish-notice-gm5tb` 成功、summary `sent=3`、per-post sent `69545` / `69546` / `69547`。 |
 
 ## 2026-05-18 session summary
@@ -264,7 +265,7 @@ user 指示「恒久対応」「title は巨人の選手の名前と指数と何
 
 | ticket | status | blocker |
 |---|---|---|
-| 344-INGEST(=GH #24、別 actor lane) | YouTube 字幕 + ch 拡充進行中 | 触らない、別 actor の lane |
+| 344-INGEST(=GH #24) | CLOSED / SUPERSEDED | `doc/done/2026-05/344-INGEST-youtube-caption-draft-expansion.md`。親設計は 383 / 385 / 395 / 398 / 317 の実装済み chain に分割され、GH #24 は既に close。受け入れ観察は必要なら別 ticket。 |
 
 ### waiting(park、別 session 着手)
 

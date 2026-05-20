@@ -4,12 +4,19 @@
 
 - ticket: 344-INGEST-youtube-caption-draft-expansion
 - owner: Claude Code
-- status: DESIGN_LOCKED / READY_FOR_PHASE_1A_IMPL
+- status: CLOSED / SUPERSEDED
 - priority: P1 (動画 source 解禁、巨人特化媒体としての content 幅拡充)
 - created: 2026-05-14
 - 採番: 3 source verify 済 (doc/ + gh issue + grep all 全部 344 未使用)
 - depends_on: なし
 - related memory: `project_youtube_channel_expansion_candidates_2026_05_14` / `project_mlb_player_inclusion_policy` / `feedback_title_no_ai` / `feedback_publish_forward_must_check_gate_reason`
+
+## close note (2026-05-20)
+
+This broad design ticket was superseded by the implemented / deployed YouTube chain:
+383 articleize fix, 385 caption quote summary, 395 official YouTube weak-title intake,
+398 media quote default guard, and 317 OB YouTube draft-only intake.
+GitHub Issue #24 is already closed. Natural fire acceptance observation will be a separate ticket if needed.
 
 ## user intent (2026-05-14 chat lock)
 
@@ -132,4 +139,4 @@ channel_id 不明 ch は YouTube web で verify してから add。
 
 ## next action
 
-Phase 1a 着手 → narrow PR(file ごと small commit、minimum-diff 維持)→ Phase 1b は user 確認後に 26 ch 段階追加。
+No remaining action in this ticket. Follow-up acceptance observation must be created as a new ticket.

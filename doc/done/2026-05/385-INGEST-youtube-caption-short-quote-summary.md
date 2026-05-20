@@ -3,7 +3,7 @@
 ## meta
 
 - ticket: 385-INGEST-youtube-caption-short-quote-summary
-- status: LIVE_DEPLOYED_OBSERVE
+- status: CLOSED
 - owner: Codex A
 - lane: A
 - priority: P0.5
@@ -148,4 +148,4 @@ Implement YouTube caption presentation v2 only.
 
 ## next action
 
-Observe the next natural fire for `youtube_caption_section_appended` with `quote_count` / `summary_count`, then close GitHub Issue #60 if live article output matches acceptance.
+Closed on 2026-05-20 after deploy / health / ERROR 0 verification and user decision that acceptance observation will be a separate ticket if needed.

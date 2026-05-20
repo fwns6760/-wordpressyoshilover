@@ -3,7 +3,7 @@
 ## meta
 
 - ticket: 398-INGEST-media-quote-evaluation-default
-- status: LIVE_DEPLOYED_OBSERVE
+- status: CLOSED
 - owner: Codex A
 - lane: A
 - priority: P0.5
@@ -75,5 +75,5 @@
 
 ## next action
 
-Observe the next natural fetcher run for absence of
-`media_quote_evaluation` UnboundLocalError.
+Closed on 2026-05-20 after deploy / health / ERROR 0 verification.
+Natural fire acceptance observation is not held in this ticket; create a separate ticket if needed.

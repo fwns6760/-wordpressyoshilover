@@ -1,8 +1,9 @@
 # 317-QA OB YouTube Review-Only Intake
 
 作成日: 2026-05-10
-状態: LIVE_DEPLOYED_OBSERVE
+状態: CLOSED
 GitHub Issue: #76
+クローズ日: 2026-05-20
 
 ## 1. 今回の目的
 
@@ -160,6 +161,7 @@ GO後に実装する場合の予定:
 - 2026-05-20: user 指示「ならデプロイ」。実装 commit `021c85c` の clean archive から Cloud Build `6a0c0d80-84ad-42fa-9c75-5c547e819b3f` を実行し、image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:317-ob-youtube-021c85c` / digest `sha256:2f1479043bb99ab88f4a1821e7d8df63dfa5d0f705a72036269084ecb5fc3f09` を作成。Cloud Run service `yoshilover-fetcher` へ deploy し、revision `yoshilover-fetcher-00454-ntj`、traffic 100%、`/health` OK、新 revision ERROR log 0 を確認。manual `/run` fire、env / Secret / Scheduler / RUN_DRAFT_ONLY flip / WP既存記事 / X は未変更。
 - 2026-05-20: deploy 後の current-state refresh で、fetcher は後続 revision `yoshilover-fetcher-00455-lcf` / image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:400-ext-readable-0a29e7f` / generation `597` / observedGeneration `597` へ進行済みを確認。`git merge-base --is-ancestor 021c85c 0a29e7f` は exit 0 で、317 実装は後続 image に含まれて live 維持。`/health` OK、新 revision `00455-lcf` ERROR log 0。env / Secret / Scheduler / RUN_DRAFT_ONLY flip / WP既存記事 / X / manual `/run` fire は未変更。
 - 2026-05-20: user が「引用とかしっかり取れる？変な言葉入らないか。ちゃんと引用だけになるか」と確認。現状確認で、317 本体は title + YouTube embed だが、共通 YouTube caption enrichment が `youtube_review_notice` にも走り、既存実装では「要点」リストが付く可能性を確認。修正として `quote_only` mode を追加し、`youtube_review_notice` では字幕引用 block だけを表示、要点リストを出さない。字幕ノイズ `[音楽]` / `[拍手]` / `チャンネル登録` / `高評価` / `概要欄` / `コメント欄` / URL 系は引用候補から除外。実出力チェックで summary なし、noise なし、blockquote 内の字幕引用のみを確認。env / Secret / Scheduler / WP既存記事 / X / manual `/run` fire は未変更。
+- 2026-05-20: user 判断「受け入れはまたチケットだす」を受け、本 ticket は GitHub Issue #76 を close。自然 fire での draft 実物観察は本 ticket の残作業にせず、必要なら別 ticket で扱う。
 
 ## 10. Regression Memo欄
 
@@ -248,7 +250,7 @@ GO後に実装する場合の予定:
 
 ## 15. 残った懸念
 
-- RSS 本線への接続、quote-only caption guard、関連/本文抜粋 1200 字化の live deploy は完了。ただし natural fire で実 OB YouTube draft が作られる観察は未実施。
+- RSS 本線への接続、quote-only caption guard、関連/本文抜粋 1200 字化の live deploy は完了。natural fire で実 OB YouTube draft が作られる観察は未実施だが、user 判断により受け入れ観察は別 ticket 扱いにする。
 - deploy は clean archive `021c85c` から実施。manual `/run` fire は追加していない。
 - OBチャンネルの `channel_handle` は未確認のため空欄が多い。source表示はチャンネル名fallbackになる。
 - `giants_ob` source は title が弱くても draft になるため、無関係動画が混じる可能性は残る。公開は user 判断で止める。
@@ -369,7 +371,7 @@ post-deploy verify:
 - Cloud Logging で direct deploy revision / current revision とも ERROR 0。
 - X API POST / publish 自動化 / Secret / Scheduler / env 変更 0。
 
-残 acceptance:
+別 ticket acceptance:
 
-- 次 natural fire 後に `youtube_review_category_override` が出ても ERROR なし。
+- natural fire 後に `youtube_review_category_override` が出ても ERROR なし。
 - OB YouTube draft が作られる場合、status は draft、category は `OB・解説者`、content に `wp-block-embed-youtube` が入る。

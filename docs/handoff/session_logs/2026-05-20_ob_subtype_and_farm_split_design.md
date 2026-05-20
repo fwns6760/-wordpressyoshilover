@@ -220,6 +220,10 @@ GO 後のコード編集便で実行する予定の test。本便(markdown 作�
 - 408 commit | `215abbf 408: OB subtype 新設 (Phase 1, literal marker + name table seed) + 407 / 409 / 410 起票` | 11 files / 1052+ / 1- | push 済 (`ee1d73d..215abbf` 経由、 並走 commit ee1d73d は scope disjoint で問題なし)
 - 409 Phase 1 実装 | rss_fetcher に `_maybe_apply_farm_2gun_3gun_split` + 4 新 subtype 登録 (validator 3 file) + 26 unit test | flag 無し時 4 件 regression (`test_third_team_result_routes_to_*` / `test_flag_on_routes_third_team_result_to_farm`) → env flag `ENABLE_FARM_2GUN_3GUN_SPLIT` で gate (default OFF) に修正、 既存 contract (ENABLE_FARM_SUBTYPE_SPLIT=1 + 三軍 → farm) を維持
 - 409 fix | flag gate 追加後、 targeted test 96 件 pass (失敗 4 件復活) | full pytest 再実行で全件 verify へ
+- 409 Phase 1 full pytest | post-fix | **5502 passed / 1 xfailed / 3 xpassed / 980 subtests / 237.76s** (regression 0) | Task #4 commit へ
+- 409 commit | `64125cb 409: farm 2軍 / 3軍 分離 (Phase 1, ENABLE_FARM_2GUN_3GUN_SPLIT flag-gated)` | 6 files / 295+ / 3- | push 済 (`ee1d73d..64125cb`)
+- 410 Phase 1 実装 | `src/subtype_display_format.py` 新規 (badge + 出典帯 builder helpers、 additive、 draft pipeline 未 wire) + 17 unit test | Phase 2 で wire-in (postgame_runner / nomotoke_card_renderer 等)
+- 410 Phase 1 full pytest | **5520 passed / 1 xfailed / 3 xpassed / 980 subtests / 116.68s** (regression 0) | Task #5 commit へ
 
 ## 10. Regression Memo 欄
 

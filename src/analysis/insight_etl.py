@@ -357,6 +357,96 @@ def _player_last_n_game_window(
     return (rows[-1][0], rows[0][0])
 
 
+def _player_last_n_pa_window(
+    conn: sqlite3.Connection,
+    player_canonical: str,
+    n_pa: int,
+    snapshot_date: str,
+) -> Optional[tuple[str, str]]:
+    """打者の直近 n_pa (PA cumsum) を満たす (oldest_date, latest_date) を返す。
+
+    PA = ``atbats_json`` entry 数。 cumsum が n_pa に届かない場合は None
+    (集計 skip)。 403 (2026-05-20)。
+    """
+    rows = conn.execute(
+        "SELECT g.game_date, bl.atbats_json FROM batting_logs bl "
+        "JOIN games g ON bl.game_id = g.game_id "
+        "WHERE bl.player_canonical = ? AND g.game_date <= ? "
+        "ORDER BY g.game_date DESC",
+        (player_canonical, snapshot_date),
+    ).fetchall()
+    cumsum = 0
+    latest = oldest = None
+    for date_str, atb_json in rows:
+        try:
+            atbs = json.loads(atb_json) if atb_json else []
+        except (ValueError, TypeError):
+            atbs = []
+        if not isinstance(atbs, list):
+            continue
+        if latest is None:
+            latest = date_str
+        cumsum += len(atbs)
+        oldest = date_str
+        if cumsum >= n_pa:
+            return (oldest, latest)
+    return None
+
+
+def _pitcher_last_n_appearance_window(
+    conn: sqlite3.Connection,
+    pitcher_canonical: str,
+    n_apps: int,
+    snapshot_date: str,
+) -> Optional[tuple[str, str]]:
+    """投手の直近 n_apps 登板を満たす (oldest_date, latest_date) を返す。
+
+    登板数が n_apps 未満なら None。 403 (2026-05-20)。
+    """
+    rows = conn.execute(
+        "SELECT g.game_date FROM pitching_logs pl "
+        "JOIN games g ON pl.game_id = g.game_id "
+        "WHERE pl.player_canonical = ? AND g.game_date <= ? "
+        "ORDER BY g.game_date DESC LIMIT ?",
+        (pitcher_canonical, snapshot_date, n_apps),
+    ).fetchall()
+    if len(rows) < n_apps:
+        return None
+    return (rows[-1][0], rows[0][0])
+
+
+def _pitcher_last_n_ip_window(
+    conn: sqlite3.Connection,
+    pitcher_canonical: str,
+    n_ip: float,
+    snapshot_date: str,
+) -> Optional[tuple[str, str]]:
+    """投手の直近 n_ip (IP cumsum) を満たす (oldest_date, latest_date) を返す。
+
+    IP cumsum が n_ip に届かない場合は None。 403 (2026-05-20)。
+    """
+    rows = conn.execute(
+        "SELECT g.game_date, pl.IP FROM pitching_logs pl "
+        "JOIN games g ON pl.game_id = g.game_id "
+        "WHERE pl.player_canonical = ? AND g.game_date <= ? "
+        "ORDER BY g.game_date DESC",
+        (pitcher_canonical, snapshot_date),
+    ).fetchall()
+    cumsum = 0.0
+    latest = oldest = None
+    for date_str, ip in rows:
+        if latest is None:
+            latest = date_str
+        try:
+            cumsum += float(ip or 0)
+        except (TypeError, ValueError):
+            continue
+        oldest = date_str
+        if cumsum >= n_ip:
+            return (oldest, latest)
+    return None
+
+
 def _aggregate_batting_line(
     conn: sqlite3.Connection,
     player_canonical: str,
@@ -640,23 +730,46 @@ def compute_advanced_metric_snapshots(
     """指定 ``scope`` で全 active player の advanced metrics を計算し、
     ``advanced_metric_snapshots`` に ``INSERT OR REPLACE``。
 
-    対応 scope (348 step 3 で拡張):
+    対応 scope:
       * range scope: ``season`` / ``last_7d`` / ``last_30d`` / ``monthly`` / ``weekly``
-      * per-player rolling: ``last_5_games`` / ``last_10_games``
+      * 試合数 rolling (打者 + 投手): ``last_3/5/10/20_games``
+      * PA cumsum (打者専用、 403): ``last_30/50/100_pa``
+      * 登板数 rolling (投手専用、 403): ``last_3/5/10_appearances``
+      * IP cumsum (投手専用、 403): ``last_5/10_ip``
 
     最小 sample 閾値 (打者: ``PA >= min_pa`` / 投手: ``IP >= min_ip``) で skip。
     league_rank / league_total は同 scope 内 metric 別に sort して付与。
     position_rank / position_total / extra_json は本 phase で NULL。
     """
-    _ROLLING_N = {
+    _ROLLING_N_GAMES = {
         "last_3_games": 3,
         "last_5_games": 5,
         "last_10_games": 10,
         "last_20_games": 20,
     }
-    is_rolling = scope in _ROLLING_N
+    _ROLLING_N_PA = {
+        "last_30_pa": 30,
+        "last_50_pa": 50,
+        "last_100_pa": 100,
+    }
+    _ROLLING_N_APPEARANCES = {
+        "last_3_appearances": 3,
+        "last_5_appearances": 5,
+        "last_10_appearances": 10,
+    }
+    _ROLLING_N_IP = {
+        "last_5_ip": 5.0,
+        "last_10_ip": 10.0,
+    }
+    is_rolling_games = scope in _ROLLING_N_GAMES
+    is_rolling_pa = scope in _ROLLING_N_PA
+    is_rolling_appearances = scope in _ROLLING_N_APPEARANCES
+    is_rolling_ip = scope in _ROLLING_N_IP
+    is_rolling = (
+        is_rolling_games or is_rolling_pa
+        or is_rolling_appearances or is_rolling_ip
+    )
     if is_rolling:
-        n_games = _ROLLING_N[scope]
         window_start = window_end = None
     else:
         # range scope (raise if unknown)
@@ -686,13 +799,32 @@ def compute_advanced_metric_snapshots(
         if not canonical or not team_code:
             continue
 
-        # 348 step 3: per-player rolling は player ごとに window を再計算
-        if is_rolling:
+        # 348 step 3 / 403: per-player rolling は player ごとに window を再計算
+        if is_rolling_games:
+            n_games = _ROLLING_N_GAMES[scope]
             bat_window = _player_last_n_game_window(
                 conn, canonical, n_games, snapshot_date, "batting_logs",
             )
             pit_window = _player_last_n_game_window(
                 conn, canonical, n_games, snapshot_date, "pitching_logs",
+            )
+        elif is_rolling_pa:
+            n_pa = _ROLLING_N_PA[scope]
+            bat_window = _player_last_n_pa_window(
+                conn, canonical, n_pa, snapshot_date,
+            )
+            pit_window = None  # PA scope は打者専用
+        elif is_rolling_appearances:
+            n_apps = _ROLLING_N_APPEARANCES[scope]
+            bat_window = None  # 登板 scope は投手専用
+            pit_window = _pitcher_last_n_appearance_window(
+                conn, canonical, n_apps, snapshot_date,
+            )
+        elif is_rolling_ip:
+            n_ip = _ROLLING_N_IP[scope]
+            bat_window = None  # IP scope は投手専用
+            pit_window = _pitcher_last_n_ip_window(
+                conn, canonical, n_ip, snapshot_date,
             )
         else:
             bat_window = (window_start, window_end)

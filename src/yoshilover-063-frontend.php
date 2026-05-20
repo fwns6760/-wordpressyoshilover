@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.16.1
+ * Version: 0.16.2
  * Author: yoshilover
  */
 
@@ -283,9 +283,11 @@ function yoshilover_063_get_dense_nav_items() {
     }
 
     // 388: 概念タグ (監督/公示/試合結果/球団情報) の後ろに player 名タグ
-    // top 100 を付け足す (dnomotoke PC ヘッダー 133 player に追随)。
-    // 既存タグと重複したら sanitize 段で seen dedupe。
-    foreach ( yoshilover_063_get_top_player_tags( 100 ) as $player_item ) {
+    // top 30 を付け足す (user 判断 2026-05-20: PC 30 / mobile 10-15 目安、
+    // dnomotoke 133 追随より控えめ)。 既存タグと重複したら sanitize 段で seen dedupe。
+    // mobile での見え方は custom.css の @media (max-width: 600px) で
+    // `__item:nth-child(n+19)` を hide することで約 18 個 (固定 8 + player 10) に絞る。
+    foreach ( yoshilover_063_get_top_player_tags( 30 ) as $player_item ) {
         $items[] = $player_item;
     }
 
@@ -319,9 +321,9 @@ function yoshilover_063_get_dense_nav_items() {
         );
     }
 
-    // 388: HOME / 全記事 / 概念 6 + player 100 = 約 108 件まで許容
-    // (dnomotoke PC ヘッダー 136 link に追随)。
-    return array_slice( $sanitized, 0, 150 );
+    // 388: HOME / 全記事 / 概念 6 + player 30 = 約 38 件 (user 判断 2026-05-20)。
+    // buffer 込みで上限 50。 mobile での絞り込みは custom.css 側で行う。
+    return array_slice( $sanitized, 0, 50 );
 }
 
 function yoshilover_063_render_dense_nav( $atts = array() ) {

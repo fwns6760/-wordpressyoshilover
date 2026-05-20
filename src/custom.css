@@ -8977,6 +8977,16 @@ button.cta:hover,
   }
 }
 
+/* 388 (2026-05-20): mobile では PC ほど多く chip を出さない。
+   PC = HOME / 全記事 / 概念 6 + player top 30 = 約 38 chip (水平スクロール)。
+   mobile = 固定 8 + player 10 = 18 chip まで (水平スクロール)。
+   user 判断 2026-05-20: PC 30 / mobile 10-15 目安、 chip 数を絞って疎にする。 */
+@media (max-width: 600px) {
+  .yoshi-dense-nav__item:nth-child(n+19) {
+    display: none;
+  }
+}
+
 /* ====================================================================
    125 / 087 AdSense slot scaffolding (wrapper only, no real ad unit IDs)
    ==================================================================== */

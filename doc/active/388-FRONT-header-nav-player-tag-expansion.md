@@ -2,13 +2,30 @@
 
 ## meta
 
-- status: READY_FOR_IMPL
+- status: REVIEW_NEEDED
 - priority: P1 (回遊率 main 改善、 のもとけ模倣の中核)
 - owner: Claude
 - created: 2026-05-19
+- updated: 2026-05-20 (user scope clarification + impl)
 - parent_intent: のもとけ風サイト構造 (387-390 chain)
-- depends_on: 387 (タグ付与率 100% が前提条件、 タグ空欄では nav から飛んでも 0 件 page)
+- depends_on: 387 (タグ付与率 100% が前提条件、 タグ空欄では nav から飛んでも 0 件 page) — user 判断 2026-05-20: 387 close (タグ付与は OK 扱い)、 当 ticket は UI のみで前進
 - github_issue: https://github.com/fwns6760/-wordpressyoshilover/issues/63
+
+## 2026-05-20 user scope clarification
+
+- PC = 選手タグ 30 個 目安 (固定 8 + player 30 = 38 chip)
+- mobile = 選手タグ 10-15 個 目安 (PC ほど多くなくてよい、 chip 数を絞って疎にする)
+- 387 タグ付与率 100% は不要扱いで close、 UI 先行で進める
+
+## 2026-05-20 impl
+
+- `src/yoshilover-063-frontend.php`:
+  - `yoshilover_063_get_top_player_tags()` の cap を 100 → 30
+  - `yoshilover_063_sanitize_dense_nav_items()` の slice 上限を 150 → 50
+  - plugin version 0.16.1 → 0.16.2
+- `src/custom.css`:
+  - `@media (max-width: 600px)` block を追加し、 `.yoshi-dense-nav__item:nth-child(n+19)` を `display: none` で隠す
+  - mobile 可視 = 固定 8 + player 10 = 18 chip (水平スクロールは維持)
 
 ## user intent (2026-05-19 chat lock)
 

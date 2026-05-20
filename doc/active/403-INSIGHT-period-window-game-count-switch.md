@@ -9,7 +9,20 @@
 - **priority**: high (5/20 12:00/15:00/17:00 publish 0 件の主因、 サンプル不足を構造的に直す)
 - **owner**: Claude (実装) / user (GO 判断、 受け入れ試験)
 - **lane**: Claude
+- **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/77
 - **stage**: Phase 1 stage 1 / 段階式 (404 / 405 は follow-up)
+- **progress (2026-05-20 PM、 全 commit 直列)**:
+  - Stage A1 `ee1d73d`: scope window helpers additive (game-count / PA / appearance / IP cumsum) + tests
+  - Stage A2 `dabe355`: aggregate_* 統一 + focus_player kw
+  - Stage A3 `17c32d6`: insight_quality_gate min_sample scope-aware (audit 値反映)
+  - Stage A5 `b2a62a3`: title period labels (打席 / 登板 / 投球回) + config
+  - Stage A4 prep `b46ffaa`: ETL window helpers + dispatch (PA / appearance / IP)
+  - Stage A4 cutover `03a49ee`: default_jobs / counting_scopes / split scope を last_7d/weekly → last_5_games
+  - Stage A4 cutover fix `e343479`: inline scope_label dict 廃止 → title_guard.period_label_for_scope 統一 (二重 label bug 回避)
+  - 恒久 lock `f1df3be`: spec 恒久化 + status LIVE_DEPLOYED_OBSERVE
+  - Stage B `febb2f0`: 打順別 publisher 新規 (band 化、 4 番固定回避)
+- **deploy 履歴**: image `403-cutover-03a49ee` (gen 73) → `403-cutover-e343479` (gen 74、 二重 label fix) → `403-stage-b-febb2f0` (gen 75、 Stage B 同梱)
+- **verify 状況 (2026-05-20 20:00 JST)**: 20:00 fire は cutover 前 image だが 406 fix verify 完了 (bl.HR error 過去 5 日 175 件 → 0 件)。 21:00 fire (data-insight-during-game-trigger) で cutover + Stage B 動作観察
 - **依存**: [[project_data_insight_period_scope_2026_05_20]] memory (新 scope spec lock)
 - **関連**: 348 (whitelist 実装、 CLOSED) / 349 (dedup cooldown、 LIVE_OBSERVE) / 356 (data quality gate、 LIVE_OBSERVE) / 357 (mail human period labels、 LIVE_OBSERVE)
 

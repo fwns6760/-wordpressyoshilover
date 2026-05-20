@@ -6,6 +6,7 @@
 - **priority**: P1 (5/20 logs で確認された既存機能の壊れ、 publish が落ちている)
 - **owner**: Claude / **lane**: Claude
 - **依存**: なし ([[403]] と並走可能、 narrow fix)
+- **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/78
 
 ## 2. 背景 / 事実 bug
 

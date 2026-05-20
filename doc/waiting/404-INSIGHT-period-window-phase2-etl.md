@@ -7,6 +7,7 @@
 - **owner**: Claude / **lane**: Claude
 - **stage**: Phase 2 / 段階式 ([[403]] の follow-up)
 - **依存**: [[project_data_insight_period_scope_2026_05_20]] memory
+- **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/79
 
 ## 2. 目的
 

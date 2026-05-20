@@ -20475,7 +20475,7 @@ def _maybe_insert_x_outbound_article_excerpt(
     _ = summary  # kept for signature parity; not used in this branch
     try:
         excerpt = extract_article_body_excerpt(
-            article_html, article_url, max_chars=600, title=title,
+            article_html, article_url, max_chars=1200, title=title,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning(
@@ -20724,6 +20724,7 @@ def _create_draft_with_same_fire_guard(
         source_url=normalized_source_url,
         source_name=enrichment_source_name,
         logger=logger,
+        quote_only=enrichment_template_key == "youtube_review_notice",
     )
     enriched_content = _relocate_source_excerpt_to_primary_slot(
         enriched_content,
@@ -22493,6 +22494,30 @@ _YOUTUBE_CAPTION_FETCH_MAX_CHARS = 1500
 _YOUTUBE_CAPTION_QUOTE_MAX_CHARS = 110
 _YOUTUBE_CAPTION_SUMMARY_MAX_CHARS = 76
 _YOUTUBE_CAPTION_CHUNK_MAX_CHARS = 90
+_YOUTUBE_CAPTION_NOISE_EXACT = {
+    "[音楽]",
+    "【音楽】",
+    "(音楽)",
+    "（音楽）",
+    "音楽",
+    "[拍手]",
+    "【拍手】",
+    "(拍手)",
+    "（拍手）",
+    "拍手",
+}
+_YOUTUBE_CAPTION_NOISE_TERMS = (
+    "チャンネル登録",
+    "高評価",
+    "グッドボタン",
+    "通知オン",
+    "概要欄",
+    "コメント欄",
+    "URL",
+    "http://",
+    "https://",
+    "www.",
+)
 _YOUTUBE_CAPTION_IMPORTANT_TERMS = (
     "巨人",
     "ジャイアンツ",
@@ -22514,6 +22539,16 @@ _YOUTUBE_CAPTION_IMPORTANT_TERMS = (
     "一軍",
     "二軍",
 )
+
+
+def _is_youtube_caption_noise(text: str) -> bool:
+    """字幕の非本文ノイズやCTAを引用候補から外す。"""
+    clean = _re.sub(r"\s+", " ", str(text or "")).strip()
+    if not clean:
+        return True
+    if clean in _YOUTUBE_CAPTION_NOISE_EXACT:
+        return True
+    return any(term in clean for term in _YOUTUBE_CAPTION_NOISE_TERMS)
 
 
 def _maybe_apply_youtube_title_prefix(title: str, source_url: str) -> str:
@@ -22557,6 +22592,8 @@ def _extract_youtube_video_id(url: str) -> str:
 def _trim_youtube_caption_piece(text: str, max_chars: int) -> str:
     """Caption text 由来の短い表示片に trim。推測補完はしない。"""
     clean = _re.sub(r"\s+", " ", str(text or "")).strip()
+    if _is_youtube_caption_noise(clean):
+        return ""
     if not clean or len(clean) <= max_chars:
         return clean
     head = clean[:max_chars]
@@ -22604,6 +22641,8 @@ def _split_youtube_caption_sentences(caption: str) -> list[str]:
             continue
         for chunk in _split_long_youtube_caption_sentence(part):
             if len(chunk) < 8:
+                continue
+            if _is_youtube_caption_noise(chunk):
                 continue
             if chunk in seen:
                 continue
@@ -22689,6 +22728,7 @@ def _maybe_append_youtube_caption_section(
     source_url: str,
     source_name: str,
     logger: logging.Logger,
+    quote_only: bool = False,
 ) -> str:
     """344-INGEST: YouTube source なら caption literal + 出典 + embed section を末尾に追加。
 
@@ -22725,6 +22765,8 @@ def _maybe_append_youtube_caption_section(
         )
         return rendered_html
     quotes, summary = _build_youtube_caption_quote_summary(caption)
+    if quote_only:
+        summary = []
     if not quotes:
         fallback_quote = _trim_youtube_caption_piece(
             caption, _YOUTUBE_CAPTION_QUOTE_MAX_CHARS
@@ -22735,7 +22777,7 @@ def _maybe_append_youtube_caption_section(
                 "youtube_caption_v2_fallback reason=no_extracted_quotes url=%s",
                 source_url,
             )
-    if not summary and quotes:
+    if not quote_only and not summary and quotes:
         summary = [
             _trim_youtube_caption_piece(
                 quotes[0], _YOUTUBE_CAPTION_SUMMARY_MAX_CHARS
@@ -27980,7 +28022,7 @@ def _main(args, logger):
                     _hochi_excerpt = extract_article_body_excerpt(
                         _article_raw_html,
                         source_url=post_url,
-                        max_chars=600,
+                        max_chars=1200,
                         title=str(item.get("title") or ""),
                     )
                     if _hochi_excerpt:

@@ -1208,6 +1208,9 @@ def build_gemma_branding_candidate(
     same_day_only: Optional[bool] = None,
     db_fact_streak_window: Optional[int] = None,
     post_type: Optional[str] = None,
+    focused_players: Optional[list[str]] = None,
+    fan_voice_snippet: str = "",
+    starting_pitcher_today: str = "",
 ) -> Optional[Candidate]:
     """Tavily REST 検索 + Gemma 4 31B 生成で 1 件の Candidate を返す。
 
@@ -1305,7 +1308,13 @@ def build_gemma_branding_candidate(
                 build_pregame_themes,
                 format_pregame_themes_for_prompt,
             )
-            themes = build_pregame_themes(db_path, now_jst=now_jst)
+            themes = build_pregame_themes(
+                db_path,
+                now_jst=now_jst,
+                starting_pitcher_today=starting_pitcher_today,
+                focused_players=focused_players,
+                fan_voice_snippet=fan_voice_snippet,
+            )
             pregame_section = format_pregame_themes_for_prompt(themes)
         except Exception as exc:  # noqa: BLE001 - silent fallback
             log.info("pregame_themes_skip reason=%r", exc)

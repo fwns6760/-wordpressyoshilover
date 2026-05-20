@@ -716,6 +716,7 @@ def _build_gemma_branding_candidates(
     recent_player_counts: dict[str, int] | None,
     max_count: int,
     db_path: str | None = None,
+    bucket_name: str | None = None,
 ) -> list[lane.Candidate]:
     """392: max_count 件まで Gemma branding candidate を生成。
 
@@ -792,6 +793,24 @@ def _build_gemma_branding_candidates(
     remaining = max_count - (1 if roundup_added else 0)
     if remaining <= 0:
         return out
+    # 414 axis E7 wire: fan_voice_pool から直近 24h の 1 件を snippet として注入
+    # (試合前 prompt themes に組み込まれる、 fault-tolerant)
+    fan_voice_snippet = ""
+    if bucket_name:
+        try:
+            entries = lane.load_recent_fan_voice_pool_entries(
+                bucket_name, now_jst, lookback_hours=24
+            )
+            if entries:
+                top = entries[0]
+                text_preview = str(top.get("text") or "").strip()[:120]
+                handle = str(top.get("handle") or "").strip()
+                if text_preview:
+                    fan_voice_snippet = (
+                        f"@{handle}: {text_preview}" if handle else text_preview
+                    )
+        except Exception as exc:  # noqa: BLE001
+            LOG.info("fan_voice_snippet_skip reason=%r", exc)
     for player, lineup_fact in players[:remaining]:
         db_fact = ""
         if db_path:
@@ -805,12 +824,18 @@ def _build_gemma_branding_candidates(
                 )
                 db_fact = ""
         fact = db_fact or lineup_fact
+        # 414 axis E wire: focused_players (= 今日のスタメン focus name list) と
+        # fan_voice_snippet を pass、 build_gemma_branding_candidate が
+        # build_pregame_themes に転送して prompt 注入する。
         cand = _xbg.build_gemma_branding_candidate(
             player,
             gemini_api_key=gemini_key,
             tavily_api_key=tavily_key,
             db_fact_line=fact,
             logger=LOG,
+            db_path=db_path or "",
+            focused_players=list(lineup_focus_names) if lineup_focus_names else None,
+            fan_voice_snippet=fan_voice_snippet,
         )
         if cand is not None:
             out.append(cand)
@@ -1086,6 +1111,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 recent_player_counts=recent_player_counts,
                 max_count=gemma_count,
                 db_path=db_path,
+                bucket_name=bucket_name or None,
             )
             if gemma_candidates:
                 before = len(candidates)

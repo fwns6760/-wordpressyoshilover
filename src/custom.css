@@ -8980,10 +8980,13 @@ button.cta:hover,
 /* 388 (2026-05-20): chip 数を CSS で gating する。 plugin php 側は live に 100 chip
    出力する v16 が乗っており、 XSERVER WAF が plugin php push を block するため、
    CSS で表示を絞ることで PC 30 / mobile 7 target を実現する。
-   PC (>600px) = 固定 8 + player 30 = 38 chip 可視 (横スクロール)。 39 番目以降は hide。
-   mobile (<=600px) = 固定 8 + player 7 = 15 chip 可視 (折り返し 3 段)。 16 番目以降は hide。
+   PC (601px 以上) = 固定 8 + player 30 = 38 chip 可視 (横スクロール)。 39 番目以降は hide。
+   mobile (600px 以下) = 固定 8 + player 7 = 15 chip 可視 (折り返し 3 段)。 16 番目以降は hide。
    user 判断 2026-05-20: PC 30 / mobile 10-15 目安、 chip 数を絞って疎にする。
-   user 判断 2026-05-20 (追記): スマホは横スクロールではなく折り返し、 3 段に収まる量。 */
+   user 判断 2026-05-20 (追記): スマホは横スクロールではなく折り返し、 3 段に収まる量。
+   note: WP の wp_strip_all_tags が CSS option を sanitize する際に
+   左不等号 (lt-sign) から次の `]` 以外の右不等号 (gt-sign) まで HTML tag 扱いで
+   strip する。 コメント内に lt-sign を書かないこと (CSS rule が消える)。 */
 @media (min-width: 601px) {
   .yoshi-dense-nav__item:nth-child(n+39) {
     display: none;

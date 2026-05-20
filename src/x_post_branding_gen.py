@@ -385,6 +385,89 @@ def select_branding_persona(now_jst, is_game_day: bool) -> str:
     return "fuuga"
 
 
+# 414 axis A (2026-05-20): user spec lock 5 型分離.
+# 観戦中 (試合中) は 感情系 + 次の展開系 が強い。
+_POST_TYPES = ("flash", "emotion", "data", "next", "positive")
+
+_POST_TYPE_GUIDANCE: dict[str, str] = {
+    "flash": (
+        "【今回の型: 速報系】\n"
+        "- 事実中心: 選手名 / 回 / スコア を厳格に書く。 DB fact / Tavily literal に\n"
+        "  ないものは書かない\n"
+        "- 短文 OK、 観点 1-2 個に絞ってよい (長文無理に書かない)\n"
+        "- 感想は控えめ、 事実が主"
+    ),
+    "emotion": (
+        "【今回の型: 感情系】\n"
+        "- 巨人ファンの気持ち代弁 (噛み締める / 嬉しい / 悔しい / ホッとした 等)\n"
+        "- 数字は 1 個だけでも、 そこから派生する感情を厚く\n"
+        "- 「同じ条件で並べると」 系の分析調は控え、 ファンの本音 voice"
+    ),
+    "data": (
+        "【今回の型: データ系】\n"
+        "- 過去成績 / 直近傾向 を踏まえる (ただし順位は絶対書かない = axis C1)\n"
+        "- 「最近のリズム」「打順上位の働き」 等の傾向観察として書く\n"
+        "- 数字は DB fact 由来のみ、 generalize OK"
+    ),
+    "next": (
+        "【今回の型: 次の展開系】\n"
+        "- 試合進行中前提 (まだ続行中、 完了形で書かない)\n"
+        "- 采配 / 継投 / 追加点 / 守備固め / 代打 / 抑え への期待・想像\n"
+        "- 「ここで」「次の回」「あと◯回」 の即時性、 流動的な書き方"
+    ),
+    "positive": (
+        "【今回の型: ポジティブ系】\n"
+        "- 若手 / 二軍 / 復帰選手 / 育成 を拾う (やってる感、 期待感)\n"
+        "- 「いいな」「楽しみ」「これからの選手」 voice\n"
+        "- 強批判 / 雑批判 NG (axis D 厳守)"
+    ),
+}
+
+
+def select_post_type(
+    now_jst,
+    is_game_day: bool,
+    has_db_fact: bool = False,
+    has_tavily_results: bool = False,
+) -> str:
+    """414 axis A: 型自動選択.
+
+    user 仕様 lock (2026-05-20 chat):
+    - 観戦中 (試合日 18-21時) = next (次の展開系) 優先、 fallback emotion
+    - 試合後 (試合日 22-23時) = emotion (試合の余韻)
+    - 試合日 朝 (5-11時) = data (前日試合の余韻 + 今日試合への準備)
+    - 試合日 昼 (11-17時) = data + emotion (試合前 buildup)
+    - 非試合日 朝 = data (前日試合 stat / 直近傾向)
+    - 非試合日 昼 = positive (若手 / 二軍 narrative)
+    - 非試合日 夜 = emotion (off-day fan voice)
+    - flash は test 用 / caller override 用、 自動選択は使わない (= 事実中心は型に
+      しなくても axis C で hallucination 防止が効くため)
+
+    Returns one of: 'next' / 'emotion' / 'data' / 'positive' / 'flash'
+    """
+    try:
+        hour = int(now_jst.hour)
+    except Exception:
+        return "emotion"
+    if is_game_day:
+        if 18 <= hour <= 21:
+            return "next"
+        if 22 <= hour <= 23 or hour < 5:
+            return "emotion"
+        if 5 <= hour < 11:
+            return "data"
+        if 11 <= hour < 17:
+            return "data" if has_db_fact else "emotion"
+        # hour 17: 試合直前
+        return "next"
+    # 非試合日
+    if 5 <= hour < 11:
+        return "data"
+    if 11 <= hour < 17:
+        return "positive"
+    return "emotion"
+
+
 # 411 (2026-05-20): user 仕様 = 公式 / NPB / 球団 / 主要スポーツ紙を優先。
 # include_domains で Tavily 側の取得を whitelist 内に絞る。 paid credit / cost は
 # domain 数によらず 1 query = 1 credit (free tier 1000/月 内で運用)。
@@ -1124,6 +1207,7 @@ def build_gemma_branding_candidate(
     persona: Optional[str] = None,
     same_day_only: Optional[bool] = None,
     db_fact_streak_window: Optional[int] = None,
+    post_type: Optional[str] = None,
 ) -> Optional[Candidate]:
     """Tavily REST 検索 + Gemma 4 31B 生成で 1 件の Candidate を返す。
 
@@ -1201,14 +1285,33 @@ def build_gemma_branding_candidate(
         today_jst=now_jst.strftime("%Y-%m-%d"),
         persona=resolved_persona,
     )
-    prompt = (
-        f"{system_prompt}\n\n"
-        f"対象選手: {player}\n\n"
-        f"DB 照合済み数字 (使ってよい数字): {db_fact_line or 'なし'}\n\n"
-        f"Tavily 検索結果 (context、 ここから不検証数字 / 引用 / 媒体名 / URL は使わない):\n"
-        f"{context}\n\n"
-        "上記情報を踏まえて、 独自の視点で X 投稿案を 1 件、 本文のみ書いてください。"
-    )
+    # 414 axis A: 型自動選択。 caller が post_type kwarg で明示すれば override。
+    if post_type is None:
+        is_game_day_val = is_giants_game_day(now_jst, db_path) if db_path else False
+        resolved_post_type = select_post_type(
+            now_jst,
+            is_game_day_val,
+            has_db_fact=bool(db_fact_line),
+            has_tavily_results=bool(results),
+        )
+    else:
+        resolved_post_type = post_type
+    post_type_guidance = _POST_TYPE_GUIDANCE.get(resolved_post_type, "")
+    prompt_parts = [system_prompt]
+    if post_type_guidance:
+        prompt_parts.extend(["", post_type_guidance])
+    prompt_parts.extend([
+        "",
+        f"対象選手: {player}",
+        "",
+        f"DB 照合済み数字 (使ってよい数字): {db_fact_line or 'なし'}",
+        "",
+        "Tavily 検索結果 (context、 ここから不検証数字 / 引用 / 媒体名 / URL は使わない):",
+        context,
+        "",
+        "上記情報を踏まえて、 独自の視点で X 投稿案を 1 件、 本文のみ書いてください。",
+    ])
+    prompt = "\n".join(prompt_parts)
     try:
         from google import genai
         client = genai.Client(api_key=gemini_api_key)
@@ -1253,6 +1356,7 @@ def build_gemma_branding_candidate(
                     "axis": matched_axis,
                     "player": player,
                     "persona": resolved_persona,
+                    "post_type": resolved_post_type,
                     "matched_pattern": matched_pattern,
                     "text_preview": text[:80],
                     "text_len": len(text),
@@ -1274,6 +1378,7 @@ def build_gemma_branding_candidate(
                     "reason": "unverified_numbers",
                     "player": player,
                     "persona": resolved_persona,
+                    "post_type": resolved_post_type,
                     "unverified_numbers": unverified[:10],
                     "text_preview": text[:80],
                 },

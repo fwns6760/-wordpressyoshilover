@@ -676,6 +676,58 @@ class HallucinationPreventionAxisCTests414(unittest.TestCase):
         self.assertIn("今日", titles)
 
 
+class PostTypeAxisATests414(unittest.TestCase):
+    """414 axis A: 5 型分離 + 自動選択."""
+
+    def _now_at(self, hour: int):
+        from datetime import datetime, timezone, timedelta
+        jst = timezone(timedelta(hours=9))
+        return datetime(2026, 5, 20, hour, 0, tzinfo=jst)
+
+    def test_post_types_constant_has_5_types(self) -> None:
+        self.assertEqual(set(xbg._POST_TYPES), {"flash", "emotion", "data", "next", "positive"})
+
+    def test_post_type_guidance_covers_all_5(self) -> None:
+        for t in xbg._POST_TYPES:
+            self.assertIn(t, xbg._POST_TYPE_GUIDANCE)
+            self.assertGreater(len(xbg._POST_TYPE_GUIDANCE[t]), 30)
+
+    # 試合日
+    def test_game_day_18_returns_next(self) -> None:
+        self.assertEqual(xbg.select_post_type(self._now_at(18), True), "next")
+
+    def test_game_day_20_returns_next(self) -> None:
+        self.assertEqual(xbg.select_post_type(self._now_at(20), True), "next")
+
+    def test_game_day_22_returns_emotion(self) -> None:
+        self.assertEqual(xbg.select_post_type(self._now_at(22), True), "emotion")
+
+    def test_game_day_morning_returns_data(self) -> None:
+        self.assertEqual(xbg.select_post_type(self._now_at(8), True), "data")
+
+    def test_game_day_afternoon_with_db_fact_returns_data(self) -> None:
+        result = xbg.select_post_type(self._now_at(14), True, has_db_fact=True)
+        self.assertEqual(result, "data")
+
+    def test_game_day_afternoon_without_db_fact_returns_emotion(self) -> None:
+        result = xbg.select_post_type(self._now_at(14), True, has_db_fact=False)
+        self.assertEqual(result, "emotion")
+
+    def test_game_day_17_returns_next(self) -> None:
+        # 17時 = 試合直前 = next
+        self.assertEqual(xbg.select_post_type(self._now_at(17), True), "next")
+
+    # 非試合日
+    def test_non_game_day_morning_returns_data(self) -> None:
+        self.assertEqual(xbg.select_post_type(self._now_at(8), False), "data")
+
+    def test_non_game_day_afternoon_returns_positive(self) -> None:
+        self.assertEqual(xbg.select_post_type(self._now_at(14), False), "positive")
+
+    def test_non_game_day_evening_returns_emotion(self) -> None:
+        self.assertEqual(xbg.select_post_type(self._now_at(20), False), "emotion")
+
+
 class InflammationPreventionAxisDTests414(unittest.TestCase):
     """414 axis D: 炎上・ズレ防止 6 check."""
 

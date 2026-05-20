@@ -4,6 +4,12 @@
 
 ## 2026-05-20 session update
 
+### 398 — media_quote_evaluation 未初期化エラーの再発防止
+
+| ticket | status | 内容 |
+|---|---|---|
+| `doc/active/398-INGEST-media-quote-evaluation-default.md` (GH #73) | READY_FOR_DEPLOY | 395 手動 run で non-YouTube/X candidate が `cannot access local variable 'media_quote_evaluation' where it is not associated with a value` により `[ERROR] 公開失敗` へ落ちた。YouTube draft 作成自体は成功済みだが、後続候補を削るリスクがあるため、各 entry 処理開始時に `media_quote_evaluation` / `media_quotes` の safe default を置く narrow fix。tests: media quote/default guard 27 OK、compileall / diff-check OK。env / Secret / Scheduler / RUN_DRAFT_ONLY / WP既存記事 / X / frontend / unrelated staged changes は不可触。 |
+
 ### 395 — 公式 YouTube の弱いタイトルでも取り込む (user 要望「YouTube の取り込みも」)
 
 | ticket | status | 内容 |

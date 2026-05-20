@@ -26742,6 +26742,14 @@ def _main(args, logger):
         # excerpt block が誤注入される事故防止 (各 iter 開始で空に reset)。
         _article_raw_html: str = ""
         title_template_key: str = ""
+        # 398: media quote selector が動かない branch / 将来の早期分岐でも
+        # 後段 observability log が UnboundLocalError で candidate を落とさない。
+        media_quote_evaluation: dict[str, object] = {
+            "quotes": [],
+            "selector_type": "none",
+            "is_target": False,
+        }
+        media_quotes: list[dict] = []
 
         source_type = item["source_type"]
         category = item["category"]
@@ -26992,8 +27000,8 @@ def _main(args, logger):
                 },
                 max_count=media_quote_max_count,
                 media_quote_pool=media_quote_pool,
-            )
-            media_quotes = media_quote_evaluation["quotes"]
+            ) or {}
+            media_quotes = list(media_quote_evaluation.get("quotes") or [])
             entry_obj = item.get("entry") if isinstance(item.get("entry"), dict) else {}
             _article_raw_html = ""
             if source_type in {"news", "tag_scrape"}:

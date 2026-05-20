@@ -1706,8 +1706,12 @@ def publish_player_counting_by_slot_band_draft(
             "status": "skip", "reason": "category_resolution_failed",
             "stat_col": stat_col, "scope": scope, "slot_band": slot_band,
         }
-    publish_status = _resolve_publish_status()
-    tags_list = _resolve_post_tags(wp_client_obj, focus_player=article["top_player"])
+    publish_status = _resolve_publish_status(focus_team_code="g")
+    # player tag 自動付与 (回遊 navigation、 publish_giants_centric_ranking_draft
+    # と同 pattern を流用)。 _resolve_post_tags は存在しないため _ensure_player_tag
+    # を使用 (Stage B 初回 deploy 時の NameError fix)。
+    tag_id = _ensure_player_tag(wp_client_obj, article["top_player"])
+    tags_list = [tag_id] if tag_id else None
     if not tags_list:
         tags_list = [850]
     _banner = _giants_news_banner_html(

@@ -1425,6 +1425,12 @@ def publish_player_counting_split_draft(
     if not category_id:
         return {"status": "error", "stage": "category"}
     publish_status = _resolve_publish_status(focus_team_code="g")
+    # 387 fix (2026-05-20): tag 付与経路を統一 (publish_giants_centric_ranking_draft
+    # と同 pattern)。 split publish post の tag=0 解消。
+    tag_id = _ensure_player_tag(wp_client_obj, article["top_player"])
+    tags_list = [tag_id] if tag_id else None
+    if not tags_list:
+        tags_list = [850]
     _banner = _giants_news_banner_html(
         article["title"], _BANNER_SOURCE_LABEL, category_name,
     )
@@ -1438,6 +1444,16 @@ def publish_player_counting_split_draft(
             status=publish_status,
             caller="ranking_article_publisher_counting_split",
         )
+        # 387 fix: create_post 後の tag attach
+        if post_id and tags_list:
+            try:
+                import requests as _req
+                wp_client_obj._request_with_retry(
+                    _req.post, f"{wp_client_obj.api}/posts/{post_id}",
+                    action="add_tags", json={"tags": tags_list},
+                )
+            except Exception:
+                pass
         try:
             dedup_history_id = dedup_gate.record_metric_publish(
                 conn,
@@ -1948,6 +1964,14 @@ def publish_player_counting_draft(
     if not category_id:
         return {"status": "error", "stage": "category"}
     publish_status = _resolve_publish_status(focus_team_code="g")
+    # 387 fix (2026-05-20): tag 付与経路を publish_giants_centric_ranking_draft
+    # と統一。 21:00 fire の data-insight post 69939/40/41 が tags=[] で出ていた
+    # 件の root cause = この publisher が create_post 後の tag attach を行って
+    # いなかった。 player tag + fallback [850] 速報 で 100% 付与化。
+    tag_id = _ensure_player_tag(wp_client_obj, article["top_player"])
+    tags_list = [tag_id] if tag_id else None
+    if not tags_list:
+        tags_list = [850]
     _banner = _giants_news_banner_html(
         article["title"], _BANNER_SOURCE_LABEL, category_name
     )
@@ -1961,6 +1985,17 @@ def publish_player_counting_draft(
             status=publish_status,
             caller="ranking_article_publisher_counting",
         )
+        # 387 fix: create_post 後の tag attach (publish_giants_centric_ranking_draft
+        # と同 pattern)。
+        if post_id and tags_list:
+            try:
+                import requests as _req
+                wp_client_obj._request_with_retry(
+                    _req.post, f"{wp_client_obj.api}/posts/{post_id}",
+                    action="add_tags", json={"tags": tags_list},
+                )
+            except Exception:
+                pass
         try:
             dedup_history_id = dedup_gate.record_metric_publish(
                 conn,

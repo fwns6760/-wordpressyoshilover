@@ -1,8 +1,11 @@
 # 403-INSIGHT-period-window-game-count-switch
 
+**恒久 spec (2026-05-20 PM lock)**: 新 scope vocabulary は今後の恒久 default。 既存 post (`(週別)` / `(直近1週間)` 等の旧 label を持つもの) は **retroactive 書き換えなし**、 新 spec は cutover deploy 後の新規 publish にだけ適用。 user 明示「今後でいい。恒久的に」。
+
+
 ## 1. ticket header
 
-- **status**: READY (audit 完了 + spec 確定 2026-05-20、 user 確認後 実装便 fire 可)
+- **status**: LIVE_DEPLOYED_OBSERVE (cutover deploy 済 image `403-cutover-e343479` gen 74、 21:00 fire 観察待ち、 **恒久 spec lock 2026-05-20 PM**)
 - **priority**: high (5/20 12:00/15:00/17:00 publish 0 件の主因、 サンプル不足を構造的に直す)
 - **owner**: Claude (実装) / user (GO 判断、 受け入れ試験)
 - **lane**: Claude

@@ -755,7 +755,7 @@ def test_render_team_metric_article_era_marks_lower_is_better(tmp_path):
 
 
 def test_publish_team_default_set_uses_short_term_once(monkeypatch):
-    """球団 AVG/ERA/HR と得失点差の default run は last_7d に寄せる。"""
+    """球団 AVG/ERA/HR と得失点差の default run は last_5_games に寄せる (412 cutover 2026-05-20)."""
     metric_calls = []
     run_diff_calls = []
     vs_calls = []
@@ -782,14 +782,16 @@ def test_publish_team_default_set_uses_short_term_once(monkeypatch):
 
     results = trp.publish_team_default_set(object(), object(), max_per_run=100)
 
-    assert metric_calls == [("HR", "last_7d"), ("AVG", "last_7d"), ("ERA", "last_7d")]
-    assert run_diff_calls == ["last_7d"]
+    assert metric_calls == [
+        ("HR", "last_5_games"), ("AVG", "last_5_games"), ("ERA", "last_5_games"),
+    ]
+    assert run_diff_calls == ["last_5_games"]
     assert vs_calls == [
-        ("t", "last_7d"),
-        ("s", "last_7d"),
-        ("c", "last_7d"),
-        ("db", "last_7d"),
-        ("d", "last_7d"),
+        ("t", "last_5_games"),
+        ("s", "last_5_games"),
+        ("c", "last_5_games"),
+        ("db", "last_5_games"),
+        ("d", "last_5_games"),
     ]
     assert not any(r.get("status") == "skip_duplicate_metric_period" for r in results)
 
@@ -818,7 +820,9 @@ def test_publish_team_default_set_default_cap_is_three(monkeypatch):
 
     results = trp.publish_team_default_set(object(), object())
 
-    assert metric_calls == [("HR", "last_7d"), ("AVG", "last_7d"), ("ERA", "last_7d")]
+    assert metric_calls == [
+        ("HR", "last_5_games"), ("AVG", "last_5_games"), ("ERA", "last_5_games"),
+    ]
     assert sum(1 for r in results if r.get("status") == "published_draft") == 3
 
 

@@ -892,10 +892,14 @@ def publish_team_default_set(
     default_jobs = [
         # 2026-05-16 user feedback: season / last_30d / last_7d を同時に
         # 出すと同じ指標の重複記事になるため、default auto publish は
-        # 短期変化 (last_7d) に寄せる。
-        {"metric": "HR", "scope": "last_7d"},
-        {"metric": "AVG", "scope": "last_7d"},
-        {"metric": "ERA", "scope": "last_7d"},
+        # 短期変化に寄せる。
+        # 403 Stage A4 cutover follow-up (412、 2026-05-20): last_7d →
+        # last_5_games。 試合のない日に publish 過疎を回避、 player level
+        # cutover ([[403]]) と整合。 team_ranking_publisher._scope_window は
+        # 403 Stage A2 (commit dabe355) で last_N_games 対応済。
+        {"metric": "HR", "scope": "last_5_games"},
+        {"metric": "AVG", "scope": "last_5_games"},
+        {"metric": "ERA", "scope": "last_5_games"},
     ]
     results = []
     published = 0
@@ -921,7 +925,8 @@ def publish_team_default_set(
             published += 1
     # 348 step 3 完全達成: 得失点差 publisher。
     # 2026-05-16: default auto publish は短期変化のみ。
-    for scope in ("last_7d",):
+    # 403 Stage A4 cutover follow-up (412、 2026-05-20): last_7d → last_5_games。
+    for scope in ("last_5_games",):
         if published >= max_per_run:
             break
         if "RUN_DIFF" in seen_metric_periods:
@@ -935,12 +940,13 @@ def publish_team_default_set(
             published += 1
     # 348 step 3 完全達成: 対戦相手別 publisher (セ・リーグ 5 球団 vs 巨人)
     # 2026-05-16 user feedback: season / full-period は auto publish から
-    # 外す。直近7日で3試合未満なら render 側で skip される。
+    # 外す。直近5試合で3試合未満なら render 側で skip される。
+    # 403 Stage A4 cutover follow-up (412、 2026-05-20): last_7d → last_5_games。
     for opp in ("t", "s", "c", "db", "d"):  # 阪神/ヤクルト/広島/DeNA/中日
         if published >= max_per_run:
             break
         vs_r = publish_team_vs_opponent_draft(
-            conn, wp_client_obj, opponent=opp, scope="last_7d", dry_run=dry_run,
+            conn, wp_client_obj, opponent=opp, scope="last_5_games", dry_run=dry_run,
         )
         results.append(vs_r)
         if vs_r.get("status") in ("published", "published_draft", "dry_run"):

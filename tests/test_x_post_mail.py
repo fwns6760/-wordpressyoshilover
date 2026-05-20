@@ -352,7 +352,7 @@ class PickCandidatesTests(unittest.TestCase):
         self.assertIn("平山 功太", players)
 
     def test_player_diversity_caps_same_player_when_no_alternative(self) -> None:
-        """380: 代替巨人 row が無い時だけ同一選手を最大2件まで戻す。"""
+        """397: 代替巨人 row が無い時、同一選手は player_max=1 (default) まで。"""
         rows = [
             _row(1, "佐藤輝明", "阪神", 1.045),
             _row(2, "マルティネス", "巨人", 0.990),
@@ -379,7 +379,8 @@ class PickCandidatesTests(unittest.TestCase):
             min_central_rows=3,
         )
         players = [c.focus_player for c in cands]
-        self.assertEqual(players, ["マルティネス", "マルティネス"])
+        # 397: _DEFAULT_PLAYER_MAX_PER_MAIL=1 で同一 player 1 件のみ
+        self.assertEqual(players, ["マルティネス"])
 
     def test_recent_player_history_uses_next_giants_row(self) -> None:
         """380 follow-up: 直近24h既出 player は次の巨人 row に差し替える。"""
@@ -1545,7 +1546,7 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
 class XPostMailEntrypointFreshnessTests(unittest.TestCase):
     """DB freshness guard for the X post mail CLI entrypoint."""
 
-    def _entrypoint_candidate(self, signature: str) -> Candidate:
+    def _entrypoint_candidate(self, signature: str, *, focus_player: str = "") -> Candidate:
         return Candidate(
             title=f"候補 {signature}",
             metric="OPS",
@@ -1553,6 +1554,120 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
             draft_text=f"候補 {signature}\n#巨人 #ジャイアンツ",
             char_count=24,
             signature=signature,
+            focus_player=focus_player,
+        )
+
+    def test_backfill_dedup_starved_skips_player_in_24h_history(self) -> None:
+        """397: starvation fallback で 24h history に出た player を skip する。"""
+        from src.tools import run_x_post_mail
+
+        # candidates (pre-pass after dedup): 1 件のみ (枯れた状態)
+        fresh = [self._entrypoint_candidate("fresh-sig", focus_player="大城卓三")]
+        # relaxed (dedup=None で再 pick した結果): 浦田 2 件 + 増田陸 1 件
+        relaxed = [
+            self._entrypoint_candidate("OBP|今月|False|None", focus_player="浦田俊輔"),
+            self._entrypoint_candidate("AVG|直近10試合|False|None", focus_player="浦田俊輔"),
+            self._entrypoint_candidate("AVG|今月|False|None", focus_player="増田陸"),
+        ]
+        merged = run_x_post_mail._backfill_dedup_starved_candidates(
+            fresh,
+            relaxed,
+            max_candidates=4,
+            recent_player_counts={"浦田俊輔": 5},
+        )
+        players = [c.focus_player for c in merged]
+        # 浦田 は 24h history で 5 回出てるので Stage A で skip、増田陸は採用
+        self.assertEqual(len(merged), 2)
+        self.assertEqual(players, ["大城卓三", "増田陸"])
+        for c in merged:
+            self.assertNotEqual(c.focus_player, "浦田俊輔")
+
+    def test_backfill_dedup_starved_player_dedup_for_current_mail(self) -> None:
+        """397: current mail に既に同一 player が居る場合も Stage A で skip。"""
+        from src.tools import run_x_post_mail
+
+        # 浦田が既に candidates に居る (これは 24h dedup pre-pass を通過した)
+        fresh = [self._entrypoint_candidate("first-uchida", focus_player="浦田俊輔")]
+        # relaxed で 同じ player 別 metric を出してきた → skip して別 player を採用
+        relaxed = [
+            self._entrypoint_candidate("OBP|今月|False|None", focus_player="浦田俊輔"),
+            self._entrypoint_candidate("OPS|直近10試合|False|None", focus_player="平山 功太"),
+        ]
+        merged = run_x_post_mail._backfill_dedup_starved_candidates(
+            fresh,
+            relaxed,
+            max_candidates=4,
+            recent_player_counts=None,
+        )
+        players = [c.focus_player for c in merged]
+        self.assertEqual(players, ["浦田俊輔", "平山 功太"])
+
+    def test_backfill_dedup_starved_stage_b_falls_back_when_too_sparse(self) -> None:
+        """397: Stage A で全部 player skip された場合、Stage B で詰める (mail 空回避)。"""
+        from src.tools import run_x_post_mail
+
+        # 既存 0 件、relaxed は全部 history に居る player
+        fresh: list = []
+        relaxed = [
+            self._entrypoint_candidate("sig-a", focus_player="浦田俊輔"),
+            self._entrypoint_candidate("sig-b", focus_player="浦田俊輔"),
+            self._entrypoint_candidate("sig-c", focus_player="平山 功太"),
+        ]
+        merged = run_x_post_mail._backfill_dedup_starved_candidates(
+            fresh,
+            relaxed,
+            max_candidates=10,
+            recent_player_counts={"浦田俊輔": 3, "平山 功太": 2},
+            min_candidates=3,  # Stage B threshold
+        )
+        # Stage A: 全部 skip → 0 件、Stage B: signature dedup だけ守って min_candidates まで詰める
+        self.assertEqual(len(merged), 3)
+        self.assertEqual(
+            [c.signature for c in merged],
+            ["sig-a", "sig-b", "sig-c"],
+        )
+
+    def test_backfill_dedup_starved_stage_b_does_not_blow_past_min(self) -> None:
+        """397: Stage B は min_candidates で止まる (max_candidates まで埋めない)。"""
+        from src.tools import run_x_post_mail
+
+        fresh: list = []
+        relaxed = [
+            self._entrypoint_candidate("sig-a", focus_player="浦田俊輔"),
+            self._entrypoint_candidate("sig-b", focus_player="浦田俊輔"),
+            self._entrypoint_candidate("sig-c", focus_player="浦田俊輔"),
+            self._entrypoint_candidate("sig-d", focus_player="浦田俊輔"),
+            self._entrypoint_candidate("sig-e", focus_player="浦田俊輔"),
+        ]
+        merged = run_x_post_mail._backfill_dedup_starved_candidates(
+            fresh,
+            relaxed,
+            max_candidates=10,
+            recent_player_counts={"浦田俊輔": 5},
+            min_candidates=2,
+        )
+        # Stage B は min_candidates=2 で止まる
+        self.assertEqual(len(merged), 2)
+
+    def test_backfill_dedup_starved_no_history_no_change(self) -> None:
+        """397: recent_player_counts=None 時、 signature dedup のみで従来挙動。"""
+        from src.tools import run_x_post_mail
+
+        fresh = [self._entrypoint_candidate("fresh", focus_player="大城卓三")]
+        relaxed = [
+            self._entrypoint_candidate("fresh", focus_player="大城卓三"),  # sig dup
+            self._entrypoint_candidate("new1", focus_player="浦田俊輔"),
+            self._entrypoint_candidate("new2", focus_player="増田陸"),
+        ]
+        merged = run_x_post_mail._backfill_dedup_starved_candidates(
+            fresh,
+            relaxed,
+            max_candidates=4,
+            recent_player_counts=None,
+        )
+        self.assertEqual(
+            [c.signature for c in merged],
+            ["fresh", "new1", "new2"],
         )
 
     def test_main_aborts_before_candidate_pick_when_db_is_stale(self) -> None:

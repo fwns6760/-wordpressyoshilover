@@ -404,6 +404,8 @@ def _backfill_dedup_starved_candidates(
     relaxed_candidates: list[lane.Candidate],
     *,
     max_candidates: int,
+    recent_player_counts: dict[str, int] | None = None,
+    min_candidates: int = 0,
 ) -> list[lane.Candidate]:
     """Keep fresh dedup-safe candidates first, then fill with relaxed ones.
 
@@ -411,17 +413,76 @@ def _backfill_dedup_starved_candidates(
     combos. When it leaves the mail nearly empty, the operator loses the
     actual review queue, so duplicate suppression must become a soft
     preference instead of a hard skip.
+
+    397: player-level dedup を 2 段で適用する。
+    Stage A: signature dedup + player dedup ON (24h history と current mail
+    の両方を見て同一 player をスキップ)。これで浦田連発を抑止する。
+    Stage B: Stage A 終了後の candidate 数が ``min_candidates`` 未満で
+    残りに player_dedup_skipped 候補が残っているなら、最後の手段として
+    signature dedup だけ守って詰め直す。これは mail が「ほぼ空」に
+    なるよりは構造的 top player を再採用する方を優先する保険である。
+    Stage B のしきい値は caller の ``min_candidates`` (= dedup_min_candidates
+    と同じ意図、default 0 = Stage B 無効) で制御する。
     """
     merged = list(candidates)
     seen_signatures = {c.signature for c in merged if c.signature}
+    history_player_keys = {
+        lane._normalize_player_name(name)
+        for name, count in (recent_player_counts or {}).items()
+        if lane._normalize_player_name(name) and int(count or 0) > 0
+    }
+    seen_player_keys = {
+        lane._normalize_player_name(c.focus_player)
+        for c in merged
+        if lane._normalize_player_name(c.focus_player)
+    }
+    player_dedup_skipped: list[lane.Candidate] = []
     for cand in relaxed_candidates:
         if len(merged) >= max_candidates:
             break
         if cand.signature and cand.signature in seen_signatures:
             continue
+        cand_key = lane._normalize_player_name(cand.focus_player)
+        if cand_key and (cand_key in seen_player_keys or cand_key in history_player_keys):
+            LOG.info(
+                "dedup_fallback_player_skip metric=%s period=%s player=%s reason=%s",
+                cand.metric,
+                cand.period_label,
+                cand.focus_player,
+                "in_current_mail" if cand_key in seen_player_keys else "in_24h_history",
+            )
+            player_dedup_skipped.append(cand)
+            continue
         merged.append(cand)
         if cand.signature:
             seen_signatures.add(cand.signature)
+        if cand_key:
+            seen_player_keys.add(cand_key)
+    if (
+        min_candidates > 0
+        and len(merged) < min_candidates
+        and player_dedup_skipped
+    ):
+        for cand in player_dedup_skipped:
+            if len(merged) >= max_candidates:
+                break
+            if cand.signature and cand.signature in seen_signatures:
+                continue
+            LOG.warning(
+                "dedup_fallback_player_skip_overridden metric=%s period=%s player=%s "
+                "(mail would otherwise be too sparse: %d < %d)",
+                cand.metric,
+                cand.period_label,
+                cand.focus_player,
+                len(merged),
+                min_candidates,
+            )
+            merged.append(cand)
+            if cand.signature:
+                seen_signatures.add(cand.signature)
+            if len(merged) >= min_candidates:
+                # Stage B fills up to min_candidates only; do not blow past.
+                break
     return merged
 
 
@@ -852,6 +913,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             candidates,
             relaxed_candidates,
             max_candidates=args.max_candidates,
+            recent_player_counts=recent_player_counts,
+            min_candidates=dedup_min_candidates,
         )
         if len(backfilled) > len(candidates):
             LOG.info(

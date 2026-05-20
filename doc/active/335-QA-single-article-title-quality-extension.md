@@ -4,7 +4,7 @@
 
 - ticket: 335-QA-single-article-title-quality-extension
 - owner: Claude Code
-- status: DESIGN_LOCKED / READY_FOR_PHASE_1_IMPL
+- status: PARTIAL_LANDED (2026-05-20 PM verify): `src/title_template_assembler.py` 内に 335-QA Phase 1 / Phase 2 / Phase 3 コメント付き code landed (literal quote / 反応 pattern / fact 重複圧縮)。 `src/title_validator.py` に `generic_noun_only_no_person_name` rejection rule landed。 `src/rss_fetcher.py` L11726 で `weak_reason = "generic_noun_only_no_person_name"` 経路に wire 済。 ただし production log で 今日の fire に該当 rejection token 観察なし (今日の content がそのパス trigger していない可能性、 user acceptance pending)
 - priority: P1(本文品質改善、CLAUDE.md §9 title assembly 修正優先順位最上位)
 - created: 2026-05-14
 - numbering reserved in: README で追加予定

@@ -4,7 +4,7 @@
 
 - ticket: 334-QA-player-voice-multi-source-digest-subtype
 - owner: Claude Code
-- status: DESIGN_LOCKED / READY_FOR_PHASE_0_AUDIT
+- status: PARTIAL_LANDED (2026-05-20 PM verify): Phase 2a clusterer (`src/player_voice_digest_clusterer.py`) + Phase 3 body renderer (`src/player_voice_digest_body_renderer.py`) + title assembler `_assemble_pattern_X_player_voice_digest` 全 src 内 landed。 production fire log evidence: `player_voice_digest_detection candidate_count=35 clusters=0` (yoshilover-fetcher、 2026-05-20 14:03 fire、 = detection は走るが今日は cluster 形成なし)。 残作業: Phase 0 audit (spec 完全達成 verify) は未、 user acceptance pending
 - priority: P1(本文品質改善の中核、CLAUDE.md §9 title assembly = 最優先)
 - created: 2026-05-14
 - numbering reserved in: `doc/README.md`

@@ -57,7 +57,18 @@ def _team_code_from_name(name: str) -> str:
     return "?"
 
 
-def _scope_window(scope: str, today: Optional[dt.date] = None) -> tuple[str, str]:
+def _scope_window(
+    scope: str,
+    today: Optional[dt.date] = None,
+    *,
+    conn: Optional[sqlite3.Connection] = None,
+) -> tuple[str, str]:
+    """Team-level scope window. Returns (start_iso, end_iso).
+
+    403 (2026-05-20): 新 scope `last_N_games` を additive 対応。 team-level
+    では PA / appearance / IP scope は意味を成さないため未対応 (raise)。
+    既存 scope (last_7d / last_30d / season / unknown=today) は完全不変。
+    """
     if today is None:
         today = dt.date.today()
     if scope == "last_7d":
@@ -66,6 +77,28 @@ def _scope_window(scope: str, today: Optional[dt.date] = None) -> tuple[str, str
         start = today - dt.timedelta(days=29)
     elif scope == "season":
         start = dt.date(today.year, 3, 27)
+    elif scope.startswith("last_") and scope.endswith("_games"):
+        if conn is None:
+            raise ValueError(f"scope {scope!r} requires conn")
+        # ranking_article_publisher の helper を再利用 (循環 import 回避で
+        # 関数 import)
+        from src.analysis.ranking_article_publisher import (
+            _compute_giants_game_window,
+        )
+        n_games = int(scope[len("last_"):-len("_games")])
+        start, _ = _compute_giants_game_window(
+            conn, n_games=n_games, today=today,
+        )
+    elif (
+        scope.startswith("last_") and (
+            scope.endswith("_pa") or scope.endswith("_appearances")
+            or scope.endswith("_ip")
+        )
+    ):
+        raise ValueError(
+            f"scope {scope!r} not supported at team-level "
+            "(PA/appearance/IP は player-specific)"
+        )
     else:
         start = today
     return (start.isoformat(), today.isoformat())

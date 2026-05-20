@@ -347,6 +347,7 @@ def aggregate_player_hr_from_atbats(
     today: Optional[Any] = None,
     top_n: int = 10,
     league: Optional[str] = None,
+    focus_player: Optional[str] = None,
 ) -> list[dict]:
     """選手別 HR 数を ``atbats_json`` から集計 (issue #44 G follow-up).
 
@@ -356,9 +357,14 @@ def aggregate_player_hr_from_atbats(
     を経由して per-row count。 ``team_ranking_publisher.aggregate_team_hr``
     と同じ pattern を player level に extend。
 
+    403 (2026-05-20): focus_player kw 追加 (PA / appearance / IP scope の
+    window 計算用、 game-count scope は不要)。
+
     Returns: list of {"player": str, "team": str, "value": int} (top_n)
     """
-    start, end = _scope_window(scope, today)
+    start, end = _scope_window(
+        scope, today, conn=conn, focus_player=focus_player,
+    )
     league_clause = ""
     league_params: tuple = ()
     if league == "central":
@@ -423,6 +429,7 @@ def aggregate_player_hr_from_atbats_split(
     today: Optional[Any] = None,
     top_n: int = 10,
     league: Optional[str] = None,
+    focus_player: Optional[str] = None,
 ) -> list[dict]:
     """ホーム/アウェイ別 / 対戦相手別 HR 数を ``atbats_json`` から集計 (406 fix).
 
@@ -430,10 +437,14 @@ def aggregate_player_hr_from_atbats_split(
     列が無いため ``aggregate_player_counting_stat_split`` の ``SUM(bl.HR)``
     が ``OperationalError`` を返す問題を、 split 経路でも atbats_json 集計に
     dispatch して回避する。
+
+    403: focus_player kw 追加 (PA / appearance / IP scope window 計算用)。
     """
     if split_field not in ("home_away", "opponent"):
         raise ValueError(f"unsupported split_field: {split_field!r}")
-    start, end = _scope_window(scope, today)
+    start, end = _scope_window(
+        scope, today, conn=conn, focus_player=focus_player,
+    )
     league_clause = ""
     league_params: tuple = ()
     if league == "central":
@@ -499,17 +510,23 @@ def aggregate_player_counting_stat(
     today: Optional[Any] = None,
     top_n: int = 10,
     league: Optional[str] = None,
+    focus_player: Optional[str] = None,
 ) -> list[dict]:
     """指定 counting stat (HR / H / RBI / SB / W / K 等) を player 別集計、 top_n 返却。
 
     348 step 3 spec §2.5: 「セ / パ リーグ別 ranking (リーグ横断 NG)」適用、
     `league='central'` / `'pacific'` で filter (default None は後方互換で全 12 球団)。
 
+    403 (2026-05-20): 新 scope vocabulary (last_N_games / last_N_pa /
+    last_N_appearances / last_N_ip) 対応。 ``focus_player`` は PA / appearance
+    / IP scope で必須 (game-count scope は不要)。
+
     Args:
         stat_col: SQL column 名 (例 'H' / 'HR' / 'RBI' / 'K')
         table: 'batting_logs' / 'pitching_logs' / 'fielding_logs'
-        scope: 'season' / 'last_30d' 等 (range scope のみ)
+        scope: 'season' / 'last_30d' / 'last_5_games' 等
         league: 'central' / 'pacific' / None (= 12 球団全体、 spec 違反、 deprecated)
+        focus_player: PA / appearance / IP scope で必須 (window 計算用)
 
     return: list of {"player": str, "team": str, "value": int}
     """
@@ -518,23 +535,14 @@ def aggregate_player_counting_stat(
     if stat_col == "HR" and table == "batting_logs":
         return aggregate_player_hr_from_atbats(
             conn, scope=scope, today=today, top_n=top_n, league=league,
+            focus_player=focus_player,
         )
     import datetime as _dt
     if today is None:
         today = _dt.date.today()
-    if scope == "last_7d":
-        start = today - _dt.timedelta(days=6)
-    elif scope == "last_30d":
-        start = today - _dt.timedelta(days=29)
-    elif scope == "season":
-        start = _dt.date(today.year, 1, 1)
-    elif scope == "monthly":
-        start = today.replace(day=1)
-    elif scope == "weekly":
-        start = today - _dt.timedelta(days=today.weekday())
-    else:
-        raise ValueError(f"unsupported scope: {scope!r}")
-    end = today
+    start, end = _scope_window(
+        scope, today, conn=conn, focus_player=focus_player,
+    )
     safe_col = "".join(c for c in stat_col if c.isalnum() or c == "_")
     if safe_col != stat_col:
         raise ValueError(f"unsafe stat_col: {stat_col!r}")
@@ -1185,8 +1193,12 @@ def aggregate_player_counting_stat_split(
     today: Optional[Any] = None,
     top_n: int = 10,
     league: Optional[str] = None,
+    focus_player: Optional[str] = None,
 ) -> list[dict]:
-    """ホーム/アウェイ別 / 対戦相手別 counting 集計 (348 step 3 完全達成、 §4 file list)."""
+    """ホーム/アウェイ別 / 対戦相手別 counting 集計 (348 step 3 完全達成、 §4 file list).
+
+    403: focus_player kw 追加 (PA / appearance / IP scope window 計算用)。
+    """
     # 406 fix: HR は batting_logs に列が無く atbats_json 集計が必要。
     # SQL SUM(bl.HR) は OperationalError を出すため、 split 対応 helper に dispatch。
     if stat_col == "HR" and table == "batting_logs":
@@ -1194,30 +1206,18 @@ def aggregate_player_counting_stat_split(
             conn, scope=scope,
             split_field=split_field, split_value=split_value,
             today=today, top_n=top_n, league=league,
+            focus_player=focus_player,
         )
-    import datetime as _dt
-    if today is None:
-        today = _dt.date.today()
-    if scope == "last_7d":
-        start = today - _dt.timedelta(days=6)
-    elif scope == "last_30d":
-        start = today - _dt.timedelta(days=29)
-    elif scope == "season":
-        start = _dt.date(today.year, 1, 1)
-    elif scope == "monthly":
-        start = today.replace(day=1)
-    elif scope == "weekly":
-        start = today - _dt.timedelta(days=today.weekday())
-    else:
-        raise ValueError(f"unsupported scope: {scope!r}")
-    end = today
+    if split_field not in ("home_away", "opponent"):
+        raise ValueError(f"unsupported split_field: {split_field!r}")
+    start, end = _scope_window(
+        scope, today, conn=conn, focus_player=focus_player,
+    )
     safe_col = "".join(c for c in stat_col if c.isalnum() or c == "_")
     if safe_col != stat_col:
         raise ValueError(f"unsafe stat_col: {stat_col!r}")
     if table not in ("batting_logs", "pitching_logs", "fielding_logs"):
         raise ValueError(f"unsupported table: {table!r}")
-    if split_field not in ("home_away", "opponent"):
-        raise ValueError(f"unsupported split_field: {split_field!r}")
     # 348 step 3 spec: league filter (セ/パ 横断 NG)
     league_clause = ""
     league_params: tuple = ()

@@ -283,3 +283,52 @@ def test_scope_window_unknown_scope_raises():
     today = dt.date(2026, 5, 20)
     with pytest.raises(ValueError, match="unsupported scope"):
         rap._scope_window("nonsense_scope", today=today)
+
+
+# ─── team-level _scope_window (team_ranking_publisher) ──────────────────────
+
+
+def test_team_scope_window_last_7d_unchanged():
+    """team-level の既存 scope は完全不変 (str ISO 返却)。"""
+    from src.analysis import team_ranking_publisher as trp
+    today = dt.date(2026, 5, 20)
+    start, end = trp._scope_window("last_7d", today=today)
+    assert start == "2026-05-14"
+    assert end == "2026-05-20"
+
+
+def test_team_scope_window_last_3_games(tmp_path):
+    """team-level でも last_N_games dispatch (conn 必須)。"""
+    from src.analysis import team_ranking_publisher as trp
+    conn = _open_db(tmp_path)
+    try:
+        _seed_giants_games(conn, [
+            "2026-05-13", "2026-05-15", "2026-05-17", "2026-05-18", "2026-05-19",
+        ])
+        today = dt.date(2026, 5, 20)
+        start, end = trp._scope_window("last_3_games", today=today, conn=conn)
+        # 直近3試合 = 5/17, 5/18, 5/19 → start=5/17 (ISO str)
+        assert start == "2026-05-17"
+        assert end == "2026-05-20"
+    finally:
+        conn.close()
+
+
+def test_team_scope_window_pa_scope_rejected():
+    """team-level では PA / appearance / IP scope は ValueError (player-specific)。"""
+    from src.analysis import team_ranking_publisher as trp
+    today = dt.date(2026, 5, 20)
+    with pytest.raises(ValueError, match="player-specific"):
+        trp._scope_window("last_30_pa", today=today)
+    with pytest.raises(ValueError, match="player-specific"):
+        trp._scope_window("last_5_appearances", today=today)
+    with pytest.raises(ValueError, match="player-specific"):
+        trp._scope_window("last_10_ip", today=today)
+
+
+def test_team_scope_window_last_games_requires_conn():
+    """team-level の last_N_games は conn なしで ValueError。"""
+    from src.analysis import team_ranking_publisher as trp
+    today = dt.date(2026, 5, 20)
+    with pytest.raises(ValueError, match="requires conn"):
+        trp._scope_window("last_5_games", today=today)

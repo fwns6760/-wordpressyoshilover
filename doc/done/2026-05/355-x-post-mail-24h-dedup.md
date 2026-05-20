@@ -2,7 +2,13 @@
 
 ## 1. ticket header
 
-- **status**: READY (user GO 待ち、 本 doc 作成のみ、 code 編集禁止)
+- **status**: CLOSED (2026-05-20 PM、 1 次 source verified)
+  - code: `_combo_signature` (L1597) / `_get_storage_client` (L1619) / `_dedup_blob_path` (L1628) / `_load_recent_dedup_records` (L1632) / pick_candidates dedup gate L2197 全 landed
+  - **production fire log evidence** (x-post-mail-lane-sl2zj、 2026-05-20 13:30 fire):
+    - `Recorded 10 dedup signatures (ok=True)` ← GCS write 成功
+    - `dedup skip combo AVG/直近10試合 (signature=AVG|直近10試合|False|None)` ← skip gate 動作
+    - `fan_voice_skip reason=player_in_24h_history player=戸郷翔征` ← 補助 player-level 24h dedup も動作
+  - x-post-mail-lane image `411-persona-3dd89e5` gen 37 に landed
 - **priority**: medium (handoff Task 5、 連日同 ranking 体感抑制)
 - **owner**: Claude (実装) / user (GO 判断)
 - **依存**: 353 (LIVE)、 354 (LIVE)、 347 lane

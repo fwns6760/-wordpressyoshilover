@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.16.7
+ * Version: 0.17.0
  * Author: yoshilover
  */
 
@@ -61,7 +61,7 @@ function yoshilover_063_buffer_inject_header_titles( $buffer ) {
     }
 
     $title_text    = 'ヨシラバー｜読売ジャイアンツ速報掲示板';
-    $subtitle_text = '読売ジャイアンツ専門 速報・試合結果・スタメンまとめ';
+    $subtitle_text = 'ヨシラバーは読売ジャイアンツ専門の速報・試合結果・スタメンまとめサイト';
     $span_html = '<span class="yoshi-headLogo__text">' . esc_html( $title_text ) . '</span></a>';
     $h2_html   = '<h2 class="yoshi-headLogo__subtitle">' . esc_html( $subtitle_text ) . '</h2>';
 
@@ -91,6 +91,66 @@ function yoshilover_063_buffer_inject_header_titles( $buffer ) {
                 $buffer = substr_replace( $buffer, $h2_html, $insert_at, 0 );
             }
         }
+    }
+
+    // 398-SEO (2026-05-20): Schema.org sameAs の CRLF-joined string を array に修正。
+    $samesas_marker = '"sameAs":["';
+    $samesas_pos = strpos( $buffer, $samesas_marker );
+    if ( $samesas_pos !== false ) {
+        $inner_start = $samesas_pos + strlen( $samesas_marker );
+        $end_pos     = strpos( $buffer, '"]', $inner_start );
+        if ( $end_pos !== false ) {
+            $inner = substr( $buffer, $inner_start, $end_pos - $inner_start );
+            // JSON 内の `\r\n` は literal で 4 chars (バックスラッシュ + r + バックスラッシュ + n)
+            if ( strpos( $inner, "\\r\\n" ) !== false || strpos( $inner, "\\n" ) !== false ) {
+                // PHP regex で literal `\r\n` (4 chars) を split。
+                $parts = preg_split( '/\\\\r\\\\n|\\\\n/', $inner );
+                $urls  = array();
+                foreach ( (array) $parts as $p ) {
+                    $p = trim( (string) $p );
+                    if ( $p !== '' ) {
+                        $urls[] = $p;
+                    }
+                }
+                if ( count( $urls ) > 1 ) {
+                    $new_inner = implode( '","', $urls );
+                    $buffer    = substr_replace( $buffer, $new_inner, $inner_start, $end_pos - $inner_start );
+                }
+            }
+        }
+    }
+
+    // 398-SEO (2026-05-20): Schema Organization の url を `/page-1980/` から `/` に修正。
+    $buffer = str_replace(
+        '"url":"https:\\/\\/yoshilover.com\\/page-1980\\/"',
+        '"url":"https:\\/\\/yoshilover.com\\/"',
+        $buffer
+    );
+
+    // 398-SEO (2026-05-20): home の meta description と og:description にブランド名と
+    // 具体内容を入れて CTR + entity 認識を補強。 既存値が generic な場合のみ上書き。
+    // home (front page) でのみ書き換え。
+    if ( is_front_page() ) {
+        $new_desc = 'ヨシラバーは読売ジャイアンツ専門の速報サイト。試合結果・スタメン・選手データを毎日更新。巨人ファンの集まる場所。';
+        // meta description の上書き (どの SEO プラグインが出していても string 置換で対応)
+        $buffer = preg_replace(
+            '#<meta\s+name="description"\s+content="[^"]*"\s*/?>#i',
+            '<meta name="description" content="' . esc_attr( $new_desc ) . '" />',
+            $buffer,
+            1
+        );
+        $buffer = preg_replace(
+            '#<meta\s+property="og:description"\s+content="[^"]*"\s*/?>#i',
+            '<meta property="og:description" content="' . esc_attr( $new_desc ) . '" />',
+            $buffer,
+            1
+        );
+        $buffer = preg_replace(
+            '#<meta\s+name="twitter:description"\s+content="[^"]*"\s*/?>#i',
+            '<meta name="twitter:description" content="' . esc_attr( $new_desc ) . '" />',
+            $buffer,
+            1
+        );
     }
 
     return $buffer;
@@ -2693,6 +2753,31 @@ function yoshilover_063_phase1_should_noindex() {
         return false;
     }
 
+    // 398-SEO (2026-05-20): user 意図 = home (/) と 301 リダイレクト元のみ index、
+    // それ以外すべて noindex。 既存の category/tag noindex (SEO Simple Pack 側) は維持。
+    // 個別記事 / pagination / 日付 archive / author archive を明示的に noindex 化する。
+    // home (is_front_page or is_home) は除外。
+
+    // 個別記事 (single post / single CPT)
+    if ( is_singular( 'post' ) ) {
+        return true;
+    }
+
+    // ページネーション付き home / archive
+    if ( is_paged() ) {
+        return true;
+    }
+
+    // date / author archive
+    if ( is_date() || is_author() ) {
+        return true;
+    }
+
+    // 検索結果 / 404 ページ
+    if ( is_search() || is_404() ) {
+        return true;
+    }
+
     // hub 専用ページ(固定ページ側のフラグで制御)
     if ( is_page() ) {
         $flag = get_post_meta( get_the_ID(), '_yoshilover_topic_hub_page', true );
@@ -4709,6 +4794,8 @@ function yoshilover_063_handle_admin_request( $request ) {
             return yoshilover_063_rest_clear_cache();
         case 'replace_plugin_php':
             return yoshilover_063_rest_replace_plugin_php( $request );
+        case 'read_plugin_file':
+            return yoshilover_063_rest_read_plugin_file( $request );
         default:
             return new WP_Error(
                 'yoshilover_063_unknown_action',
@@ -5111,6 +5198,60 @@ function yoshilover_063_rest_clear_cache() {
  *   - written_bytes: int
  *   - backup_path: string
  */
+/**
+ * 398-SEO (2026-05-20): plugins/ 配下の指定ファイルを読み取る REST action。
+ * - path traversal 禁止 (basename / realpath で plugins ディレクトリ配下に限定)
+ * - manage_options 必須
+ * - 最大 256KB
+ * - 読み取り専用 (write しない)
+ *
+ * Request body:
+ *   - action: read_plugin_file
+ *   - plugin_slug: e.g. "gone-response/gone-response.php"
+ *
+ * Response:
+ *   - status: ok / error
+ *   - bytes: int
+ *   - content: file content (text)
+ */
+function yoshilover_063_rest_read_plugin_file( $request ) {
+    if ( ! current_user_can( 'manage_options' ) ) {
+        return new WP_Error( 'yoshilover_063_read_plugin_file_forbidden', 'manage_options required.', array( 'status' => 403 ) );
+    }
+    $slug = (string) $request->get_param( 'plugin_slug' );
+    if ( $slug === '' ) {
+        return new WP_Error( 'yoshilover_063_read_plugin_file_empty', 'plugin_slug required.', array( 'status' => 400 ) );
+    }
+    if ( strpos( $slug, '..' ) !== false || strpos( $slug, "\0" ) !== false ) {
+        return new WP_Error( 'yoshilover_063_read_plugin_file_invalid', 'invalid slug.', array( 'status' => 400 ) );
+    }
+
+    $plugins_dir = trailingslashit( WP_PLUGIN_DIR );
+    $candidate   = $plugins_dir . ltrim( $slug, '/\\' );
+    $real        = realpath( $candidate );
+    if ( $real === false || strpos( $real, $plugins_dir ) !== 0 ) {
+        return new WP_Error( 'yoshilover_063_read_plugin_file_not_found', 'file not under plugins dir.', array( 'status' => 404 ) );
+    }
+    if ( ! is_file( $real ) || ! is_readable( $real ) ) {
+        return new WP_Error( 'yoshilover_063_read_plugin_file_unreadable', 'file not readable.', array( 'status' => 404 ) );
+    }
+    $size = (int) filesize( $real );
+    if ( $size > 256 * 1024 ) {
+        return new WP_Error( 'yoshilover_063_read_plugin_file_too_large', 'file exceeds 256KB.', array( 'status' => 413 ) );
+    }
+    $content = @file_get_contents( $real );
+    if ( $content === false ) {
+        return new WP_Error( 'yoshilover_063_read_plugin_file_read_failed', 'file_get_contents failed.', array( 'status' => 500 ) );
+    }
+
+    return array(
+        'status'  => 'ok',
+        'path'    => $real,
+        'bytes'   => $size,
+        'content' => $content,
+    );
+}
+
 function yoshilover_063_rest_replace_plugin_php( $request ) {
     if ( ! current_user_can( 'manage_options' ) ) {
         return new WP_Error(

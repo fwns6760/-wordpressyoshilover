@@ -86,19 +86,71 @@ def _thresholds(config: Any = None) -> dict[str, Any]:
     return cfg.get("thresholds", {}) or {}
 
 
-def min_sample_for_metric(metric_name: str, *, config: Any = None) -> Optional[int]:
+def min_sample_for_metric(
+    metric_name: str,
+    *,
+    scope: Optional[str] = None,
+    config: Any = None,
+) -> Optional[int]:
     """Return minimum sample for rate/snapshot metrics.
 
     Counting stats do not have a universal sample_size column in rendered
     articles, so unknown metric names return None.
+
+    403 (2026-05-20): 新 scope vocabulary (last_N_games / last_N_pa /
+    last_N_appearances / last_N_ip) 対応。 scope 別の min_sample:
+
+    打者 metric (AVG / OBP / SLG / OPS / RISP):
+      - last_3_games: 8 AB (audit: 上位 5 名で達成)
+      - last_5_games: 12 AB (audit: 7 名達成)
+      - last_10_games: 20 AB (audit: 8 名達成)
+      - last_N_pa: N そのもの (PA cumsum を threshold)
+      - 既存 (last_7d / last_30d / season / monthly / weekly): 20 PA (不変)
+
+    投手 metric (ERA / WHIP-ban 等):
+      - last_N_appearances: 0 (登板数自体を threshold、 audit OK)
+      - last_5_ip: 5、 last_10_ip: 10
+      - 既存: 10 IP (不変)
+
+    fielding metric: scope 不問、 10 (不変)
     """
     thresholds = _thresholds(config)
     quality = _quality_config(config)
-    if metric_name in PITCHER_METRICS:
-        return int(thresholds.get("min_sample_pitcher_ip", 10))
-    if metric_name in FIELDING_METRICS:
+    is_batter = metric_name in {"AVG", "OBP", "SLG", "OPS", "RISP"}
+    is_pitcher = metric_name in PITCHER_METRICS
+    is_fielding = metric_name in FIELDING_METRICS
+
+    if is_fielding:
         return int(quality.get("min_sample_fielding", 10))
-    if metric_name in {"AVG", "OBP", "SLG", "OPS", "RISP"}:
+
+    # 403 新 scope の audit-based min_sample (打者 / 投手)
+    if scope:
+        if is_batter:
+            scope_specific = {
+                "last_3_games": 8,
+                "last_5_games": 12,
+                "last_10_games": 20,
+            }
+            if scope in scope_specific:
+                return scope_specific[scope]
+            if scope.startswith("last_") and scope.endswith("_pa"):
+                try:
+                    return int(scope[len("last_"):-len("_pa")])
+                except ValueError:
+                    pass
+        if is_pitcher:
+            if scope.startswith("last_") and scope.endswith("_appearances"):
+                return 0  # 登板数自体を threshold (cumsum 不要)
+            if scope.startswith("last_") and scope.endswith("_ip"):
+                try:
+                    return int(scope[len("last_"):-len("_ip")])
+                except ValueError:
+                    pass
+
+    # 既存 (date-based scope or scope=None) — 完全不変
+    if is_pitcher:
+        return int(thresholds.get("min_sample_pitcher_ip", 10))
+    if is_batter:
         return int(thresholds.get("min_sample_batter_pa", 20))
     return None
 
@@ -268,7 +320,9 @@ def validate_focus_sample(
     snapshot_date: Optional[str] = None,
     config: Any = None,
 ) -> QualityDecision:
-    min_sample = min_sample_for_metric(metric_name, config=config)
+    min_sample = min_sample_for_metric(
+        metric_name, scope=scope, config=config,
+    )
     if min_sample is None:
         return ok(metric_name=metric_name, scope=scope, sample_required=False)
     effective = snapshot_date or latest_snapshot_date(

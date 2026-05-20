@@ -2,7 +2,7 @@
 
 ## 1. ticket header
 
-- **status**: DRAFT (user GO 待ち、 audit 便 fire 前)
+- **status**: READY (audit 完了 + spec 確定 2026-05-20、 user 確認後 実装便 fire 可)
 - **priority**: high (5/20 12:00/15:00/17:00 publish 0 件の主因、 サンプル不足を構造的に直す)
 - **owner**: Claude (実装) / user (GO 判断、 受け入れ試験)
 - **lane**: Claude
@@ -27,7 +27,7 @@
 
 固定 sample 数 (試合数 / 打席 / 登板数 / 投球回) で切れば「最近の活躍」 が常に同じ粒度で出せる。
 
-## 3. 新 scope spec (lock、 user 確定 2026-05-20)
+## 3. 新 scope spec (lock、 user 確定 2026-05-20 / audit 反映)
 
 ### 期間 cut (4 軸、 日付 cut 全廃)
 
@@ -36,17 +36,19 @@
 | 打者 試合 base | `last_3_games` / `last_5_games` / `last_10_games` | 巨人試合数 cnt (出場有無関係なし、 ベンチ含む) |
 | 打者 打席 base | `last_30_pa` / `last_50_pa` / `last_100_pa` | 当該選手 PA cumsum |
 | 投手 登板 base | `last_3_appearances` / `last_5_appearances` / `last_10_appearances` | 当該投手 appearance cnt |
-| 投手 IP base | `last_5_ip` / `last_10_ip` / `last_20_ip` | IP cumsum |
+| 投手 IP base | `last_5_ip` / `last_10_ip` | IP cumsum (last_20_ip は audit で 4/22 達成のみ → 廃止) |
 
 `last_7d` / `last_30d` 等日付 window は **全廃止** (`season` scope は維持)。
 
-### ファン視点 追加 cut (3 軸、 既存 schema で実装可能)
+### ファン視点 追加 cut (2 軸、 既存 schema で実装可能)
 
 | cut | 使う field | 例 |
 |---|---|---|
 | 打順別 | `batting_logs.slot_order` + `is_sub=0` | 「3 番打者として last_5_games で .380」 |
-| 本拠地 / ビジター | `games.home_away` | 「東京ドーム OPS .920 / ビジター .750」 |
 | vs 球団別 | `games.opponent` | 「対阪神 last_5_games .400」 |
+
+**廃止 cut (audit で発覚)**:
+- 本拠地 / ビジター: 実 ETL が `games.home_away` を fill していない (直近30日 23/23 試合 `unknown`)。 user 判断 (2026-05-20) で **完全 drop** (404 への格上げもしない)。
 
 ### サバメ NG line 維持
 
@@ -62,18 +64,24 @@ WHIP / BABIP / wOBA / FIP / xFIP / ISO は引き続き NG。 [[project_data_insi
 
 case A-D title format ([[project_data_insight_final_whitelist_2026_05_15]] 定義) は据え置き、 期間 label だけ入れ替え。
 
-### min_sample (仮置き、 audit で詰める)
+### min_sample (audit 結果反映、 2026-05-20 確定)
 
-| scope | min_sample (仮) |
-|---|---|
-| 打者 `last_3_games` | 12 打数 |
-| 打者 `last_5_games` | 20 打数 |
-| 打者 `last_10_games` | 35 打数 |
-| 打者 `last_30_pa` / `last_50_pa` / `last_100_pa` | PA 自体を threshold (30/50/100) |
-| 投手 `last_3_appearances` / `last_5_appearances` / `last_10_appearances` | appearance cnt 自体 |
-| 投手 `last_5_ip` / `last_10_ip` / `last_20_ip` | IP 自体を threshold |
+| scope | min_sample 確定 | audit 達成数 (29名/22名 base) |
+|---|---|---|
+| 打者 `last_3_games` | **8 AB** | 上位 5 名 (仮置き 12 → 1 名のみ → 8 に下げ) |
+| 打者 `last_5_games` | **12 AB** | 7 名 (仮置き 20 → 1 名のみ → 12 に下げ) |
+| 打者 `last_10_games` | **20 AB** | 8 名 (仮置き 35 → 2 名のみ → 20 に下げ) |
+| 打者 `last_30_pa` | 30 | 19 名 (仮置きそのまま OK) |
+| 打者 `last_50_pa` | 50 | 16 名 (OK) |
+| 打者 `last_100_pa` | 100 | 12 名 (OK) |
+| 投手 `last_3_appearances` | 登板数 3 のみ (IP min 無し) | 17 投手 |
+| 投手 `last_5_appearances` | 登板数 5 のみ | 14 投手 |
+| 投手 `last_10_appearances` | 登板数 10 のみ | 7 投手 |
+| 投手 `last_5_ip` | 5 IP | 17/22 |
+| 投手 `last_10_ip` | 10 IP | 14/22 |
+| ~~投手 `last_20_ip`~~ | ~~廃止~~ | 4/22 → publish 過疎で廃止 |
 
-audit 便で DB 実分布見て詰める。
+audit 詳細: `docs/handoff/session_logs/2026-05-20_403_audit_and_spec_finalization.md`
 
 ## 4. 実装 scope
 
@@ -126,9 +134,12 @@ audit 便で DB 実分布見て詰める。
 - **404** (Stage 2、 DRAFT): Phase 2 ETL 改修 (デーゲーム / vs 左右 / 登板 inning) — 403 完了 + 観察後
 - **405** (Stage 3、 PARKED): Phase 3 (打席内カウント / 走者状況詳細) — pitch-by-pitch source 検討から
 
-## 8. open question (user 判断不要、 audit 便で詰める)
+## 8. open question (audit 後の残)
 
-- 打者 last_3_games の min 打数 12 は妥当か (DB 実分布で判定)
-- 投手 last_3_appearances の min は 0 (登板したら全部 OK) で良いか
-- 打順別の slot_order の集約単位: 1番 / 2番 / 3番 を個別か、 「先頭打者 (1-2)」 「中軸 (3-5)」 「下位 (6-9)」 で band 化するか
-- vs 球団別 の min 試合数 (今 last_7d で `insufficient_games` 出ているので、 last_5_games なら必ず 1 球団 1 試合以下になる可能性、 last_10_games に拡張要)
+- **打順別の slot_order 集約単位**: 1番 / 2番 / 3番 を個別か、 「先頭打者 (1-2)」 「中軸 (3-5)」 「下位 (6-9)」 で band 化するか。 audit 結果 (1番 5名 / 4番 1名固定) を見ると個別 publish は 4 番 (固定選手なら岡本) で同じ選手だらけになるリスク、 band 化が無難
+- **vs 球団別の min 試合数**: 直近30日 で vs 阪神 3 / ヤクルト 4 試合のみ → last_5_games スコープだと取れる試合が 1-3 程度。 vs 球団別 cut は last_30_pa / last_10_games の長 scope のみ enable、 short scope は disable が現実的
+- **打順 × 期間 cut の cross product**: 全部出すと publish 過剰、 max_per_run cap で抑える前提
+
+## 9. audit 詳細
+
+`docs/handoff/session_logs/2026-05-20_403_audit_and_spec_finalization.md`

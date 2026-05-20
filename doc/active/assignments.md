@@ -27,11 +27,20 @@ user 方針「受け入れ NG はまた起票」+「一人開発で Active 多�
 
 ## 2026-05-20 session update
 
-### 403 — INSIGHT 期間 cut を日付 base から 試合数 / PA / 登板数 / IP base に全面切替 (段階式 Stage 1、 DRAFT user GO 待ち)
+### 407 — SUBTYPE OB 新設 + farm 2軍/3軍 分離 + WP front 表示 (親 ticket、 設計 lock 中)
 
 | ticket | status | 内容 |
 |---|---|---|
-| `doc/active/403-INSIGHT-period-window-game-count-switch.md` | DRAFT (user GO 待ち) | 5/20 logs で 12:00 / 15:00 / 17:00 publish 0 件、 主因は 356 quality gate `insufficient_sample` (last_7d sample 不足)。 user lock spec で **日付 cut (last_7d / last_30d) 全廃止**、 打者 3/5/10試合 + 30/50/100打席、 投手 3/5/10登板 + 5/10/20投球回 base へ切替。 同 stage でファン視点 cut (打順別 / 本拠地 / vs 球団別) を既存 schema のまま追加。 サバメ NG line 維持、 whitelist [[348]] 据え置き。 affected: 8 file / 67 reference、 DB schema 変更なし。 follow-up: 404 (Phase 2 ETL: デーゲーム / vs 左右 / 登板 inning) / 405 (Phase 3 PARKED)。 next action: GO 後 audit 便 fire (read-only、 DB 実分布 + min_sample 詰め)。 |
+| `doc/active/407-SUBTYPE-ob-and-farm-split-master.md` | DRAFT | chat 起票 (2026-05-20 「OBとかは？」「2軍と3軍を分けるは」)。subtype 名 / 判定軸 / validator 要件の design lock を本親 ticket で確定し、 子 408/409/410 で実装。 設計 anchor: `docs/handoff/session_logs/2026-05-20_ob_subtype_and_farm_split_design.md`。 lock 内容: subtype 名 = `ob` / `farm2_result` / `farm2_lineup` / `farm3_practice` / `farm3_player`。 alias `farm` → `farm2_*`。 validator 要件は OB = LENIENT + 「元巨人 / 現所属」併記必須、 farm2 = STRICT (NPB 公式数値)、 farm3 = LENIENT (非公式)。 受け入れ条件: 子 ticket 全閉じ + baseline pytest fail 増加なし + 既存 farm fixture alias 経路 hash 一致 + 自然 fire 1 週間観察。 |
+| `doc/active/408-SUBTYPE-ob-classifier-and-validator.md` | READY (407 lock 後) | OB subtype 実装。 `src/ob_name_table.py` 新規 (30-50 件初期 seed、 現役除外、 元巨人 MLB は含む) + `classify_category` の name table literal match 追加 + title/body/source_attribution/numeric/publish_gate/long_body/weak_title/x_post の subtype 登録 + 新規 unit test 4 file。 X 投稿 enable は §11 user 判断後 = 別 ticket。 並走可: [[409]] (scope disjoint、 commit 直列)。 |
+| `doc/active/409-SUBTYPE-farm-2gun-3gun-split.md` | READY (407 lock 後) | farm → farm2/farm3 分離。 alias backward-compat (farm/farm_result/farm_lineup → farm2_*) で既存 fixture hash 不変必須。 classifier 2軍/3軍 判定 (literal: イースタン/2軍/フューチャーズ → farm2、 3軍/育成/練習試合 → farm3、 育成選手 背番号 3 桁 含有率)。 validator 登録 (farm2 = STRICT、 farm3 = LENIENT)。 既存 farm test は alias regression test として保持 (削除禁止)。 並走可: [[408]] (scope disjoint、 commit 直列)。 |
+| `doc/active/410-FRONT-ob-farm-category-display.md` | DRAFT (408/409 subtype 名 lock 後) | WP front + 記事ページ表示。 推奨方式 B: draft 生成側で badge HTML inject (WP テーマ PHP 改修不要)。 出典帯 format = OB 「元巨人 / 現所属」併記、 farm2 「2軍 イースタン」、 farm3 「3軍 (※非公式)」。 category slug 案 (ob / farm2 / farm3) は user 判断、 本 ticket では設計のみ + staging 目視 read-only、 WP REST mutation 禁止。 noindex 維持 ([[251-SEO]] 解禁前)。 |
+
+### 403 — INSIGHT 期間 cut を日付 base から 試合数 / PA / 登板数 / IP base に全面切替 (段階式 Stage 1、 READY audit 完了)
+
+| ticket | status | 内容 |
+|---|---|---|
+| `doc/active/403-INSIGHT-period-window-game-count-switch.md` | READY (audit 完了 + spec 確定 2026-05-20) | 5/20 logs で 12:00 / 15:00 / 17:00 publish 0 件、 主因は 356 quality gate `insufficient_sample` (last_7d sample 不足)。 user lock spec で **日付 cut (last_7d / last_30d) 全廃止**、 打者 3/5/10試合 (min AB=8/12/20、 audit 反映で当初仮置き 12/20/35 → 半減) + 30/50/100打席、 投手 3/5/10登板 + 5/10投球回 (last_20_ip 廃止、 audit 4/22 達成のみで過疎) base へ切替。 同 stage でファン視点 cut (打順別 + vs 球団別) を既存 schema のまま追加、 **本拠地 / ビジターは廃止** (user 判断 2026-05-20 「いらん」+ audit で `games.home_away` 直近30日全 unknown 確認)。 サバメ NG line 維持、 whitelist [[348]] 据え置き。 affected: 9 file / 67 reference、 DB schema 変更なし。 follow-up: 404 (Phase 2 ETL) / 405 (Phase 3 PARKED)。 audit log: `docs/handoff/session_logs/2026-05-20_403_audit_and_spec_finalization.md`。 next action: 実装便 fire (scope vocabulary 切替 + counting logic + min_sample 再算出 + dedup scope_family 対応 + 打順別 / vs 球団別 publisher 追加 + title 表記)。 |
 
 ### 404 — INSIGHT Phase 2 ETL stub (段階式 Stage 2、 BLOCKED_BY=403)
 
@@ -45,11 +54,11 @@ user 方針「受け入れ NG はまた起票」+「一人開発で Active 多�
 |---|---|---|
 | `doc/waiting/405-INSIGHT-period-window-phase3-parked.md` | PARKED | pitch-by-pitch source が必要な cut の shadow ticket。 打席内カウント別 (初球打ち / 2 ストライク後) / 走者状況別 (満塁 / 二塁単独 / 一三塁 等) / 球場別 (本拠地以外)。 NPB box は per-PA result の text marker のみで pitch-by-pitch なし、 別 source 必要 (有料 API or NPB BIS feed)。 議論された案を忘れないため shadow 保管、 user 再指定 or source 確保で再開。 |
 
-### 406 — HR opponent / home_away split SQL bug fix (P1 narrow、 Claude 自律進行、 403 と独立)
+### 406 — HR opponent / home_away split SQL bug fix (P1 narrow、 LIVE_DEPLOYED_OBSERVE)
 
 | ticket | status | 内容 |
 |---|---|---|
-| `doc/active/406-INSIGHT-hr-split-sql-bug-fix.md` | READY | 5/20 12:00 JST `insight-nightly-ndtvf` logs に `OperationalError:no such column: bl.HR` × 7 split (opponent=t/s/c/db/d + home_away=home/away)、 warn `player_counting_split_publish_failed`。 HR opponent / home_away split publish が deploy 後ずっと壊れていた可能性。 原因 (audit 済): `src/analysis/ranking_article_publisher.py` L937 `aggregate_player_counting_stat_split` に L278 と同じ HR dispatch (`aggregate_player_hr_from_atbats` への分岐) が無く、 `batting_logs` schema に HR 列が存在しない (`atbats_json` 内 marker 集計が必要) のに `SUM(bl.HR)` を発行している。 fix 方針 (narrow): split 版にも HR dispatch 追加 + split 対応 helper `aggregate_player_hr_from_atbats_split` 新規追加。 `batting_logs` schema 変更なし、 他 metric / scope / caller 不変。 [[403]] と並走可、 同 file touch のため commit 順序は直列。 |
+| `doc/active/406-INSIGHT-hr-split-sql-bug-fix.md` | LIVE_DEPLOYED_OBSERVE | 5/20 12:00 JST `insight-nightly-ndtvf` logs に `OperationalError:no such column: bl.HR` × 7 split (opponent=t/s/c/db/d + home_away=home/away)、 warn `player_counting_split_publish_failed`、 過去 5 日で 175 件再発。 原因 (audit 済): `src/analysis/ranking_article_publisher.py` L937 `aggregate_player_counting_stat_split` に L278 と同じ HR dispatch 無く、 `batting_logs` schema に HR 列が存在しない (`atbats_json` 内 marker 集計が必要) のに `SUM(bl.HR)` を発行。 narrow fix: split 版に dispatch 追加 + split 対応 helper `aggregate_player_hr_from_atbats_split` 新規。 tests 3 件追加 / targeted 6 passed / regression check 74 passed / `batting_logs` schema 変更なし。 commit `5d72191` / Cloud Build `fd780627` SUCCESS / image `insight-nightly:406-hr-split-5d72191` / Job generation 72 Ready=True。 next: 20:00 JST scheduler 自然 fire で `bl.HR` error 消失 verify (+ HR split publish の cooldown 経路観察)。 |
 
 
 

@@ -43,6 +43,7 @@ Active folder is intentionally narrow. 2026-05-08 朝の「0 publish 0 mail」�
 
 | bucket | tickets | decision |
 |---|---|---|
+| **subtype OB + farm 2/3 split + WP front (2026-05-20 chat 起票)** | `407-SUBTYPE-ob-and-farm-split-master.md` / `408-SUBTYPE-ob-classifier-and-validator.md` / `409-SUBTYPE-farm-2gun-3gun-split.md` / `410-FRONT-ob-farm-category-display.md` | 親 407 で design lock (subtype 名: `ob` / `farm2_result` / `farm2_lineup` / `farm3_practice` / `farm3_player`、 alias `farm` → `farm2_*` backward-compat、 OB = LENIENT + 「元巨人 / 現所属」併記必須、 farm2 = STRICT NPB 公式数値、 farm3 = LENIENT 非公式)。 子 408 (OB classifier + name table 30-50 件 seed + validator 登録) と 409 (farm 分離 + alias regression) は scope disjoint で並走可、 commit は直列。 410 (WP front 表示) は 408/409 subtype 名 lock 後着手、 推奨方式 B = draft 生成側 badge inject (WP テーマ PHP 不可触)、 WP REST mutation 禁止、 noindex 維持。 設計 anchor: `docs/handoff/session_logs/2026-05-20_ob_subtype_and_farm_split_design.md`。 |
 | **observation pending(副次)** | `303-rollback-2026-05-08-frontend-rich-body.md` | manual-intake-service / yoshilover-fetcher を `d34072a` に揃えた audit 反映 ticket。Tier 1+2 の 5 件適用済、Tier 3(49 件)は doc-only。 |
 | **user 方針判断待ち** | `MANUAL-INTAKE-QUALITY-PARITY-2026-05-08.md` | 5/8 PM session 調査:apply_rss_pipeline_enrichment の nomotoke marker gate 発見、RSS auto は marker 付与なしで装飾 skip。「手動を直す」なら本文長 / 装飾 / 自動化 のどの軸かが user 判断必要。 |
 | **frontend audit ready** | `FRONTEND-ENRICHMENT-LIVE-AUDIT-2026-05-08.md` | 5/7 enrichment 装飾が live で 0% / 100% gap、¥0 / デグレ 0 の audit + narrow fix ticket。Phase A 受動 audit から開始。 |
@@ -1996,14 +1997,15 @@ git add -A禁止。
 ### 403-INSIGHT-period-window-game-count-switch
 
 - **alias**: -
-- **status**: DRAFT (user GO 待ち、 audit 便 fire 前) / **priority**: high
+- **status**: READY (audit 完了 + spec 確定 2026-05-20、 実装便 fire 可) / **priority**: high
 - **owner**: Claude / **lane**: Claude
 - **doc_path**: `doc/active/403-INSIGHT-period-window-game-count-switch.md`
 - **stage**: Phase 1 stage 1 / 段階式 (404 / 405 は follow-up)
 - **背景**: 2026-05-20 logs で 12:00 / 15:00 / 17:00 publish 0 件、 主因は 356 quality gate `insufficient_sample` (浦田俊輔 / 平山功太 / マルティネス の last_7d sample 不足)。 日付 window が試合のない日に潰れる構造問題。
-- **方針**: 期間 cut を日付 base (last_7d / last_30d) から **試合数 / 打席 / 登板数 / 投球回 base に全面切替**。 同 stage で ファン視点 cut (打順別 / 本拠地 / vs 球団別) を 既存 schema のまま追加。
-- **新 scope**: 打者 3/5/10試合 + 30/50/100打席、 投手 3/5/10登板 + 5/10/20投球回。 `last_7d` / `last_30d` 全廃止、 `season` は維持。
-- **追加 cut**: 打順別 (`batting_logs.slot_order`) / 本拠地 (`games.home_away`) / vs 球団別 (`games.opponent`)。
+- **方針**: 期間 cut を日付 base (last_7d / last_30d) から **試合数 / 打席 / 登板数 / 投球回 base に全面切替**。 同 stage で ファン視点 cut (打順別 / vs 球団別) を 既存 schema のまま追加。
+- **新 scope (audit 確定)**: 打者 3/5/10試合 (min AB=8/12/20) + 30/50/100打席、 投手 3/5/10登板 + 5/10投球回 (last_20_ip 廃止、 audit 4/22 達成のみで過疎)。 `last_7d` / `last_30d` 全廃止、 `season` は維持。
+- **追加 cut**: 打順別 (`batting_logs.slot_order`) / vs 球団別 (`games.opponent`)。 **本拠地 / ビジターは廃止** (user 判断 2026-05-20 +`games.home_away` 直近30日全 unknown audit 確認)。
+- **audit log**: `docs/handoff/session_logs/2026-05-20_403_audit_and_spec_finalization.md`
 - **whitelist 据え置き**: counting + 標準率 + 投手 /9 系率 + WAR + UZR + 得点圏打率 + 球団 ranking + record/milestone は [[348]] のまま、 サバメ NG line (WHIP / BABIP / wOBA / FIP / xFIP / ISO) 維持。
 - **affected files** (grep 67 ref / 8 file): `src/analysis/ranking_article_publisher.py` / `insight_anomaly_detector.py` / `insight_nightly.py` / `insight_title_guard.py` / `insight_etl.py` / `anomaly_article_publisher.py` / `team_ranking_publisher.py` / `src/insight_quality_gate.py` / `src/x_post_mail_lane.py`
 - **不可触**: DB schema 変更なし (advanced_metric_snapshots.scope は TEXT 文字列値拡張のみ) / env / Secret / Scheduler / RUN_DRAFT_ONLY / WP既存記事 / X / publish-notice / frontend / 348 whitelist / 349 cooldown 日数 / 356 quality gate の他 check / title format case A-D 構造

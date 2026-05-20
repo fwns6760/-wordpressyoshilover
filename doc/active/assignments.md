@@ -4,6 +4,12 @@
 
 ## 2026-05-20 session update
 
+### 317 — 巨人OB YouTubeを差別化用 review-only 記事候補にする
+
+| ticket | status | 内容 |
+|---|---|---|
+| `doc/waiting/317-QA-ob-youtube-review-only-intake.md` (GH #76) | PARKED / USER_REAFFIRMED_FOR_LATER | user 判断「巨人OBなら差別化図るため記事にしてもいいかも。記録しといて。後でやる」。2026-05-19 JST は YouTube下書き化が `post_id=69718` の1本のみで、OBチャンネル候補は多くが `youtube_title_filter_skip reason=no_match` または `stale_rss_entry` で落ちた。後で進める場合は、公式YouTubeの395とは分け、OB/非公式は relevance gate を維持し、巨人文脈が明確な動画だけ `OB・解説者` の review-only / draft-only 候補へ流す。初期上限は1日1〜2本。env / Secret / Scheduler / YouTube Data API / WP既存記事 / X は不可触。 |
+
 ### 398 — media_quote_evaluation 未初期化エラーの再発防止
 
 | ticket | status | 内容 |

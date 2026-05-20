@@ -1,7 +1,8 @@
 # 317-QA OB YouTube Review-Only Intake
 
 作成日: 2026-05-10
-状態: IMPLEMENTED_NOT_DEPLOYED
+状態: PARKED / USER_REAFFIRMED_FOR_LATER
+GitHub Issue: #76
 
 ## 1. 今回の目的
 
@@ -12,6 +13,14 @@
 発言内容を自動で深掘り・要約・断定しない。動画内発言の詳細は、人間が確認した場合だけ短く追記する前提にする。
 
 初期方針は `review-only`。自動公開ではなく、人間確認前の下書き候補または手動取り込み候補として出す。
+
+2026-05-20 追記:
+
+- user 判断: 「巨人OBなら差別化図るため記事にしてもいいかも。記録しといて。後でやる」
+- 昨日 2026-05-19 JST のログでは、YouTubeとして下書き化されたのは `post_id=69718` の1本のみ。
+- OBチャンネル候補は取得されていたが、多くは `youtube_title_filter_skip reason=no_match` または `stale_rss_entry` で落ちていた。
+- 後でやる場合は、公式 YouTube の 395 titleless intake とは分ける。OB / 非公式は relevance gate を維持し、巨人文脈が明確な動画だけ review-only / draft-only に流す。
+- 初期上限は 1日1〜2本。カテゴリ候補は `OB・解説者`。自動公開、X投稿、env、scheduler、Secret、YouTube Data API は触らない。
 
 ## 2. 今回触る範囲
 
@@ -145,6 +154,7 @@ GO後に実装する場合の予定:
 - 2026-05-10: 先に回帰テストを追加し、現状で赤になることを確認。失敗内容は `src.youtube_ob_source_registry` 未実装、YouTube本文に `wp-block-embed-youtube` がない、YouTube embed必須validatorがない、CLIが `--youtube-url` を受け付けない、の4系統。
 - 2026-05-10: OB YouTube review-only source棚、YouTube source registry、YouTube WordPress embed本文生成、YouTube embed必須validator、dry-run CLIの `--youtube-url` 入力を実装。
 - 2026-05-10: 本番fire、deploy、WP書き込み、scheduler変更、Cloud Run変更、env変更、secrets参照/変更、GitHub Actions変更、X投稿は未実施。
+- 2026-05-20: user が巨人OB YouTubeを差別化記事として後で扱う方針を再確認。GitHub Issue #76 を作成し、本 ticket を PARKED / later backlog として記録。コード、deploy、env、scheduler、Secret、WP、X は未変更。
 
 ## 10. Regression Memo欄
 

@@ -139,6 +139,16 @@ def min_sample_for_metric(
                 except ValueError:
                     pass
         if is_pitcher:
+            # 413 (2026-05-20): 投手 last_N_games scope の min_sample gap fix。
+            # last_5_games で巨人 5 試合 window だが、 リリーフは 1-3 IP し
+            # か投げない。 audit 反映の小さな threshold (IP base):
+            pitcher_games_min = {
+                "last_3_games": 2,
+                "last_5_games": 3,
+                "last_10_games": 5,
+            }
+            if scope in pitcher_games_min:
+                return pitcher_games_min[scope]
             if scope.startswith("last_") and scope.endswith("_appearances"):
                 return 0  # 登板数自体を threshold (cumsum 不要)
             if scope.startswith("last_") and scope.endswith("_ip"):

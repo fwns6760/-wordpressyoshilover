@@ -87,3 +87,13 @@ def test_min_sample_pitcher_last_n_ip():
     assert qg.min_sample_for_metric("ERA", scope="last_5_ip") == 5
     assert qg.min_sample_for_metric("ERA", scope="last_10_ip") == 10
     assert qg.min_sample_for_metric("K_per_9", scope="last_5_ip") == 5
+
+
+def test_min_sample_pitcher_last_n_games_413_fix():
+    """投手 last_N_games: 413 fix で IP base の小さな threshold (リリーフ救済)."""
+    # 413 fix: リリーフ (マルティネス 等) が 21:00 fire で skip 多発
+    # last_5_games で min=10 → 3 に下げ、 5 IP → publish 候補化
+    assert qg.min_sample_for_metric("ERA", scope="last_3_games") == 2
+    assert qg.min_sample_for_metric("ERA", scope="last_5_games") == 3
+    assert qg.min_sample_for_metric("ERA", scope="last_10_games") == 5
+    assert qg.min_sample_for_metric("K_per_9", scope="last_5_games") == 3

@@ -229,6 +229,10 @@ GO 後のコード編集便で実行する予定の test。本便(markdown 作�
 - 408 Phase 2 commit + push | `afdfd5c 408 Phase 2: OB name table secondary gate activate + 現巨人 role guard` (4 files / 95+ / 9-)
 - 410 Phase 2 wire-in 実装 | `src/subtype_display_format.py` に `maybe_prepend_subtype_display` (badge prepend + 出典帯 append + idempotent) 追加 + `src/rss_fetcher.py` `_create_draft_with_same_fire_guard` に `article_subtype` kw 追加 + 2 caller (main / review path) で body_article_subtype / validator_article_subtype 渡し + 8 new test | targeted 25 passed (Phase 1 17 + Phase 2 8)
 - 410 Phase 2 full pytest | **5550 passed / 1 xfailed / 3 xpassed / 980 subtests / 120.47s (regression 0)** | 並走 commit `e343479 403 Stage A4 cutover fix` で他者が `test_publish_default_set_*` 2 件も修復済、 fail 0 件で着地
+- 410 Phase 2 commit + push | `d963d1d 410 Phase 2: badge / 出典帯 builder を draft pipeline に wire-in` (4 files / 147+)
+- 410 deploy 1st | Cloud Build `478cb6f9-fc98-4b6d-bf87-8f14a99cbad1` SUCCESS (2m7s)、 image `410-display-d963d1d` digest `sha256:6680b362...`、 revision `yoshilover-fetcher-00459-44z` 100% / /health 200
+- GH Issues 起票 | #80 (407 master) / #82 (408) / #83 (409) / #84 (410)、 並列 gh で 3 件 cd 落ち → sequential 再 try で復旧
+- 408 Phase 3 実装 | OB_NAME_SEED 18 → 32 名 (篠塚和典 / 角盈男 / 山口鉄也 / 大田泰示 / 立岡宗一郎 / 越智大祐 / 大竹寛 / 香月一也 / 高木京介 / 川上哲治 / 藤田元司 / クロマティ / ペタジーニ / アレックス・ラミレス 14 名追加)、 OB_LITERAL_MARKERS 10 → 15 (元・巨人 / ジャイアンツO.B. / ジャイアンツ時代 / 巨人在籍時 / 巨人の選手だった)、 tests +2 (40 OB tests pass) | full pytest **5561 passed / regression 0 / 93.80s**
 
 ## 10. Regression Memo 欄
 

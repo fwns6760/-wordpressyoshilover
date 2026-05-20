@@ -44,6 +44,14 @@ class OBLiteralMarkerTests(unittest.TestCase):
         title = "巨人時代の槙原寛己氏が選手会長として若手指導"
         self.assertTrue(has_ob_literal_marker(title))
 
+    def test_positive_match_phase3_markers(self):
+        # Phase 3 (2026-05-20): 10 → 15 markers 拡充
+        self.assertTrue(has_ob_literal_marker("元・巨人 篠塚氏が解説"))
+        self.assertTrue(has_ob_literal_marker("ジャイアンツO.B. 角盈男氏が出演"))
+        self.assertTrue(has_ob_literal_marker("ジャイアンツ時代の山口鉄也氏が振り返る"))
+        self.assertTrue(has_ob_literal_marker("巨人在籍時の大竹寛氏がコメント"))
+        self.assertTrue(has_ob_literal_marker("巨人の選手だった大田泰示氏"))
+
     def test_negative_no_marker_in_postgame_title(self):
         title = "巨人 阿部監督が試合後にコメント、若手の活躍を称賛"
         self.assertFalse(has_ob_literal_marker(title))
@@ -61,6 +69,19 @@ class OBNameTableTests(unittest.TestCase):
         self.assertIn("高橋由伸", OB_NAME_SEED)
         self.assertIn("上原浩治", OB_NAME_SEED)
         self.assertIn("槙原寛己", OB_NAME_SEED)
+
+    def test_name_seed_includes_phase3_expansion(self):
+        # Phase 3 (2026-05-20): 18 → 32 名 拡充
+        self.assertIn("篠塚和典", OB_NAME_SEED)
+        self.assertIn("角盈男", OB_NAME_SEED)
+        self.assertIn("山口鉄也", OB_NAME_SEED)
+        self.assertIn("大田泰示", OB_NAME_SEED)
+        self.assertIn("クロマティ", OB_NAME_SEED)
+        self.assertIn("ペタジーニ", OB_NAME_SEED)
+        self.assertIn("アレックス・ラミレス", OB_NAME_SEED)
+        self.assertIn("川上哲治", OB_NAME_SEED)
+        self.assertIn("藤田元司", OB_NAME_SEED)
+        self.assertGreaterEqual(len(OB_NAME_SEED), 30)
 
     def test_name_seed_excludes_current_giants_staff(self):
         # Phase 1: 現在 巨人 staff (監督 / コーチ) は OB 名簿から除外

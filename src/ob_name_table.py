@@ -27,7 +27,7 @@ from __future__ import annotations
 
 
 OB_NAME_SEED: frozenset[str] = frozenset({
-    # 引退 / 解説者 / メディア露出中
+    # 1980s-1990s 引退 / 解説者
     "高橋由伸",
     "上原浩治",
     "江川卓",
@@ -42,11 +42,27 @@ OB_NAME_SEED: frozenset[str] = frozenset({
     "木佐貫洋",
     "松井秀喜",
     "仁志敏久",
-    # 名誉職 / 元監督
+    "篠塚和典",
+    "角盈男",
+    # 2000s-2010s 引退
+    "山口鉄也",
+    "大田泰示",
+    "立岡宗一郎",
+    "越智大祐",
+    "大竹寛",
+    "香月一也",
+    "高木京介",
+    # 名誉職 / 元監督 / 殿堂
     "長嶋茂雄",
     "王貞治",
+    "川上哲治",
+    "藤田元司",
     # MLB OB (see project_mlb_player_inclusion_policy)
     "菅野智之",
+    # 外国人 OB (clearly retired from Japan)
+    "クロマティ",
+    "ペタジーニ",
+    "アレックス・ラミレス",
     # legacy
     "沢村栄治",
 })
@@ -54,15 +70,20 @@ OB_NAME_SEED: frozenset[str] = frozenset({
 
 OB_LITERAL_MARKERS: tuple[str, ...] = (
     "元巨人",
+    "元・巨人",
     "元読売",
     "巨人OB",
     "巨人O.B.",
     "読売OB",
+    "ジャイアンツOB",
+    "ジャイアンツO.B.",
     "古巣・巨人",
     "古巣巨人",
     "巨人時代",
+    "ジャイアンツ時代",
+    "巨人在籍時",
     "巨人だった",
-    "ジャイアンツOB",
+    "巨人の選手だった",
 )
 
 

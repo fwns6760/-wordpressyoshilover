@@ -27,6 +27,12 @@ user 方針「受け入れ NG はまた起票」+「一人開発で Active 多�
 
 ## 2026-05-20 session update
 
+### 411 — X-POST branding voice persona (Tavily whitelist 拡張 + フーガ/缶詰 2 persona + 試合日/18時 gate)
+
+| ticket | status | 内容 |
+|---|---|---|
+| `doc/active/411-X-POST-BRANDING-VOICE-PERSONA.md` | DRAFT (user GO 待ち) | chat 起票 (2026-05-20 「ブランディング新案 / Tavily 候補URL / 公式NPB球団主要紙優先 / answer不使用 / URL本文・媒体名・日付 / 観戦記事 / フーガ風+缶詰風 voice / 18時以降 / 試合日のみ」)。 392 (CLOSED) の Gemma 4 + Tavily 基盤を 2 persona 化。 `src/x_post_branding_gen.py:182` の `_TAVILY_INCLUDE_DOMAINS` を 2 → 9 domain (giants.jp / npb.or.jp / sponichi.co.jp / nikkansports.com / sanspo.com / daily.co.jp / chunichi.co.jp + 既存 yahoo/hochi) に拡張、 `_format_tavily_context` に published_date 注入、 `_SYSTEM_PROMPT_BASE` を フーガ風 (長文分析) / 缶詰風 (試合中実況) の 2 template に split、 `is_giants_game_day(now_jst, db_path)` helper を `insight.db` games table で実装、 `select_branding_persona` で「試合日 + 18-21時 = 缶詰、 それ以外 = フーガ」 自動選択。 cost ¥0/post 維持 (free tier 内)、 spec 382 hard rule 不変。 並走: 394 active P0 (hallucination fix) 同 file、 commit 直列。 GH Issue 別途起票予定。 |
+
 ### 407 / 408 / 409 / 410 — OB subtype + farm 2軍/3軍 + WP front (CLOSED 2026-05-20、 全 Phase LIVE_DEPLOYED_OBSERVE)
 
 | ticket | status | 内容 |

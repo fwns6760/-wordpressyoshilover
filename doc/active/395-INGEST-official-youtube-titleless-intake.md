@@ -114,12 +114,21 @@ Official Giants YouTube source intake only.
   - Cloud Run service `yoshilover-fetcher` deployed to revision `yoshilover-fetcher-00449-lkq`, latest revision 100% traffic.
   - `/health` returned `OK`.
   - Cloud Run log: startup TCP probe succeeded; new revision ERROR log count 0.
+- Follow-up manual scheduler run after priority deploy:
+  - 2026-05-20 10:58 JST: manually ran `giants-weekday-daytime` once.
+  - 2026-05-20 11:02:18 JST: `[WP] 記事draft post_id=69846`.
+  - title: `【YouTube】みんなが待ってた！戸郷翔征投手の今季初勝利に球団カメラが密着！`
+  - source URL: `https://www.youtube.com/watch?v=1syvtigdsVk`
+  - `RUN_DRAFT_ONLY` behavior preserved; the post stayed draft.
+  - request-level result was still Cloud Run `504` after 286s, but the
+    official YouTube draft was created before timeout.
+  - same run observed one non-YouTube/X `media_quote_evaluation` local variable
+    error; this is outside the 395 YouTube title / priority fix scope.
 
 ## live evidence
 
-Deploy verified. Manual run verified official YouTube source intake and title-filter
-behavior; follow-up priority change is deployed and awaiting the next run for
-draft creation evidence.
+Deploy verified. Manual run verified official YouTube source intake,
+title-filter behavior, and draft creation evidence.
 
 Expected evidence:
 
@@ -130,5 +139,5 @@ Expected evidence:
 
 ## next action
 
-Observe the next run and verify a fresh official YouTube item reaches draft
-creation before the run timeout window.
+395 scope is verified. Track the full-source Cloud Run timeout and the
+non-YouTube/X `media_quote_evaluation` error separately if they recur.

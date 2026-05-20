@@ -272,6 +272,28 @@ def _run_data_insight_auto_publish(*, db_path: Path) -> tuple[dict[str, Any], di
                                 }, ensure_ascii=False))
                         if slot_band_published >= auto_draft_max_per_run:
                             break
+                    # 404 (2026-05-20): 登板 inning 別 publisher。 リリーフ
+                    # role split (7 回 setup / 8 回 setup / 9 回 closer)。
+                    # start_inning 列は 404 で derive、 backfill_pitcher_innings
+                    # で既存 row も populate 済 (open_db 経由 idempotent migration)。
+                    inning_published = 0
+                    for inning in (9, 8, 7):  # closer > setup の順で fan 訴求高
+                        if inning_published >= auto_draft_max_per_run:
+                            break
+                        try:
+                            inning_result = ranking_pub.publish_pitcher_inning_split_draft(
+                                conn, wp, scope="last_5_games", inning=inning,
+                            )
+                            if inning_result.get("status") in (
+                                "published", "published_draft", "dry_run",
+                            ):
+                                inning_published += 1
+                        except Exception as exc:  # noqa: BLE001
+                            print(json.dumps({
+                                "warn": "pitcher_inning_split_publish_failed",
+                                "inning": inning,
+                                "error": f"{type(exc).__name__}:{exc}",
+                            }, ensure_ascii=False))
                 except Exception as exc:  # noqa: BLE001
                     ranking_publish_summary["counting_error"] = (
                         f"{type(exc).__name__}:{exc}"

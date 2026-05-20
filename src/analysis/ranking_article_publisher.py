@@ -1476,6 +1476,290 @@ def publish_player_counting_split_draft(
         return {"status": "error", "error": f"{type(e).__name__}: {e}"}
 
 
+# ─── 404: 登板 inning 別 publisher (リリーフ専、 setup / closer 区別) ──────
+#
+# pitching_logs.start_inning を split key にした登板 inning 別 ranking。
+# 404 ticket spec (2026-05-20、 user 「他は登板はやる」):
+# - 7 回登板 = setup マン (start_inning=7)
+# - 8 回登板 = setup (start_inning=8)
+# - 9 回登板 = closer (start_inning=9)
+# start_inning は 404 で追加した derive 列 (IP cumsum + appearance_order)。
+# starter (start_inning=1) は本 publisher で扱わない (既存 starter ranking 経路で対応)。
+
+_INNING_ROLES: dict[int, str] = {
+    7: "7回登板 (setup)",
+    8: "8回登板 (setup)",
+    9: "9回登板 (closer)",
+}
+
+
+def aggregate_pitcher_inning_split(
+    conn: sqlite3.Connection,
+    *,
+    inning: int,
+    scope: str,
+    today: Optional[Any] = None,
+    top_n: int = 10,
+    league: Optional[str] = None,
+    focus_player: Optional[str] = None,
+) -> list[dict]:
+    """404 (2026-05-20): リリーフ投手の inning 別 ranking (start_inning == inning 限定)。
+
+    Returns list of {"player", "team", "value": ERA, "ip": cumulative IP, "apps": appearance count}。
+    HAVING SUM(IP) >= 1.0 で sample 不足 skip。 ERA = ER * 9 / IP で計算、 lower-is-better。
+    """
+    if inning not in (7, 8, 9):
+        raise ValueError(f"unsupported inning: {inning!r} (404 では 7/8/9 のみ)")
+    start, end = _scope_window(
+        scope, today, conn=conn, focus_player=focus_player,
+    )
+    league_clause = ""
+    league_params: tuple = ()
+    if league == "central":
+        placeholders = ",".join("?" * len(_CENTRAL_TEAM_NAMES))
+        league_clause = f" AND pl.team_name IN ({placeholders})"
+        league_params = _CENTRAL_TEAM_NAMES
+    elif league == "pacific":
+        placeholders = ",".join("?" * len(_PACIFIC_TEAM_NAMES))
+        league_clause = f" AND pl.team_name IN ({placeholders})"
+        league_params = _PACIFIC_TEAM_NAMES
+    rows = conn.execute(
+        f"SELECT pl.player_canonical, pl.team_name, "
+        f"SUM(pl.IP) AS total_ip, SUM(pl.ER) AS total_er, COUNT(*) AS apps "
+        f"FROM pitching_logs pl JOIN games g ON pl.game_id = g.game_id "
+        f"WHERE g.game_date >= ? AND g.game_date <= ? "
+        f"AND pl.start_inning = ? "
+        f"AND pl.player_canonical IS NOT NULL AND pl.player_canonical != '' "
+        f"AND pl.IP IS NOT NULL"
+        f"{league_clause} "
+        f"GROUP BY pl.player_canonical "
+        f"HAVING SUM(pl.IP) >= 1.0 "
+        f"ORDER BY (CAST(COALESCE(SUM(pl.ER), 0) AS REAL) * 9.0 / SUM(pl.IP)) ASC "
+        f"LIMIT ?",
+        (start.isoformat(), end.isoformat(), inning, *league_params, top_n),
+    ).fetchall()
+    out = []
+    for p, t, total_ip, total_er, apps in rows:
+        try:
+            ip_f = float(total_ip or 0)
+            er_f = float(total_er or 0)
+        except (TypeError, ValueError):
+            continue
+        if ip_f <= 0:
+            continue
+        era = round(er_f * 9.0 / ip_f, 2)
+        out.append({
+            "player": p, "team": _team_name_to_code(t),
+            "value": era, "ip": round(ip_f, 1), "apps": int(apps or 0),
+        })
+    return out
+
+
+def render_pitcher_inning_split_article(
+    conn: sqlite3.Connection,
+    *,
+    inning: int,
+    scope: str,
+    top_n: int = 10,
+) -> Optional[dict]:
+    """404 inning 別 投手 ranking 記事。"""
+    if inning not in _INNING_ROLES:
+        return None
+    role_label = _INNING_ROLES[inning]
+    rows = aggregate_pitcher_inning_split(
+        conn, inning=inning, scope=scope, top_n=max(top_n, 30), league="central",
+    )
+    if not rows:
+        return None
+    giants_rows = [r for r in rows if r.get("team") == "g"]
+    if not giants_rows:
+        return None
+    top_giants = giants_rows[0]
+    top_player = top_giants["player"]
+    top_era = top_giants["value"]
+    giants_rank = next(
+        (i + 1 for i, r in enumerate(rows) if r["player"] == top_player), len(rows),
+    )
+    scope_label = title_guard.period_label_for_scope(scope) or scope
+    title = (
+        f"【巨人データ】{top_player} {role_label} 防御率 {top_era} "
+        f"でセ・リーグ {giants_rank} 位 ({scope_label})"
+    )
+    title = title_guard.ensure_title_period(title, scope=scope).title
+    table_lines = [
+        f"| 順位 | 選手 | チーム | 防御率 | 投球回 | 登板 |",
+        "|---|---|---|---|---|---|",
+    ]
+    focus_in_top_n = False
+    for i, r in enumerate(rows[:top_n], start=1):
+        team_disp = _TEAM_LABEL_JP.get(r.get("team", ""), r.get("team", "?"))
+        is_focus = r["player"] == top_player
+        if is_focus:
+            focus_in_top_n = True
+            r_disp = f'<span style="color:#c0392b"><strong>{i}</strong></span>'
+            p_disp = f'<span style="color:#c0392b"><strong>{r["player"]} ★</strong></span>'
+            v_disp = f'<span style="color:#c0392b"><strong>{r["value"]}</strong></span>'
+        else:
+            r_disp = str(i)
+            p_disp = r["player"]
+            v_disp = str(r["value"])
+        table_lines.append(
+            f"| {r_disp} | {p_disp} | {team_disp} | {v_disp} | {r['ip']} | {r['apps']} |"
+        )
+    if not focus_in_top_n:
+        team_disp = _TEAM_LABEL_JP.get(top_giants.get("team", ""), "?")
+        r_disp = f'<span style="color:#c0392b"><strong>{giants_rank}</strong></span>'
+        p_disp = f'<span style="color:#c0392b"><strong>{top_player} ★</strong></span>'
+        v_disp = f'<span style="color:#c0392b"><strong>{top_era}</strong></span>'
+        table_lines.append(
+            f"| {r_disp} | {p_disp} | {team_disp} | {v_disp} | {top_giants['ip']} | {top_giants['apps']} |"
+        )
+    table_md = "\n".join(table_lines)
+    body_md = f"""# {title}
+
+## ひとこと
+
+巨人 {top_player} の **{role_label}** での防御率は **{top_era}**
+({scope_label} 時点)、 セ・リーグ内 **{giants_rank} 位**。
+
+## リーグ TOP {top_n}({role_label})
+
+{table_md}
+
+## このデータについて
+
+| 項目 | 内容 |
+|---|---|
+| 選手 | **{top_player}**(巨人) |
+| 指標 | 防御率({role_label}) = **{top_era}** |
+| 順位 | リーグ {giants_rank} 位 |
+| 登板 inning | start_inning = {inning} ({role_label}) |
+| データ元 | NPB 公式 box score(https://npb.jp/) |
+| 集計式 | SUM(ER) * 9 / SUM(IP) over pitching_logs WHERE start_inning={inning} |
+| 集計期間 | {scope_label} |
+"""
+    body_html = markdown_to_html(body_md)
+    return {
+        "title": title, "body_md": body_md, "body_html": body_html,
+        "inning": inning, "role_label": role_label, "scope": scope,
+        "top_player": top_player, "top_value": top_era,
+        "giants_rank": giants_rank, "league_total": len(rows),
+        "team_coverage": len({r.get("team") for r in rows if r.get("team")}),
+    }
+
+
+def publish_pitcher_inning_split_draft(
+    conn: sqlite3.Connection,
+    wp_client_obj: Any,
+    *,
+    inning: int,
+    scope: str,
+    category_name: str = DEFAULT_CATEGORY_NAME,
+    dry_run: bool = False,
+) -> dict:
+    """404 inning 別 投手 publish (387 part 1 tag + 411 term_exists pattern 共通)."""
+    article = render_pitcher_inning_split_article(
+        conn, inning=inning, scope=scope, top_n=10,
+    )
+    if article is None:
+        return {"status": "skip", "reason": "no_data_or_no_giants",
+                "inning": inning, "scope": scope}
+    title_check = title_guard.ensure_title_period(article["title"], scope=scope)
+    if not title_check.ok:
+        return {
+            "status": "skip_title_period_guard",
+            "reason": title_check.reason,
+            "inning": inning, "scope": scope,
+            "title": article["title"],
+        }
+    article["title"] = title_check.title
+    quality_decision = quality_gate.validate_counting_article(article)
+    if not quality_decision.allowed:
+        return quality_gate.skip_result(
+            quality_decision,
+            inning=inning, scope=scope, title=article["title"],
+        )
+    metric_key = f"ERA:inning={inning}"
+    dedup_context = {
+        "subject_key": article["top_player"],
+        "metric_name": metric_key,
+        "scope": scope,
+        "value": article.get("top_value"),
+        "rank": article.get("giants_rank"),
+        "total": article.get("league_total"),
+    }
+    dedup_decision = dedup_gate.evaluate_metric_cooldown(conn, **dedup_context)
+    if not dedup_decision.get("allowed"):
+        return {
+            "status": "skip_dedup_cooldown",
+            "reason": dedup_decision.get("reason"),
+            "inning": inning, "scope": scope,
+            "dedup": dedup_decision,
+        }
+    if dry_run:
+        return {"status": "dry_run", "title": article["title"]}
+    try:
+        category_id = wp_client_obj.create_category(category_name)
+    except Exception:
+        category_id = 0
+    if not category_id:
+        try:
+            category_id = wp_client_obj.resolve_category_id(category_name)
+        except Exception:
+            category_id = 0
+    if not category_id:
+        return {"status": "skip", "reason": "category_resolution_failed",
+                "inning": inning, "scope": scope}
+    publish_status = _resolve_publish_status(focus_team_code="g")
+    tag_id = _ensure_player_tag(wp_client_obj, article["top_player"])
+    tags_list = [tag_id] if tag_id else None
+    if not tags_list:
+        tags_list = [850]
+    _banner = _giants_news_banner_html(
+        article["title"], _BANNER_SOURCE_LABEL, category_name,
+    )
+    dedup_history_id = 0
+    dedup_record_error = ""
+    try:
+        post_id = wp_client_obj.create_post(
+            title=article["title"],
+            content=_banner + article["body_html"],
+            categories=[category_id],
+            status=publish_status,
+            caller="ranking_article_publisher_pitcher_inning",
+        )
+        if post_id and tags_list:
+            try:
+                import requests as _req
+                wp_client_obj._request_with_retry(
+                    _req.post, f"{wp_client_obj.api}/posts/{post_id}",
+                    action="add_tags", json={"tags": tags_list},
+                )
+            except Exception:
+                pass
+        try:
+            dedup_history_id = dedup_gate.record_metric_publish(
+                conn, **dedup_context,
+                title=article["title"],
+                post_id=int(post_id or 0),
+                wp_status=publish_status,
+            )
+        except Exception as exc:  # noqa: BLE001
+            dedup_record_error = f"{type(exc).__name__}: {exc}"
+        return {
+            "status": "published" if publish_status == "publish" else "published_draft",
+            "wp_status": publish_status,
+            "title": article["title"],
+            "post_id": int(post_id or 0),
+            "category_id": int(category_id),
+            "inning": inning, "scope": scope,
+            "dedup_history_id": dedup_history_id,
+            "dedup_record_error": dedup_record_error,
+        }
+    except Exception as e:
+        return {"status": "error", "error": f"{type(e).__name__}: {e}"}
+
+
 # ─── 403 Stage B: 打順別 publisher (band 化: 上位 / クリーンナップ / 下位) ───
 #
 # batting_logs.slot_order を split key にした打順別 ranking publisher。

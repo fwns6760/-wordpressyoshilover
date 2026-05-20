@@ -156,24 +156,188 @@ _CENTRAL_TEAM_NAMES = ("巨人", "阪神", "ヤクルト", "広島", "DeNA", "�
 _PACIFIC_TEAM_NAMES = ("ソフトバンク", "西武", "ロッテ", "楽天", "オリックス", "日本ハム")
 
 
-def _scope_window(scope: str, today: Optional[Any] = None) -> tuple[Any, Any]:
-    """Common scope-to-(start, end) date computation. Returns (date, date)."""
+def _scope_window(
+    scope: str,
+    today: Optional[Any] = None,
+    *,
+    conn: Optional[sqlite3.Connection] = None,
+    focus_player: Optional[str] = None,
+) -> tuple[Any, Any]:
+    """Common scope-to-(start, end) date computation. Returns (date, date).
+
+    403 (2026-05-20): 新 scope vocabulary 対応。 game-count / PA / appearance /
+    IP cumsum scope は ``conn`` 引数経由で DB lookup し、 該当 game の最古日付
+    を start とする (filter は依然 date range で表現、 既存 SQL 構造維持)。
+
+    新 scope の追加は additive。 既存 scope (`last_7d` / `last_30d` / `season`
+    / `monthly` / `weekly`) は不変。
+
+    Args:
+        scope: scope vocabulary 文字列
+        today: 計算 base 日付 (default: 今日)
+        conn: DB connection (game-count / PA / appearance / IP scope で必須)
+        focus_player: 選手名 (PA / appearance / IP scope で必須、 player_canonical)
+
+    Returns:
+        (start_date, end_date) tuple
+    """
     import datetime as _dt
     if today is None:
         today = _dt.date.today()
+    # 既存 date-based scope (変更なし)
     if scope == "last_7d":
-        start = today - _dt.timedelta(days=6)
-    elif scope == "last_30d":
-        start = today - _dt.timedelta(days=29)
-    elif scope == "season":
-        start = _dt.date(today.year, 1, 1)
-    elif scope == "monthly":
-        start = today.replace(day=1)
-    elif scope == "weekly":
-        start = today - _dt.timedelta(days=today.weekday())
-    else:
-        raise ValueError(f"unsupported scope: {scope!r}")
+        return today - _dt.timedelta(days=6), today
+    if scope == "last_30d":
+        return today - _dt.timedelta(days=29), today
+    if scope == "season":
+        return _dt.date(today.year, 1, 1), today
+    if scope == "monthly":
+        return today.replace(day=1), today
+    if scope == "weekly":
+        return today - _dt.timedelta(days=today.weekday()), today
+    # 新 scope vocabulary (403)
+    if scope.startswith("last_") and scope.endswith("_games"):
+        n_games = int(scope[len("last_"):-len("_games")])
+        if conn is None:
+            raise ValueError(f"scope {scope!r} requires conn")
+        return _compute_giants_game_window(conn, n_games=n_games, today=today)
+    if scope.startswith("last_") and scope.endswith("_pa"):
+        n_pa = int(scope[len("last_"):-len("_pa")])
+        if conn is None or focus_player is None:
+            raise ValueError(f"scope {scope!r} requires conn + focus_player")
+        return _compute_player_pa_window(
+            conn, player=focus_player, n_pa=n_pa, today=today,
+        )
+    if scope.startswith("last_") and scope.endswith("_appearances"):
+        n_apps = int(scope[len("last_"):-len("_appearances")])
+        if conn is None or focus_player is None:
+            raise ValueError(f"scope {scope!r} requires conn + focus_player")
+        return _compute_pitcher_appearance_window(
+            conn, pitcher=focus_player, n_apps=n_apps, today=today,
+        )
+    if scope.startswith("last_") and scope.endswith("_ip"):
+        n_ip = int(scope[len("last_"):-len("_ip")])
+        if conn is None or focus_player is None:
+            raise ValueError(f"scope {scope!r} requires conn + focus_player")
+        return _compute_pitcher_ip_window(
+            conn, pitcher=focus_player, n_ip=n_ip, today=today,
+        )
+    raise ValueError(f"unsupported scope: {scope!r}")
+
+
+def _compute_giants_game_window(
+    conn: sqlite3.Connection,
+    *,
+    n_games: int,
+    today: Any,
+) -> tuple[Any, Any]:
+    """直近 n 試合の巨人試合の game_date 範囲を返す。 403 fix。
+
+    巨人試合数 cnt (出場有無関係なし、 ベンチ含む) ベース。 batting_logs から
+    巨人 row を持つ game を today 以前で游 desc 並べ、 n 試合目の game_date を
+    start として返す。
+    """
+    import datetime as _dt
+    rows = conn.execute(
+        "SELECT DISTINCT g.game_date FROM games g "
+        "JOIN batting_logs bl ON g.game_id = bl.game_id "
+        "WHERE bl.team_name = '巨人' AND g.game_date <= ? "
+        "ORDER BY g.game_date DESC LIMIT ?",
+        (today.isoformat(), n_games),
+    ).fetchall()
+    if not rows:
+        # 巨人試合なし: today 単日を返す (空 sample になる)
+        return today, today
+    earliest_date_str = rows[-1][0]
+    start = _dt.date.fromisoformat(earliest_date_str)
     return start, today
+
+
+def _compute_player_pa_window(
+    conn: sqlite3.Connection,
+    *,
+    player: str,
+    n_pa: int,
+    today: Any,
+) -> tuple[Any, Any]:
+    """選手の直近 n 打席 (PA cumsum) を満たす game_date 範囲を返す。 403 fix。
+
+    PA = atbats_json entry 数。 today 以前の batting_logs を game_date desc で
+    游り、 PA cumsum >= n_pa に達した行の game_date を start とする。
+    """
+    import datetime as _dt
+    import json as _json
+    rows = conn.execute(
+        "SELECT g.game_date, bl.atbats_json FROM batting_logs bl "
+        "JOIN games g ON bl.game_id = g.game_id "
+        "WHERE bl.player_canonical = ? AND g.game_date <= ? "
+        "ORDER BY g.game_date DESC",
+        (player, today.isoformat()),
+    ).fetchall()
+    cumsum = 0
+    for date_str, atb_json in rows:
+        try:
+            atbs = _json.loads(atb_json) if atb_json else []
+        except Exception:
+            atbs = []
+        if isinstance(atbs, list):
+            cumsum += len(atbs)
+        if cumsum >= n_pa:
+            return _dt.date.fromisoformat(date_str), today
+    # n_pa 未達: 取得できた最古 row まで返す (sample 不足は呼出側で判定)
+    if rows:
+        return _dt.date.fromisoformat(rows[-1][0]), today
+    return today, today
+
+
+def _compute_pitcher_appearance_window(
+    conn: sqlite3.Connection,
+    *,
+    pitcher: str,
+    n_apps: int,
+    today: Any,
+) -> tuple[Any, Any]:
+    """投手の直近 n 登板を含む game_date 範囲を返す。 403 fix。"""
+    import datetime as _dt
+    rows = conn.execute(
+        "SELECT g.game_date FROM pitching_logs pl "
+        "JOIN games g ON pl.game_id = g.game_id "
+        "WHERE pl.player_canonical = ? AND g.game_date <= ? "
+        "ORDER BY g.game_date DESC LIMIT ?",
+        (pitcher, today.isoformat(), n_apps),
+    ).fetchall()
+    if not rows:
+        return today, today
+    return _dt.date.fromisoformat(rows[-1][0]), today
+
+
+def _compute_pitcher_ip_window(
+    conn: sqlite3.Connection,
+    *,
+    pitcher: str,
+    n_ip: float,
+    today: Any,
+) -> tuple[Any, Any]:
+    """投手の直近 n 投球回 (IP cumsum) を満たす game_date 範囲を返す。 403 fix。"""
+    import datetime as _dt
+    rows = conn.execute(
+        "SELECT g.game_date, pl.IP FROM pitching_logs pl "
+        "JOIN games g ON pl.game_id = g.game_id "
+        "WHERE pl.player_canonical = ? AND g.game_date <= ? "
+        "ORDER BY g.game_date DESC",
+        (pitcher, today.isoformat()),
+    ).fetchall()
+    cumsum = 0.0
+    for date_str, ip in rows:
+        try:
+            cumsum += float(ip or 0)
+        except (TypeError, ValueError):
+            continue
+        if cumsum >= n_ip:
+            return _dt.date.fromisoformat(date_str), today
+    if rows:
+        return _dt.date.fromisoformat(rows[-1][0]), today
+    return today, today
 
 
 def aggregate_player_hr_from_atbats(

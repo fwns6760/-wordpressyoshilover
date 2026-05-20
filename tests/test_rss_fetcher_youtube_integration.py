@@ -62,6 +62,22 @@ class CheckYoutubeGiantsFilterTests(unittest.TestCase):
         ok, reason = rss_fetcher._check_youtube_giants_filter("")
         self.assertFalse(ok)
 
+    def test_official_source_role_passes_even_without_title_keyword(self):
+        ok, reason = rss_fetcher._check_youtube_giants_filter_for_source(
+            "小林の肩 vs 朝井の声",
+            source_roles={"media_quote_only", "official_video_source"},
+        )
+        self.assertTrue(ok)
+        self.assertEqual(reason, "official_video_source")
+
+    def test_non_official_source_role_still_uses_title_filter(self):
+        ok, reason = rss_fetcher._check_youtube_giants_filter_for_source(
+            "メジャー大谷総決算",
+            source_roles={"media_quote_only", "youtube_review_source"},
+        )
+        self.assertFalse(ok)
+        self.assertEqual(reason, "no_match")
+
 
 class YoutubeSourceArticleizeTests(unittest.TestCase):
     def test_youtube_channel_media_quote_only_still_articleizes_for_344(self):

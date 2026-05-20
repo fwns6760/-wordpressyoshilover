@@ -1,6 +1,14 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-05-19 JST
+最終更新: 2026-05-20 JST
+
+## 2026-05-20 session update
+
+### 395 — 公式 YouTube の弱いタイトルでも取り込む (user 要望「YouTube の取り込みも」)
+
+| ticket | status | 内容 |
+|---|---|---|
+| `doc/active/395-INGEST-official-youtube-titleless-intake.md` (GH #72) | IN_FLIGHT | 383 で YouTube articleize path は復旧済みだが、巨人公式 YouTube の `小林の肩 vs 朝井の声` が `youtube_title_filter_skip reason=no_match` で落ちていた。`official_video_source` ロールだけ source-aware に titleless / weak-title pass させ、非公式 / OB / candidate YouTube は既存 title filter を維持する narrow fix。local: YouTube integration/title/caption/caption fetcher 59 tests OK、compileall / py_compile / AST / diff-check OK。deploy / natural fire evidence 待ち。env / Secret / Scheduler / RUN_DRAFT_ONLY / WP既存記事 / X / frontend は不可触。 |
 
 ## 2026-05-19 session update
 

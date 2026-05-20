@@ -22804,6 +22804,19 @@ def _check_youtube_giants_filter(title: str) -> tuple[bool, str]:
     except Exception:  # noqa: BLE001
         return (False, "filter_error")
 
+
+def _check_youtube_giants_filter_for_source(
+    title: str,
+    *,
+    source_roles: set[str] | frozenset[str] | list[str] | tuple[str, ...],
+) -> tuple[bool, str]:
+    """YouTube source relevance check, with a narrow pass for official Giants channels."""
+    roles = set(source_roles or [])
+    if "official_video_source" in roles:
+        return (True, "official_video_source")
+    return _check_youtube_giants_filter(title)
+
+
 # ──────────────────────────────────────────────────────────
 # カテゴリ自動分類
 # ──────────────────────────────────────────────────────────
@@ -26069,8 +26082,9 @@ def _main(args, logger):
             _youtube_filter_pass = False
             _youtube_filter_reason = ""
             if _entry_is_youtube:
-                _youtube_filter_pass, _youtube_filter_reason = _check_youtube_giants_filter(
-                    entry_title_clean
+                _youtube_filter_pass, _youtube_filter_reason = _check_youtube_giants_filter_for_source(
+                    entry_title_clean,
+                    source_roles=source_roles,
                 )
 
             if (

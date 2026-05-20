@@ -8203,6 +8203,22 @@ button.cta:hover,
   color: #20845e;
 }
 
+/* 388 bottom variant (2026-05-20): 記事末に rank 31-60 player を出す nav。 */
+.yoshi-dense-nav--bottom {
+  margin: 28px 0 18px;
+  padding: 14px 16px 12px;
+  background: #fafafa;
+  border-top: 3px solid var(--orange);
+  border-radius: 4px;
+}
+.yoshi-dense-nav--bottom .yoshi-dense-nav__heading {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--dark-gray);
+  margin: 0 0 10px;
+  letter-spacing: 0.5px;
+}
+
 .yoshi-breaking-strip {
   margin: 14px 0 18px;
   padding: 14px 16px 16px;
@@ -8993,11 +9009,24 @@ button.cta:hover,
   }
 }
 @media (max-width: 600px) {
+  .yoshi-dense-nav {
+    margin-top: 8px;
+    margin-bottom: 10px;
+  }
   .yoshi-dense-nav__scroll {
     overflow-x: visible;
+    margin-left: -2px;
+    margin-right: -2px;
+    padding-bottom: 2px;
   }
   .yoshi-dense-nav__list {
     flex-wrap: wrap;
+    gap: 6px;
+  }
+  .yoshi-dense-nav__link {
+    min-height: 36px;
+    padding: 8px 12px;
+    font-size: 12px;
   }
   .yoshi-dense-nav__item:nth-child(n+16) {
     display: none;

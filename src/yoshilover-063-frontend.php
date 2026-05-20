@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.16.2
+ * Version: 0.16.3
  * Author: yoshilover
  */
 
@@ -173,17 +173,20 @@ function yoshilover_063_get_term_link_candidates( $taxonomy, $candidate_keys ) {
  * count 降順で並べる。 残った 上位 N 件は事実上ほぼ player 名タグになる
  * (387 で生成側が選手検出した name タグだけ付与する設計)。 cap=$limit。
  */
-function yoshilover_063_get_top_player_tags( $limit = 30 ) {
+function yoshilover_063_get_top_player_tags( $limit = 30, $offset = 0 ) {
     $exclude_names = array(
         'keep', '一軍', '二軍', '三軍', '育成', '速報',
         '監督コメント', 'OB解説', '雑誌報道',
     );
 
+    $limit  = max( 1, (int) $limit );
+    $offset = max( 0, (int) $offset );
+
     $terms = get_terms( array(
         'taxonomy'   => 'post_tag',
         'orderby'    => 'count',
         'order'      => 'DESC',
-        'number'     => max( 1, (int) $limit ) + count( $exclude_names ),
+        'number'     => $limit + $offset + count( $exclude_names ),
         'hide_empty' => true,
     ) );
 
@@ -191,7 +194,8 @@ function yoshilover_063_get_top_player_tags( $limit = 30 ) {
         return array();
     }
 
-    $items = array();
+    $items   = array();
+    $skipped = 0;
     foreach ( $terms as $term ) {
         if ( ! $term instanceof WP_Term ) {
             continue;
@@ -201,6 +205,10 @@ function yoshilover_063_get_top_player_tags( $limit = 30 ) {
         }
         $url = get_term_link( $term );
         if ( is_wp_error( $url ) || ! is_string( $url ) || $url === '' ) {
+            continue;
+        }
+        if ( $skipped < $offset ) {
+            $skipped++;
             continue;
         }
         $items[] = array(
@@ -364,6 +372,63 @@ function yoshilover_063_render_dense_nav( $atts = array() ) {
 
     return $html;
 }
+
+/**
+ * 388 (2026-05-20 bottom variant): 記事末に別の選手 30 個 (rank 31-60) を出す。
+ * 上の dense_nav と被らないよう offset=30、 player のみ (固定 / 概念は含まない)。
+ * 記事 the_content の末尾に auto-inject される (priority 24)。
+ */
+function yoshilover_063_get_dense_nav_bottom_items() {
+    return yoshilover_063_get_top_player_tags( 30, 30 );
+}
+
+function yoshilover_063_render_dense_nav_bottom( $atts = array() ) {
+    $atts = shortcode_atts(
+        array(
+            'heading' => '別の選手も見る',
+        ),
+        $atts,
+        'yoshilover_dense_nav_bottom'
+    );
+
+    $items = yoshilover_063_get_dense_nav_bottom_items();
+    if ( empty( $items ) ) {
+        return '';
+    }
+
+    $html  = '<nav class="yoshi-dense-nav yoshi-dense-nav--bottom" aria-label="' . esc_attr( $atts['heading'] ) . '" data-yoshi-phase="5">';
+    $html .= '<div class="yoshi-dense-nav__heading">' . esc_html( $atts['heading'] ) . '</div>';
+    $html .= '<div class="yoshi-dense-nav__scroll">';
+    $html .= '<ul class="yoshi-dense-nav__list">';
+
+    foreach ( $items as $item ) {
+        $html .= '<li class="yoshi-dense-nav__item">';
+        $html .= '<a class="yoshi-dense-nav__link yoshi-dense-nav__link--' . esc_attr( $item['tone'] ) . '" href="' . esc_url( $item['url'] ) . '">';
+        $html .= '<span class="yoshi-dense-nav__label">' . esc_html( $item['label'] ) . '</span>';
+        $html .= '</a>';
+        $html .= '</li>';
+    }
+
+    $html .= '</ul>';
+    $html .= '</div>';
+    $html .= '</nav>';
+
+    return $html;
+}
+
+add_shortcode( 'yoshilover_dense_nav_bottom', 'yoshilover_063_render_dense_nav_bottom' );
+
+function yoshilover_063_auto_inject_dense_nav_bottom( $content ) {
+    if ( ! is_singular( 'post' ) || ! in_the_loop() || ! is_main_query() ) {
+        return $content;
+    }
+    $bottom_nav = yoshilover_063_render_dense_nav_bottom();
+    if ( $bottom_nav === '' ) {
+        return $content;
+    }
+    return $content . $bottom_nav;
+}
+add_filter( 'the_content', 'yoshilover_063_auto_inject_dense_nav_bottom', 24 );
 
 function yoshilover_063_breaking_strip_target_subtypes() {
     return array(

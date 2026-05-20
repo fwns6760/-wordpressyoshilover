@@ -4813,6 +4813,9 @@ _STALE_ABSOLUTE_DATE_PATTERNS = (
     _re.compile(r"(?<!\d)(\d{1,2})/(\d{1,2})(?!\d)"),  # 「M/N」 form
 )
 _STALE_STANDALONE_DAY_RE = _re.compile(r"(?<![/0-9月年])(\d{1,2})日(?:の|に|から|付|頃)?")
+# 2026-05-20 (382 fix): year-prefixed pattern 「YYYY年M月N日」 で年が current
+# year と一致しない場合は歴史 reference として skip 対象から除外する。
+_STALE_YEAR_PREFIXED_RE = _re.compile(r"(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日?")
 
 
 def _is_stale_absolute_date(text: str, *, now: datetime | None = None) -> bool:
@@ -4820,9 +4823,24 @@ def _is_stale_absolute_date(text: str, *, now: datetime | None = None) -> bool:
 
     Why: 「5月17日朝」 等の昨日以前の event を 朝の RSS で配信されても skip。
     年情報が無い場合は current year 推定。 standalone N日 は同月内 day 比較のみ。
+
+    2026-05-20 (382 fix): 「YYYY年M月N日」 で year が current year でないものは
+    歴史 reference として **skip 対象外** (false-skip 防止)。 spec §副作用想定 #3。
     """
     current = (now or datetime.now(JST)).astimezone(JST)
     today = current.date()
+    # 382 fix: 「YYYY年M月N日」 の year 一致 check。
+    # text 内で year が明示されている範囲は current year でない時は除外候補。
+    # 単純化: text 全体に「(他 year)年」 が含まれる場合は historical reference
+    # として skip しない (false-skip 防止)。 typical news title は year 明記が
+    # 稀、 year 明記 = 歴史 / record 系の signal。
+    for match in _STALE_YEAR_PREFIXED_RE.finditer(text):
+        try:
+            year = int(match.group(1))
+        except (ValueError, TypeError):
+            continue
+        if year != today.year:
+            return False  # 他 year 明記 = 歴史 reference、 skip 対象外
     for pat in _STALE_ABSOLUTE_DATE_PATTERNS:
         for match in pat.finditer(text):
             try:

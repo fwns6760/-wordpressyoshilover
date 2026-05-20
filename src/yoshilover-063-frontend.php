@@ -283,10 +283,10 @@ function yoshilover_063_get_dense_nav_items() {
     }
 
     // 388: 概念タグ (監督/公示/試合結果/球団情報) の後ろに player 名タグ
-    // top 30 を付け足す (user 判断 2026-05-20: PC 30 / mobile 10-15 目安、
+    // top 30 を付け足す (user 判断 2026-05-20: PC 30 / mobile 7 目安、
     // dnomotoke 133 追随より控えめ)。 既存タグと重複したら sanitize 段で seen dedupe。
     // mobile での見え方は custom.css の @media (max-width: 600px) で
-    // `__item:nth-child(n+19)` を hide することで約 18 個 (固定 8 + player 10) に絞る。
+    // `__item:nth-child(n+16)` を hide することで 15 個 (固定 8 + player 7、 3 段) に絞る。
     foreach ( yoshilover_063_get_top_player_tags( 30 ) as $player_item ) {
         $items[] = $player_item;
     }

@@ -24,9 +24,10 @@
   - `yoshilover_063_sanitize_dense_nav_items()` の slice 上限を 150 → 50
   - plugin version 0.16.1 → 0.16.2
 - `src/custom.css`:
-  - `@media (max-width: 600px)` block を追加し、 `.yoshi-dense-nav__item:nth-child(n+19)` を `display: none` で隠す
-  - mobile 可視 = 固定 8 + player 10 = 18 chip
+  - `@media (max-width: 600px)` block を追加し、 `.yoshi-dense-nav__item:nth-child(n+16)` を `display: none` で隠す
+  - mobile 可視 = 固定 8 + player 7 = 15 chip (3 段で収まる)
   - mobile は横スクロールではなく折り返し: `__scroll { overflow-x: visible }` + `__list { flex-wrap: wrap }` (user 判断 2026-05-20 追記)
+  - user 判断 2026-05-20 (再追記): mobile は **3 段** に収まる量 (chip 18 → 15 へ削減)
 
 ## user intent (2026-05-19 chat lock)
 

@@ -8,7 +8,7 @@
 
 | ticket | status | 内容 |
 |---|---|---|
-| `doc/active/398-INGEST-media-quote-evaluation-default.md` (GH #73) | READY_FOR_DEPLOY | 395 手動 run で non-YouTube/X candidate が `cannot access local variable 'media_quote_evaluation' where it is not associated with a value` により `[ERROR] 公開失敗` へ落ちた。YouTube draft 作成自体は成功済みだが、後続候補を削るリスクがあるため、各 entry 処理開始時に `media_quote_evaluation` / `media_quotes` の safe default を置く narrow fix。tests: media quote/default guard 27 OK、compileall / diff-check OK。env / Secret / Scheduler / RUN_DRAFT_ONLY / WP既存記事 / X / frontend / unrelated staged changes は不可触。 |
+| `doc/active/398-INGEST-media-quote-evaluation-default.md` (GH #73) | LIVE_DEPLOYED_OBSERVE | 395 手動 run で non-YouTube/X candidate が `cannot access local variable 'media_quote_evaluation' where it is not associated with a value` により `[ERROR] 公開失敗` へ落ちた。YouTube draft 作成自体は成功済みだが、後続候補を削るリスクがあるため、各 entry 処理開始時に `media_quote_evaluation` / `media_quotes` の safe default を置く narrow fix。tests: media quote/default guard 27 OK、compileall / diff-check OK。commit `6969375`、Cloud Build `14880fed-c77f-44a1-b168-b5705561bf12` SUCCESS、image digest `sha256:67df1d62...`、fetcher rev `yoshilover-fetcher-00452-glk` 100%、`/health` OK、新 revision ERROR 0。env / Secret / Scheduler / RUN_DRAFT_ONLY / WP既存記事 / X / frontend / unrelated staged changes は不可触。次自然 run で同 UnboundLocalError 不在を観察。 |
 
 ### 395 — 公式 YouTube の弱いタイトルでも取り込む (user 要望「YouTube の取り込みも」)
 

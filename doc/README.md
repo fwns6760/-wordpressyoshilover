@@ -2009,6 +2009,43 @@ git add -A禁止。
 - **不可触**: DB schema 変更なし (advanced_metric_snapshots.scope は TEXT 文字列値拡張のみ) / env / Secret / Scheduler / RUN_DRAFT_ONLY / WP既存記事 / X / publish-notice / frontend / 348 whitelist / 349 cooldown 日数 / 356 quality gate の他 check / title format case A-D 構造
 - **follow-up**: 404 (Stage 2、 Phase 2 ETL: デーゲーム / vs 左右 / 登板 inning) / 405 (Stage 3、 PARKED: 打席内カウント / 走者状況詳細)
 
+### 404-INSIGHT-period-window-phase2-etl
+
+- **alias**: -
+- **status**: BLOCKED_BY=403 (Stage 2、 403 完了 + 観察後着手) / **priority**: medium
+- **owner**: Claude / **lane**: Claude
+- **doc_path**: `doc/waiting/404-INSIGHT-period-window-phase2-etl.md`
+- **stage**: Phase 2 / 段階式
+- **背景**: [[403]] では既存 schema で実装できる cut を全部入れた。 本 ticket は ETL 軽改修 (列追加 + parse 追加) で実装できる cut 3 件を Phase 2 として追加する。
+- **scope**: (1) デーゲーム / ナイター — `games.start_hour` 列追加 + NPB box 開始時刻 parse / (2) vs 左右投手 — `pitching_logs.pitcher_throws` 列追加 + roster fill / (3) 登板 inning 別 — `pitching_logs.start_inning` 列追加 + NPB box 登板回数 parse
+- **不可触**: [[403]] が固めた期間 cut 体系 / 348 whitelist / 349 cooldown / 356 quality gate / env / Secret / Scheduler / 既存 publisher の title format
+- **着手判断**: 403 完了 + 1 週間以上の自然 fire 観察後
+
+### 405-INSIGHT-period-window-phase3-parked
+
+- **alias**: -
+- **status**: PARKED (重工事、 pitch-by-pitch source 確保から、 当面着手しない) / **priority**: low
+- **owner**: Claude / **lane**: Claude
+- **doc_path**: `doc/waiting/405-INSIGHT-period-window-phase3-parked.md`
+- **stage**: Phase 3 / 段階式
+- **背景**: ファン視点 cut のうち pitch-by-pitch (1 球単位) source が必要なため当面着手しない案を shadow ticket として保管。 議論された案を忘れないため残す。
+- **scope (parked)**: (1) 打席内カウント別 (初球打ち / 2 ストライク後 / 3 ボール後 / 投球数別) / (2) 走者状況別 (満塁 / 二塁単独 / 一三塁 等、 得点圏以外の細分) / (3) 球場別 (本拠地以外、 甲子園 / マツダ / ハマスタ 等)
+- **着手判断条件**: pitch-by-pitch data の安定 source 確保 or NPB BIS feed access 取得 or user 再指定
+- **不可触**: [[403]] / [[404]] が固めた cut 体系 / DB schema (本 ticket 単独では何も変えない) / env / Secret / Scheduler
+
+### 406-INSIGHT-hr-split-sql-bug-fix
+
+- **alias**: -
+- **status**: READY (Claude 自律進行可能、 403 と独立) / **priority**: P1
+- **owner**: Claude / **lane**: Claude
+- **doc_path**: `doc/active/406-INSIGHT-hr-split-sql-bug-fix.md`
+- **背景**: 2026-05-20 12:00 JST `insight-nightly-ndtvf` logs に `OperationalError:no such column: bl.HR` × 7 split (opponent=t/s/c/db/d + home_away=home/away)、 warn `player_counting_split_publish_failed`。 HR opponent / home_away split publish が deploy 後ずっと壊れていた可能性。
+- **原因 (audit 済)**: `src/analysis/ranking_article_publisher.py` L937 `aggregate_player_counting_stat_split` に L278 と同じ HR dispatch が無い。 `batting_logs` schema に HR 列が存在せず (HR は `atbats_json` 内の per-PA marker)、 `SUM(bl.HR)` で OperationalError。
+- **fix 方針 (narrow)**: split 版にも HR dispatch 追加 + split 対応 helper `aggregate_player_hr_from_atbats_split` 新規追加。 `batting_logs` schema 変更なし、 他 metric / scope / caller 不変。
+- **affected**: `src/analysis/ranking_article_publisher.py` + tests
+- **不可触**: `batting_logs` schema / 他 metric (H / RBI / SB / K / W 等) の split / 348 whitelist / 349 cooldown / 356 quality gate / env / Secret / Scheduler / publisher caller / title format / [[403]] の scope vocabulary 切替
+- **並走**: [[403]] と完全に独立、 同 file touch のため commit 順序は直列 (どちらを先でも可)
+
 ### 362-INSIGHT-queue-cleanup-and-metric-run-cap
 
 - **alias**: -

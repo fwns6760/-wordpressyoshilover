@@ -33,6 +33,24 @@ user 方針「受け入れ NG はまた起票」+「一人開発で Active 多�
 |---|---|---|
 | `doc/active/403-INSIGHT-period-window-game-count-switch.md` | DRAFT (user GO 待ち) | 5/20 logs で 12:00 / 15:00 / 17:00 publish 0 件、 主因は 356 quality gate `insufficient_sample` (last_7d sample 不足)。 user lock spec で **日付 cut (last_7d / last_30d) 全廃止**、 打者 3/5/10試合 + 30/50/100打席、 投手 3/5/10登板 + 5/10/20投球回 base へ切替。 同 stage でファン視点 cut (打順別 / 本拠地 / vs 球団別) を既存 schema のまま追加。 サバメ NG line 維持、 whitelist [[348]] 据え置き。 affected: 8 file / 67 reference、 DB schema 変更なし。 follow-up: 404 (Phase 2 ETL: デーゲーム / vs 左右 / 登板 inning) / 405 (Phase 3 PARKED)。 next action: GO 後 audit 便 fire (read-only、 DB 実分布 + min_sample 詰め)。 |
 
+### 404 — INSIGHT Phase 2 ETL stub (段階式 Stage 2、 BLOCKED_BY=403)
+
+| ticket | status | 内容 |
+|---|---|---|
+| `doc/waiting/404-INSIGHT-period-window-phase2-etl.md` | BLOCKED_BY=403 | [[403]] の follow-up。 ETL 軽改修 (列追加 + parse 追加) で実装できる ファン視点 cut 3 件 = デーゲーム / ナイター (`games.start_hour`) / vs 左右投手 (`pitching_logs.pitcher_throws` + roster fill) / 登板 inning 別 (`pitching_logs.start_inning`)。 着手は 403 完了 + 1 週間以上の自然 fire 観察後。 stub だけ残して忘れない。 |
+
+### 405 — INSIGHT Phase 3 PARKED stub (段階式 Stage 3、 当面着手しない)
+
+| ticket | status | 内容 |
+|---|---|---|
+| `doc/waiting/405-INSIGHT-period-window-phase3-parked.md` | PARKED | pitch-by-pitch source が必要な cut の shadow ticket。 打席内カウント別 (初球打ち / 2 ストライク後) / 走者状況別 (満塁 / 二塁単独 / 一三塁 等) / 球場別 (本拠地以外)。 NPB box は per-PA result の text marker のみで pitch-by-pitch なし、 別 source 必要 (有料 API or NPB BIS feed)。 議論された案を忘れないため shadow 保管、 user 再指定 or source 確保で再開。 |
+
+### 406 — HR opponent / home_away split SQL bug fix (P1 narrow、 Claude 自律進行、 403 と独立)
+
+| ticket | status | 内容 |
+|---|---|---|
+| `doc/active/406-INSIGHT-hr-split-sql-bug-fix.md` | READY | 5/20 12:00 JST `insight-nightly-ndtvf` logs に `OperationalError:no such column: bl.HR` × 7 split (opponent=t/s/c/db/d + home_away=home/away)、 warn `player_counting_split_publish_failed`。 HR opponent / home_away split publish が deploy 後ずっと壊れていた可能性。 原因 (audit 済): `src/analysis/ranking_article_publisher.py` L937 `aggregate_player_counting_stat_split` に L278 と同じ HR dispatch (`aggregate_player_hr_from_atbats` への分岐) が無く、 `batting_logs` schema に HR 列が存在しない (`atbats_json` 内 marker 集計が必要) のに `SUM(bl.HR)` を発行している。 fix 方針 (narrow): split 版にも HR dispatch 追加 + split 対応 helper `aggregate_player_hr_from_atbats_split` 新規追加。 `batting_logs` schema 変更なし、 他 metric / scope / caller 不変。 [[403]] と並走可、 同 file touch のため commit 順序は直列。 |
+
 
 
 ### 400 — 本文抜粋を「全文恒久」 clean (share UI + photo credit + copyright + lead heading、user 指摘「全文恒久対応でないの?」「アプリ以外も対応」「引用文をよみやすく」 2026-05-20、同日 LIVE_DEPLOYED_VERIFIED)

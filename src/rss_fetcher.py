@@ -20870,15 +20870,20 @@ def _create_draft_with_same_fire_guard(
             normalized_source_url,
             draft_title[:80],
         )
+    # 387 part 2 fix (2026-05-20): person_tag_routing が 0 件返した場合の
+    # fallback。 直近 30 post の 37% (post 69537/24/22/12/10 等) で tag=[] が
+    # 発生していたのは player_canonical 検出 0 + fallback なし が原因。
+    # 全 publish が最低 1 tag を持つよう WP tag「速報」 (id=850) を fallback。
+    if not tag_ids:
+        tag_ids = [850]
     post_kwargs = {
         "categories": categories,
         "status": resolved_status,
         "featured_media": featured_media or None,
         "source_url": normalized_source_url or None,
         "allow_title_only_reuse": allow_title_reuse,
+        "tags": tag_ids,
     }
-    if tag_ids:
-        post_kwargs["tags"] = tag_ids
     return wp.create_post(
         draft_title,
         enriched_content,

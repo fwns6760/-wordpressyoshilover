@@ -60,6 +60,43 @@ class RssFetcherPersonTagsTests(unittest.TestCase):
         self.assertEqual(wp.created["tags"], [101, 102, 201, 202])
         self.assertEqual(wp.created["categories"], [663])
 
+    def test_create_draft_uses_breaking_news_tag_fallback_when_no_person_tags(self):
+        """387 part 2 fix: tag_ids が空の場合 [850] 速報 fallback で post に attach。"""
+        wp = FakeWP()
+        logger = logging.getLogger("test_rss_fetcher_person_tags_fallback")
+
+        # person_tag_router を mock し、 person_tags / context_tags 両方空に
+        # → tag_ids 空 → 387 fallback [850] 速報 が attach されるはず
+        from src.person_tag_router import PersonTagRouting
+        empty_routing = PersonTagRouting(
+            person_tags=(),
+            context_tags=(),
+            skip_reasons=("test_fallback",),
+        )
+        with (
+            patch("src.person_tag_router.route_tag_names", return_value=empty_routing),
+            patch("src.person_tag_router.resolve_existing_wp_tag_ids", return_value=([], [])),
+            patch.object(rss_fetcher, "_apply_rss_pipeline_enrichment", None),
+        ):
+            post_id = rss_fetcher._create_draft_with_same_fire_guard(
+                wp,
+                logger,
+                set(),
+                {},
+                "テレビ番組情報: 今日の野球中継",
+                "<p>body</p>",
+                [665],
+                "https://example.com/no-player",
+                enrichment_summary="特定選手名なし",
+                enrichment_category="general",
+                enrichment_template_key="general",
+            )
+
+        self.assertEqual(post_id, 999)
+        # 387 fix: tag_ids 空 → fallback [850] 速報 が確実に attach
+        self.assertEqual(wp.created["tags"], [850])
+        self.assertEqual(wp.created["categories"], [665])
+
 
 if __name__ == "__main__":
     unittest.main()

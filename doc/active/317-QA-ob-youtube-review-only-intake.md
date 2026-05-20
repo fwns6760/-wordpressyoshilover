@@ -158,6 +158,7 @@ GO後に実装する場合の予定:
 - 2026-05-20: user が「下書きで作ってもらうでよい。公開は私が判断する」と明示。`giants_ob` source role を追加し、巨人OB YouTube は title が弱くても候補化、RSS 本線では `social_video_notice` body + YouTube embed で draft 作成、publish skip reason `draft_only,youtube_review_source_draft_only` で必ず下書き維持する実装に変更。公式 YouTube は `official_video_source` として既存 395 挙動を維持。非巨人OBは従来 title filter を維持。env / Secret / Scheduler / Cloud Run / WP既存記事 / X は未変更。
 - 2026-05-20: user 指示「デプロイ前まで進めて」。status を `READY_FOR_AUTH_EXECUTOR` に正規化し、folder policy に従って `doc/waiting/` へ移動。read-only `gcloud run services describe yoshilover-fetcher --project baseballsite --region asia-northeast1 --format=json` で現行本番を確認: revision `yoshilover-fetcher-00452-glk`、image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:398-media-quote-default-6969375`、traffic 100%、service generation `594`、`RUN_DRAFT_ONLY=True`、`AUTO_TWEET_ENABLED=0`。deploy / build / env / Secret / Scheduler / WP / X / fire は未実行。
 - 2026-05-20: user 指示「ならデプロイ」。実装 commit `021c85c` の clean archive から Cloud Build `6a0c0d80-84ad-42fa-9c75-5c547e819b3f` を実行し、image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:317-ob-youtube-021c85c` / digest `sha256:2f1479043bb99ab88f4a1821e7d8df63dfa5d0f705a72036269084ecb5fc3f09` を作成。Cloud Run service `yoshilover-fetcher` へ deploy し、revision `yoshilover-fetcher-00454-ntj`、traffic 100%、`/health` OK、新 revision ERROR log 0 を確認。manual `/run` fire、env / Secret / Scheduler / RUN_DRAFT_ONLY flip / WP既存記事 / X は未変更。
+- 2026-05-20: deploy 後の current-state refresh で、fetcher は後続 revision `yoshilover-fetcher-00455-lcf` / image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:400-ext-readable-0a29e7f` / generation `597` / observedGeneration `597` へ進行済みを確認。`git merge-base --is-ancestor 021c85c 0a29e7f` は exit 0 で、317 実装は後続 image に含まれて live 維持。`/health` OK、新 revision `00455-lcf` ERROR log 0。env / Secret / Scheduler / RUN_DRAFT_ONLY flip / WP既存記事 / X / manual `/run` fire は未変更。
 
 ## 10. Regression Memo欄
 
@@ -236,6 +237,7 @@ GO後に実装する場合の予定:
 - 2026-05-20 sandbox外切り分け: PASS (`14 passed, 3 warnings`)。
 - 2026-05-20 full pytest baseline sandbox外: PASS (`5388 passed, 1 xfailed, 3 xpassed, 4 warnings`)。
 - 2026-05-20 deploy / log 数値 diff: PASS。fetcher revision `yoshilover-fetcher-00452-glk` -> `yoshilover-fetcher-00454-ntj`、image `398-media-quote-default-6969375` -> `317-ob-youtube-021c85c`、generation / observedGeneration `594/594` -> `596/596`、traffic latest 100% 維持、`RUN_DRAFT_ONLY=True` 維持、`AUTO_TWEET_ENABLED=0` 維持、`/health` OK、新 revision ERROR log 0。
+- 2026-05-20 current-state refresh: PASS。fetcher revision `yoshilover-fetcher-00455-lcf`、image `400-ext-readable-0a29e7f`、generation / observedGeneration `597/597`、traffic latest 100% 維持。`0a29e7f` は `021c85c` descendant のため、317 実装は live image に含まれる。`/health` OK、新 revision ERROR log 0。
 - 2026-05-20 pre-deploy read-only Cloud Run check: PASS。current service `yoshilover-fetcher` は Ready、latest ready revision `yoshilover-fetcher-00452-glk`、current image `yoshilover-fetcher:398-media-quote-default-6969375`、traffic 100%。
 
 ## 15. 残った懸念
@@ -311,6 +313,16 @@ deploy 実績:
 - new revision ERROR log: `0`
 - invariants: `RUN_DRAFT_ONLY=True`、`AUTO_TWEET_ENABLED=0`
 
+current live refresh:
+
+- current revision: `yoshilover-fetcher-00455-lcf`
+- current image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:400-ext-readable-0a29e7f`
+- current generation / observedGeneration: `597` / `597`
+- ancestry: `0a29e7f` includes `021c85c` (`git merge-base --is-ancestor 021c85c 0a29e7f` exit 0)
+- current `/health`: `OK`
+- current new revision ERROR log: `0`
+- 317 implementation remains live via the descendant image.
+
 実行した deploy command:
 
 ```bash
@@ -343,8 +355,9 @@ gcloud run services update yoshilover-fetcher \
 post-deploy verify:
 
 - `GET /health` が 200 / `OK`。
-- latest ready revision が new image `317-ob-youtube-021c85c` を向き、traffic 100%。
-- Cloud Logging で新 revision ERROR 0。
+- direct deploy revision `00454-ntj` は new image `317-ob-youtube-021c85c` を向き、traffic 100%。
+- current latest ready revision `00455-lcf` は `021c85c` を含む descendant image `400-ext-readable-0a29e7f` を向き、traffic 100%。
+- Cloud Logging で direct deploy revision / current revision とも ERROR 0。
 - X API POST / publish 自動化 / Secret / Scheduler / env 変更 0。
 
 残 acceptance:

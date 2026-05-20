@@ -1404,31 +1404,35 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
         self.assertEqual(len(combos), 20)
 
     def test_build_combos_with_db_path_adds_last_n_after_step1(self) -> None:
-        """STEP1 + snapshot 復活 + 394 fix: db_path 指定で 20 + 直近5試合 4 +
-        直近10試合 4 = 28 combo (投手は短窓除外で 4 batting metric のみ)。"""
+        """STEP1 + snapshot 復活 + 397 (2026-05-20): db_path 指定で 20 base +
+        直近3/5/10/20試合 × 8 metric = 32、 ただし 15 dates seed では
+        20-game window が返らないので 3/5/10 = 24 combo。 base 20 + 24 = 44。"""
         from src.x_post_mail_lane import _build_combos
-        # need ≥10 distinct game dates for both 5-game and 10-game windows
+        # need ≥10 distinct game dates for 5/10-game windows. 20-game は seed 不足で skip。
         dates = [f"2026-05-{day:02d}" for day in range(1, 16)]  # 15 dates
         self._seed_games(dates)
         combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST), db_path=self.db_path)
-        self.assertEqual(len(combos), 28)
+        self.assertEqual(len(combos), 44)
 
     def test_last_n_games_combos_are_high_novelty_and_league_scoped(self) -> None:
         from src.x_post_mail_lane import _build_combos
         dates = [f"2026-05-{day:02d}" for day in range(1, 16)]
         self._seed_games(dates)
         combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST), db_path=self.db_path)
-        last_n_combos = [c for c in combos if c.period_label in ("直近5試合", "直近10試合")]
-        # 394 fix: 投手は短窓除外、 batting 4 metric × 2 period = 8
-        self.assertEqual(len(last_n_combos), 8)
+        last_n_combos = [
+            c for c in combos
+            if c.period_label in ("直近3試合", "直近5試合", "直近10試合", "直近20試合")
+        ]
+        # 397: 直近 3/5/10 × 8 metric (batter + pitcher) = 24 (20-game seed 不足で skip)
+        self.assertEqual(len(last_n_combos), 24)
         for c in last_n_combos:
             self.assertEqual(c.novelty, "high", msg=f"non-high novelty leaked: {c}")
             self.assertFalse(c.giants_only, msg=f"giants-only combo leaked: {c}")
             self.assertIn(
                 c.metric,
-                ("AVG", "OBP", "SLG", "OPS"),
+                ("AVG", "OBP", "SLG", "OPS",
+                 "ERA", "K_per_9", "BB_per_9", "HR_per_9"),
             )
-            self.assertIn(c.min_sample_override, (5, 10))
 
     def test_last_n_games_period_range_uses_game_dates(self) -> None:
         """直近 N 試合 combo の since/until が seed date と一致。"""
@@ -1533,14 +1537,16 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
         self.assertIn(30, ms_values, msg=f"default 30 missing: {ms_values}")
 
     def test_db_path_with_insufficient_games_falls_back_gracefully(self) -> None:
-        """394 fix: games 件数不足の時、 直近 N 試合 combo は追加されず
+        """394 fix + 397: games 件数不足の時、 直近 N 試合 combo は追加されず
         base 20 (直近1週間 batting 4 + 守備位置別 AVG 4 + 今週 batting 4
-        + 今月 8) 維持。 投手は短窓除外。"""
+        + 今月 8) 維持。 397 で直近 3 試合 window が追加されたので、 3 dates
+        だと last_3_games × 8 metric = 8 combo は追加される (20 + 8 = 28)。
+        last_5/10/20 は seed 不足で skip。"""
         from src.x_post_mail_lane import _build_combos
-        # only 3 games → both n=5 and n=10 windows return None
+        # 3 games seeded → last_3_games window OK、 last_5/10/20 は seed 不足で None
         self._seed_games(["2026-05-14", "2026-05-15", "2026-05-16"])
         combos = _build_combos(datetime(2026, 5, 16, 7, 0, tzinfo=JST), db_path=self.db_path)
-        self.assertEqual(len(combos), 20, msg=f"unexpected combo count: {len(combos)}")
+        self.assertEqual(len(combos), 28, msg=f"unexpected combo count: {len(combos)}")
 
 
 class XPostMailEntrypointFreshnessTests(unittest.TestCase):

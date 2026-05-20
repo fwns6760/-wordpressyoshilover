@@ -549,8 +549,12 @@ def run_nightly(
                 ("last_7d", 5, 1.0),
                 ("last_30d", 15, 5.0),
                 ("season", qualified_pa, qualified_ip),
+                # 直近 N 試合 rolling (user 2026-05-20: calendar scope 廃止、
+                # 投手 / 打者 / 守備 全て 直近 3/5/10/20試合 に統一)
+                ("last_3_games", 2, 0.0),
                 ("last_5_games", 3, 0.0),
                 ("last_10_games", 6, 0.0),
+                ("last_20_games", 12, 0.0),
                 ("weekly", 5, 1.0),
                 ("monthly", 15, 5.0),
             )

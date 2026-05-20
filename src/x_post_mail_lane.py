@@ -107,13 +107,19 @@ SAFE_METRICS = (
 # Pitching metrics keep using the legacy `query_rank_fn` path because
 # `_aggregate_pitching` correctly reads `pitching_logs` columns.
 _BATTING_SNAPSHOT_METRICS = frozenset({"AVG", "OBP", "SLG", "OPS"})
+_PITCHING_SNAPSHOT_METRICS = frozenset({"ERA", "K_per_9", "BB_per_9", "HR_per_9"})
+_SNAPSHOT_METRICS = _BATTING_SNAPSHOT_METRICS | _PITCHING_SNAPSHOT_METRICS
 
 # period_label → snapshot scope mapping. period_label not in this map
 # falls back to the legacy `query_rank_fn` path.
+# 2026-05-20: 直近 N 試合 のみが新規 publish / mail combo の本流。
+# calendar scope (直近1週間 / 今週 / 今月) は legacy 互換のため map 残置。
 _PERIOD_LABEL_TO_SNAPSHOT_SCOPE: dict[str, str] = {
-    "直近1週間": "last_7d",
+    "直近3試合": "last_3_games",
     "直近5試合": "last_5_games",
     "直近10試合": "last_10_games",
+    "直近20試合": "last_20_games",
+    "直近1週間": "last_7d",
     "今週": "weekly",
     "今月": "monthly",
 }
@@ -675,6 +681,11 @@ def _build_combos(
     だから combo pool が広いほど starvation 解消、 連日同じ ranking が
     出にくくなる。 1 mail 中の `_period_family_key` ({metric}|{position})
     で同一 metric 多窓の重複は防止される。
+
+    2026-05-20 user 方針 (additive 段階): 直近 3 試合 / 直近 20 試合 を
+    追加 (combo pool 拡張)。 計算は per-player rolling (snapshot 経由)。
+    将来 commit で calendar scope (直近1週間 / 今週 / 今月 / 前月) を
+    削除し、 直近 3/5/10/20 試合のみに統一する予定。
     """
     combos: list[_MetricCombo] = []
 
@@ -696,21 +707,23 @@ def _build_combos(
         combos.append(
             _MetricCombo("AVG", last7, "直近1週間", position=pos, novelty="high")
         )
-    # 3. 354+STEP1: 直近 5/10 巨人試合 × 8 metric — yoshilover 独自
-    # の試合数 base ranking。 games table が読めて且つ N 試合分の row が
-    # あれば追加 (case-by-case fallback、 取得失敗時は skip)。
+    # 3. 354+STEP1+397: 直近 3/5/10/20 巨人試合 × 8 metric — yoshilover
+    # 独自の試合数 base ranking。 games table が読めて且つ N 試合分の
+    # row があれば追加 (case-by-case fallback、 取得失敗時は skip)。
+    # 397 (2026-05-20): 投手も snapshot per-player rolling 経由で含める。
+    # 旧 (5/10 試合のみ batter) → 新 (3/5/10/20 試合 batter+pitcher)。
     if db_path:
-        for n_games, label in ((5, "直近5試合"), (10, "直近10試合")):
+        for n_games, label in (
+            (3, "直近3試合"),
+            (5, "直近5試合"),
+            (10, "直近10試合"),
+            (20, "直近20試合"),
+        ):
             window = _query_recent_n_games_date_range(n_games, db_path)
             if window is None:
                 continue
             since, until = window
             for m in SAFE_METRICS:
-                # 394 fix: 先発投手は週 1 回しか投げないため、 「直近 5/10
-                # 試合」 (team game window) は投手指標には合わない。 投手は
-                # 今月 / シーズン / 前月 等の長窓のみで集計する。
-                if m in _PITCHING_METRICS:
-                    continue
                 combos.append(
                     _MetricCombo(
                         m,
@@ -718,7 +731,9 @@ def _build_combos(
                         label,
                         until=until,
                         novelty="high",
-                        min_sample_override=n_games,
+                        min_sample_override=max(1, n_games // 2)
+                            if m in _PITCHING_METRICS
+                            else n_games,
                     )
                 )
     # 4. STEP1: 今週 — current ISO week Monday to today × 8 metric.
@@ -2195,11 +2210,14 @@ def pick_candidates(
             else min_sample
         )
         # 2026-05-17 dispatch: batting metrics without position are
-        # answered by the snapshot table (correct OPS/OBP/SLG values);
-        # everything else uses the legacy aggregator path.
+        # answered by the snapshot table (correct OPS/OBP/SLG values).
+        # 2026-05-20: 投手 metric (ERA / K_per_9 / BB_per_9 / HR_per_9) も
+        # snapshot 経由 per-player rolling で扱う (直近 N 試合 が starter
+        # 1 登板に依存しない正しい値になる)。 守備位置別 (position != None)
+        # は snapshot に position 列が無いので legacy path 維持。
         use_snapshot = (
             db_path is not None
-            and combo.metric in _BATTING_SNAPSHOT_METRICS
+            and combo.metric in _SNAPSHOT_METRICS
             and combo.position is None
             and combo.period_label in _PERIOD_LABEL_TO_SNAPSHOT_SCOPE
         )

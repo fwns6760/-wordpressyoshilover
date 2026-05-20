@@ -648,7 +648,12 @@ def compute_advanced_metric_snapshots(
     league_rank / league_total は同 scope 内 metric 別に sort して付与。
     position_rank / position_total / extra_json は本 phase で NULL。
     """
-    _ROLLING_N = {"last_5_games": 5, "last_10_games": 10}
+    _ROLLING_N = {
+        "last_3_games": 3,
+        "last_5_games": 5,
+        "last_10_games": 10,
+        "last_20_games": 20,
+    }
     is_rolling = scope in _ROLLING_N
     if is_rolling:
         n_games = _ROLLING_N[scope]

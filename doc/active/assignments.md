@@ -27,14 +27,14 @@ user 方針「受け入れ NG はまた起票」+「一人開発で Active 多�
 
 ## 2026-05-20 session update
 
-### 407 — SUBTYPE OB 新設 + farm 2軍/3軍 分離 + WP front 表示 (親 ticket、 設計 lock 中)
+### 407 / 408 / 409 / 410 — OB subtype + farm 2軍/3軍 + WP front (CLOSED 2026-05-20、 全 Phase LIVE_DEPLOYED_OBSERVE)
 
 | ticket | status | 内容 |
 |---|---|---|
-| `doc/active/407-SUBTYPE-ob-and-farm-split-master.md` | DRAFT | chat 起票 (2026-05-20 「OBとかは？」「2軍と3軍を分けるは」)。subtype 名 / 判定軸 / validator 要件の design lock を本親 ticket で確定し、 子 408/409/410 で実装。 設計 anchor: `docs/handoff/session_logs/2026-05-20_ob_subtype_and_farm_split_design.md`。 lock 内容: subtype 名 = `ob` / `farm2_result` / `farm2_lineup` / `farm3_practice` / `farm3_player`。 alias `farm` → `farm2_*`。 validator 要件は OB = LENIENT + 「元巨人 / 現所属」併記必須、 farm2 = STRICT (NPB 公式数値)、 farm3 = LENIENT (非公式)。 受け入れ条件: 子 ticket 全閉じ + baseline pytest fail 増加なし + 既存 farm fixture alias 経路 hash 一致 + 自然 fire 1 週間観察。 |
-| `doc/active/408-SUBTYPE-ob-classifier-and-validator.md` | READY (407 lock 後) | OB subtype 実装。 `src/ob_name_table.py` 新規 (30-50 件初期 seed、 現役除外、 元巨人 MLB は含む) + `classify_category` の name table literal match 追加 + title/body/source_attribution/numeric/publish_gate/long_body/weak_title/x_post の subtype 登録 + 新規 unit test 4 file。 X 投稿 enable は §11 user 判断後 = 別 ticket。 並走可: [[409]] (scope disjoint、 commit 直列)。 |
-| `doc/active/409-SUBTYPE-farm-2gun-3gun-split.md` | READY (407 lock 後) | farm → farm2/farm3 分離。 alias backward-compat (farm/farm_result/farm_lineup → farm2_*) で既存 fixture hash 不変必須。 classifier 2軍/3軍 判定 (literal: イースタン/2軍/フューチャーズ → farm2、 3軍/育成/練習試合 → farm3、 育成選手 背番号 3 桁 含有率)。 validator 登録 (farm2 = STRICT、 farm3 = LENIENT)。 既存 farm test は alias regression test として保持 (削除禁止)。 並走可: [[408]] (scope disjoint、 commit 直列)。 |
-| `doc/active/410-FRONT-ob-farm-category-display.md` | DRAFT (408/409 subtype 名 lock 後) | WP front + 記事ページ表示。 推奨方式 B: draft 生成側で badge HTML inject (WP テーマ PHP 改修不要)。 出典帯 format = OB 「元巨人 / 現所属」併記、 farm2 「2軍 イースタン」、 farm3 「3軍 (※非公式)」。 category slug 案 (ob / farm2 / farm3) は user 判断、 本 ticket では設計のみ + staging 目視 read-only、 WP REST mutation 禁止。 noindex 維持 ([[251-SEO]] 解禁前)。 |
+| `doc/done/2026-05/407-SUBTYPE-ob-and-farm-split-master.md` | LIVE_DEPLOYED_OBSERVE | 親 ticket。 子 408/409/410 全 Phase 完了、 production deploy 2 回 (`00459-44z`/`00460-tng`)、 GH Issue #80。 残: 自然 fire 1 週間観察 / 409 enable user 判断 / WP CSS user 判断。 |
+| `doc/done/2026-05/408-SUBTYPE-ob-classifier-and-validator.md` | LIVE_DEPLOYED_OBSERVE | OB subtype 新設。 Phase 1 (`215abbf`) literal marker primary + 19 OB seed + 3 validator 登録、 Phase 2 (`afdfd5c`) name table secondary gate + 現巨人 role guard 13 件、 Phase 3 (`1cb561c`) name seed 32 名 + literal markers 15 拡充。 40 OB tests pass、 GH Issue #82。 |
+| `doc/done/2026-05/409-SUBTYPE-farm-2gun-3gun-split.md` | LIVE_DEPLOYED_OBSERVE (flag OFF) | farm → farm2/farm3 分離。 Phase 1 (`64125cb`) `ENABLE_FARM_2GUN_3GUN_SPLIT` flag-gated (default OFF) + 4 新 subtype 登録 + 26 unit test。 backward-compat alias 維持で既存 farm test 全 pass。 GH Issue #83。 残: enable user 判断 + farm3_player narrative judge。 |
+| `doc/done/2026-05/410-FRONT-ob-farm-category-display.md` | LIVE_DEPLOYED_OBSERVE | WP front 表示。 Phase 1 (`b46ffaa`) `src/subtype_display_format.py` (build_subtype_badge_html / build_source_attribution_block + 17 test)、 Phase 2 (`d963d1d`) `maybe_prepend_subtype_display` + `_create_draft_with_same_fire_guard` wire-in + 8 test。 GH Issue #84。 残: WP テーマ CSS 追加 (`.nomotoke-subtype-badge--ob/farm2/farm3`、 user 判断)。 |
 
 ### 403 — INSIGHT 期間 cut を日付 base から 試合数 / PA / 登板数 / IP base に全面切替 (段階式 Stage 1、 READY audit 完了)
 

@@ -33,7 +33,7 @@
     {
       "channel_id": "UCGynN2H7DcNjpN7Qng4dZmg",
       "display_name": "上原浩治の雑談魂",
-      "role": "ob",
+      "role": "giants_ob",
       "status": "candidate",
       "channel_handle": "",
       "reference": "existing-rss-sources",
@@ -42,7 +42,7 @@
     {
       "channel_id": "UC7alpSrw0vhpihgYxbVFDkA",
       "display_name": "元木大介チャンネル",
-      "role": "ob",
+      "role": "giants_ob",
       "status": "candidate",
       "channel_handle": "",
       "reference": "existing-rss-sources",
@@ -51,7 +51,7 @@
     {
       "channel_id": "UCAMXfvpILgkofiQFbYWeeZA",
       "display_name": "髙橋尚成のHISAちゃん",
-      "role": "ob",
+      "role": "giants_ob",
       "status": "candidate",
       "channel_handle": "",
       "reference": "existing-rss-sources",
@@ -60,7 +60,7 @@
     {
       "channel_id": "UCKa1VlSq1WwdSQWv4JFdgxg",
       "display_name": "デーブ大久保チャンネル",
-      "role": "ob",
+      "role": "giants_ob",
       "status": "candidate",
       "channel_handle": "",
       "reference": "manual-web-confirmed-channel-id",
@@ -69,7 +69,7 @@
     {
       "channel_id": "UCB-FcvdGhY5a69C7Csv4unA",
       "display_name": "アスリートアカデミア 岡崎郁 official",
-      "role": "ob",
+      "role": "giants_ob",
       "status": "candidate",
       "channel_handle": "",
       "reference": "manual-web-confirmed-channel-id",
@@ -78,7 +78,7 @@
     {
       "channel_id": "UCU77bY7q28jGPYlDn089gfg",
       "display_name": "ミスターパーフェクト槙原",
-      "role": "ob",
+      "role": "giants_ob",
       "status": "candidate",
       "channel_handle": "",
       "reference": "manual-web-confirmed-channel-id",
@@ -87,7 +87,7 @@
     {
       "channel_id": "UCrmppJ31jdU7GDVupoSbl0Q",
       "display_name": "江川卓のたかされ",
-      "role": "ob",
+      "role": "giants_ob",
       "status": "candidate",
       "channel_handle": "",
       "reference": "manual-web-confirmed-channel-id",
@@ -96,7 +96,7 @@
     {
       "channel_id": "UC9aER0bs2IpqTQNKljzzBFQ",
       "display_name": "清ちゃんスポーツ",
-      "role": "ob",
+      "role": "giants_ob",
       "status": "candidate",
       "channel_handle": "",
       "reference": "manual-web-confirmed-channel-id",
@@ -114,7 +114,7 @@
     {
       "channel_id": "UC2vnK-QoXQrl1LVTNFDfUaQ",
       "display_name": "[ラミレス公式]ラミちゃんねる",
-      "role": "ob",
+      "role": "giants_ob",
       "status": "candidate",
       "channel_handle": "",
       "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
@@ -123,7 +123,7 @@
     {
       "channel_id": "UCl5XxVyJYNq7gOkemprMBiA",
       "display_name": "元巨人・中日小田幸平のはげch",
-      "role": "ob",
+      "role": "giants_ob",
       "status": "candidate",
       "channel_handle": "",
       "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
@@ -132,7 +132,7 @@
     {
       "channel_id": "UCMJ0UAF5JTDnfndnHyLOgUQ",
       "display_name": "今成亮太チャンネル by DIAMOND ALLIANS",
-      "role": "ob",
+      "role": "giants_ob",
       "status": "candidate",
       "channel_handle": "",
       "reference": "344-INGEST-phase-1b-2026-05-17-webverify",
@@ -213,7 +213,7 @@
     {
       "channel_id": "UCVhXntGHOpB4vnfkBdN5HlA",
       "display_name": "【イバTV】井端弘和公式チャンネル",
-      "role": "ob",
+      "role": "giants_ob",
       "status": "candidate",
       "channel_handle": "",
       "reference": "344-INGEST-phase-1b-2026-05-17-webverify",

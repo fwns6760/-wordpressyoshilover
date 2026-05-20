@@ -78,6 +78,87 @@ class CheckYoutubeGiantsFilterTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(reason, "no_match")
 
+    def test_giants_ob_source_role_passes_for_draft_review_even_with_weak_title(self):
+        ok, reason = rss_fetcher._check_youtube_giants_filter_for_source(
+            "あの場面の配球を語る",
+            source_roles={"media_quote_only", "youtube_review_source", "giants_ob"},
+        )
+
+        self.assertTrue(ok)
+        self.assertEqual(reason, "giants_ob_source")
+
+
+class YoutubeReviewDraftSourceTests(unittest.TestCase):
+    def test_giants_ob_youtube_review_source_is_forced_to_draft(self):
+        self.assertTrue(
+            rss_fetcher._is_youtube_review_draft_source(
+                source_type="tag_scrape",
+                source_roles={"media_quote_only", "youtube_review_source", "giants_ob"},
+                source_url="https://www.youtube.com/watch?v=abc12345DEF",
+            )
+        )
+
+    def test_official_youtube_source_keeps_existing_publish_path(self):
+        self.assertFalse(
+            rss_fetcher._is_youtube_review_draft_source(
+                source_type="tag_scrape",
+                source_roles={"media_quote_only", "official_video_source", "review_only"},
+                source_url="https://www.youtube.com/watch?v=abc12345DEF",
+            )
+        )
+
+    def test_non_youtube_review_source_not_forced_to_draft(self):
+        self.assertFalse(
+            rss_fetcher._is_youtube_review_draft_source(
+                source_type="tag_scrape",
+                source_roles={"media_quote_only", "youtube_review_source", "giants_ob"},
+                source_url="https://example.com/video",
+            )
+        )
+
+    def test_giants_ob_youtube_category_routes_to_ob_commentary(self):
+        category = rss_fetcher._youtube_review_category_override(
+            "コラム",
+            source_type="tag_scrape",
+            source_roles={"media_quote_only", "youtube_review_source", "giants_ob"},
+            source_url="https://www.youtube.com/watch?v=abc12345DEF",
+        )
+
+        self.assertEqual(category, "OB・解説者")
+
+    def test_giants_ob_youtube_publish_reasons_force_draft_and_history_persistence(self):
+        reasons = rss_fetcher._apply_youtube_review_draft_skip_reasons(
+            [],
+            source_type="tag_scrape",
+            source_roles={"media_quote_only", "youtube_review_source", "giants_ob"},
+            source_url="https://www.youtube.com/watch?v=abc12345DEF",
+        )
+
+        self.assertEqual(reasons, ["draft_only", "youtube_review_source_draft_only"])
+
+    def test_official_youtube_publish_reasons_are_not_forced_to_draft(self):
+        reasons = rss_fetcher._apply_youtube_review_draft_skip_reasons(
+            [],
+            source_type="tag_scrape",
+            source_roles={"media_quote_only", "official_video_source", "review_only"},
+            source_url="https://www.youtube.com/watch?v=abc12345DEF",
+        )
+
+        self.assertEqual(reasons, [])
+
+    def test_youtube_review_notice_article_uses_embed_and_validates(self):
+        article, validation = rss_fetcher._build_youtube_review_notice_article(
+            source_url="https://www.youtube.com/watch?v=abc12345DEF",
+            source_name="上原浩治の雑談魂",
+            source_roles={"media_quote_only", "youtube_review_source", "giants_ob"},
+            title="あの場面の配球を語る",
+            published_at=None,
+        )
+
+        self.assertTrue(validation.ok, validation)
+        self.assertIn("wp-block-embed-youtube", article.body_html)
+        self.assertIn("上原浩治の雑談魂", article.title)
+
 
 class YoutubeSourceArticleizeTests(unittest.TestCase):
     def test_youtube_channel_media_quote_only_still_articleizes_for_344(self):
@@ -151,6 +232,7 @@ class YoutubeRegistryExpansionTests(unittest.TestCase):
         self.assertEqual(added["article_limit"], 5)
         self.assertIn("media_quote_only", added["role"])
         self.assertIn("review_only", added["role"])
+        self.assertIn("giants_ob", added["role"])
 
     def test_registry_not_appended_when_base_sources_have_no_youtube_scraper(self):
         base_sources = [

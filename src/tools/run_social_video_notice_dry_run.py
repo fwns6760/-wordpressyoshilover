@@ -94,7 +94,7 @@ def _payload_from_youtube_args(args: argparse.Namespace) -> dict[str, Any]:
         "source_url": normalize_youtube_video_url(args.youtube_url),
         "source_account_name": source.display_name or source.channel_id,
         "source_account_handle": source.channel_handle,
-        "source_account_type": source.role,
+        "source_account_type": "ob" if source.role == "giants_ob" else source.role,
         "media_kind": args.media_kind,
         "caption_or_title": video_title,
         "published_at": args.published_at,

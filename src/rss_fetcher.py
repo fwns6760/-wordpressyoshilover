@@ -313,6 +313,8 @@ def _should_articleize_source(
 def _youtube_registry_source_to_rss_source(source: Any) -> dict[str, Any]:
     role = str(getattr(source, "role", "") or "")
     roles = ["media_quote_only", "youtube_review_source", "review_only"]
+    if role and role not in roles and role != "excluded":
+        roles.append(role)
     if role == "official":
         roles.append("official_video_source")
     if role in {"media", "broadcast"}:
@@ -22819,7 +22821,112 @@ def _check_youtube_giants_filter_for_source(
     roles = set(source_roles or [])
     if "official_video_source" in roles:
         return (True, "official_video_source")
+    if "giants_ob" in roles:
+        return (True, "giants_ob_source")
     return _check_youtube_giants_filter(title)
+
+
+def _is_youtube_review_draft_source(
+    *,
+    source_type: str,
+    source_roles: set[str] | frozenset[str] | list[str] | tuple[str, ...],
+    source_url: str,
+) -> bool:
+    roles = set(source_roles or [])
+    if source_type != "tag_scrape":
+        return False
+    if not _is_youtube_post_url(source_url):
+        return False
+    if "official_video_source" in roles:
+        return False
+    return bool(roles & {"youtube_review_source", "review_only", "giants_ob", "ob"})
+
+
+def _youtube_review_category_override(
+    category: str,
+    *,
+    source_type: str,
+    source_roles: set[str] | frozenset[str] | list[str] | tuple[str, ...],
+    source_url: str,
+) -> str:
+    roles = set(source_roles or [])
+    if _is_youtube_review_draft_source(
+        source_type=source_type,
+        source_roles=roles,
+        source_url=source_url,
+    ) and roles & {"giants_ob", "ob", "coach", "player", "team_staff"}:
+        return "OB・解説者"
+    return category
+
+
+def _youtube_review_source_account_type(
+    source_roles: set[str] | frozenset[str] | list[str] | tuple[str, ...],
+) -> str:
+    roles = set(source_roles or [])
+    if roles & {"giants_ob", "ob"}:
+        return "ob"
+    if "coach" in roles:
+        return "coach"
+    if "player" in roles:
+        return "player"
+    if "team_staff" in roles:
+        return "team_staff"
+    if "broadcast" in roles:
+        return "broadcast"
+    if "media" in roles:
+        return "media"
+    return "youtube_review"
+
+
+def _apply_youtube_review_draft_skip_reasons(
+    publish_skip_reasons: list[str],
+    *,
+    source_type: str,
+    source_roles: set[str] | frozenset[str] | list[str] | tuple[str, ...],
+    source_url: str,
+) -> list[str]:
+    # 317 / GH #76: OB/非公式 YouTube は素材として下書き化するが、
+    # 公開判断は user が WP 管理画面で行う。
+    reasons = list(publish_skip_reasons or [])
+    if not _is_youtube_review_draft_source(
+        source_type=source_type,
+        source_roles=source_roles,
+        source_url=source_url,
+    ):
+        return reasons
+    if "draft_only" not in reasons:
+        reasons.append("draft_only")
+    if "youtube_review_source_draft_only" not in reasons:
+        reasons.append("youtube_review_source_draft_only")
+    return reasons
+
+
+def _build_youtube_review_notice_article(
+    *,
+    source_url: str,
+    source_name: str,
+    source_roles: set[str] | frozenset[str] | list[str] | tuple[str, ...],
+    title: str,
+    published_at: datetime | None,
+):
+    from src.social_video_notice_builder import build_social_video_notice_article
+    from src.social_video_notice_contract import SocialVideoNoticePayload
+    from src.social_video_notice_validator import validate_social_video_notice_article
+
+    payload = SocialVideoNoticePayload(
+        source_platform="youtube",
+        source_url=source_url,
+        source_account_name=source_name or "YouTube",
+        source_account_type=_youtube_review_source_account_type(source_roles),
+        source_account_handle=None,
+        media_kind="video",
+        caption_or_title=title,
+        published_at=published_at.isoformat() if isinstance(published_at, datetime) else None,
+        supplement_note=None,
+    )
+    article = build_social_video_notice_article(payload)
+    validation = validate_social_video_notice_article(article)
+    return article, validation
 
 
 # ──────────────────────────────────────────────────────────
@@ -26289,6 +26396,27 @@ def _main(args, logger):
                 source_url=post_url,
                 logger=logger,
             )
+            category_before_youtube_review_override = category
+            category = _youtube_review_category_override(
+                category,
+                source_type=source_type,
+                source_roles=source_roles,
+                source_url=post_url,
+            )
+            if category != category_before_youtube_review_override:
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "youtube_review_category_override",
+                            "source_url": post_url,
+                            "source_name": name,
+                            "source_roles": prepared_source_roles,
+                            "before": category_before_youtube_review_override,
+                            "after": category,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
             # Observation only; later consumers decide whether to use normalized outputs.
             _, category_guard_warnings = _tc_validate_category(category)
             _, tag_guard_warnings = _tc_validate_tags(prepared_source_roles)
@@ -26752,6 +26880,7 @@ def _main(args, logger):
         media_quotes: list[dict] = []
 
         source_type = item["source_type"]
+        source_roles = set(item.get("source_roles") or [])
         category = item["category"]
         title = item["title"]
         raw_title = item.get("raw_title") or title
@@ -27685,31 +27814,84 @@ def _main(args, logger):
                     persist_history(history)
                     continue
         else:
-            # RELIABILITY-2026-05-08-G: 13:04 JST incident 防止。
-            # 非 X URL を build_oembed_block に渡すと <blockquote
-            # class="twitter-tweet"> wrapper を生成、Twitter widgets.js は
-            # 非 X URL を tweet 化できず thin body publish になる。
-            # is_x_url で判定し、非 X URL は _build_body_for_news の
-            # nomotoke-shell passthrough body (lead + 出典 + footer) を生成、
-            # nomotoke-card- marker 入りで enrichment が走る形にする。
-            from wp_draft_creator import is_x_url as _is_x_url
-            # NEWS-BANNER-FIX-2026-05-15: passthrough 経路 (oembed / 非 X URL) は
-            # build_news_block を通らないため、helper で banner を冒頭に prepend
-            # し、build_news_block 経路と同じ赤紫グラデ banner で揃える。
             _passthrough_banner = _giants_news_banner_html(title, source_name, category)
-            if _is_x_url(post_url):
-                content = _passthrough_banner + build_oembed_block(post_url)
-                _passthrough_label = "oembed_passthrough"
-            else:
-                from src.tools.manual_intake import _build_body_for_news
-                content = _passthrough_banner + _build_body_for_news(
+            if _is_youtube_review_draft_source(
+                source_type=source_type,
+                source_roles=source_roles,
+                source_url=post_url,
+            ):
+                youtube_review_article, youtube_review_validation = _build_youtube_review_notice_article(
                     source_url=post_url,
+                    source_name=source_name,
+                    source_roles=source_roles,
                     title=title,
-                    summary=summary or "",
+                    published_at=item.get("published_at") if isinstance(item.get("published_at"), datetime) else None,
                 )
-                _passthrough_label = "non_x_url_passthrough"
+                if not youtube_review_validation.ok:
+                    logger.info(
+                        json.dumps(
+                            {
+                                "event": "youtube_review_notice_validation_failed",
+                                "reason_code": youtube_review_validation.reason_code,
+                                "detail": youtube_review_validation.detail,
+                                "source_url": post_url,
+                                "source_name": source_name,
+                                "source_roles": sorted(source_roles),
+                                "title": title[:120],
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
+                    skip_filter += 1
+                    skip_reason_counts["youtube_review_notice_validation_failed"] += 1
+                    _append_skip_reason_sample(
+                        skip_reason_sample_titles,
+                        "youtube_review_notice_validation_failed",
+                        title,
+                    )
+                    continue
+                content = _passthrough_banner + youtube_review_article.body_html
+                draft_title = youtube_review_article.title
+                title_template_key = "youtube_review_notice"
+                title_article_subtype = youtube_review_article.subtype
+                body_article_subtype = youtube_review_article.subtype
+                validator_article_subtype = youtube_review_article.subtype
+                _log_title_template_selected(
+                    logger,
+                    post_url,
+                    raw_title,
+                    draft_title,
+                    title_template_key,
+                    category,
+                    title_article_subtype,
+                )
+            else:
+                # RELIABILITY-2026-05-08-G: 13:04 JST incident 防止。
+                # 非 X URL を build_oembed_block に渡すと <blockquote
+                # class="twitter-tweet"> wrapper を生成、Twitter widgets.js は
+                # 非 X URL を tweet 化できず thin body publish になる。
+                # is_x_url で判定し、非 X URL は _build_body_for_news の
+                # nomotoke-shell passthrough body (lead + 出典 + footer) を生成、
+                # nomotoke-card- marker 入りで enrichment が走る形にする。
+                from wp_draft_creator import is_x_url as _is_x_url
+                # NEWS-BANNER-FIX-2026-05-15: passthrough 経路 (oembed / 非 X URL) は
+                # build_news_block を通らないため、helper で banner を冒頭に prepend
+                # し、build_news_block 経路と同じ赤紫グラデ banner で揃える。
+                if _is_x_url(post_url):
+                    content = _passthrough_banner + build_oembed_block(post_url)
+                    _passthrough_label = "oembed_passthrough"
+                else:
+                    from src.tools.manual_intake import _build_body_for_news
+                    content = _passthrough_banner + _build_body_for_news(
+                        source_url=post_url,
+                        title=title,
+                        summary=summary or "",
+                    )
+                    _passthrough_label = "non_x_url_passthrough"
+                draft_title = title
+                title_template_key = _passthrough_label
+                _log_title_template_selected(logger, post_url, raw_title, draft_title, _passthrough_label, category, title_article_subtype)
             ai_body_for_x = ""
-            draft_title = title
             # 2026-05-12 hotfix(B、proper fix): else パスでも _article_images と
             # title_template_key を正規代入する。if-branch と同じ画像抽出
             # logic を mirror。これで try block(23856+)の _article_images
@@ -27737,8 +27919,6 @@ def _main(args, logger):
             )
             _article_images = _filter_image_candidates(_article_images, post_url, logger)
             _article_images = _refetch_article_images_if_empty(_article_images, post_url, logger, max_images=3)
-            title_template_key = _passthrough_label
-            _log_title_template_selected(logger, post_url, raw_title, draft_title, _passthrough_label, category, title_article_subtype)
             if args.dry_run:
                 print(f"  DRY: [{category}] {draft_title[:50]}")
                 print(f"       {post_url}")
@@ -28053,9 +28233,12 @@ def _main(args, logger):
                 featured_media=effective_featured_media,
                 article_subtype=publish_gate_subtype,
             )
-            # 344-INGEST 2026-05-14 lock 変更: 当初 YouTube は force-draft だったが
-            # 「公開で mail でも OK、title prefix で識別できれば user 手動編集 前提」に
-            # user 切替。force-draft gate を revert、title prefix で対応 (#7)。
+            publish_skip_reasons = _apply_youtube_review_draft_skip_reasons(
+                publish_skip_reasons,
+                source_type=source_type,
+                source_roles=source_roles,
+                source_url=post_url,
+            )
             if source_type in {"news", "social_news"} and not args.draft_only:
                 quality_guard = _evaluate_publish_quality_guard(
                     content_html=content,

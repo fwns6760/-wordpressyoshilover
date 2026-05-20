@@ -14,7 +14,7 @@
 
 | ticket | status | 内容 |
 |---|---|---|
-| `doc/active/317-QA-ob-youtube-review-only-intake.md` (GH #76) | REVIEW_NEEDED | user 判断「下書きで作ってもらうでよい。公開は私が判断する」。巨人OB YouTube source を RSS 本線へ draft-only 接続。`giants_ob` source は weak title でも候補化し、`OB・解説者` category + `social_video_notice` body / YouTube embed で draft 作成。publish skip reason は `draft_only,youtube_review_source_draft_only`。非巨人OBは従来 title relevance gate 維持、公式YouTube 395 は別扱いで既存挙動維持。対象 unittest 75 OK / py_compile OK。env / Secret / Scheduler / YouTube Data API / WP既存記事 / X / Cloud Run live は未変更、fire/log diff は未実施 N/A。 |
+| `doc/active/317-QA-ob-youtube-review-only-intake.md` (GH #76) | REVIEW_NEEDED | user 判断「下書きで作ってもらうでよい。公開は私が判断する」。巨人OB YouTube source を RSS 本線へ draft-only 接続。`giants_ob` source は weak title でも候補化し、`OB・解説者` category + `social_video_notice` body / YouTube embed で draft 作成。publish skip reason は `draft_only,youtube_review_source_draft_only`。非巨人OBは従来 title relevance gate 維持、公式YouTube 395 は別扱いで既存挙動維持。対象 unittest 77 OK / targeted pytest 77 passed / full pytest baseline 5388 passed, 1 xfailed, 3 xpassed / py_compile・compileall・AST OK。env / Secret / Scheduler / YouTube Data API / WP既存記事 / X / Cloud Run live は未変更、fire/log diff は未実施 N/A。 |
 
 ### 398 — media_quote_evaluation 未初期化エラーの再発防止
 

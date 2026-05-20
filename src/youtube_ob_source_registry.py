@@ -12,7 +12,17 @@ from urllib.parse import parse_qs, urlparse
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "youtube_ob_sources.json"
 
-SOURCE_ROLES = frozenset({"official", "ob", "media", "broadcast", "coach", "player", "team_staff", "excluded"})
+SOURCE_ROLES = frozenset({
+    "official",
+    "giants_ob",
+    "ob",
+    "media",
+    "broadcast",
+    "coach",
+    "player",
+    "team_staff",
+    "excluded",
+})
 SOURCE_STATUSES = frozenset({"confirmed", "candidate", "hold", "excluded"})
 
 _CHANNEL_ID_RE = re.compile(r"^UC[A-Za-z0-9_-]{20,30}$")

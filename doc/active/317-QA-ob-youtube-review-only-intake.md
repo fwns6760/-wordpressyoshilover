@@ -1,7 +1,7 @@
 # 317-QA OB YouTube Review-Only Intake
 
 作成日: 2026-05-10
-状態: PARKED / USER_REAFFIRMED_FOR_LATER
+状態: REVIEW_NEEDED
 GitHub Issue: #76
 
 ## 1. 今回の目的
@@ -21,23 +21,23 @@ GitHub Issue: #76
 - OBチャンネル候補は取得されていたが、多くは `youtube_title_filter_skip reason=no_match` または `stale_rss_entry` で落ちていた。
 - 後でやる場合は、公式 YouTube の 395 titleless intake とは分ける。OB / 非公式は relevance gate を維持し、巨人文脈が明確な動画だけ review-only / draft-only に流す。
 - 初期上限は 1日1〜2本。カテゴリ候補は `OB・解説者`。自動公開、X投稿、env、scheduler、Secret、YouTube Data API は触らない。
+- user 追加判断: 「下書きで作ってもらうでよい。公開は私が判断する」。巨人OB YouTubeは RSS 本線で下書き候補化するが、公開は自動化しない。
+- 実装方針: `giants_ob` source は title が弱くても候補化し、`OB・解説者` に寄せる。非巨人OB / 一般OBは従来の巨人 relevance title gate を維持する。公式 YouTube は 395 として別扱い。
 
 ## 2. 今回触る範囲
 
-このMarkdown作成時点で触る範囲:
+今回触る範囲:
 
-- `doc/waiting/317-QA-ob-youtube-review-only-intake.md`
-
-GO後に検討する実装候補:
-
-- OB YouTube source候補棚または `config/rss_sources.json` の狭い追加
-- OB YouTubeを `media_quote_only` または `review-only` として扱うための設定
-- YouTube動画タイトル、公開日、チャンネル名、URLから薄い記事候補を作る処理
-- のもとけ型のYouTube記事本文テンプレート
-- 巨人文脈フィルタ
-- OB本人チャンネルと「他チャンネルにOBが出演する動画」の扱い分け
-- 対応する回帰テスト
-- このMarkdownへの作業ログ追記
+- `src/rss_fetcher.py`
+- `src/youtube_ob_source_registry.py`
+- `src/tools/run_social_video_notice_dry_run.py`
+- `config/youtube_ob_sources.json`
+- `config/rss_sources.json`
+- `tests/test_rss_fetcher_youtube_integration.py`
+- `tests/test_youtube_ob_source_registry.py`
+- `doc/active/317-QA-ob-youtube-review-only-intake.md`
+- `doc/README.md`
+- `doc/active/assignments.md`
 
 初期候補として検討するチャンネル:
 
@@ -155,14 +155,16 @@ GO後に実装する場合の予定:
 - 2026-05-10: OB YouTube review-only source棚、YouTube source registry、YouTube WordPress embed本文生成、YouTube embed必須validator、dry-run CLIの `--youtube-url` 入力を実装。
 - 2026-05-10: 本番fire、deploy、WP書き込み、scheduler変更、Cloud Run変更、env変更、secrets参照/変更、GitHub Actions変更、X投稿は未実施。
 - 2026-05-20: user が巨人OB YouTubeを差別化記事として後で扱う方針を再確認。GitHub Issue #76 を作成し、本 ticket を PARKED / later backlog として記録。コード、deploy、env、scheduler、Secret、WP、X は未変更。
+- 2026-05-20: user が「下書きで作ってもらうでよい。公開は私が判断する」と明示。`giants_ob` source role を追加し、巨人OB YouTube は title が弱くても候補化、RSS 本線では `social_video_notice` body + YouTube embed で draft 作成、publish skip reason `draft_only,youtube_review_source_draft_only` で必ず下書き維持する実装に変更。公式 YouTube は `official_video_source` として既存 395 挙動を維持。非巨人OBは従来 title filter を維持。env / Secret / Scheduler / Cloud Run / WP既存記事 / X は未変更。
 
 ## 10. Regression Memo欄
 
 - 最重要回帰ポイントは、YouTube動画を「事実source」として過剰に扱わないこと。
-- 初期は `review-only` とし、自動公開には接続しない。
+- 初期は `review-only / draft-only` とし、RSS 本線で下書き化しても自動公開には接続しない。
 - のもとけ型に寄せ、本文は動画メタ情報、埋め込み、明示トピック、一言に抑える。
 - 発言内容は、人間が確認した場合だけ短く追記する。
-- OB本人チャンネルでも、巨人文脈がない動画は候補化しない。
+- `giants_ob` source は user 判断により候補化対象を広げる。ただし公開は user 判断で、本文は動画メタ情報と埋め込みに限定する。
+- 非巨人OB / 一般OB は巨人 keyword / 現役巨人選手名 / 元巨人OB名 title filter を維持する。
 - 非公式切り抜き、転載、コメント欄、文字起こしは使わない。
 - 既存の上原、元木、髙橋尚成のYouTube sourceを壊さない。
 - 追加OB候補は一括本線化せず、1本ずつdry-run / review-onlyで確認する。
@@ -170,14 +172,15 @@ GO後に実装する場合の予定:
 ## 11. 実際に変更したファイル
 
 - `config/youtube_ob_sources.json`
+- `config/rss_sources.json`
+- `src/rss_fetcher.py`
 - `src/youtube_ob_source_registry.py`
-- `src/social_video_notice_builder.py`
-- `src/social_video_notice_validator.py`
 - `src/tools/run_social_video_notice_dry_run.py`
 - `tests/test_youtube_ob_source_registry.py`
-- `tests/test_social_video_notice_builder.py`
-- `tests/test_social_video_notice_validator.py`
-- `doc/waiting/317-QA-ob-youtube-review-only-intake.md`
+- `tests/test_rss_fetcher_youtube_integration.py`
+- `doc/active/317-QA-ob-youtube-review-only-intake.md`
+- `doc/README.md`
+- `doc/active/assignments.md`
 
 ## 12. diff概要
 
@@ -187,7 +190,10 @@ GO後に実装する場合の予定:
 - YouTube本文もInstagram同様、のもとけ型のsource headerを使うよう変更。
 - validatorでYouTube動画URL以外のchannel/profile URLを拒否し、YouTube embed block欠落を `EMBED_MISSING` にするよう追加。
 - dry-run CLIに `--youtube-url` / `--youtube-channel-id` / `--video-title` を追加。
-- 自動RSS本線、publish gate、mail、scheduler、Cloud Run、env、secrets、GitHub Actions、X投稿には未接続。
+- 2026-05-20 追加: `giants_ob` role を導入し、巨人OB YouTube source は弱い title でも候補化する。
+- 2026-05-20 追加: 巨人OB YouTube source を `OB・解説者` category に override し、RSS 本線では `social_video_notice` body / YouTube embed で draft 作成する。
+- 2026-05-20 追加: OB / 非公式 YouTube review source は publish skip reason `draft_only,youtube_review_source_draft_only` を付けて自動公開しない。公式 YouTube は 395 の既存 path を維持する。
+- mail、scheduler、Cloud Run、env、secrets、GitHub Actions、X投稿には未接続 / 未変更。
 
 ## 13. 実行したテスト
 
@@ -200,6 +206,13 @@ GO後に実装する場合の予定:
 - sandbox失敗切り分け: `python3 -m pytest tests/test_manual_intake_service.py::LiveServerSmokeTest` を通常権限で再実行
 - `git diff --check`
 - dry-run確認: `python3 -m src.tools.run_social_video_notice_dry_run --youtube-url https://youtu.be/abc12345DEF --youtube-channel-id UCKa1VlSq1WwdSQWv4JFdgxg --video-title 巨人OBが試合のポイントを語った --media-kind video --published-at 2026-05-10T09:00:00+09:00`
+- 2026-05-20 追加: `python3 -m unittest tests.test_youtube_ob_source_registry tests.test_rss_fetcher_youtube_integration tests.test_social_video_notice_builder tests.test_social_video_notice_validator`
+- 2026-05-20 追加: `python3 -m py_compile src/rss_fetcher.py src/youtube_ob_source_registry.py src/tools/run_social_video_notice_dry_run.py tests/test_rss_fetcher_youtube_integration.py tests/test_youtube_ob_source_registry.py`
+- 2026-05-20 追加: `python3 -m compileall -q src tests`
+- 2026-05-20 追加: touched Python files AST parse
+- 2026-05-20 追加: `python3 -m pytest tests/test_rss_fetcher_youtube_integration.py tests/test_youtube_ob_source_registry.py tests/test_social_video_notice_builder.py tests/test_social_video_notice_validator.py`
+- 2026-05-20 追加: `python3 -m pytest`
+- 2026-05-20 sandbox 切り分け: `python3 -m pytest tests/test_manual_intake_service.py::LiveServerSmokeTest tests/test_manual_intake_service_x_post.py`
 
 ## 14. テスト結果
 
@@ -212,18 +225,27 @@ GO後に実装する場合の予定:
 - `python3 -m pytest tests/test_manual_intake_service.py::LiveServerSmokeTest` 通常権限再実行: PASS (`3 passed`)
 - `git diff --check`: PASS
 - dry-run確認: PASS。出力本文に `wp-block-embed-youtube` と `<!-- wp:embed {"url":"https://www.youtube.com/watch?v=abc12345DEF","type":"video","providerNameSlug":"youtube","responsive":true} -->` が入ることを確認。
+- 2026-05-20 追加 unittest: PASS (`Ran 77 tests ... OK`)。
+- 2026-05-20 追加 py_compile: PASS。
+- 2026-05-20 追加 compileall: PASS。
+- 2026-05-20 追加 AST parse: PASS (`AST OK 5`)。
+- 2026-05-20 追加 targeted pytest: PASS (`77 passed, 3 warnings`)。
+- 2026-05-20 sandbox baseline: `5377 passed, 11 failed, 1 xfailed, 3 xpassed`。失敗11件は `127.0.0.1` socket 作成が sandbox で `PermissionError: [Errno 1] Operation not permitted` になった LiveServerSmokeTest 起点、およびその env bleed による x-post endpoint 403。
+- 2026-05-20 sandbox外切り分け: PASS (`14 passed, 3 warnings`)。
+- 2026-05-20 full pytest baseline sandbox外: PASS (`5388 passed, 1 xfailed, 3 xpassed, 4 warnings`)。
+- 2026-05-20 live fire / deploy / log 数値 diff: N/A。この便では env / Scheduler / Cloud Run / WP live fire を触らず、repo 実装 + tests + commit まで。
 
 ## 15. 残った懸念
 
-- 今回はsource棚とreview-only dry-run経路まで。RSS本線や自動下書き生成には接続していない。
+- RSS 本線への接続は実装済み。ただし live deploy / fire は未実施。
 - OBチャンネルの `channel_handle` は未確認のため空欄が多い。source表示はチャンネル名fallbackになる。
-- 動画タイトルだけでは巨人文脈が薄い動画を完全には判定できない。自動候補化へ進む場合は巨人文脈フィルタが別途必要。
+- `giants_ob` source は title が弱くても draft になるため、無関係動画が混じる可能性は残る。公開は user 判断で止める。
 - 動画内発言内容は取得していないため、発言詳細を本文に出すには人間確認が必要。
 
 ## 16. 新しく見つかったデグレ
 
 - 今回差分起因のテスト失敗はなし。
-- 既存baselineはsandbox内localhost socket制限で `LiveServerSmokeTest` 3件が失敗する。通常権限で該当3件はpass。
+- sandbox内 baseline は localhost socket 制限で `LiveServerSmokeTest` 起点の 11 件が失敗する。sandbox外の失敗 subset は 14 件 pass、full pytest baseline も pass。
 
 ## 17. 追加した回帰テスト
 
@@ -234,6 +256,10 @@ GO後に実装する場合の予定:
 - YouTube channel/profile URLは `UNSUPPORTED_YOUTUBE_URL`。
 - CLIからOB YouTube動画をreview用 `social_video_notice` として生成できること。
 - CLIで未知YouTubeチャンネルを安全扱いしないこと。
+- `giants_ob` source role は weak title でも pass するが、非巨人OB source は従来の title gate で no_match になること。
+- 巨人OB YouTube review source は `OB・解説者` に category override されること。
+- 巨人OB YouTube review source は publish path に進まず draft-only reason を持つこと。
+- 公式 YouTube source は draft-only override の対象外で、395 の既存挙動を維持すること。
 
 ## 18. 次回触ってはいけない範囲
 
@@ -249,4 +275,4 @@ GO後に実装する場合の予定:
 - YouTube Data API / OAuth / API key
 - YouTube文字起こし自動取得
 - 動画・画像の保存、再アップロード、加工
-- RSS本線への自動接続。ただし、ユーザーが次回明示GOした場合のみ別チケットで小さく実装する。
+- 公式 YouTube 395 の titleless intake 挙動。

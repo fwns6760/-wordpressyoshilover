@@ -436,7 +436,10 @@
     "max_age_days": 14,
     "article_limit": 10,
     "role": [
-      "media_quote_only"
+      "media_quote_only",
+      "youtube_review_source",
+      "review_only",
+      "giants_ob"
     ]
   },
   {
@@ -447,7 +450,10 @@
     "max_age_days": 14,
     "article_limit": 10,
     "role": [
-      "media_quote_only"
+      "media_quote_only",
+      "youtube_review_source",
+      "review_only",
+      "giants_ob"
     ]
   },
   {
@@ -458,7 +464,10 @@
     "max_age_days": 14,
     "article_limit": 10,
     "role": [
-      "media_quote_only"
+      "media_quote_only",
+      "youtube_review_source",
+      "review_only",
+      "giants_ob"
     ]
   },
   {

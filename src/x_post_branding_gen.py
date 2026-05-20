@@ -56,6 +56,25 @@ _GEMMA_BRANDING_FORBIDDEN_PATTERNS = (
     _re.compile(r"防御率\s*\d+\.\d{1,2}"),
 )
 
+# 414 axis D (2026-05-20): 炎上・ズレ防止 6 check。 brand identity =「ポジティブな
+# 巨人ファン account」 維持のため、 強批判 / 断定 / 雑批判 / 監督批判 / 誤字 / 煽り の
+# 6 軸を post-gen 段で drop する。 safety_check で _GEMMA_BRANDING_FORBIDDEN_PATTERNS
+# と一緒に評価される (= 同等 hard rule)。
+_GEMMA_BRANDING_INFLAMMATORY_PATTERNS = (
+    # D1: 強批判語 (選手批判が強すぎる)
+    _re.compile(r"使えない|戦犯|クビ|最悪|酷い|論外|引退しろ|辞めろ|無能"),
+    # D3: 断定語 (事実超え断定、 brand voice の柔らかさ維持)
+    _re.compile(r"絶対|間違いなく|確実に|100%|必ず|断言"),
+    # D6: 他球団 / 相手ファン煽り
+    _re.compile(r"雑魚|カモ|負け犬|三流|お粗末|情けない|レベルが低い"),
+    # D4: 監督批判の雑な隣接 (監督名 + 強批判語)
+    # 「阿部監督 無能」「監督 解任」 のような直接批判
+    _re.compile(r"(?:監督|采配|阿部)[^\n]{0,15}(?:無能|解任|更迭|降ろせ|失格|無策)"),
+    # D5: 偽名 / generic player 表現 (Gemma が roster にない名前 / generic を出した時)
+    # 「打者A」「投手X」 等 placeholder 系を drop
+    _re.compile(r"打者[A-Z]|投手[A-Z]|選手[A-Z]|プレイヤー[A-Z]"),
+)
+
 
 # 411 (2026-05-20): 本 prompt は フーガ (@EH87EazmV9D2eSw、 巨人ファン長文分析)
 # voice の few-shot prompt。 缶詰 (@kandume92、 巨人ファン試合中実況) voice は
@@ -79,6 +98,13 @@ X 投稿案を 1 件生成してください。
   - **BAD**: 「出塁率28位」 「打率3位」 「歴代5位」 「セ・リーグOPS2位」 「.345」 「防御率1.85」
   - **GOOD**: 「出塁率の数字いい」 「打率は安定」 「歴代でも上位」 「セで上の方」 「数字を残してる」
   - 違反したら出力全体破棄。 「◯位」 という表現は **どんな文脈でも禁止**
+- **【414 axis D、 炎上・ズレ防止】 以下も出力禁止 (ポジティブな巨人ファン account 維持のため)**:
+  - 強批判語: 「使えない」 「戦犯」 「クビ」 「最悪」 「酷い」 「論外」 「引退しろ」 「辞めろ」 「無能」
+  - 断定語: 「絶対」 「間違いなく」 「確実に」 「100%」 「必ず」 「断言」 (= 事実超え断定)
+  - 監督批判の雑な隣接: 「阿部監督 無能」 「監督 解任」 「采配 失格」 系
+  - 他球団 / 相手ファン煽り: 「雑魚」 「カモ」 「負け犬」 「三流」 「お粗末」 「情けない」
+  - 「打者A」 「投手X」 等 generic placeholder 名 (= roster 名で書く)
+  - 違反したら出力全体破棄
 
 トーン (重要):
 - **本物の巨人ファンらしく**: 連勝の喜び、 優勝争いへの期待、 特定選手への信頼、 悔しさ、 「噛み締める」 テンション、 「ガチで凄い」「とんでもない」 等の素直な熱量、 内輪ネタ (栄冠は君に輝く 等) は自然に出してよい。 ファンとして堂々と巨人寄りで書く
@@ -172,6 +198,13 @@ _SYSTEM_PROMPT_KANDUME = """あなたは熱心な巨人ファンとして X 投�
   - **BAD**: 「出塁率28位」 「打率3位」 「歴代5位」 「セ・リーグOPS2位」 「.345」 「防御率1.85」
   - **GOOD**: 「出塁率いいね」 「打率いい感じ」 「歴代でも上位」 「ピッチャーの数字いい」
   - 違反したら出力全体破棄。 「◯位」 という表現は **どんな文脈でも禁止**
+- **【414 axis D、 炎上・ズレ防止】 以下も出力禁止 (ポジティブな巨人ファン account 維持のため)**:
+  - 強批判語: 「使えない」 「戦犯」 「クビ」 「最悪」 「酷い」 「論外」 「引退しろ」 「辞めろ」 「無能」
+  - 断定語: 「絶対」 「間違いなく」 「確実に」 「100%」 「必ず」 「断言」
+  - 監督批判の雑な隣接: 「阿部監督 無能」 「采配 失格」 系
+  - 他球団 / 相手ファン煽り: 「雑魚」 「カモ」 「負け犬」 「三流」
+  - 「打者A」 「投手X」 等 generic placeholder 名
+  - 違反したら出力全体破棄
 
 トーン (重要):
 - **試合中実況の voice**: 「◯回終わって◯-◯」「次の打席◯◯」「この回しのげれば」「来た！」「ここでこの場面!」 のような実況・実感の voice
@@ -454,6 +487,7 @@ def _gemma_branding_safety_check(text: str) -> bool:
     """spec 382 hard rule gate for Gemma branding output.
 
     True = safe (pass). False = violation (caller drops the candidate)。
+    414 axis D: 炎上 / ズレ防止 patterns も同等 hard rule として評価。
     """
     if not text or not text.strip():
         return False
@@ -462,9 +496,23 @@ def _gemma_branding_safety_check(text: str) -> bool:
     for pattern in _GEMMA_BRANDING_FORBIDDEN_PATTERNS:
         if pattern.search(text):
             return False
+    # 414 axis D: 炎上系も同 fail 扱い
+    for pattern in _GEMMA_BRANDING_INFLAMMATORY_PATTERNS:
+        if pattern.search(text):
+            return False
     if not _is_safe_post_text(text):
         return False
     return True
+
+
+def _matched_inflammatory_pattern(text: str) -> Optional[str]:
+    """414 axis D + C7 log: text が炎上 pattern に hit した場合、 hit した
+    pattern 文字列を返す (drop log に reason として記録するため)。 hit なしは None。
+    """
+    for pattern in _GEMMA_BRANDING_INFLAMMATORY_PATTERNS:
+        if pattern.search(text):
+            return pattern.pattern
+    return None
 
 
 # 414 axis 2 (2026-05-20): 数値 whitelist helper.
@@ -1180,20 +1228,29 @@ def build_gemma_branding_candidate(
 
     text = _finalize_post_text(text)
 
-    # 3. spec 382 hard rule validator (414 axis C1/C3 regex 含む)
+    # 3. spec 382 hard rule + 414 axis D 炎上防止 validator
     if not _gemma_branding_safety_check(text):
-        # 414 axis C7: 構造化 drop log (どの pattern が hit したか含む)
-        matched_pattern = None
+        # 414 axis C7 + D: 構造化 drop log (どの pattern が hit したか + 軸名)
+        matched_pattern: Optional[str] = None
+        matched_axis: str = "C"  # default: forbidden patterns (axis C)
         for pattern in _GEMMA_BRANDING_FORBIDDEN_PATTERNS:
             match = pattern.search(text)
             if match:
                 matched_pattern = pattern.pattern
+                matched_axis = "C"
                 break
+        if matched_pattern is None:
+            # 軸 D: 炎上 patterns hit を確認
+            inflammatory_match = _matched_inflammatory_pattern(text)
+            if inflammatory_match:
+                matched_pattern = inflammatory_match
+                matched_axis = "D"
         log.warning(
             _json.dumps(
                 {
                     "event": "gemma_branding_drop",
                     "reason": "safety_check_failed",
+                    "axis": matched_axis,
                     "player": player,
                     "persona": resolved_persona,
                     "matched_pattern": matched_pattern,

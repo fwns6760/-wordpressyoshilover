@@ -676,6 +676,59 @@ class HallucinationPreventionAxisCTests414(unittest.TestCase):
         self.assertIn("今日", titles)
 
 
+class InflammationPreventionAxisDTests414(unittest.TestCase):
+    """414 axis D: 炎上・ズレ防止 6 check."""
+
+    # D1: 強批判語
+    def test_safety_check_rejects_player_criticism(self) -> None:
+        self.assertFalse(xbg._gemma_branding_safety_check("戸郷は使えない投手だ"))
+        self.assertFalse(xbg._gemma_branding_safety_check("岸田は戦犯"))
+        self.assertFalse(xbg._gemma_branding_safety_check("もう引退しろという声"))
+
+    # D3: 断定語
+    def test_safety_check_rejects_absolute_claim(self) -> None:
+        self.assertFalse(xbg._gemma_branding_safety_check("絶対優勝する流れ"))
+        self.assertFalse(xbg._gemma_branding_safety_check("100%勝てる試合"))
+        self.assertFalse(xbg._gemma_branding_safety_check("間違いなく好投する"))
+
+    # D4: 監督批判の雑な隣接
+    def test_safety_check_rejects_manager_harsh_criticism(self) -> None:
+        self.assertFalse(xbg._gemma_branding_safety_check("阿部監督の采配は無能だ"))
+        self.assertFalse(xbg._gemma_branding_safety_check("監督を解任すべき"))
+
+    # D6: 他球団 / 相手ファン煽り
+    def test_safety_check_rejects_opponent_taunting(self) -> None:
+        self.assertFalse(xbg._gemma_branding_safety_check("阪神なんて雑魚だ"))
+        self.assertFalse(xbg._gemma_branding_safety_check("中日は三流"))
+
+    # D5: 偽名 / generic placeholder
+    def test_safety_check_rejects_placeholder_name(self) -> None:
+        self.assertFalse(xbg._gemma_branding_safety_check("打者Aの活躍がすごい"))
+        self.assertFalse(xbg._gemma_branding_safety_check("投手Xに期待"))
+
+    # 正常系 (D 全 check 通過)
+    def test_safety_check_accepts_positive_fan_voice(self) -> None:
+        text = (
+            "今日の戸郷さん ナイスピッチ "
+            "球が走ってた 直球で押し込めるのが大きい "
+            "連勝の流れに乗れそう 噛み締めましょう "
+            "あと打線も早めに点取れると更に楽 試合運びの完成度が上がってる "
+            "明日のカードも楽しみで仕方ない とんでもないチームになりそう "
+            "やってる野球が強い ガチで凄い"
+        )
+        self.assertTrue(xbg._gemma_branding_safety_check(text))
+
+    # helper: _matched_inflammatory_pattern
+    def test_matched_inflammatory_pattern_returns_pattern_string(self) -> None:
+        pattern_str = xbg._matched_inflammatory_pattern("阪神なんて雑魚だ")
+        self.assertIsNotNone(pattern_str)
+        assert pattern_str is not None
+        self.assertIn("雑魚", pattern_str)
+
+    def test_matched_inflammatory_pattern_returns_none_when_clean(self) -> None:
+        self.assertIsNone(xbg._matched_inflammatory_pattern("良い試合だった"))
+
+
 class BuildSystemPromptPersonaTests411(unittest.TestCase):
     """411: _build_system_prompt が persona 引数で フーガ / 缶詰 を切替."""
 

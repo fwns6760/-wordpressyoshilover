@@ -36,6 +36,12 @@
 - 工数: 6-8h (NPB box table 構造解析、 inning marker parse、 atbats_json 拡張、 backfill)
 - 精度: 高 (per-PA L/R 正確に追跡)
 
+**2026-05-20 PM 更新**: 415 (b) source も無料で同定済 — `playbyplay.html` (= [[405]] と同 source) に「（投手交代） A → B」 marker + per-PA 打者名 + 結果が記載。 [[405]] 実装 (per-PA detail table) と statefully overlap、 同時実装が効率的 (= 共通 parser + table)。
+
+### MVP status
+
+approach (a) は **2026-05-20 PM landed 済** (commit pending、 image `415-vs-lr-mvp` gen 81 deploy 済)。 production dry-run で「キャベッジ 対左投手打率 0.263」 等 verify。 limitation: starter 限定、 reliever 対戦は集計外 (article body に明記)。
+
 ## 4. user 判断 pending
 
 (a) approx ですぐやる / (b) 重工事だが本気で精度確保 のどちらを選ぶか。 spec 「最近 30 打席対左 .280」 の信頼性が要件次第。

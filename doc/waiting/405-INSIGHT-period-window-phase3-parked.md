@@ -2,7 +2,7 @@
 
 ## 1. ticket header
 
-- **status**: PARKED (重工事、 pitch-by-pitch source 確保から、 当面着手しない)
+- **status**: READY (2026-05-20 PM、 user 指示「残をやるが無料でね」 → **free source 確認**: NPB 公式 `playbyplay.html` で per-PA 走者状況 + カウント + 結果 全部 parse 可能。 paid API 不要。 実装 scope は大きい (parser + storage + 3 aggregators + tests + deploy = 6-8h) ため次 session handoff、 spec lock で残す)
 - **priority**: low (shadow ticket、 議論された案を忘れないため残す)
 - **owner**: Claude / **lane**: Claude
 - **stage**: Phase 3 / 段階式 ([[403]] / [[404]] の最終 follow-up)
@@ -22,7 +22,7 @@
 - 3 ボール後打率
 - 投球数別 (10 球以上の粘り打席 .XXX)
 
-**障壁**: NPB box は per-PA result の text marker のみ提供、 pitch-by-pitch data なし。 別 source 必要 (有料 sports data API or NPB BIS feed)。
+**source (2026-05-20 確定)**: NPB 公式 `https://npb.jp/scores/YYYY/MMDD/SLUG/playbyplay.html` で per-PA `X-Y より` (count) + 結果 (`空振り三振` / `中安打` 等) を parse 可能 (sample game で実 verify 済、 無料 source)。
 
 ### 3.2. 走者状況別 (得点圏以外)
 
@@ -32,7 +32,7 @@
 - 走者なし時の本塁打率
 - 一二塁時の犠飛率
 
-**障壁**: atbats_json に走者 state が入っていない。 NPB box の per-PA marker (「○」 「●」 等) は得点圏のみ。 詳細 split には別 source 必要。
+**source (2026-05-20 確定)**: NPB 公式 `playbyplay.html` で per-PA 走者状況 (`1塁` / `2塁` / `3塁` / `1・2塁` / `1・3塁` / `2・3塁` / `満塁` / `&nbsp;`=無走者) と打者名 / 結果が table 列で並んでいる (sample game で実 verify 済、 無料 source)。
 
 ### 3.3. 球場別 (本拠地以外)
 
@@ -44,11 +44,15 @@
 
 ## 4. 着手判断条件
 
-以下のいずれかが揃ったら [[403]] / [[404]] の安定後に再開:
+**2026-05-20 PM 更新**: free source 確保 (`playbyplay.html`) で着手判断条件は満たされた。 残課題は実装 scope の大きさ (6-8h):
 
-1. pitch-by-pitch data の安定 source 確保 (有料 API 契約 or 別 scraping target)
-2. NPB BIS 等の official feed access 取得
-3. user から「ファンが特に欲しい cut」 が再指定
+1. **playbyplay.html parser** 新規 (1 game の parse + 全球団化、 stable HTML 構造で regex 抽出可)
+2. **per-PA detail table** 新設 (player_canonical / game_id / inning / outs / runners_state / count_balls / count_strikes / result_text / current_pitcher)
+3. **3 aggregators**: 打席内カウント別 / 走者状況別 / 球場別
+4. **3 publishers**: 各 cut の ranking publish
+5. **tests + build + deploy**
+
+= 1 session 跨ぎで段階実装が現実的。 spec lock 済み、 次 session で 1 cut ずつ着手可能。
 
 ## 5. 不可触
 

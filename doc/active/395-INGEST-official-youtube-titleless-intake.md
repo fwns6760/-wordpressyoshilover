@@ -107,11 +107,19 @@ Official Giants YouTube source intake only.
   - `python3 -m compileall src/rss_fetcher.py tests/test_lineup_create_priority.py tests/test_rss_fetcher_youtube_integration.py` passed.
   - AST parse passed for `src/rss_fetcher.py` and `tests/test_lineup_create_priority.py`.
   - `git diff --check -- src/rss_fetcher.py tests/test_lineup_create_priority.py` passed.
+  - commit `ffdb668` (`395: prioritize official YouTube draft creation`).
+  - Cloud Build `d2bfad47-cfd7-42ee-8ca2-c1342b2ccd29` SUCCESS.
+  - image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:395-youtube-priority-ffdb668`.
+  - image digest `sha256:2a2d898a723a5d244528c7fdb1f06aa602522e130e097b14df406a0670bdaf69`.
+  - Cloud Run service `yoshilover-fetcher` deployed to revision `yoshilover-fetcher-00449-lkq`, latest revision 100% traffic.
+  - `/health` returned `OK`.
+  - Cloud Run log: startup TCP probe succeeded; new revision ERROR log count 0.
 
 ## live evidence
 
 Deploy verified. Manual run verified official YouTube source intake and title-filter
-behavior; draft creation for YouTube needs the follow-up priority change deploy.
+behavior; follow-up priority change is deployed and awaiting the next run for
+draft creation evidence.
 
 Expected evidence:
 
@@ -122,6 +130,5 @@ Expected evidence:
 
 ## next action
 
-Deploy the official YouTube creation-priority follow-up, then observe the next
-run and verify a fresh official YouTube item reaches draft creation before the
-run timeout window.
+Observe the next run and verify a fresh official YouTube item reaches draft
+creation before the run timeout window.

@@ -2,7 +2,7 @@
 
 ## meta
 
-- status: REVIEW_NEEDED
+- status: LIVE_DEPLOYED_VERIFIED (2026-05-20 PM、 user acceptance pending)
 - priority: P1 (回遊率 main 改善、 のもとけ模倣の中核)
 - owner: Claude
 - created: 2026-05-19

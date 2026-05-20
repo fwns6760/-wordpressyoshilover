@@ -8203,6 +8203,46 @@ button.cta:hover,
   color: #20845e;
 }
 
+/* 388 (2026-05-20): H1 (c-headLogo) 内に real DOM の span で site title を併記、
+   その直下に H2 を subtitle として配置。 SWELL の SEO 構造 (H1 + alt) を維持しつつ、
+   mobile で「画像だけ」 になる問題を解消、 自然な見た目に整える。 */
+.c-headLogo__link {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  flex-wrap: wrap;
+}
+.yoshi-headLogo__text {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1a1a1a;
+  letter-spacing: 0.5px;
+  line-height: 1.3;
+}
+.yoshi-headLogo__subtitle {
+  font-size: 13px;
+  font-weight: 500;
+  color: #50555b;
+  letter-spacing: 0.3px;
+  line-height: 1.3;
+  margin: 4px 0 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+@media (max-width: 600px) {
+  .yoshi-headLogo__text {
+    font-size: 14px;
+    letter-spacing: 0;
+  }
+  .yoshi-headLogo__subtitle {
+    font-size: 11px;
+    margin-top: 3px;
+  }
+}
+
 /* 388 bottom variant (2026-05-20): 記事末に rank 31-60 player を出す nav。 */
 .yoshi-dense-nav--bottom {
   margin: 28px 0 18px;

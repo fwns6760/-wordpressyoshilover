@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.16.3
+ * Version: 0.16.7
  * Author: yoshilover
  */
 
@@ -40,6 +40,69 @@ add_shortcode( 'yoshilover_063_today_giants_fan_guide', 'yoshilover_063_render_t
 add_shortcode( 'yoshilover_sidebar_rail', 'yoshilover_063_render_sidebar_rail' );
 add_action( 'dynamic_sidebar_before', 'yoshilover_063_auto_inject_sidebar_top_ad_slot', 4, 2 );
 add_action( 'dynamic_sidebar_before', 'yoshilover_063_auto_inject_sidebar_rail', 5, 2 );
+
+/**
+ * 388 (2026-05-20): H1 内に実 text として site title を挿入し、 H2 を H1 兄弟として
+ * 自然な subtitle 位置に挿入する。 template_redirect で ob_start し、 SWELL が
+ * 出力する `c-headLogo` HTML を regex で穏当に書き換える方式 (疑似要素ではなく real DOM)。
+ *
+ * - H1 `<a class="c-headLogo__link">` の </a> 直前に `<span class="yoshi-headLogo__text">` を挿入
+ * - H1 `</h1>` 直後に `<h2 class="yoshi-headLogo__subtitle">` を挿入
+ *
+ * regex 失敗 (構造変化等) の場合は buffer をそのまま返すので無害。 `c-headLogo` は
+ * 通常 header と fix_header の 2 箇所に出るため、 各 1 回ずつ挿入する。
+ */
+function yoshilover_063_buffer_inject_header_titles( $buffer ) {
+    if ( ! is_string( $buffer ) || $buffer === '' ) {
+        return $buffer;
+    }
+    if ( strpos( $buffer, 'c-headLogo__link' ) === false ) {
+        return $buffer;
+    }
+
+    $title_text    = 'ヨシラバー｜読売ジャイアンツ速報掲示板';
+    $subtitle_text = '読売ジャイアンツ専門 速報・試合結果・スタメンまとめ';
+    $span_html = '<span class="yoshi-headLogo__text">' . esc_html( $title_text ) . '</span></a>';
+    $h2_html   = '<h2 class="yoshi-headLogo__subtitle">' . esc_html( $subtitle_text ) . '</h2>';
+
+    // c-headLogo__link は通常 header / fix_header の 2 箇所。 各箇所の </a> 直前に span を入れる。
+    // span を 2 重に入れないよう簡易 dedupe (既に yoshi-headLogo__text を含む箇所は skip)。
+    $buffer = preg_replace_callback(
+        '#(<a\b[^>]*class="[^"]*c-headLogo__link[^"]*"[^>]*>)(.*?)(</a>)#s',
+        function( $m ) use ( $span_html ) {
+            if ( strpos( $m[0], 'yoshi-headLogo__text' ) !== false ) {
+                return $m[0];
+            }
+            return $m[1] . $m[2] . $span_html;
+        },
+        $buffer
+    );
+
+    // H1 c-headLogo の </h1> 直後に H2 を 1 度だけ挿入 (通常 header の方)。
+    // dedup は H2 タグそのもの (<h2 class="yoshi-headLogo__subtitle">) を見る。
+    // (class 名だけだと custom CSS 内の class 定義にひっかかって毎回 skip されてしまう。)
+    if ( strpos( $buffer, '<h2 class="yoshi-headLogo__subtitle">' ) === false ) {
+        // c-headLogo は CSS と HTML の両方に出るので、 H1 element に限定して探す。
+        $h1_open_pos = strpos( $buffer, '<h1 class="c-headLogo' );
+        if ( $h1_open_pos !== false ) {
+            $h1_close_pos = strpos( $buffer, '</h1>', $h1_open_pos );
+            if ( $h1_close_pos !== false ) {
+                $insert_at = $h1_close_pos + strlen( '</h1>' );
+                $buffer = substr_replace( $buffer, $h2_html, $insert_at, 0 );
+            }
+        }
+    }
+
+    return $buffer;
+}
+
+function yoshilover_063_start_header_title_buffer() {
+    if ( is_admin() || ( defined( 'DOING_AJAX' ) && DOING_AJAX ) || ( defined( 'REST_REQUEST' ) && REST_REQUEST ) ) {
+        return;
+    }
+    ob_start( 'yoshilover_063_buffer_inject_header_titles' );
+}
+add_action( 'template_redirect', 'yoshilover_063_start_header_title_buffer', 0 );
 
 function yoshilover_063_get_topic_hub_items() {
     $items = get_option( 'yoshilover_topic_hub_items', array() );

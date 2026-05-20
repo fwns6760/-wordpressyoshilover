@@ -2,7 +2,7 @@
 
 ## 1. ticket header
 
-- **status**: READY (user GO 待ち、 本 doc 作成のみ、 code 編集禁止)
+- **status**: PARTIAL_VERIFIED (2026-05-20 PM) — code path **exercised in production** 確認 (x-post-mail-lane-sl2zj fire log で `dedup skip combo AVG/直近10試合` / `combo ERA/直近10試合` 等 actual evaluation、 mail send status=sent)。 ただし **mail body の format detail (medals 🥇🥈🥉 / ⭐巨人 / period_suffix lines[1] / 大手 pool 除外) は log に出ず**、 user Gmail 受信箱の目視確認のみで完全 verify 可能
 - **priority**: high (user 「データサイト方向 / 大手にないランキング / 意外性」要望直結)
 - **owner**: Claude (実装) / user (GO 判断)
 - **依存**: 347 lane (`src/x_post_mail_lane.py`、 LIVE 350/351 反映済)

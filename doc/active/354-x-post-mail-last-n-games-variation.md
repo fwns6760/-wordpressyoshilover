@@ -2,7 +2,7 @@
 
 ## 1. ticket header
 
-- **status**: READY (user GO 待ち、 本 doc 作成のみ、 code 編集禁止)
+- **status**: PARTIAL_VERIFIED (2026-05-20 PM) — code path **exercised in production** 確認 (x-post-mail-lane-sl2zj fire log で `dedup skip combo AVG/直近10試合` / `dedup skip combo BB_per_9/直近5試合` / `period-family skip combo OBP/直近3試合` 等、 直近 N 試合 combo が actual pool に存在し evaluation されている)。 ただし **直近 N 試合 combo が actual mail body に entry として出ているか / min_sample_override 値が効いているか は log に出ず**、 user Gmail 目視確認のみで完全 verify 可能
 - **priority**: medium-high (handoff Task 4、 yoshilover 独自度の高い slice 追加)
 - **owner**: Claude (実装) / user (GO 判断)
 - **依存**: 353 ticket (LIVE 反映済) — pool 構造と novelty sampling を継承

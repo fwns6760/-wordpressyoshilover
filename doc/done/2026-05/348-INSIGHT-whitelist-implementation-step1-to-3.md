@@ -2,7 +2,7 @@
 
 ## 1. ticket header
 
-- **status**: READY (user GO 待ち)
+- **status**: CLOSED (2026-05-15 LANDED + production verified、 README L1803 で CLOSED 確定済、 doc 側 stale だったので update。 commits `86d4724` → `bf010ba` → `8b962e5` → `7a10c6e` → `21a8e7a`、 tests 389 passed、 production で 4 巨人データ post 生成 verify 済)
 - **priority**: high (× metric 漏れが現状起きている)
 - **owner**: Claude (実装) / user (GO 判断)
 - **依存**: `doc/reference/data-insight-metric-whitelist.md` (2026-05-15 lock)

@@ -4,7 +4,7 @@
 |---|---|
 | ticket_id | 343-INSIGHT-007-data-population-audit-and-backfill |
 | priority | P1(342-INSIGHT の prerequisite、INSIGHT 系全体の data quality 基盤) |
-| status | PHASE_4_TEAM_AWARE_ROSTER_LANDED_READY_FOR_CLOSE(2026-05-14 user GO 後 Claude が NPB 12 球団 roster scrape + team-aware fill 完了、production DB players 39→462 / advanced_metric_snapshots 616→6394 / 12 球団全部 32-43 player 充足、342-INSIGHT「12 球団 top 30」impl も着手 ready、本 ticket close 候補) |
+| status | CLOSED (2026-05-20 PM、 PHASE_4_TEAM_AWARE_ROSTER_LANDED 後の close ritual、 342-INSIGHT 「12 球団 top 30」 は別 ticket で進行) |
 | owner | Claude Code |
 | lane | INSIGHT |
 | created | 2026-05-14 |

@@ -2,7 +2,7 @@
 
 ## 1. ticket header
 
-- **status**: REVIEW_NEEDED(repo fix complete、live deploy 未実行)
+- **status**: CLOSED (2026-05-20 PM、 verified 5/17-5/20 連続 4 fire success、 fix commit `88de487` は既 deploy 済 + 本日 manual-intake-service:414-manual-tag-20cad0b gen 32 で更新)
 - **priority**: medium(自動 publish 4 日停止だが緊急度低、user 手動投稿で代替可)
 - **owner**: Claude(実装) / user(GO 判断)
 - **依存 (audit)**: `docs/handoff/session_logs/`(2026-05-15 348 step 3 verify 時に発見)

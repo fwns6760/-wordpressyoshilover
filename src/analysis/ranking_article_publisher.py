@@ -1277,10 +1277,10 @@ def render_player_counting_split_article(
     giants_rank = next(
         (i + 1 for i, r in enumerate(rows) if r["player"] == top_player), len(rows),
     )
-    scope_label = {
-        "last_7d": "1 週間", "last_30d": "1 ヶ月", "season": "今シーズン",
-        "monthly": "月別", "weekly": "週別",
-    }.get(scope, scope)
+    # 403 (2026-05-20): inline dict 廃止、 title_guard.period_label_for_scope に
+    # 統一 (新 scope last_N_games / last_N_pa / last_N_appearances / last_N_ip
+    # が raw code として title / body に出る二重 label bug を回避)。
+    scope_label = title_guard.period_label_for_scope(scope) or scope
     title = (
         f"【巨人データ】{top_player} {metric_label_jp} {top_value} で"
         f"{split_label_jp} セ・リーグ {giants_rank} 位 ({scope_label})"
@@ -1494,29 +1494,18 @@ def render_player_counting_article(
         len(rows),
     )
 
-    scope_label = {
-        "last_7d": "1 週間",
-        "last_30d": "1 ヶ月",
-        "season": "今シーズン",
-        "monthly": "月別",
-        "weekly": "週別",
-    }.get(scope, scope)
+    # 403 (2026-05-20): inline dict 廃止、 title_guard.period_label_for_scope に統一
+    scope_label = title_guard.period_label_for_scope(scope) or scope
 
     # 348 step 3 part 2 fix: body 集計期間 を実日付範囲で表示 (title variation
     # 補完 + 透明性、 user 指摘「期間がない」反映)
+    # 403: 新 scope (last_N_games / last_N_pa / etc) は _scope_window で window
+    # 計算、 raw code が period_range に出ないようにする
     import datetime as _dt
     _today = _dt.date.today()
-    if scope == "last_7d":
-        _start = _today - _dt.timedelta(days=6)
-    elif scope == "last_30d":
-        _start = _today - _dt.timedelta(days=29)
-    elif scope == "season":
-        _start = _dt.date(_today.year, 1, 1)
-    elif scope == "monthly":
-        _start = _today.replace(day=1)
-    elif scope == "weekly":
-        _start = _today - _dt.timedelta(days=_today.weekday())
-    else:
+    try:
+        _start, _ = _scope_window(scope, _today, conn=conn, focus_player=top_player)
+    except (ValueError, TypeError):
         _start = _today
     period_range = f"{_start.isoformat()} 〜 {_today.isoformat()}"
 

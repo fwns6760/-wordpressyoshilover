@@ -200,6 +200,20 @@ _YAHOO_DELIVERY_RE = re.compile(
 _COMMENT_COUNT_LABEL_RE = re.compile(r"^コメント\s*\d+\s*件$")
 _DIGITS_ONLY_RE = re.compile(r"^\d{1,4}$")
 _IMAGE_CAPTION_RE = re.compile(r"^[^\n]{0,60}（カメラ[・\s][^）]{0,40}）[^\n]{0,20}$")
+# Lines that contain a parenthesised photo / camera / source credit are
+# caption metadata, not article body. Matches both half-width and
+# full-width parens, and the common Japanese credit prefixes used by
+# 報知 / 日テレ / NHK / 朝日 / 産経 / 共同 等. The line is dropped wholesale
+# (description + credit together) — these blocks never belong inline
+# with the article narrative.
+_PHOTO_CREDIT_LINE_RE = re.compile(
+    r"[（(]\s*(?:写真|撮影|提供|画像|Photo|PHOTO)\s*[：:＝=／/]?\s*[^）)]{0,60}[）)]\s*$"
+)
+# Copyright / rights footer lines.
+_COPYRIGHT_LINE_RE = re.compile(
+    r"^\s*(?:©|Ⓒ|\(c\)|（c）|Copyright|COPYRIGHT|無断複写|無断転載|All\s+Rights\s+Reserved)",
+    re.IGNORECASE,
+)
 _RELATED_LINK_MARKER_RE = re.compile(r"^【[^】]{1,30}】[^\n]*$")
 _BOILERPLATE_LINES = {
     "PR",
@@ -276,6 +290,10 @@ def _strip_html_to_plain(fragment: str) -> str:
         if any(marker in low for marker in ("googletag", "document.write", "function()")):
             continue
         if cleaned in _BOILERPLATE_LINES:
+            continue
+        if _PHOTO_CREDIT_LINE_RE.search(cleaned):
+            continue
+        if _COPYRIGHT_LINE_RE.match(cleaned):
             continue
         if cleaned:
             lines.append(cleaned)
@@ -446,6 +464,10 @@ def _is_noise_line(line: str) -> bool:
     if _IMAGE_CAPTION_RE.match(line):
         return True
     if _RELATED_LINK_MARKER_RE.match(line):
+        return True
+    if _PHOTO_CREDIT_LINE_RE.search(line):
+        return True
+    if _COPYRIGHT_LINE_RE.match(line):
         return True
     return False
 
@@ -747,7 +769,7 @@ def extract_article_body_excerpt(
 # ---------------------------------------------------------------------------
 
 
-_HEADING_PREFIXES = ("◆", "●", "■", "▶", "▼", "★", "☆")
+_HEADING_PREFIXES = ("◆", "●", "■", "▶", "▼", "★", "☆", "◇", "▽", "◎", "□")
 _LONG_PARAGRAPH_THRESHOLD = 80
 _SENTENCE_FINALS = "。！？"
 

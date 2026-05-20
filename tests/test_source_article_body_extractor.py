@@ -209,6 +209,73 @@ class SiteSelectorPathTests(unittest.TestCase):
         self.assertNotIn("ナショナルズのウッドが激走で満塁ホームラン\n", out)
         self.assertNotIn("2026年5月20日", out)
 
+    def test_photo_credit_tail_line_dropped(self):
+        # Photo / camera credit parens at the tail of a line (NTV /
+        # 報知 / 朝日 等の共通パターン) は本文ではなく caption metadata。
+        # 行全体を drop し、本文の prose だけを残す。
+        html = (
+            "<article>"
+            "<p>ナショナルズのウッド選手がランニング満塁ホームランを記録(写真：AP/アフロ)</p>"
+            "<p>選手の表情(撮影：共同)</p>"
+            "<p>2016年シーズン（提供：MLB）</p>"
+            "<p>◇MLB ナショナルズ9-6メッツ(日本時間20日、ナショナルズ・パーク)</p>"
+            "<p>ナショナルズのジェームズ・ウッド選手が2回にランニング満塁ホームランを記録しました。</p>"
+            "</article>"
+        )
+        out = extract_article_body_excerpt(
+            html,
+            "https://news.ntv.co.jp/category/sports/5b63a75714734548999c19fbf038d767",
+            title="ナショナルズのウッドが激走で満塁ホームラン",
+            max_chars=600,
+        )
+        self.assertIn("ナショナルズ9-6メッツ", out)
+        self.assertIn("ウッド選手", out)
+        # caption + credit 行全体が剥がれる
+        self.assertNotIn("写真：AP/アフロ", out)
+        self.assertNotIn("撮影：共同", out)
+        self.assertNotIn("提供：MLB", out)
+        self.assertNotIn("ランニング満塁ホームランを記録(写真", out)
+
+    def test_copyright_line_dropped(self):
+        # Real copyright footer lines from various news sites get
+        # dropped from the body excerpt while the article prose
+        # remains. Body is large enough to clear minimum-length
+        # threshold so we can assert prose preservation alongside
+        # noise removal.
+        html = (
+            "<article>"
+            "<p>巨人は7日の阪神戦に勝利した。坂本勇人選手が決勝打を放った。"
+            "9回には大勢投手が無失点で抑え、見事に勝利投手となった。</p>"
+            "<p>試合後、原監督は「全員が役割を果たしてくれた」と語った。</p>"
+            "<p>© Nippon Television Network Corporation</p>"
+            "<p>Copyright 2026 Yomiuri Giants. All Rights Reserved.</p>"
+            "</article>"
+        )
+        out = extract_article_body_excerpt(
+            html,
+            "https://example.com/news/123",
+            title="巨人 試合",
+            max_chars=600,
+        )
+        self.assertIn("巨人は7日の阪神戦に勝利", out)
+        self.assertIn("坂本勇人", out)
+        self.assertNotIn("Nippon Television", out)
+        self.assertNotIn("Copyright 2026", out)
+        self.assertNotIn("All Rights Reserved", out)
+
+    def test_lead_diamond_marker_classified_as_heading(self):
+        # NTV / 朝日 / 報知 等が試合速報リードに使う「◇MLB 巨人○-●xxx」
+        # 形を heading 化して読みやすくする (◆/●/■ と同 path)。
+        from src.source_article_body_extractor import classify_excerpt_paragraph
+        self.assertEqual(
+            classify_excerpt_paragraph("◇MLB ナショナルズ9-6メッツ(日本時間20日、ナショナルズ・パーク)"),
+            "heading",
+        )
+        self.assertEqual(
+            classify_excerpt_paragraph("▽セ・リーグ 巨人5-3阪神"),
+            "heading",
+        )
+
     def test_share_ui_substring_in_prose_preserved(self):
         # share UI labels は exact-line match で剥がす実装なので、
         # 「ポストシーズン」「メールマガジン」「シェアを伸ばす」

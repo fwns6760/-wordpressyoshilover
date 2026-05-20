@@ -131,3 +131,36 @@ def build_source_attribution_block(
 def is_supported_subtype(subtype: str) -> bool:
     """badge / 出典帯 対象 subtype かを返す."""
     return subtype in SUPPORTED_SUBTYPES
+
+
+def maybe_prepend_subtype_display(
+    body_html: str,
+    subtype: str,
+    *,
+    source_url: str = "",
+    source_name: str = "",
+    ob_current_team: str | None = None,
+) -> str:
+    """410 Phase 2 wire-in helper: badge を本文先頭 / 出典帯 を本文末尾に挿入.
+
+    対象 subtype (ob / farm2_result / farm2_lineup / farm3_practice / farm3_player)
+    以外は body_html を不変で返す (additive no-op、 既存 subtype は副作用なし)。
+    Idempotent: 既に同 badge / 出典帯 文字列が body_html に含まれている場合は重複追加しない
+    (再 run / retry / 並走 enrich 経路で複数回呼ばれても安全)。
+    """
+    if not is_supported_subtype(subtype):
+        return body_html
+    safe_body = body_html or ""
+    badge = build_subtype_badge_html(subtype)
+    attribution = build_source_attribution_block(
+        subtype, source_url, source_name, ob_current_team=ob_current_team
+    )
+    parts: list[str] = []
+    if badge and badge not in safe_body:
+        parts.append(badge)
+        parts.append("\n")
+    parts.append(safe_body)
+    if attribution and attribution not in safe_body:
+        parts.append("\n")
+        parts.append(attribution)
+    return "".join(parts)

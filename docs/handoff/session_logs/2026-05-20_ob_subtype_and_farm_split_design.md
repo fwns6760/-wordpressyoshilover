@@ -226,6 +226,9 @@ GO 後のコード編集便で実行する予定の test。本便(markdown 作�
 - 410 Phase 1 full pytest | **5520 passed / 1 xfailed / 3 xpassed / 980 subtests / 116.68s** (regression 0) | Task #5 commit へ
 - 408 Phase 2 実装 | `src/ob_name_table.py` に `has_known_ob_name` + `_CURRENT_GIANTS_ROLE_GUARDS` 13 件追加、 `_maybe_apply_ob_subtype` を primary OR secondary に拡張、 11 new test (7 has_known_ob_name + 4 name match override) | targeted OB test 38 passed
 - 408 Phase 2 full pytest | **5539 passed / 2 failed (`test_publish_default_set_*`, ranking_article_publisher 系) / 1 xfailed / 3 xpassed / 308s** | **2 failed は並走 commit `03a49ee 403 Stage A4 cutover (last_7d → last_5_games 切替)` 由来、 OB Phase 2 と scope disjoint、 私の changes は regression 0**
+- 408 Phase 2 commit + push | `afdfd5c 408 Phase 2: OB name table secondary gate activate + 現巨人 role guard` (4 files / 95+ / 9-)
+- 410 Phase 2 wire-in 実装 | `src/subtype_display_format.py` に `maybe_prepend_subtype_display` (badge prepend + 出典帯 append + idempotent) 追加 + `src/rss_fetcher.py` `_create_draft_with_same_fire_guard` に `article_subtype` kw 追加 + 2 caller (main / review path) で body_article_subtype / validator_article_subtype 渡し + 8 new test | targeted 25 passed (Phase 1 17 + Phase 2 8)
+- 410 Phase 2 full pytest | **5550 passed / 1 xfailed / 3 xpassed / 980 subtests / 120.47s (regression 0)** | 並走 commit `e343479 403 Stage A4 cutover fix` で他者が `test_publish_default_set_*` 2 件も修復済、 fail 0 件で着地
 
 ## 10. Regression Memo 欄
 

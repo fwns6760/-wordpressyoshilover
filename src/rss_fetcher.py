@@ -38,6 +38,7 @@ from html.parser import HTMLParser
 
 from article_parts_renderer import ArticleParts, render_postgame
 from ob_name_table import has_known_ob_name, has_ob_literal_marker
+from subtype_display_format import maybe_prepend_subtype_display
 from body_validator import POSTGAME_DECISIVE_EVENT_RE
 from body_validator import validate_body_candidate as _validate_body_candidate
 from body_validator import is_supported_subtype as _body_validator_supports_subtype
@@ -20691,6 +20692,7 @@ def _create_draft_with_same_fire_guard(
     enrichment_source_name: str = "",
     enrichment_raw_html: str = "",
     enrichment_source_type: str = "",
+    article_subtype: str = "",
 ) -> int:
     # 344-INGEST: YouTube source なら title 先頭に「【YouTube】」prefix を付与。
     # mail 件名 + WP admin で即識別可、idempotent。
@@ -20810,6 +20812,14 @@ def _create_draft_with_same_fire_guard(
         enriched_content,
         logger=logger,
         source_url=normalized_source_url,
+    )
+    # 410 Phase 2: OB / farm2 / farm3 subtype に対し badge + 出典帯 を inject。
+    # 対象 subtype 以外は no-op (既存 subtype の挙動は不変)。 idempotent。
+    enriched_content = maybe_prepend_subtype_display(
+        enriched_content,
+        article_subtype,
+        source_url=normalized_source_url,
+        source_name=enrichment_source_name,
     )
     if force_status:
         resolved_status = force_status
@@ -27854,6 +27864,7 @@ def _main(args, logger):
                             # 出ない silent skip 原因の 1 つだった。
                             enrichment_raw_html=_article_raw_html,
                             enrichment_source_type=source_type,
+                            article_subtype=str(validator_article_subtype or ""),
                         )
                         if review_post_id_logged and review_post_id_logged > 0:
                             review_draft_created = True
@@ -28189,6 +28200,7 @@ def _main(args, logger):
                 enrichment_source_name=source_name,
                 enrichment_raw_html=_article_raw_html,
                 enrichment_source_type=source_type,
+                article_subtype=str(body_article_subtype or ""),
             )
             if post_id <= 0:
                 # RELIABILITY-2026-05-08-DUP-FIX: same-fire dedup で 0 が返った時、

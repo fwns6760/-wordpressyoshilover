@@ -1451,17 +1451,28 @@ class WPClient:
                 json=payload,
             )
             return int(resp.json().get("id") or 0)
-        except requests.HTTPError as e:
-            if e.response is not None and e.response.status_code == 400:
-                try:
-                    data = e.response.json()
-                except Exception:
-                    data = {}
-                if data.get("code") == "term_exists":
-                    # 既存名で衝突 → search で既存 ID を返す
-                    for cat in self.get_categories():
-                        if cat.get("name") == name:
-                            return cat["id"]
+        except (requests.HTTPError, RuntimeError) as e:
+            # 411 fix: _raise_for_status が requests.HTTPError → RuntimeError に
+            # wrap するため except requests.HTTPError だけでは catch 不能。
+            # message 内に term_exists を含む場合 (既存 category 衝突) は
+            # search fallback で既存 ID を返す。
+            msg = str(e)
+            if isinstance(e, requests.HTTPError):
+                # raw HTTPError 経路 (直接 raise された場合の互換)
+                if e.response is not None and e.response.status_code == 400:
+                    try:
+                        data = e.response.json()
+                    except Exception:
+                        data = {}
+                    if data.get("code") == "term_exists":
+                        for cat in self.get_categories():
+                            if cat.get("name") == name:
+                                return cat["id"]
+            elif "term_exists" in msg:
+                # RuntimeError (wrap 経路) 用の fallback
+                for cat in self.get_categories():
+                    if cat.get("name") == name:
+                        return cat["id"]
             print(f"[WP] カテゴリ作成失敗: {name!r}, error={e}")
             return 0
 

@@ -840,6 +840,7 @@ class Candidate:
 _DEFAULT_PLAYER_MAX_PER_MAIL = 1
 _NEWS_OPINION_METRIC = "NEWS_OPINION"
 _COMMENT_DB_METRIC = "COMMENT_DB"
+_FAN_VOICE_METRIC = "FAN_VOICE"
 _COMMENT_TERMS = (
     "コメント",
     "語った",
@@ -1167,6 +1168,66 @@ def build_news_opinion_candidate(
         focus_player=player,
         source_material_type=material_type,
         source_topic_family=source_topic_family,
+    )
+
+
+def build_fan_voice_candidate(
+    entry: dict,
+    *,
+    detected_player: str = "",
+) -> Optional[Candidate]:
+    """397: build a 「(参考) 巨人ファン X 投稿」 candidate from a fan_voice_pool
+    GCS record (produced by ``record_fan_voice_pool_entries_to_gcs``).
+
+    The candidate carries the raw tweet text (literal, attribution
+    preserved), not a generated post. user uses this as voice reference
+    to write their own X post manually.
+
+    Returns ``None`` (silent skip) when:
+    - URL or text empty
+    - text length out of 20-280 chars
+    - ``detected_player`` empty (= no Giants player NER hit in text)
+    """
+    if not isinstance(entry, dict):
+        return None
+    url = str(entry.get("url") or "").strip()
+    text = str(entry.get("text") or "").strip()
+    handle = str(entry.get("handle") or "").strip()
+    source_name = str(entry.get("source_name") or "").strip()
+    pub_iso = str(entry.get("pub_iso") or "").strip()
+    if not url or not text:
+        return None
+    if len(text) < 20 or len(text) > 280:
+        return None
+    if not detected_player:
+        return None
+    title_preview = _truncate_text(text.replace("\n", " "), 40)
+    title = f"(参考) ファン投稿｜{handle or '匿名'}｜{title_preview}"
+    proof_lines = [
+        "【根拠: 巨人ファン X 投稿 (参考)】",
+        f"投稿者: @{handle}" if handle else "投稿者: (不明)",
+        f"出典: {source_name}" if source_name else "",
+        f"投稿日時: {pub_iso}" if pub_iso else "",
+        f"投稿URL: {url}",
+        f"検出選手: {detected_player}",
+        "",
+        "【元投稿本文】",
+        text,
+        "",
+        "※ user メモ: この voice / 視点を参考に、 独自表現で post 案を書く。",
+        "  literal コピーや過度な類似は避ける (引用元 @user 明示なら可)。",
+    ]
+    signature_hash = _hashlib.sha1(f"fan_voice|{url}".encode("utf-8")).hexdigest()[:16]
+    return Candidate(
+        title=title,
+        metric=_FAN_VOICE_METRIC,
+        period_label="(参考) ファン投稿",
+        draft_text="\n".join(ln for ln in proof_lines if ln is not None),
+        char_count=len(text),
+        signature=f"fan_voice|{signature_hash}|False|None",
+        post_text="",
+        focus_player=detected_player,
+        source_material_type="fan_voice",
     )
 
 
@@ -1654,6 +1715,181 @@ def _load_recent_player_counts(
         lookback_hours=lookback_hours,
     )
     return _player_counts_from_dedup_records(records)
+
+
+def _fan_voice_pool_blob_path(date_str: str) -> str:
+    """397: GCS path for fan_voice_pool cache JSONL (per-day)."""
+    return f"fan_voice/pool_{date_str}.jsonl"
+
+
+def _coerce_struct_time_to_iso(value) -> str:
+    """Convert feedparser ``published_parsed`` (``time.struct_time``) or any
+    iso-able value into an ISO 8601 string. Returns ``""`` on best-effort
+    failure (silent skip)."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    # feedparser published_parsed: time.struct_time
+    try:
+        import time as _time
+        if hasattr(value, "tm_year"):
+            return datetime.fromtimestamp(_time.mktime(value), tz=JST).isoformat()
+    except Exception:  # noqa: BLE001
+        return ""
+    try:
+        if hasattr(value, "isoformat"):
+            return value.isoformat()
+    except Exception:  # noqa: BLE001
+        return ""
+    return str(value)
+
+
+def record_fan_voice_pool_entries_to_gcs(
+    bucket_name: str,
+    now: datetime,
+    entries: list[dict],
+) -> bool:
+    """397: Append in-process fan_voice_pool cache entries to today's
+    GCS JSONL so x-post-mail-lane Job (separate process) can read them.
+
+    Each input ``entry`` is the dict produced by
+    ``rss_fetcher._record_fan_voice_pool_entries`` (keys: ``source_name``,
+    ``handle``, ``text``, ``url``, ``created_at``).  Missing / unserializable
+    fields are silently dropped from the record (best-effort).
+
+    Returns ``True`` on upload success, ``False`` on any error. The caller
+    must never abort on a GCS failure: fan_voice is a soft add-on.
+    """
+    if not entries or not bucket_name:
+        return False
+    try:
+        client = _get_storage_client()
+        bucket = client.bucket(bucket_name)
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("record_fan_voice_pool_entries_to_gcs: client init failed: %r", exc)
+        return False
+    date_str = now.strftime("%Y-%m-%d")
+    blob = bucket.blob(_fan_voice_pool_blob_path(date_str))
+    if now.tzinfo is None:
+        ts_iso = now.replace(tzinfo=JST).isoformat()
+    else:
+        ts_iso = now.isoformat()
+    new_records: list[dict] = []
+    seen_urls: set[str] = set()
+    try:
+        existing = blob.download_as_text() if blob.exists() else ""
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("record_fan_voice_pool_entries_to_gcs: read existing failed: %r", exc)
+        existing = ""
+    # gather already-recorded URLs to avoid duplicate appends across fetcher runs
+    for line in existing.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = _json.loads(line)
+        except Exception:  # noqa: BLE001
+            continue
+        url = str(rec.get("url") or "")
+        if url:
+            seen_urls.add(url)
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        url = str(entry.get("url") or "").strip()
+        text = str(entry.get("text") or "").strip()
+        if not text or not url:
+            continue
+        if url in seen_urls:
+            continue
+        rec = {
+            "ts": ts_iso,
+            "source_name": str(entry.get("source_name") or ""),
+            "handle": str(entry.get("handle") or ""),
+            "text": text,
+            "url": url,
+            "pub_iso": _coerce_struct_time_to_iso(entry.get("created_at")),
+        }
+        new_records.append(rec)
+        seen_urls.add(url)
+    if not new_records:
+        return True  # nothing new but not an error
+    new_lines = [_json.dumps(rec, ensure_ascii=False) for rec in new_records]
+    new_block = "\n".join(new_lines) + "\n"
+    try:
+        blob.upload_from_string(
+            existing + new_block,
+            content_type="application/x-jsonlines",
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("record_fan_voice_pool_entries_to_gcs: upload failed: %r", exc)
+        return False
+
+
+def load_recent_fan_voice_pool_entries(
+    bucket_name: str,
+    now: datetime,
+    *,
+    lookback_hours: int = 24,
+) -> list[dict]:
+    """397: read recent fan_voice_pool entries from GCS for x-post-mail
+    consumption. Returns an empty list on any GCS error (silent skip).
+
+    Filter: returns records whose ``ts`` (upload time) falls within the
+    last ``lookback_hours``. Caller can further filter by ``pub_iso``
+    if it wants real-tweet recency (vs upload recency).
+    """
+    if not bucket_name:
+        return []
+    try:
+        client = _get_storage_client()
+        bucket = client.bucket(bucket_name)
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("load_recent_fan_voice_pool_entries: client init failed: %r", exc)
+        return []
+    cutoff = now - timedelta(hours=lookback_hours)
+    today = now.strftime("%Y-%m-%d")
+    yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    out: list[dict] = []
+    seen_urls: set[str] = set()
+    for date_str in (today, yesterday):
+        blob = bucket.blob(_fan_voice_pool_blob_path(date_str))
+        try:
+            if not blob.exists():
+                continue
+            content = blob.download_as_text()
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning("load_recent_fan_voice_pool_entries: read %s failed: %r",
+                        date_str, exc)
+            continue
+        for line in content.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = _json.loads(line)
+            except Exception:  # noqa: BLE001
+                continue
+            ts_str = rec.get("ts") or ""
+            if not ts_str:
+                continue
+            try:
+                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                continue
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=JST)
+            if ts < cutoff:
+                continue
+            url = str(rec.get("url") or "")
+            if url and url in seen_urls:
+                continue
+            out.append(rec)
+            if url:
+                seen_urls.add(url)
+    return out
 
 
 def _record_dedup_signatures(

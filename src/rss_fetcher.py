@@ -26505,6 +26505,33 @@ def _main(args, logger):
             })
             entry_index += 1
 
+    # 397: fan_voice_pool cache (in-process) を GCS に永続化する。
+    # x-post-mail-lane Job は別 process のためこの cache に直接アクセス
+    # できないので、 GCS JSONL に書き出す。 失敗しても fetch 本流を
+    # 止めない (best-effort、 fan_voice は soft add-on)。
+    try:
+        _fan_voice_pool_entries_now = get_fan_voice_pool_entries()
+        if _fan_voice_pool_entries_now:
+            _fan_voice_pool_bucket = os.environ.get("INSIGHT_GCS_BUCKET", "")
+            if _fan_voice_pool_bucket:
+                from src.x_post_mail_lane import (
+                    record_fan_voice_pool_entries_to_gcs as _record_fan_voice_pool_to_gcs,
+                )
+                from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+                _jst = _tz(_td(hours=9))
+                _record_fan_voice_pool_to_gcs(
+                    _fan_voice_pool_bucket,
+                    _dt.now(_jst),
+                    _fan_voice_pool_entries_now,
+                )
+                logger.info(
+                    "fan_voice_pool: uploaded %d entries to gs://%s/fan_voice/",
+                    len(_fan_voice_pool_entries_now),
+                    _fan_voice_pool_bucket,
+                )
+    except Exception as _fv_exc:  # noqa: BLE001
+        logger.warning("fan_voice_pool GCS upload failed (non-fatal): %r", _fv_exc)
+
     prepared_entries = _aggregate_lineup_candidates(prepared_entries)
     # #18 / 339-INGEST: 同 family X 速報 + Web 記事 dedup (digest aggregation の前)。
     # ENABLE_SAME_FAMILY_X_WEB_DEDUP=0 で rollback no-op。

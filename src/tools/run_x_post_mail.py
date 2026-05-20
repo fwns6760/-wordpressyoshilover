@@ -176,6 +176,41 @@ def _gemma_branding_max_per_run() -> int:
     )
 
 
+def _fan_voice_enabled() -> bool:
+    """397: env flag for fan_voice (参考) candidate.
+
+    Default OFF。 ON 時のみ x-post-mail-evening (17:30) / postgame
+    (22:30) 便で fan_voice candidate を append する。 flag OFF では
+    既存挙動完全不変。
+    """
+    raw = (os.environ.get("X_POST_MAIL_FAN_VOICE_ENABLED") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _fan_voice_max_per_run() -> int:
+    """397: fan_voice 候補数 / fire の上限 (default 2)。"""
+    return _resolve_int_env(
+        "X_POST_MAIL_FAN_VOICE_MAX",
+        2,
+        min_value=0,
+    )
+
+
+def _is_fan_voice_fire_window(now_jst: datetime) -> bool:
+    """397: 試合時間帯 (= evening / postgame 便) なら True。
+
+    evening fire は 17:30 JST 前後、 postgame fire は 22:30 JST 前後。
+    手動 fire 等で時刻がずれる可能性を考慮し、 17:00-23:30 を許容
+    レンジとする。 朝便 (07:00) / lunch (12:00) / afternoon (15:00) は
+    試合時間帯外なので False。
+    """
+    if now_jst.tzinfo is None:
+        return False
+    minutes_since_midnight = now_jst.hour * 60 + now_jst.minute
+    # 17:00 - 23:30 を試合 / 試合直後 window とする
+    return 17 * 60 <= minutes_since_midnight <= 23 * 60 + 30
+
+
 def _resolve_int_env(name: str, default: int, *, min_value: int = 0) -> int:
     raw = (os.environ.get(name) or str(default)).strip()
     try:
@@ -396,6 +431,112 @@ def _fetch_news_opinion_fallback_candidates(
                 player,
                 link,
             )
+    return out
+
+
+def _build_fan_voice_candidates(
+    existing_candidates: list[lane.Candidate],
+    *,
+    bucket_name: str,
+    now: datetime,
+    max_count: int,
+    recent_player_counts: dict[str, int] | None = None,
+    lookback_hours: int = 24,
+) -> list[lane.Candidate]:
+    """397: build 「(参考) 巨人ファン X 投稿」 candidates from GCS-cached
+    fan_voice_pool entries (uploaded by yoshilover-fetcher).
+
+    Filters:
+    - tweet text length 20-280
+    - text contains a verified Giants player name (NER via
+      :func:`lane.detect_giants_player_name`)
+    - URL not already present in another candidate of this mail
+    - player not in 24h history (``recent_player_counts``)
+    - player not already in current candidate list
+
+    Returns up to ``max_count`` candidates, newest-first (by ``pub_iso``
+    if available, else by ``ts``).
+    """
+    if max_count <= 0 or not bucket_name:
+        return []
+    try:
+        entries = lane.load_recent_fan_voice_pool_entries(
+            bucket_name,
+            now,
+            lookback_hours=lookback_hours,
+        )
+    except Exception as exc:  # noqa: BLE001 - silent skip per fan_voice contract
+        LOG.warning("fan_voice load failed (silent skip): %r", exc)
+        return []
+    if not entries:
+        LOG.info("fan_voice: 0 entries in GCS cache within last %dh", lookback_hours)
+        return []
+    # newest-first sort
+    def _sort_key(rec: dict) -> str:
+        return str(rec.get("pub_iso") or rec.get("ts") or "")
+    entries = sorted(entries, key=_sort_key, reverse=True)
+
+    existing_urls = {
+        getattr(c, "signature", "") for c in existing_candidates
+    }
+    existing_player_keys = {
+        lane._normalize_player_name(c.focus_player)
+        for c in existing_candidates
+        if lane._normalize_player_name(c.focus_player)
+    }
+    history_player_keys = {
+        lane._normalize_player_name(name)
+        for name, count in (recent_player_counts or {}).items()
+        if lane._normalize_player_name(name) and int(count or 0) > 0
+    }
+    out: list[lane.Candidate] = []
+    seen_handles: set[str] = set()
+    for entry in entries:
+        if len(out) >= max_count:
+            break
+        text = str(entry.get("text") or "").strip()
+        url = str(entry.get("url") or "").strip()
+        handle = str(entry.get("handle") or "").strip()
+        if not text or not url:
+            continue
+        # diversity: at most 1 candidate per handle within one mail
+        if handle and handle in seen_handles:
+            LOG.info(
+                "fan_voice_skip reason=handle_diversity handle=%s url=%s",
+                handle, url,
+            )
+            continue
+        player = lane.detect_giants_player_name(text)
+        player_key = lane._normalize_player_name(player)
+        if not player_key:
+            LOG.info("fan_voice_skip reason=no_giants_player_in_text url=%s", url)
+            continue
+        if player_key in existing_player_keys:
+            LOG.info(
+                "fan_voice_skip reason=player_in_current_mail player=%s url=%s",
+                player, url,
+            )
+            continue
+        if player_key in history_player_keys:
+            LOG.info(
+                "fan_voice_skip reason=player_in_24h_history player=%s url=%s",
+                player, url,
+            )
+            continue
+        cand = lane.build_fan_voice_candidate(entry, detected_player=player)
+        if cand is None:
+            continue
+        if cand.signature in existing_urls:
+            continue
+        out.append(cand)
+        existing_player_keys.add(player_key)
+        if handle:
+            seen_handles.add(handle)
+        LOG.info(
+            "fan_voice_candidate_added handle=%s player=%s url=%s",
+            handle, player, url,
+        )
+    LOG.info("fan_voice: built %d candidates (max=%d)", len(out), max_count)
     return out
 
 
@@ -1004,6 +1145,50 @@ def main(argv: Sequence[str] | None = None) -> int:
                 before,
                 len(candidates),
             )
+    # 397: fan_voice (参考) candidate append。
+    # X_POST_MAIL_FAN_VOICE_ENABLED=1 で ON、 evening (17:30) / postgame
+    # (22:30) 便 (= _is_fan_voice_fire_window) でのみ append。 朝 / 昼 /
+    # 午後便には出さない (試合時間帯のファン熱を mail に届けるため)。
+    # flag OFF or 試合時間帯外なら完全 skip (no-op、 既存挙動不変)。
+    if _fan_voice_enabled() and _is_fan_voice_fire_window(now_jst):
+        fan_voice_max = _fan_voice_max_per_run()
+        if fan_voice_max > 0 and bucket_name:
+            remaining_slots = max(0, args.max_candidates - len(candidates))
+            fan_voice_count = min(fan_voice_max, remaining_slots)
+            if fan_voice_count > 0:
+                fan_voice_candidates = _build_fan_voice_candidates(
+                    candidates,
+                    bucket_name=bucket_name,
+                    now=now_jst,
+                    max_count=fan_voice_count,
+                    recent_player_counts=recent_player_counts,
+                )
+                if fan_voice_candidates:
+                    before = len(candidates)
+                    candidates = candidates + fan_voice_candidates
+                    LOG.info(
+                        "fan_voice appended: data=%d fan_voice=%d total=%d",
+                        before,
+                        len(fan_voice_candidates),
+                        len(candidates),
+                    )
+                else:
+                    LOG.info(
+                        "fan_voice produced 0 candidates "
+                        "(empty GCS cache / NER mismatch / dedup)."
+                    )
+            else:
+                LOG.info(
+                    "fan_voice skip: mail already full (candidates=%d, max=%d)",
+                    len(candidates),
+                    args.max_candidates,
+                )
+    elif _fan_voice_enabled():
+        LOG.info(
+            "fan_voice skip: not in fire window (now=%s, allowed 17:00-23:30 JST)",
+            now_jst.strftime("%H:%M"),
+        )
+
     if not candidates and recent_player_counts:
         LOG.warning(
             "Player history left 0 candidates after news/opinion fallback; "

@@ -2384,6 +2384,169 @@ class TicketThreeFiftyFiveDedupTests(unittest.TestCase):
         self.assertIn("EXISTING|x|False|None", body)
         self.assertIn("NEW|y|False|None", body)
 
+    def test_record_fan_voice_pool_writes_jsonl(self) -> None:
+        """397: fan_voice_pool entries が GCS JSONL に書ける。"""
+        from unittest.mock import patch
+        import json
+        import src.x_post_mail_lane as lane
+
+        store: dict[str, str] = {}
+        now = datetime(2026, 5, 20, 11, 30, tzinfo=JST)
+        entries = [
+            {
+                "source_name": "フーガ X (巨人ファン長文分析)",
+                "handle": "EH87EazmV9D2eSw",
+                "text": "完勝！ 7連勝！！ 戸郷ナイスピッチ！",
+                "url": "https://x.com/EH87EazmV9D2eSw/status/2056705467792163327",
+                "created_at": None,
+            },
+            {
+                "source_name": "缶詰 X (巨人ファン試合中実況)",
+                "handle": "kandume92",
+                "text": "やったー！！！ 7回無失点！！！！",
+                "url": "https://x.com/kandume92/status/2056681000000000000",
+                "created_at": None,
+            },
+        ]
+        with patch.object(lane, "_get_storage_client",
+                          return_value=self._fake_storage_client(store)):
+            ok = lane.record_fan_voice_pool_entries_to_gcs(
+                "test-bucket",
+                now,
+                entries,
+            )
+        self.assertTrue(ok)
+        path = "fan_voice/pool_2026-05-20.jsonl"
+        self.assertIn(path, store)
+        lines = [ln for ln in store[path].split("\n") if ln.strip()]
+        self.assertEqual(len(lines), 2)
+        rec0 = json.loads(lines[0])
+        self.assertEqual(rec0["handle"], "EH87EazmV9D2eSw")
+        self.assertEqual(rec0["source_name"], "フーガ X (巨人ファン長文分析)")
+        self.assertIn("ts", rec0)
+        self.assertIn("text", rec0)
+
+    def test_record_fan_voice_pool_dedupes_existing_urls(self) -> None:
+        """397: 既に同 URL が GCS に書かれてる時は再追加しない。"""
+        from unittest.mock import patch
+        import src.x_post_mail_lane as lane
+
+        path = "fan_voice/pool_2026-05-20.jsonl"
+        existing_url = "https://x.com/EH87EazmV9D2eSw/status/2056705467792163327"
+        store = {
+            path: f'{{"ts": "2026-05-20T07:00:00+09:00", "url": "{existing_url}", "text": "old"}}\n',
+        }
+        now = datetime(2026, 5, 20, 11, 30, tzinfo=JST)
+        entries = [
+            {
+                "source_name": "フーガ X",
+                "handle": "EH87EazmV9D2eSw",
+                "text": "completely different text",
+                "url": existing_url,
+                "created_at": None,
+            },
+        ]
+        with patch.object(lane, "_get_storage_client",
+                          return_value=self._fake_storage_client(store)):
+            lane.record_fan_voice_pool_entries_to_gcs(
+                "test-bucket",
+                now,
+                entries,
+            )
+        body = store[path]
+        self.assertEqual(body.count(existing_url), 1)
+
+    def test_load_recent_fan_voice_pool_filters_old(self) -> None:
+        """397: 24h 超 (= 30h 前) の record は除外。"""
+        from unittest.mock import patch
+        import src.x_post_mail_lane as lane
+
+        old_ts = (datetime(2026, 5, 20, 12, 0, tzinfo=JST) - timedelta(hours=30)).isoformat()
+        recent_ts = (datetime(2026, 5, 20, 12, 0, tzinfo=JST) - timedelta(hours=2)).isoformat()
+        store = {
+            "fan_voice/pool_2026-05-19.jsonl":
+                f'{{"ts": "{old_ts}", "url": "https://x.com/old/status/1", "text": "old", "handle": "old"}}\n'
+                f'{{"ts": "{recent_ts}", "url": "https://x.com/fresh/status/2", "text": "fresh", "handle": "fresh"}}\n',
+        }
+        now = datetime(2026, 5, 20, 12, 0, tzinfo=JST)
+        with patch.object(lane, "_get_storage_client",
+                          return_value=self._fake_storage_client(store)):
+            recs = lane.load_recent_fan_voice_pool_entries("test-bucket", now)
+        urls = [r["url"] for r in recs]
+        self.assertIn("https://x.com/fresh/status/2", urls)
+        self.assertNotIn("https://x.com/old/status/1", urls)
+
+    def test_load_recent_fan_voice_pool_silent_fallback_on_error(self) -> None:
+        """397: GCS client init 失敗時は empty list、 raise しない。"""
+        from unittest.mock import patch
+        import src.x_post_mail_lane as lane
+
+        def _boom():
+            raise RuntimeError("simulated GCS auth failure")
+        now = datetime(2026, 5, 20, 12, 0, tzinfo=JST)
+        with patch.object(lane, "_get_storage_client", side_effect=_boom):
+            recs = lane.load_recent_fan_voice_pool_entries("test-bucket", now)
+        self.assertEqual(recs, [])
+
+    def test_is_fan_voice_fire_window(self) -> None:
+        """397: 17:00-23:30 JST のみ True、 朝 / 昼 / 午後は False。"""
+        from src.tools.run_x_post_mail import _is_fan_voice_fire_window
+
+        def _at(hh: int, mm: int) -> datetime:
+            return datetime(2026, 5, 20, hh, mm, tzinfo=JST)
+        # 朝 / 昼 / 午後便: False
+        self.assertFalse(_is_fan_voice_fire_window(_at(7, 0)))
+        self.assertFalse(_is_fan_voice_fire_window(_at(12, 0)))
+        self.assertFalse(_is_fan_voice_fire_window(_at(15, 0)))
+        self.assertFalse(_is_fan_voice_fire_window(_at(16, 59)))
+        # evening / postgame 便: True
+        self.assertTrue(_is_fan_voice_fire_window(_at(17, 0)))
+        self.assertTrue(_is_fan_voice_fire_window(_at(17, 30)))
+        self.assertTrue(_is_fan_voice_fire_window(_at(20, 0)))
+        self.assertTrue(_is_fan_voice_fire_window(_at(22, 30)))
+        self.assertTrue(_is_fan_voice_fire_window(_at(23, 30)))
+        # 夜間 / 早朝: False
+        self.assertFalse(_is_fan_voice_fire_window(_at(23, 31)))
+        self.assertFalse(_is_fan_voice_fire_window(_at(2, 0)))
+
+    def test_build_fan_voice_candidate_ok(self) -> None:
+        """397: 正常 entry → Candidate(metric=FAN_VOICE) 生成。"""
+        import src.x_post_mail_lane as lane
+        entry = {
+            "source_name": "フーガ X (巨人ファン長文分析)",
+            "handle": "EH87EazmV9D2eSw",
+            "text": "完勝！ 7連勝！！ 戸郷ナイスピッチ！ こんなに勝ちが続くなんていつ以来やろ ピッチャーのクオリティが高すぎる",
+            "url": "https://x.com/EH87EazmV9D2eSw/status/2056705467792163327",
+            "pub_iso": "2026-05-19T20:56:09+09:00",
+        }
+        cand = lane.build_fan_voice_candidate(entry, detected_player="戸郷翔征")
+        self.assertIsNotNone(cand)
+        self.assertEqual(cand.metric, "FAN_VOICE")
+        self.assertEqual(cand.focus_player, "戸郷翔征")
+        self.assertIn("完勝", cand.draft_text)
+        self.assertIn("@EH87EazmV9D2eSw", cand.draft_text)
+        self.assertTrue(cand.signature.startswith("fan_voice|"))
+
+    def test_build_fan_voice_candidate_rejects_short_text(self) -> None:
+        """397: 文字数 20 未満は None。"""
+        import src.x_post_mail_lane as lane
+        entry = {
+            "handle": "EH87EazmV9D2eSw",
+            "text": "短い",
+            "url": "https://x.com/EH87EazmV9D2eSw/status/1",
+        }
+        self.assertIsNone(lane.build_fan_voice_candidate(entry, detected_player="戸郷翔征"))
+
+    def test_build_fan_voice_candidate_rejects_no_player(self) -> None:
+        """397: detected_player 空は None (NER hit なし時)。"""
+        import src.x_post_mail_lane as lane
+        entry = {
+            "handle": "EH87EazmV9D2eSw",
+            "text": "完勝！ 7連勝！！ 戸郷ナイスピッチ！ こんなに勝ちが続くなんていつ以来やろ",
+            "url": "https://x.com/EH87EazmV9D2eSw/status/1",
+        }
+        self.assertIsNone(lane.build_fan_voice_candidate(entry, detected_player=""))
+
 
 class SnapshotPathBattingMetricsTests(unittest.TestCase):
     """2026-05-17: batting metrics (AVG/OBP/SLG/OPS) は
